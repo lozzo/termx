@@ -138,7 +138,7 @@ func TestProtocolServiceRemoteHookCanBeInjectedAfterServerConstruction(t *testin
 	}
 }
 
-func newProtocolClientWithOptions(t *testing.T, opts ...ServerOption) (*Server, *protocol.Client, func()) {
+func newProtocolClientWithOptions(t *testing.T, opts ...ServerOption) (*Server, *applicationProtocolTestClient, func()) {
 	t.Helper()
 	all := append([]ServerOption{WithProcessFactory(newRecordingProcessFactory())}, opts...)
 	return newProtocolClientWithServer(t, NewServer(all...))

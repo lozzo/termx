@@ -8,6 +8,7 @@ import (
 
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/shared/perftrace"
 	"github.com/lozzow/termx/tui/app"
 	"github.com/lozzow/termx/tui/state"
@@ -162,7 +163,11 @@ func runV3RootEmptyRuntime(ctx context.Context, cfg v3RootEmptyConfig) error {
 }
 
 func selectV3RootAttachTerminal(ctx context.Context, client *protocol.Client) (string, bool, error) {
-	list, err := client.List(ctx)
+	application, err := newLocalApplicationSession(client)
+	if err != nil {
+		return "", false, err
+	}
+	list, err := application.TerminalList(ctx, &apipb.TerminalListCommand{})
 	if err != nil {
 		return "", false, fmt.Errorf("list core-v2 terminals for root: %w", err)
 	}
@@ -172,25 +177,25 @@ func selectV3RootAttachTerminal(ctx context.Context, client *protocol.Client) (s
 	// 固定 root terminal 退出后仍会留在 core 里；root 入口只选择连接对象。
 	// restart 必须是用户显式动作，不能在重进 TUI 时自动 HUP 旧 PTY。
 	if item, ok := findV3RootTerminal(list.Terminals); ok {
-		return item.ID, true, nil
+		return item.GetRef().GetTerminalId(), true, nil
 	}
 	return "", false, nil
 }
 
-func selectV3RootTerminal(items []protocol.TerminalInfo) string {
+func selectV3RootTerminal(items []*apipb.TerminalInfo) string {
 	for _, item := range items {
-		if item.State == "running" {
-			return item.ID
+		if item.GetState() == apipb.TerminalState_TERMINAL_STATE_RUNNING {
+			return item.GetRef().GetTerminalId()
 		}
 	}
 	return ""
 }
 
-func findV3RootTerminal(items []protocol.TerminalInfo) (protocol.TerminalInfo, bool) {
+func findV3RootTerminal(items []*apipb.TerminalInfo) (*apipb.TerminalInfo, bool) {
 	for _, item := range items {
-		if item.ID == v3RootTerminalID {
+		if item.GetRef().GetTerminalId() == v3RootTerminalID {
 			return item, true
 		}
 	}
-	return protocol.TerminalInfo{}, false
+	return nil, false
 }

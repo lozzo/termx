@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	xansi "github.com/charmbracelet/x/ansi"
+	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/shared/perftrace"
 	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
@@ -16,110 +19,97 @@ import (
 // live invalidation 方法只透传 observed native revision 补 wake 边沿；adapter
 // 不把 renderer/FrameSink 状态写回 core，也不从 protocol 侧推断 history truth。
 type ProtocolTerminalClient interface {
-	AttachWithOptions(context.Context, protocol.AttachParams) (*protocol.AttachResult, error)
-	Detach(context.Context, protocol.DetachParams) error
+	clientruntime.ProtoApplicationExecutor
+	ApplicationAttachmentChannel(*apipb.ResourceHandle) (uint16, bool)
+	ApplicationAttachment(uint16) (*apipb.ResourceHandle, bool)
 	Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error)
-	List(context.Context) (*protocol.ListResult, error)
 	LiveScreen(context.Context, string) (*protocol.NativeScreenSnapshot, error)
 	NextLiveInvalidation(context.Context, string, uint64) (*protocol.Event, error)
-	Create(context.Context, protocol.CreateParams) (*protocol.CreateResult, error)
-	Restart(context.Context, string) error
-	Kill(context.Context, string) error
-	Remove(context.Context, string) error
-	SetMetadata(context.Context, string, string, map[string]string) error
-	SetTags(context.Context, string, map[string]string) error
-	Input(context.Context, uint16, []byte) error
-	Resize(context.Context, uint16, uint16, uint16) error
-	EnsureResize(context.Context, protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error)
-}
-
-type ProtocolInputRequestClient interface {
-	InputWithOptions(context.Context, protocol.InputParams) error
 }
 
 // ProtocolTerminalServiceAdapter 把 TUI-v3 terminal service 契约映射到 termx protocol。
 type ProtocolTerminalServiceAdapter struct {
-	Client ProtocolTerminalClient
+	Client      ProtocolTerminalClient
+	Application *clientruntime.ApplicationSession
+}
+
+// NewProtocolTerminalServiceAdapter 把一个已完成 Hello/auth 的 protocol client 绑定到不可变 runtime generation。
+// 构造失败时调用方必须放弃该 connection，不能用空 application session 继续运行或 fallback 到旧 method。
+func NewProtocolTerminalServiceAdapter(client ProtocolTerminalClient, stamp clientruntime.EndpointSessionStamp) (ProtocolTerminalServiceAdapter, error) {
+	if client == nil {
+		return ProtocolTerminalServiceAdapter{}, port.ErrMissingTerminalClient
+	}
+	application, err := clientruntime.NewApplicationSession(stamp, client)
+	if err != nil {
+		return ProtocolTerminalServiceAdapter{}, err
+	}
+	return ProtocolTerminalServiceAdapter{Client: client, Application: application}, nil
 }
 
 func (adapter ProtocolTerminalServiceAdapter) Attach(ctx context.Context, req port.TerminalAttachRequest) (port.TerminalAttachResult, error) {
-	if adapter.Client == nil {
+	if adapter.Client == nil || adapter.Application == nil {
 		return port.TerminalAttachResult{}, port.ErrMissingTerminalClient
 	}
-	mode := req.Mode
-	if mode == "" {
-		mode = "collaborator"
-	}
 	finishRPC := perftrace.Measure("tui.protocol.terminal_attach.rpc")
-	result, err := adapter.Client.AttachWithOptions(ctx, protocol.AttachParams{
-		TerminalID:   req.TerminalID,
-		Mode:         mode,
-		ResizePolicy: req.ResizePolicy,
-		SurfaceID:    req.SurfaceID,
-		ViewID:       req.ViewID,
+	result, err := adapter.Application.TerminalAttach(ctx, &apipb.TerminalAttachCommand{
+		Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID},
+		Mode:     attachmentModeToProto(req.Mode), ResizePolicy: resizePolicyToProto(req.ResizePolicy), SurfaceId: req.SurfaceID, ViewId: req.ViewID,
 	})
 	finishRPC(0)
 	if err != nil {
 		return port.TerminalAttachResult{}, err
 	}
+	channel, ok := adapter.Client.ApplicationAttachmentChannel(result.GetAttachment().GetResource())
+	if !ok {
+		return port.TerminalAttachResult{}, fmt.Errorf("terminal attachment has no protocol stream binding")
+	}
 	out := port.TerminalAttachResult{
+		EndpointID:   req.EndpointID,
 		TerminalID:   req.TerminalID,
-		Channel:      result.Channel,
-		Cols:         req.Cols,
-		Rows:         req.Rows,
+		Channel:      channel,
+		Cols:         int(result.GetSize().GetCols()),
+		Rows:         int(result.GetSize().GetRows()),
 		CanResize:    true,
-		ResizePolicy: req.ResizePolicy,
+		ResizePolicy: resizePolicyFromProto(result.GetResizePolicy()),
 		SurfaceID:    req.SurfaceID,
 		ViewID:       req.ViewID,
 	}
-	if result.ResizeControl != nil {
-		applyProtocolResizeControlToAttach(&out, result.ResizeControl)
+	if result.GetResizeControl() != nil {
+		applyProtoResizeControlToAttach(&out, result.GetResizeControl())
 	}
 	return out, nil
 }
 
 func (adapter ProtocolTerminalServiceAdapter) Detach(ctx context.Context, req port.TerminalDetachRequest) error {
-	if adapter.Client == nil {
+	if adapter.Client == nil || adapter.Application == nil {
 		return port.ErrMissingTerminalClient
 	}
-	return adapter.Client.Detach(ctx, protocol.DetachParams{
-		TerminalID: req.TerminalID,
-		Channel:    req.Channel,
-		SurfaceID:  req.SurfaceID,
-		ViewID:     req.ViewID,
-	})
+	resource, ok := adapter.Client.ApplicationAttachment(req.Channel)
+	if !ok {
+		return fmt.Errorf("terminal detach requires active attachment resource")
+	}
+	return adapter.Application.TerminalDetach(ctx, &apipb.TerminalDetachCommand{Attachment: resource})
 }
 
-func (adapter ProtocolTerminalServiceAdapter) List(ctx context.Context, _ port.TerminalListRequest) (port.TerminalListResult, error) {
-	if adapter.Client == nil {
+func (adapter ProtocolTerminalServiceAdapter) List(ctx context.Context, req port.TerminalListRequest) (port.TerminalListResult, error) {
+	if adapter.Application == nil {
 		return port.TerminalListResult{}, port.ErrMissingTerminalClient
 	}
 	finishRPC := perftrace.Measure("tui.protocol.terminal_list.rpc")
-	result, err := adapter.Client.List(ctx)
+	result, err := adapter.Application.TerminalList(ctx, &apipb.TerminalListCommand{})
 	finishRPC(0)
 	if err != nil {
 		return port.TerminalListResult{}, err
 	}
 	finishConvert := perftrace.Measure("tui.protocol.terminal_list.convert")
-	items := make([]port.TerminalPoolItem, 0, len(result.Terminals))
-	for _, terminal := range result.Terminals {
+	items := make([]port.TerminalPoolItem, 0, len(result.GetTerminals()))
+	for _, terminal := range result.GetTerminals() {
 		items = append(items, port.TerminalPoolItem{
-			TerminalID:      terminal.ID,
-			Title:           terminalPoolTitleFromProtocol(terminal),
-			State:           terminal.State,
-			CWD:             terminal.CWD,
-			Command:         append([]string(nil), terminal.Command...),
-			Tags:            cloneStringMap(terminal.Tags),
-			ExitCode:        cloneIntPointer(terminal.ExitCode),
-			ExitedAt:        terminal.ExitedAt,
-			Cols:            int(terminal.Size.Cols),
-			Rows:            int(terminal.Size.Rows),
-			AttachmentCount: terminal.ResizeOwnerAttachmentCount,
+			EndpointID: req.EndpointID, TerminalID: terminal.GetRef().GetTerminalId(), Title: terminalTitleFromProto(terminal), State: terminalStateFromProto(terminal.GetState()), CWD: terminal.GetCwd(),
+			Command: append([]string(nil), terminal.GetCommand()...), Tags: cloneStringMap(terminal.GetTags()), ExitCode: int32PointerToInt(terminal.ExitCode), ExitedAt: unixNanoTime(terminal.GetExitedAtUnixNano()),
+			Cols: int(terminal.GetSize().GetCols()), Rows: int(terminal.GetSize().GetRows()), AttachmentCount: int(terminal.GetAttachmentCount()),
 			Resources: port.TerminalResourceUsage{
-				PID:            terminal.Resources.PID,
-				CPUPercentX100: terminal.Resources.CPUPercentX100,
-				MemoryBytes:    terminal.Resources.MemoryBytes,
-				SampledAt:      terminal.Resources.SampledAt,
+				PID: int(terminal.GetResources().GetPid()), CPUPercentX100: int(terminal.GetResources().GetCpuPercentX100()), MemoryBytes: terminal.GetResources().GetMemoryBytes(), SampledAt: unixNanoTime(terminal.GetResources().GetSampledAtUnixNano()),
 			},
 		})
 	}
@@ -128,7 +118,7 @@ func (adapter ProtocolTerminalServiceAdapter) List(ctx context.Context, _ port.T
 }
 
 func (adapter ProtocolTerminalServiceAdapter) Create(ctx context.Context, req port.TerminalCreateRequest) (port.TerminalCreateResult, error) {
-	if adapter.Client == nil {
+	if adapter.Application == nil {
 		return port.TerminalCreateResult{}, port.ErrMissingTerminalClient
 	}
 	command := append([]string(nil), req.Command...)
@@ -138,34 +128,30 @@ func (adapter ProtocolTerminalServiceAdapter) Create(ctx context.Context, req po
 		return port.TerminalCreateResult{}, fmt.Errorf("terminal create command is required")
 	}
 	finishRPC := perftrace.Measure("tui.protocol.terminal_create.rpc")
-	result, err := adapter.Client.Create(ctx, protocol.CreateParams{
-		ID:      req.TerminalID,
-		Name:    req.Title,
-		Command: command,
-		Tags:    cloneStringMap(req.Tags),
-		Dir:     req.CWD,
-		Size:    protocol.Size{Cols: uint16(req.Cols), Rows: uint16(req.Rows)},
-	})
+	result, err := adapter.Application.TerminalCreate(ctx, &apipb.TerminalCreateCommand{Terminal: &apipb.TerminalCreateSpec{
+		TerminalId: req.TerminalID, Name: req.Title, Command: command, Tags: cloneStringMap(req.Tags), Cwd: req.CWD, Size: &apipb.TerminalSize{Cols: uint32(req.Cols), Rows: uint32(req.Rows)},
+	}})
 	finishRPC(0)
 	if err != nil {
 		return port.TerminalCreateResult{}, err
 	}
-	terminalID := result.TerminalID
+	terminalID := result.GetTerminal().GetRef().GetTerminalId()
 	if terminalID == "" {
 		terminalID = req.TerminalID
 	}
-	return port.TerminalCreateResult{TerminalID: terminalID, State: result.State}, nil
+	return port.TerminalCreateResult{EndpointID: req.EndpointID, TerminalID: terminalID, State: terminalStateFromProto(result.GetTerminal().GetState())}, nil
 }
 
 func (adapter ProtocolTerminalServiceAdapter) Restart(ctx context.Context, req port.TerminalRestartRequest) error {
-	if adapter.Client == nil {
+	if adapter.Application == nil {
 		return port.ErrMissingTerminalClient
 	}
-	return adapter.Client.Restart(ctx, req.TerminalID)
+	return adapter.Application.TerminalRestart(ctx, &apipb.TerminalRestartCommand{Terminal: terminalRef(req.EndpointID, req.TerminalID)})
 }
 
 func (adapter ProtocolTerminalServiceAdapter) Reconnect(ctx context.Context, req port.TerminalReconnectRequest) (port.TerminalAttachResult, error) {
 	return adapter.Attach(ctx, port.TerminalAttachRequest{
+		EndpointID:   req.EndpointID,
 		TerminalID:   req.TerminalID,
 		Cols:         req.Cols,
 		Rows:         req.Rows,
@@ -177,145 +163,124 @@ func (adapter ProtocolTerminalServiceAdapter) Reconnect(ctx context.Context, req
 }
 
 func (adapter ProtocolTerminalServiceAdapter) Kill(ctx context.Context, req port.TerminalKillRequest) error {
-	if adapter.Client == nil {
+	if adapter.Application == nil {
 		return port.ErrMissingTerminalClient
 	}
-	return adapter.Client.Kill(ctx, req.TerminalID)
+	return adapter.Application.TerminalKill(ctx, &apipb.TerminalKillCommand{Terminal: terminalRef(req.EndpointID, req.TerminalID)})
 }
 
 func (adapter ProtocolTerminalServiceAdapter) Remove(ctx context.Context, req port.TerminalRemoveRequest) error {
-	if adapter.Client == nil {
+	if adapter.Application == nil {
 		return port.ErrMissingTerminalClient
 	}
-	return adapter.Client.Remove(ctx, req.TerminalID)
+	return adapter.Application.TerminalRemove(ctx, &apipb.TerminalRemoveCommand{Terminal: terminalRef(req.EndpointID, req.TerminalID)})
 }
 
 func (adapter ProtocolTerminalServiceAdapter) EditMetadata(ctx context.Context, req port.TerminalEditMetadataRequest) error {
-	if adapter.Client == nil {
+	if adapter.Application == nil {
 		return port.ErrMissingTerminalClient
 	}
-	return adapter.Client.SetMetadata(ctx, req.TerminalID, req.Title, cloneStringMap(req.Tags))
+	return adapter.Application.TerminalSetMetadata(ctx, &apipb.TerminalSetMetadataCommand{Terminal: terminalRef(req.EndpointID, req.TerminalID), Name: req.Title, Tags: cloneStringMap(req.Tags)})
 }
 
 func (adapter ProtocolTerminalServiceAdapter) EditTags(ctx context.Context, req port.TerminalEditTagsRequest) error {
-	if adapter.Client == nil {
+	if adapter.Application == nil {
 		return port.ErrMissingTerminalClient
 	}
-	return adapter.Client.SetTags(ctx, req.TerminalID, cloneStringMap(req.Tags))
+	return adapter.Application.TerminalSetTags(ctx, &apipb.TerminalSetTagsCommand{Terminal: terminalRef(req.EndpointID, req.TerminalID), Tags: cloneStringMap(req.Tags)})
 }
 
 func (adapter ProtocolTerminalServiceAdapter) SendInput(ctx context.Context, req port.TerminalInputRequest) error {
-	if adapter.Client == nil {
+	if adapter.Client == nil || adapter.Application == nil {
 		return port.ErrMissingTerminalClient
 	}
 	if req.Channel == 0 {
 		return fmt.Errorf("terminal input requires attached channel")
 	}
-	if client, ok := adapter.Client.(ProtocolInputRequestClient); ok {
-		return client.InputWithOptions(ctx, protocol.InputParams{
-			TerminalID: req.TerminalID,
-			Channel:    req.Channel,
-			SurfaceID:  req.SurfaceID,
-			ViewID:     req.ViewID,
-			Data:       req.Bytes,
-		})
+	resource, ok := adapter.Client.ApplicationAttachment(req.Channel)
+	if !ok {
+		return fmt.Errorf("terminal input requires active attachment resource")
 	}
-	return adapter.Client.Input(ctx, req.Channel, req.Bytes)
+	return adapter.Application.TerminalInput(ctx, &apipb.TerminalInputCommand{Attachment: resource, Data: append([]byte(nil), req.Bytes...)})
 }
 
 func (adapter ProtocolTerminalServiceAdapter) Resize(ctx context.Context, req port.TerminalResizeRequest) (port.TerminalResizeResult, error) {
-	if adapter.Client == nil {
+	if adapter.Client == nil || adapter.Application == nil {
 		return port.TerminalResizeResult{}, port.ErrMissingTerminalClient
 	}
 	if req.Channel == 0 {
 		return port.TerminalResizeResult{}, fmt.Errorf("terminal resize requires attached channel")
 	}
-	cols := uint16(req.Cols)
-	rows := uint16(req.Rows)
-	if req.SurfaceID != "" || req.ViewID != "" {
-		resizePolicy := req.ResizePolicy
-		if resizePolicy == "" {
-			resizePolicy = protocol.ResizePolicyOwner
-		}
-		result, err := adapter.Client.EnsureResize(ctx, protocol.EnsureResizeParams{
-			TerminalID:   req.TerminalID,
-			Channel:      req.Channel,
-			Cols:         cols,
-			Rows:         rows,
-			ResizePolicy: resizePolicy,
-			SurfaceID:    req.SurfaceID,
-			ViewID:       req.ViewID,
-		})
-		if err != nil {
-			return port.TerminalResizeResult{}, err
-		}
-		return terminalResizeResultFromProtocol(req, result), nil
+	resource, ok := adapter.Client.ApplicationAttachment(req.Channel)
+	if !ok {
+		return port.TerminalResizeResult{}, fmt.Errorf("terminal resize requires active attachment resource")
 	}
-	if err := adapter.Client.Resize(ctx, req.Channel, cols, rows); err != nil {
+	result, err := adapter.Application.TerminalResize(ctx, &apipb.TerminalResizeCommand{Attachment: resource, Size: &apipb.TerminalSize{Cols: uint32(req.Cols), Rows: uint32(req.Rows)}, ResizePolicy: resizePolicyToProto(req.ResizePolicy)})
+	if err != nil {
 		return port.TerminalResizeResult{}, err
 	}
-	return port.TerminalResizeResult{TerminalID: req.TerminalID, Cols: req.Cols, Rows: req.Rows, Resized: true, CanResize: true, ResizePolicy: req.ResizePolicy, SurfaceID: req.SurfaceID, ViewID: req.ViewID}, nil
+	return terminalResizeResultFromProto(req, result), nil
 }
 
-func applyProtocolResizeControlToAttach(out *port.TerminalAttachResult, control *protocol.ResizeControl) {
+func applyProtoResizeControlToAttach(out *port.TerminalAttachResult, control *apipb.ResizeControl) {
 	if out == nil || control == nil {
 		return
 	}
 	out.CanResize = control.CanResize
 	out.SizeLocked = control.SizeLocked
-	out.ControlReason = control.Reason
-	out.ResizePolicy = resizePolicyFromProtocolControl(control, out.ResizePolicy)
-	out.OwnerSurfaceID = control.OwnerSurfaceID
-	out.OwnerViewID = control.OwnerViewID
-	if control.ResizeOwnership != nil {
-		out.SizeLocked = control.ResizeOwnership.SizeLocked
-		out.ResizeEpoch = control.ResizeOwnership.Epoch
-		if control.ResizeOwnership.Size != (protocol.Size{}) {
-			out.Cols = int(control.ResizeOwnership.Size.Cols)
-			out.Rows = int(control.ResizeOwnership.Size.Rows)
+	out.ControlReason = resizeControlReasonFromProto(control.GetReason())
+	out.ResizePolicy = resizePolicyFromProtoControl(control, out.ResizePolicy)
+	out.OwnerSurfaceID = control.GetOwnerSurfaceId()
+	out.OwnerViewID = control.GetOwnerViewId()
+	if ownership := control.GetOwnership(); ownership != nil {
+		out.SizeLocked = ownership.GetSizeLocked()
+		out.ResizeEpoch = ownership.GetEpoch()
+		if ownership.GetSize() != nil {
+			out.Cols = int(ownership.GetSize().GetCols())
+			out.Rows = int(ownership.GetSize().GetRows())
 		}
 	}
 }
 
-func terminalResizeResultFromProtocol(req port.TerminalResizeRequest, result *protocol.EnsureResizeResult) port.TerminalResizeResult {
+func terminalResizeResultFromProto(req port.TerminalResizeRequest, result *apipb.TerminalResizeResult) port.TerminalResizeResult {
 	out := port.TerminalResizeResult{TerminalID: req.TerminalID, Cols: req.Cols, Rows: req.Rows, ResizePolicy: req.ResizePolicy, SurfaceID: req.SurfaceID, ViewID: req.ViewID}
 	if result == nil {
 		return out
 	}
-	out.Resized = result.Resized
-	out.Cols = int(result.Size.Cols)
-	out.Rows = int(result.Size.Rows)
-	if result.ResizeControl != nil {
-		out.CanResize = result.ResizeControl.CanResize
-		out.SizeLocked = result.ResizeControl.SizeLocked
-		out.ControlReason = result.ResizeControl.Reason
-		out.ResizePolicy = resizePolicyFromProtocolControl(result.ResizeControl, out.ResizePolicy)
-		out.OwnerSurfaceID = result.ResizeControl.OwnerSurfaceID
-		out.OwnerViewID = result.ResizeControl.OwnerViewID
-		if result.ResizeControl.ResizeOwnership != nil {
-			out.SizeLocked = result.ResizeControl.ResizeOwnership.SizeLocked
-			out.ResizeEpoch = result.ResizeControl.ResizeOwnership.Epoch
-			if result.ResizeControl.ResizeOwnership.Size != (protocol.Size{}) {
-				out.Cols = int(result.ResizeControl.ResizeOwnership.Size.Cols)
-				out.Rows = int(result.ResizeControl.ResizeOwnership.Size.Rows)
+	out.Resized = result.GetResized()
+	out.Cols = int(result.GetSize().GetCols())
+	out.Rows = int(result.GetSize().GetRows())
+	if control := result.GetResizeControl(); control != nil {
+		out.CanResize = control.GetCanResize()
+		out.SizeLocked = control.GetSizeLocked()
+		out.ControlReason = resizeControlReasonFromProto(control.GetReason())
+		out.ResizePolicy = resizePolicyFromProtoControl(control, out.ResizePolicy)
+		out.OwnerSurfaceID = control.GetOwnerSurfaceId()
+		out.OwnerViewID = control.GetOwnerViewId()
+		if ownership := control.GetOwnership(); ownership != nil {
+			out.SizeLocked = ownership.GetSizeLocked()
+			out.ResizeEpoch = ownership.GetEpoch()
+			if ownership.GetSize() != nil {
+				out.Cols = int(ownership.GetSize().GetCols())
+				out.Rows = int(ownership.GetSize().GetRows())
 			}
 		}
 	}
 	return out
 }
 
-func resizePolicyFromProtocolControl(control *protocol.ResizeControl, fallback string) string {
+func resizePolicyFromProtoControl(control *apipb.ResizeControl, fallback string) string {
 	if control == nil {
 		return fallback
 	}
 	// core-v2 的 ResizeControl.Reason 是 attachment 这次 attach/ensure 后的权威角色；
 	// 不能继续沿用请求里的 ResizePolicy，否则 UI 会显示半旧的 owner/follower 状态。
-	switch control.Reason {
-	case protocol.ResizeControlReasonOwner, protocol.ResizeControlReasonSizeLocked:
+	switch control.GetReason() {
+	case apipb.ResizeControlReason_RESIZE_CONTROL_REASON_OWNER, apipb.ResizeControlReason_RESIZE_CONTROL_REASON_SIZE_LOCKED:
 		return state.TerminalResizeRoleOwner
-	case protocol.ResizeControlReasonObserver:
+	case apipb.ResizeControlReason_RESIZE_CONTROL_REASON_OBSERVER:
 		return state.TerminalResizeRoleObserver
-	case protocol.ResizeControlReasonFollower:
+	case apipb.ResizeControlReason_RESIZE_CONTROL_REASON_FOLLOWER:
 		return state.TerminalResizeRoleFollower
 	default:
 		if control.CanResize {
@@ -428,19 +393,6 @@ func liveSurfaceSnapshotFromProtocol(terminalID string, snapshot *protocol.Nativ
 		},
 		Modes: liveSurfaceModesFromProtocol(snapshot.Modes),
 	}
-}
-
-func (adapter ProtocolTerminalServiceAdapter) terminalInfo(ctx context.Context, terminalID string) (protocol.TerminalInfo, error) {
-	result, err := adapter.Client.List(ctx)
-	if err != nil {
-		return protocol.TerminalInfo{}, err
-	}
-	for _, item := range result.Terminals {
-		if item.ID == terminalID {
-			return item, nil
-		}
-	}
-	return protocol.TerminalInfo{}, fmt.Errorf("terminal metadata unavailable: %s", terminalID)
 }
 
 func liveSurfaceScreenFromCompactRows(rows []protocol.CompactRow) [][]state.LiveCell {
@@ -737,22 +689,92 @@ func liveSurfaceCellIsSingleWidthASCII(cell state.LiveCell) bool {
 	return true
 }
 
-func terminalPoolTitleFromProtocol(terminal protocol.TerminalInfo) string {
-	if terminal.Name != "" {
-		return terminal.Name
+func terminalRef(endpointID state.EndpointID, terminalID string) *apipb.TerminalRef {
+	return &apipb.TerminalRef{EndpointId: string(endpointID), TerminalId: terminalID}
+}
+
+func terminalTitleFromProto(terminal *apipb.TerminalInfo) string {
+	if terminal.GetName() != "" {
+		return terminal.GetName()
 	}
-	if terminal.ID != "" {
-		return terminal.ID
+	if terminal.GetRef().GetTerminalId() != "" {
+		return terminal.GetRef().GetTerminalId()
 	}
 	return "terminal"
 }
 
-func cloneIntPointer(value *int) *int {
+func int32PointerToInt(value *int32) *int {
 	if value == nil {
 		return nil
 	}
-	cloned := *value
+	cloned := int(*value)
 	return &cloned
+}
+
+func unixNanoTime(value int64) time.Time {
+	if value == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, value)
+}
+
+func terminalStateFromProto(value apipb.TerminalState) string {
+	switch value {
+	case apipb.TerminalState_TERMINAL_STATE_CREATED:
+		return "created"
+	case apipb.TerminalState_TERMINAL_STATE_RUNNING:
+		return "running"
+	case apipb.TerminalState_TERMINAL_STATE_EXITED:
+		return "exited"
+	case apipb.TerminalState_TERMINAL_STATE_REMOVED:
+		return "removed"
+	default:
+		return ""
+	}
+}
+
+func attachmentModeToProto(value string) apipb.AttachmentMode {
+	if strings.EqualFold(value, "observer") {
+		return apipb.AttachmentMode_ATTACHMENT_MODE_OBSERVER
+	}
+	return apipb.AttachmentMode_ATTACHMENT_MODE_COLLABORATOR
+}
+
+func resizePolicyToProto(value string) apipb.ResizePolicy {
+	switch value {
+	case state.TerminalResizeRoleFollower:
+		return apipb.ResizePolicy_RESIZE_POLICY_FOLLOWER
+	case state.TerminalResizeRoleObserver:
+		return apipb.ResizePolicy_RESIZE_POLICY_OBSERVER
+	default:
+		return apipb.ResizePolicy_RESIZE_POLICY_OWNER
+	}
+}
+
+func resizePolicyFromProto(value apipb.ResizePolicy) string {
+	switch value {
+	case apipb.ResizePolicy_RESIZE_POLICY_FOLLOWER:
+		return state.TerminalResizeRoleFollower
+	case apipb.ResizePolicy_RESIZE_POLICY_OBSERVER:
+		return state.TerminalResizeRoleObserver
+	default:
+		return state.TerminalResizeRoleOwner
+	}
+}
+
+func resizeControlReasonFromProto(value apipb.ResizeControlReason) string {
+	switch value {
+	case apipb.ResizeControlReason_RESIZE_CONTROL_REASON_OWNER:
+		return "owner"
+	case apipb.ResizeControlReason_RESIZE_CONTROL_REASON_FOLLOWER:
+		return "follower"
+	case apipb.ResizeControlReason_RESIZE_CONTROL_REASON_OBSERVER:
+		return "observer"
+	case apipb.ResizeControlReason_RESIZE_CONTROL_REASON_SIZE_LOCKED:
+		return "size_locked"
+	default:
+		return ""
+	}
 }
 
 func cloneStringMap(values map[string]string) map[string]string {

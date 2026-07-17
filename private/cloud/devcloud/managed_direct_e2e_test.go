@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	protocoladapter "github.com/lozzow/termx/tui/adapter/protocol"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,10 +14,13 @@ import (
 	"testing"
 	"time"
 
+	clientendpoint "github.com/lozzow/termx/client/endpoint"
+	clientruntime "github.com/lozzow/termx/client/runtime"
 	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/private/cloud/companion"
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/proto/wire"
 	remotev2client "github.com/lozzow/termx/remote/client"
@@ -28,6 +30,7 @@ import (
 	"github.com/lozzow/termx/shared/cloudcompanion/ipc"
 	"github.com/lozzow/termx/shared/remoteauth"
 	unixtransport "github.com/lozzow/termx/shared/transport/unix"
+	protocoladapter "github.com/lozzow/termx/tui/adapter/protocol"
 	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 )
@@ -78,8 +81,8 @@ func TestManagedDirectE2EAcrossRealBoundaries(t *testing.T) {
 
 	localCore := startManagedDirectCore(t, ctx, "local")
 	remoteCore := startManagedDirectCore(t, ctx, "remote")
-	createManagedDirectTerminal(t, ctx, localCore.client, "local-terminal", []string{"/bin/sh", "-c", "printf 'LOCAL-READY\\n'; sleep 30"})
-	createManagedDirectTerminal(t, ctx, remoteCore.client, "remote-terminal", []string{"/bin/sh", "-c", "printf 'REMOTE-READY\\n'; while IFS= read -r line; do printf 'REMOTE-ECHO:%s\\n' \"$line\"; done"})
+	createManagedDirectTerminal(t, ctx, "local", localCore.client, "local-terminal", []string{"/bin/sh", "-c", "printf 'LOCAL-READY\\n'; sleep 30"})
+	createManagedDirectTerminal(t, ctx, "remote", remoteCore.client, "remote-terminal", []string{"/bin/sh", "-c", "printf 'REMOTE-READY\\n'; while IFS= read -r line; do printf 'REMOTE-ECHO:%s\\n' \"$line\"; done"})
 
 	daemonCompanion, _, err := ipc.DialAndHello(ctx, daemonSocket, ipc.HelloOptions{
 		TermxVersion: "managed-direct-e2e", CallerRole: cloudpb.CallerRole_CALLER_ROLE_DAEMON,
@@ -134,8 +137,8 @@ func TestManagedDirectE2EAcrossRealBoundaries(t *testing.T) {
 	if err := remoteProtocolClient.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "managed-direct-e2e"}); err != nil {
 		t.Fatal(err)
 	}
-	managed := newManagedE2EServices(managedEndpointID, remoteProtocolClient)
-	local := newManagedE2EServices(state.DefaultEndpointID, localCore.client)
+	managed := newManagedE2EServices(t, managedEndpointID, remoteProtocolClient)
+	local := newManagedE2EServices(t, state.DefaultEndpointID, localCore.client)
 	listed, err := managed.List(ctx, port.TerminalListRequest{EndpointID: managedEndpointID})
 	if err != nil || !managedDirectListContains(listed.Items, managedEndpointID, "remote-terminal") {
 		t.Fatalf("managed list = (%#v, %v)", listed, err)
@@ -365,9 +368,13 @@ func startManagedDirectCore(t *testing.T, ctx context.Context, name string) mana
 	return managedDirectCore{server: server, client: client}
 }
 
-func createManagedDirectTerminal(t *testing.T, ctx context.Context, client *protocol.Client, terminalID string, command []string) {
+func createManagedDirectTerminal(t *testing.T, ctx context.Context, endpointID clientendpoint.EndpointID, client *protocol.Client, terminalID string, command []string) {
 	t.Helper()
-	if _, err := client.Create(ctx, protocol.CreateParams{ID: terminalID, Name: terminalID, Command: command, Size: protocol.Size{Cols: 80, Rows: 24}}); err != nil {
+	application, err := clientruntime.NewApplicationSession(clientruntime.EndpointSessionStamp{EndpointID: endpointID, RouteID: "unix", Generation: 1}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := application.TerminalCreate(ctx, &apipb.TerminalCreateCommand{Terminal: &apipb.TerminalCreateSpec{TerminalId: terminalID, Name: terminalID, Command: command, Size: &apipb.TerminalSize{Cols: 80, Rows: 24}}}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -393,10 +400,15 @@ type managedE2EServices struct {
 	core       protocoladapter.ProtocolCoreClientAdapter
 }
 
-func newManagedE2EServices(endpointID state.EndpointID, client *protocol.Client) *managedE2EServices {
+func newManagedE2EServices(t *testing.T, endpointID state.EndpointID, client *protocol.Client) *managedE2EServices {
+	t.Helper()
+	terminal, err := protocoladapter.NewProtocolTerminalServiceAdapter(client, clientruntime.EndpointSessionStamp{EndpointID: clientendpoint.EndpointID(endpointID), RouteID: "e2e", Generation: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
 	return &managedE2EServices{
 		endpointID: endpointID,
-		terminal:   protocoladapter.ProtocolTerminalServiceAdapter{Client: client},
+		terminal:   terminal,
 		core:       protocoladapter.ProtocolCoreClientAdapter{Client: client},
 	}
 }

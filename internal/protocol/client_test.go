@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -13,12 +14,33 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/wire"
 
 	"github.com/lozzow/termx/shared/transport/memory"
 )
 
 var errConcurrentSend = errors.New("concurrent send")
+
+func applicationSessionStamp() *apipb.EndpointSessionStamp {
+	return &apipb.EndpointSessionStamp{EndpointId: "local", RouteId: "memory", Generation: 1}
+}
+
+func applicationListCommand(requestID string) *apipb.CommandEnvelope {
+	return &apipb.CommandEnvelope{
+		Context: &apipb.RequestContext{RequestId: requestID, ApiVersion: &apipb.ApiVersion{Major: 1}, Session: applicationSessionStamp()},
+		Command: &apipb.CommandEnvelope_TerminalList{TerminalList: &apipb.TerminalListCommand{}},
+	}
+}
+
+func applicationAttachCommand(requestID string) *apipb.CommandEnvelope {
+	return &apipb.CommandEnvelope{
+		Context: &apipb.RequestContext{RequestId: requestID, ApiVersion: &apipb.ApiVersion{Major: 1}, Session: applicationSessionStamp()},
+		Command: &apipb.CommandEnvelope_TerminalAttach{TerminalAttach: &apipb.TerminalAttachCommand{
+			Terminal: &apipb.TerminalRef{EndpointId: "local", TerminalId: "term-1"}, Mode: apipb.AttachmentMode_ATTACHMENT_MODE_OBSERVER,
+		}},
+	}
+}
 
 type legacyRemotePairStartParams struct {
 	localPairURL string
@@ -30,16 +52,14 @@ func (p legacyRemotePairStartParams) GetTTLSeconds() int      { return p.ttlSeco
 
 func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 	want := []string{
-		"Attach",
-		"AttachWithOptions",
+		"ApplicationAttachment",
+		"ApplicationAttachmentChannel",
 		"Call",
 		"Close",
-		"Create",
-		"Detach",
 		"Done",
-		"EnsureResize",
 		"Err",
 		"Events",
+		"ExecuteApplication",
 		"FileCopy",
 		"FileDelete",
 		"FileDownloadOpen",
@@ -56,29 +76,15 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"HistoryCopy",
 		"HistoryReplay",
 		"HistoryWindow",
-		"Input",
-		"InputWithOptions",
-		"Kill",
-		"List",
-		"ListDirectories",
 		"LiveScreen",
-		"LockResize",
 		"NextLiveInvalidation",
-		"PathDefaults",
 		"ReleaseHistory",
-		"Remove",
-		"Resize",
-		"ResizeRequest",
-		"Restart",
 		"SendFileFrame",
-		"SetMetadata",
-		"SetTags",
 		"StorageDelete",
 		"StorageGet",
 		"StorageList",
 		"StoragePut",
 		"Stream",
-		"UnlockResize",
 		"WorkbenchApply",
 		"WorkbenchGet",
 	}
@@ -234,7 +240,7 @@ func TestRemoteProtocolTypedResults(t *testing.T) {
 	}
 }
 
-func TestClientRequestStreamAndProtocolError(t *testing.T) {
+func TestClientExecutesApplicationEnvelopeAndReportsClosedTransport(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -254,151 +260,19 @@ func TestClientRequestStreamAndProtocolError(t *testing.T) {
 		t.Fatalf("hello failed: %v", err)
 	}
 
-	created, err := client.Create(ctx, CreateParams{
-		Command:            []string{"bash", "--noprofile", "--norc"},
-		Name:               "demo",
-		ScrollbackSize:     123,
-		ScrollbackMaxBytes: 4567,
-		ScrollbackMaxAge:   2 * time.Hour,
-	})
-	if err != nil {
-		t.Fatalf("create failed: %v", err)
-	}
-	if created.TerminalID != "term-1" || created.State != "running" {
-		t.Fatalf("unexpected create result: %#v", created)
-	}
-
-	list, err := client.List(ctx)
+	list, err := client.ExecuteApplication(ctx, applicationListCommand("list-1"))
 	if err != nil {
 		t.Fatalf("list failed: %v", err)
 	}
-	if len(list.Terminals) != 1 || list.Terminals[0].ID != "term-1" {
+	if len(list.GetTerminalList().GetTerminals()) != 1 || list.GetTerminalList().GetTerminals()[0].GetRef().GetTerminalId() != "term-1" {
 		t.Fatalf("unexpected list result: %#v", list)
 	}
-
-	if err := client.SetTags(ctx, "term-1", map[string]string{"role": "shell"}); err != nil {
-		t.Fatalf("set tags failed: %v", err)
-	}
-	if err := client.SetMetadata(ctx, "term-1", "dev-shell", map[string]string{"role": "shell", "team": "infra"}); err != nil {
-		t.Fatalf("set metadata failed: %v", err)
-	}
-
-	attach, err := client.Attach(ctx, "term-1", "collaborator")
-	if err != nil {
-		t.Fatalf("attach failed: %v", err)
-	}
-	if attach.Channel != 7 {
-		t.Fatalf("unexpected channel: %#v", attach)
-	}
-
-	if err := client.Input(ctx, attach.Channel, []byte("echo hi\n")); err != nil {
-		t.Fatalf("input failed: %v", err)
-	}
-
-	if err := client.Resize(ctx, attach.Channel, 100, 40); err != nil {
-		t.Fatalf("resize failed: %v", err)
-	}
-
-	liveScreen, err := client.LiveScreen(ctx, "term-1")
-	if err != nil {
-		t.Fatalf("live screen failed: %v", err)
-	}
-	if liveScreen.TerminalID != "term-1" || liveScreen.Revision != 9 || len(liveScreen.Rows) != 1 || liveScreen.Rows[0].Text != "ns" {
-		t.Fatalf("unexpected live screen result: %#v", liveScreen)
-	}
-
-	history, err := client.HistoryReplay(ctx, attach.Channel, 0, 50)
-	if err != nil {
-		t.Fatalf("history replay failed: %v", err)
-	}
-	if history.Rows != 1 || history.Replay != "old" {
-		t.Fatalf("unexpected history replay result: %#v", history)
-	}
-
-	err = client.Kill(ctx, "missing")
-	if err == nil || !strings.Contains(err.Error(), "protocol error 404") {
-		t.Fatalf("expected protocol error 404, got %v", err)
-	}
-
-	if _, err := client.List(ctx); err == nil {
+	if _, err := client.ExecuteApplication(ctx, applicationListCommand("list-2")); err == nil {
 		t.Fatal("expected list after server close to fail")
 	}
 
 	if err := <-serverDone; err != nil {
 		t.Fatalf("fake server failed: %v", err)
-	}
-}
-
-func TestClientInputWithOptionsUsesAckedRequest(t *testing.T) {
-	clientTransport, serverTransport := memory.NewPair()
-	defer serverTransport.Close()
-	client := NewClient(clientTransport)
-	defer client.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	done := make(chan error, 1)
-	go func() {
-		done <- client.InputWithOptions(ctx, InputParams{
-			TerminalID: "term-1",
-			Channel:    7,
-			SurfaceID:  "surface-1",
-			ViewID:     "view-1",
-			Data:       []byte("ls\n"),
-		})
-	}()
-
-	req, err := expectRequest(serverTransport, "input")
-	if err != nil {
-		t.Fatal(err)
-	}
-	params, err := requestParams[InputParams](req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if params.TerminalID != "term-1" || params.Channel != 7 || params.SurfaceID != "surface-1" || params.ViewID != "view-1" || string(params.Data) != "ls\n" {
-		t.Fatalf("unexpected input params %#v", params)
-	}
-	if err := sendMethodResponse(serverTransport, req, nil); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("input request failed: %v", err)
-		}
-	case <-ctx.Done():
-		t.Fatal(ctx.Err())
-	}
-}
-
-func TestClientInputWithOptionsReturnsServerError(t *testing.T) {
-	clientTransport, serverTransport := memory.NewPair()
-	defer serverTransport.Close()
-	client := NewClient(clientTransport)
-	defer client.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	done := make(chan error, 1)
-	go func() {
-		done <- client.InputWithOptions(ctx, InputParams{TerminalID: "term-1", Channel: 99, Data: []byte("x")})
-	}()
-
-	req, err := expectRequest(serverTransport, "input")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := sendError(serverTransport, req.ID, 404, "terminal not found"); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-done:
-		if err == nil || !strings.Contains(err.Error(), "terminal not found") {
-			t.Fatalf("expected protocol error, got %v", err)
-		}
-	case <-ctx.Done():
-		t.Fatal(ctx.Err())
 	}
 }
 
@@ -710,14 +584,18 @@ func TestClientStreamCancelDropsLateFramesAndKeepsReadLoopAlive(t *testing.T) {
 		t.Fatalf("hello failed: %v", err)
 	}
 
-	attach, err := client.Attach(ctx, "term-1", "observer")
+	attached, err := client.ExecuteApplication(ctx, applicationAttachCommand("attach-1"))
 	if err != nil {
 		t.Fatalf("attach failed: %v", err)
 	}
-	_, stop := client.Stream(attach.Channel)
+	channel, ok := client.ApplicationAttachmentChannel(attached.GetTerminalAttach().GetAttachment().GetResource())
+	if !ok {
+		t.Fatal("attachment stream binding missing")
+	}
+	_, stop := client.Stream(channel)
 	stop()
 
-	stream, stop2 := client.Stream(attach.Channel)
+	stream, stop2 := client.Stream(channel)
 	defer stop2()
 
 	select {
@@ -726,7 +604,7 @@ func TestClientStreamCancelDropsLateFramesAndKeepsReadLoopAlive(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 
-	if _, err := client.List(ctx); err != nil {
+	if _, err := client.ExecuteApplication(ctx, applicationListCommand("list-after-late")); err != nil {
 		t.Fatalf("expected client to stay usable after late frame, got %v", err)
 	}
 
@@ -743,7 +621,7 @@ func TestClientCloseWaitsForReadLoopAndUnblocksPendingRequest(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := client.List(context.Background())
+		_, err := client.ExecuteApplication(context.Background(), applicationListCommand("pending"))
 		errCh <- err
 	}()
 
@@ -801,7 +679,7 @@ func TestClientSerializesConcurrentSends(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, err := client.List(ctx)
+			_, err := client.ExecuteApplication(ctx, applicationListCommand(fmt.Sprintf("worker-%d", time.Now().UnixNano())))
 			errCh <- err
 		}()
 	}
@@ -854,141 +732,20 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 		return err
 	}
 
-	req, err := expectRequest(tr, "create")
+	req, err := expectRequest(tr, "api.execute")
 	if err != nil {
 		return err
 	}
-	createParams, err := requestParams[CreateParams](req)
+	decoded, err := DecodeMethodParams("api.execute", req.Params)
 	if err != nil {
 		return err
 	}
-	if createParams.ScrollbackSize != 123 || createParams.ScrollbackMaxBytes != 4567 || createParams.ScrollbackMaxAge != 2*time.Hour {
-		return fmt.Errorf("unexpected create params: %#v", createParams)
+	command, ok := decoded.(*apipb.CommandEnvelope)
+	if !ok || command.GetTerminalList() == nil {
+		return fmt.Errorf("unexpected application command: %#v", decoded)
 	}
-	if err := sendMethodResponse(tr, req, CreateResult{TerminalID: "term-1", State: "running"}); err != nil {
-		return err
-	}
-
-	req, err = expectRequest(tr, "list")
-	if err != nil {
-		return err
-	}
-	if err := sendMethodResponse(tr, req, ListResult{
-		Terminals: []TerminalInfo{{
-			ID:    "term-1",
-			Name:  "demo",
-			State: "running",
-		}},
-	}); err != nil {
-		return err
-	}
-
-	req, err = expectRequest(tr, "set_tags")
-	if err != nil {
-		return err
-	}
-	setTags, err := requestParams[SetTagsParams](req)
-	if err != nil {
-		return err
-	}
-	if setTags.TerminalID != "term-1" || setTags.Tags["role"] != "shell" {
-		return fmt.Errorf("unexpected set_tags params: %#v", setTags)
-	}
-	if err := sendMethodResponse(tr, req, nil); err != nil {
-		return err
-	}
-
-	req, err = expectRequest(tr, "set_metadata")
-	if err != nil {
-		return err
-	}
-	setMetadata, err := requestParams[SetMetadataParams](req)
-	if err != nil {
-		return err
-	}
-	if setMetadata.TerminalID != "term-1" || setMetadata.Name != "dev-shell" || setMetadata.Tags["team"] != "infra" {
-		return fmt.Errorf("unexpected set_metadata params: %#v", setMetadata)
-	}
-	if err := sendMethodResponse(tr, req, nil); err != nil {
-		return err
-	}
-
-	req, err = expectRequest(tr, "attach")
-	if err != nil {
-		return err
-	}
-	if err := sendMethodResponse(tr, req, AttachResult{Mode: "collaborator", Channel: 7}); err != nil {
-		return err
-	}
-
-	channel, typ, payload, err := recvFrame(tr)
-	if err != nil {
-		return err
-	}
-	if channel != 7 || typ != wire.TypeInput || string(payload) != "echo hi\n" {
-		return fmt.Errorf("unexpected input frame: channel=%d type=%d payload=%q", channel, typ, string(payload))
-	}
-	channel, typ, payload, err = recvFrame(tr)
-	if err != nil {
-		return err
-	}
-	if channel != 7 || typ != wire.TypeResize {
-		return fmt.Errorf("unexpected resize frame: channel=%d type=%d", channel, typ)
-	}
-	cols, rows, err := wire.DecodeResizePayload(payload)
-	if err != nil {
-		return err
-	}
-	if cols != 100 || rows != 40 {
-		return fmt.Errorf("unexpected resize payload: %dx%d", cols, rows)
-	}
-
-	req, err = expectRequest(tr, "live.screen.get")
-	if err != nil {
-		return err
-	}
-	liveResult, err := EncodeNativeScreenSnapshotPayload(&NativeScreenSnapshot{
-		TerminalID: "term-1",
-		Revision:   9,
-		Size:       Size{Cols: 80, Rows: 24},
-		Rows:       []CompactRow{CompactRowFromCells([]Cell{{Content: "n", Width: 1}, {Content: "s", Width: 1}})},
-		Cursor:     CursorState{Row: 0, Col: 2, Visible: true},
-		Modes:      TerminalModes{AutoWrap: true},
-	})
-	if err != nil {
-		return err
-	}
-	if err := sendBinaryResponse(tr, req.ID, liveResult); err != nil {
-		return err
-	}
-
-	channel, typ, payload, err = recvFrame(tr)
-	if err != nil {
-		return err
-	}
-	if channel != 7 || typ != wire.TypeHistoryRequest {
-		return fmt.Errorf("unexpected history request frame: channel=%d type=%d", channel, typ)
-	}
-	beforeOffset, limit, err := wire.DecodeHistoryRequestPayload(payload)
-	if err != nil {
-		return err
-	}
-	if beforeOffset != 0 || limit != 50 {
-		return fmt.Errorf("unexpected history request payload: before=%d limit=%d", beforeOffset, limit)
-	}
-	historyPayload, err := wire.EncodeHistoryReplayPayload(1, false, []byte("old"))
-	if err != nil {
-		return err
-	}
-	if err := sendFrame(tr, 7, wire.TypeHistoryReplay, historyPayload); err != nil {
-		return err
-	}
-
-	req, err = expectRequest(tr, "kill")
-	if err != nil {
-		return err
-	}
-	if err := sendError(tr, req.ID, 404, "missing"); err != nil {
+	result := &apipb.ResultEnvelope{RequestId: command.GetContext().GetRequestId(), OriginSession: command.GetContext().GetSession(), Result: &apipb.ResultEnvelope_TerminalList{TerminalList: &apipb.TerminalListResult{Terminals: []*apipb.TerminalInfo{{Ref: &apipb.TerminalRef{EndpointId: "local", TerminalId: "term-1"}, State: apipb.TerminalState_TERMINAL_STATE_RUNNING}}}}}
+	if err := sendMethodResponse(tr, req, result); err != nil {
 		return err
 	}
 
@@ -1061,10 +818,10 @@ func (t *concurrentUnsafeTransport) Send(frame []byte) error {
 		if err != nil {
 			return err
 		}
-		if req.Method != "list" {
+		if req.Method != "api.execute" {
 			return fmt.Errorf("unexpected method %q", req.Method)
 		}
-		result, err := EncodeMethodResult(req.Method, ListResult{})
+		result, err := EncodeMethodResult(req.Method, &apipb.ResultEnvelope{Result: &apipb.ResultEnvelope_TerminalList{TerminalList: &apipb.TerminalListResult{}}})
 		if err != nil {
 			return err
 		}
@@ -1154,11 +911,14 @@ func runLateFrameAfterCancelServer(tr *memory.Transport) error {
 		return err
 	}
 
-	req, err := expectRequest(tr, "attach")
+	req, err := expectRequest(tr, "api.execute")
 	if err != nil {
 		return err
 	}
-	if err := sendMethodResponse(tr, req, AttachResult{Mode: "observer", Channel: 7}); err != nil {
+	token := make([]byte, 8)
+	binary.BigEndian.PutUint16(token[:2], 7)
+	attachment := &apipb.TerminalAttachResult{Attachment: &apipb.AttachmentHandle{Resource: &apipb.ResourceHandle{OpaqueToken: token, Kind: apipb.ResourceKind_RESOURCE_KIND_TERMINAL_ATTACHMENT, Session: applicationSessionStamp(), Generation: 1}}, Mode: apipb.AttachmentMode_ATTACHMENT_MODE_OBSERVER}
+	if err := sendMethodResponse(tr, req, &apipb.ResultEnvelope{Result: &apipb.ResultEnvelope_TerminalAttach{TerminalAttach: attachment}}); err != nil {
 		return err
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -1170,13 +930,11 @@ func runLateFrameAfterCancelServer(tr *memory.Transport) error {
 		return err
 	}
 
-	req, err = expectRequest(tr, "list")
+	req, err = expectRequest(tr, "api.execute")
 	if err != nil {
 		return err
 	}
-	if err := sendMethodResponse(tr, req, ListResult{
-		Terminals: []TerminalInfo{{ID: "term-1", Name: "demo", State: "running"}},
-	}); err != nil {
+	if err := sendMethodResponse(tr, req, &apipb.ResultEnvelope{Result: &apipb.ResultEnvelope_TerminalList{TerminalList: &apipb.TerminalListResult{}}}); err != nil {
 		return err
 	}
 	return nil

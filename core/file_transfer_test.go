@@ -121,7 +121,7 @@ func TestProtocolFileUploadResumesAcrossSessionAndValidatesDigest(t *testing.T) 
 	}
 	firstStream, stopFirst := first.Stream(opened.Channel)
 	firstChunk := content[:fileTransferChunkBytes]
-	sendUploadData(t, first, opened.Channel, 0, firstChunk)
+	sendUploadData(t, first.Client, opened.Channel, 0, firstChunk)
 	ack := waitUploadAck(t, firstStream)
 	if ack.Offset != int64(len(firstChunk)) {
 		t.Fatalf("first ack %#v", ack)
@@ -143,7 +143,7 @@ func TestProtocolFileUploadResumesAcrossSessionAndValidatesDigest(t *testing.T) 
 	offset := len(firstChunk)
 	for offset < len(content) {
 		end := min(offset+fileTransferChunkBytes, len(content))
-		sendUploadData(t, second, resumed.Channel, int64(offset), content[offset:end])
+		sendUploadData(t, second.Client, resumed.Channel, int64(offset), content[offset:end])
 		ack := waitUploadAck(t, stream)
 		if ack.Offset != int64(end) {
 			t.Fatalf("ack offset %d want %d", ack.Offset, end)

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 
-	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/proto/apipb"
 	"google.golang.org/protobuf/proto"
 )
@@ -21,6 +20,30 @@ const (
 type ValidationError struct {
 	Field  string
 	Reason string
+}
+
+// ClassifiedError 是 core adapter 向公共 typed error 映射层提交的稳定内部错误分类。
+// 它不携带 request/result DTO，只描述 code、retryability 与原始诊断错误。
+type ClassifiedError struct {
+	Err       error
+	Code      apipb.ApiErrorCode
+	Retryable bool
+}
+
+// Error 返回原始领域错误文本；公共响应仍由 ErrorToProto 统一生成。
+func (err *ClassifiedError) Error() string {
+	if err == nil || err.Err == nil {
+		return "classified application error"
+	}
+	return err.Err.Error()
+}
+
+// Unwrap 保留 errors.Is/errors.As 诊断链路。
+func (err *ClassifiedError) Unwrap() error {
+	if err == nil {
+		return nil
+	}
+	return err.Err
 }
 
 // ValidateCommandEnvelopeSize 在 API Layer 深拷贝前执行总量门禁，避免超大 in-process/JNI/WASM 请求造成二次内存放大。
@@ -168,26 +191,13 @@ func ErrorToProto(err error, attempted bool) *apipb.ApiError {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return &apipb.ApiError{Code: apipb.ApiErrorCode_API_ERROR_CODE_CANCELLED, Message: err.Error(), Attempted: attempted}
 	}
-	switch {
-	case errors.Is(err, corev2.ErrInvalidTerminalID),
-		errors.Is(err, corev2.ErrInvalidCommand),
-		errors.Is(err, corev2.ErrInvalidServerSize),
-		errors.Is(err, corev2.ErrInvalidStorageKey),
-		errors.Is(err, corev2.ErrInvalidWorkbenchMutation):
-		return &apipb.ApiError{Code: apipb.ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST, Message: err.Error(), Attempted: attempted}
-	case errors.Is(err, corev2.ErrTerminalNotFound),
-		errors.Is(err, corev2.ErrStorageEntryNotFound),
-		errors.Is(err, corev2.ErrWorkbenchNotFound):
-		return &apipb.ApiError{Code: apipb.ApiErrorCode_API_ERROR_CODE_NOT_FOUND, Message: err.Error(), Attempted: attempted}
-	case errors.Is(err, corev2.ErrDuplicateTerminal),
-		errors.Is(err, corev2.ErrTerminalExited),
-		errors.Is(err, corev2.ErrStorageVersionConflict),
-		errors.Is(err, corev2.ErrDuplicateWorkbenchResource),
-		errors.Is(err, corev2.ErrWorkbenchVersionConflict):
-		return &apipb.ApiError{Code: apipb.ApiErrorCode_API_ERROR_CODE_CONFLICT, Message: err.Error(), Attempted: attempted}
-	case errors.Is(err, corev2.ErrServerClosed),
-		errors.Is(err, corev2.ErrHistoryNotRebuilt):
-		return &apipb.ApiError{Code: apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE, Message: err.Error(), Retryable: true, Attempted: attempted}
+	var classified *ClassifiedError
+	if errors.As(err, &classified) {
+		code := classified.Code
+		if code == apipb.ApiErrorCode_API_ERROR_CODE_UNSPECIFIED {
+			code = apipb.ApiErrorCode_API_ERROR_CODE_INTERNAL
+		}
+		return &apipb.ApiError{Code: code, Message: classified.Error(), Retryable: classified.Retryable, Attempted: attempted}
 	}
 	return &apipb.ApiError{Code: apipb.ApiErrorCode_API_ERROR_CODE_INTERNAL, Message: "application operation failed", Attempted: attempted}
 }

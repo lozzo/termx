@@ -66,83 +66,6 @@ type Size struct {
 	Rows uint16
 }
 
-type TerminalInfo struct {
-	ID                         string
-	Name                       string
-	Command                    []string
-	Tags                       map[string]string
-	Size                       Size
-	State                      string
-	CWD                        string
-	LiveCWD                    string
-	CreatedAt                  time.Time
-	ExitCode                   *int
-	ExitedAt                   time.Time
-	ResizeOwnership            *ResizeOwnership
-	ResizeOwnerAttachmentCount int
-	Resources                  TerminalResourceUsage
-}
-
-// TerminalResourceUsage 是 TerminalInfo 随 list/get 返回的资源诊断投影；
-// 真值来自 core-v2 当前 TerminalProcess 的 OS 采样，SampledAt 为零表示本次没有可用资源数据。
-type TerminalResourceUsage struct {
-	PID            int
-	CPUPercentX100 int
-	MemoryBytes    uint64
-	SampledAt      time.Time
-}
-
-type CreateParams struct {
-	Command            []string
-	ID                 string
-	Name               string
-	Tags               map[string]string
-	Size               Size
-	Dir                string
-	Env                []string
-	ScrollbackSize     int
-	ScrollbackMaxBytes int64
-	ScrollbackMaxAge   time.Duration
-}
-
-type CreateResult struct {
-	TerminalID string
-	State      string
-}
-
-// PathListDirsParams 是 daemon endpoint 文件系统目录补全的请求契约。
-// Prefix 来自客户端当前输入光标前的路径片段；解析、home/cwd 和目录权限都以
-// owning daemon 所在机器为真值，客户端不能用本地文件系统推断远端路径。
-type PathListDirsParams struct {
-	Prefix string
-	Limit  int
-}
-
-// PathDirEntry 是 path.list_dirs 返回的单个目录候选。
-// Path 是可直接写回 prompt 的展示/提交路径，Name 只用于排序或诊断。
-type PathDirEntry struct {
-	Name string
-	Path string
-}
-
-// PathListDirsResult 是 daemon endpoint 对目录候选的只读投影。
-// Missing 表示 base path 不存在或不可读取；这属于补全空态，不等同于 protocol
-// transport 失败，TUI 应在 prompt 内展示而不是清空 endpoint 状态。
-type PathListDirsResult struct {
-	BasePath  string
-	Entries   []PathDirEntry
-	Missing   bool
-	Truncated bool
-}
-
-// PathDefaultsResult 是 daemon endpoint 对创建终端默认环境的只读投影。
-// DefaultCommand 和 DefaultCWD 都来自当前 protocol session 所属 daemon 进程所在机器；
-// TUI 只能消费该投影，不能用客户端本地 SHELL 或 cwd 替代远端 truth。
-type PathDefaultsResult struct {
-	DefaultCommand []string
-	DefaultCWD     string
-}
-
 // Remote* 是 core-v2 daemon 暴露给 CLI/App 的显式 remote domain contract。
 // wirepb 只作为跨进程编码格式，不能泄露成调用方依赖的业务类型。
 type RemoteStatus struct {
@@ -199,108 +122,6 @@ type RemoteLocalStatus struct {
 
 type GetParams struct {
 	TerminalID string
-}
-
-type ResizeParams struct {
-	TerminalID string
-	Cols       uint16
-	Rows       uint16
-}
-
-// InputParams 是带 ack 的 terminal 输入请求；TUI-v3 用它校验当前 view attachment。
-type InputParams struct {
-	TerminalID string
-	Channel    uint16
-	SurfaceID  string
-	ViewID     string
-	Data       []byte
-}
-
-type EnsureResizeParams struct {
-	TerminalID   string
-	Channel      uint16
-	Cols         uint16
-	Rows         uint16
-	ResizePolicy string
-	SurfaceID    string
-	ViewID       string
-}
-
-type EnsureResizeResult struct {
-	ResizeControl *ResizeControl
-	Size          Size
-	Resized       bool
-}
-
-type ResizeControlParams struct {
-	TerminalID   string
-	Channel      uint16
-	ResizePolicy string
-	SurfaceID    string
-	ViewID       string
-}
-
-type ResizeControlResult struct {
-	ResizeControl *ResizeControl
-	Size          Size
-}
-
-type SetTagsParams struct {
-	TerminalID string
-	Tags       map[string]string
-}
-
-type SetMetadataParams struct {
-	TerminalID string
-	Name       string
-	Tags       map[string]string
-}
-
-type AttachParams struct {
-	TerminalID   string
-	Mode         string
-	ResizePolicy string
-	SurfaceID    string
-	ViewID       string
-}
-
-type AttachResult struct {
-	Mode          string
-	Channel       uint16
-	ResizeControl *ResizeControl
-}
-
-type ResizeOwnership struct {
-	OwnerAttachmentID string
-	OwnerSurfaceID    string
-	OwnerViewID       string
-	OwnerRemoteAddr   string
-	Size              Size
-	SizeLocked        bool
-	Epoch             uint64
-}
-
-const (
-	ResizePolicyOwner    = "owner"
-	ResizePolicyFollower = "follower"
-	ResizePolicyObserver = "observer"
-)
-
-const (
-	ResizeControlReasonOwner      = "owner"
-	ResizeControlReasonFollower   = "follower"
-	ResizeControlReasonObserver   = "observer"
-	ResizeControlReasonSizeLocked = "size_locked"
-)
-
-type ResizeControl struct {
-	CanResize       bool
-	Reason          string
-	SizeLocked      bool
-	SurfaceID       string
-	OwnerSurfaceID  string
-	OwnerViewID     string
-	ResizeOwnership *ResizeOwnership
 }
 
 type EventType int
@@ -444,13 +265,6 @@ type Event struct {
 	LiveInvalidated      *LiveScreenInvalidatedData
 	Storage              *StorageChangedData
 	Workbench            *WorkbenchChangedData
-}
-
-type DetachParams struct {
-	TerminalID string
-	Channel    uint16
-	SurfaceID  string
-	ViewID     string
 }
 
 type EventsParams struct {
@@ -627,10 +441,6 @@ type HistoryBacklogStatus struct {
 	BackpressureWaitNanos int64
 	InFlight              bool
 	Closed                bool
-}
-
-type ListResult struct {
-	Terminals []TerminalInfo
 }
 
 func minInt(a, b int) int {

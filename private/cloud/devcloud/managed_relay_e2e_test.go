@@ -73,8 +73,8 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 
 	localCore := startManagedDirectCore(t, ctx, "relay-local")
 	remoteCore := startManagedDirectCore(t, ctx, "relay-remote")
-	createManagedDirectTerminal(t, ctx, localCore.client, "relay-local-terminal", []string{"/bin/sh", "-c", "printf 'RELAY-LOCAL-READY\\n'; sleep 30"})
-	createManagedDirectTerminal(t, ctx, remoteCore.client, "relay-remote-terminal", []string{"/bin/sh", "-c", "printf 'RELAY-REMOTE-READY\\n'; while IFS= read -r line; do printf 'RELAY-ECHO:%s\\n' \"$line\"; done"})
+	createManagedDirectTerminal(t, ctx, "relay-local", localCore.client, "relay-local-terminal", []string{"/bin/sh", "-c", "printf 'RELAY-LOCAL-READY\\n'; sleep 30"})
+	createManagedDirectTerminal(t, ctx, "relay-remote", remoteCore.client, "relay-remote-terminal", []string{"/bin/sh", "-c", "printf 'RELAY-REMOTE-READY\\n'; while IFS= read -r line; do printf 'RELAY-ECHO:%s\\n' \"$line\"; done"})
 
 	daemonCompanion, _, err := ipc.DialAndHello(ctx, daemonSocket, ipc.HelloOptions{
 		TermxVersion: "managed-relay-e2e", CallerRole: cloudpb.CallerRole_CALLER_ROLE_DAEMON,
@@ -155,8 +155,8 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 	if err := remoteProtocolClient.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "managed-relay-e2e"}); err != nil {
 		t.Fatal(err)
 	}
-	managed := newManagedE2EServices(managedEndpointID, remoteProtocolClient)
-	local := newManagedE2EServices(state.DefaultEndpointID, localCore.client)
+	managed := newManagedE2EServices(t, managedEndpointID, remoteProtocolClient)
+	local := newManagedE2EServices(t, state.DefaultEndpointID, localCore.client)
 	listed, err := managed.List(ctx, port.TerminalListRequest{EndpointID: managedEndpointID})
 	if err != nil || !managedDirectListContains(listed.Items, managedEndpointID, "relay-remote-terminal") {
 		select {

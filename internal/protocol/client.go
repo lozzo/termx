@@ -2,16 +2,19 @@ package protocol
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"strings"
 	"sync"
 	"sync/atomic"
 
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/wire"
 
 	"github.com/lozzow/termx/shared/perftrace"
 	"github.com/lozzow/termx/shared/transport"
+	"google.golang.org/protobuf/proto"
 )
 
 type Client struct {
@@ -21,18 +24,19 @@ type Client struct {
 	doneErrMu sync.Mutex
 	doneErr   error
 
-	mu               sync.Mutex
-	sendMu           sync.Mutex
-	waiters          map[uint64]chan result
-	streams          map[uint16]*clientStream
-	pending          map[uint16][]StreamFrame
-	reused           map[uint16][]StreamFrame
-	dropped          map[uint16]struct{}
-	eventSubscribers map[uint64]eventSubscription
-	nextEventSubID   uint64
-	eventsStarted    bool
-	eventStartDone   chan struct{}
-	eventStartErr    error
+	mu                     sync.Mutex
+	sendMu                 sync.Mutex
+	waiters                map[uint64]chan result
+	streams                map[uint16]*clientStream
+	pending                map[uint16][]StreamFrame
+	reused                 map[uint16][]StreamFrame
+	dropped                map[uint16]struct{}
+	eventSubscribers       map[uint64]eventSubscription
+	applicationAttachments map[uint16]*apipb.ResourceHandle
+	nextEventSubID         uint64
+	eventsStarted          bool
+	eventStartDone         chan struct{}
+	eventStartErr          error
 
 	helloCh chan result
 	done    chan struct{}
@@ -170,15 +174,16 @@ func (s *clientStream) enqueueFrameLocked(frame StreamFrame) {
 
 func NewClient(t transport.Transport) *Client {
 	c := &Client{
-		transport:        t,
-		waiters:          make(map[uint64]chan result),
-		streams:          make(map[uint16]*clientStream),
-		pending:          make(map[uint16][]StreamFrame),
-		reused:           make(map[uint16][]StreamFrame),
-		dropped:          make(map[uint16]struct{}),
-		eventSubscribers: make(map[uint64]eventSubscription),
-		helloCh:          make(chan result, 1),
-		done:             make(chan struct{}),
+		transport:              t,
+		waiters:                make(map[uint64]chan result),
+		streams:                make(map[uint16]*clientStream),
+		pending:                make(map[uint16][]StreamFrame),
+		reused:                 make(map[uint16][]StreamFrame),
+		dropped:                make(map[uint16]struct{}),
+		eventSubscribers:       make(map[uint64]eventSubscription),
+		applicationAttachments: make(map[uint16]*apipb.ResourceHandle),
+		helloCh:                make(chan result, 1),
+		done:                   make(chan struct{}),
 	}
 	go c.readLoop()
 	return c
@@ -237,46 +242,93 @@ func (c *Client) Hello(ctx context.Context, hello Hello) error {
 	}
 }
 
-func (c *Client) Create(ctx context.Context, params CreateParams) (*CreateResult, error) {
-	var out CreateResult
-	if err := c.doRequest(ctx, "create", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
 func (c *Client) Call(ctx context.Context, method string, params any, out any) error {
 	return c.doRequest(ctx, method, params, out)
 }
 
-func (c *Client) List(ctx context.Context) (*ListResult, error) {
-	var out ListResult
-	if err := c.doRequest(ctx, "list", map[string]any{}, &out); err != nil {
+// ExecuteApplication 通过唯一 api.execute framing 发送公共 Proto API command。
+// protocol client 只负责 correlation 与 payload transport，不解释 terminal application 字段。
+func (c *Client) ExecuteApplication(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+	var out apipb.ResultEnvelope
+	if err := c.doRequest(ctx, "api.execute", command, &out); err != nil {
 		return nil, err
 	}
+	c.updateApplicationAttachmentBinding(command, &out)
 	return &out, nil
 }
 
-// ListDirectories 请求当前 protocol session 所属 daemon 列出目录候选。
-// 该方法只转发 Prefix/Limit 到 owning endpoint；home、cwd 和权限判断都在 daemon
-// 侧完成，客户端不能把本地文件系统结果混入远端补全。
-func (c *Client) ListDirectories(ctx context.Context, params PathListDirsParams) (*PathListDirsResult, error) {
-	var out PathListDirsResult
-	if err := c.doRequest(ctx, "path.list_dirs", params, &out); err != nil {
-		return nil, err
+// ApplicationAttachmentChannel 返回当前 protocol connection 为 attachment resource 分配的 stream channel。
+// opaque token 的内部格式和 channel registry 只属于 framing binding，不得暴露为公共 API schema。
+func (c *Client) ApplicationAttachmentChannel(resource *apipb.ResourceHandle) (uint16, bool) {
+	if resource == nil || len(resource.GetOpaqueToken()) < 2 {
+		return 0, false
 	}
-	return &out, nil
+	channel := binary.BigEndian.Uint16(resource.GetOpaqueToken()[:2])
+	if channel == 0 {
+		return 0, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	bound := c.applicationAttachments[channel]
+	return channel, bound != nil && string(bound.GetOpaqueToken()) == string(resource.GetOpaqueToken())
 }
 
-// PathDefaults 请求当前 protocol session 所属 daemon 的创建默认值。
-// 默认 shell/cwd 的 truth 在 daemon 机器；该方法避免 TUI 进程用本地 SHELL 或 cwd
-// 猜测 remote endpoint 的终端创建参数。
-func (c *Client) PathDefaults(ctx context.Context) (*PathDefaultsResult, error) {
-	var out PathDefaultsResult
-	if err := c.doRequest(ctx, "path.defaults", map[string]any{}, &out); err != nil {
-		return nil, err
+// ApplicationAttachment 返回 stream channel 当前绑定的 Proto resource handle 副本。
+func (c *Client) ApplicationAttachment(channel uint16) (*apipb.ResourceHandle, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	resource := c.applicationAttachments[channel]
+	if resource == nil {
+		return nil, false
 	}
-	return &out, nil
+	return proto.Clone(resource).(*apipb.ResourceHandle), true
+}
+
+func (c *Client) updateApplicationAttachmentBinding(command *apipb.CommandEnvelope, result *apipb.ResultEnvelope) {
+	if command == nil || result == nil || result.GetError() != nil {
+		return
+	}
+	if attached := result.GetTerminalAttach().GetAttachment().GetResource(); attached != nil && len(attached.GetOpaqueToken()) >= 2 {
+		channel := binary.BigEndian.Uint16(attached.GetOpaqueToken()[:2])
+		if channel != 0 {
+			c.bindApplicationAttachment(channel, attached)
+		}
+		return
+	}
+	var released *apipb.ResourceHandle
+	switch value := command.GetCommand().(type) {
+	case *apipb.CommandEnvelope_TerminalDetach:
+		released = value.TerminalDetach.GetAttachment()
+	case *apipb.CommandEnvelope_ReleaseResource:
+		released = value.ReleaseResource.GetResource()
+	}
+	if channel, ok := c.ApplicationAttachmentChannel(released); ok {
+		c.mu.Lock()
+		delete(c.applicationAttachments, channel)
+		c.mu.Unlock()
+	}
+}
+
+func (c *Client) bindApplicationAttachment(channel uint16, resource *apipb.ResourceHandle) {
+	c.mu.Lock()
+	stream := c.streams[channel]
+	if stream == nil {
+		stream = newClientStream()
+		c.streams[channel] = stream
+	}
+	c.applicationAttachments[channel] = proto.Clone(resource).(*apipb.ResourceHandle)
+	delete(c.dropped, channel)
+	pending := c.pending[channel]
+	delete(c.pending, channel)
+	reused := c.reused[channel]
+	delete(c.reused, channel)
+	c.mu.Unlock()
+	for _, frame := range pending {
+		stream.send(frame)
+	}
+	for _, frame := range reused {
+		stream.send(frame)
+	}
 }
 
 // FileList 从当前 endpoint 的 daemon 文件系统读取一个目录窗口。
@@ -392,91 +444,6 @@ func (c *Client) SendFileFrame(channel uint16, typ uint8, payload []byte) error 
 		return err
 	}
 	return c.send(frame)
-}
-
-func (c *Client) Kill(ctx context.Context, terminalID string) error {
-	return c.doRequest(ctx, "kill", GetParams{TerminalID: terminalID}, nil)
-}
-
-func (c *Client) Restart(ctx context.Context, terminalID string) error {
-	return c.doRequest(ctx, "restart", GetParams{TerminalID: terminalID}, nil)
-}
-
-func (c *Client) Remove(ctx context.Context, terminalID string) error {
-	return c.doRequest(ctx, "remove", GetParams{TerminalID: terminalID}, nil)
-}
-
-func (c *Client) SetTags(ctx context.Context, terminalID string, tags map[string]string) error {
-	return c.doRequest(ctx, "set_tags", SetTagsParams{
-		TerminalID: terminalID,
-		Tags:       tags,
-	}, nil)
-}
-
-func (c *Client) SetMetadata(ctx context.Context, terminalID string, name string, tags map[string]string) error {
-	return c.doRequest(ctx, "set_metadata", SetMetadataParams{
-		TerminalID: terminalID,
-		Name:       name,
-		Tags:       tags,
-	}, nil)
-}
-
-func (c *Client) Attach(ctx context.Context, terminalID string, mode string) (*AttachResult, error) {
-	return c.AttachWithOptions(ctx, AttachParams{TerminalID: terminalID, Mode: mode})
-}
-
-func (c *Client) AttachWithOptions(ctx context.Context, params AttachParams) (*AttachResult, error) {
-	var out AttachResult
-	if err := c.doRequest(ctx, "attach", params, &out); err != nil {
-		return nil, err
-	}
-	c.mu.Lock()
-	stream := c.streams[out.Channel]
-	if stream == nil {
-		stream = newClientStream()
-		c.streams[out.Channel] = stream
-	}
-	delete(c.dropped, out.Channel)
-	pending := c.pending[out.Channel]
-	delete(c.pending, out.Channel)
-	reused := c.reused[out.Channel]
-	delete(c.reused, out.Channel)
-	c.mu.Unlock()
-	for _, frame := range pending {
-		stream.send(frame)
-	}
-	for _, frame := range reused {
-		stream.send(frame)
-	}
-	return &out, nil
-}
-
-func (c *Client) Detach(ctx context.Context, params DetachParams) error {
-	return c.doRequest(ctx, "detach", params, nil)
-}
-
-func (c *Client) EnsureResize(ctx context.Context, params EnsureResizeParams) (*EnsureResizeResult, error) {
-	var out EnsureResizeResult
-	if err := c.doRequest(ctx, "ensure_resize", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) LockResize(ctx context.Context, params ResizeControlParams) (*ResizeControlResult, error) {
-	var out ResizeControlResult
-	if err := c.doRequest(ctx, "resize.lock", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) UnlockResize(ctx context.Context, params ResizeControlParams) (*ResizeControlResult, error) {
-	var out ResizeControlResult
-	if err := c.doRequest(ctx, "resize.unlock", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
 }
 
 // LiveScreen 返回 core 当前 latest native screen。
@@ -665,42 +632,6 @@ func (c *Client) ensureEventsStarted(ctx context.Context) error {
 	}
 	c.mu.Unlock()
 	return err
-}
-
-func (c *Client) Input(ctx context.Context, channel uint16, data []byte) error {
-	finish := perftrace.Measure("protocol.input.send")
-	defer func() {
-		finish(len(data))
-	}()
-	frame, err := wire.EncodeFrame(channel, wire.TypeInput, data)
-	if err != nil {
-		return err
-	}
-	return c.send(frame)
-}
-
-func (c *Client) InputWithOptions(ctx context.Context, params InputParams) error {
-	finish := perftrace.Measure("protocol.request.input")
-	defer func() {
-		finish(len(params.Data))
-	}()
-	return c.doRequest(ctx, "input", params, nil)
-}
-
-func (c *Client) Resize(ctx context.Context, channel uint16, cols, rows uint16) error {
-	frame, err := wire.EncodeFrame(channel, wire.TypeResize, wire.EncodeResizePayload(cols, rows))
-	if err != nil {
-		return err
-	}
-	return c.send(frame)
-}
-
-func (c *Client) ResizeRequest(ctx context.Context, terminalID string, cols, rows uint16) error {
-	return c.doRequest(ctx, "resize", ResizeParams{
-		TerminalID: terminalID,
-		Cols:       cols,
-		Rows:       rows,
-	}, nil)
 }
 
 func (c *Client) Stream(channel uint16) (<-chan StreamFrame, func()) {

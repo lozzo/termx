@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
 )
 
 func TestListPathDirectoriesUsesDaemonFilesystem(t *testing.T) {
@@ -33,7 +33,7 @@ func TestListPathDirectoriesUsesDaemonFilesystem(t *testing.T) {
 		t.Fatalf("resolve temp dir: %v", err)
 	}
 
-	result, err := listPathDirectories(protocol.PathListDirsParams{Prefix: "d", Limit: 10})
+	result, err := listPathDirectories(&apipb.PathListDirectoriesCommand{Prefix: "d", Limit: 10})
 	if err != nil {
 		t.Fatalf("list path dirs: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestListPathDirectoriesUsesDaemonFilesystem(t *testing.T) {
 		t.Fatalf("unexpected directory candidates got=%#v result=%#v want=%#v", got, result, want)
 	}
 
-	hidden, err := listPathDirectories(protocol.PathListDirsParams{Prefix: ".", Limit: 10})
+	hidden, err := listPathDirectories(&apipb.PathListDirectoriesCommand{Prefix: ".", Limit: 10})
 	if err != nil {
 		t.Fatalf("list hidden dirs: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestListPathDirectoriesUsesDaemonFilesystem(t *testing.T) {
 		t.Fatalf("hidden directories require dot prefix, got %#v", hidden)
 	}
 
-	missing, err := listPathDirectories(protocol.PathListDirsParams{Prefix: filepath.Join(dir, "missing", "x"), Limit: 10})
+	missing, err := listPathDirectories(&apipb.PathListDirectoriesCommand{Prefix: filepath.Join(dir, "missing", "x"), Limit: 10})
 	if err != nil {
 		t.Fatalf("missing path should be prompt empty state, got err=%v", err)
 	}

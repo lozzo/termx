@@ -126,6 +126,7 @@ proto schema
 ## 当前迁移债务
 
 - `core/api` 是错误的平行 Go API，必须删除。
-- `internal/protocol/messages.go` 仍拥有大量 application DTO，需按领域迁移到 proto 生成类型。
-- `internal/protocol/control_payload.go` 同时承担 dispatch、业务转换和 wire codec，需拆到 API Layer、API Mapping 和 protocol framing。
-- TUI/CLI 当前直接依赖 protocol client，需在共享 runtime 和 API Layer 稳定后迁移。
+- terminal、attachment 与 path 已通过 `api.execute` 迁到 `apipb`；对应 protocol DTO、旧 method codec 和 `wirepb` message 已删除。
+- `core/application_api.go` 仍临时承载 connection adapter 与 terminal Proto/core 投影，并形成 `core -> api_layer/api_mapping` 的装配倒置。PA006 必须把 connection-bound API 装配移到 core 外部，并把字段转换恢复到 `api_mapping/`；PA007 在该依赖归零前不得 PASS。
+- history/live、file/storage/workbench 仍保留旧 protocol application DTO，后续只能按 PA005B、PA005C 的原子切片迁移，不能恢复 terminal/path 双路径。
+- CLI 的共享 endpoint runtime helper 仍有已冻结编译缺口；不得用自造 generation、裸 protocol client 或 local fallback 填补。

@@ -434,314 +434,6 @@ func (x *Size) GetRows() uint32 {
 	return 0
 }
 
-type TerminalInfo struct {
-	state                      protoimpl.MessageState `protogen:"open.v1"`
-	Id                         string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name                       string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Command                    []string               `protobuf:"bytes,3,rep,name=command,proto3" json:"command,omitempty"`
-	Tags                       map[string]string      `protobuf:"bytes,4,rep,name=tags,proto3" json:"tags,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Size                       *Size                  `protobuf:"bytes,5,opt,name=size,proto3" json:"size,omitempty"`
-	State                      string                 `protobuf:"bytes,6,opt,name=state,proto3" json:"state,omitempty"`
-	Cwd                        string                 `protobuf:"bytes,7,opt,name=cwd,proto3" json:"cwd,omitempty"`
-	LiveCwd                    string                 `protobuf:"bytes,8,opt,name=live_cwd,json=liveCwd,proto3" json:"live_cwd,omitempty"`
-	CreatedAtUnixNano          int64                  `protobuf:"varint,9,opt,name=created_at_unix_nano,json=createdAtUnixNano,proto3" json:"created_at_unix_nano,omitempty"`
-	ExitCode                   *int32                 `protobuf:"varint,10,opt,name=exit_code,json=exitCode,proto3,oneof" json:"exit_code,omitempty"`
-	ResizeOwnership            *ResizeOwnership       `protobuf:"bytes,11,opt,name=resize_ownership,json=resizeOwnership,proto3" json:"resize_ownership,omitempty"`
-	ResizeOwnerAttachmentCount int32                  `protobuf:"varint,12,opt,name=resize_owner_attachment_count,json=resizeOwnerAttachmentCount,proto3" json:"resize_owner_attachment_count,omitempty"`
-	ExitedAtUnixNano           int64                  `protobuf:"varint,13,opt,name=exited_at_unix_nano,json=exitedAtUnixNano,proto3" json:"exited_at_unix_nano,omitempty"`
-	unknownFields              protoimpl.UnknownFields
-	sizeCache                  protoimpl.SizeCache
-}
-
-func (x *TerminalInfo) Reset() {
-	*x = TerminalInfo{}
-	mi := &file_wirepb_terminal_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TerminalInfo) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TerminalInfo) ProtoMessage() {}
-
-func (x *TerminalInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TerminalInfo.ProtoReflect.Descriptor instead.
-func (*TerminalInfo) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *TerminalInfo) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *TerminalInfo) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *TerminalInfo) GetCommand() []string {
-	if x != nil {
-		return x.Command
-	}
-	return nil
-}
-
-func (x *TerminalInfo) GetTags() map[string]string {
-	if x != nil {
-		return x.Tags
-	}
-	return nil
-}
-
-func (x *TerminalInfo) GetSize() *Size {
-	if x != nil {
-		return x.Size
-	}
-	return nil
-}
-
-func (x *TerminalInfo) GetState() string {
-	if x != nil {
-		return x.State
-	}
-	return ""
-}
-
-func (x *TerminalInfo) GetCwd() string {
-	if x != nil {
-		return x.Cwd
-	}
-	return ""
-}
-
-func (x *TerminalInfo) GetLiveCwd() string {
-	if x != nil {
-		return x.LiveCwd
-	}
-	return ""
-}
-
-func (x *TerminalInfo) GetCreatedAtUnixNano() int64 {
-	if x != nil {
-		return x.CreatedAtUnixNano
-	}
-	return 0
-}
-
-func (x *TerminalInfo) GetExitCode() int32 {
-	if x != nil && x.ExitCode != nil {
-		return *x.ExitCode
-	}
-	return 0
-}
-
-func (x *TerminalInfo) GetResizeOwnership() *ResizeOwnership {
-	if x != nil {
-		return x.ResizeOwnership
-	}
-	return nil
-}
-
-func (x *TerminalInfo) GetResizeOwnerAttachmentCount() int32 {
-	if x != nil {
-		return x.ResizeOwnerAttachmentCount
-	}
-	return 0
-}
-
-func (x *TerminalInfo) GetExitedAtUnixNano() int64 {
-	if x != nil {
-		return x.ExitedAtUnixNano
-	}
-	return 0
-}
-
-type CreateParams struct {
-	state                   protoimpl.MessageState `protogen:"open.v1"`
-	Command                 []string               `protobuf:"bytes,1,rep,name=command,proto3" json:"command,omitempty"`
-	Id                      string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
-	Name                    string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Tags                    map[string]string      `protobuf:"bytes,4,rep,name=tags,proto3" json:"tags,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Size                    *Size                  `protobuf:"bytes,5,opt,name=size,proto3" json:"size,omitempty"`
-	Dir                     string                 `protobuf:"bytes,6,opt,name=dir,proto3" json:"dir,omitempty"`
-	Env                     []string               `protobuf:"bytes,7,rep,name=env,proto3" json:"env,omitempty"`
-	ScrollbackSize          int32                  `protobuf:"varint,8,opt,name=scrollback_size,json=scrollbackSize,proto3" json:"scrollback_size,omitempty"`
-	ScrollbackMaxBytes      int64                  `protobuf:"varint,9,opt,name=scrollback_max_bytes,json=scrollbackMaxBytes,proto3" json:"scrollback_max_bytes,omitempty"`
-	ScrollbackMaxAgeSeconds int64                  `protobuf:"varint,10,opt,name=scrollback_max_age_seconds,json=scrollbackMaxAgeSeconds,proto3" json:"scrollback_max_age_seconds,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
-}
-
-func (x *CreateParams) Reset() {
-	*x = CreateParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateParams) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateParams) ProtoMessage() {}
-
-func (x *CreateParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateParams.ProtoReflect.Descriptor instead.
-func (*CreateParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *CreateParams) GetCommand() []string {
-	if x != nil {
-		return x.Command
-	}
-	return nil
-}
-
-func (x *CreateParams) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *CreateParams) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *CreateParams) GetTags() map[string]string {
-	if x != nil {
-		return x.Tags
-	}
-	return nil
-}
-
-func (x *CreateParams) GetSize() *Size {
-	if x != nil {
-		return x.Size
-	}
-	return nil
-}
-
-func (x *CreateParams) GetDir() string {
-	if x != nil {
-		return x.Dir
-	}
-	return ""
-}
-
-func (x *CreateParams) GetEnv() []string {
-	if x != nil {
-		return x.Env
-	}
-	return nil
-}
-
-func (x *CreateParams) GetScrollbackSize() int32 {
-	if x != nil {
-		return x.ScrollbackSize
-	}
-	return 0
-}
-
-func (x *CreateParams) GetScrollbackMaxBytes() int64 {
-	if x != nil {
-		return x.ScrollbackMaxBytes
-	}
-	return 0
-}
-
-func (x *CreateParams) GetScrollbackMaxAgeSeconds() int64 {
-	if x != nil {
-		return x.ScrollbackMaxAgeSeconds
-	}
-	return 0
-}
-
-type CreateResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TerminalId    string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
-	State         string                 `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateResult) Reset() {
-	*x = CreateResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateResult) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateResult) ProtoMessage() {}
-
-func (x *CreateResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateResult.ProtoReflect.Descriptor instead.
-func (*CreateResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *CreateResult) GetTerminalId() string {
-	if x != nil {
-		return x.TerminalId
-	}
-	return ""
-}
-
-func (x *CreateResult) GetState() string {
-	if x != nil {
-		return x.State
-	}
-	return ""
-}
-
 type GetParams struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TerminalId    string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
@@ -751,7 +443,7 @@ type GetParams struct {
 
 func (x *GetParams) Reset() {
 	*x = GetParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[10]
+	mi := &file_wirepb_terminal_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -763,7 +455,7 @@ func (x *GetParams) String() string {
 func (*GetParams) ProtoMessage() {}
 
 func (x *GetParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[10]
+	mi := &file_wirepb_terminal_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -776,7 +468,7 @@ func (x *GetParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetParams.ProtoReflect.Descriptor instead.
 func (*GetParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{10}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetParams) GetTerminalId() string {
@@ -784,650 +476,6 @@ func (x *GetParams) GetTerminalId() string {
 		return x.TerminalId
 	}
 	return ""
-}
-
-type ResizeParams struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TerminalId    string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
-	Cols          uint32                 `protobuf:"varint,2,opt,name=cols,proto3" json:"cols,omitempty"`
-	Rows          uint32                 `protobuf:"varint,3,opt,name=rows,proto3" json:"rows,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ResizeParams) Reset() {
-	*x = ResizeParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ResizeParams) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ResizeParams) ProtoMessage() {}
-
-func (x *ResizeParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ResizeParams.ProtoReflect.Descriptor instead.
-func (*ResizeParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *ResizeParams) GetTerminalId() string {
-	if x != nil {
-		return x.TerminalId
-	}
-	return ""
-}
-
-func (x *ResizeParams) GetCols() uint32 {
-	if x != nil {
-		return x.Cols
-	}
-	return 0
-}
-
-func (x *ResizeParams) GetRows() uint32 {
-	if x != nil {
-		return x.Rows
-	}
-	return 0
-}
-
-type EnsureResizeParams struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TerminalId    string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
-	Channel       uint32                 `protobuf:"varint,2,opt,name=channel,proto3" json:"channel,omitempty"`
-	Cols          uint32                 `protobuf:"varint,3,opt,name=cols,proto3" json:"cols,omitempty"`
-	Rows          uint32                 `protobuf:"varint,4,opt,name=rows,proto3" json:"rows,omitempty"`
-	ResizePolicy  string                 `protobuf:"bytes,5,opt,name=resize_policy,json=resizePolicy,proto3" json:"resize_policy,omitempty"`
-	SurfaceId     string                 `protobuf:"bytes,6,opt,name=surface_id,json=surfaceId,proto3" json:"surface_id,omitempty"`
-	ViewId        string                 `protobuf:"bytes,7,opt,name=view_id,json=viewId,proto3" json:"view_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *EnsureResizeParams) Reset() {
-	*x = EnsureResizeParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *EnsureResizeParams) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*EnsureResizeParams) ProtoMessage() {}
-
-func (x *EnsureResizeParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use EnsureResizeParams.ProtoReflect.Descriptor instead.
-func (*EnsureResizeParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *EnsureResizeParams) GetTerminalId() string {
-	if x != nil {
-		return x.TerminalId
-	}
-	return ""
-}
-
-func (x *EnsureResizeParams) GetChannel() uint32 {
-	if x != nil {
-		return x.Channel
-	}
-	return 0
-}
-
-func (x *EnsureResizeParams) GetCols() uint32 {
-	if x != nil {
-		return x.Cols
-	}
-	return 0
-}
-
-func (x *EnsureResizeParams) GetRows() uint32 {
-	if x != nil {
-		return x.Rows
-	}
-	return 0
-}
-
-func (x *EnsureResizeParams) GetResizePolicy() string {
-	if x != nil {
-		return x.ResizePolicy
-	}
-	return ""
-}
-
-func (x *EnsureResizeParams) GetSurfaceId() string {
-	if x != nil {
-		return x.SurfaceId
-	}
-	return ""
-}
-
-func (x *EnsureResizeParams) GetViewId() string {
-	if x != nil {
-		return x.ViewId
-	}
-	return ""
-}
-
-type EnsureResizeResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ResizeControl *ResizeControl         `protobuf:"bytes,1,opt,name=resize_control,json=resizeControl,proto3" json:"resize_control,omitempty"`
-	Size          *Size                  `protobuf:"bytes,2,opt,name=size,proto3" json:"size,omitempty"`
-	Resized       bool                   `protobuf:"varint,3,opt,name=resized,proto3" json:"resized,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *EnsureResizeResult) Reset() {
-	*x = EnsureResizeResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[13]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *EnsureResizeResult) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*EnsureResizeResult) ProtoMessage() {}
-
-func (x *EnsureResizeResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[13]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use EnsureResizeResult.ProtoReflect.Descriptor instead.
-func (*EnsureResizeResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{13}
-}
-
-func (x *EnsureResizeResult) GetResizeControl() *ResizeControl {
-	if x != nil {
-		return x.ResizeControl
-	}
-	return nil
-}
-
-func (x *EnsureResizeResult) GetSize() *Size {
-	if x != nil {
-		return x.Size
-	}
-	return nil
-}
-
-func (x *EnsureResizeResult) GetResized() bool {
-	if x != nil {
-		return x.Resized
-	}
-	return false
-}
-
-type SetTagsParams struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TerminalId    string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
-	Tags          map[string]string      `protobuf:"bytes,2,rep,name=tags,proto3" json:"tags,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SetTagsParams) Reset() {
-	*x = SetTagsParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[14]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SetTagsParams) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SetTagsParams) ProtoMessage() {}
-
-func (x *SetTagsParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[14]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SetTagsParams.ProtoReflect.Descriptor instead.
-func (*SetTagsParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{14}
-}
-
-func (x *SetTagsParams) GetTerminalId() string {
-	if x != nil {
-		return x.TerminalId
-	}
-	return ""
-}
-
-func (x *SetTagsParams) GetTags() map[string]string {
-	if x != nil {
-		return x.Tags
-	}
-	return nil
-}
-
-type SetMetadataParams struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TerminalId    string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Tags          map[string]string      `protobuf:"bytes,3,rep,name=tags,proto3" json:"tags,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SetMetadataParams) Reset() {
-	*x = SetMetadataParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[15]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SetMetadataParams) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SetMetadataParams) ProtoMessage() {}
-
-func (x *SetMetadataParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[15]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SetMetadataParams.ProtoReflect.Descriptor instead.
-func (*SetMetadataParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{15}
-}
-
-func (x *SetMetadataParams) GetTerminalId() string {
-	if x != nil {
-		return x.TerminalId
-	}
-	return ""
-}
-
-func (x *SetMetadataParams) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *SetMetadataParams) GetTags() map[string]string {
-	if x != nil {
-		return x.Tags
-	}
-	return nil
-}
-
-type AttachParams struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TerminalId    string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
-	Mode          string                 `protobuf:"bytes,2,opt,name=mode,proto3" json:"mode,omitempty"`
-	ResizePolicy  string                 `protobuf:"bytes,3,opt,name=resize_policy,json=resizePolicy,proto3" json:"resize_policy,omitempty"`
-	SurfaceId     string                 `protobuf:"bytes,4,opt,name=surface_id,json=surfaceId,proto3" json:"surface_id,omitempty"`
-	ViewId        string                 `protobuf:"bytes,5,opt,name=view_id,json=viewId,proto3" json:"view_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *AttachParams) Reset() {
-	*x = AttachParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[16]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *AttachParams) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*AttachParams) ProtoMessage() {}
-
-func (x *AttachParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[16]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use AttachParams.ProtoReflect.Descriptor instead.
-func (*AttachParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{16}
-}
-
-func (x *AttachParams) GetTerminalId() string {
-	if x != nil {
-		return x.TerminalId
-	}
-	return ""
-}
-
-func (x *AttachParams) GetMode() string {
-	if x != nil {
-		return x.Mode
-	}
-	return ""
-}
-
-func (x *AttachParams) GetResizePolicy() string {
-	if x != nil {
-		return x.ResizePolicy
-	}
-	return ""
-}
-
-func (x *AttachParams) GetSurfaceId() string {
-	if x != nil {
-		return x.SurfaceId
-	}
-	return ""
-}
-
-func (x *AttachParams) GetViewId() string {
-	if x != nil {
-		return x.ViewId
-	}
-	return ""
-}
-
-type AttachResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Mode          string                 `protobuf:"bytes,1,opt,name=mode,proto3" json:"mode,omitempty"`
-	Channel       uint32                 `protobuf:"varint,2,opt,name=channel,proto3" json:"channel,omitempty"`
-	ResizeControl *ResizeControl         `protobuf:"bytes,3,opt,name=resize_control,json=resizeControl,proto3" json:"resize_control,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *AttachResult) Reset() {
-	*x = AttachResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[17]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *AttachResult) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*AttachResult) ProtoMessage() {}
-
-func (x *AttachResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[17]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use AttachResult.ProtoReflect.Descriptor instead.
-func (*AttachResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{17}
-}
-
-func (x *AttachResult) GetMode() string {
-	if x != nil {
-		return x.Mode
-	}
-	return ""
-}
-
-func (x *AttachResult) GetChannel() uint32 {
-	if x != nil {
-		return x.Channel
-	}
-	return 0
-}
-
-func (x *AttachResult) GetResizeControl() *ResizeControl {
-	if x != nil {
-		return x.ResizeControl
-	}
-	return nil
-}
-
-type ResizeOwnership struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	OwnerAttachmentId string                 `protobuf:"bytes,1,opt,name=owner_attachment_id,json=ownerAttachmentId,proto3" json:"owner_attachment_id,omitempty"`
-	OwnerSurfaceId    string                 `protobuf:"bytes,2,opt,name=owner_surface_id,json=ownerSurfaceId,proto3" json:"owner_surface_id,omitempty"`
-	OwnerViewId       string                 `protobuf:"bytes,3,opt,name=owner_view_id,json=ownerViewId,proto3" json:"owner_view_id,omitempty"`
-	OwnerRemoteAddr   string                 `protobuf:"bytes,4,opt,name=owner_remote_addr,json=ownerRemoteAddr,proto3" json:"owner_remote_addr,omitempty"`
-	Size              *Size                  `protobuf:"bytes,5,opt,name=size,proto3" json:"size,omitempty"`
-	SizeLocked        bool                   `protobuf:"varint,6,opt,name=size_locked,json=sizeLocked,proto3" json:"size_locked,omitempty"`
-	Epoch             uint64                 `protobuf:"varint,7,opt,name=epoch,proto3" json:"epoch,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
-}
-
-func (x *ResizeOwnership) Reset() {
-	*x = ResizeOwnership{}
-	mi := &file_wirepb_terminal_proto_msgTypes[18]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ResizeOwnership) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ResizeOwnership) ProtoMessage() {}
-
-func (x *ResizeOwnership) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[18]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ResizeOwnership.ProtoReflect.Descriptor instead.
-func (*ResizeOwnership) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{18}
-}
-
-func (x *ResizeOwnership) GetOwnerAttachmentId() string {
-	if x != nil {
-		return x.OwnerAttachmentId
-	}
-	return ""
-}
-
-func (x *ResizeOwnership) GetOwnerSurfaceId() string {
-	if x != nil {
-		return x.OwnerSurfaceId
-	}
-	return ""
-}
-
-func (x *ResizeOwnership) GetOwnerViewId() string {
-	if x != nil {
-		return x.OwnerViewId
-	}
-	return ""
-}
-
-func (x *ResizeOwnership) GetOwnerRemoteAddr() string {
-	if x != nil {
-		return x.OwnerRemoteAddr
-	}
-	return ""
-}
-
-func (x *ResizeOwnership) GetSize() *Size {
-	if x != nil {
-		return x.Size
-	}
-	return nil
-}
-
-func (x *ResizeOwnership) GetSizeLocked() bool {
-	if x != nil {
-		return x.SizeLocked
-	}
-	return false
-}
-
-func (x *ResizeOwnership) GetEpoch() uint64 {
-	if x != nil {
-		return x.Epoch
-	}
-	return 0
-}
-
-type ResizeControl struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	CanResize       bool                   `protobuf:"varint,1,opt,name=can_resize,json=canResize,proto3" json:"can_resize,omitempty"`
-	Reason          string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
-	SizeLocked      bool                   `protobuf:"varint,3,opt,name=size_locked,json=sizeLocked,proto3" json:"size_locked,omitempty"`
-	SurfaceId       string                 `protobuf:"bytes,4,opt,name=surface_id,json=surfaceId,proto3" json:"surface_id,omitempty"`
-	OwnerSurfaceId  string                 `protobuf:"bytes,5,opt,name=owner_surface_id,json=ownerSurfaceId,proto3" json:"owner_surface_id,omitempty"`
-	OwnerViewId     string                 `protobuf:"bytes,6,opt,name=owner_view_id,json=ownerViewId,proto3" json:"owner_view_id,omitempty"`
-	ResizeOwnership *ResizeOwnership       `protobuf:"bytes,7,opt,name=resize_ownership,json=resizeOwnership,proto3" json:"resize_ownership,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
-}
-
-func (x *ResizeControl) Reset() {
-	*x = ResizeControl{}
-	mi := &file_wirepb_terminal_proto_msgTypes[19]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ResizeControl) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ResizeControl) ProtoMessage() {}
-
-func (x *ResizeControl) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[19]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ResizeControl.ProtoReflect.Descriptor instead.
-func (*ResizeControl) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{19}
-}
-
-func (x *ResizeControl) GetCanResize() bool {
-	if x != nil {
-		return x.CanResize
-	}
-	return false
-}
-
-func (x *ResizeControl) GetReason() string {
-	if x != nil {
-		return x.Reason
-	}
-	return ""
-}
-
-func (x *ResizeControl) GetSizeLocked() bool {
-	if x != nil {
-		return x.SizeLocked
-	}
-	return false
-}
-
-func (x *ResizeControl) GetSurfaceId() string {
-	if x != nil {
-		return x.SurfaceId
-	}
-	return ""
-}
-
-func (x *ResizeControl) GetOwnerSurfaceId() string {
-	if x != nil {
-		return x.OwnerSurfaceId
-	}
-	return ""
-}
-
-func (x *ResizeControl) GetOwnerViewId() string {
-	if x != nil {
-		return x.OwnerViewId
-	}
-	return ""
-}
-
-func (x *ResizeControl) GetResizeOwnership() *ResizeOwnership {
-	if x != nil {
-		return x.ResizeOwnership
-	}
-	return nil
 }
 
 type TerminalCreatedData struct {
@@ -1441,7 +489,7 @@ type TerminalCreatedData struct {
 
 func (x *TerminalCreatedData) Reset() {
 	*x = TerminalCreatedData{}
-	mi := &file_wirepb_terminal_proto_msgTypes[20]
+	mi := &file_wirepb_terminal_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1453,7 +501,7 @@ func (x *TerminalCreatedData) String() string {
 func (*TerminalCreatedData) ProtoMessage() {}
 
 func (x *TerminalCreatedData) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[20]
+	mi := &file_wirepb_terminal_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1466,7 +514,7 @@ func (x *TerminalCreatedData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalCreatedData.ProtoReflect.Descriptor instead.
 func (*TerminalCreatedData) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{20}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *TerminalCreatedData) GetName() string {
@@ -1502,7 +550,7 @@ type TerminalStateChangedData struct {
 
 func (x *TerminalStateChangedData) Reset() {
 	*x = TerminalStateChangedData{}
-	mi := &file_wirepb_terminal_proto_msgTypes[21]
+	mi := &file_wirepb_terminal_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1514,7 +562,7 @@ func (x *TerminalStateChangedData) String() string {
 func (*TerminalStateChangedData) ProtoMessage() {}
 
 func (x *TerminalStateChangedData) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[21]
+	mi := &file_wirepb_terminal_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1527,7 +575,7 @@ func (x *TerminalStateChangedData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalStateChangedData.ProtoReflect.Descriptor instead.
 func (*TerminalStateChangedData) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{21}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *TerminalStateChangedData) GetOldState() string {
@@ -1568,7 +616,7 @@ type TerminalResizedData struct {
 
 func (x *TerminalResizedData) Reset() {
 	*x = TerminalResizedData{}
-	mi := &file_wirepb_terminal_proto_msgTypes[22]
+	mi := &file_wirepb_terminal_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1580,7 +628,7 @@ func (x *TerminalResizedData) String() string {
 func (*TerminalResizedData) ProtoMessage() {}
 
 func (x *TerminalResizedData) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[22]
+	mi := &file_wirepb_terminal_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1593,7 +641,7 @@ func (x *TerminalResizedData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalResizedData.ProtoReflect.Descriptor instead.
 func (*TerminalResizedData) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{22}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *TerminalResizedData) GetOldSize() *Size {
@@ -1619,7 +667,7 @@ type TerminalRemovedData struct {
 
 func (x *TerminalRemovedData) Reset() {
 	*x = TerminalRemovedData{}
-	mi := &file_wirepb_terminal_proto_msgTypes[23]
+	mi := &file_wirepb_terminal_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1631,7 +679,7 @@ func (x *TerminalRemovedData) String() string {
 func (*TerminalRemovedData) ProtoMessage() {}
 
 func (x *TerminalRemovedData) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[23]
+	mi := &file_wirepb_terminal_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1644,7 +692,7 @@ func (x *TerminalRemovedData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalRemovedData.ProtoReflect.Descriptor instead.
 func (*TerminalRemovedData) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{23}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *TerminalRemovedData) GetReason() string {
@@ -1662,7 +710,7 @@ type CollaboratorsRevokedData struct {
 
 func (x *CollaboratorsRevokedData) Reset() {
 	*x = CollaboratorsRevokedData{}
-	mi := &file_wirepb_terminal_proto_msgTypes[24]
+	mi := &file_wirepb_terminal_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1674,7 +722,7 @@ func (x *CollaboratorsRevokedData) String() string {
 func (*CollaboratorsRevokedData) ProtoMessage() {}
 
 func (x *CollaboratorsRevokedData) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[24]
+	mi := &file_wirepb_terminal_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1687,7 +735,7 @@ func (x *CollaboratorsRevokedData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CollaboratorsRevokedData.ProtoReflect.Descriptor instead.
 func (*CollaboratorsRevokedData) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{24}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{12}
 }
 
 type TerminalReadErrorData struct {
@@ -1699,7 +747,7 @@ type TerminalReadErrorData struct {
 
 func (x *TerminalReadErrorData) Reset() {
 	*x = TerminalReadErrorData{}
-	mi := &file_wirepb_terminal_proto_msgTypes[25]
+	mi := &file_wirepb_terminal_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1711,7 +759,7 @@ func (x *TerminalReadErrorData) String() string {
 func (*TerminalReadErrorData) ProtoMessage() {}
 
 func (x *TerminalReadErrorData) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[25]
+	mi := &file_wirepb_terminal_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1724,7 +772,7 @@ func (x *TerminalReadErrorData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalReadErrorData.ProtoReflect.Descriptor instead.
 func (*TerminalReadErrorData) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{25}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *TerminalReadErrorData) GetError() string {
@@ -1748,7 +796,7 @@ type StorageChangedData struct {
 
 func (x *StorageChangedData) Reset() {
 	*x = StorageChangedData{}
-	mi := &file_wirepb_terminal_proto_msgTypes[26]
+	mi := &file_wirepb_terminal_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1760,7 +808,7 @@ func (x *StorageChangedData) String() string {
 func (*StorageChangedData) ProtoMessage() {}
 
 func (x *StorageChangedData) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[26]
+	mi := &file_wirepb_terminal_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1773,7 +821,7 @@ func (x *StorageChangedData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StorageChangedData.ProtoReflect.Descriptor instead.
 func (*StorageChangedData) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{26}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *StorageChangedData) GetAppId() string {
@@ -1830,7 +878,7 @@ type WorkbenchChangedData struct {
 
 func (x *WorkbenchChangedData) Reset() {
 	*x = WorkbenchChangedData{}
-	mi := &file_wirepb_terminal_proto_msgTypes[27]
+	mi := &file_wirepb_terminal_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1842,7 +890,7 @@ func (x *WorkbenchChangedData) String() string {
 func (*WorkbenchChangedData) ProtoMessage() {}
 
 func (x *WorkbenchChangedData) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[27]
+	mi := &file_wirepb_terminal_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1855,7 +903,7 @@ func (x *WorkbenchChangedData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkbenchChangedData.ProtoReflect.Descriptor instead.
 func (*WorkbenchChangedData) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{27}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *WorkbenchChangedData) GetWorkspaceId() string {
@@ -1905,7 +953,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_wirepb_terminal_proto_msgTypes[28]
+	mi := &file_wirepb_terminal_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1917,7 +965,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[28]
+	mi := &file_wirepb_terminal_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1930,7 +978,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{28}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *Event) GetType() uint32 {
@@ -2025,7 +1073,7 @@ type EventsParams struct {
 
 func (x *EventsParams) Reset() {
 	*x = EventsParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[29]
+	mi := &file_wirepb_terminal_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2037,7 +1085,7 @@ func (x *EventsParams) String() string {
 func (*EventsParams) ProtoMessage() {}
 
 func (x *EventsParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[29]
+	mi := &file_wirepb_terminal_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2050,7 +1098,7 @@ func (x *EventsParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventsParams.ProtoReflect.Descriptor instead.
 func (*EventsParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{29}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *EventsParams) GetTerminalId() string {
@@ -2113,7 +1161,7 @@ type SnapshotParams struct {
 
 func (x *SnapshotParams) Reset() {
 	*x = SnapshotParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[30]
+	mi := &file_wirepb_terminal_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2125,7 +1173,7 @@ func (x *SnapshotParams) String() string {
 func (*SnapshotParams) ProtoMessage() {}
 
 func (x *SnapshotParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[30]
+	mi := &file_wirepb_terminal_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2138,7 +1186,7 @@ func (x *SnapshotParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SnapshotParams.ProtoReflect.Descriptor instead.
 func (*SnapshotParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{30}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SnapshotParams) GetTerminalId() string {
@@ -2174,7 +1222,7 @@ type GridViewportParams struct {
 
 func (x *GridViewportParams) Reset() {
 	*x = GridViewportParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[31]
+	mi := &file_wirepb_terminal_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2186,7 +1234,7 @@ func (x *GridViewportParams) String() string {
 func (*GridViewportParams) ProtoMessage() {}
 
 func (x *GridViewportParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[31]
+	mi := &file_wirepb_terminal_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2199,7 +1247,7 @@ func (x *GridViewportParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GridViewportParams.ProtoReflect.Descriptor instead.
 func (*GridViewportParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{31}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GridViewportParams) GetTerminalId() string {
@@ -2258,7 +1306,7 @@ type HistoryWindowParams struct {
 
 func (x *HistoryWindowParams) Reset() {
 	*x = HistoryWindowParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[32]
+	mi := &file_wirepb_terminal_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2270,7 +1318,7 @@ func (x *HistoryWindowParams) String() string {
 func (*HistoryWindowParams) ProtoMessage() {}
 
 func (x *HistoryWindowParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[32]
+	mi := &file_wirepb_terminal_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2283,7 +1331,7 @@ func (x *HistoryWindowParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HistoryWindowParams.ProtoReflect.Descriptor instead.
 func (*HistoryWindowParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{32}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *HistoryWindowParams) GetTerminalId() string {
@@ -2426,274 +1474,6 @@ func (x *HistoryWindowParams) GetRangeEndCol() int32 {
 	return 0
 }
 
-type ListResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Terminals     []*TerminalInfo        `protobuf:"bytes,1,rep,name=terminals,proto3" json:"terminals,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListResult) Reset() {
-	*x = ListResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[33]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListResult) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListResult) ProtoMessage() {}
-
-func (x *ListResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[33]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListResult.ProtoReflect.Descriptor instead.
-func (*ListResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{33}
-}
-
-func (x *ListResult) GetTerminals() []*TerminalInfo {
-	if x != nil {
-		return x.Terminals
-	}
-	return nil
-}
-
-type PathListDirsParams struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Prefix        string                 `protobuf:"bytes,1,opt,name=prefix,proto3" json:"prefix,omitempty"`
-	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *PathListDirsParams) Reset() {
-	*x = PathListDirsParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[34]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PathListDirsParams) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PathListDirsParams) ProtoMessage() {}
-
-func (x *PathListDirsParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[34]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PathListDirsParams.ProtoReflect.Descriptor instead.
-func (*PathListDirsParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{34}
-}
-
-func (x *PathListDirsParams) GetPrefix() string {
-	if x != nil {
-		return x.Prefix
-	}
-	return ""
-}
-
-func (x *PathListDirsParams) GetLimit() int32 {
-	if x != nil {
-		return x.Limit
-	}
-	return 0
-}
-
-type PathDirEntry struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *PathDirEntry) Reset() {
-	*x = PathDirEntry{}
-	mi := &file_wirepb_terminal_proto_msgTypes[35]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PathDirEntry) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PathDirEntry) ProtoMessage() {}
-
-func (x *PathDirEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[35]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PathDirEntry.ProtoReflect.Descriptor instead.
-func (*PathDirEntry) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{35}
-}
-
-func (x *PathDirEntry) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *PathDirEntry) GetPath() string {
-	if x != nil {
-		return x.Path
-	}
-	return ""
-}
-
-type PathListDirsResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	BasePath      string                 `protobuf:"bytes,1,opt,name=base_path,json=basePath,proto3" json:"base_path,omitempty"`
-	Entries       []*PathDirEntry        `protobuf:"bytes,2,rep,name=entries,proto3" json:"entries,omitempty"`
-	Missing       bool                   `protobuf:"varint,3,opt,name=missing,proto3" json:"missing,omitempty"`
-	Truncated     bool                   `protobuf:"varint,4,opt,name=truncated,proto3" json:"truncated,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *PathListDirsResult) Reset() {
-	*x = PathListDirsResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[36]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PathListDirsResult) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PathListDirsResult) ProtoMessage() {}
-
-func (x *PathListDirsResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[36]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PathListDirsResult.ProtoReflect.Descriptor instead.
-func (*PathListDirsResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{36}
-}
-
-func (x *PathListDirsResult) GetBasePath() string {
-	if x != nil {
-		return x.BasePath
-	}
-	return ""
-}
-
-func (x *PathListDirsResult) GetEntries() []*PathDirEntry {
-	if x != nil {
-		return x.Entries
-	}
-	return nil
-}
-
-func (x *PathListDirsResult) GetMissing() bool {
-	if x != nil {
-		return x.Missing
-	}
-	return false
-}
-
-func (x *PathListDirsResult) GetTruncated() bool {
-	if x != nil {
-		return x.Truncated
-	}
-	return false
-}
-
-type PathDefaultsResult struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	DefaultCommand []string               `protobuf:"bytes,1,rep,name=default_command,json=defaultCommand,proto3" json:"default_command,omitempty"`
-	DefaultCwd     string                 `protobuf:"bytes,2,opt,name=default_cwd,json=defaultCwd,proto3" json:"default_cwd,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *PathDefaultsResult) Reset() {
-	*x = PathDefaultsResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[37]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PathDefaultsResult) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PathDefaultsResult) ProtoMessage() {}
-
-func (x *PathDefaultsResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[37]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PathDefaultsResult.ProtoReflect.Descriptor instead.
-func (*PathDefaultsResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{37}
-}
-
-func (x *PathDefaultsResult) GetDefaultCommand() []string {
-	if x != nil {
-		return x.DefaultCommand
-	}
-	return nil
-}
-
-func (x *PathDefaultsResult) GetDefaultCwd() string {
-	if x != nil {
-		return x.DefaultCwd
-	}
-	return ""
-}
-
 type FilePathParams struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
@@ -2704,7 +1484,7 @@ type FilePathParams struct {
 
 func (x *FilePathParams) Reset() {
 	*x = FilePathParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[38]
+	mi := &file_wirepb_terminal_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2716,7 +1496,7 @@ func (x *FilePathParams) String() string {
 func (*FilePathParams) ProtoMessage() {}
 
 func (x *FilePathParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[38]
+	mi := &file_wirepb_terminal_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2729,7 +1509,7 @@ func (x *FilePathParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilePathParams.ProtoReflect.Descriptor instead.
 func (*FilePathParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{38}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *FilePathParams) GetPath() string {
@@ -2757,7 +1537,7 @@ type FileListParams struct {
 
 func (x *FileListParams) Reset() {
 	*x = FileListParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[39]
+	mi := &file_wirepb_terminal_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2769,7 +1549,7 @@ func (x *FileListParams) String() string {
 func (*FileListParams) ProtoMessage() {}
 
 func (x *FileListParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[39]
+	mi := &file_wirepb_terminal_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2782,7 +1562,7 @@ func (x *FileListParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileListParams.ProtoReflect.Descriptor instead.
 func (*FileListParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{39}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *FileListParams) GetPath() string {
@@ -2821,7 +1601,7 @@ type FileEntry struct {
 
 func (x *FileEntry) Reset() {
 	*x = FileEntry{}
-	mi := &file_wirepb_terminal_proto_msgTypes[40]
+	mi := &file_wirepb_terminal_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2833,7 +1613,7 @@ func (x *FileEntry) String() string {
 func (*FileEntry) ProtoMessage() {}
 
 func (x *FileEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[40]
+	mi := &file_wirepb_terminal_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2846,7 +1626,7 @@ func (x *FileEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileEntry.ProtoReflect.Descriptor instead.
 func (*FileEntry) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{40}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *FileEntry) GetPath() string {
@@ -2909,7 +1689,7 @@ type FileListResult struct {
 
 func (x *FileListResult) Reset() {
 	*x = FileListResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[41]
+	mi := &file_wirepb_terminal_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2921,7 +1701,7 @@ func (x *FileListResult) String() string {
 func (*FileListResult) ProtoMessage() {}
 
 func (x *FileListResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[41]
+	mi := &file_wirepb_terminal_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2934,7 +1714,7 @@ func (x *FileListResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileListResult.ProtoReflect.Descriptor instead.
 func (*FileListResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{41}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *FileListResult) GetPath() string {
@@ -2968,7 +1748,7 @@ type FilePreviewParams struct {
 
 func (x *FilePreviewParams) Reset() {
 	*x = FilePreviewParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[42]
+	mi := &file_wirepb_terminal_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2980,7 +1760,7 @@ func (x *FilePreviewParams) String() string {
 func (*FilePreviewParams) ProtoMessage() {}
 
 func (x *FilePreviewParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[42]
+	mi := &file_wirepb_terminal_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2993,7 +1773,7 @@ func (x *FilePreviewParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilePreviewParams.ProtoReflect.Descriptor instead.
 func (*FilePreviewParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{42}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *FilePreviewParams) GetPath() string {
@@ -3022,7 +1802,7 @@ type FilePreviewResult struct {
 
 func (x *FilePreviewResult) Reset() {
 	*x = FilePreviewResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[43]
+	mi := &file_wirepb_terminal_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3034,7 +1814,7 @@ func (x *FilePreviewResult) String() string {
 func (*FilePreviewResult) ProtoMessage() {}
 
 func (x *FilePreviewResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[43]
+	mi := &file_wirepb_terminal_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3047,7 +1827,7 @@ func (x *FilePreviewResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilePreviewResult.ProtoReflect.Descriptor instead.
 func (*FilePreviewResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{43}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *FilePreviewResult) GetEntry() *FileEntry {
@@ -3089,7 +1869,7 @@ type FileRenameParams struct {
 
 func (x *FileRenameParams) Reset() {
 	*x = FileRenameParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[44]
+	mi := &file_wirepb_terminal_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3101,7 +1881,7 @@ func (x *FileRenameParams) String() string {
 func (*FileRenameParams) ProtoMessage() {}
 
 func (x *FileRenameParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[44]
+	mi := &file_wirepb_terminal_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3114,7 +1894,7 @@ func (x *FileRenameParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileRenameParams.ProtoReflect.Descriptor instead.
 func (*FileRenameParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{44}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *FileRenameParams) GetPath() string {
@@ -3149,7 +1929,7 @@ type FileCopyMoveParams struct {
 
 func (x *FileCopyMoveParams) Reset() {
 	*x = FileCopyMoveParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[45]
+	mi := &file_wirepb_terminal_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3161,7 +1941,7 @@ func (x *FileCopyMoveParams) String() string {
 func (*FileCopyMoveParams) ProtoMessage() {}
 
 func (x *FileCopyMoveParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[45]
+	mi := &file_wirepb_terminal_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3174,7 +1954,7 @@ func (x *FileCopyMoveParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileCopyMoveParams.ProtoReflect.Descriptor instead.
 func (*FileCopyMoveParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{45}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *FileCopyMoveParams) GetPaths() []string {
@@ -3211,7 +1991,7 @@ type FileOperationResult struct {
 
 func (x *FileOperationResult) Reset() {
 	*x = FileOperationResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[46]
+	mi := &file_wirepb_terminal_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3223,7 +2003,7 @@ func (x *FileOperationResult) String() string {
 func (*FileOperationResult) ProtoMessage() {}
 
 func (x *FileOperationResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[46]
+	mi := &file_wirepb_terminal_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3236,7 +2016,7 @@ func (x *FileOperationResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileOperationResult.ProtoReflect.Descriptor instead.
 func (*FileOperationResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{46}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *FileOperationResult) GetPath() string {
@@ -3283,7 +2063,7 @@ type FileBatchResult struct {
 
 func (x *FileBatchResult) Reset() {
 	*x = FileBatchResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[47]
+	mi := &file_wirepb_terminal_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3295,7 +2075,7 @@ func (x *FileBatchResult) String() string {
 func (*FileBatchResult) ProtoMessage() {}
 
 func (x *FileBatchResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[47]
+	mi := &file_wirepb_terminal_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3308,7 +2088,7 @@ func (x *FileBatchResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileBatchResult.ProtoReflect.Descriptor instead.
 func (*FileBatchResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{47}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *FileBatchResult) GetResults() []*FileOperationResult {
@@ -3330,7 +2110,7 @@ type FileDownloadOpenParams struct {
 
 func (x *FileDownloadOpenParams) Reset() {
 	*x = FileDownloadOpenParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[48]
+	mi := &file_wirepb_terminal_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3342,7 +2122,7 @@ func (x *FileDownloadOpenParams) String() string {
 func (*FileDownloadOpenParams) ProtoMessage() {}
 
 func (x *FileDownloadOpenParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[48]
+	mi := &file_wirepb_terminal_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3355,7 +2135,7 @@ func (x *FileDownloadOpenParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileDownloadOpenParams.ProtoReflect.Descriptor instead.
 func (*FileDownloadOpenParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{48}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *FileDownloadOpenParams) GetPath() string {
@@ -3398,7 +2178,7 @@ type FileUploadOpenParams struct {
 
 func (x *FileUploadOpenParams) Reset() {
 	*x = FileUploadOpenParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[49]
+	mi := &file_wirepb_terminal_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3410,7 +2190,7 @@ func (x *FileUploadOpenParams) String() string {
 func (*FileUploadOpenParams) ProtoMessage() {}
 
 func (x *FileUploadOpenParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[49]
+	mi := &file_wirepb_terminal_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3423,7 +2203,7 @@ func (x *FileUploadOpenParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileUploadOpenParams.ProtoReflect.Descriptor instead.
 func (*FileUploadOpenParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{49}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *FileUploadOpenParams) GetPath() string {
@@ -3470,7 +2250,7 @@ type FileTransferOpenResult struct {
 
 func (x *FileTransferOpenResult) Reset() {
 	*x = FileTransferOpenResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[50]
+	mi := &file_wirepb_terminal_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3482,7 +2262,7 @@ func (x *FileTransferOpenResult) String() string {
 func (*FileTransferOpenResult) ProtoMessage() {}
 
 func (x *FileTransferOpenResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[50]
+	mi := &file_wirepb_terminal_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3495,7 +2275,7 @@ func (x *FileTransferOpenResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileTransferOpenResult.ProtoReflect.Descriptor instead.
 func (*FileTransferOpenResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{50}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *FileTransferOpenResult) GetTransferId() string {
@@ -3563,7 +2343,7 @@ type FileTransferCancelParams struct {
 
 func (x *FileTransferCancelParams) Reset() {
 	*x = FileTransferCancelParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[51]
+	mi := &file_wirepb_terminal_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3575,7 +2355,7 @@ func (x *FileTransferCancelParams) String() string {
 func (*FileTransferCancelParams) ProtoMessage() {}
 
 func (x *FileTransferCancelParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[51]
+	mi := &file_wirepb_terminal_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3588,7 +2368,7 @@ func (x *FileTransferCancelParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileTransferCancelParams.ProtoReflect.Descriptor instead.
 func (*FileTransferCancelParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{51}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *FileTransferCancelParams) GetTransferId() string {
@@ -3607,7 +2387,7 @@ type FileTransferCancelResult struct {
 
 func (x *FileTransferCancelResult) Reset() {
 	*x = FileTransferCancelResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[52]
+	mi := &file_wirepb_terminal_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3619,7 +2399,7 @@ func (x *FileTransferCancelResult) String() string {
 func (*FileTransferCancelResult) ProtoMessage() {}
 
 func (x *FileTransferCancelResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[52]
+	mi := &file_wirepb_terminal_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3632,7 +2412,7 @@ func (x *FileTransferCancelResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileTransferCancelResult.ProtoReflect.Descriptor instead.
 func (*FileTransferCancelResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{52}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *FileTransferCancelResult) GetCancelled() bool {
@@ -3652,7 +2432,7 @@ type FileTransferData struct {
 
 func (x *FileTransferData) Reset() {
 	*x = FileTransferData{}
-	mi := &file_wirepb_terminal_proto_msgTypes[53]
+	mi := &file_wirepb_terminal_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3664,7 +2444,7 @@ func (x *FileTransferData) String() string {
 func (*FileTransferData) ProtoMessage() {}
 
 func (x *FileTransferData) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[53]
+	mi := &file_wirepb_terminal_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3677,7 +2457,7 @@ func (x *FileTransferData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileTransferData.ProtoReflect.Descriptor instead.
 func (*FileTransferData) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{53}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *FileTransferData) GetOffset() int64 {
@@ -3704,7 +2484,7 @@ type FileTransferAck struct {
 
 func (x *FileTransferAck) Reset() {
 	*x = FileTransferAck{}
-	mi := &file_wirepb_terminal_proto_msgTypes[54]
+	mi := &file_wirepb_terminal_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3716,7 +2496,7 @@ func (x *FileTransferAck) String() string {
 func (*FileTransferAck) ProtoMessage() {}
 
 func (x *FileTransferAck) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[54]
+	mi := &file_wirepb_terminal_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3729,7 +2509,7 @@ func (x *FileTransferAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileTransferAck.ProtoReflect.Descriptor instead.
 func (*FileTransferAck) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{54}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *FileTransferAck) GetOffset() int64 {
@@ -3756,7 +2536,7 @@ type FileTransferFinish struct {
 
 func (x *FileTransferFinish) Reset() {
 	*x = FileTransferFinish{}
-	mi := &file_wirepb_terminal_proto_msgTypes[55]
+	mi := &file_wirepb_terminal_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3768,7 +2548,7 @@ func (x *FileTransferFinish) String() string {
 func (*FileTransferFinish) ProtoMessage() {}
 
 func (x *FileTransferFinish) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[55]
+	mi := &file_wirepb_terminal_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3781,7 +2561,7 @@ func (x *FileTransferFinish) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileTransferFinish.ProtoReflect.Descriptor instead.
 func (*FileTransferFinish) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{55}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *FileTransferFinish) GetSize() int64 {
@@ -3809,7 +2589,7 @@ type FileTransferResult struct {
 
 func (x *FileTransferResult) Reset() {
 	*x = FileTransferResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[56]
+	mi := &file_wirepb_terminal_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3821,7 +2601,7 @@ func (x *FileTransferResult) String() string {
 func (*FileTransferResult) ProtoMessage() {}
 
 func (x *FileTransferResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[56]
+	mi := &file_wirepb_terminal_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3834,7 +2614,7 @@ func (x *FileTransferResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileTransferResult.ProtoReflect.Descriptor instead.
 func (*FileTransferResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{56}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *FileTransferResult) GetPath() string {
@@ -3871,7 +2651,7 @@ type CursorState struct {
 
 func (x *CursorState) Reset() {
 	*x = CursorState{}
-	mi := &file_wirepb_terminal_proto_msgTypes[57]
+	mi := &file_wirepb_terminal_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3883,7 +2663,7 @@ func (x *CursorState) String() string {
 func (*CursorState) ProtoMessage() {}
 
 func (x *CursorState) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[57]
+	mi := &file_wirepb_terminal_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3896,7 +2676,7 @@ func (x *CursorState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CursorState.ProtoReflect.Descriptor instead.
 func (*CursorState) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{57}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *CursorState) GetRow() int32 {
@@ -3943,7 +2723,7 @@ type TerminalModes struct {
 
 func (x *TerminalModes) Reset() {
 	*x = TerminalModes{}
-	mi := &file_wirepb_terminal_proto_msgTypes[58]
+	mi := &file_wirepb_terminal_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3955,7 +2735,7 @@ func (x *TerminalModes) String() string {
 func (*TerminalModes) ProtoMessage() {}
 
 func (x *TerminalModes) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[58]
+	mi := &file_wirepb_terminal_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3968,7 +2748,7 @@ func (x *TerminalModes) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalModes.ProtoReflect.Descriptor instead.
 func (*TerminalModes) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{58}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *TerminalModes) GetMask() uint32 {
@@ -3991,7 +2771,7 @@ type RowSet struct {
 
 func (x *RowSet) Reset() {
 	*x = RowSet{}
-	mi := &file_wirepb_terminal_proto_msgTypes[59]
+	mi := &file_wirepb_terminal_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4003,7 +2783,7 @@ func (x *RowSet) String() string {
 func (*RowSet) ProtoMessage() {}
 
 func (x *RowSet) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[59]
+	mi := &file_wirepb_terminal_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4016,7 +2796,7 @@ func (x *RowSet) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RowSet.ProtoReflect.Descriptor instead.
 func (*RowSet) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{59}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *RowSet) GetRowsBlob() []byte {
@@ -4078,7 +2858,7 @@ type Snapshot struct {
 
 func (x *Snapshot) Reset() {
 	*x = Snapshot{}
-	mi := &file_wirepb_terminal_proto_msgTypes[60]
+	mi := &file_wirepb_terminal_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4090,7 +2870,7 @@ func (x *Snapshot) String() string {
 func (*Snapshot) ProtoMessage() {}
 
 func (x *Snapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[60]
+	mi := &file_wirepb_terminal_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4103,7 +2883,7 @@ func (x *Snapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Snapshot.ProtoReflect.Descriptor instead.
 func (*Snapshot) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{60}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *Snapshot) GetTerminalId() string {
@@ -4239,7 +3019,7 @@ type GridViewport struct {
 
 func (x *GridViewport) Reset() {
 	*x = GridViewport{}
-	mi := &file_wirepb_terminal_proto_msgTypes[61]
+	mi := &file_wirepb_terminal_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4251,7 +3031,7 @@ func (x *GridViewport) String() string {
 func (*GridViewport) ProtoMessage() {}
 
 func (x *GridViewport) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[61]
+	mi := &file_wirepb_terminal_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4264,7 +3044,7 @@ func (x *GridViewport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GridViewport.ProtoReflect.Descriptor instead.
 func (*GridViewport) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{61}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *GridViewport) GetTerminalId() string {
@@ -4396,7 +3176,7 @@ type HistoryWindow struct {
 
 func (x *HistoryWindow) Reset() {
 	*x = HistoryWindow{}
-	mi := &file_wirepb_terminal_proto_msgTypes[62]
+	mi := &file_wirepb_terminal_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4408,7 +3188,7 @@ func (x *HistoryWindow) String() string {
 func (*HistoryWindow) ProtoMessage() {}
 
 func (x *HistoryWindow) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[62]
+	mi := &file_wirepb_terminal_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4421,7 +3201,7 @@ func (x *HistoryWindow) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HistoryWindow.ProtoReflect.Descriptor instead.
 func (*HistoryWindow) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{62}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *HistoryWindow) GetTerminalId() string {
@@ -4649,7 +3429,7 @@ type StorageEntry struct {
 
 func (x *StorageEntry) Reset() {
 	*x = StorageEntry{}
-	mi := &file_wirepb_terminal_proto_msgTypes[63]
+	mi := &file_wirepb_terminal_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4661,7 +3441,7 @@ func (x *StorageEntry) String() string {
 func (*StorageEntry) ProtoMessage() {}
 
 func (x *StorageEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[63]
+	mi := &file_wirepb_terminal_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4674,7 +3454,7 @@ func (x *StorageEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StorageEntry.ProtoReflect.Descriptor instead.
 func (*StorageEntry) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{63}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *StorageEntry) GetAppId() string {
@@ -4738,7 +3518,7 @@ type StorageGetParams struct {
 
 func (x *StorageGetParams) Reset() {
 	*x = StorageGetParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[64]
+	mi := &file_wirepb_terminal_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4750,7 +3530,7 @@ func (x *StorageGetParams) String() string {
 func (*StorageGetParams) ProtoMessage() {}
 
 func (x *StorageGetParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[64]
+	mi := &file_wirepb_terminal_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4763,7 +3543,7 @@ func (x *StorageGetParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StorageGetParams.ProtoReflect.Descriptor instead.
 func (*StorageGetParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{64}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *StorageGetParams) GetAppId() string {
@@ -4809,7 +3589,7 @@ type StoragePutParams struct {
 
 func (x *StoragePutParams) Reset() {
 	*x = StoragePutParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[65]
+	mi := &file_wirepb_terminal_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4821,7 +3601,7 @@ func (x *StoragePutParams) String() string {
 func (*StoragePutParams) ProtoMessage() {}
 
 func (x *StoragePutParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[65]
+	mi := &file_wirepb_terminal_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4834,7 +3614,7 @@ func (x *StoragePutParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StoragePutParams.ProtoReflect.Descriptor instead.
 func (*StoragePutParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{65}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *StoragePutParams) GetAppId() string {
@@ -4900,7 +3680,7 @@ type StorageDeleteParams struct {
 
 func (x *StorageDeleteParams) Reset() {
 	*x = StorageDeleteParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[66]
+	mi := &file_wirepb_terminal_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4912,7 +3692,7 @@ func (x *StorageDeleteParams) String() string {
 func (*StorageDeleteParams) ProtoMessage() {}
 
 func (x *StorageDeleteParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[66]
+	mi := &file_wirepb_terminal_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4925,7 +3705,7 @@ func (x *StorageDeleteParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StorageDeleteParams.ProtoReflect.Descriptor instead.
 func (*StorageDeleteParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{66}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *StorageDeleteParams) GetAppId() string {
@@ -4984,7 +3764,7 @@ type StorageDeleteResult struct {
 
 func (x *StorageDeleteResult) Reset() {
 	*x = StorageDeleteResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[67]
+	mi := &file_wirepb_terminal_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4996,7 +3776,7 @@ func (x *StorageDeleteResult) String() string {
 func (*StorageDeleteResult) ProtoMessage() {}
 
 func (x *StorageDeleteResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[67]
+	mi := &file_wirepb_terminal_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5009,7 +3789,7 @@ func (x *StorageDeleteResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StorageDeleteResult.ProtoReflect.Descriptor instead.
 func (*StorageDeleteResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{67}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *StorageDeleteResult) GetAppId() string {
@@ -5066,7 +3846,7 @@ type StorageListParams struct {
 
 func (x *StorageListParams) Reset() {
 	*x = StorageListParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[68]
+	mi := &file_wirepb_terminal_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5078,7 +3858,7 @@ func (x *StorageListParams) String() string {
 func (*StorageListParams) ProtoMessage() {}
 
 func (x *StorageListParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[68]
+	mi := &file_wirepb_terminal_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5091,7 +3871,7 @@ func (x *StorageListParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StorageListParams.ProtoReflect.Descriptor instead.
 func (*StorageListParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{68}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *StorageListParams) GetAppId() string {
@@ -5131,7 +3911,7 @@ type StorageListResult struct {
 
 func (x *StorageListResult) Reset() {
 	*x = StorageListResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[69]
+	mi := &file_wirepb_terminal_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5143,7 +3923,7 @@ func (x *StorageListResult) String() string {
 func (*StorageListResult) ProtoMessage() {}
 
 func (x *StorageListResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[69]
+	mi := &file_wirepb_terminal_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5156,7 +3936,7 @@ func (x *StorageListResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StorageListResult.ProtoReflect.Descriptor instead.
 func (*StorageListResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{69}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *StorageListResult) GetEntries() []*StorageEntry {
@@ -5177,7 +3957,7 @@ type WorkbenchSnapshot struct {
 
 func (x *WorkbenchSnapshot) Reset() {
 	*x = WorkbenchSnapshot{}
-	mi := &file_wirepb_terminal_proto_msgTypes[70]
+	mi := &file_wirepb_terminal_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5189,7 +3969,7 @@ func (x *WorkbenchSnapshot) String() string {
 func (*WorkbenchSnapshot) ProtoMessage() {}
 
 func (x *WorkbenchSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[70]
+	mi := &file_wirepb_terminal_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5202,7 +3982,7 @@ func (x *WorkbenchSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkbenchSnapshot.ProtoReflect.Descriptor instead.
 func (*WorkbenchSnapshot) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{70}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *WorkbenchSnapshot) GetVersion() uint64 {
@@ -5238,7 +4018,7 @@ type WorkbenchWorkspace struct {
 
 func (x *WorkbenchWorkspace) Reset() {
 	*x = WorkbenchWorkspace{}
-	mi := &file_wirepb_terminal_proto_msgTypes[71]
+	mi := &file_wirepb_terminal_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5250,7 +4030,7 @@ func (x *WorkbenchWorkspace) String() string {
 func (*WorkbenchWorkspace) ProtoMessage() {}
 
 func (x *WorkbenchWorkspace) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[71]
+	mi := &file_wirepb_terminal_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5263,7 +4043,7 @@ func (x *WorkbenchWorkspace) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkbenchWorkspace.ProtoReflect.Descriptor instead.
 func (*WorkbenchWorkspace) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{71}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *WorkbenchWorkspace) GetId() string {
@@ -5307,7 +4087,7 @@ type WorkbenchTab struct {
 
 func (x *WorkbenchTab) Reset() {
 	*x = WorkbenchTab{}
-	mi := &file_wirepb_terminal_proto_msgTypes[72]
+	mi := &file_wirepb_terminal_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5319,7 +4099,7 @@ func (x *WorkbenchTab) String() string {
 func (*WorkbenchTab) ProtoMessage() {}
 
 func (x *WorkbenchTab) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[72]
+	mi := &file_wirepb_terminal_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5332,7 +4112,7 @@ func (x *WorkbenchTab) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkbenchTab.ProtoReflect.Descriptor instead.
 func (*WorkbenchTab) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{72}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *WorkbenchTab) GetId() string {
@@ -5382,7 +4162,7 @@ type WorkbenchPane struct {
 
 func (x *WorkbenchPane) Reset() {
 	*x = WorkbenchPane{}
-	mi := &file_wirepb_terminal_proto_msgTypes[73]
+	mi := &file_wirepb_terminal_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5394,7 +4174,7 @@ func (x *WorkbenchPane) String() string {
 func (*WorkbenchPane) ProtoMessage() {}
 
 func (x *WorkbenchPane) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[73]
+	mi := &file_wirepb_terminal_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5407,7 +4187,7 @@ func (x *WorkbenchPane) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkbenchPane.ProtoReflect.Descriptor instead.
 func (*WorkbenchPane) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{73}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *WorkbenchPane) GetId() string {
@@ -5454,7 +4234,7 @@ type WorkbenchSplitNode struct {
 
 func (x *WorkbenchSplitNode) Reset() {
 	*x = WorkbenchSplitNode{}
-	mi := &file_wirepb_terminal_proto_msgTypes[74]
+	mi := &file_wirepb_terminal_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5466,7 +4246,7 @@ func (x *WorkbenchSplitNode) String() string {
 func (*WorkbenchSplitNode) ProtoMessage() {}
 
 func (x *WorkbenchSplitNode) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[74]
+	mi := &file_wirepb_terminal_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5479,7 +4259,7 @@ func (x *WorkbenchSplitNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkbenchSplitNode.ProtoReflect.Descriptor instead.
 func (*WorkbenchSplitNode) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{74}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *WorkbenchSplitNode) GetPaneId() string {
@@ -5547,7 +4327,7 @@ type WorkbenchGetParams struct {
 
 func (x *WorkbenchGetParams) Reset() {
 	*x = WorkbenchGetParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[75]
+	mi := &file_wirepb_terminal_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5559,7 +4339,7 @@ func (x *WorkbenchGetParams) String() string {
 func (*WorkbenchGetParams) ProtoMessage() {}
 
 func (x *WorkbenchGetParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[75]
+	mi := &file_wirepb_terminal_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5572,7 +4352,7 @@ func (x *WorkbenchGetParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkbenchGetParams.ProtoReflect.Descriptor instead.
 func (*WorkbenchGetParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{75}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *WorkbenchGetParams) GetWorkspaceId() string {
@@ -5601,7 +4381,7 @@ type WorkbenchMutateParams struct {
 
 func (x *WorkbenchMutateParams) Reset() {
 	*x = WorkbenchMutateParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[76]
+	mi := &file_wirepb_terminal_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5613,7 +4393,7 @@ func (x *WorkbenchMutateParams) String() string {
 func (*WorkbenchMutateParams) ProtoMessage() {}
 
 func (x *WorkbenchMutateParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[76]
+	mi := &file_wirepb_terminal_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5626,7 +4406,7 @@ func (x *WorkbenchMutateParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkbenchMutateParams.ProtoReflect.Descriptor instead.
 func (*WorkbenchMutateParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{76}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *WorkbenchMutateParams) GetAction() string {
@@ -5717,7 +4497,7 @@ type WorkbenchMutateResult struct {
 
 func (x *WorkbenchMutateResult) Reset() {
 	*x = WorkbenchMutateResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[77]
+	mi := &file_wirepb_terminal_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5729,7 +4509,7 @@ func (x *WorkbenchMutateResult) String() string {
 func (*WorkbenchMutateResult) ProtoMessage() {}
 
 func (x *WorkbenchMutateResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[77]
+	mi := &file_wirepb_terminal_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5742,7 +4522,7 @@ func (x *WorkbenchMutateResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkbenchMutateResult.ProtoReflect.Descriptor instead.
 func (*WorkbenchMutateResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{77}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *WorkbenchMutateResult) GetSnapshot() *WorkbenchSnapshot {
@@ -5786,7 +4566,7 @@ type RemoteStatus struct {
 
 func (x *RemoteStatus) Reset() {
 	*x = RemoteStatus{}
-	mi := &file_wirepb_terminal_proto_msgTypes[78]
+	mi := &file_wirepb_terminal_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5798,7 +4578,7 @@ func (x *RemoteStatus) String() string {
 func (*RemoteStatus) ProtoMessage() {}
 
 func (x *RemoteStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[78]
+	mi := &file_wirepb_terminal_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5811,7 +4591,7 @@ func (x *RemoteStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteStatus.ProtoReflect.Descriptor instead.
 func (*RemoteStatus) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{78}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *RemoteStatus) GetState() string {
@@ -5909,7 +4689,7 @@ type RemotePairStartParams struct {
 
 func (x *RemotePairStartParams) Reset() {
 	*x = RemotePairStartParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[79]
+	mi := &file_wirepb_terminal_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5921,7 +4701,7 @@ func (x *RemotePairStartParams) String() string {
 func (*RemotePairStartParams) ProtoMessage() {}
 
 func (x *RemotePairStartParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[79]
+	mi := &file_wirepb_terminal_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5934,7 +4714,7 @@ func (x *RemotePairStartParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemotePairStartParams.ProtoReflect.Descriptor instead.
 func (*RemotePairStartParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{79}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *RemotePairStartParams) GetLocalPairUrl() string {
@@ -5974,7 +4754,7 @@ type RemotePairStartResult struct {
 
 func (x *RemotePairStartResult) Reset() {
 	*x = RemotePairStartResult{}
-	mi := &file_wirepb_terminal_proto_msgTypes[80]
+	mi := &file_wirepb_terminal_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5986,7 +4766,7 @@ func (x *RemotePairStartResult) String() string {
 func (*RemotePairStartResult) ProtoMessage() {}
 
 func (x *RemotePairStartResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[80]
+	mi := &file_wirepb_terminal_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5999,7 +4779,7 @@ func (x *RemotePairStartResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemotePairStartResult.ProtoReflect.Descriptor instead.
 func (*RemotePairStartResult) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{80}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *RemotePairStartResult) GetType() string {
@@ -6072,7 +4852,7 @@ type RemoteLocalEnableParams struct {
 
 func (x *RemoteLocalEnableParams) Reset() {
 	*x = RemoteLocalEnableParams{}
-	mi := &file_wirepb_terminal_proto_msgTypes[81]
+	mi := &file_wirepb_terminal_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6084,7 +4864,7 @@ func (x *RemoteLocalEnableParams) String() string {
 func (*RemoteLocalEnableParams) ProtoMessage() {}
 
 func (x *RemoteLocalEnableParams) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[81]
+	mi := &file_wirepb_terminal_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6097,7 +4877,7 @@ func (x *RemoteLocalEnableParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteLocalEnableParams.ProtoReflect.Descriptor instead.
 func (*RemoteLocalEnableParams) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{81}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *RemoteLocalEnableParams) GetLocalWebAddr() string {
@@ -6158,7 +4938,7 @@ type RemoteLocalStatus struct {
 
 func (x *RemoteLocalStatus) Reset() {
 	*x = RemoteLocalStatus{}
-	mi := &file_wirepb_terminal_proto_msgTypes[82]
+	mi := &file_wirepb_terminal_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6170,7 +4950,7 @@ func (x *RemoteLocalStatus) String() string {
 func (*RemoteLocalStatus) ProtoMessage() {}
 
 func (x *RemoteLocalStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[82]
+	mi := &file_wirepb_terminal_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6183,7 +4963,7 @@ func (x *RemoteLocalStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteLocalStatus.ProtoReflect.Descriptor instead.
 func (*RemoteLocalStatus) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{82}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *RemoteLocalStatus) GetEnabled() bool {
@@ -6261,7 +5041,7 @@ type TerminalGridMetadata struct {
 
 func (x *TerminalGridMetadata) Reset() {
 	*x = TerminalGridMetadata{}
-	mi := &file_wirepb_terminal_proto_msgTypes[83]
+	mi := &file_wirepb_terminal_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6273,7 +5053,7 @@ func (x *TerminalGridMetadata) String() string {
 func (*TerminalGridMetadata) ProtoMessage() {}
 
 func (x *TerminalGridMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[83]
+	mi := &file_wirepb_terminal_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6286,7 +5066,7 @@ func (x *TerminalGridMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalGridMetadata.ProtoReflect.Descriptor instead.
 func (*TerminalGridMetadata) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{83}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *TerminalGridMetadata) GetStoreVersion() int32 {
@@ -6391,115 +5171,10 @@ const file_wirepb_terminal_proto_rawDesc = "" +
 	"\x05error\x18\x02 \x01(\v2$.termx.protocol.wirepb.ProtocolErrorR\x05error\".\n" +
 	"\x04Size\x12\x12\n" +
 	"\x04cols\x18\x01 \x01(\rR\x04cols\x12\x12\n" +
-	"\x04rows\x18\x02 \x01(\rR\x04rows\"\xe2\x04\n" +
-	"\fTerminalInfo\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
-	"\acommand\x18\x03 \x03(\tR\acommand\x12A\n" +
-	"\x04tags\x18\x04 \x03(\v2-.termx.protocol.wirepb.TerminalInfo.TagsEntryR\x04tags\x12/\n" +
-	"\x04size\x18\x05 \x01(\v2\x1b.termx.protocol.wirepb.SizeR\x04size\x12\x14\n" +
-	"\x05state\x18\x06 \x01(\tR\x05state\x12\x10\n" +
-	"\x03cwd\x18\a \x01(\tR\x03cwd\x12\x19\n" +
-	"\blive_cwd\x18\b \x01(\tR\aliveCwd\x12/\n" +
-	"\x14created_at_unix_nano\x18\t \x01(\x03R\x11createdAtUnixNano\x12 \n" +
-	"\texit_code\x18\n" +
-	" \x01(\x05H\x00R\bexitCode\x88\x01\x01\x12Q\n" +
-	"\x10resize_ownership\x18\v \x01(\v2&.termx.protocol.wirepb.ResizeOwnershipR\x0fresizeOwnership\x12A\n" +
-	"\x1dresize_owner_attachment_count\x18\f \x01(\x05R\x1aresizeOwnerAttachmentCount\x12-\n" +
-	"\x13exited_at_unix_nano\x18\r \x01(\x03R\x10exitedAtUnixNano\x1a7\n" +
-	"\tTagsEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\f\n" +
-	"\n" +
-	"_exit_code\"\xb5\x03\n" +
-	"\fCreateParams\x12\x18\n" +
-	"\acommand\x18\x01 \x03(\tR\acommand\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\x12A\n" +
-	"\x04tags\x18\x04 \x03(\v2-.termx.protocol.wirepb.CreateParams.TagsEntryR\x04tags\x12/\n" +
-	"\x04size\x18\x05 \x01(\v2\x1b.termx.protocol.wirepb.SizeR\x04size\x12\x10\n" +
-	"\x03dir\x18\x06 \x01(\tR\x03dir\x12\x10\n" +
-	"\x03env\x18\a \x03(\tR\x03env\x12'\n" +
-	"\x0fscrollback_size\x18\b \x01(\x05R\x0escrollbackSize\x120\n" +
-	"\x14scrollback_max_bytes\x18\t \x01(\x03R\x12scrollbackMaxBytes\x12;\n" +
-	"\x1ascrollback_max_age_seconds\x18\n" +
-	" \x01(\x03R\x17scrollbackMaxAgeSeconds\x1a7\n" +
-	"\tTagsEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"E\n" +
-	"\fCreateResult\x12\x1f\n" +
-	"\vterminal_id\x18\x01 \x01(\tR\n" +
-	"terminalId\x12\x14\n" +
-	"\x05state\x18\x02 \x01(\tR\x05state\",\n" +
+	"\x04rows\x18\x02 \x01(\rR\x04rows\",\n" +
 	"\tGetParams\x12\x1f\n" +
 	"\vterminal_id\x18\x01 \x01(\tR\n" +
-	"terminalId\"W\n" +
-	"\fResizeParams\x12\x1f\n" +
-	"\vterminal_id\x18\x01 \x01(\tR\n" +
-	"terminalId\x12\x12\n" +
-	"\x04cols\x18\x02 \x01(\rR\x04cols\x12\x12\n" +
-	"\x04rows\x18\x03 \x01(\rR\x04rows\"\xd4\x01\n" +
-	"\x12EnsureResizeParams\x12\x1f\n" +
-	"\vterminal_id\x18\x01 \x01(\tR\n" +
-	"terminalId\x12\x18\n" +
-	"\achannel\x18\x02 \x01(\rR\achannel\x12\x12\n" +
-	"\x04cols\x18\x03 \x01(\rR\x04cols\x12\x12\n" +
-	"\x04rows\x18\x04 \x01(\rR\x04rows\x12#\n" +
-	"\rresize_policy\x18\x05 \x01(\tR\fresizePolicy\x12\x1d\n" +
-	"\n" +
-	"surface_id\x18\x06 \x01(\tR\tsurfaceId\x12\x17\n" +
-	"\aview_id\x18\a \x01(\tR\x06viewId\"\xac\x01\n" +
-	"\x12EnsureResizeResult\x12K\n" +
-	"\x0eresize_control\x18\x01 \x01(\v2$.termx.protocol.wirepb.ResizeControlR\rresizeControl\x12/\n" +
-	"\x04size\x18\x02 \x01(\v2\x1b.termx.protocol.wirepb.SizeR\x04size\x12\x18\n" +
-	"\aresized\x18\x03 \x01(\bR\aresized\"\xad\x01\n" +
-	"\rSetTagsParams\x12\x1f\n" +
-	"\vterminal_id\x18\x01 \x01(\tR\n" +
-	"terminalId\x12B\n" +
-	"\x04tags\x18\x02 \x03(\v2..termx.protocol.wirepb.SetTagsParams.TagsEntryR\x04tags\x1a7\n" +
-	"\tTagsEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc9\x01\n" +
-	"\x11SetMetadataParams\x12\x1f\n" +
-	"\vterminal_id\x18\x01 \x01(\tR\n" +
-	"terminalId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12F\n" +
-	"\x04tags\x18\x03 \x03(\v22.termx.protocol.wirepb.SetMetadataParams.TagsEntryR\x04tags\x1a7\n" +
-	"\tTagsEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa0\x01\n" +
-	"\fAttachParams\x12\x1f\n" +
-	"\vterminal_id\x18\x01 \x01(\tR\n" +
-	"terminalId\x12\x12\n" +
-	"\x04mode\x18\x02 \x01(\tR\x04mode\x12#\n" +
-	"\rresize_policy\x18\x03 \x01(\tR\fresizePolicy\x12\x1d\n" +
-	"\n" +
-	"surface_id\x18\x04 \x01(\tR\tsurfaceId\x12\x17\n" +
-	"\aview_id\x18\x05 \x01(\tR\x06viewId\"\x89\x01\n" +
-	"\fAttachResult\x12\x12\n" +
-	"\x04mode\x18\x01 \x01(\tR\x04mode\x12\x18\n" +
-	"\achannel\x18\x02 \x01(\rR\achannel\x12K\n" +
-	"\x0eresize_control\x18\x03 \x01(\v2$.termx.protocol.wirepb.ResizeControlR\rresizeControl\"\xa3\x02\n" +
-	"\x0fResizeOwnership\x12.\n" +
-	"\x13owner_attachment_id\x18\x01 \x01(\tR\x11ownerAttachmentId\x12(\n" +
-	"\x10owner_surface_id\x18\x02 \x01(\tR\x0eownerSurfaceId\x12\"\n" +
-	"\rowner_view_id\x18\x03 \x01(\tR\vownerViewId\x12*\n" +
-	"\x11owner_remote_addr\x18\x04 \x01(\tR\x0fownerRemoteAddr\x12/\n" +
-	"\x04size\x18\x05 \x01(\v2\x1b.termx.protocol.wirepb.SizeR\x04size\x12\x1f\n" +
-	"\vsize_locked\x18\x06 \x01(\bR\n" +
-	"sizeLocked\x12\x14\n" +
-	"\x05epoch\x18\a \x01(\x04R\x05epoch\"\xa7\x02\n" +
-	"\rResizeControl\x12\x1d\n" +
-	"\n" +
-	"can_resize\x18\x01 \x01(\bR\tcanResize\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x1f\n" +
-	"\vsize_locked\x18\x03 \x01(\bR\n" +
-	"sizeLocked\x12\x1d\n" +
-	"\n" +
-	"surface_id\x18\x04 \x01(\tR\tsurfaceId\x12(\n" +
-	"\x10owner_surface_id\x18\x05 \x01(\tR\x0eownerSurfaceId\x12\"\n" +
-	"\rowner_view_id\x18\x06 \x01(\tR\vownerViewId\x12Q\n" +
-	"\x10resize_ownership\x18\a \x01(\v2&.termx.protocol.wirepb.ResizeOwnershipR\x0fresizeOwnership\"t\n" +
+	"terminalId\"t\n" +
 	"\x13TerminalCreatedData\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\acommand\x18\x02 \x03(\tR\acommand\x12/\n" +
@@ -6590,25 +5265,7 @@ const file_wirepb_terminal_proto_rawDesc = "" +
 	"\x13range_start_line_id\x18\x11 \x01(\x04R\x10rangeStartLineId\x12&\n" +
 	"\x0frange_start_col\x18\x12 \x01(\x05R\rrangeStartCol\x12)\n" +
 	"\x11range_end_line_id\x18\x13 \x01(\x04R\x0erangeEndLineId\x12\"\n" +
-	"\rrange_end_col\x18\x14 \x01(\x05R\vrangeEndCol\"O\n" +
-	"\n" +
-	"ListResult\x12A\n" +
-	"\tterminals\x18\x01 \x03(\v2#.termx.protocol.wirepb.TerminalInfoR\tterminals\"B\n" +
-	"\x12PathListDirsParams\x12\x16\n" +
-	"\x06prefix\x18\x01 \x01(\tR\x06prefix\x12\x14\n" +
-	"\x05limit\x18\x02 \x01(\x05R\x05limit\"6\n" +
-	"\fPathDirEntry\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04path\x18\x02 \x01(\tR\x04path\"\xa8\x01\n" +
-	"\x12PathListDirsResult\x12\x1b\n" +
-	"\tbase_path\x18\x01 \x01(\tR\bbasePath\x12=\n" +
-	"\aentries\x18\x02 \x03(\v2#.termx.protocol.wirepb.PathDirEntryR\aentries\x12\x18\n" +
-	"\amissing\x18\x03 \x01(\bR\amissing\x12\x1c\n" +
-	"\ttruncated\x18\x04 \x01(\bR\ttruncated\"^\n" +
-	"\x12PathDefaultsResult\x12'\n" +
-	"\x0fdefault_command\x18\x01 \x03(\tR\x0edefaultCommand\x12\x1f\n" +
-	"\vdefault_cwd\x18\x02 \x01(\tR\n" +
-	"defaultCwd\"B\n" +
+	"\rrange_end_col\x18\x14 \x01(\x05R\vrangeEndCol\"B\n" +
 	"\x0eFilePathParams\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1c\n" +
 	"\trecursive\x18\x02 \x01(\bR\trecursive\"R\n" +
@@ -6971,7 +5628,7 @@ func file_wirepb_terminal_proto_rawDescGZIP() []byte {
 }
 
 var file_wirepb_terminal_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_wirepb_terminal_proto_msgTypes = make([]protoimpl.MessageInfo, 88)
+var file_wirepb_terminal_proto_msgTypes = make([]protoimpl.MessageInfo, 67)
 var file_wirepb_terminal_proto_goTypes = []any{
 	(StorageScope)(0),                // 0: termx.protocol.wirepb.StorageScope
 	(*Empty)(nil),                    // 1: termx.protocol.wirepb.Empty
@@ -6981,147 +5638,112 @@ var file_wirepb_terminal_proto_goTypes = []any{
 	(*ProtocolError)(nil),            // 5: termx.protocol.wirepb.ProtocolError
 	(*ErrorEnvelope)(nil),            // 6: termx.protocol.wirepb.ErrorEnvelope
 	(*Size)(nil),                     // 7: termx.protocol.wirepb.Size
-	(*TerminalInfo)(nil),             // 8: termx.protocol.wirepb.TerminalInfo
-	(*CreateParams)(nil),             // 9: termx.protocol.wirepb.CreateParams
-	(*CreateResult)(nil),             // 10: termx.protocol.wirepb.CreateResult
-	(*GetParams)(nil),                // 11: termx.protocol.wirepb.GetParams
-	(*ResizeParams)(nil),             // 12: termx.protocol.wirepb.ResizeParams
-	(*EnsureResizeParams)(nil),       // 13: termx.protocol.wirepb.EnsureResizeParams
-	(*EnsureResizeResult)(nil),       // 14: termx.protocol.wirepb.EnsureResizeResult
-	(*SetTagsParams)(nil),            // 15: termx.protocol.wirepb.SetTagsParams
-	(*SetMetadataParams)(nil),        // 16: termx.protocol.wirepb.SetMetadataParams
-	(*AttachParams)(nil),             // 17: termx.protocol.wirepb.AttachParams
-	(*AttachResult)(nil),             // 18: termx.protocol.wirepb.AttachResult
-	(*ResizeOwnership)(nil),          // 19: termx.protocol.wirepb.ResizeOwnership
-	(*ResizeControl)(nil),            // 20: termx.protocol.wirepb.ResizeControl
-	(*TerminalCreatedData)(nil),      // 21: termx.protocol.wirepb.TerminalCreatedData
-	(*TerminalStateChangedData)(nil), // 22: termx.protocol.wirepb.TerminalStateChangedData
-	(*TerminalResizedData)(nil),      // 23: termx.protocol.wirepb.TerminalResizedData
-	(*TerminalRemovedData)(nil),      // 24: termx.protocol.wirepb.TerminalRemovedData
-	(*CollaboratorsRevokedData)(nil), // 25: termx.protocol.wirepb.CollaboratorsRevokedData
-	(*TerminalReadErrorData)(nil),    // 26: termx.protocol.wirepb.TerminalReadErrorData
-	(*StorageChangedData)(nil),       // 27: termx.protocol.wirepb.StorageChangedData
-	(*WorkbenchChangedData)(nil),     // 28: termx.protocol.wirepb.WorkbenchChangedData
-	(*Event)(nil),                    // 29: termx.protocol.wirepb.Event
-	(*EventsParams)(nil),             // 30: termx.protocol.wirepb.EventsParams
-	(*SnapshotParams)(nil),           // 31: termx.protocol.wirepb.SnapshotParams
-	(*GridViewportParams)(nil),       // 32: termx.protocol.wirepb.GridViewportParams
-	(*HistoryWindowParams)(nil),      // 33: termx.protocol.wirepb.HistoryWindowParams
-	(*ListResult)(nil),               // 34: termx.protocol.wirepb.ListResult
-	(*PathListDirsParams)(nil),       // 35: termx.protocol.wirepb.PathListDirsParams
-	(*PathDirEntry)(nil),             // 36: termx.protocol.wirepb.PathDirEntry
-	(*PathListDirsResult)(nil),       // 37: termx.protocol.wirepb.PathListDirsResult
-	(*PathDefaultsResult)(nil),       // 38: termx.protocol.wirepb.PathDefaultsResult
-	(*FilePathParams)(nil),           // 39: termx.protocol.wirepb.FilePathParams
-	(*FileListParams)(nil),           // 40: termx.protocol.wirepb.FileListParams
-	(*FileEntry)(nil),                // 41: termx.protocol.wirepb.FileEntry
-	(*FileListResult)(nil),           // 42: termx.protocol.wirepb.FileListResult
-	(*FilePreviewParams)(nil),        // 43: termx.protocol.wirepb.FilePreviewParams
-	(*FilePreviewResult)(nil),        // 44: termx.protocol.wirepb.FilePreviewResult
-	(*FileRenameParams)(nil),         // 45: termx.protocol.wirepb.FileRenameParams
-	(*FileCopyMoveParams)(nil),       // 46: termx.protocol.wirepb.FileCopyMoveParams
-	(*FileOperationResult)(nil),      // 47: termx.protocol.wirepb.FileOperationResult
-	(*FileBatchResult)(nil),          // 48: termx.protocol.wirepb.FileBatchResult
-	(*FileDownloadOpenParams)(nil),   // 49: termx.protocol.wirepb.FileDownloadOpenParams
-	(*FileUploadOpenParams)(nil),     // 50: termx.protocol.wirepb.FileUploadOpenParams
-	(*FileTransferOpenResult)(nil),   // 51: termx.protocol.wirepb.FileTransferOpenResult
-	(*FileTransferCancelParams)(nil), // 52: termx.protocol.wirepb.FileTransferCancelParams
-	(*FileTransferCancelResult)(nil), // 53: termx.protocol.wirepb.FileTransferCancelResult
-	(*FileTransferData)(nil),         // 54: termx.protocol.wirepb.FileTransferData
-	(*FileTransferAck)(nil),          // 55: termx.protocol.wirepb.FileTransferAck
-	(*FileTransferFinish)(nil),       // 56: termx.protocol.wirepb.FileTransferFinish
-	(*FileTransferResult)(nil),       // 57: termx.protocol.wirepb.FileTransferResult
-	(*CursorState)(nil),              // 58: termx.protocol.wirepb.CursorState
-	(*TerminalModes)(nil),            // 59: termx.protocol.wirepb.TerminalModes
-	(*RowSet)(nil),                   // 60: termx.protocol.wirepb.RowSet
-	(*Snapshot)(nil),                 // 61: termx.protocol.wirepb.Snapshot
-	(*GridViewport)(nil),             // 62: termx.protocol.wirepb.GridViewport
-	(*HistoryWindow)(nil),            // 63: termx.protocol.wirepb.HistoryWindow
-	(*StorageEntry)(nil),             // 64: termx.protocol.wirepb.StorageEntry
-	(*StorageGetParams)(nil),         // 65: termx.protocol.wirepb.StorageGetParams
-	(*StoragePutParams)(nil),         // 66: termx.protocol.wirepb.StoragePutParams
-	(*StorageDeleteParams)(nil),      // 67: termx.protocol.wirepb.StorageDeleteParams
-	(*StorageDeleteResult)(nil),      // 68: termx.protocol.wirepb.StorageDeleteResult
-	(*StorageListParams)(nil),        // 69: termx.protocol.wirepb.StorageListParams
-	(*StorageListResult)(nil),        // 70: termx.protocol.wirepb.StorageListResult
-	(*WorkbenchSnapshot)(nil),        // 71: termx.protocol.wirepb.WorkbenchSnapshot
-	(*WorkbenchWorkspace)(nil),       // 72: termx.protocol.wirepb.WorkbenchWorkspace
-	(*WorkbenchTab)(nil),             // 73: termx.protocol.wirepb.WorkbenchTab
-	(*WorkbenchPane)(nil),            // 74: termx.protocol.wirepb.WorkbenchPane
-	(*WorkbenchSplitNode)(nil),       // 75: termx.protocol.wirepb.WorkbenchSplitNode
-	(*WorkbenchGetParams)(nil),       // 76: termx.protocol.wirepb.WorkbenchGetParams
-	(*WorkbenchMutateParams)(nil),    // 77: termx.protocol.wirepb.WorkbenchMutateParams
-	(*WorkbenchMutateResult)(nil),    // 78: termx.protocol.wirepb.WorkbenchMutateResult
-	(*RemoteStatus)(nil),             // 79: termx.protocol.wirepb.RemoteStatus
-	(*RemotePairStartParams)(nil),    // 80: termx.protocol.wirepb.RemotePairStartParams
-	(*RemotePairStartResult)(nil),    // 81: termx.protocol.wirepb.RemotePairStartResult
-	(*RemoteLocalEnableParams)(nil),  // 82: termx.protocol.wirepb.RemoteLocalEnableParams
-	(*RemoteLocalStatus)(nil),        // 83: termx.protocol.wirepb.RemoteLocalStatus
-	(*TerminalGridMetadata)(nil),     // 84: termx.protocol.wirepb.TerminalGridMetadata
-	nil,                              // 85: termx.protocol.wirepb.TerminalInfo.TagsEntry
-	nil,                              // 86: termx.protocol.wirepb.CreateParams.TagsEntry
-	nil,                              // 87: termx.protocol.wirepb.SetTagsParams.TagsEntry
-	nil,                              // 88: termx.protocol.wirepb.SetMetadataParams.TagsEntry
+	(*GetParams)(nil),                // 8: termx.protocol.wirepb.GetParams
+	(*TerminalCreatedData)(nil),      // 9: termx.protocol.wirepb.TerminalCreatedData
+	(*TerminalStateChangedData)(nil), // 10: termx.protocol.wirepb.TerminalStateChangedData
+	(*TerminalResizedData)(nil),      // 11: termx.protocol.wirepb.TerminalResizedData
+	(*TerminalRemovedData)(nil),      // 12: termx.protocol.wirepb.TerminalRemovedData
+	(*CollaboratorsRevokedData)(nil), // 13: termx.protocol.wirepb.CollaboratorsRevokedData
+	(*TerminalReadErrorData)(nil),    // 14: termx.protocol.wirepb.TerminalReadErrorData
+	(*StorageChangedData)(nil),       // 15: termx.protocol.wirepb.StorageChangedData
+	(*WorkbenchChangedData)(nil),     // 16: termx.protocol.wirepb.WorkbenchChangedData
+	(*Event)(nil),                    // 17: termx.protocol.wirepb.Event
+	(*EventsParams)(nil),             // 18: termx.protocol.wirepb.EventsParams
+	(*SnapshotParams)(nil),           // 19: termx.protocol.wirepb.SnapshotParams
+	(*GridViewportParams)(nil),       // 20: termx.protocol.wirepb.GridViewportParams
+	(*HistoryWindowParams)(nil),      // 21: termx.protocol.wirepb.HistoryWindowParams
+	(*FilePathParams)(nil),           // 22: termx.protocol.wirepb.FilePathParams
+	(*FileListParams)(nil),           // 23: termx.protocol.wirepb.FileListParams
+	(*FileEntry)(nil),                // 24: termx.protocol.wirepb.FileEntry
+	(*FileListResult)(nil),           // 25: termx.protocol.wirepb.FileListResult
+	(*FilePreviewParams)(nil),        // 26: termx.protocol.wirepb.FilePreviewParams
+	(*FilePreviewResult)(nil),        // 27: termx.protocol.wirepb.FilePreviewResult
+	(*FileRenameParams)(nil),         // 28: termx.protocol.wirepb.FileRenameParams
+	(*FileCopyMoveParams)(nil),       // 29: termx.protocol.wirepb.FileCopyMoveParams
+	(*FileOperationResult)(nil),      // 30: termx.protocol.wirepb.FileOperationResult
+	(*FileBatchResult)(nil),          // 31: termx.protocol.wirepb.FileBatchResult
+	(*FileDownloadOpenParams)(nil),   // 32: termx.protocol.wirepb.FileDownloadOpenParams
+	(*FileUploadOpenParams)(nil),     // 33: termx.protocol.wirepb.FileUploadOpenParams
+	(*FileTransferOpenResult)(nil),   // 34: termx.protocol.wirepb.FileTransferOpenResult
+	(*FileTransferCancelParams)(nil), // 35: termx.protocol.wirepb.FileTransferCancelParams
+	(*FileTransferCancelResult)(nil), // 36: termx.protocol.wirepb.FileTransferCancelResult
+	(*FileTransferData)(nil),         // 37: termx.protocol.wirepb.FileTransferData
+	(*FileTransferAck)(nil),          // 38: termx.protocol.wirepb.FileTransferAck
+	(*FileTransferFinish)(nil),       // 39: termx.protocol.wirepb.FileTransferFinish
+	(*FileTransferResult)(nil),       // 40: termx.protocol.wirepb.FileTransferResult
+	(*CursorState)(nil),              // 41: termx.protocol.wirepb.CursorState
+	(*TerminalModes)(nil),            // 42: termx.protocol.wirepb.TerminalModes
+	(*RowSet)(nil),                   // 43: termx.protocol.wirepb.RowSet
+	(*Snapshot)(nil),                 // 44: termx.protocol.wirepb.Snapshot
+	(*GridViewport)(nil),             // 45: termx.protocol.wirepb.GridViewport
+	(*HistoryWindow)(nil),            // 46: termx.protocol.wirepb.HistoryWindow
+	(*StorageEntry)(nil),             // 47: termx.protocol.wirepb.StorageEntry
+	(*StorageGetParams)(nil),         // 48: termx.protocol.wirepb.StorageGetParams
+	(*StoragePutParams)(nil),         // 49: termx.protocol.wirepb.StoragePutParams
+	(*StorageDeleteParams)(nil),      // 50: termx.protocol.wirepb.StorageDeleteParams
+	(*StorageDeleteResult)(nil),      // 51: termx.protocol.wirepb.StorageDeleteResult
+	(*StorageListParams)(nil),        // 52: termx.protocol.wirepb.StorageListParams
+	(*StorageListResult)(nil),        // 53: termx.protocol.wirepb.StorageListResult
+	(*WorkbenchSnapshot)(nil),        // 54: termx.protocol.wirepb.WorkbenchSnapshot
+	(*WorkbenchWorkspace)(nil),       // 55: termx.protocol.wirepb.WorkbenchWorkspace
+	(*WorkbenchTab)(nil),             // 56: termx.protocol.wirepb.WorkbenchTab
+	(*WorkbenchPane)(nil),            // 57: termx.protocol.wirepb.WorkbenchPane
+	(*WorkbenchSplitNode)(nil),       // 58: termx.protocol.wirepb.WorkbenchSplitNode
+	(*WorkbenchGetParams)(nil),       // 59: termx.protocol.wirepb.WorkbenchGetParams
+	(*WorkbenchMutateParams)(nil),    // 60: termx.protocol.wirepb.WorkbenchMutateParams
+	(*WorkbenchMutateResult)(nil),    // 61: termx.protocol.wirepb.WorkbenchMutateResult
+	(*RemoteStatus)(nil),             // 62: termx.protocol.wirepb.RemoteStatus
+	(*RemotePairStartParams)(nil),    // 63: termx.protocol.wirepb.RemotePairStartParams
+	(*RemotePairStartResult)(nil),    // 64: termx.protocol.wirepb.RemotePairStartResult
+	(*RemoteLocalEnableParams)(nil),  // 65: termx.protocol.wirepb.RemoteLocalEnableParams
+	(*RemoteLocalStatus)(nil),        // 66: termx.protocol.wirepb.RemoteLocalStatus
+	(*TerminalGridMetadata)(nil),     // 67: termx.protocol.wirepb.TerminalGridMetadata
 }
 var file_wirepb_terminal_proto_depIdxs = []int32{
 	5,  // 0: termx.protocol.wirepb.ErrorEnvelope.error:type_name -> termx.protocol.wirepb.ProtocolError
-	85, // 1: termx.protocol.wirepb.TerminalInfo.tags:type_name -> termx.protocol.wirepb.TerminalInfo.TagsEntry
-	7,  // 2: termx.protocol.wirepb.TerminalInfo.size:type_name -> termx.protocol.wirepb.Size
-	19, // 3: termx.protocol.wirepb.TerminalInfo.resize_ownership:type_name -> termx.protocol.wirepb.ResizeOwnership
-	86, // 4: termx.protocol.wirepb.CreateParams.tags:type_name -> termx.protocol.wirepb.CreateParams.TagsEntry
-	7,  // 5: termx.protocol.wirepb.CreateParams.size:type_name -> termx.protocol.wirepb.Size
-	20, // 6: termx.protocol.wirepb.EnsureResizeResult.resize_control:type_name -> termx.protocol.wirepb.ResizeControl
-	7,  // 7: termx.protocol.wirepb.EnsureResizeResult.size:type_name -> termx.protocol.wirepb.Size
-	87, // 8: termx.protocol.wirepb.SetTagsParams.tags:type_name -> termx.protocol.wirepb.SetTagsParams.TagsEntry
-	88, // 9: termx.protocol.wirepb.SetMetadataParams.tags:type_name -> termx.protocol.wirepb.SetMetadataParams.TagsEntry
-	20, // 10: termx.protocol.wirepb.AttachResult.resize_control:type_name -> termx.protocol.wirepb.ResizeControl
-	7,  // 11: termx.protocol.wirepb.ResizeOwnership.size:type_name -> termx.protocol.wirepb.Size
-	19, // 12: termx.protocol.wirepb.ResizeControl.resize_ownership:type_name -> termx.protocol.wirepb.ResizeOwnership
-	7,  // 13: termx.protocol.wirepb.TerminalCreatedData.size:type_name -> termx.protocol.wirepb.Size
-	7,  // 14: termx.protocol.wirepb.TerminalResizedData.old_size:type_name -> termx.protocol.wirepb.Size
-	7,  // 15: termx.protocol.wirepb.TerminalResizedData.new_size:type_name -> termx.protocol.wirepb.Size
-	0,  // 16: termx.protocol.wirepb.StorageChangedData.scope:type_name -> termx.protocol.wirepb.StorageScope
-	21, // 17: termx.protocol.wirepb.Event.created:type_name -> termx.protocol.wirepb.TerminalCreatedData
-	22, // 18: termx.protocol.wirepb.Event.state_changed:type_name -> termx.protocol.wirepb.TerminalStateChangedData
-	23, // 19: termx.protocol.wirepb.Event.resized:type_name -> termx.protocol.wirepb.TerminalResizedData
-	24, // 20: termx.protocol.wirepb.Event.removed:type_name -> termx.protocol.wirepb.TerminalRemovedData
-	25, // 21: termx.protocol.wirepb.Event.collaborators_revoked:type_name -> termx.protocol.wirepb.CollaboratorsRevokedData
-	26, // 22: termx.protocol.wirepb.Event.read_error:type_name -> termx.protocol.wirepb.TerminalReadErrorData
-	27, // 23: termx.protocol.wirepb.Event.storage:type_name -> termx.protocol.wirepb.StorageChangedData
-	28, // 24: termx.protocol.wirepb.Event.workbench:type_name -> termx.protocol.wirepb.WorkbenchChangedData
-	0,  // 25: termx.protocol.wirepb.EventsParams.storage_scope:type_name -> termx.protocol.wirepb.StorageScope
-	8,  // 26: termx.protocol.wirepb.ListResult.terminals:type_name -> termx.protocol.wirepb.TerminalInfo
-	36, // 27: termx.protocol.wirepb.PathListDirsResult.entries:type_name -> termx.protocol.wirepb.PathDirEntry
-	41, // 28: termx.protocol.wirepb.FileListResult.entries:type_name -> termx.protocol.wirepb.FileEntry
-	41, // 29: termx.protocol.wirepb.FilePreviewResult.entry:type_name -> termx.protocol.wirepb.FileEntry
-	47, // 30: termx.protocol.wirepb.FileBatchResult.results:type_name -> termx.protocol.wirepb.FileOperationResult
-	7,  // 31: termx.protocol.wirepb.Snapshot.size:type_name -> termx.protocol.wirepb.Size
-	60, // 32: termx.protocol.wirepb.Snapshot.screen:type_name -> termx.protocol.wirepb.RowSet
-	60, // 33: termx.protocol.wirepb.Snapshot.scrollback:type_name -> termx.protocol.wirepb.RowSet
-	58, // 34: termx.protocol.wirepb.Snapshot.cursor:type_name -> termx.protocol.wirepb.CursorState
-	59, // 35: termx.protocol.wirepb.Snapshot.modes:type_name -> termx.protocol.wirepb.TerminalModes
-	7,  // 36: termx.protocol.wirepb.GridViewport.size:type_name -> termx.protocol.wirepb.Size
-	60, // 37: termx.protocol.wirepb.GridViewport.rows:type_name -> termx.protocol.wirepb.RowSet
-	7,  // 38: termx.protocol.wirepb.HistoryWindow.size:type_name -> termx.protocol.wirepb.Size
-	60, // 39: termx.protocol.wirepb.HistoryWindow.rows:type_name -> termx.protocol.wirepb.RowSet
-	0,  // 40: termx.protocol.wirepb.StorageEntry.scope:type_name -> termx.protocol.wirepb.StorageScope
-	0,  // 41: termx.protocol.wirepb.StorageGetParams.scope:type_name -> termx.protocol.wirepb.StorageScope
-	0,  // 42: termx.protocol.wirepb.StoragePutParams.scope:type_name -> termx.protocol.wirepb.StorageScope
-	0,  // 43: termx.protocol.wirepb.StorageDeleteParams.scope:type_name -> termx.protocol.wirepb.StorageScope
-	0,  // 44: termx.protocol.wirepb.StorageDeleteResult.scope:type_name -> termx.protocol.wirepb.StorageScope
-	0,  // 45: termx.protocol.wirepb.StorageListParams.scope:type_name -> termx.protocol.wirepb.StorageScope
-	64, // 46: termx.protocol.wirepb.StorageListResult.entries:type_name -> termx.protocol.wirepb.StorageEntry
-	72, // 47: termx.protocol.wirepb.WorkbenchSnapshot.workspaces:type_name -> termx.protocol.wirepb.WorkbenchWorkspace
-	73, // 48: termx.protocol.wirepb.WorkbenchWorkspace.tabs:type_name -> termx.protocol.wirepb.WorkbenchTab
-	74, // 49: termx.protocol.wirepb.WorkbenchTab.panes:type_name -> termx.protocol.wirepb.WorkbenchPane
-	75, // 50: termx.protocol.wirepb.WorkbenchTab.root_split:type_name -> termx.protocol.wirepb.WorkbenchSplitNode
-	75, // 51: termx.protocol.wirepb.WorkbenchSplitNode.children:type_name -> termx.protocol.wirepb.WorkbenchSplitNode
-	71, // 52: termx.protocol.wirepb.WorkbenchMutateResult.snapshot:type_name -> termx.protocol.wirepb.WorkbenchSnapshot
-	53, // [53:53] is the sub-list for method output_type
-	53, // [53:53] is the sub-list for method input_type
-	53, // [53:53] is the sub-list for extension type_name
-	53, // [53:53] is the sub-list for extension extendee
-	0,  // [0:53] is the sub-list for field type_name
+	7,  // 1: termx.protocol.wirepb.TerminalCreatedData.size:type_name -> termx.protocol.wirepb.Size
+	7,  // 2: termx.protocol.wirepb.TerminalResizedData.old_size:type_name -> termx.protocol.wirepb.Size
+	7,  // 3: termx.protocol.wirepb.TerminalResizedData.new_size:type_name -> termx.protocol.wirepb.Size
+	0,  // 4: termx.protocol.wirepb.StorageChangedData.scope:type_name -> termx.protocol.wirepb.StorageScope
+	9,  // 5: termx.protocol.wirepb.Event.created:type_name -> termx.protocol.wirepb.TerminalCreatedData
+	10, // 6: termx.protocol.wirepb.Event.state_changed:type_name -> termx.protocol.wirepb.TerminalStateChangedData
+	11, // 7: termx.protocol.wirepb.Event.resized:type_name -> termx.protocol.wirepb.TerminalResizedData
+	12, // 8: termx.protocol.wirepb.Event.removed:type_name -> termx.protocol.wirepb.TerminalRemovedData
+	13, // 9: termx.protocol.wirepb.Event.collaborators_revoked:type_name -> termx.protocol.wirepb.CollaboratorsRevokedData
+	14, // 10: termx.protocol.wirepb.Event.read_error:type_name -> termx.protocol.wirepb.TerminalReadErrorData
+	15, // 11: termx.protocol.wirepb.Event.storage:type_name -> termx.protocol.wirepb.StorageChangedData
+	16, // 12: termx.protocol.wirepb.Event.workbench:type_name -> termx.protocol.wirepb.WorkbenchChangedData
+	0,  // 13: termx.protocol.wirepb.EventsParams.storage_scope:type_name -> termx.protocol.wirepb.StorageScope
+	24, // 14: termx.protocol.wirepb.FileListResult.entries:type_name -> termx.protocol.wirepb.FileEntry
+	24, // 15: termx.protocol.wirepb.FilePreviewResult.entry:type_name -> termx.protocol.wirepb.FileEntry
+	30, // 16: termx.protocol.wirepb.FileBatchResult.results:type_name -> termx.protocol.wirepb.FileOperationResult
+	7,  // 17: termx.protocol.wirepb.Snapshot.size:type_name -> termx.protocol.wirepb.Size
+	43, // 18: termx.protocol.wirepb.Snapshot.screen:type_name -> termx.protocol.wirepb.RowSet
+	43, // 19: termx.protocol.wirepb.Snapshot.scrollback:type_name -> termx.protocol.wirepb.RowSet
+	41, // 20: termx.protocol.wirepb.Snapshot.cursor:type_name -> termx.protocol.wirepb.CursorState
+	42, // 21: termx.protocol.wirepb.Snapshot.modes:type_name -> termx.protocol.wirepb.TerminalModes
+	7,  // 22: termx.protocol.wirepb.GridViewport.size:type_name -> termx.protocol.wirepb.Size
+	43, // 23: termx.protocol.wirepb.GridViewport.rows:type_name -> termx.protocol.wirepb.RowSet
+	7,  // 24: termx.protocol.wirepb.HistoryWindow.size:type_name -> termx.protocol.wirepb.Size
+	43, // 25: termx.protocol.wirepb.HistoryWindow.rows:type_name -> termx.protocol.wirepb.RowSet
+	0,  // 26: termx.protocol.wirepb.StorageEntry.scope:type_name -> termx.protocol.wirepb.StorageScope
+	0,  // 27: termx.protocol.wirepb.StorageGetParams.scope:type_name -> termx.protocol.wirepb.StorageScope
+	0,  // 28: termx.protocol.wirepb.StoragePutParams.scope:type_name -> termx.protocol.wirepb.StorageScope
+	0,  // 29: termx.protocol.wirepb.StorageDeleteParams.scope:type_name -> termx.protocol.wirepb.StorageScope
+	0,  // 30: termx.protocol.wirepb.StorageDeleteResult.scope:type_name -> termx.protocol.wirepb.StorageScope
+	0,  // 31: termx.protocol.wirepb.StorageListParams.scope:type_name -> termx.protocol.wirepb.StorageScope
+	47, // 32: termx.protocol.wirepb.StorageListResult.entries:type_name -> termx.protocol.wirepb.StorageEntry
+	55, // 33: termx.protocol.wirepb.WorkbenchSnapshot.workspaces:type_name -> termx.protocol.wirepb.WorkbenchWorkspace
+	56, // 34: termx.protocol.wirepb.WorkbenchWorkspace.tabs:type_name -> termx.protocol.wirepb.WorkbenchTab
+	57, // 35: termx.protocol.wirepb.WorkbenchTab.panes:type_name -> termx.protocol.wirepb.WorkbenchPane
+	58, // 36: termx.protocol.wirepb.WorkbenchTab.root_split:type_name -> termx.protocol.wirepb.WorkbenchSplitNode
+	58, // 37: termx.protocol.wirepb.WorkbenchSplitNode.children:type_name -> termx.protocol.wirepb.WorkbenchSplitNode
+	54, // 38: termx.protocol.wirepb.WorkbenchMutateResult.snapshot:type_name -> termx.protocol.wirepb.WorkbenchSnapshot
+	39, // [39:39] is the sub-list for method output_type
+	39, // [39:39] is the sub-list for method input_type
+	39, // [39:39] is the sub-list for extension type_name
+	39, // [39:39] is the sub-list for extension extendee
+	0,  // [0:39] is the sub-list for field type_name
 }
 
 func init() { file_wirepb_terminal_proto_init() }
@@ -7129,15 +5751,14 @@ func file_wirepb_terminal_proto_init() {
 	if File_wirepb_terminal_proto != nil {
 		return
 	}
-	file_wirepb_terminal_proto_msgTypes[7].OneofWrappers = []any{}
-	file_wirepb_terminal_proto_msgTypes[21].OneofWrappers = []any{}
+	file_wirepb_terminal_proto_msgTypes[9].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wirepb_terminal_proto_rawDesc), len(file_wirepb_terminal_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   88,
+			NumMessages:   67,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

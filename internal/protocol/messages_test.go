@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"bytes"
 	"reflect"
 	"testing"
 	"time"
@@ -171,39 +170,9 @@ func TestCompactRowFromCellsCanPreserveTrailingBlankCells(t *testing.T) {
 	}
 }
 
-func TestTerminalExitMetadataCodecRoundTrip(t *testing.T) {
+func TestTerminalExitEventCodecRoundTrip(t *testing.T) {
 	exitedAt := time.Unix(1712345678, 987654321).UTC()
-	resourceSampledAt := exitedAt.Add(-time.Minute)
 	exitCode := 23
-	result, err := EncodeMethodResult("list", ListResult{Terminals: []TerminalInfo{{
-		ID:        "term-1",
-		Name:      "job",
-		Command:   []string{"bash", "-lc", "make test"},
-		State:     "exited",
-		ExitCode:  &exitCode,
-		ExitedAt:  exitedAt,
-		CreatedAt: exitedAt.Add(-time.Hour),
-		Resources: TerminalResourceUsage{
-			PID:            4321,
-			CPUPercentX100: 1234,
-			MemoryBytes:    64 * 1024 * 1024,
-			SampledAt:      resourceSampledAt,
-		},
-	}}})
-	if err != nil {
-		t.Fatalf("encode list result: %v", err)
-	}
-	var decoded ListResult
-	if err := DecodeMethodResult("list", result, &decoded); err != nil {
-		t.Fatalf("decode list result: %v", err)
-	}
-	if len(decoded.Terminals) != 1 || decoded.Terminals[0].ExitCode == nil || *decoded.Terminals[0].ExitCode != exitCode || !decoded.Terminals[0].ExitedAt.Equal(exitedAt) {
-		t.Fatalf("terminal exit metadata did not round trip: %#v", decoded)
-	}
-	if got := decoded.Terminals[0].Resources; got.PID != 4321 || got.CPUPercentX100 != 1234 || got.MemoryBytes != 64*1024*1024 || !got.SampledAt.Equal(resourceSampledAt) {
-		t.Fatalf("terminal resource metadata did not round trip: %#v", got)
-	}
-
 	payload, err := EncodeEventPayload(Event{Type: EventTerminalStateChanged, TerminalID: "term-1", StateChanged: &TerminalStateChangedData{
 		NewState: "exited",
 		ExitCode: &exitCode,
@@ -463,54 +432,5 @@ func TestHistoryBacklogStatusControlPayloadRoundTrip(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("history backlog status mismatch:\n got: %#v\nwant: %#v", got, want)
-	}
-}
-
-func TestDetachParamsControlPayloadRoundTripKeepsAttachmentIdentity(t *testing.T) {
-	params := DetachParams{
-		TerminalID: "term-1",
-		Channel:    7,
-		SurfaceID:  "surface-1",
-		ViewID:     "view-1",
-	}
-	encoded, err := EncodeMethodParams("detach", params)
-	if err != nil {
-		t.Fatalf("encode detach params failed: %v", err)
-	}
-	decoded, err := DecodeMethodParams("detach", encoded)
-	if err != nil {
-		t.Fatalf("decode detach params failed: %v", err)
-	}
-	got, ok := decoded.(DetachParams)
-	if !ok {
-		t.Fatalf("expected DetachParams, got %T", decoded)
-	}
-	if got != params {
-		t.Fatalf("unexpected decoded detach params: %#v", got)
-	}
-}
-
-func TestInputParamsControlPayloadRoundTripKeepsViewIdentityAndBytes(t *testing.T) {
-	params := InputParams{
-		TerminalID: "term-1",
-		Channel:    7,
-		SurfaceID:  "surface-1",
-		ViewID:     "view-1",
-		Data:       []byte("ls\n\x00raw"),
-	}
-	encoded, err := EncodeMethodParams("input", params)
-	if err != nil {
-		t.Fatalf("encode input params failed: %v", err)
-	}
-	decoded, err := DecodeMethodParams("input", encoded)
-	if err != nil {
-		t.Fatalf("decode input params failed: %v", err)
-	}
-	got, ok := decoded.(InputParams)
-	if !ok {
-		t.Fatalf("expected InputParams, got %T", decoded)
-	}
-	if got.TerminalID != params.TerminalID || got.Channel != params.Channel || got.SurfaceID != params.SurfaceID || got.ViewID != params.ViewID || !bytes.Equal(got.Data, params.Data) {
-		t.Fatalf("unexpected decoded input params: %#v", got)
 	}
 }

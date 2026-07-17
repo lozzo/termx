@@ -38,109 +38,8 @@ message Size {
   uint32 rows = 2;
 }
 
-message TerminalInfo {
-  string id = 1;
-  string name = 2;
-  repeated string command = 3;
-  map<string, string> tags = 4;
-  Size size = 5;
-  string state = 6;
-  string cwd = 7;
-  string live_cwd = 8;
-  int64 created_at_unix_nano = 9;
-  optional int32 exit_code = 10;
-  ResizeOwnership resize_ownership = 11;
-  int32 resize_owner_attachment_count = 12;
-  int64 exited_at_unix_nano = 13;
-}
-
-message CreateParams {
-  repeated string command = 1;
-  string id = 2;
-  string name = 3;
-  map<string, string> tags = 4;
-  Size size = 5;
-  string dir = 6;
-  repeated string env = 7;
-  int32 scrollback_size = 8;
-  int64 scrollback_max_bytes = 9;
-  int64 scrollback_max_age_seconds = 10;
-}
-
-message CreateResult {
-  string terminal_id = 1;
-  string state = 2;
-}
-
 message GetParams {
   string terminal_id = 1;
-}
-
-message ResizeParams {
-  string terminal_id = 1;
-  uint32 cols = 2;
-  uint32 rows = 3;
-}
-
-message EnsureResizeParams {
-  string terminal_id = 1;
-  uint32 channel = 2;
-  uint32 cols = 3;
-  uint32 rows = 4;
-  string resize_policy = 5;
-  string surface_id = 6;
-  string view_id = 7;
-}
-
-message EnsureResizeResult {
-  ResizeControl resize_control = 1;
-  Size size = 2;
-  bool resized = 3;
-}
-
-message SetTagsParams {
-  string terminal_id = 1;
-  map<string, string> tags = 2;
-}
-
-message SetMetadataParams {
-  string terminal_id = 1;
-  string name = 2;
-  map<string, string> tags = 3;
-}
-
-message AttachParams {
-  string terminal_id = 1;
-  string mode = 2;
-  string resize_policy = 3;
-  string surface_id = 4;
-  string view_id = 5;
-}
-
-message AttachResult {
-  string mode = 1;
-  uint32 channel = 2;
-  ResizeControl resize_control = 3;
-}
-
-message ResizeOwnership {
-  string owner_attachment_id = 1;
-  string owner_surface_id = 2;
-  string owner_view_id = 3;
-  string owner_remote_addr = 4;
-  Size size = 5;
-  bool size_locked = 6;
-  uint64 epoch = 7;
-}
-
-message ResizeControl {
-  bool can_resize = 1;
-  string reason = 2;
-  bool size_locked = 3;
-  string surface_id = 4;
-  string owner_surface_id = 5;
-  string owner_view_id = 6;
-  ResizeOwnership resize_ownership = 7;
 }
 
 message TerminalCreatedData {
@@ -251,32 +150,6 @@ message HistoryWindowParams {
   int32 range_start_col = 18;
   uint64 range_end_line_id = 19;
   int32 range_end_col = 20;
-}
-
-message ListResult {
-  repeated TerminalInfo terminals = 1;
-}
-
-message PathListDirsParams {
-  string prefix = 1;
-  int32 limit = 2;
-}
-
-message PathDirEntry {
-  string name = 1;
-  string path = 2;
-}
-
-message PathListDirsResult {
-  string base_path = 1;
-  repeated PathDirEntry entries = 2;
-  bool missing = 3;
-  bool truncated = 4;
-}
-
-message PathDefaultsResult {
-  repeated string default_command = 1;
-  string default_cwd = 2;
 }
 
 message FilePathParams {

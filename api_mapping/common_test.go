@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/proto/apipb"
 	"google.golang.org/protobuf/encoding/protowire"
 )
@@ -67,10 +66,10 @@ func TestCoreErrorsMapToStableCodesAndRetryability(t *testing.T) {
 		code      apipb.ApiErrorCode
 		retryable bool
 	}{
-		{err: corev2.ErrTerminalNotFound, code: apipb.ApiErrorCode_API_ERROR_CODE_NOT_FOUND},
-		{err: corev2.ErrDuplicateTerminal, code: apipb.ApiErrorCode_API_ERROR_CODE_CONFLICT},
-		{err: corev2.ErrInvalidCommand, code: apipb.ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST},
-		{err: corev2.ErrServerClosed, code: apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE, retryable: true},
+		{err: &ClassifiedError{Err: errors.New("not found"), Code: apipb.ApiErrorCode_API_ERROR_CODE_NOT_FOUND}, code: apipb.ApiErrorCode_API_ERROR_CODE_NOT_FOUND},
+		{err: &ClassifiedError{Err: errors.New("conflict"), Code: apipb.ApiErrorCode_API_ERROR_CODE_CONFLICT}, code: apipb.ApiErrorCode_API_ERROR_CODE_CONFLICT},
+		{err: &ClassifiedError{Err: errors.New("invalid"), Code: apipb.ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST}, code: apipb.ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST},
+		{err: &ClassifiedError{Err: errors.New("unavailable"), Code: apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE, Retryable: true}, code: apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE, retryable: true},
 	}
 	for _, test := range tests {
 		mapped := ErrorToProto(test.err, true)

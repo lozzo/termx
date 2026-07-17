@@ -14,6 +14,7 @@ import (
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/shared/filelock"
 )
 
@@ -138,8 +139,8 @@ func TestTerminalCommandsRouteDuplicateIDsToOwningLocalEndpoint(t *testing.T) {
 	defer closeWest()
 
 	for _, client := range []*protocol.Client{localClient, westClient} {
-		if _, err := client.Create(context.Background(), protocol.CreateParams{
-			ID: "same", Name: "same", Command: []string{"/bin/sh", "-c", "sleep 30"}, Size: protocol.Size{Cols: 80, Rows: 24},
+		if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{
+			TerminalId: "same", Name: "same", Command: []string{"/bin/sh", "-c", "sleep 30"}, Size: &apipb.TerminalSize{Cols: 80, Rows: 24},
 		}); err != nil {
 			t.Fatal(err)
 		}

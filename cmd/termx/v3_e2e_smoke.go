@@ -13,6 +13,7 @@ import (
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/tui/app"
 	"github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/render"
@@ -83,29 +84,33 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	}
 	defer clipboardStorageClient.Close()
 
-	created, err := client.Create(ctx, protocol.CreateParams{
-		ID:      newV3TerminalID(),
-		Name:    "v3-e2e-smoke",
+	application, err := newLocalApplicationSession(client)
+	if err != nil {
+		return v3E2ESmokeResult{}, err
+	}
+	created, err := application.TerminalCreate(ctx, &apipb.TerminalCreateCommand{Terminal: &apipb.TerminalCreateSpec{
+		TerminalId: newV3TerminalID(), Name: "v3-e2e-smoke",
 		Command: []string{"/bin/sh", "-c", "printf 'alpha\\nbeta\\n'; while IFS= read -r line; do printf 'echo:%s\\n' \"$line\"; done"},
-		Size:    protocol.Size{Cols: 80, Rows: 24},
-	})
+		Size:    &apipb.TerminalSize{Cols: 80, Rows: 24},
+	}})
 	if err != nil {
 		return v3E2ESmokeResult{}, err
 	}
 
+	createdID := created.GetTerminal().GetRef().GetTerminalId()
 	host := app.NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
-	runtime := newV3InteractiveRuntimeWithOptions(created.TerminalID, 80, 24, client, workbenchStorageClient, clipboardStorageClient, host, nil, v3InteractiveRuntimeOptions{
+	runtime := newV3InteractiveRuntimeWithOptions(createdID, 80, 24, client, workbenchStorageClient, clipboardStorageClient, host, nil, v3InteractiveRuntimeOptions{
 		InitialEndpointID:  state.DefaultEndpointID,
 		RuntimeSurfaceID:   "v3-e2e-smoke",
 		ConnectionRegistry: endpointdomain.DefaultRegistry(),
 	})
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
-		TerminalID:   created.TerminalID,
+		TerminalID:   createdID,
 		Cols:         80,
 		Rows:         24,
 		Mode:         "collaborator",
-		ResizePolicy: protocol.ResizePolicyFollower,
+		ResizePolicy: state.TerminalResizeRoleFollower,
 		SurfaceID:    "v3-e2e-smoke",
 		ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
 	}}); err != nil {
@@ -211,14 +216,14 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	if err := validateV3E2EFrameSize(host.Frames(), 100, 40); err != nil {
 		return v3E2ESmokeResult{}, err
 	}
-	if err := client.Kill(ctx, created.TerminalID); err != nil {
+	if err := application.TerminalKill(ctx, &apipb.TerminalKillCommand{Terminal: &apipb.TerminalRef{EndpointId: string(endpointdomain.DefaultEndpointID), TerminalId: createdID}}); err != nil {
 		return v3E2ESmokeResult{}, err
 	}
-	if err := client.Remove(ctx, created.TerminalID); err != nil {
+	if err := application.TerminalRemove(ctx, &apipb.TerminalRemoveCommand{Terminal: &apipb.TerminalRef{EndpointId: string(endpointdomain.DefaultEndpointID), TerminalId: createdID}}); err != nil {
 		return v3E2ESmokeResult{}, err
 	}
 	return v3E2ESmokeResult{
-		TerminalID:   created.TerminalID,
+		TerminalID:   createdID,
 		Frames:       len(host.Frames()),
 		ViewportCols: runtime.State().Viewport.Cols,
 		ViewportRows: runtime.State().Viewport.Rows,

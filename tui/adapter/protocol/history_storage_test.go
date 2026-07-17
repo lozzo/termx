@@ -2,8 +2,8 @@ package protocoladapter
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
-	. "github.com/lozzow/termx/tui/port"
 	"go/parser"
 	"go/token"
 	"os"
@@ -13,7 +13,10 @@ import (
 	"testing"
 	"time"
 
+	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
+	. "github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -49,10 +52,10 @@ func (client *fakeProtocolHistoryClient) ReleaseHistory(_ context.Context, param
 }
 
 type fakeProtocolTerminalClient struct {
-	attachParams              []protocol.AttachParams
-	detachParams              []protocol.DetachParams
+	attachParams              []*apipb.TerminalAttachCommand
+	detachResources           []*apipb.ResourceHandle
 	listCalls                 int
-	createParams              []protocol.CreateParams
+	createParams              []*apipb.TerminalCreateSpec
 	restartIDs                []string
 	killIDs                   []string
 	removeIDs                 []string
@@ -61,12 +64,8 @@ type fakeProtocolTerminalClient struct {
 	metadataTags              []map[string]string
 	tagIDs                    []string
 	tagSets                   []map[string]string
-	inputChannel              []uint16
-	inputData                 [][]byte
-	inputParams               []protocol.InputParams
-	resizeChannels            []uint16
-	resizes                   []protocol.Size
-	ensureParams              []protocol.EnsureResizeParams
+	inputCommands             []*apipb.TerminalInputCommand
+	resizeCommands            []*apipb.TerminalResizeCommand
 	eventParams               []protocol.EventsParams
 	eventCh                   chan protocol.Event
 	eventSubscribers          []fakeProtocolEventSubscriber
@@ -78,18 +77,20 @@ type fakeProtocolTerminalClient struct {
 	liveScreenIDs             []string
 	liveScreenResult          *protocol.NativeScreenSnapshot
 	liveScreenResults         map[string]*protocol.NativeScreenSnapshot
-	attachResult              *protocol.AttachResult
-	listResult                *protocol.ListResult
-	createResult              *protocol.CreateResult
-	pathListParams            []protocol.PathListDirsParams
-	pathListResult            *protocol.PathListDirsResult
+	attachResult              *apipb.TerminalAttachResult
+	attachChannel             uint16
+	listResult                *apipb.TerminalListResult
+	createResult              *apipb.TerminalCreateResult
+	pathListParams            []*apipb.PathListDirectoriesCommand
+	pathListResult            *apipb.PathListDirectoriesResult
 	pathDefaultsCalls         int
-	pathDefaultsResult        *protocol.PathDefaultsResult
+	pathDefaultsResult        *apipb.TerminalDefaultsResult
 	storageGets               []protocol.StorageGetParams
 	storagePuts               []protocol.StoragePutParams
 	storageEntry              *protocol.StorageEntry
 	storageGetErr             error
 	storagePutErr             error
+	applicationAttachments    map[uint16]*apipb.ResourceHandle
 }
 
 type fakeProtocolEventSubscriber struct {
@@ -97,17 +98,125 @@ type fakeProtocolEventSubscriber struct {
 	ch     chan protocol.Event
 }
 
-func (client *fakeProtocolTerminalClient) AttachWithOptions(_ context.Context, params protocol.AttachParams) (*protocol.AttachResult, error) {
-	client.attachParams = append(client.attachParams, params)
-	if client.attachResult != nil {
-		return client.attachResult, nil
+func newFakeProtocolTerminalServiceAdapter(t *testing.T, client *fakeProtocolTerminalClient) ProtocolTerminalServiceAdapter {
+	t.Helper()
+	application, err := clientruntime.NewApplicationSession(clientruntime.EndpointSessionStamp{EndpointID: "local", RouteID: "test", Generation: 1}, client)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return &protocol.AttachResult{Channel: 11}, nil
+	return ProtocolTerminalServiceAdapter{Client: client, Application: application}
 }
 
-func (client *fakeProtocolTerminalClient) Detach(_ context.Context, params protocol.DetachParams) error {
-	client.detachParams = append(client.detachParams, params)
-	return nil
+func (client *fakeProtocolTerminalClient) ExecuteApplication(_ context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+	requestID := command.GetContext().GetRequestId()
+	origin := command.GetContext().GetSession()
+	ack := func() *apipb.ResultEnvelope {
+		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: origin, Result: &apipb.ResultEnvelope_Acknowledge{Acknowledge: &apipb.AcknowledgeResult{}}}
+	}
+	switch value := command.GetCommand().(type) {
+	case *apipb.CommandEnvelope_TerminalAttach:
+		params := value.TerminalAttach
+		client.attachParams = append(client.attachParams, params)
+		channel := uint16(11)
+		if client.attachChannel != 0 {
+			channel = client.attachChannel
+		}
+		token := make([]byte, 8)
+		binary.BigEndian.PutUint16(token[:2], channel)
+		resource := &apipb.ResourceHandle{OpaqueToken: token, Kind: apipb.ResourceKind_RESOURCE_KIND_TERMINAL_ATTACHMENT, Session: origin, Generation: 1}
+		if client.applicationAttachments == nil {
+			client.applicationAttachments = make(map[uint16]*apipb.ResourceHandle)
+		}
+		client.applicationAttachments[channel] = resource
+		result := client.attachResult
+		if result == nil {
+			result = &apipb.TerminalAttachResult{Mode: params.GetMode(), ResizePolicy: params.GetResizePolicy(), Size: &apipb.TerminalSize{Cols: 80, Rows: 24}, ResizeControl: &apipb.ResizeControl{CanResize: true, Reason: apipb.ResizeControlReason_RESIZE_CONTROL_REASON_OWNER}}
+		}
+		result.Attachment = &apipb.AttachmentHandle{Resource: resource, Terminal: params.GetTerminal(), SurfaceId: params.GetSurfaceId(), ViewId: params.GetViewId()}
+		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: origin, Result: &apipb.ResultEnvelope_TerminalAttach{TerminalAttach: result}}, nil
+	case *apipb.CommandEnvelope_TerminalDetach:
+		channel, _ := client.ApplicationAttachmentChannel(value.TerminalDetach.GetAttachment())
+		client.detachResources = append(client.detachResources, value.TerminalDetach.GetAttachment())
+		delete(client.applicationAttachments, channel)
+		return ack(), nil
+	case *apipb.CommandEnvelope_TerminalList:
+		client.listCalls++
+		result := &apipb.TerminalListResult{}
+		if client.listResult != nil {
+			result = client.listResult
+		}
+		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: origin, Result: &apipb.ResultEnvelope_TerminalList{TerminalList: result}}, nil
+	case *apipb.CommandEnvelope_TerminalCreate:
+		spec := value.TerminalCreate.GetTerminal()
+		client.createParams = append(client.createParams, spec)
+		terminalID := spec.GetTerminalId()
+		stateValue := apipb.TerminalState_TERMINAL_STATE_RUNNING
+		if client.createResult != nil {
+			return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: origin, Result: &apipb.ResultEnvelope_TerminalCreate{TerminalCreate: client.createResult}}, nil
+		}
+		result := &apipb.TerminalCreateResult{Terminal: &apipb.TerminalInfo{Ref: &apipb.TerminalRef{EndpointId: origin.GetEndpointId(), TerminalId: terminalID}, State: stateValue, Size: spec.GetSize()}}
+		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: origin, Result: &apipb.ResultEnvelope_TerminalCreate{TerminalCreate: result}}, nil
+	case *apipb.CommandEnvelope_TerminalRestart:
+		client.restartIDs = append(client.restartIDs, value.TerminalRestart.GetTerminal().GetTerminalId())
+		return ack(), nil
+	case *apipb.CommandEnvelope_TerminalKill:
+		client.killIDs = append(client.killIDs, value.TerminalKill.GetTerminal().GetTerminalId())
+		return ack(), nil
+	case *apipb.CommandEnvelope_TerminalRemove:
+		client.removeIDs = append(client.removeIDs, value.TerminalRemove.GetTerminal().GetTerminalId())
+		return ack(), nil
+	case *apipb.CommandEnvelope_TerminalSetMetadata:
+		client.metadataIDs = append(client.metadataIDs, value.TerminalSetMetadata.GetTerminal().GetTerminalId())
+		client.metadataNames = append(client.metadataNames, value.TerminalSetMetadata.GetName())
+		client.metadataTags = append(client.metadataTags, cloneStringMap(value.TerminalSetMetadata.GetTags()))
+		return ack(), nil
+	case *apipb.CommandEnvelope_TerminalSetTags:
+		client.tagIDs = append(client.tagIDs, value.TerminalSetTags.GetTerminal().GetTerminalId())
+		client.tagSets = append(client.tagSets, cloneStringMap(value.TerminalSetTags.GetTags()))
+		return ack(), nil
+	case *apipb.CommandEnvelope_TerminalInput:
+		client.inputCommands = append(client.inputCommands, value.TerminalInput)
+		return ack(), nil
+	case *apipb.CommandEnvelope_TerminalResize:
+		client.resizeCommands = append(client.resizeCommands, value.TerminalResize)
+		surfaceID, viewID := "", ""
+		if len(client.attachParams) > 0 {
+			surfaceID = client.attachParams[len(client.attachParams)-1].GetSurfaceId()
+			viewID = client.attachParams[len(client.attachParams)-1].GetViewId()
+		}
+		result := &apipb.TerminalResizeResult{Size: value.TerminalResize.GetSize(), Resized: true, ResizeControl: &apipb.ResizeControl{CanResize: true, Reason: apipb.ResizeControlReason_RESIZE_CONTROL_REASON_OWNER, OwnerSurfaceId: surfaceID, OwnerViewId: viewID, Ownership: &apipb.ResizeOwnership{OwnerSurfaceId: surfaceID, OwnerViewId: viewID, Size: value.TerminalResize.GetSize(), Epoch: 2}}}
+		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: origin, Result: &apipb.ResultEnvelope_TerminalResize{TerminalResize: result}}, nil
+	case *apipb.CommandEnvelope_PathListDirectories:
+		client.pathListParams = append(client.pathListParams, value.PathListDirectories)
+		result := client.pathListResult
+		if result == nil {
+			result = &apipb.PathListDirectoriesResult{}
+		}
+		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: origin, Result: &apipb.ResultEnvelope_PathListDirectories{PathListDirectories: result}}, nil
+	case *apipb.CommandEnvelope_TerminalDefaults:
+		client.pathDefaultsCalls++
+		defaults := &apipb.TerminalDefaults{}
+		if client.pathDefaultsResult != nil {
+			defaults = client.pathDefaultsResult.GetDefaults()
+		}
+		return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: origin, Result: &apipb.ResultEnvelope_TerminalDefaults{TerminalDefaults: &apipb.TerminalDefaultsResult{Defaults: defaults}}}, nil
+	default:
+		return ack(), nil
+	}
+}
+
+func (client *fakeProtocolTerminalClient) ApplicationAttachmentChannel(resource *apipb.ResourceHandle) (uint16, bool) {
+	if resource == nil || len(resource.GetOpaqueToken()) < 2 {
+		return 0, false
+	}
+	channel := binary.BigEndian.Uint16(resource.GetOpaqueToken()[:2])
+	_, ok := client.applicationAttachments[channel]
+	return channel, ok
+}
+
+func (client *fakeProtocolTerminalClient) ApplicationAttachment(channel uint16) (*apipb.ResourceHandle, bool) {
+	resource := client.applicationAttachments[channel]
+	return resource, resource != nil
 }
 
 func (client *fakeProtocolTerminalClient) Events(_ context.Context, params protocol.EventsParams) (<-chan protocol.Event, error) {
@@ -207,105 +316,6 @@ func fakeProtocolWorkbenchEventMatches(workbench *protocol.WorkbenchChangedData,
 	return params.WorkbenchID == "" || params.WorkbenchID == workbench.WorkspaceID || params.WorkbenchID == workbench.ResourceID
 }
 
-func (client *fakeProtocolTerminalClient) List(context.Context) (*protocol.ListResult, error) {
-	client.listCalls++
-	if client.listResult != nil {
-		return client.listResult, nil
-	}
-	return &protocol.ListResult{}, nil
-}
-
-func (client *fakeProtocolTerminalClient) ListDirectories(_ context.Context, params protocol.PathListDirsParams) (*protocol.PathListDirsResult, error) {
-	client.pathListParams = append(client.pathListParams, params)
-	if client.pathListResult != nil {
-		return client.pathListResult, nil
-	}
-	return &protocol.PathListDirsResult{}, nil
-}
-
-func (client *fakeProtocolTerminalClient) PathDefaults(context.Context) (*protocol.PathDefaultsResult, error) {
-	client.pathDefaultsCalls++
-	if client.pathDefaultsResult != nil {
-		return client.pathDefaultsResult, nil
-	}
-	return &protocol.PathDefaultsResult{}, nil
-}
-
-func (client *fakeProtocolTerminalClient) Create(_ context.Context, params protocol.CreateParams) (*protocol.CreateResult, error) {
-	client.createParams = append(client.createParams, params)
-	if client.createResult != nil {
-		return client.createResult, nil
-	}
-	return &protocol.CreateResult{TerminalID: params.ID, State: "running"}, nil
-}
-
-func (client *fakeProtocolTerminalClient) Restart(_ context.Context, terminalID string) error {
-	client.restartIDs = append(client.restartIDs, terminalID)
-	return nil
-}
-
-func (client *fakeProtocolTerminalClient) Kill(_ context.Context, terminalID string) error {
-	client.killIDs = append(client.killIDs, terminalID)
-	return nil
-}
-
-func (client *fakeProtocolTerminalClient) Remove(_ context.Context, terminalID string) error {
-	client.removeIDs = append(client.removeIDs, terminalID)
-	return nil
-}
-
-func (client *fakeProtocolTerminalClient) SetMetadata(_ context.Context, terminalID string, name string, tags map[string]string) error {
-	client.metadataIDs = append(client.metadataIDs, terminalID)
-	client.metadataNames = append(client.metadataNames, name)
-	client.metadataTags = append(client.metadataTags, cloneStringMap(tags))
-	return nil
-}
-
-func (client *fakeProtocolTerminalClient) SetTags(_ context.Context, terminalID string, tags map[string]string) error {
-	client.tagIDs = append(client.tagIDs, terminalID)
-	client.tagSets = append(client.tagSets, cloneStringMap(tags))
-	return nil
-}
-
-func (client *fakeProtocolTerminalClient) Input(_ context.Context, channel uint16, data []byte) error {
-	client.inputChannel = append(client.inputChannel, channel)
-	client.inputData = append(client.inputData, append([]byte(nil), data...))
-	return nil
-}
-
-func (client *fakeProtocolTerminalClient) InputWithOptions(_ context.Context, params protocol.InputParams) error {
-	params.Data = append([]byte(nil), params.Data...)
-	client.inputParams = append(client.inputParams, params)
-	return nil
-}
-
-func (client *fakeProtocolTerminalClient) Resize(_ context.Context, channel uint16, cols uint16, rows uint16) error {
-	client.resizeChannels = append(client.resizeChannels, channel)
-	client.resizes = append(client.resizes, protocol.Size{Cols: cols, Rows: rows})
-	return nil
-}
-
-func (client *fakeProtocolTerminalClient) EnsureResize(_ context.Context, params protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error) {
-	client.ensureParams = append(client.ensureParams, params)
-	return &protocol.EnsureResizeResult{
-		Size:    protocol.Size{Cols: params.Cols, Rows: params.Rows},
-		Resized: true,
-		ResizeControl: &protocol.ResizeControl{
-			CanResize:      true,
-			Reason:         protocol.ResizeControlReasonOwner,
-			SurfaceID:      params.SurfaceID,
-			OwnerSurfaceID: params.SurfaceID,
-			OwnerViewID:    params.ViewID,
-			ResizeOwnership: &protocol.ResizeOwnership{
-				OwnerSurfaceID: params.SurfaceID,
-				OwnerViewID:    params.ViewID,
-				Size:           protocol.Size{Cols: params.Cols, Rows: params.Rows},
-				Epoch:          2,
-			},
-		},
-	}, nil
-}
-
 func (client *fakeProtocolTerminalClient) LiveScreen(_ context.Context, terminalID string) (*protocol.NativeScreenSnapshot, error) {
 	client.liveScreenIDs = append(client.liveScreenIDs, terminalID)
 	if client.liveScreenResults != nil {
@@ -347,16 +357,16 @@ func (client *fakeProtocolTerminalClient) StoragePut(_ context.Context, params p
 
 func TestProtocolPathServiceAdapterListsDirectoriesThroughProtocol(t *testing.T) {
 	client := &fakeProtocolTerminalClient{
-		pathListResult: &protocol.PathListDirsResult{
+		pathListResult: &apipb.PathListDirectoriesResult{
 			BasePath: "/home/root",
-			Entries: []protocol.PathDirEntry{
+			Entries: []*apipb.PathDirectoryEntry{
 				{Name: "project", Path: "~/project/"},
 				{Name: "profile", Path: "~/profile/"},
 			},
 			Truncated: true,
 		},
 	}
-	adapter := ProtocolPathServiceAdapter{Client: client}
+	adapter := ProtocolPathServiceAdapter{Application: newFakeProtocolTerminalServiceAdapter(t, client).Application}
 
 	result, err := adapter.ListDirectories(context.Background(), PathListDirectoriesRequest{
 		EndpointID: "west",
@@ -366,23 +376,20 @@ func TestProtocolPathServiceAdapterListsDirectoriesThroughProtocol(t *testing.T)
 	if err != nil {
 		t.Fatalf("list directories: %v", err)
 	}
-	if len(client.pathListParams) != 1 || client.pathListParams[0].Prefix != "~/pro" || client.pathListParams[0].Limit != 25 {
+	if len(client.pathListParams) != 1 || client.pathListParams[0].GetPrefix() != "~/pro" || client.pathListParams[0].GetLimit() != 25 {
 		t.Fatalf("path adapter should pass typed params to protocol client, got %#v", client.pathListParams)
 	}
 	wantEntries := []PathDirectoryEntry{{Name: "project", Path: "~/project/"}, {Name: "profile", Path: "~/profile/"}}
-	if result.EndpointID != "" || result.BasePath != "/home/root" || !result.Truncated || !reflect.DeepEqual(result.Entries, wantEntries) {
+	if result.EndpointID != "west" || result.BasePath != "/home/root" || !result.Truncated || !reflect.DeepEqual(result.Entries, wantEntries) {
 		t.Fatalf("unexpected path adapter result %#v", result)
 	}
 }
 
 func TestProtocolPathServiceAdapterLoadsDefaultsThroughProtocol(t *testing.T) {
 	client := &fakeProtocolTerminalClient{
-		pathDefaultsResult: &protocol.PathDefaultsResult{
-			DefaultCommand: []string{"/bin/bash", "-l"},
-			DefaultCWD:     "/srv/app",
-		},
+		pathDefaultsResult: &apipb.TerminalDefaultsResult{Defaults: &apipb.TerminalDefaults{DefaultCommand: []string{"/bin/bash", "-l"}, DefaultCwd: "/srv/app"}},
 	}
-	adapter := ProtocolPathServiceAdapter{Client: client}
+	adapter := ProtocolPathServiceAdapter{Application: newFakeProtocolTerminalServiceAdapter(t, client).Application}
 
 	result, err := adapter.Defaults(context.Background(), PathDefaultsRequest{EndpointID: "west"})
 	if err != nil {
@@ -391,7 +398,7 @@ func TestProtocolPathServiceAdapterLoadsDefaultsThroughProtocol(t *testing.T) {
 	if client.pathDefaultsCalls != 1 {
 		t.Fatalf("expected one path defaults call, got %d", client.pathDefaultsCalls)
 	}
-	if result.EndpointID != "" || result.DefaultCWD != "/srv/app" || strings.Join(result.DefaultCommand, " ") != "/bin/bash -l" {
+	if result.EndpointID != "west" || result.DefaultCWD != "/srv/app" || strings.Join(result.DefaultCommand, " ") != "/bin/bash -l" {
 		t.Fatalf("unexpected defaults result %#v", result)
 	}
 }
@@ -1266,7 +1273,7 @@ func TestProtocolCoreClientAdapterPreservesLiveTailOwnership(t *testing.T) {
 
 func TestProtocolTerminalServiceAdapterMapsRemove(t *testing.T) {
 	client := &fakeProtocolTerminalClient{}
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	adapter := newFakeProtocolTerminalServiceAdapter(t, client)
 
 	if err := adapter.Remove(context.Background(), TerminalRemoveRequest{TerminalID: "term-1"}); err != nil {
 		t.Fatalf("remove: %v", err)
@@ -1419,24 +1426,19 @@ func TestProtocolWorkbenchStorageAdapterWrapsStorageConflict(t *testing.T) {
 
 func TestProtocolTerminalServiceAdapterMapsAttachInputAndResize(t *testing.T) {
 	client := &fakeProtocolTerminalClient{
-		attachResult: &protocol.AttachResult{
-			Channel: 11,
-			ResizeControl: &protocol.ResizeControl{
-				CanResize: true,
-				ResizeOwnership: &protocol.ResizeOwnership{
-					Size: protocol.Size{Cols: 100, Rows: 40},
-				},
-			},
-		},
+		attachChannel: 11,
+		attachResult: &apipb.TerminalAttachResult{Size: &apipb.TerminalSize{Cols: 100, Rows: 40}, ResizeControl: &apipb.ResizeControl{
+			CanResize: true, Ownership: &apipb.ResizeOwnership{Size: &apipb.TerminalSize{Cols: 100, Rows: 40}},
+		}},
 	}
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	adapter := newFakeProtocolTerminalServiceAdapter(t, client)
 
 	attached, err := adapter.Attach(context.Background(), TerminalAttachRequest{
 		TerminalID:   "term-1",
 		Cols:         80,
 		Rows:         24,
 		Mode:         "collaborator",
-		ResizePolicy: protocol.ResizePolicyOwner,
+		ResizePolicy: state.TerminalResizeRoleOwner,
 		SurfaceID:    "surface-1",
 		ViewID:       "view-1",
 	})
@@ -1447,18 +1449,15 @@ func TestProtocolTerminalServiceAdapterMapsAttachInputAndResize(t *testing.T) {
 		t.Fatalf("unexpected attach result %#v", attached)
 	}
 	params := client.attachParams[0]
-	if params.TerminalID != "term-1" || params.SurfaceID != "surface-1" || params.ViewID != "view-1" {
+	if params.GetTerminal().GetTerminalId() != "term-1" || params.GetSurfaceId() != "surface-1" || params.GetViewId() != "view-1" {
 		t.Fatalf("unexpected attach params %#v", params)
 	}
 
 	if err := adapter.SendInput(context.Background(), TerminalInputRequest{TerminalID: "term-1", Channel: 11, SurfaceID: "surface-1", ViewID: "view-1", Bytes: []byte("x")}); err != nil {
 		t.Fatalf("input: %v", err)
 	}
-	if len(client.inputParams) != 1 || client.inputParams[0].TerminalID != "term-1" || client.inputParams[0].Channel != 11 || client.inputParams[0].SurfaceID != "surface-1" || client.inputParams[0].ViewID != "view-1" || string(client.inputParams[0].Data) != "x" {
-		t.Fatalf("unexpected input params %#v", client.inputParams)
-	}
-	if len(client.inputData) != 0 {
-		t.Fatalf("adapter must prefer acked input request over stream input, got %#v", client.inputData)
+	if len(client.inputCommands) != 1 || string(client.inputCommands[0].GetData()) != "x" {
+		t.Fatalf("unexpected input commands %#v", client.inputCommands)
 	}
 	resized, err := adapter.Resize(context.Background(), TerminalResizeRequest{
 		TerminalID: "term-1",
@@ -1474,8 +1473,8 @@ func TestProtocolTerminalServiceAdapterMapsAttachInputAndResize(t *testing.T) {
 	if !resized.Resized || !resized.CanResize || resized.ResizeEpoch != 2 || resized.OwnerViewID != "view-1" {
 		t.Fatalf("unexpected resize result %#v", resized)
 	}
-	if len(client.ensureParams) != 1 || client.ensureParams[0].Cols != 120 || client.ensureParams[0].Rows != 50 {
-		t.Fatalf("unexpected ensure resize params %#v", client.ensureParams)
+	if len(client.resizeCommands) != 1 || client.resizeCommands[0].GetSize().GetCols() != 120 || client.resizeCommands[0].GetSize().GetRows() != 50 {
+		t.Fatalf("unexpected resize commands %#v", client.resizeCommands)
 	}
 	if err := adapter.Detach(context.Background(), TerminalDetachRequest{
 		TerminalID: "term-1",
@@ -1485,34 +1484,26 @@ func TestProtocolTerminalServiceAdapterMapsAttachInputAndResize(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("detach: %v", err)
 	}
-	if len(client.detachParams) != 1 || client.detachParams[0].TerminalID != "term-1" || client.detachParams[0].Channel != 11 || client.detachParams[0].SurfaceID != "surface-1" || client.detachParams[0].ViewID != "view-1" {
-		t.Fatalf("unexpected detach params %#v", client.detachParams)
+	if len(client.detachResources) != 1 || binary.BigEndian.Uint16(client.detachResources[0].GetOpaqueToken()[:2]) != 11 {
+		t.Fatalf("unexpected detach resources %#v", client.detachResources)
 	}
 }
 
 func TestProtocolTerminalServiceAdapterUsesResizeControlRole(t *testing.T) {
 	client := &fakeProtocolTerminalClient{
-		attachResult: &protocol.AttachResult{
-			Channel: 12,
-			ResizeControl: &protocol.ResizeControl{
-				CanResize:   false,
-				Reason:      protocol.ResizeControlReasonFollower,
-				OwnerViewID: "owner-view",
-				ResizeOwnership: &protocol.ResizeOwnership{
-					OwnerViewID: "owner-view",
-					Size:        protocol.Size{Cols: 100, Rows: 40},
-					Epoch:       3,
-				},
-			},
-		},
+		attachChannel: 12,
+		attachResult: &apipb.TerminalAttachResult{Size: &apipb.TerminalSize{Cols: 100, Rows: 40}, ResizeControl: &apipb.ResizeControl{
+			CanResize: false, Reason: apipb.ResizeControlReason_RESIZE_CONTROL_REASON_FOLLOWER, OwnerViewId: "owner-view",
+			Ownership: &apipb.ResizeOwnership{OwnerViewId: "owner-view", Size: &apipb.TerminalSize{Cols: 100, Rows: 40}, Epoch: 3},
+		}},
 	}
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	adapter := newFakeProtocolTerminalServiceAdapter(t, client)
 
 	attached, err := adapter.Attach(context.Background(), TerminalAttachRequest{
 		TerminalID:   "term-1",
 		Cols:         80,
 		Rows:         24,
-		ResizePolicy: protocol.ResizePolicyOwner,
+		ResizePolicy: state.TerminalResizeRoleOwner,
 		SurfaceID:    "surface-1",
 		ViewID:       "view-1",
 	})
@@ -1539,7 +1530,7 @@ func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 			Modes:  protocol.TerminalModes{MouseTracking: true, MouseButtonEvent: true, MouseSGR: true},
 		},
 	}
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	adapter := newFakeProtocolTerminalServiceAdapter(t, client)
 
 	result, err := adapter.LiveSurface(context.Background(), TerminalSurfaceRequest{
 		TerminalID: "term-1",
@@ -1595,7 +1586,7 @@ func TestProtocolTerminalServiceAdapterMergesPlainASCIILiveCellRuns(t *testing.T
 			})},
 		},
 	}
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	adapter := newFakeProtocolTerminalServiceAdapter(t, client)
 
 	result, err := adapter.LiveSurface(context.Background(), TerminalSurfaceRequest{TerminalID: "term-1", Cols: 8, Rows: 1})
 	if err != nil {
@@ -1638,7 +1629,7 @@ func TestProtocolTerminalServiceAdapterLiveScreenIgnoresExitMarkerText(t *testin
 			Cursor: protocol.CursorState{Visible: true, Row: 2, Col: 2, Shape: "bar"},
 		},
 	}
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	adapter := newFakeProtocolTerminalServiceAdapter(t, client)
 
 	result, err := adapter.LiveSurface(context.Background(), TerminalSurfaceRequest{TerminalID: "term-1", Cols: 80, Rows: 3})
 	if err != nil {
@@ -1672,7 +1663,7 @@ func TestProtocolTerminalServiceAdapterSkipsZeroWidthContinuationPlaceholders(t 
 			},
 		},
 	}
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	adapter := newFakeProtocolTerminalServiceAdapter(t, client)
 
 	result, err := adapter.LiveSurface(context.Background(), TerminalSurfaceRequest{
 		TerminalID: "term-1",
@@ -1701,7 +1692,7 @@ func TestProtocolTerminalServiceAdapterMapsOrdinaryLiveEventsToRefreshInvalidati
 	client := &fakeProtocolTerminalClient{
 		nextLiveEvent: &protocol.Event{Type: protocol.EventTerminalLiveInvalidated, TerminalID: "term-1", LiveInvalidated: &protocol.LiveScreenInvalidatedData{Revision: 9}},
 	}
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	adapter := newFakeProtocolTerminalServiceAdapter(t, client)
 	got, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24, ObservedRevision: 7})
 	if err != nil {
 		t.Fatalf("arm live invalidation: %v", err)
@@ -1719,7 +1710,7 @@ func TestProtocolTerminalServiceAdapterMapsOrdinaryLiveEventsToRefreshInvalidati
 
 func TestProtocolTerminalServiceAdapterLiveInvalidationArmIsTerminalScoped(t *testing.T) {
 	client := &fakeProtocolTerminalClient{}
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	adapter := newFakeProtocolTerminalServiceAdapter(t, client)
 	termOne, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatalf("term-1 live invalidation: %v", err)
@@ -1740,7 +1731,7 @@ func TestProtocolTerminalServiceAdapterRejectsNonInvalidationOnLiveArm(t *testin
 	client := &fakeProtocolTerminalClient{
 		nextLiveEvent: &protocol.Event{Type: protocol.EventTerminalMetadataChanged, TerminalID: "term-1"},
 	}
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	adapter := newFakeProtocolTerminalServiceAdapter(t, client)
 	got, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1"})
 	if err != nil {
 		t.Fatalf("arm live invalidation: %v", err)
@@ -1786,28 +1777,16 @@ func TestProtocolTerminalAdapterDoesNotUseFixedLiveFrameInterval(t *testing.T) {
 func TestProtocolTerminalServiceAdapterMapsTerminalPoolActions(t *testing.T) {
 	exitedAt := time.Date(2026, 6, 17, 12, 46, 0, 0, time.UTC)
 	resourceSampledAt := exitedAt.Add(-time.Minute)
-	exitCode := 23
+	exitCode := int32(23)
 	client := &fakeProtocolTerminalClient{
-		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
-			ID:       "term-pool",
-			Name:     "日志🚀",
-			Command:  []string{"bash", "-lc", "make test"},
-			State:    "exited",
-			CWD:      "/tmp",
-			Size:     protocol.Size{Cols: 120, Rows: 36},
-			Tags:     map[string]string{"role": "shell"},
-			ExitCode: &exitCode,
-			ExitedAt: exitedAt,
-			Resources: protocol.TerminalResourceUsage{
-				PID:            4321,
-				CPUPercentX100: 1234,
-				MemoryBytes:    64 * 1024 * 1024,
-				SampledAt:      resourceSampledAt,
-			},
+		listResult: &apipb.TerminalListResult{Terminals: []*apipb.TerminalInfo{{
+			Ref: &apipb.TerminalRef{TerminalId: "term-pool"}, Name: "日志🚀", Command: []string{"bash", "-lc", "make test"}, State: apipb.TerminalState_TERMINAL_STATE_EXITED,
+			Cwd: "/tmp", Size: &apipb.TerminalSize{Cols: 120, Rows: 36}, Tags: map[string]string{"role": "shell"}, ExitCode: &exitCode, ExitedAtUnixNano: exitedAt.UnixNano(),
+			Resources: &apipb.TerminalResourceUsage{Pid: 4321, CpuPercentX100: 1234, MemoryBytes: 64 * 1024 * 1024, SampledAtUnixNano: resourceSampledAt.UnixNano()},
 		}}},
-		createResult: &protocol.CreateResult{TerminalID: "term-new", State: "running"},
+		createResult: &apipb.TerminalCreateResult{Terminal: &apipb.TerminalInfo{Ref: &apipb.TerminalRef{TerminalId: "term-new"}, State: apipb.TerminalState_TERMINAL_STATE_RUNNING}},
 	}
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	adapter := newFakeProtocolTerminalServiceAdapter(t, client)
 
 	list, err := adapter.List(context.Background(), TerminalListRequest{})
 	if err != nil {
@@ -1824,7 +1803,7 @@ func TestProtocolTerminalServiceAdapterMapsTerminalPoolActions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if created.TerminalID != "term-new" || len(client.createParams) != 1 || client.createParams[0].Size.Cols != 100 || client.createParams[0].Name != "new" || client.createParams[0].Dir != "/tmp/app" || client.createParams[0].Tags["role"] != "dev" {
+	if created.TerminalID != "term-new" || len(client.createParams) != 1 || client.createParams[0].GetSize().GetCols() != 100 || client.createParams[0].GetName() != "new" || client.createParams[0].GetCwd() != "/tmp/app" || client.createParams[0].GetTags()["role"] != "dev" {
 		t.Fatalf("unexpected create mapping created=%#v params=%#v", created, client.createParams)
 	}
 	if _, err := adapter.Create(context.Background(), TerminalCreateRequest{TerminalID: "term-default", Title: "default", Cols: 80, Rows: 24}); err == nil {

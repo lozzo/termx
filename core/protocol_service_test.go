@@ -9,26 +9,75 @@ import (
 	"testing"
 	"time"
 
+	clientendpoint "github.com/lozzow/termx/client/endpoint"
+	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/wire"
 	"github.com/lozzow/termx/shared/transport/memory"
 )
+
+func TestProtocolServiceExecutesTerminalProtoAPI(t *testing.T) {
+	_, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	session := &apipb.EndpointSessionStamp{EndpointId: "local", RouteId: "unix", Generation: 1}
+	create := &apipb.CommandEnvelope{
+		Context: applicationRequestContext("create-1", session),
+		Command: &apipb.CommandEnvelope_TerminalCreate{TerminalCreate: &apipb.TerminalCreateCommand{Terminal: &apipb.TerminalCreateSpec{
+			TerminalId: "term-api", Name: "proto", Command: []string{"shell"}, Size: &apipb.TerminalSize{Cols: 12, Rows: 4},
+		}}},
+	}
+	created, err := client.ExecuteApplication(context.Background(), create)
+	if err != nil {
+		t.Fatalf("execute create framing: %v", err)
+	}
+	if created.GetError() != nil || created.GetTerminalCreate().GetTerminal().GetRef().GetTerminalId() != "term-api" {
+		t.Fatalf("unexpected create result %#v", created)
+	}
+
+	list, err := client.ExecuteApplication(context.Background(), &apipb.CommandEnvelope{
+		Context: applicationRequestContext("list-1", session),
+		Command: &apipb.CommandEnvelope_TerminalList{TerminalList: &apipb.TerminalListCommand{}},
+	})
+	if err != nil {
+		t.Fatalf("execute list framing: %v", err)
+	}
+	if list.GetError() != nil || len(list.GetTerminalList().GetTerminals()) != 1 || list.GetOriginSession().GetGeneration() != 1 {
+		t.Fatalf("unexpected list result %#v", list)
+	}
+
+	missing, err := client.ExecuteApplication(context.Background(), &apipb.CommandEnvelope{
+		Context: applicationRequestContext("get-missing", session),
+		Command: &apipb.CommandEnvelope_TerminalGet{TerminalGet: &apipb.TerminalGetCommand{Terminal: &apipb.TerminalRef{EndpointId: "local", TerminalId: "missing"}}},
+	})
+	if err != nil {
+		t.Fatalf("execute missing get framing: %v", err)
+	}
+	if missing.GetError().GetCode() != apipb.ApiErrorCode_API_ERROR_CODE_NOT_FOUND || !missing.GetError().GetAttempted() {
+		t.Fatalf("unexpected typed application error %#v", missing)
+	}
+}
+
+func applicationRequestContext(requestID string, session *apipb.EndpointSessionStamp) *apipb.RequestContext {
+	return &apipb.RequestContext{RequestId: requestID, ApiVersion: &apipb.ApiVersion{Major: 1}, Session: session}
+}
+
+func terminalCreateSpec(terminalID, name string, command []string, cols, rows uint32) *apipb.TerminalCreateSpec {
+	return &apipb.TerminalCreateSpec{TerminalId: terminalID, Name: name, Command: append([]string(nil), command...), Size: &apipb.TerminalSize{Cols: cols, Rows: rows}}
+}
 
 func TestProtocolServiceCreateListMetadataRestartRemove(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
 
-	created, err := client.Create(context.Background(), protocol.CreateParams{
-		ID:      "term-1",
-		Name:    "demo",
-		Tags:    map[string]string{"role": "test"},
-		Command: []string{"shell"},
-		Size:    protocol.Size{Cols: 12, Rows: 4},
-	})
+	spec := terminalCreateSpec("term-1", "demo", []string{"shell"}, 12, 4)
+	spec.Tags = map[string]string{"role": "test"}
+	created, err := client.Create(context.Background(), spec)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if created.TerminalID != "term-1" || created.State != string(TerminalStateRunning) {
+	if created.GetTerminal().GetRef().GetTerminalId() != "term-1" || created.GetTerminal().GetState() != apipb.TerminalState_TERMINAL_STATE_RUNNING {
 		t.Fatalf("unexpected create result %#v", created)
 	}
 
@@ -43,12 +92,12 @@ func TestProtocolServiceCreateListMetadataRestartRemove(t *testing.T) {
 	if err := client.SetMetadata(context.Background(), "term-1", "renamed", map[string]string{"role": "updated"}); err != nil {
 		t.Fatalf("set metadata: %v", err)
 	}
-	var info protocol.TerminalInfo
-	if err := client.Call(context.Background(), "get", protocol.GetParams{TerminalID: "term-1"}, &info); err != nil {
+	got, err := client.Get(context.Background(), "term-1")
+	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if info.Name != "renamed" || info.Tags["role"] != "updated" {
-		t.Fatalf("unexpected terminal metadata %#v", info)
+	if got.GetTerminal().GetName() != "renamed" || got.GetTerminal().GetTags()["role"] != "updated" {
+		t.Fatalf("unexpected terminal metadata %#v", got)
 	}
 
 	if err := client.Restart(context.Background(), "term-1"); err != nil {
@@ -66,26 +115,18 @@ func TestProtocolServiceCreateListMetadataRestartRemove(t *testing.T) {
 	}
 }
 
-func TestProtocolServiceCreateUsesNameAsDefaultTerminalID(t *testing.T) {
+func TestProtocolServiceCreateRequiresExplicitTerminalID(t *testing.T) {
 	_, client, closeClient := newProtocolClient(t)
 	defer closeClient()
 
-	created, err := client.Create(context.Background(), protocol.CreateParams{
-		Name:    "named-shell",
-		Command: []string{"shell"},
-		Size:    protocol.Size{Cols: 12, Rows: 4},
-	})
+	created, err := client.Create(context.Background(), terminalCreateSpec("named-shell", "named-shell", []string{"shell"}, 12, 4))
 	if err != nil {
-		t.Fatalf("create with name-only identity: %v", err)
+		t.Fatalf("create with explicit identity: %v", err)
 	}
-	if created.TerminalID != "named-shell" {
+	if created.GetTerminal().GetRef().GetTerminalId() != "named-shell" {
 		t.Fatalf("name-only create should return name as terminal id, got %#v", created)
 	}
-	if _, err := client.Create(context.Background(), protocol.CreateParams{
-		Name:    "named-shell",
-		Command: []string{"shell"},
-		Size:    protocol.Size{Cols: 12, Rows: 4},
-	}); err == nil || !strings.Contains(err.Error(), "duplicate terminal") {
+	if _, err := client.Create(context.Background(), terminalCreateSpec("named-shell", "named-shell", []string{"shell"}, 12, 4)); err == nil || !strings.Contains(err.Error(), "duplicate terminal") {
 		t.Fatalf("duplicate name create should fail with duplicate terminal, got %v", err)
 	}
 }
@@ -114,7 +155,7 @@ func TestProtocolServiceListDirectoriesUsesDaemonPath(t *testing.T) {
 	_, client, closeClient := newProtocolClient(t)
 	defer closeClient()
 
-	result, err := client.ListDirectories(context.Background(), protocol.PathListDirsParams{Prefix: "pro", Limit: 10})
+	result, err := client.ListDirectories(context.Background(), "pro", 10)
 	if err != nil {
 		t.Fatalf("list directories: %v", err)
 	}
@@ -146,7 +187,7 @@ func TestProtocolServicePathDefaultsUsesDaemonEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("path defaults: %v", err)
 	}
-	if strings.Join(result.DefaultCommand, " ") != "/bin/sh" || result.DefaultCWD != resolvedDir {
+	if strings.Join(result.GetDefaults().GetDefaultCommand(), " ") != "/bin/sh" || result.GetDefaults().GetDefaultCwd() != resolvedDir {
 		t.Fatalf("unexpected path defaults %#v", result)
 	}
 }
@@ -156,17 +197,13 @@ func TestProtocolServiceCreateCarriesRemoteProcessContract(t *testing.T) {
 	_, client, closeClient := newProtocolClientWithProcessFactory(t, factory)
 	defer closeClient()
 
-	if _, err := client.Create(context.Background(), protocol.CreateParams{
-		ID:                 "term-peer",
-		Name:               "peer",
-		Command:            []string{"shell"},
-		Size:               protocol.Size{Cols: 100, Rows: 40},
-		Dir:                "/tmp/termx-peer",
-		Env:                []string{"TERMX_PEER=1", "TERMX_REGION=local"},
-		ScrollbackSize:     123,
-		ScrollbackMaxBytes: 4567,
-		ScrollbackMaxAge:   2 * time.Hour,
-	}); err != nil {
+	peerSpec := terminalCreateSpec("term-peer", "peer", []string{"shell"}, 100, 40)
+	peerSpec.Cwd = "/tmp/termx-peer"
+	peerSpec.Env = []string{"TERMX_PEER=1", "TERMX_REGION=local"}
+	peerSpec.ScrollbackRows = 123
+	peerSpec.ScrollbackMaxBytes = 4567
+	peerSpec.ScrollbackMaxAgeSeconds = int64((2 * time.Hour) / time.Second)
+	if _, err := client.Create(context.Background(), peerSpec); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	specs := factory.spawnedSpecs("term-peer")
@@ -179,15 +216,15 @@ func TestProtocolServiceCreateCarriesRemoteProcessContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if len(list.Terminals) != 1 || list.Terminals[0].CWD != "/tmp/termx-peer" || list.Terminals[0].LiveCWD != "/tmp/termx-peer" {
+	if len(list.Terminals) != 1 || list.Terminals[0].GetCwd() != "/tmp/termx-peer" || list.Terminals[0].GetLiveCwd() != "/tmp/termx-peer" {
 		t.Fatalf("list should expose create cwd, got %#v", list)
 	}
-	var info protocol.TerminalInfo
-	if err := client.Call(context.Background(), "get", protocol.GetParams{TerminalID: "term-peer"}, &info); err != nil {
+	got, err := client.Get(context.Background(), "term-peer")
+	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if info.CWD != "/tmp/termx-peer" || info.LiveCWD != "/tmp/termx-peer" {
-		t.Fatalf("get should expose create cwd, got %#v", info)
+	if got.GetTerminal().GetCwd() != "/tmp/termx-peer" || got.GetTerminal().GetLiveCwd() != "/tmp/termx-peer" {
+		t.Fatalf("get should expose create cwd, got %#v", got)
 	}
 
 	if err := client.Restart(context.Background(), "term-peer"); err != nil {
@@ -216,12 +253,7 @@ func assertRemoteProcessSpec(t *testing.T, spec ProcessSpec) {
 func TestProtocolServiceExitMetadataRoundTrips(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
-	if _, err := client.Create(context.Background(), protocol.CreateParams{
-		ID:      "term-1",
-		Name:    "job",
-		Command: []string{"bash", "-lc", "make test"},
-		Size:    protocol.Size{Cols: 12, Rows: 4},
-	}); err != nil {
+	if _, err := client.Create(context.Background(), terminalCreateSpec("term-1", "job", []string{"bash", "-lc", "make test"}, 12, 4)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	events, err := client.Events(context.Background(), protocol.EventsParams{
@@ -236,24 +268,19 @@ func TestProtocolServiceExitMetadataRoundTrips(t *testing.T) {
 	if event.StateChanged == nil || event.StateChanged.ExitCode == nil || *event.StateChanged.ExitCode != 23 || event.StateChanged.ExitedAt.IsZero() {
 		t.Fatalf("expected exited event metadata, got %#v", event)
 	}
-	var info protocol.TerminalInfo
-	if err := client.Call(context.Background(), "get", protocol.GetParams{TerminalID: "term-1"}, &info); err != nil {
+	got, err := client.Get(context.Background(), "term-1")
+	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if info.State != string(TerminalStateExited) || info.ExitCode == nil || *info.ExitCode != 23 || !info.ExitedAt.Equal(event.StateChanged.ExitedAt) {
-		t.Fatalf("expected get to carry exit metadata, got %#v event=%#v", info, event)
+	if got.GetTerminal().GetState() != apipb.TerminalState_TERMINAL_STATE_EXITED || got.GetTerminal().ExitCode == nil || got.GetTerminal().GetExitCode() != 23 || !time.Unix(0, got.GetTerminal().GetExitedAtUnixNano()).Equal(event.StateChanged.ExitedAt) {
+		t.Fatalf("expected get to carry exit metadata, got %#v event=%#v", got, event)
 	}
 }
 
 func TestProtocolServiceRestartedProcessSurvivesClientSessionClose(t *testing.T) {
 	factory := newSessionBoundRecordingProcessFactory()
 	server, client, closeClient := newProtocolClientWithProcessFactory(t, factory)
-	if _, err := client.Create(context.Background(), protocol.CreateParams{
-		ID:      "term-1",
-		Name:    "job",
-		Command: []string{"shell"},
-		Size:    protocol.Size{Cols: 12, Rows: 4},
-	}); err != nil {
+	if _, err := client.Create(context.Background(), terminalCreateSpec("term-1", "job", []string{"shell"}, 12, 4)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if err := client.Restart(context.Background(), "term-1"); err != nil {
@@ -284,7 +311,7 @@ func TestProtocolServiceRestartedProcessSurvivesClientSessionClose(t *testing.T)
 func TestProtocolServiceHistoryWindowReturnsAuthoritativeRowsAfterR324(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
-	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-history-r324", Command: []string{"shell"}, Size: protocol.Size{Cols: 24, Rows: 4}}); err != nil {
+	if _, err := client.Create(context.Background(), terminalCreateSpec("term-history-r324", "", []string{"shell"}, 24, 4)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if err := server.IngestOutput(context.Background(), "term-history-r324", "alpha\r\nbeta\r\n"); err != nil {
@@ -358,7 +385,7 @@ func TestR448ProtocolServiceHistoryBacklogStatus(t *testing.T) {
 	)
 	_, client, closeClient := newProtocolClientWithServer(t, server)
 	defer closeClient()
-	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-r448-backlog", Command: []string{"shell"}, Size: protocol.Size{Cols: 24, Rows: 4}}); err != nil {
+	if _, err := client.Create(context.Background(), terminalCreateSpec("term-r448-backlog", "", []string{"shell"}, 24, 4)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if err := server.IngestOutput(context.Background(), "term-r448-backlog", "alpha\r\nbeta\r\n"); err != nil {
@@ -383,7 +410,7 @@ func TestProtocolServiceAttachRoutesInputResizeAndEvents(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
 
-	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 3}}); err != nil {
+	if _, err := client.Create(context.Background(), terminalCreateSpec("term-1", "", []string{"shell"}, 10, 3)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	events, err := client.Events(context.Background(), protocol.EventsParams{
@@ -393,30 +420,18 @@ func TestProtocolServiceAttachRoutesInputResizeAndEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("events: %v", err)
 	}
-	attach, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{
-		TerminalID:   "term-1",
-		Mode:         "collaborator",
-		ResizePolicy: protocol.ResizePolicyOwner,
-		SurfaceID:    "surface-1",
-		ViewID:       "view-1",
-	})
+	attach, channel, err := client.Attach(context.Background(), "term-1", apipb.ResizePolicy_RESIZE_POLICY_OWNER, "surface-1", "view-1")
 	if err != nil {
 		t.Fatalf("attach: %v", err)
 	}
-	if attach.Channel == 0 || attach.ResizeControl == nil || !attach.ResizeControl.CanResize {
+	if channel == 0 || attach.GetResizeControl() == nil || !attach.GetResizeControl().GetCanResize() {
 		t.Fatalf("unexpected attach result %#v", attach)
 	}
 
-	if err := client.InputWithOptions(context.Background(), protocol.InputParams{
-		TerminalID: "term-1",
-		Channel:    attach.Channel,
-		SurfaceID:  "surface-1",
-		ViewID:     "view-1",
-		Data:       []byte("echo hi\n"),
-	}); err != nil {
+	if err := client.Input(context.Background(), attach.GetAttachment().GetResource(), []byte("echo hi\n")); err != nil {
 		t.Fatalf("input: %v", err)
 	}
-	if err := client.Resize(context.Background(), attach.Channel, 20, 5); err != nil {
+	if _, err := client.Resize(context.Background(), attach.GetAttachment().GetResource(), 20, 5, apipb.ResizePolicy_RESIZE_POLICY_OWNER); err != nil {
 		t.Fatalf("resize frame: %v", err)
 	}
 	process := waitForProcessTraffic(t, server, "term-1", 1, 1)
@@ -438,68 +453,41 @@ func TestProtocolServiceAttachReplacesSameClientViewAttachment(t *testing.T) {
 	_, client, closeClient := newProtocolClient(t)
 	defer closeClient()
 
-	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-reattach", Command: []string{"shell"}, Size: protocol.Size{Cols: 80, Rows: 24}}); err != nil {
+	if _, err := client.Create(context.Background(), terminalCreateSpec("term-reattach", "", []string{"shell"}, 80, 24)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	first, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{
-		TerminalID:   "term-reattach",
-		ResizePolicy: protocol.ResizePolicyOwner,
-		SurfaceID:    "surface-1",
-		ViewID:       "view-main",
-	})
+	first, firstChannel, err := client.Attach(context.Background(), "term-reattach", apipb.ResizePolicy_RESIZE_POLICY_OWNER, "surface-1", "view-main")
 	if err != nil {
 		t.Fatalf("first attach: %v", err)
 	}
-	second, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{
-		TerminalID:   "term-reattach",
-		ResizePolicy: protocol.ResizePolicyFollower,
-		SurfaceID:    "surface-1",
-		ViewID:       "view-main",
-	})
+	second, secondChannel, err := client.Attach(context.Background(), "term-reattach", apipb.ResizePolicy_RESIZE_POLICY_FOLLOWER, "surface-1", "view-main")
 	if err != nil {
 		t.Fatalf("second attach: %v", err)
 	}
-	if second.Channel == first.Channel {
+	if secondChannel == firstChannel {
 		t.Fatalf("reattach should allocate a fresh channel, first=%#v second=%#v", first, second)
 	}
-	if err := client.InputWithOptions(context.Background(), protocol.InputParams{
-		TerminalID: "term-reattach",
-		Channel:    first.Channel,
-		SurfaceID:  "surface-1",
-		ViewID:     "view-main",
-		Data:       []byte("old"),
-	}); err == nil {
+	if err := client.Input(context.Background(), first.GetAttachment().GetResource(), []byte("old")); err == nil {
 		t.Fatal("old reattached channel should be released")
 	}
-	if err := client.InputWithOptions(context.Background(), protocol.InputParams{
-		TerminalID: "term-reattach",
-		Channel:    second.Channel,
-		SurfaceID:  "surface-1",
-		ViewID:     "view-main",
-		Data:       []byte("new"),
-	}); err != nil {
+	if err := client.Input(context.Background(), second.GetAttachment().GetResource(), []byte("new")); err != nil {
 		t.Fatalf("fresh channel should accept input: %v", err)
 	}
 	list, err := client.List(context.Background())
 	if err != nil {
 		t.Fatalf("list after reattach: %v", err)
 	}
-	if len(list.Terminals) != 1 || list.Terminals[0].ResizeOwnerAttachmentCount != 1 {
+	if len(list.Terminals) != 1 || list.Terminals[0].GetAttachmentCount() != 1 {
 		t.Fatalf("same client view reattach should count as one view attachment, list=%#v", list)
 	}
-	if _, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{
-		TerminalID:   "term-reattach",
-		ResizePolicy: protocol.ResizePolicyFollower,
-		SurfaceID:    "surface-1",
-		ViewID:       "view-side",
-	}); err != nil {
+	if _, _, err := client.Attach(context.Background(), "term-reattach", apipb.ResizePolicy_RESIZE_POLICY_FOLLOWER, "surface-1", "view-side"); err != nil {
 		t.Fatalf("third attach: %v", err)
 	}
 	list, err = client.List(context.Background())
 	if err != nil {
 		t.Fatalf("list after second view: %v", err)
 	}
-	if len(list.Terminals) != 1 || list.Terminals[0].ResizeOwnerAttachmentCount != 2 {
+	if len(list.Terminals) != 1 || list.Terminals[0].GetAttachmentCount() != 2 {
 		t.Fatalf("distinct client views should count separately, list=%#v", list)
 	}
 }
@@ -591,7 +579,7 @@ func TestProtocolServiceLiveScreenReturnsNativeRows(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
 
-	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 40, Rows: 6}}); err != nil {
+	if _, err := client.Create(context.Background(), terminalCreateSpec("term-1", "", []string{"shell"}, 40, 6)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if err := server.IngestOutput(context.Background(), "term-1", "alpha\r\n\x1b[32mOK\x1b[0m"); err != nil {
@@ -648,7 +636,7 @@ func TestProtocolServiceLiveScreenRevisionAdvancesWithOutput(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
 
-	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-r347-live-revision", Command: []string{"shell"}, Size: protocol.Size{Cols: 12, Rows: 4}}); err != nil {
+	if _, err := client.Create(context.Background(), terminalCreateSpec("term-r347-live-revision", "", []string{"shell"}, 12, 4)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	first, err := client.LiveScreen(context.Background(), "term-r347-live-revision")
@@ -678,7 +666,7 @@ func TestProtocolServiceNextLiveInvalidationDecodesOneShotParams(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
 
-	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-live-next", Command: []string{"shell"}, Size: protocol.Size{Cols: 12, Rows: 4}}); err != nil {
+	if _, err := client.Create(context.Background(), terminalCreateSpec("term-live-next", "", []string{"shell"}, 12, 4)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	initial, err := client.LiveScreen(context.Background(), "term-live-next")
@@ -724,7 +712,7 @@ func TestProtocolServiceNextLiveInvalidationUsesObservedRevision(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
 
-	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-live-observed", Command: []string{"shell"}, Size: protocol.Size{Cols: 12, Rows: 4}}); err != nil {
+	if _, err := client.Create(context.Background(), terminalCreateSpec("term-live-observed", "", []string{"shell"}, 12, 4)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if err := server.IngestOutput(context.Background(), "term-live-observed", "first\r\n"); err != nil {
@@ -748,16 +736,81 @@ func TestProtocolServiceNextLiveInvalidationUsesObservedRevision(t *testing.T) {
 	}
 }
 
-func newProtocolClient(t *testing.T) (*Server, *protocol.Client, func()) {
+type applicationProtocolTestClient struct {
+	*protocol.Client
+	application *clientruntime.ApplicationSession
+}
+
+func (client *applicationProtocolTestClient) Create(ctx context.Context, spec *apipb.TerminalCreateSpec) (*apipb.TerminalCreateResult, error) {
+	return client.application.TerminalCreate(ctx, &apipb.TerminalCreateCommand{Terminal: spec})
+}
+
+func (client *applicationProtocolTestClient) List(ctx context.Context) (*apipb.TerminalListResult, error) {
+	return client.application.TerminalList(ctx, &apipb.TerminalListCommand{})
+}
+
+func (client *applicationProtocolTestClient) Get(ctx context.Context, terminalID string) (*apipb.TerminalGetResult, error) {
+	return client.application.TerminalGet(ctx, &apipb.TerminalGetCommand{Terminal: &apipb.TerminalRef{EndpointId: "local", TerminalId: terminalID}})
+}
+
+func (client *applicationProtocolTestClient) SetMetadata(ctx context.Context, terminalID, name string, tags map[string]string) error {
+	return client.application.TerminalSetMetadata(ctx, &apipb.TerminalSetMetadataCommand{Terminal: &apipb.TerminalRef{EndpointId: "local", TerminalId: terminalID}, Name: name, Tags: tags})
+}
+
+func (client *applicationProtocolTestClient) SetTags(ctx context.Context, terminalID string, tags map[string]string) error {
+	return client.application.TerminalSetTags(ctx, &apipb.TerminalSetTagsCommand{Terminal: &apipb.TerminalRef{EndpointId: "local", TerminalId: terminalID}, Tags: tags})
+}
+
+func (client *applicationProtocolTestClient) Restart(ctx context.Context, terminalID string) error {
+	return client.application.TerminalRestart(ctx, &apipb.TerminalRestartCommand{Terminal: &apipb.TerminalRef{EndpointId: "local", TerminalId: terminalID}})
+}
+
+func (client *applicationProtocolTestClient) Kill(ctx context.Context, terminalID string) error {
+	return client.application.TerminalKill(ctx, &apipb.TerminalKillCommand{Terminal: &apipb.TerminalRef{EndpointId: "local", TerminalId: terminalID}})
+}
+
+func (client *applicationProtocolTestClient) Remove(ctx context.Context, terminalID string) error {
+	return client.application.TerminalRemove(ctx, &apipb.TerminalRemoveCommand{Terminal: &apipb.TerminalRef{EndpointId: "local", TerminalId: terminalID}})
+}
+
+func (client *applicationProtocolTestClient) PathDefaults(ctx context.Context) (*apipb.TerminalDefaultsResult, error) {
+	return client.application.TerminalDefaults(ctx, &apipb.TerminalDefaultsCommand{})
+}
+
+func (client *applicationProtocolTestClient) ListDirectories(ctx context.Context, prefix string, limit int32) (*apipb.PathListDirectoriesResult, error) {
+	return client.application.PathListDirectories(ctx, &apipb.PathListDirectoriesCommand{Prefix: prefix, Limit: limit})
+}
+
+func (client *applicationProtocolTestClient) Attach(ctx context.Context, terminalID string, policy apipb.ResizePolicy, surfaceID, viewID string) (*apipb.TerminalAttachResult, uint16, error) {
+	result, err := client.application.TerminalAttach(ctx, &apipb.TerminalAttachCommand{Terminal: &apipb.TerminalRef{EndpointId: "local", TerminalId: terminalID}, Mode: apipb.AttachmentMode_ATTACHMENT_MODE_COLLABORATOR, ResizePolicy: policy, SurfaceId: surfaceID, ViewId: viewID})
+	if err != nil {
+		return nil, 0, err
+	}
+	channel, ok := client.ApplicationAttachmentChannel(result.GetAttachment().GetResource())
+	if !ok {
+		return nil, 0, errors.New("attachment stream binding missing")
+	}
+	return result, channel, nil
+}
+
+func (client *applicationProtocolTestClient) Input(ctx context.Context, resource *apipb.ResourceHandle, data []byte) error {
+	return client.application.TerminalInput(ctx, &apipb.TerminalInputCommand{Attachment: resource, Data: append([]byte(nil), data...)})
+}
+
+func (client *applicationProtocolTestClient) Resize(ctx context.Context, resource *apipb.ResourceHandle, cols, rows uint32, policy apipb.ResizePolicy) (*apipb.TerminalResizeResult, error) {
+	return client.application.TerminalResize(ctx, &apipb.TerminalResizeCommand{Attachment: resource, Size: &apipb.TerminalSize{Cols: cols, Rows: rows}, ResizePolicy: policy})
+}
+
+func newProtocolClient(t *testing.T) (*Server, *applicationProtocolTestClient, func()) {
 	return newProtocolClientWithProcessFactory(t, newRecordingProcessFactory())
 }
 
-func newProtocolClientWithProcessFactory(t *testing.T, factory ProcessFactory) (*Server, *protocol.Client, func()) {
+func newProtocolClientWithProcessFactory(t *testing.T, factory ProcessFactory) (*Server, *applicationProtocolTestClient, func()) {
 	t.Helper()
 	return newProtocolClientWithServer(t, NewServer(WithProcessFactory(factory)))
 }
 
-func newProtocolClientWithServer(t *testing.T, server *Server) (*Server, *protocol.Client, func()) {
+func newProtocolClientWithServer(t *testing.T, server *Server) (*Server, *applicationProtocolTestClient, func()) {
 	t.Helper()
 	clientTransport, serverTransport := memory.NewPair()
 	errCh := make(chan error, 1)
@@ -768,6 +821,11 @@ func newProtocolClientWithServer(t *testing.T, server *Server) (*Server, *protoc
 	if err := client.Hello(context.Background(), protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {
 		t.Fatalf("hello: %v", err)
 	}
+	application, err := clientruntime.NewApplicationSession(clientruntime.EndpointSessionStamp{EndpointID: clientendpoint.EndpointID("local"), RouteID: clientendpoint.RouteID("memory"), Generation: 1}, client)
+	if err != nil {
+		t.Fatalf("application session: %v", err)
+	}
+	wrapped := &applicationProtocolTestClient{Client: client, application: application}
 	closeClient := func() {
 		_ = client.Close()
 		select {
@@ -779,7 +837,7 @@ func newProtocolClientWithServer(t *testing.T, server *Server) (*Server, *protoc
 			t.Fatal("server session did not stop")
 		}
 	}
-	return server, client, closeClient
+	return server, wrapped, closeClient
 }
 
 func waitForTerminalState(t *testing.T, server *Server, terminalID string, want TerminalState) {

@@ -10,24 +10,27 @@ import (
 	"strings"
 	"time"
 
+	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/spf13/cobra"
 )
 
 type terminalProtocolClient interface {
-	Create(context.Context, protocol.CreateParams) (*protocol.CreateResult, error)
-	List(context.Context) (*protocol.ListResult, error)
-	Restart(context.Context, string) error
-	Kill(context.Context, string) error
-	Remove(context.Context, string) error
-	SetTags(context.Context, string, map[string]string) error
-	SetMetadata(context.Context, string, string, map[string]string) error
-	PathDefaults(context.Context) (*protocol.PathDefaultsResult, error)
-	AttachWithOptions(context.Context, protocol.AttachParams) (*protocol.AttachResult, error)
-	Detach(context.Context, protocol.DetachParams) error
-	InputWithOptions(context.Context, protocol.InputParams) error
-	EnsureResize(context.Context, protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error)
+	TerminalDefaults(context.Context, *apipb.TerminalDefaultsCommand) (*apipb.TerminalDefaultsResult, error)
+	TerminalCreate(context.Context, *apipb.TerminalCreateCommand) (*apipb.TerminalCreateResult, error)
+	TerminalList(context.Context, *apipb.TerminalListCommand) (*apipb.TerminalListResult, error)
+	TerminalGet(context.Context, *apipb.TerminalGetCommand) (*apipb.TerminalGetResult, error)
+	TerminalRestart(context.Context, *apipb.TerminalRestartCommand) error
+	TerminalKill(context.Context, *apipb.TerminalKillCommand) error
+	TerminalRemove(context.Context, *apipb.TerminalRemoveCommand) error
+	TerminalSetTags(context.Context, *apipb.TerminalSetTagsCommand) error
+	TerminalSetMetadata(context.Context, *apipb.TerminalSetMetadataCommand) error
+	TerminalAttach(context.Context, *apipb.TerminalAttachCommand) (*apipb.TerminalAttachResult, error)
+	TerminalDetach(context.Context, *apipb.TerminalDetachCommand) error
+	TerminalInput(context.Context, *apipb.TerminalInputCommand) error
+	TerminalResize(context.Context, *apipb.TerminalResizeCommand) (*apipb.TerminalResizeResult, error)
 	HistoryWindow(context.Context, protocol.HistoryWindowParams) (*protocol.HistoryWindow, error)
 	HistoryCopy(context.Context, protocol.HistoryWindowParams) (string, error)
 	ReleaseHistory(context.Context, protocol.HistoryWindowParams) error
@@ -154,7 +157,10 @@ func (runtime terminalCommandRuntime) open(cmd *cobra.Command, cfg endpointdomai
 	// terminal lifecycle 与 metadata truth 始终来自 owning endpoint 的 daemon client。
 	// 参数已经在进入本函数前完成校验；transport/protocol 失败不得附带 Cobra usage。
 	cmd.Root().SilenceUsage = true
-	client, closeClient, err := openEndpointProtocolClient(cmd.Context(), cfg, *runtime.socket, *runtime.logFile)
+	var client *protocoladapter.ApplicationClient
+	var closeClient func()
+	var err error
+	client, closeClient, err = openEndpointProtocolClient(cmd.Context(), cfg, *runtime.socket, *runtime.logFile)
 	if err != nil {
 		return nil, func() {}, classifyCLIError(err)
 	}
@@ -189,43 +195,45 @@ func newTerminalCreateCommand(runtime terminalCommandRuntime, use string) *cobra
 			}
 			defer closeClient()
 			if len(args) == 0 {
-				defaults, defaultErr := client.PathDefaults(cmd.Context())
+				defaults, defaultErr := client.TerminalDefaults(cmd.Context(), &apipb.TerminalDefaultsCommand{})
 				if defaultErr != nil {
 					return classifyCLIError(defaultErr)
 				}
-				args = append([]string(nil), defaults.DefaultCommand...)
+				args = append([]string(nil), defaults.GetDefaults().GetDefaultCommand()...)
 				if len(args) == 0 {
 					return &cliError{code: 6, message: fmt.Sprintf("endpoint %s returned no default command", endpoint.ID)}
 				}
 				if strings.TrimSpace(cwd) == "" {
-					cwd = defaults.DefaultCWD
+					cwd = defaults.GetDefaults().GetDefaultCwd()
 				}
 			}
-			size := protocol.Size{Cols: cols, Rows: rows}
+			size := &apipb.TerminalSize{Cols: uint32(cols), Rows: uint32(rows)}
 			if cols == 0 {
-				size = currentSize()
+				current := currentSize()
+				size = &apipb.TerminalSize{Cols: uint32(current.Cols), Rows: uint32(current.Rows)}
 			}
 			terminalID := newV3TerminalID()
 			if strings.TrimSpace(name) != "" {
 				terminalID = strings.TrimSpace(name)
 			}
-			created, err := client.Create(cmd.Context(), protocol.CreateParams{
-				ID: terminalID, Name: strings.TrimSpace(name), Command: append([]string(nil), args...),
-				Dir: strings.TrimSpace(cwd), Env: append([]string(nil), environment...), Tags: cloneTerminalTags(tags), Size: size,
-			})
+			created, err := client.TerminalCreate(cmd.Context(), &apipb.TerminalCreateCommand{Terminal: &apipb.TerminalCreateSpec{
+				TerminalId: terminalID, Name: strings.TrimSpace(name), Command: append([]string(nil), args...), Cwd: strings.TrimSpace(cwd), Env: append([]string(nil), environment...), Tags: cloneTerminalTags(tags), Size: size,
+			}})
 			if err != nil {
 				return classifyCLIError(err)
 			}
-			target := string(endpoint.ID) + ":" + created.TerminalID
+			createdInfo := created.GetTerminal()
+			createdID := createdInfo.GetRef().GetTerminalId()
+			target := string(endpoint.ID) + ":" + createdID
 			if jsonOutput {
-				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(commandResultEnvelope{SchemaVersion: 1, Kind: "terminal_created", Target: target, State: created.State}); err != nil {
+				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(commandResultEnvelope{SchemaVersion: 1, Kind: "terminal_created", Target: target, State: terminalStateString(createdInfo.GetState())}); err != nil {
 					return err
 				}
 			} else {
 				fmt.Fprintln(cmd.OutOrStdout(), target)
 			}
 			if attach {
-				return runAttachCommand(cmd, string(endpoint.ID), created.TerminalID, *runtime.socket, *runtime.logFile, *runtime.configPath)
+				return runAttachCommand(cmd, string(endpoint.ID), createdID, *runtime.socket, *runtime.logFile, *runtime.configPath)
 			}
 			return nil
 		},
@@ -280,13 +288,13 @@ func newTerminalListCommand(runtime terminalCommandRuntime, use string) *cobra.C
 				if openErr != nil {
 					return openErr
 				}
-				result, listErr := client.List(cmd.Context())
+				result, listErr := client.TerminalList(cmd.Context(), &apipb.TerminalListCommand{})
 				closeClient()
 				if listErr != nil {
 					return classifyCLIError(listErr)
 				}
 				for _, item := range result.Terminals {
-					if stateFilter != "" && item.State != stateFilter || !terminalMatchesTags(item, tagFilters) {
+					if stateFilter != "" && terminalStateString(item.GetState()) != stateFilter || !terminalMatchesTags(item, tagFilters) {
 						continue
 					}
 					views = append(views, terminalInfoView(cfg.ID, item))
@@ -408,14 +416,14 @@ func newTerminalMutationCommand(runtime terminalCommandRuntime, use, short strin
 			}
 			switch mutation {
 			case terminalRestart:
-				err = client.Restart(cmd.Context(), item.ID)
+				err = client.TerminalRestart(cmd.Context(), &apipb.TerminalRestartCommand{Terminal: item.GetRef()})
 			case terminalKill:
-				err = client.Kill(cmd.Context(), item.ID)
+				err = client.TerminalKill(cmd.Context(), &apipb.TerminalKillCommand{Terminal: item.GetRef()})
 			case terminalRemove:
-				if item.State == "running" {
+				if item.GetState() == apipb.TerminalState_TERMINAL_STATE_RUNNING {
 					return &cliError{code: 4, message: fmt.Sprintf("terminal %s is running; kill it before remove", ref.String())}
 				}
-				err = client.Remove(cmd.Context(), item.ID)
+				err = client.TerminalRemove(cmd.Context(), &apipb.TerminalRemoveCommand{Terminal: item.GetRef()})
 			}
 			if err != nil {
 				return classifyCLIError(err)
@@ -467,7 +475,7 @@ func newTerminalRenameCommand(runtime terminalCommandRuntime) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := client.SetMetadata(cmd.Context(), item.ID, strings.TrimSpace(args[1]), item.Tags); err != nil {
+			if err := client.TerminalSetMetadata(cmd.Context(), &apipb.TerminalSetMetadataCommand{Terminal: item.GetRef(), Name: strings.TrimSpace(args[1]), Tags: cloneTerminalTags(item.GetTags())}); err != nil {
 				return classifyCLIError(err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s\trenamed\n", ref.String())
@@ -507,7 +515,7 @@ func newTerminalTagCommand(runtime terminalCommandRuntime) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			tags := cloneTerminalTags(item.Tags)
+			tags := cloneTerminalTags(item.GetTags())
 			if tags == nil {
 				tags = make(map[string]string)
 			}
@@ -521,7 +529,7 @@ func newTerminalTagCommand(runtime terminalCommandRuntime) *cobra.Command {
 				}
 				delete(tags, key)
 			}
-			if err := client.SetTags(cmd.Context(), item.ID, tags); err != nil {
+			if err := client.TerminalSetTags(cmd.Context(), &apipb.TerminalSetTagsCommand{Terminal: item.GetRef(), Tags: tags}); err != nil {
 				return classifyCLIError(err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s\ttagged\n", ref.String())
@@ -532,26 +540,25 @@ func newTerminalTagCommand(runtime terminalCommandRuntime) *cobra.Command {
 	return command
 }
 
-func findTerminal(ctx context.Context, client terminalProtocolClient, ref resolvedTerminalRef) (protocol.TerminalInfo, error) {
+func findTerminal(ctx context.Context, client terminalProtocolClient, ref resolvedTerminalRef) (*apipb.TerminalInfo, error) {
 	// TerminalRef 已在 registry 边界解析；查询只进入 owning daemon，CLI 不建立第二份 terminal inventory。
-	result, err := client.List(ctx)
+	result, err := client.TerminalGet(ctx, &apipb.TerminalGetCommand{Terminal: &apipb.TerminalRef{EndpointId: string(ref.EndpointID), TerminalId: ref.TerminalID}})
 	if err != nil {
-		return protocol.TerminalInfo{}, classifyCLIError(err)
+		return nil, classifyCLIError(err)
 	}
-	for _, item := range result.Terminals {
-		if item.ID == ref.TerminalID {
-			return item, nil
-		}
+	if result.GetTerminal() == nil {
+		return nil, &cliError{code: 3, message: fmt.Sprintf("terminal %s was not found", ref.String())}
 	}
-	return protocol.TerminalInfo{}, &cliError{code: 3, message: fmt.Sprintf("terminal %s was not found", ref.String())}
+	return result.GetTerminal(), nil
 }
 
-func terminalInfoView(endpointID endpointdomain.EndpointID, item protocol.TerminalInfo) terminalView {
+func terminalInfoView(endpointID endpointdomain.EndpointID, item *apipb.TerminalInfo) terminalView {
+	exitCode := int32PointerToCLIInt(item.ExitCode)
 	return terminalView{
-		Target: string(endpointID) + ":" + item.ID, EndpointID: string(endpointID), TerminalID: item.ID,
-		Name: item.Name, Command: append([]string(nil), item.Command...), CWD: item.CWD,
-		Tags: cloneTerminalTags(item.Tags), State: item.State, Cols: item.Size.Cols, Rows: item.Size.Rows,
-		CreatedAt: formatTerminalTime(item.CreatedAt), ExitCode: item.ExitCode, ExitedAt: formatTerminalTime(item.ExitedAt),
+		Target: string(endpointID) + ":" + item.GetRef().GetTerminalId(), EndpointID: string(endpointID), TerminalID: item.GetRef().GetTerminalId(),
+		Name: item.GetName(), Command: append([]string(nil), item.GetCommand()...), CWD: item.GetCwd(),
+		Tags: cloneTerminalTags(item.GetTags()), State: terminalStateString(item.GetState()), Cols: uint16(item.GetSize().GetCols()), Rows: uint16(item.GetSize().GetRows()),
+		CreatedAt: formatTerminalUnixNano(item.GetCreatedAtUnixNano()), ExitCode: exitCode, ExitedAt: formatTerminalUnixNano(item.GetExitedAtUnixNano()),
 	}
 }
 
@@ -560,6 +567,36 @@ func formatTerminalTime(value time.Time) string {
 		return ""
 	}
 	return value.UTC().Format(time.RFC3339Nano)
+}
+
+func formatTerminalUnixNano(value int64) string {
+	if value == 0 {
+		return ""
+	}
+	return formatTerminalTime(time.Unix(0, value))
+}
+
+func int32PointerToCLIInt(value *int32) *int {
+	if value == nil {
+		return nil
+	}
+	converted := int(*value)
+	return &converted
+}
+
+func terminalStateString(value apipb.TerminalState) string {
+	switch value {
+	case apipb.TerminalState_TERMINAL_STATE_CREATED:
+		return "created"
+	case apipb.TerminalState_TERMINAL_STATE_RUNNING:
+		return "running"
+	case apipb.TerminalState_TERMINAL_STATE_EXITED:
+		return "exited"
+	case apipb.TerminalState_TERMINAL_STATE_REMOVED:
+		return "removed"
+	default:
+		return ""
+	}
 }
 
 func writeTerminalTable(writer io.Writer, views []terminalView, noHeader bool) error {
@@ -581,10 +618,10 @@ func writeTerminalDetail(writer io.Writer, view terminalView) error {
 	return err
 }
 
-func terminalMatchesTags(item protocol.TerminalInfo, filters []string) bool {
+func terminalMatchesTags(item *apipb.TerminalInfo, filters []string) bool {
 	for _, filter := range filters {
 		key, value, hasValue := strings.Cut(filter, "=")
-		actual, exists := item.Tags[strings.TrimSpace(key)]
+		actual, exists := item.GetTags()[strings.TrimSpace(key)]
 		if !exists || hasValue && actual != value {
 			return false
 		}

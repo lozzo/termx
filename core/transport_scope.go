@@ -149,63 +149,6 @@ func (scope TransportScope) constrainMachineEventsOnly(method string, params any
 
 func (scope TransportScope) constrainTerminalMethod(method string, params any) (any, error) {
 	switch method {
-	case "get", "kill", "restart", "remove":
-		in, ok := params.(protocol.GetParams)
-		if !ok {
-			return nil, fmt.Errorf("%s params have unexpected type %T", method, params)
-		}
-		return params, scope.requireTerminal(method, in.TerminalID)
-	case "set_tags":
-		in, ok := params.(protocol.SetTagsParams)
-		if !ok {
-			return nil, fmt.Errorf("%s params have unexpected type %T", method, params)
-		}
-		return params, scope.requireTerminal(method, in.TerminalID)
-	case "set_metadata":
-		in, ok := params.(protocol.SetMetadataParams)
-		if !ok {
-			return nil, fmt.Errorf("%s params have unexpected type %T", method, params)
-		}
-		return params, scope.requireTerminal(method, in.TerminalID)
-	case "resize":
-		in, ok := params.(protocol.ResizeParams)
-		if !ok {
-			return nil, fmt.Errorf("%s params have unexpected type %T", method, params)
-		}
-		return params, scope.requireTerminal(method, in.TerminalID)
-	case "input":
-		in, ok := params.(protocol.InputParams)
-		if !ok {
-			return nil, fmt.Errorf("%s params have unexpected type %T", method, params)
-		}
-		return params, scope.requireTerminal(method, in.TerminalID)
-	case "attach":
-		in, ok := params.(protocol.AttachParams)
-		if !ok {
-			return nil, fmt.Errorf("%s params have unexpected type %T", method, params)
-		}
-		return params, scope.requireTerminal(method, in.TerminalID)
-	case "detach":
-		in, ok := params.(protocol.DetachParams)
-		if !ok {
-			return nil, fmt.Errorf("%s params have unexpected type %T", method, params)
-		}
-		if in.TerminalID == "" {
-			return params, nil
-		}
-		return params, scope.requireTerminal(method, in.TerminalID)
-	case "ensure_resize":
-		in, ok := params.(protocol.EnsureResizeParams)
-		if !ok {
-			return nil, fmt.Errorf("%s params have unexpected type %T", method, params)
-		}
-		return params, scope.requireTerminal(method, in.TerminalID)
-	case "resize.lock", "resize.unlock":
-		in, ok := params.(protocol.ResizeControlParams)
-		if !ok {
-			return nil, fmt.Errorf("%s params have unexpected type %T", method, params)
-		}
-		return params, scope.requireTerminal(method, in.TerminalID)
 	case "live.screen.get":
 		in, ok := params.(protocol.LiveScreenParams)
 		if !ok {

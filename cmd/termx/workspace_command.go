@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/spf13/cobra"
@@ -68,7 +69,7 @@ func newWorkspaceCommand(socket, logFile *string) *cobra.Command {
 	return command
 }
 
-func (runtime *workspaceCommandRuntime) open(cmd *cobra.Command) (context.Context, *protocol.Client, endpointdomain.Endpoint, func(), error) {
+func (runtime *workspaceCommandRuntime) open(cmd *cobra.Command) (context.Context, *protocoladapter.ApplicationClient, endpointdomain.Endpoint, func(), error) {
 	if runtime.timeout <= 0 {
 		return nil, nil, endpointdomain.Endpoint{}, func() {}, usageCLIError("--timeout must be positive")
 	}
@@ -82,7 +83,9 @@ func (runtime *workspaceCommandRuntime) open(cmd *cobra.Command) (context.Contex
 	}
 	ctx, cancel := context.WithTimeout(cmd.Context(), runtime.timeout)
 	cmd.Root().SilenceUsage = true
-	client, closeClient, err := openEndpointProtocolClient(ctx, endpoint, *runtime.socket, *runtime.logFile)
+	var client *protocoladapter.ApplicationClient
+	var closeClient func()
+	client, closeClient, err = openEndpointProtocolClient(ctx, endpoint, *runtime.socket, *runtime.logFile)
 	if err != nil {
 		cancel()
 		return nil, nil, endpointdomain.Endpoint{}, func() {}, classifyCLIError(err)

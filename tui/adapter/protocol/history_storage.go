@@ -8,7 +8,9 @@ import (
 	"unicode/utf8"
 
 	xansi "github.com/charmbracelet/x/ansi"
+	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/shared/perftrace"
 	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
@@ -26,58 +28,54 @@ type ProtocolStorageClient interface {
 	Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error)
 }
 
-// ProtocolPathClient 是 path service adapter 依赖的 protocol 边界。
-// 实现必须把目录查询发送到当前 protocol session 所属 daemon，不能退回本地文件系统。
-type ProtocolPathClient interface {
-	ListDirectories(context.Context, protocol.PathListDirsParams) (*protocol.PathListDirsResult, error)
-	PathDefaults(context.Context) (*protocol.PathDefaultsResult, error)
-}
-
 // ProtocolPathServiceAdapter 把 endpoint path completion service 映射到 core-v2 protocol。
 // adapter 不读取本地文件系统；Prefix 直接交给当前 protocol session 所属 daemon，
 // 保证 SSH/hub endpoint 的目录候选来自远端机器。
 type ProtocolPathServiceAdapter struct {
-	Client ProtocolPathClient
+	Application *clientruntime.ApplicationSession
+}
+
+// NewProtocolPathServiceAdapter 复用 terminal application session 查询 owning endpoint 的路径和默认值。
+// 该构造函数不接受裸 protocol client，防止 adapter 丢失 route/generation fence。
+func NewProtocolPathServiceAdapter(application *clientruntime.ApplicationSession) (ProtocolPathServiceAdapter, error) {
+	if application == nil {
+		return ProtocolPathServiceAdapter{}, fmt.Errorf("missing path application session")
+	}
+	return ProtocolPathServiceAdapter{Application: application}, nil
 }
 
 // ListDirectories 返回当前 daemon 文件系统中的目录候选。
 // EndpointID 已由 client runtime adapter 剥离；如果 Client 缺失，调用方会在 prompt 内展示失败。
 func (adapter ProtocolPathServiceAdapter) ListDirectories(ctx context.Context, req port.PathListDirectoriesRequest) (port.PathListDirectoriesResult, error) {
-	if adapter.Client == nil {
+	if adapter.Application == nil {
 		return port.PathListDirectoriesResult{}, fmt.Errorf("missing path client")
 	}
-	result, err := adapter.Client.ListDirectories(ctx, protocol.PathListDirsParams{
-		Prefix: req.Prefix,
-		Limit:  req.Limit,
-	})
+	result, err := adapter.Application.PathListDirectories(ctx, &apipb.PathListDirectoriesCommand{Prefix: req.Prefix, Limit: int32(req.Limit)})
 	if err != nil {
 		return port.PathListDirectoriesResult{}, err
 	}
 	out := port.PathListDirectoriesResult{
-		BasePath:  result.BasePath,
-		Missing:   result.Missing,
-		Truncated: result.Truncated,
-		Entries:   make([]port.PathDirectoryEntry, 0, len(result.Entries)),
+		EndpointID: req.EndpointID, BasePath: result.GetBasePath(), Missing: result.GetMissing(), Truncated: result.GetTruncated(),
+		Entries: make([]port.PathDirectoryEntry, 0, len(result.GetEntries())),
 	}
-	for _, entry := range result.Entries {
-		out.Entries = append(out.Entries, port.PathDirectoryEntry{Name: entry.Name, Path: entry.Path})
+	for _, entry := range result.GetEntries() {
+		out.Entries = append(out.Entries, port.PathDirectoryEntry{Name: entry.GetName(), Path: entry.GetPath()})
 	}
 	return out, nil
 }
 
 // Defaults 返回当前 daemon 进程所在机器的创建默认值。
 // EndpointID 已由 client runtime adapter 剥离；adapter 只消费 protocol 投影，不读取 TUI 本地环境。
-func (adapter ProtocolPathServiceAdapter) Defaults(ctx context.Context, _ port.PathDefaultsRequest) (port.PathDefaultsResult, error) {
-	if adapter.Client == nil {
+func (adapter ProtocolPathServiceAdapter) Defaults(ctx context.Context, req port.PathDefaultsRequest) (port.PathDefaultsResult, error) {
+	if adapter.Application == nil {
 		return port.PathDefaultsResult{}, fmt.Errorf("missing path client")
 	}
-	result, err := adapter.Client.PathDefaults(ctx)
+	result, err := adapter.Application.TerminalDefaults(ctx, &apipb.TerminalDefaultsCommand{})
 	if err != nil {
 		return port.PathDefaultsResult{}, err
 	}
 	return port.PathDefaultsResult{
-		DefaultCommand: append([]string(nil), result.DefaultCommand...),
-		DefaultCWD:     result.DefaultCWD,
+		EndpointID: req.EndpointID, DefaultCommand: append([]string(nil), result.GetDefaults().GetDefaultCommand()...), DefaultCWD: result.GetDefaults().GetDefaultCwd(),
 	}, nil
 }
 

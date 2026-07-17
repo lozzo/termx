@@ -1,27 +1,26 @@
 package core
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
 )
 
 const defaultPathListDirsLimit = 100
 
-func listPathDirectories(params protocol.PathListDirsParams) (protocol.PathListDirsResult, error) {
-	prefix := params.Prefix
+func listPathDirectories(command *apipb.PathListDirectoriesCommand) (*apipb.PathListDirectoriesResult, error) {
+	prefix := command.GetPrefix()
 	if strings.TrimSpace(prefix) == "" {
-		return protocol.PathListDirsResult{}, nil
+		return &apipb.PathListDirectoriesResult{}, nil
 	}
 	baseDisplay, baseResolved, fragment, ok := pathCompletionBase(prefix)
 	if !ok {
-		return protocol.PathListDirsResult{}, nil
+		return &apipb.PathListDirectoriesResult{}, nil
 	}
-	out := protocol.PathListDirsResult{BasePath: baseResolved}
+	out := &apipb.PathListDirectoriesResult{BasePath: baseResolved}
 	entries, err := os.ReadDir(baseResolved)
 	if err != nil {
 		// 中文说明：目录补全的 domain owner 是当前 daemon 机器文件系统；
@@ -29,7 +28,7 @@ func listPathDirectories(params protocol.PathListDirsParams) (protocol.PathListD
 		out.Missing = true
 		return out, nil
 	}
-	limit := params.Limit
+	limit := int(command.GetLimit())
 	if limit <= 0 {
 		limit = defaultPathListDirsLimit
 	}
@@ -56,15 +55,15 @@ func listPathDirectories(params protocol.PathListDirsParams) (protocol.PathListD
 		if baseDisplay != "" {
 			candidate = baseDisplay + candidate
 		}
-		out.Entries = append(out.Entries, protocol.PathDirEntry{Name: name, Path: candidate})
+		out.Entries = append(out.Entries, &apipb.PathDirectoryEntry{Name: name, Path: candidate})
 	}
 	return out, nil
 }
 
-func pathDefaults() protocol.PathDefaultsResult {
-	return protocol.PathDefaultsResult{
+func pathDefaults() *apipb.TerminalDefaults {
+	return &apipb.TerminalDefaults{
 		DefaultCommand: defaultPathCommand(),
-		DefaultCWD:     defaultPathCWD(),
+		DefaultCwd:     defaultPathCWD(),
 	}
 }
 
@@ -124,11 +123,4 @@ func splitPathCompletionPrefix(prefix string) (string, string) {
 		return "", prefix
 	}
 	return prefix[:lastSlash+1], prefix[lastSlash+1:]
-}
-
-func pathListDirsProtocolError(err error) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("path list dirs: %w", err)
 }

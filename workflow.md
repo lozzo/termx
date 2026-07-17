@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- 当前最早未完成切片是 `PA005A3`。`PA005A2R` 已按 client-owned origin session、connection-bound atomic admission、transactional resource publication 和 descriptor baseline 完成修正，架构 reviewer 与代码 reviewer 均明确 PASS。
+- 当前最早未完成切片是 `PA005A4`。`PA005A3` 已完成 terminal/attachment/path 的 Proto API 原子迁移与旧协议删除；下一步必须先清除 application 装配倒置，再进入 history/live 或 file/storage/workbench 迁移。
 - 用户已确立仓库级强约定：所有插件、第三方客户端、官方客户端、跨进程和跨语言 API 的唯一 schema truth 必须位于 `proto/`。
 - 完整运行链路固定为 `插件/客户端 -> transport/platform binding -> protocol framing -> generated proto -> api_layer -> api_mapping -> core`，返回方向相反。Proto 是 schema/message truth，不是 transport 或主动运行层；任何入口都不得绕过 API Layer 消费 core domain struct。
 - `core/api` Go DTO 路线已判定错误，必须删除；此前 `AR003B1A/AR003B1B` 结论作废，不得继续迁移或补兼容层。
@@ -79,11 +79,11 @@ core domain truth
 | PA005A1 | 已完成 | Terminal/attachment/path Proto schema | 定义 TerminalRef、lifecycle、attachment/input/resize、path typed command/result/event；加入 application envelope、生成代码和 compatibility harness |
 | PA005A2 | 已完成 | Terminal API Layer 与 API Mapping | proto validation、core domain mapping、typed error/cancel/release；不接 protocol transport 或 UI |
 | PA005A2R | 已完成 | Proto API 基础契约审查修正 | envelope 顶层 context 保留未知 command correlation；result/event 回显 origin session；API Layer 使用 connection-bound atomic admission lease；resource handle 绑定 origin session 且事务式发布；稳定错误、enum/数值边界、response clone、descriptor baseline 和双 reviewer 通过 |
-| PA005A3 | 待开始 | Core/protocol terminal adapter 迁移 | protocol framing 把 proto payload 交给 API Layer，API Layer 经 API Mapping 调用 core；删除 terminal/attachment/path protocol DTO，不使用 alias |
-| PA005A4 | 待开始 | Terminal consumer 与守卫收口 | client runtime、CLI/TUI/remote consumer 使用 proto；删除重复 application DTO；依赖守卫与测试通过 |
+| PA005A3 | 已完成 | Terminal Proto API 原子迁移 | `api.execute` framing 把 Proto envelope 交给 API Layer；core 提供 connection-bound admission、terminal adapter 与 attachment transaction；protocol client、CLI/TUI/remote terminal/path consumer 同步切到 `apipb`；删除 terminal/attachment/path protocol DTO、旧 method codec 和 wire schema，不使用 alias、wrapper 或双路径；依赖守卫与测试通过 |
+| PA005A4 | 待开始 | Application 装配方向收口 | connection-bound API 装配移出 `core/`；`api_mapping` 恢复 generated Proto 与 core domain 的唯一字段转换；`core` 不再 import `api_layer/api_mapping`，protocol framing 不直接持有 core adapter；补 import guard 和同等 terminal/path E2E 后删除 `core/application_api.go` |
 | PA005B | 待开始 | History/live 迁移 | authoritative history window/native screen API 进入 proto；保持 history/live revision 边界；删除重复 projection owner |
 | PA005C | 待开始 | File/storage/workbench 迁移 | file 隐藏 frame/channel，storage 保持 opaque，workbench 只表达 client intent；删除旧专用或重复 DTO |
-| PA006 | 待开始 | Protocol 与 consumer 收口 | protocol 只传 proto payload；CLI/TUI/remote/Cloud 通过 transport/protocol/API Layer/API Mapping 链路；Go-only API 债务和 concrete dependency 清单归零或有明确延期 |
+| PA006 | 待开始 | Protocol 与 consumer 收口 | protocol 只传 proto payload；CLI/TUI/remote/Cloud 通过 transport/protocol/API Layer/API Mapping 链路；把 connection-bound API 装配移出 `core/`，恢复 `api_mapping -> core` 单向字段转换并禁止 `core` import `api_layer/api_mapping`；Go-only API 债务和 concrete dependency 清单归零或有明确延期 |
 | PA007 | 待开始 | 架构就绪双审 | import graph、schema coverage、重复 DTO、fallback、生成代码、文档和 tests 通过；架构 reviewer 与代码 reviewer 明确 PASS 后恢复 C3B |
 | C3B | 暂停 | RouteSelectionPlanner | PA007 PASS 后恢复 |
 | C3C | 暂停 | fresh daemon proof / ReadySession | PA007 PASS 后恢复 |

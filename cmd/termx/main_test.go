@@ -15,9 +15,11 @@ import (
 	"time"
 
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
+	clientruntime "github.com/lozzow/termx/client/runtime"
 	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/core/history"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
 	tuiv3 "github.com/lozzow/termx/tui"
 	actiondomain "github.com/lozzow/termx/tui/action"
 	protocoladapter "github.com/lozzow/termx/tui/adapter/protocol"
@@ -1090,7 +1092,7 @@ func TestV3HistoryDumpWritesAuthoritativeWindows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial core-v2 daemon: %v", err)
 	}
-	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-dump", Command: []string{"shell"}, Size: protocol.Size{Cols: 24, Rows: 4}}); err != nil {
+	if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{TerminalId: "term-dump", Command: []string{"shell"}, Size: &apipb.TerminalSize{Cols: 24, Rows: 4}}); err != nil {
 		t.Fatalf("create terminal: %v", err)
 	}
 	if err := server.IngestOutput(context.Background(), "term-dump", "older one\r\nvisible tail\r\n"); err != nil {
@@ -1175,7 +1177,7 @@ func TestR448V3HistoryBacklogWritesDiagnostics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial core-v2 daemon: %v", err)
 	}
-	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-backlog", Command: []string{"shell"}, Size: protocol.Size{Cols: 24, Rows: 4}}); err != nil {
+	if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{TerminalId: "term-backlog", Command: []string{"shell"}, Size: &apipb.TerminalSize{Cols: 24, Rows: 4}}); err != nil {
 		t.Fatalf("create terminal: %v", err)
 	}
 	if err := server.IngestOutput(context.Background(), "term-backlog", "alpha\r\nbeta\r\n"); err != nil {
@@ -1356,11 +1358,11 @@ func TestV3RootEmptyRuntimeEnablesPerfTrace(t *testing.T) {
 func TestV3RootRuntimeReusesRunningTerminal(t *testing.T) {
 	server, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
 	defer closeClient()
-	if _, err := client.Create(context.Background(), protocol.CreateParams{
-		ID:      "term-existing",
-		Name:    "existing",
-		Command: testShellSleepCommand(),
-		Size:    protocol.Size{Cols: 100, Rows: 30},
+	if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{
+		TerminalId: "term-existing",
+		Name:       "existing",
+		Command:    testShellSleepCommand(),
+		Size:       &apipb.TerminalSize{Cols: 100, Rows: 30},
 	}); err != nil {
 		t.Fatalf("create existing terminal: %v", err)
 	}
@@ -1397,11 +1399,11 @@ func TestV3RootRuntimeAttachesExitedRootWithoutAutoRestart(t *testing.T) {
 	processes := newCoreV2ResizeRecordingProcessFactory()
 	server, client, closeClient := newCoreV2ProtocolClientForCLITestWithOptions(t, corev2.WithProcessFactory(processes))
 	defer closeClient()
-	if _, err := client.Create(context.Background(), protocol.CreateParams{
-		ID:      v3RootTerminalID,
-		Name:    "main",
-		Command: testShellSleepCommand(),
-		Size:    protocol.Size{Cols: 100, Rows: 30},
+	if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{
+		TerminalId: v3RootTerminalID,
+		Name:       "main",
+		Command:    testShellSleepCommand(),
+		Size:       &apipb.TerminalSize{Cols: 100, Rows: 30},
 	}); err != nil {
 		t.Fatalf("create exited root terminal: %v", err)
 	}
@@ -1494,11 +1496,11 @@ func TestRemoteCommandsAreNotMounted(t *testing.T) {
 func TestV3InteractiveRuntimeAttachesThroughProtocolClient(t *testing.T) {
 	server, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
 	defer closeClient()
-	if _, err := client.Create(context.Background(), protocol.CreateParams{
-		ID:      "term-1",
-		Name:    "attach-demo",
-		Command: testShellSleepCommand(),
-		Size:    protocol.Size{Cols: 100, Rows: 30},
+	if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{
+		TerminalId: "term-1",
+		Name:       "attach-demo",
+		Command:    testShellSleepCommand(),
+		Size:       &apipb.TerminalSize{Cols: 100, Rows: 30},
 	}); err != nil {
 		t.Fatalf("create terminal: %v", err)
 	}
@@ -1511,7 +1513,7 @@ func TestV3InteractiveRuntimeAttachesThroughProtocolClient(t *testing.T) {
 		Cols:         100,
 		Rows:         30,
 		Mode:         "collaborator",
-		ResizePolicy: protocol.ResizePolicyOwner,
+		ResizePolicy: tuistate.TerminalResizeRoleOwner,
 		SurfaceID:    "test-surface",
 		ViewID:       tuistate.TerminalPaneViewID(tuistate.DefaultPaneID),
 	}}); err != nil {
@@ -1532,11 +1534,11 @@ func TestV3InteractiveRuntimeAttachesThroughProtocolClient(t *testing.T) {
 func TestV3InteractiveRuntimeRestoresWorkbenchFromCoreV2Storage(t *testing.T) {
 	_, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
 	defer closeClient()
-	if _, err := client.Create(context.Background(), protocol.CreateParams{
-		ID:      "term-restored",
-		Name:    "restored",
-		Command: testShellSleepCommand(),
-		Size:    protocol.Size{Cols: 80, Rows: 24},
+	if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{
+		TerminalId: "term-restored",
+		Name:       "restored",
+		Command:    testShellSleepCommand(),
+		Size:       &apipb.TerminalSize{Cols: 80, Rows: 24},
 	}); err != nil {
 		t.Fatalf("create restored terminal: %v", err)
 	}
@@ -1581,11 +1583,11 @@ func TestV3InteractiveRuntimeCorrectsProtocolResizeToContentRect(t *testing.T) {
 	processes := newCoreV2ResizeRecordingProcessFactory()
 	server, client, closeClient := newCoreV2ProtocolClientForCLITestWithOptions(t, corev2.WithProcessFactory(processes))
 	defer closeClient()
-	if _, err := client.Create(context.Background(), protocol.CreateParams{
-		ID:      "term-1",
-		Name:    "resize-demo",
-		Command: testShellSleepCommand(),
-		Size:    protocol.Size{Cols: 100, Rows: 30},
+	if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{
+		TerminalId: "term-1",
+		Name:       "resize-demo",
+		Command:    testShellSleepCommand(),
+		Size:       &apipb.TerminalSize{Cols: 100, Rows: 30},
 	}); err != nil {
 		t.Fatalf("create terminal: %v", err)
 	}
@@ -1599,7 +1601,7 @@ func TestV3InteractiveRuntimeCorrectsProtocolResizeToContentRect(t *testing.T) {
 		Cols:         100,
 		Rows:         30,
 		Mode:         "collaborator",
-		ResizePolicy: protocol.ResizePolicyOwner,
+		ResizePolicy: tuistate.TerminalResizeRoleOwner,
 		SurfaceID:    "test-surface",
 		ViewID:       tuistate.TerminalPaneViewID(tuistate.DefaultPaneID),
 	}}); err != nil {
@@ -1619,11 +1621,11 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 	processes := newCoreV2ResizeRecordingProcessFactory()
 	server, client, closeClient := newCoreV2ProtocolClientForCLITestWithOptions(t, corev2.WithProcessFactory(processes))
 	defer closeClient()
-	if _, err := client.Create(context.Background(), protocol.CreateParams{
-		ID:      "term-1",
-		Name:    "resize-flow",
-		Command: testShellSleepCommand(),
-		Size:    protocol.Size{Cols: 100, Rows: 30},
+	if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{
+		TerminalId: "term-1",
+		Name:       "resize-flow",
+		Command:    testShellSleepCommand(),
+		Size:       &apipb.TerminalSize{Cols: 100, Rows: 30},
 	}); err != nil {
 		t.Fatalf("create terminal: %v", err)
 	}
@@ -1637,7 +1639,7 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 		Cols:         100,
 		Rows:         30,
 		Mode:         "collaborator",
-		ResizePolicy: protocol.ResizePolicyOwner,
+		ResizePolicy: tuistate.TerminalResizeRoleOwner,
 		SurfaceID:    "test-surface",
 		ViewID:       tuistate.TerminalPaneViewID(tuistate.DefaultPaneID),
 	}}); err != nil {
@@ -1727,11 +1729,11 @@ func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T
 	processes := newCoreV2ResizeRecordingProcessFactory()
 	server, client, closeClient := newCoreV2ProtocolClientForCLITestWithOptions(t, corev2.WithProcessFactory(processes))
 	defer closeClient()
-	if _, err := client.Create(context.Background(), protocol.CreateParams{
-		ID:      "term-1",
-		Name:    "mouse-resize-flow",
-		Command: testShellSleepCommand(),
-		Size:    protocol.Size{Cols: 100, Rows: 30},
+	if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{
+		TerminalId: "term-1",
+		Name:       "mouse-resize-flow",
+		Command:    testShellSleepCommand(),
+		Size:       &apipb.TerminalSize{Cols: 100, Rows: 30},
 	}); err != nil {
 		t.Fatalf("create terminal: %v", err)
 	}
@@ -1745,7 +1747,7 @@ func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T
 		Cols:         100,
 		Rows:         30,
 		Mode:         "collaborator",
-		ResizePolicy: protocol.ResizePolicyOwner,
+		ResizePolicy: tuistate.TerminalResizeRoleOwner,
 		SurfaceID:    "test-surface",
 		ViewID:       tuistate.TerminalPaneViewID(tuistate.DefaultPaneID),
 	}}); err != nil {
@@ -1795,11 +1797,11 @@ func TestV3InteractiveRuntimeCoreV2ResizeFailureSurfacesInSession(t *testing.T) 
 	processes := newCoreV2ResizeRecordingProcessFactory()
 	server, client, closeClient := newCoreV2ProtocolClientForCLITestWithOptions(t, corev2.WithProcessFactory(processes))
 	defer closeClient()
-	if _, err := client.Create(context.Background(), protocol.CreateParams{
-		ID:      "term-1",
-		Name:    "resize-failure-flow",
-		Command: testShellSleepCommand(),
-		Size:    protocol.Size{Cols: 100, Rows: 30},
+	if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{
+		TerminalId: "term-1",
+		Name:       "resize-failure-flow",
+		Command:    testShellSleepCommand(),
+		Size:       &apipb.TerminalSize{Cols: 100, Rows: 30},
 	}); err != nil {
 		t.Fatalf("create terminal: %v", err)
 	}
@@ -1813,7 +1815,7 @@ func TestV3InteractiveRuntimeCoreV2ResizeFailureSurfacesInSession(t *testing.T) 
 		Cols:         100,
 		Rows:         30,
 		Mode:         "collaborator",
-		ResizePolicy: protocol.ResizePolicyOwner,
+		ResizePolicy: tuistate.TerminalResizeRoleOwner,
 		SurfaceID:    "test-surface",
 		ViewID:       tuistate.TerminalPaneViewID(tuistate.DefaultPaneID),
 	}}); err != nil {
@@ -1842,8 +1844,11 @@ func TestV3InteractiveRuntimeCoreV2ResizeFailureSurfacesInSession(t *testing.T) 
 func TestV3TerminalServiceCreateRejectsMissingCommandAgainstCoreV2(t *testing.T) {
 	_, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
 	defer closeClient()
-	adapter := protocoladapter.ProtocolTerminalServiceAdapter{Client: client}
-	_, err := adapter.Create(context.Background(), tuiservices.TerminalCreateRequest{
+	adapter, err := protocoladapter.NewProtocolTerminalServiceAdapter(client, clientruntime.EndpointSessionStamp{EndpointID: endpointdomain.DefaultEndpointID, RouteID: endpointdomain.DefaultLocalRouteID, Generation: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = adapter.Create(context.Background(), tuiservices.TerminalCreateRequest{
 		TerminalID: "term-default-command",
 		Title:      "default command",
 		Cols:       80,

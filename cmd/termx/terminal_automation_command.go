@@ -14,6 +14,7 @@ import (
 
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/spf13/cobra"
 )
 
@@ -96,15 +97,12 @@ func newTerminalSendCommand(runtime terminalCommandRuntime) *cobra.Command {
 				return err
 			}
 			defer target.Close()
-			attachment, identity, detach, err := attachTerminalAutomation(ctx, target.Client, target.Ref, protocol.ResizePolicyFollower, "send")
+			attachment, _, detach, err := attachTerminalAutomation(ctx, target.Client, target.Ref, apipb.ResizePolicy_RESIZE_POLICY_FOLLOWER, "send")
 			if err != nil {
 				return classifyCLIError(err)
 			}
 			defer detach()
-			if err := target.Client.InputWithOptions(ctx, protocol.InputParams{
-				TerminalID: target.Ref.TerminalID, Channel: attachment.Channel,
-				SurfaceID: identity, ViewID: identity, Data: data,
-			}); err != nil {
+			if err := target.Client.TerminalInput(ctx, &apipb.TerminalInputCommand{Attachment: attachment.GetAttachment().GetResource(), Data: data}); err != nil {
 				return classifyCLIError(err)
 			}
 			if jsonOutput {
@@ -333,22 +331,19 @@ func newTerminalResizeCommand(runtime terminalCommandRuntime) *cobra.Command {
 				return err
 			}
 			defer target.Close()
-			attachment, identity, detach, err := attachTerminalAutomation(ctx, target.Client, target.Ref, protocol.ResizePolicyOwner, "resize")
+			attachment, _, detach, err := attachTerminalAutomation(ctx, target.Client, target.Ref, apipb.ResizePolicy_RESIZE_POLICY_OWNER, "resize")
 			if err != nil {
 				return classifyCLIError(err)
 			}
 			defer detach()
-			result, err := target.Client.EnsureResize(ctx, protocol.EnsureResizeParams{
-				TerminalID: target.Ref.TerminalID, Channel: attachment.Channel, Cols: cols, Rows: rows,
-				ResizePolicy: protocol.ResizePolicyOwner, SurfaceID: identity, ViewID: identity,
-			})
+			result, err := target.Client.TerminalResize(ctx, &apipb.TerminalResizeCommand{Attachment: attachment.GetAttachment().GetResource(), Size: &apipb.TerminalSize{Cols: uint32(cols), Rows: uint32(rows)}, ResizePolicy: apipb.ResizePolicy_RESIZE_POLICY_OWNER})
 			if err != nil {
 				return classifyCLIError(err)
 			}
-			view := terminalResizeEnvelope{SchemaVersion: 1, Kind: "terminal_resized", Target: target.Ref.String(), Cols: result.Size.Cols, Rows: result.Size.Rows, Resized: result.Resized}
-			if result.ResizeControl != nil {
-				view.CanResize, view.Reason = result.ResizeControl.CanResize, result.ResizeControl.Reason
-				view.OwnerSurface, view.OwnerView = result.ResizeControl.OwnerSurfaceID, result.ResizeControl.OwnerViewID
+			view := terminalResizeEnvelope{SchemaVersion: 1, Kind: "terminal_resized", Target: target.Ref.String(), Cols: uint16(result.GetSize().GetCols()), Rows: uint16(result.GetSize().GetRows()), Resized: result.GetResized()}
+			if control := result.GetResizeControl(); control != nil {
+				view.CanResize, view.Reason = control.GetCanResize(), resizeControlReasonString(control.GetReason())
+				view.OwnerSurface, view.OwnerView = control.GetOwnerSurfaceId(), control.GetOwnerViewId()
 			}
 			if !view.Resized || !view.CanResize {
 				return &cliError{code: 4, message: fmt.Sprintf("terminal %s resize rejected: %s", target.Ref.String(), terminalResizeReason(view))}
@@ -434,16 +429,16 @@ func waitForTerminalState(ctx context.Context, client terminalProtocolClient, re
 	if err != nil {
 		return terminalWaitEnvelope{}, err
 	}
-	list, err := client.List(ctx)
+	list, err := client.TerminalList(ctx, &apipb.TerminalListCommand{})
 	if err != nil {
 		return terminalWaitEnvelope{}, err
 	}
 	found := false
 	for _, item := range list.Terminals {
-		if item.ID == ref.TerminalID {
+		if item.GetRef().GetTerminalId() == ref.TerminalID {
 			found = true
-			if desired == "created" || item.State == desired {
-				return terminalWaitEnvelope{1, "terminal_wait", ref.String(), desired, item.ExitCode, formatTerminalTime(item.ExitedAt)}, nil
+			if desired == "created" || terminalStateString(item.GetState()) == desired {
+				return terminalWaitEnvelope{1, "terminal_wait", ref.String(), desired, int32PointerToCLIInt(item.ExitCode), formatTerminalUnixNano(item.GetExitedAtUnixNano())}, nil
 			}
 			break
 		}
@@ -656,21 +651,34 @@ func openTerminalAutomationTarget(ctx context.Context, cmd *cobra.Command, runti
 	return terminalAutomationTarget{Ref: ref, Endpoint: endpoint, Client: client, Close: closeClient}, nil
 }
 
-func attachTerminalAutomation(ctx context.Context, client terminalProtocolClient, ref resolvedTerminalRef, resizePolicy, operation string) (*protocol.AttachResult, string, func(), error) {
+func attachTerminalAutomation(ctx context.Context, client terminalProtocolClient, ref resolvedTerminalRef, resizePolicy apipb.ResizePolicy, operation string) (*apipb.TerminalAttachResult, string, func(), error) {
 	// send/resize 只能通过 owning daemon 签发的临时 attachment；操作结束立即 detach，不持有隐式 CLI session。
 	identity := attachmentIdentity(ref, operation)
-	result, err := client.AttachWithOptions(ctx, protocol.AttachParams{
-		TerminalID: ref.TerminalID, Mode: "collaborator", ResizePolicy: resizePolicy, SurfaceID: identity, ViewID: identity,
-	})
+	result, err := client.TerminalAttach(ctx, &apipb.TerminalAttachCommand{Terminal: &apipb.TerminalRef{EndpointId: string(ref.EndpointID), TerminalId: ref.TerminalID}, Mode: apipb.AttachmentMode_ATTACHMENT_MODE_COLLABORATOR, ResizePolicy: resizePolicy, SurfaceId: identity, ViewId: identity})
 	if err != nil {
 		return nil, "", func() {}, err
 	}
 	detach := func() {
 		detachContext, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		_ = client.Detach(detachContext, protocol.DetachParams{TerminalID: ref.TerminalID, Channel: result.Channel, SurfaceID: identity, ViewID: identity})
+		_ = client.TerminalDetach(detachContext, &apipb.TerminalDetachCommand{Attachment: result.GetAttachment().GetResource()})
 	}
 	return result, identity, detach, nil
+}
+
+func resizeControlReasonString(reason apipb.ResizeControlReason) string {
+	switch reason {
+	case apipb.ResizeControlReason_RESIZE_CONTROL_REASON_OWNER:
+		return "owner"
+	case apipb.ResizeControlReason_RESIZE_CONTROL_REASON_FOLLOWER:
+		return "follower"
+	case apipb.ResizeControlReason_RESIZE_CONTROL_REASON_OBSERVER:
+		return "observer"
+	case apipb.ResizeControlReason_RESIZE_CONTROL_REASON_SIZE_LOCKED:
+		return "size_locked"
+	default:
+		return ""
+	}
 }
 
 func attachmentIdentity(ref resolvedTerminalRef, operation string) string {

@@ -15,8 +15,10 @@ import (
 	"strings"
 	"time"
 
+	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/wire"
 	"github.com/spf13/cobra"
 )
@@ -71,7 +73,7 @@ func newFileCommand(socket, logFile *string) *cobra.Command {
 	return command
 }
 
-func (runtime *fileCommandRuntime) open(ctx context.Context, cmd *cobra.Command, endpointValue string) (*protocol.Client, endpointdomain.Endpoint, func(), error) {
+func (runtime *fileCommandRuntime) open(ctx context.Context, cmd *cobra.Command, endpointValue string) (*protocoladapter.ApplicationClient, endpointdomain.Endpoint, func(), error) {
 	if runtime.timeout <= 0 {
 		return nil, endpointdomain.Endpoint{}, func() {}, usageCLIError("--timeout must be positive")
 	}
@@ -84,7 +86,9 @@ func (runtime *fileCommandRuntime) open(ctx context.Context, cmd *cobra.Command,
 		return nil, endpointdomain.Endpoint{}, func() {}, err
 	}
 	cmd.Root().SilenceUsage = true
-	client, closeClient, err := openEndpointProtocolClient(ctx, endpoint, *runtime.socket, *runtime.logFile)
+	var client *protocoladapter.ApplicationClient
+	var closeClient func()
+	client, closeClient, err = openEndpointProtocolClient(ctx, endpoint, *runtime.socket, *runtime.logFile)
 	if err != nil {
 		return nil, endpointdomain.Endpoint{}, func() {}, classifyCLIError(err)
 	}
@@ -116,11 +120,11 @@ func newFileListCommand(runtime *fileCommandRuntime) *cobra.Command {
 			if len(args) == 2 {
 				path = args[1]
 			} else {
-				defaults, err := client.PathDefaults(ctx)
+				defaults, err := client.TerminalDefaults(ctx, &apipb.TerminalDefaultsCommand{})
 				if err != nil {
 					return classifyCLIError(err)
 				}
-				path = defaults.DefaultCWD
+				path = defaults.GetDefaults().GetDefaultCwd()
 			}
 			entries := make([]fileEntryView, 0)
 			next := cursor
@@ -210,7 +214,7 @@ func newFileCatCommand(runtime *fileCommandRuntime) *cobra.Command {
 				return err
 			}
 			defer closeClient()
-			_, err = downloadEndpointFile(ctx, client, args[1], cmd.OutOrStdout())
+			_, err = downloadEndpointFile(ctx, client.Client, args[1], cmd.OutOrStdout())
 			return classifyCLIError(err)
 		},
 	}
@@ -232,7 +236,7 @@ func newFileDownloadCommand(runtime *fileCommandRuntime) *cobra.Command {
 			if len(args) == 3 {
 				localPath = args[2]
 			}
-			result, err := downloadEndpointFileAtomic(ctx, client, args[1], localPath, overwrite)
+			result, err := downloadEndpointFileAtomic(ctx, client.Client, args[1], localPath, overwrite)
 			if err != nil {
 				if errors.Is(err, os.ErrExist) {
 					return &cliError{code: 4, message: fmt.Sprintf("local file %s already exists; use --overwrite", localPath), cause: err}
@@ -268,13 +272,13 @@ func newFileUploadCommand(runtime *fileCommandRuntime) *cobra.Command {
 			if len(args) == 3 {
 				remotePath = args[2]
 			} else {
-				defaults, err := client.PathDefaults(ctx)
+				defaults, err := client.TerminalDefaults(ctx, &apipb.TerminalDefaultsCommand{})
 				if err != nil {
 					return classifyCLIError(err)
 				}
-				remotePath = pathpkg.Join(defaults.DefaultCWD, filepath.Base(args[1]))
+				remotePath = pathpkg.Join(defaults.GetDefaults().GetDefaultCwd(), filepath.Base(args[1]))
 			}
-			result, err := uploadEndpointFile(ctx, client, args[1], remotePath, overwrite)
+			result, err := uploadEndpointFile(ctx, client.Client, args[1], remotePath, overwrite)
 			if err != nil {
 				return classifyCLIError(err)
 			}
@@ -391,7 +395,7 @@ func runFileSingleMutation(cmd *cobra.Command, runtime *fileCommandRuntime, endp
 		return err
 	}
 	defer closeClient()
-	result, err := operation(ctx, client)
+	result, err := operation(ctx, client.Client)
 	if err != nil {
 		return classifyCLIError(err)
 	}

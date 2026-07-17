@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/tui/app"
 	tuistate "github.com/lozzow/termx/tui/state"
 )
@@ -14,16 +14,16 @@ import (
 func TestV3InteractiveRuntimeRendersInitialTerminalOutput(t *testing.T) {
 	_, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
 	defer closeClient()
-	if _, err := client.Create(context.Background(), protocol.CreateParams{
-		ID: "initial-output", Name: "initial-output", Command: []string{"/bin/sh", "-c", "printf 'termx-initial-output\\n'; sleep 5"},
-		Size: protocol.Size{Cols: 100, Rows: 30},
+	if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{
+		TerminalId: "initial-output", Name: "initial-output", Command: []string{"/bin/sh", "-c", "printf 'termx-initial-output\\n'; sleep 5"},
+		Size: &apipb.TerminalSize{Cols: 100, Rows: 30},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	host := app.NewFakeTerminalHost(32)
 	runtime := newV3InteractiveRuntime("initial-output", 100, 30, client, nil, nil, host, nil)
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
-		TerminalID: "initial-output", Cols: 100, Rows: 30, Mode: "collaborator", ResizePolicy: protocol.ResizePolicyFollower,
+		TerminalID: "initial-output", Cols: 100, Rows: 30, Mode: "collaborator", ResizePolicy: tuistate.TerminalResizeRoleFollower,
 		SurfaceID: "initial-output-surface", ViewID: tuistate.TerminalPaneViewID(tuistate.DefaultPaneID),
 	}}); err != nil {
 		t.Fatal(err)

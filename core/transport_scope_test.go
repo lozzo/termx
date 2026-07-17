@@ -6,7 +6,10 @@ import (
 	"testing"
 	"time"
 
+	clientendpoint "github.com/lozzow/termx/client/endpoint"
+	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/wire"
 	"github.com/lozzow/termx/shared/transport/memory"
 )
@@ -16,19 +19,14 @@ func TestServeTransportRunsUnscopedProtocolSession(t *testing.T) {
 	client, closeClient := newClientForServedTransport(t, server, TransportScope{}, false)
 	defer closeClient()
 
-	if _, err := client.Create(context.Background(), protocol.CreateParams{
-		ID:      "term-1",
-		Name:    "demo",
-		Command: []string{"shell"},
-		Size:    protocol.Size{Cols: 12, Rows: 4},
-	}); err != nil {
+	if _, err := client.Create(context.Background(), terminalCreateSpec("term-1", "demo", []string{"shell"}, 12, 4)); err != nil {
 		t.Fatalf("create through ServeTransport: %v", err)
 	}
 	list, err := client.List(context.Background())
 	if err != nil {
 		t.Fatalf("list through ServeTransport: %v", err)
 	}
-	if len(list.Terminals) != 1 || list.Terminals[0].ID != "term-1" {
+	if len(list.Terminals) != 1 || list.Terminals[0].GetRef().GetTerminalId() != "term-1" {
 		t.Fatalf("unexpected unscoped list result %#v", list)
 	}
 }
@@ -52,47 +50,34 @@ func TestServeScopedTransportRestrictsTerminalMethods(t *testing.T) {
 	client, closeClient := newClientForServedTransport(t, server, TransportScope{TerminalID: "term-1"}, true)
 	defer closeClient()
 
-	var info protocol.TerminalInfo
-	if err := client.Call(context.Background(), "get", protocol.GetParams{TerminalID: "term-1"}, &info); err != nil {
+	info, err := client.Get(context.Background(), "term-1")
+	if err != nil {
 		t.Fatalf("scoped get allowed terminal: %v", err)
 	}
-	if info.ID != "term-1" {
+	if info.GetTerminal().GetRef().GetTerminalId() != "term-1" {
 		t.Fatalf("scoped get returned wrong terminal %#v", info)
 	}
-	if err := client.Call(context.Background(), "get", protocol.GetParams{TerminalID: "term-2"}, &info); err == nil || !strings.Contains(err.Error(), "transport scope") {
+	if _, err := client.Get(context.Background(), "term-2"); err == nil || !strings.Contains(err.Error(), "forbidden") {
 		t.Fatalf("expected scoped get denial, got %v", err)
 	}
-	if _, err := client.List(context.Background()); err == nil || !strings.Contains(err.Error(), "transport scope") {
+	if _, err := client.List(context.Background()); err == nil || !strings.Contains(err.Error(), "forbidden") {
 		t.Fatalf("expected scoped list denial, got %v", err)
 	}
 
-	attached, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{
-		TerminalID:   "term-1",
-		ResizePolicy: protocol.ResizePolicyFollower,
-		SurfaceID:    "surface",
-		ViewID:       "view",
-	})
+	attached, _, err := client.Attach(context.Background(), "term-1", apipb.ResizePolicy_RESIZE_POLICY_FOLLOWER, "surface", "view")
 	if err != nil {
 		t.Fatalf("attach scoped terminal: %v", err)
 	}
-	if _, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{TerminalID: "term-2"}); err == nil || !strings.Contains(err.Error(), "transport scope") {
+	if _, _, err := client.Attach(context.Background(), "term-2", apipb.ResizePolicy_RESIZE_POLICY_FOLLOWER, "", ""); err == nil || !strings.Contains(err.Error(), "forbidden") {
 		t.Fatalf("expected scoped attach denial, got %v", err)
 	}
-	if err := client.InputWithOptions(context.Background(), protocol.InputParams{
-		TerminalID: "term-1",
-		Channel:    attached.Channel,
-		SurfaceID:  "surface",
-		ViewID:     "view",
-		Data:       []byte("ok"),
-	}); err != nil {
+	if err := client.Input(context.Background(), attached.GetAttachment().GetResource(), []byte("ok")); err != nil {
 		t.Fatalf("input scoped terminal: %v", err)
 	}
-	if err := client.InputWithOptions(context.Background(), protocol.InputParams{
-		TerminalID: "term-2",
-		Channel:    attached.Channel,
-		Data:       []byte("deny"),
-	}); err == nil || !strings.Contains(err.Error(), "transport scope") {
-		t.Fatalf("expected scoped input denial before attachment lookup, got %v", err)
+	forged := *attached.GetAttachment().GetResource()
+	forged.OpaqueToken = []byte("unknown")
+	if err := client.Input(context.Background(), &forged, []byte("deny")); err == nil || !strings.Contains(err.Error(), "forbidden") {
+		t.Fatalf("expected scoped input denial before resource lookup, got %v", err)
 	}
 }
 
@@ -127,11 +112,10 @@ func TestServeScopedTransportMachineEventsOnly(t *testing.T) {
 	client, closeClient := newClientForServedTransport(t, server, TransportScope{MachineEventsOnly: true}, true)
 	defer closeClient()
 
-	var info protocol.TerminalInfo
-	if err := client.Call(context.Background(), "get", protocol.GetParams{TerminalID: "term-1"}, &info); err == nil || !strings.Contains(err.Error(), "transport scope") {
+	if _, err := client.Get(context.Background(), "term-1"); err == nil || !strings.Contains(err.Error(), "forbidden") {
 		t.Fatalf("expected machine-events-only get denial, got %v", err)
 	}
-	if _, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{TerminalID: "term-1"}); err == nil || !strings.Contains(err.Error(), "transport scope") {
+	if _, _, err := client.Attach(context.Background(), "term-1", apipb.ResizePolicy_RESIZE_POLICY_OWNER, "", ""); err == nil || !strings.Contains(err.Error(), "forbidden") {
 		t.Fatalf("expected machine-events-only attach denial, got %v", err)
 	}
 	if err := client.Call(context.Background(), "events", protocol.EventsParams{StorageAppID: "app"}, nil); err == nil || !strings.Contains(err.Error(), "transport scope") {
@@ -178,7 +162,7 @@ func TestClientAccessManagementRequiresLocalOwnerOrExplicitCapability(t *testing
 	}
 }
 
-func newClientForServedTransport(t *testing.T, server *Server, scope TransportScope, scoped bool) (*protocol.Client, func()) {
+func newClientForServedTransport(t *testing.T, server *Server, scope TransportScope, scoped bool) (*applicationProtocolTestClient, func()) {
 	t.Helper()
 	clientTransport, serverTransport := memory.NewPair()
 	errCh := make(chan error, 1)
@@ -193,7 +177,12 @@ func newClientForServedTransport(t *testing.T, server *Server, scope TransportSc
 	if err := client.Hello(context.Background(), protocol.Hello{Version: wire.Version, Client: "scope-test"}); err != nil {
 		t.Fatalf("hello: %v", err)
 	}
-	return client, func() {
+	application, err := clientruntime.NewApplicationSession(clientruntime.EndpointSessionStamp{EndpointID: clientendpoint.EndpointID("local"), RouteID: clientendpoint.RouteID("memory"), Generation: 1}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapped := &applicationProtocolTestClient{Client: client, application: application}
+	return wrapped, func() {
 		_ = client.Close()
 		select {
 		case err := <-errCh:

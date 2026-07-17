@@ -5,7 +5,6 @@ import (
 	"math"
 	"time"
 
-	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/proto/apipb"
 )
 
@@ -287,75 +286,6 @@ func ValidateTerminalAttachResult(command *apipb.TerminalAttachCommand, result *
 	return nil
 }
 
-// TerminalRecordFromProto 把已校验的 public create spec 转换为 core domain record。
-func TerminalRecordFromProto(spec *apipb.TerminalCreateSpec) (corev2.TerminalRecord, error) {
-	if err := ValidateTerminalCreateSpec(spec); err != nil {
-		return corev2.TerminalRecord{}, err
-	}
-	return corev2.TerminalRecord{
-		ID:      spec.GetTerminalId(),
-		Name:    spec.GetName(),
-		Command: append([]string(nil), spec.GetCommand()...),
-		Tags:    cloneStringMap(spec.GetTags()),
-		Size:    corev2.Size{Cols: uint16(spec.GetSize().GetCols()), Rows: uint16(spec.GetSize().GetRows())},
-		Options: corev2.TerminalCreateOptions{
-			Dir:                spec.GetCwd(),
-			Env:                append([]string(nil), spec.GetEnv()...),
-			ScrollbackSize:     int(spec.GetScrollbackRows()),
-			ScrollbackMaxBytes: spec.GetScrollbackMaxBytes(),
-			ScrollbackMaxAge:   time.Duration(spec.GetScrollbackMaxAgeSeconds()) * time.Second,
-		},
-	}, nil
-}
-
-// TerminalInfoToProto 把 core lifecycle snapshot 转换为 endpoint-aware public projection。
-func TerminalInfoToProto(endpointID string, info corev2.TerminalInfo) (*apipb.TerminalInfo, error) {
-	if endpointID == "" || info.ID == "" {
-		return nil, fmt.Errorf("terminal projection requires endpoint and terminal identity")
-	}
-	state, err := terminalStateToProto(info.State)
-	if err != nil {
-		return nil, err
-	}
-	if info.Resources.PID < math.MinInt32 || info.Resources.PID > math.MaxInt32 ||
-		info.Resources.CPUPercentX100 < math.MinInt32 || info.Resources.CPUPercentX100 > math.MaxInt32 {
-		return nil, fmt.Errorf("terminal resource usage exceeds public API integer range")
-	}
-	out := &apipb.TerminalInfo{
-		Ref:               &apipb.TerminalRef{EndpointId: endpointID, TerminalId: info.ID},
-		Name:              info.Name,
-		Command:           append([]string(nil), info.Command...),
-		Tags:              cloneStringMap(info.Tags),
-		Size:              &apipb.TerminalSize{Cols: uint32(info.Size.Cols), Rows: uint32(info.Size.Rows)},
-		State:             state,
-		Cwd:               info.CWD,
-		LiveCwd:           info.LiveCWD,
-		CreatedAtUnixNano: info.CreatedAt.UnixNano(),
-		ExitedAtUnixNano:  info.ExitedAt.UnixNano(),
-		Resources: &apipb.TerminalResourceUsage{
-			Pid: int32(info.Resources.PID), CpuPercentX100: int32(info.Resources.CPUPercentX100),
-			MemoryBytes: info.Resources.MemoryBytes, SampledAtUnixNano: info.Resources.SampledAt.UnixNano(),
-		},
-	}
-	if info.CreatedAt.IsZero() {
-		out.CreatedAtUnixNano = 0
-	}
-	if info.ExitedAt.IsZero() {
-		out.ExitedAtUnixNano = 0
-	}
-	if info.Resources.SampledAt.IsZero() {
-		out.Resources.SampledAtUnixNano = 0
-	}
-	if info.ExitCode != nil {
-		if *info.ExitCode < math.MinInt32 || *info.ExitCode > math.MaxInt32 {
-			return nil, fmt.Errorf("terminal exit code exceeds public API integer range")
-		}
-		value := int32(*info.ExitCode)
-		out.ExitCode = &value
-	}
-	return out, nil
-}
-
 func requireSession(contextMessage *apipb.RequestContext) error {
 	return ValidateSessionStamp(contextMessage.GetSession())
 }
@@ -389,21 +319,6 @@ func validateAttachmentOperation(resource *apipb.ResourceHandle, operation *apip
 	return ValidateOperationStamp(operation, contextMessage.GetSession())
 }
 
-func terminalStateToProto(state corev2.TerminalState) (apipb.TerminalState, error) {
-	switch state {
-	case corev2.TerminalStateCreated:
-		return apipb.TerminalState_TERMINAL_STATE_CREATED, nil
-	case corev2.TerminalStateRunning:
-		return apipb.TerminalState_TERMINAL_STATE_RUNNING, nil
-	case corev2.TerminalStateExited:
-		return apipb.TerminalState_TERMINAL_STATE_EXITED, nil
-	case corev2.TerminalStateRemoved:
-		return apipb.TerminalState_TERMINAL_STATE_REMOVED, nil
-	default:
-		return apipb.TerminalState_TERMINAL_STATE_UNSPECIFIED, fmt.Errorf("unsupported core terminal state %q", state)
-	}
-}
-
 func validAttachmentMode(mode apipb.AttachmentMode) bool {
 	return mode == apipb.AttachmentMode_ATTACHMENT_MODE_COLLABORATOR || mode == apipb.AttachmentMode_ATTACHMENT_MODE_OBSERVER
 }
@@ -417,17 +332,6 @@ func validResizePolicy(policy apipb.ResizePolicy) bool {
 	default:
 		return false
 	}
-}
-
-func cloneStringMap(values map[string]string) map[string]string {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(values))
-	for key, value := range values {
-		out[key] = value
-	}
-	return out
 }
 
 func validateStringSlice(field string, values []string, maxItems int) error {

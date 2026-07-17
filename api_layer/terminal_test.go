@@ -18,11 +18,11 @@ type fakeTerminalController struct {
 	attachErr         error
 }
 
-func (*fakeTerminalController) TerminalDefaults(context.Context, *apipb.TerminalDefaultsCommand) (*apipb.TerminalDefaultsResult, error) {
+func (*fakeTerminalController) TerminalDefaults(context.Context, *apipb.EndpointSessionStamp, *apipb.TerminalDefaultsCommand) (*apipb.TerminalDefaultsResult, error) {
 	return &apipb.TerminalDefaultsResult{Defaults: &apipb.TerminalDefaults{DefaultCommand: []string{"sh"}, DefaultCwd: "/tmp"}}, nil
 }
 
-func (controller *fakeTerminalController) TerminalCreate(_ context.Context, command *apipb.TerminalCreateCommand) (*apipb.TerminalCreateResult, error) {
+func (controller *fakeTerminalController) TerminalCreate(_ context.Context, _ *apipb.EndpointSessionStamp, command *apipb.TerminalCreateCommand) (*apipb.TerminalCreateResult, error) {
 	controller.creates = append(controller.creates, command)
 	if controller.returnNilCreate {
 		return nil, nil
@@ -33,35 +33,35 @@ func (controller *fakeTerminalController) TerminalCreate(_ context.Context, comm
 	return &apipb.TerminalCreateResult{Terminal: &apipb.TerminalInfo{Ref: &apipb.TerminalRef{EndpointId: "studio", TerminalId: command.GetTerminal().GetTerminalId()}}}, nil
 }
 
-func (*fakeTerminalController) TerminalList(context.Context, *apipb.TerminalListCommand) (*apipb.TerminalListResult, error) {
+func (*fakeTerminalController) TerminalList(context.Context, *apipb.EndpointSessionStamp, *apipb.TerminalListCommand) (*apipb.TerminalListResult, error) {
 	return &apipb.TerminalListResult{}, nil
 }
 
-func (*fakeTerminalController) TerminalGet(context.Context, *apipb.TerminalGetCommand) (*apipb.TerminalGetResult, error) {
+func (*fakeTerminalController) TerminalGet(context.Context, *apipb.EndpointSessionStamp, *apipb.TerminalGetCommand) (*apipb.TerminalGetResult, error) {
 	return &apipb.TerminalGetResult{}, nil
 }
 
-func (*fakeTerminalController) TerminalRestart(context.Context, *apipb.TerminalRestartCommand) error {
+func (*fakeTerminalController) TerminalRestart(context.Context, *apipb.EndpointSessionStamp, *apipb.TerminalRestartCommand) error {
 	return nil
 }
 
-func (*fakeTerminalController) TerminalKill(context.Context, *apipb.TerminalKillCommand) error {
+func (*fakeTerminalController) TerminalKill(context.Context, *apipb.EndpointSessionStamp, *apipb.TerminalKillCommand) error {
 	return nil
 }
 
-func (*fakeTerminalController) TerminalRemove(context.Context, *apipb.TerminalRemoveCommand) error {
+func (*fakeTerminalController) TerminalRemove(context.Context, *apipb.EndpointSessionStamp, *apipb.TerminalRemoveCommand) error {
 	return nil
 }
 
-func (*fakeTerminalController) TerminalSetMetadata(context.Context, *apipb.TerminalSetMetadataCommand) error {
+func (*fakeTerminalController) TerminalSetMetadata(context.Context, *apipb.EndpointSessionStamp, *apipb.TerminalSetMetadataCommand) error {
 	return nil
 }
 
-func (*fakeTerminalController) TerminalSetTags(context.Context, *apipb.TerminalSetTagsCommand) error {
+func (*fakeTerminalController) TerminalSetTags(context.Context, *apipb.EndpointSessionStamp, *apipb.TerminalSetTagsCommand) error {
 	return nil
 }
 
-func (controller *fakeTerminalController) TerminalAttach(context.Context, *apipb.TerminalAttachCommand) (TerminalAttachTransaction, error) {
+func (controller *fakeTerminalController) TerminalAttach(context.Context, *apipb.EndpointSessionStamp, *apipb.TerminalAttachCommand) (TerminalAttachTransaction, error) {
 	return controller.attachTransaction, controller.attachErr
 }
 
@@ -93,24 +93,24 @@ func (transaction *fakeAttachTransaction) Rollback(ctx context.Context) error {
 	return transaction.rollbackErr
 }
 
-func (*fakeTerminalController) TerminalDetach(context.Context, *apipb.TerminalDetachCommand) error {
+func (*fakeTerminalController) TerminalDetach(context.Context, *apipb.EndpointSessionStamp, *apipb.TerminalDetachCommand) error {
 	return nil
 }
 
-func (controller *fakeTerminalController) TerminalInput(_ context.Context, command *apipb.TerminalInputCommand) error {
+func (controller *fakeTerminalController) TerminalInput(_ context.Context, _ *apipb.EndpointSessionStamp, command *apipb.TerminalInputCommand) error {
 	controller.inputs = append(controller.inputs, command)
 	return controller.inputErr
 }
 
-func (*fakeTerminalController) TerminalResize(context.Context, *apipb.TerminalResizeCommand) (*apipb.TerminalResizeResult, error) {
+func (*fakeTerminalController) TerminalResize(context.Context, *apipb.EndpointSessionStamp, *apipb.TerminalResizeCommand) (*apipb.TerminalResizeResult, error) {
 	return &apipb.TerminalResizeResult{}, nil
 }
 
-func (*fakeTerminalController) TerminalResizeLock(context.Context, *apipb.TerminalResizeLockCommand) (*apipb.TerminalResizeResult, error) {
+func (*fakeTerminalController) TerminalResizeLock(context.Context, *apipb.EndpointSessionStamp, *apipb.TerminalResizeLockCommand) (*apipb.TerminalResizeResult, error) {
 	return &apipb.TerminalResizeResult{}, nil
 }
 
-func (*fakeTerminalController) PathListDirectories(context.Context, *apipb.PathListDirectoriesCommand) (*apipb.PathListDirectoriesResult, error) {
+func (*fakeTerminalController) PathListDirectories(context.Context, *apipb.EndpointSessionStamp, *apipb.PathListDirectoriesCommand) (*apipb.PathListDirectoriesResult, error) {
 	return &apipb.PathListDirectoriesResult{}, nil
 }
 

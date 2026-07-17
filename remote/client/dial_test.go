@@ -12,8 +12,11 @@ import (
 	"testing"
 	"time"
 
+	clientendpoint "github.com/lozzow/termx/client/endpoint"
+	clientruntime "github.com/lozzow/termx/client/runtime"
 	core "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/proto/remoteauthpb"
 	"github.com/lozzow/termx/proto/wire"
@@ -47,7 +50,8 @@ func TestDialRunsE2EHandshakeBeforeTermxProtocolWithoutSendingGrantToCompanion(t
 	if err := client.Hello(context.Background(), protocol.Hello{Version: wire.Version, Client: "remote-v2-e2e-test"}); err != nil {
 		t.Fatalf("protocol Hello after capability accepted: %v", err)
 	}
-	if _, err := client.List(context.Background()); err != nil {
+	application := newRemoteApplicationSession(t, "lab", client)
+	if _, err := application.TerminalList(context.Background(), &apipb.TerminalListCommand{}); err != nil {
 		t.Fatalf("protocol List after capability accepted: %v", err)
 	}
 	recorded := companion.Requests()
@@ -229,11 +233,11 @@ func TestDialSingleTerminalGrantCannotEscapeCoreScope(t *testing.T) {
 	if err := client.Hello(context.Background(), protocol.Hello{Version: wire.Version, Client: "remote-v2-scope-test"}); err != nil {
 		t.Fatalf("protocol Hello: %v", err)
 	}
-	if _, err := client.List(context.Background()); err == nil || !strings.Contains(err.Error(), "transport scope") {
+	application := newRemoteApplicationSession(t, "lab", client)
+	if _, err := application.TerminalList(context.Background(), &apipb.TerminalListCommand{}); err == nil || !strings.Contains(err.Error(), "forbidden") {
 		t.Fatalf("single-terminal grant escaped through List: %v", err)
 	}
-	var info protocol.TerminalInfo
-	if err := client.Call(context.Background(), "get", protocol.GetParams{TerminalID: "denied"}, &info); err == nil || !strings.Contains(err.Error(), "transport scope") {
+	if _, err := application.TerminalGet(context.Background(), &apipb.TerminalGetCommand{Terminal: &apipb.TerminalRef{EndpointId: "lab", TerminalId: "denied"}}); err == nil || !strings.Contains(err.Error(), "forbidden") {
 		t.Fatalf("single-terminal grant escaped through get: %v", err)
 	}
 }
@@ -275,7 +279,8 @@ func TestDialSessionReportsQualityWithoutChangingRoute(t *testing.T) {
 		_ = client.Close()
 		t.Fatalf("protocol Hello: %v", err)
 	}
-	if _, err := client.List(context.Background()); err != nil {
+	application := newRemoteApplicationSession(t, "lab", client)
+	if _, err := application.TerminalList(context.Background(), &apipb.TerminalListCommand{}); err != nil {
 		_ = client.Close()
 		t.Fatalf("protocol List: %v", err)
 	}
@@ -308,6 +313,15 @@ func TestDialSessionReportsQualityWithoutChangingRoute(t *testing.T) {
 	if len(recorded.ReportConnectionOutcome) != 1 || recorded.ReportConnectionOutcome[0].GetOutcome().GetObservedPath() != cloudpb.ObservedPath_OBSERVED_PATH_DIRECT {
 		t.Fatalf("connection outcomes = %+v", recorded.ReportConnectionOutcome)
 	}
+}
+
+func newRemoteApplicationSession(t *testing.T, endpointID string, client *protocol.Client) *clientruntime.ApplicationSession {
+	t.Helper()
+	session, err := clientruntime.NewApplicationSession(clientruntime.EndpointSessionStamp{EndpointID: clientendpoint.EndpointID(endpointID), RouteID: "webrtc", Generation: 1}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return session
 }
 
 func signalingCompanion(answerer remotev2webrtc.Answerer, targetDeviceID string) *cloudcompanion.FakeClient {

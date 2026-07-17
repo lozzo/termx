@@ -8,7 +8,10 @@ import (
 	"testing"
 	"time"
 
+	clientendpoint "github.com/lozzow/termx/client/endpoint"
+	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/wire"
 	"github.com/lozzow/termx/shared/transport/datachannel"
 )
@@ -41,11 +44,14 @@ func TestHubDataChannelTransportCannotEscapeCapabilityTerminalScope(t *testing.T
 		}
 	}()
 
-	var info protocol.TerminalInfo
-	if err := client.Call(context.Background(), "get", protocol.GetParams{TerminalID: "allowed"}, &info); err != nil {
+	application, err := clientruntime.NewApplicationSession(clientruntime.EndpointSessionStamp{EndpointID: clientendpoint.EndpointID("hub"), RouteID: clientendpoint.RouteID("webrtc"), Generation: 1}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := application.TerminalGet(context.Background(), &apipb.TerminalGetCommand{Terminal: &apipb.TerminalRef{EndpointId: "hub", TerminalId: "allowed"}}); err != nil {
 		t.Fatalf("get allowed terminal: %v", err)
 	}
-	if err := client.Call(context.Background(), "get", protocol.GetParams{TerminalID: "denied"}, &info); err == nil || !strings.Contains(err.Error(), "transport scope") {
+	if _, err := application.TerminalGet(context.Background(), &apipb.TerminalGetCommand{Terminal: &apipb.TerminalRef{EndpointId: "hub", TerminalId: "denied"}}); err == nil || !strings.Contains(err.Error(), "forbidden") {
 		t.Fatalf("expected capability scope denial, got %v", err)
 	}
 }

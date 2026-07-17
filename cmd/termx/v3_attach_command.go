@@ -107,7 +107,7 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 		Cols:         cols,
 		Rows:         rows,
 		Mode:         "collaborator",
-		ResizePolicy: protocol.ResizePolicyFollower,
+		ResizePolicy: state.TerminalResizeRoleFollower,
 		SurfaceID:    surfaceID,
 		ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
 	}}); err != nil {

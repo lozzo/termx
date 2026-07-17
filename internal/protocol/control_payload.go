@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/wirepb"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
@@ -98,21 +99,15 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 		return proto.Marshal(&wirepb.Empty{})
 	}
 	switch method {
-	case "create":
-		value, ok := params.(CreateParams)
-		if !ok {
-			if ptr, ptrOK := params.(*CreateParams); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
+	case "api.execute":
+		command, ok := params.(*apipb.CommandEnvelope)
+		if !ok || command == nil {
+			return nil, methodParamsTypeError(method, "*apipb.CommandEnvelope", params)
 		}
-		if !ok {
-			return nil, methodParamsTypeError(method, "protocol.CreateParams", params)
-		}
-		return proto.Marshal(createParamsToWirePB(value))
-	case "list", "path.defaults", "remote.status", "remote.local.status", "remote.local.disable":
+		return proto.Marshal(command)
+	case "remote.status", "remote.local.status", "remote.local.disable":
 		return proto.Marshal(&wirepb.Empty{})
-	case "get", "kill", "restart", "remove", "history.backlog.status":
+	case "history.backlog.status":
 		value, ok := params.(GetParams)
 		if !ok {
 			if ptr, ptrOK := params.(*GetParams); ptrOK && ptr != nil {
@@ -124,130 +119,6 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 			return nil, methodParamsTypeError(method, "protocol.GetParams", params)
 		}
 		return proto.Marshal(&wirepb.GetParams{TerminalId: value.TerminalID})
-	case "resize":
-		value, ok := params.(ResizeParams)
-		if !ok {
-			if ptr, ptrOK := params.(*ResizeParams); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
-		}
-		if !ok {
-			return nil, methodParamsTypeError(method, "protocol.ResizeParams", params)
-		}
-		return proto.Marshal(&wirepb.ResizeParams{TerminalId: value.TerminalID, Cols: uint32(value.Cols), Rows: uint32(value.Rows)})
-	case "input":
-		value, ok := params.(InputParams)
-		if !ok {
-			if ptr, ptrOK := params.(*InputParams); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
-		}
-		if !ok {
-			return nil, methodParamsTypeError(method, "protocol.InputParams", params)
-		}
-		return encodeInputParamsPayload(value), nil
-	case "ensure_resize", "resize.lock", "resize.unlock":
-		value, ok := params.(EnsureResizeParams)
-		if !ok {
-			if ptr, ptrOK := params.(*EnsureResizeParams); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
-		}
-		if !ok {
-			if control, controlOK := params.(ResizeControlParams); controlOK {
-				value = EnsureResizeParams{
-					TerminalID:   control.TerminalID,
-					Channel:      control.Channel,
-					ResizePolicy: control.ResizePolicy,
-					SurfaceID:    control.SurfaceID,
-					ViewID:       control.ViewID,
-				}
-				ok = true
-			} else if ptr, ptrOK := params.(*ResizeControlParams); ptrOK && ptr != nil {
-				value = EnsureResizeParams{
-					TerminalID:   ptr.TerminalID,
-					Channel:      ptr.Channel,
-					ResizePolicy: ptr.ResizePolicy,
-					SurfaceID:    ptr.SurfaceID,
-					ViewID:       ptr.ViewID,
-				}
-				ok = true
-			}
-		}
-		if !ok {
-			return nil, methodParamsTypeError(method, "protocol.EnsureResizeParams", params)
-		}
-		return proto.Marshal(&wirepb.EnsureResizeParams{
-			TerminalId:   value.TerminalID,
-			Channel:      uint32(value.Channel),
-			Cols:         uint32(value.Cols),
-			Rows:         uint32(value.Rows),
-			ResizePolicy: value.ResizePolicy,
-			SurfaceId:    value.SurfaceID,
-			ViewId:       value.ViewID,
-		})
-	case "set_tags":
-		value, ok := params.(SetTagsParams)
-		if !ok {
-			if ptr, ptrOK := params.(*SetTagsParams); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
-		}
-		if !ok {
-			return nil, methodParamsTypeError(method, "protocol.SetTagsParams", params)
-		}
-		return proto.Marshal(&wirepb.SetTagsParams{TerminalId: value.TerminalID, Tags: cloneStringMap(value.Tags)})
-	case "set_metadata":
-		value, ok := params.(SetMetadataParams)
-		if !ok {
-			if ptr, ptrOK := params.(*SetMetadataParams); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
-		}
-		if !ok {
-			return nil, methodParamsTypeError(method, "protocol.SetMetadataParams", params)
-		}
-		return proto.Marshal(&wirepb.SetMetadataParams{TerminalId: value.TerminalID, Name: value.Name, Tags: cloneStringMap(value.Tags)})
-	case "attach":
-		value, ok := params.(AttachParams)
-		if !ok {
-			if ptr, ptrOK := params.(*AttachParams); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
-		}
-		if !ok {
-			return nil, methodParamsTypeError(method, "protocol.AttachParams", params)
-		}
-		return proto.Marshal(&wirepb.AttachParams{
-			TerminalId:   value.TerminalID,
-			Mode:         value.Mode,
-			ResizePolicy: value.ResizePolicy,
-			SurfaceId:    value.SurfaceID,
-			ViewId:       value.ViewID,
-		})
-	case "detach":
-		value, ok := params.(DetachParams)
-		if !ok {
-			if ptr, ptrOK := params.(*DetachParams); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
-		}
-		if !ok {
-			return nil, methodParamsTypeError(method, "protocol.DetachParams", params)
-		}
-		return proto.Marshal(&wirepb.EnsureResizeParams{
-			TerminalId: value.TerminalID,
-			Channel:    uint32(value.Channel),
-			SurfaceId:  value.SurfaceID,
-			ViewId:     value.ViewID,
-		})
 	case "events":
 		value, ok := params.(EventsParams)
 		if !ok {
@@ -308,18 +179,6 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 			return nil, methodParamsTypeError(method, "protocol.StorageListParams", params)
 		}
 		return proto.Marshal(storageListParamsToWirePB(value))
-	case "path.list_dirs":
-		value, ok := params.(PathListDirsParams)
-		if !ok {
-			if ptr, ptrOK := params.(*PathListDirsParams); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
-		}
-		if !ok {
-			return nil, methodParamsTypeError(method, "protocol.PathListDirsParams", params)
-		}
-		return proto.Marshal(pathListDirsParamsToWirePB(value))
 	case "workbench.get":
 		value, ok := params.(WorkbenchGetParams)
 		if !ok {
@@ -433,81 +292,20 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 
 func DecodeMethodParams(method string, payload []byte) (any, error) {
 	switch method {
-	case "create":
-		var msg wirepb.CreateParams
-		if err := proto.Unmarshal(payload, &msg); err != nil {
+	case "api.execute":
+		var command apipb.CommandEnvelope
+		if err := proto.Unmarshal(payload, &command); err != nil {
 			return nil, err
 		}
-		return createParamsFromWirePB(&msg), nil
-	case "list", "path.defaults", "remote.status", "remote.local.status", "remote.local.disable":
+		return &command, nil
+	case "remote.status", "remote.local.status", "remote.local.disable":
 		return struct{}{}, decodeEmpty(payload)
-	case "get", "kill", "restart", "remove", "history.backlog.status":
+	case "history.backlog.status":
 		var msg wirepb.GetParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {
 			return nil, err
 		}
 		return GetParams{TerminalID: msg.GetTerminalId()}, nil
-	case "resize":
-		var msg wirepb.ResizeParams
-		if err := proto.Unmarshal(payload, &msg); err != nil {
-			return nil, err
-		}
-		return ResizeParams{TerminalID: msg.GetTerminalId(), Cols: uint16(msg.GetCols()), Rows: uint16(msg.GetRows())}, nil
-	case "input":
-		return decodeInputParamsPayload(payload)
-	case "ensure_resize", "resize.lock", "resize.unlock":
-		var msg wirepb.EnsureResizeParams
-		if err := proto.Unmarshal(payload, &msg); err != nil {
-			return nil, err
-		}
-		if method == "resize.lock" || method == "resize.unlock" {
-			return ResizeControlParams{
-				TerminalID:   msg.GetTerminalId(),
-				Channel:      uint16(msg.GetChannel()),
-				ResizePolicy: msg.GetResizePolicy(),
-				SurfaceID:    msg.GetSurfaceId(),
-				ViewID:       msg.GetViewId(),
-			}, nil
-		}
-		return EnsureResizeParams{
-			TerminalID:   msg.GetTerminalId(),
-			Channel:      uint16(msg.GetChannel()),
-			Cols:         uint16(msg.GetCols()),
-			Rows:         uint16(msg.GetRows()),
-			ResizePolicy: msg.GetResizePolicy(),
-			SurfaceID:    msg.GetSurfaceId(),
-			ViewID:       msg.GetViewId(),
-		}, nil
-	case "set_tags":
-		var msg wirepb.SetTagsParams
-		if err := proto.Unmarshal(payload, &msg); err != nil {
-			return nil, err
-		}
-		return SetTagsParams{TerminalID: msg.GetTerminalId(), Tags: cloneStringMap(msg.GetTags())}, nil
-	case "set_metadata":
-		var msg wirepb.SetMetadataParams
-		if err := proto.Unmarshal(payload, &msg); err != nil {
-			return nil, err
-		}
-		return SetMetadataParams{TerminalID: msg.GetTerminalId(), Name: msg.GetName(), Tags: cloneStringMap(msg.GetTags())}, nil
-	case "attach":
-		var msg wirepb.AttachParams
-		if err := proto.Unmarshal(payload, &msg); err != nil {
-			return nil, err
-		}
-		return AttachParams{
-			TerminalID:   msg.GetTerminalId(),
-			Mode:         msg.GetMode(),
-			ResizePolicy: msg.GetResizePolicy(),
-			SurfaceID:    msg.GetSurfaceId(),
-			ViewID:       msg.GetViewId(),
-		}, nil
-	case "detach":
-		var msg wirepb.EnsureResizeParams
-		if err := proto.Unmarshal(payload, &msg); err != nil {
-			return nil, err
-		}
-		return DetachParams{TerminalID: msg.GetTerminalId(), Channel: uint16(msg.GetChannel()), SurfaceID: msg.GetSurfaceId(), ViewID: msg.GetViewId()}, nil
 	case "events":
 		var msg wirepb.EventsParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {
@@ -538,12 +336,6 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 			return nil, err
 		}
 		return storageListParamsFromWirePB(&msg), nil
-	case "path.list_dirs":
-		var msg wirepb.PathListDirsParams
-		if err := proto.Unmarshal(payload, &msg); err != nil {
-			return nil, err
-		}
-		return pathListDirsParamsFromWirePB(&msg), nil
 	case "workbench.get":
 		var msg wirepb.WorkbenchGetParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {
@@ -619,75 +411,12 @@ func EncodeMethodResult(method string, result any) ([]byte, error) {
 		return proto.Marshal(&wirepb.Empty{})
 	}
 	switch method {
-	case "create":
-		value, ok := result.(CreateResult)
-		if !ok {
-			if ptr, ptrOK := result.(*CreateResult); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
+	case "api.execute":
+		envelope, ok := result.(*apipb.ResultEnvelope)
+		if !ok || envelope == nil {
+			return nil, methodResultTypeError(method, "*apipb.ResultEnvelope", result)
 		}
-		if !ok {
-			return nil, methodResultTypeError(method, "protocol.CreateResult", result)
-		}
-		return proto.Marshal(&wirepb.CreateResult{TerminalId: value.TerminalID, State: value.State})
-	case "list":
-		value, ok := result.(ListResult)
-		if !ok {
-			if ptr, ptrOK := result.(*ListResult); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
-		}
-		if !ok {
-			return nil, methodResultTypeError(method, "protocol.ListResult", result)
-		}
-		return proto.Marshal(listResultToWirePB(value))
-	case "get":
-		value, ok := result.(TerminalInfo)
-		if !ok {
-			if ptr, ptrOK := result.(*TerminalInfo); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
-		}
-		if !ok {
-			return nil, methodResultTypeError(method, "protocol.TerminalInfo", result)
-		}
-		return proto.Marshal(terminalInfoToWirePB(value))
-	case "ensure_resize", "resize.lock", "resize.unlock":
-		value, ok := result.(EnsureResizeResult)
-		if !ok {
-			if ptr, ptrOK := result.(*EnsureResizeResult); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
-		}
-		if !ok {
-			if control, controlOK := result.(ResizeControlResult); controlOK {
-				value = EnsureResizeResult{ResizeControl: control.ResizeControl, Size: control.Size}
-				ok = true
-			} else if ptr, ptrOK := result.(*ResizeControlResult); ptrOK && ptr != nil {
-				value = EnsureResizeResult{ResizeControl: ptr.ResizeControl, Size: ptr.Size}
-				ok = true
-			}
-		}
-		if !ok {
-			return nil, methodResultTypeError(method, "protocol.EnsureResizeResult", result)
-		}
-		return proto.Marshal(&wirepb.EnsureResizeResult{ResizeControl: resizeControlToWirePB(value.ResizeControl), Size: sizeToWirePB(value.Size), Resized: value.Resized})
-	case "attach":
-		value, ok := result.(AttachResult)
-		if !ok {
-			if ptr, ptrOK := result.(*AttachResult); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
-		}
-		if !ok {
-			return nil, methodResultTypeError(method, "protocol.AttachResult", result)
-		}
-		return proto.Marshal(&wirepb.AttachResult{Mode: value.Mode, Channel: uint32(value.Channel), ResizeControl: resizeControlToWirePB(value.ResizeControl)})
+		return proto.Marshal(envelope)
 	case "storage.get", "storage.put":
 		value, ok := result.(StorageEntry)
 		if !ok {
@@ -724,30 +453,6 @@ func EncodeMethodResult(method string, result any) ([]byte, error) {
 			return nil, methodResultTypeError(method, "protocol.StorageListResult", result)
 		}
 		return proto.Marshal(storageListResultToWirePB(value))
-	case "path.list_dirs":
-		value, ok := result.(PathListDirsResult)
-		if !ok {
-			if ptr, ptrOK := result.(*PathListDirsResult); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
-		}
-		if !ok {
-			return nil, methodResultTypeError(method, "protocol.PathListDirsResult", result)
-		}
-		return proto.Marshal(pathListDirsResultToWirePB(value))
-	case "path.defaults":
-		value, ok := result.(PathDefaultsResult)
-		if !ok {
-			if ptr, ptrOK := result.(*PathDefaultsResult); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
-		}
-		if !ok {
-			return nil, methodResultTypeError(method, "protocol.PathDefaultsResult", result)
-		}
-		return proto.Marshal(pathDefaultsResultToWirePB(value))
 	case "workbench.get":
 		value, ok := result.(WorkbenchSnapshot)
 		if !ok {
@@ -836,69 +541,12 @@ func DecodeMethodResult(method string, payload []byte, out any) error {
 		return nil
 	}
 	switch method {
-	case "create":
-		var msg wirepb.CreateResult
-		if err := proto.Unmarshal(payload, &msg); err != nil {
-			return err
+	case "api.execute":
+		envelope, ok := out.(*apipb.ResultEnvelope)
+		if !ok || envelope == nil {
+			return methodOutTypeError(method, "*apipb.ResultEnvelope", out)
 		}
-		ptr, ok := out.(*CreateResult)
-		if !ok || ptr == nil {
-			return methodOutTypeError(method, "*protocol.CreateResult", out)
-		}
-		*ptr = CreateResult{TerminalID: msg.GetTerminalId(), State: msg.GetState()}
-		return nil
-	case "list":
-		var msg wirepb.ListResult
-		if err := proto.Unmarshal(payload, &msg); err != nil {
-			return err
-		}
-		ptr, ok := out.(*ListResult)
-		if !ok || ptr == nil {
-			return methodOutTypeError(method, "*protocol.ListResult", out)
-		}
-		*ptr = listResultFromWirePB(&msg)
-		return nil
-	case "get":
-		var msg wirepb.TerminalInfo
-		if err := proto.Unmarshal(payload, &msg); err != nil {
-			return err
-		}
-		ptr, ok := out.(*TerminalInfo)
-		if !ok || ptr == nil {
-			return methodOutTypeError(method, "*protocol.TerminalInfo", out)
-		}
-		*ptr = terminalInfoFromWirePB(&msg)
-		return nil
-	case "ensure_resize", "resize.lock", "resize.unlock":
-		var msg wirepb.EnsureResizeResult
-		if err := proto.Unmarshal(payload, &msg); err != nil {
-			return err
-		}
-		if method == "resize.lock" || method == "resize.unlock" {
-			ptr, ok := out.(*ResizeControlResult)
-			if !ok || ptr == nil {
-				return methodOutTypeError(method, "*protocol.ResizeControlResult", out)
-			}
-			*ptr = ResizeControlResult{ResizeControl: resizeControlFromWirePB(msg.GetResizeControl()), Size: sizeFromWirePB(msg.GetSize())}
-			return nil
-		}
-		ptr, ok := out.(*EnsureResizeResult)
-		if !ok || ptr == nil {
-			return methodOutTypeError(method, "*protocol.EnsureResizeResult", out)
-		}
-		*ptr = EnsureResizeResult{ResizeControl: resizeControlFromWirePB(msg.GetResizeControl()), Size: sizeFromWirePB(msg.GetSize()), Resized: msg.GetResized()}
-		return nil
-	case "attach":
-		var msg wirepb.AttachResult
-		if err := proto.Unmarshal(payload, &msg); err != nil {
-			return err
-		}
-		ptr, ok := out.(*AttachResult)
-		if !ok || ptr == nil {
-			return methodOutTypeError(method, "*protocol.AttachResult", out)
-		}
-		*ptr = AttachResult{Mode: msg.GetMode(), Channel: uint16(msg.GetChannel()), ResizeControl: resizeControlFromWirePB(msg.GetResizeControl())}
-		return nil
+		return proto.Unmarshal(payload, envelope)
 	case "storage.get", "storage.put":
 		var msg wirepb.StorageEntry
 		if err := proto.Unmarshal(payload, &msg); err != nil {
@@ -931,28 +579,6 @@ func DecodeMethodResult(method string, payload []byte, out any) error {
 			return methodOutTypeError(method, "*protocol.StorageListResult", out)
 		}
 		*ptr = storageListResultFromWirePB(&msg)
-		return nil
-	case "path.list_dirs":
-		var msg wirepb.PathListDirsResult
-		if err := proto.Unmarshal(payload, &msg); err != nil {
-			return err
-		}
-		ptr, ok := out.(*PathListDirsResult)
-		if !ok || ptr == nil {
-			return methodOutTypeError(method, "*protocol.PathListDirsResult", out)
-		}
-		*ptr = pathListDirsResultFromWirePB(&msg)
-		return nil
-	case "path.defaults":
-		var msg wirepb.PathDefaultsResult
-		if err := proto.Unmarshal(payload, &msg); err != nil {
-			return err
-		}
-		ptr, ok := out.(*PathDefaultsResult)
-		if !ok || ptr == nil {
-			return methodOutTypeError(method, "*protocol.PathDefaultsResult", out)
-		}
-		*ptr = pathDefaultsResultFromWirePB(&msg)
 		return nil
 	case "workbench.get":
 		var msg wirepb.WorkbenchSnapshot
@@ -1206,179 +832,6 @@ func remoteLocalStatusFromWirePB(msg *wirepb.RemoteLocalStatus) RemoteLocalStatu
 	}
 }
 
-func createParamsToWirePB(params CreateParams) *wirepb.CreateParams {
-	return &wirepb.CreateParams{
-		Command:                 append([]string(nil), params.Command...),
-		Id:                      params.ID,
-		Name:                    params.Name,
-		Tags:                    cloneStringMap(params.Tags),
-		Size:                    sizeToWirePB(params.Size),
-		Dir:                     params.Dir,
-		Env:                     append([]string(nil), params.Env...),
-		ScrollbackSize:          int32(params.ScrollbackSize),
-		ScrollbackMaxBytes:      params.ScrollbackMaxBytes,
-		ScrollbackMaxAgeSeconds: int64(params.ScrollbackMaxAge / time.Second),
-	}
-}
-
-func createParamsFromWirePB(msg *wirepb.CreateParams) CreateParams {
-	if msg == nil {
-		return CreateParams{}
-	}
-	return CreateParams{
-		Command:            append([]string(nil), msg.GetCommand()...),
-		ID:                 msg.GetId(),
-		Name:               msg.GetName(),
-		Tags:               cloneStringMap(msg.GetTags()),
-		Size:               sizeFromWirePB(msg.GetSize()),
-		Dir:                msg.GetDir(),
-		Env:                append([]string(nil), msg.GetEnv()...),
-		ScrollbackSize:     int(msg.GetScrollbackSize()),
-		ScrollbackMaxBytes: msg.GetScrollbackMaxBytes(),
-		ScrollbackMaxAge:   time.Duration(msg.GetScrollbackMaxAgeSeconds()) * time.Second,
-	}
-}
-
-func terminalInfoToWirePB(info TerminalInfo) *wirepb.TerminalInfo {
-	msg := &wirepb.TerminalInfo{
-		Id:                         info.ID,
-		Name:                       info.Name,
-		Command:                    append([]string(nil), info.Command...),
-		Tags:                       cloneStringMap(info.Tags),
-		Size:                       sizeToWirePB(info.Size),
-		State:                      info.State,
-		Cwd:                        info.CWD,
-		LiveCwd:                    info.LiveCWD,
-		CreatedAtUnixNano:          timeToUnixNano(info.CreatedAt),
-		ExitedAtUnixNano:           timeToUnixNano(info.ExitedAt),
-		ResizeOwnership:            resizeOwnershipToWirePB(info.ResizeOwnership),
-		ResizeOwnerAttachmentCount: int32(info.ResizeOwnerAttachmentCount),
-	}
-	if info.ExitCode != nil {
-		value := int32(*info.ExitCode)
-		msg.ExitCode = &value
-	}
-	setInt64UnknownField(msg, terminalInfoExitedAtFieldNumber, timeToUnixNano(info.ExitedAt))
-	setInt32ProtoFieldOrUnknown(msg, terminalInfoResourcePIDFieldNumber, int32(info.Resources.PID))
-	setInt32ProtoFieldOrUnknown(msg, terminalInfoResourceCPUPercentX100FieldNumber, int32(info.Resources.CPUPercentX100))
-	setUint64ProtoFieldOrUnknown(msg, terminalInfoResourceMemoryBytesFieldNumber, info.Resources.MemoryBytes)
-	setInt64UnknownField(msg, terminalInfoResourceSampledAtFieldNumber, timeToUnixNano(info.Resources.SampledAt))
-	return msg
-}
-
-func terminalInfoFromWirePB(msg *wirepb.TerminalInfo) TerminalInfo {
-	if msg == nil {
-		return TerminalInfo{}
-	}
-	out := TerminalInfo{
-		ID:                         msg.GetId(),
-		Name:                       msg.GetName(),
-		Command:                    append([]string(nil), msg.GetCommand()...),
-		Tags:                       cloneStringMap(msg.GetTags()),
-		Size:                       sizeFromWirePB(msg.GetSize()),
-		State:                      msg.GetState(),
-		CWD:                        msg.GetCwd(),
-		LiveCWD:                    msg.GetLiveCwd(),
-		CreatedAt:                  unixNanoToTime(msg.GetCreatedAtUnixNano()),
-		ExitedAt:                   unixNanoToTime(msg.GetExitedAtUnixNano()),
-		ResizeOwnership:            resizeOwnershipFromWirePB(msg.GetResizeOwnership()),
-		ResizeOwnerAttachmentCount: int(msg.GetResizeOwnerAttachmentCount()),
-		Resources: TerminalResourceUsage{
-			PID:            int(int32ProtoFieldOrUnknown(msg, terminalInfoResourcePIDFieldNumber)),
-			CPUPercentX100: int(int32ProtoFieldOrUnknown(msg, terminalInfoResourceCPUPercentX100FieldNumber)),
-			MemoryBytes:    uint64ProtoFieldOrUnknown(msg, terminalInfoResourceMemoryBytesFieldNumber),
-			SampledAt:      unixNanoToTime(int64UnknownField(msg, terminalInfoResourceSampledAtFieldNumber)),
-		},
-	}
-	if msg.ExitCode != nil {
-		value := int(msg.GetExitCode())
-		out.ExitCode = &value
-	}
-	if out.ExitedAt.IsZero() {
-		out.ExitedAt = unixNanoToTime(int64UnknownField(msg, terminalInfoExitedAtFieldNumber))
-	}
-	return out
-}
-
-func listResultToWirePB(result ListResult) *wirepb.ListResult {
-	out := &wirepb.ListResult{Terminals: make([]*wirepb.TerminalInfo, 0, len(result.Terminals))}
-	for _, item := range result.Terminals {
-		out.Terminals = append(out.Terminals, terminalInfoToWirePB(item))
-	}
-	return out
-}
-
-func listResultFromWirePB(msg *wirepb.ListResult) ListResult {
-	if msg == nil {
-		return ListResult{}
-	}
-	out := ListResult{Terminals: make([]TerminalInfo, 0, len(msg.GetTerminals()))}
-	for _, item := range msg.GetTerminals() {
-		out.Terminals = append(out.Terminals, terminalInfoFromWirePB(item))
-	}
-	return out
-}
-
-func resizeOwnershipToWirePB(value *ResizeOwnership) *wirepb.ResizeOwnership {
-	if value == nil {
-		return nil
-	}
-	return &wirepb.ResizeOwnership{
-		OwnerAttachmentId: value.OwnerAttachmentID,
-		OwnerSurfaceId:    value.OwnerSurfaceID,
-		OwnerViewId:       value.OwnerViewID,
-		OwnerRemoteAddr:   value.OwnerRemoteAddr,
-		Size:              sizeToWirePB(value.Size),
-		SizeLocked:        value.SizeLocked,
-		Epoch:             value.Epoch,
-	}
-}
-
-func resizeOwnershipFromWirePB(msg *wirepb.ResizeOwnership) *ResizeOwnership {
-	if msg == nil {
-		return nil
-	}
-	return &ResizeOwnership{
-		OwnerAttachmentID: msg.GetOwnerAttachmentId(),
-		OwnerSurfaceID:    msg.GetOwnerSurfaceId(),
-		OwnerViewID:       msg.GetOwnerViewId(),
-		OwnerRemoteAddr:   msg.GetOwnerRemoteAddr(),
-		Size:              sizeFromWirePB(msg.GetSize()),
-		SizeLocked:        msg.GetSizeLocked(),
-		Epoch:             msg.GetEpoch(),
-	}
-}
-
-func resizeControlToWirePB(value *ResizeControl) *wirepb.ResizeControl {
-	if value == nil {
-		return nil
-	}
-	return &wirepb.ResizeControl{
-		CanResize:       value.CanResize,
-		Reason:          value.Reason,
-		SizeLocked:      value.SizeLocked,
-		SurfaceId:       value.SurfaceID,
-		OwnerSurfaceId:  value.OwnerSurfaceID,
-		OwnerViewId:     value.OwnerViewID,
-		ResizeOwnership: resizeOwnershipToWirePB(value.ResizeOwnership),
-	}
-}
-
-func resizeControlFromWirePB(msg *wirepb.ResizeControl) *ResizeControl {
-	if msg == nil {
-		return nil
-	}
-	return &ResizeControl{
-		CanResize:       msg.GetCanResize(),
-		Reason:          msg.GetReason(),
-		SizeLocked:      msg.GetSizeLocked(),
-		SurfaceID:       msg.GetSurfaceId(),
-		OwnerSurfaceID:  msg.GetOwnerSurfaceId(),
-		OwnerViewID:     msg.GetOwnerViewId(),
-		ResizeOwnership: resizeOwnershipFromWirePB(msg.GetResizeOwnership()),
-	}
-}
-
 func eventsParamsToWirePB(params EventsParams) *wirepb.EventsParams {
 	out := &wirepb.EventsParams{
 		TerminalId:       params.TerminalID,
@@ -1579,63 +1032,6 @@ func storageListResultFromWirePB(msg *wirepb.StorageListResult) StorageListResul
 		out.Entries = append(out.Entries, storageEntryFromWirePB(entry))
 	}
 	return out
-}
-
-func pathListDirsParamsToWirePB(params PathListDirsParams) *wirepb.PathListDirsParams {
-	return &wirepb.PathListDirsParams{Prefix: params.Prefix, Limit: int32(params.Limit)}
-}
-
-func pathListDirsParamsFromWirePB(msg *wirepb.PathListDirsParams) PathListDirsParams {
-	if msg == nil {
-		return PathListDirsParams{}
-	}
-	return PathListDirsParams{Prefix: msg.GetPrefix(), Limit: int(msg.GetLimit())}
-}
-
-func pathListDirsResultToWirePB(result PathListDirsResult) *wirepb.PathListDirsResult {
-	out := &wirepb.PathListDirsResult{
-		BasePath:  result.BasePath,
-		Missing:   result.Missing,
-		Truncated: result.Truncated,
-		Entries:   make([]*wirepb.PathDirEntry, 0, len(result.Entries)),
-	}
-	for _, entry := range result.Entries {
-		out.Entries = append(out.Entries, &wirepb.PathDirEntry{Name: entry.Name, Path: entry.Path})
-	}
-	return out
-}
-
-func pathListDirsResultFromWirePB(msg *wirepb.PathListDirsResult) PathListDirsResult {
-	if msg == nil {
-		return PathListDirsResult{}
-	}
-	out := PathListDirsResult{
-		BasePath:  msg.GetBasePath(),
-		Missing:   msg.GetMissing(),
-		Truncated: msg.GetTruncated(),
-		Entries:   make([]PathDirEntry, 0, len(msg.GetEntries())),
-	}
-	for _, entry := range msg.GetEntries() {
-		out.Entries = append(out.Entries, PathDirEntry{Name: entry.GetName(), Path: entry.GetPath()})
-	}
-	return out
-}
-
-func pathDefaultsResultToWirePB(result PathDefaultsResult) *wirepb.PathDefaultsResult {
-	return &wirepb.PathDefaultsResult{
-		DefaultCommand: append([]string(nil), result.DefaultCommand...),
-		DefaultCwd:     result.DefaultCWD,
-	}
-}
-
-func pathDefaultsResultFromWirePB(msg *wirepb.PathDefaultsResult) PathDefaultsResult {
-	if msg == nil {
-		return PathDefaultsResult{}
-	}
-	return PathDefaultsResult{
-		DefaultCommand: append([]string(nil), msg.GetDefaultCommand()...),
-		DefaultCWD:     msg.GetDefaultCwd(),
-	}
 }
 
 func workbenchSnapshotToWirePB(snapshot WorkbenchSnapshot) *wirepb.WorkbenchSnapshot {

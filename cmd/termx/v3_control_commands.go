@@ -7,7 +7,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/lozzow/termx/internal/protocol"
+	clientendpoint "github.com/lozzow/termx/client/endpoint"
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -43,18 +44,18 @@ func v3NewCommand(socket *string, logFile *string) *cobra.Command {
 				// 用户名称就是 daemon-local terminal key，随机 ID 只服务无名称的兼容入口。
 				terminalID = terminalName
 			}
-			created, err := client.Create(context.Background(), protocol.CreateParams{
-				ID:      terminalID,
-				Command: args,
-				Name:    name,
-				Size:    currentSize(),
-			})
+			application, err := newLocalApplicationSession(client)
+			if err != nil {
+				return err
+			}
+			created, err := application.TerminalCreate(context.Background(), &apipb.TerminalCreateCommand{Terminal: &apipb.TerminalCreateSpec{TerminalId: terminalID, Command: args, Name: name, Size: currentSize()}})
 			if err != nil {
 				logger.Error("create core-v2 terminal failed", "error", err)
 				return err
 			}
-			logger.Info("created core-v2 terminal", "terminal_id", created.TerminalID)
-			fmt.Fprintln(cmd.OutOrStdout(), created.TerminalID)
+			createdID := created.GetTerminal().GetRef().GetTerminalId()
+			logger.Info("created core-v2 terminal", "terminal_id", createdID)
+			fmt.Fprintln(cmd.OutOrStdout(), createdID)
 			return nil
 		},
 	}
@@ -66,12 +67,12 @@ func newV3TerminalID() string {
 	return "term-" + uuid.NewString()
 }
 
-func currentSize() protocol.Size {
+func currentSize() *apipb.TerminalSize {
 	cols, rows, err := term.GetSize(int(os.Stdout.Fd()))
 	if err != nil {
-		return protocol.Size{}
+		return &apipb.TerminalSize{}
 	}
-	return protocol.Size{Cols: uint16(cols), Rows: uint16(rows)}
+	return &apipb.TerminalSize{Cols: uint32(cols), Rows: uint32(rows)}
 }
 
 func v3LsCommand(socket *string, logFile *string) *cobra.Command {
@@ -89,7 +90,11 @@ func v3LsCommand(socket *string, logFile *string) *cobra.Command {
 				return err
 			}
 			defer client.Close()
-			list, err := client.List(context.Background())
+			application, err := newLocalApplicationSession(client)
+			if err != nil {
+				return err
+			}
+			list, err := application.TerminalList(context.Background(), &apipb.TerminalListCommand{})
 			if err != nil {
 				logger.Error("list core-v2 terminals failed", "error", err)
 				return err
@@ -97,7 +102,7 @@ func v3LsCommand(socket *string, logFile *string) *cobra.Command {
 			logger.Info("listed core-v2 terminals", "count", len(list.Terminals))
 			for _, item := range list.Terminals {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%dx%d\n",
-					item.ID, item.Name, strings.Join(item.Command, " "), item.State, item.Size.Cols, item.Size.Rows)
+					item.GetRef().GetTerminalId(), item.GetName(), strings.Join(item.GetCommand(), " "), terminalStateString(item.GetState()), item.GetSize().GetCols(), item.GetSize().GetRows())
 			}
 			return nil
 		},
@@ -121,7 +126,11 @@ func v3KillCommand(socket *string, logFile *string) *cobra.Command {
 				return err
 			}
 			defer client.Close()
-			err = client.Kill(context.Background(), args[0])
+			application, err := newLocalApplicationSession(client)
+			if err != nil {
+				return err
+			}
+			err = application.TerminalKill(context.Background(), &apipb.TerminalKillCommand{Terminal: &apipb.TerminalRef{EndpointId: string(clientendpoint.DefaultEndpointID), TerminalId: args[0]}})
 			if err != nil {
 				logger.Error("kill core-v2 terminal failed", "terminal_id", args[0], "error", err)
 			}
@@ -149,7 +158,11 @@ func v3RemoveCommand(socket *string, logFile *string) *cobra.Command {
 				return err
 			}
 			defer client.Close()
-			err = client.Remove(context.Background(), args[0])
+			application, err := newLocalApplicationSession(client)
+			if err != nil {
+				return err
+			}
+			err = application.TerminalRemove(context.Background(), &apipb.TerminalRemoveCommand{Terminal: &apipb.TerminalRef{EndpointId: string(clientendpoint.DefaultEndpointID), TerminalId: args[0]}})
 			if err != nil {
 				logger.Error("remove core-v2 terminal failed", "terminal_id", args[0], "error", err)
 			}
