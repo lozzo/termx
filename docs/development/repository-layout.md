@@ -70,6 +70,7 @@ cmd / platform binding / tui adapter
 
 - `client/endpoint` 不 import `client/runtime`、TUI、Cobra、platform UI、Cloud 私有实现或 protocol client。
 - `client/runtime` 不 import `tui/`、`cmd/`、Android/JNI、Swift、DOM 或 `private/`。
+- `client/runtime` 和 `client/port` 不 import concrete protocol、transport、remoteauth、Cloud Companion 或 WebRTC client；这些依赖只能出现在 `client/adapter/*`。
 - `client/adapter/*` 可以依赖 runtime port 和具体 transport/protocol primitive，但不能持有第二份 route/session truth。
 - `tui/state`、`tui/app` 和 `tui/render` 不 import concrete transport、credential store、Cloud Companion client 或 protocol client。
 - `tui/port` 只定义 TUI 所需 interface/DTO；不得实现 IO，不得包含 fake。
@@ -88,6 +89,14 @@ cmd / platform binding / tui adapter
 4. TUI fake 位于 `tui/testkit/`，生产 port 不包含测试状态或宿主 IO。
 5. `EndpointServiceBundle`、`EndpointDialer` 已退出 TUI；后续 ready bundle contract 只能归 `client/runtime` 或 `client/port`。
 6. 静态依赖守卫禁止 client 依赖 UI/CLI/private，也禁止 TUI port 重新依赖 protocol、adapter、testkit 或 `os/exec`。
+
+## 接口优先约束
+
+- `client/runtime.Runtime` 是 TUI、CLI 和未来平台 binding 使用的连接控制面接口，只返回不可变 `SessionLease` 与 endpoint event，不暴露 transport 或 protocol client。
+- `client/runtime.RouteAttemptDialer` 是 runtime 到单 route adapter 的边界；adapter 只能执行指定 attempt，不能选择其它 route 或 fallback。
+- `client/runtime.ReadySession` 只在 transport、identity、authorization 和 protocol Hello 全部完成后成立，并拥有明确的 Done/Err/Close 生命周期。
+- `client/port.Clock` 等 host capability 必须先定义接口和取消/释放语义，再接系统实现。
+- TUI/CLI consumer 迁移必须发生在上述 contract 和 harness 之后；不得根据当前 concrete method 集合反向生成宽接口。
 
 本轮没有移动 `shared/transport`、`shared/remoteauth`、`shared/cloudcompanion`、`perftrace`、`filelock`，也没有机械重命名整个 `tui/app`、`tui/state`、`tui/render`。这些目录确有命名与职责债务，但只能按后续独立切片处理，避免干扰连接运行时主线。
 

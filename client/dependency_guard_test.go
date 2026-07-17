@@ -25,10 +25,22 @@ func TestClientPackagesRespectDependencyDirection(t *testing.T) {
 	))
 	assertClientImportsExclude(t, "runtime", append(commonForbidden,
 		"github.com/lozzow/termx/client/adapter",
+		"github.com/lozzow/termx/internal/protocol",
+		"github.com/lozzow/termx/shared/transport",
+		"github.com/lozzow/termx/shared/cloudcompanion",
+		"github.com/lozzow/termx/shared/remoteauth",
+		"github.com/lozzow/termx/remote/client",
+		"github.com/lozzow/termx/remote/webrtc",
 	))
 	assertClientImportsExclude(t, "port", append(commonForbidden,
 		"github.com/lozzow/termx/client/runtime",
 		"github.com/lozzow/termx/client/adapter",
+		"github.com/lozzow/termx/internal/protocol",
+		"github.com/lozzow/termx/shared/transport",
+		"github.com/lozzow/termx/shared/cloudcompanion",
+		"github.com/lozzow/termx/shared/remoteauth",
+		"github.com/lozzow/termx/remote/client",
+		"github.com/lozzow/termx/remote/webrtc",
 	))
 	assertClientImportsExclude(t, "adapter", commonForbidden)
 }
