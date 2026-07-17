@@ -21,6 +21,7 @@ client/
   binding/           后续 AAR、XCFramework、C ABI、WASM 的稳定外部边界
 
 core/                daemon terminal lifecycle、history、live、storage truth
+  api/                wire/UI-independent daemon application projection contract
 tui/                 纯 TUI 产品与平台适配
   state/             当前 reducer-owned UI model；后续独立切片再评估改名 model
   app/               当前 reducer/effect/workflow；后续独立切片再拆 update/runtime
@@ -79,6 +80,7 @@ cmd / platform binding / tui adapter
 - `tui/adapter/*` 实现 port，并通过 message/effect 回投；不得直接修改 reducer-owned state。
 - `cmd/termx` 不实现 Dial、Hello、authorization、credential resolution、route race、session cache 或 transport cleanup。
 - `core/`、`remote/`、`private/` 不反向 import TUI 或 CLI。
+- `core/api` 不 import core implementation、storage、protocol/wire、client runtime 或 TUI；core implementation、protocol adapter 和 client runtime 只能共同依赖这套 daemon-owned projection contract。
 - 外部绑定只暴露 versioned protobuf command/event、opaque handle 和显式资源释放，不暴露 Go pointer 或内部 struct。
 
 ## 当前已落实边界
