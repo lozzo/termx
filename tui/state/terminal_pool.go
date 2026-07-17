@@ -95,7 +95,7 @@ func (store TerminalPoolStore) ApplyList(seq uint64, items []TerminalPoolItem, e
 }
 
 // ApplyEndpointList 应用单个 endpoint 的 terminal list 结果。
-// 该入口服务多 endpoint manager：成功只替换同 endpoint 条目，失败不清空任何 terminal，避免局部离线污染其他 daemon 的列表真值。
+// 该入口服务多 endpoint runtime projection：成功只替换同 endpoint 条目，失败不清空任何 terminal，避免局部离线污染其他 daemon 的列表真值。
 func (store TerminalPoolStore) ApplyEndpointList(endpointID EndpointID, items []TerminalPoolItem, err string) TerminalPoolStore {
 	endpointID = NormalizeEndpointID(endpointID)
 	if strings.TrimSpace(err) != "" {

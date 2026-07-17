@@ -232,5 +232,5 @@ func SendInput(ctx, req) (Result, error) {
 
 ## 当前状态记录
 
-- 2026-07-17：C3S2 完成。Endpoint 领域位于 `client/endpoint`；客户端边界为 `client/runtime`、`client/port` 与 local/SSH/managed/protocol adapter；TUI 边界为 `tui/port`、`tui/adapter/protocol`、`tui/adapter/system` 与 `tui/testkit`。client/TUI 静态依赖守卫已启用，相关准入通过；`cmd/termx` 仅保留 C3D/C3E 计划内未接线缺口。两份依赖旧 TUI session owner 的 Cloud E2E harness 已从仓库删除，参考副本位于仓库外 `/tmp/termx-c3s2-ref/`，C3D 后按共享 runtime 重写。
+- 2026-07-17：C3S2 完成。Endpoint 领域位于 `client/endpoint`；客户端边界为 `client/runtime`、`client/port` 与 local/SSH/managed/protocol adapter；TUI 边界为 `tui/port`、`tui/adapter/protocol`、`tui/adapter/system` 与 `tui/testkit`。client/TUI 静态依赖守卫已启用，相关准入通过；`cmd/termx` 仅保留 C3D/C3E 计划内未接线缺口。managed direct/single Relay 真实 E2E 已改为显式建立单次 WebRTC/protocol session，不再依赖已删除的 TUI session owner。
 - 2026-07-17：跨端 runtime 决策写入当前真值。CONN003 不再把 session owner 固化在 TUI；共享 Go client runtime 负责 planner/race/generation/protocol/auth，TUI/CLI 先接 adapter，Android 通过 AAR、iOS 通过 XCFramework、桌面通过 C ABI 或进程内 adapter 接入。Web 只考虑浏览器原生 WebRTC 的 Pion WASM wrapper；未解决等价 DTLS channel binding 前不进入生产 CapabilityGrant 链路，本轮不做真实跨平台编译。

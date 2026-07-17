@@ -30,7 +30,7 @@ type EndpointRuntimeStatusMsg struct {
 
 func (EndpointRuntimeStatusMsg) isMsg() {}
 
-// NewEndpointStatusReducer 处理 endpoint manager 主动发布的 transport/protocol 状态。
+// NewEndpointStatusReducer 处理 client runtime adapter 主动发布的 transport/protocol 状态。
 // reducer 只更新 endpoint/pane/live 投影；断线错误不得作为全局 toast 写入 ShellStore。
 func NewEndpointStatusReducer(deps LiveDeps) Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {

@@ -20,6 +20,7 @@ import (
 	"github.com/lozzow/termx/internal/protocol"
 	tuiv3 "github.com/lozzow/termx/tui"
 	actiondomain "github.com/lozzow/termx/tui/action"
+	protocoladapter "github.com/lozzow/termx/tui/adapter/protocol"
 	"github.com/lozzow/termx/tui/app"
 	tuiinput "github.com/lozzow/termx/tui/input"
 	tuiservices "github.com/lozzow/termx/tui/port"
@@ -1841,7 +1842,7 @@ func TestV3InteractiveRuntimeCoreV2ResizeFailureSurfacesInSession(t *testing.T) 
 func TestV3TerminalServiceCreateRejectsMissingCommandAgainstCoreV2(t *testing.T) {
 	_, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
 	defer closeClient()
-	adapter := tuiservices.ProtocolTerminalServiceAdapter{Client: client}
+	adapter := protocoladapter.ProtocolTerminalServiceAdapter{Client: client}
 	_, err := adapter.Create(context.Background(), tuiservices.TerminalCreateRequest{
 		TerminalID: "term-default-command",
 		Title:      "default command",

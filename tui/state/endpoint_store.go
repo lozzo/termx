@@ -10,7 +10,7 @@ import (
 
 const (
 	// EndpointTransportLocal 表示通过本机 unix socket 访问 daemon。
-	// 该值只用于 TUI reducer/view-model 展示，真实 dial 仍由 endpoint manager 和 transport 层负责。
+	// 该值只用于 TUI reducer/view-model 展示，真实 dial 仍由 client runtime 和 transport adapter 负责。
 	EndpointTransportLocal EndpointTransportKind = "local-unix"
 	// EndpointTransportSSH 表示通过 SSH 访问远端 daemon。
 	// SSH host key 与认证结果不由 label 或 endpoint id 表达，必须在 transport 连接阶段处理。
@@ -40,8 +40,8 @@ const (
 	// EndpointStatusConnected 表示该 endpoint 最近一次 list/connect 成功。
 	// 这只是 TUI 已知的运行时投影，terminal lifecycle truth 仍在 owning daemon。
 	EndpointStatusConnected EndpointStatusKind = "connected"
-	// EndpointStatusConnecting 表示 endpoint manager 正在建立连接。
-	// ME004 只提供展示状态，真实连接流程在后续 ME007/ME008 接入。
+	// EndpointStatusConnecting 表示 client runtime 正在建立连接。
+	// 该值只提供展示状态，真实连接流程按 CONN003 的 client runtime 切片接入。
 	EndpointStatusConnecting EndpointStatusKind = "connecting"
 	// EndpointStatusAuto 表示 auto endpoint 已配置但当前没有已知连接结果。
 	// 它和 connect mode 同名，是为了让 picker 能展示启动期的连接策略状态。
@@ -94,7 +94,7 @@ type EndpointTransportKind string
 // 它来自 connection registry，只影响未来连接时机，不热切换已连接 session。
 type EndpointConnectMode string
 
-// EndpointStatusKind 是 endpoint manager 回投给 reducer 的运行时展示状态。
+// EndpointStatusKind 是 client runtime adapter 回投给 reducer 的运行时展示状态。
 // renderer 只能消费该状态；真正的 terminal list、history 和 lifecycle 仍属于 owning daemon。
 type EndpointStatusKind string
 
@@ -116,7 +116,7 @@ type EndpointRouteItem struct {
 
 // EndpointItem 是 reducer-owned endpoint 展示投影。
 // ID 是 workbench/路由主键；Label/Transport/ConnectMode 来自 registry；
-// Status/LastError 来自 endpoint manager 的运行时消息；DefaultCommand/DefaultCWD
+// Status/LastError 来自 client runtime adapter 的运行时消息；DefaultCommand/DefaultCWD
 // 来自 owning daemon 的 path.defaults，不得由 TUI 本地环境推断。
 type EndpointItem struct {
 	ID                EndpointID
@@ -272,7 +272,7 @@ func (store EndpointStore) DisplayEndpoint(endpointID EndpointID) (EndpointItem,
 }
 
 // Upsert 插入或替换一个 endpoint 展示投影。
-// 它用于测试 harness 和后续 endpoint manager 消息回投；重复 ID 只保留最后一次写入的状态。
+// 它用于测试 harness 和后续 client runtime adapter 消息回投；重复 ID 只保留最后一次写入的状态。
 func (store EndpointStore) Upsert(item EndpointItem) EndpointStore {
 	item = item.withDefaults()
 	items := cloneEndpointItems(store.Items)
@@ -296,7 +296,7 @@ func (store EndpointStore) MarkTerminalListResult(endpointID EndpointID, termina
 	return store.MarkRuntimeStatus(endpointID, EndpointStatusUnknown, EndpointErrorUnknown, terminalCount, err)
 }
 
-// MarkRuntimeStatus 记录 endpoint manager 主动回投的连接状态。
+// MarkRuntimeStatus 记录 client runtime adapter 主动回投的连接状态。
 // Status/ErrorKind 来自 endpoint-scoped service/transport 事件；该方法只更新对应 endpoint，
 // 不删除 terminal pool、workbench binding 或其他 endpoint 的状态。
 func (store EndpointStore) MarkRuntimeStatus(endpointID EndpointID, status EndpointStatusKind, errorKind EndpointErrorKind, terminalCount int, err string) EndpointStore {
@@ -532,7 +532,7 @@ func ClassifyEndpointErrorText(text string) EndpointErrorKind {
 }
 
 // RequiresReconnect 判断 registry reload 后是否改变了 endpoint dial identity。
-// 该判断只覆盖 TUI 展示字段，完整 dial identity 仍由 shared/endpointdomain.Endpoint 负责。
+// 该判断只覆盖 TUI 展示字段，完整 dial identity 仍由 client/endpoint.Endpoint 负责。
 func (item EndpointItem) RequiresReconnect(next EndpointItem) bool {
 	item = item.withDefaults()
 	next = next.withDefaults()

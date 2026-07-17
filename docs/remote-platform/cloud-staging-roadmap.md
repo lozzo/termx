@@ -33,7 +33,7 @@
 | 组件 | 已存在的真实能力 | 当前阻塞 |
 | --- | --- | --- |
 | `core/` | terminal lifecycle、scoped transport、live/history 真值；desktop 与 Android 共用授权后的 termx protocol | 当前单区域纵向链路无 core 阻塞 |
-| `tui/` | 多 endpoint manager、managed dial、局部失败、连接 phase、实际 direct/single_relay path 与远程 terminal 投影 | desktop 纵向链路已闭环；不承担 Android 装配 |
+| `tui/` | 多 endpoint UI 投影、局部失败、连接 phase、实际 direct/single_relay path 与远程 terminal 展示 | 旧 session owner 已删除，等待共享 client runtime 接线；不承担 Android 装配 |
 | `remote/client` | Pion offer、relay-only ICE、caller-specific RelayLease、DTLS fingerprint、capability handshake 和 protocol transport | 自动 SmartRoute 继续延后，不影响显式 single Relay |
 | `remote/daemon` 与 `remote/webrtc` | fresh-proof presence 续约、principal-specific TURN material、relay-only answerer、DataChannel auth 和 core scoped transport | 自动 SmartRoute 继续延后 |
 | `shared/cloudcompanion` | versioned local IPC、single Relay material 校验、错误语义、stream、fake 和 installer contract | contract 本身不提供云服务 |
@@ -266,7 +266,7 @@ CLOUD002 建立名为 `dev-local` 的显式 staging 剖面：
 - 让 desktop Companion 使用 CLOUD002 的真实 dev adapter，支持 daemon presence 与 client signaling 并存。
 - 补最小 public pairing UX：daemon 签发 grant；client 导入 bundle 后把 raw grant 写入 credential store，只把 `grant_ref` 写入 endpoint registry。
 - 修正 managed endpoint 输入：Hub assignment 由 Companion/Control Plane 决定，当前被要求但被 dialer 忽略的 `hub_url` 不再作为有效 dial identity。target DeviceID、fingerprint、grant ref 和 relay policy 保持彼此独立。
-- 复用现有 TUI endpoint manager 和 termx protocol，不增加 managed terminal inventory API。
+- 复用共享 client runtime 与 termx protocol，不增加 managed terminal inventory API。
 
 用户可观察完成条件：
 

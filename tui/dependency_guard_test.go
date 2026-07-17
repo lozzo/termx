@@ -1,6 +1,7 @@
 package tui_test
 
 import (
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -20,6 +21,11 @@ func TestTUIDirectoryDependencies(t *testing.T) {
 	})
 	for _, root := range []string{"state", "app", "render"} {
 		assertImportsExclude(t, root, []string{
+			"github.com/lozzow/termx/internal/protocol",
+			"github.com/lozzow/termx/shared/transport",
+			"github.com/lozzow/termx/shared/remoteauth",
+			"github.com/lozzow/termx/remote/client",
+			"github.com/lozzow/termx/remote/webrtc",
 			"github.com/lozzow/termx/tui/adapter",
 			"github.com/lozzow/termx/tui/testkit",
 		})
@@ -28,6 +34,13 @@ func TestTUIDirectoryDependencies(t *testing.T) {
 
 // TestTUIPortContainsOnlyProductionContracts 防止 fake 或宿主 IO 实现重新进入 application port。
 func TestTUIPortContainsOnlyProductionContracts(t *testing.T) {
+	allowedImports := map[string]struct{}{
+		"context": {}, "errors": {}, "time": {},
+		"github.com/lozzow/termx/proto/cloudpb":         {},
+		"github.com/lozzow/termx/shared/cloudcompanion": {},
+		"github.com/lozzow/termx/tui/input":             {},
+		"github.com/lozzow/termx/tui/state":             {},
+	}
 	err := filepath.WalkDir("port", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return err
@@ -41,11 +54,60 @@ func TestTUIPortContainsOnlyProductionContracts(t *testing.T) {
 				t.Errorf("%s contains forbidden port implementation %q", path, forbidden)
 			}
 		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), path, content, 0)
+		if err != nil {
+			return err
+		}
+		for _, imported := range parsed.Imports {
+			importPath := strings.Trim(imported.Path.Value, `"`)
+			if _, ok := allowedImports[importPath]; !ok {
+				t.Errorf("%s imports non-contract dependency %s", path, importPath)
+			}
+		}
+		for _, declaration := range parsed.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Body == nil {
+				continue
+			}
+			if function.Recv == nil {
+				if function.Name.Name != "ClassifyEndpointError" {
+					t.Errorf("%s implements function %s in contract-only port", path, function.Name.Name)
+				}
+				continue
+			}
+			if receiverUsesStructType(parsed, function.Recv.List[0].Type) {
+				t.Errorf("%s implements method %s on a struct-owned service in contract-only port", path, function.Name.Name)
+			}
+		}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func receiverUsesStructType(file *ast.File, receiver ast.Expr) bool {
+	if pointer, ok := receiver.(*ast.StarExpr); ok {
+		receiver = pointer.X
+	}
+	name, ok := receiver.(*ast.Ident)
+	if !ok {
+		return true
+	}
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok.String() != "type" {
+			continue
+		}
+		for _, spec := range general.Specs {
+			typeSpec, ok := spec.(*ast.TypeSpec)
+			if ok && typeSpec.Name.Name == name.Name {
+				_, isStruct := typeSpec.Type.(*ast.StructType)
+				return isStruct
+			}
+		}
+	}
+	return true
 }
 
 func assertImportsExclude(t *testing.T, root string, forbidden []string) {
