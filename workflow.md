@@ -2,11 +2,11 @@
 
 ## 当前真值
 
-- 当前最早未完成切片是 `CONN003`。本轮只处理统一 Endpoint / 多 Route 的 route planner、CLI/TUI session owner 与文档真值修正。
-- `CONN001` 已完成：`shared/connection` 拥有 `connections.yaml` v2、Endpoint/Route registry、strict parser/writer、EndpointAssembler、portable bootstrap/share contract 和跨 Go/Kotlin/TypeScript fixture。
+- 当前最早未完成切片是 `C3B`。C3R 已删除 CONN001/CONN002 未接管产品链路的平行模型，后续只进入 Go 客户端连接 runtime 重构。
+- `CONN001` 已完成：`shared/connection` 拥有 `connections.yaml` v2、Endpoint/Route registry、strict parser/writer、EndpointAssembler 和 portable bootstrap/share contract。Android/TypeScript 未接线 registry/assembler 已在 C3R 删除，Official App 统一 runtime 等 CONN007 直接重写。
 - `CONN002` 已完成：`shared/remoteauth` 与 daemon-local AccessStore 拥有 DeviceIdentity、ClientAccessIdentity、PairingTicket、client-bound CapabilityGrant v2、channel binding auth、撤销和重启恢复。
 - 当前真实代码状态：local Unix、SSH stdio、managed WebRTC 各自已有可用接线，但 `RouteSelectionPlanner`、default full race、priority hedge、winner/loser cleanup、`SessionGeneration` guard 和 stamped service result 尚未完整实现。生产路径仍存在 `ResolveCurrentRoute` 过渡调用。
-- 当前文档冲突：`tui/docs/multi-endpoint-transport-plan.md`、`docs/development/cli-command-design.md`、`tui/docs/architecture.md` 把 CONN003 部分能力写成“已实现”。后续必须先把这些内容改成“目标/缺口/待实现”，完成真实实现后才能再改回“已实现”。
+- C3A 文档冲突已收口：`tui/docs/multi-endpoint-transport-plan.md`、`docs/development/cli-command-design.md`、`tui/docs/architecture.md` 已明确 CONN003 仍处于过渡态。
 - Cloud 单区域 direct/single Relay、Official Android、公网 HTTP staging、文件能力、CLI002-CLI008、KS012-KS017 已完成；这些是背景，不是当前可主动修改范围。
 - `WEB003`、`CLOUD018`、`SI001` 暂停；`CONN004-CONN008`、GA、多区域、生产 TLS/OAuth、正式开源隔离全部待后续排序。
 - 插件系统在独立分支；本分支不新增插件协议、代码或文档。
@@ -26,7 +26,7 @@
 
 ## 当前允许修改范围
 
-- 主动范围：`workflow.md`、`docs/remote-platform/unified-endpoint-route-refactor-plan.md`、`docs/development/cli-command-design.md`、`tui/docs/multi-endpoint-transport-plan.md`、`tui/docs/architecture.md`、`tui/docs/state-ownership-map.md`、`shared/connection/`、`shared/transport/{unix,ssh}/`、`tui/{services,state,app}/`、`cmd/termx/`、`scripts/conn003_local_ssh_race_e2e.sh`、必要 `testkit/`。
+- 主动范围：`workflow.md`、连接规划文档、`shared/connection/`、`shared/transport/{unix,ssh}/`、`tui/{services,state,app}/`、`cmd/termx/`、CONN003 E2E 与必要 `testkit/`。
 - 受限联动：`core/`、`internal/protocol/`、`shared/remoteauth/` 只允许为 fresh DeviceIdentity challenge proof、protocol Hello、channel-bound generation/stamp contract 做最小修改。
 - 禁止范围：`private/cloud/`、`clients/mobile/`、`clients/ui/`、`remote/`、`proto/`、`private/archive/`，除非当前 CONN003 实现被真实编译 contract 阻塞且先更新本文件说明原因。
 
@@ -35,6 +35,7 @@
 | ID | 状态 | 内容 | 完成条件 |
 | --- | --- | --- | --- |
 | C3A | 已完成 | 文档真值收口 | 三个冲突文档不再声称 CONN003 已实现；明确当前代码仍用 `ResolveCurrentRoute` 过渡；写清重构目标、非目标和删除边界 |
+| C3R | 已完成 | CONN001/CONN002 平行模型去重 | 删除未接线 Android/TypeScript Endpoint registry/assembler；删除无消息链路的 protobuf runtime/session/assembler 类型；client-access 改为 typed protobuf；删除旧内存 Revocations；pairing 输入上限只引用 canonical contract |
 | C3B | 待开始 | `shared/connection` planner 领域层 | 新增纯 `RouteSelectionPlanner`、`RouteAttempt` plan、priority grouped hedge、manual override、unsupported route 失败；无网络 IO；单测覆盖 full race、hedge、manual-only、未绑定 identity 多 route 拒绝、managed 不入 CONN003 race |
 | C3C | 待开始 | fresh daemon proof / ReadySession contract | local Unix 与 SSH route attempt 在 protocol Hello 前完成 fresh DeviceIdentity challenge proof；只有 transport + proof + authorization + Hello 全部成功才能产出 `ReadySession` |
 | C3D | 待开始 | TUI `EndpointManager` session owner 重写 | manager 成为每 Endpoint 唯一 route race、winner、loser、generation、lifecycle mailbox owner；删除生产路径 `ResolveCurrentRoute` 依赖；service 调用取得 generation lease，迟到回包拒绝 |
@@ -155,6 +156,7 @@ func SendInput(ctx, req) (Result, error) {
 ## 测试准入
 
 - C3A 文档-only：`git diff --check`。
+- C3R：用户明确允许本轮不保证测试通过；必须运行 protobuf 生成、`gofmt`、`git diff --check`，并尽力执行 `go test ./shared/connection/... ./shared/remoteauth/... ./internal/protocol/... ./core ./cmd/termx -count=1` 与 `clients/ui` typecheck。失败可记录后提交，但不得留下已知生成文件不一致或明显未清理引用。
 - C3B：`scripts/with-clean-termx-env.sh env GOWORK=off go test ./shared/connection/... -count=1`；`git diff --check`。
 - C3C：`scripts/with-clean-termx-env.sh env GOWORK=off go test ./shared/transport/unix/... ./shared/transport/ssh/... ./internal/protocol/... ./core -count=1`；必要 race；`git diff --check`。
 - C3D：`scripts/with-clean-termx-env.sh env GOWORK=off go test ./tui/services ./tui/state ./tui/app -count=1`；`scripts/with-clean-termx-env.sh env GOWORK=off go test -race ./tui/services -count=1`；`git diff --check`。
@@ -180,6 +182,7 @@ func SendInput(ctx, req) (Result, error) {
 | ID | 状态 | 说明 |
 | --- | --- | --- |
 | C3A | 已完成 | 修正文档真值与 CONN003 重构说明 |
+| C3R | 已完成 | 删除 CONN001/CONN002 未接线平行模型与重复 wire/schema |
 | C3B | 待开始 | 纯 RouteSelectionPlanner 领域层 |
 | C3C | 待开始 | local/SSH fresh proof 与 ReadySession contract |
 | C3D | 待开始 | TUI EndpointManager session owner |
@@ -199,5 +202,6 @@ func SendInput(ctx, req) (Result, error) {
 
 ## 当前状态记录
 
+- 2026-07-17：C3R 完成。删除未接线 Android/TypeScript Endpoint registry、assembler、codec、store、fixture 与 remoteauth TS 生成入口；protobuf 删除纯客户端 registry/assembler/runtime session/discovery 消息；`remote.access.*` 从 487 行 `structpb` 动态 schema 改为 typed protobuf，Go scope/record 真值收回 `shared/remoteauth`；删除旧内存 Revocations，pairing 输入上限统一引用 canonical contract。相关 Go 测试、生成检查、TypeScript typecheck 和 Android Kotlin 编译均通过。
 - 2026-07-17：C3A 完成。多 transport 文档已删除旧 ME 路线图并收敛为 CONN003 技术边界；CLI 文档不再维护易漂移的命令快照；TUI 架构删除已退出目录迁移说明和旧落地顺序。三份文档均明确当前仍处于 `ResolveCurrentRoute` 过渡态，planner/session owner/generation 是待实现目标。
 - 2026-07-17：因文档把 CONN003 写成已实现而源码仍处于 `ResolveCurrentRoute` 过渡态，本文件已压缩为当前活动控制面；真实实现从 C3B 的纯 planner 领域层开始。

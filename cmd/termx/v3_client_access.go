@@ -138,7 +138,7 @@ func (service v3ClientAccessService) CreateTicket(_ context.Context, params prot
 		return protocol.ClientAccessTicketCreateResult{}, err
 	}
 	bundle, claims, err := service.store.IssuePairingBundle(remoteauth.PairingIssueOptions{
-		Label: params.Label, Scope: remoteauthScope(params.Scope), TicketTTL: ticketTTL, GrantLifetime: grantLifetime,
+		Label: params.Label, Scope: params.Scope, TicketTTL: ticketTTL, GrantLifetime: grantLifetime,
 	})
 	if err != nil {
 		return protocol.ClientAccessTicketCreateResult{}, err
@@ -155,12 +155,7 @@ func (service v3ClientAccessService) List(context.Context) (protocol.ClientAcces
 	if service.store == nil {
 		return protocol.ClientAccessListResult{}, fmt.Errorf("client access store is unavailable")
 	}
-	records := service.store.ListClientAccess()
-	out := protocol.ClientAccessListResult{Records: make([]protocol.ClientAccessRecord, 0, len(records))}
-	for _, record := range records {
-		out.Records = append(out.Records, protocolClientAccessRecord(record))
-	}
-	return out, nil
+	return protocol.ClientAccessListResult{Records: service.store.ListClientAccess()}, nil
 }
 
 // Revoke 由 owning daemon 原子持久化撤销状态；删除客户端本地 credential 不能替代该操作。
@@ -172,7 +167,7 @@ func (service v3ClientAccessService) Revoke(_ context.Context, params protocol.C
 	if err != nil {
 		return protocol.ClientAccessRecord{}, err
 	}
-	return protocolClientAccessRecord(record), nil
+	return record, nil
 }
 
 func checkedSecondsDuration(seconds int64, field string) (time.Duration, error) {
@@ -180,30 +175,4 @@ func checkedSecondsDuration(seconds int64, field string) (time.Duration, error) 
 		return 0, fmt.Errorf("%s must be between one second and one year", field)
 	}
 	return time.Duration(seconds) * time.Second, nil
-}
-
-func remoteauthScope(scope protocol.ClientAccessScope) remoteauth.Scope {
-	return remoteauth.Scope{
-		AllowDaemon: scope.AllowDaemon, TerminalID: scope.TerminalID, MachineEventsOnly: scope.MachineEventsOnly,
-		FileReadMetadata: scope.FileReadMetadata, FileReadContent: scope.FileReadContent,
-		FileWriteContent: scope.FileWriteContent, FileMutate: scope.FileMutate,
-		ManageClientAccess: scope.ManageClientAccess,
-	}
-}
-
-func protocolClientAccessScope(scope remoteauth.Scope) protocol.ClientAccessScope {
-	return protocol.ClientAccessScope{
-		AllowDaemon: scope.AllowDaemon, TerminalID: scope.TerminalID, MachineEventsOnly: scope.MachineEventsOnly,
-		FileReadMetadata: scope.FileReadMetadata, FileReadContent: scope.FileReadContent,
-		FileWriteContent: scope.FileWriteContent, FileMutate: scope.FileMutate,
-		ManageClientAccess: scope.ManageClientAccess,
-	}
-}
-
-func protocolClientAccessRecord(record remoteauth.ClientAccessRecord) protocol.ClientAccessRecord {
-	return protocol.ClientAccessRecord{
-		GrantID: record.GrantID, RevocationID: record.RevocationID, SubjectKeyFingerprint: record.SubjectKeyFingerprint,
-		ClientLabel: record.ClientLabel, Scope: protocolClientAccessScope(record.Scope),
-		IssuedAt: record.IssuedAt, ExpiresAt: record.ExpiresAt, RevokedAt: record.RevokedAt,
-	}
 }

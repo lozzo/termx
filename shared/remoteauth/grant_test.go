@@ -57,12 +57,15 @@ func TestGrantV2RejectsMissingSubjectV1ExpiryAndRevocation(t *testing.T) {
 	if _, err := Verify(grant, Fingerprint(daemonPublic), now.Add(2*time.Minute), nil); !errors.Is(err, ErrGrantExpired) {
 		t.Fatalf("expiry error = %v", err)
 	}
-	revocations := NewRevocations()
-	revocations.Revoke("grant-1")
+	revocations := revocationCheckerFunc(func(revocationID string) bool { return revocationID == "grant-1" })
 	if _, err := Verify(grant, Fingerprint(daemonPublic), now, revocations); !errors.Is(err, ErrGrantRevoked) {
 		t.Fatalf("revocation error = %v", err)
 	}
 }
+
+type revocationCheckerFunc func(string) bool
+
+func (check revocationCheckerFunc) Revoked(revocationID string) bool { return check(revocationID) }
 
 func TestGrantScopeKeepsManageClientAccessIndependent(t *testing.T) {
 	_, daemonPrivate, _ := ed25519.GenerateKey(rand.Reader)

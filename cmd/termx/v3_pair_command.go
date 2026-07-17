@@ -22,8 +22,6 @@ import (
 	"golang.org/x/term"
 )
 
-const maxPairingBundleBytes = 1 << 20
-
 const pairingBootstrapURIPrefix = "termx://bootstrap?payload="
 
 var (
@@ -129,7 +127,7 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 			}
 			var result protocol.ClientAccessTicketCreateResult
 			if err := client.Call(cmd.Context(), "remote.access.ticket.create", protocol.ClientAccessTicketCreateParams{
-				Label: label, Scope: protocolClientAccessScope(scope),
+				Label: label, Scope: scope,
 				TicketTTLSeconds: int64(ticketTTL / time.Second), GrantLifetimeSeconds: int64(grantLifetime / time.Second),
 			}, &result); err != nil {
 				return err
@@ -439,18 +437,18 @@ func readV3PairingBundle(ctx context.Context, stdin io.Reader, path string) ([]b
 		defer file.Close()
 		reader = file
 	}
-	payload, err := io.ReadAll(io.LimitReader(reader, maxPairingBundleBytes+1))
+	payload, err := io.ReadAll(io.LimitReader(reader, connection.MaxPortableContractBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read pairing bundle: %w", err)
 	}
-	if len(payload) == 0 || len(payload) > maxPairingBundleBytes {
+	if len(payload) == 0 || len(payload) > connection.MaxPortableContractBytes {
 		clear(payload)
 		return nil, fmt.Errorf("pairing bundle size is invalid")
 	}
 	if text := strings.TrimSpace(string(payload)); strings.HasPrefix(text, pairingBootstrapURIPrefix) {
 		decoded, decodeErr := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(text, pairingBootstrapURIPrefix))
 		clear(payload)
-		if decodeErr != nil || len(decoded) == 0 || len(decoded) > maxPairingBundleBytes {
+		if decodeErr != nil || len(decoded) == 0 || len(decoded) > connection.MaxPortableContractBytes {
 			clear(decoded)
 			return nil, fmt.Errorf("pairing bootstrap URI payload is invalid")
 		}

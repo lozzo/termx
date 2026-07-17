@@ -16,7 +16,7 @@ fi
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/termx-generated-check.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
-mkdir -p "$tmp_dir/go" "$tmp_dir/runtime" "$tmp_dir/wire" "$tmp_dir/remoteauth"
+mkdir -p "$tmp_dir/go" "$tmp_dir/runtime" "$tmp_dir/wire"
 
 # Go 与 TypeScript 都从 proto 源码生成到临时目录；检查过程不改工作树。
 protoc -I proto \
@@ -36,12 +36,7 @@ PATH="$repo_root/node_modules/.bin:$PATH" NODE_NO_WARNINGS=1 protoc \
   --es_out="$tmp_dir/wire" \
   --es_opt=target=ts,import_extension=none \
   proto/wirepb/terminal.proto
-PATH="$repo_root/node_modules/.bin:$PATH" NODE_NO_WARNINGS=1 protoc \
-  -I proto/remoteauthpb \
-  --es_out="$tmp_dir/remoteauth" \
-  --es_opt=target=ts,import_extension=none \
-  proto/remoteauthpb/remote_auth.proto
-perl -0pi -e 's/\s*\z/\n/' "$tmp_dir/runtime/runtime_pb.ts" "$tmp_dir/wire/terminal_pb.ts" "$tmp_dir/remoteauth/remote_auth_pb.ts"
+perl -0pi -e 's/\s*\z/\n/' "$tmp_dir/runtime/runtime_pb.ts" "$tmp_dir/wire/terminal_pb.ts"
 
 check_generated_file() {
   local generated="$1"
@@ -59,6 +54,4 @@ check_generated_file "$tmp_dir/go/remoteauthpb/remote_auth.pb.go" proto/remoteau
 check_generated_file "$tmp_dir/go/wirepb/terminal.pb.go" proto/wirepb/terminal.pb.go
 check_generated_file "$tmp_dir/runtime/runtime_pb.ts" clients/ui/src/generated/runtimepb/runtime_pb.ts
 check_generated_file "$tmp_dir/wire/terminal_pb.ts" clients/ui/src/generated/wirepb/terminal_pb.ts
-check_generated_file "$tmp_dir/remoteauth/remote_auth_pb.ts" clients/ui/src/generated/remoteauthpb/remote_auth_pb.ts
-
 echo "generated code is current"

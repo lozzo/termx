@@ -107,6 +107,57 @@ message ScopeSummary {
   bool manage_client_access = 3;
 }
 
+// ClientAccessScope 是 remote.access 管理 RPC 使用的完整 typed scope。
+// 它与 signed CapabilityGrant scope 一一对应，不通过 Struct 或字符串字段表复制 schema。
+message ClientAccessScope {
+  bool allow_daemon = 1;
+  string terminal_id = 2;
+  bool machine_events_only = 3;
+  bool file_read_metadata = 4;
+  bool file_read_content = 5;
+  bool file_write_content = 6;
+  bool file_mutate = 7;
+  bool manage_client_access = 8;
+}
+
+message ClientAccessIdentityResult {
+  string device_id = 1;
+  string device_fingerprint = 2;
+  bytes device_public_key = 3;
+}
+
+message ClientAccessTicketCreateRequest {
+  string label = 1;
+  ClientAccessScope scope = 2;
+  int64 ticket_ttl_seconds = 3;
+  int64 grant_lifetime_seconds = 4;
+}
+
+message ClientAccessTicketCreateResult {
+  bytes bundle = 1;
+  string ticket_id = 2;
+  int64 expires_at_unix_nano = 3;
+}
+
+message ClientAccessRevokeRequest {
+  string grant_id = 1;
+}
+
+message ClientAccessRecord {
+  string grant_id = 1;
+  string revocation_id = 2;
+  string subject_key_fingerprint = 3;
+  string client_label = 4;
+  ClientAccessScope scope = 5;
+  int64 issued_at_unix_nano = 6;
+  int64 expires_at_unix_nano = 7;
+  int64 revoked_at_unix_nano = 8;
+}
+
+message ClientAccessListResult {
+  repeated ClientAccessRecord records = 1;
+}
+
 // CapabilityAccepted 是 remote auth 到 termx protocol 的单向切换点。
 message CapabilityAccepted {
   string grant_id = 1;
@@ -184,22 +235,6 @@ enum EndpointRelayMode {
   ENDPOINT_RELAY_MODE_SMART_ROUTE = 4;
 }
 
-// EndpointObservedPath 只描述 managed-webrtc transport 内部实际经过的网络路径。
-// local-unix、ssh-stdio 与 direct-tls route 不得设置该值。
-enum EndpointObservedPath {
-  ENDPOINT_OBSERVED_PATH_UNSPECIFIED = 0;
-  ENDPOINT_OBSERVED_PATH_DIRECT = 1;
-  ENDPOINT_OBSERVED_PATH_SINGLE_RELAY = 2;
-}
-
-// EndpointSessionLifecycle 是客户端当前唯一活动 protocol session 的生命周期投影。
-enum EndpointSessionLifecycle {
-  ENDPOINT_SESSION_LIFECYCLE_UNSPECIFIED = 0;
-  ENDPOINT_SESSION_LIFECYCLE_READY = 1;
-  ENDPOINT_SESSION_LIFECYCLE_CLOSING = 2;
-  ENDPOINT_SESSION_LIFECYCLE_CLOSED = 3;
-}
-
 // EndpointSource 记录 route 或用户策略的来源，供确定性 assembler 保留更高权重的已确认信息。
 enum EndpointSource {
   ENDPOINT_SOURCE_UNSPECIFIED = 0;
@@ -220,20 +255,6 @@ enum EndpointCredentialKind {
   ENDPOINT_CREDENTIAL_KIND_SSH_PASSWORD = 3;
   ENDPOINT_CREDENTIAL_KIND_CAPABILITY_GRANT = 4;
   ENDPOINT_CREDENTIAL_KIND_CLOUD_PROFILE = 5;
-}
-
-// EndpointContractErrorCode 是三语言 strict parser 与 assembler 必须一致返回的稳定错误分类。
-enum EndpointContractErrorCode {
-  ENDPOINT_CONTRACT_ERROR_CODE_UNSPECIFIED = 0;
-  ENDPOINT_CONTRACT_ERROR_CODE_CONFIG_INVALID = 1;
-  ENDPOINT_CONTRACT_ERROR_CODE_SIZE_LIMIT = 2;
-  ENDPOINT_CONTRACT_ERROR_CODE_UNSUPPORTED_VERSION = 3;
-  ENDPOINT_CONTRACT_ERROR_CODE_IDENTITY_CONFLICT = 4;
-  ENDPOINT_CONTRACT_ERROR_CODE_ROUTE_CONFLICT = 5;
-  ENDPOINT_CONTRACT_ERROR_CODE_ROUTE_SELECTION_REQUIRED = 6;
-  ENDPOINT_CONTRACT_ERROR_CODE_ROUTE_UNAVAILABLE = 7;
-  ENDPOINT_CONTRACT_ERROR_CODE_CREDENTIAL_REQUIRED = 8;
-  ENDPOINT_CONTRACT_ERROR_CODE_AUTHORIZATION_REQUIRED = 9;
 }
 
 // EndpointDaemonIdentity 是跨来源安全归并 daemon 的唯一锚点。
@@ -275,133 +296,11 @@ message EndpointAccessRoute {
   EndpointRelayMode relay_mode = 20;
 }
 
-// SavedEndpoint 是一个 daemon 及其多条持久 route 的跨平台投影。
-message SavedEndpoint {
-  string endpoint_id = 1;
-  string label = 2;
-  EndpointSource label_source = 3;
-  EndpointDaemonIdentity daemon_identity = 4;
-  EndpointConnectMode connect_mode = 5;
-  bool enabled = 6;
-  EndpointSelectionPolicy selection_policy = 7;
-  repeated EndpointAccessRoute routes = 8;
-}
-
-// SavedEndpointRegistryV2 是 Android native store 的 versioned domain schema，也作为桌面 YAML registry 的跨语言 fixture carrier。
-message SavedEndpointRegistryV2 {
-  uint32 schema_version = 1;
-  string default_endpoint_id = 2;
-  repeated SavedEndpoint endpoints = 3;
-}
-
-// EndpointCandidate 是 Cloud/bootstrap/manual/share 输入 EndpointAssembler 的纯数据 contract。
-message EndpointCandidate {
-  EndpointSource source = 1;
-  EndpointDaemonIdentity identity = 2;
-  string suggested_label = 3;
-  repeated EndpointAccessRoute routes = 4;
-  EndpointConnectMode connect_mode = 5;
-  EndpointSelectionPolicy selection_policy = 6;
-  repeated EndpointCredentialDescriptor credential_descriptors = 7;
-  // 只有用户已确认的 client share candidate 可以为 true；Cloud/bootstrap/LAN 永远为 false。
-  bool apply_client_policy = 8;
-}
-
-// ConfirmedEndpointIdentityBinding 是客户端本地用户确认结果。
-// identity 必须同时出现在本次 assembler candidates 中；外部 bootstrap/Cloud/share payload 不能自行指定 EndpointID。
-message ConfirmedEndpointIdentityBinding {
-  string endpoint_id = 1;
-  EndpointDaemonIdentity identity = 2;
-}
-
 // EndpointCredentialDescriptor 描述 share 后目标端需要解析或重新创建的凭据，不携带源平台 credential ref 或 secret body。
 message EndpointCredentialDescriptor {
   string descriptor_id = 1;
   EndpointCredentialKind kind = 2;
   bool exportable = 3;
-}
-
-// EndpointAssemblerInput 是纯合并事务的完整输入；调用方必须先完成来源各自的签名、pin 或用户确认。
-message EndpointAssemblerInput {
-  SavedEndpointRegistryV2 registry = 1;
-  repeated EndpointCandidate candidates = 2;
-  repeated ConfirmedEndpointIdentityBinding confirmed_identity_bindings = 3;
-}
-
-// EndpointAssemblerResult 只返回普通 registry、输入顺序对应的 EndpointID 和待写入目标 secure store 的脱敏 descriptor。
-// secure credential 写入成功前，调用方不得发布 registry snapshot。
-message EndpointAssemblerResult {
-  SavedEndpointRegistryV2 registry = 1;
-  repeated string resolved_endpoint_ids = 2;
-  repeated EndpointCredentialDescriptor credential_descriptors = 3;
-}
-
-// EndpointConnectIntent 描述本次连接所需的用户动作与 capability ceiling，不拥有 terminal lifecycle。
-message EndpointConnectIntent {
-  string kind = 1;
-  string terminal_id = 2;
-  repeated string required_scopes = 3;
-}
-
-// EndpointRouteAttempt 是 planner 交给单 route dialer 的不可变输入；网络 transport handle 不进入 protobuf。
-// 它只冻结 EndpointID、期望 identity 和唯一选中 route，不能再复制含 Routes 的完整 SavedEndpoint。
-message EndpointRouteAttempt {
-  string attempt_id = 1;
-  string endpoint_id = 2;
-  EndpointDaemonIdentity expected_daemon_identity = 3;
-  EndpointAccessRoute route = 4;
-  EndpointConnectIntent intent = 5;
-  uint64 session_generation = 6;
-}
-
-// EndpointReadySession 只在 transport、daemon identity、authorization 与 protocol Hello 全部完成后产生。
-message EndpointReadySession {
-  string attempt_id = 1;
-  string endpoint_id = 2;
-  string route_id = 3;
-  uint64 session_generation = 4;
-  EndpointDaemonIdentity verified_daemon_identity = 5;
-  repeated string authorization_scope = 6;
-  uint32 protocol_version = 7;
-  EndpointObservedPath observed_path = 8;
-}
-
-// EndpointSession 是一个 Endpoint 当前唯一活动的已认证 protocol session 脱敏投影。
-message EndpointSession {
-  string endpoint_id = 1;
-  string route_id = 2;
-  uint64 session_generation = 3;
-  EndpointDaemonIdentity verified_daemon_identity = 4;
-  repeated string authorization_scope = 5;
-  uint32 protocol_version = 6;
-  EndpointObservedPath observed_path = 7;
-  EndpointSessionLifecycle lifecycle = 8;
-}
-
-// LocalDiscoveryCandidate 是 LAN discovery 的短期内存候选；地址和 label 永远不是 daemon 信任锚点。
-message LocalDiscoveryCandidate {
-  EndpointDaemonIdentity claimed_identity = 1;
-  string address = 2;
-  uint32 port = 3;
-  uint32 protocol_version = 4;
-  int64 announcement_expires_at_unix_nano = 5;
-  bytes announcement_signature = 6;
-}
-
-// EndpointAssemblerCase 是三语言共享 testdata 的单个确定性合并场景。
-message EndpointAssemblerCase {
-  string name = 1;
-  SavedEndpointRegistryV2 initial_registry = 2;
-  repeated EndpointCandidate candidates = 3;
-  SavedEndpointRegistryV2 expected_registry = 4;
-  EndpointContractErrorCode expected_error = 5;
-}
-
-// EndpointContractFixture 是 Go/Kotlin/TypeScript 共同读取的 strict parser、round-trip、冲突和交换律测试载体。
-message EndpointContractFixture {
-  uint32 schema_version = 1;
-  SavedEndpointRegistryV2 valid_registry = 2;
-  repeated EndpointAssemblerCase assembler_cases = 3;
 }
 
 // PairingTicketDescriptor 是 daemon-local 一次性授权兑换票据的公开部分。

@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -88,44 +87,6 @@ type Claims struct {
 // Hub/relay 不拥有撤销真值；连接建立和重连时由签发设备查询本地 store。
 type RevocationChecker interface {
 	Revoked(revocationID string) bool
-}
-
-// Revocations 是进程内 grant 撤销集合。
-// 它适用于 transport contract 与 daemon runtime；持久化策略由后续 daemon agent 装配切片决定。
-type Revocations struct {
-	mu  sync.RWMutex
-	ids map[string]struct{}
-}
-
-// NewRevocations 创建空的 daemon-local 撤销集合。
-func NewRevocations() *Revocations {
-	return &Revocations{ids: map[string]struct{}{}}
-}
-
-// Revoke 按 revocation ID 撤销 capability。
-// 空 ID 会被忽略；多个 grant 可以显式共享一个 revocation ID，但撤销不会影响其他 endpoint scope。
-func (revocations *Revocations) Revoke(revocationID string) {
-	if revocations == nil {
-		return
-	}
-	revocationID = strings.TrimSpace(revocationID)
-	if revocationID == "" {
-		return
-	}
-	revocations.mu.Lock()
-	revocations.ids[revocationID] = struct{}{}
-	revocations.mu.Unlock()
-}
-
-// Revoked 返回指定 revocation ID 是否已由签发 daemon 撤销。
-func (revocations *Revocations) Revoked(revocationID string) bool {
-	if revocations == nil {
-		return false
-	}
-	revocations.mu.RLock()
-	_, ok := revocations.ids[strings.TrimSpace(revocationID)]
-	revocations.mu.RUnlock()
-	return ok
 }
 
 // Fingerprint 从 Ed25519 公钥生成稳定安全身份。

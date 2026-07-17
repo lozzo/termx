@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/proto/remoteauthpb"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestClientAccessMethodCodecsRoundTripStrictContract(t *testing.T) {
@@ -34,32 +35,17 @@ func TestClientAccessMethodCodecsRoundTripStrictContract(t *testing.T) {
 	}
 }
 
-func TestClientAccessMethodCodecRejectsUnknownMissingAndCoercedFields(t *testing.T) {
-	tests := []map[string]any{
-		{
-			"label": "Phone", "scope": clientAccessScopeMap(ClientAccessScope{AllowDaemon: true}),
-			"ticket_ttl_seconds": "600", "grant_lifetime_seconds": 86400,
-		},
-		{
-			"label": "Phone", "scope": clientAccessScopeMap(ClientAccessScope{AllowDaemon: true}),
-			"ticket_ttl_seconds": 600,
-		},
-		{
-			"label": "Phone", "scope": clientAccessScopeMap(ClientAccessScope{AllowDaemon: true}),
-			"ticket_ttl_seconds": 600, "grant_lifetime_seconds": 86400, "cloud_token": "forbidden",
-		},
+func TestClientAccessMethodCodecRejectsUnknownFields(t *testing.T) {
+	payload, err := proto.Marshal(&remoteauthpb.ClientAccessTicketCreateRequest{
+		Label: "Phone", Scope: &remoteauthpb.ClientAccessScope{AllowDaemon: true},
+		TicketTtlSeconds: 600, GrantLifetimeSeconds: 86400,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, input := range tests {
-		message, err := structpb.NewStruct(input)
-		if err != nil {
-			t.Fatal(err)
-		}
-		payload, err := proto.Marshal(message)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := DecodeMethodParams("remote.access.ticket.create", payload); err == nil {
-			t.Fatalf("unsafe client access params were accepted: %#v", input)
-		}
+	payload = protowire.AppendTag(payload, 99, protowire.VarintType)
+	payload = protowire.AppendVarint(payload, 1)
+	if _, err := DecodeMethodParams("remote.access.ticket.create", payload); err == nil {
+		t.Fatal("client access params with unknown protobuf fields were accepted")
 	}
 }
