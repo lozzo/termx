@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- 当前最早未完成切片是 `AR004B2B`。在 `AR001-AR005` 全部完成前，暂停 `C3B` 以及后续连接功能开发。
+- 当前最早未完成切片是 `AR004B2C`。在 `AR001-AR005` 全部完成前，暂停 `C3B` 以及后续连接功能开发。
 - 目录迁移已经完成，但目录正确不等于架构就绪。当前必须先收口接口、依赖方向、消息边界和 composition root，再迁移真实实现。
 - 禁止继续通过移动文件、修改 import、增加别名或补局部分支冒充架构重构。每次迁移必须先存在目标 interface/DTO、owner、truth source、消息链路和失败条件。
 - 当前仓库是私有开发真值。插件系统、正式开源隔离、多区域 Cloud、完整 Web、Android/iOS/桌面 binding 均不是当前主动工作。
@@ -78,8 +78,8 @@ owner/truth source
 | AR004A | 已完成 | CLI concrete dependency 清单与冻结守卫 | concrete import 与 direct helper 已按文件精确列入可递减债务清单；新增依赖立即失败，移除债务必须同步删除守卫条目 |
 | AR004B1 | 已完成 | Endpoint probe 与 access contract | probe 只返回 stamp/path/reason；access 只返回公开 identity 与脱敏 record/scope；contract harness 禁止 transport/protocol/credential owner 泄露 |
 | AR004B2A | 已完成 | Terminal lifecycle contract | client-owned TerminalRef、defaults/create/list/mutation/metadata DTO 与窄接口完成；裸 TerminalID 不能跨 endpoint |
-| AR004B2B | 进行中 | Terminal attachment contract | 定义 attach/detach/input/resize 和 attachment stamp；input 失败不得隐式重放 |
-| AR004B2C | 待开始 | Terminal history/live/event contract | 定义 authoritative history window、native live screen 和 typed lifecycle event；不复制 protocol wire union |
+| AR004B2B | 已完成 | Terminal attachment contract | attachment stamp 固定 endpoint/route/generation/terminal/channel/surface/view/operation；错误显式区分 adapter 是否已尝试，input 不得隐式重放 |
+| AR004B2C | 进行中 | Terminal history/live/event contract | 定义 authoritative history window、native live screen 和 typed lifecycle event；不复制 protocol wire union |
 | AR004B3 | 待开始 | File 与 workspace application contract | file 使用高层 stream/read/write contract 隐藏 frame/channel；workspace 使用 client-owned snapshot/mutation DTO |
 | AR004C | 待开始 | CLI consumer 迁移 | terminal/file/workspace/endpoint test/pair/access/root TUI 改为依赖 application contract；删除 direct dial/Hello/credential helper 调用意图，不增加 stub |
 | AR004D | 待开始 | CLI composition 与守卫收口 | concrete adapter 只允许出现在明确 composition 文件；daemon host 与 client runtime 装配分离；债务清单归零或仅保留文档批准的 daemon-host primitive |

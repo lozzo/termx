@@ -255,6 +255,9 @@ type Error struct {
 	Code    ErrorCode
 	Message string
 	Cause   error
+	// Attempted 表示请求是否已经越过 runtime generation guard 并调用 concrete adapter。
+	// input/paste 等非幂等操作只有在 false 时才允许 consumer 发起新的显式 recovery，不能自动重放 payload。
+	Attempted bool
 }
 
 func (err *Error) Error() string {
@@ -285,6 +288,18 @@ func CodeOf(err error) ErrorCode {
 		return ErrorCanceled
 	}
 	return ErrorUnavailable
+}
+
+// WasAttempted 返回失败是否已经调用 concrete adapter；未知错误保守返回 true。
+func WasAttempted(err error) bool {
+	if err == nil {
+		return false
+	}
+	var runtimeErr *Error
+	if errors.As(err, &runtimeErr) {
+		return runtimeErr.Attempted
+	}
+	return true
 }
 
 func runtimeError(code ErrorCode, message string, cause error) error {
