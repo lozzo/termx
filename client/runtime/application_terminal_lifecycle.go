@@ -3,9 +3,9 @@ package runtime
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/lozzow/termx/client/endpoint"
+	coreapi "github.com/lozzow/termx/core/api"
 )
 
 // TerminalRef 是 client application 跨 endpoint 引用 daemon-local terminal 的稳定身份。
@@ -23,69 +23,28 @@ func (ref TerminalRef) Validate() error {
 	return nil
 }
 
-// TerminalSize 是 daemon 确认的 terminal cell 尺寸。
-type TerminalSize struct {
-	Cols uint16
-	Rows uint16
-}
-
-// TerminalResourceUsage 是 owning daemon 对 terminal process 的采样投影。
-// SampledAt 为零表示本次没有可用采样，client runtime 不缓存或推断 process 状态。
-type TerminalResourceUsage struct {
-	PID            int
-	CPUPercentX100 int
-	MemoryBytes    uint64
-	SampledAt      time.Time
-}
-
-// TerminalInfo 是 owning daemon terminal lifecycle/metadata 的只读 application projection。
-type TerminalInfo struct {
-	Ref             TerminalRef
-	Name            string
-	Command         []string
-	Tags            map[string]string
-	Size            TerminalSize
-	State           string
-	CWD             string
-	LiveCWD         string
-	CreatedAt       time.Time
-	ExitCode        *int
-	ExitedAt        time.Time
-	AttachmentCount int
-	Resources       TerminalResourceUsage
-}
-
 // TerminalDefaultsRequest 请求 owning endpoint daemon 的 terminal 创建默认值。
 type TerminalDefaultsRequest struct {
 	EndpointID endpoint.EndpointID
 }
 
-// TerminalDefaultsResult 返回 daemon 进程所在机器的默认命令和 cwd。
+// TerminalDefaultsResult 只给 daemon-local defaults 增加 owning endpoint 上下文。
 type TerminalDefaultsResult struct {
-	DefaultCommand []string
-	DefaultCWD     string
+	EndpointID endpoint.EndpointID
+	Defaults   coreapi.PathDefaults
 }
 
-// TerminalCreateRequest 描述在 owning endpoint 创建 terminal 的 application intent。
-// Command/Env/Tags 在方法返回前归调用方所有；runtime implementation 必须在异步使用前复制。
+// TerminalCreateRequest 只给 daemon-local create spec 增加 owning endpoint 上下文。
+// Spec 中的 slice/map 在方法返回前归调用方所有；runtime implementation 异步使用前必须复制。
 type TerminalCreateRequest struct {
-	EndpointID         endpoint.EndpointID
-	TerminalID         string
-	Name               string
-	Command            []string
-	Tags               map[string]string
-	Size               TerminalSize
-	CWD                string
-	Env                []string
-	ScrollbackRows     int
-	ScrollbackMaxBytes int64
-	ScrollbackMaxAge   time.Duration
+	EndpointID endpoint.EndpointID
+	Spec       coreapi.TerminalCreateSpec
 }
 
-// TerminalCreateResult 返回 owning daemon 创建的 terminal identity 和初始 lifecycle state。
+// TerminalCreateResult 只给 daemon create result 增加 owning endpoint 上下文。
 type TerminalCreateResult struct {
-	Ref   TerminalRef
-	State string
+	EndpointID endpoint.EndpointID
+	Terminal   coreapi.TerminalCreateResult
 }
 
 // TerminalListRequest 请求单个 owning endpoint 的 terminal inventory。
@@ -93,9 +52,10 @@ type TerminalListRequest struct {
 	EndpointID endpoint.EndpointID
 }
 
-// TerminalListResult 返回单 endpoint terminal inventory；runtime 不混入其它 endpoint 的缓存条目。
+// TerminalListResult 只给 daemon-local inventory 增加 owning endpoint 上下文；runtime 不混入其它 endpoint 的缓存条目。
 type TerminalListResult struct {
-	Items []TerminalInfo
+	EndpointID endpoint.EndpointID
+	Items      []coreapi.TerminalInfo
 }
 
 // TerminalMutationRequest 指定 restart/kill/remove 操作的 terminal identity。
@@ -103,17 +63,16 @@ type TerminalMutationRequest struct {
 	Ref TerminalRef
 }
 
-// TerminalMetadataRequest 请求 owning daemon 原子更新 terminal name 和 tags。
+// TerminalMetadataRequest 只给 daemon-local metadata update 增加 owning endpoint 上下文。
 type TerminalMetadataRequest struct {
-	Ref  TerminalRef
-	Name string
-	Tags map[string]string
+	EndpointID endpoint.EndpointID
+	Update     coreapi.TerminalMetadataUpdate
 }
 
-// TerminalTagsRequest 请求 owning daemon 原子替换 terminal tags。
+// TerminalTagsRequest 只给 daemon-local tags update 增加 owning endpoint 上下文。
 type TerminalTagsRequest struct {
-	Ref  TerminalRef
-	Tags map[string]string
+	EndpointID endpoint.EndpointID
+	Update     coreapi.TerminalTagsUpdate
 }
 
 // TerminalLifecycleApplication 是 CLI/TUI 管理 daemon terminal lifecycle 与 metadata 的窄接口。

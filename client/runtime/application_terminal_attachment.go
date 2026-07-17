@@ -3,6 +3,9 @@ package runtime
 import (
 	"context"
 	"strings"
+
+	"github.com/lozzow/termx/client/endpoint"
+	coreapi "github.com/lozzow/termx/core/api"
 )
 
 // AttachmentStamp 把 daemon attachment identity 固定到创建它的 endpoint session generation。
@@ -33,25 +36,16 @@ func (stamp AttachmentStamp) TerminalRef() TerminalRef {
 	return TerminalRef{EndpointID: stamp.EndpointID, TerminalID: stamp.TerminalID}
 }
 
-// TerminalAttachRequest 描述 consumer 希望为 terminal view 建立 attachment 的意图。
+// TerminalAttachRequest 只给 daemon-local attach spec 增加 owning endpoint 上下文。
 type TerminalAttachRequest struct {
-	Ref          TerminalRef
-	Mode         string
-	ResizePolicy string
-	SurfaceID    string
-	ViewID       string
+	EndpointID endpoint.EndpointID
+	Spec       coreapi.TerminalAttachSpec
 }
 
-// TerminalAttachResult 返回 daemon 确认后的 attachment stamp、尺寸和 resize ownership。
+// TerminalAttachResult 把 daemon attach result 固定到创建它的 client session stamp。
 type TerminalAttachResult struct {
-	Stamp          AttachmentStamp
-	Size           TerminalSize
-	CanResize      bool
-	ResizeReason   string
-	SizeLocked     bool
-	OwnerSurfaceID string
-	OwnerViewID    string
-	ResizeEpoch    uint64
+	Stamp      AttachmentStamp
+	Attachment coreapi.TerminalAttachResult
 }
 
 // TerminalDetachRequest 精确释放一个既有 attachment；stale stamp 不得触发 lazy dial。
@@ -69,20 +63,14 @@ type TerminalInputRequest struct {
 // TerminalResizeRequest 携带 owner view 的 resize intent 和原始 attachment stamp。
 type TerminalResizeRequest struct {
 	Stamp        AttachmentStamp
-	Size         TerminalSize
+	Size         coreapi.TerminalSize
 	ResizePolicy string
 }
 
-// TerminalResizeResult 返回 daemon 对 resize ownership、epoch 和最终尺寸的确认。
+// TerminalResizeResult 把 daemon resize result 固定到发起操作的 attachment stamp。
 type TerminalResizeResult struct {
-	Size           TerminalSize
-	Resized        bool
-	CanResize      bool
-	ResizeReason   string
-	SizeLocked     bool
-	OwnerSurfaceID string
-	OwnerViewID    string
-	ResizeEpoch    uint64
+	Stamp  AttachmentStamp
+	Resize coreapi.TerminalResizeResult
 }
 
 // TerminalAttachmentApplication 是 attach/detach/input/resize 的窄 application interface。

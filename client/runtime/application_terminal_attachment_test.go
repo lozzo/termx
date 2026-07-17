@@ -3,7 +3,10 @@ package runtime
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
+
+	coreapi "github.com/lozzow/termx/core/api"
 )
 
 func TestAttachmentStampRequiresOriginalSessionAndViewIdentity(t *testing.T) {
@@ -55,3 +58,10 @@ func (contractTerminalAttachmentApplication) ResizeTerminal(context.Context, Ter
 }
 
 var _ TerminalAttachmentApplication = contractTerminalAttachmentApplication{}
+
+func TestAttachmentApplicationContractWrapsCoreProjection(t *testing.T) {
+	assertFieldType(t, TerminalAttachRequest{}, "Spec", reflect.TypeOf(coreapi.TerminalAttachSpec{}))
+	assertFieldType(t, TerminalAttachResult{}, "Attachment", reflect.TypeOf(coreapi.TerminalAttachResult{}))
+	assertFieldType(t, TerminalResizeRequest{}, "Size", reflect.TypeOf(coreapi.TerminalSize{}))
+	assertFieldType(t, TerminalResizeResult{}, "Resize", reflect.TypeOf(coreapi.TerminalResizeResult{}))
+}

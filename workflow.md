@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- 当前最早未完成切片是 `AR003B1`。在 `AR001-AR005` 全部完成前，暂停 `C3B` 以及后续连接功能开发。
+- 当前最早未完成切片是 `AR003B1B`。在 `AR001-AR005` 全部完成前，暂停 `C3B` 以及后续连接功能开发。
 - 目录迁移已经完成，但目录正确不等于架构就绪。当前必须先收口接口、依赖方向、消息边界和 composition root，再迁移真实实现。
 - 禁止继续通过移动文件、修改 import、增加别名或补局部分支冒充架构重构。每次迁移必须先存在目标 interface/DTO、owner、truth source、消息链路和失败条件。
 - 当前仓库是私有开发真值。插件系统、正式开源隔离、多区域 Cloud、完整 Web、Android/iOS/桌面 binding 均不是当前主动工作。
@@ -75,7 +75,8 @@ owner/truth source
 | AR001 | 已完成 | 压缩活动 workflow，建立架构就绪门禁 | 删除过时任务流水账；明确接口优先顺序、允许范围、停止条件和后续队列；`git diff --check` |
 | AR002 | 已完成 | client contract 与依赖图 | 定义 runtime control interface、session/attempt/lifecycle DTO、ReadySession 校验、稳定错误与 Clock capability；harness 覆盖不可变 route、stamp、取消和 lifecycle 边界；无网络实现 |
 | AR003 | 已完成 | TUI application boundary 清理 | port 按 history/terminal/live/path/endpoint event/clipboard/storage 拆分；TUI state/port 不依赖 Cloud/protocol/transport concrete type；clientruntime adapter 负责纯事件映射并由守卫固化 |
-| AR003B1 | 进行中 | Core terminal/attachment/path API | 先定义 daemon-local lifecycle、resize control、path DTO；client runtime 只包装 EndpointID/stamp；迁移对应 core/protocol type owner |
+| AR003B1A | 已完成 | Core terminal/attachment/path contract | 定义 wire/UI-independent daemon-local DTO；client runtime application request/result 只包装 EndpointID 和 session/attachment stamp |
+| AR003B1B | 进行中 | Core/protocol terminal contract 迁移 | core 实现与 protocol adapter 真实改用 `core/api`；更新调用方后删除 protocol/core 重复 DTO，不使用 type alias |
 | AR003B2 | 待开始 | Core history/live API | 定义 authoritative history window 与 native screen DTO；core implementation 产出 API，protocol 只编码，TUI 只做 UI projection |
 | AR003B3 | 待开始 | Core file/workbench API | file 隐藏 protocol transfer frame/channel；workbench 只表达 layout/binding intent；迁移 core/protocol owner |
 | AR003B4 | 待开始 | Core API 依赖守卫与重复类型删除 | 禁止 API 依赖 implementation/wire/UI/client；删除 core/protocol/client 的重复 daemon-local DTO 并完成 import graph 审计 |
