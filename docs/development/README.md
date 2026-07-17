@@ -2,7 +2,7 @@
 
 本文是仓库日常维护入口。产品与远程平台约束见 `docs/remote-platform/`，领域细节见 `core/docs/`、`tui/docs/`，已完成计划和一次性审计见 `docs/history/`。
 
-目录 ownership 与依赖方向统一见 [`repository-layout.md`](repository-layout.md)，Proto API 强约定见 [`proto-api-architecture.md`](proto-api-architecture.md)；下表只提供入口索引，不另定义架构。
+目录 ownership 与依赖方向统一见 [`repository-layout.md`](repository-layout.md)，Proto API 强约定见 [`proto-api-architecture.md`](proto-api-architecture.md)，当前迁移盘点见 [`proto-api-inventory.md`](proto-api-inventory.md)；下表只提供入口索引，不另定义架构。
 
 公开 CLI 的长期命令树、target、输出、退出码和 tmux 能力映射见 [`cli-command-design.md`](cli-command-design.md)。
 
