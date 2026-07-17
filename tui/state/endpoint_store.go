@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/shared/cloudcompanion"
 )
 
 const (
@@ -130,7 +129,7 @@ type EndpointItem struct {
 	Enabled     bool
 	// ConnectionPhase 是 managed WebRTC 当前连接阶段；local/SSH 保持空值。
 	// 它来自 endpoint runtime event，只服务 picker/manager 展示，不参与 endpoint identity 或 capability 判断。
-	ConnectionPhase cloudcompanion.EndpointPhase
+	ConnectionPhase EndpointConnectionPhase
 	// ObservedPath 是当前 managed WebRTC session 的 direct/single_relay/relay_mesh 投影。
 	// registry reload 不提供该值；断线或新 session 会由 endpoint runtime event 更新。
 	ObservedPath string
@@ -342,7 +341,7 @@ func (store EndpointStore) MarkManagedRoute(endpointID EndpointID, observedPath,
 	selectionReason = strings.TrimSpace(selectionReason)
 	if observedPath == "" {
 		selectionReason = ""
-	} else if selectionReason != "" && !cloudcompanion.IsKnownRouteSelectionReason(cloudcompanion.RouteSelectionReason(selectionReason)) {
+	} else if selectionReason != "" && !isKnownRouteSelectionReason(selectionReason) {
 		return store
 	}
 	item.ObservedPath = observedPath
@@ -352,11 +351,11 @@ func (store EndpointStore) MarkManagedRoute(endpointID EndpointID, observedPath,
 
 // MarkConnectionPhase 更新单个 managed endpoint 的公开连接阶段。
 // 未知阶段被忽略；connected/failed 只描述最近一次 dial 结果，Status 仍由 endpoint runtime 消息独立维护。
-func (store EndpointStore) MarkConnectionPhase(endpointID EndpointID, phase cloudcompanion.EndpointPhase) EndpointStore {
+func (store EndpointStore) MarkConnectionPhase(endpointID EndpointID, phase EndpointConnectionPhase) EndpointStore {
 	switch phase {
-	case cloudcompanion.EndpointPhaseIdle, cloudcompanion.EndpointPhaseResolving, cloudcompanion.EndpointPhaseSignaling,
-		cloudcompanion.EndpointPhaseConnecting, cloudcompanion.EndpointPhaseAuthorizing,
-		cloudcompanion.EndpointPhaseConnected, cloudcompanion.EndpointPhaseFailed:
+	case EndpointConnectionIdle, EndpointConnectionResolving, EndpointConnectionSignaling,
+		EndpointConnectionConnecting, EndpointConnectionAuthorizing,
+		EndpointConnectionConnected, EndpointConnectionFailed:
 	default:
 		return store
 	}
@@ -366,6 +365,17 @@ func (store EndpointStore) MarkConnectionPhase(endpointID EndpointID, phase clou
 	}
 	item.ConnectionPhase = phase
 	return store.Upsert(item)
+}
+
+func isKnownRouteSelectionReason(reason string) bool {
+	switch reason {
+	case "initial_best", "only_viable", "lower_loss", "direct_unstable", "lower_latency", "lower_score",
+		"cost_guard", "minimum_hold", "cooldown", "hysteresis_hold", "insufficient_improvement",
+		"current_unavailable", "current_best":
+		return true
+	default:
+		return false
+	}
 }
 
 // ApplyDefaults 记录某个 endpoint daemon 返回的创建默认值。

@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"github.com/lozzow/termx/shared/cloudcompanion"
 	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 )
@@ -91,7 +90,7 @@ func reduceEndpointRuntimeStatus(root state.Root, msg EndpointRuntimeStatusMsg) 
 	message := endpointRuntimeEventMessage(event)
 	errorKind := state.NormalizeEndpointErrorKind(event.ErrorKind)
 	if errorKind == state.EndpointErrorUnknown && event.Err != nil {
-		errorKind = port.ClassifyEndpointError(event.Err)
+		errorKind = state.ClassifyEndpointErrorText(event.Err.Error())
 	}
 	if errorKind == state.EndpointErrorUnknown && message != "" {
 		errorKind = state.ClassifyEndpointErrorText(message)
@@ -109,9 +108,9 @@ func reduceEndpointRuntimeStatus(root state.Root, msg EndpointRuntimeStatusMsg) 
 	if event.Phase != "" {
 		root.Endpoints = root.Endpoints.MarkConnectionPhase(event.EndpointID, event.Phase)
 	} else if status == state.EndpointStatusConnected {
-		root.Endpoints = root.Endpoints.MarkConnectionPhase(event.EndpointID, cloudcompanion.EndpointPhaseConnected)
+		root.Endpoints = root.Endpoints.MarkConnectionPhase(event.EndpointID, state.EndpointConnectionConnected)
 	} else if status == state.EndpointStatusOffline {
-		root.Endpoints = root.Endpoints.MarkConnectionPhase(event.EndpointID, cloudcompanion.EndpointPhaseFailed)
+		root.Endpoints = root.Endpoints.MarkConnectionPhase(event.EndpointID, state.EndpointConnectionFailed)
 	}
 	if status == state.EndpointStatusConnected {
 		root.Endpoints = root.Endpoints.MarkManagedRoute(event.EndpointID, event.ObservedPath, event.RouteSelectionReason)

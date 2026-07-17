@@ -12,6 +12,20 @@ const (
 // 它属于客户端本地配置和 workbench 连接意图，不是展示名称，也不能替代 SSH host key、hub device id 或其他安全身份。
 type EndpointID string
 
+// EndpointConnectionPhase 是 TUI-owned 的 endpoint 连接阶段投影。
+// 它只服务 reducer/view-model，不拥有 runtime 状态，也不绑定 Cloud、WebRTC 或 protocol concrete type。
+type EndpointConnectionPhase string
+
+const (
+	EndpointConnectionIdle        EndpointConnectionPhase = "idle"
+	EndpointConnectionResolving   EndpointConnectionPhase = "resolving"
+	EndpointConnectionSignaling   EndpointConnectionPhase = "signaling"
+	EndpointConnectionConnecting  EndpointConnectionPhase = "connecting"
+	EndpointConnectionAuthorizing EndpointConnectionPhase = "authorizing"
+	EndpointConnectionConnected   EndpointConnectionPhase = "connected"
+	EndpointConnectionFailed      EndpointConnectionPhase = "failed"
+)
+
 // NormalizeEndpointID 把空 endpoint 映射到默认 local endpoint。
 // 这是旧单 daemon 数据进入新多 endpoint 模型的唯一默认化入口，避免裸 TerminalID 在 reducer state 中保持无归属状态。
 func NormalizeEndpointID(endpointID EndpointID) EndpointID {

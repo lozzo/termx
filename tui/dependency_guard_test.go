@@ -23,6 +23,7 @@ func TestTUIDirectoryDependencies(t *testing.T) {
 		assertImportsExclude(t, root, []string{
 			"github.com/lozzow/termx/internal/protocol",
 			"github.com/lozzow/termx/shared/transport",
+			"github.com/lozzow/termx/shared/cloudcompanion",
 			"github.com/lozzow/termx/shared/remoteauth",
 			"github.com/lozzow/termx/remote/client",
 			"github.com/lozzow/termx/remote/webrtc",
@@ -36,10 +37,8 @@ func TestTUIDirectoryDependencies(t *testing.T) {
 func TestTUIPortContainsOnlyProductionContracts(t *testing.T) {
 	allowedImports := map[string]struct{}{
 		"context": {}, "errors": {}, "time": {},
-		"github.com/lozzow/termx/proto/cloudpb":         {},
-		"github.com/lozzow/termx/shared/cloudcompanion": {},
-		"github.com/lozzow/termx/tui/input":             {},
-		"github.com/lozzow/termx/tui/state":             {},
+		"github.com/lozzow/termx/tui/input": {},
+		"github.com/lozzow/termx/tui/state": {},
 	}
 	err := filepath.WalkDir("port", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
@@ -70,9 +69,7 @@ func TestTUIPortContainsOnlyProductionContracts(t *testing.T) {
 				continue
 			}
 			if function.Recv == nil {
-				if function.Name.Name != "ClassifyEndpointError" {
-					t.Errorf("%s implements function %s in contract-only port", path, function.Name.Name)
-				}
+				t.Errorf("%s implements function %s in contract-only port", path, function.Name.Name)
 				continue
 			}
 			if receiverUsesStructType(parsed, function.Recv.List[0].Type) {

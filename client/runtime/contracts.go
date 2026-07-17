@@ -104,7 +104,10 @@ func (request DisconnectRequest) Validate() error {
 type EndpointPhase string
 
 const (
+	EndpointPhaseIdle        EndpointPhase = "idle"
 	EndpointPhasePlanning    EndpointPhase = "planning"
+	EndpointPhaseResolving   EndpointPhase = "resolving"
+	EndpointPhaseSignaling   EndpointPhase = "signaling"
 	EndpointPhaseConnecting  EndpointPhase = "connecting"
 	EndpointPhaseAuthorizing EndpointPhase = "authorizing"
 	EndpointPhaseReady       EndpointPhase = "ready"

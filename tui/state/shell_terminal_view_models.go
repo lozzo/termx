@@ -2,8 +2,6 @@ package state
 
 import (
 	"time"
-
-	"github.com/lozzow/termx/shared/cloudcompanion"
 )
 
 // TerminalPickerItem 是 terminal picker 的只读行投影。
@@ -66,7 +64,7 @@ type EndpointPickerGroup struct {
 	Transport            EndpointTransportKind
 	ObservedPath         string
 	RouteSelectionReason string
-	ConnectionPhase      cloudcompanion.EndpointPhase
+	ConnectionPhase      EndpointConnectionPhase
 	ConnectMode          EndpointConnectMode
 	Status               EndpointStatusKind
 	LastError            string
@@ -84,7 +82,7 @@ type TerminalPoolPageGroup struct {
 	Transport            EndpointTransportKind
 	ObservedPath         string
 	RouteSelectionReason string
-	ConnectionPhase      cloudcompanion.EndpointPhase
+	ConnectionPhase      EndpointConnectionPhase
 	ConnectMode          EndpointConnectMode
 	Status               EndpointStatusKind
 	LastError            string

@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- 当前最早未完成切片是 `AR003`。在 `AR001-AR005` 全部完成前，暂停 `C3B` 以及后续连接功能开发。
+- 当前最早未完成切片是 `AR004`。在 `AR001-AR005` 全部完成前，暂停 `C3B` 以及后续连接功能开发。
 - 目录迁移已经完成，但目录正确不等于架构就绪。当前必须先收口接口、依赖方向、消息边界和 composition root，再迁移真实实现。
 - 禁止继续通过移动文件、修改 import、增加别名或补局部分支冒充架构重构。每次迁移必须先存在目标 interface/DTO、owner、truth source、消息链路和失败条件。
 - 当前仓库是私有开发真值。插件系统、正式开源隔离、多区域 Cloud、完整 Web、Android/iOS/桌面 binding 均不是当前主动工作。
@@ -74,8 +74,8 @@ owner/truth source
 | --- | --- | --- | --- |
 | AR001 | 已完成 | 压缩活动 workflow，建立架构就绪门禁 | 删除过时任务流水账；明确接口优先顺序、允许范围、停止条件和后续队列；`git diff --check` |
 | AR002 | 已完成 | client contract 与依赖图 | 定义 runtime control interface、session/attempt/lifecycle DTO、ReadySession 校验、稳定错误与 Clock capability；harness 覆盖不可变 route、stamp、取消和 lifecycle 边界；无网络实现 |
-| AR003 | 进行中 | TUI application boundary 清理 | 按 history/terminal/path/storage/clipboard/endpoint event 拆分 `tui/port`；移除 TUI state/port 对 Cloud/protocol concrete type 的依赖；建立 `tui/adapter/clientruntime` 接口壳和守卫 |
-| AR004 | 待开始 | CLI composition boundary 清理 | 定义 CLI 消费的 runtime/application interface；删除剩余 direct dial/helper 调用意图；命令只依赖 interface，保留等待真实 runtime implementation 的显式装配缺口 |
+| AR003 | 已完成 | TUI application boundary 清理 | port 按 history/terminal/live/path/endpoint event/clipboard/storage 拆分；TUI state/port 不依赖 Cloud/protocol/transport concrete type；clientruntime adapter 负责纯事件映射并由守卫固化 |
+| AR004 | 进行中 | CLI composition boundary 清理 | 定义 CLI 消费的 runtime/application interface；删除剩余 direct dial/helper 调用意图；命令只依赖 interface，保留等待真实 runtime implementation 的显式装配缺口 |
 | AR005 | 待开始 | 架构就绪审查 | import graph、重复 owner、旧 helper、fallback、文档和测试门禁全部通过；独立架构 reviewer 与代码 reviewer PASS 后才恢复 C3B |
 | C3B | 暂停 | `client/endpoint` 纯 RouteSelectionPlanner | AR005 PASS 后恢复；无网络 IO，覆盖 full race、priority hedge、manual-only、identity 与 managed route 限制 |
 | C3C | 暂停 | fresh daemon proof / ReadySession | local/SSH attempt 完成 transport、fresh proof、authorization、Hello 后才产生 ReadySession |

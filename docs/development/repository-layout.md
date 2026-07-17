@@ -74,6 +74,8 @@ cmd / platform binding / tui adapter
 - `client/adapter/*` 可以依赖 runtime port 和具体 transport/protocol primitive，但不能持有第二份 route/session truth。
 - `tui/state`、`tui/app` 和 `tui/render` 不 import concrete transport、credential store、Cloud Companion client 或 protocol client。
 - `tui/port` 只定义 TUI 所需 interface/DTO；不得实现 IO，不得包含 fake。
+- `tui/port` 按 history、terminal、live、path、endpoint event、clipboard 和 storage contract 分文件；不得重新合并为无 ownership 的总类型文件。
+- TUI-owned endpoint phase/error/path projection 使用 `tui/state` 类型；`shared/cloudcompanion`、`cloudpb` 和 client runtime concrete event 只能由 `tui/adapter/clientruntime` 映射。
 - `tui/adapter/*` 实现 port，并通过 message/effect 回投；不得直接修改 reducer-owned state。
 - `cmd/termx` 不实现 Dial、Hello、authorization、credential resolution、route race、session cache 或 transport cleanup。
 - `core/`、`remote/`、`private/` 不反向 import TUI 或 CLI。
@@ -85,7 +87,7 @@ cmd / platform binding / tui adapter
 
 1. Endpoint/Route 持久领域位于 `client/endpoint/`，package 名为 `endpoint`。
 2. `client/runtime/`、`client/port/` 与 `client/adapter/` 已建立明确边界；runtime 行为按 workflow 后续切片实现。
-3. TUI application contract 位于 `tui/port/`，protocol 与系统实现分别位于 `tui/adapter/protocol/`、`tui/adapter/system/`。
+3. TUI application contract 位于 `tui/port/`，client runtime、protocol 与系统实现分别位于 `tui/adapter/clientruntime/`、`tui/adapter/protocol/`、`tui/adapter/system/`。
 4. TUI fake 位于 `tui/testkit/`，生产 port 不包含测试状态或宿主 IO。
 5. `EndpointServiceBundle`、`EndpointDialer` 已退出 TUI；后续 ready bundle contract 只能归 `client/runtime` 或 `client/port`。
 6. 静态依赖守卫禁止 client 依赖 UI/CLI/private，也禁止 TUI port 重新依赖 protocol、adapter、testkit 或 `os/exec`。
