@@ -5,28 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	xansi "github.com/charmbracelet/x/ansi"
 	clientruntime "github.com/lozzow/termx/client/runtime"
-	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/shared/perftrace"
 	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 )
-
-type ProtocolHistoryClient interface {
-	HistoryWindow(context.Context, protocol.HistoryWindowParams) (*protocol.HistoryWindow, error)
-	HistoryCopy(context.Context, protocol.HistoryWindowParams) (string, error)
-	ReleaseHistory(context.Context, protocol.HistoryWindowParams) error
-}
-
-type ProtocolStorageClient interface {
-	StorageGet(context.Context, protocol.StorageGetParams) (*protocol.StorageEntry, error)
-	StoragePut(context.Context, protocol.StoragePutParams) (*protocol.StorageEntry, error)
-	Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error)
-}
 
 // ProtocolPathServiceAdapter 把 endpoint path completion service 映射到 core-v2 protocol。
 // adapter 不读取本地文件系统；Prefix 直接交给当前 protocol session 所属 daemon，
@@ -81,15 +67,13 @@ func (adapter ProtocolPathServiceAdapter) Defaults(ctx context.Context, req port
 
 // ProtocolCoreClientAdapter 是真实 protocol history.window 的 service adapter。
 type ProtocolCoreClientAdapter struct {
-	Client ProtocolHistoryClient
+	Application *clientruntime.ApplicationSession
 }
 
 func (adapter ProtocolCoreClientAdapter) HistoryLatest(ctx context.Context, req port.HistoryLatestRequest) (port.HistoryResult, error) {
-	window, err := adapter.historyWindow(ctx, protocol.HistoryWindowParams{
-		TerminalID: req.TerminalID,
-		Limit:      req.Rows,
-		Cols:       req.Cols,
-		Generation: req.GenerationBoundary,
+	window, err := adapter.historyWindow(ctx, &apipb.HistoryWindowCommand{
+		Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID},
+		Mode:     apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_LATEST, Limit: int32(req.Rows), Cols: int32(req.Cols), HistoryGeneration: req.GenerationBoundary,
 	})
 	if err != nil {
 		return port.HistoryResult{RequestID: req.RequestID}, normalizeProtocolHistoryError(err)
@@ -98,20 +82,10 @@ func (adapter ProtocolCoreClientAdapter) HistoryLatest(ctx context.Context, req 
 }
 
 func (adapter ProtocolCoreClientAdapter) HistoryOlder(ctx context.Context, req port.HistoryOlderRequest) (port.HistoryResult, error) {
-	window, err := adapter.historyWindow(ctx, protocol.HistoryWindowParams{
-		TerminalID:          req.TerminalID,
-		Limit:               req.Rows,
-		Cols:                req.Cols,
-		Mode:                "older",
-		Token:               req.Token,
-		Generation:          req.Generation,
-		CursorValid:         req.Cursor.Valid,
-		BeforeLineID:        req.Cursor.BeforeLineID,
-		BeforeRowInLine:     req.Cursor.BeforeRowInLine,
-		BeforeRowIndex:      req.Cursor.BeforeRowIndex,
-		CursorSegment:       req.Cursor.Segment,
-		BoundaryFirstLineID: req.Boundary.FirstLineID,
-		BoundaryLastLineID:  req.Boundary.LastLineID,
+	window, err := adapter.historyWindow(ctx, &apipb.HistoryWindowCommand{
+		Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID}, Mode: apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_OLDER,
+		Limit: int32(req.Rows), Cols: int32(req.Cols), Token: req.Token, HistoryGeneration: req.Generation,
+		BeforeCursor: historyCursorToProto(req.Cursor), BoundaryFirstLineId: req.Boundary.FirstLineID, BoundaryLastLineId: req.Boundary.LastLineID,
 	})
 	if err != nil {
 		return port.HistoryResult{RequestID: req.RequestID}, normalizeProtocolHistoryError(err)
@@ -120,20 +94,10 @@ func (adapter ProtocolCoreClientAdapter) HistoryOlder(ctx context.Context, req p
 }
 
 func (adapter ProtocolCoreClientAdapter) HistoryNewer(ctx context.Context, req port.HistoryNewerRequest) (port.HistoryResult, error) {
-	window, err := adapter.historyWindow(ctx, protocol.HistoryWindowParams{
-		TerminalID:          req.TerminalID,
-		Limit:               req.Rows,
-		Cols:                req.Cols,
-		Mode:                "newer",
-		Token:               req.Token,
-		Generation:          req.Generation,
-		AfterCursorValid:    req.Cursor.Valid,
-		AfterLineID:         req.Cursor.BeforeLineID,
-		AfterRowInLine:      req.Cursor.BeforeRowInLine,
-		AfterRowIndex:       req.Cursor.BeforeRowIndex,
-		AfterCursorSegment:  req.Cursor.Segment,
-		BoundaryFirstLineID: req.Boundary.FirstLineID,
-		BoundaryLastLineID:  req.Boundary.LastLineID,
+	window, err := adapter.historyWindow(ctx, &apipb.HistoryWindowCommand{
+		Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID}, Mode: apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_NEWER,
+		Limit: int32(req.Rows), Cols: int32(req.Cols), Token: req.Token, HistoryGeneration: req.Generation,
+		AfterCursor: historyCursorToProto(req.Cursor), BoundaryFirstLineId: req.Boundary.FirstLineID, BoundaryLastLineId: req.Boundary.LastLineID,
 	})
 	if err != nil {
 		return port.HistoryResult{RequestID: req.RequestID}, normalizeProtocolHistoryError(err)
@@ -142,15 +106,10 @@ func (adapter ProtocolCoreClientAdapter) HistoryNewer(ctx context.Context, req p
 }
 
 func (adapter ProtocolCoreClientAdapter) HistoryOldest(ctx context.Context, req port.HistoryOldestRequest) (port.HistoryResult, error) {
-	window, err := adapter.historyWindow(ctx, protocol.HistoryWindowParams{
-		TerminalID:          req.TerminalID,
-		Limit:               req.Rows,
-		Cols:                req.Cols,
-		Mode:                "oldest",
-		Token:               req.Token,
-		Generation:          req.Generation,
-		BoundaryFirstLineID: req.Boundary.FirstLineID,
-		BoundaryLastLineID:  req.Boundary.LastLineID,
+	window, err := adapter.historyWindow(ctx, &apipb.HistoryWindowCommand{
+		Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID}, Mode: apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_OLDEST,
+		Limit: int32(req.Rows), Cols: int32(req.Cols), Token: req.Token, HistoryGeneration: req.Generation,
+		BoundaryFirstLineId: req.Boundary.FirstLineID, BoundaryLastLineId: req.Boundary.LastLineID,
 	})
 	if err != nil {
 		return port.HistoryResult{RequestID: req.RequestID}, normalizeProtocolHistoryError(err)
@@ -159,42 +118,34 @@ func (adapter ProtocolCoreClientAdapter) HistoryOldest(ctx context.Context, req 
 }
 
 func (adapter ProtocolCoreClientAdapter) ReleaseHistory(ctx context.Context, req port.HistoryReleaseRequest) error {
-	if adapter.Client == nil || req.Token == "" {
+	if adapter.Application == nil || req.Token == "" {
 		return nil
 	}
-	return adapter.Client.ReleaseHistory(ctx, protocol.HistoryWindowParams{
-		TerminalID: req.TerminalID,
-		Token:      req.Token,
-	})
+	return adapter.Application.HistoryRelease(ctx, &apipb.HistoryReleaseCommand{Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID}, Token: req.Token})
 }
 
 func (adapter ProtocolCoreClientAdapter) HistoryCopyRange(ctx context.Context, req port.HistoryCopyRangeRequest) (port.HistoryCopyRangeResult, error) {
-	text, err := adapter.Client.HistoryCopy(ctx, protocol.HistoryWindowParams{
-		TerminalID:          req.TerminalID,
-		Cols:                req.Cols,
-		Token:               req.Token,
-		Generation:          req.Generation,
-		BoundaryFirstLineID: req.Boundary.FirstLineID,
-		BoundaryLastLineID:  req.Boundary.LastLineID,
-		RangeValid:          req.Start.Valid && req.End.Valid,
-		RangeStartLineID:    req.Start.LineID,
-		RangeStartCol:       req.Start.Col,
-		RangeEndLineID:      req.End.LineID,
-		RangeEndCol:         req.End.Col,
-	})
+	window := &apipb.HistoryWindowCommand{Token: req.Token, Cols: int32(req.Cols), HistoryGeneration: req.Generation, BoundaryFirstLineId: req.Boundary.FirstLineID, BoundaryLastLineId: req.Boundary.LastLineID}
+	if req.Start.Valid && req.End.Valid {
+		window.Range = &apipb.HistoryRange{StartLineId: req.Start.LineID, StartCol: int32(req.Start.Col), EndLineId: req.End.LineID, EndCol: int32(req.End.Col)}
+	}
+	result, err := adapter.Application.HistoryCopy(ctx, &apipb.HistoryCopyCommand{Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID}, Window: window})
 	if err != nil {
 		return port.HistoryCopyRangeResult{}, normalizeProtocolHistoryError(err)
 	}
-	return port.HistoryCopyRangeResult{Text: text}, nil
+	return port.HistoryCopyRangeResult{Text: result.GetText()}, nil
 }
 
-func (adapter ProtocolCoreClientAdapter) historyWindow(ctx context.Context, params protocol.HistoryWindowParams) (state.HistoryWindow, error) {
-	mode := protocolHistoryWindowPerfMode(params.Mode)
+func (adapter ProtocolCoreClientAdapter) historyWindow(ctx context.Context, command *apipb.HistoryWindowCommand) (state.HistoryWindow, error) {
+	if adapter.Application == nil {
+		return state.HistoryWindow{}, fmt.Errorf("missing history application session")
+	}
+	mode := strings.ToLower(strings.TrimPrefix(command.GetMode().String(), "HISTORY_WINDOW_MODE_"))
 	finishRPC := perftrace.Measure("tui.protocol.history_window." + mode + ".rpc")
-	window, err := adapter.Client.HistoryWindow(ctx, params)
+	window, err := adapter.Application.HistoryWindow(ctx, command)
 	if window != nil {
-		finishRPC(len(window.Rows))
-		perftrace.Count("tui.protocol.history_window."+mode+".rows", len(window.Rows))
+		finishRPC(len(window.GetRows()))
+		perftrace.Count("tui.protocol.history_window."+mode+".rows", len(window.GetRows()))
 	} else {
 		finishRPC(0)
 	}
@@ -202,9 +153,31 @@ func (adapter ProtocolCoreClientAdapter) historyWindow(ctx context.Context, para
 		return state.HistoryWindow{}, normalizeProtocolHistoryError(err)
 	}
 	finishConvert := perftrace.Measure("tui.protocol.history_window." + mode + ".convert")
-	converted := historyWindowFromProtocol(window, params.Cols)
+	converted := historyWindowFromProto(window, int(command.GetCols()))
 	finishConvert(len(converted.Rows))
 	return converted, nil
+}
+
+func historyCursorToProto(cursor state.HistoryCursor) *apipb.HistoryCursor {
+	if !cursor.Valid {
+		return nil
+	}
+	return &apipb.HistoryCursor{LineId: cursor.BeforeLineID, RowInLine: int32(cursor.BeforeRowInLine), RowIndex: int32(cursor.BeforeRowIndex), Segment: historySegmentToProto(cursor.Segment)}
+}
+
+func historySegmentToProto(segment string) apipb.HistoryCursorSegment {
+	switch segment {
+	case "committed":
+		return apipb.HistoryCursorSegment_HISTORY_CURSOR_SEGMENT_COMMITTED
+	case "current-primary-frame":
+		return apipb.HistoryCursorSegment_HISTORY_CURSOR_SEGMENT_CURRENT_PRIMARY_FRAME
+	case "archived-primary-frame":
+		return apipb.HistoryCursorSegment_HISTORY_CURSOR_SEGMENT_ARCHIVED_PRIMARY_FRAME
+	case "current-alt-frame":
+		return apipb.HistoryCursorSegment_HISTORY_CURSOR_SEGMENT_CURRENT_ALT_FRAME
+	default:
+		return apipb.HistoryCursorSegment_HISTORY_CURSOR_SEGMENT_UNSPECIFIED
+	}
 }
 
 func protocolHistoryWindowPerfMode(mode string) string {
@@ -237,498 +210,218 @@ func normalizeProtocolHistoryError(err error) error {
 	return err
 }
 
-func historyWindowFromProtocol(window *protocol.HistoryWindow, requestedCols int) state.HistoryWindow {
+func historyWindowFromProto(window *apipb.HistoryWindowResult, requestedCols int) state.HistoryWindow {
 	if window == nil {
 		return state.HistoryWindow{}
 	}
 	cols := requestedCols
 	if cols <= 0 {
-		cols = int(window.Size.Cols)
+		cols = int(window.GetSize().GetCols())
 	}
-	sourceLines := historySourceLinesFromProtocol(window)
-	rows, lines := historyRowsFromProtocol(window, sourceLines, cols)
+	sourceLines := historySourceLinesFromProto(window)
+	rows, lines := historyRowsFromProto(window, sourceLines, cols)
+	cursor := window.GetCursor()
 	return state.HistoryWindow{
-		TerminalID:  window.TerminalID,
-		Token:       window.Token,
-		Op:          state.HistoryWindowOp(window.Op),
-		Cols:        cols,
-		SourceLines: sourceLines,
-		Rows:        rows,
-		Lines:       lines,
-		Cursor: state.HistoryCursor{
-			Valid:           window.CursorValid,
-			BeforeLineID:    window.CursorLineID,
-			BeforeRowInLine: window.CursorRow,
-			BeforeRowIndex:  window.CursorRowIndex,
-			Segment:         window.CursorSegment,
-		},
-		HasMore:    window.HasMore,
-		Generation: window.Generation,
-		Boundary: state.HistoryBoundary{
-			FirstLineID: window.FirstLineID,
-			LastLineID:  window.LastLineID,
-		},
-		LoadedLines: window.LoadedLines,
-		TotalLines:  window.LogicalTotal,
+		TerminalID: window.GetTerminal().GetTerminalId(), Token: window.GetToken(), Op: historyOperationFromProto(window.GetOperation()), Cols: cols,
+		SourceLines: sourceLines, Rows: rows, Lines: lines,
+		Cursor:  state.HistoryCursor{Valid: cursor != nil, BeforeLineID: cursor.GetLineId(), BeforeRowInLine: int(cursor.GetRowInLine()), BeforeRowIndex: int(cursor.GetRowIndex()), Segment: historySegmentFromProto(cursor.GetSegment())},
+		HasMore: window.GetHasMore(), Generation: window.GetHistoryGeneration(),
+		Boundary:    state.HistoryBoundary{FirstLineID: window.GetFirstLineId(), LastLineID: window.GetLastLineId()},
+		LoadedLines: int(window.GetLoadedLines()), TotalLines: int(window.GetLogicalTotal()),
 	}
 }
 
-func historySourceLinesFromProtocol(window *protocol.HistoryWindow) []state.HistoryLogicalLine {
-	if window == nil || len(window.Rows) == 0 {
-		return nil
-	}
-	lines := make([]state.HistoryLogicalLine, 0, len(window.Rows))
-	for i, row := range window.Rows {
-		lineID := uint64At(window.RowLineIDs, i)
-		text, cells := historyTextAndCellsFromCompactRow(row)
-		span, hasSpan := historyProtocolSpanForRow(window.Lines, i, lineID)
-		nextLine := state.HistoryLogicalLine{
-			Text:               text,
-			Cells:              cells,
-			LineID:             lineID,
-			Kind:               historyProtocolRowKind(window, i, span, hasSpan),
-			Segment:            stringAt(window.RowSegments, i),
-			SessionID:          uint64At(window.RowSessionIDs, i),
-			FrameID:            uint64At(window.RowFrameIDs, i),
-			FixedGrid:          boolAt(window.RowFixedGrid, i) || (hasSpan && span.FixedGrid),
-			ScreenCols:         intAt(window.RowScreenCols, i),
-			ScreenRow:          intAt(window.RowScreenRows, i),
-			ScreenRowSet:       boolAt(window.RowScreenRowSet, i),
-			ProjectionRowIndex: intAt(window.RowIndexes, i),
-			TailFill:           historyTailFillFromProtocol(row.TailFill),
-			LiveTail:           historyProtocolRowIsLiveTail(window, i),
-			ClippedBefore:      hasSpan && span.ClippedBefore,
-			ClippedAfter:       hasSpan && span.ClippedAfter,
-		}
-		if nextLine.ScreenCols == 0 && hasSpan {
-			nextLine.ScreenCols = span.ScreenCols
-		}
-		// protocol 可能按当前 cols 把一条 logical line 切成多行；这里必须先按
-		// stable source identity 合回 frozen source，再交给 TUI 本地 reflow。
-		if len(lines) > 0 && sameProtocolHistorySource(lines[len(lines)-1], nextLine) {
-			appendHistoryProtocolSegment(&lines[len(lines)-1], text, cells)
-			if tail := historyTailFillFromProtocol(row.TailFill); tail != nil {
-				lines[len(lines)-1].TailFill = tail
-			}
-			lines[len(lines)-1].LiveTail = lines[len(lines)-1].LiveTail || historyProtocolRowIsLiveTail(window, i)
-			if nextLine.ScreenRowSet {
-				lines[len(lines)-1].ScreenRow = nextLine.ScreenRow
-				lines[len(lines)-1].ScreenRowSet = true
-			}
+func historySourceLinesFromProto(window *apipb.HistoryWindowResult) []state.HistoryLogicalLine {
+	lines := make([]state.HistoryLogicalLine, 0, len(window.GetRows()))
+	for _, row := range window.GetRows() {
+		text, cells := historyTextAndCellsFromProto(row.GetRow())
+		next := state.HistoryLogicalLine{Text: text, Cells: cells, LineID: row.GetLogicalLineId(), Kind: row.GetRowKind(), Segment: historySegmentFromProto(row.GetSegment()), SessionID: row.GetSessionId(), FrameID: row.GetFrameId(), FixedGrid: row.GetFixedGrid(), ScreenCols: int(row.GetScreenCols()), ScreenRow: int(row.GetScreenRows()), ScreenRowSet: row.GetScreenRowSet(), ProjectionRowIndex: int(row.GetRowIndex()), TailFill: historyStyleFromProto(row.GetRow().GetTailFill()), LiveTail: row.GetOwnership() == apipb.RowOwnership_ROW_OWNERSHIP_LIVE_TAIL_LIVE}
+		if len(lines) > 0 && sameProtoHistorySource(lines[len(lines)-1], next) {
+			appendProtoHistorySegment(&lines[len(lines)-1], text, cells)
 			continue
 		}
-		lines = append(lines, nextLine)
+		lines = append(lines, next)
+	}
+	for _, span := range window.GetLines() {
+		for index := int(span.GetStartRow()); index <= int(span.GetEndRow()) && index < len(lines); index++ {
+			if index >= 0 {
+				lines[index].ClippedBefore = span.GetClippedBefore()
+				lines[index].ClippedAfter = span.GetClippedAfter()
+			}
+		}
 	}
 	return lines
 }
 
-func sameProtocolHistorySource(left state.HistoryLogicalLine, right state.HistoryLogicalLine) bool {
-	return left.LineID != 0 &&
-		left.LineID == right.LineID &&
-		left.Kind == right.Kind &&
-		left.Segment == right.Segment &&
-		left.SessionID == right.SessionID &&
-		left.FrameID == right.FrameID &&
-		left.FixedGrid == right.FixedGrid &&
-		(!left.FixedGrid || left.ScreenCols == right.ScreenCols)
-}
-
-func historyProtocolSpanForRow(spans []protocol.HistoryLineSpan, rowIndex int, lineID uint64) (protocol.HistoryLineSpan, bool) {
-	for _, span := range spans {
-		if span.LogicalLineID != 0 && lineID != 0 && span.LogicalLineID != lineID {
-			continue
-		}
-		if rowIndex >= span.StartRow && rowIndex <= span.EndRow {
-			return span, true
-		}
-	}
-	return protocol.HistoryLineSpan{}, false
-}
-
-func appendHistoryProtocolSegment(line *state.HistoryLogicalLine, text string, cells []state.HistoryCell) {
-	if line == nil {
-		return
-	}
-	if len(line.Cells) > 0 && len(cells) == 0 && text != "" {
-		cells = []state.HistoryCell{{Text: text, Width: displayWidthForProtocolHistoryText(text)}}
-	}
-	if len(line.Cells) == 0 && len(cells) > 0 && line.Text != "" {
-		// 中文说明：同一 logical line 中只要任一 protocol row 需要 cell 元数据，
-		// source line 的 Cells 就必须覆盖完整 Text，否则后续本地 reflow 会忽略纯文本前缀。
-		line.Cells = []state.HistoryCell{{Text: line.Text, Width: displayWidthForProtocolHistoryText(line.Text)}}
-	}
-	line.Text += text
-	line.Cells = append(line.Cells, cells...)
-}
-
-func historyRowsFromProtocol(window *protocol.HistoryWindow, sourceLines []state.HistoryLogicalLine, cols int) ([]state.HistoryRow, []state.HistoryLineSpan) {
-	if window == nil || len(window.Rows) == 0 {
-		return nil, nil
-	}
-	if cols != int(window.Size.Cols) {
+func historyRowsFromProto(window *apipb.HistoryWindowResult, sourceLines []state.HistoryLogicalLine, cols int) ([]state.HistoryRow, []state.HistoryLineSpan) {
+	if cols != int(window.GetSize().GetCols()) {
 		return state.ReflowHistoryLogicalLines(sourceLines, cols)
 	}
-	rows := make([]state.HistoryRow, 0, len(window.Rows))
-	for i, row := range window.Rows {
-		text, cells := historyTextAndCellsFromCompactRow(row)
-		rows = append(rows, state.HistoryRow{
-			Text:               text,
-			Cells:              cells,
-			TailFill:           historyTailFillFromProtocol(row.TailFill),
-			LineID:             uint64At(window.RowLineIDs, i),
-			RowInLine:          intAt(window.RowInLine, i),
-			Kind:               stringAt(window.RowKinds, i),
-			Segment:            stringAt(window.RowSegments, i),
-			SessionID:          uint64At(window.RowSessionIDs, i),
-			FrameID:            uint64At(window.RowFrameIDs, i),
-			FixedGrid:          boolAt(window.RowFixedGrid, i),
-			ScreenCols:         intAt(window.RowScreenCols, i),
-			ScreenRow:          intAt(window.RowScreenRows, i),
-			ScreenRowSet:       boolAt(window.RowScreenRowSet, i),
-			ProjectionRowIndex: intAt(window.RowIndexes, i),
-			LiveTail:           historyProtocolRowIsLiveTail(window, i),
-		})
+	rows := make([]state.HistoryRow, 0, len(window.GetRows()))
+	for _, row := range window.GetRows() {
+		text, cells := historyTextAndCellsFromProto(row.GetRow())
+		rows = append(rows, state.HistoryRow{Text: text, Cells: cells, TailFill: historyStyleFromProto(row.GetRow().GetTailFill()), LineID: row.GetLogicalLineId(), RowInLine: int(row.GetRowInLine()), Kind: row.GetRowKind(), Segment: historySegmentFromProto(row.GetSegment()), SessionID: row.GetSessionId(), FrameID: row.GetFrameId(), FixedGrid: row.GetFixedGrid(), ScreenCols: int(row.GetScreenCols()), ScreenRow: int(row.GetScreenRows()), ScreenRowSet: row.GetScreenRowSet(), ProjectionRowIndex: int(row.GetRowIndex()), LiveTail: row.GetOwnership() == apipb.RowOwnership_ROW_OWNERSHIP_LIVE_TAIL_LIVE})
 	}
-	lines := make([]state.HistoryLineSpan, 0, len(window.Lines))
-	for _, span := range window.Lines {
-		lines = append(lines, state.HistoryLineSpan{
-			LineID:             span.LogicalLineID,
-			StartRow:           span.StartRow,
-			EndRow:             span.EndRow,
-			Kind:               span.RowKind,
-			Segment:            stringAt(window.RowSegments, span.StartRow),
-			SessionID:          firstNonZeroUint64(span.SessionID, uint64At(window.RowSessionIDs, span.StartRow)),
-			FrameID:            firstNonZeroUint64(span.FrameID, uint64At(window.RowFrameIDs, span.StartRow)),
-			FixedGrid:          span.FixedGrid || boolAt(window.RowFixedGrid, span.StartRow),
-			ScreenCols:         firstNonZeroInt(span.ScreenCols, intAt(window.RowScreenCols, span.StartRow)),
-			ScreenRow:          intAt(window.RowScreenRows, span.StartRow),
-			ScreenRowSet:       boolAt(window.RowScreenRowSet, span.StartRow),
-			ProjectionRowIndex: intAt(window.RowIndexes, span.StartRow),
-			ClippedBefore:      span.ClippedBefore,
-			ClippedAfter:       span.ClippedAfter,
-		})
+	lines := make([]state.HistoryLineSpan, 0, len(window.GetLines()))
+	for _, span := range window.GetLines() {
+		segment := ""
+		screenRow, projectionRow := 0, 0
+		screenRowSet := false
+		if index := int(span.GetStartRow()); index >= 0 && index < len(rows) {
+			segment, screenRow, screenRowSet, projectionRow = rows[index].Segment, rows[index].ScreenRow, rows[index].ScreenRowSet, rows[index].ProjectionRowIndex
+		}
+		lines = append(lines, state.HistoryLineSpan{LineID: span.GetLogicalLineId(), StartRow: int(span.GetStartRow()), EndRow: int(span.GetEndRow()), Kind: span.GetRowKind(), Segment: segment, SessionID: span.GetSessionId(), FrameID: span.GetFrameId(), FixedGrid: span.GetFixedGrid(), ScreenCols: int(span.GetScreenCols()), ScreenRow: screenRow, ScreenRowSet: screenRowSet, ProjectionRowIndex: projectionRow, ClippedBefore: span.GetClippedBefore(), ClippedAfter: span.GetClippedAfter()})
 	}
 	if len(lines) == 0 {
-		lines = historyLineSpansFromRows(rows, sourceLines)
+		lines = protoLineSpansFromRows(rows, sourceLines)
 	}
 	return rows, lines
 }
 
-func historyProtocolRowIsLiveTail(window *protocol.HistoryWindow, index int) bool {
-	if window == nil || index < 0 || index >= len(window.RowOwnership) {
-		return false
+func historyTextAndCellsFromProto(row *apipb.ScreenRow) (string, []state.HistoryCell) {
+	if row == nil || len(row.GetCells()) == 0 {
+		return "", nil
 	}
-	return protocol.RowOwnershipIsLiveTailLive(window.RowOwnership[index])
+	cells := make([]state.HistoryCell, 0, len(row.GetCells()))
+	for _, cell := range row.GetCells() {
+		cells = append(cells, state.HistoryCell{Text: cell.GetContent(), Width: int(cell.GetWidth()), Style: historyCellStyleFromProto(cell.GetStyle()), LinkURL: cell.GetLinkUrl(), LinkParams: cell.GetLinkParams()})
+	}
+	return protoHistoryCellsPlainText(cells), cells
 }
 
-func historyProtocolRowKind(window *protocol.HistoryWindow, index int, span protocol.HistoryLineSpan, hasSpan bool) string {
-	if kind := stringAt(window.RowKinds, index); kind != "" {
-		return kind
+func historyCellStyleFromProto(style *apipb.CellStyle) state.HistoryCellStyle {
+	if style == nil {
+		return state.HistoryCellStyle{}
 	}
-	if hasSpan {
-		return span.RowKind
-	}
-	return ""
+	return state.HistoryCellStyle{FG: style.GetForeground(), BG: style.GetBackground(), Bold: style.GetBold(), Italic: style.GetItalic(), Underline: style.GetUnderline(), Blink: style.GetBlink(), Reverse: style.GetReverse(), Strikethrough: style.GetStrikethrough()}
 }
 
-func historyLineSpansFromRows(rows []state.HistoryRow, sourceLines []state.HistoryLogicalLine) []state.HistoryLineSpan {
+func historyStyleFromProto(style *apipb.CellStyle) *state.HistoryCellStyle {
+	if style == nil {
+		return nil
+	}
+	value := historyCellStyleFromProto(style)
+	if value == (state.HistoryCellStyle{}) {
+		return nil
+	}
+	return &value
+}
+
+func historyOperationFromProto(operation apipb.HistoryWindowOperation) state.HistoryWindowOp {
+	switch operation {
+	case apipb.HistoryWindowOperation_HISTORY_WINDOW_OPERATION_PREPEND:
+		return state.HistoryWindowPrepend
+	case apipb.HistoryWindowOperation_HISTORY_WINDOW_OPERATION_APPEND:
+		return state.HistoryWindowAppend
+	default:
+		return state.HistoryWindowReplace
+	}
+}
+
+func historySegmentFromProto(segment apipb.HistoryCursorSegment) string {
+	switch segment {
+	case apipb.HistoryCursorSegment_HISTORY_CURSOR_SEGMENT_COMMITTED:
+		return "committed"
+	case apipb.HistoryCursorSegment_HISTORY_CURSOR_SEGMENT_CURRENT_PRIMARY_FRAME:
+		return "current-primary-frame"
+	case apipb.HistoryCursorSegment_HISTORY_CURSOR_SEGMENT_ARCHIVED_PRIMARY_FRAME:
+		return "archived-primary-frame"
+	case apipb.HistoryCursorSegment_HISTORY_CURSOR_SEGMENT_CURRENT_ALT_FRAME:
+		return "current-alt-frame"
+	default:
+		return ""
+	}
+}
+
+func sameProtoHistorySource(left, right state.HistoryLogicalLine) bool {
+	return left.LineID != 0 && left.LineID == right.LineID && left.Kind == right.Kind && left.Segment == right.Segment && left.SessionID == right.SessionID && left.FrameID == right.FrameID && left.FixedGrid == right.FixedGrid && (!left.FixedGrid || left.ScreenCols == right.ScreenCols)
+}
+
+func appendProtoHistorySegment(line *state.HistoryLogicalLine, text string, cells []state.HistoryCell) {
+	line.Text += text
+	line.Cells = append(line.Cells, cells...)
+}
+
+func protoLineSpansFromRows(rows []state.HistoryRow, sourceLines []state.HistoryLogicalLine) []state.HistoryLineSpan {
 	if len(rows) == 0 {
 		return nil
 	}
 	spans := make([]state.HistoryLineSpan, 0, len(rows))
 	start := 0
-	current := rows[0].LineID
-	for row := 1; row < len(rows); row++ {
-		if rows[row].LineID == current &&
-			rows[row].Kind == rows[start].Kind &&
-			rows[row].Segment == rows[start].Segment &&
-			rows[row].SessionID == rows[start].SessionID &&
-			rows[row].FrameID == rows[start].FrameID &&
-			rows[row].FixedGrid == rows[start].FixedGrid &&
-			(!rows[row].FixedGrid || rows[row].ScreenCols == rows[start].ScreenCols) {
+	for index := 1; index <= len(rows); index++ {
+		if index < len(rows) && rows[index].LineID == rows[start].LineID && rows[index].Kind == rows[start].Kind && rows[index].Segment == rows[start].Segment && rows[index].SessionID == rows[start].SessionID && rows[index].FrameID == rows[start].FrameID && rows[index].FixedGrid == rows[start].FixedGrid {
 			continue
 		}
-		spans = append(spans, historyLineSpanFromRowGroup(rows, current, start, row-1, sourceLines))
-		start = row
-		current = rows[row].LineID
+		row := rows[start]
+		spans = append(spans, state.HistoryLineSpan{LineID: row.LineID, StartRow: start, EndRow: index - 1, Kind: row.Kind, Segment: row.Segment, SessionID: row.SessionID, FrameID: row.FrameID, FixedGrid: row.FixedGrid, ScreenCols: row.ScreenCols, ScreenRow: row.ScreenRow, ScreenRowSet: row.ScreenRowSet, ProjectionRowIndex: row.ProjectionRowIndex})
+		start = index
 	}
-	spans = append(spans, historyLineSpanFromRowGroup(rows, current, start, len(rows)-1, sourceLines))
 	return spans
 }
 
-func historyLineSpanFromRowGroup(rows []state.HistoryRow, lineID uint64, start int, end int, sourceLines []state.HistoryLogicalLine) state.HistoryLineSpan {
-	span := state.HistoryLineSpan{LineID: lineID, StartRow: start, EndRow: end}
-	if start >= 0 && start < len(rows) {
-		span.Kind = rows[start].Kind
-		span.Segment = rows[start].Segment
-		span.SessionID = rows[start].SessionID
-		span.FrameID = rows[start].FrameID
-		span.FixedGrid = rows[start].FixedGrid
-		span.ScreenCols = rows[start].ScreenCols
-		span.ProjectionRowIndex = rows[start].ProjectionRowIndex
-	}
-	if lineID == 0 {
-		return span
-	}
-	if line, ok := historySourceLineForRow(sourceLines, rows[start]); ok && (line.ClippedBefore || line.ClippedAfter) {
-		span.Kind = line.Kind
-		span.Segment = line.Segment
-		span.SessionID = line.SessionID
-		span.FrameID = line.FrameID
-		span.FixedGrid = line.FixedGrid
-		span.ScreenCols = line.ScreenCols
-		span.ProjectionRowIndex = line.ProjectionRowIndex
-		span.ClippedBefore = line.ClippedBefore
-		span.ClippedAfter = line.ClippedAfter
-	}
-	return span
-}
-
-func historySourceLineForRow(lines []state.HistoryLogicalLine, row state.HistoryRow) (state.HistoryLogicalLine, bool) {
-	for _, line := range lines {
-		if line.LineID != 0 &&
-			line.LineID == row.LineID &&
-			line.Kind == row.Kind &&
-			line.Segment == row.Segment &&
-			line.SessionID == row.SessionID &&
-			line.FrameID == row.FrameID &&
-			line.FixedGrid == row.FixedGrid &&
-			(!line.FixedGrid || line.ScreenCols == row.ScreenCols) {
-			return line, true
-		}
-	}
-	return state.HistoryLogicalLine{}, false
-}
-
-func historyTailFillFromProtocol(style *protocol.CompactRowStyle) *state.HistoryCellStyle {
-	if style == nil {
-		return nil
-	}
-	out := state.HistoryCellStyle{
-		FG:            style.FG,
-		BG:            style.BG,
-		Bold:          style.Bold,
-		Italic:        style.Italic,
-		Underline:     style.Underline,
-		Blink:         style.Blink,
-		Reverse:       style.Reverse,
-		Strikethrough: style.Strikethrough,
-	}
-	if out == (state.HistoryCellStyle{}) {
-		return nil
-	}
-	return &out
-}
-
-func historyTextAndCellsFromCompactRow(row protocol.CompactRow) (string, []state.HistoryCell) {
-	if row.Text != "" {
-		// 中文说明：plain compact row 已经是无样式单宽文本，Text 本身足够支撑
-		// search/copy/reflow；不物化 per-cell payload，避免大历史窗口常驻 cells。
-		return row.Text, nil
-	}
-	if len(row.Runs) > 0 {
-		cells := historyCellsFromCompactRuns(row.Runs)
-		return historyCellsPlainText(cells), cells
-	}
-	if len(row.Cells) == 0 {
-		return "", nil
-	}
-	out := make([]state.HistoryCell, len(row.Cells))
-	for i, cell := range row.Cells {
-		out[i] = state.HistoryCell{
-			Text:       cell.Content,
-			Width:      cell.Width,
-			Style:      historyCellStyleFromCompact(cell.Style),
-			LinkURL:    cell.LinkURL,
-			LinkParams: cell.LinkParams,
-		}
-	}
-	return historyCellsPlainText(out), out
-}
-
-func historyCellsFromCompactRuns(runs []protocol.CompactRowRun) []state.HistoryCell {
-	out := make([]state.HistoryCell, 0, compactRunCellCount(runs))
-	for _, run := range runs {
-		style := historyCellStyleFromCompact(run.Style)
-		for len(run.Text) > 0 {
-			cluster, width := xansi.FirstGraphemeCluster(run.Text, xansi.GraphemeWidth)
-			if cluster == "" {
-				break
-			}
-			if width < 0 {
-				width = 0
-			}
-			out = append(out, state.HistoryCell{
-				Text:       cluster,
-				Width:      width,
-				Style:      style,
-				LinkURL:    run.LinkURL,
-				LinkParams: run.LinkParams,
-			})
-			run.Text = run.Text[len(cluster):]
-		}
-	}
-	return out
-}
-
-func compactRunCellCount(runs []protocol.CompactRowRun) int {
-	total := 0
-	for _, run := range runs {
-		total += utf8.RuneCountInString(run.Text)
-	}
-	return total
-}
-
-func historyCellStyleFromCompact(style *protocol.CompactRowStyle) state.HistoryCellStyle {
-	if style == nil {
-		return state.HistoryCellStyle{}
-	}
-	return state.HistoryCellStyle{
-		FG:            style.FG,
-		BG:            style.BG,
-		Bold:          style.Bold,
-		Italic:        style.Italic,
-		Underline:     style.Underline,
-		Blink:         style.Blink,
-		Reverse:       style.Reverse,
-		Strikethrough: style.Strikethrough,
-	}
-}
-
-func historyCellsPlainText(cells []state.HistoryCell) string {
+func protoHistoryCellsPlainText(cells []state.HistoryCell) string {
 	var builder strings.Builder
 	for _, cell := range cells {
-		if cell.Text == "" {
-			continue
-		}
 		builder.WriteString(cell.Text)
-		if cell.Text == " " {
-			continue
-		}
-		if pad := state.HistoryCellDisplayWidth(cell) - displayWidthForProtocolHistoryText(cell.Text); pad > 0 {
-			builder.WriteString(strings.Repeat(" ", pad))
+		if cell.Text != " " {
+			if padding := state.HistoryCellDisplayWidth(cell) - xansi.StringWidth(strings.ReplaceAll(cell.Text, "\n", " ")); padding > 0 {
+				builder.WriteString(strings.Repeat(" ", padding))
+			}
 		}
 	}
 	return builder.String()
 }
 
-func displayWidthForProtocolHistoryText(text string) int {
-	return xansi.StringWidth(strings.ReplaceAll(text, "\n", " "))
-}
-
-func cloneHistoryCells(cells []state.HistoryCell) []state.HistoryCell {
-	if len(cells) == 0 {
-		return nil
-	}
-	out := make([]state.HistoryCell, len(cells))
-	copy(out, cells)
-	return out
-}
-
-func uint64At(values []uint64, index int) uint64 {
-	if index < 0 || index >= len(values) {
-		return 0
-	}
-	return values[index]
-}
-
-func intAt(values []int, index int) int {
-	if index < 0 || index >= len(values) {
-		return 0
-	}
-	return values[index]
-}
-
-func boolAt(values []bool, index int) bool {
-	if index < 0 || index >= len(values) {
-		return false
-	}
-	return values[index]
-}
-
-func firstNonZeroUint64(values ...uint64) uint64 {
-	for _, value := range values {
-		if value != 0 {
-			return value
-		}
-	}
-	return 0
-}
-
-func firstNonZeroInt(values ...int) int {
-	for _, value := range values {
-		if value != 0 {
-			return value
-		}
-	}
-	return 0
-}
-
-func stringAt(values []string, index int) string {
-	if index < 0 || index >= len(values) {
-		return ""
-	}
-	return values[index]
-}
-
 type ProtocolWorkbenchStorageAdapter struct {
-	Client ProtocolStorageClient
+	Application *clientruntime.ApplicationSession
 }
 
 func (adapter ProtocolWorkbenchStorageAdapter) LoadWorkbench(ctx context.Context, ref state.WorkbenchStorageRef) (port.WorkbenchStorageLoadResult, error) {
-	entry, err := adapter.Client.StorageGet(ctx, protocol.StorageGetParams{
-		AppID:   ref.AppID,
-		Scope:   protocol.StorageScope(ref.Scope),
-		OwnerID: ref.OwnerID,
-		Key:     ref.Key,
-	})
+	result, err := adapter.Application.StorageGet(ctx, &apipb.StorageGetCommand{Key: storageKeyToProto(ref.AppID, ref.Scope, ref.OwnerID, ref.Key)})
 	if err != nil {
 		if isStorageNotFound(err) {
 			return port.WorkbenchStorageLoadResult{Found: false}, nil
 		}
 		return port.WorkbenchStorageLoadResult{}, err
 	}
-	if entry == nil || len(entry.Value) == 0 {
+	entry := result.GetEntry()
+	if entry == nil || len(entry.GetValue()) == 0 {
 		return port.WorkbenchStorageLoadResult{Found: false}, nil
 	}
-	snapshot, err := state.DecodeWorkbenchStorageSnapshot(entry.Value)
+	snapshot, err := state.DecodeWorkbenchStorageSnapshot(entry.GetValue())
 	if err != nil {
 		return port.WorkbenchStorageLoadResult{}, err
 	}
 	return port.WorkbenchStorageLoadResult{
 		Snapshot: snapshot,
-		Version:  entry.Version,
+		Version:  entry.GetVersion(),
 		Found:    true,
 	}, nil
 }
 
 type ProtocolClipboardStorageAdapter struct {
-	Client ProtocolStorageClient
+	Application *clientruntime.ApplicationSession
 }
 
 func (adapter ProtocolClipboardStorageAdapter) LoadClipboard(ctx context.Context, ref state.ClipboardStorageRef) (port.ClipboardStorageLoadResult, error) {
-	entry, err := adapter.Client.StorageGet(ctx, protocol.StorageGetParams{
-		AppID:   ref.AppID,
-		Scope:   protocol.StorageScope(ref.Scope),
-		OwnerID: ref.OwnerID,
-		Key:     ref.Key,
-	})
+	result, err := adapter.Application.StorageGet(ctx, &apipb.StorageGetCommand{Key: storageKeyToProto(ref.AppID, ref.Scope, ref.OwnerID, ref.Key)})
 	if err != nil {
 		if isStorageNotFound(err) {
 			return port.ClipboardStorageLoadResult{Found: false}, nil
 		}
 		return port.ClipboardStorageLoadResult{}, err
 	}
-	if entry == nil || len(entry.Value) == 0 {
+	entry := result.GetEntry()
+	if entry == nil || len(entry.GetValue()) == 0 {
 		return port.ClipboardStorageLoadResult{Found: false}, nil
 	}
-	snapshot, err := state.DecodeClipboardStorageSnapshot(entry.Value)
+	snapshot, err := state.DecodeClipboardStorageSnapshot(entry.GetValue())
 	if err != nil {
 		return port.ClipboardStorageLoadResult{}, err
 	}
 	return port.ClipboardStorageLoadResult{
 		Snapshot: snapshot,
-		Version:  entry.Version,
+		Version:  entry.GetVersion(),
 		Found:    true,
 	}, nil
 }
@@ -738,24 +431,17 @@ func (adapter ProtocolWorkbenchStorageAdapter) SaveWorkbench(ctx context.Context
 	if err != nil {
 		return port.WorkbenchStorageSaveResult{}, err
 	}
-	entry, err := adapter.Client.StoragePut(ctx, protocol.StoragePutParams{
-		AppID:           req.Ref.AppID,
-		Scope:           protocol.StorageScope(req.Ref.Scope),
-		OwnerID:         req.Ref.OwnerID,
-		Key:             req.Ref.Key,
-		Value:           value,
-		CheckVersion:    req.CheckVersion,
-		ExpectedVersion: req.ExpectedVersion,
-	})
+	result, err := adapter.Application.StoragePut(ctx, &apipb.StoragePutCommand{Key: storageKeyToProto(req.Ref.AppID, req.Ref.Scope, req.Ref.OwnerID, req.Ref.Key), Value: value, Version: &apipb.StorageVersionFence{CheckVersion: req.CheckVersion, ExpectedVersion: req.ExpectedVersion}})
 	if err != nil {
 		if isStorageVersionConflict(err) {
 			return port.WorkbenchStorageSaveResult{}, fmt.Errorf("%w: %v", port.ErrWorkbenchStorageConflict, err)
 		}
 		return port.WorkbenchStorageSaveResult{}, err
 	}
+	entry := result.GetEntry()
 	return port.WorkbenchStorageSaveResult{
-		Ref:     req.Ref.WithVersion(entry.Version),
-		Version: entry.Version,
+		Ref:     req.Ref.WithVersion(entry.GetVersion()),
+		Version: entry.GetVersion(),
 	}, nil
 }
 
@@ -764,24 +450,17 @@ func (adapter ProtocolClipboardStorageAdapter) SaveClipboard(ctx context.Context
 	if err != nil {
 		return port.ClipboardStorageSaveResult{}, err
 	}
-	entry, err := adapter.Client.StoragePut(ctx, protocol.StoragePutParams{
-		AppID:           req.Ref.AppID,
-		Scope:           protocol.StorageScope(req.Ref.Scope),
-		OwnerID:         req.Ref.OwnerID,
-		Key:             req.Ref.Key,
-		Value:           value,
-		CheckVersion:    req.CheckVersion,
-		ExpectedVersion: req.ExpectedVersion,
-	})
+	result, err := adapter.Application.StoragePut(ctx, &apipb.StoragePutCommand{Key: storageKeyToProto(req.Ref.AppID, req.Ref.Scope, req.Ref.OwnerID, req.Ref.Key), Value: value, Version: &apipb.StorageVersionFence{CheckVersion: req.CheckVersion, ExpectedVersion: req.ExpectedVersion}})
 	if err != nil {
 		if isStorageVersionConflict(err) {
 			return port.ClipboardStorageSaveResult{}, fmt.Errorf("%w: %v", port.ErrClipboardStorageConflict, err)
 		}
 		return port.ClipboardStorageSaveResult{}, err
 	}
+	entry := result.GetEntry()
 	return port.ClipboardStorageSaveResult{
-		Ref:     req.Ref.WithVersion(entry.Version),
-		Version: entry.Version,
+		Ref:     req.Ref.WithVersion(entry.GetVersion()),
+		Version: entry.GetVersion(),
 	}, nil
 }
 
@@ -794,13 +473,7 @@ func isStorageNotFound(err error) bool {
 }
 
 func (adapter ProtocolWorkbenchStorageAdapter) WatchWorkbench(ctx context.Context, ref state.WorkbenchStorageRef) (<-chan port.WorkbenchStorageEvent, error) {
-	events, err := adapter.Client.Events(ctx, protocol.EventsParams{
-		Types:            []protocol.EventType{protocol.EventStorageChanged},
-		StorageAppID:     ref.AppID,
-		StorageScope:     protocol.StorageScope(ref.Scope),
-		StorageOwnerID:   ref.OwnerID,
-		StorageKeyPrefix: ref.KeyPrefix(),
-	})
+	_, events, err := adapter.Application.EventSubscribe(ctx, &apipb.EventSubscribeCommand{Types: []apipb.ApplicationEventType{apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_STORAGE_CHANGED}, StorageAppId: ref.AppID, StorageScope: storageScopeToProto(ref.Scope), StorageOwnerId: ref.OwnerID, StorageKeyPrefix: ref.KeyPrefix()})
 	if err != nil {
 		return nil, err
 	}
@@ -815,19 +488,15 @@ func (adapter ProtocolWorkbenchStorageAdapter) WatchWorkbench(ctx context.Contex
 				if !ok {
 					return
 				}
-				if event.Storage == nil {
+				storage := event.GetStorageChanged()
+				if storage == nil {
 					continue
 				}
 				changed := port.WorkbenchStorageEvent{
 					Ref: state.WorkbenchStorageRef{
-						AppID:   event.Storage.AppID,
-						Scope:   string(event.Storage.Scope),
-						OwnerID: event.Storage.OwnerID,
-						Key:     event.Storage.Key,
-						Version: event.Storage.Version,
+						AppID: storage.GetKey().GetAppId(), Scope: storageScopeFromProto(storage.GetKey().GetScope()), OwnerID: storage.GetKey().GetOwnerId(), Key: storage.GetKey().GetKey(), Version: storage.GetVersion(),
 					},
-					Version: event.Storage.Version,
-					Op:      event.Storage.Op,
+					Version: storage.GetVersion(), Op: storage.GetOperation(),
 				}
 				select {
 				case out <- changed:
@@ -841,13 +510,7 @@ func (adapter ProtocolWorkbenchStorageAdapter) WatchWorkbench(ctx context.Contex
 }
 
 func (adapter ProtocolClipboardStorageAdapter) WatchClipboard(ctx context.Context, ref state.ClipboardStorageRef) (<-chan port.ClipboardStorageEvent, error) {
-	events, err := adapter.Client.Events(ctx, protocol.EventsParams{
-		Types:            []protocol.EventType{protocol.EventStorageChanged},
-		StorageAppID:     ref.AppID,
-		StorageScope:     protocol.StorageScope(ref.Scope),
-		StorageOwnerID:   ref.OwnerID,
-		StorageKeyPrefix: ref.KeyPrefix(),
-	})
+	_, events, err := adapter.Application.EventSubscribe(ctx, &apipb.EventSubscribeCommand{Types: []apipb.ApplicationEventType{apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_STORAGE_CHANGED}, StorageAppId: ref.AppID, StorageScope: storageScopeToProto(ref.Scope), StorageOwnerId: ref.OwnerID, StorageKeyPrefix: ref.KeyPrefix()})
 	if err != nil {
 		return nil, err
 	}
@@ -862,19 +525,15 @@ func (adapter ProtocolClipboardStorageAdapter) WatchClipboard(ctx context.Contex
 				if !ok {
 					return
 				}
-				if event.Storage == nil {
+				storage := event.GetStorageChanged()
+				if storage == nil {
 					continue
 				}
 				changed := port.ClipboardStorageEvent{
 					Ref: state.ClipboardStorageRef{
-						AppID:   event.Storage.AppID,
-						Scope:   string(event.Storage.Scope),
-						OwnerID: event.Storage.OwnerID,
-						Key:     event.Storage.Key,
-						Version: event.Storage.Version,
+						AppID: storage.GetKey().GetAppId(), Scope: storageScopeFromProto(storage.GetKey().GetScope()), OwnerID: storage.GetKey().GetOwnerId(), Key: storage.GetKey().GetKey(), Version: storage.GetVersion(),
 					},
-					Version: event.Storage.Version,
-					Op:      event.Storage.Op,
+					Version: storage.GetVersion(), Op: storage.GetOperation(),
 				}
 				select {
 				case out <- changed:
@@ -885,4 +544,22 @@ func (adapter ProtocolClipboardStorageAdapter) WatchClipboard(ctx context.Contex
 		}
 	}()
 	return out, nil
+}
+
+func storageKeyToProto(appID, scope, ownerID, key string) *apipb.StorageKey {
+	return &apipb.StorageKey{AppId: appID, Scope: storageScopeToProto(scope), OwnerId: ownerID, Key: key}
+}
+
+func storageScopeToProto(scope string) apipb.StorageScope {
+	if strings.EqualFold(strings.TrimSpace(scope), "private") {
+		return apipb.StorageScope_STORAGE_SCOPE_PRIVATE
+	}
+	return apipb.StorageScope_STORAGE_SCOPE_PUBLIC
+}
+
+func storageScopeFromProto(scope apipb.StorageScope) string {
+	if scope == apipb.StorageScope_STORAGE_SCOPE_PRIVATE {
+		return "private"
+	}
+	return "public"
 }

@@ -131,6 +131,37 @@ type CommandEnvelope struct {
 	//	*CommandEnvelope_TerminalResize
 	//	*CommandEnvelope_TerminalResizeLock
 	//	*CommandEnvelope_PathListDirectories
+	//	*CommandEnvelope_HistoryWindow
+	//	*CommandEnvelope_HistoryCopy
+	//	*CommandEnvelope_HistoryRelease
+	//	*CommandEnvelope_HistoryBacklogStatus
+	//	*CommandEnvelope_LiveScreenGet
+	//	*CommandEnvelope_LiveInvalidationNext
+	//	*CommandEnvelope_EventSubscribe
+	//	*CommandEnvelope_FileList
+	//	*CommandEnvelope_FileStat
+	//	*CommandEnvelope_FilePreview
+	//	*CommandEnvelope_FileMkdir
+	//	*CommandEnvelope_FileRename
+	//	*CommandEnvelope_FileDelete
+	//	*CommandEnvelope_FileCopy
+	//	*CommandEnvelope_FileMove
+	//	*CommandEnvelope_FileDownloadOpen
+	//	*CommandEnvelope_FileUploadOpen
+	//	*CommandEnvelope_FileTransferCancel
+	//	*CommandEnvelope_StorageGet
+	//	*CommandEnvelope_StoragePut
+	//	*CommandEnvelope_StorageDelete
+	//	*CommandEnvelope_StorageList
+	//	*CommandEnvelope_ClientAccessIdentity
+	//	*CommandEnvelope_ClientAccessList
+	//	*CommandEnvelope_ClientAccessTicketCreate
+	//	*CommandEnvelope_ClientAccessRevoke
+	//	*CommandEnvelope_RemoteStatus
+	//	*CommandEnvelope_RemotePairStart
+	//	*CommandEnvelope_RemoteLocalEnable
+	//	*CommandEnvelope_RemoteLocalStatus
+	//	*CommandEnvelope_RemoteLocalDisable
 	Command       isCommandEnvelope_Command `protobuf_oneof:"command"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -333,6 +364,285 @@ func (x *CommandEnvelope) GetPathListDirectories() *PathListDirectoriesCommand {
 	return nil
 }
 
+func (x *CommandEnvelope) GetHistoryWindow() *HistoryWindowCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_HistoryWindow); ok {
+			return x.HistoryWindow
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetHistoryCopy() *HistoryCopyCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_HistoryCopy); ok {
+			return x.HistoryCopy
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetHistoryRelease() *HistoryReleaseCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_HistoryRelease); ok {
+			return x.HistoryRelease
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetHistoryBacklogStatus() *HistoryBacklogStatusCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_HistoryBacklogStatus); ok {
+			return x.HistoryBacklogStatus
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetLiveScreenGet() *LiveScreenGetCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_LiveScreenGet); ok {
+			return x.LiveScreenGet
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetLiveInvalidationNext() *LiveInvalidationNextCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_LiveInvalidationNext); ok {
+			return x.LiveInvalidationNext
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetEventSubscribe() *EventSubscribeCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_EventSubscribe); ok {
+			return x.EventSubscribe
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetFileList() *FileListCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_FileList); ok {
+			return x.FileList
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetFileStat() *FileStatCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_FileStat); ok {
+			return x.FileStat
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetFilePreview() *FilePreviewCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_FilePreview); ok {
+			return x.FilePreview
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetFileMkdir() *FileMkdirCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_FileMkdir); ok {
+			return x.FileMkdir
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetFileRename() *FileRenameCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_FileRename); ok {
+			return x.FileRename
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetFileDelete() *FileDeleteCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_FileDelete); ok {
+			return x.FileDelete
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetFileCopy() *FileCopyCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_FileCopy); ok {
+			return x.FileCopy
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetFileMove() *FileMoveCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_FileMove); ok {
+			return x.FileMove
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetFileDownloadOpen() *FileDownloadOpenCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_FileDownloadOpen); ok {
+			return x.FileDownloadOpen
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetFileUploadOpen() *FileUploadOpenCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_FileUploadOpen); ok {
+			return x.FileUploadOpen
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetFileTransferCancel() *FileTransferCancelCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_FileTransferCancel); ok {
+			return x.FileTransferCancel
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetStorageGet() *StorageGetCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_StorageGet); ok {
+			return x.StorageGet
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetStoragePut() *StoragePutCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_StoragePut); ok {
+			return x.StoragePut
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetStorageDelete() *StorageDeleteCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_StorageDelete); ok {
+			return x.StorageDelete
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetStorageList() *StorageListCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_StorageList); ok {
+			return x.StorageList
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetClientAccessIdentity() *ClientAccessIdentityCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_ClientAccessIdentity); ok {
+			return x.ClientAccessIdentity
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetClientAccessList() *ClientAccessListCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_ClientAccessList); ok {
+			return x.ClientAccessList
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetClientAccessTicketCreate() *ClientAccessTicketCreateCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_ClientAccessTicketCreate); ok {
+			return x.ClientAccessTicketCreate
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetClientAccessRevoke() *ClientAccessRevokeCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_ClientAccessRevoke); ok {
+			return x.ClientAccessRevoke
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetRemoteStatus() *RemoteStatusCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_RemoteStatus); ok {
+			return x.RemoteStatus
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetRemotePairStart() *RemotePairStartCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_RemotePairStart); ok {
+			return x.RemotePairStart
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetRemoteLocalEnable() *RemoteLocalEnableCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_RemoteLocalEnable); ok {
+			return x.RemoteLocalEnable
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetRemoteLocalStatus() *RemoteLocalStatusCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_RemoteLocalStatus); ok {
+			return x.RemoteLocalStatus
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetRemoteLocalDisable() *RemoteLocalDisableCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_RemoteLocalDisable); ok {
+			return x.RemoteLocalDisable
+		}
+	}
+	return nil
+}
+
 type isCommandEnvelope_Command interface {
 	isCommandEnvelope_Command()
 }
@@ -405,6 +715,130 @@ type CommandEnvelope_PathListDirectories struct {
 	PathListDirectories *PathListDirectoriesCommand `protobuf:"bytes,34,opt,name=path_list_directories,json=pathListDirectories,proto3,oneof"`
 }
 
+type CommandEnvelope_HistoryWindow struct {
+	HistoryWindow *HistoryWindowCommand `protobuf:"bytes,40,opt,name=history_window,json=historyWindow,proto3,oneof"`
+}
+
+type CommandEnvelope_HistoryCopy struct {
+	HistoryCopy *HistoryCopyCommand `protobuf:"bytes,41,opt,name=history_copy,json=historyCopy,proto3,oneof"`
+}
+
+type CommandEnvelope_HistoryRelease struct {
+	HistoryRelease *HistoryReleaseCommand `protobuf:"bytes,42,opt,name=history_release,json=historyRelease,proto3,oneof"`
+}
+
+type CommandEnvelope_HistoryBacklogStatus struct {
+	HistoryBacklogStatus *HistoryBacklogStatusCommand `protobuf:"bytes,43,opt,name=history_backlog_status,json=historyBacklogStatus,proto3,oneof"`
+}
+
+type CommandEnvelope_LiveScreenGet struct {
+	LiveScreenGet *LiveScreenGetCommand `protobuf:"bytes,44,opt,name=live_screen_get,json=liveScreenGet,proto3,oneof"`
+}
+
+type CommandEnvelope_LiveInvalidationNext struct {
+	LiveInvalidationNext *LiveInvalidationNextCommand `protobuf:"bytes,45,opt,name=live_invalidation_next,json=liveInvalidationNext,proto3,oneof"`
+}
+
+type CommandEnvelope_EventSubscribe struct {
+	EventSubscribe *EventSubscribeCommand `protobuf:"bytes,46,opt,name=event_subscribe,json=eventSubscribe,proto3,oneof"`
+}
+
+type CommandEnvelope_FileList struct {
+	FileList *FileListCommand `protobuf:"bytes,60,opt,name=file_list,json=fileList,proto3,oneof"`
+}
+
+type CommandEnvelope_FileStat struct {
+	FileStat *FileStatCommand `protobuf:"bytes,61,opt,name=file_stat,json=fileStat,proto3,oneof"`
+}
+
+type CommandEnvelope_FilePreview struct {
+	FilePreview *FilePreviewCommand `protobuf:"bytes,62,opt,name=file_preview,json=filePreview,proto3,oneof"`
+}
+
+type CommandEnvelope_FileMkdir struct {
+	FileMkdir *FileMkdirCommand `protobuf:"bytes,63,opt,name=file_mkdir,json=fileMkdir,proto3,oneof"`
+}
+
+type CommandEnvelope_FileRename struct {
+	FileRename *FileRenameCommand `protobuf:"bytes,64,opt,name=file_rename,json=fileRename,proto3,oneof"`
+}
+
+type CommandEnvelope_FileDelete struct {
+	FileDelete *FileDeleteCommand `protobuf:"bytes,65,opt,name=file_delete,json=fileDelete,proto3,oneof"`
+}
+
+type CommandEnvelope_FileCopy struct {
+	FileCopy *FileCopyCommand `protobuf:"bytes,66,opt,name=file_copy,json=fileCopy,proto3,oneof"`
+}
+
+type CommandEnvelope_FileMove struct {
+	FileMove *FileMoveCommand `protobuf:"bytes,67,opt,name=file_move,json=fileMove,proto3,oneof"`
+}
+
+type CommandEnvelope_FileDownloadOpen struct {
+	FileDownloadOpen *FileDownloadOpenCommand `protobuf:"bytes,68,opt,name=file_download_open,json=fileDownloadOpen,proto3,oneof"`
+}
+
+type CommandEnvelope_FileUploadOpen struct {
+	FileUploadOpen *FileUploadOpenCommand `protobuf:"bytes,69,opt,name=file_upload_open,json=fileUploadOpen,proto3,oneof"`
+}
+
+type CommandEnvelope_FileTransferCancel struct {
+	FileTransferCancel *FileTransferCancelCommand `protobuf:"bytes,70,opt,name=file_transfer_cancel,json=fileTransferCancel,proto3,oneof"`
+}
+
+type CommandEnvelope_StorageGet struct {
+	StorageGet *StorageGetCommand `protobuf:"bytes,80,opt,name=storage_get,json=storageGet,proto3,oneof"`
+}
+
+type CommandEnvelope_StoragePut struct {
+	StoragePut *StoragePutCommand `protobuf:"bytes,81,opt,name=storage_put,json=storagePut,proto3,oneof"`
+}
+
+type CommandEnvelope_StorageDelete struct {
+	StorageDelete *StorageDeleteCommand `protobuf:"bytes,82,opt,name=storage_delete,json=storageDelete,proto3,oneof"`
+}
+
+type CommandEnvelope_StorageList struct {
+	StorageList *StorageListCommand `protobuf:"bytes,83,opt,name=storage_list,json=storageList,proto3,oneof"`
+}
+
+type CommandEnvelope_ClientAccessIdentity struct {
+	ClientAccessIdentity *ClientAccessIdentityCommand `protobuf:"bytes,100,opt,name=client_access_identity,json=clientAccessIdentity,proto3,oneof"`
+}
+
+type CommandEnvelope_ClientAccessList struct {
+	ClientAccessList *ClientAccessListCommand `protobuf:"bytes,101,opt,name=client_access_list,json=clientAccessList,proto3,oneof"`
+}
+
+type CommandEnvelope_ClientAccessTicketCreate struct {
+	ClientAccessTicketCreate *ClientAccessTicketCreateCommand `protobuf:"bytes,102,opt,name=client_access_ticket_create,json=clientAccessTicketCreate,proto3,oneof"`
+}
+
+type CommandEnvelope_ClientAccessRevoke struct {
+	ClientAccessRevoke *ClientAccessRevokeCommand `protobuf:"bytes,103,opt,name=client_access_revoke,json=clientAccessRevoke,proto3,oneof"`
+}
+
+type CommandEnvelope_RemoteStatus struct {
+	RemoteStatus *RemoteStatusCommand `protobuf:"bytes,110,opt,name=remote_status,json=remoteStatus,proto3,oneof"`
+}
+
+type CommandEnvelope_RemotePairStart struct {
+	RemotePairStart *RemotePairStartCommand `protobuf:"bytes,111,opt,name=remote_pair_start,json=remotePairStart,proto3,oneof"`
+}
+
+type CommandEnvelope_RemoteLocalEnable struct {
+	RemoteLocalEnable *RemoteLocalEnableCommand `protobuf:"bytes,112,opt,name=remote_local_enable,json=remoteLocalEnable,proto3,oneof"`
+}
+
+type CommandEnvelope_RemoteLocalStatus struct {
+	RemoteLocalStatus *RemoteLocalStatusCommand `protobuf:"bytes,113,opt,name=remote_local_status,json=remoteLocalStatus,proto3,oneof"`
+}
+
+type CommandEnvelope_RemoteLocalDisable struct {
+	RemoteLocalDisable *RemoteLocalDisableCommand `protobuf:"bytes,114,opt,name=remote_local_disable,json=remoteLocalDisable,proto3,oneof"`
+}
+
 func (*CommandEnvelope_CancelOperation) isCommandEnvelope_Command() {}
 
 func (*CommandEnvelope_ReleaseResource) isCommandEnvelope_Command() {}
@@ -438,6 +872,68 @@ func (*CommandEnvelope_TerminalResize) isCommandEnvelope_Command() {}
 func (*CommandEnvelope_TerminalResizeLock) isCommandEnvelope_Command() {}
 
 func (*CommandEnvelope_PathListDirectories) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_HistoryWindow) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_HistoryCopy) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_HistoryRelease) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_HistoryBacklogStatus) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_LiveScreenGet) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_LiveInvalidationNext) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_EventSubscribe) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_FileList) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_FileStat) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_FilePreview) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_FileMkdir) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_FileRename) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_FileDelete) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_FileCopy) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_FileMove) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_FileDownloadOpen) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_FileUploadOpen) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_FileTransferCancel) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_StorageGet) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_StoragePut) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_StorageDelete) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_StorageList) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_ClientAccessIdentity) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_ClientAccessList) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_ClientAccessTicketCreate) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_ClientAccessRevoke) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_RemoteStatus) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_RemotePairStart) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_RemoteLocalEnable) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_RemoteLocalStatus) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_RemoteLocalDisable) isCommandEnvelope_Command() {}
 
 type AcknowledgeResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -490,6 +986,30 @@ type ResultEnvelope struct {
 	//	*ResultEnvelope_TerminalAttach
 	//	*ResultEnvelope_TerminalResize
 	//	*ResultEnvelope_PathListDirectories
+	//	*ResultEnvelope_HistoryWindow
+	//	*ResultEnvelope_HistoryCopy
+	//	*ResultEnvelope_HistoryBacklogStatus
+	//	*ResultEnvelope_LiveScreen
+	//	*ResultEnvelope_LiveInvalidation
+	//	*ResultEnvelope_EventSubscription
+	//	*ResultEnvelope_FileList
+	//	*ResultEnvelope_FileStat
+	//	*ResultEnvelope_FilePreview
+	//	*ResultEnvelope_FileOperation
+	//	*ResultEnvelope_FileBatch
+	//	*ResultEnvelope_FileTransferOpen
+	//	*ResultEnvelope_FileTransferCancel
+	//	*ResultEnvelope_StorageGet
+	//	*ResultEnvelope_StoragePut
+	//	*ResultEnvelope_StorageDelete
+	//	*ResultEnvelope_StorageList
+	//	*ResultEnvelope_ClientAccessIdentity
+	//	*ResultEnvelope_ClientAccessList
+	//	*ResultEnvelope_ClientAccessTicketCreate
+	//	*ResultEnvelope_ClientAccessRevoke
+	//	*ResultEnvelope_RemoteStatus
+	//	*ResultEnvelope_RemotePairStart
+	//	*ResultEnvelope_RemoteLocalStatus
 	Result        isResultEnvelope_Result `protobuf_oneof:"result"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -627,6 +1147,222 @@ func (x *ResultEnvelope) GetPathListDirectories() *PathListDirectoriesResult {
 	return nil
 }
 
+func (x *ResultEnvelope) GetHistoryWindow() *HistoryWindowResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_HistoryWindow); ok {
+			return x.HistoryWindow
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetHistoryCopy() *HistoryCopyResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_HistoryCopy); ok {
+			return x.HistoryCopy
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetHistoryBacklogStatus() *HistoryBacklogStatusResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_HistoryBacklogStatus); ok {
+			return x.HistoryBacklogStatus
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetLiveScreen() *NativeScreenResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_LiveScreen); ok {
+			return x.LiveScreen
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetLiveInvalidation() *LiveInvalidationResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_LiveInvalidation); ok {
+			return x.LiveInvalidation
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetEventSubscription() *EventSubscriptionResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_EventSubscription); ok {
+			return x.EventSubscription
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetFileList() *FileListResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_FileList); ok {
+			return x.FileList
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetFileStat() *FileStatResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_FileStat); ok {
+			return x.FileStat
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetFilePreview() *FilePreviewResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_FilePreview); ok {
+			return x.FilePreview
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetFileOperation() *FileOperationResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_FileOperation); ok {
+			return x.FileOperation
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetFileBatch() *FileBatchResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_FileBatch); ok {
+			return x.FileBatch
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetFileTransferOpen() *FileTransferOpenResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_FileTransferOpen); ok {
+			return x.FileTransferOpen
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetFileTransferCancel() *FileTransferCancelResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_FileTransferCancel); ok {
+			return x.FileTransferCancel
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetStorageGet() *StorageGetResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_StorageGet); ok {
+			return x.StorageGet
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetStoragePut() *StoragePutResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_StoragePut); ok {
+			return x.StoragePut
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetStorageDelete() *StorageDeleteResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_StorageDelete); ok {
+			return x.StorageDelete
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetStorageList() *StorageListResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_StorageList); ok {
+			return x.StorageList
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetClientAccessIdentity() *ClientAccessIdentityResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_ClientAccessIdentity); ok {
+			return x.ClientAccessIdentity
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetClientAccessList() *ClientAccessListResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_ClientAccessList); ok {
+			return x.ClientAccessList
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetClientAccessTicketCreate() *ClientAccessTicketCreateResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_ClientAccessTicketCreate); ok {
+			return x.ClientAccessTicketCreate
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetClientAccessRevoke() *ClientAccessRevokeResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_ClientAccessRevoke); ok {
+			return x.ClientAccessRevoke
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetRemoteStatus() *RemoteStatusResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_RemoteStatus); ok {
+			return x.RemoteStatus
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetRemotePairStart() *RemotePairStartResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_RemotePairStart); ok {
+			return x.RemotePairStart
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetRemoteLocalStatus() *RemoteLocalStatusResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_RemoteLocalStatus); ok {
+			return x.RemoteLocalStatus
+		}
+	}
+	return nil
+}
+
 type isResultEnvelope_Result interface {
 	isResultEnvelope_Result()
 }
@@ -667,6 +1403,102 @@ type ResultEnvelope_PathListDirectories struct {
 	PathListDirectories *PathListDirectoriesResult `protobuf:"bytes,26,opt,name=path_list_directories,json=pathListDirectories,proto3,oneof"`
 }
 
+type ResultEnvelope_HistoryWindow struct {
+	HistoryWindow *HistoryWindowResult `protobuf:"bytes,40,opt,name=history_window,json=historyWindow,proto3,oneof"`
+}
+
+type ResultEnvelope_HistoryCopy struct {
+	HistoryCopy *HistoryCopyResult `protobuf:"bytes,41,opt,name=history_copy,json=historyCopy,proto3,oneof"`
+}
+
+type ResultEnvelope_HistoryBacklogStatus struct {
+	HistoryBacklogStatus *HistoryBacklogStatusResult `protobuf:"bytes,42,opt,name=history_backlog_status,json=historyBacklogStatus,proto3,oneof"`
+}
+
+type ResultEnvelope_LiveScreen struct {
+	LiveScreen *NativeScreenResult `protobuf:"bytes,43,opt,name=live_screen,json=liveScreen,proto3,oneof"`
+}
+
+type ResultEnvelope_LiveInvalidation struct {
+	LiveInvalidation *LiveInvalidationResult `protobuf:"bytes,44,opt,name=live_invalidation,json=liveInvalidation,proto3,oneof"`
+}
+
+type ResultEnvelope_EventSubscription struct {
+	EventSubscription *EventSubscriptionResult `protobuf:"bytes,45,opt,name=event_subscription,json=eventSubscription,proto3,oneof"`
+}
+
+type ResultEnvelope_FileList struct {
+	FileList *FileListResult `protobuf:"bytes,60,opt,name=file_list,json=fileList,proto3,oneof"`
+}
+
+type ResultEnvelope_FileStat struct {
+	FileStat *FileStatResult `protobuf:"bytes,61,opt,name=file_stat,json=fileStat,proto3,oneof"`
+}
+
+type ResultEnvelope_FilePreview struct {
+	FilePreview *FilePreviewResult `protobuf:"bytes,62,opt,name=file_preview,json=filePreview,proto3,oneof"`
+}
+
+type ResultEnvelope_FileOperation struct {
+	FileOperation *FileOperationResult `protobuf:"bytes,63,opt,name=file_operation,json=fileOperation,proto3,oneof"`
+}
+
+type ResultEnvelope_FileBatch struct {
+	FileBatch *FileBatchResult `protobuf:"bytes,64,opt,name=file_batch,json=fileBatch,proto3,oneof"`
+}
+
+type ResultEnvelope_FileTransferOpen struct {
+	FileTransferOpen *FileTransferOpenResult `protobuf:"bytes,65,opt,name=file_transfer_open,json=fileTransferOpen,proto3,oneof"`
+}
+
+type ResultEnvelope_FileTransferCancel struct {
+	FileTransferCancel *FileTransferCancelResult `protobuf:"bytes,66,opt,name=file_transfer_cancel,json=fileTransferCancel,proto3,oneof"`
+}
+
+type ResultEnvelope_StorageGet struct {
+	StorageGet *StorageGetResult `protobuf:"bytes,80,opt,name=storage_get,json=storageGet,proto3,oneof"`
+}
+
+type ResultEnvelope_StoragePut struct {
+	StoragePut *StoragePutResult `protobuf:"bytes,81,opt,name=storage_put,json=storagePut,proto3,oneof"`
+}
+
+type ResultEnvelope_StorageDelete struct {
+	StorageDelete *StorageDeleteResult `protobuf:"bytes,82,opt,name=storage_delete,json=storageDelete,proto3,oneof"`
+}
+
+type ResultEnvelope_StorageList struct {
+	StorageList *StorageListResult `protobuf:"bytes,83,opt,name=storage_list,json=storageList,proto3,oneof"`
+}
+
+type ResultEnvelope_ClientAccessIdentity struct {
+	ClientAccessIdentity *ClientAccessIdentityResult `protobuf:"bytes,100,opt,name=client_access_identity,json=clientAccessIdentity,proto3,oneof"`
+}
+
+type ResultEnvelope_ClientAccessList struct {
+	ClientAccessList *ClientAccessListResult `protobuf:"bytes,101,opt,name=client_access_list,json=clientAccessList,proto3,oneof"`
+}
+
+type ResultEnvelope_ClientAccessTicketCreate struct {
+	ClientAccessTicketCreate *ClientAccessTicketCreateResult `protobuf:"bytes,102,opt,name=client_access_ticket_create,json=clientAccessTicketCreate,proto3,oneof"`
+}
+
+type ResultEnvelope_ClientAccessRevoke struct {
+	ClientAccessRevoke *ClientAccessRevokeResult `protobuf:"bytes,103,opt,name=client_access_revoke,json=clientAccessRevoke,proto3,oneof"`
+}
+
+type ResultEnvelope_RemoteStatus struct {
+	RemoteStatus *RemoteStatusResult `protobuf:"bytes,110,opt,name=remote_status,json=remoteStatus,proto3,oneof"`
+}
+
+type ResultEnvelope_RemotePairStart struct {
+	RemotePairStart *RemotePairStartResult `protobuf:"bytes,111,opt,name=remote_pair_start,json=remotePairStart,proto3,oneof"`
+}
+
+type ResultEnvelope_RemoteLocalStatus struct {
+	RemoteLocalStatus *RemoteLocalStatusResult `protobuf:"bytes,112,opt,name=remote_local_status,json=remoteLocalStatus,proto3,oneof"`
+}
+
 func (*ResultEnvelope_Acknowledge) isResultEnvelope_Result() {}
 
 func (*ResultEnvelope_Error) isResultEnvelope_Result() {}
@@ -684,6 +1516,54 @@ func (*ResultEnvelope_TerminalAttach) isResultEnvelope_Result() {}
 func (*ResultEnvelope_TerminalResize) isResultEnvelope_Result() {}
 
 func (*ResultEnvelope_PathListDirectories) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_HistoryWindow) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_HistoryCopy) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_HistoryBacklogStatus) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_LiveScreen) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_LiveInvalidation) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_EventSubscription) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_FileList) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_FileStat) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_FilePreview) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_FileOperation) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_FileBatch) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_FileTransferOpen) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_FileTransferCancel) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_StorageGet) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_StoragePut) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_StorageDelete) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_StorageList) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_ClientAccessIdentity) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_ClientAccessList) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_ClientAccessTicketCreate) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_ClientAccessRevoke) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_RemoteStatus) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_RemotePairStart) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_RemoteLocalStatus) isResultEnvelope_Result() {}
 
 type OperationCancelledEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -779,12 +1659,15 @@ type EventEnvelope struct {
 	TimestampUnixNano int64                  `protobuf:"varint,2,opt,name=timestamp_unix_nano,json=timestampUnixNano,proto3" json:"timestamp_unix_nano,omitempty"`
 	ApiVersion        *ApiVersion            `protobuf:"bytes,3,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
 	OriginSession     *EndpointSessionStamp  `protobuf:"bytes,4,opt,name=origin_session,json=originSession,proto3" json:"origin_session,omitempty"`
+	Subscription      *ResourceHandle        `protobuf:"bytes,5,opt,name=subscription,proto3" json:"subscription,omitempty"`
 	// Types that are valid to be assigned to Event:
 	//
 	//	*EventEnvelope_OperationCancelled
 	//	*EventEnvelope_ResourceReleased
 	//	*EventEnvelope_TerminalLifecycle
-	//	*EventEnvelope_TerminalResizeControl
+	//	*EventEnvelope_LiveInvalidated
+	//	*EventEnvelope_StorageChanged
+	//	*EventEnvelope_FileTransferCompleted
 	Event         isEventEnvelope_Event `protobuf_oneof:"event"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -848,6 +1731,13 @@ func (x *EventEnvelope) GetOriginSession() *EndpointSessionStamp {
 	return nil
 }
 
+func (x *EventEnvelope) GetSubscription() *ResourceHandle {
+	if x != nil {
+		return x.Subscription
+	}
+	return nil
+}
+
 func (x *EventEnvelope) GetEvent() isEventEnvelope_Event {
 	if x != nil {
 		return x.Event
@@ -882,10 +1772,28 @@ func (x *EventEnvelope) GetTerminalLifecycle() *TerminalLifecycleEvent {
 	return nil
 }
 
-func (x *EventEnvelope) GetTerminalResizeControl() *TerminalResizeControlEvent {
+func (x *EventEnvelope) GetLiveInvalidated() *LiveInvalidatedEvent {
 	if x != nil {
-		if x, ok := x.Event.(*EventEnvelope_TerminalResizeControl); ok {
-			return x.TerminalResizeControl
+		if x, ok := x.Event.(*EventEnvelope_LiveInvalidated); ok {
+			return x.LiveInvalidated
+		}
+	}
+	return nil
+}
+
+func (x *EventEnvelope) GetStorageChanged() *StorageChangedEvent {
+	if x != nil {
+		if x, ok := x.Event.(*EventEnvelope_StorageChanged); ok {
+			return x.StorageChanged
+		}
+	}
+	return nil
+}
+
+func (x *EventEnvelope) GetFileTransferCompleted() *FileTransferCompletedEvent {
+	if x != nil {
+		if x, ok := x.Event.(*EventEnvelope_FileTransferCompleted); ok {
+			return x.FileTransferCompleted
 		}
 	}
 	return nil
@@ -907,8 +1815,16 @@ type EventEnvelope_TerminalLifecycle struct {
 	TerminalLifecycle *TerminalLifecycleEvent `protobuf:"bytes,20,opt,name=terminal_lifecycle,json=terminalLifecycle,proto3,oneof"`
 }
 
-type EventEnvelope_TerminalResizeControl struct {
-	TerminalResizeControl *TerminalResizeControlEvent `protobuf:"bytes,21,opt,name=terminal_resize_control,json=terminalResizeControl,proto3,oneof"`
+type EventEnvelope_LiveInvalidated struct {
+	LiveInvalidated *LiveInvalidatedEvent `protobuf:"bytes,22,opt,name=live_invalidated,json=liveInvalidated,proto3,oneof"`
+}
+
+type EventEnvelope_StorageChanged struct {
+	StorageChanged *StorageChangedEvent `protobuf:"bytes,30,opt,name=storage_changed,json=storageChanged,proto3,oneof"`
+}
+
+type EventEnvelope_FileTransferCompleted struct {
+	FileTransferCompleted *FileTransferCompletedEvent `protobuf:"bytes,40,opt,name=file_transfer_completed,json=fileTransferCompleted,proto3,oneof"`
 }
 
 func (*EventEnvelope_OperationCancelled) isEventEnvelope_Event() {}
@@ -917,17 +1833,21 @@ func (*EventEnvelope_ResourceReleased) isEventEnvelope_Event() {}
 
 func (*EventEnvelope_TerminalLifecycle) isEventEnvelope_Event() {}
 
-func (*EventEnvelope_TerminalResizeControl) isEventEnvelope_Event() {}
+func (*EventEnvelope_LiveInvalidated) isEventEnvelope_Event() {}
+
+func (*EventEnvelope_StorageChanged) isEventEnvelope_Event() {}
+
+func (*EventEnvelope_FileTransferCompleted) isEventEnvelope_Event() {}
 
 var File_apipb_application_proto protoreflect.FileDescriptor
 
 const file_apipb_application_proto_rawDesc = "" +
 	"\n" +
-	"\x17apipb/application.proto\x12\ftermx.api.v1\x1a\x12apipb/common.proto\x1a\x14apipb/terminal.proto\"Z\n" +
+	"\x17apipb/application.proto\x12\ftermx.api.v1\x1a\x12apipb/common.proto\x1a\x19apipb/access_remote.proto\x1a\x12apipb/events.proto\x1a\x10apipb/file.proto\x1a\x13apipb/history.proto\x1a\x13apipb/storage.proto\x1a\x14apipb/terminal.proto\"Z\n" +
 	"\x16CancelOperationCommand\x12:\n" +
 	"\toperation\x18\x02 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"X\n" +
 	"\x16ReleaseResourceCommand\x128\n" +
-	"\bresource\x18\x02 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresourceJ\x04\b\x01\x10\x02\"\xcc\v\n" +
+	"\bresource\x18\x02 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresourceJ\x04\b\x01\x10\x02\"\xf3\x1e\n" +
 	"\x0fCommandEnvelope\x126\n" +
 	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x12Q\n" +
 	"\x10cancel_operation\x18\n" +
@@ -947,9 +1867,45 @@ const file_apipb_application_proto_rawDesc = "" +
 	"\x0eterminal_input\x18\x1f \x01(\v2\".termx.api.v1.TerminalInputCommandH\x00R\rterminalInput\x12N\n" +
 	"\x0fterminal_resize\x18  \x01(\v2#.termx.api.v1.TerminalResizeCommandH\x00R\x0eterminalResize\x12[\n" +
 	"\x14terminal_resize_lock\x18! \x01(\v2'.termx.api.v1.TerminalResizeLockCommandH\x00R\x12terminalResizeLock\x12^\n" +
-	"\x15path_list_directories\x18\" \x01(\v2(.termx.api.v1.PathListDirectoriesCommandH\x00R\x13pathListDirectoriesB\t\n" +
+	"\x15path_list_directories\x18\" \x01(\v2(.termx.api.v1.PathListDirectoriesCommandH\x00R\x13pathListDirectories\x12K\n" +
+	"\x0ehistory_window\x18( \x01(\v2\".termx.api.v1.HistoryWindowCommandH\x00R\rhistoryWindow\x12E\n" +
+	"\fhistory_copy\x18) \x01(\v2 .termx.api.v1.HistoryCopyCommandH\x00R\vhistoryCopy\x12N\n" +
+	"\x0fhistory_release\x18* \x01(\v2#.termx.api.v1.HistoryReleaseCommandH\x00R\x0ehistoryRelease\x12a\n" +
+	"\x16history_backlog_status\x18+ \x01(\v2).termx.api.v1.HistoryBacklogStatusCommandH\x00R\x14historyBacklogStatus\x12L\n" +
+	"\x0flive_screen_get\x18, \x01(\v2\".termx.api.v1.LiveScreenGetCommandH\x00R\rliveScreenGet\x12a\n" +
+	"\x16live_invalidation_next\x18- \x01(\v2).termx.api.v1.LiveInvalidationNextCommandH\x00R\x14liveInvalidationNext\x12N\n" +
+	"\x0fevent_subscribe\x18. \x01(\v2#.termx.api.v1.EventSubscribeCommandH\x00R\x0eeventSubscribe\x12<\n" +
+	"\tfile_list\x18< \x01(\v2\x1d.termx.api.v1.FileListCommandH\x00R\bfileList\x12<\n" +
+	"\tfile_stat\x18= \x01(\v2\x1d.termx.api.v1.FileStatCommandH\x00R\bfileStat\x12E\n" +
+	"\ffile_preview\x18> \x01(\v2 .termx.api.v1.FilePreviewCommandH\x00R\vfilePreview\x12?\n" +
+	"\n" +
+	"file_mkdir\x18? \x01(\v2\x1e.termx.api.v1.FileMkdirCommandH\x00R\tfileMkdir\x12B\n" +
+	"\vfile_rename\x18@ \x01(\v2\x1f.termx.api.v1.FileRenameCommandH\x00R\n" +
+	"fileRename\x12B\n" +
+	"\vfile_delete\x18A \x01(\v2\x1f.termx.api.v1.FileDeleteCommandH\x00R\n" +
+	"fileDelete\x12<\n" +
+	"\tfile_copy\x18B \x01(\v2\x1d.termx.api.v1.FileCopyCommandH\x00R\bfileCopy\x12<\n" +
+	"\tfile_move\x18C \x01(\v2\x1d.termx.api.v1.FileMoveCommandH\x00R\bfileMove\x12U\n" +
+	"\x12file_download_open\x18D \x01(\v2%.termx.api.v1.FileDownloadOpenCommandH\x00R\x10fileDownloadOpen\x12O\n" +
+	"\x10file_upload_open\x18E \x01(\v2#.termx.api.v1.FileUploadOpenCommandH\x00R\x0efileUploadOpen\x12[\n" +
+	"\x14file_transfer_cancel\x18F \x01(\v2'.termx.api.v1.FileTransferCancelCommandH\x00R\x12fileTransferCancel\x12B\n" +
+	"\vstorage_get\x18P \x01(\v2\x1f.termx.api.v1.StorageGetCommandH\x00R\n" +
+	"storageGet\x12B\n" +
+	"\vstorage_put\x18Q \x01(\v2\x1f.termx.api.v1.StoragePutCommandH\x00R\n" +
+	"storagePut\x12K\n" +
+	"\x0estorage_delete\x18R \x01(\v2\".termx.api.v1.StorageDeleteCommandH\x00R\rstorageDelete\x12E\n" +
+	"\fstorage_list\x18S \x01(\v2 .termx.api.v1.StorageListCommandH\x00R\vstorageList\x12a\n" +
+	"\x16client_access_identity\x18d \x01(\v2).termx.api.v1.ClientAccessIdentityCommandH\x00R\x14clientAccessIdentity\x12U\n" +
+	"\x12client_access_list\x18e \x01(\v2%.termx.api.v1.ClientAccessListCommandH\x00R\x10clientAccessList\x12n\n" +
+	"\x1bclient_access_ticket_create\x18f \x01(\v2-.termx.api.v1.ClientAccessTicketCreateCommandH\x00R\x18clientAccessTicketCreate\x12[\n" +
+	"\x14client_access_revoke\x18g \x01(\v2'.termx.api.v1.ClientAccessRevokeCommandH\x00R\x12clientAccessRevoke\x12H\n" +
+	"\rremote_status\x18n \x01(\v2!.termx.api.v1.RemoteStatusCommandH\x00R\fremoteStatus\x12R\n" +
+	"\x11remote_pair_start\x18o \x01(\v2$.termx.api.v1.RemotePairStartCommandH\x00R\x0fremotePairStart\x12X\n" +
+	"\x13remote_local_enable\x18p \x01(\v2&.termx.api.v1.RemoteLocalEnableCommandH\x00R\x11remoteLocalEnable\x12X\n" +
+	"\x13remote_local_status\x18q \x01(\v2&.termx.api.v1.RemoteLocalStatusCommandH\x00R\x11remoteLocalStatus\x12[\n" +
+	"\x14remote_local_disable\x18r \x01(\v2'.termx.api.v1.RemoteLocalDisableCommandH\x00R\x12remoteLocalDisableB\t\n" +
 	"\acommand\"\x13\n" +
-	"\x11AcknowledgeResult\"\xa9\x06\n" +
+	"\x11AcknowledgeResult\"\x9d\x15\n" +
 	"\x0eResultEnvelope\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12I\n" +
@@ -963,24 +1919,55 @@ const file_apipb_application_proto_rawDesc = "" +
 	"\fterminal_get\x18\x17 \x01(\v2\x1f.termx.api.v1.TerminalGetResultH\x00R\vterminalGet\x12M\n" +
 	"\x0fterminal_attach\x18\x18 \x01(\v2\".termx.api.v1.TerminalAttachResultH\x00R\x0eterminalAttach\x12M\n" +
 	"\x0fterminal_resize\x18\x19 \x01(\v2\".termx.api.v1.TerminalResizeResultH\x00R\x0eterminalResize\x12]\n" +
-	"\x15path_list_directories\x18\x1a \x01(\v2'.termx.api.v1.PathListDirectoriesResultH\x00R\x13pathListDirectoriesB\b\n" +
+	"\x15path_list_directories\x18\x1a \x01(\v2'.termx.api.v1.PathListDirectoriesResultH\x00R\x13pathListDirectories\x12J\n" +
+	"\x0ehistory_window\x18( \x01(\v2!.termx.api.v1.HistoryWindowResultH\x00R\rhistoryWindow\x12D\n" +
+	"\fhistory_copy\x18) \x01(\v2\x1f.termx.api.v1.HistoryCopyResultH\x00R\vhistoryCopy\x12`\n" +
+	"\x16history_backlog_status\x18* \x01(\v2(.termx.api.v1.HistoryBacklogStatusResultH\x00R\x14historyBacklogStatus\x12C\n" +
+	"\vlive_screen\x18+ \x01(\v2 .termx.api.v1.NativeScreenResultH\x00R\n" +
+	"liveScreen\x12S\n" +
+	"\x11live_invalidation\x18, \x01(\v2$.termx.api.v1.LiveInvalidationResultH\x00R\x10liveInvalidation\x12V\n" +
+	"\x12event_subscription\x18- \x01(\v2%.termx.api.v1.EventSubscriptionResultH\x00R\x11eventSubscription\x12;\n" +
+	"\tfile_list\x18< \x01(\v2\x1c.termx.api.v1.FileListResultH\x00R\bfileList\x12;\n" +
+	"\tfile_stat\x18= \x01(\v2\x1c.termx.api.v1.FileStatResultH\x00R\bfileStat\x12D\n" +
+	"\ffile_preview\x18> \x01(\v2\x1f.termx.api.v1.FilePreviewResultH\x00R\vfilePreview\x12J\n" +
+	"\x0efile_operation\x18? \x01(\v2!.termx.api.v1.FileOperationResultH\x00R\rfileOperation\x12>\n" +
+	"\n" +
+	"file_batch\x18@ \x01(\v2\x1d.termx.api.v1.FileBatchResultH\x00R\tfileBatch\x12T\n" +
+	"\x12file_transfer_open\x18A \x01(\v2$.termx.api.v1.FileTransferOpenResultH\x00R\x10fileTransferOpen\x12Z\n" +
+	"\x14file_transfer_cancel\x18B \x01(\v2&.termx.api.v1.FileTransferCancelResultH\x00R\x12fileTransferCancel\x12A\n" +
+	"\vstorage_get\x18P \x01(\v2\x1e.termx.api.v1.StorageGetResultH\x00R\n" +
+	"storageGet\x12A\n" +
+	"\vstorage_put\x18Q \x01(\v2\x1e.termx.api.v1.StoragePutResultH\x00R\n" +
+	"storagePut\x12J\n" +
+	"\x0estorage_delete\x18R \x01(\v2!.termx.api.v1.StorageDeleteResultH\x00R\rstorageDelete\x12D\n" +
+	"\fstorage_list\x18S \x01(\v2\x1f.termx.api.v1.StorageListResultH\x00R\vstorageList\x12`\n" +
+	"\x16client_access_identity\x18d \x01(\v2(.termx.api.v1.ClientAccessIdentityResultH\x00R\x14clientAccessIdentity\x12T\n" +
+	"\x12client_access_list\x18e \x01(\v2$.termx.api.v1.ClientAccessListResultH\x00R\x10clientAccessList\x12m\n" +
+	"\x1bclient_access_ticket_create\x18f \x01(\v2,.termx.api.v1.ClientAccessTicketCreateResultH\x00R\x18clientAccessTicketCreate\x12Z\n" +
+	"\x14client_access_revoke\x18g \x01(\v2&.termx.api.v1.ClientAccessRevokeResultH\x00R\x12clientAccessRevoke\x12G\n" +
+	"\rremote_status\x18n \x01(\v2 .termx.api.v1.RemoteStatusResultH\x00R\fremoteStatus\x12Q\n" +
+	"\x11remote_pair_start\x18o \x01(\v2#.termx.api.v1.RemotePairStartResultH\x00R\x0fremotePairStart\x12W\n" +
+	"\x13remote_local_status\x18p \x01(\v2%.termx.api.v1.RemoteLocalStatusResultH\x00R\x11remoteLocalStatusB\b\n" +
 	"\x06result\"U\n" +
 	"\x17OperationCancelledEvent\x12:\n" +
 	"\toperation\x18\x01 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\"Q\n" +
 	"\x15ResourceReleasedEvent\x128\n" +
-	"\bresource\x18\x01 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresource\"\xd2\x04\n" +
+	"\bresource\x18\x01 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresource\"\xbf\x06\n" +
 	"\rEventEnvelope\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12.\n" +
 	"\x13timestamp_unix_nano\x18\x02 \x01(\x03R\x11timestampUnixNano\x129\n" +
 	"\vapi_version\x18\x03 \x01(\v2\x18.termx.api.v1.ApiVersionR\n" +
 	"apiVersion\x12I\n" +
-	"\x0eorigin_session\x18\x04 \x01(\v2\".termx.api.v1.EndpointSessionStampR\roriginSession\x12X\n" +
+	"\x0eorigin_session\x18\x04 \x01(\v2\".termx.api.v1.EndpointSessionStampR\roriginSession\x12@\n" +
+	"\fsubscription\x18\x05 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\fsubscription\x12X\n" +
 	"\x13operation_cancelled\x18\n" +
 	" \x01(\v2%.termx.api.v1.OperationCancelledEventH\x00R\x12operationCancelled\x12R\n" +
 	"\x11resource_released\x18\v \x01(\v2#.termx.api.v1.ResourceReleasedEventH\x00R\x10resourceReleased\x12U\n" +
-	"\x12terminal_lifecycle\x18\x14 \x01(\v2$.termx.api.v1.TerminalLifecycleEventH\x00R\x11terminalLifecycle\x12b\n" +
-	"\x17terminal_resize_control\x18\x15 \x01(\v2(.termx.api.v1.TerminalResizeControlEventH\x00R\x15terminalResizeControlB\a\n" +
-	"\x05eventB%Z#github.com/lozzow/termx/proto/apipbb\x06proto3"
+	"\x12terminal_lifecycle\x18\x14 \x01(\v2$.termx.api.v1.TerminalLifecycleEventH\x00R\x11terminalLifecycle\x12O\n" +
+	"\x10live_invalidated\x18\x16 \x01(\v2\".termx.api.v1.LiveInvalidatedEventH\x00R\x0fliveInvalidated\x12L\n" +
+	"\x0fstorage_changed\x18\x1e \x01(\v2!.termx.api.v1.StorageChangedEventH\x00R\x0estorageChanged\x12b\n" +
+	"\x17file_transfer_completed\x18( \x01(\v2(.termx.api.v1.FileTransferCompletedEventH\x00R\x15fileTransferCompletedB\a\n" +
+	"\x05eventJ\x04\b\x15\x10\x16J\x04\b\x17\x10\x18B%Z#github.com/lozzow/termx/proto/apipbb\x06proto3"
 
 var (
 	file_apipb_application_proto_rawDescOnce sync.Once
@@ -996,44 +1983,101 @@ func file_apipb_application_proto_rawDescGZIP() []byte {
 
 var file_apipb_application_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_apipb_application_proto_goTypes = []any{
-	(*CancelOperationCommand)(nil),     // 0: termx.api.v1.CancelOperationCommand
-	(*ReleaseResourceCommand)(nil),     // 1: termx.api.v1.ReleaseResourceCommand
-	(*CommandEnvelope)(nil),            // 2: termx.api.v1.CommandEnvelope
-	(*AcknowledgeResult)(nil),          // 3: termx.api.v1.AcknowledgeResult
-	(*ResultEnvelope)(nil),             // 4: termx.api.v1.ResultEnvelope
-	(*OperationCancelledEvent)(nil),    // 5: termx.api.v1.OperationCancelledEvent
-	(*ResourceReleasedEvent)(nil),      // 6: termx.api.v1.ResourceReleasedEvent
-	(*EventEnvelope)(nil),              // 7: termx.api.v1.EventEnvelope
-	(*OperationStamp)(nil),             // 8: termx.api.v1.OperationStamp
-	(*ResourceHandle)(nil),             // 9: termx.api.v1.ResourceHandle
-	(*RequestContext)(nil),             // 10: termx.api.v1.RequestContext
-	(*TerminalDefaultsCommand)(nil),    // 11: termx.api.v1.TerminalDefaultsCommand
-	(*TerminalCreateCommand)(nil),      // 12: termx.api.v1.TerminalCreateCommand
-	(*TerminalListCommand)(nil),        // 13: termx.api.v1.TerminalListCommand
-	(*TerminalGetCommand)(nil),         // 14: termx.api.v1.TerminalGetCommand
-	(*TerminalRestartCommand)(nil),     // 15: termx.api.v1.TerminalRestartCommand
-	(*TerminalKillCommand)(nil),        // 16: termx.api.v1.TerminalKillCommand
-	(*TerminalRemoveCommand)(nil),      // 17: termx.api.v1.TerminalRemoveCommand
-	(*TerminalSetMetadataCommand)(nil), // 18: termx.api.v1.TerminalSetMetadataCommand
-	(*TerminalSetTagsCommand)(nil),     // 19: termx.api.v1.TerminalSetTagsCommand
-	(*TerminalAttachCommand)(nil),      // 20: termx.api.v1.TerminalAttachCommand
-	(*TerminalDetachCommand)(nil),      // 21: termx.api.v1.TerminalDetachCommand
-	(*TerminalInputCommand)(nil),       // 22: termx.api.v1.TerminalInputCommand
-	(*TerminalResizeCommand)(nil),      // 23: termx.api.v1.TerminalResizeCommand
-	(*TerminalResizeLockCommand)(nil),  // 24: termx.api.v1.TerminalResizeLockCommand
-	(*PathListDirectoriesCommand)(nil), // 25: termx.api.v1.PathListDirectoriesCommand
-	(*EndpointSessionStamp)(nil),       // 26: termx.api.v1.EndpointSessionStamp
-	(*ApiError)(nil),                   // 27: termx.api.v1.ApiError
-	(*TerminalDefaultsResult)(nil),     // 28: termx.api.v1.TerminalDefaultsResult
-	(*TerminalCreateResult)(nil),       // 29: termx.api.v1.TerminalCreateResult
-	(*TerminalListResult)(nil),         // 30: termx.api.v1.TerminalListResult
-	(*TerminalGetResult)(nil),          // 31: termx.api.v1.TerminalGetResult
-	(*TerminalAttachResult)(nil),       // 32: termx.api.v1.TerminalAttachResult
-	(*TerminalResizeResult)(nil),       // 33: termx.api.v1.TerminalResizeResult
-	(*PathListDirectoriesResult)(nil),  // 34: termx.api.v1.PathListDirectoriesResult
-	(*ApiVersion)(nil),                 // 35: termx.api.v1.ApiVersion
-	(*TerminalLifecycleEvent)(nil),     // 36: termx.api.v1.TerminalLifecycleEvent
-	(*TerminalResizeControlEvent)(nil), // 37: termx.api.v1.TerminalResizeControlEvent
+	(*CancelOperationCommand)(nil),          // 0: termx.api.v1.CancelOperationCommand
+	(*ReleaseResourceCommand)(nil),          // 1: termx.api.v1.ReleaseResourceCommand
+	(*CommandEnvelope)(nil),                 // 2: termx.api.v1.CommandEnvelope
+	(*AcknowledgeResult)(nil),               // 3: termx.api.v1.AcknowledgeResult
+	(*ResultEnvelope)(nil),                  // 4: termx.api.v1.ResultEnvelope
+	(*OperationCancelledEvent)(nil),         // 5: termx.api.v1.OperationCancelledEvent
+	(*ResourceReleasedEvent)(nil),           // 6: termx.api.v1.ResourceReleasedEvent
+	(*EventEnvelope)(nil),                   // 7: termx.api.v1.EventEnvelope
+	(*OperationStamp)(nil),                  // 8: termx.api.v1.OperationStamp
+	(*ResourceHandle)(nil),                  // 9: termx.api.v1.ResourceHandle
+	(*RequestContext)(nil),                  // 10: termx.api.v1.RequestContext
+	(*TerminalDefaultsCommand)(nil),         // 11: termx.api.v1.TerminalDefaultsCommand
+	(*TerminalCreateCommand)(nil),           // 12: termx.api.v1.TerminalCreateCommand
+	(*TerminalListCommand)(nil),             // 13: termx.api.v1.TerminalListCommand
+	(*TerminalGetCommand)(nil),              // 14: termx.api.v1.TerminalGetCommand
+	(*TerminalRestartCommand)(nil),          // 15: termx.api.v1.TerminalRestartCommand
+	(*TerminalKillCommand)(nil),             // 16: termx.api.v1.TerminalKillCommand
+	(*TerminalRemoveCommand)(nil),           // 17: termx.api.v1.TerminalRemoveCommand
+	(*TerminalSetMetadataCommand)(nil),      // 18: termx.api.v1.TerminalSetMetadataCommand
+	(*TerminalSetTagsCommand)(nil),          // 19: termx.api.v1.TerminalSetTagsCommand
+	(*TerminalAttachCommand)(nil),           // 20: termx.api.v1.TerminalAttachCommand
+	(*TerminalDetachCommand)(nil),           // 21: termx.api.v1.TerminalDetachCommand
+	(*TerminalInputCommand)(nil),            // 22: termx.api.v1.TerminalInputCommand
+	(*TerminalResizeCommand)(nil),           // 23: termx.api.v1.TerminalResizeCommand
+	(*TerminalResizeLockCommand)(nil),       // 24: termx.api.v1.TerminalResizeLockCommand
+	(*PathListDirectoriesCommand)(nil),      // 25: termx.api.v1.PathListDirectoriesCommand
+	(*HistoryWindowCommand)(nil),            // 26: termx.api.v1.HistoryWindowCommand
+	(*HistoryCopyCommand)(nil),              // 27: termx.api.v1.HistoryCopyCommand
+	(*HistoryReleaseCommand)(nil),           // 28: termx.api.v1.HistoryReleaseCommand
+	(*HistoryBacklogStatusCommand)(nil),     // 29: termx.api.v1.HistoryBacklogStatusCommand
+	(*LiveScreenGetCommand)(nil),            // 30: termx.api.v1.LiveScreenGetCommand
+	(*LiveInvalidationNextCommand)(nil),     // 31: termx.api.v1.LiveInvalidationNextCommand
+	(*EventSubscribeCommand)(nil),           // 32: termx.api.v1.EventSubscribeCommand
+	(*FileListCommand)(nil),                 // 33: termx.api.v1.FileListCommand
+	(*FileStatCommand)(nil),                 // 34: termx.api.v1.FileStatCommand
+	(*FilePreviewCommand)(nil),              // 35: termx.api.v1.FilePreviewCommand
+	(*FileMkdirCommand)(nil),                // 36: termx.api.v1.FileMkdirCommand
+	(*FileRenameCommand)(nil),               // 37: termx.api.v1.FileRenameCommand
+	(*FileDeleteCommand)(nil),               // 38: termx.api.v1.FileDeleteCommand
+	(*FileCopyCommand)(nil),                 // 39: termx.api.v1.FileCopyCommand
+	(*FileMoveCommand)(nil),                 // 40: termx.api.v1.FileMoveCommand
+	(*FileDownloadOpenCommand)(nil),         // 41: termx.api.v1.FileDownloadOpenCommand
+	(*FileUploadOpenCommand)(nil),           // 42: termx.api.v1.FileUploadOpenCommand
+	(*FileTransferCancelCommand)(nil),       // 43: termx.api.v1.FileTransferCancelCommand
+	(*StorageGetCommand)(nil),               // 44: termx.api.v1.StorageGetCommand
+	(*StoragePutCommand)(nil),               // 45: termx.api.v1.StoragePutCommand
+	(*StorageDeleteCommand)(nil),            // 46: termx.api.v1.StorageDeleteCommand
+	(*StorageListCommand)(nil),              // 47: termx.api.v1.StorageListCommand
+	(*ClientAccessIdentityCommand)(nil),     // 48: termx.api.v1.ClientAccessIdentityCommand
+	(*ClientAccessListCommand)(nil),         // 49: termx.api.v1.ClientAccessListCommand
+	(*ClientAccessTicketCreateCommand)(nil), // 50: termx.api.v1.ClientAccessTicketCreateCommand
+	(*ClientAccessRevokeCommand)(nil),       // 51: termx.api.v1.ClientAccessRevokeCommand
+	(*RemoteStatusCommand)(nil),             // 52: termx.api.v1.RemoteStatusCommand
+	(*RemotePairStartCommand)(nil),          // 53: termx.api.v1.RemotePairStartCommand
+	(*RemoteLocalEnableCommand)(nil),        // 54: termx.api.v1.RemoteLocalEnableCommand
+	(*RemoteLocalStatusCommand)(nil),        // 55: termx.api.v1.RemoteLocalStatusCommand
+	(*RemoteLocalDisableCommand)(nil),       // 56: termx.api.v1.RemoteLocalDisableCommand
+	(*EndpointSessionStamp)(nil),            // 57: termx.api.v1.EndpointSessionStamp
+	(*ApiError)(nil),                        // 58: termx.api.v1.ApiError
+	(*TerminalDefaultsResult)(nil),          // 59: termx.api.v1.TerminalDefaultsResult
+	(*TerminalCreateResult)(nil),            // 60: termx.api.v1.TerminalCreateResult
+	(*TerminalListResult)(nil),              // 61: termx.api.v1.TerminalListResult
+	(*TerminalGetResult)(nil),               // 62: termx.api.v1.TerminalGetResult
+	(*TerminalAttachResult)(nil),            // 63: termx.api.v1.TerminalAttachResult
+	(*TerminalResizeResult)(nil),            // 64: termx.api.v1.TerminalResizeResult
+	(*PathListDirectoriesResult)(nil),       // 65: termx.api.v1.PathListDirectoriesResult
+	(*HistoryWindowResult)(nil),             // 66: termx.api.v1.HistoryWindowResult
+	(*HistoryCopyResult)(nil),               // 67: termx.api.v1.HistoryCopyResult
+	(*HistoryBacklogStatusResult)(nil),      // 68: termx.api.v1.HistoryBacklogStatusResult
+	(*NativeScreenResult)(nil),              // 69: termx.api.v1.NativeScreenResult
+	(*LiveInvalidationResult)(nil),          // 70: termx.api.v1.LiveInvalidationResult
+	(*EventSubscriptionResult)(nil),         // 71: termx.api.v1.EventSubscriptionResult
+	(*FileListResult)(nil),                  // 72: termx.api.v1.FileListResult
+	(*FileStatResult)(nil),                  // 73: termx.api.v1.FileStatResult
+	(*FilePreviewResult)(nil),               // 74: termx.api.v1.FilePreviewResult
+	(*FileOperationResult)(nil),             // 75: termx.api.v1.FileOperationResult
+	(*FileBatchResult)(nil),                 // 76: termx.api.v1.FileBatchResult
+	(*FileTransferOpenResult)(nil),          // 77: termx.api.v1.FileTransferOpenResult
+	(*FileTransferCancelResult)(nil),        // 78: termx.api.v1.FileTransferCancelResult
+	(*StorageGetResult)(nil),                // 79: termx.api.v1.StorageGetResult
+	(*StoragePutResult)(nil),                // 80: termx.api.v1.StoragePutResult
+	(*StorageDeleteResult)(nil),             // 81: termx.api.v1.StorageDeleteResult
+	(*StorageListResult)(nil),               // 82: termx.api.v1.StorageListResult
+	(*ClientAccessIdentityResult)(nil),      // 83: termx.api.v1.ClientAccessIdentityResult
+	(*ClientAccessListResult)(nil),          // 84: termx.api.v1.ClientAccessListResult
+	(*ClientAccessTicketCreateResult)(nil),  // 85: termx.api.v1.ClientAccessTicketCreateResult
+	(*ClientAccessRevokeResult)(nil),        // 86: termx.api.v1.ClientAccessRevokeResult
+	(*RemoteStatusResult)(nil),              // 87: termx.api.v1.RemoteStatusResult
+	(*RemotePairStartResult)(nil),           // 88: termx.api.v1.RemotePairStartResult
+	(*RemoteLocalStatusResult)(nil),         // 89: termx.api.v1.RemoteLocalStatusResult
+	(*ApiVersion)(nil),                      // 90: termx.api.v1.ApiVersion
+	(*TerminalLifecycleEvent)(nil),          // 91: termx.api.v1.TerminalLifecycleEvent
+	(*LiveInvalidatedEvent)(nil),            // 92: termx.api.v1.LiveInvalidatedEvent
+	(*StorageChangedEvent)(nil),             // 93: termx.api.v1.StorageChangedEvent
+	(*FileTransferCompletedEvent)(nil),      // 94: termx.api.v1.FileTransferCompletedEvent
 }
 var file_apipb_application_proto_depIdxs = []int32{
 	8,  // 0: termx.api.v1.CancelOperationCommand.operation:type_name -> termx.api.v1.OperationStamp
@@ -1056,29 +2100,87 @@ var file_apipb_application_proto_depIdxs = []int32{
 	23, // 17: termx.api.v1.CommandEnvelope.terminal_resize:type_name -> termx.api.v1.TerminalResizeCommand
 	24, // 18: termx.api.v1.CommandEnvelope.terminal_resize_lock:type_name -> termx.api.v1.TerminalResizeLockCommand
 	25, // 19: termx.api.v1.CommandEnvelope.path_list_directories:type_name -> termx.api.v1.PathListDirectoriesCommand
-	26, // 20: termx.api.v1.ResultEnvelope.origin_session:type_name -> termx.api.v1.EndpointSessionStamp
-	3,  // 21: termx.api.v1.ResultEnvelope.acknowledge:type_name -> termx.api.v1.AcknowledgeResult
-	27, // 22: termx.api.v1.ResultEnvelope.error:type_name -> termx.api.v1.ApiError
-	28, // 23: termx.api.v1.ResultEnvelope.terminal_defaults:type_name -> termx.api.v1.TerminalDefaultsResult
-	29, // 24: termx.api.v1.ResultEnvelope.terminal_create:type_name -> termx.api.v1.TerminalCreateResult
-	30, // 25: termx.api.v1.ResultEnvelope.terminal_list:type_name -> termx.api.v1.TerminalListResult
-	31, // 26: termx.api.v1.ResultEnvelope.terminal_get:type_name -> termx.api.v1.TerminalGetResult
-	32, // 27: termx.api.v1.ResultEnvelope.terminal_attach:type_name -> termx.api.v1.TerminalAttachResult
-	33, // 28: termx.api.v1.ResultEnvelope.terminal_resize:type_name -> termx.api.v1.TerminalResizeResult
-	34, // 29: termx.api.v1.ResultEnvelope.path_list_directories:type_name -> termx.api.v1.PathListDirectoriesResult
-	8,  // 30: termx.api.v1.OperationCancelledEvent.operation:type_name -> termx.api.v1.OperationStamp
-	9,  // 31: termx.api.v1.ResourceReleasedEvent.resource:type_name -> termx.api.v1.ResourceHandle
-	35, // 32: termx.api.v1.EventEnvelope.api_version:type_name -> termx.api.v1.ApiVersion
-	26, // 33: termx.api.v1.EventEnvelope.origin_session:type_name -> termx.api.v1.EndpointSessionStamp
-	5,  // 34: termx.api.v1.EventEnvelope.operation_cancelled:type_name -> termx.api.v1.OperationCancelledEvent
-	6,  // 35: termx.api.v1.EventEnvelope.resource_released:type_name -> termx.api.v1.ResourceReleasedEvent
-	36, // 36: termx.api.v1.EventEnvelope.terminal_lifecycle:type_name -> termx.api.v1.TerminalLifecycleEvent
-	37, // 37: termx.api.v1.EventEnvelope.terminal_resize_control:type_name -> termx.api.v1.TerminalResizeControlEvent
-	38, // [38:38] is the sub-list for method output_type
-	38, // [38:38] is the sub-list for method input_type
-	38, // [38:38] is the sub-list for extension type_name
-	38, // [38:38] is the sub-list for extension extendee
-	0,  // [0:38] is the sub-list for field type_name
+	26, // 20: termx.api.v1.CommandEnvelope.history_window:type_name -> termx.api.v1.HistoryWindowCommand
+	27, // 21: termx.api.v1.CommandEnvelope.history_copy:type_name -> termx.api.v1.HistoryCopyCommand
+	28, // 22: termx.api.v1.CommandEnvelope.history_release:type_name -> termx.api.v1.HistoryReleaseCommand
+	29, // 23: termx.api.v1.CommandEnvelope.history_backlog_status:type_name -> termx.api.v1.HistoryBacklogStatusCommand
+	30, // 24: termx.api.v1.CommandEnvelope.live_screen_get:type_name -> termx.api.v1.LiveScreenGetCommand
+	31, // 25: termx.api.v1.CommandEnvelope.live_invalidation_next:type_name -> termx.api.v1.LiveInvalidationNextCommand
+	32, // 26: termx.api.v1.CommandEnvelope.event_subscribe:type_name -> termx.api.v1.EventSubscribeCommand
+	33, // 27: termx.api.v1.CommandEnvelope.file_list:type_name -> termx.api.v1.FileListCommand
+	34, // 28: termx.api.v1.CommandEnvelope.file_stat:type_name -> termx.api.v1.FileStatCommand
+	35, // 29: termx.api.v1.CommandEnvelope.file_preview:type_name -> termx.api.v1.FilePreviewCommand
+	36, // 30: termx.api.v1.CommandEnvelope.file_mkdir:type_name -> termx.api.v1.FileMkdirCommand
+	37, // 31: termx.api.v1.CommandEnvelope.file_rename:type_name -> termx.api.v1.FileRenameCommand
+	38, // 32: termx.api.v1.CommandEnvelope.file_delete:type_name -> termx.api.v1.FileDeleteCommand
+	39, // 33: termx.api.v1.CommandEnvelope.file_copy:type_name -> termx.api.v1.FileCopyCommand
+	40, // 34: termx.api.v1.CommandEnvelope.file_move:type_name -> termx.api.v1.FileMoveCommand
+	41, // 35: termx.api.v1.CommandEnvelope.file_download_open:type_name -> termx.api.v1.FileDownloadOpenCommand
+	42, // 36: termx.api.v1.CommandEnvelope.file_upload_open:type_name -> termx.api.v1.FileUploadOpenCommand
+	43, // 37: termx.api.v1.CommandEnvelope.file_transfer_cancel:type_name -> termx.api.v1.FileTransferCancelCommand
+	44, // 38: termx.api.v1.CommandEnvelope.storage_get:type_name -> termx.api.v1.StorageGetCommand
+	45, // 39: termx.api.v1.CommandEnvelope.storage_put:type_name -> termx.api.v1.StoragePutCommand
+	46, // 40: termx.api.v1.CommandEnvelope.storage_delete:type_name -> termx.api.v1.StorageDeleteCommand
+	47, // 41: termx.api.v1.CommandEnvelope.storage_list:type_name -> termx.api.v1.StorageListCommand
+	48, // 42: termx.api.v1.CommandEnvelope.client_access_identity:type_name -> termx.api.v1.ClientAccessIdentityCommand
+	49, // 43: termx.api.v1.CommandEnvelope.client_access_list:type_name -> termx.api.v1.ClientAccessListCommand
+	50, // 44: termx.api.v1.CommandEnvelope.client_access_ticket_create:type_name -> termx.api.v1.ClientAccessTicketCreateCommand
+	51, // 45: termx.api.v1.CommandEnvelope.client_access_revoke:type_name -> termx.api.v1.ClientAccessRevokeCommand
+	52, // 46: termx.api.v1.CommandEnvelope.remote_status:type_name -> termx.api.v1.RemoteStatusCommand
+	53, // 47: termx.api.v1.CommandEnvelope.remote_pair_start:type_name -> termx.api.v1.RemotePairStartCommand
+	54, // 48: termx.api.v1.CommandEnvelope.remote_local_enable:type_name -> termx.api.v1.RemoteLocalEnableCommand
+	55, // 49: termx.api.v1.CommandEnvelope.remote_local_status:type_name -> termx.api.v1.RemoteLocalStatusCommand
+	56, // 50: termx.api.v1.CommandEnvelope.remote_local_disable:type_name -> termx.api.v1.RemoteLocalDisableCommand
+	57, // 51: termx.api.v1.ResultEnvelope.origin_session:type_name -> termx.api.v1.EndpointSessionStamp
+	3,  // 52: termx.api.v1.ResultEnvelope.acknowledge:type_name -> termx.api.v1.AcknowledgeResult
+	58, // 53: termx.api.v1.ResultEnvelope.error:type_name -> termx.api.v1.ApiError
+	59, // 54: termx.api.v1.ResultEnvelope.terminal_defaults:type_name -> termx.api.v1.TerminalDefaultsResult
+	60, // 55: termx.api.v1.ResultEnvelope.terminal_create:type_name -> termx.api.v1.TerminalCreateResult
+	61, // 56: termx.api.v1.ResultEnvelope.terminal_list:type_name -> termx.api.v1.TerminalListResult
+	62, // 57: termx.api.v1.ResultEnvelope.terminal_get:type_name -> termx.api.v1.TerminalGetResult
+	63, // 58: termx.api.v1.ResultEnvelope.terminal_attach:type_name -> termx.api.v1.TerminalAttachResult
+	64, // 59: termx.api.v1.ResultEnvelope.terminal_resize:type_name -> termx.api.v1.TerminalResizeResult
+	65, // 60: termx.api.v1.ResultEnvelope.path_list_directories:type_name -> termx.api.v1.PathListDirectoriesResult
+	66, // 61: termx.api.v1.ResultEnvelope.history_window:type_name -> termx.api.v1.HistoryWindowResult
+	67, // 62: termx.api.v1.ResultEnvelope.history_copy:type_name -> termx.api.v1.HistoryCopyResult
+	68, // 63: termx.api.v1.ResultEnvelope.history_backlog_status:type_name -> termx.api.v1.HistoryBacklogStatusResult
+	69, // 64: termx.api.v1.ResultEnvelope.live_screen:type_name -> termx.api.v1.NativeScreenResult
+	70, // 65: termx.api.v1.ResultEnvelope.live_invalidation:type_name -> termx.api.v1.LiveInvalidationResult
+	71, // 66: termx.api.v1.ResultEnvelope.event_subscription:type_name -> termx.api.v1.EventSubscriptionResult
+	72, // 67: termx.api.v1.ResultEnvelope.file_list:type_name -> termx.api.v1.FileListResult
+	73, // 68: termx.api.v1.ResultEnvelope.file_stat:type_name -> termx.api.v1.FileStatResult
+	74, // 69: termx.api.v1.ResultEnvelope.file_preview:type_name -> termx.api.v1.FilePreviewResult
+	75, // 70: termx.api.v1.ResultEnvelope.file_operation:type_name -> termx.api.v1.FileOperationResult
+	76, // 71: termx.api.v1.ResultEnvelope.file_batch:type_name -> termx.api.v1.FileBatchResult
+	77, // 72: termx.api.v1.ResultEnvelope.file_transfer_open:type_name -> termx.api.v1.FileTransferOpenResult
+	78, // 73: termx.api.v1.ResultEnvelope.file_transfer_cancel:type_name -> termx.api.v1.FileTransferCancelResult
+	79, // 74: termx.api.v1.ResultEnvelope.storage_get:type_name -> termx.api.v1.StorageGetResult
+	80, // 75: termx.api.v1.ResultEnvelope.storage_put:type_name -> termx.api.v1.StoragePutResult
+	81, // 76: termx.api.v1.ResultEnvelope.storage_delete:type_name -> termx.api.v1.StorageDeleteResult
+	82, // 77: termx.api.v1.ResultEnvelope.storage_list:type_name -> termx.api.v1.StorageListResult
+	83, // 78: termx.api.v1.ResultEnvelope.client_access_identity:type_name -> termx.api.v1.ClientAccessIdentityResult
+	84, // 79: termx.api.v1.ResultEnvelope.client_access_list:type_name -> termx.api.v1.ClientAccessListResult
+	85, // 80: termx.api.v1.ResultEnvelope.client_access_ticket_create:type_name -> termx.api.v1.ClientAccessTicketCreateResult
+	86, // 81: termx.api.v1.ResultEnvelope.client_access_revoke:type_name -> termx.api.v1.ClientAccessRevokeResult
+	87, // 82: termx.api.v1.ResultEnvelope.remote_status:type_name -> termx.api.v1.RemoteStatusResult
+	88, // 83: termx.api.v1.ResultEnvelope.remote_pair_start:type_name -> termx.api.v1.RemotePairStartResult
+	89, // 84: termx.api.v1.ResultEnvelope.remote_local_status:type_name -> termx.api.v1.RemoteLocalStatusResult
+	8,  // 85: termx.api.v1.OperationCancelledEvent.operation:type_name -> termx.api.v1.OperationStamp
+	9,  // 86: termx.api.v1.ResourceReleasedEvent.resource:type_name -> termx.api.v1.ResourceHandle
+	90, // 87: termx.api.v1.EventEnvelope.api_version:type_name -> termx.api.v1.ApiVersion
+	57, // 88: termx.api.v1.EventEnvelope.origin_session:type_name -> termx.api.v1.EndpointSessionStamp
+	9,  // 89: termx.api.v1.EventEnvelope.subscription:type_name -> termx.api.v1.ResourceHandle
+	5,  // 90: termx.api.v1.EventEnvelope.operation_cancelled:type_name -> termx.api.v1.OperationCancelledEvent
+	6,  // 91: termx.api.v1.EventEnvelope.resource_released:type_name -> termx.api.v1.ResourceReleasedEvent
+	91, // 92: termx.api.v1.EventEnvelope.terminal_lifecycle:type_name -> termx.api.v1.TerminalLifecycleEvent
+	92, // 93: termx.api.v1.EventEnvelope.live_invalidated:type_name -> termx.api.v1.LiveInvalidatedEvent
+	93, // 94: termx.api.v1.EventEnvelope.storage_changed:type_name -> termx.api.v1.StorageChangedEvent
+	94, // 95: termx.api.v1.EventEnvelope.file_transfer_completed:type_name -> termx.api.v1.FileTransferCompletedEvent
+	96, // [96:96] is the sub-list for method output_type
+	96, // [96:96] is the sub-list for method input_type
+	96, // [96:96] is the sub-list for extension type_name
+	96, // [96:96] is the sub-list for extension extendee
+	0,  // [0:96] is the sub-list for field type_name
 }
 
 func init() { file_apipb_application_proto_init() }
@@ -1087,6 +2189,11 @@ func file_apipb_application_proto_init() {
 		return
 	}
 	file_apipb_common_proto_init()
+	file_apipb_access_remote_proto_init()
+	file_apipb_events_proto_init()
+	file_apipb_file_proto_init()
+	file_apipb_history_proto_init()
+	file_apipb_storage_proto_init()
 	file_apipb_terminal_proto_init()
 	file_apipb_application_proto_msgTypes[2].OneofWrappers = []any{
 		(*CommandEnvelope_CancelOperation)(nil),
@@ -1106,6 +2213,37 @@ func file_apipb_application_proto_init() {
 		(*CommandEnvelope_TerminalResize)(nil),
 		(*CommandEnvelope_TerminalResizeLock)(nil),
 		(*CommandEnvelope_PathListDirectories)(nil),
+		(*CommandEnvelope_HistoryWindow)(nil),
+		(*CommandEnvelope_HistoryCopy)(nil),
+		(*CommandEnvelope_HistoryRelease)(nil),
+		(*CommandEnvelope_HistoryBacklogStatus)(nil),
+		(*CommandEnvelope_LiveScreenGet)(nil),
+		(*CommandEnvelope_LiveInvalidationNext)(nil),
+		(*CommandEnvelope_EventSubscribe)(nil),
+		(*CommandEnvelope_FileList)(nil),
+		(*CommandEnvelope_FileStat)(nil),
+		(*CommandEnvelope_FilePreview)(nil),
+		(*CommandEnvelope_FileMkdir)(nil),
+		(*CommandEnvelope_FileRename)(nil),
+		(*CommandEnvelope_FileDelete)(nil),
+		(*CommandEnvelope_FileCopy)(nil),
+		(*CommandEnvelope_FileMove)(nil),
+		(*CommandEnvelope_FileDownloadOpen)(nil),
+		(*CommandEnvelope_FileUploadOpen)(nil),
+		(*CommandEnvelope_FileTransferCancel)(nil),
+		(*CommandEnvelope_StorageGet)(nil),
+		(*CommandEnvelope_StoragePut)(nil),
+		(*CommandEnvelope_StorageDelete)(nil),
+		(*CommandEnvelope_StorageList)(nil),
+		(*CommandEnvelope_ClientAccessIdentity)(nil),
+		(*CommandEnvelope_ClientAccessList)(nil),
+		(*CommandEnvelope_ClientAccessTicketCreate)(nil),
+		(*CommandEnvelope_ClientAccessRevoke)(nil),
+		(*CommandEnvelope_RemoteStatus)(nil),
+		(*CommandEnvelope_RemotePairStart)(nil),
+		(*CommandEnvelope_RemoteLocalEnable)(nil),
+		(*CommandEnvelope_RemoteLocalStatus)(nil),
+		(*CommandEnvelope_RemoteLocalDisable)(nil),
 	}
 	file_apipb_application_proto_msgTypes[4].OneofWrappers = []any{
 		(*ResultEnvelope_Acknowledge)(nil),
@@ -1117,12 +2255,38 @@ func file_apipb_application_proto_init() {
 		(*ResultEnvelope_TerminalAttach)(nil),
 		(*ResultEnvelope_TerminalResize)(nil),
 		(*ResultEnvelope_PathListDirectories)(nil),
+		(*ResultEnvelope_HistoryWindow)(nil),
+		(*ResultEnvelope_HistoryCopy)(nil),
+		(*ResultEnvelope_HistoryBacklogStatus)(nil),
+		(*ResultEnvelope_LiveScreen)(nil),
+		(*ResultEnvelope_LiveInvalidation)(nil),
+		(*ResultEnvelope_EventSubscription)(nil),
+		(*ResultEnvelope_FileList)(nil),
+		(*ResultEnvelope_FileStat)(nil),
+		(*ResultEnvelope_FilePreview)(nil),
+		(*ResultEnvelope_FileOperation)(nil),
+		(*ResultEnvelope_FileBatch)(nil),
+		(*ResultEnvelope_FileTransferOpen)(nil),
+		(*ResultEnvelope_FileTransferCancel)(nil),
+		(*ResultEnvelope_StorageGet)(nil),
+		(*ResultEnvelope_StoragePut)(nil),
+		(*ResultEnvelope_StorageDelete)(nil),
+		(*ResultEnvelope_StorageList)(nil),
+		(*ResultEnvelope_ClientAccessIdentity)(nil),
+		(*ResultEnvelope_ClientAccessList)(nil),
+		(*ResultEnvelope_ClientAccessTicketCreate)(nil),
+		(*ResultEnvelope_ClientAccessRevoke)(nil),
+		(*ResultEnvelope_RemoteStatus)(nil),
+		(*ResultEnvelope_RemotePairStart)(nil),
+		(*ResultEnvelope_RemoteLocalStatus)(nil),
 	}
 	file_apipb_application_proto_msgTypes[7].OneofWrappers = []any{
 		(*EventEnvelope_OperationCancelled)(nil),
 		(*EventEnvelope_ResourceReleased)(nil),
 		(*EventEnvelope_TerminalLifecycle)(nil),
-		(*EventEnvelope_TerminalResizeControl)(nil),
+		(*EventEnvelope_LiveInvalidated)(nil),
+		(*EventEnvelope_StorageChanged)(nil),
+		(*EventEnvelope_FileTransferCompleted)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

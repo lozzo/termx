@@ -5,23 +5,18 @@ import (
 	"fmt"
 
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/proto/apipb"
 )
 
 func (session *protocolSession) dispatchApplicationPayload(ctx context.Context, payload []byte) ([]byte, bool, int, error) {
 	if session.application == nil {
 		return nil, false, protocolErrorUnavailable, fmt.Errorf("application executor is unavailable")
 	}
-	decoded, err := protocol.DecodeMethodParams("api.execute", payload)
+	command, err := protocol.DecodeApplicationCommand(payload)
 	if err != nil {
 		return nil, false, protocolErrorBadRequest, err
 	}
-	command, ok := decoded.(*apipb.CommandEnvelope)
-	if !ok || command == nil {
-		return nil, false, protocolErrorBadRequest, fmt.Errorf("api.execute decoded unexpected payload %T", decoded)
-	}
 	result := session.application.Execute(ctx, command)
-	payload, err = protocol.EncodeMethodResult("api.execute", result)
+	payload, err = protocol.EncodeApplicationResult(result)
 	if err != nil {
 		return nil, false, protocolErrorInternal, err
 	}

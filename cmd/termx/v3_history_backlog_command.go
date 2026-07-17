@@ -7,7 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/lozzow/termx/internal/protocol"
+	clientruntime "github.com/lozzow/termx/client/runtime"
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/spf13/cobra"
 )
 
@@ -40,15 +41,19 @@ func v3HistoryBacklogCommand(socket *string, logFile *string) *cobra.Command {
 			if client != nil {
 				defer client.Close()
 			}
+			application, err := newLocalApplicationSession(client)
+			if err != nil {
+				return err
+			}
 			if cfg.OutPath == "" {
-				return runV3HistoryBacklog(cmd.Context(), client, cfg, cmd.OutOrStdout())
+				return runV3HistoryBacklog(cmd.Context(), application, cfg, cmd.OutOrStdout())
 			}
 			file, err := os.Create(cfg.OutPath)
 			if err != nil {
 				return err
 			}
 			defer file.Close()
-			if err := runV3HistoryBacklog(cmd.Context(), client, cfg, file); err != nil {
+			if err := runV3HistoryBacklog(cmd.Context(), application, cfg, file); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "termx v3 history backlog ok: terminal=%s out=%s\n", cfg.TerminalID, cfg.OutPath)
@@ -59,14 +64,14 @@ func v3HistoryBacklogCommand(socket *string, logFile *string) *cobra.Command {
 	return cmd
 }
 
-func runV3HistoryBacklog(ctx context.Context, client *protocol.Client, cfg v3HistoryBacklogConfig, writer io.Writer) error {
+func runV3HistoryBacklog(ctx context.Context, client *clientruntime.ApplicationSession, cfg v3HistoryBacklogConfig, writer io.Writer) error {
 	if client == nil {
 		return fmt.Errorf("nil core-v2 protocol client")
 	}
 	if strings.TrimSpace(cfg.TerminalID) == "" {
 		return fmt.Errorf("terminal id is required")
 	}
-	status, err := client.HistoryBacklogStatus(ctx, cfg.TerminalID)
+	status, err := client.HistoryBacklogStatus(ctx, &apipb.HistoryBacklogStatusCommand{Terminal: &apipb.TerminalRef{EndpointId: string(client.Stamp().EndpointID), TerminalId: cfg.TerminalID}})
 	if err != nil {
 		return err
 	}
@@ -74,24 +79,13 @@ func runV3HistoryBacklog(ctx context.Context, client *protocol.Client, cfg v3His
 	return nil
 }
 
-func writeV3HistoryBacklogTSV(writer io.Writer, status *protocol.HistoryBacklogStatus) {
+func writeV3HistoryBacklogTSV(writer io.Writer, status *apipb.HistoryBacklogStatusResult) {
 	if status == nil {
-		status = &protocol.HistoryBacklogStatus{}
+		status = &apipb.HistoryBacklogStatusResult{}
 	}
 	fmt.Fprintln(writer, "terminal_id\thistory_enabled\tapplied_seq\ttarget_seq\tcatchup_pending\tpending_transactions\tpending_bytes\tbackpressure_mode\tbuffer_limit_bytes\tbackpressure_events\tbackpressure_wait_nanos\tin_flight\tclosed")
 	fmt.Fprintf(writer, "%s\t%t\t%d\t%d\t%t\t%d\t%d\t%s\t%d\t%d\t%d\t%t\t%t\n",
-		status.TerminalID,
-		status.HistoryEnabled,
-		status.AppliedSeq,
-		status.TargetSeq,
-		status.CatchupPending,
-		status.PendingTransactions,
-		status.PendingBytes,
-		status.BackpressureMode,
-		status.BufferLimitBytes,
-		status.BackpressureEvents,
-		status.BackpressureWaitNanos,
-		status.InFlight,
-		status.Closed,
+		status.GetTerminal().GetTerminalId(), status.GetHistoryEnabled(), status.GetAppliedSeq(), status.GetTargetSeq(), status.GetCatchupPending(),
+		status.GetPendingTransactions(), status.GetPendingBytes(), status.GetBackpressureMode(), status.GetBufferLimitBytes(), status.GetBackpressureEvents(), status.GetBackpressureWaitNanos(), status.GetInFlight(), status.GetClosed(),
 	)
 }

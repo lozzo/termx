@@ -20,7 +20,6 @@ const (
 	EventTerminalChanged         EventType = "terminal.changed"
 	EventTerminalLiveInvalidated EventType = "terminal.live.invalidated"
 	EventStorageChanged          EventType = "storage.changed"
-	EventWorkbenchChanged        EventType = "workbench.changed"
 )
 
 type Event struct {
@@ -28,7 +27,6 @@ type Event struct {
 	TerminalID string
 	Terminal   *TerminalInfo
 	Storage    *StorageChanged
-	Workbench  *WorkbenchChanged
 	Live       *LiveScreenInvalidated
 	// 中文说明：true 表示该事件承载 terminal lifecycle 变化，而不是普通 live 输出刷新。
 	LifecycleKnown bool
@@ -45,7 +43,6 @@ type EventFilter struct {
 	StorageScope     StorageScope
 	StorageOwnerID   string
 	StorageKeyPrefix string
-	WorkbenchID      string
 }
 
 type eventBroker struct {
@@ -141,9 +138,6 @@ func eventMatchesFilter(event Event, filter EventFilter) bool {
 	if event.Type == EventStorageChanged && !storageEventMatchesFilter(event.Storage, filter) {
 		return false
 	}
-	if event.Type == EventWorkbenchChanged && !workbenchEventMatchesFilter(event.Workbench, filter) {
-		return false
-	}
 	if len(filter.Types) == 0 {
 		return true
 	}
@@ -153,13 +147,6 @@ func eventMatchesFilter(event Event, filter EventFilter) bool {
 		}
 	}
 	return false
-}
-
-func workbenchEventMatchesFilter(workbench *WorkbenchChanged, filter EventFilter) bool {
-	if workbench == nil {
-		return filter.WorkbenchID == ""
-	}
-	return filter.WorkbenchID == "" || filter.WorkbenchID == workbench.WorkspaceID || filter.WorkbenchID == workbench.ResourceID
 }
 
 func storageEventMatchesFilter(storage *StorageChanged, filter EventFilter) bool {
@@ -189,10 +176,6 @@ func cloneEvent(event Event) Event {
 	if event.Storage != nil {
 		storage := *event.Storage
 		event.Storage = &storage
-	}
-	if event.Workbench != nil {
-		workbench := *event.Workbench
-		event.Workbench = &workbench
 	}
 	if event.Live != nil {
 		live := *event.Live

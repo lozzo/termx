@@ -4,12 +4,21 @@ import (
 	"context"
 	"errors"
 
+	"github.com/lozzow/termx/core/history"
 	"github.com/lozzow/termx/proto/apipb"
 )
 
 // ApplicationCapability 表示 connection admission 需要的 core-native 能力类别。
 // 它只参与 daemon 内部授权，不是公共 capability schema 的第二份真值。
 type ApplicationCapability uint8
+
+// ApplicationResourceKind 只用于 connection admission 选择 owning registry，不复制公共资源字段。
+type ApplicationResourceKind uint8
+
+const (
+	// ApplicationResourceKindSubscription 表示 session-owned event subscription。
+	ApplicationResourceKindSubscription ApplicationResourceKind = iota + 1
+)
 
 const (
 	// ApplicationCapabilityResourceLifecycle 表示释放 session-owned resource。
@@ -20,6 +29,20 @@ const (
 	ApplicationCapabilityTerminalAttachment
 	// ApplicationCapabilityPathQuery 表示 daemon 文件系统 path 查询。
 	ApplicationCapabilityPathQuery
+	// ApplicationCapabilityHistory 表示 authoritative history 查询。
+	ApplicationCapabilityHistory
+	// ApplicationCapabilityLiveScreen 表示 native live screen 查询。
+	ApplicationCapabilityLiveScreen
+	// ApplicationCapabilityFile 表示 daemon 文件系统操作。
+	ApplicationCapabilityFile
+	// ApplicationCapabilityStorage 表示 daemon opaque storage 操作。
+	ApplicationCapabilityStorage
+	// ApplicationCapabilityEventSubscription 表示 application event 订阅。
+	ApplicationCapabilityEventSubscription
+	// ApplicationCapabilityClientAccess 表示 daemon client access 管理。
+	ApplicationCapabilityClientAccess
+	// ApplicationCapabilityRemoteControl 表示 local-owner remote runtime 控制。
+	ApplicationCapabilityRemoteControl
 )
 
 var (
@@ -34,15 +57,22 @@ var (
 // ApplicationAdmission 是 API Layer 映射后的 connection-bound 授权输入。
 // TerminalID 与 ResourceToken 只能二选一表达目标；core 不读取 Proto command 推断权限。
 type ApplicationAdmission struct {
-	Capability    ApplicationCapability
-	TerminalID    string
-	ResourceToken []byte
+	Capability                 ApplicationCapability
+	TerminalID                 string
+	ResourceToken              []byte
+	ResourceKind               ApplicationResourceKind
+	FileOperation              string
+	MachineLifecycleEventsOnly bool
 }
 
 // ApplicationAdmissionLease 覆盖一次 controller 执行期，保证连接 scope 不在校验后失效。
 type ApplicationAdmissionLease interface {
 	Release()
 }
+
+// ApplicationEventEncoder 把 core-native event 转成公共事件 payload。
+// 实现由 API Mapping 注入；core 只负责 subscription lifecycle 与 framing send。
+type ApplicationEventEncoder func(Event, []byte) ([]byte, error)
 
 // TerminalDefaults 是 daemon 默认 shell 与 cwd 的 core-native 查询结果。
 type TerminalDefaults struct {
@@ -199,6 +229,68 @@ type ApplicationSessionPort interface {
 	ApplicationTerminalResizeLock(context.Context, []byte, bool) (TerminalResizeResult, error)
 	// ApplicationPathListDirectories 查询 owning daemon 文件系统目录候选。
 	ApplicationPathListDirectories(context.Context, string, int) (PathDirectories, error)
+	// ApplicationHistoryWindow 从 core authoritative history truth 查询 tokenized window。
+	ApplicationHistoryWindow(context.Context, history.HistoryWindowRequest) (history.HistoryWindow, error)
+	// ApplicationHistoryCopy 从 frozen history token 复制文本。
+	ApplicationHistoryCopy(context.Context, history.HistoryCopyRequest) (string, error)
+	// ApplicationHistoryRelease 释放当前 terminal 的 frozen history token。
+	ApplicationHistoryRelease(context.Context, string, history.HistoryToken) error
+	// ApplicationHistoryBacklogStatus 返回 history ingest 的诊断状态。
+	ApplicationHistoryBacklogStatus(context.Context, string) (HistoryBacklogStatus, error)
+	// ApplicationLiveScreen 返回 daemon 当前 native live screen projection。
+	ApplicationLiveScreen(context.Context, string) (NativeScreenSnapshot, error)
+	// ApplicationLiveInvalidation 等待 observed revision 之后的一次 live invalidation。
+	ApplicationLiveInvalidation(context.Context, string, LiveRevision) (LiveScreenInvalidated, error)
+	// ApplicationEventSubscribe 建立 session-owned application event subscription。
+	ApplicationEventSubscribe(context.Context, EventFilter, ApplicationEventEncoder) ([]byte, error)
+	// ApplicationFileList 返回 daemon-owned directory window。
+	ApplicationFileList(context.Context, FileListRequest) (FileListResult, error)
+	// ApplicationFileStat 返回 daemon-owned path metadata。
+	ApplicationFileStat(context.Context, FilePathRequest) (FileEntry, error)
+	// ApplicationFilePreview 返回有界文件内容预览。
+	ApplicationFilePreview(context.Context, FilePreviewRequest) (FilePreviewResult, error)
+	// ApplicationFileMkdir 创建 daemon-owned directory。
+	ApplicationFileMkdir(context.Context, FilePathRequest) FileOperationResult
+	// ApplicationFileRename 原子重命名 daemon-owned path。
+	ApplicationFileRename(context.Context, FileRenameRequest) FileOperationResult
+	// ApplicationFileDelete 删除 daemon-owned path。
+	ApplicationFileDelete(context.Context, FilePathRequest) FileOperationResult
+	// ApplicationFileCopy 批量复制 daemon-owned paths。
+	ApplicationFileCopy(context.Context, FileCopyMoveRequest) FileBatchResult
+	// ApplicationFileMove 批量移动 daemon-owned paths。
+	ApplicationFileMove(context.Context, FileCopyMoveRequest) FileBatchResult
+	// ApplicationFileDownloadOpen 创建 session-bound download transfer。
+	ApplicationFileDownloadOpen(context.Context, FileDownloadOpenRequest) (FileTransfer, error)
+	// ApplicationFileUploadOpen 创建或恢复 session-bound upload transfer。
+	ApplicationFileUploadOpen(context.Context, FileUploadOpenRequest) (FileTransfer, error)
+	// ApplicationFileTransferCancel 按 opaque token 取消 transfer。
+	ApplicationFileTransferCancel(context.Context, []byte) (FileTransferCancelResult, error)
+	// ApplicationStorageGet 返回 daemon opaque storage entry。
+	ApplicationStorageGet(context.Context, string, StorageScope, string, string) (StorageEntry, error)
+	// ApplicationStoragePut 执行 opaque value CAS put。
+	ApplicationStoragePut(context.Context, StoragePutRequest) (StorageEntry, error)
+	// ApplicationStorageDelete 执行 opaque value CAS delete。
+	ApplicationStorageDelete(context.Context, StorageDeleteRequest) (StorageDeleteResult, error)
+	// ApplicationStorageList 返回稳定 storage key window。
+	ApplicationStorageList(context.Context, string, StorageScope, string, string) []StorageEntry
+	// ApplicationClientAccessIdentity 返回 daemon DeviceIdentity 公开投影。
+	ApplicationClientAccessIdentity(context.Context) (ClientAccessIdentity, error)
+	// ApplicationClientAccessList 返回 daemon 持久化 grant 脱敏投影。
+	ApplicationClientAccessList(context.Context) ([]ClientAccessRecord, error)
+	// ApplicationClientAccessCreateTicket 原子签发并登记一次性 pairing ticket。
+	ApplicationClientAccessCreateTicket(context.Context, ClientAccessTicketRequest) (ClientAccessTicket, error)
+	// ApplicationClientAccessRevoke 按 grant ID 持久化撤销。
+	ApplicationClientAccessRevoke(context.Context, string) (ClientAccessRecord, error)
+	// ApplicationRemoteStatus 返回 remote runtime 状态。
+	ApplicationRemoteStatus(context.Context) (RemoteStatus, error)
+	// ApplicationRemotePairStart 启动本地配对会话。
+	ApplicationRemotePairStart(context.Context, RemotePairStartRequest) (RemotePairStartResult, error)
+	// ApplicationRemoteLocalEnable 启用 local remote runtime。
+	ApplicationRemoteLocalEnable(context.Context, RemoteLocalEnableRequest) (RemoteLocalStatus, error)
+	// ApplicationRemoteLocalStatus 返回 local remote runtime 状态。
+	ApplicationRemoteLocalStatus(context.Context) (RemoteLocalStatus, error)
+	// ApplicationRemoteLocalDisable 关闭 local remote runtime。
+	ApplicationRemoteLocalDisable(context.Context) (RemoteLocalStatus, error)
 }
 
 // ApplicationExecutor 执行 framing 已解码的公共 Proto command。

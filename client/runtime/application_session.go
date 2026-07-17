@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"sync/atomic"
@@ -13,6 +14,10 @@ import (
 // 实现只运输完整 CommandEnvelope/ResultEnvelope，不解释 terminal 字段，也不选择 route 或 generation。
 type ProtoApplicationExecutor interface {
 	ExecuteApplication(context.Context, *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error)
+}
+
+type protoApplicationEventSource interface {
+	ApplicationEvents(context.Context) (<-chan *apipb.EventEnvelope, error)
 }
 
 // ApplicationSession 把 generated Proto command 绑定到一个不可变 ReadySession generation。
@@ -208,6 +213,383 @@ func (session *ApplicationSession) PathListDirectories(ctx context.Context, comm
 	return result.GetPathListDirectories(), nil
 }
 
+// HistoryWindow 查询 core authoritative history window；token/cursor 必须由调用方原样回传。
+func (session *ApplicationSession) HistoryWindow(ctx context.Context, command *apipb.HistoryWindowCommand) (*apipb.HistoryWindowResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_HistoryWindow{HistoryWindow: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetHistoryWindow() == nil {
+		return nil, missingApplicationResult("history_window")
+	}
+	return result.GetHistoryWindow(), nil
+}
+
+// HistoryCopy 从 frozen history token 复制 authoritative text。
+func (session *ApplicationSession) HistoryCopy(ctx context.Context, command *apipb.HistoryCopyCommand) (*apipb.HistoryCopyResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_HistoryCopy{HistoryCopy: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetHistoryCopy() == nil {
+		return nil, missingApplicationResult("history_copy")
+	}
+	return result.GetHistoryCopy(), nil
+}
+
+// HistoryRelease 释放 current-session 使用的 frozen history token。
+func (session *ApplicationSession) HistoryRelease(ctx context.Context, command *apipb.HistoryReleaseCommand) error {
+	return session.executeAcknowledge(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_HistoryRelease{HistoryRelease: command}})
+}
+
+// HistoryBacklogStatus 返回 history ingest 的诊断状态。
+func (session *ApplicationSession) HistoryBacklogStatus(ctx context.Context, command *apipb.HistoryBacklogStatusCommand) (*apipb.HistoryBacklogStatusResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_HistoryBacklogStatus{HistoryBacklogStatus: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetHistoryBacklogStatus() == nil {
+		return nil, missingApplicationResult("history_backlog_status")
+	}
+	return result.GetHistoryBacklogStatus(), nil
+}
+
+// LiveScreen 读取 latest-only native screen projection。
+func (session *ApplicationSession) LiveScreen(ctx context.Context, command *apipb.LiveScreenGetCommand) (*apipb.NativeScreenResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_LiveScreenGet{LiveScreenGet: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetLiveScreen() == nil {
+		return nil, missingApplicationResult("live_screen")
+	}
+	return result.GetLiveScreen(), nil
+}
+
+// LiveInvalidation 等待 observed revision 之后的一次 daemon wake edge。
+func (session *ApplicationSession) LiveInvalidation(ctx context.Context, command *apipb.LiveInvalidationNextCommand) (*apipb.LiveInvalidationResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_LiveInvalidationNext{LiveInvalidationNext: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetLiveInvalidation() == nil {
+		return nil, missingApplicationResult("live_invalidation")
+	}
+	return result.GetLiveInvalidation(), nil
+}
+
+// EventSubscribe 建立 daemon session-owned subscription，并返回对应的 Proto event stream。
+func (session *ApplicationSession) EventSubscribe(ctx context.Context, command *apipb.EventSubscribeCommand) (*apipb.EventSubscriptionResult, <-chan *apipb.EventEnvelope, error) {
+	source, ok := session.executor.(protoApplicationEventSource)
+	if !ok {
+		return nil, nil, runtimeError(ErrorUnavailable, "application event source is unavailable", nil)
+	}
+	eventCtx, cancel := context.WithCancel(ctx)
+	events, err := source.ApplicationEvents(eventCtx)
+	if err != nil {
+		cancel()
+		return nil, nil, err
+	}
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_EventSubscribe{EventSubscribe: command}})
+	if err != nil {
+		cancel()
+		return nil, nil, err
+	}
+	if result.GetEventSubscription() == nil {
+		cancel()
+		return nil, nil, missingApplicationResult("event_subscription")
+	}
+	subscription := result.GetEventSubscription().GetSubscription()
+	filtered := make(chan *apipb.EventEnvelope, 64)
+	go func() {
+		defer cancel()
+		defer close(filtered)
+		for {
+			select {
+			case <-eventCtx.Done():
+				return
+			case event, ok := <-events:
+				if !ok {
+					return
+				}
+				if !sameApplicationResource(event.GetSubscription(), subscription) {
+					continue
+				}
+				select {
+				case filtered <- event:
+				case <-eventCtx.Done():
+					return
+				}
+			}
+		}
+	}()
+	return result.GetEventSubscription(), filtered, nil
+}
+
+func sameApplicationResource(left, right *apipb.ResourceHandle) bool {
+	return left != nil && right != nil && left.GetKind() == right.GetKind() && left.GetGeneration() == right.GetGeneration() && applicationSessionStampsEqual(left.GetSession(), right.GetSession()) && bytes.Equal(left.GetOpaqueToken(), right.GetOpaqueToken())
+}
+
+// FileList 读取 owning daemon 的目录窗口。
+func (session *ApplicationSession) FileList(ctx context.Context, command *apipb.FileListCommand) (*apipb.FileListResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileList{FileList: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetFileList() == nil {
+		return nil, missingApplicationResult("file_list")
+	}
+	return result.GetFileList(), nil
+}
+
+// FileStat 读取 owning daemon path metadata。
+func (session *ApplicationSession) FileStat(ctx context.Context, command *apipb.FileStatCommand) (*apipb.FileStatResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileStat{FileStat: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetFileStat() == nil {
+		return nil, missingApplicationResult("file_stat")
+	}
+	return result.GetFileStat(), nil
+}
+
+// FilePreview 读取有界文件前缀。
+func (session *ApplicationSession) FilePreview(ctx context.Context, command *apipb.FilePreviewCommand) (*apipb.FilePreviewResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FilePreview{FilePreview: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetFilePreview() == nil {
+		return nil, missingApplicationResult("file_preview")
+	}
+	return result.GetFilePreview(), nil
+}
+
+// FileMkdir 创建 daemon-owned directory。
+func (session *ApplicationSession) FileMkdir(ctx context.Context, command *apipb.FileMkdirCommand) (*apipb.FileOperationResult, error) {
+	return session.fileOperation(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileMkdir{FileMkdir: command}})
+}
+
+// FileRename 原子重命名 daemon-owned path。
+func (session *ApplicationSession) FileRename(ctx context.Context, command *apipb.FileRenameCommand) (*apipb.FileOperationResult, error) {
+	return session.fileOperation(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileRename{FileRename: command}})
+}
+
+// FileDelete 删除 daemon-owned path。
+func (session *ApplicationSession) FileDelete(ctx context.Context, command *apipb.FileDeleteCommand) (*apipb.FileOperationResult, error) {
+	return session.fileOperation(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileDelete{FileDelete: command}})
+}
+
+// FileCopy 批量复制 daemon-owned paths。
+func (session *ApplicationSession) FileCopy(ctx context.Context, command *apipb.FileCopyCommand) (*apipb.FileBatchResult, error) {
+	return session.fileBatch(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileCopy{FileCopy: command}})
+}
+
+// FileMove 批量移动 daemon-owned paths。
+func (session *ApplicationSession) FileMove(ctx context.Context, command *apipb.FileMoveCommand) (*apipb.FileBatchResult, error) {
+	return session.fileBatch(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileMove{FileMove: command}})
+}
+
+// FileDownloadOpen 创建 session-bound download resource。
+func (session *ApplicationSession) FileDownloadOpen(ctx context.Context, command *apipb.FileDownloadOpenCommand) (*apipb.FileTransferOpenResult, error) {
+	return session.fileTransferOpen(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileDownloadOpen{FileDownloadOpen: command}})
+}
+
+// FileUploadOpen 创建或恢复 session-bound upload resource。
+func (session *ApplicationSession) FileUploadOpen(ctx context.Context, command *apipb.FileUploadOpenCommand) (*apipb.FileTransferOpenResult, error) {
+	return session.fileTransferOpen(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileUploadOpen{FileUploadOpen: command}})
+}
+
+// FileTransferCancel 取消 current-session file transfer。
+func (session *ApplicationSession) FileTransferCancel(ctx context.Context, command *apipb.FileTransferCancelCommand) (*apipb.FileTransferCancelResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileTransferCancel{FileTransferCancel: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetFileTransferCancel() == nil {
+		return nil, missingApplicationResult("file_transfer_cancel")
+	}
+	return result.GetFileTransferCancel(), nil
+}
+
+// StorageGet 读取 opaque storage entry。
+func (session *ApplicationSession) StorageGet(ctx context.Context, command *apipb.StorageGetCommand) (*apipb.StorageGetResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_StorageGet{StorageGet: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetStorageGet() == nil {
+		return nil, missingApplicationResult("storage_get")
+	}
+	return result.GetStorageGet(), nil
+}
+
+// StoragePut 执行 opaque value CAS put。
+func (session *ApplicationSession) StoragePut(ctx context.Context, command *apipb.StoragePutCommand) (*apipb.StoragePutResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_StoragePut{StoragePut: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetStoragePut() == nil {
+		return nil, missingApplicationResult("storage_put")
+	}
+	return result.GetStoragePut(), nil
+}
+
+// StorageDelete 执行 opaque value CAS delete。
+func (session *ApplicationSession) StorageDelete(ctx context.Context, command *apipb.StorageDeleteCommand) (*apipb.StorageDeleteResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_StorageDelete{StorageDelete: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetStorageDelete() == nil {
+		return nil, missingApplicationResult("storage_delete")
+	}
+	return result.GetStorageDelete(), nil
+}
+
+// StorageList 列出 opaque storage entries。
+func (session *ApplicationSession) StorageList(ctx context.Context, command *apipb.StorageListCommand) (*apipb.StorageListResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_StorageList{StorageList: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetStorageList() == nil {
+		return nil, missingApplicationResult("storage_list")
+	}
+	return result.GetStorageList(), nil
+}
+
+// ClientAccessIdentity 读取 daemon DeviceIdentity 的公开投影。
+func (session *ApplicationSession) ClientAccessIdentity(ctx context.Context, command *apipb.ClientAccessIdentityCommand) (*apipb.ClientAccessIdentityResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_ClientAccessIdentity{ClientAccessIdentity: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetClientAccessIdentity() == nil {
+		return nil, missingApplicationResult("client_access_identity")
+	}
+	return result.GetClientAccessIdentity(), nil
+}
+
+// ClientAccessList 读取 daemon 持久化 grant 的脱敏投影。
+func (session *ApplicationSession) ClientAccessList(ctx context.Context, command *apipb.ClientAccessListCommand) (*apipb.ClientAccessListResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_ClientAccessList{ClientAccessList: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetClientAccessList() == nil {
+		return nil, missingApplicationResult("client_access_list")
+	}
+	return result.GetClientAccessList(), nil
+}
+
+// ClientAccessTicketCreate 原子签发并登记一次性 pairing ticket。
+func (session *ApplicationSession) ClientAccessTicketCreate(ctx context.Context, command *apipb.ClientAccessTicketCreateCommand) (*apipb.ClientAccessTicketCreateResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_ClientAccessTicketCreate{ClientAccessTicketCreate: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetClientAccessTicketCreate() == nil {
+		return nil, missingApplicationResult("client_access_ticket_create")
+	}
+	return result.GetClientAccessTicketCreate(), nil
+}
+
+// ClientAccessRevoke 持久化撤销指定 grant。
+func (session *ApplicationSession) ClientAccessRevoke(ctx context.Context, command *apipb.ClientAccessRevokeCommand) (*apipb.ClientAccessRevokeResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_ClientAccessRevoke{ClientAccessRevoke: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetClientAccessRevoke() == nil {
+		return nil, missingApplicationResult("client_access_revoke")
+	}
+	return result.GetClientAccessRevoke(), nil
+}
+
+// RemoteStatus 读取 daemon remote runtime 状态。
+func (session *ApplicationSession) RemoteStatus(ctx context.Context, command *apipb.RemoteStatusCommand) (*apipb.RemoteStatusResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_RemoteStatus{RemoteStatus: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetRemoteStatus() == nil {
+		return nil, missingApplicationResult("remote_status")
+	}
+	return result.GetRemoteStatus(), nil
+}
+
+// RemotePairStart 启动 daemon local pairing session。
+func (session *ApplicationSession) RemotePairStart(ctx context.Context, command *apipb.RemotePairStartCommand) (*apipb.RemotePairStartResult, error) {
+	result, err := session.Execute(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_RemotePairStart{RemotePairStart: command}})
+	if err != nil {
+		return nil, err
+	}
+	if result.GetRemotePairStart() == nil {
+		return nil, missingApplicationResult("remote_pair_start")
+	}
+	return result.GetRemotePairStart(), nil
+}
+
+// RemoteLocalEnable 启用 daemon local remote runtime。
+func (session *ApplicationSession) RemoteLocalEnable(ctx context.Context, command *apipb.RemoteLocalEnableCommand) (*apipb.RemoteLocalStatusResult, error) {
+	return session.remoteLocalStatus(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_RemoteLocalEnable{RemoteLocalEnable: command}})
+}
+
+// RemoteLocalStatus 读取 daemon local remote runtime 状态。
+func (session *ApplicationSession) RemoteLocalStatus(ctx context.Context, command *apipb.RemoteLocalStatusCommand) (*apipb.RemoteLocalStatusResult, error) {
+	return session.remoteLocalStatus(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_RemoteLocalStatus{RemoteLocalStatus: command}})
+}
+
+// RemoteLocalDisable 关闭 daemon local remote runtime。
+func (session *ApplicationSession) RemoteLocalDisable(ctx context.Context, command *apipb.RemoteLocalDisableCommand) (*apipb.RemoteLocalStatusResult, error) {
+	return session.remoteLocalStatus(ctx, &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_RemoteLocalDisable{RemoteLocalDisable: command}})
+}
+
+func (session *ApplicationSession) remoteLocalStatus(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.RemoteLocalStatusResult, error) {
+	result, err := session.Execute(ctx, command)
+	if err != nil {
+		return nil, err
+	}
+	if result.GetRemoteLocalStatus() == nil {
+		return nil, missingApplicationResult("remote_local_status")
+	}
+	return result.GetRemoteLocalStatus(), nil
+}
+
+func (session *ApplicationSession) fileOperation(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.FileOperationResult, error) {
+	result, err := session.Execute(ctx, command)
+	if err != nil {
+		return nil, err
+	}
+	if result.GetFileOperation() == nil {
+		return nil, missingApplicationResult("file_operation")
+	}
+	return result.GetFileOperation(), nil
+}
+func (session *ApplicationSession) fileBatch(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.FileBatchResult, error) {
+	result, err := session.Execute(ctx, command)
+	if err != nil {
+		return nil, err
+	}
+	if result.GetFileBatch() == nil {
+		return nil, missingApplicationResult("file_batch")
+	}
+	return result.GetFileBatch(), nil
+}
+func (session *ApplicationSession) fileTransferOpen(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.FileTransferOpenResult, error) {
+	result, err := session.Execute(ctx, command)
+	if err != nil {
+		return nil, err
+	}
+	if result.GetFileTransferOpen() == nil {
+		return nil, missingApplicationResult("file_transfer_open")
+	}
+	return result.GetFileTransferOpen(), nil
+}
+
 func (session *ApplicationSession) executeAcknowledge(ctx context.Context, command *apipb.CommandEnvelope) error {
 	result, err := session.Execute(ctx, command)
 	if err != nil {
@@ -251,6 +633,12 @@ func bindOperationStamp(command *apipb.CommandEnvelope, stamp *apipb.EndpointSes
 		value.TerminalResize.Operation = operation
 	case *apipb.CommandEnvelope_TerminalResizeLock:
 		value.TerminalResizeLock.Operation = operation
+	case *apipb.CommandEnvelope_FileDownloadOpen:
+		value.FileDownloadOpen.Operation = operation
+	case *apipb.CommandEnvelope_FileUploadOpen:
+		value.FileUploadOpen.Operation = operation
+	case *apipb.CommandEnvelope_FileTransferCancel:
+		value.FileTransferCancel.Operation = operation
 	}
 }
 

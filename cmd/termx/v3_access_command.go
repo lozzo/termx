@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
-	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
+	"github.com/lozzow/termx/proto/remoteauthpb"
 	"github.com/spf13/cobra"
 )
 
@@ -28,15 +30,20 @@ func v3AccessIdentityCommand(socket *string, logFile *string) *cobra.Command {
 				return err
 			}
 			defer client.Close()
-			var result protocol.ClientAccessIdentityResult
-			if err := client.Call(cmd.Context(), "remote.access.identity", map[string]any{}, &result); err != nil {
+			application, err := newLocalApplicationSession(client)
+			if err != nil {
 				return err
 			}
+			response, err := application.ClientAccessIdentity(cmd.Context(), &apipb.ClientAccessIdentityCommand{})
+			if err != nil {
+				return err
+			}
+			result := response.GetIdentity()
 			view := struct {
 				DeviceID          string `json:"device_id"`
 				DeviceFingerprint string `json:"device_fingerprint"`
 				DevicePublicKey   string `json:"device_public_key"`
-			}{result.DeviceID, result.DeviceFingerprint, base64.RawURLEncoding.EncodeToString(result.DevicePublicKey)}
+			}{result.GetDeviceId(), result.GetDeviceFingerprint(), base64.RawURLEncoding.EncodeToString(result.GetDevicePublicKey())}
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
 			}
@@ -58,24 +65,29 @@ func v3AccessListCommand(socket *string, logFile *string) *cobra.Command {
 				return err
 			}
 			defer client.Close()
-			var result protocol.ClientAccessListResult
-			if err := client.Call(cmd.Context(), "remote.access.list", map[string]any{}, &result); err != nil {
+			application, err := newLocalApplicationSession(client)
+			if err != nil {
 				return err
 			}
-			if jsonOutput {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(result.Records)
+			response, err := application.ClientAccessList(cmd.Context(), &apipb.ClientAccessListCommand{})
+			if err != nil {
+				return err
 			}
-			if len(result.Records) == 0 {
+			result := response.GetAccess()
+			if jsonOutput {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(result.GetRecords())
+			}
+			if len(result.GetRecords()) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "No client access grants")
 				return nil
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "GRANT\tCLIENT\tSUBJECT\tEXPIRES\tSTATE")
-			for _, record := range result.Records {
+			for _, record := range result.GetRecords() {
 				state := "active"
-				if !record.RevokedAt.IsZero() {
+				if record.GetRevokedAtUnixNano() != 0 {
 					state = "revoked"
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n", record.GrantID, record.ClientLabel, record.SubjectKeyFingerprint, formatTerminalTime(record.ExpiresAt), state)
+				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n", record.GetGrantId(), record.GetClientLabel(), record.GetSubjectKeyFingerprint(), formatTerminalTime(time.Unix(0, record.GetExpiresAtUnixNano()).UTC()), state)
 			}
 			return nil
 		},
@@ -98,14 +110,19 @@ func v3AccessRevokeCommand(socket *string, logFile *string) *cobra.Command {
 				return err
 			}
 			defer client.Close()
-			var result protocol.ClientAccessRecord
-			if err := client.Call(cmd.Context(), "remote.access.revoke", protocol.ClientAccessRevokeParams{GrantID: grantID}, &result); err != nil {
+			application, err := newLocalApplicationSession(client)
+			if err != nil {
 				return err
 			}
+			response, err := application.ClientAccessRevoke(cmd.Context(), &apipb.ClientAccessRevokeCommand{Request: &remoteauthpb.ClientAccessRevokeRequest{GrantId: grantID}})
+			if err != nil {
+				return err
+			}
+			result := response.GetRecord()
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Revoked client access grant %s for %s\n", result.GrantID, result.SubjectKeyFingerprint)
+			fmt.Fprintf(cmd.OutOrStdout(), "Revoked client access grant %s for %s\n", result.GetGrantId(), result.GetSubjectKeyFingerprint())
 			return nil
 		},
 	}

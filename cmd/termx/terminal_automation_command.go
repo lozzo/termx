@@ -13,7 +13,6 @@ import (
 	"unicode/utf8"
 
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/spf13/cobra"
 )
@@ -237,13 +236,13 @@ func newTerminalCaptureCommand(runtime terminalCommandRuntime) *cobra.Command {
 			var text string
 			if live {
 				source = "live"
-				snapshot, err := target.Client.LiveScreen(ctx, target.Ref.TerminalID)
+				snapshot, err := target.Client.LiveScreen(ctx, &apipb.LiveScreenGetCommand{Terminal: &apipb.TerminalRef{EndpointId: string(target.Ref.EndpointID), TerminalId: target.Ref.TerminalID}})
 				if err != nil {
 					return classifyCLIError(err)
 				}
 				text = nativeScreenText(snapshot)
 			} else {
-				text, err = captureTerminalHistory(ctx, target.Client, target.Ref.TerminalID, lines, cols)
+				text, err = captureTerminalHistory(ctx, target.Client, target.Ref, lines, cols)
 				if err != nil {
 					return classifyCLIError(err)
 				}
@@ -268,38 +267,40 @@ func newTerminalCaptureCommand(runtime terminalCommandRuntime) *cobra.Command {
 	return command
 }
 
-func captureTerminalHistory(ctx context.Context, client terminalProtocolClient, terminalID string, lines, cols int) (string, error) {
+func captureTerminalHistory(ctx context.Context, client terminalProtocolClient, ref resolvedTerminalRef, lines, cols int) (string, error) {
 	// copy 必须绑定 daemon 签发的 frozen token；CLI 不从 window rows 自行拼第二份 history truth。
-	window, err := client.HistoryWindow(ctx, protocol.HistoryWindowParams{TerminalID: terminalID, Limit: lines, Cols: cols, Mode: "latest"})
+	terminal := &apipb.TerminalRef{EndpointId: string(ref.EndpointID), TerminalId: ref.TerminalID}
+	window, err := client.HistoryWindow(ctx, &apipb.HistoryWindowCommand{Terminal: terminal, Limit: int32(lines), Cols: int32(cols), Mode: apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_LATEST})
 	if err != nil {
 		return "", err
 	}
-	if window.Token == "" {
+	if window.GetToken() == "" {
 		return "", fmt.Errorf("daemon returned history without a copy token")
 	}
 	defer func() {
 		releaseContext, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		_ = client.ReleaseHistory(releaseContext, protocol.HistoryWindowParams{TerminalID: terminalID, Token: window.Token})
+		_ = client.HistoryRelease(releaseContext, &apipb.HistoryReleaseCommand{Terminal: terminal, Token: window.GetToken()})
 	}()
-	if len(window.Rows) == 0 {
+	if len(window.GetRows()) == 0 {
 		return "", nil
 	}
-	return client.HistoryCopy(ctx, protocol.HistoryWindowParams{
-		TerminalID: terminalID, Cols: cols, Token: window.Token, Generation: window.Generation,
-		RangeValid: true, RangeStartLineID: window.FirstLineID, RangeEndLineID: window.LastLineID,
-	})
+	result, err := client.HistoryCopy(ctx, &apipb.HistoryCopyCommand{Terminal: terminal, Window: &apipb.HistoryWindowCommand{Token: window.GetToken(), Cols: int32(cols), HistoryGeneration: window.GetHistoryGeneration(), Range: &apipb.HistoryRange{StartLineId: window.GetFirstLineId(), EndLineId: window.GetLastLineId()}}})
+	if err != nil {
+		return "", err
+	}
+	return result.GetText(), nil
 }
 
-func nativeScreenText(snapshot *protocol.NativeScreenSnapshot) string {
+func nativeScreenText(snapshot *apipb.NativeScreenResult) string {
 	if snapshot == nil {
 		return ""
 	}
 	rows := make([]string, 0, len(snapshot.Rows))
-	for _, row := range snapshot.Rows {
+	for _, row := range snapshot.GetRows() {
 		var text strings.Builder
-		for _, cell := range row.DecodeCells() {
-			text.WriteString(cell.Content)
+		for _, cell := range row.GetCells() {
+			text.WriteString(cell.GetContent())
 		}
 		rows = append(rows, strings.TrimRight(text.String(), " \t"))
 	}
@@ -423,9 +424,7 @@ func newTerminalWaitCommand(runtime terminalCommandRuntime) *cobra.Command {
 
 func waitForTerminalState(ctx context.Context, client terminalProtocolClient, ref resolvedTerminalRef, desired string) (terminalWaitEnvelope, error) {
 	// 先订阅再读取 inventory，避免状态在 snapshot 与 event arm 之间变化造成丢边沿。
-	events, err := client.Events(ctx, protocol.EventsParams{TerminalID: ref.TerminalID, Types: []protocol.EventType{
-		protocol.EventTerminalCreated, protocol.EventTerminalStateChanged, protocol.EventTerminalRemoved,
-	}})
+	_, events, err := client.EventSubscribe(ctx, &apipb.EventSubscribeCommand{Terminal: &apipb.TerminalRef{EndpointId: string(ref.EndpointID), TerminalId: ref.TerminalID}, Types: []apipb.ApplicationEventType{apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE}})
 	if err != nil {
 		return terminalWaitEnvelope{}, err
 	}
@@ -461,23 +460,20 @@ func waitForTerminalState(ctx context.Context, client terminalProtocolClient, re
 	}
 }
 
-func terminalWaitResult(ref resolvedTerminalRef, desired string, event protocol.Event) (terminalWaitEnvelope, bool) {
-	result := terminalWaitEnvelope{SchemaVersion: 1, Kind: "terminal_wait", Target: ref.String(), State: desired, Timestamp: formatTerminalTime(event.Timestamp)}
-	switch desired {
-	case "created":
-		return result, event.Type == protocol.EventTerminalCreated
-	case "removed":
-		return result, event.Type == protocol.EventTerminalRemoved
-	case "running", "exited":
-		if event.Type == protocol.EventTerminalStateChanged && event.StateChanged != nil && event.StateChanged.NewState == desired {
-			result.ExitCode = event.StateChanged.ExitCode
-			if !event.StateChanged.ExitedAt.IsZero() {
-				result.Timestamp = formatTerminalTime(event.StateChanged.ExitedAt)
-			}
-			return result, true
-		}
+func terminalWaitResult(ref resolvedTerminalRef, desired string, event *apipb.EventEnvelope) (terminalWaitEnvelope, bool) {
+	terminal := event.GetTerminalLifecycle().GetTerminal()
+	if terminal == nil || terminal.GetRef().GetTerminalId() != ref.TerminalID {
+		return terminalWaitEnvelope{}, false
 	}
-	return terminalWaitEnvelope{}, false
+	state := terminalStateString(terminal.GetState())
+	if desired == "created" {
+		if state != "created" && state != "running" {
+			return terminalWaitEnvelope{}, false
+		}
+	} else if state != desired {
+		return terminalWaitEnvelope{}, false
+	}
+	return terminalWaitEnvelope{SchemaVersion: 1, Kind: "terminal_wait", Target: ref.String(), State: desired, ExitCode: int32PointerToCLIInt(terminal.ExitCode), Timestamp: formatTerminalUnixNano(event.GetTimestampUnixNano())}, true
 }
 
 func newTerminalEventsCommand(runtime terminalCommandRuntime) *cobra.Command {
@@ -534,7 +530,11 @@ func newTerminalEventsCommand(runtime terminalCommandRuntime) *cobra.Command {
 				return err
 			}
 			defer closeClient()
-			events, err := client.Events(ctx, protocol.EventsParams{TerminalID: ref.TerminalID, Types: eventTypes})
+			command := &apipb.EventSubscribeCommand{Types: eventTypes}
+			if ref.TerminalID != "" {
+				command.Terminal = &apipb.TerminalRef{EndpointId: string(ref.EndpointID), TerminalId: ref.TerminalID}
+			}
+			_, events, err := client.EventSubscribe(ctx, command)
 			if err != nil {
 				return classifyCLIError(err)
 			}
@@ -569,19 +569,15 @@ func newTerminalEventsCommand(runtime terminalCommandRuntime) *cobra.Command {
 	return command
 }
 
-func parseTerminalEventTypes(values []string) ([]protocol.EventType, error) {
+func parseTerminalEventTypes(values []string) ([]apipb.ApplicationEventType, error) {
 	if len(values) == 0 {
-		return []protocol.EventType{
-			protocol.EventTerminalCreated, protocol.EventTerminalStateChanged, protocol.EventTerminalResized,
-			protocol.EventTerminalRemoved, protocol.EventTerminalReadError, protocol.EventTerminalMetadataChanged,
-		}, nil
+		return []apipb.ApplicationEventType{apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE}, nil
 	}
-	names := map[string]protocol.EventType{
-		"created": protocol.EventTerminalCreated, "state": protocol.EventTerminalStateChanged,
-		"resized": protocol.EventTerminalResized, "removed": protocol.EventTerminalRemoved,
-		"read_error": protocol.EventTerminalReadError, "metadata": protocol.EventTerminalMetadataChanged,
+	names := map[string]apipb.ApplicationEventType{
+		"created": apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE, "state": apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE,
+		"removed": apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE, "metadata": apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE,
 	}
-	out := make([]protocol.EventType, 0, len(values))
+	out := make([]apipb.ApplicationEventType, 0, len(values))
 	for _, value := range values {
 		typ, ok := names[strings.ToLower(strings.TrimSpace(value))]
 		if !ok {
@@ -592,45 +588,29 @@ func parseTerminalEventTypes(values []string) ([]protocol.EventType, error) {
 	return out, nil
 }
 
-func terminalEventView(endpointID endpointdomain.EndpointID, event protocol.Event) terminalEventEnvelope {
+func terminalEventView(endpointID endpointdomain.EndpointID, event *apipb.EventEnvelope) terminalEventEnvelope {
 	view := terminalEventEnvelope{
 		SchemaVersion: 1, Kind: "terminal_event", EndpointID: string(endpointID),
-		Type: terminalEventTypeName(event.Type), Timestamp: formatTerminalTime(event.Timestamp),
+		Type: terminalEventTypeName(event), Timestamp: formatTerminalUnixNano(event.GetTimestampUnixNano()),
 	}
-	if event.TerminalID != "" {
-		view.Target = string(endpointID) + ":" + event.TerminalID
-	}
-	switch {
-	case event.Created != nil:
-		view.Data = map[string]any{"name": event.Created.Name, "command": event.Created.Command, "cols": event.Created.Size.Cols, "rows": event.Created.Size.Rows}
-	case event.StateChanged != nil:
-		view.Data = map[string]any{"old_state": event.StateChanged.OldState, "new_state": event.StateChanged.NewState, "exit_code": event.StateChanged.ExitCode, "exited_at": formatTerminalTime(event.StateChanged.ExitedAt)}
-	case event.Resized != nil:
-		view.Data = map[string]any{"old_cols": event.Resized.OldSize.Cols, "old_rows": event.Resized.OldSize.Rows, "new_cols": event.Resized.NewSize.Cols, "new_rows": event.Resized.NewSize.Rows}
-	case event.Removed != nil:
-		view.Data = map[string]any{"reason": event.Removed.Reason}
-	case event.ReadError != nil:
-		view.Data = map[string]any{"error": event.ReadError.Error}
+	if terminal := event.GetTerminalLifecycle().GetTerminal(); terminal != nil {
+		view.Target = string(endpointID) + ":" + terminal.GetRef().GetTerminalId()
+		view.Data = map[string]any{"state": terminalStateString(terminal.GetState()), "name": terminal.GetName(), "command": terminal.GetCommand(), "cols": terminal.GetSize().GetCols(), "rows": terminal.GetSize().GetRows(), "exit_code": terminal.ExitCode}
+	} else if live := event.GetLiveInvalidated(); live != nil {
+		view.Target = string(endpointID) + ":" + live.GetTerminal().GetTerminalId()
+		view.Data = map[string]any{"live_revision": live.GetLiveRevision()}
 	}
 	return view
 }
 
-func terminalEventTypeName(typ protocol.EventType) string {
-	switch typ {
-	case protocol.EventTerminalCreated:
-		return "created"
-	case protocol.EventTerminalStateChanged:
-		return "state_changed"
-	case protocol.EventTerminalResized:
-		return "resized"
-	case protocol.EventTerminalRemoved:
-		return "removed"
-	case protocol.EventTerminalReadError:
-		return "read_error"
-	case protocol.EventTerminalMetadataChanged:
-		return "metadata_changed"
+func terminalEventTypeName(event *apipb.EventEnvelope) string {
+	switch event.GetEvent().(type) {
+	case *apipb.EventEnvelope_TerminalLifecycle:
+		return "lifecycle"
+	case *apipb.EventEnvelope_LiveInvalidated:
+		return "live_invalidated"
 	default:
-		return fmt.Sprintf("event_%d", typ)
+		return "unknown"
 	}
 }
 

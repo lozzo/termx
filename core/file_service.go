@@ -12,44 +12,42 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/lozzow/termx/internal/protocol"
 )
 
 const fileListLimitMax = 500
 const filePreviewMaxBytes = 4 << 20
 
-func fileList(params protocol.FileListParams) (protocol.FileListResult, error) {
+func fileList(params FileListRequest) (FileListResult, error) {
 	path, err := absoluteFilePath(params.Path)
 	if err != nil {
-		return protocol.FileListResult{}, err
+		return FileListResult{}, err
 	}
 	directory, err := os.Stat(path)
 	if err != nil {
-		return protocol.FileListResult{}, err
+		return FileListResult{}, err
 	}
 	entries, err := os.ReadDir(path)
 	if err != nil {
-		return protocol.FileListResult{}, err
+		return FileListResult{}, err
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	offset, err := decodeFileCursor(params.Cursor, directory.ModTime().UnixNano())
 	if err != nil {
-		return protocol.FileListResult{}, err
+		return FileListResult{}, err
 	}
 	if offset > len(entries) {
-		return protocol.FileListResult{}, fmt.Errorf("invalid file list cursor")
+		return FileListResult{}, fmt.Errorf("invalid file list cursor")
 	}
 	limit := params.Limit
 	if limit <= 0 || limit > fileListLimitMax {
 		limit = fileListLimitMax
 	}
 	end := min(offset+limit, len(entries))
-	result := protocol.FileListResult{Path: path, Entries: make([]protocol.FileEntry, 0, end-offset)}
+	result := FileListResult{Path: path, Entries: make([]FileEntry, 0, end-offset)}
 	for _, item := range entries[offset:end] {
 		entry, entryErr := fileEntry(filepath.Join(path, item.Name()))
 		if entryErr != nil {
-			return protocol.FileListResult{}, entryErr
+			return FileListResult{}, entryErr
 		}
 		result.Entries = append(result.Entries, entry)
 	}
@@ -60,25 +58,25 @@ func fileList(params protocol.FileListParams) (protocol.FileListResult, error) {
 	return result, nil
 }
 
-func fileStat(params protocol.FilePathParams) (protocol.FileEntry, error) {
+func fileStat(params FilePathRequest) (FileEntry, error) {
 	path, err := absoluteFilePath(params.Path)
 	if err != nil {
-		return protocol.FileEntry{}, err
+		return FileEntry{}, err
 	}
 	return fileEntry(path)
 }
 
-func filePreview(params protocol.FilePreviewParams) (protocol.FilePreviewResult, error) {
+func filePreview(params FilePreviewRequest) (FilePreviewResult, error) {
 	path, err := absoluteFilePath(params.Path)
 	if err != nil {
-		return protocol.FilePreviewResult{}, err
+		return FilePreviewResult{}, err
 	}
 	entry, err := fileEntry(path)
 	if err != nil {
-		return protocol.FilePreviewResult{}, err
+		return FilePreviewResult{}, err
 	}
 	if entry.Type != "file" {
-		return protocol.FilePreviewResult{}, fmt.Errorf("preview requires a regular file")
+		return FilePreviewResult{}, fmt.Errorf("preview requires a regular file")
 	}
 	limit := params.MaxBytes
 	if limit <= 0 || limit > filePreviewMaxBytes {
@@ -86,12 +84,12 @@ func filePreview(params protocol.FilePreviewParams) (protocol.FilePreviewResult,
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return protocol.FilePreviewResult{}, err
+		return FilePreviewResult{}, err
 	}
 	defer file.Close()
 	content, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
-		return protocol.FilePreviewResult{}, err
+		return FilePreviewResult{}, err
 	}
 	truncated := int64(len(content)) > limit
 	if truncated {
@@ -101,10 +99,10 @@ func filePreview(params protocol.FilePreviewParams) (protocol.FilePreviewResult,
 	if mimeType == "" {
 		mimeType = http.DetectContentType(content)
 	}
-	return protocol.FilePreviewResult{Entry: entry, MIMEType: mimeType, Content: content, Truncated: truncated}, nil
+	return FilePreviewResult{Entry: entry, MIMEType: mimeType, Content: content, Truncated: truncated}, nil
 }
 
-func fileMkdir(params protocol.FilePathParams) protocol.FileOperationResult {
+func fileMkdir(params FilePathRequest) FileOperationResult {
 	path, err := absoluteFilePath(params.Path)
 	if err == nil {
 		if params.Recursive {
@@ -116,7 +114,7 @@ func fileMkdir(params protocol.FilePathParams) protocol.FileOperationResult {
 	return fileOperation(path, path, err)
 }
 
-func fileRename(params protocol.FileRenameParams) protocol.FileOperationResult {
+func fileRename(params FileRenameRequest) FileOperationResult {
 	source, err := absoluteFilePath(params.Path)
 	if err != nil {
 		return fileOperation(params.Path, params.NewPath, err)
@@ -136,7 +134,7 @@ func fileRename(params protocol.FileRenameParams) protocol.FileOperationResult {
 	return fileOperation(source, target, err)
 }
 
-func fileDelete(params protocol.FilePathParams) protocol.FileOperationResult {
+func fileDelete(params FilePathRequest) FileOperationResult {
 	path, err := absoluteFilePath(params.Path)
 	if err == nil {
 		if params.Recursive {
@@ -148,8 +146,8 @@ func fileDelete(params protocol.FilePathParams) protocol.FileOperationResult {
 	return fileOperation(path, path, err)
 }
 
-func fileCopyMove(params protocol.FileCopyMoveParams, move bool) protocol.FileBatchResult {
-	result := protocol.FileBatchResult{Results: make([]protocol.FileOperationResult, 0, len(params.Paths))}
+func fileCopyMove(params FileCopyMoveRequest, move bool) FileBatchResult {
+	result := FileBatchResult{Results: make([]FileOperationResult, 0, len(params.Paths))}
 	targetDir, targetErr := absoluteFilePath(params.TargetDir)
 	for _, raw := range params.Paths {
 		source, err := absoluteFilePath(raw)
@@ -209,10 +207,10 @@ func decodeFileCursor(cursor string, directoryVersion int64) (int, error) {
 	return strconv.Atoi(parts[1])
 }
 
-func fileEntry(path string) (protocol.FileEntry, error) {
+func fileEntry(path string) (FileEntry, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
-		return protocol.FileEntry{}, err
+		return FileEntry{}, err
 	}
 	typeName := "other"
 	switch {
@@ -227,14 +225,14 @@ func fileEntry(path string) (protocol.FileEntry, error) {
 	if typeName == "symlink" {
 		linkTarget, err = os.Readlink(path)
 		if err != nil {
-			return protocol.FileEntry{}, err
+			return FileEntry{}, err
 		}
 	}
-	return protocol.FileEntry{Path: path, Name: info.Name(), Type: typeName, Size: info.Size(), Mode: uint32(info.Mode()), ModifiedAt: info.ModTime().UTC(), LinkTarget: linkTarget}, nil
+	return FileEntry{Path: path, Name: info.Name(), Type: typeName, Size: info.Size(), Mode: uint32(info.Mode()), ModifiedAt: info.ModTime().UTC(), LinkTarget: linkTarget}, nil
 }
 
-func fileOperation(path, target string, err error) protocol.FileOperationResult {
-	result := protocol.FileOperationResult{Path: path, TargetPath: target, Success: err == nil}
+func fileOperation(path, target string, err error) FileOperationResult {
+	result := FileOperationResult{Path: path, TargetPath: target, Success: err == nil}
 	if err != nil {
 		result.ErrorCode = fileErrorCode(err)
 		result.ErrorMessage = err.Error()

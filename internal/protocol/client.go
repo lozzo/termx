@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -24,19 +23,17 @@ type Client struct {
 	doneErrMu sync.Mutex
 	doneErr   error
 
-	mu                     sync.Mutex
-	sendMu                 sync.Mutex
-	waiters                map[uint64]chan result
-	streams                map[uint16]*clientStream
-	pending                map[uint16][]StreamFrame
-	reused                 map[uint16][]StreamFrame
-	dropped                map[uint16]struct{}
-	eventSubscribers       map[uint64]eventSubscription
-	applicationAttachments map[uint16]*apipb.ResourceHandle
-	nextEventSubID         uint64
-	eventsStarted          bool
-	eventStartDone         chan struct{}
-	eventStartErr          error
+	mu                          sync.Mutex
+	sendMu                      sync.Mutex
+	waiters                     map[uint64]chan result
+	streams                     map[uint16]*clientStream
+	pending                     map[uint16][]StreamFrame
+	reused                      map[uint16][]StreamFrame
+	dropped                     map[uint16]struct{}
+	applicationEventSubscribers map[uint64]chan *apipb.EventEnvelope
+	pendingApplicationEvents    []*apipb.EventEnvelope
+	applicationAttachments      map[uint16]*apipb.ResourceHandle
+	nextEventSubID              uint64
 
 	helloCh chan result
 	done    chan struct{}
@@ -50,19 +47,6 @@ type result struct {
 type StreamFrame struct {
 	Type    uint8
 	Payload []byte
-}
-
-type HistoryReplayPage struct {
-	BeforeOffset int
-	Limit        int
-	Rows         int
-	HasMore      bool
-	Replay       string
-}
-
-type eventSubscription struct {
-	params EventsParams
-	ch     chan Event
 }
 
 type clientStream struct {
@@ -174,19 +158,64 @@ func (s *clientStream) enqueueFrameLocked(frame StreamFrame) {
 
 func NewClient(t transport.Transport) *Client {
 	c := &Client{
-		transport:              t,
-		waiters:                make(map[uint64]chan result),
-		streams:                make(map[uint16]*clientStream),
-		pending:                make(map[uint16][]StreamFrame),
-		reused:                 make(map[uint16][]StreamFrame),
-		dropped:                make(map[uint16]struct{}),
-		eventSubscribers:       make(map[uint64]eventSubscription),
-		applicationAttachments: make(map[uint16]*apipb.ResourceHandle),
-		helloCh:                make(chan result, 1),
-		done:                   make(chan struct{}),
+		transport:                   t,
+		waiters:                     make(map[uint64]chan result),
+		streams:                     make(map[uint16]*clientStream),
+		pending:                     make(map[uint16][]StreamFrame),
+		reused:                      make(map[uint16][]StreamFrame),
+		dropped:                     make(map[uint16]struct{}),
+		applicationEventSubscribers: make(map[uint64]chan *apipb.EventEnvelope),
+		applicationAttachments:      make(map[uint16]*apipb.ResourceHandle),
+		helloCh:                     make(chan result, 1),
+		done:                        make(chan struct{}),
 	}
 	go c.readLoop()
 	return c
+}
+
+// ApplicationEvents 注册 generated Proto application event 消费者。
+// 事件 frame 只包含 EventEnvelope；filter 与 subscription lifecycle 由 daemon resource 管理。
+func (c *Client) ApplicationEvents(ctx context.Context) (<-chan *apipb.EventEnvelope, error) {
+	if c == nil || c.doneClosed() {
+		return nil, io.EOF
+	}
+	raw := make(chan *apipb.EventEnvelope, 64)
+	out := make(chan *apipb.EventEnvelope, 64)
+	c.mu.Lock()
+	c.nextEventSubID++
+	id := c.nextEventSubID
+	c.applicationEventSubscribers[id] = raw
+	pending := c.pendingApplicationEvents
+	c.pendingApplicationEvents = nil
+	c.mu.Unlock()
+	for _, event := range pending {
+		raw <- event
+	}
+	go func() {
+		defer close(out)
+		defer func() {
+			c.mu.Lock()
+			delete(c.applicationEventSubscribers, id)
+			c.mu.Unlock()
+		}()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-c.done:
+				return
+			case event := <-raw:
+				select {
+				case out <- event:
+				case <-ctx.Done():
+					return
+				case <-c.done:
+					return
+				}
+			}
+		}
+	}()
+	return out, nil
 }
 
 func (c *Client) Close() error {
@@ -242,24 +271,33 @@ func (c *Client) Hello(ctx context.Context, hello Hello) error {
 	}
 }
 
-func (c *Client) Call(ctx context.Context, method string, params any, out any) error {
-	return c.doRequest(ctx, method, params, out)
-}
-
 // ExecuteApplication 通过唯一 api.execute framing 发送公共 Proto API command。
 // protocol client 只负责 correlation 与 payload transport，不解释 terminal application 字段。
 func (c *Client) ExecuteApplication(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
-	var out apipb.ResultEnvelope
-	if err := c.doRequest(ctx, "api.execute", command, &out); err != nil {
+	payload, err := c.doApplicationRequest(ctx, command)
+	if err != nil {
 		return nil, err
 	}
-	c.updateApplicationAttachmentBinding(command, &out)
-	return &out, nil
+	result, err := DecodeApplicationResult(payload)
+	if err != nil {
+		return nil, err
+	}
+	c.updateApplicationAttachmentBinding(command, result)
+	return result, nil
 }
 
 // ApplicationAttachmentChannel 返回当前 protocol connection 为 attachment resource 分配的 stream channel。
 // opaque token 的内部格式和 channel registry 只属于 framing binding，不得暴露为公共 API schema。
 func (c *Client) ApplicationAttachmentChannel(resource *apipb.ResourceHandle) (uint16, bool) {
+	if resource.GetKind() != apipb.ResourceKind_RESOURCE_KIND_TERMINAL_ATTACHMENT {
+		return 0, false
+	}
+	return c.ApplicationResourceChannel(resource)
+}
+
+// ApplicationResourceChannel 返回当前 connection 为 stream resource 绑定的内部 channel。
+// channel 只供 framing adapter 使用，不进入公共 Proto result。
+func (c *Client) ApplicationResourceChannel(resource *apipb.ResourceHandle) (uint16, bool) {
 	if resource == nil || len(resource.GetOpaqueToken()) < 2 {
 		return 0, false
 	}
@@ -288,10 +326,14 @@ func (c *Client) updateApplicationAttachmentBinding(command *apipb.CommandEnvelo
 	if command == nil || result == nil || result.GetError() != nil {
 		return
 	}
-	if attached := result.GetTerminalAttach().GetAttachment().GetResource(); attached != nil && len(attached.GetOpaqueToken()) >= 2 {
-		channel := binary.BigEndian.Uint16(attached.GetOpaqueToken()[:2])
+	boundResource := result.GetTerminalAttach().GetAttachment().GetResource()
+	if transfer := result.GetFileTransferOpen().GetTransfer(); transfer != nil {
+		boundResource = transfer.GetResource()
+	}
+	if boundResource != nil && len(boundResource.GetOpaqueToken()) >= 2 {
+		channel := binary.BigEndian.Uint16(boundResource.GetOpaqueToken()[:2])
 		if channel != 0 {
-			c.bindApplicationAttachment(channel, attached)
+			c.bindApplicationAttachment(channel, boundResource)
 		}
 		return
 	}
@@ -301,8 +343,10 @@ func (c *Client) updateApplicationAttachmentBinding(command *apipb.CommandEnvelo
 		released = value.TerminalDetach.GetAttachment()
 	case *apipb.CommandEnvelope_ReleaseResource:
 		released = value.ReleaseResource.GetResource()
+	case *apipb.CommandEnvelope_FileTransferCancel:
+		released = value.FileTransferCancel.GetTransfer()
 	}
-	if channel, ok := c.ApplicationAttachmentChannel(released); ok {
+	if channel, ok := c.ApplicationResourceChannel(released); ok {
 		c.mu.Lock()
 		delete(c.applicationAttachments, channel)
 		c.mu.Unlock()
@@ -331,106 +375,6 @@ func (c *Client) bindApplicationAttachment(channel uint16, resource *apipb.Resou
 	}
 }
 
-// FileList 从当前 endpoint 的 daemon 文件系统读取一个目录窗口。
-// 路径与 cursor 都只由 owning daemon 解释，客户端不读取本机目录补全结果。
-func (c *Client) FileList(ctx context.Context, params FileListParams) (*FileListResult, error) {
-	var out FileListResult
-	if err := c.doRequest(ctx, "file.list", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-// FileStat 对当前 endpoint 的路径执行 lstat 语义查询，不跟随 symlink 获取目标 metadata。
-func (c *Client) FileStat(ctx context.Context, path string) (*FileEntry, error) {
-	var out FileEntry
-	if err := c.doRequest(ctx, "file.stat", FilePathParams{Path: path}, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-// FilePreview 有界读取当前 endpoint 的普通文件前缀；它不创建下载 transfer。
-func (c *Client) FilePreview(ctx context.Context, params FilePreviewParams) (*FilePreviewResult, error) {
-	var out FilePreviewResult
-	if err := c.doRequest(ctx, "file.preview", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-// FileMkdir 在当前 endpoint 创建目录，结果中的业务错误不会被伪装成 transport 错误。
-func (c *Client) FileMkdir(ctx context.Context, params FilePathParams) (*FileOperationResult, error) {
-	var out FileOperationResult
-	if err := c.doRequest(ctx, "file.mkdir", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-// FileRename 在当前 endpoint 内重命名单一路径，覆盖策略由请求显式决定。
-func (c *Client) FileRename(ctx context.Context, params FileRenameParams) (*FileOperationResult, error) {
-	var out FileOperationResult
-	if err := c.doRequest(ctx, "file.rename", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-// FileDelete 删除当前 endpoint 的单一路径；递归行为必须由 params 显式开启。
-func (c *Client) FileDelete(ctx context.Context, params FilePathParams) (*FileOperationResult, error) {
-	var out FileOperationResult
-	if err := c.doRequest(ctx, "file.delete", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-// FileCopy 在当前 endpoint 内复制多项，并按请求顺序返回逐项结果。
-func (c *Client) FileCopy(ctx context.Context, params FileCopyMoveParams) (*FileBatchResult, error) {
-	var out FileBatchResult
-	if err := c.doRequest(ctx, "file.copy", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-// FileMove 在当前 endpoint 内移动多项，并按请求顺序返回逐项结果。
-func (c *Client) FileMove(ctx context.Context, params FileCopyMoveParams) (*FileBatchResult, error) {
-	var out FileBatchResult
-	if err := c.doRequest(ctx, "file.move", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-// FileDownloadOpen 打开当前 endpoint 的下载 transfer，并返回 session-local channel。
-func (c *Client) FileDownloadOpen(ctx context.Context, params FileDownloadOpenParams) (*FileTransferOpenResult, error) {
-	var out FileTransferOpenResult
-	if err := c.doRequest(ctx, "file.download.open", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-// FileUploadOpen 打开当前 endpoint 的上传临时文件或恢复同 session transfer。
-func (c *Client) FileUploadOpen(ctx context.Context, params FileUploadOpenParams) (*FileTransferOpenResult, error) {
-	var out FileTransferOpenResult
-	if err := c.doRequest(ctx, "file.upload.open", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-// FileTransferCancel 幂等取消当前 session 的文件 transfer。
-func (c *Client) FileTransferCancel(ctx context.Context, transferID string) (*FileTransferCancelResult, error) {
-	var out FileTransferCancelResult
-	if err := c.doRequest(ctx, "file.transfer.cancel", FileTransferCancelParams{TransferID: transferID}, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
 // SendFileFrame 在已由 daemon 分配的 transfer channel 上发送流控 frame。
 // typ 只允许 file data/ack/finish，避免调用方借该入口写 terminal channel。
 func (c *Client) SendFileFrame(channel uint16, typ uint8, payload []byte) error {
@@ -444,194 +388,6 @@ func (c *Client) SendFileFrame(channel uint16, typ uint8, payload []byte) error 
 		return err
 	}
 	return c.send(frame)
-}
-
-// LiveScreen 返回 core 当前 latest native screen。
-// 它是 v3 live display 的专用路径，不读取 scrollback，也不使用 HistoryGeneration 承载 revision。
-func (c *Client) LiveScreen(ctx context.Context, terminalID string) (*NativeScreenSnapshot, error) {
-	payload, err := c.doRequestPayload(ctx, "live.screen.get", LiveScreenParams{TerminalID: terminalID})
-	if err != nil {
-		return nil, err
-	}
-	return DecodeNativeScreenSnapshotPayload(payload)
-}
-
-// NextLiveInvalidation 阻塞等待指定 terminal 的下一次 live screen 失效通知。
-// observedRevision 是客户端已观察到的 latest native screen revision，不是渲染进度；
-// core 只用它补 one-shot arm 间隙丢失的 wake，不维护客户端 frame 队列。
-func (c *Client) NextLiveInvalidation(ctx context.Context, terminalID string, observedRevision uint64) (*Event, error) {
-	payload, err := c.doRequestPayload(ctx, "live.invalidation.next", LiveInvalidationNextParams{
-		TerminalID:       terminalID,
-		ObservedRevision: observedRevision,
-	})
-	if err != nil {
-		return nil, err
-	}
-	event, err := DecodeEventPayload(payload)
-	if err != nil {
-		return nil, err
-	}
-	return &event, nil
-}
-
-func (c *Client) HistoryWindow(ctx context.Context, params HistoryWindowParams) (*HistoryWindow, error) {
-	payload, err := c.doRequestPayload(ctx, "history.window", params)
-	if err != nil {
-		return nil, err
-	}
-	return DecodeHistoryWindowPayload(payload)
-}
-
-func (c *Client) HistoryCopy(ctx context.Context, params HistoryWindowParams) (string, error) {
-	payload, err := c.doRequestPayload(ctx, "history.copy", params)
-	if err != nil {
-		return "", err
-	}
-	return string(payload), nil
-}
-
-func (c *Client) ReleaseHistory(ctx context.Context, params HistoryWindowParams) error {
-	return c.doRequest(ctx, "history.release", params, nil)
-}
-
-// HistoryBacklogStatus 返回 core-v2 history consumer 的只读 backlog 诊断。
-// 它不触发 history flush，也不拉取 history.window；调用方只能用它观测
-// pending bytes 和背压统计，不能把它作为 authoritative history payload。
-func (c *Client) HistoryBacklogStatus(ctx context.Context, terminalID string) (*HistoryBacklogStatus, error) {
-	var out HistoryBacklogStatus
-	if err := c.doRequest(ctx, "history.backlog.status", GetParams{TerminalID: terminalID}, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) StorageGet(ctx context.Context, params StorageGetParams) (*StorageEntry, error) {
-	var out StorageEntry
-	if err := c.doRequest(ctx, "storage.get", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) StoragePut(ctx context.Context, params StoragePutParams) (*StorageEntry, error) {
-	var out StorageEntry
-	if err := c.doRequest(ctx, "storage.put", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) StorageDelete(ctx context.Context, params StorageDeleteParams) (*StorageDeleteResult, error) {
-	var out StorageDeleteResult
-	if err := c.doRequest(ctx, "storage.delete", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) StorageList(ctx context.Context, params StorageListParams) (*StorageListResult, error) {
-	var out StorageListResult
-	if err := c.doRequest(ctx, "storage.list", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) WorkbenchGet(ctx context.Context, params WorkbenchGetParams) (*WorkbenchSnapshot, error) {
-	var out WorkbenchSnapshot
-	if err := c.doRequest(ctx, "workbench.get", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) WorkbenchApply(ctx context.Context, params WorkbenchMutateParams) (*WorkbenchMutateResult, error) {
-	var out WorkbenchMutateResult
-	if err := c.doRequest(ctx, "workbench.apply", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-// Events 注册当前 protocol client 内的 endpoint-local 事件订阅。
-// daemon 只接收一条宽事件流，TerminalID/type/storage/workbench 过滤由本 client fan-out；
-// 已确认订阅在 transport 关闭时仍可排空缓冲事件，关闭后的新订阅则稳定返回 io.EOF。
-func (c *Client) Events(ctx context.Context, params EventsParams) (<-chan Event, error) {
-	ch := make(chan Event, 64)
-	c.mu.Lock()
-	c.nextEventSubID++
-	id := c.nextEventSubID
-	c.eventSubscribers[id] = eventSubscription{params: params, ch: ch}
-	c.mu.Unlock()
-
-	if err := c.ensureEventsStarted(ctx); err != nil {
-		c.removeEventSubscriber(id)
-		return nil, err
-	}
-	if c.doneClosed() {
-		c.mu.Lock()
-		_, stillRegistered := c.eventSubscribers[id]
-		c.mu.Unlock()
-		if stillRegistered {
-			// failAll 已经结束；这是连接关闭后才注册、无人再负责关闭的新 subscriber。
-			c.removeEventSubscriber(id)
-			return nil, io.EOF
-		}
-		// failAll 已关闭并移除已确认 subscriber；channel 中已发布的事件仍按顺序可读。
-		return ch, nil
-	}
-	go func() {
-		<-ctx.Done()
-		c.removeEventSubscriber(id)
-	}()
-	return ch, nil
-}
-
-func (c *Client) ensureEventsStarted(ctx context.Context) error {
-	c.mu.Lock()
-	if c.eventsStarted {
-		c.mu.Unlock()
-		return nil
-	}
-	if c.eventStartDone != nil {
-		done := c.eventStartDone
-		c.mu.Unlock()
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-done:
-		}
-		c.mu.Lock()
-		started := c.eventsStarted
-		err := c.eventStartErr
-		c.mu.Unlock()
-		if started {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return io.EOF
-	}
-	done := make(chan struct{})
-	c.eventStartDone = done
-	c.eventStartErr = nil
-	c.mu.Unlock()
-
-	// 中文说明：同一个 protocol client 只向 daemon 打开一条宽事件流；
-	// 多个 TUI view/storage watcher 在客户端内 fan-out，避免互相取消或重复刷新。
-	err := c.doRequest(ctx, "events", EventsParams{}, nil)
-	c.mu.Lock()
-	if err == nil {
-		c.eventsStarted = true
-	}
-	c.eventStartErr = err
-	if c.eventStartDone == done {
-		close(done)
-		c.eventStartDone = nil
-	}
-	c.mu.Unlock()
-	return err
 }
 
 func (c *Client) Stream(channel uint16) (<-chan StreamFrame, func()) {
@@ -665,112 +421,50 @@ func (c *Client) Stream(channel uint16) (<-chan StreamFrame, func()) {
 	}
 }
 
-func (c *Client) HistoryReplay(ctx context.Context, channel uint16, beforeOffset, limit int) (*HistoryReplayPage, error) {
-	stream, stop := c.Stream(channel)
-	defer stop()
-
-	frame, err := wire.EncodeFrame(channel, wire.TypeHistoryRequest, wire.EncodeHistoryRequestPayload(beforeOffset, limit))
-	if err != nil {
-		return nil, err
-	}
-	if err := c.send(frame); err != nil {
-		return nil, err
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case msg, ok := <-stream:
-			if !ok {
-				return nil, io.EOF
-			}
-			switch msg.Type {
-			case wire.TypeHistoryReplay:
-				rows, hasMore, replay, err := wire.DecodeHistoryReplayPayload(msg.Payload)
-				if err != nil {
-					return nil, err
-				}
-				return &HistoryReplayPage{
-					BeforeOffset: beforeOffset,
-					Limit:        limit,
-					Rows:         rows,
-					HasMore:      hasMore,
-					Replay:       string(replay),
-				}, nil
-			case wire.TypeError:
-				msgErr, err := DecodeErrorPayload(msg.Payload)
-				if err != nil {
-					return nil, err
-				}
-				return nil, &RequestError{Code: msgErr.Error.Code, Message: msgErr.Error.Message}
-			case wire.TypeClosed:
-				return nil, io.EOF
-			}
-		}
-	}
-}
-
-func (c *Client) doRequest(ctx context.Context, method string, params any, out any) error {
-	payload, err := c.doRequestPayload(ctx, method, params)
-	if err != nil {
-		return err
-	}
-	if out == nil {
-		return nil
-	}
-	return DecodeMethodResult(method, payload, out)
-}
-
-func (c *Client) doRequestPayload(ctx context.Context, method string, params any) ([]byte, error) {
+func (c *Client) doApplicationRequest(ctx context.Context, command *apipb.CommandEnvelope) ([]byte, error) {
+	const method = "api.execute"
 	finish := perftrace.Measure("protocol.request." + method)
-	payload, err := EncodeMethodParams(method, params)
+	payload, err := EncodeApplicationCommand(command)
 	if err != nil {
 		finish(0)
 		return nil, err
 	}
 	id := c.nextID.Add(1)
-	reqPayload, err := EncodeRequestPayload(Request{
-		ID:     id,
-		Method: method,
-		Params: payload,
-	})
+	requestPayload, err := EncodeRequestPayload(Request{ID: id, Method: method, Params: payload})
 	if err != nil {
 		finish(len(payload))
 		return nil, err
 	}
-	frame, err := wire.EncodeFrame(0, wire.TypeRequest, reqPayload)
+	frame, err := wire.EncodeFrame(0, wire.TypeRequest, requestPayload)
 	if err != nil {
 		finish(len(payload))
 		return nil, err
 	}
 
-	resCh := make(chan result, 1)
+	response := make(chan result, 1)
 	c.mu.Lock()
-	c.waiters[id] = resCh
+	c.waiters[id] = response
 	c.mu.Unlock()
 	defer func() {
 		c.mu.Lock()
 		delete(c.waiters, id)
 		c.mu.Unlock()
 	}()
-
 	if err := c.send(frame); err != nil {
 		finish(len(frame))
 		return nil, err
 	}
-
 	select {
 	case <-ctx.Done():
 		finish(len(frame))
 		return nil, ctx.Err()
-	case res := <-resCh:
-		if res.err != nil {
+	case result := <-response:
+		if result.err != nil {
 			finish(len(frame))
-			return nil, res.err
+			return nil, result.err
 		}
-		finish(len(res.payload))
-		return res.payload, nil
+		finish(len(result.payload))
+		return result.payload, nil
 	}
 }
 
@@ -800,13 +494,19 @@ func (c *Client) readLoop() {
 			case wire.TypeHello:
 				c.helloCh <- result{}
 			case wire.TypeEvent:
-				evt, err := DecodeEventPayload(payload)
-				if err != nil {
+				var applicationEvent apipb.EventEnvelope
+				if err := proto.Unmarshal(payload, &applicationEvent); err != nil {
 					c.setDoneErr(err)
 					c.failAll(err)
 					return
 				}
-				c.publishEvent(evt)
+				if applicationEvent.GetEvent() == nil {
+					err := fmt.Errorf("application event payload has no event")
+					c.setDoneErr(err)
+					c.failAll(err)
+					return
+				}
+				c.publishApplicationEvent(&applicationEvent)
 			case wire.TypeResponse:
 				resp, err := DecodeResponsePayload(payload)
 				if err != nil {
@@ -885,19 +585,27 @@ func (c *Client) setDoneErr(err error) {
 	}
 }
 
-func (c *Client) publishEvent(event Event) {
+func (c *Client) publishApplicationEvent(event *apipb.EventEnvelope) {
+	if event == nil {
+		return
+	}
+	snapshot := proto.Clone(event).(*apipb.EventEnvelope)
 	c.mu.Lock()
-	subscribers := make([]eventSubscription, 0, len(c.eventSubscribers))
-	for _, sub := range c.eventSubscribers {
-		if !eventMatchesParams(event, sub.params) {
-			continue
+	if len(c.applicationEventSubscribers) == 0 {
+		if len(c.pendingApplicationEvents) < 64 {
+			c.pendingApplicationEvents = append(c.pendingApplicationEvents, snapshot)
 		}
-		subscribers = append(subscribers, sub)
+		c.mu.Unlock()
+		return
+	}
+	subscribers := make([]chan *apipb.EventEnvelope, 0, len(c.applicationEventSubscribers))
+	for _, subscriber := range c.applicationEventSubscribers {
+		subscribers = append(subscribers, subscriber)
 	}
 	c.mu.Unlock()
-	for _, sub := range subscribers {
+	for _, subscriber := range subscribers {
 		select {
-		case sub.ch <- event:
+		case subscriber <- proto.Clone(snapshot).(*apipb.EventEnvelope):
 		default:
 		}
 	}
@@ -910,69 +618,6 @@ func (c *Client) doneClosed() bool {
 	default:
 		return false
 	}
-}
-
-func (c *Client) removeEventSubscriber(id uint64) {
-	c.mu.Lock()
-	sub, ok := c.eventSubscribers[id]
-	if ok {
-		delete(c.eventSubscribers, id)
-	}
-	c.mu.Unlock()
-	if ok {
-		close(sub.ch)
-	}
-}
-
-func eventMatchesParams(event Event, params EventsParams) bool {
-	if params.TerminalID != "" && params.TerminalID != event.TerminalID {
-		return false
-	}
-	if (event.Storage != nil || hasStorageEventParams(params)) && !storageEventMatchesParams(event.Storage, params) {
-		return false
-	}
-	if (event.Workbench != nil || params.WorkbenchID != "") && !workbenchEventMatchesParams(event.Workbench, params) {
-		return false
-	}
-	if len(params.Types) == 0 {
-		return true
-	}
-	for _, typ := range params.Types {
-		if typ == event.Type {
-			return true
-		}
-	}
-	return false
-}
-
-func hasStorageEventParams(params EventsParams) bool {
-	return params.StorageAppID != "" || params.StorageScope != "" || params.StorageOwnerID != "" || params.StorageKeyPrefix != ""
-}
-
-func storageEventMatchesParams(storage *StorageChangedData, params EventsParams) bool {
-	if storage == nil {
-		return params.StorageAppID == "" && params.StorageScope == "" && params.StorageOwnerID == "" && params.StorageKeyPrefix == ""
-	}
-	if params.StorageAppID != "" && params.StorageAppID != storage.AppID {
-		return false
-	}
-	if params.StorageScope != "" && params.StorageScope != storage.Scope {
-		return false
-	}
-	if params.StorageOwnerID != "" && params.StorageOwnerID != storage.OwnerID {
-		return false
-	}
-	if params.StorageKeyPrefix != "" && !strings.HasPrefix(storage.Key, params.StorageKeyPrefix) {
-		return false
-	}
-	return true
-}
-
-func workbenchEventMatchesParams(workbench *WorkbenchChangedData, params EventsParams) bool {
-	if workbench == nil {
-		return params.WorkbenchID == ""
-	}
-	return params.WorkbenchID == "" || params.WorkbenchID == workbench.WorkspaceID || params.WorkbenchID == workbench.ResourceID
 }
 
 func (c *Client) failAll(err error) {
@@ -1002,8 +647,8 @@ func (c *Client) failAll(err error) {
 	for id := range c.dropped {
 		delete(c.dropped, id)
 	}
-	for id, sub := range c.eventSubscribers {
-		close(sub.ch)
-		delete(c.eventSubscribers, id)
+	for id := range c.applicationEventSubscribers {
+		delete(c.applicationEventSubscribers, id)
 	}
+	c.pendingApplicationEvents = nil
 }

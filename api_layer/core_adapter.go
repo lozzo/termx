@@ -6,14 +6,16 @@ import (
 
 	apimapping "github.com/lozzow/termx/api_mapping"
 	corev2 "github.com/lozzow/termx/core"
+	"github.com/lozzow/termx/core/history"
 	"github.com/lozzow/termx/proto/apipb"
+	"github.com/lozzow/termx/proto/remoteauthpb"
 )
 
 // CoreApplicationExecutorFactory 为一条 ready protocol connection 装配 API Layer。
 // core 只提供 connection-bound native port；Proto validation、mapping 与错误分类均停留在本层。
 func CoreApplicationExecutorFactory(port corev2.ApplicationSessionPort) corev2.ApplicationExecutor {
 	adapter := &coreApplicationAdapter{port: port}
-	return NewService(adapter, adapter, adapter, adapter)
+	return NewPlatformService(adapter, adapter, adapter, adapter, adapter)
 }
 
 type coreApplicationAdapter struct {
@@ -159,6 +161,63 @@ func (adapter *coreApplicationAdapter) PathListDirectories(ctx context.Context, 
 	return out, nil
 }
 
+func (adapter *coreApplicationAdapter) HistoryWindow(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.HistoryWindowCommand) (*apipb.HistoryWindowResult, error) {
+	result, err := adapter.port.ApplicationHistoryWindow(ctx, apimapping.HistoryWindowRequestFromProto(command))
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.HistoryWindowToProto(origin.GetEndpointId(), result), nil
+}
+
+func (adapter *coreApplicationAdapter) HistoryCopy(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.HistoryCopyCommand) (*apipb.HistoryCopyResult, error) {
+	text, err := adapter.port.ApplicationHistoryCopy(ctx, apimapping.HistoryCopyRequestFromProto(command))
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return &apipb.HistoryCopyResult{Text: text}, nil
+}
+
+func (adapter *coreApplicationAdapter) HistoryRelease(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.HistoryReleaseCommand) (*apipb.AcknowledgeResult, error) {
+	if err := adapter.port.ApplicationHistoryRelease(ctx, command.GetTerminal().GetTerminalId(), history.HistoryToken(command.GetToken())); err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return &apipb.AcknowledgeResult{}, nil
+}
+
+func (adapter *coreApplicationAdapter) HistoryBacklogStatus(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.HistoryBacklogStatusCommand) (*apipb.HistoryBacklogStatusResult, error) {
+	result, err := adapter.port.ApplicationHistoryBacklogStatus(ctx, command.GetTerminal().GetTerminalId())
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.HistoryBacklogToProto(origin.GetEndpointId(), result), nil
+}
+
+func (adapter *coreApplicationAdapter) LiveScreen(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.LiveScreenGetCommand) (*apipb.NativeScreenResult, error) {
+	result, err := adapter.port.ApplicationLiveScreen(ctx, command.GetTerminal().GetTerminalId())
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.NativeScreenToProto(origin.GetEndpointId(), result), nil
+}
+
+func (adapter *coreApplicationAdapter) LiveInvalidation(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.LiveInvalidationNextCommand) (*apipb.LiveInvalidationResult, error) {
+	result, err := adapter.port.ApplicationLiveInvalidation(ctx, command.GetTerminal().GetTerminalId(), corev2.LiveRevision(command.GetObservedRevision()))
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return &apipb.LiveInvalidationResult{Terminal: &apipb.TerminalRef{EndpointId: origin.GetEndpointId(), TerminalId: result.TerminalID}, LiveRevision: uint64(result.Revision)}, nil
+}
+
+func (adapter *coreApplicationAdapter) EventSubscribe(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.EventSubscribeCommand) (*apipb.EventSubscriptionResult, error) {
+	token, err := adapter.port.ApplicationEventSubscribe(ctx, apimapping.EventFilterFromProto(command), func(event corev2.Event, subscriptionToken []byte) ([]byte, error) {
+		return apimapping.EncodeEventEnvelope(origin.GetEndpointId(), origin, subscriptionToken, event)
+	})
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return &apipb.EventSubscriptionResult{Subscription: &apipb.ResourceHandle{OpaqueToken: token, Kind: apipb.ResourceKind_RESOURCE_KIND_SUBSCRIPTION, Session: cloneSession(origin), Generation: 1}}, nil
+}
+
 type coreAttachmentTransaction struct {
 	transaction corev2.TerminalAttachmentTransaction
 	origin      *apipb.EndpointSessionStamp
@@ -178,4 +237,167 @@ func (transaction *coreAttachmentTransaction) Commit(ctx context.Context) error 
 
 func (transaction *coreAttachmentTransaction) Rollback(ctx context.Context) error {
 	return apimapping.CoreError(transaction.transaction.Rollback(ctx))
+}
+
+func (adapter *coreApplicationAdapter) FileList(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.FileListCommand) (*apipb.FileListResult, error) {
+	result, err := adapter.port.ApplicationFileList(ctx, apimapping.FileListRequestFromProto(command))
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.FileListToProto(result), nil
+}
+func (adapter *coreApplicationAdapter) FileStat(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.FileStatCommand) (*apipb.FileStatResult, error) {
+	result, err := adapter.port.ApplicationFileStat(ctx, apimapping.FilePathRequestFromProto(command.GetPath(), false))
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return &apipb.FileStatResult{Entry: apimapping.FileEntryToProto(result)}, nil
+}
+func (adapter *coreApplicationAdapter) FilePreview(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.FilePreviewCommand) (*apipb.FilePreviewResult, error) {
+	result, err := adapter.port.ApplicationFilePreview(ctx, apimapping.FilePreviewRequestFromProto(command))
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.FilePreviewToProto(result), nil
+}
+func (adapter *coreApplicationAdapter) FileMkdir(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.FileMkdirCommand) (*apipb.FileOperationResult, error) {
+	return apimapping.FileOperationToProto(adapter.port.ApplicationFileMkdir(ctx, apimapping.FilePathRequestFromProto(command.GetPath(), command.GetRecursive()))), nil
+}
+func (adapter *coreApplicationAdapter) FileRename(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.FileRenameCommand) (*apipb.FileOperationResult, error) {
+	return apimapping.FileOperationToProto(adapter.port.ApplicationFileRename(ctx, apimapping.FileRenameRequestFromProto(command))), nil
+}
+func (adapter *coreApplicationAdapter) FileDelete(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.FileDeleteCommand) (*apipb.FileOperationResult, error) {
+	return apimapping.FileOperationToProto(adapter.port.ApplicationFileDelete(ctx, apimapping.FilePathRequestFromProto(command.GetPath(), command.GetRecursive()))), nil
+}
+func (adapter *coreApplicationAdapter) FileCopy(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.FileCopyCommand) (*apipb.FileBatchResult, error) {
+	return apimapping.FileBatchToProto(adapter.port.ApplicationFileCopy(ctx, apimapping.FileCopyRequestFromProto(command))), nil
+}
+func (adapter *coreApplicationAdapter) FileMove(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.FileMoveCommand) (*apipb.FileBatchResult, error) {
+	return apimapping.FileBatchToProto(adapter.port.ApplicationFileMove(ctx, apimapping.FileMoveRequestFromProto(command))), nil
+}
+func (adapter *coreApplicationAdapter) FileDownloadOpen(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.FileDownloadOpenCommand) (*apipb.FileTransferOpenResult, error) {
+	result, err := adapter.port.ApplicationFileDownloadOpen(ctx, apimapping.FileDownloadRequestFromProto(command))
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.FileTransferToProto(origin, command.GetOperation(), result), nil
+}
+func (adapter *coreApplicationAdapter) FileUploadOpen(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.FileUploadOpenCommand) (*apipb.FileTransferOpenResult, error) {
+	result, err := adapter.port.ApplicationFileUploadOpen(ctx, apimapping.FileUploadRequestFromProto(command))
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.FileTransferToProto(origin, command.GetOperation(), result), nil
+}
+func (adapter *coreApplicationAdapter) FileTransferCancel(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.FileTransferCancelCommand) (*apipb.FileTransferCancelResult, error) {
+	result, err := adapter.port.ApplicationFileTransferCancel(ctx, command.GetTransfer().GetOpaqueToken())
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return &apipb.FileTransferCancelResult{Cancelled: result.Cancelled}, nil
+}
+func (adapter *coreApplicationAdapter) StorageGet(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.StorageGetCommand) (*apipb.StorageGetResult, error) {
+	appID, scope, ownerID, key := apimapping.StorageKeyFromProto(command.GetKey())
+	result, err := adapter.port.ApplicationStorageGet(ctx, appID, scope, ownerID, key)
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return &apipb.StorageGetResult{Entry: apimapping.StorageEntryToProto(result)}, nil
+}
+func (adapter *coreApplicationAdapter) StoragePut(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.StoragePutCommand) (*apipb.StoragePutResult, error) {
+	result, err := adapter.port.ApplicationStoragePut(ctx, apimapping.StoragePutFromProto(command))
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return &apipb.StoragePutResult{Entry: apimapping.StorageEntryToProto(result)}, nil
+}
+func (adapter *coreApplicationAdapter) StorageDelete(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.StorageDeleteCommand) (*apipb.StorageDeleteResult, error) {
+	result, err := adapter.port.ApplicationStorageDelete(ctx, apimapping.StorageDeleteFromProto(command))
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.StorageDeleteToProto(result), nil
+}
+func (adapter *coreApplicationAdapter) StorageList(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.StorageListCommand) (*apipb.StorageListResult, error) {
+	result := &apipb.StorageListResult{}
+	for _, entry := range adapter.port.ApplicationStorageList(ctx, command.GetAppId(), apimapping.StorageScopeFromProto(command.GetScope()), command.GetOwnerId(), command.GetPrefix()) {
+		result.Entries = append(result.Entries, apimapping.StorageEntryToProto(entry))
+	}
+	return result, nil
+}
+
+func (adapter *coreApplicationAdapter) ClientAccessIdentity(ctx context.Context, _ *apipb.EndpointSessionStamp, _ *apipb.ClientAccessIdentityCommand) (*apipb.ClientAccessIdentityResult, error) {
+	result, err := adapter.port.ApplicationClientAccessIdentity(ctx)
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return &apipb.ClientAccessIdentityResult{Identity: apimapping.ClientAccessIdentityToProto(result)}, nil
+}
+
+func (adapter *coreApplicationAdapter) ClientAccessList(ctx context.Context, _ *apipb.EndpointSessionStamp, _ *apipb.ClientAccessListCommand) (*apipb.ClientAccessListResult, error) {
+	records, err := adapter.port.ApplicationClientAccessList(ctx)
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	result := &apipb.ClientAccessListResult{Access: &remoteauthpb.ClientAccessListResult{}}
+	for _, record := range records {
+		result.Access.Records = append(result.Access.Records, apimapping.ClientAccessRecordToProto(record))
+	}
+	return result, nil
+}
+
+func (adapter *coreApplicationAdapter) ClientAccessTicketCreate(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.ClientAccessTicketCreateCommand) (*apipb.ClientAccessTicketCreateResult, error) {
+	result, err := adapter.port.ApplicationClientAccessCreateTicket(ctx, apimapping.ClientAccessTicketRequestFromProto(command))
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return &apipb.ClientAccessTicketCreateResult{Ticket: apimapping.ClientAccessTicketToProto(result)}, nil
+}
+
+func (adapter *coreApplicationAdapter) ClientAccessRevoke(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.ClientAccessRevokeCommand) (*apipb.ClientAccessRevokeResult, error) {
+	result, err := adapter.port.ApplicationClientAccessRevoke(ctx, command.GetRequest().GetGrantId())
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return &apipb.ClientAccessRevokeResult{Record: apimapping.ClientAccessRecordToProto(result)}, nil
+}
+
+func (adapter *coreApplicationAdapter) RemoteStatus(ctx context.Context, _ *apipb.EndpointSessionStamp, _ *apipb.RemoteStatusCommand) (*apipb.RemoteStatusResult, error) {
+	result, err := adapter.port.ApplicationRemoteStatus(ctx)
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.RemoteStatusToProto(result), nil
+}
+
+func (adapter *coreApplicationAdapter) RemotePairStart(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.RemotePairStartCommand) (*apipb.RemotePairStartResult, error) {
+	result, err := adapter.port.ApplicationRemotePairStart(ctx, apimapping.RemotePairStartRequestFromProto(command))
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.RemotePairStartToProto(result), nil
+}
+
+func (adapter *coreApplicationAdapter) RemoteLocalEnable(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.RemoteLocalEnableCommand) (*apipb.RemoteLocalStatusResult, error) {
+	result, err := adapter.port.ApplicationRemoteLocalEnable(ctx, apimapping.RemoteLocalEnableRequestFromProto(command))
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.RemoteLocalStatusToProto(result), nil
+}
+
+func (adapter *coreApplicationAdapter) RemoteLocalStatus(ctx context.Context, _ *apipb.EndpointSessionStamp, _ *apipb.RemoteLocalStatusCommand) (*apipb.RemoteLocalStatusResult, error) {
+	result, err := adapter.port.ApplicationRemoteLocalStatus(ctx)
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.RemoteLocalStatusToProto(result), nil
+}
+
+func (adapter *coreApplicationAdapter) RemoteLocalDisable(ctx context.Context, _ *apipb.EndpointSessionStamp, _ *apipb.RemoteLocalDisableCommand) (*apipb.RemoteLocalStatusResult, error) {
+	result, err := adapter.port.ApplicationRemoteLocalDisable(ctx)
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.RemoteLocalStatusToProto(result), nil
 }

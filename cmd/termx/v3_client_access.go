@@ -7,9 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/lozzow/termx/internal/protocol"
+	corev2 "github.com/lozzow/termx/core"
 	remotev2daemon "github.com/lozzow/termx/remote/daemon"
 	"github.com/lozzow/termx/shared/remoteauth"
 	"github.com/lozzow/termx/shared/transport"
@@ -114,65 +113,63 @@ type v3ClientAccessService struct {
 }
 
 // Identity 返回当前 daemon 进程统一 DeviceIdentity 的公开投影；私钥永远不进入 protocol response。
-func (service v3ClientAccessService) Identity(context.Context) (protocol.ClientAccessIdentityResult, error) {
+func (service v3ClientAccessService) Identity(context.Context) (corev2.ClientAccessIdentity, error) {
 	if err := service.identity.Validate(); err != nil {
-		return protocol.ClientAccessIdentityResult{}, err
+		return corev2.ClientAccessIdentity{}, err
 	}
-	return protocol.ClientAccessIdentityResult{
+	return corev2.ClientAccessIdentity{
 		DeviceID: service.identity.DeviceID, DeviceFingerprint: service.identity.Fingerprint,
 		DevicePublicKey: append([]byte(nil), service.identity.PublicKey...),
 	}, nil
 }
 
 // CreateTicket 把已通过 transport scope 校验的 owner 请求交给唯一 AccessStore 原子签发并登记。
-func (service v3ClientAccessService) CreateTicket(_ context.Context, params protocol.ClientAccessTicketCreateParams) (protocol.ClientAccessTicketCreateResult, error) {
+func (service v3ClientAccessService) CreateTicket(_ context.Context, request corev2.ClientAccessTicketRequest) (corev2.ClientAccessTicket, error) {
 	if service.store == nil {
-		return protocol.ClientAccessTicketCreateResult{}, fmt.Errorf("client access store is unavailable")
-	}
-	ticketTTL, err := checkedSecondsDuration(params.TicketTTLSeconds, "ticket ttl")
-	if err != nil {
-		return protocol.ClientAccessTicketCreateResult{}, err
-	}
-	grantLifetime, err := checkedSecondsDuration(params.GrantLifetimeSeconds, "grant lifetime")
-	if err != nil {
-		return protocol.ClientAccessTicketCreateResult{}, err
+		return corev2.ClientAccessTicket{}, fmt.Errorf("client access store is unavailable")
 	}
 	bundle, claims, err := service.store.IssuePairingBundle(remoteauth.PairingIssueOptions{
-		Label: params.Label, Scope: params.Scope, TicketTTL: ticketTTL, GrantLifetime: grantLifetime,
+		Label: request.Label, Scope: remoteAuthScopeFromCore(request.Scope), TicketTTL: request.TicketTTL, GrantLifetime: request.GrantLifetime,
 	})
 	if err != nil {
-		return protocol.ClientAccessTicketCreateResult{}, err
+		return corev2.ClientAccessTicket{}, err
 	}
 	payload, err := remoteauth.EncodePairingBundle(bundle)
 	if err != nil {
-		return protocol.ClientAccessTicketCreateResult{}, err
+		return corev2.ClientAccessTicket{}, err
 	}
-	return protocol.ClientAccessTicketCreateResult{Bundle: payload, TicketID: claims.TicketID, ExpiresAt: claims.ExpiresAt}, nil
+	return corev2.ClientAccessTicket{Bundle: payload, TicketID: claims.TicketID, ExpiresAt: claims.ExpiresAt}, nil
 }
 
 // List 返回 AccessStore 的脱敏授权记录；该调用不刷新时间戳或写入本地状态。
-func (service v3ClientAccessService) List(context.Context) (protocol.ClientAccessListResult, error) {
+func (service v3ClientAccessService) List(context.Context) ([]corev2.ClientAccessRecord, error) {
 	if service.store == nil {
-		return protocol.ClientAccessListResult{}, fmt.Errorf("client access store is unavailable")
+		return nil, fmt.Errorf("client access store is unavailable")
 	}
-	return protocol.ClientAccessListResult{Records: service.store.ListClientAccess()}, nil
+	records := service.store.ListClientAccess()
+	result := make([]corev2.ClientAccessRecord, 0, len(records))
+	for _, record := range records {
+		result = append(result, clientAccessRecordFromRemoteAuth(record))
+	}
+	return result, nil
 }
 
 // Revoke 由 owning daemon 原子持久化撤销状态；删除客户端本地 credential 不能替代该操作。
-func (service v3ClientAccessService) Revoke(_ context.Context, params protocol.ClientAccessRevokeParams) (protocol.ClientAccessRecord, error) {
+func (service v3ClientAccessService) Revoke(_ context.Context, grantID string) (corev2.ClientAccessRecord, error) {
 	if service.store == nil {
-		return protocol.ClientAccessRecord{}, fmt.Errorf("client access store is unavailable")
+		return corev2.ClientAccessRecord{}, fmt.Errorf("client access store is unavailable")
 	}
-	record, err := service.store.RevokeGrant(params.GrantID)
+	record, err := service.store.RevokeGrant(grantID)
 	if err != nil {
-		return protocol.ClientAccessRecord{}, err
+		return corev2.ClientAccessRecord{}, err
 	}
-	return record, nil
+	return clientAccessRecordFromRemoteAuth(record), nil
 }
 
-func checkedSecondsDuration(seconds int64, field string) (time.Duration, error) {
-	if seconds <= 0 || seconds > int64((365*24*time.Hour)/time.Second) {
-		return 0, fmt.Errorf("%s must be between one second and one year", field)
-	}
-	return time.Duration(seconds) * time.Second, nil
+func remoteAuthScopeFromCore(scope corev2.ClientAccessScope) remoteauth.Scope {
+	return remoteauth.Scope{AllowDaemon: scope.AllowDaemon, TerminalID: scope.TerminalID, MachineEventsOnly: scope.MachineEventsOnly, FileReadMetadata: scope.FileReadMetadata, FileReadContent: scope.FileReadContent, FileWriteContent: scope.FileWriteContent, FileMutate: scope.FileMutate, ManageClientAccess: scope.ManageClientAccess}
+}
+
+func clientAccessRecordFromRemoteAuth(record remoteauth.ClientAccessRecord) corev2.ClientAccessRecord {
+	return corev2.ClientAccessRecord{GrantID: record.GrantID, RevocationID: record.RevocationID, SubjectKeyFingerprint: record.SubjectKeyFingerprint, ClientLabel: record.ClientLabel, Scope: corev2.ClientAccessScope{AllowDaemon: record.Scope.AllowDaemon, TerminalID: record.Scope.TerminalID, MachineEventsOnly: record.Scope.MachineEventsOnly, FileReadMetadata: record.Scope.FileReadMetadata, FileReadContent: record.Scope.FileReadContent, FileWriteContent: record.Scope.FileWriteContent, FileMutate: record.Scope.FileMutate, ManageClientAccess: record.Scope.ManageClientAccess}, IssuedAt: record.IssuedAt, ExpiresAt: record.ExpiresAt, RevokedAt: record.RevokedAt}
 }

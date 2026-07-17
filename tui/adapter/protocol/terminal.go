@@ -6,9 +6,7 @@ import (
 	"strings"
 	"time"
 
-	xansi "github.com/charmbracelet/x/ansi"
 	clientruntime "github.com/lozzow/termx/client/runtime"
-	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/shared/perftrace"
 	"github.com/lozzow/termx/tui/port"
@@ -22,9 +20,6 @@ type ProtocolTerminalClient interface {
 	clientruntime.ProtoApplicationExecutor
 	ApplicationAttachmentChannel(*apipb.ResourceHandle) (uint16, bool)
 	ApplicationAttachment(uint16) (*apipb.ResourceHandle, bool)
-	Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error)
-	LiveScreen(context.Context, string) (*protocol.NativeScreenSnapshot, error)
-	NextLiveInvalidation(context.Context, string, uint64) (*protocol.Event, error)
 }
 
 // ProtocolTerminalServiceAdapter 把 TUI-v3 terminal service 契约映射到 termx protocol。
@@ -291,11 +286,11 @@ func resizePolicyFromProtoControl(control *apipb.ResizeControl, fallback string)
 }
 
 func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, req port.TerminalSurfaceRequest) (port.TerminalSurfaceResult, error) {
-	if adapter.Client == nil {
+	if adapter.Application == nil {
 		return port.TerminalSurfaceResult{}, port.ErrMissingTerminalClient
 	}
 	finishRPC := perftrace.Measure("tui.protocol.live_surface.rpc")
-	snapshot, err := adapter.Client.LiveScreen(ctx, req.TerminalID)
+	snapshot, err := adapter.Application.LiveScreen(ctx, &apipb.LiveScreenGetCommand{Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID}})
 	finishRPC(0)
 	if err != nil {
 		return port.TerminalSurfaceResult{}, err
@@ -303,7 +298,7 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 	finishConvert := perftrace.Measure("tui.protocol.live_surface_convert")
 	// 中文说明：v3 live display 的 screen truth 只能来自 core latest native screen；
 	// lifecycle 由 list/state event 单独承载，不能再混入 snapshot RPC。
-	liveSnapshot := liveSurfaceSnapshotFromProtocol(req.TerminalID, snapshot)
+	liveSnapshot := liveSurfaceSnapshotFromProto(req.TerminalID, snapshot)
 	finishConvert(liveSnapshotApproxBytes(liveSnapshot))
 	return port.TerminalSurfaceResult{
 		Ready:          true,
@@ -313,11 +308,11 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 }
 
 func (adapter ProtocolTerminalServiceAdapter) ArmLiveInvalidation(ctx context.Context, req port.TerminalLiveEventRequest) (port.TerminalLiveEvent, error) {
-	if adapter.Client == nil {
+	if adapter.Application == nil {
 		return port.TerminalLiveEvent{}, port.ErrMissingTerminalClient
 	}
 	finishRPC := perftrace.Measure("tui.protocol.live_invalidation.rpc")
-	event, err := adapter.Client.NextLiveInvalidation(ctx, req.TerminalID, req.ObservedRevision)
+	event, err := adapter.Application.LiveInvalidation(ctx, &apipb.LiveInvalidationNextCommand{Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID}, ObservedRevision: req.ObservedRevision})
 	finishRPC(0)
 	if err != nil {
 		return port.TerminalLiveEvent{}, err
@@ -325,9 +320,32 @@ func (adapter ProtocolTerminalServiceAdapter) ArmLiveInvalidation(ctx context.Co
 	if event == nil {
 		return port.TerminalLiveEvent{}, context.Canceled
 	}
-	liveEvent := liveInvalidationFromProtocol(req, *event)
+	liveEvent := port.TerminalLiveEvent{EndpointID: req.EndpointID, TerminalID: event.GetTerminal().GetTerminalId(), Refresh: true}
+	liveEvent.Snapshot.Revision = event.GetLiveRevision()
 	perftrace.Count("tui.protocol.live_event", protocolLiveEventApproxBytes(liveEvent))
 	return liveEvent, nil
+}
+
+func liveSurfaceSnapshotFromProto(terminalID string, snapshot *apipb.NativeScreenResult) state.LiveSurfaceSnapshot {
+	if snapshot == nil {
+		return state.LiveSurfaceSnapshot{TerminalID: terminalID}
+	}
+	result := state.LiveSurfaceSnapshot{TerminalID: terminalID, Revision: snapshot.GetLiveRevision(), Cols: int(snapshot.GetSize().GetCols()), Rows: int(snapshot.GetSize().GetRows())}
+	if cursor := snapshot.GetCursor(); cursor != nil {
+		result.Cursor = state.LiveCursor{Visible: cursor.GetVisible(), Row: int(cursor.GetRow()), Col: int(cursor.GetCol()), Shape: strings.ToLower(strings.TrimPrefix(cursor.GetShape().String(), "CURSOR_SHAPE_"))}
+	}
+	if modes := snapshot.GetModes(); modes != nil {
+		result.Modes = state.LiveTerminalModes{MouseTracking: modes.GetMouseTracking(), MouseX10: modes.GetMouseX10(), MouseNormal: modes.GetMouseNormal(), MouseButton: modes.GetMouseButtonEvent(), MouseAny: modes.GetMouseAnyEvent(), MouseSGR: modes.GetMouseSgr(), BracketedPaste: modes.GetBracketedPaste()}
+	}
+	for _, row := range snapshot.GetRows() {
+		cells := make([]state.LiveCell, 0, len(row.GetCells()))
+		for _, cell := range row.GetCells() {
+			style := cell.GetStyle()
+			cells = append(cells, state.LiveCell{Text: cell.GetContent(), Width: int(cell.GetWidth()), FG: style.GetForeground(), BG: style.GetBackground(), Bold: style.GetBold(), Italic: style.GetItalic(), Underline: style.GetUnderline(), Blink: style.GetBlink(), Reverse: style.GetReverse(), Strikethrough: style.GetStrikethrough(), LinkURL: cell.GetLinkUrl(), LinkParams: cell.GetLinkParams()})
+		}
+		result.Screen = append(result.Screen, cells)
+	}
+	return result
 }
 
 func protocolLiveEventApproxBytes(event port.TerminalLiveEvent) int {
@@ -357,336 +375,6 @@ func liveSnapshotApproxBytes(snapshot state.LiveSurfaceSnapshot) int {
 		}
 	}
 	return total
-}
-
-func liveInvalidationFromProtocol(req port.TerminalLiveEventRequest, event protocol.Event) port.TerminalLiveEvent {
-	out := port.TerminalLiveEvent{TerminalID: req.TerminalID}
-	if event.TerminalID != "" {
-		out.TerminalID = event.TerminalID
-	}
-	if event.Type != protocol.EventTerminalLiveInvalidated {
-		out.Err = fmt.Errorf("unexpected live invalidation event type: %v", event.Type)
-		return out
-	}
-	out.Refresh = true
-	if event.LiveInvalidated != nil {
-		out.Snapshot.Revision = event.LiveInvalidated.Revision
-	}
-	return out
-}
-
-func liveSurfaceSnapshotFromProtocol(terminalID string, snapshot *protocol.NativeScreenSnapshot) state.LiveSurfaceSnapshot {
-	if snapshot == nil {
-		return state.LiveSurfaceSnapshot{TerminalID: terminalID}
-	}
-	return state.LiveSurfaceSnapshot{
-		TerminalID: terminalID,
-		Revision:   snapshot.Revision,
-		Cols:       int(snapshot.Size.Cols),
-		Rows:       int(snapshot.Size.Rows),
-		Screen:     liveSurfaceScreenFromCompactRows(snapshot.Rows),
-		Cursor: state.LiveCursor{
-			Visible: snapshot.Cursor.Visible,
-			Row:     snapshot.Cursor.Row,
-			Col:     snapshot.Cursor.Col,
-			Shape:   snapshot.Cursor.Shape,
-		},
-		Modes: liveSurfaceModesFromProtocol(snapshot.Modes),
-	}
-}
-
-func liveSurfaceScreenFromCompactRows(rows []protocol.CompactRow) [][]state.LiveCell {
-	if len(rows) == 0 {
-		return nil
-	}
-	screen := make([][]state.LiveCell, len(rows))
-	for rowIndex, row := range rows {
-		screen[rowIndex] = liveSurfaceCellsFromCompactRow(row)
-	}
-	return screen
-}
-
-func liveSurfaceModesFromProtocol(modes protocol.TerminalModes) state.LiveTerminalModes {
-	return state.LiveTerminalModes{
-		MouseTracking:  modes.MouseTracking,
-		MouseX10:       modes.MouseX10,
-		MouseNormal:    modes.MouseNormal,
-		MouseButton:    modes.MouseButtonEvent,
-		MouseAny:       modes.MouseAnyEvent,
-		MouseSGR:       modes.MouseSGR,
-		BracketedPaste: modes.BracketedPaste,
-	}
-}
-
-func liveSurfaceCellsFromCompactRow(row protocol.CompactRow) []state.LiveCell {
-	if row.Text != "" {
-		return []state.LiveCell{{Text: row.Text, Width: liveSurfaceTextWidth(row.Text)}}
-	}
-	if len(row.Runs) > 0 {
-		out := make([]state.LiveCell, 0, len(row.Runs))
-		for _, run := range row.Runs {
-			cell, ok := liveSurfaceCellFromCompactRun(run)
-			if ok {
-				out = append(out, cell)
-			}
-		}
-		return out
-	}
-	if len(row.Cells) == 0 {
-		return nil
-	}
-	return liveSurfaceCellsFromCompactCells(row.Cells)
-}
-
-func liveSurfaceCellFromCompactRun(run protocol.CompactRowRun) (state.LiveCell, bool) {
-	if run.Text == "" {
-		return state.LiveCell{}, false
-	}
-	style := liveSurfaceStyleFromCompact(run.Style)
-	return state.LiveCell{
-		Text:          run.Text,
-		Width:         liveSurfaceTextWidth(run.Text),
-		FG:            style.FG,
-		BG:            style.BG,
-		Bold:          style.Bold,
-		Italic:        style.Italic,
-		Underline:     style.Underline,
-		Blink:         style.Blink,
-		Reverse:       style.Reverse,
-		Strikethrough: style.Strikethrough,
-		LinkURL:       run.LinkURL,
-		LinkParams:    run.LinkParams,
-	}, true
-}
-
-func liveSurfaceCellsFromCompactCells(cells []protocol.CompactRowCell) []state.LiveCell {
-	out := make([]state.LiveCell, 0, liveSurfaceRunCapacity(len(cells)))
-	for index := 0; index < len(cells); {
-		next, ok := liveSurfaceCellFromCompactCell(cells[index])
-		if !ok {
-			index++
-			continue
-		}
-		if !liveSurfaceCellIsSingleWidthASCII(next) {
-			out = append(out, next)
-			index++
-			continue
-		}
-		runEnd := index + 1
-		runWidth := next.Width
-		runBytes := len(next.Text)
-		runCells := 1
-		for runEnd < len(cells) {
-			runCell, ok := liveSurfaceCellFromCompactCell(cells[runEnd])
-			if !ok {
-				runEnd++
-				continue
-			}
-			if !canMergeLiveSurfaceCellRun(next, runCell) {
-				break
-			}
-			runWidth += runCell.Width
-			runBytes += len(runCell.Text)
-			runCells++
-			runEnd++
-		}
-		if runCells == 1 {
-			out = append(out, next)
-			index = runEnd
-			continue
-		}
-		var builder strings.Builder
-		builder.Grow(runBytes)
-		for runIndex := index; runIndex < runEnd; runIndex++ {
-			if runCell, ok := liveSurfaceCellFromCompactCell(cells[runIndex]); ok {
-				builder.WriteString(runCell.Text)
-			}
-		}
-		next.Text = builder.String()
-		next.Width = runWidth
-		out = append(out, next)
-		index = runEnd
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func liveSurfaceTextWidth(text string) int {
-	return xansi.StringWidth(strings.ReplaceAll(text, "\n", " "))
-}
-
-func liveSurfaceCellFromCompactCell(cell protocol.CompactRowCell) (state.LiveCell, bool) {
-	width := cell.Width
-	if width < 0 {
-		width = 0
-	}
-	if width == 0 && cell.Content == "" {
-		return state.LiveCell{}, false
-	}
-	if width == 0 {
-		width = 1
-	}
-	style := liveSurfaceStyleFromCompact(cell.Style)
-	return state.LiveCell{
-		Text:          cell.Content,
-		Width:         width,
-		FG:            style.FG,
-		BG:            style.BG,
-		Bold:          style.Bold,
-		Italic:        style.Italic,
-		Underline:     style.Underline,
-		Blink:         style.Blink,
-		Reverse:       style.Reverse,
-		Strikethrough: style.Strikethrough,
-		LinkURL:       cell.LinkURL,
-		LinkParams:    cell.LinkParams,
-	}, true
-}
-
-func liveSurfaceStyleFromCompact(style *protocol.CompactRowStyle) protocol.CellStyle {
-	if style == nil {
-		return protocol.CellStyle{}
-	}
-	return protocol.CellStyle{
-		FG:            style.FG,
-		BG:            style.BG,
-		Bold:          style.Bold,
-		Italic:        style.Italic,
-		Underline:     style.Underline,
-		Blink:         style.Blink,
-		Reverse:       style.Reverse,
-		Strikethrough: style.Strikethrough,
-	}
-}
-
-func liveSurfaceCellsFromProtocol(cells []protocol.Cell) []state.LiveCell {
-	if len(cells) == 0 {
-		return nil
-	}
-	out := make([]state.LiveCell, 0, liveSurfaceRunCapacity(len(cells)))
-	for index := 0; index < len(cells); {
-		next, ok := liveSurfaceCellFromProtocol(cells[index])
-		if !ok {
-			index++
-			continue
-		}
-		if !liveSurfaceCellIsSingleWidthASCII(next) {
-			out = append(out, next)
-			index++
-			continue
-		}
-		runEnd := index + 1
-		runWidth := next.Width
-		runBytes := len(next.Text)
-		runCells := 1
-		for runEnd < len(cells) {
-			runCell, ok := liveSurfaceCellFromProtocol(cells[runEnd])
-			if !ok {
-				runEnd++
-				continue
-			}
-			if !canMergeLiveSurfaceCellRun(next, runCell) {
-				break
-			}
-			runWidth += runCell.Width
-			runBytes += len(runCell.Text)
-			runCells++
-			runEnd++
-		}
-		if runCells == 1 {
-			out = append(out, next)
-			index = runEnd
-			continue
-		}
-		// 中文说明：高频 live 行合并时先算准 run 容量，再一次构造字符串，
-		// 避免逐 cell 拼接或小容量 builder 增长制造 alloc churn。
-		var builder strings.Builder
-		builder.Grow(runBytes)
-		for runIndex := index; runIndex < runEnd; runIndex++ {
-			if runCell, ok := liveSurfaceCellFromProtocol(cells[runIndex]); ok {
-				builder.WriteString(runCell.Text)
-			}
-		}
-		next.Text = builder.String()
-		next.Width = runWidth
-		out = append(out, next)
-		index = runEnd
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func liveSurfaceRunCapacity(cellCount int) int {
-	if cellCount <= 0 {
-		return 0
-	}
-	if cellCount < 16 {
-		return cellCount
-	}
-	return 16
-}
-
-func liveSurfaceCellFromProtocol(cell protocol.Cell) (state.LiveCell, bool) {
-	width := cell.Width
-	if width < 0 {
-		width = 0
-	}
-	if width == 0 && cell.Content == "" {
-		// 中文说明：protocol/vterm 会把 wide cell continuation 暴露成零宽空占位。
-		// live surface 只需要保留真实 terminal footprint 起点；continuation 交给渲染侧按前一格 width 物化。
-		// 否则会把同一个 FE0F footprint 额外展开成一格可见空白，导致 follower dots 被提前推左。
-		return state.LiveCell{}, false
-	}
-	if width == 0 {
-		width = 1
-	}
-	return state.LiveCell{
-		Text:          cell.Content,
-		Width:         width,
-		FG:            cell.Style.FG,
-		BG:            cell.Style.BG,
-		Bold:          cell.Style.Bold,
-		Italic:        cell.Style.Italic,
-		Underline:     cell.Style.Underline,
-		Blink:         cell.Style.Blink,
-		Reverse:       cell.Style.Reverse,
-		Strikethrough: cell.Style.Strikethrough,
-		LinkURL:       cell.LinkURL,
-		LinkParams:    cell.LinkParams,
-	}, true
-}
-
-func canMergeLiveSurfaceCellRun(left state.LiveCell, right state.LiveCell) bool {
-	return left.FG == right.FG &&
-		left.BG == right.BG &&
-		left.Bold == right.Bold &&
-		left.Italic == right.Italic &&
-		left.Underline == right.Underline &&
-		left.Blink == right.Blink &&
-		left.Reverse == right.Reverse &&
-		left.Strikethrough == right.Strikethrough &&
-		left.LinkURL == "" &&
-		right.LinkURL == "" &&
-		left.LinkParams == "" &&
-		right.LinkParams == "" &&
-		liveSurfaceCellIsSingleWidthASCII(left) &&
-		liveSurfaceCellIsSingleWidthASCII(right)
-}
-
-func liveSurfaceCellIsSingleWidthASCII(cell state.LiveCell) bool {
-	if cell.Width != len(cell.Text) {
-		return false
-	}
-	for index := 0; index < len(cell.Text); index++ {
-		if cell.Text[index] < 0x20 || cell.Text[index] > 0x7e {
-			return false
-		}
-	}
-	return true
 }
 
 func terminalRef(endpointID state.EndpointID, terminalID string) *apipb.TerminalRef {

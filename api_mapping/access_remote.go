@@ -1,0 +1,104 @@
+package apimapping
+
+import (
+	"time"
+
+	corev2 "github.com/lozzow/termx/core"
+	"github.com/lozzow/termx/proto/apipb"
+	"github.com/lozzow/termx/proto/remoteauthpb"
+)
+
+const maxClientAccessLifetimeSeconds = int64((365 * 24 * time.Hour) / time.Second)
+
+// ValidateAccessRemoteCommand 校验 client access 与 remote daemon control 的 typed command。
+func ValidateAccessRemoteCommand(command *apipb.CommandEnvelope) error {
+	if err := ValidateRequestContext(RequestContextForCommand(command)); err != nil {
+		return err
+	}
+	switch value := command.GetCommand().(type) {
+	case *apipb.CommandEnvelope_ClientAccessIdentity, *apipb.CommandEnvelope_ClientAccessList,
+		*apipb.CommandEnvelope_RemoteStatus, *apipb.CommandEnvelope_RemoteLocalStatus,
+		*apipb.CommandEnvelope_RemoteLocalDisable:
+		return nil
+	case *apipb.CommandEnvelope_ClientAccessTicketCreate:
+		request := value.ClientAccessTicketCreate.GetRequest()
+		if request == nil || request.GetLabel() == "" || request.GetScope() == nil {
+			return validation("client_access_ticket_create.request", "label and scope are required")
+		}
+		if request.GetTicketTtlSeconds() <= 0 || request.GetTicketTtlSeconds() > maxClientAccessLifetimeSeconds || request.GetGrantLifetimeSeconds() <= 0 || request.GetGrantLifetimeSeconds() > maxClientAccessLifetimeSeconds {
+			return validation("client_access_ticket_create.request", "ticket and grant lifetimes must be between one second and one year")
+		}
+	case *apipb.CommandEnvelope_ClientAccessRevoke:
+		if value.ClientAccessRevoke.GetRequest().GetGrantId() == "" {
+			return validation("client_access_revoke.request.grant_id", "grant id is required")
+		}
+	case *apipb.CommandEnvelope_RemotePairStart:
+		if value.RemotePairStart.GetTtlSeconds() <= 0 || value.RemotePairStart.GetAuthTtlSeconds() <= 0 {
+			return validation("remote_pair_start", "positive ttl values are required")
+		}
+	case *apipb.CommandEnvelope_RemoteLocalEnable:
+		if value.RemoteLocalEnable.GetLocalWebAddress() == "" {
+			return validation("remote_local_enable.local_web_address", "address is required")
+		}
+	default:
+		return validation("command", "access or remote command is required")
+	}
+	return nil
+}
+
+// ClientAccessTicketRequestFromProto 转为 core-native ticket request。
+func ClientAccessTicketRequestFromProto(command *apipb.ClientAccessTicketCreateCommand) corev2.ClientAccessTicketRequest {
+	request := command.GetRequest()
+	return corev2.ClientAccessTicketRequest{Label: request.GetLabel(), Scope: clientAccessScopeFromProto(request.GetScope()), TicketTTL: time.Duration(request.GetTicketTtlSeconds()) * time.Second, GrantLifetime: time.Duration(request.GetGrantLifetimeSeconds()) * time.Second}
+}
+
+// ClientAccessIdentityToProto 转为公开 DeviceIdentity 投影，私钥不在输入模型中。
+func ClientAccessIdentityToProto(identity corev2.ClientAccessIdentity) *remoteauthpb.ClientAccessIdentityResult {
+	return &remoteauthpb.ClientAccessIdentityResult{DeviceId: identity.DeviceID, DeviceFingerprint: identity.DeviceFingerprint, DevicePublicKey: cloneBytes(identity.DevicePublicKey)}
+}
+
+// ClientAccessTicketToProto 转为一次性 pairing bundle result。
+func ClientAccessTicketToProto(ticket corev2.ClientAccessTicket) *remoteauthpb.ClientAccessTicketCreateResult {
+	return &remoteauthpb.ClientAccessTicketCreateResult{Bundle: cloneBytes(ticket.Bundle), TicketId: ticket.TicketID, ExpiresAtUnixNano: unixNanoOrZero(ticket.ExpiresAt)}
+}
+
+// ClientAccessRecordToProto 转为不包含 grant body/public key 的脱敏记录。
+func ClientAccessRecordToProto(record corev2.ClientAccessRecord) *remoteauthpb.ClientAccessRecord {
+	return &remoteauthpb.ClientAccessRecord{GrantId: record.GrantID, RevocationId: record.RevocationID, SubjectKeyFingerprint: record.SubjectKeyFingerprint, ClientLabel: record.ClientLabel, Scope: clientAccessScopeToProto(record.Scope), IssuedAtUnixNano: unixNanoOrZero(record.IssuedAt), ExpiresAtUnixNano: unixNanoOrZero(record.ExpiresAt), RevokedAtUnixNano: unixNanoOrZero(record.RevokedAt)}
+}
+
+// RemotePairStartRequestFromProto 转为 core-native remote pairing request。
+func RemotePairStartRequestFromProto(command *apipb.RemotePairStartCommand) corev2.RemotePairStartRequest {
+	return corev2.RemotePairStartRequest{LocalPairURL: command.GetLocalPairUrl(), TTLSeconds: int(command.GetTtlSeconds()), AuthorizationTTLSeconds: int(command.GetAuthTtlSeconds())}
+}
+
+// RemoteLocalEnableRequestFromProto 转为 core-native local remote runtime request。
+func RemoteLocalEnableRequestFromProto(command *apipb.RemoteLocalEnableCommand) corev2.RemoteLocalEnableRequest {
+	return corev2.RemoteLocalEnableRequest{LocalWebAddress: command.GetLocalWebAddress(), ICETCPAddress: command.GetIceTcpAddress(), HubURLs: append([]string(nil), command.GetHubUrls()...), ControlURL: command.GetControlUrl(), AccessToken: command.GetAccessToken(), Region: command.GetRegion()}
+}
+
+// RemoteStatusToProto 转为公共 remote runtime 状态。
+func RemoteStatusToProto(status corev2.RemoteStatus) *apipb.RemoteStatusResult {
+	return &apipb.RemoteStatusResult{State: status.State, Detail: status.Detail, DeviceId: status.DeviceID, DeviceName: status.DeviceName, ControlUrl: status.ControlURL, HubUrl: status.HubURL, HubUrls: append([]string(nil), status.HubURLs...), DataDirectory: status.DataDirectory, Mode: status.Mode, AllowLan: status.AllowLAN, TerminalCount: int32(status.TerminalCount), UpdatedAtUnixNano: unixNanoOrZero(status.UpdatedAt)}
+}
+
+// RemotePairStartToProto 转为公共 remote pairing result。
+func RemotePairStartToProto(result corev2.RemotePairStartResult) *apipb.RemotePairStartResult {
+	return &apipb.RemotePairStartResult{Type: result.Type, MachineId: result.MachineID, MachineName: result.MachineName, LocalPairUrl: result.LocalPairURL, PairSessionId: result.PairSessionID, PairSecret: result.PairSecret, AnswerProofSecret: result.AnswerProofSecret, ExpiresAtUnixNano: unixNanoOrZero(result.ExpiresAt)}
+}
+
+// RemoteLocalStatusToProto 转为公共 local remote runtime 状态。
+func RemoteLocalStatusToProto(status corev2.RemoteLocalStatus) *apipb.RemoteLocalStatusResult {
+	return &apipb.RemoteLocalStatusResult{Enabled: status.Enabled, HttpUrl: status.HTTPURL, LocalWebAddress: status.LocalWebAddress, LocalPairUrl: status.LocalPairURL, IceTcpEnabled: status.ICETCPEnabled, IceTcpAddress: status.ICETCPAddress, IceTcpPort: int32(status.ICETCPPort), UpdatedAtUnixNano: unixNanoOrZero(status.UpdatedAt)}
+}
+
+func clientAccessScopeFromProto(scope *remoteauthpb.ClientAccessScope) corev2.ClientAccessScope {
+	if scope == nil {
+		return corev2.ClientAccessScope{}
+	}
+	return corev2.ClientAccessScope{AllowDaemon: scope.GetAllowDaemon(), TerminalID: scope.GetTerminalId(), MachineEventsOnly: scope.GetMachineEventsOnly(), FileReadMetadata: scope.GetFileReadMetadata(), FileReadContent: scope.GetFileReadContent(), FileWriteContent: scope.GetFileWriteContent(), FileMutate: scope.GetFileMutate(), ManageClientAccess: scope.GetManageClientAccess()}
+}
+
+func clientAccessScopeToProto(scope corev2.ClientAccessScope) *remoteauthpb.ClientAccessScope {
+	return &remoteauthpb.ClientAccessScope{AllowDaemon: scope.AllowDaemon, TerminalId: scope.TerminalID, MachineEventsOnly: scope.MachineEventsOnly, FileReadMetadata: scope.FileReadMetadata, FileReadContent: scope.FileReadContent, FileWriteContent: scope.FileWriteContent, FileMutate: scope.FileMutate, ManageClientAccess: scope.ManageClientAccess}
+}

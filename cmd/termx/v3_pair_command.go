@@ -15,6 +15,8 @@ import (
 
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
+	"github.com/lozzow/termx/proto/remoteauthpb"
 	"github.com/lozzow/termx/shared/remoteauth"
 	unixtransport "github.com/lozzow/termx/shared/transport/unix"
 	qrcode "github.com/skip2/go-qrcode"
@@ -125,14 +127,16 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 			if ticketTTL <= 0 || grantLifetime <= 0 {
 				return usageCLIError("pair create ticket and grant ttl must be positive")
 			}
-			var result protocol.ClientAccessTicketCreateResult
-			if err := client.Call(cmd.Context(), "remote.access.ticket.create", protocol.ClientAccessTicketCreateParams{
-				Label: label, Scope: scope,
-				TicketTTLSeconds: int64(ticketTTL / time.Second), GrantLifetimeSeconds: int64(grantLifetime / time.Second),
-			}, &result); err != nil {
+			application, err := newLocalApplicationSession(client)
+			if err != nil {
 				return err
 			}
-			payload := result.Bundle
+			response, err := application.ClientAccessTicketCreate(cmd.Context(), &apipb.ClientAccessTicketCreateCommand{Request: &remoteauthpb.ClientAccessTicketCreateRequest{Label: label, Scope: clientAccessScopeToProto(scope), TicketTtlSeconds: int64(ticketTTL / time.Second), GrantLifetimeSeconds: int64(grantLifetime / time.Second)}})
+			if err != nil {
+				return err
+			}
+			result := response.GetTicket()
+			payload := result.GetBundle()
 			if rawOutput {
 				_, err = cmd.OutOrStdout().Write(payload)
 				return err
@@ -141,7 +145,7 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 				if !v3PairOutputIsTerminal(cmd.OutOrStdout()) {
 					return usageCLIError("pair create requires an interactive terminal; use --raw for stdout or --out FILE")
 				}
-				return renderV3PairingQR(cmd.OutOrStdout(), payload, result.ExpiresAt)
+				return renderV3PairingQR(cmd.OutOrStdout(), payload, time.Unix(0, result.GetExpiresAtUnixNano()).UTC())
 			}
 			if err := writeV3PrivateFile(outputPath, payload); err != nil {
 				return err
@@ -157,6 +161,10 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 	command.Flags().DurationVar(&ticketTTL, "ttl", 10*time.Minute, "one-time ticket lifetime")
 	command.Flags().DurationVar(&grantLifetime, "grant-ttl", 90*24*time.Hour, "bound capability lifetime")
 	return command
+}
+
+func clientAccessScopeToProto(scope remoteauth.Scope) *remoteauthpb.ClientAccessScope {
+	return &remoteauthpb.ClientAccessScope{AllowDaemon: scope.AllowDaemon, TerminalId: scope.TerminalID, MachineEventsOnly: scope.MachineEventsOnly, FileReadMetadata: scope.FileReadMetadata, FileReadContent: scope.FileReadContent, FileWriteContent: scope.FileWriteContent, FileMutate: scope.FileMutate, ManageClientAccess: scope.ManageClientAccess}
 }
 
 // renderV3PairingQR 把短期一次性 PairingTicket bundle 编码进高对比度终端二维码。

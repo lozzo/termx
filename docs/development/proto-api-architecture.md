@@ -82,7 +82,7 @@ core
 
 PA003 已建立 `proto/apipb/`，package 为 `termx.api.v1`，它是新的公共 application API 唯一落点。后续 terminal/history/file 等领域 command/result/event 必须进入该 package 或其同版本子 schema。
 
-已有 `runtimepb` 是迁移期 Web/mobile API，已有 `wirepb` 同时包含 application message 与 framing。两者都是迁移输入，不再新增 application API；consumer 切到 `apipb` 后删除重复 schema。迁移期间禁止直接复用 field number 声称 wire compatibility，必须通过显式 API Mapping 和 compatibility harness 验证。
+已有 `runtimepb` 是迁移期 Web/mobile API，已有 `wirepb` 同时包含 application message 与 framing。当前 Go 端不得使用其中的 application message；App/Web consumer 后续切到 `apipb` 后删除重复 schema。暂留只表达迁移顺序，不是长期兼容承诺。
 
 ## API 设计要求
 
@@ -92,7 +92,8 @@ PA003 已建立 `proto/apipb/`，package 为 `termx.api.v1`，它是新的公共
 - endpoint generation 是 client runtime truth，daemon 不查询或复制“当前 generation”。capability 与具体 application scope 由 protocol connection 在 Hello/authorization 后持有，并通过覆盖 controller 执行期的原子 admission lease 交给 API Layer；每条请求不得自声明 capability。
 - API Layer 在深拷贝 in-process/JNI/WASM Proto 前必须执行 envelope 总量门禁；通过后 admission、validation 与 dispatch 只能使用同一私有快照。
 - 非幂等 input、paste、resize、detach 必须携带 operation/session fence，失败后不得隐式重放。
-- 长生命周期资源使用 session-bound opaque token 与稳定 `ResourceKind` enum，并有显式 release/cancel；owning registry 必须验证 token 真伪、kind、generation 和 session ownership，不得暴露 Go pointer、channel 或 goroutine。
+- 长生命周期活动资源使用 session-bound opaque token 与稳定 `ResourceKind` enum，并有显式 release/cancel；owning registry 必须验证 token 真伪、kind、generation 和 session ownership，不得暴露 Go pointer、channel 或 goroutine。
+- upload resume 不是活动 stream resource：使用独立 `FileUploadResumeHandle`，由 verified principal、path、size 和 TTL 约束，可跨 session 使用，但不能进入通用 release/cancel。
 - 创建长期资源的 controller 必须返回 pending transaction；API Layer 校验公开 projection 后才 commit，校验或提交失败必须通过不继承请求取消且有超时的 cleanup context rollback。
 - 稳定错误使用 code + typed detail，不依赖字符串解析。
 - `EndpointID + TerminalID` 是跨 endpoint terminal identity；裸 `TerminalID` 只在 owning daemon 内有效。
@@ -125,9 +126,8 @@ proto schema
 
 ## 当前迁移债务
 
-- `core/api` 是错误的平行 Go API，必须删除。
-- terminal、attachment 与 path 已通过 `api.execute` 迁到 `apipb`；对应 protocol DTO、旧 method codec 和 `wirepb` message 已删除。
-- connection-bound application 装配已由 composition root 通过 `api_layer.CoreApplicationExecutorFactory` 注入；`core` 只暴露 native `ApplicationSessionPort`，不再 import `api_layer/api_mapping`。
-- terminal/attachment/path 的 generated Proto 与 core domain 转换已恢复到 `api_mapping/`；`core/application_api.go` 已删除，dependency guard 禁止该倒置重新出现。
-- history/live、file/storage/workbench 仍保留旧 protocol application DTO，后续只能按 PA005B、PA005C 的原子切片迁移，不能恢复 terminal/path 双路径。
+- Go application domain 已统一进入 `apipb + api.execute`；旧 Go protocol DTO、generic method codec、daemon workbench mutation/store 已删除。
+- `core` 只暴露 native `ApplicationSessionPort`，不 import `api_layer/api_mapping`；generated Proto 与 core 的字段转换只位于 `api_mapping/`。
+- App/Web consumer 尚未迁移，`runtimepb/wirepb` 重复 schema 暂留；当前阶段不得修改其生产源码。
+- Go 旧测试仍需改为 generated Proto harness；实现收口不以旧 DTO 测试继续编译为条件。
 - CLI 的共享 endpoint runtime helper 仍有已冻结编译缺口；不得用自造 generation、裸 protocol client 或 local fallback 填补。

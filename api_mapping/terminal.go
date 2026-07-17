@@ -48,6 +48,44 @@ func RequiredCapabilityForCommand(command *apipb.CommandEnvelope) apipb.ApiCapab
 		return apipb.ApiCapability_API_CAPABILITY_TERMINAL_ATTACHMENT
 	case *apipb.CommandEnvelope_PathListDirectories:
 		return apipb.ApiCapability_API_CAPABILITY_PATH_QUERY
+	case *apipb.CommandEnvelope_HistoryWindow,
+		*apipb.CommandEnvelope_HistoryCopy,
+		*apipb.CommandEnvelope_HistoryRelease,
+		*apipb.CommandEnvelope_HistoryBacklogStatus:
+		return apipb.ApiCapability_API_CAPABILITY_HISTORY
+	case *apipb.CommandEnvelope_LiveScreenGet,
+		*apipb.CommandEnvelope_LiveInvalidationNext:
+		return apipb.ApiCapability_API_CAPABILITY_LIVE_SCREEN
+	case *apipb.CommandEnvelope_EventSubscribe:
+		return apipb.ApiCapability_API_CAPABILITY_EVENT_SUBSCRIPTION
+	case *apipb.CommandEnvelope_FileList,
+		*apipb.CommandEnvelope_FileStat,
+		*apipb.CommandEnvelope_FilePreview,
+		*apipb.CommandEnvelope_FileMkdir,
+		*apipb.CommandEnvelope_FileRename,
+		*apipb.CommandEnvelope_FileDelete,
+		*apipb.CommandEnvelope_FileCopy,
+		*apipb.CommandEnvelope_FileMove,
+		*apipb.CommandEnvelope_FileDownloadOpen,
+		*apipb.CommandEnvelope_FileUploadOpen,
+		*apipb.CommandEnvelope_FileTransferCancel:
+		return apipb.ApiCapability_API_CAPABILITY_FILE
+	case *apipb.CommandEnvelope_StorageGet,
+		*apipb.CommandEnvelope_StoragePut,
+		*apipb.CommandEnvelope_StorageDelete,
+		*apipb.CommandEnvelope_StorageList:
+		return apipb.ApiCapability_API_CAPABILITY_STORAGE
+	case *apipb.CommandEnvelope_ClientAccessIdentity,
+		*apipb.CommandEnvelope_ClientAccessList,
+		*apipb.CommandEnvelope_ClientAccessTicketCreate,
+		*apipb.CommandEnvelope_ClientAccessRevoke:
+		return apipb.ApiCapability_API_CAPABILITY_CLIENT_ACCESS
+	case *apipb.CommandEnvelope_RemoteStatus,
+		*apipb.CommandEnvelope_RemotePairStart,
+		*apipb.CommandEnvelope_RemoteLocalEnable,
+		*apipb.CommandEnvelope_RemoteLocalStatus,
+		*apipb.CommandEnvelope_RemoteLocalDisable:
+		return apipb.ApiCapability_API_CAPABILITY_REMOTE_CONTROL
 	case *apipb.CommandEnvelope_TerminalDefaults,
 		*apipb.CommandEnvelope_TerminalCreate,
 		*apipb.CommandEnvelope_TerminalList,
@@ -320,8 +358,61 @@ func ApplicationAdmissionFromCommand(command *apipb.CommandEnvelope, capability 
 		admission.ResourceToken = cloneBytes(value.TerminalResizeLock.GetAttachment().GetOpaqueToken())
 	case *apipb.CommandEnvelope_ReleaseResource:
 		admission.ResourceToken = cloneBytes(value.ReleaseResource.GetResource().GetOpaqueToken())
+		if value.ReleaseResource.GetResource().GetKind() == apipb.ResourceKind_RESOURCE_KIND_SUBSCRIPTION {
+			admission.ResourceKind = corev2.ApplicationResourceKindSubscription
+		}
+	case *apipb.CommandEnvelope_HistoryWindow:
+		admission.TerminalID = value.HistoryWindow.GetTerminal().GetTerminalId()
+	case *apipb.CommandEnvelope_HistoryCopy:
+		admission.TerminalID = value.HistoryCopy.GetTerminal().GetTerminalId()
+	case *apipb.CommandEnvelope_HistoryRelease:
+		admission.TerminalID = value.HistoryRelease.GetTerminal().GetTerminalId()
+	case *apipb.CommandEnvelope_HistoryBacklogStatus:
+		admission.TerminalID = value.HistoryBacklogStatus.GetTerminal().GetTerminalId()
+	case *apipb.CommandEnvelope_LiveScreenGet:
+		admission.TerminalID = value.LiveScreenGet.GetTerminal().GetTerminalId()
+	case *apipb.CommandEnvelope_LiveInvalidationNext:
+		admission.TerminalID = value.LiveInvalidationNext.GetTerminal().GetTerminalId()
+	case *apipb.CommandEnvelope_EventSubscribe:
+		admission.TerminalID = value.EventSubscribe.GetTerminal().GetTerminalId()
+		admission.MachineLifecycleEventsOnly = machineLifecycleEventsOnly(value.EventSubscribe)
+	case *apipb.CommandEnvelope_FileList:
+		admission.FileOperation = "list"
+	case *apipb.CommandEnvelope_FileStat:
+		admission.FileOperation = "stat"
+	case *apipb.CommandEnvelope_FilePreview:
+		admission.FileOperation = "preview"
+	case *apipb.CommandEnvelope_FileMkdir:
+		admission.FileOperation = "mkdir"
+	case *apipb.CommandEnvelope_FileRename:
+		admission.FileOperation = "rename"
+	case *apipb.CommandEnvelope_FileDelete:
+		admission.FileOperation = "delete"
+	case *apipb.CommandEnvelope_FileCopy:
+		admission.FileOperation = "copy"
+	case *apipb.CommandEnvelope_FileMove:
+		admission.FileOperation = "move"
+	case *apipb.CommandEnvelope_FileDownloadOpen:
+		admission.FileOperation = "download"
+	case *apipb.CommandEnvelope_FileUploadOpen:
+		admission.FileOperation = "upload"
+	case *apipb.CommandEnvelope_FileTransferCancel:
+		admission.FileOperation = "cancel"
+		admission.ResourceToken = cloneBytes(value.FileTransferCancel.GetTransfer().GetOpaqueToken())
 	}
 	return admission
+}
+
+func machineLifecycleEventsOnly(command *apipb.EventSubscribeCommand) bool {
+	if command == nil || command.GetTerminal() != nil || command.GetStorageAppId() != "" || command.GetStorageScope() != apipb.StorageScope_STORAGE_SCOPE_UNSPECIFIED || command.GetStorageOwnerId() != "" || command.GetStorageKeyPrefix() != "" || len(command.GetTypes()) == 0 {
+		return false
+	}
+	for _, eventType := range command.GetTypes() {
+		if eventType != apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE {
+			return false
+		}
+	}
+	return true
 }
 
 // TerminalRecordFromProto 把已校验 create spec 转换为 core domain record。
@@ -488,6 +579,20 @@ func applicationCapabilityToCore(capability apipb.ApiCapability) corev2.Applicat
 		return corev2.ApplicationCapabilityTerminalAttachment
 	case apipb.ApiCapability_API_CAPABILITY_PATH_QUERY:
 		return corev2.ApplicationCapabilityPathQuery
+	case apipb.ApiCapability_API_CAPABILITY_HISTORY:
+		return corev2.ApplicationCapabilityHistory
+	case apipb.ApiCapability_API_CAPABILITY_LIVE_SCREEN:
+		return corev2.ApplicationCapabilityLiveScreen
+	case apipb.ApiCapability_API_CAPABILITY_FILE:
+		return corev2.ApplicationCapabilityFile
+	case apipb.ApiCapability_API_CAPABILITY_STORAGE:
+		return corev2.ApplicationCapabilityStorage
+	case apipb.ApiCapability_API_CAPABILITY_EVENT_SUBSCRIPTION:
+		return corev2.ApplicationCapabilityEventSubscription
+	case apipb.ApiCapability_API_CAPABILITY_CLIENT_ACCESS:
+		return corev2.ApplicationCapabilityClientAccess
+	case apipb.ApiCapability_API_CAPABILITY_REMOTE_CONTROL:
+		return corev2.ApplicationCapabilityRemoteControl
 	default:
 		return 0
 	}

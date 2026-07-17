@@ -32,19 +32,33 @@ const (
 	ApiCapability_API_CAPABILITY_TERMINAL_LIFECYCLE     ApiCapability = 5
 	ApiCapability_API_CAPABILITY_TERMINAL_ATTACHMENT    ApiCapability = 6
 	ApiCapability_API_CAPABILITY_PATH_QUERY             ApiCapability = 7
+	ApiCapability_API_CAPABILITY_HISTORY                ApiCapability = 8
+	ApiCapability_API_CAPABILITY_LIVE_SCREEN            ApiCapability = 9
+	ApiCapability_API_CAPABILITY_FILE                   ApiCapability = 10
+	ApiCapability_API_CAPABILITY_STORAGE                ApiCapability = 11
+	ApiCapability_API_CAPABILITY_EVENT_SUBSCRIPTION     ApiCapability = 12
+	ApiCapability_API_CAPABILITY_CLIENT_ACCESS          ApiCapability = 13
+	ApiCapability_API_CAPABILITY_REMOTE_CONTROL         ApiCapability = 14
 )
 
 // Enum value maps for ApiCapability.
 var (
 	ApiCapability_name = map[int32]string{
-		0: "API_CAPABILITY_UNSPECIFIED",
-		1: "API_CAPABILITY_TYPED_ERRORS",
-		2: "API_CAPABILITY_ENDPOINT_SESSION_FENCE",
-		3: "API_CAPABILITY_OPERATION_CANCELLATION",
-		4: "API_CAPABILITY_RESOURCE_LIFECYCLE",
-		5: "API_CAPABILITY_TERMINAL_LIFECYCLE",
-		6: "API_CAPABILITY_TERMINAL_ATTACHMENT",
-		7: "API_CAPABILITY_PATH_QUERY",
+		0:  "API_CAPABILITY_UNSPECIFIED",
+		1:  "API_CAPABILITY_TYPED_ERRORS",
+		2:  "API_CAPABILITY_ENDPOINT_SESSION_FENCE",
+		3:  "API_CAPABILITY_OPERATION_CANCELLATION",
+		4:  "API_CAPABILITY_RESOURCE_LIFECYCLE",
+		5:  "API_CAPABILITY_TERMINAL_LIFECYCLE",
+		6:  "API_CAPABILITY_TERMINAL_ATTACHMENT",
+		7:  "API_CAPABILITY_PATH_QUERY",
+		8:  "API_CAPABILITY_HISTORY",
+		9:  "API_CAPABILITY_LIVE_SCREEN",
+		10: "API_CAPABILITY_FILE",
+		11: "API_CAPABILITY_STORAGE",
+		12: "API_CAPABILITY_EVENT_SUBSCRIPTION",
+		13: "API_CAPABILITY_CLIENT_ACCESS",
+		14: "API_CAPABILITY_REMOTE_CONTROL",
 	}
 	ApiCapability_value = map[string]int32{
 		"API_CAPABILITY_UNSPECIFIED":            0,
@@ -55,6 +69,13 @@ var (
 		"API_CAPABILITY_TERMINAL_LIFECYCLE":     5,
 		"API_CAPABILITY_TERMINAL_ATTACHMENT":    6,
 		"API_CAPABILITY_PATH_QUERY":             7,
+		"API_CAPABILITY_HISTORY":                8,
+		"API_CAPABILITY_LIVE_SCREEN":            9,
+		"API_CAPABILITY_FILE":                   10,
+		"API_CAPABILITY_STORAGE":                11,
+		"API_CAPABILITY_EVENT_SUBSCRIPTION":     12,
+		"API_CAPABILITY_CLIENT_ACCESS":          13,
+		"API_CAPABILITY_REMOTE_CONTROL":         14,
 	}
 )
 
@@ -840,7 +861,7 @@ const file_apipb_common_proto_rawDesc = "" +
 	"validation\x12L\n" +
 	"\rstale_session\x18\v \x01(\v2%.termx.api.v1.StaleSessionErrorDetailH\x00R\fstaleSession\x12?\n" +
 	"\bresource\x18\f \x01(\v2!.termx.api.v1.ResourceErrorDetailH\x00R\bresourceB\b\n" +
-	"\x06detail*\xbb\x02\n" +
+	"\x06detail*\x98\x04\n" +
 	"\rApiCapability\x12\x1e\n" +
 	"\x1aAPI_CAPABILITY_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bAPI_CAPABILITY_TYPED_ERRORS\x10\x01\x12)\n" +
@@ -849,7 +870,15 @@ const file_apipb_common_proto_rawDesc = "" +
 	"!API_CAPABILITY_RESOURCE_LIFECYCLE\x10\x04\x12%\n" +
 	"!API_CAPABILITY_TERMINAL_LIFECYCLE\x10\x05\x12&\n" +
 	"\"API_CAPABILITY_TERMINAL_ATTACHMENT\x10\x06\x12\x1d\n" +
-	"\x19API_CAPABILITY_PATH_QUERY\x10\a*\x9c\x03\n" +
+	"\x19API_CAPABILITY_PATH_QUERY\x10\a\x12\x1a\n" +
+	"\x16API_CAPABILITY_HISTORY\x10\b\x12\x1e\n" +
+	"\x1aAPI_CAPABILITY_LIVE_SCREEN\x10\t\x12\x17\n" +
+	"\x13API_CAPABILITY_FILE\x10\n" +
+	"\x12\x1a\n" +
+	"\x16API_CAPABILITY_STORAGE\x10\v\x12%\n" +
+	"!API_CAPABILITY_EVENT_SUBSCRIPTION\x10\f\x12 \n" +
+	"\x1cAPI_CAPABILITY_CLIENT_ACCESS\x10\r\x12!\n" +
+	"\x1dAPI_CAPABILITY_REMOTE_CONTROL\x10\x0e*\x9c\x03\n" +
 	"\fApiErrorCode\x12\x1e\n" +
 	"\x1aAPI_ERROR_CODE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eAPI_ERROR_CODE_INVALID_REQUEST\x10\x01\x12&\n" +

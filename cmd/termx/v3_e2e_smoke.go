@@ -13,7 +13,6 @@ import (
 	apilayer "github.com/lozzow/termx/api_layer"
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	corev2 "github.com/lozzow/termx/core"
-	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/tui/app"
 	"github.com/lozzow/termx/tui/input"
@@ -184,10 +183,11 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	if err := validateV3E2EStyledChrome(host.Frames()); err != nil {
 		return v3E2ESmokeResult{}, err
 	}
-	if _, err := client.HistoryWindow(ctx, protocol.HistoryWindowParams{
-		TerminalID: created.TerminalID,
-		Cols:       runtime.State().Session.Cols,
-		Limit:      1,
+	if _, err := application.HistoryWindow(ctx, &apipb.HistoryWindowCommand{
+		Terminal: &apipb.TerminalRef{EndpointId: string(endpointdomain.DefaultEndpointID), TerminalId: createdID},
+		Cols:     int32(runtime.State().Session.Cols),
+		Limit:    1,
+		Mode:     apipb.HistoryWindowMode_HISTORY_WINDOW_MODE_LATEST,
 	}); err != nil && strings.Contains(err.Error(), corev2.ErrHistoryNotRebuilt.Error()) {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: %w", err)
 	}

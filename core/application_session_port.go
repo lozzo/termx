@@ -1,6 +1,12 @@
 package core
 
-import "context"
+import (
+	"context"
+	"encoding/binary"
+
+	"github.com/lozzow/termx/core/history"
+	"github.com/lozzow/termx/proto/wire"
+)
 
 type protocolAdmissionLease struct{}
 
@@ -17,11 +23,44 @@ func (session *protocolSession) AcquireApplication(ctx context.Context, admissio
 		return nil, ErrApplicationUnsupportedCapability
 	}
 	scope := session.scope.normalized()
+	if admission.Capability == ApplicationCapabilityFile {
+		if !applicationFileAllowed(scope, admission.FileOperation) {
+			return nil, ErrApplicationForbidden
+		}
+		return protocolAdmissionLease{}, nil
+	}
+	if admission.Capability == ApplicationCapabilityClientAccess {
+		if !scope.LocalOwner && !scope.ManageClientAccess {
+			return nil, ErrApplicationForbidden
+		}
+		return protocolAdmissionLease{}, nil
+	}
+	if admission.Capability == ApplicationCapabilityRemoteControl {
+		if !scope.LocalOwner {
+			return nil, ErrApplicationForbidden
+		}
+		return protocolAdmissionLease{}, nil
+	}
 	if scope.AllowDaemon {
 		return protocolAdmissionLease{}, nil
 	}
 	if scope.MachineEventsOnly {
+		if admission.Capability == ApplicationCapabilityEventSubscription && admission.MachineLifecycleEventsOnly {
+			return protocolAdmissionLease{}, nil
+		}
+		if admission.Capability == ApplicationCapabilityResourceLifecycle && admission.ResourceKind == ApplicationResourceKindSubscription {
+			if subscription, ok := session.eventSubscriptionForToken(admission.ResourceToken); ok && machineLifecycleEventFilter(subscription.filter) {
+				return protocolAdmissionLease{}, nil
+			}
+		}
 		return nil, ErrApplicationForbidden
+	}
+	if admission.Capability == ApplicationCapabilityResourceLifecycle && admission.ResourceKind == ApplicationResourceKindSubscription {
+		subscription, ok := session.eventSubscriptionForToken(admission.ResourceToken)
+		if !ok || subscription.filter.TerminalID != scope.TerminalID {
+			return nil, ErrApplicationForbidden
+		}
+		return protocolAdmissionLease{}, nil
 	}
 	target := admission.TerminalID
 	if len(admission.ResourceToken) > 0 {
@@ -42,8 +81,37 @@ func applicationCapabilitySupported(capability ApplicationCapability) bool {
 	case ApplicationCapabilityResourceLifecycle,
 		ApplicationCapabilityTerminalLifecycle,
 		ApplicationCapabilityTerminalAttachment,
-		ApplicationCapabilityPathQuery:
+		ApplicationCapabilityPathQuery,
+		ApplicationCapabilityHistory,
+		ApplicationCapabilityLiveScreen,
+		ApplicationCapabilityFile,
+		ApplicationCapabilityStorage,
+		ApplicationCapabilityEventSubscription,
+		ApplicationCapabilityClientAccess,
+		ApplicationCapabilityRemoteControl:
 		return true
+	default:
+		return false
+	}
+}
+
+func applicationFileAllowed(scope TransportScope, operation string) bool {
+	if !scope.AllowDaemon {
+		return false
+	}
+	switch operation {
+	case "list", "stat":
+		return scope.FileReadMetadata
+	case "preview", "download":
+		return scope.FileReadContent
+	case "upload":
+		return scope.FileWriteContent
+	case "cancel":
+		return scope.FileReadContent || scope.FileWriteContent
+	case "mkdir", "rename", "delete", "move":
+		return scope.FileMutate
+	case "copy":
+		return scope.FileMutate && scope.FileReadContent
 	default:
 		return false
 	}
@@ -57,11 +125,26 @@ func (session *protocolSession) CancelApplicationOperation(context.Context, stri
 // ReleaseApplicationResource 释放当前 session registry 持有的 opaque attachment token。
 func (session *protocolSession) ReleaseApplicationResource(_ context.Context, token []byte) error {
 	attachment, err := session.attachmentForToken(token)
-	if err != nil {
-		return err
+	if err == nil {
+		session.detach(attachmentDetachRequest{Channel: attachment.Channel})
+		return nil
 	}
-	session.detach(attachmentDetachRequest{Channel: attachment.Channel})
-	return nil
+	if subscriptionID, ok := applicationEventSubscriptionID(token); ok {
+		session.mu.Lock()
+		subscription := session.eventSubscriptions[subscriptionID]
+		delete(session.eventSubscriptions, subscriptionID)
+		session.mu.Unlock()
+		if subscription.cancel == nil {
+			return ErrApplicationForbidden
+		}
+		subscription.cancel()
+		return nil
+	}
+	if transferID, ok := fileTransferIDFromResourceToken(token); ok {
+		session.cancelFileTransfer(transferID)
+		return nil
+	}
+	return err
 }
 
 // ApplicationTerminalDefaults 返回 owning daemon 机器的默认 shell 与 cwd。
@@ -242,6 +325,297 @@ func (session *protocolSession) ApplicationTerminalResizeLock(_ context.Context,
 // ApplicationPathListDirectories 查询 owning daemon 文件系统的目录候选。
 func (session *protocolSession) ApplicationPathListDirectories(_ context.Context, prefix string, limit int) (PathDirectories, error) {
 	return listPathDirectories(prefix, limit)
+}
+
+// ApplicationHistoryWindow 查询 authoritative history；latest 会先建立 frozen token，
+// 后续分页只能沿 core 返回的 token/cursor 继续，不能从客户端 rows 重建边界。
+func (session *protocolSession) ApplicationHistoryWindow(ctx context.Context, request history.HistoryWindowRequest) (history.HistoryWindow, error) {
+	if _, err := session.server.GetTerminal(request.TerminalID); err != nil {
+		return history.HistoryWindow{}, err
+	}
+	flush := true
+	if request.Mode == history.HistoryWindowModeLatest {
+		snapshot, err := session.server.TerminalHistoryFreeze(ctx, request.TerminalID, history.FreezeHistoryRequest{
+			TerminalID: request.TerminalID,
+			Cols:       request.Cols,
+			Limit:      request.Limit,
+		})
+		if err != nil {
+			return history.HistoryWindow{}, err
+		}
+		request.Token = snapshot.Token
+		flush = false
+	}
+	return session.server.terminalHistoryWindow(ctx, request.TerminalID, request, flush)
+}
+
+// ApplicationHistoryCopy 从 core frozen history token 复制文本。
+func (session *protocolSession) ApplicationHistoryCopy(ctx context.Context, request history.HistoryCopyRequest) (string, error) {
+	if _, err := session.server.GetTerminal(request.TerminalID); err != nil {
+		return "", err
+	}
+	return session.server.TerminalHistoryCopy(ctx, request.TerminalID, request)
+}
+
+// ApplicationHistoryRelease 释放 core-owned frozen history token。
+func (session *protocolSession) ApplicationHistoryRelease(ctx context.Context, terminalID string, token history.HistoryToken) error {
+	if _, err := session.server.GetTerminal(terminalID); err != nil {
+		return err
+	}
+	return session.server.TerminalHistoryRelease(ctx, terminalID, token)
+}
+
+// ApplicationHistoryBacklogStatus 返回 history worker 的诊断投影。
+func (session *protocolSession) ApplicationHistoryBacklogStatus(_ context.Context, terminalID string) (HistoryBacklogStatus, error) {
+	return session.server.TerminalHistoryBacklogStatus(terminalID)
+}
+
+// ApplicationLiveScreen 返回 latest-only native screen，不把 live surface 当作 history truth。
+func (session *protocolSession) ApplicationLiveScreen(_ context.Context, terminalID string) (NativeScreenSnapshot, error) {
+	if _, err := session.server.GetTerminal(terminalID); err != nil {
+		return NativeScreenSnapshot{}, err
+	}
+	terminal, err := session.server.Terminal(terminalID)
+	if err != nil {
+		return NativeScreenSnapshot{}, err
+	}
+	return terminal.NativeScreenSnapshot(terminalID), nil
+}
+
+// ApplicationLiveInvalidation 等待 observed revision 之后的单次唤醒边沿。
+func (session *protocolSession) ApplicationLiveInvalidation(ctx context.Context, terminalID string, observed LiveRevision) (LiveScreenInvalidated, error) {
+	event, err := session.server.NextLiveInvalidation(ctx, terminalID, observed)
+	if err != nil {
+		return LiveScreenInvalidated{}, err
+	}
+	if event.Live == nil {
+		return LiveScreenInvalidated{}, ErrTerminalNotFound
+	}
+	return LiveScreenInvalidated{TerminalID: event.TerminalID, Revision: event.Live.Revision}, nil
+}
+
+// ApplicationEventSubscribe 建立当前 protocol session owning 的异步事件订阅。
+// encoder 来自 API Mapping；编码失败只丢弃该通知，不改变 core event truth。
+func (session *protocolSession) ApplicationEventSubscribe(ctx context.Context, filter EventFilter, encoder ApplicationEventEncoder) ([]byte, error) {
+	if encoder == nil {
+		return nil, ErrApplicationForbidden
+	}
+	eventCtx, cancel := context.WithCancel(ctx)
+	session.mu.Lock()
+	session.nextEventSub++
+	subscriptionID := session.nextEventSub
+	session.eventSubscriptions[subscriptionID] = applicationEventSubscription{cancel: cancel, filter: filter}
+	session.mu.Unlock()
+	token := applicationEventSubscriptionToken(subscriptionID)
+	events := session.server.Events(eventCtx, filter)
+	go func() {
+		defer session.clearEventSubscription(subscriptionID)
+		for {
+			select {
+			case <-eventCtx.Done():
+				return
+			case event, ok := <-events:
+				if !ok {
+					return
+				}
+				payload, err := encoder(event, token)
+				if err == nil {
+					_ = session.sendFrame(0, wire.TypeEvent, payload)
+				}
+			}
+		}
+	}()
+	return token, nil
+}
+
+func applicationEventSubscriptionToken(subscriptionID uint64) []byte {
+	token := make([]byte, 10)
+	copy(token, "ev")
+	binary.BigEndian.PutUint64(token[2:], subscriptionID)
+	return token
+}
+
+func applicationEventSubscriptionID(token []byte) (uint64, bool) {
+	if len(token) != 10 || string(token[:2]) != "ev" {
+		return 0, false
+	}
+	return binary.BigEndian.Uint64(token[2:]), true
+}
+
+func (session *protocolSession) eventSubscriptionForToken(token []byte) (applicationEventSubscription, bool) {
+	id, ok := applicationEventSubscriptionID(token)
+	if !ok {
+		return applicationEventSubscription{}, false
+	}
+	session.mu.RLock()
+	defer session.mu.RUnlock()
+	subscription, ok := session.eventSubscriptions[id]
+	return subscription, ok
+}
+
+func machineLifecycleEventFilter(filter EventFilter) bool {
+	if filter.TerminalID != "" || filter.StorageAppID != "" || filter.StorageScope != "" || filter.StorageOwnerID != "" || filter.StorageKeyPrefix != "" || len(filter.Types) == 0 {
+		return false
+	}
+	for _, eventType := range filter.Types {
+		switch eventType {
+		case EventTerminalCreated, EventTerminalExited, EventTerminalMetadataChanged, EventTerminalRemoved, EventTerminalChanged:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// ApplicationFileList 返回 daemon-owned directory window。
+func (session *protocolSession) ApplicationFileList(_ context.Context, request FileListRequest) (FileListResult, error) {
+	return fileList(request)
+}
+
+// ApplicationFileStat 返回 daemon-owned path metadata。
+func (session *protocolSession) ApplicationFileStat(_ context.Context, request FilePathRequest) (FileEntry, error) {
+	return fileStat(request)
+}
+
+// ApplicationFilePreview 返回有界文件内容预览。
+func (session *protocolSession) ApplicationFilePreview(_ context.Context, request FilePreviewRequest) (FilePreviewResult, error) {
+	return filePreview(request)
+}
+
+// ApplicationFileMkdir 创建 daemon-owned directory。
+func (session *protocolSession) ApplicationFileMkdir(_ context.Context, request FilePathRequest) FileOperationResult {
+	return fileMkdir(request)
+}
+
+// ApplicationFileRename 原子重命名 daemon-owned path。
+func (session *protocolSession) ApplicationFileRename(_ context.Context, request FileRenameRequest) FileOperationResult {
+	return fileRename(request)
+}
+
+// ApplicationFileDelete 删除 daemon-owned path。
+func (session *protocolSession) ApplicationFileDelete(_ context.Context, request FilePathRequest) FileOperationResult {
+	return fileDelete(request)
+}
+
+// ApplicationFileCopy 批量复制 daemon-owned paths。
+func (session *protocolSession) ApplicationFileCopy(_ context.Context, request FileCopyMoveRequest) FileBatchResult {
+	return fileCopyMove(request, false)
+}
+
+// ApplicationFileMove 批量移动 daemon-owned paths。
+func (session *protocolSession) ApplicationFileMove(_ context.Context, request FileCopyMoveRequest) FileBatchResult {
+	return fileCopyMove(request, true)
+}
+
+// ApplicationFileDownloadOpen 创建 session-bound download transfer。
+func (session *protocolSession) ApplicationFileDownloadOpen(ctx context.Context, request FileDownloadOpenRequest) (FileTransfer, error) {
+	return session.openFileDownload(ctx, request)
+}
+
+// ApplicationFileUploadOpen 创建或恢复 session-bound upload transfer。
+func (session *protocolSession) ApplicationFileUploadOpen(_ context.Context, request FileUploadOpenRequest) (FileTransfer, error) {
+	return session.openFileUpload(request)
+}
+
+// ApplicationFileTransferCancel 按 opaque token 取消 transfer。
+func (session *protocolSession) ApplicationFileTransferCancel(_ context.Context, token []byte) (FileTransferCancelResult, error) {
+	transferID, ok := fileTransferIDFromResourceToken(token)
+	if !ok {
+		return FileTransferCancelResult{}, ErrTerminalNotFound
+	}
+	return session.cancelFileTransfer(transferID), nil
+}
+
+// ApplicationStorageGet 返回 daemon opaque storage entry。
+func (session *protocolSession) ApplicationStorageGet(ctx context.Context, appID string, scope StorageScope, ownerID, key string) (StorageEntry, error) {
+	return session.server.StorageGet(ctx, appID, scope, ownerID, key)
+}
+
+// ApplicationStoragePut 执行 opaque value CAS put。
+func (session *protocolSession) ApplicationStoragePut(ctx context.Context, request StoragePutRequest) (StorageEntry, error) {
+	return session.server.StoragePut(ctx, request)
+}
+
+// ApplicationStorageDelete 执行 opaque value CAS delete。
+func (session *protocolSession) ApplicationStorageDelete(ctx context.Context, request StorageDeleteRequest) (StorageDeleteResult, error) {
+	return session.server.StorageDelete(ctx, request)
+}
+
+// ApplicationStorageList 返回稳定 storage key window。
+func (session *protocolSession) ApplicationStorageList(ctx context.Context, appID string, scope StorageScope, ownerID, prefix string) []StorageEntry {
+	return session.server.StorageList(ctx, appID, scope, ownerID, prefix)
+}
+
+func (session *protocolSession) ApplicationClientAccessIdentity(ctx context.Context) (ClientAccessIdentity, error) {
+	service, err := session.clientAccessService()
+	if err != nil {
+		return ClientAccessIdentity{}, err
+	}
+	return service.Identity(ctx)
+}
+
+func (session *protocolSession) ApplicationClientAccessList(ctx context.Context) ([]ClientAccessRecord, error) {
+	service, err := session.clientAccessService()
+	if err != nil {
+		return nil, err
+	}
+	return service.List(ctx)
+}
+
+func (session *protocolSession) ApplicationClientAccessCreateTicket(ctx context.Context, request ClientAccessTicketRequest) (ClientAccessTicket, error) {
+	service, err := session.clientAccessService()
+	if err != nil {
+		return ClientAccessTicket{}, err
+	}
+	return service.CreateTicket(ctx, request)
+}
+
+func (session *protocolSession) ApplicationClientAccessRevoke(ctx context.Context, grantID string) (ClientAccessRecord, error) {
+	service, err := session.clientAccessService()
+	if err != nil {
+		return ClientAccessRecord{}, err
+	}
+	return service.Revoke(ctx, grantID)
+}
+
+func (session *protocolSession) ApplicationRemoteStatus(ctx context.Context) (RemoteStatus, error) {
+	service, err := session.remoteService()
+	if err != nil {
+		return RemoteStatus{}, err
+	}
+	return service.Status(ctx)
+}
+
+func (session *protocolSession) ApplicationRemotePairStart(ctx context.Context, request RemotePairStartRequest) (RemotePairStartResult, error) {
+	service, err := session.remoteService()
+	if err != nil {
+		return RemotePairStartResult{}, err
+	}
+	return service.PairStart(ctx, request)
+}
+
+func (session *protocolSession) ApplicationRemoteLocalEnable(ctx context.Context, request RemoteLocalEnableRequest) (RemoteLocalStatus, error) {
+	service, err := session.remoteService()
+	if err != nil {
+		return RemoteLocalStatus{}, err
+	}
+	return service.LocalEnable(ctx, request)
+}
+
+func (session *protocolSession) ApplicationRemoteLocalStatus(ctx context.Context) (RemoteLocalStatus, error) {
+	service, err := session.remoteService()
+	if err != nil {
+		return RemoteLocalStatus{}, err
+	}
+	return service.LocalStatus(ctx)
+}
+
+func (session *protocolSession) ApplicationRemoteLocalDisable(ctx context.Context) (RemoteLocalStatus, error) {
+	service, err := session.remoteService()
+	if err != nil {
+		return RemoteLocalStatus{}, err
+	}
+	return service.LocalDisable(ctx)
 }
 
 func applicationResizeControl(control *attachmentResizeControl) *TerminalResizeControl {

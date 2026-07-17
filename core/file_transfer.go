@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"hash"
@@ -56,46 +57,46 @@ type sessionFileTransfer struct {
 	cancel    context.CancelFunc
 }
 
-func (session *protocolSession) openFileDownload(ctx context.Context, params protocol.FileDownloadOpenParams) (protocol.FileTransferOpenResult, error) {
+func (session *protocolSession) openFileDownload(ctx context.Context, params FileDownloadOpenRequest) (FileTransfer, error) {
 	path, err := absoluteFilePath(params.Path)
 	if err != nil {
-		return protocol.FileTransferOpenResult{}, err
+		return FileTransfer{}, err
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return protocol.FileTransferOpenResult{}, err
+		return FileTransfer{}, err
 	}
 	if !info.Mode().IsRegular() {
-		return protocol.FileTransferOpenResult{}, fmt.Errorf("download requires a regular file")
+		return FileTransfer{}, fmt.Errorf("download requires a regular file")
 	}
 	if params.Offset < 0 || params.Offset > info.Size() {
-		return protocol.FileTransferOpenResult{}, fmt.Errorf("invalid download offset")
+		return FileTransfer{}, fmt.Errorf("invalid download offset")
 	}
 	if params.ExpectedSize > 0 && params.ExpectedSize != info.Size() {
-		return protocol.FileTransferOpenResult{}, fmt.Errorf("stale download source")
+		return FileTransfer{}, fmt.Errorf("stale download source")
 	}
 	if !params.ExpectedModifiedAt.IsZero() && params.ExpectedModifiedAt.UnixNano() != info.ModTime().UnixNano() {
-		return protocol.FileTransferOpenResult{}, fmt.Errorf("stale download source")
+		return FileTransfer{}, fmt.Errorf("stale download source")
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return protocol.FileTransferOpenResult{}, err
+		return FileTransfer{}, err
 	}
 	if _, err = file.Seek(params.Offset, io.SeekStart); err != nil {
 		file.Close()
-		return protocol.FileTransferOpenResult{}, err
+		return FileTransfer{}, err
 	}
 	id, err := newFileTransferID()
 	if err != nil {
 		file.Close()
-		return protocol.FileTransferOpenResult{}, err
+		return FileTransfer{}, err
 	}
 	channel := session.allocateFileChannel()
 	transferCtx, cancel := context.WithCancel(ctx)
 	transfer := &sessionFileTransfer{id: id, channel: channel, direction: fileTransferDownload, path: path, file: file, offset: params.Offset, size: info.Size(), ack: make(chan protocol.FileTransferAck, 1), cancel: cancel}
 	session.registerFileTransfer(transfer)
 	go session.runFileDownload(transferCtx, transfer)
-	return protocol.FileTransferOpenResult{TransferID: id, Channel: channel, Path: path, Offset: params.Offset, Size: info.Size(), ModifiedAt: info.ModTime().UTC(), WindowBytes: fileTransferWindowBytes, ChunkBytes: fileTransferChunkBytes}, nil
+	return FileTransfer{ID: id, Channel: channel, Path: path, Offset: params.Offset, Size: info.Size(), ModifiedAt: info.ModTime().UTC(), WindowBytes: fileTransferWindowBytes, ChunkBytes: fileTransferChunkBytes, OpaqueToken: fileTransferToken(channel, id)}, nil
 }
 
 func (session *protocolSession) runFileDownload(ctx context.Context, transfer *sessionFileTransfer) {
@@ -145,51 +146,59 @@ func (session *protocolSession) runFileDownload(ctx context.Context, transfer *s
 	}
 }
 
-func (session *protocolSession) openFileUpload(params protocol.FileUploadOpenParams) (protocol.FileTransferOpenResult, error) {
+func (session *protocolSession) openFileUpload(params FileUploadOpenRequest) (FileTransfer, error) {
 	target, err := absoluteFilePath(params.Path)
 	if err != nil {
-		return protocol.FileTransferOpenResult{}, err
+		return FileTransfer{}, err
 	}
 	if params.Size < 0 {
-		return protocol.FileTransferOpenResult{}, fmt.Errorf("invalid upload size")
+		return FileTransfer{}, fmt.Errorf("invalid upload size")
 	}
 	now := time.Now().UTC()
 	var record *uploadTransferRecord
+	resumeTransferID := ""
+	if len(params.ResumeTransferToken) > 0 {
+		var ok bool
+		resumeTransferID, ok = fileTransferIDFromResumeToken(params.ResumeTransferToken)
+		if !ok {
+			return FileTransfer{}, fmt.Errorf("upload transfer token is invalid")
+		}
+	}
 	session.server.fileTransferMu.Lock()
 	session.server.removeExpiredUploadsLocked(now)
-	if params.ResumeTransferID != "" {
-		record = session.server.fileUploads[params.ResumeTransferID]
+	if resumeTransferID != "" {
+		record = session.server.fileUploads[resumeTransferID]
 		if record == nil || record.PrincipalID != session.scope.PrincipalID || record.TargetPath != target || record.Size != params.Size || record.AttachedSessionID == session.sessionID {
 			session.server.fileTransferMu.Unlock()
-			return protocol.FileTransferOpenResult{}, fmt.Errorf("upload transfer is unavailable")
+			return FileTransfer{}, fmt.Errorf("upload transfer is unavailable")
 		}
 		previousSession := record.attachedSession
 		if previousSession != nil {
 			session.server.fileTransferMu.Unlock()
 			previousSession.releaseUploadForTakeover(record.ID)
 			session.server.fileTransferMu.Lock()
-			record = session.server.fileUploads[params.ResumeTransferID]
+			record = session.server.fileUploads[resumeTransferID]
 			if record == nil || record.PrincipalID != session.scope.PrincipalID || record.TargetPath != target || record.Size != params.Size || record.AttachedSessionID != 0 {
 				session.server.fileTransferMu.Unlock()
-				return protocol.FileTransferOpenResult{}, fmt.Errorf("upload transfer is unavailable")
+				return FileTransfer{}, fmt.Errorf("upload transfer is unavailable")
 			}
 		}
 	} else {
 		if !params.Overwrite {
 			if _, statErr := os.Lstat(target); statErr == nil {
 				session.server.fileTransferMu.Unlock()
-				return protocol.FileTransferOpenResult{}, os.ErrExist
+				return FileTransfer{}, os.ErrExist
 			}
 		}
 		id, idErr := newFileTransferID()
 		if idErr != nil {
 			session.server.fileTransferMu.Unlock()
-			return protocol.FileTransferOpenResult{}, idErr
+			return FileTransfer{}, idErr
 		}
 		temp, tempErr := os.CreateTemp(filepath.Dir(target), ".termx-upload-*.part")
 		if tempErr != nil {
 			session.server.fileTransferMu.Unlock()
-			return protocol.FileTransferOpenResult{}, tempErr
+			return FileTransfer{}, tempErr
 		}
 		tempPath := temp.Name()
 		temp.Close()
@@ -202,25 +211,26 @@ func (session *protocolSession) openFileUpload(params protocol.FileUploadOpenPar
 	file, err := os.OpenFile(record.TempPath, os.O_RDWR, 0o600)
 	if err != nil {
 		session.detachUploadRecord(record.ID)
-		return protocol.FileTransferOpenResult{}, err
+		return FileTransfer{}, err
 	}
 	hasher := sha256.New()
 	if record.Offset > 0 {
 		if _, err = io.CopyN(hasher, file, record.Offset); err != nil {
 			file.Close()
 			session.detachUploadRecord(record.ID)
-			return protocol.FileTransferOpenResult{}, err
+			return FileTransfer{}, err
 		}
 	}
 	if _, err = file.Seek(record.Offset, io.SeekStart); err != nil {
 		file.Close()
 		session.detachUploadRecord(record.ID)
-		return protocol.FileTransferOpenResult{}, err
+		return FileTransfer{}, err
 	}
 	channel := session.allocateFileChannel()
 	transfer := &sessionFileTransfer{id: record.ID, channel: channel, direction: fileTransferUpload, path: target, file: file, offset: record.Offset, size: record.Size, hasher: hasher}
 	session.registerFileTransfer(transfer)
-	return protocol.FileTransferOpenResult{TransferID: record.ID, Channel: channel, Path: target, Offset: record.Offset, Size: record.Size, WindowBytes: fileTransferWindowBytes, ChunkBytes: fileTransferChunkBytes}, nil
+	token := fileTransferToken(channel, record.ID)
+	return FileTransfer{ID: record.ID, Channel: channel, Path: target, Offset: record.Offset, Size: record.Size, WindowBytes: fileTransferWindowBytes, ChunkBytes: fileTransferChunkBytes, OpaqueToken: token, ResumeToken: fileUploadResumeToken(record.ID)}, nil
 }
 
 func (session *protocolSession) handleFileTransferFrame(ctx context.Context, transfer *sessionFileTransfer, typ uint8, payload []byte) error {
@@ -299,23 +309,56 @@ func (session *protocolSession) handleFileTransferFrame(ctx context.Context, tra
 	}
 }
 
-func (session *protocolSession) cancelFileTransfer(params protocol.FileTransferCancelParams) protocol.FileTransferCancelResult {
+func (session *protocolSession) cancelFileTransfer(transferID string) FileTransferCancelResult {
 	session.fileMu.Lock()
-	channel, ok := session.fileIDs[params.TransferID]
+	channel, ok := session.fileIDs[transferID]
 	transfer := session.fileChannels[channel]
 	session.fileMu.Unlock()
 	if ok {
-		session.releaseFileTransfer(params.TransferID, true)
+		session.releaseFileTransfer(transferID, true)
 		if transfer != nil && transfer.direction == fileTransferUpload {
-			session.removeUpload(params.TransferID)
+			session.removeUpload(transferID)
 		}
-		return protocol.FileTransferCancelResult{Cancelled: true}
+		return FileTransferCancelResult{Cancelled: true}
 	}
-	owned := session.uploadOwnedByPrincipal(params.TransferID)
+	owned := session.uploadOwnedByPrincipal(transferID)
 	if owned {
-		session.removeUpload(params.TransferID)
+		session.removeUpload(transferID)
 	}
-	return protocol.FileTransferCancelResult{Cancelled: owned}
+	return FileTransferCancelResult{Cancelled: owned}
+}
+
+func fileTransferToken(channel uint16, transferID string) []byte {
+	token := make([]byte, 4+len(transferID))
+	binary.BigEndian.PutUint16(token[:2], channel)
+	copy(token[2:4], "ft")
+	copy(token[4:], transferID)
+	return token
+}
+
+func fileTransferIDFromResourceToken(token []byte) (string, bool) {
+	if len(token) != 36 || binary.BigEndian.Uint16(token[:2]) == 0 || string(token[2:4]) != "ft" {
+		return "", false
+	}
+	return validFileTransferID(string(token[4:]))
+}
+
+func fileUploadResumeToken(transferID string) []byte {
+	return append([]byte("fr"), transferID...)
+}
+
+func fileTransferIDFromResumeToken(token []byte) (string, bool) {
+	if len(token) != 34 || string(token[:2]) != "fr" {
+		return "", false
+	}
+	return validFileTransferID(string(token[2:]))
+}
+
+func validFileTransferID(id string) (string, bool) {
+	if _, err := hex.DecodeString(id); err != nil {
+		return "", false
+	}
+	return id, true
 }
 
 func (session *protocolSession) uploadOwnedByPrincipal(id string) bool {

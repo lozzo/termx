@@ -130,14 +130,14 @@ func newFileListCommand(runtime *fileCommandRuntime) *cobra.Command {
 			next := cursor
 			seen := make(map[string]struct{})
 			for {
-				result, err := client.FileList(ctx, protocol.FileListParams{Path: path, Cursor: next, Limit: limit})
+				result, err := client.ApplicationSession.FileList(ctx, &apipb.FileListCommand{Path: path, Cursor: next, Limit: int32(limit)})
 				if err != nil {
 					return classifyCLIError(err)
 				}
-				for _, entry := range result.Entries {
+				for _, entry := range result.GetEntries() {
 					entries = append(entries, fileEntryProjection(entry))
 				}
-				next = result.NextCursor
+				next = result.GetNextCursor()
 				if !all || next == "" {
 					break
 				}
@@ -182,11 +182,11 @@ func newFileStatCommand(runtime *fileCommandRuntime) *cobra.Command {
 				return err
 			}
 			defer closeClient()
-			entry, err := client.FileStat(ctx, args[1])
+			result, err := client.ApplicationSession.FileStat(ctx, &apipb.FileStatCommand{Path: args[1]})
 			if err != nil {
 				return classifyCLIError(err)
 			}
-			view := fileEntryProjection(*entry)
+			view := fileEntryProjection(result.GetEntry())
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
 					SchemaVersion int           `json:"schema_version"`
@@ -214,7 +214,7 @@ func newFileCatCommand(runtime *fileCommandRuntime) *cobra.Command {
 				return err
 			}
 			defer closeClient()
-			_, err = downloadEndpointFile(ctx, client.Client, args[1], cmd.OutOrStdout())
+			_, err = downloadEndpointFile(ctx, client, args[1], cmd.OutOrStdout())
 			return classifyCLIError(err)
 		},
 	}
@@ -236,7 +236,7 @@ func newFileDownloadCommand(runtime *fileCommandRuntime) *cobra.Command {
 			if len(args) == 3 {
 				localPath = args[2]
 			}
-			result, err := downloadEndpointFileAtomic(ctx, client.Client, args[1], localPath, overwrite)
+			result, err := downloadEndpointFileAtomic(ctx, client, args[1], localPath, overwrite)
 			if err != nil {
 				if errors.Is(err, os.ErrExist) {
 					return &cliError{code: 4, message: fmt.Sprintf("local file %s already exists; use --overwrite", localPath), cause: err}
@@ -278,7 +278,7 @@ func newFileUploadCommand(runtime *fileCommandRuntime) *cobra.Command {
 				}
 				remotePath = pathpkg.Join(defaults.GetDefaults().GetDefaultCwd(), filepath.Base(args[1]))
 			}
-			result, err := uploadEndpointFile(ctx, client.Client, args[1], remotePath, overwrite)
+			result, err := uploadEndpointFile(ctx, client, args[1], remotePath, overwrite)
 			if err != nil {
 				return classifyCLIError(err)
 			}
@@ -300,8 +300,8 @@ func newFileMkdirCommand(runtime *fileCommandRuntime) *cobra.Command {
 	command := &cobra.Command{
 		Use: "mkdir ENDPOINT PATH", Short: "Create a daemon-owned directory", Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFileSingleMutation(cmd, runtime, args[0], jsonOutput, func(ctx context.Context, client *protocol.Client) (*protocol.FileOperationResult, error) {
-				return client.FileMkdir(ctx, protocol.FilePathParams{Path: args[1], Recursive: parents})
+			return runFileSingleMutation(cmd, runtime, args[0], jsonOutput, func(ctx context.Context, client *protocoladapter.ApplicationClient) (*apipb.FileOperationResult, error) {
+				return client.ApplicationSession.FileMkdir(ctx, &apipb.FileMkdirCommand{Path: args[1], Recursive: parents})
 			})
 		},
 	}
@@ -315,8 +315,8 @@ func newFileRenameCommand(runtime *fileCommandRuntime) *cobra.Command {
 	command := &cobra.Command{
 		Use: "rename ENDPOINT OLD NEW", Short: "Rename a daemon-owned path", Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFileSingleMutation(cmd, runtime, args[0], jsonOutput, func(ctx context.Context, client *protocol.Client) (*protocol.FileOperationResult, error) {
-				return client.FileRename(ctx, protocol.FileRenameParams{Path: args[1], NewPath: args[2], Overwrite: overwrite})
+			return runFileSingleMutation(cmd, runtime, args[0], jsonOutput, func(ctx context.Context, client *protocoladapter.ApplicationClient) (*apipb.FileOperationResult, error) {
+				return client.ApplicationSession.FileRename(ctx, &apipb.FileRenameCommand{Path: args[1], NewPath: args[2], Overwrite: overwrite})
 			})
 		},
 	}
@@ -341,17 +341,17 @@ func newFileCopyMoveCommand(runtime *fileCommandRuntime, move bool) *cobra.Comma
 				return err
 			}
 			defer closeClient()
-			params := protocol.FileCopyMoveParams{Paths: append([]string(nil), args[1:len(args)-1]...), TargetDir: args[len(args)-1], Overwrite: overwrite}
-			var result *protocol.FileBatchResult
+			paths := append([]string(nil), args[1:len(args)-1]...)
+			var result *apipb.FileBatchResult
 			if move {
-				result, err = client.FileMove(ctx, params)
+				result, err = client.ApplicationSession.FileMove(ctx, &apipb.FileMoveCommand{Paths: paths, TargetDirectory: args[len(args)-1], Overwrite: overwrite})
 			} else {
-				result, err = client.FileCopy(ctx, params)
+				result, err = client.ApplicationSession.FileCopy(ctx, &apipb.FileCopyCommand{Paths: paths, TargetDirectory: args[len(args)-1], Overwrite: overwrite})
 			}
 			if err != nil {
 				return classifyCLIError(err)
 			}
-			return writeFileOperationResults(cmd, endpoint.ID, "file_"+verb, result.Results, jsonOutput)
+			return writeFileOperationResults(cmd, endpoint.ID, "file_"+verb, result.GetResults(), jsonOutput)
 		},
 	}
 	command.Flags().BoolVar(&overwrite, "overwrite", false, "replace existing targets")
@@ -371,13 +371,13 @@ func newFileRemoveCommand(runtime *fileCommandRuntime) *cobra.Command {
 				return err
 			}
 			defer closeClient()
-			results := make([]protocol.FileOperationResult, 0, len(args)-1)
+			results := make([]*apipb.FileOperationResult, 0, len(args)-1)
 			for _, path := range args[1:] {
-				result, requestErr := client.FileDelete(ctx, protocol.FilePathParams{Path: path, Recursive: recursive})
+				result, requestErr := client.ApplicationSession.FileDelete(ctx, &apipb.FileDeleteCommand{Path: path, Recursive: recursive})
 				if requestErr != nil {
 					return classifyCLIError(requestErr)
 				}
-				results = append(results, *result)
+				results = append(results, result)
 			}
 			return writeFileOperationResults(cmd, endpoint.ID, "file_remove", results, jsonOutput)
 		},
@@ -387,7 +387,7 @@ func newFileRemoveCommand(runtime *fileCommandRuntime) *cobra.Command {
 	return command
 }
 
-func runFileSingleMutation(cmd *cobra.Command, runtime *fileCommandRuntime, endpointValue string, jsonOutput bool, operation func(context.Context, *protocol.Client) (*protocol.FileOperationResult, error)) error {
+func runFileSingleMutation(cmd *cobra.Command, runtime *fileCommandRuntime, endpointValue string, jsonOutput bool, operation func(context.Context, *protocoladapter.ApplicationClient) (*apipb.FileOperationResult, error)) error {
 	ctx, cancel := runtime.context(cmd)
 	defer cancel()
 	client, endpoint, closeClient, err := runtime.open(ctx, cmd, endpointValue)
@@ -395,19 +395,19 @@ func runFileSingleMutation(cmd *cobra.Command, runtime *fileCommandRuntime, endp
 		return err
 	}
 	defer closeClient()
-	result, err := operation(ctx, client.Client)
+	result, err := operation(ctx, client)
 	if err != nil {
 		return classifyCLIError(err)
 	}
-	return writeFileOperationResults(cmd, endpoint.ID, "file_operation", []protocol.FileOperationResult{*result}, jsonOutput)
+	return writeFileOperationResults(cmd, endpoint.ID, "file_operation", []*apipb.FileOperationResult{result}, jsonOutput)
 }
 
-func writeFileOperationResults(cmd *cobra.Command, endpointID endpointdomain.EndpointID, kind string, results []protocol.FileOperationResult, jsonOutput bool) error {
+func writeFileOperationResults(cmd *cobra.Command, endpointID endpointdomain.EndpointID, kind string, results []*apipb.FileOperationResult, jsonOutput bool) error {
 	views := make([]fileOperationView, 0, len(results))
 	failures := 0
 	for _, result := range results {
-		views = append(views, fileOperationView{result.Path, result.TargetPath, result.Success, result.ErrorCode, result.ErrorMessage})
-		if !result.Success {
+		views = append(views, fileOperationView{result.GetPath(), result.GetTargetPath(), result.GetSuccess(), result.GetErrorCode(), result.GetErrorMessage()})
+		if !result.GetSuccess() {
 			failures++
 		}
 	}
@@ -439,25 +439,27 @@ func writeFileOperationResults(cmd *cobra.Command, endpointID endpointdomain.End
 	return nil
 }
 
-func downloadEndpointFile(ctx context.Context, client *protocol.Client, remotePath string, writer io.Writer) (protocol.FileTransferResult, error) {
-	opened, err := client.FileDownloadOpen(ctx, protocol.FileDownloadOpenParams{Path: remotePath})
+func downloadEndpointFile(ctx context.Context, client *protocoladapter.ApplicationClient, remotePath string, writer io.Writer) (protocol.FileTransferResult, error) {
+	result, err := client.ApplicationSession.FileDownloadOpen(ctx, &apipb.FileDownloadOpenCommand{Path: remotePath})
 	if err != nil {
 		return protocol.FileTransferResult{}, err
 	}
-	if err := validateFileTransferOpen(opened, -1, false); err != nil {
-		cancelFileTransfer(client, opened.TransferID)
+	opened := result.GetTransfer()
+	channel, err := validateFileTransferOpen(client, opened, -1, false)
+	if err != nil {
+		cancelFileTransfer(client, opened.GetResource())
 		return protocol.FileTransferResult{}, err
 	}
 	completed := false
 	defer func() {
 		if !completed {
-			cancelFileTransfer(client, opened.TransferID)
+			cancelFileTransfer(client, opened.GetResource())
 		}
 	}()
-	stream, stop := client.Stream(opened.Channel)
+	stream, stop := client.Stream(channel)
 	defer stop()
 	hash := sha256.New()
-	offset := opened.Offset
+	offset := opened.GetOffset()
 	for {
 		select {
 		case <-ctx.Done():
@@ -481,7 +483,7 @@ func downloadEndpointFile(ctx context.Context, client *protocol.Client, remotePa
 				if err != nil {
 					return protocol.FileTransferResult{}, err
 				}
-				if err := client.SendFileFrame(opened.Channel, wire.TypeFileAck, ack); err != nil {
+				if err := client.SendFileFrame(channel, wire.TypeFileAck, ack); err != nil {
 					return protocol.FileTransferResult{}, err
 				}
 			case wire.TypeFileFinish:
@@ -489,11 +491,11 @@ func downloadEndpointFile(ctx context.Context, client *protocol.Client, remotePa
 				if err != nil {
 					return protocol.FileTransferResult{}, err
 				}
-				if finish.Size != offset || finish.Size != opened.Size || !bytes.Equal(finish.SHA256, hash.Sum(nil)) {
+				if finish.Size != offset || finish.Size != opened.GetSize() || !bytes.Equal(finish.SHA256, hash.Sum(nil)) {
 					return protocol.FileTransferResult{}, fmt.Errorf("download size or SHA-256 mismatch")
 				}
 				completed = true
-				return protocol.FileTransferResult{Path: opened.Path, Size: finish.Size, SHA256: finish.SHA256}, nil
+				return protocol.FileTransferResult{Path: opened.GetPath(), Size: finish.Size, SHA256: finish.SHA256}, nil
 			case wire.TypeError:
 				message, decodeErr := protocol.DecodeErrorPayload(frame.Payload)
 				if decodeErr != nil {
@@ -507,7 +509,7 @@ func downloadEndpointFile(ctx context.Context, client *protocol.Client, remotePa
 	}
 }
 
-func downloadEndpointFileAtomic(ctx context.Context, client *protocol.Client, remotePath, localPath string, overwrite bool) (protocol.FileTransferResult, error) {
+func downloadEndpointFileAtomic(ctx context.Context, client *protocoladapter.ApplicationClient, remotePath, localPath string, overwrite bool) (protocol.FileTransferResult, error) {
 	localPath = filepath.Clean(strings.TrimSpace(localPath))
 	if localPath == "." || localPath == "" {
 		return protocol.FileTransferResult{}, usageCLIError("local download path is required")
@@ -560,7 +562,7 @@ func downloadEndpointFileAtomic(ctx context.Context, client *protocol.Client, re
 	return result, nil
 }
 
-func uploadEndpointFile(ctx context.Context, client *protocol.Client, localPath, remotePath string, overwrite bool) (protocol.FileTransferResult, error) {
+func uploadEndpointFile(ctx context.Context, client *protocoladapter.ApplicationClient, localPath, remotePath string, overwrite bool) (protocol.FileTransferResult, error) {
 	file, err := os.Open(localPath)
 	if err != nil {
 		return protocol.FileTransferResult{}, err
@@ -573,35 +575,37 @@ func uploadEndpointFile(ctx context.Context, client *protocol.Client, localPath,
 	if !info.Mode().IsRegular() {
 		return protocol.FileTransferResult{}, fmt.Errorf("upload source must be a regular file")
 	}
-	opened, err := client.FileUploadOpen(ctx, protocol.FileUploadOpenParams{Path: remotePath, Size: info.Size(), Overwrite: overwrite})
+	result, err := client.ApplicationSession.FileUploadOpen(ctx, &apipb.FileUploadOpenCommand{Path: remotePath, Size: info.Size(), Overwrite: overwrite})
 	if err != nil {
 		return protocol.FileTransferResult{}, err
 	}
-	if err := validateFileTransferOpen(opened, info.Size(), false); err != nil {
-		cancelFileTransfer(client, opened.TransferID)
+	opened := result.GetTransfer()
+	channel, err := validateFileTransferOpen(client, opened, info.Size(), false)
+	if err != nil {
+		cancelFileTransfer(client, opened.GetResource())
 		return protocol.FileTransferResult{}, err
 	}
 	completed := false
 	defer func() {
 		if !completed {
-			cancelFileTransfer(client, opened.TransferID)
+			cancelFileTransfer(client, opened.GetResource())
 		}
 	}()
-	stream, stop := client.Stream(opened.Channel)
+	stream, stop := client.Stream(channel)
 	defer stop()
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return protocol.FileTransferResult{}, err
 	}
 	hash := sha256.New()
-	if opened.Offset > 0 {
-		if _, err := io.CopyN(hash, file, opened.Offset); err != nil {
+	if opened.GetOffset() > 0 {
+		if _, err := io.CopyN(hash, file, opened.GetOffset()); err != nil {
 			return protocol.FileTransferResult{}, err
 		}
 	}
-	buffer := make([]byte, max(1, opened.ChunkBytes))
-	offset := opened.Offset
-	for offset < opened.Size {
-		remaining := opened.Size - offset
+	buffer := make([]byte, maxCLIFileChunkBytes)
+	offset := opened.GetOffset()
+	for offset < opened.GetSize() {
+		remaining := opened.GetSize() - offset
 		chunk := buffer
 		if int64(len(chunk)) > remaining {
 			chunk = chunk[:remaining]
@@ -616,7 +620,7 @@ func uploadEndpointFile(ctx context.Context, client *protocol.Client, localPath,
 		if err != nil {
 			return protocol.FileTransferResult{}, err
 		}
-		if err := client.SendFileFrame(opened.Channel, wire.TypeFileData, payload); err != nil {
+		if err := client.SendFileFrame(channel, wire.TypeFileData, payload); err != nil {
 			return protocol.FileTransferResult{}, err
 		}
 		frame, err := nextFileFrame(ctx, stream)
@@ -640,11 +644,11 @@ func uploadEndpointFile(ctx context.Context, client *protocol.Client, localPath,
 		offset = ack.Offset
 	}
 	digest := hash.Sum(nil)
-	finish, err := protocol.EncodeFileTransferFinish(protocol.FileTransferFinish{Size: opened.Size, SHA256: digest})
+	finish, err := protocol.EncodeFileTransferFinish(protocol.FileTransferFinish{Size: opened.GetSize(), SHA256: digest})
 	if err != nil {
 		return protocol.FileTransferResult{}, err
 	}
-	if err := client.SendFileFrame(opened.Channel, wire.TypeFileFinish, finish); err != nil {
+	if err := client.SendFileFrame(channel, wire.TypeFileFinish, finish); err != nil {
 		return protocol.FileTransferResult{}, err
 	}
 	frame, err := nextFileFrame(ctx, stream)
@@ -661,40 +665,38 @@ func uploadEndpointFile(ctx context.Context, client *protocol.Client, localPath,
 	if frame.Type != wire.TypeFileResult {
 		return protocol.FileTransferResult{}, fmt.Errorf("unexpected upload completion frame %d", frame.Type)
 	}
-	result, err := protocol.DecodeFileTransferResult(frame.Payload)
+	completedResult, err := protocol.DecodeFileTransferResult(frame.Payload)
 	if err != nil {
 		return protocol.FileTransferResult{}, err
 	}
-	if result.Size != opened.Size || !bytes.Equal(result.SHA256, digest) {
+	if completedResult.Size != opened.GetSize() || !bytes.Equal(completedResult.SHA256, digest) {
 		return protocol.FileTransferResult{}, fmt.Errorf("upload completion size or SHA-256 mismatch")
 	}
 	completed = true
-	return result, nil
+	return completedResult, nil
 }
 
-func validateFileTransferOpen(opened *protocol.FileTransferOpenResult, expectedSize int64, allowResume bool) error {
-	if opened == nil || strings.TrimSpace(opened.TransferID) == "" || opened.Channel == 0 || strings.TrimSpace(opened.Path) == "" {
-		return fmt.Errorf("daemon returned incomplete file transfer metadata")
+func validateFileTransferOpen(client *protocoladapter.ApplicationClient, opened *apipb.FileTransferHandle, expectedSize int64, allowResume bool) (uint16, error) {
+	channel, bound := client.ApplicationResourceChannel(opened.GetResource())
+	if opened == nil || opened.GetResource() == nil || !bound || strings.TrimSpace(opened.GetPath()) == "" {
+		return 0, fmt.Errorf("daemon returned incomplete file transfer metadata")
 	}
-	if opened.Size < 0 || (expectedSize >= 0 && opened.Size != expectedSize) {
-		return fmt.Errorf("daemon returned an invalid file transfer size")
+	if opened.GetSize() < 0 || (expectedSize >= 0 && opened.GetSize() != expectedSize) {
+		return 0, fmt.Errorf("daemon returned an invalid file transfer size")
 	}
-	if opened.Offset < 0 || opened.Offset > opened.Size || (!allowResume && opened.Offset != 0) {
-		return fmt.Errorf("daemon returned an invalid file transfer offset")
+	if opened.GetOffset() < 0 || opened.GetOffset() > opened.GetSize() || (!allowResume && opened.GetOffset() != 0) {
+		return 0, fmt.Errorf("daemon returned an invalid file transfer offset")
 	}
-	if opened.WindowBytes <= 0 || opened.ChunkBytes <= 0 || opened.ChunkBytes > maxCLIFileChunkBytes {
-		return fmt.Errorf("daemon returned invalid file transfer flow-control metadata")
-	}
-	return nil
+	return channel, nil
 }
 
-func cancelFileTransfer(client *protocol.Client, transferID string) {
-	if client == nil || strings.TrimSpace(transferID) == "" {
+func cancelFileTransfer(client *protocoladapter.ApplicationClient, resource *apipb.ResourceHandle) {
+	if client == nil || resource == nil {
 		return
 	}
 	cancelContext, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	_, _ = client.FileTransferCancel(cancelContext, transferID)
+	_, _ = client.ApplicationSession.FileTransferCancel(cancelContext, &apipb.FileTransferCancelCommand{Transfer: resource})
 }
 
 func nextFileFrame(ctx context.Context, stream <-chan protocol.StreamFrame) (protocol.StreamFrame, error) {
@@ -709,6 +711,26 @@ func nextFileFrame(ctx context.Context, stream <-chan protocol.StreamFrame) (pro
 	}
 }
 
-func fileEntryProjection(entry protocol.FileEntry) fileEntryView {
-	return fileEntryView{entry.Path, entry.Name, entry.Type, entry.Size, entry.Mode, formatTerminalTime(entry.ModifiedAt), entry.LinkTarget}
+func fileEntryProjection(entry *apipb.FileEntry) fileEntryView {
+	if entry == nil {
+		return fileEntryView{}
+	}
+	modified := time.Time{}
+	if entry.GetModifiedAtUnixNano() != 0 {
+		modified = time.Unix(0, entry.GetModifiedAtUnixNano()).UTC()
+	}
+	return fileEntryView{entry.GetPath(), entry.GetName(), fileEntryTypeName(entry.GetType()), entry.GetSize(), entry.GetMode(), formatTerminalTime(modified), entry.GetLinkTarget()}
+}
+
+func fileEntryTypeName(entryType apipb.FileEntryType) string {
+	switch entryType {
+	case apipb.FileEntryType_FILE_ENTRY_TYPE_FILE:
+		return "file"
+	case apipb.FileEntryType_FILE_ENTRY_TYPE_DIRECTORY:
+		return "directory"
+	case apipb.FileEntryType_FILE_ENTRY_TYPE_SYMLINK:
+		return "symlink"
+	default:
+		return "other"
+	}
 }

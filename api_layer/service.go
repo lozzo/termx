@@ -54,11 +54,18 @@ type Service struct {
 	operations OperationController
 	resources  ResourceController
 	terminals  TerminalController
+	platform   PlatformController
 }
 
 // NewService 创建 application API service；缺失 request admission 或 controller 的请求会 fail closed。
 func NewService(admission RequestAdmission, operations OperationController, resources ResourceController, terminals TerminalController) *Service {
 	return &Service{admission: admission, operations: operations, resources: resources, terminals: terminals}
+}
+
+// NewPlatformService 创建覆盖全部公共 application domain 的 API service。
+// platform controller 缺失时对应 command fail closed，不回退旧 protocol method。
+func NewPlatformService(admission RequestAdmission, operations OperationController, resources ResourceController, terminals TerminalController, platform PlatformController) *Service {
+	return &Service{admission: admission, operations: operations, resources: resources, terminals: terminals, platform: platform}
 }
 
 // Execute 校验并执行单个 typed command。返回值始终非 nil，领域失败不会泄露成 Go error。
@@ -80,7 +87,6 @@ func (service *Service) Execute(ctx context.Context, command *apipb.CommandEnvel
 	}
 	requestID = requestContext.GetRequestId()
 	originSession = requestContext.GetSession()
-	requestID = requestContext.GetRequestId()
 	if requestContext.GetApiVersion().GetMajor() != supportedAPIMajor {
 		return errorResult(requestID, originSession, &apipb.ApiError{
 			Code:    apipb.ApiErrorCode_API_ERROR_CODE_UNSUPPORTED_VERSION,
@@ -104,7 +110,10 @@ func (service *Service) Execute(ctx context.Context, command *apipb.CommandEnvel
 		return service.releaseResource(ctx, originSession, requestContext, value.ReleaseResource)
 	default:
 		if requiredCapability != apipb.ApiCapability_API_CAPABILITY_UNSPECIFIED {
-			return service.executeTerminal(ctx, originSession, command, requestContext)
+			if isTerminalCommand(command) {
+				return service.executeTerminal(ctx, originSession, command, requestContext)
+			}
+			return service.executePlatform(ctx, originSession, command, requestContext)
 		}
 		return errorResult(requestID, originSession, &apipb.ApiError{
 			Code:    apipb.ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST,

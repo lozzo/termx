@@ -58,7 +58,6 @@ func v3Command(socket *string, logFile *string, configPath *string) *cobra.Comma
 	cmd.AddCommand(v3KillCommand(socket, logFile))
 	cmd.AddCommand(v3RemoveCommand(socket, logFile))
 	cmd.AddCommand(v3AttachCommand(socket, logFile))
-	cmd.AddCommand(v3HistoryDumpCommand(socket, logFile))
 	cmd.AddCommand(v3HistoryBacklogCommand(socket, logFile))
 	cmd.AddCommand(v3PaneCommandAdapterCommand())
 	cmd.AddCommand(v3StdioProxyCommand(socket, logFile, configPath))

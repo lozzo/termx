@@ -31,11 +31,11 @@ type terminalProtocolClient interface {
 	TerminalDetach(context.Context, *apipb.TerminalDetachCommand) error
 	TerminalInput(context.Context, *apipb.TerminalInputCommand) error
 	TerminalResize(context.Context, *apipb.TerminalResizeCommand) (*apipb.TerminalResizeResult, error)
-	HistoryWindow(context.Context, protocol.HistoryWindowParams) (*protocol.HistoryWindow, error)
-	HistoryCopy(context.Context, protocol.HistoryWindowParams) (string, error)
-	ReleaseHistory(context.Context, protocol.HistoryWindowParams) error
-	LiveScreen(context.Context, string) (*protocol.NativeScreenSnapshot, error)
-	Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error)
+	HistoryWindow(context.Context, *apipb.HistoryWindowCommand) (*apipb.HistoryWindowResult, error)
+	HistoryCopy(context.Context, *apipb.HistoryCopyCommand) (*apipb.HistoryCopyResult, error)
+	HistoryRelease(context.Context, *apipb.HistoryReleaseCommand) error
+	LiveScreen(context.Context, *apipb.LiveScreenGetCommand) (*apipb.NativeScreenResult, error)
+	EventSubscribe(context.Context, *apipb.EventSubscribeCommand) (*apipb.EventSubscriptionResult, <-chan *apipb.EventEnvelope, error)
 	Close() error
 }
 

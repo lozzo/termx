@@ -2,7 +2,12 @@
 
 ## 当前结论
 
-- 当前最早未完成切片是 `PA005B`。`PA005A4` 已把 connection-bound application 装配移出 core、恢复 `api_mapping -> core` 字段转换并加入反向依赖守卫；现在才允许进入 history/live 迁移。
+- Go 端 Proto API 原子迁移 `PA005G` 已完成。下一切片是 `PA005A` App 迁移；用户最新明确要求本阶段不迁移 Web，且不得在同一切片跨端扩散。
+- Go 阶段允许修改 `proto/apipb/` schema、Go generated code、`api_layer/`、`api_mapping/`、`core/`、`internal/protocol/`、Go client runtime/adapter、Go CLI/TUI/remote/cloud consumer 及其 Go 测试和文档。
+- Go 阶段禁止主动修改 `clients/mobile/`、`clients/ui/` 生产源码。`runtimepb` 和 `wirepb` 中仍被 App/Web 消费的迁移期 application schema 暂不删除；但 Go 生产代码不得继续 import、编码、解码或 dispatch 这些旧 application DTO。
+- App/Web 迁移不是 Go 阶段完成条件。后续切片必须把对应 consumer 切到 `apipb + api.execute` 后，再删除其旧 schema、codec、method string 和多通道 fallback；不得以 Go 阶段的暂留为长期兼容承诺。
+- 用户已明确允许实现阶段不保证旧测试通过。PA005G 的新 schema/API Mapping/API Layer tests 与 Go 生产包通过；旧 core/protocol/client-runtime/TUI tests 因引用已删除 DTO 暂缓到 `PA006T`，不得据此恢复旧类型。
+- CLI 根包仍有 PA005G 之前已冻结的 endpoint runtime helper 缺口：`v3DialClient`、`probeEndpointProtocolClient`、`openEndpointProtocolClient`、`dialOrStartV3ClientContext` 及 attach runtime helpers。不得用 legacy/fallback 修补。
 - 用户已确立仓库级强约定：所有插件、第三方客户端、官方客户端、跨进程和跨语言 API 的唯一 schema truth 必须位于 `proto/`。
 - 完整运行链路固定为 `插件/客户端 -> transport/platform binding -> protocol framing -> generated proto -> api_layer -> api_mapping -> core`，返回方向相反。Proto 是 schema/message truth，不是 transport 或主动运行层；任何入口都不得绕过 API Layer 消费 core domain struct。
 - `core/api` Go DTO 路线已判定错误，必须删除；此前 `AR003B1A/AR003B1B` 结论作废，不得继续迁移或补兼容层。
@@ -81,9 +86,10 @@ core domain truth
 | PA005A2R | 已完成 | Proto API 基础契约审查修正 | envelope 顶层 context 保留未知 command correlation；result/event 回显 origin session；API Layer 使用 connection-bound atomic admission lease；resource handle 绑定 origin session 且事务式发布；稳定错误、enum/数值边界、response clone、descriptor baseline 和双 reviewer 通过 |
 | PA005A3 | 已完成 | Terminal Proto API 原子迁移 | `api.execute` framing 把 Proto envelope 交给 API Layer；core 提供 connection-bound admission、terminal adapter 与 attachment transaction；protocol client、CLI/TUI/remote terminal/path consumer 同步切到 `apipb`；删除 terminal/attachment/path protocol DTO、旧 method codec 和 wire schema，不使用 alias、wrapper 或双路径；依赖守卫与测试通过 |
 | PA005A4 | 已完成 | Application 装配方向收口 | connection-bound API 装配移出 `core/`；`api_mapping` 恢复 generated Proto 与 core domain 的唯一字段转换；`core` 不再 import `api_layer/api_mapping`，protocol framing 不直接持有 core adapter；补 import guard 和同等 terminal/path E2E 后删除 `core/application_api.go` |
-| PA005B | 待开始 | History/live 迁移 | authoritative history window/native screen API 进入 proto；保持 history/live revision 边界；删除重复 projection owner |
-| PA005C | 待开始 | File/storage/workbench 迁移 | file 隐藏 frame/channel，storage 保持 opaque，workbench 只表达 client intent；删除旧专用或重复 DTO |
-| PA006 | 待开始 | Protocol 与 consumer 收口 | protocol 只传 proto payload；CLI/TUI/remote/Cloud 通过 transport/protocol/API Layer/API Mapping 链路；保持 PA005A4 的外部装配与 `api_mapping -> core` import guard；Go-only API 债务和 concrete dependency 清单归零或有明确延期 |
+| PA005G | 已完成 | Go 全领域 Proto API 原子迁移 | history/live/file/storage/workbench value/endpoint runtime/access/remote daemon control/application events 已进入 `apipb + api.execute`；Go-only DTO、generic `Call`/method codec、daemon workbench mutation/store 与 Go 双路径已删除；file stream framing 私有，upload resume 与 active resource token 分域，event subscription 有资源 correlation；生产包、Go generated compare、schema/Mapping/API Layer tests 与旧 DTO 扫描通过 |
+| PA005A | 待开始 | App Proto API 迁移 | Android/native bridge 与 App shared client 切到 `apipb + api.execute` 和单一 protocol transport；迁移 resource/session/event/file stream binding；删除 App 旧 runtime/wire application codec、method string 和多 DataChannel fallback；不得修改 Web browser adapter |
+| PA005W | 待开始 | Web Proto API 迁移 | 浏览器 WebRTC client 切到 `apipb + api.execute` 和单一 authorized protocol DataChannel；迁移或明确删除旧 browser runtime；完成后删除 `runtimepb` 及 `wirepb` 重复 application schema、旧 TS codec 和 fallback |
+| PA006T | 待开始 | Proto API 测试迁移 | 把 core/protocol/client-runtime/TUI/CLI 旧 DTO tests 改为 generated Proto harness；补 event subscription correlation/release、machine-events-only、file active/resume token namespace 和跨 session upload resume 测试；不得恢复旧 alias/codec |
 | PA007 | 待开始 | 架构就绪双审 | import graph、schema coverage、重复 DTO、fallback、生成代码、文档和 tests 通过；架构 reviewer 与代码 reviewer 明确 PASS 后恢复 C3B |
 | C3B | 暂停 | RouteSelectionPlanner | PA007 PASS 后恢复 |
 | C3C | 暂停 | fresh daemon proof / ReadySession | PA007 PASS 后恢复 |
@@ -100,7 +106,10 @@ core domain truth
 - `PA003`：生成代码检查；proto round-trip、unknown-field/compatibility、enum/oneof/version harness；`git diff --check`。
 - `PA004`：API Layer/API Mapping unit tests 与 dependency guards；取消、资源释放和错误映射 harness。
 - `PA005A2R`：generated-code check；descriptor baseline；Proto/API Layer/API Mapping race tests；client-owned origin session、atomic admission lease、command authorization、resource ownership、unknown command correlation、typed error 和边界 validation harness；`git diff --check`。
-- `PA005-PA006`：对应 core/protocol/client/TUI/CLI tests；迁移后的重复类型与旧 helper 扫描；必要 race/E2E。
+- `PA005G`：Go 生产包编译；Go generated 临时重生成比较；`proto/apipb`、`api_mapping`、`api_layer` tests；Go 重复类型、旧 helper、旧 method dispatch 和旧 application DTO import 扫描。旧 DTO tests 按用户指令延期到 PA006T。
+- `PA005A`：Android/App generated code、Kotlin/TypeScript compile 与 native protocol harness；App 旧 schema/codec/method 扫描。
+- `PA005W`：Web generated code、TypeScript typecheck/build 与 browser protocol harness；删除重复 runtime/wire application schema后的全仓扫描。
+- `PA006T`：迁移后的 Go tests、race/E2E 与 CLI compile；失败不得通过恢复旧 DTO、method codec 或 fallback 解决。
 - `PA007`：全量可运行测试、generated-code check、import graph、重复 schema/DTO 扫描和双 Agent 审查。
 
 ## 执行规则
