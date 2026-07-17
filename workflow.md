@@ -6,6 +6,7 @@
 - `CONN001` 已完成：`shared/connection` 拥有 `connections.yaml` v2、Endpoint/Route registry、strict parser/writer、EndpointAssembler 和 portable bootstrap/share contract。Android/TypeScript 未接线 registry/assembler 已在 C3R 删除，Official App 统一 runtime 等 CONN007 直接重写。
 - `CONN002` 已完成：`shared/remoteauth` 与 daemon-local AccessStore 拥有 DeviceIdentity、ClientAccessIdentity、PairingTicket、client-bound CapabilityGrant v2、channel binding auth、撤销和重启恢复。
 - 当前真实代码状态：local Unix、SSH stdio、managed WebRTC 各自已有可用接线，但 `RouteSelectionPlanner`、default full race、priority hedge、winner/loser cleanup、`SessionGeneration` guard 和 stamped service result 尚未完整实现。生产路径仍存在 `ResolveCurrentRoute` 过渡调用。
+- 客户端连接 runtime 的目标 owner 调整为可跨端复用的 Go package，而不是 TUI、Android、桌面或 Web 各自维护状态机。CONN003 先让 TUI/CLI 消费该 runtime；Android/桌面绑定与可选 WebAssembly WebRTC 只记录后续 contract，本轮不做真实跨平台编译。
 - C3A 文档冲突已收口：`tui/docs/multi-endpoint-transport-plan.md`、`docs/development/cli-command-design.md`、`tui/docs/architecture.md` 已明确 CONN003 仍处于过渡态。
 - Cloud 单区域 direct/single Relay、Official Android、公网 HTTP staging、文件能力、CLI002-CLI008、KS012-KS017 已完成；这些是背景，不是当前可主动修改范围。
 - `WEB003`、`CLOUD018`、`SI001` 暂停；`CONN004-CONN008`、GA、多区域、生产 TLS/OAuth、正式开源隔离全部待后续排序。
@@ -21,12 +22,16 @@
 - CapabilityGrant 只由 owning daemon 签发和验证；Control Plane、Companion、Hub、Relay、Route Planner 不得接收 CapabilityGrant、DeviceIdentity private key、terminal payload、history、输入、文件路径、文件 metadata 或文件内容。
 - local、SSH、direct TLS、LAN discovery、daemon bootstrap、share 和已就绪 DataChannel 不依赖账号、订阅、Hub 或 Relay。
 - CONN003 只接 `local-unix` 与 `ssh-stdio` 的外层多 route race。`managed-webrtc` 保持单 route 可用但不参与共同竞速，等 `CONN005`；`direct-tls` 和 LAN discovery 等 `CONN004`；share 等 `CONN006`。
+- Go client runtime 是 route plan、race、winner/loser、session generation、protocol session、授权状态和稳定错误的跨端真值；TUI、CLI、Android、桌面与可选 Web 只能作为 host adapter、transport capability provider 和 projection consumer，不能再建立平行 session owner。
+- 跨端边界使用 versioned protobuf command/event、opaque runtime handle 和显式资源释放语义；不得跨 C/JNI/WASM 边界暴露 Go pointer、Go struct、goroutine、`context.Context` 或平台对象。
+- Android/桌面仍拥有系统生命周期、网络可达性通知、Keystore/Keychain、文件选择、通知和私有 Cloud 装配；这些能力以 host event 或异步 request/result 输入 Go runtime，不反向成为连接状态真值。
+- 可选 Web 只支持浏览器原生 WebRTC/DataChannel transport，不支持 local Unix、SSH 或 direct TLS。Pion 的 `js/wasm` 路径只能作为浏览器 WebRTC API wrapper；浏览器 DTLS channel binding 未形成与现有安全语义等价的可验证 contract 前，不得接入 CapabilityGrant 生产链路或降低认证要求。
 - 不恢复 legacy remote、旧 Hub/session-token、grant-in-signaling、原始 SSH shell fallback、通用插件或旧 `termx-core`/`tuiv2`。
 - 可以使用 `/tmp/termx-conn003-ref` 这类仓库外临时目录保存旧代码参考；不得在仓库内新增旧实现快照、fallback 目录或第二份 runtime 真值。
 
 ## 当前允许修改范围
 
-- 主动范围：`workflow.md`、连接规划文档、`shared/connection/`、`shared/transport/{unix,ssh}/`、`tui/{services,state,app}/`、`cmd/termx/`、CONN003 E2E 与必要 `testkit/`。
+- 主动范围：`workflow.md`、连接规划文档、`shared/connection/`、`shared/clientruntime/`、`shared/transport/{unix,ssh}/`、`tui/{services,state,app}/`、`cmd/termx/`、CONN003 E2E 与必要 `testkit/`。
 - 受限联动：`core/`、`internal/protocol/`、`shared/remoteauth/` 只允许为 fresh DeviceIdentity challenge proof、protocol Hello、channel-bound generation/stamp contract 做最小修改。
 - 禁止范围：`private/cloud/`、`clients/mobile/`、`clients/ui/`、`remote/`、`proto/`、`private/archive/`，除非当前 CONN003 实现被真实编译 contract 阻塞且先更新本文件说明原因。
 
@@ -38,8 +43,8 @@
 | C3R | 已完成 | CONN001/CONN002 平行模型去重 | 删除未接线 Android/TypeScript Endpoint registry/assembler；删除无消息链路的 protobuf runtime/session/assembler 类型；client-access 改为 typed protobuf；删除旧内存 Revocations；pairing 输入上限只引用 canonical contract |
 | C3B | 待开始 | `shared/connection` planner 领域层 | 新增纯 `RouteSelectionPlanner`、`RouteAttempt` plan、priority grouped hedge、manual override、unsupported route 失败；无网络 IO；单测覆盖 full race、hedge、manual-only、未绑定 identity 多 route 拒绝、managed 不入 CONN003 race |
 | C3C | 待开始 | fresh daemon proof / ReadySession contract | local Unix 与 SSH route attempt 在 protocol Hello 前完成 fresh DeviceIdentity challenge proof；只有 transport + proof + authorization + Hello 全部成功才能产出 `ReadySession` |
-| C3D | 待开始 | TUI `EndpointManager` session owner 重写 | manager 成为每 Endpoint 唯一 route race、winner、loser、generation、lifecycle mailbox owner；删除生产路径 `ResolveCurrentRoute` 依赖；service 调用取得 generation lease，迟到回包拒绝 |
-| C3E | 待开始 | CLI runtime 接入同一 session owner | terminal/file/workspace/root TUI/`endpoint test` 共用 planner 与 attempt dialer；`--route` 显式 override sticky 于当前 TUI session；错误码稳定，不 fallback local/raw shell |
+| C3D | 待开始 | `shared/clientruntime` session owner 与 TUI adapter | 新共享 client runtime 成为每 Endpoint 唯一 route race、winner、loser、generation、lifecycle mailbox owner；TUI `EndpointManager` 降为 adapter/projection；删除生产路径 `ResolveCurrentRoute` 依赖；service 调用取得 generation lease，迟到回包拒绝 |
+| C3E | 待开始 | CLI 接入同一共享 runtime | terminal/file/workspace/root TUI/`endpoint test` 共用 planner、attempt dialer 和 session owner；`--route` 显式 override sticky 于当前 client runtime；错误码稳定，不 fallback local/raw shell |
 | C3F | 待开始 | attach/input/resize generation 边界 | attach candidate、confirm、commit、cleanup、detach、input、paste、resize 都携带原始 `EndpointSessionStamp`；stale cleanup 只查已有 bundle，禁止 lazy dial |
 | C3G | 待开始 | 真实 local + SSH race E2E | 新脚本使用真实 local daemon 与 OpenSSH host 注入延迟，验证 default full race、priority hedge、manual override、loser process 回收、TerminalRef 稳定和旧 generation 拒绝 |
 | C3H | 待开始 | 审查、状态回填、提交 | 全部准入通过，双 Agent 架构/代码审查 PASS，仅机械回填本文件状态和审查结论后提交 |
@@ -72,10 +77,10 @@ func (p RouteSelectionPlanner) Plan(req RouteSelectionRequest) (RouteSelectionPl
 - 显式 `--route` 可以选择 manual-only route；自动竞速必须排除 manual-only。
 - CONN003 `CanAutoRace=true` 只给 `local-unix` 与 `ssh-stdio`；`managed-webrtc` 只能在单 route 或显式 override 下保持原能力。
 
-### session owner 负责竞速和 generation
+### 共享 client runtime 负责竞速和 generation
 
 ```go
-func (m *EndpointManager) ensureSession(ctx, endpointID, intent, routeOverride) (lease, error) {
+func (m *ClientRuntime) ensureSession(ctx, endpointID, intent, routeOverride) (lease, error) {
     m.mu.Lock()
     if current winner matches sticky override {
         return lease(current.Generation, current.Bundle)
@@ -109,6 +114,7 @@ func race(plan) {
 - route switch 或 reconnect 先建立新 generation fence，再释放旧 winner；旧 generation 的 live/history/input/file 结果全部拒绝。
 - lifecycle event mailbox 按 endpoint 合并，但不得丢失最终状态或相邻 `connected -> offline` 转换。
 - loser cleanup 必须等待 SSH process、protocol transport、future TLS/WebRTC resources 释放；失败只作为诊断，不得复活 loser。
+- 共享 runtime 不 import TUI、Cobra、Android/JNI、桌面 GUI、浏览器 DOM 或私有 Cloud 实现；平台 adapter 只能通过 capability/command/event contract 与它交互。
 
 ### channel-bound operation stamp
 
@@ -145,11 +151,18 @@ func SendInput(ctx, req) (Result, error) {
 - adapter 已调用后的错误返回 `Attempted=true`，不得自动重放 input/paste bytes。
 - cleanup 只查询当前已存在且 generation 精确匹配的 bundle，禁止因 cleanup 触发 lazy dial。
 
+### 后续跨平台绑定
+
+- Android 优先评估 Go runtime AAR binding；若使用 JNI/C ABI，接口仍必须复用同一 protobuf command/event contract，不另造 Kotlin 领域模型。
+- 桌面端通过同一 C ABI 或进程内 Go adapter 消费 runtime；私有 Cloud Companion 继续保持 out-of-process，不能因为共享 runtime 改回静态链接私有实现。
+- Web 弱场景使用 `GOOS=js GOARCH=wasm`，Pion 只包装浏览器 `RTCPeerConnection`。Web host 提供 signaling、浏览器 credential custody 和生命周期事件，Go runtime 复用 planner、session、auth 与 terminal protocol 上层逻辑。
+- CONN007 开始前必须先做独立 binding spike，验证 Android arm64 生命周期、异步事件、取消、资源释放和崩溃边界；Web spike 只有在产品恢复 Web 客户端时执行，至少验证 WASM package dependency、DataChannel、channel binding 和浏览器后台恢复。
+
 ## 删除/替换清单
 
 - 删除或降级 `Endpoint.ResolveCurrentRoute` 在生产路径的使用；保留时只能作为测试 helper 或单 route 兼容 guard，并加静态守卫防止 CLI/TUI runtime 调用。
 - `cmd/termx` 不再直接选择 route 或保存 session state；只负责 Cobra 参数、target resolution、输出和错误码。
-- TUI `EndpointManager.bundle()` 不再同时承担 route 选择、dial、event publish 和 bundle cache；拆为 planner adapter、session owner、service router、mailbox。
+- TUI `EndpointManager.bundle()` 不再承担 route 选择、dial、event publish、bundle cache 或 session owner；这些职责进入共享 Go client runtime，TUI 只保留 service adapter、mailbox 投影和 reducer 消息桥接。
 - 旧文档中“CONN003 已实现基线”字样必须删除或改为“CONN003 目标基线”。
 - 不新增仓库内 `legacy/`、`tmp/`、`archive/` 作为旧代码参考。
 
@@ -159,7 +172,7 @@ func SendInput(ctx, req) (Result, error) {
 - C3R：用户明确允许本轮不保证测试通过；必须运行 protobuf 生成、`gofmt`、`git diff --check`，并尽力执行 `go test ./shared/connection/... ./shared/remoteauth/... ./internal/protocol/... ./core ./cmd/termx -count=1` 与 `clients/ui` typecheck。失败可记录后提交，但不得留下已知生成文件不一致或明显未清理引用。
 - C3B：`scripts/with-clean-termx-env.sh env GOWORK=off go test ./shared/connection/... -count=1`；`git diff --check`。
 - C3C：`scripts/with-clean-termx-env.sh env GOWORK=off go test ./shared/transport/unix/... ./shared/transport/ssh/... ./internal/protocol/... ./core -count=1`；必要 race；`git diff --check`。
-- C3D：`scripts/with-clean-termx-env.sh env GOWORK=off go test ./tui/services ./tui/state ./tui/app -count=1`；`scripts/with-clean-termx-env.sh env GOWORK=off go test -race ./tui/services -count=1`；`git diff --check`。
+- C3D：`scripts/with-clean-termx-env.sh env GOWORK=off go test ./shared/clientruntime/... ./tui/services ./tui/state ./tui/app -count=1`；`scripts/with-clean-termx-env.sh env GOWORK=off go test -race ./shared/clientruntime/... ./tui/services -count=1`；`git diff --check`。
 - C3E：`scripts/with-clean-termx-env.sh env GOWORK=off go test ./cmd/termx -count=1`；必要 `go test -race ./cmd/termx -count=1`；`git diff --check`。
 - C3F：`scripts/with-clean-termx-env.sh env GOWORK=off go test ./tui/... ./cmd/termx -count=1`；`git diff --check`。
 - C3G：`scripts/conn003_local_ssh_race_e2e.sh` 必须用真实 local daemon 与 OpenSSH host 注入延迟，覆盖 default full race、priority hedge、manual override、loser process 回收、TerminalRef 稳定和旧 generation 拒绝。
@@ -185,15 +198,15 @@ func SendInput(ctx, req) (Result, error) {
 | C3R | 已完成 | 删除 CONN001/CONN002 未接线平行模型与重复 wire/schema |
 | C3B | 待开始 | 纯 RouteSelectionPlanner 领域层 |
 | C3C | 待开始 | local/SSH fresh proof 与 ReadySession contract |
-| C3D | 待开始 | TUI EndpointManager session owner |
-| C3E | 待开始 | CLI 共用 session owner 与 route override |
+| C3D | 待开始 | `shared/clientruntime` session owner 与 TUI adapter |
+| C3E | 待开始 | CLI 共用共享 runtime 与 route override |
 | C3F | 待开始 | attach/input/resize generation stamp |
 | C3G | 待开始 | 真实 local + SSH race E2E |
 | C3H | 待开始 | 最终准入、双审、状态回填和提交 |
 | CONN004 | 待开始 | Direct TLS 与 LAN discovery，等 CONN003 完成后再恢复 |
 | CONN005 | 待开始 | Managed Cloud 普通 Route adapter，等 CONN004 或用户重排 |
 | CONN006 | 待开始 | endpoint share 与 TUI share action |
-| CONN007 | 待开始 | Official App 统一 endpoint runtime |
+| CONN007 | 待开始 | Android/桌面绑定共享 Go endpoint runtime；Web WASM 保持可选弱场景 |
 | CONN008 | 待开始 | 旧路径删除与全链路总验收 |
 | WEB003 | 暂停 | 完整用户中心与联合登录 |
 | CLOUD018 | 暂停 | Hub 自主 Presence 与持久 session P0 |
@@ -202,6 +215,7 @@ func SendInput(ctx, req) (Result, error) {
 
 ## 当前状态记录
 
+- 2026-07-17：跨端 runtime 决策写入当前真值。CONN003 不再把 session owner 固化在 TUI；共享 Go client runtime 负责 planner/race/generation/protocol/auth，TUI/CLI 先接 adapter，Android/桌面后续通过 AAR/C ABI 接入。Web 只考虑浏览器原生 WebRTC 的 Pion WASM wrapper；未解决等价 DTLS channel binding 前不进入生产 CapabilityGrant 链路，本轮不做真实跨平台编译。
 - 2026-07-17：C3R 完成。删除未接线 Android/TypeScript Endpoint registry、assembler、codec、store、fixture 与 remoteauth TS 生成入口；protobuf 删除纯客户端 registry/assembler/runtime session/discovery 消息；`remote.access.*` 从 487 行 `structpb` 动态 schema 改为 typed protobuf，Go scope/record 真值收回 `shared/remoteauth`；删除旧内存 Revocations，pairing 输入上限统一引用 canonical contract。相关 Go 测试、生成检查、TypeScript typecheck 和 Android Kotlin 编译均通过。
 - 2026-07-17：C3A 完成。多 transport 文档已删除旧 ME 路线图并收敛为 CONN003 技术边界；CLI 文档不再维护易漂移的命令快照；TUI 架构删除已退出目录迁移说明和旧落地顺序。三份文档均明确当前仍处于 `ResolveCurrentRoute` 过渡态，planner/session owner/generation 是待实现目标。
 - 2026-07-17：因文档把 CONN003 写成已实现而源码仍处于 `ResolveCurrentRoute` 过渡态，本文件已压缩为当前活动控制面；真实实现从 C3B 的纯 planner 领域层开始。
