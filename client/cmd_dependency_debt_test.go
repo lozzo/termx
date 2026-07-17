@@ -1,0 +1,136 @@
+package client_test
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
+	expectedImports := map[string]struct{}{
+		"file_command.go|github.com/lozzow/termx/internal/protocol":                               {},
+		"terminal_automation_command.go|github.com/lozzow/termx/internal/protocol":                {},
+		"terminal_command.go|github.com/lozzow/termx/internal/protocol":                           {},
+		"v3_access_command.go|github.com/lozzow/termx/internal/protocol":                          {},
+		"v3_attach_command.go|github.com/lozzow/termx/internal/protocol":                          {},
+		"v3_client_access.go|github.com/lozzow/termx/internal/protocol":                           {},
+		"v3_client_access.go|github.com/lozzow/termx/shared/remoteauth":                           {},
+		"v3_client_access.go|github.com/lozzow/termx/shared/transport":                            {},
+		"v3_client_access.go|github.com/lozzow/termx/shared/transport/unix":                       {},
+		"v3_cloud_command.go|github.com/lozzow/termx/shared/cloudcompanion":                       {},
+		"v3_cloud_command.go|github.com/lozzow/termx/shared/cloudcompanion/installer":             {},
+		"v3_cloud_command.go|github.com/lozzow/termx/shared/cloudcompanion/ipc":                   {},
+		"v3_cloud_command.go|github.com/lozzow/termx/shared/remoteauth":                           {},
+		"v3_cloud_development_source.go|github.com/lozzow/termx/shared/cloudcompanion":            {},
+		"v3_cloud_development_source.go|github.com/lozzow/termx/shared/cloudcompanion/activation": {},
+		"v3_cloud_development_source.go|github.com/lozzow/termx/shared/cloudcompanion/installer":  {},
+		"v3_cloud_runtime.go|github.com/lozzow/termx/shared/cloudcompanion":                       {},
+		"v3_cloud_runtime.go|github.com/lozzow/termx/shared/cloudcompanion/activation":            {},
+		"v3_cloud_runtime.go|github.com/lozzow/termx/shared/cloudcompanion/installer":             {},
+		"v3_cloud_runtime.go|github.com/lozzow/termx/shared/cloudcompanion/ipc":                   {},
+		"v3_command.go|github.com/lozzow/termx/shared/transport/ssh":                              {},
+		"v3_control_commands.go|github.com/lozzow/termx/internal/protocol":                        {},
+		"v3_e2e_smoke.go|github.com/lozzow/termx/internal/protocol":                               {},
+		"v3_history_backlog_command.go|github.com/lozzow/termx/internal/protocol":                 {},
+		"v3_history_dump_command.go|github.com/lozzow/termx/internal/protocol":                    {},
+		"v3_managed_daemon.go|github.com/lozzow/termx/remote/webrtc":                              {},
+		"v3_managed_daemon.go|github.com/lozzow/termx/shared/cloudcompanion":                      {},
+		"v3_managed_daemon.go|github.com/lozzow/termx/shared/transport":                           {},
+		"v3_pair_command.go|github.com/lozzow/termx/internal/protocol":                            {},
+		"v3_pair_command.go|github.com/lozzow/termx/shared/remoteauth":                            {},
+		"v3_pair_command.go|github.com/lozzow/termx/shared/transport/unix":                        {},
+		"v3_root_command.go|github.com/lozzow/termx/internal/protocol":                            {},
+		"workspace_command.go|github.com/lozzow/termx/internal/protocol":                          {},
+	}
+	expectedHelpers := map[string]struct{}{
+		"daemon_lifecycle.go|v3DialClient":                  {},
+		"endpoint_command.go|probeEndpointProtocolClient":   {},
+		"file_command.go|openEndpointProtocolClient":        {},
+		"terminal_command.go|openEndpointProtocolClient":    {},
+		"v3_access_command.go|dialOrStartV3ClientContext":   {},
+		"v3_command.go|dialOrStartV3Client":                 {},
+		"v3_control_commands.go|dialOrStartV3Client":        {},
+		"v3_history_backlog_command.go|dialOrStartV3Client": {},
+		"v3_history_dump_command.go|dialOrStartV3Client":    {},
+		"v3_pair_command.go|dialOrStartV3ClientContext":     {},
+		"v3_root_command.go|dialOrStartV3Client":            {},
+		"v3_root_command.go|v3DialClient":                   {},
+		"workspace_command.go|openEndpointProtocolClient":   {},
+	}
+	seenImports := map[string]struct{}{}
+	seenHelpers := map[string]struct{}{}
+	concretePrefixes := []string{
+		"github.com/lozzow/termx/internal/protocol",
+		"github.com/lozzow/termx/shared/transport",
+		"github.com/lozzow/termx/shared/cloudcompanion",
+		"github.com/lozzow/termx/shared/remoteauth",
+		"github.com/lozzow/termx/remote/client",
+		"github.com/lozzow/termx/remote/webrtc",
+	}
+	helperNames := map[string]struct{}{
+		"v3DialClient": {}, "probeEndpointProtocolClient": {}, "openEndpointProtocolClient": {},
+		"dialOrStartV3Client": {}, "dialOrStartV3ClientContext": {},
+	}
+	err := filepath.WalkDir("../cmd/termx", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return err
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if err != nil {
+			return err
+		}
+		file := filepath.Base(path)
+		for _, imported := range parsed.Imports {
+			importPath := strings.Trim(imported.Path.Value, `"`)
+			if hasImportPrefix(importPath, concretePrefixes) {
+				key := file + "|" + importPath
+				seenImports[key] = struct{}{}
+				if _, ok := expectedImports[key]; !ok {
+					t.Errorf("new command concrete import debt: %s", key)
+				}
+			}
+		}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			identifier, ok := node.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			if _, tracked := helperNames[identifier.Name]; tracked {
+				key := file + "|" + identifier.Name
+				seenHelpers[key] = struct{}{}
+				if _, ok := expectedHelpers[key]; !ok {
+					t.Errorf("new command direct helper debt: %s", key)
+				}
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDebtSetMatches(t, "concrete import", expectedImports, seenImports)
+	assertDebtSetMatches(t, "direct helper", expectedHelpers, seenHelpers)
+}
+
+func hasImportPrefix(importPath string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if importPath == prefix || strings.HasPrefix(importPath, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func assertDebtSetMatches(t *testing.T, kind string, expected, seen map[string]struct{}) {
+	t.Helper()
+	for key := range expected {
+		if _, ok := seen[key]; !ok {
+			t.Errorf("%s debt was removed; delete the obsolete guard entry: %s", kind, key)
+		}
+	}
+}
