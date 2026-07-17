@@ -11,10 +11,8 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/proto/wire"
 	"github.com/lozzow/termx/shared/connection"
 	"github.com/lozzow/termx/shared/perftrace"
-	sshtransport "github.com/lozzow/termx/shared/transport/ssh"
 	"github.com/lozzow/termx/tui/app"
 	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
@@ -306,82 +304,6 @@ func openV3AttachProtocolClients(ctx context.Context, cfg v3AttachConfig, logPat
 		return nil, nil, nil, func() {}, err
 	}
 	return client, nil, nil, closeClient, nil
-}
-
-func v3LocalEndpointDialer(logger *slog.Logger) services.EndpointDialer {
-	return func(_ context.Context, endpoint connection.Endpoint, route connection.AccessRoute) (services.EndpointServiceBundle, error) {
-		socketPath := strings.TrimSpace(route.Socket)
-		if socketPath == "" || socketPath == "auto" {
-			socketPath = resolveV3Socket("")
-		}
-		client, err := dialOrStartV3Client(socketPath, resolveV3LogFilePath(""), logger)
-		if err != nil {
-			return services.EndpointServiceBundle{}, err
-		}
-		terminal := services.ProtocolTerminalServiceAdapter{Client: client}
-		return services.EndpointServiceBundle{
-			EndpointID: state.EndpointID(endpoint.ID), RouteID: route.ID, Terminal: terminal,
-			Core: services.ProtocolCoreClientAdapter{Client: client}, Surface: terminal, LiveEvents: terminal,
-			Path: services.ProtocolPathServiceAdapter{Client: client}, Lifecycle: services.EndpointLifecycle{Done: client.Done(), Err: client.Err},
-		}, nil
-	}
-}
-
-func v3SSHEndpointDialer(endpointCtx context.Context) services.EndpointDialer {
-	if endpointCtx == nil {
-		endpointCtx = context.Background()
-	}
-	return func(ctx context.Context, endpoint connection.Endpoint, route connection.AccessRoute) (services.EndpointServiceBundle, error) {
-		client, err := dialV3SSHEndpointClient(endpointCtx, ctx, endpoint, route)
-		if err != nil {
-			return services.EndpointServiceBundle{}, err
-		}
-		terminal := services.ProtocolTerminalServiceAdapter{Client: client}
-		core := services.ProtocolCoreClientAdapter{Client: client}
-		path := services.ProtocolPathServiceAdapter{Client: client}
-		return services.EndpointServiceBundle{
-			EndpointID: state.EndpointID(endpoint.ID),
-			RouteID:    route.ID,
-			Terminal:   terminal,
-			Core:       core,
-			Surface:    terminal,
-			LiveEvents: terminal,
-			Path:       path,
-			Lifecycle:  services.EndpointLifecycle{Done: client.Done(), Err: client.Err},
-		}, nil
-	}
-}
-
-func dialV3SSHEndpointClient(endpointCtx, helloContext context.Context, endpoint connection.Endpoint, route connection.AccessRoute) (*protocol.Client, error) {
-	address := strings.TrimSpace(route.Host)
-	if strings.TrimSpace(route.User) != "" {
-		address = strings.TrimSpace(route.User) + "@" + address
-	}
-	extraArgs := make([]string, 0, 4)
-	if route.Port != 0 && route.Port != 22 {
-		extraArgs = append(extraArgs, "-p", fmt.Sprintf("%d", route.Port))
-	}
-	if strings.TrimSpace(route.ProxyJump) != "" {
-		extraArgs = append(extraArgs, "-J", strings.TrimSpace(route.ProxyJump))
-	}
-	transport, err := sshtransport.Dial(endpointCtx, sshtransport.DialOptions{
-		Address: address, AuthRef: route.CredentialRef, RemoteSocket: route.RemoteSocket, ExtraArgs: extraArgs,
-	})
-	if err != nil {
-		if endpointCtx.Err() != nil {
-			return nil, fmt.Errorf("ssh endpoint %q route %q dial: %w", endpoint.ID, route.ID, endpointCtx.Err())
-		}
-		return nil, fmt.Errorf("ssh endpoint %q route %q dial: %w", endpoint.ID, route.ID, err)
-	}
-	client := protocol.NewClient(transport)
-	if err := client.Hello(helloContext, protocol.Hello{Version: wire.Version, Client: "cmd/termx:ssh:" + string(endpoint.ID)}); err != nil {
-		_ = client.Close()
-		if helloContext.Err() != nil {
-			return nil, fmt.Errorf("ssh endpoint %q route %q hello: %w", endpoint.ID, route.ID, helloContext.Err())
-		}
-		return nil, fmt.Errorf("ssh endpoint %q route %q hello: %w", endpoint.ID, route.ID, err)
-	}
-	return client, nil
 }
 
 func newV3RuntimeSurfaceID() string {

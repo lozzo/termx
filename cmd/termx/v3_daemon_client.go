@@ -1,150 +1,18 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
 	"syscall"
-	"time"
-
-	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/proto/wire"
-	unixtransport "github.com/lozzow/termx/shared/transport/unix"
 )
 
 var (
-	v3DialClient            = dialV3Client
 	startV3Daemon           = startCoreV2Daemon
 	startV3DaemonWithConfig = startCoreV2DaemonWithConfig
 	osExecutable            = os.Executable
 )
-
-func dialV3Client(path string) (*protocol.Client, error) {
-	return dialV3ClientContext(context.Background(), path)
-}
-
-func dialV3ClientContext(ctx context.Context, path string) (*protocol.Client, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	conn, err := unixtransport.DialContext(ctx, path)
-	if err != nil {
-		return nil, err
-	}
-	client := protocol.NewClient(conn)
-	if err := client.Hello(ctx, protocol.Hello{
-		Version: wire.Version,
-		Client:  "cmd/termx-v3",
-	}); err != nil {
-		_ = client.Close()
-		return nil, err
-	}
-	return client, nil
-}
-
-func dialOrStartV3Client(path string, logFile string, logger *slog.Logger) (*protocol.Client, error) {
-	return dialOrStartV3ClientWithConfig(path, logFile, "", logger)
-}
-
-func dialOrStartV3ClientWithConfig(path string, logFile string, configPath string, logger *slog.Logger) (*protocol.Client, error) {
-	return dialOrStartV3ClientWithConfigUsing(context.Background(), path, logFile, configPath, logger, func(_ context.Context, path string) (*protocol.Client, error) {
-		return v3DialClient(path)
-	})
-}
-
-func dialOrStartV3ClientContext(ctx context.Context, path string, logFile string, logger *slog.Logger) (*protocol.Client, error) {
-	return dialOrStartV3ClientWithConfigContext(ctx, path, logFile, "", logger)
-}
-
-func dialOrStartV3ClientWithConfigContext(ctx context.Context, path string, logFile string, configPath string, logger *slog.Logger) (*protocol.Client, error) {
-	return dialOrStartV3ClientWithConfigUsing(ctx, path, logFile, configPath, logger, dialV3ClientContext)
-}
-
-func dialOrStartV3ClientWithConfigUsing(
-	ctx context.Context,
-	path string,
-	logFile string,
-	configPath string,
-	logger *slog.Logger,
-	dial func(context.Context, string) (*protocol.Client, error),
-) (*protocol.Client, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	client, err := dial(ctx, path)
-	if err == nil {
-		if logger != nil {
-			logger.Debug("connected to existing core-v2 daemon", "socket", path)
-		}
-		return client, nil
-	}
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return nil, ctxErr
-	}
-	if logger != nil {
-		logger.Warn("initial core-v2 daemon dial failed, attempting v3 auto-start", "socket", path, "error", err)
-	}
-	if startErr := startCoreV2DaemonForConfig(path, logFile, configPath); startErr != nil {
-		return nil, fmt.Errorf("start core-v2 daemon: %w", startErr)
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if waitErr := waitForSocketContext(ctx, path, 5*time.Second, func(attemptCtx context.Context) error {
-		c, dialErr := dial(attemptCtx, path)
-		if dialErr != nil {
-			return dialErr
-		}
-		if c != nil {
-			_ = c.Close()
-		}
-		return nil
-	}); waitErr != nil {
-		return nil, waitErr
-	}
-	if logger != nil {
-		logger.Info("auto-started core-v2 daemon became ready", "socket", path)
-	}
-	return dial(ctx, path)
-}
-
-func dialOrStartV3TransportWithConfig(path string, logFile string, configPath string, logger *slog.Logger) (*unixtransport.Transport, error) {
-	transport, err := unixtransport.Dial(path)
-	if err == nil {
-		if logger != nil {
-			logger.Debug("connected to existing core-v2 daemon transport", "socket", path)
-		}
-		return transport, nil
-	}
-	if logger != nil {
-		logger.Warn("initial core-v2 daemon transport dial failed, attempting v3 auto-start", "socket", path, "error", err)
-	}
-	if startErr := startCoreV2DaemonForConfig(path, logFile, configPath); startErr != nil {
-		return nil, fmt.Errorf("start core-v2 daemon: %w", startErr)
-	}
-	if waitErr := waitForSocket(path, 5*time.Second, func() error {
-		c, dialErr := unixtransport.Dial(path)
-		if dialErr != nil {
-			return dialErr
-		}
-		if c != nil {
-			_ = c.Close()
-		}
-		return nil
-	}); waitErr != nil {
-		return nil, waitErr
-	}
-	if logger != nil {
-		logger.Info("auto-started core-v2 daemon transport became ready", "socket", path)
-	}
-	return unixtransport.Dial(path)
-}
 
 func startCoreV2Daemon(path string, logFile string) error {
 	return startCoreV2DaemonWithConfig(path, logFile, "")

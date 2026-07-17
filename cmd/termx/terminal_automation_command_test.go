@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -149,35 +148,6 @@ func TestTerminalAutomationInputAndFormatValidation(t *testing.T) {
 	}
 	if _, _, err := parseTerminalSize("80x", "24"); cliExitCode(err) != 2 {
 		t.Fatalf("invalid size error = %v", err)
-	}
-}
-
-func TestTerminalTransportErrorDoesNotPrintUsage(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	if err := connection.Save("", connection.Registry{
-		Version: connection.RegistryVersion, Default: "west",
-		Endpoints: map[connection.EndpointID]connection.Endpoint{
-			"west": testSSHEndpoint("west", "West", "west.example", "", "auto", connection.ConnectOnDemand, true),
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	oldSSH := dialCLIEndpointSSH
-	t.Cleanup(func() { dialCLIEndpointSSH = oldSSH })
-	dialCLIEndpointSSH = func(context.Context, context.Context, connection.Endpoint, connection.AccessRoute) (*protocol.Client, error) {
-		return nil, errors.New("transport unavailable")
-	}
-	command := newRootCmd()
-	var stderr bytes.Buffer
-	command.SetOut(io.Discard)
-	command.SetErr(&stderr)
-	command.SetArgs([]string{"terminal", "list"})
-	err := command.Execute()
-	if cliExitCode(err) != 6 || !strings.Contains(err.Error(), "transport unavailable") {
-		t.Fatalf("transport error = %v, exit=%d", err, cliExitCode(err))
-	}
-	if strings.Contains(stderr.String(), "Usage:") {
-		t.Fatalf("runtime transport error printed command usage: %s", stderr.String())
 	}
 }
 

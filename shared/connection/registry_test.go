@@ -20,9 +20,9 @@ func TestLoadMissingDefaultPathReturnsLocalEndpoint(t *testing.T) {
 	if !ok || endpoint.ID != DefaultEndpointID || endpoint.ConnectMode != ConnectAuto || !endpoint.Enabled {
 		t.Fatalf("unexpected default endpoint %#v, ok=%v", endpoint, ok)
 	}
-	route, err := endpoint.ResolveCurrentRoute("")
-	if err != nil || route.Kind != RouteLocalUnix || route.Socket != "auto" {
-		t.Fatalf("unexpected default route %#v, err=%v", route, err)
+	routes := endpoint.RouteList()
+	if len(routes) != 1 || routes[0].Kind != RouteLocalUnix || routes[0].Socket != "auto" {
+		t.Fatalf("unexpected default routes %#v", routes)
 	}
 }
 
@@ -123,12 +123,6 @@ endpoints:
 	}
 	if route := studio.Routes["ssh"]; route.Kind != RouteSSHStdio || route.Host != "studio-host" || route.User != "build" || route.ProxyJump != "bastion" || route.RemoteSocket != "auto" {
 		t.Fatalf("unexpected ssh route %#v", route)
-	}
-	if _, err := studio.ResolveCurrentRoute(""); !IsCode(err, ErrorRouteSelectionRequired) {
-		t.Fatalf("multi-route runtime must fail until planner exists, got %v", err)
-	}
-	if route, err := studio.ResolveCurrentRoute("lan"); err != nil || route.Kind != RouteDirectTLS {
-		t.Fatalf("explicit route should resolve, route=%#v err=%v", route, err)
 	}
 }
 

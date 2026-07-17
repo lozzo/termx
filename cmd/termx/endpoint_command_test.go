@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,7 +13,6 @@ import (
 
 	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/internal/protocol"
-	remotev2client "github.com/lozzow/termx/remote/client"
 	"github.com/lozzow/termx/shared/connection"
 	"github.com/lozzow/termx/shared/filelock"
 )
@@ -129,43 +127,6 @@ func TestEndpointAddCreatesExplicitRegistryWithoutInventingLocalEndpoint(t *test
 	}
 	if _, exists := registry.Endpoints[connection.DefaultEndpointID]; exists {
 		t.Fatal("explicit registry creation invented a local endpoint")
-	}
-}
-
-func TestEndpointTransportFailureDoesNotFallbackToLocal(t *testing.T) {
-	oldLocal := dialCLIEndpointLocal
-	oldSSH := dialCLIEndpointSSH
-	oldCloud := dialCLIEndpointCloud
-	t.Cleanup(func() {
-		dialCLIEndpointLocal = oldLocal
-		dialCLIEndpointSSH = oldSSH
-		dialCLIEndpointCloud = oldCloud
-	})
-
-	localCalls := 0
-	dialCLIEndpointLocal = func(string, string, *slog.Logger) (*protocol.Client, error) {
-		localCalls++
-		return nil, errors.New("local dial must not run")
-	}
-	sshFailure := errors.New("ssh transport failed")
-	dialCLIEndpointSSH = func(context.Context, context.Context, connection.Endpoint, connection.AccessRoute) (*protocol.Client, error) {
-		return nil, sshFailure
-	}
-	cloudFailure := errors.New("managed transport failed")
-	dialCLIEndpointCloud = func(context.Context, connection.Endpoint, connection.AccessRoute) (*protocol.Client, remotev2client.Session, error) {
-		return nil, remotev2client.Session{}, cloudFailure
-	}
-
-	sshConfig := testSSHEndpoint("west", "West", "west.example", "", "auto", connection.ConnectOnDemand, true)
-	if _, _, err := openEndpointProtocolClient(context.Background(), sshConfig, "", ""); !errors.Is(err, sshFailure) {
-		t.Fatalf("SSH error = %v", err)
-	}
-	cloudConfig := testManagedEndpoint("studio", "Studio", "device-studio", "SHA256:studio", "grant:studio", connection.RelayAuto, connection.ConnectOnDemand, true)
-	if _, _, err := openEndpointProtocolClient(context.Background(), cloudConfig, "", ""); !errors.Is(err, cloudFailure) {
-		t.Fatalf("Cloud error = %v", err)
-	}
-	if localCalls != 0 {
-		t.Fatalf("remote failure attempted %d local fallback dials", localCalls)
 	}
 }
 

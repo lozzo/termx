@@ -17,8 +17,8 @@
 - TUI 内部状态和副作用分离：state reducer 不做 IO，service/effect 不直接绕过 message path 修改 UI state。
 - renderer 只消费 render view-model，不读取 runtime、history source 或 protocol client。
 - TUI 用户配置以 `tui/docs/tui-config-management.md` 为基准；配置 loader 负责文件/env/flag，reducer 持有已验证快照，renderer 和 input router 只消费解析后的 theme/shortcuts，不直接读配置源。
-- `connections.yaml` 只保存 Endpoint/Route 期望配置。当前 `EndpointManager` 仍处于单 route lazy bundle 过渡态，生产路径仍有 `ResolveCurrentRoute`；不能把 CONN003 目标态当成已实现结构。
-- CONN003 的目标是让 `EndpointManager` 成为每个 Endpoint 唯一 session owner，统一 planner、route race、`ReadySession`、`SessionGeneration`、winner/loser cleanup 和 lifecycle mailbox。算法细节不在本文复制。
+- `connections.yaml` 只保存 Endpoint/Route 期望配置。C3X 已删除旧 TUI lazy bundle/session owner 和 `ResolveCurrentRoute`；当前 CLI/TUI 正等待 `shared/clientruntime` 接线，不能把删除后的编译缺口或 CONN003 目标态当成已交付结构。
+- CONN003 的目标是让 `shared/clientruntime` 成为每个 Endpoint 唯一跨端 session owner，统一 planner、route race、`ReadySession`、`SessionGeneration`、winner/loser cleanup 和 lifecycle mailbox；TUI 只保留 adapter/projection。算法细节不在本文复制。
 - endpoint-scoped service result 的目标契约是携带原始 session stamp，并在 reducer 提交前统一校验 generation；旧 generation 结果不得污染当前 live/history/input/file 投影。
 - attach/input/paste/resize/detach 的目标契约是绑定创建 channel 的原始 stamp。stale cleanup 不得 lazy dial，adapter 已调用后的输入错误不得自动重放 payload。
 - input 和 mouse 只输出 semantic intent，不直接修改 workspace/history/copy mode。

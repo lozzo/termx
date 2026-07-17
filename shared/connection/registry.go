@@ -718,32 +718,6 @@ func (endpoint Endpoint) Route(id RouteID) (AccessRoute, bool) {
 	return cloneRoute(route), ok
 }
 
-// ResolveCurrentRoute 为 CONN003 planner 接入前的现有 CLI/TUI runtime 提供 fail-closed 过渡边界。
-// 显式 route 可以直接使用；未显式选择时只有唯一 enabled 且非 manual-only route 才可继续，多 route 绝不隐式排序。
-func (endpoint Endpoint) ResolveCurrentRoute(requested RouteID) (AccessRoute, error) {
-	if requested = normalizeRouteID(requested); requested != "" {
-		route, ok := endpoint.Route(requested)
-		if !ok || !route.Enabled {
-			return AccessRoute{}, connectionError(ErrorRouteUnavailable, "endpoint %q route %q is unavailable", endpoint.ID, requested)
-		}
-		return route, nil
-	}
-	eligible := make([]AccessRoute, 0, len(endpoint.Routes))
-	for _, route := range endpoint.RouteList() {
-		if route.Enabled && !route.ManualOnly {
-			eligible = append(eligible, route)
-		}
-	}
-	switch len(eligible) {
-	case 0:
-		return AccessRoute{}, connectionError(ErrorRouteUnavailable, "endpoint %q has no eligible route", endpoint.ID)
-	case 1:
-		return eligible[0], nil
-	default:
-		return AccessRoute{}, connectionError(ErrorRouteSelectionRequired, "endpoint %q has multiple eligible routes; route planner is required", endpoint.ID)
-	}
-}
-
 // DialIdentity 返回 route 的连接身份，用于 registry reload 后判断当前 session 是否需要重连。
 func (route AccessRoute) DialIdentity() DialIdentity {
 	hostKeys := append([]string(nil), route.HostKeyFingerprints...)

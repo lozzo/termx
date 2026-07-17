@@ -410,7 +410,7 @@ type TerminalLiveEvent struct {
 	Ready                bool
 }
 
-// EndpointRuntimeEvent 是 endpoint manager 主动发布的连接生命周期事件。
+// EndpointRuntimeEvent 是共享 client runtime 发布给 TUI adapter 的连接生命周期事件。
 // 它只描述某个 EndpointID 的 transport/protocol 状态，不携带 terminal lifecycle truth；
 // TUI reducer 应把它投影到对应 pane/manager/picker，而不是升级成全局 toast。
 type EndpointRuntimeEvent struct {
@@ -428,19 +428,6 @@ type EndpointRuntimeEvent struct {
 	Message              string
 	Err                  error
 }
-
-// ReportEndpointDialPhase 把 managed dialer 的公开阶段写回当前 EndpointManager dial context。
-// 缺少 manager sink 时保持 no-op；调用方不得通过该函数修改 reducer state、选择其他 transport 或携带 credential。
-func ReportEndpointDialPhase(ctx context.Context, phase cloudcompanion.EndpointPhase) {
-	if ctx == nil {
-		return
-	}
-	if sink, ok := ctx.Value(endpointDialProgressContextKey{}).(func(cloudcompanion.EndpointPhase)); ok && sink != nil {
-		sink(phase)
-	}
-}
-
-type endpointDialProgressContextKey struct{}
 
 // EndpointEventSource 提供 endpoint-scoped 生命周期事件订阅。
 // 该接口用于主动侦测 transport 关闭；订阅者只能通过 message path 回写 reducer state。

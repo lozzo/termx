@@ -20,9 +20,9 @@
 
 `CONN003` 尚未完成：
 
-- 生产路径仍有 `Endpoint.ResolveCurrentRoute`，实际行为仍以单 route 选择和按需建 bundle 为主。
+- C3X 已删除 `Endpoint.ResolveCurrentRoute`、TUI lazy bundle/session owner 和 CLI 直接 route/dial owner；CLI/TUI 当前保留明确待接 `shared/clientruntime` 的调用缺口，不再有可继续修补的旧运行时。
 - `RouteSelectionPlanner`、默认全量竞速、priority hedge、统一 `ReadySession`、winner/loser cleanup 尚未成为 CLI/TUI 共同运行时。
-- TUI `EndpointManager` 还不是完整的 per-endpoint session owner。
+- `shared/clientruntime` 尚未实现 per-endpoint session owner，TUI adapter 尚未接入。
 - `SessionGeneration` 和 channel-bound operation stamp 尚未覆盖 attach、input、paste、resize、detach 与迟到回包。
 
 因此，下文所有 planner、race、generation 和 stamp 语义都是 `CONN003` 的目标契约，不是当前已交付能力。
@@ -46,7 +46,7 @@ Endpoint  一个客户端要连接的 daemon 目标
 - 一个 daemon 对应一个 Endpoint；local Unix、SSH、direct TLS 和 managed WebRTC 是该 Endpoint 下的 Route。
 - `connections.yaml` 只保存期望配置，不保存 winner、generation、dial phase、observed path、运行时错误或 transport 句柄。
 - `TerminalID` 只在 owning daemon 内唯一；跨 Endpoint 数据必须使用 `TerminalRef{EndpointID, TerminalID}`。
-- TUI/client 侧 `EndpointManager` 管理“我如何连接 daemon”；daemon 侧 attachment/client manager 管理“哪些客户端连接我”。两者不是同一个领域模型。
+- client 侧 `shared/clientruntime` 管理“我如何连接 daemon”；daemon 侧 attachment/client manager 管理“哪些客户端连接我”。两者不是同一个领域模型。
 - TUI 不拥有 terminal lifecycle、committed history、daemon 文件系统或授权真值。
 
 ## CONN003 目标运行时
@@ -75,9 +75,9 @@ transport 建立不等于 Endpoint 已连接。一次 attempt 只有依次完成
 
 首个产生 `ReadySession` 的 attempt 在唯一线性化点成为 winner。静态 route 顺序只稳定启动计划和错误诊断，不能让稍晚 Ready 的 attempt 反超。
 
-### EndpointManager
+### ClientRuntime
 
-TUI `EndpointManager` 的目标职责是每个 Endpoint 唯一的 session owner：
+`shared/clientruntime` 的目标职责是每个 Endpoint 唯一的跨端 session owner：
 
 - 分配递增 `SessionGeneration`。
 - 同一 Endpoint 只维护一个 in-flight race 和一个活动 winner。
@@ -92,7 +92,7 @@ CLI 不另建一套选路状态机。root TUI、terminal/file/workspace 命令�
 
 ```text
 CLI/TUI intent
-  -> EndpointManager.ensureSession
+  -> ClientRuntime.ensureSession
   -> RouteSelectionPlanner.Plan
   -> local/SSH attempts
   -> identity proof + authorization + Hello
@@ -149,11 +149,11 @@ AttachmentStamp      = EndpointSessionStamp + TerminalID + Channel
 
 ## 删除与替换边界
 
-CONN003 实现时直接删除旧职责，不保留双路径：
+CONN003 直接删除旧职责，不保留双路径：
 
-- CLI/TUI 生产路径不再调用 `Endpoint.ResolveCurrentRoute`。
+- C3X 已删除 `Endpoint.ResolveCurrentRoute`、TUI lazy bundle/session owner 和 CLI 直接 route/dial owner。
 - `cmd/termx` 不再直接选择 route 或保存 session state。
-- `EndpointManager.bundle()` 不再同时承担 route 选择、dial、event publish 和 bundle cache。
+- TUI adapter 不得重新承担 route 选择、dial、event publish、bundle cache 或 session owner。
 - 不新增 local fallback、raw SSH shell fallback、legacy remote bridge 或仓库内旧代码快照。
 - 不为 managed WebRTC、direct TLS、LAN discovery 或 share 提前扩展通用抽象。
 
