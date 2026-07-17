@@ -812,6 +812,9 @@ func newProtocolClientWithProcessFactory(t *testing.T, factory ProcessFactory) (
 
 func newProtocolClientWithServer(t *testing.T, server *Server) (*Server, *applicationProtocolTestClient, func()) {
 	t.Helper()
+	if server.cfg.applicationFactory == nil {
+		server.cfg.applicationFactory = applicationTestExecutorFactory
+	}
 	clientTransport, serverTransport := memory.NewPair()
 	errCh := make(chan error, 1)
 	go func() {

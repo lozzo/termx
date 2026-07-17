@@ -17,7 +17,7 @@ import (
 )
 
 func TestHubDataChannelTransportCannotEscapeCapabilityTerminalScope(t *testing.T) {
-	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	server := NewServer(WithApplicationExecutorFactory(applicationTestExecutorFactory), WithProcessFactory(newRecordingProcessFactory()))
 	registerScopedTestTerminal(t, server, "allowed")
 	registerScopedTestTerminal(t, server, "denied")
 

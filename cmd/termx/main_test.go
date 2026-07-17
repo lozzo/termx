@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	apilayer "github.com/lozzow/termx/api_layer"
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	clientruntime "github.com/lozzow/termx/client/runtime"
 	corev2 "github.com/lozzow/termx/core"
@@ -491,7 +492,7 @@ func TestDefaultDaemonUsesCoreV2Server(t *testing.T) {
 	fakeV3 := &fakeCoreV2Server{}
 	newCoreV2Server = func(opts ...corev2.ServerOption) coreV2Server {
 		fakeV3.newServerCalls++
-		server := corev2.NewServer(opts...)
+		server := newCoreV2TestServer(opts...)
 		if server.HistoryStorageDir() == "" {
 			t.Fatal("default daemon must configure file-backed core-v2 history storage dir")
 		}
@@ -522,7 +523,7 @@ func TestDaemonCanDisableHistoryFromEnv(t *testing.T) {
 	newCoreV2Server = func(opts ...corev2.ServerOption) coreV2Server {
 		fakeV3.newServerCalls++
 		opts = append(opts, corev2.WithProcessFactory(newCoreV2ResizeRecordingProcessFactory()))
-		server := corev2.NewServer(opts...)
+		server := newCoreV2TestServer(opts...)
 		if server.HistoryStorageDir() != "" {
 			t.Fatalf("history disabled daemon must not configure history storage dir, got %q", server.HistoryStorageDir())
 		}
@@ -564,7 +565,7 @@ func TestR446DaemonConfiguresHistoryBackpressureFromEnv(t *testing.T) {
 	fakeV3 := &fakeCoreV2Server{}
 	newCoreV2Server = func(opts ...corev2.ServerOption) coreV2Server {
 		fakeV3.newServerCalls++
-		server := corev2.NewServer(opts...)
+		server := newCoreV2TestServer(opts...)
 		got := server.HistoryBackpressureConfig()
 		if got.Mode != corev2.HistoryBackpressureBounded || got.BufferBytes != 12<<20 {
 			t.Fatalf("daemon did not pass history backpressure env to core: %#v", got)
@@ -703,7 +704,7 @@ func TestV3PingReturnsAutoStartError(t *testing.T) {
 
 func TestV3PingConnectsRealCoreV2Daemon(t *testing.T) {
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
-	server := corev2.NewServer(corev2.WithSocketPath(socketPath))
+	server := newCoreV2TestServer(corev2.WithSocketPath(socketPath))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -863,7 +864,7 @@ func TestDialOrStartV3ClientUsesConfigStarterWhenConfigPathIsExplicit(t *testing
 
 func TestDefaultLocalControlCommandsUseCoreV2Protocol(t *testing.T) {
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
-	server := corev2.NewServer(corev2.WithSocketPath(socketPath))
+	server := newCoreV2TestServer(corev2.WithSocketPath(socketPath))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -1022,7 +1023,7 @@ func TestDefaultLocalControlCommandsUseCoreV2Protocol(t *testing.T) {
 
 func TestV3LocalControlCommandsRemainAvailable(t *testing.T) {
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
-	server := corev2.NewServer(corev2.WithSocketPath(socketPath))
+	server := newCoreV2TestServer(corev2.WithSocketPath(socketPath))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -1063,7 +1064,7 @@ func TestV3LocalControlCommandsRemainAvailable(t *testing.T) {
 
 func TestV3HistoryDumpWritesAuthoritativeWindows(t *testing.T) {
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
-	server := corev2.NewServer(corev2.WithSocketPath(socketPath), corev2.WithProcessFactory(newCoreV2ResizeRecordingProcessFactory()))
+	server := newCoreV2TestServer(corev2.WithSocketPath(socketPath), corev2.WithProcessFactory(newCoreV2ResizeRecordingProcessFactory()))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -1141,7 +1142,7 @@ func TestV3HistoryDumpWritesAuthoritativeWindows(t *testing.T) {
 
 func TestR448V3HistoryBacklogWritesDiagnostics(t *testing.T) {
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
-	server := corev2.NewServer(
+	server := newCoreV2TestServer(
 		corev2.WithSocketPath(socketPath),
 		corev2.WithProcessFactory(newCoreV2ResizeRecordingProcessFactory()),
 		corev2.WithHistoryBackpressureConfig(corev2.HistoryBackpressureConfig{
@@ -2542,11 +2543,15 @@ func newCoreV2ProtocolClientForCLITest(t *testing.T) (*corev2.Server, *protocol.
 	return newCoreV2ProtocolClientForCLITestWithOptions(t)
 }
 
+func newCoreV2TestServer(opts ...corev2.ServerOption) *corev2.Server {
+	return corev2.NewServer(append([]corev2.ServerOption{corev2.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory)}, opts...)...)
+}
+
 func newCoreV2ProtocolClientForCLITestWithOptions(t *testing.T, opts ...corev2.ServerOption) (*corev2.Server, *protocol.Client, func()) {
 	t.Helper()
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
 	serverOpts := append([]corev2.ServerOption{corev2.WithSocketPath(socketPath)}, opts...)
-	server := corev2.NewServer(serverOpts...)
+	server := newCoreV2TestServer(serverOpts...)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {

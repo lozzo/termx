@@ -36,6 +36,7 @@ type serverConfig struct {
 	historyStorageDir   string
 	historyDisabled     bool
 	historyBackpressure HistoryBackpressureConfig
+	applicationFactory  ApplicationExecutorFactory
 }
 
 // HistoryStoreFactory 为每个 terminal 创建 core-v2 authoritative history store。
@@ -125,6 +126,14 @@ func WithSocketPath(path string) ServerOption {
 		if path != "" {
 			cfg.socketPath = path
 		}
+	}
+}
+
+// WithApplicationExecutorFactory 注入 connection-bound API Layer 装配。
+// core 只保存 factory contract；具体 Proto validation、mapping 与 controller 组合必须位于 core 外部。
+func WithApplicationExecutorFactory(factory ApplicationExecutorFactory) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.applicationFactory = factory
 	}
 }
 

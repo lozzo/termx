@@ -5,22 +5,19 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/lozzow/termx/proto/apipb"
 )
 
 const defaultPathListDirsLimit = 100
 
-func listPathDirectories(command *apipb.PathListDirectoriesCommand) (*apipb.PathListDirectoriesResult, error) {
-	prefix := command.GetPrefix()
+func listPathDirectories(prefix string, limit int) (PathDirectories, error) {
 	if strings.TrimSpace(prefix) == "" {
-		return &apipb.PathListDirectoriesResult{}, nil
+		return PathDirectories{}, nil
 	}
 	baseDisplay, baseResolved, fragment, ok := pathCompletionBase(prefix)
 	if !ok {
-		return &apipb.PathListDirectoriesResult{}, nil
+		return PathDirectories{}, nil
 	}
-	out := &apipb.PathListDirectoriesResult{BasePath: baseResolved}
+	out := PathDirectories{BasePath: baseResolved}
 	entries, err := os.ReadDir(baseResolved)
 	if err != nil {
 		// 中文说明：目录补全的 domain owner 是当前 daemon 机器文件系统；
@@ -28,7 +25,6 @@ func listPathDirectories(command *apipb.PathListDirectoriesCommand) (*apipb.Path
 		out.Missing = true
 		return out, nil
 	}
-	limit := int(command.GetLimit())
 	if limit <= 0 {
 		limit = defaultPathListDirsLimit
 	}
@@ -55,15 +51,15 @@ func listPathDirectories(command *apipb.PathListDirectoriesCommand) (*apipb.Path
 		if baseDisplay != "" {
 			candidate = baseDisplay + candidate
 		}
-		out.Entries = append(out.Entries, &apipb.PathDirectoryEntry{Name: name, Path: candidate})
+		out.Entries = append(out.Entries, PathDirectoryEntry{Name: name, Path: candidate})
 	}
 	return out, nil
 }
 
-func pathDefaults() *apipb.TerminalDefaults {
-	return &apipb.TerminalDefaults{
+func pathDefaults() TerminalDefaults {
+	return TerminalDefaults{
 		DefaultCommand: defaultPathCommand(),
-		DefaultCwd:     defaultPathCWD(),
+		DefaultCWD:     defaultPathCWD(),
 	}
 }
 

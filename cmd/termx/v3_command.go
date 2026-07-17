@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 
+	apilayer "github.com/lozzow/termx/api_layer"
 	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/shared/perftrace"
 	sshtransport "github.com/lozzow/termx/shared/transport/ssh"
@@ -25,7 +26,7 @@ type coreV2Server interface {
 
 var (
 	newCoreV2Server = func(opts ...corev2.ServerOption) coreV2Server {
-		return corev2.NewServer(opts...)
+		return corev2.NewServer(append([]corev2.ServerOption{corev2.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory)}, opts...)...)
 	}
 	runTUIv3Smoke         = tuiv3.SmokeRun
 	runTUIv3SmokeDetailed = tuiv3.SmokeRunDetailed

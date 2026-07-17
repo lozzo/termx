@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	apilayer "github.com/lozzow/termx/api_layer"
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/internal/protocol"
@@ -42,6 +43,7 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	defer os.RemoveAll(socketDir)
 	socketPath := filepath.Join(socketDir, fmt.Sprintf("termx-v2-smoke-%d.sock", time.Now().UnixNano()))
 	server := corev2.NewServer(
+		corev2.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory),
 		corev2.WithSocketPath(socketPath),
 		corev2.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	)

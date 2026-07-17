@@ -1,9 +1,11 @@
 package apilayer
 
 import (
+	"errors"
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,6 +35,13 @@ func TestAPILayerAndAPIMappingRespectDependencyDirection(t *testing.T) {
 		"github.com/lozzow/termx/shared",
 		"github.com/lozzow/termx/tui",
 	})
+	assertImportsExclude(t, "../core", []string{
+		"github.com/lozzow/termx/api_layer",
+		"github.com/lozzow/termx/api_mapping",
+	})
+	if _, err := os.Stat("../core/application_api.go"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("legacy core application adapter must stay deleted: %v", err)
+	}
 }
 
 func assertImportsExclude(t *testing.T, root string, forbidden []string) {

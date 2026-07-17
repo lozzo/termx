@@ -127,6 +127,7 @@ proto schema
 
 - `core/api` 是错误的平行 Go API，必须删除。
 - terminal、attachment 与 path 已通过 `api.execute` 迁到 `apipb`；对应 protocol DTO、旧 method codec 和 `wirepb` message 已删除。
-- `core/application_api.go` 仍临时承载 connection adapter 与 terminal Proto/core 投影，并形成 `core -> api_layer/api_mapping` 的装配倒置。PA006 必须把 connection-bound API 装配移到 core 外部，并把字段转换恢复到 `api_mapping/`；PA007 在该依赖归零前不得 PASS。
+- connection-bound application 装配已由 composition root 通过 `api_layer.CoreApplicationExecutorFactory` 注入；`core` 只暴露 native `ApplicationSessionPort`，不再 import `api_layer/api_mapping`。
+- terminal/attachment/path 的 generated Proto 与 core domain 转换已恢复到 `api_mapping/`；`core/application_api.go` 已删除，dependency guard 禁止该倒置重新出现。
 - history/live、file/storage/workbench 仍保留旧 protocol application DTO，后续只能按 PA005B、PA005C 的原子切片迁移，不能恢复 terminal/path 双路径。
 - CLI 的共享 endpoint runtime helper 仍有已冻结编译缺口；不得用自造 generation、裸 protocol client 或 local fallback 填补。

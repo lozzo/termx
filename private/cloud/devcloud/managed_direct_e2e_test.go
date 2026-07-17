@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	apilayer "github.com/lozzow/termx/api_layer"
 	clientendpoint "github.com/lozzow/termx/client/endpoint"
 	clientruntime "github.com/lozzow/termx/client/runtime"
 	corev2 "github.com/lozzow/termx/core"
@@ -329,7 +330,7 @@ func startManagedDirectCore(t *testing.T, ctx context.Context, name string) mana
 	t.Helper()
 	socketDir := managedDirectShortTempDir(t, "txd-")
 	socket := filepath.Join(socketDir, name+"-core.sock")
-	server := corev2.NewServer(corev2.WithSocketPath(socket), corev2.WithHistoryStorageDir(filepath.Join(t.TempDir(), name+"-history")))
+	server := corev2.NewServer(corev2.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory), corev2.WithSocketPath(socket), corev2.WithHistoryStorageDir(filepath.Join(t.TempDir(), name+"-history")))
 	serveContext, cancelServe := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go func() { done <- server.ListenAndServe(serveContext) }()

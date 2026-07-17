@@ -181,7 +181,7 @@ func TestTerminalCommandsRouteDuplicateIDsToOwningLocalEndpoint(t *testing.T) {
 func startCLIEndpointServer(t *testing.T) (string, *protocol.Client, func()) {
 	t.Helper()
 	socketPath := filepath.Join(t.TempDir(), "termx.sock")
-	server := corev2.NewServer(corev2.WithSocketPath(socketPath))
+	server := newCoreV2TestServer(corev2.WithSocketPath(socketPath))
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- server.ListenAndServe(ctx) }()

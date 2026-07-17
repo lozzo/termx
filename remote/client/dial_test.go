@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	apilayer "github.com/lozzow/termx/api_layer"
 	clientendpoint "github.com/lozzow/termx/client/endpoint"
 	clientruntime "github.com/lozzow/termx/client/runtime"
 	core "github.com/lozzow/termx/core"
@@ -29,9 +30,13 @@ import (
 	pion "github.com/pion/webrtc/v4"
 )
 
+func newApplicationCoreServer(opts ...core.ServerOption) *core.Server {
+	return core.NewServer(append([]core.ServerOption{core.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory)}, opts...)...)
+}
+
 func TestDialRunsE2EHandshakeBeforeTermxProtocolWithoutSendingGrantToCompanion(t *testing.T) {
 	identity, grant, store, now := dialIdentityFixture(t, "device-1")
-	core := core.NewServer()
+	core := newApplicationCoreServer()
 	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
 		Core: core, Identity: identity, AccessStore: store, Now: fixedDialNow(now),
 	}}
@@ -73,7 +78,7 @@ func TestDialCarriesFileDownloadOverAuthenticatedProtocolChannel(t *testing.T) {
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{Core: core.NewServer(), Identity: identity, AccessStore: store, Now: fixedDialNow(now)}}
+	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{Core: newApplicationCoreServer(), Identity: identity, AccessStore: store, Now: fixedDialNow(now)}}
 	connection, err := Dial(context.Background(), DialOptions{Companion: signalingCompanion(answerer, "device-file"), EndpointID: "lab-file", TargetDeviceID: "device-file", DeviceFingerprint: identity.Fingerprint, Credential: grant, RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY, Now: now})
 	if err != nil {
 		t.Fatal(err)
@@ -119,7 +124,7 @@ func TestDialCarriesFileDownloadOverAuthenticatedProtocolChannel(t *testing.T) {
 func TestDialReportsStableManagedConnectionPhases(t *testing.T) {
 	identity, grant, store, now := dialIdentityFixture(t, "device-1")
 	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
-		Core: core.NewServer(), Identity: identity, AccessStore: store, Now: fixedDialNow(now),
+		Core: newApplicationCoreServer(), Identity: identity, AccessStore: store, Now: fixedDialNow(now),
 	}}
 	phases := make([]cloudcompanion.EndpointPhase, 0, 5)
 	connection, err := Dial(context.Background(), DialOptions{
@@ -215,7 +220,7 @@ func TestDialRejectsNonCanonicalManagedSessionCorrelationID(t *testing.T) {
 
 func TestDialSingleTerminalGrantCannotEscapeCoreScope(t *testing.T) {
 	identity, grant, store, now := dialIdentityFixtureWithScope(t, "device-1", remoteauth.Scope{TerminalID: "allowed"})
-	core := core.NewServer()
+	core := newApplicationCoreServer()
 	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
 		Core: core, Identity: identity, AccessStore: store, Now: fixedDialNow(now),
 	}}
@@ -259,7 +264,7 @@ func TestPeerConfigurationEnforcesRelayOnlyPolicy(t *testing.T) {
 func TestDialSessionReportsQualityWithoutChangingRoute(t *testing.T) {
 	identity, grant, store, now := dialIdentityFixture(t, "device-1")
 	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
-		Core: core.NewServer(), Identity: identity, AccessStore: store, Now: fixedDialNow(now),
+		Core: newApplicationCoreServer(), Identity: identity, AccessStore: store, Now: fixedDialNow(now),
 	}}
 	companion := signalingCompanion(answerer, "device-1")
 	session, err := DialSession(context.Background(), DialOptions{

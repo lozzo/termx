@@ -164,6 +164,9 @@ func TestClientAccessManagementRequiresLocalOwnerOrExplicitCapability(t *testing
 
 func newClientForServedTransport(t *testing.T, server *Server, scope TransportScope, scoped bool) (*applicationProtocolTestClient, func()) {
 	t.Helper()
+	if server.cfg.applicationFactory == nil {
+		server.cfg.applicationFactory = applicationTestExecutorFactory
+	}
 	clientTransport, serverTransport := memory.NewPair()
 	errCh := make(chan error, 1)
 	go func() {

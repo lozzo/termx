@@ -91,7 +91,7 @@ type protocolSession struct {
 	server           *Server
 	conn             transport.Transport
 	scope            TransportScope
-	application      applicationExecutor
+	application      ApplicationExecutor
 	sessionID        uint64
 	sendMu           sync.Mutex
 	nextCh           atomic.Uint32
@@ -212,8 +212,10 @@ func newProtocolSession(server *Server, conn transport.Transport, scope Transpor
 		fileIDs:          make(map[string]uint16),
 		eventCancels:     make(map[uint64]context.CancelFunc),
 	}
-	// 中文说明：application executor 与当前连接 session 同寿命，admission 只能读取该连接的 immutable scope。
-	session.application = newApplicationExecutor(session)
+	// 中文说明：application executor 与当前连接 session 同寿命；具体 API Layer 装配由 composition root 注入。
+	if server.cfg.applicationFactory != nil {
+		session.application = server.cfg.applicationFactory(session)
+	}
 	session.nextCh.Store(6)
 	return session
 }

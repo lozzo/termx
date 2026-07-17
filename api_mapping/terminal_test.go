@@ -2,12 +2,55 @@ package apimapping
 
 import (
 	"math"
+	"reflect"
 	"testing"
 	"time"
 
+	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/proto/apipb"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestTerminalRecordFromProtoCopiesCreateSpecIntoCoreDomain(t *testing.T) {
+	spec := &apipb.TerminalCreateSpec{TerminalId: "term-1", Name: "demo", Command: []string{"sh", "-l"}, Tags: map[string]string{"role": "dev"}, Size: &apipb.TerminalSize{Cols: 100, Rows: 30}, Cwd: "/srv/app", Env: []string{"A=1"}, ScrollbackRows: 2000, ScrollbackMaxBytes: 4096, ScrollbackMaxAgeSeconds: 120}
+	record, err := TerminalRecordFromProto(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.ID != "term-1" || record.Size != (corev2.Size{Cols: 100, Rows: 30}) || record.Options.Dir != "/srv/app" || record.Options.ScrollbackMaxAge != 2*time.Minute {
+		t.Fatalf("record=%#v", record)
+	}
+	spec.Command[0] = "mutated"
+	spec.Tags["role"] = "mutated"
+	if record.Command[0] != "sh" || record.Tags["role"] != "dev" {
+		t.Fatalf("record aliases proto input: %#v", record)
+	}
+}
+
+func TestTerminalInfoToProtoAddsEndpointWithoutMutatingCore(t *testing.T) {
+	exitCode := 23
+	now := time.Date(2026, 7, 17, 8, 0, 0, 0, time.UTC)
+	info := corev2.TerminalInfo{ID: "term-1", Name: "demo", Command: []string{"sh"}, Tags: map[string]string{"role": "dev"}, Size: corev2.Size{Cols: 80, Rows: 24}, State: corev2.TerminalStateExited, CreatedAt: now.Add(-time.Minute), ExitedAt: now, ExitCode: &exitCode}
+	projection, err := TerminalInfoToProto("studio", info, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projection.GetRef().GetEndpointId() != "studio" || projection.GetState() != apipb.TerminalState_TERMINAL_STATE_EXITED || projection.GetExitCode() != 23 || projection.GetAttachmentCount() != 2 {
+		t.Fatalf("projection=%#v", projection)
+	}
+	projection.Command[0] = "mutated"
+	projection.Tags["role"] = "mutated"
+	if !reflect.DeepEqual(info.Command, []string{"sh"}) || info.Tags["role"] != "dev" {
+		t.Fatalf("projection aliases core domain: %#v", info)
+	}
+}
+
+func TestTerminalInfoToProtoRejectsUnknownCoreState(t *testing.T) {
+	_, err := TerminalInfoToProto("studio", corev2.TerminalInfo{ID: "term-1", State: corev2.TerminalState("future")}, 0)
+	if err == nil {
+		t.Fatal("unknown core terminal state must fail")
+	}
+}
 
 func TestValidateTerminalInputRejectsMismatchedOperationSession(t *testing.T) {
 	contextMessage := terminalRequestContext("request-1")

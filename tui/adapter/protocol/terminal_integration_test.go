@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	apilayer "github.com/lozzow/termx/api_layer"
 	"github.com/lozzow/termx/client/endpoint"
 	clientruntime "github.com/lozzow/termx/client/runtime"
 	corev2 "github.com/lozzow/termx/core"
@@ -18,7 +19,7 @@ import (
 
 func TestProtocolTerminalServiceAdapterWithRealProtocolClient(t *testing.T) {
 	clientTransport, serverTransport := memory.NewPair()
-	server := corev2.NewServer()
+	server := corev2.NewServer(corev2.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory))
 	if _, err := server.RegisterTerminal(corev2.TerminalRecord{ID: "term-1", Command: []string{"/bin/cat"}, Size: corev2.Size{Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("register terminal: %v", err)
 	}

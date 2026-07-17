@@ -1,0 +1,181 @@
+package apilayer
+
+import (
+	"context"
+	"errors"
+
+	apimapping "github.com/lozzow/termx/api_mapping"
+	corev2 "github.com/lozzow/termx/core"
+	"github.com/lozzow/termx/proto/apipb"
+)
+
+// CoreApplicationExecutorFactory 为一条 ready protocol connection 装配 API Layer。
+// core 只提供 connection-bound native port；Proto validation、mapping 与错误分类均停留在本层。
+func CoreApplicationExecutorFactory(port corev2.ApplicationSessionPort) corev2.ApplicationExecutor {
+	adapter := &coreApplicationAdapter{port: port}
+	return NewService(adapter, adapter, adapter, adapter)
+}
+
+type coreApplicationAdapter struct {
+	port corev2.ApplicationSessionPort
+}
+
+func (adapter *coreApplicationAdapter) Acquire(ctx context.Context, command *apipb.CommandEnvelope, capability apipb.ApiCapability) (AdmissionLease, error) {
+	lease, err := adapter.port.AcquireApplication(ctx, apimapping.ApplicationAdmissionFromCommand(command, capability))
+	if err == nil {
+		return lease, nil
+	}
+	switch {
+	case errors.Is(err, corev2.ErrApplicationForbidden):
+		return nil, ErrAdmissionForbidden
+	case errors.Is(err, corev2.ErrApplicationUnsupportedCapability):
+		return nil, ErrAdmissionUnsupportedCapability
+	default:
+		return nil, apimapping.CoreError(err)
+	}
+}
+
+func (adapter *coreApplicationAdapter) CancelOperation(ctx context.Context, operation *apipb.OperationStamp) error {
+	return apimapping.CoreError(adapter.port.CancelApplicationOperation(ctx, operation.GetOperationId()))
+}
+
+func (adapter *coreApplicationAdapter) ReleaseResource(ctx context.Context, resource *apipb.ResourceHandle) error {
+	return apimapping.CoreError(adapter.port.ReleaseApplicationResource(ctx, resource.GetOpaqueToken()))
+}
+
+func (adapter *coreApplicationAdapter) TerminalDefaults(ctx context.Context, _ *apipb.EndpointSessionStamp, _ *apipb.TerminalDefaultsCommand) (*apipb.TerminalDefaultsResult, error) {
+	defaults, err := adapter.port.ApplicationTerminalDefaults(ctx)
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return &apipb.TerminalDefaultsResult{Defaults: &apipb.TerminalDefaults{DefaultCommand: append([]string(nil), defaults.DefaultCommand...), DefaultCwd: defaults.DefaultCWD}}, nil
+}
+
+func (adapter *coreApplicationAdapter) TerminalCreate(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.TerminalCreateCommand) (*apipb.TerminalCreateResult, error) {
+	record, err := apimapping.TerminalRecordFromProto(command.GetTerminal())
+	if err != nil {
+		return nil, err
+	}
+	info, err := adapter.port.ApplicationTerminalCreate(ctx, record)
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	projection, err := apimapping.TerminalInfoToProto(origin.GetEndpointId(), info, adapter.port.ApplicationTerminalAttachmentCount(info.ID))
+	if err != nil {
+		return nil, err
+	}
+	return &apipb.TerminalCreateResult{Terminal: projection}, nil
+}
+
+func (adapter *coreApplicationAdapter) TerminalList(ctx context.Context, origin *apipb.EndpointSessionStamp, _ *apipb.TerminalListCommand) (*apipb.TerminalListResult, error) {
+	items, err := adapter.port.ApplicationTerminalList(ctx)
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	result := &apipb.TerminalListResult{Terminals: make([]*apipb.TerminalInfo, 0, len(items))}
+	for _, item := range items {
+		projection, err := apimapping.TerminalInfoToProto(origin.GetEndpointId(), item, adapter.port.ApplicationTerminalAttachmentCount(item.ID))
+		if err != nil {
+			return nil, err
+		}
+		result.Terminals = append(result.Terminals, projection)
+	}
+	return result, nil
+}
+
+func (adapter *coreApplicationAdapter) TerminalGet(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.TerminalGetCommand) (*apipb.TerminalGetResult, error) {
+	info, err := adapter.port.ApplicationTerminalGet(ctx, command.GetTerminal().GetTerminalId())
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	projection, err := apimapping.TerminalInfoToProto(origin.GetEndpointId(), info, adapter.port.ApplicationTerminalAttachmentCount(info.ID))
+	if err != nil {
+		return nil, err
+	}
+	return &apipb.TerminalGetResult{Terminal: projection}, nil
+}
+
+func (adapter *coreApplicationAdapter) TerminalRestart(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.TerminalRestartCommand) error {
+	return apimapping.CoreError(adapter.port.ApplicationTerminalRestart(ctx, command.GetTerminal().GetTerminalId()))
+}
+
+func (adapter *coreApplicationAdapter) TerminalKill(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.TerminalKillCommand) error {
+	return apimapping.CoreError(adapter.port.ApplicationTerminalKill(ctx, command.GetTerminal().GetTerminalId()))
+}
+
+func (adapter *coreApplicationAdapter) TerminalRemove(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.TerminalRemoveCommand) error {
+	return apimapping.CoreError(adapter.port.ApplicationTerminalRemove(ctx, command.GetTerminal().GetTerminalId()))
+}
+
+func (adapter *coreApplicationAdapter) TerminalSetMetadata(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.TerminalSetMetadataCommand) error {
+	return apimapping.CoreError(adapter.port.ApplicationTerminalSetMetadata(ctx, command.GetTerminal().GetTerminalId(), command.GetName(), command.GetTags()))
+}
+
+func (adapter *coreApplicationAdapter) TerminalSetTags(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.TerminalSetTagsCommand) error {
+	return apimapping.CoreError(adapter.port.ApplicationTerminalSetTags(ctx, command.GetTerminal().GetTerminalId(), command.GetTags()))
+}
+
+func (adapter *coreApplicationAdapter) TerminalAttach(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.TerminalAttachCommand) (TerminalAttachTransaction, error) {
+	transaction, err := adapter.port.ApplicationTerminalAttach(ctx, apimapping.TerminalAttachmentRequestFromProto(command))
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return &coreAttachmentTransaction{transaction: transaction, origin: origin, command: command}, nil
+}
+
+func (adapter *coreApplicationAdapter) TerminalDetach(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.TerminalDetachCommand) error {
+	return apimapping.CoreError(adapter.port.ApplicationTerminalDetach(ctx, command.GetAttachment().GetOpaqueToken()))
+}
+
+func (adapter *coreApplicationAdapter) TerminalInput(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.TerminalInputCommand) error {
+	return apimapping.CoreError(adapter.port.ApplicationTerminalInput(ctx, command.GetAttachment().GetOpaqueToken(), command.GetData()))
+}
+
+func (adapter *coreApplicationAdapter) TerminalResize(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.TerminalResizeCommand) (*apipb.TerminalResizeResult, error) {
+	result, err := adapter.port.ApplicationTerminalResize(ctx, command.GetAttachment().GetOpaqueToken(), apimapping.TerminalSizeFromProto(command.GetSize()), apimapping.ResizePolicyToCore(command.GetResizePolicy()))
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.TerminalResizeResultToProto(result), nil
+}
+
+func (adapter *coreApplicationAdapter) TerminalResizeLock(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.TerminalResizeLockCommand) (*apipb.TerminalResizeResult, error) {
+	result, err := adapter.port.ApplicationTerminalResizeLock(ctx, command.GetAttachment().GetOpaqueToken(), command.GetLocked())
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	return apimapping.TerminalResizeResultToProto(result), nil
+}
+
+func (adapter *coreApplicationAdapter) PathListDirectories(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.PathListDirectoriesCommand) (*apipb.PathListDirectoriesResult, error) {
+	result, err := adapter.port.ApplicationPathListDirectories(ctx, command.GetPrefix(), int(command.GetLimit()))
+	if err != nil {
+		return nil, apimapping.CoreError(err)
+	}
+	out := &apipb.PathListDirectoriesResult{BasePath: result.BasePath, Missing: result.Missing, Truncated: result.Truncated, Entries: make([]*apipb.PathDirectoryEntry, 0, len(result.Entries))}
+	for _, entry := range result.Entries {
+		out.Entries = append(out.Entries, &apipb.PathDirectoryEntry{Name: entry.Name, Path: entry.Path})
+	}
+	return out, nil
+}
+
+type coreAttachmentTransaction struct {
+	transaction corev2.TerminalAttachmentTransaction
+	origin      *apipb.EndpointSessionStamp
+	command     *apipb.TerminalAttachCommand
+}
+
+func (transaction *coreAttachmentTransaction) Result() *apipb.TerminalAttachResult {
+	if transaction == nil || transaction.transaction == nil {
+		return nil
+	}
+	return apimapping.TerminalAttachmentToProto(transaction.origin, transaction.command, transaction.transaction.Result())
+}
+
+func (transaction *coreAttachmentTransaction) Commit(ctx context.Context) error {
+	return apimapping.CoreError(transaction.transaction.Commit(ctx))
+}
+
+func (transaction *coreAttachmentTransaction) Rollback(ctx context.Context) error {
+	return apimapping.CoreError(transaction.transaction.Rollback(ctx))
+}

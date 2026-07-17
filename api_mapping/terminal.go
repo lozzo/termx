@@ -1,10 +1,12 @@
 package apimapping
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"time"
 
+	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/proto/apipb"
 )
 
@@ -286,6 +288,148 @@ func ValidateTerminalAttachResult(command *apipb.TerminalAttachCommand, result *
 	return nil
 }
 
+// ApplicationAdmissionFromCommand 把公共 capability 与 command target 映射为 core connection admission。
+// 该函数不查询 attachment registry；resource token 的真实性只由 owning core session 验证。
+func ApplicationAdmissionFromCommand(command *apipb.CommandEnvelope, capability apipb.ApiCapability) corev2.ApplicationAdmission {
+	admission := corev2.ApplicationAdmission{Capability: applicationCapabilityToCore(capability)}
+	if command == nil {
+		return admission
+	}
+	switch value := command.GetCommand().(type) {
+	case *apipb.CommandEnvelope_TerminalGet:
+		admission.TerminalID = value.TerminalGet.GetTerminal().GetTerminalId()
+	case *apipb.CommandEnvelope_TerminalRestart:
+		admission.TerminalID = value.TerminalRestart.GetTerminal().GetTerminalId()
+	case *apipb.CommandEnvelope_TerminalKill:
+		admission.TerminalID = value.TerminalKill.GetTerminal().GetTerminalId()
+	case *apipb.CommandEnvelope_TerminalRemove:
+		admission.TerminalID = value.TerminalRemove.GetTerminal().GetTerminalId()
+	case *apipb.CommandEnvelope_TerminalSetMetadata:
+		admission.TerminalID = value.TerminalSetMetadata.GetTerminal().GetTerminalId()
+	case *apipb.CommandEnvelope_TerminalSetTags:
+		admission.TerminalID = value.TerminalSetTags.GetTerminal().GetTerminalId()
+	case *apipb.CommandEnvelope_TerminalAttach:
+		admission.TerminalID = value.TerminalAttach.GetTerminal().GetTerminalId()
+	case *apipb.CommandEnvelope_TerminalDetach:
+		admission.ResourceToken = cloneBytes(value.TerminalDetach.GetAttachment().GetOpaqueToken())
+	case *apipb.CommandEnvelope_TerminalInput:
+		admission.ResourceToken = cloneBytes(value.TerminalInput.GetAttachment().GetOpaqueToken())
+	case *apipb.CommandEnvelope_TerminalResize:
+		admission.ResourceToken = cloneBytes(value.TerminalResize.GetAttachment().GetOpaqueToken())
+	case *apipb.CommandEnvelope_TerminalResizeLock:
+		admission.ResourceToken = cloneBytes(value.TerminalResizeLock.GetAttachment().GetOpaqueToken())
+	case *apipb.CommandEnvelope_ReleaseResource:
+		admission.ResourceToken = cloneBytes(value.ReleaseResource.GetResource().GetOpaqueToken())
+	}
+	return admission
+}
+
+// TerminalRecordFromProto 把已校验 create spec 转换为 core domain record。
+func TerminalRecordFromProto(spec *apipb.TerminalCreateSpec) (corev2.TerminalRecord, error) {
+	if err := ValidateTerminalCreateSpec(spec); err != nil {
+		return corev2.TerminalRecord{}, err
+	}
+	return corev2.TerminalRecord{
+		ID: spec.GetTerminalId(), Name: spec.GetName(), Command: append([]string(nil), spec.GetCommand()...), Tags: cloneStringMap(spec.GetTags()),
+		Size: corev2.Size{Cols: uint16(spec.GetSize().GetCols()), Rows: uint16(spec.GetSize().GetRows())},
+		Options: corev2.TerminalCreateOptions{
+			Dir: spec.GetCwd(), Env: append([]string(nil), spec.GetEnv()...), ScrollbackSize: int(spec.GetScrollbackRows()),
+			ScrollbackMaxBytes: spec.GetScrollbackMaxBytes(), ScrollbackMaxAge: time.Duration(spec.GetScrollbackMaxAgeSeconds()) * time.Second,
+		},
+	}, nil
+}
+
+// TerminalInfoToProto 把 core lifecycle snapshot 转换为 endpoint-aware public projection。
+func TerminalInfoToProto(endpointID string, info corev2.TerminalInfo, attachmentCount int) (*apipb.TerminalInfo, error) {
+	if endpointID == "" || info.ID == "" {
+		return nil, fmt.Errorf("terminal projection requires endpoint and terminal identity")
+	}
+	state, err := terminalStateToProto(info.State)
+	if err != nil {
+		return nil, err
+	}
+	if info.Resources.PID < math.MinInt32 || info.Resources.PID > math.MaxInt32 || info.Resources.CPUPercentX100 < math.MinInt32 || info.Resources.CPUPercentX100 > math.MaxInt32 || attachmentCount < 0 || attachmentCount > math.MaxInt32 {
+		return nil, fmt.Errorf("terminal projection exceeds public API integer range")
+	}
+	out := &apipb.TerminalInfo{
+		Ref: &apipb.TerminalRef{EndpointId: endpointID, TerminalId: info.ID}, Name: info.Name, Command: append([]string(nil), info.Command...),
+		Tags: cloneStringMap(info.Tags), Size: TerminalSizeToProto(info.Size), State: state, Cwd: info.CWD, LiveCwd: info.LiveCWD,
+		CreatedAtUnixNano: unixNanoOrZero(info.CreatedAt), ExitedAtUnixNano: unixNanoOrZero(info.ExitedAt), AttachmentCount: int32(attachmentCount),
+		Resources: &apipb.TerminalResourceUsage{Pid: int32(info.Resources.PID), CpuPercentX100: int32(info.Resources.CPUPercentX100), MemoryBytes: info.Resources.MemoryBytes, SampledAtUnixNano: unixNanoOrZero(info.Resources.SampledAt)},
+	}
+	if info.ExitCode != nil {
+		if *info.ExitCode < math.MinInt32 || *info.ExitCode > math.MaxInt32 {
+			return nil, fmt.Errorf("terminal exit code exceeds public API integer range")
+		}
+		value := int32(*info.ExitCode)
+		out.ExitCode = &value
+	}
+	return out, nil
+}
+
+// TerminalAttachmentRequestFromProto 映射 attachment command，不建立或发布资源。
+func TerminalAttachmentRequestFromProto(command *apipb.TerminalAttachCommand) corev2.TerminalAttachmentRequest {
+	return corev2.TerminalAttachmentRequest{
+		TerminalID: command.GetTerminal().GetTerminalId(), Mode: attachmentModeToCore(command.GetMode()),
+		ResizePolicy: resizePolicyToCore(command.GetResizePolicy()), SurfaceID: command.GetSurfaceId(), ViewID: command.GetViewId(),
+	}
+}
+
+// TerminalAttachmentToProto 把 pending core attachment 投影为待 API Layer 校验的公开 handle。
+func TerminalAttachmentToProto(origin *apipb.EndpointSessionStamp, command *apipb.TerminalAttachCommand, attachment corev2.TerminalAttachment) *apipb.TerminalAttachResult {
+	return &apipb.TerminalAttachResult{
+		Attachment: &apipb.AttachmentHandle{
+			Resource: &apipb.ResourceHandle{OpaqueToken: cloneBytes(attachment.Token), Kind: apipb.ResourceKind_RESOURCE_KIND_TERMINAL_ATTACHMENT, Session: cloneSessionStamp(origin), Generation: 1},
+			Terminal: cloneTerminalRef(command.GetTerminal()), Operation: cloneOperationStamp(command.GetOperation()), SurfaceId: command.GetSurfaceId(), ViewId: command.GetViewId(),
+		},
+		Mode: command.GetMode(), ResizePolicy: command.GetResizePolicy(), Size: TerminalSizeToProto(attachment.Size), ResizeControl: resizeControlToProto(attachment.ResizeControl),
+	}
+}
+
+// TerminalResizeResultToProto 映射 daemon 确认后的 resize/control 状态。
+func TerminalResizeResultToProto(result corev2.TerminalResizeResult) *apipb.TerminalResizeResult {
+	return &apipb.TerminalResizeResult{Size: TerminalSizeToProto(result.Size), Resized: result.Resized, ResizeControl: resizeControlToProto(result.ResizeControl)}
+}
+
+// TerminalSizeFromProto 把已校验尺寸转换为 core value。
+func TerminalSizeFromProto(size *apipb.TerminalSize) corev2.Size {
+	return corev2.Size{Cols: uint16(size.GetCols()), Rows: uint16(size.GetRows())}
+}
+
+// TerminalSizeToProto 把 core cell size 转换为公共尺寸。
+func TerminalSizeToProto(size corev2.Size) *apipb.TerminalSize {
+	return &apipb.TerminalSize{Cols: uint32(size.Cols), Rows: uint32(size.Rows)}
+}
+
+// ResizePolicyToCore 把公共 resize enum 转换为 core attachment policy。
+func ResizePolicyToCore(policy apipb.ResizePolicy) corev2.TerminalResizePolicy {
+	return resizePolicyToCore(policy)
+}
+
+// CoreError 把 core stable error 分类为公共 typed error 输入。
+func CoreError(err error) error {
+	if err == nil {
+		return nil
+	}
+	classified := &ClassifiedError{Err: err, Code: apipb.ApiErrorCode_API_ERROR_CODE_INTERNAL}
+	switch {
+	case errors.Is(err, corev2.ErrApplicationForbidden):
+		classified.Code = apipb.ApiErrorCode_API_ERROR_CODE_FORBIDDEN
+	case errors.Is(err, corev2.ErrApplicationUnsupportedCapability):
+		classified.Code = apipb.ApiErrorCode_API_ERROR_CODE_UNSUPPORTED_CAPABILITY
+	case errors.Is(err, corev2.ErrApplicationCancellationUnavailable), errors.Is(err, corev2.ErrServerClosed), errors.Is(err, corev2.ErrHistoryNotRebuilt):
+		classified.Code = apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE
+		classified.Retryable = true
+	case errors.Is(err, corev2.ErrInvalidTerminalID), errors.Is(err, corev2.ErrInvalidCommand), errors.Is(err, corev2.ErrInvalidServerSize):
+		classified.Code = apipb.ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST
+	case errors.Is(err, corev2.ErrTerminalNotFound):
+		classified.Code = apipb.ApiErrorCode_API_ERROR_CODE_NOT_FOUND
+	case errors.Is(err, corev2.ErrDuplicateTerminal), errors.Is(err, corev2.ErrTerminalExited):
+		classified.Code = apipb.ApiErrorCode_API_ERROR_CODE_CONFLICT
+	}
+	return classified
+}
+
 func requireSession(contextMessage *apipb.RequestContext) error {
 	return ValidateSessionStamp(contextMessage.GetSession())
 }
@@ -332,6 +476,125 @@ func validResizePolicy(policy apipb.ResizePolicy) bool {
 	default:
 		return false
 	}
+}
+
+func applicationCapabilityToCore(capability apipb.ApiCapability) corev2.ApplicationCapability {
+	switch capability {
+	case apipb.ApiCapability_API_CAPABILITY_RESOURCE_LIFECYCLE:
+		return corev2.ApplicationCapabilityResourceLifecycle
+	case apipb.ApiCapability_API_CAPABILITY_TERMINAL_LIFECYCLE:
+		return corev2.ApplicationCapabilityTerminalLifecycle
+	case apipb.ApiCapability_API_CAPABILITY_TERMINAL_ATTACHMENT:
+		return corev2.ApplicationCapabilityTerminalAttachment
+	case apipb.ApiCapability_API_CAPABILITY_PATH_QUERY:
+		return corev2.ApplicationCapabilityPathQuery
+	default:
+		return 0
+	}
+}
+
+func terminalStateToProto(state corev2.TerminalState) (apipb.TerminalState, error) {
+	switch state {
+	case corev2.TerminalStateCreated:
+		return apipb.TerminalState_TERMINAL_STATE_CREATED, nil
+	case corev2.TerminalStateRunning:
+		return apipb.TerminalState_TERMINAL_STATE_RUNNING, nil
+	case corev2.TerminalStateExited:
+		return apipb.TerminalState_TERMINAL_STATE_EXITED, nil
+	case corev2.TerminalStateRemoved:
+		return apipb.TerminalState_TERMINAL_STATE_REMOVED, nil
+	default:
+		return apipb.TerminalState_TERMINAL_STATE_UNSPECIFIED, fmt.Errorf("unsupported core terminal state %q", state)
+	}
+}
+
+func attachmentModeToCore(mode apipb.AttachmentMode) corev2.TerminalAttachmentMode {
+	if mode == apipb.AttachmentMode_ATTACHMENT_MODE_OBSERVER {
+		return corev2.TerminalAttachmentModeObserver
+	}
+	return corev2.TerminalAttachmentModeCollaborator
+}
+
+func resizePolicyToCore(policy apipb.ResizePolicy) corev2.TerminalResizePolicy {
+	switch policy {
+	case apipb.ResizePolicy_RESIZE_POLICY_FOLLOWER:
+		return corev2.TerminalResizePolicyFollower
+	case apipb.ResizePolicy_RESIZE_POLICY_OBSERVER:
+		return corev2.TerminalResizePolicyObserver
+	default:
+		return corev2.TerminalResizePolicyOwner
+	}
+}
+
+func resizeControlToProto(control *corev2.TerminalResizeControl) *apipb.ResizeControl {
+	if control == nil {
+		return nil
+	}
+	out := &apipb.ResizeControl{
+		CanResize: control.CanResize, Reason: resizeReasonToProto(control.Reason), SizeLocked: control.SizeLocked,
+		SurfaceId: control.SurfaceID, OwnerSurfaceId: control.OwnerSurfaceID, OwnerViewId: control.OwnerViewID,
+	}
+	if ownership := control.ResizeOwnership; ownership != nil {
+		out.Ownership = &apipb.ResizeOwnership{
+			OwnerAttachmentId: ownership.OwnerAttachmentID, OwnerSurfaceId: ownership.OwnerSurfaceID,
+			OwnerViewId: ownership.OwnerViewID, Size: TerminalSizeToProto(ownership.Size), SizeLocked: ownership.SizeLocked, Epoch: ownership.Epoch,
+		}
+	}
+	return out
+}
+
+func resizeReasonToProto(reason corev2.TerminalResizeReason) apipb.ResizeControlReason {
+	switch reason {
+	case corev2.TerminalResizeReasonOwner:
+		return apipb.ResizeControlReason_RESIZE_CONTROL_REASON_OWNER
+	case corev2.TerminalResizeReasonObserver:
+		return apipb.ResizeControlReason_RESIZE_CONTROL_REASON_OBSERVER
+	case corev2.TerminalResizeReasonSizeLocked:
+		return apipb.ResizeControlReason_RESIZE_CONTROL_REASON_SIZE_LOCKED
+	default:
+		return apipb.ResizeControlReason_RESIZE_CONTROL_REASON_FOLLOWER
+	}
+}
+
+func cloneTerminalRef(value *apipb.TerminalRef) *apipb.TerminalRef {
+	if value == nil {
+		return nil
+	}
+	return &apipb.TerminalRef{EndpointId: value.GetEndpointId(), TerminalId: value.GetTerminalId()}
+}
+
+func cloneOperationStamp(value *apipb.OperationStamp) *apipb.OperationStamp {
+	if value == nil {
+		return nil
+	}
+	return &apipb.OperationStamp{Session: cloneSessionStamp(value.GetSession()), OperationId: value.GetOperationId()}
+}
+
+func cloneSessionStamp(value *apipb.EndpointSessionStamp) *apipb.EndpointSessionStamp {
+	if value == nil {
+		return nil
+	}
+	return &apipb.EndpointSessionStamp{EndpointId: value.GetEndpointId(), RouteId: value.GetRouteId(), Generation: value.GetGeneration()}
+}
+
+func cloneBytes(value []byte) []byte { return append([]byte(nil), value...) }
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+	return out
+}
+
+func unixNanoOrZero(value time.Time) int64 {
+	if value.IsZero() {
+		return 0
+	}
+	return value.UnixNano()
 }
 
 func validateStringSlice(field string, values []string, maxItems int) error {
