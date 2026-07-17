@@ -45,6 +45,13 @@ func TestClientPackagesRespectDependencyDirection(t *testing.T) {
 		"github.com/lozzow/termx/remote/client",
 		"github.com/lozzow/termx/remote/webrtc",
 	))
+	assertClientImportsExclude(t, "binding", append(commonForbidden,
+		"github.com/lozzow/termx/core",
+		"github.com/lozzow/termx/client/adapter",
+		"github.com/lozzow/termx/internal/protocol",
+		"github.com/lozzow/termx/remote",
+		"github.com/pion/webrtc",
+	))
 	assertClientImportsExclude(t, "adapter", commonForbidden)
 }
 

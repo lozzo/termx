@@ -52,6 +52,7 @@ core
 - remote-auth 通过异步 `ClientAccessSigner` 使用平台 secure key。native 文件 store 可以适配内存 Ed25519 signer；Android Keystore/WebCrypto 只提供 public projection 与不可导出 signer，Go 在发送 proof 前必须用绑定 public key 重新验签。
 - `SessionOwner.ConnectRoute` 只接收已经选定的 route，不提前实现 route planner/race。planner 只能在后续切片生成单个 immutable `AttemptRequest`，不能进入 platform binding 或 managed adapter。
 - managed attempt 成功结果必须已经完成 remote auth、Hello，并只通过 generated `apipb` 执行业务 command/event。attachment/file 的内部 framing channel 不属于公共 API，跨语言 binding 必须在 opaque resource 边界重新封装。
+- `client/binding` 只接收 serialized `bindingpb.OpenSessionRequest`、`apipb.CommandEnvelope` 和 `uint64` opaque handle；异步输出统一为 `bindingpb.EventEnvelope`。C/JNI/WASM 共享同一 engine/operation/session registry 与有界事件队列，平台 wrapper 不能建立第二份 handle truth。
 
 ### Core
 

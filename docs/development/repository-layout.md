@@ -19,7 +19,7 @@ client/
     managed/         portable Cloud signaling、remote auth、Hello、Proto session attempt adapter
       pion/          native/Android Pion RTCPeerConnection primitive
     protocol/        ready transport 到 termx protocol service 的映射
-  binding/           后续 AAR、XCFramework、C ABI、WASM 的稳定外部边界
+  binding/           Proto bytes、opaque handle、异步事件、cancel/close/release 的稳定 C/JNI/WASM 核心
 
 core/                daemon terminal lifecycle、history、live、storage truth
 api_layer/           generated proto 驱动的 application dispatch、授权、session fence、取消与资源生命周期

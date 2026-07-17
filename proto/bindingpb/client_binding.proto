@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package termx.client.binding.v1;
+
+import "apipb/application.proto";
+import "apipb/common.proto";
+
+option go_package = "github.com/lozzow/termx/proto/bindingpb";
+
+enum ConnectIntent {
+  CONNECT_INTENT_UNSPECIFIED = 0;
+  CONNECT_INTENT_INTERACTIVE = 1;
+  CONNECT_INTENT_BACKGROUND = 2;
+  CONNECT_INTENT_PROBE = 3;
+}
+
+message OpenSessionRequest {
+  string request_id = 1;
+  string endpoint_id = 2;
+  string route_override = 3;
+  ConnectIntent intent = 4;
+}
+
+message OpenSessionResult {
+  string request_id = 1;
+  uint64 operation_handle = 2;
+  uint64 session_handle = 3;
+  termx.api.v1.EndpointSessionStamp session = 4;
+  termx.api.v1.ApiError error = 5;
+}
+
+message ExecuteResult {
+  uint64 operation_handle = 1;
+  uint64 session_handle = 2;
+  termx.api.v1.ResultEnvelope result = 3;
+  termx.api.v1.ApiError error = 4;
+}
+
+message ApplicationEvent {
+  uint64 session_handle = 1;
+  termx.api.v1.EventEnvelope event = 2;
+}
+
+message SessionClosedEvent {
+  uint64 session_handle = 1;
+  termx.api.v1.EndpointSessionStamp session = 2;
+  termx.api.v1.ApiError error = 3;
+}
+
+message EventEnvelope {
+  uint32 abi_version = 1;
+  uint64 sequence = 2;
+  oneof event {
+    OpenSessionResult open_session = 10;
+    ExecuteResult execute = 11;
+    ApplicationEvent application = 12;
+    SessionClosedEvent session_closed = 13;
+  }
+}

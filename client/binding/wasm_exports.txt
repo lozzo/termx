@@ -1,0 +1,10 @@
+termxClientAbiVersion
+termxEngineCreate
+termxEngineOpenSession
+termxEngineExecute
+termxEngineNextEvent
+termxEngineCancel
+termxEngineCloseSession
+termxEngineRelease
+termxEngineClose
+termxBufferFree
