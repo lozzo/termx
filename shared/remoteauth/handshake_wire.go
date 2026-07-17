@@ -1,6 +1,7 @@
 package remoteauth
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -217,11 +218,36 @@ func SignClientProof(identity ClientAccessIdentity, openKind remoteauthpb.AuthOp
 	if err := identity.Validate(); err != nil {
 		return nil, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_SUBJECT_KEY_MISMATCH, "ClientAccessIdentity is invalid", err)
 	}
+	signer, err := NewPrivateClientAccessSigner(identity)
+	if err != nil {
+		return nil, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_SUBJECT_KEY_MISMATCH, "ClientAccessIdentity signer is invalid", err)
+	}
+	return signClientProof(context.Background(), identity, signer, openKind, credential, authSessionID, serverNonce, clientNonce, binding)
+}
+
+func signClientProof(ctx context.Context, identity ClientAccessIdentity, signer ClientAccessSigner, openKind remoteauthpb.AuthOpenKind, credential []byte, authSessionID string, serverNonce []byte, clientNonce []byte, binding ChannelBinding) ([]byte, error) {
+	if signer == nil {
+		native, err := NewPrivateClientAccessSigner(identity)
+		if err != nil {
+			return nil, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_SUBJECT_KEY_MISMATCH, "ClientAccessIdentity signer is invalid", err)
+		}
+		signer = native
+	}
+	if err := identity.ValidatePublic(); err != nil {
+		return nil, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_SUBJECT_KEY_MISMATCH, "ClientAccessIdentity signer is invalid", err)
+	}
 	canonical, err := ClientProofSigningBytes(openKind, credential, identity.PublicKey, authSessionID, serverNonce, clientNonce, binding)
 	if err != nil {
 		return nil, err
 	}
-	return ed25519.Sign(identity.PrivateKey, canonical), nil
+	proof, err := signer.Sign(ctx, canonical)
+	if err != nil {
+		return nil, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_INTERNAL, "ClientAccessIdentity signing failed", err)
+	}
+	if len(proof) != ed25519.SignatureSize || !ed25519.Verify(identity.PublicKey, canonical, proof) {
+		return nil, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_SUBJECT_KEY_MISMATCH, "ClientAccessIdentity signer used a different key", nil)
+	}
+	return append([]byte(nil), proof...), nil
 }
 
 // validateSingleAuthPayloadWire 在 protobuf oneof 解码前检查原始 wire 中恰好出现一个 payload field。

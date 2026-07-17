@@ -2,9 +2,9 @@
 
 ## 定位
 
-- 本目录是公开 WebRTC transport、DataChannel primitive 接线和端到端 remote auth runtime owner。
+- 本目录是公开 daemon WebRTC answerer、Pion/DataChannel primitive 和端到端 remote auth 服务端接线。
 - cloud account、Hub/Relay adapter 和 SmartRoute 通过 `shared/cloudcompanion` 的公开 contract 接入；本目录不得 import `termx-hub`、`web-control` 或 `private/`。
-- terminal lifecycle、history truth 和 protocol method 仍属于 `core/`；endpoint registry/planner 属于 `client/endpoint`，route race/session owner 属于 `client/runtime`，`remote/` 只提供 managed WebRTC attempt primitive。
+- terminal lifecycle、history truth 和 protocol method 仍属于 `core/`；endpoint registry/planner 属于 `client/endpoint`，route race/session owner 属于 `client/runtime`，客户端 managed signaling/auth/Hello 编排属于 `client/adapter/managed`，native Pion 实现属于 `client/adapter/managed/pion`。`remote/webrtc` 只提供双方复用的底层 Pion primitive。
 
 ## 禁止
 

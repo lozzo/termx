@@ -1,6 +1,7 @@
 package remoteauth
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
@@ -18,16 +19,57 @@ type ClientAccessIdentity struct {
 	PrivateKey  ed25519.PrivateKey
 }
 
+// ClientAccessSigner 是平台 secure key 对 remote-auth canonical proof 的异步签名边界。
+// Android Keystore/WebCrypto 实现不得导出私钥；返回签名必须由调用方使用 Identity.PublicKey 再验证，防止 signer ref 指向其他 endpoint key。
+type ClientAccessSigner interface {
+	// Sign 对 Go remote-auth 提供的 canonical proof bytes 签名；实现必须响应 context 取消并且不得记录 payload。
+	Sign(context.Context, []byte) ([]byte, error)
+}
+
 // Validate 校验 Endpoint 绑定、Ed25519 key pair 与 fingerprint 是否一致。
 // 失败表示客户端 secure store 损坏或调用方把其他 Endpoint 的 key 混入当前连接，调用方必须停止授权且不能生成临时替代 key。
 func (identity ClientAccessIdentity) Validate() error {
-	if strings.TrimSpace(identity.EndpointID) == "" || len(identity.PublicKey) != ed25519.PublicKeySize || len(identity.PrivateKey) != ed25519.PrivateKeySize {
+	if err := identity.ValidatePublic(); err != nil || len(identity.PrivateKey) != ed25519.PrivateKeySize {
 		return fmt.Errorf("incomplete ClientAccessIdentity")
 	}
-	if Fingerprint(identity.PublicKey) != strings.TrimSpace(identity.Fingerprint) || !identity.PublicKey.Equal(identity.PrivateKey.Public()) {
+	if !identity.PublicKey.Equal(identity.PrivateKey.Public()) {
 		return fmt.Errorf("ClientAccessIdentity key and fingerprint mismatch")
 	}
 	return nil
+}
+
+// ValidatePublic 校验不含可导出私钥的 ClientAccessIdentity public projection。
+// WebCrypto/Keystore signer 使用该入口；EndpointID、public key 与 fingerprint 任一不一致都必须在 Cloud 或握手前失败。
+func (identity ClientAccessIdentity) ValidatePublic() error {
+	if strings.TrimSpace(identity.EndpointID) == "" || len(identity.PublicKey) != ed25519.PublicKeySize {
+		return fmt.Errorf("incomplete ClientAccessIdentity public key")
+	}
+	if Fingerprint(identity.PublicKey) != strings.TrimSpace(identity.Fingerprint) {
+		return fmt.Errorf("ClientAccessIdentity public key and fingerprint mismatch")
+	}
+	return nil
+}
+
+type privateClientAccessSigner struct {
+	privateKey ed25519.PrivateKey
+}
+
+func (signer privateClientAccessSigner) Sign(ctx context.Context, payload []byte) ([]byte, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+		return ed25519.Sign(signer.privateKey, payload), nil
+	}
+}
+
+// NewPrivateClientAccessSigner 把 native secure store 已加载的 identity 适配为 signer contract。
+// 返回 signer 持有私钥副本且只能留在当前 Go 进程；Android/Web 应提供不可导出平台实现而不是调用本函数。
+func NewPrivateClientAccessSigner(identity ClientAccessIdentity) (ClientAccessSigner, error) {
+	if err := identity.Validate(); err != nil {
+		return nil, err
+	}
+	return privateClientAccessSigner{privateKey: append(ed25519.PrivateKey(nil), identity.PrivateKey...)}, nil
 }
 
 // NewClientAccessIdentity 从平台 secure store 已持有的私钥构造一个 Endpoint 专用访问身份。

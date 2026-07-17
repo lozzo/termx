@@ -5,11 +5,14 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/lozzow/termx/proto/apipb"
+	"github.com/lozzow/termx/proto/remoteauthpb"
 )
 
 func TestEndpointAndAccessContractsDoNotExposeConnectionOrCredentialOwners(t *testing.T) {
-	for _, value := range []any{EndpointProbeResult{}, AccessIdentityResult{}, AccessRecord{}, AccessListResult{}} {
-		typeOf := reflect.TypeOf(value)
+	for _, value := range []any{&apipb.EndpointProbeResult{}, &apipb.ClientAccessIdentityResult{}, &remoteauthpb.ClientAccessRecord{}, &apipb.ClientAccessListResult{}} {
+		typeOf := reflect.TypeOf(value).Elem()
 		for index := 0; index < typeOf.NumField(); index++ {
 			name := strings.ToLower(typeOf.Field(index).Name)
 			for _, forbidden := range []string{"transport", "protocol", "capabilitygrant", "privatekey", "credential"} {
@@ -23,22 +26,22 @@ func TestEndpointAndAccessContractsDoNotExposeConnectionOrCredentialOwners(t *te
 
 type contractEndpointApplication struct{}
 
-func (contractEndpointApplication) ProbeEndpoint(context.Context, EndpointProbeRequest) (EndpointProbeResult, error) {
-	return EndpointProbeResult{}, nil
+func (contractEndpointApplication) ProbeEndpoint(context.Context, *apipb.EndpointProbeRequest) (*apipb.EndpointProbeResult, error) {
+	return &apipb.EndpointProbeResult{}, nil
 }
 
 type contractAccessApplication struct{}
 
-func (contractAccessApplication) AccessIdentity(context.Context, AccessIdentityRequest) (AccessIdentityResult, error) {
-	return AccessIdentityResult{}, nil
+func (contractAccessApplication) AccessIdentity(context.Context, *apipb.ClientAccessIdentityCommand) (*apipb.ClientAccessIdentityResult, error) {
+	return &apipb.ClientAccessIdentityResult{}, nil
 }
 
-func (contractAccessApplication) ListAccess(context.Context, AccessListRequest) (AccessListResult, error) {
-	return AccessListResult{}, nil
+func (contractAccessApplication) ListAccess(context.Context, *apipb.ClientAccessListCommand) (*apipb.ClientAccessListResult, error) {
+	return &apipb.ClientAccessListResult{}, nil
 }
 
-func (contractAccessApplication) RevokeAccess(context.Context, AccessRevokeRequest) (AccessRecord, error) {
-	return AccessRecord{}, nil
+func (contractAccessApplication) RevokeAccess(context.Context, *apipb.ClientAccessRevokeCommand) (*apipb.ClientAccessRevokeResult, error) {
+	return &apipb.ClientAccessRevokeResult{}, nil
 }
 
 var _ EndpointApplication = contractEndpointApplication{}

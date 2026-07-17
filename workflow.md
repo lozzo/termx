@@ -2,13 +2,14 @@
 
 ## 当前结论
 
-- Go 端 Proto API 原子迁移 `PA005G` 已完成。下一切片是 `PA005E` 跨端 Go Client Engine 边界收口；Android 与 Web 都必须复用该引擎，不再按两套客户端网络实现分别打补丁。
+- 跨端 Go Client Engine 收口 `PA005E` 已完成。下一切片是 `PA005B` 稳定跨语言 binding contract；Android 与 Web 必须复用当前 runtime/managed/auth/protocol 引擎，不再按两套客户端网络实现分别打补丁。
 - 当前迁移允许修改 `client/{runtime,port,adapter,binding}/`、`remote/`、`internal/protocol/`、`proto/`、`clients/mobile/`、`clients/ui/` 以及对应 tests、build scripts 和必要架构文档；每个切片仍只能触及任务表规定的最小范围。
 - Android 目标是 Go Client Engine 编译为 native library，通过稳定 C ABI 与薄 JNI/Capacitor bridge 调用；Kotlin/Java 不拥有连接、认证、协议、session/resource 或重连真值。
 - Web 目标是同一 Go Client Engine 编译为 WebAssembly。浏览器 WebRTC、WebCrypto/IndexedDB 和页面 lifecycle 由薄 JavaScript/TypeScript platform adapter 提供；TypeScript 不保留第二套认证、协议、Proto codec、session/resource 或多 DataChannel fallback 真值。
 - `runtimepb` 和 `wirepb` 中仍被 App/Web 消费的迁移期 application schema，只能保留到对应 consumer 全部切到 `apipb + api.execute`；`PA005R` 必须原子删除这些旧 schema、codec、method string 和双路径。
 - 当前探针已证明 `proto/apipb`、`internal/protocol`、`client/runtime`、remote auth 和 DataChannel transport 可以编译到 `js/wasm`，Go remote client/Pion 路径可以编译到 `android/arm64`。当前 native Pion WebRTC 不能直接编译到浏览器 WASM，因此 Web 必须通过浏览器 WebRTC platform port 接入。
-- 本机当前未安装 Android NDK 和 `gomobile`；这不阻塞 `PA005E/PA005B`，但真实 Android native artifact 是 `PA005A1` 的完成条件。缺少工具链时必须把该切片标记阻塞，不得提交 fake `.so`、stub JNI 或跳到后续 Web consumer 迁移。
+- 本机当前未安装 Android NDK 和 `gomobile`；这不阻塞 `PA005B`，但真实 Android native artifact 是 `PA005N1` 的完成条件。缺少工具链时必须把该切片标记阻塞，不得提交 fake `.so`、stub JNI 或跳到后续 Web consumer 迁移。
+- `PA005E` 已删除 `remote/client` 集中 owner；`client/runtime.SessionOwner` 持有 generation/current winner，`client/adapter/managed` 持有 portable signaling/auth/Hello/Proto session 编排，`client/adapter/managed/pion` 是 native concrete peer。不可导出 signer、unit/race、dependency guard、Android arm64/WASM 编译以及真实 direct/single-relay devcloud E2E 已通过。
 - 用户已明确允许实现阶段不保证旧测试通过。PA005G 的新 schema/API Mapping/API Layer tests 与 Go 生产包通过；旧 core/protocol/client-runtime/TUI tests 因引用已删除 DTO 暂缓到 `PA006T`，不得据此恢复旧类型。
 - CLI 根包仍有 PA005G 之前已冻结的 endpoint runtime helper 缺口：`v3DialClient`、`probeEndpointProtocolClient`、`openEndpointProtocolClient`、`dialOrStartV3ClientContext` 及 attach runtime helpers。不得用 legacy/fallback 修补。
 - 用户已确立仓库级强约定：所有插件、第三方客户端、官方客户端、跨进程和跨语言 API 的唯一 schema truth 必须位于 `proto/`。
@@ -78,8 +79,8 @@ core domain truth
 
 ## 当前允许范围
 
-- 主动范围：`AGENTS.md`、`workflow.md`、`docs/development/`、`proto/`、`api_layer/`、`api_mapping/`、`internal/protocol/`、`client/{runtime,port,adapter,binding}/`、`remote/` 与对应 tests/guards。
-- 平台切片范围：只有 `PA005A1/PA005A2` 可以主动修改 `clients/mobile/`、Android Gradle/JNI/build scripts；只有 `PA005W1/PA005W2` 可以主动修改 `clients/ui/`、WASM loader/worker 和 browser WebRTC adapter。
+- 主动范围：`AGENTS.md`、`workflow.md`、`docs/development/`、`proto/`、`api_layer/`、`api_mapping/`、`internal/protocol/`、`client/{runtime,port,adapter,binding}/`、`remote/`、`shared/remoteauth/` 与对应 tests/guards。`shared/remoteauth` 只允许为跨端不可导出 signer 接口最小触及，不迁移 daemon store 或其他 shared 目录债务。
+- 平台切片范围：只有 `PA005N1/PA005N2` 可以主动修改 `clients/mobile/`、Android Gradle/JNI/build scripts；只有 `PA005W1/PA005W2` 可以主动修改 `clients/ui/`、WASM loader/worker 和 browser WebRTC adapter。
 - 受限联动：`core/`、`tui/{port,adapter,testkit}/`、`cmd/termx/`、`private/cloud/`、`Makefile`、`scripts/`、`go.work*`，只能为当前跨端迁移切片最小触及。
 - 禁止范围：插件 runtime、`private/archive/`、多区域 Cloud、正式开源工程、真实 iOS/Desktop binding。当前 C ABI 必须为未来 iOS/Desktop 保留可复用边界，但不在本阶段生成 XCFramework 或桌面安装包。
 
@@ -97,10 +98,10 @@ core domain truth
 | PA005A3 | 已完成 | Terminal Proto API 原子迁移 | `api.execute` framing 把 Proto envelope 交给 API Layer；core 提供 connection-bound admission、terminal adapter 与 attachment transaction；protocol client、CLI/TUI/remote terminal/path consumer 同步切到 `apipb`；删除 terminal/attachment/path protocol DTO、旧 method codec 和 wire schema，不使用 alias、wrapper 或双路径；依赖守卫与测试通过 |
 | PA005A4 | 已完成 | Application 装配方向收口 | connection-bound API 装配移出 `core/`；`api_mapping` 恢复 generated Proto 与 core domain 的唯一字段转换；`core` 不再 import `api_layer/api_mapping`，protocol framing 不直接持有 core adapter；补 import guard 和同等 terminal/path E2E 后删除 `core/application_api.go` |
 | PA005G | 已完成 | Go 全领域 Proto API 原子迁移 | history/live/file/storage/workbench value/endpoint runtime/access/remote daemon control/application events 已进入 `apipb + api.execute`；Go-only DTO、generic `Call`/method codec、daemon workbench mutation/store 与 Go 双路径已删除；file stream framing 私有，upload resume 与 active resource token 分域，event subscription 有资源 correlation；生产包、Go generated compare、schema/Mapping/API Layer tests 与旧 DTO 扫描通过 |
-| PA005E | 待开始 | 跨端 Go Client Engine 收口 | 从 `remote/client.Dial` 和平台 consumer 中分离 portable orchestration；`client/runtime` 成为 endpoint/session generation、resource/cancel/reconnect 的唯一客户端真值，portable auth/protocol adapter 负责 remote auth、Hello、`api.execute` 与 Proto command/result/event；两者通过 WebRTC/DataChannel、signer/credential、Cloud signaling、clock/random、host lifecycle ports 组成共享引擎，runtime 不直接依赖 remoteauth/Pion；native Pion 进入 concrete adapter；不修改 App/Web 生产代码 |
+| PA005E | 已完成 | 跨端 Go Client Engine 收口 | 从 `remote/client.Dial` 和平台 consumer 中分离 portable orchestration；`client/runtime` 成为 endpoint/session generation、resource/cancel/reconnect 的唯一客户端真值，portable auth/protocol adapter 负责 remote auth、Hello、`api.execute` 与 Proto command/result/event；两者通过 WebRTC/DataChannel、signer/credential、Cloud signaling、clock/random、host lifecycle ports 组成共享引擎，runtime 不直接依赖 remoteauth/Pion；native Pion 进入 concrete adapter；不修改 App/Web 生产代码 |
 | PA005B | 待开始 | 稳定跨语言 binding contract | 在 `client/binding` 建立 serialized Proto + opaque handle + async event/cancel/close/release 的窄边界；禁止 Go pointer、业务专用函数、JSON/base64 和无界队列；提供 fake host harness、ABI ownership 文档、Android 与 `js/wasm` 编译门禁，不产出 fake 平台库 |
-| PA005A1 | 待开始 | Android native/JNI 纵向 spike | 安装并固定 NDK/Go binding 工具链；从 Go Client Engine 生成真实 Android native artifact，经薄 JNI/Capacitor bridge 完成 signaling、Pion WebRTC DataChannel、remote auth、Hello、一次 `api.execute`、一个 event、cancel/close；APK 进程内真实加载，Kotlin 不实现平行网络状态机 |
-| PA005A2 | 待开始 | Android App 完整迁移 | App 所有 terminal/history/live/file/storage/access/remote consumer 切到 Go binding 与 `apipb`；Android Keystore signer、process/activity lifecycle、网络切换和 generation fence 接入；删除 Kotlin/TypeScript mobile 旧 codec、session/resource registry、多 DataChannel fallback 和旧原生 WebRTC manager |
+| PA005N1 | 待开始 | Android native/JNI 纵向 spike | 安装并固定 NDK/Go binding 工具链；从 Go Client Engine 生成真实 Android native artifact，经薄 JNI/Capacitor bridge 完成 signaling、Pion WebRTC DataChannel、remote auth、Hello、一次 `api.execute`、一个 event、cancel/close；APK 进程内真实加载，Kotlin 不实现平行网络状态机 |
+| PA005N2 | 待开始 | Android App 完整迁移 | App 所有 terminal/history/live/file/storage/access/remote consumer 切到 Go binding 与 `apipb`；Android Keystore signer、process/activity lifecycle、网络切换和 generation fence 接入；删除 Kotlin/TypeScript mobile 旧 codec、session/resource registry、多 DataChannel fallback 和旧原生 WebRTC manager |
 | PA005W1 | 待开始 | Web WASM/WebRTC 安全纵向 spike | Go Client Engine 编译为 WASM；薄 browser adapter 提供 `RTCPeerConnection`、`RTCDataChannel`、signer/store、signaling 和 lifecycle；完成 remote auth、Hello、一次 `api.execute`、一个 event、cancel/close；独立 harness 证明 SDP fingerprint、浏览器 peer 与 Go auth transcript 的 channel binding，tab suspend/resume 产生新 generation |
 | PA005W2 | 待开始 | Web client 完整迁移 | Web terminal/history/live/file/storage/access/remote consumer 切到 Go/WASM binding 与 generated `apipb`；收缩 `browserRtcSession` 为平台 primitive adapter，删除 TypeScript API codec、session/resource/reconnect truth、多 DataChannel fallback；typecheck/build 与真实浏览器 protocol harness 通过 |
 | PA005R | 待开始 | 双端旧契约与路径原子删除 | Android/Web 都完成后删除 `runtimepb`、`wirepb` 中重复 application schema、generated artifacts、旧 method codec、旧 bridge 和 fallback；全仓扫描确认业务 API 只剩 `apipb + api.execute`，不得保留兼容 alias/wrapper/双路径 |
@@ -124,8 +125,8 @@ core domain truth
 - `PA005G`：Go 生产包编译；Go generated 临时重生成比较；`proto/apipb`、`api_mapping`、`api_layer` tests；Go 重复类型、旧 helper、旧 method dispatch 和旧 application DTO import 扫描。旧 DTO tests 按用户指令延期到 PA006T。
 - `PA005E`：portable engine unit/race harness；`GOOS=android GOARCH=arm64` 与 `GOOS=js GOARCH=wasm` 编译 portable packages；dependency guard 确认 runtime 不依赖 Pion、DOM/JNI、UI、CLI、private 或 file-backed credential；native Pion adapter tests。
 - `PA005B`：binding ownership/cancel/release/event backpressure harness；C ABI header/符号与 WASM export baseline；Android/`js/wasm` compile；Proto round-trip 与 unknown-field 保留；Go pointer、JSON/base64、业务专用导出扫描。
-- `PA005A1`：真实 Android native artifact build；Gradle unit/instrumentation 或等效 APK load harness；真实 DataChannel/auth/Hello/`api.execute`/event/cancel/close 纵向证明；JNI thread、buffer ownership、重复 close 和 process teardown 测试。
-- `PA005A2`：Android/App generated code、Kotlin/TypeScript compile、Community/Official APK build 与 native protocol harness；Keystore/lifecycle/generation tests；App 旧 schema/codec/session/resource/WebRTC manager/fallback 扫描。
+- `PA005N1`：真实 Android native artifact build；Gradle unit/instrumentation 或等效 APK load harness；真实 DataChannel/auth/Hello/`api.execute`/event/cancel/close 纵向证明；JNI thread、buffer ownership、重复 close 和 process teardown 测试。
+- `PA005N2`：Android/App generated code、Kotlin/TypeScript compile、Community/Official APK build 与 native protocol harness；Keystore/lifecycle/generation tests；App 旧 schema/codec/session/resource/WebRTC manager/fallback 扫描。
 - `PA005W1`：WASM build；browser WebRTC/auth/channel-binding E2E；Promise/cancel/close、event backpressure、binary copy、tab suspend/resume generation harness；不得以 mock peer 代替完成条件。
 - `PA005W2`：Web generated code、TypeScript typecheck/build 与真实 browser protocol harness；旧 TS codec、session/resource/reconnect truth 和多 DataChannel fallback 扫描。
 - `PA005R`：generated-code check；删除重复 runtime/wire application schema后的全仓 compile/typecheck/build；旧 schema、codec、method、bridge、fallback 和手写跨语言 DTO 扫描。

@@ -27,6 +27,7 @@ type ClientHandshakeRequest struct {
 	ExpectedDeviceID          string
 	ExpectedDeviceFingerprint string
 	Credential                ClientAccessCredential
+	Signer                    ClientAccessSigner
 	ChannelBinding            ChannelBinding
 }
 
@@ -37,6 +38,7 @@ type ClientPairingRequest struct {
 	ExpectedDeviceFingerprint string
 	PairingBundle             []byte
 	Identity                  ClientAccessIdentity
+	Signer                    ClientAccessSigner
 	ClientLabel               string
 	ChannelBinding            ChannelBinding
 }
@@ -54,7 +56,7 @@ func (handshake ClientHandshake) Authenticate(ctx context.Context, connection tr
 	if connection == nil {
 		return Claims{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_PROTOCOL, "remote auth transport is nil", nil)
 	}
-	if err := request.Credential.Identity.Validate(); err != nil || !request.Credential.Ready() {
+	if err := validateClientSigner(request.Credential.Identity, request.Signer); err != nil || !request.Credential.Ready() {
 		return Claims{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_SUBJECT_KEY_MISMATCH, "client access credential is incomplete", err)
 	}
 	if err := request.ChannelBinding.Validate(); err != nil {
@@ -86,7 +88,7 @@ func (handshake ClientHandshake) Authenticate(ctx context.Context, connection tr
 	if err != nil {
 		return Claims{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_INTERNAL, "generate client nonce", err)
 	}
-	proof, err := SignClientProof(request.Credential.Identity, remoteauthpb.AuthOpenKind_AUTH_OPEN_KIND_CAPABILITY,
+	proof, err := signClientProof(ctx, request.Credential.Identity, request.Signer, remoteauthpb.AuthOpenKind_AUTH_OPEN_KIND_CAPABILITY,
 		[]byte(request.Credential.CapabilityGrant), helloEnvelope.GetAuthSessionId(), hello.GetServerNonce(), clientNonce, request.ChannelBinding)
 	if err != nil {
 		return Claims{}, err
@@ -134,7 +136,7 @@ func (handshake ClientPairingHandshake) Redeem(ctx context.Context, connection t
 	if connection == nil {
 		return PairingExchangeResult{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_PROTOCOL, "pairing transport is nil", nil)
 	}
-	if err := request.Identity.Validate(); err != nil {
+	if err := validateClientSigner(request.Identity, request.Signer); err != nil {
 		return PairingExchangeResult{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_SUBJECT_KEY_MISMATCH, "ClientAccessIdentity is invalid", err)
 	}
 	if err := request.ChannelBinding.Validate(); err != nil {
@@ -164,7 +166,7 @@ func (handshake ClientPairingHandshake) Redeem(ctx context.Context, connection t
 	if err != nil {
 		return PairingExchangeResult{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_INTERNAL, "generate pairing nonce", err)
 	}
-	proof, err := SignClientProof(request.Identity, remoteauthpb.AuthOpenKind_AUTH_OPEN_KIND_PAIRING,
+	proof, err := signClientProof(ctx, request.Identity, request.Signer, remoteauthpb.AuthOpenKind_AUTH_OPEN_KIND_PAIRING,
 		request.PairingBundle, helloEnvelope.GetAuthSessionId(), hello.GetServerNonce(), clientNonce, request.ChannelBinding)
 	if err != nil {
 		return PairingExchangeResult{}, err
@@ -207,6 +209,13 @@ func (handshake ClientPairingHandshake) Redeem(ctx context.Context, connection t
 		DeliveryReceipt: strings.TrimSpace(accepted.GetDeliveryReceipt()), SubjectKeyFingerprint: claims.SubjectKeyFingerprint,
 		Scope: claims.Scope, ExpiresAt: claims.ExpiresAt,
 	}, nil
+}
+
+func validateClientSigner(identity ClientAccessIdentity, signer ClientAccessSigner) error {
+	if signer != nil {
+		return identity.ValidatePublic()
+	}
+	return identity.Validate()
 }
 
 // ServerHandshakeMode 区分成功握手后的唯一下一步。

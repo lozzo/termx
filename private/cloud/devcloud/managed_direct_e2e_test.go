@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	apilayer "github.com/lozzow/termx/api_layer"
+	managedadapter "github.com/lozzow/termx/client/adapter/managed"
+	pionadapter "github.com/lozzow/termx/client/adapter/managed/pion"
 	clientendpoint "github.com/lozzow/termx/client/endpoint"
 	clientruntime "github.com/lozzow/termx/client/runtime"
 	corev2 "github.com/lozzow/termx/core"
@@ -24,7 +27,6 @@ import (
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/proto/wire"
-	remotev2client "github.com/lozzow/termx/remote/client"
 	remotev2daemon "github.com/lozzow/termx/remote/daemon"
 	remotev2webrtc "github.com/lozzow/termx/remote/webrtc"
 	"github.com/lozzow/termx/shared/cloudcompanion"
@@ -119,38 +121,30 @@ func TestManagedDirectE2EAcrossRealBoundaries(t *testing.T) {
 	credential := issueManagedE2ECredential(t, accessStore, "managed-direct", "Managed direct client", clock.Now())
 
 	managedEndpointID := state.EndpointID("managed-direct")
-	phases := make([]cloudcompanion.EndpointPhase, 0, 5)
-	session, err := remotev2client.DialSession(ctx, remotev2client.DialOptions{
-		Companion: clientCompanion, EndpointID: string(managedEndpointID), TargetDeviceID: identity.DeviceID,
-		DeviceFingerprint: identity.Fingerprint, Credential: credential,
-		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY, Now: clock.Now(),
-		Phase: func(phase cloudcompanion.EndpointPhase) {
-			if len(phases) == 0 || phases[len(phases)-1] != phase {
-				phases = append(phases, phase)
-			}
-		},
+	phases := make([]clientruntime.EndpointPhase, 0, 5)
+	session, err := dialManagedE2ESession(ctx, clientCompanion, string(managedEndpointID), identity, credential, clientendpoint.RelayDirect, clock.Now, "managed-direct-e2e", func(phase clientruntime.EndpointPhase) {
+		if len(phases) == 0 || phases[len(phases)-1] != phase {
+			phases = append(phases, phase)
+		}
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	remoteProtocolClient := protocol.NewClient(session.Transport)
-	defer remoteProtocolClient.Close()
-	if err := remoteProtocolClient.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "managed-direct-e2e"}); err != nil {
-		t.Fatal(err)
-	}
+	defer session.Close()
+	remoteProtocolClient := session.FramingClient()
 	managed := newManagedE2EServices(t, managedEndpointID, remoteProtocolClient)
 	local := newManagedE2EServices(t, state.DefaultEndpointID, localCore.client)
 	listed, err := managed.List(ctx, port.TerminalListRequest{EndpointID: managedEndpointID})
 	if err != nil || !managedDirectListContains(listed.Items, managedEndpointID, "remote-terminal") {
 		t.Fatalf("managed list = (%#v, %v)", listed, err)
 	}
-	if session.ObservedPath != cloudcompanion.PathDirect {
-		t.Fatalf("managed endpoint path = %q, want direct", session.ObservedPath)
+	if session.ObservedPath() != string(clientendpoint.PathDirect) {
+		t.Fatalf("managed endpoint path = %q, want direct", session.ObservedPath())
 	}
-	wantPhases := []cloudcompanion.EndpointPhase{
-		cloudcompanion.EndpointPhaseResolving, cloudcompanion.EndpointPhaseSignaling,
-		cloudcompanion.EndpointPhaseConnecting, cloudcompanion.EndpointPhaseAuthorizing,
-		cloudcompanion.EndpointPhaseConnected,
+	wantPhases := []clientruntime.EndpointPhase{
+		clientruntime.EndpointPhaseResolving, clientruntime.EndpointPhaseSignaling,
+		clientruntime.EndpointPhaseConnecting, clientruntime.EndpointPhaseAuthorizing,
+		clientruntime.EndpointPhaseReady,
 	}
 	if !slices.Equal(phases, wantPhases) {
 		t.Fatalf("managed endpoint phases = %v, want %v", phases, wantPhases)
@@ -192,7 +186,7 @@ func TestManagedDirectE2EAcrossRealBoundaries(t *testing.T) {
 	}
 	remoteShutdownCancel()
 	select {
-	case <-remoteProtocolClient.Done():
+	case <-session.Done():
 	case <-ctx.Done():
 		t.Fatal("managed protocol session did not close after remote daemon shutdown")
 	}
@@ -209,6 +203,61 @@ func TestManagedDirectE2EAcrossRealBoundaries(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("managed daemon agent did not stop")
 	}
+}
+
+func dialManagedE2ESession(
+	ctx context.Context,
+	cloud cloudcompanion.Client,
+	endpointID string,
+	identity remoteauth.Identity,
+	credential remoteauth.ClientAccessCredential,
+	relayMode clientendpoint.RelayMode,
+	now func() time.Time,
+	clientName string,
+	phase func(clientruntime.EndpointPhase),
+) (*managedadapter.Session, error) {
+	target := clientendpoint.Endpoint{
+		ID:             clientendpoint.EndpointID(endpointID),
+		DaemonIdentity: clientendpoint.DaemonIdentity{DeviceID: identity.DeviceID, DeviceFingerprint: identity.Fingerprint},
+		Routes: map[clientendpoint.RouteID]clientendpoint.AccessRoute{
+			"webrtc": {
+				ID: "webrtc", Kind: clientendpoint.RouteManagedWebRTC, Enabled: true,
+				Source: clientendpoint.SourceCloud, PolicySource: clientendpoint.SourceUser, CredentialRef: "credential:" + endpointID,
+				TargetDeviceID: identity.DeviceID, AccountProfile: "default", RelayMode: relayMode,
+			},
+		},
+	}
+	attempt, err := clientruntime.NewAttemptRequest(target, "webrtc", 1, clientruntime.ConnectIntentInteractive)
+	if err != nil {
+		return nil, err
+	}
+	dialer := &managedadapter.Dialer{
+		Cloud: cloud, Peers: pionadapter.Factory{}, ClientName: clientName, Now: now, Phase: phase,
+		Authorization: managedadapter.CapabilityAuthorizer{
+			Credentials: managedE2ECredentialSource{credential: credential}, Now: now,
+		},
+	}
+	ready, err := dialer.Dial(ctx, attempt)
+	if err != nil {
+		return nil, err
+	}
+	session, ok := ready.(*managedadapter.Session)
+	if !ok {
+		_ = ready.Close()
+		return nil, fmt.Errorf("managed dialer returned %T", ready)
+	}
+	return session, nil
+}
+
+type managedE2ECredentialSource struct {
+	credential remoteauth.ClientAccessCredential
+}
+
+func (source managedE2ECredentialSource) ResolveClientCredential(_ context.Context, endpointID, credentialRef string) (remoteauth.ClientAccessCredential, error) {
+	if endpointID != source.credential.EndpointID || credentialRef != "credential:"+endpointID {
+		return remoteauth.ClientAccessCredential{}, fmt.Errorf("managed E2E credential ref mismatch")
+	}
+	return source.credential, nil
 }
 
 func issueManagedE2ECredential(t *testing.T, store *remoteauth.AccessStore, endpointID string, label string, now time.Time) remoteauth.ClientAccessCredential {
@@ -403,14 +452,19 @@ type managedE2EServices struct {
 
 func newManagedE2EServices(t *testing.T, endpointID state.EndpointID, client *protocol.Client) *managedE2EServices {
 	t.Helper()
-	terminal, err := protocoladapter.NewProtocolTerminalServiceAdapter(client, clientruntime.EndpointSessionStamp{EndpointID: clientendpoint.EndpointID(endpointID), RouteID: "e2e", Generation: 1})
+	stamp := clientruntime.EndpointSessionStamp{EndpointID: clientendpoint.EndpointID(endpointID), RouteID: "e2e", Generation: 1}
+	terminal, err := protocoladapter.NewProtocolTerminalServiceAdapter(client, stamp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	application, err := clientruntime.NewApplicationSession(stamp, client)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return &managedE2EServices{
 		endpointID: endpointID,
 		terminal:   terminal,
-		core:       protocoladapter.ProtocolCoreClientAdapter{Client: client},
+		core:       protocoladapter.ProtocolCoreClientAdapter{Application: application},
 	}
 }
 

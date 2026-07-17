@@ -44,6 +44,15 @@ core
 - `internal/protocol/` 负责 Hello、channel、correlation 和 payload framing，不拥有 terminal/history 等 application API 字段语义。
 - transport 和 protocol framing 不执行 application authorization，不把 core domain struct 暴露给客户端，也不在失败时切换未授权 fallback。
 
+### Cross-platform Go Client Engine
+
+- `client/runtime.SessionOwner` 是 endpoint session generation、当前 ready winner、stale operation 拒绝和 reconnect replacement 的唯一客户端真值；平台 UI 不缓存 protocol client。
+- `client/adapter/managed` 是 native/Web 共用的 managed single-route attempt 编排，固定执行 Cloud resolution/route material -> platform peer -> signaling -> DTLS-bound remote auth -> protocol Hello -> Proto application session。
+- `client/port.ManagedPeer` 只描述 RTCPeerConnection/DataChannel 平台原语。native/Android 由 `client/adapter/managed/pion` 实现；Web 后续由浏览器 adapter 实现，portable managed adapter 不 import Pion、DOM、JNI 或 `syscall/js`。
+- remote-auth 通过异步 `ClientAccessSigner` 使用平台 secure key。native 文件 store 可以适配内存 Ed25519 signer；Android Keystore/WebCrypto 只提供 public projection 与不可导出 signer，Go 在发送 proof 前必须用绑定 public key 重新验签。
+- `SessionOwner.ConnectRoute` 只接收已经选定的 route，不提前实现 route planner/race。planner 只能在后续切片生成单个 immutable `AttemptRequest`，不能进入 platform binding 或 managed adapter。
+- managed attempt 成功结果必须已经完成 remote auth、Hello，并只通过 generated `apipb` 执行业务 command/event。attachment/file 的内部 framing channel 不属于公共 API，跨语言 binding 必须在 opaque resource 边界重新封装。
+
 ### Core
 
 - 拥有 terminal、attachment、history、live、file/storage 等领域真值。
@@ -128,6 +137,7 @@ proto schema
 
 - Go application domain 已统一进入 `apipb + api.execute`；旧 Go protocol DTO、generic method codec、daemon workbench mutation/store 已删除。
 - `core` 只暴露 native `ApplicationSessionPort`，不 import `api_layer/api_mapping`；generated Proto 与 core 的字段转换只位于 `api_mapping/`。
+- managed client signaling/auth/Hello/session 编排已从已删除的 `remote/client` 收口到 `client/adapter/managed`；native Pion 只位于 concrete adapter，portable engine 已有 Android arm64 与 `js/wasm` 编译门禁。
 - App/Web consumer 尚未迁移，`runtimepb/wirepb` 重复 schema 暂留；当前阶段不得修改其生产源码。
 - Go 旧测试仍需改为 generated Proto harness；实现收口不以旧 DTO 测试继续编译为条件。
 - CLI 的共享 endpoint runtime helper 仍有已冻结编译缺口；不得用自造 generation、裸 protocol client 或 local fallback 填补。

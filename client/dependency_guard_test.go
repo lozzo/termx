@@ -31,6 +31,9 @@ func TestClientPackagesRespectDependencyDirection(t *testing.T) {
 		"github.com/lozzow/termx/shared/remoteauth",
 		"github.com/lozzow/termx/remote/client",
 		"github.com/lozzow/termx/remote/webrtc",
+		"os",
+		"path/filepath",
+		"syscall/js",
 	))
 	assertClientImportsExclude(t, "port", append(commonForbidden,
 		"github.com/lozzow/termx/client/runtime",

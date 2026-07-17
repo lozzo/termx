@@ -16,7 +16,8 @@ client/
   adapter/
     local/           local Unix attempt adapter
     ssh/             SSH stdio attempt adapter
-    managed/         managed WebRTC attempt adapter
+    managed/         portable Cloud signaling、remote auth、Hello、Proto session attempt adapter
+      pion/          native/Android Pion RTCPeerConnection primitive
     protocol/        ready transport 到 termx protocol service 的映射
   binding/           后续 AAR、XCFramework、C ABI、WASM 的稳定外部边界
 
@@ -41,7 +42,7 @@ tui/                 纯 TUI 产品与平台适配
 cmd/termx/           Cobra、参数/target 解析、composition root、输出与退出码
 internal/protocol/   framing、Hello、channel、correlation 与 proto payload transport
 proto/               所有插件/客户端/跨进程/跨语言 API 的唯一 schema truth 与生成代码
-remote/              managed WebRTC/DataChannel primitive 与公开 remote auth 接线
+remote/              daemon WebRTC answerer、双方复用的 Pion/DataChannel primitive 与 remote auth 服务端接线
 vterm/               terminal semantic interpreter
 clients/             React/Capacitor/Android 等平台壳与 UI
 private/             闭源云服务与只读历史 archive
@@ -109,6 +110,7 @@ Proto 在图中表示 schema/message boundary，不表示网络 transport 或独
 4. TUI fake 位于 `tui/testkit/`，生产 port 不包含测试状态或宿主 IO。
 5. `EndpointServiceBundle`、`EndpointDialer` 已退出 TUI；后续 ready bundle contract 只能归 `client/runtime` 或 `client/port`。
 6. 静态依赖守卫禁止 client 依赖 UI/CLI/private，也禁止 TUI port 重新依赖 protocol、adapter、testkit 或 `os/exec`。
+7. managed client 编排已从 `remote/client` 收口到 `client/adapter/managed`；portable adapter 不 import Pion，native concrete peer 位于 `client/adapter/managed/pion`，成功 attempt 已完成 remote auth、Hello 和 Proto application session。
 
 ## 接口优先约束
 

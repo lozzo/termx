@@ -9,16 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/internal/protocol"
+	clientendpoint "github.com/lozzow/termx/client/endpoint"
+	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
 	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/proto/wire"
-	remotev2client "github.com/lozzow/termx/remote/client"
 	remotev2daemon "github.com/lozzow/termx/remote/daemon"
 	remotev2webrtc "github.com/lozzow/termx/remote/webrtc"
-	"github.com/lozzow/termx/shared/cloudcompanion"
 	"github.com/lozzow/termx/shared/cloudcompanion/ipc"
 	"github.com/lozzow/termx/shared/remoteauth"
 	"github.com/lozzow/termx/tui/port"
@@ -136,25 +134,17 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 	credential := issueManagedE2ECredential(t, accessStore, "managed-relay", "Managed Relay client", clock.Now())
 
 	managedEndpointID := state.EndpointID("managed-relay")
-	phases := make([]cloudcompanion.EndpointPhase, 0, 5)
-	session, err := remotev2client.DialSession(ctx, remotev2client.DialOptions{
-		Companion: clientCompanion, EndpointID: string(managedEndpointID), TargetDeviceID: identity.DeviceID,
-		DeviceFingerprint: identity.Fingerprint, Credential: credential,
-		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY, RelayOnly: true, Now: clock.Now(),
-		Phase: func(phase cloudcompanion.EndpointPhase) {
-			if len(phases) == 0 || phases[len(phases)-1] != phase {
-				phases = append(phases, phase)
-			}
-		},
+	phases := make([]clientruntime.EndpointPhase, 0, 5)
+	session, err := dialManagedE2ESession(ctx, clientCompanion, string(managedEndpointID), identity, credential, clientendpoint.RelayOnly, clock.Now, "managed-relay-e2e", func(phase clientruntime.EndpointPhase) {
+		if len(phases) == 0 || phases[len(phases)-1] != phase {
+			phases = append(phases, phase)
+		}
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	remoteProtocolClient := protocol.NewClient(session.Transport)
-	defer remoteProtocolClient.Close()
-	if err := remoteProtocolClient.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "managed-relay-e2e"}); err != nil {
-		t.Fatal(err)
-	}
+	defer session.Close()
+	remoteProtocolClient := session.FramingClient()
 	managed := newManagedE2EServices(t, managedEndpointID, remoteProtocolClient)
 	local := newManagedE2EServices(t, state.DefaultEndpointID, localCore.client)
 	listed, err := managed.List(ctx, port.TerminalListRequest{EndpointID: managedEndpointID})
@@ -169,13 +159,13 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 		}
 		t.Fatalf("managed Relay list = (%#v, %v)", listed, err)
 	}
-	if session.ObservedPath != cloudcompanion.PathSingleRelay {
-		t.Fatalf("managed endpoint path = %q, want single_relay", session.ObservedPath)
+	if session.ObservedPath() != string(clientendpoint.PathSingleRelay) {
+		t.Fatalf("managed endpoint path = %q, want single_relay", session.ObservedPath())
 	}
-	wantPhases := []cloudcompanion.EndpointPhase{
-		cloudcompanion.EndpointPhaseResolving, cloudcompanion.EndpointPhaseSignaling,
-		cloudcompanion.EndpointPhaseConnecting, cloudcompanion.EndpointPhaseAuthorizing,
-		cloudcompanion.EndpointPhaseConnected,
+	wantPhases := []clientruntime.EndpointPhase{
+		clientruntime.EndpointPhaseResolving, clientruntime.EndpointPhaseSignaling,
+		clientruntime.EndpointPhaseConnecting, clientruntime.EndpointPhaseAuthorizing,
+		clientruntime.EndpointPhaseReady,
 	}
 	if !slices.Equal(phases, wantPhases) {
 		t.Fatalf("managed Relay phases = %v, want %v", phases, wantPhases)
@@ -254,13 +244,9 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 	defer failureCompanion.Close()
 	failureContext, cancelFailure := context.WithTimeout(ctx, 3*time.Second)
 	defer cancelFailure()
-	failedSession, relayFailure := remotev2client.DialSession(failureContext, remotev2client.DialOptions{
-		Companion: failureCompanion, EndpointID: "managed-relay", TargetDeviceID: identity.DeviceID,
-		DeviceFingerprint: identity.Fingerprint, Credential: credential,
-		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY, RelayOnly: true, Now: clock.Now(),
-	})
+	failedSession, relayFailure := dialManagedE2ESession(failureContext, failureCompanion, "managed-relay", identity, credential, clientendpoint.RelayOnly, clock.Now, "managed-relay-failure", nil)
 	if relayFailure == nil {
-		_ = failedSession.Transport.Close()
+		_ = failedSession.Close()
 		t.Fatal("managed Relay reconnected after its only TURN server stopped")
 	}
 

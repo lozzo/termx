@@ -1,4 +1,4 @@
-package client
+package managed
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/lozzow/termx/client/endpoint"
+	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/shared/cloudcompanion"
 )
@@ -16,7 +18,7 @@ type dialRoute struct {
 	iceServers      []*cloudpb.IceServer
 	preference      cloudpb.RoutePreference
 	relayOnly       bool
-	expectedPath    cloudcompanion.Path
+	expectedPath    endpoint.Path
 	selectionReason cloudcompanion.RouteSelectionReason
 }
 
@@ -24,45 +26,47 @@ type dialRoute struct {
 // 公开进程只执行受信 material，不自行签发 lease、选择未授权 TURN URL 或猜测候选评分。
 func resolveDialRoute(
 	ctx context.Context,
-	options DialOptions,
-	endpointID string,
-	targetDeviceID string,
+	cloud CloudClient,
+	attempt clientruntime.AttemptRequest,
 	resolved *cloudpb.ResolvedEndpoint,
+	policy cloudcompanion.DialPolicy,
+	now time.Time,
 ) (dialRoute, error) {
-	if options.RelayOnly {
-		if options.RoutePreference != cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY {
+	targetDeviceID := attempt.DaemonIdentity().DeviceID
+	if policy.RelayOnly {
+		if policy.RoutePreference != cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY {
 			return dialRoute{}, routePlanProtocolError("relay-only policy requires standard Relay service intent")
 		}
 		request := &cloudpb.AcquireRelayLeaseRequest{
 			ManagedSessionId: resolved.GetManagedSessionId(), TargetDeviceId: targetDeviceID,
 			RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY,
 		}
-		lease, err := options.Companion.AcquireRelayLease(ctx, request)
+		lease, err := cloud.AcquireRelayLease(ctx, request)
 		if err != nil {
 			return dialRoute{}, err
 		}
-		if err := cloudcompanion.ValidateSingleRelayLease(request, lease, dialRouteNow(options.Now)); err != nil {
+		if err := cloudcompanion.ValidateSingleRelayLease(request, lease, now); err != nil {
 			return dialRoute{}, err
 		}
 		return dialRoute{
 			iceServers: lease.GetIceServers(), preference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY,
-			relayOnly: true, expectedPath: cloudcompanion.PathSingleRelay,
+			relayOnly: true, expectedPath: endpoint.PathSingleRelay,
 		}, nil
 	}
-	if options.RoutePreference != cloudpb.RoutePreference_ROUTE_PREFERENCE_SMART_ROUTE {
+	if policy.RoutePreference != cloudpb.RoutePreference_ROUTE_PREFERENCE_SMART_ROUTE {
 		return dialRoute{
-			iceServers: resolved.GetIceServers(), preference: options.RoutePreference, relayOnly: options.RelayOnly,
+			iceServers: resolved.GetIceServers(), preference: policy.RoutePreference, relayOnly: policy.RelayOnly,
 		}, nil
 	}
 	request := &cloudpb.PlanManagedRouteRequest{
-		EndpointId: endpointID, ManagedSessionId: resolved.GetManagedSessionId(), TargetDeviceId: targetDeviceID,
+		EndpointId: string(attempt.EndpointID()), ManagedSessionId: resolved.GetManagedSessionId(), TargetDeviceId: targetDeviceID,
 		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_SMART_ROUTE,
 	}
-	plan, err := options.Companion.PlanManagedRoute(ctx, request)
+	plan, err := cloud.PlanManagedRoute(ctx, request)
 	if err != nil {
 		return dialRoute{}, err
 	}
-	return validateManagedRoutePlan(request, plan, dialRouteNow(options.Now))
+	return validateManagedRoutePlan(request, plan, now)
 }
 
 // validateManagedRoutePlan 在公开进程再次校验 Companion 输出。
@@ -85,7 +89,7 @@ func validateManagedRoutePlan(request *cloudpb.PlanManagedRouteRequest, plan *cl
 		return dialRoute{}, err
 	}
 
-	route := dialRoute{iceServers: plan.GetIceServers(), expectedPath: cloudcompanion.PathFromWire(plan.GetSelectedPath()), selectionReason: reason}
+	route := dialRoute{iceServers: plan.GetIceServers(), expectedPath: endpoint.Path(cloudcompanion.PathFromWire(plan.GetSelectedPath())), selectionReason: reason}
 	switch plan.GetSelectedPath() {
 	case cloudpb.ObservedPath_OBSERVED_PATH_DIRECT:
 		if plan.GetRelayOnly() || plan.GetRelayRegion() != "" || hasTURN {
@@ -145,13 +149,6 @@ func canonicalRouteTag(value string) bool {
 		return false
 	}
 	return true
-}
-
-func dialRouteNow(configured time.Time) time.Time {
-	if configured.IsZero() {
-		return time.Now().UTC()
-	}
-	return configured.UTC()
 }
 
 func routePlanProtocolError(message string) error {

@@ -16,6 +16,14 @@ type ProtoApplicationExecutor interface {
 	ExecuteApplication(context.Context, *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error)
 }
 
+// ApplicationReadySession 是已经完成 transport、授权与 protocol Hello 的可执行 session。
+// route adapter 返回该接口后，runtime/binding 只能通过 generated Proto command/event 访问 daemon；关闭和 generation fence 仍由 ReadySession 约束。
+type ApplicationReadySession interface {
+	ReadySession
+	ProtoApplicationExecutor
+	ApplicationEvents(context.Context) (<-chan *apipb.EventEnvelope, error)
+}
+
 type protoApplicationEventSource interface {
 	ApplicationEvents(context.Context) (<-chan *apipb.EventEnvelope, error)
 }
