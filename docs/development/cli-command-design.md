@@ -8,56 +8,34 @@ TermX 的 terminal 是 daemon 拥有的长期实体；workspace、tab、pane 和
 
 本文是命令面设计门禁，不表示所有命令已经实现。每个阶段必须先有真实 protocol/domain owner，再挂 CLI；不得用 CLI 内部状态、shell fallback 或解析 TUI 画面伪造能力。
 
-## CONN003 当前实现
+## 当前连接运行时状态
 
-CLI 的 terminal、file、workspace、root TUI 和 `endpoint test` 已共同消费 `shared/connection.RouteSelectionPlanner`。同一 Endpoint 可以同时保存 local Unix 与 OpenSSH stdio route：无 priority 时全量竞速，有 priority 时按 group/hedge delay 启动。winner 严格取首个完成 fresh DeviceIdentity challenge proof、授权和 protocol Hello 校验的 `ReadySession`；原子 Ready 序号是唯一线性化点，静态 route 顺序只稳定计划和失败诊断，不能让稍晚结果反超。所有 loser 在命令继续前取消并释放。
+CLI 命令树已经使用 Endpoint/Route registry 和 `TerminalRef`，local Unix、SSH stdio、managed WebRTC 也各自已有入口，但 `CONN003` 的统一多 route runtime 尚未完成。
 
-`termx endpoint test ID --route ROUTE` 和 `termx terminal attach TARGET --route ROUTE` 是显式 route override；后者在该 TUI session 的断线重连中保持 sticky。不指定 `--route` 时使用 registry policy。CLI target 始终是 `EndpointID:TerminalID`，换 route 不换 target。
+当前生产代码仍有 `Endpoint.ResolveCurrentRoute` 过渡调用。terminal、file、workspace、root TUI 和 `endpoint test` 尚未共同消费完整的 `RouteSelectionPlanner + ReadySession + SessionGeneration` session owner；默认 local/SSH full race、priority hedge、winner/loser cleanup 和 stamped result 仍是待实现目标。
 
-`termx terminal attach` 与 root TUI 的 runtime 错误统一经过 CLI typed error 分类：deadline/cancel 为退出码 7，identity/auth 为 5，route/transport unavailable 为 6。显式 `--socket` 只作为当前 TUI runtime 的 local route overlay，不写回 registry，但后续 generation 继续使用同一 override。
+CONN003 完成后，CLI 只保留以下职责：
 
-当前外层多 route race 只包含 `local-unix` 与 `ssh-stdio`。单独的 managed Cloud endpoint 仍可使用，但 managed 与其他 route 的共同竞速在 CONN005 接入；direct TLS/LAN 在 CONN004 接入。CLI 不因当前切片未接这些 adapter 而 fallback 到 local、原始 SSH shell 或旧 remote runtime。
+- 解析 Cobra 参数、`EndpointID:TerminalID` target 和可选 `--route` override。
+- 调用共享 planner/session owner，不在 `cmd/termx` 内复制 route 选择或 session 状态。
+- 输出稳定的人类/JSON 结果和 typed error 对应的退出码。
+- 保持 route 切换不改变 EndpointID 或 TerminalRef。
 
-## 2. 当前命令盘点
+具体 planner、race、generation、取消和资源回收契约只在 [`tui/docs/multi-endpoint-transport-plan.md`](../../tui/docs/multi-endpoint-transport-plan.md) 维护；任务状态和准入只看 `workflow.md`。CLI 不得因统一 runtime 尚未完成而 fallback 到 local、原始 SSH shell 或旧 remote runtime。
 
-当前顶层命令如下：
+## 2. 现状核对
 
-| 命令 | 当前行为 | 主要问题 |
-| --- | --- | --- |
-| `termx` | 连接或自动启动 local daemon，进入 TUI | 可用，但自动启动、目标选择和错误输出未形成统一 contract |
-| `new` | 在 local daemon 创建 terminal | 名称过于宽泛，仅支持 local socket，缺少 cwd/env/输出格式 |
-| `ls` | 列出 local terminal | 没有标题、过滤、JSON、format 或 endpoint 维度 |
-| `attach` | attach local terminal 并进入 TUI | target 只有裸 TerminalID，不能表达 TerminalRef |
-| `kill` | 终止 terminal 进程 | 与删除、重启的差异没有在 help 中说明 |
-| `rm` | 删除 daemon inventory 记录 | 缺少运行态保护、确认和稳定退出码 |
-| `daemon` | 前台运行 core-v2 daemon | 没有 start/stop/status/logs；`--cloud` 暴露了未装配细节 |
-| `pair create/import` | 签发或导入 capability bundle | 缺少 inspect/list/revoke；import 同时修改 credential 与 registry，但结果不可查询 |
-| `cloud ...` | Companion 安装、登录、enroll、状态和诊断 | 用户 Companion 与 daemon Companion 未在命令模型中分开；staging 会泄漏 socket/runuser/DBus 装配细节 |
-| `completion` | 生成 shell completion | 可保留 |
-| `licenses` | 输出第三方许可 | 可保留，缺少 `version` |
-| `v3 ...` | 重复 local 命令并暴露 smoke/tmux harness | 内部迁移名和测试工具不应出现在产品 CLI |
+本文不手工维护“当前有哪些命令”的快照。当前产品命令、别名、参数和 help 以 `termx --help`、各子命令 `--help` 及 `cmd/termx` 黑盒测试为准；活动切片完成状态只看 `workflow.md`。
 
-已有 protocol 实际支持 Create/List/Kill/Restart/Remove、metadata/tags、Attach/Detach、Input、Resize、LiveScreen、HistoryWindow/Copy、events、workbench storage 和文件操作。CLI 只暴露了其中很小一部分。另一方面，daemon client 列表、跨客户端强制 detach、pairing grant revoke 和稳定 server service manager 尚无完整 contract，不能只靠新增 Cobra command 冒充完成。
+设计文档只保留稳定约束：命令按领域对象组织，target 使用 TerminalRef，machine output 和退出码可脚本化，开发 harness 不进入产品树，尚无真实 domain/protocol contract 的能力不得只靠 Cobra command 伪造。
 
-## 3. 当前问题结论
+## 3. 设计原则
 
-1. 命令没有按 domain object 分组，五个无描述的短命令与 Cloud、pair、daemon 混在同一层。
-2. local `--socket` 被当成全局目标，但 SSH/Hub endpoint 只能从 TUI 使用，CLI 不是多 endpoint 一等客户端。
-3. 裸 `TerminalID` 被当成全局 target，和 `TerminalRef` 硬语义冲突。
-4. human 输出没有稳定列，machine 输出没有 JSON schema、format、filter 或退出码约定。
-5. `v3` 同时承载重复产品命令、内部诊断和 tmux 测试，迁移实现泄漏到用户界面。
-6. daemon 自动启动与显式前台运行并存，却没有可观察的 status/stop/restart contract。
-7. Cloud 用户登录、Companion 安装和 daemon enrollment 混在一个 namespace；Linux keyring、IPC socket 和 service user 暴露给用户。
-8. 缺少 tmux 用户依赖的自动化能力：send、capture、wait、events、稳定 target 和格式化列表。
-9. 命令失败大多只返回普通 error，脚本无法可靠区分 usage、not found、conflict、auth、unavailable 和 timeout。
-
-## 4. 设计原则
-
-### 4.1 对象优先
+### 3.1 对象优先
 
 canonical command 使用 `termx <object> <verb>`。高频旧短命令可以作为同一个 command handler 的别名保留，但不能维护第二套执行路径。
 
-### 4.2 真值不下沉到 CLI
+### 3.2 真值不下沉到 CLI
 
 - terminal lifecycle、metadata、live 和 history 来自 owning daemon。
 - endpoint 配置来自共享 connection registry；运行连接状态来自实际 dial/session。
@@ -65,21 +43,21 @@ canonical command 使用 `termx <object> <verb>`。高频旧短命令可以作�
 - Cloud 账号、节点 ownership 和订阅来自 Control Plane/Companion contract。
 - CLI 只做参数解析、target resolution、调用和输出，不缓存第二份领域状态。
 
-### 4.3 transport 中立
+### 3.3 transport 中立
 
 同一条 `terminal list/create/send/capture` 必须能路由到 local、SSH 或 managed Hub endpoint。Cloud 失败不能 fallback 到 local，SSH 失败不能 fallback 成原始 shell。
 
-### 4.4 人类与脚本同等重要
+### 3.4 人类与脚本同等重要
 
 默认输出适合终端阅读；所有查询命令提供稳定 JSON。批量和写操作必须有明确 stdin、timeout、确认及退出码语义。
 
-### 4.5 开发命令不进入产品树
+### 3.5 开发命令不进入产品树
 
 `smoke`、`visual-snapshot`、`tmux-*-smoke` 和 history 内部 backlog harness 移入测试脚本或单独开发工具，不进入 release `termx --help`。`v3` namespace 在新命令完成后直接删除，不保留 legacy fallback。
 
-## 5. 目标与寻址
+## 4. 目标与寻址
 
-### 5.1 TerminalRef 文本形式
+### 4.1 TerminalRef 文本形式
 
 canonical target 为：
 
@@ -104,11 +82,11 @@ cloud-sg:prod-shell
 - 输出 target 时始终显示完整 TerminalRef，避免不同 daemon 上同名 terminal 混淆。
 - `--socket` 降级为 local transport 的专家覆盖参数，不能继续代表通用 endpoint。
 
-### 5.2 其他 target
+### 4.2 其他 target
 
 workspace、view 和 client 若后续进入 CLI，使用带类型的独立 ID，不复用 TerminalID。涉及 pane/view 的命令必须显式要求 view target，不能用 terminal target 推断当前 TUI pane。
 
-## 6. 目标命令树
+## 5. 目标命令树
 
 ```text
 termx                                  打开 TUI
@@ -126,7 +104,7 @@ termx completion <shell>
 termx licenses
 ```
 
-### 6.1 terminal
+### 5.1 terminal
 
 | 命令 | 语义 | 实现基础 |
 | --- | --- | --- |
@@ -155,7 +133,7 @@ termx kill      -> termx terminal kill
 termx rm        -> termx terminal remove
 ```
 
-### 6.2 endpoint
+### 5.2 endpoint
 
 ```text
 termx endpoint list
@@ -170,7 +148,7 @@ termx endpoint test ID
 
 `endpoint list/show` 展示 registry 期望状态与一次显式探测结果，但不得把缓存配置冒充在线状态。`endpoint test` 必须完成 transport、protocol Hello 和 daemon identity 校验；SSH 不执行原始 shell fallback，Cloud 不输出 token/grant。
 
-### 6.3 daemon
+### 5.3 daemon
 
 ```text
 termx daemon run [--cloud]              前台运行
@@ -184,7 +162,7 @@ termx daemon doctor
 
 `termx daemon` 可以作为 `daemon run` 的简写。start/stop/status 必须由明确的跨平台 service manager 或 pid/socket ownership contract 实现，不能使用宽泛 `pkill termx`。系统级 daemon 与当前用户 daemon 必须显式区分；停止 daemon 的帮助文本必须说明它会影响该 endpoint 的所有客户端，退出 TUI 不应调用 daemon stop。
 
-### 6.4 workspace
+### 5.4 workspace
 
 ```text
 termx workspace list
@@ -197,7 +175,7 @@ termx workspace export ID
 
 该 namespace 只管理 workbench/layout 投影。当前 daemon contract 支持 versioned mutation 和 snapshot export，但没有原子 snapshot replace，因此 `workspace import` 延后，禁止用多次 create/split 重放制造半导入状态。tab/pane/floating 的细粒度脚本控制延后到稳定 view target contract；不得照搬 tmux 的 window/pane lifecycle 并把 terminal 状态写回 workspace storage。
 
-### 6.5 file
+### 5.5 file
 
 ```text
 termx file list ENDPOINT [PATH]
@@ -214,7 +192,7 @@ termx file remove ENDPOINT PATH...
 
 ENDPOINT 用于选择 owning daemon，当前 protocol session 仍必须持有显式文件权限；文件系统能力不绑定某个 TerminalID，也不允许 Control Plane、Hub 或 Relay看到路径和内容。批量操作的部分成功必须使用结构化 per-item result，不能只返回最后一个错误。
 
-### 6.6 pair
+### 5.6 pair
 
 ```text
 termx pair create [--terminal TARGET] [--ttl DURATION] [--out FILE]
@@ -224,7 +202,7 @@ termx pair inspect FILE
 
 create/import/inspect 已实现；inspect 只能显示非秘密 metadata。list/revoke 必须先建立 daemon-owned grant registry/revocation contract，当前不进入产品树。raw grant 永不进入普通 JSON、日志、connections.yaml 或 shell completion。
 
-### 6.7 cloud
+### 5.7 cloud
 
 ```text
 termx cloud login
@@ -245,7 +223,7 @@ termx cloud companion install|update|status|uninstall
 - client Companion 与 daemon Companion 的选择由安装/IPC contract 决定，不由用户填写任意 executable 或 socket。
 - production 未安装可信 Companion 时 fail closed；staging 通过显式受信开发安装 profile 解决，不用 shell wrapper 冒充产品体验。
 
-### 6.8 config 与通用诊断
+### 5.8 config 与通用诊断
 
 ```text
 termx config paths
@@ -261,9 +239,9 @@ termx version [--json]
 
 config 修改必须使用现有严格 parser 和原子 writer；secret 只显示引用或 `<redacted>`。`doctor` 聚合 binary、config、daemon socket、endpoint registry、Companion 可用性和权限，不发起 terminal 输入，也不打印凭据。
 
-## 7. 输出契约
+## 6. 输出契约
 
-### 7.1 三种输出模式
+### 6.1 三种输出模式
 
 - 默认 human table/detail：允许改善排版，不作为机器稳定接口。
 - `--json`：稳定 envelope 和字段，禁止 ANSI；列表也输出 JSON object，不输出裸数组。
@@ -283,7 +261,7 @@ config 修改必须使用现有严格 parser 和原子 writer；secret 只显示
 
 CLI005 固定 `--format` 为 Go template 语法，字段名使用 JSON 同源的小写稳定名称，例如 `{{.target}}|{{.state}}|{{.cols}}x{{.rows}}`；未知字段必须失败。`terminal events --output ndjson` 每行输出独立的 `schema_version=1` `terminal_event` 对象，不能混入 human 文本或 ANSI。
 
-### 7.2 查询通用参数
+### 6.2 查询通用参数
 
 ```text
 --endpoint ID
@@ -301,7 +279,7 @@ CLI005 固定 `--format` 为 Go template 语法，字段名使用 JSON 同源的
 
 首轮只实现明确字段过滤，不复制 tmux 完整表达式语言。format/filter 语法必须版本化、有测试并拒绝未知字段。
 
-### 7.3 写操作通用参数
+### 6.3 写操作通用参数
 
 ```text
 --timeout DURATION
@@ -315,7 +293,7 @@ CLI005 固定 `--format` 为 Go template 语法，字段名使用 JSON 同源的
 
 危险操作在交互终端可确认；非交互调用若需要确认但未给 `--yes` 必须失败。`--no-start` 禁止查询命令隐式启动 local daemon，适用于监控和 service manager。
 
-### 7.4 退出码
+### 6.4 退出码
 
 | Code | 类别 |
 | --- | --- |
@@ -331,7 +309,7 @@ CLI005 固定 `--format` 为 Go template 语法，字段名使用 JSON 同源的
 
 Cobra usage 只在参数错误时输出；网络或业务错误不得刷整页 usage。错误写 stderr，正常数据写 stdout。
 
-## 8. tmux 能力映射
+## 7. tmux 能力映射
 
 | tmux 能力 | TermX 对应 | 说明 |
 | --- | --- | --- |
@@ -351,45 +329,7 @@ Cobra usage 只在参数错误时输出；网络或业务错误不得刷整页 u
 
 不计划复制 tmux 的 key table、status-line option、server-side shell condition 和任意 `run-shell`。TermX TUI 配置、renderer 和 daemon 控制面保持独立；通用自动化应通过结构化命令和事件完成。
 
-## 9. 实施切片
-
-### CLI001：命令设计门禁
-
-- 完成本文件、现状审计、target/output/error contract 和分期范围。
-- 不修改运行代码。
-
-### CLI002：骨架与 local terminal 闭环
-
-- 建立 canonical `terminal` namespace、共享 target/output/error 层和完整 help。
-- 接通 create/list/show/attach/restart/kill/remove/rename/tag。
-- 保留五个高频别名但不保留重复 handler。
-- 从产品命令树删除 `v3` 和 smoke harness；测试入口迁到 scripts/test binary。
-- 验收 human/JSON、退出码和真实 local daemon lifecycle。
-
-### CLI003：daemon 与配置生命周期
-
-- 实现 daemon run/start/stop/restart/status/logs/doctor。
-- 实现 config paths/show/get/set/unset/validate。
-- macOS/Linux 分别使用明确 service ownership；不使用广泛 pkill。
-
-### CLI004：endpoint-aware 控制
-
-- 实现 TerminalRef parser、endpoint registry commands 和 local/SSH/Hub dialer 复用。
-- terminal query/mutation 经 owning endpoint 路由，跨 endpoint 同名不冲突。
-- 完成 SSH 与 managed direct/single Relay 真实 CLI E2E。
-
-### CLI005：自动化数据面
-
-- 实现 send/capture/resize/wait/events、NDJSON 和稳定 format。
-- history/live/input 全部使用 owning daemon protocol，不读取 TUI renderer。
-
-### CLI006：file、workspace、pair 与 Cloud UX
-
-- 暴露已有文件 contract 和 workspace 投影。
-- 补 pair inspect；list/revoke 只有在 daemon revocation contract 完成后进入。
-- 收口 Cloud 当前用户/daemon Companion 自动发现，让 login/enroll 不暴露 DBus、runuser 或 socket。
-
-## 10. 明确延后
+## 8. 明确延后
 
 - tmux 完整 format/filter 表达式兼容。
 - raw RPC console 或任意 server-side shell execution。
@@ -398,7 +338,7 @@ Cobra usage 只在参数错误时输出；网络或业务错误不得刷整页 u
 - 未定义 view/client owner 前的强制 detach、swap-pane、join-pane、pipe-pane。
 - shell completion 中枚举 secret、grant、token 或远端文件内容。
 
-## 11. 验收总则
+## 9. 验收总则
 
 每个产品命令必须至少有：
 

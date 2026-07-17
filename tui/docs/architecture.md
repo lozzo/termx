@@ -1,17 +1,13 @@
 # tui 架构设计
 
-## 1. 背景
+## 1. 文档职责
 
-`tuiv2/` 已经包含大量可用能力：输入路由、runtime bridge、render pipeline、pane/workbench layout、modal、session restore、clipboard、terminal attach/resize 等。TUI-v3 不应该把这些能力全部推倒重写。
+本文定义当前 `tui/` 的模块边界、状态 ownership、消息/副作用链路和渲染约束。它不是活动任务队列，也不保存 Endpoint route planner 的完整算法。
 
-但 `tuiv2/app` 的核心问题是边界过度混合：单个 `Model` 同时持有 workspace、runtime、render、history store、copy mode、modal、clipboard、session、副作用队列、鼠标拖拽、terminal input dispatch 和各种 invalidate 状态。大量 `update_*` 文件通过共享 model 字段协作，导致历史、copy mode、live surface、render 和副作用互相穿透。
-
-TUI-v3 的重构目标不是“功能全部重新发明”，而是：
-
-- 沿用 tuiv2 中已经稳定的能力和行为经验。
-- 重建模块边界，让 app shell、state、services、render、history、copy mode 各自有明确职责。
-- 把唯一必须改的历史/copy mode 路径设计成 core-v2 authoritative history projection 的消费者：core-v2 默认历史实现是 `history/linehist`，冷段为 file-backed logical lines，热段为 vterm 当前屏 projection；普通浏览仍可消费 history window，copy mode 优先消费冻结 projection snapshot。
-- 避免继续复制 tuiv2 的单体 app model 和 snapshot/grid viewport history fallback。TUI-v3 不得用 live surface、local vterm scrollback 或本地 snapshot/grid 作为 committed history/copy/search truth。
+- 当前切片、状态、修改范围和测试准入只看仓库根目录 `workflow.md`。
+- 多 Endpoint/Route 的客户端运行时契约以 [`multi-endpoint-transport-plan.md`](multi-endpoint-transport-plan.md) 为准。
+- core terminal lifecycle、screen history truth 和 protocol 边界以 [`core/docs/architecture.md`](../../core/docs/architecture.md) 为准。
+- 本文只记录 TUI 自己拥有的稳定架构；历史迁移步骤和已退出目录不作为当前设计依据。
 
 ## 2. 设计目标
 
@@ -21,14 +17,13 @@ TUI-v3 的重构目标不是“功能全部重新发明”，而是：
 - TUI 内部状态和副作用分离：state reducer 不做 IO，service/effect 不直接绕过 message path 修改 UI state。
 - renderer 只消费 render view-model，不读取 runtime、history source 或 protocol client。
 - TUI 用户配置以 `tui/docs/tui-config-management.md` 为基准；配置 loader 负责文件/env/flag，reducer 持有已验证快照，renderer 和 input router 只消费解析后的 theme/shortcuts，不直接读配置源。
-- `connections.yaml` 只保存 Endpoint/Route 期望配置；`EndpointManager` 是每个 Endpoint 唯一的 route race、`ReadySession`、`SessionGeneration` 与 winner/loser 生命周期 owner。未配置 priority 时 eligible local/SSH route 全量竞速，配置后按 priority group 与 hedge delay 启动；首个完成 DeviceIdentity challenge proof、authorization 和 Hello 的 `ReadySession` 在线性化点胜出。每个 endpoint-scoped result 携带 `EndpointSessionStamp`；消息可以进入队列，但完整组合 reducer 必须在 manager session mutex 内通过统一 generation guard 后才能提交。当前 Endpoint session、`TerminalViewStore.Views` 中的 committed binding、以及 `TerminalAttachOperation{ViewID, Seq, Candidate}` 各自只有一份真值；candidate 与 operation identity 是同一个 transient value，不存在第二份 pending intent。attach、reconnect、route switch recovery 与 input/resize recovery 都走同一个 completion/confirm/commit/cleanup 契约：daemon Attach 先建立不抢占 resize owner 的候选 channel，Attach ACK 只更新 current operation 的 candidate；confirm 回执通过同一 operation + generation guard 后 reducer 才原子提交新 binding，再按 previous binding 的 `EndpointID + SessionGeneration + Channel + SurfaceID + ViewID + OperationID` 精确 detach。candidate 失败、confirm 失败或 stale finalize 都只 abort/cleanup candidate，保留旧 committed attachment。replaced operation、view close、context cancel、过期 generation 的迟到成功只能释放返回的精确 attachment，不能复活 view、fallback 或改写新 session。更高 generation 只撤销该 endpoint 旧 committed channel/resize control 与 live/history 背压，保留 TerminalRef、layout、surface/history 内容和可能触发 lazy connect 的 current operation；channel-bound input、resize 与 detach 只能命中创建 channel 的原始 generation bundle。TerminalPool 的 `OperationSeq`、`RequestSeq`、`RefreshSeq` 与每 endpoint `AppliedEndpointSeq` 继续分别约束 action、前台请求、后台刷新和 payload 新旧；history/copy request 记录 RequestID 与发起 generation，统一 guard 拒绝的 payload 只能结束匹配 operation，不能污染已接纳 surface、frozen history 或 workbench 连接意图。
-- `SessionGeneration` 只存在于客户端运行时。service 调用取得 generation lease，异步回包和 lifecycle event 在进入 reducer 前复核；live invalidation one-shot cancellation 同时匹配 generation 与 observed revision。route 切换保持 `TerminalRef{EndpointID, TerminalID}`，旧 generation 不能清空新 session 的 live/history/input/file 投影。Endpoint lifecycle stream 使用按 Endpoint 合并的可靠 mailbox：同状态阶段可折叠，最后状态和相邻状态转换不会因消费者 channel 满而丢失；publisher 不在 manager 锁内等待 UI 消费。
-- channel-bound input、paste、resize 与 detach 的 operation identity 是 `EndpointID + SessionGeneration + Channel + ViewID`。请求必须携带 committed binding 的原始 stamp；EndpointManager 只命中已存在的同 generation bundle，不能让旧 channel lazy dial 或进入 replacement session。`Attempted=false` 的 `session_stale` 表示副作用未开始，reducer 可以精确失效该 binding 并 fresh attach；adapter 已调用后的 stale 不得自动重放输入。
-- channel error recovery 只能基于 committed binding 创建同 view recovery candidate；commit 前不清空旧 binding、不转移 resize owner，也不预先 detach。candidate 成功且 confirm/generation guard 通过后原子提交并精确释放 previous attachment，失败或 confirm stale 则 abort candidate 并保留旧 committed truth；同 view 已有用户 operation 时自动 recovery 直接让位。adapter 已调用后的普通错误可以无 payload reattach，但不得重放原输入。
+- `connections.yaml` 只保存 Endpoint/Route 期望配置。当前 `EndpointManager` 仍处于单 route lazy bundle 过渡态，生产路径仍有 `ResolveCurrentRoute`；不能把 CONN003 目标态当成已实现结构。
+- CONN003 的目标是让 `EndpointManager` 成为每个 Endpoint 唯一 session owner，统一 planner、route race、`ReadySession`、`SessionGeneration`、winner/loser cleanup 和 lifecycle mailbox。算法细节不在本文复制。
+- endpoint-scoped service result 的目标契约是携带原始 session stamp，并在 reducer 提交前统一校验 generation；旧 generation 结果不得污染当前 live/history/input/file 投影。
+- attach/input/paste/resize/detach 的目标契约是绑定创建 channel 的原始 stamp。stale cleanup 不得 lazy dial，adapter 已调用后的输入错误不得自动重放 payload。
 - input 和 mouse 只输出 semantic intent，不直接修改 workspace/history/copy mode。
 - TUI-v3 不以 Bubble Tea 作为主运行时；消息循环、effect 调度、终端输入、终端模式和最终 frame 输出都由 v3 自己的 runtime/terminal host 管理。
 - 可以使用 `lipgloss/v2`、`x/ansi` 这类纯渲染、样式、ANSI 辅助库，但不得引入绑定 Bubble Tea `Model/Msg/Cmd` contract 的 UI 组件作为主结构。
-- 可以从 tuiv2 搬迁小而稳定的包，但迁入 v3 后必须去掉对 `tuiv2/` 的运行时依赖。
 
 ## 3. 总体架构图
 
@@ -87,7 +82,7 @@ TUI-v3 的重构目标不是“功能全部重新发明”，而是：
 - `Service` 只通过 message 返回结果，不直接改 `StateRoot`。
 - `RenderVMBuilder` 从 `StateRoot` 生成不可变 view-model。
 - `Renderer` 只画 view-model，不知道 core client、history source 或 terminal service；`FrameSink` 是 render 侧输出接口，由 `TerminalHost` 提供真实 TTY 实现。
-- Bubble Tea 只能作为旧 `tuiv2/` 行为参考，不作为 TUI-v3 主线依赖。
+- Bubble Tea 不作为 TUI-v3 主线依赖或行为真值。
 
 ### 3.1 状态权威边界
 
@@ -122,7 +117,7 @@ state/
 
 services/
   coreclient        protocol/core-v2 adapter
-  endpoint          registry projection、route planner 执行、winner/loser 生命周期、SessionGeneration guard
+  endpoint          当前 registry projection/bundle routing；CONN003 目标为 planner、session owner 与 generation guard
   terminal          外部终端进程/core service：attach view、terminal input、resize、restart、ownership、surface/title event stream
   history           latest/older request IO，返回 response message，不做 stale 接纳
   session           load/save/restore
@@ -154,49 +149,11 @@ bridge/
   fake              harness fake source/client
 ```
 
-## 5. tuiv2 可复用策略
-
-### 5.1 可迁移能力
-
-这些能力可以作为 v3 的迁移来源，但迁入后必须放进新的边界：
-
-- `tuiv2/input` 的 keymap、mode、router、terminal input translation。
-- `tuiv2/render` 的 canvas、compositor、pane chrome、hit regions、theme、glyph、render cache 思路。
-- `tuiv2/historyview` 的 authoritative window contract、source adapter 思路和 stale guard 测试。v3 不照搬其带 mutex 的可变 store。
-- `tuiv2/runtime` 的 terminal registry、pane binding、live surface adapter、terminal input/resize/attach 经验。v3 的 terminal process handle、event stream 和 IO 必须归外部 terminal service。
-- `tuiv2/bootstrap`、`sessionstore`、`workbench`、`modal`、`uiinput`、clipboard 相关能力。
-- tuiv2 中已经覆盖的行为 harness，特别是 input、render、historyview、copy selection、mouse wheel 和 resize 场景。
-
-### 5.2 不直接沿用的结构
-
-下面结构不迁移为 v3 主结构：
-
-- `tuiv2/app.Model` 的大状态对象。
-- `tuiv2/app` 中以 Bubble Tea `Model/Msg/Cmd` 为中心的 host/runtime 结构。
-- `tuiv2/input` 中对 `tea.KeyMsg`、`tea.MouseMsg` 的直接类型依赖；v3 必须改为自己的 `InputEvent`。
-- 通过共享 model 字段互相耦合的 `update_*` 文件结构。
-- 带 mutex、可被 service 直接调用修改的 UI store。
-- copy mode 读取 snapshot/local scrollback 的历史路径。
-- render 层从 snapshot/grid viewport 推断 history truth 的路径。
-- app 层本地 committed history depth、local loading depth、local exhausted truth。
-- mouse wheel/page up/page down 中任何 snapshot totals、LoadedRows、row count fallback。
-- runtime/local VTerm scrollback 作为 history source 的路径。
-- 任何把 Bubble Tea renderer、Bubble Tea `Cmd` 或 `bubbles` 组件作为 v3 主线 contract 的结构。
-
-### 5.3 迁移方式
-
-- 可以复制 tuiv2 中小而稳定的包到 v3，再按 v3 边界改名和裁剪依赖。
-- 不允许 v3 运行时长期 import `tuiv2/` 作为内部依赖。
-- 每个迁移包必须有自己的 v3 harness，不以 tuiv2 测试语义自动作为回归基准。
-- 如果迁移代码携带旧 history 语义，必须先删除旧语义再进入 v3。
-- store 迁移只能迁移数据结构和校验语义，不能迁移“外部对象持有指针并直接 Apply”的可变调用模式；v3 store 必须由 reducer 持有和更新。
-- 如果迁移代码携带 `tea.Msg`、`tea.Cmd`、`tea.Model`、`tea.KeyMsg` 或 `tea.MouseMsg`，必须在迁入时替换为 v3 自有 message、effect 和 input event 类型。
-
-## 6. 运行时与终端主机
+## 5. 运行时与终端主机
 
 TUI-v3 使用自有 `AppRuntime`，不使用 Bubble Tea `Program` 作为主运行时。
 
-### 6.1 AppRuntime
+### 5.1 AppRuntime
 
 `AppRuntime` 是轻量事件运行时，职责限定为：
 
@@ -209,7 +166,7 @@ TUI-v3 使用自有 `AppRuntime`，不使用 Bubble Tea `Program` 作为主运�
 
 `AppRuntime` 不做业务决策，不读写 history，不直接访问 protocol client，不直接拼 frame。
 
-### 6.2 EffectRunner
+### 5.2 EffectRunner
 
 `EffectRunner` 替代 Bubble Tea `Cmd`。
 
@@ -221,7 +178,7 @@ TUI-v3 使用自有 `AppRuntime`，不使用 Bubble Tea `Program` 作为主运�
 - batch 只是多个 effect 的调度组合，不改变 reducer 纯同步边界。
 - timer/interval 必须产出普通 message，不能直接改 state。
 
-### 6.3 TerminalHost
+### 5.3 TerminalHost
 
 `TerminalHost` 负责宿主 TTY 边界，不负责远端/core 终端进程的 attach、resize、restart 或 terminal input IO：
 
@@ -246,7 +203,7 @@ TUI-v3 使用自有 `AppRuntime`，不使用 Bubble Tea `Program` 作为主运�
 - terminal input 是写给 core/terminal 进程的输入字节或控制请求，归 terminal service。
 - 宿主 theme/palette 只推导 TermX chrome theme；PTY live 内容中的 `ansi:N`、`idx:N` 和 truecolor 仍作为 terminal 内容 SGR 语义直通，不重新映射为 semantic token。
 
-## 7. UI 组件与第三方库边界
+## 6. UI 组件与第三方库边界
 
 TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有事件循环、状态更新 contract 或 Bubble Tea `Model/Msg/Cmd` 绑定的 UI 组件作为主线结构。
 
@@ -272,9 +229,9 @@ TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有�
 - 渲染只消费 view-model，返回 frame lines、spans 或 hit region metadata。
 - 组件内部不得发起 IO、history request、terminal input 或 session save。
 
-## 8. 核心状态模型
+## 7. 核心状态模型
 
-### 8.1 StateRoot
+### 7.1 StateRoot
 
 `StateRoot` 是 TUI-v3 的唯一 UI state。
 
@@ -295,7 +252,7 @@ TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有�
 
 `StateRoot` 只保存 terminal id、pane/floating view binding、attachment channel metadata、surface snapshot、运行状态标记和请求状态。terminal process handle、event stream subscription、protocol client、resize/input IO 都属于 terminal service 或 core client adapter。
 
-### 8.1.1 TerminalViewStore
+### 7.1.1 TerminalViewStore
 
 `TerminalViewStore` 是 reducer-owned 的客户端连接视图状态，用来表达“某个 panel 连接到某个 terminal 的哪个 attachment”。
 
@@ -333,7 +290,7 @@ TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有�
 - kill/restart/remove terminal 后，所有绑定该 terminal 的 view 都必须通过 reducer message 清理或重建 attachment runtime；是否展示 exited/restart 仍只看 core terminal lifecycle。
 - service 不得直接修改 view store；attach、resize、ownership、stream、error 都必须通过 message/effect/result 回到 reducer。
 
-### 8.2 TerminalSurfaceStore
+### 7.2 TerminalSurfaceStore
 
 `TerminalSurfaceStore` 只保存实时显示所需状态。
 
@@ -343,7 +300,7 @@ TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有�
 - 不得向 `HistoryStore` 提供 rows 让其反推出 logical line。
 - 可以按 terminal id 缓存 latest live surface，但 view-local resize boundary、desired size、stream subscription 和 attachment channel 不属于 `TerminalSurfaceStore` 的 truth。
 
-### 8.3 HistoryStore
+### 7.3 HistoryStore
 
 `HistoryStore` 是 reducer-owned 的纯状态，保存 core-v2 返回的 authoritative history 数据、请求状态和 exhausted marker。它不保存 copy mode 交互态。
 
@@ -381,7 +338,7 @@ history service 只能发起请求并把 response 映射成 message，不能在 
 
 `exhausted older marker` 只能绑定 core response、local request id、请求 cursor、core window token 和 cols；它不是本地推断的 history exhausted truth。
 
-### 8.4 CopyModeStore
+### 7.4 CopyModeStore
 
 `CopyModeStore` 只保存 copy mode 的交互态和本地投影状态。
 
@@ -406,7 +363,7 @@ copy mode 绑定的是发起 copy 的 pane/floating view 与 terminal history tr
 - 同一 terminal 的两个 view 可以各自拿到自己的 frozen snapshot，并在本地按不同 cols 重排；一个 view 的本地 reflow 不得覆盖另一个 view 的 copy 交互态。
 - view 被 detach/close 时，绑定该 view 的 copy mode 必须退出或转为 pending/error；不得 silently fallback 到同 terminal 的其它 view。
 
-## 9. 消息和副作用架构
+## 8. 消息和副作用架构
 
 ```text
 input/mouse/protocol msg
@@ -432,9 +389,9 @@ input/mouse/protocol msg
 - renderer invalidate 是 effect 或 shell 级调度，不允许 service 直接调用 renderer。
 - terminal input、history request、session save、clipboard IO 都属于 effect。
 
-## 10. 历史和 copy mode 流程图
+## 9. 历史和 copy mode 流程图
 
-### 10.1 进入 copy mode
+### 9.1 进入 copy mode
 
 ```text
 wheel up / page up
@@ -478,7 +435,7 @@ copy/history 入口只能请求统一的 `history.window`。如果 core 需要�
 内部；TUI 不能再发独立 materialized projection 请求，也不能从 `TerminalSurfaceStore`、本地 VTerm
 或旧 rows 补洞。
 
-### 10.2 older prepend
+### 9.2 older prepend
 
 ```text
 copy mode viewport at top
@@ -499,7 +456,7 @@ Reducer receives response; HistoryStore validates request id/token/generation/cu
 prepend rows; CopyModeStore viewport top adjusted by inserted row count
 ```
 
-### 10.3 selection
+### 9.3 selection
 
 ```text
 cursor/mark visual position
@@ -516,7 +473,7 @@ copy text assembled by logical line spans
 
 clipped span 不能被当作完整 logical line。相邻片段只有在 stable logical line id 和 clipping 关系连续时才能拼接。若 copy mode 使用 frozen snapshot，本地重排也必须继续遵守这条规则，不能把截断片段误拼成新的历史 truth。
 
-## 11. Render 架构
+## 10. Render 架构
 
 Renderer 分两层：
 
@@ -646,7 +603,7 @@ terminal-live content renderer 只能在上述交互闭环完成后深化。term
 - 页面 action hit region 必须由 render framework 转换到全局坐标，并由 runtime 按最新 hit region 派发；content action 命中不得转发成 terminal input。
 - 页面内所有文本继续通过 cell-width helper 裁切，emoji、CJK、combining mark 和 ANSI styled text 不得破坏 overlay/page chrome。
 
-## 12. 与 core-v2 的接口
+## 11. 与 core-v2 的接口
 
 TUI-v3 只通过 `CoreClient` 访问 core-v2。
 
@@ -690,7 +647,7 @@ resize 接纳规则：
 - 继续请求 older 时，必须继续带着 frozen token / boundary 回 core 拉更早 logical lines。
 - page up/down 在等待 older response 时不得从 live surface 推断历史，但可以继续基于当前 frozen snapshot 本地重排已加载部分。
 
-### 12.1 history copy 全流程
+### 11.1 history copy 全流程
 
 冻结快照模式下，TUI 的完整链路应该是：
 
@@ -714,7 +671,7 @@ resize 接纳规则：
 7. core 返回 `line 880-919` 之后，TUI 把它们 prepend 到现有 source lines，再按当前 pane 宽度重排。
 8. 这整个过程中，terminal live 又新增的 `line 1001-1050` 不会混入 `S1`，除非用户退出 copy mode、重新拿一份新的 latest snapshot。
 
-### 12.2 TUI 侧必须补的实现阶段
+### 11.2 TUI 侧待实现项
 
 实现上按这个顺序推进：
 
@@ -725,7 +682,7 @@ resize 接纳规则：
 
 第一版不要求一上来做 chunk-level COW；只要 snapshot 与 live 的隔离已经靠 line-level copy-on-write 成立即可。
 
-## 13. 包边界硬约束
+## 12. 包边界硬约束
 
 - `historyview` 不 import `render`、`runtime`、`app`。
 - `copymode` 不 import protocol client、runtime 或 renderer。
@@ -740,7 +697,7 @@ resize 接纳规则：
 - terminal service 不持有或修改 `StateRoot`；它只通过 event/result message 反馈 attach、resize、restart、surface update 和 title/metadata 变化。
 - history service 不持有 `HistoryStore`；它只返回 response message。
 
-## 14. 测试策略
+## 13. 测试策略
 
 优先用小 harness 固定边界，再做 e2e。
 
@@ -754,72 +711,5 @@ resize 接纳规则：
 - app runtime harness：message 顺序、effect result 回投、timer、batch、cancel、quit。
 - terminal host harness：input event 转换、direct terminal enter/exit、FrameSink 输出 contract。
 - UI render helper harness：lipgloss/v2 样式 helper 宽度、裁剪、ANSI 安全性，不依赖 Bubble Tea。
-- visual alignment harness：固定 viewport smoke snapshot、真实 TTY ANSI frame、截图/录制和人工对照 `tuiv2` 视觉目标；不得只凭 Unicode 线框存在判定完成。
+- visual alignment harness：固定 viewport smoke snapshot、真实 TTY ANSI frame、截图/录制和人工基线；不得只凭 Unicode 线框存在判定完成。
 - integration harness：wheel up 进入 copy mode、page up 请求 older、resize 后 latest replace、旧 cols response 被拒绝。
-
-tuiv2 测试可以作为行为参考，但不得把旧 snapshot/local scrollback 语义带进 v3。
-
-## 15. 推荐落地顺序
-
-1. 建立 `tui/` Go module、包目录和基础测试框架。
-2. 建立 v3 自有 `Msg`、`Effect`、`AppRuntime`、`EffectRunner` 骨架和 harness。
-3. 建立 `TerminalHost` fake 与 `FrameSink` contract，先不接真实 TTY。
-4. 迁入或重写 `input`，替换 Bubble Tea key/mouse 类型，只输出 semantic intent / terminal input。
-5. 建立 `StateRoot`、message、effect、reducer 骨架。
-6. 实现 reducer-owned `historyview` 状态与 fake source harness。
-7. 实现 `copymode` 状态机和 selection harness。
-8. 建立 `RenderVMBuilder`，先用 fake state 渲染 live/copy 两种 projection。
-9. 迁移 render primitives、pane chrome、hit regions、lipgloss/v2 style helper 和 render cache。
-10. 建立 `CoreClient` fake adapter，接入 history latest/older。
-11. 建立 terminal service fake，接入 terminal surface/update/resize/restart message。
-12. 接入 workspace/pane layout、modal、clipboard、session restore。
-13. 接入真实 protocol adapter、真实 `TerminalHost`、terminal input、resize、attach/restart。
-14. 补最小端到端 harness。
-15. 完成 styled chrome renderer、cell matrix、theme token、ANSI FrameSink、header/footer、toast/overlay、pane chrome 和 pane command 基础。
-16. 完成 UI framework 交互产品化总验收：header/footer 信息层、pane/resize/global mode、鼠标命中、active pane 反馈、toast 操作、layout/effect 同步和基本手工测试入口。
-17. 完成 terminal-live content renderer 一期：live 行、基础 style、cursor、pending/empty/exited、宽字符裁切和 no chrome leak。
-18. 完成 copy-history content renderer 一期：authoritative rows、logical-line marker、selection、cursor、position token、copy/yank feedback、宽字符裁切和 no chrome leak。
-19. 完成 empty/exited/Terminal Picker content renderer 与 Terminal Picker 真实交互。
-20. 完成 Terminal Pool 数据源与 Picker 服务接线。
-21. 实现 Terminal Pool 管理页一期。
-22. 实现 Workbench Tree overlay 一期。
-23. 实现 floating pane 一期。
-24. 实现 Prompt / Help overlay 一期。
-25. 实现 Tab / Workspace 产品入口一期。
-26. 完成 TUI 产品壳总验收。
-27. 前推 terminal live 连接展示与交互。
-28. 深化 copy-history 内容 renderer。
-29. 清理 render 兼容投影并建立性能基线。
-30. 做视觉差距审计与固定 viewport smoke 基线。
-31. 重绘 `tuiv2` 风格 shell header/footer。
-32. 重绘 `tuiv2` 风格 pane chrome 与 split 视觉。
-33. 对齐 overlay、toast 和 floating 视觉。
-34. 做真实默认 TUI 视觉验收。
-
-每个切片都必须避免引入 local scrollback history fallback。
-
-## 16. 第一阶段范围
-
-第一阶段只做：
-
-- v3 module skeleton
-- package boundaries
-- v3 自有 `Msg` / `Effect` 基础类型
-- `AppRuntime` fake harness
-- `TerminalHost` fake 与 `FrameSink` contract
-- reducer-owned `historyview` state
-- fake `historyview.Source`
-- `copymode` state skeleton
-- reducer/effect harness
-- latest replace harness
-- older prepend harness
-- stale response harness
-- selection clipped span harness
-
-第一阶段不做：
-
-- 真实 AppRuntime/TerminalHost 完整接入
-- 真实 protocol adapter
-- 旧 `tuiv2/` 原地修补
-- local VTerm scrollback 迁移
-- render 全量迁移

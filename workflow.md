@@ -34,7 +34,7 @@
 
 | ID | 状态 | 内容 | 完成条件 |
 | --- | --- | --- | --- |
-| C3A | 待开始 | 文档真值收口 | 三个冲突文档不再声称 CONN003 已实现；明确当前代码仍用 `ResolveCurrentRoute` 过渡；写清重构目标、非目标和删除边界 |
+| C3A | 已完成 | 文档真值收口 | 三个冲突文档不再声称 CONN003 已实现；明确当前代码仍用 `ResolveCurrentRoute` 过渡；写清重构目标、非目标和删除边界 |
 | C3B | 待开始 | `shared/connection` planner 领域层 | 新增纯 `RouteSelectionPlanner`、`RouteAttempt` plan、priority grouped hedge、manual override、unsupported route 失败；无网络 IO；单测覆盖 full race、hedge、manual-only、未绑定 identity 多 route 拒绝、managed 不入 CONN003 race |
 | C3C | 待开始 | fresh daemon proof / ReadySession contract | local Unix 与 SSH route attempt 在 protocol Hello 前完成 fresh DeviceIdentity challenge proof；只有 transport + proof + authorization + Hello 全部成功才能产出 `ReadySession` |
 | C3D | 待开始 | TUI `EndpointManager` session owner 重写 | manager 成为每 Endpoint 唯一 route race、winner、loser、generation、lifecycle mailbox owner；删除生产路径 `ResolveCurrentRoute` 依赖；service 调用取得 generation lease，迟到回包拒绝 |
@@ -179,7 +179,7 @@ func SendInput(ctx, req) (Result, error) {
 
 | ID | 状态 | 说明 |
 | --- | --- | --- |
-| C3A | 待开始 | 修正文档真值与 CONN003 重构说明 |
+| C3A | 已完成 | 修正文档真值与 CONN003 重构说明 |
 | C3B | 待开始 | 纯 RouteSelectionPlanner 领域层 |
 | C3C | 待开始 | local/SSH fresh proof 与 ReadySession contract |
 | C3D | 待开始 | TUI EndpointManager session owner |
@@ -199,4 +199,5 @@ func SendInput(ctx, req) (Result, error) {
 
 ## 当前状态记录
 
-- 2026-07-17：因文档把 CONN003 写成已实现而源码仍处于 `ResolveCurrentRoute` 过渡态，本文件已压缩为当前活动控制面。下一步从 C3A 开始，不直接重写代码。
+- 2026-07-17：C3A 完成。多 transport 文档已删除旧 ME 路线图并收敛为 CONN003 技术边界；CLI 文档不再维护易漂移的命令快照；TUI 架构删除已退出目录迁移说明和旧落地顺序。三份文档均明确当前仍处于 `ResolveCurrentRoute` 过渡态，planner/session owner/generation 是待实现目标。
+- 2026-07-17：因文档把 CONN003 写成已实现而源码仍处于 `ResolveCurrentRoute` 过渡态，本文件已压缩为当前活动控制面；真实实现从 C3B 的纯 planner 领域层开始。
