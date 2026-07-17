@@ -21,6 +21,10 @@ TUI-v3 的重构目标不是“功能全部重新发明”，而是：
 - TUI 内部状态和副作用分离：state reducer 不做 IO，service/effect 不直接绕过 message path 修改 UI state。
 - renderer 只消费 render view-model，不读取 runtime、history source 或 protocol client。
 - TUI 用户配置以 `tui/docs/tui-config-management.md` 为基准；配置 loader 负责文件/env/flag，reducer 持有已验证快照，renderer 和 input router 只消费解析后的 theme/shortcuts，不直接读配置源。
+- `connections.yaml` 只保存 Endpoint/Route 期望配置；`EndpointManager` 是每个 Endpoint 唯一的 route race、`ReadySession`、`SessionGeneration` 与 winner/loser 生命周期 owner。未配置 priority 时 eligible local/SSH route 全量竞速，配置后按 priority group 与 hedge delay 启动；首个完成 DeviceIdentity challenge proof、authorization 和 Hello 的 `ReadySession` 在线性化点胜出。每个 endpoint-scoped result 携带 `EndpointSessionStamp`；消息可以进入队列，但完整组合 reducer 必须在 manager session mutex 内通过统一 generation guard 后才能提交。当前 Endpoint session、`TerminalViewStore.Views` 中的 committed binding、以及 `TerminalAttachOperation{ViewID, Seq, Candidate}` 各自只有一份真值；candidate 与 operation identity 是同一个 transient value，不存在第二份 pending intent。attach、reconnect、route switch recovery 与 input/resize recovery 都走同一个 completion/confirm/commit/cleanup 契约：daemon Attach 先建立不抢占 resize owner 的候选 channel，Attach ACK 只更新 current operation 的 candidate；confirm 回执通过同一 operation + generation guard 后 reducer 才原子提交新 binding，再按 previous binding 的 `EndpointID + SessionGeneration + Channel + SurfaceID + ViewID + OperationID` 精确 detach。candidate 失败、confirm 失败或 stale finalize 都只 abort/cleanup candidate，保留旧 committed attachment。replaced operation、view close、context cancel、过期 generation 的迟到成功只能释放返回的精确 attachment，不能复活 view、fallback 或改写新 session。更高 generation 只撤销该 endpoint 旧 committed channel/resize control 与 live/history 背压，保留 TerminalRef、layout、surface/history 内容和可能触发 lazy connect 的 current operation；channel-bound input、resize 与 detach 只能命中创建 channel 的原始 generation bundle。TerminalPool 的 `OperationSeq`、`RequestSeq`、`RefreshSeq` 与每 endpoint `AppliedEndpointSeq` 继续分别约束 action、前台请求、后台刷新和 payload 新旧；history/copy request 记录 RequestID 与发起 generation，统一 guard 拒绝的 payload 只能结束匹配 operation，不能污染已接纳 surface、frozen history 或 workbench 连接意图。
+- `SessionGeneration` 只存在于客户端运行时。service 调用取得 generation lease，异步回包和 lifecycle event 在进入 reducer 前复核；live invalidation one-shot cancellation 同时匹配 generation 与 observed revision。route 切换保持 `TerminalRef{EndpointID, TerminalID}`，旧 generation 不能清空新 session 的 live/history/input/file 投影。Endpoint lifecycle stream 使用按 Endpoint 合并的可靠 mailbox：同状态阶段可折叠，最后状态和相邻状态转换不会因消费者 channel 满而丢失；publisher 不在 manager 锁内等待 UI 消费。
+- channel-bound input、paste、resize 与 detach 的 operation identity 是 `EndpointID + SessionGeneration + Channel + ViewID`。请求必须携带 committed binding 的原始 stamp；EndpointManager 只命中已存在的同 generation bundle，不能让旧 channel lazy dial 或进入 replacement session。`Attempted=false` 的 `session_stale` 表示副作用未开始，reducer 可以精确失效该 binding 并 fresh attach；adapter 已调用后的 stale 不得自动重放输入。
+- channel error recovery 只能基于 committed binding 创建同 view recovery candidate；commit 前不清空旧 binding、不转移 resize owner，也不预先 detach。candidate 成功且 confirm/generation guard 通过后原子提交并精确释放 previous attachment，失败或 confirm stale 则 abort candidate 并保留旧 committed truth；同 view 已有用户 operation 时自动 recovery 直接让位。adapter 已调用后的普通错误可以无 payload reattach，但不得重放原输入。
 - input 和 mouse 只输出 semantic intent，不直接修改 workspace/history/copy mode。
 - TUI-v3 不以 Bubble Tea 作为主运行时；消息循环、effect 调度、终端输入、终端模式和最终 frame 输出都由 v3 自己的 runtime/terminal host 管理。
 - 可以使用 `lipgloss/v2`、`x/ansi` 这类纯渲染、样式、ANSI 辅助库，但不得引入绑定 Bubble Tea `Model/Msg/Cmd` contract 的 UI 组件作为主结构。
@@ -118,6 +122,7 @@ state/
 
 services/
   coreclient        protocol/core-v2 adapter
+  endpoint          registry projection、route planner 执行、winner/loser 生命周期、SessionGeneration guard
   terminal          外部终端进程/core service：attach view、terminal input、resize、restart、ownership、surface/title event stream
   history           latest/older request IO，返回 response message，不做 stale 接纳
   session           load/save/restore
@@ -300,6 +305,7 @@ TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有�
 - terminal id。
 - bound pane id 或 floating id。
 - protocol channel。
+- channel 所属的 endpoint session generation；只存在当前 runtime，不进入 workbench storage。
 - surface id。
 - resize role：owner、follower 或 observer。
 - desired cols/rows、last confirmed cols/rows、resize request seq 和 confirmed seq。
@@ -312,8 +318,13 @@ TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有�
 - pane/floating 不能保存 exited/copy-history 这类 runtime 展示态；renderer 必须从 `TerminalViewStore + TerminalSurfaceStore/Session + CopyModeStore` 投影最终内容。
 - 同一 terminal 可以有多个 view；多个 view 共享 terminal process、history truth 和 terminal lifecycle，但不共享 focus、copy mode、content rect、desired size、resize seq 或 view-local error。
 - terminal input 只发送到当前 active view 的 attachment channel；active pane 缺 view binding 时必须显示 no terminal bound，不得 fallback 到最近 attach 的全局 session。
+- `ViewBinding` 查询可以投影 current operation 内嵌的 candidate；close、rebind commit 和 workbench reload 的资源回收必须读取 committed binding，不能让 candidate 的 `Channel=0` 遮蔽旧 attachment。
+- 新 binding 提交、pane/floating close 和 workbench snapshot 替换统一比较 committed attachment identity；被替换或移除的旧 binding 只能用其原始 generation 精确 detach。
+- attach candidate error 不等于 committed attachment error；同 ref 重试失败只能保留与 Endpoint 当前 generation 完全一致的 committed binding。generation 提升必须撤销旧 committed channel 与 owner/control 投影，不能让候选失败复活旧 session attachment。
+- input/resize effect 不能只携带 daemon-local channel；它必须冻结 binding 的原始 generation。manager 在 adapter 调用前发现 bundle 缺失或 generation 不符时，reducer 通过同一 attach operation contract 重建 view，不把旧 channel 发送给新 session。
 - terminal mouse passthrough 必须按命中的 view 所对应 live modes 判定；chrome、overlay、toast、footer/header 的 hit region 继续优先。
 - owner view 的 content rect 变化才可以产生 terminal resize effect；follower/observer view 只能显示当前 terminal projection，除非用户显式触发 ownership transfer。
+- resize request/result 只更新尺寸和 ownership control，不拥有 terminal running/exited/error lifecycle；迟到 resize 不能把 core 已确认的 exited/error 改回 attached。
 - size 权限必须区分三层状态：core-v2 authoritative resize owner、core-v2 terminal size lock、TUI view-local layout lock。前两者来自 protocol control 投影，第三者只影响当前 pane/floating 内容排布，不能冒充 terminal 级协作锁。
 - 当用户显式获取 resize owner 且 terminal 未被 core-v2 size lock 锁住时，TUI 可以根据当前 content rect 主动发起一次 `ensure_resize`；如果 control 投影显示 `size_locked`，TUI 只能更新 owner/chrome/toast 为 pending/manual 状态，不得自动 unlock 或自动 resize。
 - terminal size lock 的 lock/unlock 必须通过 terminal service effect 发送到 core-v2，并经 result/event message 回到 reducer；解锁后如果当前 owner view 的 content rect 与 terminal size 不一致，TUI 会发起一次明确的 owner-resize command，让 PTY 重新贴合 owner panel。
@@ -330,7 +341,7 @@ TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有�
 - 可以服务普通 terminal renderer。
 - 不得成为 copy mode/history path 的 committed history source。
 - 不得向 `HistoryStore` 提供 rows 让其反推出 logical line。
-- 可以按 terminal id 缓存 latest live surface，但 view-local resize boundary、desired size、stream subscription 和 input channel 不属于 `TerminalSurfaceStore` 的 truth。
+- 可以按 terminal id 缓存 latest live surface，但 view-local resize boundary、desired size、stream subscription 和 attachment channel 不属于 `TerminalSurfaceStore` 的 truth。
 
 ### 8.3 HistoryStore
 
@@ -609,11 +620,11 @@ terminal-live content renderer 只能在上述交互闭环完成后深化。term
 当前 Terminal Pool 数据源与 Picker 服务接线一期的架构边界：
 
 - `TerminalPoolStore` 是 reducer-owned list/source 状态，只保存 list 请求状态、当前 items、错误、stale guard 序号和最近 create/attach 结果；它不是完整 Terminal Pool 管理页状态。
-- `TerminalService` 已扩展最小 Terminal Pool contract：`List`、`Create`、`Restart`、`Reconnect`、`Attach` 均只能通过 effect/result message 回到 reducer；service 不得直接修改 `StateRoot`。
+- `TerminalService` 的最小 Terminal Pool contract 是 `List`、`Create`、`Restart` 与 `Attach`；UI reconnect 只创建新的 `TerminalAttachOperation` 并复用 `Attach`，不存在第二套 Reconnect RPC。所有 service 调用都只能通过 effect/result message 回到 reducer，不得直接修改 `StateRoot`。
 - Terminal Picker 打开时可以触发 `TerminalPoolListRequestMsg`，服务端 list result 只能先写入 `TerminalPoolStore`，再由 `state.TerminalPickerItems(root)` 合并当前 workspace panes 与 pool items。
 - picker attach 对当前 pane row 仍只执行 pane focus/close overlay；对 pool row 才通过 terminal service attach/reconnect result 更新 session/surface，并显示 toast。
 - `picker.new` 通过 terminal service create result 显示反馈并触发 list refresh；不得在 result 到达前伪造 terminal lifecycle。
-- list/create/attach/restart/reconnect 失败必须写入 reducer-owned error/toast；stale list result 必须被拒绝。
+- list/create/restart 与显式 picker attach 的用户反馈由 reducer-owned error/toast 投影；candidate 取消、过期 generation 或被替换 operation 不得伪造成 terminal error，stale list/attach result 必须由统一 operation/session guard 拒绝并 cleanup。
 - 本阶段不实现 Terminal Pool 管理页、跨 workspace 管理、跨 remote 管理、metadata edit、kill/remove UI 或 Workbench Tree。
 
 当前 Terminal Pool 管理页一期的架构边界：

@@ -55,7 +55,7 @@ CONN002：全局 Daemon Identity、客户端绑定授权与配对
 CONN003：EndpointAssembler、RouteSelectionPlanner 与 TUI/CLI session owner
 
 - 所有 Saved registry、Cloud projection、bootstrap import、manual draft 和 LAN candidate 进入统一 EndpointAssembler；相同 fingerprint + DeviceID 合并，相同 ID/不同 fingerprint 或相同 fingerprint/不同 ID 进入安全冲突。
-- 实现 default full race、priority grouped hedge、manual route override、eligibility、稳定 tie-breaker、attempt cancellation 和 SessionGeneration。
+- 实现 default full race、priority grouped hedge、manual route override、eligibility、稳定 Ready 线性化、attempt cancellation 和 SessionGeneration。
 - TUI EndpointManager 拆为 registry projection、route selection/session owner 和 endpoint-aware service router；不让 reducer/render/service 形成重复真值。
 - CLI/TUI 先完成 local Unix 与真实 SSH 多 route 连接、切换、重连、TerminalRef 稳定和 history/live/input/file 路由。
 - 同一 endpoint 的 route 配置更新不得复制 workbench、terminal 或授权状态。

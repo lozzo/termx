@@ -532,7 +532,7 @@ termx endpoint connect studio --route ssh
 - 相同 priority 的 route 同时竞速。
 - 下一 priority 组在前一组尚未产生 `ReadySession` 且经过 `hedge_delay` 后启动。
 - 不要求前一组完整失败或超时，避免高优先级 route 卡住全部连接。
-- 如果 `hedge_delay = 0`，所有组同时启动，但同一完成时刻使用 priority 作为稳定 tie-breaker。
+- 如果 `hedge_delay = 0`，所有组同时启动，并由首个完成完整校验的 `ReadySession` 胜出；priority 只决定分组与启动计划，不能覆盖实际 readiness。需要严格偏好时应配置正 `hedge_delay` 或显式 route override。
 
 示例：
 
@@ -650,7 +650,7 @@ Authorization scope 是 session 属性，不是 endpoint 展示属性。竞速 w
 引入纯领域 `RouteSelectionPlanner`：
 
 - 输入 endpoint routes、priority、platform capability、manual override 和 `ConnectIntent`。
-- 输出 race groups、start delay 和稳定 tie-breaker。
+- 输出 race groups、start delay 和稳定 attempt/失败诊断顺序；winner 由唯一 Ready 线性化点决定。
 - 不做网络 IO，不读取 secure store，不修改 UI state。
 
 Go TUI、CLI 与 Android native 使用同一组机器可读 fixture 验证规划结果。
@@ -767,10 +767,14 @@ Cloud Companion 不应拥有：
 
 ### CONN003：Route planner 与 TUI/CLI session manager
 
-- 实现 `EndpointAssembler`、route eligibility、默认全量竞速、priority grouped hedge、manual override 和稳定 tie-breaker。
+- 实现 `EndpointAssembler`、route eligibility、默认全量竞速、priority grouped hedge、manual override 和稳定 Ready 线性化。
 - 首个 `ReadySession` 通过 generation-aware winner CAS 胜出，loser transport、SSH 子进程和订阅全部取消释放。
 - local Unix 与 OpenSSH stdio 接入唯一 EndpointSession owner；Cloud 不在启动关键路径上。
 - service router 继续保持 endpoint-aware。
+- TUI picker/live/input/reconnect 共享 view-scoped attach operation；daemon attach 只发布绑定非零 operation identity 的候选 channel，不按 ViewID 隐式替换。Attach ACK 只把 candidate identity 写回当前 operation；confirm 回执通过同一 operation + generation guard 后，reducer 才提交新 binding，再按 previous binding 的原 generation 精确 detach 旧 channel。
+- Endpoint generation 提升时撤销旧 committed channel、input channel 与 resize control，但保留 TerminalRef、layout、surface/history 和当前 attach operation；候选失败只能保留仍属于当前 generation 的 committed attachment。
+- channel-bound input/resize 与 detach 一样携带原始 session stamp，只能命中已存在的同 generation bundle 且禁止 lazy dial；副作用前的 stale rejection 统一回到 reducer 发起 fresh attach，已经调用 adapter 的非幂等输入不得自动重放。
+- recovery 必须先基于旧 committed binding 创建同 view candidate；commit 前不得清空旧 binding、转移 resize owner 或预先 detach。candidate 成功且 confirm/generation guard 通过后才提交新 binding，并随后精确 detach previous；candidate 失败、confirm 失败、replaced operation、view close 或 stale generation 都只 abort/cleanup candidate，保留旧 committed attachment。若同 view 已有更新的 attach operation，用户新 intent 优先，旧 input/resize 错误不得覆盖它。
 
 ### CONN004：Direct TLS 与 LAN discovery
 

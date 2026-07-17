@@ -989,10 +989,11 @@
 | --- | --- | --- | --- | --- |
 | `Root` | `state/root.go` | `Generation`, `History`, `CopyMode`, `Clipboard`, `Surface`, `Session`, `TerminalViews`, `TerminalPool`, `Viewport`, `Shell`, `HostTheme`, `WorkbenchSync` | 当前 TUI 进程唯一 reducer 状态根 | 这里没有 core terminal lifecycle 真相；字段只能保存 UI 交互态、连接意图或刚收到的投影。 |
 | `ShellStore` | `state/shell.go` | workspace、workspaces、floatings、active ids、`InteractionMode`、overlay、CTA、toasts | Workbench UI 结构和当前焦点 | `PaneState.Kind` 当前只能是 `empty` 或 `terminal-live`；exited/copy-history 不是当前 pane 状态。 |
-| `TerminalViewStore` | `state/terminal_view.go` | `Views`, `PaneViews`, `FloatingViews` | 当前进程 view binding map | 普通 terminal input 必须通过 active pane/floating -> binding 解析。 |
-| `TerminalViewBinding` | `state/terminal_view.go` | `ViewID`, `SurfaceID`, `TerminalID`, `Channel`, `ResizeRole`, desired size、pane/floating ids、`Attached`、resize projection | 当前 TUI 的连接意图和最新已知 attachment 投影 | Channel 可能 stale；send 失败时只能 reattach 当前 view。 |
+| `TerminalViewStore` | `state/terminal_view.go` | committed `Views`、pane/floating index、current attach operation、per-view sequence watermark | 当前进程 view binding 与 attach operation 真值 | 普通 input/resize/close 必须从 committed binding 取精确 attachment；pending candidate 只能从 current operation 取。 |
+| `TerminalViewBinding` | `state/terminal_view.go` | `ViewID`, `SurfaceID`, `EndpointID`, `TerminalID`, `Channel`, `SessionGeneration`, resize owner/control、pane/floating ids | 当前 view 最后一次成功提交的 attachment binding | candidate 成功前不能覆盖它；新 binding 原子提交后才显式 detach previous attachment。 |
+| `TerminalAttachOperation` | `state/terminal_view.go` | `ViewID`, `Seq`, `Candidate` | attach、reconnect、route switch recovery 与 view close 的唯一异步 operation identity | replaced/closed/stale operation 的迟到成功只能按返回 identity cleanup，不能复活 view 或 fallback。 |
 | `TerminalSurfaceStore` | `state/live.go` | 当前 terminal projection 和 `Surfaces` map | live surface/event 展示投影 | 只显示 live surface/event 已回投的画面和退出提示；不能回答“现在是否应该 restart”，也不能从 terminal pool/list 推导 lifecycle。 |
-| `TerminalSessionStore` | `state/live.go` | `TerminalID`, `Channel`, `InputChannels`, attach status、desired resize、last error | attach/live path 的 session projection | 多 view 输入不能用它当 global fallback；不持有 core terminal lifecycle truth，旧退出展示态只能被 core lifecycle 消息覆盖。 |
+| `TerminalSessionStore` | `state/live.go` | active `EndpointID + TerminalID`、前台 geometry、lifecycle/error projection | 当前前台 terminal 的生命周期与几何投影 | 不保存 channel、generation、view identity 或 resize owner；input/resize/detach 禁止把它当 fallback。 |
 | `TerminalPoolStore` | `state/terminal_pool.go` | list status、items、request/applied seq、last action ids | 最近一次 core terminal list/action response | 用于 picker/pool 展示；restart、running/exited 判定必须重新查询 core，不得写回 pane live lifecycle，也不是 input routing truth。 |
 | `HistoryStore` | `state/history.go` | accepted `SourceLines`, `Rows`, token/generation/cursor/boundary、pending/exhausted | 当前 authoritative history window cache | payload 来自 core；TUI 只缓存和本地 reflow 已接纳窗口。 |
 | `CopyModeStore` | `state/history.go` | active/entering、pane/view/terminal ids、cursor、mark、selection、query、matches、bound token/cols | copy/history 交互状态 | 永远不是 history source，只在 `HistoryStore` 上选择和搜索。 |
@@ -1047,7 +1048,7 @@
 | 现象 | 第一优先检查的归属方 | 不要用这些解释 |
 | --- | --- | --- |
 | restart 成功后重进 TUI 仍显示 restart | core terminal list state、lifecycle-known surface/event、`TerminalSurfaceStore` projection | workbench pane kind |
-| active panel 边框移动了但键盘输入没进 terminal | `ShellStore` active ids -> `TerminalViewStore` binding -> protocol attachment channel | `TerminalSessionStore.Channel` global fallback |
+| active panel 边框移动了但键盘输入没进 terminal | `ShellStore` active ids -> committed `TerminalViewBinding` -> protocol attachment channel | `TerminalSessionStore` lifecycle/geometry projection |
 | reattach 当前 panel 后 sibling panel 失效 | `TerminalViewStore` update scope 和 protocol attachment detach/restart 行为 | terminal pool selected item |
 | copy/history 内容不对 | core `HistoryTrack` window response 和 TUI `HistoryStore` stale guard | live surface scrollback |
 | restart 后 cursor 错位 | core `SurfaceTrack` snapshot cursor 和 TUI live cursor projection | text tail synthesis |

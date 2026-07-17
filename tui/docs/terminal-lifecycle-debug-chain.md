@@ -43,15 +43,19 @@ TUI 里不能自己发明 terminal lifecycle。restart 后是否还应该显示 
 - copy selection。
 - 当前输入路由状态。
 
-旧 storage 中可能已经写入过 `"exited"` / `"copy-history"` pane kind。当前兼容策略是在 restore 边界迁移成 `terminal-live` 连接意图。
+旧 storage 中可能已经写入过 `"exited"` / `"copy-history"` pane kind。当前 restore 只在 snapshot 已有完整 `TerminalViews` 连接意图时 scrub 这些展示态为 `terminal-live`；没有 `TerminalViews`，或要恢复的 attachment identity 缺少完整 `EndpointID` / `TerminalID` / `OperationID`，必须 fail closed。workbench storage 本身只持久化 `EndpointID` + `TerminalID` 连接意图；新的 `OperationID` 只能由当前 reducer attach 时分配，不能从旧 snapshot 补造。
 
 关键函数：
 
 - `SnapshotRootWorkbenchForStorage`
+- `WorkbenchStorageSnapshot.Validate`
 - `WorkbenchStorageSnapshot.ToShellStore`
 - `WorkbenchStorageSnapshot.ToTerminalViewStore`
 - `workbenchStoragePane`
-- `TerminalViewStore.withLegacyWorkbenchPaneBindings`
+- `WorkbenchStorageSnapshot.validTerminalViews`
+- `WorkbenchStorageSnapshot.validTerminalPaneBindings`
+- `TerminalViewBinding.ForWorkbenchStorage`
+- `TerminalViewBinding.ForWorkbenchRestore`
 
 ### TUI memory
 
@@ -63,7 +67,7 @@ TUI 里不能自己发明 terminal lifecycle。restart 后是否还应该显示 
 - `TerminalViewStore`：当前 pane/floating 到 terminal attachment 的 view binding。
 - `TerminalPoolStore`：core terminal list 的展示缓存和当前 action 查询结果。
 - `TerminalSurfaceStore`：live surface 画面和 live event 投影缓存。
-- `TerminalSessionStore`：当前 attach/session/input channel 投影缓存。
+- `TerminalSessionStore`：当前前台 terminal 的 lifecycle、geometry 与 error 投影缓存；不保存 attachment channel。
 - `CopyModeStore` / `HistoryStore`：copy/history 交互态和 authoritative history window。
 
 TUI memory 不持有 terminal lifecycle truth；需要决定 restart / running / exited 时必须重新查询 core 或消费 core live surface/event 回投。
@@ -97,7 +101,8 @@ TUI memory 不持有 terminal lifecycle truth；需要决定 restart / running /
 
 - restore 后 pane kind 只能是 `empty` 或 `terminal-live`。
 - 退出态不应该来自 pane kind。
-- 如果旧 snapshot 只有 `pane.TerminalID` 没有 `TerminalViews`，`withLegacyWorkbenchPaneBindings` 应该补 detached view binding。
+- restore 成功必须来自 schema v2 的 `TerminalViews`：每个 terminal pane/floating 都要有匹配的 `EndpointID` + `TerminalID` binding；裸 `pane.TerminalID` 不能恢复成 default local binding。
+- 旧 snapshot 缺少 `TerminalViews`、缺 endpoint-aware terminal ref，或试图把缺少 `OperationID` 的旧 runtime identity 当成已恢复 attachment 时，都不能补 binding；必须 fail closed，只有有效 `TerminalViews` 通过后才能由 reducer 发起新的 attach operation。
 - 当前进程内输入和 render 应该使用 TerminalView binding，不应该使用 global session fallback。
 
 重点日志：
@@ -147,7 +152,7 @@ TUI memory 不持有 terminal lifecycle truth；需要决定 restart / running /
 入口：
 
 - `LiveAttachMsg`
-- `LiveAttachResultMsg`
+- `TerminalAttachCompletedMsg`
 - `LiveSurfaceMsg`
 - `LiveEventMsg`
 
@@ -160,7 +165,7 @@ TUI memory 不持有 terminal lifecycle truth；需要决定 restart / running /
 流程：
 
 1. restore 或 restart 之后会为 view binding 发出 `LiveAttachMsg`。
-2. attach result 会更新 view binding / session channel。
+2. reducer 只接受仍匹配 current `TerminalAttachOperation` 的 completion，原子提交 committed view binding 后再精确 detach previous attachment；`TerminalSessionStore` 只更新前台 lifecycle/geometry 投影。
 3. surface request/event 回来后变成 `LiveSurfaceMsg` 或 `LiveEventMsg`。
 4. `LiveSurfaceMsg` / `LiveEventMsg` 携带一次性的 `LifecycleKnown=true` 时，才表示本次消息来自 core lifecycle 查询或事件。
 5. `TerminalSurfaceStore.ApplySnapshotWithLifecycle` 投影 live surface；如果消息是 `LifecycleKnown=true` 且 `State=attached`，`root.Session.MarkAttached` 应该清掉旧 exited session metadata。
@@ -311,8 +316,8 @@ runtime 会合并普通 live 帧，避免高频输出把队列撑爆。这个合
 4. restart result 成功后：
    - `root.TerminalPool.ApplyRestarted`
    - `root.Surface.RestartPreservingContent`
-   - `root.TerminalViews.MarkTerminalReattaching`
-   - `root.Session.ClearInputChannel`
+   - `root.Session.MarkRestartPendingRef`
+   - 保留每个 view 的旧 committed binding，等待 replacement candidate 成功
 5. 发起：
    - `TerminalPoolListRequestMsg`
    - `restartTerminalViewEffects`，逐 view reattach。
@@ -322,7 +327,7 @@ runtime 会合并普通 live 帧，避免高频输出把队列撑爆。这个合
 - restart 不删除 terminal identity。
 - restart 不清 authoritative history。
 - restart 不清 live tail。
-- restart 会让旧 channel 失效，后续每个 view 重新 attach。
+- restart 会为每个 view 发起新的 `TerminalAttachOperation`；candidate 成功前旧 committed attachment 不被破坏，commit 后才按旧 binding 精确 detach。
 - restart 后 core list / lifecycle-known surface 必须能把 TUI exited cache 清成 running。
 
 重点日志：
@@ -351,22 +356,27 @@ runtime 会合并普通 live 帧，避免高频输出把队列撑爆。这个合
 - 查 `workbenchStoragePane`
 - 查旧 snapshot 是否绕过了 `ToShellStore`
 
-### 2. restore 后是否有 active TerminalView binding
+### 2. restore 是否因为 TerminalViews 不完整而 fail closed
 
 看日志：
 
+- `workbench.storage` warning toast
 - `workbench.restore terminal_views`
 - `workbench.restore active_terminal`
 
 期望：
 
+- 无效 snapshot 不产生 `workbench.restore`，并报告 `invalid workbench snapshot`。
 - `terminal_views > 0`
 - `active_terminal = 当前 panel 连接的 terminal id`
 
 如果没有：
 
 - 查 `ToTerminalViewStore`
-- 查 `withLegacyWorkbenchPaneBindings`
+- 查 `Validate` / `validTerminalViews` / `validTerminalPaneBindings`
+- 查 snapshot 是否只有 `pane.TerminalID` 而没有匹配 `TerminalViews`
+- 查 binding 是否缺少 `EndpointID` / `TerminalID`
+- 查当前 runtime 已 live 的同一 view 是否缺少 `OperationID`，不能把它当成同一 committed attachment 复用
 - 查 active pane/floating id 是否和 snapshot 中 pane id 对不上
 
 ### 3. core list 是否返回 running
@@ -446,7 +456,7 @@ runtime 会合并普通 live 帧，避免高频输出把队列撑爆。这个合
 重点测试：
 
 - `TestInteractiveRuntimeWorkbenchRestoreLegacyExitedPaneUsesCoreRunningLifecycle`
-- `TestInteractiveRuntimeWorkbenchRestoreLegacyPaneWithoutTerminalViewsUsesCoreRunningLifecycle`
+- `TestInteractiveRuntimeWorkbenchRestoreTerminalPaneWithoutBindingFailsClosed`
 - `TestLiveSurfaceAuthoritativeRunningClearsExitedSessionAndSurface`
 - `TestLiveQueueKeepsAuthoritativeRunningLifecycleWhenOrdinaryFrameFollows`
 

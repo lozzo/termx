@@ -8,6 +8,16 @@ TermX 的 terminal 是 daemon 拥有的长期实体；workspace、tab、pane 和
 
 本文是命令面设计门禁，不表示所有命令已经实现。每个阶段必须先有真实 protocol/domain owner，再挂 CLI；不得用 CLI 内部状态、shell fallback 或解析 TUI 画面伪造能力。
 
+## CONN003 当前实现
+
+CLI 的 terminal、file、workspace、root TUI 和 `endpoint test` 已共同消费 `shared/connection.RouteSelectionPlanner`。同一 Endpoint 可以同时保存 local Unix 与 OpenSSH stdio route：无 priority 时全量竞速，有 priority 时按 group/hedge delay 启动。winner 严格取首个完成 fresh DeviceIdentity challenge proof、授权和 protocol Hello 校验的 `ReadySession`；原子 Ready 序号是唯一线性化点，静态 route 顺序只稳定计划和失败诊断，不能让稍晚结果反超。所有 loser 在命令继续前取消并释放。
+
+`termx endpoint test ID --route ROUTE` 和 `termx terminal attach TARGET --route ROUTE` 是显式 route override；后者在该 TUI session 的断线重连中保持 sticky。不指定 `--route` 时使用 registry policy。CLI target 始终是 `EndpointID:TerminalID`，换 route 不换 target。
+
+`termx terminal attach` 与 root TUI 的 runtime 错误统一经过 CLI typed error 分类：deadline/cancel 为退出码 7，identity/auth 为 5，route/transport unavailable 为 6。显式 `--socket` 只作为当前 TUI runtime 的 local route overlay，不写回 registry，但后续 generation 继续使用同一 override。
+
+当前外层多 route race 只包含 `local-unix` 与 `ssh-stdio`。单独的 managed Cloud endpoint 仍可使用，但 managed 与其他 route 的共同竞速在 CONN005 接入；direct TLS/LAN 在 CONN004 接入。CLI 不因当前切片未接这些 adapter 而 fallback 到 local、原始 SSH shell 或旧 remote runtime。
+
 ## 2. 当前命令盘点
 
 当前顶层命令如下：

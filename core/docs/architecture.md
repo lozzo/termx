@@ -95,11 +95,17 @@ core-v2 采用 `HistoryTrack + LiveSurfaceTrack` 双轨架构。双轨只区分�
 `Terminal Attachment` 是客户端连接某个 terminal 的 protocol 视图，不是新的 terminal，也不是 TUI 的 pane/workspace truth。
 
 - `Terminal` 仍是 core-v2 daemon 管理的全局运行实体，拥有 process、PTY size、live surface、terminal lifecycle 和 authoritative history truth。
-- `Attachment` 绑定 `terminal_id + channel + surface_id + view_id + resize_policy + resize ownership epoch`，用于路由 input、resize、event stream 和 detach。
+- `Attachment` 绑定 `terminal_id + channel + surface_id + view_id + operation_id + resize_policy + resize ownership epoch`，用于路由 input、resize、event stream、confirm 和 detach。
 - 同一个 terminal 可以同时存在多个 attachment；多个 attachment 共享同一 process、input sink、live surface truth 和 history truth。
+- `attach` 必须携带非零 `operation_id`；分配的新 channel 先是客户端尚未提交的候选，不参与 resize owner election。daemon 不得仅因 `surface_id + view_id` 相同就隐式删除旧 channel。哪个候选成为 committed client binding 由客户端 operation + confirm contract 决定；confirm 只把候选标记为可提交 observer，客户端 commit 后再发 ensure_resize/精确 detach previous。
+- detach/abort 可以先于 attach publish 到达；daemon 必须按 `ViewID#Seq` 解析 reducer-owned `operation_id`，并以 protocol session 内 `view_id -> abort seq watermark` 作为 candidate lifecycle truth。某 view abort 到 N 后，`seq <= N` 的迟到 attach 必须永久拒绝，不能依赖有损 FIFO、客户端已收到 channel 或 session/global registry 中已有 entry 才 cleanup。
+- 同一 protocol session 收到相同 `operation_id` 的重复 attach 必须幂等：若 terminal/channel 前的身份字段完全一致，返回既有 candidate channel/control；若 `terminal_id/surface_id/view_id/mode/resize_policy` 任一冲突，必须 fail closed，不得新分配 channel 或写入第二份 registry 状态。
+- detach 必须携带完整 `terminal_id + surface_id + view_id + operation_id`，其中 `operation_id` 严格为 `ViewID#Seq`。非零 channel 表示 committed exact detach；channel 为零只允许中止未确认 candidate 或记录 abort-before-attach watermark，不能删除已 confirm 的 attachment，也不能恢复 broad terminal/channel detach。
+- protocol session map、daemon-global attachment registry、channel index 与 resize owner 必须按 `session attachment lock -> global attachment lock` 在同一事务内发布和撤销。attach 在 session entry 写入后、global publish 前仍持有 session lock；并发 detach 只能在线性化完成后撤销，不能留下只存在于任一张表的 ghost attachment。
 - attachment registry 不能保存 workspace、tab、pane、floating 或布局 schema；这些只属于 TUI/client 或 storage opaque value。
 - `channel -> terminal_id` 只是最低限度路由信息，不能替代 attachment registry；后续 input/resize/error 必须能定位到具体 attachment。
-- detach 应移除具体 attachment 或 channel，不得因为一个 view 关闭而删除同 terminal 的其它 attachment。
+- detach 应校验完整 `terminal_id/surface_id/view_id/operation_id`，并在 channel 非零时同时匹配 channel，只移除精确 attachment；不得因为一个 view 关闭而删除同 terminal 的其它 attachment。
+- 同一 protocol session 内 channel 单调且唯一；跨 session/generation 的 channel 可以重号，客户端必须在 Endpoint session owner 边界验证原始 generation，不能把旧 channel cleanup 发送给新 session。
 - terminal kill/remove/restart 是 terminal lifecycle 操作，必须影响所有 attachment，并通过 daemon event stream 通知客户端重新投影。
 - attach、detach、reattach、resize ownership 变化都不得创建 committed history；它们只能改变 attachment/session 边界、live projection 或 stale signal。
 
@@ -108,6 +114,7 @@ Resize ownership 是 attachment 的属性，不是 terminal history truth。
 - 同一 terminal 在同一时刻最多有一个有效 resize owner attachment。
 - owner attachment 可以通过 `ensure_resize` 改变 PTY size；follower/observer attachment 不能因为自身 view content rect 变化覆盖 PTY size。
 - owner 转移必须显式发生，更新 ownership epoch，并让旧 owner 的 late resize response 失效。
+- 同一 channel 的 `ensure_resize`/resize-control 与 exact detach 必须在 session attachment 锁内串行；control update 只能修改 session map 和 global registry 同时存在的 attachment，禁止把已 detach 的 channel 重新注册或复活成 owner。
 - resize policy 不改变 logical-line history truth；resize 后 history window 仍通过 token/generation/cols 失效和重投影。
 
 Terminal size lock 是 terminal 级协作控制状态，不是 TUI 的 pane layout 状态。

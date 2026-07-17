@@ -6,6 +6,47 @@
 
 当前 schema、identity 合并、selection policy、session 和 share/bootstrap 边界以 [`docs/remote-platform/unified-endpoint-route-refactor-plan.md`](../../docs/remote-platform/unified-endpoint-route-refactor-plan.md) 与 `workflow.md` 为准。本文后续保留的单 transport `ConnectionConfig` 和 `connections:` 示例只用于解释历史迁移背景，不再是可实现或可兼容读取的 contract；endpoint-aware service routing、`TerminalRef` 和 TUI/core ownership 说明仍然有效。
 
+## CONN003 已实现基线
+
+`shared/connection.RouteSelectionPlanner` 现在是 CLI/TUI 的共同选路真值：
+
+- 未显式配置 priority 时，当前平台支持且 `enabled=true`、`manual_only=false` 的 route 在 `t=0` 全量竞速。
+- 配置 priority 时，所有自动 route 必须都有 priority；同 priority 同时启动，下一组按 `selection.hedge_delay` 绝对延迟启动。
+- 每个通过完整校验的 ReadySession 在原子序号处分配唯一 readiness 顺序，序号 1 的 attempt 立即胜出；planner 固定 route 顺序只用于启动计划和失败诊断，不得设置 arbitration window 或让稍晚 Ready 反超。
+- EndpointManager 返回的 list/attach/live/history/defaults 等异步结果必须携带 `EndpointSessionStamp`；error-only terminal 操作也必须由实际取得 lease 的 stamped manager API 返回同类回执，禁止 App 在调用前独立快照 generation。异步 payload 可以正常进入 runtime queue；完整组合 reducer 必须在 manager state mutex 内通过统一 generation guard 后才能提交，避免 pre-enqueue 丢弃 attach 成功 payload而无法精确 cleanup，也关闭 service 校验成功到 reducer 提交之间的 route-switch TOCTOU。
+- 新 generation 是 reducer-owned session fence：清除同 endpoint 旧 generation 的 `Armed/InFlight/Dirty`、resize backpressure 和 committed view channel/owner control，但保留 TerminalRef、layout、surface/history 内容以及可能正触发 lazy connect 的 current list/history/attach operation。`TerminalViewStore.Views` 只保存最后成功提交的 binding；每个 view 的 current `TerminalAttachOperation{ViewID, Seq, Candidate}` 同时持有唯一 candidate 与 completion identity，sequence watermark 单独保持单调，三者都不进入 workbench storage。workbench reload 或 view close 使 current operation 失效并取消 effect，显式 attach/reconnect 可原子替换 current，自动 input/resize recovery 不能覆盖已有用户 operation；同 view 的 Attach+Confirm 使用同一个 attach operation key 串行化候选创建和提交确认，cleanup/exact detach 使用独立 cleanup key，并按原始 Endpoint、Terminal、Channel、Session、Surface、View 精确定位。发送取消时先取消 reducer/effect operation，再用原 session 精确 detach/abort；关闭 session 时先建立 generation fence 拒绝旧回包，再释放 winner transport，late cleanup 只查询已存在 bundle，禁止 lazy dial。daemon Attach 只发布候选 channel，不按 `ViewID` 隐式替换旧 attachment，也不在 commit 前抢占 resize owner；匹配 current operation 且 generation 有效的 completion 才能原子提交 binding，随后显式 detach previous attachment。candidate 失败保留旧 committed binding；replaced/closed/stale operation 的迟到成功按返回的 Endpoint、Terminal、Channel、Session、Surface、View 精确 cleanup，不能 fallback 或复活 view。manager 对旧 expected generation 的 cleanup 只查询已有 bundle，禁止 lazy dial。TerminalPool 的 `OperationSeq`、`RequestSeq`、`RefreshSeq` 和每 endpoint `AppliedEndpointSeq` 分别约束 action、前台请求、后台刷新与 payload 新旧；history/copy request 记录 RequestID 与 generation，统一 session guard 拒绝的 payload 只能结束匹配 operation，不能污染已接纳 terminal surface、frozen history、TerminalRef 或 workbench 连接意图。
+- `--route <route-id>` 或 `EndpointManager.ReconnectEndpointRoute` 只拨指定 route，并在当前 TUI session 的后续重连中保持 sticky；清除 override 后恢复自动 planner。
+- 自动多 route 竞速要求 Endpoint 已持有完整 `DeviceID + DeviceFingerprint` pin。未绑定 identity 的单 route 仍可用于首次验证，但不能把多个未验证目标放进同一自动竞速。
+- route 只有在 transport、fresh `remote.access.identity.prove`、授权边界和 termx protocol Hello 全部完成后才产生 `ReadySession`。local Unix 与 SSH 每次生成 32-byte challenge，验证 daemon 对 DeviceID、fingerprint 与 challenge canonical transcript 的 Ed25519 签名，再比较 Endpoint pin；复制 public identity 不能胜出。
+- winner 产生后，竞速 owner 取消所有 loser context 并等待清理；成功 loser 的 protocol client/transport 会在返回前释放，SSH loser 会结束 OpenSSH 与远端 stdio proxy。
+
+TUI `EndpointManager` 是每个 Endpoint 唯一的 session owner。它为每轮连接分配递增 `SessionGeneration`，同一 Endpoint 只保留一个 in-flight race 和一个活动 winner；竞速与 winner transport 由 manager 生命周期持有，单次 List/Attach 等短请求只等待 singleflight 结果，不能用自己的超时误杀共享 session。显式 route switch 按 Endpoint 串行，先让旧 connect call 失去 current CAS 身份再取消，replacement plan 验证成功后才释放当前 winner。terminal/history/live/input/file service 在调用前取得 generation lease，回包后再次校验；live invalidation cancellation 还绑定 generation 与 observed revision。精确 attachment cleanup 必须携带创建 channel 的原始 stamp；manager 只从当前已存在 bundle 中原子取得同 generation terminal adapter，不允许 cleanup 触发连接。route 切换不改变 `EndpointID` 或 `TerminalRef`，旧 generation 的迟到回包和 lifecycle event 都被拒绝，app reducer 不会把这类回包投影成当前 session 的错误，且只展示最新 generation 的 `ActiveRouteID`。主动 lifecycle 订阅使用按 Endpoint 合并的可靠 mailbox：同 generation、同状态的 dial phase 可以被较新 phase 覆盖，但每个 Endpoint 最后的状态转换不会因 channel 满而静默丢失，`connected -> offline` 等相邻转换保持顺序。
+
+所有非零 channel 的 input、paste、resize 与 detach 都必须携带创建该 channel 的原始 `EndpointSessionStamp`。EndpointManager 只查询已存在且 generation 精确匹配的 bundle，禁止这些 channel-bound operation 触发 lazy dial；缺失或失配在调用 daemon adapter 前返回 `session_stale`。回执同时区分 adapter 是否已经被调用：`Attempted=false` 可以创建不携带副作用的 fresh recovery candidate，`Attempted=true` 只能无 payload 重建 attachment；两者都不能在 candidate commit 前清除 committed binding，也不能自动重放不确定是否已执行的输入。
+
+任何 channel error recovery 都从 committed binding 构造同 view 的 recovery candidate，但 candidate 完成前不清除 committed binding，也不能成为 resize owner。candidate 成功后 reducer 原子提交新 binding，再按 previous binding 精确 detach；candidate 失败继续保留旧 committed truth。若同 view 已存在更新的用户 operation，自动 recovery 不得覆盖它。`Attempted=true` 的普通输入/ACK 错误只允许无 payload reattach，原键盘或 paste bytes 永不自动重放。
+
+当前用户入口：
+
+```text
+# 按 registry policy 测试并输出实际 winner route
+termx endpoint test studio --json
+
+# 本次探测只使用 SSH
+termx endpoint test studio --route ssh
+
+# TUI attach 本次 session 只使用 SSH，断线重连继续使用 SSH
+termx terminal attach studio:build --route ssh
+
+# 不指定 --route 时，root TUI、terminal/file/workspace CLI 使用相同自动 planner
+termx
+termx terminal list --endpoint studio
+```
+
+SSH 继续由 OpenSSH 承担用户认证、agent/private key、ProxyJump 和 `known_hosts` 校验；TermX 固定启用 `BatchMode=yes`、`StrictHostKeyChecking=yes`，用 `--` 终止本地 option 解析，并把远端 `termx --socket <remote_socket> daemon stdio-proxy` 的每个参数做 POSIX shell quoting。它不打开 shell/PTY，也不在 registry 保存密码或私钥。TUI 的显式 `--socket` 作为本次 runtime 的 local route overlay 由 dialer 闭包持有，后续 generation 不会退回 registry/default socket。
+
+CONN003 只把 `local-unix` 与 `ssh-stdio` 接入外层多 route race。单条 `managed-webrtc` route 维持既有可用链路，但和其他 route 的共同竞速、取消/Relay 资源回收在 CONN005 完成；`direct-tls`、LAN discovery 和 share 分别属于 CONN004、CONN006。
+
 ## 背景
 
 当前 TUI v3 默认只连接一个本地 daemon。`TerminalID`、terminal pool、live attach、copy/history 和 workbench binding 都隐含在“唯一 daemon”下面成立。下一阶段希望一个 TUI/client 能同时管理多个 daemon endpoint，例如本机 daemon、SSH 到远端服务器上的 daemon，或未来通过 hub/P2P 找到的同账号设备。
