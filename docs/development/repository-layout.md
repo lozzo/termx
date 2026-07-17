@@ -21,7 +21,8 @@ client/
   binding/           后续 AAR、XCFramework、C ABI、WASM 的稳定外部边界
 
 core/                daemon terminal lifecycle、history、live、storage truth
-  api/                wire/UI-independent daemon application projection contract
+api_layer/           generated proto 驱动的 application dispatch、授权、取消与资源生命周期
+transformer/         core domain 与 generated proto 的无状态双向转换
 tui/                 纯 TUI 产品与平台适配
   state/             当前 reducer-owned UI model；后续独立切片再评估改名 model
   app/               当前 reducer/effect/workflow；后续独立切片再拆 update/runtime
@@ -38,8 +39,8 @@ tui/                 纯 TUI 产品与平台适配
     system/          clipboard 等系统能力
 
 cmd/termx/           Cobra、参数/target 解析、composition root、输出与退出码
-internal/protocol/   仓库内部 daemon/client wire 实现
-proto/               versioned wire schema 与生成代码
+internal/protocol/   framing、Hello、channel、correlation 与 proto payload transport
+proto/               所有插件/客户端/跨进程/跨语言 API 的唯一 schema truth 与生成代码
 remote/              managed WebRTC/DataChannel primitive 与公开 remote auth 接线
 vterm/               terminal semantic interpreter
 clients/             React/Capacitor/Android 等平台壳与 UI
@@ -56,15 +57,18 @@ cmd / platform binding / tui adapter
                   |
                   v
             client/runtime
-              |       |
-              v       v
- client/endpoint    client/port
-              |
-              v
- protocol / transport / remoteauth primitive
-              |
-              v
-             core daemon
+                  |
+                  v
+          generated proto API
+                  |
+                  v
+             transformer
+                  |
+                  v
+              api_layer
+                  |
+                  v
+             core domain
 ```
 
 硬规则：
@@ -80,7 +84,10 @@ cmd / platform binding / tui adapter
 - `tui/adapter/*` 实现 port，并通过 message/effect 回投；不得直接修改 reducer-owned state。
 - `cmd/termx` 不实现 Dial、Hello、authorization、credential resolution、route race、session cache 或 transport cleanup。
 - `core/`、`remote/`、`private/` 不反向 import TUI 或 CLI。
-- `core/api` 不 import core implementation、storage、protocol/wire、client runtime 或 TUI；core implementation、protocol adapter 和 client runtime 只能共同依赖这套 daemon-owned projection contract。
+- `proto/` 是所有跨边界 API 的唯一 schema truth；禁止在 `core/api`、client runtime、protocol 或 TUI port 复制业务 DTO。
+- `api_layer/` 公开边界只使用 proto 生成类型，禁止依赖 UI、CLI、具体 transport、插件和 private Cloud implementation。
+- `transformer/` 只做 core domain 与 proto 的确定性转换，不拥有状态、权限、session、route、fallback 或重试。
+- `internal/protocol/` 只传输 proto payload，不拥有 application request/result/event 字段语义。
 - 外部绑定只暴露 versioned protobuf command/event、opaque handle 和显式资源释放，不暴露 Go pointer 或内部 struct。
 
 ## 当前已落实边界

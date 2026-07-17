@@ -8,6 +8,21 @@ import (
 	"github.com/lozzow/termx/client/endpoint"
 )
 
+func TestWasAttemptedDefaultsToNoReplayForUnknownErrors(t *testing.T) {
+	if WasAttempted(nil) {
+		t.Fatal("nil error must not be attempted")
+	}
+	if !WasAttempted(errors.New("adapter failed")) {
+		t.Fatal("unknown error must conservatively prevent replay")
+	}
+	if WasAttempted(&Error{Code: ErrorStaleSession, Message: "stale", Attempted: false}) {
+		t.Fatal("generation guard failure must remain unattempted")
+	}
+	if !WasAttempted(&Error{Code: ErrorUnavailable, Message: "write failed", Attempted: true}) {
+		t.Fatal("adapter write failure must remain attempted")
+	}
+}
+
 func TestAttemptRequestBindsOneRouteAndGeneration(t *testing.T) {
 	target := endpoint.NewSSHEndpoint("studio", "Studio", "studio.example", "ssh:studio", "auto", endpoint.ConnectOnDemand)
 	request, err := NewAttemptRequest(target, "ssh", 7, ConnectIntentInteractive)

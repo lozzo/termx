@@ -11,6 +11,7 @@
 - `core/docs/architecture.md` 是 core-v2 技术设计基准。
 - `tui/docs/architecture.md` 是 tui-v3 技术设计基准。
 - `docs/development/repository-layout.md` 是目录 ownership、依赖方向和迁移边界的唯一架构基准。
+- `docs/development/proto-api-architecture.md` 是 Proto API、API Layer、Transformer、插件与客户端依赖关系的唯一架构基准。
 - `AGENTS.md` 只规定代理执行方式和目录职责，不替代 `workflow.md` 的范围判断。
 - 若 `workflow.md` 与旧说明、聊天记录、旧代码行为或局部假设冲突，默认以 `workflow.md` 为准。
 
@@ -67,8 +68,10 @@
 
 ## 目录职责
 
+- `api_layer/`：core application API 的执行边界，负责调用编排、授权、取消、错误分类和资源生命周期；所有跨边界 request/result/event 必须使用 `proto/` 生成类型，不得定义第二套业务 DTO。
+- `transformer/`：`core domain <-> proto API` 以及必要的平台 projection 转换；只做确定性转换和 validation，不拥有 lifecycle、session、history、route 或 UI state。
 - `client/endpoint/`：客户端 Endpoint/Route 持久领域、assembler、planner 与 portable contract；不负责网络 IO、credential、protocol session 或 UI。
-- `client/runtime/`：跨端客户端 route race、ReadySession、generation、session owner 和稳定 command/event 真值；不得依赖 TUI、CLI、平台 UI 或私有 Cloud 实现。
+- `client/runtime/`：跨端客户端 route race、ReadySession、generation、session owner 和 proto command/event 执行生命周期；不得自定义 application DTO，不得依赖 TUI、CLI、平台 UI 或私有 Cloud 实现。
 - `client/port/` 与 `client/adapter/`：host capability 接口与 local/SSH/managed/protocol adapter；adapter 不得创建第二份 route/session truth。
 - `core/`：新 core 主线目录，负责 terminal lifecycle、daemon-local terminal identity、screen-backed history 模型、terminal semantic transaction 消费、`HistoryWindow`、storage/backend 与相关 harness。
 - `docs/history/core/screen-app-infinite-history-final-plan.md`：旧无限历史定案，当前只在触及 history truth 时作为背景基准读取。
@@ -78,7 +81,8 @@
 - `tui/docs/architecture.md`：tui-v3 技术设计基准。
 - `termx-core/`：已删除旧 core 目录；不得作为 fallback 恢复。
 - `tuiv2/`：已删除旧 TUI 目录；不得作为 fallback 恢复。
-- `internal/protocol/` 与 `proto/`：受限联动目录，只在 endpoint-aware routing、history window/copy 或 semantic history contract 需要时最小化触及。
+- `proto/`：所有跨 core API Layer、插件、第三方客户端、官方客户端、进程和语言边界 API 的唯一 schema truth；生成代码不得手改。
+- `internal/protocol/`：连接 framing、握手、channel、request correlation 和 proto payload 传输实现；不得重新定义 proto 已表达的业务 request/result/event DTO。
 - `remote/`：公开 managed WebRTC client/daemon orchestration、DataChannel E2E auth、平台 primitive interface 与 fake harness；不承载 Hub/Relay server 或账号业务。
 - `clients/ui/` 与 `clients/mobile/`：公开共享 UI 和移动客户端；消费公开 endpoint/history/cloud contract，不拥有 daemon terminal truth 或私有云服务状态。
 - `private/cloud/`：闭源 Control Plane、Companion、Hub、Relay、Web Controller 与官方移动装配；可以依赖 public contract，public namespace 不得反向依赖。
@@ -88,6 +92,15 @@
 
 ## 硬语义规则
 
+- **Proto API 强约定**：所有对插件、第三方客户端、官方客户端、CLI/TUI client runtime、跨进程服务或跨语言 binding 暴露的 API，都必须先定义在 `proto/`；任何 Go interface、dispatcher、adapter 或 binding 只能消费生成类型，不得先写 Go struct 再补 proto。
+- 唯一允许的完整依赖链是 `core <-> api_layer <-> transformer <-> 插件/客户端`。Transport、CLI、TUI、Cloud、WebRTC、JNI、Swift、WASM 不得绕过 API Layer 或 Transformer 直接把 core domain struct 当成 API。
+- `core/` 可以拥有内部领域 struct、value object 和状态机，但这些类型不得成为插件/客户端契约，也不得为了复用而移动到所谓 shared API DTO 目录。
+- `api_layer/` 的公开方法参数、返回值、command、event、stream item 和稳定错误 detail 必须来自 proto 生成类型；允许的非 proto 参数仅限 `context.Context`、内部依赖接口和不越过调用边界的资源句柄实现。
+- `transformer/` 是 core domain 与 proto API 之间唯一允许的字段转换位置；transformer 必须无状态、可测试、失败显式，不得选择 route、fallback、权限、重试或修改 reducer/core-owned state。
+- `proto/` schema 是 API 字段、枚举、oneof、版本和兼容语义的唯一真值。修改 API 必须先改 proto、重新生成、补兼容/round-trip harness，再修改 API Layer、Transformer 和 consumer。
+- 禁止在 `core/api`、`client/runtime`、`internal/protocol`、`tui/port`、插件 SDK 或平台 binding 中复制 proto 业务字段形成平行 DTO；UI-only view model 和 core-only domain model 除外，但必须通过 transformer 显式转换。
+- `internal/protocol` 只能负责 wire transport，不拥有 API 语义；method string 到 proto command 的分发属于迁移债，最终必须由 versioned proto command/event envelope 取代。
+- 插件和第三方客户端只以发布的 proto schema、生成 SDK 和 API capability/version contract 为基础，不依赖仓库内部 Go package、core struct、TUI state 或私有 Cloud 类型。
 - 禁止症状补丁：遇到状态错乱、输入错路由、生命周期误判或恢复异常时，必须先定位权威状态边界和消息链路，再修改模型或契约；不得用 storage scrub、fallback、定时刷新、重复 attach、局部 if 分支等方式掩盖根因。
 - 禁止补丁式实现：不得为了让当前 case 通过而堆叠临时分支、局部兜底、重复同步、隐式状态修正或旧路径兼容；每次修复都必须先说清 domain owner、truth source、消息链路和失败条件，再按模型/契约补 harness 后实现。
 - 多 endpoint / 多 transport 主线必须保持 endpoint 边界清晰：跨 endpoint 状态使用 `EndpointID + TerminalID` 的 `TerminalRef`，不得把裸 `TerminalID` 当成全局唯一真值。
@@ -125,6 +138,8 @@
 
 ## 实现纪律
 
+- 新增或修改跨边界 API 时，顺序固定为：proto schema -> generated code -> API Layer interface/dispatcher -> transformer harness -> core adapter -> consumer；不得颠倒顺序。
+- 如果发现现有 API 只存在 Go struct/interface 而没有 proto 定义，必须先在 `workflow.md` 登记并迁移到 proto；不得继续扩大该 Go-only API。
 - 先写 domain model 和小 harness，再接真实 protocol、terminal 或 CLI 入口。
 - 所有新增或修改的导出 `type`、`interface`、`struct`、导出方法和导出函数都必须写清晰、详细的中文注释；注释要说明用途、领域归属、真值来源、消息链路、失败条件或调用边界中的至少相关部分，不能只复述名字。
 - 关键代码路径必须写必要中文注释，尤其是状态归属、事务边界、跨模块消息传递、历史 truth 边界、失败分支和禁止 fallback 的位置；不要用空泛注释替代模型说明。

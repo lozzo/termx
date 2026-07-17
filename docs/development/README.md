@@ -2,7 +2,7 @@
 
 本文是仓库日常维护入口。产品与远程平台约束见 `docs/remote-platform/`，领域细节见 `core/docs/`、`tui/docs/`，已完成计划和一次性审计见 `docs/history/`。
 
-目录 ownership 与依赖方向统一见 [`repository-layout.md`](repository-layout.md)；下表只提供入口索引，不另定义架构。
+目录 ownership 与依赖方向统一见 [`repository-layout.md`](repository-layout.md)，Proto API 强约定见 [`proto-api-architecture.md`](proto-api-architecture.md)；下表只提供入口索引，不另定义架构。
 
 公开 CLI 的长期命令树、target、输出、退出码和 tmux 能力映射见 [`cli-command-design.md`](cli-command-design.md)。
 
@@ -15,10 +15,12 @@
 | `client/runtime/` | 跨端 route race、ReadySession、generation 与 session owner |
 | `client/port/`、`client/adapter/` | host capability 接口和 local/SSH/managed/protocol adapter |
 | `core/` | terminal lifecycle、live surface、history 与 daemon storage truth |
+| `api_layer/`、`transformer/` | generated proto 驱动的 application API 与 core/proto 无状态转换 |
 | `tui/` | UI state、reducer/effect、terminal host、workbench/copy/history 投影、交互与渲染 |
 | `remote/` | 公开 WebRTC/DataChannel transport 与端到端 remote auth 接线 |
 | `shared/` | 尚未迁移的 transport、remote auth、Cloud Companion 和 infrastructure primitive；不得新增 domain owner |
-| `proto/`、`internal/` | 跨进程 schema、wire protocol 与仓库内部 contract |
+| `proto/` | 插件、客户端、跨进程和跨语言 API 的唯一 schema truth 与生成代码 |
+| `internal/protocol/` | framing、Hello、channel、correlation 与 proto payload transport |
 | `clients/ui/` | 共享 React UI 与平台中立客户端 runtime interface |
 | `clients/mobile/` | Capacitor/Android 壳、native bridge 与 Community App |
 | `private/cloud/` | 闭源 Companion、Control Plane、Hub、Relay、Route Planner、Web Controller 与 Official App source set |
