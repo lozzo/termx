@@ -1,20 +1,20 @@
 # 统一 Endpoint、多 Route 与 Transport 竞速重构方案
 
-状态：实施中；CONN001 领域模型、registry 与跨语言 contract 正在收口，后续切片顺序以 `workflow.md` 为准
+状态：目标架构基准；当前真实状态和切片顺序以 `workflow.md` 为准
 
 日期：2026-07-15
 
-自动执行入口：`unified-endpoint-route-migration-goal-prompt.md`。该 Prompt 只在当前更早的 `workflow.md` 活动切片和未提交改动收口后启动。
+目录 ownership 与依赖方向以 [`../development/repository-layout.md`](../development/repository-layout.md) 为准；本文不再提供独立自动执行 prompt。
 
 ## 1. 背景
 
 当前产品原则已经明确：用户管理的是 daemon endpoint，不是“SSH 机器”“Cloud 机器”或“直连机器”三套资源；local、SSH、直连 IP 和 managed WebRTC 只是到达同一个 daemon 的不同方式。
 
-当前实现尚未完整落实这个原则：
+当前实现仍处于重建期：
 
-- `shared/connection.Config` 把一个 endpoint 和一个 transport 绑定在同一个对象里。
-- TUI `EndpointManager` 按 endpoint 配置中的唯一 transport 创建唯一 bundle。
-- Cloud target device、daemon fingerprint、grant、SSH 参数和 local socket 被放在同一层 dial identity 中。
+- Endpoint/Route v2 contract 当前位于待迁移的 `shared/connection`，C3S2 将迁入 `client/endpoint`。
+- C3X 已删除 TUI lazy bundle/session owner 和 CLI 直接 route/dial owner；`client/runtime` 尚未实现。
+- CLI/TUI 当前保留明确未接线缺口，不得恢复旧 helper 或 TUI owner。
 - Official App 同时存在共享 TypeScript connection orchestrator、TypeScript session manager 和 Android Kotlin managed Cloud `ConnectionStore` 等多套连接状态机。
 - 当前 termx protocol Hello 不返回可验证 daemon identity，因此客户端无法安全确认 SSH、指定 IP 和 managed Cloud 是否到达同一个 daemon。
 
@@ -655,15 +655,11 @@ Authorization scope 是 session 属性，不是 endpoint 展示属性。竞速 w
 
 Go TUI、CLI 与 Android native 使用同一组机器可读 fixture 验证规划结果。
 
-### 10.2 TUI
+### 10.2 共享客户端运行时与 TUI
 
-TUI `EndpointManager` 应拆成：
+`client/endpoint` 拥有 registry、assembler 与 planner；`client/runtime` 拥有 route selection/session owner。TUI 只通过 `tui/port` 和 `tui/adapter/clientruntime` 消费 endpoint/runtime projection。
 
-- endpoint registry projection。
-- route selection/session owner。
-- endpoint-aware service router。
-
-service router 继续按 `EndpointID` 路由 terminal/history/input/file；它不应该知道 route priority、Cloud account 或 SSH 参数。
+TUI service router 继续按 `EndpointID` 路由 terminal/history/input/file，但它不拥有 route priority、Cloud account、SSH 参数、winner、generation 或 protocol session。
 
 TUI reducer 投影：
 
@@ -675,15 +671,12 @@ TUI reducer 投影：
 
 ### 10.3 App
 
-Official App native 层拥有：
+Official App 复用公开 Go client runtime：
 
-- `SavedEndpointRegistry`、daemon fingerprint 索引和 endpoint/route store。
-- `EndpointBootstrapBundle` 的本地解析、签名验证与 `EndpointAssembler` 合并事务。
-- `ShareSessionOffer` 的 TLS pin、receiver identity proof、share bundle 校验和安全凭据落盘。
-- credential reference resolution。
-- route dialer。
-- route race/session lifecycle。
-- Android foreground/background/network recovery。
+- `client/endpoint` 拥有 SavedEndpointRegistry、fingerprint 索引、bootstrap parser 和 `EndpointAssembler`。
+- `client/runtime` 拥有 route dial plan、race、winner、generation 和 protocol session lifecycle。
+- Android/iOS host adapter 拥有 Keystore/Keychain、credential body、LAN discovery、WebRTC/platform primitive、前后台与网络变化通知。
+- `ShareSessionOffer` 的 TLS pin、receiver identity proof 和 share bundle 校验进入共享 client application service；平台层只负责安全凭据原子落盘和用户确认 UI。
 
 共享 TypeScript UI 只负责：
 
@@ -801,12 +794,12 @@ Cloud Companion 不应拥有：
 
 ### CONN007：Official App
 
-- Android native 建立统一 endpoint route manager、bootstrap verifier、per-endpoint `ClientAccessIdentity`、secure credential store 和 `EndpointAssembler`。
+- Android 通过 AAR/C ABI 接入 `client/endpoint` 与 `client/runtime`；Kotlin 只提供 per-endpoint `ClientAccessIdentity` 的 Keystore custody、secure credential store 和 host capability adapter，不建立平行 endpoint/session manager。
 - 接入 direct TLS 与 SSH route connector；缺少 SSH credential 时保留 route 并标记 `credential_required`，不做 Cloud fallback。
 - 使用平台 LAN discovery primitive，为 pinned endpoint 提供短期 direct address candidate；网络变化只刷新 candidate。
 - 实现 `termx://endpoint/share` receiver、接收方 proof、导入 diff、route/policy 选择和 credential-required 状态。
 - App 未登录或无法访问 Cloud 时仍从本地 registry 展示并连接扫码/手工导入的 endpoint。
-- TUI/App planner contract 对齐。
+- TUI/App 直接消费同一 Go planner/runtime contract，不各自重写算法。
 - 共享 TypeScript UI 退出网络 owner 职责。
 
 ### CONN008：删除旧路径与真实验收

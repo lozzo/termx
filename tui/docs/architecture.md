@@ -5,6 +5,7 @@
 本文定义当前 `tui/` 的模块边界、状态 ownership、消息/副作用链路和渲染约束。它不是活动任务队列，也不保存 Endpoint route planner 的完整算法。
 
 - 当前切片、状态、修改范围和测试准入只看仓库根目录 `workflow.md`。
+- 仓库目录 ownership 与依赖方向以 [`docs/development/repository-layout.md`](../../docs/development/repository-layout.md) 为准。
 - 多 Endpoint/Route 的客户端运行时契约以 [`multi-endpoint-transport-plan.md`](multi-endpoint-transport-plan.md) 为准。
 - core terminal lifecycle、screen history truth 和 protocol 边界以 [`core/docs/architecture.md`](../../core/docs/architecture.md) 为准。
 - 本文只记录 TUI 自己拥有的稳定架构；历史迁移步骤和已退出目录不作为当前设计依据。
@@ -14,11 +15,12 @@
 - `tui` 不拥有 committed history truth。
 - copy mode、鼠标滚轮、page up/down、older prepend、latest replace、stale response guard 都围绕 core-v2 authoritative logical-line contract 工作；进入 copy mode 后优先使用冻结 snapshot，本地按 pane 宽度重排。
 - 普通实时终端显示可以继续消费 live surface snapshot/grid viewport。
-- TUI 内部状态和副作用分离：state reducer 不做 IO，service/effect 不直接绕过 message path 修改 UI state。
+- TUI 内部状态和副作用分离：state reducer 不做 IO，port/adapter/effect 不直接绕过 message path 修改 UI state。
 - renderer 只消费 render view-model，不读取 runtime、history source 或 protocol client。
 - TUI 用户配置以 `tui/docs/tui-config-management.md` 为基准；配置 loader 负责文件/env/flag，reducer 持有已验证快照，renderer 和 input router 只消费解析后的 theme/shortcuts，不直接读配置源。
-- `connections.yaml` 只保存 Endpoint/Route 期望配置。C3X 已删除旧 TUI lazy bundle/session owner 和 `ResolveCurrentRoute`；当前 CLI/TUI 正等待 `shared/clientruntime` 接线，不能把删除后的编译缺口或 CONN003 目标态当成已交付结构。
-- CONN003 的目标是让 `shared/clientruntime` 成为每个 Endpoint 唯一跨端 session owner，统一 planner、route race、`ReadySession`、`SessionGeneration`、winner/loser cleanup 和 lifecycle mailbox；TUI 只保留 adapter/projection。算法细节不在本文复制。
+- `connections.yaml` 只保存 Endpoint/Route 期望配置。C3X 已删除旧 TUI lazy bundle/session owner 和 `ResolveCurrentRoute`；当前 CLI/TUI 正等待 `client/runtime` 接线，不能把删除后的编译缺口或 CONN003 目标态当成已交付结构。
+- CONN003 的目标是让 `client/runtime` 成为每个 Endpoint 唯一跨端 session owner，统一 planner、route race、`ReadySession`、`SessionGeneration`、winner/loser cleanup 和 lifecycle mailbox；TUI 只通过 `tui/port` 与 `tui/adapter/clientruntime` 消费 projection。算法细节不在本文复制。
+- 当前 `tui/services` 是 C3S2 待拆迁目录，不是稳定边界；interface/DTO 进入 `tui/port`，protocol/system 实现进入 `tui/adapter/*`，fake 不得留在生产 port。
 - endpoint-scoped service result 的目标契约是携带原始 session stamp，并在 reducer 提交前统一校验 generation；旧 generation 结果不得污染当前 live/history/input/file 投影。
 - attach/input/paste/resize/detach 的目标契约是绑定创建 channel 的原始 stamp。stale cleanup 不得 lazy dial，adapter 已调用后的输入错误不得自动重放 payload。
 - input 和 mouse 只输出 semantic intent，不直接修改 workspace/history/copy mode。
@@ -115,13 +117,14 @@ state/
   modal             picker、prompt、terminal manager state
   session           session restore/save 所需 UI 状态
 
-services/
-  coreclient        protocol/core-v2 adapter
-  endpoint          当前 registry projection/bundle routing；CONN003 目标为 planner、session owner 与 generation guard
-  terminal          外部终端进程/core service：attach view、terminal input、resize、restart、ownership、surface/title event stream
-  history           latest/older request IO，返回 response message，不做 stale 接纳
-  session           load/save/restore
-  clipboard         yank、clipboard history
+port/
+  core              history/live/terminal/path/storage 等 application-facing interface 与 DTO
+  clientruntime     endpoint/session command/event projection interface
+
+adapter/
+  clientruntime     client/runtime command/event 到 TUI message/effect 的映射
+  protocol          core-v2 protocol 到 TUI port DTO 的映射
+  system            clipboard 等平台系统能力
 
 terminalhost/
   input             raw stdin、UV/xterm event -> v3 InputEvent

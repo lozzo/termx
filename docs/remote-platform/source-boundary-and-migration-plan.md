@@ -50,7 +50,7 @@ public namespace 不能依赖 `private/` 才能完成 `go test`、App build 或 
 
 ## 3. 目标 Monorepo 布局
 
-当前开发阶段只维护本 private monorepo。开源时复制 public namespace 到全新空 Git 仓库，不复制当前历史；目录边界不可调整。
+当前开发阶段只维护本 private monorepo。开源时复制 public namespace 到全新空 Git 仓库，不复制当前历史；public/private 安全依赖边界不可弱化，public namespace 内部目录按 `docs/development/repository-layout.md` 演进。
 
 ### 3.1 Public namespace：未来复制到 `termx`
 
@@ -59,11 +59,15 @@ public namespace 不能依赖 `private/` 才能完成 `go test`、App build 或 
 ```text
 core/              terminal lifecycle/history truth
 vterm/                terminal semantic interpreter
-tui/               TUI and EndpointManager
+client/endpoint/       Endpoint/Route registry, assembler and planner
+client/runtime/        cross-platform route/session owner
+client/port/           host capability interfaces
+client/adapter/        local/SSH/managed/protocol adapters
+tui/                   TUI state/update/view/input/host/port/adapter
 cmd/termx/                  daemon/CLI assembly
 clients/mobile/                  mobile client UI and platform adapters
 clients/ui/                  shared public App/browser UI and runtime interfaces
-shared/               endpoint/transport/remote auth/cloud companion contracts
+shared/               transitional transport/remote auth/cloud companion primitives only
 internal/protocol/          termx protocol implementation
 proto/                versioned public wire messages
 remote/            public WebRTC client/daemon orchestration only
@@ -122,7 +126,8 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 | 当前资产 | 现状问题 | 可保留资产 | 目标去向 |
 | --- | --- | --- | --- |
 | `core/` | 无远程领域所有权问题 | scoped transport、terminal/history truth | public namespace 保留 |
-| `tui/` | 已接公开 managed endpoint contract | EndpointID、TerminalRef、EndpointManager、局部失败状态 | public namespace 保留 |
+| `client/` | C3S2 建立明确客户端领域边界 | Endpoint/Route、planner、runtime、port、adapter | public namespace 保留；不得依赖 TUI/CLI/private |
+| `tui/` | 旧连接 owner 已删除，port/adapter 待拆分 | TerminalRef UI 投影、交互、render、局部失败状态 | public namespace 保留；不拥有 route/session truth |
 | `shared/remoteauth/` | grant 概念可用，交付链路需重做 | DeviceIdentity、fingerprint、scope、revoke | public namespace 演进为 E2E auth owner |
 | `shared/transport/datachannel/` | primitive 基本可用 | reliable ordered packet transport | public namespace 保留 |
 | `remote/` | 已完成公开 WebRTC/E2E runtime 收口 | Pion adapter、dial/answer harness、core scoped session 接线 | public namespace 保留；不得承载服务端业务 |
@@ -235,14 +240,14 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 
 范围：公开客户端。
 
-- TUI `hub-p2p` dialer 改为新的 managed WebRTC adapter。
+- `client/adapter/managed` 接入公开 managed WebRTC attempt，TUI 只消费 runtime projection。
 - App 删除独立 `HubConnector` 业务协议，复用同一 endpoint state machine 和 fixtures。
 - 两端统一 direct/Relay path、admission/entitlement/auth 错误展示。
 - 凭据分别使用 file credential store 与平台 Keychain/Keystore，但共享 `grant_ref` 语义。
 
 完成条件：同一 endpoint 配置和 grant 可以在 TUI/App 中得到一致授权结果；平台差异只停留在 WebRTC primitive 和安全存储。
 
-实现结果：`shared/cloudcompanion/testdata/managed_endpoint_contract.json` 固化两端共同的 phase、relay policy、observed path、cloud error 和 endpoint authorization case。TUI `hub-p2p` dialer 已从 `grant_ref` 文件 store 解析 capability，调用公开 `remote/client` 完成 managed signaling、WebRTC、DTLS 和端到端授权，再建立标准 protocol bundle；`relay_only` 约束真实 ICE policy，direct/single-relay path 回投 EndpointManager。Android 删除 `HubConnector`、`LocalConnector`、`RaceConnector` 及其 Bearer/session-token/旧 Hub HTTP 路径，Cloud adapter 只接触 resolve/signaling，公开 WebRTC primitive 和 authorizer 边界不交给私有模块；raw grant 由 Android Keystore AES-GCM store 按 `grant_ref` 保存。Community build 对 cloud/authorizer 明确 fail closed，官方移动 cloud module 与桌面 Companion 的安装和装配进入 RP006A。
+历史实现曾把 managed dialer 与 credential resolution 放在 TUI/CLI 装配层；C3X 已删除该 owner。后续由 `client/adapter/managed` 调用公开 `remote/client`，`client/runtime` 持有 winner/generation，TUI 只接收脱敏 phase、observed path、selection reason 和稳定错误。Android 继续由平台 Keystore 保存 credential body，不把 secret 交给共享 UI。
 
 ### RP006A：Companion 安装与官方构建
 

@@ -31,6 +31,7 @@ fixtures/
 internal/
 clients/ui/
 clients/mobile/
+client/
 cmd/
 core/
 proto/

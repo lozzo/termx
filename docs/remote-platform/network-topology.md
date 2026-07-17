@@ -21,9 +21,9 @@ flowchart LR
     subgraph Client["客户端（公开源码）"]
         TUI["TUI / CLI"]
         APP["手机 App"]
-        EM["EndpointManager"]
-        TUI --> EM
-        APP --> EM
+        CR["client/runtime"]
+        TUI --> CR
+        APP --> CR
     end
 
     subgraph FreePaths["免费路径：不依赖 TermX 云"]

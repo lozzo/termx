@@ -4,12 +4,13 @@
 
 - 仓库根目录 `workflow.md` 是当前分支唯一有效的活动驱动文件。
 - 本仓库内所有工作必须先读取 `workflow.md`，并以它作为范围、任务顺序、测试准入和提交规则的唯一基准。
-- 当前活动主线只由 `workflow.md` 最早未完成切片决定；单区域 Cloud 纵向闭环已完成，用户当前已把 KS012-KS017 TUI 快捷键完整收口排到 CLI 后续实现之前。
+- 当前活动主线只由 `workflow.md` 最早未完成切片决定；快捷键与单区域 Cloud 已是背景，当前优先完成客户端目录 ownership 收口和 CONN003 共享 runtime 重构。
 - 插件系统已经拆到独立分支，本分支不新增插件系统代码、协议或文档。
 - `docs/remote-platform/` 是当前远程平台产品、架构、安全和迁移基准。
 - `tui/docs/multi-endpoint-transport-plan.md` 是当前多 endpoint / 多 transport 技术规划。
 - `core/docs/architecture.md` 是 core-v2 技术设计基准。
 - `tui/docs/architecture.md` 是 tui-v3 技术设计基准。
+- `docs/development/repository-layout.md` 是目录 ownership、依赖方向和迁移边界的唯一架构基准。
 - `AGENTS.md` 只规定代理执行方式和目录职责，不替代 `workflow.md` 的范围判断。
 - 若 `workflow.md` 与旧说明、聊天记录、旧代码行为或局部假设冲突，默认以 `workflow.md` 为准。
 
@@ -66,11 +67,14 @@
 
 ## 目录职责
 
+- `client/endpoint/`：客户端 Endpoint/Route 持久领域、assembler、planner 与 portable contract；不负责网络 IO、credential、protocol session 或 UI。
+- `client/runtime/`：跨端客户端 route race、ReadySession、generation、session owner 和稳定 command/event 真值；不得依赖 TUI、CLI、平台 UI 或私有 Cloud 实现。
+- `client/port/` 与 `client/adapter/`：host capability 接口与 local/SSH/managed/protocol adapter；adapter 不得创建第二份 route/session truth。
 - `core/`：新 core 主线目录，负责 terminal lifecycle、daemon-local terminal identity、screen-backed history 模型、terminal semantic transaction 消费、`HistoryWindow`、storage/backend 与相关 harness。
 - `docs/history/core/screen-app-infinite-history-final-plan.md`：旧无限历史定案，当前只在触及 history truth 时作为背景基准读取。
 - `core/docs/architecture.md`：core-v2 技术设计基准。
 - `vterm/`：终端语义解释来源；负责把 PTY bytes 解释成 terminal 语义事件或 transaction，不负责持有无限历史 truth。
-- `tui/`：新 TUI 主线目录，负责自有 `AppRuntime`、`TerminalHost`、`EffectRunner`、`FrameSink`、endpoint manager、workbench/layout 投影、authoritative history source、copy mode、同步输入、滚动、selection、render 与相关 harness；不拥有 committed history truth 或 daemon terminal lifecycle。
+- `tui/`：TUI 产品目录，负责 UI state、reducer/effect、AppRuntime、TerminalHost、FrameSink、workbench/layout、copy/history 投影、输入和 render；只通过 `tui/port` 与 `tui/adapter` 消费 client/core projection，不拥有 endpoint route/session、committed history 或 daemon terminal lifecycle。
 - `tui/docs/architecture.md`：tui-v3 技术设计基准。
 - `termx-core/`：已删除旧 core 目录；不得作为 fallback 恢复。
 - `tuiv2/`：已删除旧 TUI 目录；不得作为 fallback 恢复。
@@ -78,14 +82,16 @@
 - `remote/`：公开 managed WebRTC client/daemon orchestration、DataChannel E2E auth、平台 primitive interface 与 fake harness；不承载 Hub/Relay server 或账号业务。
 - `clients/ui/` 与 `clients/mobile/`：公开共享 UI 和移动客户端；消费公开 endpoint/history/cloud contract，不拥有 daemon terminal truth 或私有云服务状态。
 - `private/cloud/`：闭源 Control Plane、Companion、Hub、Relay、Web Controller 与官方移动装配；可以依赖 public contract，public namespace 不得反向依赖。
-- `cmd/termx/`、`shared/`、`testkit/`、`scripts/`、`Makefile`、`go.work`、`go.work.sum`、必要顶层说明文档：受限联动范围，只在当前切片需要时最小化触及。
+- `cmd/termx/`：Cobra、参数/target 解析、composition root、输出和退出码；不得实现网络连接、credential resolution、Hello、授权、session cache 或 cleanup。
+- `shared/`：迁移期遗留 primitive/contract 容器，不得新增领域 owner；目标去向和当前允许迁移范围以 repository layout 文档和 `workflow.md` 为准。
+- `testkit/`、`scripts/`、`Makefile`、`go.work`、`go.work.sum`、必要顶层说明文档：受限联动范围，只在当前切片需要时最小化触及。
 
 ## 硬语义规则
 
 - 禁止症状补丁：遇到状态错乱、输入错路由、生命周期误判或恢复异常时，必须先定位权威状态边界和消息链路，再修改模型或契约；不得用 storage scrub、fallback、定时刷新、重复 attach、局部 if 分支等方式掩盖根因。
 - 禁止补丁式实现：不得为了让当前 case 通过而堆叠临时分支、局部兜底、重复同步、隐式状态修正或旧路径兼容；每次修复都必须先说清 domain owner、truth source、消息链路和失败条件，再按模型/契约补 harness 后实现。
 - 多 endpoint / 多 transport 主线必须保持 endpoint 边界清晰：跨 endpoint 状态使用 `EndpointID + TerminalID` 的 `TerminalRef`，不得把裸 `TerminalID` 当成全局唯一真值。
-- Endpoint 表达“当前客户端要连接的 daemon 目标”，Transport 表达“到达该 endpoint 的方式”；daemon 侧客户端连接管理与 TUI/client 侧 endpoint 管理不得混成一个模型。
+- Endpoint 表达“当前客户端要连接的 daemon 目标”，Transport 表达“到达该 endpoint 的方式”；daemon 侧客户端连接管理与 `client/runtime` 侧 endpoint session 管理不得混成一个模型。
 - TUI 不拥有 terminal lifecycle、committed history 或 history truth；history/live/input/resize 必须路由到 owning endpoint 的 daemon。
 - 远程产品目录只能按 `workflow.md` 明确切片重新设计；不得通过 fallback、桥接或旧入口把 archive 中的 remote/localweb/Web Controller 路径重新引回当前 TUI/core 主线。
 - Hub/Relay 可以验证云服务准入和 Relay 租约，但不能看到或判断 terminal capability；CapabilityGrant 只能在完成 channel binding 的 direct TLS 或 DTLS DataChannel 端到端认证握手内由 owning daemon 验证。

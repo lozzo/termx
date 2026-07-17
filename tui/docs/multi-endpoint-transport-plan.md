@@ -7,6 +7,7 @@
 - 当前任务顺序、允许修改范围、准入命令和完成状态只看仓库根目录 `workflow.md`。
 - Endpoint/Route/Transport/Path、授权、Cloud 和后续迁移的完整产品架构以 [`docs/remote-platform/unified-endpoint-route-refactor-plan.md`](../../docs/remote-platform/unified-endpoint-route-refactor-plan.md) 为准。
 - TUI reducer、service、render 和 history ownership 以 [`tui/docs/architecture.md`](architecture.md) 为准。
+- 仓库目录与依赖方向以 [`docs/development/repository-layout.md`](../../docs/development/repository-layout.md) 为准。
 - 本文不重复保存 CLI 命令树、Cloud 专项设计或历史实施记录，避免形成第二份活动计划。
 
 ## 当前真实状态
@@ -20,9 +21,9 @@
 
 `CONN003` 尚未完成：
 
-- C3X 已删除 `Endpoint.ResolveCurrentRoute`、TUI lazy bundle/session owner 和 CLI 直接 route/dial owner；CLI/TUI 当前保留明确待接 `shared/clientruntime` 的调用缺口，不再有可继续修补的旧运行时。
+- C3X 已删除 `Endpoint.ResolveCurrentRoute`、TUI lazy bundle/session owner 和 CLI 直接 route/dial owner；CLI/TUI 当前保留明确待接 `client/runtime` 的调用缺口，不再有可继续修补的旧运行时。
 - `RouteSelectionPlanner`、默认全量竞速、priority hedge、统一 `ReadySession`、winner/loser cleanup 尚未成为 CLI/TUI 共同运行时。
-- `shared/clientruntime` 尚未实现 per-endpoint session owner，TUI adapter 尚未接入。
+- `client/runtime` 尚未实现 per-endpoint session owner，`tui/adapter/clientruntime` 尚未接入。
 - `SessionGeneration` 和 channel-bound operation stamp 尚未覆盖 attach、input、paste、resize、detach 与迟到回包。
 
 因此，下文所有 planner、race、generation 和 stamp 语义都是 `CONN003` 的目标契约，不是当前已交付能力。
@@ -46,14 +47,14 @@ Endpoint  一个客户端要连接的 daemon 目标
 - 一个 daemon 对应一个 Endpoint；local Unix、SSH、direct TLS 和 managed WebRTC 是该 Endpoint 下的 Route。
 - `connections.yaml` 只保存期望配置，不保存 winner、generation、dial phase、observed path、运行时错误或 transport 句柄。
 - `TerminalID` 只在 owning daemon 内唯一；跨 Endpoint 数据必须使用 `TerminalRef{EndpointID, TerminalID}`。
-- client 侧 `shared/clientruntime` 管理“我如何连接 daemon”；daemon 侧 attachment/client manager 管理“哪些客户端连接我”。两者不是同一个领域模型。
+- client 侧 `client/runtime` 管理“我如何连接 daemon”；daemon 侧 attachment/client manager 管理“哪些客户端连接我”。两者不是同一个领域模型。
 - TUI 不拥有 terminal lifecycle、committed history、daemon 文件系统或授权真值。
 
 ## CONN003 目标运行时
 
 ### RouteSelectionPlanner
 
-planner 是 `shared/connection` 的纯领域逻辑：
+planner 是 `client/endpoint` 的纯领域逻辑：
 
 - 输入已规范化 Endpoint、连接意图、可选 route override 和 generation。
 - 过滤 disabled、manual-only、当前阶段不支持自动竞速或缺少必要 identity/credential 的 route。
@@ -77,7 +78,7 @@ transport 建立不等于 Endpoint 已连接。一次 attempt 只有依次完成
 
 ### ClientRuntime
 
-`shared/clientruntime` 的目标职责是每个 Endpoint 唯一的跨端 session owner：
+`client/runtime` 的目标职责是每个 Endpoint 唯一的跨端 session owner：
 
 - 分配递增 `SessionGeneration`。
 - 同一 Endpoint 只维护一个 in-flight race 和一个活动 winner。
@@ -153,7 +154,7 @@ CONN003 直接删除旧职责，不保留双路径：
 
 - C3X 已删除 `Endpoint.ResolveCurrentRoute`、TUI lazy bundle/session owner 和 CLI 直接 route/dial owner。
 - `cmd/termx` 不再直接选择 route 或保存 session state。
-- TUI adapter 不得重新承担 route 选择、dial、event publish、bundle cache 或 session owner。
+- `tui/adapter/clientruntime` 不得重新承担 route 选择、dial、event publish、bundle cache 或 session owner。
 - 不新增 local fallback、raw SSH shell fallback、legacy remote bridge 或仓库内旧代码快照。
 - 不为 managed WebRTC、direct TLS、LAN discovery 或 share 提前扩展通用抽象。
 

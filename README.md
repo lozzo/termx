@@ -2,6 +2,8 @@
 
 `termx` 是一个以 daemon 为核心的 terminal workspace 系统。
 
+> 开发状态：当前分支正在执行客户端目录与连接 runtime 的破坏性重构。旧 CLI/TUI 连接 owner 已删除，`client/runtime` 尚未接回前 `cmd/termx` 预期无法完整编译；精确状态见 [`workflow.md`](workflow.md)。
+
 核心理念很简单：**terminal 是长期存在的工作实体，TUI、GUI、mobile app、workspace、pane 和 floating window 只是观察和操作它的入口。**
 
 传统 terminal multiplexer 通常把工作内容绑定到 tab、pane 或 session 里。`termx` 反过来把 terminal 放进独立的 terminal pool，由 core daemon 管理 terminal lifecycle、history、live surface 和输入路由；当前 UI 只负责把这些 terminal 组织成某个工作视图。
@@ -294,10 +296,10 @@ core daemon
 internal protocol + transport
         |
         v
-EndpointManager
-  - local unix socket
-  - SSH daemon endpoint
-  - managed WebRTC endpoint
+client/runtime
+  - Endpoint/Route planner
+  - local / SSH / managed attempts
+  - ReadySession / generation
         |
         v
 tui / clients/mobile / other public clients
@@ -314,11 +316,15 @@ tui / clients/mobile / other public clients
 
 ## 仓库结构
 
-- `cmd/termx/`：`termx` 命令行入口，组装 core-v2 与 tui-v3。
+- 目录 ownership 和依赖方向以 [`docs/development/repository-layout.md`](docs/development/repository-layout.md) 为准；下面只列主要入口。
+- `cmd/termx/`：`termx` 命令行与 composition root，不实现连接 runtime。
+- `client/endpoint/`：Endpoint/Route registry、assembler、planner 与 portable contract。
+- `client/runtime/`：跨端 route race、ReadySession、generation 与 session owner。
+- `client/port/`、`client/adapter/`：平台能力接口和 local/SSH/managed/protocol adapter。
 - `core/`：core daemon 主线，负责 terminal lifecycle、history、live surface、storage 和 protocol 服务端能力。
-- `tui/`：当前 TUI 主线，负责 AppRuntime、TerminalHost、EndpointManager、state、render、copy/history 投影和交互。
+- `tui/`：当前 TUI 主线，负责 UI state、reducer/effect、AppRuntime、TerminalHost、render、copy/history 投影和交互。
 - `vterm/`：终端语义解释来源，把 PTY bytes 解释成 terminal 语义事件或 transaction。
-- `shared/`：共享 connection registry、transport、remote auth 和 Cloud Companion contract。
+- `shared/`：迁移期尚未归位的 transport、remote auth、Cloud Companion 与 infrastructure primitive；不得新增领域 owner。
 - `internal/protocol/`、`proto/`：daemon/client wire contract 与协议类型。
 - `remote/`：公开 WebRTC client/daemon orchestration、DataChannel 授权与 fake harness。
 - `clients/ui/`：App 与浏览器客户端共享的公开 UI、状态编排和平台中立 runtime interface。
@@ -327,7 +333,7 @@ tui / clients/mobile / other public clients
 - `private/archive/`：只读历史资产，不进入 workspace、构建或 runtime fallback。
 - `testkit/`：测试辅助能力。
 - `fixtures/`、`scripts/`、`Makefile`、`go.work`：测试、生成、发布审计和 workspace 支撑。
-- `docs/development/`、`docs/history/`：当前维护入口与已完成计划/审计记录。
+- `docs/development/`：当前维护与目录架构入口；`docs/history/`：只读已完成计划/审计记录。
 
 托管 Control Plane、Hub、Relay、计费和官方 Cloud Companion 是独立交付能力，不属于公开源码构建依赖。Community CLI、TUI、daemon、App 以及 local/SSH runtime 在没有这些服务时仍可独立构建和使用。
 

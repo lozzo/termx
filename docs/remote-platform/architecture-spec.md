@@ -43,7 +43,7 @@
                           |                     |
 +-------------------------+---------------------+------------------+
 |                         public clients                           |
-|  TUI / CLI / App -> EndpointManager -> WebRTC Transport Adapter |
+|  TUI / CLI / App -> client/runtime -> WebRTC Transport Adapter  |
 |         |                 |                                      |
 |         |                 +-> local / SSH adapters                |
 +---------|---------------------------------------------------------+
@@ -64,7 +64,7 @@ Hub 只传递 signaling metadata。Relay 只转发已经由 WebRTC DTLS 加密�
 | --- | --- | --- | --- |
 | Terminal lifecycle/history | core-v2 daemon | owning daemon storage/runtime | 云账号、Hub、Relay、App/TUI 本地投影 |
 | Endpoint registry | client | `connections.yaml` 与可选云 metadata projection | daemon client registry、Relay node |
-| Client endpoint runtime | TUI/App `EndpointManager` | reducer/store 当前连接状态 | terminal lifecycle truth |
+| Client endpoint runtime | `client/runtime` | per-endpoint race、winner、generation、ReadySession | terminal lifecycle truth、UI reducer state |
 | Device identity | daemon | daemon 本地长期密钥 | Hub 注册 token、设备 label |
 | Terminal capability | daemon | daemon 签发、验证和撤销记录 | Control Plane subscription、Hub session |
 | Account/session | Control Plane | 私有账号数据库 | terminal capability |

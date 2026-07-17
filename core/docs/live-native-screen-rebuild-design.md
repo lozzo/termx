@@ -310,9 +310,9 @@ on live.screen.snapshot(snapshot):
 - 新增 `terminal.live.invalidated` event payload。
 - lifecycle、resize-control、metadata 使用独立 payload。
 
-### 6.3 tui services
+### 6.3 TUI port 与 protocol adapter
 
-文件：`tui/services/protocol_terminal_adapter.go`、`tui/services/types.go`
+目标文件：`tui/adapter/protocol/`、`tui/port/`；C3S2 前旧实现暂位于 `tui/services/`。
 
 建议删除或替换：
 
@@ -327,7 +327,7 @@ on live.screen.snapshot(snapshot):
 
 - protocol cell -> TUI cell conversion。
 - modes/cursor conversion。
-- fake service harness，但类型要换成 `NativeScreenSnapshot` / `LiveScreenInvalidated`。
+- fake harness，但类型要换成 `NativeScreenSnapshot` / `LiveScreenInvalidated`，且不能留在生产 port package。
 
 ### 6.4 tui app/state/runtime
 
@@ -373,7 +373,8 @@ on live.screen.snapshot(snapshot):
 
 范围：
 
-- `tui/services/`
+- `tui/port/`
+- `tui/adapter/protocol/`
 - `tui/state/`
 - `tui/app/`
 

@@ -2,6 +2,8 @@
 
 本文是仓库日常维护入口。产品与远程平台约束见 `docs/remote-platform/`，领域细节见 `core/docs/`、`tui/docs/`，已完成计划和一次性审计见 `docs/history/`。
 
+目录 ownership 与依赖方向统一见 [`repository-layout.md`](repository-layout.md)；下表只提供入口索引，不另定义架构。
+
 公开 CLI 的长期命令树、target、输出、退出码和 tmux 能力映射见 [`cli-command-design.md`](cli-command-design.md)。
 
 ## 仓库地图
@@ -9,15 +11,18 @@
 | 路径 | 责任 |
 | --- | --- |
 | `cmd/termx/` | 公开 CLI、daemon 与 TUI 装配入口 |
+| `client/endpoint/` | Endpoint/Route registry、assembler、planner 与 portable contract |
+| `client/runtime/` | 跨端 route race、ReadySession、generation 与 session owner |
+| `client/port/`、`client/adapter/` | host capability 接口和 local/SSH/managed/protocol adapter |
 | `core/` | terminal lifecycle、live surface、history 与 daemon storage truth |
-| `tui/` | client runtime、EndpointManager、workbench 投影、交互与渲染 |
+| `tui/` | UI state、reducer/effect、terminal host、workbench/copy/history 投影、交互与渲染 |
 | `remote/` | 公开 WebRTC/DataChannel transport 与端到端 remote auth 接线 |
-| `shared/` | endpoint、transport、remote auth 与 Cloud Companion public contract |
+| `shared/` | 尚未迁移的 transport、remote auth、Cloud Companion 和 infrastructure primitive；不得新增 domain owner |
 | `proto/`、`internal/` | 跨进程 schema、wire protocol 与仓库内部 contract |
 | `clients/ui/` | 共享 React UI 与平台中立客户端 runtime interface |
 | `clients/mobile/` | Capacitor/Android 壳、native bridge 与 Community App |
 | `private/cloud/` | 闭源 Companion、Control Plane、Hub、Relay、Route Planner、Web Controller 与 Official App source set |
-| `private/archive/` | 只读代码考古资产，不进入 workspace、构建或 runtime fallback |
+| `private/archive/`、`docs/history/` | 只读代码/文档考古资产，不进入活动 workflow、构建或 runtime fallback |
 | `fixtures/`、`testkit/` | 跨语言 contract fixture 与测试辅助 |
 | `scripts/` | 生成、诊断、license、public snapshot 和仓库结构门禁 |
 

@@ -52,7 +52,7 @@
 ```mermaid
 flowchart LR
     subgraph ClientHost["客户端主机"]
-        TUI["TUI / CLI<br/>EndpointManager"]
+        TUI["TUI / CLI<br/>client/runtime adapter"]
         RC["public remote client<br/>Pion + E2E auth"]
         CC["private Cloud Companion<br/>account session / cloud adapter"]
         GS["public grant store<br/>grant_ref -> CapabilityGrant"]

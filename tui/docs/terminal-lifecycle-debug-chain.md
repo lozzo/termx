@@ -159,7 +159,7 @@ TUI memory 不持有 terminal lifecycle truth；需要决定 restart / running /
 关键文件：
 
 - `tui/app/live.go`
-- `tui/services/protocol_terminal_adapter.go`
+- `tui/adapter/protocol/`（C3S2 前旧文件位于 `tui/services/protocol_terminal_adapter.go`）
 - `tui/state/live.go`
 
 流程：

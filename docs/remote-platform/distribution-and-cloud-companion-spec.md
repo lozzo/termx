@@ -79,7 +79,7 @@ flowchart LR
     subgraph ClientDevice["客户端设备"]
         subgraph PublicClient["公开 termx client 进程"]
         UI["TUI / CLI"]
-        EM["EndpointManager"]
+        EM["client/runtime"]
         RTC["WebRTC + DTLS + E2E Auth"]
         UI --> EM --> RTC
         end
