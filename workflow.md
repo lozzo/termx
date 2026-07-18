@@ -114,7 +114,7 @@ core domain truth
 | PA005W2 | 已完成 | Web client 完整迁移 | Web terminal/history/live/file/storage/access/remote consumer 切到 Go/WASM binding 与 generated `apipb`；收缩 `browserRtcSession` 为平台 primitive adapter，删除 TypeScript API codec、session/resource/reconnect truth、多 DataChannel fallback；typecheck/build 与真实浏览器 protocol harness 通过 |
 | PA005R | 已完成 | 双端旧契约与路径原子删除 | Android/Web 都完成后删除 `runtimepb`、`wirepb` 中重复 application schema、generated artifacts、旧 method codec、旧 bridge 和 fallback；全仓扫描确认业务 API 只剩 `apipb + api.execute`，不得保留兼容 alias/wrapper/双路径 |
 | PA006T | 已完成 | Proto API 测试迁移 | 把 core/protocol/client-runtime/TUI/CLI 旧 DTO tests 改为 generated Proto harness；补 event subscription correlation/release、machine-events-only、file active/resume token namespace 和跨 session upload resume 测试；不得恢复旧 alias/codec |
-| PA007 | 待开始 | 跨端架构就绪双审 | import graph、schema coverage、重复 DTO、binding ownership、Android/Web lifecycle、channel binding、fallback、生成代码、文档和 tests 通过；架构 reviewer 与代码 reviewer 明确 PASS 后恢复 C3B |
+| PA007 | 进行中 | 跨端架构就绪双审 | import graph、schema coverage、重复 DTO、binding ownership、Android/Web lifecycle、channel binding、fallback、生成代码、文档和 tests 通过；架构 reviewer 与代码 reviewer 明确 PASS 后恢复 C3B |
 | C3B | 暂停 | RouteSelectionPlanner | PA007 PASS 后恢复 |
 | C3C | 暂停 | fresh daemon proof / ReadySession | PA007 PASS 后恢复 |
 | C3D | 暂停 | shared runtime session owner | PA007 PASS 后恢复 |
