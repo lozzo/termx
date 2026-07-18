@@ -4,9 +4,9 @@
 
 - 仓库根目录 `workflow.md` 是当前分支唯一有效的活动驱动文件。
 - 本仓库内所有工作必须先读取 `workflow.md`，并以它作为范围、任务顺序、测试准入和提交规则的唯一基准。
-- 当前活动主线只由 `workflow.md` 最早未完成切片决定；Go 端 Proto API 已完成，当前优先把连接、认证、协议会话和 Proto command/event 执行收口为跨端 Go Client Engine，再依次接入 Android JNI/C ABI 与 WebAssembly。
+- 当前活动主线只由 `workflow.md` 最早未完成切片决定；Go 端 Proto API 与基础 Client Engine 已完成，当前主线是把 Direct、SSH、Cloud 三种远程 Route 统一到 Go-owned WebRTC DataChannel session，并先完成 Android JNI 纵向闭环。浏览器 Web/WASM 当前冻结，不得抢占 Android 与 native Go 主线。
 - 插件系统已经拆到独立分支，本分支不新增插件系统代码、协议或文档。
-- `docs/remote-platform/` 是当前远程平台产品、架构、安全和迁移基准。
+- `docs/remote-platform/` 是远程平台产品、架构、安全和迁移背景文档；统一 WebRTC Route 的当前决策以 `workflow.md` 为准，并由对应活动切片同步更新该目录，旧文档不得覆盖活动工作流。
 - `tui/docs/multi-endpoint-transport-plan.md` 是当前多 endpoint / 多 transport 技术规划。
 - `core/docs/architecture.md` 是 core-v2 技术设计基准。
 - `tui/docs/architecture.md` 是 tui-v3 技术设计基准。
@@ -61,7 +61,7 @@
 - `cmd/termx/legacy_*.go` 不得重新出现；旧本地入口已经删除。
 - `cmd/termx/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
 - `remote/`、`clients/mobile/` 与 `clients/ui/` 是活动远程客户端资产；只能按 `workflow.md` 对应纵向切片演进，不得恢复旧 fallback。
-- `client/binding/` 是 Android、未来 iOS/Desktop 的 C ABI 与 WebAssembly 外部边界；只能暴露序列化 Proto、opaque handle、异步事件和显式释放，不得暴露 Go pointer、core domain struct 或平台 UI 类型。
+- `client/binding/` 是 Android、未来 iOS/Desktop 的 C ABI 与预留 WebAssembly 外部边界；只能暴露序列化 Proto、opaque handle、异步事件和显式释放，不得暴露 Go pointer、core domain struct 或平台 UI 类型。WASM 当前只维持不回归，不主动开发 Web 产品入口。
 - 旧 `termx-hub/`、`termx-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已迁入 `private/archive/termx-platform-legacy/`，只能作为只读历史资产；archive 不进入 workspace、构建脚本或 runtime。
 - Hub/Relay 服务端实现位于 `private/cloud/hub/` 与 `private/cloud/relay/`；当前只保持必要逻辑依赖边界，不为未来 public repo 继续增加物理隔离工作。
 - `vterm/` 是受限联动目录，只能在 terminal semantic transaction 接口、事件或 harness 需要时最小化触及。
@@ -76,7 +76,7 @@
 - `client/endpoint/`：客户端 Endpoint/Route 持久领域、assembler、planner 与 portable contract；不负责网络 IO、credential、protocol session 或 UI。
 - `client/runtime/`：跨端客户端 route race、ReadySession、generation、session owner 和 proto command/event 执行生命周期；不得自定义 application DTO，不得依赖 TUI、CLI、平台 UI 或私有 Cloud 实现。
 - `client/port/` 与 `client/adapter/`：host capability 接口与 local/SSH/managed/protocol adapter；adapter 不得创建第二份 route/session truth。
-- `client/binding/`：跨语言调用边界。C ABI 供 Android JNI 以及未来 iOS/Desktop wrapper 使用；WASM binding 供浏览器调用。binding 只做参数所有权、异步调度、handle/event/release 和 Proto bytes 转交，不拥有 endpoint、route、session、credential、API 或重连真值。
+- `client/binding/`：跨语言调用边界。C ABI 供 Android JNI 以及未来 iOS/Desktop wrapper 使用；WASM binding 是未来浏览器预留边界。binding 只做参数所有权、异步调度、handle/event/release 和 Proto bytes 转交，不拥有 endpoint、route、session、credential、API 或重连真值。
 - `core/`：新 core 主线目录，负责 terminal lifecycle、daemon-local terminal identity、screen-backed history 模型、terminal semantic transaction 消费、`HistoryWindow`、storage/backend 与相关 harness。
 - `docs/history/core/screen-app-infinite-history-final-plan.md`：旧无限历史定案，当前只在触及 history truth 时作为背景基准读取。
 - `core/docs/architecture.md`：core-v2 技术设计基准。
@@ -87,9 +87,9 @@
 - `tuiv2/`：已删除旧 TUI 目录；不得作为 fallback 恢复。
 - `proto/`：所有跨 core API Layer、插件、第三方客户端、官方客户端、进程和语言边界 API 的唯一 schema truth；生成代码不得手改。
 - `internal/protocol/`：连接 framing、握手、channel、request correlation 和 proto payload 传输实现；不得重新定义 proto 已表达的业务 request/result/event DTO。
-- `remote/`：公开 managed WebRTC client/daemon orchestration、DataChannel E2E auth、平台 primitive interface 与 fake harness；不承载 Hub/Relay server 或账号业务。
-- `clients/ui/` 与 `clients/mobile/`：公开共享 UI 和移动客户端；消费公开 endpoint/history/cloud contract，不拥有 daemon terminal truth、客户端连接 session truth 或私有云服务状态。Android/Kotlin 和 Web/TypeScript 只保留平台 lifecycle、UI 与平台 primitive adapter，不得复制 Go Client Engine 的认证、重连、Proto codec、resource/session 或 channel 状态机。
-- `private/cloud/`：闭源 Control Plane、Companion、Hub、Relay、Web Controller 与官方移动装配；可以依赖 public contract，public namespace 不得反向依赖。
+- `remote/`：公开 daemon WebRTC endpoint、ICE-TCP/ICE-UDP primitive、DataChannel E2E auth 与 session 接线；不承载 Cloud 账号、订阅、Hub/Relay server 或计费业务。
+- `clients/ui/` 与 `clients/mobile/`：共享 UI 和移动平台壳；消费 Go Client Engine 投影，不拥有 daemon terminal truth、Endpoint/Route/session/credential 真值。Android/Kotlin 只保留 lifecycle、Keystore、安全存储、权限和薄 JNI/Capacitor adapter；TypeScript 只保留 UI，不得复制认证、重连、Proto codec、resource/session、SSH 或 WebRTC 状态机。
+- `private/cloud/`：闭源 Control Plane、Companion、Hub、Relay、Web Controller 与 Cloud 移动装配；它是同一个 App 的可选 managed Route 能力，不是第二个面向用户的 App 版本。可以依赖 public contract，public namespace 不得反向依赖。
 - `cmd/termx/`：Cobra、参数/target 解析、composition root、输出和退出码；不得实现网络连接、credential resolution、Hello、授权、session cache 或 cleanup。
 - `shared/`：迁移期遗留 primitive/contract 容器，不得新增领域 owner；目标去向和当前允许迁移范围以 repository layout 文档和 `workflow.md` 为准。
 - `testkit/`、`scripts/`、`Makefile`、`go.work`、`go.work.sum`、必要顶层说明文档：受限联动范围，只在当前切片需要时最小化触及。
@@ -97,16 +97,18 @@
 ## 硬语义规则
 
 - **Proto API 强约定**：所有对插件、第三方客户端、官方客户端、CLI/TUI client runtime、跨进程服务或跨语言 binding 暴露的 API，都必须先定义在 `proto/`；任何 Go interface、dispatcher、adapter 或 binding 只能消费生成类型，不得先写 Go struct 再补 proto。
-- 唯一允许的完整运行链路是 `插件/客户端 -> transport/platform binding -> protocol framing -> generated proto -> api_layer -> api_mapping -> core`，返回方向相反。Unix Socket、TCP/TLS、SSH、WebRTC DataChannel、JNI、Swift 和 WASM binding 都属于 transport 或平台接入，不属于 API Mapping；任何入口不得绕过 API Layer 直接消费 core domain struct。
-- Android、Web、未来 iOS/Desktop 必须复用同一套 Go Client Engine：连接编排、remote auth、session generation、protocol Hello、`api.execute`、Proto command/result/event、resource lifecycle、取消和重连策略属于 Go truth。平台层只能提供 WebRTC/DataChannel、secure signer/store、Cloud signaling、时钟/随机数和 host lifecycle 等原语。
+- 唯一允许的完整运行链路是 `插件/客户端 -> Go Client Engine -> transport/platform binding -> protocol framing -> generated proto -> api_layer -> api_mapping -> core`，返回方向相反。Unix Socket、WebRTC DataChannel、JNI、Swift 和预留 WASM binding 都属于 transport 或平台接入，不属于 API Mapping；任何入口不得绕过 API Layer 直接消费 core domain struct。
+- 所有官方客户端和仓库提供的外部客户端接入必须复用同一套 Go Client Engine：Endpoint/Route 配置、route planning、embedded signaling、SSH tunnel、remote auth、session generation、protocol Hello、`api.execute`、Proto command/result/event、resource lifecycle、取消和重连策略属于 Go truth。Go/native 客户端直接调用，Android 通过 C ABI + JNI，未来 iOS/Desktop 通过 C ABI wrapper，未来浏览器通过 Go/WASM；平台层只能提供 secure signer/store、host lifecycle、系统权限和浏览器未来必需的 WebRTC/WebCrypto primitive。
+- 所有远程业务连接最终必须进入可靠有序 WebRTC DataChannel。Direct Route 使用 daemon embedded signaling + ICE-TCP；SSH Route 使用 Go SSH client/direct-tcpip tunnel + daemon loopback ICE-TCP；Cloud Route 使用 TermX Cloud signaling + ICE-UDP 或 TURN Relay。三种 Route 成功后必须返回同一 Go-owned ReadyPeerSession，不得维护三套 application session。
+- WebRTC Cloud 是唯一允许的 managed WebRTC 服务；不得建设用户自建 Hub/Relay/signaling provider。Direct embedded signaling 是 daemon 自带的近端连接能力，不是可替换的 Cloud provider。
+- 用户未登录、未订阅或 Cloud 不可用时，Android/iOS/Desktop 的 Direct 与 SSH 必须继续可用；Cloud 只决定 managed Route eligibility，不得隐藏、删除或阻断本地 Endpoint。
 - Android 默认不得继续维护原生 Kotlin/Java 网络连接管理器；Go 代码通过稳定 C ABI 编译为 Android native library，再由薄 JNI/Capacitor bridge 调用。除平台 API 必需适配外，不得在 Kotlin/Java 重写 Go 连接状态机。
-- 浏览器必须使用 Go/WASM Client Engine，但浏览器 `RTCPeerConnection`、`RTCDataChannel`、WebCrypto、IndexedDB 和页面 lifecycle 必须由薄 JavaScript/TypeScript adapter 提供。不得要求当前 native Pion WebRTC 实现原样编译到浏览器，也不得因此在 TypeScript 保留第二套认证、协议、API codec、session/resource 或 fallback 真值。
-- Android 的 loopback WebSocket/JNI 与浏览器 WASM 只是同一 binding contract 的两种平台实现；共享 UI 必须只消费同一 `ProtoClientSession`、`ProtoResourceStream`、generated `apipb`、cancel/close/release、错误和 generation 失效语义。UI 不得按 JNI/WASM、Pion/Browser WebRTC 或 App/Web 分叉业务 session 接口，也不得直接持有平台 peer/channel。
+- 浏览器 Web 当前不是默认产品入口，不得为 Web 页面、WASM consumer、浏览器 Direct/SSH 或 Web UI 可用性扩展当前切片。未来恢复 Web 时仍必须使用 Go/WASM Client Engine；纯浏览器只支持 TermX Cloud managed WebRTC，不支持 Direct ICE-TCP 或 SSH。
+- Android JNI 与未来 WASM 必须保持同一窄 binding contract：共享 UI 只消费 `ProtoClientSession`、`ProtoResourceStream`、generated `apipb`、cancel/close/release、错误和 generation 失效语义。UI 不得按 JNI/WASM 或 Direct/SSH/Cloud 分叉业务 session 接口，也不得直接持有 peer/channel。
 - 跨 JNI/WASM 边界的业务 payload 只能是 versioned protobuf bytes；平台可以从同一份 schema 生成语言类型，但不得手写镜像 DTO。外部资源只能以数值 opaque handle 标识，禁止跨边界传递 Go pointer、channel、interface 或内部 struct。
-- binding 调用必须是可取消的异步模型。Android process/activity 重建、网络切换和浏览器 tab suspend/resume 后必须由 Go runtime 建立新的 session generation；不得复用 stale DataChannel、resource handle 或旧授权状态。
+- binding 调用必须是可取消的异步模型。Android process/activity 重建和网络切换后必须由 Go runtime 建立新的 session generation；不得复用 stale DataChannel、SSH tunnel、resource handle 或旧授权状态。未来浏览器恢复时沿用同一规则。
 - Android 锁屏或进程进入后台时，即使 JNI/Go 线程仍可运行，WebView 也视为不可消费事件；native owner 必须关闭当前 Go engine、loopback bridge、session/resource 与事件泵，禁止后台维持第二套重连或积累无界事件。WebView 恢复时必须先创建进程内严格递增的新 generation，再通知 UI 重建 binding；冻结前的 socket、operation/session/resource handle 和迟到 callback 一律失效，不得复活或重放到新 generation。
-- DeviceIdentity/credential 私钥不得以裸字节长期暴露给 Kotlin/JavaScript。Go Client Engine 必须通过 signer/credential port 使用 Android Keystore 或 WebCrypto/IndexedDB 等平台实现，并明确不可导出 key、签名失败和用户/系统取消语义。
-- Web DTLS channel binding 必须有独立安全 harness，证明 remote SDP fingerprint、浏览器建立的 peer connection 与 Go remote-auth transcript 绑定一致；JavaScript 提供的未经验证字符串不能直接成为认证真值。
+- DeviceIdentity、ClientAccessIdentity 和 SSH 私钥不得以裸字节长期暴露给 Kotlin/JavaScript。Go Client Engine 必须通过 signer/credential port 使用 Android Keystore、未来 Keychain/keychain 或 WebCrypto 等平台实现，并明确不可导出 key、签名失败和用户/系统取消语义。
 - `core/` 可以拥有内部领域 struct、value object 和状态机，但这些类型不得成为插件/客户端契约，也不得为了复用而移动到所谓 shared API DTO 目录。
 - `api_layer/` 的公开方法参数、返回值、command、event、stream item 和稳定错误 detail 必须来自 proto 生成类型；允许的非 proto 参数仅限 `context.Context`、内部依赖接口和不越过调用边界的资源句柄实现。
 - `EndpointSessionStamp.generation` 属于 client runtime correlation truth，daemon/API Layer 不得建立第二份“当前 generation”状态。API Layer 必须使用 protocol connection 提供的原子 admission lease 校验连接存活、已协商 capability 和具体 command/resource authorization；请求中的 stamp 只用于 operation/resource fence 与结果 origin correlation。
@@ -121,10 +123,10 @@
 - Endpoint 表达“当前客户端要连接的 daemon 目标”，Transport 表达“到达该 endpoint 的方式”；daemon 侧客户端连接管理与 `client/runtime` 侧 endpoint session 管理不得混成一个模型。
 - TUI 不拥有 terminal lifecycle、committed history 或 history truth；history/live/input/resize 必须路由到 owning endpoint 的 daemon。
 - 远程产品目录只能按 `workflow.md` 明确切片重新设计；不得通过 fallback、桥接或旧入口把 archive 中的 remote/localweb/Web Controller 路径重新引回当前 TUI/core 主线。
-- Hub/Relay 可以验证云服务准入和 Relay 租约，但不能看到或判断 terminal capability；CapabilityGrant 只能在完成 channel binding 的 direct TLS 或 DTLS DataChannel 端到端认证握手内由 owning daemon 验证。
+- Hub/Relay 可以验证云服务准入、订阅和 Relay 租约，但不能看到或判断 terminal capability；CapabilityGrant 只能在完成 DTLS DataChannel channel binding 的端到端认证握手内由 owning daemon 验证。
 - 免费 local、SSH、多 endpoint 和 terminal protocol 不得依赖私有服务、账号订阅或 Relay；收费边界只建立在托管云服务能力上。
-- 桌面 closed cloud client 使用专用 out-of-process Cloud Companion 和 versioned local IPC，不得恢复通用插件系统或把私有模块链接进公开 `termx`；移动端使用同一 contract 的官方私有构建模块。
-- direct TLS、WebRTC、TLS/DTLS channel binding、CapabilityGrant 与 terminal protocol 必须留在公开进程；Cloud Companion 失败只影响 managed Cloud route。
+- Cloud Companion 使用专用 versioned IPC，不得恢复通用插件系统；移动端 Cloud 装配也只能提供账号、信令和 Relay primitive，不得拥有 Endpoint、PeerSession 或 terminal protocol。
+- Direct/SSH/Cloud 的 WebRTC、DTLS channel binding、CapabilityGrant 与 terminal protocol 必须留在 Go Client Engine/daemon；Cloud Companion 失败只影响 managed Cloud Route。
 - 当前开发阶段只维护这个 private monorepo 并正常提交；闭源代码统一进入 `private/`。正式开源时复制审核后的公开目录到全新空 Git 仓库，不复制当前私有历史，当前不建设 exporter 或双仓同步。
 - R419 后，history ingest truth 的基本单位是 core-v2 authoritative physical row/cell，不是 append-only logical line、visual row、wrapped row、snapshot scrollback、grid viewport、xterm buffer row 或 DOM/canvas row。
 - core-v2 `ScreenHistoryBuffer` 是 main/alt screen、physical rows、cells、cursor、scroll region、RowID、Version 和 seal-once 的 domain owner；logical line 只是 query/copy/history 阶段的 projection。
@@ -153,7 +155,7 @@
 ## 实现纪律
 
 - 新增或修改跨边界 API 时，顺序固定为：proto schema -> generated code -> compatibility harness -> API Layer interface/dispatcher -> API Mapping harness -> core adapter -> transport/consumer；不得颠倒顺序。
-- 跨端迁移顺序固定为：portable client port/runtime harness -> Android 与 `js/wasm` 编译门禁 -> stable binding ABI -> 真实平台 primitive spike -> consumer 迁移 -> 删除旧平台网络真值。不得先在 App/Web 壳内堆桥接，再反向抽取共享引擎。
+- 当前远程迁移顺序固定为：Proto Route/config contract -> portable PeerSession/pairing harness -> daemon embedded signaling + ICE-TCP -> Android JNI Direct 纵向闭环 -> Go-owned Endpoint registry -> SSH-backed ICE dialer -> endpoint share -> Cloud Route 收口 -> 删除旧路径 -> 弱网与真机准入。Web/WASM 只维持现有门禁，不进入当前顺序。
 - binding 导出面必须保持窄且稳定：创建/关闭 engine 或 session、提交 protobuf command、取消 operation、轮询或订阅 protobuf event、释放 opaque resource。不得按每个业务 command 导出一组 JNI/WASM 函数。
 - 如果发现现有 API 只存在 Go struct/interface 而没有 proto 定义，必须先在 `workflow.md` 登记并迁移到 proto；不得继续扩大该 Go-only API。
 - 先写 domain model 和小 harness，再接真实 protocol、terminal 或 CLI 入口。
