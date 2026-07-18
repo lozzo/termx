@@ -68,11 +68,12 @@ func TestTerminalViewStoreMarkTerminalReattachingClearsOnlyRestartedChannels(t *
 	}
 }
 
-func TestTerminalViewStoreMarkAttachPendingClaimsViewWithoutChannel(t *testing.T) {
+func TestTerminalViewStoreBeginAttachPreservesCommittedBinding(t *testing.T) {
 	store := TerminalViewStore{}.
 		BindPane(NewPaneTerminalView("pane-1", "term-old", 7, 80, 24, TerminalResizeRoleOwner, "surface-old", "view-1", true))
 
-	store = store.MarkAttachPending(TerminalViewBinding{
+	var candidate TerminalAttachCandidate
+	store, candidate = store.BeginAttach(TerminalViewBinding{
 		ViewID:      "view-1",
 		SurfaceID:   "surface-new",
 		TerminalID:  "term-new",
@@ -83,17 +84,17 @@ func TestTerminalViewStoreMarkAttachPendingClaimsViewWithoutChannel(t *testing.T
 	})
 
 	binding, ok := store.PaneBinding("pane-1")
-	if !ok || !binding.AttachPending || binding.Attached || binding.Channel != 0 {
-		t.Fatalf("pending attach should claim pane view before channel arrives, binding=%#v ok=%v", binding, ok)
+	if !ok || !binding.AttachPending || !binding.Attached || binding.Channel != 7 {
+		t.Fatalf("pending attach should preserve committed pane attachment, binding=%#v ok=%v", binding, ok)
 	}
-	if binding.TerminalID != "term-new" || binding.SurfaceID != "surface-new" || binding.DesiredCols != 100 || binding.DesiredRows != 30 {
-		t.Fatalf("pending attach should keep requested identity and size, got %#v", binding)
+	if binding.TerminalID != "term-old" || binding.AttachCandidate == nil || binding.AttachCandidate.TerminalID != "term-new" || binding.AttachCandidate.SurfaceID != "surface-new" || binding.AttachCandidate.DesiredCols != 100 || binding.AttachCandidate.DesiredRows != 30 {
+		t.Fatalf("pending attach should isolate candidate identity and size, got %#v", binding)
 	}
 
-	store = store.ClearAttachPending("view-1", "attach failed")
+	store, _ = store.FailAttach("view-1", candidate.OperationID, "attach failed")
 	binding, _ = store.PaneBinding("pane-1")
-	if binding.AttachPending || binding.LastError != "attach failed" {
-		t.Fatalf("clear pending should keep binding intent and record error, got %#v", binding)
+	if binding.AttachPending || binding.LastError != "" || !binding.Attached || binding.Channel != 7 {
+		t.Fatalf("candidate failure should preserve committed binding without poisoning it, got %#v", binding)
 	}
 }
 

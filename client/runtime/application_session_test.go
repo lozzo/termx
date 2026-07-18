@@ -58,6 +58,24 @@ func TestApplicationSessionOwnsContextAndOperationStamp(t *testing.T) {
 	}
 }
 
+func TestApplicationSessionPreservesCallerOperationIdentityAndOwnsSessionStamp(t *testing.T) {
+	executor := &recordingProtoExecutor{}
+	session, err := NewApplicationSession(EndpointSessionStamp{EndpointID: "studio", RouteID: "ssh", Generation: 7}, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_TerminalInput{TerminalInput: &apipb.TerminalInputCommand{
+		Operation: &apipb.OperationStamp{OperationId: "ui-input-19", Session: &apipb.EndpointSessionStamp{EndpointId: "forged", RouteId: "old", Generation: 1}},
+	}}}
+	if _, err := session.Execute(context.Background(), command); err != nil {
+		t.Fatal(err)
+	}
+	operation := executor.command.GetTerminalInput().GetOperation()
+	if operation.GetOperationId() != "ui-input-19" || operation.GetSession().GetEndpointId() != "studio" || operation.GetSession().GetRouteId() != "ssh" || operation.GetSession().GetGeneration() != 7 {
+		t.Fatalf("unexpected operation stamp %#v", operation)
+	}
+}
+
 func TestApplicationSessionTerminalExecutionOwnsContextAndOperationStamp(t *testing.T) {
 	executor := &recordingProtoExecutor{}
 	session, err := NewApplicationSession(EndpointSessionStamp{EndpointID: "studio", RouteID: "cloud", Generation: 9}, executor)

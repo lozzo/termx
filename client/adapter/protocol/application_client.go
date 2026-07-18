@@ -178,6 +178,20 @@ func (client *ApplicationClient) ExecuteApplication(ctx context.Context, command
 	return client.Client.ExecuteApplication(ctx, command)
 }
 
+// ValidateApplicationSession 在 protocol/resource 副作用前确认请求 stamp 与当前 facade 一致，并委托 runtime owner 校验 generation。
+func (client *ApplicationClient) ValidateApplicationSession(stamp clientruntime.EndpointSessionStamp) error {
+	if client == nil || client.ApplicationSession == nil {
+		return &clientruntime.Error{Code: clientruntime.ErrorUnavailable, Message: "protocol application client is unavailable"}
+	}
+	if client.ApplicationSession.Stamp() != stamp {
+		return &clientruntime.Error{Code: clientruntime.ErrorStaleSession, Message: "application operation session stamp does not match protocol client"}
+	}
+	if validator, ok := client.ready.(clientruntime.ApplicationSessionValidator); ok {
+		return validator.ValidateApplicationSession(stamp)
+	}
+	return nil
+}
+
 // ExecuteApplicationTerminal 为 resource-producing binding operation 保留有界 terminal response。
 // 该选择来自上层 owner；protocol adapter 只转交通用能力，不解释 command oneof。
 func (client *ApplicationClient) ExecuteApplicationTerminal(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {

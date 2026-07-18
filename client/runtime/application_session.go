@@ -16,6 +16,12 @@ type ProtoApplicationExecutor interface {
 	ExecuteApplication(context.Context, *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error)
 }
 
+// ApplicationSessionValidator 在任何具体 adapter 副作用前校验请求仍属于当前 EndpointSessionStamp。
+// owner/shared lease 实现必须在 generation 被替换或 consumer lease 关闭后返回 Attempted=false 的 stale error。
+type ApplicationSessionValidator interface {
+	ValidateApplicationSession(EndpointSessionStamp) error
+}
+
 // TerminalResponseApplicationExecutor 在调用 context 取消后仍等待一个有界 terminal response。
 // 只有会创建远端资源、且必须取得迟到结果完成销毁的 binding owner 可以选择该能力；transport 不得自行解释业务 command。
 type TerminalResponseApplicationExecutor interface {
@@ -83,6 +89,27 @@ func (session *ApplicationSession) Stamp() EndpointSessionStamp {
 	return session.stamp
 }
 
+// ProtoStamp 返回当前 application session 的 generated Proto stamp 快照。
+// 调用方可以把它保存为 attachment/view projection，但不得修改后再作为新的 generation truth。
+func (session *ApplicationSession) ProtoStamp() *apipb.EndpointSessionStamp {
+	if session == nil {
+		return nil
+	}
+	return session.protoStamp()
+}
+
+// ValidateCurrent 在进入 protocol/resource adapter 前验证 executor 仍绑定当前 generation。
+// 不支持动态 generation 的单连接 executor 只校验本地 stamp；runtime-owned executor 必须实现 ApplicationSessionValidator。
+func (session *ApplicationSession) ValidateCurrent() error {
+	if session == nil || session.executor == nil {
+		return runtimeError(ErrorUnavailable, "application session is unavailable", nil)
+	}
+	if validator, ok := session.executor.(ApplicationSessionValidator); ok {
+		return validator.ValidateApplicationSession(session.stamp)
+	}
+	return session.stamp.Validate()
+}
+
 // Execute 克隆 command、写入当前 session context 和每次调用唯一的 operation stamp，再交给 protocol binding。
 // transport 失败与 ResultEnvelope typed error 都转换为 runtime error；失败不会自动重放 command。
 func (session *ApplicationSession) Execute(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
@@ -120,7 +147,7 @@ func (session *ApplicationSession) execute(ctx context.Context, command *apipb.C
 		result, err = session.executor.ExecuteApplication(ctx, snapshot)
 	}
 	if err != nil {
-		return nil, &Error{Code: CodeOf(err), Message: err.Error(), Cause: err, Attempted: true}
+		return nil, &Error{Code: CodeOf(err), Message: err.Error(), Cause: err, Attempted: WasAttempted(err)}
 	}
 	if result == nil {
 		return nil, &Error{Code: ErrorUnavailable, Message: "application executor returned no result", Attempted: true}
@@ -676,7 +703,11 @@ func applicationSessionStampsEqual(left, right *apipb.EndpointSessionStamp) bool
 }
 
 func bindOperationStamp(command *apipb.CommandEnvelope, stamp *apipb.EndpointSessionStamp, requestID string) {
-	operation := &apipb.OperationStamp{Session: proto.Clone(stamp).(*apipb.EndpointSessionStamp), OperationId: requestID}
+	operationID := commandOperationID(command)
+	if operationID == "" {
+		operationID = requestID
+	}
+	operation := &apipb.OperationStamp{Session: proto.Clone(stamp).(*apipb.EndpointSessionStamp), OperationId: operationID}
 	switch value := command.GetCommand().(type) {
 	case *apipb.CommandEnvelope_TerminalAttach:
 		value.TerminalAttach.Operation = operation
@@ -694,6 +725,32 @@ func bindOperationStamp(command *apipb.CommandEnvelope, stamp *apipb.EndpointSes
 		value.FileUploadOpen.Operation = operation
 	case *apipb.CommandEnvelope_FileTransferCancel:
 		value.FileTransferCancel.Operation = operation
+	}
+}
+
+func commandOperationID(command *apipb.CommandEnvelope) string {
+	if command == nil {
+		return ""
+	}
+	switch value := command.GetCommand().(type) {
+	case *apipb.CommandEnvelope_TerminalAttach:
+		return value.TerminalAttach.GetOperation().GetOperationId()
+	case *apipb.CommandEnvelope_TerminalDetach:
+		return value.TerminalDetach.GetOperation().GetOperationId()
+	case *apipb.CommandEnvelope_TerminalInput:
+		return value.TerminalInput.GetOperation().GetOperationId()
+	case *apipb.CommandEnvelope_TerminalResize:
+		return value.TerminalResize.GetOperation().GetOperationId()
+	case *apipb.CommandEnvelope_TerminalResizeLock:
+		return value.TerminalResizeLock.GetOperation().GetOperationId()
+	case *apipb.CommandEnvelope_FileDownloadOpen:
+		return value.FileDownloadOpen.GetOperation().GetOperationId()
+	case *apipb.CommandEnvelope_FileUploadOpen:
+		return value.FileUploadOpen.GetOperation().GetOperationId()
+	case *apipb.CommandEnvelope_FileTransferCancel:
+		return value.FileTransferCancel.GetOperation().GetOperationId()
+	default:
+		return ""
 	}
 }
 

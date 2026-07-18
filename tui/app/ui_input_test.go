@@ -1886,7 +1886,7 @@ func TestInteractiveRuntimeTerminalPickerUsesTerminalPoolService(t *testing.T) {
 
 func TestTerminalPoolReducerHandlesListErrorCreateAndStaleResult(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{ListErr: errors.New("list failed")}
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 	root, effects := reducer(state.Root{Shell: state.DefaultShell()}, TerminalPoolListRequestMsg{})
 	if root.TerminalPool.Status != state.TerminalPoolLoading || len(effects) != 1 {
 		t.Fatalf("expected loading pool and list effect, got root=%#v effects=%#v", root, effects)
@@ -1903,7 +1903,7 @@ func TestTerminalPoolReducerHandlesListErrorCreateAndStaleResult(t *testing.T) {
 	}
 
 	terminal = &testkit.FakeTerminalService{CreateResult: port.TerminalCreateResult{TerminalID: "term-created", State: "running"}}
-	reducer = NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer = newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 	root.Endpoints = (state.EndpointStore{}).
 		Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
 		ApplyDefaults(state.DefaultEndpointID, []string{"/bin/sh"}, "/Users/me", "")
@@ -1938,7 +1938,7 @@ func TestTerminalPoolReducerHandlesListErrorCreateAndStaleResult(t *testing.T) {
 
 func TestTerminalSizeLockToggleWritesTerminalTagsAndProjectsViews(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{}
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{
 		Shell:        state.DefaultShell(),
 		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-1", Title: "main", Tags: map[string]string{"role": "shell"}}}},
@@ -1989,7 +1989,7 @@ func TestTerminalSizeLockToggleLoadsTerminalPoolTagsBeforeWriting(t *testing.T) 
 	terminal := &testkit.FakeTerminalService{
 		ListResult: port.TerminalListResult{Items: []port.TerminalPoolItem{{TerminalID: "term-1", Title: "main", Tags: map[string]string{"role": "shell"}}}},
 	}
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{Shell: state.DefaultShell()}
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
 
@@ -2013,7 +2013,7 @@ func TestTerminalSizeLockToggleLoadsTerminalPoolTagsBeforeWriting(t *testing.T) 
 
 func TestTerminalSizeLockToggleRequiresOwnerIdentity(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{}
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{
 		Shell:        state.DefaultShell(),
 		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-1", Title: "main", Tags: map[string]string{"role": "shell"}}}},
@@ -2033,7 +2033,7 @@ func TestTerminalPoolReducerHandlesRestartAndReconnectResults(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{
 		AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 3, Cols: 80, Rows: 24},
 	}
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{Shell: state.DefaultShell()}
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")
 	root.Session = root.Session.AttachWithResizeOwner("term-1", 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID))
@@ -2132,7 +2132,7 @@ func TestTerminalPoolRestartResultPreventsStaleExitedPoolFromPoisoningReattach(t
 	if err := runtime.Post(TerminalPoolRestartResultMsg{TerminalID: "term-1"}); err != nil {
 		t.Fatalf("post restart result: %v", err)
 	}
-	if err := runtime.Post(TerminalPoolAttachResultMsg{
+	if err := postPreparedTerminalPoolAttachResult(runtime, TerminalPoolAttachResultMsg{
 		TerminalID:   "term-1",
 		TargetPaneID: state.DefaultPaneID,
 		ResizePolicy: state.TerminalResizeRoleOwner,
@@ -2178,7 +2178,7 @@ func TestRestartIfExitedSkipsRunningCoreTerminal(t *testing.T) {
 			Rows:       24,
 		}}},
 	}
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{Shell: state.DefaultShell()}
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
 	root.Session = root.Session.AttachWithResizeOwner("term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID))
@@ -2251,7 +2251,7 @@ func TestTerminalPoolRunningListDoesNotCacheLifecycleBeforeSurface(t *testing.T)
 }
 
 func TestTerminalPoolRestartReattachesEachViewWithoutReusingExitedChannels(t *testing.T) {
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	root := state.Root{Shell: state.DefaultShell()}
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")
 	var result state.FloatingCommandResult
@@ -4176,7 +4176,7 @@ func TestOverlayContentActionsUseSelectedItemsAndReducers(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{
 		AttachResult: port.TerminalAttachResult{TerminalID: "term-logs", Channel: 12, Cols: 100, Rows: 30},
 	}
-	reducer := ComposeReducers(NewShellReducer(), NewTerminalPoolReducer(LiveDeps{Terminal: terminal}))
+	reducer := ComposeReducers(NewShellReducer(), newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal}))
 	root := state.Root{Shell: state.DefaultShell().OpenTerminalPool(), Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 30}}
 	root.TerminalPool, _ = root.TerminalPool.ApplyList(0, []state.TerminalPoolItem{{TerminalID: "term-logs", Title: "logs", State: "running", Cols: 100, Rows: 30}}, "")
 

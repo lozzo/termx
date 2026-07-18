@@ -10,7 +10,7 @@ import (
 )
 
 func TestDetachedViewResizeResultDoesNotOverrideCurrentSessionSize(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{})
+	reducer := newLiveReducerPrepared(LiveDeps{})
 	root := state.Root{
 		Session: state.TerminalSessionStore{
 			TerminalID: "term-1",
@@ -75,7 +75,7 @@ func TestDetachedViewResizeResultDoesNotOverrideCurrentSessionSize(t *testing.T)
 
 func TestDetachedViewResizeRequestDoesNotReuseCurrentSessionChannel(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{}
-	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{
 		Session: state.TerminalSessionStore{
 			TerminalID: "term-1",
@@ -121,7 +121,7 @@ func TestDetachedViewResizeRequestDoesNotReuseCurrentSessionChannel(t *testing.T
 }
 
 func TestViewScopedResizeErrorSurfacesInSessionAndBinding(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{})
+	reducer := newLiveReducerPrepared(LiveDeps{})
 	root := state.Root{
 		Session: state.TerminalSessionStore{
 			TerminalID: "term-1",
@@ -169,7 +169,7 @@ func TestViewScopedResizeErrorSurfacesInSessionAndBinding(t *testing.T) {
 }
 
 func TestStaleViewScopedResizeErrorStillSurfacesInSession(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{})
+	reducer := newLiveReducerPrepared(LiveDeps{})
 	viewID := state.TerminalPaneViewID(state.DefaultPaneID)
 	root := state.Root{
 		Session: state.TerminalSessionStore{

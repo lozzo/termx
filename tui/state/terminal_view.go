@@ -1,5 +1,12 @@
 package state
 
+import (
+	"strconv"
+
+	"github.com/lozzow/termx/proto/apipb"
+	"google.golang.org/protobuf/proto"
+)
+
 const (
 	TerminalResizeRoleOwner    = "owner"
 	TerminalResizeRoleFollower = "follower"
@@ -21,35 +28,62 @@ type TerminalViewStore struct {
 	Views         map[string]TerminalViewBinding
 	PaneViews     map[string]string
 	FloatingViews map[string]string
+	NextOperation uint64 `json:"-"`
 }
 
 // TerminalViewBinding 是 pane/floating 到 owning daemon terminal 的连接意图和运行时 attach 投影。
 // EndpointID + TerminalID 是跨 endpoint 真值；Channel、SurfaceID、OwnerViewID 等字段只属于当前 TUI 运行时和 daemon attachment 回包，不是 workbench storage 的长期 truth。
 type TerminalViewBinding struct {
-	ViewID           string             `json:"viewId"`
-	SurfaceID        string             `json:"surfaceId,omitempty"`
-	EndpointID       EndpointID         `json:"endpointId,omitempty"`
-	TerminalID       string             `json:"terminalId"`
-	Channel          uint16             `json:"channel,omitempty"`
-	Layout           TerminalViewLayout `json:"layout,omitempty"`
-	ResizeRole       string             `json:"resizeRole,omitempty"`
-	DesiredCols      int                `json:"desiredCols,omitempty"`
-	DesiredRows      int                `json:"desiredRows,omitempty"`
-	RequestSeq       uint64             `json:"requestSeq,omitempty"`
-	LastError        string             `json:"lastError,omitempty"`
-	PaneID           string             `json:"paneId,omitempty"`
-	FloatingID       string             `json:"floatingId,omitempty"`
-	Attached         bool               `json:"attached"`
-	CanResize        bool               `json:"canResize,omitempty"`
-	SizeLocked       bool               `json:"sizeLocked,omitempty"`
-	ControlReason    string             `json:"controlReason,omitempty"`
-	OwnerSurfaceID   string             `json:"ownerSurfaceId,omitempty"`
-	OwnerViewID      string             `json:"ownerViewId,omitempty"`
-	ResizeEpoch      uint64             `json:"resizeEpoch,omitempty"`
-	ResizePending    bool               `json:"resizePending,omitempty"`
-	AttachPending    bool               `json:"attachPending,omitempty"`
-	Unresolved       bool               `json:"unresolved,omitempty"`
-	UnresolvedReason string             `json:"unresolvedReason,omitempty"`
+	ViewID           string                      `json:"viewId"`
+	SurfaceID        string                      `json:"surfaceId,omitempty"`
+	EndpointID       EndpointID                  `json:"endpointId,omitempty"`
+	TerminalID       string                      `json:"terminalId"`
+	Channel          uint16                      `json:"channel,omitempty"`
+	Layout           TerminalViewLayout          `json:"layout,omitempty"`
+	ResizeRole       string                      `json:"resizeRole,omitempty"`
+	DesiredCols      int                         `json:"desiredCols,omitempty"`
+	DesiredRows      int                         `json:"desiredRows,omitempty"`
+	RequestSeq       uint64                      `json:"requestSeq,omitempty"`
+	LastError        string                      `json:"lastError,omitempty"`
+	PaneID           string                      `json:"paneId,omitempty"`
+	FloatingID       string                      `json:"floatingId,omitempty"`
+	Attached         bool                        `json:"attached"`
+	CanResize        bool                        `json:"canResize,omitempty"`
+	SizeLocked       bool                        `json:"sizeLocked,omitempty"`
+	ControlReason    string                      `json:"controlReason,omitempty"`
+	OwnerSurfaceID   string                      `json:"ownerSurfaceId,omitempty"`
+	OwnerViewID      string                      `json:"ownerViewId,omitempty"`
+	ResizeEpoch      uint64                      `json:"resizeEpoch,omitempty"`
+	ResizePending    bool                        `json:"resizePending,omitempty"`
+	AttachPending    bool                        `json:"attachPending,omitempty"`
+	Unresolved       bool                        `json:"unresolved,omitempty"`
+	UnresolvedReason string                      `json:"unresolvedReason,omitempty"`
+	Session          *apipb.EndpointSessionStamp `json:"-"`
+	OperationID      string                      `json:"-"`
+	AttachCandidate  *TerminalAttachCandidate    `json:"-"`
+}
+
+// TerminalAttachCandidate 是 reducer-owned 的未提交 attach operation。
+// candidate 与 committed binding 分离；只有 operation ID 精确匹配的结果才能 commit，迟到成功必须按其返回 stamp/resource cleanup。
+type TerminalAttachCandidate struct {
+	OperationID string
+	EndpointID  EndpointID
+	TerminalID  string
+	SurfaceID   string
+	ViewID      string
+	ResizeRole  string
+	DesiredCols int
+	DesiredRows int
+	PaneID      string
+	FloatingID  string
+	HadBinding  bool
+}
+
+// NextTerminalOperation 分配 TUI 进程内唯一 operation ID，用于 input/paste/resize/detach 与 attach candidate correlation。
+// 该序号只属于 reducer runtime，不进入 workbench storage，也不代替 Proto EndpointSessionStamp。
+func (store TerminalViewStore) NextTerminalOperation(kind, viewID string) (TerminalViewStore, string) {
+	store.NextOperation++
+	return store, kind + ":" + viewID + ":" + strconv.FormatUint(store.NextOperation, 10)
 }
 
 // TerminalViewLayout 是 pane/floating 的 view-local 内容布局状态。
@@ -480,63 +514,130 @@ func (store TerminalViewStore) Bindings() []TerminalViewBinding {
 	return bindings
 }
 
-func (store TerminalViewStore) MarkAttachPending(binding TerminalViewBinding) TerminalViewStore {
+// BeginAttach 创建独立 candidate 并返回唯一 operation ID；已有 committed channel 不会被覆盖。
+func (store TerminalViewStore) BeginAttach(binding TerminalViewBinding) (TerminalViewStore, TerminalAttachCandidate) {
 	binding = binding.withDefaultEndpoint()
 	if binding.TerminalID == "" || binding.ViewID == "" {
-		return store
+		return store, TerminalAttachCandidate{}
+	}
+	var operationID string
+	store, operationID = store.NextTerminalOperation("attach", binding.ViewID)
+	candidate := TerminalAttachCandidate{
+		OperationID: operationID, EndpointID: binding.EndpointID,
+		TerminalID: binding.TerminalID, SurfaceID: binding.SurfaceID, ViewID: binding.ViewID, ResizeRole: binding.ResizeRole,
+		DesiredCols: binding.DesiredCols, DesiredRows: binding.DesiredRows, PaneID: binding.PaneID, FloatingID: binding.FloatingID,
 	}
 	existing, hasExisting := store.Views[binding.ViewID]
 	if hasExisting {
-		binding.Layout = existing.Layout
-		if binding.PaneID == "" {
-			binding.PaneID = existing.PaneID
+		candidate.HadBinding = true
+		if candidate.PaneID == "" {
+			candidate.PaneID = existing.PaneID
 		}
-		if binding.FloatingID == "" {
-			binding.FloatingID = existing.FloatingID
+		if candidate.FloatingID == "" {
+			candidate.FloatingID = existing.FloatingID
 		}
-		if binding.DesiredCols <= 0 {
-			binding.DesiredCols = existing.DesiredCols
+		if candidate.DesiredCols <= 0 {
+			candidate.DesiredCols = existing.DesiredCols
 		}
-		if binding.DesiredRows <= 0 {
-			binding.DesiredRows = existing.DesiredRows
+		if candidate.DesiredRows <= 0 {
+			candidate.DesiredRows = existing.DesiredRows
 		}
-		if binding.ResizeRole == "" {
-			binding.ResizeRole = existing.ResizeRole
+		if candidate.ResizeRole == "" {
+			candidate.ResizeRole = existing.ResizeRole
 		}
-		if binding.SurfaceID == "" {
-			binding.SurfaceID = existing.SurfaceID
+		if candidate.SurfaceID == "" {
+			candidate.SurfaceID = existing.SurfaceID
 		}
-		binding.SizeLocked = existing.SizeLocked
+		existing.AttachPending = true
+		existing.AttachCandidate = &candidate
+		store.Views = cloneTerminalViewBindings(store.Views)
+		store.Views[binding.ViewID] = existing
+		return store, candidate
 	}
 	binding.Channel = 0
 	binding.Attached = false
 	binding.AttachPending = true
+	binding.AttachCandidate = &candidate
 	binding.CanResize = false
 	binding.LastError = ""
 	if binding.PaneID != "" {
-		return store.BindPane(binding)
+		return store.BindPane(binding), candidate
 	}
 	if binding.FloatingID != "" {
-		return store.BindFloating(binding)
+		return store.BindFloating(binding), candidate
 	}
 	store.Views = cloneTerminalViewBindings(store.Views)
 	store.Views[binding.ViewID] = binding
-	return store
+	return store, candidate
 }
 
-func (store TerminalViewStore) ClearAttachPending(viewID string, err string) TerminalViewStore {
-	if viewID == "" {
-		return store
-	}
+// FailAttach 只结束 operation ID 精确匹配的 candidate；已有 committed binding 保持可用且不写入 candidate error。
+func (store TerminalViewStore) FailAttach(viewID, operationID, message string) (TerminalViewStore, bool) {
 	binding, ok := store.Views[viewID]
-	if !ok || !binding.AttachPending {
-		return store
+	if !ok || binding.AttachCandidate == nil || binding.AttachCandidate.OperationID != operationID {
+		return store, false
 	}
+	hadBinding := binding.AttachCandidate.HadBinding
 	binding.AttachPending = false
-	binding.LastError = err
+	binding.AttachCandidate = nil
+	if !binding.Attached && !hadBinding {
+		store.Views = cloneTerminalViewBindings(store.Views)
+		store.PaneViews = cloneTerminalViewIDs(store.PaneViews)
+		store.FloatingViews = cloneTerminalViewIDs(store.FloatingViews)
+		delete(store.Views, viewID)
+		if binding.PaneID != "" {
+			delete(store.PaneViews, binding.PaneID)
+		}
+		if binding.FloatingID != "" {
+			delete(store.FloatingViews, binding.FloatingID)
+		}
+		return store, true
+	}
+	if !binding.Attached {
+		binding.LastError = message
+	}
 	store.Views = cloneTerminalViewBindings(store.Views)
 	store.Views[viewID] = binding
-	return store
+	return store, true
+}
+
+// CommitAttach 原子提交当前 candidate，并返回需要在 commit 后精确 detach 的 previous committed binding。
+func (store TerminalViewStore) CommitAttach(viewID, operationID string, next TerminalViewBinding) (TerminalViewStore, TerminalViewBinding, bool) {
+	current, ok := store.Views[viewID]
+	if !ok || current.AttachCandidate == nil || current.AttachCandidate.OperationID != operationID {
+		return store, TerminalViewBinding{}, false
+	}
+	previous := TerminalViewBinding{}
+	if current.Attached {
+		previous = current
+	}
+	if next.PaneID == "" {
+		next.PaneID = current.AttachCandidate.PaneID
+	}
+	if next.FloatingID == "" {
+		next.FloatingID = current.AttachCandidate.FloatingID
+	}
+	next.Layout = current.Layout
+	next.AttachPending = false
+	next.AttachCandidate = nil
+	next.LastError = ""
+	if next.PaneID != "" {
+		return store.BindPane(next), previous, true
+	}
+	if next.FloatingID != "" {
+		return store.BindFloating(next), previous, true
+	}
+	store.Views = cloneTerminalViewBindings(store.Views)
+	store.Views[viewID] = next
+	return store, previous, true
+}
+
+// AttachmentSession 返回 committed binding 的 Proto session stamp 快照。
+func (binding TerminalViewBinding) AttachmentSession() *apipb.EndpointSessionStamp {
+	if binding.Session == nil {
+		return nil
+	}
+	return proto.Clone(binding.Session).(*apipb.EndpointSessionStamp)
 }
 
 func (store TerminalViewStore) MarkTerminalReattaching(terminalID string) TerminalViewStore {
@@ -560,6 +661,9 @@ func (store TerminalViewStore) MarkTerminalRefReattaching(ref TerminalRef) Termi
 		binding.Channel = 0
 		binding.Attached = false
 		binding.AttachPending = false
+		binding.AttachCandidate = nil
+		binding.Session = nil
+		binding.OperationID = ""
 		binding.LastError = ""
 		store.Views[viewID] = binding
 	}

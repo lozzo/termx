@@ -141,9 +141,13 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 		return root.Advance(), []Effect{handledEffect{}}
 	}
 	if target.Channel == 0 {
-		return root, []Effect{liveAttachForInputEffect(root, target, msg.Event, terminalBytes, deps)}
+		var effect Effect
+		root, effect = liveAttachForInputEffect(root, target, msg.Event, terminalBytes, deps)
+		return root, []Effect{effect}
 	}
-	return root, []Effect{terminalSendInputEffect(target, msg.Event, terminalBytes, true, deps)}
+	var operationID string
+	root.TerminalViews, operationID = root.TerminalViews.NextTerminalOperation(inputOperationKind(msg.Event), target.ViewID)
+	return root, []Effect{terminalSendInputEffect(target, msg.Event, terminalBytes, operationID, deps)}
 }
 
 func encodeTerminalPaste(text string, modes state.LiveTerminalModes) []byte {
@@ -200,7 +204,9 @@ func reduceTerminalInputBytes(root state.Root, msg TerminalInputBytesMsg, deps L
 		return root, nil
 	}
 	if target.Channel == 0 {
-		return root, []Effect{liveAttachForInputEffect(root, target, msg.Event, msg.Bytes, deps)}
+		var effect Effect
+		root, effect = liveAttachForInputEffect(root, target, msg.Event, msg.Bytes, deps)
+		return root, []Effect{effect}
 	}
 	logTerminalInputRoute(deps, root, terminalInputRouteLog{
 		Event:       msg.Event,
@@ -209,10 +215,12 @@ func reduceTerminalInputBytes(root state.Root, msg TerminalInputBytesMsg, deps L
 		Bytes:       len(msg.Bytes),
 		NeedsAttach: false,
 	})
-	return root, []Effect{terminalSendInputEffect(target, msg.Event, msg.Bytes, true, deps)}
+	var operationID string
+	root.TerminalViews, operationID = root.TerminalViews.NextTerminalOperation(inputOperationKind(msg.Event), target.ViewID)
+	return root, []Effect{terminalSendInputEffect(target, msg.Event, msg.Bytes, operationID, deps)}
 }
 
-func terminalSendInputEffect(target liveInputTargetInfo, event input.InputEvent, bytes []byte, retryOnError bool, deps LiveDeps) Effect {
+func terminalSendInputEffect(target liveInputTargetInfo, event input.InputEvent, bytes []byte, operationID string, deps LiveDeps) Effect {
 	payload := append([]byte(nil), bytes...)
 	return FuncEffect{
 		Async:            true,
@@ -220,13 +228,15 @@ func terminalSendInputEffect(target liveInputTargetInfo, event input.InputEvent,
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			err := deps.Terminal.SendInput(ctx, port.TerminalInputRequest{
-				EndpointID: target.EndpointID,
-				TerminalID: target.TerminalID,
-				Channel:    target.Channel,
-				SurfaceID:  target.SurfaceID,
-				ViewID:     target.ViewID,
-				Event:      event,
-				Bytes:      payload,
+				EndpointID:  target.EndpointID,
+				TerminalID:  target.TerminalID,
+				Channel:     target.Channel,
+				SurfaceID:   target.SurfaceID,
+				ViewID:      target.ViewID,
+				Event:       event,
+				Bytes:       payload,
+				Session:     target.Session,
+				OperationID: operationID,
 			})
 			if err != nil {
 				logTerminalInputSend(deps, target, event, len(payload), err)
@@ -234,17 +244,24 @@ func terminalSendInputEffect(target liveInputTargetInfo, event input.InputEvent,
 				logTerminalInputSendOK(deps, target, event, len(payload))
 			}
 			return LiveInputResultMsg{
-				EndpointID:   target.EndpointID,
-				TerminalID:   target.TerminalID,
-				ViewID:       target.ViewID,
-				Channel:      target.Channel,
-				Event:        event,
-				Bytes:        payload,
-				RetryOnError: retryOnError,
-				Err:          err,
+				EndpointID:  target.EndpointID,
+				TerminalID:  target.TerminalID,
+				ViewID:      target.ViewID,
+				Channel:     target.Channel,
+				Event:       event,
+				Bytes:       payload,
+				OperationID: operationID,
+				Err:         err,
 			}
 		},
 	}
+}
+
+func inputOperationKind(event input.InputEvent) string {
+	if event.Kind == input.EventKindPaste {
+		return "paste"
+	}
+	return "input"
 }
 
 func terminalInputSerialKey(target liveInputTargetInfo) string {

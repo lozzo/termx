@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/render"
@@ -156,7 +157,7 @@ func TestWorkbenchCommandPersistsSnapshotThroughStorageReducer(t *testing.T) {
 
 func TestTerminalPoolAttachPersistsTerminalViewBindingThroughStorageReducer(t *testing.T) {
 	storage := &testkit.FakeWorkbenchStorageService{}
-	reducer := ComposeReducers(NewTerminalPoolReducer(LiveDeps{}), NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage}))
+	reducer := ComposeReducers(newTerminalPoolReducerPrepared(LiveDeps{}), NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage}))
 	root := state.Root{Shell: state.DefaultShell()}
 
 	root, effects := reducer(root, TerminalPoolAttachResultMsg{
@@ -276,14 +277,16 @@ func TestWorkbenchRestoreAttachEffectsUseFollowerRuntimeSurface(t *testing.T) {
 
 func TestWorkbenchRestoreSkipsReattachForAlreadyLiveBinding(t *testing.T) {
 	viewID := state.TerminalPaneViewID(state.DefaultPaneID)
-	previous := state.TerminalViewStore{}.
-		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-live", viewID, true))
+	live := state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-live", viewID, true)
+	live.Session = &apipb.EndpointSessionStamp{EndpointId: "local", RouteId: "unix", Generation: 9}
+	live.OperationID = "attach-9"
+	previous := state.TerminalViewStore{NextOperation: 12}.BindPane(live)
 	stored := state.TerminalViewStore{}.
 		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 0, 80, 24, state.TerminalResizeRoleOwner, "surface-stored", viewID, false))
 
 	restored := preserveWorkbenchRuntimeTerminalViews(previous, stored)
 	binding, ok := restored.PaneBinding(state.DefaultPaneID)
-	if !ok || binding.Channel != 7 || binding.SurfaceID != "surface-live" || !binding.CanResize {
+	if !ok || binding.Channel != 7 || binding.SurfaceID != "surface-live" || !binding.CanResize || binding.Session.GetGeneration() != 9 || binding.OperationID != "attach-9" || restored.NextOperation != 12 {
 		t.Fatalf("restore should preserve current live runtime fields, binding=%#v ok=%v", binding, ok)
 	}
 	if effects := workbenchRestoredTerminalAttachEffects(previous, restored.Bindings()); len(effects) != 0 {
@@ -293,16 +296,15 @@ func TestWorkbenchRestoreSkipsReattachForAlreadyLiveBinding(t *testing.T) {
 
 func TestWorkbenchRestoreSkipsReattachForPendingStartupAttach(t *testing.T) {
 	viewID := state.TerminalPaneViewID(state.DefaultPaneID)
-	previous := state.TerminalViewStore{}.
-		MarkAttachPending(state.TerminalViewBinding{
-			ViewID:      viewID,
-			SurfaceID:   "runtime-a",
-			TerminalID:  "term-1",
-			ResizeRole:  state.TerminalResizeRoleFollower,
-			DesiredCols: 80,
-			DesiredRows: 24,
-			PaneID:      state.DefaultPaneID,
-		})
+	previous, _ := (state.TerminalViewStore{}).BeginAttach(state.TerminalViewBinding{
+		ViewID:      viewID,
+		SurfaceID:   "runtime-a",
+		TerminalID:  "term-1",
+		ResizeRole:  state.TerminalResizeRoleFollower,
+		DesiredCols: 80,
+		DesiredRows: 24,
+		PaneID:      state.DefaultPaneID,
+	})
 	stored := state.TerminalViewStore{}.
 		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 0, 80, 24, state.TerminalResizeRoleFollower, "", viewID, false))
 
@@ -962,7 +964,7 @@ func TestWorkbenchRestoreInputDoesNotUseStoredOldChannelBeforeAttachEffect(t *te
 		}},
 	}
 	liveDeps := LiveDeps{Terminal: terminal}
-	reducer := ComposeReducers(NewUIInputReducer(), NewWorkbenchStorageReducer(WorkbenchDeps{}), NewTerminalInputRouterReducer(liveDeps), NewLiveReducer(liveDeps))
+	reducer := ComposeReducers(NewUIInputReducer(), NewWorkbenchStorageReducer(WorkbenchDeps{}), NewTerminalInputRouterReducer(liveDeps), newLiveReducerPrepared(liveDeps))
 	root := state.Root{Shell: state.DefaultShell(), Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 30}}
 
 	root, restoreEffects := reducer(root, WorkbenchStorageLoadResultMsg{Result: loadResult})

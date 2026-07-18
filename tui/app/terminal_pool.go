@@ -93,6 +93,7 @@ type TerminalPoolAttachResultMsg struct {
 	TargetPaneID     string
 	TargetFloatingID string
 	ResizePolicy     string
+	OperationID      string
 	Result           port.TerminalAttachResult
 	Err              error
 }
@@ -172,6 +173,7 @@ type TerminalPoolReconnectResultMsg struct {
 	TargetPaneID     string
 	TargetFloatingID string
 	ResizePolicy     string
+	OperationID      string
 	Result           port.TerminalAttachResult
 	Err              error
 	// LocalError 沿用 request 的断线 pane 边界，指导 reducer 进行 view-local 错误投影。
@@ -548,6 +550,9 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 	}
 	endpointID := state.NormalizeEndpointID(msg.EndpointID)
 	surfaceID := runtimeSurfaceID(root)
+	binding := state.TerminalViewBinding{ViewID: target.ViewID, SurfaceID: surfaceID, EndpointID: endpointID, TerminalID: msg.TerminalID, DesiredCols: cols, DesiredRows: rows, ResizeRole: resizePolicy, PaneID: target.PaneID, FloatingID: target.FloatingID}
+	var candidate state.TerminalAttachCandidate
+	root.TerminalViews, candidate = root.TerminalViews.BeginAttach(binding)
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			finish := perftrace.Measure("tui.terminal_pool.attach.effect")
@@ -560,9 +565,10 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 				ResizePolicy: resizePolicy,
 				SurfaceID:    surfaceID,
 				ViewID:       target.ViewID,
+				OperationID:  candidate.OperationID,
 			})
 			finish(0)
-			return TerminalPoolAttachResultMsg{EndpointID: endpointID, TerminalID: msg.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, ResizePolicy: resizePolicy, Result: result, Err: err}
+			return TerminalPoolAttachResultMsg{EndpointID: endpointID, TerminalID: msg.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, ResizePolicy: resizePolicy, OperationID: candidate.OperationID, Result: result, Err: err}
 		},
 	}}
 }
@@ -573,10 +579,19 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	ref := state.NewTerminalRef(endpointID, msg.TerminalID)
 	root.TerminalPool = root.TerminalPool.ApplyAttachedRef(ref, errText)
 	if errText != "" {
+		target, _ := terminalPoolTargetFromRequest(root, msg.TargetPaneID, msg.TargetFloatingID)
+		var applied bool
+		root.TerminalViews, applied = root.TerminalViews.FailAttach(target.ViewID, msg.OperationID, errText)
+		if !applied {
+			return root, nil
+		}
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.attach", Body: errText})
 		return root.Advance(), nil
 	}
 	result := msg.Result
+	if result.OperationID == "" {
+		result.OperationID = msg.OperationID
+	}
 	if result.EndpointID == "" {
 		result.EndpointID = endpointID
 	}
@@ -586,6 +601,14 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	ref = state.NewTerminalRef(result.EndpointID, result.TerminalID)
 	root.Endpoints = root.Endpoints.MarkRuntimeStatus(ref.EndpointID, state.EndpointStatusConnected, state.EndpointErrorUnknown, endpointTerminalCount(root, ref.EndpointID), "")
 	target, _ := terminalPoolTargetFromRequest(root, msg.TargetPaneID, msg.TargetFloatingID)
+	current, currentOK := root.TerminalViews.Views[target.ViewID]
+	if !currentOK || current.AttachCandidate == nil || current.AttachCandidate.OperationID != msg.OperationID || result.OperationID != msg.OperationID {
+		return root, cleanupAttachResultEffects(result)
+	}
+	previous := state.TerminalViewBinding{}
+	if current.Attached {
+		previous = current
+	}
 	if result.ViewID == "" {
 		result.ViewID = target.ViewID
 	}
@@ -607,7 +630,10 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 			paneID = floating.Pane.ID
 		}
 		root = invalidateCopyModeForTerminalRebindRef(root, paneID, result.ViewID, ref)
-		root.TerminalViews = root.TerminalViews.BindFloating(state.NewEndpointFloatingTerminalView(result.EndpointID, msg.TargetFloatingID, paneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
+		binding := state.NewEndpointFloatingTerminalView(result.EndpointID, msg.TargetFloatingID, paneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize)
+		binding.Session = result.Session
+		binding.OperationID = result.OperationID
+		root.TerminalViews = root.TerminalViews.BindFloating(binding)
 		root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 		root.Shell = root.Shell.BindFloatingTerminal(msg.TargetFloatingID, result.TerminalID)
 	} else {
@@ -618,13 +644,17 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 		}
 		root = invalidateCopyModeForTerminalRebindRef(root, targetPaneID, result.ViewID, ref)
 		root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: targetPaneID}, result.TerminalID)
-		root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView(result.EndpointID, targetPaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
+		binding := state.NewEndpointPaneTerminalView(result.EndpointID, targetPaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize)
+		binding.Session = result.Session
+		binding.OperationID = result.OperationID
+		root.TerminalViews = root.TerminalViews.BindPane(binding)
 		root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 	}
 	root.Shell = root.Shell.CloseOverlay().ExitInteractionMode()
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: result.TerminalID})
 	effects := workbenchPersistEffects("terminal.attach")
 	effects = append(effects, liveEffectsForRef(result.EndpointID, result.TerminalID, result.Cols, result.Rows, deps)...)
+	effects = appendPreviousAttachmentCleanup(effects, previous, result)
 	return root.Advance(), effects
 }
 
@@ -890,16 +920,23 @@ func reduceTerminalPoolReconnectRequest(root state.Root, msg TerminalPoolReconne
 	binding := state.TerminalViewBinding{ViewID: target.ViewID, SurfaceID: surfaceID, EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, DesiredCols: cols, DesiredRows: rows, ResizeRole: state.TerminalResizeRoleFollower, PaneID: target.PaneID, FloatingID: target.FloatingID}
 	// 中文说明：连接中的唯一真值是 view attach pending；renderer 直接消费该投影，
 	// 不用定时器、toast 或 transport 猜测伪造连接进度。
-	root.TerminalViews = root.TerminalViews.MarkAttachPending(binding)
+	var candidate state.TerminalAttachCandidate
+	root.TerminalViews, candidate = root.TerminalViews.BeginAttach(binding)
 	root.Endpoints = root.Endpoints.MarkRuntimeStatus(ref.EndpointID, state.EndpointStatusConnecting, state.EndpointErrorUnknown, endpointTerminalCount(root, ref.EndpointID), "")
 	return root.Advance(), []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
-		result, err := deps.Terminal.Reconnect(ctx, port.TerminalReconnectRequest{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, Cols: cols, Rows: rows, Mode: "collaborator", ResizePolicy: state.TerminalResizeRoleFollower, SurfaceID: surfaceID, ViewID: target.ViewID})
-		return TerminalPoolReconnectResultMsg{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, ResizePolicy: state.TerminalResizeRoleFollower, Result: result, Err: err, LocalError: msg.LocalError}
+		result, err := deps.Terminal.Reconnect(ctx, port.TerminalReconnectRequest{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, Cols: cols, Rows: rows, Mode: "collaborator", ResizePolicy: state.TerminalResizeRoleFollower, SurfaceID: surfaceID, ViewID: target.ViewID, OperationID: candidate.OperationID})
+		return TerminalPoolReconnectResultMsg{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, ResizePolicy: state.TerminalResizeRoleFollower, OperationID: candidate.OperationID, Result: result, Err: err, LocalError: msg.LocalError}
 	}}}
 }
 
 func reduceTerminalPoolReconnectResult(root state.Root, msg TerminalPoolReconnectResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	if msg.Err != nil {
+		target, _ := terminalPoolTargetFromRequest(root, msg.TargetPaneID, msg.TargetFloatingID)
+		var applied bool
+		root.TerminalViews, applied = root.TerminalViews.FailAttach(target.ViewID, msg.OperationID, msg.Err.Error())
+		if !applied {
+			return root, nil
+		}
 		root, effects := reduceTerminalPoolReconnectLocalError(root, msg)
 		if !msg.LocalError {
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.reconnect", Body: msg.Err.Error()})
@@ -907,7 +944,7 @@ func reduceTerminalPoolReconnectResult(root state.Root, msg TerminalPoolReconnec
 		}
 		return root, effects
 	}
-	return reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{EndpointID: msg.EndpointID, TerminalID: msg.TerminalID, TargetPaneID: msg.TargetPaneID, TargetFloatingID: msg.TargetFloatingID, ResizePolicy: msg.ResizePolicy, Result: msg.Result, Err: msg.Err}, deps)
+	return reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{EndpointID: msg.EndpointID, TerminalID: msg.TerminalID, TargetPaneID: msg.TargetPaneID, TargetFloatingID: msg.TargetFloatingID, ResizePolicy: msg.ResizePolicy, OperationID: msg.OperationID, Result: msg.Result, Err: msg.Err}, deps)
 }
 
 func reduceTerminalPoolReconnectLocalError(root state.Root, msg TerminalPoolReconnectResultMsg) (state.Root, []Effect) {

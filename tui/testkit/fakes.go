@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 )
@@ -259,6 +260,12 @@ func (service *FakeTerminalService) Attach(_ context.Context, req port.TerminalA
 	if result.ViewID == "" {
 		result.ViewID = req.ViewID
 	}
+	if result.Session == nil {
+		result.Session = &apipb.EndpointSessionStamp{EndpointId: string(state.NormalizeEndpointID(req.EndpointID)), RouteId: "test", Generation: 1}
+	}
+	if result.OperationID == "" {
+		result.OperationID = req.OperationID
+	}
 	if !result.SizeLocked && result.ControlReason == "" && result.ResizePolicy == state.TerminalResizeRoleOwner {
 		result.CanResize = true
 	}
@@ -317,6 +324,7 @@ func (service *FakeTerminalService) Reconnect(ctx context.Context, req port.Term
 		ResizePolicy: req.ResizePolicy,
 		SurfaceID:    req.SurfaceID,
 		ViewID:       req.ViewID,
+		OperationID:  req.OperationID,
 	})
 }
 
@@ -383,6 +391,12 @@ func (service *FakeTerminalService) Resize(_ context.Context, req port.TerminalR
 	}
 	if result.ViewID == "" {
 		result.ViewID = req.ViewID
+	}
+	if result.Session == nil {
+		result.Session = req.Session
+	}
+	if result.OperationID == "" {
+		result.OperationID = req.OperationID
 	}
 	if !result.SizeLocked && result.ControlReason == "" {
 		result.Resized = true

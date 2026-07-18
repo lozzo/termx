@@ -23,11 +23,11 @@
 
 - C3X 已删除 `Endpoint.ResolveCurrentRoute`、TUI lazy bundle/session owner 和 CLI 直接 route/dial owner；CLI/TUI 当前保留明确待接 `client/runtime` 的调用缺口，不再有可继续修补的旧运行时。
 - C3B 已在 `client/endpoint` 完成纯领域 `RouteSelectionPlanner`、local/SSH full-race 分组、priority hedge、manual override、唯一 managed 单路计划和机器可读 fixture；它只产出不可变 attempt groups，不 dial，也不拥有 winner。
-- C3C 已把 local/SSH fresh DeviceIdentity challenge proof、managed channel-bound auth、route authorization、Hello 与 lifecycle signal 固化为统一 `ReadySession` 发布门禁；默认全量竞速的真实启动和 winner/loser cleanup 尚未成为 CLI/TUI 共同运行时。
+- C3C 已把 local/SSH fresh DeviceIdentity challenge proof、managed channel-bound auth、route authorization、Hello 与 lifecycle signal 固化为统一 `ReadySession` 发布门禁；C3D/C3E 已把 planner race、winner/loser cleanup 和 CLI/TUI composition 接到同一 runtime。
 - C3E 已让 CLI/TUI native composition 共用 per-endpoint `ClientRuntime/SessionOwner`、local/SSH/lazy-managed dialer registry、system Clock 和 lifecycle mailbox；TUI 不再从 raw protocol client 推断 endpoint 状态。operation/channel stamp 的完整副作用前校验仍由 C3F 完成。
-- `SessionGeneration` 和 channel-bound operation stamp 尚未覆盖 attach、input、paste、resize、detach 与迟到回包。
+- C3F 已把 generated Proto `EndpointSessionStamp` 与 operation identity 贯穿 attach candidate/commit/cleanup、input/paste、resize 和 detach；stale generation 在 attachment lookup/adapter 副作用前失败，replaced candidate 精确 cleanup，非幂等 input/paste 不自动重放。
 
-因此，下文所有 planner、race、generation 和 stamp 语义都是 `CONN003` 的目标契约，不是当前已交付能力。
+因此，当前 `CONN003` 剩余完成条件集中在 C3G 真实 local + OpenSSH race E2E 与 C3H 最终双审；下文已标记完成的 planner/runtime/stamp 语义是当前实现基线。
 
 ## 当前非目标
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/state"
 )
@@ -93,15 +94,18 @@ type TerminalAttachRequest struct {
 	ResizePolicy string
 	SurfaceID    string
 	ViewID       string
+	OperationID  string
 }
 
 // TerminalDetachRequest 精确释放既有 channel/view binding，不得触发 lazy reconnect。
 type TerminalDetachRequest struct {
-	EndpointID state.EndpointID
-	TerminalID string
-	Channel    uint16
-	SurfaceID  string
-	ViewID     string
+	EndpointID  state.EndpointID
+	TerminalID  string
+	Channel     uint16
+	SurfaceID   string
+	ViewID      string
+	Session     *apipb.EndpointSessionStamp
+	OperationID string
 }
 
 // TerminalAttachResult 是 daemon 确认后的 attachment projection；channel 和 resize control 都来自 owning daemon。
@@ -121,6 +125,8 @@ type TerminalAttachResult struct {
 	SurfaceID       string
 	ViewID          string
 	AttachmentCount int
+	Session         *apipb.EndpointSessionStamp
+	OperationID     string
 }
 
 // TerminalRestartRequest 请求 owning daemon 按其 lifecycle 规则重启已退出 terminal。
@@ -139,6 +145,7 @@ type TerminalReconnectRequest struct {
 	ResizePolicy string
 	SurfaceID    string
 	ViewID       string
+	OperationID  string
 }
 
 // TerminalKillRequest 请求 owning daemon 终止 terminal process。
@@ -170,13 +177,15 @@ type TerminalEditTagsRequest struct {
 
 // TerminalInputRequest 携带用户输入 bytes 和原始 attachment identity；失败后不得自动重放。
 type TerminalInputRequest struct {
-	EndpointID state.EndpointID
-	TerminalID string
-	Channel    uint16
-	SurfaceID  string
-	ViewID     string
-	Event      input.InputEvent
-	Bytes      []byte
+	EndpointID  state.EndpointID
+	TerminalID  string
+	Channel     uint16
+	SurfaceID   string
+	ViewID      string
+	Event       input.InputEvent
+	Bytes       []byte
+	Session     *apipb.EndpointSessionStamp
+	OperationID string
 }
 
 // TerminalResizeRequest 携带 owner view 的 resize intent；最终尺寸与 ownership 由 daemon 确认。
@@ -189,6 +198,8 @@ type TerminalResizeRequest struct {
 	ResizePolicy string
 	SurfaceID    string
 	ViewID       string
+	Session      *apipb.EndpointSessionStamp
+	OperationID  string
 }
 
 // TerminalResizeResult 返回 daemon 对 resize ownership、epoch 和最终尺寸的确认。
@@ -208,6 +219,8 @@ type TerminalResizeResult struct {
 	SurfaceID       string
 	ViewID          string
 	AttachmentCount int
+	Session         *apipb.EndpointSessionStamp
+	OperationID     string
 }
 
 var ErrMissingTerminalClient = errors.New("missing terminal client")

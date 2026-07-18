@@ -11,6 +11,7 @@ import (
 	"github.com/lozzow/termx/shared/perftrace"
 	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
+	"google.golang.org/protobuf/proto"
 )
 
 // ProtocolTerminalClient 是 tui-v3 service adapter 依赖的 core-v2 protocol 边界。
@@ -45,10 +46,17 @@ func (adapter ProtocolTerminalServiceAdapter) Attach(ctx context.Context, req po
 	if adapter.Client == nil || adapter.Application == nil {
 		return port.TerminalAttachResult{}, port.ErrMissingTerminalClient
 	}
+	if req.OperationID == "" {
+		return port.TerminalAttachResult{}, operationValidationError(clientruntime.ErrorInvalidRequest, "terminal attach operation identity is required")
+	}
+	if err := adapter.Application.ValidateCurrent(); err != nil {
+		return port.TerminalAttachResult{}, err
+	}
 	finishRPC := perftrace.Measure("tui.protocol.terminal_attach.rpc")
 	result, err := adapter.Application.TerminalAttach(ctx, &apipb.TerminalAttachCommand{
 		Terminal: &apipb.TerminalRef{EndpointId: string(req.EndpointID), TerminalId: req.TerminalID},
 		Mode:     attachmentModeToProto(req.Mode), ResizePolicy: resizePolicyToProto(req.ResizePolicy), SurfaceId: req.SurfaceID, ViewId: req.ViewID,
+		Operation: &apipb.OperationStamp{OperationId: req.OperationID},
 	})
 	finishRPC(0)
 	if err != nil {
@@ -68,6 +76,8 @@ func (adapter ProtocolTerminalServiceAdapter) Attach(ctx context.Context, req po
 		ResizePolicy: resizePolicyFromProto(result.GetResizePolicy()),
 		SurfaceID:    req.SurfaceID,
 		ViewID:       req.ViewID,
+		Session:      adapter.Application.ProtoStamp(),
+		OperationID:  req.OperationID,
 	}
 	if result.GetResizeControl() != nil {
 		applyProtoResizeControlToAttach(&out, result.GetResizeControl())
@@ -79,11 +89,14 @@ func (adapter ProtocolTerminalServiceAdapter) Detach(ctx context.Context, req po
 	if adapter.Client == nil || adapter.Application == nil {
 		return port.ErrMissingTerminalClient
 	}
+	if err := adapter.validateBoundOperation(req.Session, req.OperationID); err != nil {
+		return err
+	}
 	resource, ok := adapter.Client.ApplicationAttachment(req.Channel)
 	if !ok {
 		return fmt.Errorf("terminal detach requires active attachment resource")
 	}
-	return adapter.Application.TerminalDetach(ctx, &apipb.TerminalDetachCommand{Attachment: resource})
+	return adapter.Application.TerminalDetach(ctx, &apipb.TerminalDetachCommand{Attachment: resource, Operation: &apipb.OperationStamp{OperationId: req.OperationID}})
 }
 
 func (adapter ProtocolTerminalServiceAdapter) List(ctx context.Context, req port.TerminalListRequest) (port.TerminalListResult, error) {
@@ -154,6 +167,7 @@ func (adapter ProtocolTerminalServiceAdapter) Reconnect(ctx context.Context, req
 		ResizePolicy: req.ResizePolicy,
 		SurfaceID:    req.SurfaceID,
 		ViewID:       req.ViewID,
+		OperationID:  req.OperationID,
 	})
 }
 
@@ -192,11 +206,14 @@ func (adapter ProtocolTerminalServiceAdapter) SendInput(ctx context.Context, req
 	if req.Channel == 0 {
 		return fmt.Errorf("terminal input requires attached channel")
 	}
+	if err := adapter.validateBoundOperation(req.Session, req.OperationID); err != nil {
+		return err
+	}
 	resource, ok := adapter.Client.ApplicationAttachment(req.Channel)
 	if !ok {
 		return fmt.Errorf("terminal input requires active attachment resource")
 	}
-	return adapter.Application.TerminalInput(ctx, &apipb.TerminalInputCommand{Attachment: resource, Data: append([]byte(nil), req.Bytes...)})
+	return adapter.Application.TerminalInput(ctx, &apipb.TerminalInputCommand{Attachment: resource, Operation: &apipb.OperationStamp{OperationId: req.OperationID}, Data: append([]byte(nil), req.Bytes...)})
 }
 
 func (adapter ProtocolTerminalServiceAdapter) Resize(ctx context.Context, req port.TerminalResizeRequest) (port.TerminalResizeResult, error) {
@@ -206,11 +223,14 @@ func (adapter ProtocolTerminalServiceAdapter) Resize(ctx context.Context, req po
 	if req.Channel == 0 {
 		return port.TerminalResizeResult{}, fmt.Errorf("terminal resize requires attached channel")
 	}
+	if err := adapter.validateBoundOperation(req.Session, req.OperationID); err != nil {
+		return port.TerminalResizeResult{}, err
+	}
 	resource, ok := adapter.Client.ApplicationAttachment(req.Channel)
 	if !ok {
 		return port.TerminalResizeResult{}, fmt.Errorf("terminal resize requires active attachment resource")
 	}
-	result, err := adapter.Application.TerminalResize(ctx, &apipb.TerminalResizeCommand{Attachment: resource, Size: &apipb.TerminalSize{Cols: uint32(req.Cols), Rows: uint32(req.Rows)}, ResizePolicy: resizePolicyToProto(req.ResizePolicy)})
+	result, err := adapter.Application.TerminalResize(ctx, &apipb.TerminalResizeCommand{Attachment: resource, Operation: &apipb.OperationStamp{OperationId: req.OperationID}, Size: &apipb.TerminalSize{Cols: uint32(req.Cols), Rows: uint32(req.Rows)}, ResizePolicy: resizePolicyToProto(req.ResizePolicy)})
 	if err != nil {
 		return port.TerminalResizeResult{}, err
 	}
@@ -238,7 +258,7 @@ func applyProtoResizeControlToAttach(out *port.TerminalAttachResult, control *ap
 }
 
 func terminalResizeResultFromProto(req port.TerminalResizeRequest, result *apipb.TerminalResizeResult) port.TerminalResizeResult {
-	out := port.TerminalResizeResult{TerminalID: req.TerminalID, Cols: req.Cols, Rows: req.Rows, ResizePolicy: req.ResizePolicy, SurfaceID: req.SurfaceID, ViewID: req.ViewID}
+	out := port.TerminalResizeResult{EndpointID: req.EndpointID, TerminalID: req.TerminalID, Cols: req.Cols, Rows: req.Rows, ResizePolicy: req.ResizePolicy, SurfaceID: req.SurfaceID, ViewID: req.ViewID, Session: cloneEndpointSessionStamp(req.Session), OperationID: req.OperationID}
 	if result == nil {
 		return out
 	}
@@ -262,6 +282,28 @@ func terminalResizeResultFromProto(req port.TerminalResizeRequest, result *apipb
 		}
 	}
 	return out
+}
+
+func (adapter ProtocolTerminalServiceAdapter) validateBoundOperation(session *apipb.EndpointSessionStamp, operationID string) error {
+	if operationID == "" {
+		return operationValidationError(clientruntime.ErrorInvalidRequest, "terminal operation identity is required")
+	}
+	current := adapter.Application.ProtoStamp()
+	if session == nil || !proto.Equal(session, current) {
+		return operationValidationError(clientruntime.ErrorStaleSession, "terminal attachment session stamp is stale")
+	}
+	return adapter.Application.ValidateCurrent()
+}
+
+func operationValidationError(code clientruntime.ErrorCode, message string) error {
+	return &clientruntime.Error{Code: code, Message: message, Attempted: false}
+}
+
+func cloneEndpointSessionStamp(stamp *apipb.EndpointSessionStamp) *apipb.EndpointSessionStamp {
+	if stamp == nil {
+		return nil
+	}
+	return proto.Clone(stamp).(*apipb.EndpointSessionStamp)
 }
 
 func resizePolicyFromProtoControl(control *apipb.ResizeControl, fallback string) string {

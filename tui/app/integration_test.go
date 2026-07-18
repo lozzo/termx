@@ -1941,7 +1941,7 @@ func TestCopyModeOlderResponseKeepsLocalReflowColsBinding(t *testing.T) {
 }
 
 func TestCopyModeAttachRebindInvalidatesFrozenHistoryForNewTerminal(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	root := state.Root{
 		Shell: state.DefaultShell(),
 		Session: state.TerminalSessionStore{
@@ -2000,7 +2000,7 @@ func TestCopyModeAttachRebindInvalidatesFrozenHistoryForNewTerminal(t *testing.T
 }
 
 func TestCopyModeReattachSameTerminalKeepsFrozenHistory(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	root := state.Root{
 		Shell: state.DefaultShell(),
 		Session: state.TerminalSessionStore{
@@ -2062,7 +2062,7 @@ func TestCopyModeReattachSameTerminalKeepsFrozenHistory(t *testing.T) {
 }
 
 func TestCopyModeAttachRebindInvalidatesFrozenHistoryForNewFloatingTerminal(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	root := state.Root{Shell: state.DefaultShell()}
 	var result state.FloatingCommandResult
 	root.Shell, result = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
@@ -2130,7 +2130,7 @@ func TestCopyModeAttachRebindInvalidatesFrozenHistoryForNewFloatingTerminal(t *t
 }
 
 func TestCopyModeReattachSameFloatingTerminalKeepsFrozenHistory(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	root := state.Root{Shell: state.DefaultShell()}
 	var result state.FloatingCommandResult
 	root.Shell, result = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
@@ -2247,7 +2247,7 @@ func TestCopyModeRuntimeAttachRebindDoesNotRenderOldFrozenHistory(t *testing.T) 
 		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 
-	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{
+	if err := postPreparedLiveAttachResult(runtime, LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-new",
 		Channel:      9,
 		Cols:         78,
@@ -2326,7 +2326,7 @@ func TestCopyModeRuntimeReattachSameTerminalKeepsFrozenHistory(t *testing.T) {
 		t.Fatalf("expected initial frame to render old frozen history, frames=%#v", host.Frames())
 	}
 
-	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{
+	if err := postPreparedLiveAttachResult(runtime, LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-1",
 		Channel:      9,
 		Cols:         78,
@@ -2409,7 +2409,7 @@ func TestCopyModeRuntimeAttachRebindDoesNotRenderOldFrozenHistoryForNewFloatingT
 	})
 	runtime.state.TerminalViews = runtime.state.TerminalViews.BindFloating(state.NewFloatingTerminalView("floating-1", "float-pane", "term-old", 7, 40, 12, state.TerminalResizeRoleOwner, "surface-old", state.TerminalFloatingViewID("floating-1"), true))
 
-	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{
+	if err := postPreparedLiveAttachResult(runtime, LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-new",
 		Channel:      8,
 		Cols:         40,
@@ -2494,7 +2494,7 @@ func TestCopyModeRuntimeReattachSameFloatingTerminalKeepsFrozenHistory(t *testin
 	}
 	initialBoundCols := runtime.State().CopyMode.BoundCols
 
-	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{
+	if err := postPreparedLiveAttachResult(runtime, LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-1",
 		Channel:      8,
 		Cols:         40,
@@ -2527,7 +2527,7 @@ func TestCopyModeRuntimeReattachSameFloatingTerminalKeepsFrozenHistory(t *testin
 }
 
 func TestCopyModeRemoveClearsFrozenHistoryForDeletedTerminal(t *testing.T) {
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	root := state.Root{
 		Shell: state.DefaultShell(),
 		Session: state.TerminalSessionStore{
@@ -3106,7 +3106,7 @@ func TestCopyModeTerminalPoolAttachRebindInvalidatesFrozenHistoryForNewPaneTermi
 		},
 	}
 
-	next, _ := reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{
+	next, _ := reduceTerminalPoolAttachResultPrepared(root, TerminalPoolAttachResultMsg{
 		TerminalID: "term-new",
 		Result: port.TerminalAttachResult{
 			TerminalID:   "term-new",
@@ -3154,7 +3154,7 @@ func TestCopyModeTerminalPoolReattachSamePaneTerminalKeepsFrozenHistory(t *testi
 		},
 	}
 
-	next, _ := reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{
+	next, _ := reduceTerminalPoolAttachResultPrepared(root, TerminalPoolAttachResultMsg{
 		TerminalID: "term-1",
 		Result: port.TerminalAttachResult{
 			TerminalID:   "term-1",
@@ -3212,7 +3212,7 @@ func TestCopyModeTerminalPoolAttachRebindInvalidatesFrozenHistoryForNewFloatingT
 		ViewRows:   10,
 	}
 
-	next, _ := reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{
+	next, _ := reduceTerminalPoolAttachResultPrepared(root, TerminalPoolAttachResultMsg{
 		TerminalID:       "term-new",
 		TargetFloatingID: "floating-1",
 		Result: port.TerminalAttachResult{
@@ -3268,7 +3268,7 @@ func TestCopyModeTerminalPoolReattachSameFloatingTerminalKeepsFrozenHistory(t *t
 		ViewRows:   10,
 	}
 
-	next, _ := reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{
+	next, _ := reduceTerminalPoolAttachResultPrepared(root, TerminalPoolAttachResultMsg{
 		TerminalID:       "term-1",
 		TargetFloatingID: "floating-1",
 		Result: port.TerminalAttachResult{
@@ -3341,7 +3341,7 @@ func TestCopyModeRuntimeTerminalPoolAttachRebindDoesNotRenderOldFrozenHistoryFor
 		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 
-	if err := runtime.Post(TerminalPoolAttachResultMsg{
+	if err := postPreparedTerminalPoolAttachResult(runtime, TerminalPoolAttachResultMsg{
 		TerminalID: "term-new",
 		Result: port.TerminalAttachResult{
 			TerminalID:   "term-new",
@@ -3423,7 +3423,7 @@ func TestCopyModeRuntimeTerminalPoolReattachSamePaneTerminalKeepsFrozenHistory(t
 		t.Fatalf("expected initial frame to render old frozen history, frames=%#v", host.Frames())
 	}
 
-	if err := runtime.Post(TerminalPoolAttachResultMsg{
+	if err := postPreparedTerminalPoolAttachResult(runtime, TerminalPoolAttachResultMsg{
 		TerminalID: "term-1",
 		Result: port.TerminalAttachResult{
 			TerminalID:   "term-1",
@@ -3510,7 +3510,7 @@ func TestCopyModeRuntimeTerminalPoolAttachRebindDoesNotRenderOldFrozenHistoryFor
 	})
 	runtime.state.TerminalViews = runtime.state.TerminalViews.BindFloating(state.NewFloatingTerminalView("floating-1", "float-pane", "term-old", 7, 40, 12, state.TerminalResizeRoleOwner, "surface-old", state.TerminalFloatingViewID("floating-1"), true))
 
-	if err := runtime.Post(TerminalPoolAttachResultMsg{
+	if err := postPreparedTerminalPoolAttachResult(runtime, TerminalPoolAttachResultMsg{
 		TerminalID:       "term-new",
 		TargetFloatingID: "floating-1",
 		Result: port.TerminalAttachResult{
@@ -3599,7 +3599,7 @@ func TestCopyModeRuntimeTerminalPoolReattachSameFloatingTerminalKeepsFrozenHisto
 	}
 	initialBoundCols := runtime.State().CopyMode.BoundCols
 
-	if err := runtime.Post(TerminalPoolAttachResultMsg{
+	if err := postPreparedTerminalPoolAttachResult(runtime, TerminalPoolAttachResultMsg{
 		TerminalID:       "term-1",
 		TargetFloatingID: "floating-1",
 		Result: port.TerminalAttachResult{
@@ -3661,7 +3661,7 @@ func TestCopyModeTerminalPoolReconnectRebindInvalidatesFrozenHistoryForNewPaneTe
 		},
 	}
 
-	next, _ := reduceTerminalPoolReconnectResult(root, TerminalPoolReconnectResultMsg{
+	next, _ := reduceTerminalPoolReconnectResultPrepared(root, TerminalPoolReconnectResultMsg{
 		TerminalID: "term-new",
 		Result: port.TerminalAttachResult{
 			TerminalID:   "term-new",
@@ -3709,7 +3709,7 @@ func TestCopyModeTerminalPoolReconnectSamePaneTerminalKeepsFrozenHistory(t *test
 		},
 	}
 
-	next, _ := reduceTerminalPoolReconnectResult(root, TerminalPoolReconnectResultMsg{
+	next, _ := reduceTerminalPoolReconnectResultPrepared(root, TerminalPoolReconnectResultMsg{
 		TerminalID: "term-1",
 		Result: port.TerminalAttachResult{
 			TerminalID:   "term-1",
@@ -3781,7 +3781,7 @@ func TestCopyModeRuntimeTerminalPoolReconnectRebindDoesNotRenderOldFrozenHistory
 		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 
-	if err := runtime.Post(TerminalPoolReconnectResultMsg{
+	if err := postPreparedTerminalPoolReconnectResult(runtime, TerminalPoolReconnectResultMsg{
 		TerminalID: "term-new",
 		Result: port.TerminalAttachResult{
 			TerminalID:   "term-new",
@@ -3863,7 +3863,7 @@ func TestCopyModeRuntimeTerminalPoolReconnectSamePaneTerminalKeepsFrozenHistory(
 		t.Fatalf("expected initial frame to render old frozen history, frames=%#v", host.Frames())
 	}
 
-	if err := runtime.Post(TerminalPoolReconnectResultMsg{
+	if err := postPreparedTerminalPoolReconnectResult(runtime, TerminalPoolReconnectResultMsg{
 		TerminalID: "term-1",
 		Result: port.TerminalAttachResult{
 			TerminalID:   "term-1",
@@ -3931,7 +3931,7 @@ func TestCopyModeTerminalPoolReconnectRebindInvalidatesFrozenHistoryForNewFloati
 		ViewRows:   10,
 	}
 
-	next, _ := reduceTerminalPoolReconnectResult(root, TerminalPoolReconnectResultMsg{
+	next, _ := reduceTerminalPoolReconnectResultPrepared(root, TerminalPoolReconnectResultMsg{
 		TerminalID:       "term-new",
 		TargetFloatingID: "floating-1",
 		Result: port.TerminalAttachResult{
@@ -3987,7 +3987,7 @@ func TestCopyModeTerminalPoolReconnectSameFloatingTerminalKeepsFrozenHistory(t *
 		ViewRows:   10,
 	}
 
-	next, _ := reduceTerminalPoolReconnectResult(root, TerminalPoolReconnectResultMsg{
+	next, _ := reduceTerminalPoolReconnectResultPrepared(root, TerminalPoolReconnectResultMsg{
 		TerminalID:       "term-1",
 		TargetFloatingID: "floating-1",
 		Result: port.TerminalAttachResult{
@@ -4065,7 +4065,7 @@ func TestCopyModeRuntimeTerminalPoolReconnectRebindDoesNotRenderOldFrozenHistory
 	})
 	runtime.state.TerminalViews = runtime.state.TerminalViews.BindFloating(state.NewFloatingTerminalView("floating-1", "float-pane", "term-old", 7, 40, 12, state.TerminalResizeRoleOwner, "surface-old", state.TerminalFloatingViewID("floating-1"), true))
 
-	if err := runtime.Post(TerminalPoolReconnectResultMsg{
+	if err := postPreparedTerminalPoolReconnectResult(runtime, TerminalPoolReconnectResultMsg{
 		TerminalID:       "term-new",
 		TargetFloatingID: "floating-1",
 		Result: port.TerminalAttachResult{
@@ -4154,7 +4154,7 @@ func TestCopyModeRuntimeTerminalPoolReconnectSameFloatingTerminalKeepsFrozenHist
 	}
 	initialBoundCols := runtime.State().CopyMode.BoundCols
 
-	if err := runtime.Post(TerminalPoolReconnectResultMsg{
+	if err := postPreparedTerminalPoolReconnectResult(runtime, TerminalPoolReconnectResultMsg{
 		TerminalID:       "term-1",
 		TargetFloatingID: "floating-1",
 		Result: port.TerminalAttachResult{

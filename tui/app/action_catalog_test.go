@@ -99,11 +99,11 @@ func runDefaultActionToOwnerBoundary(t *testing.T, root state.Root, invocation a
 	reducer := ComposeReducers(
 		NewBackNavigationReducer(copyDeps), NewShellReducer(), NewUIInputReducer(),
 		NewEndpointStatusReducer(liveDeps), NewEndpointDefaultsReducer(liveDeps), NewPromptPathCompletionReducer(liveDeps),
-		NewTerminalPoolReducer(liveDeps),
+		newTerminalPoolReducerPrepared(liveDeps),
 		NewWorkbenchStorageReducer(WorkbenchDeps{Storage: workbenchStorage, SkipInitialLoad: true}),
 		NewClipboardStorageReducer(ClipboardDeps{Storage: clipboardStorage}),
 		NewCopyModeReducer(copyDeps), NewCopyModeResizeRebindReducer(copyDeps),
-		NewTerminalInputRouterReducer(liveDeps), NewLiveReducer(liveDeps), NewTerminalLayoutResizeReducer(),
+		NewTerminalInputRouterReducer(liveDeps), newLiveReducerPrepared(liveDeps), NewTerminalLayoutResizeReducer(),
 	)
 	queue := []Msg{ShellShortcutActionMsg{Invocation: invocation}}
 	execution := defaultActionExecution{
@@ -416,7 +416,7 @@ func TestTerminalPickerSplitAttachFailureKeepsDeclaredPartialResult(t *testing.T
 	}
 
 	terminal := &testkit.FakeTerminalService{AttachErr: errors.New("west attach denied")}
-	poolReducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	poolReducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 	next, effects = poolReducer(next, request)
 	if len(effects) != 1 {
 		t.Fatalf("attach request must reach terminal service, effects=%#v", effects)
@@ -484,7 +484,7 @@ func TestTerminalPoolCombinationAttachFailuresKeepDeclaredSlots(t *testing.T) {
 				t.Fatalf("combination must declare endpoint-aware attach target: request=%#v ok=%v", request, ok)
 			}
 			terminal := &testkit.FakeTerminalService{AttachErr: errors.New("west attach denied")}
-			poolReducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+			poolReducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 			next, effects = poolReducer(next, request)
 			if len(effects) != 1 {
 				t.Fatalf("attach request must reach terminal service: effects=%#v", effects)

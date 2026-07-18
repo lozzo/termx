@@ -256,7 +256,7 @@ func TestTerminalInputRouterLogsActiveViewRoute(t *testing.T) {
 		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
 	}
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-1", state.TerminalPaneViewID(state.DefaultPaneID), true))
-	reducer := ComposeReducers(NewUIInputReducer(), NewTerminalInputRouterReducer(LiveDeps{Terminal: terminal, Logger: logger}), NewLiveReducer(LiveDeps{Terminal: terminal, Logger: logger}))
+	reducer := ComposeReducers(NewUIInputReducer(), NewTerminalInputRouterReducer(LiveDeps{Terminal: terminal, Logger: logger}), newLiveReducerPrepared(LiveDeps{Terminal: terminal, Logger: logger}))
 
 	_, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l", RawSeq: "l"}})
 	if len(effects) != 1 {
@@ -579,7 +579,7 @@ func TestTerminalPoolReattachCurrentPaneDoesNotOverwriteSiblingBinding(t *testin
 	root.TerminalViews = root.TerminalViews.
 		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
 		BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-2"), false))
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 
 	root, effects := reducer(root, TerminalPoolAttachRequestMsg{TerminalID: "term-1", TargetPaneID: state.DefaultPaneID})
 	if len(effects) != 1 {
@@ -613,7 +613,7 @@ func TestTerminalPoolAttachRoutesEndpointRef(t *testing.T) {
 		},
 	}
 	root := state.Root{Shell: state.DefaultShell()}
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 
 	root, effects := reducer(root, TerminalPoolAttachRequestMsg{EndpointID: "west", TerminalID: "term-1", TargetPaneID: state.DefaultPaneID})
 	if len(effects) != 1 {
@@ -677,7 +677,7 @@ func TestTerminalPoolAttachExitedTerminalDoesNotCacheLifecycleBeforeSurface(t *t
 		}}},
 	}
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-old", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 
 	next, effects := reducer(root, TerminalPoolAttachRequestMsg{TerminalID: "term-exited", TargetPaneID: state.DefaultPaneID})
 	if len(effects) != 1 {
@@ -840,7 +840,7 @@ func TestLiveAppAttachRenderInputAndResize(t *testing.T) {
 
 func TestLiveAttachMarksViewPendingBeforeResult(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{}
-	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{Shell: state.DefaultShell(), RuntimeSurfaceID: "runtime-a"}
 
 	next, effects := reducer(root, LiveAttachMsg{Config: LiveConfig{
@@ -865,7 +865,7 @@ func TestLiveAttachMarksViewPendingBeforeResult(t *testing.T) {
 
 func TestLiveAttachResultRefreshesTerminalPoolProjection(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell()}
-	next, effects := reduceLiveAttachResult(root, LiveAttachResultMsg{Result: port.TerminalAttachResult{
+	next, effects := reduceLiveAttachResultPrepared(root, LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-1",
 		Channel:      7,
 		Cols:         80,
@@ -874,6 +874,7 @@ func TestLiveAttachResultRefreshesTerminalPoolProjection(t *testing.T) {
 		SurfaceID:    "surface",
 		ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
 	}}, LiveDeps{})
+
 	if _, ok := next.TerminalViews.PaneBinding(state.DefaultPaneID); !ok {
 		t.Fatalf("attach result should bind active pane, root=%#v", next)
 	}
@@ -883,7 +884,7 @@ func TestLiveAttachResultRefreshesTerminalPoolProjection(t *testing.T) {
 }
 
 func TestLiveAttachResultForBackgroundViewDoesNotReplaceActiveProjection(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{})
+	reducer := newLiveReducerPrepared(LiveDeps{})
 	shell := state.DefaultShell().
 		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-main").
 		SplitActivePane(state.PaneState{ID: "pane-remote", Title: "remote", Kind: state.PaneTerminalLive, TerminalID: "remote"}, state.SplitDirectionVertical).
@@ -950,7 +951,7 @@ func TestLiveAttachResultForBackgroundViewDoesNotReplaceActiveProjection(t *test
 }
 
 func TestBackgroundLiveAttachErrorDoesNotPoisonActiveProjection(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{})
+	reducer := newLiveReducerPrepared(LiveDeps{})
 	remoteRef := state.NewTerminalRef("west", "remote")
 	shell := state.DefaultShell().
 		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-main").
@@ -992,7 +993,7 @@ func TestBackgroundLiveAttachErrorDoesNotPoisonActiveProjection(t *testing.T) {
 }
 
 func TestBackgroundLiveSurfaceErrorDoesNotPoisonActiveProjection(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{})
+	reducer := newLiveReducerPrepared(LiveDeps{})
 	remoteRef := state.NewTerminalRef("west", "remote")
 	shell := state.DefaultShell().
 		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-main").
@@ -1029,7 +1030,7 @@ func TestBackgroundLiveSurfaceErrorDoesNotPoisonActiveProjection(t *testing.T) {
 }
 
 func TestLiveAttachmentStoreSupportsSameTerminalAcrossTwoPanes(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{})
+	reducer := newLiveReducerPrepared(LiveDeps{})
 	root := state.Root{Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneEmpty}, state.SplitDirectionVertical)}
 
 	var effects []Effect
@@ -1158,7 +1159,7 @@ func TestLiveInputDoesNotReattachWhileViewAttachPending(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(100, 30)
 	root := state.Root{Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")}
-	root.TerminalViews = root.TerminalViews.MarkAttachPending(state.TerminalViewBinding{
+	root.TerminalViews, _ = root.TerminalViews.BeginAttach(state.TerminalViewBinding{
 		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
 		SurfaceID:   "surface",
 		TerminalID:  "term-1",
@@ -1191,7 +1192,7 @@ func TestLiveInputDoesNotReattachWhileViewAttachPending(t *testing.T) {
 	}
 }
 
-func TestLiveInputRefreshesStaleViewChannelWithoutStealingSibling(t *testing.T) {
+func TestLiveInputFailureDoesNotReplayAcrossReattach(t *testing.T) {
 	terminal := &refreshingInputTerminalService{
 		nextChannel:         21,
 		staleChannels:       map[uint16]bool{7: true},
@@ -1223,14 +1224,14 @@ func TestLiveInputRefreshesStaleViewChannelWithoutStealingSibling(t *testing.T) 
 		t.Fatalf("drain first pane: %v", err)
 	}
 
-	if len(terminal.Inputs) != 2 || terminal.Inputs[0].Channel != 7 || terminal.Inputs[1].Channel != 21 {
-		t.Fatalf("stale active pane should retry on fresh channel, got %#v", terminal.Inputs)
+	if len(terminal.Inputs) != 1 || terminal.Inputs[0].Channel != 7 {
+		t.Fatalf("failed input must be attempted exactly once, got %#v", terminal.Inputs)
 	}
-	if len(terminal.Attaches) != 1 || terminal.Attaches[0].ViewID != state.TerminalPaneViewID(state.DefaultPaneID) {
-		t.Fatalf("retry should reattach default pane only, got %#v", terminal.Attaches)
+	if len(terminal.Attaches) != 0 {
+		t.Fatalf("failed input must not trigger implicit reattach, got %#v", terminal.Attaches)
 	}
-	if binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.Channel != 21 {
-		t.Fatalf("default pane channel should refresh, binding=%#v ok=%v", binding, ok)
+	if binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.Channel != 0 || binding.Attached {
+		t.Fatalf("failed input may invalidate the committed channel but must not replay payload, binding=%#v ok=%v", binding, ok)
 	}
 
 	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandFocus, Target: state.PaneCommandTarget{PaneID: "pane-2"}, Source: state.PaneCommandSourceTest}}); err != nil {
@@ -1243,18 +1244,15 @@ func TestLiveInputRefreshesStaleViewChannelWithoutStealingSibling(t *testing.T) 
 		t.Fatalf("drain second pane: %v", err)
 	}
 
-	if len(terminal.Inputs) != 4 || terminal.Inputs[2].Channel != 8 || terminal.Inputs[3].Channel != 22 {
-		t.Fatalf("sibling pane should recover its own channel after focus, got %#v", terminal.Inputs)
+	if len(terminal.Inputs) != 2 || terminal.Inputs[1].Channel != 8 {
+		t.Fatalf("sibling input must also be attempted once without replay, got %#v", terminal.Inputs)
 	}
-	if len(terminal.Attaches) != 2 || terminal.Attaches[1].ViewID != state.TerminalPaneViewID("pane-2") {
-		t.Fatalf("second retry should reattach pane-2 view, got %#v", terminal.Attaches)
-	}
-	if binding, ok := runtime.State().TerminalViews.PaneBinding("pane-2"); !ok || binding.Channel != 22 {
-		t.Fatalf("pane-2 channel should refresh independently, binding=%#v ok=%v", binding, ok)
+	if binding, ok := runtime.State().TerminalViews.PaneBinding("pane-2"); !ok || binding.Channel != 8 || !binding.Attached {
+		t.Fatalf("successful sibling input must preserve its committed channel, binding=%#v ok=%v", binding, ok)
 	}
 }
 
-func TestLiveInputReattachesOnlyActiveViewWhenProtocolChannelCheckFails(t *testing.T) {
+func TestLiveInputProtocolFailureDoesNotReattachOrReplay(t *testing.T) {
 	terminal := &refreshingInputTerminalService{
 		nextChannel:         21,
 		staleChannels:       map[uint16]bool{7: true},
@@ -1285,16 +1283,14 @@ func TestLiveInputReattachesOnlyActiveViewWhenProtocolChannelCheckFails(t *testi
 		t.Fatalf("drain first pane: %v", err)
 	}
 
-	if len(terminal.Attaches) != 1 || terminal.Attaches[0].ViewID != state.TerminalPaneViewID(state.DefaultPaneID) {
-		t.Fatalf("failed active view input should reattach only active pane, got %#v", terminal.Attaches)
+	if len(terminal.Attaches) != 0 {
+		t.Fatalf("failed active view input must not reattach implicitly, got %#v", terminal.Attaches)
 	}
-	if got := compactInputRequests(terminal.Inputs); len(got) != 2 ||
-		got[0] != "term-1#7:l" ||
-		got[1] != "term-1#21:l" {
-		t.Fatalf("input should retry on active pane fresh channel, got %#v raw=%#v", got, terminal.Inputs)
+	if got := compactInputRequests(terminal.Inputs); len(got) != 1 || got[0] != "term-1#7:l" {
+		t.Fatalf("input must be attempted exactly once, got %#v raw=%#v", got, terminal.Inputs)
 	}
-	if binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.Channel != 21 {
-		t.Fatalf("active pane channel should refresh, binding=%#v ok=%v", binding, ok)
+	if binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.Channel != 0 || binding.Attached {
+		t.Fatalf("active pane failed input may invalidate its channel without replay, binding=%#v ok=%v", binding, ok)
 	}
 	if binding, ok := runtime.State().TerminalViews.PaneBinding("pane-2"); !ok || binding.Channel != 8 {
 		t.Fatalf("sibling channel must not be overwritten, binding=%#v ok=%v", binding, ok)
@@ -1306,7 +1302,7 @@ func TestLiveAttachResultAcceptsPrefilledSessionBeforeFirstBinding(t *testing.T)
 		Session: state.TerminalSessionStore{TerminalID: "term-1", Cols: 100, Rows: 30},
 		Surface: state.TerminalSurfaceStore{TerminalID: "term-1", Cols: 100, Rows: 30},
 	}
-	root, effects := reduceLiveAttachResult(root, LiveAttachResultMsg{Result: port.TerminalAttachResult{
+	root, effects := reduceLiveAttachResultPrepared(root, LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-1",
 		Channel:      7,
 		Cols:         100,
@@ -1329,7 +1325,7 @@ func TestLiveAttachResultAcceptsPrefilledSessionBeforeFirstBinding(t *testing.T)
 }
 
 func TestLiveAttachResultDoesNotAutoRestartExitedTerminal(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{})
+	reducer := newLiveReducerPrepared(LiveDeps{})
 	root := state.Root{
 		Shell:   state.DefaultShell(),
 		Surface: state.TerminalSurfaceStore{TerminalID: "term-1", State: state.TerminalLiveExited},
@@ -1384,7 +1380,7 @@ func TestLiveAttachAndInitialSurfaceEffectsAreAsync(t *testing.T) {
 
 func TestTerminalPoolRemoveDeletesInventoryAndBindings(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{}
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{
 		Shell:        state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
 		Session:      state.TerminalSessionStore{TerminalID: "term-1", Channel: 7, Attached: true, InputChannels: map[string]uint16{"term-1": 7}},
@@ -1471,7 +1467,7 @@ func TestR394LiveInvalidationArmEffectDoesNotUseFixedDelay(t *testing.T) {
 
 func TestLiveFrameReadyArmsNextInvalidation(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{LiveInvalidationsCh: make(chan port.TerminalLiveEvent, 1)}
-	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
 	surface := (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
 		TerminalID: "term-1",
 		Revision:   8,
@@ -1499,7 +1495,7 @@ func TestLiveFrameReadyArmsNextInvalidation(t *testing.T) {
 
 func TestLiveFrameReadyArmsEndpointInvalidation(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{LiveInvalidationsCh: make(chan port.TerminalLiveEvent, 1)}
-	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
 	surface := (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
 		EndpointID: "west",
 		TerminalID: "term-1",
@@ -1526,7 +1522,7 @@ func TestLiveFrameReadyArmsEndpointInvalidation(t *testing.T) {
 
 func TestLiveFrameReadyDedupesPendingCallbackForSharedTerminalViews(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{LiveInvalidationsCh: make(chan port.TerminalLiveEvent, 1)}
-	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
 	shell := state.DefaultShell().
 		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-shared").
 		SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-shared"}, state.SplitDirectionVertical)
@@ -1597,7 +1593,7 @@ func TestLiveInvalidationArmContextCanceledDoesNotPostPanelError(t *testing.T) {
 
 func TestLiveInvalidationArmCancellationReleasesPendingCallback(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{LiveInvalidationsErr: context.Canceled}
-	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{}
 	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{
 		TerminalID: "term-1",
@@ -1634,7 +1630,7 @@ func TestLiveInvalidationArmCancellationReleasesPendingCallback(t *testing.T) {
 }
 
 func TestLiveExitClearsPendingRefreshDebt(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{})
+	reducer := newLiveReducerPrepared(LiveDeps{})
 	root := rootWithDirtyRefreshForLiveTest(t, state.LocalTerminalRef("term-1"))
 
 	next, effects := reducer(root, LiveExitMsg{TerminalID: "term-1", ExitCode: 0, Reason: "done"})
@@ -1650,7 +1646,7 @@ func TestLiveExitClearsPendingRefreshDebt(t *testing.T) {
 }
 
 func TestLiveEventBoundaryClearsPendingRefreshDebt(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{})
+	reducer := newLiveReducerPrepared(LiveDeps{})
 	cases := []struct {
 		name  string
 		event port.TerminalLiveEvent
@@ -1770,7 +1766,7 @@ func TestLiveEventRefreshBackpressureSchedulesDirtyLatestFetchAfterSurfaceReturn
 		Ready:    true,
 		Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Lines: []string{"latest"}},
 	}}
-	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{Surface: state.TerminalSurfaceStore{TerminalID: "term-1", Cols: 80, Rows: 24}}
 
 	root, effects := reducer(root, LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}})
@@ -1807,7 +1803,7 @@ func TestLiveEventRefreshUsesCoreLatestScreenInsteadOfEventPayload(t *testing.T)
 		Ready:    true,
 		Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 11, Lines: []string{"latest"}},
 	}}
-	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{Surface: (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
 		TerminalID: "term-1",
 		Revision:   10,
@@ -1846,7 +1842,7 @@ func TestLiveEventRefreshDoesNotTriggerLayoutResizeMeasurement(t *testing.T) {
 
 func TestTerminalPoolReconnectUsesActiveViewIdentity(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 11, Cols: 80, Rows: 24, CanResize: true}}
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)}
 
 	root, effects := reducer(root, TerminalPoolReconnectRequestMsg{TerminalID: "term-1"})
@@ -2069,7 +2065,7 @@ func TestTerminalSizeLockBlocksSplitLayoutResize(t *testing.T) {
 }
 
 func TestTerminalSizeUnlockResizesOwnerWhenPanelSizeDiverged(t *testing.T) {
-	reducer := ComposeReducers(NewTerminalPoolReducer(LiveDeps{}), NewTerminalLayoutResizeReducer())
+	reducer := ComposeReducers(newTerminalPoolReducerPrepared(LiveDeps{}), NewTerminalLayoutResizeReducer())
 	root := state.Root{
 		Shell: state.DefaultShell().
 			SetPanelPresentation(state.PanelPresentationSplitLine).
@@ -2100,7 +2096,7 @@ func TestTerminalSizeUnlockResizesOwnerWhenPanelSizeDiverged(t *testing.T) {
 }
 
 func TestLiveMetadataEventProjectsTerminalSizeLockAndUnlockResize(t *testing.T) {
-	reducer := ComposeReducers(NewLiveReducer(LiveDeps{}), NewTerminalLayoutResizeReducer())
+	reducer := ComposeReducers(newLiveReducerPrepared(LiveDeps{}), NewTerminalLayoutResizeReducer())
 	root := state.Root{
 		Shell: state.DefaultShell().
 			SetPanelPresentation(state.PanelPresentationSplitLine).
@@ -2144,7 +2140,7 @@ func TestLiveMetadataEventProjectsTerminalSizeLockAndUnlockResize(t *testing.T) 
 }
 
 func TestTerminalSizeLockBlocksAttachResultResizeToSplitPane(t *testing.T) {
-	reducer := ComposeReducers(NewShellReducer(), NewTerminalPoolReducer(LiveDeps{}), NewTerminalLayoutResizeReducer())
+	reducer := ComposeReducers(NewShellReducer(), newTerminalPoolReducerPrepared(LiveDeps{}), NewTerminalLayoutResizeReducer())
 	root := state.Root{
 		Shell: state.DefaultShell().
 			SetPanelPresentation(state.PanelPresentationSplitLine).
@@ -2263,7 +2259,7 @@ func TestTerminalPoolAttachRequestToSameLockedTerminalDoesNotResize(t *testing.T
 }
 
 func TestTakeResizeOwnerAttachResultTriggersOwnerViewResize(t *testing.T) {
-	reducer := ComposeReducers(NewLiveReducer(LiveDeps{}), NewTerminalLayoutResizeReducer())
+	reducer := ComposeReducers(newLiveReducerPrepared(LiveDeps{}), NewTerminalLayoutResizeReducer())
 	shell := state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine)
 	shell = shell.SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
 	root := state.Root{
@@ -2290,7 +2286,7 @@ func TestTakeResizeOwnerAttachResultTriggersOwnerViewResize(t *testing.T) {
 }
 
 func TestTakeResizeOwnerAttachResultTriggersSameSizeOwnerResize(t *testing.T) {
-	reducer := ComposeReducers(NewLiveReducer(LiveDeps{}), NewTerminalLayoutResizeReducer())
+	reducer := ComposeReducers(newLiveReducerPrepared(LiveDeps{}), NewTerminalLayoutResizeReducer())
 	shell := state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine)
 	shell = shell.SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
 	root := state.Root{
@@ -2314,7 +2310,7 @@ func TestTakeResizeOwnerAttachResultTriggersSameSizeOwnerResize(t *testing.T) {
 
 func TestViewScopedOwnerResizeUsesBindingResizePolicy(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{}
-	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{
 		Session: state.TerminalSessionStore{
 			TerminalID:   "term-1",
@@ -2353,7 +2349,7 @@ func TestViewScopedOwnerResizeUsesBindingResizePolicy(t *testing.T) {
 
 func TestViewScopedOwnerResizeRoutesEndpointBinding(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{}
-	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{
 		Session: state.TerminalSessionStore{
 			EndpointID:    "west",
@@ -2424,7 +2420,7 @@ func liveResizeMsgFromEffects(effects []Effect) (LiveResizeMsg, bool) {
 }
 
 func TestLiveResizeResultUsesViewScopedStaleGuard(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{})
+	reducer := newLiveReducerPrepared(LiveDeps{})
 	root := state.Root{
 		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24, DesiredCols: 80, DesiredRows: 24, ResizeRequestSeq: 9},
 		Surface: state.TerminalSurfaceStore{TerminalID: "term-1", Cols: 80, Rows: 24},
@@ -2441,7 +2437,7 @@ func TestLiveResizeResultUsesViewScopedStaleGuard(t *testing.T) {
 }
 
 func TestLiveResizeResultProjectsTerminalSizeLockWithoutResizingSurface(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{})
+	reducer := newLiveReducerPrepared(LiveDeps{})
 	root := state.Root{
 		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24, DesiredCols: 100, DesiredRows: 30},
 		Surface: state.TerminalSurfaceStore{TerminalID: "term-1", Cols: 80, Rows: 24},
@@ -2568,10 +2564,10 @@ func TestLiveInputRoutesToFocusedPaneTerminal(t *testing.T) {
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 90, Rows: 24}}); err != nil {
 		t.Fatalf("post main attach: %v", err)
 	}
-	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-2", Channel: 2, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID("pane-2")}}); err != nil {
+	if err := postPreparedLiveAttachResult(runtime, LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-2", Channel: 2, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID("pane-2")}}); err != nil {
 		t.Fatalf("post term-2 attach result: %v", err)
 	}
-	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-3", Channel: 3, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID("pane-3")}}); err != nil {
+	if err := postPreparedLiveAttachResult(runtime, LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-3", Channel: 3, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID("pane-3")}}); err != nil {
 		t.Fatalf("post term-3 attach result: %v", err)
 	}
 	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandFocus, Target: state.PaneCommandTarget{PaneID: state.DefaultPaneID}, Source: state.PaneCommandSourceTest}}); err != nil {
@@ -2635,10 +2631,10 @@ func TestMousePaneContentActivationExitsInteractionModeBeforeLiveInput(t *testin
 		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 
-	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID(state.DefaultPaneID)}}); err != nil {
+	if err := postPreparedLiveAttachResult(runtime, LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID(state.DefaultPaneID)}}); err != nil {
 		t.Fatalf("post main attach result: %v", err)
 	}
-	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-2", Channel: 2, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID("pane-2")}}); err != nil {
+	if err := postPreparedLiveAttachResult(runtime, LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-2", Channel: 2, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID("pane-2")}}); err != nil {
 		t.Fatalf("post term-2 attach result: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2693,7 +2689,7 @@ func TestLiveInputTargetsActiveFloatingBeforeTiledPane(t *testing.T) {
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post main attach: %v", err)
 	}
-	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-float", Channel: 9, Cols: 28, Rows: 6, ViewID: state.TerminalFloatingViewID("floating-1")}}); err != nil {
+	if err := postPreparedLiveAttachResult(runtime, LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-float", Channel: 9, Cols: 28, Rows: 6, ViewID: state.TerminalFloatingViewID("floating-1")}}); err != nil {
 		t.Fatalf("post floating attach result: %v", err)
 	}
 	if err := runtime.Post(ShellFloatingCommandMsg{Command: state.FloatingCommand{Action: state.FloatingCommandFocusRaise, TargetID: "floating-1", Source: state.PaneCommandSourceTest}}); err != nil {
@@ -2739,10 +2735,10 @@ func TestMouseFloatingContentActivationExitsInteractionModeBeforeLiveInput(t *te
 		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 
-	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 78, Rows: 20, ViewID: state.TerminalPaneViewID(state.DefaultPaneID)}}); err != nil {
+	if err := postPreparedLiveAttachResult(runtime, LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 78, Rows: 20, ViewID: state.TerminalPaneViewID(state.DefaultPaneID)}}); err != nil {
 		t.Fatalf("post main attach result: %v", err)
 	}
-	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-float", Channel: 9, Cols: 28, Rows: 6, ViewID: state.TerminalFloatingViewID("floating-1")}}); err != nil {
+	if err := postPreparedLiveAttachResult(runtime, LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-float", Channel: 9, Cols: 28, Rows: 6, ViewID: state.TerminalFloatingViewID("floating-1")}}); err != nil {
 		t.Fatalf("post floating attach result: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2797,7 +2793,7 @@ func TestTerminalPoolPaneReattachDoesNotStealSharedFloatingBinding(t *testing.T)
 	root.TerminalViews = root.TerminalViews.
 		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-a", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
 		BindFloating(state.NewFloatingTerminalView("floating-1", "floating-pane-1", "term-a", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalFloatingViewID("floating-1"), false))
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 
 	root, effects := reducer(root, TerminalPoolAttachRequestMsg{TerminalID: "term-b", TargetPaneID: state.DefaultPaneID})
 	if len(effects) != 1 {
@@ -3014,7 +3010,7 @@ func TestActiveFloatingResizeCommandResizesAttachedTerminalContentRect(t *testin
 		LiveDeps{Terminal: terminal},
 		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
-	if err := runtime.Post(TerminalPoolAttachResultMsg{
+	if err := postPreparedTerminalPoolAttachResult(runtime, TerminalPoolAttachResultMsg{
 		TerminalID:       "term-float",
 		TargetFloatingID: "floating-1",
 		Result:           port.TerminalAttachResult{TerminalID: "term-float", Channel: 5, Cols: 28, Rows: 6, ResizePolicy: state.TerminalResizeRoleOwner, CanResize: true},
@@ -3209,7 +3205,7 @@ func TestLiveEventUsesEventTerminalIDWhenSnapshotTerminalIDMissing(t *testing.T)
 			Lines:      []string{"main"},
 		}),
 	}
-	reducer := NewLiveReducer(LiveDeps{})
+	reducer := newLiveReducerPrepared(LiveDeps{})
 	next, _ := reducer(root, LiveEventMsg{Event: port.TerminalLiveEvent{
 		TerminalID: "term-logs",
 		Ready:      true,
@@ -4134,7 +4130,11 @@ func TestBatchedPaneCommandsResizeTerminalToLatestContentRect(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain split command: %v", err)
 	}
-	runtime.state.TerminalViews = runtime.state.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 9, 48, 36, state.TerminalResizeRoleOwner, "test-surface", state.TerminalPaneViewID("pane-2"), true)).TransferPaneResizeOwner("pane-2")
+	owner, _ := runtime.state.TerminalViews.PaneBinding(state.DefaultPaneID)
+	binding := state.NewPaneTerminalView("pane-2", "term-1", 9, 48, 36, state.TerminalResizeRoleOwner, "test-surface", state.TerminalPaneViewID("pane-2"), true)
+	binding.Session = owner.AttachmentSession()
+	binding.OperationID = owner.OperationID
+	runtime.state.TerminalViews = runtime.state.TerminalViews.BindPane(binding).TransferPaneResizeOwner("pane-2")
 	terminal.Resizes = nil
 	for _, command := range []state.PaneCommand{
 		{Action: state.PaneCommandResize, Target: state.PaneCommandTarget{PaneID: "pane-2"}, ResizeDirection: state.PaneResizeLeft, Delta: 6},
@@ -4313,7 +4313,7 @@ func TestLiveAppShowsTerminalServiceError(t *testing.T) {
 	}
 	frames := host.Frames()
 	last := lastFrame(t, frames)
-	if len(last.Lines) < 2 || !strings.Contains(last.Lines[len(last.Lines)-1], "attach failed") {
+	if len(last.Lines) < 2 || !frameContains(last, "attach failed") {
 		t.Fatalf("expected rendered error status, got %#v", last.Lines)
 	}
 }

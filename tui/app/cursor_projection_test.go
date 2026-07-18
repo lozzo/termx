@@ -100,7 +100,7 @@ func TestHostCursorProjectionLiveCopyPromptFloatingAndOverlayPriority(t *testing
 	}}); err != nil {
 		t.Fatalf("create floating: %v", err)
 	}
-	if err := runtime.Post(TerminalPoolAttachResultMsg{
+	if err := postPreparedTerminalPoolAttachResult(runtime, TerminalPoolAttachResultMsg{
 		TerminalID:       "term-float",
 		TargetFloatingID: "floating-1",
 		Result:           port.TerminalAttachResult{TerminalID: "term-float", Channel: 9, Cols: 30, Rows: 7},

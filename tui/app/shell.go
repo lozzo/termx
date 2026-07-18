@@ -1930,11 +1930,13 @@ func terminalDetachRequestFromBinding(binding state.TerminalViewBinding) (port.T
 		return port.TerminalDetachRequest{}, false
 	}
 	return port.TerminalDetachRequest{
-		EndpointID: binding.EndpointID,
-		TerminalID: binding.TerminalID,
-		Channel:    binding.Channel,
-		SurfaceID:  binding.SurfaceID,
-		ViewID:     binding.ViewID,
+		EndpointID:  binding.EndpointID,
+		TerminalID:  binding.TerminalID,
+		Channel:     binding.Channel,
+		SurfaceID:   binding.SurfaceID,
+		ViewID:      binding.ViewID,
+		Session:     binding.AttachmentSession(),
+		OperationID: "detach:" + binding.OperationID,
 	}, true
 }
 

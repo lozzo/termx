@@ -97,7 +97,7 @@ func TestShellReducerHandlesTerminalPickerOverlaySemanticActions(t *testing.T) {
 
 func TestTerminalPickerOpenRefreshKeepsExistingRowsOutOfLoading(t *testing.T) {
 	shellReducer := NewShellReducer()
-	poolReducer := NewTerminalPoolReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
+	poolReducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	root := state.Root{
 		Shell: state.DefaultShell(),
 		TerminalPool: state.TerminalPoolStore{

@@ -468,6 +468,15 @@ func (session *ownedApplicationSession) ExecuteApplication(ctx context.Context, 
 	return session.owner.ExecuteApplication(ctx, session.stamp, command)
 }
 
+// ValidateApplicationSession 在具体 protocol/resource 调用前确认 owned wrapper 仍是 owner 当前 winner。
+func (session *ownedApplicationSession) ValidateApplicationSession(stamp EndpointSessionStamp) error {
+	if stamp != session.stamp {
+		return runtimeError(ErrorStaleSession, "application operation session stamp does not match owned session", nil)
+	}
+	_, err := session.owner.session(stamp)
+	return err
+}
+
 // ExecuteApplicationTerminal 把 terminal-response 选择路由到同一 generation 的底层 ready session。
 func (session *ownedApplicationSession) ExecuteApplicationTerminal(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
 	current, err := session.owner.session(session.stamp)
@@ -524,6 +533,7 @@ func (session *ownedApplicationSession) ApplicationAttachment(channel uint16) (*
 var _ ApplicationReadySession = (*ownedApplicationSession)(nil)
 var _ ResourceStreamSession = (*ownedApplicationSession)(nil)
 var _ ApplicationAttachmentSession = (*ownedApplicationSession)(nil)
+var _ ApplicationSessionValidator = (*ownedApplicationSession)(nil)
 
 type sharedApplicationLease struct {
 	owner      *SessionOwner
@@ -567,6 +577,17 @@ func (lease *sharedApplicationLease) ExecuteApplication(ctx context.Context, com
 		return nil, err
 	}
 	return lease.ready.ExecuteApplication(ctx, command)
+}
+
+// ValidateApplicationSession 在副作用前确认 consumer lease 未关闭且请求 stamp 精确属于共享 ready generation。
+func (lease *sharedApplicationLease) ValidateApplicationSession(stamp EndpointSessionStamp) error {
+	if err := lease.active(); err != nil {
+		return err
+	}
+	if stamp != lease.ready.Stamp() {
+		return runtimeError(ErrorStaleSession, "application operation session stamp does not match shared session", nil)
+	}
+	return nil
 }
 
 // ExecuteApplicationTerminal 保持 shared lease generation fence，并把 terminal response 交给同一 ready session。
@@ -637,3 +658,4 @@ func (lease *sharedApplicationLease) active() error {
 var _ ApplicationReadySession = (*sharedApplicationLease)(nil)
 var _ ResourceStreamSession = (*sharedApplicationLease)(nil)
 var _ ApplicationAttachmentSession = (*sharedApplicationLease)(nil)
+var _ ApplicationSessionValidator = (*sharedApplicationLease)(nil)

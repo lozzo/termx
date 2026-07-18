@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/shared/perftrace"
 	"github.com/lozzow/termx/shared/terminalmeta"
 	"github.com/lozzow/termx/tui/input"
@@ -173,6 +174,7 @@ type LiveAttachResultMsg struct {
 	TerminalID            string
 	ViewID                string
 	RequestedResizePolicy string
+	OperationID           string
 	Result                port.TerminalAttachResult
 	Err                   error
 }
@@ -279,37 +281,40 @@ type LiveResizeMsg struct {
 func (LiveResizeMsg) isMsg() {}
 
 type LiveResizeResultMsg struct {
-	EndpointID state.EndpointID
-	TerminalID string
-	Result     port.TerminalResizeResult
-	Cols       int
-	Rows       int
-	Seq        uint64
-	ViewID     string
-	Err        error
+	EndpointID  state.EndpointID
+	TerminalID  string
+	Result      port.TerminalResizeResult
+	Cols        int
+	Rows        int
+	Seq         uint64
+	ViewID      string
+	Session     *apipb.EndpointSessionStamp
+	OperationID string
+	Err         error
 }
 
 func (LiveResizeResultMsg) isMsg() {}
 
 type LiveInputResultMsg struct {
-	EndpointID   state.EndpointID
-	TerminalID   string
-	ViewID       string
-	Channel      uint16
-	Event        input.InputEvent
-	Bytes        []byte
-	RetryOnError bool
-	Err          error
+	EndpointID  state.EndpointID
+	TerminalID  string
+	ViewID      string
+	Channel     uint16
+	Event       input.InputEvent
+	Bytes       []byte
+	OperationID string
+	Err         error
 }
 
 func (LiveInputResultMsg) isMsg() {}
 
 type LiveInputAttachResultMsg struct {
-	Target liveInputTargetInfo
-	Event  input.InputEvent
-	Bytes  []byte
-	Result port.TerminalAttachResult
-	Err    error
+	Target      liveInputTargetInfo
+	Event       input.InputEvent
+	Bytes       []byte
+	OperationID string
+	Result      port.TerminalAttachResult
+	Err         error
 }
 
 func (LiveInputAttachResultMsg) isMsg() {}
@@ -407,14 +412,7 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				if next, ok := markTerminalExitedFromErrorRef(root, msgRef, msg.Err); ok {
 					return next.Advance(), nil
 				}
-				if msg.RetryOnError && msg.ViewID != "" && len(msg.Bytes) > 0 {
-					if target, ok := liveInputTargetForView(root, msg.ViewID); ok && state.NewTerminalRef(target.EndpointID, target.TerminalID).Equal(msgRef) {
-						// 中文说明：channel 是 view attach 身份；发送失败时只重建这一个 view，
-						// 不能退回全局 session 或抢用 sibling panel 的 channel。
-						return root, []Effect{liveAttachForInputEffect(root, target, msg.Event, msg.Bytes, deps)}
-					}
-				}
-				root = setLiveInputErrorRef(root, msgRef, msg.Err.Error())
+				root = setLiveInputViewError(root, msgRef, msg.ViewID, msg.Err.Error())
 				return root.Advance(), nil
 			}
 			return root, nil
@@ -439,6 +437,9 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				}
 				if binding.IsStaleResizeResult(msg.Seq) {
 					return recoverLatestResizeAfterStaleResult(root, msg)
+				}
+				if !protoEndpointSessionEqual(binding.Session, msg.Session) {
+					return root, nil
 				}
 				if liveResizeResultConflictsWithLocalOwner(root, binding, msg.Result) {
 					return recoverLatestResizeAfterStaleResult(root, msg)
@@ -524,7 +525,11 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 	if cfg.ResizePolicy == "" {
 		cfg.ResizePolicy = state.TerminalResizeRoleFollower
 	}
-	root = markLiveAttachPending(root, cfg)
+	var candidate state.TerminalAttachCandidate
+	root, candidate = markLiveAttachPending(root, cfg)
+	if candidate.OperationID == "" {
+		return root, nil
+	}
 	logLifecycleTrace(deps.Logger, "live.attach.request",
 		"terminal_id", cfg.TerminalID,
 		"view_id", cfg.ViewID,
@@ -551,19 +556,23 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 				ResizePolicy: cfg.ResizePolicy,
 				SurfaceID:    cfg.SurfaceID,
 				ViewID:       cfg.ViewID,
+				OperationID:  candidate.OperationID,
 			})
-			return LiveAttachResultMsg{EndpointID: cfg.EndpointID, TerminalID: cfg.TerminalID, ViewID: cfg.ViewID, RequestedResizePolicy: cfg.ResizePolicy, Result: result, Err: err}
+			return LiveAttachResultMsg{EndpointID: cfg.EndpointID, TerminalID: cfg.TerminalID, ViewID: cfg.ViewID, RequestedResizePolicy: cfg.ResizePolicy, OperationID: candidate.OperationID, Result: result, Err: err}
 		},
 	}}
 }
 
-func markLiveAttachPending(root state.Root, cfg LiveConfig) state.Root {
+func markLiveAttachPending(root state.Root, cfg LiveConfig) (state.Root, state.TerminalAttachCandidate) {
 	if cfg.TerminalID == "" || cfg.ViewID == "" {
-		return root
+		return root, state.TerminalAttachCandidate{}
 	}
 	target, ok := liveAttachTargetForViewID(root, cfg.ViewID)
 	if !ok {
-		return root
+		if len(root.TerminalViews.Views) != 0 {
+			return root, state.TerminalAttachCandidate{}
+		}
+		target.PaneID = root.Shell.EnsureDefaults().ActivePaneID
 	}
 	role := cfg.ResizePolicy
 	if role == "" {
@@ -582,8 +591,9 @@ func markLiveAttachPending(root state.Root, cfg LiveConfig) state.Root {
 	}
 	// 中文说明：attach 请求已经发出但 channel 未返回时，先占住当前 view，
 	// 避免 storage restore 把同一 view/terminal 再次 attach 成第二个附件。
-	root.TerminalViews = root.TerminalViews.MarkAttachPending(binding)
-	return root
+	var candidate state.TerminalAttachCandidate
+	root.TerminalViews, candidate = root.TerminalViews.BeginAttach(binding)
+	return root, candidate
 }
 
 func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveDeps) (state.Root, []Effect) {
@@ -599,17 +609,36 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 			)
 			return next.Advance(), nil
 		}
+		binding, hadBinding := root.TerminalViews.Views[msg.ViewID]
+		var applied bool
+		root.TerminalViews, applied = root.TerminalViews.FailAttach(msg.ViewID, msg.OperationID, msg.Err.Error())
+		if !applied {
+			return root, nil
+		}
+		if hadBinding && binding.Attached {
+			return root, nil
+		}
 		logLifecycleTrace(deps.Logger, "live.attach.result",
 			"endpoint_id", string(ref.EndpointID),
 			"terminal_id", msg.TerminalID,
 			"error", msg.Err.Error(),
 			"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminalRef(ref)),
 		)
-		root.TerminalViews = root.TerminalViews.ClearAttachPending(msg.ViewID, msg.Err.Error())
 		root = applyLiveAttachErrorRef(root, ref, msg.ViewID, msg.Err.Error())
 		return root.Advance(), nil
 	}
 	result := msg.Result
+	if result.OperationID == "" {
+		result.OperationID = msg.OperationID
+	}
+	current, currentOK := root.TerminalViews.Views[msg.ViewID]
+	if !currentOK || current.AttachCandidate == nil || current.AttachCandidate.OperationID != msg.OperationID || result.OperationID != msg.OperationID {
+		return root, cleanupAttachResultEffects(result)
+	}
+	previous := state.TerminalViewBinding{}
+	if current.Attached {
+		previous = current
+	}
 	if result.EndpointID == "" {
 		result.EndpointID = state.NormalizeEndpointID(msg.EndpointID)
 	}
@@ -621,6 +650,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	activePaneID := root.Shell.ReadonlyDefaults().ActivePaneID
 	if viewID == "" {
 		viewID = liveAttachDefaultViewID(root)
+		result.ViewID = viewID
 	} else if !liveAttachViewStillPresent(root, viewID) {
 		// 外部 reload/restore 替换 pane/view 结构后，旧 view 的迟到 attach result
 		// 不能回退绑定到当前 pane/floating；但首次 attach 时 view binding 可能还没建，
@@ -631,7 +661,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 			"channel", result.Channel,
 			"bindings", lifecycleTerminalViewsSummary(root.TerminalViews),
 		)
-		return root, nil
+		return root, cleanupAttachResultEffects(result)
 	}
 	target, hasTarget := liveAttachTargetForViewID(root, viewID)
 	if hasTarget && target.PaneID != "" {
@@ -646,6 +676,8 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		if existing.FloatingID != "" {
 			root = invalidateCopyModeForTerminalRebindRef(root, existing.PaneID, viewID, state.NewTerminalRef(result.EndpointID, result.TerminalID))
 			binding := state.NewEndpointFloatingTerminalView(result.EndpointID, existing.FloatingID, existing.PaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
+			binding.Session = result.Session
+			binding.OperationID = result.OperationID
 			binding.Layout = existing.Layout
 			root.TerminalViews = root.TerminalViews.BindFloating(binding)
 			root.TerminalViews, _ = root.TerminalViews.ApplyResizeControl(viewID, state.TerminalResizeControlProjection{
@@ -664,12 +696,15 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 			effects := liveAttachAppliedEffects(result.EndpointID, result.TerminalID)
 			effects = append(effects, liveEffectsForRef(result.EndpointID, result.TerminalID, result.Cols, result.Rows, deps)...)
 			root, effects = appendResizeOwnerConfirmAfterAttach(root, msg, result, viewID, effects)
+			effects = appendPreviousAttachmentCleanup(effects, previous, result)
 			return root.Advance(), effects
 		}
 	}
 	if hasTarget && target.FloatingID != "" {
 		root = invalidateCopyModeForTerminalRebindRef(root, target.PaneID, viewID, state.NewTerminalRef(result.EndpointID, result.TerminalID))
 		binding := state.NewEndpointFloatingTerminalView(result.EndpointID, target.FloatingID, target.PaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
+		binding.Session = result.Session
+		binding.OperationID = result.OperationID
 		root.TerminalViews = root.TerminalViews.BindFloating(binding)
 		root.TerminalViews, _ = root.TerminalViews.ApplyResizeControl(viewID, state.TerminalResizeControlProjection{
 			CanResize:      result.CanResize,
@@ -688,12 +723,15 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		effects := liveAttachAppliedEffects(result.EndpointID, result.TerminalID)
 		effects = append(effects, liveEffectsForRef(result.EndpointID, result.TerminalID, result.Cols, result.Rows, deps)...)
 		root, effects = appendResizeOwnerConfirmAfterAttach(root, msg, result, viewID, effects)
+		effects = appendPreviousAttachmentCleanup(effects, previous, result)
 		return root.Advance(), effects
 	}
 	root.Shell = root.Shell.EnsureActiveTabForAttach()
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, result.TerminalID)
 	root = invalidateCopyModeForTerminalRebindRef(root, activePaneID, viewID, state.NewTerminalRef(result.EndpointID, result.TerminalID))
 	binding := state.NewEndpointPaneTerminalView(result.EndpointID, activePaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
+	binding.Session = result.Session
+	binding.OperationID = result.OperationID
 	if existing, ok := root.TerminalViews.Views[viewID]; ok {
 		binding.Layout = existing.Layout
 	}
@@ -714,7 +752,35 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	effects := liveAttachAppliedEffects(result.EndpointID, result.TerminalID)
 	effects = append(effects, liveEffectsForRef(result.EndpointID, result.TerminalID, result.Cols, result.Rows, deps)...)
 	root, effects = appendResizeOwnerConfirmAfterAttach(root, msg, result, viewID, effects)
+	effects = appendPreviousAttachmentCleanup(effects, previous, result)
 	return root.Advance(), effects
+}
+
+func cleanupAttachResultEffects(result port.TerminalAttachResult) []Effect {
+	if result.Channel == 0 || result.Session == nil || result.OperationID == "" {
+		return nil
+	}
+	return []Effect{terminalDetachEffect(port.TerminalDetachRequest{
+		EndpointID: result.EndpointID, TerminalID: result.TerminalID, Channel: result.Channel,
+		SurfaceID: result.SurfaceID, ViewID: result.ViewID, Session: result.Session, OperationID: "cleanup:" + result.OperationID,
+	})}
+}
+
+func appendPreviousAttachmentCleanup(effects []Effect, previous state.TerminalViewBinding, current port.TerminalAttachResult) []Effect {
+	if !previous.Attached || previous.Channel == 0 || previous.Session == nil {
+		return effects
+	}
+	if previous.Channel == current.Channel && protoEndpointSessionEqual(previous.Session, current.Session) {
+		return effects
+	}
+	return append(effects, terminalDetachEffect(port.TerminalDetachRequest{
+		EndpointID: previous.EndpointID, TerminalID: previous.TerminalID, Channel: previous.Channel,
+		SurfaceID: previous.SurfaceID, ViewID: previous.ViewID, Session: previous.AttachmentSession(), OperationID: "cleanup:" + current.OperationID,
+	}))
+}
+
+func protoEndpointSessionEqual(left, right *apipb.EndpointSessionStamp) bool {
+	return left != nil && right != nil && left.GetEndpointId() == right.GetEndpointId() && left.GetRouteId() == right.GetRouteId() && left.GetGeneration() == right.GetGeneration()
 }
 
 func liveAttachAppliedEffects(endpointID state.EndpointID, terminalID string) []Effect {
@@ -1454,6 +1520,7 @@ type liveInputTargetInfo struct {
 	DesiredRows   int
 	Floating      bool
 	AttachPending bool
+	Session       *apipb.EndpointSessionStamp
 }
 
 func liveInputTarget(root state.Root) (liveInputTargetInfo, bool) {
@@ -1501,19 +1568,27 @@ func liveInputTargetFromBinding(binding state.TerminalViewBinding) liveInputTarg
 		DesiredRows:   binding.DesiredRows,
 		Floating:      binding.FloatingID != "",
 		AttachPending: binding.AttachPending,
+		Session:       binding.AttachmentSession(),
 	}
 	return info
 }
 
-func liveAttachForInputEffect(root state.Root, target liveInputTargetInfo, event input.InputEvent, bytes []byte, deps LiveDeps) Effect {
+func liveAttachForInputEffect(root state.Root, target liveInputTargetInfo, event input.InputEvent, bytes []byte, deps LiveDeps) (state.Root, Effect) {
 	payload := append([]byte(nil), bytes...)
-	req := liveInputAttachRequest(root, target)
-	return FuncEffect{
+	request := liveInputAttachRequest(root, target)
+	binding := state.TerminalViewBinding{
+		ViewID: target.ViewID, SurfaceID: request.SurfaceID, EndpointID: target.EndpointID, TerminalID: target.TerminalID,
+		ResizeRole: request.ResizePolicy, DesiredCols: request.Cols, DesiredRows: request.Rows, PaneID: target.PaneID, FloatingID: target.FloatingID,
+	}
+	var candidate state.TerminalAttachCandidate
+	root.TerminalViews, candidate = root.TerminalViews.BeginAttach(binding)
+	request.OperationID = candidate.OperationID
+	return root, FuncEffect{
 		Async:            true,
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
-			result, err := deps.Terminal.Attach(ctx, req)
-			return LiveInputAttachResultMsg{Target: target, Event: event, Bytes: payload, Result: result, Err: err}
+			result, err := deps.Terminal.Attach(ctx, request)
+			return LiveInputAttachResultMsg{Target: target, Event: event, Bytes: payload, OperationID: candidate.OperationID, Result: result, Err: err}
 		},
 	}
 }
@@ -1559,14 +1634,7 @@ func liveInputAttachSize(root state.Root, target liveInputTargetInfo) (int, int)
 
 func reduceLiveInputAttachResult(root state.Root, msg LiveInputAttachResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	if msg.Err != nil {
-		if isContextLifecycleError(msg.Err) {
-			return root, nil
-		}
-		if next, ok := markTerminalExitedFromErrorRef(root, state.NewTerminalRef(msg.Target.EndpointID, msg.Target.TerminalID), msg.Err); ok {
-			return next.Advance(), nil
-		}
-		root = setLiveInputErrorRef(root, state.NewTerminalRef(msg.Target.EndpointID, msg.Target.TerminalID), msg.Err.Error())
-		return root.Advance(), nil
+		return reduceLiveAttachResult(root, LiveAttachResultMsg{EndpointID: msg.Target.EndpointID, TerminalID: msg.Target.TerminalID, ViewID: msg.Target.ViewID, RequestedResizePolicy: msg.Target.ResizeRole, OperationID: msg.OperationID, Err: msg.Err}, deps)
 	}
 	result := msg.Result
 	if result.EndpointID == "" {
@@ -1596,12 +1664,14 @@ func reduceLiveInputAttachResult(root state.Root, msg LiveInputAttachResultMsg, 
 			result.Rows = rows
 		}
 	}
-	next, effects := reduceLiveAttachResult(root, LiveAttachResultMsg{EndpointID: msg.Target.EndpointID, TerminalID: msg.Target.TerminalID, ViewID: msg.Target.ViewID, RequestedResizePolicy: msg.Target.ResizeRole, Result: result}, deps)
+	next, effects := reduceLiveAttachResult(root, LiveAttachResultMsg{EndpointID: msg.Target.EndpointID, TerminalID: msg.Target.TerminalID, ViewID: msg.Target.ViewID, RequestedResizePolicy: msg.Target.ResizeRole, OperationID: msg.OperationID, Result: result}, deps)
 	target, ok := liveInputTargetForView(next, result.ViewID)
 	if !ok || target.Channel == 0 {
 		return next, effects
 	}
-	effects = append(effects, terminalSendInputEffect(target, msg.Event, msg.Bytes, false, deps))
+	var operationID string
+	next.TerminalViews, operationID = next.TerminalViews.NextTerminalOperation(inputOperationKind(msg.Event), target.ViewID)
+	effects = append(effects, terminalSendInputEffect(target, msg.Event, msg.Bytes, operationID, deps))
 	return next, effects
 }
 
@@ -1655,6 +1725,7 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 		msg.Seq = root.Session.ResizeRequestSeq
 	}
 	session := root.Session
+	var attachmentSession *apipb.EndpointSessionStamp
 	if msg.EndpointID != "" {
 		session.EndpointID = state.NormalizeEndpointID(msg.EndpointID)
 	}
@@ -1673,7 +1744,10 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 		// 中文说明：view-scoped resize 的权限身份必须来自目标 binding；
 		// restore 多个 view 后，全局 session 可能已被最后一个 follower attach 覆盖。
 		session.ResizePolicy = binding.ResizeRole
+		attachmentSession = binding.AttachmentSession()
 	}
+	var operationID string
+	root.TerminalViews, operationID = root.TerminalViews.NextTerminalOperation("resize", session.ViewID)
 	return root, []Effect{FuncEffect{
 		Async:            true,
 		ForceSyncInTests: true,
@@ -1687,6 +1761,8 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 				ResizePolicy: session.ResizePolicy,
 				SurfaceID:    session.SurfaceID,
 				ViewID:       session.ViewID,
+				Session:      attachmentSession,
+				OperationID:  operationID,
 			})
 			if result.EndpointID == "" {
 				result.EndpointID = session.EndpointID
@@ -1694,7 +1770,7 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 			if result.TerminalID == "" {
 				result.TerminalID = session.TerminalID
 			}
-			return LiveResizeResultMsg{EndpointID: session.EndpointID, TerminalID: session.TerminalID, Result: result, Cols: msg.Cols, Rows: msg.Rows, Seq: msg.Seq, ViewID: msg.ViewID, Err: err}
+			return LiveResizeResultMsg{EndpointID: session.EndpointID, TerminalID: session.TerminalID, Result: result, Cols: msg.Cols, Rows: msg.Rows, Seq: msg.Seq, ViewID: msg.ViewID, Session: attachmentSession, OperationID: operationID, Err: err}
 		},
 	}}
 }
@@ -1992,4 +2068,23 @@ func setLiveInputErrorRef(root state.Root, ref state.TerminalRef, message string
 		message = "unknown terminal input error"
 	}
 	return applyLiveErrorRef(root, ref, message)
+}
+
+func setLiveInputViewError(root state.Root, ref state.TerminalRef, viewID, message string) state.Root {
+	if message == "" {
+		message = "unknown terminal input error"
+	}
+	if viewID == "" {
+		return applyLiveErrorRef(root, ref, message)
+	}
+	binding, ok := root.TerminalViews.Views[viewID]
+	if !ok || !binding.TerminalRef().Equal(ref) {
+		return root
+	}
+	root.TerminalViews = root.TerminalViews.MarkViewRuntimeError(viewID, message)
+	root.Surface = root.Surface.SetErrorRef(ref, message)
+	if liveAttachResultOwnsActiveView(root, viewID, ref) {
+		root.Session = root.Session.SetError(message)
+	}
+	return root
 }

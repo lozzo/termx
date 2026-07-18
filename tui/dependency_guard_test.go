@@ -37,8 +37,9 @@ func TestTUIDirectoryDependencies(t *testing.T) {
 func TestTUIPortContainsOnlyProductionContracts(t *testing.T) {
 	allowedImports := map[string]struct{}{
 		"context": {}, "errors": {}, "time": {},
-		"github.com/lozzow/termx/tui/input": {},
-		"github.com/lozzow/termx/tui/state": {},
+		"github.com/lozzow/termx/proto/apipb": {},
+		"github.com/lozzow/termx/tui/input":   {},
+		"github.com/lozzow/termx/tui/state":   {},
 	}
 	err := filepath.WalkDir("port", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {

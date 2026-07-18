@@ -36,17 +36,17 @@ func TestProtocolTerminalServiceAdapterWithRealProtocolClient(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := ProtocolTerminalServiceAdapter{Client: client, Application: application}
-	attached, err := adapter.Attach(context.Background(), TerminalAttachRequest{EndpointID: "local", TerminalID: "term-1", Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "surface-1", ViewID: "view-1"})
+	attached, err := adapter.Attach(context.Background(), TerminalAttachRequest{EndpointID: "local", TerminalID: "term-1", Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "surface-1", ViewID: "view-1", OperationID: "attach-1"})
 	if err != nil {
 		t.Fatalf("attach: %v", err)
 	}
 	if attached.Channel == 0 || !attached.CanResize {
 		t.Fatalf("unexpected attach result %#v", attached)
 	}
-	if err := adapter.SendInput(context.Background(), TerminalInputRequest{EndpointID: "local", TerminalID: "term-1", Channel: attached.Channel, SurfaceID: "surface-1", ViewID: "view-1", Bytes: []byte("x")}); err != nil {
+	if err := adapter.SendInput(context.Background(), TerminalInputRequest{EndpointID: "local", TerminalID: "term-1", Channel: attached.Channel, SurfaceID: "surface-1", ViewID: "view-1", Session: attached.Session, OperationID: "input-1", Bytes: []byte("x")}); err != nil {
 		t.Fatalf("input: %v", err)
 	}
-	if _, err := adapter.Resize(context.Background(), TerminalResizeRequest{EndpointID: "local", TerminalID: "term-1", Channel: attached.Channel, Cols: 100, Rows: 40, SurfaceID: "surface-1", ViewID: "view-1"}); err != nil {
+	if _, err := adapter.Resize(context.Background(), TerminalResizeRequest{EndpointID: "local", TerminalID: "term-1", Channel: attached.Channel, Cols: 100, Rows: 40, SurfaceID: "surface-1", ViewID: "view-1", Session: attached.Session, OperationID: "resize-1"}); err != nil {
 		t.Fatalf("resize: %v", err)
 	}
 	info, err := server.GetTerminal("term-1")

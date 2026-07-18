@@ -23,7 +23,7 @@ func TestTerminalPoolListResultSchedulesResourceRefreshAndLivePreview(t *testing
 			},
 		},
 	}
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{Shell: state.DefaultShell().OpenTerminalPool()}
 	root.TerminalPool = root.TerminalPool.RequestList()
 	seq := root.TerminalPool.RequestSeq
@@ -72,9 +72,9 @@ func TestTerminalPoolDisconnectedReconnectErrorStaysInPane(t *testing.T) {
 	}
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView(ref.EndpointID, state.DefaultPaneID, ref.TerminalID, 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
 	pending, _ := root.TerminalViews.PaneBinding(state.DefaultPaneID)
-	root.TerminalViews = root.TerminalViews.MarkAttachPending(pending)
+	root.TerminalViews, _ = root.TerminalViews.BeginAttach(pending)
 
-	reducer := NewTerminalPoolReducer(LiveDeps{})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{})
 	next, effects := reducer(root, TerminalPoolReconnectResultMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, TargetPaneID: state.DefaultPaneID, Err: err, LocalError: true})
 
 	if len(effects) != 0 || len(next.Shell.Toasts) != 0 {
@@ -103,7 +103,7 @@ func TestTerminalPoolPickerReconnectFailureClearsConnectingAndKeepsToast(t *test
 	binding.AttachPending = true
 	root.TerminalViews = root.TerminalViews.BindPane(binding)
 
-	next, effects := NewTerminalPoolReducer(LiveDeps{})(root, TerminalPoolReconnectResultMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, TargetPaneID: state.DefaultPaneID, Err: err})
+	next, effects := newTerminalPoolReducerPrepared(LiveDeps{})(root, TerminalPoolReconnectResultMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, TargetPaneID: state.DefaultPaneID, Err: err})
 	if len(effects) != 0 || len(next.Shell.Toasts) != 1 {
 		t.Fatalf("picker reconnect failure should keep one toast and no follow-up effects, effects=%#v toasts=%#v", effects, next.Shell.Toasts)
 	}
@@ -124,7 +124,7 @@ func TestTerminalPoolRefreshTickRequestsSilentList(t *testing.T) {
 			State:      "running",
 		}}},
 	}
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{
 		Shell: state.DefaultShell().OpenTerminalPool(),
 		TerminalPool: state.TerminalPoolStore{
@@ -150,7 +150,7 @@ func TestTerminalPoolRefreshTickRequestsSilentList(t *testing.T) {
 }
 
 func TestTerminalPickerListResultSchedulesBackgroundRefresh(t *testing.T) {
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	root := state.Root{Shell: state.DefaultShell().OpenTerminalPicker()}
 	root.TerminalPool = root.TerminalPool.RequestList()
 	seq := root.TerminalPool.RequestSeq
@@ -169,7 +169,7 @@ func TestTerminalPickerListResultSchedulesBackgroundRefresh(t *testing.T) {
 
 func TestTerminalPickerRefreshTickFansOutSilentEndpointList(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{ListResult: port.TerminalListResult{Items: []port.TerminalPoolItem{{TerminalID: "term-1", Title: "shell"}}}}
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{
 		Shell: state.DefaultShell().OpenTerminalPicker(),
 		Endpoints: state.EndpointStore{}.
@@ -200,7 +200,7 @@ func TestTerminalPickerRefreshTickFansOutSilentEndpointList(t *testing.T) {
 
 func TestTerminalPoolListRequestFansOutToConnectableEndpoints(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{ListResult: port.TerminalListResult{Items: []port.TerminalPoolItem{{TerminalID: "term-1", Title: "shell"}}}}
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{
 		Endpoints: state.EndpointStore{}.
 			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "Local", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
@@ -231,7 +231,7 @@ func TestTerminalPoolListRequestFansOutToConnectableEndpoints(t *testing.T) {
 }
 
 func TestTerminalPoolEndpointListFailureMarksOnlyThatEndpointOffline(t *testing.T) {
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	root := state.Root{
 		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
 		Session: state.TerminalSessionStore{}.
@@ -277,7 +277,7 @@ func TestTerminalPoolEndpointListFailureMarksOnlyThatEndpointOffline(t *testing.
 }
 
 func TestTerminalPoolEndpointListSuccessDisconnectsMissingRemoteBinding(t *testing.T) {
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")
 	shell = shell.SplitActivePane(state.PaneState{ID: "pane-local", Title: "local", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
 	surface := (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
@@ -347,7 +347,7 @@ func TestTerminalPoolEndpointListSuccessDisconnectsMissingRemoteBinding(t *testi
 }
 
 func TestTerminalPoolEndpointListSuccessKeepsRuntimeDisconnectedPane(t *testing.T) {
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	ref := state.NewTerminalRef("west", "term-1")
 	errText := "remote-daemon: stdio-proxy connect core-v2 daemon socket: connection refused"
 	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, ref.TerminalID)
@@ -415,7 +415,7 @@ func TestTerminalPoolEndpointListSuccessKeepsRuntimeDisconnectedPane(t *testing.
 }
 
 func TestTerminalPoolRefreshFailureMarksEndpointOfflineSilently(t *testing.T) {
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	root := state.Root{
 		Shell: state.DefaultShell().OpenTerminalPool(),
 		TerminalPool: state.TerminalPoolStore{
@@ -469,7 +469,7 @@ func TestTerminalPoolCreateResultFallsBackToRequestedRemoteIDForAttach(t *testin
 func TestTerminalPoolCreateRequestDefaultsRemoteCommandByEndpoint(t *testing.T) {
 	t.Setenv("SHELL", "/bin/zsh")
 	terminal := &testkit.FakeTerminalService{CreateResult: port.TerminalCreateResult{State: "running"}}
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{
 		Shell: state.DefaultShell(),
 		Endpoints: (state.EndpointStore{}.
@@ -496,7 +496,7 @@ func TestTerminalPoolCreateRequestDefaultsRemoteCommandByEndpoint(t *testing.T) 
 
 func TestTerminalPoolCreateRequestRejectsDuplicateNameOnSameEndpoint(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{}
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{
 		Shell: state.DefaultShell(),
 		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{
@@ -554,7 +554,7 @@ func TestTerminalPickerGlobalCreateRowOpensPromptWithDraftEndpoint(t *testing.T)
 
 func TestLiveAttachTerminalNotFoundDisconnectsPane(t *testing.T) {
 	terminal := &testkit.FakeTerminalService{AttachErr: errors.New("protocol error 404: terminal not found")}
-	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	reducer := newLiveReducerPrepared(LiveDeps{Terminal: terminal})
 	root := state.Root{Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-missing")}
 
 	pending, effects := reducer(root, LiveAttachMsg{Config: LiveConfig{

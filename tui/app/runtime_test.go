@@ -206,7 +206,7 @@ func TestAppRuntimeDoesNotCoalesceLiveInvalidationWakeWithSurfaceResult(t *testi
 	if !armed {
 		t.Fatalf("test setup should arm live invalidation, got %#v", root.Surface.Refreshes)
 	}
-	runtime := NewAppRuntime(root, NewLiveReducer(LiveDeps{Terminal: terminal}), nil, nil, NewSyncEffectRunner())
+	runtime := NewAppRuntime(root, newLiveReducerPrepared(LiveDeps{Terminal: terminal}), nil, nil, NewSyncEffectRunner())
 
 	if err := runtime.Post(LiveEventMsg{Event: port.TerminalLiveEvent{
 		TerminalID: "term-1",
@@ -846,7 +846,7 @@ func TestAppRuntimeSchedulesDirtyLiveFetchAfterSurfaceReturn(t *testing.T) {
 			},
 		},
 	}}
-	reducer := NewLiveReducer(liveDeps)
+	reducer := newLiveReducerPrepared(liveDeps)
 	runtime := NewAppRuntime(
 		state.Root{Surface: state.TerminalSurfaceStore{
 			TerminalID: "term-1",
@@ -888,7 +888,7 @@ func TestAppRuntimeArmsLiveInvalidationAfterFrameWrite(t *testing.T) {
 	runner := &recordingRuntimeEffectRunner{}
 	runtime := NewAppRuntime(
 		state.Root{Surface: state.TerminalSurfaceStore{TerminalID: "term-1"}},
-		NewLiveReducer(liveDeps),
+		newLiveReducerPrepared(liveDeps),
 		func(root state.Root) render.Frame {
 			return render.Frame{Lines: []string{root.Surface.Lines[0]}}
 		},
@@ -922,7 +922,7 @@ func TestAppRuntimeArmsLiveInvalidationAfterNonSurfaceFrameWrite(t *testing.T) {
 	runner := &recordingRuntimeEffectRunner{}
 	root := state.Root{}
 	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 12, Lines: []string{"ready"}})
-	runtime := NewAppRuntime(root, NewLiveReducer(LiveDeps{Terminal: terminal}), nil, NewFakeTerminalHost(8), runner)
+	runtime := NewAppRuntime(root, newLiveReducerPrepared(LiveDeps{Terminal: terminal}), nil, NewFakeTerminalHost(8), runner)
 	done := make(chan render.FrameWriteCompletion, 1)
 	done <- render.FrameWriteCompletion{Written: true}
 	close(done)
@@ -945,7 +945,7 @@ func TestAppRuntimeDoesNotArmLiveInvalidationForDroppedFrame(t *testing.T) {
 	runner := &recordingRuntimeEffectRunner{}
 	root := state.Root{}
 	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 12, Lines: []string{"ready"}})
-	runtime := NewAppRuntime(root, NewLiveReducer(LiveDeps{Terminal: terminal}), nil, NewFakeTerminalHost(8), runner)
+	runtime := NewAppRuntime(root, newLiveReducerPrepared(LiveDeps{Terminal: terminal}), nil, NewFakeTerminalHost(8), runner)
 	done := make(chan render.FrameWriteCompletion, 1)
 	done <- render.FrameWriteCompletion{Written: false}
 	close(done)
@@ -970,7 +970,7 @@ func TestAppRuntimeArmsAllVisibleLiveTerminalsAfterFrameWrite(t *testing.T) {
 	root.TerminalViews = root.TerminalViews.
 		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-1", state.TerminalPaneViewID(state.DefaultPaneID), true)).
 		BindPane(state.NewPaneTerminalView("pane-2", "term-2", 8, 80, 24, state.TerminalResizeRoleOwner, "surface-2", state.TerminalPaneViewID("pane-2"), true))
-	runtime := NewAppRuntime(root, NewLiveReducer(LiveDeps{Terminal: terminal}), nil, NewFakeTerminalHost(8), runner)
+	runtime := NewAppRuntime(root, newLiveReducerPrepared(LiveDeps{Terminal: terminal}), nil, NewFakeTerminalHost(8), runner)
 	done := make(chan render.FrameWriteCompletion, 1)
 	done <- render.FrameWriteCompletion{Written: true}
 	close(done)
@@ -997,7 +997,7 @@ func TestAppRuntimeDirtyLiveFetchIgnoresServiceLifecycleFlagFromOrdinaryRefresh(
 			LifecycleKnown: true,
 		},
 	}}
-	reducer := NewLiveReducer(liveDeps)
+	reducer := newLiveReducerPrepared(liveDeps)
 	runtime := NewAppRuntime(
 		state.Root{Surface: state.TerminalSurfaceStore{
 			TerminalID: "term-1",
@@ -1237,7 +1237,7 @@ func TestAppRuntimeVisibleLocalInputContinuesAfterHiddenRemoteSurface(t *testing
 		BindPane(state.NewEndpointPaneTerminalView(state.DefaultEndpointID, state.DefaultPaneID, "term-local", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-local", state.TerminalPaneViewID(state.DefaultPaneID), true))
 	runtime := NewAppRuntime(
 		root,
-		ComposeReducers(NewLiveReducer(LiveDeps{Terminal: terminal}), NewTerminalInputRouterReducer(LiveDeps{Terminal: terminal})),
+		ComposeReducers(newLiveReducerPrepared(LiveDeps{Terminal: terminal}), NewTerminalInputRouterReducer(LiveDeps{Terminal: terminal})),
 		func(root state.Root) render.Frame {
 			return render.Frame{Lines: append([]string(nil), root.Surface.Lines...)}
 		},
@@ -4822,7 +4822,7 @@ func newShellHitRuntimeWithTerminal(root state.Root, host *FakeTerminalHost, ter
 	host.SetSize(80, 20)
 	return NewAppRuntime(
 		root,
-		ComposeReducers(NewShellReducer(), NewTerminalPoolReducer(LiveDeps{Terminal: terminal})),
+		ComposeReducers(NewShellReducer(), newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})),
 		func(root state.Root) render.Frame {
 			return render.NewRenderer(render.DefaultTheme()).Render(render.NewRenderVMBuilder().Build(root))
 		},

@@ -445,6 +445,9 @@ func upsertRestoredWorkspace(workspaces []state.WorkspaceState, workspace state.
 }
 
 func preserveWorkbenchRuntimeTerminalViews(previous state.TerminalViewStore, restored state.TerminalViewStore) state.TerminalViewStore {
+	if restored.NextOperation < previous.NextOperation {
+		restored.NextOperation = previous.NextOperation
+	}
 	if len(previous.Views) == 0 || len(restored.Views) == 0 {
 		return restored
 	}
@@ -466,6 +469,9 @@ func preserveWorkbenchRuntimeTerminalViews(previous state.TerminalViewStore, res
 		binding.OwnerViewID = previousBinding.OwnerViewID
 		binding.ResizeEpoch = previousBinding.ResizeEpoch
 		binding.AttachPending = previousBinding.AttachPending
+		binding.AttachCandidate = previousBinding.AttachCandidate
+		binding.Session = previousBinding.AttachmentSession()
+		binding.OperationID = previousBinding.OperationID
 		binding.LastError = previousBinding.LastError
 		restored.Views[viewID] = binding
 	}
