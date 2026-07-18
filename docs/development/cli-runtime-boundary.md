@@ -41,9 +41,9 @@ cmd/termx daemon command
 
 1. 已完成：冻结 concrete import/direct helper 债务，守卫现在扫描全部 command 源文件，不再整文件排除 composition helper。
 2. 已完成：local Unix route 使用 `ClientRuntime/SessionOwner`、`RouteSelectionPlanner` 与 `client/adapter/local`，不再由 CLI 生成 stamp、选择 route 或执行 Hello；旧 `SelectRoute` 已删除。
-3. 已完成：C3B-C3E 建立 planner、fresh ReadyPeerSession proof、per-endpoint race/session owner 与 local/SSH/lazy-managed native composition；CLI/TUI command helper 已收缩为共享 `ClientRuntime` 的 composition injection，旧单 route selector/connect helper 和 raw protocol adoption 已删除。
-4. 已完成：C3F-C3G 补齐 operation generation stamp、真实 local+OpenSSH race E2E 与 loser cleanup。
-5. 当前 C3H 只执行最终全量准入、重复真值/fallback/cleanup 审计和双 Agent 审查；剩余 daemon/Cloud concrete composition 债务不在本切片扩大处理。
+3. 已完成：planner、fresh ReadyPeerSession proof、per-endpoint race/session owner 与 local/Direct/SSH/lazy-managed native composition；CLI/TUI command helper 已收缩为共享 `ClientRuntime` 的 composition injection，旧单 route selector/connect helper 和 raw protocol adoption 已删除。
+4. 已完成：operation generation stamp、Direct ICE-TCP 与 Go SSH `direct-tcpip` 真实 E2E、winner/loser cleanup；进程型 OpenSSH transport 和远端 `stdio-proxy` 已删除。
+5. 当前剩余 Cloud 最终装配、产品 E2E 与全仓审计按 `workflow.md` 推进；daemon/Cloud concrete composition 债务不在普通 command 中扩散。
 
 ## 停止条件
 

@@ -33,12 +33,13 @@ type plannerFixtureDiagnostic struct {
 }
 
 type plannerFixtureRoute struct {
-	ID            RouteID   `json:"id"`
-	Kind          RouteKind `json:"kind"`
-	Enabled       bool      `json:"enabled"`
-	ManualOnly    bool      `json:"manual_only,omitempty"`
-	Priority      *int      `json:"priority,omitempty"`
-	CredentialRef string    `json:"credential_ref,omitempty"`
+	ID               RouteID   `json:"id"`
+	Kind             RouteKind `json:"kind"`
+	Enabled          bool      `json:"enabled"`
+	ManualOnly       bool      `json:"manual_only,omitempty"`
+	Priority         *int      `json:"priority,omitempty"`
+	CredentialRef    string    `json:"credential_ref,omitempty"`
+	SSHCredentialRef string    `json:"ssh_credential_ref,omitempty"`
 }
 
 type plannerFixtureGroup struct {
@@ -119,7 +120,7 @@ func endpointFromPlannerFixture(test plannerFixtureCase) Endpoint {
 	for _, value := range test.Routes {
 		route := AccessRoute{
 			ID: value.ID, Kind: value.Kind, Enabled: value.Enabled, ManualOnly: value.ManualOnly, Priority: clonePriority(value.Priority),
-			CredentialRef: value.CredentialRef, Source: SourceManual, PolicySource: SourceUser,
+			CredentialRef: value.CredentialRef, SSHCredentialRef: value.SSHCredentialRef, Source: SourceManual, PolicySource: SourceUser,
 		}
 		switch route.Kind {
 		case RouteLocalUnix:

@@ -11,7 +11,6 @@ import (
 	apilayer "github.com/lozzow/termx/api_layer"
 	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/shared/perftrace"
-	sshtransport "github.com/lozzow/termx/shared/transport/ssh"
 	tuiv3 "github.com/lozzow/termx/tui"
 	tuiapp "github.com/lozzow/termx/tui/app"
 	"github.com/lozzow/termx/tui/render"
@@ -60,7 +59,6 @@ func v3Command(socket *string, logFile *string, configPath *string) *cobra.Comma
 	cmd.AddCommand(v3AttachCommand(socket, logFile))
 	cmd.AddCommand(v3HistoryBacklogCommand(socket, logFile))
 	cmd.AddCommand(v3PaneCommandAdapterCommand())
-	cmd.AddCommand(v3StdioProxyCommand(socket, logFile, configPath))
 	return cmd
 }
 
@@ -147,31 +145,7 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 	command.Args = cobra.NoArgs
 	command.PersistentFlags().BoolVar(&cloudEnabled, "cloud", false, "enable managed cloud presence for this daemon")
 	addDaemonLifecycleCommands(command, socket, logFile, configPath, &cloudEnabled, runDaemon)
-	command.AddCommand(v3StdioProxyCommand(socket, logFile, configPath))
 	return command
-}
-
-func v3StdioProxyCommand(socket *string, logFile *string, configPath *string) *cobra.Command {
-	return &cobra.Command{
-		Use:    "stdio-proxy",
-		Hidden: true,
-		Short:  "Bridge stdin/stdout to the core-v2 daemon socket for SSH transport",
-		Args:   cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			logger, closeLogger, logPath, err := openLogFileLogger(*logFile)
-			if err != nil {
-				return err
-			}
-			defer closeLogger()
-			socketPath := resolveV3SocketAuto(*socket)
-			transport, err := dialOrStartV3TransportWithConfig(socketPath, logPath, *configPath, logger)
-			if err != nil {
-				return fmt.Errorf("stdio proxy connect core-v2 daemon socket %q: %w", socketPath, err)
-			}
-			defer transport.Close()
-			return sshtransport.ServeProxy(cmd.Context(), transport, cmd.InOrStdin(), cmd.OutOrStdout())
-		},
-	}
 }
 
 func v3PingCommand(socket *string, logFile *string) *cobra.Command {

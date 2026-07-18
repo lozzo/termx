@@ -33,13 +33,14 @@ type selectionPolicyDocument struct {
 }
 
 type routeDocument struct {
-	Kind          string `yaml:"kind"`
-	Enabled       *bool  `yaml:"enabled,omitempty"`
-	ManualOnly    bool   `yaml:"manual_only,omitempty"`
-	Priority      *int   `yaml:"priority,omitempty"`
-	CredentialRef string `yaml:"credential_ref,omitempty"`
-	Source        string `yaml:"source,omitempty"`
-	PolicySource  string `yaml:"policy_source,omitempty"`
+	Kind             string `yaml:"kind"`
+	Enabled          *bool  `yaml:"enabled,omitempty"`
+	ManualOnly       bool   `yaml:"manual_only,omitempty"`
+	Priority         *int   `yaml:"priority,omitempty"`
+	CredentialRef    string `yaml:"credential_ref,omitempty"`
+	SSHCredentialRef string `yaml:"ssh_credential_ref,omitempty"`
+	Source           string `yaml:"source,omitempty"`
+	PolicySource     string `yaml:"policy_source,omitempty"`
 
 	Socket string `yaml:"socket,omitempty"`
 
@@ -143,7 +144,7 @@ func parseRegistry(data []byte) (Registry, error) {
 			}
 			endpoint.Routes[routeID] = AccessRoute{
 				ID: routeID, Kind: RouteKind(routeValue.Kind), Enabled: routeEnabled, ManualOnly: routeValue.ManualOnly,
-				Priority: clonePriority(routeValue.Priority), CredentialRef: routeValue.CredentialRef,
+				Priority: clonePriority(routeValue.Priority), CredentialRef: routeValue.CredentialRef, SSHCredentialRef: routeValue.SSHCredentialRef,
 				Source: EndpointSource(routeValue.Source), PolicySource: EndpointSource(routeValue.PolicySource),
 				Socket: routeValue.Socket,
 				Host:   routeValue.Host, Port: routeValue.Port, User: routeValue.User, ProxyJump: routeValue.ProxyJump,

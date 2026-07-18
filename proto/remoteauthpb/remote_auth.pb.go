@@ -2818,6 +2818,7 @@ type SSHWebRTCTCPRouteConfig struct {
 	CredentialDescriptor   *EndpointCredentialDescriptor `protobuf:"bytes,6,opt,name=credential_descriptor,json=credentialDescriptor,proto3" json:"credential_descriptor,omitempty"`
 	RemoteSignalingAddress string                        `protobuf:"bytes,7,opt,name=remote_signaling_address,json=remoteSignalingAddress,proto3" json:"remote_signaling_address,omitempty"`
 	RemoteIceTcpAddress    string                        `protobuf:"bytes,8,opt,name=remote_ice_tcp_address,json=remoteIceTcpAddress,proto3" json:"remote_ice_tcp_address,omitempty"`
+	SshCredentialRef       string                        `protobuf:"bytes,9,opt,name=ssh_credential_ref,json=sshCredentialRef,proto3" json:"ssh_credential_ref,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -2904,6 +2905,13 @@ func (x *SSHWebRTCTCPRouteConfig) GetRemoteSignalingAddress() string {
 func (x *SSHWebRTCTCPRouteConfig) GetRemoteIceTcpAddress() string {
 	if x != nil {
 		return x.RemoteIceTcpAddress
+	}
+	return ""
+}
+
+func (x *SSHWebRTCTCPRouteConfig) GetSshCredentialRef() string {
+	if x != nil {
+		return x.SshCredentialRef
 	}
 	return ""
 }
@@ -4143,7 +4151,7 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x11ice_tcp_addresses\x18\x02 \x03(\tR\x0ficeTcpAddresses\x121\n" +
 	"\x14advertised_addresses\x18\x03 \x03(\tR\x13advertisedAddresses\x12\x1f\n" +
 	"\vserver_name\x18\x04 \x01(\tR\n" +
-	"serverName\"\x80\x03\n" +
+	"serverName\"\xae\x03\n" +
 	"\x17SSHWebRTCTCPRouteConfig\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\rR\x04port\x12\x12\n" +
@@ -4153,7 +4161,8 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"proxy_jump\x18\x05 \x01(\tR\tproxyJump\x12g\n" +
 	"\x15credential_descriptor\x18\x06 \x01(\v22.termx.remote.auth.v1.EndpointCredentialDescriptorR\x14credentialDescriptor\x128\n" +
 	"\x18remote_signaling_address\x18\a \x01(\tR\x16remoteSignalingAddress\x123\n" +
-	"\x16remote_ice_tcp_address\x18\b \x01(\tR\x13remoteIceTcpAddress\"\xc1\x01\n" +
+	"\x16remote_ice_tcp_address\x18\b \x01(\tR\x13remoteIceTcpAddress\x12,\n" +
+	"\x12ssh_credential_ref\x18\t \x01(\tR\x10sshCredentialRef\"\xc1\x01\n" +
 	"\x18ManagedWebRTCRouteConfig\x12(\n" +
 	"\x10target_device_id\x18\x01 \x01(\tR\x0etargetDeviceId\x12.\n" +
 	"\x13account_profile_ref\x18\x02 \x01(\tR\x11accountProfileRef\x12K\n" +

@@ -27,7 +27,7 @@ func TestEndpointRegistryProtoRoundTripCoversAllRouteKinds(t *testing.T) {
 					ICETCPAddresses: []string{"studio.local:41121"}, AdvertisedAddresses: []string{"203.0.113.10:41121"}, ServerName: "studio.local",
 				},
 				"ssh": {
-					ID: "ssh", Kind: RouteSSHWebRTCTCP, Enabled: true, Priority: priority(30), CredentialRef: "ssh:studio",
+					ID: "ssh", Kind: RouteSSHWebRTCTCP, Enabled: true, Priority: priority(30), CredentialRef: "grant:ssh-studio", SSHCredentialRef: "ssh:studio",
 					Source: SourceManual, PolicySource: SourceUser, Host: "studio-ssh", Port: 22, User: "build",
 					HostKeyFingerprints: []string{"SHA256:ssh-host"}, RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121",
 					CredentialDescriptor: &CredentialDescriptor{DescriptorID: "ssh-key", Kind: CredentialSSHPrivateKey, Exportable: true},

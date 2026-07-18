@@ -149,12 +149,10 @@ func (RouteSelectionPlanner) Plan(request RouteSelectionRequest) (RouteSelection
 			diagnostics = append(diagnostics, routePlanDiagnostic(route, ErrorRouteUnavailable, RoutePlanPlatformUnsupported))
 			continue
 		}
-		if route.CredentialRef != "" {
-			if _, ok := credentials[route.CredentialRef]; !ok {
-				credentialBlocked = true
-				diagnostics = append(diagnostics, routePlanDiagnostic(route, ErrorCredentialRequired, RoutePlanCredentialUnavailable))
-				continue
-			}
+		if missingRouteCredential(route, credentials) != "" {
+			credentialBlocked = true
+			diagnostics = append(diagnostics, routePlanDiagnostic(route, ErrorCredentialRequired, RoutePlanCredentialUnavailable))
+			continue
 		}
 		switch route.Kind {
 		case RouteLocalUnix, RouteDirectWebRTCTCP, RouteSSHWebRTCTCP, RouteManagedWebRTC:
@@ -241,12 +239,22 @@ func validatePlannedRoute(route AccessRoute, supported map[RouteKind]struct{}, c
 	default:
 		return connectionError(ErrorRouteUnavailable, "route %q kind %q is not available in C3B", route.ID, route.Kind)
 	}
-	if route.CredentialRef != "" {
-		if _, ok := credentials[route.CredentialRef]; !ok {
-			return connectionError(ErrorCredentialRequired, "route %q credential %q is unavailable", route.ID, route.CredentialRef)
-		}
+	if missing := missingRouteCredential(route, credentials); missing != "" {
+		return connectionError(ErrorCredentialRequired, "route %q credential %q is unavailable", route.ID, missing)
 	}
 	return nil
+}
+
+func missingRouteCredential(route AccessRoute, credentials map[string]struct{}) string {
+	for _, reference := range []string{route.CredentialRef, route.SSHCredentialRef} {
+		if reference == "" {
+			continue
+		}
+		if _, ok := credentials[reference]; !ok {
+			return reference
+		}
+	}
+	return ""
 }
 
 func routeKindSet(values []RouteKind) (map[RouteKind]struct{}, error) {

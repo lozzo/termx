@@ -33,14 +33,13 @@ ssh root@114.66.58.243 'curl -fsS http://127.0.0.1:41001/api/catalog'
 
 ### `cn-fast` SSH endpoint
 
-`cn-fast` 是独立的 SSH endpoint，连接 `root@114.66.58.243` 后固定执行 `/usr/local/bin/termx daemon stdio-proxy`。它使用 root 当前用户 daemon 与默认 `/run/user/0/termx-v2-wire4.sock`，不启用 Cloud presence，也不依赖上表两个 managed daemon unit。`remote_socket: auto` 必须由服务器当前版本的 `stdio-proxy` 解析为远端默认 socket，不能创建名为 `auto` 的字面 socket。
+旧 `cn-fast` 的进程型 OpenSSH + 远端 `stdio-proxy` 路径已经退役，不得继续按旧命令验证。新的 SSH Route 使用 Go SSH `direct-tcpip` 到达 daemon loopback signaling 与 ICE-TCP，并在 DataChannel 内完成 daemon identity、CapabilityGrant、Hello 和 Proto API；staging 重新部署该 Route 前，本节不声明 `cn-fast` 可用。
 
-2026-07-14 已把 `/usr/local/bin/termx` 更新为 CLI008 Linux/amd64 构建，清理旧 wire3 daemon 和 16 个异常 `stdio-proxy`，并通过带 runtime record 的 `termx daemon start` 启动 PID 可验证的 wire4 daemon。验证命令：
+重新部署后的验证命令仍从公开 Endpoint API 进入，不允许执行远端 TermX proxy command：
 
 ```bash
 termx --timeout 10s endpoint test cn-fast --json
 termx --timeout 10s file list cn-fast / --limit 20 --json
-ssh root@114.66.58.243 '/usr/local/bin/termx --timeout 5s daemon status --json'
 ```
 
 WEB002/WEB003 staging profile 在 `/login` 提供固定开发账号以及邮箱密码注册登录，在 `/account` 提供 Managed Free/Pro、测试 Checkout、密码修改和 AFF 推荐奖励。该 provider 不扣款；confirm 仍经 HMAC webhook transaction，只有首次有效事件才调用 Control Plane internal entitlement endpoint。Control Plane 更新 edge revision 并重新发布 Hub snapshot 后，订单、payment event 与邀请人 +15 天/被邀请人 +7 天奖励才在同一 SQLite 事务提交。浏览器 session 使用 HttpOnly、SameSite=Strict Cookie，登录/注册校验精确 Origin，所有已登录写请求同时校验 Origin 与 CSRF token。生产 OAuth、价格和支付 provider 未配置时保持禁用。

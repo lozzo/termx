@@ -28,6 +28,7 @@ import (
 	"github.com/lozzow/termx/shared/remoteauth"
 	"github.com/lozzow/termx/shared/transport"
 	"github.com/lozzow/termx/shared/transport/datachannel"
+	"google.golang.org/protobuf/proto"
 )
 
 const defaultClientName = "termx-go-direct"
@@ -49,26 +50,36 @@ type SignalingClient interface {
 // Dialer 是 direct-webrtc-tcp Route 的 Go-owned connector。
 // 成功结果已经完成 daemon-signed signaling、实际 DTLS-bound capability auth、protocol Hello 与 ReadyPeerSession 装配。
 type Dialer struct {
-	Peers         PeerFactory
-	Signaling     SignalingClient
-	Authorization peeradapter.Authorizer
-	Random        io.Reader
-	Now           func() time.Time
-	ClientName    string
-	Phase         func(clientruntime.EndpointPhase)
+	Peers           PeerFactory
+	Signaling       SignalingClient
+	Authorization   peeradapter.Authorizer
+	RouteKind       endpoint.RouteKind
+	Locators        []string
+	TransformAnswer func(*remoteauthpb.DirectSignalingAnswerV1) (*remoteauthpb.DirectSignalingAnswerV1, error)
+	Random          io.Reader
+	Now             func() time.Time
+	ClientName      string
+	Phase           func(clientruntime.EndpointPhase)
 }
 
 // Connect 只尝试 request 指定的 Direct Route；任何失败都会关闭 peer、DataChannel 和 protocol client。
 // signaling locator 变化不改变 Endpoint identity，answer 必须由 pin 对应的 daemon DeviceIdentity 签名。
 func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.AttemptRequest) (clientruntime.ReadyPeerSession, error) {
+	if dialer == nil {
+		return nil, fmt.Errorf("direct WebRTC connector is required")
+	}
 	if err := request.Validate(); err != nil {
 		return nil, err
 	}
 	route := request.Route()
-	if route.Kind != endpoint.RouteDirectWebRTCTCP {
-		return nil, fmt.Errorf("route %q kind %q is not direct WebRTC TCP", route.ID, route.Kind)
+	expectedKind := dialer.RouteKind
+	if expectedKind == "" {
+		expectedKind = endpoint.RouteDirectWebRTCTCP
 	}
-	if dialer == nil || dialer.Peers == nil || dialer.Authorization == nil {
+	if route.Kind != expectedKind {
+		return nil, fmt.Errorf("route %q kind %q does not match WebRTC connector kind %q", route.ID, route.Kind, expectedKind)
+	}
+	if dialer.Peers == nil || dialer.Authorization == nil {
 		return nil, fmt.Errorf("direct WebRTC connector dependencies are incomplete")
 	}
 	prepared, err := dialer.Authorization.Prepare(ctx, request)
@@ -79,7 +90,8 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 		return nil, fmt.Errorf("direct endpoint authorizer returned no transaction")
 	}
 	opened, err := openDirectPeer(ctx, request, directPeerOptions{
-		Peers: dialer.Peers, Signaling: dialer.Signaling, Random: dialer.Random, Now: dialer.Now, Phase: dialer.Phase,
+		Peers: dialer.Peers, Signaling: dialer.Signaling, Locators: dialer.Locators, TransformAnswer: dialer.TransformAnswer,
+		Random: dialer.Random, Now: dialer.Now, Phase: dialer.Phase,
 	})
 	if err != nil {
 		return nil, err
@@ -137,11 +149,13 @@ func directRequestID(randomSource io.Reader) (string, error) {
 }
 
 type directPeerOptions struct {
-	Peers     PeerFactory
-	Signaling SignalingClient
-	Random    io.Reader
-	Now       func() time.Time
-	Phase     func(clientruntime.EndpointPhase)
+	Peers           PeerFactory
+	Signaling       SignalingClient
+	Locators        []string
+	TransformAnswer func(*remoteauthpb.DirectSignalingAnswerV1) (*remoteauthpb.DirectSignalingAnswerV1, error)
+	Random          io.Reader
+	Now             func() time.Time
+	Phase           func(clientruntime.EndpointPhase)
 }
 
 type openedDirectPeer struct {
@@ -196,7 +210,11 @@ func openDirectPeer(ctx context.Context, request clientruntime.AttemptRequest, o
 	if signaling == nil {
 		signaling = TCPSignalingClient{}
 	}
-	answer, err := signaling.Exchange(ctx, route.SignalingAddresses, signalingRequest)
+	locators := options.Locators
+	if len(locators) == 0 {
+		locators = route.SignalingAddresses
+	}
+	answer, err := signaling.Exchange(ctx, locators, signalingRequest)
 	if err != nil {
 		_ = opened.Close()
 		return nil, err
@@ -208,6 +226,17 @@ func openDirectPeer(ctx context.Context, request clientruntime.AttemptRequest, o
 	if err := remoteauth.VerifyDirectSignalingAnswer(answer, requestID, request.DaemonIdentity().DeviceID, request.DaemonIdentity().DeviceFingerprint, verifyNow); err != nil {
 		_ = opened.Close()
 		return nil, fmt.Errorf("verify direct signaling answer: %w", err)
+	}
+	if options.TransformAnswer != nil {
+		answer, err = options.TransformAnswer(proto.Clone(answer).(*remoteauthpb.DirectSignalingAnswerV1))
+		if err != nil {
+			_ = opened.Close()
+			return nil, fmt.Errorf("project verified WebRTC answer: %w", err)
+		}
+		if answer == nil {
+			_ = opened.Close()
+			return nil, fmt.Errorf("project verified WebRTC answer: empty result")
+		}
 	}
 	candidates := make([]*cloudpb.IceCandidate, 0, len(answer.GetCandidates()))
 	for _, candidate := range answer.GetCandidates() {
@@ -280,7 +309,13 @@ func (dialer *Dialer) reportPhase(phase clientruntime.EndpointPhase) {
 // TCPSignalingClient 使用首个可建立 TCP connection 的 locator 完成一次 Proto exchange。
 // 地址选择只发生在写入 request 前；一旦请求可能已被 daemon 消费，就不重放到其他地址。
 type TCPSignalingClient struct {
-	Dialer net.Dialer
+	Dialer ContextDialer
+}
+
+// ContextDialer 是 Direct/SSH signaling 对单条 TCP connection 的最小拨号要求。
+// SSH 实现通过 direct-tcpip 返回 net.Conn；默认实现仍使用标准 net.Dialer。
+type ContextDialer interface {
+	DialContext(context.Context, string, string) (net.Conn, error)
 }
 
 // Exchange 建连后写入一个 request 并读取一个 response；context 取消会立即打断当前 socket。
@@ -295,7 +330,11 @@ func (client TCPSignalingClient) Exchange(ctx context.Context, addresses []strin
 		if address == "" {
 			continue
 		}
-		candidate, err := client.Dialer.DialContext(ctx, "tcp", address)
+		dialer := client.Dialer
+		if dialer == nil {
+			dialer = &net.Dialer{}
+		}
+		candidate, err := dialer.DialContext(ctx, "tcp", address)
 		if err != nil {
 			dialErrors = append(dialErrors, fmt.Errorf("%s: %w", address, err))
 			continue

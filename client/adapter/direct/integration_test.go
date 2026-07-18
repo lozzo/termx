@@ -174,6 +174,14 @@ func TestDirectCancelDuringSignalingClosesPeer(t *testing.T) {
 	}
 }
 
+func TestNilDirectDialerFailsWithoutPanic(t *testing.T) {
+	fixture := newDirectFixture(t)
+	var dialer *direct.Dialer
+	if _, err := dialer.Connect(context.Background(), fixture.attempt(t, 102)); err == nil {
+		t.Fatal("nil Direct dialer unexpectedly connected")
+	}
+}
+
 type directFixture struct {
 	identity         remoteauth.Identity
 	credential       remoteauth.ClientAccessCredential

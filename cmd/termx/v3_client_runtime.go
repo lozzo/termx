@@ -59,6 +59,11 @@ func (source cliCredentialSource) ResolveClientSigner(_ context.Context, endpoin
 	return remoteauth.NewPrivateClientAccessSigner(identity)
 }
 
+func (source cliCredentialSource) Available(ctx context.Context, endpointID, reference string) bool {
+	credential, err := source.store.ResolveContext(ctx, strings.TrimSpace(reference))
+	return err == nil && credential.EndpointID == endpointID && credential.Ready()
+}
+
 func connectCLIEndpointApplication(ctx context.Context, owner *clientruntime.SessionOwner, target clientendpoint.Endpoint, requested clientendpoint.RouteID, intent clientruntime.ConnectIntent, localOptions localadapter.Options) (*protocoladapter.ApplicationClient, clientendpoint.AccessRoute, error) {
 	runtime, err := newCLIEndpointRuntime(ctx, owner, target, localOptions)
 	if err != nil {
@@ -89,10 +94,14 @@ func newCLIEndpointRuntime(ctx context.Context, owner *clientruntime.SessionOwne
 		return nil, fmt.Errorf("CLI endpoint runtime requires context and a session owner")
 	}
 	credentials := cliCredentialSource{store: remoteauth.NewCredentialStore(v3RemoteCredentialDir())}
+	sshCredentials := sshadapter.AgentCredentialSource{}
 	localDialer := localadapter.NewDialer(localOptions)
 	dialers, err := clientruntime.NewPeerConnectorMap(map[clientendpoint.RouteKind]clientruntime.PeerConnector{
-		clientendpoint.RouteLocalUnix:    localDialer,
-		clientendpoint.RouteSSHWebRTCTCP: sshadapter.NewDialer(sshadapter.Options{ClientName: "termx-cli"}),
+		clientendpoint.RouteLocalUnix: localDialer,
+		clientendpoint.RouteSSHWebRTCTCP: sshadapter.NewDialer(sshadapter.Options{
+			Peers: pionadapter.Factory{}, Authorization: peeradapter.CapabilityAuthorizer{Credentials: credentials},
+			Credentials: sshCredentials, ClientName: "termx-cli",
+		}),
 		clientendpoint.RouteManagedWebRTC: managedadapter.LazyDialer{
 			OpenCloud: func(ctx context.Context) (managedadapter.CloudClient, io.Closer, error) {
 				cloud, err := openV3CloudLifecycleClient(ctx, cloudpb.CallerRole_CALLER_ROLE_TUI,
@@ -110,7 +119,7 @@ func newCLIEndpointRuntime(ctx context.Context, owner *clientruntime.SessionOwne
 	if err != nil {
 		return nil, err
 	}
-	environment := cliRoutePlanEnvironment(ctx, target, credentials)
+	environment := cliRoutePlanEnvironment(ctx, target, credentials, sshCredentials)
 	configKey, err := cliEndpointConfigKey(target, localOptions, environment)
 	if err != nil {
 		return nil, err
@@ -124,22 +133,30 @@ func newCLIEndpointRuntime(ctx context.Context, owner *clientruntime.SessionOwne
 	return runtime, nil
 }
 
-func cliRoutePlanEnvironment(ctx context.Context, target clientendpoint.Endpoint, credentials cliCredentialSource) clientruntime.RoutePlanEnvironment {
+type cliSSHCredentialAvailability interface {
+	Available(string) bool
+}
+
+type cliCapabilityAvailability interface {
+	Available(context.Context, string, string) bool
+}
+
+func cliRoutePlanEnvironment(ctx context.Context, target clientendpoint.Endpoint, credentials cliCapabilityAvailability, sshCredentials cliSSHCredentialAvailability) clientruntime.RoutePlanEnvironment {
 	environment := clientruntime.RoutePlanEnvironment{SupportedRouteKinds: []clientendpoint.RouteKind{
 		clientendpoint.RouteLocalUnix, clientendpoint.RouteSSHWebRTCTCP, clientendpoint.RouteManagedWebRTC,
 	}}
 	for _, route := range target.RouteList() {
 		reference := strings.TrimSpace(route.CredentialRef)
-		if reference == "" {
-			continue
-		}
 		switch route.Kind {
 		case clientendpoint.RouteSSHWebRTCTCP:
-			if strings.HasPrefix(reference, "ssh:") {
+			if credentials != nil && credentials.Available(ctx, string(target.ID), reference) {
 				environment.AvailableCredentialRefs = append(environment.AvailableCredentialRefs, reference)
+				if sshCredentials != nil && sshCredentials.Available(route.SSHCredentialRef) {
+					environment.AvailableCredentialRefs = append(environment.AvailableCredentialRefs, route.SSHCredentialRef)
+				}
 			}
 		case clientendpoint.RouteManagedWebRTC:
-			if credential, err := credentials.store.ResolveContext(ctx, reference); err == nil && credential.EndpointID == string(target.ID) {
+			if credentials != nil && credentials.Available(ctx, string(target.ID), reference) {
 				environment.AvailableCredentialRefs = append(environment.AvailableCredentialRefs, reference)
 			}
 		}

@@ -101,11 +101,11 @@ TUI 不得为连接失败增加 local fallback、旧 SSH proxy、重复 attach�
 - TUI 进程退出时由 SessionOwner 关闭 session、operation 和 resource。
 - registry reload 只在 dial identity 变化时要求后续 reconnect；label/priority 等变化不能热改已建立 session。
 - Cloud failure 只影响 managed Route projection。
-- Direct/SSH connector 未实现时显示稳定 unavailable，不得回退旧 transport。
+- Direct/SSH connector 只有在平台 primitive 或所需 credential 缺失时显示稳定 unavailable，不得回退旧 transport。
 
 ## 8. 当前与后续
 
 - RTC001：完成 versioned Proto Route/config、strict parser、assembler 和 planner contract。
-- RTC002 起：Go runtime 逐步把 Direct/SSH/Cloud 收口为统一 PeerSession。
+- RTC002-RTC006：Go runtime 已把 Direct 与 SSH 收口为统一 PeerSession；Cloud 的最终统一装配按 `workflow.md` 推进。
 - Android、Cloud 和最终验收顺序以 `workflow.md` 为准。
 - Web/WASM 当前冻结，TUI 不为未来 Web 抽象额外 UI 或 runtime contract。

@@ -371,6 +371,7 @@ message SSHWebRTCTCPRouteConfig {
   EndpointCredentialDescriptor credential_descriptor = 6;
   string remote_signaling_address = 7;
   string remote_ice_tcp_address = 8;
+  string ssh_credential_ref = 9;
 }
 
 // ManagedWebRTCRouteConfig 描述同一个 App 内由 TermX Cloud 提供的可选 managed Route。

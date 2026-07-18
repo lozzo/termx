@@ -10,7 +10,7 @@ func TestRouteSelectionPlannerFullRaceAndImmutableOutput(t *testing.T) {
 	plan, err := (RouteSelectionPlanner{}).Plan(RouteSelectionRequest{
 		Endpoint: target, Intent: ConnectIntent{Kind: "interactive"}, Generation: 7,
 		SupportedRouteKinds:     []RouteKind{RouteLocalUnix, RouteSSHWebRTCTCP, RouteManagedWebRTC},
-		AvailableCredentialRefs: []string{"ssh:studio", "credential:studio"},
+		AvailableCredentialRefs: []string{"credential:ssh-studio", "ssh:studio", "credential:studio"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestRouteSelectionPlannerGroupsPriorityWithCumulativeHedge(t *testing.T) {
 	plan, err := (RouteSelectionPlanner{}).Plan(RouteSelectionRequest{
 		Endpoint: target, Intent: ConnectIntent{Kind: "background"}, Generation: 3,
 		SupportedRouteKinds:     []RouteKind{RouteLocalUnix, RouteSSHWebRTCTCP, RouteManagedWebRTC},
-		AvailableCredentialRefs: []string{"ssh:studio", "credential:studio"},
+		AvailableCredentialRefs: []string{"credential:ssh-studio", "ssh:studio", "credential:studio"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestRouteSelectionPlannerExplicitManualRouteAndFailures(t *testing.T) {
 
 	plan, err := planner.Plan(RouteSelectionRequest{
 		Endpoint: target, Intent: ConnectIntent{Kind: "probe"}, RouteOverride: "ssh", Generation: 2,
-		SupportedRouteKinds: []RouteKind{RouteSSHWebRTCTCP}, AvailableCredentialRefs: []string{"ssh:studio"},
+		SupportedRouteKinds: []RouteKind{RouteSSHWebRTCTCP}, AvailableCredentialRefs: []string{"credential:ssh-studio", "ssh:studio"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +98,7 @@ func TestRouteSelectionPlannerExplicitManualRouteAndFailures(t *testing.T) {
 	if _, err := planner.Plan(request); !IsCode(err, ErrorCredentialRequired) {
 		t.Fatalf("missing credential error = %v", err)
 	}
-	request.AvailableCredentialRefs = []string{"ssh:studio"}
+	request.AvailableCredentialRefs = []string{"credential:ssh-studio", "ssh:studio"}
 	request.SupportedRouteKinds = []RouteKind{RouteLocalUnix}
 	if _, err := planner.Plan(request); !IsCode(err, ErrorRouteUnavailable) {
 		t.Fatalf("unsupported platform error = %v", err)
@@ -135,7 +135,7 @@ func plannerEndpoint() Endpoint {
 		ID: "studio", Label: "Studio", LabelSource: SourceUser, DaemonIdentity: identity, ConnectMode: ConnectOnDemand, Enabled: true,
 		Routes: map[RouteID]AccessRoute{
 			"local": {ID: "local", Kind: RouteLocalUnix, Enabled: true, Source: SourceLocal, PolicySource: SourceUser, Socket: "auto"},
-			"ssh":   {ID: "ssh", Kind: RouteSSHWebRTCTCP, Enabled: true, Source: SourceManual, PolicySource: SourceUser, Host: "studio", RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121", CredentialRef: "ssh:studio"},
+			"ssh":   {ID: "ssh", Kind: RouteSSHWebRTCTCP, Enabled: true, Source: SourceManual, PolicySource: SourceUser, Host: "studio", RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121", CredentialRef: "credential:ssh-studio", SSHCredentialRef: "ssh:studio"},
 			"cloud": {ID: "cloud", Kind: RouteManagedWebRTC, Enabled: true, Source: SourceCloud, PolicySource: SourceUser, TargetDeviceID: identity.DeviceID, RelayMode: RelayAuto, CredentialRef: "credential:studio"},
 		},
 	}

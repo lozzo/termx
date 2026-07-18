@@ -56,7 +56,7 @@ func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
 		"v3_cloud_runtime.go|github.com/lozzow/termx/shared/cloudcompanion/activation":            {},
 		"v3_cloud_runtime.go|github.com/lozzow/termx/shared/cloudcompanion/installer":             {},
 		"v3_cloud_runtime.go|github.com/lozzow/termx/shared/cloudcompanion/ipc":                   {},
-		"v3_command.go|github.com/lozzow/termx/shared/transport/ssh":                              {},
+		"v3_direct_daemon.go|github.com/lozzow/termx/remote/webrtc":                               {},
 		"v3_managed_daemon.go|github.com/lozzow/termx/remote/webrtc":                              {},
 		"v3_managed_daemon.go|github.com/lozzow/termx/shared/cloudcompanion":                      {},
 		"v3_managed_daemon.go|github.com/lozzow/termx/shared/transport":                           {},

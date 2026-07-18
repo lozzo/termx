@@ -255,14 +255,15 @@ type CredentialDescriptor struct {
 // AccessRoute 是到达一个 Endpoint 的持久配置。
 // Kind-specific 字段由 Validate 严格互斥；Enabled/ManualOnly/Priority 属于客户端 selection policy，不能由 discovery 静默覆盖。
 type AccessRoute struct {
-	ID            RouteID        `json:"route_id"`
-	Kind          RouteKind      `json:"kind"`
-	Enabled       bool           `json:"enabled"`
-	ManualOnly    bool           `json:"manual_only"`
-	Priority      *int           `json:"priority,omitempty"`
-	CredentialRef string         `json:"credential_ref,omitempty"`
-	Source        EndpointSource `json:"source"`
-	PolicySource  EndpointSource `json:"policy_source"`
+	ID               RouteID        `json:"route_id"`
+	Kind             RouteKind      `json:"kind"`
+	Enabled          bool           `json:"enabled"`
+	ManualOnly       bool           `json:"manual_only"`
+	Priority         *int           `json:"priority,omitempty"`
+	CredentialRef    string         `json:"credential_ref,omitempty"`
+	SSHCredentialRef string         `json:"ssh_credential_ref,omitempty"`
+	Source           EndpointSource `json:"source"`
+	PolicySource     EndpointSource `json:"policy_source"`
 
 	Socket string `json:"socket,omitempty"`
 
@@ -385,6 +386,7 @@ func (candidate LocalDiscoveryCandidate) Validate(now time.Time) error {
 type DialIdentity struct {
 	Kind                   RouteKind
 	CredentialRef          string
+	SSHCredentialRef       string
 	Socket                 string
 	Host                   string
 	Port                   uint16
@@ -642,6 +644,7 @@ func (route AccessRoute) Validate(identity DaemonIdentity) error {
 		value string
 	}{
 		{name: "credential_ref", value: route.CredentialRef},
+		{name: "ssh_credential_ref", value: route.SSHCredentialRef},
 		{name: "socket", value: route.Socket},
 		{name: "host", value: route.Host},
 		{name: "user", value: route.User},
@@ -763,7 +766,7 @@ func (route AccessRoute) DialIdentity() DialIdentity {
 		descriptor = route.CredentialDescriptor.DescriptorID + "\x00" + string(route.CredentialDescriptor.Kind)
 	}
 	return DialIdentity{
-		Kind: route.Kind, CredentialRef: strings.TrimSpace(route.CredentialRef), Socket: strings.TrimSpace(route.Socket),
+		Kind: route.Kind, CredentialRef: strings.TrimSpace(route.CredentialRef), SSHCredentialRef: strings.TrimSpace(route.SSHCredentialRef), Socket: strings.TrimSpace(route.Socket),
 		Host: strings.TrimSpace(route.Host), Port: route.Port, User: strings.TrimSpace(route.User), ProxyJump: strings.TrimSpace(route.ProxyJump),
 		CredentialDescriptor: descriptor, RemoteSignalingAddress: strings.TrimSpace(route.RemoteSignalingAddress),
 		RemoteICETCPAddress: strings.TrimSpace(route.RemoteICETCPAddress), HostKeyFingerprints: strings.Join(hostKeys, "\x00"),
@@ -807,10 +810,10 @@ func NewLocalEndpoint(id EndpointID, label, socket string, mode ConnectMode) End
 
 // NewSSHEndpoint 构造单 ssh-webrtc-tcp route Endpoint。
 // host 可以是 OpenSSH alias；credential body 和 known_hosts 内容不进入 registry。
-func NewSSHEndpoint(id EndpointID, label, host, credentialRef, remoteSignalingAddress, remoteICETCPAddress string, mode ConnectMode) Endpoint {
+func NewSSHEndpoint(id EndpointID, label, host, sshCredentialRef, remoteSignalingAddress, remoteICETCPAddress string, mode ConnectMode) Endpoint {
 	routeID := RouteID("ssh")
 	return Endpoint{ID: id, Label: label, LabelSource: SourceManual, ConnectMode: mode, Enabled: true, Routes: map[RouteID]AccessRoute{
-		routeID: {ID: routeID, Kind: RouteSSHWebRTCTCP, Enabled: true, Source: SourceManual, PolicySource: SourceManual, Host: host, CredentialRef: credentialRef, RemoteSignalingAddress: remoteSignalingAddress, RemoteICETCPAddress: remoteICETCPAddress},
+		routeID: {ID: routeID, Kind: RouteSSHWebRTCTCP, Enabled: true, Source: SourceManual, PolicySource: SourceManual, Host: host, SSHCredentialRef: sshCredentialRef, RemoteSignalingAddress: remoteSignalingAddress, RemoteICETCPAddress: remoteICETCPAddress},
 	}}
 }
 
@@ -883,7 +886,8 @@ func (route AccessRoute) withDefaults() AccessRoute {
 func (route AccessRoute) hasSSHFields() bool {
 	return strings.TrimSpace(route.Host) != "" || route.Port != 0 || strings.TrimSpace(route.User) != "" ||
 		strings.TrimSpace(route.ProxyJump) != "" || strings.TrimSpace(route.RemoteSignalingAddress) != "" ||
-		strings.TrimSpace(route.RemoteICETCPAddress) != "" || len(route.HostKeyFingerprints) != 0 || route.CredentialDescriptor != nil
+		strings.TrimSpace(route.RemoteICETCPAddress) != "" || strings.TrimSpace(route.SSHCredentialRef) != "" ||
+		len(route.HostKeyFingerprints) != 0 || route.CredentialDescriptor != nil
 }
 
 func (route AccessRoute) hasDirectFields() bool {

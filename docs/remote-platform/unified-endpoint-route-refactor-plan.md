@@ -82,12 +82,13 @@ SSHWebRTCTCPRouteConfig
   credential_descriptor?
   remote_signaling_address
   remote_ice_tcp_address
+  ssh_credential_ref
 ```
 
 - Go Client Engine 负责 SSH host-key 校验、credential resolution 和 `direct-tcpip` tunnel。
 - Pion ICE-TCP 通过 SSH-backed dialer 访问 daemon loopback listener。
 - `credential_descriptor` 只描述目标平台所需凭据类别，不携带 password、private key、Cloud token 或源平台 credential ref。
-- 旧 OpenSSH 子进程与 `termx daemon stdio-proxy` 不是该 Route 的实现或 fallback；真实替换由 `workflow.md` 的 SSH 切片完成。
+- 旧 OpenSSH 子进程与 `termx daemon stdio-proxy` 已删除，不是该 Route 的实现或 fallback。
 
 ### 2.4 Managed WebRTC
 
@@ -143,8 +144,8 @@ Go 内部可以使用便于 validation/planning 的领域投影，但跨 JNI/C A
 - planner 不读取 secure store body、不 dial、不选择 winner、不修改 registry。
 - planner 输出不可变 attempt group 和稳定过滤诊断。
 - 平台明确支持的 Direct、SSH 和 Cloud connector 使用同一 `PeerConnector.Connect -> ReadyPeerSession` contract，可以进入同一 attempt group。
-- Route connector 尚未实现时必须显式 unavailable，不能把新 Route 配置降级解释成旧 transport。
-- Direct/SSH/Cloud 收口为同一 ReadyPeerSession 的时机由 `workflow.md` 后续切片推进。
+- Route connector 在当前平台未装配或 credential primitive 缺失时必须显式 unavailable，不能把 Route 配置降级解释成旧 transport。
+- Direct 与 SSH 已收口为同一 ReadyPeerSession；Cloud 最终装配时机由 `workflow.md` 推进。
 
 ## 7. Portable bundle
 
@@ -177,4 +178,4 @@ RTC001 至少证明：
 - registry parser/encode、assembler、planner fixtures 使用新 Route 语义。
 - 全仓扫描不存在旧 Route enum/name。
 
-真实 Direct、SSH、Cloud connector 和 Android APK 用户链路不由本文提前宣称完成；完成证据只记录在 `workflow.md` 对应切片。
+真实 connector 和 Android APK 用户链路的完成证据只记录在 `workflow.md` 对应切片；本文不重复维护阶段状态。

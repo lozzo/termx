@@ -1,25 +1,45 @@
 package ssh
 
 import (
-	"slices"
+	"crypto/ed25519"
+	"crypto/rand"
+	"net"
 	"testing"
 
 	"github.com/lozzow/termx/client/endpoint"
+	golangssh "golang.org/x/crypto/ssh"
 )
 
-func TestSSHAttemptArgumentsComeOnlyFromSelectedRoute(t *testing.T) {
-	route := endpoint.AccessRoute{
-		ID: "ssh", Kind: endpoint.RouteSSHWebRTCTCP, Enabled: true, Host: "studio.example", User: "build", Port: 2222,
-		ProxyJump: "bastion", RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121", Source: endpoint.SourceManual, PolicySource: endpoint.SourceUser,
+func TestSSHRouteProjectionKeepsUserHostAndTCPCandidateExplicit(t *testing.T) {
+	route := endpoint.AccessRoute{Host: "build@studio.example", Port: 2222}
+	user, host := sshUserAndHost(route)
+	if user != "build" || host != "studio.example" {
+		t.Fatalf("SSH target = %q@%q", user, host)
 	}
-	if got := sshAddress(route); got != "build@studio.example" {
-		t.Fatalf("SSH address = %q", got)
+	candidate := "candidate:1 1 tcp 1671430143 127.0.0.1 41121 typ host tcptype passive"
+	if got := projectTCPCandidate(candidate, "127.0.0.1", 54321); got != "candidate:1 1 tcp 1671430143 127.0.0.1 54321 typ host tcptype passive" {
+		t.Fatalf("projected candidate = %q", got)
 	}
-	if got := sshArgs(route, []string{"-o", "LogLevel=ERROR"}); !slices.Equal(got, []string{"-o", "LogLevel=ERROR", "-p", "2222", "-J", "bastion"}) {
-		t.Fatalf("SSH args = %v", got)
+	udp := "candidate:2 1 udp 1 127.0.0.1 41121 typ host"
+	if got := projectTCPCandidate(udp, "127.0.0.1", 54321); got != udp {
+		t.Fatalf("UDP candidate changed to %q", got)
 	}
-	route.CredentialRef = "ssh:studio"
-	if got := sshAddress(route); got != "build@studio.example" {
-		t.Fatalf("credential ref changed route target snapshot: %q", got)
+}
+
+func TestPinnedHostKeyCallbackRejectsUnpinnedKey(t *testing.T) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := golangssh.NewSignerFromKey(privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fingerprint := golangssh.FingerprintSHA256(signer.PublicKey())
+	if err := pinnedHostKeyCallback([]string{fingerprint})("host", &net.TCPAddr{}, signer.PublicKey()); err != nil {
+		t.Fatal(err)
+	}
+	if err := pinnedHostKeyCallback([]string{"SHA256:not-the-key"})("host", &net.TCPAddr{}, signer.PublicKey()); err == nil {
+		t.Fatal("unpinned host key unexpectedly accepted")
 	}
 }

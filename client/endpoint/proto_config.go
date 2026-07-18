@@ -162,7 +162,7 @@ func routeToProto(route AccessRoute) (*remoteauthpb.EndpointRouteConfigV1, error
 		sshConfig := &remoteauthpb.SSHWebRTCTCPRouteConfig{
 			Host: route.Host, Port: uint32(route.Port), User: route.User, ProxyJump: route.ProxyJump,
 			HostKeyFingerprints: append([]string(nil), route.HostKeyFingerprints...), RemoteSignalingAddress: route.RemoteSignalingAddress,
-			RemoteIceTcpAddress: route.RemoteICETCPAddress,
+			RemoteIceTcpAddress: route.RemoteICETCPAddress, SshCredentialRef: route.SSHCredentialRef,
 		}
 		if descriptor := route.CredentialDescriptor; descriptor != nil {
 			sshConfig.CredentialDescriptor = &remoteauthpb.EndpointCredentialDescriptor{

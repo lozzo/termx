@@ -16,6 +16,7 @@ import (
 	"github.com/lozzow/termx/client/adapter/direct"
 	"github.com/lozzow/termx/client/adapter/managed"
 	peeradapter "github.com/lozzow/termx/client/adapter/peer"
+	sshadapter "github.com/lozzow/termx/client/adapter/ssh"
 	"github.com/lozzow/termx/client/binding"
 	"github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/client/port"
@@ -36,6 +37,7 @@ type Options struct {
 	Broker           *binding.PlatformBroker
 	DirectPeers      direct.PeerFactory
 	ManagedPeers     port.ManagedPeerFactory
+	SSHCredentials   port.SSHCredentialSource
 	ClientName       string
 	CredentialPrefix string
 	Now              func() time.Time
@@ -115,6 +117,14 @@ func (host *Host) OpenSession(ctx context.Context, request *bindingpb.OpenSessio
 		return host.owner.AcquireRoute(ctx, target, routeID, intent, config, &direct.Dialer{
 			Peers: host.options.DirectPeers, Authorization: authorizer, ClientName: host.options.ClientName, Now: host.options.Now,
 		})
+	case endpoint.RouteSSHWebRTCTCP:
+		if host.options.DirectPeers == nil || host.options.SSHCredentials == nil {
+			return nil, fmt.Errorf("SSH WebRTC peer factory or credential source is unavailable")
+		}
+		return host.owner.AcquireRoute(ctx, target, routeID, intent, config, sshadapter.NewDialer(sshadapter.Options{
+			Peers: host.options.DirectPeers, Authorization: authorizer, Credentials: host.options.SSHCredentials,
+			ClientName: host.options.ClientName,
+		}))
 	case endpoint.RouteManagedWebRTC:
 		if host.options.ManagedPeers == nil {
 			return nil, fmt.Errorf("managed WebRTC peer factory is unavailable")

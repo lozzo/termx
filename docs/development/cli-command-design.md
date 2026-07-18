@@ -14,7 +14,7 @@ TermX 的 terminal 是 daemon 拥有的长期实体；workspace、tab、pane 和
 
 CLI 命令树使用 Endpoint/Route registry、`TerminalRef` 和统一 `ClientRuntime/SessionOwner`；local Unix、Direct WebRTC TCP、SSH WebRTC TCP 与 managed WebRTC 都作为同一 planner/runtime 的 Route connector 接入。
 
-C3B-C3G 已完成默认 local/SSH full race、priority hedge、显式 override/sticky reconnect、winner/loser cleanup、ReadyPeerSession 身份门禁和 operation generation fence。CLI/TUI 不再拥有直接 route/dial owner，也不得恢复旧 helper、raw protocol adoption 或 only-viable local 假路径。
+共享 runtime 已完成 local/Direct/SSH route race、priority hedge、显式 override/sticky reconnect、winner/loser cleanup、ReadyPeerSession 身份门禁和 operation generation fence。SSH 使用 Go client + `direct-tcpip` 承载同一 WebRTC DataChannel；CLI/TUI 不再拥有直接 route/dial owner，也不得恢复旧 helper、raw protocol adoption、进程型 OpenSSH proxy 或 only-viable local 假路径。
 
 CLI 只保留以下职责：
 

@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- `RTC005` Go-owned Endpoint registry 已完成；当前活动主线从 `RTC006` 开始。
+- `RTC006` SSH WebRTC TCP 已完成；当前活动主线从 `RTC007` 开始。
 - TermX 只有一个面向用户的 App。Direct 与 SSH 是无需登录和订阅的基础能力；TermX Cloud 是同一 App 内可选的 managed Route，提供账号目录、托管信令、ICE-UDP、TURN Relay 和跨网络能力。
 - 所有远程业务连接最终统一为可靠有序 WebRTC DataChannel：Direct 使用 daemon embedded signaling + ICE-TCP；SSH 使用 Go SSH client/direct-tcpip tunnel + daemon loopback ICE-TCP；Cloud 使用 TermX Cloud signaling + ICE-UDP 或 TURN Relay。
 - Local Unix 仍是本机 CLI/TUI 到本机 daemon 的本地 transport，不要求为了形式统一改成 WebRTC。
@@ -10,8 +10,8 @@
 - Android 通过稳定 C ABI + 薄 JNI/Capacitor bridge 使用 Go；Kotlin/Java 只提供 lifecycle、Keystore、安全存储、权限和平台 primitive。
 - Web/WASM 当前冻结。仓库维持现有编译与 contract 不回归，但不建设默认 Web 访问界面、不迁移浏览器 consumer，也不允许 Web 工作抢占 Android/native Go 主线。未来恢复时必须使用 Go/WASM；纯浏览器只支持 TermX Cloud managed WebRTC。
 - `ICE001` 已证明 Pion 双端仅启用 TCP4 时，真实 selected candidate pair 为 TCP，并完成 DeviceIdentity/CapabilityGrant auth、Hello、Proto API、取消 teardown、race 和 100 次连续独立建连。
-- 当前实现仍有 OpenSSH 子进程 + `stdio-proxy` 历史实现和旧 App flavor 构建语义等迁移债；不得围绕这些旧路径继续打补丁。
-- 新 `ssh-webrtc-tcp` contract 已生效，但 Go SSH direct-tcpip connector 要到 `RTC006` 实现；此前 adapter 必须显式 unavailable，不得把新字段解释为旧 stdio proxy 参数。
+- Go SSH client 已通过 host-key pin、key/password credential、`direct-tcpip` signaling/ICE-TCP、DataChannel auth/Hello/Proto API 和 cleanup E2E；进程型 OpenSSH transport 与远端 `stdio-proxy` 已删除。
+- 旧 App flavor 构建语义等剩余迁移债不得围绕旧路径继续打补丁，按后续切片删除。
 
 ## 产品要求
 
@@ -136,7 +136,7 @@ Android / TUI / CLI / future iOS/Desktop / future Web
 | RTC003 | 已完成 | daemon embedded signaling + ICE-TCP | versioned Direct signaling Proto、一次性 expiry/replay/pin admission、DeviceIdentity 签名 answer、共享 Pion TCPMux、Go Direct connector、DTLS-bound auth、Hello、Proto API、SessionClose 和有界 peer admission 已完成；真实 TCP candidate、篡改拒绝、取消、100 次连续建连/listener cleanup 与 race 通过；未接 App |
 | RTC004 | 已完成 | Android Direct 纵向闭环 | `pair create` QR -> Android JNI -> Go Direct connector -> PairingTicket -> client-bound grant -> terminal list/attach；无 Cloud 登录可用；锁屏/恢复 generation 正确；ARM64 模拟器真实 APK 已完成扫码导入、terminal 输入输出、持续交互与 crash scan |
 | RTC005 | 已完成 | Go-owned Endpoint registry | `enginehost` 已拥有 registry load/get/upsert/delete、identity pin、pairing credential 补偿和 unreferenced credential cleanup；Android/Web 只保存 opaque Proto bytes，UI 只缓存 projection；race、失败事务、5 个 instrumentation、模拟器冷启动恢复和重复真值扫描通过 |
-| RTC006 | 待开始 | SSH WebRTC TCP | Go SSH client、host-key/credential port、direct-tcpip backed ICE dialer 和真实 sshd E2E；完成后删除 OpenSSH 子进程与远端 `stdio-proxy` |
+| RTC006 | 已完成 | SSH WebRTC TCP | Go SSH client、host-key/credential port、direct-tcpip backed signaling/ICE-TCP 已接入统一 ReadyPeerSession；真实 sshd key E2E、password、host-key pin、selected TCP pair、auth/Hello/API、cancel/cleanup 与 race 通过；OpenSSH 子进程 transport 和远端 `stdio-proxy` 已删除 |
 | RTC007 | 待开始 | 地址覆盖、LAN 与 FRP | `pair create` 支持 signaling/ICE 地址与端口覆盖、自动 LAN seed 和安全预览；真实 LAN 与 TCP 映射 E2E 证明 locator 变化不改变 identity pin |
 | RTC008 | 待开始 | Endpoint share | 实现 CLI/TUI 同源 `endpoint share`、一次性 TLS share session、receiver proof、Route/policy diff、config-only 和 App 原子导入 |
 | RTC009 | 待开始 | Cloud Route 收口 | 现有 managed WebRTC 接到统一 PeerSession；单一 App 内按账号/订阅决定 eligibility；Cloud logout/failure 不影响 Direct/SSH |

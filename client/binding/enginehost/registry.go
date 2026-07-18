@@ -176,7 +176,7 @@ func (host *Host) storeRegistryLocked(ctx context.Context, registry endpoint.Reg
 
 func (host *Host) commitPairingEndpoint(ctx context.Context, preferredID endpoint.EndpointID, candidate endpoint.EndpointCandidate, credentialRef string) (*remoteauthpb.EndpointConfigV1, *remoteauthpb.EndpointRegistryV1, error) {
 	for index := range candidate.Routes {
-		if candidate.Routes[index].Kind == endpoint.RouteDirectWebRTCTCP || candidate.Routes[index].Kind == endpoint.RouteManagedWebRTC {
+		if candidate.Routes[index].Kind == endpoint.RouteDirectWebRTCTCP || candidate.Routes[index].Kind == endpoint.RouteSSHWebRTCTCP || candidate.Routes[index].Kind == endpoint.RouteManagedWebRTC {
 			candidate.Routes[index].CredentialRef = credentialRef
 		}
 	}

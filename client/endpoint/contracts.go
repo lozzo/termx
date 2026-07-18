@@ -529,6 +529,7 @@ func accessRouteFromWire(route *remoteauthpb.EndpointRouteConfigV1, enabled bool
 		model.HostKeyFingerprints = append([]string(nil), config.GetHostKeyFingerprints()...)
 		model.RemoteSignalingAddress = config.GetRemoteSignalingAddress()
 		model.RemoteICETCPAddress = config.GetRemoteIceTcpAddress()
+		model.SSHCredentialRef = config.GetSshCredentialRef()
 		if descriptor := config.GetCredentialDescriptor(); descriptor != nil {
 			model.CredentialDescriptor = &CredentialDescriptor{
 				DescriptorID: descriptor.GetDescriptorId(), Kind: mapWireCredentialKind(descriptor.GetKind()), Exportable: descriptor.GetExportable(),

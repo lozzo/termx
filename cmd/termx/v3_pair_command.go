@@ -362,7 +362,7 @@ func mergePairingEndpoint(
 	grantRef := v3PairingGrantRef(actualID, identity.DeviceID)
 	if targetExists {
 		for _, route := range target.Routes {
-			if route.Kind != endpointdomain.RouteDirectWebRTCTCP && route.Kind != endpointdomain.RouteManagedWebRTC || strings.TrimSpace(route.CredentialRef) == "" {
+			if route.Kind != endpointdomain.RouteDirectWebRTCTCP && route.Kind != endpointdomain.RouteSSHWebRTCTCP && route.Kind != endpointdomain.RouteManagedWebRTC || strings.TrimSpace(route.CredentialRef) == "" {
 				continue
 			}
 			if grantRef != v3PairingGrantRef(actualID, identity.DeviceID) && grantRef != route.CredentialRef {
@@ -375,7 +375,7 @@ func mergePairingEndpoint(
 		return endpointdomain.Registry{}, endpointdomain.Endpoint{}, "", fmt.Errorf("pairing bundle contains no portable route and no existing endpoint matches daemon %q", identity.DeviceID)
 	}
 	for index := range candidate.Routes {
-		if candidate.Routes[index].Kind == endpointdomain.RouteDirectWebRTCTCP || candidate.Routes[index].Kind == endpointdomain.RouteManagedWebRTC {
+		if candidate.Routes[index].Kind == endpointdomain.RouteDirectWebRTCTCP || candidate.Routes[index].Kind == endpointdomain.RouteSSHWebRTCTCP || candidate.Routes[index].Kind == endpointdomain.RouteManagedWebRTC {
 			candidate.Routes[index].CredentialRef = grantRef
 		}
 	}
@@ -408,7 +408,7 @@ func mergePairingEndpoint(
 	endpoint := result.Registry.Endpoints[resolvedID]
 	authRoutes := 0
 	for routeID, route := range endpoint.Routes {
-		if route.Kind != endpointdomain.RouteDirectWebRTCTCP && route.Kind != endpointdomain.RouteManagedWebRTC {
+		if route.Kind != endpointdomain.RouteDirectWebRTCTCP && route.Kind != endpointdomain.RouteSSHWebRTCTCP && route.Kind != endpointdomain.RouteManagedWebRTC {
 			continue
 		}
 		if strings.TrimSpace(route.CredentialRef) != "" && route.CredentialRef != grantRef {
@@ -419,7 +419,7 @@ func mergePairingEndpoint(
 		authRoutes++
 	}
 	if authRoutes == 0 {
-		return endpointdomain.Registry{}, endpointdomain.Endpoint{}, "", fmt.Errorf("endpoint %q has no direct-webrtc-tcp or managed-webrtc route that can use the paired capability", resolvedID)
+		return endpointdomain.Registry{}, endpointdomain.Endpoint{}, "", fmt.Errorf("endpoint %q has no WebRTC route that can use the paired capability", resolvedID)
 	}
 	result.Registry.Endpoints[resolvedID] = endpoint
 	result.Registry, err = result.Registry.Normalize()
