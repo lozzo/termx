@@ -30,8 +30,8 @@ import termx.client.binding.v1.ClientBinding;
 public final class GoClientNativeInstrumentedTest {
     @Test
     public void loadsAndRunsRealGoClientEngine() throws Exception {
-        assertEquals(1, GoClientNative.INSTANCE.abiVersion());
-        long engine = GoClientNative.INSTANCE.create(
+        assertEquals(2, GoClientNative.INSTANCE.abiVersion());
+        long engine = GoClientNative.INSTANCE.createSpike(
                 ApplicationProvider.getApplicationContext().getCacheDir().getAbsolutePath());
         assertNotEquals(0, engine);
 
@@ -120,10 +120,76 @@ public final class GoClientNativeInstrumentedTest {
         ExecutorService executor = Executors.newFixedThreadPool(4);
         try {
             for (Future<Integer> result : executor.invokeAll(calls)) {
-                assertEquals(1, result.get().intValue());
+                assertEquals(2, result.get().intValue());
             }
         } finally {
             executor.shutdownNow();
+        }
+    }
+
+    @Test
+    public void productionEngineExchangesPlatformProtoRequests() throws Exception {
+        long engine = GoClientNative.INSTANCE.create();
+        try {
+            long operation = GoClientNative.INSTANCE.deleteCredential(engine,
+                    ClientBinding.DeleteCredentialRequest.newBuilder()
+                            .setRequestId("delete-platform")
+                            .setCredentialRef("credential:studio")
+                            .build().toByteArray());
+            ClientBinding.PlatformRequest request = ClientBinding.PlatformRequest.parseFrom(
+                    GoClientNative.INSTANCE.nextPlatformRequest(engine, 5_000));
+            assertTrue(request.hasCredentialDelete());
+            assertEquals("credential:studio", request.getCredentialDelete().getCredentialRef());
+            GoClientNative.INSTANCE.completePlatformRequest(engine,
+                    ClientBinding.PlatformResponse.newBuilder()
+                            .setRequestId(request.getRequestId())
+                            .build().toByteArray());
+            ClientBinding.EventEnvelope event = next(engine);
+            assertTrue(event.hasDeleteCredential());
+            assertEquals(operation, event.getDeleteCredential().getOperationHandle());
+            GoClientNative.INSTANCE.release(engine, operation);
+        } finally {
+            GoClientNative.INSTANCE.close(engine);
+        }
+    }
+
+    @Test
+    public void screenFreezeTeardownInvalidatesHandlesAndAdvancesGeneration() throws Exception {
+        String runtimeDir = ApplicationProvider.getApplicationContext().getCacheDir().getAbsolutePath();
+        long firstEngine = GoClientNative.INSTANCE.createSpike(runtimeDir);
+        Common.EndpointSessionStamp firstStamp;
+        try {
+            GoClientNative.INSTANCE.openSession(firstEngine,
+                    ClientBinding.OpenSessionRequest.newBuilder()
+                            .setRequestId("before-freeze")
+                            .setEndpointId("android-spike")
+                            .setIntent(ClientBinding.ConnectIntent.CONNECT_INTENT_INTERACTIVE)
+                            .build().toByteArray());
+            firstStamp = next(firstEngine).getOpenSession().getSession();
+        } finally {
+            GoClientNative.INSTANCE.close(firstEngine);
+        }
+        boolean staleRejected = false;
+        try {
+            GoClientNative.INSTANCE.nextEvent(firstEngine, 1);
+        } catch (IllegalStateException expected) {
+            staleRejected = true;
+        }
+        assertTrue("closed engine handle must be rejected after WebView freeze", staleRejected);
+
+        long secondEngine = GoClientNative.INSTANCE.createSpike(runtimeDir);
+        try {
+            GoClientNative.INSTANCE.openSession(secondEngine,
+                    ClientBinding.OpenSessionRequest.newBuilder()
+                            .setRequestId("after-resume")
+                            .setEndpointId("android-spike")
+                            .setIntent(ClientBinding.ConnectIntent.CONNECT_INTENT_INTERACTIVE)
+                            .build().toByteArray());
+            Common.EndpointSessionStamp secondStamp = next(secondEngine).getOpenSession().getSession();
+            assertTrue("resumed engine must allocate a newer process generation",
+                    secondStamp.getGeneration() > firstStamp.getGeneration());
+        } finally {
+            GoClientNative.INSTANCE.close(secondEngine);
         }
     }
 

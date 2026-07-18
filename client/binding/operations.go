@@ -1,0 +1,92 @@
+package binding
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/lozzow/termx/proto/bindingpb"
+	"google.golang.org/protobuf/proto"
+)
+
+// ImportPairing 解析 bindingpb.ImportPairingRequest 并异步请求可选 PairingHost。
+// 完成结果只通过 NextEvent 发布；binding 不解析二维码、ticket 或 credential 内容。
+func (engine *Engine) ImportPairing(payload []byte) (uint64, error) {
+	if err := validatePayload(payload); err != nil {
+		return 0, err
+	}
+	request := &bindingpb.ImportPairingRequest{}
+	if err := (proto.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(payload, request); err != nil {
+		return 0, fmt.Errorf("decode import pairing request: %w", err)
+	}
+	if request.GetRequestId() == "" || request.GetPortablePayload() == "" {
+		return 0, fmt.Errorf("import pairing request is incomplete")
+	}
+	host, ok := engine.host.(PairingHost)
+	if !ok {
+		return 0, fmt.Errorf("binding host does not support pairing import")
+	}
+	handle, operationContext, err := engine.startOperation()
+	if err != nil {
+		return 0, err
+	}
+	go engine.runImportPairing(handle, operationContext, host, proto.Clone(request).(*bindingpb.ImportPairingRequest))
+	return handle, nil
+}
+
+// DeleteCredential 解析 bindingpb.DeleteCredentialRequest 并异步删除平台 credential。
+// 它不撤销 daemon grant；结果只通过 NextEvent 发布并需要显式 Release operation handle。
+func (engine *Engine) DeleteCredential(payload []byte) (uint64, error) {
+	if err := validatePayload(payload); err != nil {
+		return 0, err
+	}
+	request := &bindingpb.DeleteCredentialRequest{}
+	if err := (proto.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(payload, request); err != nil {
+		return 0, fmt.Errorf("decode delete credential request: %w", err)
+	}
+	if request.GetRequestId() == "" || request.GetCredentialRef() == "" {
+		return 0, fmt.Errorf("delete credential request is incomplete")
+	}
+	host, ok := engine.host.(CredentialHost)
+	if !ok {
+		return 0, fmt.Errorf("binding host does not support credential deletion")
+	}
+	handle, operationContext, err := engine.startOperation()
+	if err != nil {
+		return 0, err
+	}
+	go engine.runDeleteCredential(handle, operationContext, host, proto.Clone(request).(*bindingpb.DeleteCredentialRequest))
+	return handle, nil
+}
+
+func (engine *Engine) runImportPairing(handle uint64, ctx context.Context, host PairingHost, request *bindingpb.ImportPairingRequest) {
+	result, err := host.ImportPairing(ctx, request)
+	if ctx.Err() != nil {
+		result = nil
+		err = ctx.Err()
+	}
+	engine.markOperationDone(handle)
+	if result == nil {
+		result = &bindingpb.ImportPairingResult{}
+	} else {
+		result = proto.Clone(result).(*bindingpb.ImportPairingResult)
+	}
+	result.RequestId = request.GetRequestId()
+	result.OperationHandle = handle
+	if err != nil {
+		result.Error = apiError(err)
+	}
+	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_ImportPairing{ImportPairing: result}})
+}
+
+func (engine *Engine) runDeleteCredential(handle uint64, ctx context.Context, host CredentialHost, request *bindingpb.DeleteCredentialRequest) {
+	err := host.DeleteCredential(ctx, request)
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	engine.markOperationDone(handle)
+	result := &bindingpb.DeleteCredentialResult{RequestId: request.GetRequestId(), OperationHandle: handle}
+	if err != nil {
+		result.Error = apiError(err)
+	}
+	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_DeleteCredential{DeleteCredential: result}})
+}

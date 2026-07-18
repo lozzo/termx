@@ -18,7 +18,7 @@ import com.getcapacitor.annotation.CapacitorPlugin
 /**
  * NativeFilePickerPlugin — 使用 Android SAF (ACTION_OPEN_DOCUMENT) 选择文件
  *
- * 返回 content:// URI，供 Native FileTransferManager 直接读取上传。
+ * 返回 content:// URI，供 WebView 读取并通过 Go resource stream 上传。
  */
 @CapacitorPlugin(name = "NativeFilePicker")
 class NativeFilePickerPlugin : Plugin() {

@@ -10,6 +10,7 @@ import {
   type FilePreviewStreamResult,
 } from './fileApi'
 import type { ConnectionInfo, RtcSession } from '../core/transport'
+import type { ProtoClientSession } from '../core/protoClientSession'
 import { createPathBookmarkApi, type PathBookmark } from './pathBookmarks'
 
 export type FileSortField = 'name' | 'modified' | 'size' | 'type'
@@ -31,7 +32,7 @@ export interface FileManagerVisibleError {
 export interface UseFileManagerOptions {
   machineId: string
   terminalId?: string | undefined
-  session: Pick<RtcSession, 'openApi' | 'openFileChannel' | 'getConnectionInfo'>
+  session: Pick<RtcSession, 'openApi' | 'openFileChannel' | 'getConnectionInfo'> | ProtoClientSession
   initialPath?: string | undefined
 }
 
@@ -85,6 +86,16 @@ export interface UseFileManagerResult {
   updatePathBookmark(id: string, input: { label?: string | undefined; path?: string | undefined }): Promise<void>
   removePathBookmark(id: string): Promise<void>
   refreshPathBookmarks(): Promise<void>
+}
+
+function fileSessionConnectionInfo(session: UseFileManagerOptions['session']): Promise<ConnectionInfo> {
+  if ('execute' in session) {
+    return Promise.resolve({
+      path: 'hub', connectionId: `${session.stamp.endpointId}:${session.stamp.generation}`,
+      machineId: session.stamp.endpointId, relayInUse: false,
+    })
+  }
+  return session.getConnectionInfo()
 }
 
 export function useFileManager(options: UseFileManagerOptions): UseFileManagerResult {
@@ -145,7 +156,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
 
     setError(null)
     try {
-      const info = await options.session.getConnectionInfo()
+      const info = await fileSessionConnectionInfo(options.session)
       if (seq !== requestSeqRef.current) return
       assertSessionTarget(info, options.machineId, options.terminalId)
       const { response, fallbackFrom } = await listDirWithParentFallback(fileApi, path)
@@ -350,7 +361,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     setPreviewError(null)
     setPreviewLoading(true)
     try {
-      const info = await options.session.getConnectionInfo()
+      const info = await fileSessionConnectionInfo(options.session)
       if (seq !== previewSeqRef.current) return
       assertSessionTarget(info, options.machineId, options.terminalId)
       const response = await previewSource.preview(path)
@@ -373,7 +384,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     mimeType: string,
     streamOptions?: FilePreviewStreamOptions,
   ) => {
-    const info = await options.session.getConnectionInfo()
+    const info = await fileSessionConnectionInfo(options.session)
     assertSessionTarget(info, options.machineId, options.terminalId)
     return await previewSource.stream(path, mimeType, streamOptions)
   }, [options.machineId, options.terminalId, options.session, previewSource])

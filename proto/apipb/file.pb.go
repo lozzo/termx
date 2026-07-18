@@ -1159,6 +1159,8 @@ type FileTransferHandle struct {
 	ModifiedAtUnixNano int64                   `protobuf:"varint,5,opt,name=modified_at_unix_nano,json=modifiedAtUnixNano,proto3" json:"modified_at_unix_nano,omitempty"`
 	Operation          *OperationStamp         `protobuf:"bytes,6,opt,name=operation,proto3" json:"operation,omitempty"`
 	Resume             *FileUploadResumeHandle `protobuf:"bytes,7,opt,name=resume,proto3" json:"resume,omitempty"`
+	ChunkBytes         uint32                  `protobuf:"varint,8,opt,name=chunk_bytes,json=chunkBytes,proto3" json:"chunk_bytes,omitempty"`
+	WindowBytes        int64                   `protobuf:"varint,9,opt,name=window_bytes,json=windowBytes,proto3" json:"window_bytes,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -1240,6 +1242,20 @@ func (x *FileTransferHandle) GetResume() *FileUploadResumeHandle {
 		return x.Resume
 	}
 	return nil
+}
+
+func (x *FileTransferHandle) GetChunkBytes() uint32 {
+	if x != nil {
+		return x.ChunkBytes
+	}
+	return 0
+}
+
+func (x *FileTransferHandle) GetWindowBytes() int64 {
+	if x != nil {
+		return x.WindowBytes
+	}
+	return 0
 }
 
 type FileTransferOpenResult struct {
@@ -1469,7 +1485,7 @@ const file_apipb_file_proto_rawDesc = "" +
 	"error_code\x18\x04 \x01(\tR\terrorCode\x12#\n" +
 	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"N\n" +
 	"\x0fFileBatchResult\x12;\n" +
-	"\aresults\x18\x01 \x03(\v2!.termx.api.v1.FileOperationResultR\aresults\"\xbb\x02\n" +
+	"\aresults\x18\x01 \x03(\v2!.termx.api.v1.FileOperationResultR\aresults\"\xff\x02\n" +
 	"\x12FileTransferHandle\x128\n" +
 	"\bresource\x18\x01 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresource\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x16\n" +
@@ -1477,7 +1493,10 @@ const file_apipb_file_proto_rawDesc = "" +
 	"\x04size\x18\x04 \x01(\x03R\x04size\x121\n" +
 	"\x15modified_at_unix_nano\x18\x05 \x01(\x03R\x12modifiedAtUnixNano\x12:\n" +
 	"\toperation\x18\x06 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\x12<\n" +
-	"\x06resume\x18\a \x01(\v2$.termx.api.v1.FileUploadResumeHandleR\x06resume\"V\n" +
+	"\x06resume\x18\a \x01(\v2$.termx.api.v1.FileUploadResumeHandleR\x06resume\x12\x1f\n" +
+	"\vchunk_bytes\x18\b \x01(\rR\n" +
+	"chunkBytes\x12!\n" +
+	"\fwindow_bytes\x18\t \x01(\x03R\vwindowBytes\"V\n" +
 	"\x16FileTransferOpenResult\x12<\n" +
 	"\btransfer\x18\x01 \x01(\v2 .termx.api.v1.FileTransferHandleR\btransfer\"8\n" +
 	"\x18FileTransferCancelResult\x12\x1c\n" +

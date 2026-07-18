@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { App as CapApp } from '@capacitor/app'
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { Keyboard } from '@capacitor/keyboard'
+import { create } from '@bufbuild/protobuf'
 import { Html5Qrcode } from 'html5-qrcode'
 import {
   RemoteControlApp,
@@ -9,6 +10,9 @@ import {
   dispatchNativeKeyboardEvent,
   dispatchNativeBack,
   normalizeTerminalInventory,
+  TermxClientBinding,
+  TermxApiApplication,
+  TermxApiTerminal,
 } from '@termx/ui'
 import type {
   FileTransferContext,
@@ -29,10 +33,11 @@ import type {
   RemoteControlAppProps,
   ExternalPairingAdapter,
   CloudAccountAdapter,
+  ProtoClientSession,
 } from '@termx/ui'
-import { NativeConnection, type NativeConnectOpts, type NativeConnectionSnapshot, type NativeRelayMode, type NativeStateChangeEvent } from './plugins/nativeConnection'
-import { NativeRtcConnector, recoverNativeBridgeAfterResume, type NativeRtcSession } from './NativeConnectionProxy'
+import { NativeConnection, type NativeRelayMode } from './plugins/nativeConnection'
 import { NativeFileTransferStore } from './NativeFileTransferStore'
+import { GoBindingClient, GoBindingConnector } from './GoBindingClient'
 import NativeFilePicker from './plugins/nativeFilePicker'
 import { useNativeStatusBarSync } from './nativeStatusBar'
 
@@ -41,12 +46,13 @@ const qrScannerRootId = 'termx-camera-qr-scanner'
 const qrScannerReaderId = 'termx-camera-qr-reader'
 const nativeHttpConnectTimeoutMs = 8_000
 const nativeHttpReadTimeoutMs = 15_000
+let goBindingClient = new GoBindingClient()
 
 type MachineRuntimeFactory = NonNullable<RemoteControlAppProps['machineRuntimeFactory']>
 type MachineRuntime = ReturnType<MachineRuntimeFactory>
 type NativeSessionManager = ReturnType<typeof createNativeSessionManager>
-type NativeConnector = Pick<NativeRtcConnector, 'connect'> & {
-  connect(input: { machineId: string }, options?: RtcConnectOptions): Promise<NativeRtcSession>
+type NativeConnector = {
+  connect(input: { machineId: string }, options?: RtcConnectOptions): Promise<ProtoClientSession>
   release?(machineId: string): Promise<void>
 }
 type NativeSessionEntry = {
@@ -54,12 +60,7 @@ type NativeSessionEntry = {
   connector: NativeConnector
   manager: NativeSessionManager
 }
-type NativeSessionLease = ManagedRtcSession & {
-  onTransferSync: NativeRtcSession['onTransferSync']
-  onSyncResponse: NativeRtcSession['onSyncResponse']
-  sendTransferRequest: NativeRtcSession['sendTransferRequest']
-  sendSyncRequest: NativeRtcSession['sendSyncRequest']
-}
+type NativeSessionLease = ProtoClientSession
 
 export function TermxApp() {
   useAndroidBackButton()
@@ -131,27 +132,21 @@ function createNativeExternalPairingAdapter(storage: RemoteRuntimeStorage): Exte
   const key = (machineId: string, field: string) => `termx.endpoint.${machineId}.${field}`
   return {
     async import(rawValue, expectedMachineId) {
-      let candidate: unknown
-      try {
-        candidate = JSON.parse(rawValue.trim())
-      } catch {
-        return null
-      }
-      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null
-      const record = candidate as Record<string, unknown>
-      if (record.version !== 1 || typeof record.capability_grant !== 'string') return null
-      const imported = await NativeConnection.importManagedPairing({
-        payload: rawValue,
-        ...(expectedMachineId ? { expectedEndpointId: expectedMachineId } : {}),
-      })
+	  const imported = await goBindingClient.importPairing(create(TermxClientBinding.ImportPairingRequestSchema, {
+		requestId: crypto.randomUUID(),
+		portablePayload: rawValue,
+		expectedEndpointId: expectedMachineId ?? '',
+	  }))
+	  if (!imported.endpointId || !imported.credentialRef) return null
+	  const expiresAt = new Date(Number(imported.expiresAtUnixNano / 1_000_000n)).toISOString()
       storage.setItem(key(imported.endpointId, 'targetDeviceId'), imported.targetDeviceId)
       storage.setItem(key(imported.endpointId, 'deviceFingerprint'), imported.deviceFingerprint)
-      storage.setItem(key(imported.endpointId, 'grantRef'), imported.grantRef)
-      storage.setItem(key(imported.endpointId, 'grantExpiresAt'), imported.expiresAt)
+	  storage.setItem(key(imported.endpointId, 'grantRef'), imported.credentialRef)
+	  storage.setItem(key(imported.endpointId, 'grantExpiresAt'), expiresAt)
       storage.setItem(key(imported.endpointId, 'relayMode'), 'direct')
       return {
         machine: { id: imported.endpointId, name: imported.label, accessClass: 'cloud' },
-        expiresAt: imported.expiresAt,
+		expiresAt,
       }
     },
     isAuthorized(machineId) {
@@ -171,7 +166,12 @@ function createNativeExternalPairingAdapter(storage: RemoteRuntimeStorage): Exte
       storage.removeItem(key(machineId, 'grantRef'))
       storage.removeItem(key(machineId, 'grantExpiresAt'))
       storage.removeItem(key(machineId, 'relayMode'))
-      if (grantRef) await NativeConnection.deleteManagedGrant({ grantRef })
+	  if (grantRef) {
+		await goBindingClient.deleteCredential(create(TermxClientBinding.DeleteCredentialRequestSchema, {
+		  requestId: crypto.randomUUID(),
+		  credentialRef: grantRef,
+		}))
+	  }
     },
   }
 }
@@ -212,9 +212,13 @@ function useAppResumeSync(): void {
       if (!state.isActive) {
         return
       }
-      recoverNativeBridgeAfterResume()
-      // Broadcast a visibility change so existing bridge clients can re-sync
-      document.dispatchEvent(new Event('termx:resume'))
+	  void NativeConnection.handleForegroundResume().then(async () => {
+		const staleClient = goBindingClient
+		goBindingClient = new GoBindingClient()
+		await staleClient.close()
+        // Native 已创建新 generation 后再通知 UI；冻结前的 session/resource handle 不得继续使用。
+        document.dispatchEvent(new Event('termx:resume'))
+	  })
     })
     return () => { void promise.then((sub) => sub.remove()) }
   }, [])
@@ -523,17 +527,28 @@ function createNativeMachineRuntime(
         onStatus: options?.onStatus,
         onConnectionState: options?.onConnectionState,
       })
-      const channel = await session.openApi()
+      emitNativeRuntimeConnectionState(options, machine.id, 'connecting', 'Fetching terminals...')
       try {
-        emitNativeRuntimeConnectionState(options, machine.id, 'connecting', 'Fetching terminals...')
-        const response = await channel.request<{ terminals: Record<string, unknown>[] }>('list', {})
+        const response = await session.execute(create(TermxApiApplication.CommandEnvelopeSchema, {
+          command: { case: 'terminalList', value: create(TermxApiTerminal.TerminalListCommandSchema) },
+        }))
+        if (response.result.case !== 'terminalList') throw new Error('terminal list returned no result')
         emitNativeRuntimeConnectionState(options, machine.id, 'connected', 'Connected')
         return normalizeTerminalInventory({
           machine_id: machine.id,
-          terminals: response.terminals ?? [],
+          terminals: response.result.value.terminals.map((terminal) => ({
+            terminal_id: terminal.ref?.terminalId ?? '',
+            name: terminal.name,
+            state: terminal.state === TermxApiTerminal.TerminalState.RUNNING ? 'running' : terminal.state === TermxApiTerminal.TerminalState.EXITED ? 'exited' : 'unknown',
+            command: terminal.command,
+            cwd: terminal.cwd,
+            live_cwd: terminal.liveCwd,
+            cols: terminal.size?.cols ?? 0,
+            rows: terminal.size?.rows ?? 0,
+          })),
         }).terminals
       } finally {
-        channel.close()
+        await session.close()
       }
     },
   }
@@ -546,17 +561,12 @@ function createNativeMachineRuntime(
           throw new Error(`machine runtime mismatch: ${target.machineId} != ${machine.id}`)
         }
         const sessionPromise = sessionManager.lease(options)
-        // Bind transfer store to the new session when it connects
-        sessionPromise.then((session) => {
-          transferStore.setSession(session)
-        }).catch(() => {})
         return sessionPromise
       },
       reconnect(options) {
         void sessionManager.resetClientOnly(options)
       },
     },
-    connectionStateEvents: createNativeConnectionStateEvents(machine.id),
     inventoryEvents: createNativeInventoryEvents(machine.id, sessionManager),
     fileTransfer: createFileTransferContext(machine.id, transferStore),
     dispose: () => {
@@ -624,16 +634,15 @@ function createNativeConnector(
     }
   }
 
-  const connectOpts: Omit<NativeConnectOpts, 'endpointId'> = {
+  const connector = new GoBindingConnector(() => goBindingClient, {
+    endpointId: machine.id,
     targetDeviceId,
     deviceFingerprint,
-    grantRef,
+    credentialRef: grantRef,
     relayMode: isNativeRelayMode(relayModeValue) ? relayModeValue : 'auto',
-  }
-  const connector = new NativeRtcConnector(connectOpts)
+  })
   return {
     connect: (target, options) => connector.connect(target, options),
-    release: (endpointId) => NativeConnection.release({ endpointId }),
   }
 }
 
@@ -642,108 +651,11 @@ function isNativeRelayMode(value: string): value is NativeRelayMode {
 }
 
 function createNativeSessionManager(machineId: string, connector: NativeConnector) {
-  let sessionPromise: Promise<NativeRtcSession> | null = null
-  let currentSession: NativeRtcSession | null = null
-  let currentForceRelay = false
-  let pendingForceRelay = false
-  let connectAbortController: AbortController | null = null
-  let resetSeq = 0
-  let disconnectSubscription: RtcSubscription | null = null
-
-  const reset = async () => {
-    const requestedForceRelay = pendingForceRelay
-    resetSeq += 1
-    connectAbortController?.abort()
-    connectAbortController = null
-    const session = currentSession
-    currentSession = null
-    currentForceRelay = requestedForceRelay
-    pendingForceRelay = requestedForceRelay
-    sessionPromise = null
-    disconnectSubscription?.close()
-    disconnectSubscription = null
-    await session?.disconnect()
-  }
-
-  const resetClientOnly = async (options?: { forceRelay?: boolean | undefined }) => {
-    const requestedForceRelay = options?.forceRelay ?? pendingForceRelay
-    resetSeq += 1
-    connectAbortController?.abort()
-    connectAbortController = null
-    const session = currentSession
-    currentSession = null
-    currentForceRelay = requestedForceRelay
-    pendingForceRelay = requestedForceRelay
-    sessionPromise = null
-    disconnectSubscription?.close()
-    disconnectSubscription = null
-    if (session) closeNativeSessionClientOnly(session)
-  }
-
-  const get = async (options?: RtcConnectOptions): Promise<NativeRtcSession> => {
-    const signal = options?.signal
-    const requestedForceRelay = options?.forceRelay
-    const forceRelay = requestedForceRelay ?? (currentForceRelay || pendingForceRelay)
-    if (signal?.aborted) throw abortError(signal)
-    if (currentSession && currentSession.isAlive() && currentForceRelay === forceRelay) {
-      await currentSession.waitUntilConnected(signal)
-      return currentSession
-    }
-    if (currentSession) await reset()
-    if (!sessionPromise) {
-      const seq = resetSeq
-      const controller = new AbortController()
-      connectAbortController = controller
-      pendingForceRelay = forceRelay
-      const promise = connector.connect({
-        machineId,
-      }, {
-        signal: combineAbortSignals(signal, controller.signal),
-        forceRelay,
-        onStatus: options?.onStatus,
-        onConnectionState: options?.onConnectionState,
-      }).then((session) => {
-        if (connectAbortController === controller) connectAbortController = null
-        if (seq !== resetSeq || controller.signal.aborted) {
-          closeNativeSessionClientOnly(session)
-          throw new Error('native runtime connection was superseded')
-        }
-        currentSession = session
-        currentForceRelay = forceRelay
-        disconnectSubscription?.close()
-        disconnectSubscription = session.onDisconnect(() => {
-          if (currentSession === session) {
-            currentSession = null
-            sessionPromise = null
-            currentForceRelay = pendingForceRelay
-            disconnectSubscription?.close()
-            disconnectSubscription = null
-          }
-        })
-        return session
-      }).catch((error) => {
-        if (connectAbortController === controller) connectAbortController = null
-        if (sessionPromise === promise) sessionPromise = null
-        pendingForceRelay = currentForceRelay
-        throw error
-      })
-      sessionPromise = promise
-    }
-    if (pendingForceRelay !== forceRelay) {
-      await reset()
-      return get(options)
-    }
-    return sessionPromise
-  }
-
   return {
-    get,
-    async lease(options?: RtcConnectOptions): Promise<NativeSessionLease> {
-      const session = await get(options)
-      return createSessionLease(session)
-    },
-    reset,
-    resetClientOnly,
+    get: (options?: RtcConnectOptions) => connector.connect({ machineId }, options),
+    lease: (options?: RtcConnectOptions): Promise<NativeSessionLease> => connector.connect({ machineId }, options),
+    reset: async () => {},
+    resetClientOnly: async (_options?: { forceRelay?: boolean }) => {},
   }
 }
 
@@ -756,10 +668,15 @@ function createNativeInventoryEvents(
       if (targetMachineId !== machineId) return { close() {} }
       let closed = false
       let subscription: RtcSubscription | null = null
-      void sessionManager.get().then((session) => {
-        if (closed) return
-        subscription = session.subscribeEvents((event) => {
-          if (isTerminalInventoryEvent(event)) handler({ type: 'inventory_changed', payload: event.payload })
+      let session: NativeSessionLease | null = null
+      void sessionManager.get().then((connectedSession) => {
+        if (closed) {
+          void connectedSession.close()
+          return
+        }
+        session = connectedSession
+        subscription = connectedSession.subscribeEvents((event) => {
+          if (event.event.case === 'terminalLifecycle') handler({ type: 'inventory_changed', payload: event.event.value })
         })
         if (closed) {
           subscription.close()
@@ -771,78 +688,12 @@ function createNativeInventoryEvents(
           closed = true
           subscription?.close()
           subscription = null
+          void session?.close()
+          session = null
         },
       }
     },
   }
-}
-
-function createNativeConnectionStateEvents(machineId: string) {
-  return {
-    subscribe(targetMachineId: string, handler: (snapshot: RtcConnectionStateSnapshot) => void): RtcSubscription {
-      if (targetMachineId !== machineId) return { close() {} }
-      let closed = false
-      let listenerHandle: { remove(): void } | null = null
-      let sawLiveEvent = false
-      NativeConnection.addListener('stateChange', (event: NativeStateChangeEvent) => {
-        if (closed || event.endpointId !== machineId) return
-        sawLiveEvent = true
-        handler(nativeConnectionStateSnapshot(event))
-      }).then((handle) => {
-        if (closed) {
-          void handle.remove()
-          return
-        }
-        listenerHandle = handle
-      }).catch(() => {})
-      NativeConnection.getSnapshot({ endpointId: machineId }).then((snapshot) => {
-        if (closed || sawLiveEvent || snapshot.phase === 'failed') return
-        handler(nativeConnectionStateSnapshot(snapshot))
-      }).catch(() => {})
-      return {
-        close() {
-          closed = true
-          void listenerHandle?.remove()
-          listenerHandle = null
-        },
-      }
-    },
-  }
-}
-
-function nativeConnectionStateSnapshot(data: NativeConnectionSnapshot | NativeStateChangeEvent): RtcConnectionStateSnapshot {
-  return {
-    machineId: data.endpointId,
-    phase: nativeConnectionPhase(data.phase),
-    ...(data.path ? { path: nativeConnectionPath(data.path) } : {}),
-    ...(data.observedPath ? { observedPath: data.observedPath } : {}),
-    ...(data.routeSelectionReason ? { routeSelectionReason: data.routeSelectionReason } : {}),
-    statusText: data.statusText || 'Connecting...',
-    relayInUse: data.relayInUse === true,
-    ...(data.failReason ? { failReason: data.failReason } : {}),
-  }
-}
-
-function nativeConnectionPhase(phase: string): RtcConnectionStateSnapshot['phase'] {
-  if (
-    phase === 'idle' ||
-    phase === 'resolving' ||
-    phase === 'signaling' ||
-    phase === 'connecting' ||
-    phase === 'authorizing' ||
-    phase === 'connected' ||
-    phase === 'verifying' ||
-    phase === 'reconnecting' ||
-    phase === 'waiting_network' ||
-    phase === 'failed'
-  ) {
-    return phase
-  }
-  return 'connecting'
-}
-
-function nativeConnectionPath(path: string): RtcConnectionStateSnapshot['path'] {
-  return path === 'local' ? 'local' : 'hub'
 }
 
 function emitNativeRuntimeConnectionState(
@@ -858,116 +709,6 @@ function emitNativeRuntimeConnectionState(
     statusText,
     relayInUse: false,
   })
-}
-
-function combineAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {
-  const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal))
-  if (activeSignals.length === 0) return undefined
-  if (activeSignals.length === 1) return activeSignals[0]
-  const controller = new AbortController()
-  const abort = (signal: AbortSignal) => {
-    if (!controller.signal.aborted) controller.abort(signal.reason)
-  }
-  for (const signal of activeSignals) {
-    if (signal.aborted) {
-      abort(signal)
-      break
-    }
-    signal.addEventListener('abort', () => abort(signal), { once: true })
-  }
-  return controller.signal
-}
-
-function closeNativeSessionClientOnly(session: NativeRtcSession): void {
-  session.closeBridgeOnly()
-}
-
-function createSessionLease(session: NativeRtcSession): NativeSessionLease {
-  const subscriptions = new Set<RtcSubscription>()
-  const terminalChannels = new Map<string, Awaited<ReturnType<NativeRtcSession['openTerminal']>>>()
-  let closed = false
-  const closeOnce = () => {
-    if (closed) return
-    closed = true
-    for (const subscription of subscriptions) subscription.close()
-    for (const channel of terminalChannels.values()) channel.close()
-    subscriptions.clear()
-    terminalChannels.clear()
-  }
-
-  return {
-    async openTerminal(terminalId) {
-      const channel = await session.openTerminal(terminalId)
-      terminalChannels.set(terminalId, channel)
-      channel.onClose(() => terminalChannels.delete(terminalId))
-      return channel
-    },
-    openApi: () => session.openApi(),
-    openFileChannel: (channel, transferId) => session.openFileChannel(channel, transferId),
-    subscribeEvents(handler) {
-      const subscription = session.subscribeEvents(handler)
-      subscriptions.add(subscription)
-      return {
-        close() {
-          subscription.close()
-          subscriptions.delete(subscription)
-        },
-      }
-    },
-    getConnectionInfo: () => session.getConnectionInfo(),
-    getCapabilities: () => session.getCapabilities(),
-    subscribeConnectionState(handler) {
-      const subscription = session.subscribeConnectionState(handler)
-      subscriptions.add(subscription)
-      return {
-        close() {
-          subscription.close()
-          subscriptions.delete(subscription)
-        },
-      }
-    },
-    onTransferSync(handler) {
-      return session.onTransferSync(handler)
-    },
-    onSyncResponse(handler) {
-      return session.onSyncResponse(handler)
-    },
-    sendTransferRequest(request) {
-      session.sendTransferRequest(request)
-    },
-    sendSyncRequest() {
-      session.sendSyncRequest()
-    },
-    async disconnect() {
-      closeOnce()
-    },
-    isAlive() {
-      return !closed && session.isAlive()
-    },
-    waitUntilConnected(signal?: AbortSignal) {
-      return session.waitUntilConnected(signal)
-    },
-    closeTerminalDataChannel(terminalId: string) {
-      terminalChannels.get(terminalId)?.close()
-      terminalChannels.delete(terminalId)
-      session.closeTerminalDataChannel(terminalId)
-    },
-    onDisconnect(handler: () => void) {
-      if (closed) return { close() {} }
-      const subscription = session.onDisconnect(handler)
-      subscriptions.add(subscription)
-      return {
-        close() {
-          subscription.close()
-          subscriptions.delete(subscription)
-        },
-      }
-    },
-    handleAppResume() {
-      if (closed) return Promise.resolve(false)
-      return session.handleAppResume()
-    },
-  }
 }
 
 function firstNonEmpty(values: readonly (string | undefined)[]): string | undefined {

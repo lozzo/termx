@@ -2,7 +2,9 @@ package binding
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -11,6 +13,7 @@ import (
 	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/bindingpb"
+	"github.com/lozzow/termx/proto/wirepb"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
@@ -124,6 +127,77 @@ func TestEngineCancellationProducesTypedResult(t *testing.T) {
 		t.Fatalf("cancel event = %#v", event)
 	}
 	if err := engine.Release(operation); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEngineResourceStreamUsesProtoFramesAndOpaqueHandle(t *testing.T) {
+	session := newBindingSession()
+	stream := newBindingResourceStream()
+	session.resourceStream = stream
+	engine, err := NewEngine(&bindingHost{session: session})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	sessionHandle := openBindingSession(t, engine)
+	resource := &apipb.ResourceHandle{OpaqueToken: []byte{0, 7, 1}, Kind: apipb.ResourceKind_RESOURCE_KIND_FILE_TRANSFER}
+	requestPayload, err := proto.Marshal(&bindingpb.OpenResourceStreamRequest{Resource: resource})
+	if err != nil {
+		t.Fatal(err)
+	}
+	streamHandle, err := engine.OpenResourceStream(sessionHandle, requestPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if streamHandle == 0 || !proto.Equal(session.resource, resource) {
+		t.Fatalf("resource stream handle=%d resource=%v", streamHandle, session.resource)
+	}
+	dataPayload, err := proto.Marshal(&wirepb.FileTransferData{Offset: 0, Data: []byte("upload")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendPayload, err := proto.Marshal(&bindingpb.ResourceStreamFrame{
+		StreamHandle: streamHandle,
+		Type:         bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_DATA,
+		Payload:      dataPayload,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.SendResourceStreamFrame(streamHandle, sendPayload); err != nil {
+		t.Fatal(err)
+	}
+	var sentData wirepb.FileTransferData
+	if err := proto.Unmarshal(stream.sentPayload, &sentData); err != nil {
+		t.Fatal(err)
+	}
+	if stream.sentType != 0x21 || string(sentData.GetData()) != "upload" {
+		t.Fatalf("sent frame type=%x payload=%q", stream.sentType, stream.sentPayload)
+	}
+	finishPayload, _ := proto.Marshal(&bindingpb.ResourceStreamFrame{StreamHandle: streamHandle, Type: bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO})
+	if err := engine.SendResourceStreamFrame(streamHandle, finishPayload); err != nil {
+		t.Fatal(err)
+	}
+	var finish wirepb.FileTransferFinish
+	if err := proto.Unmarshal(stream.sentPayload, &finish); err != nil || finish.GetSize() != 6 || len(finish.GetSha256()) != sha256.Size {
+		t.Fatalf("automatic finish = %#v err=%v", finish, err)
+	}
+	stream.frames <- bindingResourceFrame{typ: 0x24, payload: []byte("done")}
+	event := nextBindingEvent(t, engine)
+	if event.GetResourceStreamFrame().GetStreamHandle() != streamHandle ||
+		event.GetResourceStreamFrame().GetType() != bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT ||
+		string(event.GetResourceStreamFrame().GetPayload()) != "done" {
+		t.Fatalf("resource stream event = %#v", event)
+	}
+	if err := engine.CloseResourceStream(streamHandle); err != nil {
+		t.Fatal(err)
+	}
+	closed := nextBindingEvent(t, engine)
+	if closed.GetResourceStreamClosed().GetStreamHandle() != streamHandle {
+		t.Fatalf("resource stream closed event = %#v", closed)
+	}
+	if err := engine.Release(streamHandle); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -260,13 +334,62 @@ func (host *bindingHost) OpenSession(_ context.Context, request *bindingpb.OpenS
 }
 
 type bindingSession struct {
-	stamp     clientruntime.EndpointSessionStamp
-	done      chan struct{}
-	events    chan *apipb.EventEnvelope
-	closeOnce sync.Once
-	err       error
-	command   *apipb.CommandEnvelope
-	execute   func(context.Context, *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error)
+	stamp          clientruntime.EndpointSessionStamp
+	done           chan struct{}
+	events         chan *apipb.EventEnvelope
+	closeOnce      sync.Once
+	err            error
+	command        *apipb.CommandEnvelope
+	execute        func(context.Context, *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error)
+	resource       *apipb.ResourceHandle
+	resourceStream clientruntime.ResourceStream
+}
+
+func (session *bindingSession) OpenResourceStream(resource *apipb.ResourceHandle) (clientruntime.ResourceStream, error) {
+	session.resource = proto.Clone(resource).(*apipb.ResourceHandle)
+	if session.resourceStream == nil {
+		return nil, errors.New("resource stream unavailable")
+	}
+	return session.resourceStream, nil
+}
+
+type bindingResourceFrame struct {
+	typ     uint8
+	payload []byte
+}
+
+type bindingResourceStream struct {
+	frames      chan bindingResourceFrame
+	closed      chan struct{}
+	closeOnce   sync.Once
+	sentType    uint8
+	sentPayload []byte
+}
+
+func newBindingResourceStream() *bindingResourceStream {
+	return &bindingResourceStream{frames: make(chan bindingResourceFrame, 4), closed: make(chan struct{})}
+}
+
+func (stream *bindingResourceStream) Receive(ctx context.Context) (uint8, []byte, error) {
+	select {
+	case <-ctx.Done():
+		return 0, nil, ctx.Err()
+	case <-stream.closed:
+		return 0, nil, io.EOF
+	case frame := <-stream.frames:
+		return frame.typ, append([]byte(nil), frame.payload...), nil
+	}
+}
+
+func (stream *bindingResourceStream) Send(_ context.Context, typ uint8, payload []byte) error {
+	stream.sentType = typ
+	stream.sentPayload = append([]byte(nil), payload...)
+	return nil
+}
+
+func (stream *bindingResourceStream) Close() error {
+	stream.closeOnce.Do(func() { close(stream.closed) })
+	return nil
 }
 
 func newBindingSession() *bindingSession {

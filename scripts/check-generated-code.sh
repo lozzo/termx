@@ -18,31 +18,49 @@ tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/termx-generated-check.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
 mkdir -p "$tmp_dir/go" "$tmp_dir/api" "$tmp_dir/runtime" "$tmp_dir/wire" "$tmp_dir/descriptor"
 
+api_proto=(
+  proto/apipb/common.proto
+  proto/remoteauthpb/remote_auth.proto
+  proto/apipb/access_remote.proto
+  proto/apipb/storage.proto
+  proto/apipb/terminal.proto
+  proto/apipb/events.proto
+  proto/apipb/file.proto
+  proto/apipb/history.proto
+  proto/apipb/runtime.proto
+  proto/apipb/workbench.proto
+  proto/apipb/application.proto
+)
+api_ts_proto=(
+  proto/apipb/common.proto
+  proto/apipb/terminal.proto
+  proto/apipb/history.proto
+  proto/apipb/file.proto
+  proto/apipb/storage.proto
+  proto/apipb/workbench.proto
+  proto/apipb/runtime.proto
+  proto/apipb/access_remote.proto
+  proto/apipb/events.proto
+  proto/apipb/application.proto
+)
+
 # Go 与 TypeScript 都从 proto 源码生成到临时目录；检查过程不改工作树。
 protoc -I proto \
   --go_out="$tmp_dir/go" \
   --go_opt=paths=source_relative \
-  proto/apipb/common.proto \
-  proto/apipb/terminal.proto \
-  proto/apipb/application.proto \
+  "${api_proto[@]}" \
   proto/cloudpb/cloud_companion.proto \
-  proto/remoteauthpb/remote_auth.proto \
   proto/wirepb/terminal.proto
 
 protoc -I proto \
-  --include_imports \
   --descriptor_set_out="$tmp_dir/descriptor/public-api-v1.pb" \
-  proto/apipb/common.proto \
-  proto/apipb/terminal.proto \
-  proto/apipb/application.proto
+  "${api_proto[@]}"
 
 PATH="$repo_root/node_modules/.bin:$PATH" NODE_NO_WARNINGS=1 protoc \
   -I proto \
   --es_out="$tmp_dir/api" \
   --es_opt=target=ts,import_extension=none \
-  proto/apipb/common.proto \
-  proto/apipb/terminal.proto \
-  proto/apipb/application.proto
+  "${api_ts_proto[@]}"
 PATH="$repo_root/node_modules/.bin:$PATH" NODE_NO_WARNINGS=1 protoc \
   -I proto/runtimepb \
   --es_out="$tmp_dir/runtime" \
@@ -53,7 +71,7 @@ PATH="$repo_root/node_modules/.bin:$PATH" NODE_NO_WARNINGS=1 protoc \
   --es_out="$tmp_dir/wire" \
   --es_opt=target=ts,import_extension=none \
   proto/wirepb/terminal.proto
-perl -0pi -e 's/\s*\z/\n/' "$tmp_dir/api/apipb/common_pb.ts" "$tmp_dir/api/apipb/terminal_pb.ts" "$tmp_dir/api/apipb/application_pb.ts" "$tmp_dir/runtime/runtime_pb.ts" "$tmp_dir/wire/terminal_pb.ts"
+perl -0pi -e 's/\s*\z/\n/' "$tmp_dir"/api/apipb/*_pb.ts "$tmp_dir/runtime/runtime_pb.ts" "$tmp_dir/wire/terminal_pb.ts"
 
 check_generated_file() {
   local generated="$1"
@@ -66,16 +84,15 @@ check_generated_file() {
   exit 1
 }
 
-check_generated_file "$tmp_dir/go/apipb/application.pb.go" proto/apipb/application.pb.go
-check_generated_file "$tmp_dir/go/apipb/common.pb.go" proto/apipb/common.pb.go
-check_generated_file "$tmp_dir/go/apipb/terminal.pb.go" proto/apipb/terminal.pb.go
+for source in "${api_ts_proto[@]}"; do
+  name="$(basename "$source" .proto)"
+  check_generated_file "$tmp_dir/go/apipb/${name}.pb.go" "proto/apipb/${name}.pb.go"
+  check_generated_file "$tmp_dir/api/apipb/${name}_pb.ts" "clients/ui/src/generated/apipb/${name}_pb.ts"
+done
 check_generated_file "$tmp_dir/go/cloudpb/cloud_companion.pb.go" proto/cloudpb/cloud_companion.pb.go
 check_generated_file "$tmp_dir/go/remoteauthpb/remote_auth.pb.go" proto/remoteauthpb/remote_auth.pb.go
 check_generated_file "$tmp_dir/go/wirepb/terminal.pb.go" proto/wirepb/terminal.pb.go
 check_generated_file "$tmp_dir/descriptor/public-api-v1.pb" proto/apipb/testdata/public-api-v1.pb
-check_generated_file "$tmp_dir/api/apipb/application_pb.ts" clients/ui/src/generated/apipb/application_pb.ts
-check_generated_file "$tmp_dir/api/apipb/common_pb.ts" clients/ui/src/generated/apipb/common_pb.ts
-check_generated_file "$tmp_dir/api/apipb/terminal_pb.ts" clients/ui/src/generated/apipb/terminal_pb.ts
 check_generated_file "$tmp_dir/runtime/runtime_pb.ts" clients/ui/src/generated/runtimepb/runtime_pb.ts
 check_generated_file "$tmp_dir/wire/terminal_pb.ts" clients/ui/src/generated/wirepb/terminal_pb.ts
 echo "generated code is current"

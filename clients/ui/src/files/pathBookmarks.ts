@@ -1,4 +1,5 @@
 import type { RtcSession } from '../core/transport'
+import type { ProtoClientSession } from '../core/protoClientSession'
 import { createRemoteStorageApi, storageText } from '../storage/remoteStorageApi'
 
 export interface PathBookmark {
@@ -21,7 +22,7 @@ const pathBookmarkStorageAppId = 'termx.paths'
 const pathBookmarkPrefix = 'bookmarks/'
 const pathBookmarkRecordVersion = 1
 
-export function createPathBookmarkApi(session: Pick<RtcSession, 'openApi'>): PathBookmarkApi {
+export function createPathBookmarkApi(session: Pick<RtcSession, 'openApi'> | ProtoClientSession): PathBookmarkApi {
   const storage = createRemoteStorageApi(session)
 
   return {

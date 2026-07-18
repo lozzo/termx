@@ -3,20 +3,11 @@ package com.termx.cloud
 import com.google.protobuf.Message
 import com.google.protobuf.Parser
 import com.google.protobuf.Descriptors
-import com.termx.app.managed.ManagedDialPolicy
 import com.termx.app.managed.ManagedCloudAccount
 import com.termx.app.managed.ManagedCloudClientMetadata
 import com.termx.app.managed.ManagedCloudLoginFlow
 import com.termx.app.managed.ManagedCloudDevice
 import com.termx.app.managed.ManagedEndpointFailure
-import com.termx.app.managed.ManagedEndpointResolution
-import com.termx.app.managed.ManagedEndpointSpec
-import com.termx.app.managed.ManagedIceServer
-import com.termx.app.managed.ManagedPathQualitySummary
-import com.termx.app.managed.ManagedRoutePlan
-import com.termx.app.managed.ManagedSignalAnswer
-import com.termx.app.managed.ManagedSignalOffer
-import com.termx.app.managed.RelayMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -142,77 +133,53 @@ internal class DevCloudMobileGateway(
         sessionStore.clear()
     }
 
-    /** resolve 创建独立 ManagedSession；relay-only 时额外领取 caller-specific 短期 TURN material。 */
-    suspend fun resolve(spec: ManagedEndpointSpec): ManagedEndpointResolution = withContext(Dispatchers.IO) {
-        val session = accountSession()
-        val request = CloudCompanion.ResolveEndpointRequest.newBuilder()
-            .setEndpointId(spec.endpointId)
-            .setTargetDeviceId(spec.targetDeviceId)
-            .build()
+    /** resolveProto 直接转发 Go Client Engine 的 cloudpb request，不建立 Kotlin endpoint/session 真值。 */
+    suspend fun resolveProto(request: CloudCompanion.ResolveEndpointRequest): CloudCompanion.ResolvedEndpoint = withContext(Dispatchers.IO) {
         val response = postEdgeProto(
             "$hubOrigin/v1/endpoints/resolve",
             request,
             CloudCompanion.ResolvedEndpoint.parser(),
-            session,
+            accountSession(),
         )
-        if (response.endpointId != spec.endpointId || response.targetDeviceId != spec.targetDeviceId || response.managedSessionId.isBlank()) {
+        if (response.endpointId != request.endpointId || response.targetDeviceId != request.targetDeviceId || response.managedSessionId.isBlank()) {
             fail("protocol", "Hub resolved a different managed endpoint")
         }
-        if (response.presence != CloudCompanion.PresenceState.PRESENCE_STATE_ONLINE) {
-            fail("route_unavailable", "managed daemon is offline")
-        }
-        val iceServers = if (spec.relayMode == RelayMode.RELAY_ONLY) {
-            acquireRelayLease(session, response.managedSessionId, spec.targetDeviceId)
-        } else {
-            response.iceServersList.map(::iceServer)
-        }
-        ManagedEndpointResolution(response.managedSessionId, response.targetDeviceId, iceServers)
+        response
     }
 
-    /** createSignalingSession 使用启动阶段 edge credential 直接读取 Hub answer stream。 */
-    suspend fun createSignalingSession(
-        spec: ManagedEndpointSpec,
-        resolution: ManagedEndpointResolution,
-        offer: ManagedSignalOffer,
-        policy: ManagedDialPolicy,
-    ): ManagedSignalAnswer = withContext(Dispatchers.IO) {
-        val session = accountSession()
-        val request = CloudCompanion.CreateSignalingSessionRequest.newBuilder()
-            .setEndpointId(spec.endpointId)
-            .setManagedSessionId(resolution.managedSessionId)
-            .setTargetDeviceId(spec.targetDeviceId)
-            .setOfferSdp(offer.sdp)
-            .setRoutePreference(routePreference(policy.routePreference))
-            .setRelayOnly(policy.relayOnly)
-            .build()
-        val signaling = postHubStream("$hubOrigin/v1/signaling/create", session, request)
-        val event = signaling.finalEvent
-        when (event.payloadCase) {
-            CloudCompanion.SignalingEvent.PayloadCase.ANSWER -> {
-                val answer = event.answer
-                if (answer.signalingSessionId.isBlank() || answer.sdp.isBlank()) fail("protocol", "Hub returned an invalid WebRTC answer")
-                val candidates = (signaling.candidates + answer.candidatesList.map { it.candidate.trim() })
-                    .filter(String::isNotBlank)
-                    .distinct()
-                ManagedSignalAnswer(answer.sdp, candidates)
-            }
-            CloudCompanion.SignalingEvent.PayloadCase.ERROR -> throw cloudFailure(event.error)
-            CloudCompanion.SignalingEvent.PayloadCase.CLOSED -> fail("route_unavailable", "Hub closed managed signaling")
-            else -> fail("protocol", "Hub returned an unsupported signaling event")
+    /** createSignalingProto 返回完整 signaling Proto event 序列，candidate/order 真值由 Go managed adapter 消费。 */
+    suspend fun createSignalingProto(request: CloudCompanion.CreateSignalingSessionRequest): List<CloudCompanion.SignalingEvent> = withContext(Dispatchers.IO) {
+        val signaling = postHubStream("$hubOrigin/v1/signaling/create", accountSession(), request)
+        val candidates = signaling.candidates.map { candidate ->
+            CloudCompanion.SignalingEvent.newBuilder()
+                .setCandidate(CloudCompanion.IceCandidate.newBuilder().setCandidate(candidate))
+                .build()
         }
+        candidates + signaling.finalEvent
     }
 
-    /** reportPathQuality 保持 CLOUD004 dev contract 的 measurement sink 未启用语义，不影响当前 transport。 */
-    suspend fun reportPathQuality(@Suppress("UNUSED_PARAMETER") summary: ManagedPathQualitySummary) {
+    /** acquireRelayProto 保留 Hub 签发的完整 lease；Kotlin 不提取或缓存 TURN material。 */
+    suspend fun acquireRelayProto(request: CloudCompanion.AcquireRelayLeaseRequest): CloudCompanion.RelayLease = withContext(Dispatchers.IO) {
+        val lease = postEdgeProto(
+            "$hubOrigin/v1/relay/leases/acquire",
+            request,
+            CloudCompanion.RelayLease.parser(),
+            accountSession(),
+        )
+        if (lease.pathKind != CloudCompanion.ObservedPath.OBSERVED_PATH_SINGLE_RELAY || lease.expiresAtUnix <= now().epochSecond || lease.iceServersCount != 1) {
+            fail("protocol", "Hub returned invalid Relay material")
+        }
+        lease
+    }
+
+    suspend fun planRouteProto(@Suppress("UNUSED_PARAMETER") request: CloudCompanion.PlanManagedRouteRequest): CloudCompanion.ManagedRoutePlan =
+        fail("route_unavailable", "dev cloud SmartRoute is not enabled")
+
+    suspend fun reportQualityProto(@Suppress("UNUSED_PARAMETER") request: CloudCompanion.ReportPathQualityRequest): CloudCompanion.ReportPathQualityResponse =
         fail("route_unavailable", "dev cloud path quality reporting is not enabled")
-    }
 
-    /** planManagedRoute 保持 SmartRoute deferred；CLOUD005 只验证 direct 与显式 relay-only。 */
-    suspend fun planManagedRoute(
-        @Suppress("UNUSED_PARAMETER") spec: ManagedEndpointSpec,
-        @Suppress("UNUSED_PARAMETER") resolution: ManagedEndpointResolution,
-        @Suppress("UNUSED_PARAMETER") policy: ManagedDialPolicy,
-    ): ManagedRoutePlan = fail("route_unavailable", "dev cloud SmartRoute is not enabled")
+    suspend fun reportOutcomeProto(@Suppress("UNUSED_PARAMETER") request: CloudCompanion.ReportConnectionOutcomeRequest): CloudCompanion.ReportConnectionOutcomeResponse =
+        fail("route_unavailable", "dev cloud connection outcome reporting is not enabled")
 
     private suspend fun accountSession(): AccountSession = sessionLock.withLock {
 		val currentTime = now()
@@ -238,23 +205,6 @@ internal class DevCloudMobileGateway(
 			}
 		}
 		fail("login_required", "Official mobile cloud account login is required")
-    }
-
-    private fun acquireRelayLease(session: AccountSession, managedSessionId: String, targetDeviceId: String): List<ManagedIceServer> {
-        val lease = postEdgeProto(
-            "$hubOrigin/v1/relay/leases/acquire",
-            CloudCompanion.AcquireRelayLeaseRequest.newBuilder()
-                .setManagedSessionId(managedSessionId)
-                .setTargetDeviceId(targetDeviceId)
-                .setRoutePreference(CloudCompanion.RoutePreference.ROUTE_PREFERENCE_STANDARD_RELAY)
-                .build(),
-            CloudCompanion.RelayLease.parser(),
-            session,
-        )
-        if (lease.pathKind != CloudCompanion.ObservedPath.OBSERVED_PATH_SINGLE_RELAY || lease.expiresAtUnix <= now().epochSecond || lease.iceServersCount != 1) {
-            fail("protocol", "Hub returned invalid Relay material")
-        }
-        return lease.iceServersList.map(::iceServer)
     }
 
     private fun postSession(endpoint: String, request: Message): AccountSession {
@@ -441,18 +391,6 @@ internal class DevCloudMobileGateway(
             else -> "temporary"
         }
         return ManagedEndpointFailure(code, error.message.ifBlank { "managed cloud request failed" })
-    }
-
-    private fun routePreference(value: String): CloudCompanion.RoutePreference = when (value) {
-        "direct_only" -> CloudCompanion.RoutePreference.ROUTE_PREFERENCE_DIRECT_ONLY
-        "standard_relay" -> CloudCompanion.RoutePreference.ROUTE_PREFERENCE_STANDARD_RELAY
-        "smart_route" -> CloudCompanion.RoutePreference.ROUTE_PREFERENCE_SMART_ROUTE
-        else -> fail("protocol", "managed route preference is invalid")
-    }
-
-    private fun iceServer(server: CloudCompanion.IceServer): ManagedIceServer {
-        if (server.urlsCount == 0) fail("protocol", "cloud ICE server is empty")
-        return ManagedIceServer(server.urlsList, server.username, server.credential)
     }
 
     private data class HubSignalingResult(

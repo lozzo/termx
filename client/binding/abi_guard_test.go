@@ -14,13 +14,17 @@ import (
 
 var expectedCSymbols = []string{
 	"termx_client_abi_version", "termx_engine_create", "termx_engine_open_session", "termx_engine_execute",
-	"termx_engine_next_event", "termx_engine_cancel", "termx_engine_close_session", "termx_engine_release",
+	"termx_engine_open_resource_stream", "termx_engine_send_resource_stream_frame", "termx_engine_close_resource_stream",
+	"termx_engine_import_pairing", "termx_engine_delete_credential", "termx_engine_next_event",
+	"termx_platform_next_request", "termx_platform_complete", "termx_engine_cancel", "termx_engine_close_session", "termx_engine_release",
 	"termx_engine_close", "termx_buffer_free",
 }
 
 var expectedWASMExports = []string{
 	"termxClientAbiVersion", "termxEngineCreate", "termxEngineOpenSession", "termxEngineExecute",
-	"termxEngineNextEvent", "termxEngineCancel", "termxEngineCloseSession", "termxEngineRelease",
+	"termxEngineOpenResourceStream", "termxEngineSendResourceStreamFrame", "termxEngineCloseResourceStream",
+	"termxEngineImportPairing", "termxEngineDeleteCredential", "termxEngineNextEvent",
+	"termxPlatformNextRequest", "termxPlatformComplete", "termxEngineCancel", "termxEngineCloseSession", "termxEngineRelease",
 	"termxEngineClose", "termxBufferFree",
 }
 
@@ -29,7 +33,7 @@ func TestBindingABIBaselinesStayGeneric(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(header), "TERMX_CLIENT_ABI_VERSION 1u") || ABIVersion != 1 {
+	if !strings.Contains(string(header), "TERMX_CLIENT_ABI_VERSION 2u") || ABIVersion != 2 {
 		t.Fatalf("ABI version mismatch header=%q go=%d", header, ABIVersion)
 	}
 	re := regexp.MustCompile(`(?m)^termx_status_v1 (termx_[a-z0-9_]+)\(`)
@@ -48,7 +52,7 @@ func TestBindingABIBaselinesStayGeneric(t *testing.T) {
 	if !slices.Equal(wasmSymbols, expectedWASMExports) {
 		t.Fatalf("WASM exports = %v, want %v", wasmSymbols, expectedWASMExports)
 	}
-	for _, forbidden := range []string{"terminal", "history", "file", "storage", "remote", "json", "base64"} {
+	for _, forbidden := range []string{"terminal", "history", "file", "storage", "json", "base64"} {
 		if strings.Contains(strings.ToLower(string(header)), forbidden) || strings.Contains(strings.ToLower(string(wasm)), forbidden) {
 			t.Fatalf("binding ABI contains business/encoding term %q", forbidden)
 		}

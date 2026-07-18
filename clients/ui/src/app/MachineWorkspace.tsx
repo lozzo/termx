@@ -24,6 +24,7 @@ import { TerminalList } from '../terminal/TerminalList'
 import { createTerminalManagementApi } from '../terminal/terminalManagementApi'
 import { readTerminalSettings, terminalThemeCssVariables, writeTerminalSettings, type TerminalSettings } from '../terminal/terminalSettings'
 import type { Machine, Terminal as RemoteTerminal } from '../core/model'
+import type { ProtoClientSession } from '../core/protoClientSession'
 import type { ConnectionInfo, LocalAgentApi, LocalCreateTerminalInput, LocalPairingApi, LocalUpdateTerminalInput, MachineConnectionStateEvents, RtcConnectOptions, RtcConnectionStateSnapshot, RtcConnector, RtcEvent, RtcSession, RtcSessionConnectionStateEvents, RtcSessionLiveness, RtcSubscription, RtcTerminalDataChannelController, TerminalInventoryEvents } from '../core/transport'
 import { useTerminalKeyboard } from '../terminal/useTerminalKeyboard'
 
@@ -35,7 +36,10 @@ export interface MachineWorkspaceSessionInput {
   machineId: string
 }
 
-export type MachineWorkspaceConnector = RtcConnector<MachineWorkspaceSessionInput> & {
+export type MachineWorkspaceClientSession = RtcSession | ProtoClientSession
+
+export type MachineWorkspaceConnector = {
+  connect(input: MachineWorkspaceSessionInput, options?: RtcConnectOptions): Promise<MachineWorkspaceClientSession>
   reconnect?: ((options?: { forceRelay?: boolean | undefined }) => void) | undefined
 }
 
@@ -101,7 +105,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     if (!machineId) return null
     return Boolean(pair.sessionStore.getSessionToken(machineId))
   })
-  const [connectedSession, setConnectedSession] = useState<RtcSession | null>(null)
+  const [connectedSession, setConnectedSession] = useState<MachineWorkspaceClientSession | null>(null)
   const [connectedTerminalId, setConnectedTerminalId] = useState<string | null>(null)
   const [connectingTerminalId, setConnectingTerminalId] = useState<string | null>(null)
   const [fileTerminalId, setFileTerminalId] = useState<string | null>(null)
@@ -178,7 +182,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     connector: MachineWorkspaceConnector
     machineId: string
     retryToken: number
-    session: RtcSession
+    session: MachineWorkspaceClientSession
     forceRelay: boolean
   } | null>(null)
   const machineSessionPromiseRef = useRef<{
@@ -186,7 +190,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     machineId: string
     retryToken: number
     forceRelay: boolean
-    promise: Promise<RtcSession>
+    promise: Promise<MachineWorkspaceClientSession>
   } | null>(null)
   const machineSessionConnectSeqRef = useRef(0)
   const terminalRefreshSeqRef = useRef(0)
@@ -194,7 +198,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     connector: MachineWorkspaceConnector
     machineId: string
     retryToken: number
-    session: RtcSession
+    session: MachineWorkspaceClientSession
     subscription: { close(): void }
   } | null>(null)
   const connectionStateSubscriptionRef = useRef<RtcSubscription | null>(null)
@@ -373,7 +377,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     setMobileSheet('pair')
   }, [initialMachine?.machineId, onNeedsReauthorization, pair])
 
-  const updateFromConnectionState = useCallback((snapshot: RtcConnectionStateSnapshot, session?: RtcSession) => {
+  const updateFromConnectionState = useCallback((snapshot: RtcConnectionStateSnapshot, session?: MachineWorkspaceClientSession) => {
     if (snapshot.phase === 'connected') {
       setError(null)
       if (session) {
@@ -407,12 +411,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     updateConnectionStatus(snapshot.statusText || connectionPhaseLabel(snapshot.phase), snapshot.phase)
   }, [clearConnectionStatus, clearConnectionStatusSoon, handleConnectionAuthFailure, updateConnectionStatus])
 
-  const updateFromPassiveConnectionState = useCallback((snapshot: RtcConnectionStateSnapshot, session?: RtcSession) => {
+  const updateFromPassiveConnectionState = useCallback((snapshot: RtcConnectionStateSnapshot, session?: MachineWorkspaceClientSession) => {
     if (isTransientConnectionPhase(snapshot.phase)) return
     updateFromConnectionState(snapshot, session)
   }, [updateFromConnectionState])
 
-  const reattachActiveTerminals = useCallback((session: RtcSession) => {
+  const reattachActiveTerminals = useCallback((session: MachineWorkspaceClientSession) => {
     const terminalId = latestActiveTerminalIdRef.current
     const currentSplitTerminalId = latestSplitTerminalIdRef.current
     if (!terminalId && !currentSplitTerminalId) return
@@ -437,10 +441,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     const runtimeInventorySubscription = runtimeInventorySubscriptionRef.current
     runtimeInventorySubscriptionRef.current = null
     runtimeInventorySubscription?.subscription.close()
-    void current?.session.disconnect()
+    if (current) void closeMachineWorkspaceSession(current.session)
   }, [])
 
-  const attachConnectionStateSubscription = useCallback((session: RtcSession) => {
+  const attachConnectionStateSubscription = useCallback((session: MachineWorkspaceClientSession) => {
     connectionStateSubscriptionRef.current?.close()
     sessionConnectionPhaseRef.current = null
     const candidate = session as RtcSession & Partial<RtcSessionConnectionStateEvents>
@@ -465,7 +469,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     setConnectingTerminalId(null)
   }, [disconnectMachineSession])
 
-  const ensureMachineSession = useCallback(async (machineId: string, connectOptions?: RtcConnectOptions): Promise<RtcSession> => {
+  const ensureMachineSession = useCallback(async (machineId: string, connectOptions?: RtcConnectOptions): Promise<MachineWorkspaceClientSession> => {
     const forceRelay = connectOptions?.forceRelay ?? forceRelayConnection
     const effectiveConnectOptions: RtcConnectOptions = { ...connectOptions, forceRelay }
     const reusable = machineSessionRef.current
@@ -494,17 +498,17 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       machineId: string
       retryToken: number
       forceRelay: boolean
-      promise: Promise<RtcSession>
+      promise: Promise<MachineWorkspaceClientSession>
     } = {
       connector,
       machineId,
       retryToken: connectionRetryToken,
       forceRelay,
-      promise: Promise.resolve(null as unknown as RtcSession),
+      promise: Promise.resolve(null as unknown as MachineWorkspaceClientSession),
     }
     entry.promise = connector.connect({ machineId }, effectiveConnectOptions).then((session) => {
       if (machineSessionPromiseRef.current !== entry) {
-        void session.disconnect()
+        void closeMachineWorkspaceSession(session)
         return session
       }
       machineSessionPromiseRef.current = null
@@ -714,7 +718,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         return
       }
       current?.subscription.close()
-      const subscription = session.subscribeEvents((event) => {
+      const subscription = subscribeMachineWorkspaceEvents(session, (event) => {
         if (!isTerminalInventoryRuntimeEvent(event)) return
         if (!applyRuntimeTerminalEvent(event)) {
           void refreshTerminals()
@@ -911,15 +915,20 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       if (page !== 'terminal') return
       resetKeyboardLayout()
       const session = machineSessionRef.current?.session ?? connectedSession
-      if (!session || !isRtcSessionAlive(session)) return
       if (!activeTerminalId && !splitTerminalId) return
+      if (!session || !isRtcSessionAlive(session)) {
+        setManualReconnectNonce((value) => value + 1)
+        return
+      }
 
       setConnectedSession(session)
       reattachActiveTerminals(session)
     }
     document.addEventListener('termx:resume', handleResume)
+    document.addEventListener('termx:binding-closed', handleResume)
     return () => {
       document.removeEventListener('termx:resume', handleResume)
+      document.removeEventListener('termx:binding-closed', handleResume)
     }
   }, [activeTerminalId, connectedSession, page, reattachActiveTerminals, resetKeyboardLayout, splitTerminalId])
 
@@ -1071,7 +1080,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       const runtimeInventorySubscription = runtimeInventorySubscriptionRef.current
       runtimeInventorySubscriptionRef.current = null
       runtimeInventorySubscription?.subscription.close()
-      void current?.session.disconnect()
+      if (current) void closeMachineWorkspaceSession(current.session)
       setConnectedSession(null)
       setConnectedTerminalId(null)
       setConnectingTerminalId(activeTerminalId)
@@ -1473,7 +1482,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     const sessionPromise = existingSession
       ? Promise.resolve(existingSession)
       : ensureMachineSession(machine!.machineId, { forceRelay: forceRelayConnection })
-    sessionPromise.then((session) => session.getConnectionInfo()).then((info) => {
+    sessionPromise.then(machineWorkspaceConnectionInfo).then((info) => {
       setConnectionInfo(info)
     }).catch((err: unknown) => {
       setConnectionInfoError(err instanceof Error ? err.message : String(err))
@@ -2787,17 +2796,42 @@ function candidateTypeText(info: ConnectionInfo | null): string {
   return `${local} / ${remote}`
 }
 
-function isRtcSessionAlive(session: RtcSession): boolean {
+function isRtcSessionAlive(session: MachineWorkspaceClientSession): boolean {
+	if ('execute' in session) return session.isAlive()
   const candidate = session as RtcSession & Partial<RtcSessionLiveness>
   if (typeof candidate.isAlive !== 'function') return true
   return candidate.isAlive()
 }
 
-function closeTerminalDataChannel(session: RtcSession, terminalId: string): void {
+function closeTerminalDataChannel(session: MachineWorkspaceClientSession, terminalId: string): void {
+	if ('execute' in session) return
   const controller = session as RtcSession & Partial<RtcTerminalDataChannelController>
   if (typeof controller.closeTerminalDataChannel === 'function') {
     controller.closeTerminalDataChannel(terminalId)
   }
+}
+
+function closeMachineWorkspaceSession(session: MachineWorkspaceClientSession): Promise<void> {
+  return 'execute' in session ? session.close() : session.disconnect()
+}
+
+function machineWorkspaceConnectionInfo(session: MachineWorkspaceClientSession): Promise<ConnectionInfo> {
+  if ('execute' in session) {
+    return Promise.resolve({
+      path: 'hub',
+      connectionId: `${session.stamp.endpointId}:${session.stamp.generation}`,
+      machineId: session.stamp.endpointId,
+      relayInUse: false,
+    })
+  }
+  return session.getConnectionInfo()
+}
+
+function subscribeMachineWorkspaceEvents(session: MachineWorkspaceClientSession, handler: (event: RtcEvent) => void): RtcSubscription {
+  if (!('execute' in session)) return session.subscribeEvents(handler)
+  return session.subscribeEvents((event) => {
+    if (event.event.case === 'terminalLifecycle') handler({ type: 'terminal_changed' })
+  })
 }
 
 function isDirectoryEntry(entry: FileEntry): boolean {

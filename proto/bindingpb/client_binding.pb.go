@@ -8,6 +8,7 @@ package bindingpb
 
 import (
 	apipb "github.com/lozzow/termx/proto/apipb"
+	cloudpb "github.com/lozzow/termx/proto/cloudpb"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -74,19 +75,212 @@ func (ConnectIntent) EnumDescriptor() ([]byte, []int) {
 	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{0}
 }
 
+type ManagedRelayMode int32
+
+const (
+	ManagedRelayMode_MANAGED_RELAY_MODE_UNSPECIFIED ManagedRelayMode = 0
+	ManagedRelayMode_MANAGED_RELAY_MODE_AUTO        ManagedRelayMode = 1
+	ManagedRelayMode_MANAGED_RELAY_MODE_DIRECT      ManagedRelayMode = 2
+	ManagedRelayMode_MANAGED_RELAY_MODE_RELAY_ONLY  ManagedRelayMode = 3
+	ManagedRelayMode_MANAGED_RELAY_MODE_SMART_ROUTE ManagedRelayMode = 4
+)
+
+// Enum value maps for ManagedRelayMode.
+var (
+	ManagedRelayMode_name = map[int32]string{
+		0: "MANAGED_RELAY_MODE_UNSPECIFIED",
+		1: "MANAGED_RELAY_MODE_AUTO",
+		2: "MANAGED_RELAY_MODE_DIRECT",
+		3: "MANAGED_RELAY_MODE_RELAY_ONLY",
+		4: "MANAGED_RELAY_MODE_SMART_ROUTE",
+	}
+	ManagedRelayMode_value = map[string]int32{
+		"MANAGED_RELAY_MODE_UNSPECIFIED": 0,
+		"MANAGED_RELAY_MODE_AUTO":        1,
+		"MANAGED_RELAY_MODE_DIRECT":      2,
+		"MANAGED_RELAY_MODE_RELAY_ONLY":  3,
+		"MANAGED_RELAY_MODE_SMART_ROUTE": 4,
+	}
+)
+
+func (x ManagedRelayMode) Enum() *ManagedRelayMode {
+	p := new(ManagedRelayMode)
+	*p = x
+	return p
+}
+
+func (x ManagedRelayMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ManagedRelayMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_bindingpb_client_binding_proto_enumTypes[1].Descriptor()
+}
+
+func (ManagedRelayMode) Type() protoreflect.EnumType {
+	return &file_bindingpb_client_binding_proto_enumTypes[1]
+}
+
+func (x ManagedRelayMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ManagedRelayMode.Descriptor instead.
+func (ManagedRelayMode) EnumDescriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{1}
+}
+
+type ResourceStreamFrameType int32
+
+const (
+	ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_UNSPECIFIED      ResourceStreamFrameType = 0
+	ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_DATA        ResourceStreamFrameType = 1
+	ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_ACK         ResourceStreamFrameType = 2
+	ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH      ResourceStreamFrameType = 3
+	ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT      ResourceStreamFrameType = 4
+	ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_ERROR            ResourceStreamFrameType = 5
+	ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO ResourceStreamFrameType = 6
+)
+
+// Enum value maps for ResourceStreamFrameType.
+var (
+	ResourceStreamFrameType_name = map[int32]string{
+		0: "RESOURCE_STREAM_FRAME_TYPE_UNSPECIFIED",
+		1: "RESOURCE_STREAM_FRAME_TYPE_FILE_DATA",
+		2: "RESOURCE_STREAM_FRAME_TYPE_FILE_ACK",
+		3: "RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH",
+		4: "RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT",
+		5: "RESOURCE_STREAM_FRAME_TYPE_ERROR",
+		6: "RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO",
+	}
+	ResourceStreamFrameType_value = map[string]int32{
+		"RESOURCE_STREAM_FRAME_TYPE_UNSPECIFIED":      0,
+		"RESOURCE_STREAM_FRAME_TYPE_FILE_DATA":        1,
+		"RESOURCE_STREAM_FRAME_TYPE_FILE_ACK":         2,
+		"RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH":      3,
+		"RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT":      4,
+		"RESOURCE_STREAM_FRAME_TYPE_ERROR":            5,
+		"RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO": 6,
+	}
+)
+
+func (x ResourceStreamFrameType) Enum() *ResourceStreamFrameType {
+	p := new(ResourceStreamFrameType)
+	*p = x
+	return p
+}
+
+func (x ResourceStreamFrameType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ResourceStreamFrameType) Descriptor() protoreflect.EnumDescriptor {
+	return file_bindingpb_client_binding_proto_enumTypes[2].Descriptor()
+}
+
+func (ResourceStreamFrameType) Type() protoreflect.EnumType {
+	return &file_bindingpb_client_binding_proto_enumTypes[2]
+}
+
+func (x ResourceStreamFrameType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ResourceStreamFrameType.Descriptor instead.
+func (ResourceStreamFrameType) EnumDescriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{2}
+}
+
+type ManagedEndpointConfig struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	TargetDeviceId    string                 `protobuf:"bytes,1,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
+	DeviceFingerprint string                 `protobuf:"bytes,2,opt,name=device_fingerprint,json=deviceFingerprint,proto3" json:"device_fingerprint,omitempty"`
+	CredentialRef     string                 `protobuf:"bytes,3,opt,name=credential_ref,json=credentialRef,proto3" json:"credential_ref,omitempty"`
+	AccountProfile    string                 `protobuf:"bytes,4,opt,name=account_profile,json=accountProfile,proto3" json:"account_profile,omitempty"`
+	RelayMode         ManagedRelayMode       `protobuf:"varint,5,opt,name=relay_mode,json=relayMode,proto3,enum=termx.client.binding.v1.ManagedRelayMode" json:"relay_mode,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ManagedEndpointConfig) Reset() {
+	*x = ManagedEndpointConfig{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ManagedEndpointConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ManagedEndpointConfig) ProtoMessage() {}
+
+func (x *ManagedEndpointConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ManagedEndpointConfig.ProtoReflect.Descriptor instead.
+func (*ManagedEndpointConfig) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ManagedEndpointConfig) GetTargetDeviceId() string {
+	if x != nil {
+		return x.TargetDeviceId
+	}
+	return ""
+}
+
+func (x *ManagedEndpointConfig) GetDeviceFingerprint() string {
+	if x != nil {
+		return x.DeviceFingerprint
+	}
+	return ""
+}
+
+func (x *ManagedEndpointConfig) GetCredentialRef() string {
+	if x != nil {
+		return x.CredentialRef
+	}
+	return ""
+}
+
+func (x *ManagedEndpointConfig) GetAccountProfile() string {
+	if x != nil {
+		return x.AccountProfile
+	}
+	return ""
+}
+
+func (x *ManagedEndpointConfig) GetRelayMode() ManagedRelayMode {
+	if x != nil {
+		return x.RelayMode
+	}
+	return ManagedRelayMode_MANAGED_RELAY_MODE_UNSPECIFIED
+}
+
 type OpenSessionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	EndpointId    string                 `protobuf:"bytes,2,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
 	RouteOverride string                 `protobuf:"bytes,3,opt,name=route_override,json=routeOverride,proto3" json:"route_override,omitempty"`
 	Intent        ConnectIntent          `protobuf:"varint,4,opt,name=intent,proto3,enum=termx.client.binding.v1.ConnectIntent" json:"intent,omitempty"`
+	Managed       *ManagedEndpointConfig `protobuf:"bytes,5,opt,name=managed,proto3" json:"managed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *OpenSessionRequest) Reset() {
 	*x = OpenSessionRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[0]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -98,7 +292,7 @@ func (x *OpenSessionRequest) String() string {
 func (*OpenSessionRequest) ProtoMessage() {}
 
 func (x *OpenSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[0]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -111,7 +305,7 @@ func (x *OpenSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenSessionRequest.ProtoReflect.Descriptor instead.
 func (*OpenSessionRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{0}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *OpenSessionRequest) GetRequestId() string {
@@ -142,6 +336,317 @@ func (x *OpenSessionRequest) GetIntent() ConnectIntent {
 	return ConnectIntent_CONNECT_INTENT_UNSPECIFIED
 }
 
+func (x *OpenSessionRequest) GetManaged() *ManagedEndpointConfig {
+	if x != nil {
+		return x.Managed
+	}
+	return nil
+}
+
+type ImportPairingRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	RequestId          string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	PortablePayload    string                 `protobuf:"bytes,2,opt,name=portable_payload,json=portablePayload,proto3" json:"portable_payload,omitempty"`
+	ExpectedEndpointId string                 `protobuf:"bytes,3,opt,name=expected_endpoint_id,json=expectedEndpointId,proto3" json:"expected_endpoint_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ImportPairingRequest) Reset() {
+	*x = ImportPairingRequest{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportPairingRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportPairingRequest) ProtoMessage() {}
+
+func (x *ImportPairingRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportPairingRequest.ProtoReflect.Descriptor instead.
+func (*ImportPairingRequest) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ImportPairingRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ImportPairingRequest) GetPortablePayload() string {
+	if x != nil {
+		return x.PortablePayload
+	}
+	return ""
+}
+
+func (x *ImportPairingRequest) GetExpectedEndpointId() string {
+	if x != nil {
+		return x.ExpectedEndpointId
+	}
+	return ""
+}
+
+type ImportPairingResult struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	RequestId             string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	OperationHandle       uint64                 `protobuf:"varint,2,opt,name=operation_handle,json=operationHandle,proto3" json:"operation_handle,omitempty"`
+	EndpointId            string                 `protobuf:"bytes,3,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
+	Label                 string                 `protobuf:"bytes,4,opt,name=label,proto3" json:"label,omitempty"`
+	TargetDeviceId        string                 `protobuf:"bytes,5,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
+	DeviceFingerprint     string                 `protobuf:"bytes,6,opt,name=device_fingerprint,json=deviceFingerprint,proto3" json:"device_fingerprint,omitempty"`
+	CredentialRef         string                 `protobuf:"bytes,7,opt,name=credential_ref,json=credentialRef,proto3" json:"credential_ref,omitempty"`
+	TicketId              string                 `protobuf:"bytes,8,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
+	ClientKeyFingerprint  string                 `protobuf:"bytes,9,opt,name=client_key_fingerprint,json=clientKeyFingerprint,proto3" json:"client_key_fingerprint,omitempty"`
+	ExpiresAtUnixNano     int64                  `protobuf:"varint,10,opt,name=expires_at_unix_nano,json=expiresAtUnixNano,proto3" json:"expires_at_unix_nano,omitempty"`
+	AuthorizationRequired bool                   `protobuf:"varint,11,opt,name=authorization_required,json=authorizationRequired,proto3" json:"authorization_required,omitempty"`
+	Error                 *apipb.ApiError        `protobuf:"bytes,12,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *ImportPairingResult) Reset() {
+	*x = ImportPairingResult{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportPairingResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportPairingResult) ProtoMessage() {}
+
+func (x *ImportPairingResult) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportPairingResult.ProtoReflect.Descriptor instead.
+func (*ImportPairingResult) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ImportPairingResult) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ImportPairingResult) GetOperationHandle() uint64 {
+	if x != nil {
+		return x.OperationHandle
+	}
+	return 0
+}
+
+func (x *ImportPairingResult) GetEndpointId() string {
+	if x != nil {
+		return x.EndpointId
+	}
+	return ""
+}
+
+func (x *ImportPairingResult) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *ImportPairingResult) GetTargetDeviceId() string {
+	if x != nil {
+		return x.TargetDeviceId
+	}
+	return ""
+}
+
+func (x *ImportPairingResult) GetDeviceFingerprint() string {
+	if x != nil {
+		return x.DeviceFingerprint
+	}
+	return ""
+}
+
+func (x *ImportPairingResult) GetCredentialRef() string {
+	if x != nil {
+		return x.CredentialRef
+	}
+	return ""
+}
+
+func (x *ImportPairingResult) GetTicketId() string {
+	if x != nil {
+		return x.TicketId
+	}
+	return ""
+}
+
+func (x *ImportPairingResult) GetClientKeyFingerprint() string {
+	if x != nil {
+		return x.ClientKeyFingerprint
+	}
+	return ""
+}
+
+func (x *ImportPairingResult) GetExpiresAtUnixNano() int64 {
+	if x != nil {
+		return x.ExpiresAtUnixNano
+	}
+	return 0
+}
+
+func (x *ImportPairingResult) GetAuthorizationRequired() bool {
+	if x != nil {
+		return x.AuthorizationRequired
+	}
+	return false
+}
+
+func (x *ImportPairingResult) GetError() *apipb.ApiError {
+	if x != nil {
+		return x.Error
+	}
+	return nil
+}
+
+type DeleteCredentialRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	CredentialRef string                 `protobuf:"bytes,2,opt,name=credential_ref,json=credentialRef,proto3" json:"credential_ref,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteCredentialRequest) Reset() {
+	*x = DeleteCredentialRequest{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteCredentialRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteCredentialRequest) ProtoMessage() {}
+
+func (x *DeleteCredentialRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteCredentialRequest.ProtoReflect.Descriptor instead.
+func (*DeleteCredentialRequest) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *DeleteCredentialRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *DeleteCredentialRequest) GetCredentialRef() string {
+	if x != nil {
+		return x.CredentialRef
+	}
+	return ""
+}
+
+type DeleteCredentialResult struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	RequestId       string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	OperationHandle uint64                 `protobuf:"varint,2,opt,name=operation_handle,json=operationHandle,proto3" json:"operation_handle,omitempty"`
+	Error           *apipb.ApiError        `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *DeleteCredentialResult) Reset() {
+	*x = DeleteCredentialResult{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteCredentialResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteCredentialResult) ProtoMessage() {}
+
+func (x *DeleteCredentialResult) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteCredentialResult.ProtoReflect.Descriptor instead.
+func (*DeleteCredentialResult) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *DeleteCredentialResult) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *DeleteCredentialResult) GetOperationHandle() uint64 {
+	if x != nil {
+		return x.OperationHandle
+	}
+	return 0
+}
+
+func (x *DeleteCredentialResult) GetError() *apipb.ApiError {
+	if x != nil {
+		return x.Error
+	}
+	return nil
+}
+
 type OpenSessionResult struct {
 	state           protoimpl.MessageState      `protogen:"open.v1"`
 	RequestId       string                      `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -155,7 +660,7 @@ type OpenSessionResult struct {
 
 func (x *OpenSessionResult) Reset() {
 	*x = OpenSessionResult{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[1]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -167,7 +672,7 @@ func (x *OpenSessionResult) String() string {
 func (*OpenSessionResult) ProtoMessage() {}
 
 func (x *OpenSessionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[1]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -180,7 +685,7 @@ func (x *OpenSessionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenSessionResult.ProtoReflect.Descriptor instead.
 func (*OpenSessionResult) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{1}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *OpenSessionResult) GetRequestId() string {
@@ -230,7 +735,7 @@ type ExecuteResult struct {
 
 func (x *ExecuteResult) Reset() {
 	*x = ExecuteResult{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[2]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -242,7 +747,7 @@ func (x *ExecuteResult) String() string {
 func (*ExecuteResult) ProtoMessage() {}
 
 func (x *ExecuteResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[2]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -255,7 +760,7 @@ func (x *ExecuteResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteResult.ProtoReflect.Descriptor instead.
 func (*ExecuteResult) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{2}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ExecuteResult) GetOperationHandle() uint64 {
@@ -296,7 +801,7 @@ type ApplicationEvent struct {
 
 func (x *ApplicationEvent) Reset() {
 	*x = ApplicationEvent{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[3]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -308,7 +813,7 @@ func (x *ApplicationEvent) String() string {
 func (*ApplicationEvent) ProtoMessage() {}
 
 func (x *ApplicationEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[3]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -321,7 +826,7 @@ func (x *ApplicationEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplicationEvent.ProtoReflect.Descriptor instead.
 func (*ApplicationEvent) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{3}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ApplicationEvent) GetSessionHandle() uint64 {
@@ -338,6 +843,162 @@ func (x *ApplicationEvent) GetEvent() *apipb.EventEnvelope {
 	return nil
 }
 
+type OpenResourceStreamRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Resource      *apipb.ResourceHandle  `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OpenResourceStreamRequest) Reset() {
+	*x = OpenResourceStreamRequest{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OpenResourceStreamRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OpenResourceStreamRequest) ProtoMessage() {}
+
+func (x *OpenResourceStreamRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OpenResourceStreamRequest.ProtoReflect.Descriptor instead.
+func (*OpenResourceStreamRequest) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *OpenResourceStreamRequest) GetResource() *apipb.ResourceHandle {
+	if x != nil {
+		return x.Resource
+	}
+	return nil
+}
+
+type ResourceStreamFrame struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	StreamHandle  uint64                  `protobuf:"varint,1,opt,name=stream_handle,json=streamHandle,proto3" json:"stream_handle,omitempty"`
+	Type          ResourceStreamFrameType `protobuf:"varint,2,opt,name=type,proto3,enum=termx.client.binding.v1.ResourceStreamFrameType" json:"type,omitempty"`
+	Payload       []byte                  `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceStreamFrame) Reset() {
+	*x = ResourceStreamFrame{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceStreamFrame) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceStreamFrame) ProtoMessage() {}
+
+func (x *ResourceStreamFrame) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceStreamFrame.ProtoReflect.Descriptor instead.
+func (*ResourceStreamFrame) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ResourceStreamFrame) GetStreamHandle() uint64 {
+	if x != nil {
+		return x.StreamHandle
+	}
+	return 0
+}
+
+func (x *ResourceStreamFrame) GetType() ResourceStreamFrameType {
+	if x != nil {
+		return x.Type
+	}
+	return ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_UNSPECIFIED
+}
+
+func (x *ResourceStreamFrame) GetPayload() []byte {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+type ResourceStreamClosedEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	StreamHandle  uint64                 `protobuf:"varint,1,opt,name=stream_handle,json=streamHandle,proto3" json:"stream_handle,omitempty"`
+	Error         *apipb.ApiError        `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceStreamClosedEvent) Reset() {
+	*x = ResourceStreamClosedEvent{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceStreamClosedEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceStreamClosedEvent) ProtoMessage() {}
+
+func (x *ResourceStreamClosedEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceStreamClosedEvent.ProtoReflect.Descriptor instead.
+func (*ResourceStreamClosedEvent) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ResourceStreamClosedEvent) GetStreamHandle() uint64 {
+	if x != nil {
+		return x.StreamHandle
+	}
+	return 0
+}
+
+func (x *ResourceStreamClosedEvent) GetError() *apipb.ApiError {
+	if x != nil {
+		return x.Error
+	}
+	return nil
+}
+
 type SessionClosedEvent struct {
 	state         protoimpl.MessageState      `protogen:"open.v1"`
 	SessionHandle uint64                      `protobuf:"varint,1,opt,name=session_handle,json=sessionHandle,proto3" json:"session_handle,omitempty"`
@@ -349,7 +1010,7 @@ type SessionClosedEvent struct {
 
 func (x *SessionClosedEvent) Reset() {
 	*x = SessionClosedEvent{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[4]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -361,7 +1022,7 @@ func (x *SessionClosedEvent) String() string {
 func (*SessionClosedEvent) ProtoMessage() {}
 
 func (x *SessionClosedEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[4]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -374,7 +1035,7 @@ func (x *SessionClosedEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionClosedEvent.ProtoReflect.Descriptor instead.
 func (*SessionClosedEvent) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{4}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *SessionClosedEvent) GetSessionHandle() uint64 {
@@ -408,6 +1069,10 @@ type EventEnvelope struct {
 	//	*EventEnvelope_Execute
 	//	*EventEnvelope_Application
 	//	*EventEnvelope_SessionClosed
+	//	*EventEnvelope_ImportPairing
+	//	*EventEnvelope_DeleteCredential
+	//	*EventEnvelope_ResourceStreamFrame
+	//	*EventEnvelope_ResourceStreamClosed
 	Event         isEventEnvelope_Event `protobuf_oneof:"event"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -415,7 +1080,7 @@ type EventEnvelope struct {
 
 func (x *EventEnvelope) Reset() {
 	*x = EventEnvelope{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[5]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -427,7 +1092,7 @@ func (x *EventEnvelope) String() string {
 func (*EventEnvelope) ProtoMessage() {}
 
 func (x *EventEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[5]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -440,7 +1105,7 @@ func (x *EventEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventEnvelope.ProtoReflect.Descriptor instead.
 func (*EventEnvelope) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{5}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *EventEnvelope) GetAbiVersion() uint32 {
@@ -500,6 +1165,42 @@ func (x *EventEnvelope) GetSessionClosed() *SessionClosedEvent {
 	return nil
 }
 
+func (x *EventEnvelope) GetImportPairing() *ImportPairingResult {
+	if x != nil {
+		if x, ok := x.Event.(*EventEnvelope_ImportPairing); ok {
+			return x.ImportPairing
+		}
+	}
+	return nil
+}
+
+func (x *EventEnvelope) GetDeleteCredential() *DeleteCredentialResult {
+	if x != nil {
+		if x, ok := x.Event.(*EventEnvelope_DeleteCredential); ok {
+			return x.DeleteCredential
+		}
+	}
+	return nil
+}
+
+func (x *EventEnvelope) GetResourceStreamFrame() *ResourceStreamFrame {
+	if x != nil {
+		if x, ok := x.Event.(*EventEnvelope_ResourceStreamFrame); ok {
+			return x.ResourceStreamFrame
+		}
+	}
+	return nil
+}
+
+func (x *EventEnvelope) GetResourceStreamClosed() *ResourceStreamClosedEvent {
+	if x != nil {
+		if x, ok := x.Event.(*EventEnvelope_ResourceStreamClosed); ok {
+			return x.ResourceStreamClosed
+		}
+	}
+	return nil
+}
+
 type isEventEnvelope_Event interface {
 	isEventEnvelope_Event()
 }
@@ -520,6 +1221,22 @@ type EventEnvelope_SessionClosed struct {
 	SessionClosed *SessionClosedEvent `protobuf:"bytes,13,opt,name=session_closed,json=sessionClosed,proto3,oneof"`
 }
 
+type EventEnvelope_ImportPairing struct {
+	ImportPairing *ImportPairingResult `protobuf:"bytes,14,opt,name=import_pairing,json=importPairing,proto3,oneof"`
+}
+
+type EventEnvelope_DeleteCredential struct {
+	DeleteCredential *DeleteCredentialResult `protobuf:"bytes,15,opt,name=delete_credential,json=deleteCredential,proto3,oneof"`
+}
+
+type EventEnvelope_ResourceStreamFrame struct {
+	ResourceStreamFrame *ResourceStreamFrame `protobuf:"bytes,16,opt,name=resource_stream_frame,json=resourceStreamFrame,proto3,oneof"`
+}
+
+type EventEnvelope_ResourceStreamClosed struct {
+	ResourceStreamClosed *ResourceStreamClosedEvent `protobuf:"bytes,17,opt,name=resource_stream_closed,json=resourceStreamClosed,proto3,oneof"`
+}
+
 func (*EventEnvelope_OpenSession) isEventEnvelope_Event() {}
 
 func (*EventEnvelope_Execute) isEventEnvelope_Event() {}
@@ -528,18 +1245,916 @@ func (*EventEnvelope_Application) isEventEnvelope_Event() {}
 
 func (*EventEnvelope_SessionClosed) isEventEnvelope_Event() {}
 
+func (*EventEnvelope_ImportPairing) isEventEnvelope_Event() {}
+
+func (*EventEnvelope_DeleteCredential) isEventEnvelope_Event() {}
+
+func (*EventEnvelope_ResourceStreamFrame) isEventEnvelope_Event() {}
+
+func (*EventEnvelope_ResourceStreamClosed) isEventEnvelope_Event() {}
+
+type CredentialResolveRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EndpointId    string                 `protobuf:"bytes,1,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
+	CredentialRef string                 `protobuf:"bytes,2,opt,name=credential_ref,json=credentialRef,proto3" json:"credential_ref,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CredentialResolveRequest) Reset() {
+	*x = CredentialResolveRequest{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CredentialResolveRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CredentialResolveRequest) ProtoMessage() {}
+
+func (x *CredentialResolveRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CredentialResolveRequest.ProtoReflect.Descriptor instead.
+func (*CredentialResolveRequest) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *CredentialResolveRequest) GetEndpointId() string {
+	if x != nil {
+		return x.EndpointId
+	}
+	return ""
+}
+
+func (x *CredentialResolveRequest) GetCredentialRef() string {
+	if x != nil {
+		return x.CredentialRef
+	}
+	return ""
+}
+
+type CredentialPrepareRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EndpointId    string                 `protobuf:"bytes,1,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
+	CredentialRef string                 `protobuf:"bytes,2,opt,name=credential_ref,json=credentialRef,proto3" json:"credential_ref,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CredentialPrepareRequest) Reset() {
+	*x = CredentialPrepareRequest{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CredentialPrepareRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CredentialPrepareRequest) ProtoMessage() {}
+
+func (x *CredentialPrepareRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CredentialPrepareRequest.ProtoReflect.Descriptor instead.
+func (*CredentialPrepareRequest) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *CredentialPrepareRequest) GetEndpointId() string {
+	if x != nil {
+		return x.EndpointId
+	}
+	return ""
+}
+
+func (x *CredentialPrepareRequest) GetCredentialRef() string {
+	if x != nil {
+		return x.CredentialRef
+	}
+	return ""
+}
+
+type CredentialDeleteRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CredentialRef string                 `protobuf:"bytes,1,opt,name=credential_ref,json=credentialRef,proto3" json:"credential_ref,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CredentialDeleteRequest) Reset() {
+	*x = CredentialDeleteRequest{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CredentialDeleteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CredentialDeleteRequest) ProtoMessage() {}
+
+func (x *CredentialDeleteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CredentialDeleteRequest.ProtoReflect.Descriptor instead.
+func (*CredentialDeleteRequest) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *CredentialDeleteRequest) GetCredentialRef() string {
+	if x != nil {
+		return x.CredentialRef
+	}
+	return ""
+}
+
+type CredentialBindRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	EndpointId      string                 `protobuf:"bytes,1,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
+	CredentialRef   string                 `protobuf:"bytes,2,opt,name=credential_ref,json=credentialRef,proto3" json:"credential_ref,omitempty"`
+	CapabilityGrant string                 `protobuf:"bytes,3,opt,name=capability_grant,json=capabilityGrant,proto3" json:"capability_grant,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *CredentialBindRequest) Reset() {
+	*x = CredentialBindRequest{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CredentialBindRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CredentialBindRequest) ProtoMessage() {}
+
+func (x *CredentialBindRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CredentialBindRequest.ProtoReflect.Descriptor instead.
+func (*CredentialBindRequest) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *CredentialBindRequest) GetEndpointId() string {
+	if x != nil {
+		return x.EndpointId
+	}
+	return ""
+}
+
+func (x *CredentialBindRequest) GetCredentialRef() string {
+	if x != nil {
+		return x.CredentialRef
+	}
+	return ""
+}
+
+func (x *CredentialBindRequest) GetCapabilityGrant() string {
+	if x != nil {
+		return x.CapabilityGrant
+	}
+	return ""
+}
+
+type CredentialRecord struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	EndpointId      string                 `protobuf:"bytes,1,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
+	CredentialRef   string                 `protobuf:"bytes,2,opt,name=credential_ref,json=credentialRef,proto3" json:"credential_ref,omitempty"`
+	PublicKey       []byte                 `protobuf:"bytes,3,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	KeyFingerprint  string                 `protobuf:"bytes,4,opt,name=key_fingerprint,json=keyFingerprint,proto3" json:"key_fingerprint,omitempty"`
+	CapabilityGrant string                 `protobuf:"bytes,5,opt,name=capability_grant,json=capabilityGrant,proto3" json:"capability_grant,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *CredentialRecord) Reset() {
+	*x = CredentialRecord{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CredentialRecord) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CredentialRecord) ProtoMessage() {}
+
+func (x *CredentialRecord) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CredentialRecord.ProtoReflect.Descriptor instead.
+func (*CredentialRecord) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *CredentialRecord) GetEndpointId() string {
+	if x != nil {
+		return x.EndpointId
+	}
+	return ""
+}
+
+func (x *CredentialRecord) GetCredentialRef() string {
+	if x != nil {
+		return x.CredentialRef
+	}
+	return ""
+}
+
+func (x *CredentialRecord) GetPublicKey() []byte {
+	if x != nil {
+		return x.PublicKey
+	}
+	return nil
+}
+
+func (x *CredentialRecord) GetKeyFingerprint() string {
+	if x != nil {
+		return x.KeyFingerprint
+	}
+	return ""
+}
+
+func (x *CredentialRecord) GetCapabilityGrant() string {
+	if x != nil {
+		return x.CapabilityGrant
+	}
+	return ""
+}
+
+type CredentialSignRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CredentialRef string                 `protobuf:"bytes,1,opt,name=credential_ref,json=credentialRef,proto3" json:"credential_ref,omitempty"`
+	Payload       []byte                 `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CredentialSignRequest) Reset() {
+	*x = CredentialSignRequest{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CredentialSignRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CredentialSignRequest) ProtoMessage() {}
+
+func (x *CredentialSignRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CredentialSignRequest.ProtoReflect.Descriptor instead.
+func (*CredentialSignRequest) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *CredentialSignRequest) GetCredentialRef() string {
+	if x != nil {
+		return x.CredentialRef
+	}
+	return ""
+}
+
+func (x *CredentialSignRequest) GetPayload() []byte {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+type CredentialSignResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Signature     []byte                 `protobuf:"bytes,1,opt,name=signature,proto3" json:"signature,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CredentialSignResponse) Reset() {
+	*x = CredentialSignResponse{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CredentialSignResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CredentialSignResponse) ProtoMessage() {}
+
+func (x *CredentialSignResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CredentialSignResponse.ProtoReflect.Descriptor instead.
+func (*CredentialSignResponse) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *CredentialSignResponse) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+type SignalingEvents struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Events        []*cloudpb.SignalingEvent `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignalingEvents) Reset() {
+	*x = SignalingEvents{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignalingEvents) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignalingEvents) ProtoMessage() {}
+
+func (x *SignalingEvents) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignalingEvents.ProtoReflect.Descriptor instead.
+func (*SignalingEvents) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *SignalingEvents) GetEvents() []*cloudpb.SignalingEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+type PlatformRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId uint64                 `protobuf:"varint,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	// Types that are valid to be assigned to Request:
+	//
+	//	*PlatformRequest_CredentialResolve
+	//	*PlatformRequest_CredentialPrepare
+	//	*PlatformRequest_CredentialDelete
+	//	*PlatformRequest_CredentialSign
+	//	*PlatformRequest_CredentialBind
+	//	*PlatformRequest_CloudResolveEndpoint
+	//	*PlatformRequest_CloudCreateSignaling
+	//	*PlatformRequest_CloudAcquireRelay
+	//	*PlatformRequest_CloudPlanRoute
+	//	*PlatformRequest_CloudReportQuality
+	//	*PlatformRequest_CloudReportOutcome
+	Request       isPlatformRequest_Request `protobuf_oneof:"request"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlatformRequest) Reset() {
+	*x = PlatformRequest{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlatformRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlatformRequest) ProtoMessage() {}
+
+func (x *PlatformRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlatformRequest.ProtoReflect.Descriptor instead.
+func (*PlatformRequest) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *PlatformRequest) GetRequestId() uint64 {
+	if x != nil {
+		return x.RequestId
+	}
+	return 0
+}
+
+func (x *PlatformRequest) GetRequest() isPlatformRequest_Request {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+func (x *PlatformRequest) GetCredentialResolve() *CredentialResolveRequest {
+	if x != nil {
+		if x, ok := x.Request.(*PlatformRequest_CredentialResolve); ok {
+			return x.CredentialResolve
+		}
+	}
+	return nil
+}
+
+func (x *PlatformRequest) GetCredentialPrepare() *CredentialPrepareRequest {
+	if x != nil {
+		if x, ok := x.Request.(*PlatformRequest_CredentialPrepare); ok {
+			return x.CredentialPrepare
+		}
+	}
+	return nil
+}
+
+func (x *PlatformRequest) GetCredentialDelete() *CredentialDeleteRequest {
+	if x != nil {
+		if x, ok := x.Request.(*PlatformRequest_CredentialDelete); ok {
+			return x.CredentialDelete
+		}
+	}
+	return nil
+}
+
+func (x *PlatformRequest) GetCredentialSign() *CredentialSignRequest {
+	if x != nil {
+		if x, ok := x.Request.(*PlatformRequest_CredentialSign); ok {
+			return x.CredentialSign
+		}
+	}
+	return nil
+}
+
+func (x *PlatformRequest) GetCredentialBind() *CredentialBindRequest {
+	if x != nil {
+		if x, ok := x.Request.(*PlatformRequest_CredentialBind); ok {
+			return x.CredentialBind
+		}
+	}
+	return nil
+}
+
+func (x *PlatformRequest) GetCloudResolveEndpoint() *cloudpb.ResolveEndpointRequest {
+	if x != nil {
+		if x, ok := x.Request.(*PlatformRequest_CloudResolveEndpoint); ok {
+			return x.CloudResolveEndpoint
+		}
+	}
+	return nil
+}
+
+func (x *PlatformRequest) GetCloudCreateSignaling() *cloudpb.CreateSignalingSessionRequest {
+	if x != nil {
+		if x, ok := x.Request.(*PlatformRequest_CloudCreateSignaling); ok {
+			return x.CloudCreateSignaling
+		}
+	}
+	return nil
+}
+
+func (x *PlatformRequest) GetCloudAcquireRelay() *cloudpb.AcquireRelayLeaseRequest {
+	if x != nil {
+		if x, ok := x.Request.(*PlatformRequest_CloudAcquireRelay); ok {
+			return x.CloudAcquireRelay
+		}
+	}
+	return nil
+}
+
+func (x *PlatformRequest) GetCloudPlanRoute() *cloudpb.PlanManagedRouteRequest {
+	if x != nil {
+		if x, ok := x.Request.(*PlatformRequest_CloudPlanRoute); ok {
+			return x.CloudPlanRoute
+		}
+	}
+	return nil
+}
+
+func (x *PlatformRequest) GetCloudReportQuality() *cloudpb.ReportPathQualityRequest {
+	if x != nil {
+		if x, ok := x.Request.(*PlatformRequest_CloudReportQuality); ok {
+			return x.CloudReportQuality
+		}
+	}
+	return nil
+}
+
+func (x *PlatformRequest) GetCloudReportOutcome() *cloudpb.ReportConnectionOutcomeRequest {
+	if x != nil {
+		if x, ok := x.Request.(*PlatformRequest_CloudReportOutcome); ok {
+			return x.CloudReportOutcome
+		}
+	}
+	return nil
+}
+
+type isPlatformRequest_Request interface {
+	isPlatformRequest_Request()
+}
+
+type PlatformRequest_CredentialResolve struct {
+	CredentialResolve *CredentialResolveRequest `protobuf:"bytes,10,opt,name=credential_resolve,json=credentialResolve,proto3,oneof"`
+}
+
+type PlatformRequest_CredentialPrepare struct {
+	CredentialPrepare *CredentialPrepareRequest `protobuf:"bytes,11,opt,name=credential_prepare,json=credentialPrepare,proto3,oneof"`
+}
+
+type PlatformRequest_CredentialDelete struct {
+	CredentialDelete *CredentialDeleteRequest `protobuf:"bytes,12,opt,name=credential_delete,json=credentialDelete,proto3,oneof"`
+}
+
+type PlatformRequest_CredentialSign struct {
+	CredentialSign *CredentialSignRequest `protobuf:"bytes,13,opt,name=credential_sign,json=credentialSign,proto3,oneof"`
+}
+
+type PlatformRequest_CredentialBind struct {
+	CredentialBind *CredentialBindRequest `protobuf:"bytes,14,opt,name=credential_bind,json=credentialBind,proto3,oneof"`
+}
+
+type PlatformRequest_CloudResolveEndpoint struct {
+	CloudResolveEndpoint *cloudpb.ResolveEndpointRequest `protobuf:"bytes,20,opt,name=cloud_resolve_endpoint,json=cloudResolveEndpoint,proto3,oneof"`
+}
+
+type PlatformRequest_CloudCreateSignaling struct {
+	CloudCreateSignaling *cloudpb.CreateSignalingSessionRequest `protobuf:"bytes,21,opt,name=cloud_create_signaling,json=cloudCreateSignaling,proto3,oneof"`
+}
+
+type PlatformRequest_CloudAcquireRelay struct {
+	CloudAcquireRelay *cloudpb.AcquireRelayLeaseRequest `protobuf:"bytes,22,opt,name=cloud_acquire_relay,json=cloudAcquireRelay,proto3,oneof"`
+}
+
+type PlatformRequest_CloudPlanRoute struct {
+	CloudPlanRoute *cloudpb.PlanManagedRouteRequest `protobuf:"bytes,23,opt,name=cloud_plan_route,json=cloudPlanRoute,proto3,oneof"`
+}
+
+type PlatformRequest_CloudReportQuality struct {
+	CloudReportQuality *cloudpb.ReportPathQualityRequest `protobuf:"bytes,24,opt,name=cloud_report_quality,json=cloudReportQuality,proto3,oneof"`
+}
+
+type PlatformRequest_CloudReportOutcome struct {
+	CloudReportOutcome *cloudpb.ReportConnectionOutcomeRequest `protobuf:"bytes,25,opt,name=cloud_report_outcome,json=cloudReportOutcome,proto3,oneof"`
+}
+
+func (*PlatformRequest_CredentialResolve) isPlatformRequest_Request() {}
+
+func (*PlatformRequest_CredentialPrepare) isPlatformRequest_Request() {}
+
+func (*PlatformRequest_CredentialDelete) isPlatformRequest_Request() {}
+
+func (*PlatformRequest_CredentialSign) isPlatformRequest_Request() {}
+
+func (*PlatformRequest_CredentialBind) isPlatformRequest_Request() {}
+
+func (*PlatformRequest_CloudResolveEndpoint) isPlatformRequest_Request() {}
+
+func (*PlatformRequest_CloudCreateSignaling) isPlatformRequest_Request() {}
+
+func (*PlatformRequest_CloudAcquireRelay) isPlatformRequest_Request() {}
+
+func (*PlatformRequest_CloudPlanRoute) isPlatformRequest_Request() {}
+
+func (*PlatformRequest_CloudReportQuality) isPlatformRequest_Request() {}
+
+func (*PlatformRequest_CloudReportOutcome) isPlatformRequest_Request() {}
+
+type PlatformResponse struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId uint64                 `protobuf:"varint,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Error     *apipb.ApiError        `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	// Types that are valid to be assigned to Response:
+	//
+	//	*PlatformResponse_Credential
+	//	*PlatformResponse_CredentialSign
+	//	*PlatformResponse_CloudResolvedEndpoint
+	//	*PlatformResponse_CloudSignaling
+	//	*PlatformResponse_CloudRelayLease
+	//	*PlatformResponse_CloudRoutePlan
+	//	*PlatformResponse_CloudQualityReported
+	//	*PlatformResponse_CloudOutcomeReported
+	Response      isPlatformResponse_Response `protobuf_oneof:"response"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlatformResponse) Reset() {
+	*x = PlatformResponse{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlatformResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlatformResponse) ProtoMessage() {}
+
+func (x *PlatformResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlatformResponse.ProtoReflect.Descriptor instead.
+func (*PlatformResponse) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *PlatformResponse) GetRequestId() uint64 {
+	if x != nil {
+		return x.RequestId
+	}
+	return 0
+}
+
+func (x *PlatformResponse) GetError() *apipb.ApiError {
+	if x != nil {
+		return x.Error
+	}
+	return nil
+}
+
+func (x *PlatformResponse) GetResponse() isPlatformResponse_Response {
+	if x != nil {
+		return x.Response
+	}
+	return nil
+}
+
+func (x *PlatformResponse) GetCredential() *CredentialRecord {
+	if x != nil {
+		if x, ok := x.Response.(*PlatformResponse_Credential); ok {
+			return x.Credential
+		}
+	}
+	return nil
+}
+
+func (x *PlatformResponse) GetCredentialSign() *CredentialSignResponse {
+	if x != nil {
+		if x, ok := x.Response.(*PlatformResponse_CredentialSign); ok {
+			return x.CredentialSign
+		}
+	}
+	return nil
+}
+
+func (x *PlatformResponse) GetCloudResolvedEndpoint() *cloudpb.ResolvedEndpoint {
+	if x != nil {
+		if x, ok := x.Response.(*PlatformResponse_CloudResolvedEndpoint); ok {
+			return x.CloudResolvedEndpoint
+		}
+	}
+	return nil
+}
+
+func (x *PlatformResponse) GetCloudSignaling() *SignalingEvents {
+	if x != nil {
+		if x, ok := x.Response.(*PlatformResponse_CloudSignaling); ok {
+			return x.CloudSignaling
+		}
+	}
+	return nil
+}
+
+func (x *PlatformResponse) GetCloudRelayLease() *cloudpb.RelayLease {
+	if x != nil {
+		if x, ok := x.Response.(*PlatformResponse_CloudRelayLease); ok {
+			return x.CloudRelayLease
+		}
+	}
+	return nil
+}
+
+func (x *PlatformResponse) GetCloudRoutePlan() *cloudpb.ManagedRoutePlan {
+	if x != nil {
+		if x, ok := x.Response.(*PlatformResponse_CloudRoutePlan); ok {
+			return x.CloudRoutePlan
+		}
+	}
+	return nil
+}
+
+func (x *PlatformResponse) GetCloudQualityReported() *cloudpb.ReportPathQualityResponse {
+	if x != nil {
+		if x, ok := x.Response.(*PlatformResponse_CloudQualityReported); ok {
+			return x.CloudQualityReported
+		}
+	}
+	return nil
+}
+
+func (x *PlatformResponse) GetCloudOutcomeReported() *cloudpb.ReportConnectionOutcomeResponse {
+	if x != nil {
+		if x, ok := x.Response.(*PlatformResponse_CloudOutcomeReported); ok {
+			return x.CloudOutcomeReported
+		}
+	}
+	return nil
+}
+
+type isPlatformResponse_Response interface {
+	isPlatformResponse_Response()
+}
+
+type PlatformResponse_Credential struct {
+	Credential *CredentialRecord `protobuf:"bytes,10,opt,name=credential,proto3,oneof"`
+}
+
+type PlatformResponse_CredentialSign struct {
+	CredentialSign *CredentialSignResponse `protobuf:"bytes,11,opt,name=credential_sign,json=credentialSign,proto3,oneof"`
+}
+
+type PlatformResponse_CloudResolvedEndpoint struct {
+	CloudResolvedEndpoint *cloudpb.ResolvedEndpoint `protobuf:"bytes,20,opt,name=cloud_resolved_endpoint,json=cloudResolvedEndpoint,proto3,oneof"`
+}
+
+type PlatformResponse_CloudSignaling struct {
+	CloudSignaling *SignalingEvents `protobuf:"bytes,21,opt,name=cloud_signaling,json=cloudSignaling,proto3,oneof"`
+}
+
+type PlatformResponse_CloudRelayLease struct {
+	CloudRelayLease *cloudpb.RelayLease `protobuf:"bytes,22,opt,name=cloud_relay_lease,json=cloudRelayLease,proto3,oneof"`
+}
+
+type PlatformResponse_CloudRoutePlan struct {
+	CloudRoutePlan *cloudpb.ManagedRoutePlan `protobuf:"bytes,23,opt,name=cloud_route_plan,json=cloudRoutePlan,proto3,oneof"`
+}
+
+type PlatformResponse_CloudQualityReported struct {
+	CloudQualityReported *cloudpb.ReportPathQualityResponse `protobuf:"bytes,24,opt,name=cloud_quality_reported,json=cloudQualityReported,proto3,oneof"`
+}
+
+type PlatformResponse_CloudOutcomeReported struct {
+	CloudOutcomeReported *cloudpb.ReportConnectionOutcomeResponse `protobuf:"bytes,25,opt,name=cloud_outcome_reported,json=cloudOutcomeReported,proto3,oneof"`
+}
+
+func (*PlatformResponse_Credential) isPlatformResponse_Response() {}
+
+func (*PlatformResponse_CredentialSign) isPlatformResponse_Response() {}
+
+func (*PlatformResponse_CloudResolvedEndpoint) isPlatformResponse_Response() {}
+
+func (*PlatformResponse_CloudSignaling) isPlatformResponse_Response() {}
+
+func (*PlatformResponse_CloudRelayLease) isPlatformResponse_Response() {}
+
+func (*PlatformResponse_CloudRoutePlan) isPlatformResponse_Response() {}
+
+func (*PlatformResponse_CloudQualityReported) isPlatformResponse_Response() {}
+
+func (*PlatformResponse_CloudOutcomeReported) isPlatformResponse_Response() {}
+
 var File_bindingpb_client_binding_proto protoreflect.FileDescriptor
 
 const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\n" +
-	"\x1ebindingpb/client_binding.proto\x12\x17termx.client.binding.v1\x1a\x17apipb/application.proto\x1a\x12apipb/common.proto\"\xbb\x01\n" +
+	"\x1ebindingpb/client_binding.proto\x12\x17termx.client.binding.v1\x1a\x17apipb/application.proto\x1a\x12apipb/common.proto\x1a\x1dcloudpb/cloud_companion.proto\"\x8a\x02\n" +
+	"\x15ManagedEndpointConfig\x12(\n" +
+	"\x10target_device_id\x18\x01 \x01(\tR\x0etargetDeviceId\x12-\n" +
+	"\x12device_fingerprint\x18\x02 \x01(\tR\x11deviceFingerprint\x12%\n" +
+	"\x0ecredential_ref\x18\x03 \x01(\tR\rcredentialRef\x12'\n" +
+	"\x0faccount_profile\x18\x04 \x01(\tR\x0eaccountProfile\x12H\n" +
+	"\n" +
+	"relay_mode\x18\x05 \x01(\x0e2).termx.client.binding.v1.ManagedRelayModeR\trelayMode\"\x85\x02\n" +
 	"\x12OpenSessionRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
 	"\vendpoint_id\x18\x02 \x01(\tR\n" +
 	"endpointId\x12%\n" +
 	"\x0eroute_override\x18\x03 \x01(\tR\rrouteOverride\x12>\n" +
-	"\x06intent\x18\x04 \x01(\x0e2&.termx.client.binding.v1.ConnectIntentR\x06intent\"\xf0\x01\n" +
+	"\x06intent\x18\x04 \x01(\x0e2&.termx.client.binding.v1.ConnectIntentR\x06intent\x12H\n" +
+	"\amanaged\x18\x05 \x01(\v2..termx.client.binding.v1.ManagedEndpointConfigR\amanaged\"\x92\x01\n" +
+	"\x14ImportPairingRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
+	"\x10portable_payload\x18\x02 \x01(\tR\x0fportablePayload\x120\n" +
+	"\x14expected_endpoint_id\x18\x03 \x01(\tR\x12expectedEndpointId\"\xff\x03\n" +
+	"\x13ImportPairingResult\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
+	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12\x1f\n" +
+	"\vendpoint_id\x18\x03 \x01(\tR\n" +
+	"endpointId\x12\x14\n" +
+	"\x05label\x18\x04 \x01(\tR\x05label\x12(\n" +
+	"\x10target_device_id\x18\x05 \x01(\tR\x0etargetDeviceId\x12-\n" +
+	"\x12device_fingerprint\x18\x06 \x01(\tR\x11deviceFingerprint\x12%\n" +
+	"\x0ecredential_ref\x18\a \x01(\tR\rcredentialRef\x12\x1b\n" +
+	"\tticket_id\x18\b \x01(\tR\bticketId\x124\n" +
+	"\x16client_key_fingerprint\x18\t \x01(\tR\x14clientKeyFingerprint\x12/\n" +
+	"\x14expires_at_unix_nano\x18\n" +
+	" \x01(\x03R\x11expiresAtUnixNano\x125\n" +
+	"\x16authorization_required\x18\v \x01(\bR\x15authorizationRequired\x12,\n" +
+	"\x05error\x18\f \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\"_\n" +
+	"\x17DeleteCredentialRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
+	"\x0ecredential_ref\x18\x02 \x01(\tR\rcredentialRef\"\x90\x01\n" +
+	"\x16DeleteCredentialResult\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
+	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12,\n" +
+	"\x05error\x18\x03 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\"\xf0\x01\n" +
 	"\x11OpenSessionResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
@@ -554,11 +2169,20 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\x05error\x18\x04 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\"l\n" +
 	"\x10ApplicationEvent\x12%\n" +
 	"\x0esession_handle\x18\x01 \x01(\x04R\rsessionHandle\x121\n" +
-	"\x05event\x18\x02 \x01(\v2\x1b.termx.api.v1.EventEnvelopeR\x05event\"\xa7\x01\n" +
+	"\x05event\x18\x02 \x01(\v2\x1b.termx.api.v1.EventEnvelopeR\x05event\"U\n" +
+	"\x19OpenResourceStreamRequest\x128\n" +
+	"\bresource\x18\x01 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresource\"\x9a\x01\n" +
+	"\x13ResourceStreamFrame\x12#\n" +
+	"\rstream_handle\x18\x01 \x01(\x04R\fstreamHandle\x12D\n" +
+	"\x04type\x18\x02 \x01(\x0e20.termx.client.binding.v1.ResourceStreamFrameTypeR\x04type\x12\x18\n" +
+	"\apayload\x18\x03 \x01(\fR\apayload\"n\n" +
+	"\x19ResourceStreamClosedEvent\x12#\n" +
+	"\rstream_handle\x18\x01 \x01(\x04R\fstreamHandle\x12,\n" +
+	"\x05error\x18\x02 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\"\xa7\x01\n" +
 	"\x12SessionClosedEvent\x12%\n" +
 	"\x0esession_handle\x18\x01 \x01(\x04R\rsessionHandle\x12<\n" +
 	"\asession\x18\x02 \x01(\v2\".termx.api.v1.EndpointSessionStampR\asession\x12,\n" +
-	"\x05error\x18\x03 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\"\x8f\x03\n" +
+	"\x05error\x18\x03 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\"\x96\x06\n" +
 	"\rEventEnvelope\x12\x1f\n" +
 	"\vabi_version\x18\x01 \x01(\rR\n" +
 	"abiVersion\x12\x1a\n" +
@@ -567,13 +2191,94 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	" \x01(\v2*.termx.client.binding.v1.OpenSessionResultH\x00R\vopenSession\x12B\n" +
 	"\aexecute\x18\v \x01(\v2&.termx.client.binding.v1.ExecuteResultH\x00R\aexecute\x12M\n" +
 	"\vapplication\x18\f \x01(\v2).termx.client.binding.v1.ApplicationEventH\x00R\vapplication\x12T\n" +
-	"\x0esession_closed\x18\r \x01(\v2+.termx.client.binding.v1.SessionClosedEventH\x00R\rsessionClosedB\a\n" +
-	"\x05event*\x88\x01\n" +
+	"\x0esession_closed\x18\r \x01(\v2+.termx.client.binding.v1.SessionClosedEventH\x00R\rsessionClosed\x12U\n" +
+	"\x0eimport_pairing\x18\x0e \x01(\v2,.termx.client.binding.v1.ImportPairingResultH\x00R\rimportPairing\x12^\n" +
+	"\x11delete_credential\x18\x0f \x01(\v2/.termx.client.binding.v1.DeleteCredentialResultH\x00R\x10deleteCredential\x12b\n" +
+	"\x15resource_stream_frame\x18\x10 \x01(\v2,.termx.client.binding.v1.ResourceStreamFrameH\x00R\x13resourceStreamFrame\x12j\n" +
+	"\x16resource_stream_closed\x18\x11 \x01(\v22.termx.client.binding.v1.ResourceStreamClosedEventH\x00R\x14resourceStreamClosedB\a\n" +
+	"\x05event\"b\n" +
+	"\x18CredentialResolveRequest\x12\x1f\n" +
+	"\vendpoint_id\x18\x01 \x01(\tR\n" +
+	"endpointId\x12%\n" +
+	"\x0ecredential_ref\x18\x02 \x01(\tR\rcredentialRef\"b\n" +
+	"\x18CredentialPrepareRequest\x12\x1f\n" +
+	"\vendpoint_id\x18\x01 \x01(\tR\n" +
+	"endpointId\x12%\n" +
+	"\x0ecredential_ref\x18\x02 \x01(\tR\rcredentialRef\"@\n" +
+	"\x17CredentialDeleteRequest\x12%\n" +
+	"\x0ecredential_ref\x18\x01 \x01(\tR\rcredentialRef\"\x8a\x01\n" +
+	"\x15CredentialBindRequest\x12\x1f\n" +
+	"\vendpoint_id\x18\x01 \x01(\tR\n" +
+	"endpointId\x12%\n" +
+	"\x0ecredential_ref\x18\x02 \x01(\tR\rcredentialRef\x12)\n" +
+	"\x10capability_grant\x18\x03 \x01(\tR\x0fcapabilityGrant\"\xcd\x01\n" +
+	"\x10CredentialRecord\x12\x1f\n" +
+	"\vendpoint_id\x18\x01 \x01(\tR\n" +
+	"endpointId\x12%\n" +
+	"\x0ecredential_ref\x18\x02 \x01(\tR\rcredentialRef\x12\x1d\n" +
+	"\n" +
+	"public_key\x18\x03 \x01(\fR\tpublicKey\x12'\n" +
+	"\x0fkey_fingerprint\x18\x04 \x01(\tR\x0ekeyFingerprint\x12)\n" +
+	"\x10capability_grant\x18\x05 \x01(\tR\x0fcapabilityGrant\"X\n" +
+	"\x15CredentialSignRequest\x12%\n" +
+	"\x0ecredential_ref\x18\x01 \x01(\tR\rcredentialRef\x12\x18\n" +
+	"\apayload\x18\x02 \x01(\fR\apayload\"6\n" +
+	"\x16CredentialSignResponse\x12\x1c\n" +
+	"\tsignature\x18\x01 \x01(\fR\tsignature\"I\n" +
+	"\x0fSignalingEvents\x126\n" +
+	"\x06events\x18\x01 \x03(\v2\x1e.termx.cloud.v1.SignalingEventR\x06events\"\xd4\b\n" +
+	"\x0fPlatformRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\x04R\trequestId\x12b\n" +
+	"\x12credential_resolve\x18\n" +
+	" \x01(\v21.termx.client.binding.v1.CredentialResolveRequestH\x00R\x11credentialResolve\x12b\n" +
+	"\x12credential_prepare\x18\v \x01(\v21.termx.client.binding.v1.CredentialPrepareRequestH\x00R\x11credentialPrepare\x12_\n" +
+	"\x11credential_delete\x18\f \x01(\v20.termx.client.binding.v1.CredentialDeleteRequestH\x00R\x10credentialDelete\x12Y\n" +
+	"\x0fcredential_sign\x18\r \x01(\v2..termx.client.binding.v1.CredentialSignRequestH\x00R\x0ecredentialSign\x12Y\n" +
+	"\x0fcredential_bind\x18\x0e \x01(\v2..termx.client.binding.v1.CredentialBindRequestH\x00R\x0ecredentialBind\x12^\n" +
+	"\x16cloud_resolve_endpoint\x18\x14 \x01(\v2&.termx.cloud.v1.ResolveEndpointRequestH\x00R\x14cloudResolveEndpoint\x12e\n" +
+	"\x16cloud_create_signaling\x18\x15 \x01(\v2-.termx.cloud.v1.CreateSignalingSessionRequestH\x00R\x14cloudCreateSignaling\x12Z\n" +
+	"\x13cloud_acquire_relay\x18\x16 \x01(\v2(.termx.cloud.v1.AcquireRelayLeaseRequestH\x00R\x11cloudAcquireRelay\x12S\n" +
+	"\x10cloud_plan_route\x18\x17 \x01(\v2'.termx.cloud.v1.PlanManagedRouteRequestH\x00R\x0ecloudPlanRoute\x12\\\n" +
+	"\x14cloud_report_quality\x18\x18 \x01(\v2(.termx.cloud.v1.ReportPathQualityRequestH\x00R\x12cloudReportQuality\x12b\n" +
+	"\x14cloud_report_outcome\x18\x19 \x01(\v2..termx.cloud.v1.ReportConnectionOutcomeRequestH\x00R\x12cloudReportOutcomeB\t\n" +
+	"\arequest\"\xa9\x06\n" +
+	"\x10PlatformResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\x04R\trequestId\x12,\n" +
+	"\x05error\x18\x02 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\x12K\n" +
+	"\n" +
+	"credential\x18\n" +
+	" \x01(\v2).termx.client.binding.v1.CredentialRecordH\x00R\n" +
+	"credential\x12Z\n" +
+	"\x0fcredential_sign\x18\v \x01(\v2/.termx.client.binding.v1.CredentialSignResponseH\x00R\x0ecredentialSign\x12Z\n" +
+	"\x17cloud_resolved_endpoint\x18\x14 \x01(\v2 .termx.cloud.v1.ResolvedEndpointH\x00R\x15cloudResolvedEndpoint\x12S\n" +
+	"\x0fcloud_signaling\x18\x15 \x01(\v2(.termx.client.binding.v1.SignalingEventsH\x00R\x0ecloudSignaling\x12H\n" +
+	"\x11cloud_relay_lease\x18\x16 \x01(\v2\x1a.termx.cloud.v1.RelayLeaseH\x00R\x0fcloudRelayLease\x12L\n" +
+	"\x10cloud_route_plan\x18\x17 \x01(\v2 .termx.cloud.v1.ManagedRoutePlanH\x00R\x0ecloudRoutePlan\x12a\n" +
+	"\x16cloud_quality_reported\x18\x18 \x01(\v2).termx.cloud.v1.ReportPathQualityResponseH\x00R\x14cloudQualityReported\x12g\n" +
+	"\x16cloud_outcome_reported\x18\x19 \x01(\v2/.termx.cloud.v1.ReportConnectionOutcomeResponseH\x00R\x14cloudOutcomeReportedB\n" +
+	"\n" +
+	"\bresponse*\x88\x01\n" +
 	"\rConnectIntent\x12\x1e\n" +
 	"\x1aCONNECT_INTENT_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aCONNECT_INTENT_INTERACTIVE\x10\x01\x12\x1d\n" +
 	"\x19CONNECT_INTENT_BACKGROUND\x10\x02\x12\x18\n" +
-	"\x14CONNECT_INTENT_PROBE\x10\x03B)Z'github.com/lozzow/termx/proto/bindingpbb\x06proto3"
+	"\x14CONNECT_INTENT_PROBE\x10\x03*\xb9\x01\n" +
+	"\x10ManagedRelayMode\x12\"\n" +
+	"\x1eMANAGED_RELAY_MODE_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17MANAGED_RELAY_MODE_AUTO\x10\x01\x12\x1d\n" +
+	"\x19MANAGED_RELAY_MODE_DIRECT\x10\x02\x12!\n" +
+	"\x1dMANAGED_RELAY_MODE_RELAY_ONLY\x10\x03\x12\"\n" +
+	"\x1eMANAGED_RELAY_MODE_SMART_ROUTE\x10\x04*\xc7\x02\n" +
+	"\x17ResourceStreamFrameType\x12*\n" +
+	"&RESOURCE_STREAM_FRAME_TYPE_UNSPECIFIED\x10\x00\x12(\n" +
+	"$RESOURCE_STREAM_FRAME_TYPE_FILE_DATA\x10\x01\x12'\n" +
+	"#RESOURCE_STREAM_FRAME_TYPE_FILE_ACK\x10\x02\x12*\n" +
+	"&RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH\x10\x03\x12*\n" +
+	"&RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT\x10\x04\x12$\n" +
+	" RESOURCE_STREAM_FRAME_TYPE_ERROR\x10\x05\x12/\n" +
+	"+RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO\x10\x06B)Z'github.com/lozzow/termx/proto/bindingpbb\x06proto3"
 
 var (
 	file_bindingpb_client_binding_proto_rawDescOnce sync.Once
@@ -587,39 +2292,104 @@ func file_bindingpb_client_binding_proto_rawDescGZIP() []byte {
 	return file_bindingpb_client_binding_proto_rawDescData
 }
 
-var file_bindingpb_client_binding_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_bindingpb_client_binding_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_bindingpb_client_binding_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_bindingpb_client_binding_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_bindingpb_client_binding_proto_goTypes = []any{
-	(ConnectIntent)(0),                 // 0: termx.client.binding.v1.ConnectIntent
-	(*OpenSessionRequest)(nil),         // 1: termx.client.binding.v1.OpenSessionRequest
-	(*OpenSessionResult)(nil),          // 2: termx.client.binding.v1.OpenSessionResult
-	(*ExecuteResult)(nil),              // 3: termx.client.binding.v1.ExecuteResult
-	(*ApplicationEvent)(nil),           // 4: termx.client.binding.v1.ApplicationEvent
-	(*SessionClosedEvent)(nil),         // 5: termx.client.binding.v1.SessionClosedEvent
-	(*EventEnvelope)(nil),              // 6: termx.client.binding.v1.EventEnvelope
-	(*apipb.EndpointSessionStamp)(nil), // 7: termx.api.v1.EndpointSessionStamp
-	(*apipb.ApiError)(nil),             // 8: termx.api.v1.ApiError
-	(*apipb.ResultEnvelope)(nil),       // 9: termx.api.v1.ResultEnvelope
-	(*apipb.EventEnvelope)(nil),        // 10: termx.api.v1.EventEnvelope
+	(ConnectIntent)(0),                              // 0: termx.client.binding.v1.ConnectIntent
+	(ManagedRelayMode)(0),                           // 1: termx.client.binding.v1.ManagedRelayMode
+	(ResourceStreamFrameType)(0),                    // 2: termx.client.binding.v1.ResourceStreamFrameType
+	(*ManagedEndpointConfig)(nil),                   // 3: termx.client.binding.v1.ManagedEndpointConfig
+	(*OpenSessionRequest)(nil),                      // 4: termx.client.binding.v1.OpenSessionRequest
+	(*ImportPairingRequest)(nil),                    // 5: termx.client.binding.v1.ImportPairingRequest
+	(*ImportPairingResult)(nil),                     // 6: termx.client.binding.v1.ImportPairingResult
+	(*DeleteCredentialRequest)(nil),                 // 7: termx.client.binding.v1.DeleteCredentialRequest
+	(*DeleteCredentialResult)(nil),                  // 8: termx.client.binding.v1.DeleteCredentialResult
+	(*OpenSessionResult)(nil),                       // 9: termx.client.binding.v1.OpenSessionResult
+	(*ExecuteResult)(nil),                           // 10: termx.client.binding.v1.ExecuteResult
+	(*ApplicationEvent)(nil),                        // 11: termx.client.binding.v1.ApplicationEvent
+	(*OpenResourceStreamRequest)(nil),               // 12: termx.client.binding.v1.OpenResourceStreamRequest
+	(*ResourceStreamFrame)(nil),                     // 13: termx.client.binding.v1.ResourceStreamFrame
+	(*ResourceStreamClosedEvent)(nil),               // 14: termx.client.binding.v1.ResourceStreamClosedEvent
+	(*SessionClosedEvent)(nil),                      // 15: termx.client.binding.v1.SessionClosedEvent
+	(*EventEnvelope)(nil),                           // 16: termx.client.binding.v1.EventEnvelope
+	(*CredentialResolveRequest)(nil),                // 17: termx.client.binding.v1.CredentialResolveRequest
+	(*CredentialPrepareRequest)(nil),                // 18: termx.client.binding.v1.CredentialPrepareRequest
+	(*CredentialDeleteRequest)(nil),                 // 19: termx.client.binding.v1.CredentialDeleteRequest
+	(*CredentialBindRequest)(nil),                   // 20: termx.client.binding.v1.CredentialBindRequest
+	(*CredentialRecord)(nil),                        // 21: termx.client.binding.v1.CredentialRecord
+	(*CredentialSignRequest)(nil),                   // 22: termx.client.binding.v1.CredentialSignRequest
+	(*CredentialSignResponse)(nil),                  // 23: termx.client.binding.v1.CredentialSignResponse
+	(*SignalingEvents)(nil),                         // 24: termx.client.binding.v1.SignalingEvents
+	(*PlatformRequest)(nil),                         // 25: termx.client.binding.v1.PlatformRequest
+	(*PlatformResponse)(nil),                        // 26: termx.client.binding.v1.PlatformResponse
+	(*apipb.ApiError)(nil),                          // 27: termx.api.v1.ApiError
+	(*apipb.EndpointSessionStamp)(nil),              // 28: termx.api.v1.EndpointSessionStamp
+	(*apipb.ResultEnvelope)(nil),                    // 29: termx.api.v1.ResultEnvelope
+	(*apipb.EventEnvelope)(nil),                     // 30: termx.api.v1.EventEnvelope
+	(*apipb.ResourceHandle)(nil),                    // 31: termx.api.v1.ResourceHandle
+	(*cloudpb.SignalingEvent)(nil),                  // 32: termx.cloud.v1.SignalingEvent
+	(*cloudpb.ResolveEndpointRequest)(nil),          // 33: termx.cloud.v1.ResolveEndpointRequest
+	(*cloudpb.CreateSignalingSessionRequest)(nil),   // 34: termx.cloud.v1.CreateSignalingSessionRequest
+	(*cloudpb.AcquireRelayLeaseRequest)(nil),        // 35: termx.cloud.v1.AcquireRelayLeaseRequest
+	(*cloudpb.PlanManagedRouteRequest)(nil),         // 36: termx.cloud.v1.PlanManagedRouteRequest
+	(*cloudpb.ReportPathQualityRequest)(nil),        // 37: termx.cloud.v1.ReportPathQualityRequest
+	(*cloudpb.ReportConnectionOutcomeRequest)(nil),  // 38: termx.cloud.v1.ReportConnectionOutcomeRequest
+	(*cloudpb.ResolvedEndpoint)(nil),                // 39: termx.cloud.v1.ResolvedEndpoint
+	(*cloudpb.RelayLease)(nil),                      // 40: termx.cloud.v1.RelayLease
+	(*cloudpb.ManagedRoutePlan)(nil),                // 41: termx.cloud.v1.ManagedRoutePlan
+	(*cloudpb.ReportPathQualityResponse)(nil),       // 42: termx.cloud.v1.ReportPathQualityResponse
+	(*cloudpb.ReportConnectionOutcomeResponse)(nil), // 43: termx.cloud.v1.ReportConnectionOutcomeResponse
 }
 var file_bindingpb_client_binding_proto_depIdxs = []int32{
-	0,  // 0: termx.client.binding.v1.OpenSessionRequest.intent:type_name -> termx.client.binding.v1.ConnectIntent
-	7,  // 1: termx.client.binding.v1.OpenSessionResult.session:type_name -> termx.api.v1.EndpointSessionStamp
-	8,  // 2: termx.client.binding.v1.OpenSessionResult.error:type_name -> termx.api.v1.ApiError
-	9,  // 3: termx.client.binding.v1.ExecuteResult.result:type_name -> termx.api.v1.ResultEnvelope
-	8,  // 4: termx.client.binding.v1.ExecuteResult.error:type_name -> termx.api.v1.ApiError
-	10, // 5: termx.client.binding.v1.ApplicationEvent.event:type_name -> termx.api.v1.EventEnvelope
-	7,  // 6: termx.client.binding.v1.SessionClosedEvent.session:type_name -> termx.api.v1.EndpointSessionStamp
-	8,  // 7: termx.client.binding.v1.SessionClosedEvent.error:type_name -> termx.api.v1.ApiError
-	2,  // 8: termx.client.binding.v1.EventEnvelope.open_session:type_name -> termx.client.binding.v1.OpenSessionResult
-	3,  // 9: termx.client.binding.v1.EventEnvelope.execute:type_name -> termx.client.binding.v1.ExecuteResult
-	4,  // 10: termx.client.binding.v1.EventEnvelope.application:type_name -> termx.client.binding.v1.ApplicationEvent
-	5,  // 11: termx.client.binding.v1.EventEnvelope.session_closed:type_name -> termx.client.binding.v1.SessionClosedEvent
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	1,  // 0: termx.client.binding.v1.ManagedEndpointConfig.relay_mode:type_name -> termx.client.binding.v1.ManagedRelayMode
+	0,  // 1: termx.client.binding.v1.OpenSessionRequest.intent:type_name -> termx.client.binding.v1.ConnectIntent
+	3,  // 2: termx.client.binding.v1.OpenSessionRequest.managed:type_name -> termx.client.binding.v1.ManagedEndpointConfig
+	27, // 3: termx.client.binding.v1.ImportPairingResult.error:type_name -> termx.api.v1.ApiError
+	27, // 4: termx.client.binding.v1.DeleteCredentialResult.error:type_name -> termx.api.v1.ApiError
+	28, // 5: termx.client.binding.v1.OpenSessionResult.session:type_name -> termx.api.v1.EndpointSessionStamp
+	27, // 6: termx.client.binding.v1.OpenSessionResult.error:type_name -> termx.api.v1.ApiError
+	29, // 7: termx.client.binding.v1.ExecuteResult.result:type_name -> termx.api.v1.ResultEnvelope
+	27, // 8: termx.client.binding.v1.ExecuteResult.error:type_name -> termx.api.v1.ApiError
+	30, // 9: termx.client.binding.v1.ApplicationEvent.event:type_name -> termx.api.v1.EventEnvelope
+	31, // 10: termx.client.binding.v1.OpenResourceStreamRequest.resource:type_name -> termx.api.v1.ResourceHandle
+	2,  // 11: termx.client.binding.v1.ResourceStreamFrame.type:type_name -> termx.client.binding.v1.ResourceStreamFrameType
+	27, // 12: termx.client.binding.v1.ResourceStreamClosedEvent.error:type_name -> termx.api.v1.ApiError
+	28, // 13: termx.client.binding.v1.SessionClosedEvent.session:type_name -> termx.api.v1.EndpointSessionStamp
+	27, // 14: termx.client.binding.v1.SessionClosedEvent.error:type_name -> termx.api.v1.ApiError
+	9,  // 15: termx.client.binding.v1.EventEnvelope.open_session:type_name -> termx.client.binding.v1.OpenSessionResult
+	10, // 16: termx.client.binding.v1.EventEnvelope.execute:type_name -> termx.client.binding.v1.ExecuteResult
+	11, // 17: termx.client.binding.v1.EventEnvelope.application:type_name -> termx.client.binding.v1.ApplicationEvent
+	15, // 18: termx.client.binding.v1.EventEnvelope.session_closed:type_name -> termx.client.binding.v1.SessionClosedEvent
+	6,  // 19: termx.client.binding.v1.EventEnvelope.import_pairing:type_name -> termx.client.binding.v1.ImportPairingResult
+	8,  // 20: termx.client.binding.v1.EventEnvelope.delete_credential:type_name -> termx.client.binding.v1.DeleteCredentialResult
+	13, // 21: termx.client.binding.v1.EventEnvelope.resource_stream_frame:type_name -> termx.client.binding.v1.ResourceStreamFrame
+	14, // 22: termx.client.binding.v1.EventEnvelope.resource_stream_closed:type_name -> termx.client.binding.v1.ResourceStreamClosedEvent
+	32, // 23: termx.client.binding.v1.SignalingEvents.events:type_name -> termx.cloud.v1.SignalingEvent
+	17, // 24: termx.client.binding.v1.PlatformRequest.credential_resolve:type_name -> termx.client.binding.v1.CredentialResolveRequest
+	18, // 25: termx.client.binding.v1.PlatformRequest.credential_prepare:type_name -> termx.client.binding.v1.CredentialPrepareRequest
+	19, // 26: termx.client.binding.v1.PlatformRequest.credential_delete:type_name -> termx.client.binding.v1.CredentialDeleteRequest
+	22, // 27: termx.client.binding.v1.PlatformRequest.credential_sign:type_name -> termx.client.binding.v1.CredentialSignRequest
+	20, // 28: termx.client.binding.v1.PlatformRequest.credential_bind:type_name -> termx.client.binding.v1.CredentialBindRequest
+	33, // 29: termx.client.binding.v1.PlatformRequest.cloud_resolve_endpoint:type_name -> termx.cloud.v1.ResolveEndpointRequest
+	34, // 30: termx.client.binding.v1.PlatformRequest.cloud_create_signaling:type_name -> termx.cloud.v1.CreateSignalingSessionRequest
+	35, // 31: termx.client.binding.v1.PlatformRequest.cloud_acquire_relay:type_name -> termx.cloud.v1.AcquireRelayLeaseRequest
+	36, // 32: termx.client.binding.v1.PlatformRequest.cloud_plan_route:type_name -> termx.cloud.v1.PlanManagedRouteRequest
+	37, // 33: termx.client.binding.v1.PlatformRequest.cloud_report_quality:type_name -> termx.cloud.v1.ReportPathQualityRequest
+	38, // 34: termx.client.binding.v1.PlatformRequest.cloud_report_outcome:type_name -> termx.cloud.v1.ReportConnectionOutcomeRequest
+	27, // 35: termx.client.binding.v1.PlatformResponse.error:type_name -> termx.api.v1.ApiError
+	21, // 36: termx.client.binding.v1.PlatformResponse.credential:type_name -> termx.client.binding.v1.CredentialRecord
+	23, // 37: termx.client.binding.v1.PlatformResponse.credential_sign:type_name -> termx.client.binding.v1.CredentialSignResponse
+	39, // 38: termx.client.binding.v1.PlatformResponse.cloud_resolved_endpoint:type_name -> termx.cloud.v1.ResolvedEndpoint
+	24, // 39: termx.client.binding.v1.PlatformResponse.cloud_signaling:type_name -> termx.client.binding.v1.SignalingEvents
+	40, // 40: termx.client.binding.v1.PlatformResponse.cloud_relay_lease:type_name -> termx.cloud.v1.RelayLease
+	41, // 41: termx.client.binding.v1.PlatformResponse.cloud_route_plan:type_name -> termx.cloud.v1.ManagedRoutePlan
+	42, // 42: termx.client.binding.v1.PlatformResponse.cloud_quality_reported:type_name -> termx.cloud.v1.ReportPathQualityResponse
+	43, // 43: termx.client.binding.v1.PlatformResponse.cloud_outcome_reported:type_name -> termx.cloud.v1.ReportConnectionOutcomeResponse
+	44, // [44:44] is the sub-list for method output_type
+	44, // [44:44] is the sub-list for method input_type
+	44, // [44:44] is the sub-list for extension type_name
+	44, // [44:44] is the sub-list for extension extendee
+	0,  // [0:44] is the sub-list for field type_name
 }
 
 func init() { file_bindingpb_client_binding_proto_init() }
@@ -627,19 +2397,46 @@ func file_bindingpb_client_binding_proto_init() {
 	if File_bindingpb_client_binding_proto != nil {
 		return
 	}
-	file_bindingpb_client_binding_proto_msgTypes[5].OneofWrappers = []any{
+	file_bindingpb_client_binding_proto_msgTypes[13].OneofWrappers = []any{
 		(*EventEnvelope_OpenSession)(nil),
 		(*EventEnvelope_Execute)(nil),
 		(*EventEnvelope_Application)(nil),
 		(*EventEnvelope_SessionClosed)(nil),
+		(*EventEnvelope_ImportPairing)(nil),
+		(*EventEnvelope_DeleteCredential)(nil),
+		(*EventEnvelope_ResourceStreamFrame)(nil),
+		(*EventEnvelope_ResourceStreamClosed)(nil),
+	}
+	file_bindingpb_client_binding_proto_msgTypes[22].OneofWrappers = []any{
+		(*PlatformRequest_CredentialResolve)(nil),
+		(*PlatformRequest_CredentialPrepare)(nil),
+		(*PlatformRequest_CredentialDelete)(nil),
+		(*PlatformRequest_CredentialSign)(nil),
+		(*PlatformRequest_CredentialBind)(nil),
+		(*PlatformRequest_CloudResolveEndpoint)(nil),
+		(*PlatformRequest_CloudCreateSignaling)(nil),
+		(*PlatformRequest_CloudAcquireRelay)(nil),
+		(*PlatformRequest_CloudPlanRoute)(nil),
+		(*PlatformRequest_CloudReportQuality)(nil),
+		(*PlatformRequest_CloudReportOutcome)(nil),
+	}
+	file_bindingpb_client_binding_proto_msgTypes[23].OneofWrappers = []any{
+		(*PlatformResponse_Credential)(nil),
+		(*PlatformResponse_CredentialSign)(nil),
+		(*PlatformResponse_CloudResolvedEndpoint)(nil),
+		(*PlatformResponse_CloudSignaling)(nil),
+		(*PlatformResponse_CloudRelayLease)(nil),
+		(*PlatformResponse_CloudRoutePlan)(nil),
+		(*PlatformResponse_CloudQualityReported)(nil),
+		(*PlatformResponse_CloudOutcomeReported)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_bindingpb_client_binding_proto_rawDesc), len(file_bindingpb_client_binding_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   6,
+			NumEnums:      3,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

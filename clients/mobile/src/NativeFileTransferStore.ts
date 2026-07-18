@@ -1,22 +1,19 @@
-/**
- * NativeFileTransferStore — 管理 Native 文件传输状态
- *
- * 与 NativeRtcSession 通过 FRAME_TRANSFER_SYNC / FRAME_TRANSFER_REQUEST 通信。
- * 实现 useSyncExternalStore 接口（subscribe/getSnapshot），供 React 消费。
- *
- * 下载流程：
- *   JS 调用 file.download.open → 获得 daemon 分配的 transfer_id、channel、offset 与流控参数
- *   → sendTransferRequest({ action: 'start_download', ... }) → Native 接管
- *   → Native 发送 FRAME_TRANSFER_SYNC 进度更新 → UI 显示进度
- *
- * 上传流程：
- *   NativeFilePicker.pickFiles() → 获得 content:// URI
- *   → sendTransferRequest({ action: 'start_upload', ... }) → Native 接管
- *   → Native 发送 FRAME_TRANSFER_SYNC 进度更新 → UI 显示进度
- */
-
-import type { TransferSyncPayload } from './NativeConnectionProxy'
-import { NativeConnection } from './plugins/nativeConnection'
+import { Capacitor } from '@capacitor/core'
+import { create } from '@bufbuild/protobuf'
+import {
+  TermxApiApplication,
+  TermxApiFile,
+  TermxClientBinding,
+  type ProtoClientSession,
+  type ProtoResourceStream,
+  decodeFileStreamErrorPayload,
+  decodeFileTransferAckPayload,
+  decodeFileTransferDataPayload,
+  decodeFileTransferFinishPayload,
+  decodeFileTransferResultPayload,
+  encodeFileTransferAckPayload,
+  encodeFileTransferDataPayload,
+} from '@termx/ui'
 
 export type TransferStatus = 'pending' | 'transferring' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'missing'
 
@@ -32,7 +29,7 @@ export interface TransferInfo {
   updatedAt?: number
   bytesPerSecond?: number
   error?: string
-  filePath?: string  // for download retry
+  filePath?: string
   localUri?: string | undefined
   targetDir?: string | undefined
   savedPath?: string | undefined
@@ -44,522 +41,339 @@ export interface FileTransferStoreSnapshot {
   hasActiveTransfers: boolean
 }
 
-export interface NativeTransferSession {
-  onTransferSync(handler: (data: TransferSyncPayload) => void): () => void
-  onSyncResponse(handler: (data: { transfers?: TransferSyncPayload['transfers'] | undefined }) => void): () => void
-  sendTransferRequest(request: Record<string, unknown>): void
-  sendSyncRequest(): void
-  isAlive(): boolean
+type NativeTransferSessionResolver = (machineId: string) => Promise<ProtoClientSession | null | undefined>
+
+type ActiveTransfer = {
+  session: ProtoClientSession
+  stream: ProtoResourceStream
+  resource: NonNullable<TermxApiFile.FileTransferHandle['resource']>
+  cancel: AbortController
 }
 
-type NativeTransferSessionResolver = (machineId: string) => Promise<NativeTransferSession | null | undefined>
-
+/** NativeFileTransferStore consumes apipb and Go-owned resource streams; it owns only UI progress and local Blob/URI access. */
 export class NativeFileTransferStore {
-  private _transfers: TransferInfo[] = []
-  private _listeners = new Set<() => void>()
-  private _session: NativeTransferSession | null = null
-  private _unsub: (() => void) | null = null
-  private _snapshotVersion = 0
-  private _cachedSnapshot?: FileTransferStoreSnapshot
-  private _cachedVersion = -1
-  private _cachedScopedSnapshots = new Map<string, {
-    version: number
-    snapshot: FileTransferStoreSnapshot
-  }>()
-  private _speedSamples = new Map<string, {
-    bytesPerSecond: number
-    timestamp: number
-    transferredSize: number
-  }>()
-  private _sessionResolver: NativeTransferSessionResolver | null = null
+  private transfers: TransferInfo[] = []
+  private readonly listeners = new Set<() => void>()
+  private readonly active = new Map<string, ActiveTransfer>()
+  private resolver: NativeTransferSessionResolver | null = null
+  private version = 0
+  private cachedVersion = -1
+  private cachedSnapshot: FileTransferStoreSnapshot | null = null
 
-  constructor() {
-    void this.refreshFromNative()
+  setSessionResolver(resolver: NativeTransferSessionResolver | null): void { this.resolver = resolver }
+
+  startDownload(machineId: string, fileName: string, fileSize: number, filePath: string, _offset = 0): void {
+    const id = transferID('download', machineId, filePath)
+    this.upsert({ id, machineId, name: fileName, direction: 'download', totalSize: fileSize, transferredSize: 0, status: 'pending', startedAt: Date.now(), updatedAt: Date.now(), filePath })
+    void this.runDownload(id).catch((error) => this.fail(id, error))
   }
 
-  // ─── Session binding ───────────────────────────────────────────────────────
+  async getDownloadResumeOffset(_machineId?: string, _filePath?: string, _fileSize?: number): Promise<number> { return 0 }
 
-  setSession(session: NativeTransferSession | null): void {
-    if (this._unsub) {
-      this._unsub()
-      this._unsub = null
-    }
-    this._session = session
-
-    if (session) {
-      const unsubSync = session.onTransferSync((data) => {
-        this._handleTransferSync(data)
-      })
-      const unsubResp = session.onSyncResponse((data) => {
-        if (data.transfers) {
-          this._handleTransferSync({ transfers: data.transfers as TransferSyncPayload['transfers'] })
-        }
-      })
-      const onResume = () => {
-        session.sendSyncRequest()
-        void this.refreshFromNative()
-      }
-      document.addEventListener('termx:resume', onResume)
-      this._unsub = () => {
-        unsubSync()
-        unsubResp()
-        document.removeEventListener('termx:resume', onResume)
-      }
-      // Request current state immediately after binding
-      session.sendSyncRequest()
-    }
-  }
-
-  setSessionResolver(resolver: NativeTransferSessionResolver | null): void {
-    this._sessionResolver = resolver
-  }
-
-  async refreshFromNative(): Promise<void> {
-    try {
-      const snapshot = await NativeConnection.getTransferSnapshot()
-      this._handleTransferSync({ transfers: snapshot.transfers as TransferSyncPayload['transfers'] })
-    } catch {
-      // The native plugin is not available in browser tests/dev.
-    }
-  }
-
-  // ─── Transfer operations ──────────────────────────────────────────────────
-
-  startDownload(
-    machineId: string,
-    fileName: string,
-    fileSize: number,
-    filePath: string,
-    offset = 0,
-  ): void {
-    const transferId = downloadTaskId(machineId, filePath, fileSize)
-    const info: TransferInfo = {
-      id: transferId,
-      machineId,
-      name: fileName,
-      direction: 'download',
-      totalSize: fileSize,
-      transferredSize: offset,
-      status: 'pending',
-      startedAt: Date.now(),
-      updatedAt: Date.now(),
-      filePath,
-    }
-    this._addOrUpdate(info)
-    void this._ensureSession(machineId).then((session) => {
-      session.sendTransferRequest({
-        action: 'start_download',
-        transfer_id: transferId,
-        file_name: fileName,
-        file_size: fileSize,
-        file_path: filePath,
-        offset,
-        machine_id: machineId,
-      })
-      void this.refreshFromNative()
-    }).catch((err) => {
-      this._update(transferId, {
-        status: 'failed',
-        error: err instanceof Error ? err.message : String(err),
-      })
-    })
-  }
-
-  async getDownloadResumeOffset(machineId: string, filePath: string, fileSize: number): Promise<number> {
-    try {
-      const result = await NativeConnection.getDownloadResumeOffset({ machineId, filePath, fileSize })
-      const offset = Number(result.offset)
-      if (!Number.isFinite(offset) || offset <= 0 || offset >= fileSize) return 0
-      return Math.floor(offset)
-    } catch {
-      return 0
-    }
-  }
-
-  startUpload(
-    machineId: string,
-    contentUri: string,
-    fileName: string,
-    fileSize: number,
-    targetDir: string,
-  ): void {
-    const pendingId = `pending_upload_${Date.now()}`
-    const info: TransferInfo = {
-      id: pendingId,
-      machineId,
-      name: fileName,
-      direction: 'upload',
-      totalSize: fileSize,
-      transferredSize: 0,
-      status: 'pending',
-      startedAt: Date.now(),
-      updatedAt: Date.now(),
-    }
-    this._addOrUpdate(info)
-
-    void this._ensureSession(machineId).then((session) => {
-      session.sendTransferRequest({
-        action: 'start_upload',
-        content_uri: contentUri,
-        file_name: fileName,
-        file_size: fileSize,
-        target_dir: targetDir,
-        machine_id: machineId,
-      })
-      void this.refreshFromNative()
-    }).catch((err) => {
-      this._update(pendingId, {
-        status: 'failed',
-        error: err instanceof Error ? err.message : String(err),
-      })
-    })
+  startUpload(machineId: string, contentUri: string, fileName: string, fileSize: number, targetDir: string): void {
+    const id = transferID('upload', machineId, `${targetDir}/${fileName}`)
+    this.upsert({ id, machineId, name: fileName, direction: 'upload', totalSize: fileSize, transferredSize: 0, status: 'pending', startedAt: Date.now(), updatedAt: Date.now(), localUri: contentUri, targetDir })
+    void this.runUpload(id).catch((error) => this.fail(id, error))
   }
 
   cancelTransfer(id: string): void {
-    const t = this._transfers.find((x) => x.id === id)
-    if (t?.direction === 'download') {
-      this._session?.sendTransferRequest({
-        action: 'cancel_download',
-        transfer_id: id,
-        ...(t.machineId ? { machine_id: t.machineId } : {}),
-      })
-    } else if (t?.direction === 'upload') {
-      this._session?.sendTransferRequest({
-        action: 'cancel_upload',
-        transfer_id: id,
-        ...(t.machineId ? { machine_id: t.machineId } : {}),
-      })
-    }
-    this._update(id, { status: 'cancelled' })
+    const task = this.active.get(id)
+    task?.cancel.abort()
+    if (task) void this.cancelRemote(task).finally(() => this.closeTask(id, task))
+    this.update(id, { status: 'cancelled', updatedAt: Date.now(), bytesPerSecond: 0 })
   }
 
   pauseTransfer(id: string): void {
-    const t = this._transfers.find((x) => x.id === id)
-    if (!t || (t.status !== 'pending' && t.status !== 'transferring')) return
-    if (t.direction === 'download') {
-      this._session?.sendTransferRequest({
-        action: 'pause_download',
-        transfer_id: id,
-        ...(t.machineId ? { machine_id: t.machineId } : {}),
-      })
-    } else {
-      this._session?.sendTransferRequest({
-        action: 'pause_upload',
-        transfer_id: id,
-        ...(t.machineId ? { machine_id: t.machineId } : {}),
-      })
-    }
-    this._speedSamples.set(id, {
-      bytesPerSecond: 0,
-      timestamp: Date.now(),
-      transferredSize: t.transferredSize,
-    })
-    this._update(id, { status: 'paused', bytesPerSecond: 0, updatedAt: Date.now() })
+    const task = this.active.get(id)
+    task?.cancel.abort()
+    if (task) void this.cancelRemote(task).finally(() => this.closeTask(id, task))
+    this.update(id, { status: 'paused', updatedAt: Date.now(), bytesPerSecond: 0 })
   }
 
   async resumeTransfer(id: string): Promise<void> {
-    const t = this._transfers.find((x) => x.id === id)
-    if (!t || !canResumeStatus(t.status)) return
-    this._speedSamples.set(id, {
-      bytesPerSecond: 0,
-      timestamp: Date.now(),
-      transferredSize: t.transferredSize,
-    })
-    this._update(id, { status: 'pending', error: undefined, bytesPerSecond: 0, updatedAt: Date.now() })
+    const transfer = this.transfers.find((item) => item.id === id)
+    if (!transfer || !canResume(transfer.status)) return
+    this.update(id, { status: 'pending', error: undefined, transferredSize: 0, updatedAt: Date.now() })
     try {
-      const session = await this._ensureSession(t.machineId)
-      if (t.direction === 'download') {
-        session.sendTransferRequest({
-          action: 'resume_download',
-          transfer_id: id,
-          ...(t.machineId ? { machine_id: t.machineId } : {}),
-        })
-      } else {
-        session.sendTransferRequest({
-          action: 'resume_upload',
-          transfer_id: id,
-          ...(t.machineId ? { machine_id: t.machineId } : {}),
-        })
-      }
-      void this.refreshFromNative()
-    } catch (err) {
-      this._update(id, {
-        status: 'paused',
-        error: err instanceof Error ? err.message : String(err),
-        bytesPerSecond: 0,
-        updatedAt: Date.now(),
-      })
+      if (transfer.direction === 'download') await this.runDownload(id)
+      else await this.runUpload(id)
+    } catch (error) {
+      this.fail(id, error)
+    }
+  }
+
+  async resumeAllTransfers(machineId?: string): Promise<void> {
+    for (const transfer of [...this.transfers]) {
+      if ((!machineId || transfer.machineId === machineId) && canResume(transfer.status)) await this.resumeTransfer(transfer.id)
     }
   }
 
   dismissTransfer(id: string): void {
-    this._session?.sendTransferRequest({
-      action: 'clear_transfer',
-      transfer_id: id,
-    })
-    void NativeConnection.clearTransfer({ transferId: id }).catch(() => {})
-    this._remove(id)
+    this.cancelTransfer(id)
+    this.transfers = this.transfers.filter((item) => item.id !== id)
+    this.notify()
   }
-
-  async resumeAllTransfers(machineId?: string): Promise<void> {
-    for (const t of this._transfers) {
-      if (machineId && t.machineId !== machineId) continue
-      if (!canResumeStatus(t.status)) continue
-      this._speedSamples.set(t.id, {
-        bytesPerSecond: 0,
-        timestamp: Date.now(),
-        transferredSize: t.transferredSize,
-      })
-      this._update(t.id, { status: 'pending', error: undefined, bytesPerSecond: 0, updatedAt: Date.now() })
-    }
-    const machineIds = machineId ? [machineId] : uniqueMachineIds(this._transfers)
-    try {
-      for (const id of machineIds) {
-        await this._ensureSession(id)
-      }
-      this._session?.sendTransferRequest({
-        action: 'resume_all',
-        ...(machineId ? { machine_id: machineId } : {}),
-      })
-      await NativeConnection.resumeAllTransfers(machineId ? { machineId } : undefined)
-      void this.refreshFromNative()
-    } catch (err) {
-      for (const t of this._transfers) {
-        if (machineId && t.machineId !== machineId) continue
-        if (!canResumeStatus(t.status)) continue
-        this._update(t.id, {
-          status: 'paused',
-          error: err instanceof Error ? err.message : String(err),
-          bytesPerSecond: 0,
-          updatedAt: Date.now(),
-        })
-      }
-    }
-  }
-
-  // ─── useSyncExternalStore interface ──────────────────────────────────────
 
   subscribe(listener: () => void): () => void {
-    this._listeners.add(listener)
-    return () => { this._listeners.delete(listener) }
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
   }
 
   getSnapshot(machineId?: string): FileTransferStoreSnapshot {
-    if (machineId) {
-      const cached = this._cachedScopedSnapshots.get(machineId)
-      if (cached?.version === this._snapshotVersion) return cached.snapshot
-      const transfers = this._transfers.filter((t) => t.machineId === machineId)
-      const snapshot = {
-        transfers,
-        hasActiveTransfers: transfers.some(
-          (t) => t.status === 'pending' || t.status === 'transferring',
-        ),
-      }
-      this._cachedScopedSnapshots.set(machineId, {
-        version: this._snapshotVersion,
-        snapshot,
-      })
-      return snapshot
+    if (!machineId && this.cachedSnapshot && this.cachedVersion === this.version) return this.cachedSnapshot
+    const transfers = machineId ? this.transfers.filter((item) => item.machineId === machineId) : this.transfers
+    const snapshot = { transfers, hasActiveTransfers: transfers.some((item) => item.status === 'pending' || item.status === 'transferring') }
+    if (!machineId) {
+      this.cachedSnapshot = snapshot
+      this.cachedVersion = this.version
     }
-    if (this._cachedVersion === this._snapshotVersion && this._cachedSnapshot) {
-      return this._cachedSnapshot
-    }
-    this._cachedSnapshot = {
-      transfers: this._transfers,
-      hasActiveTransfers: this._transfers.some(
-        (t) => t.status === 'pending' || t.status === 'transferring',
-      ),
-    }
-    this._cachedVersion = this._snapshotVersion
-    return this._cachedSnapshot
+    return snapshot
   }
 
-  // ─── Internal ─────────────────────────────────────────────────────────────
-
-  private _handleTransferSync(data: TransferSyncPayload): void {
-    if (!data.transfers) return
-    const syncReceivedAt = Date.now()
-
-    // Remove pending placeholders when real native entries arrive
-    const hasRealUploads = data.transfers.some(
-      (t) => t.direction === 'upload' && !t.id.startsWith('pending_'),
-    )
-    if (hasRealUploads) {
-      const placeholders = this._transfers.filter(
-        (t) => t.id.startsWith('pending_upload_') && t.direction === 'upload',
-      )
-      for (const p of placeholders) this._remove(p.id)
-    }
-
-    for (const nt of data.transfers) {
-      const existing = this._transfers.find((t) => t.id === nt.id)
-      const status = normalizeTransferStatus(nt.status)
-      const measured = status === 'paused' || status === 'missing'
-        ? { bytesPerSecond: 0, updatedAt: syncReceivedAt }
-        : this._measureSpeed(nt.id, nt.transferredSize, nt.bytesPerSecond)
-      const machineId = nt.machineId ?? nt.storeKey ?? existing?.machineId
-      if (existing) {
-        this._update(nt.id, {
-          machineId,
-          name: nt.name || existing.name,
-          direction: nt.direction || existing.direction,
-          totalSize: nt.totalSize || existing.totalSize,
-          transferredSize: nt.transferredSize,
-          status,
-          startedAt: nt.startedAt || existing.startedAt,
-          updatedAt: measured.updatedAt,
-          bytesPerSecond: measured.bytesPerSecond,
-          filePath: nt.filePath ?? existing.filePath,
-          ...(nt.localUri ?? existing.localUri ? { localUri: nt.localUri ?? existing.localUri } : {}),
-          ...(nt.targetDir ?? existing.targetDir ? { targetDir: nt.targetDir ?? existing.targetDir } : {}),
-          ...(nt.savedPath ?? existing.savedPath ? { savedPath: nt.savedPath ?? existing.savedPath } : {}),
-          ...(nt.savedUri ?? existing.savedUri ? { savedUri: nt.savedUri ?? existing.savedUri } : {}),
-          error: nt.error,
-        })
-      } else {
-        this._addOrUpdate({
-          id: nt.id,
-          machineId,
-          name: nt.name,
-          direction: nt.direction,
-          totalSize: nt.totalSize,
-          transferredSize: nt.transferredSize,
-          status,
-          startedAt: nt.startedAt,
-          updatedAt: measured.updatedAt,
-          bytesPerSecond: measured.bytesPerSecond,
-          filePath: nt.filePath,
-          ...(nt.localUri ? { localUri: nt.localUri } : {}),
-          ...(nt.targetDir ? { targetDir: nt.targetDir } : {}),
-          ...(nt.savedPath ? { savedPath: nt.savedPath } : {}),
-          ...(nt.savedUri ? { savedUri: nt.savedUri } : {}),
-          error: nt.error,
-        })
-      }
+  private async runDownload(id: string): Promise<void> {
+    const transfer = this.requiredTransfer(id, 'download')
+    const session = await this.session(transfer.machineId)
+    const opened = await session.execute(command('fileDownloadOpen', create(TermxApiFile.FileDownloadOpenCommandSchema, { path: transfer.filePath ?? '' })))
+    if (opened.result.case !== 'fileTransferOpen' || !opened.result.value.transfer) throw new Error('download returned no transfer resource')
+    const remote = opened.result.value.transfer
+    const resource = remote.resource
+    if (!resource) throw new Error('download returned no resource handle')
+    const stream = await session.openResourceStream(resource)
+    const task = { session, stream, resource, cancel: new AbortController() }
+    this.active.set(id, task)
+    this.update(id, { status: 'transferring', totalSize: Number(remote.size), transferredSize: Number(remote.offset), updatedAt: Date.now() })
+    try {
+      const blob = await receiveDownload(stream, remote, task.cancel.signal, (received) => this.progress(id, received))
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = transfer.name
+      anchor.click()
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      this.update(id, { status: 'completed', transferredSize: Number(remote.size), savedUri: url, updatedAt: Date.now(), bytesPerSecond: 0 })
+    } finally {
+      await this.closeTask(id, task)
     }
   }
 
-  private async _ensureSession(machineId?: string): Promise<NativeTransferSession> {
-    if (machineId && this._sessionResolver) {
-      const session = await this._sessionResolver(machineId)
-      if (session) this.setSession(session)
-      if (this._isSessionUsable(this._session)) return this._session
-      throw new Error('Native transfer bridge is not connected')
+  private async runUpload(id: string): Promise<void> {
+    const transfer = this.requiredTransfer(id, 'upload')
+    if (!transfer.localUri || !transfer.targetDir) throw new Error('upload local URI is missing')
+    const session = await this.session(transfer.machineId)
+    const target = `${transfer.targetDir.replace(/\/$/, '')}/${transfer.name}`
+    const opened = await session.execute(command('fileUploadOpen', create(TermxApiFile.FileUploadOpenCommandSchema, {
+      path: target, size: BigInt(transfer.totalSize), overwrite: true,
+    })))
+    if (opened.result.case !== 'fileTransferOpen' || !opened.result.value.transfer) throw new Error('upload returned no transfer resource')
+    const remote = opened.result.value.transfer
+    const resource = remote.resource
+    if (!resource) throw new Error('upload returned no resource handle')
+    const stream = await session.openResourceStream(resource)
+    const task = { session, stream, resource, cancel: new AbortController() }
+    this.active.set(id, task)
+    this.update(id, { status: 'transferring', updatedAt: Date.now() })
+    try {
+      const response = await fetch(Capacitor.convertFileSrc(transfer.localUri), { signal: task.cancel.signal })
+      if (!response.ok) throw new Error(`local upload file could not be read (${response.status})`)
+      const blob = await response.blob()
+      await sendUpload(stream, remote, blob, task.cancel.signal, (sent) => this.progress(id, sent))
+      this.update(id, { status: 'completed', transferredSize: transfer.totalSize, savedPath: target, updatedAt: Date.now(), bytesPerSecond: 0 })
+    } finally {
+      await this.closeTask(id, task)
     }
-    if (this._isSessionUsable(this._session)) return this._session
-    if (!machineId || !this._sessionResolver) {
-      throw new Error('Connect this machine before resuming the transfer')
-    }
-    const session = await this._sessionResolver(machineId)
-    if (session) this.setSession(session)
-    if (!this._isSessionUsable(this._session)) {
-      throw new Error('Native transfer bridge is not connected')
-    }
-    return this._session
   }
 
-  private _isSessionUsable(session: NativeTransferSession | null): session is NativeTransferSession {
-    if (!session) return false
-    return session.isAlive()
+  private async cancelRemote(task: ActiveTransfer): Promise<void> {
+    await task.session.execute(command('fileTransferCancel', create(TermxApiFile.FileTransferCancelCommandSchema, { transfer: task.resource }))).catch(() => undefined)
   }
 
-  private _measureSpeed(id: string, transferredSize: number, nativeSpeed?: number): {
-    bytesPerSecond: number
-    updatedAt: number
-  } {
+  private async closeTask(id: string, task: ActiveTransfer): Promise<void> {
+    if (this.active.get(id) === task) this.active.delete(id)
+    await task.stream.close().catch(() => undefined)
+    await task.session.close().catch(() => undefined)
+  }
+
+  private async session(machineId?: string): Promise<ProtoClientSession> {
+    if (!machineId || !this.resolver) throw new Error('Connect this machine before starting a transfer')
+    const session = await this.resolver(machineId)
+    if (!session?.isAlive()) throw new Error('Go client session is unavailable')
+    return session
+  }
+
+  private requiredTransfer(id: string, direction: TransferInfo['direction']): TransferInfo {
+    const transfer = this.transfers.find((item) => item.id === id)
+    if (!transfer || transfer.direction !== direction) throw new Error('transfer is unavailable')
+    return transfer
+  }
+
+  private progress(id: string, transferredSize: number): void {
+    const current = this.transfers.find((item) => item.id === id)
     const now = Date.now()
-    const previous = this._speedSamples.get(id)
-    if (typeof nativeSpeed === 'number' && Number.isFinite(nativeSpeed) && nativeSpeed >= 0) {
-      const bytesPerSecond = previous && previous.bytesPerSecond > 0
-        ? previous.bytesPerSecond * 0.75 + nativeSpeed * 0.25
-        : nativeSpeed
-      this._speedSamples.set(id, { bytesPerSecond, timestamp: now, transferredSize })
-      return { bytesPerSecond, updatedAt: now }
-    }
-
-    if (!previous) {
-      this._speedSamples.set(id, { bytesPerSecond: 0, timestamp: now, transferredSize })
-      return { bytesPerSecond: 0, updatedAt: now }
-    }
-
-    const elapsedSeconds = (now - previous.timestamp) / 1000
-    if (elapsedSeconds < 0.8) {
-      return { bytesPerSecond: previous.bytesPerSecond, updatedAt: previous.timestamp }
-    }
-
-    const deltaBytes = Math.max(0, transferredSize - previous.transferredSize)
-    const instantSpeed = deltaBytes / elapsedSeconds
-    const bytesPerSecond = deltaBytes > 0
-      ? previous.bytesPerSecond > 0
-        ? previous.bytesPerSecond * 0.75 + instantSpeed * 0.25
-        : instantSpeed
-      : previous.bytesPerSecond * 0.6
-
-    this._speedSamples.set(id, { bytesPerSecond, timestamp: now, transferredSize })
-    return { bytesPerSecond, updatedAt: now }
+    const elapsed = Math.max(1, now - (current?.updatedAt ?? now))
+    const speed = Math.max(0, transferredSize - (current?.transferredSize ?? 0)) * 1000 / elapsed
+    this.update(id, { transferredSize, bytesPerSecond: speed, updatedAt: now })
   }
 
-  private _addOrUpdate(info: TransferInfo): void {
-    const idx = this._transfers.findIndex((t) => t.id === info.id)
-    if (idx >= 0) {
-      this._transfers = this._transfers.map((t) => (t.id === info.id ? { ...t, ...info } : t))
-    } else {
-      this._transfers = [...this._transfers, info]
-    }
-    this._notify()
+  private fail(id: string, error: unknown): void {
+    if (error instanceof DOMException && error.name === 'AbortError') return
+    this.update(id, { status: 'failed', error: error instanceof Error ? error.message : String(error), updatedAt: Date.now(), bytesPerSecond: 0 })
   }
 
-  private _update(id: string, updates: Partial<TransferInfo>): void {
-    this._transfers = this._transfers.map((t) => (t.id === id ? { ...t, ...updates } : t))
-    this._notify()
+  private upsert(info: TransferInfo): void {
+    const index = this.transfers.findIndex((item) => item.id === info.id)
+    this.transfers = index < 0 ? [...this.transfers, info] : this.transfers.map((item) => item.id === info.id ? info : item)
+    this.notify()
   }
 
-  private _remove(id: string): void {
-    this._speedSamples.delete(id)
-    this._transfers = this._transfers.filter((t) => t.id !== id)
-    this._notify()
+  private update(id: string, patch: Partial<TransferInfo>): void {
+    this.transfers = this.transfers.map((item) => item.id === id ? { ...item, ...patch } : item)
+    this.notify()
   }
 
-  private _notify(): void {
-    this._snapshotVersion++
-    for (const fn of this._listeners) fn()
+  private notify(): void {
+    this.version += 1
+    for (const listener of this.listeners) listener()
   }
 }
 
-function canResumeStatus(status: TransferStatus): boolean {
-  return status === 'paused' || status === 'failed' || status === 'missing' || status === 'pending'
+async function receiveDownload(
+  stream: ProtoResourceStream,
+  transfer: TermxApiFile.FileTransferHandle,
+  signal: AbortSignal,
+  progress: (bytes: number) => void,
+): Promise<Blob> {
+  const chunks: Uint8Array[] = []
+  let offset = Number(transfer.offset)
+  let credit = 0
+  return await new Promise<Blob>((resolve, reject) => {
+    let closeSubscription: { close(): void } | null = null
+    const cleanup = () => {
+      subscription.close()
+      closeSubscription?.close()
+      signal.removeEventListener('abort', abort)
+    }
+    const abort = () => {
+      cleanup()
+      reject(new DOMException('Aborted', 'AbortError'))
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    const subscription = stream.subscribe((type, payload) => {
+      try {
+        if (type === TermxClientBinding.ResourceStreamFrameType.FILE_DATA) {
+          const data = decodeFileTransferDataPayload(payload)
+          if (data.offset !== offset || data.data.byteLength === 0 || data.data.byteLength > transfer.chunkBytes) throw new Error('download chunk is invalid')
+          chunks.push(data.data)
+          offset += data.data.byteLength
+          credit += data.data.byteLength
+          progress(offset)
+          if (credit >= Number(transfer.windowBytes)) {
+            const windowBytes = credit
+            credit = 0
+            void stream.send(TermxClientBinding.ResourceStreamFrameType.FILE_ACK, encodeFileTransferAckPayload({ offset, windowBytes })).catch(reject)
+          }
+        } else if (type === TermxClientBinding.ResourceStreamFrameType.FILE_FINISH) {
+          const finish = decodeFileTransferFinishPayload(payload)
+          if (finish.size !== Number(transfer.size) || offset !== finish.size) throw new Error('download completed with the wrong size')
+          cleanup()
+          const blob = new Blob(chunks.map((chunk) => chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength) as ArrayBuffer))
+          void verifyBlobDigest(blob, finish.sha256).then(() => resolve(blob), reject)
+        } else if (type === TermxClientBinding.ResourceStreamFrameType.ERROR) {
+          throw new Error(decodeFileStreamErrorPayload(payload))
+        }
+      } catch (error) {
+        cleanup()
+        reject(error)
+      }
+    })
+    closeSubscription = stream.subscribeClosed((error) => {
+      cleanup()
+      reject(error)
+    })
+  })
 }
 
-function downloadTaskId(machineId: string, filePath: string, fileSize: number): string {
-  const value = `${machineId}\u0000${filePath}\u0000${fileSize}`
-  let hash = 2166136261
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index)
-    hash = Math.imul(hash, 16777619)
+async function sendUpload(
+  stream: ProtoResourceStream,
+  transfer: TermxApiFile.FileTransferHandle,
+  blob: Blob,
+  signal: AbortSignal,
+  progress: (bytes: number) => void,
+): Promise<void> {
+  let offset = Number(transfer.offset)
+  let credit = Number(transfer.windowBytes)
+  let wake: (() => void) | null = null
+  let resultResolve: (() => void) | null = null
+  let resultReject: ((error: unknown) => void) | null = null
+  const result = new Promise<void>((resolve, reject) => { resultResolve = resolve; resultReject = reject })
+  const subscription = stream.subscribe((type, payload) => {
+    if (type === TermxClientBinding.ResourceStreamFrameType.FILE_ACK) {
+      const ack = decodeFileTransferAckPayload(payload)
+      if (ack.offset !== offset) { resultReject?.(new Error('upload ACK offset mismatch')); return }
+      credit += ack.windowBytes
+      wake?.()
+      wake = null
+    } else if (type === TermxClientBinding.ResourceStreamFrameType.FILE_RESULT) {
+      const completed = decodeFileTransferResultPayload(payload)
+      if (completed.size !== blob.size) {
+        resultReject?.(new Error('upload completed with the wrong size'))
+        return
+      }
+      resultResolve?.()
+    } else if (type === TermxClientBinding.ResourceStreamFrameType.ERROR) {
+      resultReject?.(new Error(decodeFileStreamErrorPayload(payload)))
+    }
+  })
+  const closeSubscription = stream.subscribeClosed((error) => {
+    wake?.()
+    wake = null
+    resultReject?.(error)
+  })
+  const abort = () => {
+    wake?.()
+    wake = null
+    resultReject?.(new DOMException('Aborted', 'AbortError'))
   }
-  return `download-${(hash >>> 0).toString(16).padStart(8, '0')}-${Date.now().toString(36)}`
-}
-
-function uniqueMachineIds(transfers: TransferInfo[]): string[] {
-  return Array.from(new Set(
-    transfers
-      .filter((transfer) => canResumeStatus(transfer.status))
-      .map((transfer) => transfer.machineId)
-      .filter((machineId): machineId is string => Boolean(machineId)),
-  ))
-}
-
-function normalizeTransferStatus(status: string): TransferStatus {
-  if (
-    status === 'pending' ||
-    status === 'transferring' ||
-    status === 'paused' ||
-    status === 'completed' ||
-    status === 'failed' ||
-    status === 'cancelled' ||
-    status === 'missing'
-  ) {
-    return status
+  signal.addEventListener('abort', abort, { once: true })
+  try {
+    while (offset < blob.size) {
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+      if (credit <= 0) await new Promise<void>((resolve) => { wake = resolve })
+      const length = Math.min(transfer.chunkBytes, credit, blob.size - offset)
+      const data = new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer())
+      const chunkOffset = offset
+      offset += data.byteLength
+      credit -= data.byteLength
+      await stream.send(TermxClientBinding.ResourceStreamFrameType.FILE_DATA, encodeFileTransferDataPayload({ offset: chunkOffset, data }))
+      progress(offset)
+    }
+    await stream.send(TermxClientBinding.ResourceStreamFrameType.FILE_FINISH_AUTO, new Uint8Array())
+    await result
+  } finally {
+    subscription.close()
+    closeSubscription.close()
+    signal.removeEventListener('abort', abort)
   }
-  return 'failed'
+}
+
+async function verifyBlobDigest(blob: Blob, expected: Uint8Array): Promise<void> {
+  if (expected.byteLength !== 32) throw new Error('download digest is invalid')
+  const actual = new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))
+  if (!bytesEqual(actual, expected)) throw new Error('download digest mismatch')
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false
+  let mismatch = 0
+  for (let index = 0; index < left.byteLength; index += 1) mismatch |= left[index]! ^ right[index]!
+  return mismatch === 0
+}
+
+function command(caseName: string, value: object) {
+  return create(TermxApiApplication.CommandEnvelopeSchema, { command: { case: caseName, value } } as never)
+}
+
+function canResume(status: TransferStatus): boolean { return status === 'paused' || status === 'failed' || status === 'missing' }
+
+function transferID(direction: string, machineId: string, path: string): string {
+  return `${direction}-${machineId}-${path}-${Date.now()}`
 }

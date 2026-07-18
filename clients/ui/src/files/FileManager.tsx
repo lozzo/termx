@@ -4,6 +4,7 @@ import { extension, fileEntryMenuSubtitle, fileEntryMeta, isMarkdownFile, joinPa
 import { isModelPreviewFile } from './modelFileTypes'
 import { FilePreviewSheet } from './preview/FilePreviewSheet'
 import type { RtcSession } from '../core/transport'
+import type { ProtoClientSession } from '../core/protoClientSession'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { PathBookmark } from './pathBookmarks'
 import 'highlight.js/styles/github.css'
@@ -15,7 +16,7 @@ import { AlertCircle, ArrowDownAZ, ArrowDownToLine, ArrowUpAZ, ArrowUpFromLine, 
 export interface FileManagerProps {
   machineId: string
   terminalId?: string | undefined
-  session: Pick<RtcSession, 'openApi' | 'openFileChannel' | 'getConnectionInfo'>
+  session: Pick<RtcSession, 'openApi' | 'openFileChannel' | 'getConnectionInfo'> | ProtoClientSession
   initialPath?: string | undefined
   className?: string | undefined
   active?: boolean | undefined

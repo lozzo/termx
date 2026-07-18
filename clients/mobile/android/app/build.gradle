@@ -25,7 +25,7 @@ android {
         test.resources.srcDir '../../../../shared/cloudcompanion/testdata'
         test.resources.srcDir '../../../../client/endpoint/testdata'
         main.proto.srcDir '../../../../proto'
-        debug.jniLibs.srcDir "$buildDir/generated/termxJniLibs"
+        main.jniLibs.srcDir "$buildDir/generated/termxJniLibs"
     }
     if (project.hasProperty("termxArmOnly")) {
         splits {
@@ -46,9 +46,13 @@ android {
     }
 }
 
+def termxAndroidGoTags = gradle.startParameter.taskNames.any { it.toLowerCase().contains("release") } ? "" : "termx_android_spike"
+
 tasks.register("buildTermxClientNative", Exec) {
     workingDir rootProject.projectDir
     commandLine file('../../../../scripts/build-android-client.sh').absolutePath, "$buildDir/generated/termxJniLibs"
+    environment "TERMX_ANDROID_GO_TAGS", termxAndroidGoTags
+    inputs.property "termxAndroidGoTags", termxAndroidGoTags
     inputs.files(
         fileTree('../../../../client'),
         fileTree('../../../../api_layer'),
@@ -62,7 +66,7 @@ tasks.register("buildTermxClientNative", Exec) {
     outputs.dir "$buildDir/generated/termxJniLibs"
 }
 
-tasks.matching { it.name == "preDebugBuild" }.configureEach {
+tasks.named("preBuild").configure {
     dependsOn tasks.named("buildTermxClientNative")
 }
 
@@ -75,9 +79,7 @@ repositories {
 dependencies {
     // termx NativeConnection dependencies
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
-    implementation 'io.github.webrtc-sdk:android:125.6422.07'
     implementation 'org.java-websocket:Java-WebSocket:1.5.6'
-    implementation 'com.google.code.gson:gson:2.10'
     implementation 'com.google.protobuf:protobuf-java:3.25.5'
     implementation 'org.bouncycastle:bcprov-jdk18on:1.79'
     implementation 'androidx.lifecycle:lifecycle-process:2.7.0'

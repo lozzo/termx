@@ -8,14 +8,8 @@ import com.termx.app.managed.ManagedCloudClientMetadata
 import com.termx.app.managed.ManagedCloudLoginFlow
 import com.termx.app.managed.ManagedCloudDevice
 import com.termx.app.managed.ManagedCloudModuleFactory
-import com.termx.app.managed.ManagedDialPolicy
 import com.termx.app.managed.ManagedEndpointFailure
-import com.termx.app.managed.ManagedEndpointResolution
-import com.termx.app.managed.ManagedEndpointSpec
-import com.termx.app.managed.ManagedPathQualitySummary
-import com.termx.app.managed.ManagedRoutePlan
-import com.termx.app.managed.ManagedSignalAnswer
-import com.termx.app.managed.ManagedSignalOffer
+import termx.cloud.v1.CloudCompanion
 
 /** OfficialManagedCloudFactory 是官方签名 APK 中唯一允许的私有 cloud module 入口。 */
 class OfficialManagedCloudFactory : ManagedCloudModuleFactory {
@@ -33,26 +27,13 @@ internal class OfficialManagedCloudAdapter(private val gateway: OfficialCloudGat
     override suspend fun currentAccount(): ManagedCloudAccount? = gateway.currentAccount()
     override suspend fun listDevices(): List<ManagedCloudDevice> = gateway.listDevices()
     override suspend fun logout() = gateway.logout()
+    override suspend fun resolveProto(request: CloudCompanion.ResolveEndpointRequest): CloudCompanion.ResolvedEndpoint = gateway.resolveProto(request)
+    override suspend fun createSignalingProto(request: CloudCompanion.CreateSignalingSessionRequest): List<CloudCompanion.SignalingEvent> = gateway.createSignalingProto(request)
+    override suspend fun acquireRelayProto(request: CloudCompanion.AcquireRelayLeaseRequest): CloudCompanion.RelayLease = gateway.acquireRelayProto(request)
+    override suspend fun planRouteProto(request: CloudCompanion.PlanManagedRouteRequest): CloudCompanion.ManagedRoutePlan = gateway.planRouteProto(request)
+    override suspend fun reportQualityProto(request: CloudCompanion.ReportPathQualityRequest): CloudCompanion.ReportPathQualityResponse = gateway.reportQualityProto(request)
+    override suspend fun reportOutcomeProto(request: CloudCompanion.ReportConnectionOutcomeRequest): CloudCompanion.ReportConnectionOutcomeResponse = gateway.reportOutcomeProto(request)
 
-    override suspend fun resolve(spec: ManagedEndpointSpec): ManagedEndpointResolution = gateway.resolve(spec)
-
-    override suspend fun createSignalingSession(
-        spec: ManagedEndpointSpec,
-        resolution: ManagedEndpointResolution,
-        offer: ManagedSignalOffer,
-        policy: ManagedDialPolicy,
-    ): ManagedSignalAnswer = gateway.createSignalingSession(spec, resolution, offer, policy)
-
-    override suspend fun reportPathQuality(summary: ManagedPathQualitySummary) {
-        summary.validate()
-        gateway.reportPathQuality(summary)
-    }
-
-    override suspend fun planManagedRoute(
-        spec: ManagedEndpointSpec,
-        resolution: ManagedEndpointResolution,
-        policy: ManagedDialPolicy,
-    ): ManagedRoutePlan = gateway.planManagedRoute(spec, resolution, policy)
 }
 
 /**
@@ -71,7 +52,12 @@ internal class OfficialCloudGateway(context: Context) {
         null
     }
 
-    suspend fun resolve(spec: ManagedEndpointSpec): ManagedEndpointResolution = configured().resolve(spec)
+    suspend fun resolveProto(request: CloudCompanion.ResolveEndpointRequest): CloudCompanion.ResolvedEndpoint = configured().resolveProto(request)
+    suspend fun createSignalingProto(request: CloudCompanion.CreateSignalingSessionRequest): List<CloudCompanion.SignalingEvent> = configured().createSignalingProto(request)
+    suspend fun acquireRelayProto(request: CloudCompanion.AcquireRelayLeaseRequest): CloudCompanion.RelayLease = configured().acquireRelayProto(request)
+    suspend fun planRouteProto(request: CloudCompanion.PlanManagedRouteRequest): CloudCompanion.ManagedRoutePlan = configured().planRouteProto(request)
+    suspend fun reportQualityProto(request: CloudCompanion.ReportPathQualityRequest): CloudCompanion.ReportPathQualityResponse = configured().reportQualityProto(request)
+    suspend fun reportOutcomeProto(request: CloudCompanion.ReportConnectionOutcomeRequest): CloudCompanion.ReportConnectionOutcomeResponse = configured().reportOutcomeProto(request)
 
     suspend fun beginLogin(metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow = configured().beginLogin(metadata)
     suspend fun claimLogin(userCode: String, metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow = configured().claimLogin(userCode, metadata)
@@ -79,21 +65,6 @@ internal class OfficialCloudGateway(context: Context) {
     suspend fun currentAccount(): ManagedCloudAccount? = configured().currentAccount()
     suspend fun listDevices(): List<ManagedCloudDevice> = configured().listDevices()
     suspend fun logout() = configured().logout()
-
-    suspend fun createSignalingSession(
-        spec: ManagedEndpointSpec,
-        resolution: ManagedEndpointResolution,
-        offer: ManagedSignalOffer,
-        policy: ManagedDialPolicy,
-    ): ManagedSignalAnswer = configured().createSignalingSession(spec, resolution, offer, policy)
-
-    suspend fun reportPathQuality(summary: ManagedPathQualitySummary) = configured().reportPathQuality(summary)
-
-    suspend fun planManagedRoute(
-        spec: ManagedEndpointSpec,
-        resolution: ManagedEndpointResolution,
-        policy: ManagedDialPolicy,
-    ): ManagedRoutePlan = configured().planManagedRoute(spec, resolution, policy)
 
     private fun configured(): DevCloudMobileGateway = development
         ?: throw ManagedEndpointFailure("login_required", "Official mobile cloud account session is not configured")

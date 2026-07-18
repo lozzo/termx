@@ -95,6 +95,8 @@ export interface TerminalProtocolChannel {
   readonly label: string
   readonly readyState: 'connecting' | 'open' | 'closing' | 'closed'
   send(data: Uint8Array): void
+  sendInput?(data: string, size?: TerminalInputSize): void
+  sendResize?(cols: number, rows: number): void
   close(): void
 }
 
@@ -374,7 +376,9 @@ export class TerminalClient {
     }
 
     try {
-      channel.send(new TextEncoder().encode(JSON.stringify(message)))
+	  if (message.type === 'input' && channel.sendInput) channel.sendInput(message.data, message.cols && message.rows ? { cols: message.cols, rows: message.rows } : undefined)
+	  else if (message.type === 'resize' && channel.sendResize) channel.sendResize(message.cols, message.rows)
+	  else channel.send(new TextEncoder().encode(JSON.stringify(message)))
       return true
     } catch (err) {
       this.log('send_message_failed', {

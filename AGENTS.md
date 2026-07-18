@@ -101,6 +101,7 @@
 - 浏览器必须使用 Go/WASM Client Engine，但浏览器 `RTCPeerConnection`、`RTCDataChannel`、WebCrypto、IndexedDB 和页面 lifecycle 必须由薄 JavaScript/TypeScript adapter 提供。不得要求当前 native Pion WebRTC 实现原样编译到浏览器，也不得因此在 TypeScript 保留第二套认证、协议、API codec、session/resource 或 fallback 真值。
 - 跨 JNI/WASM 边界的业务 payload 只能是 versioned protobuf bytes；平台可以从同一份 schema 生成语言类型，但不得手写镜像 DTO。外部资源只能以数值 opaque handle 标识，禁止跨边界传递 Go pointer、channel、interface 或内部 struct。
 - binding 调用必须是可取消的异步模型。Android process/activity 重建、网络切换和浏览器 tab suspend/resume 后必须由 Go runtime 建立新的 session generation；不得复用 stale DataChannel、resource handle 或旧授权状态。
+- Android 锁屏或进程进入后台时，即使 JNI/Go 线程仍可运行，WebView 也视为不可消费事件；native owner 必须关闭当前 Go engine、loopback bridge、session/resource 与事件泵，禁止后台维持第二套重连或积累无界事件。WebView 恢复时必须先创建进程内严格递增的新 generation，再通知 UI 重建 binding；冻结前的 socket、operation/session/resource handle 和迟到 callback 一律失效，不得复活或重放到新 generation。
 - DeviceIdentity/credential 私钥不得以裸字节长期暴露给 Kotlin/JavaScript。Go Client Engine 必须通过 signer/credential port 使用 Android Keystore 或 WebCrypto/IndexedDB 等平台实现，并明确不可导出 key、签名失败和用户/系统取消语义。
 - Web DTLS channel binding 必须有独立安全 harness，证明 remote SDP fingerprint、浏览器建立的 peer connection 与 Go remote-auth transcript 绑定一致；JavaScript 提供的未经验证字符串不能直接成为认证真值。
 - `core/` 可以拥有内部领域 struct、value object 和状态机，但这些类型不得成为插件/客户端契约，也不得为了复用而移动到所谓 shared API DTO 目录。

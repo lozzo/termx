@@ -54,6 +54,8 @@ message FileTransferHandle {
   int64 modified_at_unix_nano = 5;
   OperationStamp operation = 6;
   FileUploadResumeHandle resume = 7;
+  uint32 chunk_bytes = 8;
+  int64 window_bytes = 9;
 }
 
 message FileTransferOpenResult { FileTransferHandle transfer = 1; }

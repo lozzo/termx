@@ -5,6 +5,7 @@ package managed
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -337,6 +338,49 @@ func (session *Session) ApplicationEvents(ctx context.Context) (<-chan *apipb.Ev
 	return session.protocol.ApplicationEvents(ctx)
 }
 
+// OpenResourceStream 把 Proto resource handle 绑定到当前 connection 的私有 framing channel。
+// channel 编号不跨出该 adapter；跨语言调用方只能持有 binding 分配的 opaque stream handle。
+func (session *Session) OpenResourceStream(resource *apipb.ResourceHandle) (clientruntime.ResourceStream, error) {
+	channel, ok := session.protocol.ApplicationResourceChannel(resource)
+	if !ok {
+		return nil, fmt.Errorf("application resource is not bound to this session")
+	}
+	frames, stop := session.protocol.Stream(channel)
+	return &managedResourceStream{client: session.protocol, channel: channel, frames: frames, stop: stop}, nil
+}
+
+type managedResourceStream struct {
+	client  *internalprotocol.Client
+	channel uint16
+	frames  <-chan internalprotocol.StreamFrame
+	stop    func()
+	once    sync.Once
+}
+
+func (stream *managedResourceStream) Receive(ctx context.Context) (uint8, []byte, error) {
+	select {
+	case <-ctx.Done():
+		return 0, nil, ctx.Err()
+	case frame, ok := <-stream.frames:
+		if !ok {
+			return 0, nil, io.EOF
+		}
+		return frame.Type, append([]byte(nil), frame.Payload...), nil
+	}
+}
+
+func (stream *managedResourceStream) Send(ctx context.Context, typ uint8, payload []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return stream.client.SendFileFrame(stream.channel, typ, payload)
+}
+
+func (stream *managedResourceStream) Close() error {
+	stream.once.Do(stream.stop)
+	return nil
+}
+
 // FramingClient 返回当前 authenticated connection 的内部 framing client。
 // 该入口只允许 Go attachment/file stream adapter 使用；业务 command 仍必须走 ApplicationReadySession，平台 binding 不得导出此对象。
 func (session *Session) FramingClient() *internalprotocol.Client {
@@ -349,3 +393,4 @@ func (session *Session) FramingClient() *internalprotocol.Client {
 var _ clientruntime.ReadySession = (*Session)(nil)
 var _ clientruntime.ProtoApplicationExecutor = (*Session)(nil)
 var _ clientruntime.ApplicationReadySession = (*Session)(nil)
+var _ clientruntime.ResourceStreamSession = (*Session)(nil)

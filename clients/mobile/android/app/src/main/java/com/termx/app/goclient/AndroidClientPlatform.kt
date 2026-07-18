@@ -1,0 +1,141 @@
+package com.termx.app.goclient
+
+import android.content.Context
+import com.google.protobuf.ByteString
+import com.termx.app.managed.AndroidClientAccessCredentialStore
+import com.termx.app.managed.ManagedCloudAdapter
+import com.termx.app.managed.ManagedCloudAssembly
+import com.termx.app.managed.ManagedEndpointFailure
+import kotlinx.coroutines.runBlocking
+import termx.api.v1.Common
+import termx.client.binding.v1.ClientBinding
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * AndroidClientPlatform 是 Go Client Engine 的 Android primitive adapter。
+ * 它只处理 bindingpb PlatformRequest；连接、认证、Hello、API、generation 和重连真值全部留在 Go。
+ */
+class AndroidClientPlatform(
+    context: Context,
+    private val engineHandle: Long,
+    private val cloud: ManagedCloudAdapter = ManagedCloudAssembly.create(context.applicationContext),
+    private val credentials: AndroidClientAccessCredentialStore = AndroidClientAccessCredentialStore(context.applicationContext),
+) : AutoCloseable {
+    private val active = AtomicBoolean(true)
+    private val executor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "termx-go-platform").apply { isDaemon = true }
+    }
+    private val pump: Future<*> = executor.submit(::runPump)
+
+    override fun close() {
+        if (!active.compareAndSet(true, false)) return
+        executor.shutdownNow()
+        runCatching { pump.get() }
+    }
+
+    private fun runPump() {
+        while (active.get()) {
+            val payload = try {
+                GoClientNative.nextPlatformRequest(engineHandle, 0)
+            } catch (_: IllegalStateException) {
+                return
+            }
+            val request = try {
+                ClientBinding.PlatformRequest.parseFrom(payload)
+            } catch (_: Exception) {
+                return
+            }
+            val response = dispatch(request)
+            try {
+                GoClientNative.completePlatformRequest(engineHandle, response.toByteArray())
+            } catch (_: IllegalStateException) {
+                return
+            }
+        }
+    }
+
+    private fun dispatch(request: ClientBinding.PlatformRequest): ClientBinding.PlatformResponse {
+        val response = ClientBinding.PlatformResponse.newBuilder().setRequestId(request.requestId)
+        return try {
+            when (request.requestCase) {
+                ClientBinding.PlatformRequest.RequestCase.CREDENTIAL_PREPARE ->
+                    response.setCredential(credentials.prepareRecord(
+                        request.credentialPrepare.credentialRef,
+                        request.credentialPrepare.endpointId,
+                    ))
+                ClientBinding.PlatformRequest.RequestCase.CREDENTIAL_RESOLVE ->
+                    response.setCredential(credentials.resolveRecord(
+                        request.credentialResolve.credentialRef,
+                        request.credentialResolve.endpointId,
+                    ))
+                ClientBinding.PlatformRequest.RequestCase.CREDENTIAL_DELETE -> {
+                    credentials.delete(request.credentialDelete.credentialRef)
+                }
+                ClientBinding.PlatformRequest.RequestCase.CREDENTIAL_SIGN ->
+                    response.setCredentialSign(ClientBinding.CredentialSignResponse.newBuilder()
+                        .setSignature(ByteString.copyFrom(credentials.sign(
+                            request.credentialSign.credentialRef,
+                            request.credentialSign.payload.toByteArray(),
+                        ))))
+                ClientBinding.PlatformRequest.RequestCase.CREDENTIAL_BIND ->
+                    response.setCredential(credentials.bindRecord(
+                        request.credentialBind.credentialRef,
+                        request.credentialBind.endpointId,
+                        request.credentialBind.capabilityGrant,
+                    ))
+                ClientBinding.PlatformRequest.RequestCase.CLOUD_RESOLVE_ENDPOINT ->
+                    response.setCloudResolvedEndpoint(runBlocking { cloud.resolveProto(request.cloudResolveEndpoint) })
+                ClientBinding.PlatformRequest.RequestCase.CLOUD_CREATE_SIGNALING ->
+                    response.setCloudSignaling(ClientBinding.SignalingEvents.newBuilder()
+                        .addAllEvents(runBlocking { cloud.createSignalingProto(request.cloudCreateSignaling) }))
+                ClientBinding.PlatformRequest.RequestCase.CLOUD_ACQUIRE_RELAY ->
+                    response.setCloudRelayLease(runBlocking { cloud.acquireRelayProto(request.cloudAcquireRelay) })
+                ClientBinding.PlatformRequest.RequestCase.CLOUD_PLAN_ROUTE ->
+                    response.setCloudRoutePlan(runBlocking { cloud.planRouteProto(request.cloudPlanRoute) })
+                ClientBinding.PlatformRequest.RequestCase.CLOUD_REPORT_QUALITY ->
+                    response.setCloudQualityReported(runBlocking { cloud.reportQualityProto(request.cloudReportQuality) })
+                ClientBinding.PlatformRequest.RequestCase.CLOUD_REPORT_OUTCOME ->
+                    response.setCloudOutcomeReported(runBlocking { cloud.reportOutcomeProto(request.cloudReportOutcome) })
+                ClientBinding.PlatformRequest.RequestCase.REQUEST_NOT_SET ->
+                    throw ManagedEndpointFailure("protocol", "platform request payload is missing")
+            }
+            response.build()
+        } catch (failure: ManagedEndpointFailure) {
+            response.setError(platformError(failure.code, failure.message ?: failure.code)).build()
+        } catch (_: Throwable) {
+            response.setError(platformError("temporary", "Android platform request failed")).build()
+        }
+    }
+
+    private fun platformError(code: String, message: String): Common.ApiError {
+        val apiCode = when (code) {
+            "protocol" -> Common.ApiErrorCode.API_ERROR_CODE_INVALID_REQUEST
+            "unauthenticated", "login_required", "capability_invalid", "capability_expired" ->
+                Common.ApiErrorCode.API_ERROR_CODE_UNAUTHORIZED
+            "cancelled" -> Common.ApiErrorCode.API_ERROR_CODE_CANCELLED
+            "route_unavailable", "temporary", "companion_missing" -> Common.ApiErrorCode.API_ERROR_CODE_UNAVAILABLE
+            else -> Common.ApiErrorCode.API_ERROR_CODE_INTERNAL
+        }
+        return Common.ApiError.newBuilder()
+            .setCode(apiCode)
+            .setMessage(message)
+            .setRetryable(apiCode == Common.ApiErrorCode.API_ERROR_CODE_UNAVAILABLE)
+            .setAttempted(true)
+            .build()
+    }
+}
+
+/** AndroidGoClientEngine owns one production Go engine and its platform pump. */
+class AndroidGoClientEngine(context: Context) : AutoCloseable {
+    val handle: Long = GoClientNative.create()
+    private val platform = AndroidClientPlatform(context, handle)
+    private val closed = AtomicBoolean(false)
+
+    override fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        GoClientNative.close(handle)
+        platform.close()
+    }
+}

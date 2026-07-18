@@ -6,7 +6,17 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { ApiError, ApiVersion, EndpointSessionStamp, OperationStamp, RequestContext, ResourceHandle } from "./common_pb";
 import { file_apipb_common } from "./common_pb";
-import type { PathListDirectoriesCommand, PathListDirectoriesResult, TerminalAttachCommand, TerminalAttachResult, TerminalCreateCommand, TerminalCreateResult, TerminalDefaultsCommand, TerminalDefaultsResult, TerminalDetachCommand, TerminalGetCommand, TerminalGetResult, TerminalInputCommand, TerminalKillCommand, TerminalLifecycleEvent, TerminalListCommand, TerminalListResult, TerminalRemoveCommand, TerminalResizeCommand, TerminalResizeControlEvent, TerminalResizeLockCommand, TerminalResizeResult, TerminalRestartCommand, TerminalSetMetadataCommand, TerminalSetTagsCommand } from "./terminal_pb";
+import type { ClientAccessIdentityCommand, ClientAccessIdentityResult, ClientAccessListCommand, ClientAccessListResult, ClientAccessRevokeCommand, ClientAccessRevokeResult, ClientAccessTicketCreateCommand, ClientAccessTicketCreateResult, RemoteLocalDisableCommand, RemoteLocalEnableCommand, RemoteLocalStatusCommand, RemoteLocalStatusResult, RemotePairStartCommand, RemotePairStartResult, RemoteStatusCommand, RemoteStatusResult } from "./access_remote_pb";
+import { file_apipb_access_remote } from "./access_remote_pb";
+import type { EventSubscribeCommand, EventSubscriptionResult } from "./events_pb";
+import { file_apipb_events } from "./events_pb";
+import type { FileBatchResult, FileCopyCommand, FileDeleteCommand, FileDownloadOpenCommand, FileListCommand, FileListResult, FileMkdirCommand, FileMoveCommand, FileOperationResult, FilePreviewCommand, FilePreviewResult, FileRenameCommand, FileStatCommand, FileStatResult, FileTransferCancelCommand, FileTransferCancelResult, FileTransferCompletedEvent, FileTransferOpenResult, FileUploadOpenCommand } from "./file_pb";
+import { file_apipb_file } from "./file_pb";
+import type { HistoryBacklogStatusCommand, HistoryBacklogStatusResult, HistoryCopyCommand, HistoryCopyResult, HistoryReleaseCommand, HistoryWindowCommand, HistoryWindowResult, LiveInvalidatedEvent, LiveInvalidationNextCommand, LiveInvalidationResult, LiveScreenGetCommand, NativeScreenResult } from "./history_pb";
+import { file_apipb_history } from "./history_pb";
+import type { StorageChangedEvent, StorageDeleteCommand, StorageDeleteResult, StorageGetCommand, StorageGetResult, StorageListCommand, StorageListResult, StoragePutCommand, StoragePutResult } from "./storage_pb";
+import { file_apipb_storage } from "./storage_pb";
+import type { PathListDirectoriesCommand, PathListDirectoriesResult, TerminalAttachCommand, TerminalAttachResult, TerminalCreateCommand, TerminalCreateResult, TerminalDefaultsCommand, TerminalDefaultsResult, TerminalDetachCommand, TerminalGetCommand, TerminalGetResult, TerminalInputCommand, TerminalKillCommand, TerminalLifecycleEvent, TerminalListCommand, TerminalListResult, TerminalRemoveCommand, TerminalResizeCommand, TerminalResizeLockCommand, TerminalResizeResult, TerminalRestartCommand, TerminalSetMetadataCommand, TerminalSetTagsCommand } from "./terminal_pb";
 import { file_apipb_terminal } from "./terminal_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -14,7 +24,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file apipb/application.proto.
  */
 export const file_apipb_application: GenFile = /*@__PURE__*/
-  fileDesc("ChdhcGlwYi9hcHBsaWNhdGlvbi5wcm90bxIMdGVybXguYXBpLnYxIk8KFkNhbmNlbE9wZXJhdGlvbkNvbW1hbmQSLwoJb3BlcmF0aW9uGAIgASgLMhwudGVybXguYXBpLnYxLk9wZXJhdGlvblN0YW1wSgQIARACIk4KFlJlbGVhc2VSZXNvdXJjZUNvbW1hbmQSLgoIcmVzb3VyY2UYAiABKAsyHC50ZXJteC5hcGkudjEuUmVzb3VyY2VIYW5kbGVKBAgBEAIipwkKD0NvbW1hbmRFbnZlbG9wZRItCgdjb250ZXh0GAEgASgLMhwudGVybXguYXBpLnYxLlJlcXVlc3RDb250ZXh0EkAKEGNhbmNlbF9vcGVyYXRpb24YCiABKAsyJC50ZXJteC5hcGkudjEuQ2FuY2VsT3BlcmF0aW9uQ29tbWFuZEgAEkAKEHJlbGVhc2VfcmVzb3VyY2UYCyABKAsyJC50ZXJteC5hcGkudjEuUmVsZWFzZVJlc291cmNlQ29tbWFuZEgAEkIKEXRlcm1pbmFsX2RlZmF1bHRzGBQgASgLMiUudGVybXguYXBpLnYxLlRlcm1pbmFsRGVmYXVsdHNDb21tYW5kSAASPgoPdGVybWluYWxfY3JlYXRlGBUgASgLMiMudGVybXguYXBpLnYxLlRlcm1pbmFsQ3JlYXRlQ29tbWFuZEgAEjoKDXRlcm1pbmFsX2xpc3QYFiABKAsyIS50ZXJteC5hcGkudjEuVGVybWluYWxMaXN0Q29tbWFuZEgAEjgKDHRlcm1pbmFsX2dldBgXIAEoCzIgLnRlcm14LmFwaS52MS5UZXJtaW5hbEdldENvbW1hbmRIABJAChB0ZXJtaW5hbF9yZXN0YXJ0GBggASgLMiQudGVybXguYXBpLnYxLlRlcm1pbmFsUmVzdGFydENvbW1hbmRIABI6Cg10ZXJtaW5hbF9raWxsGBkgASgLMiEudGVybXguYXBpLnYxLlRlcm1pbmFsS2lsbENvbW1hbmRIABI+Cg90ZXJtaW5hbF9yZW1vdmUYGiABKAsyIy50ZXJteC5hcGkudjEuVGVybWluYWxSZW1vdmVDb21tYW5kSAASSQoVdGVybWluYWxfc2V0X21ldGFkYXRhGBsgASgLMigudGVybXguYXBpLnYxLlRlcm1pbmFsU2V0TWV0YWRhdGFDb21tYW5kSAASQQoRdGVybWluYWxfc2V0X3RhZ3MYHCABKAsyJC50ZXJteC5hcGkudjEuVGVybWluYWxTZXRUYWdzQ29tbWFuZEgAEj4KD3Rlcm1pbmFsX2F0dGFjaBgdIAEoCzIjLnRlcm14LmFwaS52MS5UZXJtaW5hbEF0dGFjaENvbW1hbmRIABI+Cg90ZXJtaW5hbF9kZXRhY2gYHiABKAsyIy50ZXJteC5hcGkudjEuVGVybWluYWxEZXRhY2hDb21tYW5kSAASPAoOdGVybWluYWxfaW5wdXQYHyABKAsyIi50ZXJteC5hcGkudjEuVGVybWluYWxJbnB1dENvbW1hbmRIABI+Cg90ZXJtaW5hbF9yZXNpemUYICABKAsyIy50ZXJteC5hcGkudjEuVGVybWluYWxSZXNpemVDb21tYW5kSAASRwoUdGVybWluYWxfcmVzaXplX2xvY2sYISABKAsyJy50ZXJteC5hcGkudjEuVGVybWluYWxSZXNpemVMb2NrQ29tbWFuZEgAEkkKFXBhdGhfbGlzdF9kaXJlY3RvcmllcxgiIAEoCzIoLnRlcm14LmFwaS52MS5QYXRoTGlzdERpcmVjdG9yaWVzQ29tbWFuZEgAQgkKB2NvbW1hbmQiEwoRQWNrbm93bGVkZ2VSZXN1bHQiiQUKDlJlc3VsdEVudmVsb3BlEhIKCnJlcXVlc3RfaWQYASABKAkSOgoOb3JpZ2luX3Nlc3Npb24YAiABKAsyIi50ZXJteC5hcGkudjEuRW5kcG9pbnRTZXNzaW9uU3RhbXASNgoLYWNrbm93bGVkZ2UYCiABKAsyHy50ZXJteC5hcGkudjEuQWNrbm93bGVkZ2VSZXN1bHRIABInCgVlcnJvchgLIAEoCzIWLnRlcm14LmFwaS52MS5BcGlFcnJvckgAEkEKEXRlcm1pbmFsX2RlZmF1bHRzGBQgASgLMiQudGVybXguYXBpLnYxLlRlcm1pbmFsRGVmYXVsdHNSZXN1bHRIABI9Cg90ZXJtaW5hbF9jcmVhdGUYFSABKAsyIi50ZXJteC5hcGkudjEuVGVybWluYWxDcmVhdGVSZXN1bHRIABI5Cg10ZXJtaW5hbF9saXN0GBYgASgLMiAudGVybXguYXBpLnYxLlRlcm1pbmFsTGlzdFJlc3VsdEgAEjcKDHRlcm1pbmFsX2dldBgXIAEoCzIfLnRlcm14LmFwaS52MS5UZXJtaW5hbEdldFJlc3VsdEgAEj0KD3Rlcm1pbmFsX2F0dGFjaBgYIAEoCzIiLnRlcm14LmFwaS52MS5UZXJtaW5hbEF0dGFjaFJlc3VsdEgAEj0KD3Rlcm1pbmFsX3Jlc2l6ZRgZIAEoCzIiLnRlcm14LmFwaS52MS5UZXJtaW5hbFJlc2l6ZVJlc3VsdEgAEkgKFXBhdGhfbGlzdF9kaXJlY3RvcmllcxgaIAEoCzInLnRlcm14LmFwaS52MS5QYXRoTGlzdERpcmVjdG9yaWVzUmVzdWx0SABCCAoGcmVzdWx0IkoKF09wZXJhdGlvbkNhbmNlbGxlZEV2ZW50Ei8KCW9wZXJhdGlvbhgBIAEoCzIcLnRlcm14LmFwaS52MS5PcGVyYXRpb25TdGFtcCJHChVSZXNvdXJjZVJlbGVhc2VkRXZlbnQSLgoIcmVzb3VyY2UYASABKAsyHC50ZXJteC5hcGkudjEuUmVzb3VyY2VIYW5kbGUiywMKDUV2ZW50RW52ZWxvcGUSEAoIZXZlbnRfaWQYASABKAkSGwoTdGltZXN0YW1wX3VuaXhfbmFubxgCIAEoAxItCgthcGlfdmVyc2lvbhgDIAEoCzIYLnRlcm14LmFwaS52MS5BcGlWZXJzaW9uEjoKDm9yaWdpbl9zZXNzaW9uGAQgASgLMiIudGVybXguYXBpLnYxLkVuZHBvaW50U2Vzc2lvblN0YW1wEkQKE29wZXJhdGlvbl9jYW5jZWxsZWQYCiABKAsyJS50ZXJteC5hcGkudjEuT3BlcmF0aW9uQ2FuY2VsbGVkRXZlbnRIABJAChFyZXNvdXJjZV9yZWxlYXNlZBgLIAEoCzIjLnRlcm14LmFwaS52MS5SZXNvdXJjZVJlbGVhc2VkRXZlbnRIABJCChJ0ZXJtaW5hbF9saWZlY3ljbGUYFCABKAsyJC50ZXJteC5hcGkudjEuVGVybWluYWxMaWZlY3ljbGVFdmVudEgAEksKF3Rlcm1pbmFsX3Jlc2l6ZV9jb250cm9sGBUgASgLMigudGVybXguYXBpLnYxLlRlcm1pbmFsUmVzaXplQ29udHJvbEV2ZW50SABCBwoFZXZlbnRCJVojZ2l0aHViLmNvbS9sb3p6b3cvdGVybXgvcHJvdG8vYXBpcGJiBnByb3RvMw", [file_apipb_common, file_apipb_terminal]);
+  fileDesc("ChdhcGlwYi9hcHBsaWNhdGlvbi5wcm90bxIMdGVybXguYXBpLnYxIk8KFkNhbmNlbE9wZXJhdGlvbkNvbW1hbmQSLwoJb3BlcmF0aW9uGAIgASgLMhwudGVybXguYXBpLnYxLk9wZXJhdGlvblN0YW1wSgQIARACIk4KFlJlbGVhc2VSZXNvdXJjZUNvbW1hbmQSLgoIcmVzb3VyY2UYAiABKAsyHC50ZXJteC5hcGkudjEuUmVzb3VyY2VIYW5kbGVKBAgBEAIi5hgKD0NvbW1hbmRFbnZlbG9wZRItCgdjb250ZXh0GAEgASgLMhwudGVybXguYXBpLnYxLlJlcXVlc3RDb250ZXh0EkAKEGNhbmNlbF9vcGVyYXRpb24YCiABKAsyJC50ZXJteC5hcGkudjEuQ2FuY2VsT3BlcmF0aW9uQ29tbWFuZEgAEkAKEHJlbGVhc2VfcmVzb3VyY2UYCyABKAsyJC50ZXJteC5hcGkudjEuUmVsZWFzZVJlc291cmNlQ29tbWFuZEgAEkIKEXRlcm1pbmFsX2RlZmF1bHRzGBQgASgLMiUudGVybXguYXBpLnYxLlRlcm1pbmFsRGVmYXVsdHNDb21tYW5kSAASPgoPdGVybWluYWxfY3JlYXRlGBUgASgLMiMudGVybXguYXBpLnYxLlRlcm1pbmFsQ3JlYXRlQ29tbWFuZEgAEjoKDXRlcm1pbmFsX2xpc3QYFiABKAsyIS50ZXJteC5hcGkudjEuVGVybWluYWxMaXN0Q29tbWFuZEgAEjgKDHRlcm1pbmFsX2dldBgXIAEoCzIgLnRlcm14LmFwaS52MS5UZXJtaW5hbEdldENvbW1hbmRIABJAChB0ZXJtaW5hbF9yZXN0YXJ0GBggASgLMiQudGVybXguYXBpLnYxLlRlcm1pbmFsUmVzdGFydENvbW1hbmRIABI6Cg10ZXJtaW5hbF9raWxsGBkgASgLMiEudGVybXguYXBpLnYxLlRlcm1pbmFsS2lsbENvbW1hbmRIABI+Cg90ZXJtaW5hbF9yZW1vdmUYGiABKAsyIy50ZXJteC5hcGkudjEuVGVybWluYWxSZW1vdmVDb21tYW5kSAASSQoVdGVybWluYWxfc2V0X21ldGFkYXRhGBsgASgLMigudGVybXguYXBpLnYxLlRlcm1pbmFsU2V0TWV0YWRhdGFDb21tYW5kSAASQQoRdGVybWluYWxfc2V0X3RhZ3MYHCABKAsyJC50ZXJteC5hcGkudjEuVGVybWluYWxTZXRUYWdzQ29tbWFuZEgAEj4KD3Rlcm1pbmFsX2F0dGFjaBgdIAEoCzIjLnRlcm14LmFwaS52MS5UZXJtaW5hbEF0dGFjaENvbW1hbmRIABI+Cg90ZXJtaW5hbF9kZXRhY2gYHiABKAsyIy50ZXJteC5hcGkudjEuVGVybWluYWxEZXRhY2hDb21tYW5kSAASPAoOdGVybWluYWxfaW5wdXQYHyABKAsyIi50ZXJteC5hcGkudjEuVGVybWluYWxJbnB1dENvbW1hbmRIABI+Cg90ZXJtaW5hbF9yZXNpemUYICABKAsyIy50ZXJteC5hcGkudjEuVGVybWluYWxSZXNpemVDb21tYW5kSAASRwoUdGVybWluYWxfcmVzaXplX2xvY2sYISABKAsyJy50ZXJteC5hcGkudjEuVGVybWluYWxSZXNpemVMb2NrQ29tbWFuZEgAEkkKFXBhdGhfbGlzdF9kaXJlY3RvcmllcxgiIAEoCzIoLnRlcm14LmFwaS52MS5QYXRoTGlzdERpcmVjdG9yaWVzQ29tbWFuZEgAEjwKDmhpc3Rvcnlfd2luZG93GCggASgLMiIudGVybXguYXBpLnYxLkhpc3RvcnlXaW5kb3dDb21tYW5kSAASOAoMaGlzdG9yeV9jb3B5GCkgASgLMiAudGVybXguYXBpLnYxLkhpc3RvcnlDb3B5Q29tbWFuZEgAEj4KD2hpc3RvcnlfcmVsZWFzZRgqIAEoCzIjLnRlcm14LmFwaS52MS5IaXN0b3J5UmVsZWFzZUNvbW1hbmRIABJLChZoaXN0b3J5X2JhY2tsb2dfc3RhdHVzGCsgASgLMikudGVybXguYXBpLnYxLkhpc3RvcnlCYWNrbG9nU3RhdHVzQ29tbWFuZEgAEj0KD2xpdmVfc2NyZWVuX2dldBgsIAEoCzIiLnRlcm14LmFwaS52MS5MaXZlU2NyZWVuR2V0Q29tbWFuZEgAEksKFmxpdmVfaW52YWxpZGF0aW9uX25leHQYLSABKAsyKS50ZXJteC5hcGkudjEuTGl2ZUludmFsaWRhdGlvbk5leHRDb21tYW5kSAASPgoPZXZlbnRfc3Vic2NyaWJlGC4gASgLMiMudGVybXguYXBpLnYxLkV2ZW50U3Vic2NyaWJlQ29tbWFuZEgAEjIKCWZpbGVfbGlzdBg8IAEoCzIdLnRlcm14LmFwaS52MS5GaWxlTGlzdENvbW1hbmRIABIyCglmaWxlX3N0YXQYPSABKAsyHS50ZXJteC5hcGkudjEuRmlsZVN0YXRDb21tYW5kSAASOAoMZmlsZV9wcmV2aWV3GD4gASgLMiAudGVybXguYXBpLnYxLkZpbGVQcmV2aWV3Q29tbWFuZEgAEjQKCmZpbGVfbWtkaXIYPyABKAsyHi50ZXJteC5hcGkudjEuRmlsZU1rZGlyQ29tbWFuZEgAEjYKC2ZpbGVfcmVuYW1lGEAgASgLMh8udGVybXguYXBpLnYxLkZpbGVSZW5hbWVDb21tYW5kSAASNgoLZmlsZV9kZWxldGUYQSABKAsyHy50ZXJteC5hcGkudjEuRmlsZURlbGV0ZUNvbW1hbmRIABIyCglmaWxlX2NvcHkYQiABKAsyHS50ZXJteC5hcGkudjEuRmlsZUNvcHlDb21tYW5kSAASMgoJZmlsZV9tb3ZlGEMgASgLMh0udGVybXguYXBpLnYxLkZpbGVNb3ZlQ29tbWFuZEgAEkMKEmZpbGVfZG93bmxvYWRfb3BlbhhEIAEoCzIlLnRlcm14LmFwaS52MS5GaWxlRG93bmxvYWRPcGVuQ29tbWFuZEgAEj8KEGZpbGVfdXBsb2FkX29wZW4YRSABKAsyIy50ZXJteC5hcGkudjEuRmlsZVVwbG9hZE9wZW5Db21tYW5kSAASRwoUZmlsZV90cmFuc2Zlcl9jYW5jZWwYRiABKAsyJy50ZXJteC5hcGkudjEuRmlsZVRyYW5zZmVyQ2FuY2VsQ29tbWFuZEgAEjYKC3N0b3JhZ2VfZ2V0GFAgASgLMh8udGVybXguYXBpLnYxLlN0b3JhZ2VHZXRDb21tYW5kSAASNgoLc3RvcmFnZV9wdXQYUSABKAsyHy50ZXJteC5hcGkudjEuU3RvcmFnZVB1dENvbW1hbmRIABI8Cg5zdG9yYWdlX2RlbGV0ZRhSIAEoCzIiLnRlcm14LmFwaS52MS5TdG9yYWdlRGVsZXRlQ29tbWFuZEgAEjgKDHN0b3JhZ2VfbGlzdBhTIAEoCzIgLnRlcm14LmFwaS52MS5TdG9yYWdlTGlzdENvbW1hbmRIABJLChZjbGllbnRfYWNjZXNzX2lkZW50aXR5GGQgASgLMikudGVybXguYXBpLnYxLkNsaWVudEFjY2Vzc0lkZW50aXR5Q29tbWFuZEgAEkMKEmNsaWVudF9hY2Nlc3NfbGlzdBhlIAEoCzIlLnRlcm14LmFwaS52MS5DbGllbnRBY2Nlc3NMaXN0Q29tbWFuZEgAElQKG2NsaWVudF9hY2Nlc3NfdGlja2V0X2NyZWF0ZRhmIAEoCzItLnRlcm14LmFwaS52MS5DbGllbnRBY2Nlc3NUaWNrZXRDcmVhdGVDb21tYW5kSAASRwoUY2xpZW50X2FjY2Vzc19yZXZva2UYZyABKAsyJy50ZXJteC5hcGkudjEuQ2xpZW50QWNjZXNzUmV2b2tlQ29tbWFuZEgAEjoKDXJlbW90ZV9zdGF0dXMYbiABKAsyIS50ZXJteC5hcGkudjEuUmVtb3RlU3RhdHVzQ29tbWFuZEgAEkEKEXJlbW90ZV9wYWlyX3N0YXJ0GG8gASgLMiQudGVybXguYXBpLnYxLlJlbW90ZVBhaXJTdGFydENvbW1hbmRIABJFChNyZW1vdGVfbG9jYWxfZW5hYmxlGHAgASgLMiYudGVybXguYXBpLnYxLlJlbW90ZUxvY2FsRW5hYmxlQ29tbWFuZEgAEkUKE3JlbW90ZV9sb2NhbF9zdGF0dXMYcSABKAsyJi50ZXJteC5hcGkudjEuUmVtb3RlTG9jYWxTdGF0dXNDb21tYW5kSAASRwoUcmVtb3RlX2xvY2FsX2Rpc2FibGUYciABKAsyJy50ZXJteC5hcGkudjEuUmVtb3RlTG9jYWxEaXNhYmxlQ29tbWFuZEgAQgkKB2NvbW1hbmQiEwoRQWNrbm93bGVkZ2VSZXN1bHQi/RAKDlJlc3VsdEVudmVsb3BlEhIKCnJlcXVlc3RfaWQYASABKAkSOgoOb3JpZ2luX3Nlc3Npb24YAiABKAsyIi50ZXJteC5hcGkudjEuRW5kcG9pbnRTZXNzaW9uU3RhbXASNgoLYWNrbm93bGVkZ2UYCiABKAsyHy50ZXJteC5hcGkudjEuQWNrbm93bGVkZ2VSZXN1bHRIABInCgVlcnJvchgLIAEoCzIWLnRlcm14LmFwaS52MS5BcGlFcnJvckgAEkEKEXRlcm1pbmFsX2RlZmF1bHRzGBQgASgLMiQudGVybXguYXBpLnYxLlRlcm1pbmFsRGVmYXVsdHNSZXN1bHRIABI9Cg90ZXJtaW5hbF9jcmVhdGUYFSABKAsyIi50ZXJteC5hcGkudjEuVGVybWluYWxDcmVhdGVSZXN1bHRIABI5Cg10ZXJtaW5hbF9saXN0GBYgASgLMiAudGVybXguYXBpLnYxLlRlcm1pbmFsTGlzdFJlc3VsdEgAEjcKDHRlcm1pbmFsX2dldBgXIAEoCzIfLnRlcm14LmFwaS52MS5UZXJtaW5hbEdldFJlc3VsdEgAEj0KD3Rlcm1pbmFsX2F0dGFjaBgYIAEoCzIiLnRlcm14LmFwaS52MS5UZXJtaW5hbEF0dGFjaFJlc3VsdEgAEj0KD3Rlcm1pbmFsX3Jlc2l6ZRgZIAEoCzIiLnRlcm14LmFwaS52MS5UZXJtaW5hbFJlc2l6ZVJlc3VsdEgAEkgKFXBhdGhfbGlzdF9kaXJlY3RvcmllcxgaIAEoCzInLnRlcm14LmFwaS52MS5QYXRoTGlzdERpcmVjdG9yaWVzUmVzdWx0SAASOwoOaGlzdG9yeV93aW5kb3cYKCABKAsyIS50ZXJteC5hcGkudjEuSGlzdG9yeVdpbmRvd1Jlc3VsdEgAEjcKDGhpc3RvcnlfY29weRgpIAEoCzIfLnRlcm14LmFwaS52MS5IaXN0b3J5Q29weVJlc3VsdEgAEkoKFmhpc3RvcnlfYmFja2xvZ19zdGF0dXMYKiABKAsyKC50ZXJteC5hcGkudjEuSGlzdG9yeUJhY2tsb2dTdGF0dXNSZXN1bHRIABI3CgtsaXZlX3NjcmVlbhgrIAEoCzIgLnRlcm14LmFwaS52MS5OYXRpdmVTY3JlZW5SZXN1bHRIABJBChFsaXZlX2ludmFsaWRhdGlvbhgsIAEoCzIkLnRlcm14LmFwaS52MS5MaXZlSW52YWxpZGF0aW9uUmVzdWx0SAASQwoSZXZlbnRfc3Vic2NyaXB0aW9uGC0gASgLMiUudGVybXguYXBpLnYxLkV2ZW50U3Vic2NyaXB0aW9uUmVzdWx0SAASMQoJZmlsZV9saXN0GDwgASgLMhwudGVybXguYXBpLnYxLkZpbGVMaXN0UmVzdWx0SAASMQoJZmlsZV9zdGF0GD0gASgLMhwudGVybXguYXBpLnYxLkZpbGVTdGF0UmVzdWx0SAASNwoMZmlsZV9wcmV2aWV3GD4gASgLMh8udGVybXguYXBpLnYxLkZpbGVQcmV2aWV3UmVzdWx0SAASOwoOZmlsZV9vcGVyYXRpb24YPyABKAsyIS50ZXJteC5hcGkudjEuRmlsZU9wZXJhdGlvblJlc3VsdEgAEjMKCmZpbGVfYmF0Y2gYQCABKAsyHS50ZXJteC5hcGkudjEuRmlsZUJhdGNoUmVzdWx0SAASQgoSZmlsZV90cmFuc2Zlcl9vcGVuGEEgASgLMiQudGVybXguYXBpLnYxLkZpbGVUcmFuc2Zlck9wZW5SZXN1bHRIABJGChRmaWxlX3RyYW5zZmVyX2NhbmNlbBhCIAEoCzImLnRlcm14LmFwaS52MS5GaWxlVHJhbnNmZXJDYW5jZWxSZXN1bHRIABI1CgtzdG9yYWdlX2dldBhQIAEoCzIeLnRlcm14LmFwaS52MS5TdG9yYWdlR2V0UmVzdWx0SAASNQoLc3RvcmFnZV9wdXQYUSABKAsyHi50ZXJteC5hcGkudjEuU3RvcmFnZVB1dFJlc3VsdEgAEjsKDnN0b3JhZ2VfZGVsZXRlGFIgASgLMiEudGVybXguYXBpLnYxLlN0b3JhZ2VEZWxldGVSZXN1bHRIABI3CgxzdG9yYWdlX2xpc3QYUyABKAsyHy50ZXJteC5hcGkudjEuU3RvcmFnZUxpc3RSZXN1bHRIABJKChZjbGllbnRfYWNjZXNzX2lkZW50aXR5GGQgASgLMigudGVybXguYXBpLnYxLkNsaWVudEFjY2Vzc0lkZW50aXR5UmVzdWx0SAASQgoSY2xpZW50X2FjY2Vzc19saXN0GGUgASgLMiQudGVybXguYXBpLnYxLkNsaWVudEFjY2Vzc0xpc3RSZXN1bHRIABJTChtjbGllbnRfYWNjZXNzX3RpY2tldF9jcmVhdGUYZiABKAsyLC50ZXJteC5hcGkudjEuQ2xpZW50QWNjZXNzVGlja2V0Q3JlYXRlUmVzdWx0SAASRgoUY2xpZW50X2FjY2Vzc19yZXZva2UYZyABKAsyJi50ZXJteC5hcGkudjEuQ2xpZW50QWNjZXNzUmV2b2tlUmVzdWx0SAASOQoNcmVtb3RlX3N0YXR1cxhuIAEoCzIgLnRlcm14LmFwaS52MS5SZW1vdGVTdGF0dXNSZXN1bHRIABJAChFyZW1vdGVfcGFpcl9zdGFydBhvIAEoCzIjLnRlcm14LmFwaS52MS5SZW1vdGVQYWlyU3RhcnRSZXN1bHRIABJEChNyZW1vdGVfbG9jYWxfc3RhdHVzGHAgASgLMiUudGVybXguYXBpLnYxLlJlbW90ZUxvY2FsU3RhdHVzUmVzdWx0SABCCAoGcmVzdWx0IkoKF09wZXJhdGlvbkNhbmNlbGxlZEV2ZW50Ei8KCW9wZXJhdGlvbhgBIAEoCzIcLnRlcm14LmFwaS52MS5PcGVyYXRpb25TdGFtcCJHChVSZXNvdXJjZVJlbGVhc2VkRXZlbnQSLgoIcmVzb3VyY2UYASABKAsyHC50ZXJteC5hcGkudjEuUmVzb3VyY2VIYW5kbGUiiQUKDUV2ZW50RW52ZWxvcGUSEAoIZXZlbnRfaWQYASABKAkSGwoTdGltZXN0YW1wX3VuaXhfbmFubxgCIAEoAxItCgthcGlfdmVyc2lvbhgDIAEoCzIYLnRlcm14LmFwaS52MS5BcGlWZXJzaW9uEjoKDm9yaWdpbl9zZXNzaW9uGAQgASgLMiIudGVybXguYXBpLnYxLkVuZHBvaW50U2Vzc2lvblN0YW1wEjIKDHN1YnNjcmlwdGlvbhgFIAEoCzIcLnRlcm14LmFwaS52MS5SZXNvdXJjZUhhbmRsZRJEChNvcGVyYXRpb25fY2FuY2VsbGVkGAogASgLMiUudGVybXguYXBpLnYxLk9wZXJhdGlvbkNhbmNlbGxlZEV2ZW50SAASQAoRcmVzb3VyY2VfcmVsZWFzZWQYCyABKAsyIy50ZXJteC5hcGkudjEuUmVzb3VyY2VSZWxlYXNlZEV2ZW50SAASQgoSdGVybWluYWxfbGlmZWN5Y2xlGBQgASgLMiQudGVybXguYXBpLnYxLlRlcm1pbmFsTGlmZWN5Y2xlRXZlbnRIABI+ChBsaXZlX2ludmFsaWRhdGVkGBYgASgLMiIudGVybXguYXBpLnYxLkxpdmVJbnZhbGlkYXRlZEV2ZW50SAASPAoPc3RvcmFnZV9jaGFuZ2VkGB4gASgLMiEudGVybXguYXBpLnYxLlN0b3JhZ2VDaGFuZ2VkRXZlbnRIABJLChdmaWxlX3RyYW5zZmVyX2NvbXBsZXRlZBgoIAEoCzIoLnRlcm14LmFwaS52MS5GaWxlVHJhbnNmZXJDb21wbGV0ZWRFdmVudEgAQgcKBWV2ZW50SgQIFRAWSgQIFxAYQiVaI2dpdGh1Yi5jb20vbG96em93L3Rlcm14L3Byb3RvL2FwaXBiYgZwcm90bzM", [file_apipb_common, file_apipb_access_remote, file_apipb_events, file_apipb_file, file_apipb_history, file_apipb_storage, file_apipb_terminal]);
 
 /**
  * @generated from message termx.api.v1.CancelOperationCommand
@@ -164,6 +174,192 @@ export type CommandEnvelope = Message<"termx.api.v1.CommandEnvelope"> & {
      */
     value: PathListDirectoriesCommand;
     case: "pathListDirectories";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.HistoryWindowCommand history_window = 40;
+     */
+    value: HistoryWindowCommand;
+    case: "historyWindow";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.HistoryCopyCommand history_copy = 41;
+     */
+    value: HistoryCopyCommand;
+    case: "historyCopy";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.HistoryReleaseCommand history_release = 42;
+     */
+    value: HistoryReleaseCommand;
+    case: "historyRelease";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.HistoryBacklogStatusCommand history_backlog_status = 43;
+     */
+    value: HistoryBacklogStatusCommand;
+    case: "historyBacklogStatus";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.LiveScreenGetCommand live_screen_get = 44;
+     */
+    value: LiveScreenGetCommand;
+    case: "liveScreenGet";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.LiveInvalidationNextCommand live_invalidation_next = 45;
+     */
+    value: LiveInvalidationNextCommand;
+    case: "liveInvalidationNext";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.EventSubscribeCommand event_subscribe = 46;
+     */
+    value: EventSubscribeCommand;
+    case: "eventSubscribe";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FileListCommand file_list = 60;
+     */
+    value: FileListCommand;
+    case: "fileList";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FileStatCommand file_stat = 61;
+     */
+    value: FileStatCommand;
+    case: "fileStat";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FilePreviewCommand file_preview = 62;
+     */
+    value: FilePreviewCommand;
+    case: "filePreview";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FileMkdirCommand file_mkdir = 63;
+     */
+    value: FileMkdirCommand;
+    case: "fileMkdir";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FileRenameCommand file_rename = 64;
+     */
+    value: FileRenameCommand;
+    case: "fileRename";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FileDeleteCommand file_delete = 65;
+     */
+    value: FileDeleteCommand;
+    case: "fileDelete";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FileCopyCommand file_copy = 66;
+     */
+    value: FileCopyCommand;
+    case: "fileCopy";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FileMoveCommand file_move = 67;
+     */
+    value: FileMoveCommand;
+    case: "fileMove";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FileDownloadOpenCommand file_download_open = 68;
+     */
+    value: FileDownloadOpenCommand;
+    case: "fileDownloadOpen";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FileUploadOpenCommand file_upload_open = 69;
+     */
+    value: FileUploadOpenCommand;
+    case: "fileUploadOpen";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FileTransferCancelCommand file_transfer_cancel = 70;
+     */
+    value: FileTransferCancelCommand;
+    case: "fileTransferCancel";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.StorageGetCommand storage_get = 80;
+     */
+    value: StorageGetCommand;
+    case: "storageGet";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.StoragePutCommand storage_put = 81;
+     */
+    value: StoragePutCommand;
+    case: "storagePut";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.StorageDeleteCommand storage_delete = 82;
+     */
+    value: StorageDeleteCommand;
+    case: "storageDelete";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.StorageListCommand storage_list = 83;
+     */
+    value: StorageListCommand;
+    case: "storageList";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.ClientAccessIdentityCommand client_access_identity = 100;
+     */
+    value: ClientAccessIdentityCommand;
+    case: "clientAccessIdentity";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.ClientAccessListCommand client_access_list = 101;
+     */
+    value: ClientAccessListCommand;
+    case: "clientAccessList";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.ClientAccessTicketCreateCommand client_access_ticket_create = 102;
+     */
+    value: ClientAccessTicketCreateCommand;
+    case: "clientAccessTicketCreate";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.ClientAccessRevokeCommand client_access_revoke = 103;
+     */
+    value: ClientAccessRevokeCommand;
+    case: "clientAccessRevoke";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.RemoteStatusCommand remote_status = 110;
+     */
+    value: RemoteStatusCommand;
+    case: "remoteStatus";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.RemotePairStartCommand remote_pair_start = 111;
+     */
+    value: RemotePairStartCommand;
+    case: "remotePairStart";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.RemoteLocalEnableCommand remote_local_enable = 112;
+     */
+    value: RemoteLocalEnableCommand;
+    case: "remoteLocalEnable";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.RemoteLocalStatusCommand remote_local_status = 113;
+     */
+    value: RemoteLocalStatusCommand;
+    case: "remoteLocalStatus";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.RemoteLocalDisableCommand remote_local_disable = 114;
+     */
+    value: RemoteLocalDisableCommand;
+    case: "remoteLocalDisable";
   } | { case: undefined; value?: undefined };
 };
 
@@ -258,6 +454,150 @@ export type ResultEnvelope = Message<"termx.api.v1.ResultEnvelope"> & {
      */
     value: PathListDirectoriesResult;
     case: "pathListDirectories";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.HistoryWindowResult history_window = 40;
+     */
+    value: HistoryWindowResult;
+    case: "historyWindow";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.HistoryCopyResult history_copy = 41;
+     */
+    value: HistoryCopyResult;
+    case: "historyCopy";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.HistoryBacklogStatusResult history_backlog_status = 42;
+     */
+    value: HistoryBacklogStatusResult;
+    case: "historyBacklogStatus";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.NativeScreenResult live_screen = 43;
+     */
+    value: NativeScreenResult;
+    case: "liveScreen";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.LiveInvalidationResult live_invalidation = 44;
+     */
+    value: LiveInvalidationResult;
+    case: "liveInvalidation";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.EventSubscriptionResult event_subscription = 45;
+     */
+    value: EventSubscriptionResult;
+    case: "eventSubscription";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FileListResult file_list = 60;
+     */
+    value: FileListResult;
+    case: "fileList";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FileStatResult file_stat = 61;
+     */
+    value: FileStatResult;
+    case: "fileStat";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FilePreviewResult file_preview = 62;
+     */
+    value: FilePreviewResult;
+    case: "filePreview";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FileOperationResult file_operation = 63;
+     */
+    value: FileOperationResult;
+    case: "fileOperation";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FileBatchResult file_batch = 64;
+     */
+    value: FileBatchResult;
+    case: "fileBatch";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FileTransferOpenResult file_transfer_open = 65;
+     */
+    value: FileTransferOpenResult;
+    case: "fileTransferOpen";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FileTransferCancelResult file_transfer_cancel = 66;
+     */
+    value: FileTransferCancelResult;
+    case: "fileTransferCancel";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.StorageGetResult storage_get = 80;
+     */
+    value: StorageGetResult;
+    case: "storageGet";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.StoragePutResult storage_put = 81;
+     */
+    value: StoragePutResult;
+    case: "storagePut";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.StorageDeleteResult storage_delete = 82;
+     */
+    value: StorageDeleteResult;
+    case: "storageDelete";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.StorageListResult storage_list = 83;
+     */
+    value: StorageListResult;
+    case: "storageList";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.ClientAccessIdentityResult client_access_identity = 100;
+     */
+    value: ClientAccessIdentityResult;
+    case: "clientAccessIdentity";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.ClientAccessListResult client_access_list = 101;
+     */
+    value: ClientAccessListResult;
+    case: "clientAccessList";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.ClientAccessTicketCreateResult client_access_ticket_create = 102;
+     */
+    value: ClientAccessTicketCreateResult;
+    case: "clientAccessTicketCreate";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.ClientAccessRevokeResult client_access_revoke = 103;
+     */
+    value: ClientAccessRevokeResult;
+    case: "clientAccessRevoke";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.RemoteStatusResult remote_status = 110;
+     */
+    value: RemoteStatusResult;
+    case: "remoteStatus";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.RemotePairStartResult remote_pair_start = 111;
+     */
+    value: RemotePairStartResult;
+    case: "remotePairStart";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.RemoteLocalStatusResult remote_local_status = 112;
+     */
+    value: RemoteLocalStatusResult;
+    case: "remoteLocalStatus";
   } | { case: undefined; value?: undefined };
 };
 
@@ -327,6 +667,11 @@ export type EventEnvelope = Message<"termx.api.v1.EventEnvelope"> & {
   originSession?: EndpointSessionStamp | undefined;
 
   /**
+   * @generated from field: termx.api.v1.ResourceHandle subscription = 5;
+   */
+  subscription?: ResourceHandle | undefined;
+
+  /**
    * @generated from oneof termx.api.v1.EventEnvelope.event
    */
   event: {
@@ -349,10 +694,22 @@ export type EventEnvelope = Message<"termx.api.v1.EventEnvelope"> & {
     case: "terminalLifecycle";
   } | {
     /**
-     * @generated from field: termx.api.v1.TerminalResizeControlEvent terminal_resize_control = 21;
+     * @generated from field: termx.api.v1.LiveInvalidatedEvent live_invalidated = 22;
      */
-    value: TerminalResizeControlEvent;
-    case: "terminalResizeControl";
+    value: LiveInvalidatedEvent;
+    case: "liveInvalidated";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.StorageChangedEvent storage_changed = 30;
+     */
+    value: StorageChangedEvent;
+    case: "storageChanged";
+  } | {
+    /**
+     * @generated from field: termx.api.v1.FileTransferCompletedEvent file_transfer_completed = 40;
+     */
+    value: FileTransferCompletedEvent;
+    case: "fileTransferCompleted";
   } | { case: undefined; value?: undefined };
 };
 

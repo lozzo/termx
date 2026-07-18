@@ -1,12 +1,31 @@
+import { create } from '@bufbuild/protobuf'
 import type { RtcBinaryChannel, RtcSession } from '../core/transport'
+import type { ProtoClientSession, ProtoResourceStream } from '../core/protoClientSession'
+import type { ResourceHandle } from '../generated/apipb/common_pb'
+import { ResourceStreamFrameType } from '../generated/bindingpb/client_binding_pb'
+import { CommandEnvelopeSchema } from '../generated/apipb/application_pb'
+import {
+  FileCopyCommandSchema,
+  FileDeleteCommandSchema,
+  FileDownloadOpenCommandSchema,
+  FileEntryType as ProtoFileEntryType,
+  FileListCommandSchema,
+  FileMkdirCommandSchema,
+  FileMoveCommandSchema,
+  FilePreviewCommandSchema,
+  FileRenameCommandSchema,
+  FileStatCommandSchema,
+  type FileEntry as ProtoFileEntry,
+  type FileOperationResult,
+} from '../generated/apipb/file_pb'
 import { isModelPreviewFile } from './modelFileTypes'
 import { TERMX_FRAME_TYPES, decodeTermxFrame, encodeTermxFrame } from '../terminal/termxProtocol'
 import {
   decodeFileTransferDataPayload,
   decodeFileTransferFinishPayload,
-  decodeTerminalErrorPayload,
+  decodeFileStreamErrorPayload,
   encodeFileTransferAckPayload,
-} from '../terminal/terminalWireProtocol'
+} from './fileStreamProtocol'
 
 export type FileEntryType = 'file' | 'dir' | 'symlink' | 'symlink-dir'
 
@@ -54,6 +73,7 @@ export interface DownloadInitResponse {
   window_bytes: number
   offset: number
   modified_at_unix_nano: number
+  resource?: ResourceHandle | undefined
 }
 
 export type TransferStatus = 'pending' | 'transferring' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'missing'
@@ -137,7 +157,8 @@ export interface FilePreviewSource {
   stream(path: string, mimeType: string, options?: FilePreviewStreamOptions): Promise<FilePreviewStreamResult>
 }
 
-export function createFileApi(session: Pick<RtcSession, 'openApi'>): FileApi {
+export function createFileApi(session: Pick<RtcSession, 'openApi'> | ProtoClientSession): FileApi {
+  if ('execute' in session) return createProtoFileApi(session)
   const apiChannel = () => {
     return session.openApi()
   }
@@ -176,13 +197,184 @@ export function createFileApi(session: Pick<RtcSession, 'openApi'>): FileApi {
   }
 }
 
-export function createFilePreviewSource(session: Pick<RtcSession, 'openApi' | 'openFileChannel'>): FilePreviewSource {
+function createProtoFileApi(session: ProtoClientSession): FileApi {
+  const execute = (caseName: string, value: object) => session.execute(
+    create(CommandEnvelopeSchema, { command: { case: caseName, value } } as never),
+  ).catch((error) => { throw normalizeFileError(error) })
+  const operation = async (caseName: string, value: object) => {
+    const result = await execute(caseName, value)
+    if (result.result.case !== 'fileOperation') throw new Error(`${caseName} returned no file operation result`)
+    return protoOperationPath(result.result.value)
+  }
+  const batch = async (caseName: string, value: object) => {
+    const result = await execute(caseName, value)
+    if (result.result.case !== 'fileBatch') throw new Error(`${caseName} returned no file batch result`)
+    for (const item of result.result.value.results) protoOperationPath(item)
+  }
+  return {
+    async listDir(path = '/', cursor = '', limit = 500) {
+      const result = await execute('fileList', create(FileListCommandSchema, { path: normalizeFilePath(path), cursor, limit }))
+      if (result.result.case !== 'fileList') throw new Error('file list returned no result')
+      return {
+        path: result.result.value.path,
+        entries: result.result.value.entries.map(protoFileEntry),
+        parent: parentPath(result.result.value.path),
+        total: result.result.value.entries.length,
+      }
+    },
+    async stat(path) {
+      const result = await execute('fileStat', create(FileStatCommandSchema, { path }))
+      if (result.result.case !== 'fileStat' || !result.result.value.entry) throw new Error('file stat returned no entry')
+      return protoFileEntry(result.result.value.entry)
+    },
+    async preview(path, maxSize) {
+      const result = await execute('filePreview', create(FilePreviewCommandSchema, { path, maxBytes: BigInt(maxSize ?? 0) }))
+      if (result.result.case !== 'filePreview' || !result.result.value.entry) throw new Error('file preview returned no entry')
+      const entry = protoFileEntry(result.result.value.entry)
+      const mimeType = result.result.value.mimeType || 'application/octet-stream'
+      const category = normalizePreviewCategory(undefined, mimeType, basename(path))
+      return {
+        path,
+        name: entry.name,
+        size: entry.size,
+        mimeType,
+        category,
+        isText: category === 'text',
+        ...(category === 'text' ? { content: new TextDecoder().decode(result.result.value.content) } : {}),
+        previewLimit: result.result.value.truncated ? result.result.value.content.byteLength : undefined,
+      }
+    },
+    mkdir: (path) => operation('fileMkdir', create(FileMkdirCommandSchema, { path, recursive: true })),
+    delete: (path) => operation('fileDelete', create(FileDeleteCommandSchema, { path, recursive: true })),
+    rename: (path, newPath) => operation('fileRename', create(FileRenameCommandSchema, { path, newPath })),
+    copy: (paths, targetDir) => batch('fileCopy', create(FileCopyCommandSchema, { paths, targetDirectory: targetDir })),
+    move: (paths, targetDir) => batch('fileMove', create(FileMoveCommandSchema, { paths, targetDirectory: targetDir })),
+    async batchDelete(paths) {
+      for (const path of paths) await operation('fileDelete', create(FileDeleteCommandSchema, { path, recursive: true }))
+    },
+    async downloadOpen(path, offset = 0, expectedSize = 0, expectedModifiedAtUnixNano = 0) {
+      const result = await execute('fileDownloadOpen', create(FileDownloadOpenCommandSchema, {
+        path,
+        offset: BigInt(offset),
+        expectedSize: BigInt(expectedSize),
+        expectedModifiedAtUnixNano: BigInt(expectedModifiedAtUnixNano),
+      }))
+      if (result.result.case !== 'fileTransferOpen' || !result.result.value.transfer?.resource) {
+        throw new Error('file download returned no transfer resource')
+      }
+      const transfer = result.result.value.transfer
+      return {
+        transfer_id: '', channel: 0, path: transfer.path, name: basename(transfer.path),
+        size: Number(transfer.size), chunk_size: transfer.chunkBytes, window_bytes: Number(transfer.windowBytes),
+        offset: Number(transfer.offset), modified_at_unix_nano: Number(transfer.modifiedAtUnixNano),
+        resource: transfer.resource,
+      }
+    },
+  }
+}
+
+async function readProtoFileTransferStream(
+  stream: ProtoResourceStream,
+  init: DownloadInitResponse,
+  mimeType: string,
+  options: FilePreviewStreamOptions,
+): Promise<FilePreviewStreamResult> {
+  if (init.chunk_size <= 0 || init.window_bytes <= 0) throw new Error('file stream returned invalid flow-control limits')
+  return await new Promise<FilePreviewStreamResult>((resolve, reject) => {
+    const chunks: Uint8Array[] = []
+    let receivedSize = init.offset
+    let bytesSinceAck = 0
+    let settled = false
+    const finish = (result: FilePreviewStreamResult) => {
+      if (settled) return
+      settled = true
+      subscription.close()
+      options.signal?.removeEventListener('abort', abortListener)
+      resolve(result)
+    }
+    const fail = (error: unknown) => {
+      if (settled) return
+      settled = true
+      subscription.close()
+      options.signal?.removeEventListener('abort', abortListener)
+      reject(error)
+    }
+    const abortListener = () => {
+      void stream.close()
+      fail(abortError())
+    }
+    const subscription = stream.subscribe((type, payload) => {
+      if (settled) return
+      if (type === ResourceStreamFrameType.FILE_DATA) {
+        const data = decodeFileTransferDataPayload(payload)
+        if (data.offset !== receivedSize || data.data.byteLength === 0 || data.data.byteLength > init.chunk_size) {
+          fail(new Error('file stream offset or chunk is invalid'))
+          return
+        }
+        chunks.push(data.data)
+        receivedSize += data.data.byteLength
+        bytesSinceAck += data.data.byteLength
+        const chunk = data.data.buffer.slice(data.data.byteOffset, data.data.byteOffset + data.data.byteLength) as ArrayBuffer
+        options.onChunk?.({ chunk, receivedSize, totalSize: init.size })
+        options.onProgress?.({ receivedSize, totalSize: init.size })
+        if (bytesSinceAck >= init.window_bytes) {
+          const credit = bytesSinceAck
+          bytesSinceAck = 0
+          void stream.send(ResourceStreamFrameType.FILE_ACK, encodeFileTransferAckPayload({ offset: receivedSize, windowBytes: credit })).catch(fail)
+        }
+        return
+      }
+      if (type === ResourceStreamFrameType.FILE_FINISH) {
+        const declared = decodeFileTransferFinishPayload(payload)
+        if (declared.size !== init.size || receivedSize !== init.size) {
+          fail(new Error('file stream completed with the wrong size'))
+          return
+        }
+        void verifyFileDigest(chunks, declared.sha256).then(() => {
+          const blobParts = chunks.map((chunk) => chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength) as ArrayBuffer)
+          finish({ blob: new Blob(blobParts, { type: mimeType.trim() || 'application/octet-stream' }), receivedSize, offset: init.offset, totalSize: init.size })
+        }).catch(fail)
+        return
+      }
+      if (type === ResourceStreamFrameType.ERROR) fail(new Error(decodeFileStreamErrorPayload(payload)))
+    })
+    options.signal?.addEventListener('abort', abortListener, { once: true })
+    if (options.signal?.aborted) abortListener()
+  })
+}
+
+function protoFileEntry(entry: ProtoFileEntry): FileEntry {
+  return {
+    name: entry.name,
+    type: entry.type === ProtoFileEntryType.DIRECTORY ? 'dir' : entry.type === ProtoFileEntryType.SYMLINK ? 'symlink' : entry.type === ProtoFileEntryType.FILE ? 'file' : 'other',
+    size: Number(entry.size),
+    mode: entry.mode ? entry.mode.toString(8) : undefined,
+    modTime: entry.modifiedAtUnixNano > 0n ? new Date(Number(entry.modifiedAtUnixNano / 1_000_000n)).toISOString() : undefined,
+    linkTarget: entry.linkTarget || undefined,
+  }
+}
+
+function protoOperationPath(result: FileOperationResult): { path: string } {
+  if (!result.success) throw new Error(result.errorMessage || result.errorCode || 'file operation failed')
+  return { path: result.targetPath || result.path }
+}
+
+export function createFilePreviewSource(session: Pick<RtcSession, 'openApi' | 'openFileChannel'> | ProtoClientSession): FilePreviewSource {
   const api = createFileApi(session)
   return {
     preview: api.preview,
     async stream(path: string, mimeType: string, options: FilePreviewStreamOptions = {}) {
       const init = await api.downloadOpen(path)
       throwIfAborted(options.signal)
+      if ('execute' in session) {
+        if (!init.resource) throw new Error('file download returned no resource handle')
+        const stream = await session.openResourceStream(init.resource)
+        try {
+          return await readProtoFileTransferStream(stream, init, mimeType, options)
+        } finally {
+          await stream.close()
+        }
+      }
       const channel = await session.openFileChannel(init.channel, init.transfer_id)
       try {
         return await readProtocolFileTransferStream(channel, init, mimeType, options)
@@ -266,7 +458,7 @@ async function readProtocolFileTransferStream(
         return
       }
       if (frame.type === TERMX_FRAME_TYPES.error) {
-        fail(new Error(decodeTerminalErrorPayload(frame.payload).message))
+        fail(new Error(decodeFileStreamErrorPayload(frame.payload)))
       }
     })
     closeSubscription = channel.onClose(() => {

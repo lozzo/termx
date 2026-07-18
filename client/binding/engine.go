@@ -2,21 +2,24 @@ package binding
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"sync"
 
 	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/bindingpb"
+	"github.com/lozzow/termx/proto/wirepb"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
 	// ABIVersion 是 C/JNI/WASM binding 符号与 EventEnvelope 语义版本。
 	// 不兼容的 handle ownership、函数签名或事件 oneof 变更必须递增该值。
-	ABIVersion uint32 = 1
+	ABIVersion uint32 = 2
 	// MaxPayloadBytes 限制跨语言单次 protobuf 输入，防止 JNI/WASM 分配无界内存。
 	MaxPayloadBytes      = 4 << 20
 	defaultEventCapacity = 256
@@ -53,6 +56,7 @@ type Engine struct {
 	nextHandle uint64
 	operations map[uint64]*operation
 	sessions   map[uint64]*sessionRecord
+	streams    map[uint64]*streamRecord
 
 	emitMu    sync.Mutex
 	sequence  uint64
@@ -68,6 +72,15 @@ type operation struct {
 type sessionRecord struct {
 	session clientruntime.ApplicationReadySession
 	closed  bool
+}
+
+type streamRecord struct {
+	sendMu        sync.Mutex
+	stream        clientruntime.ResourceStream
+	sessionHandle uint64
+	closed        bool
+	uploadHash    hash.Hash
+	uploadBytes   int64
 }
 
 // NewEngine 创建使用默认有界事件容量的 binding engine。
@@ -88,8 +101,135 @@ func NewEngineWithEventCapacity(host Host, capacity int) (*Engine, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Engine{
 		host: host, ctx: ctx, cancel: cancel, done: make(chan struct{}),
-		operations: make(map[uint64]*operation), sessions: make(map[uint64]*sessionRecord), events: make(chan []byte, capacity),
+		operations: make(map[uint64]*operation), sessions: make(map[uint64]*sessionRecord), streams: make(map[uint64]*streamRecord), events: make(chan []byte, capacity),
 	}, nil
+}
+
+// OpenResourceStream 解析 bindingpb.OpenResourceStreamRequest，并把 session-bound framing stream 注册为 opaque handle。
+// resource 必须由同一 ready session 的 API result 签发；binding 不解析 opaque token 内部 channel 编号。
+func (engine *Engine) OpenResourceStream(sessionHandle uint64, payload []byte) (uint64, error) {
+	if err := validatePayload(payload); err != nil {
+		return 0, err
+	}
+	request := &bindingpb.OpenResourceStreamRequest{}
+	if err := (proto.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(payload, request); err != nil {
+		return 0, fmt.Errorf("decode resource stream request: %w", err)
+	}
+	if request.GetResource() == nil {
+		return 0, fmt.Errorf("resource stream handle is required")
+	}
+	session, err := engine.activeSession(sessionHandle)
+	if err != nil {
+		return 0, err
+	}
+	provider, ok := session.(clientruntime.ResourceStreamSession)
+	if !ok {
+		return 0, fmt.Errorf("application session does not support resource streams")
+	}
+	stream, err := provider.OpenResourceStream(proto.Clone(request.GetResource()).(*apipb.ResourceHandle))
+	if err != nil {
+		return 0, err
+	}
+	if stream == nil {
+		return 0, fmt.Errorf("application session returned no resource stream")
+	}
+	engine.mu.Lock()
+	if engine.closed {
+		engine.mu.Unlock()
+		_ = stream.Close()
+		return 0, ErrClosed
+	}
+	handle, err := engine.allocateHandleLocked()
+	if err == nil {
+		engine.streams[handle] = &streamRecord{stream: stream, sessionHandle: sessionHandle, uploadHash: sha256.New()}
+	}
+	engine.mu.Unlock()
+	if err != nil {
+		_ = stream.Close()
+		return 0, err
+	}
+	go engine.forwardResourceStream(handle, stream)
+	return handle, nil
+}
+
+// SendResourceStreamFrame 发送 serialized bindingpb.ResourceStreamFrame。
+// frame handle 必须与参数一致，且只允许受控 file stream frame type，防止借 binding 写 terminal framing。
+func (engine *Engine) SendResourceStreamFrame(streamHandle uint64, payload []byte) error {
+	if err := validatePayload(payload); err != nil {
+		return err
+	}
+	frame := &bindingpb.ResourceStreamFrame{}
+	if err := (proto.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(payload, frame); err != nil {
+		return fmt.Errorf("decode resource stream frame: %w", err)
+	}
+	if frame.GetStreamHandle() != 0 && frame.GetStreamHandle() != streamHandle {
+		return fmt.Errorf("resource stream frame handle mismatch")
+	}
+	record, err := engine.activeStreamRecord(streamHandle)
+	if err != nil {
+		return err
+	}
+	record.sendMu.Lock()
+	defer record.sendMu.Unlock()
+	typ, err := bindingFrameTypeToWire(frame.GetType(), true)
+	if err != nil {
+		return err
+	}
+	payloadSnapshot := append([]byte(nil), frame.GetPayload()...)
+	if frame.GetType() == bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_DATA {
+		var data wirepb.FileTransferData
+		if err := proto.Unmarshal(payloadSnapshot, &data); err != nil {
+			return fmt.Errorf("decode upload data frame: %w", err)
+		}
+		engine.mu.Lock()
+		if record.closed || data.GetOffset() != record.uploadBytes || len(data.GetData()) == 0 {
+			engine.mu.Unlock()
+			return fmt.Errorf("upload data frame offset is invalid")
+		}
+		engine.mu.Unlock()
+		if err := record.stream.Send(engine.ctx, typ, payloadSnapshot); err != nil {
+			return err
+		}
+		engine.mu.Lock()
+		_, _ = record.uploadHash.Write(data.GetData())
+		record.uploadBytes += int64(len(data.GetData()))
+		engine.mu.Unlock()
+		return nil
+	}
+	if frame.GetType() == bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO {
+		if len(payloadSnapshot) != 0 {
+			return fmt.Errorf("automatic upload finish payload must be empty")
+		}
+		engine.mu.Lock()
+		payloadSnapshot, err = proto.Marshal(&wirepb.FileTransferFinish{Size: record.uploadBytes, Sha256: record.uploadHash.Sum(nil)})
+		engine.mu.Unlock()
+		if err != nil {
+			return err
+		}
+	}
+	return record.stream.Send(engine.ctx, typ, payloadSnapshot)
+}
+
+// CloseResourceStream 关闭 opaque stream handle；关闭后 handle 仍需 Release 才从 registry 删除。
+func (engine *Engine) CloseResourceStream(handle uint64) error {
+	engine.mu.Lock()
+	if engine.closed {
+		engine.mu.Unlock()
+		return ErrClosed
+	}
+	record := engine.streams[handle]
+	if record == nil {
+		engine.mu.Unlock()
+		return ErrInvalidHandle
+	}
+	if record.closed {
+		engine.mu.Unlock()
+		return nil
+	}
+	record.closed = true
+	stream := record.stream
+	engine.mu.Unlock()
+	return stream.Close()
 }
 
 // OpenSession 解析 bindingpb.OpenSessionRequest 并异步请求 Host 建立 session。
@@ -200,8 +340,24 @@ func (engine *Engine) CloseSession(sessionHandle uint64) error {
 		return nil
 	}
 	session := record.session
+	streams := make([]clientruntime.ResourceStream, 0)
+	for _, streamRecord := range engine.streams {
+		if streamRecord.sessionHandle == sessionHandle && !streamRecord.closed {
+			streamRecord.closed = true
+			streams = append(streams, streamRecord.stream)
+		}
+	}
 	engine.mu.Unlock()
-	return session.Close()
+	var first error
+	for _, stream := range streams {
+		if err := stream.Close(); err != nil && first == nil {
+			first = err
+		}
+	}
+	if err := session.Close(); err != nil && first == nil {
+		first = err
+	}
+	return first
 }
 
 // Release 从本地 handle registry 删除已经完成的 operation 或已经关闭的 session。
@@ -226,6 +382,13 @@ func (engine *Engine) Release(handle uint64) error {
 		delete(engine.sessions, handle)
 		return nil
 	}
+	if record := engine.streams[handle]; record != nil {
+		if !record.closed {
+			return ErrHandleActive
+		}
+		delete(engine.streams, handle)
+		return nil
+	}
 	return ErrInvalidHandle
 }
 
@@ -246,6 +409,11 @@ func (engine *Engine) Close() error {
 		for _, record := range engine.sessions {
 			sessions = append(sessions, record.session)
 		}
+		streams := make([]clientruntime.ResourceStream, 0, len(engine.streams))
+		for _, record := range engine.streams {
+			streams = append(streams, record.stream)
+			record.closed = true
+		}
 		engine.mu.Unlock()
 		engine.cancel()
 		close(engine.done)
@@ -254,8 +422,44 @@ func (engine *Engine) Close() error {
 				first = err
 			}
 		}
+		for _, stream := range streams {
+			if err := stream.Close(); err != nil && first == nil {
+				first = err
+			}
+		}
 	})
 	return first
+}
+
+func (engine *Engine) forwardResourceStream(handle uint64, stream clientruntime.ResourceStream) {
+	var terminalError error
+	defer func() {
+		engine.mu.Lock()
+		if record := engine.streams[handle]; record != nil {
+			record.closed = true
+		}
+		engine.mu.Unlock()
+		event := &bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_ResourceStreamClosed{ResourceStreamClosed: &bindingpb.ResourceStreamClosedEvent{StreamHandle: handle}}}
+		if terminalError != nil && !errors.Is(terminalError, io.EOF) && !errors.Is(terminalError, context.Canceled) {
+			event.GetResourceStreamClosed().Error = apiError(terminalError)
+		}
+		engine.emit(event)
+	}()
+	for {
+		typ, payload, err := stream.Receive(engine.ctx)
+		if err != nil {
+			terminalError = err
+			return
+		}
+		bindingType, err := wireFrameTypeToBinding(typ)
+		if err != nil {
+			terminalError = err
+			return
+		}
+		engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_ResourceStreamFrame{ResourceStreamFrame: &bindingpb.ResourceStreamFrame{
+			StreamHandle: handle, Type: bindingType, Payload: append([]byte(nil), payload...),
+		}}})
+	}
 }
 
 func (engine *Engine) runOpen(handle uint64, ctx context.Context, request *bindingpb.OpenSessionRequest) {
@@ -420,6 +624,59 @@ func (engine *Engine) activeSession(handle uint64) (clientruntime.ApplicationRea
 		return nil, ErrInvalidHandle
 	}
 	return record.session, nil
+}
+
+func (engine *Engine) activeStreamRecord(handle uint64) (*streamRecord, error) {
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+	if engine.closed {
+		return nil, ErrClosed
+	}
+	record := engine.streams[handle]
+	if record == nil || record.closed {
+		return nil, ErrInvalidHandle
+	}
+	return record, nil
+}
+
+func bindingFrameTypeToWire(typ bindingpb.ResourceStreamFrameType, outbound bool) (uint8, error) {
+	switch typ {
+	case bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_DATA:
+		return 0x21, nil
+	case bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_ACK:
+		return 0x22, nil
+	case bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH:
+		return 0x23, nil
+	case bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT:
+		if !outbound {
+			return 0x24, nil
+		}
+	case bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_ERROR:
+		if !outbound {
+			return 0x04, nil
+		}
+	case bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO:
+		if outbound {
+			return 0x23, nil
+		}
+	}
+	return 0, fmt.Errorf("resource stream frame type is unsupported")
+}
+
+func wireFrameTypeToBinding(typ uint8) (bindingpb.ResourceStreamFrameType, error) {
+	for _, candidate := range []bindingpb.ResourceStreamFrameType{
+		bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_DATA,
+		bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_ACK,
+		bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH,
+		bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT,
+		bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_ERROR,
+	} {
+		wireType, _ := bindingFrameTypeToWire(candidate, false)
+		if wireType == typ {
+			return candidate, nil
+		}
+	}
+	return bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_UNSPECIFIED, fmt.Errorf("resource stream received unsupported frame type %d", typ)
 }
 
 func (engine *Engine) emit(event *bindingpb.EventEnvelope) {

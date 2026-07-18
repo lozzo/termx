@@ -1,4 +1,5 @@
 import type { RtcSession } from '../core/transport'
+import type { ProtoClientSession } from '../core/protoClientSession'
 import { createRemoteStorageApi, storageText } from '../storage/remoteStorageApi'
 
 export interface RemoteClipboardEntry {
@@ -22,7 +23,7 @@ const clipboardStorageAppId = 'termx.clipboard'
 const clipboardHistoryPrefix = 'history/'
 const clipboardRecordVersion = 1
 
-export function createRemoteClipboardApi(session: Pick<RtcSession, 'openApi'>): RemoteClipboardApi {
+export function createRemoteClipboardApi(session: Pick<RtcSession, 'openApi'> | ProtoClientSession): RemoteClipboardApi {
   const storage = createRemoteStorageApi(session)
 
   return {

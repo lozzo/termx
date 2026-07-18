@@ -14,7 +14,8 @@ import {
   type TerminalScrollbackLoadResult,
   type TerminalSnapshotPayload,
 } from './terminalClient'
-import { createTerminalProtocolClient } from './terminalProtocolClient'
+import { createProtoTerminalProtocolSession } from './protoTerminalProtocolSession'
+import type { ProtoClientSession } from '../core/protoClientSession'
 import { logTerminalDiagnostic, terminalNow } from './terminalDiagnostics'
 import { appendTerminalText, terminalTextSoftLimitChars, trimTerminalTextToRecentWindow } from './terminalTextWindow'
 import type { Terminal } from '../core/model'
@@ -31,7 +32,7 @@ const largeOutputChunkBytes = 64 * 1024
 const liveOutputPublishDelayMs = 120
 
 interface TerminalChannelRecoveryOptions {
-  session?: RtcSession | undefined
+  session?: TerminalSession | undefined
   forceTerminalChannel?: boolean | undefined
   supersede?: boolean | undefined
   showClosedReason?: boolean | undefined
@@ -40,7 +41,7 @@ interface TerminalChannelRecoveryOptions {
 export interface UseTerminalSessionOptions {
   machineId: string
   terminalId: string
-  session: RtcSession
+  session: TerminalSession
   onOutput?: ((text: string) => void) | undefined
 }
 
@@ -57,9 +58,11 @@ export interface UseTerminalSessionResult {
   loadScrollback(limit?: number, alternate?: boolean): Promise<TerminalScrollbackLoadResult>
   markSyncLost(reason?: string): void
   handleAppResume(resumeKind: 'quick' | 'cold' | 'frozen'): void
-  reattach(session: RtcSession, options?: { forceTerminalChannel?: boolean }): void
+  reattach(session: TerminalSession, options?: { forceTerminalChannel?: boolean }): void
   client: TerminalClient | null
 }
+
+type TerminalSession = RtcSession | ProtoClientSession
 
 export function useTerminalSession(options: UseTerminalSessionOptions): UseTerminalSessionResult {
   const [snapshot, dispatch] = useReducer(reduceConnectionMessage, undefined, initialConnectionSnapshot)
@@ -219,7 +222,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
         }
         setResizeControl(defaultTerminalResizeControl)
         sessionRef.current = targetSession
-        const info = await targetSession.getConnectionInfo()
+        const info = await terminalSessionConnectionInfo(targetSession)
         if (terminalRecoverySeqRef.current !== seq) return false
         connectionIdRef.current = info.connectionId
         const protocolSession = createProtocolSession(targetSession, options.machineId, options.terminalId, info)
@@ -293,7 +296,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       if (!retried) {
         dispatch({ type: 'connection.failed', reason: 'terminal input retry failed', recoverable: true, surface: 'banner' })
       } else {
-        const info = await session.getConnectionInfo()
+        const info = await terminalSessionConnectionInfo(session)
         dispatch({ type: 'connection.verified', connectionId: info.connectionId })
       }
     } catch (err) {
@@ -431,7 +434,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     clearPendingRecoveryInput()
     dispatch({ type: 'user.connectMachine', machineId: options.machineId })
 
-    options.session.getConnectionInfo().then((info) => {
+    terminalSessionConnectionInfo(options.session).then((info) => {
       if (cancelled) return
       connectionIdRef.current = info.connectionId
       logSession('connection_info', {
@@ -634,7 +637,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     dispatch({ type: 'app.resume', resumeKind })
   }, [])
 
-  const reattach = useCallback((session: RtcSession, reattachOptions: { forceTerminalChannel?: boolean } = {}) => {
+  const reattach = useCallback((session: TerminalSession, reattachOptions: { forceTerminalChannel?: boolean } = {}) => {
     void recoverTerminalChannel('terminal reattach requested', {
       session,
       forceTerminalChannel: reattachOptions.forceTerminalChannel,
@@ -713,129 +716,22 @@ function scrollbackResultMetadata(page: Pick<TerminalScrollbackLoadResult, 'comm
 }
 
 function createProtocolSession(
-  session: RtcSession,
+  session: TerminalSession,
   machineId: string,
   terminalId: string,
   connectionInfo: Awaited<ReturnType<RtcSession['getConnectionInfo']>>,
 ): TerminalProtocolSession {
-  let protocol: TerminalProtocolSession | null = null
-  let protocolPromise: Promise<TerminalProtocolSession> | null = null
-  const pendingSubscribers = new Map<string, Set<Parameters<TerminalProtocolSession['subscribeTerminal']>[1]>>()
-  let closed = false
-  let pendingChannel: Awaited<ReturnType<RtcSession['openTerminal']>> | null = null
-  const resetProtocol = (id: string) => {
-    protocol?.closeTerminalChannel(id)
-    pendingChannel?.close()
-    protocol = null
-    protocolPromise = null
-    pendingChannel = null
-    closeRtcTerminalDataChannel(session, id)
-  }
-  const ensureProtocol = async (id: string): Promise<TerminalProtocolSession> => {
-    if (protocol) return protocol
-    if (closed) throw new Error(`terminal protocol session ${terminalId} is closed`)
-    if (!protocolPromise) {
-      protocolPromise = session.openTerminal(id).then((channel) => {
-        if (closed) {
-          channel.close()
-          return createClosedProtocolSession(connectionInfo, `terminal protocol session ${terminalId} is closed`)
-        }
-        pendingChannel = channel
-        protocol = createTerminalProtocolClient({
-          channel,
-          machineId,
-          terminalId,
-          connectionInfo,
-          resizePolicy: 'follower',
-          surfaceId: `app:${machineId}:terminal:${terminalId}`,
-          autoRequestResizeOwner: true,
-        })
-        for (const [pendingTerminalId, handlers] of pendingSubscribers) {
-          for (const handler of handlers) {
-            protocol.subscribeTerminal(pendingTerminalId, handler)
-          }
-        }
-        return protocol
-      }).catch((err: unknown) => {
-        if (!closed) throw err
-        return createClosedProtocolSession(connectionInfo, err instanceof Error ? err.message : String(err))
-      })
-    }
-    return protocolPromise
-  }
-  return {
-    async openTerminal(id) {
-      try {
-        const current = await ensureProtocol(id)
-        return await current.openTerminal(id)
-      } catch (err) {
-        if (!closed) resetProtocol(id)
-        throw err
-      }
-    },
-    getConnectionInfo: () => Promise.resolve(connectionInfo),
-    subscribeTerminal(id, handler) {
-      if (protocol) return protocol.subscribeTerminal(id, handler)
-      let handlers = pendingSubscribers.get(id)
-      if (!handlers) {
-        handlers = new Set()
-        pendingSubscribers.set(id, handlers)
-      }
-      handlers.add(handler)
-      void ensureProtocol(id)
-      return () => {
-        handlers?.delete(handler)
-      }
-    },
-    async loadScrollback(id, offset, limit, alternate) {
-      const current = await ensureProtocol(id)
-      return current.loadScrollback(id, offset, limit, alternate)
-    },
-    closeTerminalChannel(id) {
-      closed = true
-      resetProtocol(id)
-    },
-    markSyncLost(id, reason) {
-      if (closed) return
-      if (protocol?.markSyncLost) {
-        protocol.markSyncLost(id, reason)
-        return
-      }
-      void ensureProtocol(id).then((current) => {
-        current.markSyncLost?.(id, reason)
-      }).catch(() => {})
-    },
-    async requestResizeOwner(id, size) {
-      return withRecoverableProtocolRetry(id, async (current) => {
-        if (!current.requestResizeOwner) throw new Error('terminal resize ownership is not available')
-        return current.requestResizeOwner(id, size)
-      })
-    },
-    async releaseResizeOwner(id) {
-      return withRecoverableProtocolRetry(id, async (current) => {
-        if (!current.releaseResizeOwner) throw new Error('terminal resize ownership is not available')
-        return current.releaseResizeOwner(id)
-      })
-    },
-  }
-
-  async function withRecoverableProtocolRetry<T>(
-    id: string,
-    run: (current: TerminalProtocolSession) => Promise<T>,
-  ): Promise<T> {
-    const current = await ensureProtocol(id)
-    try {
-      return await run(current)
-    } catch (err) {
-      if (closed || !isRecoverableTerminalProtocolError(err)) throw err
-      resetProtocol(id)
-      const next = await ensureProtocol(id)
-      return run(next)
-    }
-  }
+  if ('execute' in session) return createProtoTerminalProtocolSession(session)
+  return createClosedProtocolSession(connectionInfo, `Browser terminal ${machineId}/${terminalId} is pending the PA005W2 Proto/WASM migration`)
 }
 
-function closeRtcTerminalDataChannel(session: RtcSession, terminalId: string): void {
+function terminalSessionConnectionInfo(session: TerminalSession): Promise<Awaited<ReturnType<RtcSession['getConnectionInfo']>>> {
+  if ('execute' in session) return createProtoTerminalProtocolSession(session).getConnectionInfo()
+  return session.getConnectionInfo()
+}
+
+function closeRtcTerminalDataChannel(session: TerminalSession, terminalId: string): void {
+  if ('execute' in session) return
   const controller = session as RtcSession & Partial<RtcTerminalDataChannelController>
   if (typeof controller.closeTerminalDataChannel === 'function') {
     controller.closeTerminalDataChannel(terminalId)

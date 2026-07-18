@@ -1,4 +1,17 @@
+import { create } from '@bufbuild/protobuf'
+import type { ProtoClientSession } from '../core/protoClientSession'
 import type { RtcSession } from '../core/transport'
+import { CommandEnvelopeSchema } from '../generated/apipb/application_pb'
+import {
+  StorageDeleteCommandSchema,
+  StorageGetCommandSchema,
+  StorageKeySchema,
+  StorageListCommandSchema,
+  StoragePutCommandSchema,
+  StorageScope,
+  StorageVersionFenceSchema,
+  type StorageEntry,
+} from '../generated/apipb/storage_pb'
 
 export type RemoteStorageScope = 'public' | 'private'
 
@@ -44,7 +57,8 @@ export interface RemoteStorageListInput {
 
 const defaultStorageScope: RemoteStorageScope = 'public'
 
-export function createRemoteStorageApi(session: Pick<RtcSession, 'openApi'>): RemoteStorageApi {
+export function createRemoteStorageApi(session: Pick<RtcSession, 'openApi'> | ProtoClientSession): RemoteStorageApi {
+  if ('execute' in session) return createProtoRemoteStorageApi(session)
   const request = async <TResponse>(path: string, params: Record<string, unknown>): Promise<TResponse> => {
     const channel = await session.openApi()
     return await channel.request<TResponse>('POST', { path, params })
@@ -81,6 +95,80 @@ export function createRemoteStorageApi(session: Pick<RtcSession, 'openApi'>): Re
       })
       return Array.isArray(response.entries) ? response.entries.map(normalizeStorageEntry) : []
     },
+  }
+}
+
+function createProtoRemoteStorageApi(session: ProtoClientSession): RemoteStorageApi {
+  const execute = (caseName: string, value: object) => session.execute(
+    create(CommandEnvelopeSchema, { command: { case: caseName, value } } as never),
+  )
+  return {
+    async get(input) {
+      const result = await execute('storageGet', create(StorageGetCommandSchema, { key: protoStorageKey(input) }))
+      if (result.result.case !== 'storageGet' || !result.result.value.entry) throw new Error('storage get returned no entry')
+      return protoStorageEntry(result.result.value.entry)
+    },
+    async put(input) {
+      const result = await execute('storagePut', create(StoragePutCommandSchema, {
+        key: protoStorageKey(input),
+        value: storageValue(input.value),
+        version: protoVersionFence(input.expectedVersion),
+      }))
+      if (result.result.case !== 'storagePut' || !result.result.value.entry) throw new Error('storage put returned no entry')
+      return protoStorageEntry(result.result.value.entry)
+    },
+    async delete(input) {
+      const result = await execute('storageDelete', create(StorageDeleteCommandSchema, {
+        key: protoStorageKey(input),
+        version: protoVersionFence(input.expectedVersion),
+      }))
+      if (result.result.case !== 'storageDelete') throw new Error('storage delete returned no result')
+      return { deleted: result.result.value.deleted, version: Number(result.result.value.version) }
+    },
+    async list(input) {
+      const result = await execute('storageList', create(StorageListCommandSchema, {
+        appId: input.appId,
+        scope: protoStorageScope(input.scope),
+        ownerId: input.ownerId ?? '',
+        prefix: input.prefix ?? '',
+      }))
+      if (result.result.case !== 'storageList') throw new Error('storage list returned no result')
+      return result.result.value.entries.map(protoStorageEntry)
+    },
+  }
+}
+
+function protoStorageKey(input: RemoteStorageKey) {
+  return create(StorageKeySchema, {
+    appId: input.appId,
+    scope: protoStorageScope(input.scope),
+    ownerId: input.ownerId ?? '',
+    key: input.key,
+  })
+}
+
+function protoStorageScope(scope: string | undefined): StorageScope {
+  return scope === 'private' ? StorageScope.PRIVATE : StorageScope.PUBLIC
+}
+
+function protoVersionFence(expectedVersion: number | undefined) {
+  return create(StorageVersionFenceSchema, {
+    checkVersion: typeof expectedVersion === 'number',
+    expectedVersion: BigInt(expectedVersion ?? 0),
+  })
+}
+
+function protoStorageEntry(entry: StorageEntry): RemoteStorageEntry {
+  const key = entry.key
+  if (!key) throw new Error('storage entry key is missing')
+  return {
+    appId: key.appId,
+    scope: key.scope === StorageScope.PRIVATE ? 'private' : 'public',
+    ownerId: key.ownerId,
+    key: key.key,
+    value: entry.value.slice(),
+    version: Number(entry.version),
+    updatedAt: entry.updatedAtUnixNano > 0n ? new Date(Number(entry.updatedAtUnixNano / 1_000_000n)).toISOString() : undefined,
   }
 }
 

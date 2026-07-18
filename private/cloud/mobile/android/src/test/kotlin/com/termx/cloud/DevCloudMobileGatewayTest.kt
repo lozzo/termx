@@ -1,11 +1,7 @@
 package com.termx.cloud
 
-import com.termx.app.managed.ManagedEndpointContract
 import com.termx.app.managed.ManagedEndpointFailure
-import com.termx.app.managed.ManagedEndpointSpec
 import com.termx.app.managed.ManagedCloudClientMetadata
-import com.termx.app.managed.ManagedSignalOffer
-import com.termx.app.managed.RelayMode
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -107,28 +103,33 @@ class DevCloudMobileGatewayTest {
             val loginFlow = gateway.beginLogin(ManagedCloudClientMetadata("Huawei test phone", "android", "test"))
             assertEquals("TERM-X", loginFlow.userCode)
             assertEquals("account-1", gateway.completeLogin(loginFlow.flowId).accountId)
-            val spec = ManagedEndpointSpec(
-                endpointId = "endpoint-1",
-                targetDeviceId = "daemon-1",
-                deviceFingerprint = "ed25519-sha256:fixture",
-                grantRef = "grant-ref-1",
-                relayMode = RelayMode.DIRECT,
-            )
-            val resolution = gateway.resolve(spec)
+            val resolution = gateway.resolveProto(CloudCompanion.ResolveEndpointRequest.newBuilder()
+                .setEndpointId("endpoint-1")
+                .setTargetDeviceId("daemon-1")
+                .build())
             assertEquals("managed-session-1", resolution.managedSessionId)
             control.close()
             val restartedGateway = DevCloudMobileGateway(control.origin, hub.origin, now = { now }, sessionStore = sessionStore)
-            val offlineResolution = restartedGateway.resolve(spec.copy(endpointId = "endpoint-control-down"))
-            val relayResolution = restartedGateway.resolve(spec.copy(endpointId = "endpoint-relay", relayMode = RelayMode.RELAY_ONLY))
-            assertEquals("turn:127.0.0.1:41003?transport=udp", relayResolution.iceServers.single().urls.single())
-            val answer = restartedGateway.createSignalingSession(
-                spec,
-                offlineResolution,
-                ManagedSignalOffer("offer-sdp"),
-                ManagedEndpointContract.dialPolicy(RelayMode.DIRECT),
-            )
-            assertEquals("answer-sdp", answer.sdp)
-            assertEquals(listOf("candidate:streamed", "candidate:answer"), answer.candidates)
+            val offlineResolution = restartedGateway.resolveProto(CloudCompanion.ResolveEndpointRequest.newBuilder()
+                .setEndpointId("endpoint-control-down")
+                .setTargetDeviceId("daemon-1")
+                .build())
+            val relayLease = restartedGateway.acquireRelayProto(CloudCompanion.AcquireRelayLeaseRequest.newBuilder()
+                .setManagedSessionId(offlineResolution.managedSessionId)
+                .setTargetDeviceId("daemon-1")
+                .setRoutePreference(CloudCompanion.RoutePreference.ROUTE_PREFERENCE_STANDARD_RELAY)
+                .build())
+            assertEquals("turn:127.0.0.1:41003?transport=udp", relayLease.iceServersList.single().urlsList.single())
+            val signaling = restartedGateway.createSignalingProto(CloudCompanion.CreateSignalingSessionRequest.newBuilder()
+                .setEndpointId("endpoint-control-down")
+                .setManagedSessionId(offlineResolution.managedSessionId)
+                .setTargetDeviceId("daemon-1")
+                .setOfferSdp("offer-sdp")
+                .setRoutePreference(CloudCompanion.RoutePreference.ROUTE_PREFERENCE_DIRECT_ONLY)
+                .build())
+            assertEquals("answer-sdp", signaling.last().answer.sdp)
+            assertEquals(listOf("candidate:streamed", "candidate:answer"),
+                signaling.filter { it.hasCandidate() }.map { it.candidate.candidate } + signaling.last().answer.candidatesList.map { it.candidate })
 
             assertEquals(1, records.count { it.path == "/v1/login/begin" })
             assertEquals(1, records.count { it.path == "/v1/login/complete" })

@@ -1,6 +1,7 @@
 package com.termx.app.managed
 
 import android.content.Context
+import termx.cloud.v1.CloudCompanion
 
 /** Official App 私有 cloud module 必须实现的固定 first-party factory contract。 */
 interface ManagedCloudModuleFactory {
@@ -37,33 +38,15 @@ private class BrokenOfficialCloudAdapter(private val detail: String) : ManagedCl
     override suspend fun currentAccount(): ManagedCloudAccount? = unavailable()
     override suspend fun listDevices(): List<ManagedCloudDevice> = unavailable()
     override suspend fun logout() = unavailable()
+    override suspend fun resolveProto(request: CloudCompanion.ResolveEndpointRequest): CloudCompanion.ResolvedEndpoint = unavailable()
+    override suspend fun createSignalingProto(request: CloudCompanion.CreateSignalingSessionRequest): List<CloudCompanion.SignalingEvent> = unavailable()
+    override suspend fun acquireRelayProto(request: CloudCompanion.AcquireRelayLeaseRequest): CloudCompanion.RelayLease = unavailable()
+    override suspend fun planRouteProto(request: CloudCompanion.PlanManagedRouteRequest): CloudCompanion.ManagedRoutePlan = unavailable()
+    override suspend fun reportQualityProto(request: CloudCompanion.ReportPathQualityRequest): CloudCompanion.ReportPathQualityResponse = unavailable()
+    override suspend fun reportOutcomeProto(request: CloudCompanion.ReportConnectionOutcomeRequest): CloudCompanion.ReportConnectionOutcomeResponse = unavailable()
 
     private fun unavailable(): Nothing {
         throw ManagedEndpointFailure("companion_untrusted", detail)
     }
 
-    override suspend fun resolve(spec: ManagedEndpointSpec): ManagedEndpointResolution {
-        throw ManagedEndpointFailure("companion_untrusted", detail)
-    }
-
-    override suspend fun createSignalingSession(
-        spec: ManagedEndpointSpec,
-        resolution: ManagedEndpointResolution,
-        offer: ManagedSignalOffer,
-        policy: ManagedDialPolicy,
-    ): ManagedSignalAnswer {
-        throw ManagedEndpointFailure("companion_untrusted", detail)
-    }
-
-    override suspend fun reportPathQuality(summary: ManagedPathQualitySummary) {
-        throw ManagedEndpointFailure("companion_untrusted", detail)
-    }
-
-    override suspend fun planManagedRoute(
-        spec: ManagedEndpointSpec,
-        resolution: ManagedEndpointResolution,
-        policy: ManagedDialPolicy,
-    ): ManagedRoutePlan {
-        throw ManagedEndpointFailure("companion_untrusted", detail)
-    }
 }

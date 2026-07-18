@@ -66,6 +66,51 @@ func (registry *Registry) Execute(engineHandle, sessionHandle uint64, payload []
 	return engine.Execute(sessionHandle, payload)
 }
 
+// OpenResourceStream 把 serialized bindingpb.OpenResourceStreamRequest 路由到指定 session。
+func (registry *Registry) OpenResourceStream(engineHandle, sessionHandle uint64, payload []byte) (uint64, error) {
+	engine, err := registry.engine(engineHandle)
+	if err != nil {
+		return 0, err
+	}
+	return engine.OpenResourceStream(sessionHandle, payload)
+}
+
+// SendResourceStreamFrame 把 serialized bindingpb.ResourceStreamFrame 路由到 opaque stream handle。
+func (registry *Registry) SendResourceStreamFrame(engineHandle, streamHandle uint64, payload []byte) error {
+	engine, err := registry.engine(engineHandle)
+	if err != nil {
+		return err
+	}
+	return engine.SendResourceStreamFrame(streamHandle, payload)
+}
+
+// CloseResourceStream 关闭指定 opaque stream handle。
+func (registry *Registry) CloseResourceStream(engineHandle, streamHandle uint64) error {
+	engine, err := registry.engine(engineHandle)
+	if err != nil {
+		return err
+	}
+	return engine.CloseResourceStream(streamHandle)
+}
+
+// ImportPairing 把 serialized bindingpb.ImportPairingRequest 路由到指定 engine。
+func (registry *Registry) ImportPairing(engineHandle uint64, payload []byte) (uint64, error) {
+	engine, err := registry.engine(engineHandle)
+	if err != nil {
+		return 0, err
+	}
+	return engine.ImportPairing(payload)
+}
+
+// DeleteCredential 把 serialized bindingpb.DeleteCredentialRequest 路由到指定 engine。
+func (registry *Registry) DeleteCredential(engineHandle uint64, payload []byte) (uint64, error) {
+	engine, err := registry.engine(engineHandle)
+	if err != nil {
+		return 0, err
+	}
+	return engine.DeleteCredential(payload)
+}
+
 // NextEvent 读取指定 engine 的下一条 serialized bindingpb.EventEnvelope。
 func (registry *Registry) NextEvent(ctx context.Context, engineHandle uint64) ([]byte, error) {
 	engine, err := registry.engine(engineHandle)

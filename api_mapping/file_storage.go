@@ -172,9 +172,9 @@ func FileBatchToProto(result corev2.FileBatchResult) *apipb.FileBatchResult {
 	return out
 }
 
-// FileTransferToProto 映射 session-bound transfer，隐藏 channel/window/chunk。
+// FileTransferToProto 映射 session-bound transfer；内部 channel 隐藏在 resource token，流控上限通过 Proto 显式返回跨端 consumer。
 func FileTransferToProto(origin *apipb.EndpointSessionStamp, operation *apipb.OperationStamp, transfer corev2.FileTransfer) *apipb.FileTransferOpenResult {
-	handle := &apipb.FileTransferHandle{Resource: &apipb.ResourceHandle{OpaqueToken: cloneBytes(transfer.OpaqueToken), Kind: apipb.ResourceKind_RESOURCE_KIND_FILE_TRANSFER, Session: cloneSessionStamp(origin), Generation: 1}, Path: transfer.Path, Offset: transfer.Offset, Size: transfer.Size, ModifiedAtUnixNano: unixNanoOrZero(transfer.ModifiedAt), Operation: cloneOperationStamp(operation)}
+	handle := &apipb.FileTransferHandle{Resource: &apipb.ResourceHandle{OpaqueToken: cloneBytes(transfer.OpaqueToken), Kind: apipb.ResourceKind_RESOURCE_KIND_FILE_TRANSFER, Session: cloneSessionStamp(origin), Generation: 1}, Path: transfer.Path, Offset: transfer.Offset, Size: transfer.Size, ModifiedAtUnixNano: unixNanoOrZero(transfer.ModifiedAt), Operation: cloneOperationStamp(operation), ChunkBytes: uint32(transfer.ChunkBytes), WindowBytes: transfer.WindowBytes}
 	if len(transfer.ResumeToken) > 0 {
 		handle.Resume = &apipb.FileUploadResumeHandle{OpaqueToken: cloneBytes(transfer.ResumeToken)}
 	}

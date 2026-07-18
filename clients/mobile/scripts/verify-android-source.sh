@@ -21,30 +21,39 @@ required_sources=(
   NativeHapticPlugin.java
   TermxDebugLog.kt
   TermxWebChromeClient.java
-  connection/BridgeRouter.kt
-  connection/ConnectionStore.kt
-  connection/ConnectionStoreManager.kt
-  connectors/ManagedWebRTCConnector.kt
+  goclient/AndroidClientPlatform.kt
+  goclient/GoClientBridgeServer.kt
+  goclient/GoClientNative.kt
   managed/AndroidGrantCredentialStore.kt
   managed/ManagedCloudAdapter.kt
   managed/ManagedCloudAssembly.kt
-  managed/ManagedEndpointContract.kt
-  managed/ManagedPathQuality.kt
-  managed/ManagedPathQualityReporter.kt
-  managed/ManagedRoutePlan.kt
-  network/BridgeServer.kt
-  network/NetworkStateManager.kt
-  transfer/FileTransferManager.kt
-  transfer/TransferTaskStore.kt
-  transport/ChannelManager.kt
-  transport/Heartbeat.kt
-  transport/WebRTCTransport.kt
   util/HttpHelper.java
   util/StorageHelper.java
 )
 for relative_path in "${required_sources[@]}"; do
   if [[ ! -s "$source_root/$relative_path" ]]; then
     echo "cap sync removed required Android source: $relative_path" >&2
+    exit 1
+  fi
+done
+
+forbidden_sources=(
+  connection/BridgeRouter.kt
+  connection/ConnectionStore.kt
+  connection/ConnectionStoreManager.kt
+  connectors/ManagedWebRTCConnector.kt
+  network/BridgeServer.kt
+  network/NetworkStateManager.kt
+  transfer/FileTransferManager.kt
+  transfer/FileTransferProtocol.kt
+  transfer/TransferTaskStore.kt
+  transport/ChannelManager.kt
+  transport/Heartbeat.kt
+  transport/WebRTCTransport.kt
+)
+for relative_path in "${forbidden_sources[@]}"; do
+  if [[ -e "$source_root/$relative_path" ]]; then
+    echo "obsolete Android network owner must not return: $relative_path" >&2
     exit 1
   fi
 done
@@ -63,7 +72,6 @@ done
 
 required_manifest_fragments=(
   android.permission.ACCESS_NETWORK_STATE
-  android.permission.WAKE_LOCK
   android.permission.VIBRATE
   android.permission.CAMERA
   android:networkSecurityConfig

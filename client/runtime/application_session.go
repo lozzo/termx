@@ -24,6 +24,20 @@ type ApplicationReadySession interface {
 	ApplicationEvents(context.Context) (<-chan *apipb.EventEnvelope, error)
 }
 
+// ResourceStreamSession 是 ready connection 对 session-bound stream resource 的内部 framing 能力。
+// resource 真值来自 apipb.ResourceHandle；frame type 与 payload 只在 protocol/binding adapter 间运输，不成为第二套业务 API。
+type ResourceStreamSession interface {
+	OpenResourceStream(*apipb.ResourceHandle) (ResourceStream, error)
+}
+
+// ResourceStream 是 attachment/file resource 对应的有界有序 frame stream。
+// Receive 必须响应 context 取消；Send 必须拒绝不属于该 resource kind 的 frame type；Close 必须幂等并解除 framing registry。
+type ResourceStream interface {
+	Receive(context.Context) (uint8, []byte, error)
+	Send(context.Context, uint8, []byte) error
+	Close() error
+}
+
 type protoApplicationEventSource interface {
 	ApplicationEvents(context.Context) (<-chan *apipb.EventEnvelope, error)
 }

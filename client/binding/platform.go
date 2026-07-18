@@ -1,0 +1,160 @@
+package binding
+
+import (
+	"context"
+	"fmt"
+	"sync"
+
+	"github.com/lozzow/termx/proto/bindingpb"
+	"google.golang.org/protobuf/proto"
+)
+
+const defaultPlatformRequestCapacity = 64
+
+// PairingHost 是 binding 可选的 portable pairing bootstrap owner。
+// 实现必须使用 generated Proto 验证 bundle，并通过平台 credential signer/store port 准备身份；不得把私钥返回 binding。
+type PairingHost interface {
+	// ImportPairing 验证一次性 bootstrap 并返回非秘密 endpoint metadata。
+	ImportPairing(context.Context, *bindingpb.ImportPairingRequest) (*bindingpb.ImportPairingResult, error)
+}
+
+// CredentialHost 是 binding 可选的平台 credential lifecycle owner。
+// 删除只移除本地 credential，不代表 daemon grant 已撤销。
+type CredentialHost interface {
+	// DeleteCredential 删除 request 指定的平台 credential ref。
+	DeleteCredential(context.Context, *bindingpb.DeleteCredentialRequest) error
+}
+
+// PlatformBroker 是 Go Client Engine 与 Android/WASM platform adapter 之间的 request/response owner。
+// 请求和响应均为 bindingpb，平台通过 NextRequest/Complete 驱动；broker 不解释 Cloud 或 credential 字段。
+type PlatformBroker struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	mu      sync.Mutex
+	closed  bool
+	nextID  uint64
+	pending map[uint64]chan *bindingpb.PlatformResponse
+	queue   chan []byte
+}
+
+// NewPlatformBroker 创建有界平台请求 broker。
+// 队列满时 Exchange 施加背压；关闭会取消全部等待方，不能静默丢弃签名或 signaling 请求。
+func NewPlatformBroker() *PlatformBroker {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &PlatformBroker{
+		ctx: ctx, cancel: cancel, pending: make(map[uint64]chan *bindingpb.PlatformResponse),
+		queue: make(chan []byte, defaultPlatformRequestCapacity),
+	}
+}
+
+// Exchange 发布一条平台请求并等待 request_id 匹配的响应。
+// 调用方 context 取消后会移除 pending；迟到响应返回 invalid request，不能命中新请求。
+func (broker *PlatformBroker) Exchange(ctx context.Context, request *bindingpb.PlatformRequest) (*bindingpb.PlatformResponse, error) {
+	if broker == nil || request == nil || request.GetRequest() == nil {
+		return nil, fmt.Errorf("platform request is incomplete")
+	}
+	broker.mu.Lock()
+	if broker.closed || broker.nextID == ^uint64(0) {
+		broker.mu.Unlock()
+		return nil, ErrClosed
+	}
+	broker.nextID++
+	requestID := broker.nextID
+	responseChannel := make(chan *bindingpb.PlatformResponse, 1)
+	broker.pending[requestID] = responseChannel
+	broker.mu.Unlock()
+
+	snapshot := proto.Clone(request).(*bindingpb.PlatformRequest)
+	snapshot.RequestId = requestID
+	payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(snapshot)
+	if err != nil {
+		broker.removePending(requestID)
+		return nil, fmt.Errorf("encode platform request: %w", err)
+	}
+	select {
+	case <-ctx.Done():
+		broker.removePending(requestID)
+		return nil, ctx.Err()
+	case <-broker.ctx.Done():
+		broker.removePending(requestID)
+		return nil, ErrClosed
+	case broker.queue <- payload:
+	}
+	select {
+	case <-ctx.Done():
+		broker.removePending(requestID)
+		return nil, ctx.Err()
+	case <-broker.ctx.Done():
+		broker.removePending(requestID)
+		return nil, ErrClosed
+	case response := <-responseChannel:
+		return response, nil
+	}
+}
+
+// NextRequest 阻塞读取下一条 serialized bindingpb.PlatformRequest。
+// 返回独立副本，JNI/WASM wrapper 必须沿用显式 buffer ownership。
+func (broker *PlatformBroker) NextRequest(ctx context.Context) ([]byte, error) {
+	if broker == nil {
+		return nil, ErrClosed
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-broker.ctx.Done():
+		return nil, ErrClosed
+	case payload := <-broker.queue:
+		return append([]byte(nil), payload...), nil
+	}
+}
+
+// Complete 解析并交付一条 PlatformResponse。
+// request_id 缺失、未知或重复完成都会失败，平台错误必须写入 response.error 而不是吞掉响应。
+func (broker *PlatformBroker) Complete(payload []byte) error {
+	if err := validatePayload(payload); err != nil {
+		return err
+	}
+	response := &bindingpb.PlatformResponse{}
+	if err := (proto.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(payload, response); err != nil {
+		return fmt.Errorf("decode platform response: %w", err)
+	}
+	if response.GetRequestId() == 0 {
+		return fmt.Errorf("platform response request_id is required")
+	}
+	broker.mu.Lock()
+	channel := broker.pending[response.GetRequestId()]
+	if channel != nil {
+		delete(broker.pending, response.GetRequestId())
+	}
+	broker.mu.Unlock()
+	if channel == nil {
+		return ErrInvalidHandle
+	}
+	channel <- proto.Clone(response).(*bindingpb.PlatformResponse)
+	return nil
+}
+
+// Close 取消全部平台请求并禁止新 Exchange。
+// 方法幂等，适用于 Android process teardown 和 WASM worker disposal。
+func (broker *PlatformBroker) Close() error {
+	if broker == nil {
+		return nil
+	}
+	broker.mu.Lock()
+	if broker.closed {
+		broker.mu.Unlock()
+		return nil
+	}
+	broker.closed = true
+	broker.pending = make(map[uint64]chan *bindingpb.PlatformResponse)
+	broker.mu.Unlock()
+	broker.cancel()
+	return nil
+}
+
+func (broker *PlatformBroker) removePending(requestID uint64) {
+	broker.mu.Lock()
+	delete(broker.pending, requestID)
+	broker.mu.Unlock()
+}

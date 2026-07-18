@@ -59,6 +59,64 @@ func TestPionAdapterCompletesAuthHelloAndProtoAPI(t *testing.T) {
 	}
 }
 
+func TestPionAdapterCompletesPairingExchangeAndClosesPairingChannel(t *testing.T) {
+	_, daemonPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := remoteauth.NewIdentity("device-pairing", daemonPrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	store, err := remoteauth.LoadAccessStore(t.TempDir(), identity, remoteauth.AccessStoreOptions{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	bundle, _, err := store.IssuePairingBundle(remoteauth.PairingIssueOptions{
+		Scope: remoteauth.Scope{AllowDaemon: true}, TicketTTL: time.Hour, GrantLifetime: time.Hour, Now: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := remoteauth.EncodePairingBundle(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientIdentity, err := remoteauth.GenerateClientAccessIdentity("lab", rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := remoteauth.NewPrivateClientAccessSigner(clientIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := core.NewServer(core.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory))
+	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
+		Core: server, Identity: identity, AccessStore: store, Now: func() time.Time { return now },
+	}}
+	attempt := attemptFixture(t, identity)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	paired, err := (&managed.PairingDialer{
+		Cloud: signalingCompanion(answerer), Peers: pionadapter.Factory{}, Now: func() time.Time { return now },
+	}).Redeem(ctx, attempt, remoteauth.ClientPairingRequest{
+		ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.Fingerprint,
+		PairingBundle: payload, Identity: clientIdentity, Signer: signer, ClientLabel: "android-pairing-e2e",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := remoteauth.Verify(paired.Grant, identity.Fingerprint, now, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paired.TicketID == "" || paired.DeliveryReceipt == "" || claims.SubjectKeyFingerprint != clientIdentity.Fingerprint || !claims.Scope.AllowDaemon {
+		t.Fatalf("pairing result=%+v claims=%+v", paired, claims)
+	}
+}
+
 type staticCredentialSource struct {
 	credential remoteauth.ClientAccessCredential
 }

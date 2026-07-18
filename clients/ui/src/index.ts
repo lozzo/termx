@@ -40,6 +40,15 @@ export type {
   TerminalModifierState,
 } from './terminal/mobileTerminalInput'
 export { createFileApi, createFilePreviewSource } from './files/fileApi'
+export {
+  decodeFileStreamErrorPayload,
+  decodeFileTransferAckPayload,
+  decodeFileTransferDataPayload,
+  decodeFileTransferFinishPayload,
+  decodeFileTransferResultPayload,
+  encodeFileTransferAckPayload,
+  encodeFileTransferDataPayload,
+} from './files/fileStreamProtocol'
 export type {
   DirListResponse,
   DownloadInitResponse,
@@ -71,7 +80,7 @@ export type { ConnectionStatePublisher } from './connection/connectionState'
 export { FileManager } from './files/FileManager'
 export type { FileManagerProps } from './files/FileManager'
 export { MachineWorkspace } from './app/MachineWorkspace'
-export type { MachineWorkspaceProps, MachineWorkspaceConnector, MachineWorkspaceSessionInput, MachineWorkspaceInventoryApi } from './app/MachineWorkspace'
+export type { MachineWorkspaceProps, MachineWorkspaceConnector, MachineWorkspaceClientSession, MachineWorkspaceSessionInput, MachineWorkspaceInventoryApi } from './app/MachineWorkspace'
 export { MachineList } from './machines/MachineList'
 export type { MachineListProps } from './machines/MachineList'
 export { MachineBrowserShell } from './app/MachineBrowserShell'
@@ -136,10 +145,6 @@ export {
 export type {
   MachineSessionStore,
 } from './state/localAppIdentity'
-export { createTerminalProtocolClient } from './terminal/terminalProtocolClient'
-export type { TerminalProtocolClientOptions } from './terminal/terminalProtocolClient'
-export { createTermxProtocolMultiplexer } from './terminal/termxProtocolMultiplexer'
-export type { TermxProtocolMultiplexer } from './terminal/termxProtocolMultiplexer'
 export {
   TERMX_FRAME_TYPES,
   TERMX_MAX_FRAME_SIZE,
@@ -304,3 +309,20 @@ export type {
 export { useFileManager } from './files/useFileManager'
 export type { FileManagerVisibleError, UseFileManagerOptions, UseFileManagerResult } from './files/useFileManager'
 export * from './terminal/useTerminalSession'
+export * as TermxApiAccessRemote from './generated/apipb/access_remote_pb'
+export * as TermxApiApplication from './generated/apipb/application_pb'
+export * as TermxApiCommon from './generated/apipb/common_pb'
+export * as TermxApiEvents from './generated/apipb/events_pb'
+export * as TermxApiFile from './generated/apipb/file_pb'
+export * as TermxApiHistory from './generated/apipb/history_pb'
+export * as TermxApiRuntime from './generated/apipb/runtime_pb'
+export * as TermxApiStorage from './generated/apipb/storage_pb'
+export * as TermxApiTerminal from './generated/apipb/terminal_pb'
+export * as TermxApiWorkbench from './generated/apipb/workbench_pb'
+export * as TermxClientBinding from './generated/bindingpb/client_binding_pb'
+export type {
+  ProtoClientSession,
+  ProtoClientSubscription,
+  ProtoResourceStream,
+} from './core/protoClientSession'
+export * as TermxCloud from './generated/cloudpb/cloud_companion_pb'

@@ -4,12 +4,13 @@ import terminalSource from './Terminal.tsx?raw'
 import hookSource from './useTerminalSession.tsx?raw'
 import type { TerminalProps } from './Terminal'
 import type { RtcSession } from '../core/transport'
+import type { ProtoClientSession } from '../core/protoClientSession'
 
 describe('terminal runtime boundary', () => {
   it('keeps UI terminal consumers on RtcSession instead of browser or protocol transport types', () => {
-    expectTypeOf<TerminalProps['session']>().toEqualTypeOf<RtcSession>()
+    expectTypeOf<TerminalProps['session']>().toEqualTypeOf<RtcSession | ProtoClientSession>()
     expect(terminalSource).not.toMatch(/TerminalProtocolSession|RTCPeerConnection|RTCDataChannel/)
-    expect(hookSource).toMatch(/createTerminalProtocolClient/)
+    expect(hookSource).toMatch(/createProtoTerminalProtocolSession/)
     expect(hookSource).not.toMatch(/RTCPeerConnection|RTCDataChannel/)
   })
 

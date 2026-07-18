@@ -1,6 +1,12 @@
 package com.termx.app
 
 import android.os.Build
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.net.ConnectivityManager
+import android.net.Network
 import android.util.Log
 import android.util.Base64
 import com.getcapacitor.JSObject
@@ -8,22 +14,13 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
-import com.termx.app.connection.BridgeRouter
-import com.termx.app.connection.ConnectionStoreManager
-import com.termx.app.connectors.ManagedWebRTCConnector
-import com.termx.app.managed.AndroidClientAccessCredentialStore
-import com.termx.app.managed.AndroidManagedEndpointAuthorizer
 import com.termx.app.managed.ManagedCloudAssembly
 import com.termx.app.managed.ManagedCloudAccount
 import com.termx.app.managed.ManagedCloudClientMetadata
 import com.termx.app.managed.ManagedCloudLoginFlow
 import com.termx.app.managed.ManagedEndpointFailure
-import com.termx.app.managed.ManagedPairingImporter
-import com.termx.app.managed.RelayMode
-import com.termx.app.network.BridgeServer
-import com.termx.app.network.NetworkStateManager
-import com.termx.app.transfer.FileTransferManager
-import com.termx.app.transport.WebRTCTransport
+import com.termx.app.goclient.AndroidGoClientEngine
+import com.termx.app.goclient.GoClientBridgeServer
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.SecureRandom
@@ -33,34 +30,81 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
 
 @CapacitorPlugin(name = "NativeConnection")
-class NativeConnectionPlugin : Plugin() {
+class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
 
     companion object {
         private const val TAG = "TermxNativePlugin"
         private const val BRIDGE_TOKEN_BYTES = 32
     }
 
-    private var bridgeServer: BridgeServer? = null
     private var bridgePort: Int = 0
     private var bridgeToken: String = ""
-    private var storeManager: ConnectionStoreManager? = null
-    private var networkStateManager: NetworkStateManager? = null
-    private var bridgeRouter: BridgeRouter? = null
-    private var fileTransferManager: FileTransferManager? = null
-    private val clientAccessCredentialStore: AndroidClientAccessCredentialStore by lazy { AndroidClientAccessCredentialStore(context) }
+    private var goClientEngine: AndroidGoClientEngine? = null
+    private var goBridgeServer: GoClientBridgeServer? = null
     private val cloudAdapter by lazy { ManagedCloudAssembly.create(context) }
     private val cloudScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val cloudLoginLock = Any()
     private var activeCloudLoginFlow: ManagedCloudLoginFlow? = null
+    private var lifecycleReady = false
+    private val connectivityManager by lazy { context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager }
+    @Volatile private var activeNetwork: Network? = null
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onLost(network: Network) {
+            if (activeNetwork != network) return
+            activeNetwork = null
+            suspendGoBridgeServer()
+        }
+
+        override fun onAvailable(network: Network) {
+            val previous = activeNetwork
+            activeNetwork = network
+            if (previous == network || !lifecycleReady) return
+            if (!ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
+            runCatching { restartGoBridgeServer() }
+                .onFailure { TermxDebugLog.e(TAG, "Go client engine could not follow Android network epoch", it) }
+        }
+    }
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(receiverContext: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_SCREEN_OFF) suspendGoBridgeServer()
+        }
+    }
 
     override fun load() {
         TermxDebugLog.init(context)
-        WebRTCTransport.initFactory(context)
-        startBridgeServer()
+        startGoBridgeServer()
+        ProcessLifecycleOwner.get().lifecycle.addObserver(this)
+        context.registerReceiver(screenReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
+        activeNetwork = connectivityManager.activeNetwork
+        connectivityManager.registerDefaultNetworkCallback(networkCallback)
+        lifecycleReady = true
         Log.i(TAG, "NativeConnectionPlugin loaded")
         TermxDebugLog.i(TAG, "NativeConnectionPlugin loaded")
+    }
+
+    override fun onStart(owner: LifecycleOwner) {
+        if (!lifecycleReady) return
+        resumeGoBridgeServer()
+    }
+
+    override fun onStop(owner: LifecycleOwner) {
+        if (!lifecycleReady) return
+        suspendGoBridgeServer()
+    }
+
+    override fun handleOnDestroy() {
+        lifecycleReady = false
+        ProcessLifecycleOwner.get().lifecycle.removeObserver(this)
+        runCatching { context.unregisterReceiver(screenReceiver) }
+        runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
+        suspendGoBridgeServer()
+        super.handleOnDestroy()
     }
 
     // ─── Connection Management ────────────────────────────────────────────────
@@ -211,103 +255,14 @@ class NativeConnectionPlugin : Plugin() {
     }
 
     @PluginMethod
-    fun connect(call: PluginCall) {
-        val endpointId = call.getString("endpointId") ?: run {
-            call.reject("endpointId required"); return
-        }
-        val targetDeviceId = call.getString("targetDeviceId") ?: run {
-            call.reject("targetDeviceId required"); return
-        }
-        val deviceFingerprint = call.getString("deviceFingerprint") ?: run {
-            call.reject("deviceFingerprint required"); return
-        }
-        val grantRef = call.getString("grantRef") ?: run {
-            call.reject("grantRef required"); return
-        }
-        val relayMode = try {
-            RelayMode.fromWire(call.getString("relayMode") ?: "auto")
-        } catch (failure: ManagedEndpointFailure) {
-            call.reject(failure.message ?: "invalid relayMode"); return
-        }
-
-        storeManager?.connect(
-            endpointId = endpointId,
-            targetDeviceId = targetDeviceId,
-            deviceFingerprint = deviceFingerprint,
-            grantRef = grantRef,
-            relayMode = relayMode,
-        )
-        call.resolve()
-    }
-
-    /** importManagedPairing 验证 v2 one-time ticket，并按可选客户端 EndpointID 准备 key；DeviceID 不替代客户端主键。 */
-    @PluginMethod
-    fun importManagedPairing(call: PluginCall) {
-        val payload = call.getString("payload") ?: run { call.reject("payload required"); return }
-        val expectedEndpointId = call.getString("expectedEndpointId")?.trim()?.takeIf { it.isNotEmpty() }
+    fun handleForegroundResume(call: PluginCall) {
         try {
-            val imported = ManagedPairingImporter(clientAccessCredentialStore).import(
-                payload = payload,
-                expectedEndpointId = expectedEndpointId,
-            )
-            call.resolve(JSObject().apply {
-                put("endpointId", imported.endpointId)
-                put("label", imported.label)
-                put("targetDeviceId", imported.targetDeviceId)
-                put("deviceFingerprint", imported.deviceFingerprint)
-                put("grantRef", imported.grantRef)
-                put("ticketId", imported.ticketId)
-                put("clientKeyFingerprint", imported.clientKeyFingerprint)
-                put("expiresAt", imported.expiresAt.toString())
-                put("authorizationRequired", imported.authorizationRequired)
-            })
-        } catch (failure: ManagedEndpointFailure) {
-            call.reject(failure.message ?: failure.code, failure.code)
-        } catch (failure: Exception) {
-            call.reject("managed pairing import failed")
-        }
-    }
-
-    @PluginMethod
-    fun deleteManagedGrant(call: PluginCall) {
-        val grantRef = call.getString("grantRef") ?: run { call.reject("grantRef required"); return }
-        try {
-            clientAccessCredentialStore.delete(grantRef)
+            // WebView 恢复时无条件切换 generation；冻结前的 JS handle 即使 socket 尚未观察到 close 也必须失效。
+            restartGoBridgeServer()
             call.resolve()
         } catch (failure: Exception) {
-            call.reject(failure.message ?: "failed to delete managed grant")
+            call.reject("Go client engine could not resume", failure)
         }
-    }
-
-    @PluginMethod
-    fun retry(call: PluginCall) {
-        val endpointId = call.getString("endpointId") ?: run {
-            call.reject("endpointId required"); return
-        }
-        storeManager?.retry(endpointId)
-        call.resolve()
-    }
-
-    @PluginMethod
-    fun release(call: PluginCall) {
-        val endpointId = call.getString("endpointId") ?: run {
-            call.reject("endpointId required"); return
-        }
-        storeManager?.release(endpointId)
-        call.resolve()
-    }
-
-    @PluginMethod
-    fun releaseAll(call: PluginCall) {
-        storeManager?.releaseAll()
-        call.resolve()
-    }
-
-    @PluginMethod
-    fun handleForegroundResume(call: PluginCall) {
-        val durationMs = call.getDouble("backgroundDurationMs")?.toLong() ?: 0L
-        storeManager?.handleForegroundResume(durationMs)
-        call.resolve()
     }
 
     @PluginMethod
@@ -316,85 +271,10 @@ class NativeConnectionPlugin : Plugin() {
             call.reject("native bridge server is not ready")
             return
         }
-        bridgeToken = generateBridgeToken()
-        bridgeServer?.rotateAuthToken(bridgeToken)
         val ret = JSObject()
         ret.put("port", bridgePort)
         ret.put("token", bridgeToken)
         call.resolve(ret)
-    }
-
-    @PluginMethod
-    fun getSnapshot(call: PluginCall) {
-        val endpointId = call.getString("endpointId") ?: run {
-            call.reject("endpointId required"); return
-        }
-        val snapshot = storeManager?.getSnapshot(endpointId)
-        if (snapshot == null) {
-            call.reject("no snapshot for $endpointId"); return
-        }
-        val ret = snapshotToJSObject(snapshot)
-        call.resolve(ret)
-    }
-
-    @PluginMethod
-    fun getConnectionInfo(call: PluginCall) {
-        val endpointId = call.getString("endpointId")
-        val info = storeManager?.getConnectionInfo(endpointId) ?: JSONObject()
-        val ret = JSObject()
-        ret.put("type", info.optString("type", "unknown"))
-        ret.put("relayInUse", info.optBoolean("relayInUse", false))
-        info.optString("routeSelectionReason").takeIf { it.isNotBlank() }?.let { ret.put("routeSelectionReason", it) }
-        info.optString("localAddr").takeIf { it.isNotBlank() }?.let { ret.put("localAddr", it) }
-        info.optString("remoteAddr").takeIf { it.isNotBlank() }?.let { ret.put("remoteAddr", it) }
-        info.optString("candidateType").takeIf { it.isNotBlank() }?.let { ret.put("candidateType", it) }
-        info.optString("remoteCandidateType").takeIf { it.isNotBlank() }?.let { ret.put("remoteCandidateType", it) }
-        info.optLong("rtt").takeIf { it > 0 }?.let { ret.put("rtt", it) }
-        call.resolve(ret)
-    }
-
-    @PluginMethod
-    fun getDownloadResumeOffset(call: PluginCall) {
-        val machineId = call.getString("machineId") ?: run {
-            call.reject("machineId required"); return
-        }
-        val filePath = call.getString("filePath") ?: run {
-            call.reject("filePath required"); return
-        }
-        val fileSize = call.getDouble("fileSize")?.toLong() ?: 0L
-        val offset = fileTransferManager?.getDownloadResumeOffset(machineId, filePath, fileSize) ?: 0L
-        val ret = JSObject()
-        ret.put("offset", offset)
-        call.resolve(ret)
-    }
-
-    @PluginMethod
-    fun getTransferSnapshot(call: PluginCall) {
-        val snapshot = fileTransferManager?.getTransferSnapshots() ?: JSONObject().put("transfers", JSONArray())
-        call.resolve(JSObject.fromJSONObject(snapshot))
-    }
-
-    @PluginMethod
-    fun clearTransfer(call: PluginCall) {
-        val transferId = call.getString("transferId") ?: call.getString("transfer_id") ?: run {
-            call.reject("transferId required"); return
-        }
-        fileTransferManager?.clearTransfer(transferId)
-        call.resolve()
-    }
-
-    @PluginMethod
-    fun resumeAllTransfers(call: PluginCall) {
-        val machineId = call.getString("machineId") ?: call.getString("machine_id")
-        if (!machineId.isNullOrBlank()) {
-            fileTransferManager?.resumeAllForMachine(machineId, storeManager?.findTransportForMachine(machineId))
-        } else {
-            val machines = fileTransferManager?.transferMachineIds() ?: emptySet()
-            for (mid in machines) {
-                fileTransferManager?.resumeAllForMachine(mid, storeManager?.findTransportForMachine(mid))
-            }
-        }
-        call.resolve()
     }
 
     @PluginMethod
@@ -427,44 +307,47 @@ class NativeConnectionPlugin : Plugin() {
 
     // ─── Bridge Server Setup ─────────────────────────────────────────────────
 
-    private fun startBridgeServer() {
+    @Synchronized
+    private fun startGoBridgeServer() {
         bridgeToken = generateBridgeToken()
-        val bridge = BridgeServer(0, bridgeToken)
-        bridgeServer = bridge
-
-        val managedConnector = ManagedWebRTCConnector(
-            cloudAdapter, clientAccessCredentialStore, AndroidManagedEndpointAuthorizer(),
-        )
-        val manager = ConnectionStoreManager(context, bridge, managedConnector)
-        storeManager = manager
-
-        val ftm = FileTransferManager(context)
-        fileTransferManager = ftm
-        manager.fileTransferManager = ftm
-
-        val router = BridgeRouter(bridge, manager, ftm)
-        bridgeRouter = router
-        router.setup()
-
-        manager.onStateChanged = { machineId, snapshot ->
-            notifyStateChange(machineId, snapshot)
-        }
-
-        val netManager = NetworkStateManager(context)
-        networkStateManager = netManager
-        netManager.listener = manager
-        netManager.init()
-
+        val engine = AndroidGoClientEngine(context.applicationContext)
+        val bridge = GoClientBridgeServer(engine, bridgeToken)
+        goClientEngine = engine
+        goBridgeServer = bridge
         try {
             bridge.start()
-            if (!bridge.awaitStarted(5000)) {
-                throw IllegalStateException("BridgeServer start timed out")
+            if (!bridge.awaitStarted(5_000)) {
+                throw IllegalStateException("Go binding bridge start timed out")
             }
             bridgePort = bridge.port
-            Log.i(TAG, "BridgeServer started on random loopback port $bridgePort")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start BridgeServer", e)
+            Log.i(TAG, "Go binding bridge started on loopback port $bridgePort")
+        } catch (failure: Exception) {
+            bridgePort = 0
+            runCatching { bridge.close() }
+            goBridgeServer = null
+            goClientEngine = null
+            throw failure
         }
+    }
+
+    @Synchronized
+    private fun restartGoBridgeServer() {
+        suspendGoBridgeServer()
+        startGoBridgeServer()
+    }
+
+    @Synchronized
+    private fun suspendGoBridgeServer() {
+        bridgePort = 0
+        goBridgeServer?.close()
+        goBridgeServer = null
+        goClientEngine = null
+    }
+
+    @Synchronized
+    private fun resumeGoBridgeServer() {
+        if (goBridgeServer != null && bridgePort > 0) return
+        startGoBridgeServer()
     }
 
     private fun accountToJSObject(account: ManagedCloudAccount): JSObject = JSObject().apply {
@@ -491,29 +374,4 @@ class NativeConnectionPlugin : Plugin() {
         return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
     }
 
-    private fun notifyStateChange(@Suppress("UNUSED_PARAMETER") machineId: String, snapshot: JSONObject) {
-        bridgeServer?.sendStateUpdate(snapshot.toString())
-        val data = snapshotToJSObject(snapshot)
-        notifyListeners("stateChange", data)
-    }
-
-    private fun snapshotToJSObject(snapshot: JSONObject): JSObject {
-        val ret = JSObject()
-        ret.put("endpointId", snapshot.optString("endpointId"))
-        ret.put("targetDeviceId", snapshot.optString("targetDeviceId"))
-        ret.put("phase", snapshot.optString("phase"))
-        ret.put("statusText", snapshot.optString("statusText"))
-        val path = snapshot.opt("path")
-        if (path != null && path != JSONObject.NULL) ret.put("path", path.toString())
-        val observedPath = snapshot.opt("observedPath")
-        if (observedPath != null && observedPath != JSONObject.NULL) ret.put("observedPath", observedPath.toString())
-        val routeSelectionReason = snapshot.opt("routeSelectionReason")
-        if (routeSelectionReason != null && routeSelectionReason != JSONObject.NULL) ret.put("routeSelectionReason", routeSelectionReason.toString())
-        ret.put("relayInUse", snapshot.optBoolean("relayInUse", false))
-        ret.put("relayMode", snapshot.optString("relayMode", "auto"))
-        ret.put("version", snapshot.optLong("version", 0L))
-        val failReason = snapshot.opt("failReason")
-        if (failReason != null && failReason != JSONObject.NULL) ret.put("failReason", failReason.toString())
-        return ret
-    }
 }

@@ -2,7 +2,14 @@ termxClientAbiVersion
 termxEngineCreate
 termxEngineOpenSession
 termxEngineExecute
+termxEngineOpenResourceStream
+termxEngineSendResourceStreamFrame
+termxEngineCloseResourceStream
+termxEngineImportPairing
+termxEngineDeleteCredential
 termxEngineNextEvent
+termxPlatformNextRequest
+termxPlatformComplete
 termxEngineCancel
 termxEngineCloseSession
 termxEngineRelease

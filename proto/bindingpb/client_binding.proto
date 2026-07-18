@@ -4,6 +4,7 @@ package termx.client.binding.v1;
 
 import "apipb/application.proto";
 import "apipb/common.proto";
+import "cloudpb/cloud_companion.proto";
 
 option go_package = "github.com/lozzow/termx/proto/bindingpb";
 
@@ -14,11 +15,70 @@ enum ConnectIntent {
   CONNECT_INTENT_PROBE = 3;
 }
 
+enum ManagedRelayMode {
+  MANAGED_RELAY_MODE_UNSPECIFIED = 0;
+  MANAGED_RELAY_MODE_AUTO = 1;
+  MANAGED_RELAY_MODE_DIRECT = 2;
+  MANAGED_RELAY_MODE_RELAY_ONLY = 3;
+  MANAGED_RELAY_MODE_SMART_ROUTE = 4;
+}
+
+enum ResourceStreamFrameType {
+  RESOURCE_STREAM_FRAME_TYPE_UNSPECIFIED = 0;
+  RESOURCE_STREAM_FRAME_TYPE_FILE_DATA = 1;
+  RESOURCE_STREAM_FRAME_TYPE_FILE_ACK = 2;
+  RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH = 3;
+  RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT = 4;
+  RESOURCE_STREAM_FRAME_TYPE_ERROR = 5;
+  RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO = 6;
+}
+
+message ManagedEndpointConfig {
+  string target_device_id = 1;
+  string device_fingerprint = 2;
+  string credential_ref = 3;
+  string account_profile = 4;
+  ManagedRelayMode relay_mode = 5;
+}
+
 message OpenSessionRequest {
   string request_id = 1;
   string endpoint_id = 2;
   string route_override = 3;
   ConnectIntent intent = 4;
+  ManagedEndpointConfig managed = 5;
+}
+
+message ImportPairingRequest {
+  string request_id = 1;
+  string portable_payload = 2;
+  string expected_endpoint_id = 3;
+}
+
+message ImportPairingResult {
+  string request_id = 1;
+  uint64 operation_handle = 2;
+  string endpoint_id = 3;
+  string label = 4;
+  string target_device_id = 5;
+  string device_fingerprint = 6;
+  string credential_ref = 7;
+  string ticket_id = 8;
+  string client_key_fingerprint = 9;
+  int64 expires_at_unix_nano = 10;
+  bool authorization_required = 11;
+  termx.api.v1.ApiError error = 12;
+}
+
+message DeleteCredentialRequest {
+  string request_id = 1;
+  string credential_ref = 2;
+}
+
+message DeleteCredentialResult {
+  string request_id = 1;
+  uint64 operation_handle = 2;
+  termx.api.v1.ApiError error = 3;
 }
 
 message OpenSessionResult {
@@ -41,6 +101,21 @@ message ApplicationEvent {
   termx.api.v1.EventEnvelope event = 2;
 }
 
+message OpenResourceStreamRequest {
+  termx.api.v1.ResourceHandle resource = 1;
+}
+
+message ResourceStreamFrame {
+  uint64 stream_handle = 1;
+  ResourceStreamFrameType type = 2;
+  bytes payload = 3;
+}
+
+message ResourceStreamClosedEvent {
+  uint64 stream_handle = 1;
+  termx.api.v1.ApiError error = 2;
+}
+
 message SessionClosedEvent {
   uint64 session_handle = 1;
   termx.api.v1.EndpointSessionStamp session = 2;
@@ -55,5 +130,76 @@ message EventEnvelope {
     ExecuteResult execute = 11;
     ApplicationEvent application = 12;
     SessionClosedEvent session_closed = 13;
+    ImportPairingResult import_pairing = 14;
+    DeleteCredentialResult delete_credential = 15;
+    ResourceStreamFrame resource_stream_frame = 16;
+    ResourceStreamClosedEvent resource_stream_closed = 17;
+  }
+}
+
+message CredentialResolveRequest {
+  string endpoint_id = 1;
+  string credential_ref = 2;
+}
+
+message CredentialPrepareRequest {
+  string endpoint_id = 1;
+  string credential_ref = 2;
+}
+
+message CredentialDeleteRequest { string credential_ref = 1; }
+
+message CredentialBindRequest {
+  string endpoint_id = 1;
+  string credential_ref = 2;
+  string capability_grant = 3;
+}
+
+message CredentialRecord {
+  string endpoint_id = 1;
+  string credential_ref = 2;
+  bytes public_key = 3;
+  string key_fingerprint = 4;
+  string capability_grant = 5;
+}
+
+message CredentialSignRequest {
+  string credential_ref = 1;
+  bytes payload = 2;
+}
+
+message CredentialSignResponse { bytes signature = 1; }
+
+message SignalingEvents { repeated termx.cloud.v1.SignalingEvent events = 1; }
+
+message PlatformRequest {
+  uint64 request_id = 1;
+  oneof request {
+    CredentialResolveRequest credential_resolve = 10;
+    CredentialPrepareRequest credential_prepare = 11;
+    CredentialDeleteRequest credential_delete = 12;
+    CredentialSignRequest credential_sign = 13;
+    CredentialBindRequest credential_bind = 14;
+    termx.cloud.v1.ResolveEndpointRequest cloud_resolve_endpoint = 20;
+    termx.cloud.v1.CreateSignalingSessionRequest cloud_create_signaling = 21;
+    termx.cloud.v1.AcquireRelayLeaseRequest cloud_acquire_relay = 22;
+    termx.cloud.v1.PlanManagedRouteRequest cloud_plan_route = 23;
+    termx.cloud.v1.ReportPathQualityRequest cloud_report_quality = 24;
+    termx.cloud.v1.ReportConnectionOutcomeRequest cloud_report_outcome = 25;
+  }
+}
+
+message PlatformResponse {
+  uint64 request_id = 1;
+  termx.api.v1.ApiError error = 2;
+  oneof response {
+    CredentialRecord credential = 10;
+    CredentialSignResponse credential_sign = 11;
+    termx.cloud.v1.ResolvedEndpoint cloud_resolved_endpoint = 20;
+    SignalingEvents cloud_signaling = 21;
+    termx.cloud.v1.RelayLease cloud_relay_lease = 22;
+    termx.cloud.v1.ManagedRoutePlan cloud_route_plan = 23;
+    termx.cloud.v1.ReportPathQualityResponse cloud_quality_reported = 24;
+    termx.cloud.v1.ReportConnectionOutcomeResponse cloud_outcome_reported = 25;
   }
 }

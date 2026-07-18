@@ -12,6 +12,7 @@ import { logTerminalDiagnostic, terminalNow } from './terminalDiagnostics'
 import { appendTerminalText } from './terminalTextWindow'
 import { useTerminalSession } from './useTerminalSession'
 import type { RtcSession } from '../core/transport'
+import type { ProtoClientSession } from '../core/protoClientSession'
 import { DEFAULT_TERMINAL_SETTINGS, resolveTerminalTheme, type TerminalSettings } from './terminalSettings'
 
 const historyScrollbackPageRows = 250
@@ -81,7 +82,7 @@ export type TerminalRenderer = 'auto' | 'webgl' | 'canvas' | 'dom'
 export interface TerminalProps {
   machineId: string
   terminalId: string
-  session: RtcSession
+  session: RtcSession | ProtoClientSession
   className?: string
   onReady?: () => void
   onInput?: ((data: string) => void) | undefined
@@ -102,7 +103,7 @@ export interface TerminalHandle {
   sendResize(cols: number, rows: number): void
   requestResizeOwner(): Promise<TerminalResizeControl>
   releaseResizeOwner(): Promise<TerminalResizeControl>
-  reattach(session: RtcSession, options?: { forceTerminalChannel?: boolean }): void
+  reattach(session: RtcSession | ProtoClientSession, options?: { forceTerminalChannel?: boolean }): void
   focus(): void
   blur(): void
   fit(): void

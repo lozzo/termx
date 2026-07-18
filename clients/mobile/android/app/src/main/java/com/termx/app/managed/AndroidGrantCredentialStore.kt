@@ -7,9 +7,10 @@ import android.util.Base64
 import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters
 import org.bouncycastle.crypto.signers.Ed25519Signer
 import org.json.JSONObject
+import termx.client.binding.v1.ClientBinding
 import java.security.KeyStore
+import java.security.MessageDigest
 import java.security.SecureRandom
-import java.time.Instant
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -46,7 +47,7 @@ data class AndroidClientAccessCredential(
  * AndroidClientAccessCredentialStore 使用 Android Keystore AES-GCM key 原子保存 per-endpoint ClientAccessIdentity 与 bound grant。
  * 普通 endpoint registry/WebView 只持有 credential ref；解密结果只交给公开 PairingExchange/authorizer，禁止交给 cloud adapter。
  */
-class AndroidClientAccessCredentialStore(context: Context) : ClientAccessCredentialStore {
+class AndroidClientAccessCredentialStore(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     private val random = SecureRandom()
     private val lock = Any()
@@ -72,48 +73,53 @@ class AndroidClientAccessCredentialStore(context: Context) : ClientAccessCredent
             endpointId = normalizedEndpoint,
             privateKeySeed = privateKey.encoded,
             publicKey = publicKey,
-            fingerprint = AndroidRemoteAuth.deviceFingerprint(publicKey),
+            fingerprint = keyFingerprint(publicKey),
         )
         AndroidClientAccessCredential(identity, "").also { persist(normalizedRef, it) }
     }
-
-    /** bindGrant 验证 daemon issuer、v2 subject 与已保存 key 后原子写入 grant；失败时保留原 key 供同 ticket 幂等重试。 */
-    fun bindGrant(
-        credentialRef: String,
-        grant: String,
-        expectedDaemonFingerprint: String,
-        now: Instant = Instant.now(),
-        allowScopeExpansion: Boolean = false,
-    ): AndroidClientAccessCredential = synchronized(lock) {
-        val normalizedRef = validateRef(credentialRef)
-        val current = readCredential(normalizedRef, requireGrant = false)
-            ?: throw ManagedEndpointFailure("unauthenticated", "ClientAccessIdentity is missing")
-        val claims = AndroidRemoteAuth.verifyGrant(grant, expectedDaemonFingerprint, now)
-        if (claims.subjectKeyFingerprint != current.identity.fingerprint) {
-            throw ManagedEndpointFailure("subject_key_mismatch", "capability subject does not match ClientAccessIdentity")
-        }
-        if (current.ready()) {
-            val currentClaims = AndroidRemoteAuth.verifyGrantEnvelope(current.capabilityGrant, expectedDaemonFingerprint)
-            if (!AndroidRemoteAuth.scopeContains(currentClaims.scope, claims.scope) && !allowScopeExpansion) {
-                throw ManagedEndpointFailure("scope_expansion_required", "broader capability scope requires explicit confirmation")
-            }
-            if (current.capabilityGrant.trim() == grant.trim()) return@synchronized current
-        }
-        current.copy(capabilityGrant = grant.trim()).also { persist(normalizedRef, it) }
-    }
-
-    /** resolve 解密 ready credential；缺失、损坏、空 grant 或 Keystore 失败都 fail closed，不读取旧 session token。 */
-    override suspend fun resolve(credentialRef: String): AndroidClientAccessCredential =
-        synchronized(lock) {
-            readCredential(validateRef(credentialRef), requireGrant = true)
-                ?: throw ManagedEndpointFailure("unauthenticated", "client access credential is missing")
-        }
 
     /** delete 删除本地 ClientAccessIdentity/grant 密文；它不撤销 daemon-local grant。 */
     fun delete(credentialRef: String) = synchronized(lock) {
         if (!preferences.edit().remove(preferenceKey(validateRef(credentialRef))).commit()) {
             throw ManagedEndpointFailure("temporary", "failed to delete client access credential")
         }
+    }
+
+    /** prepareRecord 为 Go Client Engine 准备 public identity projection；private seed 不离开本 secure-store owner。 */
+    fun prepareRecord(credentialRef: String, endpointId: String): ClientBinding.CredentialRecord =
+        loadOrCreateIdentity(credentialRef, endpointId).toPlatformRecord(credentialRef)
+
+    /** resolveRecord 返回 public identity 与 bound grant；private seed 不进入 JNI/Go。 */
+    fun resolveRecord(credentialRef: String, endpointId: String): ClientBinding.CredentialRecord = synchronized(lock) {
+        val credential = readCredential(validateRef(credentialRef), requireGrant = true)
+            ?: throw ManagedEndpointFailure("unauthenticated", "client access credential is missing")
+        if (credential.identity.endpointId != endpointId.trim()) {
+            throw ManagedEndpointFailure("identity_conflict", "credential ref belongs to another endpoint")
+        }
+        credential.toPlatformRecord(credentialRef)
+    }
+
+    /** bindRecord 只持久化 Go PairingExchange 已验签的 grant；Kotlin 不解析或复制 remote-auth 规则。 */
+    fun bindRecord(credentialRef: String, endpointId: String, capabilityGrant: String): ClientBinding.CredentialRecord = synchronized(lock) {
+        val normalizedRef = validateRef(credentialRef)
+        val normalizedEndpoint = endpointId.trim()
+        val grant = capabilityGrant.trim()
+        if (normalizedEndpoint.isBlank() || grant.isBlank()) {
+            throw ManagedEndpointFailure("protocol", "credential bind request is incomplete")
+        }
+        val current = readCredential(normalizedRef, requireGrant = false)
+            ?: throw ManagedEndpointFailure("unauthenticated", "client access identity is missing")
+        if (current.identity.endpointId != normalizedEndpoint) {
+            throw ManagedEndpointFailure("identity_conflict", "credential ref belongs to another endpoint")
+        }
+        current.copy(capabilityGrant = grant).also { persist(normalizedRef, it) }.toPlatformRecord(normalizedRef)
+    }
+
+    /** sign 只对 Go remote-auth 提供的 canonical bytes 签名；调用方只能按 credential ref 访问，不取得 key seed。 */
+    fun sign(credentialRef: String, payload: ByteArray): ByteArray = synchronized(lock) {
+        val credential = readCredential(validateRef(credentialRef), requireGrant = false)
+            ?: throw ManagedEndpointFailure("unauthenticated", "client access credential is missing")
+        credential.identity.sign(payload)
     }
 
     private fun persist(credentialRef: String, credential: AndroidClientAccessCredential) {
@@ -156,7 +162,7 @@ class AndroidClientAccessCredentialStore(context: Context) : ClientAccessCredent
             val privateKey = Ed25519PrivateKeyParameters(seed, 0)
             val publicKey = privateKey.generatePublicKey().encoded
             val credential = AndroidClientAccessCredential(
-                identity = AndroidClientAccessIdentity(endpointId, seed, publicKey, AndroidRemoteAuth.deviceFingerprint(publicKey)),
+                identity = AndroidClientAccessIdentity(endpointId, seed, publicKey, keyFingerprint(publicKey)),
                 capabilityGrant = value.getString("capability_grant").trim(),
             )
             validateCredential(credential)
@@ -173,10 +179,19 @@ class AndroidClientAccessCredentialStore(context: Context) : ClientAccessCredent
 
     private fun validateCredential(credential: AndroidClientAccessCredential) {
         if (credential.identity.endpointId.isBlank() || credential.identity.privateKeySeed.size != 32 || credential.identity.publicKey.size != 32 ||
-            credential.identity.fingerprint != AndroidRemoteAuth.deviceFingerprint(credential.identity.publicKey)) {
+            credential.identity.fingerprint != keyFingerprint(credential.identity.publicKey)) {
             throw ManagedEndpointFailure("unauthenticated", "ClientAccessIdentity is invalid")
         }
     }
+
+    private fun AndroidClientAccessCredential.toPlatformRecord(credentialRef: String): ClientBinding.CredentialRecord =
+        ClientBinding.CredentialRecord.newBuilder()
+            .setEndpointId(identity.endpointId)
+            .setCredentialRef(credentialRef)
+            .setPublicKey(com.google.protobuf.ByteString.copyFrom(identity.publicKey))
+            .setKeyFingerprint(identity.fingerprint)
+            .setCapabilityGrant(capabilityGrant)
+            .build()
 
     private fun secretKey(): SecretKey {
         val keyStore = KeyStore.getInstance(KEYSTORE).apply { load(null) }
@@ -204,6 +219,9 @@ class AndroidClientAccessCredentialStore(context: Context) : ClientAccessCredent
 
     private fun encodeUrl(value: ByteArray): String = Base64.encodeToString(value, Base64.NO_WRAP or Base64.URL_SAFE or Base64.NO_PADDING)
     private fun decodeUrl(value: String): ByteArray = Base64.decode(value, Base64.NO_WRAP or Base64.URL_SAFE or Base64.NO_PADDING)
+
+    private fun keyFingerprint(publicKey: ByteArray): String =
+        "ed25519-sha256:" + encodeUrl(MessageDigest.getInstance("SHA-256").digest(publicKey))
 
     companion object {
         private const val CREDENTIAL_VERSION = 1
