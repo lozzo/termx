@@ -28,10 +28,8 @@ func probeEndpointProtocolClient(ctx context.Context, endpoint endpointdomain.En
 
 func connectCLIEndpoint(ctx context.Context, target endpointdomain.Endpoint, requested endpointdomain.RouteID, socketOverride, logFile string, intent clientruntime.ConnectIntent) (*protocoladapter.ApplicationClient, endpointdomain.AccessRoute, error) {
 	owner := clientruntime.NewSessionOwner()
-	client, route, err := localadapter.Connect(ctx, owner, target, requested, intent, localadapter.Options{
-		SocketOverride: socketOverride,
-		DefaultSocket:  resolveV3Socket(""),
-		ClientName:     "termx-cli",
+	client, route, err := connectV3EndpointApplication(ctx, owner, target, requested, intent, localadapter.Options{
+		SocketOverride: socketOverride, DefaultSocket: resolveV3Socket(""), ClientName: "termx-cli",
 		Start: func(_ context.Context, path string) error {
 			if err := startCoreV2DaemonForConfig(path, resolveV3LogFilePath(logFile), ""); err != nil {
 				return fmt.Errorf("start core-v2 daemon: %w", err)

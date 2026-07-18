@@ -12,6 +12,7 @@ import (
 
 	apilayer "github.com/lozzow/termx/api_layer"
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
+	clientruntime "github.com/lozzow/termx/client/runtime"
 	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/tui/app"
@@ -74,16 +75,14 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	}); err != nil {
 		return v3E2ESmokeResult{}, err
 	}
-	client, err := dialV3Client(socketPath)
+	target, _ := endpointdomain.DefaultRegistry().DefaultEndpoint()
+	client, _, err := connectCLIEndpoint(ctx, target, endpointdomain.DefaultLocalRouteID, socketPath, "", clientruntime.ConnectIntentInteractive)
 	if err != nil {
 		return v3E2ESmokeResult{}, err
 	}
 	defer client.Close()
 
-	application, err := newLocalApplicationSession(client)
-	if err != nil {
-		return v3E2ESmokeResult{}, err
-	}
+	application := client.ApplicationSession
 	created, err := application.TerminalCreate(ctx, &apipb.TerminalCreateCommand{Terminal: &apipb.TerminalCreateSpec{
 		TerminalId: newV3TerminalID(), Name: "v3-e2e-smoke",
 		Command: []string{"/bin/sh", "-c", "printf 'alpha\\nbeta\\n'; while IFS= read -r line; do printf 'echo:%s\\n' \"$line\"; done"},

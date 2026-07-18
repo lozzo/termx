@@ -55,6 +55,9 @@ func TestSessionOwnerFullRaceChoosesFirstReadyAndWaitsLoserCleanup(t *testing.T)
 		t.Fatalf("loser=%#v loserClose=%d winner=%#v winnerClose=%d", local, closeCalls(local), ssh, closeCalls(ssh))
 	}
 	phases := collectPhasesThrough(t, events, EndpointPhaseReady)
+	if len(phases) > 0 && phases[0] == EndpointPhaseIdle {
+		phases = phases[1:]
+	}
 	if len(phases) < 4 || phases[0] != EndpointPhasePlanning || phases[len(phases)-1] != EndpointPhaseReady {
 		t.Fatalf("lifecycle phases = %#v", phases)
 	}

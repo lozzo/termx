@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/shared/perftrace"
@@ -151,7 +152,7 @@ func runV3RootEmptyRuntime(ctx context.Context, cfg v3RootEmptyConfig) error {
 	}
 }
 
-func selectV3RootAttachTerminal(ctx context.Context, client any) (string, bool, error) {
+func selectV3RootAttachTerminal(ctx context.Context, client *protocoladapter.ApplicationClient) (string, bool, error) {
 	application, err := newLocalApplicationSession(client)
 	if err != nil {
 		return "", false, err

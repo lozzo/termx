@@ -497,8 +497,33 @@ func (session *ownedApplicationSession) OpenResourceStream(resource *apipb.Resou
 	return provider.OpenResourceStream(resource)
 }
 
+func (session *ownedApplicationSession) ApplicationAttachmentChannel(resource *apipb.ResourceHandle) (uint16, bool) {
+	current, err := session.owner.session(session.stamp)
+	if err != nil {
+		return 0, false
+	}
+	provider, ok := current.(ApplicationAttachmentSession)
+	if !ok {
+		return 0, false
+	}
+	return provider.ApplicationAttachmentChannel(resource)
+}
+
+func (session *ownedApplicationSession) ApplicationAttachment(channel uint16) (*apipb.ResourceHandle, bool) {
+	current, err := session.owner.session(session.stamp)
+	if err != nil {
+		return nil, false
+	}
+	provider, ok := current.(ApplicationAttachmentSession)
+	if !ok {
+		return nil, false
+	}
+	return provider.ApplicationAttachment(channel)
+}
+
 var _ ApplicationReadySession = (*ownedApplicationSession)(nil)
 var _ ResourceStreamSession = (*ownedApplicationSession)(nil)
+var _ ApplicationAttachmentSession = (*ownedApplicationSession)(nil)
 
 type sharedApplicationLease struct {
 	owner      *SessionOwner
@@ -579,6 +604,26 @@ func (lease *sharedApplicationLease) OpenResourceStream(resource *apipb.Resource
 	}
 	return provider.OpenResourceStream(resource)
 }
+func (lease *sharedApplicationLease) ApplicationAttachmentChannel(resource *apipb.ResourceHandle) (uint16, bool) {
+	if err := lease.active(); err != nil {
+		return 0, false
+	}
+	provider, ok := lease.ready.(ApplicationAttachmentSession)
+	if !ok {
+		return 0, false
+	}
+	return provider.ApplicationAttachmentChannel(resource)
+}
+func (lease *sharedApplicationLease) ApplicationAttachment(channel uint16) (*apipb.ResourceHandle, bool) {
+	if err := lease.active(); err != nil {
+		return nil, false
+	}
+	provider, ok := lease.ready.(ApplicationAttachmentSession)
+	if !ok {
+		return nil, false
+	}
+	return provider.ApplicationAttachment(channel)
+}
 
 func (lease *sharedApplicationLease) active() error {
 	select {
@@ -591,3 +636,4 @@ func (lease *sharedApplicationLease) active() error {
 
 var _ ApplicationReadySession = (*sharedApplicationLease)(nil)
 var _ ResourceStreamSession = (*sharedApplicationLease)(nil)
+var _ ApplicationAttachmentSession = (*sharedApplicationLease)(nil)

@@ -41,7 +41,7 @@ cmd/termx daemon command
 
 1. 已完成：冻结 concrete import/direct helper 债务，守卫现在扫描全部 command 源文件，不再整文件排除 composition helper。
 2. 已完成：local Unix route 使用 `SessionOwner`、集中 `SelectRoute` 与 `client/adapter/local`，不再由 CLI 生成 stamp 或执行 Hello。
-3. C3B-C3D 已完成 planner、fresh ReadySession proof、per-endpoint race/session owner 与 SSH/managed adapters；C3E 把 CLI/TUI command helper 收缩为共享 `ClientRuntime` 的纯 composition injection。
+3. 已完成：C3B-C3E 建立 planner、fresh ReadySession proof、per-endpoint race/session owner 与 local/SSH/lazy-managed native composition；CLI/TUI command helper 已收缩为共享 `ClientRuntime` 的 composition injection，旧单 route selector/connect helper 和 raw protocol adoption 已删除。
 4. C3F-C3G：补 operation generation stamp、local+SSH race E2E 与 loser cleanup。
 5. C3H：分离剩余 daemon host composition，删除冻结债务清单并完成最终双审。
 

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/proto/wire"
 	tuiconfig "github.com/lozzow/termx/tui/config"
 )
@@ -45,11 +44,8 @@ func resolveV3SocketWithClientRuntime(path string, registry endpointdomain.Regis
 	if !ok || !endpoint.Enabled {
 		return "", fmt.Errorf("default endpoint %q is not available", registry.Default)
 	}
-	route, err := clientruntime.SelectRoute(endpoint, "")
-	if err != nil {
-		return "", err
-	}
-	if route.Kind != endpointdomain.RouteLocalUnix {
+	route, ok := endpoint.Route(endpointdomain.DefaultLocalRouteID)
+	if !ok || !route.Enabled || route.Kind != endpointdomain.RouteLocalUnix {
 		return "", fmt.Errorf("default endpoint %q is not a local unix endpoint", registry.Default)
 	}
 	if strings.TrimSpace(route.Socket) == "" || route.Socket == "auto" {

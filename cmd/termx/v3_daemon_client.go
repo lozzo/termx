@@ -17,11 +17,11 @@ import (
 )
 
 var (
-	v3DialClient              = dialV3Client
-	startV3Daemon             = startCoreV2Daemon
-	startV3DaemonWithConfig   = startCoreV2DaemonWithConfig
-	connectV3LocalApplication = localadapter.Connect
-	osExecutable              = os.Executable
+	v3DialClient                 = dialV3Client
+	startV3Daemon                = startCoreV2Daemon
+	startV3DaemonWithConfig      = startCoreV2DaemonWithConfig
+	connectV3EndpointApplication = connectCLIEndpointApplication
+	osExecutable                 = os.Executable
 )
 
 func dialV3Client(path string) (*localadapter.ProtocolClient, error) {
@@ -54,10 +54,8 @@ func connectLocalApplicationClient(ctx context.Context, path, logFile, configPat
 	registry := clientendpoint.DefaultRegistry()
 	target, _ := registry.DefaultEndpoint()
 	owner := clientruntime.NewSessionOwner()
-	client, _, err := connectV3LocalApplication(ctx, owner, target, clientendpoint.DefaultLocalRouteID, clientruntime.ConnectIntentInteractive, localadapter.Options{
-		SocketOverride: path,
-		DefaultSocket:  resolveV3Socket(""),
-		ClientName:     "termx-cli",
+	client, _, err := connectV3EndpointApplication(ctx, owner, target, clientendpoint.DefaultLocalRouteID, clientruntime.ConnectIntentInteractive, localadapter.Options{
+		SocketOverride: path, DefaultSocket: resolveV3Socket(""), ClientName: "termx-cli",
 		Start: func(_ context.Context, socketPath string) error {
 			if logger != nil {
 				logger.Warn("core-v2 daemon dial failed; starting current daemon", "socket", socketPath)

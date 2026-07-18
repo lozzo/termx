@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
+	"sync"
 
 	"github.com/lozzow/termx/client/endpoint"
 	clientruntime "github.com/lozzow/termx/client/runtime"
@@ -14,12 +16,13 @@ import (
 	"github.com/lozzow/termx/shared/remoteauth"
 )
 
-// ApplicationClient 组合单条 ready connection 的 framing client 与 Proto application session。
-// terminal/path command 必须通过 ApplicationSession；history/file/storage 等尚未迁移切片仍由嵌入的 framing client 承载。
+// ApplicationClient 组合单条 ready connection 的 Proto application session 与可选 runtime control plane。
+// raw framing client 只存在于 route adapter 尚未发布 winner 的内部阶段；CLI/TUI facade 的 command、attachment 与 file stream 都经 generation-fenced ready capability。
 type ApplicationClient struct {
 	*internalprotocol.Client
 	*clientruntime.ApplicationSession
 	ready    clientruntime.ApplicationReadySession
+	control  clientruntime.Runtime
 	path     string
 	evidence clientruntime.ReadySessionEvidence
 }
@@ -121,17 +124,31 @@ func NewApplicationClientWithObservedPath(client *internalprotocol.Client, stamp
 	return &ApplicationClient{Client: client, ApplicationSession: application, path: observedPath}, nil
 }
 
-// NewOwnedApplicationClient 把 concrete protocol stream primitives 与 SessionOwner-fenced application session 组合。
-// terminal/file stream 仍由同一 raw connection 提供，但所有 Proto command、event 与 Close 都先经过 owner generation 校验。
-func NewOwnedApplicationClient(client *internalprotocol.Client, ready clientruntime.ApplicationReadySession) (*ApplicationClient, error) {
-	if client == nil || ready == nil {
-		return nil, errors.New("protocol client and owned ready session are required")
+// NewReadyApplicationClient 把 runtime-owned ready session 投影为现有 typed Proto client facade。
+// 它不暴露 raw framing client；attachment/file primitive 只能经 ready session 的 generation-fenced capability 调用。
+func NewReadyApplicationClient(ready clientruntime.ApplicationReadySession) (*ApplicationClient, error) {
+	return NewRuntimeApplicationClient(ready, nil)
+}
+
+// NewRuntimeApplicationClient 在 ready data plane 之外保留同一 ClientRuntime control plane，供 TUI lifecycle adapter 订阅 endpoint event。
+// control 不能执行 Proto command 或暴露 transport；nil 仅用于不需要重连/事件的测试与内部 harness。
+func NewRuntimeApplicationClient(ready clientruntime.ApplicationReadySession, control clientruntime.Runtime) (*ApplicationClient, error) {
+	if ready == nil {
+		return nil, errors.New("ready application session is required")
 	}
 	application, err := clientruntime.NewApplicationSession(ready.Stamp(), ready)
 	if err != nil {
 		return nil, err
 	}
-	return &ApplicationClient{Client: client, ApplicationSession: application, ready: ready, path: ready.ObservedPath(), evidence: ready.Readiness()}, nil
+	return &ApplicationClient{ApplicationSession: application, ready: ready, control: control, path: ready.ObservedPath(), evidence: ready.Readiness()}, nil
+}
+
+// ConnectionRuntime 返回创建当前 ready session 的共享控制面；没有装配时返回 nil。
+func (client *ApplicationClient) ConnectionRuntime() clientruntime.Runtime {
+	if client == nil {
+		return nil
+	}
+	return client.control
 }
 
 // ObservedPath 返回 route adapter 观测到的实际连接路径。
@@ -167,6 +184,9 @@ func (client *ApplicationClient) ExecuteApplicationTerminal(ctx context.Context,
 	if executor, ok := client.ready.(clientruntime.TerminalResponseApplicationExecutor); ok {
 		return executor.ExecuteApplicationTerminal(ctx, command)
 	}
+	if client == nil || client.Client == nil {
+		return nil, errors.New("ready session does not support terminal application responses")
+	}
 	return client.Client.ExecuteApplicationTerminal(ctx, command)
 }
 
@@ -176,6 +196,79 @@ func (client *ApplicationClient) ApplicationEvents(ctx context.Context) (<-chan 
 		return client.ready.ApplicationEvents(ctx)
 	}
 	return client.Client.ApplicationEvents(ctx)
+}
+
+// OpenResourceStream 通过 runtime generation fence 打开 session-bound attachment/file framing stream。
+func (client *ApplicationClient) OpenResourceStream(resource *apipb.ResourceHandle) (clientruntime.ResourceStream, error) {
+	if client == nil {
+		return nil, errors.New("protocol application client is required")
+	}
+	if provider, ok := client.ready.(clientruntime.ResourceStreamSession); ok {
+		return provider.OpenResourceStream(resource)
+	}
+	if client.Client != nil {
+		channel, ok := client.Client.ApplicationResourceChannel(resource)
+		if !ok {
+			return nil, errors.New("application resource is not bound to this protocol session")
+		}
+		frames, stop := client.Client.Stream(channel)
+		return &applicationResourceStream{client: client.Client, channel: channel, frames: frames, stop: stop}, nil
+	}
+	return nil, errors.New("ready session does not support resource streams")
+}
+
+type applicationResourceStream struct {
+	client  *internalprotocol.Client
+	channel uint16
+	frames  <-chan internalprotocol.StreamFrame
+	stop    func()
+	once    sync.Once
+}
+
+func (stream *applicationResourceStream) Receive(ctx context.Context) (uint8, []byte, error) {
+	select {
+	case <-ctx.Done():
+		return 0, nil, ctx.Err()
+	case frame, ok := <-stream.frames:
+		if !ok {
+			return 0, nil, io.EOF
+		}
+		return frame.Type, append([]byte(nil), frame.Payload...), nil
+	}
+}
+
+func (stream *applicationResourceStream) Send(ctx context.Context, typ uint8, payload []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return stream.client.SendFileFrame(stream.channel, typ, payload)
+}
+
+func (stream *applicationResourceStream) Close() error {
+	stream.once.Do(stream.stop)
+	return nil
+}
+
+// ApplicationAttachmentChannel 返回当前 generation 内 attachment resource 对应的私有 channel。
+func (client *ApplicationClient) ApplicationAttachmentChannel(resource *apipb.ResourceHandle) (uint16, bool) {
+	if provider, ok := client.ready.(clientruntime.ApplicationAttachmentSession); ok {
+		return provider.ApplicationAttachmentChannel(resource)
+	}
+	if client != nil && client.Client != nil {
+		return client.Client.ApplicationAttachmentChannel(resource)
+	}
+	return 0, false
+}
+
+// ApplicationAttachment 返回当前 generation 内 channel 对应的 attachment resource。
+func (client *ApplicationClient) ApplicationAttachment(channel uint16) (*apipb.ResourceHandle, bool) {
+	if provider, ok := client.ready.(clientruntime.ApplicationAttachmentSession); ok {
+		return provider.ApplicationAttachment(channel)
+	}
+	if client != nil && client.Client != nil {
+		return client.Client.ApplicationAttachment(channel)
+	}
+	return nil, false
 }
 
 // Done 返回 ready connection 的终止信号。
@@ -203,3 +296,5 @@ func (client *ApplicationClient) Close() error {
 }
 
 var _ clientruntime.ApplicationReadySession = (*ApplicationClient)(nil)
+var _ clientruntime.ApplicationAttachmentSession = (*ApplicationClient)(nil)
+var _ clientruntime.ResourceStreamSession = (*ApplicationClient)(nil)

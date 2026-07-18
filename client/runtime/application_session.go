@@ -36,6 +36,13 @@ type ResourceStreamSession interface {
 	OpenResourceStream(*apipb.ResourceHandle) (ResourceStream, error)
 }
 
+// ApplicationAttachmentSession 是 protocol connection 对 attachment resource 与私有 stream channel 的相关性投影。
+// channel 只在当前 ReadySession 内有效；TUI 必须携带原 resource/stamp，不能把 uint16 channel 当成跨 generation API identity。
+type ApplicationAttachmentSession interface {
+	ApplicationAttachmentChannel(*apipb.ResourceHandle) (uint16, bool)
+	ApplicationAttachment(uint16) (*apipb.ResourceHandle, bool)
+}
+
 // ResourceStream 是 attachment/file resource 对应的有界有序 frame stream。
 // Receive 必须响应 context 取消；Send 必须拒绝不属于该 resource kind 的 frame type；Close 必须幂等并解除 framing registry。
 type ResourceStream interface {

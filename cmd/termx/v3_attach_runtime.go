@@ -11,9 +11,11 @@ import (
 	clientprotocol "github.com/lozzow/termx/client/adapter/protocol"
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	clientruntime "github.com/lozzow/termx/client/runtime"
+	clientruntimeadapter "github.com/lozzow/termx/tui/adapter/clientruntime"
 	tuiprotocol "github.com/lozzow/termx/tui/adapter/protocol"
 	systemadapter "github.com/lozzow/termx/tui/adapter/system"
 	"github.com/lozzow/termx/tui/app"
+	tuiport "github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 	"github.com/spf13/cobra"
 )
@@ -70,6 +72,10 @@ func newV3InteractiveRuntimeFromClientRuntime(terminalID string, cols, rows int,
 	terminalAdapter := tuiprotocol.ProtocolTerminalServiceAdapter{Client: terminalClient, Application: application}
 	coreAdapter := tuiprotocol.ProtocolCoreClientAdapter{Application: application}
 	pathAdapter, _ := tuiprotocol.NewProtocolPathServiceAdapter(application)
+	var endpointEvents tuiport.EndpointEventSource
+	if client != nil && client.ConnectionRuntime() != nil {
+		endpointEvents = clientruntimeadapter.EndpointEventSource{Runtime: client.ConnectionRuntime(), EndpointID: endpointID}
+	}
 
 	initial := state.Root{
 		RuntimeSurfaceID: opts.RuntimeSurfaceID,
@@ -100,7 +106,7 @@ func newV3InteractiveRuntimeFromClientRuntime(terminalID string, cols, rows int,
 	}
 	return app.NewInteractiveRuntimeWithStorage(
 		initial, host, app.NewAsyncEffectRunner(),
-		app.LiveDeps{Terminal: terminalAdapter, Path: pathAdapter, Logger: logger},
+		app.LiveDeps{Terminal: terminalAdapter, Path: pathAdapter, EndpointEvents: endpointEvents, Logger: logger},
 		app.CopyModeDeps{Core: coreAdapter, Clipboard: &systemadapter.ClipboardService{}, Terminal: terminalAdapter, Logger: logger, Rows: rows},
 		workbench, clipboard,
 	)

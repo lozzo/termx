@@ -21,7 +21,7 @@ func TestV3InteractiveRuntimeRendersInitialTerminalOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	host := app.NewFakeTerminalHost(32)
-	runtime := newV3InteractiveRuntime("initial-output", 100, 30, client, host, nil)
+	runtime := newV3InteractiveRuntime("initial-output", 100, 30, wrapCLIProtocolClientForTest(t, client), host, nil)
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID: "initial-output", Cols: 100, Rows: 30, Mode: "collaborator", ResizePolicy: tuistate.TerminalResizeRoleFollower,
 		SurfaceID: "initial-output-surface", ViewID: tuistate.TerminalPaneViewID(tuistate.DefaultPaneID),

@@ -17,6 +17,7 @@ import (
 
 	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
+	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/wire"
@@ -445,8 +446,7 @@ func downloadEndpointFile(ctx context.Context, client *protocoladapter.Applicati
 		return protocol.FileTransferResult{}, err
 	}
 	opened := result.GetTransfer()
-	channel, err := validateFileTransferOpen(client, opened, -1, false)
-	if err != nil {
+	if err := validateFileTransferOpen(opened, -1, false); err != nil {
 		cancelFileTransfer(client, opened.GetResource())
 		return protocol.FileTransferResult{}, err
 	}
@@ -456,55 +456,54 @@ func downloadEndpointFile(ctx context.Context, client *protocoladapter.Applicati
 			cancelFileTransfer(client, opened.GetResource())
 		}
 	}()
-	stream, stop := client.Stream(channel)
-	defer stop()
+	stream, err := client.OpenResourceStream(opened.GetResource())
+	if err != nil {
+		return protocol.FileTransferResult{}, err
+	}
+	defer stream.Close()
 	hash := sha256.New()
 	offset := opened.GetOffset()
 	for {
-		select {
-		case <-ctx.Done():
-			return protocol.FileTransferResult{}, ctx.Err()
-		case frame, ok := <-stream:
-			if !ok {
-				return protocol.FileTransferResult{}, io.ErrUnexpectedEOF
+		typ, payload, err := stream.Receive(ctx)
+		if err != nil {
+			return protocol.FileTransferResult{}, err
+		}
+		switch typ {
+		case wire.TypeFileData:
+			data, err := protocol.DecodeFileTransferData(payload)
+			if err != nil || data.Offset != offset {
+				return protocol.FileTransferResult{}, fmt.Errorf("invalid download data at offset %d", offset)
 			}
-			switch frame.Type {
-			case wire.TypeFileData:
-				data, err := protocol.DecodeFileTransferData(frame.Payload)
-				if err != nil || data.Offset != offset {
-					return protocol.FileTransferResult{}, fmt.Errorf("invalid download data at offset %d", offset)
-				}
-				if _, err := writer.Write(data.Data); err != nil {
-					return protocol.FileTransferResult{}, err
-				}
-				_, _ = hash.Write(data.Data)
-				offset += int64(len(data.Data))
-				ack, err := protocol.EncodeFileTransferAck(protocol.FileTransferAck{Offset: offset, WindowBytes: int64(len(data.Data))})
-				if err != nil {
-					return protocol.FileTransferResult{}, err
-				}
-				if err := client.SendFileFrame(channel, wire.TypeFileAck, ack); err != nil {
-					return protocol.FileTransferResult{}, err
-				}
-			case wire.TypeFileFinish:
-				finish, err := protocol.DecodeFileTransferFinish(frame.Payload)
-				if err != nil {
-					return protocol.FileTransferResult{}, err
-				}
-				if finish.Size != offset || finish.Size != opened.GetSize() || !bytes.Equal(finish.SHA256, hash.Sum(nil)) {
-					return protocol.FileTransferResult{}, fmt.Errorf("download size or SHA-256 mismatch")
-				}
-				completed = true
-				return protocol.FileTransferResult{Path: opened.GetPath(), Size: finish.Size, SHA256: finish.SHA256}, nil
-			case wire.TypeError:
-				message, decodeErr := protocol.DecodeErrorPayload(frame.Payload)
-				if decodeErr != nil {
-					return protocol.FileTransferResult{}, decodeErr
-				}
-				return protocol.FileTransferResult{}, &protocol.RequestError{Code: message.Error.Code, Message: message.Error.Message}
-			default:
-				return protocol.FileTransferResult{}, fmt.Errorf("unexpected download frame type %d", frame.Type)
+			if _, err := writer.Write(data.Data); err != nil {
+				return protocol.FileTransferResult{}, err
 			}
+			_, _ = hash.Write(data.Data)
+			offset += int64(len(data.Data))
+			ack, err := protocol.EncodeFileTransferAck(protocol.FileTransferAck{Offset: offset, WindowBytes: int64(len(data.Data))})
+			if err != nil {
+				return protocol.FileTransferResult{}, err
+			}
+			if err := stream.Send(ctx, wire.TypeFileAck, ack); err != nil {
+				return protocol.FileTransferResult{}, err
+			}
+		case wire.TypeFileFinish:
+			finish, err := protocol.DecodeFileTransferFinish(payload)
+			if err != nil {
+				return protocol.FileTransferResult{}, err
+			}
+			if finish.Size != offset || finish.Size != opened.GetSize() || !bytes.Equal(finish.SHA256, hash.Sum(nil)) {
+				return protocol.FileTransferResult{}, fmt.Errorf("download size or SHA-256 mismatch")
+			}
+			completed = true
+			return protocol.FileTransferResult{Path: opened.GetPath(), Size: finish.Size, SHA256: finish.SHA256}, nil
+		case wire.TypeError:
+			message, decodeErr := protocol.DecodeErrorPayload(payload)
+			if decodeErr != nil {
+				return protocol.FileTransferResult{}, decodeErr
+			}
+			return protocol.FileTransferResult{}, &protocol.RequestError{Code: message.Error.Code, Message: message.Error.Message}
+		default:
+			return protocol.FileTransferResult{}, fmt.Errorf("unexpected download frame type %d", typ)
 		}
 	}
 }
@@ -580,8 +579,7 @@ func uploadEndpointFile(ctx context.Context, client *protocoladapter.Application
 		return protocol.FileTransferResult{}, err
 	}
 	opened := result.GetTransfer()
-	channel, err := validateFileTransferOpen(client, opened, info.Size(), false)
-	if err != nil {
+	if err := validateFileTransferOpen(opened, info.Size(), false); err != nil {
 		cancelFileTransfer(client, opened.GetResource())
 		return protocol.FileTransferResult{}, err
 	}
@@ -591,8 +589,11 @@ func uploadEndpointFile(ctx context.Context, client *protocoladapter.Application
 			cancelFileTransfer(client, opened.GetResource())
 		}
 	}()
-	stream, stop := client.Stream(channel)
-	defer stop()
+	stream, err := client.OpenResourceStream(opened.GetResource())
+	if err != nil {
+		return protocol.FileTransferResult{}, err
+	}
+	defer stream.Close()
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return protocol.FileTransferResult{}, err
 	}
@@ -624,7 +625,7 @@ func uploadEndpointFile(ctx context.Context, client *protocoladapter.Application
 		if err != nil {
 			return protocol.FileTransferResult{}, err
 		}
-		if err := client.SendFileFrame(channel, wire.TypeFileData, payload); err != nil {
+		if err := stream.Send(ctx, wire.TypeFileData, payload); err != nil {
 			return protocol.FileTransferResult{}, err
 		}
 		frame, err := nextFileFrame(ctx, stream)
@@ -652,7 +653,7 @@ func uploadEndpointFile(ctx context.Context, client *protocoladapter.Application
 	if err != nil {
 		return protocol.FileTransferResult{}, err
 	}
-	if err := client.SendFileFrame(channel, wire.TypeFileFinish, finish); err != nil {
+	if err := stream.Send(ctx, wire.TypeFileFinish, finish); err != nil {
 		return protocol.FileTransferResult{}, err
 	}
 	frame, err := nextFileFrame(ctx, stream)
@@ -680,18 +681,17 @@ func uploadEndpointFile(ctx context.Context, client *protocoladapter.Application
 	return completedResult, nil
 }
 
-func validateFileTransferOpen(client *protocoladapter.ApplicationClient, opened *apipb.FileTransferHandle, expectedSize int64, allowResume bool) (uint16, error) {
-	channel, bound := client.ApplicationResourceChannel(opened.GetResource())
-	if opened == nil || opened.GetResource() == nil || !bound || strings.TrimSpace(opened.GetPath()) == "" {
-		return 0, fmt.Errorf("daemon returned incomplete file transfer metadata")
+func validateFileTransferOpen(opened *apipb.FileTransferHandle, expectedSize int64, allowResume bool) error {
+	if opened == nil || opened.GetResource() == nil || strings.TrimSpace(opened.GetPath()) == "" {
+		return fmt.Errorf("daemon returned incomplete file transfer metadata")
 	}
 	if opened.GetSize() < 0 || (expectedSize >= 0 && opened.GetSize() != expectedSize) {
-		return 0, fmt.Errorf("daemon returned an invalid file transfer size")
+		return fmt.Errorf("daemon returned an invalid file transfer size")
 	}
 	if opened.GetOffset() < 0 || opened.GetOffset() > opened.GetSize() || (!allowResume && opened.GetOffset() != 0) {
-		return 0, fmt.Errorf("daemon returned an invalid file transfer offset")
+		return fmt.Errorf("daemon returned an invalid file transfer offset")
 	}
-	return channel, nil
+	return nil
 }
 
 func cancelFileTransfer(client *protocoladapter.ApplicationClient, resource *apipb.ResourceHandle) {
@@ -703,16 +703,12 @@ func cancelFileTransfer(client *protocoladapter.ApplicationClient, resource *api
 	_, _ = client.ApplicationSession.FileTransferCancel(cancelContext, &apipb.FileTransferCancelCommand{Transfer: resource})
 }
 
-func nextFileFrame(ctx context.Context, stream <-chan protocol.StreamFrame) (protocol.StreamFrame, error) {
-	select {
-	case <-ctx.Done():
-		return protocol.StreamFrame{}, ctx.Err()
-	case frame, ok := <-stream:
-		if !ok {
-			return protocol.StreamFrame{}, io.ErrUnexpectedEOF
-		}
-		return frame, nil
+func nextFileFrame(ctx context.Context, stream clientruntime.ResourceStream) (protocol.StreamFrame, error) {
+	typ, payload, err := stream.Receive(ctx)
+	if err != nil {
+		return protocol.StreamFrame{}, err
 	}
+	return protocol.StreamFrame{Type: typ, Payload: payload}, nil
 }
 
 func fileEntryProjection(entry *apipb.FileEntry) fileEntryView {

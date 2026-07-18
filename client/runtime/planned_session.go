@@ -236,6 +236,11 @@ func (owner *SessionOwner) WatchEndpoint(ctx context.Context, endpointID endpoin
 		owner.watchers[endpointID] = make(map[chan EndpointEvent]struct{})
 	}
 	owner.watchers[endpointID][watcher] = struct{}{}
+	if current := owner.current[endpointID]; current != nil && owner.authority.isCurrent(endpointID, current.Stamp().Generation, current) {
+		watcher <- EndpointEvent{EndpointID: endpointID, Stamp: current.Stamp(), Phase: EndpointPhaseReady, ObservedPath: current.ObservedPath(), RouteSelectionReason: "current_winner"}
+	} else {
+		watcher <- EndpointEvent{EndpointID: endpointID, Phase: EndpointPhaseIdle}
+	}
 	owner.mu.Unlock()
 	go func() {
 		<-ctx.Done()

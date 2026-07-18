@@ -9,7 +9,6 @@ import (
 
 	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/shared/perftrace"
 	"github.com/lozzow/termx/tui/app"
 	"github.com/lozzow/termx/tui/state"
@@ -122,7 +121,7 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 	}
 }
 
-func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *protocol.Client, host app.TerminalHost, logger *slog.Logger) *app.AppRuntime {
+func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *protocoladapter.ApplicationClient, host app.TerminalHost, logger *slog.Logger) *app.AppRuntime {
 	return newV3InteractiveRuntimeWithOptions(terminalID, cols, rows, client, host, logger, v3InteractiveRuntimeOptions{
 		InitialEndpointID:  state.DefaultEndpointID,
 		ConnectionRegistry: endpointdomain.DefaultRegistry(),
@@ -138,24 +137,8 @@ type v3InteractiveRuntimeOptions struct {
 	EndpointContext          context.Context
 }
 
-func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, client any, host app.TerminalHost, logger *slog.Logger, opts v3InteractiveRuntimeOptions) *app.AppRuntime {
-	if client == nil {
-		return newV3InteractiveRuntimeFromClientRuntime(terminalID, cols, rows, nil, host, logger, opts)
-	}
-	var application *protocoladapter.ApplicationClient
-	switch value := client.(type) {
-	case *protocoladapter.ApplicationClient:
-		application = value
-	case *protocol.Client:
-		var err error
-		application, err = adoptCLIProtocolClient(value, endpointIDFromState(opts.InitialEndpointID))
-		if err != nil {
-			panic(err)
-		}
-	default:
-		panic(fmt.Sprintf("unsupported interactive runtime client %T", client))
-	}
-	return newV3InteractiveRuntimeFromClientRuntime(terminalID, cols, rows, application, host, logger, opts)
+func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, client *protocoladapter.ApplicationClient, host app.TerminalHost, logger *slog.Logger, opts v3InteractiveRuntimeOptions) *app.AppRuntime {
+	return newV3InteractiveRuntimeFromClientRuntime(terminalID, cols, rows, client, host, logger, opts)
 }
 
 func openV3AttachProtocolClients(ctx context.Context, cfg v3AttachConfig, logPath string, logger *slog.Logger) (*protocoladapter.ApplicationClient, func(), error) {

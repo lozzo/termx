@@ -362,6 +362,16 @@ func (session *Session) OpenResourceStream(resource *apipb.ResourceHandle) (clie
 	return &managedResourceStream{client: session.protocol, channel: channel, frames: frames, stop: stop}, nil
 }
 
+// ApplicationAttachmentChannel 返回当前 managed protocol connection 内 attachment resource 的 channel correlation。
+func (session *Session) ApplicationAttachmentChannel(resource *apipb.ResourceHandle) (uint16, bool) {
+	return session.protocol.ApplicationAttachmentChannel(resource)
+}
+
+// ApplicationAttachment 返回当前 managed protocol connection 内 channel 对应的 attachment resource。
+func (session *Session) ApplicationAttachment(channel uint16) (*apipb.ResourceHandle, bool) {
+	return session.protocol.ApplicationAttachment(channel)
+}
+
 type managedResourceStream struct {
 	client  *internalprotocol.Client
 	channel uint16
@@ -407,3 +417,4 @@ var _ clientruntime.ReadySession = (*Session)(nil)
 var _ clientruntime.ProtoApplicationExecutor = (*Session)(nil)
 var _ clientruntime.ApplicationReadySession = (*Session)(nil)
 var _ clientruntime.ResourceStreamSession = (*Session)(nil)
+var _ clientruntime.ApplicationAttachmentSession = (*Session)(nil)

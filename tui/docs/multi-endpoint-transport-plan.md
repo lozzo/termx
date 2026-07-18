@@ -24,7 +24,7 @@
 - C3X 已删除 `Endpoint.ResolveCurrentRoute`、TUI lazy bundle/session owner 和 CLI 直接 route/dial owner；CLI/TUI 当前保留明确待接 `client/runtime` 的调用缺口，不再有可继续修补的旧运行时。
 - C3B 已在 `client/endpoint` 完成纯领域 `RouteSelectionPlanner`、local/SSH full-race 分组、priority hedge、manual override、唯一 managed 单路计划和机器可读 fixture；它只产出不可变 attempt groups，不 dial，也不拥有 winner。
 - C3C 已把 local/SSH fresh DeviceIdentity challenge proof、managed channel-bound auth、route authorization、Hello 与 lifecycle signal 固化为统一 `ReadySession` 发布门禁；默认全量竞速的真实启动和 winner/loser cleanup 尚未成为 CLI/TUI 共同运行时。
-- C3D 已实现 per-endpoint singleflight planner race、唯一 winner、loser cancel/wait/cleanup、shared lease、sticky override 和 bounded lifecycle mailbox；`tui/adapter/clientruntime` 与 CLI composition 尚未在 C3E 接入该公共 runtime facade。
+- C3E 已让 CLI/TUI native composition 共用 per-endpoint `ClientRuntime/SessionOwner`、local/SSH/lazy-managed dialer registry、system Clock 和 lifecycle mailbox；TUI 不再从 raw protocol client 推断 endpoint 状态。operation/channel stamp 的完整副作用前校验仍由 C3F 完成。
 - `SessionGeneration` 和 channel-bound operation stamp 尚未覆盖 attach、input、paste、resize、detach 与迟到回包。
 
 因此，下文所有 planner、race、generation 和 stamp 语义都是 `CONN003` 的目标契约，不是当前已交付能力。

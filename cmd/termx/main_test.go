@@ -593,16 +593,16 @@ func TestR446DaemonConfiguresHistoryBackpressureFromEnv(t *testing.T) {
 }
 
 func TestV3PingConnectsExistingCoreV2Daemon(t *testing.T) {
-	oldConnect := connectV3LocalApplication
+	oldConnect := connectV3EndpointApplication
 	oldStart := startV3Daemon
 	t.Cleanup(func() {
-		connectV3LocalApplication = oldConnect
+		connectV3EndpointApplication = oldConnect
 		startV3Daemon = oldStart
 	})
 
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
 	dialed := false
-	connectV3LocalApplication = func(_ context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
+	connectV3EndpointApplication = func(_ context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
 		if options.SocketOverride != socketPath {
 			t.Fatalf("expected v3 ping to dial socket %q, got %q", socketPath, options.SocketOverride)
 		}
@@ -632,10 +632,10 @@ func TestV3PingConnectsExistingCoreV2Daemon(t *testing.T) {
 }
 
 func TestV3PingAutoStartsCoreV2Daemon(t *testing.T) {
-	oldConnect := connectV3LocalApplication
+	oldConnect := connectV3EndpointApplication
 	oldStart := startV3Daemon
 	t.Cleanup(func() {
-		connectV3LocalApplication = oldConnect
+		connectV3EndpointApplication = oldConnect
 		startV3Daemon = oldStart
 	})
 
@@ -645,7 +645,7 @@ func TestV3PingAutoStartsCoreV2Daemon(t *testing.T) {
 	startCalls := 0
 	var startedSocket string
 	var startedLog string
-	connectV3LocalApplication = func(ctx context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
+	connectV3EndpointApplication = func(ctx context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
 		connectCalls++
 		if options.SocketOverride != socketPath {
 			t.Fatalf("expected dial socket %q, got %q", socketPath, options.SocketOverride)
@@ -683,14 +683,14 @@ func TestV3PingAutoStartsCoreV2Daemon(t *testing.T) {
 }
 
 func TestV3PingReturnsAutoStartError(t *testing.T) {
-	oldConnect := connectV3LocalApplication
+	oldConnect := connectV3EndpointApplication
 	oldStart := startV3Daemon
 	t.Cleanup(func() {
-		connectV3LocalApplication = oldConnect
+		connectV3EndpointApplication = oldConnect
 		startV3Daemon = oldStart
 	})
 
-	connectV3LocalApplication = func(ctx context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
+	connectV3EndpointApplication = func(ctx context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
 		return nil, endpointdomain.AccessRoute{}, options.Start(ctx, options.SocketOverride)
 	}
 	startV3Daemon = func(path string, logFile string) error {
@@ -830,12 +830,12 @@ func TestDialOrStartV3ClientUsesConfigStarterWhenConfigPathIsExplicit(t *testing
 	oldDial := v3DialClient
 	oldStart := startV3Daemon
 	oldStartWithConfig := startV3DaemonWithConfig
-	oldConnect := connectV3LocalApplication
+	oldConnect := connectV3EndpointApplication
 	t.Cleanup(func() {
 		v3DialClient = oldDial
 		startV3Daemon = oldStart
 		startV3DaemonWithConfig = oldStartWithConfig
-		connectV3LocalApplication = oldConnect
+		connectV3EndpointApplication = oldConnect
 	})
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
 	socketPath := filepath.Join(t.TempDir(), "termx.sock")
@@ -849,7 +849,7 @@ func TestDialOrStartV3ClientUsesConfigStarterWhenConfigPathIsExplicit(t *testing
 		gotSocket, gotLog, gotConfig = path, logFile, cfg
 		return nil
 	}
-	connectV3LocalApplication = func(ctx context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
+	connectV3EndpointApplication = func(ctx context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
 		if err := options.Start(ctx, socketPath); err != nil {
 			return nil, endpointdomain.AccessRoute{}, err
 		}
@@ -1202,12 +1202,12 @@ func TestV3AttachRoutesToTUIv3Runtime(t *testing.T) {
 func TestV3RootRuntimeWithoutTerminalOpensPickerWithoutCreatingTerminal(t *testing.T) {
 	server, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
 	defer closeClient()
-	oldConnect := connectV3LocalApplication
+	oldConnect := connectV3EndpointApplication
 	oldStart := startV3Daemon
 	oldRunAttach := runV3Attach
 	oldRunEmpty := runV3RootEmpty
 	t.Cleanup(func() {
-		connectV3LocalApplication = oldConnect
+		connectV3EndpointApplication = oldConnect
 		startV3Daemon = oldStart
 		runV3Attach = oldRunAttach
 		runV3RootEmpty = oldRunEmpty
@@ -1267,7 +1267,7 @@ func TestV3RootEmptyRuntimeEnablesPerfTrace(t *testing.T) {
 		LogFile:    logPath,
 		TUIConfig:  tuistate.TUIConfigStore{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "start core-v2 daemon") {
+	if err == nil || clientruntime.CodeOf(err) != clientruntime.ErrorUnavailable || !clientruntime.WasAttempted(err) {
 		t.Fatalf("expected daemon start failure after perftrace enable, got %v", err)
 	}
 	data, readErr := os.ReadFile(tracePath)
@@ -1290,10 +1290,10 @@ func TestV3RootRuntimeReusesRunningTerminal(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create existing terminal: %v", err)
 	}
-	oldConnect := connectV3LocalApplication
+	oldConnect := connectV3EndpointApplication
 	oldRunAttach := runV3Attach
 	t.Cleanup(func() {
-		connectV3LocalApplication = oldConnect
+		connectV3EndpointApplication = oldConnect
 		runV3Attach = oldRunAttach
 	})
 
@@ -1333,10 +1333,10 @@ func TestV3RootRuntimeAttachesExitedRootWithoutAutoRestart(t *testing.T) {
 	process.exit(23)
 	waitForCLITerminalState(t, server, v3RootTerminalID, corev2.TerminalStateExited)
 
-	oldConnect := connectV3LocalApplication
+	oldConnect := connectV3EndpointApplication
 	oldRunAttach := runV3Attach
 	t.Cleanup(func() {
-		connectV3LocalApplication = oldConnect
+		connectV3EndpointApplication = oldConnect
 		runV3Attach = oldRunAttach
 	})
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
@@ -1368,7 +1368,7 @@ func TestV3RootEmptyInteractiveRuntimeStartsPickerAndEscLeavesUnconnectedPane(t 
 	defer closeClient()
 	host := app.NewFakeTerminalHost(8)
 	host.SetSize(100, 30)
-	runtime := newV3InteractiveRuntime("", 100, 30, client, host, nil)
+	runtime := newV3InteractiveRuntime("", 100, 30, wrapCLIProtocolClientForTest(t, client), host, nil)
 
 	if err := runtime.Post(app.ShellOpenTerminalPickerMsg{}); err != nil {
 		t.Fatalf("post terminal picker: %v", err)
@@ -1426,7 +1426,7 @@ func TestV3InteractiveRuntimeAttachesThroughProtocolClient(t *testing.T) {
 	}
 	_ = server
 	host := app.NewFakeTerminalHost(8)
-	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, host, nil)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, wrapCLIProtocolClientForTest(t, client), host, nil)
 
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   "term-1",
@@ -1472,7 +1472,7 @@ func TestV3InteractiveRuntimeRestoresWorkbenchFromCoreV2Storage(t *testing.T) {
 		t.Fatalf("encode workbench snapshot: %v", err)
 	}
 	ref := tuistate.DefaultWorkbenchStorageRef(tuistate.DefaultWorkspaceID)
-	storageApplication, err := newLocalApplicationSession(client)
+	storageApplication, err := newLocalApplicationSession(wrapCLIProtocolClientForTest(t, client))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1483,7 +1483,7 @@ func TestV3InteractiveRuntimeRestoresWorkbenchFromCoreV2Storage(t *testing.T) {
 		t.Fatalf("put workbench snapshot: %v", err)
 	}
 	host := app.NewFakeTerminalHost(8)
-	runtime := newV3InteractiveRuntime("term-restored", 100, 30, client, host, nil)
+	runtime := newV3InteractiveRuntime("term-restored", 100, 30, wrapCLIProtocolClientForTest(t, client), host, nil)
 
 	root := waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
 		if root.Shell.ActivePaneID != "pane-restored" || root.WorkbenchSync.SaveVersion() < 1 {
@@ -1515,7 +1515,7 @@ func TestV3InteractiveRuntimeCorrectsProtocolResizeToContentRect(t *testing.T) {
 	_ = server
 	host := app.NewFakeTerminalHost(8)
 	host.SetSize(100, 30)
-	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, host, nil)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, wrapCLIProtocolClientForTest(t, client), host, nil)
 
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   "term-1",
@@ -1553,7 +1553,7 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 	_ = server
 	host := app.NewFakeTerminalHost(32)
 	host.SetSize(100, 30)
-	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, host, nil)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, wrapCLIProtocolClientForTest(t, client), host, nil)
 
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   "term-1",
@@ -1661,7 +1661,7 @@ func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T
 	_ = server
 	host := app.NewFakeTerminalHost(32)
 	host.SetSize(100, 30)
-	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, host, nil)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, wrapCLIProtocolClientForTest(t, client), host, nil)
 
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   "term-1",
@@ -1729,7 +1729,7 @@ func TestV3InteractiveRuntimeCoreV2ResizeFailureSurfacesInSession(t *testing.T) 
 	_ = server
 	host := app.NewFakeTerminalHost(32)
 	host.SetSize(100, 30)
-	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, host, nil)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, wrapCLIProtocolClientForTest(t, client), host, nil)
 
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   "term-1",
@@ -2465,13 +2465,16 @@ func newCoreV2ProtocolClientForCLITest(t *testing.T) (*corev2.Server, *protocol.
 
 func installV3LocalApplicationTestClient(t *testing.T, socketPath string, client *protocol.Client) {
 	t.Helper()
-	connectV3LocalApplication = func(_ context.Context, owner *clientruntime.SessionOwner, target endpointdomain.Endpoint, requested endpointdomain.RouteID, intent clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
+	connectV3EndpointApplication = func(_ context.Context, owner *clientruntime.SessionOwner, target endpointdomain.Endpoint, requested endpointdomain.RouteID, intent clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
 		if options.SocketOverride != socketPath {
 			return nil, endpointdomain.AccessRoute{}, fmt.Errorf("test local socket = %q, want %q", options.SocketOverride, socketPath)
 		}
-		route, err := clientruntime.SelectRoute(target, requested)
-		if err != nil {
-			return nil, endpointdomain.AccessRoute{}, err
+		if requested == "" {
+			requested = endpointdomain.DefaultLocalRouteID
+		}
+		route, ok := target.Route(requested)
+		if !ok {
+			return nil, endpointdomain.AccessRoute{}, fmt.Errorf("test route %q is unavailable", requested)
 		}
 		attempt, err := owner.BeginRouteAttempt(target, route.ID, intent)
 		if err != nil {
@@ -2492,12 +2495,56 @@ func installV3LocalApplicationTestClient(t *testing.T, socketPath string, client
 		if err != nil {
 			return nil, endpointdomain.AccessRoute{}, err
 		}
-		application, err := clientprotocol.NewOwnedApplicationClient(client, owned)
+		application, err := clientprotocol.NewReadyApplicationClient(owned)
 		if err != nil {
 			return nil, endpointdomain.AccessRoute{}, err
 		}
 		return application, route, nil
 	}
+}
+
+func wrapCLIProtocolClientForTest(t *testing.T, client *protocol.Client) *clientprotocol.ApplicationClient {
+	t.Helper()
+	application, err := wrapCLIProtocolClientForTestContext(context.Background(), client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return application
+}
+
+func wrapCLIProtocolClientForTestContext(ctx context.Context, client *protocol.Client) (*clientprotocol.ApplicationClient, error) {
+	owner := clientruntime.NewSessionOwner()
+	target, _ := endpointdomain.DefaultRegistry().DefaultEndpoint()
+	attempt, err := owner.BeginRouteAttempt(target, endpointdomain.DefaultLocalRouteID, clientruntime.ConnectIntentInteractive)
+	if err != nil {
+		return nil, err
+	}
+	ready, err := clientprotocol.NewApplicationClient(client, attempt.Stamp())
+	if err != nil {
+		return nil, err
+	}
+	proofCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	identity, err := clientprotocol.VerifyDaemonIdentity(proofCtx, ready.ApplicationSession, endpointdomain.DaemonIdentity{})
+	cancel()
+	if err != nil {
+		return nil, err
+	}
+	if err := ready.MarkReady(clientruntime.ReadySessionEvidence{Identity: identity, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version}); err != nil {
+		return nil, err
+	}
+	lease, err := owner.AdoptReadySession(attempt, ready)
+	if err != nil {
+		return nil, err
+	}
+	owned, err := owner.ApplicationSession(lease)
+	if err != nil {
+		return nil, err
+	}
+	application, err := clientprotocol.NewReadyApplicationClient(owned)
+	if err != nil {
+		return nil, err
+	}
+	return application, nil
 }
 
 func newCoreV2TestServer(opts ...corev2.ServerOption) *corev2.Server {

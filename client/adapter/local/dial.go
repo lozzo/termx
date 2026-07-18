@@ -38,7 +38,6 @@ type Options struct {
 // Dialer 只执行 AttemptRequest 已选定的 local Unix route，不选择其它 route 或生成 generation。
 type Dialer struct {
 	options Options
-	client  *internalprotocol.Client
 }
 
 // NewDialer 创建 local Unix route dialer。
@@ -109,34 +108,7 @@ func (dialer *Dialer) Dial(ctx context.Context, request clientruntime.AttemptReq
 		_ = ready.Close()
 		return nil, err
 	}
-	dialer.client = client
 	return ready, nil
-}
-
-// Connect 选择 route、由 SessionOwner 分配 generation，并返回 owner-fenced concrete protocol client。
-func Connect(ctx context.Context, owner *clientruntime.SessionOwner, target endpoint.Endpoint, requested endpoint.RouteID, intent clientruntime.ConnectIntent, options Options) (*protocoladapter.ApplicationClient, endpoint.AccessRoute, error) {
-	if owner == nil {
-		return nil, endpoint.AccessRoute{}, fmt.Errorf("session owner is required")
-	}
-	route, err := clientruntime.SelectRoute(target, requested)
-	if err != nil {
-		return nil, endpoint.AccessRoute{}, err
-	}
-	dialer := NewDialer(options)
-	lease, err := owner.ConnectRoute(ctx, target, route.ID, intent, dialer)
-	if err != nil {
-		return nil, endpoint.AccessRoute{}, err
-	}
-	ready, err := owner.ApplicationSession(lease)
-	if err != nil {
-		return nil, endpoint.AccessRoute{}, err
-	}
-	client, err := protocoladapter.NewOwnedApplicationClient(dialer.client, ready)
-	if err != nil {
-		_ = ready.Close()
-		return nil, endpoint.AccessRoute{}, err
-	}
-	return client, route, nil
 }
 
 func dialProtocol(ctx context.Context, path, clientName string) (*internalprotocol.Client, error) {
