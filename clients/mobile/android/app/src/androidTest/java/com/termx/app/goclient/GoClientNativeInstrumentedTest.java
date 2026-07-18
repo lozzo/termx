@@ -120,7 +120,7 @@ public final class GoClientNativeInstrumentedTest {
         ExecutorService executor = Executors.newFixedThreadPool(4);
         try {
             for (Future<Integer> result : executor.invokeAll(calls)) {
-                assertEquals(2, result.get().intValue());
+                assertEquals(3, result.get().intValue());
             }
         } finally {
             executor.shutdownNow();

@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- `UX001` 默认 CLI/TUI 可用性修复已完成；当前没有后续活动切片。无参数 `termx` 会连接或自动启动本地 daemon 并进入 TUI，v2 Endpoint registry 使用独立 `endpoints.yaml`，旧 v1 `connections.yaml` 保持原样且不再阻断启动。
+- `QA001` Android 本地模拟器验收已完成；当前没有后续活动切片。Community debug App 可在 Android 15 ARM64 模拟器冷启动并加载 Go JNI，App instrumentation 与锁屏恢复验收通过。Web 不在本切片修改。
 - 当前迁移允许修改 `client/{runtime,port,adapter,binding}/`、`remote/`、`internal/protocol/`、`proto/`、`clients/mobile/`、`clients/ui/` 以及对应 tests、build scripts 和必要架构文档；每个切片仍只能触及任务表规定的最小范围。
 - Android 目标是 Go Client Engine 编译为 native library，通过稳定 C ABI 与薄 JNI/Capacitor bridge 调用；Kotlin/Java 不拥有连接、认证、协议、session/resource 或重连真值。
 - Android lifecycle 固定采用 generation teardown：锁屏广播或进程进入后台时关闭当前 Go engine、loopback bridge、全部 session/resource 和事件泵；WebView 恢复时先创建新 engine/generation，再让 TypeScript 重连。旧 handle、迟到 callback 和冻结期间未消费事件不得进入新 generation，事件队列必须有界。
@@ -31,6 +31,7 @@
 - `C3G` 已用测试内隔离的真实 OpenSSH 9.9 `sshd`、临时 host/client key、strict known_hosts、key-only auth、真实 `ssh` 子进程和真实 `termx daemon stdio-proxy` 验证 local/SSH full race、priority hedge、显式 SSH override、进程内 sticky reconnect、loser SSH process cleanup、跨 route `TerminalRef` 稳定和旧 generation `Attempted=false`。该 E2E 修正了同 config current winner 吞掉显式 override、SSH winner 仍绑定 race context、主动 Close 返回 `signal: killed` 三个生命周期错误；指定 race、真实 E2E、全仓 Go tests 与 doctor 通过。
 - `C3H` 最终准入已通过关键包 race、全仓 Go tests、repository doctor、UI 130 项与 mobile 16 项 tests、TypeScript typecheck、Go/WASM 与 UI/mobile production build、旧 route owner/重复真值/fallback/cleanup 审计。架构 reviewer `019f75bc-d09d-7af1-a16a-4466843a9337` 与代码 reviewer `019f75bc-5056-7c81-b015-a9ceac924d5f` 在复审后均明确 PASS；已处理过时 planner/runtime 文档、迟到 input attach 重放、旧 generation input/resize/attach 错误污染、stale terminal pool 投影和同 route 显式 override 未写 sticky intent。
 - `UX001` 已把 v2 Endpoint registry 默认文件从旧 schema 共用的 `connections.yaml` 隔离为 `endpoints.yaml`，旧文件不读取、不迁移、不覆盖；无参数 root runner、默认 local registry、daemon auto-start 与真实 TTY terminal picker 通过，运行期错误不再额外打印整页 Usage。用户现场的旧协议 daemon 已用当前二进制完成一次性重启；定向 tests、全仓 Go tests、doctor 与 diff check 通过。
+- `QA001` 已在 `termx-pa005n1` Android 15 ARM64 AVD 完成 Community debug App 验收：Capacitor production assets、`:app:assembleDebug` 和 4 项 App instrumentation 通过，APK 冷启动后真实加载 `libtermx_client_jni.so`。锁屏时系统进入 Asleep，恢复后 App 重新进入 RESUMED 并调用前台恢复处理，进程存活、界面完整且无 Java/native crash。测试同时修正跨语言 ABI 已升级到 v3 后仍断言 v2 的过期预期；Community 构建不包含 Official managed cloud module，`companion_missing` 属预期能力边界。
 - 用户已确立仓库级强约定：所有插件、第三方客户端、官方客户端、跨进程和跨语言 API 的唯一 schema truth 必须位于 `proto/`。
 - 完整运行链路固定为 `插件/客户端 -> transport/platform binding -> protocol framing -> generated proto -> api_layer -> api_mapping -> core`，返回方向相反。Proto 是 schema/message truth，不是 transport 或主动运行层；任何入口都不得绕过 API Layer 消费 core domain struct。
 - `core/api` Go DTO 路线已判定错误，必须删除；此前 `AR003B1A/AR003B1B` 结论作废，不得继续迁移或补兼容层。
@@ -134,6 +135,7 @@ core domain truth
 | C3G | 已完成 | local + SSH race E2E | 隔离真实 sshd/OpenSSH client 覆盖 full race、priority hedge、override/sticky、loser process cleanup、TerminalRef 稳定和 stale operation |
 | C3H | 已完成 | 最终准入与双审 | 全量测试与架构/重复真值/fallback/cleanup 审计通过；架构 reviewer 与代码 reviewer 复审后均明确 PASS |
 | UX001 | 已完成 | 默认 CLI/TUI 可用性 | v2 registry 使用独立路径；无参数 root 自动启动 daemon 并进入 TUI；旧 v1 文件不再阻断 `new --attach` |
+| QA001 | 已完成 | Android 本地模拟器验收 | Android 15 ARM64 AVD cold boot、Community debug APK 安装启动、4 项 Go/JNI instrumentation、锁屏/恢复 lifecycle 与 logcat crash 扫描通过 |
 
 ## 测试准入
 
@@ -160,6 +162,7 @@ core domain truth
 - `C3G`：测试内隔离真实 `sshd`、OpenSSH client 与远端 `termx daemon stdio-proxy`；full race、priority hedge、explicit override/sticky、loser SSH PID cleanup、TerminalRef 与 stale operation harness；`go test -race ./client/runtime ./client/adapter/ssh ./shared/transport/ssh -count=1`；`go test -race ./cmd/termx -run 'TestC3GRealLocalAndOpenSSHRoutes' -count=1`；`make test`；`make doctor`；`git diff --check`。
 - `C3H`：`go test -race ./client/endpoint ./client/runtime ./client/adapter/... ./shared/transport/ssh ./tui/app ./tui/adapter/clientruntime ./tui/adapter/protocol ./cmd/termx -count=1`；`make test`；`make doctor`；`npm test`；`npm run typecheck`；`npm run build`；旧 route owner/raw protocol adoption/平台网络第二真值、重复 application DTO、fallback 与资源 cleanup 守卫扫描；架构 reviewer 与代码 reviewer 对修复后 diff 均明确 PASS；`git diff --check`。
 - `UX001`：`go test ./client/endpoint ./cmd/termx -count=1`；默认路径旁存在旧 v1 `connections.yaml` 时仍加载新的 local Endpoint registry；root runner 收到 local registry/socket 并保持 auto-start TUI 入口；`make test`；`make doctor`；`git diff --check`。
+- `QA001`：启动 `termx-pa005n1` AVD 并等待 boot completed；`npm run cap:build --workspace @termx/mobile`；Android `:app:assembleDebug` 与 `:app:connectedDebugAndroidTest`；instrumentation 必须覆盖真实 Go/Pion/auth/Hello/`api.execute`/event/cancel/close、独立 JVM thread、platform Proto request 和 freeze/resume generation；安装启动 Community debug App，执行锁屏/解锁或等价 lifecycle 操作，扫描 `AndroidRuntime`/`FATAL EXCEPTION`/native crash；`make doctor`；`git diff --check`。
 
 ## 执行规则
 
