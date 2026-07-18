@@ -80,7 +80,7 @@ func TestBindingCoreDoesNotImportPlatformOrDomainOwners(t *testing.T) {
 			return err
 		}
 		if entry.IsDir() {
-			if path != "." && (entry.Name() == "cabi" || entry.Name() == "wasmlib" || entry.Name() == "managedhost") {
+			if path != "." && (entry.Name() == "cabi" || entry.Name() == "wasmlib" || entry.Name() == "enginehost") {
 				return filepath.SkipDir
 			}
 			return nil

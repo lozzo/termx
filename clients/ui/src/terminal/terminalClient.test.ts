@@ -10,7 +10,7 @@ describe('TerminalClient', () => {
     client.connect('terminal-1', session)
 
     expect(session.openedTerminalIds).toEqual(['terminal-1'])
-    expect(session.openedLabels).toEqual(['terminal:terminal-1'])
+    expect(session.openedLabels).toEqual(['proto-terminal:terminal-1'])
     return vi.waitFor(() => expect(callbacks.onLifecycle).toHaveBeenCalledWith({
       type: 'terminal.channelOpen',
       machineId: 'machine-local',
@@ -165,8 +165,8 @@ class MockTerminalProtocolSession implements TerminalProtocolSession {
 
   async openTerminal(terminalId: string): Promise<MockTerminalProtocolChannel> {
     this.openedTerminalIds.push(terminalId)
-    this.openedLabels.push(`terminal:${terminalId}`)
-    const channel = new MockTerminalProtocolChannel(`terminal:${terminalId}`)
+    this.openedLabels.push(`proto-terminal:${terminalId}`)
+    const channel = new MockTerminalProtocolChannel(`proto-terminal:${terminalId}`)
     this.channels.set(terminalId, channel)
     return channel
   }
@@ -253,14 +253,14 @@ class DeferredTerminalProtocolSession implements TerminalProtocolSession {
 
   async openTerminal(terminalId: string): Promise<MockTerminalProtocolChannel> {
     this.openedTerminalIds.push(terminalId)
-    this.openedLabels.push(`terminal:${terminalId}`)
+    this.openedLabels.push(`proto-terminal:${terminalId}`)
     return new Promise((resolve) => {
       this.waiters.set(terminalId, resolve)
     })
   }
 
   resolveOpen(terminalId: string): MockTerminalProtocolChannel {
-    const channel = new MockTerminalProtocolChannel(`terminal:${terminalId}`)
+    const channel = new MockTerminalProtocolChannel(`proto-terminal:${terminalId}`)
     const resolve = this.waiters.get(terminalId)
     if (!resolve) throw new Error(`missing pending terminal ${terminalId}`)
     this.waiters.delete(terminalId)

@@ -261,7 +261,7 @@ export class TerminalClient {
         return
       }
       this.machineId = machineId
-      if (channel.label !== `terminal:${terminalId}`) {
+      if (channel.label !== `proto-terminal:${terminalId}`) {
         channel.close()
         this.callbacks.onError(`unexpected terminal channel label ${channel.label}`)
         throw new Error(`unexpected terminal channel label ${channel.label}`)

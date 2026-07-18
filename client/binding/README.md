@@ -31,8 +31,8 @@ ABI v3 removed pairing and credential-specific exports. The ABI must not add com
 
 ## Platform Primitives
 
-- Android and Web both use `managedhost.Host` for endpoint generation, Cloud signaling, credential resolution, remote auth, Hello, Proto API, session, and resource ownership.
-- Matching `OpenSession` requests call `client/runtime.SessionOwner.AcquireRoute` and share the same underlying ready session. Each binding session handle is a consumer lease; `managedhost` keeps no parallel current-session registry.
+- Android and Web both use `enginehost.Host` for endpoint generation, route opening, credential resolution, remote auth, Hello, Proto API, session, and resource ownership.
+- Matching `OpenSession` requests call `client/runtime.SessionOwner.AcquireRoute` and share the same underlying ready session. Each binding session handle is a consumer lease; `enginehost` keeps no parallel current-session registry.
 - Android injects the native Pion peer factory. Web injects `adapter/managed/platform.Factory`, which exchanges serialized `bindingpb.PlatformRequest`, `PlatformResponse`, and `PlatformEvent` with the browser adapter.
 - Browser JavaScript owns only `RTCPeerConnection`, `RTCDataChannel`, WebCrypto/IndexedDB, and page lifecycle primitives. It cannot interpret remote-auth or application payloads.
 - Browser channel binding is accepted only after the actual certificate from `RTCDtlsTransport.getRemoteCertificates()` hashes to the SHA-256 fingerprint declared by the applied remote SDP.

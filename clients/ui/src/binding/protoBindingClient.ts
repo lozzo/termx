@@ -3,6 +3,7 @@ import * as TermxApiApplication from '../generated/apipb/application_pb'
 import * as TermxApiCommon from '../generated/apipb/common_pb'
 import * as TermxApiFile from '../generated/apipb/file_pb'
 import * as TermxClientBinding from '../generated/bindingpb/client_binding_pb'
+import * as TermxRemoteAuth from '../generated/remoteauthpb/remote_auth_pb'
 import type { ProtoClientSession, ProtoClientSubscription, ProtoResourceStream } from '../core/protoClientSession'
 
 export const BindingOperation = {
@@ -378,32 +379,29 @@ export class ProtoBindingClient {
   }
 }
 
-export interface ManagedEndpointInput {
-  endpointId: string
-  targetDeviceId: string
-  deviceFingerprint: string
-  credentialRef: string
-  relayMode: 'auto' | 'direct' | 'relay_only' | 'smart_route'
+export interface EndpointInput {
+	endpoint: TermxRemoteAuth.EndpointConfigV1
+	routeId?: string
 }
 
 /** ProtoBindingConnector builds only OpenSessionRequest; route/auth/reconnect ownership remains in Go. */
 export class ProtoBindingConnector {
-  constructor(private readonly client: () => ProtoBindingClient, private readonly endpoint: ManagedEndpointInput) {}
+  constructor(private readonly client: () => ProtoBindingClient, private readonly input: EndpointInput) {}
 
   async connect(input: { machineId: string }, options?: { signal?: AbortSignal; forceRelay?: boolean; onStatus?: (status: string) => void; onConnectionState?: (snapshot: { machineId: string; phase: 'connecting' | 'connected' | 'failed'; statusText: string; relayInUse: boolean }) => void }): Promise<ProtoClientSession> {
-    if (input.machineId !== this.endpoint.endpointId) throw new Error('managed endpoint identity mismatch')
+	const endpoint = create(TermxRemoteAuth.EndpointConfigV1Schema, this.input.endpoint)
+    if (input.machineId !== endpoint.endpointId) throw new Error('endpoint identity mismatch')
     options?.onStatus?.('Connecting...')
     options?.onConnectionState?.({ machineId: input.machineId, phase: 'connecting', statusText: 'Connecting...', relayInUse: options.forceRelay === true })
-    const managed = create(TermxClientBinding.ManagedEndpointConfigSchema, {
-      targetDeviceId: this.endpoint.targetDeviceId,
-      deviceFingerprint: this.endpoint.deviceFingerprint,
-      credentialRef: this.endpoint.credentialRef,
-      relayMode: options?.forceRelay ? TermxClientBinding.ManagedRelayMode.RELAY_ONLY : managedRelayMode(this.endpoint.relayMode),
-    })
+	if (options?.forceRelay) {
+		const managedRoute = endpoint.routes.find((route) => route.route.case === 'managedWebrtc')
+		if (!managedRoute || managedRoute.route.case !== 'managedWebrtc') throw new Error('force relay requires a managed WebRTC route')
+		managedRoute.route.value.relayMode = TermxRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY
+	}
     try {
       const session = await this.client().openSession(create(TermxClientBinding.OpenSessionRequestSchema, {
-        requestId: crypto.randomUUID(), endpointId: this.endpoint.endpointId,
-        intent: TermxClientBinding.ConnectIntent.INTERACTIVE, managed,
+		requestId: crypto.randomUUID(), endpointId: endpoint.endpointId, routeOverride: this.input.routeId ?? '',
+		intent: TermxClientBinding.ConnectIntent.INTERACTIVE, endpoint,
       }), options?.signal)
       options?.onStatus?.('Connected')
       options?.onConnectionState?.({ machineId: input.machineId, phase: 'connected', statusText: 'Connected', relayInUse: options?.forceRelay === true })
@@ -511,15 +509,6 @@ function bindingOperationHandle(envelope: TermxClientBinding.EventEnvelope): big
       return envelope.event.value.operationHandle
     default:
       return undefined
-  }
-}
-
-function managedRelayMode(value: ManagedEndpointInput['relayMode']): TermxClientBinding.ManagedRelayMode {
-  switch (value) {
-    case 'direct': return TermxClientBinding.ManagedRelayMode.DIRECT
-    case 'relay_only': return TermxClientBinding.ManagedRelayMode.RELAY_ONLY
-    case 'smart_route': return TermxClientBinding.ManagedRelayMode.SMART_ROUTE
-    case 'auto': return TermxClientBinding.ManagedRelayMode.AUTO
   }
 }
 

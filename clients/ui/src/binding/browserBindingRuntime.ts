@@ -1,4 +1,4 @@
-import { create } from '@bufbuild/protobuf'
+import { create, fromBinary, toBinary } from '@bufbuild/protobuf'
 import { openProtoEventSubscription } from '../core/protoEventSubscription'
 import type { ExternalPairingAdapter, MachineRuntime, MachineRuntimeFactory } from '../app/RemoteControlApp'
 import type { LocalStatus, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcConnectOptions, TerminalInventoryEvents } from '../core/transport'
@@ -8,6 +8,7 @@ import { CommandEnvelopeSchema } from '../generated/apipb/application_pb'
 import { ApplicationEventType, EventSubscribeCommandSchema } from '../generated/apipb/events_pb'
 import { TerminalListCommandSchema, TerminalState } from '../generated/apipb/terminal_pb'
 import { DeleteCredentialRequestSchema, ImportPairingRequestSchema } from '../generated/bindingpb/client_binding_pb'
+import { EndpointConfigV1Schema, type EndpointConfigV1 } from '../generated/remoteauthpb/remote_auth_pb'
 import type { WebControlMachine } from '../api/webControlApi'
 import { normalizeTerminalInventory } from '../terminal/terminalInventory'
 import { createMachineStore } from '../state/machineStore'
@@ -85,14 +86,8 @@ export class BrowserBindingRuntime {
 
   private createConnector(machine: WebControlMachine): { connect(input: { machineId: string }, options?: RtcConnectOptions): Promise<ProtoClientSession> } {
     const key = (field: string) => this.storage.getItem(`termx.endpoint.${machine.id}.${field}`)?.trim() ?? ''
-    const targetDeviceId = key('targetDeviceId') || machine.id
-    const deviceFingerprint = key('deviceFingerprint')
-    const credentialRef = key('grantRef')
-    const relayMode = key('relayMode')
-    if (!deviceFingerprint || !credentialRef) return { connect: async () => { throw new Error('Managed endpoint requires a current pairing grant') } }
-    if (relayMode && relayMode !== 'auto' && relayMode !== 'direct' && relayMode !== 'relay_only' && relayMode !== 'smart_route') {
-      return { connect: async () => { throw new Error('Managed endpoint has an invalid relay mode') } }
-    }
+	const endpoint = decodeEndpointConfig(key('configProto'))
+	if (!endpoint || endpoint.endpointId !== machine.id) return { connect: async () => { throw new Error('Managed endpoint requires a current Proto pairing configuration') } }
     return {
       connect: async (input, options) => {
         const binding = new ProtoBindingConnector(() => {
@@ -100,11 +95,7 @@ export class BrowserBindingRuntime {
           if (!active) throw new Error('browser WASM generation is unavailable')
           return active
         }, {
-          endpointId: machine.id,
-          targetDeviceId,
-          deviceFingerprint,
-          credentialRef,
-          relayMode: relayMode === 'relay_only' || relayMode === 'smart_route' || relayMode === 'auto' ? relayMode : 'direct',
+		  endpoint,
         })
         await this.client()
         return await binding.connect(input, bindingConnectOptions(options))
@@ -130,25 +121,41 @@ function createBrowserPairingAdapter(runtime: BrowserBindingRuntime, storage: Re
       const imported = await (await runtime.client()).importPairing(create(ImportPairingRequestSchema, {
         requestId: crypto.randomUUID(), portablePayload: rawValue, expectedEndpointId: expectedMachineId ?? '',
       }))
-      if (!imported.endpointId || !imported.credentialRef) return null
+	  const endpoint = imported.endpoint
+	  if (!endpoint?.endpointId || endpoint.routes.length === 0) return null
       const expiresAt = new Date(Number(imported.expiresAtUnixNano / 1_000_000n)).toISOString()
-      storage.setItem(key(imported.endpointId, 'targetDeviceId'), imported.targetDeviceId)
-      storage.setItem(key(imported.endpointId, 'deviceFingerprint'), imported.deviceFingerprint)
-      storage.setItem(key(imported.endpointId, 'grantRef'), imported.credentialRef)
-      storage.setItem(key(imported.endpointId, 'grantExpiresAt'), expiresAt)
-      storage.setItem(key(imported.endpointId, 'relayMode'), 'direct')
-      return { machine: { id: imported.endpointId, name: imported.label || imported.endpointId, accessClass: 'cloud' }, expiresAt }
+	  storage.setItem(key(endpoint.endpointId, 'configProto'), encodeEndpointConfig(endpoint))
+	  storage.setItem(key(endpoint.endpointId, 'grantExpiresAt'), expiresAt)
+	  return { machine: { id: endpoint.endpointId, name: endpoint.label || endpoint.endpointId, accessClass: 'cloud' }, expiresAt }
     },
     isAuthorized(machineId) {
-      return Boolean(storage.getItem(key(machineId, 'targetDeviceId'))?.trim() && storage.getItem(key(machineId, 'deviceFingerprint'))?.trim() && storage.getItem(key(machineId, 'grantRef'))?.trim())
+	  return Boolean(storage.getItem(key(machineId, 'configProto'))?.trim())
     },
     authorizationExpiresAt(machineId) { return storage.getItem(key(machineId, 'grantExpiresAt'))?.trim() || undefined },
     async forget(machineId) {
-      const credentialRef = storage.getItem(key(machineId, 'grantRef'))?.trim()
-      for (const field of ['targetDeviceId', 'deviceFingerprint', 'grantRef', 'grantExpiresAt', 'relayMode']) storage.removeItem(key(machineId, field))
-      if (credentialRef) await (await runtime.client()).deleteCredential(create(DeleteCredentialRequestSchema, { requestId: crypto.randomUUID(), credentialRef }))
+	  const endpoint = decodeEndpointConfig(storage.getItem(key(machineId, 'configProto'))?.trim() ?? '')
+	  for (const field of ['configProto', 'grantExpiresAt']) storage.removeItem(key(machineId, field))
+	  for (const route of endpoint?.routes ?? []) {
+		if (route.credentialRef) await (await runtime.client()).deleteCredential(create(DeleteCredentialRequestSchema, { requestId: crypto.randomUUID(), credentialRef: route.credentialRef }))
+	  }
     },
   }
+}
+
+function encodeEndpointConfig(endpoint: EndpointConfigV1): string {
+	let binary = ''
+	for (const byte of toBinary(EndpointConfigV1Schema, endpoint)) binary += String.fromCharCode(byte)
+	return btoa(binary)
+}
+
+function decodeEndpointConfig(encoded: string): EndpointConfigV1 | null {
+	if (!encoded) return null
+	try {
+		const binary = atob(encoded)
+		return fromBinary(EndpointConfigV1Schema, Uint8Array.from(binary, (value) => value.charCodeAt(0)))
+	} catch {
+		return null
+	}
 }
 
 async function listTerminals(machineId: string, connector: { connect(input: { machineId: string }, options?: RtcConnectOptions): Promise<ProtoClientSession> }, options?: RtcConnectOptions) {

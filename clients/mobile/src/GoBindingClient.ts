@@ -2,7 +2,7 @@ import {
   ProtoBindingClient,
   ProtoBindingConnector,
   type BindingOperationCode,
-  type ManagedEndpointInput,
+  type EndpointInput,
   type ProtoBindingBackend,
 } from '@termx/ui'
 import { NativeConnection } from './plugins/nativeConnection'
@@ -168,7 +168,7 @@ export class GoBindingClient extends ProtoBindingClient {
 }
 
 export { ProtoBindingConnector as GoBindingConnector }
-export type GoManagedEndpointInput = ManagedEndpointInput
+export type GoEndpointInput = EndpointInput
 
 function decodeBridgeFrame(bytes: Uint8Array): { operation: number; requestId: bigint; handle: bigint; payload: Uint8Array } {
   if (bytes.byteLength < RESPONSE_HEADER_BYTES) throw new Error('native binding response is truncated')

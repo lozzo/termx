@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { App as CapApp } from '@capacitor/app'
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { Keyboard } from '@capacitor/keyboard'
-import { create } from '@bufbuild/protobuf'
+import { create, fromBinary, toBinary } from '@bufbuild/protobuf'
 import { Html5Qrcode } from 'html5-qrcode'
 import {
   RemoteControlApp,
@@ -15,6 +15,7 @@ import {
   TermxApiApplication,
   TermxApiEvents,
   TermxApiTerminal,
+	TermxRemoteAuth,
 } from '@termx/ui'
 import type {
   FileTransferContext,
@@ -36,7 +37,7 @@ import type {
   CloudAccountAdapter,
   ProtoClientSession,
 } from '@termx/ui'
-import { NativeConnection, type NativeRelayMode } from './plugins/nativeConnection'
+import { NativeConnection } from './plugins/nativeConnection'
 import { NativeFileTransferStore } from './NativeFileTransferStore'
 import { GoBindingClient, GoBindingConnector } from './GoBindingClient'
 import NativeFilePicker from './plugins/nativeFilePicker'
@@ -138,39 +139,33 @@ function createNativeExternalPairingAdapter(storage: RemoteRuntimeStorage): Exte
 		portablePayload: rawValue,
 		expectedEndpointId: expectedMachineId ?? '',
 	  }))
-	  if (!imported.endpointId || !imported.credentialRef) return null
+	  const endpoint = imported.endpoint
+	  if (!endpoint?.endpointId || !endpoint.identity || endpoint.routes.length === 0) return null
 	  const expiresAt = new Date(Number(imported.expiresAtUnixNano / 1_000_000n)).toISOString()
-      storage.setItem(key(imported.endpointId, 'targetDeviceId'), imported.targetDeviceId)
-      storage.setItem(key(imported.endpointId, 'deviceFingerprint'), imported.deviceFingerprint)
-	  storage.setItem(key(imported.endpointId, 'grantRef'), imported.credentialRef)
-	  storage.setItem(key(imported.endpointId, 'grantExpiresAt'), expiresAt)
-      storage.setItem(key(imported.endpointId, 'relayMode'), 'direct')
+	  storage.setItem(key(endpoint.endpointId, 'configProto'), bytesToBase64(toBinary(TermxRemoteAuth.EndpointConfigV1Schema, endpoint)))
+	  storage.setItem(key(endpoint.endpointId, 'grantExpiresAt'), expiresAt)
       return {
-        machine: { id: imported.endpointId, name: imported.label, accessClass: 'cloud' },
+		machine: { id: endpoint.endpointId, name: endpoint.label || endpoint.endpointId, accessClass: 'local' },
 		expiresAt,
       }
     },
     isAuthorized(machineId) {
       return Boolean(
-        storage.getItem(key(machineId, 'targetDeviceId'))?.trim() &&
-        storage.getItem(key(machineId, 'deviceFingerprint'))?.trim() &&
-        storage.getItem(key(machineId, 'grantRef'))?.trim(),
+		storage.getItem(key(machineId, 'configProto'))?.trim(),
       )
     },
     authorizationExpiresAt(machineId) {
       return storage.getItem(key(machineId, 'grantExpiresAt'))?.trim() || undefined
     },
     async forget(machineId) {
-      const grantRef = storage.getItem(key(machineId, 'grantRef'))?.trim()
-      storage.removeItem(key(machineId, 'targetDeviceId'))
-      storage.removeItem(key(machineId, 'deviceFingerprint'))
-      storage.removeItem(key(machineId, 'grantRef'))
-      storage.removeItem(key(machineId, 'grantExpiresAt'))
-      storage.removeItem(key(machineId, 'relayMode'))
-	  if (grantRef) {
+	  const config = loadEndpointConfig(storage.getItem(key(machineId, 'configProto')))
+	  const credentialRefs = config?.routes.map((route) => route.credentialRef.trim()).filter(Boolean) ?? []
+	  storage.removeItem(key(machineId, 'configProto'))
+	  storage.removeItem(key(machineId, 'grantExpiresAt'))
+	  for (const credentialRef of credentialRefs) {
 		await goBindingClient.deleteCredential(create(TermxClientBinding.DeleteCredentialRequestSchema, {
 		  requestId: crypto.randomUUID(),
-		  credentialRef: grantRef,
+		  credentialRef,
 		}))
 	  }
     },
@@ -344,7 +339,11 @@ async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?
   root.append(scannerStyle, header, reader, hint, manualContainer)
   document.body.append(root)
 
-  const scanner = new Html5Qrcode(qrScannerReaderId)
+  // Android WebView 的 BarcodeDetector 可能在缺少 GMS provider 时让进程直接崩溃；扫码只使用库内 decoder。
+  const scanner = new Html5Qrcode(qrScannerReaderId, {
+    verbose: false,
+    useBarCodeDetectorIfSupported: false,
+  })
   let settled = false
   let started = false
 
@@ -452,6 +451,27 @@ function browserStorage(): RemoteRuntimeStorage | undefined {
   return storage
 }
 
+function loadEndpointConfig(encoded: string | null | undefined): TermxRemoteAuth.EndpointConfigV1 | null {
+	const normalized = encoded?.trim()
+	if (!normalized) return null
+	try {
+		return fromBinary(TermxRemoteAuth.EndpointConfigV1Schema, base64ToBytes(normalized))
+	} catch {
+		return null
+	}
+}
+
+function bytesToBase64(value: Uint8Array): string {
+	let binary = ''
+	for (const byte of value) binary += String.fromCharCode(byte)
+	return btoa(binary)
+}
+
+function base64ToBytes(value: string): Uint8Array {
+	const binary = atob(value)
+	return Uint8Array.from(binary, (character) => character.charCodeAt(0))
+}
+
 function createNativeAppRuntime(): {
   createMachineRuntime: MachineRuntimeFactory
   fileTransfer: FileTransferContext
@@ -485,8 +505,7 @@ function createNativeMachineRuntime(
   const storedMachine = machineStore.getMachine(machine.id)
   const endpointIdentity = [
     machine.id,
-    storage.getItem(`termx.endpoint.${machine.id}.deviceFingerprint`)?.trim() ?? '',
-    storage.getItem(`termx.endpoint.${machine.id}.grantRef`)?.trim() ?? '',
+	storage.getItem(`termx.endpoint.${machine.id}.configProto`)?.trim() ?? '',
   ].join('|')
   let entry = shared.sessionManagers.get(machine.id)
   if (!entry || entry.endpointIdentity !== endpointIdentity) {
@@ -615,40 +634,21 @@ function createNativeConnector(
   _storedMachine: StoredMachineRecord | null,
   storage: RemoteRuntimeStorage,
 ): NativeConnector {
-  const targetDeviceId = storage.getItem(`termx.endpoint.${machine.id}.targetDeviceId`)?.trim() ?? machine.id
-  const deviceFingerprint = storage.getItem(`termx.endpoint.${machine.id}.deviceFingerprint`)?.trim() ?? ''
-  const grantRef = storage.getItem(`termx.endpoint.${machine.id}.grantRef`)?.trim() ?? ''
-  if (!deviceFingerprint || !grantRef) {
+	const endpoint = loadEndpointConfig(storage.getItem(`termx.endpoint.${machine.id}.configProto`))
+	if (!endpoint || endpoint.endpointId !== machine.id || !endpoint.identity || endpoint.routes.length === 0) {
     return {
       async connect() {
-        throw new Error('Managed endpoint requires a device fingerprint and grant reference from the new pairing flow')
-      },
-    }
-  }
-
-  const relayModeValue = storage.getItem(`termx.endpoint.${machine.id}.relayMode`)?.trim() ?? ''
-  if (relayModeValue && !isNativeRelayMode(relayModeValue)) {
-    return {
-      async connect() {
-        throw new Error('Managed endpoint has an invalid relay mode')
+		throw new Error('Endpoint requires a valid Proto configuration from the pairing flow')
       },
     }
   }
 
   const connector = new GoBindingConnector(() => goBindingClient, {
-    endpointId: machine.id,
-    targetDeviceId,
-    deviceFingerprint,
-    credentialRef: grantRef,
-    relayMode: isNativeRelayMode(relayModeValue) ? relayModeValue : 'auto',
+	endpoint,
   })
   return {
     connect: (target, options) => connector.connect(target, options),
   }
-}
-
-function isNativeRelayMode(value: string): value is NativeRelayMode {
-  return value === 'auto' || value === 'direct' || value === 'relay_only' || value === 'smart_route'
 }
 
 function createNativeSessionManager(machineId: string, connector: NativeConnector) {

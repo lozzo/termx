@@ -150,6 +150,7 @@ func (service v3ClientAccessService) CreateTicket(_ context.Context, request cor
 	}
 	bundle, claims, err := service.store.IssuePairingBundle(remoteauth.PairingIssueOptions{
 		Label: request.Label, Scope: remoteAuthScopeFromCore(request.Scope), TicketTTL: request.TicketTTL, GrantLifetime: request.GrantLifetime,
+		Routes: request.Routes,
 	})
 	if err != nil {
 		return corev2.ClientAccessTicket{}, err

@@ -130,7 +130,10 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			response, err := application.ClientAccessTicketCreate(cmd.Context(), &apipb.ClientAccessTicketCreateCommand{Request: &remoteauthpb.ClientAccessTicketCreateRequest{Label: label, Scope: clientAccessScopeToProto(scope), TicketTtlSeconds: int64(ticketTTL / time.Second), GrantLifetimeSeconds: int64(grantLifetime / time.Second)}})
+			response, err := application.ClientAccessTicketCreate(cmd.Context(), &apipb.ClientAccessTicketCreateCommand{Request: &remoteauthpb.ClientAccessTicketCreateRequest{
+				Label: label, Scope: clientAccessScopeToProto(scope), TicketTtlSeconds: int64(ticketTTL / time.Second), GrantLifetimeSeconds: int64(grantLifetime / time.Second),
+				Routes: []*remoteauthpb.EndpointRouteConfigV1{v3DirectPairingRoute()},
+			}})
 			if err != nil {
 				return err
 			}

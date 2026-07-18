@@ -16,6 +16,7 @@ import (
 
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/proto/remoteauthpb"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -76,6 +77,7 @@ type PairingIssueOptions struct {
 	GrantLifetime time.Duration
 	Now           time.Time
 	Random        io.Reader
+	Routes        []*remoteauthpb.EndpointRouteConfigV1
 }
 
 func issuePairingBundle(identity Identity, options PairingIssueOptions) (*PairingBundle, PairingTicketClaims, error) {
@@ -139,6 +141,7 @@ func issuePairingBundle(identity Identity, options PairingIssueOptions) (*Pairin
 	ticket.Signature = ed25519.Sign(identity.PrivateKey, ticketSigningBytes)
 	bundle := &remoteauthpb.EndpointBootstrapBundleV2{
 		SchemaVersion: PairingBundleVersion, BundleId: bundleID, Identity: wireIdentity, SuggestedLabel: label,
+		Routes:           clonePairingRoutes(options.Routes),
 		Authorization:    &remoteauthpb.EndpointAuthorizationBootstrap{Payload: &remoteauthpb.EndpointAuthorizationBootstrap_PairingTicket{PairingTicket: ticket}},
 		IssuedAtUnixNano: now.UnixNano(), ExpiresAtUnixNano: ticket.GetExpiresAtUnixNano(),
 	}
@@ -152,6 +155,16 @@ func issuePairingBundle(identity Identity, options PairingIssueOptions) (*Pairin
 		return nil, PairingTicketClaims{}, err
 	}
 	return bundle, claims, nil
+}
+
+func clonePairingRoutes(routes []*remoteauthpb.EndpointRouteConfigV1) []*remoteauthpb.EndpointRouteConfigV1 {
+	cloned := make([]*remoteauthpb.EndpointRouteConfigV1, 0, len(routes))
+	for _, route := range routes {
+		if route != nil {
+			cloned = append(cloned, proto.Clone(route).(*remoteauthpb.EndpointRouteConfigV1))
+		}
+	}
+	return cloned
 }
 
 // EncodePairingBundle 严格校验并以 deterministic protobuf 编码一次性 bootstrap bundle。

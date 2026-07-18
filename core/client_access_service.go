@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/lozzow/termx/proto/remoteauthpb"
 )
 
 // ErrClientAccessServiceUnavailable 表示当前 daemon 未装配 DeviceIdentity/AccessStore 管理边界。
@@ -28,6 +30,7 @@ type ClientAccessTicketRequest struct {
 	Label                    string
 	Scope                    ClientAccessScope
 	TicketTTL, GrantLifetime time.Duration
+	Routes                   []*remoteauthpb.EndpointRouteConfigV1
 }
 
 // ClientAccessTicket 是一次性 pairing bundle 的 core-native 结果。

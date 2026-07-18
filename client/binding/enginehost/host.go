@@ -1,6 +1,6 @@
-// Package managedhost 提供 Android JNI 与浏览器 WASM 共用的 managed Client Engine composition root。
-// 平台只能注入 Cloud/credential broker 和 WebRTC primitive；remote-auth、Hello、Proto API 与 generation 真值留在 Go。
-package managedhost
+// Package enginehost 提供 Android JNI 与浏览器 WASM 共用的 Go Client Engine composition root。
+// 平台只能注入 credential/Cloud primitive；Endpoint Route、remote-auth、Hello、Proto API 与 generation 真值留在 Go。
+package enginehost
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lozzow/termx/client/adapter/direct"
 	"github.com/lozzow/termx/client/adapter/managed"
 	peeradapter "github.com/lozzow/termx/client/adapter/peer"
 	"github.com/lozzow/termx/client/binding"
@@ -21,6 +22,7 @@ import (
 	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/proto/bindingpb"
 	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/lozzow/termx/proto/remoteauthpb"
 	"github.com/lozzow/termx/shared/cloudcompanion"
 	"github.com/lozzow/termx/shared/remoteauth"
 	"google.golang.org/protobuf/proto"
@@ -29,10 +31,11 @@ import (
 const bootstrapPrefix = "termx://bootstrap?payload="
 
 // Options 定义单个平台 generation 的 primitive 依赖。
-// Broker 与 Peers 必须只属于当前 engine；关闭后不得复用到下一代。
+// Broker 与 peer factory 必须只属于当前 engine；关闭后不得复用到下一代。
 type Options struct {
 	Broker           *binding.PlatformBroker
-	Peers            port.ManagedPeerFactory
+	DirectPeers      direct.PeerFactory
+	ManagedPeers     port.ManagedPeerFactory
 	ClientName       string
 	CredentialPrefix string
 	Now              func() time.Time
@@ -48,8 +51,8 @@ type Host struct {
 
 // New 校验平台依赖并创建共享 managed host。
 func New(options Options) (*Host, error) {
-	if options.Broker == nil || options.Peers == nil {
-		return nil, fmt.Errorf("managed binding host requires broker and peer factory")
+	if options.Broker == nil || options.DirectPeers == nil && options.ManagedPeers == nil {
+		return nil, fmt.Errorf("binding engine host requires broker and at least one peer factory")
 	}
 	options.ClientName = strings.TrimSpace(options.ClientName)
 	if options.ClientName == "" {
@@ -65,13 +68,12 @@ func New(options Options) (*Host, error) {
 	return &Host{options: options, owner: clientruntime.NewSessionOwnerWithAuthority(options.SessionAuthority)}, nil
 }
 
-// OpenSession 建立 Go-owned managed generation；平台 UI 状态不能参与 endpoint、auth 或协议判断。
+// OpenSession 从 generated EndpointConfigV1 建立 Go-owned generation；平台 UI 状态不能参与 endpoint、Route、auth 或协议判断。
 func (host *Host) OpenSession(ctx context.Context, request *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadyPeerSession, error) {
-	managedConfig := request.GetManaged()
-	if managedConfig == nil {
-		return nil, fmt.Errorf("managed endpoint configuration is required")
+	if request == nil || request.GetEndpoint() == nil {
+		return nil, fmt.Errorf("endpoint configuration is required")
 	}
-	relayMode, err := relayMode(managedConfig.GetRelayMode())
+	target, err := endpoint.EndpointFromProto(request.GetEndpoint())
 	if err != nil {
 		return nil, err
 	}
@@ -80,28 +82,43 @@ func (host *Host) OpenSession(ctx context.Context, request *bindingpb.OpenSessio
 		return nil, err
 	}
 	endpointID := strings.TrimSpace(request.GetEndpointId())
+	if endpointID == "" || endpointID != string(target.ID) {
+		return nil, fmt.Errorf("open session endpoint_id does not match endpoint config")
+	}
 	routeID := endpoint.RouteID(strings.TrimSpace(request.GetRouteOverride()))
 	if routeID == "" {
-		routeID = "managed-webrtc"
+		routes := target.RouteList()
+		if len(routes) != 1 {
+			return nil, fmt.Errorf("open session route_override is required for multi-route endpoint")
+		}
+		routeID = routes[0].ID
 	}
-	target := endpoint.Endpoint{
-		ID: endpoint.EndpointID(endpointID),
-		DaemonIdentity: endpoint.DaemonIdentity{
-			DeviceID: strings.TrimSpace(managedConfig.GetTargetDeviceId()), DeviceFingerprint: strings.TrimSpace(managedConfig.GetDeviceFingerprint()),
-		},
-		Routes: map[endpoint.RouteID]endpoint.AccessRoute{routeID: {
-			ID: routeID, Kind: endpoint.RouteManagedWebRTC, Enabled: true, Source: endpoint.SourceCloud, PolicySource: endpoint.SourceUser,
-			CredentialRef: strings.TrimSpace(managedConfig.GetCredentialRef()), TargetDeviceID: strings.TrimSpace(managedConfig.GetTargetDeviceId()),
-			AccountProfileRef: strings.TrimSpace(managedConfig.GetAccountProfile()), RelayMode: relayMode,
-		}},
+	route, ok := target.Route(routeID)
+	if !ok {
+		return nil, fmt.Errorf("endpoint %q has no route %q", target.ID, routeID)
 	}
-	config := managedSessionConfig(request, routeID)
 	credentials := platformCredentials{broker: host.options.Broker}
-	dialer := &managed.Dialer{
-		Cloud: platformCloud{broker: host.options.Broker}, Peers: host.options.Peers, ClientName: host.options.ClientName,
-		Authorization: peeradapter.CapabilityAuthorizer{Credentials: credentials, Signers: credentials, Now: host.options.Now}, Now: host.options.Now,
+	authorizer := peeradapter.CapabilityAuthorizer{Credentials: credentials, Signers: credentials, Now: host.options.Now}
+	config := sessionConfig(request.GetEndpoint(), routeID, request.GetIntent())
+	switch route.Kind {
+	case endpoint.RouteDirectWebRTCTCP:
+		if host.options.DirectPeers == nil {
+			return nil, fmt.Errorf("Direct WebRTC peer factory is unavailable")
+		}
+		return host.owner.AcquireRoute(ctx, target, routeID, intent, config, &direct.Dialer{
+			Peers: host.options.DirectPeers, Authorization: authorizer, ClientName: host.options.ClientName, Now: host.options.Now,
+		})
+	case endpoint.RouteManagedWebRTC:
+		if host.options.ManagedPeers == nil {
+			return nil, fmt.Errorf("managed WebRTC peer factory is unavailable")
+		}
+		return host.owner.AcquireRoute(ctx, target, routeID, intent, config, &managed.Dialer{
+			Cloud: platformCloud{broker: host.options.Broker}, Peers: host.options.ManagedPeers, ClientName: host.options.ClientName,
+			Authorization: authorizer, Now: host.options.Now,
+		})
+	default:
+		return nil, fmt.Errorf("binding engine host does not support route kind %q", route.Kind)
 	}
-	return host.owner.AcquireRoute(ctx, target, routeID, intent, config, dialer)
 }
 
 // ImportPairing 验证 bootstrap、使用平台不可导出 signer 完成 PairingExchange，并原子绑定 grant。
@@ -134,24 +151,27 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 	if err != nil {
 		return nil, err
 	}
-	var pairingRoute endpoint.AccessRoute
+	var directRoute endpoint.AccessRoute
+	var managedRoute endpoint.AccessRoute
 	for _, route := range candidate.Routes {
-		if route.Enabled && route.Kind == endpoint.RouteManagedWebRTC {
-			pairingRoute = route
-			break
+		if !route.Enabled {
+			continue
+		}
+		if route.Kind == endpoint.RouteDirectWebRTCTCP && directRoute.ID == "" {
+			directRoute = route
+		}
+		if route.Kind == endpoint.RouteManagedWebRTC && managedRoute.ID == "" {
+			managedRoute = route
 		}
 	}
+	pairingRoute := directRoute
 	if pairingRoute.ID == "" {
-		return nil, fmt.Errorf("pairing bundle has no managed WebRTC route")
+		pairingRoute = managedRoute
 	}
-	pairingRoute.CredentialRef = credentialRef
-	if pairingRoute.TargetDeviceID == "" {
-		pairingRoute.TargetDeviceID = bundle.GetIdentity().GetDeviceId()
+	if pairingRoute.ID == "" {
+		return nil, fmt.Errorf("pairing bundle has no supported WebRTC route")
 	}
-	target := endpoint.Endpoint{
-		ID: endpoint.EndpointID(endpointID), DaemonIdentity: candidate.Identity,
-		Routes: map[endpoint.RouteID]endpoint.AccessRoute{pairingRoute.ID: pairingRoute},
-	}
+	target := pairingTarget(endpointID, candidate.Identity, pairingRoute, credentialRef)
 	attempt, err := host.owner.BeginRouteAttempt(target, pairingRoute.ID, clientruntime.ConnectIntentInteractive)
 	if err != nil {
 		return nil, err
@@ -163,12 +183,23 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 		return nil, fmt.Errorf("pairing identity is invalid: %w", err)
 	}
 	signer := platformSigner{broker: host.options.Broker, credentialRef: credentialRef, identity: identity}
-	paired, err := (&managed.PairingConnector{Cloud: platformCloud{broker: host.options.Broker}, Peers: host.options.Peers, Now: host.options.Now}).Redeem(
-		ctx, attempt, remoteauth.ClientPairingRequest{
-			ExpectedDeviceID: bundle.GetIdentity().GetDeviceId(), ExpectedDeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint(),
-			PairingBundle: payload, Identity: identity, Signer: signer, ClientLabel: host.options.ClientName,
-		},
-	)
+	pairingRequest := remoteauth.ClientPairingRequest{
+		ExpectedDeviceID: bundle.GetIdentity().GetDeviceId(), ExpectedDeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint(),
+		PairingBundle: payload, Identity: identity, Signer: signer, ClientLabel: host.options.ClientName,
+	}
+	var paired remoteauth.PairingExchangeResult
+	switch pairingRoute.Kind {
+	case endpoint.RouteDirectWebRTCTCP:
+		if host.options.DirectPeers == nil {
+			return nil, fmt.Errorf("Direct pairing peer factory is unavailable")
+		}
+		paired, err = (&direct.PairingConnector{Peers: host.options.DirectPeers, Now: host.options.Now}).Redeem(ctx, attempt, pairingRequest)
+	case endpoint.RouteManagedWebRTC:
+		if host.options.ManagedPeers == nil {
+			return nil, fmt.Errorf("managed pairing peer factory is unavailable")
+		}
+		paired, err = (&managed.PairingConnector{Cloud: platformCloud{broker: host.options.Broker}, Peers: host.options.ManagedPeers, Now: host.options.Now}).Redeem(ctx, attempt, pairingRequest)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -189,9 +220,16 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 	if label == "" {
 		label = bundle.GetIdentity().GetDeviceId()
 	}
+	target.Label = label
+	target.LabelSource = endpoint.SourceBootstrap
+	target.ConnectMode = endpoint.ConnectOnDemand
+	target.Enabled = true
+	wireEndpoint, err := endpoint.EndpointToProto(target)
+	if err != nil {
+		return nil, err
+	}
 	return &bindingpb.ImportPairingResult{
-		EndpointId: endpointID, Label: label, TargetDeviceId: bundle.GetIdentity().GetDeviceId(), DeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint(),
-		CredentialRef: credentialRef, TicketId: claims.TicketID, ClientKeyFingerprint: record.GetKeyFingerprint(),
+		Endpoint: wireEndpoint, TicketId: claims.TicketID, ClientKeyFingerprint: record.GetKeyFingerprint(),
 		ExpiresAtUnixNano: paired.ExpiresAt.UnixNano(), AuthorizationRequired: false,
 	}, nil
 }
@@ -214,7 +252,10 @@ func (host *Host) Close() error {
 	}
 	host.closeOnce.Do(func() {
 		_ = host.owner.Close()
-		if closer, ok := host.options.Peers.(interface{ Close() error }); ok {
+		if closer, ok := host.options.DirectPeers.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+		if closer, ok := host.options.ManagedPeers.(interface{ Close() error }); ok {
 			_ = closer.Close()
 		}
 		_ = host.options.Broker.Close()
@@ -225,9 +266,20 @@ func (host *Host) Close() error {
 // Broker 返回当前 engine 独占的平台 broker，供 JNI/WASM wrapper 驱动。
 func (host *Host) Broker() *binding.PlatformBroker { return host.options.Broker }
 
-func managedSessionConfig(request *bindingpb.OpenSessionRequest, routeID endpoint.RouteID) string {
-	managed := request.GetManaged()
-	return fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%s\x00%d\x00%d", routeID, managed.GetTargetDeviceId(), managed.GetDeviceFingerprint(), managed.GetCredentialRef(), managed.GetAccountProfile(), managed.GetRelayMode(), request.GetIntent())
+func sessionConfig(config *remoteauthpb.EndpointConfigV1, routeID endpoint.RouteID, intent bindingpb.ConnectIntent) string {
+	payload, _ := (proto.MarshalOptions{Deterministic: true}).Marshal(config)
+	return fmt.Sprintf("%s\x00%d\x00%x", routeID, intent, sha256.Sum256(payload))
+}
+
+func pairingTarget(endpointID string, identity endpoint.DaemonIdentity, route endpoint.AccessRoute, credentialRef string) endpoint.Endpoint {
+	route.CredentialRef = credentialRef
+	if route.Kind == endpoint.RouteManagedWebRTC && route.TargetDeviceID == "" {
+		route.TargetDeviceID = identity.DeviceID
+	}
+	return endpoint.Endpoint{
+		ID: endpoint.EndpointID(endpointID), DaemonIdentity: identity,
+		Routes: map[endpoint.RouteID]endpoint.AccessRoute{route.ID: route},
+	}
 }
 
 type platformCredentials struct{ broker *binding.PlatformBroker }
@@ -390,21 +442,6 @@ func platformResponseError(response *bindingpb.PlatformResponse) error {
 	return nil
 }
 
-func relayMode(value bindingpb.ManagedRelayMode) (endpoint.RelayMode, error) {
-	switch value {
-	case bindingpb.ManagedRelayMode_MANAGED_RELAY_MODE_AUTO:
-		return endpoint.RelayAuto, nil
-	case bindingpb.ManagedRelayMode_MANAGED_RELAY_MODE_DIRECT:
-		return endpoint.RelayDirect, nil
-	case bindingpb.ManagedRelayMode_MANAGED_RELAY_MODE_RELAY_ONLY:
-		return endpoint.RelayOnly, nil
-	case bindingpb.ManagedRelayMode_MANAGED_RELAY_MODE_SMART_ROUTE:
-		return endpoint.RelaySmart, nil
-	default:
-		return "", fmt.Errorf("managed relay mode is unsupported")
-	}
-}
-
 func connectIntent(value bindingpb.ConnectIntent) (clientruntime.ConnectIntent, error) {
 	switch value {
 	case bindingpb.ConnectIntent_CONNECT_INTENT_INTERACTIVE:
@@ -414,7 +451,7 @@ func connectIntent(value bindingpb.ConnectIntent) (clientruntime.ConnectIntent, 
 	case bindingpb.ConnectIntent_CONNECT_INTENT_PROBE:
 		return clientruntime.ConnectIntentProbe, nil
 	default:
-		return "", fmt.Errorf("managed connect intent is unsupported")
+		return "", fmt.Errorf("connect intent is unsupported")
 	}
 }
 

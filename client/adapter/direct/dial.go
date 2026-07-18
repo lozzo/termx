@@ -26,6 +26,7 @@ import (
 	"github.com/lozzow/termx/proto/remoteauthpb"
 	"github.com/lozzow/termx/proto/wire"
 	"github.com/lozzow/termx/shared/remoteauth"
+	"github.com/lozzow/termx/shared/transport"
 	"github.com/lozzow/termx/shared/transport/datachannel"
 )
 
@@ -77,74 +78,16 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	if prepared == nil {
 		return nil, fmt.Errorf("direct endpoint authorizer returned no transaction")
 	}
-	dialer.reportPhase(clientruntime.EndpointPhaseConnecting)
-	peer, err := dialer.Peers.OpenDirectPeer(ctx)
+	opened, err := openDirectPeer(ctx, request, directPeerOptions{
+		Peers: dialer.Peers, Signaling: dialer.Signaling, Random: dialer.Random, Now: dialer.Now, Phase: dialer.Phase,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("create direct endpoint peer: %w", err)
-	}
-	if peer == nil || peer.Channel() == nil {
-		if peer != nil {
-			_ = peer.Close()
-		}
-		return nil, fmt.Errorf("direct endpoint peer has no protocol DataChannel")
-	}
-	connection := datachannel.New(peer.Channel())
-	closeAttempt := func() {
-		_ = connection.Close()
-		_ = peer.Close()
-	}
-	offer, err := peer.CreateOffer(ctx)
-	if err != nil {
-		closeAttempt()
-		return nil, fmt.Errorf("create direct endpoint offer: %w", err)
-	}
-	requestID, err := dialer.requestID()
-	if err != nil {
-		closeAttempt()
 		return nil, err
 	}
-	now := dialer.currentTime()
-	signalingRequest := &remoteauthpb.DirectSignalingRequestV1{
-		SchemaVersion: remoteauth.DirectSignalingSchemaVersion, RequestId: requestID,
-		ExpectedDeviceId: request.DaemonIdentity().DeviceID, ExpectedDeviceFingerprint: request.DaemonIdentity().DeviceFingerprint,
-		OfferSdp: offer, IssuedAtUnixNano: now.UnixNano(), ExpiresAtUnixNano: now.Add(remoteauth.DirectSignalingMaxTTL).UnixNano(),
-	}
-	dialer.reportPhase(clientruntime.EndpointPhaseSignaling)
-	signaling := dialer.Signaling
-	if signaling == nil {
-		signaling = TCPSignalingClient{}
-	}
-	answer, err := signaling.Exchange(ctx, route.SignalingAddresses, signalingRequest)
-	if err != nil {
-		closeAttempt()
-		return nil, err
-	}
-	if err := remoteauth.VerifyDirectSignalingAnswer(answer, requestID, request.DaemonIdentity().DeviceID, request.DaemonIdentity().DeviceFingerprint, dialer.currentTime()); err != nil {
-		closeAttempt()
-		return nil, fmt.Errorf("verify direct signaling answer: %w", err)
-	}
-	candidates := make([]*cloudpb.IceCandidate, 0, len(answer.GetCandidates()))
-	for _, candidate := range answer.GetCandidates() {
-		if candidate == nil {
-			continue
-		}
-		candidates = append(candidates, &cloudpb.IceCandidate{
-			Candidate: candidate.GetCandidate(), SdpMid: candidate.GetSdpMid(), SdpMlineIndex: candidate.GetSdpMlineIndex(), UsernameFragment: candidate.GetUsernameFragment(),
-		})
-	}
-	if err := peer.ApplyAnswer(ctx, answer.GetAnswerSdp(), candidates); err != nil {
-		closeAttempt()
-		return nil, fmt.Errorf("apply direct endpoint answer: %w", err)
-	}
-	if err := peer.WaitReady(ctx); err != nil {
-		closeAttempt()
-		return nil, fmt.Errorf("wait direct endpoint DataChannel: %w", err)
-	}
-	if peer.ObservedPath() != endpoint.PathDirect {
-		closeAttempt()
-		return nil, fmt.Errorf("direct endpoint established unexpected path %q", peer.ObservedPath())
-	}
-	fingerprint, err := peer.RemoteCertificateFingerprint()
+	peer := opened.peer
+	connection := opened.connection
+	closeAttempt := func() { _ = opened.Close() }
+	fingerprint, err := opened.RemoteCertificateFingerprint()
 	if err != nil {
 		closeAttempt()
 		return nil, fmt.Errorf("read direct endpoint DTLS certificate: %w", err)
@@ -182,8 +125,7 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	return session, nil
 }
 
-func (dialer *Dialer) requestID() (string, error) {
-	randomSource := dialer.Random
+func directRequestID(randomSource io.Reader) (string, error) {
 	if randomSource == nil {
 		randomSource = rand.Reader
 	}
@@ -192,6 +134,134 @@ func (dialer *Dialer) requestID() (string, error) {
 		return "", fmt.Errorf("generate direct signaling request id: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+type directPeerOptions struct {
+	Peers     PeerFactory
+	Signaling SignalingClient
+	Random    io.Reader
+	Now       func() time.Time
+	Phase     func(clientruntime.EndpointPhase)
+}
+
+type openedDirectPeer struct {
+	peer       port.ManagedPeer
+	connection *datachannel.Transport
+	closeOnce  sync.Once
+	closeErr   error
+}
+
+func openDirectPeer(ctx context.Context, request clientruntime.AttemptRequest, options directPeerOptions) (*openedDirectPeer, error) {
+	if options.Peers == nil {
+		return nil, fmt.Errorf("direct peer factory is required")
+	}
+	route := request.Route()
+	if options.Phase != nil {
+		options.Phase(clientruntime.EndpointPhaseConnecting)
+	}
+	peer, err := options.Peers.OpenDirectPeer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("create direct endpoint peer: %w", err)
+	}
+	if peer == nil || peer.Channel() == nil {
+		if peer != nil {
+			_ = peer.Close()
+		}
+		return nil, fmt.Errorf("direct endpoint peer has no protocol DataChannel")
+	}
+	opened := &openedDirectPeer{peer: peer, connection: datachannel.New(peer.Channel())}
+	offer, err := peer.CreateOffer(ctx)
+	if err != nil {
+		_ = opened.Close()
+		return nil, fmt.Errorf("create direct endpoint offer: %w", err)
+	}
+	requestID, err := directRequestID(options.Random)
+	if err != nil {
+		_ = opened.Close()
+		return nil, err
+	}
+	now := time.Now().UTC()
+	if options.Now != nil {
+		now = options.Now().UTC()
+	}
+	signalingRequest := &remoteauthpb.DirectSignalingRequestV1{
+		SchemaVersion: remoteauth.DirectSignalingSchemaVersion, RequestId: requestID,
+		ExpectedDeviceId: request.DaemonIdentity().DeviceID, ExpectedDeviceFingerprint: request.DaemonIdentity().DeviceFingerprint,
+		OfferSdp: offer, IssuedAtUnixNano: now.UnixNano(), ExpiresAtUnixNano: now.Add(remoteauth.DirectSignalingMaxTTL).UnixNano(),
+	}
+	if options.Phase != nil {
+		options.Phase(clientruntime.EndpointPhaseSignaling)
+	}
+	signaling := options.Signaling
+	if signaling == nil {
+		signaling = TCPSignalingClient{}
+	}
+	answer, err := signaling.Exchange(ctx, route.SignalingAddresses, signalingRequest)
+	if err != nil {
+		_ = opened.Close()
+		return nil, err
+	}
+	verifyNow := time.Now().UTC()
+	if options.Now != nil {
+		verifyNow = options.Now().UTC()
+	}
+	if err := remoteauth.VerifyDirectSignalingAnswer(answer, requestID, request.DaemonIdentity().DeviceID, request.DaemonIdentity().DeviceFingerprint, verifyNow); err != nil {
+		_ = opened.Close()
+		return nil, fmt.Errorf("verify direct signaling answer: %w", err)
+	}
+	candidates := make([]*cloudpb.IceCandidate, 0, len(answer.GetCandidates()))
+	for _, candidate := range answer.GetCandidates() {
+		if candidate == nil {
+			continue
+		}
+		candidates = append(candidates, &cloudpb.IceCandidate{
+			Candidate: candidate.GetCandidate(), SdpMid: candidate.GetSdpMid(), SdpMlineIndex: candidate.GetSdpMlineIndex(), UsernameFragment: candidate.GetUsernameFragment(),
+		})
+	}
+	if err := peer.ApplyAnswer(ctx, answer.GetAnswerSdp(), candidates); err != nil {
+		_ = opened.Close()
+		return nil, fmt.Errorf("apply direct endpoint answer: %w", err)
+	}
+	if err := peer.WaitReady(ctx); err != nil {
+		_ = opened.Close()
+		return nil, fmt.Errorf("wait direct endpoint DataChannel: %w", err)
+	}
+	if peer.ObservedPath() != endpoint.PathDirect {
+		_ = opened.Close()
+		return nil, fmt.Errorf("direct endpoint established unexpected path %q", peer.ObservedPath())
+	}
+	return opened, nil
+}
+
+func (peer *openedDirectPeer) Transport() transport.Transport {
+	if peer == nil {
+		return nil
+	}
+	return peer.connection
+}
+
+func (peer *openedDirectPeer) RemoteCertificateFingerprint() (string, error) {
+	if peer == nil || peer.peer == nil {
+		return "", fmt.Errorf("direct peer is unavailable")
+	}
+	return peer.peer.RemoteCertificateFingerprint()
+}
+
+func (peer *openedDirectPeer) Close() error {
+	if peer == nil {
+		return nil
+	}
+	peer.closeOnce.Do(func() {
+		if peer.connection != nil {
+			peer.closeErr = peer.connection.Close()
+		}
+		if peer.peer != nil {
+			if err := peer.peer.Close(); peer.closeErr == nil {
+				peer.closeErr = err
+			}
+		}
+	})
+	return peer.closeErr
 }
 
 func (dialer *Dialer) currentTime() time.Time {

@@ -182,14 +182,15 @@ export function reduceConnectionMessage(
         fileManagers: markOpenChannelsVerifying(snapshot.fileManagers),
       }
     case 'connection.verified':
-      return {
+      return cleanSnapshot({
         ...snapshot,
         phase: 'connected',
         connectionId: message.connectionId,
         resumeVerificationRequired: false,
         terminalChannels: openVerifyingChannels(snapshot.terminalChannels),
         fileManagers: openVerifyingChannels(snapshot.fileManagers),
-      }
+        visibleError: undefined,
+      })
     case 'network.offline':
       return {
         ...snapshot,

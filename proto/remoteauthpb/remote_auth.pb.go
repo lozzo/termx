@@ -1324,11 +1324,12 @@ func (x *DeviceIdentityProofInput) GetDevicePublicKey() []byte {
 }
 
 type ClientAccessTicketCreateRequest struct {
-	state                protoimpl.MessageState `protogen:"open.v1"`
-	Label                string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
-	Scope                *ClientAccessScope     `protobuf:"bytes,2,opt,name=scope,proto3" json:"scope,omitempty"`
-	TicketTtlSeconds     int64                  `protobuf:"varint,3,opt,name=ticket_ttl_seconds,json=ticketTtlSeconds,proto3" json:"ticket_ttl_seconds,omitempty"`
-	GrantLifetimeSeconds int64                  `protobuf:"varint,4,opt,name=grant_lifetime_seconds,json=grantLifetimeSeconds,proto3" json:"grant_lifetime_seconds,omitempty"`
+	state                protoimpl.MessageState   `protogen:"open.v1"`
+	Label                string                   `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
+	Scope                *ClientAccessScope       `protobuf:"bytes,2,opt,name=scope,proto3" json:"scope,omitempty"`
+	TicketTtlSeconds     int64                    `protobuf:"varint,3,opt,name=ticket_ttl_seconds,json=ticketTtlSeconds,proto3" json:"ticket_ttl_seconds,omitempty"`
+	GrantLifetimeSeconds int64                    `protobuf:"varint,4,opt,name=grant_lifetime_seconds,json=grantLifetimeSeconds,proto3" json:"grant_lifetime_seconds,omitempty"`
+	Routes               []*EndpointRouteConfigV1 `protobuf:"bytes,5,rep,name=routes,proto3" json:"routes,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -1389,6 +1390,13 @@ func (x *ClientAccessTicketCreateRequest) GetGrantLifetimeSeconds() int64 {
 		return x.GrantLifetimeSeconds
 	}
 	return 0
+}
+
+func (x *ClientAccessTicketCreateRequest) GetRoutes() []*EndpointRouteConfigV1 {
+	if x != nil {
+		return x.Routes
+	}
+	return nil
 }
 
 type ClientAccessTicketCreateResult struct {
@@ -4021,12 +4029,13 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\tchallenge\x18\x02 \x01(\fR\tchallenge\x12\x1b\n" +
 	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x12-\n" +
 	"\x12device_fingerprint\x18\x04 \x01(\tR\x11deviceFingerprint\x12*\n" +
-	"\x11device_public_key\x18\x05 \x01(\fR\x0fdevicePublicKey\"\xda\x01\n" +
+	"\x11device_public_key\x18\x05 \x01(\fR\x0fdevicePublicKey\"\x9f\x02\n" +
 	"\x1fClientAccessTicketCreateRequest\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12=\n" +
 	"\x05scope\x18\x02 \x01(\v2'.termx.remote.auth.v1.ClientAccessScopeR\x05scope\x12,\n" +
 	"\x12ticket_ttl_seconds\x18\x03 \x01(\x03R\x10ticketTtlSeconds\x124\n" +
-	"\x16grant_lifetime_seconds\x18\x04 \x01(\x03R\x14grantLifetimeSeconds\"\x86\x01\n" +
+	"\x16grant_lifetime_seconds\x18\x04 \x01(\x03R\x14grantLifetimeSeconds\x12C\n" +
+	"\x06routes\x18\x05 \x03(\v2+.termx.remote.auth.v1.EndpointRouteConfigV1R\x06routes\"\x86\x01\n" +
 	"\x1eClientAccessTicketCreateResult\x12\x16\n" +
 	"\x06bundle\x18\x01 \x01(\fR\x06bundle\x12\x1b\n" +
 	"\tticket_id\x18\x02 \x01(\tR\bticketId\x12/\n" +
@@ -4382,51 +4391,52 @@ var file_remoteauthpb_remote_auth_proto_depIdxs = []int32{
 	9,  // 7: termx.remote.auth.v1.DeviceHello.channel_binding:type_name -> termx.remote.auth.v1.ChannelBinding
 	1,  // 8: termx.remote.auth.v1.ScopeSummary.kind:type_name -> termx.remote.auth.v1.ScopeKind
 	15, // 9: termx.remote.auth.v1.ClientAccessTicketCreateRequest.scope:type_name -> termx.remote.auth.v1.ClientAccessScope
-	15, // 10: termx.remote.auth.v1.ClientAccessRecord.scope:type_name -> termx.remote.auth.v1.ClientAccessScope
-	21, // 11: termx.remote.auth.v1.ClientAccessListResult.records:type_name -> termx.remote.auth.v1.ClientAccessRecord
-	14, // 12: termx.remote.auth.v1.CapabilityAccepted.scope:type_name -> termx.remote.auth.v1.ScopeSummary
-	14, // 13: termx.remote.auth.v1.PairingAccepted.scope:type_name -> termx.remote.auth.v1.ScopeSummary
-	0,  // 14: termx.remote.auth.v1.CapabilityRejected.code:type_name -> termx.remote.auth.v1.AuthErrorCode
-	9,  // 15: termx.remote.auth.v1.DeviceHelloSignatureInput.channel_binding:type_name -> termx.remote.auth.v1.ChannelBinding
-	9,  // 16: termx.remote.auth.v1.ClientProofInput.channel_binding:type_name -> termx.remote.auth.v1.ChannelBinding
-	3,  // 17: termx.remote.auth.v1.ClientProofInput.open_kind:type_name -> termx.remote.auth.v1.AuthOpenKind
-	34, // 18: termx.remote.auth.v1.DirectSignalingAnswerV1.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	28, // 19: termx.remote.auth.v1.DirectSignalingAnswerV1.candidates:type_name -> termx.remote.auth.v1.DirectIceCandidate
-	30, // 20: termx.remote.auth.v1.DirectSignalingAnswerSignatureInput.answer:type_name -> termx.remote.auth.v1.DirectSignalingAnswerV1
-	4,  // 21: termx.remote.auth.v1.DirectSignalingErrorV1.code:type_name -> termx.remote.auth.v1.DirectSignalingErrorCode
-	30, // 22: termx.remote.auth.v1.DirectSignalingResponseV1.answer:type_name -> termx.remote.auth.v1.DirectSignalingAnswerV1
-	32, // 23: termx.remote.auth.v1.DirectSignalingResponseV1.error:type_name -> termx.remote.auth.v1.DirectSignalingErrorV1
-	8,  // 24: termx.remote.auth.v1.EndpointCredentialDescriptor.kind:type_name -> termx.remote.auth.v1.EndpointCredentialKind
-	36, // 25: termx.remote.auth.v1.SSHWebRTCTCPRouteConfig.credential_descriptor:type_name -> termx.remote.auth.v1.EndpointCredentialDescriptor
-	6,  // 26: termx.remote.auth.v1.ManagedWebRTCRouteConfig.relay_mode:type_name -> termx.remote.auth.v1.ManagedWebRTCRelayMode
-	7,  // 27: termx.remote.auth.v1.EndpointRouteConfigV1.source:type_name -> termx.remote.auth.v1.EndpointSource
-	7,  // 28: termx.remote.auth.v1.EndpointRouteConfigV1.policy_source:type_name -> termx.remote.auth.v1.EndpointSource
-	37, // 29: termx.remote.auth.v1.EndpointRouteConfigV1.local_unix:type_name -> termx.remote.auth.v1.LocalUnixRouteConfig
-	38, // 30: termx.remote.auth.v1.EndpointRouteConfigV1.direct_webrtc_tcp:type_name -> termx.remote.auth.v1.DirectWebRTCTCPRouteConfig
-	39, // 31: termx.remote.auth.v1.EndpointRouteConfigV1.ssh_webrtc_tcp:type_name -> termx.remote.auth.v1.SSHWebRTCTCPRouteConfig
-	40, // 32: termx.remote.auth.v1.EndpointRouteConfigV1.managed_webrtc:type_name -> termx.remote.auth.v1.ManagedWebRTCRouteConfig
-	7,  // 33: termx.remote.auth.v1.EndpointConfigV1.label_source:type_name -> termx.remote.auth.v1.EndpointSource
-	34, // 34: termx.remote.auth.v1.EndpointConfigV1.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	5,  // 35: termx.remote.auth.v1.EndpointConfigV1.connect_mode:type_name -> termx.remote.auth.v1.EndpointConnectMode
-	35, // 36: termx.remote.auth.v1.EndpointConfigV1.selection_policy:type_name -> termx.remote.auth.v1.EndpointSelectionPolicy
-	41, // 37: termx.remote.auth.v1.EndpointConfigV1.routes:type_name -> termx.remote.auth.v1.EndpointRouteConfigV1
-	42, // 38: termx.remote.auth.v1.EndpointRegistryV1.endpoints:type_name -> termx.remote.auth.v1.EndpointConfigV1
-	44, // 39: termx.remote.auth.v1.EndpointAuthorizationBootstrap.pairing_ticket:type_name -> termx.remote.auth.v1.PairingTicketDescriptor
-	34, // 40: termx.remote.auth.v1.EndpointBootstrapBundleV2.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	41, // 41: termx.remote.auth.v1.EndpointBootstrapBundleV2.routes:type_name -> termx.remote.auth.v1.EndpointRouteConfigV1
-	45, // 42: termx.remote.auth.v1.EndpointBootstrapBundleV2.authorization:type_name -> termx.remote.auth.v1.EndpointAuthorizationBootstrap
-	44, // 43: termx.remote.auth.v1.PairingTicketSignatureInput.ticket:type_name -> termx.remote.auth.v1.PairingTicketDescriptor
-	46, // 44: termx.remote.auth.v1.EndpointBootstrapSignatureInput.bundle:type_name -> termx.remote.auth.v1.EndpointBootstrapBundleV2
-	34, // 45: termx.remote.auth.v1.ClientEndpointShareBundleV1.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	41, // 46: termx.remote.auth.v1.ClientEndpointShareBundleV1.routes:type_name -> termx.remote.auth.v1.EndpointRouteConfigV1
-	5,  // 47: termx.remote.auth.v1.ClientEndpointShareBundleV1.connect_mode:type_name -> termx.remote.auth.v1.EndpointConnectMode
-	35, // 48: termx.remote.auth.v1.ClientEndpointShareBundleV1.selection_policy:type_name -> termx.remote.auth.v1.EndpointSelectionPolicy
-	36, // 49: termx.remote.auth.v1.ClientEndpointShareBundleV1.credential_descriptors:type_name -> termx.remote.auth.v1.EndpointCredentialDescriptor
-	50, // [50:50] is the sub-list for method output_type
-	50, // [50:50] is the sub-list for method input_type
-	50, // [50:50] is the sub-list for extension type_name
-	50, // [50:50] is the sub-list for extension extendee
-	0,  // [0:50] is the sub-list for field type_name
+	41, // 10: termx.remote.auth.v1.ClientAccessTicketCreateRequest.routes:type_name -> termx.remote.auth.v1.EndpointRouteConfigV1
+	15, // 11: termx.remote.auth.v1.ClientAccessRecord.scope:type_name -> termx.remote.auth.v1.ClientAccessScope
+	21, // 12: termx.remote.auth.v1.ClientAccessListResult.records:type_name -> termx.remote.auth.v1.ClientAccessRecord
+	14, // 13: termx.remote.auth.v1.CapabilityAccepted.scope:type_name -> termx.remote.auth.v1.ScopeSummary
+	14, // 14: termx.remote.auth.v1.PairingAccepted.scope:type_name -> termx.remote.auth.v1.ScopeSummary
+	0,  // 15: termx.remote.auth.v1.CapabilityRejected.code:type_name -> termx.remote.auth.v1.AuthErrorCode
+	9,  // 16: termx.remote.auth.v1.DeviceHelloSignatureInput.channel_binding:type_name -> termx.remote.auth.v1.ChannelBinding
+	9,  // 17: termx.remote.auth.v1.ClientProofInput.channel_binding:type_name -> termx.remote.auth.v1.ChannelBinding
+	3,  // 18: termx.remote.auth.v1.ClientProofInput.open_kind:type_name -> termx.remote.auth.v1.AuthOpenKind
+	34, // 19: termx.remote.auth.v1.DirectSignalingAnswerV1.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
+	28, // 20: termx.remote.auth.v1.DirectSignalingAnswerV1.candidates:type_name -> termx.remote.auth.v1.DirectIceCandidate
+	30, // 21: termx.remote.auth.v1.DirectSignalingAnswerSignatureInput.answer:type_name -> termx.remote.auth.v1.DirectSignalingAnswerV1
+	4,  // 22: termx.remote.auth.v1.DirectSignalingErrorV1.code:type_name -> termx.remote.auth.v1.DirectSignalingErrorCode
+	30, // 23: termx.remote.auth.v1.DirectSignalingResponseV1.answer:type_name -> termx.remote.auth.v1.DirectSignalingAnswerV1
+	32, // 24: termx.remote.auth.v1.DirectSignalingResponseV1.error:type_name -> termx.remote.auth.v1.DirectSignalingErrorV1
+	8,  // 25: termx.remote.auth.v1.EndpointCredentialDescriptor.kind:type_name -> termx.remote.auth.v1.EndpointCredentialKind
+	36, // 26: termx.remote.auth.v1.SSHWebRTCTCPRouteConfig.credential_descriptor:type_name -> termx.remote.auth.v1.EndpointCredentialDescriptor
+	6,  // 27: termx.remote.auth.v1.ManagedWebRTCRouteConfig.relay_mode:type_name -> termx.remote.auth.v1.ManagedWebRTCRelayMode
+	7,  // 28: termx.remote.auth.v1.EndpointRouteConfigV1.source:type_name -> termx.remote.auth.v1.EndpointSource
+	7,  // 29: termx.remote.auth.v1.EndpointRouteConfigV1.policy_source:type_name -> termx.remote.auth.v1.EndpointSource
+	37, // 30: termx.remote.auth.v1.EndpointRouteConfigV1.local_unix:type_name -> termx.remote.auth.v1.LocalUnixRouteConfig
+	38, // 31: termx.remote.auth.v1.EndpointRouteConfigV1.direct_webrtc_tcp:type_name -> termx.remote.auth.v1.DirectWebRTCTCPRouteConfig
+	39, // 32: termx.remote.auth.v1.EndpointRouteConfigV1.ssh_webrtc_tcp:type_name -> termx.remote.auth.v1.SSHWebRTCTCPRouteConfig
+	40, // 33: termx.remote.auth.v1.EndpointRouteConfigV1.managed_webrtc:type_name -> termx.remote.auth.v1.ManagedWebRTCRouteConfig
+	7,  // 34: termx.remote.auth.v1.EndpointConfigV1.label_source:type_name -> termx.remote.auth.v1.EndpointSource
+	34, // 35: termx.remote.auth.v1.EndpointConfigV1.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
+	5,  // 36: termx.remote.auth.v1.EndpointConfigV1.connect_mode:type_name -> termx.remote.auth.v1.EndpointConnectMode
+	35, // 37: termx.remote.auth.v1.EndpointConfigV1.selection_policy:type_name -> termx.remote.auth.v1.EndpointSelectionPolicy
+	41, // 38: termx.remote.auth.v1.EndpointConfigV1.routes:type_name -> termx.remote.auth.v1.EndpointRouteConfigV1
+	42, // 39: termx.remote.auth.v1.EndpointRegistryV1.endpoints:type_name -> termx.remote.auth.v1.EndpointConfigV1
+	44, // 40: termx.remote.auth.v1.EndpointAuthorizationBootstrap.pairing_ticket:type_name -> termx.remote.auth.v1.PairingTicketDescriptor
+	34, // 41: termx.remote.auth.v1.EndpointBootstrapBundleV2.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
+	41, // 42: termx.remote.auth.v1.EndpointBootstrapBundleV2.routes:type_name -> termx.remote.auth.v1.EndpointRouteConfigV1
+	45, // 43: termx.remote.auth.v1.EndpointBootstrapBundleV2.authorization:type_name -> termx.remote.auth.v1.EndpointAuthorizationBootstrap
+	44, // 44: termx.remote.auth.v1.PairingTicketSignatureInput.ticket:type_name -> termx.remote.auth.v1.PairingTicketDescriptor
+	46, // 45: termx.remote.auth.v1.EndpointBootstrapSignatureInput.bundle:type_name -> termx.remote.auth.v1.EndpointBootstrapBundleV2
+	34, // 46: termx.remote.auth.v1.ClientEndpointShareBundleV1.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
+	41, // 47: termx.remote.auth.v1.ClientEndpointShareBundleV1.routes:type_name -> termx.remote.auth.v1.EndpointRouteConfigV1
+	5,  // 48: termx.remote.auth.v1.ClientEndpointShareBundleV1.connect_mode:type_name -> termx.remote.auth.v1.EndpointConnectMode
+	35, // 49: termx.remote.auth.v1.ClientEndpointShareBundleV1.selection_policy:type_name -> termx.remote.auth.v1.EndpointSelectionPolicy
+	36, // 50: termx.remote.auth.v1.ClientEndpointShareBundleV1.credential_descriptors:type_name -> termx.remote.auth.v1.EndpointCredentialDescriptor
+	51, // [51:51] is the sub-list for method output_type
+	51, // [51:51] is the sub-list for method input_type
+	51, // [51:51] is the sub-list for extension type_name
+	51, // [51:51] is the sub-list for extension extendee
+	0,  // [0:51] is the sub-list for field type_name
 }
 
 func init() { file_remoteauthpb_remote_auth_proto_init() }

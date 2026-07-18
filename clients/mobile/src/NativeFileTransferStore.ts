@@ -78,6 +78,7 @@ export class NativeFileTransferStore {
   private version = 0
   private cachedVersion = -1
   private cachedSnapshot: FileTransferStoreSnapshot | null = null
+  private readonly cachedMachineSnapshots = new Map<string, FileTransferStoreSnapshot>()
 
   setSessionResolver(resolver: NativeTransferSessionResolver | null): void { this.resolver = resolver }
 
@@ -184,9 +185,15 @@ export class NativeFileTransferStore {
 
   getSnapshot(machineId?: string): FileTransferStoreSnapshot {
     if (!machineId && this.cachedSnapshot && this.cachedVersion === this.version) return this.cachedSnapshot
+    if (machineId) {
+      const cached = this.cachedMachineSnapshots.get(machineId)
+      if (cached) return cached
+    }
     const transfers = machineId ? this.transfers.filter((item) => item.machineId === machineId) : this.transfers
     const snapshot = { transfers, hasActiveTransfers: transfers.some((item) => item.status === 'pending' || item.status === 'transferring') }
-    if (!machineId) {
+    if (machineId) {
+      this.cachedMachineSnapshots.set(machineId, snapshot)
+    } else {
       this.cachedSnapshot = snapshot
       this.cachedVersion = this.version
     }
@@ -507,6 +514,8 @@ export class NativeFileTransferStore {
 
   private notify(): void {
     this.version += 1
+    this.cachedSnapshot = null
+    this.cachedMachineSnapshots.clear()
     for (const listener of this.listeners) listener()
   }
 }

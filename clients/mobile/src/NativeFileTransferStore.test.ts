@@ -6,6 +6,23 @@ import * as TermxApiFile from '../../ui/src/generated/apipb/file_pb'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 describe('NativeFileTransferStore', () => {
+  it('keeps machine snapshots stable until transfer state changes', async () => {
+    vi.stubGlobal('self', globalThis)
+    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
+    const store = new NativeFileTransferStore()
+    const initial = store.getSnapshot('machine-a')
+
+    expect(store.getSnapshot('machine-a')).toBe(initial)
+    expect(store.getSnapshot('machine-b')).not.toBe(initial)
+
+    store.startDownload('machine-a', 'missing.txt', 1, '/missing.txt')
+    const changed = store.getSnapshot('machine-a')
+    expect(changed).not.toBe(initial)
+    expect(changed.transfers).toHaveLength(1)
+    expect(store.getSnapshot('machine-a')).toBe(changed)
+    expect(store.getSnapshot('machine-b').transfers).toHaveLength(0)
+  })
+
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()

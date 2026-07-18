@@ -151,5 +151,5 @@ proto schema
 - Go 旧测试已经迁为 generated Proto harness；旧 DTO 测试例外已结束。
 - CLI/TUI 必须通过同一 `ClientRuntime/SessionOwner` 使用 local、Direct、SSH 与 managed connector；任何 consumer 不得自行选择 route、缓存 protocol client 或增加 fallback。
 - Android engine 重建通过 Go `SessionGenerationAuthority` 保持进程内 endpoint generation 单调递增；未来 WASM 沿用同一 contract，平台只持有 authority 引用，不生成或缓存 generation 数值。
-- 同一 engine 内，`client/runtime.SessionOwner.AcquireRoute` 让同 endpoint 且连接配置相同的 `OpenSession` 共享一条 Go-owned ready session；binding handle 只持有 consumer lease，`managedhost` 不保存第二份 current-session map。关闭 list/inventory/file/workspace 任一 lease 不关闭底层 session，只有配置变化、显式 generation replacement、lifecycle teardown 或 engine close 才替换底层连接。
+- 同一 engine 内，`client/runtime.SessionOwner.AcquireRoute` 让同 endpoint 且连接配置相同的 `OpenSession` 共享一条 Go-owned ready session；binding handle 只持有 consumer lease，`enginehost` 不保存第二份 current-session map。关闭 list/inventory/file/workspace 任一 lease 不关闭底层 session，只有配置变化、显式 generation replacement、lifecycle teardown 或 engine close 才替换底层连接。
 - application event 必须按完整 subscription `ResourceHandle`（token、kind、session、generation）关联；session 级 event pump 只是 transport fan-out，consumer 不得把它当作 subscription filter。

@@ -14,6 +14,8 @@ func TestMain(m *testing.M) {
 	}
 	_ = os.Setenv("XDG_CONFIG_HOME", root+"/config")
 	_ = os.Setenv("XDG_STATE_HOME", root+"/state")
+	_ = os.Setenv("TERMX_DIRECT_SIGNALING_LISTEN", "127.0.0.1:0")
+	_ = os.Setenv("TERMX_DIRECT_ICE_TCP_LISTEN", "127.0.0.1:0")
 	code := m.Run()
 	_ = os.RemoveAll(root)
 	os.Exit(code)

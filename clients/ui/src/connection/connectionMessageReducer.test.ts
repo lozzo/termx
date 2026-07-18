@@ -93,5 +93,13 @@ describe('connectionMessageReducer', () => {
       recoverable: true,
       surface: 'banner',
     })
+
+    const verified = reduceConnectionMessage(failed, {
+      type: 'connection.verified',
+      connectionId: 'conn-2',
+    })
+    expect(verified.phase).toBe('connected')
+    expect(verified.connectionId).toBe('conn-2')
+    expect(verified.visibleError).toBeUndefined()
   })
 })

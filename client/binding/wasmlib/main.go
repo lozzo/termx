@@ -12,7 +12,7 @@ import (
 
 	platformpeer "github.com/lozzow/termx/client/adapter/managed/platform"
 	"github.com/lozzow/termx/client/binding"
-	"github.com/lozzow/termx/client/binding/managedhost"
+	"github.com/lozzow/termx/client/binding/enginehost"
 	clientruntime "github.com/lozzow/termx/client/runtime"
 )
 
@@ -34,7 +34,7 @@ var wasmLibrary = struct {
 var wasmSessionAuthority = clientruntime.NewSessionGenerationAuthority()
 
 type wasmHost struct {
-	*managedhost.Host
+	*enginehost.Host
 	peers *platformpeer.Factory
 }
 
@@ -70,8 +70,8 @@ func engineCreate(_ []js.Value) (js.Value, error) {
 	if err != nil {
 		return js.Undefined(), err
 	}
-	host, err := managedhost.New(managedhost.Options{
-		Broker: broker, Peers: peers, ClientName: "termx-web", CredentialPrefix: "web-access-",
+	host, err := enginehost.New(enginehost.Options{
+		Broker: broker, ManagedPeers: peers, ClientName: "termx-web", CredentialPrefix: "web-access-",
 		SessionAuthority: wasmSessionAuthority,
 	})
 	if err != nil {

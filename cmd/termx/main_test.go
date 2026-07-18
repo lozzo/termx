@@ -27,6 +27,7 @@ import (
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/wire"
 	"github.com/lozzow/termx/shared/remoteauth"
+	"github.com/lozzow/termx/shared/transport"
 	tuiv3 "github.com/lozzow/termx/tui"
 	actiondomain "github.com/lozzow/termx/tui/action"
 	protocoladapter "github.com/lozzow/termx/tui/adapter/protocol"
@@ -110,7 +111,7 @@ func TestRootCmdLoadsConnectionRegistryLocalSocket(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 	socketPath := filepath.Join(t.TempDir(), "configured.sock")
 	writeCLIConnectionRegistry(t, configHome, `
-version: 2
+version: 3
 default: local
 endpoints:
   local:
@@ -165,7 +166,7 @@ func TestRootCmdSocketFlagOverridesConnectionRegistrySocket(t *testing.T) {
 	registrySocket := filepath.Join(t.TempDir(), "registry.sock")
 	flagSocket := filepath.Join(t.TempDir(), "flag.sock")
 	writeCLIConnectionRegistry(t, configHome, `
-version: 2
+version: 3
 default: local
 endpoints:
   local:
@@ -2469,6 +2470,10 @@ func (s *fakeCoreV2Server) ListenAndServe(context.Context) error {
 
 func (s *fakeCoreV2Server) Shutdown(context.Context) error {
 	s.shutdownCalls++
+	return nil
+}
+
+func (s *fakeCoreV2Server) ServeScopedTransport(context.Context, transport.Transport, corev2.TransportScope) error {
 	return nil
 }
 

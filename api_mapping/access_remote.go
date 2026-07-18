@@ -6,6 +6,7 @@ import (
 	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/remoteauthpb"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -56,7 +57,13 @@ func ValidateAccessRemoteCommand(command *apipb.CommandEnvelope) error {
 // ClientAccessTicketRequestFromProto 转为 core-native ticket request。
 func ClientAccessTicketRequestFromProto(command *apipb.ClientAccessTicketCreateCommand) corev2.ClientAccessTicketRequest {
 	request := command.GetRequest()
-	return corev2.ClientAccessTicketRequest{Label: request.GetLabel(), Scope: clientAccessScopeFromProto(request.GetScope()), TicketTTL: time.Duration(request.GetTicketTtlSeconds()) * time.Second, GrantLifetime: time.Duration(request.GetGrantLifetimeSeconds()) * time.Second}
+	routes := make([]*remoteauthpb.EndpointRouteConfigV1, 0, len(request.GetRoutes()))
+	for _, route := range request.GetRoutes() {
+		if route != nil {
+			routes = append(routes, proto.Clone(route).(*remoteauthpb.EndpointRouteConfigV1))
+		}
+	}
+	return corev2.ClientAccessTicketRequest{Label: request.GetLabel(), Scope: clientAccessScopeFromProto(request.GetScope()), TicketTTL: time.Duration(request.GetTicketTtlSeconds()) * time.Second, GrantLifetime: time.Duration(request.GetGrantLifetimeSeconds()) * time.Second, Routes: routes}
 }
 
 // ClientAccessIdentityToProto 转为公开 DeviceIdentity 投影，私钥不在输入模型中。

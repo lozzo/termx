@@ -141,6 +141,7 @@ message ClientAccessTicketCreateRequest {
   ClientAccessScope scope = 2;
   int64 ticket_ttl_seconds = 3;
   int64 grant_lifetime_seconds = 4;
+  repeated EndpointRouteConfigV1 routes = 5;
 }
 
 message ClientAccessTicketCreateResult {

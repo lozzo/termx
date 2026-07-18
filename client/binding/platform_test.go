@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/proto/bindingpb"
+	"github.com/lozzow/termx/proto/remoteauthpb"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -93,7 +94,7 @@ func TestEnginePairingAndCredentialOperationsUseGenericEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	importEvent := nextBindingEvent(t, engine)
-	if importEvent.GetAbiVersion() != ABIVersion || importEvent.GetImportPairing().GetOperationHandle() != importOperation || importEvent.GetImportPairing().GetEndpointId() != "studio" {
+	if importEvent.GetAbiVersion() != ABIVersion || importEvent.GetImportPairing().GetOperationHandle() != importOperation || importEvent.GetImportPairing().GetEndpoint().GetEndpointId() != "studio" {
 		t.Fatalf("pairing event = %#v", importEvent)
 	}
 	if err := engine.Release(importOperation); err != nil {
@@ -116,7 +117,7 @@ type extendedBindingHost struct {
 }
 
 func (host *extendedBindingHost) ImportPairing(_ context.Context, request *bindingpb.ImportPairingRequest) (*bindingpb.ImportPairingResult, error) {
-	return &bindingpb.ImportPairingResult{EndpointId: "studio", CredentialRef: "credential:studio", AuthorizationRequired: true}, nil
+	return &bindingpb.ImportPairingResult{Endpoint: &remoteauthpb.EndpointConfigV1{EndpointId: "studio"}, AuthorizationRequired: true}, nil
 }
 
 func (host *extendedBindingHost) DeleteCredential(_ context.Context, request *bindingpb.DeleteCredentialRequest) error {

@@ -67,7 +67,7 @@ func TestPairCreateAndImportUsesTicketThenClientBoundCredential(t *testing.T) {
 	}
 }
 
-func TestPairImportDoesNotInventManagedRouteForExistingSSHEndpoint(t *testing.T) {
+func TestPairImportAddsAdvertisedDirectRouteToExistingSSHEndpoint(t *testing.T) {
 	runtimeDir, _, configHome := configurePairCommandTest(t)
 	socket := filepath.Join(runtimeDir, "daemon.sock")
 	created := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw", "--label", "Daemon label")
@@ -80,23 +80,27 @@ func TestPairImportDoesNotInventManagedRouteForExistingSSHEndpoint(t *testing.T)
 	if err := endpointdomain.Save(registryPath, endpointdomain.Registry{Version: endpointdomain.RegistryVersion, Default: "lab", Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{"lab": ssh}}); err != nil {
 		t.Fatal(err)
 	}
-	err = executePairCommandError(created, "pair", "import", "--id", "lab", "--registry", registryPath, "--pair-socket", v3PairingSocketPath(socket), "-")
-	if err == nil || !strings.Contains(err.Error(), "no direct-webrtc-tcp or managed-webrtc route") {
-		t.Fatalf("SSH-only pairing import error = %v", err)
+	imported := executePairCommand(t, created, "pair", "import", "--id", "lab", "--registry", registryPath, "--pair-socket", v3PairingSocketPath(socket), "-")
+	if !strings.Contains(string(imported), "Paired endpoint lab") {
+		t.Fatalf("pair import output = %q", imported)
 	}
 	registry, err := endpointdomain.Load(registryPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	endpoint := registry.Endpoints["lab"]
-	if len(registry.Endpoints) != 1 || endpoint.Label != "Existing SSH label" || !endpoint.DaemonIdentity.Empty() {
-		t.Fatalf("failed pairing import mutated existing endpoint: %#v", registry)
+	if len(registry.Endpoints) != 1 || endpoint.Label != "Existing SSH label" || endpoint.DaemonIdentity.Empty() {
+		t.Fatalf("pairing import did not bind the existing endpoint: %#v", registry)
 	}
 	if _, ok := endpoint.Route("ssh"); !ok {
 		t.Fatal("pair import deleted existing SSH route")
 	}
 	if _, ok := endpoint.Route("cloud"); ok {
 		t.Fatalf("pair import invented managed route: %#v", endpoint)
+	}
+	direct, ok := endpoint.Route("direct")
+	if !ok || direct.Kind != endpointdomain.RouteDirectWebRTCTCP || direct.CredentialRef == "" {
+		t.Fatalf("pair import did not add the advertised Direct route: %#v", endpoint)
 	}
 }
 

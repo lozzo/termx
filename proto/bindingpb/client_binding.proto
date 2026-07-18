@@ -5,6 +5,7 @@ package termx.client.binding.v1;
 import "apipb/application.proto";
 import "apipb/common.proto";
 import "cloudpb/cloud_companion.proto";
+import "remoteauthpb/remote_auth.proto";
 
 option go_package = "github.com/lozzow/termx/proto/bindingpb";
 
@@ -13,14 +14,6 @@ enum ConnectIntent {
   CONNECT_INTENT_INTERACTIVE = 1;
   CONNECT_INTENT_BACKGROUND = 2;
   CONNECT_INTENT_PROBE = 3;
-}
-
-enum ManagedRelayMode {
-  MANAGED_RELAY_MODE_UNSPECIFIED = 0;
-  MANAGED_RELAY_MODE_AUTO = 1;
-  MANAGED_RELAY_MODE_DIRECT = 2;
-  MANAGED_RELAY_MODE_RELAY_ONLY = 3;
-  MANAGED_RELAY_MODE_SMART_ROUTE = 4;
 }
 
 enum ResourceStreamFrameType {
@@ -33,20 +26,12 @@ enum ResourceStreamFrameType {
   RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO = 6;
 }
 
-message ManagedEndpointConfig {
-  string target_device_id = 1;
-  string device_fingerprint = 2;
-  string credential_ref = 3;
-  string account_profile = 4;
-  ManagedRelayMode relay_mode = 5;
-}
-
 message OpenSessionRequest {
   string request_id = 1;
   string endpoint_id = 2;
   string route_override = 3;
   ConnectIntent intent = 4;
-  ManagedEndpointConfig managed = 5;
+  termx.remote.auth.v1.EndpointConfigV1 endpoint = 5;
 }
 
 message ImportPairingRequest {
@@ -58,16 +43,12 @@ message ImportPairingRequest {
 message ImportPairingResult {
   string request_id = 1;
   uint64 operation_handle = 2;
-  string endpoint_id = 3;
-  string label = 4;
-  string target_device_id = 5;
-  string device_fingerprint = 6;
-  string credential_ref = 7;
-  string ticket_id = 8;
-  string client_key_fingerprint = 9;
-  int64 expires_at_unix_nano = 10;
-  bool authorization_required = 11;
-  termx.api.v1.ApiError error = 12;
+  termx.remote.auth.v1.EndpointConfigV1 endpoint = 3;
+  string ticket_id = 4;
+  string client_key_fingerprint = 5;
+  int64 expires_at_unix_nano = 6;
+  bool authorization_required = 7;
+  termx.api.v1.ApiError error = 8;
 }
 
 message DeleteCredentialRequest {

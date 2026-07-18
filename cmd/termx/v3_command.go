@@ -107,6 +107,15 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 			return err
 		}
 		defer closePairing()
+		directCore, ok := srv.(v3ManagedDaemonCore)
+		if !ok {
+			return fmt.Errorf("Direct WebRTC requires core-v2 scoped transport")
+		}
+		closeDirect, err := startV3DirectDaemon(ctx, directCore, clientAccess, logger)
+		if err != nil {
+			return err
+		}
+		defer closeDirect()
 		stopPerfTrace, perfTracePath, perfTraceEnabled := perftrace.EnableFromEnvWithProcess(ctx, "core-v2-daemon")
 		defer stopPerfTrace()
 		if perfTraceEnabled {
