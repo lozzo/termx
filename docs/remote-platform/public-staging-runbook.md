@@ -66,6 +66,30 @@ termx pair create \
 
 地址覆盖只改变可达 locator，不改变 daemon DeviceIdentity、fingerprint 或授权 scope。不得把 `0.0.0.0`、`::` 或端口 `0` 发布进 bundle。
 
+### 在客户端之间分享 Endpoint 配置
+
+发送端从 CLI/TUI 共用的 Endpoint registry 启动短期一次性 TLS session：
+
+```bash
+termx endpoint share build-daemon
+```
+
+跨网段或经过 TCP 映射时显式声明接收端可达地址：
+
+```bash
+termx endpoint share build-daemon \
+  --listen 0.0.0.0:41130 \
+  --address share.example.com:54130
+```
+
+接收端扫码，或在 CLI 中接收并确认 diff：
+
+```bash
+termx endpoint share receive 'termx://share?payload=...' --yes
+```
+
+二维码不携带 Endpoint 配置或 credential；配置只在临时证书 pin 和 receiver proof 通过后发送，并且 session 只能成功消费一次。导入固定为 config-only，不迁移源 EndpointID、CapabilityGrant、SSH secret、Cloud token 或 credential ref；接收端随后仍需执行 daemon pairing，并配置本地 SSH/Cloud credential。
+
 已移除的 daemon 不需要删除本地 DeviceIdentity。持有原私钥的 daemon 可以使用新 enrollment code 重新注册；Control Plane 会先撤销旧账号 access/refresh session、Hub Presence 与 Web 投影，再恢复或迁移 ownership。不同 public key 不能占用原 DeviceID。`termx cloud status` 分别展示 account session 与 daemon enrollment，`termx cloud node status` 只检查当前 daemon 身份。
 
 ### TUI 导入 daemon 访问凭据

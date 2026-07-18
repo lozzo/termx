@@ -99,6 +99,53 @@ message EndpointDeleteResult {
   termx.api.v1.ApiError error = 5;
 }
 
+// EndpointShareReceiveRequest 通过 Go Client Engine 接收一次性 TLS share bundle，只生成待确认预览。
+message EndpointShareReceiveRequest {
+  string request_id = 1;
+  string portable_offer = 2;
+}
+
+message EndpointShareRouteDiff {
+  string route_id = 1;
+  string route_kind = 2;
+  string action = 3;
+}
+
+// EndpointSharePreview 是 Go 根据当前 registry 与已验证 share bundle 计算的确认信息。
+message EndpointSharePreview {
+  string import_token = 1;
+  string endpoint_id = 2;
+  string label = 3;
+  termx.remote.auth.v1.EndpointDaemonIdentity identity = 4;
+  repeated EndpointShareRouteDiff route_diffs = 5;
+  bool connect_mode_changed = 6;
+  bool selection_policy_changed = 7;
+  repeated termx.remote.auth.v1.EndpointCredentialDescriptor credential_descriptors = 8;
+  int64 expires_at_unix_nano = 9;
+}
+
+message EndpointShareReceiveResult {
+  string request_id = 1;
+  uint64 operation_handle = 2;
+  EndpointSharePreview preview = 3;
+  termx.api.v1.ApiError error = 4;
+}
+
+// EndpointShareCommitRequest 仅提交当前 generation 内尚未过期的 preview token。
+message EndpointShareCommitRequest {
+  string request_id = 1;
+  string import_token = 2;
+}
+
+message EndpointShareCommitResult {
+  string request_id = 1;
+  uint64 operation_handle = 2;
+  termx.remote.auth.v1.EndpointConfigV1 endpoint = 3;
+  termx.remote.auth.v1.EndpointRegistryV1 registry = 4;
+  bool authorization_required = 5;
+  termx.api.v1.ApiError error = 6;
+}
+
 message EngineCommand {
   oneof command {
     ImportPairingRequest import_pairing = 1;
@@ -106,6 +153,8 @@ message EngineCommand {
     EndpointRegistryGetRequest endpoint_registry_get = 3;
     EndpointUpsertRequest endpoint_upsert = 4;
     EndpointDeleteRequest endpoint_delete = 5;
+    EndpointShareReceiveRequest endpoint_share_receive = 6;
+    EndpointShareCommitRequest endpoint_share_commit = 7;
   }
 }
 
@@ -166,6 +215,8 @@ message EventEnvelope {
     EndpointRegistryGetResult endpoint_registry_get = 18;
     EndpointUpsertResult endpoint_upsert = 19;
     EndpointDeleteResult endpoint_delete = 20;
+    EndpointShareReceiveResult endpoint_share_receive = 21;
+    EndpointShareCommitResult endpoint_share_commit = 22;
   }
 }
 

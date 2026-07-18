@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/client/binding"
 	"github.com/lozzow/termx/client/endpoint"
@@ -145,6 +146,66 @@ func TestPairingCredentialRollbackRestoresPreparedState(t *testing.T) {
 	}
 	if got := platform.credentials["grant-existing"]; got != "bound-old" {
 		t.Fatalf("existing credential grant after rollback = %q", got)
+	}
+}
+
+func TestEndpointSharePreviewCommitsAtomicallyAndTokenIsSingleUse(t *testing.T) {
+	platform := newRegistryPlatform(t)
+	host := platform.host()
+	now := time.Now().UTC()
+	bundle, err := endpoint.NewClientEndpointShareBundle(endpoint.Endpoint{
+		ID: "source", Label: "Shared Studio", LabelSource: endpoint.SourceUser,
+		DaemonIdentity: endpoint.DaemonIdentity{DeviceID: "daemon-shared", DeviceFingerprint: "SHA256:shared"},
+		ConnectMode:    endpoint.ConnectOnDemand, Enabled: true,
+		Routes: map[endpoint.RouteID]endpoint.AccessRoute{
+			"direct": {ID: "direct", Kind: endpoint.RouteDirectWebRTCTCP, Enabled: true, Source: endpoint.SourceManual, PolicySource: endpoint.SourceManual, SignalingAddresses: []string{"shared:41120"}, ICETCPAddresses: []string{"shared:41121"}},
+		},
+	}, "share-binding", now, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host.options.Now = func() time.Time { return now }
+	host.options.ShareReceive = func(context.Context, *remoteauthpb.ShareSessionOffer) (*remoteauthpb.ClientEndpointShareBundleV1, error) {
+		return proto.Clone(bundle).(*remoteauthpb.ClientEndpointShareBundleV1), nil
+	}
+	host.pendingShares = make(map[string]*remoteauthpb.ClientEndpointShareBundleV1)
+	offer := &remoteauthpb.ShareSessionOffer{
+		SchemaVersion: endpoint.ShareSessionOfferVersion, TransferId: bundle.GetTransferId(), ListenerAddresses: []string{"127.0.0.1:41130"},
+		EphemeralCertificateSha256: "sha256:" + base64.RawURLEncoding.EncodeToString(make([]byte, 32)), OneTimeSessionSecret: make([]byte, 32), ExpiresAtUnixNano: now.Add(time.Minute).UnixNano(),
+	}
+	offerPayload, err := endpoint.MarshalShareSessionOffer(offer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	received, err := host.ReceiveEndpointShare(context.Background(), &bindingpb.EndpointShareReceiveRequest{PortableOffer: endpointShareURIPrefix + base64.RawURLEncoding.EncodeToString(offerPayload)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview := received.GetPreview()
+	if preview.GetImportToken() == "" || len(preview.GetRouteDiffs()) != 1 || preview.GetRouteDiffs()[0].GetAction() != "add" {
+		t.Fatalf("share preview=%#v", preview)
+	}
+	committed, err := host.CommitEndpointShare(context.Background(), &bindingpb.EndpointShareCommitRequest{ImportToken: preview.GetImportToken()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !committed.GetAuthorizationRequired() || committed.GetEndpoint().GetRoutes()[0].GetCredentialRef() != "" {
+		t.Fatalf("share commit was not config-only: %#v", committed)
+	}
+	if _, err := host.CommitEndpointShare(context.Background(), &bindingpb.EndpointShareCommitRequest{ImportToken: preview.GetImportToken()}); err == nil {
+		t.Fatal("share import token unexpectedly committed twice")
+	}
+	retryPreview, err := host.ReceiveEndpointShare(context.Background(), &bindingpb.EndpointShareReceiveRequest{PortableOffer: endpointShareURIPrefix + base64.RawURLEncoding.EncodeToString(offerPayload)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	platform.failNextStore()
+	retryToken := retryPreview.GetPreview().GetImportToken()
+	if _, err := host.CommitEndpointShare(context.Background(), &bindingpb.EndpointShareCommitRequest{ImportToken: retryToken}); err == nil {
+		t.Fatal("share commit unexpectedly ignored platform store failure")
+	}
+	if _, err := host.CommitEndpointShare(context.Background(), &bindingpb.EndpointShareCommitRequest{ImportToken: retryToken}); err != nil {
+		t.Fatalf("share token did not survive unpublished store failure: %v", err)
 	}
 }
 

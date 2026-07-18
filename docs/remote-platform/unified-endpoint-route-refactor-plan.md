@@ -153,6 +153,9 @@ Go 内部可以使用便于 validation/planning 的领域投影，但跨 JNI/C A
 
 - bootstrap 允许 daemon 提供签名 Route hint 和一次性 PairingTicket。
 - share 只在一次性 TLS share session 内传输用户确认后的 portable config。
+- share offer 只携带 listener locator、临时证书 pin、一次性 secret、transfer ID 和有效期；接收端使用临时 Ed25519 key 完成 nonce challenge receiver proof 后，发送端才单次释放 bundle。
+- CLI/TUI 通过同一 `endpoints.yaml` 使用 `termx endpoint share ID`；Android 通过同一 Go binding 先接收 preview token、展示 Route/policy diff，再原子 commit。
+- 当前 bundle 固定为 config-only，导入结果不能被解释为已持有 CapabilityGrant 或目标平台 credential。
 - local Unix、源 credential ref、Cloud token、runtime winner、session、grant body 和 UI state 都不能进入 bundle。
 - deterministic protobuf、unknown-field rejection、大小限制、签名和过期检查必须在导入前完成。
 - `client/runtime.PairingService` 统一校验 attempt、Endpoint pin、实际 DTLS fingerprint binding 和 PairingTicket handshake；Route connector 只建立 peer，并保证成功或失败后 exact-close。

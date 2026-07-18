@@ -3974,6 +3974,549 @@ func (x *ShareSessionOffer) GetExpiresAtUnixNano() int64 {
 	return 0
 }
 
+// ShareReceiverHello 证明接收方持有静态 offer 中的一次性 secret，并声明本次会话的临时签名公钥。
+type ShareReceiverHello struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	SchemaVersion        uint32                 `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	TransferId           string                 `protobuf:"bytes,2,opt,name=transfer_id,json=transferId,proto3" json:"transfer_id,omitempty"`
+	OneTimeSessionSecret []byte                 `protobuf:"bytes,3,opt,name=one_time_session_secret,json=oneTimeSessionSecret,proto3" json:"one_time_session_secret,omitempty"`
+	ReceiverPublicKey    []byte                 `protobuf:"bytes,4,opt,name=receiver_public_key,json=receiverPublicKey,proto3" json:"receiver_public_key,omitempty"`
+	ReceiverNonce        []byte                 `protobuf:"bytes,5,opt,name=receiver_nonce,json=receiverNonce,proto3" json:"receiver_nonce,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *ShareReceiverHello) Reset() {
+	*x = ShareReceiverHello{}
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShareReceiverHello) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShareReceiverHello) ProtoMessage() {}
+
+func (x *ShareReceiverHello) ProtoReflect() protoreflect.Message {
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShareReceiverHello.ProtoReflect.Descriptor instead.
+func (*ShareReceiverHello) Descriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *ShareReceiverHello) GetSchemaVersion() uint32 {
+	if x != nil {
+		return x.SchemaVersion
+	}
+	return 0
+}
+
+func (x *ShareReceiverHello) GetTransferId() string {
+	if x != nil {
+		return x.TransferId
+	}
+	return ""
+}
+
+func (x *ShareReceiverHello) GetOneTimeSessionSecret() []byte {
+	if x != nil {
+		return x.OneTimeSessionSecret
+	}
+	return nil
+}
+
+func (x *ShareReceiverHello) GetReceiverPublicKey() []byte {
+	if x != nil {
+		return x.ReceiverPublicKey
+	}
+	return nil
+}
+
+func (x *ShareReceiverHello) GetReceiverNonce() []byte {
+	if x != nil {
+		return x.ReceiverNonce
+	}
+	return nil
+}
+
+// ShareSenderChallenge 把接收方 nonce、发送方 nonce 和 offer 有效期绑定到同一次 TLS 会话。
+type ShareSenderChallenge struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	SchemaVersion     uint32                 `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	TransferId        string                 `protobuf:"bytes,2,opt,name=transfer_id,json=transferId,proto3" json:"transfer_id,omitempty"`
+	ReceiverNonce     []byte                 `protobuf:"bytes,3,opt,name=receiver_nonce,json=receiverNonce,proto3" json:"receiver_nonce,omitempty"`
+	SenderNonce       []byte                 `protobuf:"bytes,4,opt,name=sender_nonce,json=senderNonce,proto3" json:"sender_nonce,omitempty"`
+	ExpiresAtUnixNano int64                  `protobuf:"varint,5,opt,name=expires_at_unix_nano,json=expiresAtUnixNano,proto3" json:"expires_at_unix_nano,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ShareSenderChallenge) Reset() {
+	*x = ShareSenderChallenge{}
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShareSenderChallenge) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShareSenderChallenge) ProtoMessage() {}
+
+func (x *ShareSenderChallenge) ProtoReflect() protoreflect.Message {
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShareSenderChallenge.ProtoReflect.Descriptor instead.
+func (*ShareSenderChallenge) Descriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *ShareSenderChallenge) GetSchemaVersion() uint32 {
+	if x != nil {
+		return x.SchemaVersion
+	}
+	return 0
+}
+
+func (x *ShareSenderChallenge) GetTransferId() string {
+	if x != nil {
+		return x.TransferId
+	}
+	return ""
+}
+
+func (x *ShareSenderChallenge) GetReceiverNonce() []byte {
+	if x != nil {
+		return x.ReceiverNonce
+	}
+	return nil
+}
+
+func (x *ShareSenderChallenge) GetSenderNonce() []byte {
+	if x != nil {
+		return x.SenderNonce
+	}
+	return nil
+}
+
+func (x *ShareSenderChallenge) GetExpiresAtUnixNano() int64 {
+	if x != nil {
+		return x.ExpiresAtUnixNano
+	}
+	return 0
+}
+
+// ShareReceiverProofInput 是 receiver proof 的 deterministic protobuf 签名输入。
+type ShareReceiverProofInput struct {
+	state                      protoimpl.MessageState `protogen:"open.v1"`
+	Protocol                   string                 `protobuf:"bytes,1,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	Version                    uint32                 `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	TransferId                 string                 `protobuf:"bytes,3,opt,name=transfer_id,json=transferId,proto3" json:"transfer_id,omitempty"`
+	ReceiverNonce              []byte                 `protobuf:"bytes,4,opt,name=receiver_nonce,json=receiverNonce,proto3" json:"receiver_nonce,omitempty"`
+	SenderNonce                []byte                 `protobuf:"bytes,5,opt,name=sender_nonce,json=senderNonce,proto3" json:"sender_nonce,omitempty"`
+	EphemeralCertificateSha256 string                 `protobuf:"bytes,6,opt,name=ephemeral_certificate_sha256,json=ephemeralCertificateSha256,proto3" json:"ephemeral_certificate_sha256,omitempty"`
+	OneTimeSessionSecretSha256 []byte                 `protobuf:"bytes,7,opt,name=one_time_session_secret_sha256,json=oneTimeSessionSecretSha256,proto3" json:"one_time_session_secret_sha256,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
+}
+
+func (x *ShareReceiverProofInput) Reset() {
+	*x = ShareReceiverProofInput{}
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShareReceiverProofInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShareReceiverProofInput) ProtoMessage() {}
+
+func (x *ShareReceiverProofInput) ProtoReflect() protoreflect.Message {
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShareReceiverProofInput.ProtoReflect.Descriptor instead.
+func (*ShareReceiverProofInput) Descriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *ShareReceiverProofInput) GetProtocol() string {
+	if x != nil {
+		return x.Protocol
+	}
+	return ""
+}
+
+func (x *ShareReceiverProofInput) GetVersion() uint32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *ShareReceiverProofInput) GetTransferId() string {
+	if x != nil {
+		return x.TransferId
+	}
+	return ""
+}
+
+func (x *ShareReceiverProofInput) GetReceiverNonce() []byte {
+	if x != nil {
+		return x.ReceiverNonce
+	}
+	return nil
+}
+
+func (x *ShareReceiverProofInput) GetSenderNonce() []byte {
+	if x != nil {
+		return x.SenderNonce
+	}
+	return nil
+}
+
+func (x *ShareReceiverProofInput) GetEphemeralCertificateSha256() string {
+	if x != nil {
+		return x.EphemeralCertificateSha256
+	}
+	return ""
+}
+
+func (x *ShareReceiverProofInput) GetOneTimeSessionSecretSha256() []byte {
+	if x != nil {
+		return x.OneTimeSessionSecretSha256
+	}
+	return nil
+}
+
+// ShareReceiverProof 证明 challenge 的接收者持有 hello 中临时公钥对应的私钥。
+type ShareReceiverProof struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SchemaVersion uint32                 `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	TransferId    string                 `protobuf:"bytes,2,opt,name=transfer_id,json=transferId,proto3" json:"transfer_id,omitempty"`
+	Signature     []byte                 `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShareReceiverProof) Reset() {
+	*x = ShareReceiverProof{}
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShareReceiverProof) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShareReceiverProof) ProtoMessage() {}
+
+func (x *ShareReceiverProof) ProtoReflect() protoreflect.Message {
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShareReceiverProof.ProtoReflect.Descriptor instead.
+func (*ShareReceiverProof) Descriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *ShareReceiverProof) GetSchemaVersion() uint32 {
+	if x != nil {
+		return x.SchemaVersion
+	}
+	return 0
+}
+
+func (x *ShareReceiverProof) GetTransferId() string {
+	if x != nil {
+		return x.TransferId
+	}
+	return ""
+}
+
+func (x *ShareReceiverProof) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+// ShareSessionClientEnvelope 是一次性 TLS share session 的客户端 framing payload。
+type ShareSessionClientEnvelope struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Message:
+	//
+	//	*ShareSessionClientEnvelope_Hello
+	//	*ShareSessionClientEnvelope_Proof
+	Message       isShareSessionClientEnvelope_Message `protobuf_oneof:"message"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShareSessionClientEnvelope) Reset() {
+	*x = ShareSessionClientEnvelope{}
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShareSessionClientEnvelope) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShareSessionClientEnvelope) ProtoMessage() {}
+
+func (x *ShareSessionClientEnvelope) ProtoReflect() protoreflect.Message {
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShareSessionClientEnvelope.ProtoReflect.Descriptor instead.
+func (*ShareSessionClientEnvelope) Descriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *ShareSessionClientEnvelope) GetMessage() isShareSessionClientEnvelope_Message {
+	if x != nil {
+		return x.Message
+	}
+	return nil
+}
+
+func (x *ShareSessionClientEnvelope) GetHello() *ShareReceiverHello {
+	if x != nil {
+		if x, ok := x.Message.(*ShareSessionClientEnvelope_Hello); ok {
+			return x.Hello
+		}
+	}
+	return nil
+}
+
+func (x *ShareSessionClientEnvelope) GetProof() *ShareReceiverProof {
+	if x != nil {
+		if x, ok := x.Message.(*ShareSessionClientEnvelope_Proof); ok {
+			return x.Proof
+		}
+	}
+	return nil
+}
+
+type isShareSessionClientEnvelope_Message interface {
+	isShareSessionClientEnvelope_Message()
+}
+
+type ShareSessionClientEnvelope_Hello struct {
+	Hello *ShareReceiverHello `protobuf:"bytes,1,opt,name=hello,proto3,oneof"`
+}
+
+type ShareSessionClientEnvelope_Proof struct {
+	Proof *ShareReceiverProof `protobuf:"bytes,2,opt,name=proof,proto3,oneof"`
+}
+
+func (*ShareSessionClientEnvelope_Hello) isShareSessionClientEnvelope_Message() {}
+
+func (*ShareSessionClientEnvelope_Proof) isShareSessionClientEnvelope_Message() {}
+
+// ShareSessionError 是 share session fail-closed 后返回的稳定错误投影，不包含 secret 或配置内容。
+type ShareSessionError struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShareSessionError) Reset() {
+	*x = ShareSessionError{}
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShareSessionError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShareSessionError) ProtoMessage() {}
+
+func (x *ShareSessionError) ProtoReflect() protoreflect.Message {
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShareSessionError.ProtoReflect.Descriptor instead.
+func (*ShareSessionError) Descriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *ShareSessionError) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *ShareSessionError) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+// ShareSessionServerEnvelope 是一次性 TLS share session 的服务端 framing payload。
+type ShareSessionServerEnvelope struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Message:
+	//
+	//	*ShareSessionServerEnvelope_Challenge
+	//	*ShareSessionServerEnvelope_Bundle
+	//	*ShareSessionServerEnvelope_Error
+	Message       isShareSessionServerEnvelope_Message `protobuf_oneof:"message"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShareSessionServerEnvelope) Reset() {
+	*x = ShareSessionServerEnvelope{}
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShareSessionServerEnvelope) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShareSessionServerEnvelope) ProtoMessage() {}
+
+func (x *ShareSessionServerEnvelope) ProtoReflect() protoreflect.Message {
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShareSessionServerEnvelope.ProtoReflect.Descriptor instead.
+func (*ShareSessionServerEnvelope) Descriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *ShareSessionServerEnvelope) GetMessage() isShareSessionServerEnvelope_Message {
+	if x != nil {
+		return x.Message
+	}
+	return nil
+}
+
+func (x *ShareSessionServerEnvelope) GetChallenge() *ShareSenderChallenge {
+	if x != nil {
+		if x, ok := x.Message.(*ShareSessionServerEnvelope_Challenge); ok {
+			return x.Challenge
+		}
+	}
+	return nil
+}
+
+func (x *ShareSessionServerEnvelope) GetBundle() *ClientEndpointShareBundleV1 {
+	if x != nil {
+		if x, ok := x.Message.(*ShareSessionServerEnvelope_Bundle); ok {
+			return x.Bundle
+		}
+	}
+	return nil
+}
+
+func (x *ShareSessionServerEnvelope) GetError() *ShareSessionError {
+	if x != nil {
+		if x, ok := x.Message.(*ShareSessionServerEnvelope_Error); ok {
+			return x.Error
+		}
+	}
+	return nil
+}
+
+type isShareSessionServerEnvelope_Message interface {
+	isShareSessionServerEnvelope_Message()
+}
+
+type ShareSessionServerEnvelope_Challenge struct {
+	Challenge *ShareSenderChallenge `protobuf:"bytes,1,opt,name=challenge,proto3,oneof"`
+}
+
+type ShareSessionServerEnvelope_Bundle struct {
+	Bundle *ClientEndpointShareBundleV1 `protobuf:"bytes,2,opt,name=bundle,proto3,oneof"`
+}
+
+type ShareSessionServerEnvelope_Error struct {
+	Error *ShareSessionError `protobuf:"bytes,3,opt,name=error,proto3,oneof"`
+}
+
+func (*ShareSessionServerEnvelope_Challenge) isShareSessionServerEnvelope_Message() {}
+
+func (*ShareSessionServerEnvelope_Bundle) isShareSessionServerEnvelope_Message() {}
+
+func (*ShareSessionServerEnvelope_Error) isShareSessionServerEnvelope_Message() {}
+
 var File_remoteauthpb_remote_auth_proto protoreflect.FileDescriptor
 
 const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
@@ -4256,7 +4799,47 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x12listener_addresses\x18\x03 \x03(\tR\x11listenerAddresses\x12@\n" +
 	"\x1cephemeral_certificate_sha256\x18\x04 \x01(\tR\x1aephemeralCertificateSha256\x125\n" +
 	"\x17one_time_session_secret\x18\x05 \x01(\fR\x14oneTimeSessionSecret\x12/\n" +
-	"\x14expires_at_unix_nano\x18\x06 \x01(\x03R\x11expiresAtUnixNano*\xb0\x04\n" +
+	"\x14expires_at_unix_nano\x18\x06 \x01(\x03R\x11expiresAtUnixNano\"\xea\x01\n" +
+	"\x12ShareReceiverHello\x12%\n" +
+	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x1f\n" +
+	"\vtransfer_id\x18\x02 \x01(\tR\n" +
+	"transferId\x125\n" +
+	"\x17one_time_session_secret\x18\x03 \x01(\fR\x14oneTimeSessionSecret\x12.\n" +
+	"\x13receiver_public_key\x18\x04 \x01(\fR\x11receiverPublicKey\x12%\n" +
+	"\x0ereceiver_nonce\x18\x05 \x01(\fR\rreceiverNonce\"\xd9\x01\n" +
+	"\x14ShareSenderChallenge\x12%\n" +
+	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x1f\n" +
+	"\vtransfer_id\x18\x02 \x01(\tR\n" +
+	"transferId\x12%\n" +
+	"\x0ereceiver_nonce\x18\x03 \x01(\fR\rreceiverNonce\x12!\n" +
+	"\fsender_nonce\x18\x04 \x01(\fR\vsenderNonce\x12/\n" +
+	"\x14expires_at_unix_nano\x18\x05 \x01(\x03R\x11expiresAtUnixNano\"\xc0\x02\n" +
+	"\x17ShareReceiverProofInput\x12\x1a\n" +
+	"\bprotocol\x18\x01 \x01(\tR\bprotocol\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\rR\aversion\x12\x1f\n" +
+	"\vtransfer_id\x18\x03 \x01(\tR\n" +
+	"transferId\x12%\n" +
+	"\x0ereceiver_nonce\x18\x04 \x01(\fR\rreceiverNonce\x12!\n" +
+	"\fsender_nonce\x18\x05 \x01(\fR\vsenderNonce\x12@\n" +
+	"\x1cephemeral_certificate_sha256\x18\x06 \x01(\tR\x1aephemeralCertificateSha256\x12B\n" +
+	"\x1eone_time_session_secret_sha256\x18\a \x01(\fR\x1aoneTimeSessionSecretSha256\"z\n" +
+	"\x12ShareReceiverProof\x12%\n" +
+	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x1f\n" +
+	"\vtransfer_id\x18\x02 \x01(\tR\n" +
+	"transferId\x12\x1c\n" +
+	"\tsignature\x18\x03 \x01(\fR\tsignature\"\xab\x01\n" +
+	"\x1aShareSessionClientEnvelope\x12@\n" +
+	"\x05hello\x18\x01 \x01(\v2(.termx.remote.auth.v1.ShareReceiverHelloH\x00R\x05hello\x12@\n" +
+	"\x05proof\x18\x02 \x01(\v2(.termx.remote.auth.v1.ShareReceiverProofH\x00R\x05proofB\t\n" +
+	"\amessage\"A\n" +
+	"\x11ShareSessionError\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\x81\x02\n" +
+	"\x1aShareSessionServerEnvelope\x12J\n" +
+	"\tchallenge\x18\x01 \x01(\v2*.termx.remote.auth.v1.ShareSenderChallengeH\x00R\tchallenge\x12K\n" +
+	"\x06bundle\x18\x02 \x01(\v21.termx.remote.auth.v1.ClientEndpointShareBundleV1H\x00R\x06bundle\x12?\n" +
+	"\x05error\x18\x03 \x01(\v2'.termx.remote.auth.v1.ShareSessionErrorH\x00R\x05errorB\t\n" +
+	"\amessage*\xb0\x04\n" +
 	"\rAuthErrorCode\x12\x1f\n" +
 	"\x1bAUTH_ERROR_CODE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18AUTH_ERROR_CODE_PROTOCOL\x10\x01\x12,\n" +
@@ -4335,7 +4918,7 @@ func file_remoteauthpb_remote_auth_proto_rawDescGZIP() []byte {
 }
 
 var file_remoteauthpb_remote_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
-var file_remoteauthpb_remote_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
+var file_remoteauthpb_remote_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
 var file_remoteauthpb_remote_auth_proto_goTypes = []any{
 	(AuthErrorCode)(0),                          // 0: termx.remote.auth.v1.AuthErrorCode
 	(ScopeKind)(0),                              // 1: termx.remote.auth.v1.ScopeKind
@@ -4388,6 +4971,13 @@ var file_remoteauthpb_remote_auth_proto_goTypes = []any{
 	(*EndpointBootstrapSignatureInput)(nil),     // 48: termx.remote.auth.v1.EndpointBootstrapSignatureInput
 	(*ClientEndpointShareBundleV1)(nil),         // 49: termx.remote.auth.v1.ClientEndpointShareBundleV1
 	(*ShareSessionOffer)(nil),                   // 50: termx.remote.auth.v1.ShareSessionOffer
+	(*ShareReceiverHello)(nil),                  // 51: termx.remote.auth.v1.ShareReceiverHello
+	(*ShareSenderChallenge)(nil),                // 52: termx.remote.auth.v1.ShareSenderChallenge
+	(*ShareReceiverProofInput)(nil),             // 53: termx.remote.auth.v1.ShareReceiverProofInput
+	(*ShareReceiverProof)(nil),                  // 54: termx.remote.auth.v1.ShareReceiverProof
+	(*ShareSessionClientEnvelope)(nil),          // 55: termx.remote.auth.v1.ShareSessionClientEnvelope
+	(*ShareSessionError)(nil),                   // 56: termx.remote.auth.v1.ShareSessionError
+	(*ShareSessionServerEnvelope)(nil),          // 57: termx.remote.auth.v1.ShareSessionServerEnvelope
 }
 var file_remoteauthpb_remote_auth_proto_depIdxs = []int32{
 	2,  // 0: termx.remote.auth.v1.ChannelBinding.kind:type_name -> termx.remote.auth.v1.ChannelBindingKind
@@ -4441,11 +5031,16 @@ var file_remoteauthpb_remote_auth_proto_depIdxs = []int32{
 	5,  // 48: termx.remote.auth.v1.ClientEndpointShareBundleV1.connect_mode:type_name -> termx.remote.auth.v1.EndpointConnectMode
 	35, // 49: termx.remote.auth.v1.ClientEndpointShareBundleV1.selection_policy:type_name -> termx.remote.auth.v1.EndpointSelectionPolicy
 	36, // 50: termx.remote.auth.v1.ClientEndpointShareBundleV1.credential_descriptors:type_name -> termx.remote.auth.v1.EndpointCredentialDescriptor
-	51, // [51:51] is the sub-list for method output_type
-	51, // [51:51] is the sub-list for method input_type
-	51, // [51:51] is the sub-list for extension type_name
-	51, // [51:51] is the sub-list for extension extendee
-	0,  // [0:51] is the sub-list for field type_name
+	51, // 51: termx.remote.auth.v1.ShareSessionClientEnvelope.hello:type_name -> termx.remote.auth.v1.ShareReceiverHello
+	54, // 52: termx.remote.auth.v1.ShareSessionClientEnvelope.proof:type_name -> termx.remote.auth.v1.ShareReceiverProof
+	52, // 53: termx.remote.auth.v1.ShareSessionServerEnvelope.challenge:type_name -> termx.remote.auth.v1.ShareSenderChallenge
+	49, // 54: termx.remote.auth.v1.ShareSessionServerEnvelope.bundle:type_name -> termx.remote.auth.v1.ClientEndpointShareBundleV1
+	56, // 55: termx.remote.auth.v1.ShareSessionServerEnvelope.error:type_name -> termx.remote.auth.v1.ShareSessionError
+	56, // [56:56] is the sub-list for method output_type
+	56, // [56:56] is the sub-list for method input_type
+	56, // [56:56] is the sub-list for extension type_name
+	56, // [56:56] is the sub-list for extension extendee
+	0,  // [0:56] is the sub-list for field type_name
 }
 
 func init() { file_remoteauthpb_remote_auth_proto_init() }
@@ -4475,13 +5070,22 @@ func file_remoteauthpb_remote_auth_proto_init() {
 		(*EndpointAuthorizationBootstrap_PairingTicket)(nil),
 		(*EndpointAuthorizationBootstrap_BoundGrant)(nil),
 	}
+	file_remoteauthpb_remote_auth_proto_msgTypes[46].OneofWrappers = []any{
+		(*ShareSessionClientEnvelope_Hello)(nil),
+		(*ShareSessionClientEnvelope_Proof)(nil),
+	}
+	file_remoteauthpb_remote_auth_proto_msgTypes[48].OneofWrappers = []any{
+		(*ShareSessionServerEnvelope_Challenge)(nil),
+		(*ShareSessionServerEnvelope_Bundle)(nil),
+		(*ShareSessionServerEnvelope_Error)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_remoteauthpb_remote_auth_proto_rawDesc), len(file_remoteauthpb_remote_auth_proto_rawDesc)),
 			NumEnums:      9,
-			NumMessages:   42,
+			NumMessages:   49,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

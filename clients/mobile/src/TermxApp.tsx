@@ -166,8 +166,34 @@ function createNativeExternalPairingAdapter(registry: NativeEndpointRegistryProj
 		expiresAt,
       }
     },
+	async inspectShare(rawValue) {
+	  const received = await goBindingClient.receiveEndpointShare(rawValue)
+	  const preview = received.preview
+	  if (!preview?.importToken || !preview.identity) throw new Error('Endpoint share preview is incomplete')
+	  return {
+		importToken: preview.importToken,
+		endpointId: preview.endpointId,
+		label: preview.label || preview.endpointId,
+		deviceId: preview.identity.deviceId,
+		deviceFingerprint: preview.identity.deviceFingerprint,
+		routes: preview.routeDiffs.map((route) => ({ id: route.routeId, kind: route.routeKind, action: route.action })),
+		connectModeChanged: preview.connectModeChanged,
+		selectionPolicyChanged: preview.selectionPolicyChanged,
+		credentialKinds: preview.credentialDescriptors.map((descriptor) => String(descriptor.kind)),
+	  }
+	},
+	async commitShare(importToken) {
+	  const committed = await goBindingClient.commitEndpointShare(importToken)
+	  const endpoint = committed.endpoint
+	  if (!endpoint?.endpointId || !endpoint.identity || !committed.registry) throw new Error('Endpoint share commit is incomplete')
+	  registry.replace(committed.registry)
+	  return {
+		machine: { id: endpoint.endpointId, name: endpoint.label || endpoint.endpointId, accessClass: 'local' },
+		authorizationRequired: committed.authorizationRequired,
+	  }
+	},
     isAuthorized(machineId) {
-	  return registry.has(machineId)
+	  return registry.isAuthorized(machineId)
     },
     authorizationExpiresAt(machineId) {
 	  return registry.authorizationExpiry(machineId)
@@ -195,6 +221,10 @@ class NativeEndpointRegistryProjection {
 
   snapshot(): TermxRemoteAuth.EndpointRegistryV1 { return create(TermxRemoteAuth.EndpointRegistryV1Schema, this.registry) }
   has(endpointId: string): boolean { return this.registry.endpoints.some((endpoint) => endpoint.endpointId === endpointId) }
+  isAuthorized(endpointId: string): boolean {
+	const endpoint = this.registry.endpoints.find((candidate) => candidate.endpointId === endpointId)
+	return endpoint?.routes.some((route) => route.credentialRef.trim() !== '') ?? false
+  }
   version(): number { return this.versionValue }
   authorizationExpiry(endpointId: string): string | undefined { return this.expiries.get(endpointId) }
   setAuthorizationExpiry(endpointId: string, expiresAt: string | undefined): void {

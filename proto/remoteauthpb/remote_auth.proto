@@ -500,3 +500,62 @@ message ShareSessionOffer {
   bytes one_time_session_secret = 5;
   int64 expires_at_unix_nano = 6;
 }
+
+// ShareReceiverHello 证明接收方持有静态 offer 中的一次性 secret，并声明本次会话的临时签名公钥。
+message ShareReceiverHello {
+  uint32 schema_version = 1;
+  string transfer_id = 2;
+  bytes one_time_session_secret = 3;
+  bytes receiver_public_key = 4;
+  bytes receiver_nonce = 5;
+}
+
+// ShareSenderChallenge 把接收方 nonce、发送方 nonce 和 offer 有效期绑定到同一次 TLS 会话。
+message ShareSenderChallenge {
+  uint32 schema_version = 1;
+  string transfer_id = 2;
+  bytes receiver_nonce = 3;
+  bytes sender_nonce = 4;
+  int64 expires_at_unix_nano = 5;
+}
+
+// ShareReceiverProofInput 是 receiver proof 的 deterministic protobuf 签名输入。
+message ShareReceiverProofInput {
+  string protocol = 1;
+  uint32 version = 2;
+  string transfer_id = 3;
+  bytes receiver_nonce = 4;
+  bytes sender_nonce = 5;
+  string ephemeral_certificate_sha256 = 6;
+  bytes one_time_session_secret_sha256 = 7;
+}
+
+// ShareReceiverProof 证明 challenge 的接收者持有 hello 中临时公钥对应的私钥。
+message ShareReceiverProof {
+  uint32 schema_version = 1;
+  string transfer_id = 2;
+  bytes signature = 3;
+}
+
+// ShareSessionClientEnvelope 是一次性 TLS share session 的客户端 framing payload。
+message ShareSessionClientEnvelope {
+  oneof message {
+    ShareReceiverHello hello = 1;
+    ShareReceiverProof proof = 2;
+  }
+}
+
+// ShareSessionError 是 share session fail-closed 后返回的稳定错误投影，不包含 secret 或配置内容。
+message ShareSessionError {
+  string code = 1;
+  string message = 2;
+}
+
+// ShareSessionServerEnvelope 是一次性 TLS share session 的服务端 framing payload。
+message ShareSessionServerEnvelope {
+  oneof message {
+    ShareSenderChallenge challenge = 1;
+    ClientEndpointShareBundleV1 bundle = 2;
+    ShareSessionError error = 3;
+  }
+}

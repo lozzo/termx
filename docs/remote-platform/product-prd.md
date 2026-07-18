@@ -102,6 +102,8 @@ Route connector
 - 接收方导入前展示 Route/policy diff。
 - share 可以描述目标端所需 credential 类别，但不传 secret body。
 - share 不传源 EndpointID、runtime winner、session、Cloud token、SSH secret 或源客户端 grant。
+- 静态二维码只包含 TLS listener locator、临时证书 SHA-256 pin、一次性 session secret、transfer ID 和有效期；Endpoint 配置只能在 TLS pin 与 receiver proof 均通过后发送。
+- 当前 share 固定为 config-only：导入后 Endpoint 保持未授权，接收端必须重新完成 daemon pairing，并在本地准备 SSH/Cloud credential。
 
 ## 7. Go Client Engine
 

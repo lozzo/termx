@@ -36,6 +36,15 @@ type EndpointRegistryHost interface {
 	DeleteEndpoint(context.Context, *bindingpb.EndpointDeleteRequest) (*bindingpb.EndpointDeleteResult, error)
 }
 
+// EndpointShareHost 是 binding 对一次性 Endpoint share 的两阶段入口。
+// Receive 只返回 Go 计算的 diff 并持有 generation-local token；Commit 才能原子更新 registry。
+type EndpointShareHost interface {
+	// ReceiveEndpointShare 完成 TLS pin、receiver proof 和 bundle 校验，但不持久化配置。
+	ReceiveEndpointShare(context.Context, *bindingpb.EndpointShareReceiveRequest) (*bindingpb.EndpointShareReceiveResult, error)
+	// CommitEndpointShare 提交当前 generation 内尚未过期的 import token。
+	CommitEndpointShare(context.Context, *bindingpb.EndpointShareCommitRequest) (*bindingpb.EndpointShareCommitResult, error)
+}
+
 // PlatformBroker 是 Go Client Engine 与 Android/WASM platform adapter 之间的 request/response owner。
 // 请求和响应均为 bindingpb，平台通过 NextRequest/Complete 驱动；broker 不解释 Cloud 或 credential 字段。
 type PlatformBroker struct {

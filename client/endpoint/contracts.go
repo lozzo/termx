@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -347,12 +349,16 @@ func validateShareSessionOffer(offer *remoteauthpb.ShareSessionOffer) error {
 	if err := validateIdentifier("share session transfer", offer.GetTransferId()); err != nil {
 		return connectionError(ErrorConfig, "share session offer transfer_id is invalid")
 	}
-	if len(offer.GetListenerAddresses()) == 0 || strings.TrimSpace(offer.GetEphemeralCertificateSha256()) == "" || len(offer.GetOneTimeSessionSecret()) < 32 || offer.GetExpiresAtUnixNano() <= time.Now().UnixNano() {
+	pin := strings.TrimPrefix(offer.GetEphemeralCertificateSha256(), "sha256:")
+	pinBytes, pinErr := base64.RawURLEncoding.DecodeString(pin)
+	if len(offer.GetListenerAddresses()) == 0 || !strings.HasPrefix(offer.GetEphemeralCertificateSha256(), "sha256:") || pinErr != nil || len(pinBytes) != sha256.Size || len(offer.GetOneTimeSessionSecret()) < 32 || offer.GetExpiresAtUnixNano() <= time.Now().UnixNano() {
 		return connectionError(ErrorConfig, "share session offer is incomplete")
 	}
 	seenAddresses := make(map[string]struct{}, len(offer.GetListenerAddresses()))
 	for _, address := range offer.GetListenerAddresses() {
-		if address != strings.TrimSpace(address) || address == "" || strings.ContainsAny(address, "\r\n") {
+		host, portValue, err := net.SplitHostPort(address)
+		port, portErr := strconv.ParseUint(portValue, 10, 16)
+		if address != strings.TrimSpace(address) || err != nil || portErr != nil || port == 0 || strings.TrimSpace(host) == "" || host == "0.0.0.0" || host == "::" {
 			return connectionError(ErrorConfig, "share session offer address is invalid")
 		}
 		if _, duplicate := seenAddresses[address]; duplicate {

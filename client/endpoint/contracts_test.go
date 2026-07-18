@@ -3,6 +3,8 @@ package endpoint
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/base64"
 	"testing"
 	"time"
 
@@ -215,7 +217,7 @@ func TestShareBundleAndOfferRejectNonPortableOrSecretBearingFields(t *testing.T)
 
 	offer := &remoteauthpb.ShareSessionOffer{
 		SchemaVersion: ShareSessionOfferVersion, TransferId: "transfer-1", ListenerAddresses: []string{"192.0.2.10:41130"},
-		EphemeralCertificateSha256: "SHA256:ephemeral", OneTimeSessionSecret: bytes.Repeat([]byte{4}, 32), ExpiresAtUnixNano: now.Add(time.Minute).UnixNano(),
+		EphemeralCertificateSha256: "sha256:" + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{3}, sha256.Size)), OneTimeSessionSecret: bytes.Repeat([]byte{4}, 32), ExpiresAtUnixNano: now.Add(time.Minute).UnixNano(),
 	}
 	offerPayload, err := MarshalShareSessionOffer(offer)
 	if err != nil {

@@ -37,9 +37,53 @@ func (engine *Engine) EngineCommand(payload []byte) (uint64, error) {
 		return engine.startEndpointUpsert(value.EndpointUpsert)
 	case *bindingpb.EngineCommand_EndpointDelete:
 		return engine.startEndpointDelete(value.EndpointDelete)
+	case *bindingpb.EngineCommand_EndpointShareReceive:
+		return engine.startEndpointShareReceive(value.EndpointShareReceive)
+	case *bindingpb.EngineCommand_EndpointShareCommit:
+		return engine.startEndpointShareCommit(value.EndpointShareCommit)
 	default:
 		return 0, fmt.Errorf("engine command is required")
 	}
+}
+
+func (engine *Engine) shareHost() (EndpointShareHost, error) {
+	host, ok := engine.host.(EndpointShareHost)
+	if !ok {
+		return nil, fmt.Errorf("binding host does not support endpoint share operations")
+	}
+	return host, nil
+}
+
+func (engine *Engine) startEndpointShareReceive(request *bindingpb.EndpointShareReceiveRequest) (uint64, error) {
+	if request == nil || request.GetRequestId() == "" || request.GetPortableOffer() == "" {
+		return 0, fmt.Errorf("endpoint share receive request is incomplete")
+	}
+	host, err := engine.shareHost()
+	if err != nil {
+		return 0, err
+	}
+	handle, operationContext, err := engine.startOperation()
+	if err != nil {
+		return 0, err
+	}
+	go engine.runEndpointShareReceive(handle, operationContext, host, proto.Clone(request).(*bindingpb.EndpointShareReceiveRequest))
+	return handle, nil
+}
+
+func (engine *Engine) startEndpointShareCommit(request *bindingpb.EndpointShareCommitRequest) (uint64, error) {
+	if request == nil || request.GetRequestId() == "" || request.GetImportToken() == "" {
+		return 0, fmt.Errorf("endpoint share commit request is incomplete")
+	}
+	host, err := engine.shareHost()
+	if err != nil {
+		return 0, err
+	}
+	handle, operationContext, err := engine.startOperation()
+	if err != nil {
+		return 0, err
+	}
+	go engine.runEndpointShareCommit(handle, operationContext, host, proto.Clone(request).(*bindingpb.EndpointShareCommitRequest))
+	return handle, nil
 }
 
 func (engine *Engine) registryHost() (EndpointRegistryHost, error) {
@@ -233,4 +277,40 @@ func (engine *Engine) runEndpointDelete(handle uint64, ctx context.Context, host
 		result.Error = apiError(err)
 	}
 	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_EndpointDelete{EndpointDelete: result}})
+}
+
+func (engine *Engine) runEndpointShareReceive(handle uint64, ctx context.Context, host EndpointShareHost, request *bindingpb.EndpointShareReceiveRequest) {
+	result, err := host.ReceiveEndpointShare(ctx, request)
+	if ctx.Err() != nil {
+		result, err = nil, ctx.Err()
+	}
+	engine.markOperationDone(handle)
+	if result == nil {
+		result = &bindingpb.EndpointShareReceiveResult{}
+	} else {
+		result = proto.Clone(result).(*bindingpb.EndpointShareReceiveResult)
+	}
+	result.RequestId, result.OperationHandle = request.GetRequestId(), handle
+	if err != nil {
+		result.Error = apiError(err)
+	}
+	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_EndpointShareReceive{EndpointShareReceive: result}})
+}
+
+func (engine *Engine) runEndpointShareCommit(handle uint64, ctx context.Context, host EndpointShareHost, request *bindingpb.EndpointShareCommitRequest) {
+	result, err := host.CommitEndpointShare(ctx, request)
+	if ctx.Err() != nil {
+		result, err = nil, ctx.Err()
+	}
+	engine.markOperationDone(handle)
+	if result == nil {
+		result = &bindingpb.EndpointShareCommitResult{}
+	} else {
+		result = proto.Clone(result).(*bindingpb.EndpointShareCommitResult)
+	}
+	result.RequestId, result.OperationHandle = request.GetRequestId(), handle
+	if err != nil {
+		result.Error = apiError(err)
+	}
+	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_EndpointShareCommit{EndpointShareCommit: result}})
 }

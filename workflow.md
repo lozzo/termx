@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- `RTC007` 地址覆盖、LAN 与 TCP mapping 已完成；当前活动主线从 `RTC008` 开始。
+- `RTC008` Endpoint share 已完成；当前活动主线从 `RTC009` 开始。
 - TermX 只有一个面向用户的 App。Direct 与 SSH 是无需登录和订阅的基础能力；TermX Cloud 是同一 App 内可选的 managed Route，提供账号目录、托管信令、ICE-UDP、TURN Relay 和跨网络能力。
 - 所有远程业务连接最终统一为可靠有序 WebRTC DataChannel：Direct 使用 daemon embedded signaling + ICE-TCP；SSH 使用 Go SSH client/direct-tcpip tunnel + daemon loopback ICE-TCP；Cloud 使用 TermX Cloud signaling + ICE-UDP 或 TURN Relay。
 - Local Unix 仍是本机 CLI/TUI 到本机 daemon 的本地 transport，不要求为了形式统一改成 WebRTC。
@@ -138,7 +138,7 @@ Android / TUI / CLI / future iOS/Desktop / future Web
 | RTC005 | 已完成 | Go-owned Endpoint registry | `enginehost` 已拥有 registry load/get/upsert/delete、identity pin、pairing credential 补偿和 unreferenced credential cleanup；Android/Web 只保存 opaque Proto bytes，UI 只缓存 projection；race、失败事务、5 个 instrumentation、模拟器冷启动恢复和重复真值扫描通过 |
 | RTC006 | 已完成 | SSH WebRTC TCP | Go SSH client、host-key/credential port、direct-tcpip backed signaling/ICE-TCP 已接入统一 ReadyPeerSession；真实 sshd key E2E、password、host-key pin、selected TCP pair、auth/Hello/API、cancel/cleanup 与 race 通过；OpenSSH 子进程 transport 和远端 `stdio-proxy` 已删除 |
 | RTC007 | 已完成 | 地址覆盖、LAN 与 FRP | `pair create` 已支持 signaling/ICE 地址与端口覆盖、自动 RFC1918 LAN seed、安全 identity/Route 预览和 wildcard/端口校验；真实 TCP mapping、不可达 fail-closed、identity/ticket 回归与 race 通过；ARM64 模拟器最终 APK 已从 App UI 导入映射 bundle、打开 terminal、输入并捕获 `rtc007-final-apk-ok`，crash scan 无异常 |
-| RTC008 | 待开始 | Endpoint share | 实现 CLI/TUI 同源 `endpoint share`、一次性 TLS share session、receiver proof、Route/policy diff、config-only 和 App 原子导入 |
+| RTC008 | 已完成 | Endpoint share | 已实现 CLI/TUI 同源 `endpoint share`、临时 TLS certificate pin、一次性 secret、nonce + Ed25519 receiver proof、单次消费、过期/重放/pin fail-closed、Route/policy diff 和 config-only 原子导入；binding 使用 generation-local preview token 且 store 失败可重试；ARM64 模拟器最终 APK 已从 App UI 接收预览、确认导入、显示未授权 action-required，并在进程重启后恢复，crash scan 无异常 |
 | RTC009 | 待开始 | Cloud Route 收口 | 现有 managed WebRTC 接到统一 PeerSession；单一 App 内按账号/订阅决定 eligibility；Cloud logout/failure 不影响 Direct/SSH |
 | RTC010 | 待开始 | 删除旧路径与最终验收 | 删除 managed-only pairing、旧 Route、旧 App flavor 分支、重复平台真值和旧 proxy；在 Android 模拟器完成最终 APK 的 Direct/SSH/Cloud、LAN/TCP mapping、terminal 交互、文件传输、弱网、lifecycle 与双 Agent 审查 |
 | WEB001 | 延后 | Web/WASM 产品恢复 | 仅用户明确恢复 Web 后启动；Go/WASM + Cloud managed WebRTC，纯浏览器不支持 Direct/SSH |

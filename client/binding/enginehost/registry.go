@@ -2,6 +2,8 @@ package enginehost
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"strings"
 
@@ -10,6 +12,11 @@ import (
 	"github.com/lozzow/termx/proto/bindingpb"
 	"github.com/lozzow/termx/proto/remoteauthpb"
 	"google.golang.org/protobuf/proto"
+)
+
+const (
+	endpointShareURIPrefix   = "termx://share?payload="
+	maxPendingEndpointShares = 16
 )
 
 // GetEndpointRegistry 返回 Go 校验后的完整 registry projection。
@@ -98,6 +105,111 @@ func (host *Host) DeleteEndpoint(ctx context.Context, request *bindingpb.Endpoin
 		return nil, err
 	}
 	return &bindingpb.EndpointDeleteResult{EndpointId: string(id), Registry: wireRegistry}, nil
+}
+
+// ReceiveEndpointShare 接收并验证一次性 TLS share，只返回当前 registry 上的 Route/policy diff。
+// bundle 保存在当前 Host generation 内；Android WebView 冻结或 engine 重建后 token 自动失效。
+func (host *Host) ReceiveEndpointShare(ctx context.Context, request *bindingpb.EndpointShareReceiveRequest) (*bindingpb.EndpointShareReceiveResult, error) {
+	offer, err := decodeEndpointShareOffer(request.GetPortableOffer())
+	if err != nil {
+		return nil, err
+	}
+	bundle, err := host.options.ShareReceive(ctx, offer)
+	if err != nil {
+		return nil, err
+	}
+	candidate, err := endpoint.EndpointCandidateFromShareBundle(bundle)
+	if err != nil {
+		return nil, err
+	}
+	tokenBytes := make([]byte, 24)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return nil, fmt.Errorf("generate endpoint share import token: %w", err)
+	}
+	token := base64.RawURLEncoding.EncodeToString(tokenBytes)
+	host.registryMu.Lock()
+	defer host.registryMu.Unlock()
+	registry, err := host.loadRegistryLocked(ctx)
+	if err != nil {
+		return nil, err
+	}
+	diff, err := endpoint.PreviewShare(registry, candidate)
+	if err != nil {
+		return nil, err
+	}
+	for pendingToken, pending := range host.pendingShares {
+		if pending.GetExpiresAtUnixNano() <= host.options.Now().UnixNano() {
+			delete(host.pendingShares, pendingToken)
+		}
+	}
+	if len(host.pendingShares) >= maxPendingEndpointShares {
+		return nil, fmt.Errorf("too many pending endpoint share previews")
+	}
+	host.pendingShares[token] = proto.Clone(bundle).(*remoteauthpb.ClientEndpointShareBundleV1)
+	preview := &bindingpb.EndpointSharePreview{
+		ImportToken: token, EndpointId: string(diff.EndpointID), Label: diff.Label,
+		Identity:           &remoteauthpb.EndpointDaemonIdentity{DeviceId: diff.Identity.DeviceID, DeviceFingerprint: diff.Identity.DeviceFingerprint},
+		ConnectModeChanged: diff.ConnectModeChanged, SelectionPolicyChanged: diff.SelectionPolicyChanged,
+		ExpiresAtUnixNano: bundle.GetExpiresAtUnixNano(),
+	}
+	for _, route := range diff.Routes {
+		preview.RouteDiffs = append(preview.RouteDiffs, &bindingpb.EndpointShareRouteDiff{RouteId: string(route.RouteID), RouteKind: string(route.Kind), Action: route.Action})
+	}
+	for _, descriptor := range bundle.GetCredentialDescriptors() {
+		preview.CredentialDescriptors = append(preview.CredentialDescriptors, proto.Clone(descriptor).(*remoteauthpb.EndpointCredentialDescriptor))
+	}
+	return &bindingpb.EndpointShareReceiveResult{Preview: preview}, nil
+}
+
+// CommitEndpointShare 原子提交当前 generation 内的 config-only share token。
+// 提交会针对最新 registry 重新执行 assembler；只有持久化成功或 token 过期时才消费，平台写失败可在当前 generation 内重试。
+func (host *Host) CommitEndpointShare(ctx context.Context, request *bindingpb.EndpointShareCommitRequest) (*bindingpb.EndpointShareCommitResult, error) {
+	token := strings.TrimSpace(request.GetImportToken())
+	host.registryMu.Lock()
+	defer host.registryMu.Unlock()
+	bundle := host.pendingShares[token]
+	if bundle == nil {
+		return nil, fmt.Errorf("endpoint share import token is invalid or expired")
+	}
+	if bundle.GetExpiresAtUnixNano() <= host.options.Now().UnixNano() {
+		delete(host.pendingShares, token)
+		return nil, fmt.Errorf("endpoint share import token expired")
+	}
+	candidate, err := endpoint.EndpointCandidateFromShareBundle(bundle)
+	if err != nil {
+		return nil, err
+	}
+	current, err := host.loadRegistryLocked(ctx)
+	if err != nil {
+		return nil, err
+	}
+	assembled, err := endpoint.AssembleEndpoints(endpoint.EndpointAssemblerInput{Registry: current, Candidates: []endpoint.EndpointCandidate{candidate}})
+	if err != nil {
+		return nil, err
+	}
+	resolvedID := assembled.ResolvedEndpointIDs[0]
+	wireRegistry, err := host.storeRegistryLocked(ctx, assembled.Registry, nil)
+	if err != nil {
+		return nil, err
+	}
+	delete(host.pendingShares, token)
+	wireEndpoint, err := endpoint.EndpointToProto(assembled.Registry.Endpoints[resolvedID])
+	if err != nil {
+		return nil, err
+	}
+	return &bindingpb.EndpointShareCommitResult{Endpoint: wireEndpoint, Registry: wireRegistry, AuthorizationRequired: true}, nil
+}
+
+func decodeEndpointShareOffer(value string) (*remoteauthpb.ShareSessionOffer, error) {
+	encoded := strings.TrimSpace(value)
+	if strings.HasPrefix(encoded, endpointShareURIPrefix) {
+		encoded = strings.TrimPrefix(encoded, endpointShareURIPrefix)
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil || len(payload) == 0 {
+		return nil, fmt.Errorf("endpoint share offer payload is invalid")
+	}
+	return endpoint.ParseShareSessionOffer(payload)
 }
 
 func (host *Host) registryEndpoint(ctx context.Context, id endpoint.EndpointID) (endpoint.Endpoint, error) {
@@ -298,3 +410,4 @@ func unreferencedCredentials(removed endpoint.Endpoint, remaining endpoint.Regis
 }
 
 var _ binding.EndpointRegistryHost = (*Host)(nil)
+var _ binding.EndpointShareHost = (*Host)(nil)

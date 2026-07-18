@@ -16,6 +16,7 @@ import (
 	"github.com/lozzow/termx/client/adapter/direct"
 	"github.com/lozzow/termx/client/adapter/managed"
 	peeradapter "github.com/lozzow/termx/client/adapter/peer"
+	shareadapter "github.com/lozzow/termx/client/adapter/share"
 	sshadapter "github.com/lozzow/termx/client/adapter/ssh"
 	"github.com/lozzow/termx/client/binding"
 	"github.com/lozzow/termx/client/endpoint"
@@ -42,6 +43,7 @@ type Options struct {
 	CredentialPrefix string
 	Now              func() time.Time
 	SessionAuthority *clientruntime.SessionGenerationAuthority
+	ShareReceive     func(context.Context, *remoteauthpb.ShareSessionOffer) (*remoteauthpb.ClientEndpointShareBundleV1, error)
 }
 
 // Host 是跨 Android/Web 共用的 binding.Host、PairingHost 与 CredentialHost。
@@ -51,6 +53,7 @@ type Host struct {
 	registryMu     sync.Mutex
 	registry       endpoint.Registry
 	registryLoaded bool
+	pendingShares  map[string]*remoteauthpb.ClientEndpointShareBundleV1
 	closeOnce      sync.Once
 }
 
@@ -70,7 +73,10 @@ func New(options Options) (*Host, error) {
 	if options.Now == nil {
 		options.Now = time.Now
 	}
-	return &Host{options: options, owner: clientruntime.NewSessionOwnerWithAuthority(options.SessionAuthority)}, nil
+	if options.ShareReceive == nil {
+		options.ShareReceive = shareadapter.Receive
+	}
+	return &Host{options: options, owner: clientruntime.NewSessionOwnerWithAuthority(options.SessionAuthority), pendingShares: make(map[string]*remoteauthpb.ClientEndpointShareBundleV1)}, nil
 }
 
 // OpenSession 从 generated EndpointConfigV1 建立 Go-owned generation；平台 UI 状态不能参与 endpoint、Route、auth 或协议判断。
@@ -266,6 +272,9 @@ func (host *Host) Close() error {
 		return nil
 	}
 	host.closeOnce.Do(func() {
+		host.registryMu.Lock()
+		host.pendingShares = make(map[string]*remoteauthpb.ClientEndpointShareBundleV1)
+		host.registryMu.Unlock()
 		_ = host.owner.Close()
 		if closer, ok := host.options.DirectPeers.(interface{ Close() error }); ok {
 			_ = closer.Close()
@@ -501,6 +510,7 @@ var _ binding.Host = (*Host)(nil)
 var _ binding.PairingHost = (*Host)(nil)
 var _ binding.CredentialHost = (*Host)(nil)
 var _ binding.EndpointRegistryHost = (*Host)(nil)
+var _ binding.EndpointShareHost = (*Host)(nil)
 var _ peeradapter.CredentialSource = platformCredentials{}
 var _ peeradapter.SignerSource = platformCredentials{}
 var _ remoteauth.ClientAccessSigner = platformSigner{}

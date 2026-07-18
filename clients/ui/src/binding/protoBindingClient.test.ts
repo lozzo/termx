@@ -4,8 +4,8 @@ import { CommandEnvelopeSchema, ResultEnvelopeSchema } from '../generated/apipb/
 import { ApiErrorCode, ApiErrorSchema, EndpointSessionStampSchema, ResourceHandleSchema, ResourceKind } from '../generated/apipb/common_pb'
 import { FileTransferCancelResultSchema, FileTransferHandleSchema, FileTransferOpenResultSchema, FileUploadOpenCommandSchema, FileUploadResumeHandleSchema } from '../generated/apipb/file_pb'
 import { TerminalListCommandSchema } from '../generated/apipb/terminal_pb'
-import { EndpointRegistryGetResultSchema, EngineCommandSchema, EventEnvelopeSchema, ExecuteResultSchema, OpenSessionRequestSchema, OpenSessionResultSchema, ResourceStreamClosedEventSchema, ResourceStreamFrameSchema, ResourceStreamFrameType, SessionClosedEventSchema } from '../generated/bindingpb/client_binding_pb'
-import { EndpointRegistryV1Schema } from '../generated/remoteauthpb/remote_auth_pb'
+import { EndpointRegistryGetResultSchema, EndpointShareCommitResultSchema, EndpointSharePreviewSchema, EndpointShareReceiveResultSchema, EngineCommandSchema, EventEnvelopeSchema, ExecuteResultSchema, OpenSessionRequestSchema, OpenSessionResultSchema, ResourceStreamClosedEventSchema, ResourceStreamFrameSchema, ResourceStreamFrameType, SessionClosedEventSchema } from '../generated/bindingpb/client_binding_pb'
+import { EndpointConfigV1Schema, EndpointRegistryV1Schema } from '../generated/remoteauthpb/remote_auth_pb'
 import { BindingOperation, ProtoBindingClient, type BindingOperationCode, type ProtoBindingBackend } from './protoBindingClient'
 
 class CancellationBackend implements ProtoBindingBackend {
@@ -72,6 +72,48 @@ describe('ProtoBindingClient engine command boundary', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(backend.released).toEqual([1n])
     await client.close()
+  })
+
+  it('keeps endpoint share preview and commit as two generic Proto operations', async () => {
+	const backend = new CancellationBackend()
+	let next = 0n
+	backend.request = async (operation, payload, handle) => {
+	  if (operation === BindingOperation.ENGINE_COMMAND) {
+		const command = fromBinary(EngineCommandSchema, payload)
+		const operationHandle = ++next
+		if (command.command.case === 'endpointShareReceive') {
+		  queueMicrotask(() => backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+			event: { case: 'endpointShareReceive', value: create(EndpointShareReceiveResultSchema, {
+			  operationHandle,
+			  preview: create(EndpointSharePreviewSchema, { importToken: 'preview-token', endpointId: 'studio' }),
+			}) },
+		  }))))
+		} else if (command.command.case === 'endpointShareCommit') {
+		  expect(command.command.value.importToken).toBe('preview-token')
+		  queueMicrotask(() => backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+			event: { case: 'endpointShareCommit', value: create(EndpointShareCommitResultSchema, {
+			  operationHandle,
+			  endpoint: create(EndpointConfigV1Schema, { schemaVersion: 1, endpointId: 'studio' }),
+			  registry: create(EndpointRegistryV1Schema, { schemaVersion: 1, defaultEndpointId: 'studio' }),
+			  authorizationRequired: true,
+			}) },
+		  }))))
+		} else {
+		  throw new Error(`unexpected command ${command.command.case}`)
+		}
+		return operationHandle
+	  }
+	  if (operation === BindingOperation.RELEASE && handle) backend.released.push(handle)
+	  return 0n
+	}
+	const client = new ProtoBindingClient(backend)
+	const received = await client.receiveEndpointShare('termx://share?payload=test')
+	expect(received.preview?.importToken).toBe('preview-token')
+	const committed = await client.commitEndpointShare(received.preview?.importToken ?? '')
+	expect(committed.authorizationRequired).toBe(true)
+	await new Promise((resolve) => setTimeout(resolve, 0))
+	expect(backend.released).toEqual([1n, 2n])
+	await client.close()
   })
 })
 

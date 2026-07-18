@@ -80,6 +80,7 @@ func newEndpointCommand(socket, logFile *string) *cobra.Command {
 		newEndpointSetDefaultCommand(runtime),
 		newEndpointRouteCommand(runtime),
 		newEndpointTestCommand(runtime),
+		newEndpointShareCommand(runtime),
 	)
 	return command
 }

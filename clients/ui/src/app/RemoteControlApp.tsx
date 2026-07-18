@@ -79,6 +79,20 @@ export interface ScanPairingCodeOptions {
 export interface ExternalPairingImportResult {
   machine: { id: string; name: string; hostname?: string | undefined; accessClass?: MachineAccessClass | undefined }
   expiresAt?: string | undefined
+  authorizationRequired?: boolean | undefined
+}
+
+/** EndpointSharePreviewView 是 Go Client Engine 验证并计算后的 config-only 导入差异。 */
+export interface EndpointSharePreviewView {
+  importToken: string
+  endpointId: string
+  label: string
+  deviceId: string
+  deviceFingerprint: string
+  routes: { id: string; kind: string; action: string }[]
+  connectModeChanged: boolean
+  selectionPolicyChanged: boolean
+  credentialKinds: string[]
 }
 
 /**
@@ -88,6 +102,8 @@ export interface ExternalPairingImportResult {
 export interface ExternalPairingAdapter {
   /** import 必须在写平台凭据前校验 expectedMachineId；未指定时表示全局新增设备。 */
   import(rawValue: string, expectedMachineId?: string): Promise<ExternalPairingImportResult | null>
+  inspectShare?(rawValue: string): Promise<EndpointSharePreviewView>
+  commitShare?(importToken: string): Promise<ExternalPairingImportResult>
   isAuthorized(machineId: string): boolean
   authorizationExpiresAt?(machineId: string): string | undefined
   forget(machineId: string): void | Promise<void>
@@ -173,6 +189,7 @@ export function RemoteControlApp({
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [pairing, setPairing] = useState(false)
+  const [sharePreview, setSharePreview] = useState<EndpointSharePreviewView | null>(null)
   const [cameraScanning, setCameraScanning] = useState(false)
   const [scanFlowState, setScanFlowState] = useState<ScanFlowState>('idle')
   const [scanAutoStartToken, setScanAutoStartToken] = useState(0)
@@ -542,6 +559,7 @@ export function RemoteControlApp({
     setSelectedMachineId(null)
     setPairIntent('add-local')
     setManualScanValue('')
+	setSharePreview(null)
     setManualEntryOpen(false)
     setError(null)
     setScanOpen(true)
@@ -553,6 +571,7 @@ export function RemoteControlApp({
     setSelectedMachineId(machineId)
     setPairIntent('authorize-machine')
     setManualScanValue('')
+	setSharePreview(null)
     setManualEntryOpen(false)
     setError(null)
     setScanOpen(true)
@@ -573,6 +592,46 @@ export function RemoteControlApp({
     setView('machine')
     setError(null)
   }, [openMachinePairSheet, authorizedMachineIds])
+
+  const storeImportedMachine = useCallback((external: ExternalPairingImportResult) => {
+    if (!storage) throw new Error('Local storage is required before importing a TermX QR')
+    if (selectedMachine && selectedMachine.id !== external.machine.id) {
+      throw new Error(`This code belongs to ${external.machine.name}, not ${selectedMachine.name}`)
+    }
+    const store = createMachineStore({ storage })
+    const timestamp = new Date().toISOString()
+    const existing = store.getMachine(external.machine.id)
+    const directoryMachine = machines.find((machine) => machine.id === external.machine.id)
+    const directoryHubUrl = directoryMachine?.currentHubUrl ?? directoryMachine?.hubUrls[0]
+    store.saveMachine({
+      machineId: external.machine.id,
+      name: selectedMachine?.name ?? external.machine.name,
+      ...((selectedMachine?.hostname ?? external.machine.hostname) ? { hostname: selectedMachine?.hostname ?? external.machine.hostname } : {}),
+      state: external.authorizationRequired ? 'offline' : 'online',
+      terminalCount: existing?.terminalCount ?? 0,
+      source: directoryMachine ? 'hub' : existing?.source ?? 'manual',
+      accessClass: external.machine.accessClass ?? 'local',
+      addresses: existing?.addresses ?? { local: [], lan: [], public: [] },
+      endpoints: {
+        ...(existing?.endpoints ?? {}),
+        ...(directoryMachine?.controlUrl ? { webControl: directoryMachine.controlUrl } : {}),
+        ...(directoryHubUrl ? { hub: directoryHubUrl } : {}),
+      },
+      addedAt: existing?.addedAt ?? timestamp,
+      updatedAt: timestamp,
+    })
+    dropMachineRuntime(external.machine.id)
+    setLocalMachines(store.listMachines())
+    setSelectedMachineId(external.machine.id)
+    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id, externalPairingAdapter))
+    setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
+    setPairVersion((current) => current + 1)
+    setManualScanValue('')
+    setSharePreview(null)
+    setScanOpen(false)
+    setView(external.authorizationRequired ? 'home' : 'machine')
+    hapticSuccess()
+  }, [dropMachineRuntime, externalPairingAdapter, machines, selectedMachine, storage, user?.id])
 
   const pairScannedValue = useCallback(async (rawValue: string) => {
     if (rawValue.trim().startsWith('termx-cloud-activate:v1:') && cloudAccountAdapter) {
@@ -606,46 +665,17 @@ export function RemoteControlApp({
     setScanFlowState('pairing')
     setError(null)
     try {
+	  if (rawValue.trim().startsWith('termx://share?payload=')) {
+		if (!externalPairingAdapter?.inspectShare) throw new Error('Endpoint share is unavailable in this client')
+		const preview = await externalPairingAdapter.inspectShare(rawValue)
+		setSharePreview(preview)
+		setManualEntryOpen(false)
+		setScanFlowState('idle')
+		return
+	  }
       const external = await externalPairingAdapter?.import(rawValue, selectedMachine?.id)
       if (external) {
-        if (selectedMachine && selectedMachine.id !== external.machine.id) {
-          throw new Error(`This pairing code belongs to ${external.machine.name}, not ${selectedMachine.name}`)
-        }
-        const store = createMachineStore({ storage })
-        const timestamp = new Date().toISOString()
-        const existing = store.getMachine(external.machine.id)
-        const directoryMachine = machines.find((machine) => machine.id === external.machine.id)
-        const directoryHubUrl = directoryMachine?.currentHubUrl ?? directoryMachine?.hubUrls[0]
-        // Hub 目录拥有 daemon 展示身份；配对 bundle 只授予能力，不能用扫描端标签改名。
-        const daemonName = selectedMachine?.name ?? external.machine.name
-        const daemonHostname = selectedMachine?.hostname ?? external.machine.hostname
-        store.saveMachine({
-          machineId: external.machine.id,
-          name: daemonName,
-          ...(daemonHostname ? { hostname: daemonHostname } : {}),
-          state: 'online',
-          terminalCount: existing?.terminalCount ?? 0,
-          source: directoryMachine ? 'hub' : existing?.source ?? 'manual',
-          accessClass: external.machine.accessClass ?? 'cloud',
-          addresses: existing?.addresses ?? { local: [], lan: [], public: [] },
-          endpoints: {
-            ...(existing?.endpoints ?? {}),
-            ...(directoryMachine?.controlUrl ? { webControl: directoryMachine.controlUrl } : {}),
-            ...(directoryHubUrl ? { hub: directoryHubUrl } : {}),
-          },
-          addedAt: existing?.addedAt ?? timestamp,
-          updatedAt: timestamp,
-        })
-        dropMachineRuntime(external.machine.id)
-        setLocalMachines(store.listMachines())
-        setSelectedMachineId(external.machine.id)
-        setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id, externalPairingAdapter))
-        setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
-        setPairVersion((current) => current + 1)
-        setManualScanValue('')
-        setScanOpen(false)
-        setView('machine')
-        hapticSuccess()
+		storeImportedMachine(external)
         return
       }
       throw new Error('Proto binding pairing adapter is required')
@@ -658,7 +688,22 @@ export function RemoteControlApp({
       setPairing(false)
       setScanFlowState('idle')
     }
-  }, [cloudAccountAdapter, completeCloudActivation, dropMachineRuntime, externalPairingAdapter, machines, selectedMachine, storage, user?.id])
+  }, [cloudAccountAdapter, completeCloudActivation, externalPairingAdapter, selectedMachine?.id, storage, storeImportedMachine])
+
+  const commitEndpointShare = useCallback(async () => {
+	if (!sharePreview || !externalPairingAdapter?.commitShare) return
+	setPairing(true)
+	setError(null)
+	try {
+	  const imported = await externalPairingAdapter.commitShare(sharePreview.importToken)
+	  storeImportedMachine(imported)
+	} catch (err) {
+	  hapticError()
+	  setError(err instanceof Error ? err.message : String(err))
+	} finally {
+	  setPairing(false)
+	}
+  }, [externalPairingAdapter, sharePreview, storeImportedMachine])
 
   const importManualScan = useCallback(async () => {
     hapticImpact()
@@ -823,12 +868,14 @@ export function RemoteControlApp({
           pairError={error}
           scanFlowState={scanFlowState}
           pairing={pairing}
+		  sharePreview={sharePreview}
           cameraScanning={cameraScanning}
           pairIntent={pairIntent}
           selectedMachine={selectedMachine}
           signedIn={signedIn}
           canScanWithCamera={Boolean(scanPairingCode)}
-          onClose={() => { hapticSelection(); setScanOpen(false) }}
+		  onCommitShare={() => void commitEndpointShare()}
+          onClose={() => { hapticSelection(); setSharePreview(null); setScanOpen(false) }}
           onImport={() => void importManualScan()}
           onManualEntryOpen={() => { hapticSelection(); setManualEntryOpen(true) }}
           onManualScanValueChange={setManualScanValue}
@@ -1757,9 +1804,11 @@ function PairSheet({
   scanFlowState,
   pairIntent,
   pairing,
+  sharePreview,
   selectedMachine,
   signedIn,
   onClose,
+  onCommitShare,
   onImport,
   onManualEntryOpen,
   onManualScanValueChange,
@@ -1773,15 +1822,17 @@ function PairSheet({
   scanFlowState: ScanFlowState
   pairIntent: PairIntent
   pairing: boolean
+  sharePreview: EndpointSharePreviewView | null
   selectedMachine: WebControlMachine | null
   signedIn: boolean
   onClose: () => void
+  onCommitShare: () => void
   onImport: () => void
   onManualEntryOpen: () => void
   onManualScanValueChange: (value: string) => void
   onScanWithCamera: () => void
 }) {
-  const title = pairIntent === 'add-local' ? 'Add Local Device' : 'Authorize Device'
+  const title = sharePreview ? 'Import Endpoint Config' : pairIntent === 'add-local' ? 'Add Local Device' : 'Authorize Device'
   const primaryLabel = pairIntent === 'add-local' ? 'Add Device' : 'Pair Device'
   const showManualEntry = manualEntryOpen || !canScanWithCamera
   const statusMessage = scanFlowState === 'pairing'
@@ -1809,6 +1860,36 @@ function PairSheet({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">
           <div className="mx-auto w-full max-w-md">
+            {sharePreview ? (
+              <div className="termx-app-panel bg-[var(--termx-app-soft)] px-3 py-3">
+                <div className="text-sm font-semibold text-zinc-950">{sharePreview.label || sharePreview.endpointId}</div>
+                <div className="mt-1 break-all font-mono text-xs text-zinc-500">{sharePreview.deviceFingerprint}</div>
+                <div className="mt-3 space-y-1">
+                  {sharePreview.routes.map((route) => (
+                    <div className="flex items-center justify-between gap-3 text-xs" key={route.id}>
+                      <span className="truncate font-medium text-zinc-700">{route.id} · {route.kind}</span>
+                      <span className="shrink-0 font-semibold uppercase text-[var(--termx-app-accent)]">{route.action}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 text-xs leading-5 text-zinc-500">
+                  {sharePreview.connectModeChanged ? 'Connect mode changes. ' : ''}
+                  {sharePreview.selectionPolicyChanged ? 'Route policy changes. ' : ''}
+                  Credentials and terminal authorization are not transferred.
+                </div>
+                <button
+                  className="termx-app-primary-button mt-4 h-11 w-full gap-2 px-3 text-sm font-semibold disabled:opacity-50"
+                  type="button"
+                  onClick={onCommitShare}
+                  disabled={pairing}
+                >
+                  {pairing ? <span className="termx-square-spinner" aria-hidden="true" /> : <Download className="h-4 w-4" />}
+                  Import Config
+                </button>
+              </div>
+            ) : null}
+
+            {!sharePreview ? <>
             {selectedMachine ? (
               <div className="termx-app-panel bg-[var(--termx-app-soft)] px-3 py-2">
                 <div className="truncate text-sm font-semibold text-zinc-950">{selectedMachine.name}</div>
@@ -1871,6 +1952,9 @@ function PairSheet({
             {pairError ? (
               <p className="mt-3 border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-500">{pairError}</p>
             ) : null}
+			</> : pairError ? (
+			  <p className="mt-3 border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-500">{pairError}</p>
+			) : null}
 
           </div>
         </div>

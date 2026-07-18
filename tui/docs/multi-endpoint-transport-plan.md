@@ -93,7 +93,7 @@ TUI 不得为连接失败增加 local fallback、旧 SSH proxy、重复 attach�
 - TUI endpoint 命令和 UI 编辑器只能通过 Go Endpoint domain 修改 registry。
 - kind-specific 字段来自 generated Proto contract；不得在 TUI state 定义第二份业务 DTO。
 - `pair create` 是 daemon bootstrap/authorization 流程。
-- `endpoint share` 是客户端之间迁移 portable Route/policy 的流程。
+- `endpoint share` 是客户端之间迁移 portable Route/policy 的流程；CLI 命令与 TUI composition root 使用同一 `endpoints.yaml`，导入事务完成后 TUI 下次加载直接看到同一 Go-owned registry，不建立 UI 侧副本。
 - TUI 只展示导入 diff 和用户确认，不解析 credential secret 或自行签发 grant。
 
 ## 7. 生命周期

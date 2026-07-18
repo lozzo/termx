@@ -45,6 +45,8 @@ export class ProtoBindingClient {
   private readonly registryGetOperations = new Map<bigint, PendingOperation<TermxRemoteAuth.EndpointRegistryV1>>()
   private readonly endpointUpsertOperations = new Map<bigint, PendingOperation<TermxClientBinding.EndpointUpsertResult>>()
   private readonly endpointDeleteOperations = new Map<bigint, PendingOperation<TermxClientBinding.EndpointDeleteResult>>()
+  private readonly endpointShareReceiveOperations = new Map<bigint, PendingOperation<TermxClientBinding.EndpointShareReceiveResult>>()
+  private readonly endpointShareCommitOperations = new Map<bigint, PendingOperation<TermxClientBinding.EndpointShareCommitResult>>()
   private readonly sessions = new Map<bigint, ProtoBindingSession>()
   private readonly streams = new Map<bigint, ProtoBindingResourceStream>()
   private readonly earlyOperationEvents = new Map<bigint, TermxClientBinding.EventEnvelope>()
@@ -94,6 +96,18 @@ export class ProtoBindingClient {
     const request = create(TermxClientBinding.EndpointDeleteRequestSchema, { requestId: crypto.randomUUID(), endpointId })
     const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'endpointDelete', value: request } }), signal)
     return await this.waitOperation(this.endpointDeleteOperations, operation, signal)
+  }
+
+  async receiveEndpointShare(portableOffer: string, signal?: AbortSignal): Promise<TermxClientBinding.EndpointShareReceiveResult> {
+    const request = create(TermxClientBinding.EndpointShareReceiveRequestSchema, { requestId: crypto.randomUUID(), portableOffer })
+    const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'endpointShareReceive', value: request } }), signal)
+    return await this.waitOperation(this.endpointShareReceiveOperations, operation, signal)
+  }
+
+  async commitEndpointShare(importToken: string, signal?: AbortSignal): Promise<TermxClientBinding.EndpointShareCommitResult> {
+    const request = create(TermxClientBinding.EndpointShareCommitRequestSchema, { requestId: crypto.randomUUID(), importToken })
+    const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'endpointShareCommit', value: request } }), signal)
+    return await this.waitOperation(this.endpointShareCommitOperations, operation, signal)
   }
 
   private async engineCommand(command: TermxClientBinding.EngineCommand, signal?: AbortSignal): Promise<bigint> {
@@ -284,6 +298,24 @@ export class ProtoBindingClient {
         void this.release(event.value.operationHandle)
         return
       }
+      case 'endpointShareReceive': {
+        const pending = this.endpointShareReceiveOperations.get(event.value.operationHandle)
+        if (!pending) return
+        this.endpointShareReceiveOperations.delete(event.value.operationHandle)
+        if (event.value.error || !event.value.preview) pending.reject(apiError(event.value.error, 'endpoint share receive failed'))
+        else pending.resolve(event.value)
+        void this.release(event.value.operationHandle)
+        return
+      }
+      case 'endpointShareCommit': {
+        const pending = this.endpointShareCommitOperations.get(event.value.operationHandle)
+        if (!pending) return
+        this.endpointShareCommitOperations.delete(event.value.operationHandle)
+        if (event.value.error || !event.value.endpoint || !event.value.registry) pending.reject(apiError(event.value.error, 'endpoint share commit failed'))
+        else pending.resolve(event.value)
+        void this.release(event.value.operationHandle)
+        return
+      }
       case 'application':
         this.sessions.get(event.value.sessionHandle)?.publish(event.value.event)
         return
@@ -334,6 +366,8 @@ export class ProtoBindingClient {
       case 'endpointRegistryGet': return this.registryGetOperations.has(handle)
       case 'endpointUpsert': return this.endpointUpsertOperations.has(handle)
       case 'endpointDelete': return this.endpointDeleteOperations.has(handle)
+      case 'endpointShareReceive': return this.endpointShareReceiveOperations.has(handle)
+      case 'endpointShareCommit': return this.endpointShareCommitOperations.has(handle)
       default: return true
     }
   }
@@ -351,7 +385,7 @@ export class ProtoBindingClient {
   }
 
   private rejectAll(error: Error): void {
-    for (const registry of [this.openOperations, this.executeOperations, this.importOperations, this.deleteOperations, this.registryGetOperations, this.endpointUpsertOperations, this.endpointDeleteOperations]) {
+    for (const registry of [this.openOperations, this.executeOperations, this.importOperations, this.deleteOperations, this.registryGetOperations, this.endpointUpsertOperations, this.endpointDeleteOperations, this.endpointShareReceiveOperations, this.endpointShareCommitOperations]) {
       for (const pending of registry.values()) pending.reject(error)
       registry.clear()
     }
@@ -561,6 +595,8 @@ function bindingOperationHandle(envelope: TermxClientBinding.EventEnvelope): big
     case 'endpointRegistryGet':
     case 'endpointUpsert':
     case 'endpointDelete':
+    case 'endpointShareReceive':
+    case 'endpointShareCommit':
       return envelope.event.value.operationHandle
     default:
       return undefined
