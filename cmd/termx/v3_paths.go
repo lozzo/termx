@@ -36,6 +36,27 @@ func resolveV3SocketForConnectionRegistry(path string, registry endpointdomain.R
 	return resolveV3SocketWithClientRuntime(path, registry)
 }
 
+func resolveV3SocketWithClientRuntime(path string, registry endpointdomain.Registry) (string, error) {
+	if strings.TrimSpace(path) != "" {
+		return resolveV3Socket(path), nil
+	}
+	endpoint, ok := registry.Endpoints[registry.Default]
+	if !ok || !endpoint.Enabled {
+		return "", fmt.Errorf("default endpoint %q is not available", registry.Default)
+	}
+	route, err := selectCLIEndpointRoute(endpoint, "")
+	if err != nil {
+		return "", err
+	}
+	if route.Kind != endpointdomain.RouteLocalUnix {
+		return "", fmt.Errorf("default endpoint %q is not a local unix endpoint", registry.Default)
+	}
+	if strings.TrimSpace(route.Socket) == "" || route.Socket == "auto" {
+		return resolveV3Socket(""), nil
+	}
+	return route.Socket, nil
+}
+
 func resolveV3LogFilePath(path string) string {
 	return resolveLogFilePath(path)
 }

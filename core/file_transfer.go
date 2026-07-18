@@ -161,7 +161,7 @@ func (session *protocolSession) openFileUpload(params FileUploadOpenRequest) (Fi
 		var ok bool
 		resumeTransferID, ok = fileTransferIDFromResumeToken(params.ResumeTransferToken)
 		if !ok {
-			return FileTransfer{}, fmt.Errorf("upload transfer token is invalid")
+			return FileTransfer{}, ErrInvalidFileUploadResume
 		}
 	}
 	session.server.fileTransferMu.Lock()

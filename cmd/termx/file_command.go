@@ -602,7 +602,11 @@ func uploadEndpointFile(ctx context.Context, client *protocoladapter.Application
 			return protocol.FileTransferResult{}, err
 		}
 	}
-	buffer := make([]byte, maxCLIFileChunkBytes)
+	chunkBytes := opened.GetChunkBytes()
+	if chunkBytes == 0 || chunkBytes > maxCLIFileChunkBytes {
+		return protocol.FileTransferResult{}, fmt.Errorf("invalid upload chunk size %d", chunkBytes)
+	}
+	buffer := make([]byte, int(chunkBytes))
 	offset := opened.GetOffset()
 	for offset < opened.GetSize() {
 		remaining := opened.GetSize() - offset

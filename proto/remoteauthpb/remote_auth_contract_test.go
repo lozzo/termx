@@ -7,7 +7,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-func TestOnlyCapabilityOpenCarriesRawGrant(t *testing.T) {
+func TestRawGrantOnlyCrossesEndToEndCapabilityOrPairingFrames(t *testing.T) {
 	messages := File_remoteauthpb_remote_auth_proto.Messages()
 	grantFields := make([]string, 0, 1)
 	for messageIndex := 0; messageIndex < messages.Len(); messageIndex++ {
@@ -19,9 +19,9 @@ func TestOnlyCapabilityOpenCarriesRawGrant(t *testing.T) {
 			}
 		}
 	}
-	want := "termx.remote.auth.v1.CapabilityOpen.grant"
-	if len(grantFields) != 1 || grantFields[0] != want {
-		t.Fatalf("raw grant fields = %v, want only %s", grantFields, want)
+	want := []string{"termx.remote.auth.v1.CapabilityOpen.grant", "termx.remote.auth.v1.PairingAccepted.grant"}
+	if len(grantFields) != len(want) || grantFields[0] != want[0] || grantFields[1] != want[1] {
+		t.Fatalf("raw grant fields = %v, want %v", grantFields, want)
 	}
 }
 
@@ -38,8 +38,8 @@ func TestAuthEnvelopeHasSinglePayloadOneof(t *testing.T) {
 	if descriptor.Oneofs().Len() != 1 || descriptor.Oneofs().Get(0).Name() != "payload" {
 		t.Fatalf("AuthEnvelope oneofs = %v, want one payload", descriptor.Oneofs())
 	}
-	if descriptor.Oneofs().Get(0).Fields().Len() != 4 {
-		t.Fatalf("AuthEnvelope payload variants = %d, want 4", descriptor.Oneofs().Get(0).Fields().Len())
+	if descriptor.Oneofs().Get(0).Fields().Len() != 6 {
+		t.Fatalf("AuthEnvelope payload variants = %d, want 6", descriptor.Oneofs().Get(0).Fields().Len())
 	}
 }
 

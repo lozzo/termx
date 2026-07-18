@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "transport": "hub-p2p",
+  "transport": "managed-webrtc",
   "phases": [
     "idle",
     "resolving",
@@ -76,13 +76,13 @@
       "valid": true
     },
     {
-      "name": "missing-grant-ref",
+      "name": "credential-ref-optional-at-route-validation",
       "endpoint_id": "studio",
       "target_device_id": "device-studio",
       "device_fingerprint": "SHA256:studio",
       "grant_ref": "",
       "relay_mode": "auto",
-      "valid": false
+      "valid": true
     },
     {
       "name": "missing-device-fingerprint",

@@ -1,79 +1,32 @@
+import { create } from '@bufbuild/protobuf'
 import { describe, expect, it } from 'vitest'
-import { createMockFileSession } from '../test/mockFileSession'
+import {
+  StorageDeleteResultSchema, StorageEntrySchema, StorageGetResultSchema, StorageKeySchema,
+  StorageListResultSchema, StoragePutResultSchema, StorageScope,
+} from '../generated/apipb/storage_pb'
+import { MockProtoSession, protoResult } from '../test/mockProtoSession'
 import { createRemoteStorageApi, storageText } from './remoteStorageApi'
 
-describe('createRemoteStorageApi', () => {
-  it('routes storage CRUD through runtime api requests', async () => {
-    const session = createMockFileSession({
-      '/storage/put': ({ value }: { value?: Uint8Array } = {}) => ({
-        app_id: 'termx.paths',
-        scope: 'public',
-        key: 'bookmarks/~Users~lozzow',
-        value,
-        version: 3,
-        updated_at: '2026-05-16T08:00:00Z',
-      }),
-      '/storage/get': {
-        app_id: 'termx.paths',
-        scope: 'public',
-        key: 'bookmarks/~Users~lozzow',
-        value: new TextEncoder().encode('hello'),
-        version: 3,
-      },
-      '/storage/list': {
-        entries: [{
-          app_id: 'termx.paths',
-          scope: 'public',
-          key: 'bookmarks/~Users~lozzow',
-          value: new TextEncoder().encode('hello'),
-          version: 3,
-        }],
-      },
-      '/storage/delete': { deleted: true, version: 4 },
+describe('createRemoteStorageApi generated Proto API', () => {
+  it('routes CRUD through typed storage commands', async () => {
+    const key = create(StorageKeySchema, { appId: 'termx.paths', scope: StorageScope.PUBLIC, key: 'bookmarks/project' })
+    const entry = (value: Uint8Array) => create(StorageEntrySchema, { key, value, version: 3n })
+    const session = new MockProtoSession('machine-local', (command) => {
+      switch (command.command.case) {
+        case 'storagePut': return protoResult('storagePut', create(StoragePutResultSchema, { entry: entry(command.command.value.value) }))
+        case 'storageGet': return protoResult('storageGet', create(StorageGetResultSchema, { entry: entry(new TextEncoder().encode('hello')) }))
+        case 'storageList': return protoResult('storageList', create(StorageListResultSchema, { entries: [entry(new TextEncoder().encode('hello'))] }))
+        case 'storageDelete': return protoResult('storageDelete', create(StorageDeleteResultSchema, { key, deleted: true, version: 4n }))
+        default: throw new Error(`unexpected command ${command.command.case}`)
+      }
     })
     const api = createRemoteStorageApi(session)
 
-    const put = await api.put({
-      appId: 'termx.paths',
-      key: 'bookmarks/~Users~lozzow',
-      value: 'hello',
-      expectedVersion: 2,
-    })
-    const got = await api.get({ appId: 'termx.paths', key: 'bookmarks/~Users~lozzow' })
-    const list = await api.list({ appId: 'termx.paths', prefix: 'bookmarks/' })
-    const deleted = await api.delete({ appId: 'termx.paths', key: 'bookmarks/~Users~lozzow' })
-
-    expect(storageText(put)).toBe('hello')
-    expect(storageText(got)).toBe('hello')
-    expect(list).toHaveLength(1)
-    expect(deleted).toEqual({ deleted: true, version: 4 })
-    expect(session.requests).toEqual([
-      {
-        method: 'POST',
-        path: '/storage/put',
-        params: expect.objectContaining({
-          app_id: 'termx.paths',
-          scope: 'public',
-          key: 'bookmarks/~Users~lozzow',
-          check_version: true,
-          expected_version: 2,
-        }),
-      },
-      {
-        method: 'POST',
-        path: '/storage/get',
-        params: { app_id: 'termx.paths', scope: 'public', key: 'bookmarks/~Users~lozzow' },
-      },
-      {
-        method: 'POST',
-        path: '/storage/list',
-        params: { app_id: 'termx.paths', scope: 'public', prefix: 'bookmarks/' },
-      },
-      {
-        method: 'POST',
-        path: '/storage/delete',
-        params: { app_id: 'termx.paths', scope: 'public', key: 'bookmarks/~Users~lozzow' },
-      },
-    ])
+    expect(storageText(await api.put({ appId: 'termx.paths', key: 'bookmarks/project', value: 'hello', expectedVersion: 2 }))).toBe('hello')
+    expect(storageText(await api.get({ appId: 'termx.paths', key: 'bookmarks/project' }))).toBe('hello')
+    await expect(api.list({ appId: 'termx.paths', prefix: 'bookmarks/' })).resolves.toHaveLength(1)
+    await expect(api.delete({ appId: 'termx.paths', key: 'bookmarks/project' })).resolves.toEqual({ deleted: true, version: 4 })
+    expect(session.commands.map((command) => command.command.case)).toEqual(['storagePut', 'storageGet', 'storageList', 'storageDelete'])
+    expect(session.commands[0]?.command.value).toMatchObject({ version: { checkVersion: true, expectedVersion: 2n } })
   })
 })

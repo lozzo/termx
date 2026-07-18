@@ -245,6 +245,7 @@ const (
 	ErrorUnsupportedRoute ErrorCode = "unsupported_route"
 	ErrorIdentity         ErrorCode = "identity"
 	ErrorAuthorization    ErrorCode = "authorization"
+	ErrorNotFound         ErrorCode = "not_found"
 	ErrorUnavailable      ErrorCode = "unavailable"
 	ErrorCanceled         ErrorCode = "canceled"
 	ErrorStaleSession     ErrorCode = "stale_session"

@@ -511,7 +511,7 @@ func CoreError(err error) error {
 	case errors.Is(err, corev2.ErrApplicationCancellationUnavailable), errors.Is(err, corev2.ErrServerClosed), errors.Is(err, corev2.ErrHistoryNotRebuilt):
 		classified.Code = apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE
 		classified.Retryable = true
-	case errors.Is(err, corev2.ErrInvalidTerminalID), errors.Is(err, corev2.ErrInvalidCommand), errors.Is(err, corev2.ErrInvalidServerSize):
+	case errors.Is(err, corev2.ErrInvalidTerminalID), errors.Is(err, corev2.ErrInvalidCommand), errors.Is(err, corev2.ErrInvalidServerSize), errors.Is(err, corev2.ErrInvalidFileUploadResume):
 		classified.Code = apipb.ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST
 	case errors.Is(err, corev2.ErrTerminalNotFound):
 		classified.Code = apipb.ApiErrorCode_API_ERROR_CODE_NOT_FOUND

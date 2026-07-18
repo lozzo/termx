@@ -45,13 +45,9 @@ func TestClientPackagesRespectDependencyDirection(t *testing.T) {
 		"github.com/lozzow/termx/remote/client",
 		"github.com/lozzow/termx/remote/webrtc",
 	))
-	assertClientImportsExclude(t, "binding", append(commonForbidden,
-		"github.com/lozzow/termx/core",
-		"github.com/lozzow/termx/client/adapter",
-		"github.com/lozzow/termx/internal/protocol",
-		"github.com/lozzow/termx/remote",
-		"github.com/pion/webrtc",
-	))
+	// binding 是 JNI/C/WASM 的公开 composition root，可以装配 concrete platform adapter；
+	// 它仍不能反向依赖 TUI、CLI 或 private owner。
+	assertClientImportsExclude(t, "binding", commonForbidden)
 	assertClientImportsExclude(t, "adapter", commonForbidden)
 }
 

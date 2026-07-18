@@ -39,7 +39,10 @@ func ValidateEventSubscribeCommand(command *apipb.CommandEnvelope) error {
 
 // EventFilterFromProto 映射为 core event broker filter。
 func EventFilterFromProto(command *apipb.EventSubscribeCommand) corev2.EventFilter {
-	filter := corev2.EventFilter{TerminalID: command.GetTerminal().GetTerminalId(), StorageAppID: command.GetStorageAppId(), StorageScope: StorageScopeFromProto(command.GetStorageScope()), StorageOwnerID: command.GetStorageOwnerId(), StorageKeyPrefix: command.GetStorageKeyPrefix()}
+	filter := corev2.EventFilter{TerminalID: command.GetTerminal().GetTerminalId(), StorageAppID: command.GetStorageAppId(), StorageOwnerID: command.GetStorageOwnerId(), StorageKeyPrefix: command.GetStorageKeyPrefix()}
+	if command.GetStorageScope() != apipb.StorageScope_STORAGE_SCOPE_UNSPECIFIED {
+		filter.StorageScope = StorageScopeFromProto(command.GetStorageScope())
+	}
 	for _, eventType := range command.GetTypes() {
 		switch eventType {
 		case apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE:

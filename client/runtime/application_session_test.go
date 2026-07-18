@@ -64,6 +64,22 @@ func TestApplicationSessionConvertsTypedAPIError(t *testing.T) {
 	}
 }
 
+func TestApplicationSessionConvertsNotFoundAPIError(t *testing.T) {
+	executor := &recordingProtoExecutor{result: &apipb.ResultEnvelope{Result: &apipb.ResultEnvelope_Error{Error: &apipb.ApiError{
+		Code: apipb.ApiErrorCode_API_ERROR_CODE_NOT_FOUND, Message: "missing", Attempted: true,
+	}}}}
+	session, err := NewApplicationSession(EndpointSessionStamp{EndpointID: "local", RouteID: "unix", Generation: 2}, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = session.Execute(context.Background(), &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_TerminalGet{
+		TerminalGet: &apipb.TerminalGetCommand{Terminal: &apipb.TerminalRef{EndpointId: "local", TerminalId: "missing"}},
+	}})
+	if CodeOf(err) != ErrorNotFound || !WasAttempted(err) {
+		t.Fatalf("unexpected runtime error %#v", err)
+	}
+}
+
 func TestApplicationSessionRejectsMismatchedResultCorrelation(t *testing.T) {
 	tests := []struct {
 		name   string

@@ -1,0 +1,286 @@
+package apilayer
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	clientendpoint "github.com/lozzow/termx/client/endpoint"
+	clientruntime "github.com/lozzow/termx/client/runtime"
+	corev2 "github.com/lozzow/termx/core"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/proto/apipb"
+	"github.com/lozzow/termx/proto/wire"
+	"github.com/lozzow/termx/shared/transport/memory"
+)
+
+func TestGeneratedEventSubscriptionsCorrelateAndRelease(t *testing.T) {
+	server := corev2.NewServer(corev2.WithApplicationExecutorFactory(CoreApplicationExecutorFactory))
+	defer func() { _ = server.Shutdown(context.Background()) }()
+	application, _, closeClient := newProtoTransportClient(t, server, nil, 1)
+	defer closeClient()
+
+	command := &apipb.EventSubscribeCommand{Types: []apipb.ApplicationEventType{
+		apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE,
+	}}
+	first, firstEvents, err := application.EventSubscribe(context.Background(), command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, secondEvents, err := application.EventSubscribe(context.Background(), command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.GetSubscription().GetKind() != apipb.ResourceKind_RESOURCE_KIND_SUBSCRIPTION ||
+		second.GetSubscription().GetKind() != apipb.ResourceKind_RESOURCE_KIND_SUBSCRIPTION ||
+		bytes.Equal(first.GetSubscription().GetOpaqueToken(), second.GetSubscription().GetOpaqueToken()) {
+		t.Fatalf("subscriptions are not independently correlated: first=%#v second=%#v", first, second)
+	}
+
+	createProtoTestTerminal(t, application, "term-event-first")
+	assertProtoSubscriptionEvent(t, firstEvents, first.GetSubscription(), "term-event-first")
+	assertProtoSubscriptionEvent(t, secondEvents, second.GetSubscription(), "term-event-first")
+	if _, err := application.Execute(context.Background(), &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_ReleaseResource{
+		ReleaseResource: &apipb.ReleaseResourceCommand{Resource: first.GetSubscription()},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	createProtoTestTerminal(t, application, "term-event-second")
+	assertProtoSubscriptionEvent(t, secondEvents, second.GetSubscription(), "term-event-second")
+	select {
+	case event := <-firstEvents:
+		t.Fatalf("released subscription received event %#v", event)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestGeneratedMachineEventsScopeAllowsOnlyLifecycleSubscription(t *testing.T) {
+	server := corev2.NewServer(corev2.WithApplicationExecutorFactory(CoreApplicationExecutorFactory))
+	defer func() { _ = server.Shutdown(context.Background()) }()
+	scope := corev2.TransportScope{PrincipalID: "machine-observer", MachineEventsOnly: true}
+	observer, _, closeObserver := newProtoTransportClient(t, server, &scope, 1)
+	defer closeObserver()
+	owner, _, closeOwner := newProtoTransportClient(t, server, nil, 2)
+	defer closeOwner()
+
+	subscription, events, err := observer.EventSubscribe(context.Background(), &apipb.EventSubscribeCommand{Types: []apipb.ApplicationEventType{
+		apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	createProtoTestTerminal(t, owner, "term-machine-event")
+	assertProtoSubscriptionEvent(t, events, subscription.GetSubscription(), "term-machine-event")
+	if _, err := observer.Execute(context.Background(), &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_ReleaseResource{
+		ReleaseResource: &apipb.ReleaseResourceCommand{Resource: subscription.GetSubscription()},
+	}}); err != nil {
+		t.Fatalf("machine-events-only subscription release failed: %v", err)
+	}
+	if _, err := observer.TerminalList(context.Background(), &apipb.TerminalListCommand{}); clientruntime.CodeOf(err) != clientruntime.ErrorAuthorization {
+		t.Fatalf("machine-events-only terminal list error = %v", err)
+	}
+	if _, _, err := observer.EventSubscribe(context.Background(), &apipb.EventSubscribeCommand{Types: []apipb.ApplicationEventType{
+		apipb.ApplicationEventType_APPLICATION_EVENT_TYPE_STORAGE_CHANGED,
+	}}); clientruntime.CodeOf(err) != clientruntime.ErrorAuthorization {
+		t.Fatalf("machine-events-only storage subscription error = %v", err)
+	}
+}
+
+func TestGeneratedFileUploadSeparatesActiveAndResumeTokenNamespaces(t *testing.T) {
+	server := corev2.NewServer(corev2.WithApplicationExecutorFactory(CoreApplicationExecutorFactory))
+	defer func() { _ = server.Shutdown(context.Background()) }()
+	application, client, closeClient := newProtoTransportClient(t, server, nil, 1)
+	defer closeClient()
+	target := filepath.Join(t.TempDir(), "namespace.bin")
+
+	opened, err := application.FileUploadOpen(context.Background(), &apipb.FileUploadOpenCommand{Path: target, Size: 3, Overwrite: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	transfer := opened.GetTransfer()
+	resourceToken := transfer.GetResource().GetOpaqueToken()
+	resumeToken := transfer.GetResume().GetOpaqueToken()
+	if transfer.GetResource().GetKind() != apipb.ResourceKind_RESOURCE_KIND_FILE_TRANSFER || len(resourceToken) == 0 || len(resumeToken) == 0 || bytes.Equal(resourceToken, resumeToken) {
+		t.Fatalf("file upload token namespaces collapsed: transfer=%#v", transfer)
+	}
+	if _, ok := client.ApplicationResourceChannel(transfer.GetResource()); !ok {
+		t.Fatal("active file resource was not bound to its protocol stream")
+	}
+	if _, err := application.FileUploadOpen(context.Background(), &apipb.FileUploadOpenCommand{
+		Path: target, Size: 3, Overwrite: true, Resume: &apipb.FileUploadResumeHandle{OpaqueToken: resourceToken},
+	}); clientruntime.CodeOf(err) != clientruntime.ErrorInvalidRequest {
+		t.Fatalf("active resource token was accepted as resume credential: %v", err)
+	}
+}
+
+func TestGeneratedFileUploadResumesAcrossProtocolSessions(t *testing.T) {
+	server := corev2.NewServer(corev2.WithApplicationExecutorFactory(CoreApplicationExecutorFactory))
+	defer func() { _ = server.Shutdown(context.Background()) }()
+	target := filepath.Join(t.TempDir(), "resumed.bin")
+	content := bytes.Repeat([]byte("generated-proto-resume-"), 3000)
+
+	firstApplication, firstClient, closeFirst := newProtoTransportClient(t, server, nil, 1)
+	opened, err := firstApplication.FileUploadOpen(context.Background(), &apipb.FileUploadOpenCommand{Path: target, Size: int64(len(content)), Overwrite: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstTransfer := opened.GetTransfer()
+	firstChannel, ok := firstClient.ApplicationResourceChannel(firstTransfer.GetResource())
+	if !ok {
+		t.Fatal("first upload resource has no stream channel")
+	}
+	firstStream, stopFirstStream := firstClient.Stream(firstChannel)
+	firstChunkSize := min(int(firstTransfer.GetChunkBytes()), len(content))
+	sendProtoUploadData(t, firstClient, firstChannel, 0, content[:firstChunkSize])
+	if ack := waitProtoUploadAck(t, firstStream); ack.Offset != int64(firstChunkSize) {
+		t.Fatalf("first upload ack offset=%d want=%d", ack.Offset, firstChunkSize)
+	}
+	stopFirstStream()
+	closeFirst()
+
+	secondApplication, secondClient, closeSecond := newProtoTransportClient(t, server, nil, 2)
+	defer closeSecond()
+	resumed, err := secondApplication.FileUploadOpen(context.Background(), &apipb.FileUploadOpenCommand{
+		Path: target, Size: int64(len(content)), Overwrite: true, Resume: firstTransfer.GetResume(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondTransfer := resumed.GetTransfer()
+	if secondTransfer.GetOffset() != int64(firstChunkSize) {
+		t.Fatalf("resume offset=%d want=%d", secondTransfer.GetOffset(), firstChunkSize)
+	}
+	if !bytes.Equal(secondTransfer.GetResume().GetOpaqueToken(), firstTransfer.GetResume().GetOpaqueToken()) || secondTransfer.GetResource().GetSession().GetGeneration() != 2 {
+		t.Fatalf("resumed transfer was not rebound correctly: %#v", secondTransfer)
+	}
+	secondChannel, ok := secondClient.ApplicationResourceChannel(secondTransfer.GetResource())
+	if !ok {
+		t.Fatal("resumed upload resource has no stream channel")
+	}
+	stream, stopStream := secondClient.Stream(secondChannel)
+	defer stopStream()
+	for offset := firstChunkSize; offset < len(content); {
+		end := min(offset+int(secondTransfer.GetChunkBytes()), len(content))
+		sendProtoUploadData(t, secondClient, secondChannel, int64(offset), content[offset:end])
+		if ack := waitProtoUploadAck(t, stream); ack.Offset != int64(end) {
+			t.Fatalf("resumed upload ack offset=%d want=%d", ack.Offset, end)
+		}
+		offset = end
+	}
+	digest := sha256.Sum256(content)
+	finish, err := protocol.EncodeFileTransferFinish(protocol.FileTransferFinish{Size: int64(len(content)), SHA256: digest[:]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := secondClient.SendFileFrame(secondChannel, wire.TypeFileFinish, finish); err != nil {
+		t.Fatal(err)
+	}
+	if frame := waitProtoFileFrame(t, stream); frame.Type != wire.TypeFileResult {
+		t.Fatalf("upload completion frame type=%d want=%d", frame.Type, wire.TypeFileResult)
+	}
+	got, err := os.ReadFile(target)
+	if err != nil || !bytes.Equal(got, content) {
+		t.Fatalf("resumed upload content mismatch: bytes=%d err=%v", len(got), err)
+	}
+}
+
+func newProtoTransportClient(t *testing.T, server *corev2.Server, scope *corev2.TransportScope, generation uint64) (*clientruntime.ApplicationSession, *protocol.Client, func()) {
+	t.Helper()
+	clientTransport, serverTransport := memory.NewPair()
+	errCh := make(chan error, 1)
+	go func() {
+		if scope == nil {
+			errCh <- server.ServeTransport(context.Background(), serverTransport)
+			return
+		}
+		errCh <- server.ServeScopedTransport(context.Background(), serverTransport, *scope)
+	}()
+	client := protocol.NewClient(clientTransport)
+	if err := client.Hello(context.Background(), protocol.Hello{Version: wire.Version, Client: "proto-transport-test"}); err != nil {
+		t.Fatal(err)
+	}
+	application, err := clientruntime.NewApplicationSession(clientruntime.EndpointSessionStamp{
+		EndpointID: clientendpoint.EndpointID("local"), RouteID: clientendpoint.RouteID("memory"), Generation: clientruntime.SessionGeneration(generation),
+	}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return application, client, func() {
+		_ = client.Close()
+		select {
+		case err := <-errCh:
+			if err != nil && !strings.Contains(err.Error(), "EOF") {
+				t.Fatalf("server transport returned error: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("server transport did not stop")
+		}
+	}
+}
+
+func createProtoTestTerminal(t *testing.T, application *clientruntime.ApplicationSession, terminalID string) {
+	t.Helper()
+	if _, err := application.TerminalCreate(context.Background(), &apipb.TerminalCreateCommand{Terminal: &apipb.TerminalCreateSpec{
+		TerminalId: terminalID, Command: []string{"/bin/cat"}, Size: &apipb.TerminalSize{Cols: 12, Rows: 4},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertProtoSubscriptionEvent(t *testing.T, events <-chan *apipb.EventEnvelope, subscription *apipb.ResourceHandle, terminalID string) {
+	t.Helper()
+	select {
+	case event, ok := <-events:
+		if !ok {
+			t.Fatal("application event stream closed")
+		}
+		if !bytes.Equal(event.GetSubscription().GetOpaqueToken(), subscription.GetOpaqueToken()) || event.GetTerminalLifecycle().GetTerminal().GetRef().GetTerminalId() != terminalID {
+			t.Fatalf("event correlation mismatch: event=%#v subscription=%#v", event, subscription)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for terminal lifecycle event %q", terminalID)
+	}
+}
+
+func sendProtoUploadData(t *testing.T, client *protocol.Client, channel uint16, offset int64, data []byte) {
+	t.Helper()
+	payload, err := protocol.EncodeFileTransferData(protocol.FileTransferData{Offset: offset, Data: data})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.SendFileFrame(channel, wire.TypeFileData, payload); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func waitProtoUploadAck(t *testing.T, stream <-chan protocol.StreamFrame) protocol.FileTransferAck {
+	t.Helper()
+	frame := waitProtoFileFrame(t, stream)
+	if frame.Type != wire.TypeFileAck {
+		t.Fatalf("file stream frame type=%d want=%d", frame.Type, wire.TypeFileAck)
+	}
+	ack, err := protocol.DecodeFileTransferAck(frame.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ack
+}
+
+func waitProtoFileFrame(t *testing.T, stream <-chan protocol.StreamFrame) protocol.StreamFrame {
+	t.Helper()
+	select {
+	case frame, ok := <-stream:
+		if !ok {
+			t.Fatal("file stream closed")
+		}
+		return frame
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for file stream")
+		return protocol.StreamFrame{}
+	}
+}

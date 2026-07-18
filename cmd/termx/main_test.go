@@ -1062,84 +1062,6 @@ func TestV3LocalControlCommandsRemainAvailable(t *testing.T) {
 	}
 }
 
-func TestV3HistoryDumpWritesAuthoritativeWindows(t *testing.T) {
-	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
-	server := newCoreV2TestServer(corev2.WithSocketPath(socketPath), corev2.WithProcessFactory(newCoreV2ResizeRecordingProcessFactory()))
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan error, 1)
-	go func() {
-		done <- server.ListenAndServe(ctx)
-	}()
-	defer func() {
-		cancel()
-		_ = server.Shutdown(context.Background())
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-			t.Fatal("core-v2 server did not stop in time")
-		}
-	}()
-	if err := waitForSocket(socketPath, 2*time.Second, func() error {
-		client, err := dialV3Client(socketPath)
-		if err != nil {
-			return err
-		}
-		return client.Close()
-	}); err != nil {
-		t.Fatalf("core-v2 daemon did not become ready: %v", err)
-	}
-	client, err := dialV3Client(socketPath)
-	if err != nil {
-		t.Fatalf("dial core-v2 daemon: %v", err)
-	}
-	if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{TerminalId: "term-dump", Command: []string{"shell"}, Size: &apipb.TerminalSize{Cols: 24, Rows: 4}}); err != nil {
-		t.Fatalf("create terminal: %v", err)
-	}
-	if err := server.IngestOutput(context.Background(), "term-dump", "older one\r\nvisible tail\r\n"); err != nil {
-		t.Fatalf("ingest committed history: %v", err)
-	}
-	if err := server.IngestOutput(context.Background(), "term-dump", "\x1b[?2026h\x1b[2J\x1b[Hcodex current\x1b[?2026l"); err != nil {
-		t.Fatalf("ingest current frame: %v", err)
-	}
-	if err := client.Close(); err != nil {
-		t.Fatalf("close setup client: %v", err)
-	}
-
-	outPath := filepath.Join(t.TempDir(), "history.dump")
-	var out bytes.Buffer
-	cmd := newDevelopmentRootCmd()
-	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "history-dump", "term-dump", "--out", outPath, "--cols", "24", "--limit", "1"})
-	cmd.SetOut(&out)
-	cmd.SetErr(io.Discard)
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("history-dump returned error: %v", err)
-	}
-
-	data, err := os.ReadFile(outPath)
-	if err != nil {
-		t.Fatalf("read dump: %v", err)
-	}
-	text := string(data)
-	for _, want := range []string{
-		"termx core-v2 authoritative history dump",
-		"window 0 op=prepend",
-		"window 1 op=prepend",
-		"op=replace",
-		"older one",
-		"visible tail",
-		"codex current",
-		"segment=current-primary-frame",
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("history dump missing %q:\n%s", want, text)
-		}
-	}
-	if !strings.Contains(out.String(), "termx v3 history dump ok") || !strings.Contains(out.String(), outPath) {
-		t.Fatalf("unexpected command output:\n%s", out.String())
-	}
-}
-
 func TestR448V3HistoryBacklogWritesDiagnostics(t *testing.T) {
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
 	server := newCoreV2TestServer(
@@ -1553,12 +1475,13 @@ func TestV3InteractiveRuntimeRestoresWorkbenchFromCoreV2Storage(t *testing.T) {
 		t.Fatalf("encode workbench snapshot: %v", err)
 	}
 	ref := tuistate.DefaultWorkbenchStorageRef(tuistate.DefaultWorkspaceID)
-	if _, err := client.StoragePut(context.Background(), protocol.StoragePutParams{
-		AppID:   ref.AppID,
-		Scope:   protocol.StorageScope(ref.Scope),
-		OwnerID: ref.OwnerID,
-		Key:     ref.Key,
-		Value:   value,
+	storageApplication, err := newLocalApplicationSession(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storageApplication.StoragePut(context.Background(), &apipb.StoragePutCommand{
+		Key:   &apipb.StorageKey{AppId: ref.AppID, Scope: apipb.StorageScope_STORAGE_SCOPE_PUBLIC, OwnerId: ref.OwnerID, Key: ref.Key},
+		Value: value,
 	}); err != nil {
 		t.Fatalf("put workbench snapshot: %v", err)
 	}

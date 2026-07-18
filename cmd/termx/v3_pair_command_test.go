@@ -348,7 +348,7 @@ func configurePairCommandTest(t *testing.T) (string, string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := corev2.NewServer(
+	server := newCoreV2TestServer(
 		corev2.WithSocketPath(socket), corev2.WithHistoryDisabled(),
 		corev2.WithClientAccessService(v3ClientAccessService{identity: clientAccess.Identity, store: clientAccess.Store}),
 	)

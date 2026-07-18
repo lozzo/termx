@@ -14,7 +14,6 @@ import (
 	"time"
 
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/remoteauthpb"
 	"github.com/lozzow/termx/shared/remoteauth"

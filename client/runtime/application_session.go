@@ -675,6 +675,8 @@ func runtimeErrorFromProto(apiError *apipb.ApiError) error {
 	case apipb.ApiErrorCode_API_ERROR_CODE_UNAUTHORIZED,
 		apipb.ApiErrorCode_API_ERROR_CODE_FORBIDDEN:
 		code = ErrorAuthorization
+	case apipb.ApiErrorCode_API_ERROR_CODE_NOT_FOUND:
+		code = ErrorNotFound
 	case apipb.ApiErrorCode_API_ERROR_CODE_STALE_SESSION:
 		code = ErrorStaleSession
 	case apipb.ApiErrorCode_API_ERROR_CODE_CANCELLED:

@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- 双端旧契约与路径原子删除 `PA005R` 已完成。下一切片是 `PA006T` Proto API 测试迁移；Android 与 Web 已复用同一 runtime/managed/auth/protocol/binding 引擎，不得重新引入平台自有客户端网络真值。
+- Proto API 测试迁移 `PA006T` 已完成。下一切片是 `PA007` 跨端架构就绪双审；Android 与 Web 已复用同一 runtime/managed/auth/protocol/binding 引擎，不得重新引入平台自有客户端网络真值。
 - 当前迁移允许修改 `client/{runtime,port,adapter,binding}/`、`remote/`、`internal/protocol/`、`proto/`、`clients/mobile/`、`clients/ui/` 以及对应 tests、build scripts 和必要架构文档；每个切片仍只能触及任务表规定的最小范围。
 - Android 目标是 Go Client Engine 编译为 native library，通过稳定 C ABI 与薄 JNI/Capacitor bridge 调用；Kotlin/Java 不拥有连接、认证、协议、session/resource 或重连真值。
 - Android lifecycle 固定采用 generation teardown：锁屏广播或进程进入后台时关闭当前 Go engine、loopback bridge、全部 session/resource 和事件泵；WebView 恢复时先创建新 engine/generation，再让 TypeScript 重连。旧 handle、迟到 callback 和冻结期间未消费事件不得进入新 generation，事件队列必须有界。
@@ -17,6 +17,7 @@
 - `PA005W1` 已产出真实 Go/WASM Client Engine、Promise status ABI、共享 managed host 与 Proto WebRTC platform request/event；Android 注入 Pion，Web 只注入 RTCPeerConnection/DataChannel、WebCrypto/IndexedDB 和 lifecycle primitive。Chrome Headless 对真实 Pion daemon 完成 actual remote certificate 与 SDP SHA-256 匹配、DTLS-bound remote auth、Hello、storage `api.execute`、application event、cancel/close，并通过 `pagehide/pageshow` teardown 后严格递增 generation；负向 certificate mismatch、opaque handle/event copy、generated code、WASM build、UI typecheck/test/build 和 Android debug 编译均通过。
 - `PA005W2` 已建立 Android JNI/Web WASM 共用的 `ProtoBindingClient`、`ProtoBindingConnector`、session/resource/cancel/release owner；Web 生产入口改走 `BrowserBindingRuntime`，页面冻结销毁整代 WASM engine，恢复创建新 generation 后才通知 UI 重连。旧 `browserRtcSession`、`rtcApiChannel`、`runtimeProtocol`、Hub connector、connection orchestrator、reconnect store 及对应旧架构 tests 已删除约 8,400 行；Web generated code、UI/mobile typecheck/build、WASM build、binding guards 与真实 Chrome/Pion ProtoBindingClient E2E 均通过。浏览器 Cloud HTTP primitive 缺失 edge account/device identity 时 fail closed，不从 terminal capability 或 pairing grant 推导云准入。
 - `PA005R` 已删除 `runtimepb`、`wirepb` 重复 application message、旧 TypeScript terminal/file/storage/history codec、旧 Hub API/pair panel、本地 session token/pairing payload store、旧 RTC session/channel interface 与对应失效 tests/mocks，共净删除约 16,600 行；Android/Web 生产 consumer 只接受 `ProtoClientSession`。generated-code check、UI typecheck/WASM build、mobile build、API Layer/API Mapping/binding tests、架构守卫与真实 Chrome/Pion E2E 通过。`go build ./...` 仅命中 PA005G 前已冻结的 CLI composition helper 缺口，留给 PA006T/C3E，不得恢复旧 DTO 或 fallback。
+- `PA006T` 已把 core/protocol/client-runtime/TUI/CLI 与共享 UI tests 迁到 generated Proto contract，删除依赖旧 DTO、method codec 和旧 browser session mock 的失效测试；补齐 event subscription correlation/release、machine-events-only、file active/resume token namespace 与跨 protocol session upload resume E2E。测试同时修正 unspecified storage scope 污染 event filter、无效 upload resume credential 错误分类和 CLI current API composition 缺口；全仓 Go tests/build、关键包 race、UI typecheck/test/build、mobile build 与 generated-code check 通过。
 - 用户已明确允许实现阶段不保证旧测试通过。PA005G 的新 schema/API Mapping/API Layer tests 与 Go 生产包通过；旧 core/protocol/client-runtime/TUI tests 因引用已删除 DTO 暂缓到 `PA006T`，不得据此恢复旧类型。
 - CLI 根包仍有 PA005G 之前已冻结的 endpoint runtime helper 缺口：`v3DialClient`、`probeEndpointProtocolClient`、`openEndpointProtocolClient`、`dialOrStartV3ClientContext` 及 attach runtime helpers。不得用 legacy/fallback 修补。
 - 用户已确立仓库级强约定：所有插件、第三方客户端、官方客户端、跨进程和跨语言 API 的唯一 schema truth 必须位于 `proto/`。
@@ -112,7 +113,7 @@ core domain truth
 | PA005W1 | 已完成 | Web WASM/WebRTC 安全纵向 spike | Go Client Engine 编译为 WASM；薄 browser adapter 提供 `RTCPeerConnection`、`RTCDataChannel`、signer/store、signaling 和 lifecycle；完成 remote auth、Hello、一次 `api.execute`、一个 event、cancel/close；独立 harness 证明 SDP fingerprint、浏览器 peer 与 Go auth transcript 的 channel binding，tab suspend/resume 产生新 generation |
 | PA005W2 | 已完成 | Web client 完整迁移 | Web terminal/history/live/file/storage/access/remote consumer 切到 Go/WASM binding 与 generated `apipb`；收缩 `browserRtcSession` 为平台 primitive adapter，删除 TypeScript API codec、session/resource/reconnect truth、多 DataChannel fallback；typecheck/build 与真实浏览器 protocol harness 通过 |
 | PA005R | 已完成 | 双端旧契约与路径原子删除 | Android/Web 都完成后删除 `runtimepb`、`wirepb` 中重复 application schema、generated artifacts、旧 method codec、旧 bridge 和 fallback；全仓扫描确认业务 API 只剩 `apipb + api.execute`，不得保留兼容 alias/wrapper/双路径 |
-| PA006T | 待开始 | Proto API 测试迁移 | 把 core/protocol/client-runtime/TUI/CLI 旧 DTO tests 改为 generated Proto harness；补 event subscription correlation/release、machine-events-only、file active/resume token namespace 和跨 session upload resume 测试；不得恢复旧 alias/codec |
+| PA006T | 已完成 | Proto API 测试迁移 | 把 core/protocol/client-runtime/TUI/CLI 旧 DTO tests 改为 generated Proto harness；补 event subscription correlation/release、machine-events-only、file active/resume token namespace 和跨 session upload resume 测试；不得恢复旧 alias/codec |
 | PA007 | 待开始 | 跨端架构就绪双审 | import graph、schema coverage、重复 DTO、binding ownership、Android/Web lifecycle、channel binding、fallback、生成代码、文档和 tests 通过；架构 reviewer 与代码 reviewer 明确 PASS 后恢复 C3B |
 | C3B | 暂停 | RouteSelectionPlanner | PA007 PASS 后恢复 |
 | C3C | 暂停 | fresh daemon proof / ReadySession | PA007 PASS 后恢复 |

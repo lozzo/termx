@@ -1,3 +1,4 @@
+import { create } from '@bufbuild/protobuf'
 import { describe, expect, it, vi } from 'vitest'
 import {
   copyHistorySelection,
@@ -6,15 +7,18 @@ import {
   selectionFromSurfaceRows,
 } from './coreV2HistoryInteraction'
 import { createCoreV2HistorySource } from './coreV2HistorySource'
-import { CORE_V2_TERMINAL_METHODS } from './coreV2TerminalProtocol'
+import { HistoryCopyResultSchema } from '../generated/apipb/history_pb'
+import { MockProtoSession, protoResult } from '../test/mockProtoSession'
 import type { CoreV2HistorySource } from './coreV2HistorySource'
 import type { CoreV2HistorySurfaceSnapshot } from './coreV2HistorySurface'
 import type { CoreV2HistoryRow } from './coreV2TerminalProtocol'
-import type { RtcJsonRpcChannel, RtcSession } from '../core/transport'
 
 describe('CoreV2 history interaction', () => {
   it('copies final text through core-v2 history.copy logical range', async () => {
-    const session = new MockCopySession('copied from core')
+    const session = new MockProtoSession('machine-local', () => protoResult(
+      'historyCopy',
+      create(HistoryCopyResultSchema, { text: 'copied from core' }),
+    ))
     const source = createCoreV2HistorySource(session, 'machine-local')
     const snapshot = surfaceSnapshot([
       row('41', 0, 'alpha  '),
@@ -39,40 +43,20 @@ describe('CoreV2 history interaction', () => {
     const copied = await copyHistorySelection(source, snapshot, selection)
 
     expect(copied).toBe('copied from core')
-    expect(session.requests).toEqual([
-      {
-        method: CORE_V2_TERMINAL_METHODS.historyCopy,
-        params: expect.objectContaining({
-          terminal_id: 'terminal-1',
-          token: 'token-1',
-          history_generation: 7,
-          boundary_first_line_id: 41,
-          boundary_last_line_id: 43,
-          range_valid: true,
-          range_start_line_id: 41,
-          range_start_col: 2,
-          range_end_line_id: 43,
-          range_end_col: 3,
-        }),
+    expect(session.commands).toHaveLength(1)
+    expect(session.commands[0]?.command).toMatchObject({
+      case: 'historyCopy',
+      value: {
+        terminal: { endpointId: 'machine-local', terminalId: 'terminal-1' },
+        window: {
+          token: 'token-1', historyGeneration: 7n, boundaryFirstLineId: 41n, boundaryLastLineId: 43n,
+          range: { startLineId: 41n, startCol: 2, endLineId: 43n, endCol: 3 },
+        },
       },
-    ])
+    })
     expect(liveSelection).not.toHaveBeenCalled()
     expect(loadScrollback).not.toHaveBeenCalled()
     expect(domText).not.toHaveBeenCalled()
-  })
-
-  it('decodes history.copy raw bytes returned by the runtime API channel', async () => {
-    const session = new MockCopySession({
-      bytes: new TextEncoder().encode('byte text'),
-      method: CORE_V2_TERMINAL_METHODS.historyCopy,
-    })
-    const source = createCoreV2HistorySource(session, 'machine-local')
-    const snapshot = surfaceSnapshot([row('41', 0, 'alpha')])
-
-    await expect(copyHistorySelection(source, snapshot, {
-      anchor: { lineId: '41', col: 0 },
-      focus: { lineId: '41', col: 5 },
-    })).resolves.toBe('byte text')
   })
 
   it('normalizes reversed selections and clamps columns to logical line width', () => {
@@ -135,44 +119,6 @@ describe('CoreV2 history interaction', () => {
     expect(() => searchHistorySurface(snapshot, 'alpha')).toThrow(/stale/)
   })
 })
-
-class MockCopySession implements Pick<RtcSession, 'openApi' | 'getConnectionInfo'> {
-  readonly requests: Array<{ method: string; params: unknown }> = []
-  private opened = 0
-  private closed = 0
-
-  constructor(private readonly response: unknown) {}
-
-  get openApiCount(): number {
-    return this.opened
-  }
-
-  get closeApiCount(): number {
-    return this.closed
-  }
-
-  async getConnectionInfo() {
-    return {
-      path: 'local' as const,
-      connectionId: 'copy-test',
-      machineId: 'machine-local',
-      relayInUse: false,
-    }
-  }
-
-  async openApi(): Promise<RtcJsonRpcChannel> {
-    this.opened += 1
-    return {
-      request: async <TResponse>(method: string, params?: unknown): Promise<TResponse> => {
-        this.requests.push({ method, params })
-        return this.response as TResponse
-      },
-      close: () => {
-        this.closed += 1
-      },
-    }
-  }
-}
 
 function surfaceSnapshot(rows: CoreV2HistoryRow[]): CoreV2HistorySurfaceSnapshot {
   const firstLineId = rows[0]?.logicalLineId ?? '0'

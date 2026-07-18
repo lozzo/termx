@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	protocoladapter "github.com/lozzow/termx/tui/adapter/protocol"
 	"github.com/lozzow/termx/tui/testkit"
 	"reflect"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/render"
@@ -214,171 +212,6 @@ func TestCopyModeGoAtLoadedTopRequestsOldest(t *testing.T) {
 	last := lastFrame(t, host.Frames())
 	if !frameContains(last, "line-000") || !frameContains(last, "line-001") {
 		t.Fatalf("g oldest request should visibly refresh to oldest page, got %#v", last.Lines)
-	}
-}
-
-func TestInteractiveRuntimeAttachCopyModeMainlineAcceptance(t *testing.T) {
-	terminal := &testkit.FakeTerminalService{
-		AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 10, Rows: 12},
-	}
-	clipboard := &testkit.FakeClipboardService{}
-	historyClient := &acceptanceProtocolHistoryClient{
-		windows: []*protocol.HistoryWindow{
-			{
-				TerminalID: "term-1",
-				Token:      "tok-1",
-				Op:         protocol.HistoryWindowReplace,
-				Size:       protocol.Size{Cols: 3, Rows: 20},
-				Rows: []protocol.CompactRow{
-					protocol.CompactRowFromCells([]protocol.Cell{{Content: "abc", Width: 3}}),
-					protocol.CompactRowFromCells([]protocol.Cell{{Content: "def", Width: 3}}),
-					protocol.CompactRowFromCells([]protocol.Cell{{Content: "beta", Width: 4}}),
-				},
-				Lines: []protocol.HistoryLineSpan{
-					{LogicalLineID: 10, StartRow: 0, EndRow: 1},
-					{LogicalLineID: 20, StartRow: 2, EndRow: 2},
-				},
-				RowLineIDs:   []uint64{10, 10, 20},
-				RowInLine:    []int{0, 1, 0},
-				CursorValid:  true,
-				CursorLineID: 10,
-				Generation:   7,
-				FirstLineID:  10,
-				LastLineID:   20,
-				HasMore:      true,
-				LoadedLines:  2,
-				LogicalTotal: 2,
-			},
-			{
-				TerminalID: "term-1",
-				Token:      "tok-1",
-				Op:         protocol.HistoryWindowPrepend,
-				Size:       protocol.Size{Cols: 10, Rows: 20},
-				Rows: []protocol.CompactRow{
-					protocol.CompactRowFromCells([]protocol.Cell{{Content: "older", Width: 5}}),
-				},
-				Lines: []protocol.HistoryLineSpan{
-					{LogicalLineID: 5, StartRow: 0, EndRow: 0},
-				},
-				RowLineIDs:   []uint64{5},
-				RowInLine:    []int{0},
-				CursorValid:  true,
-				CursorLineID: 5,
-				Generation:   7,
-				FirstLineID:  5,
-				LastLineID:   20,
-				HasMore:      true,
-				LoadedLines:  3,
-				LogicalTotal: 3,
-			},
-		},
-	}
-	host := NewFakeTerminalHost(32)
-	host.SetSize(12, 12)
-	runtime := NewInteractiveRuntime(
-		state.Root{},
-		host,
-		NewSyncEffectRunner(),
-		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: protocoladapter.ProtocolCoreClientAdapter{Client: historyClient}, Clipboard: clipboard, Rows: 20},
-	)
-
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 12, Rows: 12}}); err != nil {
-		t.Fatalf("post attach: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain attach: %v", err)
-	}
-	if len(terminal.Attaches) != 1 {
-		t.Fatalf("expected one live attach, got %#v", terminal.Attaches)
-	}
-	if got := terminal.Attaches[0]; got.TerminalID != "term-1" || got.Cols != 10 || got.Rows != 8 {
-		t.Fatalf("attach must use current pane content rect, got %#v", got)
-	}
-
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
-		t.Fatalf("enter copy mode: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain latest: %v", err)
-	}
-	if len(historyClient.requests) != 1 {
-		t.Fatalf("expected one latest history request, got %#v", historyClient.requests)
-	}
-	if req := historyClient.requests[0]; req.TerminalID != "term-1" || req.Token != "" || int(req.Cols) != 10 || req.Limit != 64 {
-		t.Fatalf("unexpected latest history request %#v", req)
-	}
-	if got := historyRowTexts(runtime.State().History.Rows); !reflect.DeepEqual(got, []string{"abcdef", "beta"}) {
-		t.Fatalf("latest should render authoritative history via local reflow, got %v", got)
-	}
-	if runtime.State().CopyMode.BoundToken != "tok-1" || runtime.State().History.Token != "tok-1" {
-		t.Fatalf("copy mode should bind frozen token after latest, got history=%#v copy=%#v", runtime.State().History, runtime.State().CopyMode)
-	}
-	if frame := lastFrame(t, host.Frames()); frameContains(frame, "live") || !frameContains(frame, "abcdef") {
-		t.Fatalf("copy mode must show authoritative history instead of live fallback, got %#v", frame.Lines)
-	}
-
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
-		t.Fatalf("request older: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain older: %v", err)
-	}
-	if len(historyClient.requests) != 2 {
-		t.Fatalf("expected latest plus older history requests, got %#v", historyClient.requests)
-	}
-	if req := historyClient.requests[1]; req.Token != "tok-1" || req.Generation != 7 || !req.CursorValid || req.BeforeLineID != 10 || req.BoundaryLastLineID != 20 {
-		t.Fatalf("unexpected older history request %#v", req)
-	}
-	if got := historyRowTexts(runtime.State().History.Rows); !reflect.DeepEqual(got, []string{"older", "abcdef", "beta"}) {
-		t.Fatalf("older should prepend authoritative history, got %v", got)
-	}
-
-	if err := host.SendResize(14, 12); err != nil {
-		t.Fatalf("send resize: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain resize: %v", err)
-	}
-	if len(historyClient.requests) != 2 {
-		t.Fatalf("local reflow resize must not request a new latest, got %#v", historyClient.requests)
-	}
-	if got := historyRowTexts(runtime.State().History.Rows); !reflect.DeepEqual(got, []string{"older", "abcdef", "beta"}) {
-		t.Fatalf("resize should keep frozen history rows without re-requesting latest, got %v", got)
-	}
-
-	for _, ch := range []string{"b", "e", "t", "a"} {
-		if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: ch}); err != nil {
-			t.Fatalf("send query %q: %v", ch, err)
-		}
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain query: %v", err)
-	}
-	if runtime.State().CopyMode.Query != "beta" || len(runtime.State().CopyMode.Matches) != 1 {
-		t.Fatalf("search should match current frozen history, got %#v", runtime.State().CopyMode)
-	}
-
-	if err := runtime.Post(CopyModeSetMarkMsg{Position: state.CopyPosition{Row: 1, Col: 2}}); err != nil {
-		t.Fatalf("set mark: %v", err)
-	}
-	if err := runtime.Post(CopyModeMoveCursorMsg{Position: state.CopyPosition{Row: 2, Col: 2}}); err != nil {
-		t.Fatalf("move cursor: %v", err)
-	}
-	if err := runtime.Post(CopyModeCopySelectionMsg{}); err != nil {
-		t.Fatalf("copy selection: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain copy: %v", err)
-	}
-	if len(clipboard.Writes) != 1 || clipboard.Writes[0].Text != "cdef\nbe" {
-		t.Fatalf("copy should assemble logical-line text after local reflow, got %#v", clipboard.Writes)
-	}
-	if len(runtime.State().Clipboard.Entries) == 0 || runtime.State().Clipboard.Entries[0].Text != "cdef\nbe" {
-		t.Fatalf("copy should also update reducer-owned clipboard history, got %#v", runtime.State().Clipboard)
-	}
-	if len(runtime.State().Shell.Toasts) == 0 || runtime.State().Shell.Toasts[len(runtime.State().Shell.Toasts)-1].Title != "Copied to clipboard" {
-		t.Fatalf("copy should add clipboard toast, got %#v", runtime.State().Shell.Toasts)
 	}
 }
 
@@ -7451,33 +7284,6 @@ func (client *blockingHistoryClient) finishOlder(result port.HistoryResult, err 
 	resultC := client.olderResultC
 	client.mu.Unlock()
 	resultC <- blockingHistoryResult{result: result, err: err}
-}
-
-type acceptanceProtocolHistoryClient struct {
-	requests        []protocol.HistoryWindowParams
-	copyRequests    []protocol.HistoryWindowParams
-	releaseRequests []protocol.HistoryWindowParams
-	windows         []*protocol.HistoryWindow
-}
-
-func (client *acceptanceProtocolHistoryClient) HistoryWindow(_ context.Context, params protocol.HistoryWindowParams) (*protocol.HistoryWindow, error) {
-	client.requests = append(client.requests, params)
-	if len(client.windows) == 0 {
-		return nil, errors.New("missing protocol history window")
-	}
-	window := client.windows[0]
-	client.windows = client.windows[1:]
-	return window, nil
-}
-
-func (client *acceptanceProtocolHistoryClient) ReleaseHistory(_ context.Context, params protocol.HistoryWindowParams) error {
-	client.releaseRequests = append(client.releaseRequests, params)
-	return nil
-}
-
-func (client *acceptanceProtocolHistoryClient) HistoryCopy(_ context.Context, params protocol.HistoryWindowParams) (string, error) {
-	client.copyRequests = append(client.copyRequests, params)
-	return "", nil
 }
 
 func historyWindowForApp(

@@ -1,6 +1,15 @@
 package core
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+var (
+	// ErrInvalidFileUploadResume 表示客户端把非 resume namespace 的 opaque token 用作续传凭据。
+	// 该错误属于请求校验失败；不得退化为内部错误，也不得尝试按 active resource token 解释。
+	ErrInvalidFileUploadResume = errors.New("file upload resume credential is invalid")
+)
 
 // FilePathRequest 表达 owning daemon 文件系统上的单路径 mutation。
 type FilePathRequest struct {

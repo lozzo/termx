@@ -11,7 +11,6 @@ import (
 	"time"
 
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/proto/apipb"
 )
 
@@ -130,7 +129,7 @@ received:
 	if err := json.Unmarshal([]byte(strings.TrimSpace(result.output)), &event); err != nil {
 		t.Fatalf("invalid NDJSON event %q: %v", result.output, err)
 	}
-	if event.Kind != "terminal_event" || event.Type != "created" || !strings.HasPrefix(event.Target, "local:event-created-") || event.SchemaVersion != 1 {
+	if event.Kind != "terminal_event" || event.Type != "lifecycle" || !strings.HasPrefix(event.Target, "local:event-created-") || event.SchemaVersion != 1 {
 		t.Fatalf("unexpected event %#v", event)
 	}
 }

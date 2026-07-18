@@ -69,8 +69,8 @@ func newV3TerminalID() string {
 
 func currentSize() *apipb.TerminalSize {
 	cols, rows, err := term.GetSize(int(os.Stdout.Fd()))
-	if err != nil {
-		return &apipb.TerminalSize{}
+	if err != nil || cols <= 0 || rows <= 0 {
+		return &apipb.TerminalSize{Cols: 80, Rows: 24}
 	}
 	return &apipb.TerminalSize{Cols: uint32(cols), Rows: uint32(rows)}
 }

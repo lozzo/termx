@@ -13,11 +13,8 @@ import (
 func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
 	expectedImports := map[string]struct{}{
 		"file_command.go|github.com/lozzow/termx/internal/protocol":                               {},
-		"terminal_automation_command.go|github.com/lozzow/termx/internal/protocol":                {},
 		"terminal_command.go|github.com/lozzow/termx/internal/protocol":                           {},
-		"v3_access_command.go|github.com/lozzow/termx/internal/protocol":                          {},
 		"v3_attach_command.go|github.com/lozzow/termx/internal/protocol":                          {},
-		"v3_client_access.go|github.com/lozzow/termx/internal/protocol":                           {},
 		"v3_client_access.go|github.com/lozzow/termx/shared/remoteauth":                           {},
 		"v3_client_access.go|github.com/lozzow/termx/shared/transport":                            {},
 		"v3_client_access.go|github.com/lozzow/termx/shared/transport/unix":                       {},
@@ -33,18 +30,12 @@ func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
 		"v3_cloud_runtime.go|github.com/lozzow/termx/shared/cloudcompanion/installer":             {},
 		"v3_cloud_runtime.go|github.com/lozzow/termx/shared/cloudcompanion/ipc":                   {},
 		"v3_command.go|github.com/lozzow/termx/shared/transport/ssh":                              {},
-		"v3_control_commands.go|github.com/lozzow/termx/internal/protocol":                        {},
-		"v3_e2e_smoke.go|github.com/lozzow/termx/internal/protocol":                               {},
-		"v3_history_backlog_command.go|github.com/lozzow/termx/internal/protocol":                 {},
-		"v3_history_dump_command.go|github.com/lozzow/termx/internal/protocol":                    {},
 		"v3_managed_daemon.go|github.com/lozzow/termx/remote/webrtc":                              {},
 		"v3_managed_daemon.go|github.com/lozzow/termx/shared/cloudcompanion":                      {},
 		"v3_managed_daemon.go|github.com/lozzow/termx/shared/transport":                           {},
-		"v3_pair_command.go|github.com/lozzow/termx/internal/protocol":                            {},
 		"v3_pair_command.go|github.com/lozzow/termx/shared/remoteauth":                            {},
 		"v3_pair_command.go|github.com/lozzow/termx/shared/transport/unix":                        {},
 		"v3_root_command.go|github.com/lozzow/termx/internal/protocol":                            {},
-		"workspace_command.go|github.com/lozzow/termx/internal/protocol":                          {},
 	}
 	expectedHelpers := map[string]struct{}{
 		"daemon_lifecycle.go|v3DialClient":                  {},
@@ -55,11 +46,9 @@ func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
 		"v3_command.go|dialOrStartV3Client":                 {},
 		"v3_control_commands.go|dialOrStartV3Client":        {},
 		"v3_history_backlog_command.go|dialOrStartV3Client": {},
-		"v3_history_dump_command.go|dialOrStartV3Client":    {},
 		"v3_pair_command.go|dialOrStartV3ClientContext":     {},
 		"v3_root_command.go|dialOrStartV3Client":            {},
 		"v3_root_command.go|v3DialClient":                   {},
-		"workspace_command.go|openEndpointProtocolClient":   {},
 	}
 	seenImports := map[string]struct{}{}
 	seenHelpers := map[string]struct{}{}
@@ -75,6 +64,12 @@ func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
 		"v3DialClient": {}, "probeEndpointProtocolClient": {}, "openEndpointProtocolClient": {},
 		"dialOrStartV3Client": {}, "dialOrStartV3ClientContext": {},
 	}
+	compositionRoots := map[string]struct{}{
+		"v3_application_session.go": {},
+		"v3_attach_runtime.go":      {},
+		"v3_daemon_client.go":       {},
+		"v3_endpoint_client.go":     {},
+	}
 	err := filepath.WalkDir("../cmd/termx", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return err
@@ -84,6 +79,9 @@ func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
 			return err
 		}
 		file := filepath.Base(path)
+		if _, ok := compositionRoots[file]; ok {
+			return nil
+		}
 		for _, imported := range parsed.Imports {
 			importPath := strings.Trim(imported.Path.Value, `"`)
 			if hasImportPrefix(importPath, concretePrefixes) {

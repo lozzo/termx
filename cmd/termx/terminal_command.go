@@ -12,6 +12,7 @@ import (
 
 	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
+	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/spf13/cobra"
@@ -681,6 +682,20 @@ func classifyCLIError(err error) error {
 			code = 6
 		}
 		return &cliError{code: code, message: requestError.Message, cause: err}
+	}
+	if runtimeCode := clientruntime.CodeOf(err); runtimeCode != clientruntime.ErrorUnavailable {
+		code := 6
+		switch runtimeCode {
+		case clientruntime.ErrorInvalidRequest:
+			code = 4
+		case clientruntime.ErrorAuthorization:
+			code = 5
+		case clientruntime.ErrorNotFound:
+			code = 3
+		case clientruntime.ErrorCanceled:
+			code = 7
+		}
+		return &cliError{code: code, message: err.Error(), cause: err}
 	}
 	return &cliError{code: 6, message: err.Error(), cause: err}
 }
