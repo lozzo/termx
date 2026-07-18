@@ -207,9 +207,40 @@ func (request AttemptRequest) Intent() ConnectIntent {
 type ReadySession interface {
 	Stamp() EndpointSessionStamp
 	ObservedPath() string
+	Readiness() ReadySessionEvidence
 	Done() <-chan struct{}
 	Err() error
 	Close() error
+}
+
+// ReadySessionEvidence 冻结单次 route attempt 成为 ReadySession 前已经完成的安全边界。
+// IdentityVerified 表示 adapter 已按 route 类型完成身份边界并取得 fresh daemon identity；managed 使用 channel-bound DeviceHello，local/SSH 使用 Proto challenge proof。
+// AuthorizationVerified 与 ProtocolVersion 分别证明该 route 的授权条件和 protocol Hello 已完成；Identity 始终非空，并在 Endpoint 已有 pin 时要求精确匹配。
+type ReadySessionEvidence struct {
+	Identity              endpoint.DaemonIdentity
+	IdentityVerified      bool
+	AuthorizationVerified bool
+	ProtocolVersion       uint32
+}
+
+// Validate 校验 evidence 是否足以参加 winner 线性化，并在 Endpoint 已有 pin 时要求精确匹配。
+func (evidence ReadySessionEvidence) Validate(expected endpoint.DaemonIdentity) error {
+	if !evidence.IdentityVerified {
+		return runtimeError(ErrorIdentity, "route attempt did not verify daemon identity", nil)
+	}
+	if !evidence.AuthorizationVerified {
+		return runtimeError(ErrorAuthorization, "route attempt did not complete authorization", nil)
+	}
+	if evidence.ProtocolVersion == 0 {
+		return runtimeError(ErrorUnavailable, "route attempt did not complete protocol Hello", nil)
+	}
+	if err := evidence.Identity.Validate(true); err != nil {
+		return runtimeError(ErrorIdentity, "route attempt returned invalid daemon identity", err)
+	}
+	if !expected.Empty() && evidence.Identity != expected {
+		return runtimeError(ErrorIdentity, "route attempt daemon identity does not match endpoint pin", nil)
+	}
+	return nil
 }
 
 // RouteAttemptDialer 是具体 route adapter 提供给 runtime 的单 attempt 边界。
@@ -230,6 +261,9 @@ func ValidateReadySession(request AttemptRequest, session ReadySession) error {
 	}
 	if stamp != request.Stamp() {
 		return runtimeError(ErrorStaleSession, fmt.Sprintf("ready session stamp %#v does not match attempt %#v", stamp, request.Stamp()), nil)
+	}
+	if err := session.Readiness().Validate(request.DaemonIdentity()); err != nil {
+		return err
 	}
 	if session.Done() == nil {
 		return runtimeError(ErrorUnavailable, "ready session lifecycle signal is required", nil)

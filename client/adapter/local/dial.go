@@ -98,6 +98,17 @@ func (dialer *Dialer) Dial(ctx context.Context, request clientruntime.AttemptReq
 		_ = client.Close()
 		return nil, err
 	}
+	identity, err := protocoladapter.VerifyDaemonIdentity(ctx, ready.ApplicationSession, request.DaemonIdentity())
+	if err != nil {
+		_ = ready.Close()
+		return nil, err
+	}
+	if err := ready.MarkReady(clientruntime.ReadySessionEvidence{
+		Identity: identity, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version,
+	}); err != nil {
+		_ = ready.Close()
+		return nil, err
+	}
 	dialer.client = client
 	return ready, nil
 }

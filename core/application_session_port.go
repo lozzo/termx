@@ -553,12 +553,12 @@ func (session *protocolSession) ApplicationStorageList(ctx context.Context, appI
 	return session.server.StorageList(ctx, appID, scope, ownerID, prefix)
 }
 
-func (session *protocolSession) ApplicationClientAccessIdentity(ctx context.Context) (ClientAccessIdentity, error) {
+func (session *protocolSession) ApplicationClientAccessIdentity(ctx context.Context, challenge []byte) (ClientAccessIdentity, error) {
 	service, err := session.clientAccessService()
 	if err != nil {
 		return ClientAccessIdentity{}, err
 	}
-	return service.Identity(ctx)
+	return service.Identity(ctx, append([]byte(nil), challenge...))
 }
 
 func (session *protocolSession) ApplicationClientAccessList(ctx context.Context) ([]ClientAccessRecord, error) {

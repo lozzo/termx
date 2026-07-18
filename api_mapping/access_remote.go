@@ -8,7 +8,10 @@ import (
 	"github.com/lozzow/termx/proto/remoteauthpb"
 )
 
-const maxClientAccessLifetimeSeconds = int64((365 * 24 * time.Hour) / time.Second)
+const (
+	maxClientAccessLifetimeSeconds = int64((365 * 24 * time.Hour) / time.Second)
+	deviceIdentityChallengeBytes   = 32
+)
 
 // ValidateAccessRemoteCommand 校验 client access 与 remote daemon control 的 typed command。
 func ValidateAccessRemoteCommand(command *apipb.CommandEnvelope) error {
@@ -16,7 +19,11 @@ func ValidateAccessRemoteCommand(command *apipb.CommandEnvelope) error {
 		return err
 	}
 	switch value := command.GetCommand().(type) {
-	case *apipb.CommandEnvelope_ClientAccessIdentity, *apipb.CommandEnvelope_ClientAccessList,
+	case *apipb.CommandEnvelope_ClientAccessIdentity:
+		if len(value.ClientAccessIdentity.GetChallenge()) != deviceIdentityChallengeBytes {
+			return validation("client_access_identity.challenge", "fresh identity challenge must be 32 bytes")
+		}
+	case *apipb.CommandEnvelope_ClientAccessList,
 		*apipb.CommandEnvelope_RemoteStatus, *apipb.CommandEnvelope_RemoteLocalStatus,
 		*apipb.CommandEnvelope_RemoteLocalDisable:
 		return nil
@@ -69,7 +76,7 @@ func ClientAccessRecordToProto(record corev2.ClientAccessRecord) *remoteauthpb.C
 
 // ClientAccessIdentityResultToProto 包装公开 identity projection。
 func ClientAccessIdentityResultToProto(identity corev2.ClientAccessIdentity) *apipb.ClientAccessIdentityResult {
-	return &apipb.ClientAccessIdentityResult{Identity: ClientAccessIdentityToProto(identity)}
+	return &apipb.ClientAccessIdentityResult{Identity: ClientAccessIdentityToProto(identity), Challenge: cloneBytes(identity.Challenge), Proof: cloneBytes(identity.Proof)}
 }
 
 // ClientAccessListToProto 映射脱敏 client access record 列表。

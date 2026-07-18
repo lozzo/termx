@@ -126,6 +126,16 @@ message ClientAccessIdentityResult {
   bytes device_public_key = 3;
 }
 
+// DeviceIdentityProofInput 是 local/SSH application session 上 daemon fresh identity proof 的 canonical 签名输入。
+// challenge 由客户端为本次连接随机生成；签名只证明当前响应方持有 DeviceIdentity 私钥，不替代 transport authorization。
+message DeviceIdentityProofInput {
+  string domain = 1;
+  bytes challenge = 2;
+  string device_id = 3;
+  string device_fingerprint = 4;
+  bytes device_public_key = 5;
+}
+
 message ClientAccessTicketCreateRequest {
   string label = 1;
   ClientAccessScope scope = 2;

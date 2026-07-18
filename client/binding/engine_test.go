@@ -849,7 +849,10 @@ type protocolBindingSession struct {
 func (session *protocolBindingSession) Stamp() clientruntime.EndpointSessionStamp {
 	return session.stamp
 }
-func (session *protocolBindingSession) ObservedPath() string  { return "memory" }
+func (session *protocolBindingSession) ObservedPath() string { return "memory" }
+func (session *protocolBindingSession) Readiness() clientruntime.ReadySessionEvidence {
+	return clientruntime.ReadySessionEvidence{Identity: endpoint.DaemonIdentity{DeviceID: "device-binding-protocol", DeviceFingerprint: "SHA256:device-binding-protocol"}, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version}
+}
 func (session *protocolBindingSession) Done() <-chan struct{} { return session.client.Done() }
 func (session *protocolBindingSession) Err() error            { return session.client.Err() }
 func (session *protocolBindingSession) Close() error          { return session.client.Close() }
@@ -1017,8 +1020,11 @@ func newBindingSession() *bindingSession {
 
 func (session *bindingSession) Stamp() clientruntime.EndpointSessionStamp { return session.stamp }
 func (session *bindingSession) ObservedPath() string                      { return "direct" }
-func (session *bindingSession) Done() <-chan struct{}                     { return session.done }
-func (session *bindingSession) Err() error                                { return session.err }
+func (session *bindingSession) Readiness() clientruntime.ReadySessionEvidence {
+	return clientruntime.ReadySessionEvidence{Identity: endpoint.DaemonIdentity{DeviceID: "device-binding", DeviceFingerprint: "SHA256:device-binding"}, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version}
+}
+func (session *bindingSession) Done() <-chan struct{} { return session.done }
+func (session *bindingSession) Err() error            { return session.err }
 func (session *bindingSession) Close() error {
 	if session.closeFunc != nil {
 		return session.closeFunc()

@@ -333,12 +333,20 @@ func (dialer *ownerDialer) Dial(_ context.Context, request AttemptRequest) (Read
 		<-dialer.release
 	}
 	dialer.session = newOwnerSession(request.Stamp())
+	identity := request.DaemonIdentity()
+	if identity.Empty() {
+		identity = endpoint.DaemonIdentity{DeviceID: "device-owner-test", DeviceFingerprint: "SHA256:device-owner-test"}
+	}
+	dialer.session.evidence = ReadySessionEvidence{
+		Identity: identity, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: 1,
+	}
 	dialer.session.delayDone = dialer.delayDone
 	return dialer.session, nil
 }
 
 type ownerSession struct {
 	stamp          EndpointSessionStamp
+	evidence       ReadySessionEvidence
 	done           chan struct{}
 	closeOnce      sync.Once
 	closed         bool
@@ -354,9 +362,10 @@ func newOwnerSession(stamp EndpointSessionStamp) *ownerSession {
 	return &ownerSession{stamp: stamp, done: make(chan struct{}), removeObserved: make(chan struct{})}
 }
 
-func (session *ownerSession) Stamp() EndpointSessionStamp { return session.stamp }
-func (session *ownerSession) ObservedPath() string        { return "direct" }
-func (session *ownerSession) Done() <-chan struct{}       { return session.done }
+func (session *ownerSession) Stamp() EndpointSessionStamp     { return session.stamp }
+func (session *ownerSession) ObservedPath() string            { return "direct" }
+func (session *ownerSession) Readiness() ReadySessionEvidence { return session.evidence }
+func (session *ownerSession) Done() <-chan struct{}           { return session.done }
 func (session *ownerSession) Err() error {
 	if session.closed {
 		return io.EOF

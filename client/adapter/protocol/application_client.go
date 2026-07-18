@@ -1,12 +1,17 @@
 package protocol
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
+	"fmt"
 
+	"github.com/lozzow/termx/client/endpoint"
 	clientruntime "github.com/lozzow/termx/client/runtime"
 	internalprotocol "github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/proto/apipb"
+	"github.com/lozzow/termx/shared/remoteauth"
 )
 
 // ApplicationClient 组合单条 ready connection 的 framing client 与 Proto application session。
@@ -14,8 +19,67 @@ import (
 type ApplicationClient struct {
 	*internalprotocol.Client
 	*clientruntime.ApplicationSession
-	ready clientruntime.ApplicationReadySession
-	path  string
+	ready    clientruntime.ApplicationReadySession
+	path     string
+	evidence clientruntime.ReadySessionEvidence
+}
+
+// MarkReady 在 adapter 按 route 类型完成身份边界、authorization 与 Hello 后冻结 readiness evidence。
+// 该方法只能在 session 发布给 SessionOwner 前调用一次；缺失或重复 evidence 都直接失败。
+func (client *ApplicationClient) MarkReady(evidence clientruntime.ReadySessionEvidence) error {
+	if client == nil {
+		return errors.New("protocol application client is required")
+	}
+	if client.evidence.IdentityVerified || client.evidence.AuthorizationVerified || client.evidence.ProtocolVersion != 0 {
+		return errors.New("protocol application client readiness is already frozen")
+	}
+	if err := evidence.Validate(endpoint.DaemonIdentity{}); err != nil {
+		return err
+	}
+	client.evidence = evidence
+	return nil
+}
+
+// VerifyDaemonIdentity 通过当前已经完成 Hello 的 authenticated application session读取 daemon public identity，
+// 校验 public key fingerprint，并在 Endpoint 已有 pin 时要求 DeviceID/Fingerprint 精确匹配。
+func VerifyDaemonIdentity(ctx context.Context, session *clientruntime.ApplicationSession, expected endpoint.DaemonIdentity) (endpoint.DaemonIdentity, error) {
+	result, err := VerifyDaemonIdentityResult(ctx, session, expected)
+	if err != nil {
+		return endpoint.DaemonIdentity{}, err
+	}
+	identity := result.GetIdentity()
+	return endpoint.DaemonIdentity{DeviceID: identity.GetDeviceId(), DeviceFingerprint: identity.GetDeviceFingerprint()}, nil
+}
+
+// VerifyDaemonIdentityResult 执行 fresh challenge 并返回已验签的完整 Proto identity result，供需要展示 public key 的 application consumer 使用。
+// 它不授予 capability；调用方仍只能在 local/SSH 已授权 session 或 managed remote-auth 后调用。
+func VerifyDaemonIdentityResult(ctx context.Context, session *clientruntime.ApplicationSession, expected endpoint.DaemonIdentity) (*apipb.ClientAccessIdentityResult, error) {
+	if session == nil {
+		return nil, errors.New("application session is required for daemon identity proof")
+	}
+	challenge := make([]byte, remoteauth.DeviceIdentityChallengeBytes)
+	if _, err := rand.Read(challenge); err != nil {
+		return nil, fmt.Errorf("generate daemon identity challenge: %w", err)
+	}
+	result, err := session.ClientAccessIdentity(ctx, &apipb.ClientAccessIdentityCommand{Challenge: challenge})
+	if err != nil {
+		return nil, fmt.Errorf("read daemon identity proof: %w", err)
+	}
+	identity := result.GetIdentity()
+	if identity == nil || !bytes.Equal(result.GetChallenge(), challenge) {
+		return nil, errors.New("daemon identity proof is incomplete")
+	}
+	verified := endpoint.DaemonIdentity{DeviceID: identity.GetDeviceId(), DeviceFingerprint: identity.GetDeviceFingerprint()}
+	if err := verified.Validate(true); err != nil {
+		return nil, fmt.Errorf("daemon identity proof is invalid: %w", err)
+	}
+	if err := remoteauth.VerifyDeviceIdentityProof(challenge, identity.GetDeviceId(), identity.GetDeviceFingerprint(), identity.GetDevicePublicKey(), result.GetProof()); err != nil {
+		return nil, err
+	}
+	if !expected.Empty() && verified != expected {
+		return nil, errors.New("daemon identity proof does not match endpoint pin")
+	}
+	return result, nil
 }
 
 // HistoryWindow 显式选择 Proto application API，消除 framing client 旧同名方法的嵌入歧义。
@@ -67,7 +131,7 @@ func NewOwnedApplicationClient(client *internalprotocol.Client, ready clientrunt
 	if err != nil {
 		return nil, err
 	}
-	return &ApplicationClient{Client: client, ApplicationSession: application, ready: ready, path: ready.ObservedPath()}, nil
+	return &ApplicationClient{Client: client, ApplicationSession: application, ready: ready, path: ready.ObservedPath(), evidence: ready.Readiness()}, nil
 }
 
 // ObservedPath 返回 route adapter 观测到的实际连接路径。
@@ -76,6 +140,17 @@ func (client *ApplicationClient) ObservedPath() string {
 		return ""
 	}
 	return client.path
+}
+
+// Readiness 返回 adapter 在 session 发布前冻结的 identity、authorization 与 Hello 证据。
+func (client *ApplicationClient) Readiness() clientruntime.ReadySessionEvidence {
+	if client == nil {
+		return clientruntime.ReadySessionEvidence{}
+	}
+	if client.ready != nil {
+		return client.ready.Readiness()
+	}
+	return client.evidence
 }
 
 // ExecuteApplication 运输完整 generated Proto command；owned client 会先通过 SessionOwner generation fence。

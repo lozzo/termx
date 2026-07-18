@@ -198,6 +198,9 @@ func (dialer *Dialer) Dial(ctx context.Context, request clientruntime.AttemptReq
 	}
 	session := &Session{
 		stamp: request.Stamp(), observedPath: string(peer.ObservedPath()), selectionReason: string(selected.selectionReason),
+		evidence: clientruntime.ReadySessionEvidence{
+			Identity: request.DaemonIdentity(), IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version,
+		},
 		peer: peer, protocol: protocolClient, application: application,
 		observationDone: make(chan struct{}), closeRequested: make(chan struct{}),
 	}
@@ -278,6 +281,7 @@ type Session struct {
 	stamp           clientruntime.EndpointSessionStamp
 	observedPath    string
 	selectionReason string
+	evidence        clientruntime.ReadySessionEvidence
 	peer            port.ManagedPeer
 	protocol        *internalprotocol.Client
 	application     *clientruntime.ApplicationSession
@@ -293,6 +297,9 @@ func (session *Session) Stamp() clientruntime.EndpointSessionStamp { return sess
 
 // ObservedPath 返回当前 peer 的 direct/single-relay 投影，不改变 route identity。
 func (session *Session) ObservedPath() string { return session.observedPath }
+
+// Readiness 返回 remote-auth 与 protocol Hello 已完成的冻结证据。
+func (session *Session) Readiness() clientruntime.ReadySessionEvidence { return session.evidence }
 
 // Done 返回 protocol connection 生命周期终止信号；不能据此推断 daemon terminal lifecycle。
 func (session *Session) Done() <-chan struct{} { return session.protocol.Done() }

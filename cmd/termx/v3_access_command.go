@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	clientprotocol "github.com/lozzow/termx/client/adapter/protocol"
+	clientendpoint "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/remoteauthpb"
 	"github.com/spf13/cobra"
@@ -34,7 +36,7 @@ func v3AccessIdentityCommand(socket *string, logFile *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			response, err := application.ClientAccessIdentity(cmd.Context(), &apipb.ClientAccessIdentityCommand{})
+			response, err := clientprotocol.VerifyDaemonIdentityResult(cmd.Context(), application, clientendpoint.DaemonIdentity{})
 			if err != nil {
 				return err
 			}

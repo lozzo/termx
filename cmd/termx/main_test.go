@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"io"
@@ -24,6 +25,8 @@ import (
 	"github.com/lozzow/termx/core/history"
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/proto/apipb"
+	"github.com/lozzow/termx/proto/wire"
+	"github.com/lozzow/termx/shared/remoteauth"
 	tuiv3 "github.com/lozzow/termx/tui"
 	actiondomain "github.com/lozzow/termx/tui/action"
 	protocoladapter "github.com/lozzow/termx/tui/adapter/protocol"
@@ -2478,6 +2481,9 @@ func installV3LocalApplicationTestClient(t *testing.T, socketPath string, client
 		if err != nil {
 			return nil, endpointdomain.AccessRoute{}, err
 		}
+		if err := ready.MarkReady(clientruntime.ReadySessionEvidence{Identity: endpointdomain.DaemonIdentity{DeviceID: "device-cli-fixture", DeviceFingerprint: "SHA256:device-cli-fixture"}, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version}); err != nil {
+			return nil, endpointdomain.AccessRoute{}, err
+		}
 		lease, err := owner.AdoptReadySession(attempt, ready)
 		if err != nil {
 			return nil, endpointdomain.AccessRoute{}, err
@@ -2495,7 +2501,16 @@ func installV3LocalApplicationTestClient(t *testing.T, socketPath string, client
 }
 
 func newCoreV2TestServer(opts ...corev2.ServerOption) *corev2.Server {
-	return corev2.NewServer(append([]corev2.ServerOption{corev2.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory)}, opts...)...)
+	privateKey := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x42}, ed25519.SeedSize))
+	identity, err := remoteauth.NewIdentity("device-cli-test", privateKey)
+	if err != nil {
+		panic(err)
+	}
+	defaults := []corev2.ServerOption{
+		corev2.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory),
+		corev2.WithClientAccessService(v3ClientAccessService{identity: identity}),
+	}
+	return corev2.NewServer(append(defaults, opts...)...)
 }
 
 func newCoreV2ProtocolClientForCLITestWithOptions(t *testing.T, opts ...corev2.ServerOption) (*corev2.Server, *protocol.Client, func()) {

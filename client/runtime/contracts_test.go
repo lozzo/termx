@@ -97,30 +97,56 @@ func TestValidateReadySessionRejectsWrongGenerationAndMissingLifecycle(t *testin
 	if err := ValidateReadySession(request, nilSession); CodeOf(err) != ErrorUnavailable {
 		t.Fatalf("nil session error = %v code=%q", err, CodeOf(err))
 	}
-	wrong := &contractReadySession{stamp: EndpointSessionStamp{EndpointID: endpoint.DefaultEndpointID, RouteID: "local", Generation: 5}, done: make(chan struct{})}
+	readyEvidence := ReadySessionEvidence{Identity: endpoint.DaemonIdentity{DeviceID: "device-ready", DeviceFingerprint: "SHA256:device-ready"}, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: 1}
+	wrong := &contractReadySession{stamp: EndpointSessionStamp{EndpointID: endpoint.DefaultEndpointID, RouteID: "local", Generation: 5}, evidence: readyEvidence, done: make(chan struct{})}
 	if err := ValidateReadySession(request, wrong); CodeOf(err) != ErrorStaleSession {
 		t.Fatalf("wrong generation error = %v code=%q", err, CodeOf(err))
 	}
-	missingLifecycle := &contractReadySession{stamp: request.Stamp()}
+	missingLifecycle := &contractReadySession{stamp: request.Stamp(), evidence: readyEvidence}
 	if err := ValidateReadySession(request, missingLifecycle); CodeOf(err) != ErrorUnavailable {
 		t.Fatalf("missing lifecycle error = %v code=%q", err, CodeOf(err))
 	}
-	ready := &contractReadySession{stamp: request.Stamp(), done: make(chan struct{})}
+	ready := &contractReadySession{stamp: request.Stamp(), evidence: readyEvidence, done: make(chan struct{})}
 	if err := ValidateReadySession(request, ready); err != nil {
 		t.Fatal(err)
 	}
 }
 
+func TestReadySessionEvidenceRequiresProofAuthorizationHelloAndPin(t *testing.T) {
+	expected := endpoint.DaemonIdentity{DeviceID: "device-1", DeviceFingerprint: "SHA256:device-1"}
+	tests := []struct {
+		name     string
+		evidence ReadySessionEvidence
+		code     ErrorCode
+	}{
+		{name: "identity", evidence: ReadySessionEvidence{AuthorizationVerified: true, ProtocolVersion: 1}, code: ErrorIdentity},
+		{name: "authorization", evidence: ReadySessionEvidence{Identity: expected, IdentityVerified: true, ProtocolVersion: 1}, code: ErrorAuthorization},
+		{name: "hello", evidence: ReadySessionEvidence{Identity: expected, IdentityVerified: true, AuthorizationVerified: true}, code: ErrorUnavailable},
+		{name: "pin", evidence: ReadySessionEvidence{Identity: endpoint.DaemonIdentity{DeviceID: "other", DeviceFingerprint: "SHA256:other"}, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: 1}, code: ErrorIdentity},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.evidence.Validate(expected); CodeOf(err) != test.code {
+				t.Fatalf("evidence error = %v code=%q, want %q", err, CodeOf(err), test.code)
+			}
+		})
+	}
+}
+
 type contractReadySession struct {
-	stamp EndpointSessionStamp
-	done  chan struct{}
+	stamp    EndpointSessionStamp
+	evidence ReadySessionEvidence
+	done     chan struct{}
 }
 
 func (session *contractReadySession) Stamp() EndpointSessionStamp { return session.stamp }
 func (session *contractReadySession) ObservedPath() string        { return "" }
-func (session *contractReadySession) Done() <-chan struct{}       { return session.done }
-func (session *contractReadySession) Err() error                  { return nil }
-func (session *contractReadySession) Close() error                { return nil }
+func (session *contractReadySession) Readiness() ReadySessionEvidence {
+	return session.evidence
+}
+func (session *contractReadySession) Done() <-chan struct{} { return session.done }
+func (session *contractReadySession) Err() error            { return nil }
+func (session *contractReadySession) Close() error          { return nil }
 
 var _ ReadySession = (*contractReadySession)(nil)
 

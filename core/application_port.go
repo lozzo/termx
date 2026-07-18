@@ -274,7 +274,7 @@ type ApplicationSessionPort interface {
 	// ApplicationStorageList 返回稳定 storage key window。
 	ApplicationStorageList(context.Context, string, StorageScope, string, string) []StorageEntry
 	// ApplicationClientAccessIdentity 返回 daemon DeviceIdentity 公开投影。
-	ApplicationClientAccessIdentity(context.Context) (ClientAccessIdentity, error)
+	ApplicationClientAccessIdentity(context.Context, []byte) (ClientAccessIdentity, error)
 	// ApplicationClientAccessList 返回 daemon 持久化 grant 脱敏投影。
 	ApplicationClientAccessList(context.Context) ([]ClientAccessRecord, error)
 	// ApplicationClientAccessCreateTicket 原子签发并登记一次性 pairing ticket。

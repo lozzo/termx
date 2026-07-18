@@ -20,6 +20,7 @@ type ClientAccessScope struct {
 type ClientAccessIdentity struct {
 	DeviceID, DeviceFingerprint string
 	DevicePublicKey             []byte
+	Challenge, Proof            []byte
 }
 
 // ClientAccessTicketRequest 是一次 pairing ticket 签发请求。
@@ -46,8 +47,8 @@ type ClientAccessRecord struct {
 // ClientAccessService 是 core protocol session 调用 daemon-owned identity/pair/access runtime 的 typed hook。
 // core 只负责认证后 method scope；ticket、grant、key binding、receipt、撤销和持久化 truth 全部由实现方的 remoteauth.AccessStore 持有。
 type ClientAccessService interface {
-	// Identity 返回 daemon DeviceIdentity 的公开投影；实现不得返回或记录私钥。
-	Identity(ctx context.Context) (ClientAccessIdentity, error)
+	// Identity 返回 daemon DeviceIdentity 的公开投影和当前 challenge 的签名证明；实现不得返回或记录私钥。
+	Identity(ctx context.Context, challenge []byte) (ClientAccessIdentity, error)
 	// CreateTicket 由 owning daemon 原子登记并签发一次性 PairingTicket bundle。
 	CreateTicket(ctx context.Context, request ClientAccessTicketRequest) (ClientAccessTicket, error)
 	// List 返回不含 ticket、grant body 或 client public key bytes 的脱敏授权投影。

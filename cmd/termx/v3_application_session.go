@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	localadapter "github.com/lozzow/termx/client/adapter/local"
 	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
 	clientendpoint "github.com/lozzow/termx/client/endpoint"
 	clientruntime "github.com/lozzow/termx/client/runtime"
+	"github.com/lozzow/termx/proto/wire"
 )
 
 func newLocalApplicationSession(client any) (*clientruntime.ApplicationSession, error) {
@@ -41,6 +44,19 @@ func adoptCLIProtocolClient(client *localadapter.ProtocolClient, endpointID clie
 	}
 	ready, err := protocoladapter.NewApplicationClient(client, attempt.Stamp())
 	if err != nil {
+		_ = owner.Close()
+		return nil, err
+	}
+	proofCtx, cancelProof := context.WithTimeout(context.Background(), 5*time.Second)
+	identity, err := protocoladapter.VerifyDaemonIdentity(proofCtx, ready.ApplicationSession, target.DaemonIdentity)
+	cancelProof()
+	if err != nil {
+		_ = ready.Close()
+		_ = owner.Close()
+		return nil, err
+	}
+	if err := ready.MarkReady(clientruntime.ReadySessionEvidence{Identity: identity, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version}); err != nil {
+		_ = ready.Close()
 		_ = owner.Close()
 		return nil, err
 	}

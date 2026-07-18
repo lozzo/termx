@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -112,14 +114,32 @@ type v3ClientAccessService struct {
 	store    *remoteauth.AccessStore
 }
 
+// newEphemeralV3ClientAccessService 只为进程内 smoke harness 创建不落盘的 DeviceIdentity。
+// 正式 daemon 必须继续使用 newV3ClientAccessRuntime 的持久 identity/store，不能调用该入口替代持久安全真值。
+func newEphemeralV3ClientAccessService(deviceID string) (v3ClientAccessService, error) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return v3ClientAccessService{}, err
+	}
+	identity, err := remoteauth.NewIdentity(deviceID, privateKey)
+	if err != nil {
+		return v3ClientAccessService{}, err
+	}
+	return v3ClientAccessService{identity: identity}, nil
+}
+
 // Identity 返回当前 daemon 进程统一 DeviceIdentity 的公开投影；私钥永远不进入 protocol response。
-func (service v3ClientAccessService) Identity(context.Context) (corev2.ClientAccessIdentity, error) {
+func (service v3ClientAccessService) Identity(_ context.Context, challenge []byte) (corev2.ClientAccessIdentity, error) {
 	if err := service.identity.Validate(); err != nil {
+		return corev2.ClientAccessIdentity{}, err
+	}
+	proof, err := remoteauth.SignDeviceIdentityProof(service.identity, challenge)
+	if err != nil {
 		return corev2.ClientAccessIdentity{}, err
 	}
 	return corev2.ClientAccessIdentity{
 		DeviceID: service.identity.DeviceID, DeviceFingerprint: service.identity.Fingerprint,
-		DevicePublicKey: append([]byte(nil), service.identity.PublicKey...),
+		DevicePublicKey: append([]byte(nil), service.identity.PublicKey...), Challenge: append([]byte(nil), challenge...), Proof: proof,
 	}, nil
 }
 

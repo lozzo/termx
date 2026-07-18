@@ -41,8 +41,13 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	}
 	defer os.RemoveAll(socketDir)
 	socketPath := filepath.Join(socketDir, fmt.Sprintf("termx-v2-smoke-%d.sock", time.Now().UnixNano()))
+	clientAccess, err := newEphemeralV3ClientAccessService("device-v3-e2e-smoke")
+	if err != nil {
+		return v3E2ESmokeResult{}, err
+	}
 	server := corev2.NewServer(
 		corev2.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory),
+		corev2.WithClientAccessService(clientAccess),
 		corev2.WithSocketPath(socketPath),
 		corev2.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	)

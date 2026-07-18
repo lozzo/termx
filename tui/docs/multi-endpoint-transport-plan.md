@@ -23,7 +23,7 @@
 
 - C3X 已删除 `Endpoint.ResolveCurrentRoute`、TUI lazy bundle/session owner 和 CLI 直接 route/dial owner；CLI/TUI 当前保留明确待接 `client/runtime` 的调用缺口，不再有可继续修补的旧运行时。
 - C3B 已在 `client/endpoint` 完成纯领域 `RouteSelectionPlanner`、local/SSH full-race 分组、priority hedge、manual override、唯一 managed 单路计划和机器可读 fixture；它只产出不可变 attempt groups，不 dial，也不拥有 winner。
-- 默认全量竞速的真实启动、统一 `ReadySession`、winner/loser cleanup 尚未成为 CLI/TUI 共同运行时。
+- C3C 已把 local/SSH fresh DeviceIdentity challenge proof、managed channel-bound auth、route authorization、Hello 与 lifecycle signal 固化为统一 `ReadySession` 发布门禁；默认全量竞速的真实启动和 winner/loser cleanup 尚未成为 CLI/TUI 共同运行时。
 - `client/runtime` 尚未实现 per-endpoint session owner，`tui/adapter/clientruntime` 尚未接入。
 - `SessionGeneration` 和 channel-bound operation stamp 尚未覆盖 attach、input、paste、resize、detach 与迟到回包。
 
@@ -71,7 +71,7 @@ CONN003 自动竞速只包含 `local-unix` 和 `ssh-stdio`。单条 `managed-web
 transport 建立不等于 Endpoint 已连接。一次 attempt 只有依次完成以下边界后才能产生 `ReadySession`：
 
 1. 建立 transport。
-2. 完成 fresh DeviceIdentity challenge proof，并匹配 Endpoint pin。
+2. 完成 fresh DeviceIdentity challenge proof，并匹配 Endpoint pin；local/SSH 使用 versioned Proto challenge/result，managed 使用 channel-bound DeviceHello。
 3. 完成当前连接意图要求的授权。
 4. 完成 termx protocol Hello。
 

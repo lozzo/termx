@@ -24,6 +24,7 @@ const (
 
 type ClientAccessIdentityCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Challenge     []byte                 `protobuf:"bytes,2,opt,name=challenge,proto3" json:"challenge,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -56,6 +57,13 @@ func (x *ClientAccessIdentityCommand) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ClientAccessIdentityCommand.ProtoReflect.Descriptor instead.
 func (*ClientAccessIdentityCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_access_remote_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ClientAccessIdentityCommand) GetChallenge() []byte {
+	if x != nil {
+		return x.Challenge
+	}
+	return nil
 }
 
 type ClientAccessListCommand struct {
@@ -185,6 +193,8 @@ func (x *ClientAccessRevokeCommand) GetRequest() *remoteauthpb.ClientAccessRevok
 type ClientAccessIdentityResult struct {
 	state         protoimpl.MessageState                   `protogen:"open.v1"`
 	Identity      *remoteauthpb.ClientAccessIdentityResult `protobuf:"bytes,1,opt,name=identity,proto3" json:"identity,omitempty"`
+	Challenge     []byte                                   `protobuf:"bytes,2,opt,name=challenge,proto3" json:"challenge,omitempty"`
+	Proof         []byte                                   `protobuf:"bytes,3,opt,name=proof,proto3" json:"proof,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -222,6 +232,20 @@ func (*ClientAccessIdentityResult) Descriptor() ([]byte, []int) {
 func (x *ClientAccessIdentityResult) GetIdentity() *remoteauthpb.ClientAccessIdentityResult {
 	if x != nil {
 		return x.Identity
+	}
+	return nil
+}
+
+func (x *ClientAccessIdentityResult) GetChallenge() []byte {
+	if x != nil {
+		return x.Challenge
+	}
+	return nil
+}
+
+func (x *ClientAccessIdentityResult) GetProof() []byte {
+	if x != nil {
+		return x.Proof
 	}
 	return nil
 }
@@ -946,15 +970,18 @@ var File_apipb_access_remote_proto protoreflect.FileDescriptor
 
 const file_apipb_access_remote_proto_rawDesc = "" +
 	"\n" +
-	"\x19apipb/access_remote.proto\x12\ftermx.api.v1\x1a\x1eremoteauthpb/remote_auth.proto\"#\n" +
-	"\x1bClientAccessIdentityCommandJ\x04\b\x01\x10\x02\"\x1f\n" +
+	"\x19apipb/access_remote.proto\x12\ftermx.api.v1\x1a\x1eremoteauthpb/remote_auth.proto\"A\n" +
+	"\x1bClientAccessIdentityCommand\x12\x1c\n" +
+	"\tchallenge\x18\x02 \x01(\fR\tchallengeJ\x04\b\x01\x10\x02\"\x1f\n" +
 	"\x17ClientAccessListCommandJ\x04\b\x01\x10\x02\"x\n" +
 	"\x1fClientAccessTicketCreateCommand\x12O\n" +
 	"\arequest\x18\x02 \x01(\v25.termx.remote.auth.v1.ClientAccessTicketCreateRequestR\arequestJ\x04\b\x01\x10\x02\"l\n" +
 	"\x19ClientAccessRevokeCommand\x12I\n" +
-	"\arequest\x18\x02 \x01(\v2/.termx.remote.auth.v1.ClientAccessRevokeRequestR\arequestJ\x04\b\x01\x10\x02\"j\n" +
+	"\arequest\x18\x02 \x01(\v2/.termx.remote.auth.v1.ClientAccessRevokeRequestR\arequestJ\x04\b\x01\x10\x02\"\x9e\x01\n" +
 	"\x1aClientAccessIdentityResult\x12L\n" +
-	"\bidentity\x18\x01 \x01(\v20.termx.remote.auth.v1.ClientAccessIdentityResultR\bidentity\"^\n" +
+	"\bidentity\x18\x01 \x01(\v20.termx.remote.auth.v1.ClientAccessIdentityResultR\bidentity\x12\x1c\n" +
+	"\tchallenge\x18\x02 \x01(\fR\tchallenge\x12\x14\n" +
+	"\x05proof\x18\x03 \x01(\fR\x05proof\"^\n" +
 	"\x16ClientAccessListResult\x12D\n" +
 	"\x06access\x18\x01 \x01(\v2,.termx.remote.auth.v1.ClientAccessListResultR\x06access\"n\n" +
 	"\x1eClientAccessTicketCreateResult\x12L\n" +

@@ -317,8 +317,8 @@ func (adapter *coreApplicationAdapter) StorageList(ctx context.Context, _ *apipb
 	return apimapping.StorageListToProto(adapter.port.ApplicationStorageList(ctx, command.GetAppId(), apimapping.StorageScopeFromProto(command.GetScope()), command.GetOwnerId(), command.GetPrefix())), nil
 }
 
-func (adapter *coreApplicationAdapter) ClientAccessIdentity(ctx context.Context, _ *apipb.EndpointSessionStamp, _ *apipb.ClientAccessIdentityCommand) (*apipb.ClientAccessIdentityResult, error) {
-	result, err := adapter.port.ApplicationClientAccessIdentity(ctx)
+func (adapter *coreApplicationAdapter) ClientAccessIdentity(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.ClientAccessIdentityCommand) (*apipb.ClientAccessIdentityResult, error) {
+	result, err := adapter.port.ApplicationClientAccessIdentity(ctx, command.GetChallenge())
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}

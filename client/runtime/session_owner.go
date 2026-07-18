@@ -414,8 +414,11 @@ type ownedApplicationSession struct {
 
 func (session *ownedApplicationSession) Stamp() EndpointSessionStamp { return session.stamp }
 func (session *ownedApplicationSession) ObservedPath() string        { return session.observedPath }
-func (session *ownedApplicationSession) Done() <-chan struct{}       { return session.done }
-func (session *ownedApplicationSession) Err() error                  { return session.terminal.Err() }
+func (session *ownedApplicationSession) Readiness() ReadySessionEvidence {
+	return session.terminal.Readiness()
+}
+func (session *ownedApplicationSession) Done() <-chan struct{} { return session.done }
+func (session *ownedApplicationSession) Err() error            { return session.terminal.Err() }
 
 func (session *ownedApplicationSession) Close() error {
 	return session.owner.Disconnect(context.Background(), DisconnectRequest{Stamp: session.stamp})
@@ -469,7 +472,10 @@ type sharedApplicationLease struct {
 
 func (lease *sharedApplicationLease) Stamp() EndpointSessionStamp { return lease.ready.Stamp() }
 func (lease *sharedApplicationLease) ObservedPath() string        { return lease.ready.ObservedPath() }
-func (lease *sharedApplicationLease) Done() <-chan struct{}       { return lease.done }
+func (lease *sharedApplicationLease) Readiness() ReadySessionEvidence {
+	return lease.ready.Readiness()
+}
+func (lease *sharedApplicationLease) Done() <-chan struct{} { return lease.done }
 func (lease *sharedApplicationLease) Err() error {
 	lease.errMu.Lock()
 	defer lease.errMu.Unlock()
