@@ -138,22 +138,30 @@ Android / TUI / CLI / future iOS/Desktop / future Web
 | RTC007 | 待开始 | 地址覆盖、LAN 与 FRP | `pair create` 支持 signaling/ICE 地址与端口覆盖、自动 LAN seed 和安全预览；真实 LAN 与 TCP 映射 E2E 证明 locator 变化不改变 identity pin |
 | RTC008 | 待开始 | Endpoint share | 实现 CLI/TUI 同源 `endpoint share`、一次性 TLS share session、receiver proof、Route/policy diff、config-only 和 App 原子导入 |
 | RTC009 | 待开始 | Cloud Route 收口 | 现有 managed WebRTC 接到统一 PeerSession；单一 App 内按账号/订阅决定 eligibility；Cloud logout/failure 不影响 Direct/SSH |
-| RTC010 | 待开始 | 删除旧路径与最终验收 | 删除 managed-only pairing、旧 Route、旧 App flavor 分支、重复平台真值和旧 proxy；完成 Android 真机、LAN、SSH、FRP、Cloud、弱网、文件传输、lifecycle 与双 Agent 审查 |
+| RTC010 | 待开始 | 删除旧路径与最终验收 | 删除 managed-only pairing、旧 Route、旧 App flavor 分支、重复平台真值和旧 proxy；在 Android 模拟器完成最终 APK 的 Direct/SSH/Cloud、LAN/TCP mapping、terminal 交互、文件传输、弱网、lifecycle 与双 Agent 审查 |
 | WEB001 | 延后 | Web/WASM 产品恢复 | 仅用户明确恢复 Web 后启动；Go/WASM + Cloud managed WebRTC，纯浏览器不支持 Direct/SSH |
 
 ## 测试准入
+
+### Android APK 端到端基线
+
+- Android 纵向切片和 `RTC010` 必须构建并安装真实 APK 到仓库指定的 ARM64 Android 模拟器；不能只运行 Go、JNI、TypeScript 或 Gradle 的隔离测试。
+- 自动化流程必须从真实 App UI 驱动：添加或扫码导入 Endpoint -> 建立 Direct/SSH/Cloud 对应连接 -> 查看 terminal 列表 -> 打开 terminal -> 输入命令并等待可识别输出 -> 继续发送输入并验证交互状态。
+- 最终验收还必须从 App UI 完成文件上传与下载，并按文件长度和摘要校验内容；必须覆盖取消或失败后资源释放，不能只证明文件 API 可调用。
+- 必须覆盖锁屏、后台或等价 Activity/WebView freeze -> 旧 generation/handle 失效 -> 恢复后新 generation 重建 -> terminal 重新连接，并扫描 logcat、`AndroidRuntime`、native crash 和无界等待。
+- 测试夹具可以准备 daemon、terminal command 和校验文件，但不得绕过 APK UI 直接调用 Go/JNI 来冒充用户端到端结果。物理设备只作为补充，不替代模拟器门禁。
 
 - `BASE001`：文本守卫确认 AGENTS/workflow 只定义单一 App、Web/WASM 延后且 Direct/SSH/Cloud 统一使用 WebRTC DataChannel；`git diff --check`。
 - `RTC001`：generated-code check；Proto round-trip、unknown-field、descriptor compatibility；Endpoint parser/assembler/planner tests；旧 Route enum/name 扫描；`make doctor`；`git diff --check`。
 - `RTC002`：PeerSession/pairing unit + race；Direct/SSH/Cloud fake connector exact-close、cancel、stale generation 和唯一 winner harness；managed-only import owner 扫描；`make doctor`；`git diff --check`。
 - `RTC003`：ICE-TCP candidate protocol assertion；auth/Hello/Proto API；signaling expiry/replay/pin mismatch；100 次建连、取消和 listener cleanup；相关 race；`make doctor`；`git diff --check`。
-- `RTC004`：mobile build、`:app:assembleDebug`、`:app:connectedDebugAndroidTest`；物理设备或 ARM64 AVD 无 Cloud 扫码连接、terminal attach、锁屏恢复和 crash scan；`make doctor`；`git diff --check`。
+- `RTC004`：mobile build、`:app:assembleDebug`、`:app:connectedDebugAndroidTest`；ARM64 Android 模拟器安装真实 APK，并从 App UI 完成无 Cloud 扫码、连接、terminal 列表、打开 terminal、输入命令、验证输出、持续交互、锁屏恢复和 crash scan；`make doctor`；`git diff --check`。
 - `RTC005`：registry transaction/race、identity conflict、credential atomicity、Android process recreation；平台源码扫描禁止第二份 Endpoint/Route/session registry；mobile tests/build；`git diff --check`。
 - `RTC006`：隔离真实 sshd、host-key pin、key/password credential、SSH-backed ICE selected TCP pair、auth/Hello/API、tunnel cancel/cleanup；扫描确认新路径不启动 `stdio-proxy`；`make doctor`；`git diff --check`。
-- `RTC007`：LAN 与 TCP mapping harness；二维码 route override round-trip；错误 advertised address、identity mismatch、过期 ticket 和端口不可达 fail closed；Android 真机 E2E；`git diff --check`。
+- `RTC007`：LAN 与 TCP mapping harness；二维码 route override round-trip；错误 advertised address、identity mismatch、过期 ticket 和端口不可达 fail closed；Android 模拟器经真实 TCP 映射完成 App E2E；`git diff --check`。
 - `RTC008`：ShareSessionOffer/Bundle compatibility、一次消费、过期、receiver proof、config diff、config-only、secret 扫描；CLI/TUI/Android E2E；`git diff --check`。
 - `RTC009`：managed direct/Relay E2E；未登录/无订阅/Cloud 故障只过滤 managed Route；Direct/SSH regression；Cloud 私有边界扫描；`git diff --check`。
-- `RTC010`：全仓 Go/race、Android tests/build/instrumentation、真实 LAN/SSH/FRP/Cloud、锁屏/网络切换、文件传输和弱网；旧路径/重复真值/fallback 扫描；架构与代码 reviewer 均 PASS；`make doctor`；`git diff --check`。
+- `RTC010`：全仓 Go/race、Android tests/build/instrumentation；ARM64 Android 模拟器安装最终 APK，并从真实 App UI 完成 Direct、SSH、Cloud、LAN/TCP mapping、terminal 列表、terminal 打开、命令输入/输出、持续交互、文件上传/下载内容校验、取消、锁屏/后台恢复和网络切换；执行弱网与 crash 扫描；旧路径/重复真值/fallback 扫描；双 reviewer 只按当前切片既定完成条件审查，不得以提前优化或未来能力阻塞，架构与代码 reviewer 均 PASS；`make doctor`；`git diff --check`。
 
 ## 执行规则
 
@@ -165,3 +173,4 @@ Android / TUI / CLI / future iOS/Desktop / future Web
 6. 不为旧内部 Route、storage、proxy、App flavor 或 Web runtime 保留双路径、alias、wrapper 和 fallback。
 7. 每个切片运行对应准入、更新状态并使用中文提交信息提交。
 8. `RTC010` 执行双 Agent 审查；其它切片只有用户或本文件明确要求时使用子 Agent。
+9. reviewer 只能用当前切片的范围、契约、完成条件、可复现行为和测试证据判定 `PASS/FAIL`；未来优化建议记录为 deferred，不得扩大切片或阻塞提交。
