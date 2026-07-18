@@ -190,13 +190,13 @@ func renderV3PairingQR(output io.Writer, payload []byte, expiresAt time.Time) er
 			}
 			switch {
 			case top && bottom:
-				_, err = io.WriteString(output, "\x1b[40m  ")
+				_, err = io.WriteString(output, "\x1b[40m ")
 			case !top && !bottom:
-				_, err = io.WriteString(output, "\x1b[47m  ")
+				_, err = io.WriteString(output, "\x1b[47m ")
 			case top:
-				_, err = io.WriteString(output, "\x1b[30;47m▀▀")
+				_, err = io.WriteString(output, "\x1b[30;47m▀")
 			default:
-				_, err = io.WriteString(output, "\x1b[30;47m▄▄")
+				_, err = io.WriteString(output, "\x1b[30;47m▄")
 			}
 			if err != nil {
 				return err

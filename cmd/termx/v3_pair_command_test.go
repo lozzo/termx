@@ -7,9 +7,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	corev2 "github.com/lozzow/termx/core"
@@ -112,6 +114,24 @@ func TestPairInspectAndTerminalQRNeverPrintLongLivedGrant(t *testing.T) {
 	qr := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--ttl", "5m")
 	if !strings.Contains(string(qr), "Scan with the TermX App") || !strings.Contains(string(qr), "\x1b[40m") || strings.Contains(string(qr), `"pairing_ticket"`) {
 		t.Fatalf("terminal QR output = %q", qr)
+	}
+	assertTerminalQRUsesSquareCells(t, qr)
+}
+
+func assertTerminalQRUsesSquareCells(t *testing.T, output []byte) {
+	t.Helper()
+	lines := strings.Split(strings.TrimSuffix(string(output), "\n"), "\n")
+	if len(lines) < 4 {
+		t.Fatalf("terminal QR output has %d lines", len(lines))
+	}
+	qrLines := lines[2 : len(lines)-1]
+	ansi := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	wantColumns := 2*len(qrLines) - 1
+	for index, line := range qrLines {
+		columns := utf8.RuneCountInString(ansi.ReplaceAllString(line, ""))
+		if columns != wantColumns {
+			t.Fatalf("terminal QR row %d uses %d columns for %d packed rows; want %d", index, columns, len(qrLines), wantColumns)
+		}
 	}
 }
 
