@@ -6,7 +6,9 @@ import (
 	"net"
 	"testing"
 
+	"github.com/lozzow/termx/client/adapter/direct"
 	"github.com/lozzow/termx/client/endpoint"
+	"github.com/lozzow/termx/proto/remoteauthpb"
 	golangssh "golang.org/x/crypto/ssh"
 )
 
@@ -16,13 +18,11 @@ func TestSSHRouteProjectionKeepsUserHostAndTCPCandidateExplicit(t *testing.T) {
 	if user != "build" || host != "studio.example" {
 		t.Fatalf("SSH target = %q@%q", user, host)
 	}
-	candidate := "candidate:1 1 tcp 1671430143 127.0.0.1 41121 typ host tcptype passive"
-	if got := projectTCPCandidate(candidate, "127.0.0.1", 54321); got != "candidate:1 1 tcp 1671430143 127.0.0.1 54321 typ host tcptype passive" {
-		t.Fatalf("projected candidate = %q", got)
-	}
-	udp := "candidate:2 1 udp 1 127.0.0.1 41121 typ host"
-	if got := projectTCPCandidate(udp, "127.0.0.1", 54321); got != udp {
-		t.Fatalf("UDP candidate changed to %q", got)
+	answer, err := direct.ProjectVerifiedTCPAnswer(&remoteauthpb.DirectSignalingAnswerV1{Candidates: []*remoteauthpb.DirectIceCandidate{{
+		Candidate: "candidate:1 1 tcp 1671430143 127.0.0.1 41121 typ host tcptype passive",
+	}}}, []string{"127.0.0.1:54321"})
+	if err != nil || answer.GetCandidates()[0].GetCandidate() != "candidate:1 1 tcp 1671430143 127.0.0.1 54321 typ host tcptype passive" {
+		t.Fatalf("projected answer=%v err=%v", answer, err)
 	}
 }
 

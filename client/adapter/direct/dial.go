@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -227,6 +229,13 @@ func openDirectPeer(ctx context.Context, request clientruntime.AttemptRequest, o
 		_ = opened.Close()
 		return nil, fmt.Errorf("verify direct signaling answer: %w", err)
 	}
+	if route.Kind == endpoint.RouteDirectWebRTCTCP {
+		answer, err = ProjectVerifiedTCPAnswer(answer, route.ICETCPAddresses)
+		if err != nil {
+			_ = opened.Close()
+			return nil, fmt.Errorf("project verified Direct ICE-TCP answer: %w", err)
+		}
+	}
 	if options.TransformAnswer != nil {
 		answer, err = options.TransformAnswer(proto.Clone(answer).(*remoteauthpb.DirectSignalingAnswerV1))
 		if err != nil {
@@ -260,6 +269,130 @@ func openDirectPeer(ctx context.Context, request clientruntime.AttemptRequest, o
 		return nil, fmt.Errorf("direct endpoint established unexpected path %q", peer.ObservedPath())
 	}
 	return opened, nil
+}
+
+// ProjectVerifiedTCPAnswer 把已经通过 daemon DeviceIdentity 签名验证的 TCP candidates 投影到 Route 声明的可达 locator。
+// 该函数不验证签名也不选择 Route；调用方必须先完成 VerifyDirectSignalingAnswer，地址投影失败时必须终止当前 attempt。
+func ProjectVerifiedTCPAnswer(answer *remoteauthpb.DirectSignalingAnswerV1, addresses []string) (*remoteauthpb.DirectSignalingAnswerV1, error) {
+	if answer == nil {
+		return nil, fmt.Errorf("verified Direct answer is required")
+	}
+	locators, err := tcpCandidateLocators(addresses)
+	if err != nil {
+		return nil, err
+	}
+	projected := proto.Clone(answer).(*remoteauthpb.DirectSignalingAnswerV1)
+	if answerAlreadyUsesTCPCandidateLocators(answer, locators) {
+		return projected, nil
+	}
+	lines := strings.Split(projected.GetAnswerSdp(), "\n")
+	projectedLines := make([]string, 0, len(lines)+len(locators))
+	sdpProjected := false
+	for _, line := range lines {
+		ending := ""
+		if strings.HasSuffix(line, "\r") {
+			line, ending = strings.TrimSuffix(line, "\r"), "\r"
+		}
+		if !strings.HasPrefix(line, "a=candidate:") || !isTCPCandidate(strings.TrimPrefix(line, "a=")) {
+			projectedLines = append(projectedLines, line+ending)
+			continue
+		}
+		if sdpProjected {
+			continue
+		}
+		for _, locator := range locators {
+			projectedLines = append(projectedLines, "a="+projectTCPCandidate(strings.TrimPrefix(line, "a="), locator.host, locator.port)+ending)
+		}
+		sdpProjected = true
+	}
+	projected.AnswerSdp = strings.Join(projectedLines, "\n")
+	projected.Candidates = nil
+	for _, candidate := range answer.GetCandidates() {
+		if candidate == nil || !isTCPCandidate(candidate.GetCandidate()) {
+			continue
+		}
+		for _, locator := range locators {
+			cloned := proto.Clone(candidate).(*remoteauthpb.DirectIceCandidate)
+			cloned.Candidate = projectTCPCandidate(cloned.GetCandidate(), locator.host, locator.port)
+			projected.Candidates = append(projected.Candidates, cloned)
+		}
+		break
+	}
+	return projected, nil
+}
+
+func answerAlreadyUsesTCPCandidateLocators(answer *remoteauthpb.DirectSignalingAnswerV1, locators []tcpCandidateLocator) bool {
+	wanted := make(map[string]struct{}, len(locators))
+	for _, locator := range locators {
+		wanted[net.JoinHostPort(locator.host, strconv.Itoa(locator.port))] = struct{}{}
+	}
+	found := false
+	check := func(candidate string) bool {
+		fields := strings.Fields(candidate)
+		if len(fields) < 8 || !strings.EqualFold(fields[2], "tcp") {
+			return true
+		}
+		found = true
+		_, ok := wanted[net.JoinHostPort(fields[4], fields[5])]
+		return ok
+	}
+	for _, line := range strings.Split(answer.GetAnswerSdp(), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "a=candidate:") && !check(strings.TrimPrefix(line, "a=")) {
+			return false
+		}
+	}
+	for _, candidate := range answer.GetCandidates() {
+		if candidate != nil && !check(candidate.GetCandidate()) {
+			return false
+		}
+	}
+	return found
+}
+
+type tcpCandidateLocator struct {
+	host string
+	port int
+}
+
+func tcpCandidateLocators(addresses []string) ([]tcpCandidateLocator, error) {
+	canonical := make(map[string]tcpCandidateLocator, len(addresses))
+	for _, address := range addresses {
+		host, portValue, err := net.SplitHostPort(strings.TrimSpace(address))
+		port, portErr := strconv.ParseUint(portValue, 10, 16)
+		if err != nil || portErr != nil || port == 0 || strings.TrimSpace(host) == "" || host == "0.0.0.0" || host == "::" {
+			return nil, fmt.Errorf("ICE-TCP locator %q must be a reachable HOST:PORT", address)
+		}
+		key := net.JoinHostPort(strings.TrimSpace(host), strconv.Itoa(int(port)))
+		canonical[key] = tcpCandidateLocator{host: strings.TrimSpace(host), port: int(port)}
+	}
+	if len(canonical) == 0 {
+		return nil, fmt.Errorf("at least one ICE-TCP locator is required")
+	}
+	keys := make([]string, 0, len(canonical))
+	for key := range canonical {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	result := make([]tcpCandidateLocator, 0, len(keys))
+	for _, key := range keys {
+		result = append(result, canonical[key])
+	}
+	return result, nil
+}
+
+func isTCPCandidate(candidate string) bool {
+	fields := strings.Fields(candidate)
+	return len(fields) >= 8 && strings.EqualFold(fields[2], "tcp")
+}
+
+func projectTCPCandidate(candidate, host string, port int) string {
+	fields := strings.Fields(candidate)
+	if len(fields) < 8 || !strings.EqualFold(fields[2], "tcp") {
+		return candidate
+	}
+	fields[4], fields[5] = host, strconv.Itoa(port)
+	return strings.Join(fields, " ")
 }
 
 func (peer *openedDirectPeer) Transport() transport.Transport {

@@ -5,7 +5,10 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"io"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -57,6 +60,56 @@ func TestDirectICETCPCompletesSignedSignalingAuthHelloAndProtoAPI(t *testing.T) 
 	pair := selectedPair(t, clientPeer)
 	if pair.Local.Protocol != pionwebrtc.ICEProtocolTCP || pair.Remote.Protocol != pionwebrtc.ICEProtocolTCP {
 		t.Fatalf("Direct selected candidate pair is not TCP: %s", pair)
+	}
+}
+
+func TestDirectTCPMappingChangesLocatorsWithoutChangingIdentity(t *testing.T) {
+	fixture := newDirectFixture(t)
+	signalingProxy := newTCPMappingProxy(t, fixture.signalingAddress)
+	iceProxy := newTCPMappingProxy(t, fixture.iceAddress)
+	var clientPeer *pionwebrtc.PeerConnection
+	clientAPI := directClientAPI()
+	dialer := fixture.dialer(pionadapter.Factory{PeerConnections: func(configuration pionwebrtc.Configuration) (*pionwebrtc.PeerConnection, error) {
+		peer, err := clientAPI.NewPeerConnection(configuration)
+		if err == nil {
+			clientPeer = peer
+		}
+		return peer, err
+	}})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ready, err := dialer.Connect(ctx, fixture.attemptWithLocators(t, 2, signalingProxy.address(), iceProxy.address()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ready.Close()
+	if ready.Readiness().Identity.DeviceFingerprint != fixture.identity.Fingerprint || !ready.Readiness().IdentityVerified {
+		t.Fatalf("mapped Direct readiness=%+v", ready.Readiness())
+	}
+	pair := selectedPair(t, clientPeer)
+	_, mappedPort, err := net.SplitHostPort(iceProxy.address())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pair.Remote.Protocol != pionwebrtc.ICEProtocolTCP || strconv.Itoa(int(pair.Remote.Port)) != mappedPort {
+		t.Fatalf("mapped selected pair=%s, want remote TCP port %s", pair, mappedPort)
+	}
+}
+
+func TestDirectTCPMappingFailsClosedForUnreachableSignalingOrICE(t *testing.T) {
+	fixture := newDirectFixture(t)
+	unreachableSignaling := closedTCPAddress(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := fixture.dialer(pionadapter.Factory{}).Connect(ctx, fixture.attemptWithLocators(t, 3, unreachableSignaling, fixture.iceAddress)); err == nil {
+		t.Fatal("unreachable mapped signaling unexpectedly connected")
+	}
+	signalingProxy := newTCPMappingProxy(t, fixture.signalingAddress)
+	unreachableICE := closedTCPAddress(t)
+	ctxICE, cancelICE := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelICE()
+	if _, err := fixture.dialer(pionadapter.Factory{}).Connect(ctxICE, fixture.attemptWithLocators(t, 4, signalingProxy.address(), unreachableICE)); err == nil {
+		t.Fatal("unreachable mapped ICE-TCP address unexpectedly connected")
 	}
 }
 
@@ -182,6 +235,25 @@ func TestNilDirectDialerFailsWithoutPanic(t *testing.T) {
 	}
 }
 
+func TestVerifiedTCPAnswerProjectionPublishesOneCandidatePerLocator(t *testing.T) {
+	answer, err := direct.ProjectVerifiedTCPAnswer(&remoteauthpb.DirectSignalingAnswerV1{
+		AnswerSdp: "v=0\r\na=candidate:one 1 tcp 10 192.168.1.10 41121 typ host tcptype passive\r\na=candidate:two 1 tcp 9 10.0.0.10 41121 typ host tcptype passive\r\na=end-of-candidates\r\n",
+		Candidates: []*remoteauthpb.DirectIceCandidate{
+			{Candidate: "candidate:one 1 tcp 10 192.168.1.10 41121 typ host tcptype passive"},
+			{Candidate: "candidate:two 1 tcp 9 10.0.0.10 41121 typ host tcptype passive"},
+		},
+	}, []string{"127.0.0.1:52121"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(answer.GetAnswerSdp(), "a=candidate:") != 1 || len(answer.GetCandidates()) != 1 {
+		t.Fatalf("projected answer retained duplicate mux candidates: %#v", answer)
+	}
+	if !strings.Contains(answer.GetAnswerSdp(), "127.0.0.1 52121") || !strings.Contains(answer.GetCandidates()[0].GetCandidate(), "127.0.0.1 52121") {
+		t.Fatalf("projected answer missed mapped locator: %#v", answer)
+	}
+}
+
 type directFixture struct {
 	identity         remoteauth.Identity
 	credential       remoteauth.ClientAccessCredential
@@ -271,12 +343,16 @@ func (fixture *directFixture) dialer(peers direct.PeerFactory) *direct.Dialer {
 }
 
 func (fixture *directFixture) attempt(t *testing.T, generation clientruntime.SessionGeneration) clientruntime.AttemptRequest {
+	return fixture.attemptWithLocators(t, generation, fixture.signalingAddress, fixture.iceAddress)
+}
+
+func (fixture *directFixture) attemptWithLocators(t *testing.T, generation clientruntime.SessionGeneration, signalingAddress, iceAddress string) clientruntime.AttemptRequest {
 	t.Helper()
 	target := endpoint.Endpoint{
 		ID: "direct", DaemonIdentity: endpoint.DaemonIdentity{DeviceID: fixture.identity.DeviceID, DeviceFingerprint: fixture.identity.Fingerprint},
 		Routes: map[endpoint.RouteID]endpoint.AccessRoute{"lan": {
 			ID: "lan", Kind: endpoint.RouteDirectWebRTCTCP, Enabled: true, Source: endpoint.SourceManual, PolicySource: endpoint.SourceUser,
-			CredentialRef: "credential:direct", SignalingAddresses: []string{fixture.signalingAddress}, ICETCPAddresses: []string{fixture.iceAddress},
+			CredentialRef: "credential:direct", SignalingAddresses: []string{signalingAddress}, ICETCPAddresses: []string{iceAddress},
 		}},
 	}
 	attempt, err := clientruntime.NewAttemptRequest(target, "lan", generation, clientruntime.ConnectIntentInteractive)
@@ -284,6 +360,57 @@ func (fixture *directFixture) attempt(t *testing.T, generation clientruntime.Ses
 		t.Fatal(err)
 	}
 	return attempt
+}
+
+type tcpMappingProxy struct {
+	listener net.Listener
+	target   string
+}
+
+func newTCPMappingProxy(t *testing.T, target string) *tcpMappingProxy {
+	t.Helper()
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := &tcpMappingProxy{listener: listener, target: target}
+	go proxy.serve()
+	t.Cleanup(func() { _ = listener.Close() })
+	return proxy
+}
+
+func (proxy *tcpMappingProxy) address() string { return proxy.listener.Addr().String() }
+
+func (proxy *tcpMappingProxy) serve() {
+	for {
+		incoming, err := proxy.listener.Accept()
+		if err != nil {
+			return
+		}
+		go func() {
+			defer incoming.Close()
+			outgoing, err := net.Dial("tcp", proxy.target)
+			if err != nil {
+				return
+			}
+			defer outgoing.Close()
+			done := make(chan struct{}, 2)
+			go func() { _, _ = io.Copy(outgoing, incoming); done <- struct{}{} }()
+			go func() { _, _ = io.Copy(incoming, outgoing); done <- struct{}{} }()
+			<-done
+		}()
+	}
+}
+
+func closedTCPAddress(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	_ = listener.Close()
+	return address
 }
 
 func (fixture *directFixture) stop(t *testing.T) {

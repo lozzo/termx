@@ -88,7 +88,8 @@ Route connector
 `termx pair create` 用于把当前 daemon 添加并授权到 App：
 
 - QR 包含签名 daemon identity、短期一次性 PairingTicket 和可达 Route hint。
-- 用户可以覆盖 Direct signaling/ICE-TCP 的对外地址和端口。
+- daemon 默认监听所有 IPv4 interface，并把当前活动 RFC1918 IPv4 地址投影为可预览的 LAN signaling/ICE-TCP locator；没有可用 LAN 地址时必须由用户显式指定，不能发布 wildcard 地址。
+- 用户可以同时覆盖 Direct signaling/ICE-TCP 的对外地址和端口，并可设置 server name；显式覆盖完全替代自动 LAN seed，用于 FRP 或其它 TCP 映射。
 - App 必须先验证 bundle 和 identity，再通过任一可达 Route 向 owning daemon 兑换 client-bound grant。
 - PairingTicket 不能直接访问 terminal、history 或 file。
 - QR 不包含长期 bearer grant、private key、Cloud token 或本地 credential ref。

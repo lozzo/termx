@@ -56,6 +56,16 @@ type pairInspectView struct {
 	NotBefore         string           `json:"not_before"`
 	ExpiresAt         string           `json:"expires_at"`
 	GrantLifetime     int64            `json:"grant_lifetime_seconds"`
+	Routes            []pairRouteView  `json:"routes"`
+}
+
+type pairRouteView struct {
+	RouteID             string   `json:"route_id"`
+	Kind                string   `json:"kind"`
+	SignalingAddresses  []string `json:"signaling_addresses,omitempty"`
+	ICETCPAddresses     []string `json:"ice_tcp_addresses,omitempty"`
+	AdvertisedAddresses []string `json:"advertised_addresses,omitempty"`
+	ServerName          string   `json:"server_name,omitempty"`
 }
 
 func v3PairInspectCommand() *cobra.Command {
@@ -77,6 +87,7 @@ func v3PairInspectCommand() *cobra.Command {
 				DeviceID: bundle.GetIdentity().GetDeviceId(), DeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint(),
 				TicketID: claims.TicketID, ScopeCeiling: claims.ScopeCeiling, GrantLifetime: claims.GrantLifetimeSeconds,
 				IssuedAt: formatTerminalTime(claims.IssuedAt), NotBefore: formatTerminalTime(claims.NotBefore), ExpiresAt: formatTerminalTime(claims.ExpiresAt),
+				Routes: pairRouteViews(bundle),
 			}
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
@@ -96,6 +107,9 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 	var terminalID string
 	var ticketTTL time.Duration
 	var grantLifetime time.Duration
+	var signalingAddresses []string
+	var iceTCPAddresses []string
+	var serverName string
 	command := &cobra.Command{
 		Use:   "create",
 		Short: "Issue a short-lived one-time pairing ticket from the local daemon",
@@ -130,9 +144,15 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			directRoute, err := v3DirectPairingRoute(v3DirectPairingRouteOptions{
+				SignalingAddresses: signalingAddresses, ICETCPAddresses: iceTCPAddresses, ServerName: serverName,
+			})
+			if err != nil {
+				return usageCLIError(err.Error())
+			}
 			response, err := application.ClientAccessTicketCreate(cmd.Context(), &apipb.ClientAccessTicketCreateCommand{Request: &remoteauthpb.ClientAccessTicketCreateRequest{
 				Label: label, Scope: clientAccessScopeToProto(scope), TicketTtlSeconds: int64(ticketTTL / time.Second), GrantLifetimeSeconds: int64(grantLifetime / time.Second),
-				Routes: []*remoteauthpb.EndpointRouteConfigV1{v3DirectPairingRoute()},
+				Routes: []*remoteauthpb.EndpointRouteConfigV1{directRoute},
 			}})
 			if err != nil {
 				return err
@@ -149,6 +169,9 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 				}
 				return renderV3PairingQR(cmd.OutOrStdout(), payload, time.Unix(0, result.GetExpiresAtUnixNano()).UTC())
 			}
+			if err := renderV3PairingPreview(cmd.OutOrStdout(), payload, time.Unix(0, result.GetExpiresAtUnixNano()).UTC()); err != nil {
+				return err
+			}
 			if err := writeV3PrivateFile(outputPath, payload); err != nil {
 				return err
 			}
@@ -162,6 +185,9 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 	command.Flags().StringVar(&terminalID, "terminal", "", "limit the capability to one terminal instead of daemon-wide access")
 	command.Flags().DurationVar(&ticketTTL, "ttl", 10*time.Minute, "one-time ticket lifetime")
 	command.Flags().DurationVar(&grantLifetime, "grant-ttl", 90*24*time.Hour, "bound capability lifetime")
+	command.Flags().StringArrayVar(&signalingAddresses, "signaling-address", nil, "published Direct signaling HOST:PORT (repeatable; requires --ice-tcp-address)")
+	command.Flags().StringArrayVar(&iceTCPAddresses, "ice-tcp-address", nil, "published Direct ICE-TCP HOST:PORT (repeatable; requires --signaling-address)")
+	command.Flags().StringVar(&serverName, "server-name", "", "optional Direct server name bound into the signed Route hint")
 	return command
 }
 
@@ -181,7 +207,10 @@ func renderV3PairingQR(output io.Writer, payload []byte, expiresAt time.Time) er
 	if len(bitmap) == 0 {
 		return fmt.Errorf("encode pairing QR: empty bitmap")
 	}
-	if _, err = fmt.Fprintf(output, "Scan with the TermX App\nExpires: %s\n", formatTerminalTime(expiresAt)); err != nil {
+	if err := renderV3PairingPreview(output, payload, expiresAt); err != nil {
+		return err
+	}
+	if _, err = io.WriteString(output, "Scan with the TermX App\n"); err != nil {
 		return err
 	}
 	for row := 0; row < len(bitmap); row += 2 {
@@ -211,6 +240,47 @@ func renderV3PairingQR(output io.Writer, payload []byte, expiresAt time.Time) er
 	}
 	_, err = io.WriteString(output, "\x1b[0mThis QR contains a one-time pairing ticket. Clear the terminal after scanning.\n")
 	return err
+}
+
+func renderV3PairingPreview(output io.Writer, payload []byte, expiresAt time.Time) error {
+	bundle, _, err := remoteauth.ParsePairingBundle(payload, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "Device: %s\nFingerprint: %s\nExpires: %s\n",
+		bundle.GetIdentity().GetDeviceId(), bundle.GetIdentity().GetDeviceFingerprint(), formatTerminalTime(expiresAt)); err != nil {
+		return err
+	}
+	for _, route := range pairRouteViews(bundle) {
+		if _, err := fmt.Fprintf(output, "Route %s: signaling=%s ice-tcp=%s",
+			route.RouteID, strings.Join(route.SignalingAddresses, ","), strings.Join(route.ICETCPAddresses, ",")); err != nil {
+			return err
+		}
+		if route.ServerName != "" {
+			if _, err := fmt.Fprintf(output, " server-name=%s", route.ServerName); err != nil {
+				return err
+			}
+		}
+		if _, err := io.WriteString(output, "\n"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func pairRouteViews(bundle *remoteauth.PairingBundle) []pairRouteView {
+	views := make([]pairRouteView, 0, len(bundle.GetRoutes()))
+	for _, route := range bundle.GetRoutes() {
+		if direct := route.GetDirectWebrtcTcp(); direct != nil {
+			views = append(views, pairRouteView{
+				RouteID: route.GetRouteId(), Kind: string(endpointdomain.RouteDirectWebRTCTCP),
+				SignalingAddresses:  append([]string(nil), direct.GetSignalingAddresses()...),
+				ICETCPAddresses:     append([]string(nil), direct.GetIceTcpAddresses()...),
+				AdvertisedAddresses: append([]string(nil), direct.GetAdvertisedAddresses()...), ServerName: direct.GetServerName(),
+			})
+		}
+	}
+	return views
 }
 
 func localPairTerminalID(target string) (string, error) {

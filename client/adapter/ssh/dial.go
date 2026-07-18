@@ -307,36 +307,7 @@ func (forwarder *iceForwarder) projectAnswer(answer *remoteauthpb.DirectSignalin
 	if !ok {
 		return nil, fmt.Errorf("SSH ICE forwarder has non-TCP address")
 	}
-	project := func(candidate string) string {
-		return projectTCPCandidate(candidate, address.IP.String(), address.Port)
-	}
-	lines := strings.Split(answer.GetAnswerSdp(), "\n")
-	for index, line := range lines {
-		ending := ""
-		if strings.HasSuffix(line, "\r") {
-			line, ending = strings.TrimSuffix(line, "\r"), "\r"
-		}
-		if strings.HasPrefix(line, "a=candidate:") {
-			line = "a=" + project(strings.TrimPrefix(line, "a="))
-		}
-		lines[index] = line + ending
-	}
-	answer.AnswerSdp = strings.Join(lines, "\n")
-	for _, candidate := range answer.GetCandidates() {
-		if candidate != nil {
-			candidate.Candidate = project(candidate.GetCandidate())
-		}
-	}
-	return answer, nil
-}
-
-func projectTCPCandidate(candidate, host string, port int) string {
-	fields := strings.Fields(candidate)
-	if len(fields) < 8 || !strings.EqualFold(fields[2], "tcp") {
-		return candidate
-	}
-	fields[4], fields[5] = host, strconv.Itoa(port)
-	return strings.Join(fields, " ")
+	return direct.ProjectVerifiedTCPAnswer(answer, []string{net.JoinHostPort(address.IP.String(), strconv.Itoa(address.Port))})
 }
 
 func copyBidirectional(left, right net.Conn) {

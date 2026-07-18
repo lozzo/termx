@@ -122,13 +122,77 @@ func TestPairInspectAndTerminalQRNeverPrintLongLivedGrant(t *testing.T) {
 	assertTerminalQRUsesSquareCells(t, qr)
 }
 
+func TestPairCreatePublishesExplicitTCPMappingWithoutChangingIdentity(t *testing.T) {
+	runtimeDir, _, _ := configurePairCommandTest(t)
+	socket := filepath.Join(runtimeDir, "daemon.sock")
+	base := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw")
+	mapped := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw",
+		"--signaling-address", "frp.example:51020", "--ice-tcp-address", "frp.example:51021", "--server-name", "frp.example")
+	baseBundle, _, err := remoteauth.ParsePairingBundle(base, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mappedBundle, _, err := remoteauth.ParsePairingBundle(mapped, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseBundle.GetIdentity().GetDeviceId() != mappedBundle.GetIdentity().GetDeviceId() ||
+		baseBundle.GetIdentity().GetDeviceFingerprint() != mappedBundle.GetIdentity().GetDeviceFingerprint() {
+		t.Fatalf("locator override changed daemon identity: base=%v mapped=%v", baseBundle.GetIdentity(), mappedBundle.GetIdentity())
+	}
+	direct := mappedBundle.GetRoutes()[0].GetDirectWebrtcTcp()
+	if got := direct.GetSignalingAddresses(); len(got) != 1 || got[0] != "frp.example:51020" {
+		t.Fatalf("mapped signaling addresses = %#v", got)
+	}
+	if got := direct.GetIceTcpAddresses(); len(got) != 1 || got[0] != "frp.example:51021" {
+		t.Fatalf("mapped ICE-TCP addresses = %#v", got)
+	}
+	if direct.GetServerName() != "frp.example" || len(direct.GetAdvertisedAddresses()) != 2 {
+		t.Fatalf("mapped Direct route = %#v", direct)
+	}
+	inspect := executePairCommand(t, mapped, "pair", "inspect", "--json", "-")
+	if !strings.Contains(string(inspect), `"signaling_addresses":["frp.example:51020"]`) || !strings.Contains(string(inspect), `"server_name":"frp.example"`) {
+		t.Fatalf("mapped inspect preview = %s", inspect)
+	}
+}
+
+func TestPairCreateRejectsPartialOrUnreachableAddressOverride(t *testing.T) {
+	runtimeDir, _, _ := configurePairCommandTest(t)
+	socket := filepath.Join(runtimeDir, "daemon.sock")
+	for _, args := range [][]string{
+		{"--signaling-address", "frp.example:51020"},
+		{"--signaling-address", "0.0.0.0:51020", "--ice-tcp-address", "frp.example:51021"},
+		{"--signaling-address", "frp.example:bad", "--ice-tcp-address", "frp.example:51021"},
+	} {
+		commandArgs := append([]string{"--socket", socket, "pair", "create", "--raw"}, args...)
+		if err := executePairCommandError(nil, commandArgs...); cliExitCode(err) != 2 {
+			t.Fatalf("pair create args=%v error=%v code=%d", args, err, cliExitCode(err))
+		}
+	}
+}
+
 func assertTerminalQRUsesSquareCells(t *testing.T, output []byte) {
 	t.Helper()
 	lines := strings.Split(strings.TrimSuffix(string(output), "\n"), "\n")
 	if len(lines) < 4 {
 		t.Fatalf("terminal QR output has %d lines", len(lines))
 	}
-	qrLines := lines[2 : len(lines)-1]
+	firstQR, lastQR := -1, -1
+	for index, line := range lines {
+		if strings.Contains(line, "This QR contains") {
+			break
+		}
+		if strings.Contains(line, "\x1b[") {
+			if firstQR < 0 {
+				firstQR = index
+			}
+			lastQR = index
+		}
+	}
+	if firstQR < 0 || lastQR < firstQR {
+		t.Fatalf("terminal QR rows are missing from %q", output)
+	}
+	qrLines := lines[firstQR : lastQR+1]
 	ansi := regexp.MustCompile(`\x1b\[[0-9;]*m`)
 	wantColumns := 2*len(qrLines) - 1
 	for index, line := range qrLines {
@@ -356,6 +420,8 @@ func TestPairCreateRejectsPipeWithoutExplicitOutputAndRemoteTerminalScope(t *tes
 
 func configurePairCommandTest(t *testing.T) (string, string, string) {
 	t.Helper()
+	t.Setenv("TERMX_DIRECT_SIGNALING_LISTEN", "127.0.0.1:41120")
+	t.Setenv("TERMX_DIRECT_ICE_TCP_LISTEN", "127.0.0.1:41121")
 	runtimeDir := t.TempDir()
 	stateHome := t.TempDir()
 	configHome := t.TempDir()

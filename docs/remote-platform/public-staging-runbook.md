@@ -55,6 +55,17 @@ CLOUD012 起，TUI 不再自动兑换固定账号，而是请求短期设备码�
 5. 登录后的 App/TUI 执行节点刷新，从 Hub 内存目录取得同账号 daemon 与 active Presence。目录可见不表示具备 terminal 权限；未配对节点必须显示“需要配对”。
 6. daemon owner 在交互式终端执行 `termx pair create`，默认显示可由 App 扫描的二维码。脚本环境必须显式使用 `--raw`，写文件必须显式使用 `--out OWNER_ONLY_PATH`。CapabilityGrant 仍只在 DTLS DataChannel 内由 owning daemon 验证。
 
+默认二维码发布 daemon 当前活动的私有 LAN IPv4 地址。通过 FRP 或其它 TCP 映射发布时，signaling 与 ICE-TCP 对外地址必须一起显式指定；命令会在二维码前显示签名 identity 与最终 Route locator，确认无误后再扫码：
+
+```bash
+termx pair create \
+  --signaling-address termx.example.com:52120 \
+  --ice-tcp-address termx.example.com:52121 \
+  --server-name termx.example.com
+```
+
+地址覆盖只改变可达 locator，不改变 daemon DeviceIdentity、fingerprint 或授权 scope。不得把 `0.0.0.0`、`::` 或端口 `0` 发布进 bundle。
+
 已移除的 daemon 不需要删除本地 DeviceIdentity。持有原私钥的 daemon 可以使用新 enrollment code 重新注册；Control Plane 会先撤销旧账号 access/refresh session、Hub Presence 与 Web 投影，再恢复或迁移 ownership。不同 public key 不能占用原 DeviceID。`termx cloud status` 分别展示 account session 与 daemon enrollment，`termx cloud node status` 只检查当前 daemon 身份。
 
 ### TUI 导入 daemon 访问凭据
