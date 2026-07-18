@@ -34,16 +34,16 @@ cmd/termx daemon command
 - client application contract 位于 `client/runtime`，按 endpoint、terminal、file、workspace、access 分组；不得形成单个总接口。
 - daemon host contract 与 client runtime contract 分离，daemon listener/ingress 不得伪装成 client route adapter。
 - concrete import 最终只能出现在少量命名明确的 composition 文件；普通 `*_command.go` 不得新增 concrete protocol/transport/Cloud 依赖。
-- local only-viable route 当前由共享 owner 接线；未实现的 SSH/managed planner/race 必须保持显式 unsupported，不能用 local fallback 或 command 自选 route 隐藏。
+- local、SSH 与 managed route 已由共享 planner/runtime 接线；command 只能提交 endpoint、intent 和可选显式 override，不能自行竞速、缓存 session 或用 local fallback 隐藏 route 失败。
 - TUI terminal、workbench 与 clipboard 是同一 endpoint session 上的 consumer，共用一条 ready connection；隔离由 Proto operation/subscription resource 提供，不为 consumer 数量创建平行 generation。
 
 ## 迁移顺序
 
 1. 已完成：冻结 concrete import/direct helper 债务，守卫现在扫描全部 command 源文件，不再整文件排除 composition helper。
-2. 已完成：local Unix route 使用 `SessionOwner`、集中 `SelectRoute` 与 `client/adapter/local`，不再由 CLI 生成 stamp 或执行 Hello。
+2. 已完成：local Unix route 使用 `ClientRuntime/SessionOwner`、`RouteSelectionPlanner` 与 `client/adapter/local`，不再由 CLI 生成 stamp、选择 route 或执行 Hello；旧 `SelectRoute` 已删除。
 3. 已完成：C3B-C3E 建立 planner、fresh ReadySession proof、per-endpoint race/session owner 与 local/SSH/lazy-managed native composition；CLI/TUI command helper 已收缩为共享 `ClientRuntime` 的 composition injection，旧单 route selector/connect helper 和 raw protocol adoption 已删除。
-4. C3F-C3G：补 operation generation stamp、local+SSH race E2E 与 loser cleanup。
-5. C3H：分离剩余 daemon host composition，删除冻结债务清单并完成最终双审。
+4. 已完成：C3F-C3G 补齐 operation generation stamp、真实 local+OpenSSH race E2E 与 loser cleanup。
+5. 当前 C3H 只执行最终全量准入、重复真值/fallback/cleanup 审计和双 Agent 审查；剩余 daemon/Cloud concrete composition 债务不在本切片扩大处理。
 
 ## 停止条件
 

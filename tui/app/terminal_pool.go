@@ -576,15 +576,15 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	errText := errorString(msg.Err)
 	endpointID := state.NormalizeEndpointID(msg.EndpointID)
-	ref := state.NewTerminalRef(endpointID, msg.TerminalID)
-	root.TerminalPool = root.TerminalPool.ApplyAttachedRef(ref, errText)
+	target, _ := terminalPoolTargetFromRequest(root, msg.TargetPaneID, msg.TargetFloatingID)
 	if errText != "" {
-		target, _ := terminalPoolTargetFromRequest(root, msg.TargetPaneID, msg.TargetFloatingID)
 		var applied bool
 		root.TerminalViews, applied = root.TerminalViews.FailAttach(target.ViewID, msg.OperationID, errText)
 		if !applied {
 			return root, nil
 		}
+		ref := state.NewTerminalRef(endpointID, msg.TerminalID)
+		root.TerminalPool = root.TerminalPool.ApplyAttachedRef(ref, errText)
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.attach", Body: errText})
 		return root.Advance(), nil
 	}
@@ -598,13 +598,13 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	if result.TerminalID == "" {
 		result.TerminalID = msg.TerminalID
 	}
-	ref = state.NewTerminalRef(result.EndpointID, result.TerminalID)
-	root.Endpoints = root.Endpoints.MarkRuntimeStatus(ref.EndpointID, state.EndpointStatusConnected, state.EndpointErrorUnknown, endpointTerminalCount(root, ref.EndpointID), "")
-	target, _ := terminalPoolTargetFromRequest(root, msg.TargetPaneID, msg.TargetFloatingID)
+	ref := state.NewTerminalRef(result.EndpointID, result.TerminalID)
 	current, currentOK := root.TerminalViews.Views[target.ViewID]
 	if !currentOK || current.AttachCandidate == nil || current.AttachCandidate.OperationID != msg.OperationID || result.OperationID != msg.OperationID {
 		return root, cleanupAttachResultEffects(result)
 	}
+	root.TerminalPool = root.TerminalPool.ApplyAttachedRef(ref, "")
+	root.Endpoints = root.Endpoints.MarkRuntimeStatus(ref.EndpointID, state.EndpointStatusConnected, state.EndpointErrorUnknown, endpointTerminalCount(root, ref.EndpointID), "")
 	previous := state.TerminalViewBinding{}
 	if current.Attached {
 		previous = current

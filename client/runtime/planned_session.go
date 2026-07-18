@@ -135,6 +135,9 @@ func (owner *SessionOwner) AcquirePlanned(
 		select {
 		case <-current.Done():
 		default:
+			if routeOverride != "" {
+				owner.stickyRoutes[target.ID] = routeOverride
+			}
 			lease := owner.newSharedLeaseLocked(target.ID, current)
 			owner.mu.Unlock()
 			return lease, nil
@@ -189,6 +192,9 @@ func (owner *SessionOwner) EnsurePlanned(
 		select {
 		case <-current.Done():
 		default:
+			if routeOverride != "" {
+				owner.stickyRoutes[target.ID] = routeOverride
+			}
 			lease := SessionLease{Stamp: current.Stamp()}
 			owner.mu.Unlock()
 			return lease, nil

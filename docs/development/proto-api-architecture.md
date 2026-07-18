@@ -48,9 +48,9 @@ core
 
 - `client/runtime.SessionOwner` 是 endpoint session generation、当前 ready winner、stale operation 拒绝和 reconnect replacement 的唯一客户端真值；平台 UI 不缓存 protocol client。
 - `client/adapter/managed` 是 native/Web 共用的 managed single-route attempt 编排，固定执行 Cloud resolution/route material -> platform peer -> signaling -> DTLS-bound remote auth -> protocol Hello -> Proto application session。
-- `client/port.ManagedPeer` 只描述 RTCPeerConnection/DataChannel 平台原语。native/Android 由 `client/adapter/managed/pion` 实现；Web 后续由浏览器 adapter 实现，portable managed adapter 不 import Pion、DOM、JNI 或 `syscall/js`。
+- `client/port.ManagedPeer` 只描述 RTCPeerConnection/DataChannel 平台原语。native/Android 由 `client/adapter/managed/pion` 实现；Web 由浏览器 adapter 实现，portable managed adapter 不 import Pion、DOM、JNI 或 `syscall/js`。
 - remote-auth 通过异步 `ClientAccessSigner` 使用平台 secure key。native 文件 store 可以适配内存 Ed25519 signer；Android Keystore/WebCrypto 只提供 public projection 与不可导出 signer，Go 在发送 proof 前必须用绑定 public key 重新验签。
-- `SessionOwner.ConnectRoute` 只接收已经选定的 route，不提前实现 route planner/race。planner 只能在后续切片生成单个 immutable `AttemptRequest`，不能进入 platform binding 或 managed adapter。
+- `client/endpoint.RouteSelectionPlanner` 只根据不可变 endpoint、intent、override、generation 和平台能力生成 attempt groups；`client/runtime.SessionOwner` 执行 race、线性化唯一 ReadySession winner 并精确清理 loser。planner 不进入 platform binding 或 managed adapter，adapter 也不得选择其它 route。
 - managed attempt 成功结果必须已经完成 remote auth、Hello，并只通过 generated `apipb` 执行业务 command/event。attachment/file 的内部 framing channel 不属于公共 API，跨语言 binding 必须在 opaque resource 边界重新封装。
 - `client/binding` 只接收 serialized `bindingpb.OpenSessionRequest`、`bindingpb.EngineCommand`、`apipb.CommandEnvelope` 和 `uint64` opaque handle；异步输出统一为 `bindingpb.EventEnvelope`。C/JNI/WASM 共享同一 engine/operation/session registry 与有界事件队列，平台 wrapper 不能建立第二份 handle truth，也不能为 pairing、credential 或其它业务 command 增加专用导出符号。
 
@@ -142,7 +142,7 @@ proto schema
 - Android/Web consumer 已统一通过 Go Client Engine、跨语言 binding 与 generated `apipb` 消费 application API；TypeScript 不再拥有独立 API codec、session/resource registry 或 reconnect truth。
 - `runtimepb`、`wirepb` 重复 application schema、旧 method codec、本地 session token store 与旧 Hub/RTC bridge 已删除；`wirepb` 的剩余消息仅属于 framing-private contract。
 - Go 旧测试已经迁为 generated Proto harness；旧 DTO 测试例外已结束。
-- CLI local route 已通过 runtime-owned generation、集中 route policy 与 local adapter 接线；TUI terminal/workbench/clipboard 共用同一 ready session。完整多 route planner/race 仍在 C3B-C3H，不能把 only-viable local 接线扩写成 fallback。
+- CLI/TUI 已通过同一 `ClientRuntime/SessionOwner` 使用 local、SSH 与 lazy-managed adapter；默认/priority route race、显式 override、sticky reconnect、winner/loser cleanup 和 operation generation fence 已完成。任何 consumer 仍不得自行选择 route、缓存 protocol client 或增加 fallback。
 - Android/WASM engine 重建通过 Go `SessionGenerationAuthority` 保持进程内 endpoint generation 单调递增；平台只持有 authority 引用，不生成或缓存 generation 数值。
 - 同一 engine 内，`client/runtime.SessionOwner.AcquireRoute` 让同 endpoint 且连接配置相同的 `OpenSession` 共享一条 Go-owned ready session；binding handle 只持有 consumer lease，`managedhost` 不保存第二份 current-session map。关闭 list/inventory/file/workspace 任一 lease 不关闭底层 session，只有配置变化、显式 generation replacement、lifecycle teardown 或 engine close 才替换底层连接。
 - application event 必须按完整 subscription `ResourceHandle`（token、kind、session、generation）关联；session 级 event pump 只是 transport fan-out，consumer 不得把它当作 subscription filter。

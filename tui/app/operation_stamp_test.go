@@ -2,9 +2,12 @@ package app
 
 import (
 	"context"
+	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/lozzow/termx/proto/apipb"
+	"github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 )
@@ -42,6 +45,114 @@ func TestReplacedAttachCandidateCleansLateResourceWithoutReplacingCommittedBindi
 	request, ok := effects[0].(FuncEffect).Run(context.Background()).(LiveDetachRequestMsg)
 	if !ok || request.Request.Channel != 9 || request.Request.OperationID != "cleanup:"+firstCandidate.OperationID || !protoEndpointSessionEqual(request.Request.Session, late.Session) {
 		t.Fatalf("late candidate cleanup request = %#v", request)
+	}
+}
+
+func TestLateInputAttachResultDoesNotSendCachedInputToReplacementBinding(t *testing.T) {
+	viewID := state.TerminalPaneViewID(state.DefaultPaneID)
+	root := state.Root{Shell: state.DefaultShell()}
+	first := state.TerminalViewBinding{ViewID: viewID, EndpointID: state.DefaultEndpointID, TerminalID: "term-first", SurfaceID: "surface", PaneID: state.DefaultPaneID}
+	var firstCandidate state.TerminalAttachCandidate
+	root.TerminalViews, firstCandidate = root.TerminalViews.BeginAttach(first)
+	second := first
+	second.TerminalID = "term-second"
+	var secondCandidate state.TerminalAttachCandidate
+	root.TerminalViews, secondCandidate = root.TerminalViews.BeginAttach(second)
+	secondBinding := state.NewEndpointPaneTerminalView(state.DefaultEndpointID, state.DefaultPaneID, "term-second", 10, 80, 24, state.TerminalResizeRoleOwner, "surface", viewID, true)
+	secondBinding.Session = &apipb.EndpointSessionStamp{EndpointId: string(state.DefaultEndpointID), RouteId: "local", Generation: 2}
+	secondBinding.OperationID = secondCandidate.OperationID
+	var committed bool
+	root.TerminalViews, _, committed = root.TerminalViews.CommitAttach(viewID, secondCandidate.OperationID, secondBinding)
+	if !committed {
+		t.Fatal("replacement candidate did not commit")
+	}
+	late := port.TerminalAttachResult{
+		EndpointID: state.DefaultEndpointID, TerminalID: "term-first", Channel: 9, SurfaceID: "surface", ViewID: viewID,
+		Session: &apipb.EndpointSessionStamp{EndpointId: string(state.DefaultEndpointID), RouteId: "local", Generation: 1}, OperationID: firstCandidate.OperationID,
+	}
+	next, effects := reduceLiveInputAttachResult(root, LiveInputAttachResultMsg{
+		Target: liveInputTargetInfo{EndpointID: state.DefaultEndpointID, TerminalID: "term-first", ViewID: viewID, SurfaceID: "surface"},
+		Event:  input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x"}, Bytes: []byte("x"), OperationID: firstCandidate.OperationID, Result: late,
+	}, LiveDeps{})
+	binding := next.TerminalViews.Views[viewID]
+	if binding.TerminalID != "term-second" || binding.Channel != 10 || binding.OperationID != secondCandidate.OperationID {
+		t.Fatalf("late input attach changed replacement binding: %#v", binding)
+	}
+	if len(effects) != 1 {
+		t.Fatalf("late input attach effects = %#v", effects)
+	}
+	if _, ok := effects[0].(FuncEffect).Run(context.Background()).(LiveDetachRequestMsg); !ok {
+		t.Fatalf("late input attach must only cleanup its resource: %#v", effects)
+	}
+}
+
+func TestOldGenerationInputAndResizeErrorsDoNotMutateCurrentBinding(t *testing.T) {
+	viewID := state.TerminalPaneViewID(state.DefaultPaneID)
+	currentSession := &apipb.EndpointSessionStamp{EndpointId: string(state.DefaultEndpointID), RouteId: "local", Generation: 2}
+	binding := state.NewEndpointPaneTerminalView(state.DefaultEndpointID, state.DefaultPaneID, "term-current", 10, 100, 30, state.TerminalResizeRoleOwner, "surface", viewID, true)
+	binding.Session = currentSession
+	binding.RequestSeq = 3
+	root := state.Root{Shell: state.DefaultShell(), TerminalViews: state.TerminalViewStore{}.BindPane(binding)}
+	before := root
+	reducer := NewLiveReducer(LiveDeps{})
+	oldSession := &apipb.EndpointSessionStamp{EndpointId: string(state.DefaultEndpointID), RouteId: "local", Generation: 1}
+	next, effects := reducer(root, LiveInputResultMsg{
+		EndpointID: state.DefaultEndpointID, TerminalID: "term-current", ViewID: viewID, Channel: 9, Session: oldSession,
+		OperationID: "input-old", Err: errors.New("terminal not found"),
+	})
+	if len(effects) != 0 || !reflect.DeepEqual(next, before) {
+		t.Fatalf("old input error mutated current state: next=%#v effects=%#v", next, effects)
+	}
+	next, effects = reducer(root, LiveResizeResultMsg{
+		EndpointID: state.DefaultEndpointID, TerminalID: "term-current", ViewID: viewID, Seq: 1, Session: oldSession,
+		OperationID: "resize-old", Err: errors.New("terminal not found"),
+	})
+	if len(effects) != 0 || !reflect.DeepEqual(next, before) {
+		t.Fatalf("old resize error mutated current state: next=%#v effects=%#v", next, effects)
+	}
+}
+
+func TestReplacedAttachErrorsCannotChangeTerminalOrPoolProjection(t *testing.T) {
+	viewID := state.TerminalPaneViewID(state.DefaultPaneID)
+	root := state.Root{Shell: state.DefaultShell()}
+	first := state.TerminalViewBinding{ViewID: viewID, EndpointID: state.DefaultEndpointID, TerminalID: "term-first", SurfaceID: "surface", PaneID: state.DefaultPaneID}
+	var firstCandidate state.TerminalAttachCandidate
+	root.TerminalViews, firstCandidate = root.TerminalViews.BeginAttach(first)
+	second := first
+	second.TerminalID = "term-second"
+	var secondCandidate state.TerminalAttachCandidate
+	root.TerminalViews, secondCandidate = root.TerminalViews.BeginAttach(second)
+	before := root
+	next, effects := reduceLiveAttachResult(root, LiveAttachResultMsg{
+		EndpointID: state.DefaultEndpointID, TerminalID: "term-first", ViewID: viewID, OperationID: firstCandidate.OperationID, Err: errors.New("terminal not found"),
+	}, LiveDeps{})
+	if len(effects) != 0 || !reflect.DeepEqual(next, before) {
+		t.Fatalf("replaced attach error mutated current state: next=%#v effects=%#v", next, effects)
+	}
+
+	staleResult := port.TerminalAttachResult{
+		EndpointID: state.DefaultEndpointID, TerminalID: "term-first", ViewID: viewID, Channel: 9, SurfaceID: "surface",
+		Session: testEndpointSessionStamp(state.DefaultEndpointID), OperationID: firstCandidate.OperationID,
+	}
+	next, effects = reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{
+		EndpointID: state.DefaultEndpointID, TerminalID: "term-first", TargetPaneID: state.DefaultPaneID,
+		OperationID: firstCandidate.OperationID, Result: staleResult,
+	}, LiveDeps{})
+	if !reflect.DeepEqual(next.TerminalPool, before.TerminalPool) || !reflect.DeepEqual(next.Endpoints, before.Endpoints) {
+		t.Fatalf("stale pool attach changed projections: pool=%#v endpoints=%#v", next.TerminalPool, next.Endpoints)
+	}
+	if binding := next.TerminalViews.Views[viewID]; binding.AttachCandidate == nil || binding.AttachCandidate.OperationID != secondCandidate.OperationID {
+		t.Fatalf("stale pool attach changed current candidate: %#v", binding)
+	}
+	if len(effects) != 1 {
+		t.Fatalf("stale pool attach cleanup effects = %#v", effects)
+	}
+	next, effects = reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{
+		EndpointID: state.DefaultEndpointID, TerminalID: "term-first", TargetPaneID: state.DefaultPaneID,
+		OperationID: firstCandidate.OperationID, Err: errors.New("terminal not found"),
+	}, LiveDeps{})
+	if len(effects) != 0 || !reflect.DeepEqual(next, before) {
+		t.Fatalf("stale pool attach error mutated projections: next=%#v effects=%#v", next, effects)
 	}
 }
 

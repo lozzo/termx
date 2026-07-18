@@ -4,17 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/lozzow/termx/tui/testkit"
 	"log/slog"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/render"
 	"github.com/lozzow/termx/tui/state"
+	"github.com/lozzow/termx/tui/testkit"
 )
 
 type refreshingInputTerminalService struct {
@@ -49,6 +50,9 @@ func (service *refreshingInputTerminalService) Attach(_ context.Context, req por
 	service.knownActiveChannels[channel] = true
 	delete(service.staleChannels, channel)
 	result := service.AttachResult
+	if result.EndpointID == "" {
+		result.EndpointID = req.EndpointID
+	}
 	if result.TerminalID == "" {
 		result.TerminalID = req.TerminalID
 	}
@@ -67,6 +71,12 @@ func (service *refreshingInputTerminalService) Attach(_ context.Context, req por
 	}
 	if result.ViewID == "" {
 		result.ViewID = req.ViewID
+	}
+	if result.Session == nil {
+		result.Session = &apipb.EndpointSessionStamp{EndpointId: string(state.NormalizeEndpointID(req.EndpointID)), RouteId: "test", Generation: 1}
+	}
+	if result.OperationID == "" {
+		result.OperationID = req.OperationID
 	}
 	if !result.SizeLocked && result.ControlReason == "" && result.ResizePolicy == state.TerminalResizeRoleOwner {
 		result.CanResize = true
@@ -92,6 +102,11 @@ type blockingOrderedInputTerminalService struct {
 	done         chan struct{}
 	mu           sync.Mutex
 	inputs       []port.TerminalInputRequest
+}
+
+func stampedTestTerminalView(binding state.TerminalViewBinding) state.TerminalViewBinding {
+	binding.Session = testEndpointSessionStamp(binding.EndpointID)
+	return binding
 }
 
 func newBlockingOrderedInputTerminalService() *blockingOrderedInputTerminalService {
@@ -577,8 +592,8 @@ func TestTerminalPoolReattachCurrentPaneDoesNotOverwriteSiblingBinding(t *testin
 		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
 	root := state.Root{Shell: shell}
 	root.TerminalViews = root.TerminalViews.
-		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
-		BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-2"), false))
+		BindPane(stampedTestTerminalView(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))).
+		BindPane(stampedTestTerminalView(state.NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-2"), false)))
 	reducer := newTerminalPoolReducerPrepared(LiveDeps{Terminal: terminal})
 
 	root, effects := reducer(root, TerminalPoolAttachRequestMsg{TerminalID: "term-1", TargetPaneID: state.DefaultPaneID})
@@ -1207,8 +1222,8 @@ func TestLiveInputFailureDoesNotReplayAcrossReattach(t *testing.T) {
 		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
 	root := state.Root{Shell: shell}
 	root.TerminalViews = root.TerminalViews.
-		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
-		BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-2"), false))
+		BindPane(stampedTestTerminalView(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))).
+		BindPane(stampedTestTerminalView(state.NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-2"), false)))
 	runtime := NewInteractiveRuntime(
 		root,
 		host,
@@ -1266,8 +1281,8 @@ func TestLiveInputProtocolFailureDoesNotReattachOrReplay(t *testing.T) {
 		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
 	root := state.Root{Shell: shell}
 	root.TerminalViews = root.TerminalViews.
-		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
-		BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-2"), false))
+		BindPane(stampedTestTerminalView(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))).
+		BindPane(stampedTestTerminalView(state.NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-2"), false)))
 	runtime := NewInteractiveRuntime(
 		root,
 		host,

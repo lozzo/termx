@@ -170,6 +170,40 @@ func TestSessionOwnerEnsurePlannedExplicitOverrideReplacesDifferentCurrentWinner
 	}
 }
 
+func TestSessionOwnerEnsurePlannedExplicitCurrentRouteBecomesSticky(t *testing.T) {
+	owner := NewSessionOwner()
+	defer owner.Close()
+	target := plannedEndpoint(true)
+	dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"local": {}, "ssh": {}})
+	resolver, err := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
+		endpoint.RouteLocalUnix: dialer, endpoint.RouteSSHStdio: dialer,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := owner.EnsurePlanned(context.Background(), target, "", ConnectIntentInteractive, "config-a", plannedEnvironment(), realTestClock{}, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reused, err := owner.EnsurePlanned(context.Background(), target, "local", ConnectIntentInteractive, "config-a", plannedEnvironment(), realTestClock{}, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reused.Stamp != first.Stamp || dialer.calls("local") != 1 || dialer.calls("ssh") != 0 {
+		t.Fatalf("explicit current route should reuse winner: first=%#v reused=%#v calls local=%d ssh=%d", first, reused, dialer.calls("local"), dialer.calls("ssh"))
+	}
+	if err := owner.Disconnect(context.Background(), DisconnectRequest{Stamp: reused.Stamp}); err != nil {
+		t.Fatal(err)
+	}
+	reconnected, err := owner.EnsurePlanned(context.Background(), target, "", ConnectIntentInteractive, "config-a", plannedEnvironment(), realTestClock{}, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reconnected.Stamp.RouteID != "local" || dialer.calls("local") != 2 || dialer.calls("ssh") != 0 {
+		t.Fatalf("explicit current route was not sticky: lease=%#v calls local=%d ssh=%d", reconnected, dialer.calls("local"), dialer.calls("ssh"))
+	}
+}
+
 func TestSessionOwnerPlannedRaceCancellationFailsAfterAdapterAttempt(t *testing.T) {
 	owner := NewSessionOwner()
 	defer owner.Close()

@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- `C3G` 真实 local + OpenSSH race E2E 已完成。下一切片是 `C3H` 最终准入与双 Agent 审查；Android 与 Web 已复用同一 runtime/managed/auth/protocol/binding 引擎，不得重新引入平台自有客户端网络真值。
+- `CONN003` 的 C3B-C3H 已全部完成；当前没有后续活动切片。Android 与 Web 已复用同一 runtime/managed/auth/protocol/binding 引擎，不得重新引入平台自有客户端网络真值；后续开发必须先在本文件登记新切片。
 - 当前迁移允许修改 `client/{runtime,port,adapter,binding}/`、`remote/`、`internal/protocol/`、`proto/`、`clients/mobile/`、`clients/ui/` 以及对应 tests、build scripts 和必要架构文档；每个切片仍只能触及任务表规定的最小范围。
 - Android 目标是 Go Client Engine 编译为 native library，通过稳定 C ABI 与薄 JNI/Capacitor bridge 调用；Kotlin/Java 不拥有连接、认证、协议、session/resource 或重连真值。
 - Android lifecycle 固定采用 generation teardown：锁屏广播或进程进入后台时关闭当前 Go engine、loopback bridge、全部 session/resource 和事件泵；WebView 恢复时先创建新 engine/generation，再让 TypeScript 重连。旧 handle、迟到 callback 和冻结期间未消费事件不得进入新 generation，事件队列必须有界。
@@ -19,7 +19,7 @@
 - `PA005R` 已删除 `runtimepb`、`wirepb` 重复 application message、旧 TypeScript terminal/file/storage/history codec、旧 Hub API/pair panel、本地 session token/pairing payload store、旧 RTC session/channel interface 与对应失效 tests/mocks，共净删除约 16,600 行；Android/Web 生产 consumer 只接受 `ProtoClientSession`。generated-code check、UI typecheck/WASM build、mobile build、API Layer/API Mapping/binding tests、架构守卫与真实 Chrome/Pion E2E 通过。该切片当时暴露的 CLI composition 缺口已在 PA006T/PA007 收口，不再是当前债务。
 - `PA006T` 已把 core/protocol/client-runtime/TUI/CLI 与共享 UI tests 迁到 generated Proto contract，删除依赖旧 DTO、method codec 和旧 browser session mock 的失效测试；补齐 event subscription correlation/release、machine-events-only、file active/resume token namespace 与跨 protocol session upload resume E2E。测试同时修正 unspecified storage scope 污染 event filter、无效 upload resume credential 错误分类和 CLI current API composition 缺口；全仓 Go tests/build、关键包 race、UI typecheck/test/build、mobile build 与 generated-code check 通过。
 - PA006T 已完成旧 core/protocol/client-runtime/TUI/CLI tests 的 generated Proto 迁移；后续不得再以“旧测试暂缓”为理由保留或恢复 DTO、codec 或 fake session stamp。
-- PA007 remediation 已把 CLI endpoint generation、route selection、Unix dial/Hello 收回 `client/runtime` 与 `client/adapter/local`，并让 TUI terminal/workbench/clipboard 共用同一 owner-fenced session。C3B-C3H 仍负责完整 planner/race、SSH 与 managed 多 route winner、operation stamp 和最终 E2E，不得把本次 only-viable local route 接线误写成 CONN003 已完成。
+- PA007 remediation 先把 CLI endpoint generation、route selection、Unix dial/Hello 收回 `client/runtime` 与 `client/adapter/local`，并让 TUI terminal/workbench/clipboard 共用同一 owner-fenced session；其后的 C3B-C3G 已完成 planner/race、SSH 与 managed 多 route winner、operation stamp 和真实 E2E，C3H 只负责最终准入与双审。
 - PA007 remediation 已把跨语言 ABI 升到 v3：C/JNI/WASM 业务操作统一通过 serialized `bindingpb.EngineCommand`，不再暴露 pairing/credential 专用符号；Android 与 WASM host 共享 Go runtime-owned process generation authority。
 - PA007 remediation 已把同 endpoint 的 binding `OpenSession` 改为 `client/runtime.SessionOwner.AcquireRoute` 共享底层 ready session、每个 consumer 独立 lease；`managedhost` 不保存第二份 current registry。list/inventory/workspace/file 的 lease close 不提升 generation。application event consumer 按完整 subscription `ResourceHandle` correlation，多个订阅不再共享 session 级隐式广播。
 - PA007 最终准入已通过 public/private Go、关键包 race、clients 130/16 tests、typecheck/build/WASM、generated/layout doctor、Community/Official Android APK 与边界校验。架构 reviewer `019f73b0-8426-7022-816c-1390532ce14a` 与代码 reviewer `019f73b0-00ef-72a2-bb96-909ebbcfe4f2` 均明确 PASS；已处理 early stream terminal event exact-once release、managed production terminal-response 接线、active operation close barrier 与 close failure 可观察性。
@@ -29,6 +29,7 @@
 - `C3E` 已把 CLI 与 TUI native composition 接到同一 `ClientRuntime/SessionOwner`：dialer registry 包含 local Unix、OpenSSH 与 lazy managed/Pion，managed credential 只从 owner-only store 解析且 Cloud Companion 仅在 managed attempt 真正启动时打开。TUI 通过 `tui/adapter/clientruntime.EndpointEventSource` 消费同一 owner mailbox，订阅时先收到 current winner；attachment channel 和 file resource stream 经 generation-fenced ready capability，不再要求 UI/command 持有 raw framing client。旧 `runtime.SelectRoute`、`local.Connect`、raw protocol adoption 与 `NewOwnedApplicationClient` 已删除并加入守卫；关键 race、全仓 Go tests 与 doctor 通过。
 - `C3F` 已让 attach candidate/commit/cleanup、input/paste、resize 与 detach 携带同一 generated Proto `EndpointSessionStamp` 和唯一 operation ID。`ApplicationSession` 保留 caller operation identity 但强制覆盖 session stamp；runtime validator 与 protocol adapter 在 attachment lookup/具体调用前拒绝 stale generation，返回 `Attempted=false`。TUI pending candidate 不再覆盖 committed channel，replaced/迟到成功只精确 cleanup 自己的资源；非幂等 input/paste 失败后不再自动 reattach 或重放 payload。workbench storage 不持久化 runtime stamp，但同进程 reload 会保留 live stamp/operation/candidate。指定 race、全仓 Go tests 与 doctor 通过。
 - `C3G` 已用测试内隔离的真实 OpenSSH 9.9 `sshd`、临时 host/client key、strict known_hosts、key-only auth、真实 `ssh` 子进程和真实 `termx daemon stdio-proxy` 验证 local/SSH full race、priority hedge、显式 SSH override、进程内 sticky reconnect、loser SSH process cleanup、跨 route `TerminalRef` 稳定和旧 generation `Attempted=false`。该 E2E 修正了同 config current winner 吞掉显式 override、SSH winner 仍绑定 race context、主动 Close 返回 `signal: killed` 三个生命周期错误；指定 race、真实 E2E、全仓 Go tests 与 doctor 通过。
+- `C3H` 最终准入已通过关键包 race、全仓 Go tests、repository doctor、UI 130 项与 mobile 16 项 tests、TypeScript typecheck、Go/WASM 与 UI/mobile production build、旧 route owner/重复真值/fallback/cleanup 审计。架构 reviewer `019f75bc-d09d-7af1-a16a-4466843a9337` 与代码 reviewer `019f75bc-5056-7c81-b015-a9ceac924d5f` 在复审后均明确 PASS；已处理过时 planner/runtime 文档、迟到 input attach 重放、旧 generation input/resize/attach 错误污染、stale terminal pool 投影和同 route 显式 override 未写 sticky intent。
 - 用户已确立仓库级强约定：所有插件、第三方客户端、官方客户端、跨进程和跨语言 API 的唯一 schema truth 必须位于 `proto/`。
 - 完整运行链路固定为 `插件/客户端 -> transport/platform binding -> protocol framing -> generated proto -> api_layer -> api_mapping -> core`，返回方向相反。Proto 是 schema/message truth，不是 transport 或主动运行层；任何入口都不得绕过 API Layer 消费 core domain struct。
 - `core/api` Go DTO 路线已判定错误，必须删除；此前 `AR003B1A/AR003B1B` 结论作废，不得继续迁移或补兼容层。
@@ -130,7 +131,7 @@ core domain truth
 | C3E | 已完成 | CLI 接入共享 runtime | CLI/TUI composition 共用 ClientRuntime/SessionOwner、local/SSH/lazy-managed registry、system Clock 与 lifecycle source；旧单 route owner/raw adoption 已删除 |
 | C3F | 已完成 | operation generation stamp | attach candidate/commit/cleanup、input/paste/resize/detach 共用 Proto session stamp 与 operation identity；stale 副作用前失败且 input 不重放 |
 | C3G | 已完成 | local + SSH race E2E | 隔离真实 sshd/OpenSSH client 覆盖 full race、priority hedge、override/sticky、loser process cleanup、TerminalRef 稳定和 stale operation |
-| C3H | 待开始 | 最终准入与双审 | 全量测试、架构/重复真值/fallback/cleanup 审计，架构 reviewer 与代码 reviewer 均明确 PASS |
+| C3H | 已完成 | 最终准入与双审 | 全量测试与架构/重复真值/fallback/cleanup 审计通过；架构 reviewer 与代码 reviewer 复审后均明确 PASS |
 
 ## 测试准入
 
@@ -155,6 +156,7 @@ core domain truth
 - `C3E`：CLI/TUI local/SSH/managed composition 与 dependency guards；默认/显式 route、shared owner reuse、错误/取消投影 harness；旧 `SelectRoute`、`local.Connect`、raw protocol adoption 扫描；`go test -race ./client/runtime ./client/adapter/... ./tui/adapter/clientruntime ./cmd/termx -count=1`；`make test`；`make doctor`；`git diff --check`。
 - `C3F`：attach candidate/confirm/commit/cleanup、detach/input/paste/resize stamp harness；旧 generation 和 replaced operation 在 adapter 调用前失败，`Attempted=false`，已调用非幂等 input 不自动重放；`go test -race ./tui/app ./tui/adapter/clientruntime ./tui/adapter/protocol ./client/runtime ./cmd/termx -count=1`；`make test`；`make doctor`；`git diff --check`。
 - `C3G`：测试内隔离真实 `sshd`、OpenSSH client 与远端 `termx daemon stdio-proxy`；full race、priority hedge、explicit override/sticky、loser SSH PID cleanup、TerminalRef 与 stale operation harness；`go test -race ./client/runtime ./client/adapter/ssh ./shared/transport/ssh -count=1`；`go test -race ./cmd/termx -run 'TestC3GRealLocalAndOpenSSHRoutes' -count=1`；`make test`；`make doctor`；`git diff --check`。
+- `C3H`：`go test -race ./client/endpoint ./client/runtime ./client/adapter/... ./shared/transport/ssh ./tui/app ./tui/adapter/clientruntime ./tui/adapter/protocol ./cmd/termx -count=1`；`make test`；`make doctor`；`npm test`；`npm run typecheck`；`npm run build`；旧 route owner/raw protocol adoption/平台网络第二真值、重复 application DTO、fallback 与资源 cleanup 守卫扫描；架构 reviewer 与代码 reviewer 对修复后 diff 均明确 PASS；`git diff --check`。
 
 ## 执行规则
 

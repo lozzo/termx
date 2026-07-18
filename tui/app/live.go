@@ -300,6 +300,7 @@ type LiveInputResultMsg struct {
 	TerminalID  string
 	ViewID      string
 	Channel     uint16
+	Session     *apipb.EndpointSessionStamp
 	Event       input.InputEvent
 	Bytes       []byte
 	OperationID string
@@ -408,6 +409,9 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				if isContextLifecycleError(msg.Err) {
 					return root, nil
 				}
+				if !liveInputResultOwnsCurrentBinding(root, msg) {
+					return root, nil
+				}
 				msgRef := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
 				if next, ok := markTerminalExitedFromErrorRef(root, msgRef, msg.Err); ok {
 					return next.Advance(), nil
@@ -421,12 +425,6 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 		case LiveResizeMsg:
 			return reduceLiveResize(root, msg, deps)
 		case LiveResizeResultMsg:
-			if msg.Err != nil {
-				return reduceLiveResizeError(root, msg)
-			}
-			if shouldRecoverOwnerDesiredAfterResizeResult(root, msg) {
-				return recoverLatestResizeAfterStaleResult(root, msg)
-			}
 			viewScoped := msg.ViewID != ""
 			if msg.ViewID != "" {
 				binding, ok := root.TerminalViews.Views[msg.ViewID]
@@ -435,18 +433,27 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 					// 否则 close pane 后旧 view 的结果会把当前 owner 的尺寸状态顶回去。
 					return recoverLatestResizeAfterStaleResult(root, msg)
 				}
-				if binding.IsStaleResizeResult(msg.Seq) {
-					return recoverLatestResizeAfterStaleResult(root, msg)
-				}
 				if !protoEndpointSessionEqual(binding.Session, msg.Session) {
 					return root, nil
 				}
-				if liveResizeResultConflictsWithLocalOwner(root, binding, msg.Result) {
+				if binding.IsStaleResizeResult(msg.Seq) {
 					return recoverLatestResizeAfterStaleResult(root, msg)
 				}
 			}
 			if !viewScoped && root.Session.IsStaleResizeResult(msg.Seq) {
 				return recoverLatestResizeAfterStaleResult(root, msg)
+			}
+			if msg.Err != nil {
+				return reduceLiveResizeError(root, msg)
+			}
+			if shouldRecoverOwnerDesiredAfterResizeResult(root, msg) {
+				return recoverLatestResizeAfterStaleResult(root, msg)
+			}
+			if msg.ViewID != "" {
+				binding := root.TerminalViews.Views[msg.ViewID]
+				if liveResizeResultConflictsWithLocalOwner(root, binding, msg.Result) {
+					return recoverLatestResizeAfterStaleResult(root, msg)
+				}
 			}
 			cols, rows := msg.Cols, msg.Rows
 			if msg.Result.Cols > 0 {
@@ -599,7 +606,12 @@ func markLiveAttachPending(root state.Root, cfg LiveConfig) (state.Root, state.T
 func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	if msg.Err != nil {
 		ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
+		binding, hadBinding := root.TerminalViews.Views[msg.ViewID]
+		if !hadBinding || binding.AttachCandidate == nil || binding.AttachCandidate.OperationID != msg.OperationID {
+			return root, nil
+		}
 		if next, ok := markTerminalExitedFromErrorRef(root, ref, msg.Err); ok {
+			next.TerminalViews, _ = next.TerminalViews.FailAttach(msg.ViewID, msg.OperationID, msg.Err.Error())
 			logLifecycleTrace(deps.Logger, "live.attach.result.exited",
 				"endpoint_id", string(ref.EndpointID),
 				"terminal_id", msg.TerminalID,
@@ -609,12 +621,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 			)
 			return next.Advance(), nil
 		}
-		binding, hadBinding := root.TerminalViews.Views[msg.ViewID]
-		var applied bool
-		root.TerminalViews, applied = root.TerminalViews.FailAttach(msg.ViewID, msg.OperationID, msg.Err.Error())
-		if !applied {
-			return root, nil
-		}
+		root.TerminalViews, _ = root.TerminalViews.FailAttach(msg.ViewID, msg.OperationID, msg.Err.Error())
 		if hadBinding && binding.Attached {
 			return root, nil
 		}
@@ -1655,6 +1662,9 @@ func reduceLiveInputAttachResult(root state.Root, msg LiveInputAttachResultMsg, 
 	if result.ResizePolicy == "" {
 		result.ResizePolicy = state.TerminalResizeRoleFollower
 	}
+	if result.OperationID == "" {
+		result.OperationID = msg.OperationID
+	}
 	if result.Cols <= 0 || result.Rows <= 0 {
 		cols, rows := liveInputAttachSize(root, msg.Target)
 		if result.Cols <= 0 {
@@ -1665,6 +1675,9 @@ func reduceLiveInputAttachResult(root state.Root, msg LiveInputAttachResultMsg, 
 		}
 	}
 	next, effects := reduceLiveAttachResult(root, LiveAttachResultMsg{EndpointID: msg.Target.EndpointID, TerminalID: msg.Target.TerminalID, ViewID: msg.Target.ViewID, RequestedResizePolicy: msg.Target.ResizeRole, OperationID: msg.OperationID, Result: result}, deps)
+	if !liveInputAttachResultOwnsCurrentBinding(next, result, msg.OperationID) {
+		return next, effects
+	}
 	target, ok := liveInputTargetForView(next, result.ViewID)
 	if !ok || target.Channel == 0 {
 		return next, effects
@@ -1673,6 +1686,28 @@ func reduceLiveInputAttachResult(root state.Root, msg LiveInputAttachResultMsg, 
 	next.TerminalViews, operationID = next.TerminalViews.NextTerminalOperation(inputOperationKind(msg.Event), target.ViewID)
 	effects = append(effects, terminalSendInputEffect(target, msg.Event, msg.Bytes, operationID, deps))
 	return next, effects
+}
+
+func liveInputAttachResultOwnsCurrentBinding(root state.Root, result port.TerminalAttachResult, operationID string) bool {
+	binding, ok := root.TerminalViews.Views[result.ViewID]
+	if !ok || !binding.Attached || binding.OperationID != operationID || binding.Channel != result.Channel {
+		return false
+	}
+	if !binding.TerminalRef().Equal(state.NewTerminalRef(result.EndpointID, result.TerminalID)) {
+		return false
+	}
+	return protoEndpointSessionEqual(binding.Session, result.Session)
+}
+
+func liveInputResultOwnsCurrentBinding(root state.Root, msg LiveInputResultMsg) bool {
+	binding, ok := root.TerminalViews.Views[msg.ViewID]
+	if !ok || !binding.Attached || binding.Channel != msg.Channel {
+		return false
+	}
+	if !binding.TerminalRef().Equal(state.NewTerminalRef(msg.EndpointID, msg.TerminalID)) {
+		return false
+	}
+	return protoEndpointSessionEqual(binding.Session, msg.Session)
 }
 
 func liveMousePassthroughEnabled(root state.Root, event input.InputEvent, target liveInputTargetInfo) bool {

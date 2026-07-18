@@ -10,13 +10,13 @@
 
 当前产品原则已经明确：用户管理的是 daemon endpoint，不是“SSH 机器”“Cloud 机器”或“直连机器”三套资源；local、SSH、直连 IP 和 managed WebRTC 只是到达同一个 daemon 的不同方式。
 
-当前实现仍处于重建期：
+当前实现基线：
 
-- Endpoint/Route v2 contract 当前位于 `client/endpoint`。
-- C3X 已删除 TUI lazy bundle/session owner 和 CLI 直接 route/dial owner；`client/runtime` 尚未实现。
-- CLI/TUI 当前保留明确未接线缺口，不得恢复旧 helper 或 TUI owner。
-- Official App 同时存在共享 TypeScript connection orchestrator、TypeScript session manager 和 Android Kotlin managed Cloud `ConnectionStore` 等多套连接状态机。
-- 当前 termx protocol Hello 不返回可验证 daemon identity，因此客户端无法安全确认 SSH、指定 IP 和 managed Cloud 是否到达同一个 daemon。
+- Endpoint/Route v2 contract 与纯领域 planner 位于 `client/endpoint`。
+- `client/runtime.SessionOwner` 拥有 per-endpoint generation、planner race、唯一 ReadySession winner、sticky override 和 lifecycle mailbox；CLI/TUI 只消费共享 runtime。
+- local Unix、OpenSSH stdio 与 managed WebRTC adapter 都必须在授权、fresh daemon identity proof 和 protocol Hello 完成后才能发布 ReadySession；失败 route 不得回落到旧 helper 或其它未授权路径。
+- Android/JNI 与 Web/WASM 复用同一 Go Client Engine、Proto command/event 和 session/resource owner；Kotlin/TypeScript 只保留平台 primitive、lifecycle 与 UI projection。
+- transport 切换保持 `EndpointID` 与 `TerminalRef` 稳定，旧 generation operation 在 adapter 副作用前失败。
 
 最终需要把“目标身份”“可用连接方式”“一次运行时连接”和“WebRTC 内部网络路径”拆成独立领域概念。
 

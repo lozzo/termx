@@ -12,18 +12,18 @@ TermX 的 terminal 是 daemon 拥有的长期实体；workspace、tab、pane 和
 
 ## 当前连接运行时状态
 
-CLI 命令树已经使用 Endpoint/Route registry 和 `TerminalRef`，local Unix、SSH stdio、managed WebRTC 也各自已有入口，但 `CONN003` 的统一多 route runtime 尚未完成。
+CLI 命令树使用 Endpoint/Route registry、`TerminalRef` 和统一 `ClientRuntime/SessionOwner`；local Unix、SSH stdio 与 managed WebRTC 都作为同一 planner/runtime 的 route adapter 接入。
 
-C3X 已删除 `Endpoint.ResolveCurrentRoute`、TUI lazy bundle/session owner 和 CLI 直接 route/dial owner。terminal、file、workspace、root TUI 和 `endpoint test` 当前保留待接 `client/runtime` 的明确编译缺口；默认 local/SSH full race、priority hedge、winner/loser cleanup 和 stamped result 仍是待实现目标，不能恢复旧 helper 维持假通过。
+C3B-C3G 已完成默认 local/SSH full race、priority hedge、显式 override/sticky reconnect、winner/loser cleanup、ReadySession 身份门禁和 operation generation fence。CLI/TUI 不再拥有直接 route/dial owner，也不得恢复旧 helper、raw protocol adoption 或 only-viable local 假路径。
 
-CONN003 完成后，CLI 只保留以下职责：
+CLI 只保留以下职责：
 
 - 解析 Cobra 参数、`EndpointID:TerminalID` target 和可选 `--route` override。
 - 调用 `client/runtime` planner/session owner，不在 `cmd/termx` 内复制 route 选择或 session 状态。
 - 输出稳定的人类/JSON 结果和 typed error 对应的退出码。
 - 保持 route 切换不改变 EndpointID 或 TerminalRef。
 
-具体 planner、race、generation、取消和资源回收契约只在 [`tui/docs/multi-endpoint-transport-plan.md`](../../tui/docs/multi-endpoint-transport-plan.md) 维护；任务状态和准入只看 `workflow.md`。CLI 不得因统一 runtime 尚未完成而 fallback 到 local、原始 SSH shell 或旧 remote runtime。
+具体 planner、race、generation、取消和资源回收契约只在 [`tui/docs/multi-endpoint-transport-plan.md`](../../tui/docs/multi-endpoint-transport-plan.md) 维护；任务状态和准入只看 `workflow.md`。CLI 不得绕过统一 runtime fallback 到 local、原始 SSH shell 或旧 remote runtime。
 
 ## 2. 现状核对
 

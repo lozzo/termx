@@ -41,7 +41,7 @@
 
 - App/Web 生产 consumer 已完成迁移；后续不得恢复 TypeScript/Kotlin application codec、平台自有 session/resource registry 或旧 Hub/RTC bridge。
 - Go 旧 DTO tests 已在 PA006T 迁到 generated Proto harness；仓库不再保留“测试后续再迁”的例外。
-- CLI only-viable local route 已通过 `client/runtime.SessionOwner` 与 `client/adapter/local` 接线；完整 planner/race、SSH/managed winner 和 stamped operation 仍属于 C3B-C3H，不能在 command 内补 route fallback。
+- CLI/TUI 已通过同一 `ClientRuntime/SessionOwner` 接入 planner、local/SSH/managed winner 与 stamped operation；command 和平台 UI 不得复制 route/session truth 或补 route fallback。
 - 跨语言 ABI v3 只保留通用 `EngineCommand` Proto envelope；新增 pairing、credential 或未来业务动作时修改 schema，不新增 C/JNI/WASM 业务符号。
 
 ## 删除门禁
