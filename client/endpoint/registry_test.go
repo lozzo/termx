@@ -200,7 +200,7 @@ func TestEndpointRuntimeChangeClassification(t *testing.T) {
 }
 
 func TestSaveRoundTripV2AndFileMode(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "termx", "connections.yaml")
+	path := filepath.Join(t.TempDir(), "termx", "endpoints.yaml")
 	priority := 10
 	endpoint := NewManagedEndpoint("studio", "Studio", DaemonIdentity{DeviceID: "device-studio", DeviceFingerprint: "SHA256:studio"}, "device-studio", "grant:studio", RelayDirect, ConnectOnDemand)
 	endpoint.SelectionPolicy = SelectionPolicy{HedgeDelay: 1500 * time.Millisecond, HedgeDelayConfigured: true}
@@ -264,6 +264,33 @@ func TestLoadReadsDefaultPathV2(t *testing.T) {
 	}
 	if registry.Endpoints[DefaultEndpointID].Label != "Configured Local" {
 		t.Fatalf("unexpected registry %#v", registry)
+	}
+}
+
+func TestLoadDefaultPathIgnoresLegacyConnectionsV1(t *testing.T) {
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	dir := filepath.Join(configHome, "termx")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := []byte("version: 1\ndefault: local\nconnections:\n  local:\n    transport: local\n")
+	if err := os.WriteFile(filepath.Join(dir, "connections.yaml"), legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, ok := registry.Endpoints[DefaultEndpointID]
+	if !ok || registry.Default != DefaultEndpointID {
+		t.Fatalf("legacy file blocked default local registry: %#v", registry)
+	}
+	if route, exists := local.Route(DefaultLocalRouteID); !exists || route.Kind != RouteLocalUnix {
+		t.Fatalf("default local route = %#v", local.Routes)
+	}
+	if got := filepath.Base(DefaultPath()); got != "endpoints.yaml" {
+		t.Fatalf("default registry file = %q", got)
 	}
 }
 

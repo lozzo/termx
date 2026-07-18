@@ -27,6 +27,7 @@ func newRootCmd() *cobra.Command {
 		Use:           "termx",
 		Short:         "A terminal multiplexer for local and remote daemon endpoints",
 		SilenceErrors: true,
+		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runV3RootCommand(cmd, socket, logFile, configPath)
 		},

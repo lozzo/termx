@@ -20,7 +20,8 @@ const (
 	// MaxRegistryBytes 限制普通配置文件大小，防止错误文件或不受信输入耗尽客户端内存。
 	MaxRegistryBytes = 1 << 20
 	// DefaultFileName 是 CLI/TUI 共享连接注册表的默认文件名。
-	DefaultFileName = "connections.yaml"
+	// v2 使用独立文件，避免旧 v1 connections schema 阻断默认本地入口；旧文件不迁移、不覆盖。
+	DefaultFileName = "endpoints.yaml"
 	// DefaultEndpointID 是缺省本地 daemon endpoint 的稳定客户端引用。
 	DefaultEndpointID EndpointID = "local"
 	// DefaultLocalRouteID 是缺省本地 unix route 的稳定 route 引用。
@@ -437,7 +438,7 @@ func Load(path string) (Registry, error) {
 	return registry, nil
 }
 
-// Parse 严格解析 v2 connections.yaml。
+// Parse 严格解析 v2 endpoints.yaml。
 // 未知字段、重复文档、旧 `connections` schema、非法 route 组合和超过 1 MiB 的输入全部 fail closed。
 func Parse(data []byte) (Registry, error) {
 	return parseRegistry(data)

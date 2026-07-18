@@ -32,7 +32,7 @@ func TestPairCreateAndImportUsesTicketThenClientBoundCredential(t *testing.T) {
 	if strings.Contains(string(created), "capability_grant") || strings.Contains(string(created), "private_key") {
 		t.Fatalf("static pairing bundle leaked long-lived credential: %s", created)
 	}
-	registryPath := filepath.Join(configHome, "termx", "connections.yaml")
+	registryPath := filepath.Join(configHome, "termx", endpointdomain.DefaultFileName)
 	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, endpointdomain.RelayDirect)
 	pairSocket := filepath.Join(runtimeDir, "daemon.sock.pair")
 	imported := executePairCommand(t, created, "pair", "import", "--id", "lab", "--registry", registryPath, "--pair-socket", pairSocket, "-")
@@ -73,7 +73,7 @@ func TestPairImportDoesNotInventManagedRouteForExistingSSHEndpoint(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	registryPath := filepath.Join(configHome, "termx", "connections.yaml")
+	registryPath := filepath.Join(configHome, "termx", endpointdomain.DefaultFileName)
 	ssh := endpointdomain.NewSSHEndpoint("lab", "Existing SSH label", "lab.example", "ssh:lab", "auto", endpointdomain.ConnectOnDemand)
 	if err := endpointdomain.Save(registryPath, endpointdomain.Registry{Version: endpointdomain.RegistryVersion, Default: "lab", Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{"lab": ssh}}); err != nil {
 		t.Fatal(err)
@@ -133,7 +133,7 @@ func TestPairImportRegistryFailureKeepsRecoverableBoundCredential(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	registryPath := filepath.Join(configHome, "termx", "connections.yaml")
+	registryPath := filepath.Join(configHome, "termx", endpointdomain.DefaultFileName)
 	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, endpointdomain.RelayAuto)
 	wantErr := errors.New("injected registry write failure")
 	previousUpdate := updateV3ConnectionRegistry
@@ -171,7 +171,7 @@ func TestPairImportRequiresExplicitScopeExpansionConfirmation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	registryPath := filepath.Join(configHome, "termx", "connections.yaml")
+	registryPath := filepath.Join(configHome, "termx", endpointdomain.DefaultFileName)
 	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, endpointdomain.RelayAuto)
 	pairSocket := v3PairingSocketPath(socket)
 	executePairCommand(t, narrow, "pair", "import", "--id", "lab", "--registry", registryPath, "--pair-socket", pairSocket, "-")
@@ -193,7 +193,7 @@ func TestPairImportRootTimeoutCancelsLockedDaemonHelloAndReleasesLocks(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	registryPath := filepath.Join(configHome, "termx", "connections.yaml")
+	registryPath := filepath.Join(configHome, "termx", endpointdomain.DefaultFileName)
 	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, endpointdomain.RelayAuto)
 
 	hungSocket := filepath.Join(t.TempDir(), "hung.sock")
@@ -257,7 +257,7 @@ func TestPairImportRootTimeoutCancelsPairingSocketDialAndReleasesLocks(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	registryPath := filepath.Join(configHome, "termx", "connections.yaml")
+	registryPath := filepath.Join(configHome, "termx", endpointdomain.DefaultFileName)
 	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, endpointdomain.RelayAuto)
 
 	previousDial := dialV3PairingTransport

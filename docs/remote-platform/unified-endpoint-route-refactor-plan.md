@@ -139,7 +139,7 @@ EndpointSession
 
 ### 5.1 Endpoint registry
 
-桌面 `connections.yaml` 建议升级为破坏性的 v2 schema：
+桌面 v2 Endpoint registry 使用独立的 `endpoints.yaml`；旧 v1 `connections.yaml` 保留但不读取、不迁移，避免两套 schema 共享路径：
 
 ```yaml
 version: 2

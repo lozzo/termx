@@ -65,7 +65,7 @@ type endpointTestView struct {
 func newEndpointCommand(socket, logFile *string) *cobra.Command {
 	runtime := &endpointCommandRuntime{socket: socket, logFile: logFile}
 	command := &cobra.Command{Use: "endpoint", Short: "Manage daemon endpoints and their routes"}
-	command.PersistentFlags().StringVar(&runtime.registryPath, "registry", "", "endpoint registry path (default: XDG config dir connections.yaml)")
+	command.PersistentFlags().StringVar(&runtime.registryPath, "registry", "", "endpoint registry path (default: XDG config dir endpoints.yaml)")
 	command.AddCommand(
 		newEndpointListCommand(runtime),
 		newEndpointShowCommand(runtime),

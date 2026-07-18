@@ -202,7 +202,7 @@ termx pair import FILE [--id ENDPOINT] [--relay MODE]
 termx pair inspect FILE
 ```
 
-create/import/inspect 已实现；inspect 只能显示非秘密 metadata。list/revoke 必须先建立 daemon-owned grant registry/revocation contract，当前不进入产品树。raw grant 永不进入普通 JSON、日志、connections.yaml 或 shell completion。
+create/import/inspect 已实现；inspect 只能显示非秘密 metadata。list/revoke 必须先建立 daemon-owned grant registry/revocation contract，当前不进入产品树。raw grant 永不进入普通 JSON、日志、`endpoints.yaml` 或 shell completion。
 
 ### 5.7 cloud
 

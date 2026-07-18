@@ -19,7 +19,7 @@ import (
 )
 
 func TestEndpointMutationHonorsRootTimeoutWhileRegistryLocked(t *testing.T) {
-	registryPath := filepath.Join(t.TempDir(), "connections.yaml")
+	registryPath := filepath.Join(t.TempDir(), "endpoints.yaml")
 	owner, err := filelock.Acquire(registryPath+".lock", true)
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +111,7 @@ func TestEndpointRegistryCommandLifecycle(t *testing.T) {
 }
 
 func TestEndpointAddCreatesExplicitRegistryWithoutInventingLocalEndpoint(t *testing.T) {
-	registryPath := filepath.Join(t.TempDir(), "custom", "connections.yaml")
+	registryPath := filepath.Join(t.TempDir(), "custom", "endpoints.yaml")
 	command := newRootCmd()
 	command.SetOut(io.Discard)
 	command.SetErr(io.Discard)

@@ -315,7 +315,7 @@ func v3PairImportCommand(socket *string, logFile *string) *cobra.Command {
 	}
 	command.Flags().StringVar(&endpointID, "id", "", "client-local endpoint id")
 	command.Flags().StringVar(&label, "label", "", "override the bundle display label")
-	command.Flags().StringVar(&registryPath, "registry", "", "connections.yaml path")
+	command.Flags().StringVar(&registryPath, "registry", "", "endpoint registry path (default: XDG config dir endpoints.yaml)")
 	command.Flags().StringVar(&pairingSocket, "pair-socket", "", "owner-only PairingExchange Unix socket (defaults to local daemon)")
 	command.Flags().StringVar(&clientLabel, "client-label", "", "label recorded for this client access key")
 	command.Flags().BoolVar(&allowScopeExpansion, "allow-scope-expansion", false, "confirm replacing an existing credential with a broader capability scope")

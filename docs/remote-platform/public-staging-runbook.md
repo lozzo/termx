@@ -184,7 +184,7 @@ TERMX_CLOUD_COMPANION_SOCKET=/absolute/owner-only-dir/companion.sock \
   termx cloud login --device-code
 
 termx pair import --id public-staging --relay direct \
-  --registry "$XDG_CONFIG_HOME/termx/connections.yaml" pairing.json
+  --registry "$XDG_CONFIG_HOME/termx/endpoints.yaml" pairing.json
 
 TERMX_CLOUD_COMPANION_SOCKET=/absolute/owner-only-dir/companion.sock termx
 ```

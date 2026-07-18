@@ -63,7 +63,7 @@ Hub 只传递 signaling metadata。Relay 只转发已经由 WebRTC DTLS 加密�
 | 领域 | Domain owner | Truth source | 禁止拥有 |
 | --- | --- | --- | --- |
 | Terminal lifecycle/history | core-v2 daemon | owning daemon storage/runtime | 云账号、Hub、Relay、App/TUI 本地投影 |
-| Endpoint registry | client | `connections.yaml` 与可选云 metadata projection | daemon client registry、Relay node |
+| Endpoint registry | client | `endpoints.yaml` 与可选云 metadata projection | daemon client registry、Relay node |
 | Client endpoint runtime | `client/runtime` | per-endpoint race、winner、generation、ReadySession | terminal lifecycle truth、UI reducer state |
 | Device identity | daemon | daemon 本地长期密钥 | Hub 注册 token、设备 label |
 | Terminal capability | daemon | daemon 签发、验证和撤销记录 | Control Plane subscription、Hub session |

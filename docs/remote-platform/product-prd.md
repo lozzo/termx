@@ -134,7 +134,7 @@ Enterprise 私有部署是商业授权和交付能力，不要求公开托管 Hu
 
 1. 用户安装 daemon 和 TUI。
 2. `local` endpoint 默认可用。
-3. 用户在 `connections.yaml` 中添加 SSH endpoint。
+3. 用户在 `endpoints.yaml` 中添加 SSH endpoint。
 4. TUI 使用本机 SSH config 和 host key 校验连接远端 daemon。
 5. 全程不要求登录 TermX 云端。
 

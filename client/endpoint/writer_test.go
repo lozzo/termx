@@ -8,7 +8,7 @@ import (
 )
 
 func TestUpdateSerializesConcurrentRegistryMutations(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "connections.yaml")
+	path := filepath.Join(t.TempDir(), "endpoints.yaml")
 	const mutations = 12
 	start := make(chan struct{})
 	errorsByMutation := make(chan error, mutations)

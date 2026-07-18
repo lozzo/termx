@@ -50,6 +50,13 @@ func TestRootCmdRoutesToTUIv3ByDefault(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "termx.log")
 	configHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configHome)
+	legacyDir := filepath.Join(configHome, "termx")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "connections.yaml"), []byte("version: 1\ndefault: local\nconnections:\n  local:\n    transport: local\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	var gotCfg v3RootConfig
 	calledRoot := false
@@ -64,6 +71,9 @@ func TestRootCmdRoutesToTUIv3ByDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := newRootCmd()
+	if !cmd.SilenceUsage {
+		t.Fatal("runtime failures must not print the full command usage")
+	}
 	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "--config", explicitConfig})
 	cmd.SetIn(bytes.NewBuffer(nil))
 	cmd.SetOut(io.Discard)
@@ -77,6 +87,9 @@ func TestRootCmdRoutesToTUIv3ByDefault(t *testing.T) {
 	}
 	if gotCfg.SocketPath != socketPath || gotCfg.LogFile != logPath {
 		t.Fatalf("unexpected v3 root config %#v", gotCfg)
+	}
+	if gotCfg.ConnectionRegistry.Default != endpointdomain.DefaultEndpointID {
+		t.Fatalf("legacy connections.yaml blocked default local TUI registry: %#v", gotCfg.ConnectionRegistry)
 	}
 	configPath := filepath.Join(configHome, "termx", "termx.yaml")
 	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
