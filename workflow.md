@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- `C3C` fresh daemon proof / ReadySession 已完成。下一切片是 `C3D` shared runtime session owner；Android 与 Web 已复用同一 runtime/managed/auth/protocol/binding 引擎，不得重新引入平台自有客户端网络真值。
+- `C3D` shared runtime session owner 已完成。下一切片是 `C3E` CLI 接入共享 runtime；Android 与 Web 已复用同一 runtime/managed/auth/protocol/binding 引擎，不得重新引入平台自有客户端网络真值。
 - 当前迁移允许修改 `client/{runtime,port,adapter,binding}/`、`remote/`、`internal/protocol/`、`proto/`、`clients/mobile/`、`clients/ui/` 以及对应 tests、build scripts 和必要架构文档；每个切片仍只能触及任务表规定的最小范围。
 - Android 目标是 Go Client Engine 编译为 native library，通过稳定 C ABI 与薄 JNI/Capacitor bridge 调用；Kotlin/Java 不拥有连接、认证、协议、session/resource 或重连真值。
 - Android lifecycle 固定采用 generation teardown：锁屏广播或进程进入后台时关闭当前 Go engine、loopback bridge、全部 session/resource 和事件泵；WebView 恢复时先创建新 engine/generation，再让 TypeScript 重连。旧 handle、迟到 callback 和冻结期间未消费事件不得进入新 generation，事件队列必须有界。
@@ -25,6 +25,7 @@
 - PA007 最终准入已通过 public/private Go、关键包 race、clients 130/16 tests、typecheck/build/WASM、generated/layout doctor、Community/Official Android APK 与边界校验。架构 reviewer `019f73b0-8426-7022-816c-1390532ce14a` 与代码 reviewer `019f73b0-00ef-72a2-bb96-909ebbcfe4f2` 均明确 PASS；已处理 early stream terminal event exact-once release、managed production terminal-response 接线、active operation close barrier 与 close failure 可观察性。
 - `C3B` 已在 `client/endpoint` 建立纯领域 `RouteSelectionPlanner`：输入 normalized Endpoint、ConnectIntent、route override、generation、平台 route capability 和可用 credential ref 快照，输出不可变 attempt groups、累计 hedge delay 与稳定过滤诊断。自动竞速只包含 local Unix/SSH，唯一 managed route 保留单路计划；planner 不 dial、不读取 secure store/Cloud、不选择 winner。Go harness、机器可读 fixture、race、全仓 Go tests 与 doctor 通过。
 - `C3C` 已把 ReadySession 发布条件冻结为 route-specific authorization、fresh DeviceIdentity proof 与 protocol Hello。local Unix 和 OpenSSH 在 Hello 后通过 versioned Proto challenge/result 证明当前 daemon 持有 Endpoint DeviceIdentity 私钥，SSH 同时依赖 OpenSSH host-key/user auth 与远端 owner-only socket；managed 继续使用 channel-bound DeviceHello/CapabilityGrant。缺失 proof、授权、Hello、pin 匹配或生命周期 signal 的 attempt 均不能进入 SessionOwner winner；schema/generated、Mapping/API Layer/core service、adapter/runtime race、全仓 Go tests 与 doctor 通过。
+- `C3D` 已让 `SessionOwner` 消费 C3B attempt groups：同 Endpoint 只有一个 in-flight planner race，不同 Endpoint 可独立推进；priority hedge 只使用 `client/port.Clock`，首个完整 ReadySession 线性化后取消并等待全部 loser，迟到成功资源 exact-close 后才发布 lease。`ClientRuntime` 实现公共 `Runtime` interface，按 config key 复用 winner，并提供进程内 sticky route override、独立 consumer lease、bounded latest-state lifecycle mailbox 和 generation-safe offline 投影。runtime/endpoint race、全仓 Go tests 与 doctor 通过。
 - 用户已确立仓库级强约定：所有插件、第三方客户端、官方客户端、跨进程和跨语言 API 的唯一 schema truth 必须位于 `proto/`。
 - 完整运行链路固定为 `插件/客户端 -> transport/platform binding -> protocol framing -> generated proto -> api_layer -> api_mapping -> core`，返回方向相反。Proto 是 schema/message truth，不是 transport 或主动运行层；任何入口都不得绕过 API Layer 消费 core domain struct。
 - `core/api` Go DTO 路线已判定错误，必须删除；此前 `AR003B1A/AR003B1B` 结论作废，不得继续迁移或补兼容层。
@@ -122,8 +123,8 @@ core domain truth
 | PA007 | 已完成 | 跨端架构就绪双审 | import graph、schema coverage、重复 DTO、binding ownership、Android/Web lifecycle、channel binding、fallback、生成代码、文档和 tests 通过；架构 reviewer 与代码 reviewer 明确 PASS 后恢复 C3B |
 | C3B | 已完成 | RouteSelectionPlanner | 纯 planner 覆盖平台/credential eligibility、manual override、local/SSH full race、priority hedge、唯一 managed 单路、不可变 attempt groups 和稳定过滤诊断；机器可读 fixture 与 race 通过 |
 | C3C | 已完成 | fresh daemon proof / ReadySession | local/SSH fresh challenge proof、managed channel-bound auth、ReadySession evidence/pin/Hello/lifecycle gate 与失败清理通过 |
-| C3D | 待开始 | shared runtime session owner | planner-driven attempt groups、唯一 winner 线性化、loser cancel/wait/cleanup、sticky override 与 lifecycle mailbox harness 通过 |
-| C3E | 暂停 | CLI 接入共享 runtime | PA007 PASS 后恢复 |
+| C3D | 已完成 | shared runtime session owner | planner-driven attempt groups、per-endpoint singleflight、唯一 winner 线性化、loser cancel/wait/cleanup、shared lease、sticky override 与 bounded lifecycle mailbox harness 通过 |
+| C3E | 待开始 | CLI 接入共享 runtime | CLI/TUI composition 使用同一 ClientRuntime/SessionOwner、local/SSH/managed dialer registry 与 system Clock；删除 SelectRoute、local.Connect 和 raw protocol adoption 生产路径 |
 | C3F | 暂停 | operation generation stamp | PA007 PASS 后恢复 |
 | C3G | 暂停 | local + SSH race E2E | PA007 PASS 后恢复 |
 | C3H | 暂停 | 最终准入与双审 | PA007 PASS 后恢复 |
@@ -148,6 +149,7 @@ core domain truth
 - `C3B`：`go test ./client/endpoint -count=1`；`go test -race ./client/endpoint -count=1`；机器可读 route plan fixture；`make test`；`make doctor`；`git diff --check`。
 - `C3C`：generated-code check；fresh challenge/proof、pin mismatch、缺失 authorization/Hello/lifecycle、managed auth 与 local/SSH adapter harness；`go test -race ./shared/remoteauth ./api_mapping ./api_layer ./client/runtime ./client/adapter/protocol ./client/adapter/managed ./client/adapter/ssh -count=1`；`make test`；`make doctor`；`git diff --check`。
 - `C3D`：`go test -race ./client/runtime ./client/endpoint -count=1`；winner/loser exact cleanup、hedge delay、cancel、同 endpoint shared lease、sticky override 与 lifecycle mailbox harness；`make test`；`make doctor`；`git diff --check`。
+- `C3E`：CLI/TUI local/SSH/managed composition 与 dependency guards；默认/显式 route、shared owner reuse、错误/取消投影 harness；旧 `SelectRoute`、`local.Connect`、raw protocol adoption 扫描；`go test -race ./client/runtime ./client/adapter/... ./tui/adapter/clientruntime ./cmd/termx -count=1`；`make test`；`make doctor`；`git diff --check`。
 
 ## 执行规则
 

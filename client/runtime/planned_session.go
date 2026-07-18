@@ -1,0 +1,428 @@
+package runtime
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"reflect"
+	"sync"
+	"time"
+
+	"github.com/lozzow/termx/client/endpoint"
+	"github.com/lozzow/termx/client/port"
+)
+
+// RoutePlanEnvironment 是 composition root 提供给纯 planner 的当前平台能力快照。
+// 它只包含 route kind 与 credential ref 索引，不携带 credential body、transport handle、Cloud response 或 runtime session state。
+type RoutePlanEnvironment struct {
+	SupportedRouteKinds     []endpoint.RouteKind
+	AvailableCredentialRefs []string
+}
+
+// RouteAttemptDialerResolver 按 planner 已选定的 RouteKind 返回 concrete single-route adapter。
+// resolver 不得选择 route、执行 fallback 或缓存 ReadySession；同一种 kind 的 adapter 必须严格执行 AttemptRequest.Route。
+type RouteAttemptDialerResolver interface {
+	Dialer(endpoint.RouteKind) (RouteAttemptDialer, bool)
+}
+
+// RouteDialerMap 是 composition root 使用的不可变 RouteKind 到 adapter 映射。
+// NewRouteDialerMap 会复制输入 map，后续调用方修改原 map 不得改变正在运行的 race。
+type RouteDialerMap struct {
+	dialers map[endpoint.RouteKind]RouteAttemptDialer
+}
+
+// NewRouteDialerMap 校验并复制 route adapter 映射；nil adapter 会在启动 race 前失败，不能变成运行期 fallback。
+func NewRouteDialerMap(values map[endpoint.RouteKind]RouteAttemptDialer) (RouteDialerMap, error) {
+	dialers := make(map[endpoint.RouteKind]RouteAttemptDialer, len(values))
+	for kind, dialer := range values {
+		if dialer == nil || (reflect.ValueOf(dialer).Kind() == reflect.Pointer && reflect.ValueOf(dialer).IsNil()) {
+			return RouteDialerMap{}, runtimeError(ErrorInvalidRequest, fmt.Sprintf("route %q dialer is required", kind), nil)
+		}
+		dialers[kind] = dialer
+	}
+	return RouteDialerMap{dialers: dialers}, nil
+}
+
+// Dialer 返回指定 route kind 的 adapter；返回值只读，不能借此修改 registry 或其它 kind 的 adapter。
+func (registry RouteDialerMap) Dialer(kind endpoint.RouteKind) (RouteAttemptDialer, bool) {
+	dialer, ok := registry.dialers[kind]
+	return dialer, ok
+}
+
+// ConnectPlanned 为一个 Endpoint generation 执行 C3B attempt groups，并只发布首个完整 ReadySession。
+// winner 选定后会取消并等待全部 loser；任何迟到成功都在返回前关闭，cleanup 未完成时本方法不会提前发布 lease。
+func (owner *SessionOwner) ConnectPlanned(
+	ctx context.Context,
+	target endpoint.Endpoint,
+	routeOverride endpoint.RouteID,
+	intent ConnectIntent,
+	environment RoutePlanEnvironment,
+	clock port.Clock,
+	dialers RouteAttemptDialerResolver,
+) (SessionLease, error) {
+	if owner == nil || ctx == nil || clock == nil || dialers == nil {
+		return SessionLease{}, runtimeError(ErrorInvalidRequest, "session owner, context, clock, and route dialers are required", nil)
+	}
+	acquireLock := owner.endpointAcquireLock(target.ID)
+	acquireLock.Lock()
+	defer acquireLock.Unlock()
+	return owner.connectPlanned(ctx, target, routeOverride, intent, environment, clock, dialers)
+}
+
+func (owner *SessionOwner) connectPlanned(ctx context.Context, target endpoint.Endpoint, routeOverride endpoint.RouteID, intent ConnectIntent, environment RoutePlanEnvironment, clock port.Clock, dialers RouteAttemptDialerResolver) (SessionLease, error) {
+	override := owner.effectiveRouteOverride(target.ID, routeOverride)
+	preflight := endpoint.RouteSelectionRequest{
+		Endpoint: target, Intent: endpoint.ConnectIntent{Kind: string(intent)}, RouteOverride: override, Generation: 1,
+		SupportedRouteKinds:     append([]endpoint.RouteKind(nil), environment.SupportedRouteKinds...),
+		AvailableCredentialRefs: append([]string(nil), environment.AvailableCredentialRefs...),
+	}
+	if _, err := (endpoint.RouteSelectionPlanner{}).Plan(preflight); err != nil {
+		return SessionLease{}, plannerRuntimeError(err)
+	}
+	generation, err := owner.beginEndpointGeneration(target.ID)
+	if err != nil {
+		return SessionLease{}, err
+	}
+	request := preflight
+	request.Generation = endpoint.SessionGeneration(generation)
+	plan, err := (endpoint.RouteSelectionPlanner{}).Plan(request)
+	if err != nil {
+		return SessionLease{}, plannerRuntimeError(err)
+	}
+	owner.publishEndpointEvent(EndpointEvent{EndpointID: target.ID, Stamp: EndpointSessionStamp{EndpointID: target.ID, Generation: generation}, Phase: EndpointPhasePlanning})
+	selectionReason := "first_ready"
+	if override != "" {
+		selectionReason = "route_override"
+	}
+	lease, err := owner.runRoutePlan(ctx, target, intent, plan, selectionReason, clock, dialers)
+	if err != nil {
+		owner.publishEndpointEvent(EndpointEvent{EndpointID: target.ID, Stamp: EndpointSessionStamp{EndpointID: target.ID, Generation: generation}, Phase: EndpointPhaseOffline, ErrorCode: CodeOf(err), Message: err.Error()})
+		return SessionLease{}, err
+	}
+	if routeOverride != "" {
+		owner.mu.Lock()
+		owner.stickyRoutes[target.ID] = routeOverride
+		owner.mu.Unlock()
+	}
+	return lease, nil
+}
+
+// AcquirePlanned 复用同 Endpoint、同 config key 的当前 winner，并为每个 consumer 返回独立 lease。
+// replacement race 仍由 SessionOwner 单点提升 generation；consumer Close 只释放自己的订阅与资源视图。
+func (owner *SessionOwner) AcquirePlanned(
+	ctx context.Context,
+	target endpoint.Endpoint,
+	routeOverride endpoint.RouteID,
+	intent ConnectIntent,
+	configKey string,
+	environment RoutePlanEnvironment,
+	clock port.Clock,
+	dialers RouteAttemptDialerResolver,
+) (ApplicationReadySession, error) {
+	if owner == nil || ctx == nil || configKey == "" || clock == nil || dialers == nil {
+		return nil, runtimeError(ErrorInvalidRequest, "session owner, context, config key, clock, and route dialers are required", nil)
+	}
+	acquireLock := owner.endpointAcquireLock(target.ID)
+	acquireLock.Lock()
+	defer acquireLock.Unlock()
+	owner.mu.Lock()
+	if owner.closed {
+		owner.mu.Unlock()
+		return nil, runtimeError(ErrorUnavailable, "session owner is closed", nil)
+	}
+	current := owner.current[target.ID]
+	if current != nil && owner.configs[target.ID] == configKey && owner.authority.isCurrent(target.ID, current.Stamp().Generation, current) {
+		select {
+		case <-current.Done():
+		default:
+			lease := owner.newSharedLeaseLocked(target.ID, current)
+			owner.mu.Unlock()
+			return lease, nil
+		}
+	}
+	owner.mu.Unlock()
+	lease, err := owner.connectPlanned(ctx, target, routeOverride, intent, environment, clock, dialers)
+	if err != nil {
+		return nil, err
+	}
+	ready, err := owner.ApplicationSession(lease)
+	if err != nil {
+		return nil, err
+	}
+	owner.mu.Lock()
+	if owner.closed {
+		owner.mu.Unlock()
+		_ = ready.Close()
+		return nil, runtimeError(ErrorUnavailable, "session owner is closed", nil)
+	}
+	owner.configs[target.ID] = configKey
+	shared := owner.newSharedLeaseLocked(target.ID, ready)
+	owner.mu.Unlock()
+	return shared, nil
+}
+
+// EnsurePlanned 返回 runtime application 使用的不可变 SessionLease，并按 config key 复用当前 winner。
+// 与 AcquirePlanned 不同，它不创建 consumer resource lease；调用方的 command/event 仍必须携带返回 stamp 回到 owner。
+func (owner *SessionOwner) EnsurePlanned(
+	ctx context.Context,
+	target endpoint.Endpoint,
+	routeOverride endpoint.RouteID,
+	intent ConnectIntent,
+	configKey string,
+	environment RoutePlanEnvironment,
+	clock port.Clock,
+	dialers RouteAttemptDialerResolver,
+) (SessionLease, error) {
+	if owner == nil || ctx == nil || configKey == "" || clock == nil || dialers == nil {
+		return SessionLease{}, runtimeError(ErrorInvalidRequest, "session owner, context, config key, clock, and route dialers are required", nil)
+	}
+	acquireLock := owner.endpointAcquireLock(target.ID)
+	acquireLock.Lock()
+	defer acquireLock.Unlock()
+	owner.mu.Lock()
+	if owner.closed {
+		owner.mu.Unlock()
+		return SessionLease{}, runtimeError(ErrorUnavailable, "session owner is closed", nil)
+	}
+	current := owner.current[target.ID]
+	if current != nil && owner.configs[target.ID] == configKey && owner.authority.isCurrent(target.ID, current.Stamp().Generation, current) {
+		select {
+		case <-current.Done():
+		default:
+			lease := SessionLease{Stamp: current.Stamp()}
+			owner.mu.Unlock()
+			return lease, nil
+		}
+	}
+	owner.mu.Unlock()
+	lease, err := owner.connectPlanned(ctx, target, routeOverride, intent, environment, clock, dialers)
+	if err != nil {
+		return SessionLease{}, err
+	}
+	owner.mu.Lock()
+	if owner.closed {
+		owner.mu.Unlock()
+		_ = owner.Disconnect(context.Background(), DisconnectRequest{Stamp: lease.Stamp})
+		return SessionLease{}, runtimeError(ErrorUnavailable, "session owner is closed", nil)
+	}
+	owner.configs[target.ID] = configKey
+	owner.mu.Unlock()
+	return lease, nil
+}
+
+// ClearRouteOverride 清除当前进程内 Endpoint sticky route；它不修改 connections registry，也不关闭当前 winner。
+func (owner *SessionOwner) ClearRouteOverride(endpointID endpoint.EndpointID) {
+	if owner == nil {
+		return
+	}
+	owner.mu.Lock()
+	delete(owner.stickyRoutes, endpointID)
+	owner.mu.Unlock()
+}
+
+// WatchEndpoint 订阅 bounded endpoint lifecycle mailbox。
+// producer 使用非阻塞发送；慢 consumer 只丢弃中间投影，不得阻塞 winner/cleanup 或获得 transport/protocol payload。
+func (owner *SessionOwner) WatchEndpoint(ctx context.Context, endpointID endpoint.EndpointID) (<-chan EndpointEvent, error) {
+	if owner == nil || ctx == nil || endpointID == "" {
+		return nil, runtimeError(ErrorInvalidRequest, "session owner and endpoint_id are required", nil)
+	}
+	watcher := make(chan EndpointEvent, 16)
+	owner.mu.Lock()
+	if owner.closed {
+		owner.mu.Unlock()
+		return nil, runtimeError(ErrorUnavailable, "session owner is closed", nil)
+	}
+	if owner.watchers[endpointID] == nil {
+		owner.watchers[endpointID] = make(map[chan EndpointEvent]struct{})
+	}
+	owner.watchers[endpointID][watcher] = struct{}{}
+	owner.mu.Unlock()
+	go func() {
+		<-ctx.Done()
+		owner.mu.Lock()
+		if watchers := owner.watchers[endpointID]; watchers != nil {
+			if _, ok := watchers[watcher]; ok {
+				delete(watchers, watcher)
+				close(watcher)
+			}
+			if len(watchers) == 0 {
+				delete(owner.watchers, endpointID)
+			}
+		}
+		owner.mu.Unlock()
+	}()
+	return watcher, nil
+}
+
+type routeAttemptResult struct {
+	index   int
+	request AttemptRequest
+	ready   ReadySession
+	err     error
+}
+
+func (owner *SessionOwner) runRoutePlan(ctx context.Context, target endpoint.Endpoint, intent ConnectIntent, plan endpoint.RouteSelectionPlan, selectionReason string, clock port.Clock, dialers RouteAttemptDialerResolver) (SessionLease, error) {
+	type scheduledAttempt struct {
+		request AttemptRequest
+		delay   time.Duration
+		cancel  context.CancelFunc
+	}
+	groups := plan.Groups()
+	scheduled := make([]scheduledAttempt, 0)
+	for _, group := range groups {
+		for _, attempt := range group.Attempts() {
+			request, err := NewAttemptRequest(target, attempt.Route.ID, SessionGeneration(plan.Generation()), intent)
+			if err != nil {
+				return SessionLease{}, err
+			}
+			scheduled = append(scheduled, scheduledAttempt{request: request, delay: group.StartDelay()})
+		}
+	}
+	results := make(chan routeAttemptResult, len(scheduled))
+	var wait sync.WaitGroup
+	for index := range scheduled {
+		item := &scheduled[index]
+		attemptCtx, cancel := context.WithCancel(ctx)
+		item.cancel = cancel
+		wait.Add(1)
+		go func(index int, item scheduledAttempt, attemptCtx context.Context) {
+			defer wait.Done()
+			results <- owner.executeScheduledAttempt(attemptCtx, index, item.request, item.delay, clock, dialers)
+		}(index, *item, attemptCtx)
+	}
+	var winner *routeAttemptResult
+	errorsByIndex := make([]error, len(scheduled))
+	for range scheduled {
+		result := <-results
+		if result.err == nil && winner == nil {
+			winner = &result
+			for index := range scheduled {
+				if index != result.index {
+					scheduled[index].cancel()
+				}
+			}
+			continue
+		}
+		if result.ready != nil {
+			_ = result.ready.Close()
+		}
+		errorsByIndex[result.index] = result.err
+	}
+	for index := range scheduled {
+		scheduled[index].cancel()
+	}
+	wait.Wait()
+	if winner == nil {
+		attempted := false
+		for _, err := range errorsByIndex {
+			attempted = attempted || WasAttempted(err)
+			if err != nil && CodeOf(err) != ErrorCanceled {
+				return SessionLease{}, err
+			}
+		}
+		return SessionLease{}, &Error{Code: ErrorCanceled, Message: "route race was canceled", Cause: ctx.Err(), Attempted: attempted}
+	}
+	if ctx.Err() != nil {
+		_ = winner.ready.Close()
+		return SessionLease{}, &Error{Code: ErrorCanceled, Message: "route race was canceled before winner publication", Cause: ctx.Err(), Attempted: true}
+	}
+	lease, err := owner.AdoptReadySession(winner.request, winner.ready)
+	if err != nil {
+		return SessionLease{}, err
+	}
+	owner.publishEndpointEvent(EndpointEvent{EndpointID: target.ID, Stamp: lease.Stamp, Phase: EndpointPhaseReady, ObservedPath: winner.ready.ObservedPath(), RouteSelectionReason: selectionReason})
+	return lease, nil
+}
+
+func (owner *SessionOwner) executeScheduledAttempt(ctx context.Context, index int, request AttemptRequest, delay time.Duration, clock port.Clock, dialers RouteAttemptDialerResolver) routeAttemptResult {
+	if delay > 0 {
+		timer := clock.NewTimer(delay)
+		if timer == nil {
+			return routeAttemptResult{index: index, request: request, err: runtimeError(ErrorUnavailable, "route hedge timer is unavailable", nil)}
+		}
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return routeAttemptResult{index: index, request: request, err: runtimeError(ErrorCanceled, "route attempt canceled before start", ctx.Err())}
+		case <-timer.C():
+		}
+	}
+	dialer, ok := dialers.Dialer(request.Route().Kind)
+	if !ok || dialer == nil {
+		return routeAttemptResult{index: index, request: request, err: runtimeError(ErrorUnsupportedRoute, fmt.Sprintf("route kind %q has no adapter", request.Route().Kind), nil)}
+	}
+	owner.publishEndpointEvent(EndpointEvent{EndpointID: request.EndpointID(), Stamp: request.Stamp(), Phase: EndpointPhaseConnecting})
+	ready, err := dialer.Dial(ctx, request)
+	if err != nil {
+		if ready != nil {
+			_ = ready.Close()
+		}
+		return routeAttemptResult{index: index, request: request, err: attemptedRuntimeError(err)}
+	}
+	if err := ValidateReadySession(request, ready); err != nil {
+		if ready != nil {
+			_ = ready.Close()
+		}
+		return routeAttemptResult{index: index, request: request, err: attemptedRuntimeError(err)}
+	}
+	if _, ok := ready.(ApplicationReadySession); !ok {
+		_ = ready.Close()
+		return routeAttemptResult{index: index, request: request, err: attemptedRuntimeError(runtimeError(ErrorUnavailable, "route attempt returned no Proto application session", nil))}
+	}
+	return routeAttemptResult{index: index, request: request, ready: ready}
+}
+
+func (owner *SessionOwner) effectiveRouteOverride(endpointID endpoint.EndpointID, explicit endpoint.RouteID) endpoint.RouteID {
+	if explicit != "" || owner == nil {
+		return explicit
+	}
+	owner.mu.Lock()
+	defer owner.mu.Unlock()
+	return owner.stickyRoutes[endpointID]
+}
+
+func (owner *SessionOwner) publishEndpointEvent(event EndpointEvent) {
+	owner.mu.Lock()
+	defer owner.mu.Unlock()
+	for watcher := range owner.watchers[event.EndpointID] {
+		select {
+		case watcher <- event:
+		default:
+			select {
+			case <-watcher:
+			default:
+			}
+			select {
+			case watcher <- event:
+			default:
+			}
+		}
+	}
+}
+
+func attemptedRuntimeError(err error) error {
+	code := CodeOf(err)
+	message := "route attempt failed"
+	var value *Error
+	if errors.As(err, &value) && value.Message != "" {
+		message = value.Message
+	}
+	return &Error{Code: code, Message: message, Cause: err, Attempted: true}
+}
+
+func plannerRuntimeError(err error) error {
+	var value *endpoint.Error
+	if !errors.As(err, &value) {
+		return runtimeError(ErrorInvalidRequest, "route planner rejected request", err)
+	}
+	switch value.Code {
+	case endpoint.ErrorCredentialRequired, endpoint.ErrorAuthorizationRequired:
+		return runtimeError(ErrorAuthorization, value.Message, err)
+	case endpoint.ErrorRouteUnavailable:
+		return runtimeError(ErrorUnsupportedRoute, value.Message, err)
+	default:
+		return runtimeError(ErrorInvalidRequest, value.Message, err)
+	}
+}
+
+var _ RouteAttemptDialerResolver = RouteDialerMap{}

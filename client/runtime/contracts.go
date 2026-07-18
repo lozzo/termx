@@ -268,6 +268,11 @@ func ValidateReadySession(request AttemptRequest, session ReadySession) error {
 	if session.Done() == nil {
 		return runtimeError(ErrorUnavailable, "ready session lifecycle signal is required", nil)
 	}
+	select {
+	case <-session.Done():
+		return runtimeError(ErrorUnavailable, "route attempt session ended before winner publication", session.Err())
+	default:
+	}
 	return nil
 }
 

@@ -110,6 +110,11 @@ func TestValidateReadySessionRejectsWrongGenerationAndMissingLifecycle(t *testin
 	if err := ValidateReadySession(request, ready); err != nil {
 		t.Fatal(err)
 	}
+	closed := make(chan struct{})
+	close(closed)
+	if err := ValidateReadySession(request, &contractReadySession{stamp: request.Stamp(), evidence: readyEvidence, done: closed}); CodeOf(err) != ErrorUnavailable {
+		t.Fatalf("ended ready session error = %v", err)
+	}
 }
 
 func TestReadySessionEvidenceRequiresProofAuthorizationHelloAndPin(t *testing.T) {

@@ -10,15 +10,17 @@ import (
 	"github.com/lozzow/termx/proto/apipb"
 )
 
-// SessionOwner 是跨端 Go Client Engine 的 endpoint generation 与当前 ready session 真值。
-// 它只接收外部已经选定的单个 route，不实现 planner/race；Android、Web、TUI 和 CLI 不得在 owner 外缓存可执行 protocol client。
+// SessionOwner 是跨端 Go Client Engine 的 endpoint generation、planner race 与当前 ready session 真值。
+// 单 route adapter 只能通过 AttemptRequest 参与 owner 启动的 race；Android、Web、TUI 和 CLI 不得在 owner 外缓存可执行 protocol client。
 type SessionOwner struct {
 	mu           sync.Mutex
-	acquireMu    sync.Mutex
 	authority    *SessionGenerationAuthority
 	current      map[endpoint.EndpointID]ApplicationReadySession
 	configs      map[endpoint.EndpointID]string
+	stickyRoutes map[endpoint.EndpointID]endpoint.RouteID
+	acquireLocks map[endpoint.EndpointID]*sync.Mutex
 	sharedLeases map[endpoint.EndpointID]map[*sharedApplicationLease]struct{}
+	watchers     map[endpoint.EndpointID]map[chan EndpointEvent]struct{}
 	closed       bool
 }
 
@@ -51,7 +53,10 @@ func NewSessionOwnerWithAuthority(authority *SessionGenerationAuthority) *Sessio
 		authority:    authority,
 		current:      make(map[endpoint.EndpointID]ApplicationReadySession),
 		configs:      make(map[endpoint.EndpointID]string),
+		stickyRoutes: make(map[endpoint.EndpointID]endpoint.RouteID),
+		acquireLocks: make(map[endpoint.EndpointID]*sync.Mutex),
 		sharedLeases: make(map[endpoint.EndpointID]map[*sharedApplicationLease]struct{}),
+		watchers:     make(map[endpoint.EndpointID]map[chan EndpointEvent]struct{}),
 	}
 }
 
@@ -61,8 +66,9 @@ func (owner *SessionOwner) AcquireRoute(ctx context.Context, target endpoint.End
 	if owner == nil || dialer == nil || configKey == "" {
 		return nil, runtimeError(ErrorInvalidRequest, "session owner, route dialer, and config key are required", nil)
 	}
-	owner.acquireMu.Lock()
-	defer owner.acquireMu.Unlock()
+	acquireLock := owner.endpointAcquireLock(target.ID)
+	acquireLock.Lock()
+	defer acquireLock.Unlock()
 	owner.mu.Lock()
 	if owner.closed {
 		owner.mu.Unlock()
@@ -97,6 +103,17 @@ func (owner *SessionOwner) AcquireRoute(ctx context.Context, target endpoint.End
 	shared := owner.newSharedLeaseLocked(target.ID, ready)
 	owner.mu.Unlock()
 	return shared, nil
+}
+
+func (owner *SessionOwner) endpointAcquireLock(endpointID endpoint.EndpointID) *sync.Mutex {
+	owner.mu.Lock()
+	defer owner.mu.Unlock()
+	lock := owner.acquireLocks[endpointID]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		owner.acquireLocks[endpointID] = lock
+	}
+	return lock
 }
 
 // ConnectRoute 为调用方已经选定的唯一 route 建立新 generation。
@@ -171,18 +188,25 @@ func (owner *SessionOwner) BeginRouteAttempt(target endpoint.Endpoint, routeID e
 	if _, err := NewAttemptRequest(target, routeID, 1, intent); err != nil {
 		return AttemptRequest{}, err
 	}
-	endpointID := target.ID
+	generation, err := owner.beginEndpointGeneration(target.ID)
+	if err != nil {
+		return AttemptRequest{}, err
+	}
+	return NewAttemptRequest(target, routeID, generation, intent)
+}
+
+func (owner *SessionOwner) beginEndpointGeneration(endpointID endpoint.EndpointID) (SessionGeneration, error) {
 	owner.mu.Lock()
 	if owner.closed {
 		owner.mu.Unlock()
-		return AttemptRequest{}, runtimeError(ErrorUnavailable, "session owner is closed", nil)
+		return 0, runtimeError(ErrorUnavailable, "session owner is closed", nil)
 	}
 	owner.authority.mu.Lock()
 	previousGeneration := owner.authority.generations[endpointID]
 	if previousGeneration == SessionGeneration(math.MaxUint64) {
 		owner.authority.mu.Unlock()
 		owner.mu.Unlock()
-		return AttemptRequest{}, runtimeError(ErrorUnavailable, "endpoint session generation is exhausted", nil)
+		return 0, runtimeError(ErrorUnavailable, "endpoint session generation is exhausted", nil)
 	}
 	generation := previousGeneration + 1
 	owner.authority.generations[endpointID] = generation
@@ -202,7 +226,7 @@ func (owner *SessionOwner) BeginRouteAttempt(target endpoint.Endpoint, routeID e
 	} else if previous != nil {
 		_ = previous.Close()
 	}
-	return NewAttemptRequest(target, routeID, generation, intent)
+	return generation, nil
 }
 
 // ApplicationSession 把 runtime 返回的 lease 投影为 generation-fenced application ready session。
@@ -282,6 +306,12 @@ func (owner *SessionOwner) Close() error {
 	for endpointID := range owner.sharedLeases {
 		shared = append(shared, owner.takeSharedLeasesLocked(endpointID)...)
 	}
+	for endpointID, watchers := range owner.watchers {
+		for watcher := range watchers {
+			close(watcher)
+		}
+		delete(owner.watchers, endpointID)
+	}
 	owner.mu.Unlock()
 	for _, lease := range shared {
 		lease.finish(runtimeError(ErrorUnavailable, "session owner is closed", nil))
@@ -316,6 +346,8 @@ func (owner *SessionOwner) session(stamp EndpointSessionStamp) (ApplicationReady
 
 func (owner *SessionOwner) removeWhenDone(endpointID endpoint.EndpointID, generation SessionGeneration, session ApplicationReadySession) {
 	<-session.Done()
+	stamp := session.Stamp()
+	err := session.Err()
 	owner.mu.Lock()
 	if current := owner.current[endpointID]; current == session {
 		delete(owner.current, endpointID)
@@ -327,9 +359,17 @@ func (owner *SessionOwner) removeWhenDone(endpointID endpoint.EndpointID, genera
 	owner.authority.removeCurrent(endpointID, session)
 	owner.mu.Unlock()
 	for _, lease := range shared {
-		lease.finish(session.Err())
+		lease.finish(err)
 	}
 	_ = session.Close()
+	owner.publishEndpointEvent(EndpointEvent{EndpointID: endpointID, Stamp: stamp, Phase: EndpointPhaseOffline, ErrorCode: CodeOf(err), Message: errorMessage(err)})
+}
+
+func errorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func (owner *SessionOwner) newSharedLeaseLocked(endpointID endpoint.EndpointID, ready ApplicationReadySession) *sharedApplicationLease {
