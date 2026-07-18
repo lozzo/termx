@@ -6,15 +6,15 @@
 - Go 运行链路固定为 `client -> protocol framing -> apipb -> api_layer -> api_mapping -> core`。
 - `internal/protocol/` 的 Go 生产代码只保留 Hello、request/response correlation、`api.execute` payload transport、stream channel 和 file frame/ACK/finish。
 - `core/` 保留领域模型；这些类型不是跨进程 API，也不能被客户端直接依赖。
-- 当前只完成 Go 端迁移。App/Web 尚未迁移，因此 `runtimepb` 与 `wirepb` 中被它们消费的旧 application schema 暂留；Go 生产代码不得使用它们。
+- Go、Android 与 Web application consumer 均已迁移到 `apipb + api.execute`；Android JNI 与 Web WASM 共用 Go Client Engine 和同一 binding contract。
 
 ## Schema Ownership
 
 | Schema | Owner | 当前状态 |
 | --- | --- | --- |
 | `proto/apipb/` | terminal、attachment、path、history、live、file、storage、workbench value、endpoint runtime、client access、remote daemon control、application events | Go 端唯一公共 application schema |
-| `proto/wirepb/` | framing 与 App/Web 迁移期旧 schema | Go 端只使用 framing/file stream message；重复 application message 在 PA005W 后删除 |
-| `proto/runtimepb/` | App/Web 迁移期 runtime schema | 不得新增；App/Web 切到 `apipb` 后删除 |
+| `proto/wirepb/` | Hello、correlation、error envelope 与 file resource stream payload | 仅 framing-private；不得承载 application API |
+| `proto/runtimepb/` | 已删除 | application schema 已统一到 `apipb` |
 | `proto/remoteauthpb/` | DeviceIdentity、CapabilityGrant、pairing/bootstrap | 保持独立安全 contract |
 | `proto/cloudpb/` | Companion 与 Cloud control plane | 保持独立，不承载 terminal payload |
 
@@ -39,16 +39,14 @@
 
 ## 暂留债务
 
-- App：Android/native bridge 与 shared client 仍有旧 method/string codec，进入 `PA005A` 后迁移。
-- Web：browser RTC 仍有旧 runtime/multi-channel adapter，进入 `PA005W` 后迁移或删除。
-- `wirepb/runtimepb` 重复 application schema 只因上述 consumer 暂留，不是兼容承诺。
+- App/Web 生产 consumer 已完成迁移；后续不得恢复 TypeScript/Kotlin application codec、平台自有 session/resource registry 或旧 Hub/RTC bridge。
 - Go 旧测试仍引用已删除 DTO；用户已明确把测试迁移放到实现收口之后。
 - CLI composition root 仍缺既有 endpoint runtime helper；不得用 legacy client、假 generation 或 fallback 修补。
 
 ## 删除门禁
 
-1. Go 生产代码扫描不得引用 `runtimepb` 或 `wirepb` application message。
+1. 全端生产代码扫描不得引用 `runtimepb` 或 `wirepb` application message。
 2. Go protocol client 不暴露 generic `Call(method, ...)`，server 只 dispatch `api.execute`。
-3. App 迁移完成后删除其旧 codec 和 method string。
-4. Web 迁移完成后删除 `runtimepb`、`wirepb` 重复 application schema及旧 TS generated code。
+3. Android/Web 不得恢复旧 codec、method string、session token、multi-channel fallback 或平台自有 reconnect truth。
+4. `wirepb` 只允许 framing/file stream payload；application schema 只能位于 `apipb`。
 5. PA007 再执行全仓 generated code、测试、重复 schema 和双 Agent 审查。

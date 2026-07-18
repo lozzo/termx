@@ -1,6 +1,5 @@
 import { create } from '@bufbuild/protobuf'
 import type { ProtoClientSession } from '../core/protoClientSession'
-import type { RtcSession } from '../core/transport'
 import { CommandEnvelopeSchema } from '../generated/apipb/application_pb'
 import {
   HistoryCopyCommandSchema,
@@ -27,48 +26,10 @@ export interface CoreV2HistorySource {
 }
 
 export function createCoreV2HistorySource(
-  session: Pick<RtcSession, 'openApi' | 'getConnectionInfo'> | ProtoClientSession,
+  session: ProtoClientSession,
   machineId: string,
 ): CoreV2HistorySource {
-  if ('execute' in session) return createProtoHistorySource(session, machineId)
-  return {
-    async window(request) {
-      assertLiveCacheOnlyAPIName(CORE_V2_TERMINAL_METHODS.historyWindow)
-      const info = await session.getConnectionInfo()
-      if (info.machineId !== machineId) {
-        throw new Error(`history source session machine mismatch: connected to ${info.machineId}, expected ${machineId}`)
-      }
-
-      const channel = await session.openApi()
-      try {
-        // copy/search/history 的权威数据只能来自 core-v2 logical-line history.window。
-        const response = await channel.request<unknown>(
-          CORE_V2_TERMINAL_METHODS.historyWindow,
-          coreV2HistoryWindowRequestToParams(request),
-        )
-        return coreV2HistoryWindowFromAPI(response)
-      } finally {
-        channel.close()
-      }
-    },
-    async copy(request) {
-      assertLiveCacheOnlyAPIName(CORE_V2_TERMINAL_METHODS.historyCopy)
-      const info = await session.getConnectionInfo()
-      if (info.machineId !== machineId) {
-        throw new Error(`history source session machine mismatch: connected to ${info.machineId}, expected ${machineId}`)
-      }
-
-      const protocolRequest = coreV2HistoryCopyRequestToProtocolRequest(request)
-      const channel = await session.openApi()
-      try {
-        // 复制最终文本必须由 core-v2 frozen logical-line snapshot 生成。
-        const response = await channel.request<unknown>(protocolRequest.method, protocolRequest.params)
-        return historyCopyTextFromAPI(response)
-      } finally {
-        channel.close()
-      }
-    },
-  }
+  return createProtoHistorySource(session, machineId)
 }
 
 function createProtoHistorySource(session: ProtoClientSession, machineId: string): CoreV2HistorySource {

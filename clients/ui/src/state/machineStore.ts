@@ -1,12 +1,10 @@
 import type { AppMachineRecord, AppMachineState, AppMachineSource, MachineAccessClass } from './appMachine'
-import type { PairingPayload } from './pairingPayload'
 import type { ConnectionPath } from '../core/transport'
 import { normalizeHubBaseUrlCandidate } from '../api/hubUrl'
 
 export interface StoredMachineRecord extends AppMachineRecord {
   addresses: StoredMachineAddresses
   endpoints: StoredMachineEndpoints
-  pairing?: StoredMachinePairing | undefined
   addedAt: string
   updatedAt: string
 }
@@ -22,17 +20,10 @@ export interface StoredMachineEndpoints {
   hub?: string | undefined
 }
 
-export interface StoredMachinePairing {
-  sessionId: string
-  secret: string
-  expiresAt?: string | undefined
-}
-
 export interface MachineStore {
   listMachines(): StoredMachineRecord[]
   getMachine(machineId: string): StoredMachineRecord | null
   saveMachine(record: StoredMachineRecord): StoredMachineRecord
-  saveFromPairingPayload(payload: PairingPayload): StoredMachineRecord
   forgetMachine(machineId: string): void
 }
 
@@ -58,33 +49,6 @@ export function createMachineStore(options: MachineStoreOptions): MachineStore {
       const machines = upsertMachine(readMachines(options.storage), clean)
       writeMachines(options.storage, machines)
       return clean
-    },
-    saveFromPairingPayload(payload) {
-      rejectPrivateKeyMaterial(payload)
-      const machines = readMachines(options.storage)
-      const existing = machines.find((record) => record.machineId === payload.machine.id)
-      const timestamp = now()
-      const addresses = addressesFromLocalHubUrls(payload.local.hubUrls)
-      const next: StoredMachineRecord = normalizeStoredMachine({
-        machineId: payload.machine.id,
-        name: payload.machine.name,
-        ...(payload.machine.hostname ? { hostname: payload.machine.hostname } : {}),
-        state: existing?.state ?? 'unknown',
-        terminalCount: existing?.terminalCount ?? 0,
-        ...(existing?.lastSeenAt ? { lastSeenAt: existing.lastSeenAt } : {}),
-        ...(existing?.lastConnectionPath ? { lastConnectionPath: existing.lastConnectionPath } : {}),
-        ...(existing?.preferredPath ? { preferredPath: existing.preferredPath } : {}),
-        ...(existing?.relayInUse !== undefined ? { relayInUse: existing.relayInUse } : {}),
-        source: existing?.source ?? 'local',
-        accessClass: existing?.accessClass ?? 'local',
-        addresses,
-        endpoints: existing?.endpoints ?? {},
-        pairing: payload.pairing,
-        addedAt: existing?.addedAt ?? timestamp,
-        updatedAt: timestamp,
-      })
-      writeMachines(options.storage, upsertMachine(machines, next))
-      return next
     },
     forgetMachine(machineId) {
       const machines = readMachines(options.storage).filter((record) => record.machineId !== machineId)
@@ -151,7 +115,6 @@ function normalizeStoredMachine(value: Record<string, unknown> | StoredMachineRe
     accessClass: machineAccessClassOrUndefined(record.accessClass) ?? (source === 'local' ? 'local' : 'cloud'),
     addresses,
     endpoints,
-    ...(record.pairing !== undefined ? { pairing: pairingField(record.pairing) } : {}),
     addedAt: stringField(record, 'addedAt'),
     updatedAt: stringField(record, 'updatedAt'),
   }
@@ -172,15 +135,6 @@ function endpointsField(value: unknown): StoredMachineEndpoints {
   return {
     ...(optionalString(record.webControl) ? { webControl: optionalString(record.webControl) } : {}),
     ...(hub ? { hub } : {}),
-  }
-}
-
-function pairingField(value: unknown): StoredMachinePairing {
-  const record = recordValue(value, 'stored machine pairing')
-  return {
-    sessionId: stringField(record, 'sessionId'),
-    secret: stringField(record, 'secret'),
-    ...(optionalString(record.expiresAt) ? { expiresAt: optionalString(record.expiresAt) } : {}),
   }
 }
 
@@ -282,39 +236,4 @@ function stringArray(value: unknown): string[] {
   return value
     .map((item) => typeof item === 'string' ? normalizeHubBaseUrlCandidate(item) : undefined)
     .filter((item): item is string => typeof item === 'string' && item !== '')
-}
-
-function addressesFromLocalHubUrls(values: string[]): StoredMachineAddresses {
-  const out: StoredMachineAddresses = { local: [], lan: [], public: [] }
-  for (const value of values) {
-    const normalized = normalizeHubBaseUrlCandidate(value)
-    if (!normalized) continue
-    const scope = hubURLScope(normalized)
-    out[scope].push(normalized)
-  }
-  return out
-}
-
-function hubURLScope(value: string): keyof StoredMachineAddresses {
-  try {
-    const hostname = new URL(value).hostname.toLowerCase()
-    if (hostname === 'localhost' || hostname === '::1' || hostname.startsWith('127.')) return 'local'
-    if (isPrivateIPv4(hostname) || hostname.endsWith('.local')) return 'lan'
-    return 'public'
-  } catch {
-    return 'lan'
-  }
-}
-
-function isPrivateIPv4(hostname: string): boolean {
-  const parts = hostname.split('.').map((part) => Number.parseInt(part, 10))
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false
-  const a = parts[0]
-  const b = parts[1]
-  if (a === undefined || b === undefined) return false
-  if (a === 10) return true
-  if (a === 172 && b >= 16 && b <= 31) return true
-  if (a === 192 && b === 168) return true
-  if (a === 169 && b === 254) return true
-  return false
 }

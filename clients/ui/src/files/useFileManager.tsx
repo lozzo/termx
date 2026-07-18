@@ -9,7 +9,7 @@ import {
   type FilePreviewStreamOptions,
   type FilePreviewStreamResult,
 } from './fileApi'
-import type { ConnectionInfo, RtcSession } from '../core/transport'
+import type { ConnectionInfo } from '../core/transport'
 import type { ProtoClientSession } from '../core/protoClientSession'
 import { createPathBookmarkApi, type PathBookmark } from './pathBookmarks'
 
@@ -32,7 +32,7 @@ export interface FileManagerVisibleError {
 export interface UseFileManagerOptions {
   machineId: string
   terminalId?: string | undefined
-  session: Pick<RtcSession, 'openApi' | 'openFileChannel' | 'getConnectionInfo'> | ProtoClientSession
+  session: ProtoClientSession
   initialPath?: string | undefined
 }
 
@@ -89,13 +89,10 @@ export interface UseFileManagerResult {
 }
 
 function fileSessionConnectionInfo(session: UseFileManagerOptions['session']): Promise<ConnectionInfo> {
-  if ('execute' in session) {
-    return Promise.resolve({
-      path: 'hub', connectionId: `${session.stamp.endpointId}:${session.stamp.generation}`,
-      machineId: session.stamp.endpointId, relayInUse: false,
-    })
-  }
-  return session.getConnectionInfo()
+  return Promise.resolve({
+    path: 'hub', connectionId: `${session.stamp.endpointId}:${session.stamp.generation}`,
+    machineId: session.stamp.endpointId, relayInUse: false,
+  })
 }
 
 export function useFileManager(options: UseFileManagerOptions): UseFileManagerResult {

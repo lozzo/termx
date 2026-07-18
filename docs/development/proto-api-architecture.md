@@ -92,7 +92,7 @@ core
 
 PA003 已建立 `proto/apipb/`，package 为 `termx.api.v1`，它是新的公共 application API 唯一落点。后续 terminal/history/file 等领域 command/result/event 必须进入该 package 或其同版本子 schema。
 
-已有 `runtimepb` 是迁移期 Web/mobile API，已有 `wirepb` 同时包含 application message 与 framing。当前 Go 端不得使用其中的 application message；App/Web consumer 后续切到 `apipb` 后删除重复 schema。暂留只表达迁移顺序，不是长期兼容承诺。
+`runtimepb` 迁移期 Web/mobile application schema 已删除。`wirepb` 只保留 Hello、request/response correlation、错误 envelope 与 file resource stream payload；它不再包含 terminal/history/storage 等 application message。
 
 ## API 设计要求
 
@@ -139,6 +139,7 @@ proto schema
 - Go application domain 已统一进入 `apipb + api.execute`；旧 Go protocol DTO、generic method codec、daemon workbench mutation/store 已删除。
 - `core` 只暴露 native `ApplicationSessionPort`，不 import `api_layer/api_mapping`；generated Proto 与 core 的字段转换只位于 `api_mapping/`。
 - managed client signaling/auth/Hello/session 编排已从已删除的 `remote/client` 收口到 `client/adapter/managed`；native Pion 只位于 concrete adapter，portable engine 已有 Android arm64 与 `js/wasm` 编译门禁。
-- App/Web consumer 尚未迁移，`runtimepb/wirepb` 重复 schema 暂留；当前阶段不得修改其生产源码。
+- Android/Web consumer 已统一通过 Go Client Engine、跨语言 binding 与 generated `apipb` 消费 application API；TypeScript 不再拥有独立 API codec、session/resource registry 或 reconnect truth。
+- `runtimepb`、`wirepb` 重复 application schema、旧 method codec、本地 session token store 与旧 Hub/RTC bridge 已删除；`wirepb` 的剩余消息仅属于 framing-private contract。
 - Go 旧测试仍需改为 generated Proto harness；实现收口不以旧 DTO 测试继续编译为条件。
 - CLI 的共享 endpoint runtime helper 仍有已冻结编译缺口；不得用自造 generation、裸 protocol client 或 local fallback 填补。

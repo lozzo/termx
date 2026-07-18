@@ -22,7 +22,6 @@ import type {
   RemoteNetworkRuntime,
   RemoteRuntimeFetch,
   RemoteRuntimeStorage,
-  ManagedRtcSession,
   RtcConnectOptions,
   RtcConnectionStateSnapshot,
   RtcEvent,

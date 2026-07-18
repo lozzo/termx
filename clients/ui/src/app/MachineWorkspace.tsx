@@ -7,8 +7,6 @@ import { createFileApi, type FileEntry } from '../files/fileApi'
 import { joinPath, normalizeFilePath, parentPath } from '../files/fileUtils'
 import { createPathBookmarkApi, type PathBookmark } from '../files/pathBookmarks'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
-import { PairDevicePanel } from '../pairing/PairDevicePanel'
-import type { MachineSessionStore } from '../state/localAppIdentity'
 import { MachineNetworkStatusOverlay } from '../machine-runtime/MachineNetworkStatusOverlay'
 import { useMachineNetworkStatus } from '../machine-runtime/useMachineNetworkStatus'
 import { createRemoteClipboardApi, type RemoteClipboardEntry } from '../clipboard/clipboardApi'
@@ -25,7 +23,7 @@ import { createTerminalManagementApi } from '../terminal/terminalManagementApi'
 import { readTerminalSettings, terminalThemeCssVariables, writeTerminalSettings, type TerminalSettings } from '../terminal/terminalSettings'
 import type { Machine, Terminal as RemoteTerminal } from '../core/model'
 import type { ProtoClientSession } from '../core/protoClientSession'
-import type { ConnectionInfo, LocalAgentApi, LocalCreateTerminalInput, LocalPairingApi, LocalUpdateTerminalInput, MachineConnectionStateEvents, RtcConnectOptions, RtcConnectionStateSnapshot, RtcConnector, RtcEvent, RtcSession, RtcSessionConnectionStateEvents, RtcSessionLiveness, RtcSubscription, RtcTerminalDataChannelController, TerminalInventoryEvents } from '../core/transport'
+import type { ConnectionInfo, LocalAgentApi, LocalCreateTerminalInput, LocalUpdateTerminalInput, MachineConnectionStateEvents, RtcConnectOptions, RtcConnectionStateSnapshot, RtcEvent, RtcSubscription, TerminalInventoryEvents } from '../core/transport'
 import { useTerminalKeyboard } from '../terminal/useTerminalKeyboard'
 
 export interface MachineWorkspaceInventoryApi extends Pick<LocalAgentApi, 'getStatus'> {
@@ -36,7 +34,7 @@ export interface MachineWorkspaceSessionInput {
   machineId: string
 }
 
-export type MachineWorkspaceClientSession = RtcSession | ProtoClientSession
+export type MachineWorkspaceClientSession = ProtoClientSession
 
 export type MachineWorkspaceConnector = {
   connect(input: MachineWorkspaceSessionInput, options?: RtcConnectOptions): Promise<MachineWorkspaceClientSession>
@@ -51,11 +49,6 @@ export interface MachineWorkspaceProps {
   inventoryEvents?: TerminalInventoryEvents | undefined
   connectionStateEvents?: MachineConnectionStateEvents | undefined
   subscribeRuntimeInventoryEvents?: boolean | undefined
-  pair?: {
-    api: LocalPairingApi
-    sessionStore: MachineSessionStore
-    appName: string
-  } | undefined
   onBack?: (() => void) | undefined
   fileTransfer?: import('../files/fileApi').FileTransferContext | undefined
   terminalSettings?: TerminalSettings | undefined
@@ -64,7 +57,7 @@ export interface MachineWorkspaceProps {
 }
 
 type TerminalEditorSheet = 'create-terminal' | 'edit-terminal'
-type MobileSheet = 'terminals' | 'terminal-menu' | 'split-terminal' | 'pair' | 'manage-terminal' | TerminalEditorSheet | 'terminal-path-picker' | 'terminal-path-bookmarks' | 'clipboard-history' | null
+type MobileSheet = 'terminals' | 'terminal-menu' | 'split-terminal' | 'manage-terminal' | TerminalEditorSheet | 'terminal-path-picker' | 'terminal-path-bookmarks' | 'clipboard-history' | null
 type AppPage = 'terminal-list' | 'terminal'
 type TerminalSlot = 0 | 1
 const TERMINAL_CONNECTION_PROGRESS_DELAY_MS = 450
@@ -90,7 +83,7 @@ function inventoryCacheForConnector(connector: MachineWorkspaceConnector): Map<s
   return created
 }
 
-export function MachineWorkspace({ api, connector, className, initialMachine, inventoryEvents, connectionStateEvents, subscribeRuntimeInventoryEvents = false, pair, onBack, fileTransfer, terminalSettings: terminalSettingsProp, onNeedsReauthorization, onTerminalSettingsChange }: MachineWorkspaceProps) {
+export function MachineWorkspace({ api, connector, className, initialMachine, inventoryEvents, connectionStateEvents, subscribeRuntimeInventoryEvents = false, onBack, fileTransfer, terminalSettings: terminalSettingsProp, onNeedsReauthorization, onTerminalSettingsChange }: MachineWorkspaceProps) {
   const initialInventory = initialMachine ? inventoryCacheForConnector(connector).get(initialMachine.machineId) : undefined
   const [machine, setMachine] = useState<Machine | null>(() => initialInventory?.machine ?? initialMachine ?? null)
   const [terminals, setTerminals] = useState<RemoteTerminal[]>(() => initialInventory?.terminals ?? [])
@@ -99,12 +92,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pairStatus, setPairStatus] = useState<string | null>(null)
-  const [verifiedDevice, setVerifiedDevice] = useState<boolean | null>(() => {
-    if (!pair) return true
-    const machineId = initialInventory?.machine.machineId ?? initialMachine?.machineId
-    if (!machineId) return null
-    return Boolean(pair.sessionStore.getSessionToken(machineId))
-  })
+  const [verifiedDevice, setVerifiedDevice] = useState<boolean | null>(true)
   const [connectedSession, setConnectedSession] = useState<MachineWorkspaceClientSession | null>(null)
   const [connectedTerminalId, setConnectedTerminalId] = useState<string | null>(null)
   const [connectingTerminalId, setConnectingTerminalId] = useState<string | null>(null)
@@ -220,7 +208,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const terminalHeaderDirectory = activeToolTerminal?.cwd || activeTerminal?.cwd || splitTerminal?.cwd || ''
   const activeTerminalResizeLocked = terminalResizeControl.sizeLocked === true || terminalResizeControl.reason === 'size_locked'
   const activeTerminalOwnsResize = terminalResizeControl.canResize === true
-  const requireVerification = Boolean(pair && verifiedDevice === false)
+  const requireVerification = verifiedDevice === false
   const canManageTerminals = true
   const emptyTransferSnapshot = useMemo(() => ({ transfers: [], hasActiveTransfers: false }), [])
   const transferState = useSyncExternalStore(
@@ -367,15 +355,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const handleConnectionAuthFailure = useCallback((machineId?: string | null) => {
     const targetMachineId = machineId ?? initialMachine?.machineId
     if (!targetMachineId) return
-    pair?.sessionStore.clearSessionToken(targetMachineId)
     setVerifiedDevice(false)
-    if (onNeedsReauthorization) {
-      onNeedsReauthorization(targetMachineId)
-      return
-    }
-    if (!pair) return
-    setMobileSheet('pair')
-  }, [initialMachine?.machineId, onNeedsReauthorization, pair])
+    onNeedsReauthorization?.(targetMachineId)
+  }, [initialMachine?.machineId, onNeedsReauthorization])
 
   const updateFromConnectionState = useCallback((snapshot: RtcConnectionStateSnapshot, session?: MachineWorkspaceClientSession) => {
     if (snapshot.phase === 'connected') {
@@ -447,20 +429,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const attachConnectionStateSubscription = useCallback((session: MachineWorkspaceClientSession) => {
     connectionStateSubscriptionRef.current?.close()
     sessionConnectionPhaseRef.current = null
-    const candidate = session as RtcSession & Partial<RtcSessionConnectionStateEvents>
-    if (typeof candidate.subscribeConnectionState !== 'function') {
-      connectionStateSubscriptionRef.current = null
-      return
-    }
-    connectionStateSubscriptionRef.current = candidate.subscribeConnectionState((snapshot) => {
-      const previousPhase = sessionConnectionPhaseRef.current
-      sessionConnectionPhaseRef.current = snapshot.phase
-      if (snapshot.phase === 'connected' && previousPhase !== null && previousPhase !== 'connected') {
-        reattachActiveTerminals(session)
-      }
-      updateFromPassiveConnectionState(snapshot, session)
-    })
-  }, [reattachActiveTerminals, updateFromPassiveConnectionState])
+    connectionStateSubscriptionRef.current = null
+  }, [])
 
   const releaseMachineSession = useCallback(() => {
     disconnectMachineSession()
@@ -480,7 +450,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       reusable.retryToken === connectionRetryToken &&
       reusable.forceRelay === forceRelay
     ) {
-      if (isRtcSessionAlive(reusable.session)) return reusable.session
+      if (isProtoSessionAlive(reusable.session)) return reusable.session
       releaseMachineSession()
     }
     const pending = machineSessionPromiseRef.current
@@ -557,7 +527,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       refreshMachineId = status.machine.machineId
       setMachineNetworkMachineId(status.machine.machineId)
       setMachine(status.machine)
-      if (pair) setVerifiedDevice(Boolean(pair.sessionStore.getSessionToken(status.machine.machineId)))
       const terminalList = await api.listTerminals({ forceRelay: forceRelayConnection })
       if (terminalRefreshSeqRef.current !== seq) return
       setTerminals(terminalList)
@@ -575,7 +544,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         setLoadingTerminals(false)
       }
     }
-  }, [api, forceRelayConnection, handleConnectionAuthFailure, initialMachine?.machineId, pair, setMachineNetworkMachineId, updateConnectionStatus])
+  }, [api, forceRelayConnection, handleConnectionAuthFailure, initialMachine?.machineId, setMachineNetworkMachineId, updateConnectionStatus])
 
   const applyRuntimeTerminalEvent = useCallback((event: RtcEvent | { payload?: unknown }): boolean => {
     const payload = event.payload
@@ -612,7 +581,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         loadMachineId = status.machine.machineId
         setMachineNetworkMachineId(status.machine.machineId)
         setMachine(status.machine)
-        if (pair) setVerifiedDevice(Boolean(pair.sessionStore.getSessionToken(status.machine.machineId)))
         const cachedInventory = inventoryCacheForConnector(connector).get(status.machine.machineId)
         if (cachedInventory && !hasLoadedTerminalsRef.current) {
           setTerminals(cachedInventory.terminals)
@@ -647,7 +615,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     return () => {
       cancelled = true
     }
-  }, [api, clearConnectionStatus, connector, handleConnectionAuthFailure, initialMachine?.machineId, pair, setMachineNetworkMachineId, updateConnectionStatus])
+  }, [api, clearConnectionStatus, connector, handleConnectionAuthFailure, initialMachine?.machineId, setMachineNetworkMachineId, updateConnectionStatus])
 
   useEffect(() => {
     if (!machine || !hasLoadedTerminals) return
@@ -680,7 +648,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       if (
         snapshot.phase === 'connected' &&
         activeTerminalId &&
-        (!activeSession || !isRtcSessionAlive(activeSession) || recoveredFromInterruption)
+        (!activeSession || !isProtoSessionAlive(activeSession) || recoveredFromInterruption)
       ) {
         void ensureMachineSession(machine.machineId, { forceRelay: forceRelayConnection })
           .then((session) => {
@@ -776,7 +744,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       reusable.machineId === machineId &&
       reusable.retryToken === connectionRetryToken
     ) {
-      if (isRtcSessionAlive(reusable.session)) {
+      if (isProtoSessionAlive(reusable.session)) {
         setConnectedSession(reusable.session)
         setConnectedTerminalId(activeTerminalId)
         setConnectingTerminalId(null)
@@ -856,14 +824,13 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         setConnectedTerminalId(null)
         setConnectingTerminalId(null)
         updateConnectionStatus(message, 'failed')
-        if (pair && authFailure) setMobileSheet('pair')
       }
     })
     return () => {
       cancelled = true
       window.clearTimeout(progressTimer)
     }
-  }, [activeTerminalId, clearConnectionStatus, clearConnectionStatusSoon, connector, connectionRetryToken, ensureMachineSession, forceRelayConnection, handleConnectionAuthFailure, machine?.machineId, manualReconnectNonce, page, pair, releaseMachineSession, updateConnectionStatus, updateFromConnectionState])
+  }, [activeTerminalId, clearConnectionStatus, clearConnectionStatusSoon, connector, connectionRetryToken, ensureMachineSession, forceRelayConnection, handleConnectionAuthFailure, machine?.machineId, manualReconnectNonce, page, releaseMachineSession, updateConnectionStatus, updateFromConnectionState])
 
   useEffect(() => {
     if (manualReconnectNonce === 0 || handledManualReconnectNonceRef.current === manualReconnectNonce) return
@@ -916,7 +883,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       resetKeyboardLayout()
       const session = machineSessionRef.current?.session ?? connectedSession
       if (!activeTerminalId && !splitTerminalId) return
-      if (!session || !isRtcSessionAlive(session)) {
+      if (!session || !isProtoSessionAlive(session)) {
         setManualReconnectNonce((value) => value + 1)
         return
       }
@@ -934,7 +901,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
   const openTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (requireVerification) {
-      setMobileSheet('pair')
+      handleConnectionAuthFailure(intent.machineId)
       return
     }
     if (machine && intent.machineId !== machine.machineId) {
@@ -949,11 +916,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     }
     setPage('terminal')
     setMobileSheet(null)
-  }, [machine, requireVerification, splitTerminalId])
+  }, [handleConnectionAuthFailure, machine, requireVerification, splitTerminalId])
 
   const openSplitTerminalSheet = useCallback(() => {
     if (requireVerification) {
-      setMobileSheet('pair')
+      handleConnectionAuthFailure(machine?.machineId)
       return
     }
     if (!activeTerminalId) {
@@ -968,7 +935,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     setTerminalToolbarOpen(false)
     setTerminalFnOpen(false)
     setMobileSheet('split-terminal')
-  }, [activeTerminalId, requireVerification, terminals])
+  }, [activeTerminalId, handleConnectionAuthFailure, machine?.machineId, requireVerification, terminals])
 
   const selectSplitTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (machine && intent.machineId !== machine.machineId) {
@@ -1095,16 +1062,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   }, [activeTerminalId, connector, forceRelayConnection, releaseMachineSession, updateConnectionStatus])
 
   useEffect(() => {
-    if (!pair) return
-    const machineId = machine?.machineId ?? initialMachine?.machineId
-    if (!machineId) {
-      setVerifiedDevice(null)
-      return
-    }
-    setVerifiedDevice(Boolean(pair.sessionStore.getSessionToken(machineId)))
-  }, [machine?.machineId, pair, connectionRetryToken, initialMachine?.machineId])
-
-  useEffect(() => {
     if (!pairStatus) return
     const timer = setTimeout(() => setPairStatus(null), pairStatus === 'Resize is locked. Tap LK to request manually.' ? 1800 : 3000)
     return () => clearTimeout(timer)
@@ -1130,7 +1087,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
   const openFiles = useCallback(() => {
     if (requireVerification) {
-      setMobileSheet('pair')
+      handleConnectionAuthFailure(machine?.machineId)
       return
     }
     if (!machine) {
@@ -1172,15 +1129,14 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         updateConnectionStatus(message, 'failed')
         setFilesOpen(false)
         setFileTerminalId(null)
-        if (pair) setMobileSheet('pair')
       })
     setFilesOpen(true)
     setMobileSheet(null)
-  }, [activeToolTerminal, ensureMachineSession, fileContextKey, filesOpen, forceRelayConnection, handleConnectionAuthFailure, machine, page, pair, requireVerification, terminals, updateConnectionStatus, updateFromConnectionState])
+  }, [activeToolTerminal, ensureMachineSession, fileContextKey, filesOpen, forceRelayConnection, handleConnectionAuthFailure, machine, page, requireVerification, terminals, updateConnectionStatus, updateFromConnectionState])
 
   const openManageTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (requireVerification) {
-      setMobileSheet('pair')
+      handleConnectionAuthFailure(intent.machineId)
       return
     }
     if (!canManageTerminals) return
@@ -1190,11 +1146,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     }
     setSelectedTerminalId(intent.terminalId)
     setMobileSheet('manage-terminal')
-  }, [canManageTerminals, machine, requireVerification])
+  }, [canManageTerminals, handleConnectionAuthFailure, machine, requireVerification])
 
   const openCreateTerminal = useCallback(() => {
     if (requireVerification) {
-      setMobileSheet('pair')
+      handleConnectionAuthFailure(machine?.machineId)
       return
     }
     if (!canManageTerminals) return
@@ -1208,7 +1164,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       sizeLockMode: 'off',
     })
     setMobileSheet('create-terminal')
-  }, [canManageTerminals, requireVerification])
+  }, [canManageTerminals, handleConnectionAuthFailure, machine?.machineId, requireVerification])
 
   const openEditTerminal = useCallback(() => {
     if (!selectedTerminal) return
@@ -2014,7 +1970,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             <button
               type="button"
               className="termx-app-primary-button min-h-12 w-full gap-2 px-4 text-[15px] font-semibold"
-              onClick={() => { hapticImpact(); setMobileSheet('pair') }}
+              onClick={() => { hapticImpact(); handleConnectionAuthFailure(machine.machineId) }}
             >
               <KeyRound className="h-4 w-4" />
               Verify device
@@ -2185,17 +2141,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           </MobileSheetPanel>
         ) : null}
 
-        {mobileSheet === 'pair' && pair ? (
-          <MobileSheetPanel title="Pair device" testId="termx-pair-sheet" onClose={() => setMobileSheet(null)}>
-            <PairDevicePanel
-              api={pair.api}
-              sessionStore={pair.sessionStore}
-              appName={pair.appName}
-              machineId={machine.machineId}
-              onPaired={handlePaired}
-            />
-          </MobileSheetPanel>
-        ) : null}
         {renderTerminalPathPickerSheet()}
         {renderTerminalPathBookmarksSheet()}
       </aside>
@@ -2535,17 +2480,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           </MobileSheetPanel>
         ) : null}
 
-        {mobileSheet === 'pair' && pair ? (
-          <MobileSheetPanel title="Pair device" testId="termx-pair-sheet" onClose={() => setMobileSheet(null)}>
-            <PairDevicePanel
-              api={pair.api}
-              sessionStore={pair.sessionStore}
-              appName={pair.appName}
-              machineId={machine.machineId}
-              onPaired={handlePaired}
-            />
-          </MobileSheetPanel>
-        ) : null}
         {renderClipboardHistorySheet()}
           </>
         )}
@@ -2796,39 +2730,27 @@ function candidateTypeText(info: ConnectionInfo | null): string {
   return `${local} / ${remote}`
 }
 
-function isRtcSessionAlive(session: MachineWorkspaceClientSession): boolean {
-	if ('execute' in session) return session.isAlive()
-  const candidate = session as RtcSession & Partial<RtcSessionLiveness>
-  if (typeof candidate.isAlive !== 'function') return true
-  return candidate.isAlive()
-}
+function isProtoSessionAlive(session: MachineWorkspaceClientSession): boolean { return session.isAlive() }
 
 function closeTerminalDataChannel(session: MachineWorkspaceClientSession, terminalId: string): void {
-	if ('execute' in session) return
-  const controller = session as RtcSession & Partial<RtcTerminalDataChannelController>
-  if (typeof controller.closeTerminalDataChannel === 'function') {
-    controller.closeTerminalDataChannel(terminalId)
-  }
+  void session
+  void terminalId
 }
 
 function closeMachineWorkspaceSession(session: MachineWorkspaceClientSession): Promise<void> {
-  return 'execute' in session ? session.close() : session.disconnect()
+  return session.close()
 }
 
 function machineWorkspaceConnectionInfo(session: MachineWorkspaceClientSession): Promise<ConnectionInfo> {
-  if ('execute' in session) {
-    return Promise.resolve({
-      path: 'hub',
-      connectionId: `${session.stamp.endpointId}:${session.stamp.generation}`,
-      machineId: session.stamp.endpointId,
-      relayInUse: false,
-    })
-  }
-  return session.getConnectionInfo()
+  return Promise.resolve({
+    path: 'hub',
+    connectionId: `${session.stamp.endpointId}:${session.stamp.generation}`,
+    machineId: session.stamp.endpointId,
+    relayInUse: false,
+  })
 }
 
 function subscribeMachineWorkspaceEvents(session: MachineWorkspaceClientSession, handler: (event: RtcEvent) => void): RtcSubscription {
-  if (!('execute' in session)) return session.subscribeEvents(handler)
   return session.subscribeEvents((event) => {
     if (event.event.case === 'terminalLifecycle') handler({ type: 'terminal_changed' })
   })

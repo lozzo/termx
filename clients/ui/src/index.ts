@@ -97,24 +97,14 @@ export type {
   ConnectionFlowSnapshot,
   ConnectionFlowStage,
 } from './state/appMachine'
-export { parsePairingPayload } from './state/pairingPayload'
-export type {
-  PairingPayload,
-  PairingPayloadLocal,
-  PairingPayloadMachine,
-  PairingPayloadPairing,
-} from './state/pairingPayload'
 export { createMachineStore } from './state/machineStore'
 export type {
   MachineStore,
   MachineStoreOptions,
   StoredMachineAddresses,
   StoredMachineEndpoints,
-  StoredMachinePairing,
   StoredMachineRecord,
 } from './state/machineStore'
-export { PairDevicePanel } from './pairing/PairDevicePanel'
-export type { PairDevicePanelProps } from './pairing/PairDevicePanel'
 export {
   createBrowserRemoteNetworkRuntime,
   createFutureNativeRemoteNetworkRuntime,
@@ -123,23 +113,6 @@ export type { BrowserRemoteNetworkRuntimeOptions } from './connection/browserNet
 export type { MachineConnectionSnapshot } from './connection/machineConnectionSnapshot'
 export { RemoteNetworkStateManager } from './connection/remoteNetworkState'
 export type { RemoteNetworkState, RemoteResumeType } from './connection/remoteNetworkState'
-export {
-  createMachineSessionStore,
-} from './state/localAppIdentity'
-export type {
-  MachineSessionStore,
-} from './state/localAppIdentity'
-export {
-  TERMX_FRAME_TYPES,
-  TERMX_MAX_FRAME_SIZE,
-  TERMX_PROTOCOL_VERSION,
-  decodeTermxFrame,
-  encodeResizePayload,
-  encodeTermxFrame,
-  rowsToText,
-  snapshotToReplay,
-} from './terminal/termxProtocol'
-export type { TermxFrame, TermxFrameType } from './terminal/termxProtocol'
 export { TerminalClient } from './terminal/terminalClient'
 export type {
   TerminalClientCallbacks,
@@ -238,22 +211,6 @@ export {
 } from './terminal/terminalInventory'
 export type { TerminalInventoryInput, TerminalInventorySnapshot } from './terminal/terminalInventory'
 export * from './core/transport'
-export { createHubApi } from './api/hubApi'
-export type {
-  CreateHubSessionInput,
-  HubIceServer,
-  HubApi,
-  HubApiOptions,
-  HubCreateSessionResult,
-  HubFetch,
-  HubPendingSession,
-  HubSession,
-  HubSessionIceConfig,
-  HubSessionIceInput,
-  HubSessionPath,
-  HubRelayPolicy,
-  PollHubSessionAnswerInput,
-} from './api/hubApi'
 export { createWebControlApi } from './api/webControlApi'
 export type {
   WebControlApi,

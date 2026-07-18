@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode } from 'react'
 import { ArrowLeft, Camera, ChevronRight, Cloud, Download, Keyboard, LaptopMinimal, LogIn, LogOut, Monitor, MoreHorizontal, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Wifi, X } from 'lucide-react'
-import { createMachineSessionStore } from '../state/localAppIdentity'
 import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorkspaceConnector } from './MachineWorkspace'
 import { createMachineStore, type StoredMachineRecord } from '../state/machineStore'
-import { createHubApi, type HubPairInput, type HubPairResult } from '../api/hubApi'
 import type { MachineConnectionSnapshot } from '../connection/machineConnectionSnapshot'
 import { FileTransferPanel } from '../files/FileTransferPanel'
 import { hapticError, hapticImpact, hapticSelection, hapticSuccess } from '../platform/haptics'
 import { addNativeBackHandler } from '../platform/nativeBack'
-import { parsePairingPayload, type PairingPayload } from '../state/pairingPayload'
 import type { FileTransferContext, TransferInfo } from '../files/fileApi'
 import type { MachineConnectionStateEvents, RemoteNetworkRuntime, RemoteRuntimeFetch, RemoteRuntimeStorage, RtcConnectOptions, TerminalInventoryEvents } from '../core/transport'
 import { createWebControlApi, type WebControlApi, type WebControlMachine, type WebControlUser } from '../api/webControlApi'
@@ -39,11 +36,6 @@ function noopSubscribe(_listener: () => void): () => void { return () => {} }
 type AppView = 'home' | 'settings' | 'machine'
 type PairIntent = 'add-local' | 'authorize-machine'
 type ScanFlowState = 'idle' | 'scanning' | 'pairing'
-interface PairApi {
-  pair(input: PairInput, options?: RtcConnectOptions): Promise<PairResult>
-}
-type PairInput = HubPairInput
-type PairResult = HubPairResult
 type MachineAuthorizationState = 'ready' | 'expired' | 'unauthorized'
 type DisplayMachine = WebControlMachine & {
   reachability?: MachineReachabilityView | undefined
@@ -77,7 +69,6 @@ const emptyMachineConnectionSnapshot: MachineConnectionSnapshot = {
   error: null,
 }
 const getEmptyMachineConnectionSnapshot = () => emptyMachineConnectionSnapshot
-const pairingClaimTimeoutMs = 15_000
 const localHubReachabilityProbeTimeoutMs = 2_500
 export interface ScanPairingCodeOptions {
   onCancel?: (() => void) | undefined
@@ -135,7 +126,6 @@ export interface RemoteControlAppProps {
   defaultControlUrl?: string | undefined
   storage?: RemoteRuntimeStorage | undefined
   networkRuntime?: RemoteNetworkRuntime | undefined
-  pairApiFactory?: ((payload: PairingPayload, machine: WebControlMachine) => PairApi) | undefined
   machineRuntimeFactory?: MachineRuntimeFactory | undefined
   globalFileTransfer?: FileTransferContext | undefined
   scanPairingCode?: ((options?: ScanPairingCodeOptions) => Promise<string | null>) | undefined
@@ -148,7 +138,6 @@ export function RemoteControlApp({
   defaultControlUrl,
   storage: storageProp,
   networkRuntime: networkRuntimeProp,
-  pairApiFactory,
   machineRuntimeFactory = createUnavailableMachineRuntime,
   globalFileTransfer,
   scanPairingCode,
@@ -178,7 +167,6 @@ export function RemoteControlApp({
   const [transferCenterOpen, setTransferCenterOpen] = useState(false)
   const [manualScanValue, setManualScanValue] = useState('')
   const [manualEntryOpen, setManualEntryOpen] = useState(false)
-  const [lastImported, setLastImported] = useState<PairingPayload | null>(null)
   const [authorizedMachineIds, setAuthorizedMachineIds] = useState(() => readAuthorizedMachineIds(storage, undefined, externalPairingAdapter))
   const [authorizationExpiries, setAuthorizationExpiries] = useState(() => readAuthorizationExpiries(storage, externalPairingAdapter))
   const [pairVersion, setPairVersion] = useState(0)
@@ -555,7 +543,6 @@ export function RemoteControlApp({
     setPairIntent('add-local')
     setManualScanValue('')
     setManualEntryOpen(false)
-    setLastImported(null)
     setError(null)
     setScanOpen(true)
     setScanAutoStartToken((current) => current + 1)
@@ -567,7 +554,6 @@ export function RemoteControlApp({
     setPairIntent('authorize-machine')
     setManualScanValue('')
     setManualEntryOpen(false)
-    setLastImported(null)
     setError(null)
     setScanOpen(true)
     setScanAutoStartToken((current) => current + 1)
@@ -656,96 +642,13 @@ export function RemoteControlApp({
         setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id, externalPairingAdapter))
         setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
         setPairVersion((current) => current + 1)
-        setLastImported(null)
         setManualScanValue('')
         setScanOpen(false)
         setView('machine')
         hapticSuccess()
         return
       }
-      const payload = parsePairingPayload(rawValue)
-      console.info('[termx:pairing] QR parsed', {
-        machineId: payload.machine.id,
-        localHubUrlCount: payload.local.hubUrls.length,
-      })
-      const hubMachine = machines.find((machine) => machine.id === payload.machine.id)
-      const localHubUrls = localHubUrlsFromPairingPayload(payload)
-
-      let targetMachine: WebControlMachine
-
-      if (pairIntent === 'authorize-machine' && !selectedMachine) {
-        throw new Error('Choose a machine before re-authorizing it')
-      }
-      if (selectedMachine && selectedMachine.id !== payload.machine.id) {
-        throw new Error(`This pairing code belongs to ${payload.machine.name}, not ${selectedMachine.name}`)
-      }
-
-      if (hubMachine) {
-        targetMachine = {
-          ...hubMachine,
-          localHubUrls,
-          localFallbackHubUrls: [],
-        }
-      } else {
-        if (localHubUrls.length === 0) {
-          throw new Error('This pairing code does not include local addresses. Sign in and pair the machine from your Web Control list.')
-        }
-        targetMachine = {
-          id: payload.machine.id,
-          name: payload.machine.name,
-          hostname: payload.machine.hostname,
-          online: true,
-          source: 'local',
-          hubUrls: [],
-          localHubUrls,
-          localFallbackHubUrls: [],
-        }
-      }
-
-      const pairInput = {
-        machineId: targetMachine.id,
-        pairSessionId: payload.pairing.sessionId,
-        pairSecret: payload.pairing.secret,
-        appDeviceId: createBrowserAppDeviceId(),
-        appName,
-        requestedCapabilities: ['terminal', 'file_manager', 'terminal_management'],
-      }
-      const pairApi = pairApiFactory
-        ? pairApiFactory(payload, targetMachine)
-        : createPairApiForScan({
-          candidateHubUrls: candidatePairingHubUrls(targetMachine, localHubUrls),
-          machine: targetMachine,
-          networkRuntime,
-        })
-      const pairResult = await runWithTimeout(
-        (signal) => pairApi.pair(pairInput, { signal }),
-        pairingClaimTimeoutMs,
-        'Pairing timed out. Make sure this phone can reach the QR code address and that the TermX agent is still online.',
-      )
-      console.info('[termx:pairing] pair claim succeeded', {
-        machineId: pairResult.machineId,
-        hubEndpointCount: candidatePairingHubUrls(targetMachine, localHubUrls).length,
-      })
-      if (pairResult.machineId !== targetMachine.id) {
-        throw new Error(`pairing response machine mismatch: ${pairResult.machineId} != ${targetMachine.id}`)
-      }
-      createMachineSessionStore(storage).saveSessionToken(pairResult.machineId, pairResult.sessionToken, pairResult.expiresAt, payload.pairing.answerProofSecret)
-      dropMachineRuntime(pairResult.machineId)
-      const store = createMachineStore({ storage })
-      const saved = store.saveFromPairingPayload(payload)
-      if (hubMachine) {
-        store.saveMachine(mergeHubMachine(saved, targetMachine))
-      }
-      setSelectedMachineId(targetMachine.id)
-      setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id, externalPairingAdapter))
-      setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
-      setPairVersion((current) => current + 1)
-      setLastImported(payload)
-      setError(null)
-      setManualScanValue('')
-      setScanOpen(false)
-      setView('machine')
-      hapticSuccess()
+      throw new Error('Proto binding pairing adapter is required')
     } catch (err) {
       hapticError()
       console.warn('[termx:pairing] pair claim failed', err instanceof Error ? err.message : String(err))
@@ -755,7 +658,7 @@ export function RemoteControlApp({
       setPairing(false)
       setScanFlowState('idle')
     }
-  }, [cloudAccountAdapter, completeCloudActivation, dropMachineRuntime, externalPairingAdapter, machines, networkRuntime, pairApiFactory, pairIntent, selectedMachine, storage, user?.id])
+  }, [cloudAccountAdapter, completeCloudActivation, dropMachineRuntime, externalPairingAdapter, machines, selectedMachine, storage, user?.id])
 
   const importManualScan = useCallback(async () => {
     hapticImpact()
@@ -798,7 +701,6 @@ export function RemoteControlApp({
 
   const handleMachineNeedsReauthorization = useCallback((machineId: string) => {
     if (!storage) return
-    createMachineSessionStore(storage).clearSessionToken(machineId)
     void externalPairingAdapter?.forget(machineId)
     dropMachineRuntime(machineId)
     setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id, externalPairingAdapter))
@@ -808,7 +710,6 @@ export function RemoteControlApp({
     setPairIntent('authorize-machine')
     setManualScanValue('')
     setManualEntryOpen(false)
-    setLastImported(null)
     setError('This phone needs a fresh machine authorization. Scan the machine QR again.')
     setScanOpen(true)
     setScanAutoStartToken((current) => current + 1)
@@ -817,8 +718,6 @@ export function RemoteControlApp({
   const forgetMachineAuthorization = useCallback((machine: WebControlMachine) => {
     if (!storage) return
     const store = createMachineStore({ storage })
-    const sessionStore = createMachineSessionStore(storage)
-    sessionStore.clearSessionToken(machine.id)
     void externalPairingAdapter?.forget(machine.id)
     dropMachineRuntime(machine.id)
     const stillVisibleFromHub = machines.some((hubMachine) => hubMachine.id === machine.id)
@@ -919,7 +818,6 @@ export function RemoteControlApp({
 
       {scanOpen ? (
         <PairSheet
-          lastImported={lastImported}
           manualEntryOpen={manualEntryOpen}
           manualScanValue={manualScanValue}
           pairError={error}
@@ -1853,7 +1751,6 @@ function Switch({
 function PairSheet({
   cameraScanning,
   canScanWithCamera,
-  lastImported,
   manualEntryOpen,
   manualScanValue,
   pairError,
@@ -1870,7 +1767,6 @@ function PairSheet({
 }: {
   cameraScanning: boolean
   canScanWithCamera: boolean
-  lastImported: PairingPayload | null
   manualEntryOpen: boolean
   manualScanValue: string
   pairError: string | null
@@ -1976,12 +1872,6 @@ function PairSheet({
               <p className="mt-3 border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-500">{pairError}</p>
             ) : null}
 
-            {lastImported ? (
-              <div className="mt-3 border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-500">
-                <div className="truncate font-semibold">{lastImported.machine.name}</div>
-                <div className="truncate">{lastImported.machine.id}</div>
-              </div>
-            ) : null}
           </div>
         </div>
       </section>
@@ -2304,18 +2194,6 @@ function createUnavailableWebControlApi(message: string): WebControlApi {
   }
 }
 
-function createBrowserAppDeviceId(): string {
-  const cryptoImpl = globalThis.crypto
-  if (cryptoImpl?.randomUUID) {
-    return `appweb_${cryptoImpl.randomUUID()}`
-  }
-  const bytes = new Uint8Array(16)
-  cryptoImpl?.getRandomValues?.(bytes)
-  if (bytes.some((value) => value !== 0)) {
-    return `appweb_${Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')}`
-  }
-  return `appweb_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
-}
 
 function readAuthorizedMachineIds(
   storage: RemoteRuntimeStorage | undefined,
@@ -2323,12 +2201,10 @@ function readAuthorizedMachineIds(
   externalPairingAdapter?: ExternalPairingAdapter,
 ): Set<string> {
   void userId
-  if (!storage) return new Set()
+  if (!storage || !externalPairingAdapter) return new Set()
   try {
-    const sessionStore = createMachineSessionStore(storage)
     return new Set(createMachineStore({ storage }).listMachines()
       .filter((machine) => {
-        if (!externalPairingAdapter) return Boolean(sessionStore.getSessionToken(machine.machineId))
         if (!externalPairingAdapter.isAuthorized(machine.machineId)) return false
         const expiresAt = externalPairingAdapter.authorizationExpiresAt?.(machine.machineId)
         return !expiresAt || !isExpiredAuthorization(expiresAt)
@@ -2343,14 +2219,12 @@ function readAuthorizationExpiries(
   storage: RemoteRuntimeStorage | undefined,
   externalPairingAdapter?: ExternalPairingAdapter,
 ): Map<string, string> {
-  if (!storage) return new Map()
+  if (!storage || !externalPairingAdapter) return new Map()
   try {
-    const sessionStore = createMachineSessionStore(storage)
     const expiries = new Map<string, string>()
     for (const machine of createMachineStore({ storage }).listMachines()) {
-      const expiresAt = externalPairingAdapter ? undefined : sessionStore.getSessionExpiry(machine.machineId)
-      const externalExpiry = externalPairingAdapter?.authorizationExpiresAt?.(machine.machineId)
-      if (externalExpiry || expiresAt) expiries.set(machine.machineId, externalExpiry ?? expiresAt!)
+      const externalExpiry = externalPairingAdapter.authorizationExpiresAt?.(machine.machineId)
+      if (externalExpiry) expiries.set(machine.machineId, externalExpiry)
     }
     return expiries
   } catch {
@@ -2488,14 +2362,12 @@ function machineReachabilityView(input: {
 function pruneMachinesForSignOut(storage: RemoteRuntimeStorage | undefined): StoredMachineRecord[] {
   if (!storage) return []
   const store = createMachineStore({ storage })
-  const sessionStore = createMachineSessionStore(storage)
   for (const machine of store.listMachines()) {
     if (machine.source !== 'hub') continue
     if (hasLocalAddresses(machine)) {
       store.saveMachine(downgradeHubMachineToLocal(machine))
     } else {
       store.forgetMachine(machine.machineId)
-      sessionStore.clearSessionToken(machine.machineId)
     }
   }
   return store.listMachines()
@@ -2546,119 +2418,6 @@ function downgradeHubMachineToLocal(machine: StoredMachineRecord): StoredMachine
   }
 }
 
-function createPairApiForScan(input: {
-  candidateHubUrls: string[]
-  machine: WebControlMachine
-  networkRuntime: RemoteNetworkRuntime
-}): PairApi {
-  const contenders: Array<(pairInput: PairInput, options?: RtcConnectOptions) => Promise<PairResult>> = []
-  for (const hubUrl of compactHubUrls(input.candidateHubUrls)) {
-    contenders.push((pairInput, options) => createHubApi({ baseUrl: hubUrl, fetch: input.networkRuntime.fetch }).pair(pairInputWithMachineId(pairInput, input.machine.id), options))
-  }
-  return {
-    pair(pairInput, options) {
-      return racePairClaims(contenders.map((claim) => (claimOptions?: RtcConnectOptions) => claim(pairInput, claimOptions)), options)
-    },
-  }
-}
-
-function candidatePairingHubUrls(machine: WebControlMachine, localHubUrls: string[]): string[] {
-  return compactHubUrls([
-    ...localHubUrls,
-    ...nonEmptyHubUrls(machine),
-    ...(machine.localFallbackHubUrls ?? []),
-  ])
-}
-
-function pairInputWithMachineId(input: PairInput, fallbackMachineId: string | undefined): PairInput & { machineId: string } {
-  const machineId = input.machineId ?? fallbackMachineId
-  if (!machineId) throw new Error('machine id is required before pairing this device')
-  return {
-    ...input,
-    machineId,
-  }
-}
-
-async function racePairClaims(
-  claims: Array<(options?: RtcConnectOptions) => Promise<PairResult>>,
-  options: RtcConnectOptions = {},
-): Promise<PairResult> {
-  if (claims.length === 0) throw new Error('Pairing endpoint is required before pairing this device')
-  if (claims.length === 1) return claims[0]!(options)
-  return new Promise((resolve, reject) => {
-    let settled = false
-    let remaining = claims.length
-    let lastError: unknown
-    const controllers = claims.map(() => new AbortController())
-    const abortLosers = (reason: Error) => {
-      for (const controller of controllers) {
-        if (!controller.signal.aborted) controller.abort(reason)
-      }
-      options.signal?.removeEventListener('abort', abortFromParent)
-    }
-    const abortFromParent = () => {
-      const reason = options.signal?.reason instanceof Error ? options.signal.reason : new Error('pairing request cancelled')
-      if (!settled) {
-        settled = true
-        abortLosers(reason)
-        reject(reason)
-      }
-    }
-    if (options.signal?.aborted) {
-      abortFromParent()
-      return
-    }
-    options.signal?.addEventListener('abort', abortFromParent, { once: true })
-    for (const claim of claims) {
-      const index = claims.indexOf(claim)
-      const controller = controllers[index]!
-      claim({ ...options, signal: controller.signal }).then(
-        (result) => {
-          if (settled) return
-          settled = true
-          abortLosers(new Error('pairing endpoint race finished'))
-          resolve(result)
-        },
-        (error) => {
-          if (settled) return
-          lastError = error
-          remaining -= 1
-          if (remaining === 0 && !settled) {
-            settled = true
-            options.signal?.removeEventListener('abort', abortFromParent)
-            reject(errorFromUnknown(lastError, 'Pairing failed on every endpoint'))
-          }
-        },
-      )
-    }
-  })
-}
-
-function errorFromUnknown(error: unknown, fallback: string): Error {
-  if (error instanceof Error) return error
-  if (error === undefined || error === null) return new Error(fallback)
-  return new Error(String(error))
-}
-
-function runWithTimeout<T>(
-  run: (signal: AbortSignal) => Promise<T>,
-  timeoutMs: number,
-  timeoutMessage: string,
-): Promise<T> {
-  const controller = new AbortController()
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<T>((_, reject) => {
-    timer = setTimeout(() => {
-      const error = new Error(timeoutMessage)
-      controller.abort(error)
-      reject(error)
-    }, timeoutMs)
-  })
-  return Promise.race([run(controller.signal), timeout]).finally(() => {
-    if (timer) clearTimeout(timer)
-    if (!controller.signal.aborted) controller.abort(new Error('pairing request finished'))
-  })
-}
 
 function createUnavailableMachineRuntime(): MachineRuntime {
   const unavailable = async () => { throw new Error('a Proto binding machine runtime is required') }
@@ -2696,7 +2455,6 @@ function mergeHubMachine(saved: StoredMachineRecord, machine: WebControlMachine)
       ...(machine.controlUrl ? { webControl: machine.controlUrl } : {}),
       ...(summaryHubUrl ? { hub: summaryHubUrl } : {}),
     },
-    ...(saved.pairing ? { pairing: saved.pairing } : {}),
     addedAt: saved.addedAt,
     updatedAt: saved.updatedAt,
   }
@@ -2718,10 +2476,6 @@ function localFallbackHubUrlsFromStoredMachine(
   if (machine.source !== 'hub') return publicHubUrls
   const hub = new Set(compactHubUrls([machine.endpoints.hub, ...hubUrls]))
   return publicHubUrls.filter((hubUrl) => !hub.has(hubUrl))
-}
-
-function localHubUrlsFromPairingPayload(payload: PairingPayload): string[] {
-  return compactHubUrls(payload.local.hubUrls)
 }
 
 function nonEmptyHubUrls(machine: WebControlMachine): string[] {

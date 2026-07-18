@@ -77,9 +77,12 @@ export function iceCandidateInitSummary(candidates: RTCIceCandidateInit[]): Reco
   }
 }
 
-import type { RtcSessionDescription } from '../core/transport'
+export interface PeerSessionDescription {
+  type: 'offer' | 'answer'
+  sdp: string
+}
 
-export function normalizeRemoteDescription(description: RtcSessionDescription): { description: RtcSessionDescription; candidates: RTCIceCandidateInit[] } {
+export function normalizeRemoteDescription(description: PeerSessionDescription): { description: PeerSessionDescription; candidates: RTCIceCandidateInit[] } {
   const normalized = splitOutAnswerCandidates(description.sdp)
   return {
     description: {

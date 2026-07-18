@@ -1,6 +1,6 @@
 import { create } from '@bufbuild/protobuf'
 import type { ProtoClientSession } from '../core/protoClientSession'
-import type { LocalCreateTerminalInput, LocalUpdateTerminalInput, RtcSession } from '../core/transport'
+import type { LocalCreateTerminalInput, LocalUpdateTerminalInput } from '../core/transport'
 import { CommandEnvelopeSchema } from '../generated/apipb/application_pb'
 import {
   TerminalCreateCommandSchema,
@@ -21,68 +21,10 @@ export interface TerminalManagementApi {
 }
 
 export function createTerminalManagementApi(
-  session: Pick<RtcSession, 'openApi' | 'getConnectionInfo'> | ProtoClientSession,
+  session: ProtoClientSession,
   machineId: string,
 ): TerminalManagementApi {
-  if ('execute' in session) return createProtoTerminalManagementApi(session, machineId)
-  const api = async () => {
-    const info = await session.getConnectionInfo()
-    if (info.machineId !== machineId) {
-      throw new Error(`terminal management session machine mismatch: connected to ${info.machineId}, expected ${machineId}`)
-    }
-    return session.openApi()
-  }
-
-  return {
-    async createTerminal(input) {
-      const channel = await api()
-      const response = await channel.request<{ terminal_id?: string; terminalId?: string }>('create', {
-        ...(input.command && input.command.length > 0 ? { command: input.command } : {}),
-        ...(input.name ? { name: input.name } : {}),
-        ...(input.cwd ? { dir: input.cwd } : {}),
-        ...(input.environment ? { env: [input.environment] } : {}),
-        ...(typeof input.scrollbackSize === 'number' && Number.isFinite(input.scrollbackSize) ? { scrollback_size: Math.floor(input.scrollbackSize) } : {}),
-        ...(typeof input.scrollbackMaxBytes === 'number' && Number.isFinite(input.scrollbackMaxBytes) ? { scrollback_max_bytes: Math.floor(input.scrollbackMaxBytes) } : {}),
-        ...(typeof input.scrollbackMaxAgeSeconds === 'number' && Number.isFinite(input.scrollbackMaxAgeSeconds) ? { scrollback_max_age_seconds: Math.floor(input.scrollbackMaxAgeSeconds) } : {}),
-        tags: terminalTags({
-          cwd: input.cwd,
-          environment: input.environment,
-          sizeLockMode: input.sizeLockMode,
-        }),
-      })
-      const terminalId = response.terminal_id ?? response.terminalId
-      if (!terminalId) throw new Error('terminal_id is required in terminal management create response')
-      return { terminalId }
-    },
-    async updateTerminal(input) {
-      const channel = await api()
-      await channel.request('set_metadata', {
-        terminal_id: input.terminalId,
-        ...(input.name ? { name: input.name } : {}),
-        tags: terminalTags({
-          cwd: input.cwd,
-          environment: input.environment,
-          sizeLockMode: input.sizeLockMode,
-        }),
-      })
-    },
-    async restartTerminal(terminalId) {
-      const channel = await api()
-      await channel.request('restart', { terminal_id: terminalId })
-    },
-    async deleteTerminal(terminalId) {
-      const channel = await api()
-      await channel.request('remove', { terminal_id: terminalId })
-    },
-    async getTerminalDirectory(terminalId) {
-      const channel = await api()
-      const response = await channel.request<{ cwd?: string; live_cwd?: string }>('get', { terminal_id: terminalId })
-      return {
-        path: response.live_cwd || response.cwd || '',
-        source: response.live_cwd ? 'live' : response.cwd ? 'metadata' : undefined,
-      }
-    },
-  }
+  return createProtoTerminalManagementApi(session, machineId)
 }
 
 function createProtoTerminalManagementApi(session: ProtoClientSession, machineId: string): TerminalManagementApi {

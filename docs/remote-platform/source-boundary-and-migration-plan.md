@@ -272,11 +272,11 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 - 在临时空目录按清单复制公开文件，验证独立构建、测试、license 和 secret scan。
 - 记录创建全新 public Git 仓库的发布步骤，不复制 private `.git/` 历史。
 - 使用 `docs/legal/public-snapshot/` 法律模板，不把 private root license、Companion notice 或企业交付条款误复制为 public project license。
-- 公开 runtime schema 的源码真值迁入 `proto/runtimepb/`；`remote-ui` 不再从 legacy `termx-remote/` 生成代码。
+- 当时的公开 runtime schema 曾迁入 `proto/runtimepb/`；PA005R 已在所有 consumer 切到 `apipb + api.execute` 后删除该迁移 schema。
 
 完成条件：从选定 private commit 手工复制出的 public snapshot 可独立构建测试且不含 `private/`；当前 private monorepo 继续作为完整开发真值；运行时不存在旧 fallback。
 
-实现结果：旧顶层 `termx-remote/` 与 `web-control/` 已原样迁入 `private/archive/termx-platform-legacy/`，remote-ui 历史 localweb/docs 一并归档；活动 `clients/ui/` 保持公开共享 UI，runtime proto 源码真值迁入 `proto/runtimepb/`。`public-snapshot-manifest.md` 冻结一次性人工 `git archive` 白名单、Apache/DCO 模板覆盖、public `go.work` 和全新 Git 初始化顺序；`public-snapshot-guard.sh` 与 harness 拒绝私有目录、内部 Agent/workflow 文件、未审核顶层文件、secret-like 文件、credential/PEM、越界 symlink、private build metadata 和 legacy localweb 配置，不承担 exporter/sync 职责。最终 staged-tree 快照还暴露并修复 memory transport 的 write-before-close 丢帧：peer close 必须先排空成功 Send 的 frame，protocol `Events` 已确认的 subscriber 也必须保留缓冲事件，而连接关闭后的新订阅仍返回 EOF。临时空目录快照通过九个 public Go module dependency scan、八个非 CLI module 全量、干净 CLI 排除三个既有视觉基线后的全量、CLI/Linux build、remote-ui proto 幂等/全量测试/typecheck/build、App `cap:build`、Community Android unit/assemble、APK 私有 factory/7 个 notice asset 边界、public/private license audit 与 production npm audit；memory drain 与 protocol events 定向 harness/race 重复通过。Vite/Babel 开发工具 advisories 和 CLI 三个既有视觉基线仍是正式公开发布前待处理项，不构成 public/private namespace 或独立构建阻塞。
+实现结果：旧顶层 `termx-remote/` 与 `web-control/` 已原样迁入 `private/archive/termx-platform-legacy/`，remote-ui 历史 localweb/docs 一并归档；活动 `clients/ui/` 保持公开共享 UI。后续 PA005R 已删除迁移期 `runtimepb`，公共 application schema 统一由 `apipb` 持有。`public-snapshot-manifest.md` 冻结一次性人工 `git archive` 白名单、Apache/DCO 模板覆盖、public `go.work` 和全新 Git 初始化顺序；`public-snapshot-guard.sh` 与 harness 拒绝私有目录、内部 Agent/workflow 文件、未审核顶层文件、secret-like 文件、credential/PEM、越界 symlink、private build metadata 和 legacy localweb 配置，不承担 exporter/sync 职责。最终 staged-tree 快照还暴露并修复 memory transport 的 write-before-close 丢帧：peer close 必须先排空成功 Send 的 frame，protocol `Events` 已确认的 subscriber 也必须保留缓冲事件，而连接关闭后的新订阅仍返回 EOF。临时空目录快照通过九个 public Go module dependency scan、八个非 CLI module 全量、干净 CLI 排除三个既有视觉基线后的全量、CLI/Linux build、remote-ui proto 幂等/全量测试/typecheck/build、App `cap:build`、Community Android unit/assemble、APK 私有 factory/7 个 notice asset 边界、public/private license audit 与 production npm audit；memory drain 与 protocol events 定向 harness/race 重复通过。Vite/Babel 开发工具 advisories 和 CLI 三个既有视觉基线仍是正式公开发布前待处理项，不构成 public/private namespace 或独立构建阻塞。
 
 ## 7. 迁移期间的禁止项
 

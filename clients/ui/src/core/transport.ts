@@ -40,33 +40,6 @@ export interface RemoteNetworkRuntime {
   queryParam(name: string): string | null
 }
 
-export interface RtcConnectionTarget {
-  machineId: string
-  terminalId?: string | undefined
-}
-
-export interface RtcSessionDescription {
-  type: 'offer' | 'answer'
-  sdp: string
-}
-
-export interface RtcSessionNegotiationTarget extends RtcConnectionTarget {
-  path: ConnectionPath
-  iceServers?: Array<{
-    urls: string[]
-    username?: string | undefined
-    credential?: string | undefined
-  }> | undefined
-}
-
-export interface RtcSessionNegotiator {
-  createOffer(target: RtcSessionNegotiationTarget, options?: RtcConnectOptions): Promise<{
-    sessionId: string
-    description: RtcSessionDescription
-  }>
-  acceptAnswer(answer: RtcSessionDescription, options?: RtcConnectOptions): Promise<void>
-}
-
 export interface RtcConnectOptions {
   signal?: AbortSignal
   forceRelay?: boolean | undefined
@@ -112,84 +85,8 @@ export interface ConnectionInfo {
   rtt?: number | undefined
 }
 
-export interface ConnectionCapabilities {
-  terminalAllowed: boolean
-  apiAllowed: boolean
-  eventsAllowed: boolean
-  fileTransferAllowed: boolean
-  terminalManagementAllowed: boolean
-  relayInUse: boolean
-  denialReason?: string
-}
-
-export interface RtcSessionCapabilityUpdater {
-  updateConnectionCapabilities(capabilities: ConnectionCapabilities): void
-}
-
-export interface RtcBinaryChannel {
-  readonly label: string
-  readonly readyState: 'connecting' | 'open' | 'closing' | 'closed'
-  send(data: Uint8Array): void
-  close(): void
-  onMessage(handler: (data: Uint8Array) => void): RtcSubscription
-  onClose(handler: () => void): RtcSubscription
-  waitOpen(): Promise<void>
-}
-
-export interface RtcJsonRpcChannel {
-  request<TResponse>(method: string, params?: unknown): Promise<TResponse>
-  close(): void
-}
-
-export interface RtcSession {
-  openTerminal(terminalId: string): Promise<RtcBinaryChannel>
-  openApi(): Promise<RtcJsonRpcChannel>
-  openFileChannel(channel: number, transferId: string): Promise<RtcBinaryChannel>
-  subscribeEvents(handler: (event: RtcEvent) => void): RtcSubscription
-  getConnectionInfo(): Promise<ConnectionInfo>
-  getCapabilities(): Promise<ConnectionCapabilities>
-  disconnect(): Promise<void>
-}
-
-
-export interface RtcSessionLiveness {
-  isAlive(): boolean
-}
-
-export interface RtcSessionDisconnectEvents {
-  onDisconnect(handler: () => void): RtcSubscription
-}
-
-export interface RtcSessionConnectionStateEvents {
-  subscribeConnectionState(handler: (snapshot: RtcConnectionStateSnapshot) => void): RtcSubscription
-}
-
 export interface MachineConnectionStateEvents {
   subscribe(machineId: string, handler: (snapshot: RtcConnectionStateSnapshot) => void): RtcSubscription
-}
-
-export interface RtcTerminalDataChannelController {
-  closeTerminalDataChannel(terminalId: string): void
-}
-
-export interface RtcSessionRecovery {
-  handleAppResume(): Promise<boolean>
-  waitUntilConnected(signal?: AbortSignal): Promise<void>
-}
-
-export type ManagedRtcSession = RtcSession &
-  RtcSessionConnectionStateEvents &
-  RtcSessionDisconnectEvents &
-  RtcSessionLiveness &
-  RtcSessionRecovery &
-  RtcTerminalDataChannelController
-
-export interface RtcConnector<TInput extends RtcConnectionTarget = RtcConnectionTarget> {
-  connect(input: TInput, options?: RtcConnectOptions): Promise<RtcSession>
-}
-
-export interface ManagedRtcConnector<TInput extends RtcConnectionTarget = RtcConnectionTarget> {
-  connect(input: TInput, options?: RtcConnectOptions): Promise<ManagedRtcSession>
 }
 
 export interface LocalStatus {
@@ -198,25 +95,6 @@ export interface LocalStatus {
     httpUrl: string
     rtcOfferUrl: string
   }
-}
-
-export interface LocalPairInput {
-  machineId?: string | undefined
-  pairSessionId: string
-  pairSecret: string
-  appDeviceId: string
-  appName: string
-  requestedCapabilities: string[]
-}
-
-export interface LocalPairResult {
-  machineId: string
-  sessionToken: string
-  expiresAt: string
-}
-
-export interface LocalPairingApi {
-  pair(input: LocalPairInput, options?: RtcConnectOptions): Promise<LocalPairResult>
 }
 
 export interface TerminalInventorySubscription {

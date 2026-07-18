@@ -54,7 +54,7 @@ make clean
 
 ## 生成代码
 
-Go protobuf 来自 `proto/{apipb,cloudpb,remoteauthpb,wirepb}`。当前 `PA005G` 只要求同步 Go generated code 与 public descriptor；客户端 TypeScript generated code 在后续 App/Web 切片同步。`scripts/check-generated-code.sh` 的全端比较门禁在客户端迁移完成后恢复。
+Go protobuf 来自 `proto/{apipb,bindingpb,cloudpb,remoteauthpb,wirepb}`。客户端 application 类型只从 `apipb`/`bindingpb` 生成；`wirepb` 仅生成 framing 与 file resource stream payload。`scripts/check-generated-code.sh` 同时比较 Go 和 TypeScript 生成物。
 
 ```bash
 npm run proto
