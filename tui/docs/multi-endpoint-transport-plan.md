@@ -22,7 +22,8 @@
 `CONN003` 尚未完成：
 
 - C3X 已删除 `Endpoint.ResolveCurrentRoute`、TUI lazy bundle/session owner 和 CLI 直接 route/dial owner；CLI/TUI 当前保留明确待接 `client/runtime` 的调用缺口，不再有可继续修补的旧运行时。
-- `RouteSelectionPlanner`、默认全量竞速、priority hedge、统一 `ReadySession`、winner/loser cleanup 尚未成为 CLI/TUI 共同运行时。
+- C3B 已在 `client/endpoint` 完成纯领域 `RouteSelectionPlanner`、local/SSH full-race 分组、priority hedge、manual override、唯一 managed 单路计划和机器可读 fixture；它只产出不可变 attempt groups，不 dial，也不拥有 winner。
+- 默认全量竞速的真实启动、统一 `ReadySession`、winner/loser cleanup 尚未成为 CLI/TUI 共同运行时。
 - `client/runtime` 尚未实现 per-endpoint session owner，`tui/adapter/clientruntime` 尚未接入。
 - `SessionGeneration` 和 channel-bound operation stamp 尚未覆盖 attach、input、paste、resize、detach 与迟到回包。
 

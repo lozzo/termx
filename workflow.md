@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- `PA007` 跨端架构就绪双审已完成。下一切片是 `C3B` RouteSelectionPlanner；Android 与 Web 已复用同一 runtime/managed/auth/protocol/binding 引擎，不得重新引入平台自有客户端网络真值。
+- `C3B` RouteSelectionPlanner 已完成。下一切片是 `C3C` fresh daemon proof / ReadySession；Android 与 Web 已复用同一 runtime/managed/auth/protocol/binding 引擎，不得重新引入平台自有客户端网络真值。
 - 当前迁移允许修改 `client/{runtime,port,adapter,binding}/`、`remote/`、`internal/protocol/`、`proto/`、`clients/mobile/`、`clients/ui/` 以及对应 tests、build scripts 和必要架构文档；每个切片仍只能触及任务表规定的最小范围。
 - Android 目标是 Go Client Engine 编译为 native library，通过稳定 C ABI 与薄 JNI/Capacitor bridge 调用；Kotlin/Java 不拥有连接、认证、协议、session/resource 或重连真值。
 - Android lifecycle 固定采用 generation teardown：锁屏广播或进程进入后台时关闭当前 Go engine、loopback bridge、全部 session/resource 和事件泵；WebView 恢复时先创建新 engine/generation，再让 TypeScript 重连。旧 handle、迟到 callback 和冻结期间未消费事件不得进入新 generation，事件队列必须有界。
@@ -23,6 +23,7 @@
 - PA007 remediation 已把跨语言 ABI 升到 v3：C/JNI/WASM 业务操作统一通过 serialized `bindingpb.EngineCommand`，不再暴露 pairing/credential 专用符号；Android 与 WASM host 共享 Go runtime-owned process generation authority。
 - PA007 remediation 已把同 endpoint 的 binding `OpenSession` 改为 `client/runtime.SessionOwner.AcquireRoute` 共享底层 ready session、每个 consumer 独立 lease；`managedhost` 不保存第二份 current registry。list/inventory/workspace/file 的 lease close 不提升 generation。application event consumer 按完整 subscription `ResourceHandle` correlation，多个订阅不再共享 session 级隐式广播。
 - PA007 最终准入已通过 public/private Go、关键包 race、clients 130/16 tests、typecheck/build/WASM、generated/layout doctor、Community/Official Android APK 与边界校验。架构 reviewer `019f73b0-8426-7022-816c-1390532ce14a` 与代码 reviewer `019f73b0-00ef-72a2-bb96-909ebbcfe4f2` 均明确 PASS；已处理 early stream terminal event exact-once release、managed production terminal-response 接线、active operation close barrier 与 close failure 可观察性。
+- `C3B` 已在 `client/endpoint` 建立纯领域 `RouteSelectionPlanner`：输入 normalized Endpoint、ConnectIntent、route override、generation、平台 route capability 和可用 credential ref 快照，输出不可变 attempt groups、累计 hedge delay 与稳定过滤诊断。自动竞速只包含 local Unix/SSH，唯一 managed route 保留单路计划；planner 不 dial、不读取 secure store/Cloud、不选择 winner。Go harness、机器可读 fixture、race、全仓 Go tests 与 doctor 通过。
 - 用户已确立仓库级强约定：所有插件、第三方客户端、官方客户端、跨进程和跨语言 API 的唯一 schema truth 必须位于 `proto/`。
 - 完整运行链路固定为 `插件/客户端 -> transport/platform binding -> protocol framing -> generated proto -> api_layer -> api_mapping -> core`，返回方向相反。Proto 是 schema/message truth，不是 transport 或主动运行层；任何入口都不得绕过 API Layer 消费 core domain struct。
 - `core/api` Go DTO 路线已判定错误，必须删除；此前 `AR003B1A/AR003B1B` 结论作废，不得继续迁移或补兼容层。
@@ -118,8 +119,8 @@ core domain truth
 | PA005R | 已完成 | 双端旧契约与路径原子删除 | Android/Web 都完成后删除 `runtimepb`、`wirepb` 中重复 application schema、generated artifacts、旧 method codec、旧 bridge 和 fallback；全仓扫描确认业务 API 只剩 `apipb + api.execute`，不得保留兼容 alias/wrapper/双路径 |
 | PA006T | 已完成 | Proto API 测试迁移 | 把 core/protocol/client-runtime/TUI/CLI 旧 DTO tests 改为 generated Proto harness；补 event subscription correlation/release、machine-events-only、file active/resume token namespace 和跨 session upload resume 测试；不得恢复旧 alias/codec |
 | PA007 | 已完成 | 跨端架构就绪双审 | import graph、schema coverage、重复 DTO、binding ownership、Android/Web lifecycle、channel binding、fallback、生成代码、文档和 tests 通过；架构 reviewer 与代码 reviewer 明确 PASS 后恢复 C3B |
-| C3B | 待开始 | RouteSelectionPlanner | PA007 PASS 后恢复 |
-| C3C | 暂停 | fresh daemon proof / ReadySession | PA007 PASS 后恢复 |
+| C3B | 已完成 | RouteSelectionPlanner | 纯 planner 覆盖平台/credential eligibility、manual override、local/SSH full race、priority hedge、唯一 managed 单路、不可变 attempt groups 和稳定过滤诊断；机器可读 fixture 与 race 通过 |
+| C3C | 待开始 | fresh daemon proof / ReadySession | C3B 完成后恢复 |
 | C3D | 暂停 | shared runtime session owner | PA007 PASS 后恢复 |
 | C3E | 暂停 | CLI 接入共享 runtime | PA007 PASS 后恢复 |
 | C3F | 暂停 | operation generation stamp | PA007 PASS 后恢复 |
@@ -143,6 +144,7 @@ core domain truth
 - `PA005R`：generated-code check；删除重复 runtime/wire application schema后的全仓 compile/typecheck/build；旧 schema、codec、method、bridge、fallback 和手写跨语言 DTO 扫描。
 - `PA006T`：迁移后的 Go tests、race/E2E 与 CLI compile；失败不得通过恢复旧 DTO、method codec 或 fallback 解决。
 - `PA007`：全量可运行测试、generated-code check、import graph、重复 schema/DTO 扫描和双 Agent 审查。
+- `C3B`：`go test ./client/endpoint -count=1`；`go test -race ./client/endpoint -count=1`；机器可读 route plan fixture；`make test`；`make doctor`；`git diff --check`。
 
 ## 执行规则
 
