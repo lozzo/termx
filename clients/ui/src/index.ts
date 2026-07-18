@@ -325,4 +325,10 @@ export type {
   ProtoClientSubscription,
   ProtoResourceStream,
 } from './core/protoClientSession'
+export { BrowserWasmLifecycle } from './binding/browserWasmLifecycle'
+export type { BrowserWasmGeneration, BrowserWasmGenerationFactory, BrowserWasmGenerationListener } from './binding/browserWasmLifecycle'
+export { BrowserWasmPlatform, verifyRemoteDTLSCertificate } from './binding/browserWasmPlatform'
+export type { BrowserCloudPlatform, BrowserPlatformDiagnostic, BrowserPlatformEventSink } from './binding/browserWasmPlatform'
+export { TermxWasmRuntime, loadTermxWasmExports } from './binding/wasmRuntime'
+export type { LoadTermxWasmOptions, TermxWasmResult, WasmPlatformDispatcher } from './binding/wasmRuntime'
 export * as TermxCloud from './generated/cloudpb/cloud_companion_pb'

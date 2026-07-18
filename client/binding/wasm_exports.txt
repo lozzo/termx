@@ -10,6 +10,7 @@ termxEngineDeleteCredential
 termxEngineNextEvent
 termxPlatformNextRequest
 termxPlatformComplete
+termxPlatformEvent
 termxEngineCancel
 termxEngineCloseSession
 termxEngineRelease

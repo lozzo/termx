@@ -172,6 +172,89 @@ message CredentialSignResponse { bytes signature = 1; }
 
 message SignalingEvents { repeated termx.cloud.v1.SignalingEvent events = 1; }
 
+// WebRTCOpenPeerRequest 只描述浏览器创建 RTCPeerConnection 所需的平台 primitive。
+// route/auth/session 真值仍由 Go managed engine 持有。
+message WebRTCOpenPeerRequest {
+  repeated termx.cloud.v1.IceServer ice_servers = 1;
+  termx.cloud.v1.RoutePreference route_preference = 2;
+  bool relay_only = 3;
+}
+
+message WebRTCPeerOpened {
+  uint64 peer_handle = 1;
+  uint64 channel_handle = 2;
+}
+
+message WebRTCPeerRequest { uint64 peer_handle = 1; }
+
+message WebRTCCreateOfferResult { string offer_sdp = 1; }
+
+message WebRTCApplyAnswerRequest {
+  uint64 peer_handle = 1;
+  string answer_sdp = 2;
+  repeated termx.cloud.v1.IceCandidate candidates = 3;
+}
+
+message WebRTCPeerReady {
+  string remote_certificate_fingerprint = 1;
+  termx.cloud.v1.ObservedPath observed_path = 2;
+}
+
+message WebRTCChannelSendRequest {
+  uint64 channel_handle = 1;
+  bytes payload = 2;
+}
+
+message WebRTCChannelSendResult { uint64 buffered_amount = 1; }
+
+message WebRTCChannelThresholdRequest {
+  uint64 channel_handle = 1;
+  uint64 low_threshold = 2;
+}
+
+message WebRTCPeerSnapshotRequest {
+  uint64 peer_handle = 1;
+  int64 sampled_at_unix_nano = 2;
+}
+
+message WebRTCPeerSnapshot {
+  bool valid = 1;
+  string pair_id = 2;
+  termx.cloud.v1.ObservedPath path = 3;
+  string network_class = 4;
+  int64 sampled_at_unix_nano = 5;
+  int64 round_trip_nanos = 6;
+  uint64 bytes_sent = 7;
+  uint64 bytes_received = 8;
+  uint64 packets_sent = 9;
+  uint64 loss_events = 10;
+  bool connected = 11;
+}
+
+message WebRTCCloseRequest { uint64 handle = 1; }
+
+message WebRTCChannelMessageEvent {
+  uint64 channel_handle = 1;
+  bytes payload = 2;
+}
+
+message WebRTCChannelClosedEvent { uint64 channel_handle = 1; }
+
+message WebRTCBufferedAmountLowEvent {
+  uint64 channel_handle = 1;
+  uint64 buffered_amount = 2;
+}
+
+// PlatformEvent 是浏览器异步 primitive 回到 Go engine 的唯一入口。
+// engine handle 在 WASM export 层完成 generation fence，事件本身不携带业务 session。
+message PlatformEvent {
+  oneof event {
+    WebRTCChannelMessageEvent webrtc_channel_message = 10;
+    WebRTCChannelClosedEvent webrtc_channel_closed = 11;
+    WebRTCBufferedAmountLowEvent webrtc_buffered_amount_low = 12;
+  }
+}
+
 message PlatformRequest {
   uint64 request_id = 1;
   oneof request {
@@ -186,6 +269,15 @@ message PlatformRequest {
     termx.cloud.v1.PlanManagedRouteRequest cloud_plan_route = 23;
     termx.cloud.v1.ReportPathQualityRequest cloud_report_quality = 24;
     termx.cloud.v1.ReportConnectionOutcomeRequest cloud_report_outcome = 25;
+    WebRTCOpenPeerRequest webrtc_open_peer = 30;
+    WebRTCPeerRequest webrtc_create_offer = 31;
+    WebRTCApplyAnswerRequest webrtc_apply_answer = 32;
+    WebRTCPeerRequest webrtc_wait_ready = 33;
+    WebRTCChannelSendRequest webrtc_channel_send = 34;
+    WebRTCChannelThresholdRequest webrtc_channel_threshold = 35;
+    WebRTCPeerSnapshotRequest webrtc_peer_snapshot = 36;
+    WebRTCCloseRequest webrtc_close_peer = 37;
+    WebRTCCloseRequest webrtc_close_channel = 38;
   }
 }
 
@@ -201,5 +293,10 @@ message PlatformResponse {
     termx.cloud.v1.ManagedRoutePlan cloud_route_plan = 23;
     termx.cloud.v1.ReportPathQualityResponse cloud_quality_reported = 24;
     termx.cloud.v1.ReportConnectionOutcomeResponse cloud_outcome_reported = 25;
+    WebRTCPeerOpened webrtc_peer_opened = 30;
+    WebRTCCreateOfferResult webrtc_offer = 31;
+    WebRTCPeerReady webrtc_peer_ready = 32;
+    WebRTCChannelSendResult webrtc_channel_sent = 33;
+    WebRTCPeerSnapshot webrtc_peer_snapshot = 34;
   }
 }

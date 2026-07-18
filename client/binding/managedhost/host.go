@@ -1,0 +1,459 @@
+// Package managedhost 提供 Android JNI 与浏览器 WASM 共用的 managed Client Engine composition root。
+// 平台只能注入 Cloud/credential broker 和 WebRTC primitive；remote-auth、Hello、Proto API 与 generation 真值留在 Go。
+package managedhost
+
+import (
+	"context"
+	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/base64"
+	"fmt"
+	"io"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/lozzow/termx/client/adapter/managed"
+	"github.com/lozzow/termx/client/binding"
+	"github.com/lozzow/termx/client/endpoint"
+	"github.com/lozzow/termx/client/port"
+	clientruntime "github.com/lozzow/termx/client/runtime"
+	"github.com/lozzow/termx/proto/bindingpb"
+	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/lozzow/termx/shared/remoteauth"
+	"google.golang.org/protobuf/proto"
+)
+
+const bootstrapPrefix = "termx://bootstrap?payload="
+
+// Options 定义单个平台 generation 的 primitive 依赖。
+// Broker 与 Peers 必须只属于当前 engine；关闭后不得复用到下一代。
+type Options struct {
+	Broker           *binding.PlatformBroker
+	Peers            port.ManagedPeerFactory
+	ClientName       string
+	CredentialPrefix string
+	NextGeneration   func() clientruntime.SessionGeneration
+	Now              func() time.Time
+}
+
+// Host 是跨 Android/Web 共用的 binding.Host、PairingHost 与 CredentialHost。
+type Host struct {
+	options   Options
+	closeOnce sync.Once
+}
+
+// New 校验平台依赖并创建共享 managed host。
+func New(options Options) (*Host, error) {
+	if options.Broker == nil || options.Peers == nil || options.NextGeneration == nil {
+		return nil, fmt.Errorf("managed binding host requires broker, peer factory, and generation source")
+	}
+	options.ClientName = strings.TrimSpace(options.ClientName)
+	if options.ClientName == "" {
+		return nil, fmt.Errorf("managed binding client name is required")
+	}
+	options.CredentialPrefix = strings.TrimSpace(options.CredentialPrefix)
+	if options.CredentialPrefix == "" {
+		return nil, fmt.Errorf("managed binding credential prefix is required")
+	}
+	if options.Now == nil {
+		options.Now = time.Now
+	}
+	return &Host{options: options}, nil
+}
+
+// OpenSession 建立 Go-owned managed generation；平台 UI 状态不能参与 endpoint、auth 或协议判断。
+func (host *Host) OpenSession(ctx context.Context, request *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadySession, error) {
+	managedConfig := request.GetManaged()
+	if managedConfig == nil {
+		return nil, fmt.Errorf("managed endpoint configuration is required")
+	}
+	relayMode, err := relayMode(managedConfig.GetRelayMode())
+	if err != nil {
+		return nil, err
+	}
+	intent, err := connectIntent(request.GetIntent())
+	if err != nil {
+		return nil, err
+	}
+	endpointID := strings.TrimSpace(request.GetEndpointId())
+	routeID := endpoint.RouteID(strings.TrimSpace(request.GetRouteOverride()))
+	if routeID == "" {
+		routeID = "managed-webrtc"
+	}
+	target := endpoint.Endpoint{
+		ID: endpoint.EndpointID(endpointID),
+		DaemonIdentity: endpoint.DaemonIdentity{
+			DeviceID: strings.TrimSpace(managedConfig.GetTargetDeviceId()), DeviceFingerprint: strings.TrimSpace(managedConfig.GetDeviceFingerprint()),
+		},
+		Routes: map[endpoint.RouteID]endpoint.AccessRoute{routeID: {
+			ID: routeID, Kind: endpoint.RouteManagedWebRTC, Enabled: true, Source: endpoint.SourceCloud, PolicySource: endpoint.SourceUser,
+			CredentialRef: strings.TrimSpace(managedConfig.GetCredentialRef()), TargetDeviceID: strings.TrimSpace(managedConfig.GetTargetDeviceId()),
+			AccountProfile: strings.TrimSpace(managedConfig.GetAccountProfile()), RelayMode: relayMode,
+		}},
+	}
+	attempt, err := clientruntime.NewAttemptRequest(target, routeID, host.options.NextGeneration(), intent)
+	if err != nil {
+		return nil, err
+	}
+	credentials := platformCredentials{broker: host.options.Broker}
+	dialer := &managed.Dialer{
+		Cloud: platformCloud{broker: host.options.Broker}, Peers: host.options.Peers, ClientName: host.options.ClientName,
+		Authorization: managed.CapabilityAuthorizer{Credentials: credentials, Signers: credentials, Now: host.options.Now}, Now: host.options.Now,
+	}
+	ready, err := dialer.Dial(ctx, attempt)
+	if err != nil {
+		return nil, err
+	}
+	application, ok := ready.(clientruntime.ApplicationReadySession)
+	if !ok {
+		_ = ready.Close()
+		return nil, fmt.Errorf("managed route returned no Proto application session")
+	}
+	return application, nil
+}
+
+// ImportPairing 验证 bootstrap、使用平台不可导出 signer 完成 PairingExchange，并原子绑定 grant。
+func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPairingRequest) (*bindingpb.ImportPairingResult, error) {
+	payload, err := decodeBootstrap(request.GetPortablePayload())
+	if err != nil {
+		return nil, err
+	}
+	now := host.options.Now().UTC()
+	bundle, claims, err := remoteauth.ParsePairingBundle(payload, now)
+	if err != nil {
+		return nil, err
+	}
+	endpointID := strings.TrimSpace(request.GetExpectedEndpointId())
+	if endpointID == "" {
+		endpointID = bundle.GetIdentity().GetDeviceId()
+	}
+	credentialRef := credentialRef(host.options.CredentialPrefix, bundle.GetIdentity().GetDeviceId(), bundle.GetIdentity().GetDeviceFingerprint())
+	response, err := host.options.Broker.Exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CredentialPrepare{
+		CredentialPrepare: &bindingpb.CredentialPrepareRequest{EndpointId: endpointID, CredentialRef: credentialRef},
+	}})
+	if err != nil {
+		return nil, err
+	}
+	record, err := platformCredential(response)
+	if err != nil {
+		return nil, err
+	}
+	candidate, err := endpoint.EndpointCandidateFromBootstrapBundle(bundle)
+	if err != nil {
+		return nil, err
+	}
+	var pairingRoute endpoint.AccessRoute
+	for _, route := range candidate.Routes {
+		if route.Enabled && route.Kind == endpoint.RouteManagedWebRTC {
+			pairingRoute = route
+			break
+		}
+	}
+	if pairingRoute.ID == "" {
+		return nil, fmt.Errorf("pairing bundle has no managed WebRTC route")
+	}
+	pairingRoute.CredentialRef = credentialRef
+	if pairingRoute.TargetDeviceID == "" {
+		pairingRoute.TargetDeviceID = bundle.GetIdentity().GetDeviceId()
+	}
+	target := endpoint.Endpoint{
+		ID: endpoint.EndpointID(endpointID), DaemonIdentity: candidate.Identity,
+		Routes: map[endpoint.RouteID]endpoint.AccessRoute{pairingRoute.ID: pairingRoute},
+	}
+	attempt, err := clientruntime.NewAttemptRequest(target, pairingRoute.ID, host.options.NextGeneration(), clientruntime.ConnectIntentInteractive)
+	if err != nil {
+		return nil, err
+	}
+	identity := remoteauth.ClientAccessIdentity{
+		EndpointID: endpointID, PublicKey: append(ed25519.PublicKey(nil), record.GetPublicKey()...), Fingerprint: record.GetKeyFingerprint(),
+	}
+	if err := identity.ValidatePublic(); err != nil {
+		return nil, fmt.Errorf("pairing identity is invalid: %w", err)
+	}
+	signer := platformSigner{broker: host.options.Broker, credentialRef: credentialRef, identity: identity}
+	paired, err := (&managed.PairingDialer{Cloud: platformCloud{broker: host.options.Broker}, Peers: host.options.Peers, Now: host.options.Now}).Redeem(
+		ctx, attempt, remoteauth.ClientPairingRequest{
+			ExpectedDeviceID: bundle.GetIdentity().GetDeviceId(), ExpectedDeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint(),
+			PairingBundle: payload, Identity: identity, Signer: signer, ClientLabel: host.options.ClientName,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	boundResponse, err := host.options.Broker.Exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CredentialBind{
+		CredentialBind: &bindingpb.CredentialBindRequest{EndpointId: endpointID, CredentialRef: credentialRef, CapabilityGrant: paired.Grant},
+	}})
+	if err != nil {
+		return nil, err
+	}
+	bound, err := platformCredential(boundResponse)
+	if err != nil {
+		return nil, err
+	}
+	if bound.GetKeyFingerprint() != identity.Fingerprint || bound.GetCapabilityGrant() != paired.Grant {
+		return nil, fmt.Errorf("platform secure store bound a different pairing credential")
+	}
+	label := strings.TrimSpace(bundle.GetSuggestedLabel())
+	if label == "" {
+		label = bundle.GetIdentity().GetDeviceId()
+	}
+	return &bindingpb.ImportPairingResult{
+		EndpointId: endpointID, Label: label, TargetDeviceId: bundle.GetIdentity().GetDeviceId(), DeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint(),
+		CredentialRef: credentialRef, TicketId: claims.TicketID, ClientKeyFingerprint: record.GetKeyFingerprint(),
+		ExpiresAtUnixNano: paired.ExpiresAt.UnixNano(), AuthorizationRequired: false,
+	}, nil
+}
+
+// DeleteCredential 删除当前平台 secure store 中的 credential record。
+func (host *Host) DeleteCredential(ctx context.Context, request *bindingpb.DeleteCredentialRequest) error {
+	response, err := host.options.Broker.Exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CredentialDelete{
+		CredentialDelete: &bindingpb.CredentialDeleteRequest{CredentialRef: request.GetCredentialRef()},
+	}})
+	if err != nil {
+		return err
+	}
+	return platformResponseError(response)
+}
+
+// Close 关闭当前 generation 的 peer factory 与 broker，解除冻结中的平台等待。
+func (host *Host) Close() error {
+	if host == nil {
+		return nil
+	}
+	host.closeOnce.Do(func() {
+		if closer, ok := host.options.Peers.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+		_ = host.options.Broker.Close()
+	})
+	return nil
+}
+
+// Broker 返回当前 engine 独占的平台 broker，供 JNI/WASM wrapper 驱动。
+func (host *Host) Broker() *binding.PlatformBroker { return host.options.Broker }
+
+type platformCredentials struct{ broker *binding.PlatformBroker }
+
+func (source platformCredentials) ResolveClientCredential(ctx context.Context, endpointID, reference string) (remoteauth.ClientAccessCredential, error) {
+	response, err := source.broker.Exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CredentialResolve{
+		CredentialResolve: &bindingpb.CredentialResolveRequest{EndpointId: endpointID, CredentialRef: reference},
+	}})
+	if err != nil {
+		return remoteauth.ClientAccessCredential{}, err
+	}
+	record, err := platformCredential(response)
+	if err != nil {
+		return remoteauth.ClientAccessCredential{}, err
+	}
+	identity := remoteauth.ClientAccessIdentity{EndpointID: record.GetEndpointId(), Fingerprint: record.GetKeyFingerprint(), PublicKey: append(ed25519.PublicKey(nil), record.GetPublicKey()...)}
+	if err := identity.ValidatePublic(); err != nil {
+		return remoteauth.ClientAccessCredential{}, err
+	}
+	return remoteauth.ClientAccessCredential{Version: 1, EndpointID: record.GetEndpointId(), Identity: identity, CapabilityGrant: record.GetCapabilityGrant(), UpdatedAt: time.Now().UTC()}, nil
+}
+
+func (source platformCredentials) ResolveClientSigner(_ context.Context, endpointID, reference string, identity remoteauth.ClientAccessIdentity) (remoteauth.ClientAccessSigner, error) {
+	if identity.EndpointID != endpointID {
+		return nil, fmt.Errorf("platform signer endpoint mismatch")
+	}
+	return platformSigner{broker: source.broker, credentialRef: reference, identity: identity}, nil
+}
+
+type platformSigner struct {
+	broker        *binding.PlatformBroker
+	credentialRef string
+	identity      remoteauth.ClientAccessIdentity
+}
+
+func (signer platformSigner) Sign(ctx context.Context, payload []byte) ([]byte, error) {
+	response, err := signer.broker.Exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CredentialSign{
+		CredentialSign: &bindingpb.CredentialSignRequest{CredentialRef: signer.credentialRef, Payload: append([]byte(nil), payload...)},
+	}})
+	if err != nil {
+		return nil, err
+	}
+	if err := platformResponseError(response); err != nil {
+		return nil, err
+	}
+	signature := append([]byte(nil), response.GetCredentialSign().GetSignature()...)
+	if !ed25519.Verify(signer.identity.PublicKey, payload, signature) {
+		return nil, fmt.Errorf("platform signer returned an invalid signature")
+	}
+	return signature, nil
+}
+
+type platformCloud struct{ broker *binding.PlatformBroker }
+
+func (cloud platformCloud) ResolveEndpoint(ctx context.Context, request *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
+	response, err := cloud.exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CloudResolveEndpoint{CloudResolveEndpoint: proto.Clone(request).(*cloudpb.ResolveEndpointRequest)}})
+	if err != nil {
+		return nil, err
+	}
+	return proto.Clone(response.GetCloudResolvedEndpoint()).(*cloudpb.ResolvedEndpoint), nil
+}
+
+func (cloud platformCloud) CreateSignalingSession(ctx context.Context, request *cloudpb.CreateSignalingSessionRequest) (cloudcompanion.SignalingStream, error) {
+	response, err := cloud.exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CloudCreateSignaling{CloudCreateSignaling: proto.Clone(request).(*cloudpb.CreateSignalingSessionRequest)}})
+	if err != nil {
+		return nil, err
+	}
+	return &signalingStream{events: cloneSignalingEvents(response.GetCloudSignaling().GetEvents())}, nil
+}
+
+func (cloud platformCloud) AcquireRelayLease(ctx context.Context, request *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
+	response, err := cloud.exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CloudAcquireRelay{CloudAcquireRelay: proto.Clone(request).(*cloudpb.AcquireRelayLeaseRequest)}})
+	if err != nil {
+		return nil, err
+	}
+	return proto.Clone(response.GetCloudRelayLease()).(*cloudpb.RelayLease), nil
+}
+
+func (cloud platformCloud) PlanManagedRoute(ctx context.Context, request *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error) {
+	response, err := cloud.exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CloudPlanRoute{CloudPlanRoute: proto.Clone(request).(*cloudpb.PlanManagedRouteRequest)}})
+	if err != nil {
+		return nil, err
+	}
+	return proto.Clone(response.GetCloudRoutePlan()).(*cloudpb.ManagedRoutePlan), nil
+}
+
+func (cloud platformCloud) ReportPathQuality(ctx context.Context, request *cloudpb.ReportPathQualityRequest) (*cloudpb.ReportPathQualityResponse, error) {
+	response, err := cloud.exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CloudReportQuality{CloudReportQuality: proto.Clone(request).(*cloudpb.ReportPathQualityRequest)}})
+	if err != nil {
+		return nil, err
+	}
+	return proto.Clone(response.GetCloudQualityReported()).(*cloudpb.ReportPathQualityResponse), nil
+}
+
+func (cloud platformCloud) ReportConnectionOutcome(ctx context.Context, request *cloudpb.ReportConnectionOutcomeRequest) (*cloudpb.ReportConnectionOutcomeResponse, error) {
+	response, err := cloud.exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CloudReportOutcome{CloudReportOutcome: proto.Clone(request).(*cloudpb.ReportConnectionOutcomeRequest)}})
+	if err != nil {
+		return nil, err
+	}
+	return proto.Clone(response.GetCloudOutcomeReported()).(*cloudpb.ReportConnectionOutcomeResponse), nil
+}
+
+func (cloud platformCloud) exchange(ctx context.Context, request *bindingpb.PlatformRequest) (*bindingpb.PlatformResponse, error) {
+	response, err := cloud.broker.Exchange(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if err := platformResponseError(response); err != nil {
+		return nil, err
+	}
+	if response.GetResponse() == nil {
+		return nil, fmt.Errorf("platform Cloud response is empty")
+	}
+	return response, nil
+}
+
+type signalingStream struct {
+	mu     sync.Mutex
+	events []*cloudpb.SignalingEvent
+	closed bool
+}
+
+func (stream *signalingStream) Receive() (*cloudpb.SignalingEvent, error) {
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	if stream.closed || len(stream.events) == 0 {
+		return nil, io.EOF
+	}
+	event := stream.events[0]
+	stream.events = stream.events[1:]
+	return proto.Clone(event).(*cloudpb.SignalingEvent), nil
+}
+
+func (stream *signalingStream) Close() error {
+	stream.mu.Lock()
+	stream.closed = true
+	stream.events = nil
+	stream.mu.Unlock()
+	return nil
+}
+
+func platformCredential(response *bindingpb.PlatformResponse) (*bindingpb.CredentialRecord, error) {
+	if err := platformResponseError(response); err != nil {
+		return nil, err
+	}
+	record := response.GetCredential()
+	if record == nil || record.GetEndpointId() == "" || record.GetCredentialRef() == "" {
+		return nil, fmt.Errorf("platform credential response is incomplete")
+	}
+	return proto.Clone(record).(*bindingpb.CredentialRecord), nil
+}
+
+func platformResponseError(response *bindingpb.PlatformResponse) error {
+	if response == nil {
+		return fmt.Errorf("platform response is empty")
+	}
+	if value := response.GetError(); value != nil {
+		return fmt.Errorf("platform request failed: %s", value.GetMessage())
+	}
+	return nil
+}
+
+func relayMode(value bindingpb.ManagedRelayMode) (endpoint.RelayMode, error) {
+	switch value {
+	case bindingpb.ManagedRelayMode_MANAGED_RELAY_MODE_AUTO:
+		return endpoint.RelayAuto, nil
+	case bindingpb.ManagedRelayMode_MANAGED_RELAY_MODE_DIRECT:
+		return endpoint.RelayDirect, nil
+	case bindingpb.ManagedRelayMode_MANAGED_RELAY_MODE_RELAY_ONLY:
+		return endpoint.RelayOnly, nil
+	case bindingpb.ManagedRelayMode_MANAGED_RELAY_MODE_SMART_ROUTE:
+		return endpoint.RelaySmart, nil
+	default:
+		return "", fmt.Errorf("managed relay mode is unsupported")
+	}
+}
+
+func connectIntent(value bindingpb.ConnectIntent) (clientruntime.ConnectIntent, error) {
+	switch value {
+	case bindingpb.ConnectIntent_CONNECT_INTENT_INTERACTIVE:
+		return clientruntime.ConnectIntentInteractive, nil
+	case bindingpb.ConnectIntent_CONNECT_INTENT_BACKGROUND:
+		return clientruntime.ConnectIntentBackground, nil
+	case bindingpb.ConnectIntent_CONNECT_INTENT_PROBE:
+		return clientruntime.ConnectIntentProbe, nil
+	default:
+		return "", fmt.Errorf("managed connect intent is unsupported")
+	}
+}
+
+func decodeBootstrap(value string) ([]byte, error) {
+	encoded := strings.TrimSpace(value)
+	if strings.HasPrefix(encoded, bootstrapPrefix) {
+		encoded = strings.TrimPrefix(encoded, bootstrapPrefix)
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil || len(payload) == 0 {
+		return nil, fmt.Errorf("pairing bootstrap payload is invalid")
+	}
+	return payload, nil
+}
+
+func credentialRef(prefix, deviceID, fingerprint string) string {
+	digest := sha256.Sum256([]byte(deviceID + "\n" + fingerprint))
+	return prefix + base64.RawURLEncoding.EncodeToString(digest[:])
+}
+
+func cloneSignalingEvents(values []*cloudpb.SignalingEvent) []*cloudpb.SignalingEvent {
+	result := make([]*cloudpb.SignalingEvent, 0, len(values))
+	for _, value := range values {
+		if value != nil {
+			result = append(result, proto.Clone(value).(*cloudpb.SignalingEvent))
+		}
+	}
+	return result
+}
+
+var _ binding.Host = (*Host)(nil)
+var _ binding.PairingHost = (*Host)(nil)
+var _ binding.CredentialHost = (*Host)(nil)
+var _ managed.CredentialSource = platformCredentials{}
+var _ managed.SignerSource = platformCredentials{}
+var _ remoteauth.ClientAccessSigner = platformSigner{}
+var _ managed.CloudClient = platformCloud{}
+var _ cloudcompanion.SignalingStream = (*signalingStream)(nil)

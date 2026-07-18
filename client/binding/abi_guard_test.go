@@ -24,7 +24,7 @@ var expectedWASMExports = []string{
 	"termxClientAbiVersion", "termxEngineCreate", "termxEngineOpenSession", "termxEngineExecute",
 	"termxEngineOpenResourceStream", "termxEngineSendResourceStreamFrame", "termxEngineCloseResourceStream",
 	"termxEngineImportPairing", "termxEngineDeleteCredential", "termxEngineNextEvent",
-	"termxPlatformNextRequest", "termxPlatformComplete", "termxEngineCancel", "termxEngineCloseSession", "termxEngineRelease",
+	"termxPlatformNextRequest", "termxPlatformComplete", "termxPlatformEvent", "termxEngineCancel", "termxEngineCloseSession", "termxEngineRelease",
 	"termxEngineClose", "termxBufferFree",
 }
 
@@ -52,6 +52,15 @@ func TestBindingABIBaselinesStayGeneric(t *testing.T) {
 	if !slices.Equal(wasmSymbols, expectedWASMExports) {
 		t.Fatalf("WASM exports = %v, want %v", wasmSymbols, expectedWASMExports)
 	}
+	wasmWrapper, err := os.ReadFile("wasmlib/main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, symbol := range expectedWASMExports {
+		if !strings.Contains(string(wasmWrapper), `"`+symbol+`"`) {
+			t.Fatalf("WASM wrapper does not register %s", symbol)
+		}
+	}
 	for _, forbidden := range []string{"terminal", "history", "file", "storage", "json", "base64"} {
 		if strings.Contains(strings.ToLower(string(header)), forbidden) || strings.Contains(strings.ToLower(string(wasm)), forbidden) {
 			t.Fatalf("binding ABI contains business/encoding term %q", forbidden)
@@ -71,7 +80,7 @@ func TestBindingCoreDoesNotImportPlatformOrDomainOwners(t *testing.T) {
 			return err
 		}
 		if entry.IsDir() {
-			if path != "." && (entry.Name() == "cabi") {
+			if path != "." && (entry.Name() == "cabi" || entry.Name() == "wasmlib" || entry.Name() == "managedhost") {
 				return filepath.SkipDir
 			}
 			return nil

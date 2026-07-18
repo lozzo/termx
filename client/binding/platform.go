@@ -54,6 +54,9 @@ func (broker *PlatformBroker) Exchange(ctx context.Context, request *bindingpb.P
 	if broker == nil || request == nil || request.GetRequest() == nil {
 		return nil, fmt.Errorf("platform request is incomplete")
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	broker.mu.Lock()
 	if broker.closed || broker.nextID == ^uint64(0) {
 		broker.mu.Unlock()
@@ -71,6 +74,10 @@ func (broker *PlatformBroker) Exchange(ctx context.Context, request *bindingpb.P
 	if err != nil {
 		broker.removePending(requestID)
 		return nil, fmt.Errorf("encode platform request: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		broker.removePending(requestID)
+		return nil, err
 	}
 	select {
 	case <-ctx.Done():

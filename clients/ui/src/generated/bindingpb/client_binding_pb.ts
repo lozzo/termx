@@ -8,7 +8,7 @@ import type { EventEnvelope as EventEnvelope$1, ResultEnvelope } from "../apipb/
 import { file_apipb_application } from "../apipb/application_pb";
 import type { ApiError, EndpointSessionStamp, ResourceHandle } from "../apipb/common_pb";
 import { file_apipb_common } from "../apipb/common_pb";
-import type { AcquireRelayLeaseRequest, CreateSignalingSessionRequest, ManagedRoutePlan, PlanManagedRouteRequest, RelayLease, ReportConnectionOutcomeRequest, ReportConnectionOutcomeResponse, ReportPathQualityRequest, ReportPathQualityResponse, ResolvedEndpoint, ResolveEndpointRequest, SignalingEvent } from "../cloudpb/cloud_companion_pb";
+import type { AcquireRelayLeaseRequest, CreateSignalingSessionRequest, IceCandidate, IceServer, ManagedRoutePlan, ObservedPath, PlanManagedRouteRequest, RelayLease, ReportConnectionOutcomeRequest, ReportConnectionOutcomeResponse, ReportPathQualityRequest, ReportPathQualityResponse, ResolvedEndpoint, ResolveEndpointRequest, RoutePreference, SignalingEvent } from "../cloudpb/cloud_companion_pb";
 import { file_cloudpb_cloud_companion } from "../cloudpb/cloud_companion_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file bindingpb/client_binding.proto.
  */
 export const file_bindingpb_client_binding: GenFile = /*@__PURE__*/
-  fileDesc("Ch5iaW5kaW5ncGIvY2xpZW50X2JpbmRpbmcucHJvdG8SF3Rlcm14LmNsaWVudC5iaW5kaW5nLnYxIr0BChVNYW5hZ2VkRW5kcG9pbnRDb25maWcSGAoQdGFyZ2V0X2RldmljZV9pZBgBIAEoCRIaChJkZXZpY2VfZmluZ2VycHJpbnQYAiABKAkSFgoOY3JlZGVudGlhbF9yZWYYAyABKAkSFwoPYWNjb3VudF9wcm9maWxlGAQgASgJEj0KCnJlbGF5X21vZGUYBSABKA4yKS50ZXJteC5jbGllbnQuYmluZGluZy52MS5NYW5hZ2VkUmVsYXlNb2RlIs4BChJPcGVuU2Vzc2lvblJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRITCgtlbmRwb2ludF9pZBgCIAEoCRIWCg5yb3V0ZV9vdmVycmlkZRgDIAEoCRI2CgZpbnRlbnQYBCABKA4yJi50ZXJteC5jbGllbnQuYmluZGluZy52MS5Db25uZWN0SW50ZW50Ej8KB21hbmFnZWQYBSABKAsyLi50ZXJteC5jbGllbnQuYmluZGluZy52MS5NYW5hZ2VkRW5kcG9pbnRDb25maWciYgoUSW1wb3J0UGFpcmluZ1JlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRIYChBwb3J0YWJsZV9wYXlsb2FkGAIgASgJEhwKFGV4cGVjdGVkX2VuZHBvaW50X2lkGAMgASgJIs0CChNJbXBvcnRQYWlyaW5nUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSGAoQb3BlcmF0aW9uX2hhbmRsZRgCIAEoBBITCgtlbmRwb2ludF9pZBgDIAEoCRINCgVsYWJlbBgEIAEoCRIYChB0YXJnZXRfZGV2aWNlX2lkGAUgASgJEhoKEmRldmljZV9maW5nZXJwcmludBgGIAEoCRIWCg5jcmVkZW50aWFsX3JlZhgHIAEoCRIRCgl0aWNrZXRfaWQYCCABKAkSHgoWY2xpZW50X2tleV9maW5nZXJwcmludBgJIAEoCRIcChRleHBpcmVzX2F0X3VuaXhfbmFubxgKIAEoAxIeChZhdXRob3JpemF0aW9uX3JlcXVpcmVkGAsgASgIEiUKBWVycm9yGAwgASgLMhYudGVybXguYXBpLnYxLkFwaUVycm9yIkUKF0RlbGV0ZUNyZWRlbnRpYWxSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSFgoOY3JlZGVudGlhbF9yZWYYAiABKAkibQoWRGVsZXRlQ3JlZGVudGlhbFJlc3VsdBISCgpyZXF1ZXN0X2lkGAEgASgJEhgKEG9wZXJhdGlvbl9oYW5kbGUYAiABKAQSJQoFZXJyb3IYAyABKAsyFi50ZXJteC5hcGkudjEuQXBpRXJyb3IitQEKEU9wZW5TZXNzaW9uUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSGAoQb3BlcmF0aW9uX2hhbmRsZRgCIAEoBBIWCg5zZXNzaW9uX2hhbmRsZRgDIAEoBBIzCgdzZXNzaW9uGAQgASgLMiIudGVybXguYXBpLnYxLkVuZHBvaW50U2Vzc2lvblN0YW1wEiUKBWVycm9yGAUgASgLMhYudGVybXguYXBpLnYxLkFwaUVycm9yIpYBCg1FeGVjdXRlUmVzdWx0EhgKEG9wZXJhdGlvbl9oYW5kbGUYASABKAQSFgoOc2Vzc2lvbl9oYW5kbGUYAiABKAQSLAoGcmVzdWx0GAMgASgLMhwudGVybXguYXBpLnYxLlJlc3VsdEVudmVsb3BlEiUKBWVycm9yGAQgASgLMhYudGVybXguYXBpLnYxLkFwaUVycm9yIlYKEEFwcGxpY2F0aW9uRXZlbnQSFgoOc2Vzc2lvbl9oYW5kbGUYASABKAQSKgoFZXZlbnQYAiABKAsyGy50ZXJteC5hcGkudjEuRXZlbnRFbnZlbG9wZSJLChlPcGVuUmVzb3VyY2VTdHJlYW1SZXF1ZXN0Ei4KCHJlc291cmNlGAEgASgLMhwudGVybXguYXBpLnYxLlJlc291cmNlSGFuZGxlIn0KE1Jlc291cmNlU3RyZWFtRnJhbWUSFQoNc3RyZWFtX2hhbmRsZRgBIAEoBBI+CgR0eXBlGAIgASgOMjAudGVybXguY2xpZW50LmJpbmRpbmcudjEuUmVzb3VyY2VTdHJlYW1GcmFtZVR5cGUSDwoHcGF5bG9hZBgDIAEoDCJZChlSZXNvdXJjZVN0cmVhbUNsb3NlZEV2ZW50EhUKDXN0cmVhbV9oYW5kbGUYASABKAQSJQoFZXJyb3IYAiABKAsyFi50ZXJteC5hcGkudjEuQXBpRXJyb3IiiAEKElNlc3Npb25DbG9zZWRFdmVudBIWCg5zZXNzaW9uX2hhbmRsZRgBIAEoBBIzCgdzZXNzaW9uGAIgASgLMiIudGVybXguYXBpLnYxLkVuZHBvaW50U2Vzc2lvblN0YW1wEiUKBWVycm9yGAMgASgLMhYudGVybXguYXBpLnYxLkFwaUVycm9yIoIFCg1FdmVudEVudmVsb3BlEhMKC2FiaV92ZXJzaW9uGAEgASgNEhAKCHNlcXVlbmNlGAIgASgEEkIKDG9wZW5fc2Vzc2lvbhgKIAEoCzIqLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLk9wZW5TZXNzaW9uUmVzdWx0SAASOQoHZXhlY3V0ZRgLIAEoCzImLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLkV4ZWN1dGVSZXN1bHRIABJACgthcHBsaWNhdGlvbhgMIAEoCzIpLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLkFwcGxpY2F0aW9uRXZlbnRIABJFCg5zZXNzaW9uX2Nsb3NlZBgNIAEoCzIrLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLlNlc3Npb25DbG9zZWRFdmVudEgAEkYKDmltcG9ydF9wYWlyaW5nGA4gASgLMiwudGVybXguY2xpZW50LmJpbmRpbmcudjEuSW1wb3J0UGFpcmluZ1Jlc3VsdEgAEkwKEWRlbGV0ZV9jcmVkZW50aWFsGA8gASgLMi8udGVybXguY2xpZW50LmJpbmRpbmcudjEuRGVsZXRlQ3JlZGVudGlhbFJlc3VsdEgAEk0KFXJlc291cmNlX3N0cmVhbV9mcmFtZRgQIAEoCzIsLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLlJlc291cmNlU3RyZWFtRnJhbWVIABJUChZyZXNvdXJjZV9zdHJlYW1fY2xvc2VkGBEgASgLMjIudGVybXguY2xpZW50LmJpbmRpbmcudjEuUmVzb3VyY2VTdHJlYW1DbG9zZWRFdmVudEgAQgcKBWV2ZW50IkcKGENyZWRlbnRpYWxSZXNvbHZlUmVxdWVzdBITCgtlbmRwb2ludF9pZBgBIAEoCRIWCg5jcmVkZW50aWFsX3JlZhgCIAEoCSJHChhDcmVkZW50aWFsUHJlcGFyZVJlcXVlc3QSEwoLZW5kcG9pbnRfaWQYASABKAkSFgoOY3JlZGVudGlhbF9yZWYYAiABKAkiMQoXQ3JlZGVudGlhbERlbGV0ZVJlcXVlc3QSFgoOY3JlZGVudGlhbF9yZWYYASABKAkiXgoVQ3JlZGVudGlhbEJpbmRSZXF1ZXN0EhMKC2VuZHBvaW50X2lkGAEgASgJEhYKDmNyZWRlbnRpYWxfcmVmGAIgASgJEhgKEGNhcGFiaWxpdHlfZ3JhbnQYAyABKAkihgEKEENyZWRlbnRpYWxSZWNvcmQSEwoLZW5kcG9pbnRfaWQYASABKAkSFgoOY3JlZGVudGlhbF9yZWYYAiABKAkSEgoKcHVibGljX2tleRgDIAEoDBIXCg9rZXlfZmluZ2VycHJpbnQYBCABKAkSGAoQY2FwYWJpbGl0eV9ncmFudBgFIAEoCSJAChVDcmVkZW50aWFsU2lnblJlcXVlc3QSFgoOY3JlZGVudGlhbF9yZWYYASABKAkSDwoHcGF5bG9hZBgCIAEoDCIrChZDcmVkZW50aWFsU2lnblJlc3BvbnNlEhEKCXNpZ25hdHVyZRgBIAEoDCJBCg9TaWduYWxpbmdFdmVudHMSLgoGZXZlbnRzGAEgAygLMh4udGVybXguY2xvdWQudjEuU2lnbmFsaW5nRXZlbnQi+gYKD1BsYXRmb3JtUmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgEEk8KEmNyZWRlbnRpYWxfcmVzb2x2ZRgKIAEoCzIxLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLkNyZWRlbnRpYWxSZXNvbHZlUmVxdWVzdEgAEk8KEmNyZWRlbnRpYWxfcHJlcGFyZRgLIAEoCzIxLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLkNyZWRlbnRpYWxQcmVwYXJlUmVxdWVzdEgAEk0KEWNyZWRlbnRpYWxfZGVsZXRlGAwgASgLMjAudGVybXguY2xpZW50LmJpbmRpbmcudjEuQ3JlZGVudGlhbERlbGV0ZVJlcXVlc3RIABJJCg9jcmVkZW50aWFsX3NpZ24YDSABKAsyLi50ZXJteC5jbGllbnQuYmluZGluZy52MS5DcmVkZW50aWFsU2lnblJlcXVlc3RIABJJCg9jcmVkZW50aWFsX2JpbmQYDiABKAsyLi50ZXJteC5jbGllbnQuYmluZGluZy52MS5DcmVkZW50aWFsQmluZFJlcXVlc3RIABJIChZjbG91ZF9yZXNvbHZlX2VuZHBvaW50GBQgASgLMiYudGVybXguY2xvdWQudjEuUmVzb2x2ZUVuZHBvaW50UmVxdWVzdEgAEk8KFmNsb3VkX2NyZWF0ZV9zaWduYWxpbmcYFSABKAsyLS50ZXJteC5jbG91ZC52MS5DcmVhdGVTaWduYWxpbmdTZXNzaW9uUmVxdWVzdEgAEkcKE2Nsb3VkX2FjcXVpcmVfcmVsYXkYFiABKAsyKC50ZXJteC5jbG91ZC52MS5BY3F1aXJlUmVsYXlMZWFzZVJlcXVlc3RIABJDChBjbG91ZF9wbGFuX3JvdXRlGBcgASgLMicudGVybXguY2xvdWQudjEuUGxhbk1hbmFnZWRSb3V0ZVJlcXVlc3RIABJIChRjbG91ZF9yZXBvcnRfcXVhbGl0eRgYIAEoCzIoLnRlcm14LmNsb3VkLnYxLlJlcG9ydFBhdGhRdWFsaXR5UmVxdWVzdEgAEk4KFGNsb3VkX3JlcG9ydF9vdXRjb21lGBkgASgLMi4udGVybXguY2xvdWQudjEuUmVwb3J0Q29ubmVjdGlvbk91dGNvbWVSZXF1ZXN0SABCCQoHcmVxdWVzdCKHBQoQUGxhdGZvcm1SZXNwb25zZRISCgpyZXF1ZXN0X2lkGAEgASgEEiUKBWVycm9yGAIgASgLMhYudGVybXguYXBpLnYxLkFwaUVycm9yEj8KCmNyZWRlbnRpYWwYCiABKAsyKS50ZXJteC5jbGllbnQuYmluZGluZy52MS5DcmVkZW50aWFsUmVjb3JkSAASSgoPY3JlZGVudGlhbF9zaWduGAsgASgLMi8udGVybXguY2xpZW50LmJpbmRpbmcudjEuQ3JlZGVudGlhbFNpZ25SZXNwb25zZUgAEkMKF2Nsb3VkX3Jlc29sdmVkX2VuZHBvaW50GBQgASgLMiAudGVybXguY2xvdWQudjEuUmVzb2x2ZWRFbmRwb2ludEgAEkMKD2Nsb3VkX3NpZ25hbGluZxgVIAEoCzIoLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLlNpZ25hbGluZ0V2ZW50c0gAEjcKEWNsb3VkX3JlbGF5X2xlYXNlGBYgASgLMhoudGVybXguY2xvdWQudjEuUmVsYXlMZWFzZUgAEjwKEGNsb3VkX3JvdXRlX3BsYW4YFyABKAsyIC50ZXJteC5jbG91ZC52MS5NYW5hZ2VkUm91dGVQbGFuSAASSwoWY2xvdWRfcXVhbGl0eV9yZXBvcnRlZBgYIAEoCzIpLnRlcm14LmNsb3VkLnYxLlJlcG9ydFBhdGhRdWFsaXR5UmVzcG9uc2VIABJRChZjbG91ZF9vdXRjb21lX3JlcG9ydGVkGBkgASgLMi8udGVybXguY2xvdWQudjEuUmVwb3J0Q29ubmVjdGlvbk91dGNvbWVSZXNwb25zZUgAQgoKCHJlc3BvbnNlKogBCg1Db25uZWN0SW50ZW50Eh4KGkNPTk5FQ1RfSU5URU5UX1VOU1BFQ0lGSUVEEAASHgoaQ09OTkVDVF9JTlRFTlRfSU5URVJBQ1RJVkUQARIdChlDT05ORUNUX0lOVEVOVF9CQUNLR1JPVU5EEAISGAoUQ09OTkVDVF9JTlRFTlRfUFJPQkUQAyq5AQoQTWFuYWdlZFJlbGF5TW9kZRIiCh5NQU5BR0VEX1JFTEFZX01PREVfVU5TUEVDSUZJRUQQABIbChdNQU5BR0VEX1JFTEFZX01PREVfQVVUTxABEh0KGU1BTkFHRURfUkVMQVlfTU9ERV9ESVJFQ1QQAhIhCh1NQU5BR0VEX1JFTEFZX01PREVfUkVMQVlfT05MWRADEiIKHk1BTkFHRURfUkVMQVlfTU9ERV9TTUFSVF9ST1VURRAEKscCChdSZXNvdXJjZVN0cmVhbUZyYW1lVHlwZRIqCiZSRVNPVVJDRV9TVFJFQU1fRlJBTUVfVFlQRV9VTlNQRUNJRklFRBAAEigKJFJFU09VUkNFX1NUUkVBTV9GUkFNRV9UWVBFX0ZJTEVfREFUQRABEicKI1JFU09VUkNFX1NUUkVBTV9GUkFNRV9UWVBFX0ZJTEVfQUNLEAISKgomUkVTT1VSQ0VfU1RSRUFNX0ZSQU1FX1RZUEVfRklMRV9GSU5JU0gQAxIqCiZSRVNPVVJDRV9TVFJFQU1fRlJBTUVfVFlQRV9GSUxFX1JFU1VMVBAEEiQKIFJFU09VUkNFX1NUUkVBTV9GUkFNRV9UWVBFX0VSUk9SEAUSLworUkVTT1VSQ0VfU1RSRUFNX0ZSQU1FX1RZUEVfRklMRV9GSU5JU0hfQVVUTxAGQilaJ2dpdGh1Yi5jb20vbG96em93L3Rlcm14L3Byb3RvL2JpbmRpbmdwYmIGcHJvdG8z", [file_apipb_application, file_apipb_common, file_cloudpb_cloud_companion]);
+  fileDesc("Ch5iaW5kaW5ncGIvY2xpZW50X2JpbmRpbmcucHJvdG8SF3Rlcm14LmNsaWVudC5iaW5kaW5nLnYxIr0BChVNYW5hZ2VkRW5kcG9pbnRDb25maWcSGAoQdGFyZ2V0X2RldmljZV9pZBgBIAEoCRIaChJkZXZpY2VfZmluZ2VycHJpbnQYAiABKAkSFgoOY3JlZGVudGlhbF9yZWYYAyABKAkSFwoPYWNjb3VudF9wcm9maWxlGAQgASgJEj0KCnJlbGF5X21vZGUYBSABKA4yKS50ZXJteC5jbGllbnQuYmluZGluZy52MS5NYW5hZ2VkUmVsYXlNb2RlIs4BChJPcGVuU2Vzc2lvblJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRITCgtlbmRwb2ludF9pZBgCIAEoCRIWCg5yb3V0ZV9vdmVycmlkZRgDIAEoCRI2CgZpbnRlbnQYBCABKA4yJi50ZXJteC5jbGllbnQuYmluZGluZy52MS5Db25uZWN0SW50ZW50Ej8KB21hbmFnZWQYBSABKAsyLi50ZXJteC5jbGllbnQuYmluZGluZy52MS5NYW5hZ2VkRW5kcG9pbnRDb25maWciYgoUSW1wb3J0UGFpcmluZ1JlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRIYChBwb3J0YWJsZV9wYXlsb2FkGAIgASgJEhwKFGV4cGVjdGVkX2VuZHBvaW50X2lkGAMgASgJIs0CChNJbXBvcnRQYWlyaW5nUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSGAoQb3BlcmF0aW9uX2hhbmRsZRgCIAEoBBITCgtlbmRwb2ludF9pZBgDIAEoCRINCgVsYWJlbBgEIAEoCRIYChB0YXJnZXRfZGV2aWNlX2lkGAUgASgJEhoKEmRldmljZV9maW5nZXJwcmludBgGIAEoCRIWCg5jcmVkZW50aWFsX3JlZhgHIAEoCRIRCgl0aWNrZXRfaWQYCCABKAkSHgoWY2xpZW50X2tleV9maW5nZXJwcmludBgJIAEoCRIcChRleHBpcmVzX2F0X3VuaXhfbmFubxgKIAEoAxIeChZhdXRob3JpemF0aW9uX3JlcXVpcmVkGAsgASgIEiUKBWVycm9yGAwgASgLMhYudGVybXguYXBpLnYxLkFwaUVycm9yIkUKF0RlbGV0ZUNyZWRlbnRpYWxSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSFgoOY3JlZGVudGlhbF9yZWYYAiABKAkibQoWRGVsZXRlQ3JlZGVudGlhbFJlc3VsdBISCgpyZXF1ZXN0X2lkGAEgASgJEhgKEG9wZXJhdGlvbl9oYW5kbGUYAiABKAQSJQoFZXJyb3IYAyABKAsyFi50ZXJteC5hcGkudjEuQXBpRXJyb3IitQEKEU9wZW5TZXNzaW9uUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSGAoQb3BlcmF0aW9uX2hhbmRsZRgCIAEoBBIWCg5zZXNzaW9uX2hhbmRsZRgDIAEoBBIzCgdzZXNzaW9uGAQgASgLMiIudGVybXguYXBpLnYxLkVuZHBvaW50U2Vzc2lvblN0YW1wEiUKBWVycm9yGAUgASgLMhYudGVybXguYXBpLnYxLkFwaUVycm9yIpYBCg1FeGVjdXRlUmVzdWx0EhgKEG9wZXJhdGlvbl9oYW5kbGUYASABKAQSFgoOc2Vzc2lvbl9oYW5kbGUYAiABKAQSLAoGcmVzdWx0GAMgASgLMhwudGVybXguYXBpLnYxLlJlc3VsdEVudmVsb3BlEiUKBWVycm9yGAQgASgLMhYudGVybXguYXBpLnYxLkFwaUVycm9yIlYKEEFwcGxpY2F0aW9uRXZlbnQSFgoOc2Vzc2lvbl9oYW5kbGUYASABKAQSKgoFZXZlbnQYAiABKAsyGy50ZXJteC5hcGkudjEuRXZlbnRFbnZlbG9wZSJLChlPcGVuUmVzb3VyY2VTdHJlYW1SZXF1ZXN0Ei4KCHJlc291cmNlGAEgASgLMhwudGVybXguYXBpLnYxLlJlc291cmNlSGFuZGxlIn0KE1Jlc291cmNlU3RyZWFtRnJhbWUSFQoNc3RyZWFtX2hhbmRsZRgBIAEoBBI+CgR0eXBlGAIgASgOMjAudGVybXguY2xpZW50LmJpbmRpbmcudjEuUmVzb3VyY2VTdHJlYW1GcmFtZVR5cGUSDwoHcGF5bG9hZBgDIAEoDCJZChlSZXNvdXJjZVN0cmVhbUNsb3NlZEV2ZW50EhUKDXN0cmVhbV9oYW5kbGUYASABKAQSJQoFZXJyb3IYAiABKAsyFi50ZXJteC5hcGkudjEuQXBpRXJyb3IiiAEKElNlc3Npb25DbG9zZWRFdmVudBIWCg5zZXNzaW9uX2hhbmRsZRgBIAEoBBIzCgdzZXNzaW9uGAIgASgLMiIudGVybXguYXBpLnYxLkVuZHBvaW50U2Vzc2lvblN0YW1wEiUKBWVycm9yGAMgASgLMhYudGVybXguYXBpLnYxLkFwaUVycm9yIoIFCg1FdmVudEVudmVsb3BlEhMKC2FiaV92ZXJzaW9uGAEgASgNEhAKCHNlcXVlbmNlGAIgASgEEkIKDG9wZW5fc2Vzc2lvbhgKIAEoCzIqLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLk9wZW5TZXNzaW9uUmVzdWx0SAASOQoHZXhlY3V0ZRgLIAEoCzImLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLkV4ZWN1dGVSZXN1bHRIABJACgthcHBsaWNhdGlvbhgMIAEoCzIpLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLkFwcGxpY2F0aW9uRXZlbnRIABJFCg5zZXNzaW9uX2Nsb3NlZBgNIAEoCzIrLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLlNlc3Npb25DbG9zZWRFdmVudEgAEkYKDmltcG9ydF9wYWlyaW5nGA4gASgLMiwudGVybXguY2xpZW50LmJpbmRpbmcudjEuSW1wb3J0UGFpcmluZ1Jlc3VsdEgAEkwKEWRlbGV0ZV9jcmVkZW50aWFsGA8gASgLMi8udGVybXguY2xpZW50LmJpbmRpbmcudjEuRGVsZXRlQ3JlZGVudGlhbFJlc3VsdEgAEk0KFXJlc291cmNlX3N0cmVhbV9mcmFtZRgQIAEoCzIsLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLlJlc291cmNlU3RyZWFtRnJhbWVIABJUChZyZXNvdXJjZV9zdHJlYW1fY2xvc2VkGBEgASgLMjIudGVybXguY2xpZW50LmJpbmRpbmcudjEuUmVzb3VyY2VTdHJlYW1DbG9zZWRFdmVudEgAQgcKBWV2ZW50IkcKGENyZWRlbnRpYWxSZXNvbHZlUmVxdWVzdBITCgtlbmRwb2ludF9pZBgBIAEoCRIWCg5jcmVkZW50aWFsX3JlZhgCIAEoCSJHChhDcmVkZW50aWFsUHJlcGFyZVJlcXVlc3QSEwoLZW5kcG9pbnRfaWQYASABKAkSFgoOY3JlZGVudGlhbF9yZWYYAiABKAkiMQoXQ3JlZGVudGlhbERlbGV0ZVJlcXVlc3QSFgoOY3JlZGVudGlhbF9yZWYYASABKAkiXgoVQ3JlZGVudGlhbEJpbmRSZXF1ZXN0EhMKC2VuZHBvaW50X2lkGAEgASgJEhYKDmNyZWRlbnRpYWxfcmVmGAIgASgJEhgKEGNhcGFiaWxpdHlfZ3JhbnQYAyABKAkihgEKEENyZWRlbnRpYWxSZWNvcmQSEwoLZW5kcG9pbnRfaWQYASABKAkSFgoOY3JlZGVudGlhbF9yZWYYAiABKAkSEgoKcHVibGljX2tleRgDIAEoDBIXCg9rZXlfZmluZ2VycHJpbnQYBCABKAkSGAoQY2FwYWJpbGl0eV9ncmFudBgFIAEoCSJAChVDcmVkZW50aWFsU2lnblJlcXVlc3QSFgoOY3JlZGVudGlhbF9yZWYYASABKAkSDwoHcGF5bG9hZBgCIAEoDCIrChZDcmVkZW50aWFsU2lnblJlc3BvbnNlEhEKCXNpZ25hdHVyZRgBIAEoDCJBCg9TaWduYWxpbmdFdmVudHMSLgoGZXZlbnRzGAEgAygLMh4udGVybXguY2xvdWQudjEuU2lnbmFsaW5nRXZlbnQilgEKFVdlYlJUQ09wZW5QZWVyUmVxdWVzdBIuCgtpY2Vfc2VydmVycxgBIAMoCzIZLnRlcm14LmNsb3VkLnYxLkljZVNlcnZlchI5ChByb3V0ZV9wcmVmZXJlbmNlGAIgASgOMh8udGVybXguY2xvdWQudjEuUm91dGVQcmVmZXJlbmNlEhIKCnJlbGF5X29ubHkYAyABKAgiPwoQV2ViUlRDUGVlck9wZW5lZBITCgtwZWVyX2hhbmRsZRgBIAEoBBIWCg5jaGFubmVsX2hhbmRsZRgCIAEoBCIoChFXZWJSVENQZWVyUmVxdWVzdBITCgtwZWVyX2hhbmRsZRgBIAEoBCIsChdXZWJSVENDcmVhdGVPZmZlclJlc3VsdBIRCglvZmZlcl9zZHAYASABKAkidQoYV2ViUlRDQXBwbHlBbnN3ZXJSZXF1ZXN0EhMKC3BlZXJfaGFuZGxlGAEgASgEEhIKCmFuc3dlcl9zZHAYAiABKAkSMAoKY2FuZGlkYXRlcxgDIAMoCzIcLnRlcm14LmNsb3VkLnYxLkljZUNhbmRpZGF0ZSJuCg9XZWJSVENQZWVyUmVhZHkSJgoecmVtb3RlX2NlcnRpZmljYXRlX2ZpbmdlcnByaW50GAEgASgJEjMKDW9ic2VydmVkX3BhdGgYAiABKA4yHC50ZXJteC5jbG91ZC52MS5PYnNlcnZlZFBhdGgiQwoYV2ViUlRDQ2hhbm5lbFNlbmRSZXF1ZXN0EhYKDmNoYW5uZWxfaGFuZGxlGAEgASgEEg8KB3BheWxvYWQYAiABKAwiMgoXV2ViUlRDQ2hhbm5lbFNlbmRSZXN1bHQSFwoPYnVmZmVyZWRfYW1vdW50GAEgASgEIk4KHVdlYlJUQ0NoYW5uZWxUaHJlc2hvbGRSZXF1ZXN0EhYKDmNoYW5uZWxfaGFuZGxlGAEgASgEEhUKDWxvd190aHJlc2hvbGQYAiABKAQiTgoZV2ViUlRDUGVlclNuYXBzaG90UmVxdWVzdBITCgtwZWVyX2hhbmRsZRgBIAEoBBIcChRzYW1wbGVkX2F0X3VuaXhfbmFubxgCIAEoAyKZAgoSV2ViUlRDUGVlclNuYXBzaG90Eg0KBXZhbGlkGAEgASgIEg8KB3BhaXJfaWQYAiABKAkSKgoEcGF0aBgDIAEoDjIcLnRlcm14LmNsb3VkLnYxLk9ic2VydmVkUGF0aBIVCg1uZXR3b3JrX2NsYXNzGAQgASgJEhwKFHNhbXBsZWRfYXRfdW5peF9uYW5vGAUgASgDEhgKEHJvdW5kX3RyaXBfbmFub3MYBiABKAMSEgoKYnl0ZXNfc2VudBgHIAEoBBIWCg5ieXRlc19yZWNlaXZlZBgIIAEoBBIUCgxwYWNrZXRzX3NlbnQYCSABKAQSEwoLbG9zc19ldmVudHMYCiABKAQSEQoJY29ubmVjdGVkGAsgASgIIiQKEldlYlJUQ0Nsb3NlUmVxdWVzdBIOCgZoYW5kbGUYASABKAQiRAoZV2ViUlRDQ2hhbm5lbE1lc3NhZ2VFdmVudBIWCg5jaGFubmVsX2hhbmRsZRgBIAEoBBIPCgdwYXlsb2FkGAIgASgMIjIKGFdlYlJUQ0NoYW5uZWxDbG9zZWRFdmVudBIWCg5jaGFubmVsX2hhbmRsZRgBIAEoBCJPChxXZWJSVENCdWZmZXJlZEFtb3VudExvd0V2ZW50EhYKDmNoYW5uZWxfaGFuZGxlGAEgASgEEhcKD2J1ZmZlcmVkX2Ftb3VudBgCIAEoBCKfAgoNUGxhdGZvcm1FdmVudBJUChZ3ZWJydGNfY2hhbm5lbF9tZXNzYWdlGAogASgLMjIudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDQ2hhbm5lbE1lc3NhZ2VFdmVudEgAElIKFXdlYnJ0Y19jaGFubmVsX2Nsb3NlZBgLIAEoCzIxLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLldlYlJUQ0NoYW5uZWxDbG9zZWRFdmVudEgAElsKGndlYnJ0Y19idWZmZXJlZF9hbW91bnRfbG93GAwgASgLMjUudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDQnVmZmVyZWRBbW91bnRMb3dFdmVudEgAQgcKBWV2ZW50IsUMCg9QbGF0Zm9ybVJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoBBJPChJjcmVkZW50aWFsX3Jlc29sdmUYCiABKAsyMS50ZXJteC5jbGllbnQuYmluZGluZy52MS5DcmVkZW50aWFsUmVzb2x2ZVJlcXVlc3RIABJPChJjcmVkZW50aWFsX3ByZXBhcmUYCyABKAsyMS50ZXJteC5jbGllbnQuYmluZGluZy52MS5DcmVkZW50aWFsUHJlcGFyZVJlcXVlc3RIABJNChFjcmVkZW50aWFsX2RlbGV0ZRgMIAEoCzIwLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLkNyZWRlbnRpYWxEZWxldGVSZXF1ZXN0SAASSQoPY3JlZGVudGlhbF9zaWduGA0gASgLMi4udGVybXguY2xpZW50LmJpbmRpbmcudjEuQ3JlZGVudGlhbFNpZ25SZXF1ZXN0SAASSQoPY3JlZGVudGlhbF9iaW5kGA4gASgLMi4udGVybXguY2xpZW50LmJpbmRpbmcudjEuQ3JlZGVudGlhbEJpbmRSZXF1ZXN0SAASSAoWY2xvdWRfcmVzb2x2ZV9lbmRwb2ludBgUIAEoCzImLnRlcm14LmNsb3VkLnYxLlJlc29sdmVFbmRwb2ludFJlcXVlc3RIABJPChZjbG91ZF9jcmVhdGVfc2lnbmFsaW5nGBUgASgLMi0udGVybXguY2xvdWQudjEuQ3JlYXRlU2lnbmFsaW5nU2Vzc2lvblJlcXVlc3RIABJHChNjbG91ZF9hY3F1aXJlX3JlbGF5GBYgASgLMigudGVybXguY2xvdWQudjEuQWNxdWlyZVJlbGF5TGVhc2VSZXF1ZXN0SAASQwoQY2xvdWRfcGxhbl9yb3V0ZRgXIAEoCzInLnRlcm14LmNsb3VkLnYxLlBsYW5NYW5hZ2VkUm91dGVSZXF1ZXN0SAASSAoUY2xvdWRfcmVwb3J0X3F1YWxpdHkYGCABKAsyKC50ZXJteC5jbG91ZC52MS5SZXBvcnRQYXRoUXVhbGl0eVJlcXVlc3RIABJOChRjbG91ZF9yZXBvcnRfb3V0Y29tZRgZIAEoCzIuLnRlcm14LmNsb3VkLnYxLlJlcG9ydENvbm5lY3Rpb25PdXRjb21lUmVxdWVzdEgAEkoKEHdlYnJ0Y19vcGVuX3BlZXIYHiABKAsyLi50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENPcGVuUGVlclJlcXVlc3RIABJJChN3ZWJydGNfY3JlYXRlX29mZmVyGB8gASgLMioudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDUGVlclJlcXVlc3RIABJQChN3ZWJydGNfYXBwbHlfYW5zd2VyGCAgASgLMjEudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDQXBwbHlBbnN3ZXJSZXF1ZXN0SAASRwoRd2VicnRjX3dhaXRfcmVhZHkYISABKAsyKi50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENQZWVyUmVxdWVzdEgAElAKE3dlYnJ0Y19jaGFubmVsX3NlbmQYIiABKAsyMS50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENDaGFubmVsU2VuZFJlcXVlc3RIABJaChh3ZWJydGNfY2hhbm5lbF90aHJlc2hvbGQYIyABKAsyNi50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENDaGFubmVsVGhyZXNob2xkUmVxdWVzdEgAElIKFHdlYnJ0Y19wZWVyX3NuYXBzaG90GCQgASgLMjIudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDUGVlclNuYXBzaG90UmVxdWVzdEgAEkgKEXdlYnJ0Y19jbG9zZV9wZWVyGCUgASgLMisudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDQ2xvc2VSZXF1ZXN0SAASSwoUd2VicnRjX2Nsb3NlX2NoYW5uZWwYJiABKAsyKy50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENDbG9zZVJlcXVlc3RIAEIJCgdyZXF1ZXN0Iv8HChBQbGF0Zm9ybVJlc3BvbnNlEhIKCnJlcXVlc3RfaWQYASABKAQSJQoFZXJyb3IYAiABKAsyFi50ZXJteC5hcGkudjEuQXBpRXJyb3ISPwoKY3JlZGVudGlhbBgKIAEoCzIpLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLkNyZWRlbnRpYWxSZWNvcmRIABJKCg9jcmVkZW50aWFsX3NpZ24YCyABKAsyLy50ZXJteC5jbGllbnQuYmluZGluZy52MS5DcmVkZW50aWFsU2lnblJlc3BvbnNlSAASQwoXY2xvdWRfcmVzb2x2ZWRfZW5kcG9pbnQYFCABKAsyIC50ZXJteC5jbG91ZC52MS5SZXNvbHZlZEVuZHBvaW50SAASQwoPY2xvdWRfc2lnbmFsaW5nGBUgASgLMigudGVybXguY2xpZW50LmJpbmRpbmcudjEuU2lnbmFsaW5nRXZlbnRzSAASNwoRY2xvdWRfcmVsYXlfbGVhc2UYFiABKAsyGi50ZXJteC5jbG91ZC52MS5SZWxheUxlYXNlSAASPAoQY2xvdWRfcm91dGVfcGxhbhgXIAEoCzIgLnRlcm14LmNsb3VkLnYxLk1hbmFnZWRSb3V0ZVBsYW5IABJLChZjbG91ZF9xdWFsaXR5X3JlcG9ydGVkGBggASgLMikudGVybXguY2xvdWQudjEuUmVwb3J0UGF0aFF1YWxpdHlSZXNwb25zZUgAElEKFmNsb3VkX291dGNvbWVfcmVwb3J0ZWQYGSABKAsyLy50ZXJteC5jbG91ZC52MS5SZXBvcnRDb25uZWN0aW9uT3V0Y29tZVJlc3BvbnNlSAASRwoSd2VicnRjX3BlZXJfb3BlbmVkGB4gASgLMikudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDUGVlck9wZW5lZEgAEkgKDHdlYnJ0Y19vZmZlchgfIAEoCzIwLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLldlYlJUQ0NyZWF0ZU9mZmVyUmVzdWx0SAASRQoRd2VicnRjX3BlZXJfcmVhZHkYICABKAsyKC50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENQZWVyUmVhZHlIABJPChN3ZWJydGNfY2hhbm5lbF9zZW50GCEgASgLMjAudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDQ2hhbm5lbFNlbmRSZXN1bHRIABJLChR3ZWJydGNfcGVlcl9zbmFwc2hvdBgiIAEoCzIrLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLldlYlJUQ1BlZXJTbmFwc2hvdEgAQgoKCHJlc3BvbnNlKogBCg1Db25uZWN0SW50ZW50Eh4KGkNPTk5FQ1RfSU5URU5UX1VOU1BFQ0lGSUVEEAASHgoaQ09OTkVDVF9JTlRFTlRfSU5URVJBQ1RJVkUQARIdChlDT05ORUNUX0lOVEVOVF9CQUNLR1JPVU5EEAISGAoUQ09OTkVDVF9JTlRFTlRfUFJPQkUQAyq5AQoQTWFuYWdlZFJlbGF5TW9kZRIiCh5NQU5BR0VEX1JFTEFZX01PREVfVU5TUEVDSUZJRUQQABIbChdNQU5BR0VEX1JFTEFZX01PREVfQVVUTxABEh0KGU1BTkFHRURfUkVMQVlfTU9ERV9ESVJFQ1QQAhIhCh1NQU5BR0VEX1JFTEFZX01PREVfUkVMQVlfT05MWRADEiIKHk1BTkFHRURfUkVMQVlfTU9ERV9TTUFSVF9ST1VURRAEKscCChdSZXNvdXJjZVN0cmVhbUZyYW1lVHlwZRIqCiZSRVNPVVJDRV9TVFJFQU1fRlJBTUVfVFlQRV9VTlNQRUNJRklFRBAAEigKJFJFU09VUkNFX1NUUkVBTV9GUkFNRV9UWVBFX0ZJTEVfREFUQRABEicKI1JFU09VUkNFX1NUUkVBTV9GUkFNRV9UWVBFX0ZJTEVfQUNLEAISKgomUkVTT1VSQ0VfU1RSRUFNX0ZSQU1FX1RZUEVfRklMRV9GSU5JU0gQAxIqCiZSRVNPVVJDRV9TVFJFQU1fRlJBTUVfVFlQRV9GSUxFX1JFU1VMVBAEEiQKIFJFU09VUkNFX1NUUkVBTV9GUkFNRV9UWVBFX0VSUk9SEAUSLworUkVTT1VSQ0VfU1RSRUFNX0ZSQU1FX1RZUEVfRklMRV9GSU5JU0hfQVVUTxAGQilaJ2dpdGh1Yi5jb20vbG96em93L3Rlcm14L3Byb3RvL2JpbmRpbmdwYmIGcHJvdG8z", [file_apipb_application, file_apipb_common, file_cloudpb_cloud_companion]);
 
 /**
  * @generated from message termx.client.binding.v1.ManagedEndpointConfig
@@ -681,6 +681,407 @@ export const SignalingEventsSchema: GenMessage<SignalingEvents> = /*@__PURE__*/
   messageDesc(file_bindingpb_client_binding, 21);
 
 /**
+ * WebRTCOpenPeerRequest 只描述浏览器创建 RTCPeerConnection 所需的平台 primitive。
+ * route/auth/session 真值仍由 Go managed engine 持有。
+ *
+ * @generated from message termx.client.binding.v1.WebRTCOpenPeerRequest
+ */
+export type WebRTCOpenPeerRequest = Message<"termx.client.binding.v1.WebRTCOpenPeerRequest"> & {
+  /**
+   * @generated from field: repeated termx.cloud.v1.IceServer ice_servers = 1;
+   */
+  iceServers: IceServer[];
+
+  /**
+   * @generated from field: termx.cloud.v1.RoutePreference route_preference = 2;
+   */
+  routePreference: RoutePreference;
+
+  /**
+   * @generated from field: bool relay_only = 3;
+   */
+  relayOnly: boolean;
+};
+
+/**
+ * Describes the message termx.client.binding.v1.WebRTCOpenPeerRequest.
+ * Use `create(WebRTCOpenPeerRequestSchema)` to create a new message.
+ */
+export const WebRTCOpenPeerRequestSchema: GenMessage<WebRTCOpenPeerRequest> = /*@__PURE__*/
+  messageDesc(file_bindingpb_client_binding, 22);
+
+/**
+ * @generated from message termx.client.binding.v1.WebRTCPeerOpened
+ */
+export type WebRTCPeerOpened = Message<"termx.client.binding.v1.WebRTCPeerOpened"> & {
+  /**
+   * @generated from field: uint64 peer_handle = 1;
+   */
+  peerHandle: bigint;
+
+  /**
+   * @generated from field: uint64 channel_handle = 2;
+   */
+  channelHandle: bigint;
+};
+
+/**
+ * Describes the message termx.client.binding.v1.WebRTCPeerOpened.
+ * Use `create(WebRTCPeerOpenedSchema)` to create a new message.
+ */
+export const WebRTCPeerOpenedSchema: GenMessage<WebRTCPeerOpened> = /*@__PURE__*/
+  messageDesc(file_bindingpb_client_binding, 23);
+
+/**
+ * @generated from message termx.client.binding.v1.WebRTCPeerRequest
+ */
+export type WebRTCPeerRequest = Message<"termx.client.binding.v1.WebRTCPeerRequest"> & {
+  /**
+   * @generated from field: uint64 peer_handle = 1;
+   */
+  peerHandle: bigint;
+};
+
+/**
+ * Describes the message termx.client.binding.v1.WebRTCPeerRequest.
+ * Use `create(WebRTCPeerRequestSchema)` to create a new message.
+ */
+export const WebRTCPeerRequestSchema: GenMessage<WebRTCPeerRequest> = /*@__PURE__*/
+  messageDesc(file_bindingpb_client_binding, 24);
+
+/**
+ * @generated from message termx.client.binding.v1.WebRTCCreateOfferResult
+ */
+export type WebRTCCreateOfferResult = Message<"termx.client.binding.v1.WebRTCCreateOfferResult"> & {
+  /**
+   * @generated from field: string offer_sdp = 1;
+   */
+  offerSdp: string;
+};
+
+/**
+ * Describes the message termx.client.binding.v1.WebRTCCreateOfferResult.
+ * Use `create(WebRTCCreateOfferResultSchema)` to create a new message.
+ */
+export const WebRTCCreateOfferResultSchema: GenMessage<WebRTCCreateOfferResult> = /*@__PURE__*/
+  messageDesc(file_bindingpb_client_binding, 25);
+
+/**
+ * @generated from message termx.client.binding.v1.WebRTCApplyAnswerRequest
+ */
+export type WebRTCApplyAnswerRequest = Message<"termx.client.binding.v1.WebRTCApplyAnswerRequest"> & {
+  /**
+   * @generated from field: uint64 peer_handle = 1;
+   */
+  peerHandle: bigint;
+
+  /**
+   * @generated from field: string answer_sdp = 2;
+   */
+  answerSdp: string;
+
+  /**
+   * @generated from field: repeated termx.cloud.v1.IceCandidate candidates = 3;
+   */
+  candidates: IceCandidate[];
+};
+
+/**
+ * Describes the message termx.client.binding.v1.WebRTCApplyAnswerRequest.
+ * Use `create(WebRTCApplyAnswerRequestSchema)` to create a new message.
+ */
+export const WebRTCApplyAnswerRequestSchema: GenMessage<WebRTCApplyAnswerRequest> = /*@__PURE__*/
+  messageDesc(file_bindingpb_client_binding, 26);
+
+/**
+ * @generated from message termx.client.binding.v1.WebRTCPeerReady
+ */
+export type WebRTCPeerReady = Message<"termx.client.binding.v1.WebRTCPeerReady"> & {
+  /**
+   * @generated from field: string remote_certificate_fingerprint = 1;
+   */
+  remoteCertificateFingerprint: string;
+
+  /**
+   * @generated from field: termx.cloud.v1.ObservedPath observed_path = 2;
+   */
+  observedPath: ObservedPath;
+};
+
+/**
+ * Describes the message termx.client.binding.v1.WebRTCPeerReady.
+ * Use `create(WebRTCPeerReadySchema)` to create a new message.
+ */
+export const WebRTCPeerReadySchema: GenMessage<WebRTCPeerReady> = /*@__PURE__*/
+  messageDesc(file_bindingpb_client_binding, 27);
+
+/**
+ * @generated from message termx.client.binding.v1.WebRTCChannelSendRequest
+ */
+export type WebRTCChannelSendRequest = Message<"termx.client.binding.v1.WebRTCChannelSendRequest"> & {
+  /**
+   * @generated from field: uint64 channel_handle = 1;
+   */
+  channelHandle: bigint;
+
+  /**
+   * @generated from field: bytes payload = 2;
+   */
+  payload: Uint8Array;
+};
+
+/**
+ * Describes the message termx.client.binding.v1.WebRTCChannelSendRequest.
+ * Use `create(WebRTCChannelSendRequestSchema)` to create a new message.
+ */
+export const WebRTCChannelSendRequestSchema: GenMessage<WebRTCChannelSendRequest> = /*@__PURE__*/
+  messageDesc(file_bindingpb_client_binding, 28);
+
+/**
+ * @generated from message termx.client.binding.v1.WebRTCChannelSendResult
+ */
+export type WebRTCChannelSendResult = Message<"termx.client.binding.v1.WebRTCChannelSendResult"> & {
+  /**
+   * @generated from field: uint64 buffered_amount = 1;
+   */
+  bufferedAmount: bigint;
+};
+
+/**
+ * Describes the message termx.client.binding.v1.WebRTCChannelSendResult.
+ * Use `create(WebRTCChannelSendResultSchema)` to create a new message.
+ */
+export const WebRTCChannelSendResultSchema: GenMessage<WebRTCChannelSendResult> = /*@__PURE__*/
+  messageDesc(file_bindingpb_client_binding, 29);
+
+/**
+ * @generated from message termx.client.binding.v1.WebRTCChannelThresholdRequest
+ */
+export type WebRTCChannelThresholdRequest = Message<"termx.client.binding.v1.WebRTCChannelThresholdRequest"> & {
+  /**
+   * @generated from field: uint64 channel_handle = 1;
+   */
+  channelHandle: bigint;
+
+  /**
+   * @generated from field: uint64 low_threshold = 2;
+   */
+  lowThreshold: bigint;
+};
+
+/**
+ * Describes the message termx.client.binding.v1.WebRTCChannelThresholdRequest.
+ * Use `create(WebRTCChannelThresholdRequestSchema)` to create a new message.
+ */
+export const WebRTCChannelThresholdRequestSchema: GenMessage<WebRTCChannelThresholdRequest> = /*@__PURE__*/
+  messageDesc(file_bindingpb_client_binding, 30);
+
+/**
+ * @generated from message termx.client.binding.v1.WebRTCPeerSnapshotRequest
+ */
+export type WebRTCPeerSnapshotRequest = Message<"termx.client.binding.v1.WebRTCPeerSnapshotRequest"> & {
+  /**
+   * @generated from field: uint64 peer_handle = 1;
+   */
+  peerHandle: bigint;
+
+  /**
+   * @generated from field: int64 sampled_at_unix_nano = 2;
+   */
+  sampledAtUnixNano: bigint;
+};
+
+/**
+ * Describes the message termx.client.binding.v1.WebRTCPeerSnapshotRequest.
+ * Use `create(WebRTCPeerSnapshotRequestSchema)` to create a new message.
+ */
+export const WebRTCPeerSnapshotRequestSchema: GenMessage<WebRTCPeerSnapshotRequest> = /*@__PURE__*/
+  messageDesc(file_bindingpb_client_binding, 31);
+
+/**
+ * @generated from message termx.client.binding.v1.WebRTCPeerSnapshot
+ */
+export type WebRTCPeerSnapshot = Message<"termx.client.binding.v1.WebRTCPeerSnapshot"> & {
+  /**
+   * @generated from field: bool valid = 1;
+   */
+  valid: boolean;
+
+  /**
+   * @generated from field: string pair_id = 2;
+   */
+  pairId: string;
+
+  /**
+   * @generated from field: termx.cloud.v1.ObservedPath path = 3;
+   */
+  path: ObservedPath;
+
+  /**
+   * @generated from field: string network_class = 4;
+   */
+  networkClass: string;
+
+  /**
+   * @generated from field: int64 sampled_at_unix_nano = 5;
+   */
+  sampledAtUnixNano: bigint;
+
+  /**
+   * @generated from field: int64 round_trip_nanos = 6;
+   */
+  roundTripNanos: bigint;
+
+  /**
+   * @generated from field: uint64 bytes_sent = 7;
+   */
+  bytesSent: bigint;
+
+  /**
+   * @generated from field: uint64 bytes_received = 8;
+   */
+  bytesReceived: bigint;
+
+  /**
+   * @generated from field: uint64 packets_sent = 9;
+   */
+  packetsSent: bigint;
+
+  /**
+   * @generated from field: uint64 loss_events = 10;
+   */
+  lossEvents: bigint;
+
+  /**
+   * @generated from field: bool connected = 11;
+   */
+  connected: boolean;
+};
+
+/**
+ * Describes the message termx.client.binding.v1.WebRTCPeerSnapshot.
+ * Use `create(WebRTCPeerSnapshotSchema)` to create a new message.
+ */
+export const WebRTCPeerSnapshotSchema: GenMessage<WebRTCPeerSnapshot> = /*@__PURE__*/
+  messageDesc(file_bindingpb_client_binding, 32);
+
+/**
+ * @generated from message termx.client.binding.v1.WebRTCCloseRequest
+ */
+export type WebRTCCloseRequest = Message<"termx.client.binding.v1.WebRTCCloseRequest"> & {
+  /**
+   * @generated from field: uint64 handle = 1;
+   */
+  handle: bigint;
+};
+
+/**
+ * Describes the message termx.client.binding.v1.WebRTCCloseRequest.
+ * Use `create(WebRTCCloseRequestSchema)` to create a new message.
+ */
+export const WebRTCCloseRequestSchema: GenMessage<WebRTCCloseRequest> = /*@__PURE__*/
+  messageDesc(file_bindingpb_client_binding, 33);
+
+/**
+ * @generated from message termx.client.binding.v1.WebRTCChannelMessageEvent
+ */
+export type WebRTCChannelMessageEvent = Message<"termx.client.binding.v1.WebRTCChannelMessageEvent"> & {
+  /**
+   * @generated from field: uint64 channel_handle = 1;
+   */
+  channelHandle: bigint;
+
+  /**
+   * @generated from field: bytes payload = 2;
+   */
+  payload: Uint8Array;
+};
+
+/**
+ * Describes the message termx.client.binding.v1.WebRTCChannelMessageEvent.
+ * Use `create(WebRTCChannelMessageEventSchema)` to create a new message.
+ */
+export const WebRTCChannelMessageEventSchema: GenMessage<WebRTCChannelMessageEvent> = /*@__PURE__*/
+  messageDesc(file_bindingpb_client_binding, 34);
+
+/**
+ * @generated from message termx.client.binding.v1.WebRTCChannelClosedEvent
+ */
+export type WebRTCChannelClosedEvent = Message<"termx.client.binding.v1.WebRTCChannelClosedEvent"> & {
+  /**
+   * @generated from field: uint64 channel_handle = 1;
+   */
+  channelHandle: bigint;
+};
+
+/**
+ * Describes the message termx.client.binding.v1.WebRTCChannelClosedEvent.
+ * Use `create(WebRTCChannelClosedEventSchema)` to create a new message.
+ */
+export const WebRTCChannelClosedEventSchema: GenMessage<WebRTCChannelClosedEvent> = /*@__PURE__*/
+  messageDesc(file_bindingpb_client_binding, 35);
+
+/**
+ * @generated from message termx.client.binding.v1.WebRTCBufferedAmountLowEvent
+ */
+export type WebRTCBufferedAmountLowEvent = Message<"termx.client.binding.v1.WebRTCBufferedAmountLowEvent"> & {
+  /**
+   * @generated from field: uint64 channel_handle = 1;
+   */
+  channelHandle: bigint;
+
+  /**
+   * @generated from field: uint64 buffered_amount = 2;
+   */
+  bufferedAmount: bigint;
+};
+
+/**
+ * Describes the message termx.client.binding.v1.WebRTCBufferedAmountLowEvent.
+ * Use `create(WebRTCBufferedAmountLowEventSchema)` to create a new message.
+ */
+export const WebRTCBufferedAmountLowEventSchema: GenMessage<WebRTCBufferedAmountLowEvent> = /*@__PURE__*/
+  messageDesc(file_bindingpb_client_binding, 36);
+
+/**
+ * PlatformEvent 是浏览器异步 primitive 回到 Go engine 的唯一入口。
+ * engine handle 在 WASM export 层完成 generation fence，事件本身不携带业务 session。
+ *
+ * @generated from message termx.client.binding.v1.PlatformEvent
+ */
+export type PlatformEvent = Message<"termx.client.binding.v1.PlatformEvent"> & {
+  /**
+   * @generated from oneof termx.client.binding.v1.PlatformEvent.event
+   */
+  event: {
+    /**
+     * @generated from field: termx.client.binding.v1.WebRTCChannelMessageEvent webrtc_channel_message = 10;
+     */
+    value: WebRTCChannelMessageEvent;
+    case: "webrtcChannelMessage";
+  } | {
+    /**
+     * @generated from field: termx.client.binding.v1.WebRTCChannelClosedEvent webrtc_channel_closed = 11;
+     */
+    value: WebRTCChannelClosedEvent;
+    case: "webrtcChannelClosed";
+  } | {
+    /**
+     * @generated from field: termx.client.binding.v1.WebRTCBufferedAmountLowEvent webrtc_buffered_amount_low = 12;
+     */
+    value: WebRTCBufferedAmountLowEvent;
+    case: "webrtcBufferedAmountLow";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message termx.client.binding.v1.PlatformEvent.
+ * Use `create(PlatformEventSchema)` to create a new message.
+ */
+export const PlatformEventSchema: GenMessage<PlatformEvent> = /*@__PURE__*/
+  messageDesc(file_bindingpb_client_binding, 37);
+
+/**
  * @generated from message termx.client.binding.v1.PlatformRequest
  */
 export type PlatformRequest = Message<"termx.client.binding.v1.PlatformRequest"> & {
@@ -758,6 +1159,60 @@ export type PlatformRequest = Message<"termx.client.binding.v1.PlatformRequest">
      */
     value: ReportConnectionOutcomeRequest;
     case: "cloudReportOutcome";
+  } | {
+    /**
+     * @generated from field: termx.client.binding.v1.WebRTCOpenPeerRequest webrtc_open_peer = 30;
+     */
+    value: WebRTCOpenPeerRequest;
+    case: "webrtcOpenPeer";
+  } | {
+    /**
+     * @generated from field: termx.client.binding.v1.WebRTCPeerRequest webrtc_create_offer = 31;
+     */
+    value: WebRTCPeerRequest;
+    case: "webrtcCreateOffer";
+  } | {
+    /**
+     * @generated from field: termx.client.binding.v1.WebRTCApplyAnswerRequest webrtc_apply_answer = 32;
+     */
+    value: WebRTCApplyAnswerRequest;
+    case: "webrtcApplyAnswer";
+  } | {
+    /**
+     * @generated from field: termx.client.binding.v1.WebRTCPeerRequest webrtc_wait_ready = 33;
+     */
+    value: WebRTCPeerRequest;
+    case: "webrtcWaitReady";
+  } | {
+    /**
+     * @generated from field: termx.client.binding.v1.WebRTCChannelSendRequest webrtc_channel_send = 34;
+     */
+    value: WebRTCChannelSendRequest;
+    case: "webrtcChannelSend";
+  } | {
+    /**
+     * @generated from field: termx.client.binding.v1.WebRTCChannelThresholdRequest webrtc_channel_threshold = 35;
+     */
+    value: WebRTCChannelThresholdRequest;
+    case: "webrtcChannelThreshold";
+  } | {
+    /**
+     * @generated from field: termx.client.binding.v1.WebRTCPeerSnapshotRequest webrtc_peer_snapshot = 36;
+     */
+    value: WebRTCPeerSnapshotRequest;
+    case: "webrtcPeerSnapshot";
+  } | {
+    /**
+     * @generated from field: termx.client.binding.v1.WebRTCCloseRequest webrtc_close_peer = 37;
+     */
+    value: WebRTCCloseRequest;
+    case: "webrtcClosePeer";
+  } | {
+    /**
+     * @generated from field: termx.client.binding.v1.WebRTCCloseRequest webrtc_close_channel = 38;
+     */
+    value: WebRTCCloseRequest;
+    case: "webrtcCloseChannel";
   } | { case: undefined; value?: undefined };
 };
 
@@ -766,7 +1221,7 @@ export type PlatformRequest = Message<"termx.client.binding.v1.PlatformRequest">
  * Use `create(PlatformRequestSchema)` to create a new message.
  */
 export const PlatformRequestSchema: GenMessage<PlatformRequest> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 22);
+  messageDesc(file_bindingpb_client_binding, 38);
 
 /**
  * @generated from message termx.client.binding.v1.PlatformResponse
@@ -833,6 +1288,36 @@ export type PlatformResponse = Message<"termx.client.binding.v1.PlatformResponse
      */
     value: ReportConnectionOutcomeResponse;
     case: "cloudOutcomeReported";
+  } | {
+    /**
+     * @generated from field: termx.client.binding.v1.WebRTCPeerOpened webrtc_peer_opened = 30;
+     */
+    value: WebRTCPeerOpened;
+    case: "webrtcPeerOpened";
+  } | {
+    /**
+     * @generated from field: termx.client.binding.v1.WebRTCCreateOfferResult webrtc_offer = 31;
+     */
+    value: WebRTCCreateOfferResult;
+    case: "webrtcOffer";
+  } | {
+    /**
+     * @generated from field: termx.client.binding.v1.WebRTCPeerReady webrtc_peer_ready = 32;
+     */
+    value: WebRTCPeerReady;
+    case: "webrtcPeerReady";
+  } | {
+    /**
+     * @generated from field: termx.client.binding.v1.WebRTCChannelSendResult webrtc_channel_sent = 33;
+     */
+    value: WebRTCChannelSendResult;
+    case: "webrtcChannelSent";
+  } | {
+    /**
+     * @generated from field: termx.client.binding.v1.WebRTCPeerSnapshot webrtc_peer_snapshot = 34;
+     */
+    value: WebRTCPeerSnapshot;
+    case: "webrtcPeerSnapshot";
   } | { case: undefined; value?: undefined };
 };
 
@@ -841,7 +1326,7 @@ export type PlatformResponse = Message<"termx.client.binding.v1.PlatformResponse
  * Use `create(PlatformResponseSchema)` to create a new message.
  */
 export const PlatformResponseSchema: GenMessage<PlatformResponse> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 23);
+  messageDesc(file_bindingpb_client_binding, 39);
 
 /**
  * @generated from enum termx.client.binding.v1.ConnectIntent

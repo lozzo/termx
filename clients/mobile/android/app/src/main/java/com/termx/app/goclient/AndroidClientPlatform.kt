@@ -98,8 +98,19 @@ class AndroidClientPlatform(
                     response.setCloudQualityReported(runBlocking { cloud.reportQualityProto(request.cloudReportQuality) })
                 ClientBinding.PlatformRequest.RequestCase.CLOUD_REPORT_OUTCOME ->
                     response.setCloudOutcomeReported(runBlocking { cloud.reportOutcomeProto(request.cloudReportOutcome) })
+                ClientBinding.PlatformRequest.RequestCase.WEBRTC_OPEN_PEER,
+                ClientBinding.PlatformRequest.RequestCase.WEBRTC_CREATE_OFFER,
+                ClientBinding.PlatformRequest.RequestCase.WEBRTC_APPLY_ANSWER,
+                ClientBinding.PlatformRequest.RequestCase.WEBRTC_WAIT_READY,
+                ClientBinding.PlatformRequest.RequestCase.WEBRTC_CHANNEL_SEND,
+                ClientBinding.PlatformRequest.RequestCase.WEBRTC_CHANNEL_THRESHOLD,
+                ClientBinding.PlatformRequest.RequestCase.WEBRTC_PEER_SNAPSHOT,
+                ClientBinding.PlatformRequest.RequestCase.WEBRTC_CLOSE_PEER,
+                ClientBinding.PlatformRequest.RequestCase.WEBRTC_CLOSE_CHANNEL ->
+                    throw ManagedEndpointFailure("protocol", "browser WebRTC primitive reached Android platform")
                 ClientBinding.PlatformRequest.RequestCase.REQUEST_NOT_SET ->
                     throw ManagedEndpointFailure("protocol", "platform request payload is missing")
+                null -> throw ManagedEndpointFailure("protocol", "platform request case is invalid")
             }
             response.build()
         } catch (failure: ManagedEndpointFailure) {
