@@ -9,7 +9,7 @@
 这些图描述目标架构，不描述当前 ME012 原型实现。核心结论：
 
 - local 和 SSH 完全绕过 TermX 托管云。
-- WebRTC 使用 Hub 交换 signaling，但 Hub 不承载 terminal protocol。
+- Direct 使用 daemon embedded signaling，SSH 使用 tunnel 内 signaling，只有 managed WebRTC 使用 Hub signaling；任何 signaling 服务都不承载 terminal protocol。
 - 基础 WebRTC 策略优先 direct；失败且存在有效 `RelayLease` 时才走 Relay。启用 SmartRoute 后，direct 可达但质量较差时也可以主动选择 Relay。
 - direct、single Relay 和 Relay Mesh 最终都建立同一种 DTLS DataChannel，运行同一种端到端 capability handshake 和 termx protocol。
 - Control Plane、Hub 和 Relay 都不能看到原始 `CapabilityGrant`。
@@ -28,7 +28,8 @@ flowchart LR
 
     subgraph FreePaths["免费路径：不依赖 TermX 云"]
         LOCAL["local unix socket"]
-        SSH["OpenSSH stdio proxy<br/>严格 host key 校验"]
+        DIRECT["daemon embedded signaling<br/>ICE-TCP"]
+        SSH["Go SSH direct-tcpip<br/>loopback ICE-TCP"]
     end
 
     subgraph ManagedCloud["TermX 托管云（私有源码）"]
@@ -44,7 +45,8 @@ flowchart LR
     end
 
     EM -->|"local transport"| LOCAL --> D1
-    EM -->|"ssh transport"| SSH --> D2
+    EM -->|"Direct WebRTC TCP"| DIRECT --> D2
+    EM -->|"SSH WebRTC TCP"| SSH --> D2
 
     EM -->|"TLS：登录 / 申请托管 session"| CP
     D3 -->|"TLS：设备注册 / presence 申请"| CP
@@ -67,7 +69,7 @@ flowchart LR
     classDef pathNode fill:#eff6ff,stroke:#1d4ed8,color:#172554;
     class TUI,APP,EM,D1,D2,D3 openNode;
     class CP,HUB,RELAY privateNode;
-    class LOCAL,SSH pathNode;
+    class LOCAL,DIRECT,SSH pathNode;
 ```
 
 图中最后一条逻辑 E2E 连接不是额外网络通道。它运行在 direct path 或 Relay path 已建立的同一个 DTLS DataChannel 上。

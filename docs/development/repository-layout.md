@@ -15,7 +15,7 @@ client/
   port/              host capability、credential、cloud、clock、lifecycle 接口
   adapter/
     local/           local Unix attempt adapter
-    ssh/             SSH stdio attempt adapter
+    ssh/             Go SSH direct-tcpip + ICE-TCP attempt adapter
     managed/         portable Cloud signaling、remote auth、Hello、Proto session attempt adapter
       pion/          native/Android Pion RTCPeerConnection primitive
     protocol/        ready transport 到 termx protocol service 的映射
@@ -60,7 +60,7 @@ cmd / TUI / plugin / platform client
        client runtime / platform binding
                   |
                   v
- transport: Unix / TCP+TLS / SSH / WebRTC / JNI / Swift / WASM
+ transport: Unix / WebRTC DataChannel / JNI / Swift / WASM
                   |
                   v
  protocol framing: Hello / channel / correlation / proto payload

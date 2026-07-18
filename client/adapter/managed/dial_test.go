@@ -133,7 +133,7 @@ func managedAttempt(t *testing.T) clientruntime.AttemptRequest {
 		Routes: map[endpoint.RouteID]endpoint.AccessRoute{
 			"cloud": {
 				ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true, Source: endpoint.SourceCloud, PolicySource: endpoint.SourceUser,
-				CredentialRef: "credential:studio", TargetDeviceID: "device-1", AccountProfile: "default", RelayMode: endpoint.RelayDirect,
+				CredentialRef: "credential:studio", TargetDeviceID: "device-1", AccountProfileRef: "default", RelayMode: endpoint.RelayDirect,
 			},
 		},
 	}

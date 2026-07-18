@@ -46,7 +46,7 @@ func TestNormalizeEmptyRegistryDoesNotInventLocalEndpoint(t *testing.T) {
 }
 
 func TestNormalizeRejectsNonSerializablePolicyState(t *testing.T) {
-	endpoint := NewSSHEndpoint("peer", "Peer", "peer", "", "auto", ConnectOnDemand)
+	endpoint := NewSSHEndpoint("peer", "Peer", "peer", "", "127.0.0.1:41120", "127.0.0.1:41121", ConnectOnDemand)
 	endpoint.SelectionPolicy = SelectionPolicy{HedgeDelay: time.Second, HedgeDelayConfigured: false}
 	registry := Registry{Version: RegistryVersion, Default: "peer", Endpoints: map[EndpointID]Endpoint{"peer": endpoint}}
 	if _, err := registry.Normalize(); !IsCode(err, ErrorConfig) {
@@ -66,7 +66,7 @@ func TestNormalizeRejectsNonSerializablePolicyState(t *testing.T) {
 
 func TestParseEndpointRoutesV2(t *testing.T) {
 	registry, err := Parse([]byte(`
-version: 2
+version: 3
 default: studio
 endpoints:
   studio:
@@ -88,17 +88,20 @@ endpoints:
         target_device_id: device-studio
         relay_mode: relay_only
       lan:
-        kind: direct-tls
+        kind: direct-webrtc-tcp
         enabled: true
         priority: 10
         credential_ref: grant:studio
         source: bootstrap
-        addresses:
+        signaling_addresses:
+          - 192.0.2.10:41120
+          - studio.local:41120
+        ice_tcp_addresses:
           - 192.0.2.10:41120
           - studio.local:41120
         server_name: studio.local
       ssh:
-        kind: ssh-stdio
+        kind: ssh-webrtc-tcp
         enabled: true
         priority: 20
         credential_ref: ssh:studio
@@ -107,7 +110,8 @@ endpoints:
         port: 22
         user: build
         proxy_jump: bastion
-        remote_socket: auto
+        remote_signaling_address: 127.0.0.1:41120
+        remote_ice_tcp_address: 127.0.0.1:41121
         host_key_fingerprints:
           - SHA256:ssh-host
 `))
@@ -121,7 +125,7 @@ endpoints:
 	if got := studio.RouteList(); len(got) != 3 || got[0].ID != "cloud" || got[1].ID != "lan" || got[2].ID != "ssh" {
 		t.Fatalf("route list is not stable: %#v", got)
 	}
-	if route := studio.Routes["ssh"]; route.Kind != RouteSSHStdio || route.Host != "studio-host" || route.User != "build" || route.ProxyJump != "bastion" || route.RemoteSocket != "auto" {
+	if route := studio.Routes["ssh"]; route.Kind != RouteSSHWebRTCTCP || route.Host != "studio-host" || route.User != "build" || route.ProxyJump != "bastion" || route.RemoteSignalingAddress != "127.0.0.1:41120" || route.RemoteICETCPAddress != "127.0.0.1:41121" {
 		t.Fatalf("unexpected ssh route %#v", route)
 	}
 }
@@ -133,17 +137,17 @@ func TestParseRejectsOldUnknownOversizeAndInvalidRegistry(t *testing.T) {
 		code ErrorCode
 	}{
 		{name: "empty document", data: nil, code: ErrorConfig},
-		{name: "missing endpoints", data: []byte("version: 2\ndefault: ''\n"), code: ErrorConfig},
-		{name: "missing default", data: []byte("version: 2\nendpoints: {}\n"), code: ErrorConfig},
-		{name: "non portable hedge delay", data: []byte("version: 2\ndefault: lab\nendpoints:\n  lab:\n    selection:\n      hedge_delay: 1.5s\n    routes:\n      ssh:\n        kind: ssh-stdio\n        host: lab\n"), code: ErrorConfig},
+		{name: "missing endpoints", data: []byte("version: 3\ndefault: ''\n"), code: ErrorConfig},
+		{name: "missing default", data: []byte("version: 3\nendpoints: {}\n"), code: ErrorConfig},
+		{name: "non portable hedge delay", data: []byte("version: 3\ndefault: lab\nendpoints:\n  lab:\n    selection:\n      hedge_delay: 1.5s\n    routes:\n      ssh:\n        kind: ssh-webrtc-tcp\n        host: lab\n"), code: ErrorConfig},
 		{name: "old schema", data: []byte("version: 1\nconnections:\n  local:\n    transport: local\n"), code: ErrorConfig},
-		{name: "unknown field", data: []byte("version: 2\nendpoints:\n  local:\n    routes:\n      local:\n        kind: local-unix\n        socket: auto\n        surprise: true\n"), code: ErrorConfig},
-		{name: "multiple documents", data: []byte("version: 2\nendpoints: {}\n---\nversion: 2\n"), code: ErrorConfig},
+		{name: "unknown field", data: []byte("version: 3\nendpoints:\n  local:\n    routes:\n      local:\n        kind: local-unix\n        socket: auto\n        surprise: true\n"), code: ErrorConfig},
+		{name: "multiple documents", data: []byte("version: 3\nendpoints: {}\n---\nversion: 3\n"), code: ErrorConfig},
 		{name: "oversize", data: bytes.Repeat([]byte("x"), MaxRegistryBytes+1), code: ErrorSizeLimit},
-		{name: "identity half", data: []byte("version: 2\nendpoints:\n  peer:\n    device_id: device\n    routes:\n      ssh:\n        kind: ssh-stdio\n        host: peer\n"), code: ErrorConfig},
-		{name: "identity whitespace", data: []byte("version: 2\ndefault: peer\nendpoints:\n  peer:\n    device_id: ' device'\n    device_fingerprint: SHA256:device\n    routes:\n      ssh:\n        kind: ssh-stdio\n        host: peer\n"), code: ErrorConfig},
-		{name: "direct missing identity", data: []byte("version: 2\nendpoints:\n  peer:\n    routes:\n      lan:\n        kind: direct-tls\n        addresses: [peer:41120]\n"), code: ErrorConfig},
-		{name: "mixed priority", data: []byte("version: 2\nendpoints:\n  peer:\n    routes:\n      one:\n        kind: ssh-stdio\n        host: one\n        priority: 10\n      two:\n        kind: ssh-stdio\n        host: two\n"), code: ErrorConfig},
+		{name: "identity half", data: []byte("version: 3\nendpoints:\n  peer:\n    device_id: device\n    routes:\n      ssh:\n        kind: ssh-webrtc-tcp\n        host: peer\n"), code: ErrorConfig},
+		{name: "identity whitespace", data: []byte("version: 3\ndefault: peer\nendpoints:\n  peer:\n    device_id: ' device'\n    device_fingerprint: SHA256:device\n    routes:\n      ssh:\n        kind: ssh-webrtc-tcp\n        host: peer\n"), code: ErrorConfig},
+		{name: "direct missing identity", data: []byte("version: 3\nendpoints:\n  peer:\n    routes:\n      lan:\n        kind: direct-webrtc-tcp\n        signaling_addresses: [peer:41120]\n        ice_tcp_addresses: [peer:41120]\n"), code: ErrorConfig},
+		{name: "mixed priority", data: []byte("version: 3\nendpoints:\n  peer:\n    routes:\n      one:\n        kind: ssh-webrtc-tcp\n        host: one\n        priority: 10\n      two:\n        kind: ssh-webrtc-tcp\n        host: two\n"), code: ErrorConfig},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -171,7 +175,7 @@ func TestParseRejectsOldUnknownOversizeAndInvalidRegistry(t *testing.T) {
 }
 
 func TestEndpointRuntimeChangeClassification(t *testing.T) {
-	endpoint := NewSSHEndpoint("lab", "Lab", "lab.example", "ssh:lab", "auto", ConnectOnDemand)
+	endpoint := NewSSHEndpoint("lab", "Lab", "lab.example", "ssh:lab", "127.0.0.1:41120", "127.0.0.1:41121", ConnectOnDemand)
 	normalized, err := (Registry{Version: RegistryVersion, Default: "lab", Endpoints: map[EndpointID]Endpoint{"lab": endpoint}}).Normalize()
 	if err != nil {
 		t.Fatal(err)
@@ -204,7 +208,7 @@ func TestSaveRoundTripV2AndFileMode(t *testing.T) {
 	priority := 10
 	endpoint := NewManagedEndpoint("studio", "Studio", DaemonIdentity{DeviceID: "device-studio", DeviceFingerprint: "SHA256:studio"}, "device-studio", "grant:studio", RelayDirect, ConnectOnDemand)
 	endpoint.SelectionPolicy = SelectionPolicy{HedgeDelay: 1500 * time.Millisecond, HedgeDelayConfigured: true}
-	endpoint.Routes["lan"] = AccessRoute{ID: "lan", Kind: RouteDirectTLS, Enabled: true, Priority: &priority, Source: SourceBootstrap, CredentialRef: "grant:studio", Addresses: []string{"studio.local:41120"}}
+	endpoint.Routes["lan"] = AccessRoute{ID: "lan", Kind: RouteDirectWebRTCTCP, Enabled: true, Priority: &priority, Source: SourceBootstrap, CredentialRef: "grant:studio", SignalingAddresses: []string{"studio.local:41120"}, ICETCPAddresses: []string{"studio.local:41120"}}
 	cloud := endpoint.Routes["cloud"]
 	cloud.Priority = intPointer(20)
 	endpoint.Routes["cloud"] = cloud
@@ -255,7 +259,7 @@ func TestLoadReadsDefaultPathV2(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("version: 2\ndefault: local\nendpoints:\n  local:\n    label: Configured Local\n    enabled: true\n    connect_mode: auto\n    routes:\n      local:\n        kind: local-unix\n        enabled: true\n        socket: auto\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("version: 3\ndefault: local\nendpoints:\n  local:\n    label: Configured Local\n    enabled: true\n    connect_mode: auto\n    routes:\n      local:\n        kind: local-unix\n        enabled: true\n        socket: auto\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	registry, err := Load("")

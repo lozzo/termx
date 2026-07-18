@@ -60,7 +60,7 @@ TermX 远程平台必须同时满足两个独立授权问题：
 
 用途：daemon 证明自己是已配对的安全设备。
 
-每个 daemon 使用一份全局、稳定的 Ed25519 长期密钥对；local、SSH、direct TLS 和 managed WebRTC 不得各自生成身份：
+每个 daemon 使用一份全局、稳定的 Ed25519 长期密钥对；local、Direct WebRTC TCP、SSH WebRTC TCP 和 managed WebRTC 不得各自生成身份：
 
 - private key 永不离开 daemon 安全存储。
 - DeviceIdentity 首次创建由跨进程文件锁串行化；同一安全域不能因两个 daemon 并发启动生成两把长期 key。
@@ -221,7 +221,7 @@ CapabilityGrant       -> Client secure store and daemon E2E only
 
 ## 5. 端到端安全 Channel 授权协议
 
-当前 wire contract 为 remote auth v2。它把 channel binding 抽象为 `kind + SHA-256 hash`，由 direct TLS、DTLS DataChannel 和 owner-only local Unix PairingExchange 共用同一 DeviceIdentity/client proof 状态机。CONN002 已完成 contract、DTLS adapter 与本地 pairing listener；真实 direct TLS ingress 仍由 CONN004 接入，不能因为 helper 已存在就宣称 LAN route 已交付。
+当前 wire contract 把 channel binding 抽象为 `kind + SHA-256 hash`，由 Direct/SSH/managed WebRTC 的 DTLS DataChannel 和 owner-only local Unix PairingExchange 共用同一 DeviceIdentity/client proof 状态机。真实 connector 与用户链路完成度只看 `workflow.md`，不能因为 helper 已存在就宣称 Route 已交付。
 
 共同不变量：CapabilityGrant 和携带 PairingTicket 的 EndpointBootstrapBundle 只提交给 owning daemon；Control Plane、Companion、Hub、Relay 和 signaling 永远不得接收正文。
 
@@ -336,7 +336,7 @@ daemon 必须按以下顺序 fail closed：
 5. ClientAccessIdentity Ed25519 proof 有效。
 6. scope 可以无歧义映射为 core-v2 `TransportScope`；`ManageClientAccess` 单独映射。
 
-签名正确但未登记在当前 AccessStore 的 grant 按 revoked/unknown fail closed，不能通过单独构造 `Revocations` 或 nil checker 绕过。所有 direct TLS/DTLS session handshake 在发送 `DeviceHello` 前都必须确认 AccessStore owner 可用；`local_unix` 只允许 owner pairing acceptor，generic session acceptor 在领域入口直接拒绝。
+签名正确但未登记在当前 AccessStore 的 grant 按 revoked/unknown fail closed，不能通过单独构造 `Revocations` 或 nil checker 绕过。所有远程 DTLS DataChannel handshake 在发送 `DeviceHello` 前都必须确认 AccessStore owner 可用；`local_unix` 只允许 owner pairing acceptor，generic session acceptor 在领域入口直接拒绝。
 
 成功后 `CapabilityAccepted` 只返回 grant ID、subject fingerprint、规范化 scope summary 和 auth session。普通 capability 验证、access list 和 reconnect 只读内存状态，不刷新 last-seen、不清理记录、不写 Cloud/数据库或本地 AccessStore。
 
@@ -373,7 +373,7 @@ daemon owner 通过认证后的 `remote.access.ticket.create` 管理 RPC 创建 
 
 ### 6.2 离线与故障隔离
 
-PairingTicket、DeviceIdentity、ClientAccessIdentity、AccessStore 和 capability handshake 都不依赖 TermX Cloud、账号订阅或 Control Plane 数据库。当前 CONN002 桌面链路可通过 owner-only local Unix pairing socket 完成；Official Android 已本地验证同一 canonical protobuf、identity/ticket 签名和时间边界并准备 Endpoint key。direct TLS、SSH route 和 Official App 的完整兑换入口分别由后续 CONN004/CONN007 接入，但必须复用同一 contract 和 daemon AccessStore，不能创建第二份授权真值。
+PairingTicket、DeviceIdentity、ClientAccessIdentity、AccessStore 和 capability handshake 都不依赖 TermX Cloud、账号订阅或 Control Plane 数据库。Direct、SSH 和 Android 的完整兑换入口按 `workflow.md` 推进，但必须复用同一 contract 和 daemon AccessStore，不能创建第二份授权真值。
 
 Cloud/Companion/Hub/Relay 故障只能影响 managed route。已有 local/SSH/direct route 与未过期、未撤销的 bound grant 应继续工作；普通连接不因 Cloud 离线产生数据库写入或 fallback。
 
@@ -526,7 +526,7 @@ UsageEvent {
 ## 13. 安全验收不变量
 
 - Hub、Relay 和 Control Plane 的内存、日志、请求 schema 与数据库中都不存在原始 PairingTicket、CapabilityGrant 或客户端私钥。
-- daemon 只在本次 direct TLS 或 DTLS DataChannel 的设备证明、channel binding 和 capability challenge 全部通过后创建 scoped protocol session；当前 direct TLS 在 CONN004 完成前仍属于待实现路径。
+- daemon 只在本次远程 DTLS DataChannel 的设备证明、channel binding 和 capability challenge 全部通过后创建 scoped protocol session；connector 尚未完成时必须显式 unavailable，不得回退旧 transport。
 - client 只信任 pinned DeviceFingerprint，不信任 Hub 返回的 label、DeviceID 或 online 状态。
 - Edge access 与 Relay lease 都是短期、受 audience 约束、不可替代 terminal capability。
 - Relay 不能解密 DataChannel，也不能改变 scope。

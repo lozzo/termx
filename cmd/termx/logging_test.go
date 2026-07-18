@@ -103,7 +103,7 @@ func TestResolveV3SocketRequiresRegisteredLocalRoute(t *testing.T) {
 	if _, err := resolveV3SocketForConnectionRegistry("", endpointdomain.Registry{}); err == nil {
 		t.Fatal("empty registry must not start an unregistered local daemon")
 	}
-	remote := endpointdomain.NewSSHEndpoint("remote", "Remote", "remote.example", "", "auto", endpointdomain.ConnectOnDemand)
+	remote := endpointdomain.NewSSHEndpoint("remote", "Remote", "remote.example", "", "127.0.0.1:41120", "127.0.0.1:41121", endpointdomain.ConnectOnDemand)
 	registry := endpointdomain.Registry{Version: endpointdomain.RegistryVersion, Default: "remote", Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{"remote": remote}}
 	if _, err := resolveV3SocketForConnectionRegistry("", registry); err == nil {
 		t.Fatal("remote-only registry must not fall back to the default local socket")

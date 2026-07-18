@@ -30,7 +30,7 @@ func TestEndpointMutationHonorsRootTimeoutWhileRegistryLocked(t *testing.T) {
 	command.SetErr(io.Discard)
 	command.SetArgs([]string{
 		"--timeout", "100ms", "endpoint", "--registry", registryPath,
-		"add", "ssh", "blocked", "--host", "blocked.example", "--remote-socket", "auto",
+		"add", "ssh", "blocked", "--host", "blocked.example",
 	})
 	started := time.Now()
 	err = command.Execute()
@@ -69,7 +69,7 @@ func TestEndpointRegistryCommandLifecycle(t *testing.T) {
 	if err := identityUpdate.Execute(); err == nil || !strings.Contains(err.Error(), "unknown flag") {
 		t.Fatalf("generic endpoint update must not mutate daemon identity: %v", err)
 	}
-	run("endpoint", "route", "update", "west", "ssh", "--remote-socket", "/run/user/1000/termx.sock")
+	run("endpoint", "route", "update", "west", "ssh", "--remote-signaling-address", "127.0.0.1:42120", "--remote-ice-tcp-address", "127.0.0.1:42121")
 	run("endpoint", "set-default", "west")
 
 	listing := run("endpoint", "list", "--json")

@@ -18,7 +18,7 @@ import (
 )
 
 // v3ClientAccessRuntime 是当前 daemon 进程唯一装配的 DeviceIdentity、AccessStore 与 local pairing socket。
-// local protocol、SSH stdio、future direct TLS 和 managed WebRTC 都必须引用这里的同一 Identity/Store，不能各自加载第二份授权真值。
+// local protocol、Direct/SSH/managed WebRTC 都必须引用这里的同一 Identity/Store，不能各自加载第二份授权真值。
 type v3ClientAccessRuntime struct {
 	Identity      remoteauth.Identity
 	Store         *remoteauth.AccessStore

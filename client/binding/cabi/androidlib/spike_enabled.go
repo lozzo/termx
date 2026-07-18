@@ -99,7 +99,7 @@ func (host *androidSpikeHost) OpenSession(ctx context.Context, request *bindingp
 	}
 	target := endpoint.Endpoint{ID: "android-spike", DaemonIdentity: endpoint.DaemonIdentity{DeviceID: host.identity.DeviceID, DeviceFingerprint: host.identity.Fingerprint}, Routes: map[endpoint.RouteID]endpoint.AccessRoute{
 		"webrtc": {ID: "webrtc", Kind: endpoint.RouteManagedWebRTC, Enabled: true, Source: endpoint.SourceCloud, PolicySource: endpoint.SourceUser,
-			CredentialRef: "credential:android-spike", TargetDeviceID: host.identity.DeviceID, AccountProfile: "default", RelayMode: endpoint.RelayDirect},
+			CredentialRef: "credential:android-spike", TargetDeviceID: host.identity.DeviceID, AccountProfileRef: "default", RelayMode: endpoint.RelayDirect},
 	}}
 	dialer := &managed.Dialer{Cloud: androidSpikeCompanion(host.ctx, host.answerer), Peers: pionadapter.Factory{}, ClientName: "android-go-client",
 		Authorization: managed.CapabilityAuthorizer{Credentials: androidSpikeCredentialSource{credential: host.credential}, Now: func() time.Time { return host.now }}, Now: func() time.Time { return host.now }}

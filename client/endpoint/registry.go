@@ -16,7 +16,13 @@ import (
 const (
 	// RegistryVersion 是破坏性多 Route registry 的唯一受支持版本。
 	// v1 把一个 endpoint 与一个 transport 绑定，不能兼容读取，否则会重新制造两套连接真值。
-	RegistryVersion = 2
+	RegistryVersion = 3
+	// RouteConfigVersion 是 generated EndpointRouteConfigV1 的唯一当前版本。
+	RouteConfigVersion uint32 = 1
+	// EndpointConfigVersion 是 generated EndpointConfigV1 的唯一当前版本。
+	EndpointConfigVersion uint32 = 1
+	// EndpointRegistryContractVersion 是 generated EndpointRegistryV1 的唯一当前版本。
+	EndpointRegistryContractVersion uint32 = 1
 	// MaxRegistryBytes 限制普通配置文件大小，防止错误文件或不受信输入耗尽客户端内存。
 	MaxRegistryBytes = 1 << 20
 	// DefaultFileName 是 CLI/TUI 共享连接注册表的默认文件名。
@@ -31,10 +37,10 @@ const (
 const (
 	// RouteLocalUnix 表示当前客户端通过本机 unix socket 到达 daemon。
 	RouteLocalUnix RouteKind = "local-unix"
-	// RouteSSHStdio 表示通过 OpenSSH 启动固定 stdio proxy 到达 daemon。
-	RouteSSHStdio RouteKind = "ssh-stdio"
-	// RouteDirectTLS 表示通过 TLS 1.3 frame transport 到达 daemon。
-	RouteDirectTLS RouteKind = "direct-tls"
+	// RouteSSHWebRTCTCP 表示通过 Go SSH direct-tcpip tunnel 到达 daemon 的 WebRTC ICE-TCP listener。
+	RouteSSHWebRTCTCP RouteKind = "ssh-webrtc-tcp"
+	// RouteDirectWebRTCTCP 表示通过 daemon embedded signaling 与 ICE-TCP 建立 WebRTC DataChannel。
+	RouteDirectWebRTCTCP RouteKind = "direct-webrtc-tcp"
 	// RouteManagedWebRTC 表示通过 Cloud Companion/Hub 建立 managed WebRTC DataChannel。
 	RouteManagedWebRTC RouteKind = "managed-webrtc"
 )
@@ -138,7 +144,7 @@ type ConnectMode string
 type RelayMode string
 
 // Path 只描述 managed WebRTC transport 内部实际经过的网络路径。
-// local Unix、SSH 和 direct TLS route 不得伪装成 PathDirect。
+// local Unix、Direct/SSH WebRTC TCP route 不得伪装成 managed PathDirect。
 type Path string
 
 // EndpointSource 记录 route/label 的来源，用于确定性合并和审计。
@@ -210,7 +216,7 @@ func (identity DaemonIdentity) Empty() bool {
 }
 
 // Validate 校验 DeviceID 与 fingerprint 必须同时存在且不含空白。
-// required=true 用于 assembler、direct TLS 和 managed route，禁止用裸 DeviceID 或展示字段建立信任。
+// required=true 用于 assembler、Direct WebRTC TCP 和 managed route，禁止用裸 DeviceID 或展示字段建立信任。
 func (identity DaemonIdentity) Validate(required bool) error {
 	deviceID := strings.TrimSpace(identity.DeviceID)
 	fingerprint := strings.TrimSpace(identity.DeviceFingerprint)
@@ -260,19 +266,23 @@ type AccessRoute struct {
 
 	Socket string `json:"socket,omitempty"`
 
-	Host                string   `json:"host,omitempty"`
-	Port                uint16   `json:"port,omitempty"`
-	User                string   `json:"user,omitempty"`
-	ProxyJump           string   `json:"proxy_jump,omitempty"`
-	RemoteSocket        string   `json:"remote_socket,omitempty"`
-	HostKeyFingerprints []string `json:"host_key_fingerprints,omitempty"`
+	Host                   string                `json:"host,omitempty"`
+	Port                   uint16                `json:"port,omitempty"`
+	User                   string                `json:"user,omitempty"`
+	ProxyJump              string                `json:"proxy_jump,omitempty"`
+	HostKeyFingerprints    []string              `json:"host_key_fingerprints,omitempty"`
+	CredentialDescriptor   *CredentialDescriptor `json:"credential_descriptor,omitempty"`
+	RemoteSignalingAddress string                `json:"remote_signaling_address,omitempty"`
+	RemoteICETCPAddress    string                `json:"remote_ice_tcp_address,omitempty"`
 
-	Addresses  []string `json:"addresses,omitempty"`
-	ServerName string   `json:"server_name,omitempty"`
+	SignalingAddresses  []string `json:"signaling_addresses,omitempty"`
+	ICETCPAddresses     []string `json:"ice_tcp_addresses,omitempty"`
+	AdvertisedAddresses []string `json:"advertised_addresses,omitempty"`
+	ServerName          string   `json:"server_name,omitempty"`
 
-	TargetDeviceID string    `json:"target_device_id,omitempty"`
-	AccountProfile string    `json:"account_profile,omitempty"`
-	RelayMode      RelayMode `json:"relay_mode,omitempty"`
+	TargetDeviceID    string    `json:"target_device_id,omitempty"`
+	AccountProfileRef string    `json:"account_profile_ref,omitempty"`
+	RelayMode         RelayMode `json:"relay_mode,omitempty"`
 }
 
 // Endpoint 表示当前客户端要访问的一个逻辑 daemon。
@@ -342,7 +352,7 @@ type EndpointSession struct {
 }
 
 // LocalDiscoveryCandidate 是 LAN discovery 的短期内存候选。
-// Address/label/DeviceID 都不是信任锚点；最终必须由 direct TLS handshake 验证 pinned fingerprint。
+// Address/label/DeviceID 都不是信任锚点；最终必须由 DTLS DataChannel auth 验证 pinned fingerprint。
 type LocalDiscoveryCandidate struct {
 	ClaimedIdentity    DaemonIdentity `json:"claimed_identity"`
 	Address            string         `json:"address"`
@@ -353,7 +363,7 @@ type LocalDiscoveryCandidate struct {
 }
 
 // Validate 校验 LAN discovery candidate 的内存 TTL 与结构边界。
-// announcement 即使带签名也只是地址 side proof；最终连接仍必须通过 direct TLS 验证 Endpoint pin。
+// announcement 即使带签名也只是地址 side proof；最终连接仍必须通过 DTLS DataChannel auth 验证 Endpoint pin。
 func (candidate LocalDiscoveryCandidate) Validate(now time.Time) error {
 	if err := candidate.ClaimedIdentity.Validate(true); err != nil {
 		return fmt.Errorf("local discovery identity: %w", err)
@@ -373,20 +383,24 @@ func (candidate LocalDiscoveryCandidate) Validate(now time.Time) error {
 // DialIdentity 是单条 route 的运行时连接身份。
 // priority/enabled/manual-only/source 不进入该值；它们只影响未来 selection，不要求热切换当前 session。
 type DialIdentity struct {
-	Kind                RouteKind
-	CredentialRef       string
-	Socket              string
-	Host                string
-	Port                uint16
-	User                string
-	ProxyJump           string
-	RemoteSocket        string
-	HostKeyFingerprints string
-	Addresses           string
-	ServerName          string
-	TargetDeviceID      string
-	AccountProfile      string
-	RelayMode           RelayMode
+	Kind                   RouteKind
+	CredentialRef          string
+	Socket                 string
+	Host                   string
+	Port                   uint16
+	User                   string
+	ProxyJump              string
+	CredentialDescriptor   string
+	RemoteSignalingAddress string
+	RemoteICETCPAddress    string
+	HostKeyFingerprints    string
+	SignalingAddresses     string
+	ICETCPAddresses        string
+	AdvertisedAddresses    string
+	ServerName             string
+	TargetDeviceID         string
+	AccountProfileRef      string
+	RelayMode              RelayMode
 }
 
 // DefaultPath 返回 connection registry 默认读取路径。
@@ -632,10 +646,11 @@ func (route AccessRoute) Validate(identity DaemonIdentity) error {
 		{name: "host", value: route.Host},
 		{name: "user", value: route.User},
 		{name: "proxy_jump", value: route.ProxyJump},
-		{name: "remote_socket", value: route.RemoteSocket},
+		{name: "remote_signaling_address", value: route.RemoteSignalingAddress},
+		{name: "remote_ice_tcp_address", value: route.RemoteICETCPAddress},
 		{name: "server_name", value: route.ServerName},
 		{name: "target_device_id", value: route.TargetDeviceID},
-		{name: "account_profile", value: route.AccountProfile},
+		{name: "account_profile_ref", value: route.AccountProfileRef},
 	} {
 		if err := validateCanonicalRouteText(route.ID, field.name, field.value, false); err != nil {
 			return err
@@ -644,8 +659,22 @@ func (route AccessRoute) Validate(identity DaemonIdentity) error {
 	if err := validateCanonicalRouteList(route.ID, "host_key_fingerprints", route.HostKeyFingerprints, false); err != nil {
 		return err
 	}
-	if err := validateCanonicalRouteList(route.ID, "addresses", route.Addresses, route.Kind == RouteDirectTLS); err != nil {
+	if err := validateCanonicalRouteList(route.ID, "signaling_addresses", route.SignalingAddresses, route.Kind == RouteDirectWebRTCTCP); err != nil {
 		return err
+	}
+	if err := validateCanonicalRouteList(route.ID, "ice_tcp_addresses", route.ICETCPAddresses, route.Kind == RouteDirectWebRTCTCP); err != nil {
+		return err
+	}
+	if err := validateCanonicalRouteList(route.ID, "advertised_addresses", route.AdvertisedAddresses, false); err != nil {
+		return err
+	}
+	if route.CredentialDescriptor != nil {
+		if route.Kind != RouteSSHWebRTCTCP {
+			return connectionError(ErrorConfig, "route %q contains credential_descriptor outside ssh-webrtc-tcp", route.ID)
+		}
+		if err := validateCredentialDescriptor(*route.CredentialDescriptor); err != nil {
+			return fmt.Errorf("route %q credential_descriptor: %w", route.ID, err)
+		}
 	}
 	if !validSource(route.Source) || !validSource(route.PolicySource) {
 		return connectionError(ErrorConfig, "route %q has an unknown source", route.ID)
@@ -658,22 +687,22 @@ func (route AccessRoute) Validate(identity DaemonIdentity) error {
 		if route.hasSSHFields() || route.hasDirectFields() || route.hasManagedFields() || route.CredentialRef != "" {
 			return connectionError(ErrorConfig, "local-unix route %q contains fields owned by another route kind", route.ID)
 		}
-	case RouteSSHStdio:
-		if route.Host == "" {
-			return connectionError(ErrorConfig, "ssh-stdio route %q requires host", route.ID)
+	case RouteSSHWebRTCTCP:
+		if route.Host == "" || route.RemoteSignalingAddress == "" || route.RemoteICETCPAddress == "" {
+			return connectionError(ErrorConfig, "ssh-webrtc-tcp route %q requires host and remote signaling/ICE-TCP addresses", route.ID)
 		}
 		if route.Socket != "" || route.hasDirectFields() || route.hasManagedFields() {
-			return connectionError(ErrorConfig, "ssh-stdio route %q contains fields owned by another route kind", route.ID)
+			return connectionError(ErrorConfig, "ssh-webrtc-tcp route %q contains fields owned by another route kind", route.ID)
 		}
-	case RouteDirectTLS:
-		if len(route.Addresses) == 0 {
-			return connectionError(ErrorConfig, "direct-tls route %q requires at least one address", route.ID)
+	case RouteDirectWebRTCTCP:
+		if len(route.SignalingAddresses) == 0 || len(route.ICETCPAddresses) == 0 {
+			return connectionError(ErrorConfig, "direct-webrtc-tcp route %q requires signaling and ICE-TCP addresses", route.ID)
 		}
 		if err := identity.Validate(true); err != nil {
-			return fmt.Errorf("direct-tls route %q: %w", route.ID, err)
+			return fmt.Errorf("direct-webrtc-tcp route %q: %w", route.ID, err)
 		}
 		if route.Socket != "" || route.hasSSHFields() || route.hasManagedFields() {
-			return connectionError(ErrorConfig, "direct-tls route %q contains fields owned by another route kind", route.ID)
+			return connectionError(ErrorConfig, "direct-webrtc-tcp route %q contains fields owned by another route kind", route.ID)
 		}
 	case RouteManagedWebRTC:
 		if route.TargetDeviceID == "" {
@@ -722,15 +751,25 @@ func (endpoint Endpoint) Route(id RouteID) (AccessRoute, bool) {
 // DialIdentity 返回 route 的连接身份，用于 registry reload 后判断当前 session 是否需要重连。
 func (route AccessRoute) DialIdentity() DialIdentity {
 	hostKeys := append([]string(nil), route.HostKeyFingerprints...)
-	addresses := append([]string(nil), route.Addresses...)
+	signalingAddresses := append([]string(nil), route.SignalingAddresses...)
+	iceTCPAddresses := append([]string(nil), route.ICETCPAddresses...)
+	advertisedAddresses := append([]string(nil), route.AdvertisedAddresses...)
 	sort.Strings(hostKeys)
-	sort.Strings(addresses)
+	sort.Strings(signalingAddresses)
+	sort.Strings(iceTCPAddresses)
+	sort.Strings(advertisedAddresses)
+	descriptor := ""
+	if route.CredentialDescriptor != nil {
+		descriptor = route.CredentialDescriptor.DescriptorID + "\x00" + string(route.CredentialDescriptor.Kind)
+	}
 	return DialIdentity{
 		Kind: route.Kind, CredentialRef: strings.TrimSpace(route.CredentialRef), Socket: strings.TrimSpace(route.Socket),
 		Host: strings.TrimSpace(route.Host), Port: route.Port, User: strings.TrimSpace(route.User), ProxyJump: strings.TrimSpace(route.ProxyJump),
-		RemoteSocket: strings.TrimSpace(route.RemoteSocket), HostKeyFingerprints: strings.Join(hostKeys, "\x00"),
-		Addresses: strings.Join(addresses, "\x00"), ServerName: strings.TrimSpace(route.ServerName),
-		TargetDeviceID: strings.TrimSpace(route.TargetDeviceID), AccountProfile: strings.TrimSpace(route.AccountProfile), RelayMode: route.RelayMode,
+		CredentialDescriptor: descriptor, RemoteSignalingAddress: strings.TrimSpace(route.RemoteSignalingAddress),
+		RemoteICETCPAddress: strings.TrimSpace(route.RemoteICETCPAddress), HostKeyFingerprints: strings.Join(hostKeys, "\x00"),
+		SignalingAddresses: strings.Join(signalingAddresses, "\x00"), ICETCPAddresses: strings.Join(iceTCPAddresses, "\x00"),
+		AdvertisedAddresses: strings.Join(advertisedAddresses, "\x00"), ServerName: strings.TrimSpace(route.ServerName),
+		TargetDeviceID: strings.TrimSpace(route.TargetDeviceID), AccountProfileRef: strings.TrimSpace(route.AccountProfileRef), RelayMode: route.RelayMode,
 	}
 }
 
@@ -766,12 +805,12 @@ func NewLocalEndpoint(id EndpointID, label, socket string, mode ConnectMode) End
 	}}
 }
 
-// NewSSHEndpoint 构造单 ssh-stdio route Endpoint。
+// NewSSHEndpoint 构造单 ssh-webrtc-tcp route Endpoint。
 // host 可以是 OpenSSH alias；credential body 和 known_hosts 内容不进入 registry。
-func NewSSHEndpoint(id EndpointID, label, host, credentialRef, remoteSocket string, mode ConnectMode) Endpoint {
+func NewSSHEndpoint(id EndpointID, label, host, credentialRef, remoteSignalingAddress, remoteICETCPAddress string, mode ConnectMode) Endpoint {
 	routeID := RouteID("ssh")
 	return Endpoint{ID: id, Label: label, LabelSource: SourceManual, ConnectMode: mode, Enabled: true, Routes: map[RouteID]AccessRoute{
-		routeID: {ID: routeID, Kind: RouteSSHStdio, Enabled: true, Source: SourceManual, PolicySource: SourceManual, Host: host, CredentialRef: credentialRef, RemoteSocket: remoteSocket},
+		routeID: {ID: routeID, Kind: RouteSSHWebRTCTCP, Enabled: true, Source: SourceManual, PolicySource: SourceManual, Host: host, CredentialRef: credentialRef, RemoteSignalingAddress: remoteSignalingAddress, RemoteICETCPAddress: remoteICETCPAddress},
 	}}
 }
 
@@ -825,12 +864,9 @@ func (route AccessRoute) withDefaults() AccessRoute {
 		if route.Socket == "" {
 			route.Socket = "auto"
 		}
-	case RouteSSHStdio:
+	case RouteSSHWebRTCTCP:
 		if route.Port == 0 {
 			route.Port = 22
-		}
-		if route.RemoteSocket == "" {
-			route.RemoteSocket = "auto"
 		}
 	case RouteManagedWebRTC:
 		if route.RelayMode == "" {
@@ -838,21 +874,24 @@ func (route AccessRoute) withDefaults() AccessRoute {
 		}
 	}
 	route.HostKeyFingerprints = normalizeStrings(route.HostKeyFingerprints)
-	route.Addresses = normalizeStrings(route.Addresses)
+	route.SignalingAddresses = normalizeStrings(route.SignalingAddresses)
+	route.ICETCPAddresses = normalizeStrings(route.ICETCPAddresses)
+	route.AdvertisedAddresses = normalizeStrings(route.AdvertisedAddresses)
 	return route
 }
 
 func (route AccessRoute) hasSSHFields() bool {
 	return strings.TrimSpace(route.Host) != "" || route.Port != 0 || strings.TrimSpace(route.User) != "" ||
-		strings.TrimSpace(route.ProxyJump) != "" || strings.TrimSpace(route.RemoteSocket) != "" || len(route.HostKeyFingerprints) != 0
+		strings.TrimSpace(route.ProxyJump) != "" || strings.TrimSpace(route.RemoteSignalingAddress) != "" ||
+		strings.TrimSpace(route.RemoteICETCPAddress) != "" || len(route.HostKeyFingerprints) != 0 || route.CredentialDescriptor != nil
 }
 
 func (route AccessRoute) hasDirectFields() bool {
-	return len(route.Addresses) != 0 || strings.TrimSpace(route.ServerName) != ""
+	return len(route.SignalingAddresses) != 0 || len(route.ICETCPAddresses) != 0 || len(route.AdvertisedAddresses) != 0 || strings.TrimSpace(route.ServerName) != ""
 }
 
 func (route AccessRoute) hasManagedFields() bool {
-	return strings.TrimSpace(route.TargetDeviceID) != "" || strings.TrimSpace(route.AccountProfile) != "" || route.RelayMode != ""
+	return strings.TrimSpace(route.TargetDeviceID) != "" || strings.TrimSpace(route.AccountProfileRef) != "" || route.RelayMode != ""
 }
 
 func validSource(source EndpointSource) bool {
@@ -950,6 +989,12 @@ func cloneRoute(route AccessRoute) AccessRoute {
 		route.Priority = &priority
 	}
 	route.HostKeyFingerprints = append([]string(nil), route.HostKeyFingerprints...)
-	route.Addresses = append([]string(nil), route.Addresses...)
+	route.SignalingAddresses = append([]string(nil), route.SignalingAddresses...)
+	route.ICETCPAddresses = append([]string(nil), route.ICETCPAddresses...)
+	route.AdvertisedAddresses = append([]string(nil), route.AdvertisedAddresses...)
+	if route.CredentialDescriptor != nil {
+		descriptor := *route.CredentialDescriptor
+		route.CredentialDescriptor = &descriptor
+	}
 	return route
 }

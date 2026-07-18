@@ -352,6 +352,12 @@ func cloneAttemptRoute(route endpoint.AccessRoute) endpoint.AccessRoute {
 		route.Priority = &priority
 	}
 	route.HostKeyFingerprints = append([]string(nil), route.HostKeyFingerprints...)
-	route.Addresses = append([]string(nil), route.Addresses...)
+	route.SignalingAddresses = append([]string(nil), route.SignalingAddresses...)
+	route.ICETCPAddresses = append([]string(nil), route.ICETCPAddresses...)
+	route.AdvertisedAddresses = append([]string(nil), route.AdvertisedAddresses...)
+	if route.CredentialDescriptor != nil {
+		descriptor := *route.CredentialDescriptor
+		route.CredentialDescriptor = &descriptor
+	}
 	return route
 }

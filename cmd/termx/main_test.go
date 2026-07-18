@@ -237,7 +237,7 @@ func TestV3InteractiveRuntimePreservesInitialRemoteTerminalRef(t *testing.T) {
 		Version: endpointdomain.RegistryVersion,
 		Default: "west",
 		Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{
-			"west": testSSHEndpoint("west", "West", "west.example", "", "auto", endpointdomain.ConnectOnDemand, true),
+			"west": testSSHEndpoint("west", "West", "west.example", "", endpointdomain.ConnectOnDemand, true),
 		},
 	}
 	runtime := newV3InteractiveRuntimeWithOptions("term-1", 80, 24, nil, app.NewFakeTerminalHost(8), nil, v3InteractiveRuntimeOptions{

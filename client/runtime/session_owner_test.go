@@ -306,7 +306,7 @@ func ownerEndpoint() endpoint.Endpoint {
 		Routes: map[endpoint.RouteID]endpoint.AccessRoute{
 			"cloud": {
 				ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true, Source: endpoint.SourceCloud, PolicySource: endpoint.SourceUser,
-				TargetDeviceID: identity.DeviceID, AccountProfile: "default", RelayMode: endpoint.RelayDirect,
+				TargetDeviceID: identity.DeviceID, AccountProfileRef: "default", RelayMode: endpoint.RelayDirect,
 			},
 		},
 	}

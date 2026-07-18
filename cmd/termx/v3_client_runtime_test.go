@@ -14,8 +14,8 @@ func TestCLIRoutePlanEnvironmentKeepsCloudLazyAndRecognizesOpenSSHAlias(t *testi
 		DaemonIdentity: clientendpoint.DaemonIdentity{DeviceID: "device-studio", DeviceFingerprint: "SHA256:studio"},
 		Routes: map[clientendpoint.RouteID]clientendpoint.AccessRoute{
 			"local": {ID: "local", Kind: clientendpoint.RouteLocalUnix, Enabled: true, Source: clientendpoint.SourceLocal, PolicySource: clientendpoint.SourceUser, Socket: "auto"},
-			"ssh": {ID: "ssh", Kind: clientendpoint.RouteSSHStdio, Enabled: true, Source: clientendpoint.SourceManual, PolicySource: clientendpoint.SourceUser,
-				Host: "studio", RemoteSocket: "auto", CredentialRef: "ssh:studio"},
+			"ssh": {ID: "ssh", Kind: clientendpoint.RouteSSHWebRTCTCP, Enabled: true, Source: clientendpoint.SourceManual, PolicySource: clientendpoint.SourceUser,
+				Host: "studio", RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121", CredentialRef: "ssh:studio"},
 			"cloud": {ID: "cloud", Kind: clientendpoint.RouteManagedWebRTC, Enabled: true, Source: clientendpoint.SourceCloud, PolicySource: clientendpoint.SourceUser,
 				TargetDeviceID: "device-studio", CredentialRef: "credential:missing", RelayMode: clientendpoint.RelayAuto},
 		},

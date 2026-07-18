@@ -12,10 +12,10 @@ func TestAssemblerMergesCloudBootstrapAndManualByFingerprint(t *testing.T) {
 		{ID: "cloud", Kind: RouteManagedWebRTC, Enabled: true, Source: SourceCloud, TargetDeviceID: identity.DeviceID, RelayMode: RelayAuto},
 	}}
 	bootstrap := EndpointCandidate{Source: SourceBootstrap, Identity: identity, SuggestedLabel: "Studio", Routes: []AccessRoute{
-		{ID: "lan", Kind: RouteDirectTLS, Enabled: true, Source: SourceBootstrap, Addresses: []string{"studio.local:41120"}},
+		{ID: "lan", Kind: RouteDirectWebRTCTCP, Enabled: true, Source: SourceBootstrap, SignalingAddresses: []string{"studio.local:41120"}, ICETCPAddresses: []string{"studio.local:41120"}},
 	}}
 	manual := EndpointCandidate{Source: SourceManual, Identity: identity, SuggestedLabel: "Studio SSH", Routes: []AccessRoute{
-		{ID: "ssh", Kind: RouteSSHStdio, Enabled: true, Source: SourceManual, Host: "studio-host", RemoteSocket: "auto"},
+		{ID: "ssh", Kind: RouteSSHWebRTCTCP, Enabled: true, Source: SourceManual, Host: "studio-host", RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121"},
 	}}
 	left := assembleSequence(t, cloud, bootstrap, manual)
 	right := assembleSequence(t, manual, bootstrap, cloud)
@@ -44,7 +44,7 @@ func TestAssemblerMergesCloudBootstrapAndManualByFingerprint(t *testing.T) {
 func TestAssemblerPublishesFirstImportedEndpointWithoutInventingLocalEndpoint(t *testing.T) {
 	identity := DaemonIdentity{DeviceID: "device-studio", DeviceFingerprint: "SHA256:studio"}
 	result, err := AssembleEndpoints(EndpointAssemblerInput{Registry: Registry{}, Candidates: []EndpointCandidate{{
-		Source: SourceManual, Identity: identity, Routes: []AccessRoute{{ID: "ssh", Kind: RouteSSHStdio, Enabled: true, Host: "studio"}},
+		Source: SourceManual, Identity: identity, Routes: []AccessRoute{{ID: "ssh", Kind: RouteSSHWebRTCTCP, Enabled: true, Host: "studio", RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121"}},
 	}}})
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +57,7 @@ func TestAssemblerPublishesFirstImportedEndpointWithoutInventingLocalEndpoint(t 
 func TestAssemblerRejectsIdentityAndRouteConflicts(t *testing.T) {
 	identity := DaemonIdentity{DeviceID: "device-studio", DeviceFingerprint: "SHA256:studio"}
 	base, err := AssembleEndpoints(EndpointAssemblerInput{Registry: DefaultRegistry(), Candidates: []EndpointCandidate{{
-		Source: SourceBootstrap, Identity: identity, Routes: []AccessRoute{{ID: "lan", Kind: RouteDirectTLS, Enabled: true, Addresses: []string{"studio:41120"}}},
+		Source: SourceBootstrap, Identity: identity, Routes: []AccessRoute{{ID: "lan", Kind: RouteDirectWebRTCTCP, Enabled: true, SignalingAddresses: []string{"studio:41120"}, ICETCPAddresses: []string{"studio:41120"}}},
 	}}})
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +70,7 @@ func TestAssemblerRejectsIdentityAndRouteConflicts(t *testing.T) {
 		t.Fatalf("identity conflict error=%v", err)
 	}
 	_, err = AssembleEndpoints(EndpointAssemblerInput{Registry: base.Registry, Candidates: []EndpointCandidate{{
-		Source: SourceManual, Identity: identity, Routes: []AccessRoute{{ID: "lan", Kind: RouteSSHStdio, Enabled: true, Host: "studio"}},
+		Source: SourceManual, Identity: identity, Routes: []AccessRoute{{ID: "lan", Kind: RouteSSHWebRTCTCP, Enabled: true, Host: "studio", RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121"}},
 	}}})
 	if !IsCode(err, ErrorRouteConflict) {
 		t.Fatalf("route conflict error=%v", err)
@@ -79,13 +79,13 @@ func TestAssemblerRejectsIdentityAndRouteConflicts(t *testing.T) {
 
 func TestAssemblerBindsUnverifiedSSHEndpointOnlyWithConfirmedIdentity(t *testing.T) {
 	identity := DaemonIdentity{DeviceID: "device-studio", DeviceFingerprint: "SHA256:studio"}
-	ssh := NewSSHEndpoint("studio", "Studio SSH", "studio-host", "ssh:studio", "auto", ConnectOnDemand)
+	ssh := NewSSHEndpoint("studio", "Studio SSH", "studio-host", "ssh:studio", "127.0.0.1:41120", "127.0.0.1:41121", ConnectOnDemand)
 	registry, err := (Registry{Version: RegistryVersion, Default: "studio", Endpoints: map[EndpointID]Endpoint{"studio": ssh}}).Normalize()
 	if err != nil {
 		t.Fatal(err)
 	}
 	candidate := EndpointCandidate{Source: SourceBootstrap, Identity: identity, Routes: []AccessRoute{
-		{ID: "lan", Kind: RouteDirectTLS, Enabled: true, Addresses: []string{"studio.local:41120"}},
+		{ID: "lan", Kind: RouteDirectWebRTCTCP, Enabled: true, SignalingAddresses: []string{"studio.local:41120"}, ICETCPAddresses: []string{"studio.local:41120"}},
 	}}
 	result, err := AssembleEndpoints(EndpointAssemblerInput{
 		Registry: registry, Candidates: []EndpointCandidate{candidate},
@@ -112,7 +112,7 @@ func TestAssemblerPreservesUserPolicyUnlessConfirmedShare(t *testing.T) {
 	priority := 10
 	base, err := AssembleEndpoints(EndpointAssemblerInput{Registry: DefaultRegistry(), Candidates: []EndpointCandidate{{
 		Source: SourceBootstrap, Identity: identity, SuggestedLabel: "User Studio", Routes: []AccessRoute{{
-			ID: "ssh", Kind: RouteSSHStdio, Enabled: true, Host: "studio", RemoteSocket: "auto",
+			ID: "ssh", Kind: RouteSSHWebRTCTCP, Enabled: true, Host: "studio", RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121",
 		}},
 	}}})
 	if err != nil {
@@ -130,7 +130,7 @@ func TestAssemblerPreservesUserPolicyUnlessConfirmedShare(t *testing.T) {
 	}
 	result, err := AssembleEndpoints(EndpointAssemblerInput{Registry: base.Registry, Candidates: []EndpointCandidate{{
 		Source: SourceBootstrap, Identity: identity, SuggestedLabel: "Bootstrap Label", Routes: []AccessRoute{{
-			ID: "ssh", Kind: RouteSSHStdio, Enabled: true, Source: SourceBootstrap, Host: "new-studio", RemoteSocket: "auto",
+			ID: "ssh", Kind: RouteSSHWebRTCTCP, Enabled: true, Source: SourceBootstrap, Host: "new-studio", RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121",
 		}},
 	}}})
 	if err != nil {
@@ -143,7 +143,7 @@ func TestAssemblerPreservesUserPolicyUnlessConfirmedShare(t *testing.T) {
 	}
 	unconfirmedShare, err := AssembleEndpoints(EndpointAssemblerInput{Registry: result.Registry, Candidates: []EndpointCandidate{{
 		Source: SourceShare, Identity: identity, SuggestedLabel: "Unconfirmed Share Label",
-		Routes: []AccessRoute{{ID: "ssh", Kind: RouteSSHStdio, Enabled: true, Source: SourceShare, PolicySource: SourceShare, Host: "shared-config", RemoteSocket: "auto"}},
+		Routes: []AccessRoute{{ID: "ssh", Kind: RouteSSHWebRTCTCP, Enabled: true, Source: SourceShare, PolicySource: SourceShare, Host: "shared-config", RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121"}},
 	}}})
 	if err != nil {
 		t.Fatal(err)
@@ -157,7 +157,7 @@ func TestAssemblerPreservesUserPolicyUnlessConfirmedShare(t *testing.T) {
 	shared, err := AssembleEndpoints(EndpointAssemblerInput{Registry: unconfirmedShare.Registry, Candidates: []EndpointCandidate{{
 		Source: SourceShare, Identity: identity, ConnectMode: ConnectManual, SelectionPolicy: &sharePolicy, ApplyClientPolicy: true,
 		Routes: []AccessRoute{{
-			ID: "ssh", Kind: RouteSSHStdio, Enabled: true, Priority: &sharePriority, Source: SourceShare, PolicySource: SourceShare, Host: "shared-studio", RemoteSocket: "auto",
+			ID: "ssh", Kind: RouteSSHWebRTCTCP, Enabled: true, Priority: &sharePriority, Source: SourceShare, PolicySource: SourceShare, Host: "shared-studio", RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121",
 		}},
 	}}})
 	if err != nil {
@@ -170,7 +170,7 @@ func TestAssemblerPreservesUserPolicyUnlessConfirmedShare(t *testing.T) {
 	}
 	withExternalRoute, err := AssembleEndpoints(EndpointAssemblerInput{Registry: shared.Registry, Candidates: []EndpointCandidate{{
 		Source: SourceBootstrap, Identity: identity,
-		Routes: []AccessRoute{{ID: "lan", Kind: RouteDirectTLS, Enabled: true, Addresses: []string{"studio:41120"}}},
+		Routes: []AccessRoute{{ID: "lan", Kind: RouteDirectWebRTCTCP, Enabled: true, SignalingAddresses: []string{"studio:41120"}, ICETCPAddresses: []string{"studio:41120"}}},
 	}}})
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +181,7 @@ func TestAssemblerPreservesUserPolicyUnlessConfirmedShare(t *testing.T) {
 	}
 	if _, err := AssembleEndpoints(EndpointAssemblerInput{Registry: result.Registry, Candidates: []EndpointCandidate{{
 		Source: SourceBootstrap, Identity: identity, ConnectMode: ConnectAuto,
-		Routes: []AccessRoute{{ID: "lan", Kind: RouteDirectTLS, Enabled: true, Addresses: []string{"studio:41120"}}},
+		Routes: []AccessRoute{{ID: "lan", Kind: RouteDirectWebRTCTCP, Enabled: true, SignalingAddresses: []string{"studio:41120"}, ICETCPAddresses: []string{"studio:41120"}}},
 	}}}); !IsCode(err, ErrorConfig) {
 		t.Fatalf("bootstrap client policy error=%v", err)
 	}
@@ -191,7 +191,7 @@ func TestAssemblerReturnsDeterministicCredentialDescriptors(t *testing.T) {
 	identity := DaemonIdentity{DeviceID: "device-studio", DeviceFingerprint: "SHA256:studio"}
 	result, err := AssembleEndpoints(EndpointAssemblerInput{Registry: DefaultRegistry(), Candidates: []EndpointCandidate{{
 		Source: SourceShare, Identity: identity,
-		Routes: []AccessRoute{{ID: "ssh", Kind: RouteSSHStdio, Enabled: true, Host: "studio", RemoteSocket: "auto"}},
+		Routes: []AccessRoute{{ID: "ssh", Kind: RouteSSHWebRTCTCP, Enabled: true, Host: "studio", RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121"}},
 		CredentialDescriptors: []CredentialDescriptor{
 			{DescriptorID: "ssh-password", Kind: CredentialSSHPassword, Exportable: true},
 			{DescriptorID: "ssh-key", Kind: CredentialSSHPrivateKey},
@@ -210,7 +210,7 @@ func TestAssemblerReturnsDeterministicCredentialDescriptors(t *testing.T) {
 	}
 	_, err = AssembleEndpoints(EndpointAssemblerInput{Registry: DefaultRegistry(), Candidates: []EndpointCandidate{{
 		Source: SourceShare, Identity: identity,
-		Routes: []AccessRoute{{ID: "ssh", Kind: RouteSSHStdio, Enabled: true, Host: "studio", RemoteSocket: "auto"}},
+		Routes: []AccessRoute{{ID: "ssh", Kind: RouteSSHWebRTCTCP, Enabled: true, Host: "studio", RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121"}},
 		CredentialDescriptors: []CredentialDescriptor{
 			{DescriptorID: "credential", Kind: CredentialSSHPrivateKey},
 			{DescriptorID: "credential", Kind: CredentialSSHPassword},

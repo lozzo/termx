@@ -223,7 +223,7 @@ func dialManagedE2ESession(
 			"webrtc": {
 				ID: "webrtc", Kind: clientendpoint.RouteManagedWebRTC, Enabled: true,
 				Source: clientendpoint.SourceCloud, PolicySource: clientendpoint.SourceUser, CredentialRef: "credential:" + endpointID,
-				TargetDeviceID: identity.DeviceID, AccountProfile: "default", RelayMode: relayMode,
+				TargetDeviceID: identity.DeviceID, AccountProfileRef: "default", RelayMode: relayMode,
 			},
 		},
 	}

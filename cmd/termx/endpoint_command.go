@@ -19,24 +19,27 @@ type endpointCommandRuntime struct {
 }
 
 type endpointRouteView struct {
-	ID                  string   `json:"id"`
-	Kind                string   `json:"kind"`
-	Enabled             bool     `json:"enabled"`
-	ManualOnly          bool     `json:"manual_only"`
-	Priority            *int     `json:"priority,omitempty"`
-	CredentialRef       string   `json:"credential_ref,omitempty"`
-	Socket              string   `json:"socket,omitempty"`
-	Host                string   `json:"host,omitempty"`
-	Port                uint16   `json:"port,omitempty"`
-	User                string   `json:"user,omitempty"`
-	ProxyJump           string   `json:"proxy_jump,omitempty"`
-	RemoteSocket        string   `json:"remote_socket,omitempty"`
-	HostKeyFingerprints []string `json:"host_key_fingerprints,omitempty"`
-	Addresses           []string `json:"addresses,omitempty"`
-	ServerName          string   `json:"server_name,omitempty"`
-	TargetDeviceID      string   `json:"target_device_id,omitempty"`
-	AccountProfile      string   `json:"account_profile,omitempty"`
-	RelayMode           string   `json:"relay_mode,omitempty"`
+	ID                     string   `json:"id"`
+	Kind                   string   `json:"kind"`
+	Enabled                bool     `json:"enabled"`
+	ManualOnly             bool     `json:"manual_only"`
+	Priority               *int     `json:"priority,omitempty"`
+	CredentialRef          string   `json:"credential_ref,omitempty"`
+	Socket                 string   `json:"socket,omitempty"`
+	Host                   string   `json:"host,omitempty"`
+	Port                   uint16   `json:"port,omitempty"`
+	User                   string   `json:"user,omitempty"`
+	ProxyJump              string   `json:"proxy_jump,omitempty"`
+	HostKeyFingerprints    []string `json:"host_key_fingerprints,omitempty"`
+	RemoteSignalingAddress string   `json:"remote_signaling_address,omitempty"`
+	RemoteICETCPAddress    string   `json:"remote_ice_tcp_address,omitempty"`
+	SignalingAddresses     []string `json:"signaling_addresses,omitempty"`
+	ICETCPAddresses        []string `json:"ice_tcp_addresses,omitempty"`
+	AdvertisedAddresses    []string `json:"advertised_addresses,omitempty"`
+	ServerName             string   `json:"server_name,omitempty"`
+	TargetDeviceID         string   `json:"target_device_id,omitempty"`
+	AccountProfileRef      string   `json:"account_profile_ref,omitempty"`
+	RelayMode              string   `json:"relay_mode,omitempty"`
 }
 
 type endpointView struct {
@@ -178,17 +181,19 @@ type endpointEditFlags struct {
 }
 
 type routeEditFlags struct {
-	routeID, credentialRef, socket, host, user, proxyJump, remoteSocket string
-	serverName, targetDeviceID, accountProfile, relayMode               string
-	port                                                                uint16
-	priority                                                            int
-	manualOnly                                                          bool
-	hostKeyFingerprints, addresses                                      []string
+	routeID, credentialRef, socket, host, user, proxyJump    string
+	remoteSignalingAddress, remoteICETCPAddress              string
+	serverName, targetDeviceID, accountProfileRef, relayMode string
+	port                                                     uint16
+	priority                                                 int
+	manualOnly                                               bool
+	hostKeyFingerprints, signalingAddresses, iceTCPAddresses []string
+	advertisedAddresses                                      []string
 }
 
 func newEndpointAddCommand(runtime *endpointCommandRuntime) *cobra.Command {
 	command := &cobra.Command{Use: "add", Short: "Add an endpoint with its first route"}
-	for _, kind := range []endpointdomain.RouteKind{endpointdomain.RouteLocalUnix, endpointdomain.RouteSSHStdio, endpointdomain.RouteDirectTLS, endpointdomain.RouteManagedWebRTC} {
+	for _, kind := range []endpointdomain.RouteKind{endpointdomain.RouteLocalUnix, endpointdomain.RouteSSHWebRTCTCP, endpointdomain.RouteDirectWebRTCTCP, endpointdomain.RouteManagedWebRTC} {
 		endpointFlags := &endpointEditFlags{}
 		routeFlags := &routeEditFlags{}
 		name := routeCommandName(kind)
@@ -386,7 +391,7 @@ func newEndpointRouteCommand(runtime *endpointCommandRuntime) *cobra.Command {
 
 func newEndpointRouteAddCommand(runtime *endpointCommandRuntime) *cobra.Command {
 	command := &cobra.Command{Use: "add", Short: "Add a route to an existing endpoint"}
-	for _, kind := range []endpointdomain.RouteKind{endpointdomain.RouteLocalUnix, endpointdomain.RouteSSHStdio, endpointdomain.RouteDirectTLS, endpointdomain.RouteManagedWebRTC} {
+	for _, kind := range []endpointdomain.RouteKind{endpointdomain.RouteLocalUnix, endpointdomain.RouteSSHWebRTCTCP, endpointdomain.RouteDirectWebRTCTCP, endpointdomain.RouteManagedWebRTC} {
 		flags := &routeEditFlags{}
 		child := &cobra.Command{
 			Use: routeCommandName(kind) + " ENDPOINT_ID ROUTE_ID", Args: cobra.ExactArgs(2),
@@ -567,27 +572,30 @@ func bindRouteEditFlags(command *cobra.Command, flags *routeEditFlags, kind endp
 	}
 	command.Flags().BoolVar(&flags.manualOnly, "manual-only", false, "exclude this route from automatic selection")
 	command.Flags().IntVar(&flags.priority, "priority", -1, "route priority; lower starts earlier, -1 means unset")
-	if kind == "" || kind == endpointdomain.RouteSSHStdio || kind == endpointdomain.RouteDirectTLS || kind == endpointdomain.RouteManagedWebRTC {
+	if kind == "" || kind == endpointdomain.RouteSSHWebRTCTCP || kind == endpointdomain.RouteDirectWebRTCTCP || kind == endpointdomain.RouteManagedWebRTC {
 		command.Flags().StringVar(&flags.credentialRef, "credential-ref", "", "local secure credential reference")
 	}
 	if kind == "" || kind == endpointdomain.RouteLocalUnix {
 		command.Flags().StringVar(&flags.socket, "socket", "auto", "local daemon socket")
 	}
-	if kind == "" || kind == endpointdomain.RouteSSHStdio {
+	if kind == "" || kind == endpointdomain.RouteSSHWebRTCTCP {
 		command.Flags().StringVar(&flags.host, "host", "", "OpenSSH host or alias")
 		command.Flags().Uint16Var(&flags.port, "port", 22, "SSH port")
 		command.Flags().StringVar(&flags.user, "user", "", "SSH user hint")
 		command.Flags().StringVar(&flags.proxyJump, "proxy-jump", "", "OpenSSH ProxyJump target")
-		command.Flags().StringVar(&flags.remoteSocket, "remote-socket", "auto", "remote daemon socket")
+		command.Flags().StringVar(&flags.remoteSignalingAddress, "remote-signaling-address", "127.0.0.1:41120", "daemon loopback signaling address reached through SSH")
+		command.Flags().StringVar(&flags.remoteICETCPAddress, "remote-ice-tcp-address", "127.0.0.1:41121", "daemon loopback ICE-TCP address reached through SSH")
 		command.Flags().StringSliceVar(&flags.hostKeyFingerprints, "host-key", nil, "accepted SSH host-key fingerprint")
 	}
-	if kind == "" || kind == endpointdomain.RouteDirectTLS {
-		command.Flags().StringSliceVar(&flags.addresses, "address", nil, "direct TLS address (repeatable)")
+	if kind == "" || kind == endpointdomain.RouteDirectWebRTCTCP {
+		command.Flags().StringSliceVar(&flags.signalingAddresses, "signaling-address", nil, "daemon embedded signaling address (repeatable)")
+		command.Flags().StringSliceVar(&flags.iceTCPAddresses, "ice-tcp-address", nil, "daemon ICE-TCP address (repeatable)")
+		command.Flags().StringSliceVar(&flags.advertisedAddresses, "advertised-address", nil, "explicit LAN or TCP-mapped address override (repeatable)")
 		command.Flags().StringVar(&flags.serverName, "server-name", "", "TLS routing server name; not a trust anchor")
 	}
 	if kind == "" || kind == endpointdomain.RouteManagedWebRTC {
 		command.Flags().StringVar(&flags.targetDeviceID, "target-device-id", "", "managed target device ID")
-		command.Flags().StringVar(&flags.accountProfile, "account-profile", "", "local Cloud account profile hint")
+		command.Flags().StringVar(&flags.accountProfileRef, "account-profile-ref", "", "local Cloud account profile reference")
 		command.Flags().StringVar(&flags.relayMode, "relay", string(endpointdomain.RelayAuto), "auto, direct, relay_only, or smart_route")
 	}
 }
@@ -617,9 +625,11 @@ func routeFromFlags(kind endpointdomain.RouteKind, flags routeEditFlags) endpoin
 		ID: routeID, Kind: kind, Enabled: true, ManualOnly: flags.manualOnly, CredentialRef: strings.TrimSpace(flags.credentialRef),
 		Source: endpointdomain.SourceManual, PolicySource: endpointdomain.SourceUser, Socket: strings.TrimSpace(flags.socket),
 		Host: strings.TrimSpace(flags.host), Port: flags.port, User: strings.TrimSpace(flags.user), ProxyJump: strings.TrimSpace(flags.proxyJump),
-		RemoteSocket: strings.TrimSpace(flags.remoteSocket), HostKeyFingerprints: append([]string(nil), flags.hostKeyFingerprints...),
-		Addresses: append([]string(nil), flags.addresses...), ServerName: strings.TrimSpace(flags.serverName),
-		TargetDeviceID: strings.TrimSpace(flags.targetDeviceID), AccountProfile: strings.TrimSpace(flags.accountProfile), RelayMode: endpointdomain.RelayMode(flags.relayMode),
+		HostKeyFingerprints:    append([]string(nil), flags.hostKeyFingerprints...),
+		RemoteSignalingAddress: strings.TrimSpace(flags.remoteSignalingAddress), RemoteICETCPAddress: strings.TrimSpace(flags.remoteICETCPAddress),
+		SignalingAddresses: append([]string(nil), flags.signalingAddresses...), ICETCPAddresses: append([]string(nil), flags.iceTCPAddresses...),
+		AdvertisedAddresses: append([]string(nil), flags.advertisedAddresses...), ServerName: strings.TrimSpace(flags.serverName),
+		TargetDeviceID: strings.TrimSpace(flags.targetDeviceID), AccountProfileRef: strings.TrimSpace(flags.accountProfileRef), RelayMode: endpointdomain.RelayMode(flags.relayMode),
 	}
 	if flags.priority >= 0 {
 		priority := flags.priority
@@ -658,14 +668,23 @@ func applyRouteFlagChanges(command *cobra.Command, route *endpointdomain.AccessR
 	if command.Flags().Changed("proxy-jump") {
 		route.ProxyJump = strings.TrimSpace(flags.proxyJump)
 	}
-	if command.Flags().Changed("remote-socket") {
-		route.RemoteSocket = strings.TrimSpace(flags.remoteSocket)
+	if command.Flags().Changed("remote-signaling-address") {
+		route.RemoteSignalingAddress = strings.TrimSpace(flags.remoteSignalingAddress)
+	}
+	if command.Flags().Changed("remote-ice-tcp-address") {
+		route.RemoteICETCPAddress = strings.TrimSpace(flags.remoteICETCPAddress)
 	}
 	if command.Flags().Changed("host-key") {
 		route.HostKeyFingerprints = append([]string(nil), flags.hostKeyFingerprints...)
 	}
-	if command.Flags().Changed("address") {
-		route.Addresses = append([]string(nil), flags.addresses...)
+	if command.Flags().Changed("signaling-address") {
+		route.SignalingAddresses = append([]string(nil), flags.signalingAddresses...)
+	}
+	if command.Flags().Changed("ice-tcp-address") {
+		route.ICETCPAddresses = append([]string(nil), flags.iceTCPAddresses...)
+	}
+	if command.Flags().Changed("advertised-address") {
+		route.AdvertisedAddresses = append([]string(nil), flags.advertisedAddresses...)
 	}
 	if command.Flags().Changed("server-name") {
 		route.ServerName = strings.TrimSpace(flags.serverName)
@@ -673,8 +692,8 @@ func applyRouteFlagChanges(command *cobra.Command, route *endpointdomain.AccessR
 	if command.Flags().Changed("target-device-id") {
 		route.TargetDeviceID = strings.TrimSpace(flags.targetDeviceID)
 	}
-	if command.Flags().Changed("account-profile") {
-		route.AccountProfile = strings.TrimSpace(flags.accountProfile)
+	if command.Flags().Changed("account-profile-ref") {
+		route.AccountProfileRef = strings.TrimSpace(flags.accountProfileRef)
 	}
 	if command.Flags().Changed("relay") {
 		route.RelayMode = endpointdomain.RelayMode(flags.relayMode)
@@ -685,9 +704,9 @@ func routeCommandName(kind endpointdomain.RouteKind) string {
 	switch kind {
 	case endpointdomain.RouteLocalUnix:
 		return "local"
-	case endpointdomain.RouteSSHStdio:
+	case endpointdomain.RouteSSHWebRTCTCP:
 		return "ssh"
-	case endpointdomain.RouteDirectTLS:
+	case endpointdomain.RouteDirectWebRTCTCP:
 		return "direct"
 	case endpointdomain.RouteManagedWebRTC:
 		return "cloud"
@@ -717,9 +736,11 @@ func endpointConfigView(endpoint endpointdomain.Endpoint, isDefault bool) endpoi
 		view.Routes = append(view.Routes, endpointRouteView{
 			ID: string(route.ID), Kind: string(route.Kind), Enabled: route.Enabled, ManualOnly: route.ManualOnly,
 			Priority: cloneCLIInt(route.Priority), CredentialRef: route.CredentialRef, Socket: route.Socket,
-			Host: route.Host, Port: route.Port, User: route.User, ProxyJump: route.ProxyJump, RemoteSocket: route.RemoteSocket,
-			HostKeyFingerprints: append([]string(nil), route.HostKeyFingerprints...), Addresses: append([]string(nil), route.Addresses...), ServerName: route.ServerName,
-			TargetDeviceID: route.TargetDeviceID, AccountProfile: route.AccountProfile, RelayMode: string(route.RelayMode),
+			Host: route.Host, Port: route.Port, User: route.User, ProxyJump: route.ProxyJump,
+			HostKeyFingerprints: append([]string(nil), route.HostKeyFingerprints...), RemoteSignalingAddress: route.RemoteSignalingAddress, RemoteICETCPAddress: route.RemoteICETCPAddress,
+			SignalingAddresses: append([]string(nil), route.SignalingAddresses...), ICETCPAddresses: append([]string(nil), route.ICETCPAddresses...),
+			AdvertisedAddresses: append([]string(nil), route.AdvertisedAddresses...), ServerName: route.ServerName,
+			TargetDeviceID: route.TargetDeviceID, AccountProfileRef: route.AccountProfileRef, RelayMode: string(route.RelayMode),
 		})
 	}
 	return view

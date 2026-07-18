@@ -34,7 +34,7 @@ cmd/termx daemon command
 - client application contract 位于 `client/runtime`，按 endpoint、terminal、file、workspace、access 分组；不得形成单个总接口。
 - daemon host contract 与 client runtime contract 分离，daemon listener/ingress 不得伪装成 client route adapter。
 - concrete import 最终只能出现在少量命名明确的 composition 文件；普通 `*_command.go` 不得新增 concrete protocol/transport/Cloud 依赖。
-- local、SSH 与 managed route 已由共享 planner/runtime 接线；command 只能提交 endpoint、intent 和可选显式 override，不能自行竞速、缓存 session 或用 local fallback 隐藏 route 失败。
+- local、Direct、SSH 与 managed Route 必须由共享 planner/runtime 接线；command 只能提交 endpoint、intent 和可选显式 override，不能自行竞速、缓存 session 或用 local fallback 隐藏 route 失败。
 - TUI terminal、workbench 与 clipboard 是同一 endpoint session 上的 consumer，共用一条 ready connection；隔离由 Proto operation/subscription resource 提供，不为 consumer 数量创建平行 generation。
 
 ## 迁移顺序

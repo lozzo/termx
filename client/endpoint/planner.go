@@ -99,7 +99,7 @@ func (group RouteAttemptGroup) Attempts() []RouteAttempt {
 type RouteSelectionPlanner struct{}
 
 // Plan 生成当前 C3B 支持的 local/SSH 自动竞速计划。
-// managed WebRTC 只在它是唯一 eligible 自动 route 或被显式 override 时保留单路能力；direct TLS/LAN 与 managed 共同竞速留给后续切片。
+// managed WebRTC 只在它是唯一 eligible 自动 route 或被显式 override 时保留单路能力；Direct/SSH/managed 的统一 PeerSession 竞速由 RTC002 收口。
 func (RouteSelectionPlanner) Plan(request RouteSelectionRequest) (RouteSelectionPlan, error) {
 	target := cloneEndpoint(request.Endpoint)
 	if err := target.Validate(); err != nil {
@@ -160,7 +160,7 @@ func (RouteSelectionPlanner) Plan(request RouteSelectionRequest) (RouteSelection
 			}
 		}
 		switch route.Kind {
-		case RouteLocalUnix, RouteSSHStdio:
+		case RouteLocalUnix, RouteSSHWebRTCTCP:
 			automatic = append(automatic, route)
 		case RouteManagedWebRTC:
 			managed = append(managed, route)
@@ -248,7 +248,7 @@ func validatePlannedRoute(route AccessRoute, supported map[RouteKind]struct{}, c
 		return connectionError(ErrorRouteUnavailable, "route %q kind %q is not supported by the current platform", route.ID, route.Kind)
 	}
 	switch route.Kind {
-	case RouteLocalUnix, RouteSSHStdio, RouteManagedWebRTC:
+	case RouteLocalUnix, RouteSSHWebRTCTCP, RouteManagedWebRTC:
 	default:
 		return connectionError(ErrorRouteUnavailable, "route %q kind %q is not available in C3B", route.ID, route.Kind)
 	}
@@ -264,7 +264,7 @@ func routeKindSet(values []RouteKind) (map[RouteKind]struct{}, error) {
 	result := make(map[RouteKind]struct{}, len(values))
 	for _, value := range values {
 		switch value {
-		case RouteLocalUnix, RouteSSHStdio, RouteManagedWebRTC, RouteDirectTLS:
+		case RouteLocalUnix, RouteSSHWebRTCTCP, RouteManagedWebRTC, RouteDirectWebRTCTCP:
 		default:
 			return nil, connectionError(ErrorConfig, "route planner received unknown platform route kind %q", value)
 		}

@@ -43,6 +43,45 @@ func TestAuthEnvelopeHasSinglePayloadOneof(t *testing.T) {
 	}
 }
 
+func TestEndpointRouteConfigV1OwnsVersionedRouteOneof(t *testing.T) {
+	descriptor := (&EndpointRouteConfigV1{}).ProtoReflect().Descriptor()
+	if field := descriptor.Fields().ByName("schema_version"); field == nil || field.Number() != 1 {
+		t.Fatal("EndpointRouteConfigV1.schema_version must remain field 1")
+	}
+	if descriptor.Oneofs().Len() != 2 {
+		// proto3 optional priority is represented as a synthetic oneof in reflection.
+		t.Fatalf("EndpointRouteConfigV1 oneofs = %d, want route plus optional priority", descriptor.Oneofs().Len())
+	}
+	routeOneof := descriptor.Oneofs().ByName("route")
+	if routeOneof == nil || routeOneof.Fields().Len() != 4 {
+		t.Fatalf("EndpointRouteConfigV1.route variants = %v", routeOneof)
+	}
+	want := map[protoreflect.Name]protoreflect.FieldNumber{
+		"local_unix": 20, "direct_webrtc_tcp": 21, "ssh_webrtc_tcp": 22, "managed_webrtc": 23,
+	}
+	for name, number := range want {
+		field := routeOneof.Fields().ByName(name)
+		if field == nil || field.Number() != number {
+			t.Fatalf("EndpointRouteConfigV1.%s field = %v, want number %d", name, field, number)
+		}
+	}
+	if descriptor.Fields().ByName("kind") != nil || descriptor.Fields().ByName("addresses") != nil || descriptor.Fields().ByName("remote_socket") != nil {
+		t.Fatal("EndpointRouteConfigV1 must not restore the old flat route schema")
+	}
+}
+
+func TestEndpointConfigAndRegistryAreVersionedProtoContracts(t *testing.T) {
+	for _, message := range []protoreflect.MessageDescriptor{
+		(&EndpointConfigV1{}).ProtoReflect().Descriptor(),
+		(&EndpointRegistryV1{}).ProtoReflect().Descriptor(),
+	} {
+		field := message.Fields().ByName("schema_version")
+		if field == nil || field.Number() != 1 {
+			t.Fatalf("%s schema_version must remain field 1", message.FullName())
+		}
+	}
+}
+
 func assertRemoteAuthMessageAllowed(t *testing.T, message protoreflect.MessageDescriptor, forbidden []string) {
 	t.Helper()
 	for fieldIndex := 0; fieldIndex < message.Fields().Len(); fieldIndex++ {

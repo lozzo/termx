@@ -43,6 +43,9 @@ api_ts_proto=(
   proto/apipb/events.proto
   proto/apipb/application.proto
 )
+portable_ts_proto=(
+  proto/remoteauthpb/remote_auth.proto
+)
 
 # Go 与 TypeScript 都从 proto 源码生成到临时目录；检查过程不改工作树。
 protoc -I proto \
@@ -60,13 +63,14 @@ PATH="$repo_root/node_modules/.bin:$PATH" NODE_NO_WARNINGS=1 protoc \
   -I proto \
   --es_out="$tmp_dir/api" \
   --es_opt=target=ts,import_extension=none \
-  "${api_ts_proto[@]}"
+  "${api_ts_proto[@]}" \
+  "${portable_ts_proto[@]}"
 PATH="$repo_root/node_modules/.bin:$PATH" NODE_NO_WARNINGS=1 protoc \
   -I proto/wirepb \
   --es_out="$tmp_dir/wire" \
   --es_opt=target=ts,import_extension=none \
   proto/wirepb/terminal.proto
-perl -0pi -e 's/\s*\z/\n/' "$tmp_dir"/api/apipb/*_pb.ts "$tmp_dir/wire/terminal_pb.ts"
+perl -0pi -e 's/\s*\z/\n/' "$tmp_dir"/api/apipb/*_pb.ts "$tmp_dir"/api/remoteauthpb/*_pb.ts "$tmp_dir/wire/terminal_pb.ts"
 
 check_generated_file() {
   local generated="$1"
@@ -84,6 +88,7 @@ for source in "${api_ts_proto[@]}"; do
   check_generated_file "$tmp_dir/go/apipb/${name}.pb.go" "proto/apipb/${name}.pb.go"
   check_generated_file "$tmp_dir/api/apipb/${name}_pb.ts" "clients/ui/src/generated/apipb/${name}_pb.ts"
 done
+check_generated_file "$tmp_dir/api/remoteauthpb/remote_auth_pb.ts" clients/ui/src/generated/remoteauthpb/remote_auth_pb.ts
 check_generated_file "$tmp_dir/go/cloudpb/cloud_companion.pb.go" proto/cloudpb/cloud_companion.pb.go
 check_generated_file "$tmp_dir/go/remoteauthpb/remote_auth.pb.go" proto/remoteauthpb/remote_auth.pb.go
 check_generated_file "$tmp_dir/go/wirepb/terminal.pb.go" proto/wirepb/terminal.pb.go

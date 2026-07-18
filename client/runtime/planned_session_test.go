@@ -23,8 +23,8 @@ func TestSessionOwnerFullRaceChoosesFirstReadyAndWaitsLoserCleanup(t *testing.T)
 		"ssh":   {release: sshRelease},
 	})
 	resolver, err := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
-		endpoint.RouteLocalUnix: dialer,
-		endpoint.RouteSSHStdio:  dialer,
+		endpoint.RouteLocalUnix:    dialer,
+		endpoint.RouteSSHWebRTCTCP: dialer,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -78,8 +78,8 @@ func TestSessionOwnerPriorityHedgeUsesClockAndStopsTimer(t *testing.T) {
 		"ssh":   {},
 	})
 	resolver, _ := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
-		endpoint.RouteLocalUnix: dialer,
-		endpoint.RouteSSHStdio:  dialer,
+		endpoint.RouteLocalUnix:    dialer,
+		endpoint.RouteSSHWebRTCTCP: dialer,
 	})
 	clock := &manualTestClock{}
 	result := make(chan plannedResult, 1)
@@ -114,8 +114,8 @@ func TestSessionOwnerAcquirePlannedSharesLeaseAndKeepsExplicitRouteSticky(t *tes
 	target := plannedEndpoint(false)
 	dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"local": {}, "ssh": {}})
 	resolver, _ := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
-		endpoint.RouteLocalUnix: dialer,
-		endpoint.RouteSSHStdio:  dialer,
+		endpoint.RouteLocalUnix:    dialer,
+		endpoint.RouteSSHWebRTCTCP: dialer,
 	})
 	first, err := owner.AcquirePlanned(context.Background(), target, "ssh", ConnectIntentInteractive, "config-a", plannedEnvironment(), realTestClock{}, resolver)
 	if err != nil {
@@ -152,7 +152,7 @@ func TestSessionOwnerEnsurePlannedExplicitOverrideReplacesDifferentCurrentWinner
 	target := plannedEndpoint(false)
 	dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"local": {}, "ssh": {}})
 	resolver, err := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
-		endpoint.RouteLocalUnix: dialer, endpoint.RouteSSHStdio: dialer,
+		endpoint.RouteLocalUnix: dialer, endpoint.RouteSSHWebRTCTCP: dialer,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -176,7 +176,7 @@ func TestSessionOwnerEnsurePlannedExplicitCurrentRouteBecomesSticky(t *testing.T
 	target := plannedEndpoint(true)
 	dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"local": {}, "ssh": {}})
 	resolver, err := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
-		endpoint.RouteLocalUnix: dialer, endpoint.RouteSSHStdio: dialer,
+		endpoint.RouteLocalUnix: dialer, endpoint.RouteSSHWebRTCTCP: dialer,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -213,8 +213,8 @@ func TestSessionOwnerPlannedRaceCancellationFailsAfterAdapterAttempt(t *testing.
 		"ssh":   {release: make(chan struct{})},
 	})
 	resolver, _ := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
-		endpoint.RouteLocalUnix: dialer,
-		endpoint.RouteSSHStdio:  dialer,
+		endpoint.RouteLocalUnix:    dialer,
+		endpoint.RouteSSHWebRTCTCP: dialer,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
@@ -239,8 +239,8 @@ func TestSessionOwnerPlannedRaceReturnsStableFirstFailure(t *testing.T) {
 		"ssh":   {err: errors.New("ssh unavailable")},
 	})
 	resolver, _ := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
-		endpoint.RouteLocalUnix: dialer,
-		endpoint.RouteSSHStdio:  dialer,
+		endpoint.RouteLocalUnix:    dialer,
+		endpoint.RouteSSHWebRTCTCP: dialer,
 	})
 	_, err := owner.ConnectPlanned(context.Background(), target, "", ConnectIntentInteractive, plannedEnvironment(), realTestClock{}, resolver)
 	if !errors.Is(err, io.ErrUnexpectedEOF) || !WasAttempted(err) {
@@ -275,8 +275,8 @@ func TestClientRuntimeEnsureSessionReusesOwnerWinner(t *testing.T) {
 	target := plannedEndpoint(false)
 	dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"local": {}, "ssh": {}})
 	resolver, _ := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
-		endpoint.RouteLocalUnix: dialer,
-		endpoint.RouteSSHStdio:  dialer,
+		endpoint.RouteLocalUnix:    dialer,
+		endpoint.RouteSSHWebRTCTCP: dialer,
 	})
 	source := &staticPlanSource{snapshots: map[endpoint.EndpointID]EndpointPlanSnapshot{
 		target.ID: {Endpoint: target, Environment: plannedEnvironment(), ConfigKey: "planned-config"},
@@ -306,7 +306,7 @@ func TestSessionOwnerSerializesPlannedRacePerEndpoint(t *testing.T) {
 	target := plannedEndpoint(false)
 	release := make(chan struct{})
 	dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"ssh": {release: release}})
-	resolver, _ := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{endpoint.RouteSSHStdio: dialer})
+	resolver, _ := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{endpoint.RouteSSHWebRTCTCP: dialer})
 	results := make(chan plannedResult, 2)
 	connect := func() {
 		lease, err := owner.ConnectPlanned(context.Background(), target, "ssh", ConnectIntentInteractive, plannedEnvironment(), realTestClock{}, resolver)
@@ -421,7 +421,7 @@ func plannedEndpoint(priority bool) endpoint.Endpoint {
 		ConnectMode: endpoint.ConnectOnDemand, Enabled: true,
 		Routes: map[endpoint.RouteID]endpoint.AccessRoute{
 			"local": {ID: "local", Kind: endpoint.RouteLocalUnix, Enabled: true, Source: endpoint.SourceLocal, PolicySource: endpoint.SourceUser, Socket: "auto"},
-			"ssh":   {ID: "ssh", Kind: endpoint.RouteSSHStdio, Enabled: true, Source: endpoint.SourceManual, PolicySource: endpoint.SourceUser, Host: "planned", RemoteSocket: "auto", CredentialRef: "ssh:planned"},
+			"ssh":   {ID: "ssh", Kind: endpoint.RouteSSHWebRTCTCP, Enabled: true, Source: endpoint.SourceManual, PolicySource: endpoint.SourceUser, Host: "planned", RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121", CredentialRef: "ssh:planned"},
 		},
 	}
 	if priority {
@@ -435,7 +435,7 @@ func plannedEndpoint(priority bool) endpoint.Endpoint {
 }
 
 func plannedEnvironment() RoutePlanEnvironment {
-	return RoutePlanEnvironment{SupportedRouteKinds: []endpoint.RouteKind{endpoint.RouteLocalUnix, endpoint.RouteSSHStdio}, AvailableCredentialRefs: []string{"ssh:planned"}}
+	return RoutePlanEnvironment{SupportedRouteKinds: []endpoint.RouteKind{endpoint.RouteLocalUnix, endpoint.RouteSSHWebRTCTCP}, AvailableCredentialRefs: []string{"ssh:planned"}}
 }
 
 func waitPlannedStarts(t *testing.T, started <-chan endpoint.RouteID, expected ...endpoint.RouteID) {

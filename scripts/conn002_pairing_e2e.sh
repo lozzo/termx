@@ -238,7 +238,7 @@ fi
 client_cli "$SHARED_CLIENT" endpoint --registry "$SHARED_CLIENT/connections.yaml" show sidecar --json >"$REPORT_DIR/shared-sidecar.json"
 node -e '
   const value = require(process.argv[1]);
-  if (value.item?.id !== "sidecar" || value.item.routes.length !== 1 || value.item.routes[0].kind !== "ssh-stdio") process.exit(1);
+  if (value.item?.id !== "sidecar" || value.item.routes.length !== 1 || value.item.routes[0].kind !== "ssh-webrtc-tcp") process.exit(1);
 ' "$REPORT_DIR/shared-sidecar.json" || fail "concurrent endpoint mutation was lost"
 "$HARNESS_BIN" --mode verify \
   --daemon-identity-dir "$DAEMON_STATE/termx/remote-v2/identity" \

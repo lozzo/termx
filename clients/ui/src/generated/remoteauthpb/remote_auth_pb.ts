@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file remoteauthpb/remote_auth.proto.
  */
 export const file_remoteauthpb_remote_auth: GenFile = /*@__PURE__*/
-  fileDesc("Ch5yZW1vdGVhdXRocGIvcmVtb3RlX2F1dGgucHJvdG8SFHRlcm14LnJlbW90ZS5hdXRoLnYxIl4KDkNoYW5uZWxCaW5kaW5nEjYKBGtpbmQYASABKA4yKC50ZXJteC5yZW1vdGUuYXV0aC52MS5DaGFubmVsQmluZGluZ0tpbmQSFAoMYmluZGluZ19oYXNoGAIgASgMIuEDCgxBdXRoRW52ZWxvcGUSEAoIcHJvdG9jb2wYASABKAkSDwoHdmVyc2lvbhgCIAEoDRIXCg9hdXRoX3Nlc3Npb25faWQYAyABKAkSOQoMZGV2aWNlX2hlbGxvGAQgASgLMiEudGVybXgucmVtb3RlLmF1dGgudjEuRGV2aWNlSGVsbG9IABI/Cg9jYXBhYmlsaXR5X29wZW4YBSABKAsyJC50ZXJteC5yZW1vdGUuYXV0aC52MS5DYXBhYmlsaXR5T3BlbkgAEkcKE2NhcGFiaWxpdHlfYWNjZXB0ZWQYBiABKAsyKC50ZXJteC5yZW1vdGUuYXV0aC52MS5DYXBhYmlsaXR5QWNjZXB0ZWRIABJHChNjYXBhYmlsaXR5X3JlamVjdGVkGAcgASgLMigudGVybXgucmVtb3RlLmF1dGgudjEuQ2FwYWJpbGl0eVJlamVjdGVkSAASOQoMcGFpcmluZ19vcGVuGAggASgLMiEudGVybXgucmVtb3RlLmF1dGgudjEuUGFpcmluZ09wZW5IABJBChBwYWlyaW5nX2FjY2VwdGVkGAkgASgLMiUudGVybXgucmVtb3RlLmF1dGgudjEuUGFpcmluZ0FjY2VwdGVkSABCCQoHcGF5bG9hZCLcAQoLRGV2aWNlSGVsbG8SEQoJZGV2aWNlX2lkGAEgASgJEhkKEWRldmljZV9wdWJsaWNfa2V5GAIgASgMEhoKEmRldmljZV9maW5nZXJwcmludBgDIAEoCRIUCgxzZXJ2ZXJfbm9uY2UYBCABKAwSPQoPY2hhbm5lbF9iaW5kaW5nGAUgASgLMiQudGVybXgucmVtb3RlLmF1dGgudjEuQ2hhbm5lbEJpbmRpbmcSGwoTaXNzdWVkX2F0X3VuaXhfbmFubxgGIAEoAxIRCglzaWduYXR1cmUYByABKAwiXwoOQ2FwYWJpbGl0eU9wZW4SDQoFZ3JhbnQYASABKAkSGQoRY2xpZW50X3B1YmxpY19rZXkYAiABKAwSFAoMY2xpZW50X25vbmNlGAMgASgMEg0KBXByb29mGAQgASgMInsKC1BhaXJpbmdPcGVuEhYKDnBhaXJpbmdfYnVuZGxlGAEgASgMEhkKEWNsaWVudF9wdWJsaWNfa2V5GAIgASgMEhQKDGNsaWVudF9sYWJlbBgDIAEoCRIUCgxjbGllbnRfbm9uY2UYBCABKAwSDQoFcHJvb2YYBSABKAwicAoMU2NvcGVTdW1tYXJ5Ei0KBGtpbmQYASABKA4yHy50ZXJteC5yZW1vdGUuYXV0aC52MS5TY29wZUtpbmQSEwoLdGVybWluYWxfaWQYAiABKAkSHAoUbWFuYWdlX2NsaWVudF9hY2Nlc3MYAyABKAgi4QEKEUNsaWVudEFjY2Vzc1Njb3BlEhQKDGFsbG93X2RhZW1vbhgBIAEoCBITCgt0ZXJtaW5hbF9pZBgCIAEoCRIbChNtYWNoaW5lX2V2ZW50c19vbmx5GAMgASgIEhoKEmZpbGVfcmVhZF9tZXRhZGF0YRgEIAEoCBIZChFmaWxlX3JlYWRfY29udGVudBgFIAEoCBIaChJmaWxlX3dyaXRlX2NvbnRlbnQYBiABKAgSEwoLZmlsZV9tdXRhdGUYByABKAgSHAoUbWFuYWdlX2NsaWVudF9hY2Nlc3MYCCABKAgiZgoaQ2xpZW50QWNjZXNzSWRlbnRpdHlSZXN1bHQSEQoJZGV2aWNlX2lkGAEgASgJEhoKEmRldmljZV9maW5nZXJwcmludBgCIAEoCRIZChFkZXZpY2VfcHVibGljX2tleRgDIAEoDCKHAQoYRGV2aWNlSWRlbnRpdHlQcm9vZklucHV0Eg4KBmRvbWFpbhgBIAEoCRIRCgljaGFsbGVuZ2UYAiABKAwSEQoJZGV2aWNlX2lkGAMgASgJEhoKEmRldmljZV9maW5nZXJwcmludBgEIAEoCRIZChFkZXZpY2VfcHVibGljX2tleRgFIAEoDCKkAQofQ2xpZW50QWNjZXNzVGlja2V0Q3JlYXRlUmVxdWVzdBINCgVsYWJlbBgBIAEoCRI2CgVzY29wZRgCIAEoCzInLnRlcm14LnJlbW90ZS5hdXRoLnYxLkNsaWVudEFjY2Vzc1Njb3BlEhoKEnRpY2tldF90dGxfc2Vjb25kcxgDIAEoAxIeChZncmFudF9saWZldGltZV9zZWNvbmRzGAQgASgDImEKHkNsaWVudEFjY2Vzc1RpY2tldENyZWF0ZVJlc3VsdBIOCgZidW5kbGUYASABKAwSEQoJdGlja2V0X2lkGAIgASgJEhwKFGV4cGlyZXNfYXRfdW5peF9uYW5vGAMgASgDIi0KGUNsaWVudEFjY2Vzc1Jldm9rZVJlcXVlc3QSEAoIZ3JhbnRfaWQYASABKAkihQIKEkNsaWVudEFjY2Vzc1JlY29yZBIQCghncmFudF9pZBgBIAEoCRIVCg1yZXZvY2F0aW9uX2lkGAIgASgJEh8KF3N1YmplY3Rfa2V5X2ZpbmdlcnByaW50GAMgASgJEhQKDGNsaWVudF9sYWJlbBgEIAEoCRI2CgVzY29wZRgFIAEoCzInLnRlcm14LnJlbW90ZS5hdXRoLnYxLkNsaWVudEFjY2Vzc1Njb3BlEhsKE2lzc3VlZF9hdF91bml4X25hbm8YBiABKAMSHAoUZXhwaXJlc19hdF91bml4X25hbm8YByABKAMSHAoUcmV2b2tlZF9hdF91bml4X25hbm8YCCABKAMiUwoWQ2xpZW50QWNjZXNzTGlzdFJlc3VsdBI5CgdyZWNvcmRzGAEgAygLMigudGVybXgucmVtb3RlLmF1dGgudjEuQ2xpZW50QWNjZXNzUmVjb3JkInoKEkNhcGFiaWxpdHlBY2NlcHRlZBIQCghncmFudF9pZBgBIAEoCRIxCgVzY29wZRgCIAEoCzIiLnRlcm14LnJlbW90ZS5hdXRoLnYxLlNjb3BlU3VtbWFyeRIfChdzdWJqZWN0X2tleV9maW5nZXJwcmludBgDIAEoCSKOAQoPUGFpcmluZ0FjY2VwdGVkEg0KBWdyYW50GAEgASgJEhgKEGRlbGl2ZXJ5X3JlY2VpcHQYAiABKAkSHwoXc3ViamVjdF9rZXlfZmluZ2VycHJpbnQYAyABKAkSMQoFc2NvcGUYBCABKAsyIi50ZXJteC5yZW1vdGUuYXV0aC52MS5TY29wZVN1bW1hcnkiWAoSQ2FwYWJpbGl0eVJlamVjdGVkEjEKBGNvZGUYASABKA4yIy50ZXJteC5yZW1vdGUuYXV0aC52MS5BdXRoRXJyb3JDb2RlEg8KB21lc3NhZ2UYAiABKAkikwIKGURldmljZUhlbGxvU2lnbmF0dXJlSW5wdXQSEAoIcHJvdG9jb2wYASABKAkSDwoHdmVyc2lvbhgCIAEoDRIXCg9hdXRoX3Nlc3Npb25faWQYAyABKAkSEQoJZGV2aWNlX2lkGAQgASgJEhkKEWRldmljZV9wdWJsaWNfa2V5GAUgASgMEhoKEmRldmljZV9maW5nZXJwcmludBgGIAEoCRIUCgxzZXJ2ZXJfbm9uY2UYByABKAwSPQoPY2hhbm5lbF9iaW5kaW5nGAggASgLMiQudGVybXgucmVtb3RlLmF1dGgudjEuQ2hhbm5lbEJpbmRpbmcSGwoTaXNzdWVkX2F0X3VuaXhfbmFubxgJIAEoAyKmAgoQQ2xpZW50UHJvb2ZJbnB1dBIQCghwcm90b2NvbBgBIAEoCRIPCgd2ZXJzaW9uGAIgASgNEhcKD2F1dGhfc2Vzc2lvbl9pZBgDIAEoCRIUCgxzZXJ2ZXJfbm9uY2UYBCABKAwSFAoMY2xpZW50X25vbmNlGAUgASgMEj0KD2NoYW5uZWxfYmluZGluZxgGIAEoCzIkLnRlcm14LnJlbW90ZS5hdXRoLnYxLkNoYW5uZWxCaW5kaW5nEhkKEWNyZWRlbnRpYWxfc2hhMjU2GAcgASgMEhkKEWNsaWVudF9wdWJsaWNfa2V5GAggASgMEjUKCW9wZW5fa2luZBgJIAEoDjIiLnRlcm14LnJlbW90ZS5hdXRoLnYxLkF1dGhPcGVuS2luZCJiChZFbmRwb2ludERhZW1vbklkZW50aXR5EhEKCWRldmljZV9pZBgBIAEoCRIZChFkZXZpY2VfcHVibGljX2tleRgCIAEoDBIaChJkZXZpY2VfZmluZ2VycHJpbnQYAyABKAkiVQoXRW5kcG9pbnRTZWxlY3Rpb25Qb2xpY3kSHgoWaGVkZ2VfZGVsYXlfY29uZmlndXJlZBgBIAEoCBIaChJoZWRnZV9kZWxheV9taWxsaXMYAiABKAQizwQKE0VuZHBvaW50QWNjZXNzUm91dGUSEAoIcm91dGVfaWQYASABKAkSNQoEa2luZBgCIAEoDjInLnRlcm14LnJlbW90ZS5hdXRoLnYxLkVuZHBvaW50Um91dGVLaW5kEg8KB2VuYWJsZWQYAyABKAgSEwoLbWFudWFsX29ubHkYBCABKAgSFQoIcHJpb3JpdHkYBSABKAVIAIgBARIWCg5jcmVkZW50aWFsX3JlZhgGIAEoCRI0CgZzb3VyY2UYByABKA4yJC50ZXJteC5yZW1vdGUuYXV0aC52MS5FbmRwb2ludFNvdXJjZRI7Cg1wb2xpY3lfc291cmNlGAggASgOMiQudGVybXgucmVtb3RlLmF1dGgudjEuRW5kcG9pbnRTb3VyY2USDgoGc29ja2V0GAkgASgJEgwKBGhvc3QYCiABKAkSDAoEcG9ydBgLIAEoDRIMCgR1c2VyGAwgASgJEhIKCnByb3h5X2p1bXAYDSABKAkSFQoNcmVtb3RlX3NvY2tldBgOIAEoCRIdChVob3N0X2tleV9maW5nZXJwcmludHMYDyADKAkSEQoJYWRkcmVzc2VzGBAgAygJEhMKC3NlcnZlcl9uYW1lGBEgASgJEhgKEHRhcmdldF9kZXZpY2VfaWQYEiABKAkSFwoPYWNjb3VudF9wcm9maWxlGBMgASgJEjsKCnJlbGF5X21vZGUYFCABKA4yJy50ZXJteC5yZW1vdGUuYXV0aC52MS5FbmRwb2ludFJlbGF5TW9kZUILCglfcHJpb3JpdHkihQEKHEVuZHBvaW50Q3JlZGVudGlhbERlc2NyaXB0b3ISFQoNZGVzY3JpcHRvcl9pZBgBIAEoCRI6CgRraW5kGAIgASgOMiwudGVybXgucmVtb3RlLmF1dGgudjEuRW5kcG9pbnRDcmVkZW50aWFsS2luZBISCgpleHBvcnRhYmxlGAMgASgIItkBChdQYWlyaW5nVGlja2V0RGVzY3JpcHRvchIRCgl0aWNrZXRfaWQYASABKAkSFQoNc2NvcGVfY2VpbGluZxgCIAMoCRIcChRleHBpcmVzX2F0X3VuaXhfbmFubxgDIAEoAxINCgVub25jZRgEIAEoDBIXCg9tYXhfcmVkZW1wdGlvbnMYBSABKA0SEQoJc2lnbmF0dXJlGAYgASgMEhsKE2lzc3VlZF9hdF91bml4X25hbm8YByABKAMSHgoWZ3JhbnRfbGlmZXRpbWVfc2Vjb25kcxgIIAEoAyKLAQoeRW5kcG9pbnRBdXRob3JpemF0aW9uQm9vdHN0cmFwEkcKDnBhaXJpbmdfdGlja2V0GAEgASgLMi0udGVybXgucmVtb3RlLmF1dGgudjEuUGFpcmluZ1RpY2tldERlc2NyaXB0b3JIABIVCgtib3VuZF9ncmFudBgCIAEoDEgAQgkKB3BheWxvYWQi/AIKGUVuZHBvaW50Qm9vdHN0cmFwQnVuZGxlVjISFgoOc2NoZW1hX3ZlcnNpb24YASABKA0SEQoJYnVuZGxlX2lkGAIgASgJEj4KCGlkZW50aXR5GAMgASgLMiwudGVybXgucmVtb3RlLmF1dGgudjEuRW5kcG9pbnREYWVtb25JZGVudGl0eRIXCg9zdWdnZXN0ZWRfbGFiZWwYBCABKAkSOQoGcm91dGVzGAUgAygLMikudGVybXgucmVtb3RlLmF1dGgudjEuRW5kcG9pbnRBY2Nlc3NSb3V0ZRJLCg1hdXRob3JpemF0aW9uGAYgASgLMjQudGVybXgucmVtb3RlLmF1dGgudjEuRW5kcG9pbnRBdXRob3JpemF0aW9uQm9vdHN0cmFwEhsKE2lzc3VlZF9hdF91bml4X25hbm8YByABKAMSHAoUZXhwaXJlc19hdF91bml4X25hbm8YCCABKAMSGAoQYnVuZGxlX3NpZ25hdHVyZRgJIAEoDCK8AQobUGFpcmluZ1RpY2tldFNpZ25hdHVyZUlucHV0EhAKCHByb3RvY29sGAEgASgJEg8KB3ZlcnNpb24YAiABKA0SGAoQaXNzdWVyX2RldmljZV9pZBgDIAEoCRIhChlpc3N1ZXJfZGV2aWNlX2ZpbmdlcnByaW50GAQgASgJEj0KBnRpY2tldBgFIAEoCzItLnRlcm14LnJlbW90ZS5hdXRoLnYxLlBhaXJpbmdUaWNrZXREZXNjcmlwdG9yIoUBCh9FbmRwb2ludEJvb3RzdHJhcFNpZ25hdHVyZUlucHV0EhAKCHByb3RvY29sGAEgASgJEg8KB3ZlcnNpb24YAiABKA0SPwoGYnVuZGxlGAMgASgLMi8udGVybXgucmVtb3RlLmF1dGgudjEuRW5kcG9pbnRCb290c3RyYXBCdW5kbGVWMiKMBAobQ2xpZW50RW5kcG9pbnRTaGFyZUJ1bmRsZVYxEhYKDnNjaGVtYV92ZXJzaW9uGAEgASgNEhMKC3RyYW5zZmVyX2lkGAIgASgJEj4KCGlkZW50aXR5GAMgASgLMiwudGVybXgucmVtb3RlLmF1dGgudjEuRW5kcG9pbnREYWVtb25JZGVudGl0eRIXCg9zdWdnZXN0ZWRfbGFiZWwYBCABKAkSOQoGcm91dGVzGAUgAygLMikudGVybXgucmVtb3RlLmF1dGgudjEuRW5kcG9pbnRBY2Nlc3NSb3V0ZRI/Cgxjb25uZWN0X21vZGUYBiABKA4yKS50ZXJteC5yZW1vdGUuYXV0aC52MS5FbmRwb2ludENvbm5lY3RNb2RlEkcKEHNlbGVjdGlvbl9wb2xpY3kYByABKAsyLS50ZXJteC5yZW1vdGUuYXV0aC52MS5FbmRwb2ludFNlbGVjdGlvblBvbGljeRJSChZjcmVkZW50aWFsX2Rlc2NyaXB0b3JzGAggAygLMjIudGVybXgucmVtb3RlLmF1dGgudjEuRW5kcG9pbnRDcmVkZW50aWFsRGVzY3JpcHRvchITCgtib3VuZF9ncmFudBgJIAEoDBIbChNpc3N1ZWRfYXRfdW5peF9uYW5vGAogASgDEhwKFGV4cGlyZXNfYXRfdW5peF9uYW5vGAsgASgDIsEBChFTaGFyZVNlc3Npb25PZmZlchIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoDRITCgt0cmFuc2Zlcl9pZBgCIAEoCRIaChJsaXN0ZW5lcl9hZGRyZXNzZXMYAyADKAkSJAocZXBoZW1lcmFsX2NlcnRpZmljYXRlX3NoYTI1NhgEIAEoCRIfChdvbmVfdGltZV9zZXNzaW9uX3NlY3JldBgFIAEoDBIcChRleHBpcmVzX2F0X3VuaXhfbmFubxgGIAEoAyqwBAoNQXV0aEVycm9yQ29kZRIfChtBVVRIX0VSUk9SX0NPREVfVU5TUEVDSUZJRUQQABIcChhBVVRIX0VSUk9SX0NPREVfUFJPVE9DT0wQARIsCihBVVRIX0VSUk9SX0NPREVfREVWSUNFX0lERU5USVRZX01JU01BVENIEAISJgoiQVVUSF9FUlJPUl9DT0RFX0NBUEFCSUxJVFlfSU5WQUxJRBADEiYKIkFVVEhfRVJST1JfQ09ERV9DQVBBQklMSVRZX0VYUElSRUQQBBImCiJBVVRIX0VSUk9SX0NPREVfQ0FQQUJJTElUWV9SRVZPS0VEEAUSLAooQVVUSF9FUlJPUl9DT0RFX0NBUEFCSUxJVFlfUFJPT0ZfSU5WQUxJRBAGEiEKHUFVVEhfRVJST1JfQ09ERV9TQ09QRV9JTlZBTElEEAcSHAoYQVVUSF9FUlJPUl9DT0RFX1JFUExBWUVEEAgSHAoYQVVUSF9FUlJPUl9DT0RFX0lOVEVSTkFMEAkSKAokQVVUSF9FUlJPUl9DT0RFX1NVQkpFQ1RfS0VZX01JU01BVENIEAoSKgomQVVUSF9FUlJPUl9DT0RFX1BBSVJJTkdfVElDS0VUX0lOVkFMSUQQCxIqCiZBVVRIX0VSUk9SX0NPREVfUEFJUklOR19USUNLRVRfRVhQSVJFRBAMEisKJ0FVVEhfRVJST1JfQ09ERV9QQUlSSU5HX1RJQ0tFVF9DT05TVU1FRBANKnYKCVNjb3BlS2luZBIaChZTQ09QRV9LSU5EX1VOU1BFQ0lGSUVEEAASFQoRU0NPUEVfS0lORF9EQUVNT04QARIXChNTQ09QRV9LSU5EX1RFUk1JTkFMEAISHQoZU0NPUEVfS0lORF9NQUNISU5FX0VWRU5UUxADKqMBChJDaGFubmVsQmluZGluZ0tpbmQSJAogQ0hBTk5FTF9CSU5ESU5HX0tJTkRfVU5TUEVDSUZJRUQQABIjCh9DSEFOTkVMX0JJTkRJTkdfS0lORF9ESVJFQ1RfVExTEAESHQoZQ0hBTk5FTF9CSU5ESU5HX0tJTkRfRFRMUxACEiMKH0NIQU5ORUxfQklORElOR19LSU5EX0xPQ0FMX1VOSVgQAyppCgxBdXRoT3BlbktpbmQSHgoaQVVUSF9PUEVOX0tJTkRfVU5TUEVDSUZJRUQQABIdChlBVVRIX09QRU5fS0lORF9DQVBBQklMSVRZEAESGgoWQVVUSF9PUEVOX0tJTkRfUEFJUklORxACKssBChFFbmRwb2ludFJvdXRlS2luZBIjCh9FTkRQT0lOVF9ST1VURV9LSU5EX1VOU1BFQ0lGSUVEEAASIgoeRU5EUE9JTlRfUk9VVEVfS0lORF9MT0NBTF9VTklYEAESIQodRU5EUE9JTlRfUk9VVEVfS0lORF9TU0hfU1RESU8QAhIiCh5FTkRQT0lOVF9ST1VURV9LSU5EX0RJUkVDVF9UTFMQAxImCiJFTkRQT0lOVF9ST1VURV9LSU5EX01BTkFHRURfV0VCUlRDEAQqowEKE0VuZHBvaW50Q29ubmVjdE1vZGUSJQohRU5EUE9JTlRfQ09OTkVDVF9NT0RFX1VOU1BFQ0lGSUVEEAASHgoaRU5EUE9JTlRfQ09OTkVDVF9NT0RFX0FVVE8QARIjCh9FTkRQT0lOVF9DT05ORUNUX01PREVfT05fREVNQU5EEAISIAocRU5EUE9JTlRfQ09OTkVDVF9NT0RFX01BTlVBTBADKr8BChFFbmRwb2ludFJlbGF5TW9kZRIjCh9FTkRQT0lOVF9SRUxBWV9NT0RFX1VOU1BFQ0lGSUVEEAASHAoYRU5EUE9JTlRfUkVMQVlfTU9ERV9BVVRPEAESHgoaRU5EUE9JTlRfUkVMQVlfTU9ERV9ESVJFQ1QQAhIiCh5FTkRQT0lOVF9SRUxBWV9NT0RFX1JFTEFZX09OTFkQAxIjCh9FTkRQT0lOVF9SRUxBWV9NT0RFX1NNQVJUX1JPVVRFEAQq8AEKDkVuZHBvaW50U291cmNlEh8KG0VORFBPSU5UX1NPVVJDRV9VTlNQRUNJRklFRBAAEhcKE0VORFBPSU5UX1NPVVJDRV9MQU4QARIZChVFTkRQT0lOVF9TT1VSQ0VfQ0xPVUQQAhIdChlFTkRQT0lOVF9TT1VSQ0VfQk9PVFNUUkFQEAMSGQoVRU5EUE9JTlRfU09VUkNFX0xPQ0FMEAQSGgoWRU5EUE9JTlRfU09VUkNFX01BTlVBTBAFEhkKFUVORFBPSU5UX1NPVVJDRV9TSEFSRRAGEhgKFEVORFBPSU5UX1NPVVJDRV9VU0VSEAcqngIKFkVuZHBvaW50Q3JlZGVudGlhbEtpbmQSKAokRU5EUE9JTlRfQ1JFREVOVElBTF9LSU5EX1VOU1BFQ0lGSUVEEAASJgoiRU5EUE9JTlRfQ1JFREVOVElBTF9LSU5EX1NTSF9BR0VOVBABEiwKKEVORFBPSU5UX0NSRURFTlRJQUxfS0lORF9TU0hfUFJJVkFURV9LRVkQAhIpCiVFTkRQT0lOVF9DUkVERU5USUFMX0tJTkRfU1NIX1BBU1NXT1JEEAMSLQopRU5EUE9JTlRfQ1JFREVOVElBTF9LSU5EX0NBUEFCSUxJVFlfR1JBTlQQBBIqCiZFTkRQT0lOVF9DUkVERU5USUFMX0tJTkRfQ0xPVURfUFJPRklMRRAFQixaKmdpdGh1Yi5jb20vbG96em93L3Rlcm14L3Byb3RvL3JlbW90ZWF1dGhwYmIGcHJvdG8z");
+  fileDesc("Ch5yZW1vdGVhdXRocGIvcmVtb3RlX2F1dGgucHJvdG8SFHRlcm14LnJlbW90ZS5hdXRoLnYxIl4KDkNoYW5uZWxCaW5kaW5nEjYKBGtpbmQYASABKA4yKC50ZXJteC5yZW1vdGUuYXV0aC52MS5DaGFubmVsQmluZGluZ0tpbmQSFAoMYmluZGluZ19oYXNoGAIgASgMIuEDCgxBdXRoRW52ZWxvcGUSEAoIcHJvdG9jb2wYASABKAkSDwoHdmVyc2lvbhgCIAEoDRIXCg9hdXRoX3Nlc3Npb25faWQYAyABKAkSOQoMZGV2aWNlX2hlbGxvGAQgASgLMiEudGVybXgucmVtb3RlLmF1dGgudjEuRGV2aWNlSGVsbG9IABI/Cg9jYXBhYmlsaXR5X29wZW4YBSABKAsyJC50ZXJteC5yZW1vdGUuYXV0aC52MS5DYXBhYmlsaXR5T3BlbkgAEkcKE2NhcGFiaWxpdHlfYWNjZXB0ZWQYBiABKAsyKC50ZXJteC5yZW1vdGUuYXV0aC52MS5DYXBhYmlsaXR5QWNjZXB0ZWRIABJHChNjYXBhYmlsaXR5X3JlamVjdGVkGAcgASgLMigudGVybXgucmVtb3RlLmF1dGgudjEuQ2FwYWJpbGl0eVJlamVjdGVkSAASOQoMcGFpcmluZ19vcGVuGAggASgLMiEudGVybXgucmVtb3RlLmF1dGgudjEuUGFpcmluZ09wZW5IABJBChBwYWlyaW5nX2FjY2VwdGVkGAkgASgLMiUudGVybXgucmVtb3RlLmF1dGgudjEuUGFpcmluZ0FjY2VwdGVkSABCCQoHcGF5bG9hZCLcAQoLRGV2aWNlSGVsbG8SEQoJZGV2aWNlX2lkGAEgASgJEhkKEWRldmljZV9wdWJsaWNfa2V5GAIgASgMEhoKEmRldmljZV9maW5nZXJwcmludBgDIAEoCRIUCgxzZXJ2ZXJfbm9uY2UYBCABKAwSPQoPY2hhbm5lbF9iaW5kaW5nGAUgASgLMiQudGVybXgucmVtb3RlLmF1dGgudjEuQ2hhbm5lbEJpbmRpbmcSGwoTaXNzdWVkX2F0X3VuaXhfbmFubxgGIAEoAxIRCglzaWduYXR1cmUYByABKAwiXwoOQ2FwYWJpbGl0eU9wZW4SDQoFZ3JhbnQYASABKAkSGQoRY2xpZW50X3B1YmxpY19rZXkYAiABKAwSFAoMY2xpZW50X25vbmNlGAMgASgMEg0KBXByb29mGAQgASgMInsKC1BhaXJpbmdPcGVuEhYKDnBhaXJpbmdfYnVuZGxlGAEgASgMEhkKEWNsaWVudF9wdWJsaWNfa2V5GAIgASgMEhQKDGNsaWVudF9sYWJlbBgDIAEoCRIUCgxjbGllbnRfbm9uY2UYBCABKAwSDQoFcHJvb2YYBSABKAwicAoMU2NvcGVTdW1tYXJ5Ei0KBGtpbmQYASABKA4yHy50ZXJteC5yZW1vdGUuYXV0aC52MS5TY29wZUtpbmQSEwoLdGVybWluYWxfaWQYAiABKAkSHAoUbWFuYWdlX2NsaWVudF9hY2Nlc3MYAyABKAgi4QEKEUNsaWVudEFjY2Vzc1Njb3BlEhQKDGFsbG93X2RhZW1vbhgBIAEoCBITCgt0ZXJtaW5hbF9pZBgCIAEoCRIbChNtYWNoaW5lX2V2ZW50c19vbmx5GAMgASgIEhoKEmZpbGVfcmVhZF9tZXRhZGF0YRgEIAEoCBIZChFmaWxlX3JlYWRfY29udGVudBgFIAEoCBIaChJmaWxlX3dyaXRlX2NvbnRlbnQYBiABKAgSEwoLZmlsZV9tdXRhdGUYByABKAgSHAoUbWFuYWdlX2NsaWVudF9hY2Nlc3MYCCABKAgiZgoaQ2xpZW50QWNjZXNzSWRlbnRpdHlSZXN1bHQSEQoJZGV2aWNlX2lkGAEgASgJEhoKEmRldmljZV9maW5nZXJwcmludBgCIAEoCRIZChFkZXZpY2VfcHVibGljX2tleRgDIAEoDCKHAQoYRGV2aWNlSWRlbnRpdHlQcm9vZklucHV0Eg4KBmRvbWFpbhgBIAEoCRIRCgljaGFsbGVuZ2UYAiABKAwSEQoJZGV2aWNlX2lkGAMgASgJEhoKEmRldmljZV9maW5nZXJwcmludBgEIAEoCRIZChFkZXZpY2VfcHVibGljX2tleRgFIAEoDCKkAQofQ2xpZW50QWNjZXNzVGlja2V0Q3JlYXRlUmVxdWVzdBINCgVsYWJlbBgBIAEoCRI2CgVzY29wZRgCIAEoCzInLnRlcm14LnJlbW90ZS5hdXRoLnYxLkNsaWVudEFjY2Vzc1Njb3BlEhoKEnRpY2tldF90dGxfc2Vjb25kcxgDIAEoAxIeChZncmFudF9saWZldGltZV9zZWNvbmRzGAQgASgDImEKHkNsaWVudEFjY2Vzc1RpY2tldENyZWF0ZVJlc3VsdBIOCgZidW5kbGUYASABKAwSEQoJdGlja2V0X2lkGAIgASgJEhwKFGV4cGlyZXNfYXRfdW5peF9uYW5vGAMgASgDIi0KGUNsaWVudEFjY2Vzc1Jldm9rZVJlcXVlc3QSEAoIZ3JhbnRfaWQYASABKAkihQIKEkNsaWVudEFjY2Vzc1JlY29yZBIQCghncmFudF9pZBgBIAEoCRIVCg1yZXZvY2F0aW9uX2lkGAIgASgJEh8KF3N1YmplY3Rfa2V5X2ZpbmdlcnByaW50GAMgASgJEhQKDGNsaWVudF9sYWJlbBgEIAEoCRI2CgVzY29wZRgFIAEoCzInLnRlcm14LnJlbW90ZS5hdXRoLnYxLkNsaWVudEFjY2Vzc1Njb3BlEhsKE2lzc3VlZF9hdF91bml4X25hbm8YBiABKAMSHAoUZXhwaXJlc19hdF91bml4X25hbm8YByABKAMSHAoUcmV2b2tlZF9hdF91bml4X25hbm8YCCABKAMiUwoWQ2xpZW50QWNjZXNzTGlzdFJlc3VsdBI5CgdyZWNvcmRzGAEgAygLMigudGVybXgucmVtb3RlLmF1dGgudjEuQ2xpZW50QWNjZXNzUmVjb3JkInoKEkNhcGFiaWxpdHlBY2NlcHRlZBIQCghncmFudF9pZBgBIAEoCRIxCgVzY29wZRgCIAEoCzIiLnRlcm14LnJlbW90ZS5hdXRoLnYxLlNjb3BlU3VtbWFyeRIfChdzdWJqZWN0X2tleV9maW5nZXJwcmludBgDIAEoCSKOAQoPUGFpcmluZ0FjY2VwdGVkEg0KBWdyYW50GAEgASgJEhgKEGRlbGl2ZXJ5X3JlY2VpcHQYAiABKAkSHwoXc3ViamVjdF9rZXlfZmluZ2VycHJpbnQYAyABKAkSMQoFc2NvcGUYBCABKAsyIi50ZXJteC5yZW1vdGUuYXV0aC52MS5TY29wZVN1bW1hcnkiWAoSQ2FwYWJpbGl0eVJlamVjdGVkEjEKBGNvZGUYASABKA4yIy50ZXJteC5yZW1vdGUuYXV0aC52MS5BdXRoRXJyb3JDb2RlEg8KB21lc3NhZ2UYAiABKAkikwIKGURldmljZUhlbGxvU2lnbmF0dXJlSW5wdXQSEAoIcHJvdG9jb2wYASABKAkSDwoHdmVyc2lvbhgCIAEoDRIXCg9hdXRoX3Nlc3Npb25faWQYAyABKAkSEQoJZGV2aWNlX2lkGAQgASgJEhkKEWRldmljZV9wdWJsaWNfa2V5GAUgASgMEhoKEmRldmljZV9maW5nZXJwcmludBgGIAEoCRIUCgxzZXJ2ZXJfbm9uY2UYByABKAwSPQoPY2hhbm5lbF9iaW5kaW5nGAggASgLMiQudGVybXgucmVtb3RlLmF1dGgudjEuQ2hhbm5lbEJpbmRpbmcSGwoTaXNzdWVkX2F0X3VuaXhfbmFubxgJIAEoAyKmAgoQQ2xpZW50UHJvb2ZJbnB1dBIQCghwcm90b2NvbBgBIAEoCRIPCgd2ZXJzaW9uGAIgASgNEhcKD2F1dGhfc2Vzc2lvbl9pZBgDIAEoCRIUCgxzZXJ2ZXJfbm9uY2UYBCABKAwSFAoMY2xpZW50X25vbmNlGAUgASgMEj0KD2NoYW5uZWxfYmluZGluZxgGIAEoCzIkLnRlcm14LnJlbW90ZS5hdXRoLnYxLkNoYW5uZWxCaW5kaW5nEhkKEWNyZWRlbnRpYWxfc2hhMjU2GAcgASgMEhkKEWNsaWVudF9wdWJsaWNfa2V5GAggASgMEjUKCW9wZW5fa2luZBgJIAEoDjIiLnRlcm14LnJlbW90ZS5hdXRoLnYxLkF1dGhPcGVuS2luZCJiChZFbmRwb2ludERhZW1vbklkZW50aXR5EhEKCWRldmljZV9pZBgBIAEoCRIZChFkZXZpY2VfcHVibGljX2tleRgCIAEoDBIaChJkZXZpY2VfZmluZ2VycHJpbnQYAyABKAkiVQoXRW5kcG9pbnRTZWxlY3Rpb25Qb2xpY3kSHgoWaGVkZ2VfZGVsYXlfY29uZmlndXJlZBgBIAEoCBIaChJoZWRnZV9kZWxheV9taWxsaXMYAiABKAQihQEKHEVuZHBvaW50Q3JlZGVudGlhbERlc2NyaXB0b3ISFQoNZGVzY3JpcHRvcl9pZBgBIAEoCRI6CgRraW5kGAIgASgOMiwudGVybXgucmVtb3RlLmF1dGgudjEuRW5kcG9pbnRDcmVkZW50aWFsS2luZBISCgpleHBvcnRhYmxlGAMgASgIIiYKFExvY2FsVW5peFJvdXRlQ29uZmlnEg4KBnNvY2tldBgBIAEoCSKHAQoaRGlyZWN0V2ViUlRDVENQUm91dGVDb25maWcSGwoTc2lnbmFsaW5nX2FkZHJlc3NlcxgBIAMoCRIZChFpY2VfdGNwX2FkZHJlc3NlcxgCIAMoCRIcChRhZHZlcnRpc2VkX2FkZHJlc3NlcxgDIAMoCRITCgtzZXJ2ZXJfbmFtZRgEIAEoCSKLAgoXU1NIV2ViUlRDVENQUm91dGVDb25maWcSDAoEaG9zdBgBIAEoCRIMCgRwb3J0GAIgASgNEgwKBHVzZXIYAyABKAkSHQoVaG9zdF9rZXlfZmluZ2VycHJpbnRzGAQgAygJEhIKCnByb3h5X2p1bXAYBSABKAkSUQoVY3JlZGVudGlhbF9kZXNjcmlwdG9yGAYgASgLMjIudGVybXgucmVtb3RlLmF1dGgudjEuRW5kcG9pbnRDcmVkZW50aWFsRGVzY3JpcHRvchIgChhyZW1vdGVfc2lnbmFsaW5nX2FkZHJlc3MYByABKAkSHgoWcmVtb3RlX2ljZV90Y3BfYWRkcmVzcxgIIAEoCSKTAQoYTWFuYWdlZFdlYlJUQ1JvdXRlQ29uZmlnEhgKEHRhcmdldF9kZXZpY2VfaWQYASABKAkSGwoTYWNjb3VudF9wcm9maWxlX3JlZhgCIAEoCRJACgpyZWxheV9tb2RlGAMgASgOMiwudGVybXgucmVtb3RlLmF1dGgudjEuTWFuYWdlZFdlYlJUQ1JlbGF5TW9kZSLDBAoVRW5kcG9pbnRSb3V0ZUNvbmZpZ1YxEhYKDnNjaGVtYV92ZXJzaW9uGAEgASgNEhAKCHJvdXRlX2lkGAIgASgJEg8KB2VuYWJsZWQYAyABKAgSEwoLbWFudWFsX29ubHkYBCABKAgSFQoIcHJpb3JpdHkYBSABKAVIAYgBARIWCg5jcmVkZW50aWFsX3JlZhgGIAEoCRI0CgZzb3VyY2UYByABKA4yJC50ZXJteC5yZW1vdGUuYXV0aC52MS5FbmRwb2ludFNvdXJjZRI7Cg1wb2xpY3lfc291cmNlGAggASgOMiQudGVybXgucmVtb3RlLmF1dGgudjEuRW5kcG9pbnRTb3VyY2USQAoKbG9jYWxfdW5peBgUIAEoCzIqLnRlcm14LnJlbW90ZS5hdXRoLnYxLkxvY2FsVW5peFJvdXRlQ29uZmlnSAASTQoRZGlyZWN0X3dlYnJ0Y190Y3AYFSABKAsyMC50ZXJteC5yZW1vdGUuYXV0aC52MS5EaXJlY3RXZWJSVENUQ1BSb3V0ZUNvbmZpZ0gAEkcKDnNzaF93ZWJydGNfdGNwGBYgASgLMi0udGVybXgucmVtb3RlLmF1dGgudjEuU1NIV2ViUlRDVENQUm91dGVDb25maWdIABJICg5tYW5hZ2VkX3dlYnJ0YxgXIAEoCzIuLnRlcm14LnJlbW90ZS5hdXRoLnYxLk1hbmFnZWRXZWJSVENSb3V0ZUNvbmZpZ0gAQgcKBXJvdXRlQgsKCV9wcmlvcml0eSKiAwoQRW5kcG9pbnRDb25maWdWMRIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoDRITCgtlbmRwb2ludF9pZBgCIAEoCRINCgVsYWJlbBgDIAEoCRI6CgxsYWJlbF9zb3VyY2UYBCABKA4yJC50ZXJteC5yZW1vdGUuYXV0aC52MS5FbmRwb2ludFNvdXJjZRI+CghpZGVudGl0eRgFIAEoCzIsLnRlcm14LnJlbW90ZS5hdXRoLnYxLkVuZHBvaW50RGFlbW9uSWRlbnRpdHkSPwoMY29ubmVjdF9tb2RlGAYgASgOMikudGVybXgucmVtb3RlLmF1dGgudjEuRW5kcG9pbnRDb25uZWN0TW9kZRIPCgdlbmFibGVkGAcgASgIEkcKEHNlbGVjdGlvbl9wb2xpY3kYCCABKAsyLS50ZXJteC5yZW1vdGUuYXV0aC52MS5FbmRwb2ludFNlbGVjdGlvblBvbGljeRI7CgZyb3V0ZXMYCSADKAsyKy50ZXJteC5yZW1vdGUuYXV0aC52MS5FbmRwb2ludFJvdXRlQ29uZmlnVjEihAEKEkVuZHBvaW50UmVnaXN0cnlWMRIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoDRIbChNkZWZhdWx0X2VuZHBvaW50X2lkGAIgASgJEjkKCWVuZHBvaW50cxgDIAMoCzImLnRlcm14LnJlbW90ZS5hdXRoLnYxLkVuZHBvaW50Q29uZmlnVjEi2QEKF1BhaXJpbmdUaWNrZXREZXNjcmlwdG9yEhEKCXRpY2tldF9pZBgBIAEoCRIVCg1zY29wZV9jZWlsaW5nGAIgAygJEhwKFGV4cGlyZXNfYXRfdW5peF9uYW5vGAMgASgDEg0KBW5vbmNlGAQgASgMEhcKD21heF9yZWRlbXB0aW9ucxgFIAEoDRIRCglzaWduYXR1cmUYBiABKAwSGwoTaXNzdWVkX2F0X3VuaXhfbmFubxgHIAEoAxIeChZncmFudF9saWZldGltZV9zZWNvbmRzGAggASgDIosBCh5FbmRwb2ludEF1dGhvcml6YXRpb25Cb290c3RyYXASRwoOcGFpcmluZ190aWNrZXQYASABKAsyLS50ZXJteC5yZW1vdGUuYXV0aC52MS5QYWlyaW5nVGlja2V0RGVzY3JpcHRvckgAEhUKC2JvdW5kX2dyYW50GAIgASgMSABCCQoHcGF5bG9hZCL+AgoZRW5kcG9pbnRCb290c3RyYXBCdW5kbGVWMhIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoDRIRCglidW5kbGVfaWQYAiABKAkSPgoIaWRlbnRpdHkYAyABKAsyLC50ZXJteC5yZW1vdGUuYXV0aC52MS5FbmRwb2ludERhZW1vbklkZW50aXR5EhcKD3N1Z2dlc3RlZF9sYWJlbBgEIAEoCRI7CgZyb3V0ZXMYBSADKAsyKy50ZXJteC5yZW1vdGUuYXV0aC52MS5FbmRwb2ludFJvdXRlQ29uZmlnVjESSwoNYXV0aG9yaXphdGlvbhgGIAEoCzI0LnRlcm14LnJlbW90ZS5hdXRoLnYxLkVuZHBvaW50QXV0aG9yaXphdGlvbkJvb3RzdHJhcBIbChNpc3N1ZWRfYXRfdW5peF9uYW5vGAcgASgDEhwKFGV4cGlyZXNfYXRfdW5peF9uYW5vGAggASgDEhgKEGJ1bmRsZV9zaWduYXR1cmUYCSABKAwivAEKG1BhaXJpbmdUaWNrZXRTaWduYXR1cmVJbnB1dBIQCghwcm90b2NvbBgBIAEoCRIPCgd2ZXJzaW9uGAIgASgNEhgKEGlzc3Vlcl9kZXZpY2VfaWQYAyABKAkSIQoZaXNzdWVyX2RldmljZV9maW5nZXJwcmludBgEIAEoCRI9CgZ0aWNrZXQYBSABKAsyLS50ZXJteC5yZW1vdGUuYXV0aC52MS5QYWlyaW5nVGlja2V0RGVzY3JpcHRvciKFAQofRW5kcG9pbnRCb290c3RyYXBTaWduYXR1cmVJbnB1dBIQCghwcm90b2NvbBgBIAEoCRIPCgd2ZXJzaW9uGAIgASgNEj8KBmJ1bmRsZRgDIAEoCzIvLnRlcm14LnJlbW90ZS5hdXRoLnYxLkVuZHBvaW50Qm9vdHN0cmFwQnVuZGxlVjIijgQKG0NsaWVudEVuZHBvaW50U2hhcmVCdW5kbGVWMRIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoDRITCgt0cmFuc2Zlcl9pZBgCIAEoCRI+CghpZGVudGl0eRgDIAEoCzIsLnRlcm14LnJlbW90ZS5hdXRoLnYxLkVuZHBvaW50RGFlbW9uSWRlbnRpdHkSFwoPc3VnZ2VzdGVkX2xhYmVsGAQgASgJEjsKBnJvdXRlcxgFIAMoCzIrLnRlcm14LnJlbW90ZS5hdXRoLnYxLkVuZHBvaW50Um91dGVDb25maWdWMRI/Cgxjb25uZWN0X21vZGUYBiABKA4yKS50ZXJteC5yZW1vdGUuYXV0aC52MS5FbmRwb2ludENvbm5lY3RNb2RlEkcKEHNlbGVjdGlvbl9wb2xpY3kYByABKAsyLS50ZXJteC5yZW1vdGUuYXV0aC52MS5FbmRwb2ludFNlbGVjdGlvblBvbGljeRJSChZjcmVkZW50aWFsX2Rlc2NyaXB0b3JzGAggAygLMjIudGVybXgucmVtb3RlLmF1dGgudjEuRW5kcG9pbnRDcmVkZW50aWFsRGVzY3JpcHRvchITCgtib3VuZF9ncmFudBgJIAEoDBIbChNpc3N1ZWRfYXRfdW5peF9uYW5vGAogASgDEhwKFGV4cGlyZXNfYXRfdW5peF9uYW5vGAsgASgDIsEBChFTaGFyZVNlc3Npb25PZmZlchIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoDRITCgt0cmFuc2Zlcl9pZBgCIAEoCRIaChJsaXN0ZW5lcl9hZGRyZXNzZXMYAyADKAkSJAocZXBoZW1lcmFsX2NlcnRpZmljYXRlX3NoYTI1NhgEIAEoCRIfChdvbmVfdGltZV9zZXNzaW9uX3NlY3JldBgFIAEoDBIcChRleHBpcmVzX2F0X3VuaXhfbmFubxgGIAEoAyqwBAoNQXV0aEVycm9yQ29kZRIfChtBVVRIX0VSUk9SX0NPREVfVU5TUEVDSUZJRUQQABIcChhBVVRIX0VSUk9SX0NPREVfUFJPVE9DT0wQARIsCihBVVRIX0VSUk9SX0NPREVfREVWSUNFX0lERU5USVRZX01JU01BVENIEAISJgoiQVVUSF9FUlJPUl9DT0RFX0NBUEFCSUxJVFlfSU5WQUxJRBADEiYKIkFVVEhfRVJST1JfQ09ERV9DQVBBQklMSVRZX0VYUElSRUQQBBImCiJBVVRIX0VSUk9SX0NPREVfQ0FQQUJJTElUWV9SRVZPS0VEEAUSLAooQVVUSF9FUlJPUl9DT0RFX0NBUEFCSUxJVFlfUFJPT0ZfSU5WQUxJRBAGEiEKHUFVVEhfRVJST1JfQ09ERV9TQ09QRV9JTlZBTElEEAcSHAoYQVVUSF9FUlJPUl9DT0RFX1JFUExBWUVEEAgSHAoYQVVUSF9FUlJPUl9DT0RFX0lOVEVSTkFMEAkSKAokQVVUSF9FUlJPUl9DT0RFX1NVQkpFQ1RfS0VZX01JU01BVENIEAoSKgomQVVUSF9FUlJPUl9DT0RFX1BBSVJJTkdfVElDS0VUX0lOVkFMSUQQCxIqCiZBVVRIX0VSUk9SX0NPREVfUEFJUklOR19USUNLRVRfRVhQSVJFRBAMEisKJ0FVVEhfRVJST1JfQ09ERV9QQUlSSU5HX1RJQ0tFVF9DT05TVU1FRBANKnYKCVNjb3BlS2luZBIaChZTQ09QRV9LSU5EX1VOU1BFQ0lGSUVEEAASFQoRU0NPUEVfS0lORF9EQUVNT04QARIXChNTQ09QRV9LSU5EX1RFUk1JTkFMEAISHQoZU0NPUEVfS0lORF9NQUNISU5FX0VWRU5UUxADKqMBChJDaGFubmVsQmluZGluZ0tpbmQSJAogQ0hBTk5FTF9CSU5ESU5HX0tJTkRfVU5TUEVDSUZJRUQQABIjCh9DSEFOTkVMX0JJTkRJTkdfS0lORF9ESVJFQ1RfVExTEAESHQoZQ0hBTk5FTF9CSU5ESU5HX0tJTkRfRFRMUxACEiMKH0NIQU5ORUxfQklORElOR19LSU5EX0xPQ0FMX1VOSVgQAyppCgxBdXRoT3BlbktpbmQSHgoaQVVUSF9PUEVOX0tJTkRfVU5TUEVDSUZJRUQQABIdChlBVVRIX09QRU5fS0lORF9DQVBBQklMSVRZEAESGgoWQVVUSF9PUEVOX0tJTkRfUEFJUklORxACKqMBChNFbmRwb2ludENvbm5lY3RNb2RlEiUKIUVORFBPSU5UX0NPTk5FQ1RfTU9ERV9VTlNQRUNJRklFRBAAEh4KGkVORFBPSU5UX0NPTk5FQ1RfTU9ERV9BVVRPEAESIwofRU5EUE9JTlRfQ09OTkVDVF9NT0RFX09OX0RFTUFORBACEiAKHEVORFBPSU5UX0NPTk5FQ1RfTU9ERV9NQU5VQUwQAyriAQoWTWFuYWdlZFdlYlJUQ1JlbGF5TW9kZRIpCiVNQU5BR0VEX1dFQlJUQ19SRUxBWV9NT0RFX1VOU1BFQ0lGSUVEEAASIgoeTUFOQUdFRF9XRUJSVENfUkVMQVlfTU9ERV9BVVRPEAESJAogTUFOQUdFRF9XRUJSVENfUkVMQVlfTU9ERV9ESVJFQ1QQAhIoCiRNQU5BR0VEX1dFQlJUQ19SRUxBWV9NT0RFX1JFTEFZX09OTFkQAxIpCiVNQU5BR0VEX1dFQlJUQ19SRUxBWV9NT0RFX1NNQVJUX1JPVVRFEAQq8AEKDkVuZHBvaW50U291cmNlEh8KG0VORFBPSU5UX1NPVVJDRV9VTlNQRUNJRklFRBAAEhcKE0VORFBPSU5UX1NPVVJDRV9MQU4QARIZChVFTkRQT0lOVF9TT1VSQ0VfQ0xPVUQQAhIdChlFTkRQT0lOVF9TT1VSQ0VfQk9PVFNUUkFQEAMSGQoVRU5EUE9JTlRfU09VUkNFX0xPQ0FMEAQSGgoWRU5EUE9JTlRfU09VUkNFX01BTlVBTBAFEhkKFUVORFBPSU5UX1NPVVJDRV9TSEFSRRAGEhgKFEVORFBPSU5UX1NPVVJDRV9VU0VSEAcqngIKFkVuZHBvaW50Q3JlZGVudGlhbEtpbmQSKAokRU5EUE9JTlRfQ1JFREVOVElBTF9LSU5EX1VOU1BFQ0lGSUVEEAASJgoiRU5EUE9JTlRfQ1JFREVOVElBTF9LSU5EX1NTSF9BR0VOVBABEiwKKEVORFBPSU5UX0NSRURFTlRJQUxfS0lORF9TU0hfUFJJVkFURV9LRVkQAhIpCiVFTkRQT0lOVF9DUkVERU5USUFMX0tJTkRfU1NIX1BBU1NXT1JEEAMSLQopRU5EUE9JTlRfQ1JFREVOVElBTF9LSU5EX0NBUEFCSUxJVFlfR1JBTlQQBBIqCiZFTkRQT0lOVF9DUkVERU5USUFMX0tJTkRfQ0xPVURfUFJPRklMRRAFQixaKmdpdGh1Yi5jb20vbG96em93L3Rlcm14L3Byb3RvL3JlbW90ZWF1dGhwYmIGcHJvdG8z");
 
 /**
  * ChannelBinding 是 transport adapter 从实际 TLS/DTLS/local Unix channel 取得的 SHA-256 binding。
@@ -791,21 +791,188 @@ export const EndpointSelectionPolicySchema: GenMessage<EndpointSelectionPolicy> 
   messageDesc(file_remoteauthpb_remote_auth, 20);
 
 /**
- * EndpointAccessRoute 是跨平台持久 route schema。
- * kind-specific 字段必须由 strict parser 互斥校验；credential_ref 仅在当前平台本地 store 中有意义。
+ * EndpointCredentialDescriptor 描述 share 后目标端需要解析或重新创建的凭据，不携带源平台 credential ref 或 secret body。
  *
- * @generated from message termx.remote.auth.v1.EndpointAccessRoute
+ * @generated from message termx.remote.auth.v1.EndpointCredentialDescriptor
  */
-export type EndpointAccessRoute = Message<"termx.remote.auth.v1.EndpointAccessRoute"> & {
+export type EndpointCredentialDescriptor = Message<"termx.remote.auth.v1.EndpointCredentialDescriptor"> & {
   /**
-   * @generated from field: string route_id = 1;
+   * @generated from field: string descriptor_id = 1;
    */
-  routeId: string;
+  descriptorId: string;
 
   /**
-   * @generated from field: termx.remote.auth.v1.EndpointRouteKind kind = 2;
+   * @generated from field: termx.remote.auth.v1.EndpointCredentialKind kind = 2;
    */
-  kind: EndpointRouteKind;
+  kind: EndpointCredentialKind;
+
+  /**
+   * @generated from field: bool exportable = 3;
+   */
+  exportable: boolean;
+};
+
+/**
+ * Describes the message termx.remote.auth.v1.EndpointCredentialDescriptor.
+ * Use `create(EndpointCredentialDescriptorSchema)` to create a new message.
+ */
+export const EndpointCredentialDescriptorSchema: GenMessage<EndpointCredentialDescriptor> = /*@__PURE__*/
+  messageDesc(file_remoteauthpb_remote_auth, 21);
+
+/**
+ * LocalUnixRouteConfig 只用于同一主机上的 Go/native CLI 与 TUI。
+ *
+ * @generated from message termx.remote.auth.v1.LocalUnixRouteConfig
+ */
+export type LocalUnixRouteConfig = Message<"termx.remote.auth.v1.LocalUnixRouteConfig"> & {
+  /**
+   * @generated from field: string socket = 1;
+   */
+  socket: string;
+};
+
+/**
+ * Describes the message termx.remote.auth.v1.LocalUnixRouteConfig.
+ * Use `create(LocalUnixRouteConfigSchema)` to create a new message.
+ */
+export const LocalUnixRouteConfigSchema: GenMessage<LocalUnixRouteConfig> = /*@__PURE__*/
+  messageDesc(file_remoteauthpb_remote_auth, 22);
+
+/**
+ * DirectWebRTCTCPRouteConfig 描述不依赖 TermX Cloud 的 daemon embedded signaling 与 ICE-TCP locator。
+ * advertised_addresses 允许 pair create 为 LAN、FRP 或其它 TCP 映射显式覆盖对外地址，但不改变 Endpoint identity。
+ *
+ * @generated from message termx.remote.auth.v1.DirectWebRTCTCPRouteConfig
+ */
+export type DirectWebRTCTCPRouteConfig = Message<"termx.remote.auth.v1.DirectWebRTCTCPRouteConfig"> & {
+  /**
+   * @generated from field: repeated string signaling_addresses = 1;
+   */
+  signalingAddresses: string[];
+
+  /**
+   * @generated from field: repeated string ice_tcp_addresses = 2;
+   */
+  iceTcpAddresses: string[];
+
+  /**
+   * @generated from field: repeated string advertised_addresses = 3;
+   */
+  advertisedAddresses: string[];
+
+  /**
+   * @generated from field: string server_name = 4;
+   */
+  serverName: string;
+};
+
+/**
+ * Describes the message termx.remote.auth.v1.DirectWebRTCTCPRouteConfig.
+ * Use `create(DirectWebRTCTCPRouteConfigSchema)` to create a new message.
+ */
+export const DirectWebRTCTCPRouteConfigSchema: GenMessage<DirectWebRTCTCPRouteConfig> = /*@__PURE__*/
+  messageDesc(file_remoteauthpb_remote_auth, 23);
+
+/**
+ * SSHWebRTCTCPRouteConfig 描述 Go SSH direct-tcpip tunnel 需要的 portable 配置。
+ * credential_descriptor 只说明目标平台要解析的凭据类别；credential body 和源平台 ref 永远不得进入 wire contract。
+ *
+ * @generated from message termx.remote.auth.v1.SSHWebRTCTCPRouteConfig
+ */
+export type SSHWebRTCTCPRouteConfig = Message<"termx.remote.auth.v1.SSHWebRTCTCPRouteConfig"> & {
+  /**
+   * @generated from field: string host = 1;
+   */
+  host: string;
+
+  /**
+   * @generated from field: uint32 port = 2;
+   */
+  port: number;
+
+  /**
+   * @generated from field: string user = 3;
+   */
+  user: string;
+
+  /**
+   * @generated from field: repeated string host_key_fingerprints = 4;
+   */
+  hostKeyFingerprints: string[];
+
+  /**
+   * @generated from field: string proxy_jump = 5;
+   */
+  proxyJump: string;
+
+  /**
+   * @generated from field: termx.remote.auth.v1.EndpointCredentialDescriptor credential_descriptor = 6;
+   */
+  credentialDescriptor?: EndpointCredentialDescriptor | undefined;
+
+  /**
+   * @generated from field: string remote_signaling_address = 7;
+   */
+  remoteSignalingAddress: string;
+
+  /**
+   * @generated from field: string remote_ice_tcp_address = 8;
+   */
+  remoteIceTcpAddress: string;
+};
+
+/**
+ * Describes the message termx.remote.auth.v1.SSHWebRTCTCPRouteConfig.
+ * Use `create(SSHWebRTCTCPRouteConfigSchema)` to create a new message.
+ */
+export const SSHWebRTCTCPRouteConfigSchema: GenMessage<SSHWebRTCTCPRouteConfig> = /*@__PURE__*/
+  messageDesc(file_remoteauthpb_remote_auth, 24);
+
+/**
+ * ManagedWebRTCRouteConfig 描述同一个 App 内由 TermX Cloud 提供的可选 managed Route。
+ *
+ * @generated from message termx.remote.auth.v1.ManagedWebRTCRouteConfig
+ */
+export type ManagedWebRTCRouteConfig = Message<"termx.remote.auth.v1.ManagedWebRTCRouteConfig"> & {
+  /**
+   * @generated from field: string target_device_id = 1;
+   */
+  targetDeviceId: string;
+
+  /**
+   * @generated from field: string account_profile_ref = 2;
+   */
+  accountProfileRef: string;
+
+  /**
+   * @generated from field: termx.remote.auth.v1.ManagedWebRTCRelayMode relay_mode = 3;
+   */
+  relayMode: ManagedWebRTCRelayMode;
+};
+
+/**
+ * Describes the message termx.remote.auth.v1.ManagedWebRTCRouteConfig.
+ * Use `create(ManagedWebRTCRouteConfigSchema)` to create a new message.
+ */
+export const ManagedWebRTCRouteConfigSchema: GenMessage<ManagedWebRTCRouteConfig> = /*@__PURE__*/
+  messageDesc(file_remoteauthpb_remote_auth, 25);
+
+/**
+ * EndpointRouteConfigV1 是跨 Go、JNI、未来 C ABI/WASM 的唯一持久 Route schema。
+ * route oneof 让 kind-specific 字段在 schema 层互斥；credential_ref 只引用当前平台 secure store。
+ *
+ * @generated from message termx.remote.auth.v1.EndpointRouteConfigV1
+ */
+export type EndpointRouteConfigV1 = Message<"termx.remote.auth.v1.EndpointRouteConfigV1"> & {
+  /**
+   * @generated from field: uint32 schema_version = 1;
+   */
+  schemaVersion: number;
+
+  /**
+   * @generated from field: string route_id = 2;
+   */
+  routeId: string;
 
   /**
    * @generated from field: bool enabled = 3;
@@ -838,101 +1005,129 @@ export type EndpointAccessRoute = Message<"termx.remote.auth.v1.EndpointAccessRo
   policySource: EndpointSource;
 
   /**
-   * @generated from field: string socket = 9;
+   * @generated from oneof termx.remote.auth.v1.EndpointRouteConfigV1.route
    */
-  socket: string;
-
-  /**
-   * @generated from field: string host = 10;
-   */
-  host: string;
-
-  /**
-   * @generated from field: uint32 port = 11;
-   */
-  port: number;
-
-  /**
-   * @generated from field: string user = 12;
-   */
-  user: string;
-
-  /**
-   * @generated from field: string proxy_jump = 13;
-   */
-  proxyJump: string;
-
-  /**
-   * @generated from field: string remote_socket = 14;
-   */
-  remoteSocket: string;
-
-  /**
-   * @generated from field: repeated string host_key_fingerprints = 15;
-   */
-  hostKeyFingerprints: string[];
-
-  /**
-   * @generated from field: repeated string addresses = 16;
-   */
-  addresses: string[];
-
-  /**
-   * @generated from field: string server_name = 17;
-   */
-  serverName: string;
-
-  /**
-   * @generated from field: string target_device_id = 18;
-   */
-  targetDeviceId: string;
-
-  /**
-   * @generated from field: string account_profile = 19;
-   */
-  accountProfile: string;
-
-  /**
-   * @generated from field: termx.remote.auth.v1.EndpointRelayMode relay_mode = 20;
-   */
-  relayMode: EndpointRelayMode;
+  route: {
+    /**
+     * @generated from field: termx.remote.auth.v1.LocalUnixRouteConfig local_unix = 20;
+     */
+    value: LocalUnixRouteConfig;
+    case: "localUnix";
+  } | {
+    /**
+     * @generated from field: termx.remote.auth.v1.DirectWebRTCTCPRouteConfig direct_webrtc_tcp = 21;
+     */
+    value: DirectWebRTCTCPRouteConfig;
+    case: "directWebrtcTcp";
+  } | {
+    /**
+     * @generated from field: termx.remote.auth.v1.SSHWebRTCTCPRouteConfig ssh_webrtc_tcp = 22;
+     */
+    value: SSHWebRTCTCPRouteConfig;
+    case: "sshWebrtcTcp";
+  } | {
+    /**
+     * @generated from field: termx.remote.auth.v1.ManagedWebRTCRouteConfig managed_webrtc = 23;
+     */
+    value: ManagedWebRTCRouteConfig;
+    case: "managedWebrtc";
+  } | { case: undefined; value?: undefined };
 };
 
 /**
- * Describes the message termx.remote.auth.v1.EndpointAccessRoute.
- * Use `create(EndpointAccessRouteSchema)` to create a new message.
+ * Describes the message termx.remote.auth.v1.EndpointRouteConfigV1.
+ * Use `create(EndpointRouteConfigV1Schema)` to create a new message.
  */
-export const EndpointAccessRouteSchema: GenMessage<EndpointAccessRoute> = /*@__PURE__*/
-  messageDesc(file_remoteauthpb_remote_auth, 21);
+export const EndpointRouteConfigV1Schema: GenMessage<EndpointRouteConfigV1> = /*@__PURE__*/
+  messageDesc(file_remoteauthpb_remote_auth, 26);
 
 /**
- * EndpointCredentialDescriptor 描述 share 后目标端需要解析或重新创建的凭据，不携带源平台 credential ref 或 secret body。
+ * EndpointConfigV1 是 Go Client Engine 持久化和跨 binding 投影的 Endpoint 配置。
  *
- * @generated from message termx.remote.auth.v1.EndpointCredentialDescriptor
+ * @generated from message termx.remote.auth.v1.EndpointConfigV1
  */
-export type EndpointCredentialDescriptor = Message<"termx.remote.auth.v1.EndpointCredentialDescriptor"> & {
+export type EndpointConfigV1 = Message<"termx.remote.auth.v1.EndpointConfigV1"> & {
   /**
-   * @generated from field: string descriptor_id = 1;
+   * @generated from field: uint32 schema_version = 1;
    */
-  descriptorId: string;
+  schemaVersion: number;
 
   /**
-   * @generated from field: termx.remote.auth.v1.EndpointCredentialKind kind = 2;
+   * @generated from field: string endpoint_id = 2;
    */
-  kind: EndpointCredentialKind;
+  endpointId: string;
 
   /**
-   * @generated from field: bool exportable = 3;
+   * @generated from field: string label = 3;
    */
-  exportable: boolean;
+  label: string;
+
+  /**
+   * @generated from field: termx.remote.auth.v1.EndpointSource label_source = 4;
+   */
+  labelSource: EndpointSource;
+
+  /**
+   * @generated from field: termx.remote.auth.v1.EndpointDaemonIdentity identity = 5;
+   */
+  identity?: EndpointDaemonIdentity | undefined;
+
+  /**
+   * @generated from field: termx.remote.auth.v1.EndpointConnectMode connect_mode = 6;
+   */
+  connectMode: EndpointConnectMode;
+
+  /**
+   * @generated from field: bool enabled = 7;
+   */
+  enabled: boolean;
+
+  /**
+   * @generated from field: termx.remote.auth.v1.EndpointSelectionPolicy selection_policy = 8;
+   */
+  selectionPolicy?: EndpointSelectionPolicy | undefined;
+
+  /**
+   * @generated from field: repeated termx.remote.auth.v1.EndpointRouteConfigV1 routes = 9;
+   */
+  routes: EndpointRouteConfigV1[];
 };
 
 /**
- * Describes the message termx.remote.auth.v1.EndpointCredentialDescriptor.
- * Use `create(EndpointCredentialDescriptorSchema)` to create a new message.
+ * Describes the message termx.remote.auth.v1.EndpointConfigV1.
+ * Use `create(EndpointConfigV1Schema)` to create a new message.
  */
-export const EndpointCredentialDescriptorSchema: GenMessage<EndpointCredentialDescriptor> = /*@__PURE__*/
-  messageDesc(file_remoteauthpb_remote_auth, 22);
+export const EndpointConfigV1Schema: GenMessage<EndpointConfigV1> = /*@__PURE__*/
+  messageDesc(file_remoteauthpb_remote_auth, 27);
+
+/**
+ * EndpointRegistryV1 是 Go Client Engine 拥有的完整 Endpoint registry contract。
+ *
+ * @generated from message termx.remote.auth.v1.EndpointRegistryV1
+ */
+export type EndpointRegistryV1 = Message<"termx.remote.auth.v1.EndpointRegistryV1"> & {
+  /**
+   * @generated from field: uint32 schema_version = 1;
+   */
+  schemaVersion: number;
+
+  /**
+   * @generated from field: string default_endpoint_id = 2;
+   */
+  defaultEndpointId: string;
+
+  /**
+   * @generated from field: repeated termx.remote.auth.v1.EndpointConfigV1 endpoints = 3;
+   */
+  endpoints: EndpointConfigV1[];
+};
+
+/**
+ * Describes the message termx.remote.auth.v1.EndpointRegistryV1.
+ * Use `create(EndpointRegistryV1Schema)` to create a new message.
+ */
+export const EndpointRegistryV1Schema: GenMessage<EndpointRegistryV1> = /*@__PURE__*/
+  messageDesc(file_remoteauthpb_remote_auth, 28);
 
 /**
  * PairingTicketDescriptor 是 daemon-local 一次性授权兑换票据的公开部分。
@@ -986,7 +1181,7 @@ export type PairingTicketDescriptor = Message<"termx.remote.auth.v1.PairingTicke
  * Use `create(PairingTicketDescriptorSchema)` to create a new message.
  */
 export const PairingTicketDescriptorSchema: GenMessage<PairingTicketDescriptor> = /*@__PURE__*/
-  messageDesc(file_remoteauthpb_remote_auth, 23);
+  messageDesc(file_remoteauthpb_remote_auth, 29);
 
 /**
  * EndpointAuthorizationBootstrap 只允许携带短期 PairingTicket，或双向离线扫码中已绑定接收方 key 的 grant。
@@ -1017,7 +1212,7 @@ export type EndpointAuthorizationBootstrap = Message<"termx.remote.auth.v1.Endpo
  * Use `create(EndpointAuthorizationBootstrapSchema)` to create a new message.
  */
 export const EndpointAuthorizationBootstrapSchema: GenMessage<EndpointAuthorizationBootstrap> = /*@__PURE__*/
-  messageDesc(file_remoteauthpb_remote_auth, 24);
+  messageDesc(file_remoteauthpb_remote_auth, 30);
 
 /**
  * EndpointBootstrapBundleV2 是 daemon DeviceIdentity 签名的增量 bootstrap wire contract。
@@ -1047,9 +1242,9 @@ export type EndpointBootstrapBundleV2 = Message<"termx.remote.auth.v1.EndpointBo
   suggestedLabel: string;
 
   /**
-   * @generated from field: repeated termx.remote.auth.v1.EndpointAccessRoute routes = 5;
+   * @generated from field: repeated termx.remote.auth.v1.EndpointRouteConfigV1 routes = 5;
    */
-  routes: EndpointAccessRoute[];
+  routes: EndpointRouteConfigV1[];
 
   /**
    * @generated from field: termx.remote.auth.v1.EndpointAuthorizationBootstrap authorization = 6;
@@ -1077,7 +1272,7 @@ export type EndpointBootstrapBundleV2 = Message<"termx.remote.auth.v1.EndpointBo
  * Use `create(EndpointBootstrapBundleV2Schema)` to create a new message.
  */
 export const EndpointBootstrapBundleV2Schema: GenMessage<EndpointBootstrapBundleV2> = /*@__PURE__*/
-  messageDesc(file_remoteauthpb_remote_auth, 25);
+  messageDesc(file_remoteauthpb_remote_auth, 31);
 
 /**
  * PairingTicketSignatureInput 是 DeviceIdentity 对一次性 ticket 签名的唯一 canonical protobuf。
@@ -1117,7 +1312,7 @@ export type PairingTicketSignatureInput = Message<"termx.remote.auth.v1.PairingT
  * Use `create(PairingTicketSignatureInputSchema)` to create a new message.
  */
 export const PairingTicketSignatureInputSchema: GenMessage<PairingTicketSignatureInput> = /*@__PURE__*/
-  messageDesc(file_remoteauthpb_remote_auth, 26);
+  messageDesc(file_remoteauthpb_remote_auth, 32);
 
 /**
  * EndpointBootstrapSignatureInput 是 DeviceIdentity 对完整 bootstrap 签名的唯一 canonical protobuf。
@@ -1147,7 +1342,7 @@ export type EndpointBootstrapSignatureInput = Message<"termx.remote.auth.v1.Endp
  * Use `create(EndpointBootstrapSignatureInputSchema)` to create a new message.
  */
 export const EndpointBootstrapSignatureInputSchema: GenMessage<EndpointBootstrapSignatureInput> = /*@__PURE__*/
-  messageDesc(file_remoteauthpb_remote_auth, 27);
+  messageDesc(file_remoteauthpb_remote_auth, 33);
 
 /**
  * ClientEndpointShareBundleV1 是用户确认后通过实时 TLS share session 发送的客户端配置迁移 contract。
@@ -1177,9 +1372,9 @@ export type ClientEndpointShareBundleV1 = Message<"termx.remote.auth.v1.ClientEn
   suggestedLabel: string;
 
   /**
-   * @generated from field: repeated termx.remote.auth.v1.EndpointAccessRoute routes = 5;
+   * @generated from field: repeated termx.remote.auth.v1.EndpointRouteConfigV1 routes = 5;
    */
-  routes: EndpointAccessRoute[];
+  routes: EndpointRouteConfigV1[];
 
   /**
    * @generated from field: termx.remote.auth.v1.EndpointConnectMode connect_mode = 6;
@@ -1219,7 +1414,7 @@ export type ClientEndpointShareBundleV1 = Message<"termx.remote.auth.v1.ClientEn
  * Use `create(ClientEndpointShareBundleV1Schema)` to create a new message.
  */
 export const ClientEndpointShareBundleV1Schema: GenMessage<ClientEndpointShareBundleV1> = /*@__PURE__*/
-  messageDesc(file_remoteauthpb_remote_auth, 28);
+  messageDesc(file_remoteauthpb_remote_auth, 34);
 
 /**
  * ShareSessionOffer 是静态二维码允许包含的全部内容。
@@ -1264,7 +1459,7 @@ export type ShareSessionOffer = Message<"termx.remote.auth.v1.ShareSessionOffer"
  * Use `create(ShareSessionOfferSchema)` to create a new message.
  */
 export const ShareSessionOfferSchema: GenMessage<ShareSessionOffer> = /*@__PURE__*/
-  messageDesc(file_remoteauthpb_remote_auth, 29);
+  messageDesc(file_remoteauthpb_remote_auth, 35);
 
 /**
  * AuthErrorCode 是端到端授权失败时允许返回给对端的稳定分类。
@@ -1446,45 +1641,6 @@ export const AuthOpenKindSchema: GenEnum<AuthOpenKind> = /*@__PURE__*/
   enumDesc(file_remoteauthpb_remote_auth, 3);
 
 /**
- * EndpointRouteKind 是跨 Go/Kotlin/TypeScript wire contract 的 route 分类。
- * Endpoint/Route 的领域 owner 仍是客户端 connection runtime；该枚举不能被解释为一次运行时 transport 或 managed path。
- *
- * @generated from enum termx.remote.auth.v1.EndpointRouteKind
- */
-export enum EndpointRouteKind {
-  /**
-   * @generated from enum value: ENDPOINT_ROUTE_KIND_UNSPECIFIED = 0;
-   */
-  UNSPECIFIED = 0,
-
-  /**
-   * @generated from enum value: ENDPOINT_ROUTE_KIND_LOCAL_UNIX = 1;
-   */
-  LOCAL_UNIX = 1,
-
-  /**
-   * @generated from enum value: ENDPOINT_ROUTE_KIND_SSH_STDIO = 2;
-   */
-  SSH_STDIO = 2,
-
-  /**
-   * @generated from enum value: ENDPOINT_ROUTE_KIND_DIRECT_TLS = 3;
-   */
-  DIRECT_TLS = 3,
-
-  /**
-   * @generated from enum value: ENDPOINT_ROUTE_KIND_MANAGED_WEBRTC = 4;
-   */
-  MANAGED_WEBRTC = 4,
-}
-
-/**
- * Describes the enum termx.remote.auth.v1.EndpointRouteKind.
- */
-export const EndpointRouteKindSchema: GenEnum<EndpointRouteKind> = /*@__PURE__*/
-  enumDesc(file_remoteauthpb_remote_auth, 4);
-
-/**
  * EndpointConnectMode 描述客户端何时可以自动建立 Endpoint session。
  *
  * @generated from enum termx.remote.auth.v1.EndpointConnectMode
@@ -1515,45 +1671,45 @@ export enum EndpointConnectMode {
  * Describes the enum termx.remote.auth.v1.EndpointConnectMode.
  */
 export const EndpointConnectModeSchema: GenEnum<EndpointConnectMode> = /*@__PURE__*/
-  enumDesc(file_remoteauthpb_remote_auth, 5);
+  enumDesc(file_remoteauthpb_remote_auth, 4);
 
 /**
- * EndpointRelayMode 只描述 managed-webrtc route 内部允许的 direct/single Relay 策略。
+ * ManagedWebRTCRelayMode 只描述 TermX Cloud managed route 内部允许的 ICE/Relay 策略。
  *
- * @generated from enum termx.remote.auth.v1.EndpointRelayMode
+ * @generated from enum termx.remote.auth.v1.ManagedWebRTCRelayMode
  */
-export enum EndpointRelayMode {
+export enum ManagedWebRTCRelayMode {
   /**
-   * @generated from enum value: ENDPOINT_RELAY_MODE_UNSPECIFIED = 0;
+   * @generated from enum value: MANAGED_WEBRTC_RELAY_MODE_UNSPECIFIED = 0;
    */
-  UNSPECIFIED = 0,
+  MANAGED_WEBRTC_RELAY_MODE_UNSPECIFIED = 0,
 
   /**
-   * @generated from enum value: ENDPOINT_RELAY_MODE_AUTO = 1;
+   * @generated from enum value: MANAGED_WEBRTC_RELAY_MODE_AUTO = 1;
    */
-  AUTO = 1,
+  MANAGED_WEBRTC_RELAY_MODE_AUTO = 1,
 
   /**
-   * @generated from enum value: ENDPOINT_RELAY_MODE_DIRECT = 2;
+   * @generated from enum value: MANAGED_WEBRTC_RELAY_MODE_DIRECT = 2;
    */
-  DIRECT = 2,
+  MANAGED_WEBRTC_RELAY_MODE_DIRECT = 2,
 
   /**
-   * @generated from enum value: ENDPOINT_RELAY_MODE_RELAY_ONLY = 3;
+   * @generated from enum value: MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY = 3;
    */
-  RELAY_ONLY = 3,
+  MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY = 3,
 
   /**
-   * @generated from enum value: ENDPOINT_RELAY_MODE_SMART_ROUTE = 4;
+   * @generated from enum value: MANAGED_WEBRTC_RELAY_MODE_SMART_ROUTE = 4;
    */
-  SMART_ROUTE = 4,
+  MANAGED_WEBRTC_RELAY_MODE_SMART_ROUTE = 4,
 }
 
 /**
- * Describes the enum termx.remote.auth.v1.EndpointRelayMode.
+ * Describes the enum termx.remote.auth.v1.ManagedWebRTCRelayMode.
  */
-export const EndpointRelayModeSchema: GenEnum<EndpointRelayMode> = /*@__PURE__*/
-  enumDesc(file_remoteauthpb_remote_auth, 6);
+export const ManagedWebRTCRelayModeSchema: GenEnum<ManagedWebRTCRelayMode> = /*@__PURE__*/
+  enumDesc(file_remoteauthpb_remote_auth, 5);
 
 /**
  * EndpointSource 记录 route 或用户策略的来源，供确定性 assembler 保留更高权重的已确认信息。
@@ -1606,7 +1762,7 @@ export enum EndpointSource {
  * Describes the enum termx.remote.auth.v1.EndpointSource.
  */
 export const EndpointSourceSchema: GenEnum<EndpointSource> = /*@__PURE__*/
-  enumDesc(file_remoteauthpb_remote_auth, 7);
+  enumDesc(file_remoteauthpb_remote_auth, 6);
 
 /**
  * EndpointCredentialKind 只描述目标平台 secure store 中凭据的类别；wire contract 永远不携带凭据 body。
@@ -1649,4 +1805,4 @@ export enum EndpointCredentialKind {
  * Describes the enum termx.remote.auth.v1.EndpointCredentialKind.
  */
 export const EndpointCredentialKindSchema: GenEnum<EndpointCredentialKind> = /*@__PURE__*/
-  enumDesc(file_remoteauthpb_remote_auth, 8);
+  enumDesc(file_remoteauthpb_remote_auth, 7);

@@ -1,174 +1,111 @@
-# 多 Endpoint / 多 Transport 技术规划
+# TUI 多 Endpoint / 多 Route 接入基线
 
-## 文档职责
+状态：RTC001 后技术边界
 
-本文只定义 TUI/CLI 客户端侧的多 Endpoint、多 Route 运行时边界，以及当前活动切片 `CONN003` 的实现目标。
+活动任务与顺序只以仓库根目录 `workflow.md` 为准。本文只约束 TUI 如何消费 Go Client Engine，不维护独立迁移队列。
 
-- 当前任务顺序、允许修改范围、准入命令和完成状态只看仓库根目录 `workflow.md`。
-- Endpoint/Route/Transport/Path、授权、Cloud 和后续迁移的完整产品架构以 [`docs/remote-platform/unified-endpoint-route-refactor-plan.md`](../../docs/remote-platform/unified-endpoint-route-refactor-plan.md) 为准。
-- TUI reducer、service、render 和 history ownership 以 [`tui/docs/architecture.md`](architecture.md) 为准。
-- 仓库目录与依赖方向以 [`docs/development/repository-layout.md`](../../docs/development/repository-layout.md) 为准。
-- 本文不重复保存 CLI 命令树、Cloud 专项设计或历史实施记录，避免形成第二份活动计划。
+## 1. 核心模型
 
-## 当前真实状态
+- Endpoint 表示当前客户端要连接的 daemon。
+- Route 表示到达该 Endpoint 的方式。
+- 跨 Endpoint terminal 引用固定为 `TerminalRef = EndpointID + TerminalID`。
+- TUI 不拥有 Endpoint identity、Route config、session generation、winner、credential、terminal lifecycle 或 committed history truth。
+- TUI 只消费 Go Client Engine 和 daemon API 的 projection。
 
-`CONN001` 和 `CONN002` 已完成：
-
-- `connections.yaml` v2 已能保存一个 Endpoint 下的多条 Route。
-- `EndpointID + TerminalID` 已是跨 Endpoint 的 `TerminalRef`。
-- DeviceIdentity、ClientAccessIdentity、PairingTicket、client-bound CapabilityGrant v2 和 channel binding auth 已有领域实现。
-- local Unix、SSH stdio、managed WebRTC 各自已有可用接线。
-
-`CONN003` 尚未完成：
-
-- C3X 已删除 `Endpoint.ResolveCurrentRoute`、TUI lazy bundle/session owner 和 CLI 直接 route/dial owner；CLI/TUI 当前保留明确待接 `client/runtime` 的调用缺口，不再有可继续修补的旧运行时。
-- C3B 已在 `client/endpoint` 完成纯领域 `RouteSelectionPlanner`、local/SSH full-race 分组、priority hedge、manual override、唯一 managed 单路计划和机器可读 fixture；它只产出不可变 attempt groups，不 dial，也不拥有 winner。
-- C3C 已把 local/SSH fresh DeviceIdentity challenge proof、managed channel-bound auth、route authorization、Hello 与 lifecycle signal 固化为统一 `ReadySession` 发布门禁；C3D/C3E 已把 planner race、winner/loser cleanup 和 CLI/TUI composition 接到同一 runtime。
-- C3E 已让 CLI/TUI native composition 共用 per-endpoint `ClientRuntime/SessionOwner`、local/SSH/lazy-managed dialer registry、system Clock 和 lifecycle mailbox；TUI 不再从 raw protocol client 推断 endpoint 状态。operation/channel stamp 的完整副作用前校验仍由 C3F 完成。
-- C3F 已把 generated Proto `EndpointSessionStamp` 与 operation identity 贯穿 attach candidate/commit/cleanup、input/paste、resize 和 detach；stale generation 在 attachment lookup/adapter 副作用前失败，replaced candidate 精确 cleanup，非幂等 input/paste 不自动重放。
-- C3G 已用隔离真实 `sshd`、OpenSSH client 和远端 `termx daemon stdio-proxy` 验证 local/SSH full race、priority hedge、explicit override/sticky、loser SSH process cleanup、跨 route `TerminalRef` 稳定和 stale operation；SSH winner 生命周期已在 Ready 后从 race context 移交给 session owner。
-
-因此，当前 `CONN003` 只剩 C3H 最终全量准入与双 Agent 审查；下文 planner/runtime/stamp/真实 route 语义是当前实现基线。
-
-## 当前非目标
-
-- 不在 CONN003 接入 direct TLS、LAN discovery、managed WebRTC 共同竞速或 endpoint share。
-- 不实现长期多活动 session、热备、无中断动态换路或跨 Endpoint fallback。
-- 不把 planner 扩展成插件系统，也不恢复旧 remote、旧 Hub/session-token、旧 core/TUI 路径。
-- 不让 TUI/CLI、Cloud Companion、Hub 或 Relay 成为 terminal lifecycle、history、CapabilityGrant 或 daemon identity private key 的第二真值。
-
-## 领域边界
+当前 Route：
 
 ```text
-Endpoint  一个客户端要连接的 daemon 目标
-  Route   到达该 Endpoint 的持久配置
-    Transport  某次 route attempt 的运行时载体
-      Path     managed WebRTC 内部 direct / single_relay 路径
+local-unix
+direct-webrtc-tcp
+ssh-webrtc-tcp
+managed-webrtc
 ```
 
-- 一个 daemon 对应一个 Endpoint；local Unix、SSH、direct TLS 和 managed WebRTC 是该 Endpoint 下的 Route。
-- `connections.yaml` 只保存期望配置，不保存 winner、generation、dial phase、observed path、运行时错误或 transport 句柄。
-- `TerminalID` 只在 owning daemon 内唯一；跨 Endpoint 数据必须使用 `TerminalRef{EndpointID, TerminalID}`。
-- client 侧 `client/runtime` 管理“我如何连接 daemon”；daemon 侧 attachment/client manager 管理“哪些客户端连接我”。两者不是同一个领域模型。
-- TUI 不拥有 terminal lifecycle、committed history、daemon 文件系统或授权真值。
+所有远程 Route 成功后都必须表现为同一种 Go-owned ReadyPeerSession 和 Proto API session。TUI 不按 Direct/SSH/Cloud 分叉 terminal、history、input、resize 或 file workflow。
 
-## CONN003 目标运行时
-
-### RouteSelectionPlanner
-
-planner 是 `client/endpoint` 的纯领域逻辑：
-
-- 输入已规范化 Endpoint、连接意图、可选 route override 和 generation。
-- 过滤 disabled、manual-only、当前阶段不支持自动竞速或缺少必要 identity/credential 的 route。
-- 无 priority 时，所有 eligible local Unix/SSH route 在 `t=0` 启动。
-- 有 priority 时，同 priority 同组，后续组按 `hedge_delay` 启动。
-- 显式 `--route` 只计划指定 route，并允许选择 manual-only route。
-- 输出不可变 attempt groups；不 dial、不读 credential store、不访问 Cloud、不写 registry。
-
-CONN003 自动竞速只包含 `local-unix` 和 `ssh-stdio`。单条 `managed-webrtc` 保留已有能力，但不参与共同竞速；direct TLS/LAN、managed 共同竞速和 share 分别属于 CONN004、CONN005、CONN006。
-
-### ReadySession
-
-transport 建立不等于 Endpoint 已连接。一次 attempt 只有依次完成以下边界后才能产生 `ReadySession`：
-
-1. 建立 transport。
-2. 完成 fresh DeviceIdentity challenge proof，并匹配 Endpoint pin；local/SSH 使用 versioned Proto challenge/result，managed 使用 channel-bound DeviceHello。
-3. 完成当前连接意图要求的授权。
-4. 完成 termx protocol Hello。
-
-首个产生 `ReadySession` 的 attempt 在唯一线性化点成为 winner。静态 route 顺序只稳定启动计划和错误诊断，不能让稍晚 Ready 的 attempt 反超。
-
-### ClientRuntime
-
-`client/runtime` 的目标职责是每个 Endpoint 唯一的跨端 session owner：
-
-- 分配递增 `SessionGeneration`。
-- 同一 Endpoint 只维护一个 in-flight race 和一个活动 winner。
-- 取消并等待 loser transport、protocol client 和 SSH 子进程退出。
-- 持有 sticky route override，但不写回 registry。
-- 通过 mailbox 发布 lifecycle event，不在 manager 锁内等待 UI 消费。
-- 为 service 调用签发当前 generation lease，并在结果提交前再次校验。
-
-CLI 不另建一套选路状态机。root TUI、terminal/file/workspace 命令和 `endpoint test` 共用 planner、attempt dialer 与 session owner；`cmd/termx` 只负责参数、target resolution、输出和退出码。
-
-## 消息与取消链路
+## 2. 依赖方向
 
 ```text
-CLI/TUI intent
-  -> ClientRuntime.ensureSession
-  -> RouteSelectionPlanner.Plan
-  -> local/SSH attempts
-  -> identity proof + authorization + Hello
-  -> ReadySession winner CAS
-  -> service adapter
-  -> stamped result message
-  -> reducer generation guard
+tui reducer/view
+      |
+      v
+tui/port
+      |
+      v
+tui/adapter/clientruntime
+      |
+      v
+client/runtime -> client/endpoint -> generated Endpoint Proto
 ```
 
-取消顺序必须可追踪：
+- renderer 只读取 view-model。
+- reducer 只通过 message/effect 修改 UI state。
+- adapter 不能缓存第二份 protocol client 或自行选择 Route。
+- CLI 与 TUI composition 必须复用同一个 registry、planner 和 SessionOwner。
+
+## 3. Endpoint 投影
+
+TUI 可保存和展示：
+
+- EndpointID、label、连接状态和稳定诊断。
+- 当前 ReadySession 的 RouteID、generation 和 observed managed path。
+- `TerminalRef`、terminal lifecycle projection 和用户工作台绑定。
+
+TUI 不得保存：
+
+- Route kind-specific 配置副本。
+- credential body、DeviceIdentity private key 或 CapabilityGrant body。
+- runtime winner、stale resource handle 或 reconnect state machine。
+- daemon terminal running/exited 真值或 committed history。
+
+## 4. 连接动作
+
+TUI 连接动作只能提交：
 
 ```text
-new generation fence
-  -> cancel in-flight attempts / old session
-  -> close protocol transports
-  -> wait SSH child / future route resources
-  -> publish final lifecycle state
+EndpointID
+ConnectIntent
+optional RouteID override
 ```
 
-- winner 产生后必须取消并回收全部 loser；cleanup 失败只进入诊断，不能复活 loser。
-- route switch 或 reconnect 先建立新 generation fence，再释放旧 winner。
-- stale cleanup 只能查询已有且 stamp 精确匹配的 bundle，禁止 cleanup 触发 lazy dial。
-- adapter 尚未调用时返回 `Attempted=false`；adapter 已调用后返回 `Attempted=true`。输入和 paste 在结果不确定时不得自动重放。
+Go Client Engine 负责：
 
-## Channel-Bound Stamp
+1. 加载并验证 Endpoint/Route config。
+2. 解析当前平台能力和 credential availability。
+3. 生成 attempt plan。
+4. 建立 Route connector。
+5. 完成 remote auth、Hello 和 Proto API session。
+6. 发布 generation-bound ReadyPeerSession。
+7. 取消 loser 并释放资源。
 
-attach candidate、confirm、commit、cleanup、detach、input、paste 和 resize 必须携带创建 channel 时的原始身份：
+TUI 不得为连接失败增加 local fallback、旧 SSH proxy、重复 attach、定时刷新或隐式 Route 改写。
 
-```text
-EndpointSessionStamp = EndpointID + RouteID + SessionGeneration
-AttachmentStamp      = EndpointSessionStamp + TerminalID + Channel
-                       + SurfaceID + ViewID + OperationID
-```
+## 5. Terminal 操作
 
-- 旧 generation 的迟到结果可以进入消息队列，但 reducer 不能把它提交为当前状态。
-- candidate 失败或 stale finalize 只清理 candidate，保留旧 committed binding。
-- candidate 成功并通过 operation/generation guard 后，先原子提交新 binding，再精确 detach previous binding。
-- route 切换保持 `EndpointID` 和 `TerminalRef`，不能把旧 session 的错误投影到新 session。
+- list/create/attach/detach/input/paste/resize/history/file 都必须带 owning Endpoint correlation。
+- 非幂等 input 不自动重放。
+- operation/resource 必须受 session generation fence 约束。
+- session replacement 后，旧 generation 的 callback、resource 和 UI effect 必须失败，不得写入新 terminal view。
+- endpoint session 关闭不等于 daemon terminal 退出。
 
-## 持久化边界
+## 6. 配置与分享
 
-允许持久化：
+- TUI endpoint 命令和 UI 编辑器只能通过 Go Endpoint domain 修改 registry。
+- kind-specific 字段来自 generated Proto contract；不得在 TUI state 定义第二份业务 DTO。
+- `pair create` 是 daemon bootstrap/authorization 流程。
+- `endpoint share` 是客户端之间迁移 portable Route/policy 的流程。
+- TUI 只展示导入 diff 和用户确认，不解析 credential secret 或自行签发 grant。
 
-- EndpointID、label、DaemonIdentity pin、connect/selection policy。
-- RouteID、kind、地址、credential ref、enabled/manual-only/priority 等期望配置。
-- workbench 中的 `TerminalRef` 连接意图。
+## 7. 生命周期
 
-禁止持久化：
+- TUI 进程退出时由 SessionOwner 关闭 session、operation 和 resource。
+- registry reload 只在 dial identity 变化时要求后续 reconnect；label/priority 等变化不能热改已建立 session。
+- Cloud failure 只影响 managed Route projection。
+- Direct/SSH connector 未实现时显示稳定 unavailable，不得回退旧 transport。
 
-- 当前 winner、SessionGeneration、AttemptID、ReadySession、dial phase、错误和 observed path。
-- transport/protocol client/SSH process 句柄。
-- raw CapabilityGrant、DeviceIdentity private key、SSH 密码或私钥。
-- runtime attachment channel、live/history/copy 投影。
+## 8. 当前与后续
 
-## 删除与替换边界
-
-CONN003 直接删除旧职责，不保留双路径：
-
-- C3X 已删除 `Endpoint.ResolveCurrentRoute`、TUI lazy bundle/session owner 和 CLI 直接 route/dial owner。
-- `cmd/termx` 不再直接选择 route 或保存 session state。
-- `tui/adapter/clientruntime` 不得重新承担 route 选择、dial、event publish、bundle cache 或 session owner。
-- 不新增 local fallback、raw SSH shell fallback、legacy remote bridge 或仓库内旧代码快照。
-- 不为 managed WebRTC、direct TLS、LAN discovery 或 share 提前扩展通用抽象。
-
-## 验收边界
-
-本阶段必须由真实 local daemon 与 OpenSSH host 验证：
-
-- 无 priority 的 local/SSH full race。
-- priority grouped hedge。
-- 显式 route override 及当前 TUI session 内 sticky 行为。
-- loser protocol transport 和 SSH 子进程回收。
-- route 切换后 `TerminalRef` 稳定。
-- 旧 generation 的 attach/input/resize/result 被拒绝且不触发 lazy dial 或输入重放。
-
-具体子任务、测试命令和双 Agent 审查门禁只维护在 `workflow.md`。
+- RTC001：完成 versioned Proto Route/config、strict parser、assembler 和 planner contract。
+- RTC002 起：Go runtime 逐步把 Direct/SSH/Cloud 收口为统一 PeerSession。
+- Android、Cloud 和最终验收顺序以 `workflow.md` 为准。
+- Web/WASM 当前冻结，TUI 不为未来 Web 抽象额外 UI 或 runtime contract。

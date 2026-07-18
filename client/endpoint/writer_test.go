@@ -24,7 +24,7 @@ func TestUpdateSerializesConcurrentRegistryMutations(t *testing.T) {
 					registry.Endpoints = map[EndpointID]Endpoint{}
 				}
 				registry.Version = RegistryVersion
-				registry.Endpoints[id] = NewSSHEndpoint(id, string(id), "host-"+string(id), "", "auto", ConnectOnDemand)
+				registry.Endpoints[id] = NewSSHEndpoint(id, string(id), "host-"+string(id), "", "127.0.0.1:41120", "127.0.0.1:41121", ConnectOnDemand)
 				if registry.Default == "" {
 					registry.Default = id
 				}

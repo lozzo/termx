@@ -50,12 +50,23 @@ func Encode(registry Registry) ([]byte, error) {
 		}
 		for _, route := range endpoint.RouteList() {
 			routeEnabled := route.Enabled
+			var credentialDescriptor *credentialDescriptorDocument
+			if route.CredentialDescriptor != nil {
+				credentialDescriptor = &credentialDescriptorDocument{
+					DescriptorID: route.CredentialDescriptor.DescriptorID,
+					Kind:         string(route.CredentialDescriptor.Kind),
+					Exportable:   route.CredentialDescriptor.Exportable,
+				}
+			}
 			value.Routes[string(route.ID)] = routeDocument{
 				Kind: string(route.Kind), Enabled: &routeEnabled, ManualOnly: route.ManualOnly, Priority: clonePriority(route.Priority),
 				CredentialRef: route.CredentialRef, Source: string(route.Source), PolicySource: string(route.PolicySource), Socket: route.Socket,
-				Host: route.Host, Port: route.Port, User: route.User, ProxyJump: route.ProxyJump, RemoteSocket: route.RemoteSocket,
-				HostKeyFingerprints: append([]string(nil), route.HostKeyFingerprints...), Addresses: append([]string(nil), route.Addresses...), ServerName: route.ServerName,
-				TargetDeviceID: route.TargetDeviceID, AccountProfile: route.AccountProfile, RelayMode: string(route.RelayMode),
+				Host: route.Host, Port: route.Port, User: route.User, ProxyJump: route.ProxyJump,
+				HostKeyFingerprints: append([]string(nil), route.HostKeyFingerprints...), CredentialDescriptor: credentialDescriptor,
+				RemoteSignalingAddress: route.RemoteSignalingAddress, RemoteICETCPAddress: route.RemoteICETCPAddress,
+				SignalingAddresses: append([]string(nil), route.SignalingAddresses...), ICETCPAddresses: append([]string(nil), route.ICETCPAddresses...),
+				AdvertisedAddresses: append([]string(nil), route.AdvertisedAddresses...), ServerName: route.ServerName,
+				TargetDeviceID: route.TargetDeviceID, AccountProfileRef: route.AccountProfileRef, RelayMode: string(route.RelayMode),
 			}
 		}
 		document.Endpoints[string(endpoint.ID)] = value

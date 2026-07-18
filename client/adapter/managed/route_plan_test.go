@@ -62,7 +62,7 @@ func managedAttemptWithRelayMode(t *testing.T, mode endpoint.RelayMode) clientru
 		Routes: map[endpoint.RouteID]endpoint.AccessRoute{
 			"cloud": {
 				ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true, Source: endpoint.SourceCloud, PolicySource: endpoint.SourceUser,
-				TargetDeviceID: identity.DeviceID, AccountProfile: "default", RelayMode: mode,
+				TargetDeviceID: identity.DeviceID, AccountProfileRef: "default", RelayMode: mode,
 			},
 		},
 	}

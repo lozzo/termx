@@ -45,7 +45,7 @@ func TestC3GRealLocalAndOpenSSHRoutes(t *testing.T) {
 	defer sshHost.Close(t)
 
 	target := c3gEndpoint(socketPath, sshHost)
-	environment := clientruntime.RoutePlanEnvironment{SupportedRouteKinds: []clientendpoint.RouteKind{clientendpoint.RouteLocalUnix, clientendpoint.RouteSSHStdio}}
+	environment := clientruntime.RoutePlanEnvironment{SupportedRouteKinds: []clientendpoint.RouteKind{clientendpoint.RouteLocalUnix, clientendpoint.RouteSSHWebRTCTCP}}
 	sshDialer := &c3gTrackingDialer{inner: sshadapter.NewDialer(sshadapter.Options{
 		ClientName: "c3g-real-ssh", SSHBinary: sshHost.clientWrapper,
 		ExtraArgs: sshHost.clientArgs(), ConnectTimeout: 3 * time.Second,
@@ -55,7 +55,7 @@ func TestC3GRealLocalAndOpenSSHRoutes(t *testing.T) {
 		pidFile: sshHost.clientPIDFile,
 	}
 	dialers, err := clientruntime.NewRouteDialerMap(map[clientendpoint.RouteKind]clientruntime.RouteAttemptDialer{
-		clientendpoint.RouteLocalUnix: localDialer, clientendpoint.RouteSSHStdio: sshDialer,
+		clientendpoint.RouteLocalUnix: localDialer, clientendpoint.RouteSSHWebRTCTCP: sshDialer,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -153,8 +153,8 @@ func TestC3GRealLocalAndOpenSSHRoutes(t *testing.T) {
 		ExtraArgs: sshHost.clientArgs(), ConnectTimeout: 3 * time.Second,
 	}), started: make(chan struct{})}
 	priorityDialers, err := clientruntime.NewRouteDialerMap(map[clientendpoint.RouteKind]clientruntime.RouteAttemptDialer{
-		clientendpoint.RouteLocalUnix: localadapter.NewDialer(localadapter.Options{SocketOverride: socketPath, ClientName: "c3g-priority-local"}),
-		clientendpoint.RouteSSHStdio:  prioritySSH,
+		clientendpoint.RouteLocalUnix:    localadapter.NewDialer(localadapter.Options{SocketOverride: socketPath, ClientName: "c3g-priority-local"}),
+		clientendpoint.RouteSSHWebRTCTCP: prioritySSH,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -227,8 +227,8 @@ func c3gEndpoint(socketPath string, sshHost *c3gSSHHost) clientendpoint.Endpoint
 		ConnectMode: clientendpoint.ConnectAuto, Enabled: true,
 		Routes: map[clientendpoint.RouteID]clientendpoint.AccessRoute{
 			"local": {ID: "local", Kind: clientendpoint.RouteLocalUnix, Enabled: true, Source: clientendpoint.SourceManual, PolicySource: clientendpoint.SourceUser, Socket: socketPath},
-			"ssh": {ID: "ssh", Kind: clientendpoint.RouteSSHStdio, Enabled: true, Source: clientendpoint.SourceManual, PolicySource: clientendpoint.SourceUser,
-				Host: "127.0.0.1", Port: uint16(sshHost.port), User: sshHost.user, RemoteSocket: socketPath},
+			"ssh": {ID: "ssh", Kind: clientendpoint.RouteSSHWebRTCTCP, Enabled: true, Source: clientendpoint.SourceManual, PolicySource: clientendpoint.SourceUser,
+				Host: "127.0.0.1", Port: uint16(sshHost.port), User: sshHost.user, RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121"},
 		},
 	}
 }

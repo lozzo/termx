@@ -25,8 +25,8 @@ func testLocalEndpoint(id endpointdomain.EndpointID, label, socket string, mode 
 	return endpoint
 }
 
-func testSSHEndpoint(id endpointdomain.EndpointID, label, host, credentialRef, remoteSocket string, mode endpointdomain.ConnectMode, enabled bool) endpointdomain.Endpoint {
-	endpoint := endpointdomain.NewSSHEndpoint(id, label, host, credentialRef, remoteSocket, mode)
+func testSSHEndpoint(id endpointdomain.EndpointID, label, host, credentialRef string, mode endpointdomain.ConnectMode, enabled bool) endpointdomain.Endpoint {
+	endpoint := endpointdomain.NewSSHEndpoint(id, label, host, credentialRef, "127.0.0.1:41120", "127.0.0.1:41121", mode)
 	endpoint.Enabled = enabled
 	return endpoint
 }

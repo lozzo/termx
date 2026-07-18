@@ -76,12 +76,12 @@ func TestPairImportDoesNotInventManagedRouteForExistingSSHEndpoint(t *testing.T)
 		t.Fatal(err)
 	}
 	registryPath := filepath.Join(configHome, "termx", endpointdomain.DefaultFileName)
-	ssh := endpointdomain.NewSSHEndpoint("lab", "Existing SSH label", "lab.example", "ssh:lab", "auto", endpointdomain.ConnectOnDemand)
+	ssh := endpointdomain.NewSSHEndpoint("lab", "Existing SSH label", "lab.example", "ssh:lab", "127.0.0.1:41120", "127.0.0.1:41121", endpointdomain.ConnectOnDemand)
 	if err := endpointdomain.Save(registryPath, endpointdomain.Registry{Version: endpointdomain.RegistryVersion, Default: "lab", Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{"lab": ssh}}); err != nil {
 		t.Fatal(err)
 	}
 	err = executePairCommandError(created, "pair", "import", "--id", "lab", "--registry", registryPath, "--pair-socket", v3PairingSocketPath(socket), "-")
-	if err == nil || !strings.Contains(err.Error(), "no direct-tls or managed-webrtc route") {
+	if err == nil || !strings.Contains(err.Error(), "no direct-webrtc-tcp or managed-webrtc route") {
 		t.Fatalf("SSH-only pairing import error = %v", err)
 	}
 	registry, err := endpointdomain.Load(registryPath)

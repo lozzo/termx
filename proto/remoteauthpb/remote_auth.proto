@@ -218,16 +218,6 @@ message ClientProofInput {
   AuthOpenKind open_kind = 9;
 }
 
-// EndpointRouteKind 是跨 Go/Kotlin/TypeScript wire contract 的 route 分类。
-// Endpoint/Route 的领域 owner 仍是客户端 connection runtime；该枚举不能被解释为一次运行时 transport 或 managed path。
-enum EndpointRouteKind {
-  ENDPOINT_ROUTE_KIND_UNSPECIFIED = 0;
-  ENDPOINT_ROUTE_KIND_LOCAL_UNIX = 1;
-  ENDPOINT_ROUTE_KIND_SSH_STDIO = 2;
-  ENDPOINT_ROUTE_KIND_DIRECT_TLS = 3;
-  ENDPOINT_ROUTE_KIND_MANAGED_WEBRTC = 4;
-}
-
 // EndpointConnectMode 描述客户端何时可以自动建立 Endpoint session。
 enum EndpointConnectMode {
   ENDPOINT_CONNECT_MODE_UNSPECIFIED = 0;
@@ -236,13 +226,13 @@ enum EndpointConnectMode {
   ENDPOINT_CONNECT_MODE_MANUAL = 3;
 }
 
-// EndpointRelayMode 只描述 managed-webrtc route 内部允许的 direct/single Relay 策略。
-enum EndpointRelayMode {
-  ENDPOINT_RELAY_MODE_UNSPECIFIED = 0;
-  ENDPOINT_RELAY_MODE_AUTO = 1;
-  ENDPOINT_RELAY_MODE_DIRECT = 2;
-  ENDPOINT_RELAY_MODE_RELAY_ONLY = 3;
-  ENDPOINT_RELAY_MODE_SMART_ROUTE = 4;
+// ManagedWebRTCRelayMode 只描述 TermX Cloud managed route 内部允许的 ICE/Relay 策略。
+enum ManagedWebRTCRelayMode {
+  MANAGED_WEBRTC_RELAY_MODE_UNSPECIFIED = 0;
+  MANAGED_WEBRTC_RELAY_MODE_AUTO = 1;
+  MANAGED_WEBRTC_RELAY_MODE_DIRECT = 2;
+  MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY = 3;
+  MANAGED_WEBRTC_RELAY_MODE_SMART_ROUTE = 4;
 }
 
 // EndpointSource 记录 route 或用户策略的来源，供确定性 assembler 保留更高权重的已确认信息。
@@ -281,36 +271,85 @@ message EndpointSelectionPolicy {
   uint64 hedge_delay_millis = 2;
 }
 
-// EndpointAccessRoute 是跨平台持久 route schema。
-// kind-specific 字段必须由 strict parser 互斥校验；credential_ref 仅在当前平台本地 store 中有意义。
-message EndpointAccessRoute {
-  string route_id = 1;
-  EndpointRouteKind kind = 2;
+// EndpointCredentialDescriptor 描述 share 后目标端需要解析或重新创建的凭据，不携带源平台 credential ref 或 secret body。
+message EndpointCredentialDescriptor {
+  string descriptor_id = 1;
+  EndpointCredentialKind kind = 2;
+  bool exportable = 3;
+}
+
+// LocalUnixRouteConfig 只用于同一主机上的 Go/native CLI 与 TUI。
+message LocalUnixRouteConfig {
+  string socket = 1;
+}
+
+// DirectWebRTCTCPRouteConfig 描述不依赖 TermX Cloud 的 daemon embedded signaling 与 ICE-TCP locator。
+// advertised_addresses 允许 pair create 为 LAN、FRP 或其它 TCP 映射显式覆盖对外地址，但不改变 Endpoint identity。
+message DirectWebRTCTCPRouteConfig {
+  repeated string signaling_addresses = 1;
+  repeated string ice_tcp_addresses = 2;
+  repeated string advertised_addresses = 3;
+  string server_name = 4;
+}
+
+// SSHWebRTCTCPRouteConfig 描述 Go SSH direct-tcpip tunnel 需要的 portable 配置。
+// credential_descriptor 只说明目标平台要解析的凭据类别；credential body 和源平台 ref 永远不得进入 wire contract。
+message SSHWebRTCTCPRouteConfig {
+  string host = 1;
+  uint32 port = 2;
+  string user = 3;
+  repeated string host_key_fingerprints = 4;
+  string proxy_jump = 5;
+  EndpointCredentialDescriptor credential_descriptor = 6;
+  string remote_signaling_address = 7;
+  string remote_ice_tcp_address = 8;
+}
+
+// ManagedWebRTCRouteConfig 描述同一个 App 内由 TermX Cloud 提供的可选 managed Route。
+message ManagedWebRTCRouteConfig {
+  string target_device_id = 1;
+  string account_profile_ref = 2;
+  ManagedWebRTCRelayMode relay_mode = 3;
+}
+
+// EndpointRouteConfigV1 是跨 Go、JNI、未来 C ABI/WASM 的唯一持久 Route schema。
+// route oneof 让 kind-specific 字段在 schema 层互斥；credential_ref 只引用当前平台 secure store。
+message EndpointRouteConfigV1 {
+  uint32 schema_version = 1;
+  string route_id = 2;
   bool enabled = 3;
   bool manual_only = 4;
   optional int32 priority = 5;
   string credential_ref = 6;
   EndpointSource source = 7;
   EndpointSource policy_source = 8;
-  string socket = 9;
-  string host = 10;
-  uint32 port = 11;
-  string user = 12;
-  string proxy_jump = 13;
-  string remote_socket = 14;
-  repeated string host_key_fingerprints = 15;
-  repeated string addresses = 16;
-  string server_name = 17;
-  string target_device_id = 18;
-  string account_profile = 19;
-  EndpointRelayMode relay_mode = 20;
+
+  oneof route {
+    LocalUnixRouteConfig local_unix = 20;
+    DirectWebRTCTCPRouteConfig direct_webrtc_tcp = 21;
+    SSHWebRTCTCPRouteConfig ssh_webrtc_tcp = 22;
+    ManagedWebRTCRouteConfig managed_webrtc = 23;
+  }
 }
 
-// EndpointCredentialDescriptor 描述 share 后目标端需要解析或重新创建的凭据，不携带源平台 credential ref 或 secret body。
-message EndpointCredentialDescriptor {
-  string descriptor_id = 1;
-  EndpointCredentialKind kind = 2;
-  bool exportable = 3;
+// EndpointConfigV1 是 Go Client Engine 持久化和跨 binding 投影的 Endpoint 配置。
+message EndpointConfigV1 {
+  uint32 schema_version = 1;
+  string endpoint_id = 2;
+  string label = 3;
+  EndpointSource label_source = 4;
+  EndpointDaemonIdentity identity = 5;
+  EndpointConnectMode connect_mode = 6;
+  bool enabled = 7;
+  EndpointSelectionPolicy selection_policy = 8;
+  repeated EndpointRouteConfigV1 routes = 9;
+}
+
+// EndpointRegistryV1 是 Go Client Engine 拥有的完整 Endpoint registry contract。
+message EndpointRegistryV1 {
+  uint32 schema_version = 1;
+  string default_endpoint_id = 2;
+  repeated EndpointConfigV1 endpoints = 3;
 }
 
 // PairingTicketDescriptor 是 daemon-local 一次性授权兑换票据的公开部分。
@@ -340,7 +379,7 @@ message EndpointBootstrapBundleV2 {
   string bundle_id = 2;
   EndpointDaemonIdentity identity = 3;
   string suggested_label = 4;
-  repeated EndpointAccessRoute routes = 5;
+  repeated EndpointRouteConfigV1 routes = 5;
   EndpointAuthorizationBootstrap authorization = 6;
   int64 issued_at_unix_nano = 7;
   int64 expires_at_unix_nano = 8;
@@ -372,7 +411,7 @@ message ClientEndpointShareBundleV1 {
   string transfer_id = 2;
   EndpointDaemonIdentity identity = 3;
   string suggested_label = 4;
-  repeated EndpointAccessRoute routes = 5;
+  repeated EndpointRouteConfigV1 routes = 5;
   EndpointConnectMode connect_mode = 6;
   EndpointSelectionPolicy selection_policy = 7;
   repeated EndpointCredentialDescriptor credential_descriptors = 8;

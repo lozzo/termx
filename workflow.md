@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- `BASE001` 产品与架构基线整理已完成；当前活动主线从 `RTC001` 开始。
+- `RTC001` Proto Route/config contract 已完成；当前活动主线从 `RTC002` 开始。
 - TermX 只有一个面向用户的 App。Direct 与 SSH 是无需登录和订阅的基础能力；TermX Cloud 是同一 App 内可选的 managed Route，提供账号目录、托管信令、ICE-UDP、TURN Relay 和跨网络能力。
 - 所有远程业务连接最终统一为可靠有序 WebRTC DataChannel：Direct 使用 daemon embedded signaling + ICE-TCP；SSH 使用 Go SSH client/direct-tcpip tunnel + daemon loopback ICE-TCP；Cloud 使用 TermX Cloud signaling + ICE-UDP 或 TURN Relay。
 - Local Unix 仍是本机 CLI/TUI 到本机 daemon 的本地 transport，不要求为了形式统一改成 WebRTC。
@@ -10,7 +10,8 @@
 - Android 通过稳定 C ABI + 薄 JNI/Capacitor bridge 使用 Go；Kotlin/Java 只提供 lifecycle、Keystore、安全存储、权限和平台 primitive。
 - Web/WASM 当前冻结。仓库维持现有编译与 contract 不回归，但不建设默认 Web 访问界面、不迁移浏览器 consumer，也不允许 Web 工作抢占 Android/native Go 主线。未来恢复时必须使用 Go/WASM；纯浏览器只支持 TermX Cloud managed WebRTC。
 - `ICE001` 已证明 Pion 双端仅启用 TCP4 时，真实 selected candidate pair 为 TCP，并完成 DeviceIdentity/CapabilityGrant auth、Hello、Proto API、取消 teardown、race 和 100 次连续独立建连。
-- 当前实现仍有 managed-only pairing、旧 direct Route 命名、OpenSSH 子进程 + `stdio-proxy`、TypeScript Endpoint 投影和旧 App flavor 构建语义等迁移债；不得围绕这些旧路径继续打补丁。
+- 当前实现仍有 managed-only pairing、OpenSSH 子进程 + `stdio-proxy` 历史实现、TypeScript Endpoint 投影和旧 App flavor 构建语义等迁移债；不得围绕这些旧路径继续打补丁。
+- 新 `ssh-webrtc-tcp` contract 已生效，但 Go SSH direct-tcpip connector 要到 `RTC006` 实现；此前 adapter 必须显式 unavailable，不得把新字段解释为旧 stdio proxy 参数。
 
 ## 产品要求
 
@@ -122,6 +123,7 @@ Android / TUI / CLI / future iOS/Desktop / future Web
 - Android 共享 UI 联动：`clients/ui/` 只允许为 Android 当前用户流程最小修改；browser entry、browser runtime、WASM loader/worker 和默认 Web 页面冻结。
 - 受限联动：`internal/protocol/`、`api_layer/`、`api_mapping/`、`core/`、`shared/{transport,remoteauth}/`、`scripts/`、`Makefile`、`go.work*`，仅在当前切片真实消息链路需要时触及。
 - Cloud 专属范围：`private/cloud/` 只有 `RTC009` 可以主动修改。
+- `RTC001` 例外只允许对 `tui/state` 和 `private/cloud` 测试做 generated Route contract 引起的机械编译同步；不得改变 TUI 行为、Cloud eligibility、signaling、Relay 或私有服务逻辑。
 - 禁止范围：插件系统、`private/archive/`、多区域 Cloud、计费平台扩张、iOS/Desktop 产物、默认 Web 访问产品、KCP/QUIC 替代层和开源发布工程。
 
 ## 任务队列
@@ -129,7 +131,7 @@ Android / TUI / CLI / future iOS/Desktop / future Web
 | ID | 状态 | 内容 | 完成条件 |
 | --- | --- | --- | --- |
 | BASE001 | 已完成 | 产品与工作流基线 | 单一 App、Go-owned clients、统一 DataChannel、Cloud 边界、Web 延后和后续切片写入 AGENTS/workflow；删除旧活动噪声 |
-| RTC001 | 待开始 | Proto Route/config contract | 用 versioned Proto 定义 Direct WebRTC TCP、SSH WebRTC TCP、managed WebRTC、portable credential descriptor 和地址覆盖；删除旧 direct Route enum/name，不保留 alias；同步更新受影响的远程平台架构文档 |
+| RTC001 | 已完成 | Proto Route/config contract | `EndpointRouteConfigV1` oneof、`EndpointConfigV1`、`EndpointRegistryV1`、portable credential descriptor 和地址覆盖已生成；Go/YAML v3/parser/assembler/planner/CLI 已迁移；旧 Route enum/name 无 alias；descriptor、round-trip、unknown-field、生成代码、架构文档与 doctor 通过 |
 | RTC002 | 待开始 | 通用 PeerSession 与 pairing | 把 pairing/ReadySession 从 managed-only owner 拆为 transport-neutral Go service；三种 connector 返回同一 ReadyPeerSession；补 identity、cancel、close 和 generation harness |
 | RTC003 | 待开始 | daemon embedded signaling + ICE-TCP | daemon 提供短期签名 signaling 与共享 TCPMux；Direct connector 完成 offer/answer、DTLS binding、auth、Hello、Proto API 和清理；不接 App |
 | RTC004 | 待开始 | Android Direct 纵向闭环 | `pair create` QR -> Android JNI -> Go Direct connector -> PairingTicket -> client-bound grant -> terminal list/attach；无 Cloud 登录可用；锁屏/恢复 generation 正确 |

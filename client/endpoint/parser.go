@@ -43,19 +43,29 @@ type routeDocument struct {
 
 	Socket string `yaml:"socket,omitempty"`
 
-	Host                string   `yaml:"host,omitempty"`
-	Port                uint16   `yaml:"port,omitempty"`
-	User                string   `yaml:"user,omitempty"`
-	ProxyJump           string   `yaml:"proxy_jump,omitempty"`
-	RemoteSocket        string   `yaml:"remote_socket,omitempty"`
-	HostKeyFingerprints []string `yaml:"host_key_fingerprints,omitempty"`
+	Host                   string                        `yaml:"host,omitempty"`
+	Port                   uint16                        `yaml:"port,omitempty"`
+	User                   string                        `yaml:"user,omitempty"`
+	ProxyJump              string                        `yaml:"proxy_jump,omitempty"`
+	HostKeyFingerprints    []string                      `yaml:"host_key_fingerprints,omitempty"`
+	CredentialDescriptor   *credentialDescriptorDocument `yaml:"credential_descriptor,omitempty"`
+	RemoteSignalingAddress string                        `yaml:"remote_signaling_address,omitempty"`
+	RemoteICETCPAddress    string                        `yaml:"remote_ice_tcp_address,omitempty"`
 
-	Addresses  []string `yaml:"addresses,omitempty"`
-	ServerName string   `yaml:"server_name,omitempty"`
+	SignalingAddresses  []string `yaml:"signaling_addresses,omitempty"`
+	ICETCPAddresses     []string `yaml:"ice_tcp_addresses,omitempty"`
+	AdvertisedAddresses []string `yaml:"advertised_addresses,omitempty"`
+	ServerName          string   `yaml:"server_name,omitempty"`
 
-	TargetDeviceID string `yaml:"target_device_id,omitempty"`
-	AccountProfile string `yaml:"account_profile,omitempty"`
-	RelayMode      string `yaml:"relay_mode,omitempty"`
+	TargetDeviceID    string `yaml:"target_device_id,omitempty"`
+	AccountProfileRef string `yaml:"account_profile_ref,omitempty"`
+	RelayMode         string `yaml:"relay_mode,omitempty"`
+}
+
+type credentialDescriptorDocument struct {
+	DescriptorID string `yaml:"descriptor_id"`
+	Kind         string `yaml:"kind"`
+	Exportable   bool   `yaml:"exportable,omitempty"`
 }
 
 func parseRegistry(data []byte) (Registry, error) {
@@ -123,15 +133,25 @@ func parseRegistry(data []byte) (Registry, error) {
 			if routeValue.Enabled != nil {
 				routeEnabled = *routeValue.Enabled
 			}
+			var credentialDescriptor *CredentialDescriptor
+			if routeValue.CredentialDescriptor != nil {
+				credentialDescriptor = &CredentialDescriptor{
+					DescriptorID: routeValue.CredentialDescriptor.DescriptorID,
+					Kind:         CredentialKind(routeValue.CredentialDescriptor.Kind),
+					Exportable:   routeValue.CredentialDescriptor.Exportable,
+				}
+			}
 			endpoint.Routes[routeID] = AccessRoute{
 				ID: routeID, Kind: RouteKind(routeValue.Kind), Enabled: routeEnabled, ManualOnly: routeValue.ManualOnly,
 				Priority: clonePriority(routeValue.Priority), CredentialRef: routeValue.CredentialRef,
 				Source: EndpointSource(routeValue.Source), PolicySource: EndpointSource(routeValue.PolicySource),
 				Socket: routeValue.Socket,
 				Host:   routeValue.Host, Port: routeValue.Port, User: routeValue.User, ProxyJump: routeValue.ProxyJump,
-				RemoteSocket: routeValue.RemoteSocket, HostKeyFingerprints: append([]string(nil), routeValue.HostKeyFingerprints...),
-				Addresses: append([]string(nil), routeValue.Addresses...), ServerName: routeValue.ServerName,
-				TargetDeviceID: routeValue.TargetDeviceID, AccountProfile: routeValue.AccountProfile, RelayMode: RelayMode(routeValue.RelayMode),
+				HostKeyFingerprints: append([]string(nil), routeValue.HostKeyFingerprints...), CredentialDescriptor: credentialDescriptor,
+				RemoteSignalingAddress: routeValue.RemoteSignalingAddress, RemoteICETCPAddress: routeValue.RemoteICETCPAddress,
+				SignalingAddresses: append([]string(nil), routeValue.SignalingAddresses...), ICETCPAddresses: append([]string(nil), routeValue.ICETCPAddresses...),
+				AdvertisedAddresses: append([]string(nil), routeValue.AdvertisedAddresses...), ServerName: routeValue.ServerName,
+				TargetDeviceID: routeValue.TargetDeviceID, AccountProfileRef: routeValue.AccountProfileRef, RelayMode: RelayMode(routeValue.RelayMode),
 			}
 		}
 		registry.Endpoints[id] = endpoint

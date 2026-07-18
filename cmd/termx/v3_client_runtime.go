@@ -91,7 +91,7 @@ func newCLIEndpointRuntime(ctx context.Context, owner *clientruntime.SessionOwne
 	localDialer := localadapter.NewDialer(localOptions)
 	dialers, err := clientruntime.NewRouteDialerMap(map[clientendpoint.RouteKind]clientruntime.RouteAttemptDialer{
 		clientendpoint.RouteLocalUnix: localDialer,
-		clientendpoint.RouteSSHStdio:  sshadapter.NewDialer(sshadapter.Options{ClientName: "termx-cli"}),
+		clientendpoint.RouteSSHWebRTCTCP:  sshadapter.NewDialer(sshadapter.Options{ClientName: "termx-cli"}),
 		clientendpoint.RouteManagedWebRTC: managedadapter.LazyDialer{
 			OpenCloud: func(ctx context.Context) (managedadapter.CloudClient, io.Closer, error) {
 				cloud, err := openV3CloudLifecycleClient(ctx, cloudpb.CallerRole_CALLER_ROLE_TUI,
@@ -125,7 +125,7 @@ func newCLIEndpointRuntime(ctx context.Context, owner *clientruntime.SessionOwne
 
 func cliRoutePlanEnvironment(ctx context.Context, target clientendpoint.Endpoint, credentials cliCredentialSource) clientruntime.RoutePlanEnvironment {
 	environment := clientruntime.RoutePlanEnvironment{SupportedRouteKinds: []clientendpoint.RouteKind{
-		clientendpoint.RouteLocalUnix, clientendpoint.RouteSSHStdio, clientendpoint.RouteManagedWebRTC,
+		clientendpoint.RouteLocalUnix, clientendpoint.RouteSSHWebRTCTCP, clientendpoint.RouteManagedWebRTC,
 	}}
 	for _, route := range target.RouteList() {
 		reference := strings.TrimSpace(route.CredentialRef)
@@ -133,7 +133,7 @@ func cliRoutePlanEnvironment(ctx context.Context, target clientendpoint.Endpoint
 			continue
 		}
 		switch route.Kind {
-		case clientendpoint.RouteSSHStdio:
+		case clientendpoint.RouteSSHWebRTCTCP:
 			if strings.HasPrefix(reference, "ssh:") {
 				environment.AvailableCredentialRefs = append(environment.AvailableCredentialRefs, reference)
 			}

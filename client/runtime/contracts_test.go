@@ -24,7 +24,7 @@ func TestWasAttemptedDefaultsToNoReplayForUnknownErrors(t *testing.T) {
 }
 
 func TestAttemptRequestBindsOneRouteAndGeneration(t *testing.T) {
-	target := endpoint.NewSSHEndpoint("studio", "Studio", "studio.example", "ssh:studio", "auto", endpoint.ConnectOnDemand)
+	target := endpoint.NewSSHEndpoint("studio", "Studio", "studio.example", "ssh:studio", "127.0.0.1:41120", "127.0.0.1:41121", endpoint.ConnectOnDemand)
 	request, err := NewAttemptRequest(target, "ssh", 7, ConnectIntentInteractive)
 	if err != nil {
 		t.Fatal(err)
@@ -32,13 +32,13 @@ func TestAttemptRequestBindsOneRouteAndGeneration(t *testing.T) {
 	if stamp := request.Stamp(); stamp.EndpointID != "studio" || stamp.RouteID != "ssh" || stamp.Generation != 7 {
 		t.Fatalf("attempt stamp = %#v", stamp)
 	}
-	if request.Route().Kind != endpoint.RouteSSHStdio || request.Intent() != ConnectIntentInteractive {
+	if request.Route().Kind != endpoint.RouteSSHWebRTCTCP || request.Intent() != ConnectIntentInteractive {
 		t.Fatalf("attempt contract = route %#v intent %q", request.Route(), request.Intent())
 	}
 }
 
 func TestAttemptRequestDoesNotExposeMutableRegistryRoute(t *testing.T) {
-	target := endpoint.NewSSHEndpoint("studio", "Studio", "studio.example", "ssh:studio", "auto", endpoint.ConnectOnDemand)
+	target := endpoint.NewSSHEndpoint("studio", "Studio", "studio.example", "ssh:studio", "127.0.0.1:41120", "127.0.0.1:41121", endpoint.ConnectOnDemand)
 	request, err := NewAttemptRequest(target, "ssh", 3, ConnectIntentBackground)
 	if err != nil {
 		t.Fatal(err)

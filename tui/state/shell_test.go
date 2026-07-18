@@ -603,7 +603,7 @@ func TestTerminalCreateEndpointItemsUseAvailableEndpoints(t *testing.T) {
 func TestEndpointStoreRegistryReloadClassifiesRuntimeDisplayState(t *testing.T) {
 	registry, err := (endpointdomain.Registry{Default: endpointdomain.DefaultEndpointID, Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{
 		endpointdomain.DefaultEndpointID: endpointdomain.NewLocalEndpoint(endpointdomain.DefaultEndpointID, "This Mac", "auto", endpointdomain.ConnectAuto),
-		"west":                           endpointdomain.NewSSHEndpoint("west", "US West", "root@155.94.155.192", "ssh:west", "auto", endpointdomain.ConnectOnDemand),
+		"west":                           endpointdomain.NewSSHEndpoint("west", "US West", "root@155.94.155.192", "ssh:west", "127.0.0.1:41120", "127.0.0.1:41121", endpointdomain.ConnectOnDemand),
 	}}).Normalize()
 	if err != nil {
 		t.Fatalf("normalize registry: %v", err)
@@ -696,7 +696,9 @@ func cloneStateTestRegistry(src endpointdomain.Registry) endpointdomain.Registry
 		cloned.Routes = map[endpointdomain.RouteID]endpointdomain.AccessRoute{}
 		for routeID, route := range endpoint.Routes {
 			route.HostKeyFingerprints = append([]string(nil), route.HostKeyFingerprints...)
-			route.Addresses = append([]string(nil), route.Addresses...)
+			route.SignalingAddresses = append([]string(nil), route.SignalingAddresses...)
+			route.ICETCPAddresses = append([]string(nil), route.ICETCPAddresses...)
+			route.AdvertisedAddresses = append([]string(nil), route.AdvertisedAddresses...)
 			cloned.Routes[routeID] = route
 		}
 		out.Endpoints[id] = cloned
@@ -712,7 +714,7 @@ func TestClassifyEndpointErrorTextPrefersRemoteDaemonDetail(t *testing.T) {
 }
 
 func TestClassifyEndpointErrorTextRecognizesRouteConfigurationFailure(t *testing.T) {
-	if got := ClassifyEndpointErrorText("route kind direct-tls is not connected"); got != EndpointErrorConfig {
+	if got := ClassifyEndpointErrorText("route kind direct-webrtc-tcp is not connected"); got != EndpointErrorConfig {
 		t.Fatalf("route configuration failure should classify as config, got %q", got)
 	}
 }

@@ -380,11 +380,14 @@ func validateWireIdentity(identity *remoteauthpb.EndpointDaemonIdentity, require
 	return nil
 }
 
-func validatePortableRoute(route *remoteauthpb.EndpointAccessRoute, identity *remoteauthpb.EndpointDaemonIdentity, allowPolicy bool) error {
+func validatePortableRoute(route *remoteauthpb.EndpointRouteConfigV1, identity *remoteauthpb.EndpointDaemonIdentity, allowPolicy bool) error {
 	if route == nil || validateIdentifier("portable route", route.GetRouteId()) != nil {
 		return connectionError(ErrorConfig, "portable route_id is required")
 	}
-	if route.GetKind() == remoteauthpb.EndpointRouteKind_ENDPOINT_ROUTE_KIND_LOCAL_UNIX {
+	if route.GetSchemaVersion() != RouteConfigVersion {
+		return connectionError(ErrorUnsupportedVersion, "portable route version is unsupported")
+	}
+	if route.GetLocalUnix() != nil {
 		return connectionError(ErrorConfig, "local-unix route is not portable")
 	}
 	if route.GetCredentialRef() != "" {
@@ -392,10 +395,6 @@ func validatePortableRoute(route *remoteauthpb.EndpointAccessRoute, identity *re
 	}
 	if route.GetSource() != remoteauthpb.EndpointSource_ENDPOINT_SOURCE_UNSPECIFIED || route.GetPolicySource() != remoteauthpb.EndpointSource_ENDPOINT_SOURCE_UNSPECIFIED {
 		return connectionError(ErrorConfig, "portable route cannot claim source provenance")
-	}
-	if route.GetKind() != remoteauthpb.EndpointRouteKind_ENDPOINT_ROUTE_KIND_MANAGED_WEBRTC &&
-		route.GetRelayMode() != remoteauthpb.EndpointRelayMode_ENDPOINT_RELAY_MODE_UNSPECIFIED {
-		return connectionError(ErrorConfig, "portable non-managed route cannot contain relay_mode")
 	}
 	if !allowPolicy && (route.GetManualOnly() || route.Priority != nil) {
 		return connectionError(ErrorConfig, "daemon bootstrap cannot contain client route policy")
@@ -495,23 +494,54 @@ func endpointBootstrapSigningBytesUnchecked(bundle *remoteauthpb.EndpointBootstr
 	})
 }
 
-func accessRouteFromWire(route *remoteauthpb.EndpointAccessRoute, enabled bool) (AccessRoute, error) {
-	kind := mapWireRouteKind(route.GetKind())
-	if kind == "" {
-		return AccessRoute{}, connectionError(ErrorConfig, "portable route has unknown kind")
-	}
+func accessRouteFromWire(route *remoteauthpb.EndpointRouteConfigV1, enabled bool) (AccessRoute, error) {
 	model := AccessRoute{
-		ID: RouteID(strings.TrimSpace(route.GetRouteId())), Kind: kind, Enabled: enabled, ManualOnly: route.GetManualOnly(),
-		CredentialRef: "", Source: SourceShare, PolicySource: SourceShare, Socket: route.GetSocket(), Host: route.GetHost(),
-		Port: uint16(route.GetPort()), User: route.GetUser(), ProxyJump: route.GetProxyJump(), RemoteSocket: route.GetRemoteSocket(),
-		HostKeyFingerprints: append([]string(nil), route.GetHostKeyFingerprints()...), Addresses: append([]string(nil), route.GetAddresses()...),
-		ServerName: route.GetServerName(), TargetDeviceID: route.GetTargetDeviceId(), AccountProfile: route.GetAccountProfile(),
+		ID: RouteID(strings.TrimSpace(route.GetRouteId())), Enabled: enabled, ManualOnly: route.GetManualOnly(),
+		CredentialRef: route.GetCredentialRef(), Source: mapWireSource(route.GetSource()), PolicySource: mapWireSource(route.GetPolicySource()),
 	}
-	if kind == RouteManagedWebRTC {
-		model.RelayMode = mapWireRelayMode(route.GetRelayMode())
+	if model.Source == "" {
+		model.Source = SourceShare
 	}
-	if route.GetPort() > 65535 {
-		return AccessRoute{}, connectionError(ErrorConfig, "portable route port is invalid")
+	if model.PolicySource == "" {
+		model.PolicySource = model.Source
+	}
+	switch {
+	case route.GetLocalUnix() != nil:
+		model.Kind = RouteLocalUnix
+		model.Socket = route.GetLocalUnix().GetSocket()
+	case route.GetDirectWebrtcTcp() != nil:
+		config := route.GetDirectWebrtcTcp()
+		model.Kind = RouteDirectWebRTCTCP
+		model.SignalingAddresses = append([]string(nil), config.GetSignalingAddresses()...)
+		model.ICETCPAddresses = append([]string(nil), config.GetIceTcpAddresses()...)
+		model.AdvertisedAddresses = append([]string(nil), config.GetAdvertisedAddresses()...)
+		model.ServerName = config.GetServerName()
+	case route.GetSshWebrtcTcp() != nil:
+		config := route.GetSshWebrtcTcp()
+		if config.GetPort() > 65535 {
+			return AccessRoute{}, connectionError(ErrorConfig, "portable route port is invalid")
+		}
+		model.Kind = RouteSSHWebRTCTCP
+		model.Host = config.GetHost()
+		model.Port = uint16(config.GetPort())
+		model.User = config.GetUser()
+		model.ProxyJump = config.GetProxyJump()
+		model.HostKeyFingerprints = append([]string(nil), config.GetHostKeyFingerprints()...)
+		model.RemoteSignalingAddress = config.GetRemoteSignalingAddress()
+		model.RemoteICETCPAddress = config.GetRemoteIceTcpAddress()
+		if descriptor := config.GetCredentialDescriptor(); descriptor != nil {
+			model.CredentialDescriptor = &CredentialDescriptor{
+				DescriptorID: descriptor.GetDescriptorId(), Kind: mapWireCredentialKind(descriptor.GetKind()), Exportable: descriptor.GetExportable(),
+			}
+		}
+	case route.GetManagedWebrtc() != nil:
+		config := route.GetManagedWebrtc()
+		model.Kind = RouteManagedWebRTC
+		model.TargetDeviceID = config.GetTargetDeviceId()
+		model.AccountProfileRef = config.GetAccountProfileRef()
+		model.RelayMode = mapWireRelayMode(config.GetRelayMode())
+	default:
+		return AccessRoute{}, connectionError(ErrorConfig, "portable route has unknown kind")
 	}
 	if route.Priority != nil {
 		priority := int(route.GetPriority())
@@ -551,30 +581,55 @@ func hasUnknownFields(message protoreflect.Message) bool {
 	return found
 }
 
-func mapWireRouteKind(kind remoteauthpb.EndpointRouteKind) RouteKind {
-	switch kind {
-	case remoteauthpb.EndpointRouteKind_ENDPOINT_ROUTE_KIND_SSH_STDIO:
-		return RouteSSHStdio
-	case remoteauthpb.EndpointRouteKind_ENDPOINT_ROUTE_KIND_DIRECT_TLS:
-		return RouteDirectTLS
-	case remoteauthpb.EndpointRouteKind_ENDPOINT_ROUTE_KIND_MANAGED_WEBRTC:
-		return RouteManagedWebRTC
+func mapWireRelayMode(mode remoteauthpb.ManagedWebRTCRelayMode) RelayMode {
+	switch mode {
+	case remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_UNSPECIFIED,
+		remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_AUTO:
+		return RelayAuto
+	case remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_DIRECT:
+		return RelayDirect
+	case remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY:
+		return RelayOnly
+	case remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_SMART_ROUTE:
+		return RelaySmart
 	default:
 		return ""
 	}
 }
 
-func mapWireRelayMode(mode remoteauthpb.EndpointRelayMode) RelayMode {
-	switch mode {
-	case remoteauthpb.EndpointRelayMode_ENDPOINT_RELAY_MODE_UNSPECIFIED,
-		remoteauthpb.EndpointRelayMode_ENDPOINT_RELAY_MODE_AUTO:
-		return RelayAuto
-	case remoteauthpb.EndpointRelayMode_ENDPOINT_RELAY_MODE_DIRECT:
-		return RelayDirect
-	case remoteauthpb.EndpointRelayMode_ENDPOINT_RELAY_MODE_RELAY_ONLY:
-		return RelayOnly
-	case remoteauthpb.EndpointRelayMode_ENDPOINT_RELAY_MODE_SMART_ROUTE:
-		return RelaySmart
+func mapWireCredentialKind(kind remoteauthpb.EndpointCredentialKind) CredentialKind {
+	switch kind {
+	case remoteauthpb.EndpointCredentialKind_ENDPOINT_CREDENTIAL_KIND_SSH_AGENT:
+		return CredentialSSHAgent
+	case remoteauthpb.EndpointCredentialKind_ENDPOINT_CREDENTIAL_KIND_SSH_PRIVATE_KEY:
+		return CredentialSSHPrivateKey
+	case remoteauthpb.EndpointCredentialKind_ENDPOINT_CREDENTIAL_KIND_SSH_PASSWORD:
+		return CredentialSSHPassword
+	case remoteauthpb.EndpointCredentialKind_ENDPOINT_CREDENTIAL_KIND_CAPABILITY_GRANT:
+		return CredentialCapabilityGrant
+	case remoteauthpb.EndpointCredentialKind_ENDPOINT_CREDENTIAL_KIND_CLOUD_PROFILE:
+		return CredentialCloudProfile
+	default:
+		return ""
+	}
+}
+
+func mapWireSource(source remoteauthpb.EndpointSource) EndpointSource {
+	switch source {
+	case remoteauthpb.EndpointSource_ENDPOINT_SOURCE_LOCAL:
+		return SourceLocal
+	case remoteauthpb.EndpointSource_ENDPOINT_SOURCE_CLOUD:
+		return SourceCloud
+	case remoteauthpb.EndpointSource_ENDPOINT_SOURCE_BOOTSTRAP:
+		return SourceBootstrap
+	case remoteauthpb.EndpointSource_ENDPOINT_SOURCE_MANUAL:
+		return SourceManual
+	case remoteauthpb.EndpointSource_ENDPOINT_SOURCE_SHARE:
+		return SourceShare
+	case remoteauthpb.EndpointSource_ENDPOINT_SOURCE_LAN:
+		return SourceLAN
+	case remoteauthpb.EndpointSource_ENDPOINT_SOURCE_USER:
+		return SourceUser
 	default:
 		return ""
 	}

@@ -13,8 +13,12 @@ plugins and clients
   CLI / TUI / mobile / desktop / web / third-party
     |
     v
+Go Client Engine
+  Endpoint/Route / pairing / PeerSession / generation / resource
+    |
+    v
 transport or platform binding
-  Unix Socket / TCP+TLS / SSH / WebRTC DataChannel / JNI / Swift / WASM
+  Unix Socket / WebRTC DataChannel / JNI / Swift / WASM
     |
     v
 protocol framing
@@ -40,18 +44,18 @@ core
 
 ### Transport And Protocol Framing
 
-- Unix Socket、TCP/TLS、SSH 和 WebRTC DataChannel 负责建立连接与传递 bytes；JNI、Swift 和 WASM binding 负责平台调用边界。
+- Local Unix 与 Direct/SSH/Cloud Route connector 负责建立连接；所有远程 Route 最终传递可靠有序 WebRTC DataChannel bytes。JNI、Swift 和 WASM binding 只负责平台调用边界。
 - `internal/protocol/` 负责 Hello、channel、correlation 和 payload framing，不拥有 terminal/history 等 application API 字段语义。
 - transport 和 protocol framing 不执行 application authorization，不把 core domain struct 暴露给客户端，也不在失败时切换未授权 fallback。
 
 ### Cross-platform Go Client Engine
 
 - `client/runtime.SessionOwner` 是 endpoint session generation、当前 ready winner、stale operation 拒绝和 reconnect replacement 的唯一客户端真值；平台 UI 不缓存 protocol client。
-- `client/adapter/managed` 是 native/Web 共用的 managed single-route attempt 编排，固定执行 Cloud resolution/route material -> platform peer -> signaling -> DTLS-bound remote auth -> protocol Hello -> Proto application session。
-- `client/port.ManagedPeer` 只描述 RTCPeerConnection/DataChannel 平台原语。native/Android 由 `client/adapter/managed/pion` 实现；Web 由浏览器 adapter 实现，portable managed adapter 不 import Pion、DOM、JNI 或 `syscall/js`。
+- Direct、SSH 和 Cloud connector 必须返回同一种 Go-owned ReadyPeerSession；Route 差异只存在于 signaling、ICE 和 SSH tunnel 建立阶段。
+- native/Android 使用 Go/Pion；Android 通过 C ABI + JNI。浏览器 Web 当前冻结，未来恢复时由 Go/WASM 使用浏览器 WebRTC/WebCrypto primitive，不允许 TypeScript 建立第二套 session truth。
 - remote-auth 通过异步 `ClientAccessSigner` 使用平台 secure key。native 文件 store 可以适配内存 Ed25519 signer；Android Keystore/WebCrypto 只提供 public projection 与不可导出 signer，Go 在发送 proof 前必须用绑定 public key 重新验签。
 - `client/endpoint.RouteSelectionPlanner` 只根据不可变 endpoint、intent、override、generation 和平台能力生成 attempt groups；`client/runtime.SessionOwner` 执行 race、线性化唯一 ReadySession winner 并精确清理 loser。planner 不进入 platform binding 或 managed adapter，adapter 也不得选择其它 route。
-- managed attempt 成功结果必须已经完成 remote auth、Hello，并只通过 generated `apipb` 执行业务 command/event。attachment/file 的内部 framing channel 不属于公共 API，跨语言 binding 必须在 opaque resource 边界重新封装。
+- 任一远程 attempt 成功结果必须已经完成 remote auth、Hello，并只通过 generated `apipb` 执行业务 command/event。attachment/file 的内部 framing channel 不属于公共 API，跨语言 binding 必须在 opaque resource 边界重新封装。
 - `client/binding` 只接收 serialized `bindingpb.OpenSessionRequest`、`bindingpb.EngineCommand`、`apipb.CommandEnvelope` 和 `uint64` opaque handle；异步输出统一为 `bindingpb.EventEnvelope`。C/JNI/WASM 共享同一 engine/operation/session registry 与有界事件队列，平台 wrapper 不能建立第二份 handle truth，也不能为 pairing、credential 或其它业务 command 增加专用导出符号。
 
 ### Core
@@ -138,11 +142,11 @@ proto schema
 
 - Go application domain 已统一进入 `apipb + api.execute`；旧 Go protocol DTO、generic method codec、daemon workbench mutation/store 已删除。
 - `core` 只暴露 native `ApplicationSessionPort`，不 import `api_layer/api_mapping`；generated Proto 与 core 的字段转换只位于 `api_mapping/`。
-- managed client signaling/auth/Hello/session 编排已从已删除的 `remote/client` 收口到 `client/adapter/managed`；native Pion 只位于 concrete adapter，portable engine 已有 Android arm64 与 `js/wasm` 编译门禁。
-- Android/Web consumer 已统一通过 Go Client Engine、跨语言 binding 与 generated `apipb` 消费 application API；TypeScript 不再拥有独立 API codec、session/resource registry 或 reconnect truth。
+- Go application API 与基础 Client Engine 已形成；当前活动迁移按 `workflow.md` 把 Direct、SSH 和 Cloud 收口为统一 WebRTC DataChannel PeerSession。
+- Android 是当前平台纵向主线；Web/WASM 只维持 contract/编译不回归，不建设默认 Web 访问入口或迁移 browser consumer。
 - `runtimepb`、`wirepb` 重复 application schema、旧 method codec、本地 session token store 与旧 Hub/RTC bridge 已删除；`wirepb` 的剩余消息仅属于 framing-private contract。
 - Go 旧测试已经迁为 generated Proto harness；旧 DTO 测试例外已结束。
-- CLI/TUI 已通过同一 `ClientRuntime/SessionOwner` 使用 local、SSH 与 lazy-managed adapter；默认/priority route race、显式 override、sticky reconnect、winner/loser cleanup 和 operation generation fence 已完成。任何 consumer 仍不得自行选择 route、缓存 protocol client 或增加 fallback。
-- Android/WASM engine 重建通过 Go `SessionGenerationAuthority` 保持进程内 endpoint generation 单调递增；平台只持有 authority 引用，不生成或缓存 generation 数值。
+- CLI/TUI 必须通过同一 `ClientRuntime/SessionOwner` 使用 local、Direct、SSH 与 managed connector；任何 consumer 不得自行选择 route、缓存 protocol client 或增加 fallback。
+- Android engine 重建通过 Go `SessionGenerationAuthority` 保持进程内 endpoint generation 单调递增；未来 WASM 沿用同一 contract，平台只持有 authority 引用，不生成或缓存 generation 数值。
 - 同一 engine 内，`client/runtime.SessionOwner.AcquireRoute` 让同 endpoint 且连接配置相同的 `OpenSession` 共享一条 Go-owned ready session；binding handle 只持有 consumer lease，`managedhost` 不保存第二份 current-session map。关闭 list/inventory/file/workspace 任一 lease 不关闭底层 session，只有配置变化、显式 generation replacement、lifecycle teardown 或 engine close 才替换底层连接。
 - application event 必须按完整 subscription `ResourceHandle`（token、kind、session、generation）关联；session 级 event pump 只是 transport fan-out，consumer 不得把它当作 subscription filter。

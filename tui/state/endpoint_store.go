@@ -13,7 +13,7 @@ const (
 	EndpointTransportLocal EndpointTransportKind = "local-unix"
 	// EndpointTransportSSH 表示通过 SSH 访问远端 daemon。
 	// SSH host key 与认证结果不由 label 或 endpoint id 表达，必须在 transport 连接阶段处理。
-	EndpointTransportSSH EndpointTransportKind = "ssh-stdio"
+	EndpointTransportSSH EndpointTransportKind = "ssh-webrtc-tcp"
 	// EndpointTransportHubP2P 表示 managed WebRTC transport 的 UI 投影。
 	// 展示层只消费连接阶段和实际路径，DeviceIdentity 与 CapabilityGrant 仍由公开 remote transport 验证。
 	EndpointTransportHubP2P EndpointTransportKind = "managed-webrtc"

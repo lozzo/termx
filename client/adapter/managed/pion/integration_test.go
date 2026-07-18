@@ -270,7 +270,7 @@ func attemptFixture(t *testing.T, identity remoteauth.Identity) clientruntime.At
 			"webrtc": {
 				ID: "webrtc", Kind: endpoint.RouteManagedWebRTC, Enabled: true,
 				Source: endpoint.SourceCloud, PolicySource: endpoint.SourceUser, CredentialRef: "credential:lab",
-				TargetDeviceID: identity.DeviceID, AccountProfile: "default", RelayMode: endpoint.RelayDirect,
+				TargetDeviceID: identity.DeviceID, AccountProfileRef: "default", RelayMode: endpoint.RelayDirect,
 			},
 		},
 	}

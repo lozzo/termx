@@ -91,7 +91,7 @@ func (host *Host) OpenSession(ctx context.Context, request *bindingpb.OpenSessio
 		Routes: map[endpoint.RouteID]endpoint.AccessRoute{routeID: {
 			ID: routeID, Kind: endpoint.RouteManagedWebRTC, Enabled: true, Source: endpoint.SourceCloud, PolicySource: endpoint.SourceUser,
 			CredentialRef: strings.TrimSpace(managedConfig.GetCredentialRef()), TargetDeviceID: strings.TrimSpace(managedConfig.GetTargetDeviceId()),
-			AccountProfile: strings.TrimSpace(managedConfig.GetAccountProfile()), RelayMode: relayMode,
+			AccountProfileRef: strings.TrimSpace(managedConfig.GetAccountProfile()), RelayMode: relayMode,
 		}},
 	}
 	config := managedSessionConfig(request, routeID)

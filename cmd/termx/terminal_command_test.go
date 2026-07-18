@@ -98,7 +98,7 @@ func TestResolveTerminalRefUsesOwningEndpoint(t *testing.T) {
 		Default: "west",
 		Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{
 			"local": testLocalEndpoint("local", "Local", "auto", endpointdomain.ConnectAuto, true),
-			"west":  testSSHEndpoint("west", "West", "west.example", "", "auto", endpointdomain.ConnectOnDemand, true),
+			"west":  testSSHEndpoint("west", "West", "west.example", "", endpointdomain.ConnectOnDemand, true),
 			"off":   testLocalEndpoint("off", "Off", "auto", endpointdomain.ConnectOnDemand, false),
 		},
 	}

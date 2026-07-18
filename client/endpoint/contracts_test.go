@@ -29,12 +29,10 @@ func TestPortableContractsUseDeterministicStrictProtobuf(t *testing.T) {
 	}
 	ticket.Signature = ed25519.Sign(privateKey, ticketSigningBytes)
 	bundle := &remoteauthpb.EndpointBootstrapBundleV2{
-		SchemaVersion: EndpointBootstrapBundleVersion,
-		BundleId:      "bundle-1",
-		Identity:      identity,
-		Routes: []*remoteauthpb.EndpointAccessRoute{{
-			RouteId: "lan", Kind: remoteauthpb.EndpointRouteKind_ENDPOINT_ROUTE_KIND_DIRECT_TLS, Addresses: []string{"studio.local:41120"},
-		}},
+		SchemaVersion:     EndpointBootstrapBundleVersion,
+		BundleId:          "bundle-1",
+		Identity:          identity,
+		Routes:            []*remoteauthpb.EndpointRouteConfigV1{testDirectRoute("lan", "studio.local:41120")},
 		Authorization:     &remoteauthpb.EndpointAuthorizationBootstrap{Payload: &remoteauthpb.EndpointAuthorizationBootstrap_PairingTicket{PairingTicket: ticket}},
 		IssuedAtUnixNano:  now.UnixNano(),
 		ExpiresAtUnixNano: now.Add(time.Minute).UnixNano(),
@@ -76,7 +74,7 @@ func TestPortableContractsUseDeterministicStrictProtobuf(t *testing.T) {
 		t.Fatalf("bootstrap priority error = %v", err)
 	}
 	tampered := proto.Clone(bundle).(*remoteauthpb.EndpointBootstrapBundleV2)
-	tampered.Routes[0].Addresses[0] = "attacker.example:41120"
+	tampered.Routes[0].GetDirectWebrtcTcp().SignalingAddresses[0] = "attacker.example:41120"
 	if _, err := MarshalEndpointBootstrapBundle(tampered); !IsCode(err, ErrorIdentityConflict) {
 		t.Fatalf("tampered bootstrap signature error = %v", err)
 	}
@@ -123,9 +121,12 @@ func TestShareBundleAndOfferRejectNonPortableOrSecretBearingFields(t *testing.T)
 	priority := int32(20)
 	share := &remoteauthpb.ClientEndpointShareBundleV1{
 		SchemaVersion: ClientEndpointShareBundleVersion, TransferId: "transfer-1", Identity: identity, SuggestedLabel: "Studio",
-		Routes: []*remoteauthpb.EndpointAccessRoute{{
-			RouteId: "ssh", Kind: remoteauthpb.EndpointRouteKind_ENDPOINT_ROUTE_KIND_SSH_STDIO, Enabled: false, ManualOnly: true,
-			Priority: &priority, Host: "studio", Port: 22, RemoteSocket: "auto",
+		Routes: []*remoteauthpb.EndpointRouteConfigV1{{
+			SchemaVersion: RouteConfigVersion, RouteId: "ssh", Enabled: false, ManualOnly: true, Priority: &priority,
+			Route: &remoteauthpb.EndpointRouteConfigV1_SshWebrtcTcp{SshWebrtcTcp: &remoteauthpb.SSHWebRTCTCPRouteConfig{
+				Host: "studio", Port: 22, RemoteSignalingAddress: "127.0.0.1:41120", RemoteIceTcpAddress: "127.0.0.1:41121",
+				CredentialDescriptor: &remoteauthpb.EndpointCredentialDescriptor{DescriptorId: "ssh-key", Kind: remoteauthpb.EndpointCredentialKind_ENDPOINT_CREDENTIAL_KIND_SSH_AGENT},
+			}},
 		}},
 		ConnectMode:     remoteauthpb.EndpointConnectMode_ENDPOINT_CONNECT_MODE_ON_DEMAND,
 		SelectionPolicy: &remoteauthpb.EndpointSelectionPolicy{HedgeDelayConfigured: true, HedgeDelayMillis: 250},
@@ -154,30 +155,35 @@ func TestShareBundleAndOfferRejectNonPortableOrSecretBearingFields(t *testing.T)
 		t.Fatalf("whitespace source credential ref error = %v", err)
 	}
 	nonCanonicalHost := proto.Clone(share).(*remoteauthpb.ClientEndpointShareBundleV1)
-	nonCanonicalHost.Routes[0].Host = " studio"
+	nonCanonicalHost.Routes[0].GetSshWebrtcTcp().Host = " studio"
 	if _, err := MarshalClientEndpointShareBundle(nonCanonicalHost); !IsCode(err, ErrorConfig) {
 		t.Fatalf("non-canonical portable host error = %v", err)
 	}
 	controlProxyJump := proto.Clone(share).(*remoteauthpb.ClientEndpointShareBundleV1)
-	controlProxyJump.Routes[0].ProxyJump = "bad\njump"
+	controlProxyJump.Routes[0].GetSshWebrtcTcp().ProxyJump = "bad\njump"
 	if _, err := MarshalClientEndpointShareBundle(controlProxyJump); !IsCode(err, ErrorConfig) {
 		t.Fatalf("portable proxy jump control character error = %v", err)
 	}
-	nonManagedRelay := proto.Clone(share).(*remoteauthpb.ClientEndpointShareBundleV1)
-	nonManagedRelay.Routes[0].RelayMode = remoteauthpb.EndpointRelayMode_ENDPOINT_RELAY_MODE_RELAY_ONLY
-	if _, err := MarshalClientEndpointShareBundle(nonManagedRelay); !IsCode(err, ErrorConfig) {
-		t.Fatalf("portable non-managed relay mode error = %v", err)
+	unknownManagedRelay := proto.Clone(share).(*remoteauthpb.ClientEndpointShareBundleV1)
+	unknownManagedRelay.Routes[0] = &remoteauthpb.EndpointRouteConfigV1{
+		SchemaVersion: RouteConfigVersion, RouteId: "cloud", Enabled: true,
+		Route: &remoteauthpb.EndpointRouteConfigV1_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.ManagedWebRTCRouteConfig{
+			TargetDeviceId: identity.GetDeviceId(), RelayMode: remoteauthpb.ManagedWebRTCRelayMode(99),
+		}},
+	}
+	if _, err := MarshalClientEndpointShareBundle(unknownManagedRelay); !IsCode(err, ErrorConfig) {
+		t.Fatalf("unknown managed relay mode error = %v", err)
 	}
 	duplicateAddress := proto.Clone(share).(*remoteauthpb.ClientEndpointShareBundleV1)
-	duplicateAddress.Routes[0] = &remoteauthpb.EndpointAccessRoute{
-		RouteId: "lan", Kind: remoteauthpb.EndpointRouteKind_ENDPOINT_ROUTE_KIND_DIRECT_TLS,
-		Enabled: true, Addresses: []string{"studio:41120", "studio:41120"},
-	}
+	duplicateAddress.Routes[0] = testDirectRoute("lan", "studio:41120", "studio:41120")
 	if _, err := MarshalClientEndpointShareBundle(duplicateAddress); !IsCode(err, ErrorConfig) {
 		t.Fatalf("duplicate portable address error = %v", err)
 	}
 	withLocal := proto.Clone(share).(*remoteauthpb.ClientEndpointShareBundleV1)
-	withLocal.Routes[0] = &remoteauthpb.EndpointAccessRoute{RouteId: "local", Kind: remoteauthpb.EndpointRouteKind_ENDPOINT_ROUTE_KIND_LOCAL_UNIX, Socket: "auto"}
+	withLocal.Routes[0] = &remoteauthpb.EndpointRouteConfigV1{
+		SchemaVersion: RouteConfigVersion, RouteId: "local", Enabled: true,
+		Route: &remoteauthpb.EndpointRouteConfigV1_LocalUnix{LocalUnix: &remoteauthpb.LocalUnixRouteConfig{Socket: "auto"}},
+	}
 	if _, err := MarshalClientEndpointShareBundle(withLocal); !IsCode(err, ErrorConfig) {
 		t.Fatalf("local share route error = %v", err)
 	}
@@ -222,5 +228,17 @@ func TestShareBundleAndOfferRejectNonPortableOrSecretBearingFields(t *testing.T)
 	expiredOffer.ExpiresAtUnixNano = now.Add(-time.Second).UnixNano()
 	if _, err := MarshalShareSessionOffer(expiredOffer); !IsCode(err, ErrorConfig) {
 		t.Fatalf("expired share offer error = %v", err)
+	}
+}
+
+func testDirectRoute(routeID string, addresses ...string) *remoteauthpb.EndpointRouteConfigV1 {
+	return &remoteauthpb.EndpointRouteConfigV1{
+		SchemaVersion: RouteConfigVersion,
+		RouteId:       routeID,
+		Enabled:       true,
+		Route: &remoteauthpb.EndpointRouteConfigV1_DirectWebrtcTcp{DirectWebrtcTcp: &remoteauthpb.DirectWebRTCTCPRouteConfig{
+			SignalingAddresses: append([]string(nil), addresses...),
+			IceTcpAddresses:    append([]string(nil), addresses...),
+		}},
 	}
 }

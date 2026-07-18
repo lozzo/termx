@@ -60,7 +60,7 @@ func authorizationAttempt(t *testing.T, identity endpoint.DaemonIdentity) client
 		Routes: map[endpoint.RouteID]endpoint.AccessRoute{
 			"cloud": {
 				ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true, Source: endpoint.SourceCloud, PolicySource: endpoint.SourceUser,
-				CredentialRef: "credential:web", TargetDeviceID: identity.DeviceID, AccountProfile: "default", RelayMode: endpoint.RelayDirect,
+				CredentialRef: "credential:web", TargetDeviceID: identity.DeviceID, AccountProfileRef: "default", RelayMode: endpoint.RelayDirect,
 			},
 		},
 	}

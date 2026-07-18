@@ -43,9 +43,8 @@
                           |                     |
 +-------------------------+---------------------+------------------+
 |                         public clients                           |
-|  TUI / CLI / App -> client/runtime -> WebRTC Transport Adapter  |
-|         |                 |                                      |
-|         |                 +-> local / SSH adapters                |
+|  TUI / CLI / App -> Go Client Engine -> Route connectors        |
+|         |            local / Direct / SSH / Cloud                |
 +---------|---------------------------------------------------------+
           | termx protocol after E2E capability handshake
           v
@@ -76,7 +75,7 @@ Hub 只传递 signaling metadata。Relay 只转发已经由 WebRTC DTLS 加密�
 
 ## 4. 核心模型
 
-### 4.1 Endpoint 与 Transport
+### 4.1 Endpoint 与 Route
 
 `Endpoint` 表达一个 daemon 目标，其稳定引用是客户端域的 `EndpointID`。跨 endpoint terminal 必须继续使用：
 
@@ -84,13 +83,14 @@ Hub 只传递 signaling metadata。Relay 只转发已经由 WebRTC DTLS 加密�
 TerminalRef = EndpointID + daemon-local TerminalID
 ```
 
-`Transport` 表达到达 endpoint 的方法：
+`Route` 表达到达 endpoint 的持久配置，唯一跨边界 schema 是 `EndpointRouteConfigV1`：
 
-- `local`：本地 unix socket。
-- `ssh`：通过 OpenSSH stdio proxy 到远端 daemon socket。
-- `webrtc`：通过 Hub signaling 协商的 DataChannel。
+- `local-unix`：本地 Unix socket。
+- `direct-webrtc-tcp`：daemon embedded signaling + ICE-TCP。
+- `ssh-webrtc-tcp`：Go SSH `direct-tcpip` tunnel + daemon loopback ICE-TCP。
+- `managed-webrtc`：TermX Cloud signaling + ICE-UDP 或 TURN。
 
-`direct`、`single_relay` 和 `relay_mesh` 不是 transport kind，而是 `webrtc` transport 的 `ObservedPath`。其中 `relay_mesh` 表示两端各自就近接入 Edge Relay，再经受控 inter-region backbone 转发。详细阶段和限制见 `global-acceleration-spec.md`。因此以下状态保持不变：
+除 local Unix 外，三种远程 Route 最终都建立可靠有序 WebRTC DataChannel。`direct` 和 `single_relay` 只是 managed WebRTC 的 `ObservedPath`，不能代替外层 Route 类型。因此以下状态保持不变：
 
 - endpoint identity；
 - device fingerprint；
@@ -345,11 +345,12 @@ Client -> local socket -> protocol Hello -> core-v2
 ### 7.2 SSH
 
 ```text
-Client -> OpenSSH/host-key -> remote daemon stdio proxy
-       -> protocol Hello -> core-v2
+Go Client Engine -> Go SSH host-key/auth -> direct-tcpip tunnel
+                 -> daemon loopback signaling + ICE-TCP
+                 -> DTLS DataChannel -> remote auth -> Hello -> core-v2
 ```
 
-SSH 自身负责 transport authentication。该路径不需要云端 capability grant；远端 daemon 可以按 SSH 接入策略映射 scope。
+SSH 负责主机与用户认证，但不替代 DataChannel 内 daemon identity、channel binding 和 capability handshake。该路径不需要 Cloud；旧 stdio proxy 不是 fallback。
 
 ### 7.3 Managed WebRTC direct
 
