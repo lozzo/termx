@@ -4,6 +4,7 @@ apply plugin: 'com.google.protobuf'
 android {
     namespace = "com.termx.app"
     compileSdk = rootProject.ext.compileSdkVersion
+    ndkVersion "27.2.12479018"
     defaultConfig {
         applicationId "com.termx.app"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -23,7 +24,8 @@ android {
     sourceSets {
         test.resources.srcDir '../../../../shared/cloudcompanion/testdata'
         test.resources.srcDir '../../../../client/endpoint/testdata'
-        main.proto.srcDirs '../../../../proto/cloudpb', '../../../../proto/remoteauthpb', '../../../../proto/wirepb'
+        main.proto.srcDir '../../../../proto'
+        debug.jniLibs.srcDir "$buildDir/generated/termxJniLibs"
     }
     if (project.hasProperty("termxArmOnly")) {
         splits {
@@ -42,6 +44,26 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
     }
+}
+
+tasks.register("buildTermxClientNative", Exec) {
+    workingDir rootProject.projectDir
+    commandLine file('../../../../scripts/build-android-client.sh').absolutePath, "$buildDir/generated/termxJniLibs"
+    inputs.files(
+        fileTree('../../../../client'),
+        fileTree('../../../../api_layer'),
+        fileTree('../../../../core'),
+        fileTree('../../../../internal/protocol'),
+        fileTree('../../../../remote'),
+        fileTree('../../../../shared'),
+        fileTree('../../../../proto'),
+        file('src/main/cpp/termx_client_jni.c')
+    )
+    outputs.dir "$buildDir/generated/termxJniLibs"
+}
+
+tasks.matching { it.name == "preDebugBuild" }.configureEach {
+    dependsOn tasks.named("buildTermxClientNative")
 }
 
 repositories {

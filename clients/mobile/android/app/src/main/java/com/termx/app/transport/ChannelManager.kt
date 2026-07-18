@@ -199,9 +199,8 @@ class ChannelManager(
     }
 
     private fun requestList(timeoutMs: Long) {
-        val resultBytes = requestProtocol("list", Terminal.Empty.getDefaultInstance().toByteArray(), timeoutMs)
-        val result = Terminal.ListResult.parseFrom(resultBytes)
-        if (result.unknownFields.asMap().isNotEmpty()) throw IllegalStateException("termx protocol list response contains unknown fields")
+        // 旧 ListResult 已随 API Proto 收口删除；迁移前 readiness probe 只以完整成功 response 为准。
+        requestProtocol("list", Terminal.Empty.getDefaultInstance().toByteArray(), timeoutMs)
     }
 
     private fun requestProtocol(method: String, params: ByteArray, timeoutMs: Long, claimsFileChannel: Boolean = false): ByteArray {
