@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/client/adapter/managed"
+	peeradapter "github.com/lozzow/termx/client/adapter/peer"
 	"github.com/lozzow/termx/client/binding"
 	"github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/client/port"
@@ -98,7 +99,7 @@ func (host *Host) OpenSession(ctx context.Context, request *bindingpb.OpenSessio
 	credentials := platformCredentials{broker: host.options.Broker}
 	dialer := &managed.Dialer{
 		Cloud: platformCloud{broker: host.options.Broker}, Peers: host.options.Peers, ClientName: host.options.ClientName,
-		Authorization: managed.CapabilityAuthorizer{Credentials: credentials, Signers: credentials, Now: host.options.Now}, Now: host.options.Now,
+		Authorization: peeradapter.CapabilityAuthorizer{Credentials: credentials, Signers: credentials, Now: host.options.Now}, Now: host.options.Now,
 	}
 	return host.owner.AcquireRoute(ctx, target, routeID, intent, config, dialer)
 }
@@ -447,8 +448,8 @@ func cloneSignalingEvents(values []*cloudpb.SignalingEvent) []*cloudpb.Signaling
 var _ binding.Host = (*Host)(nil)
 var _ binding.PairingHost = (*Host)(nil)
 var _ binding.CredentialHost = (*Host)(nil)
-var _ managed.CredentialSource = platformCredentials{}
-var _ managed.SignerSource = platformCredentials{}
+var _ peeradapter.CredentialSource = platformCredentials{}
+var _ peeradapter.SignerSource = platformCredentials{}
 var _ remoteauth.ClientAccessSigner = platformSigner{}
 var _ managed.CloudClient = platformCloud{}
 var _ cloudcompanion.SignalingStream = (*signalingStream)(nil)

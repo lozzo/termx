@@ -23,6 +23,8 @@ type Client struct {
 
 	doneErrMu sync.Mutex
 	doneErr   error
+	closeOnce sync.Once
+	closeErr  error
 
 	mu                          sync.Mutex
 	sendMu                      sync.Mutex
@@ -220,9 +222,31 @@ func (c *Client) ApplicationEvents(ctx context.Context) (<-chan *apipb.EventEnve
 }
 
 func (c *Client) Close() error {
-	err := c.transport.Close()
+	if c == nil {
+		return nil
+	}
+	c.closeOnce.Do(func() {
+		select {
+		case <-c.done:
+		default:
+			if drainer, ok := c.transport.(interface{ Drain(context.Context) error }); ok {
+				if payload, err := EncodeSessionClosePayload(); err == nil {
+					if frame, err := wire.EncodeFrame(0, wire.TypeSessionClose, payload); err == nil && c.send(frame) == nil {
+						drainCtx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+						_ = drainer.Drain(drainCtx)
+						cancel()
+						select {
+						case <-c.done:
+						case <-time.After(250 * time.Millisecond):
+						}
+					}
+				}
+			}
+		}
+		c.closeErr = c.transport.Close()
+	})
 	<-c.done
-	return err
+	return c.closeErr
 }
 
 // Done 返回 protocol client read loop 的关闭信号。

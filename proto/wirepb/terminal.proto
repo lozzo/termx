@@ -12,6 +12,12 @@ message Hello {
   string server = 3;
 }
 
+// SessionClose 是已完成 Hello 的客户端主动结束当前 protocol session 的单向 control frame。
+// daemon 收到后必须先释放 request/resource 并关闭 transport；它不改变 Endpoint、terminal 或 grant lifecycle。
+message SessionClose {
+  uint32 version = 1;
+}
+
 message RequestEnvelope {
   uint64 id = 1;
   string method = 2;

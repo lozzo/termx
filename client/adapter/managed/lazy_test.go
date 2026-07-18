@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	peeradapter "github.com/lozzow/termx/client/adapter/peer"
 	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/shared/cloudcompanion"
@@ -36,7 +37,7 @@ func TestLazyDialerOwnsCloudLifecycle(t *testing.T) {
 			return cloud, closer, nil
 		},
 		Peers: fakePeerFactory{peer: peer},
-		Authorization: &fakeAuthorizer{prepare: func(clientruntime.AttemptRequest) (PreparedAuthorization, error) {
+		Authorization: &fakeAuthorizer{prepare: func(clientruntime.AttemptRequest) (peeradapter.PreparedAuthorization, error) {
 			return &fakePreparedAuthorization{authenticate: func(transport.Transport, string) error { return nil }}, nil
 		}},
 		ClientName: "lazy-managed-test",

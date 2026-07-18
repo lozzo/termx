@@ -15,6 +15,7 @@ import (
 	apilayer "github.com/lozzow/termx/api_layer"
 	"github.com/lozzow/termx/client/adapter/managed"
 	pionadapter "github.com/lozzow/termx/client/adapter/managed/pion"
+	peeradapter "github.com/lozzow/termx/client/adapter/peer"
 	"github.com/lozzow/termx/client/endpoint"
 	clientruntime "github.com/lozzow/termx/client/runtime"
 	core "github.com/lozzow/termx/core"
@@ -102,7 +103,7 @@ func (host *androidSpikeHost) OpenSession(ctx context.Context, request *bindingp
 			CredentialRef: "credential:android-spike", TargetDeviceID: host.identity.DeviceID, AccountProfileRef: "default", RelayMode: endpoint.RelayDirect},
 	}}
 	dialer := &managed.Dialer{Cloud: androidSpikeCompanion(host.ctx, host.answerer), Peers: pionadapter.Factory{}, ClientName: "android-go-client",
-		Authorization: managed.CapabilityAuthorizer{Credentials: androidSpikeCredentialSource{credential: host.credential}, Now: func() time.Time { return host.now }}, Now: func() time.Time { return host.now }}
+		Authorization: peeradapter.CapabilityAuthorizer{Credentials: androidSpikeCredentialSource{credential: host.credential}, Now: func() time.Time { return host.now }}, Now: func() time.Time { return host.now }}
 	lease, err := host.owner.ConnectRoute(ctx, target, "webrtc", clientruntime.ConnectIntentInteractive, dialer)
 	if err != nil {
 		return nil, err

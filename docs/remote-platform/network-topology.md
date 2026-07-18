@@ -44,30 +44,30 @@ flowchart LR
         D3["WebRTC 可达 termx daemon<br/>DeviceIdentity / Capability owner<br/>独立 core-v2"]
     end
 
-    EM -->|"local transport"| LOCAL --> D1
-    EM -->|"Direct WebRTC TCP"| DIRECT --> D2
-    EM -->|"SSH WebRTC TCP"| SSH --> D2
+    CR -->|"local transport"| LOCAL --> D1
+    CR -->|"Direct WebRTC TCP"| DIRECT --> D2
+    CR -->|"SSH WebRTC TCP"| SSH --> D2
 
-    EM -->|"TLS：登录 / 申请托管 session"| CP
+    CR -->|"TLS：登录 / 申请托管 session"| CP
     D3 -->|"TLS：设备注册 / presence 申请"| CP
-    CP -->|"client admission / RelayLease"| EM
+    CP -->|"client admission / RelayLease"| CR
     CP -->|"daemon admission / RelayLease"| D3
-    EM <-->|"TLS：offer / answer / ICE + admission"| HUB
+    CR <-->|"TLS：offer / answer / ICE + admission"| HUB
     D3 <-->|"TLS：presence / offer / answer / ICE + admission"| HUB
     CP -.->|"admission 验签 keyset"| HUB
     CP -.->|"lease 验签 keyset / quota policy"| RELAY
 
-    EM -.->|"优先：WebRTC direct + DTLS"| D3
-    EM ==>|"直连失败：WebRTC DTLS"| RELAY
+    CR -.->|"优先：WebRTC direct + DTLS"| D3
+    CR ==>|"直连失败：WebRTC DTLS"| RELAY
     RELAY ==>|"仅转发端到端加密字节"| D3
     RELAY -->|"签名 UsageEvent"| CP
 
-    EM -.->|"逻辑 E2E：DeviceHello / CapabilityOpen / termx protocol"| D3
+    CR -.->|"逻辑 E2E：DeviceHello / CapabilityOpen / termx protocol"| D3
 
     classDef openNode fill:#ecfdf5,stroke:#15803d,color:#052e16;
     classDef privateNode fill:#fff7ed,stroke:#c2410c,color:#431407;
     classDef pathNode fill:#eff6ff,stroke:#1d4ed8,color:#172554;
-    class TUI,APP,EM,D1,D2,D3 openNode;
+    class TUI,APP,CR,D1,D2,D3 openNode;
     class CP,HUB,RELAY privateNode;
     class LOCAL,DIRECT,SSH pathNode;
 ```
@@ -129,31 +129,26 @@ flowchart LR
 | Client | endpoint pin、原始 grant、daemon 返回的 protocol 数据 | daemon 私钥 |
 | Daemon | DeviceIdentity 私钥、grant 签发/撤销、terminal truth | 用户计费数据库 |
 
-## 4. Direct P2P 连接时序
+## 4. Direct WebRTC TCP 连接时序
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant C as TUI / App
-    participant CP as Control Plane
-    participant H as Hub
+    participant S as daemon embedded signaling
     participant D as termx daemon
     participant Core as core-v2
 
-    C->>CP: ResolveEndpoint(target DeviceID)
-    CP-->>C: Hub assignment + target presence metadata
-    C->>CP: IssueHubAdmission(ManagedSession)
-    CP-->>C: short-lived client admission
-    D->>CP: refresh daemon admission
-    CP-->>D: short-lived daemon admission
-
-    C->>H: offer + ICE + client admission
-    H->>D: route offer + ICE
-    D->>H: answer + ICE + daemon admission
-    H-->>C: route answer + ICE
-
-    C->>D: WebRTC direct ICE + DTLS
-    D-->>C: DeviceHello + signed DTLS fingerprint binding
+    C->>C: load Endpoint pin + Direct Route + endpoint-bound credential
+    C->>C: create TCP-only offer and one-time request_id
+    C->>S: DirectSignalingRequestV1(pin, offer, short expiry)
+    S->>S: validate schema / pin / expiry / replay
+    S->>D: create answer on shared ICE-TCP mux
+    D-->>S: answer + TCP candidates
+    S-->>C: signed DirectSignalingAnswerV1
+    C->>C: verify DeviceIdentity pin, request correlation, expiry and signature
+    C->>D: ICE-TCP -> DTLS -> reliable ordered DataChannel
+    D-->>C: DeviceHello bound to actual DTLS certificate
     C->>C: verify pinned DeviceFingerprint and actual DTLS peer
     C->>D: CapabilityOpen(grant + one-time challenge proof)
     D->>D: verify signature / expiry / revoke / proof / scope
@@ -161,12 +156,14 @@ sequenceDiagram
     D->>Core: ServeScopedTransport(scope, DataChannel)
     C->>D: termx protocol Hello / List / Attach
     D->>Core: dispatch requests inside accepted scope
+    C->>D: versioned SessionClose
+    D->>D: release protocol resources, DataChannel, peer and TCPMux ufrag
 
     Note over C,D: CapabilityGrant only appears inside this E2E DTLS DataChannel
-    Note over CP,H: Control Plane and Hub never receive terminal capability
+    Note over C,S: signaling carries public SDP/ICE and signed identity only; it never carries grant or terminal payload
 ```
 
-## 5. Relay fallback 连接时序
+## 5. Managed Relay fallback 连接时序
 
 ```mermaid
 sequenceDiagram

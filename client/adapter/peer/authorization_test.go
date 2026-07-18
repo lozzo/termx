@@ -1,4 +1,4 @@
-package managed
+package peer_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	peeradapter "github.com/lozzow/termx/client/adapter/peer"
 	"github.com/lozzow/termx/client/endpoint"
 	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/shared/remoteauth"
@@ -43,7 +44,7 @@ func TestCapabilityAuthorizerAcceptsPublicCredentialWithPlatformSigner(t *testin
 		Version: 1, EndpointID: "web", Identity: publicIdentity, CapabilityGrant: grant, UpdatedAt: now,
 	}
 	attempt := authorizationAttempt(t, endpoint.DaemonIdentity{DeviceID: daemon.DeviceID, DeviceFingerprint: daemon.Fingerprint})
-	prepared, err := (CapabilityAuthorizer{
+	prepared, err := (peeradapter.CapabilityAuthorizer{
 		Credentials: staticAuthorizationCredentialSource{credential: credential},
 		Signers:     staticAuthorizationSignerSource{signer: signer},
 		Now:         func() time.Time { return now },

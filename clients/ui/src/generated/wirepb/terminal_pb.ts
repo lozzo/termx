@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file terminal.proto.
  */
 export const file_terminal: GenFile = /*@__PURE__*/
-  fileDesc("Cg50ZXJtaW5hbC5wcm90bxIVdGVybXgucHJvdG9jb2wud2lyZXBiIjgKBUhlbGxvEg8KB3ZlcnNpb24YASABKA0SDgoGY2xpZW50GAIgASgJEg4KBnNlcnZlchgDIAEoCSI9Cg9SZXF1ZXN0RW52ZWxvcGUSCgoCaWQYASABKAQSDgoGbWV0aG9kGAIgASgJEg4KBnBhcmFtcxgDIAEoDCIuChBSZXNwb25zZUVudmVsb3BlEgoKAmlkGAEgASgEEg4KBnJlc3VsdBgCIAEoDCIuCg1Qcm90b2NvbEVycm9yEgwKBGNvZGUYASABKAUSDwoHbWVzc2FnZRgCIAEoCSJQCg1FcnJvckVudmVsb3BlEgoKAmlkGAEgASgEEjMKBWVycm9yGAIgASgLMiQudGVybXgucHJvdG9jb2wud2lyZXBiLlByb3RvY29sRXJyb3IiMAoQRmlsZVRyYW5zZmVyRGF0YRIOCgZvZmZzZXQYASABKAMSDAoEZGF0YRgCIAEoDCI3Cg9GaWxlVHJhbnNmZXJBY2sSDgoGb2Zmc2V0GAEgASgDEhQKDHdpbmRvd19ieXRlcxgCIAEoAyIyChJGaWxlVHJhbnNmZXJGaW5pc2gSDAoEc2l6ZRgBIAEoAxIOCgZzaGEyNTYYAiABKAwiQAoSRmlsZVRyYW5zZmVyUmVzdWx0EgwKBHBhdGgYASABKAkSDAoEc2l6ZRgCIAEoAxIOCgZzaGEyNTYYAyABKAxCJlokZ2l0aHViLmNvbS9sb3p6b3cvdGVybXgvcHJvdG8vd2lyZXBiYgZwcm90bzM");
+  fileDesc("Cg50ZXJtaW5hbC5wcm90bxIVdGVybXgucHJvdG9jb2wud2lyZXBiIjgKBUhlbGxvEg8KB3ZlcnNpb24YASABKA0SDgoGY2xpZW50GAIgASgJEg4KBnNlcnZlchgDIAEoCSIfCgxTZXNzaW9uQ2xvc2USDwoHdmVyc2lvbhgBIAEoDSI9Cg9SZXF1ZXN0RW52ZWxvcGUSCgoCaWQYASABKAQSDgoGbWV0aG9kGAIgASgJEg4KBnBhcmFtcxgDIAEoDCIuChBSZXNwb25zZUVudmVsb3BlEgoKAmlkGAEgASgEEg4KBnJlc3VsdBgCIAEoDCIuCg1Qcm90b2NvbEVycm9yEgwKBGNvZGUYASABKAUSDwoHbWVzc2FnZRgCIAEoCSJQCg1FcnJvckVudmVsb3BlEgoKAmlkGAEgASgEEjMKBWVycm9yGAIgASgLMiQudGVybXgucHJvdG9jb2wud2lyZXBiLlByb3RvY29sRXJyb3IiMAoQRmlsZVRyYW5zZmVyRGF0YRIOCgZvZmZzZXQYASABKAMSDAoEZGF0YRgCIAEoDCI3Cg9GaWxlVHJhbnNmZXJBY2sSDgoGb2Zmc2V0GAEgASgDEhQKDHdpbmRvd19ieXRlcxgCIAEoAyIyChJGaWxlVHJhbnNmZXJGaW5pc2gSDAoEc2l6ZRgBIAEoAxIOCgZzaGEyNTYYAiABKAwiQAoSRmlsZVRyYW5zZmVyUmVzdWx0EgwKBHBhdGgYASABKAkSDAoEc2l6ZRgCIAEoAxIOCgZzaGEyNTYYAyABKAxCJlokZ2l0aHViLmNvbS9sb3p6b3cvdGVybXgvcHJvdG8vd2lyZXBiYgZwcm90bzM");
 
 /**
  * wirepb 只拥有 DataChannel framing 与 file resource stream payload。
@@ -43,6 +43,26 @@ export const HelloSchema: GenMessage<Hello> = /*@__PURE__*/
   messageDesc(file_terminal, 0);
 
 /**
+ * SessionClose 是已完成 Hello 的客户端主动结束当前 protocol session 的单向 control frame。
+ * daemon 收到后必须先释放 request/resource 并关闭 transport；它不改变 Endpoint、terminal 或 grant lifecycle。
+ *
+ * @generated from message termx.protocol.wirepb.SessionClose
+ */
+export type SessionClose = Message<"termx.protocol.wirepb.SessionClose"> & {
+  /**
+   * @generated from field: uint32 version = 1;
+   */
+  version: number;
+};
+
+/**
+ * Describes the message termx.protocol.wirepb.SessionClose.
+ * Use `create(SessionCloseSchema)` to create a new message.
+ */
+export const SessionCloseSchema: GenMessage<SessionClose> = /*@__PURE__*/
+  messageDesc(file_terminal, 1);
+
+/**
  * @generated from message termx.protocol.wirepb.RequestEnvelope
  */
 export type RequestEnvelope = Message<"termx.protocol.wirepb.RequestEnvelope"> & {
@@ -67,7 +87,7 @@ export type RequestEnvelope = Message<"termx.protocol.wirepb.RequestEnvelope"> &
  * Use `create(RequestEnvelopeSchema)` to create a new message.
  */
 export const RequestEnvelopeSchema: GenMessage<RequestEnvelope> = /*@__PURE__*/
-  messageDesc(file_terminal, 1);
+  messageDesc(file_terminal, 2);
 
 /**
  * @generated from message termx.protocol.wirepb.ResponseEnvelope
@@ -89,7 +109,7 @@ export type ResponseEnvelope = Message<"termx.protocol.wirepb.ResponseEnvelope">
  * Use `create(ResponseEnvelopeSchema)` to create a new message.
  */
 export const ResponseEnvelopeSchema: GenMessage<ResponseEnvelope> = /*@__PURE__*/
-  messageDesc(file_terminal, 2);
+  messageDesc(file_terminal, 3);
 
 /**
  * @generated from message termx.protocol.wirepb.ProtocolError
@@ -111,7 +131,7 @@ export type ProtocolError = Message<"termx.protocol.wirepb.ProtocolError"> & {
  * Use `create(ProtocolErrorSchema)` to create a new message.
  */
 export const ProtocolErrorSchema: GenMessage<ProtocolError> = /*@__PURE__*/
-  messageDesc(file_terminal, 3);
+  messageDesc(file_terminal, 4);
 
 /**
  * @generated from message termx.protocol.wirepb.ErrorEnvelope
@@ -133,7 +153,7 @@ export type ErrorEnvelope = Message<"termx.protocol.wirepb.ErrorEnvelope"> & {
  * Use `create(ErrorEnvelopeSchema)` to create a new message.
  */
 export const ErrorEnvelopeSchema: GenMessage<ErrorEnvelope> = /*@__PURE__*/
-  messageDesc(file_terminal, 4);
+  messageDesc(file_terminal, 5);
 
 /**
  * @generated from message termx.protocol.wirepb.FileTransferData
@@ -155,7 +175,7 @@ export type FileTransferData = Message<"termx.protocol.wirepb.FileTransferData">
  * Use `create(FileTransferDataSchema)` to create a new message.
  */
 export const FileTransferDataSchema: GenMessage<FileTransferData> = /*@__PURE__*/
-  messageDesc(file_terminal, 5);
+  messageDesc(file_terminal, 6);
 
 /**
  * @generated from message termx.protocol.wirepb.FileTransferAck
@@ -177,7 +197,7 @@ export type FileTransferAck = Message<"termx.protocol.wirepb.FileTransferAck"> &
  * Use `create(FileTransferAckSchema)` to create a new message.
  */
 export const FileTransferAckSchema: GenMessage<FileTransferAck> = /*@__PURE__*/
-  messageDesc(file_terminal, 6);
+  messageDesc(file_terminal, 7);
 
 /**
  * @generated from message termx.protocol.wirepb.FileTransferFinish
@@ -199,7 +219,7 @@ export type FileTransferFinish = Message<"termx.protocol.wirepb.FileTransferFini
  * Use `create(FileTransferFinishSchema)` to create a new message.
  */
 export const FileTransferFinishSchema: GenMessage<FileTransferFinish> = /*@__PURE__*/
-  messageDesc(file_terminal, 7);
+  messageDesc(file_terminal, 8);
 
 /**
  * @generated from message termx.protocol.wirepb.FileTransferResult
@@ -226,4 +246,4 @@ export type FileTransferResult = Message<"termx.protocol.wirepb.FileTransferResu
  * Use `create(FileTransferResultSchema)` to create a new message.
  */
 export const FileTransferResultSchema: GenMessage<FileTransferResult> = /*@__PURE__*/
-  messageDesc(file_terminal, 8);
+  messageDesc(file_terminal, 9);

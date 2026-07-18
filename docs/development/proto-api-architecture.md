@@ -46,12 +46,14 @@ core
 
 - Local Unix 与 Direct/SSH/Cloud Route connector 负责建立连接；所有远程 Route 最终传递可靠有序 WebRTC DataChannel bytes。JNI、Swift 和 WASM binding 只负责平台调用边界。
 - `internal/protocol/` 负责 Hello、channel、correlation 和 payload framing，不拥有 terminal/history 等 application API 字段语义。
+- Direct embedded signaling 的 request/answer/error 与 protocol `SessionClose` 也必须先定义在 Proto；length-prefix、TCP listener 和 Pion TCPMux 只实现 framing/lifecycle，不能复制字段或把签名 answer 当作 DataChannel authorization。
 - transport 和 protocol framing 不执行 application authorization，不把 core domain struct 暴露给客户端，也不在失败时切换未授权 fallback。
 
 ### Cross-platform Go Client Engine
 
 - `client/runtime.SessionOwner` 是 endpoint session generation、当前 ready winner、stale operation 拒绝和 reconnect replacement 的唯一客户端真值；平台 UI 不缓存 protocol client。
 - Direct、SSH 和 Cloud connector 必须返回同一种 Go-owned ReadyPeerSession；Route 差异只存在于 signaling、ICE 和 SSH tunnel 建立阶段。
+- `client/adapter/direct` 只消费当前 `direct-webrtc-tcp` attempt；它验证 daemon-signed answer 后仍复用 `client/adapter/peer` 的 DTLS-bound capability transaction，并通过 versioned `SessionClose` 让 daemon 先释放 protocol/peer/TCPMux 资源。
 - native/Android 使用 Go/Pion；Android 通过 C ABI + JNI。浏览器 Web 当前冻结，未来恢复时由 Go/WASM 使用浏览器 WebRTC/WebCrypto primitive，不允许 TypeScript 建立第二套 session truth。
 - remote-auth 通过异步 `ClientAccessSigner` 使用平台 secure key。native 文件 store 可以适配内存 Ed25519 signer；Android Keystore/WebCrypto 只提供 public projection 与不可导出 signer，Go 在发送 proof 前必须用绑定 public key 重新验签。
 - `client/endpoint.RouteSelectionPlanner` 只根据不可变 endpoint、intent、override、generation 和平台能力生成 attempt groups；`client/runtime.SessionOwner` 执行 race、线性化唯一 ReadyPeerSession winner 并精确清理 loser。planner 不进入 platform binding 或 managed adapter，adapter 也不得选择其它 route。

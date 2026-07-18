@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"runtime/debug"
@@ -284,6 +285,11 @@ func (session *protocolSession) handleControlFrame(ctx context.Context, typ uint
 			_ = session.handleRequest(ctx, req)
 		}()
 		return nil
+	case wire.TypeSessionClose:
+		if err := protocol.DecodeSessionClosePayload(payload); err != nil {
+			return session.sendError(0, protocolErrorBadRequest, err.Error())
+		}
+		return io.EOF
 	default:
 		return session.sendError(0, protocolErrorBadRequest, fmt.Sprintf("unsupported control frame type %d", typ))
 	}

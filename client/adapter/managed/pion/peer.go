@@ -27,6 +27,19 @@ type Factory struct {
 	PeerConnections remotewebrtc.PeerConnectionFactory
 }
 
+// OpenDirectPeer 创建只启用 ICE-TCP 的 native Pion peer，供 Direct 与后续 SSH tunnel connector 使用。
+// 默认 factory 不发布 UDP candidate；测试可以通过 PeerConnections 注入受控 API，但不能改变上层 Route 或授权语义。
+func (factory Factory) OpenDirectPeer(_ context.Context) (port.ManagedPeer, error) {
+	peerFactory := factory.PeerConnections
+	if peerFactory == nil {
+		settings := pionwebrtc.SettingEngine{}
+		settings.SetNetworkTypes([]pionwebrtc.NetworkType{pionwebrtc.NetworkTypeTCP4, pionwebrtc.NetworkTypeTCP6})
+		settings.SetIncludeLoopbackCandidate(true)
+		peerFactory = pionwebrtc.NewAPI(pionwebrtc.WithSettingEngine(settings)).NewPeerConnection
+	}
+	return openPeer(peerFactory, pionwebrtc.Configuration{})
+}
+
 // OpenManagedPeer 按已验证 ICE material 创建可靠有序 protocol DataChannel。
 // direct-only 会剔除 TURN URL，relay-only 会启用 Pion relay policy；非法组合直接失败，不能降级为其他策略。
 func (factory Factory) OpenManagedPeer(_ context.Context, servers []*cloudpb.IceServer, preference cloudpb.RoutePreference, relayOnly bool) (port.ManagedPeer, error) {
@@ -38,6 +51,10 @@ func (factory Factory) OpenManagedPeer(_ context.Context, servers []*cloudpb.Ice
 	if peerFactory == nil {
 		peerFactory = remotewebrtc.NewPeerConnection
 	}
+	return openPeer(peerFactory, configuration)
+}
+
+func openPeer(peerFactory remotewebrtc.PeerConnectionFactory, configuration pionwebrtc.Configuration) (port.ManagedPeer, error) {
 	peer, err := peerFactory(configuration)
 	if err != nil {
 		return nil, err
@@ -48,18 +65,23 @@ func (factory Factory) OpenManagedPeer(_ context.Context, servers []*cloudpb.Ice
 		return nil, err
 	}
 	ready := make(chan struct{})
-	value := &managedPeer{peer: peer, channel: remotewebrtc.NewChannel(channel), ready: ready}
+	closed := make(chan struct{})
+	channelAdapter := remotewebrtc.NewChannel(channel)
+	value := &managedPeer{peer: peer, channel: channelAdapter, ready: ready, channelClosed: closed}
 	channel.OnOpen(func() { value.readyOnce.Do(func() { close(ready) }) })
+	channelAdapter.SetCloseHandler(func() { value.channelCloseOnce.Do(func() { close(closed) }) })
 	return value, nil
 }
 
 type managedPeer struct {
-	peer      *pionwebrtc.PeerConnection
-	channel   *remotewebrtc.Channel
-	ready     chan struct{}
-	readyOnce sync.Once
-	closeOnce sync.Once
-	closeErr  error
+	peer             *pionwebrtc.PeerConnection
+	channel          *remotewebrtc.Channel
+	ready            chan struct{}
+	readyOnce        sync.Once
+	channelClosed    chan struct{}
+	channelCloseOnce sync.Once
+	closeOnce        sync.Once
+	closeErr         error
 }
 
 func (peer *managedPeer) Channel() port.ManagedMessageChannel { return peer.channel }
@@ -166,7 +188,24 @@ func (peer *managedPeer) Close() error {
 	if peer == nil {
 		return nil
 	}
-	peer.closeOnce.Do(func() { peer.closeErr = peer.peer.Close() })
+	peer.closeOnce.Do(func() {
+		if peer.channel != nil {
+			peer.closeErr = peer.channel.Close()
+		}
+		if peer.channelClosed != nil {
+			timer := time.NewTimer(250 * time.Millisecond)
+			select {
+			case <-peer.channelClosed:
+				if !timer.Stop() {
+					<-timer.C
+				}
+			case <-timer.C:
+			}
+		}
+		if err := peer.peer.Close(); peer.closeErr == nil {
+			peer.closeErr = err
+		}
+	})
 	return peer.closeErr
 }
 

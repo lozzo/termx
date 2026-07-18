@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	peeradapter "github.com/lozzow/termx/client/adapter/peer"
 	"github.com/lozzow/termx/client/port"
 	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/proto/apipb"
@@ -21,7 +22,7 @@ type CloudSessionOpener func(context.Context) (CloudClient, io.Closer, error)
 type LazyDialer struct {
 	OpenCloud     CloudSessionOpener
 	Peers         port.ManagedPeerFactory
-	Authorization Authorizer
+	Authorization peeradapter.Authorizer
 	ClientName    string
 	Now           func() time.Time
 }

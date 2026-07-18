@@ -82,6 +82,22 @@ func TestEndpointConfigAndRegistryAreVersionedProtoContracts(t *testing.T) {
 	}
 }
 
+func TestDirectSignalingUsesVersionedProtoAndSignedAnswer(t *testing.T) {
+	request := (&DirectSignalingRequestV1{}).ProtoReflect().Descriptor()
+	answer := (&DirectSignalingAnswerV1{}).ProtoReflect().Descriptor()
+	response := (&DirectSignalingResponseV1{}).ProtoReflect().Descriptor()
+	if request.Fields().ByName("schema_version").Number() != 1 || answer.Fields().ByName("schema_version").Number() != 1 {
+		t.Fatal("Direct signaling request/answer must retain schema_version field 1")
+	}
+	if answer.Fields().ByName("identity") == nil || answer.Fields().ByName("signature") == nil {
+		t.Fatal("Direct signaling answer must carry daemon identity and signature")
+	}
+	payload := response.Oneofs().ByName("payload")
+	if payload == nil || payload.Fields().Len() != 2 || payload.Fields().ByName("answer") == nil || payload.Fields().ByName("error") == nil {
+		t.Fatal("Direct signaling response must be an answer/error oneof")
+	}
+}
+
 func assertRemoteAuthMessageAllowed(t *testing.T, message protoreflect.MessageDescriptor, forbidden []string) {
 	t.Helper()
 	for fieldIndex := 0; fieldIndex < message.Fields().Len(); fieldIndex++ {

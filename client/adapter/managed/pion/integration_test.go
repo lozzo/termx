@@ -12,6 +12,7 @@ import (
 	apilayer "github.com/lozzow/termx/api_layer"
 	"github.com/lozzow/termx/client/adapter/managed"
 	pionadapter "github.com/lozzow/termx/client/adapter/managed/pion"
+	peeradapter "github.com/lozzow/termx/client/adapter/peer"
 	"github.com/lozzow/termx/client/endpoint"
 	clientruntime "github.com/lozzow/termx/client/runtime"
 	core "github.com/lozzow/termx/core"
@@ -62,7 +63,7 @@ func TestPionICETCPCompletesAuthHelloAndProtoAPI(t *testing.T) {
 	}
 	dialer := &managed.Dialer{
 		Cloud: signalingCompanion(answerer), Peers: clientFactory, ClientName: "pion-ice-tcp-e2e",
-		Authorization: managed.CapabilityAuthorizer{
+		Authorization: peeradapter.CapabilityAuthorizer{
 			Credentials: staticCredentialSource{credential: credential}, Now: func() time.Time { return now },
 		},
 		Now: func() time.Time { return now },
@@ -121,7 +122,7 @@ func TestPionICETCPCancelClosesPeer(t *testing.T) {
 	}
 	dialer := &managed.Dialer{
 		Cloud: companion, Peers: clientFactory, ClientName: "pion-ice-tcp-cancel",
-		Authorization: managed.CapabilityAuthorizer{
+		Authorization: peeradapter.CapabilityAuthorizer{
 			Credentials: staticCredentialSource{credential: credential}, Now: func() time.Time { return now },
 		},
 		Now: func() time.Time { return now },
@@ -165,7 +166,7 @@ func TestPionAdapterCompletesAuthHelloAndProtoAPI(t *testing.T) {
 	attempt := attemptFixture(t, identity)
 	dialer := &managed.Dialer{
 		Cloud: companion, Peers: pionadapter.Factory{}, ClientName: "pion-engine-e2e",
-		Authorization: managed.CapabilityAuthorizer{
+		Authorization: peeradapter.CapabilityAuthorizer{
 			Credentials: staticCredentialSource{credential: credential}, Now: func() time.Time { return now },
 		},
 		Now: func() time.Time { return now },

@@ -13,6 +13,7 @@ import (
 	localadapter "github.com/lozzow/termx/client/adapter/local"
 	managedadapter "github.com/lozzow/termx/client/adapter/managed"
 	pionadapter "github.com/lozzow/termx/client/adapter/managed/pion"
+	peeradapter "github.com/lozzow/termx/client/adapter/peer"
 	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
 	sshadapter "github.com/lozzow/termx/client/adapter/ssh"
 	systemadapter "github.com/lozzow/termx/client/adapter/system"
@@ -103,7 +104,7 @@ func newCLIEndpointRuntime(ctx context.Context, owner *clientruntime.SessionOwne
 				return cloud, cloud, err
 			},
 			Peers: pionadapter.Factory{}, ClientName: "termx-cli",
-			Authorization: managedadapter.CapabilityAuthorizer{Credentials: credentials}, Now: time.Now,
+			Authorization: peeradapter.CapabilityAuthorizer{Credentials: credentials}, Now: time.Now,
 		},
 	})
 	if err != nil {

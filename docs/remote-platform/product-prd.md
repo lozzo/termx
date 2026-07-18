@@ -42,6 +42,8 @@ Endpoint
 ### 3.2 Direct WebRTC TCP
 
 - daemon 提供 embedded signaling 和 ICE-TCP listener。
+- embedded signaling 使用短期、一次性、versioned Proto request；daemon 在创建 peer 前校验 Endpoint pin、有效期和 request replay。
+- answer 携带 daemon public identity，并由 DeviceIdentity 对 request correlation、SDP、ICE candidate 和有效期做 deterministic protobuf 签名；客户端验签后仍必须在实际 DTLS DataChannel 内完成 DeviceHello/CapabilityGrant auth。
 - App/CLI/TUI 通过 Go Client Engine 建立 WebRTC DataChannel。
 - 支持 LAN 自动地址和用户显式覆盖公网 IP、域名、端口及 server name。
 - 地址覆盖用于 FRP 或其它 TCP 映射，只改变 locator，不改变 daemon identity 和授权。

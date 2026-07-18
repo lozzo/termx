@@ -28,6 +28,12 @@ type Answerer struct {
 	Handler DataChannelSessionHandler
 	// PeerConnections 只允许注入 Pion primitive 创建策略；nil 保持当前生产默认配置。
 	PeerConnections PeerConnectionFactory
+	// CloseOnDisconnected 只用于 Direct/SSH ICE-TCP 的短连接 owner：对端关闭后立即释放共享 TCPMux ufrag。
+	// managed ICE-UDP 保持 false，让其继续使用 Pion 默认的短暂断连恢复策略。
+	CloseOnDisconnected bool
+	// OnPeerClosed 在 Pion peer 真正进入 closed 后调用一次，供 daemon listener 释放有界 admission token。
+	// callback 不能拥有 session truth，也不能启动替代 Route。
+	OnPeerClosed func()
 }
 
 // Answer 创建 WebRTC answer，并把唯一可靠有序的 termx DataChannel 交给端到端授权 handler。
@@ -66,6 +72,15 @@ func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOff
 	if err != nil {
 		return nil, fmt.Errorf("create remote daemon peer connection: %w", err)
 	}
+	var closePeerOnce sync.Once
+	closePeer := func() {
+		closePeerOnce.Do(func() {
+			_ = peer.Close()
+			if answerer.OnPeerClosed != nil {
+				answerer.OnPeerClosed()
+			}
+		})
+	}
 	sessionCtx, cancel := context.WithCancel(ctx)
 	var candidateMu sync.Mutex
 	candidates := make([]*cloudpb.IceCandidate, 0, 4)
@@ -90,8 +105,11 @@ func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOff
 		candidateMu.Unlock()
 	})
 	peer.OnConnectionStateChange(func(state pion.PeerConnectionState) {
-		if state == pion.PeerConnectionStateFailed || state == pion.PeerConnectionStateClosed {
+		if state == pion.PeerConnectionStateFailed || state == pion.PeerConnectionStateClosed || answerer.CloseOnDisconnected && state == pion.PeerConnectionStateDisconnected {
 			cancel()
+			if state != pion.PeerConnectionStateClosed {
+				go closePeer()
+			}
 		}
 	})
 	peer.OnDataChannel(func(channel *pion.DataChannel) {
@@ -110,38 +128,38 @@ func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOff
 					_ = protocolTransport.Close()
 				}
 				cancel()
-				_ = peer.Close()
+				closePeer()
 			}()
 		})
 	})
 	if err := peer.SetRemoteDescription(pion.SessionDescription{Type: pion.SDPTypeOffer, SDP: offer.GetSdp()}); err != nil {
 		cancel()
-		_ = peer.Close()
+		closePeer()
 		return nil, fmt.Errorf("set remote daemon offer: %w", err)
 	}
 	localAnswer, err := peer.CreateAnswer(nil)
 	if err != nil {
 		cancel()
-		_ = peer.Close()
+		closePeer()
 		return nil, fmt.Errorf("create remote daemon answer: %w", err)
 	}
 	gatherComplete := pion.GatheringCompletePromise(peer)
 	if err := peer.SetLocalDescription(localAnswer); err != nil {
 		cancel()
-		_ = peer.Close()
+		closePeer()
 		return nil, fmt.Errorf("set remote daemon answer: %w", err)
 	}
 	select {
 	case <-ctx.Done():
 		cancel()
-		_ = peer.Close()
+		closePeer()
 		return nil, ctx.Err()
 	case <-gatherComplete:
 	}
 	description := peer.LocalDescription()
 	if description == nil || strings.TrimSpace(description.SDP) == "" {
 		cancel()
-		_ = peer.Close()
+		closePeer()
 		return nil, fmt.Errorf("remote daemon answer has no local description")
 	}
 	candidateMu.Lock()

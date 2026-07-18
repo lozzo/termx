@@ -1,4 +1,6 @@
-package managed
+// Package peer 提供 Direct、SSH 与 Cloud WebRTC connector 共用的客户端认证事务。
+// 本包不建立网络、不选择 Route，也不拥有 session generation；它只冻结 endpoint-bound credential 并执行 DTLS-bound remote auth。
+package peer
 
 import (
 	"context"
@@ -27,7 +29,21 @@ type SignerSource interface {
 	ResolveClientSigner(context.Context, string, string, remoteauth.ClientAccessIdentity) (remoteauth.ClientAccessSigner, error)
 }
 
-// CapabilityAuthorizer 使用共享 Go remote-auth 状态机完成 managed DataChannel 授权。
+// PreparedAuthorization 是当前 endpoint/route 已完成本地 credential 校验后的单次认证事务。
+// Authenticate 只能绑定当前 peer 的实际 DTLS certificate；失败后调用方必须关闭 peer，不能切换旧授权路径。
+type PreparedAuthorization interface {
+	// Authenticate 使用当前 peer certificate fingerprint 完成 DataChannel 内 capability proof。
+	Authenticate(context.Context, transport.Transport, string) (remoteauth.Claims, error)
+}
+
+// Authorizer 在任何 signaling 请求前验证 endpoint-bound credential，并冻结本次认证事务。
+// 平台 secure store 或 signer 适配位于实现侧，connector 不读取、持久化或记录私钥。
+type Authorizer interface {
+	// Prepare 在网络副作用前冻结 endpoint-bound credential/signer 事务。
+	Prepare(context.Context, clientruntime.AttemptRequest) (PreparedAuthorization, error)
+}
+
+// CapabilityAuthorizer 使用共享 Go remote-auth 状态机完成 WebRTC DataChannel 授权。
 // Credentials 是平台 secure-store adapter；Random/Now 仅用于 deterministic harness，生产零值使用安全默认值。
 type CapabilityAuthorizer struct {
 	Credentials CredentialSource
@@ -36,11 +52,11 @@ type CapabilityAuthorizer struct {
 	Now         func() time.Time
 }
 
-// Prepare 在 Cloud signaling 之前验证 credential 的 endpoint、issuer、subject 和有效期。
+// Prepare 在 signaling 之前验证 credential 的 endpoint、issuer、subject 和有效期。
 // 成功结果冻结本次 attempt 使用的 credential，防止连接过程中 secure-store ref 被替换后混入其他身份。
 func (authorizer CapabilityAuthorizer) Prepare(ctx context.Context, request clientruntime.AttemptRequest) (PreparedAuthorization, error) {
 	if authorizer.Credentials == nil {
-		return nil, fmt.Errorf("managed endpoint credential source is required")
+		return nil, fmt.Errorf("peer endpoint credential source is required")
 	}
 	route := request.Route()
 	credential, err := authorizer.Credentials.ResolveClientCredential(ctx, string(request.EndpointID()), route.CredentialRef)
@@ -50,27 +66,27 @@ func (authorizer CapabilityAuthorizer) Prepare(ctx context.Context, request clie
 	var signer remoteauth.ClientAccessSigner
 	if authorizer.Signers != nil {
 		if err := credential.Identity.ValidatePublic(); err != nil {
-			return nil, fmt.Errorf("managed endpoint ClientAccessIdentity public projection is invalid: %w", err)
+			return nil, fmt.Errorf("peer endpoint ClientAccessIdentity public projection is invalid: %w", err)
 		}
 		signer, err = authorizer.Signers.ResolveClientSigner(ctx, string(request.EndpointID()), route.CredentialRef, credential.Identity)
 		if err != nil {
 			return nil, err
 		}
 		if signer == nil {
-			return nil, fmt.Errorf("managed endpoint signer source returned no signer")
+			return nil, fmt.Errorf("peer endpoint signer source returned no signer")
 		}
 	} else {
 		signer, err = remoteauth.NewPrivateClientAccessSigner(credential.Identity)
 		if err != nil {
-			return nil, fmt.Errorf("managed endpoint ClientAccessIdentity is invalid: %w", err)
+			return nil, fmt.Errorf("peer endpoint ClientAccessIdentity is invalid: %w", err)
 		}
 	}
 	endpointID := string(request.EndpointID())
 	if strings.TrimSpace(credential.EndpointID) != endpointID || credential.Identity.EndpointID != endpointID {
-		return nil, fmt.Errorf("managed endpoint credential belongs to endpoint %q, not %q", credential.EndpointID, endpointID)
+		return nil, fmt.Errorf("peer endpoint credential belongs to endpoint %q, not %q", credential.EndpointID, endpointID)
 	}
 	if !credential.Ready() {
-		return nil, fmt.Errorf("managed endpoint capability credential is awaiting pairing")
+		return nil, fmt.Errorf("peer endpoint capability credential is awaiting pairing")
 	}
 	now := time.Now().UTC()
 	if authorizer.Now != nil {
@@ -78,13 +94,13 @@ func (authorizer CapabilityAuthorizer) Prepare(ctx context.Context, request clie
 	}
 	claims, err := remoteauth.Verify(credential.CapabilityGrant, request.DaemonIdentity().DeviceFingerprint, now, nil)
 	if err != nil {
-		return nil, fmt.Errorf("verify managed endpoint capability grant: %w", err)
+		return nil, fmt.Errorf("verify peer endpoint capability grant: %w", err)
 	}
 	if claims.IssuerDeviceID != request.DaemonIdentity().DeviceID {
-		return nil, fmt.Errorf("managed endpoint device mismatch: grant %q registry %q", claims.IssuerDeviceID, request.DaemonIdentity().DeviceID)
+		return nil, fmt.Errorf("peer endpoint device mismatch: grant %q registry %q", claims.IssuerDeviceID, request.DaemonIdentity().DeviceID)
 	}
 	if claims.SubjectKeyFingerprint != credential.Identity.Fingerprint {
-		return nil, fmt.Errorf("managed endpoint capability subject does not match ClientAccessIdentity")
+		return nil, fmt.Errorf("peer endpoint capability subject does not match ClientAccessIdentity")
 	}
 	return &preparedCapabilityAuthorization{
 		credential: credential, identity: request.DaemonIdentity(), signer: signer, random: authorizer.Random, now: authorizer.Now,
@@ -102,7 +118,7 @@ type preparedCapabilityAuthorization struct {
 func (authorization *preparedCapabilityAuthorization) Authenticate(ctx context.Context, connection transport.Transport, certificateFingerprint string) (remoteauth.Claims, error) {
 	binding, err := remoteauth.DTLSChannelBinding(certificateFingerprint)
 	if err != nil {
-		return remoteauth.Claims{}, fmt.Errorf("bind managed endpoint DTLS certificate: %w", err)
+		return remoteauth.Claims{}, fmt.Errorf("bind peer endpoint DTLS certificate: %w", err)
 	}
 	handshake := remoteauth.ClientHandshake{Random: authorization.random, Now: authorization.now}
 	return handshake.Authenticate(ctx, connection, remoteauth.ClientHandshakeRequest{

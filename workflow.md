@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- `RTC002` 通用 PeerSession 与 pairing 已完成；当前活动主线从 `RTC003` 开始。
+- `RTC003` daemon embedded signaling + ICE-TCP 已完成；当前活动主线从 `RTC004` 开始。
 - TermX 只有一个面向用户的 App。Direct 与 SSH 是无需登录和订阅的基础能力；TermX Cloud 是同一 App 内可选的 managed Route，提供账号目录、托管信令、ICE-UDP、TURN Relay 和跨网络能力。
 - 所有远程业务连接最终统一为可靠有序 WebRTC DataChannel：Direct 使用 daemon embedded signaling + ICE-TCP；SSH 使用 Go SSH client/direct-tcpip tunnel + daemon loopback ICE-TCP；Cloud 使用 TermX Cloud signaling + ICE-UDP 或 TURN Relay。
 - Local Unix 仍是本机 CLI/TUI 到本机 daemon 的本地 transport，不要求为了形式统一改成 WebRTC。
@@ -133,7 +133,7 @@ Android / TUI / CLI / future iOS/Desktop / future Web
 | BASE001 | 已完成 | 产品与工作流基线 | 单一 App、Go-owned clients、统一 DataChannel、Cloud 边界、Web 延后和后续切片写入 AGENTS/workflow；删除旧活动噪声 |
 | RTC001 | 已完成 | Proto Route/config contract | `EndpointRouteConfigV1` oneof、`EndpointConfigV1`、`EndpointRegistryV1`、portable credential descriptor 和地址覆盖已生成；Go/YAML v3/parser/assembler/planner/CLI 已迁移；旧 Route enum/name 无 alias；descriptor、round-trip、unknown-field、生成代码、架构文档与 doctor 通过 |
 | RTC002 | 已完成 | 通用 PeerSession 与 pairing | Local/Direct/SSH/Cloud 统一使用 `PeerConnector.Connect -> ReadyPeerSession`；planner 支持平台声明的四类 connector 同组竞速；`PairingService` 统一 Endpoint pin、实际 DTLS binding、PairingTicket handshake 和 exact-close；三类远程 fake connector、managed Pion E2E、cancel、stale generation、唯一 winner 与 race 通过 |
-| RTC003 | 待开始 | daemon embedded signaling + ICE-TCP | daemon 提供短期签名 signaling 与共享 TCPMux；Direct connector 完成 offer/answer、DTLS binding、auth、Hello、Proto API 和清理；不接 App |
+| RTC003 | 已完成 | daemon embedded signaling + ICE-TCP | versioned Direct signaling Proto、一次性 expiry/replay/pin admission、DeviceIdentity 签名 answer、共享 Pion TCPMux、Go Direct connector、DTLS-bound auth、Hello、Proto API、SessionClose 和有界 peer admission 已完成；真实 TCP candidate、篡改拒绝、取消、100 次连续建连/listener cleanup 与 race 通过；未接 App |
 | RTC004 | 待开始 | Android Direct 纵向闭环 | `pair create` QR -> Android JNI -> Go Direct connector -> PairingTicket -> client-bound grant -> terminal list/attach；无 Cloud 登录可用；锁屏/恢复 generation 正确 |
 | RTC005 | 待开始 | Go-owned Endpoint registry | Android Endpoint/Route/config/credential-ref 真值收回 Go；TypeScript/Kotlin 只保留 projection/platform primitive；导入、更新、删除和 identity conflict 原子化 |
 | RTC006 | 待开始 | SSH WebRTC TCP | Go SSH client、host-key/credential port、direct-tcpip backed ICE dialer 和真实 sshd E2E；完成后删除 OpenSSH 子进程与远端 `stdio-proxy` |

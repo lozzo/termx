@@ -1,0 +1,360 @@
+package direct_test
+
+import (
+	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"errors"
+	"net"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	apilayer "github.com/lozzow/termx/api_layer"
+	"github.com/lozzow/termx/client/adapter/direct"
+	pionadapter "github.com/lozzow/termx/client/adapter/managed/pion"
+	peeradapter "github.com/lozzow/termx/client/adapter/peer"
+	"github.com/lozzow/termx/client/endpoint"
+	clientruntime "github.com/lozzow/termx/client/runtime"
+	core "github.com/lozzow/termx/core"
+	"github.com/lozzow/termx/proto/apipb"
+	"github.com/lozzow/termx/proto/remoteauthpb"
+	remotev2daemon "github.com/lozzow/termx/remote/daemon"
+	remotev2webrtc "github.com/lozzow/termx/remote/webrtc"
+	"github.com/lozzow/termx/shared/remoteauth"
+	"github.com/lozzow/termx/shared/transport"
+	pionwebrtc "github.com/pion/webrtc/v4"
+)
+
+func TestDirectICETCPCompletesSignedSignalingAuthHelloAndProtoAPI(t *testing.T) {
+	fixture := newDirectFixture(t)
+	var clientPeer *pionwebrtc.PeerConnection
+	clientAPI := directClientAPI()
+	dialer := fixture.dialer(pionadapter.Factory{PeerConnections: func(configuration pionwebrtc.Configuration) (*pionwebrtc.PeerConnection, error) {
+		peer, err := clientAPI.NewPeerConnection(configuration)
+		if err == nil {
+			clientPeer = peer
+		}
+		return peer, err
+	}})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ready, err := dialer.Connect(ctx, fixture.attempt(t, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ready.Close()
+	result, err := ready.(clientruntime.ApplicationReadyPeerSession).ExecuteApplication(ctx, &apipb.CommandEnvelope{
+		Command: &apipb.CommandEnvelope_TerminalList{TerminalList: &apipb.TerminalListCommand{}},
+	})
+	if err != nil || result.GetTerminalList() == nil {
+		t.Fatalf("Direct Proto API result=%#v err=%v", result, err)
+	}
+	if ready.Readiness().Identity.DeviceFingerprint != fixture.identity.Fingerprint || !ready.Readiness().AuthorizationVerified {
+		t.Fatalf("Direct readiness=%+v", ready.Readiness())
+	}
+	pair := selectedPair(t, clientPeer)
+	if pair.Local.Protocol != pionwebrtc.ICEProtocolTCP || pair.Remote.Protocol != pionwebrtc.ICEProtocolTCP {
+		t.Fatalf("Direct selected candidate pair is not TCP: %s", pair)
+	}
+}
+
+func TestDirectSignalingRejectsExpiryReplayAndPinMismatch(t *testing.T) {
+	fixture := newDirectFixture(t)
+	clientAPI := directClientAPI()
+	peer, err := (pionadapter.Factory{PeerConnections: clientAPI.NewPeerConnection}).OpenDirectPeer(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer peer.Close()
+	offer, err := peer.CreateOffer(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := direct.TCPSignalingClient{}
+	base := &remoteauthpb.DirectSignalingRequestV1{
+		SchemaVersion: remoteauth.DirectSignalingSchemaVersion, RequestId: "request-valid-0000000000000001",
+		ExpectedDeviceId: fixture.identity.DeviceID, ExpectedDeviceFingerprint: fixture.identity.Fingerprint,
+		OfferSdp: offer, IssuedAtUnixNano: fixture.now.UnixNano(), ExpiresAtUnixNano: fixture.now.Add(remoteauth.DirectSignalingMaxTTL).UnixNano(),
+	}
+	answer, err := client.Exchange(context.Background(), []string{fixture.signalingAddress}, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := remoteauth.VerifyDirectSignalingAnswer(answer, base.GetRequestId(), fixture.identity.DeviceID, fixture.identity.Fingerprint, fixture.now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Exchange(context.Background(), []string{fixture.signalingAddress}, base); signalingCode(err) != remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_REPLAYED {
+		t.Fatalf("replay error=%v code=%v", err, signalingCode(err))
+	}
+	expired := cloneRequest(base)
+	expired.RequestId = "request-expired-00000000000001"
+	expired.IssuedAtUnixNano = fixture.now.Add(-time.Minute).UnixNano()
+	expired.ExpiresAtUnixNano = fixture.now.Add(-time.Second).UnixNano()
+	if _, err := client.Exchange(context.Background(), []string{fixture.signalingAddress}, expired); signalingCode(err) != remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_EXPIRED {
+		t.Fatalf("expiry error=%v code=%v", err, signalingCode(err))
+	}
+	mismatch := cloneRequest(base)
+	mismatch.RequestId = "request-mismatch-0000000000001"
+	mismatch.ExpectedDeviceFingerprint = "sha256:wrong-pin"
+	if _, err := client.Exchange(context.Background(), []string{fixture.signalingAddress}, mismatch); signalingCode(err) != remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_IDENTITY_MISMATCH {
+		t.Fatalf("pin mismatch error=%v code=%v", err, signalingCode(err))
+	}
+}
+
+func TestDirectICETCPHundredConnectionsAndListenerCleanup(t *testing.T) {
+	fixture := newDirectFixture(t)
+	clientAPI := directClientAPI()
+	dialer := fixture.dialer(pionadapter.Factory{PeerConnections: clientAPI.NewPeerConnection})
+	for index := 0; index < 100; index++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ready, err := dialer.Connect(ctx, fixture.attempt(t, clientruntime.SessionGeneration(index+1)))
+		if err != nil {
+			cancel()
+			t.Fatalf("Direct connection %d: %v", index, err)
+		}
+		if err := ready.Close(); err != nil {
+			cancel()
+			t.Fatalf("close Direct connection %d: %v", index, err)
+		}
+		cancel()
+		deadline := time.Now().Add(time.Second)
+		for fixture.closedSessions.Load() < int32(index+1) && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		if fixture.closedSessions.Load() < int32(index+1) {
+			t.Fatalf("daemon session %d did not observe protocol close", index)
+		}
+	}
+	fixture.stop(t)
+	for _, address := range []string{fixture.signalingAddress, fixture.iceAddress} {
+		connection, err := net.DialTimeout("tcp", address, 100*time.Millisecond)
+		if err == nil {
+			_ = connection.Close()
+			t.Fatalf("listener %s remained reachable after Direct server shutdown", address)
+		}
+	}
+}
+
+func TestDirectCancelDuringSignalingClosesPeer(t *testing.T) {
+	fixture := newDirectFixture(t)
+	clientAPI := directClientAPI()
+	var mu sync.Mutex
+	var clientPeer *pionwebrtc.PeerConnection
+	started := make(chan struct{})
+	dialer := fixture.dialer(pionadapter.Factory{PeerConnections: func(configuration pionwebrtc.Configuration) (*pionwebrtc.PeerConnection, error) {
+		peer, err := clientAPI.NewPeerConnection(configuration)
+		mu.Lock()
+		clientPeer = peer
+		mu.Unlock()
+		return peer, err
+	}})
+	dialer.Signaling = blockingSignaling{started: started}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := dialer.Connect(ctx, fixture.attempt(t, 101))
+		done <- err
+	}()
+	<-started
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancel Direct signaling error=%v", err)
+	}
+	mu.Lock()
+	peer := clientPeer
+	mu.Unlock()
+	deadline := time.Now().Add(time.Second)
+	for peer != nil && peer.ConnectionState() != pionwebrtc.PeerConnectionStateClosed && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if peer == nil || peer.ConnectionState() != pionwebrtc.PeerConnectionStateClosed {
+		t.Fatalf("cancelled Direct peer=%v state=%v", peer, peer.ConnectionState())
+	}
+}
+
+type directFixture struct {
+	identity         remoteauth.Identity
+	credential       remoteauth.ClientAccessCredential
+	now              time.Time
+	signalingAddress string
+	iceAddress       string
+	server           *remotev2webrtc.DirectServer
+	cancel           context.CancelFunc
+	done             chan error
+	stopOnce         sync.Once
+	closedSessions   *atomic.Int32
+}
+
+func newDirectFixture(t *testing.T) *directFixture {
+	t.Helper()
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := remoteauth.NewIdentity("device-direct", privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	clientIdentity, err := remoteauth.GenerateClientAccessIdentity("direct", rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := remoteauth.LoadAccessStore(t.TempDir(), identity, remoteauth.AccessStoreOptions{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	bundle, _, err := store.IssuePairingBundle(remoteauth.PairingIssueOptions{
+		Scope: remoteauth.Scope{AllowDaemon: true}, TicketTTL: time.Hour, GrantLifetime: time.Hour, Now: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := remoteauth.EncodePairingBundle(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exchanged, err := store.RedeemPairingBundle(payload, clientIdentity.PublicKey, "direct-e2e", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signalingListener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	iceListener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		_ = signalingListener.Close()
+		t.Fatal(err)
+	}
+	coreServer := core.NewServer(core.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory))
+	acceptor := remotev2daemon.SessionAcceptor{
+		Core: coreServer, Identity: identity, AccessStore: store, Now: func() time.Time { return now },
+	}
+	closedSessions := &atomic.Int32{}
+	directServer, err := remotev2webrtc.NewDirectServer(identity, countingHandler{inner: acceptor, closed: closedSessions}, signalingListener, iceListener, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- directServer.Serve(ctx) }()
+	fixture := &directFixture{
+		identity: identity, credential: remoteauth.ClientAccessCredential{
+			Version: 1, EndpointID: "direct", Identity: clientIdentity, CapabilityGrant: exchanged.Grant, UpdatedAt: now,
+		},
+		now: now, signalingAddress: signalingListener.Addr().String(), iceAddress: iceListener.Addr().String(), server: directServer, cancel: cancel, done: done,
+	}
+	fixture.closedSessions = closedSessions
+	t.Cleanup(func() { fixture.stop(t) })
+	return fixture
+}
+
+func (fixture *directFixture) dialer(peers direct.PeerFactory) *direct.Dialer {
+	return &direct.Dialer{
+		Peers: peers, Authorization: peeradapter.CapabilityAuthorizer{
+			Credentials: directCredentialSource{credential: fixture.credential}, Now: func() time.Time { return fixture.now },
+		},
+		Now: func() time.Time { return fixture.now },
+	}
+}
+
+func (fixture *directFixture) attempt(t *testing.T, generation clientruntime.SessionGeneration) clientruntime.AttemptRequest {
+	t.Helper()
+	target := endpoint.Endpoint{
+		ID: "direct", DaemonIdentity: endpoint.DaemonIdentity{DeviceID: fixture.identity.DeviceID, DeviceFingerprint: fixture.identity.Fingerprint},
+		Routes: map[endpoint.RouteID]endpoint.AccessRoute{"lan": {
+			ID: "lan", Kind: endpoint.RouteDirectWebRTCTCP, Enabled: true, Source: endpoint.SourceManual, PolicySource: endpoint.SourceUser,
+			CredentialRef: "credential:direct", SignalingAddresses: []string{fixture.signalingAddress}, ICETCPAddresses: []string{fixture.iceAddress},
+		}},
+	}
+	attempt, err := clientruntime.NewAttemptRequest(target, "lan", generation, clientruntime.ConnectIntentInteractive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return attempt
+}
+
+func (fixture *directFixture) stop(t *testing.T) {
+	t.Helper()
+	fixture.stopOnce.Do(func() {
+		fixture.cancel()
+		_ = fixture.server.Close()
+		select {
+		case err := <-fixture.done:
+			if err != nil && !errors.Is(err, context.Canceled) {
+				t.Errorf("Direct server shutdown: %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Errorf("Direct server did not stop")
+		}
+	})
+}
+
+type directCredentialSource struct {
+	credential remoteauth.ClientAccessCredential
+}
+
+type countingHandler struct {
+	inner  remotev2daemon.SessionAcceptor
+	closed *atomic.Int32
+}
+
+func (handler countingHandler) ServeDataChannel(ctx context.Context, connection transport.Transport, fingerprint string) error {
+	err := handler.inner.ServeDataChannel(ctx, connection, fingerprint)
+	handler.closed.Add(1)
+	return err
+}
+
+func (source directCredentialSource) ResolveClientCredential(context.Context, string, string) (remoteauth.ClientAccessCredential, error) {
+	return source.credential, nil
+}
+
+type blockingSignaling struct {
+	started chan struct{}
+}
+
+func (signaling blockingSignaling) Exchange(ctx context.Context, _ []string, _ *remoteauthpb.DirectSignalingRequestV1) (*remoteauthpb.DirectSignalingAnswerV1, error) {
+	close(signaling.started)
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func directClientAPI() *pionwebrtc.API {
+	settings := pionwebrtc.SettingEngine{}
+	settings.SetNetworkTypes([]pionwebrtc.NetworkType{pionwebrtc.NetworkTypeTCP4})
+	settings.SetIncludeLoopbackCandidate(true)
+	settings.SetIPFilter(func(address net.IP) bool { return address.IsLoopback() })
+	return pionwebrtc.NewAPI(pionwebrtc.WithSettingEngine(settings))
+}
+
+func selectedPair(t *testing.T, peer *pionwebrtc.PeerConnection) *pionwebrtc.ICECandidatePair {
+	t.Helper()
+	if peer == nil || peer.SCTP() == nil || peer.SCTP().Transport() == nil || peer.SCTP().Transport().ICETransport() == nil {
+		t.Fatal("Direct client peer transport is unavailable")
+	}
+	pair, err := peer.SCTP().Transport().ICETransport().GetSelectedCandidatePair()
+	if err != nil || pair == nil || pair.Local == nil || pair.Remote == nil {
+		t.Fatalf("Direct selected pair=%v err=%v", pair, err)
+	}
+	return pair
+}
+
+func signalingCode(err error) remoteauthpb.DirectSignalingErrorCode {
+	var failure *direct.SignalingError
+	if errors.As(err, &failure) {
+		return failure.Code
+	}
+	return remoteauthpb.DirectSignalingErrorCode_DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED
+}
+
+func cloneRequest(request *remoteauthpb.DirectSignalingRequestV1) *remoteauthpb.DirectSignalingRequestV1 {
+	return &remoteauthpb.DirectSignalingRequestV1{
+		SchemaVersion: request.GetSchemaVersion(), RequestId: request.GetRequestId(), ExpectedDeviceId: request.GetExpectedDeviceId(),
+		ExpectedDeviceFingerprint: request.GetExpectedDeviceFingerprint(), OfferSdp: request.GetOfferSdp(),
+		IssuedAtUnixNano: request.GetIssuedAtUnixNano(), ExpiresAtUnixNano: request.GetExpiresAtUnixNano(),
+	}
+}

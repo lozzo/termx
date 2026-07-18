@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	peeradapter "github.com/lozzow/termx/client/adapter/peer"
 	"github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/client/port"
 	clientruntime "github.com/lozzow/termx/client/runtime"
@@ -18,8 +19,6 @@ import (
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/proto/wire"
 	"github.com/lozzow/termx/shared/cloudcompanion"
-	"github.com/lozzow/termx/shared/remoteauth"
-	"github.com/lozzow/termx/shared/transport"
 	"github.com/lozzow/termx/shared/transport/datachannel"
 )
 
@@ -42,26 +41,12 @@ type CloudClient interface {
 	ReportConnectionOutcome(context.Context, *cloudpb.ReportConnectionOutcomeRequest) (*cloudpb.ReportConnectionOutcomeResponse, error)
 }
 
-// PreparedAuthorization 是当前 endpoint/route 已完成本地 credential 校验后的单次认证事务。
-// Authenticate 只能绑定当前 peer 的实际 DTLS certificate；失败后调用方必须关闭 peer，不能切换旧授权路径。
-type PreparedAuthorization interface {
-	// Authenticate 使用当前 peer certificate fingerprint 完成 DataChannel 内 capability proof。
-	Authenticate(context.Context, transport.Transport, string) (remoteauth.Claims, error)
-}
-
-// Authorizer 在任何 Cloud 请求前验证 endpoint-bound credential，并冻结本次认证事务。
-// 平台 secure store 或 signer 适配位于实现侧，managed dialer 不读取、持久化或记录私钥。
-type Authorizer interface {
-	// Prepare 在 Cloud 请求前冻结 endpoint-bound credential/signer 事务。
-	Prepare(context.Context, clientruntime.AttemptRequest) (PreparedAuthorization, error)
-}
-
 // Dialer 是 managed WebRTC 单 route adapter。
 // runtime 负责选择唯一 AttemptRequest 和 generation；Dialer 不读取 registry、不竞速其他 route，也不建立 fallback。
 type Dialer struct {
 	Cloud         CloudClient
 	Peers         port.ManagedPeerFactory
-	Authorization Authorizer
+	Authorization peeradapter.Authorizer
 	ClientName    string
 	Now           func() time.Time
 	Phase         func(clientruntime.EndpointPhase)

@@ -26,15 +26,17 @@ func TestClientPackagesRespectDependencyDirection(t *testing.T) {
 	assertClientImportsExclude(t, "runtime", append(commonForbidden,
 		"github.com/lozzow/termx/client/adapter",
 		"github.com/lozzow/termx/internal/protocol",
-		"github.com/lozzow/termx/shared/transport",
 		"github.com/lozzow/termx/shared/cloudcompanion",
-		"github.com/lozzow/termx/shared/remoteauth",
 		"github.com/lozzow/termx/remote/client",
 		"github.com/lozzow/termx/remote/webrtc",
 		"os",
 		"path/filepath",
 		"syscall/js",
 	))
+	assertClientImportsLimitedToFiles(t, "runtime", []string{
+		"github.com/lozzow/termx/shared/transport",
+		"github.com/lozzow/termx/shared/remoteauth",
+	}, map[string]bool{"pairing.go": true})
 	assertClientImportsExclude(t, "port", append(commonForbidden,
 		"github.com/lozzow/termx/client/runtime",
 		"github.com/lozzow/termx/client/adapter",
@@ -49,6 +51,31 @@ func TestClientPackagesRespectDependencyDirection(t *testing.T) {
 	// 它仍不能反向依赖 TUI、CLI 或 private owner。
 	assertClientImportsExclude(t, "binding", commonForbidden)
 	assertClientImportsExclude(t, "adapter", commonForbidden)
+}
+
+func assertClientImportsLimitedToFiles(t *testing.T, root string, prefixes []string, allowed map[string]bool) {
+	t.Helper()
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return err
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, imported := range parsed.Imports {
+			importPath := strings.Trim(imported.Path.Value, `"`)
+			for _, prefix := range prefixes {
+				if (importPath == prefix || strings.HasPrefix(importPath, prefix+"/")) && !allowed[filepath.Base(path)] {
+					t.Errorf("%s imports owner %s reserved for explicit pairing boundary", path, importPath)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertClientImportsExclude(t *testing.T, root string, forbidden []string) {

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	peeradapter "github.com/lozzow/termx/client/adapter/peer"
 	"github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/client/port"
 	clientruntime "github.com/lozzow/termx/client/runtime"
@@ -27,7 +28,7 @@ func TestDialBuildsAuthorizedProtocolReadyPeerSession(t *testing.T) {
 	channel := newScriptedProtocolChannel(t)
 	peer := &fakeManagedPeer{channel: channel, observedPath: endpoint.PathDirect, fingerprint: "sha-256:aa:bb"}
 	order := make([]string, 0, 4)
-	authorizer := &fakeAuthorizer{prepare: func(request clientruntime.AttemptRequest) (PreparedAuthorization, error) {
+	authorizer := &fakeAuthorizer{prepare: func(request clientruntime.AttemptRequest) (peeradapter.PreparedAuthorization, error) {
 		order = append(order, "prepare")
 		if request.Stamp() != attempt.Stamp() {
 			t.Fatalf("authorization attempt = %#v, want %#v", request.Stamp(), attempt.Stamp())
@@ -113,7 +114,7 @@ func TestDialRejectsAuthorizationBeforeCloudResolution(t *testing.T) {
 	cloud := &cloudcompanion.FakeClient{}
 	dialer := &Dialer{
 		Cloud: cloud, Peers: fakePeerFactory{},
-		Authorization: &fakeAuthorizer{prepare: func(clientruntime.AttemptRequest) (PreparedAuthorization, error) {
+		Authorization: &fakeAuthorizer{prepare: func(clientruntime.AttemptRequest) (peeradapter.PreparedAuthorization, error) {
 			return nil, fmt.Errorf("credential unavailable")
 		}},
 	}
@@ -145,10 +146,10 @@ func managedAttempt(t *testing.T) clientruntime.AttemptRequest {
 }
 
 type fakeAuthorizer struct {
-	prepare func(clientruntime.AttemptRequest) (PreparedAuthorization, error)
+	prepare func(clientruntime.AttemptRequest) (peeradapter.PreparedAuthorization, error)
 }
 
-func (authorizer *fakeAuthorizer) Prepare(_ context.Context, request clientruntime.AttemptRequest) (PreparedAuthorization, error) {
+func (authorizer *fakeAuthorizer) Prepare(_ context.Context, request clientruntime.AttemptRequest) (peeradapter.PreparedAuthorization, error) {
 	return authorizer.prepare(request)
 }
 

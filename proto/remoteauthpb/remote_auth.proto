@@ -218,6 +218,73 @@ message ClientProofInput {
   AuthOpenKind open_kind = 9;
 }
 
+// DirectSignalingErrorCode 是 daemon embedded signaling 在创建 WebRTC peer 前返回的稳定失败分类。
+// 该错误只描述信令 admission，不替代 DataChannel 内的 DeviceIdentity 与 CapabilityGrant 校验。
+enum DirectSignalingErrorCode {
+  DIRECT_SIGNALING_ERROR_CODE_UNSPECIFIED = 0;
+  DIRECT_SIGNALING_ERROR_CODE_PROTOCOL = 1;
+  DIRECT_SIGNALING_ERROR_CODE_EXPIRED = 2;
+  DIRECT_SIGNALING_ERROR_CODE_REPLAYED = 3;
+  DIRECT_SIGNALING_ERROR_CODE_IDENTITY_MISMATCH = 4;
+  DIRECT_SIGNALING_ERROR_CODE_INTERNAL = 5;
+}
+
+// DirectIceCandidate 是 Direct/SSH embedded signaling 使用的 ICE candidate wire contract。
+// candidate 只用于建立 peer，不携带授权材料，也不能成为 Endpoint identity 或 DTLS binding 真值。
+message DirectIceCandidate {
+  string candidate = 1;
+  string sdp_mid = 2;
+  uint32 sdp_mline_index = 3;
+  string username_fragment = 4;
+}
+
+// DirectSignalingRequestV1 是客户端向 daemon embedded signaling 提交的一次性短期 offer。
+// request_id 由客户端安全随机生成；daemon 必须在有效期内原子消费，并在创建 PeerConnection 前校验 Endpoint pin。
+message DirectSignalingRequestV1 {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string expected_device_id = 3;
+  string expected_device_fingerprint = 4;
+  string offer_sdp = 5;
+  int64 issued_at_unix_nano = 6;
+  int64 expires_at_unix_nano = 7;
+}
+
+// DirectSignalingAnswerV1 是 daemon 对本次 offer 返回的短期签名 answer。
+// signature 覆盖 DirectSignalingAnswerSignatureInput；客户端必须使用 Endpoint pin 对 identity 和签名同时校验。
+message DirectSignalingAnswerV1 {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  EndpointDaemonIdentity identity = 3;
+  string answer_sdp = 4;
+  repeated DirectIceCandidate candidates = 5;
+  int64 issued_at_unix_nano = 6;
+  int64 expires_at_unix_nano = 7;
+  bytes signature = 8;
+}
+
+// DirectSignalingAnswerSignatureInput 是 daemon DeviceIdentity 对 Direct answer 签名的 canonical protobuf。
+// answer.signature 必须在构造该输入前清空；deterministic protobuf bytes 是唯一签名输入。
+message DirectSignalingAnswerSignatureInput {
+  string protocol = 1;
+  uint32 version = 2;
+  DirectSignalingAnswerV1 answer = 3;
+}
+
+// DirectSignalingErrorV1 返回不含内部状态的信令失败；错误响应后当前 TCP connection 必须关闭。
+message DirectSignalingErrorV1 {
+  DirectSignalingErrorCode code = 1;
+  string message = 2;
+}
+
+// DirectSignalingResponseV1 是 embedded signaling 每条 TCP connection 唯一允许返回的响应。
+message DirectSignalingResponseV1 {
+  oneof payload {
+    DirectSignalingAnswerV1 answer = 1;
+    DirectSignalingErrorV1 error = 2;
+  }
+}
+
 // EndpointConnectMode 描述客户端何时可以自动建立 Endpoint session。
 enum EndpointConnectMode {
   ENDPOINT_CONNECT_MODE_UNSPECIFIED = 0;

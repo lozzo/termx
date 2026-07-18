@@ -10,7 +10,7 @@ import (
 const (
 	// Version 是 control protobuf method 合同的代际边界。
 	// FILE003 增加文件 transfer channel frame 后，新客户端不能继续连缺少流控语义的旧 daemon。
-	Version      = 4
+	Version      = 5
 	MaxFrameSize = 4 << 20
 
 	TypeHello          uint8 = 0x00
@@ -19,6 +19,7 @@ const (
 	TypeEvent          uint8 = 0x03
 	TypeError          uint8 = 0x04
 	TypeResponseBinary uint8 = 0x05
+	TypeSessionClose   uint8 = 0x06
 
 	TypeInput          uint8 = 0x11
 	TypeResize         uint8 = 0x12
