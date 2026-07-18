@@ -10,7 +10,8 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run build:wasm && vite build",
+    "build:wasm": "../../scripts/build-web-client-wasm.sh",
     "proto": "npm run proto:api && npm run proto:runtime && npm run proto:wire",
     "proto:api": "protoc --es_out=src/generated --es_opt=target=ts,import_extension=none -I ../../proto ../../proto/apipb/*.proto ../../proto/bindingpb/client_binding.proto ../../proto/cloudpb/cloud_companion.proto ../../proto/remoteauthpb/remote_auth.proto && perl -0pi -e 's/\\s*\\z/\\n/' src/generated/apipb/*_pb.ts src/generated/bindingpb/*_pb.ts src/generated/cloudpb/*_pb.ts src/generated/remoteauthpb/*_pb.ts",
     "proto:runtime": "protoc --es_out=src/generated/runtimepb --es_opt=target=ts,import_extension=none -I ../../proto/runtimepb ../../proto/runtimepb/runtime.proto && perl -0pi -e 's/\\s*\\z/\\n/' src/generated/runtimepb/runtime_pb.ts",

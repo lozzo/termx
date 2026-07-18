@@ -10,13 +10,17 @@ vi.mock('../app/RemoteControlApp', () => ({
 vi.mock('../connection/browserNetworkRuntime', () => ({
   createBrowserRemoteNetworkRuntime: () => ({
     fetch: vi.fn(),
-    storage: undefined,
+    storage: { getItem: vi.fn(() => null), setItem: vi.fn(), removeItem: vi.fn() },
     queryParam: vi.fn(() => null),
   }),
 }))
 
-vi.mock('../webrtc/browserRtcSession', () => ({
-  createBrowserRtcSession: vi.fn(),
+vi.mock('../binding/browserBindingRuntime', () => ({
+  BrowserBindingRuntime: class {
+    externalPairingAdapter = {}
+    machineRuntimeFactory = vi.fn()
+    dispose = vi.fn()
+  },
 }))
 
 describe('mountRemoteControlApp', () => {

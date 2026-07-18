@@ -1,10 +1,8 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf'
-import { ApiErrorCode } from '../../src/generated/apipb/common_pb'
 import { CommandEnvelopeSchema } from '../../src/generated/apipb/application_pb'
 import { ApplicationEventType, EventSubscribeCommandSchema } from '../../src/generated/apipb/events_pb'
 import { StorageKeySchema, StoragePutCommandSchema, StorageScope } from '../../src/generated/apipb/storage_pb'
 import {
-  EventEnvelopeSchema,
   CredentialRecordSchema,
   ManagedEndpointConfigSchema,
   ManagedRelayMode,
@@ -12,7 +10,6 @@ import {
   PlatformResponseSchema,
   SignalingEventsSchema,
   ConnectIntent,
-  type EventEnvelope,
   type PlatformRequest,
   type PlatformResponse,
 } from '../../src/generated/bindingpb/client_binding_pb'
@@ -28,6 +25,8 @@ import {
 import { BrowserWasmPlatform, type BrowserCloudPlatform } from '../../src/binding/browserWasmPlatform'
 import { BrowserWasmLifecycle } from '../../src/binding/browserWasmLifecycle'
 import { TermxWasmRuntime, loadTermxWasmExports } from '../../src/binding/wasmRuntime'
+import { ProtoBindingClient } from '../../src/binding/protoBindingClient'
+import { WasmBindingBackend } from '../../src/binding/wasmBindingBackend'
 
 const endpointId = 'web-spike'
 const credentialRef = 'credential:web-spike'
@@ -57,19 +56,20 @@ async function run(): Promise<void> {
     platform = null
     const runtime = await TermxWasmRuntime.create(exports, nextPlatform)
     activeRuntime = runtime
-    return runtime
-  }, (runtime) => { activeRuntime = runtime })
+    const client = new ProtoBindingClient(new WasmBindingBackend(runtime))
+    return { client, close: () => client.close() }
+  }, (generation) => { if (!generation) activeRuntime = null })
   lifecycle.attach()
-  let runtime = await lifecycle.start()
+  let generation = await lifecycle.start()
   await stage('first-runtime-created')
-  const first = await openAndProve(runtime)
+  const first = await openAndProve(generation.client)
   await stage('first-runtime-proved')
   window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }))
   window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))
   await lifecycle.whenIdle()
-  runtime = lifecycle.current as TermxWasmRuntime
+  generation = lifecycle.current as typeof generation
   await stage('second-runtime-created')
-  const second = await openAndProve(runtime, false)
+  const second = await openAndProve(generation.client, false)
   await stage('second-runtime-proved')
   if (second.generation <= first.generation) throw new Error(`WASM generation did not advance: ${first.generation} -> ${second.generation}`)
   await lifecycle.dispose()
@@ -83,9 +83,8 @@ async function run(): Promise<void> {
   })
 }
 
-async function openAndProve(runtime: TermxWasmRuntime, proveEvent = true): Promise<{ generation: bigint; fingerprint: string; observedEvent: boolean }> {
-  const events = new BindingEvents(runtime)
-  const openOperation = runtime.openSession(toBinary(OpenSessionRequestSchema, create(OpenSessionRequestSchema, {
+async function openAndProve(client: ProtoBindingClient, proveEvent = true): Promise<{ generation: bigint; fingerprint: string; observedEvent: boolean }> {
+  const session = await client.openSession(create(OpenSessionRequestSchema, {
     requestId: crypto.randomUUID(),
     endpointId,
     intent: ConnectIntent.INTERACTIVE,
@@ -95,28 +94,27 @@ async function openAndProve(runtime: TermxWasmRuntime, proveEvent = true): Promi
       credentialRef,
       relayMode: ManagedRelayMode.DIRECT,
     }),
-  })))
-  const opened = await events.wait((event) => event.event.case === 'openSession' && Number(event.event.value.operationHandle) === openOperation)
-  if (opened.event.case !== 'openSession' || opened.event.value.error || !opened.event.value.session) {
-    throw new Error(`WASM open session failed: ${opened.event.case === 'openSession' ? opened.event.value.error?.message || 'missing session' : 'unexpected event'}`)
-  }
-  const session = Number(opened.event.value.sessionHandle)
-  const generation = opened.event.value.session.generation
-  runtime.release(openOperation)
+  }))
+  const generation = session.stamp.generation
 
   let observedEvent = false
   if (proveEvent) {
-    const subscription = runtime.execute(session, toBinary(CommandEnvelopeSchema, create(CommandEnvelopeSchema, {
+    const observed = new Promise<boolean>((resolve) => {
+      const subscription = session.subscribeEvents((event) => {
+        if (event.event.case !== 'storageChanged') return
+        subscription.close()
+        resolve(true)
+      })
+    })
+    const subscribed = await session.execute(create(CommandEnvelopeSchema, {
       command: {
         case: 'eventSubscribe',
         value: create(EventSubscribeCommandSchema, { types: [ApplicationEventType.STORAGE_CHANGED], storageAppId: 'web-spike', storageScope: StorageScope.PUBLIC }),
       },
-    })))
-    const subscribed = await events.wait((event) => event.event.case === 'execute' && Number(event.event.value.operationHandle) === subscription)
-    if (subscribed.event.case !== 'execute' || !subscribed.event.value.result?.result.case) throw new Error('WASM event subscribe failed')
-    runtime.release(subscription)
+    }))
+    if (!subscribed.result.case) throw new Error('WASM event subscribe failed')
 
-    const put = runtime.execute(session, toBinary(CommandEnvelopeSchema, create(CommandEnvelopeSchema, {
+    const put = await session.execute(create(CommandEnvelopeSchema, {
       command: {
         case: 'storagePut',
         value: create(StoragePutCommandSchema, {
@@ -124,17 +122,12 @@ async function openAndProve(runtime: TermxWasmRuntime, proveEvent = true): Promi
           value: new TextEncoder().encode('ok'),
         }),
       },
-    })))
-    let sawPut = false
-    for (let attempt = 0; attempt < 4 && (!sawPut || !observedEvent); attempt += 1) {
-      const event = await events.next()
-      if (event.event.case === 'execute' && Number(event.event.value.operationHandle) === put) sawPut = event.event.value.result?.result.case === 'storagePut'
-      if (event.event.case === 'application') observedEvent = event.event.value.event?.event.case === 'storageChanged'
-    }
-    if (!sawPut || !observedEvent) throw new Error('WASM storage command/event proof failed')
-    runtime.release(put)
+    }))
+    observedEvent = await observed
+    if (put.result.case !== 'storagePut' || !observedEvent) throw new Error('WASM storage command/event proof failed')
 
-    const cancelledOperation = runtime.openSession(toBinary(OpenSessionRequestSchema, create(OpenSessionRequestSchema, {
+    const controller = new AbortController()
+    const cancelled = client.openSession(create(OpenSessionRequestSchema, {
       requestId: crypto.randomUUID(), endpointId, intent: ConnectIntent.PROBE,
       managed: create(ManagedEndpointConfigSchema, {
         targetDeviceId: 'device-web-spike',
@@ -142,61 +135,16 @@ async function openAndProve(runtime: TermxWasmRuntime, proveEvent = true): Promi
         credentialRef,
         relayMode: ManagedRelayMode.DIRECT,
       }),
-    })))
-    runtime.cancel(cancelledOperation)
-    const cancelled = await events.wait((event) => event.event.case === 'openSession' && Number(event.event.value.operationHandle) === cancelledOperation)
-    if (cancelled.event.case !== 'openSession' || cancelled.event.value.error?.code !== ApiErrorCode.CANCELLED) throw new Error('WASM cancel proof failed')
-    runtime.release(cancelledOperation)
+    }), controller.signal)
+    controller.abort(new DOMException('cancel proof', 'AbortError'))
+    await cancelled.then(() => { throw new Error('WASM cancel proof unexpectedly opened a session') }, () => undefined)
   }
 
-  await runtime.closeSession(session)
-  await events.wait((event) => event.event.case === 'sessionClosed' && Number(event.event.value.sessionHandle) === session)
-  runtime.release(session)
-  events.close()
+  await session.close()
   return {
     generation,
     fingerprint: (globalThis as typeof globalThis & { termxDeviceFingerprint: string }).termxDeviceFingerprint,
     observedEvent,
-  }
-}
-
-class BindingEvents {
-  private readonly buffered: EventEnvelope[] = []
-  private readonly waiters: Array<(event: EventEnvelope) => boolean> = []
-  private active = true
-
-  constructor(private readonly runtime: TermxWasmRuntime) {
-    void this.pump()
-  }
-
-  async next(): Promise<EventEnvelope> {
-    if (this.buffered.length > 0) return this.buffered.shift() as EventEnvelope
-    return await new Promise<EventEnvelope>((resolve) => this.waiters.push((event) => { resolve(event); return true }))
-  }
-
-  async wait(predicate: (event: EventEnvelope) => boolean): Promise<EventEnvelope> {
-    const index = this.buffered.findIndex(predicate)
-    if (index >= 0) return this.buffered.splice(index, 1)[0] as EventEnvelope
-    return await new Promise<EventEnvelope>((resolve) => this.waiters.push((event) => {
-      if (!predicate(event)) return false
-      resolve(event)
-      return true
-    }))
-  }
-
-  close(): void { this.active = false }
-
-  private async pump(): Promise<void> {
-    while (this.active) {
-      try {
-        const event = fromBinary(EventEnvelopeSchema, await this.runtime.nextEvent())
-        const waiter = this.waiters.find((candidate) => candidate(event))
-        if (waiter) this.waiters.splice(this.waiters.indexOf(waiter), 1)
-        else this.buffered.push(event)
-      } catch {
-        return
-      }
-    }
   }
 }
 

@@ -95,7 +95,7 @@ export class RemoteNetworkStateManager {
       win.removeEventListener('offline', onOffline)
     })
 
-    const connection = browserNavigator()?.connection
+    const connection = browserNetworkConnection()
     if (!connection?.addEventListener || !connection.removeEventListener) return
     const onChange = () => {
       this.connectionType = networkConnectionType()
@@ -258,8 +258,12 @@ function classifyResume(duration: number): RemoteResumeType {
 }
 
 function networkConnectionType(): string {
-  const connection = browserNavigator()?.connection
+  const connection = browserNetworkConnection()
   return connection?.effectiveType ?? connection?.type ?? ''
+}
+
+function browserNetworkConnection(): (EventTarget & { effectiveType?: string; type?: string }) | undefined {
+  return (browserNavigator() as (Navigator & { connection?: EventTarget & { effectiveType?: string; type?: string } }) | undefined)?.connection
 }
 
 function browserWindow(): Window | undefined {

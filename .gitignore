@@ -3,6 +3,7 @@
 .toolchain/
 .worktrees/
 *.tsbuildinfo
+/clients/ui/public/termx-wasm/
 /node_modules/
 /private/archive/**/.build/
 Screenshot_*.jpg

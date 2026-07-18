@@ -35,6 +35,8 @@ describe('legacy transport cleanup', () => {
     expect(indexSource).toMatch(/createHubApi/)
     expect(indexSource).toMatch(/HubApi/)
     expect(indexSource).not.toMatch(/createBrowserRtcSession|BrowserRtcSession/)
+    expect(indexSource).toMatch(/BrowserBindingRuntime/)
+    expect(indexSource).toMatch(/ProtoBindingClient/)
   })
 
   it('keeps file manager target validation named as session validation', () => {

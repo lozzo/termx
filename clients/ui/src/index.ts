@@ -86,7 +86,7 @@ export type { MachineListProps } from './machines/MachineList'
 export { MachineBrowserShell } from './app/MachineBrowserShell'
 export type { MachineBrowserShellProps } from './app/MachineBrowserShell'
 export { RemoteControlApp } from './app/RemoteControlApp'
-export type { RemoteControlAppProps } from './app/RemoteControlApp'
+export type { MachineRuntime, MachineRuntimeFactory, RemoteControlAppProps } from './app/RemoteControlApp'
 export type { CloudAccountAdapter, ExternalPairingAdapter, ExternalPairingImportResult } from './app/RemoteControlApp'
 export { mountRemoteControlApp } from './entries/mountRemoteControlApp'
 export type { RemoteControlEntryOptions } from './entries/mountRemoteControlApp'
@@ -113,21 +113,6 @@ export type {
   StoredMachinePairing,
   StoredMachineRecord,
 } from './state/machineStore'
-export { createConnectionOrchestrator } from './connection/connectionOrchestrator'
-export type {
-  ConnectionAttemptError,
-  ConnectionAttemptSnapshot,
-  ConnectionAttemptStage,
-  ConnectionPolicy,
-  ConnectionOrchestrator,
-  ConnectionOrchestratorInput,
-  ConnectionOrchestratorOptions,
-  ConnectionOrchestratorResult,
-  HubEndpoint,
-  HubEndpointKind,
-  HubEndpointScope,
-  HubEndpointSource,
-} from './connection/connectionOrchestrator'
 export { PairDevicePanel } from './pairing/PairDevicePanel'
 export type { PairDevicePanelProps } from './pairing/PairDevicePanel'
 export {
@@ -135,8 +120,7 @@ export {
   createFutureNativeRemoteNetworkRuntime,
 } from './connection/browserNetworkRuntime'
 export type { BrowserRemoteNetworkRuntimeOptions } from './connection/browserNetworkRuntime'
-export { MachineConnectionStore } from './connection/machineConnectionStore'
-export type { MachineConnectionSnapshot, MachineConnectionStoreOptions } from './connection/machineConnectionStore'
+export type { MachineConnectionSnapshot } from './connection/machineConnectionSnapshot'
 export { RemoteNetworkStateManager } from './connection/remoteNetworkState'
 export type { RemoteNetworkState, RemoteResumeType } from './connection/remoteNetworkState'
 export {
@@ -255,28 +239,6 @@ export {
 export type { TerminalInventoryInput, TerminalInventorySnapshot } from './terminal/terminalInventory'
 export * from './core/transport'
 export { createHubApi } from './api/hubApi'
-export { createHubRtcConnector } from './webrtc/hubRtcConnector'
-export {
-  decodeRuntimeAPIRequest,
-  decodeRuntimeAPIResponse,
-  decodeRuntimeEventEnvelope,
-  decodeRuntimeEventSubscribeRequest,
-  decodeRuntimeRequestBody,
-  decodeRuntimeResponseBody,
-  encodeRuntimeAPIRequest,
-  encodeRuntimeAPIResponse,
-  encodeRuntimeEventEnvelope,
-  encodeRuntimeEventSubscribeRequest,
-  encodeRuntimeRequestBody,
-  encodeRuntimeResponseBody,
-  runtimeEventEnvelopeToRtcEvent,
-} from './webrtc/runtimeProtocol'
-export type {
-  RuntimeAPIRequest,
-  RuntimeAPIResponse,
-  RuntimeEventEnvelope,
-  RuntimeEventSubscribeRequest,
-} from './webrtc/runtimeProtocol'
 export type {
   CreateHubSessionInput,
   HubIceServer,
@@ -292,10 +254,6 @@ export type {
   HubRelayPolicy,
   PollHubSessionAnswerInput,
 } from './api/hubApi'
-export type {
-  HubRtcConnectInput,
-  HubRtcConnectorOptions,
-} from './webrtc/hubRtcConnector'
 export { createWebControlApi } from './api/webControlApi'
 export type {
   WebControlApi,
@@ -331,4 +289,10 @@ export { BrowserWasmPlatform, verifyRemoteDTLSCertificate } from './binding/brow
 export type { BrowserCloudPlatform, BrowserPlatformDiagnostic, BrowserPlatformEventSink } from './binding/browserWasmPlatform'
 export { TermxWasmRuntime, loadTermxWasmExports } from './binding/wasmRuntime'
 export type { LoadTermxWasmOptions, TermxWasmResult, WasmPlatformDispatcher } from './binding/wasmRuntime'
+export { BindingOperation, ProtoBindingClient, ProtoBindingConnector } from './binding/protoBindingClient'
+export type { BindingOperationCode, ManagedEndpointInput, ProtoBindingBackend } from './binding/protoBindingClient'
+export { WasmBindingBackend } from './binding/wasmBindingBackend'
+export { BrowserBindingRuntime } from './binding/browserBindingRuntime'
+export { BrowserCloudHttpPlatform } from './binding/browserCloudHttpPlatform'
+export type { BrowserCloudEndpoint } from './binding/browserCloudHttpPlatform'
 export * as TermxCloud from './generated/cloudpb/cloud_companion_pb'

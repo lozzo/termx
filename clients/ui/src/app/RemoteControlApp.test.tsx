@@ -6,7 +6,7 @@ import { createMachineStore } from '../state/machineStore'
 import { parsePairingPayload } from '../state/pairingPayload'
 import type { RemoteNetworkRuntime, RemoteRuntimeStorage, RtcConnectionStateSnapshot, RtcSession, RtcSessionNegotiationTarget, RtcSubscription } from '../core/transport'
 import type { WebControlFetch } from '../api/webControlApi'
-import type { MachineConnectionSnapshot } from '../connection/machineConnectionStore'
+import type { MachineConnectionSnapshot } from '../connection/machineConnectionSnapshot'
 
 describe('RemoteControlApp', () => {
   afterEach(() => cleanup())
@@ -18,7 +18,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
         storage={storage}
       />,
@@ -245,7 +244,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
         storage={storage}
       />,
@@ -611,7 +609,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -664,7 +661,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
         storage={storage}
       />,
@@ -703,7 +699,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -821,7 +816,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
         storage={storage}
       />,
@@ -861,7 +855,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         scanPairingCode={scanPairingCode}
         storage={storage}
@@ -899,7 +892,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch, storage)}
         scanPairingCode={scanPairingCode}
         storage={storage}
@@ -931,7 +923,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
         scanPairingCode={scanPairingCode}
         storage={storage}
@@ -963,7 +954,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch, storage)}
         scanPairingCode={scanPairingCode}
         storage={storage}
@@ -995,7 +985,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch, storage)}
         storage={storage}
       />,
@@ -1047,7 +1036,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -1120,7 +1108,6 @@ describe('RemoteControlApp', () => {
           isAuthorized: () => false,
           forget: () => {},
         }}
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -1186,7 +1173,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -1253,7 +1239,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -1351,7 +1336,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -1418,7 +1402,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -1475,7 +1458,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -1516,7 +1498,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -1570,11 +1551,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={({ machineId }) => {
-          const session = hubTestRtcSession(machineId)
-          sessions.push(session)
-          return session
-        }}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -1629,11 +1605,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={({ machineId }) => {
-          const session = hubTestRtcSession(machineId)
-          sessions.push(session)
-          return session
-        }}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -1678,11 +1649,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={({ machineId }) => {
-          const session = hubTestRtcSession(machineId)
-          sessions.push(session)
-          return session
-        }}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -1729,7 +1695,6 @@ describe('RemoteControlApp', () => {
       machineId: 'device-1',
       phase: 'connected',
       statusText: 'Connected through relay',
-      session: null,
       connectionInfo: {
         path: 'hub',
         observedPath: 'single_relay',
@@ -1827,11 +1792,6 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        hubRtcSessionFactory={({ machineId }) => {
-          const session = hubTestRtcSession(machineId)
-          sessions.push(session)
-          return session
-        }}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,

@@ -1,22 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode } from 'react'
 import { ArrowLeft, Camera, ChevronRight, Cloud, Download, Keyboard, LaptopMinimal, LogIn, LogOut, Monitor, MoreHorizontal, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Wifi, X } from 'lucide-react'
-import { createMachineSessionStore, type MachineSessionStore } from '../state/localAppIdentity'
+import { createMachineSessionStore } from '../state/localAppIdentity'
 import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorkspaceConnector } from './MachineWorkspace'
 import { createMachineStore, type StoredMachineRecord } from '../state/machineStore'
-import { createConnectionOrchestrator, type ConnectionAttemptSnapshot, type HubEndpoint } from '../connection/connectionOrchestrator'
-import { connectionStateFromAttempt, createConnectionStatePublisher } from '../connection/connectionState'
-import { createHubRtcConnector } from '../webrtc/hubRtcConnector'
-import { consoleConnectionLogger } from '../connection/connectionLogger'
 import { createHubApi, type HubPairInput, type HubPairResult } from '../api/hubApi'
-import { MachineConnectionStore, type MachineConnectionSnapshot } from '../connection/machineConnectionStore'
-import { RemoteNetworkStateManager } from '../connection/remoteNetworkState'
+import type { MachineConnectionSnapshot } from '../connection/machineConnectionSnapshot'
 import { FileTransferPanel } from '../files/FileTransferPanel'
 import { hapticError, hapticImpact, hapticSelection, hapticSuccess } from '../platform/haptics'
 import { addNativeBackHandler } from '../platform/nativeBack'
 import { parsePairingPayload, type PairingPayload } from '../state/pairingPayload'
 import type { FileTransferContext, TransferInfo } from '../files/fileApi'
-import type { ConnectionInfo, LocalStatus, MachineConnectionStateEvents, ManagedRtcSession, RemoteNetworkRuntime, RemoteRuntimeFetch, RemoteRuntimeStorage, RtcBinaryChannel, RtcConnectOptions, RtcConnectionStateSnapshot, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionNegotiator, RtcSubscription, TerminalInventoryEvents } from '../core/transport'
-import { normalizeTerminalInventory } from '../terminal/terminalInventory'
+import type { MachineConnectionStateEvents, RemoteNetworkRuntime, RemoteRuntimeFetch, RemoteRuntimeStorage, RtcConnectOptions, TerminalInventoryEvents } from '../core/transport'
 import { createWebControlApi, type WebControlApi, type WebControlMachine, type WebControlUser } from '../api/webControlApi'
 import { normalizeHubBaseUrlCandidate } from '../api/hubUrl'
 import {
@@ -50,7 +44,6 @@ interface PairApi {
 }
 type PairInput = HubPairInput
 type PairResult = HubPairResult
-type HubRtcSessionFactory = (input: { machineId: string }) => RtcSession & RtcSessionNegotiator
 type MachineAuthorizationState = 'ready' | 'expired' | 'unauthorized'
 type DisplayMachine = WebControlMachine & {
   reachability?: MachineReachabilityView | undefined
@@ -77,7 +70,6 @@ const emptyMachineConnectionSnapshot: MachineConnectionSnapshot = {
   machineId: '',
   phase: 'idle',
   statusText: 'Ready',
-  session: null,
   connectionInfo: null,
   forceRelay: false,
   relayInUse: false,
@@ -121,16 +113,12 @@ export interface CloudAccountAdapter {
   listMachines(): Promise<WebControlMachine[]>
   logout(): Promise<void>
 }
-type MachineRuntimeFactory = (input: {
+export type MachineRuntimeFactory = (input: {
   machine: WebControlMachine
   storage: RemoteRuntimeStorage
-  api: WebControlApi
-  networkRuntime: RemoteNetworkRuntime
-  networkStateManager: RemoteNetworkStateManager
-  createSession?: HubRtcSessionFactory | undefined
 }) => MachineRuntime
 
-interface MachineRuntime {
+export interface MachineRuntime {
   api: MachineWorkspaceInventoryApi
   connector: MachineWorkspaceConnector
   inventoryEvents?: TerminalInventoryEvents | undefined
@@ -147,7 +135,6 @@ export interface RemoteControlAppProps {
   defaultControlUrl?: string | undefined
   storage?: RemoteRuntimeStorage | undefined
   networkRuntime?: RemoteNetworkRuntime | undefined
-  hubRtcSessionFactory?: HubRtcSessionFactory | undefined
   pairApiFactory?: ((payload: PairingPayload, machine: WebControlMachine) => PairApi) | undefined
   machineRuntimeFactory?: MachineRuntimeFactory | undefined
   globalFileTransfer?: FileTransferContext | undefined
@@ -161,9 +148,8 @@ export function RemoteControlApp({
   defaultControlUrl,
   storage: storageProp,
   networkRuntime: networkRuntimeProp,
-  hubRtcSessionFactory,
   pairApiFactory,
-  machineRuntimeFactory = createHubMachineRuntime,
+  machineRuntimeFactory = createUnavailableMachineRuntime,
   globalFileTransfer,
   scanPairingCode,
   externalPairingAdapter,
@@ -172,11 +158,6 @@ export function RemoteControlApp({
 }: RemoteControlAppProps) {
   const networkRuntime = networkRuntimeProp ?? unavailableNetworkRuntime
   const storage = storageProp ?? networkRuntime.storage
-  const networkStateManagerRef = useRef<RemoteNetworkStateManager | null>(null)
-  if (!networkStateManagerRef.current) {
-    networkStateManagerRef.current = new RemoteNetworkStateManager()
-  }
-  const networkStateManager = networkStateManagerRef.current
   const [view, setView] = useState<AppView>('home')
   const controlUrl = useMemo(() => initialControlUrl(defaultControlUrl, networkRuntime), [defaultControlUrl, networkRuntime])
   const [login, setLogin] = useState('')
@@ -213,7 +194,6 @@ export function RemoteControlApp({
   const cameraScanInFlightRef = useRef(false)
   const runtimeCacheRef = useRef<{
     api: WebControlApi
-    createSession: HubRtcSessionFactory | undefined
     networkRuntime: RemoteNetworkRuntime
     runtimeFactory: MachineRuntimeFactory
     storage: RemoteRuntimeStorage
@@ -235,7 +215,6 @@ export function RemoteControlApp({
     const cache = runtimeCacheRef.current
     const cacheMatches = cache &&
       cache.api === api &&
-      cache.createSession === hubRtcSessionFactory &&
       cache.networkRuntime === networkRuntime &&
       cache.runtimeFactory === machineRuntimeFactory &&
       cache.storage === storage
@@ -245,7 +224,6 @@ export function RemoteControlApp({
       }
       runtimeCacheRef.current = {
         api,
-        createSession: hubRtcSessionFactory,
         networkRuntime,
         runtimeFactory: machineRuntimeFactory,
         storage,
@@ -269,23 +247,14 @@ export function RemoteControlApp({
     const created = machineRuntimeFactory({
       machine,
       storage,
-      api,
-      networkRuntime,
-      networkStateManager,
-      createSession: hubRtcSessionFactory,
     })
     cache.set(machine.id, created)
     return created
-  }, [api, machineRuntimeFactory, hubRtcSessionFactory, networkRuntime, networkStateManager, storage])
+  }, [machineRuntimeFactory, storage])
 
   const getExistingMachineRuntime = useCallback((machine: DisplayMachine): MachineRuntime | null => {
     return runtimeCacheRef.current?.runtimes.get(machine.id) ?? null
   }, [])
-
-  useEffect(() => {
-    networkStateManager.init()
-    return () => networkStateManager.destroy()
-  }, [networkStateManager])
 
   useEffect(() => {
     return () => {
@@ -658,6 +627,9 @@ export function RemoteControlApp({
         }
         const store = createMachineStore({ storage })
         const timestamp = new Date().toISOString()
+        const existing = store.getMachine(external.machine.id)
+        const directoryMachine = machines.find((machine) => machine.id === external.machine.id)
+        const directoryHubUrl = directoryMachine?.currentHubUrl ?? directoryMachine?.hubUrls[0]
         // Hub 目录拥有 daemon 展示身份；配对 bundle 只授予能力，不能用扫描端标签改名。
         const daemonName = selectedMachine?.name ?? external.machine.name
         const daemonHostname = selectedMachine?.hostname ?? external.machine.hostname
@@ -666,12 +638,16 @@ export function RemoteControlApp({
           name: daemonName,
           ...(daemonHostname ? { hostname: daemonHostname } : {}),
           state: 'online',
-          terminalCount: 0,
-          source: 'manual',
+          terminalCount: existing?.terminalCount ?? 0,
+          source: directoryMachine ? 'hub' : existing?.source ?? 'manual',
           accessClass: external.machine.accessClass ?? 'cloud',
-          addresses: { local: [], lan: [], public: [] },
-          endpoints: {},
-          addedAt: store.getMachine(external.machine.id)?.addedAt ?? timestamp,
+          addresses: existing?.addresses ?? { local: [], lan: [], public: [] },
+          endpoints: {
+            ...(existing?.endpoints ?? {}),
+            ...(directoryMachine?.controlUrl ? { webControl: directoryMachine.controlUrl } : {}),
+            ...(directoryHubUrl ? { hub: directoryHubUrl } : {}),
+          },
+          addedAt: existing?.addedAt ?? timestamp,
           updatedAt: timestamp,
         })
         dropMachineRuntime(external.machine.id)
@@ -2352,8 +2328,8 @@ function readAuthorizedMachineIds(
     const sessionStore = createMachineSessionStore(storage)
     return new Set(createMachineStore({ storage }).listMachines()
       .filter((machine) => {
-        if (sessionStore.getSessionToken(machine.machineId)) return true
-        if (!externalPairingAdapter?.isAuthorized(machine.machineId)) return false
+        if (!externalPairingAdapter) return Boolean(sessionStore.getSessionToken(machine.machineId))
+        if (!externalPairingAdapter.isAuthorized(machine.machineId)) return false
         const expiresAt = externalPairingAdapter.authorizationExpiresAt?.(machine.machineId)
         return !expiresAt || !isExpiredAuthorization(expiresAt)
       })
@@ -2372,7 +2348,7 @@ function readAuthorizationExpiries(
     const sessionStore = createMachineSessionStore(storage)
     const expiries = new Map<string, string>()
     for (const machine of createMachineStore({ storage }).listMachines()) {
-      const expiresAt = sessionStore.getSessionExpiry(machine.machineId)
+      const expiresAt = externalPairingAdapter ? undefined : sessionStore.getSessionExpiry(machine.machineId)
       const externalExpiry = externalPairingAdapter?.authorizationExpiresAt?.(machine.machineId)
       if (externalExpiry || expiresAt) expiries.set(machine.machineId, externalExpiry ?? expiresAt!)
     }
@@ -2684,166 +2660,9 @@ function runWithTimeout<T>(
   })
 }
 
-function createHubMachineRuntime(input: {
-  machine: WebControlMachine
-  storage: RemoteRuntimeStorage
-  api: WebControlApi
-  networkRuntime: RemoteNetworkRuntime
-  networkStateManager: RemoteNetworkStateManager
-  createSession?: HubRtcSessionFactory | undefined
-}): MachineRuntime {
-  const sessionStore = createMachineSessionStore(input.storage)
-  const [summaryHubUrl] = nonEmptyHubUrls(input.machine)
-  const machineSession = createHubMachineSessionManager({
-    machine: input.machine,
-    sessionStore,
-    networkRuntime: input.networkRuntime,
-    networkStateManager: input.networkStateManager,
-    createSession: requiredHubRtcSessionFactory(input.createSession),
-  })
-  const machineStatus: LocalStatus = {
-    machine: {
-      machineId: input.machine.id,
-      name: input.machine.name,
-      state: input.machine.online ? 'online' : 'offline',
-      ...(input.machine.lastSeen ? { lastSeenAt: input.machine.lastSeen } : {}),
-    },
-    localWeb: {
-      httpUrl: input.machine.controlUrl ?? '',
-      rtcOfferUrl: summaryHubUrl ?? '',
-    },
-  }
-  return {
-    api: {
-      async getStatus() {
-        return machineStatus
-      },
-      async listTerminals(options) {
-        const session = await machineSession.get({
-          forceRelay: options?.forceRelay,
-          onStatus: options?.onStatus,
-          onConnectionState: options?.onConnectionState,
-        })
-        const channel = await session.openApi()
-        const response = await channel.request<{ terminals: Record<string, unknown>[] }>('list', {})
-        return normalizeTerminalsForMachine(input.machine.id, response.terminals ?? [])
-      },
-    },
-    connector: {
-      async connect(target, options) {
-        if (target.machineId !== input.machine.id) {
-          throw new Error(`machine runtime mismatch: ${target.machineId} != ${input.machine.id}`)
-        }
-        return machineSession.get(options)
-      },
-      reconnect(options?: { forceRelay?: boolean | undefined }) {
-        machineSession.reconnect(options)
-      },
-    },
-    connectionStateEvents: {
-      subscribe(machineId, handler) {
-        if (machineId !== input.machine.id) return { close() {} }
-        return machineSession.subscribeConnectionState(handler)
-      },
-    },
-    listConnectionState: {
-      getSnapshot: machineSession.getConnectionSnapshot,
-      subscribe: machineSession.subscribeConnectionSnapshot,
-    },
-    inventoryEvents: {
-      subscribe(machineId, handler) {
-        if (machineId !== input.machine.id) {
-          return { close() {} }
-        }
-        return machineSession.subscribeInventoryEvents(handler)
-      },
-    },
-    dispose: machineSession.reset,
-  }
-}
-
-function createHubMachineSessionManager(input: {
-  machine: WebControlMachine
-  sessionStore: MachineSessionStore
-  networkRuntime: RemoteNetworkRuntime
-  networkStateManager: RemoteNetworkStateManager
-  createSession: HubRtcSessionFactory
-}) {
-  const connectionState = createConnectionStatePublisher()
-  const publishAttempt = (snapshot: ConnectionAttemptSnapshot) => {
-    connectionState.publish(connectionStateFromAttempt({
-      machineId: input.machine.id,
-      stage: snapshot.stage,
-      message: snapshot.message,
-      ...(snapshot.path ? { path: snapshot.path } : {}),
-      relayInUse: snapshot.relayInUse,
-    }))
-  }
-  const connectionStore = new MachineConnectionStore({
-    machineId: input.machine.id,
-    networkStateManager: input.networkStateManager,
-    createLease: createHubMachineSessionLease,
-    connect: (options = {}) => connect(options),
-  })
-  const subscribeInventoryEvents = (handler: (event: { type: 'inventory_changed'; payload?: unknown }) => void): RtcSubscription => {
-    return connectionStore.subscribeSessionEvents((event) => {
-      if (isTerminalInventoryRuntimeEvent(event)) handler({ type: 'inventory_changed', payload: event.payload })
-    })
-  }
-  const connect = async (options?: RtcConnectOptions & { onSnapshot?: (snapshot: ConnectionAttemptSnapshot) => void }): Promise<ManagedRtcSession> => {
-    if (options?.signal?.aborted) {
-      throw options.signal.reason instanceof Error ? options.signal.reason : new Error('connection aborted')
-    }
-    const endpoints = endpointsFromMachine(input.machine)
-    if (endpoints.length === 0) {
-      throw new Error('Hub endpoint is required before opening this machine runtime')
-    }
-    const sessionToken = input.sessionStore.getSessionToken(input.machine.id)
-    if (!sessionToken) {
-      throw new Error('Pair this machine before opening the runtime channel')
-    }
-    const answerProofSecret = input.sessionStore.getAnswerProofSecret(input.machine.id) ?? undefined
-    const orchestrator = createConnectionOrchestrator({
-      hubApiFactory: (hubUrl) => createHubApi({ baseUrl: hubUrl, fetch: input.networkRuntime.fetch }),
-      hubRtcConnectorFactory: ({ hubUrl, api }) => createHubRtcConnector({
-        api,
-        createSession: input.createSession,
-        hubUrl,
-        logger: consoleConnectionLogger,
-      }),
-      logger: consoleConnectionLogger,
-    })
-    const result = await orchestrator.connect({
-      machineId: input.machine.id,
-      sessionToken,
-      answerProofSecret,
-      policy: 'app_fastest',
-      endpoints,
-      onSnapshot: (snapshot) => {
-        publishAttempt(snapshot)
-        options?.onSnapshot?.(snapshot)
-      },
-    }, options)
-    return assertManagedRtcSession(result.session)
-  }
-  return {
-    get: (options?: RtcConnectOptions) => connectionStore.get(options),
-    reconnect: (options?: { forceRelay?: boolean | undefined }) => connectionStore.reconnect(options),
-    subscribeInventoryEvents,
-    subscribeConnectionState: (handler: (snapshot: RtcConnectionStateSnapshot) => void) => {
-      const storeSubscription = connectionStore.subscribeConnectionState(handler)
-      const attemptSubscription = connectionState.subscribe(handler)
-      return {
-        close() {
-          storeSubscription.close()
-          attemptSubscription.close()
-        },
-      }
-    },
-    getConnectionSnapshot: () => connectionStore.getSnapshot(),
-    subscribeConnectionSnapshot: (listener: () => void) => connectionStore.subscribe(listener),
-    reset: () => connectionStore.release(),
-  }
+function createUnavailableMachineRuntime(): MachineRuntime {
+  const unavailable = async () => { throw new Error('a Proto binding machine runtime is required') }
+  return { api: { getStatus: unavailable, listTerminals: unavailable }, connector: { connect: unavailable } }
 }
 
 const unavailableNetworkRuntime: RemoteNetworkRuntime = {
@@ -2853,158 +2672,6 @@ const unavailableNetworkRuntime: RemoteNetworkRuntime = {
   queryParam() {
     return null
   },
-}
-
-function requiredHubRtcSessionFactory(factory: HubRtcSessionFactory | undefined): HubRtcSessionFactory {
-  if (!factory) {
-    throw new Error('hub RTC session factory is required')
-  }
-  return factory
-}
-
-function isTerminalInventoryRuntimeEvent(event: RtcEvent): boolean {
-  if (event.type === 'inventory_changed') return true
-  if (event.type === 'terminal_changed') return true
-  return event.type === 'terminal_created' ||
-    event.type === 'terminal_state_changed' ||
-    event.type === 'terminal_resized' ||
-    event.type === 'terminal_removed' ||
-    event.type === 'terminal_metadata_changed'
-}
-
-function createHubMachineSessionLease(session: ManagedRtcSession): ManagedRtcSession {
-  const openedTerminals = new Map<string, RtcBinaryChannel>()
-  const openedFiles = new Map<string, RtcBinaryChannel>()
-  const subscriptions = new Set<RtcSubscription>()
-  let closed = false
-  return {
-    async openTerminal(id: string) {
-      if (closed) throw new Error('machine session lease is closed')
-      const channel = await session.openTerminal(id)
-      openedTerminals.set(id, channel)
-      return channel
-    },
-    closeTerminalDataChannel(id: string) {
-      const channel = openedTerminals.get(id)
-      openedTerminals.delete(id)
-      channel?.close()
-      session.closeTerminalDataChannel(id)
-    },
-    async openApi() {
-      if (closed) throw new Error('machine session lease is closed')
-      return createSharedApiLeaseChannel(await session.openApi())
-    },
-    async openFileChannel(streamChannel: number, transferId: string) {
-      if (closed) throw new Error('machine session lease is closed')
-      const channel = await session.openFileChannel(streamChannel, transferId)
-      openedFiles.set(transferId, channel)
-      return channel
-    },
-    subscribeEvents(handler: (event: RtcEvent) => void) {
-      if (closed) return { close() {} }
-      const subscription = session.subscribeEvents(handler)
-      subscriptions.add(subscription)
-      return {
-        close() {
-          subscriptions.delete(subscription)
-          subscription.close()
-        },
-      }
-    },
-    async getConnectionInfo(): Promise<ConnectionInfo> {
-      return session.getConnectionInfo()
-    },
-    getCapabilities() {
-      return session.getCapabilities()
-    },
-    isAlive() {
-      if (closed) return false
-      return session.isAlive()
-    },
-    subscribeConnectionState(handler: (snapshot: RtcConnectionStateSnapshot) => void) {
-      if (closed) return { close() {} }
-      const subscription = session.subscribeConnectionState(handler)
-      subscriptions.add(subscription)
-      return {
-        close() {
-          subscriptions.delete(subscription)
-          subscription.close()
-        },
-      }
-    },
-    onDisconnect(handler: () => void) {
-      if (closed) return { close() {} }
-      const subscription = session.onDisconnect(handler)
-      subscriptions.add(subscription)
-      return {
-        close() {
-          subscriptions.delete(subscription)
-          subscription.close()
-        },
-      }
-    },
-    handleAppResume() {
-      if (closed) return Promise.resolve(false)
-      return session.handleAppResume()
-    },
-    waitUntilConnected(signal?: AbortSignal) {
-      if (closed) return Promise.reject(new Error('machine session lease is closed'))
-      return session.waitUntilConnected(signal)
-    },
-    async disconnect() {
-      closed = true
-      for (const subscription of Array.from(subscriptions)) {
-        subscription.close()
-      }
-      subscriptions.clear()
-      for (const channel of Array.from(openedTerminals.values())) {
-        channel.close()
-      }
-      openedTerminals.clear()
-      for (const channel of Array.from(openedFiles.values())) {
-        channel.close()
-      }
-      openedFiles.clear()
-    },
-  }
-}
-
-function createSharedApiLeaseChannel(channel: RtcJsonRpcChannel): RtcJsonRpcChannel {
-  return {
-    request<TResponse>(method: string, params?: unknown) {
-      return channel.request<TResponse>(method, params)
-    },
-    close() {},
-  }
-}
-
-function assertManagedRtcSession(session: RtcSession): ManagedRtcSession {
-  const candidate = session as RtcSession & Partial<ManagedRtcSession>
-  const required: Array<keyof ManagedRtcSession> = [
-    'subscribeConnectionState',
-    'onDisconnect',
-    'isAlive',
-    'handleAppResume',
-    'waitUntilConnected',
-    'closeTerminalDataChannel',
-  ]
-  const missing = required.filter((key) => typeof candidate[key] !== 'function')
-  if (missing.length > 0) {
-    throw new Error(`runtime session does not implement managed WebRTC contract: ${missing.join(', ')}`)
-  }
-  return candidate as ManagedRtcSession
-}
-
-function normalizeTerminalsForMachine(machineId: string, terminals: Record<string, unknown>[]) {
-  return normalizeTerminalInventory({
-    machine_id: machineId,
-    terminals: terminals.map((terminal) => ({
-      ...terminal,
-      machine_id: typeof terminal.machine_id === 'string' || typeof terminal.machineId === 'string'
-        ? terminal.machine_id ?? terminal.machineId
-        : machineId,
-    })),
-  }).terminals
 }
 
 function mergeHubMachine(saved: StoredMachineRecord, machine: WebControlMachine): StoredMachineRecord {
@@ -3059,70 +2726,6 @@ function localHubUrlsFromPairingPayload(payload: PairingPayload): string[] {
 
 function nonEmptyHubUrls(machine: WebControlMachine): string[] {
   return compactHubUrls(machine.hubUrls)
-}
-
-function endpointsFromMachine(machine: WebControlMachine): HubEndpoint[] {
-  const reachability = (machine as DisplayMachine).reachability
-  const localHubUrls = orderReachableHubUrls(machine.localHubUrls ?? [], reachability?.localOnlineUrls ?? [])
-  const localFallbackHubUrls = orderReachableHubUrls(machine.localFallbackHubUrls ?? [], reachability?.localOnlineUrls ?? [])
-  return compactHubEndpoints([
-    ...localHubUrls.map((url) => ({
-      url,
-      kind: 'local' as const,
-      scope: localHubScope(url),
-      source: 'stored_machine' as const,
-    })),
-    ...localFallbackHubUrls.map((url) => ({
-      url,
-      kind: 'local' as const,
-      scope: 'public_mapping' as const,
-      source: 'stored_machine' as const,
-    })),
-    ...(machine.source === 'local'
-      ? []
-      : nonEmptyHubUrls(machine).map((url) => ({
-        url,
-        kind: 'hub' as const,
-        scope: 'hub' as const,
-        source: 'web_control' as const,
-      }))),
-  ])
-}
-
-function orderReachableHubUrls(
-  urls: readonly string[],
-  reachableUrls: readonly string[],
-): string[] {
-  const compact = compactHubUrls(urls)
-  if (reachableUrls.length === 0) return compact
-  const reachable = new Set(compactHubUrls(reachableUrls))
-  return [
-    ...compact.filter((url) => reachable.has(url)),
-    ...compact.filter((url) => !reachable.has(url)),
-  ]
-}
-
-function compactHubEndpoints(endpoints: readonly HubEndpoint[]): HubEndpoint[] {
-  const out: HubEndpoint[] = []
-  const seen = new Set<string>()
-  for (const endpoint of endpoints) {
-    const url = normalizeHubBaseUrlCandidate(endpoint.url)
-    if (!url) continue
-    const key = `${endpoint.kind}:${url}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push({ ...endpoint, url })
-  }
-  return out
-}
-
-function localHubScope(url: string): HubEndpoint['scope'] {
-  try {
-    const host = new URL(url).hostname
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1' ? 'loopback' : 'lan'
-  } catch {
-    return 'lan'
-  }
 }
 
 function compactHubUrls(values: readonly (string | undefined)[]): string[] {
