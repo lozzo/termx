@@ -131,7 +131,7 @@ func (owner *SessionOwner) AcquirePlanned(
 		return nil, runtimeError(ErrorUnavailable, "session owner is closed", nil)
 	}
 	current := owner.current[target.ID]
-	if current != nil && owner.configs[target.ID] == configKey && owner.authority.isCurrent(target.ID, current.Stamp().Generation, current) {
+	if current != nil && owner.configs[target.ID] == configKey && routeOverrideAllowsReuse(current.Stamp().RouteID, routeOverride) && owner.authority.isCurrent(target.ID, current.Stamp().Generation, current) {
 		select {
 		case <-current.Done():
 		default:
@@ -185,7 +185,7 @@ func (owner *SessionOwner) EnsurePlanned(
 		return SessionLease{}, runtimeError(ErrorUnavailable, "session owner is closed", nil)
 	}
 	current := owner.current[target.ID]
-	if current != nil && owner.configs[target.ID] == configKey && owner.authority.isCurrent(target.ID, current.Stamp().Generation, current) {
+	if current != nil && owner.configs[target.ID] == configKey && routeOverrideAllowsReuse(current.Stamp().RouteID, routeOverride) && owner.authority.isCurrent(target.ID, current.Stamp().Generation, current) {
 		select {
 		case <-current.Done():
 		default:
@@ -218,6 +218,10 @@ func (owner *SessionOwner) ClearRouteOverride(endpointID endpoint.EndpointID) {
 	owner.mu.Lock()
 	delete(owner.stickyRoutes, endpointID)
 	owner.mu.Unlock()
+}
+
+func routeOverrideAllowsReuse(current, explicit endpoint.RouteID) bool {
+	return explicit == "" || explicit == current
 }
 
 // WatchEndpoint 订阅 bounded endpoint lifecycle mailbox。

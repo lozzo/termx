@@ -84,6 +84,9 @@ func (dialer *Dialer) Dial(ctx context.Context, request clientruntime.AttemptReq
 		_ = ready.Close()
 		return nil, err
 	}
+	// ReadySession 已经完成 OpenSSH auth、fresh daemon proof 与 Hello；从这里开始
+	// SSH 子进程由 ready.Close 拥有，planner race context 只允许取消 loser。
+	transportConnection.CommitReady()
 	return ready, nil
 }
 

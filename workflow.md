@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- `C3F` operation generation stamp 已完成。下一切片是 `C3G` 真实 local + OpenSSH race E2E；Android 与 Web 已复用同一 runtime/managed/auth/protocol/binding 引擎，不得重新引入平台自有客户端网络真值。
+- `C3G` 真实 local + OpenSSH race E2E 已完成。下一切片是 `C3H` 最终准入与双 Agent 审查；Android 与 Web 已复用同一 runtime/managed/auth/protocol/binding 引擎，不得重新引入平台自有客户端网络真值。
 - 当前迁移允许修改 `client/{runtime,port,adapter,binding}/`、`remote/`、`internal/protocol/`、`proto/`、`clients/mobile/`、`clients/ui/` 以及对应 tests、build scripts 和必要架构文档；每个切片仍只能触及任务表规定的最小范围。
 - Android 目标是 Go Client Engine 编译为 native library，通过稳定 C ABI 与薄 JNI/Capacitor bridge 调用；Kotlin/Java 不拥有连接、认证、协议、session/resource 或重连真值。
 - Android lifecycle 固定采用 generation teardown：锁屏广播或进程进入后台时关闭当前 Go engine、loopback bridge、全部 session/resource 和事件泵；WebView 恢复时先创建新 engine/generation，再让 TypeScript 重连。旧 handle、迟到 callback 和冻结期间未消费事件不得进入新 generation，事件队列必须有界。
@@ -28,6 +28,7 @@
 - `C3D` 已让 `SessionOwner` 消费 C3B attempt groups：同 Endpoint 只有一个 in-flight planner race，不同 Endpoint 可独立推进；priority hedge 只使用 `client/port.Clock`，首个完整 ReadySession 线性化后取消并等待全部 loser，迟到成功资源 exact-close 后才发布 lease。`ClientRuntime` 实现公共 `Runtime` interface，按 config key 复用 winner，并提供进程内 sticky route override、独立 consumer lease、bounded latest-state lifecycle mailbox 和 generation-safe offline 投影。runtime/endpoint race、全仓 Go tests 与 doctor 通过。
 - `C3E` 已把 CLI 与 TUI native composition 接到同一 `ClientRuntime/SessionOwner`：dialer registry 包含 local Unix、OpenSSH 与 lazy managed/Pion，managed credential 只从 owner-only store 解析且 Cloud Companion 仅在 managed attempt 真正启动时打开。TUI 通过 `tui/adapter/clientruntime.EndpointEventSource` 消费同一 owner mailbox，订阅时先收到 current winner；attachment channel 和 file resource stream 经 generation-fenced ready capability，不再要求 UI/command 持有 raw framing client。旧 `runtime.SelectRoute`、`local.Connect`、raw protocol adoption 与 `NewOwnedApplicationClient` 已删除并加入守卫；关键 race、全仓 Go tests 与 doctor 通过。
 - `C3F` 已让 attach candidate/commit/cleanup、input/paste、resize 与 detach 携带同一 generated Proto `EndpointSessionStamp` 和唯一 operation ID。`ApplicationSession` 保留 caller operation identity 但强制覆盖 session stamp；runtime validator 与 protocol adapter 在 attachment lookup/具体调用前拒绝 stale generation，返回 `Attempted=false`。TUI pending candidate 不再覆盖 committed channel，replaced/迟到成功只精确 cleanup 自己的资源；非幂等 input/paste 失败后不再自动 reattach 或重放 payload。workbench storage 不持久化 runtime stamp，但同进程 reload 会保留 live stamp/operation/candidate。指定 race、全仓 Go tests 与 doctor 通过。
+- `C3G` 已用测试内隔离的真实 OpenSSH 9.9 `sshd`、临时 host/client key、strict known_hosts、key-only auth、真实 `ssh` 子进程和真实 `termx daemon stdio-proxy` 验证 local/SSH full race、priority hedge、显式 SSH override、进程内 sticky reconnect、loser SSH process cleanup、跨 route `TerminalRef` 稳定和旧 generation `Attempted=false`。该 E2E 修正了同 config current winner 吞掉显式 override、SSH winner 仍绑定 race context、主动 Close 返回 `signal: killed` 三个生命周期错误；指定 race、真实 E2E、全仓 Go tests 与 doctor 通过。
 - 用户已确立仓库级强约定：所有插件、第三方客户端、官方客户端、跨进程和跨语言 API 的唯一 schema truth 必须位于 `proto/`。
 - 完整运行链路固定为 `插件/客户端 -> transport/platform binding -> protocol framing -> generated proto -> api_layer -> api_mapping -> core`，返回方向相反。Proto 是 schema/message truth，不是 transport 或主动运行层；任何入口都不得绕过 API Layer 消费 core domain struct。
 - `core/api` Go DTO 路线已判定错误，必须删除；此前 `AR003B1A/AR003B1B` 结论作废，不得继续迁移或补兼容层。
@@ -128,8 +129,8 @@ core domain truth
 | C3D | 已完成 | shared runtime session owner | planner-driven attempt groups、per-endpoint singleflight、唯一 winner 线性化、loser cancel/wait/cleanup、shared lease、sticky override 与 bounded lifecycle mailbox harness 通过 |
 | C3E | 已完成 | CLI 接入共享 runtime | CLI/TUI composition 共用 ClientRuntime/SessionOwner、local/SSH/lazy-managed registry、system Clock 与 lifecycle source；旧单 route owner/raw adoption 已删除 |
 | C3F | 已完成 | operation generation stamp | attach candidate/commit/cleanup、input/paste/resize/detach 共用 Proto session stamp 与 operation identity；stale 副作用前失败且 input 不重放 |
-| C3G | 待开始 | local + SSH race E2E | 真实 local daemon 与 OpenSSH host 覆盖 full race、priority hedge、override/sticky、loser transport/子进程 cleanup、TerminalRef 稳定和 stale operation |
-| C3H | 暂停 | 最终准入与双审 | C3G PASS 后恢复 |
+| C3G | 已完成 | local + SSH race E2E | 隔离真实 sshd/OpenSSH client 覆盖 full race、priority hedge、override/sticky、loser process cleanup、TerminalRef 稳定和 stale operation |
+| C3H | 待开始 | 最终准入与双审 | 全量测试、架构/重复真值/fallback/cleanup 审计，架构 reviewer 与代码 reviewer 均明确 PASS |
 
 ## 测试准入
 
@@ -153,6 +154,7 @@ core domain truth
 - `C3D`：`go test -race ./client/runtime ./client/endpoint -count=1`；winner/loser exact cleanup、hedge delay、cancel、同 endpoint shared lease、sticky override 与 lifecycle mailbox harness；`make test`；`make doctor`；`git diff --check`。
 - `C3E`：CLI/TUI local/SSH/managed composition 与 dependency guards；默认/显式 route、shared owner reuse、错误/取消投影 harness；旧 `SelectRoute`、`local.Connect`、raw protocol adoption 扫描；`go test -race ./client/runtime ./client/adapter/... ./tui/adapter/clientruntime ./cmd/termx -count=1`；`make test`；`make doctor`；`git diff --check`。
 - `C3F`：attach candidate/confirm/commit/cleanup、detach/input/paste/resize stamp harness；旧 generation 和 replaced operation 在 adapter 调用前失败，`Attempted=false`，已调用非幂等 input 不自动重放；`go test -race ./tui/app ./tui/adapter/clientruntime ./tui/adapter/protocol ./client/runtime ./cmd/termx -count=1`；`make test`；`make doctor`；`git diff --check`。
+- `C3G`：测试内隔离真实 `sshd`、OpenSSH client 与远端 `termx daemon stdio-proxy`；full race、priority hedge、explicit override/sticky、loser SSH PID cleanup、TerminalRef 与 stale operation harness；`go test -race ./client/runtime ./client/adapter/ssh ./shared/transport/ssh -count=1`；`go test -race ./cmd/termx -run 'TestC3GRealLocalAndOpenSSHRoutes' -count=1`；`make test`；`make doctor`；`git diff --check`。
 
 ## 执行规则
 

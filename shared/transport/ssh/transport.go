@@ -44,11 +44,15 @@ type Transport struct {
 	stdout io.ReadCloser
 	stderr *limitedBuffer
 
-	sendMu sync.Mutex
-	recvMu sync.Mutex
-	once   sync.Once
-	done   chan struct{}
-	waitCh chan error
+	sendMu       sync.Mutex
+	recvMu       sync.Mutex
+	once         sync.Once
+	killOnce     sync.Once
+	dialDoneOnce sync.Once
+	dialDone     chan struct{}
+	done         chan struct{}
+	waitCh       chan error
+	closeErr     error
 }
 
 // Dial 启动 OpenSSH 并连接远端 termx stdio-proxy。
@@ -58,7 +62,7 @@ func Dial(ctx context.Context, opts DialOptions) (*Transport, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, binaryName, args...)
+	cmd := exec.Command(binaryName, args...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -76,15 +80,26 @@ func Dial(ctx context.Context, opts DialOptions) (*Transport, error) {
 		return nil, fmt.Errorf("start ssh transport: %w", err)
 	}
 	t := &Transport{
-		cmd:    cmd,
-		stdin:  stdin,
-		stdout: stdout,
-		stderr: stderr,
-		done:   make(chan struct{}),
-		waitCh: make(chan error, 1),
+		cmd:      cmd,
+		stdin:    stdin,
+		stdout:   stdout,
+		stderr:   stderr,
+		done:     make(chan struct{}),
+		waitCh:   make(chan error, 1),
+		dialDone: make(chan struct{}),
 	}
 	go t.wait()
+	go t.watchDialContext(ctx)
 	return t, nil
+}
+
+// CommitReady 把已完成 SSH 认证、daemon identity proof 与 protocol Hello 的进程生命周期移交给 ReadySession owner。
+// 调用后原始 dial context 取消不再终止 winner；后续只能由 Transport.Close 或进程自身退出结束。
+func (t *Transport) CommitReady() {
+	if t == nil {
+		return
+	}
+	t.dialDoneOnce.Do(func() { close(t.dialDone) })
 }
 
 // BuildCommand 生成 OpenSSH 命令参数。
@@ -188,15 +203,40 @@ func (t *Transport) Close() error {
 		return nil
 	}
 	t.once.Do(func() {
+		select {
+		case <-t.done:
+			t.closeErr = t.waitError()
+			return
+		default:
+		}
+		t.CommitReady()
 		if t.stdin != nil {
 			_ = t.stdin.Close()
 		}
+		t.killProcess()
+		<-t.done
+	})
+	return t.closeErr
+}
+
+func (t *Transport) watchDialContext(ctx context.Context) {
+	select {
+	case <-ctx.Done():
+		if t.stdin != nil {
+			_ = t.stdin.Close()
+		}
+		t.killProcess()
+	case <-t.dialDone:
+	case <-t.done:
+	}
+}
+
+func (t *Transport) killProcess() {
+	t.killOnce.Do(func() {
 		if t.cmd != nil && t.cmd.Process != nil {
 			_ = t.cmd.Process.Kill()
 		}
 	})
-	<-t.done
-	return t.waitError()
 }
 
 // Done 返回 SSH 进程生命周期结束信号。

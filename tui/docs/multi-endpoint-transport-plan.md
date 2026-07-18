@@ -26,8 +26,9 @@
 - C3C 已把 local/SSH fresh DeviceIdentity challenge proof、managed channel-bound auth、route authorization、Hello 与 lifecycle signal 固化为统一 `ReadySession` 发布门禁；C3D/C3E 已把 planner race、winner/loser cleanup 和 CLI/TUI composition 接到同一 runtime。
 - C3E 已让 CLI/TUI native composition 共用 per-endpoint `ClientRuntime/SessionOwner`、local/SSH/lazy-managed dialer registry、system Clock 和 lifecycle mailbox；TUI 不再从 raw protocol client 推断 endpoint 状态。operation/channel stamp 的完整副作用前校验仍由 C3F 完成。
 - C3F 已把 generated Proto `EndpointSessionStamp` 与 operation identity 贯穿 attach candidate/commit/cleanup、input/paste、resize 和 detach；stale generation 在 attachment lookup/adapter 副作用前失败，replaced candidate 精确 cleanup，非幂等 input/paste 不自动重放。
+- C3G 已用隔离真实 `sshd`、OpenSSH client 和远端 `termx daemon stdio-proxy` 验证 local/SSH full race、priority hedge、explicit override/sticky、loser SSH process cleanup、跨 route `TerminalRef` 稳定和 stale operation；SSH winner 生命周期已在 Ready 后从 race context 移交给 session owner。
 
-因此，当前 `CONN003` 剩余完成条件集中在 C3G 真实 local + OpenSSH race E2E 与 C3H 最终双审；下文已标记完成的 planner/runtime/stamp 语义是当前实现基线。
+因此，当前 `CONN003` 只剩 C3H 最终全量准入与双 Agent 审查；下文 planner/runtime/stamp/真实 route 语义是当前实现基线。
 
 ## 当前非目标
 

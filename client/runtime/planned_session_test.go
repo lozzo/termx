@@ -147,6 +147,29 @@ func TestSessionOwnerAcquirePlannedSharesLeaseAndKeepsExplicitRouteSticky(t *tes
 	_ = third.Close()
 }
 
+func TestSessionOwnerEnsurePlannedExplicitOverrideReplacesDifferentCurrentWinner(t *testing.T) {
+	owner := NewSessionOwner()
+	target := plannedEndpoint(false)
+	dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"local": {}, "ssh": {}})
+	resolver, err := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
+		endpoint.RouteLocalUnix: dialer, endpoint.RouteSSHStdio: dialer,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := owner.EnsurePlanned(context.Background(), target, "local", ConnectIntentInteractive, "config-a", plannedEnvironment(), realTestClock{}, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := owner.EnsurePlanned(context.Background(), target, "ssh", ConnectIntentInteractive, "config-a", plannedEnvironment(), realTestClock{}, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Stamp.RouteID != "local" || second.Stamp.RouteID != "ssh" || second.Stamp.Generation <= first.Stamp.Generation {
+		t.Fatalf("explicit override did not replace winner: first=%#v second=%#v", first, second)
+	}
+}
+
 func TestSessionOwnerPlannedRaceCancellationFailsAfterAdapterAttempt(t *testing.T) {
 	owner := NewSessionOwner()
 	defer owner.Close()
