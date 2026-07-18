@@ -22,16 +22,23 @@ const protocolChannelLabel = "protocol"
 
 // Factory 创建当前 native 进程使用的 Pion PeerConnection。
 // 它不持有 endpoint、credential、Cloud client 或 route winner，因此可被桌面与 Android Go library 共同复用。
-type Factory struct{}
+type Factory struct {
+	// PeerConnections 只覆盖底层 Pion primitive 创建策略；nil 使用当前生产默认配置。
+	PeerConnections remotewebrtc.PeerConnectionFactory
+}
 
 // OpenManagedPeer 按已验证 ICE material 创建可靠有序 protocol DataChannel。
 // direct-only 会剔除 TURN URL，relay-only 会启用 Pion relay policy；非法组合直接失败，不能降级为其他策略。
-func (Factory) OpenManagedPeer(_ context.Context, servers []*cloudpb.IceServer, preference cloudpb.RoutePreference, relayOnly bool) (port.ManagedPeer, error) {
+func (factory Factory) OpenManagedPeer(_ context.Context, servers []*cloudpb.IceServer, preference cloudpb.RoutePreference, relayOnly bool) (port.ManagedPeer, error) {
 	configuration, err := peerConfiguration(servers, preference, relayOnly)
 	if err != nil {
 		return nil, err
 	}
-	peer, err := remotewebrtc.NewPeerConnection(configuration)
+	peerFactory := factory.PeerConnections
+	if peerFactory == nil {
+		peerFactory = remotewebrtc.NewPeerConnection
+	}
+	peer, err := peerFactory(configuration)
 	if err != nil {
 		return nil, err
 	}

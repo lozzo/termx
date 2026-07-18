@@ -8,6 +8,10 @@ import (
 	pion "github.com/pion/webrtc/v4"
 )
 
+// PeerConnectionFactory 创建单个 Pion PeerConnection。
+// 默认生产路径使用 NewPeerConnection；测试或后续 direct transport 可以注入限定网络类型和 mux 的独立 Pion API，但 factory 不拥有 signaling、auth 或 session lifecycle。
+type PeerConnectionFactory func(pion.Configuration) (*pion.PeerConnection, error)
+
 // NewPeerConnection 按受信 ICE 配置创建公开 WebRTC primitive。
 // 只有显式 loopback TURN URL 会启用 loopback candidate，用于本地开发云或自托管 harness；普通公网配置保持 Pion 默认网络边界。
 func NewPeerConnection(configuration pion.Configuration) (*pion.PeerConnection, error) {

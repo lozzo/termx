@@ -26,6 +26,8 @@ type DataChannelSessionHandler interface {
 // PeerConnection 只负责 ICE/DTLS/SCTP；它不接收 grant、terminal payload 或 Hub 私有 runtime 类型。
 type Answerer struct {
 	Handler DataChannelSessionHandler
+	// PeerConnections 只允许注入 Pion primitive 创建策略；nil 保持当前生产默认配置。
+	PeerConnections PeerConnectionFactory
 }
 
 // Answer 创建 WebRTC answer，并把唯一可靠有序的 termx DataChannel 交给端到端授权 handler。
@@ -56,7 +58,11 @@ func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOff
 			URLs: append([]string(nil), server.GetUrls()...), Username: server.GetUsername(), Credential: server.GetCredential(),
 		})
 	}
-	peer, err := NewPeerConnection(configuration)
+	peerFactory := answerer.PeerConnections
+	if peerFactory == nil {
+		peerFactory = NewPeerConnection
+	}
+	peer, err := peerFactory(configuration)
 	if err != nil {
 		return nil, fmt.Errorf("create remote daemon peer connection: %w", err)
 	}

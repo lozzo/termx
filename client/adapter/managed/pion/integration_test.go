@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
+	"net"
 	"testing"
 	"time"
 
@@ -19,7 +21,139 @@ import (
 	remotev2webrtc "github.com/lozzow/termx/remote/webrtc"
 	"github.com/lozzow/termx/shared/cloudcompanion"
 	"github.com/lozzow/termx/shared/remoteauth"
+	pionwebrtc "github.com/pion/webrtc/v4"
 )
+
+func TestPionICETCPCompletesAuthHelloAndProtoAPI(t *testing.T) {
+	listener, err := net.ListenTCP("tcp4", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	tcpMux := pionwebrtc.NewICETCPMux(nil, listener, 8)
+	t.Cleanup(func() { _ = tcpMux.Close() })
+
+	serverSettings := pionwebrtc.SettingEngine{}
+	serverSettings.SetNetworkTypes([]pionwebrtc.NetworkType{pionwebrtc.NetworkTypeTCP4})
+	serverSettings.SetIncludeLoopbackCandidate(true)
+	serverSettings.SetICETCPMux(tcpMux)
+	serverAPI := pionwebrtc.NewAPI(pionwebrtc.WithSettingEngine(serverSettings))
+
+	clientSettings := pionwebrtc.SettingEngine{}
+	clientSettings.SetNetworkTypes([]pionwebrtc.NetworkType{pionwebrtc.NetworkTypeTCP4})
+	clientSettings.SetIncludeLoopbackCandidate(true)
+	clientAPI := pionwebrtc.NewAPI(pionwebrtc.WithSettingEngine(clientSettings))
+	var clientPeer *pionwebrtc.PeerConnection
+	clientFactory := pionadapter.Factory{PeerConnections: func(configuration pionwebrtc.Configuration) (*pionwebrtc.PeerConnection, error) {
+		peer, createErr := clientAPI.NewPeerConnection(configuration)
+		if createErr == nil {
+			clientPeer = peer
+		}
+		return peer, createErr
+	}}
+
+	identity, credential, store, now := identityFixture(t)
+	server := core.NewServer(core.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory))
+	answerer := remotev2webrtc.Answerer{
+		Handler: remotev2daemon.SessionAcceptor{
+			Core: server, Identity: identity, AccessStore: store, Now: func() time.Time { return now },
+		},
+		PeerConnections: serverAPI.NewPeerConnection,
+	}
+	dialer := &managed.Dialer{
+		Cloud: signalingCompanion(answerer), Peers: clientFactory, ClientName: "pion-ice-tcp-e2e",
+		Authorization: managed.CapabilityAuthorizer{
+			Credentials: staticCredentialSource{credential: credential}, Now: func() time.Time { return now },
+		},
+		Now: func() time.Time { return now },
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ready, err := dialer.Dial(ctx, attemptFixture(t, identity))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ready.Close()
+	result, err := ready.(clientruntime.ApplicationReadySession).ExecuteApplication(ctx, &apipb.CommandEnvelope{
+		Command: &apipb.CommandEnvelope_TerminalList{TerminalList: &apipb.TerminalListCommand{}},
+	})
+	if err != nil || result.GetTerminalList() == nil {
+		t.Fatalf("ICE-TCP api result=%#v err=%v", result, err)
+	}
+	if clientPeer == nil || clientPeer.SCTP() == nil || clientPeer.SCTP().Transport() == nil || clientPeer.SCTP().Transport().ICETransport() == nil {
+		t.Fatal("ICE-TCP client peer transport is unavailable")
+	}
+	pair, err := clientPeer.SCTP().Transport().ICETransport().GetSelectedCandidatePair()
+	if err != nil || pair == nil || pair.Local == nil || pair.Remote == nil {
+		t.Fatalf("ICE-TCP selected pair=%v err=%v", pair, err)
+	}
+	if pair.Local.Protocol != pionwebrtc.ICEProtocolTCP || pair.Remote.Protocol != pionwebrtc.ICEProtocolTCP {
+		t.Fatalf("selected candidate pair is not TCP: %s", pair)
+	}
+}
+
+func TestPionICETCPCancelClosesPeer(t *testing.T) {
+	clientSettings := pionwebrtc.SettingEngine{}
+	clientSettings.SetNetworkTypes([]pionwebrtc.NetworkType{pionwebrtc.NetworkTypeTCP4})
+	clientSettings.SetIncludeLoopbackCandidate(true)
+	clientAPI := pionwebrtc.NewAPI(pionwebrtc.WithSettingEngine(clientSettings))
+	var clientPeer *pionwebrtc.PeerConnection
+	clientFactory := pionadapter.Factory{PeerConnections: func(configuration pionwebrtc.Configuration) (*pionwebrtc.PeerConnection, error) {
+		peer, createErr := clientAPI.NewPeerConnection(configuration)
+		if createErr == nil {
+			clientPeer = peer
+		}
+		return peer, createErr
+	}}
+	identity, credential, _, now := identityFixture(t)
+	signalingStarted := make(chan struct{})
+	companion := &cloudcompanion.FakeClient{
+		ResolveEndpointFunc: func(_ context.Context, request *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
+			return &cloudpb.ResolvedEndpoint{
+				EndpointId: request.GetEndpointId(), TargetDeviceId: request.GetTargetDeviceId(), ManagedSessionId: "managed-cancel",
+			}, nil
+		},
+		CreateSignalingSessionFunc: func(ctx context.Context, _ *cloudpb.CreateSignalingSessionRequest) (cloudcompanion.SignalingStream, error) {
+			close(signalingStarted)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	dialer := &managed.Dialer{
+		Cloud: companion, Peers: clientFactory, ClientName: "pion-ice-tcp-cancel",
+		Authorization: managed.CapabilityAuthorizer{
+			Credentials: staticCredentialSource{credential: credential}, Now: func() time.Time { return now },
+		},
+		Now: func() time.Time { return now },
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	attempt := attemptFixture(t, identity)
+	done := make(chan error, 1)
+	go func() {
+		_, dialErr := dialer.Dial(ctx, attempt)
+		done <- dialErr
+	}()
+	select {
+	case <-signalingStarted:
+		cancel()
+	case <-ctx.Done():
+		t.Fatal("ICE-TCP signaling did not start")
+	}
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("ICE-TCP cancelled dial error=%v", err)
+	}
+	if clientPeer == nil {
+		t.Fatal("ICE-TCP client peer was not created")
+	}
+	deadline := time.Now().Add(time.Second)
+	for clientPeer.ConnectionState() != pionwebrtc.PeerConnectionStateClosed && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if state := clientPeer.ConnectionState(); state != pionwebrtc.PeerConnectionStateClosed {
+		t.Fatalf("ICE-TCP cancelled peer state=%s", state)
+	}
+}
 
 func TestPionAdapterCompletesAuthHelloAndProtoAPI(t *testing.T) {
 	identity, credential, store, now := identityFixture(t)
