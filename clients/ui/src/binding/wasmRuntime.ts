@@ -22,8 +22,7 @@ interface TermxWasmExports {
   termxEngineOpenResourceStream(engine: number, session: number, payload: Uint8Array): TermxWasmResult
   termxEngineSendResourceStreamFrame(engine: number, stream: number, payload: Uint8Array): Promise<TermxWasmResult>
   termxEngineCloseResourceStream(engine: number, stream: number): Promise<TermxWasmResult>
-  termxEngineImportPairing(engine: number, payload: Uint8Array): TermxWasmResult
-  termxEngineDeleteCredential(engine: number, payload: Uint8Array): TermxWasmResult
+  termxEngineCommand(engine: number, payload: Uint8Array): TermxWasmResult
   termxEngineNextEvent(engine: number): Promise<TermxWasmResult>
   termxPlatformNextRequest(engine: number): Promise<TermxWasmResult>
   termxPlatformComplete(engine: number, payload: Uint8Array): TermxWasmResult
@@ -56,7 +55,7 @@ export class TermxWasmRuntime {
   ) {}
 
   static async create(exports: TermxWasmExports, platform: WasmPlatformDispatcher): Promise<TermxWasmRuntime> {
-    if (exports.termxClientAbiVersion() !== 2) throw new Error('unsupported TermX WASM binding ABI')
+    if (exports.termxClientAbiVersion() !== 3) throw new Error('unsupported TermX WASM binding ABI')
     const created = requireWasmResult(exports.termxEngineCreate())
     const engine = requireHandle(created)
     const runtime = new TermxWasmRuntime(exports, engine, platform)
@@ -84,12 +83,8 @@ export class TermxWasmRuntime {
     requireWasmResult(await this.exports.termxEngineCloseResourceStream(this.engineHandle, stream))
   }
 
-  importPairing(payload: Uint8Array): number {
-    return requireHandle(requireWasmResult(this.exports.termxEngineImportPairing(this.engineHandle, payload)))
-  }
-
-  deleteCredential(payload: Uint8Array): number {
-    return requireHandle(requireWasmResult(this.exports.termxEngineDeleteCredential(this.engineHandle, payload)))
+  engineCommand(payload: Uint8Array): number {
+    return requireHandle(requireWasmResult(this.exports.termxEngineCommand(this.engineHandle, payload)))
   }
 
   async nextEvent(): Promise<Uint8Array> {

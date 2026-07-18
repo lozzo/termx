@@ -2,6 +2,7 @@ package datachannel
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"sync"
@@ -122,6 +123,49 @@ func TestTransportCloseUnblocksInFlightChannelSend(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("transport Close remained blocked on sendMu")
+	}
+}
+
+func TestTransportDrainWaitsForQueuedOutboundMessages(t *testing.T) {
+	clientChannel, serverChannel := newFakeChannelPair()
+	clientChannel.setBufferedAmount(1)
+	client := New(clientChannel)
+	server := New(serverChannel)
+	defer client.Close()
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	drained := make(chan error, 1)
+	go func() { drained <- client.Drain(ctx) }()
+	select {
+	case err := <-drained:
+		t.Fatalf("drain returned before outbound buffer emptied: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	clientChannel.setBufferedAmount(0)
+	select {
+	case err := <-drained:
+		if err != nil {
+			t.Fatalf("drain queued outbound messages: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("drain did not observe empty outbound buffer")
+	}
+}
+
+func TestTransportDrainHasInternalDeadlineWithoutCallerDeadline(t *testing.T) {
+	channel, _ := newFakeChannelPair()
+	channel.setBufferedAmount(1)
+	transport := New(channel)
+	defer transport.Close()
+	transport.drainTimeout = 20 * time.Millisecond
+	started := time.Now()
+	if err := transport.Drain(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("drain deadline error = %v", err)
+	}
+	if time.Since(started) > time.Second {
+		t.Fatal("drain ignored its internal deadline")
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	apilayer "github.com/lozzow/termx/api_layer"
+	localadapter "github.com/lozzow/termx/client/adapter/local"
+	clientprotocol "github.com/lozzow/termx/client/adapter/protocol"
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	clientruntime "github.com/lozzow/termx/client/runtime"
 	corev2 "github.com/lozzow/termx/core"
@@ -200,7 +203,7 @@ func TestV3InteractiveRuntimeInitializesEndpointStoreFromRegistry(t *testing.T) 
 			endpointdomain.DefaultEndpointID: testLocalEndpoint(endpointdomain.DefaultEndpointID, "Runtime Local", "auto", endpointdomain.ConnectAuto, true),
 		},
 	}
-	runtime := newV3InteractiveRuntimeWithOptions("", 80, 24, nil, nil, nil, app.NewFakeTerminalHost(8), nil, v3InteractiveRuntimeOptions{
+	runtime := newV3InteractiveRuntimeWithOptions("", 80, 24, nil, app.NewFakeTerminalHost(8), nil, v3InteractiveRuntimeOptions{
 		SkipWorkbenchInitialLoad: true,
 		ConnectionRegistry:       registry,
 	})
@@ -221,7 +224,7 @@ func TestV3InteractiveRuntimePreservesInitialRemoteTerminalRef(t *testing.T) {
 			"west": testSSHEndpoint("west", "West", "west.example", "", "auto", endpointdomain.ConnectOnDemand, true),
 		},
 	}
-	runtime := newV3InteractiveRuntimeWithOptions("term-1", 80, 24, nil, nil, nil, app.NewFakeTerminalHost(8), nil, v3InteractiveRuntimeOptions{
+	runtime := newV3InteractiveRuntimeWithOptions("term-1", 80, 24, nil, app.NewFakeTerminalHost(8), nil, v3InteractiveRuntimeOptions{
 		SkipWorkbenchInitialLoad: true,
 		InitialEndpointID:        "west",
 		ConnectionRegistry:       registry,
@@ -587,21 +590,21 @@ func TestR446DaemonConfiguresHistoryBackpressureFromEnv(t *testing.T) {
 }
 
 func TestV3PingConnectsExistingCoreV2Daemon(t *testing.T) {
-	oldDial := v3DialClient
+	oldConnect := connectV3LocalApplication
 	oldStart := startV3Daemon
 	t.Cleanup(func() {
-		v3DialClient = oldDial
+		connectV3LocalApplication = oldConnect
 		startV3Daemon = oldStart
 	})
 
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
 	dialed := false
-	v3DialClient = func(path string) (*protocol.Client, error) {
-		if path != socketPath {
-			t.Fatalf("expected v3 ping to dial socket %q, got %q", socketPath, path)
+	connectV3LocalApplication = func(_ context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
+		if options.SocketOverride != socketPath {
+			t.Fatalf("expected v3 ping to dial socket %q, got %q", socketPath, options.SocketOverride)
 		}
 		dialed = true
-		return nil, nil
+		return nil, endpointdomain.AccessRoute{}, nil
 	}
 	startV3Daemon = func(path string, logFile string) error {
 		t.Fatal("v3 ping must not auto-start when existing daemon is reachable")
@@ -626,28 +629,28 @@ func TestV3PingConnectsExistingCoreV2Daemon(t *testing.T) {
 }
 
 func TestV3PingAutoStartsCoreV2Daemon(t *testing.T) {
-	oldDial := v3DialClient
+	oldConnect := connectV3LocalApplication
 	oldStart := startV3Daemon
 	t.Cleanup(func() {
-		v3DialClient = oldDial
+		connectV3LocalApplication = oldConnect
 		startV3Daemon = oldStart
 	})
 
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
 	logPath := filepath.Join(t.TempDir(), "termx.log")
-	dialCalls := 0
+	connectCalls := 0
 	startCalls := 0
 	var startedSocket string
 	var startedLog string
-	v3DialClient = func(path string) (*protocol.Client, error) {
-		dialCalls++
-		if path != socketPath {
-			t.Fatalf("expected dial socket %q, got %q", socketPath, path)
+	connectV3LocalApplication = func(ctx context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
+		connectCalls++
+		if options.SocketOverride != socketPath {
+			t.Fatalf("expected dial socket %q, got %q", socketPath, options.SocketOverride)
 		}
-		if dialCalls == 1 {
-			return nil, os.ErrNotExist
+		if err := options.Start(ctx, socketPath); err != nil {
+			return nil, endpointdomain.AccessRoute{}, err
 		}
-		return nil, nil
+		return nil, endpointdomain.AccessRoute{}, nil
 	}
 	startV3Daemon = func(path string, logFile string) error {
 		startCalls++
@@ -665,8 +668,8 @@ func TestV3PingAutoStartsCoreV2Daemon(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
-	if dialCalls < 2 {
-		t.Fatalf("expected initial dial and post-start dial, got %d", dialCalls)
+	if connectCalls != 1 {
+		t.Fatalf("expected one owner-managed connect attempt, got %d", connectCalls)
 	}
 	if startCalls != 1 || startedSocket != socketPath || startedLog != logPath {
 		t.Fatalf("unexpected v3 daemon auto-start: calls=%d socket=%q log=%q", startCalls, startedSocket, startedLog)
@@ -677,15 +680,15 @@ func TestV3PingAutoStartsCoreV2Daemon(t *testing.T) {
 }
 
 func TestV3PingReturnsAutoStartError(t *testing.T) {
-	oldDial := v3DialClient
+	oldConnect := connectV3LocalApplication
 	oldStart := startV3Daemon
 	t.Cleanup(func() {
-		v3DialClient = oldDial
+		connectV3LocalApplication = oldConnect
 		startV3Daemon = oldStart
 	})
 
-	v3DialClient = func(path string) (*protocol.Client, error) {
-		return nil, os.ErrNotExist
+	connectV3LocalApplication = func(ctx context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
+		return nil, endpointdomain.AccessRoute{}, options.Start(ctx, options.SocketOverride)
 	}
 	startV3Daemon = func(path string, logFile string) error {
 		return os.ErrPermission
@@ -824,22 +827,16 @@ func TestDialOrStartV3ClientUsesConfigStarterWhenConfigPathIsExplicit(t *testing
 	oldDial := v3DialClient
 	oldStart := startV3Daemon
 	oldStartWithConfig := startV3DaemonWithConfig
+	oldConnect := connectV3LocalApplication
 	t.Cleanup(func() {
 		v3DialClient = oldDial
 		startV3Daemon = oldStart
 		startV3DaemonWithConfig = oldStartWithConfig
+		connectV3LocalApplication = oldConnect
 	})
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
 	socketPath := filepath.Join(t.TempDir(), "termx.sock")
 	logPath := filepath.Join(t.TempDir(), "termx.log")
-	dialCalls := 0
-	v3DialClient = func(path string) (*protocol.Client, error) {
-		dialCalls++
-		if dialCalls == 1 {
-			return nil, errors.New("not running")
-		}
-		return nil, nil
-	}
 	startV3Daemon = func(path string, logFile string) error {
 		t.Fatal("plain daemon starter must not be used when explicit config path is present")
 		return nil
@@ -848,6 +845,12 @@ func TestDialOrStartV3ClientUsesConfigStarterWhenConfigPathIsExplicit(t *testing
 	startV3DaemonWithConfig = func(path string, logFile string, cfg string) error {
 		gotSocket, gotLog, gotConfig = path, logFile, cfg
 		return nil
+	}
+	connectV3LocalApplication = func(ctx context.Context, _ *clientruntime.SessionOwner, _ endpointdomain.Endpoint, _ endpointdomain.RouteID, _ clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
+		if err := options.Start(ctx, socketPath); err != nil {
+			return nil, endpointdomain.AccessRoute{}, err
+		}
+		return nil, endpointdomain.AccessRoute{}, nil
 	}
 
 	client, err := dialOrStartV3ClientWithConfig(socketPath, logPath, configPath, nil)
@@ -1196,12 +1199,12 @@ func TestV3AttachRoutesToTUIv3Runtime(t *testing.T) {
 func TestV3RootRuntimeWithoutTerminalOpensPickerWithoutCreatingTerminal(t *testing.T) {
 	server, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
 	defer closeClient()
-	oldDial := v3DialClient
+	oldConnect := connectV3LocalApplication
 	oldStart := startV3Daemon
 	oldRunAttach := runV3Attach
 	oldRunEmpty := runV3RootEmpty
 	t.Cleanup(func() {
-		v3DialClient = oldDial
+		connectV3LocalApplication = oldConnect
 		startV3Daemon = oldStart
 		runV3Attach = oldRunAttach
 		runV3RootEmpty = oldRunEmpty
@@ -1209,12 +1212,7 @@ func TestV3RootRuntimeWithoutTerminalOpensPickerWithoutCreatingTerminal(t *testi
 
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
 	logPath := filepath.Join(t.TempDir(), "termx.log")
-	v3DialClient = func(path string) (*protocol.Client, error) {
-		if path != socketPath {
-			t.Fatalf("expected v3 root to dial socket %q, got %q", socketPath, path)
-		}
-		return client, nil
-	}
+	installV3LocalApplicationTestClient(t, socketPath, client)
 	startV3Daemon = func(path string, logFile string) error {
 		t.Fatal("v3 root must not auto-start when injected client is available")
 		return nil
@@ -1289,18 +1287,16 @@ func TestV3RootRuntimeReusesRunningTerminal(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create existing terminal: %v", err)
 	}
-	oldDial := v3DialClient
+	oldConnect := connectV3LocalApplication
 	oldRunAttach := runV3Attach
 	t.Cleanup(func() {
-		v3DialClient = oldDial
+		connectV3LocalApplication = oldConnect
 		runV3Attach = oldRunAttach
 	})
 
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
 	logPath := filepath.Join(t.TempDir(), "termx.log")
-	v3DialClient = func(path string) (*protocol.Client, error) {
-		return client, nil
-	}
+	installV3LocalApplicationTestClient(t, socketPath, client)
 	var gotAttach v3AttachConfig
 	runV3Attach = func(ctx context.Context, cfg v3AttachConfig) error {
 		gotAttach = cfg
@@ -1334,17 +1330,15 @@ func TestV3RootRuntimeAttachesExitedRootWithoutAutoRestart(t *testing.T) {
 	process.exit(23)
 	waitForCLITerminalState(t, server, v3RootTerminalID, corev2.TerminalStateExited)
 
-	oldDial := v3DialClient
+	oldConnect := connectV3LocalApplication
 	oldRunAttach := runV3Attach
 	t.Cleanup(func() {
-		v3DialClient = oldDial
+		connectV3LocalApplication = oldConnect
 		runV3Attach = oldRunAttach
 	})
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
 	logPath := filepath.Join(t.TempDir(), "termx.log")
-	v3DialClient = func(path string) (*protocol.Client, error) {
-		return client, nil
-	}
+	installV3LocalApplicationTestClient(t, socketPath, client)
 	var gotAttach v3AttachConfig
 	runV3Attach = func(ctx context.Context, cfg v3AttachConfig) error {
 		gotAttach = cfg
@@ -1371,7 +1365,7 @@ func TestV3RootEmptyInteractiveRuntimeStartsPickerAndEscLeavesUnconnectedPane(t 
 	defer closeClient()
 	host := app.NewFakeTerminalHost(8)
 	host.SetSize(100, 30)
-	runtime := newV3InteractiveRuntime("", 100, 30, client, nil, nil, host, nil)
+	runtime := newV3InteractiveRuntime("", 100, 30, client, host, nil)
 
 	if err := runtime.Post(app.ShellOpenTerminalPickerMsg{}); err != nil {
 		t.Fatalf("post terminal picker: %v", err)
@@ -1429,7 +1423,7 @@ func TestV3InteractiveRuntimeAttachesThroughProtocolClient(t *testing.T) {
 	}
 	_ = server
 	host := app.NewFakeTerminalHost(8)
-	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, nil, nil, host, nil)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, host, nil)
 
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   "term-1",
@@ -1486,7 +1480,7 @@ func TestV3InteractiveRuntimeRestoresWorkbenchFromCoreV2Storage(t *testing.T) {
 		t.Fatalf("put workbench snapshot: %v", err)
 	}
 	host := app.NewFakeTerminalHost(8)
-	runtime := newV3InteractiveRuntime("term-restored", 100, 30, client, client, client, host, nil)
+	runtime := newV3InteractiveRuntime("term-restored", 100, 30, client, host, nil)
 
 	root := waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
 		if root.Shell.ActivePaneID != "pane-restored" || root.WorkbenchSync.SaveVersion() < 1 {
@@ -1518,7 +1512,7 @@ func TestV3InteractiveRuntimeCorrectsProtocolResizeToContentRect(t *testing.T) {
 	_ = server
 	host := app.NewFakeTerminalHost(8)
 	host.SetSize(100, 30)
-	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, nil, nil, host, nil)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, host, nil)
 
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   "term-1",
@@ -1556,7 +1550,7 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 	_ = server
 	host := app.NewFakeTerminalHost(32)
 	host.SetSize(100, 30)
-	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, nil, nil, host, nil)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, host, nil)
 
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   "term-1",
@@ -1664,7 +1658,7 @@ func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T
 	_ = server
 	host := app.NewFakeTerminalHost(32)
 	host.SetSize(100, 30)
-	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, nil, nil, host, nil)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, host, nil)
 
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   "term-1",
@@ -1732,7 +1726,7 @@ func TestV3InteractiveRuntimeCoreV2ResizeFailureSurfacesInSession(t *testing.T) 
 	_ = server
 	host := app.NewFakeTerminalHost(32)
 	host.SetSize(100, 30)
-	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, nil, nil, host, nil)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, host, nil)
 
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   "term-1",
@@ -2464,6 +2458,40 @@ func (s *fakeCoreV2Server) Shutdown(context.Context) error {
 
 func newCoreV2ProtocolClientForCLITest(t *testing.T) (*corev2.Server, *protocol.Client, func()) {
 	return newCoreV2ProtocolClientForCLITestWithOptions(t)
+}
+
+func installV3LocalApplicationTestClient(t *testing.T, socketPath string, client *protocol.Client) {
+	t.Helper()
+	connectV3LocalApplication = func(_ context.Context, owner *clientruntime.SessionOwner, target endpointdomain.Endpoint, requested endpointdomain.RouteID, intent clientruntime.ConnectIntent, options localadapter.Options) (*clientprotocol.ApplicationClient, endpointdomain.AccessRoute, error) {
+		if options.SocketOverride != socketPath {
+			return nil, endpointdomain.AccessRoute{}, fmt.Errorf("test local socket = %q, want %q", options.SocketOverride, socketPath)
+		}
+		route, err := clientruntime.SelectRoute(target, requested)
+		if err != nil {
+			return nil, endpointdomain.AccessRoute{}, err
+		}
+		attempt, err := owner.BeginRouteAttempt(target, route.ID, intent)
+		if err != nil {
+			return nil, endpointdomain.AccessRoute{}, err
+		}
+		ready, err := clientprotocol.NewApplicationClient(client, attempt.Stamp())
+		if err != nil {
+			return nil, endpointdomain.AccessRoute{}, err
+		}
+		lease, err := owner.AdoptReadySession(attempt, ready)
+		if err != nil {
+			return nil, endpointdomain.AccessRoute{}, err
+		}
+		owned, err := owner.ApplicationSession(lease)
+		if err != nil {
+			return nil, endpointdomain.AccessRoute{}, err
+		}
+		application, err := clientprotocol.NewOwnedApplicationClient(client, owned)
+		if err != nil {
+			return nil, endpointdomain.AccessRoute{}, err
+		}
+		return application, route, nil
+	}
 }
 
 func newCoreV2TestServer(opts ...corev2.ServerOption) *corev2.Server {

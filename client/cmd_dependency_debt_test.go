@@ -35,9 +35,14 @@ func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
 		"v3_managed_daemon.go|github.com/lozzow/termx/shared/transport":                           {},
 		"v3_pair_command.go|github.com/lozzow/termx/shared/remoteauth":                            {},
 		"v3_pair_command.go|github.com/lozzow/termx/shared/transport/unix":                        {},
-		"v3_root_command.go|github.com/lozzow/termx/internal/protocol":                            {},
 	}
 	expectedHelpers := map[string]struct{}{
+		"v3_attach_runtime.go|openEndpointProtocolClient":   {},
+		"v3_daemon_client.go|dialOrStartV3Client":           {},
+		"v3_daemon_client.go|dialOrStartV3ClientContext":    {},
+		"v3_daemon_client.go|v3DialClient":                  {},
+		"v3_endpoint_client.go|openEndpointProtocolClient":  {},
+		"v3_endpoint_client.go|probeEndpointProtocolClient": {},
 		"daemon_lifecycle.go|v3DialClient":                  {},
 		"endpoint_command.go|probeEndpointProtocolClient":   {},
 		"file_command.go|openEndpointProtocolClient":        {},
@@ -48,7 +53,6 @@ func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
 		"v3_history_backlog_command.go|dialOrStartV3Client": {},
 		"v3_pair_command.go|dialOrStartV3ClientContext":     {},
 		"v3_root_command.go|dialOrStartV3Client":            {},
-		"v3_root_command.go|v3DialClient":                   {},
 	}
 	seenImports := map[string]struct{}{}
 	seenHelpers := map[string]struct{}{}
@@ -64,12 +68,6 @@ func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
 		"v3DialClient": {}, "probeEndpointProtocolClient": {}, "openEndpointProtocolClient": {},
 		"dialOrStartV3Client": {}, "dialOrStartV3ClientContext": {},
 	}
-	compositionRoots := map[string]struct{}{
-		"v3_application_session.go": {},
-		"v3_attach_runtime.go":      {},
-		"v3_daemon_client.go":       {},
-		"v3_endpoint_client.go":     {},
-	}
 	err := filepath.WalkDir("../cmd/termx", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return err
@@ -79,9 +77,6 @@ func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
 			return err
 		}
 		file := filepath.Base(path)
-		if _, ok := compositionRoots[file]; ok {
-			return nil
-		}
 		for _, imported := range parsed.Imports {
 			importPath := strings.Trim(imported.Path.Value, `"`)
 			if hasImportPrefix(importPath, concretePrefixes) {

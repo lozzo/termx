@@ -8,7 +8,6 @@ import (
 	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/core/history"
 	"github.com/lozzow/termx/proto/apipb"
-	"github.com/lozzow/termx/proto/remoteauthpb"
 )
 
 // CoreApplicationExecutorFactory 为一条 ready protocol connection 装配 API Layer。
@@ -50,7 +49,7 @@ func (adapter *coreApplicationAdapter) TerminalDefaults(ctx context.Context, _ *
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}
-	return &apipb.TerminalDefaultsResult{Defaults: &apipb.TerminalDefaults{DefaultCommand: append([]string(nil), defaults.DefaultCommand...), DefaultCwd: defaults.DefaultCWD}}, nil
+	return apimapping.TerminalDefaultsToProto(defaults), nil
 }
 
 func (adapter *coreApplicationAdapter) TerminalCreate(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.TerminalCreateCommand) (*apipb.TerminalCreateResult, error) {
@@ -66,7 +65,7 @@ func (adapter *coreApplicationAdapter) TerminalCreate(ctx context.Context, origi
 	if err != nil {
 		return nil, err
 	}
-	return &apipb.TerminalCreateResult{Terminal: projection}, nil
+	return apimapping.TerminalCreateToProto(projection), nil
 }
 
 func (adapter *coreApplicationAdapter) TerminalList(ctx context.Context, origin *apipb.EndpointSessionStamp, _ *apipb.TerminalListCommand) (*apipb.TerminalListResult, error) {
@@ -74,15 +73,15 @@ func (adapter *coreApplicationAdapter) TerminalList(ctx context.Context, origin 
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}
-	result := &apipb.TerminalListResult{Terminals: make([]*apipb.TerminalInfo, 0, len(items))}
+	terminals := make([]*apipb.TerminalInfo, 0, len(items))
 	for _, item := range items {
 		projection, err := apimapping.TerminalInfoToProto(origin.GetEndpointId(), item, adapter.port.ApplicationTerminalAttachmentCount(item.ID))
 		if err != nil {
 			return nil, err
 		}
-		result.Terminals = append(result.Terminals, projection)
+		terminals = append(terminals, projection)
 	}
-	return result, nil
+	return apimapping.TerminalListToProto(terminals), nil
 }
 
 func (adapter *coreApplicationAdapter) TerminalGet(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.TerminalGetCommand) (*apipb.TerminalGetResult, error) {
@@ -94,7 +93,7 @@ func (adapter *coreApplicationAdapter) TerminalGet(ctx context.Context, origin *
 	if err != nil {
 		return nil, err
 	}
-	return &apipb.TerminalGetResult{Terminal: projection}, nil
+	return apimapping.TerminalGetToProto(projection), nil
 }
 
 func (adapter *coreApplicationAdapter) TerminalRestart(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.TerminalRestartCommand) error {
@@ -154,11 +153,7 @@ func (adapter *coreApplicationAdapter) PathListDirectories(ctx context.Context, 
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}
-	out := &apipb.PathListDirectoriesResult{BasePath: result.BasePath, Missing: result.Missing, Truncated: result.Truncated, Entries: make([]*apipb.PathDirectoryEntry, 0, len(result.Entries))}
-	for _, entry := range result.Entries {
-		out.Entries = append(out.Entries, &apipb.PathDirectoryEntry{Name: entry.Name, Path: entry.Path})
-	}
-	return out, nil
+	return apimapping.PathDirectoriesToProto(result), nil
 }
 
 func (adapter *coreApplicationAdapter) HistoryWindow(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.HistoryWindowCommand) (*apipb.HistoryWindowResult, error) {
@@ -174,14 +169,14 @@ func (adapter *coreApplicationAdapter) HistoryCopy(ctx context.Context, _ *apipb
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}
-	return &apipb.HistoryCopyResult{Text: text}, nil
+	return apimapping.HistoryCopyToProto(text), nil
 }
 
 func (adapter *coreApplicationAdapter) HistoryRelease(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.HistoryReleaseCommand) (*apipb.AcknowledgeResult, error) {
 	if err := adapter.port.ApplicationHistoryRelease(ctx, command.GetTerminal().GetTerminalId(), history.HistoryToken(command.GetToken())); err != nil {
 		return nil, apimapping.CoreError(err)
 	}
-	return &apipb.AcknowledgeResult{}, nil
+	return apimapping.AcknowledgeToProto(), nil
 }
 
 func (adapter *coreApplicationAdapter) HistoryBacklogStatus(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.HistoryBacklogStatusCommand) (*apipb.HistoryBacklogStatusResult, error) {
@@ -205,7 +200,7 @@ func (adapter *coreApplicationAdapter) LiveInvalidation(ctx context.Context, ori
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}
-	return &apipb.LiveInvalidationResult{Terminal: &apipb.TerminalRef{EndpointId: origin.GetEndpointId(), TerminalId: result.TerminalID}, LiveRevision: uint64(result.Revision)}, nil
+	return apimapping.LiveInvalidationToProto(origin.GetEndpointId(), result), nil
 }
 
 func (adapter *coreApplicationAdapter) EventSubscribe(ctx context.Context, origin *apipb.EndpointSessionStamp, command *apipb.EventSubscribeCommand) (*apipb.EventSubscriptionResult, error) {
@@ -215,7 +210,7 @@ func (adapter *coreApplicationAdapter) EventSubscribe(ctx context.Context, origi
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}
-	return &apipb.EventSubscriptionResult{Subscription: &apipb.ResourceHandle{OpaqueToken: token, Kind: apipb.ResourceKind_RESOURCE_KIND_SUBSCRIPTION, Session: cloneSession(origin), Generation: 1}}, nil
+	return apimapping.EventSubscriptionToProto(origin, token), nil
 }
 
 type coreAttachmentTransaction struct {
@@ -251,7 +246,7 @@ func (adapter *coreApplicationAdapter) FileStat(ctx context.Context, _ *apipb.En
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}
-	return &apipb.FileStatResult{Entry: apimapping.FileEntryToProto(result)}, nil
+	return apimapping.FileStatToProto(result), nil
 }
 func (adapter *coreApplicationAdapter) FilePreview(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.FilePreviewCommand) (*apipb.FilePreviewResult, error) {
 	result, err := adapter.port.ApplicationFilePreview(ctx, apimapping.FilePreviewRequestFromProto(command))
@@ -290,11 +285,11 @@ func (adapter *coreApplicationAdapter) FileUploadOpen(ctx context.Context, origi
 	return apimapping.FileTransferToProto(origin, command.GetOperation(), result), nil
 }
 func (adapter *coreApplicationAdapter) FileTransferCancel(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.FileTransferCancelCommand) (*apipb.FileTransferCancelResult, error) {
-	result, err := adapter.port.ApplicationFileTransferCancel(ctx, command.GetTransfer().GetOpaqueToken())
+	result, err := adapter.port.ApplicationFileTransferCancel(ctx, apimapping.FileTransferCancelRequestFromProto(command))
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}
-	return &apipb.FileTransferCancelResult{Cancelled: result.Cancelled}, nil
+	return apimapping.FileTransferCancelToProto(result), nil
 }
 func (adapter *coreApplicationAdapter) StorageGet(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.StorageGetCommand) (*apipb.StorageGetResult, error) {
 	appID, scope, ownerID, key := apimapping.StorageKeyFromProto(command.GetKey())
@@ -302,14 +297,14 @@ func (adapter *coreApplicationAdapter) StorageGet(ctx context.Context, _ *apipb.
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}
-	return &apipb.StorageGetResult{Entry: apimapping.StorageEntryToProto(result)}, nil
+	return apimapping.StorageGetToProto(result), nil
 }
 func (adapter *coreApplicationAdapter) StoragePut(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.StoragePutCommand) (*apipb.StoragePutResult, error) {
 	result, err := adapter.port.ApplicationStoragePut(ctx, apimapping.StoragePutFromProto(command))
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}
-	return &apipb.StoragePutResult{Entry: apimapping.StorageEntryToProto(result)}, nil
+	return apimapping.StoragePutToProto(result), nil
 }
 func (adapter *coreApplicationAdapter) StorageDelete(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.StorageDeleteCommand) (*apipb.StorageDeleteResult, error) {
 	result, err := adapter.port.ApplicationStorageDelete(ctx, apimapping.StorageDeleteFromProto(command))
@@ -319,11 +314,7 @@ func (adapter *coreApplicationAdapter) StorageDelete(ctx context.Context, _ *api
 	return apimapping.StorageDeleteToProto(result), nil
 }
 func (adapter *coreApplicationAdapter) StorageList(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.StorageListCommand) (*apipb.StorageListResult, error) {
-	result := &apipb.StorageListResult{}
-	for _, entry := range adapter.port.ApplicationStorageList(ctx, command.GetAppId(), apimapping.StorageScopeFromProto(command.GetScope()), command.GetOwnerId(), command.GetPrefix()) {
-		result.Entries = append(result.Entries, apimapping.StorageEntryToProto(entry))
-	}
-	return result, nil
+	return apimapping.StorageListToProto(adapter.port.ApplicationStorageList(ctx, command.GetAppId(), apimapping.StorageScopeFromProto(command.GetScope()), command.GetOwnerId(), command.GetPrefix())), nil
 }
 
 func (adapter *coreApplicationAdapter) ClientAccessIdentity(ctx context.Context, _ *apipb.EndpointSessionStamp, _ *apipb.ClientAccessIdentityCommand) (*apipb.ClientAccessIdentityResult, error) {
@@ -331,7 +322,7 @@ func (adapter *coreApplicationAdapter) ClientAccessIdentity(ctx context.Context,
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}
-	return &apipb.ClientAccessIdentityResult{Identity: apimapping.ClientAccessIdentityToProto(result)}, nil
+	return apimapping.ClientAccessIdentityResultToProto(result), nil
 }
 
 func (adapter *coreApplicationAdapter) ClientAccessList(ctx context.Context, _ *apipb.EndpointSessionStamp, _ *apipb.ClientAccessListCommand) (*apipb.ClientAccessListResult, error) {
@@ -339,11 +330,7 @@ func (adapter *coreApplicationAdapter) ClientAccessList(ctx context.Context, _ *
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}
-	result := &apipb.ClientAccessListResult{Access: &remoteauthpb.ClientAccessListResult{}}
-	for _, record := range records {
-		result.Access.Records = append(result.Access.Records, apimapping.ClientAccessRecordToProto(record))
-	}
-	return result, nil
+	return apimapping.ClientAccessListToProto(records), nil
 }
 
 func (adapter *coreApplicationAdapter) ClientAccessTicketCreate(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.ClientAccessTicketCreateCommand) (*apipb.ClientAccessTicketCreateResult, error) {
@@ -351,7 +338,7 @@ func (adapter *coreApplicationAdapter) ClientAccessTicketCreate(ctx context.Cont
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}
-	return &apipb.ClientAccessTicketCreateResult{Ticket: apimapping.ClientAccessTicketToProto(result)}, nil
+	return apimapping.ClientAccessTicketResultToProto(result), nil
 }
 
 func (adapter *coreApplicationAdapter) ClientAccessRevoke(ctx context.Context, _ *apipb.EndpointSessionStamp, command *apipb.ClientAccessRevokeCommand) (*apipb.ClientAccessRevokeResult, error) {
@@ -359,7 +346,7 @@ func (adapter *coreApplicationAdapter) ClientAccessRevoke(ctx context.Context, _
 	if err != nil {
 		return nil, apimapping.CoreError(err)
 	}
-	return &apipb.ClientAccessRevokeResult{Record: apimapping.ClientAccessRecordToProto(result)}, nil
+	return apimapping.ClientAccessRevokeToProto(result), nil
 }
 
 func (adapter *coreApplicationAdapter) RemoteStatus(ctx context.Context, _ *apipb.EndpointSessionStamp, _ *apipb.RemoteStatusCommand) (*apipb.RemoteStatusResult, error) {

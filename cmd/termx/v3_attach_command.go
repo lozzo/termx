@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/shared/perftrace"
@@ -74,7 +75,7 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 	if perfTraceEnabled {
 		logger.Info("tui-v3 perftrace enabled", "path", perfTracePath)
 	}
-	client, workbenchStorageClient, clipboardStorageClient, closeClients, err := openV3AttachProtocolClients(ctx, cfg, logPath, logger)
+	client, closeClients, err := openV3AttachProtocolClients(ctx, cfg, logPath, logger)
 	if err != nil {
 		return err
 	}
@@ -94,7 +95,7 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 		cols, rows = 80, 24
 	}
 	surfaceID := newV3RuntimeSurfaceID()
-	runtime := newV3InteractiveRuntimeWithOptions(cfg.TerminalID, cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger, v3InteractiveRuntimeOptions{
+	runtime := newV3InteractiveRuntimeFromClientRuntime(cfg.TerminalID, cols, rows, client, host, logger, v3InteractiveRuntimeOptions{
 		InitialEndpointID:  cfg.EndpointID,
 		RuntimeSurfaceID:   surfaceID,
 		TUIConfig:          cfg.TUIConfig,
@@ -121,8 +122,8 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 	}
 }
 
-func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *protocol.Client, workbenchStorageClient *protocol.Client, clipboardStorageClient *protocol.Client, host app.TerminalHost, logger *slog.Logger) *app.AppRuntime {
-	return newV3InteractiveRuntimeWithOptions(terminalID, cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger, v3InteractiveRuntimeOptions{
+func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *protocol.Client, host app.TerminalHost, logger *slog.Logger) *app.AppRuntime {
+	return newV3InteractiveRuntimeWithOptions(terminalID, cols, rows, client, host, logger, v3InteractiveRuntimeOptions{
 		InitialEndpointID:  state.DefaultEndpointID,
 		ConnectionRegistry: endpointdomain.DefaultRegistry(),
 	})
@@ -137,11 +138,27 @@ type v3InteractiveRuntimeOptions struct {
 	EndpointContext          context.Context
 }
 
-func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, client *protocol.Client, workbenchStorageClient *protocol.Client, clipboardStorageClient *protocol.Client, host app.TerminalHost, logger *slog.Logger, opts v3InteractiveRuntimeOptions) *app.AppRuntime {
-	return newV3InteractiveRuntimeFromClientRuntime(terminalID, cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger, opts)
+func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, client any, host app.TerminalHost, logger *slog.Logger, opts v3InteractiveRuntimeOptions) *app.AppRuntime {
+	if client == nil {
+		return newV3InteractiveRuntimeFromClientRuntime(terminalID, cols, rows, nil, host, logger, opts)
+	}
+	var application *protocoladapter.ApplicationClient
+	switch value := client.(type) {
+	case *protocoladapter.ApplicationClient:
+		application = value
+	case *protocol.Client:
+		var err error
+		application, err = adoptCLIProtocolClient(value, endpointIDFromState(opts.InitialEndpointID))
+		if err != nil {
+			panic(err)
+		}
+	default:
+		panic(fmt.Sprintf("unsupported interactive runtime client %T", client))
+	}
+	return newV3InteractiveRuntimeFromClientRuntime(terminalID, cols, rows, application, host, logger, opts)
 }
 
-func openV3AttachProtocolClients(ctx context.Context, cfg v3AttachConfig, logPath string, logger *slog.Logger) (*protocol.Client, *protocol.Client, *protocol.Client, func(), error) {
+func openV3AttachProtocolClients(ctx context.Context, cfg v3AttachConfig, logPath string, logger *slog.Logger) (*protocoladapter.ApplicationClient, func(), error) {
 	return openV3AttachProtocolClientsWithClientRuntime(ctx, cfg, logPath, logger)
 }
 

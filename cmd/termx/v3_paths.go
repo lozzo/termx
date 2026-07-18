@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
+	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/proto/wire"
 	tuiconfig "github.com/lozzow/termx/tui/config"
 )
@@ -44,7 +45,7 @@ func resolveV3SocketWithClientRuntime(path string, registry endpointdomain.Regis
 	if !ok || !endpoint.Enabled {
 		return "", fmt.Errorf("default endpoint %q is not available", registry.Default)
 	}
-	route, err := selectCLIEndpointRoute(endpoint, "")
+	route, err := clientruntime.SelectRoute(endpoint, "")
 	if err != nil {
 		return "", err
 	}

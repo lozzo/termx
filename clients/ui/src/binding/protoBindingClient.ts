@@ -1,5 +1,7 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf'
 import * as TermxApiApplication from '../generated/apipb/application_pb'
+import * as TermxApiCommon from '../generated/apipb/common_pb'
+import * as TermxApiFile from '../generated/apipb/file_pb'
 import * as TermxClientBinding from '../generated/bindingpb/client_binding_pb'
 import type { ProtoClientSession, ProtoClientSubscription, ProtoResourceStream } from '../core/protoClientSession'
 
@@ -30,6 +32,9 @@ type PendingOperation<T> = {
 }
 
 const MAX_EARLY_STREAM_EVENTS = 64
+const MAX_EARLY_OPERATION_EVENTS = 4096
+const MAX_ABANDONED_STREAM_HANDLES = 4096
+const CANCELLED_CLEANUP_TIMEOUT_MS = 5_000
 
 /** ProtoBindingClient is the shared Android-JNI and Web-WASM session/resource contract owner. */
 export class ProtoBindingClient {
@@ -40,7 +45,14 @@ export class ProtoBindingClient {
   private readonly sessions = new Map<bigint, ProtoBindingSession>()
   private readonly streams = new Map<bigint, ProtoBindingResourceStream>()
   private readonly earlyOperationEvents = new Map<bigint, TermxClientBinding.EventEnvelope>()
+  private readonly cancelledOperations = new Set<bigint>()
   private readonly earlyStreamEvents = new Map<bigint, TermxClientBinding.EventEnvelope[]>()
+  private readonly abandonedStreamHandles = new Set<bigint>()
+  private readonly retiredSessionHandles = new Set<bigint>()
+  private readonly releasedSessionHandles = new Set<bigint>()
+  private readonly releasedSessionOrder: bigint[] = []
+  private readonly releasedStreamHandles = new Set<bigint>()
+  private readonly releasedStreamOrder: bigint[] = []
   private closed = false
   private intentionalClose = false
 
@@ -81,9 +93,13 @@ export class ProtoBindingClient {
     return await this.waitOperation(this.executeOperations, operation, signal)
   }
 
-  async openResourceStream(session: bigint, resource: NonNullable<TermxClientBinding.OpenResourceStreamRequest['resource']>): Promise<ProtoBindingResourceStream> {
-    const request = create(TermxClientBinding.OpenResourceStreamRequestSchema, { resource })
-    const handle = await this.backend.request(BindingOperation.OPEN_RESOURCE_STREAM, toBinary(TermxClientBinding.OpenResourceStreamRequestSchema, request), session)
+  async openResourceStream(session: bigint, resource: NonNullable<TermxClientBinding.OpenResourceStreamRequest['resource']>, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoBindingResourceStream> {
+    const request = create(TermxClientBinding.OpenResourceStreamRequestSchema, { resource, initialUploadOffset: options?.initialUploadOffset ?? 0n })
+    const handle = await awaitAbortableHandle(
+      this.backend.request(BindingOperation.OPEN_RESOURCE_STREAM, toBinary(TermxClientBinding.OpenResourceStreamRequestSchema, request), session, options?.signal),
+      options?.signal,
+      (late) => this.abandonResourceStream(late),
+    )
     const stream = new ProtoBindingResourceStream(this, handle)
     this.streams.set(handle, stream)
     const early = this.earlyStreamEvents.get(handle)
@@ -113,14 +129,13 @@ export class ProtoBindingClient {
 
   private async waitOperation<T>(registry: Map<bigint, PendingOperation<T>>, operation: bigint, signal?: AbortSignal): Promise<T> {
     if (signal?.aborted) {
-      await this.cancel(operation)
+      this.abandonOperation(registry, operation)
       throw abortError(signal)
     }
     return await new Promise<T>((resolve, reject) => {
       registry.set(operation, { resolve, reject })
       const abort = () => {
-        registry.delete(operation)
-        void this.cancel(operation)
+        this.abandonOperation(registry, operation)
         reject(signal ? abortError(signal) : new DOMException('Aborted', 'AbortError'))
       }
       signal?.addEventListener('abort', abort, { once: true })
@@ -147,10 +162,30 @@ export class ProtoBindingClient {
     await this.backend.request(BindingOperation.CANCEL, new Uint8Array(), operation).catch(() => undefined)
   }
 
+  private abandonOperation<T>(registry: Map<bigint, PendingOperation<T>>, operation: bigint): void {
+    registry.delete(operation)
+    const completed = this.earlyOperationEvents.get(operation)
+    if (completed) {
+      this.earlyOperationEvents.delete(operation)
+      this.retireCancelledOperation(operation, completed)
+      return
+    }
+    this.cancelledOperations.add(operation)
+    void this.cancel(operation)
+  }
+
   private onEvent(envelope: TermxClientBinding.EventEnvelope): void {
     const event = envelope.event
     const operationHandle = bindingOperationHandle(envelope)
+    if (operationHandle !== undefined && this.cancelledOperations.delete(operationHandle)) {
+      this.retireCancelledOperation(operationHandle, envelope)
+      return
+    }
     if (operationHandle !== undefined && !this.hasPendingOperation(event.case, operationHandle)) {
+      if (!this.earlyOperationEvents.has(operationHandle) && this.earlyOperationEvents.size >= MAX_EARLY_OPERATION_EVENTS) {
+        this.onClosed(new Error('Proto binding early operation event queue overflow'))
+        return
+      }
       this.earlyOperationEvents.set(operationHandle, envelope)
       return
     }
@@ -161,6 +196,7 @@ export class ProtoBindingClient {
         this.openOperations.delete(event.value.operationHandle)
         if (event.value.error || !event.value.session || event.value.sessionHandle === 0n) {
           pending.reject(apiError(event.value.error, 'open session failed'))
+          void this.release(event.value.operationHandle)
           return
         }
         const session = new ProtoBindingSession(this, event.value.sessionHandle, event.value.session)
@@ -200,25 +236,38 @@ export class ProtoBindingClient {
         this.sessions.get(event.value.sessionHandle)?.publish(event.value.event)
         return
       case 'sessionClosed':
-        this.sessions.get(event.value.sessionHandle)?.markClosed(apiError(event.value.error, 'session closed'))
-        this.sessions.delete(event.value.sessionHandle)
-        void this.release(event.value.sessionHandle)
+		if (this.releasedSessionHandles.has(event.value.sessionHandle)) return
+		rememberHandle(this.releasedSessionHandles, this.releasedSessionOrder, event.value.sessionHandle)
+		if (!this.retiredSessionHandles.delete(event.value.sessionHandle)) {
+		  this.sessions.get(event.value.sessionHandle)?.markClosed(apiError(event.value.error, 'session closed'))
+		  this.sessions.delete(event.value.sessionHandle)
+		}
+		void this.release(event.value.sessionHandle).catch((error) => this.onClosed(new Error(`closed session release failed: ${errorMessage(error)}`)))
         return
       case 'resourceStreamFrame': {
+        if (this.abandonedStreamHandles.has(event.value.streamHandle)) return
         const stream = this.streams.get(event.value.streamHandle)
         if (stream) stream.publish(event.value.type, event.value.payload)
         else this.queueEarlyStreamEvent(event.value.streamHandle, envelope)
         return
       }
       case 'resourceStreamClosed': {
+        if (this.abandonedStreamHandles.delete(event.value.streamHandle)) {
+          this.earlyStreamEvents.delete(event.value.streamHandle)
+			if (this.releasedStreamHandles.has(event.value.streamHandle)) return
+			rememberHandle(this.releasedStreamHandles, this.releasedStreamOrder, event.value.streamHandle)
+          return
+        }
         const stream = this.streams.get(event.value.streamHandle)
         if (!stream) {
           this.queueEarlyStreamEvent(event.value.streamHandle, envelope)
           return
         }
+		if (this.releasedStreamHandles.has(event.value.streamHandle)) return
+		rememberHandle(this.releasedStreamHandles, this.releasedStreamOrder, event.value.streamHandle)
         stream.markClosed(apiError(event.value.error, 'resource stream closed'))
         this.streams.delete(event.value.streamHandle)
-        void this.release(event.value.streamHandle)
+        void this.release(event.value.streamHandle).catch((error) => this.onClosed(new Error(`closed resource stream release failed: ${errorMessage(error)}`)))
         return
       }
     }
@@ -237,6 +286,7 @@ export class ProtoBindingClient {
   private onClosed(error: Error): void {
     if (this.closed) return
     this.closed = true
+    void this.backend.close().catch(() => undefined)
     this.rejectAll(error)
     this.sessions.forEach((session) => session.markClosed(error))
     this.streams.forEach((stream) => stream.markClosed(error))
@@ -251,10 +301,18 @@ export class ProtoBindingClient {
       registry.clear()
     }
     this.earlyOperationEvents.clear()
+    this.cancelledOperations.clear()
     this.earlyStreamEvents.clear()
+    this.abandonedStreamHandles.clear()
+    this.retiredSessionHandles.clear()
+	this.releasedSessionHandles.clear()
+	this.releasedSessionOrder.length = 0
+	this.releasedStreamHandles.clear()
+	this.releasedStreamOrder.length = 0
   }
 
   private queueEarlyStreamEvent(handle: bigint, envelope: TermxClientBinding.EventEnvelope): void {
+    if (this.abandonedStreamHandles.has(handle)) return
     const pending = this.earlyStreamEvents.get(handle) ?? []
     if (pending.length >= MAX_EARLY_STREAM_EVENTS) {
       this.onClosed(new Error('Proto binding early stream event queue overflow'))
@@ -262,6 +320,61 @@ export class ProtoBindingClient {
     }
     pending.push(envelope)
     this.earlyStreamEvents.set(handle, pending)
+  }
+
+  private abandonResourceStream(handle: bigint): void {
+    const early = this.earlyStreamEvents.get(handle)
+    const terminalClosed = early?.some((event) => event.event.case === 'resourceStreamClosed') === true
+    this.earlyStreamEvents.delete(handle)
+	if (terminalClosed) rememberHandle(this.releasedStreamHandles, this.releasedStreamOrder, handle)
+    if (!terminalClosed) {
+      if (this.abandonedStreamHandles.size >= MAX_ABANDONED_STREAM_HANDLES) {
+        this.onClosed(new Error('Proto binding abandoned stream handle capacity is exhausted'))
+        return
+      }
+      this.abandonedStreamHandles.add(handle)
+    }
+    void this.closeResourceStream(handle)
+      .then(() => this.release(handle))
+      .catch((error) => this.onClosed(new Error(`abandoned resource stream cleanup failed: ${errorMessage(error)}`)))
+  }
+
+  private async cleanupCancelledExecute(result: TermxClientBinding.ExecuteResult): Promise<void> {
+    if (result.error && result.error.code !== TermxApiCommon.ApiErrorCode.CANCELLED) {
+      throw apiError(result.error, 'cancelled operation cleanup failed')
+    }
+    const session = this.sessions.get(result.sessionHandle)
+    const transfer = result.result?.result.case === 'fileTransferOpen' ? result.result.result.value.transfer : undefined
+    if (!session || !transfer?.resource) return
+    const cleanup = transfer.resume
+      ? create(TermxApiApplication.CommandEnvelopeSchema, { command: { case: 'fileTransferCancel', value: create(TermxApiFile.FileTransferCancelCommandSchema, { uploadResume: transfer.resume }) } })
+      : create(TermxApiApplication.CommandEnvelopeSchema, { command: { case: 'releaseResource', value: create(TermxApiApplication.ReleaseResourceCommandSchema, { resource: transfer.resource }) } })
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(new DOMException('cancelled operation cleanup timed out', 'TimeoutError')), CANCELLED_CLEANUP_TIMEOUT_MS)
+    try {
+      const cleanupResult = await session.execute(cleanup, { signal: controller.signal })
+      if (transfer.resume && (cleanupResult.result.case !== 'fileTransferCancel' || !cleanupResult.result.value.cancelled)) {
+        throw new Error('cancelled upload cleanup was not confirmed')
+      }
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
+  private retireCancelledOperation(operationHandle: bigint, envelope: TermxClientBinding.EventEnvelope): void {
+    const event = envelope.event
+    if (event.case === 'execute') {
+      void this.cleanupCancelledExecute(event.value).catch((error) => this.onClosed(new Error(`cancelled operation cleanup failed: ${errorMessage(error)}`)))
+    } else if (event.case === 'openSession' && event.value.sessionHandle !== 0n) {
+	  if (this.retiredSessionHandles.size >= MAX_ABANDONED_STREAM_HANDLES) {
+		this.onClosed(new Error('Proto binding retired session handle capacity is exhausted'))
+		return
+	  }
+	  this.retiredSessionHandles.add(event.value.sessionHandle)
+      void this.closeSession(event.value.sessionHandle)
+        .catch((error) => this.onClosed(new Error(`cancelled session cleanup failed: ${errorMessage(error)}`)))
+    }
+    void this.release(operationHandle).catch((error) => this.onClosed(new Error(`cancelled operation release failed: ${errorMessage(error)}`)))
   }
 }
 
@@ -318,9 +431,9 @@ class ProtoBindingSession implements ProtoClientSession {
     return { close: () => this.eventHandlers.delete(handler) }
   }
 
-  openResourceStream(resource: NonNullable<TermxClientBinding.OpenResourceStreamRequest['resource']>): Promise<ProtoResourceStream> {
+  openResourceStream(resource: NonNullable<TermxClientBinding.OpenResourceStreamRequest['resource']>, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoResourceStream> {
     if (!this.alive) return Promise.reject(new Error('Proto session is closed'))
-    return this.client.openResourceStream(this.handle, resource)
+    return this.client.openResourceStream(this.handle, resource, options)
   }
 
   isAlive(): boolean { return this.alive }
@@ -329,11 +442,7 @@ class ProtoBindingSession implements ProtoClientSession {
     if (!this.alive) return
     this.alive = false
     this.eventHandlers.clear()
-    try {
-      await this.client.closeSession(this.handle)
-    } finally {
-      await this.client.release(this.handle).catch(() => undefined)
-    }
+    await this.client.closeSession(this.handle)
   }
 
   publish(event: TermxApiApplication.EventEnvelope | undefined): void {
@@ -372,11 +481,7 @@ class ProtoBindingResourceStream implements ProtoResourceStream {
   async close(): Promise<void> {
     if (this.closed) return
     this.closed = true
-    try {
-      await this.client.closeResourceStream(this.handle)
-    } finally {
-      await this.client.release(this.handle).catch(() => undefined)
-    }
+    await this.client.closeResourceStream(this.handle)
   }
 
   publish(type: TermxClientBinding.ResourceStreamFrameType, payload: Uint8Array): void {
@@ -420,4 +525,53 @@ function managedRelayMode(value: ManagedEndpointInput['relayMode']): TermxClient
 
 function abortError(signal: AbortSignal): Error {
   return signal.reason instanceof Error ? signal.reason : new DOMException('Aborted', 'AbortError')
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function rememberHandle(handles: Set<bigint>, order: bigint[], handle: bigint): void {
+  if (handles.has(handle)) return
+  if (order.length >= MAX_ABANDONED_STREAM_HANDLES) {
+    const oldest = order.shift()
+    if (oldest !== undefined) handles.delete(oldest)
+  }
+  handles.add(handle)
+  order.push(handle)
+}
+
+async function awaitAbortableHandle(promise: Promise<bigint>, signal: AbortSignal | undefined, onLate: (handle: bigint) => void): Promise<bigint> {
+  if (!signal) return await promise
+  if (signal.aborted) {
+    void promise.then(onLate, () => undefined)
+    throw abortError(signal)
+  }
+  return await new Promise<bigint>((resolve, reject) => {
+    let settled = false
+    const abort = () => {
+      if (settled) return
+      settled = true
+      signal.removeEventListener('abort', abort)
+      reject(abortError(signal))
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    void promise.then(
+      (handle) => {
+        if (settled) {
+          onLate(handle)
+          return
+        }
+        settled = true
+        signal.removeEventListener('abort', abort)
+        resolve(handle)
+      },
+      (error) => {
+        if (settled) return
+        settled = true
+        signal.removeEventListener('abort', abort)
+        reject(error)
+      },
+    )
+  })
 }

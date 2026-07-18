@@ -309,23 +309,25 @@ func (session *protocolSession) handleFileTransferFrame(ctx context.Context, tra
 	}
 }
 
-func (session *protocolSession) cancelFileTransfer(transferID string) FileTransferCancelResult {
+func (session *protocolSession) cancelCurrentFileTransfer(transferID string) bool {
 	session.fileMu.Lock()
 	channel, ok := session.fileIDs[transferID]
 	transfer := session.fileChannels[channel]
 	session.fileMu.Unlock()
-	if ok {
+	if !ok || transfer == nil {
+		return false
+	}
+	if transfer.direction == fileTransferDownload {
 		session.releaseFileTransfer(transferID, true)
-		if transfer != nil && transfer.direction == fileTransferUpload {
-			session.removeUpload(transferID)
-		}
-		return FileTransferCancelResult{Cancelled: true}
+		return true
 	}
-	owned := session.uploadOwnedByPrincipal(transferID)
-	if owned {
-		session.removeUpload(transferID)
+	record, ok := session.takeCurrentUploadForCancel(transferID)
+	if !ok {
+		return false
 	}
-	return FileTransferCancelResult{Cancelled: owned}
+	session.releaseFileTransfer(transferID, true)
+	_ = os.Remove(record.TempPath)
+	return true
 }
 
 func fileTransferToken(channel uint16, transferID string) []byte {
@@ -361,11 +363,41 @@ func validFileTransferID(id string) (string, bool) {
 	return id, true
 }
 
-func (session *protocolSession) uploadOwnedByPrincipal(id string) bool {
+func (session *protocolSession) takeOwnedUploadForCancel(id string) (*uploadTransferRecord, bool) {
 	session.server.fileTransferMu.Lock()
 	defer session.server.fileTransferMu.Unlock()
 	record := session.server.fileUploads[id]
-	return record != nil && record.PrincipalID == session.scope.PrincipalID
+	if record == nil || record.PrincipalID != session.scope.PrincipalID {
+		return nil, false
+	}
+	delete(session.server.fileUploads, id)
+	return record, true
+}
+
+func (session *protocolSession) takeCurrentUploadForCancel(id string) (*uploadTransferRecord, bool) {
+	session.server.fileTransferMu.Lock()
+	defer session.server.fileTransferMu.Unlock()
+	record := session.server.fileUploads[id]
+	if record == nil || record.PrincipalID != session.scope.PrincipalID || record.AttachedSessionID != session.sessionID || record.attachedSession != session {
+		return nil, false
+	}
+	delete(session.server.fileUploads, id)
+	return record, true
+}
+
+// cancelOwnedUpload 先关闭当前 owning session 的 stream，再删除 principal-owned 临时上传。
+// resume credential 可以来自另一 session，因此不能只删除 server registry 而让旧 stream 继续写入已失去 owner 的文件。
+func (session *protocolSession) cancelOwnedUpload(id string) bool {
+	record, ok := session.takeOwnedUploadForCancel(id)
+	if !ok {
+		return false
+	}
+	attached := record.attachedSession
+	if attached != nil {
+		attached.releaseFileTransfer(id, true)
+	}
+	_ = os.Remove(record.TempPath)
+	return true
 }
 
 func (session *protocolSession) allocateFileChannel() uint16 {

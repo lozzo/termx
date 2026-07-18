@@ -100,6 +100,13 @@ type FileUploadOpenRequest struct {
 	ResumeTransferToken []byte
 }
 
+// FileTransferCancelRequest 携带二选一的 transfer 销毁凭据。
+// ResourceToken 只属于当前 protocol session；UploadResumeToken 由 principal 约束，可在新 session 中销毁未完成上传。
+type FileTransferCancelRequest struct {
+	ResourceToken     []byte
+	UploadResumeToken []byte
+}
+
 // FileTransfer 是 session-local stream binding 的 core-native 结果。
 // Channel、window 和 chunk 只供 protocol binding 使用，不进入公共 Proto API。
 type FileTransfer struct {

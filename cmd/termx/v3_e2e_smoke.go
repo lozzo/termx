@@ -74,16 +74,6 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 		return v3E2ESmokeResult{}, err
 	}
 	defer client.Close()
-	workbenchStorageClient, err := dialV3Client(socketPath)
-	if err != nil {
-		return v3E2ESmokeResult{}, err
-	}
-	defer workbenchStorageClient.Close()
-	clipboardStorageClient, err := dialV3Client(socketPath)
-	if err != nil {
-		return v3E2ESmokeResult{}, err
-	}
-	defer clipboardStorageClient.Close()
 
 	application, err := newLocalApplicationSession(client)
 	if err != nil {
@@ -101,7 +91,7 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	createdID := created.GetTerminal().GetRef().GetTerminalId()
 	host := app.NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
-	runtime := newV3InteractiveRuntimeWithOptions(createdID, 80, 24, client, workbenchStorageClient, clipboardStorageClient, host, nil, v3InteractiveRuntimeOptions{
+	runtime := newV3InteractiveRuntimeWithOptions(createdID, 80, 24, client, host, nil, v3InteractiveRuntimeOptions{
 		InitialEndpointID:  state.DefaultEndpointID,
 		RuntimeSurfaceID:   "v3-e2e-smoke",
 		ConnectionRegistry: endpointdomain.DefaultRegistry(),

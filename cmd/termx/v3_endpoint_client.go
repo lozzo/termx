@@ -3,80 +3,44 @@ package main
 import (
 	"context"
 	"fmt"
-	"strings"
-	"sync/atomic"
 
+	localadapter "github.com/lozzow/termx/client/adapter/local"
 	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	clientruntime "github.com/lozzow/termx/client/runtime"
 )
 
-var nextCLIEndpointGeneration atomic.Uint64
-
 func openEndpointProtocolClient(ctx context.Context, endpoint endpointdomain.Endpoint, socketOverride, logFile string) (*protocoladapter.ApplicationClient, func(), error) {
-	route, err := selectCLIEndpointRoute(endpoint, "")
+	client, _, err := connectCLIEndpoint(ctx, endpoint, "", socketOverride, logFile, clientruntime.ConnectIntentInteractive)
 	if err != nil {
 		return nil, func() {}, err
 	}
-	return openEndpointRouteProtocolClient(ctx, endpoint, route, socketOverride, logFile)
+	return client, func() { _ = client.Close() }, nil
 }
 
 func probeEndpointProtocolClient(ctx context.Context, endpoint endpointdomain.Endpoint, requestedRoute endpointdomain.RouteID, socketOverride, logFile string) (endpointdomain.RouteID, string, string, func(), error) {
-	route, err := selectCLIEndpointRoute(endpoint, requestedRoute)
+	client, route, err := connectCLIEndpoint(ctx, endpoint, requestedRoute, socketOverride, logFile, clientruntime.ConnectIntentProbe)
 	if err != nil {
 		return "", "", "", func() {}, err
 	}
-	_, closeClient, err := openEndpointRouteProtocolClient(ctx, endpoint, route, socketOverride, logFile)
-	if err != nil {
-		return "", "", "", func() {}, err
-	}
-	return route.ID, "", "only_viable", func() { closeClient() }, nil
+	return route.ID, client.ObservedPath(), "only_viable", func() { _ = client.Close() }, nil
 }
 
-func openEndpointRouteProtocolClient(ctx context.Context, endpoint endpointdomain.Endpoint, route endpointdomain.AccessRoute, socketOverride, logFile string) (*protocoladapter.ApplicationClient, func(), error) {
-	if route.Kind != endpointdomain.RouteLocalUnix {
-		return nil, func() {}, fmt.Errorf("endpoint %s route %s (%s) requires shared client runtime integration", endpoint.ID, route.ID, route.Kind)
-	}
-	socketPath := strings.TrimSpace(route.Socket)
-	if strings.TrimSpace(socketOverride) != "" {
-		socketPath = strings.TrimSpace(socketOverride)
-	}
-	if socketPath == "" || socketPath == "auto" {
-		socketPath = resolveV3Socket("")
-	}
-	client, err := dialOrStartV3ClientContext(ctx, socketPath, resolveV3LogFilePath(logFile), nil)
-	if err != nil {
-		return nil, func() {}, err
-	}
-	application, err := protocoladapter.NewApplicationClient(client, clientruntime.EndpointSessionStamp{
-		EndpointID: endpoint.ID, RouteID: route.ID, Generation: clientruntime.SessionGeneration(nextCLIEndpointGeneration.Add(1)),
+func connectCLIEndpoint(ctx context.Context, target endpointdomain.Endpoint, requested endpointdomain.RouteID, socketOverride, logFile string, intent clientruntime.ConnectIntent) (*protocoladapter.ApplicationClient, endpointdomain.AccessRoute, error) {
+	owner := clientruntime.NewSessionOwner()
+	client, route, err := localadapter.Connect(ctx, owner, target, requested, intent, localadapter.Options{
+		SocketOverride: socketOverride,
+		DefaultSocket:  resolveV3Socket(""),
+		ClientName:     "termx-cli",
+		Start: func(_ context.Context, path string) error {
+			if err := startCoreV2DaemonForConfig(path, resolveV3LogFilePath(logFile), ""); err != nil {
+				return fmt.Errorf("start core-v2 daemon: %w", err)
+			}
+			return nil
+		},
 	})
 	if err != nil {
-		_ = client.Close()
-		return nil, func() {}, err
+		_ = owner.Close()
 	}
-	return application, func() { _ = client.Close() }, nil
-}
-
-func selectCLIEndpointRoute(endpoint endpointdomain.Endpoint, requested endpointdomain.RouteID) (endpointdomain.AccessRoute, error) {
-	if requested != "" {
-		route, ok := endpoint.Route(requested)
-		if !ok || !route.Enabled {
-			return endpointdomain.AccessRoute{}, fmt.Errorf("endpoint %s route %s is unavailable", endpoint.ID, requested)
-		}
-		return route, nil
-	}
-	eligible := make([]endpointdomain.AccessRoute, 0, len(endpoint.Routes))
-	for _, route := range endpoint.RouteList() {
-		if route.Enabled && !route.ManualOnly {
-			eligible = append(eligible, route)
-		}
-	}
-	if len(eligible) == 0 {
-		return endpointdomain.AccessRoute{}, fmt.Errorf("endpoint %s has no eligible route", endpoint.ID)
-	}
-	if len(eligible) != 1 {
-		return endpointdomain.AccessRoute{}, fmt.Errorf("endpoint %s requires explicit route selection", endpoint.ID)
-	}
-	return eligible[0], nil
+	return client, route, err
 }

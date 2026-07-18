@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"sync"
-	"sync/atomic"
 	"syscall/js"
 
 	platformpeer "github.com/lozzow/termx/client/adapter/managed/platform"
@@ -32,7 +31,7 @@ var wasmLibrary = struct {
 	hosts    map[uint64]*wasmHost
 }{registry: binding.NewRegistry(), hosts: make(map[uint64]*wasmHost)}
 
-var wasmProcessGeneration atomic.Uint64
+var wasmSessionAuthority = clientruntime.NewSessionGenerationAuthority()
 
 type wasmHost struct {
 	*managedhost.Host
@@ -48,8 +47,7 @@ func main() {
 		"termxEngineOpenResourceStream":      syncExport(sessionPayloadOperation(wasmLibrary.registry.OpenResourceStream)),
 		"termxEngineSendResourceStreamFrame": asyncExport(sendResourceStreamFrame),
 		"termxEngineCloseResourceStream":     asyncExport(handleOperation(wasmLibrary.registry.CloseResourceStream)),
-		"termxEngineImportPairing":           syncExport(payloadOperation(wasmLibrary.registry.ImportPairing)),
-		"termxEngineDeleteCredential":        syncExport(payloadOperation(wasmLibrary.registry.DeleteCredential)),
+		"termxEngineCommand":                 syncExport(payloadOperation(wasmLibrary.registry.EngineCommand)),
 		"termxEngineNextEvent":               asyncExport(nextEvent),
 		"termxPlatformNextRequest":           asyncExport(nextPlatformRequest),
 		"termxPlatformComplete":              syncExport(completePlatformRequest),
@@ -74,9 +72,7 @@ func engineCreate(_ []js.Value) (js.Value, error) {
 	}
 	host, err := managedhost.New(managedhost.Options{
 		Broker: broker, Peers: peers, ClientName: "termx-web", CredentialPrefix: "web-access-",
-		NextGeneration: func() clientruntime.SessionGeneration {
-			return clientruntime.SessionGeneration(wasmProcessGeneration.Add(1))
-		},
+		SessionAuthority: wasmSessionAuthority,
 	})
 	if err != nil {
 		_ = peers.Close()

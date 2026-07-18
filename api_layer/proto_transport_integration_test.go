@@ -189,6 +189,80 @@ func TestGeneratedFileUploadResumesAcrossProtocolSessions(t *testing.T) {
 	}
 }
 
+func TestGeneratedFileUploadCancelUsesPrincipalBoundResumeAcrossSessions(t *testing.T) {
+	server := corev2.NewServer(corev2.WithApplicationExecutorFactory(CoreApplicationExecutorFactory))
+	defer func() { _ = server.Shutdown(context.Background()) }()
+	target := filepath.Join(t.TempDir(), "cancel-resume.bin")
+	firstApplication, _, closeFirst := newProtoTransportClient(t, server, nil, 1)
+	defer closeFirst()
+	opened, err := firstApplication.FileUploadOpen(context.Background(), &apipb.FileUploadOpenCommand{Path: target, Size: 8, Overwrite: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondApplication, _, closeSecond := newProtoTransportClient(t, server, nil, 2)
+	defer closeSecond()
+	forgedResource := &apipb.ResourceHandle{
+		OpaqueToken: append([]byte(nil), opened.GetTransfer().GetResource().GetOpaqueToken()...),
+		Kind:        apipb.ResourceKind_RESOURCE_KIND_FILE_TRANSFER,
+		Session:     &apipb.EndpointSessionStamp{EndpointId: "local", RouteId: "memory", Generation: 2},
+		Generation:  opened.GetTransfer().GetResource().GetGeneration(),
+	}
+	forged, err := secondApplication.Execute(context.Background(), &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileTransferCancel{FileTransferCancel: &apipb.FileTransferCancelCommand{Transfer: forgedResource}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forged.GetFileTransferCancel().GetCancelled() {
+		t.Fatal("stale resource token was accepted after its session stamp was forged")
+	}
+	cancelled, err := secondApplication.Execute(context.Background(), &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileTransferCancel{FileTransferCancel: &apipb.FileTransferCancelCommand{UploadResume: opened.GetTransfer().GetResume()}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cancelled.GetFileTransferCancel().GetCancelled() {
+		t.Fatalf("resume cancellation was not confirmed: %#v", cancelled)
+	}
+	if _, err := secondApplication.FileUploadOpen(context.Background(), &apipb.FileUploadOpenCommand{Path: target, Size: 8, Overwrite: true, Resume: opened.GetTransfer().GetResume()}); err == nil {
+		t.Fatal("cancelled upload resume credential remained usable")
+	}
+}
+
+func TestGeneratedFileUploadResumesAfterResourceReleaseOnSharedSession(t *testing.T) {
+	server := corev2.NewServer(corev2.WithApplicationExecutorFactory(CoreApplicationExecutorFactory))
+	defer func() { _ = server.Shutdown(context.Background()) }()
+	target := filepath.Join(t.TempDir(), "shared-session-resume.bin")
+	content := bytes.Repeat([]byte("shared-session-resume-"), 128)
+	application, client, closeClient := newProtoTransportClient(t, server, nil, 1)
+	defer closeClient()
+	opened, err := application.FileUploadOpen(context.Background(), &apipb.FileUploadOpenCommand{Path: target, Size: int64(len(content)), Overwrite: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := opened.GetTransfer()
+	channel, ok := client.ApplicationResourceChannel(first.GetResource())
+	if !ok {
+		t.Fatal("first upload resource has no stream channel")
+	}
+	stream, stop := client.Stream(channel)
+	chunkSize := min(int(first.GetChunkBytes()), len(content))
+	sendProtoUploadData(t, client, channel, 0, content[:chunkSize])
+	if ack := waitProtoUploadAck(t, stream); ack.Offset != int64(chunkSize) {
+		t.Fatalf("first upload ack offset=%d want=%d", ack.Offset, chunkSize)
+	}
+	stop()
+	if _, err := application.Execute(context.Background(), &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_ReleaseResource{ReleaseResource: &apipb.ReleaseResourceCommand{Resource: first.GetResource()}}}); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := application.FileUploadOpen(context.Background(), &apipb.FileUploadOpenCommand{
+		Path: target, Size: int64(len(content)), Overwrite: true, Resume: first.GetResume(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.GetTransfer().GetOffset() != int64(chunkSize) || resumed.GetTransfer().GetResource().GetSession().GetGeneration() != 1 {
+		t.Fatalf("shared-session resume = %#v", resumed.GetTransfer())
+	}
+}
+
 func newProtoTransportClient(t *testing.T, server *corev2.Server, scope *corev2.TransportScope, generation uint64) (*clientruntime.ApplicationSession, *protocol.Client, func()) {
 	t.Helper()
 	clientTransport, serverTransport := memory.NewPair()

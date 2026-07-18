@@ -1,5 +1,6 @@
 package com.termx.app.goclient
 
+import termx.client.binding.v1.ClientBinding
 import org.java_websocket.WebSocket
 import org.java_websocket.handshake.ClientHandshake
 import org.java_websocket.server.WebSocketServer
@@ -120,8 +121,14 @@ class GoClientBridgeServer(
                 GoClientNative.closeResourceStream(engine.handle, input.long)
                 sendAck(conn, requestId)
             }
-            OP_IMPORT_PAIRING -> accept(conn, requestId, GoClientNative.importPairing(engine.handle, remaining(input)))
-            OP_DELETE_CREDENTIAL -> accept(conn, requestId, GoClientNative.deleteCredential(engine.handle, remaining(input)))
+            OP_IMPORT_PAIRING -> accept(conn, requestId, GoClientNative.engineCommand(engine.handle,
+                ClientBinding.EngineCommand.newBuilder()
+                    .setImportPairing(ClientBinding.ImportPairingRequest.parseFrom(remaining(input)))
+                    .build().toByteArray()))
+            OP_DELETE_CREDENTIAL -> accept(conn, requestId, GoClientNative.engineCommand(engine.handle,
+                ClientBinding.EngineCommand.newBuilder()
+                    .setDeleteCredential(ClientBinding.DeleteCredentialRequest.parseFrom(remaining(input)))
+                    .build().toByteArray()))
             OP_CANCEL -> {
                 GoClientNative.cancel(engine.handle, input.long)
                 sendAck(conn, requestId)

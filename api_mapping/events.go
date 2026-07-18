@@ -56,6 +56,11 @@ func EventFilterFromProto(command *apipb.EventSubscribeCommand) corev2.EventFilt
 	return filter
 }
 
+// EventSubscriptionToProto 把 core subscription token 绑定到当前 Proto session。
+func EventSubscriptionToProto(session *apipb.EndpointSessionStamp, token []byte) *apipb.EventSubscriptionResult {
+	return &apipb.EventSubscriptionResult{Subscription: &apipb.ResourceHandle{OpaqueToken: cloneBytes(token), Kind: apipb.ResourceKind_RESOURCE_KIND_SUBSCRIPTION, Session: cloneSessionStamp(session), Generation: 1}}
+}
+
 // EncodeEventEnvelope 把 core-native event 转为公共 Proto event frame payload。
 func EncodeEventEnvelope(endpointID string, session *apipb.EndpointSessionStamp, subscriptionToken []byte, event corev2.Event) ([]byte, error) {
 	envelope := &apipb.EventEnvelope{EventId: fmt.Sprintf("%s-%d", event.Type, event.Timestamp.UnixNano()), TimestampUnixNano: event.Timestamp.UnixNano(), ApiVersion: &apipb.ApiVersion{Major: 1}, OriginSession: cloneSessionStamp(session), Subscription: &apipb.ResourceHandle{OpaqueToken: cloneBytes(subscriptionToken), Kind: apipb.ResourceKind_RESOURCE_KIND_SUBSCRIPTION, Session: cloneSessionStamp(session), Generation: 1}}

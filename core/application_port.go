@@ -263,8 +263,8 @@ type ApplicationSessionPort interface {
 	ApplicationFileDownloadOpen(context.Context, FileDownloadOpenRequest) (FileTransfer, error)
 	// ApplicationFileUploadOpen 创建或恢复 session-bound upload transfer。
 	ApplicationFileUploadOpen(context.Context, FileUploadOpenRequest) (FileTransfer, error)
-	// ApplicationFileTransferCancel 按 opaque token 取消 transfer。
-	ApplicationFileTransferCancel(context.Context, []byte) (FileTransferCancelResult, error)
+	// ApplicationFileTransferCancel 按 current-session resource 或 principal-bound upload resume 凭据取消 transfer。
+	ApplicationFileTransferCancel(context.Context, FileTransferCancelRequest) (FileTransferCancelResult, error)
 	// ApplicationStorageGet 返回 daemon opaque storage entry。
 	ApplicationStorageGet(context.Context, string, StorageScope, string, string) (StorageEntry, error)
 	// ApplicationStoragePut 执行 opaque value CAS put。

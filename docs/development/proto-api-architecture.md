@@ -52,7 +52,7 @@ core
 - remote-auth 通过异步 `ClientAccessSigner` 使用平台 secure key。native 文件 store 可以适配内存 Ed25519 signer；Android Keystore/WebCrypto 只提供 public projection 与不可导出 signer，Go 在发送 proof 前必须用绑定 public key 重新验签。
 - `SessionOwner.ConnectRoute` 只接收已经选定的 route，不提前实现 route planner/race。planner 只能在后续切片生成单个 immutable `AttemptRequest`，不能进入 platform binding 或 managed adapter。
 - managed attempt 成功结果必须已经完成 remote auth、Hello，并只通过 generated `apipb` 执行业务 command/event。attachment/file 的内部 framing channel 不属于公共 API，跨语言 binding 必须在 opaque resource 边界重新封装。
-- `client/binding` 只接收 serialized `bindingpb.OpenSessionRequest`、`apipb.CommandEnvelope` 和 `uint64` opaque handle；异步输出统一为 `bindingpb.EventEnvelope`。C/JNI/WASM 共享同一 engine/operation/session registry 与有界事件队列，平台 wrapper 不能建立第二份 handle truth。
+- `client/binding` 只接收 serialized `bindingpb.OpenSessionRequest`、`bindingpb.EngineCommand`、`apipb.CommandEnvelope` 和 `uint64` opaque handle；异步输出统一为 `bindingpb.EventEnvelope`。C/JNI/WASM 共享同一 engine/operation/session registry 与有界事件队列，平台 wrapper 不能建立第二份 handle truth，也不能为 pairing、credential 或其它业务 command 增加专用导出符号。
 
 ### Core
 
@@ -103,7 +103,7 @@ PA003 已建立 `proto/apipb/`，package 为 `termx.api.v1`，它是新的公共
 - API Layer 在深拷贝 in-process/JNI/WASM Proto 前必须执行 envelope 总量门禁；通过后 admission、validation 与 dispatch 只能使用同一私有快照。
 - 非幂等 input、paste、resize、detach 必须携带 operation/session fence，失败后不得隐式重放。
 - 长生命周期活动资源使用 session-bound opaque token 与稳定 `ResourceKind` enum，并有显式 release/cancel；owning registry 必须验证 token 真伪、kind、generation 和 session ownership，不得暴露 Go pointer、channel 或 goroutine。
-- upload resume 不是活动 stream resource：使用独立 `FileUploadResumeHandle`，由 verified principal、path、size 和 TTL 约束，可跨 session 使用，但不能进入通用 release/cancel。
+- upload resume 不是活动 stream resource：使用独立 `FileUploadResumeHandle`，由 verified principal、path、size 和 TTL 约束，可跨 session 用于续传或专用 `FileTransferCancel` 销毁未完成上传，但不能进入 stream 或通用 resource release。
 - 创建长期资源的 controller 必须返回 pending transaction；API Layer 校验公开 projection 后才 commit，校验或提交失败必须通过不继承请求取消且有超时的 cleanup context rollback。
 - 稳定错误使用 code + typed detail，不依赖字符串解析。
 - `EndpointID + TerminalID` 是跨 endpoint terminal identity；裸 `TerminalID` 只在 owning daemon 内有效。
@@ -141,5 +141,8 @@ proto schema
 - managed client signaling/auth/Hello/session 编排已从已删除的 `remote/client` 收口到 `client/adapter/managed`；native Pion 只位于 concrete adapter，portable engine 已有 Android arm64 与 `js/wasm` 编译门禁。
 - Android/Web consumer 已统一通过 Go Client Engine、跨语言 binding 与 generated `apipb` 消费 application API；TypeScript 不再拥有独立 API codec、session/resource registry 或 reconnect truth。
 - `runtimepb`、`wirepb` 重复 application schema、旧 method codec、本地 session token store 与旧 Hub/RTC bridge 已删除；`wirepb` 的剩余消息仅属于 framing-private contract。
-- Go 旧测试仍需改为 generated Proto harness；实现收口不以旧 DTO 测试继续编译为条件。
-- CLI 的共享 endpoint runtime helper 仍有已冻结编译缺口；不得用自造 generation、裸 protocol client 或 local fallback 填补。
+- Go 旧测试已经迁为 generated Proto harness；旧 DTO 测试例外已结束。
+- CLI local route 已通过 runtime-owned generation、集中 route policy 与 local adapter 接线；TUI terminal/workbench/clipboard 共用同一 ready session。完整多 route planner/race 仍在 C3B-C3H，不能把 only-viable local 接线扩写成 fallback。
+- Android/WASM engine 重建通过 Go `SessionGenerationAuthority` 保持进程内 endpoint generation 单调递增；平台只持有 authority 引用，不生成或缓存 generation 数值。
+- 同一 engine 内，`client/runtime.SessionOwner.AcquireRoute` 让同 endpoint 且连接配置相同的 `OpenSession` 共享一条 Go-owned ready session；binding handle 只持有 consumer lease，`managedhost` 不保存第二份 current-session map。关闭 list/inventory/file/workspace 任一 lease 不关闭底层 session，只有配置变化、显式 generation replacement、lifecycle teardown 或 engine close 才替换底层连接。
+- application event 必须按完整 subscription `ResourceHandle`（token、kind、session、generation）关联；session 级 event pump 只是 transport fan-out，consumer 不得把它当作 subscription filter。

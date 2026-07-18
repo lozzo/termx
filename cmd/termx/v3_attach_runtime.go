@@ -8,10 +8,10 @@ import (
 	"strings"
 	"syscall"
 
+	clientprotocol "github.com/lozzow/termx/client/adapter/protocol"
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	clientruntime "github.com/lozzow/termx/client/runtime"
-	"github.com/lozzow/termx/internal/protocol"
-	protocoladapter "github.com/lozzow/termx/tui/adapter/protocol"
+	tuiprotocol "github.com/lozzow/termx/tui/adapter/protocol"
 	systemadapter "github.com/lozzow/termx/tui/adapter/system"
 	"github.com/lozzow/termx/tui/app"
 	"github.com/lozzow/termx/tui/state"
@@ -46,11 +46,9 @@ func runAttachCommandWithClientRuntime(cmd *cobra.Command, endpointID, terminalI
 	if !endpoint.Enabled {
 		return &cliError{code: 4, message: fmt.Sprintf("endpoint %s is disabled", resolvedID)}
 	}
-	socketPath := resolveV3Socket(socket)
-	if route, routeErr := selectCLIEndpointRoute(endpoint, ""); routeErr == nil && route.Kind == endpointdomain.RouteLocalUnix {
-		if strings.TrimSpace(route.Socket) != "" && strings.TrimSpace(socket) == "" {
-			socketPath = route.Socket
-		}
+	socketPath := strings.TrimSpace(socket)
+	if socketPath != "" {
+		socketPath = resolveV3Socket(socketPath)
 	}
 	return runV3Attach(ctx, v3AttachConfig{
 		EndpointID: resolvedID, TerminalID: terminalID, SocketPath: socketPath, LogFile: resolveV3LogFilePath(logFile),
@@ -58,16 +56,20 @@ func runAttachCommandWithClientRuntime(cmd *cobra.Command, endpointID, terminalI
 	})
 }
 
-func newV3InteractiveRuntimeFromClientRuntime(terminalID string, cols, rows int, client, workbenchClient, clipboardClient *protocol.Client, host app.TerminalHost, logger *slog.Logger, opts v3InteractiveRuntimeOptions) *app.AppRuntime {
+func newV3InteractiveRuntimeFromClientRuntime(terminalID string, cols, rows int, client *clientprotocol.ApplicationClient, host app.TerminalHost, logger *slog.Logger, opts v3InteractiveRuntimeOptions) *app.AppRuntime {
 	endpointID := state.NormalizeEndpointID(opts.InitialEndpointID)
 	if endpointID == "" {
 		endpointID = state.DefaultEndpointID
 	}
-	routeID := "local"
-	application := mustCLIApplicationSession(client, endpointID, routeID)
-	terminalAdapter := protocoladapter.ProtocolTerminalServiceAdapter{Client: client, Application: application}
-	coreAdapter := protocoladapter.ProtocolCoreClientAdapter{Application: application}
-	pathAdapter, _ := protocoladapter.NewProtocolPathServiceAdapter(application)
+	var application *clientruntime.ApplicationSession
+	var terminalClient tuiprotocol.ProtocolTerminalClient
+	if client != nil {
+		application = client.ApplicationSession
+		terminalClient = client
+	}
+	terminalAdapter := tuiprotocol.ProtocolTerminalServiceAdapter{Client: terminalClient, Application: application}
+	coreAdapter := tuiprotocol.ProtocolCoreClientAdapter{Application: application}
+	pathAdapter, _ := tuiprotocol.NewProtocolPathServiceAdapter(application)
 
 	initial := state.Root{
 		RuntimeSurfaceID: opts.RuntimeSurfaceID,
@@ -84,15 +86,15 @@ func newV3InteractiveRuntimeFromClientRuntime(terminalID string, cols, rows int,
 	}
 
 	var workbench app.WorkbenchDeps
-	if workbenchClient != nil {
-		workbench.Storage = protocoladapter.ProtocolWorkbenchStorageAdapter{Application: mustCLIApplicationSession(workbenchClient, endpointID, routeID)}
+	if client != nil {
+		workbench.Storage = tuiprotocol.ProtocolWorkbenchStorageAdapter{Application: client.ApplicationSession}
 		workbench.Ref = state.DefaultWorkbenchStorageRef(state.DefaultWorkspaceID)
 		workbench.Logger = logger
 		workbench.SkipInitialLoad = opts.SkipWorkbenchInitialLoad
 	}
 	var clipboard app.ClipboardDeps
-	if clipboardClient != nil {
-		clipboard.Storage = protocoladapter.ProtocolClipboardStorageAdapter{Application: mustCLIApplicationSession(clipboardClient, endpointID, routeID)}
+	if client != nil {
+		clipboard.Storage = tuiprotocol.ProtocolClipboardStorageAdapter{Application: client.ApplicationSession}
 		clipboard.Ref = state.DefaultClipboardStorageRef(state.DefaultWorkspaceID)
 		clipboard.Logger = logger
 	}
@@ -104,50 +106,19 @@ func newV3InteractiveRuntimeFromClientRuntime(terminalID string, cols, rows int,
 	)
 }
 
-func openV3AttachProtocolClientsWithClientRuntime(ctx context.Context, cfg v3AttachConfig, logPath string, _ *slog.Logger) (*protocol.Client, *protocol.Client, *protocol.Client, func(), error) {
+func openV3AttachProtocolClientsWithClientRuntime(ctx context.Context, cfg v3AttachConfig, logPath string, _ *slog.Logger) (*clientprotocol.ApplicationClient, func(), error) {
 	endpointID := endpointIDFromState(state.NormalizeEndpointID(cfg.EndpointID))
 	endpoint, ok := cfg.ConnectionRegistry.Endpoints[endpointID]
 	if !ok {
-		return nil, nil, nil, func() {}, fmt.Errorf("attach endpoint %q is not registered", endpointID)
+		return nil, func() {}, fmt.Errorf("attach endpoint %q is not registered", endpointID)
 	}
-	route, err := selectCLIEndpointRoute(endpoint, "")
+	application, closeClient, err := openEndpointProtocolClient(ctx, endpoint, cfg.SocketPath, logPath)
 	if err != nil {
-		return nil, nil, nil, func() {}, err
+		return nil, func() {}, err
 	}
-	application, closeClient, err := openEndpointRouteProtocolClient(ctx, endpoint, route, cfg.SocketPath, logPath)
-	if err != nil {
-		return nil, nil, nil, func() {}, err
-	}
-	client := application.Client
-	if route.Kind != endpointdomain.RouteLocalUnix {
-		return client, nil, nil, closeClient, nil
-	}
-	workbench, err := dialV3Client(cfg.SocketPath)
-	if err != nil {
-		closeClient()
-		return nil, nil, nil, func() {}, fmt.Errorf("dial workbench event session: %w", err)
-	}
-	clipboard, err := dialV3Client(cfg.SocketPath)
-	if err != nil {
-		_ = workbench.Close()
-		closeClient()
-		return nil, nil, nil, func() {}, fmt.Errorf("dial clipboard event session: %w", err)
-	}
-	return client, workbench, clipboard, func() {
-		_ = clipboard.Close()
-		_ = workbench.Close()
-		closeClient()
-	}, nil
-}
-
-func mustCLIApplicationSession(client *protocol.Client, endpointID state.EndpointID, routeID string) *clientruntime.ApplicationSession {
-	session, err := clientruntime.NewApplicationSession(clientruntime.EndpointSessionStamp{
-		EndpointID: endpointIDFromState(endpointID), RouteID: endpointdomain.RouteID(routeID), Generation: clientruntime.SessionGeneration(nextCLIEndpointGeneration.Add(1)),
-	}, client)
-	if err != nil {
-		panic(err)
-	}
-	return session
+	// terminal/workbench/clipboard 是同一 endpoint session 上的独立 Proto consumer；
+	// subscription resource 已经提供隔离，不得再为它们伪造三条 generation。
+	return application, closeClient, nil
 }
 
 func endpointIDFromState(id state.EndpointID) endpointdomain.EndpointID {

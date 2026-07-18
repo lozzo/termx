@@ -35,6 +35,7 @@ type androidSpikeHost struct {
 	identity   remoteauth.Identity
 	credential remoteauth.ClientAccessCredential
 	store      *remoteauth.AccessStore
+	owner      *clientruntime.SessionOwner
 	now        time.Time
 	closeOnce  sync.Once
 }
@@ -82,6 +83,7 @@ func newAndroidSpikeHost(runtimeDir string) (androidHost, error) {
 	server := core.NewServer(core.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory))
 	daemonCtx, daemonCancel := context.WithCancel(context.Background())
 	host := &androidSpikeHost{ctx: daemonCtx, cancel: daemonCancel, server: server, identity: identity, store: store, now: now,
+		owner:      clientruntime.NewSessionOwnerWithAuthority(androidSessionAuthority),
 		credential: remoteauth.ClientAccessCredential{Version: 1, EndpointID: "android-spike", Identity: clientIdentity, CapabilityGrant: exchanged.Grant, UpdatedAt: now}}
 	host.answerer = remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{Core: server, Identity: identity, AccessStore: store, Now: func() time.Time { return now }}}
 	return host, nil
@@ -99,27 +101,22 @@ func (host *androidSpikeHost) OpenSession(ctx context.Context, request *bindingp
 		"webrtc": {ID: "webrtc", Kind: endpoint.RouteManagedWebRTC, Enabled: true, Source: endpoint.SourceCloud, PolicySource: endpoint.SourceUser,
 			CredentialRef: "credential:android-spike", TargetDeviceID: host.identity.DeviceID, AccountProfile: "default", RelayMode: endpoint.RelayDirect},
 	}}
-	attempt, err := clientruntime.NewAttemptRequest(target, "webrtc", nextAndroidSessionGeneration(), clientruntime.ConnectIntentInteractive)
-	if err != nil {
-		return nil, err
-	}
 	dialer := &managed.Dialer{Cloud: androidSpikeCompanion(host.ctx, host.answerer), Peers: pionadapter.Factory{}, ClientName: "android-go-client",
 		Authorization: managed.CapabilityAuthorizer{Credentials: androidSpikeCredentialSource{credential: host.credential}, Now: func() time.Time { return host.now }}, Now: func() time.Time { return host.now }}
-	ready, err := dialer.Dial(ctx, attempt)
+	lease, err := host.owner.ConnectRoute(ctx, target, "webrtc", clientruntime.ConnectIntentInteractive, dialer)
 	if err != nil {
 		return nil, err
 	}
-	application, ok := ready.(clientruntime.ApplicationReadySession)
-	if !ok {
-		_ = ready.Close()
-		return nil, fmt.Errorf("Android managed route returned no application session")
-	}
-	return application, nil
+	return host.owner.ApplicationSession(lease)
 }
 
 func (host *androidSpikeHost) close() error {
 	var err error
-	host.closeOnce.Do(func() { host.cancel(); err = host.store.Close() })
+	host.closeOnce.Do(func() {
+		host.cancel()
+		_ = host.owner.Close()
+		err = host.store.Close()
+	})
 	return err
 }
 

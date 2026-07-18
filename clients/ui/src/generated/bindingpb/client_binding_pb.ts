@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file bindingpb/client_binding.proto.
  */
 export const file_bindingpb_client_binding: GenFile = /*@__PURE__*/
-  fileDesc("Ch5iaW5kaW5ncGIvY2xpZW50X2JpbmRpbmcucHJvdG8SF3Rlcm14LmNsaWVudC5iaW5kaW5nLnYxIr0BChVNYW5hZ2VkRW5kcG9pbnRDb25maWcSGAoQdGFyZ2V0X2RldmljZV9pZBgBIAEoCRIaChJkZXZpY2VfZmluZ2VycHJpbnQYAiABKAkSFgoOY3JlZGVudGlhbF9yZWYYAyABKAkSFwoPYWNjb3VudF9wcm9maWxlGAQgASgJEj0KCnJlbGF5X21vZGUYBSABKA4yKS50ZXJteC5jbGllbnQuYmluZGluZy52MS5NYW5hZ2VkUmVsYXlNb2RlIs4BChJPcGVuU2Vzc2lvblJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRITCgtlbmRwb2ludF9pZBgCIAEoCRIWCg5yb3V0ZV9vdmVycmlkZRgDIAEoCRI2CgZpbnRlbnQYBCABKA4yJi50ZXJteC5jbGllbnQuYmluZGluZy52MS5Db25uZWN0SW50ZW50Ej8KB21hbmFnZWQYBSABKAsyLi50ZXJteC5jbGllbnQuYmluZGluZy52MS5NYW5hZ2VkRW5kcG9pbnRDb25maWciYgoUSW1wb3J0UGFpcmluZ1JlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRIYChBwb3J0YWJsZV9wYXlsb2FkGAIgASgJEhwKFGV4cGVjdGVkX2VuZHBvaW50X2lkGAMgASgJIs0CChNJbXBvcnRQYWlyaW5nUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSGAoQb3BlcmF0aW9uX2hhbmRsZRgCIAEoBBITCgtlbmRwb2ludF9pZBgDIAEoCRINCgVsYWJlbBgEIAEoCRIYChB0YXJnZXRfZGV2aWNlX2lkGAUgASgJEhoKEmRldmljZV9maW5nZXJwcmludBgGIAEoCRIWCg5jcmVkZW50aWFsX3JlZhgHIAEoCRIRCgl0aWNrZXRfaWQYCCABKAkSHgoWY2xpZW50X2tleV9maW5nZXJwcmludBgJIAEoCRIcChRleHBpcmVzX2F0X3VuaXhfbmFubxgKIAEoAxIeChZhdXRob3JpemF0aW9uX3JlcXVpcmVkGAsgASgIEiUKBWVycm9yGAwgASgLMhYudGVybXguYXBpLnYxLkFwaUVycm9yIkUKF0RlbGV0ZUNyZWRlbnRpYWxSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSFgoOY3JlZGVudGlhbF9yZWYYAiABKAkibQoWRGVsZXRlQ3JlZGVudGlhbFJlc3VsdBISCgpyZXF1ZXN0X2lkGAEgASgJEhgKEG9wZXJhdGlvbl9oYW5kbGUYAiABKAQSJQoFZXJyb3IYAyABKAsyFi50ZXJteC5hcGkudjEuQXBpRXJyb3IitQEKEU9wZW5TZXNzaW9uUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSGAoQb3BlcmF0aW9uX2hhbmRsZRgCIAEoBBIWCg5zZXNzaW9uX2hhbmRsZRgDIAEoBBIzCgdzZXNzaW9uGAQgASgLMiIudGVybXguYXBpLnYxLkVuZHBvaW50U2Vzc2lvblN0YW1wEiUKBWVycm9yGAUgASgLMhYudGVybXguYXBpLnYxLkFwaUVycm9yIpYBCg1FeGVjdXRlUmVzdWx0EhgKEG9wZXJhdGlvbl9oYW5kbGUYASABKAQSFgoOc2Vzc2lvbl9oYW5kbGUYAiABKAQSLAoGcmVzdWx0GAMgASgLMhwudGVybXguYXBpLnYxLlJlc3VsdEVudmVsb3BlEiUKBWVycm9yGAQgASgLMhYudGVybXguYXBpLnYxLkFwaUVycm9yIlYKEEFwcGxpY2F0aW9uRXZlbnQSFgoOc2Vzc2lvbl9oYW5kbGUYASABKAQSKgoFZXZlbnQYAiABKAsyGy50ZXJteC5hcGkudjEuRXZlbnRFbnZlbG9wZSJLChlPcGVuUmVzb3VyY2VTdHJlYW1SZXF1ZXN0Ei4KCHJlc291cmNlGAEgASgLMhwudGVybXguYXBpLnYxLlJlc291cmNlSGFuZGxlIn0KE1Jlc291cmNlU3RyZWFtRnJhbWUSFQoNc3RyZWFtX2hhbmRsZRgBIAEoBBI+CgR0eXBlGAIgASgOMjAudGVybXguY2xpZW50LmJpbmRpbmcudjEuUmVzb3VyY2VTdHJlYW1GcmFtZVR5cGUSDwoHcGF5bG9hZBgDIAEoDCJZChlSZXNvdXJjZVN0cmVhbUNsb3NlZEV2ZW50EhUKDXN0cmVhbV9oYW5kbGUYASABKAQSJQoFZXJyb3IYAiABKAsyFi50ZXJteC5hcGkudjEuQXBpRXJyb3IiiAEKElNlc3Npb25DbG9zZWRFdmVudBIWCg5zZXNzaW9uX2hhbmRsZRgBIAEoBBIzCgdzZXNzaW9uGAIgASgLMiIudGVybXguYXBpLnYxLkVuZHBvaW50U2Vzc2lvblN0YW1wEiUKBWVycm9yGAMgASgLMhYudGVybXguYXBpLnYxLkFwaUVycm9yIoIFCg1FdmVudEVudmVsb3BlEhMKC2FiaV92ZXJzaW9uGAEgASgNEhAKCHNlcXVlbmNlGAIgASgEEkIKDG9wZW5fc2Vzc2lvbhgKIAEoCzIqLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLk9wZW5TZXNzaW9uUmVzdWx0SAASOQoHZXhlY3V0ZRgLIAEoCzImLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLkV4ZWN1dGVSZXN1bHRIABJACgthcHBsaWNhdGlvbhgMIAEoCzIpLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLkFwcGxpY2F0aW9uRXZlbnRIABJFCg5zZXNzaW9uX2Nsb3NlZBgNIAEoCzIrLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLlNlc3Npb25DbG9zZWRFdmVudEgAEkYKDmltcG9ydF9wYWlyaW5nGA4gASgLMiwudGVybXguY2xpZW50LmJpbmRpbmcudjEuSW1wb3J0UGFpcmluZ1Jlc3VsdEgAEkwKEWRlbGV0ZV9jcmVkZW50aWFsGA8gASgLMi8udGVybXguY2xpZW50LmJpbmRpbmcudjEuRGVsZXRlQ3JlZGVudGlhbFJlc3VsdEgAEk0KFXJlc291cmNlX3N0cmVhbV9mcmFtZRgQIAEoCzIsLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLlJlc291cmNlU3RyZWFtRnJhbWVIABJUChZyZXNvdXJjZV9zdHJlYW1fY2xvc2VkGBEgASgLMjIudGVybXguY2xpZW50LmJpbmRpbmcudjEuUmVzb3VyY2VTdHJlYW1DbG9zZWRFdmVudEgAQgcKBWV2ZW50IkcKGENyZWRlbnRpYWxSZXNvbHZlUmVxdWVzdBITCgtlbmRwb2ludF9pZBgBIAEoCRIWCg5jcmVkZW50aWFsX3JlZhgCIAEoCSJHChhDcmVkZW50aWFsUHJlcGFyZVJlcXVlc3QSEwoLZW5kcG9pbnRfaWQYASABKAkSFgoOY3JlZGVudGlhbF9yZWYYAiABKAkiMQoXQ3JlZGVudGlhbERlbGV0ZVJlcXVlc3QSFgoOY3JlZGVudGlhbF9yZWYYASABKAkiXgoVQ3JlZGVudGlhbEJpbmRSZXF1ZXN0EhMKC2VuZHBvaW50X2lkGAEgASgJEhYKDmNyZWRlbnRpYWxfcmVmGAIgASgJEhgKEGNhcGFiaWxpdHlfZ3JhbnQYAyABKAkihgEKEENyZWRlbnRpYWxSZWNvcmQSEwoLZW5kcG9pbnRfaWQYASABKAkSFgoOY3JlZGVudGlhbF9yZWYYAiABKAkSEgoKcHVibGljX2tleRgDIAEoDBIXCg9rZXlfZmluZ2VycHJpbnQYBCABKAkSGAoQY2FwYWJpbGl0eV9ncmFudBgFIAEoCSJAChVDcmVkZW50aWFsU2lnblJlcXVlc3QSFgoOY3JlZGVudGlhbF9yZWYYASABKAkSDwoHcGF5bG9hZBgCIAEoDCIrChZDcmVkZW50aWFsU2lnblJlc3BvbnNlEhEKCXNpZ25hdHVyZRgBIAEoDCJBCg9TaWduYWxpbmdFdmVudHMSLgoGZXZlbnRzGAEgAygLMh4udGVybXguY2xvdWQudjEuU2lnbmFsaW5nRXZlbnQilgEKFVdlYlJUQ09wZW5QZWVyUmVxdWVzdBIuCgtpY2Vfc2VydmVycxgBIAMoCzIZLnRlcm14LmNsb3VkLnYxLkljZVNlcnZlchI5ChByb3V0ZV9wcmVmZXJlbmNlGAIgASgOMh8udGVybXguY2xvdWQudjEuUm91dGVQcmVmZXJlbmNlEhIKCnJlbGF5X29ubHkYAyABKAgiPwoQV2ViUlRDUGVlck9wZW5lZBITCgtwZWVyX2hhbmRsZRgBIAEoBBIWCg5jaGFubmVsX2hhbmRsZRgCIAEoBCIoChFXZWJSVENQZWVyUmVxdWVzdBITCgtwZWVyX2hhbmRsZRgBIAEoBCIsChdXZWJSVENDcmVhdGVPZmZlclJlc3VsdBIRCglvZmZlcl9zZHAYASABKAkidQoYV2ViUlRDQXBwbHlBbnN3ZXJSZXF1ZXN0EhMKC3BlZXJfaGFuZGxlGAEgASgEEhIKCmFuc3dlcl9zZHAYAiABKAkSMAoKY2FuZGlkYXRlcxgDIAMoCzIcLnRlcm14LmNsb3VkLnYxLkljZUNhbmRpZGF0ZSJuCg9XZWJSVENQZWVyUmVhZHkSJgoecmVtb3RlX2NlcnRpZmljYXRlX2ZpbmdlcnByaW50GAEgASgJEjMKDW9ic2VydmVkX3BhdGgYAiABKA4yHC50ZXJteC5jbG91ZC52MS5PYnNlcnZlZFBhdGgiQwoYV2ViUlRDQ2hhbm5lbFNlbmRSZXF1ZXN0EhYKDmNoYW5uZWxfaGFuZGxlGAEgASgEEg8KB3BheWxvYWQYAiABKAwiMgoXV2ViUlRDQ2hhbm5lbFNlbmRSZXN1bHQSFwoPYnVmZmVyZWRfYW1vdW50GAEgASgEIk4KHVdlYlJUQ0NoYW5uZWxUaHJlc2hvbGRSZXF1ZXN0EhYKDmNoYW5uZWxfaGFuZGxlGAEgASgEEhUKDWxvd190aHJlc2hvbGQYAiABKAQiTgoZV2ViUlRDUGVlclNuYXBzaG90UmVxdWVzdBITCgtwZWVyX2hhbmRsZRgBIAEoBBIcChRzYW1wbGVkX2F0X3VuaXhfbmFubxgCIAEoAyKZAgoSV2ViUlRDUGVlclNuYXBzaG90Eg0KBXZhbGlkGAEgASgIEg8KB3BhaXJfaWQYAiABKAkSKgoEcGF0aBgDIAEoDjIcLnRlcm14LmNsb3VkLnYxLk9ic2VydmVkUGF0aBIVCg1uZXR3b3JrX2NsYXNzGAQgASgJEhwKFHNhbXBsZWRfYXRfdW5peF9uYW5vGAUgASgDEhgKEHJvdW5kX3RyaXBfbmFub3MYBiABKAMSEgoKYnl0ZXNfc2VudBgHIAEoBBIWCg5ieXRlc19yZWNlaXZlZBgIIAEoBBIUCgxwYWNrZXRzX3NlbnQYCSABKAQSEwoLbG9zc19ldmVudHMYCiABKAQSEQoJY29ubmVjdGVkGAsgASgIIiQKEldlYlJUQ0Nsb3NlUmVxdWVzdBIOCgZoYW5kbGUYASABKAQiRAoZV2ViUlRDQ2hhbm5lbE1lc3NhZ2VFdmVudBIWCg5jaGFubmVsX2hhbmRsZRgBIAEoBBIPCgdwYXlsb2FkGAIgASgMIjIKGFdlYlJUQ0NoYW5uZWxDbG9zZWRFdmVudBIWCg5jaGFubmVsX2hhbmRsZRgBIAEoBCJPChxXZWJSVENCdWZmZXJlZEFtb3VudExvd0V2ZW50EhYKDmNoYW5uZWxfaGFuZGxlGAEgASgEEhcKD2J1ZmZlcmVkX2Ftb3VudBgCIAEoBCKfAgoNUGxhdGZvcm1FdmVudBJUChZ3ZWJydGNfY2hhbm5lbF9tZXNzYWdlGAogASgLMjIudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDQ2hhbm5lbE1lc3NhZ2VFdmVudEgAElIKFXdlYnJ0Y19jaGFubmVsX2Nsb3NlZBgLIAEoCzIxLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLldlYlJUQ0NoYW5uZWxDbG9zZWRFdmVudEgAElsKGndlYnJ0Y19idWZmZXJlZF9hbW91bnRfbG93GAwgASgLMjUudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDQnVmZmVyZWRBbW91bnRMb3dFdmVudEgAQgcKBWV2ZW50IsUMCg9QbGF0Zm9ybVJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoBBJPChJjcmVkZW50aWFsX3Jlc29sdmUYCiABKAsyMS50ZXJteC5jbGllbnQuYmluZGluZy52MS5DcmVkZW50aWFsUmVzb2x2ZVJlcXVlc3RIABJPChJjcmVkZW50aWFsX3ByZXBhcmUYCyABKAsyMS50ZXJteC5jbGllbnQuYmluZGluZy52MS5DcmVkZW50aWFsUHJlcGFyZVJlcXVlc3RIABJNChFjcmVkZW50aWFsX2RlbGV0ZRgMIAEoCzIwLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLkNyZWRlbnRpYWxEZWxldGVSZXF1ZXN0SAASSQoPY3JlZGVudGlhbF9zaWduGA0gASgLMi4udGVybXguY2xpZW50LmJpbmRpbmcudjEuQ3JlZGVudGlhbFNpZ25SZXF1ZXN0SAASSQoPY3JlZGVudGlhbF9iaW5kGA4gASgLMi4udGVybXguY2xpZW50LmJpbmRpbmcudjEuQ3JlZGVudGlhbEJpbmRSZXF1ZXN0SAASSAoWY2xvdWRfcmVzb2x2ZV9lbmRwb2ludBgUIAEoCzImLnRlcm14LmNsb3VkLnYxLlJlc29sdmVFbmRwb2ludFJlcXVlc3RIABJPChZjbG91ZF9jcmVhdGVfc2lnbmFsaW5nGBUgASgLMi0udGVybXguY2xvdWQudjEuQ3JlYXRlU2lnbmFsaW5nU2Vzc2lvblJlcXVlc3RIABJHChNjbG91ZF9hY3F1aXJlX3JlbGF5GBYgASgLMigudGVybXguY2xvdWQudjEuQWNxdWlyZVJlbGF5TGVhc2VSZXF1ZXN0SAASQwoQY2xvdWRfcGxhbl9yb3V0ZRgXIAEoCzInLnRlcm14LmNsb3VkLnYxLlBsYW5NYW5hZ2VkUm91dGVSZXF1ZXN0SAASSAoUY2xvdWRfcmVwb3J0X3F1YWxpdHkYGCABKAsyKC50ZXJteC5jbG91ZC52MS5SZXBvcnRQYXRoUXVhbGl0eVJlcXVlc3RIABJOChRjbG91ZF9yZXBvcnRfb3V0Y29tZRgZIAEoCzIuLnRlcm14LmNsb3VkLnYxLlJlcG9ydENvbm5lY3Rpb25PdXRjb21lUmVxdWVzdEgAEkoKEHdlYnJ0Y19vcGVuX3BlZXIYHiABKAsyLi50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENPcGVuUGVlclJlcXVlc3RIABJJChN3ZWJydGNfY3JlYXRlX29mZmVyGB8gASgLMioudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDUGVlclJlcXVlc3RIABJQChN3ZWJydGNfYXBwbHlfYW5zd2VyGCAgASgLMjEudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDQXBwbHlBbnN3ZXJSZXF1ZXN0SAASRwoRd2VicnRjX3dhaXRfcmVhZHkYISABKAsyKi50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENQZWVyUmVxdWVzdEgAElAKE3dlYnJ0Y19jaGFubmVsX3NlbmQYIiABKAsyMS50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENDaGFubmVsU2VuZFJlcXVlc3RIABJaChh3ZWJydGNfY2hhbm5lbF90aHJlc2hvbGQYIyABKAsyNi50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENDaGFubmVsVGhyZXNob2xkUmVxdWVzdEgAElIKFHdlYnJ0Y19wZWVyX3NuYXBzaG90GCQgASgLMjIudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDUGVlclNuYXBzaG90UmVxdWVzdEgAEkgKEXdlYnJ0Y19jbG9zZV9wZWVyGCUgASgLMisudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDQ2xvc2VSZXF1ZXN0SAASSwoUd2VicnRjX2Nsb3NlX2NoYW5uZWwYJiABKAsyKy50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENDbG9zZVJlcXVlc3RIAEIJCgdyZXF1ZXN0Iv8HChBQbGF0Zm9ybVJlc3BvbnNlEhIKCnJlcXVlc3RfaWQYASABKAQSJQoFZXJyb3IYAiABKAsyFi50ZXJteC5hcGkudjEuQXBpRXJyb3ISPwoKY3JlZGVudGlhbBgKIAEoCzIpLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLkNyZWRlbnRpYWxSZWNvcmRIABJKCg9jcmVkZW50aWFsX3NpZ24YCyABKAsyLy50ZXJteC5jbGllbnQuYmluZGluZy52MS5DcmVkZW50aWFsU2lnblJlc3BvbnNlSAASQwoXY2xvdWRfcmVzb2x2ZWRfZW5kcG9pbnQYFCABKAsyIC50ZXJteC5jbG91ZC52MS5SZXNvbHZlZEVuZHBvaW50SAASQwoPY2xvdWRfc2lnbmFsaW5nGBUgASgLMigudGVybXguY2xpZW50LmJpbmRpbmcudjEuU2lnbmFsaW5nRXZlbnRzSAASNwoRY2xvdWRfcmVsYXlfbGVhc2UYFiABKAsyGi50ZXJteC5jbG91ZC52MS5SZWxheUxlYXNlSAASPAoQY2xvdWRfcm91dGVfcGxhbhgXIAEoCzIgLnRlcm14LmNsb3VkLnYxLk1hbmFnZWRSb3V0ZVBsYW5IABJLChZjbG91ZF9xdWFsaXR5X3JlcG9ydGVkGBggASgLMikudGVybXguY2xvdWQudjEuUmVwb3J0UGF0aFF1YWxpdHlSZXNwb25zZUgAElEKFmNsb3VkX291dGNvbWVfcmVwb3J0ZWQYGSABKAsyLy50ZXJteC5jbG91ZC52MS5SZXBvcnRDb25uZWN0aW9uT3V0Y29tZVJlc3BvbnNlSAASRwoSd2VicnRjX3BlZXJfb3BlbmVkGB4gASgLMikudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDUGVlck9wZW5lZEgAEkgKDHdlYnJ0Y19vZmZlchgfIAEoCzIwLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLldlYlJUQ0NyZWF0ZU9mZmVyUmVzdWx0SAASRQoRd2VicnRjX3BlZXJfcmVhZHkYICABKAsyKC50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENQZWVyUmVhZHlIABJPChN3ZWJydGNfY2hhbm5lbF9zZW50GCEgASgLMjAudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDQ2hhbm5lbFNlbmRSZXN1bHRIABJLChR3ZWJydGNfcGVlcl9zbmFwc2hvdBgiIAEoCzIrLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLldlYlJUQ1BlZXJTbmFwc2hvdEgAQgoKCHJlc3BvbnNlKogBCg1Db25uZWN0SW50ZW50Eh4KGkNPTk5FQ1RfSU5URU5UX1VOU1BFQ0lGSUVEEAASHgoaQ09OTkVDVF9JTlRFTlRfSU5URVJBQ1RJVkUQARIdChlDT05ORUNUX0lOVEVOVF9CQUNLR1JPVU5EEAISGAoUQ09OTkVDVF9JTlRFTlRfUFJPQkUQAyq5AQoQTWFuYWdlZFJlbGF5TW9kZRIiCh5NQU5BR0VEX1JFTEFZX01PREVfVU5TUEVDSUZJRUQQABIbChdNQU5BR0VEX1JFTEFZX01PREVfQVVUTxABEh0KGU1BTkFHRURfUkVMQVlfTU9ERV9ESVJFQ1QQAhIhCh1NQU5BR0VEX1JFTEFZX01PREVfUkVMQVlfT05MWRADEiIKHk1BTkFHRURfUkVMQVlfTU9ERV9TTUFSVF9ST1VURRAEKscCChdSZXNvdXJjZVN0cmVhbUZyYW1lVHlwZRIqCiZSRVNPVVJDRV9TVFJFQU1fRlJBTUVfVFlQRV9VTlNQRUNJRklFRBAAEigKJFJFU09VUkNFX1NUUkVBTV9GUkFNRV9UWVBFX0ZJTEVfREFUQRABEicKI1JFU09VUkNFX1NUUkVBTV9GUkFNRV9UWVBFX0ZJTEVfQUNLEAISKgomUkVTT1VSQ0VfU1RSRUFNX0ZSQU1FX1RZUEVfRklMRV9GSU5JU0gQAxIqCiZSRVNPVVJDRV9TVFJFQU1fRlJBTUVfVFlQRV9GSUxFX1JFU1VMVBAEEiQKIFJFU09VUkNFX1NUUkVBTV9GUkFNRV9UWVBFX0VSUk9SEAUSLworUkVTT1VSQ0VfU1RSRUFNX0ZSQU1FX1RZUEVfRklMRV9GSU5JU0hfQVVUTxAGQilaJ2dpdGh1Yi5jb20vbG96em93L3Rlcm14L3Byb3RvL2JpbmRpbmdwYmIGcHJvdG8z", [file_apipb_application, file_apipb_common, file_cloudpb_cloud_companion]);
+  fileDesc("Ch5iaW5kaW5ncGIvY2xpZW50X2JpbmRpbmcucHJvdG8SF3Rlcm14LmNsaWVudC5iaW5kaW5nLnYxIr0BChVNYW5hZ2VkRW5kcG9pbnRDb25maWcSGAoQdGFyZ2V0X2RldmljZV9pZBgBIAEoCRIaChJkZXZpY2VfZmluZ2VycHJpbnQYAiABKAkSFgoOY3JlZGVudGlhbF9yZWYYAyABKAkSFwoPYWNjb3VudF9wcm9maWxlGAQgASgJEj0KCnJlbGF5X21vZGUYBSABKA4yKS50ZXJteC5jbGllbnQuYmluZGluZy52MS5NYW5hZ2VkUmVsYXlNb2RlIs4BChJPcGVuU2Vzc2lvblJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRITCgtlbmRwb2ludF9pZBgCIAEoCRIWCg5yb3V0ZV9vdmVycmlkZRgDIAEoCRI2CgZpbnRlbnQYBCABKA4yJi50ZXJteC5jbGllbnQuYmluZGluZy52MS5Db25uZWN0SW50ZW50Ej8KB21hbmFnZWQYBSABKAsyLi50ZXJteC5jbGllbnQuYmluZGluZy52MS5NYW5hZ2VkRW5kcG9pbnRDb25maWciYgoUSW1wb3J0UGFpcmluZ1JlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRIYChBwb3J0YWJsZV9wYXlsb2FkGAIgASgJEhwKFGV4cGVjdGVkX2VuZHBvaW50X2lkGAMgASgJIs0CChNJbXBvcnRQYWlyaW5nUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSGAoQb3BlcmF0aW9uX2hhbmRsZRgCIAEoBBITCgtlbmRwb2ludF9pZBgDIAEoCRINCgVsYWJlbBgEIAEoCRIYChB0YXJnZXRfZGV2aWNlX2lkGAUgASgJEhoKEmRldmljZV9maW5nZXJwcmludBgGIAEoCRIWCg5jcmVkZW50aWFsX3JlZhgHIAEoCRIRCgl0aWNrZXRfaWQYCCABKAkSHgoWY2xpZW50X2tleV9maW5nZXJwcmludBgJIAEoCRIcChRleHBpcmVzX2F0X3VuaXhfbmFubxgKIAEoAxIeChZhdXRob3JpemF0aW9uX3JlcXVpcmVkGAsgASgIEiUKBWVycm9yGAwgASgLMhYudGVybXguYXBpLnYxLkFwaUVycm9yIkUKF0RlbGV0ZUNyZWRlbnRpYWxSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSFgoOY3JlZGVudGlhbF9yZWYYAiABKAkibQoWRGVsZXRlQ3JlZGVudGlhbFJlc3VsdBISCgpyZXF1ZXN0X2lkGAEgASgJEhgKEG9wZXJhdGlvbl9oYW5kbGUYAiABKAQSJQoFZXJyb3IYAyABKAsyFi50ZXJteC5hcGkudjEuQXBpRXJyb3IisgEKDUVuZ2luZUNvbW1hbmQSRwoOaW1wb3J0X3BhaXJpbmcYASABKAsyLS50ZXJteC5jbGllbnQuYmluZGluZy52MS5JbXBvcnRQYWlyaW5nUmVxdWVzdEgAEk0KEWRlbGV0ZV9jcmVkZW50aWFsGAIgASgLMjAudGVybXguY2xpZW50LmJpbmRpbmcudjEuRGVsZXRlQ3JlZGVudGlhbFJlcXVlc3RIAEIJCgdjb21tYW5kIrUBChFPcGVuU2Vzc2lvblJlc3VsdBISCgpyZXF1ZXN0X2lkGAEgASgJEhgKEG9wZXJhdGlvbl9oYW5kbGUYAiABKAQSFgoOc2Vzc2lvbl9oYW5kbGUYAyABKAQSMwoHc2Vzc2lvbhgEIAEoCzIiLnRlcm14LmFwaS52MS5FbmRwb2ludFNlc3Npb25TdGFtcBIlCgVlcnJvchgFIAEoCzIWLnRlcm14LmFwaS52MS5BcGlFcnJvciKWAQoNRXhlY3V0ZVJlc3VsdBIYChBvcGVyYXRpb25faGFuZGxlGAEgASgEEhYKDnNlc3Npb25faGFuZGxlGAIgASgEEiwKBnJlc3VsdBgDIAEoCzIcLnRlcm14LmFwaS52MS5SZXN1bHRFbnZlbG9wZRIlCgVlcnJvchgEIAEoCzIWLnRlcm14LmFwaS52MS5BcGlFcnJvciJWChBBcHBsaWNhdGlvbkV2ZW50EhYKDnNlc3Npb25faGFuZGxlGAEgASgEEioKBWV2ZW50GAIgASgLMhsudGVybXguYXBpLnYxLkV2ZW50RW52ZWxvcGUiagoZT3BlblJlc291cmNlU3RyZWFtUmVxdWVzdBIuCghyZXNvdXJjZRgBIAEoCzIcLnRlcm14LmFwaS52MS5SZXNvdXJjZUhhbmRsZRIdChVpbml0aWFsX3VwbG9hZF9vZmZzZXQYAiABKAMifQoTUmVzb3VyY2VTdHJlYW1GcmFtZRIVCg1zdHJlYW1faGFuZGxlGAEgASgEEj4KBHR5cGUYAiABKA4yMC50ZXJteC5jbGllbnQuYmluZGluZy52MS5SZXNvdXJjZVN0cmVhbUZyYW1lVHlwZRIPCgdwYXlsb2FkGAMgASgMIlkKGVJlc291cmNlU3RyZWFtQ2xvc2VkRXZlbnQSFQoNc3RyZWFtX2hhbmRsZRgBIAEoBBIlCgVlcnJvchgCIAEoCzIWLnRlcm14LmFwaS52MS5BcGlFcnJvciKIAQoSU2Vzc2lvbkNsb3NlZEV2ZW50EhYKDnNlc3Npb25faGFuZGxlGAEgASgEEjMKB3Nlc3Npb24YAiABKAsyIi50ZXJteC5hcGkudjEuRW5kcG9pbnRTZXNzaW9uU3RhbXASJQoFZXJyb3IYAyABKAsyFi50ZXJteC5hcGkudjEuQXBpRXJyb3IiggUKDUV2ZW50RW52ZWxvcGUSEwoLYWJpX3ZlcnNpb24YASABKA0SEAoIc2VxdWVuY2UYAiABKAQSQgoMb3Blbl9zZXNzaW9uGAogASgLMioudGVybXguY2xpZW50LmJpbmRpbmcudjEuT3BlblNlc3Npb25SZXN1bHRIABI5CgdleGVjdXRlGAsgASgLMiYudGVybXguY2xpZW50LmJpbmRpbmcudjEuRXhlY3V0ZVJlc3VsdEgAEkAKC2FwcGxpY2F0aW9uGAwgASgLMikudGVybXguY2xpZW50LmJpbmRpbmcudjEuQXBwbGljYXRpb25FdmVudEgAEkUKDnNlc3Npb25fY2xvc2VkGA0gASgLMisudGVybXguY2xpZW50LmJpbmRpbmcudjEuU2Vzc2lvbkNsb3NlZEV2ZW50SAASRgoOaW1wb3J0X3BhaXJpbmcYDiABKAsyLC50ZXJteC5jbGllbnQuYmluZGluZy52MS5JbXBvcnRQYWlyaW5nUmVzdWx0SAASTAoRZGVsZXRlX2NyZWRlbnRpYWwYDyABKAsyLy50ZXJteC5jbGllbnQuYmluZGluZy52MS5EZWxldGVDcmVkZW50aWFsUmVzdWx0SAASTQoVcmVzb3VyY2Vfc3RyZWFtX2ZyYW1lGBAgASgLMiwudGVybXguY2xpZW50LmJpbmRpbmcudjEuUmVzb3VyY2VTdHJlYW1GcmFtZUgAElQKFnJlc291cmNlX3N0cmVhbV9jbG9zZWQYESABKAsyMi50ZXJteC5jbGllbnQuYmluZGluZy52MS5SZXNvdXJjZVN0cmVhbUNsb3NlZEV2ZW50SABCBwoFZXZlbnQiRwoYQ3JlZGVudGlhbFJlc29sdmVSZXF1ZXN0EhMKC2VuZHBvaW50X2lkGAEgASgJEhYKDmNyZWRlbnRpYWxfcmVmGAIgASgJIkcKGENyZWRlbnRpYWxQcmVwYXJlUmVxdWVzdBITCgtlbmRwb2ludF9pZBgBIAEoCRIWCg5jcmVkZW50aWFsX3JlZhgCIAEoCSIxChdDcmVkZW50aWFsRGVsZXRlUmVxdWVzdBIWCg5jcmVkZW50aWFsX3JlZhgBIAEoCSJeChVDcmVkZW50aWFsQmluZFJlcXVlc3QSEwoLZW5kcG9pbnRfaWQYASABKAkSFgoOY3JlZGVudGlhbF9yZWYYAiABKAkSGAoQY2FwYWJpbGl0eV9ncmFudBgDIAEoCSKGAQoQQ3JlZGVudGlhbFJlY29yZBITCgtlbmRwb2ludF9pZBgBIAEoCRIWCg5jcmVkZW50aWFsX3JlZhgCIAEoCRISCgpwdWJsaWNfa2V5GAMgASgMEhcKD2tleV9maW5nZXJwcmludBgEIAEoCRIYChBjYXBhYmlsaXR5X2dyYW50GAUgASgJIkAKFUNyZWRlbnRpYWxTaWduUmVxdWVzdBIWCg5jcmVkZW50aWFsX3JlZhgBIAEoCRIPCgdwYXlsb2FkGAIgASgMIisKFkNyZWRlbnRpYWxTaWduUmVzcG9uc2USEQoJc2lnbmF0dXJlGAEgASgMIkEKD1NpZ25hbGluZ0V2ZW50cxIuCgZldmVudHMYASADKAsyHi50ZXJteC5jbG91ZC52MS5TaWduYWxpbmdFdmVudCKWAQoVV2ViUlRDT3BlblBlZXJSZXF1ZXN0Ei4KC2ljZV9zZXJ2ZXJzGAEgAygLMhkudGVybXguY2xvdWQudjEuSWNlU2VydmVyEjkKEHJvdXRlX3ByZWZlcmVuY2UYAiABKA4yHy50ZXJteC5jbG91ZC52MS5Sb3V0ZVByZWZlcmVuY2USEgoKcmVsYXlfb25seRgDIAEoCCI/ChBXZWJSVENQZWVyT3BlbmVkEhMKC3BlZXJfaGFuZGxlGAEgASgEEhYKDmNoYW5uZWxfaGFuZGxlGAIgASgEIigKEVdlYlJUQ1BlZXJSZXF1ZXN0EhMKC3BlZXJfaGFuZGxlGAEgASgEIiwKF1dlYlJUQ0NyZWF0ZU9mZmVyUmVzdWx0EhEKCW9mZmVyX3NkcBgBIAEoCSJ1ChhXZWJSVENBcHBseUFuc3dlclJlcXVlc3QSEwoLcGVlcl9oYW5kbGUYASABKAQSEgoKYW5zd2VyX3NkcBgCIAEoCRIwCgpjYW5kaWRhdGVzGAMgAygLMhwudGVybXguY2xvdWQudjEuSWNlQ2FuZGlkYXRlIm4KD1dlYlJUQ1BlZXJSZWFkeRImCh5yZW1vdGVfY2VydGlmaWNhdGVfZmluZ2VycHJpbnQYASABKAkSMwoNb2JzZXJ2ZWRfcGF0aBgCIAEoDjIcLnRlcm14LmNsb3VkLnYxLk9ic2VydmVkUGF0aCJDChhXZWJSVENDaGFubmVsU2VuZFJlcXVlc3QSFgoOY2hhbm5lbF9oYW5kbGUYASABKAQSDwoHcGF5bG9hZBgCIAEoDCIyChdXZWJSVENDaGFubmVsU2VuZFJlc3VsdBIXCg9idWZmZXJlZF9hbW91bnQYASABKAQiTgodV2ViUlRDQ2hhbm5lbFRocmVzaG9sZFJlcXVlc3QSFgoOY2hhbm5lbF9oYW5kbGUYASABKAQSFQoNbG93X3RocmVzaG9sZBgCIAEoBCJOChlXZWJSVENQZWVyU25hcHNob3RSZXF1ZXN0EhMKC3BlZXJfaGFuZGxlGAEgASgEEhwKFHNhbXBsZWRfYXRfdW5peF9uYW5vGAIgASgDIpkCChJXZWJSVENQZWVyU25hcHNob3QSDQoFdmFsaWQYASABKAgSDwoHcGFpcl9pZBgCIAEoCRIqCgRwYXRoGAMgASgOMhwudGVybXguY2xvdWQudjEuT2JzZXJ2ZWRQYXRoEhUKDW5ldHdvcmtfY2xhc3MYBCABKAkSHAoUc2FtcGxlZF9hdF91bml4X25hbm8YBSABKAMSGAoQcm91bmRfdHJpcF9uYW5vcxgGIAEoAxISCgpieXRlc19zZW50GAcgASgEEhYKDmJ5dGVzX3JlY2VpdmVkGAggASgEEhQKDHBhY2tldHNfc2VudBgJIAEoBBITCgtsb3NzX2V2ZW50cxgKIAEoBBIRCgljb25uZWN0ZWQYCyABKAgiJAoSV2ViUlRDQ2xvc2VSZXF1ZXN0Eg4KBmhhbmRsZRgBIAEoBCJEChlXZWJSVENDaGFubmVsTWVzc2FnZUV2ZW50EhYKDmNoYW5uZWxfaGFuZGxlGAEgASgEEg8KB3BheWxvYWQYAiABKAwiMgoYV2ViUlRDQ2hhbm5lbENsb3NlZEV2ZW50EhYKDmNoYW5uZWxfaGFuZGxlGAEgASgEIk8KHFdlYlJUQ0J1ZmZlcmVkQW1vdW50TG93RXZlbnQSFgoOY2hhbm5lbF9oYW5kbGUYASABKAQSFwoPYnVmZmVyZWRfYW1vdW50GAIgASgEIp8CCg1QbGF0Zm9ybUV2ZW50ElQKFndlYnJ0Y19jaGFubmVsX21lc3NhZ2UYCiABKAsyMi50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENDaGFubmVsTWVzc2FnZUV2ZW50SAASUgoVd2VicnRjX2NoYW5uZWxfY2xvc2VkGAsgASgLMjEudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDQ2hhbm5lbENsb3NlZEV2ZW50SAASWwoad2VicnRjX2J1ZmZlcmVkX2Ftb3VudF9sb3cYDCABKAsyNS50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENCdWZmZXJlZEFtb3VudExvd0V2ZW50SABCBwoFZXZlbnQixQwKD1BsYXRmb3JtUmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgEEk8KEmNyZWRlbnRpYWxfcmVzb2x2ZRgKIAEoCzIxLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLkNyZWRlbnRpYWxSZXNvbHZlUmVxdWVzdEgAEk8KEmNyZWRlbnRpYWxfcHJlcGFyZRgLIAEoCzIxLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLkNyZWRlbnRpYWxQcmVwYXJlUmVxdWVzdEgAEk0KEWNyZWRlbnRpYWxfZGVsZXRlGAwgASgLMjAudGVybXguY2xpZW50LmJpbmRpbmcudjEuQ3JlZGVudGlhbERlbGV0ZVJlcXVlc3RIABJJCg9jcmVkZW50aWFsX3NpZ24YDSABKAsyLi50ZXJteC5jbGllbnQuYmluZGluZy52MS5DcmVkZW50aWFsU2lnblJlcXVlc3RIABJJCg9jcmVkZW50aWFsX2JpbmQYDiABKAsyLi50ZXJteC5jbGllbnQuYmluZGluZy52MS5DcmVkZW50aWFsQmluZFJlcXVlc3RIABJIChZjbG91ZF9yZXNvbHZlX2VuZHBvaW50GBQgASgLMiYudGVybXguY2xvdWQudjEuUmVzb2x2ZUVuZHBvaW50UmVxdWVzdEgAEk8KFmNsb3VkX2NyZWF0ZV9zaWduYWxpbmcYFSABKAsyLS50ZXJteC5jbG91ZC52MS5DcmVhdGVTaWduYWxpbmdTZXNzaW9uUmVxdWVzdEgAEkcKE2Nsb3VkX2FjcXVpcmVfcmVsYXkYFiABKAsyKC50ZXJteC5jbG91ZC52MS5BY3F1aXJlUmVsYXlMZWFzZVJlcXVlc3RIABJDChBjbG91ZF9wbGFuX3JvdXRlGBcgASgLMicudGVybXguY2xvdWQudjEuUGxhbk1hbmFnZWRSb3V0ZVJlcXVlc3RIABJIChRjbG91ZF9yZXBvcnRfcXVhbGl0eRgYIAEoCzIoLnRlcm14LmNsb3VkLnYxLlJlcG9ydFBhdGhRdWFsaXR5UmVxdWVzdEgAEk4KFGNsb3VkX3JlcG9ydF9vdXRjb21lGBkgASgLMi4udGVybXguY2xvdWQudjEuUmVwb3J0Q29ubmVjdGlvbk91dGNvbWVSZXF1ZXN0SAASSgoQd2VicnRjX29wZW5fcGVlchgeIAEoCzIuLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLldlYlJUQ09wZW5QZWVyUmVxdWVzdEgAEkkKE3dlYnJ0Y19jcmVhdGVfb2ZmZXIYHyABKAsyKi50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENQZWVyUmVxdWVzdEgAElAKE3dlYnJ0Y19hcHBseV9hbnN3ZXIYICABKAsyMS50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENBcHBseUFuc3dlclJlcXVlc3RIABJHChF3ZWJydGNfd2FpdF9yZWFkeRghIAEoCzIqLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLldlYlJUQ1BlZXJSZXF1ZXN0SAASUAoTd2VicnRjX2NoYW5uZWxfc2VuZBgiIAEoCzIxLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLldlYlJUQ0NoYW5uZWxTZW5kUmVxdWVzdEgAEloKGHdlYnJ0Y19jaGFubmVsX3RocmVzaG9sZBgjIAEoCzI2LnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLldlYlJUQ0NoYW5uZWxUaHJlc2hvbGRSZXF1ZXN0SAASUgoUd2VicnRjX3BlZXJfc25hcHNob3QYJCABKAsyMi50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENQZWVyU25hcHNob3RSZXF1ZXN0SAASSAoRd2VicnRjX2Nsb3NlX3BlZXIYJSABKAsyKy50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENDbG9zZVJlcXVlc3RIABJLChR3ZWJydGNfY2xvc2VfY2hhbm5lbBgmIAEoCzIrLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLldlYlJUQ0Nsb3NlUmVxdWVzdEgAQgkKB3JlcXVlc3Qi/wcKEFBsYXRmb3JtUmVzcG9uc2USEgoKcmVxdWVzdF9pZBgBIAEoBBIlCgVlcnJvchgCIAEoCzIWLnRlcm14LmFwaS52MS5BcGlFcnJvchI/CgpjcmVkZW50aWFsGAogASgLMikudGVybXguY2xpZW50LmJpbmRpbmcudjEuQ3JlZGVudGlhbFJlY29yZEgAEkoKD2NyZWRlbnRpYWxfc2lnbhgLIAEoCzIvLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLkNyZWRlbnRpYWxTaWduUmVzcG9uc2VIABJDChdjbG91ZF9yZXNvbHZlZF9lbmRwb2ludBgUIAEoCzIgLnRlcm14LmNsb3VkLnYxLlJlc29sdmVkRW5kcG9pbnRIABJDCg9jbG91ZF9zaWduYWxpbmcYFSABKAsyKC50ZXJteC5jbGllbnQuYmluZGluZy52MS5TaWduYWxpbmdFdmVudHNIABI3ChFjbG91ZF9yZWxheV9sZWFzZRgWIAEoCzIaLnRlcm14LmNsb3VkLnYxLlJlbGF5TGVhc2VIABI8ChBjbG91ZF9yb3V0ZV9wbGFuGBcgASgLMiAudGVybXguY2xvdWQudjEuTWFuYWdlZFJvdXRlUGxhbkgAEksKFmNsb3VkX3F1YWxpdHlfcmVwb3J0ZWQYGCABKAsyKS50ZXJteC5jbG91ZC52MS5SZXBvcnRQYXRoUXVhbGl0eVJlc3BvbnNlSAASUQoWY2xvdWRfb3V0Y29tZV9yZXBvcnRlZBgZIAEoCzIvLnRlcm14LmNsb3VkLnYxLlJlcG9ydENvbm5lY3Rpb25PdXRjb21lUmVzcG9uc2VIABJHChJ3ZWJydGNfcGVlcl9vcGVuZWQYHiABKAsyKS50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENQZWVyT3BlbmVkSAASSAoMd2VicnRjX29mZmVyGB8gASgLMjAudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDQ3JlYXRlT2ZmZXJSZXN1bHRIABJFChF3ZWJydGNfcGVlcl9yZWFkeRggIAEoCzIoLnRlcm14LmNsaWVudC5iaW5kaW5nLnYxLldlYlJUQ1BlZXJSZWFkeUgAEk8KE3dlYnJ0Y19jaGFubmVsX3NlbnQYISABKAsyMC50ZXJteC5jbGllbnQuYmluZGluZy52MS5XZWJSVENDaGFubmVsU2VuZFJlc3VsdEgAEksKFHdlYnJ0Y19wZWVyX3NuYXBzaG90GCIgASgLMisudGVybXguY2xpZW50LmJpbmRpbmcudjEuV2ViUlRDUGVlclNuYXBzaG90SABCCgoIcmVzcG9uc2UqiAEKDUNvbm5lY3RJbnRlbnQSHgoaQ09OTkVDVF9JTlRFTlRfVU5TUEVDSUZJRUQQABIeChpDT05ORUNUX0lOVEVOVF9JTlRFUkFDVElWRRABEh0KGUNPTk5FQ1RfSU5URU5UX0JBQ0tHUk9VTkQQAhIYChRDT05ORUNUX0lOVEVOVF9QUk9CRRADKrkBChBNYW5hZ2VkUmVsYXlNb2RlEiIKHk1BTkFHRURfUkVMQVlfTU9ERV9VTlNQRUNJRklFRBAAEhsKF01BTkFHRURfUkVMQVlfTU9ERV9BVVRPEAESHQoZTUFOQUdFRF9SRUxBWV9NT0RFX0RJUkVDVBACEiEKHU1BTkFHRURfUkVMQVlfTU9ERV9SRUxBWV9PTkxZEAMSIgoeTUFOQUdFRF9SRUxBWV9NT0RFX1NNQVJUX1JPVVRFEAQqxwIKF1Jlc291cmNlU3RyZWFtRnJhbWVUeXBlEioKJlJFU09VUkNFX1NUUkVBTV9GUkFNRV9UWVBFX1VOU1BFQ0lGSUVEEAASKAokUkVTT1VSQ0VfU1RSRUFNX0ZSQU1FX1RZUEVfRklMRV9EQVRBEAESJwojUkVTT1VSQ0VfU1RSRUFNX0ZSQU1FX1RZUEVfRklMRV9BQ0sQAhIqCiZSRVNPVVJDRV9TVFJFQU1fRlJBTUVfVFlQRV9GSUxFX0ZJTklTSBADEioKJlJFU09VUkNFX1NUUkVBTV9GUkFNRV9UWVBFX0ZJTEVfUkVTVUxUEAQSJAogUkVTT1VSQ0VfU1RSRUFNX0ZSQU1FX1RZUEVfRVJST1IQBRIvCitSRVNPVVJDRV9TVFJFQU1fRlJBTUVfVFlQRV9GSUxFX0ZJTklTSF9BVVRPEAZCKVonZ2l0aHViLmNvbS9sb3p6b3cvdGVybXgvcHJvdG8vYmluZGluZ3BiYgZwcm90bzM", [file_apipb_application, file_apipb_common, file_cloudpb_cloud_companion]);
 
 /**
  * @generated from message termx.client.binding.v1.ManagedEndpointConfig
@@ -241,6 +241,35 @@ export const DeleteCredentialResultSchema: GenMessage<DeleteCredentialResult> = 
   messageDesc(file_bindingpb_client_binding, 5);
 
 /**
+ * @generated from message termx.client.binding.v1.EngineCommand
+ */
+export type EngineCommand = Message<"termx.client.binding.v1.EngineCommand"> & {
+  /**
+   * @generated from oneof termx.client.binding.v1.EngineCommand.command
+   */
+  command: {
+    /**
+     * @generated from field: termx.client.binding.v1.ImportPairingRequest import_pairing = 1;
+     */
+    value: ImportPairingRequest;
+    case: "importPairing";
+  } | {
+    /**
+     * @generated from field: termx.client.binding.v1.DeleteCredentialRequest delete_credential = 2;
+     */
+    value: DeleteCredentialRequest;
+    case: "deleteCredential";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message termx.client.binding.v1.EngineCommand.
+ * Use `create(EngineCommandSchema)` to create a new message.
+ */
+export const EngineCommandSchema: GenMessage<EngineCommand> = /*@__PURE__*/
+  messageDesc(file_bindingpb_client_binding, 6);
+
+/**
  * @generated from message termx.client.binding.v1.OpenSessionResult
  */
 export type OpenSessionResult = Message<"termx.client.binding.v1.OpenSessionResult"> & {
@@ -275,7 +304,7 @@ export type OpenSessionResult = Message<"termx.client.binding.v1.OpenSessionResu
  * Use `create(OpenSessionResultSchema)` to create a new message.
  */
 export const OpenSessionResultSchema: GenMessage<OpenSessionResult> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 6);
+  messageDesc(file_bindingpb_client_binding, 7);
 
 /**
  * @generated from message termx.client.binding.v1.ExecuteResult
@@ -307,7 +336,7 @@ export type ExecuteResult = Message<"termx.client.binding.v1.ExecuteResult"> & {
  * Use `create(ExecuteResultSchema)` to create a new message.
  */
 export const ExecuteResultSchema: GenMessage<ExecuteResult> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 7);
+  messageDesc(file_bindingpb_client_binding, 8);
 
 /**
  * @generated from message termx.client.binding.v1.ApplicationEvent
@@ -329,7 +358,7 @@ export type ApplicationEvent = Message<"termx.client.binding.v1.ApplicationEvent
  * Use `create(ApplicationEventSchema)` to create a new message.
  */
 export const ApplicationEventSchema: GenMessage<ApplicationEvent> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 8);
+  messageDesc(file_bindingpb_client_binding, 9);
 
 /**
  * @generated from message termx.client.binding.v1.OpenResourceStreamRequest
@@ -339,6 +368,11 @@ export type OpenResourceStreamRequest = Message<"termx.client.binding.v1.OpenRes
    * @generated from field: termx.api.v1.ResourceHandle resource = 1;
    */
   resource?: ResourceHandle | undefined;
+
+  /**
+   * @generated from field: int64 initial_upload_offset = 2;
+   */
+  initialUploadOffset: bigint;
 };
 
 /**
@@ -346,7 +380,7 @@ export type OpenResourceStreamRequest = Message<"termx.client.binding.v1.OpenRes
  * Use `create(OpenResourceStreamRequestSchema)` to create a new message.
  */
 export const OpenResourceStreamRequestSchema: GenMessage<OpenResourceStreamRequest> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 9);
+  messageDesc(file_bindingpb_client_binding, 10);
 
 /**
  * @generated from message termx.client.binding.v1.ResourceStreamFrame
@@ -373,7 +407,7 @@ export type ResourceStreamFrame = Message<"termx.client.binding.v1.ResourceStrea
  * Use `create(ResourceStreamFrameSchema)` to create a new message.
  */
 export const ResourceStreamFrameSchema: GenMessage<ResourceStreamFrame> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 10);
+  messageDesc(file_bindingpb_client_binding, 11);
 
 /**
  * @generated from message termx.client.binding.v1.ResourceStreamClosedEvent
@@ -395,7 +429,7 @@ export type ResourceStreamClosedEvent = Message<"termx.client.binding.v1.Resourc
  * Use `create(ResourceStreamClosedEventSchema)` to create a new message.
  */
 export const ResourceStreamClosedEventSchema: GenMessage<ResourceStreamClosedEvent> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 11);
+  messageDesc(file_bindingpb_client_binding, 12);
 
 /**
  * @generated from message termx.client.binding.v1.SessionClosedEvent
@@ -422,7 +456,7 @@ export type SessionClosedEvent = Message<"termx.client.binding.v1.SessionClosedE
  * Use `create(SessionClosedEventSchema)` to create a new message.
  */
 export const SessionClosedEventSchema: GenMessage<SessionClosedEvent> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 12);
+  messageDesc(file_bindingpb_client_binding, 13);
 
 /**
  * @generated from message termx.client.binding.v1.EventEnvelope
@@ -497,7 +531,7 @@ export type EventEnvelope = Message<"termx.client.binding.v1.EventEnvelope"> & {
  * Use `create(EventEnvelopeSchema)` to create a new message.
  */
 export const EventEnvelopeSchema: GenMessage<EventEnvelope> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 13);
+  messageDesc(file_bindingpb_client_binding, 14);
 
 /**
  * @generated from message termx.client.binding.v1.CredentialResolveRequest
@@ -519,7 +553,7 @@ export type CredentialResolveRequest = Message<"termx.client.binding.v1.Credenti
  * Use `create(CredentialResolveRequestSchema)` to create a new message.
  */
 export const CredentialResolveRequestSchema: GenMessage<CredentialResolveRequest> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 14);
+  messageDesc(file_bindingpb_client_binding, 15);
 
 /**
  * @generated from message termx.client.binding.v1.CredentialPrepareRequest
@@ -541,7 +575,7 @@ export type CredentialPrepareRequest = Message<"termx.client.binding.v1.Credenti
  * Use `create(CredentialPrepareRequestSchema)` to create a new message.
  */
 export const CredentialPrepareRequestSchema: GenMessage<CredentialPrepareRequest> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 15);
+  messageDesc(file_bindingpb_client_binding, 16);
 
 /**
  * @generated from message termx.client.binding.v1.CredentialDeleteRequest
@@ -558,7 +592,7 @@ export type CredentialDeleteRequest = Message<"termx.client.binding.v1.Credentia
  * Use `create(CredentialDeleteRequestSchema)` to create a new message.
  */
 export const CredentialDeleteRequestSchema: GenMessage<CredentialDeleteRequest> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 16);
+  messageDesc(file_bindingpb_client_binding, 17);
 
 /**
  * @generated from message termx.client.binding.v1.CredentialBindRequest
@@ -585,7 +619,7 @@ export type CredentialBindRequest = Message<"termx.client.binding.v1.CredentialB
  * Use `create(CredentialBindRequestSchema)` to create a new message.
  */
 export const CredentialBindRequestSchema: GenMessage<CredentialBindRequest> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 17);
+  messageDesc(file_bindingpb_client_binding, 18);
 
 /**
  * @generated from message termx.client.binding.v1.CredentialRecord
@@ -622,7 +656,7 @@ export type CredentialRecord = Message<"termx.client.binding.v1.CredentialRecord
  * Use `create(CredentialRecordSchema)` to create a new message.
  */
 export const CredentialRecordSchema: GenMessage<CredentialRecord> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 18);
+  messageDesc(file_bindingpb_client_binding, 19);
 
 /**
  * @generated from message termx.client.binding.v1.CredentialSignRequest
@@ -644,7 +678,7 @@ export type CredentialSignRequest = Message<"termx.client.binding.v1.CredentialS
  * Use `create(CredentialSignRequestSchema)` to create a new message.
  */
 export const CredentialSignRequestSchema: GenMessage<CredentialSignRequest> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 19);
+  messageDesc(file_bindingpb_client_binding, 20);
 
 /**
  * @generated from message termx.client.binding.v1.CredentialSignResponse
@@ -661,7 +695,7 @@ export type CredentialSignResponse = Message<"termx.client.binding.v1.Credential
  * Use `create(CredentialSignResponseSchema)` to create a new message.
  */
 export const CredentialSignResponseSchema: GenMessage<CredentialSignResponse> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 20);
+  messageDesc(file_bindingpb_client_binding, 21);
 
 /**
  * @generated from message termx.client.binding.v1.SignalingEvents
@@ -678,7 +712,7 @@ export type SignalingEvents = Message<"termx.client.binding.v1.SignalingEvents">
  * Use `create(SignalingEventsSchema)` to create a new message.
  */
 export const SignalingEventsSchema: GenMessage<SignalingEvents> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 21);
+  messageDesc(file_bindingpb_client_binding, 22);
 
 /**
  * WebRTCOpenPeerRequest 只描述浏览器创建 RTCPeerConnection 所需的平台 primitive。
@@ -708,7 +742,7 @@ export type WebRTCOpenPeerRequest = Message<"termx.client.binding.v1.WebRTCOpenP
  * Use `create(WebRTCOpenPeerRequestSchema)` to create a new message.
  */
 export const WebRTCOpenPeerRequestSchema: GenMessage<WebRTCOpenPeerRequest> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 22);
+  messageDesc(file_bindingpb_client_binding, 23);
 
 /**
  * @generated from message termx.client.binding.v1.WebRTCPeerOpened
@@ -730,7 +764,7 @@ export type WebRTCPeerOpened = Message<"termx.client.binding.v1.WebRTCPeerOpened
  * Use `create(WebRTCPeerOpenedSchema)` to create a new message.
  */
 export const WebRTCPeerOpenedSchema: GenMessage<WebRTCPeerOpened> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 23);
+  messageDesc(file_bindingpb_client_binding, 24);
 
 /**
  * @generated from message termx.client.binding.v1.WebRTCPeerRequest
@@ -747,7 +781,7 @@ export type WebRTCPeerRequest = Message<"termx.client.binding.v1.WebRTCPeerReque
  * Use `create(WebRTCPeerRequestSchema)` to create a new message.
  */
 export const WebRTCPeerRequestSchema: GenMessage<WebRTCPeerRequest> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 24);
+  messageDesc(file_bindingpb_client_binding, 25);
 
 /**
  * @generated from message termx.client.binding.v1.WebRTCCreateOfferResult
@@ -764,7 +798,7 @@ export type WebRTCCreateOfferResult = Message<"termx.client.binding.v1.WebRTCCre
  * Use `create(WebRTCCreateOfferResultSchema)` to create a new message.
  */
 export const WebRTCCreateOfferResultSchema: GenMessage<WebRTCCreateOfferResult> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 25);
+  messageDesc(file_bindingpb_client_binding, 26);
 
 /**
  * @generated from message termx.client.binding.v1.WebRTCApplyAnswerRequest
@@ -791,7 +825,7 @@ export type WebRTCApplyAnswerRequest = Message<"termx.client.binding.v1.WebRTCAp
  * Use `create(WebRTCApplyAnswerRequestSchema)` to create a new message.
  */
 export const WebRTCApplyAnswerRequestSchema: GenMessage<WebRTCApplyAnswerRequest> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 26);
+  messageDesc(file_bindingpb_client_binding, 27);
 
 /**
  * @generated from message termx.client.binding.v1.WebRTCPeerReady
@@ -813,7 +847,7 @@ export type WebRTCPeerReady = Message<"termx.client.binding.v1.WebRTCPeerReady">
  * Use `create(WebRTCPeerReadySchema)` to create a new message.
  */
 export const WebRTCPeerReadySchema: GenMessage<WebRTCPeerReady> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 27);
+  messageDesc(file_bindingpb_client_binding, 28);
 
 /**
  * @generated from message termx.client.binding.v1.WebRTCChannelSendRequest
@@ -835,7 +869,7 @@ export type WebRTCChannelSendRequest = Message<"termx.client.binding.v1.WebRTCCh
  * Use `create(WebRTCChannelSendRequestSchema)` to create a new message.
  */
 export const WebRTCChannelSendRequestSchema: GenMessage<WebRTCChannelSendRequest> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 28);
+  messageDesc(file_bindingpb_client_binding, 29);
 
 /**
  * @generated from message termx.client.binding.v1.WebRTCChannelSendResult
@@ -852,7 +886,7 @@ export type WebRTCChannelSendResult = Message<"termx.client.binding.v1.WebRTCCha
  * Use `create(WebRTCChannelSendResultSchema)` to create a new message.
  */
 export const WebRTCChannelSendResultSchema: GenMessage<WebRTCChannelSendResult> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 29);
+  messageDesc(file_bindingpb_client_binding, 30);
 
 /**
  * @generated from message termx.client.binding.v1.WebRTCChannelThresholdRequest
@@ -874,7 +908,7 @@ export type WebRTCChannelThresholdRequest = Message<"termx.client.binding.v1.Web
  * Use `create(WebRTCChannelThresholdRequestSchema)` to create a new message.
  */
 export const WebRTCChannelThresholdRequestSchema: GenMessage<WebRTCChannelThresholdRequest> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 30);
+  messageDesc(file_bindingpb_client_binding, 31);
 
 /**
  * @generated from message termx.client.binding.v1.WebRTCPeerSnapshotRequest
@@ -896,7 +930,7 @@ export type WebRTCPeerSnapshotRequest = Message<"termx.client.binding.v1.WebRTCP
  * Use `create(WebRTCPeerSnapshotRequestSchema)` to create a new message.
  */
 export const WebRTCPeerSnapshotRequestSchema: GenMessage<WebRTCPeerSnapshotRequest> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 31);
+  messageDesc(file_bindingpb_client_binding, 32);
 
 /**
  * @generated from message termx.client.binding.v1.WebRTCPeerSnapshot
@@ -963,7 +997,7 @@ export type WebRTCPeerSnapshot = Message<"termx.client.binding.v1.WebRTCPeerSnap
  * Use `create(WebRTCPeerSnapshotSchema)` to create a new message.
  */
 export const WebRTCPeerSnapshotSchema: GenMessage<WebRTCPeerSnapshot> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 32);
+  messageDesc(file_bindingpb_client_binding, 33);
 
 /**
  * @generated from message termx.client.binding.v1.WebRTCCloseRequest
@@ -980,7 +1014,7 @@ export type WebRTCCloseRequest = Message<"termx.client.binding.v1.WebRTCCloseReq
  * Use `create(WebRTCCloseRequestSchema)` to create a new message.
  */
 export const WebRTCCloseRequestSchema: GenMessage<WebRTCCloseRequest> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 33);
+  messageDesc(file_bindingpb_client_binding, 34);
 
 /**
  * @generated from message termx.client.binding.v1.WebRTCChannelMessageEvent
@@ -1002,7 +1036,7 @@ export type WebRTCChannelMessageEvent = Message<"termx.client.binding.v1.WebRTCC
  * Use `create(WebRTCChannelMessageEventSchema)` to create a new message.
  */
 export const WebRTCChannelMessageEventSchema: GenMessage<WebRTCChannelMessageEvent> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 34);
+  messageDesc(file_bindingpb_client_binding, 35);
 
 /**
  * @generated from message termx.client.binding.v1.WebRTCChannelClosedEvent
@@ -1019,7 +1053,7 @@ export type WebRTCChannelClosedEvent = Message<"termx.client.binding.v1.WebRTCCh
  * Use `create(WebRTCChannelClosedEventSchema)` to create a new message.
  */
 export const WebRTCChannelClosedEventSchema: GenMessage<WebRTCChannelClosedEvent> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 35);
+  messageDesc(file_bindingpb_client_binding, 36);
 
 /**
  * @generated from message termx.client.binding.v1.WebRTCBufferedAmountLowEvent
@@ -1041,7 +1075,7 @@ export type WebRTCBufferedAmountLowEvent = Message<"termx.client.binding.v1.WebR
  * Use `create(WebRTCBufferedAmountLowEventSchema)` to create a new message.
  */
 export const WebRTCBufferedAmountLowEventSchema: GenMessage<WebRTCBufferedAmountLowEvent> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 36);
+  messageDesc(file_bindingpb_client_binding, 37);
 
 /**
  * PlatformEvent 是浏览器异步 primitive 回到 Go engine 的唯一入口。
@@ -1079,7 +1113,7 @@ export type PlatformEvent = Message<"termx.client.binding.v1.PlatformEvent"> & {
  * Use `create(PlatformEventSchema)` to create a new message.
  */
 export const PlatformEventSchema: GenMessage<PlatformEvent> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 37);
+  messageDesc(file_bindingpb_client_binding, 38);
 
 /**
  * @generated from message termx.client.binding.v1.PlatformRequest
@@ -1221,7 +1255,7 @@ export type PlatformRequest = Message<"termx.client.binding.v1.PlatformRequest">
  * Use `create(PlatformRequestSchema)` to create a new message.
  */
 export const PlatformRequestSchema: GenMessage<PlatformRequest> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 38);
+  messageDesc(file_bindingpb_client_binding, 39);
 
 /**
  * @generated from message termx.client.binding.v1.PlatformResponse
@@ -1326,7 +1360,7 @@ export type PlatformResponse = Message<"termx.client.binding.v1.PlatformResponse
  * Use `create(PlatformResponseSchema)` to create a new message.
  */
 export const PlatformResponseSchema: GenMessage<PlatformResponse> = /*@__PURE__*/
-  messageDesc(file_bindingpb_client_binding, 39);
+  messageDesc(file_bindingpb_client_binding, 40);
 
 /**
  * @generated from enum termx.client.binding.v1.ConnectIntent

@@ -34,20 +34,21 @@ type Options struct {
 	Peers            port.ManagedPeerFactory
 	ClientName       string
 	CredentialPrefix string
-	NextGeneration   func() clientruntime.SessionGeneration
 	Now              func() time.Time
+	SessionAuthority *clientruntime.SessionGenerationAuthority
 }
 
 // Host 是跨 Android/Web 共用的 binding.Host、PairingHost 与 CredentialHost。
 type Host struct {
 	options   Options
+	owner     *clientruntime.SessionOwner
 	closeOnce sync.Once
 }
 
 // New 校验平台依赖并创建共享 managed host。
 func New(options Options) (*Host, error) {
-	if options.Broker == nil || options.Peers == nil || options.NextGeneration == nil {
-		return nil, fmt.Errorf("managed binding host requires broker, peer factory, and generation source")
+	if options.Broker == nil || options.Peers == nil {
+		return nil, fmt.Errorf("managed binding host requires broker and peer factory")
 	}
 	options.ClientName = strings.TrimSpace(options.ClientName)
 	if options.ClientName == "" {
@@ -60,7 +61,7 @@ func New(options Options) (*Host, error) {
 	if options.Now == nil {
 		options.Now = time.Now
 	}
-	return &Host{options: options}, nil
+	return &Host{options: options, owner: clientruntime.NewSessionOwnerWithAuthority(options.SessionAuthority)}, nil
 }
 
 // OpenSession 建立 Go-owned managed generation；平台 UI 状态不能参与 endpoint、auth 或协议判断。
@@ -93,25 +94,13 @@ func (host *Host) OpenSession(ctx context.Context, request *bindingpb.OpenSessio
 			AccountProfile: strings.TrimSpace(managedConfig.GetAccountProfile()), RelayMode: relayMode,
 		}},
 	}
-	attempt, err := clientruntime.NewAttemptRequest(target, routeID, host.options.NextGeneration(), intent)
-	if err != nil {
-		return nil, err
-	}
+	config := managedSessionConfig(request, routeID)
 	credentials := platformCredentials{broker: host.options.Broker}
 	dialer := &managed.Dialer{
 		Cloud: platformCloud{broker: host.options.Broker}, Peers: host.options.Peers, ClientName: host.options.ClientName,
 		Authorization: managed.CapabilityAuthorizer{Credentials: credentials, Signers: credentials, Now: host.options.Now}, Now: host.options.Now,
 	}
-	ready, err := dialer.Dial(ctx, attempt)
-	if err != nil {
-		return nil, err
-	}
-	application, ok := ready.(clientruntime.ApplicationReadySession)
-	if !ok {
-		_ = ready.Close()
-		return nil, fmt.Errorf("managed route returned no Proto application session")
-	}
-	return application, nil
+	return host.owner.AcquireRoute(ctx, target, routeID, intent, config, dialer)
 }
 
 // ImportPairing 验证 bootstrap、使用平台不可导出 signer 完成 PairingExchange，并原子绑定 grant。
@@ -162,7 +151,7 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 		ID: endpoint.EndpointID(endpointID), DaemonIdentity: candidate.Identity,
 		Routes: map[endpoint.RouteID]endpoint.AccessRoute{pairingRoute.ID: pairingRoute},
 	}
-	attempt, err := clientruntime.NewAttemptRequest(target, pairingRoute.ID, host.options.NextGeneration(), clientruntime.ConnectIntentInteractive)
+	attempt, err := host.owner.BeginRouteAttempt(target, pairingRoute.ID, clientruntime.ConnectIntentInteractive)
 	if err != nil {
 		return nil, err
 	}
@@ -223,6 +212,7 @@ func (host *Host) Close() error {
 		return nil
 	}
 	host.closeOnce.Do(func() {
+		_ = host.owner.Close()
 		if closer, ok := host.options.Peers.(interface{ Close() error }); ok {
 			_ = closer.Close()
 		}
@@ -233,6 +223,11 @@ func (host *Host) Close() error {
 
 // Broker 返回当前 engine 独占的平台 broker，供 JNI/WASM wrapper 驱动。
 func (host *Host) Broker() *binding.PlatformBroker { return host.options.Broker }
+
+func managedSessionConfig(request *bindingpb.OpenSessionRequest, routeID endpoint.RouteID) string {
+	managed := request.GetManaged()
+	return fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%s\x00%d\x00%d", routeID, managed.GetTargetDeviceId(), managed.GetDeviceFingerprint(), managed.GetCredentialRef(), managed.GetAccountProfile(), managed.GetRelayMode(), request.GetIntent())
+}
 
 type platformCredentials struct{ broker *binding.PlatformBroker }
 

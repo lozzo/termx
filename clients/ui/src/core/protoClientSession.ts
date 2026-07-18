@@ -22,7 +22,7 @@ export interface ProtoClientSession {
   readonly stamp: EndpointSessionStamp
   execute(command: CommandEnvelope, options?: { signal?: AbortSignal }): Promise<ResultEnvelope>
   subscribeEvents(handler: (event: EventEnvelope) => void): ProtoClientSubscription
-  openResourceStream(resource: ResourceHandle): Promise<ProtoResourceStream>
+  openResourceStream(resource: ResourceHandle, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoResourceStream>
   isAlive(): boolean
   close(): Promise<void>
 }

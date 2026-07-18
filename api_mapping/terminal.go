@@ -458,6 +458,35 @@ func TerminalInfoToProto(endpointID string, info corev2.TerminalInfo, attachment
 	return out, nil
 }
 
+// TerminalDefaultsToProto 把 core daemon defaults 投影为公共 API result。
+func TerminalDefaultsToProto(defaults corev2.TerminalDefaults) *apipb.TerminalDefaultsResult {
+	return &apipb.TerminalDefaultsResult{Defaults: &apipb.TerminalDefaults{DefaultCommand: append([]string(nil), defaults.DefaultCommand...), DefaultCwd: defaults.DefaultCWD}}
+}
+
+// TerminalCreateToProto 包装已经完成 endpoint-aware 映射的 terminal projection。
+func TerminalCreateToProto(terminal *apipb.TerminalInfo) *apipb.TerminalCreateResult {
+	return &apipb.TerminalCreateResult{Terminal: terminal}
+}
+
+// TerminalGetToProto 包装已经完成 endpoint-aware 映射的 terminal projection。
+func TerminalGetToProto(terminal *apipb.TerminalInfo) *apipb.TerminalGetResult {
+	return &apipb.TerminalGetResult{Terminal: terminal}
+}
+
+// TerminalListToProto 包装已经完成 endpoint-aware 映射的 terminal projections。
+func TerminalListToProto(terminals []*apipb.TerminalInfo) *apipb.TerminalListResult {
+	return &apipb.TerminalListResult{Terminals: terminals}
+}
+
+// PathDirectoriesToProto 把 core path completion window 投影为公共 API result。
+func PathDirectoriesToProto(result corev2.PathDirectories) *apipb.PathListDirectoriesResult {
+	out := &apipb.PathListDirectoriesResult{BasePath: result.BasePath, Missing: result.Missing, Truncated: result.Truncated, Entries: make([]*apipb.PathDirectoryEntry, 0, len(result.Entries))}
+	for _, entry := range result.Entries {
+		out.Entries = append(out.Entries, &apipb.PathDirectoryEntry{Name: entry.Name, Path: entry.Path})
+	}
+	return out
+}
+
 // TerminalAttachmentRequestFromProto 映射 attachment command，不建立或发布资源。
 func TerminalAttachmentRequestFromProto(command *apipb.TerminalAttachCommand) corev2.TerminalAttachmentRequest {
 	return corev2.TerminalAttachmentRequest{

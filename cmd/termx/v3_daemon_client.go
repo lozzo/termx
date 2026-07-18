@@ -10,96 +10,73 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/proto/wire"
-	unixtransport "github.com/lozzow/termx/shared/transport/unix"
+	localadapter "github.com/lozzow/termx/client/adapter/local"
+	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
+	clientendpoint "github.com/lozzow/termx/client/endpoint"
+	clientruntime "github.com/lozzow/termx/client/runtime"
 )
 
 var (
-	v3DialClient            = dialV3Client
-	startV3Daemon           = startCoreV2Daemon
-	startV3DaemonWithConfig = startCoreV2DaemonWithConfig
-	osExecutable            = os.Executable
+	v3DialClient              = dialV3Client
+	startV3Daemon             = startCoreV2Daemon
+	startV3DaemonWithConfig   = startCoreV2DaemonWithConfig
+	connectV3LocalApplication = localadapter.Connect
+	osExecutable              = os.Executable
 )
 
-func dialV3Client(path string) (*protocol.Client, error) {
+func dialV3Client(path string) (*localadapter.ProtocolClient, error) {
 	return dialV3ClientContext(context.Background(), path)
 }
 
-func dialV3ClientContext(ctx context.Context, path string) (*protocol.Client, error) {
+func dialV3ClientContext(ctx context.Context, path string) (*localadapter.ProtocolClient, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	transport, err := unixtransport.DialContext(ctx, path)
-	if err != nil {
-		return nil, err
+	return localadapter.DialProtocolClientForComposition(ctx, path, "termx-cli")
+}
+
+func dialOrStartV3Client(path, logFile string, logger *slog.Logger) (*protocoladapter.ApplicationClient, error) {
+	return dialOrStartV3ClientWithConfig(path, logFile, "", logger)
+}
+
+func dialOrStartV3ClientWithConfig(path, logFile, configPath string, logger *slog.Logger) (*protocoladapter.ApplicationClient, error) {
+	return connectLocalApplicationClient(context.Background(), path, logFile, configPath, logger)
+}
+
+func dialOrStartV3ClientContext(ctx context.Context, path, logFile string, logger *slog.Logger) (*protocoladapter.ApplicationClient, error) {
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	client := protocol.NewClient(transport)
-	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "cmd/termx"}); err != nil {
-		_ = client.Close()
+	return connectLocalApplicationClient(ctx, path, logFile, "", logger)
+}
+
+func connectLocalApplicationClient(ctx context.Context, path, logFile, configPath string, logger *slog.Logger) (*protocoladapter.ApplicationClient, error) {
+	registry := clientendpoint.DefaultRegistry()
+	target, _ := registry.DefaultEndpoint()
+	owner := clientruntime.NewSessionOwner()
+	client, _, err := connectV3LocalApplication(ctx, owner, target, clientendpoint.DefaultLocalRouteID, clientruntime.ConnectIntentInteractive, localadapter.Options{
+		SocketOverride: path,
+		DefaultSocket:  resolveV3Socket(""),
+		ClientName:     "termx-cli",
+		Start: func(_ context.Context, socketPath string) error {
+			if logger != nil {
+				logger.Warn("core-v2 daemon dial failed; starting current daemon", "socket", socketPath)
+			}
+			if err := startCoreV2DaemonForConfig(socketPath, logFile, configPath); err != nil {
+				return fmt.Errorf("start core-v2 daemon: %w", err)
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		_ = owner.Close()
 		return nil, err
 	}
 	return client, nil
 }
 
-func dialOrStartV3Client(path, logFile string, logger *slog.Logger) (*protocol.Client, error) {
-	return dialOrStartV3ClientWithConfig(path, logFile, "", logger)
-}
-
-func dialOrStartV3ClientWithConfig(path, logFile, configPath string, logger *slog.Logger) (*protocol.Client, error) {
-	client, err := v3DialClient(path)
-	if err == nil {
-		return client, nil
-	}
-	if logger != nil {
-		logger.Warn("core-v2 daemon dial failed; starting current daemon", "socket", path, "error", err)
-	}
-	if err := startCoreV2DaemonForConfig(path, logFile, configPath); err != nil {
-		return nil, fmt.Errorf("start core-v2 daemon: %w", err)
-	}
-	if err := waitForSocket(path, 5*time.Second, func() error {
-		probe, probeErr := v3DialClient(path)
-		if probe != nil {
-			_ = probe.Close()
-		}
-		return probeErr
-	}); err != nil {
-		return nil, err
-	}
-	return v3DialClient(path)
-}
-
-func dialOrStartV3ClientContext(ctx context.Context, path, logFile string, logger *slog.Logger) (*protocol.Client, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	client, err := dialV3ClientContext(ctx, path)
-	if err == nil {
-		return client, nil
-	}
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-	if logger != nil {
-		logger.Warn("core-v2 daemon dial failed; starting current daemon", "socket", path, "error", err)
-	}
-	if err := startCoreV2DaemonForConfig(path, logFile, ""); err != nil {
-		return nil, fmt.Errorf("start core-v2 daemon: %w", err)
-	}
-	if err := waitForSocketContext(ctx, path, 5*time.Second, func(attemptCtx context.Context) error {
-		probe, probeErr := dialV3ClientContext(attemptCtx, path)
-		if probe != nil {
-			_ = probe.Close()
-		}
-		return probeErr
-	}); err != nil {
-		return nil, err
-	}
-	return dialV3ClientContext(ctx, path)
-}
-
-func dialOrStartV3TransportWithConfig(path, logFile, configPath string, logger *slog.Logger) (*unixtransport.Transport, error) {
-	transport, err := unixtransport.Dial(path)
+func dialOrStartV3TransportWithConfig(path, logFile, configPath string, logger *slog.Logger) (*localadapter.Transport, error) {
+	transport, err := localadapter.DialTransport(context.Background(), path)
 	if err == nil {
 		return transport, nil
 	}
@@ -110,7 +87,7 @@ func dialOrStartV3TransportWithConfig(path, logFile, configPath string, logger *
 		return nil, fmt.Errorf("start core-v2 daemon: %w", err)
 	}
 	if err := waitForSocket(path, 5*time.Second, func() error {
-		probe, probeErr := unixtransport.Dial(path)
+		probe, probeErr := localadapter.DialTransport(context.Background(), path)
 		if probe != nil {
 			_ = probe.Close()
 		}
@@ -118,7 +95,7 @@ func dialOrStartV3TransportWithConfig(path, logFile, configPath string, logger *
 	}); err != nil {
 		return nil, err
 	}
-	return unixtransport.Dial(path)
+	return localadapter.DialTransport(context.Background(), path)
 }
 
 func startCoreV2Daemon(path string, logFile string) error {

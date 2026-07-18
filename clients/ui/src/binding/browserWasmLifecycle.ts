@@ -64,7 +64,7 @@ export class BrowserWasmLifecycle<T extends BrowserWasmGeneration> {
   private readonly onPageShow = () => this.enqueueResume()
 
   private enqueueSuspend(): void {
-    this.transition = this.transition.then(async () => {
+    this.transition = this.transition.catch(() => undefined).then(async () => {
       const stale = this.generation
       this.generation = null
       this.onGeneration?.(null)
@@ -73,7 +73,7 @@ export class BrowserWasmLifecycle<T extends BrowserWasmGeneration> {
   }
 
   private enqueueResume(): void {
-    this.transition = this.transition.then(async () => {
+    this.transition = this.transition.catch(() => undefined).then(async () => {
       if (this.disposed || this.generation) return
       const fresh = await this.createGeneration()
       if (this.disposed) {

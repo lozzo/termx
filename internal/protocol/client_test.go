@@ -42,6 +42,84 @@ func TestClientExecutesGeneratedApplicationEnvelope(t *testing.T) {
 	}
 }
 
+func TestClientRetainsLateFileOpenResultAfterContextCancellation(t *testing.T) {
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	defer serverTransport.Close()
+	client := NewClient(clientTransport)
+	defer client.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	helloDone := make(chan error, 1)
+	go func() { helloDone <- client.Hello(ctx, Hello{Version: wire.Version, Client: "test"}) }()
+	if err := expectHelloAndRespond(serverTransport); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-helloDone; err != nil {
+		t.Fatal(err)
+	}
+
+	requestSeen := make(chan Request, 1)
+	releaseResponse := make(chan struct{})
+	serverDone := make(chan error, 1)
+	go func() {
+		channel, typ, payload, err := receiveTestFrame(serverTransport)
+		if err != nil || channel != 0 || typ != wire.TypeRequest {
+			serverDone <- fmt.Errorf("file request frame channel=%d type=%d err=%v", channel, typ, err)
+			return
+		}
+		request, err := DecodeRequestPayload(payload)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		requestSeen <- request
+		<-releaseResponse
+		var command apipb.CommandEnvelope
+		if err := proto.Unmarshal(request.Params, &command); err != nil {
+			serverDone <- err
+			return
+		}
+		result, err := proto.Marshal(&apipb.ResultEnvelope{RequestId: command.GetContext().GetRequestId(), OriginSession: command.GetContext().GetSession(), Result: &apipb.ResultEnvelope_FileTransferOpen{FileTransferOpen: &apipb.FileTransferOpenResult{Transfer: &apipb.FileTransferHandle{
+			Resource: &apipb.ResourceHandle{Kind: apipb.ResourceKind_RESOURCE_KIND_FILE_TRANSFER, OpaqueToken: []byte("resource"), Session: command.GetContext().GetSession(), Generation: 1},
+			Resume:   &apipb.FileUploadResumeHandle{OpaqueToken: []byte("resume")},
+		}}}})
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		response, err := EncodeResponsePayload(Response{ID: request.ID, Result: result})
+		if err == nil {
+			err = sendTestFrame(serverTransport, 0, wire.TypeResponse, response)
+		}
+		serverDone <- err
+	}()
+
+	requestCtx, requestCancel := context.WithCancel(context.Background())
+	resultCh := make(chan *apipb.ResultEnvelope, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		result, err := client.ExecuteApplicationTerminal(requestCtx, &apipb.CommandEnvelope{
+			Context: &apipb.RequestContext{RequestId: "upload-open", ApiVersion: &apipb.ApiVersion{Major: 1}, Session: testSessionStamp()},
+			Command: &apipb.CommandEnvelope_FileUploadOpen{FileUploadOpen: &apipb.FileUploadOpenCommand{Path: "/tmp/demo", Size: 8, Overwrite: true, Operation: &apipb.OperationStamp{Session: testSessionStamp(), OperationId: "upload-open"}}},
+		})
+		resultCh <- result
+		errCh <- err
+	}()
+	<-requestSeen
+	requestCancel()
+	close(releaseResponse)
+	if err := <-errCh; err != nil {
+		t.Fatalf("late file result was discarded: %v", err)
+	}
+	if result := <-resultCh; string(result.GetFileTransferOpen().GetTransfer().GetResume().GetOpaqueToken()) != "resume" {
+		t.Fatalf("late file result = %#v", result)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestClientPublishesGeneratedApplicationEvents(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

@@ -87,8 +87,8 @@ func TestEnginePairingAndCredentialOperationsUseGenericEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer engine.Close()
-	importPayload, _ := proto.Marshal(&bindingpb.ImportPairingRequest{RequestId: "pair-1", PortablePayload: "termx://bootstrap?payload=proof"})
-	importOperation, err := engine.ImportPairing(importPayload)
+	importPayload, _ := proto.Marshal(&bindingpb.EngineCommand{Command: &bindingpb.EngineCommand_ImportPairing{ImportPairing: &bindingpb.ImportPairingRequest{RequestId: "pair-1", PortablePayload: "termx://bootstrap?payload=proof"}}})
+	importOperation, err := engine.EngineCommand(importPayload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,8 +99,8 @@ func TestEnginePairingAndCredentialOperationsUseGenericEvents(t *testing.T) {
 	if err := engine.Release(importOperation); err != nil {
 		t.Fatal(err)
 	}
-	deletePayload, _ := proto.Marshal(&bindingpb.DeleteCredentialRequest{RequestId: "delete-1", CredentialRef: "credential:studio"})
-	deleteOperation, err := engine.DeleteCredential(deletePayload)
+	deletePayload, _ := proto.Marshal(&bindingpb.EngineCommand{Command: &bindingpb.EngineCommand_DeleteCredential{DeleteCredential: &bindingpb.DeleteCredentialRequest{RequestId: "delete-1", CredentialRef: "credential:studio"}}})
+	deleteOperation, err := engine.EngineCommand(deletePayload)
 	if err != nil {
 		t.Fatal(err)
 	}

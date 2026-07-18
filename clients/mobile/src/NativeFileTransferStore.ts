@@ -13,6 +13,7 @@ import {
   decodeFileTransferResultPayload,
   encodeFileTransferAckPayload,
   encodeFileTransferDataPayload,
+  encodeFileTransferFinishPayload,
 } from '@termx/ui'
 
 export type TransferStatus = 'pending' | 'transferring' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'missing'
@@ -34,6 +35,8 @@ export interface TransferInfo {
   targetDir?: string | undefined
   savedPath?: string | undefined
   savedUri?: string | undefined
+  uploadResumeToken?: Uint8Array | undefined
+  remoteModifiedAtUnixNano?: bigint | undefined
 }
 
 export interface FileTransferStoreSnapshot {
@@ -41,13 +44,20 @@ export interface FileTransferStoreSnapshot {
   hasActiveTransfers: boolean
 }
 
-type NativeTransferSessionResolver = (machineId: string) => Promise<ProtoClientSession | null | undefined>
+type NativeTransferSessionResolver = (machineId: string, signal: AbortSignal) => Promise<ProtoClientSession | null | undefined>
 
 type ActiveTransfer = {
-  session: ProtoClientSession
-  stream: ProtoResourceStream
-  resource: NonNullable<TermxApiFile.FileTransferHandle['resource']>
+  epoch: number
+  machineId: string
+  direction: TransferInfo['direction']
   cancel: AbortController
+  session?: ProtoClientSession
+  stream?: ProtoResourceStream
+  resource?: NonNullable<TermxApiFile.FileTransferHandle['resource']>
+  uploadResume?: NonNullable<TermxApiFile.FileTransferHandle['resume']>
+  destructiveCancel: boolean
+  readyForClose: Promise<void>
+  markReadyForClose: () => void
 }
 
 /** NativeFileTransferStore consumes apipb and Go-owned resource streams; it owns only UI progress and local Blob/URI access. */
@@ -55,6 +65,15 @@ export class NativeFileTransferStore {
   private transfers: TransferInfo[] = []
   private readonly listeners = new Set<() => void>()
   private readonly active = new Map<string, ActiveTransfer>()
+  private readonly downloadChunks = new Map<string, Uint8Array[]>()
+  private readonly taskTeardowns = new WeakMap<ActiveTransfer, Promise<void>>()
+  private readonly pendingTeardowns = new Map<string, Promise<void>>()
+  private readonly failedCleanupOwners = new Map<string, ActiveTransfer>()
+  private readonly detachedCleanupOwners = new Map<string, ActiveTransfer>()
+  private readonly destructiveRetries = new Map<string, Promise<void>>()
+  private readonly pendingDismissals = new Set<string>()
+  private readonly resumeTransitions = new Map<string, Promise<void>>()
+  private readonly transitionEpochs = new Map<string, number>()
   private resolver: NativeTransferSessionResolver | null = null
   private version = 0
   private cachedVersion = -1
@@ -64,40 +83,80 @@ export class NativeFileTransferStore {
 
   startDownload(machineId: string, fileName: string, fileSize: number, filePath: string, _offset = 0): void {
     const id = transferID('download', machineId, filePath)
+    this.advanceTransition(id)
     this.upsert({ id, machineId, name: fileName, direction: 'download', totalSize: fileSize, transferredSize: 0, status: 'pending', startedAt: Date.now(), updatedAt: Date.now(), filePath })
     void this.runDownload(id).catch((error) => this.fail(id, error))
   }
 
-  async getDownloadResumeOffset(_machineId?: string, _filePath?: string, _fileSize?: number): Promise<number> { return 0 }
+  async getDownloadResumeOffset(machineId?: string, filePath?: string, fileSize?: number): Promise<number> {
+    const transfer = this.transfers.find((item) => item.direction === 'download' && item.machineId === machineId && item.filePath === filePath && item.totalSize === fileSize)
+    return transfer && this.downloadChunks.has(transfer.id) ? transfer.transferredSize : 0
+  }
 
   startUpload(machineId: string, contentUri: string, fileName: string, fileSize: number, targetDir: string): void {
     const id = transferID('upload', machineId, `${targetDir}/${fileName}`)
+    this.advanceTransition(id)
     this.upsert({ id, machineId, name: fileName, direction: 'upload', totalSize: fileSize, transferredSize: 0, status: 'pending', startedAt: Date.now(), updatedAt: Date.now(), localUri: contentUri, targetDir })
     void this.runUpload(id).catch((error) => this.fail(id, error))
   }
 
   cancelTransfer(id: string): void {
-    const task = this.active.get(id)
+    void this.requestCancel(id)?.catch(() => undefined)
+  }
+
+  private requestCancel(id: string): Promise<void> | null {
+    this.advanceTransition(id)
+    const task = this.active.get(id) ?? this.failedCleanupOwners.get(id) ?? this.detachedCleanupOwners.get(id)
     task?.cancel.abort()
-    if (task) void this.cancelRemote(task).finally(() => this.closeTask(id, task))
+    let cleanup: Promise<void> | null = null
+    if (task) {
+      task.destructiveCancel = true
+      cleanup = this.active.get(id) === task ? this.closeTask(id, task) : this.retryDestructiveCleanup(id, task)
+    } else {
+      this.pendingTeardowns.delete(id)
+    }
+    this.downloadChunks.delete(id)
     this.update(id, { status: 'cancelled', updatedAt: Date.now(), bytesPerSecond: 0 })
+    return cleanup
   }
 
   pauseTransfer(id: string): void {
+    this.advanceTransition(id)
     const task = this.active.get(id)
     task?.cancel.abort()
-    if (task) void this.cancelRemote(task).finally(() => this.closeTask(id, task))
+    if (task) void this.closeTask(id, task).catch((error) => this.fail(id, error))
     this.update(id, { status: 'paused', updatedAt: Date.now(), bytesPerSecond: 0 })
   }
 
   async resumeTransfer(id: string): Promise<void> {
     const transfer = this.transfers.find((item) => item.id === id)
     if (!transfer || !canResume(transfer.status)) return
-    this.update(id, { status: 'pending', error: undefined, transferredSize: 0, updatedAt: Date.now() })
+    const requestEpoch = this.transitionEpochs.get(id) ?? 0
+    const previous = this.resumeTransitions.get(id) ?? Promise.resolve()
+    let transition!: Promise<void>
+    transition = previous.catch(() => undefined).then(() => this.runResumeTransition(id, requestEpoch))
+    this.resumeTransitions.set(id, transition)
     try {
+      await transition
+    } finally {
+      if (this.resumeTransitions.get(id) === transition) this.resumeTransitions.delete(id)
+    }
+  }
+
+  private async runResumeTransition(id: string, requestEpoch: number): Promise<void> {
+    try {
+      let transfer = this.transfers.find((item) => item.id === id)
+      if (!transfer || !canResume(transfer.status) || (this.transitionEpochs.get(id) ?? 0) !== requestEpoch) return
+      const teardown = this.pendingTeardowns.get(id)
+      if (teardown) await teardown
+      transfer = this.transfers.find((item) => item.id === id)
+      if (!transfer || !canResume(transfer.status) || (this.transitionEpochs.get(id) ?? 0) !== requestEpoch) return
+      this.advanceTransition(id)
+      this.update(id, { status: 'pending', error: undefined, updatedAt: Date.now() })
       if (transfer.direction === 'download') await this.runDownload(id)
       else await this.runUpload(id)
     } catch (error) {
+      if (this.transfers.find((item) => item.id === id)?.status === 'cancelled') return
       this.fail(id, error)
     }
   }
@@ -109,9 +168,13 @@ export class NativeFileTransferStore {
   }
 
   dismissTransfer(id: string): void {
-    this.cancelTransfer(id)
-    this.transfers = this.transfers.filter((item) => item.id !== id)
-    this.notify()
+    this.pendingDismissals.add(id)
+    const cleanup = this.requestCancel(id)
+    if (!cleanup) {
+      this.completeDismiss(id)
+      return
+    }
+    void cleanup.then(() => this.completeDismiss(id), () => undefined)
   }
 
   subscribe(listener: () => void): () => void {
@@ -132,18 +195,45 @@ export class NativeFileTransferStore {
 
   private async runDownload(id: string): Promise<void> {
     const transfer = this.requiredTransfer(id, 'download')
-    const session = await this.session(transfer.machineId)
-    const opened = await session.execute(command('fileDownloadOpen', create(TermxApiFile.FileDownloadOpenCommandSchema, { path: transfer.filePath ?? '' })))
-    if (opened.result.case !== 'fileTransferOpen' || !opened.result.value.transfer) throw new Error('download returned no transfer resource')
-    const remote = opened.result.value.transfer
-    const resource = remote.resource
-    if (!resource) throw new Error('download returned no resource handle')
-    const stream = await session.openResourceStream(resource)
-    const task = { session, stream, resource, cancel: new AbortController() }
-    this.active.set(id, task)
-    this.update(id, { status: 'transferring', totalSize: Number(remote.size), transferredSize: Number(remote.offset), updatedAt: Date.now() })
+    const task = this.beginAttempt(id)
     try {
-      const blob = await receiveDownload(stream, remote, task.cancel.signal, (received) => this.progress(id, received))
+      const session = await this.session(transfer.machineId, task.cancel.signal)
+      task.session = session
+      this.assertCurrentAttempt(id, task)
+      const chunks = this.downloadChunks.get(id) ?? []
+      const bufferedBytes = chunks.reduce((total, chunk) => total + chunk.byteLength, 0)
+      const resumeOffset = bufferedBytes === transfer.transferredSize ? bufferedBytes : 0
+      if (resumeOffset === 0) this.downloadChunks.set(id, [])
+      const opened = await session.execute(command('fileDownloadOpen', create(TermxApiFile.FileDownloadOpenCommandSchema, {
+        path: transfer.filePath ?? '', offset: BigInt(resumeOffset),
+        expectedSize: transfer.remoteModifiedAtUnixNano ? BigInt(transfer.totalSize) : 0n,
+        expectedModifiedAtUnixNano: transfer.remoteModifiedAtUnixNano ?? 0n,
+      })), { signal: task.cancel.signal })
+      if (opened.result.case !== 'fileTransferOpen' || !opened.result.value.transfer) throw new Error('download returned no transfer resource')
+      const remote = opened.result.value.transfer
+      if (Number(remote.offset) !== resumeOffset) {
+        if (Number(remote.offset) !== 0) throw new Error('download resume offset was not accepted')
+        this.downloadChunks.set(id, [])
+      }
+      const resource = remote.resource
+      if (!resource) throw new Error('download returned no resource handle')
+      task.resource = resource
+      this.detachedCleanupOwners.delete(id)
+      this.assertCurrentAttempt(id, task)
+      const stream = await awaitAbortable(
+        session.openResourceStream(resource, { signal: task.cancel.signal }),
+        task.cancel.signal,
+        (late) => { void late.close().catch(() => undefined) },
+      )
+      task.stream = stream
+      this.assertCurrentAttempt(id, task)
+      this.update(id, {
+        status: 'transferring', totalSize: Number(remote.size), transferredSize: Number(remote.offset),
+        remoteModifiedAtUnixNano: remote.modifiedAtUnixNano, updatedAt: Date.now(),
+      })
+      const retained = this.downloadChunks.get(id) ?? []
+      const blob = await receiveDownload(stream, remote, retained, task.cancel.signal, (received) => this.progress(id, received))
+      this.assertCurrentAttempt(id, task)
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
@@ -151,7 +241,9 @@ export class NativeFileTransferStore {
       anchor.click()
       setTimeout(() => URL.revokeObjectURL(url), 60_000)
       this.update(id, { status: 'completed', transferredSize: Number(remote.size), savedUri: url, updatedAt: Date.now(), bytesPerSecond: 0 })
+      this.downloadChunks.delete(id)
     } finally {
+      task.markReadyForClose()
       await this.closeTask(id, task)
     }
   }
@@ -159,43 +251,226 @@ export class NativeFileTransferStore {
   private async runUpload(id: string): Promise<void> {
     const transfer = this.requiredTransfer(id, 'upload')
     if (!transfer.localUri || !transfer.targetDir) throw new Error('upload local URI is missing')
-    const session = await this.session(transfer.machineId)
-    const target = `${transfer.targetDir.replace(/\/$/, '')}/${transfer.name}`
-    const opened = await session.execute(command('fileUploadOpen', create(TermxApiFile.FileUploadOpenCommandSchema, {
-      path: target, size: BigInt(transfer.totalSize), overwrite: true,
-    })))
-    if (opened.result.case !== 'fileTransferOpen' || !opened.result.value.transfer) throw new Error('upload returned no transfer resource')
-    const remote = opened.result.value.transfer
-    const resource = remote.resource
-    if (!resource) throw new Error('upload returned no resource handle')
-    const stream = await session.openResourceStream(resource)
-    const task = { session, stream, resource, cancel: new AbortController() }
-    this.active.set(id, task)
-    this.update(id, { status: 'transferring', updatedAt: Date.now() })
+    const task = this.beginAttempt(id)
     try {
+      const session = await this.session(transfer.machineId, task.cancel.signal)
+      task.session = session
+      this.assertCurrentAttempt(id, task)
+      const target = `${transfer.targetDir.replace(/\/$/, '')}/${transfer.name}`
+      const opened = await session.execute(command('fileUploadOpen', create(TermxApiFile.FileUploadOpenCommandSchema, {
+        path: target, size: BigInt(transfer.totalSize), overwrite: true,
+        resume: transfer.uploadResumeToken ? create(TermxApiFile.FileUploadResumeHandleSchema, { opaqueToken: transfer.uploadResumeToken }) : undefined,
+      })), { signal: task.cancel.signal })
+      if (opened.result.case !== 'fileTransferOpen' || !opened.result.value.transfer) throw new Error('upload returned no transfer resource')
+      const remote = opened.result.value.transfer
+      const resource = remote.resource
+      if (!resource) throw new Error('upload returned no resource handle')
+      task.resource = resource
+      task.uploadResume = remote.resume
+      this.detachedCleanupOwners.delete(id)
+      this.assertCurrentAttempt(id, task)
+      const stream = await awaitAbortable(
+        session.openResourceStream(resource, { initialUploadOffset: remote.offset, signal: task.cancel.signal }),
+        task.cancel.signal,
+        (late) => { void late.close().catch(() => undefined) },
+      )
+      task.stream = stream
+      this.assertCurrentAttempt(id, task)
+      this.update(id, {
+        status: 'transferring', transferredSize: Number(remote.offset),
+        uploadResumeToken: remote.resume?.opaqueToken.slice(), updatedAt: Date.now(),
+      })
       const response = await fetch(Capacitor.convertFileSrc(transfer.localUri), { signal: task.cancel.signal })
+      this.assertCurrentAttempt(id, task)
       if (!response.ok) throw new Error(`local upload file could not be read (${response.status})`)
       const blob = await response.blob()
+      this.assertCurrentAttempt(id, task)
       await sendUpload(stream, remote, blob, task.cancel.signal, (sent) => this.progress(id, sent))
+      this.assertCurrentAttempt(id, task)
       this.update(id, { status: 'completed', transferredSize: transfer.totalSize, savedPath: target, updatedAt: Date.now(), bytesPerSecond: 0 })
     } finally {
+      task.markReadyForClose()
       await this.closeTask(id, task)
     }
   }
 
-  private async cancelRemote(task: ActiveTransfer): Promise<void> {
-    await task.session.execute(command('fileTransferCancel', create(TermxApiFile.FileTransferCancelCommandSchema, { transfer: task.resource }))).catch(() => undefined)
+  private async cancelRemote(task: ActiveTransfer): Promise<boolean> {
+    if (!task.session || (!task.resource && !task.uploadResume)) return false
+    try {
+      const useSessionResource = task.resource && sameSession(task.resource.session, task.session.stamp)
+      const result = await task.session.execute(command('fileTransferCancel', create(TermxApiFile.FileTransferCancelCommandSchema, {
+        transfer: useSessionResource ? task.resource : undefined,
+        uploadResume: useSessionResource ? undefined : task.uploadResume,
+      })))
+      return result.result.case === 'fileTransferCancel' && result.result.value.cancelled
+    } catch {
+      return false
+    }
   }
 
-  private async closeTask(id: string, task: ActiveTransfer): Promise<void> {
+  private async releaseRemote(session: ProtoClientSession, resource: NonNullable<ActiveTransfer['resource']>): Promise<void> {
+    await session.execute(command('releaseResource', create(TermxApiApplication.ReleaseResourceCommandSchema, { resource })))
+  }
+
+  private closeTask(id: string, task: ActiveTransfer): Promise<void> {
+    const existing = this.taskTeardowns.get(task)
+    if (existing) return existing
+    const teardown = this.finishCloseTask(id, task)
+    this.taskTeardowns.set(task, teardown)
+    this.pendingTeardowns.set(id, teardown)
+    void teardown.then(
+      () => this.clearPendingTeardown(id, teardown),
+      () => undefined,
+    )
+    return teardown
+  }
+
+  private async finishCloseTask(id: string, task: ActiveTransfer): Promise<void> {
+    await task.readyForClose
+    let cleanupError: unknown
+    let destructiveConfirmed = false
+    let destructiveAttempted = false
+    if (!task.destructiveCancel && task.session && task.resource) {
+      try {
+        await this.releaseRemote(task.session, task.resource)
+      } catch (error) {
+        cleanupError = error
+      }
+    }
+    if (task.destructiveCancel && task.session && task.resource) {
+      destructiveAttempted = true
+      destructiveConfirmed = await this.cancelRemote(task)
+      cleanupError = destructiveConfirmed ? undefined : new Error('remote file transfer cancellation was not confirmed')
+    }
+    await task.stream?.close().catch(() => undefined)
+    if (task.destructiveCancel && !destructiveAttempted && task.session && task.resource) {
+      destructiveConfirmed = await this.cancelRemote(task)
+      cleanupError = destructiveConfirmed ? undefined : new Error('remote file transfer cancellation was not confirmed')
+    }
+    if (cleanupError) {
+      if (this.active.get(id) === task) this.active.delete(id)
+      this.failedCleanupOwners.set(id, task)
+      throw cleanupError
+    }
+    this.failedCleanupOwners.delete(id)
+    await task.session?.close().catch(() => undefined)
+    task.session = undefined
+    task.stream = undefined
+    if (task.destructiveCancel && !destructiveConfirmed) {
+      try {
+        destructiveConfirmed = await this.cancelWithFreshSession(task)
+      } catch (error) {
+        if (this.active.get(id) === task) this.active.delete(id)
+        this.failedCleanupOwners.set(id, task)
+        throw error
+      }
+      if (!destructiveConfirmed) {
+        if (this.active.get(id) === task) this.active.delete(id)
+        this.failedCleanupOwners.set(id, task)
+        throw new Error('remote file transfer cancellation was not confirmed')
+      }
+    }
+    const transfer = this.transfers.find((item) => item.id === id)
+    if (!task.destructiveCancel && task.direction === 'upload' && transfer?.status !== 'completed' && transfer?.status !== 'cancelled' && task.uploadResume) {
+      this.detachedCleanupOwners.set(id, task)
+    } else {
+      this.detachedCleanupOwners.delete(id)
+    }
     if (this.active.get(id) === task) this.active.delete(id)
-    await task.stream.close().catch(() => undefined)
-    await task.session.close().catch(() => undefined)
   }
 
-  private async session(machineId?: string): Promise<ProtoClientSession> {
+  private retryDestructiveCleanup(id: string, task: ActiveTransfer): Promise<void> {
+    const existing = this.destructiveRetries.get(id)
+    if (existing) return existing
+    const retry = this.finishDestructiveCleanup(id, task)
+    this.destructiveRetries.set(id, retry)
+    this.pendingTeardowns.set(id, retry)
+    void retry.then(
+      () => {
+        if (this.destructiveRetries.get(id) === retry) this.destructiveRetries.delete(id)
+        this.clearPendingTeardown(id, retry)
+      },
+      () => {
+        if (this.destructiveRetries.get(id) === retry) this.destructiveRetries.delete(id)
+      },
+    )
+    return retry
+  }
+
+  private async finishDestructiveCleanup(id: string, task: ActiveTransfer): Promise<void> {
+	if (!await this.cancelWithFreshSession(task)) throw new Error('remote file transfer cancellation was not confirmed')
+    this.failedCleanupOwners.delete(id)
+    this.detachedCleanupOwners.delete(id)
+    await task.stream?.close().catch(() => undefined)
+	await task.session?.close().catch(() => undefined)
+  }
+
+  private async cancelWithFreshSession(task: ActiveTransfer): Promise<boolean> {
+	if (task.session?.isAlive()) {
+	  if (await this.cancelRemote(task)) return true
+	  await task.session.close().catch(() => undefined)
+	  task.session = undefined
+	}
+    if (!task.uploadResume) return false
+	const controller = new AbortController()
+	task.session = await this.session(task.machineId, controller.signal)
+	return await this.cancelRemote(task)
+  }
+
+  private completeDismiss(id: string): void {
+    if (!this.pendingDismissals.delete(id)) return
+    this.transfers = this.transfers.filter((item) => item.id !== id)
+    this.transitionEpochs.delete(id)
+    this.resumeTransitions.delete(id)
+    this.pendingTeardowns.delete(id)
+    this.failedCleanupOwners.delete(id)
+    this.detachedCleanupOwners.delete(id)
+    this.notify()
+  }
+
+  private clearPendingTeardown(id: string, teardown: Promise<void>): void {
+    if (this.pendingTeardowns.get(id) === teardown) this.pendingTeardowns.delete(id)
+  }
+
+  private beginAttempt(id: string): ActiveTransfer {
+    if (this.active.has(id)) throw new Error('transfer attempt is already active')
+    const transfer = this.transfers.find((item) => item.id === id)
+    if (!transfer?.machineId) throw new Error('transfer machine is unavailable')
+    let markReadyForClose!: () => void
+    const readyForClose = new Promise<void>((resolve) => { markReadyForClose = resolve })
+    const task: ActiveTransfer = {
+      epoch: this.transitionEpochs.get(id) ?? 0,
+      machineId: transfer.machineId,
+      direction: transfer.direction,
+      cancel: new AbortController(),
+      destructiveCancel: false,
+      readyForClose,
+      markReadyForClose,
+    }
+    this.active.set(id, task)
+    return task
+  }
+
+  private assertCurrentAttempt(id: string, task: ActiveTransfer): void {
+    const transfer = this.transfers.find((item) => item.id === id)
+    if (this.active.get(id) !== task || (this.transitionEpochs.get(id) ?? 0) !== task.epoch || task.cancel.signal.aborted || !transfer || transfer.status === 'paused' || transfer.status === 'cancelled') {
+      throw new DOMException('Aborted', 'AbortError')
+    }
+  }
+
+  private advanceTransition(id: string): number {
+    const next = (this.transitionEpochs.get(id) ?? 0) + 1
+    this.transitionEpochs.set(id, next)
+    return next
+  }
+
+  private async session(machineId: string | undefined, signal: AbortSignal): Promise<ProtoClientSession> {
     if (!machineId || !this.resolver) throw new Error('Connect this machine before starting a transfer')
-    const session = await this.resolver(machineId)
+    const session = await awaitAbortable(
+      this.resolver(machineId, signal),
+      signal,
+      (late) => { void late?.close().catch(() => undefined) },
+    )
     if (!session?.isAlive()) throw new Error('Go client session is unavailable')
     return session
   }
@@ -239,10 +514,10 @@ export class NativeFileTransferStore {
 async function receiveDownload(
   stream: ProtoResourceStream,
   transfer: TermxApiFile.FileTransferHandle,
+  chunks: Uint8Array[],
   signal: AbortSignal,
   progress: (bytes: number) => void,
 ): Promise<Blob> {
-  const chunks: Uint8Array[] = []
   let offset = Number(transfer.offset)
   let credit = 0
   return await new Promise<Blob>((resolve, reject) => {
@@ -346,7 +621,8 @@ async function sendUpload(
       await stream.send(TermxClientBinding.ResourceStreamFrameType.FILE_DATA, encodeFileTransferDataPayload({ offset: chunkOffset, data }))
       progress(offset)
     }
-    await stream.send(TermxClientBinding.ResourceStreamFrameType.FILE_FINISH_AUTO, new Uint8Array())
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))
+    await stream.send(TermxClientBinding.ResourceStreamFrameType.FILE_FINISH, encodeFileTransferFinishPayload({ size: blob.size, sha256: digest }))
     await result
   } finally {
     subscription.close()
@@ -374,6 +650,48 @@ function command(caseName: string, value: object) {
 
 function canResume(status: TransferStatus): boolean { return status === 'paused' || status === 'failed' || status === 'missing' }
 
+async function awaitAbortable<T>(promise: Promise<T>, signal: AbortSignal, onLate: (value: T) => void): Promise<T> {
+  if (signal.aborted) {
+    void promise.then(onLate, () => undefined)
+    throw abortError(signal)
+  }
+  return await new Promise<T>((resolve, reject) => {
+    let settled = false
+    const abort = () => {
+      if (settled) return
+      settled = true
+      signal.removeEventListener('abort', abort)
+      reject(abortError(signal))
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    void promise.then(
+      (value) => {
+        if (settled) {
+          onLate(value)
+          return
+        }
+        settled = true
+        signal.removeEventListener('abort', abort)
+        resolve(value)
+      },
+      (error) => {
+        if (settled) return
+        settled = true
+        signal.removeEventListener('abort', abort)
+        reject(error)
+      },
+    )
+  })
+}
+
+function abortError(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new DOMException('Aborted', 'AbortError')
+}
+
 function transferID(direction: string, machineId: string, path: string): string {
   return `${direction}-${machineId}-${path}-${Date.now()}`
+}
+
+function sameSession(left: { endpointId: string; routeId: string; generation: bigint } | undefined, right: ProtoClientSession['stamp']): boolean {
+  return left?.endpointId === right.endpointId && left.routeId === right.routeId && left.generation === right.generation
 }

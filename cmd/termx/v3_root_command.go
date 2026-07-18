@@ -7,7 +7,6 @@ import (
 	"syscall"
 
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/shared/perftrace"
 	"github.com/lozzow/termx/tui/app"
@@ -120,16 +119,6 @@ func runV3RootEmptyRuntime(ctx context.Context, cfg v3RootEmptyConfig) error {
 		return err
 	}
 	defer client.Close()
-	workbenchStorageClient, err := v3DialClient(cfg.SocketPath)
-	if err != nil {
-		return fmt.Errorf("dial core-v2 workbench storage events client: %w", err)
-	}
-	defer workbenchStorageClient.Close()
-	clipboardStorageClient, err := v3DialClient(cfg.SocketPath)
-	if err != nil {
-		return fmt.Errorf("dial core-v2 clipboard storage events client: %w", err)
-	}
-	defer clipboardStorageClient.Close()
 
 	host := newV3TerminalHost()
 	if loggerHost, ok := host.(v3TerminalHostLogger); ok {
@@ -144,7 +133,7 @@ func runV3RootEmptyRuntime(ctx context.Context, cfg v3RootEmptyConfig) error {
 	if err != nil || cols <= 0 || rows <= 0 {
 		cols, rows = 80, 24
 	}
-	runtime := newV3InteractiveRuntimeWithOptions("", cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger, v3InteractiveRuntimeOptions{
+	runtime := newV3InteractiveRuntimeWithOptions("", cols, rows, client, host, logger, v3InteractiveRuntimeOptions{
 		SkipWorkbenchInitialLoad: true,
 		TUIConfig:                cfg.TUIConfig,
 		ConnectionRegistry:       cfg.ConnectionRegistry,
@@ -162,7 +151,7 @@ func runV3RootEmptyRuntime(ctx context.Context, cfg v3RootEmptyConfig) error {
 	}
 }
 
-func selectV3RootAttachTerminal(ctx context.Context, client *protocol.Client) (string, bool, error) {
+func selectV3RootAttachTerminal(ctx context.Context, client any) (string, bool, error) {
 	application, err := newLocalApplicationSession(client)
 	if err != nil {
 		return "", false, err

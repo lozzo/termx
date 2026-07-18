@@ -10,8 +10,10 @@ import {
   dispatchNativeKeyboardEvent,
   dispatchNativeBack,
   normalizeTerminalInventory,
+  openProtoEventSubscription,
   TermxClientBinding,
   TermxApiApplication,
+  TermxApiEvents,
   TermxApiTerminal,
 } from '@termx/ui'
 import type {
@@ -456,8 +458,8 @@ function createNativeAppRuntime(): {
 } {
   const transferStore = new NativeFileTransferStore()
   const sessionManagers = new Map<string, NativeSessionEntry>()
-  transferStore.setSessionResolver(async (machineId) => {
-    return await sessionManagers.get(machineId)?.manager.get() ?? null
+  transferStore.setSessionResolver(async (machineId, signal) => {
+    return await sessionManagers.get(machineId)?.manager.get({ signal }) ?? null
   })
 
   return {
@@ -668,13 +670,15 @@ function createNativeInventoryEvents(
       let closed = false
       let subscription: RtcSubscription | null = null
       let session: NativeSessionLease | null = null
-      void sessionManager.get().then((connectedSession) => {
+      void sessionManager.get().then(async (connectedSession) => {
         if (closed) {
           void connectedSession.close()
           return
         }
         session = connectedSession
-        subscription = connectedSession.subscribeEvents((event) => {
+        subscription = await openProtoEventSubscription(connectedSession, create(TermxApiEvents.EventSubscribeCommandSchema, {
+          types: [TermxApiEvents.ApplicationEventType.TERMINAL_LIFECYCLE],
+        }), (event) => {
           if (event.event.case === 'terminalLifecycle') handler({ type: 'inventory_changed', payload: event.event.value })
         })
         if (closed) {

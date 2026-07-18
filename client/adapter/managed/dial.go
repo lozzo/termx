@@ -333,6 +333,12 @@ func (session *Session) ExecuteApplication(ctx context.Context, command *apipb.C
 	return session.application.Execute(ctx, command)
 }
 
+// ExecuteApplicationTerminal 使用同一 managed generation 的 ApplicationSession 补齐 correlation stamp，并把取消后的有界 terminal response 交给 protocol。
+// 该方法不解释业务 command；是否选择 terminal response 由 binding 的资源 owner 决定。
+func (session *Session) ExecuteApplicationTerminal(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+	return session.application.ExecuteTerminal(ctx, command)
+}
+
 // ApplicationEvents 返回当前 authenticated connection 的 generated Proto event stream。
 func (session *Session) ApplicationEvents(ctx context.Context) (<-chan *apipb.EventEnvelope, error) {
 	return session.protocol.ApplicationEvents(ctx)

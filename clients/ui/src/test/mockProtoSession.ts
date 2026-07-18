@@ -39,7 +39,7 @@ export class MockProtoSession implements ProtoClientSession {
     for (const handler of this.eventHandlers) handler(event)
   }
 
-  async openResourceStream(resource: ResourceHandle): Promise<ProtoResourceStream> {
+  async openResourceStream(resource: ResourceHandle, _options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoResourceStream> {
     this.openedResources.push(resource)
     return this.streamFactory(resource)
   }

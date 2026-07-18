@@ -13,6 +13,7 @@ const (
 	defaultSendBufferHigh       = 512 * 1024
 	defaultSendBufferLow        = 128 * 1024
 	defaultDrainTimeout         = 30 * time.Second
+	defaultDrainPoll            = time.Millisecond
 )
 
 // Channel 是 WebRTC 实现需要适配的可靠有序消息通道。
@@ -38,16 +39,18 @@ type Transport struct {
 	doneOnce         sync.Once
 	channelCloseOnce sync.Once
 	closeErr         error
+	drainTimeout     time.Duration
 }
 
 // New 创建 DataChannel message transport。
 // channel 必须保证消息可靠且有序；该构造函数不判断 auth/protocol 阶段、不创建 peer connection，也不提供旧 remote/session-token fallback。
 func New(channel Channel) *Transport {
 	transport := &Transport{
-		channel: channel,
-		recvCh:  make(chan []byte, defaultReceiveQueueCapacity),
-		drainCh: make(chan struct{}, 1),
-		done:    make(chan struct{}),
+		channel:      channel,
+		recvCh:       make(chan []byte, defaultReceiveQueueCapacity),
+		drainCh:      make(chan struct{}, 1),
+		done:         make(chan struct{}),
+		drainTimeout: defaultDrainTimeout,
 	}
 	if channel == nil {
 		transport.closeDone()
@@ -101,6 +104,36 @@ func (transport *Transport) Send(frame []byte) error {
 	default:
 	}
 	return transport.channel.Send(append([]byte(nil), frame...))
+}
+
+// Drain 等待已经成功交给 DataChannel 的 outbound message 被底层发送完毕。
+// 它只用于 pairing 等“发送最终响应后必须关闭 transport”的协议边界；普通 session 关闭仍走 Close，不能因 drain 阻塞 teardown。
+func (transport *Transport) Drain(ctx context.Context) error {
+	if transport == nil || transport.channel == nil {
+		return io.EOF
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	drainCtx, cancel := context.WithTimeout(ctx, transport.drainTimeout)
+	defer cancel()
+	ticker := time.NewTicker(defaultDrainPoll)
+	defer ticker.Stop()
+	for {
+		transport.sendMu.Lock()
+		buffered := transport.channel.BufferedAmount()
+		transport.sendMu.Unlock()
+		if buffered == 0 {
+			return nil
+		}
+		select {
+		case <-drainCtx.Done():
+			return drainCtx.Err()
+		case <-transport.done:
+			return io.EOF
+		case <-ticker.C:
+		}
+	}
 }
 
 // Recv 接收一个完整 termx protocol frame。

@@ -33,15 +33,16 @@
 ## Resource Semantics
 
 - Attachment、event subscription 和 active file transfer 使用 current-session `ResourceHandle`；cancel/release 必须由 owning session registry 验证。
-- Upload resume 使用独立 `FileUploadResumeHandle`。它由 verified principal、目标 path、size 和 TTL 约束，可跨 protocol session 使用，但不能用于 stream、cancel 或通用 resource release。
+- Upload resume 使用独立 `FileUploadResumeHandle`。它由 verified principal、目标 path、size 和 TTL 约束，可跨 protocol session 用于续传或专用 transfer cancel，但不能用于 stream 或通用 resource release。
 - File stream channel、window、chunk 和 frame type 不进入公共 Proto。protocol binding 可建立 resource 到 channel 的私有映射。
 - Storage value 始终是 opaque bytes；core 不解释 workbench 或客户端 value schema。
 
 ## 暂留债务
 
 - App/Web 生产 consumer 已完成迁移；后续不得恢复 TypeScript/Kotlin application codec、平台自有 session/resource registry 或旧 Hub/RTC bridge。
-- Go 旧测试仍引用已删除 DTO；用户已明确把测试迁移放到实现收口之后。
-- CLI composition root 仍缺既有 endpoint runtime helper；不得用 legacy client、假 generation 或 fallback 修补。
+- Go 旧 DTO tests 已在 PA006T 迁到 generated Proto harness；仓库不再保留“测试后续再迁”的例外。
+- CLI only-viable local route 已通过 `client/runtime.SessionOwner` 与 `client/adapter/local` 接线；完整 planner/race、SSH/managed winner 和 stamped operation 仍属于 C3B-C3H，不能在 command 内补 route fallback。
+- 跨语言 ABI v3 只保留通用 `EngineCommand` Proto envelope；新增 pairing、credential 或未来业务动作时修改 schema，不新增 C/JNI/WASM 业务符号。
 
 ## 删除门禁
 

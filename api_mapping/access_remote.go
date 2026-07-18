@@ -67,6 +67,30 @@ func ClientAccessRecordToProto(record corev2.ClientAccessRecord) *remoteauthpb.C
 	return &remoteauthpb.ClientAccessRecord{GrantId: record.GrantID, RevocationId: record.RevocationID, SubjectKeyFingerprint: record.SubjectKeyFingerprint, ClientLabel: record.ClientLabel, Scope: clientAccessScopeToProto(record.Scope), IssuedAtUnixNano: unixNanoOrZero(record.IssuedAt), ExpiresAtUnixNano: unixNanoOrZero(record.ExpiresAt), RevokedAtUnixNano: unixNanoOrZero(record.RevokedAt)}
 }
 
+// ClientAccessIdentityResultToProto 包装公开 identity projection。
+func ClientAccessIdentityResultToProto(identity corev2.ClientAccessIdentity) *apipb.ClientAccessIdentityResult {
+	return &apipb.ClientAccessIdentityResult{Identity: ClientAccessIdentityToProto(identity)}
+}
+
+// ClientAccessListToProto 映射脱敏 client access record 列表。
+func ClientAccessListToProto(records []corev2.ClientAccessRecord) *apipb.ClientAccessListResult {
+	result := &apipb.ClientAccessListResult{Access: &remoteauthpb.ClientAccessListResult{Records: make([]*remoteauthpb.ClientAccessRecord, 0, len(records))}}
+	for _, record := range records {
+		result.Access.Records = append(result.Access.Records, ClientAccessRecordToProto(record))
+	}
+	return result
+}
+
+// ClientAccessTicketResultToProto 包装一次性 pairing ticket projection。
+func ClientAccessTicketResultToProto(ticket corev2.ClientAccessTicket) *apipb.ClientAccessTicketCreateResult {
+	return &apipb.ClientAccessTicketCreateResult{Ticket: ClientAccessTicketToProto(ticket)}
+}
+
+// ClientAccessRevokeToProto 包装撤销后的脱敏 access record。
+func ClientAccessRevokeToProto(record corev2.ClientAccessRecord) *apipb.ClientAccessRevokeResult {
+	return &apipb.ClientAccessRevokeResult{Record: ClientAccessRecordToProto(record)}
+}
+
 // RemotePairStartRequestFromProto 转为 core-native remote pairing request。
 func RemotePairStartRequestFromProto(command *apipb.RemotePairStartCommand) corev2.RemotePairStartRequest {
 	return corev2.RemotePairStartRequest{LocalPairURL: command.GetLocalPairUrl(), TTLSeconds: int(command.GetTtlSeconds()), AuthorizationTTLSeconds: int(command.GetAuthTtlSeconds())}

@@ -5,12 +5,13 @@
 ## Payloads
 
 - `OpenSession` input is serialized `bindingpb.OpenSessionRequest`.
+- Engine-scoped business operations use one serialized `bindingpb.EngineCommand` entry point.
 - `Execute` input is serialized `apipb.CommandEnvelope`.
 - `NextEvent` output is serialized `bindingpb.EventEnvelope`.
 - Business commands, results, events, errors, cancellation, and daemon resources remain generated Proto contracts.
 - Opaque `uint64` handles identify only binding-local engine, operation, session, and output-buffer ownership.
 
-The ABI must not add command-specific entry points such as terminal list, history copy, or file upload. New business behavior changes Proto, not C/JNI/WASM symbols.
+ABI v3 removed pairing and credential-specific exports. The ABI must not add command-specific entry points such as terminal list, history copy, pairing import, credential deletion, or file upload. New business behavior changes Proto, not C/JNI/WASM symbols.
 
 ## Ownership
 
@@ -31,6 +32,7 @@ The ABI must not add command-specific entry points such as terminal list, histor
 ## Platform Primitives
 
 - Android and Web both use `managedhost.Host` for endpoint generation, Cloud signaling, credential resolution, remote auth, Hello, Proto API, session, and resource ownership.
+- Matching `OpenSession` requests call `client/runtime.SessionOwner.AcquireRoute` and share the same underlying ready session. Each binding session handle is a consumer lease; `managedhost` keeps no parallel current-session registry.
 - Android injects the native Pion peer factory. Web injects `adapter/managed/platform.Factory`, which exchanges serialized `bindingpb.PlatformRequest`, `PlatformResponse`, and `PlatformEvent` with the browser adapter.
 - Browser JavaScript owns only `RTCPeerConnection`, `RTCDataChannel`, WebCrypto/IndexedDB, and page lifecycle primitives. It cannot interpret remote-auth or application payloads.
 - Browser channel binding is accepted only after the actual certificate from `RTCDtlsTransport.getRemoteCertificates()` hashes to the SHA-256 fingerprint declared by the applied remote SDP.

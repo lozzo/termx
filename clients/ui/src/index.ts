@@ -24,6 +24,7 @@ export type {
   Terminal as RemoteTerminal,
   TerminalState,
 } from './core/model'
+export { openProtoEventSubscription } from './core/protoEventSubscription'
 export { Terminal } from './terminal/Terminal'
 export type { TerminalHandle, TerminalProps } from './terminal/Terminal'
 export { TerminalList } from './terminal/TerminalList'
@@ -48,6 +49,7 @@ export {
   decodeFileTransferResultPayload,
   encodeFileTransferAckPayload,
   encodeFileTransferDataPayload,
+  encodeFileTransferFinishPayload,
 } from './files/fileStreamProtocol'
 export type {
   DirListResponse,

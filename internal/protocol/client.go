@@ -7,6 +7,7 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/wire"
@@ -274,7 +275,22 @@ func (c *Client) Hello(ctx context.Context, hello Hello) error {
 // ExecuteApplication 通过唯一 api.execute framing 发送公共 Proto API command。
 // protocol client 只负责 correlation 与 payload transport，不解释 terminal application 字段。
 func (c *Client) ExecuteApplication(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
-	payload, err := c.doApplicationRequest(ctx, command)
+	payload, err := c.doApplicationRequest(ctx, command, false)
+	if err != nil {
+		return nil, err
+	}
+	result, err := DecodeApplicationResult(payload)
+	if err != nil {
+		return nil, err
+	}
+	c.updateApplicationAttachmentBinding(command, result)
+	return result, nil
+}
+
+// ExecuteApplicationTerminal 使用通用 correlation 选项，在调用 context 取消后继续等待一个有界 terminal response。
+// 是否选择该能力由上层 resource owner 决定；protocol 不检查 application oneof，也不负责业务清理。
+func (c *Client) ExecuteApplicationTerminal(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+	payload, err := c.doApplicationRequest(ctx, command, true)
 	if err != nil {
 		return nil, err
 	}
@@ -421,7 +437,7 @@ func (c *Client) Stream(channel uint16) (<-chan StreamFrame, func()) {
 	}
 }
 
-func (c *Client) doApplicationRequest(ctx context.Context, command *apipb.CommandEnvelope) ([]byte, error) {
+func (c *Client) doApplicationRequest(ctx context.Context, command *apipb.CommandEnvelope, waitTerminalOnCancel bool) ([]byte, error) {
 	const method = "api.execute"
 	finish := perftrace.Measure("protocol.request." + method)
 	payload, err := EncodeApplicationCommand(command)
@@ -456,6 +472,26 @@ func (c *Client) doApplicationRequest(ctx context.Context, command *apipb.Comman
 	}
 	select {
 	case <-ctx.Done():
+		if waitTerminalOnCancel {
+			timer := time.NewTimer(5 * time.Second)
+			defer timer.Stop()
+			select {
+			case result := <-response:
+				if result.err != nil {
+					finish(len(frame))
+					return nil, result.err
+				}
+				finish(len(result.payload))
+				return result.payload, nil
+			case <-c.done:
+				finish(len(frame))
+				return nil, c.Err()
+			case <-timer.C:
+				_ = c.Close()
+				finish(len(frame))
+				return nil, fmt.Errorf("cancelled file resource open did not reach a terminal response")
+			}
+		}
 		finish(len(frame))
 		return nil, ctx.Err()
 	case result := <-response:

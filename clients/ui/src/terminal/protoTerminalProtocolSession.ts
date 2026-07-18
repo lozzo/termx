@@ -1,6 +1,8 @@
 import { create } from '@bufbuild/protobuf'
 import type { ProtoClientSession } from '../core/protoClientSession'
+import { openProtoEventSubscription } from '../core/protoEventSubscription'
 import { CommandEnvelopeSchema } from '../generated/apipb/application_pb'
+import { ApplicationEventType, EventSubscribeCommandSchema } from '../generated/apipb/events_pb'
 import {
   HistoryWindowCommandSchema,
   HistoryWindowMode,
@@ -51,10 +53,12 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
   private readonly subscribers = new Map<string, Set<(event: TerminalProtocolEvent) => void>>()
   private readonly terminalSizes = new Map<string, TerminalInputSize>()
   private readonly liveRevisions = new Map<string, bigint>()
-  private readonly events
+  private readonly eventSubscriptionReady
 
   constructor(private readonly session: ProtoClientSession) {
-    this.events = session.subscribeEvents((event) => {
+    this.eventSubscriptionReady = openProtoEventSubscription(session, create(EventSubscribeCommandSchema, {
+      types: [ApplicationEventType.TERMINAL_LIVE_INVALIDATED, ApplicationEventType.TERMINAL_LIFECYCLE],
+    }), (event) => {
       if (event.event.case === 'liveInvalidated' && event.event.value.terminal?.terminalId) {
         void this.publishLiveScreen(event.event.value.terminal.terminalId, 'live_invalidated', event.event.value.liveRevision)
       }
@@ -70,6 +74,7 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
   }
 
   async openTerminal(terminalId: string): Promise<TerminalProtocolChannel> {
+    await this.eventSubscriptionReady
     const existing = this.attachments.get(terminalId)
     if (existing) return existing.channel
     const terminal = this.terminalRef(terminalId)

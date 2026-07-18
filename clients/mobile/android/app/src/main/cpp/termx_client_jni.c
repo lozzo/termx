@@ -139,7 +139,7 @@ Java_com_termx_app_goclient_GoClientNative_closeResourceStream(JNIEnv *env, jobj
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_termx_app_goclient_GoClientNative_importPairing(JNIEnv *env, jobject self, jlong engine, jbyteArray payload) {
+Java_com_termx_app_goclient_GoClientNative_engineCommand(JNIEnv *env, jobject self, jlong engine, jbyteArray payload) {
   (void)self;
   jsize length = 0;
   jbyte *bytes = borrow_payload(env, payload, &length);
@@ -147,22 +147,7 @@ Java_com_termx_app_goclient_GoClientNative_importPairing(JNIEnv *env, jobject se
     return 0;
   }
   termx_handle_t operation = 0;
-  termx_status_v1 status = termx_engine_import_pairing(
-      (termx_handle_t)engine, (const uint8_t *)bytes, (size_t)length, &operation);
-  (*env)->ReleaseByteArrayElements(env, payload, bytes, JNI_ABORT);
-  return throw_status(env, status) == 0 ? (jlong)operation : 0;
-}
-
-JNIEXPORT jlong JNICALL
-Java_com_termx_app_goclient_GoClientNative_deleteCredential(JNIEnv *env, jobject self, jlong engine, jbyteArray payload) {
-  (void)self;
-  jsize length = 0;
-  jbyte *bytes = borrow_payload(env, payload, &length);
-  if (bytes == NULL) {
-    return 0;
-  }
-  termx_handle_t operation = 0;
-  termx_status_v1 status = termx_engine_delete_credential(
+  termx_status_v1 status = termx_engine_command(
       (termx_handle_t)engine, (const uint8_t *)bytes, (size_t)length, &operation);
   (*env)->ReleaseByteArrayElements(env, payload, bytes, JNI_ABORT);
   return throw_status(env, status) == 0 ? (jlong)operation : 0;

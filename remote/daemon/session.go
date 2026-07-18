@@ -20,6 +20,10 @@ type ScopedTransportServer interface {
 	ServeScopedTransport(context.Context, transport.Transport, core.TransportScope) error
 }
 
+type outboundDrainer interface {
+	Drain(context.Context) error
+}
+
 // SessionAcceptor 是远程 DataChannel 进入 core-v2 的唯一授权入口。
 // Identity、grant expiry/revoke 和 scope mapping 都属于 daemon；Cloud Companion、Hub admission 或 signaling 结果不能预授权 session。
 type SessionAcceptor struct {
@@ -67,6 +71,13 @@ func (acceptor SessionAcceptor) ServeBoundTransport(ctx context.Context, connect
 		return fmt.Errorf("authorize remote transport: %w", err)
 	}
 	if result.Mode == remoteauth.ServerHandshakeModePairing {
+		// PairingAccepted 是该 DataChannel 的最后一帧。Send 成功只表示进入底层队列，
+		// 必须在关闭 pairing-only transport 前 drain，避免 peer close 丢弃已签发 grant。
+		if drainer, ok := connection.(outboundDrainer); ok {
+			if err := drainer.Drain(ctx); err != nil {
+				return fmt.Errorf("drain PairingExchange response: %w", err)
+			}
+		}
 		return nil
 	}
 	if result.Mode != remoteauth.ServerHandshakeModeCapability {

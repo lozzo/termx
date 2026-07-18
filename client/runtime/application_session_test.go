@@ -10,8 +10,9 @@ import (
 )
 
 type recordingProtoExecutor struct {
-	command *apipb.CommandEnvelope
-	result  *apipb.ResultEnvelope
+	command  *apipb.CommandEnvelope
+	result   *apipb.ResultEnvelope
+	terminal bool
 }
 
 func (executor *recordingProtoExecutor) ExecuteApplication(_ context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
@@ -27,6 +28,11 @@ func (executor *recordingProtoExecutor) ExecuteApplication(_ context.Context, co
 		return result, nil
 	}
 	return &apipb.ResultEnvelope{RequestId: command.GetContext().GetRequestId(), OriginSession: proto.Clone(command.GetContext().GetSession()).(*apipb.EndpointSessionStamp), Result: &apipb.ResultEnvelope_Acknowledge{Acknowledge: &apipb.AcknowledgeResult{}}}, nil
+}
+
+func (executor *recordingProtoExecutor) ExecuteApplicationTerminal(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+	executor.terminal = true
+	return executor.ExecuteApplication(ctx, command)
 }
 
 func TestApplicationSessionOwnsContextAndOperationStamp(t *testing.T) {
@@ -49,6 +55,27 @@ func TestApplicationSessionOwnsContextAndOperationStamp(t *testing.T) {
 	}
 	if command.GetContext() != nil || command.GetTerminalAttach().GetOperation() != nil {
 		t.Fatal("application session mutated caller command")
+	}
+}
+
+func TestApplicationSessionTerminalExecutionOwnsContextAndOperationStamp(t *testing.T) {
+	executor := &recordingProtoExecutor{}
+	session, err := NewApplicationSession(EndpointSessionStamp{EndpointID: "studio", RouteID: "cloud", Generation: 9}, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileUploadOpen{FileUploadOpen: &apipb.FileUploadOpenCommand{Path: "/tmp/demo", Size: 8}}}
+	if _, err := session.ExecuteTerminal(context.Background(), command); err != nil {
+		t.Fatal(err)
+	}
+	if !executor.terminal {
+		t.Fatal("terminal executor was not selected")
+	}
+	if executor.command.GetContext().GetSession().GetGeneration() != 9 || executor.command.GetFileUploadOpen().GetOperation().GetOperationId() == "" {
+		t.Fatalf("terminal command was not stamped: %#v", executor.command)
+	}
+	if command.GetContext() != nil || command.GetFileUploadOpen().GetOperation() != nil {
+		t.Fatal("terminal execution mutated caller command")
 	}
 }
 

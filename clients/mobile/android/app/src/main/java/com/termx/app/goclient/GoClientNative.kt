@@ -14,8 +14,7 @@ object GoClientNative {
     external fun openResourceStream(engine: Long, session: Long, requestProto: ByteArray): Long
     external fun sendResourceStreamFrame(engine: Long, stream: Long, frameProto: ByteArray)
     external fun closeResourceStream(engine: Long, stream: Long)
-    external fun importPairing(engine: Long, requestProto: ByteArray): Long
-    external fun deleteCredential(engine: Long, requestProto: ByteArray): Long
+    external fun engineCommand(engine: Long, commandProto: ByteArray): Long
     external fun nextEvent(engine: Long, timeoutMillis: Int): ByteArray
     external fun nextPlatformRequest(engine: Long, timeoutMillis: Int): ByteArray
     external fun completePlatformRequest(engine: Long, responseProto: ByteArray)

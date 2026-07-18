@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { create } from '@bufbuild/protobuf'
 import { Bookmark, BookmarkMinus, BookmarkPlus, ChevronLeft, ClipboardList, Folder, FolderOpen, Info, KeyRound, Link2, Link2Off, Monitor, MoreHorizontal, PanelBottomClose, Plus, RefreshCw, Rows2, SlidersHorizontal, SquarePen, Trash2, Unlock, X } from 'lucide-react'
 import { connectionPhaseLabel, connectionSnapshotFromStatus } from '../connection/connectionState'
 import { FileTransferPanel } from '../files/FileTransferPanel'
@@ -23,6 +24,8 @@ import { createTerminalManagementApi } from '../terminal/terminalManagementApi'
 import { readTerminalSettings, terminalThemeCssVariables, writeTerminalSettings, type TerminalSettings } from '../terminal/terminalSettings'
 import type { Machine, Terminal as RemoteTerminal } from '../core/model'
 import type { ProtoClientSession } from '../core/protoClientSession'
+import { openProtoEventSubscription } from '../core/protoEventSubscription'
+import { ApplicationEventType, EventSubscribeCommandSchema } from '../generated/apipb/events_pb'
 import type { ConnectionInfo, LocalAgentApi, LocalCreateTerminalInput, LocalUpdateTerminalInput, MachineConnectionStateEvents, RtcConnectOptions, RtcConnectionStateSnapshot, RtcEvent, RtcSubscription, TerminalInventoryEvents } from '../core/transport'
 import { useTerminalKeyboard } from '../terminal/useTerminalKeyboard'
 
@@ -2751,9 +2754,17 @@ function machineWorkspaceConnectionInfo(session: MachineWorkspaceClientSession):
 }
 
 function subscribeMachineWorkspaceEvents(session: MachineWorkspaceClientSession, handler: (event: RtcEvent) => void): RtcSubscription {
-  return session.subscribeEvents((event) => {
+  let closed = false
+  let subscription: RtcSubscription | null = null
+  void openProtoEventSubscription(session, create(EventSubscribeCommandSchema, {
+    types: [ApplicationEventType.TERMINAL_LIFECYCLE],
+  }), (event) => {
     if (event.event.case === 'terminalLifecycle') handler({ type: 'terminal_changed' })
-  })
+  }).then((opened) => {
+    if (closed) opened.close()
+    else subscription = opened
+  }).catch(() => undefined)
+  return { close() { closed = true; subscription?.close(); subscription = null } }
 }
 
 function isDirectoryEntry(entry: FileEntry): boolean {

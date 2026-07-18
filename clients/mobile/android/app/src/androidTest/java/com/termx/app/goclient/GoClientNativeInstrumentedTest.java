@@ -30,7 +30,7 @@ import termx.client.binding.v1.ClientBinding;
 public final class GoClientNativeInstrumentedTest {
     @Test
     public void loadsAndRunsRealGoClientEngine() throws Exception {
-        assertEquals(2, GoClientNative.INSTANCE.abiVersion());
+        assertEquals(3, GoClientNative.INSTANCE.abiVersion());
         long engine = GoClientNative.INSTANCE.createSpike(
                 ApplicationProvider.getApplicationContext().getCacheDir().getAbsolutePath());
         assertNotEquals(0, engine);
@@ -131,10 +131,11 @@ public final class GoClientNativeInstrumentedTest {
     public void productionEngineExchangesPlatformProtoRequests() throws Exception {
         long engine = GoClientNative.INSTANCE.create();
         try {
-            long operation = GoClientNative.INSTANCE.deleteCredential(engine,
-                    ClientBinding.DeleteCredentialRequest.newBuilder()
-                            .setRequestId("delete-platform")
-                            .setCredentialRef("credential:studio")
+            long operation = GoClientNative.INSTANCE.engineCommand(engine,
+                    ClientBinding.EngineCommand.newBuilder()
+                            .setDeleteCredential(ClientBinding.DeleteCredentialRequest.newBuilder()
+                                    .setRequestId("delete-platform")
+                                    .setCredentialRef("credential:studio"))
                             .build().toByteArray());
             ClientBinding.PlatformRequest request = ClientBinding.PlatformRequest.parseFrom(
                     GoClientNative.INSTANCE.nextPlatformRequest(engine, 5_000));

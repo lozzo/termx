@@ -1,9 +1,12 @@
+import { create, fromBinary, toBinary } from '@bufbuild/protobuf'
+import * as TermxClientBinding from '../generated/bindingpb/client_binding_pb'
 import { BindingOperation, type BindingOperationCode, type ProtoBindingBackend } from './protoBindingClient'
 import type { TermxWasmRuntime } from './wasmRuntime'
 
 /** WasmBindingBackend maps the stable binding operation set onto one Go/WASM engine generation. */
 export class WasmBindingBackend implements ProtoBindingBackend {
   private active = false
+  private closePromise: Promise<void> | null = null
   private onEvent: ((payload: Uint8Array) => void) | null = null
   private onClosed: ((error: Error) => void) | null = null
 
@@ -26,9 +29,13 @@ export class WasmBindingBackend implements ProtoBindingBackend {
       case BindingOperation.EXECUTE:
         return BigInt(this.runtime.execute(requiredHandle(handle), payload))
       case BindingOperation.IMPORT_PAIRING:
-        return BigInt(this.runtime.importPairing(payload))
+        return BigInt(this.runtime.engineCommand(toBinary(TermxClientBinding.EngineCommandSchema, create(TermxClientBinding.EngineCommandSchema, {
+          command: { case: 'importPairing', value: fromBinary(TermxClientBinding.ImportPairingRequestSchema, payload) },
+        }))))
       case BindingOperation.DELETE_CREDENTIAL:
-        return BigInt(this.runtime.deleteCredential(payload))
+        return BigInt(this.runtime.engineCommand(toBinary(TermxClientBinding.EngineCommandSchema, create(TermxClientBinding.EngineCommandSchema, {
+          command: { case: 'deleteCredential', value: fromBinary(TermxClientBinding.DeleteCredentialRequestSchema, payload) },
+        }))))
       case BindingOperation.CANCEL:
         this.runtime.cancel(requiredHandle(handle))
         return 0n
@@ -50,9 +57,10 @@ export class WasmBindingBackend implements ProtoBindingBackend {
   }
 
   async close(): Promise<void> {
-    if (!this.active) return
+    if (this.closePromise) return await this.closePromise
     this.active = false
-    await this.runtime.close()
+    this.closePromise = this.runtime.close()
+    await this.closePromise
   }
 
   private async pumpEvents(): Promise<void> {

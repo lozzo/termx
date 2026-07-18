@@ -130,6 +130,16 @@ func HistoryWindowToProto(endpointID string, window history.HistoryWindow) *apip
 	return result
 }
 
+// HistoryCopyToProto 把 core frozen-history copy 文本包装为公共 API result。
+func HistoryCopyToProto(text string) *apipb.HistoryCopyResult {
+	return &apipb.HistoryCopyResult{Text: text}
+}
+
+// AcknowledgeToProto 返回无附加 payload 的成功确认。
+func AcknowledgeToProto() *apipb.AcknowledgeResult {
+	return &apipb.AcknowledgeResult{}
+}
+
 // HistoryBacklogToProto 返回不包含 history payload 的诊断投影。
 func HistoryBacklogToProto(endpointID string, status corev2.HistoryBacklogStatus) *apipb.HistoryBacklogStatusResult {
 	return &apipb.HistoryBacklogStatusResult{
@@ -153,6 +163,11 @@ func NativeScreenToProto(endpointID string, snapshot corev2.NativeScreenSnapshot
 		result.Rows = append(result.Rows, vtermRowToProto(row.Cells))
 	}
 	return result
+}
+
+// LiveInvalidationToProto 把 core latest-screen 唤醒边沿投影为 endpoint-aware result。
+func LiveInvalidationToProto(endpointID string, event corev2.LiveScreenInvalidated) *apipb.LiveInvalidationResult {
+	return &apipb.LiveInvalidationResult{Terminal: &apipb.TerminalRef{EndpointId: endpointID, TerminalId: event.TerminalID}, LiveRevision: uint64(event.Revision)}
 }
 
 func historyWindowModeFromProto(mode apipb.HistoryWindowMode) history.HistoryWindowMode {

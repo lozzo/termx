@@ -16,6 +16,12 @@ type ProtoApplicationExecutor interface {
 	ExecuteApplication(context.Context, *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error)
 }
 
+// TerminalResponseApplicationExecutor 在调用 context 取消后仍等待一个有界 terminal response。
+// 只有会创建远端资源、且必须取得迟到结果完成销毁的 binding owner 可以选择该能力；transport 不得自行解释业务 command。
+type TerminalResponseApplicationExecutor interface {
+	ExecuteApplicationTerminal(context.Context, *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error)
+}
+
 // ApplicationReadySession 是已经完成 transport、授权与 protocol Hello 的可执行 session。
 // route adapter 返回该接口后，runtime/binding 只能通过 generated Proto command/event 访问 daemon；关闭和 generation fence 仍由 ReadySession 约束。
 type ApplicationReadySession interface {
@@ -73,6 +79,16 @@ func (session *ApplicationSession) Stamp() EndpointSessionStamp {
 // Execute 克隆 command、写入当前 session context 和每次调用唯一的 operation stamp，再交给 protocol binding。
 // transport 失败与 ResultEnvelope typed error 都转换为 runtime error；失败不会自动重放 command。
 func (session *ApplicationSession) Execute(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+	return session.execute(ctx, command, false)
+}
+
+// ExecuteTerminal 为必须取得迟到资源结果的调用保留有界 terminal response，同时复用本 session 的 request/operation stamp 与结果校验。
+// executor 不支持该能力时立即失败，禁止绕过 ApplicationSession 自行复制 generation 或 correlation 逻辑。
+func (session *ApplicationSession) ExecuteTerminal(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+	return session.execute(ctx, command, true)
+}
+
+func (session *ApplicationSession) execute(ctx context.Context, command *apipb.CommandEnvelope, terminal bool) (*apipb.ResultEnvelope, error) {
 	if session == nil || session.executor == nil {
 		return nil, runtimeError(ErrorUnavailable, "application session is unavailable", nil)
 	}
@@ -85,7 +101,17 @@ func (session *ApplicationSession) Execute(ctx context.Context, command *apipb.C
 	snapshot := proto.Clone(command).(*apipb.CommandEnvelope)
 	snapshot.Context = &apipb.RequestContext{RequestId: requestID, ApiVersion: &apipb.ApiVersion{Major: 1}, Session: stamp}
 	bindOperationStamp(snapshot, stamp, requestID)
-	result, err := session.executor.ExecuteApplication(ctx, snapshot)
+	var result *apipb.ResultEnvelope
+	var err error
+	if terminal {
+		executor, ok := session.executor.(TerminalResponseApplicationExecutor)
+		if !ok {
+			return nil, runtimeError(ErrorUnavailable, "application executor does not support terminal responses", nil)
+		}
+		result, err = executor.ExecuteApplicationTerminal(ctx, snapshot)
+	} else {
+		result, err = session.executor.ExecuteApplication(ctx, snapshot)
+	}
 	if err != nil {
 		return nil, &Error{Code: CodeOf(err), Message: err.Error(), Cause: err, Attempted: true}
 	}

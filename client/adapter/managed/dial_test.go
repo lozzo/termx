@@ -80,6 +80,19 @@ func TestDialBuildsAuthorizedProtocolReadySession(t *testing.T) {
 	if result.GetTerminalList() == nil || channel.helloClient != "managed-engine-test" || channel.applicationCalls != 1 {
 		t.Fatalf("protocol result=%#v hello=%q calls=%d", result, channel.helloClient, channel.applicationCalls)
 	}
+	terminal, ok := ready.(clientruntime.TerminalResponseApplicationExecutor)
+	if !ok {
+		t.Fatalf("managed ready session %T does not expose terminal responses", ready)
+	}
+	result, err = terminal.ExecuteApplicationTerminal(context.Background(), &apipb.CommandEnvelope{
+		Command: &apipb.CommandEnvelope_FileUploadOpen{FileUploadOpen: &apipb.FileUploadOpenCommand{Path: "/tmp/demo", Size: 8}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.GetFileTransferOpen() == nil || channel.applicationCalls != 2 {
+		t.Fatalf("terminal protocol result=%#v calls=%d", result, channel.applicationCalls)
+	}
 	if !slices.Equal(order, []string{"prepare", "resolve", "signal", "authorize"}) {
 		t.Fatalf("managed order = %v", order)
 	}
@@ -254,10 +267,17 @@ func (channel *scriptedProtocolChannel) Send(frame []byte) error {
 			return err
 		}
 		channel.applicationCalls++
-		resultPayload, err := internalprotocol.EncodeApplicationResult(&apipb.ResultEnvelope{
+		result := &apipb.ResultEnvelope{
 			RequestId: command.GetContext().GetRequestId(), OriginSession: proto.Clone(command.GetContext().GetSession()).(*apipb.EndpointSessionStamp),
 			Result: &apipb.ResultEnvelope_TerminalList{TerminalList: &apipb.TerminalListResult{}},
-		})
+		}
+		if command.GetFileUploadOpen() != nil {
+			result.Result = &apipb.ResultEnvelope_FileTransferOpen{FileTransferOpen: &apipb.FileTransferOpenResult{Transfer: &apipb.FileTransferHandle{
+				Resource: &apipb.ResourceHandle{Kind: apipb.ResourceKind_RESOURCE_KIND_FILE_TRANSFER, OpaqueToken: []byte{1}},
+				Resume:   &apipb.FileUploadResumeHandle{OpaqueToken: []byte{2}},
+			}}}
+		}
+		resultPayload, err := internalprotocol.EncodeApplicationResult(result)
 		if err != nil {
 			return err
 		}

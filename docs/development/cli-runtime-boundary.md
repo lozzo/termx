@@ -13,7 +13,7 @@
 3. local daemon host 的启动、status、stop 与 client-access listener 装配。
 4. Cloud Companion、managed daemon、WebRTC 和 transport concrete composition。
 
-这些职责处于同一个 Go package，导致 command 文件可以直接 import protocol、transport、remoteauth、Cloud Companion 和 WebRTC。旧 dial owner 已删除后，部分调用方又保留未接线 helper 名称，使“composition root”和“application implementation”边界不可验证。
+这些职责处于同一个 Go package，导致部分 command 文件仍直接 import protocol、transport、remoteauth、Cloud Companion 和 WebRTC。PA007 已把 CLI endpoint generation、route policy、Unix dial 与 Hello 收回 `client/runtime` 和 `client/adapter/local`；当前冻结清单约束的是剩余 daemon/Cloud concrete composition，不表示 client session ownership 仍在 CLI。
 
 ## 目标结构
 
@@ -33,17 +33,17 @@ cmd/termx daemon command
 - command 文件只能解析参数、构造 application request、调用 interface、格式化 result/error。
 - client application contract 位于 `client/runtime`，按 endpoint、terminal、file、workspace、access 分组；不得形成单个总接口。
 - daemon host contract 与 client runtime contract 分离，daemon listener/ingress 不得伪装成 client route adapter。
-- concrete import 最终只能出现在少量命名明确的 composition 文件；普通 `*_command.go` 不得 import concrete protocol/transport/Cloud。
-- 当前未接线必须保持编译期可见，不能用 nil implementation、panic、local fallback 或旧 helper 同义替代隐藏。
+- concrete import 最终只能出现在少量命名明确的 composition 文件；普通 `*_command.go` 不得新增 concrete protocol/transport/Cloud 依赖。
+- local only-viable route 当前由共享 owner 接线；未实现的 SSH/managed planner/race 必须保持显式 unsupported，不能用 local fallback 或 command 自选 route 隐藏。
+- TUI terminal、workbench 与 clipboard 是同一 endpoint session 上的 consumer，共用一条 ready connection；隔离由 Proto operation/subscription resource 提供，不为 consumer 数量创建平行 generation。
 
 ## 迁移顺序
 
-1. 冻结当前 concrete import 和 direct helper 债务，任何新增立即失败。
-2. 在 `client/runtime` 先定义窄 application interface/DTO 和 harness。
-3. 逐组迁移 endpoint test、terminal、file、workspace、pair/access 和 root TUI consumer。
-4. 把 local/SSH/managed/protocol 实现接入 `client/adapter/*`，command 只注入 interface。
-5. 分离 daemon host composition 与 client runtime composition。
-6. 删除 direct helper 债务清单，静态守卫只允许批准的 composition 文件依赖 concrete package。
+1. 已完成：冻结 concrete import/direct helper 债务，守卫现在扫描全部 command 源文件，不再整文件排除 composition helper。
+2. 已完成：local Unix route 使用 `SessionOwner`、集中 `SelectRoute` 与 `client/adapter/local`，不再由 CLI 生成 stamp 或执行 Hello。
+3. C3B-C3E：实现完整 planner/race 与 SSH/managed adapters，再把 command helper 收缩为纯 composition injection。
+4. C3F-C3G：补 operation generation stamp、local+SSH race E2E 与 loser cleanup。
+5. C3H：分离剩余 daemon host composition，删除冻结债务清单并完成最终双审。
 
 ## 停止条件
 

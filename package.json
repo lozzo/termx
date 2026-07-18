@@ -26,7 +26,7 @@
   },
   "scripts": {
     "proto": "npm run proto --workspace @termx/ui",
-    "test": "npm test --workspace @termx/ui",
+    "test": "npm test --workspace @termx/ui && npm test --workspace @termx/mobile",
     "typecheck": "npm run typecheck --workspace @termx/ui",
     "build": "npm run build --workspace @termx/ui && npm run build --workspace @termx/mobile",
     "cap:sync": "npm run cap:sync --workspace @termx/mobile",

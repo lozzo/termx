@@ -1,9 +1,11 @@
 import { create } from '@bufbuild/protobuf'
+import { openProtoEventSubscription } from '../core/protoEventSubscription'
 import type { ExternalPairingAdapter, MachineRuntime, MachineRuntimeFactory } from '../app/RemoteControlApp'
 import type { LocalStatus, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcConnectOptions, TerminalInventoryEvents } from '../core/transport'
 import type { Machine } from '../core/model'
 import type { ProtoClientSession } from '../core/protoClientSession'
 import { CommandEnvelopeSchema } from '../generated/apipb/application_pb'
+import { ApplicationEventType, EventSubscribeCommandSchema } from '../generated/apipb/events_pb'
 import { TerminalListCommandSchema, TerminalState } from '../generated/apipb/terminal_pb'
 import { DeleteCredentialRequestSchema, ImportPairingRequestSchema } from '../generated/bindingpb/client_binding_pb'
 import type { WebControlMachine } from '../api/webControlApi'
@@ -174,10 +176,12 @@ function createInventoryEvents(machineId: string, connector: { connect(input: { 
       let closed = false
       let session: ProtoClientSession | null = null
       let subscription: { close(): void } | null = null
-      void connector.connect({ machineId }).then((connected) => {
+      void connector.connect({ machineId }).then(async (connected) => {
         if (closed) { void connected.close(); return }
         session = connected
-        subscription = connected.subscribeEvents((event) => {
+        subscription = await openProtoEventSubscription(connected, create(EventSubscribeCommandSchema, {
+          types: [ApplicationEventType.TERMINAL_LIFECYCLE],
+        }), (event) => {
           if (event.event.case === 'terminalLifecycle') handler({ type: 'inventory_changed', payload: event.event.value })
         })
       }).catch(() => undefined)

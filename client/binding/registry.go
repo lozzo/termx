@@ -93,22 +93,14 @@ func (registry *Registry) CloseResourceStream(engineHandle, streamHandle uint64)
 	return engine.CloseResourceStream(streamHandle)
 }
 
-// ImportPairing 把 serialized bindingpb.ImportPairingRequest 路由到指定 engine。
-func (registry *Registry) ImportPairing(engineHandle uint64, payload []byte) (uint64, error) {
+// EngineCommand 把 serialized bindingpb.EngineCommand 路由到指定 engine。
+// Registry 不解释具体业务命令，跨语言 ABI 只随该 Proto envelope 演进。
+func (registry *Registry) EngineCommand(engineHandle uint64, payload []byte) (uint64, error) {
 	engine, err := registry.engine(engineHandle)
 	if err != nil {
 		return 0, err
 	}
-	return engine.ImportPairing(payload)
-}
-
-// DeleteCredential 把 serialized bindingpb.DeleteCredentialRequest 路由到指定 engine。
-func (registry *Registry) DeleteCredential(engineHandle uint64, payload []byte) (uint64, error) {
-	engine, err := registry.engine(engineHandle)
-	if err != nil {
-		return 0, err
-	}
-	return engine.DeleteCredential(payload)
+	return engine.EngineCommand(payload)
 }
 
 // NextEvent 读取指定 engine 的下一条 serialized bindingpb.EventEnvelope。

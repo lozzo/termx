@@ -4,16 +4,21 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/lozzow/termx/client/endpoint"
 	clientruntime "github.com/lozzow/termx/client/runtime"
+	internalprotocol "github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/bindingpb"
+	"github.com/lozzow/termx/proto/wire"
 	"github.com/lozzow/termx/proto/wirepb"
+	"github.com/lozzow/termx/shared/transport/memory"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
@@ -131,6 +136,471 @@ func TestEngineCancellationProducesTypedResult(t *testing.T) {
 	}
 }
 
+func TestEngineCancellationDestroysLateFileOpenResource(t *testing.T) {
+	session := newBindingSession()
+	var closeCount atomic.Int32
+	session.closeFunc = func() error {
+		session.closeOnce.Do(func() {
+			closeCount.Add(1)
+			close(session.done)
+		})
+		return nil
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	cleanup := make(chan *apipb.FileTransferCancelCommand, 1)
+	session.execute = func(_ context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+		if command.GetFileTransferCancel() != nil {
+			cleanup <- proto.Clone(command.GetFileTransferCancel()).(*apipb.FileTransferCancelCommand)
+			return &apipb.ResultEnvelope{Result: &apipb.ResultEnvelope_FileTransferCancel{FileTransferCancel: &apipb.FileTransferCancelResult{Cancelled: true}}}, nil
+		}
+		close(started)
+		<-release
+		return &apipb.ResultEnvelope{Result: &apipb.ResultEnvelope_FileTransferOpen{FileTransferOpen: &apipb.FileTransferOpenResult{Transfer: &apipb.FileTransferHandle{
+			Resource: &apipb.ResourceHandle{Kind: apipb.ResourceKind_RESOURCE_KIND_FILE_TRANSFER, OpaqueToken: []byte("resource")},
+			Resume:   &apipb.FileUploadResumeHandle{OpaqueToken: []byte("resume")},
+		}}}}, nil
+	}
+	engine, err := NewEngine(&bindingHost{session: session})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	sessionHandle := openBindingSession(t, engine)
+	payload, _ := proto.Marshal(&apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileUploadOpen{FileUploadOpen: &apipb.FileUploadOpenCommand{Path: "/tmp/demo", Size: 8, Overwrite: true}}})
+	operation, err := engine.Execute(sessionHandle, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	if err := engine.Cancel(operation); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.CloseSession(sessionHandle); err != nil {
+		t.Fatal(err)
+	}
+	if closeCount.Load() != 0 {
+		t.Fatal("session closed before the cancelled file-open operation reached cleanup")
+	}
+	close(release)
+	event := nextBindingEvent(t, engine)
+	if event.GetExecute().GetError().GetCode() != apipb.ApiErrorCode_API_ERROR_CODE_CANCELLED {
+		t.Fatalf("cancel event = %#v", event)
+	}
+	select {
+	case command := <-cleanup:
+		if string(command.GetUploadResume().GetOpaqueToken()) != "resume" || command.GetTransfer() != nil {
+			t.Fatalf("cleanup command = %#v", command)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("late file open resource was not destroyed")
+	}
+	deadline := time.Now().Add(time.Second)
+	for closeCount.Load() != 1 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if closeCount.Load() != 1 {
+		t.Fatalf("session close count=%d want=1", closeCount.Load())
+	}
+}
+
+func TestEngineCancellationReportsLateFileOpenCleanupFailure(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		cleanup func(context.Context) error
+	}{
+		{name: "error", cleanup: func(context.Context) error { return errors.New("cleanup failed") }},
+		{name: "timeout", cleanup: func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			session := newBindingSession()
+			started := make(chan struct{})
+			release := make(chan struct{})
+			session.execute = func(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+				if command.GetFileTransferCancel() != nil {
+					return nil, test.cleanup(ctx)
+				}
+				close(started)
+				<-release
+				return &apipb.ResultEnvelope{Result: &apipb.ResultEnvelope_FileTransferOpen{FileTransferOpen: &apipb.FileTransferOpenResult{Transfer: &apipb.FileTransferHandle{
+					Resource: &apipb.ResourceHandle{Kind: apipb.ResourceKind_RESOURCE_KIND_FILE_TRANSFER, OpaqueToken: []byte("resource")},
+					Resume:   &apipb.FileUploadResumeHandle{OpaqueToken: []byte("resume")},
+				}}}}, nil
+			}
+			engine, err := NewEngine(&bindingHost{session: session})
+			if err != nil {
+				t.Fatal(err)
+			}
+			engine.cleanupTTL = 10 * time.Millisecond
+			defer engine.Close()
+			sessionHandle := openBindingSession(t, engine)
+			payload, _ := proto.Marshal(&apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileUploadOpen{FileUploadOpen: &apipb.FileUploadOpenCommand{Path: "/tmp/demo", Size: 8, Overwrite: true}}})
+			operation, err := engine.Execute(sessionHandle, payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			<-started
+			if err := engine.Cancel(operation); err != nil {
+				t.Fatal(err)
+			}
+			close(release)
+			event := nextBindingEvent(t, engine)
+			if event.GetExecute().GetError() == nil || event.GetExecute().GetError().GetCode() == apipb.ApiErrorCode_API_ERROR_CODE_CANCELLED {
+				t.Fatalf("cleanup failure was not observable: %#v", event)
+			}
+		})
+	}
+}
+
+func TestEngineCleansDelayedRealProtocolFileOpenBeforeClosingSession(t *testing.T) {
+	clientTransport, serverTransport := memory.NewPair()
+	defer serverTransport.Close()
+	protocolClient := internalprotocol.NewClient(clientTransport)
+	helloDone := make(chan error, 1)
+	go func() {
+		helloDone <- protocolClient.Hello(context.Background(), internalprotocol.Hello{Version: wire.Version, Client: "binding-test"})
+	}()
+	if err := bindingExpectHello(serverTransport); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-helloDone; err != nil {
+		t.Fatal(err)
+	}
+	session := &protocolBindingSession{client: protocolClient, stamp: clientruntime.EndpointSessionStamp{EndpointID: endpoint.EndpointID("studio"), RouteID: endpoint.RouteID("memory"), Generation: 1}}
+	engine, err := NewEngine(&bindingHost{session: session})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	sessionHandle := openBindingSession(t, engine)
+
+	openSeen := make(chan struct{})
+	releaseOpen := make(chan struct{})
+	cleanupSeen := make(chan struct{})
+	serverDone := make(chan error, 1)
+	go func() {
+		openRequest, openCommand, err := bindingReceiveApplicationRequest(serverTransport)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		close(openSeen)
+		<-releaseOpen
+		openResult := &apipb.ResultEnvelope{RequestId: openCommand.GetContext().GetRequestId(), OriginSession: openCommand.GetContext().GetSession(), Result: &apipb.ResultEnvelope_FileTransferOpen{FileTransferOpen: &apipb.FileTransferOpenResult{Transfer: &apipb.FileTransferHandle{
+			Resource: &apipb.ResourceHandle{Kind: apipb.ResourceKind_RESOURCE_KIND_FILE_TRANSFER, OpaqueToken: []byte("resource"), Session: openCommand.GetContext().GetSession(), Generation: 1},
+			Resume:   &apipb.FileUploadResumeHandle{OpaqueToken: []byte("resume")},
+		}}}}
+		if err := bindingSendApplicationResult(serverTransport, openRequest.ID, openResult); err != nil {
+			serverDone <- err
+			return
+		}
+		cleanupRequest, cleanupCommand, err := bindingReceiveApplicationRequest(serverTransport)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if string(cleanupCommand.GetFileTransferCancel().GetUploadResume().GetOpaqueToken()) != "resume" {
+			serverDone <- fmt.Errorf("cleanup command = %#v", cleanupCommand)
+			return
+		}
+		close(cleanupSeen)
+		serverDone <- bindingSendApplicationResult(serverTransport, cleanupRequest.ID, &apipb.ResultEnvelope{RequestId: cleanupCommand.GetContext().GetRequestId(), OriginSession: cleanupCommand.GetContext().GetSession(), Result: &apipb.ResultEnvelope_FileTransferCancel{FileTransferCancel: &apipb.FileTransferCancelResult{Cancelled: true}}})
+	}()
+
+	payload, _ := proto.Marshal(&apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileUploadOpen{FileUploadOpen: &apipb.FileUploadOpenCommand{Path: "/tmp/demo", Size: 8, Overwrite: true}}})
+	operation, err := engine.Execute(sessionHandle, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-openSeen
+	if err := engine.Cancel(operation); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.CloseSession(sessionHandle); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-session.Done():
+		t.Fatal("protocol session closed before delayed file resource cleanup")
+	default:
+	}
+	close(releaseOpen)
+	select {
+	case <-cleanupSeen:
+	case <-time.After(time.Second):
+		t.Fatal("delayed real protocol file resource was not destroyed")
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEngineCloseSessionIsConcurrentAndIdempotent(t *testing.T) {
+	engine, err := NewEngine(&bindingHost{session: newBindingSession()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	handle := openBindingSession(t, engine)
+	errorsCh := make(chan error, 8)
+	var wait sync.WaitGroup
+	for range 8 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			errorsCh <- engine.CloseSession(handle)
+		}()
+	}
+	wait.Wait()
+	close(errorsCh)
+	for err := range errorsCh {
+		if err != nil {
+			t.Fatalf("concurrent close error = %v", err)
+		}
+	}
+	if event := nextBindingEvent(t, engine); event.GetSessionClosed().GetSessionHandle() != handle {
+		t.Fatalf("session closed event = %#v", event)
+	}
+}
+
+func TestEnginePublishesDeferredSessionCloseFailure(t *testing.T) {
+	session := newBindingSession()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	session.execute = func(context.Context, *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+		close(started)
+		<-release
+		return terminalListBindingResult(), nil
+	}
+	session.closeFunc = func() error { return errors.New("close failed") }
+	engine, err := NewEngine(&bindingHost{session: session})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	sessionHandle := openBindingSession(t, engine)
+	payload, _ := proto.Marshal(&apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_TerminalList{TerminalList: &apipb.TerminalListCommand{}}})
+	operation, err := engine.Execute(sessionHandle, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	if err := engine.CloseSession(sessionHandle); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	var closed *bindingpb.SessionClosedEvent
+	for range 2 {
+		event := nextBindingEvent(t, engine)
+		if event.GetSessionClosed() != nil {
+			closed = event.GetSessionClosed()
+		}
+	}
+	if closed == nil || closed.GetError() == nil {
+		t.Fatalf("deferred close failure was not published: %#v", closed)
+	}
+	if err := engine.Release(operation); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEngineCloseClaimsSessionOnceWhileOperationCompletes(t *testing.T) {
+	session := newBindingSession()
+	started := make(chan struct{})
+	releaseOperation := make(chan struct{})
+	releaseClose := make(chan struct{})
+	var closeCount atomic.Int32
+	session.execute = func(context.Context, *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+		close(started)
+		<-releaseOperation
+		return terminalListBindingResult(), nil
+	}
+	session.closeFunc = func() error {
+		closeCount.Add(1)
+		<-releaseClose
+		return nil
+	}
+	engine, err := NewEngine(&bindingHost{session: session})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionHandle := openBindingSession(t, engine)
+	payload, _ := proto.Marshal(&apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_TerminalList{TerminalList: &apipb.TerminalListCommand{}}})
+	if _, err := engine.Execute(sessionHandle, payload); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	if err := engine.CloseSession(sessionHandle); err != nil {
+		t.Fatal(err)
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- engine.Close() }()
+	deadline := time.Now().Add(time.Second)
+	for closeCount.Load() != 1 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	close(releaseOperation)
+	close(releaseClose)
+	if err := <-closed; err != nil {
+		t.Fatal(err)
+	}
+	if closeCount.Load() != 1 {
+		t.Fatalf("session close count=%d want=1", closeCount.Load())
+	}
+}
+
+func TestEngineClosingSessionRejectsExecuteAndResourceOpen(t *testing.T) {
+	session := newBindingSession()
+	closeStarted := make(chan struct{})
+	releaseClose := make(chan struct{})
+	var closeCallbackOnce sync.Once
+	session.closeFunc = func() error {
+		closeCallbackOnce.Do(func() {
+			close(closeStarted)
+			<-releaseClose
+			session.closeOnce.Do(func() { close(session.done) })
+		})
+		return nil
+	}
+	engine, err := NewEngine(&bindingHost{session: session})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	handle := openBindingSession(t, engine)
+	closeResult := make(chan error, 1)
+	go func() { closeResult <- engine.CloseSession(handle) }()
+	<-closeStarted
+	command, _ := proto.Marshal(&apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_TerminalList{TerminalList: &apipb.TerminalListCommand{}}})
+	if _, err := engine.Execute(handle, command); !errors.Is(err, ErrInvalidHandle) {
+		t.Fatalf("execute while closing error = %v", err)
+	}
+	engine.mu.Lock()
+	operationCount := len(engine.operations)
+	engine.mu.Unlock()
+	if operationCount != 0 {
+		t.Fatalf("closing session admitted %d execute operations", operationCount)
+	}
+	resource, _ := proto.Marshal(&bindingpb.OpenResourceStreamRequest{Resource: &apipb.ResourceHandle{OpaqueToken: []byte("resource")}})
+	if _, err := engine.OpenResourceStream(handle, resource); !errors.Is(err, ErrInvalidHandle) {
+		t.Fatalf("resource open while closing error = %v", err)
+	}
+	close(releaseClose)
+	if err := <-closeResult; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEngineSessionCloseRevokesBlockedStreamSendBeforeTransportWrite(t *testing.T) {
+	session := newBindingSession()
+	stream := newBindingResourceStream()
+	session.resourceStream = stream
+	engine, err := NewEngine(&bindingHost{session: session})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	sessionHandle := openBindingSession(t, engine)
+	requestPayload, _ := proto.Marshal(&bindingpb.OpenResourceStreamRequest{
+		Resource: &apipb.ResourceHandle{OpaqueToken: []byte("resource"), Kind: apipb.ResourceKind_RESOURCE_KIND_FILE_TRANSFER},
+	})
+	streamHandle, err := engine.OpenResourceStream(sessionHandle, requestPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dataPayload, _ := proto.Marshal(&wirepb.FileTransferData{Offset: 0, Data: []byte("blocked")})
+	framePayload, _ := proto.Marshal(&bindingpb.ResourceStreamFrame{
+		StreamHandle: streamHandle,
+		Type:         bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_DATA,
+		Payload:      dataPayload,
+	})
+	engine.mu.Lock()
+	record := engine.streams[streamHandle]
+	engine.mu.Unlock()
+	record.sendMu.Lock()
+	sendResult := make(chan error, 1)
+	go func() { sendResult <- engine.SendResourceStreamFrame(streamHandle, framePayload) }()
+	closeResult := make(chan error, 1)
+	go func() { closeResult <- engine.CloseSession(sessionHandle) }()
+	deadline := time.Now().Add(time.Second)
+	for {
+		engine.mu.Lock()
+		closing := engine.sessions[sessionHandle].closing && record.closed
+		engine.mu.Unlock()
+		if closing {
+			break
+		}
+		if time.Now().After(deadline) {
+			record.sendMu.Unlock()
+			t.Fatal("session close did not revoke stream send")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	record.sendMu.Unlock()
+	if err := <-sendResult; !errors.Is(err, ErrInvalidHandle) {
+		t.Fatalf("revoked stream send error = %v", err)
+	}
+	if err := <-closeResult; err != nil {
+		t.Fatal(err)
+	}
+	if stream.sentPayload != nil {
+		t.Fatalf("revoked stream wrote transport payload %x", stream.sentPayload)
+	}
+}
+
+func TestEngineResourceOpenRechecksSessionAfterProviderReturns(t *testing.T) {
+	session := newBindingSession()
+	stream := newBindingResourceStream()
+	openStarted := make(chan struct{})
+	releaseOpen := make(chan struct{})
+	session.resourceOpen = func(*apipb.ResourceHandle) (clientruntime.ResourceStream, error) {
+		close(openStarted)
+		<-releaseOpen
+		return stream, nil
+	}
+	engine, err := NewEngine(&bindingHost{session: session})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	handle := openBindingSession(t, engine)
+	resource, _ := proto.Marshal(&bindingpb.OpenResourceStreamRequest{Resource: &apipb.ResourceHandle{OpaqueToken: []byte("resource")}})
+	openResult := make(chan error, 1)
+	go func() { _, err := engine.OpenResourceStream(handle, resource); openResult <- err }()
+	<-openStarted
+	if err := engine.CloseSession(handle); err != nil {
+		t.Fatal(err)
+	}
+	close(releaseOpen)
+	if err := <-openResult; !errors.Is(err, ErrInvalidHandle) {
+		t.Fatalf("late resource open error = %v", err)
+	}
+	select {
+	case <-stream.closed:
+	default:
+		t.Fatal("late resource stream was not closed")
+	}
+}
+
+func TestEngineHandleCapacityIncludesResourceStreams(t *testing.T) {
+	engine, err := NewEngine(&bindingHost{session: newBindingSession()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine.mu.Lock()
+	for handle := uint64(1); handle <= maxLiveHandles; handle++ {
+		engine.streams[handle] = nil
+	}
+	engine.mu.Unlock()
+	if _, _, err := engine.startOperation(); err == nil {
+		t.Fatal("operation exceeded mixed binding handle capacity")
+	}
+	engine.mu.Lock()
+	clear(engine.streams)
+	engine.mu.Unlock()
+	_ = engine.Close()
+}
+
 func TestEngineResourceStreamUsesProtoFramesAndOpaqueHandle(t *testing.T) {
 	session := newBindingSession()
 	stream := newBindingResourceStream()
@@ -198,6 +668,48 @@ func TestEngineResourceStreamUsesProtoFramesAndOpaqueHandle(t *testing.T) {
 		t.Fatalf("resource stream closed event = %#v", closed)
 	}
 	if err := engine.Release(streamHandle); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEngineResourceStreamAcceptsResumedUploadOffsetAndRequiresExplicitDigest(t *testing.T) {
+	session := newBindingSession()
+	stream := newBindingResourceStream()
+	session.resourceStream = stream
+	engine, err := NewEngine(&bindingHost{session: session})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	sessionHandle := openBindingSession(t, engine)
+	requestPayload, err := proto.Marshal(&bindingpb.OpenResourceStreamRequest{
+		Resource:            &apipb.ResourceHandle{OpaqueToken: []byte{0, 7, 1}, Kind: apipb.ResourceKind_RESOURCE_KIND_FILE_TRANSFER},
+		InitialUploadOffset: 4,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	streamHandle, err := engine.OpenResourceStream(sessionHandle, requestPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dataPayload, _ := proto.Marshal(&wirepb.FileTransferData{Offset: 4, Data: []byte("tail")})
+	framePayload, _ := proto.Marshal(&bindingpb.ResourceStreamFrame{
+		StreamHandle: streamHandle, Type: bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_DATA, Payload: dataPayload,
+	})
+	if err := engine.SendResourceStreamFrame(streamHandle, framePayload); err != nil {
+		t.Fatal(err)
+	}
+	autoPayload, _ := proto.Marshal(&bindingpb.ResourceStreamFrame{StreamHandle: streamHandle, Type: bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO})
+	if err := engine.SendResourceStreamFrame(streamHandle, autoPayload); err == nil {
+		t.Fatal("resumed upload accepted suffix-only automatic digest")
+	}
+	digest := sha256.Sum256([]byte("headtail"))
+	finishPayload, _ := proto.Marshal(&wirepb.FileTransferFinish{Size: 8, Sha256: digest[:]})
+	explicitPayload, _ := proto.Marshal(&bindingpb.ResourceStreamFrame{
+		StreamHandle: streamHandle, Type: bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH, Payload: finishPayload,
+	})
+	if err := engine.SendResourceStreamFrame(streamHandle, explicitPayload); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -324,8 +836,107 @@ func nextBindingEvent(t *testing.T, engine *Engine) *bindingpb.EventEnvelope {
 }
 
 type bindingHost struct {
-	session *bindingSession
+	session clientruntime.ApplicationReadySession
 	request *bindingpb.OpenSessionRequest
+}
+
+type protocolBindingSession struct {
+	client *internalprotocol.Client
+	stamp  clientruntime.EndpointSessionStamp
+	nextID atomic.Uint64
+}
+
+func (session *protocolBindingSession) Stamp() clientruntime.EndpointSessionStamp {
+	return session.stamp
+}
+func (session *protocolBindingSession) ObservedPath() string  { return "memory" }
+func (session *protocolBindingSession) Done() <-chan struct{} { return session.client.Done() }
+func (session *protocolBindingSession) Err() error            { return session.client.Err() }
+func (session *protocolBindingSession) Close() error          { return session.client.Close() }
+func (session *protocolBindingSession) ApplicationEvents(ctx context.Context) (<-chan *apipb.EventEnvelope, error) {
+	return session.client.ApplicationEvents(ctx)
+}
+func (session *protocolBindingSession) ExecuteApplication(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+	return session.executeApplication(ctx, command, false)
+}
+func (session *protocolBindingSession) ExecuteApplicationTerminal(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
+	return session.executeApplication(ctx, command, true)
+}
+func (session *protocolBindingSession) executeApplication(ctx context.Context, command *apipb.CommandEnvelope, terminal bool) (*apipb.ResultEnvelope, error) {
+	requestID := fmt.Sprintf("binding-%d", session.nextID.Add(1))
+	stamp := &apipb.EndpointSessionStamp{EndpointId: string(session.stamp.EndpointID), RouteId: string(session.stamp.RouteID), Generation: uint64(session.stamp.Generation)}
+	snapshot := proto.Clone(command).(*apipb.CommandEnvelope)
+	snapshot.Context = &apipb.RequestContext{RequestId: requestID, ApiVersion: &apipb.ApiVersion{Major: 1}, Session: stamp}
+	operation := &apipb.OperationStamp{Session: proto.Clone(stamp).(*apipb.EndpointSessionStamp), OperationId: requestID}
+	if snapshot.GetFileUploadOpen() != nil {
+		snapshot.GetFileUploadOpen().Operation = operation
+	}
+	if snapshot.GetFileTransferCancel() != nil {
+		snapshot.GetFileTransferCancel().Operation = operation
+	}
+	if terminal {
+		return session.client.ExecuteApplicationTerminal(ctx, snapshot)
+	}
+	return session.client.ExecuteApplication(ctx, snapshot)
+}
+
+func bindingExpectHello(transport *memory.Transport) error {
+	channel, typ, payload, err := bindingReceiveFrame(transport)
+	if err != nil || channel != 0 || typ != wire.TypeHello {
+		return fmt.Errorf("hello frame channel=%d type=%d err=%v", channel, typ, err)
+	}
+	if _, err := internalprotocol.DecodeHelloPayload(payload); err != nil {
+		return err
+	}
+	response, err := internalprotocol.EncodeHelloPayload(internalprotocol.Hello{Version: wire.Version, Server: "binding-test"})
+	if err != nil {
+		return err
+	}
+	return bindingSendFrame(transport, 0, wire.TypeHello, response)
+}
+
+func bindingReceiveApplicationRequest(transport *memory.Transport) (internalprotocol.Request, *apipb.CommandEnvelope, error) {
+	channel, typ, payload, err := bindingReceiveFrame(transport)
+	if err != nil || channel != 0 || typ != wire.TypeRequest {
+		return internalprotocol.Request{}, nil, fmt.Errorf("application frame channel=%d type=%d err=%v", channel, typ, err)
+	}
+	request, err := internalprotocol.DecodeRequestPayload(payload)
+	if err != nil {
+		return internalprotocol.Request{}, nil, err
+	}
+	command := &apipb.CommandEnvelope{}
+	if err := proto.Unmarshal(request.Params, command); err != nil {
+		return internalprotocol.Request{}, nil, err
+	}
+	return request, command, nil
+}
+
+func bindingSendApplicationResult(transport *memory.Transport, id uint64, result *apipb.ResultEnvelope) error {
+	payload, err := proto.Marshal(result)
+	if err != nil {
+		return err
+	}
+	response, err := internalprotocol.EncodeResponsePayload(internalprotocol.Response{ID: id, Result: payload})
+	if err != nil {
+		return err
+	}
+	return bindingSendFrame(transport, 0, wire.TypeResponse, response)
+}
+
+func bindingReceiveFrame(transport *memory.Transport) (uint16, uint8, []byte, error) {
+	frame, err := transport.Recv()
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	return wire.DecodeFrame(frame)
+}
+
+func bindingSendFrame(transport *memory.Transport, channel uint16, typ uint8, payload []byte) error {
+	frame, err := wire.EncodeFrame(channel, typ, payload)
+	if err != nil {
+		return err
+	}
+	return transport.Send(frame)
 }
 
 func (host *bindingHost) OpenSession(_ context.Context, request *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadySession, error) {
@@ -343,9 +954,14 @@ type bindingSession struct {
 	execute        func(context.Context, *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error)
 	resource       *apipb.ResourceHandle
 	resourceStream clientruntime.ResourceStream
+	resourceOpen   func(*apipb.ResourceHandle) (clientruntime.ResourceStream, error)
+	closeFunc      func() error
 }
 
 func (session *bindingSession) OpenResourceStream(resource *apipb.ResourceHandle) (clientruntime.ResourceStream, error) {
+	if session.resourceOpen != nil {
+		return session.resourceOpen(resource)
+	}
 	session.resource = proto.Clone(resource).(*apipb.ResourceHandle)
 	if session.resourceStream == nil {
 		return nil, errors.New("resource stream unavailable")
@@ -404,6 +1020,9 @@ func (session *bindingSession) ObservedPath() string                      { retu
 func (session *bindingSession) Done() <-chan struct{}                     { return session.done }
 func (session *bindingSession) Err() error                                { return session.err }
 func (session *bindingSession) Close() error {
+	if session.closeFunc != nil {
+		return session.closeFunc()
+	}
 	session.closeOnce.Do(func() { close(session.done) })
 	return nil
 }

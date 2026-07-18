@@ -68,7 +68,7 @@ func ValidateFileStorageCommand(command *apipb.CommandEnvelope) error {
 		}
 		return ValidateOperationStamp(value.FileUploadOpen.GetOperation(), requestContext.GetSession())
 	case *apipb.CommandEnvelope_FileTransferCancel:
-		return validateFileTransferOperation(value.FileTransferCancel.GetTransfer(), value.FileTransferCancel.GetOperation(), requestContext)
+		return validateFileTransferCancel(value.FileTransferCancel, requestContext)
 	case *apipb.CommandEnvelope_StorageGet:
 		return validateStorageKey(value.StorageGet.GetKey())
 	case *apipb.CommandEnvelope_StoragePut:
@@ -139,9 +139,22 @@ func FileUploadRequestFromProto(command *apipb.FileUploadOpenCommand) corev2.Fil
 	}
 }
 
+// FileTransferCancelRequestFromProto 将 Proto 二选一销毁凭据映射到 core；不解释 opaque token 内容。
+func FileTransferCancelRequestFromProto(command *apipb.FileTransferCancelCommand) corev2.FileTransferCancelRequest {
+	return corev2.FileTransferCancelRequest{
+		ResourceToken:     cloneBytes(command.GetTransfer().GetOpaqueToken()),
+		UploadResumeToken: cloneBytes(command.GetUploadResume().GetOpaqueToken()),
+	}
+}
+
 // FileEntryToProto 映射 daemon file metadata。
 func FileEntryToProto(entry corev2.FileEntry) *apipb.FileEntry {
 	return &apipb.FileEntry{Path: entry.Path, Name: entry.Name, Type: fileEntryTypeToProto(entry.Type), Size: entry.Size, Mode: entry.Mode, ModifiedAtUnixNano: unixNanoOrZero(entry.ModifiedAt), LinkTarget: entry.LinkTarget}
+}
+
+// FileStatToProto 包装单个 daemon file metadata projection。
+func FileStatToProto(entry corev2.FileEntry) *apipb.FileStatResult {
+	return &apipb.FileStatResult{Entry: FileEntryToProto(entry)}
 }
 
 // FileListToProto 映射目录窗口。
@@ -181,6 +194,11 @@ func FileTransferToProto(origin *apipb.EndpointSessionStamp, operation *apipb.Op
 	return &apipb.FileTransferOpenResult{Transfer: handle}
 }
 
+// FileTransferCancelToProto 映射 transfer cancellation result。
+func FileTransferCancelToProto(result corev2.FileTransferCancelResult) *apipb.FileTransferCancelResult {
+	return &apipb.FileTransferCancelResult{Cancelled: result.Cancelled}
+}
+
 // StorageKeyFromProto 映射 opaque storage identity。
 func StorageKeyFromProto(key *apipb.StorageKey) (string, corev2.StorageScope, string, string) {
 	return key.GetAppId(), storageScopeFromProto(key.GetScope()), key.GetOwnerId(), key.GetKey()
@@ -206,6 +224,25 @@ func StorageEntryToProto(entry corev2.StorageEntry) *apipb.StorageEntry {
 // StorageDeleteToProto 映射 delete 结果。
 func StorageDeleteToProto(result corev2.StorageDeleteResult) *apipb.StorageDeleteResult {
 	return &apipb.StorageDeleteResult{Key: &apipb.StorageKey{AppId: result.AppID, Scope: storageScopeToProto(result.Scope), OwnerId: result.OwnerID, Key: result.Key}, Deleted: result.Deleted, Version: result.Version}
+}
+
+// StorageGetToProto 包装 storage entry projection。
+func StorageGetToProto(entry corev2.StorageEntry) *apipb.StorageGetResult {
+	return &apipb.StorageGetResult{Entry: StorageEntryToProto(entry)}
+}
+
+// StoragePutToProto 包装 storage entry projection。
+func StoragePutToProto(entry corev2.StorageEntry) *apipb.StoragePutResult {
+	return &apipb.StoragePutResult{Entry: StorageEntryToProto(entry)}
+}
+
+// StorageListToProto 映射 core storage entry window。
+func StorageListToProto(entries []corev2.StorageEntry) *apipb.StorageListResult {
+	result := &apipb.StorageListResult{Entries: make([]*apipb.StorageEntry, 0, len(entries))}
+	for _, entry := range entries {
+		result.Entries = append(result.Entries, StorageEntryToProto(entry))
+	}
+	return result
 }
 
 // StorageScopeFromProto 映射公共 storage scope enum。
@@ -244,6 +281,24 @@ func validateFileTransferOperation(resource *apipb.ResourceHandle, operation *ap
 		return validation("file_transfer", "must be a current-session file transfer")
 	}
 	return ValidateOperationStamp(operation, contextMessage.GetSession())
+}
+func validateFileTransferCancel(command *apipb.FileTransferCancelCommand, contextMessage *apipb.RequestContext) error {
+	if command == nil {
+		return validation("file_transfer_cancel", "is required")
+	}
+	hasTransfer := command.GetTransfer() != nil
+	hasResume := command.GetUploadResume() != nil
+	if hasTransfer == hasResume {
+		return validation("file_transfer_cancel", "requires exactly one transfer or upload_resume credential")
+	}
+	if hasTransfer {
+		return validateFileTransferOperation(command.GetTransfer(), command.GetOperation(), contextMessage)
+	}
+	token := command.GetUploadResume().GetOpaqueToken()
+	if len(token) == 0 || len(token) > 256 {
+		return validation("file_transfer_cancel.upload_resume", "opaque_token must contain at most 256 bytes")
+	}
+	return ValidateOperationStamp(command.GetOperation(), contextMessage.GetSession())
 }
 func validateStorageKey(key *apipb.StorageKey) error {
 	if key == nil || key.GetAppId() == "" || key.GetKey() == "" || key.GetScope() == apipb.StorageScope_STORAGE_SCOPE_UNSPECIFIED {

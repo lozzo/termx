@@ -33,6 +33,12 @@ export function decodeFileTransferFinishPayload(payload: Uint8Array): { size: nu
   return { size: Number(value.size), sha256: value.sha256.slice() }
 }
 
+export function encodeFileTransferFinishPayload(value: { size: number; sha256: Uint8Array }): Uint8Array {
+  return toBinary(FileTransferFinishSchema, create(FileTransferFinishSchema, {
+    size: BigInt(value.size), sha256: value.sha256,
+  }))
+}
+
 export function decodeFileTransferAckPayload(payload: Uint8Array): { offset: number; windowBytes: number } {
   const value = fromBinary(FileTransferAckSchema, payload)
   return { offset: Number(value.offset), windowBytes: Number(value.windowBytes) }

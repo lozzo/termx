@@ -1,0 +1,370 @@
+import { create, fromBinary, toBinary } from '@bufbuild/protobuf'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { CommandEnvelopeSchema, ResultEnvelopeSchema } from '../generated/apipb/application_pb'
+import { ApiErrorCode, ApiErrorSchema, EndpointSessionStampSchema, ResourceHandleSchema, ResourceKind } from '../generated/apipb/common_pb'
+import { FileTransferCancelResultSchema, FileTransferHandleSchema, FileTransferOpenResultSchema, FileUploadOpenCommandSchema, FileUploadResumeHandleSchema } from '../generated/apipb/file_pb'
+import { TerminalListCommandSchema } from '../generated/apipb/terminal_pb'
+import { EventEnvelopeSchema, ExecuteResultSchema, OpenSessionRequestSchema, OpenSessionResultSchema, ResourceStreamClosedEventSchema, ResourceStreamFrameSchema, ResourceStreamFrameType, SessionClosedEventSchema } from '../generated/bindingpb/client_binding_pb'
+import { BindingOperation, ProtoBindingClient, type BindingOperationCode, type ProtoBindingBackend } from './protoBindingClient'
+
+class CancellationBackend implements ProtoBindingBackend {
+  readonly released: bigint[] = []
+  private next = 0n
+  private onEvent: ((payload: Uint8Array) => void) | null = null
+
+  start(onEvent: (payload: Uint8Array) => void): void { this.onEvent = onEvent }
+
+  emit(payload: Uint8Array): void { this.onEvent?.(payload) }
+
+  async request(operation: BindingOperationCode, _payload: Uint8Array, handle?: bigint): Promise<bigint> {
+    if (operation === BindingOperation.EXECUTE) return ++this.next
+    if (operation === BindingOperation.CANCEL && handle) {
+      queueMicrotask(() => this.onEvent?.(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+        event: { case: 'execute', value: create(ExecuteResultSchema, { operationHandle: handle, sessionHandle: 1n }) },
+      }))))
+    }
+    if (operation === BindingOperation.RELEASE && handle) this.released.push(handle)
+    return 0n
+  }
+
+  async close(): Promise<void> {}
+}
+
+describe('ProtoBindingClient cancellation ownership', () => {
+  it('releases every cancelled operation after its terminal event', async () => {
+    const backend = new CancellationBackend()
+    const client = new ProtoBindingClient(backend)
+    const command = create(CommandEnvelopeSchema, { command: { case: 'terminalList', value: create(TerminalListCommandSchema) } })
+
+    for (let index = 0; index < 4100; index += 1) {
+      const controller = new AbortController()
+      const pending = client.execute(1n, command, controller.signal)
+      controller.abort(new DOMException('cancel test', 'AbortError'))
+      await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(backend.released).toHaveLength(4100)
+    await client.close()
+  })
+})
+
+describe('ProtoBindingClient failed open ownership', () => {
+  it('releases failed open operations beyond the engine handle capacity', async () => {
+    const backend = new CancellationBackend()
+    let next = 0n
+    backend.request = async (operation, _payload, handle) => {
+      if (operation === BindingOperation.OPEN_SESSION) {
+        const operationHandle = ++next
+        queueMicrotask(() => backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+          event: { case: 'openSession', value: create(OpenSessionResultSchema, {
+            operationHandle,
+            error: create(ApiErrorSchema, { code: ApiErrorCode.UNAVAILABLE, message: 'connect failed' }),
+          }) },
+        }))))
+        return operationHandle
+      }
+      if (operation === BindingOperation.RELEASE && handle) backend.released.push(handle)
+      return 0n
+    }
+    const client = new ProtoBindingClient(backend)
+    const request = create(OpenSessionRequestSchema, { endpointId: 'studio' })
+    for (let index = 0; index < 4100; index += 1) {
+      await expect(client.openSession(request)).rejects.toThrow('connect failed')
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(backend.released).toHaveLength(4100)
+    await client.close()
+  })
+
+  it('lets SessionClosedEvent own release for an early successful open that was cancelled', async () => {
+	const backend = new CancellationBackend()
+	let backendClosed = false
+	backend.close = async () => { backendClosed = true }
+	backend.request = async (operation, _payload, handle) => {
+	  if (operation === BindingOperation.OPEN_SESSION) {
+		backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, { event: { case: 'openSession', value: create(OpenSessionResultSchema, {
+		  operationHandle: 1n,
+		  sessionHandle: 50n,
+		  session: create(EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'cloud', generation: 1n }),
+		}) } })))
+		return 1n
+	  }
+	  if (operation === BindingOperation.CLOSE_SESSION && handle === 50n) {
+		queueMicrotask(() => backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, { event: { case: 'sessionClosed', value: create(SessionClosedEventSchema, { sessionHandle: 50n }) } }))))
+	  }
+	  if (operation === BindingOperation.RELEASE && handle) backend.released.push(handle)
+	  return 0n
+	}
+	const client = new ProtoBindingClient(backend)
+	const controller = new AbortController()
+	controller.abort(new DOMException('cancel open', 'AbortError'))
+	await expect(client.openSession(create(OpenSessionRequestSchema, { requestId: 'open', endpointId: 'studio' }), controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
+	await new Promise((resolve) => setTimeout(resolve, 0))
+	expect(backend.released.filter((handle) => handle === 50n)).toHaveLength(1)
+	expect(backend.released.filter((handle) => handle === 1n)).toHaveLength(1)
+	expect(backendClosed).toBe(false)
+	await client.close()
+  })
+})
+
+describe('ProtoBindingClient resource open cancellation', () => {
+  it('returns promptly and closes a late stream handle', async () => {
+    const backend = new CancellationBackend()
+    let releaseOpen!: (handle: bigint) => void
+    const open = new Promise<bigint>((resolve) => { releaseOpen = resolve })
+    const closed: bigint[] = []
+    backend.request = async (operation, _payload, handle) => {
+      if (operation === BindingOperation.OPEN_RESOURCE_STREAM) return await open
+      if (operation === BindingOperation.CLOSE_RESOURCE_STREAM && handle) closed.push(handle)
+      if (operation === BindingOperation.RELEASE && handle) backend.released.push(handle)
+      return 0n
+    }
+    const client = new ProtoBindingClient(backend)
+    const controller = new AbortController()
+    const pending = client.openResourceStream(1n, create(ResourceHandleSchema, {
+      kind: ResourceKind.FILE_TRANSFER,
+      opaqueToken: Uint8Array.of(1),
+    }), { signal: controller.signal })
+    controller.abort(new DOMException('cancel stream open', 'AbortError'))
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+      event: { case: 'resourceStreamFrame', value: create(ResourceStreamFrameSchema, { streamHandle: 9n, type: ResourceStreamFrameType.FILE_DATA }) },
+    })))
+    releaseOpen(9n)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(closed).toEqual([9n])
+    expect(backend.released).toEqual([9n])
+    backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+      event: { case: 'resourceStreamFrame', value: create(ResourceStreamFrameSchema, { streamHandle: 9n, type: ResourceStreamFrameType.FILE_DATA }) },
+    })))
+    expect((client as unknown as { earlyStreamEvents: Map<bigint, unknown> }).earlyStreamEvents.size).toBe(0)
+    backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+      event: { case: 'resourceStreamClosed', value: create(ResourceStreamClosedEventSchema, { streamHandle: 9n }) },
+    })))
+    expect((client as unknown as { abandonedStreamHandles: Set<bigint> }).abandonedStreamHandles.size).toBe(0)
+    await client.close()
+  })
+
+  it('reclaims a late stream handle when closed arrived before the handle', async () => {
+	const backend = new CancellationBackend()
+	let releaseOpen!: (handle: bigint) => void
+	const open = new Promise<bigint>((resolve) => { releaseOpen = resolve })
+	backend.request = async (operation, _payload, handle) => {
+	  if (operation === BindingOperation.OPEN_RESOURCE_STREAM) return await open
+	  if (operation === BindingOperation.RELEASE && handle) backend.released.push(handle)
+	  return 0n
+	}
+	const client = new ProtoBindingClient(backend)
+	const controller = new AbortController()
+	const pending = client.openResourceStream(1n, create(ResourceHandleSchema, { kind: ResourceKind.FILE_TRANSFER, opaqueToken: Uint8Array.of(1) }), { signal: controller.signal })
+	controller.abort(new DOMException('cancel stream open', 'AbortError'))
+	await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+	backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+	  event: { case: 'resourceStreamClosed', value: create(ResourceStreamClosedEventSchema, { streamHandle: 10n }) },
+	})))
+	releaseOpen(10n)
+	await new Promise((resolve) => setTimeout(resolve, 0))
+	const state = client as unknown as { earlyStreamEvents: Map<bigint, unknown>; abandonedStreamHandles: Set<bigint> }
+	expect(state.earlyStreamEvents.size).toBe(0)
+	expect(state.abandonedStreamHandles.size).toBe(0)
+	expect(backend.released).toEqual([10n])
+	await client.close()
+  })
+})
+
+describe('ProtoBindingClient terminal event release ownership', () => {
+	it('replays a normal stream close that arrives before the open handle ACK', async () => {
+		const backend = new CancellationBackend()
+		let releaseOpen!: (handle: bigint) => void
+		const open = new Promise<bigint>((resolve) => { releaseOpen = resolve })
+		backend.request = async (operation, _payload, handle) => {
+		  if (operation === BindingOperation.OPEN_RESOURCE_STREAM) return await open
+		  if (operation === BindingOperation.RELEASE && handle) backend.released.push(handle)
+		  return 0n
+		}
+		const client = new ProtoBindingClient(backend)
+		const pending = client.openResourceStream(1n, create(ResourceHandleSchema, { kind: ResourceKind.FILE_TRANSFER, opaqueToken: Uint8Array.of(1) }))
+		backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+		  event: { case: 'resourceStreamClosed', value: create(ResourceStreamClosedEventSchema, { streamHandle: 60n }) },
+		})))
+		releaseOpen(60n)
+		const stream = await pending
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		await expect(stream.send(ResourceStreamFrameType.FILE_DATA, new Uint8Array())).rejects.toThrow('closed')
+		expect((client as unknown as { streams: Map<bigint, unknown> }).streams.has(60n)).toBe(false)
+		expect(backend.released.filter((handle) => handle === 60n)).toHaveLength(1)
+		backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+		  event: { case: 'resourceStreamClosed', value: create(ResourceStreamClosedEventSchema, { streamHandle: 60n }) },
+		})))
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		expect(backend.released.filter((handle) => handle === 60n)).toHaveLength(1)
+		await client.close()
+	})
+
+  it.each(['before_ack', 'after_ack'] as const)('releases normal session and stream handles exactly once when events arrive %s', async (order) => {
+	const backend = new CancellationBackend()
+	let nextOperation = 0n
+	let backendClosed = false
+	backend.close = async () => { backendClosed = true }
+	const emit = (payload: Uint8Array) => order === 'before_ack' ? backend.emit(payload) : queueMicrotask(() => backend.emit(payload))
+	backend.request = async (operation, _payload, handle) => {
+	  if (operation === BindingOperation.OPEN_SESSION) {
+		const operationHandle = ++nextOperation
+		queueMicrotask(() => backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, { event: { case: 'openSession', value: create(OpenSessionResultSchema, {
+		  operationHandle,
+		  sessionHandle: 70n,
+		  session: create(EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'cloud', generation: 1n }),
+		}) } }))))
+		return operationHandle
+	  }
+	  if (operation === BindingOperation.OPEN_RESOURCE_STREAM) return 80n
+	  if (operation === BindingOperation.CLOSE_RESOURCE_STREAM && handle === 80n) {
+		emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, { event: { case: 'resourceStreamClosed', value: create(ResourceStreamClosedEventSchema, { streamHandle: 80n }) } })))
+	  }
+	  if (operation === BindingOperation.CLOSE_SESSION && handle === 70n) {
+		emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, { event: { case: 'sessionClosed', value: create(SessionClosedEventSchema, { sessionHandle: 70n }) } })))
+	  }
+	  if (operation === BindingOperation.RELEASE && handle) backend.released.push(handle)
+	  return 0n
+	}
+	const client = new ProtoBindingClient(backend)
+	const session = await client.openSession(create(OpenSessionRequestSchema, { requestId: 'open', endpointId: 'studio' }))
+	const stream = await session.openResourceStream(create(ResourceHandleSchema, { kind: ResourceKind.FILE_TRANSFER, opaqueToken: Uint8Array.of(1) }))
+	await stream.close()
+	await session.close()
+	await new Promise((resolve) => setTimeout(resolve, 0))
+	backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, { event: { case: 'resourceStreamClosed', value: create(ResourceStreamClosedEventSchema, { streamHandle: 80n }) } })))
+	backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, { event: { case: 'sessionClosed', value: create(SessionClosedEventSchema, { sessionHandle: 70n }) } })))
+	await new Promise((resolve) => setTimeout(resolve, 0))
+	expect(backend.released.filter((handle) => handle === 80n)).toHaveLength(1)
+	expect(backend.released.filter((handle) => handle === 70n)).toHaveLength(1)
+	expect(backendClosed).toBe(false)
+	await client.close()
+  })
+})
+
+describe('ProtoBindingClient late execute cleanup', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('destroys a late FileUploadOpen resource through its resume credential', async () => {
+	const backend = new LateFileOpenBackend()
+	const client = new ProtoBindingClient(backend)
+	const session = await client.openSession(create(OpenSessionRequestSchema, { requestId: 'open', endpointId: 'studio' }))
+	const controller = new AbortController()
+	const pending = session.execute(create(CommandEnvelopeSchema, { command: { case: 'fileUploadOpen', value: create(FileUploadOpenCommandSchema, { path: '/tmp/demo', size: 8n, overwrite: true }) } }), { signal: controller.signal })
+	controller.abort(new DOMException('cancel upload open', 'AbortError'))
+	await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+	backend.emitLateOpen()
+	await backend.cleanupObserved
+	expect(backend.cleanupCase).toBe('fileTransferCancel')
+	await session.close()
+	await client.close()
+  })
+
+  it('cleans a FileUploadOpen result emitted before the operation handle returns', async () => {
+    const backend = new LateFileOpenBackend('success', true)
+    const client = new ProtoBindingClient(backend)
+    const session = await client.openSession(create(OpenSessionRequestSchema, { requestId: 'open', endpointId: 'studio' }))
+    const controller = new AbortController()
+    const pending = session.execute(create(CommandEnvelopeSchema, { command: { case: 'fileUploadOpen', value: create(FileUploadOpenCommandSchema, { path: '/tmp/demo', size: 8n, overwrite: true }) } }), { signal: controller.signal })
+    controller.abort(new DOMException('cancel upload open', 'AbortError'))
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    await backend.cleanupObserved
+    expect(backend.cleanupCase).toBe('fileTransferCancel')
+    await client.close()
+  })
+
+  it.each(['false', 'reject'] as const)('fails closed when late cleanup is %s', async (mode) => {
+    const backend = new LateFileOpenBackend(mode)
+    const client = new ProtoBindingClient(backend)
+    const session = await client.openSession(create(OpenSessionRequestSchema, { requestId: 'open', endpointId: 'studio' }))
+    const controller = new AbortController()
+    const pending = session.execute(create(CommandEnvelopeSchema, { command: { case: 'fileUploadOpen', value: create(FileUploadOpenCommandSchema, { path: '/tmp/demo', size: 8n, overwrite: true }) } }), { signal: controller.signal })
+    controller.abort(new DOMException('cancel upload open', 'AbortError'))
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    backend.emitLateOpen()
+    await waitFor(() => backend.closed)
+    expect(session.isAlive()).toBe(false)
+  })
+
+  it('fails closed when late cleanup times out', async () => {
+    vi.useFakeTimers()
+    const backend = new LateFileOpenBackend('hang')
+    const client = new ProtoBindingClient(backend)
+    const session = await client.openSession(create(OpenSessionRequestSchema, { requestId: 'open', endpointId: 'studio' }))
+    const controller = new AbortController()
+    const pending = session.execute(create(CommandEnvelopeSchema, { command: { case: 'fileUploadOpen', value: create(FileUploadOpenCommandSchema, { path: '/tmp/demo', size: 8n, overwrite: true }) } }), { signal: controller.signal })
+    controller.abort(new DOMException('cancel upload open', 'AbortError'))
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    backend.emitLateOpen()
+    await vi.advanceTimersByTimeAsync(5_001)
+    expect(backend.closed).toBe(true)
+    expect(session.isAlive()).toBe(false)
+  })
+})
+
+class LateFileOpenBackend implements ProtoBindingBackend {
+  cleanupCase = ''
+  closed = false
+  private onEvent: ((payload: Uint8Array) => void) | null = null
+  private next = 0n
+  private lateOperation = 0n
+  private cleanupResolve!: () => void
+  readonly cleanupObserved = new Promise<void>((resolve) => { this.cleanupResolve = resolve })
+
+  constructor(private readonly cleanupMode: 'success' | 'false' | 'reject' | 'hang' = 'success', private readonly emitOpenBeforeReturn = false) {}
+
+  start(onEvent: (payload: Uint8Array) => void): void { this.onEvent = onEvent }
+  emit(payload: Uint8Array): void { this.onEvent?.(payload) }
+
+  async request(operation: BindingOperationCode, payload: Uint8Array, handle?: bigint): Promise<bigint> {
+	if (operation === BindingOperation.OPEN_SESSION) {
+	  const operationHandle = ++this.next
+	  queueMicrotask(() => this.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, { event: { case: 'openSession', value: create(OpenSessionResultSchema, {
+		operationHandle, sessionHandle: 20n, session: create(EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'cloud', generation: 1n }),
+	  }) } }))))
+	  return operationHandle
+	}
+	if (operation === BindingOperation.EXECUTE) {
+	  const operationHandle = ++this.next
+	  const command = fromBinary(CommandEnvelopeSchema, payload)
+	  if (command.command.case === 'fileUploadOpen') {
+		this.lateOperation = operationHandle
+		if (this.emitOpenBeforeReturn) this.emitLateOpen()
+		return operationHandle
+	  }
+	  this.cleanupCase = command.command.case
+	  this.cleanupResolve()
+	  if (this.cleanupMode === 'reject') throw new Error('cleanup transport failed')
+	  if (this.cleanupMode === 'hang') return operationHandle
+	  queueMicrotask(() => this.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, { event: { case: 'execute', value: create(ExecuteResultSchema, {
+		operationHandle, sessionHandle: handle ?? 0n, result: create(ResultEnvelopeSchema, {
+		  result: { case: 'fileTransferCancel', value: create(FileTransferCancelResultSchema, { cancelled: this.cleanupMode !== 'false' }) },
+		}),
+	  }) } }))))
+	  return operationHandle
+	}
+	return 0n
+  }
+
+  emitLateOpen(): void {
+	this.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, { event: { case: 'execute', value: create(ExecuteResultSchema, {
+	  operationHandle: this.lateOperation,
+	  sessionHandle: 20n,
+	  result: create(ResultEnvelopeSchema, { result: { case: 'fileTransferOpen', value: create(FileTransferOpenResultSchema, { transfer: create(FileTransferHandleSchema, {
+		resource: create(ResourceHandleSchema, { kind: ResourceKind.FILE_TRANSFER, opaqueToken: Uint8Array.of(1) }),
+		resume: create(FileUploadResumeHandleSchema, { opaqueToken: Uint8Array.of(7) }),
+	  }) }) } }),
+	}) } })))
+  }
+
+	async close(): Promise<void> { this.closed = true }
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 1_000
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error('condition was not reached')
+    await new Promise((resolve) => setTimeout(resolve, 1))
+  }
+}

@@ -141,7 +141,7 @@ func (session *protocolSession) ReleaseApplicationResource(_ context.Context, to
 		return nil
 	}
 	if transferID, ok := fileTransferIDFromResourceToken(token); ok {
-		session.cancelFileTransfer(transferID)
+		session.releaseFileTransfer(transferID, false)
 		return nil
 	}
 	return err
@@ -517,13 +517,20 @@ func (session *protocolSession) ApplicationFileUploadOpen(_ context.Context, req
 	return session.openFileUpload(request)
 }
 
-// ApplicationFileTransferCancel 按 opaque token 取消 transfer。
-func (session *protocolSession) ApplicationFileTransferCancel(_ context.Context, token []byte) (FileTransferCancelResult, error) {
-	transferID, ok := fileTransferIDFromResourceToken(token)
+// ApplicationFileTransferCancel 按 current-session resource 或 principal-bound upload resume 凭据取消 transfer。
+func (session *protocolSession) ApplicationFileTransferCancel(_ context.Context, request FileTransferCancelRequest) (FileTransferCancelResult, error) {
+	if len(request.UploadResumeToken) > 0 {
+		transferID, ok := fileTransferIDFromResumeToken(request.UploadResumeToken)
+		if !ok {
+			return FileTransferCancelResult{}, ErrTerminalNotFound
+		}
+		return FileTransferCancelResult{Cancelled: session.cancelOwnedUpload(transferID)}, nil
+	}
+	transferID, ok := fileTransferIDFromResourceToken(request.ResourceToken)
 	if !ok {
 		return FileTransferCancelResult{}, ErrTerminalNotFound
 	}
-	return session.cancelFileTransfer(transferID), nil
+	return FileTransferCancelResult{Cancelled: session.cancelCurrentFileTransfer(transferID)}, nil
 }
 
 // ApplicationStorageGet 返回 daemon opaque storage entry。

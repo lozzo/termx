@@ -168,8 +168,8 @@ func (x *FileEntry) GetLinkTarget() string {
 	return ""
 }
 
-// FileUploadResumeHandle 是 owning daemon 签发的短期 opaque 续传凭据。
-// 它由已验证 principal 约束，可跨 protocol session 使用，但不能用于 stream/cancel/resource release。
+// FileUploadResumeHandle 是 owning daemon 签发的短期 opaque 上传凭据。
+// 它由已验证 principal 约束，可跨 protocol session 用于续传或销毁未完成上传，但不能打开 stream 或 release session-bound resource。
 type FileUploadResumeHandle struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OpaqueToken   []byte                 `protobuf:"bytes,1,opt,name=opaque_token,json=opaqueToken,proto3" json:"opaque_token,omitempty"`
@@ -807,9 +807,10 @@ func (x *FileUploadOpenCommand) GetOperation() *OperationStamp {
 }
 
 type FileTransferCancelCommand struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Transfer      *ResourceHandle        `protobuf:"bytes,2,opt,name=transfer,proto3" json:"transfer,omitempty"`
-	Operation     *OperationStamp        `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Transfer      *ResourceHandle         `protobuf:"bytes,2,opt,name=transfer,proto3" json:"transfer,omitempty"`
+	Operation     *OperationStamp         `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`
+	UploadResume  *FileUploadResumeHandle `protobuf:"bytes,4,opt,name=upload_resume,json=uploadResume,proto3" json:"upload_resume,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -854,6 +855,13 @@ func (x *FileTransferCancelCommand) GetTransfer() *ResourceHandle {
 func (x *FileTransferCancelCommand) GetOperation() *OperationStamp {
 	if x != nil {
 		return x.Operation
+	}
+	return nil
+}
+
+func (x *FileTransferCancelCommand) GetUploadResume() *FileUploadResumeHandle {
+	if x != nil {
+		return x.UploadResume
 	}
 	return nil
 }
@@ -1460,10 +1468,11 @@ const file_apipb_file_proto_rawDesc = "" +
 	"\x04size\x18\x03 \x01(\x03R\x04size\x12\x1c\n" +
 	"\toverwrite\x18\x04 \x01(\bR\toverwrite\x12<\n" +
 	"\x06resume\x18\x05 \x01(\v2$.termx.api.v1.FileUploadResumeHandleR\x06resume\x12:\n" +
-	"\toperation\x18\x06 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"\x97\x01\n" +
+	"\toperation\x18\x06 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"\xe2\x01\n" +
 	"\x19FileTransferCancelCommand\x128\n" +
 	"\btransfer\x18\x02 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\btransfer\x12:\n" +
-	"\toperation\x18\x03 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"x\n" +
+	"\toperation\x18\x03 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\x12I\n" +
+	"\rupload_resume\x18\x04 \x01(\v2$.termx.api.v1.FileUploadResumeHandleR\fuploadResumeJ\x04\b\x01\x10\x02\"x\n" +
 	"\x0eFileListResult\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x121\n" +
 	"\aentries\x18\x02 \x03(\v2\x17.termx.api.v1.FileEntryR\aentries\x12\x1f\n" +
@@ -1560,20 +1569,21 @@ var file_apipb_file_proto_depIdxs = []int32{
 	23, // 3: termx.api.v1.FileUploadOpenCommand.operation:type_name -> termx.api.v1.OperationStamp
 	24, // 4: termx.api.v1.FileTransferCancelCommand.transfer:type_name -> termx.api.v1.ResourceHandle
 	23, // 5: termx.api.v1.FileTransferCancelCommand.operation:type_name -> termx.api.v1.OperationStamp
-	1,  // 6: termx.api.v1.FileListResult.entries:type_name -> termx.api.v1.FileEntry
-	1,  // 7: termx.api.v1.FileStatResult.entry:type_name -> termx.api.v1.FileEntry
-	1,  // 8: termx.api.v1.FilePreviewResult.entry:type_name -> termx.api.v1.FileEntry
-	17, // 9: termx.api.v1.FileBatchResult.results:type_name -> termx.api.v1.FileOperationResult
-	24, // 10: termx.api.v1.FileTransferHandle.resource:type_name -> termx.api.v1.ResourceHandle
-	23, // 11: termx.api.v1.FileTransferHandle.operation:type_name -> termx.api.v1.OperationStamp
-	2,  // 12: termx.api.v1.FileTransferHandle.resume:type_name -> termx.api.v1.FileUploadResumeHandle
-	19, // 13: termx.api.v1.FileTransferOpenResult.transfer:type_name -> termx.api.v1.FileTransferHandle
-	19, // 14: termx.api.v1.FileTransferCompletedEvent.transfer:type_name -> termx.api.v1.FileTransferHandle
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	2,  // 6: termx.api.v1.FileTransferCancelCommand.upload_resume:type_name -> termx.api.v1.FileUploadResumeHandle
+	1,  // 7: termx.api.v1.FileListResult.entries:type_name -> termx.api.v1.FileEntry
+	1,  // 8: termx.api.v1.FileStatResult.entry:type_name -> termx.api.v1.FileEntry
+	1,  // 9: termx.api.v1.FilePreviewResult.entry:type_name -> termx.api.v1.FileEntry
+	17, // 10: termx.api.v1.FileBatchResult.results:type_name -> termx.api.v1.FileOperationResult
+	24, // 11: termx.api.v1.FileTransferHandle.resource:type_name -> termx.api.v1.ResourceHandle
+	23, // 12: termx.api.v1.FileTransferHandle.operation:type_name -> termx.api.v1.OperationStamp
+	2,  // 13: termx.api.v1.FileTransferHandle.resume:type_name -> termx.api.v1.FileUploadResumeHandle
+	19, // 14: termx.api.v1.FileTransferOpenResult.transfer:type_name -> termx.api.v1.FileTransferHandle
+	19, // 15: termx.api.v1.FileTransferCompletedEvent.transfer:type_name -> termx.api.v1.FileTransferHandle
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_apipb_file_proto_init() }

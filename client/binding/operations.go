@@ -8,6 +8,34 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// EngineCommand 解析 bindingpb.EngineCommand，并把命令路由到 engine-owned 异步 operation。
+// C/JNI/WASM 只暴露这个通用 Proto 入口；业务命令类型不得继续扩张跨语言符号面。
+func (engine *Engine) EngineCommand(payload []byte) (uint64, error) {
+	if err := validatePayload(payload); err != nil {
+		return 0, err
+	}
+	command := &bindingpb.EngineCommand{}
+	if err := (proto.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(payload, command); err != nil {
+		return 0, fmt.Errorf("decode engine command: %w", err)
+	}
+	switch value := command.GetCommand().(type) {
+	case *bindingpb.EngineCommand_ImportPairing:
+		encoded, err := proto.Marshal(value.ImportPairing)
+		if err != nil {
+			return 0, err
+		}
+		return engine.ImportPairing(encoded)
+	case *bindingpb.EngineCommand_DeleteCredential:
+		encoded, err := proto.Marshal(value.DeleteCredential)
+		if err != nil {
+			return 0, err
+		}
+		return engine.DeleteCredential(encoded)
+	default:
+		return 0, fmt.Errorf("engine command is required")
+	}
+}
+
 // ImportPairing 解析 bindingpb.ImportPairingRequest 并异步请求可选 PairingHost。
 // 完成结果只通过 NextEvent 发布；binding 不解析二维码、ticket 或 credential 内容。
 func (engine *Engine) ImportPairing(payload []byte) (uint64, error) {

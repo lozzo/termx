@@ -8,6 +8,7 @@ import (
 	"hash"
 	"io"
 	"sync"
+	"time"
 
 	clientruntime "github.com/lozzow/termx/client/runtime"
 	"github.com/lozzow/termx/proto/apipb"
@@ -19,7 +20,7 @@ import (
 const (
 	// ABIVersion 是 C/JNI/WASM binding 符号与 EventEnvelope 语义版本。
 	// 不兼容的 handle ownership、函数签名或事件 oneof 变更必须递增该值。
-	ABIVersion uint32 = 2
+	ABIVersion uint32 = 3
 	// MaxPayloadBytes 限制跨语言单次 protobuf 输入，防止 JNI/WASM 分配无界内存。
 	MaxPayloadBytes      = 4 << 20
 	defaultEventCapacity = 256
@@ -57,6 +58,7 @@ type Engine struct {
 	operations map[uint64]*operation
 	sessions   map[uint64]*sessionRecord
 	streams    map[uint64]*streamRecord
+	cleanupTTL time.Duration
 
 	emitMu    sync.Mutex
 	sequence  uint64
@@ -65,13 +67,17 @@ type Engine struct {
 }
 
 type operation struct {
-	cancel context.CancelFunc
-	done   bool
+	cancel        context.CancelFunc
+	sessionHandle uint64
+	done          bool
 }
 
 type sessionRecord struct {
-	session clientruntime.ApplicationReadySession
-	closed  bool
+	session      clientruntime.ApplicationReadySession
+	activeOps    int
+	closing      bool
+	closeStarted bool
+	closed       bool
 }
 
 type streamRecord struct {
@@ -81,6 +87,7 @@ type streamRecord struct {
 	closed        bool
 	uploadHash    hash.Hash
 	uploadBytes   int64
+	uploadStart   int64
 }
 
 // NewEngine 创建使用默认有界事件容量的 binding engine。
@@ -102,6 +109,7 @@ func NewEngineWithEventCapacity(host Host, capacity int) (*Engine, error) {
 	return &Engine{
 		host: host, ctx: ctx, cancel: cancel, done: make(chan struct{}),
 		operations: make(map[uint64]*operation), sessions: make(map[uint64]*sessionRecord), streams: make(map[uint64]*streamRecord), events: make(chan []byte, capacity),
+		cleanupTTL: 5 * time.Second,
 	}, nil
 }
 
@@ -117,6 +125,9 @@ func (engine *Engine) OpenResourceStream(sessionHandle uint64, payload []byte) (
 	}
 	if request.GetResource() == nil {
 		return 0, fmt.Errorf("resource stream handle is required")
+	}
+	if request.GetInitialUploadOffset() < 0 {
+		return 0, fmt.Errorf("initial upload offset must not be negative")
 	}
 	session, err := engine.activeSession(sessionHandle)
 	if err != nil {
@@ -139,9 +150,18 @@ func (engine *Engine) OpenResourceStream(sessionHandle uint64, payload []byte) (
 		_ = stream.Close()
 		return 0, ErrClosed
 	}
+	sessionRecord := engine.sessions[sessionHandle]
+	if sessionRecord == nil || sessionRecord.session != session || sessionRecord.closing || sessionRecord.closed {
+		engine.mu.Unlock()
+		_ = stream.Close()
+		return 0, ErrInvalidHandle
+	}
 	handle, err := engine.allocateHandleLocked()
 	if err == nil {
-		engine.streams[handle] = &streamRecord{stream: stream, sessionHandle: sessionHandle, uploadHash: sha256.New()}
+		engine.streams[handle] = &streamRecord{
+			stream: stream, sessionHandle: sessionHandle, uploadHash: sha256.New(),
+			uploadBytes: request.GetInitialUploadOffset(), uploadStart: request.GetInitialUploadOffset(),
+		}
 	}
 	engine.mu.Unlock()
 	if err != nil {
@@ -182,7 +202,11 @@ func (engine *Engine) SendResourceStreamFrame(streamHandle uint64, payload []byt
 			return fmt.Errorf("decode upload data frame: %w", err)
 		}
 		engine.mu.Lock()
-		if record.closed || data.GetOffset() != record.uploadBytes || len(data.GetData()) == 0 {
+		if err := engine.validateStreamSendLocked(streamHandle, record); err != nil {
+			engine.mu.Unlock()
+			return err
+		}
+		if data.GetOffset() != record.uploadBytes || len(data.GetData()) == 0 {
 			engine.mu.Unlock()
 			return fmt.Errorf("upload data frame offset is invalid")
 		}
@@ -201,11 +225,33 @@ func (engine *Engine) SendResourceStreamFrame(streamHandle uint64, payload []byt
 			return fmt.Errorf("automatic upload finish payload must be empty")
 		}
 		engine.mu.Lock()
+		if record.uploadStart != 0 {
+			engine.mu.Unlock()
+			return fmt.Errorf("automatic upload finish is unavailable for resumed streams")
+		}
 		payloadSnapshot, err = proto.Marshal(&wirepb.FileTransferFinish{Size: record.uploadBytes, Sha256: record.uploadHash.Sum(nil)})
 		engine.mu.Unlock()
 		if err != nil {
 			return err
 		}
+	}
+	if frame.GetType() == bindingpb.ResourceStreamFrameType_RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH {
+		var finish wirepb.FileTransferFinish
+		if err := proto.Unmarshal(payloadSnapshot, &finish); err != nil {
+			return fmt.Errorf("decode upload finish frame: %w", err)
+		}
+		engine.mu.Lock()
+		uploadBytes := record.uploadBytes
+		engine.mu.Unlock()
+		if finish.GetSize() != uploadBytes || len(finish.GetSha256()) != sha256.Size {
+			return fmt.Errorf("upload finish does not match sent bytes")
+		}
+	}
+	engine.mu.Lock()
+	err = engine.validateStreamSendLocked(streamHandle, record)
+	engine.mu.Unlock()
+	if err != nil {
+		return err
 	}
 	return record.stream.Send(engine.ctx, typ, payloadSnapshot)
 }
@@ -227,9 +273,10 @@ func (engine *Engine) CloseResourceStream(handle uint64) error {
 		return nil
 	}
 	record.closed = true
-	stream := record.stream
 	engine.mu.Unlock()
-	return stream.Close()
+	record.sendMu.Lock()
+	defer record.sendMu.Unlock()
+	return record.stream.Close()
 }
 
 // OpenSession 解析 bindingpb.OpenSessionRequest 并异步请求 Host 建立 session。
@@ -274,11 +321,7 @@ func (engine *Engine) Execute(sessionHandle uint64, payload []byte) (uint64, err
 	if command.GetCommand() == nil {
 		return 0, fmt.Errorf("application command is required")
 	}
-	session, err := engine.activeSession(sessionHandle)
-	if err != nil {
-		return 0, err
-	}
-	handle, operationContext, err := engine.startOperation()
+	handle, operationContext, session, err := engine.startSessionOperation(sessionHandle)
 	if err != nil {
 		return 0, err
 	}
@@ -335,27 +378,40 @@ func (engine *Engine) CloseSession(sessionHandle uint64) error {
 		engine.mu.Unlock()
 		return ErrInvalidHandle
 	}
-	if record.closed {
+	if record.closed || record.closing {
 		engine.mu.Unlock()
 		return nil
 	}
+	record.closing = true
 	session := record.session
-	streams := make([]clientruntime.ResourceStream, 0)
+	closeSession := record.activeOps == 0
+	if closeSession {
+		record.closeStarted = true
+	}
+	streams := make([]*streamRecord, 0)
 	for _, streamRecord := range engine.streams {
 		if streamRecord.sessionHandle == sessionHandle && !streamRecord.closed {
 			streamRecord.closed = true
-			streams = append(streams, streamRecord.stream)
+			streams = append(streams, streamRecord)
 		}
 	}
 	engine.mu.Unlock()
 	var first error
 	for _, stream := range streams {
-		if err := stream.Close(); err != nil && first == nil {
+		stream.sendMu.Lock()
+		err := stream.stream.Close()
+		stream.sendMu.Unlock()
+		if err != nil && first == nil {
 			first = err
 		}
 	}
-	if err := session.Close(); err != nil && first == nil {
-		first = err
+	if closeSession {
+		if err := session.Close(); err != nil {
+			if first == nil {
+				first = err
+			}
+			engine.finishSession(sessionHandle, session, err)
+		}
 	}
 	return first
 }
@@ -407,23 +463,29 @@ func (engine *Engine) Close() error {
 		}
 		sessions := make([]clientruntime.ApplicationReadySession, 0, len(engine.sessions))
 		for _, record := range engine.sessions {
-			sessions = append(sessions, record.session)
+			if !record.closed && !record.closeStarted {
+				record.closeStarted = true
+				sessions = append(sessions, record.session)
+			}
 		}
-		streams := make([]clientruntime.ResourceStream, 0, len(engine.streams))
+		streams := make([]*streamRecord, 0, len(engine.streams))
 		for _, record := range engine.streams {
-			streams = append(streams, record.stream)
+			streams = append(streams, record)
 			record.closed = true
 		}
 		engine.mu.Unlock()
 		engine.cancel()
 		close(engine.done)
-		for _, session := range sessions {
-			if err := session.Close(); err != nil && first == nil {
+		for _, stream := range streams {
+			stream.sendMu.Lock()
+			err := stream.stream.Close()
+			stream.sendMu.Unlock()
+			if err != nil && first == nil {
 				first = err
 			}
 		}
-		for _, stream := range streams {
-			if err := stream.Close(); err != nil && first == nil {
+		for _, session := range sessions {
+			if err := session.Close(); err != nil && first == nil {
 				first = err
 			}
 		}
@@ -512,10 +574,24 @@ func (engine *Engine) runOpen(handle uint64, ctx context.Context, request *bindi
 }
 
 func (engine *Engine) runExecute(handle, sessionHandle uint64, ctx context.Context, session clientruntime.ApplicationReadySession, command *apipb.CommandEnvelope) {
-	result, err := session.ExecuteApplication(ctx, command)
+	var result *apipb.ResultEnvelope
+	var err error
+	if command.GetFileDownloadOpen() != nil || command.GetFileUploadOpen() != nil {
+		if executor, ok := session.(clientruntime.TerminalResponseApplicationExecutor); ok {
+			result, err = executor.ExecuteApplicationTerminal(ctx, command)
+		} else {
+			result, err = session.ExecuteApplication(ctx, command)
+		}
+	} else {
+		result, err = session.ExecuteApplication(ctx, command)
+	}
 	if ctx.Err() != nil {
+		if cleanupErr := engine.cleanupCancelledFileOpen(session, result); cleanupErr != nil {
+			err = fmt.Errorf("cancelled file open cleanup: %w", cleanupErr)
+		} else {
+			err = ctx.Err()
+		}
 		result = nil
-		err = ctx.Err()
 	}
 	engine.markOperationDone(handle)
 	event := &bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_Execute{Execute: &bindingpb.ExecuteResult{
@@ -531,8 +607,38 @@ func (engine *Engine) runExecute(handle, sessionHandle uint64, ctx context.Conte
 	engine.emit(event)
 }
 
+// cleanupCancelledFileOpen 销毁已在 daemon 创建、但因跨语言 operation 取消而不能交付给 consumer 的 file resource。
+// upload 使用 principal-bound resume 凭据，download 使用 current-session resource release；清理失败会作为 operation failure 暴露，禁止静默泄漏。
+func (engine *Engine) cleanupCancelledFileOpen(session clientruntime.ApplicationReadySession, result *apipb.ResultEnvelope) error {
+	transfer := result.GetFileTransferOpen().GetTransfer()
+	if transfer == nil || transfer.GetResource() == nil {
+		return nil
+	}
+	cleanupCtx, cancel := context.WithTimeout(engine.ctx, engine.cleanupTTL)
+	defer cancel()
+	var command *apipb.CommandEnvelope
+	if transfer.GetResume() != nil {
+		command = &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_FileTransferCancel{FileTransferCancel: &apipb.FileTransferCancelCommand{UploadResume: proto.Clone(transfer.GetResume()).(*apipb.FileUploadResumeHandle)}}}
+	} else {
+		command = &apipb.CommandEnvelope{Command: &apipb.CommandEnvelope_ReleaseResource{ReleaseResource: &apipb.ReleaseResourceCommand{Resource: proto.Clone(transfer.GetResource()).(*apipb.ResourceHandle)}}}
+	}
+	cleanup, err := session.ExecuteApplication(cleanupCtx, command)
+	if err != nil {
+		if cleanupCtx.Err() != nil {
+			return fmt.Errorf("cancelled file resource cleanup timed out")
+		}
+		return err
+	}
+	if transfer.GetResume() != nil && (cleanup.GetFileTransferCancel() == nil || !cleanup.GetFileTransferCancel().GetCancelled()) {
+		return fmt.Errorf("upload cancellation was not confirmed")
+	}
+	return nil
+}
+
 func (engine *Engine) forwardSession(handle uint64, session clientruntime.ApplicationReadySession) {
-	events, err := session.ApplicationEvents(engine.ctx)
+	eventCtx, cancelEvents := context.WithCancel(engine.ctx)
+	defer cancelEvents()
+	events, err := session.ApplicationEvents(eventCtx)
 	if err != nil {
 		_ = session.Close()
 		engine.finishSession(handle, session, err)
@@ -593,8 +699,28 @@ func (engine *Engine) startOperation() (uint64, context.Context, error) {
 	return handle, ctx, nil
 }
 
+func (engine *Engine) startSessionOperation(sessionHandle uint64) (uint64, context.Context, clientruntime.ApplicationReadySession, error) {
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+	if engine.closed {
+		return 0, nil, nil, ErrClosed
+	}
+	record := engine.sessions[sessionHandle]
+	if record == nil || record.closing || record.closed {
+		return 0, nil, nil, ErrInvalidHandle
+	}
+	handle, err := engine.allocateHandleLocked()
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	ctx, cancel := context.WithCancel(engine.ctx)
+	engine.operations[handle] = &operation{cancel: cancel, sessionHandle: sessionHandle}
+	record.activeOps++
+	return handle, ctx, record.session, nil
+}
+
 func (engine *Engine) allocateHandleLocked() (uint64, error) {
-	if len(engine.operations)+len(engine.sessions) >= maxLiveHandles || engine.nextHandle == ^uint64(0) {
+	if len(engine.operations)+len(engine.sessions)+len(engine.streams) >= maxLiveHandles || engine.nextHandle == ^uint64(0) {
 		return 0, fmt.Errorf("binding handle capacity is exhausted")
 	}
 	engine.nextHandle++
@@ -605,12 +731,31 @@ func (engine *Engine) allocateHandleLocked() (uint64, error) {
 }
 
 func (engine *Engine) markOperationDone(handle uint64) {
+	var closeSession clientruntime.ApplicationReadySession
+	var closeSessionHandle uint64
 	engine.mu.Lock()
 	if operation := engine.operations[handle]; operation != nil {
 		operation.done = true
 		operation.cancel()
+		if operation.sessionHandle != 0 {
+			if record := engine.sessions[operation.sessionHandle]; record != nil {
+				if record.activeOps > 0 {
+					record.activeOps--
+				}
+				if record.closing && record.activeOps == 0 && !record.closeStarted && !record.closed {
+					record.closeStarted = true
+					closeSession = record.session
+					closeSessionHandle = operation.sessionHandle
+				}
+			}
+		}
 	}
 	engine.mu.Unlock()
+	if closeSession != nil {
+		if err := closeSession.Close(); err != nil {
+			engine.finishSession(closeSessionHandle, closeSession, err)
+		}
+	}
 }
 
 func (engine *Engine) activeSession(handle uint64) (clientruntime.ApplicationReadySession, error) {
@@ -620,7 +765,7 @@ func (engine *Engine) activeSession(handle uint64) (clientruntime.ApplicationRea
 		return nil, ErrClosed
 	}
 	record := engine.sessions[handle]
-	if record == nil || record.closed {
+	if record == nil || record.closing || record.closed {
 		return nil, ErrInvalidHandle
 	}
 	return record.session, nil
@@ -637,6 +782,20 @@ func (engine *Engine) activeStreamRecord(handle uint64) (*streamRecord, error) {
 		return nil, ErrInvalidHandle
 	}
 	return record, nil
+}
+
+func (engine *Engine) validateStreamSendLocked(handle uint64, record *streamRecord) error {
+	if engine.closed {
+		return ErrClosed
+	}
+	if record == nil || engine.streams[handle] != record || record.closed {
+		return ErrInvalidHandle
+	}
+	session := engine.sessions[record.sessionHandle]
+	if session == nil || session.closing || session.closed {
+		return ErrInvalidHandle
+	}
+	return nil
 }
 
 func bindingFrameTypeToWire(typ bindingpb.ResourceStreamFrameType, outbound bool) (uint8, error) {

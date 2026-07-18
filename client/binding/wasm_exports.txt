@@ -5,8 +5,7 @@ termxEngineExecute
 termxEngineOpenResourceStream
 termxEngineSendResourceStreamFrame
 termxEngineCloseResourceStream
-termxEngineImportPairing
-termxEngineDeleteCredential
+termxEngineCommand
 termxEngineNextEvent
 termxPlatformNextRequest
 termxPlatformComplete

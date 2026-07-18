@@ -141,17 +141,10 @@ func termx_engine_close_resource_stream(engine, stream C.termx_handle_t) C.termx
 	return status(androidLibrary.registry.CloseResourceStream(uint64(engine), uint64(stream)))
 }
 
-//export termx_engine_import_pairing
-func termx_engine_import_pairing(engine C.termx_handle_t, data *C.uint8_t, length C.size_t, out *C.termx_handle_t) C.termx_status_v1 {
+//export termx_engine_command
+func termx_engine_command(engine C.termx_handle_t, data *C.uint8_t, length C.size_t, out *C.termx_handle_t) C.termx_status_v1 {
 	return operation(data, length, out, func(payload []byte) (uint64, error) {
-		return androidLibrary.registry.ImportPairing(uint64(engine), payload)
-	})
-}
-
-//export termx_engine_delete_credential
-func termx_engine_delete_credential(engine C.termx_handle_t, data *C.uint8_t, length C.size_t, out *C.termx_handle_t) C.termx_status_v1 {
-	return operation(data, length, out, func(payload []byte) (uint64, error) {
-		return androidLibrary.registry.DeleteCredential(uint64(engine), payload)
+		return androidLibrary.registry.EngineCommand(uint64(engine), payload)
 	})
 }
 
