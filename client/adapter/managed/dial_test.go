@@ -22,7 +22,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestDialBuildsAuthorizedProtocolReadySession(t *testing.T) {
+func TestDialBuildsAuthorizedProtocolReadyPeerSession(t *testing.T) {
 	attempt := managedAttempt(t)
 	channel := newScriptedProtocolChannel(t)
 	peer := &fakeManagedPeer{channel: channel, observedPath: endpoint.PathDirect, fingerprint: "sha-256:aa:bb"}
@@ -59,7 +59,7 @@ func TestDialBuildsAuthorizedProtocolReadySession(t *testing.T) {
 		Cloud: cloud, Peers: fakePeerFactory{peer: peer}, Authorization: authorizer,
 		ClientName: "managed-engine-test", Phase: func(phase clientruntime.EndpointPhase) { phases = append(phases, phase) },
 	}
-	ready, err := dialer.Dial(context.Background(), attempt)
+	ready, err := dialer.Connect(context.Background(), attempt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestDialBuildsAuthorizedProtocolReadySession(t *testing.T) {
 	if ready.Stamp() != attempt.Stamp() || ready.ObservedPath() != string(endpoint.PathDirect) {
 		t.Fatalf("ready session = stamp %#v path %q", ready.Stamp(), ready.ObservedPath())
 	}
-	application, ok := ready.(clientruntime.ApplicationReadySession)
+	application, ok := ready.(clientruntime.ApplicationReadyPeerSession)
 	if !ok {
 		t.Fatalf("ready session %T does not expose Proto application API", ready)
 	}
@@ -117,7 +117,7 @@ func TestDialRejectsAuthorizationBeforeCloudResolution(t *testing.T) {
 			return nil, fmt.Errorf("credential unavailable")
 		}},
 	}
-	if _, err := dialer.Dial(context.Background(), attempt); err == nil {
+	if _, err := dialer.Connect(context.Background(), attempt); err == nil {
 		t.Fatal("missing credential must fail")
 	}
 	if requests := cloud.Requests(); len(requests.ResolveEndpoint) != 0 || len(requests.CreateSignalingSession) != 0 {

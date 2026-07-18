@@ -93,7 +93,7 @@ func Dial(ctx context.Context, opts DialOptions) (*Transport, error) {
 	return t, nil
 }
 
-// CommitReady 把已完成 SSH 认证、daemon identity proof 与 protocol Hello 的进程生命周期移交给 ReadySession owner。
+// CommitReady 把已完成 SSH 认证、daemon identity proof 与 protocol Hello 的进程生命周期移交给 ReadyPeerSession owner。
 // 调用后原始 dial context 取消不再终止 winner；后续只能由 Transport.Close 或进程自身退出结束。
 func (t *Transport) CommitReady() {
 	if t == nil {

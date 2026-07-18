@@ -299,7 +299,7 @@ type Endpoint struct {
 }
 
 // Registry 是 CLI/TUI 共享的 Endpoint 期望状态真值。
-// 已建立的 Transport/ReadySession、attempt phase、Path 和错误不进入该文件。
+// 已建立的 Transport/ReadyPeerSession、attempt phase、Path 和错误不进入该文件。
 type Registry struct {
 	Version   int                     `json:"version"`
 	Default   EndpointID              `json:"default"`
@@ -325,9 +325,9 @@ type RouteAttempt struct {
 	Generation       SessionGeneration `json:"session_generation"`
 }
 
-// ReadySession 表示 transport、daemon identity、authorization 和 protocol Hello 均已成功。
+// ReadyPeerSession 表示 transport、daemon identity、authorization 和 protocol Hello 均已成功。
 // 只有该状态可以参加 winner CAS；底层 socket/SSH/WebRTC ready 均不能提前胜出。
-type ReadySession struct {
+type ReadyPeerSession struct {
 	AttemptID          AttemptID         `json:"attempt_id"`
 	EndpointID         EndpointID        `json:"endpoint_id"`
 	RouteID            RouteID           `json:"route_id"`
@@ -339,7 +339,7 @@ type ReadySession struct {
 }
 
 // EndpointSession 是客户端当前唯一活动的 protocol session 投影。
-// 它只引用 ReadySession 结果，不复制 core terminal/history/file truth。
+// 它只引用 ReadyPeerSession 结果，不复制 core terminal/history/file truth。
 type EndpointSession struct {
 	EndpointID         EndpointID        `json:"endpoint_id"`
 	RouteID            RouteID           `json:"route_id"`

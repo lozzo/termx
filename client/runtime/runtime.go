@@ -17,7 +17,7 @@ type EndpointPlanSnapshot struct {
 }
 
 // EndpointPlanSource 按 EndpointID 读取当前 registry 与平台 planner 环境快照。
-// source 只读取配置和 capability 索引，不建立网络连接、不分配 generation，也不缓存 ReadySession。
+// source 只读取配置和 capability 索引，不建立网络连接、不分配 generation，也不缓存 ReadyPeerSession。
 type EndpointPlanSource interface {
 	Snapshot(context.Context, endpoint.EndpointID) (EndpointPlanSnapshot, error)
 }
@@ -28,11 +28,11 @@ type ClientRuntime struct {
 	owner   *SessionOwner
 	source  EndpointPlanSource
 	clock   port.Clock
-	dialers RouteAttemptDialerResolver
+	dialers PeerConnectorResolver
 }
 
 // NewClientRuntime 装配共享 runtime facade；依赖缺失时返回错误，不能构造会在连接时 fallback 的半可用 runtime。
-func NewClientRuntime(owner *SessionOwner, source EndpointPlanSource, clock port.Clock, dialers RouteAttemptDialerResolver) (*ClientRuntime, error) {
+func NewClientRuntime(owner *SessionOwner, source EndpointPlanSource, clock port.Clock, dialers PeerConnectorResolver) (*ClientRuntime, error) {
 	if owner == nil || source == nil || clock == nil || dialers == nil {
 		return nil, runtimeError(ErrorInvalidRequest, "session owner, endpoint source, clock, and route dialers are required", nil)
 	}

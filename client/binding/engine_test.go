@@ -836,7 +836,7 @@ func nextBindingEvent(t *testing.T, engine *Engine) *bindingpb.EventEnvelope {
 }
 
 type bindingHost struct {
-	session clientruntime.ApplicationReadySession
+	session clientruntime.ApplicationReadyPeerSession
 	request *bindingpb.OpenSessionRequest
 }
 
@@ -850,8 +850,8 @@ func (session *protocolBindingSession) Stamp() clientruntime.EndpointSessionStam
 	return session.stamp
 }
 func (session *protocolBindingSession) ObservedPath() string { return "memory" }
-func (session *protocolBindingSession) Readiness() clientruntime.ReadySessionEvidence {
-	return clientruntime.ReadySessionEvidence{Identity: endpoint.DaemonIdentity{DeviceID: "device-binding-protocol", DeviceFingerprint: "SHA256:device-binding-protocol"}, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version}
+func (session *protocolBindingSession) Readiness() clientruntime.ReadyPeerSessionEvidence {
+	return clientruntime.ReadyPeerSessionEvidence{Identity: endpoint.DaemonIdentity{DeviceID: "device-binding-protocol", DeviceFingerprint: "SHA256:device-binding-protocol"}, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version}
 }
 func (session *protocolBindingSession) Done() <-chan struct{} { return session.client.Done() }
 func (session *protocolBindingSession) Err() error            { return session.client.Err() }
@@ -942,7 +942,7 @@ func bindingSendFrame(transport *memory.Transport, channel uint16, typ uint8, pa
 	return transport.Send(frame)
 }
 
-func (host *bindingHost) OpenSession(_ context.Context, request *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadySession, error) {
+func (host *bindingHost) OpenSession(_ context.Context, request *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadyPeerSession, error) {
 	host.request = proto.Clone(request).(*bindingpb.OpenSessionRequest)
 	return host.session, nil
 }
@@ -1020,8 +1020,8 @@ func newBindingSession() *bindingSession {
 
 func (session *bindingSession) Stamp() clientruntime.EndpointSessionStamp { return session.stamp }
 func (session *bindingSession) ObservedPath() string                      { return "direct" }
-func (session *bindingSession) Readiness() clientruntime.ReadySessionEvidence {
-	return clientruntime.ReadySessionEvidence{Identity: endpoint.DaemonIdentity{DeviceID: "device-binding", DeviceFingerprint: "SHA256:device-binding"}, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version}
+func (session *bindingSession) Readiness() clientruntime.ReadyPeerSessionEvidence {
+	return clientruntime.ReadyPeerSessionEvidence{Identity: endpoint.DaemonIdentity{DeviceID: "device-binding", DeviceFingerprint: "SHA256:device-binding"}, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version}
 }
 func (session *bindingSession) Done() <-chan struct{} { return session.done }
 func (session *bindingSession) Err() error            { return session.err }
@@ -1067,4 +1067,4 @@ func terminalListBindingResult() *apipb.ResultEnvelope {
 	return &apipb.ResultEnvelope{Result: &apipb.ResultEnvelope_TerminalList{TerminalList: &apipb.TerminalListResult{}}}
 }
 
-var _ clientruntime.ApplicationReadySession = (*bindingSession)(nil)
+var _ clientruntime.ApplicationReadyPeerSession = (*bindingSession)(nil)

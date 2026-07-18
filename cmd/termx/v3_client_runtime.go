@@ -89,9 +89,9 @@ func newCLIEndpointRuntime(ctx context.Context, owner *clientruntime.SessionOwne
 	}
 	credentials := cliCredentialSource{store: remoteauth.NewCredentialStore(v3RemoteCredentialDir())}
 	localDialer := localadapter.NewDialer(localOptions)
-	dialers, err := clientruntime.NewRouteDialerMap(map[clientendpoint.RouteKind]clientruntime.RouteAttemptDialer{
-		clientendpoint.RouteLocalUnix: localDialer,
-		clientendpoint.RouteSSHWebRTCTCP:  sshadapter.NewDialer(sshadapter.Options{ClientName: "termx-cli"}),
+	dialers, err := clientruntime.NewPeerConnectorMap(map[clientendpoint.RouteKind]clientruntime.PeerConnector{
+		clientendpoint.RouteLocalUnix:    localDialer,
+		clientendpoint.RouteSSHWebRTCTCP: sshadapter.NewDialer(sshadapter.Options{ClientName: "termx-cli"}),
 		clientendpoint.RouteManagedWebRTC: managedadapter.LazyDialer{
 			OpenCloud: func(ctx context.Context) (managedadapter.CloudClient, io.Closer, error) {
 				cloud, err := openV3CloudLifecycleClient(ctx, cloudpb.CallerRole_CALLER_ROLE_TUI,

@@ -39,7 +39,7 @@ func NewDialer(options Options) *Dialer {
 
 // Dial 在 RTC006 实现 Go SSH backed ICE-TCP 前显式拒绝新 Route。
 // 该失败保证新配置不会被错误解释为旧 stdio proxy 参数。
-func (dialer *Dialer) Dial(ctx context.Context, request clientruntime.AttemptRequest) (clientruntime.ReadySession, error) {
+func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.AttemptRequest) (clientruntime.ReadyPeerSession, error) {
 	if dialer == nil {
 		return nil, fmt.Errorf("SSH dialer is required")
 	}
@@ -72,4 +72,4 @@ func sshAddress(route endpoint.AccessRoute) string {
 	return target
 }
 
-var _ clientruntime.RouteAttemptDialer = (*Dialer)(nil)
+var _ clientruntime.PeerConnector = (*Dialer)(nil)

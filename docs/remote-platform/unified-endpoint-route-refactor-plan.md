@@ -121,7 +121,7 @@ exportable
 | Owner | 负责 | 不负责 |
 | --- | --- | --- |
 | `client/endpoint` | registry projection、strict parser、assembler、planner、identity conflict、portable contract validation | 网络 IO、credential body、session winner、重连 |
-| `client/runtime` | attempt、ReadyPeerSession、winner、generation、lease、cancel、replacement | 复制 Route 配置、UI state、terminal truth |
+| `client/runtime` | attempt、PeerConnector、ReadyPeerSession、通用 pairing admission/DTLS binding、winner、generation、lease、cancel、replacement | 复制 Route 配置、signaling、UI state、terminal truth |
 | `client/adapter` | 执行 planner 已选定的单条 Route | 自行选择 fallback、创建第二份 Endpoint/session truth |
 | `remote/` | daemon embedded signaling、ICE mux、Pion/DataChannel 和 remote auth 接线 | Cloud 账号、订阅、terminal capability policy |
 | `client/binding` | Proto bytes、opaque handle、异步 operation/event、close/release | Endpoint、Route、credential 或重连状态机 |
@@ -142,6 +142,7 @@ Go 内部可以使用便于 validation/planning 的领域投影，但跨 JNI/C A
 - planner 输入是规范化 Endpoint、connect intent、generation、平台支持 Route 和本地可用 credential ref。
 - planner 不读取 secure store body、不 dial、不选择 winner、不修改 registry。
 - planner 输出不可变 attempt group 和稳定过滤诊断。
+- 平台明确支持的 Direct、SSH 和 Cloud connector 使用同一 `PeerConnector.Connect -> ReadyPeerSession` contract，可以进入同一 attempt group。
 - Route connector 尚未实现时必须显式 unavailable，不能把新 Route 配置降级解释成旧 transport。
 - Direct/SSH/Cloud 收口为同一 ReadyPeerSession 的时机由 `workflow.md` 后续切片推进。
 
@@ -153,6 +154,7 @@ Go 内部可以使用便于 validation/planning 的领域投影，但跨 JNI/C A
 - share 只在一次性 TLS share session 内传输用户确认后的 portable config。
 - local Unix、源 credential ref、Cloud token、runtime winner、session、grant body 和 UI state 都不能进入 bundle。
 - deterministic protobuf、unknown-field rejection、大小限制、签名和过期检查必须在导入前完成。
+- `client/runtime.PairingService` 统一校验 attempt、Endpoint pin、实际 DTLS fingerprint binding 和 PairingTicket handshake；Route connector 只建立 peer，并保证成功或失败后 exact-close。
 
 ## 8. 失败语义
 

@@ -15,7 +15,7 @@ import (
 type SessionOwner struct {
 	mu           sync.Mutex
 	authority    *SessionGenerationAuthority
-	current      map[endpoint.EndpointID]ApplicationReadySession
+	current      map[endpoint.EndpointID]ApplicationReadyPeerSession
 	configs      map[endpoint.EndpointID]string
 	stickyRoutes map[endpoint.EndpointID]endpoint.RouteID
 	acquireLocks map[endpoint.EndpointID]*sync.Mutex
@@ -29,12 +29,12 @@ type SessionOwner struct {
 type SessionGenerationAuthority struct {
 	mu          sync.Mutex
 	generations map[endpoint.EndpointID]SessionGeneration
-	current     map[endpoint.EndpointID]ApplicationReadySession
+	current     map[endpoint.EndpointID]ApplicationReadyPeerSession
 }
 
 // NewSessionGenerationAuthority 创建空的进程级 generation authority。
 func NewSessionGenerationAuthority() *SessionGenerationAuthority {
-	return &SessionGenerationAuthority{generations: make(map[endpoint.EndpointID]SessionGeneration), current: make(map[endpoint.EndpointID]ApplicationReadySession)}
+	return &SessionGenerationAuthority{generations: make(map[endpoint.EndpointID]SessionGeneration), current: make(map[endpoint.EndpointID]ApplicationReadyPeerSession)}
 }
 
 // NewSessionOwner 创建空的客户端 session owner。
@@ -51,7 +51,7 @@ func NewSessionOwnerWithAuthority(authority *SessionGenerationAuthority) *Sessio
 	}
 	return &SessionOwner{
 		authority:    authority,
-		current:      make(map[endpoint.EndpointID]ApplicationReadySession),
+		current:      make(map[endpoint.EndpointID]ApplicationReadyPeerSession),
 		configs:      make(map[endpoint.EndpointID]string),
 		stickyRoutes: make(map[endpoint.EndpointID]endpoint.RouteID),
 		acquireLocks: make(map[endpoint.EndpointID]*sync.Mutex),
@@ -62,7 +62,7 @@ func NewSessionOwnerWithAuthority(authority *SessionGenerationAuthority) *Sessio
 
 // AcquireRoute 复用同 endpoint、同 config key 的当前 ready session，并返回独立 consumer lease。
 // config key 由 adapter 对已验证连接配置生成，runtime 只比较 opaque key；lease Close 只释放 consumer，配置变化或 owner teardown 才提升 generation。
-func (owner *SessionOwner) AcquireRoute(ctx context.Context, target endpoint.Endpoint, routeID endpoint.RouteID, intent ConnectIntent, configKey string, dialer RouteAttemptDialer) (ApplicationReadySession, error) {
+func (owner *SessionOwner) AcquireRoute(ctx context.Context, target endpoint.Endpoint, routeID endpoint.RouteID, intent ConnectIntent, configKey string, dialer PeerConnector) (ApplicationReadyPeerSession, error) {
 	if owner == nil || dialer == nil || configKey == "" {
 		return nil, runtimeError(ErrorInvalidRequest, "session owner, route dialer, and config key are required", nil)
 	}
@@ -123,7 +123,7 @@ func (owner *SessionOwner) ConnectRoute(
 	target endpoint.Endpoint,
 	routeID endpoint.RouteID,
 	intent ConnectIntent,
-	dialer RouteAttemptDialer,
+	dialer PeerConnector,
 ) (SessionLease, error) {
 	if owner == nil || dialer == nil {
 		return SessionLease{}, runtimeError(ErrorUnavailable, "session owner or route dialer is unavailable", nil)
@@ -132,27 +132,27 @@ func (owner *SessionOwner) ConnectRoute(
 	if err != nil {
 		return SessionLease{}, err
 	}
-	ready, err := dialer.Dial(ctx, attempt)
+	ready, err := dialer.Connect(ctx, attempt)
 	if err != nil {
 		return SessionLease{}, err
 	}
-	return owner.AdoptReadySession(attempt, ready)
+	return owner.AdoptReadyPeerSession(attempt, ready)
 }
 
-// AdoptReadySession 把指定 attempt 已完成 Hello/auth 的 ready session 发布为当前 winner。
+// AdoptReadyPeerSession 把指定 attempt 已完成 Hello/auth 的 ready session 发布为当前 winner。
 // 该入口只供 composition 迁移已经建立的 transport；attempt generation 必须先由 BeginRouteAttempt 分配，调用方不能伪造 stamp。
-func (owner *SessionOwner) AdoptReadySession(attempt AttemptRequest, ready ReadySession) (SessionLease, error) {
+func (owner *SessionOwner) AdoptReadyPeerSession(attempt AttemptRequest, ready ReadyPeerSession) (SessionLease, error) {
 	if owner == nil {
 		if ready != nil {
 			_ = ready.Close()
 		}
 		return SessionLease{}, runtimeError(ErrorUnavailable, "session owner is unavailable", nil)
 	}
-	if err := ValidateReadySession(attempt, ready); err != nil {
+	if err := ValidateReadyPeerSession(attempt, ready); err != nil {
 		_ = ready.Close()
 		return SessionLease{}, err
 	}
-	application, ok := ready.(ApplicationReadySession)
+	application, ok := ready.(ApplicationReadyPeerSession)
 	if !ok {
 		_ = ready.Close()
 		return SessionLease{}, runtimeError(ErrorUnavailable, "route attempt returned no Proto application session", nil)
@@ -231,7 +231,7 @@ func (owner *SessionOwner) beginEndpointGeneration(endpointID endpoint.EndpointI
 
 // ApplicationSession 把 runtime 返回的 lease 投影为 generation-fenced application ready session。
 // wrapper 不缓存可执行 protocol client；每次 command/event/resource 操作都回到 owner 校验 current winner，Close 也只断开精确 generation。
-func (owner *SessionOwner) ApplicationSession(lease SessionLease) (ApplicationReadySession, error) {
+func (owner *SessionOwner) ApplicationSession(lease SessionLease) (ApplicationReadyPeerSession, error) {
 	if err := lease.Validate(); err != nil {
 		return nil, err
 	}
@@ -295,7 +295,7 @@ func (owner *SessionOwner) Close() error {
 		return nil
 	}
 	owner.closed = true
-	sessions := make([]ApplicationReadySession, 0, len(owner.current))
+	sessions := make([]ApplicationReadyPeerSession, 0, len(owner.current))
 	for endpointID, session := range owner.current {
 		sessions = append(sessions, session)
 		owner.authority.removeCurrent(endpointID, session)
@@ -325,7 +325,7 @@ func (owner *SessionOwner) Close() error {
 	return first
 }
 
-func (owner *SessionOwner) session(stamp EndpointSessionStamp) (ApplicationReadySession, error) {
+func (owner *SessionOwner) session(stamp EndpointSessionStamp) (ApplicationReadyPeerSession, error) {
 	if owner == nil {
 		return nil, runtimeError(ErrorUnavailable, "session owner is unavailable", nil)
 	}
@@ -344,7 +344,7 @@ func (owner *SessionOwner) session(stamp EndpointSessionStamp) (ApplicationReady
 	return session, nil
 }
 
-func (owner *SessionOwner) removeWhenDone(endpointID endpoint.EndpointID, generation SessionGeneration, session ApplicationReadySession) {
+func (owner *SessionOwner) removeWhenDone(endpointID endpoint.EndpointID, generation SessionGeneration, session ApplicationReadyPeerSession) {
 	<-session.Done()
 	stamp := session.Stamp()
 	err := session.Err()
@@ -372,7 +372,7 @@ func errorMessage(err error) string {
 	return err.Error()
 }
 
-func (owner *SessionOwner) newSharedLeaseLocked(endpointID endpoint.EndpointID, ready ApplicationReadySession) *sharedApplicationLease {
+func (owner *SessionOwner) newSharedLeaseLocked(endpointID endpoint.EndpointID, ready ApplicationReadyPeerSession) *sharedApplicationLease {
 	lease := &sharedApplicationLease{owner: owner, endpointID: endpointID, ready: ready, done: make(chan struct{})}
 	if owner.sharedLeases[endpointID] == nil {
 		owner.sharedLeases[endpointID] = make(map[*sharedApplicationLease]struct{})
@@ -408,7 +408,7 @@ func (owner *SessionOwner) takeSharedLeasesLocked(endpointID endpoint.EndpointID
 	return result
 }
 
-func (owner *SessionOwner) takeSharedLeasesForSessionLocked(endpointID endpoint.EndpointID, ready ApplicationReadySession) []*sharedApplicationLease {
+func (owner *SessionOwner) takeSharedLeasesForSessionLocked(endpointID endpoint.EndpointID, ready ApplicationReadyPeerSession) []*sharedApplicationLease {
 	leasing := owner.sharedLeases[endpointID]
 	result := make([]*sharedApplicationLease, 0, len(leasing))
 	for lease := range leasing {
@@ -424,7 +424,7 @@ func (owner *SessionOwner) takeSharedLeasesForSessionLocked(endpointID endpoint.
 	return result
 }
 
-func (authority *SessionGenerationAuthority) isCurrent(endpointID endpoint.EndpointID, generation SessionGeneration, session ApplicationReadySession) bool {
+func (authority *SessionGenerationAuthority) isCurrent(endpointID endpoint.EndpointID, generation SessionGeneration, session ApplicationReadyPeerSession) bool {
 	if authority == nil {
 		return false
 	}
@@ -433,7 +433,7 @@ func (authority *SessionGenerationAuthority) isCurrent(endpointID endpoint.Endpo
 	return authority.generations[endpointID] == generation && authority.current[endpointID] == session
 }
 
-func (authority *SessionGenerationAuthority) removeCurrent(endpointID endpoint.EndpointID, session ApplicationReadySession) {
+func (authority *SessionGenerationAuthority) removeCurrent(endpointID endpoint.EndpointID, session ApplicationReadyPeerSession) {
 	if authority == nil {
 		return
 	}
@@ -449,12 +449,12 @@ type ownedApplicationSession struct {
 	stamp        EndpointSessionStamp
 	observedPath string
 	done         <-chan struct{}
-	terminal     ApplicationReadySession
+	terminal     ApplicationReadyPeerSession
 }
 
 func (session *ownedApplicationSession) Stamp() EndpointSessionStamp { return session.stamp }
 func (session *ownedApplicationSession) ObservedPath() string        { return session.observedPath }
-func (session *ownedApplicationSession) Readiness() ReadySessionEvidence {
+func (session *ownedApplicationSession) Readiness() ReadyPeerSessionEvidence {
 	return session.terminal.Readiness()
 }
 func (session *ownedApplicationSession) Done() <-chan struct{} { return session.done }
@@ -530,7 +530,7 @@ func (session *ownedApplicationSession) ApplicationAttachment(channel uint16) (*
 	return provider.ApplicationAttachment(channel)
 }
 
-var _ ApplicationReadySession = (*ownedApplicationSession)(nil)
+var _ ApplicationReadyPeerSession = (*ownedApplicationSession)(nil)
 var _ ResourceStreamSession = (*ownedApplicationSession)(nil)
 var _ ApplicationAttachmentSession = (*ownedApplicationSession)(nil)
 var _ ApplicationSessionValidator = (*ownedApplicationSession)(nil)
@@ -538,7 +538,7 @@ var _ ApplicationSessionValidator = (*ownedApplicationSession)(nil)
 type sharedApplicationLease struct {
 	owner      *SessionOwner
 	endpointID endpoint.EndpointID
-	ready      ApplicationReadySession
+	ready      ApplicationReadyPeerSession
 	done       chan struct{}
 	closeOnce  sync.Once
 	errMu      sync.Mutex
@@ -547,7 +547,7 @@ type sharedApplicationLease struct {
 
 func (lease *sharedApplicationLease) Stamp() EndpointSessionStamp { return lease.ready.Stamp() }
 func (lease *sharedApplicationLease) ObservedPath() string        { return lease.ready.ObservedPath() }
-func (lease *sharedApplicationLease) Readiness() ReadySessionEvidence {
+func (lease *sharedApplicationLease) Readiness() ReadyPeerSessionEvidence {
 	return lease.ready.Readiness()
 }
 func (lease *sharedApplicationLease) Done() <-chan struct{} { return lease.done }
@@ -655,7 +655,7 @@ func (lease *sharedApplicationLease) active() error {
 	}
 }
 
-var _ ApplicationReadySession = (*sharedApplicationLease)(nil)
+var _ ApplicationReadyPeerSession = (*sharedApplicationLease)(nil)
 var _ ResourceStreamSession = (*sharedApplicationLease)(nil)
 var _ ApplicationAttachmentSession = (*sharedApplicationLease)(nil)
 var _ ApplicationSessionValidator = (*sharedApplicationLease)(nil)

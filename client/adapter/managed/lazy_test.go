@@ -45,7 +45,7 @@ func TestLazyDialerOwnsCloudLifecycle(t *testing.T) {
 	if openCalls.Load() != 0 {
 		t.Fatal("Cloud opener must remain lazy before Dial")
 	}
-	ready, err := dialer.Dial(context.Background(), attempt)
+	ready, err := dialer.Connect(context.Background(), attempt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestLazyDialerRejectsIncompleteCloudLifecycle(t *testing.T) {
 	dialer := LazyDialer{OpenCloud: func(context.Context) (CloudClient, io.Closer, error) {
 		return nil, closer, nil
 	}}
-	if _, err := dialer.Dial(context.Background(), managedAttempt(t)); err == nil {
+	if _, err := dialer.Connect(context.Background(), managedAttempt(t)); err == nil {
 		t.Fatal("incomplete Cloud lifecycle must fail")
 	}
 	if closer.calls.Load() != 1 {

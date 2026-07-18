@@ -35,14 +35,14 @@ const (
 )
 
 // EndpointSessionStamp 是所有 endpoint-scoped runtime 操作的 generation fence。
-// 它来自 ReadySession winner，必须原样传递到后续 operation；任何层都不得用当前 registry 推断或重建 stamp。
+// 它来自 ReadyPeerSession winner，必须原样传递到后续 operation；任何层都不得用当前 registry 推断或重建 stamp。
 type EndpointSessionStamp struct {
 	EndpointID endpoint.EndpointID
 	RouteID    endpoint.RouteID
 	Generation SessionGeneration
 }
 
-// Validate 校验 stamp 是否完整；失败表示调用方没有绑定到真实 ReadySession。
+// Validate 校验 stamp 是否完整；失败表示调用方没有绑定到真实 ReadyPeerSession。
 func (stamp EndpointSessionStamp) Validate() error {
 	if strings.TrimSpace(string(stamp.EndpointID)) == "" {
 		return runtimeError(ErrorInvalidRequest, "session stamp endpoint_id is required", nil)
@@ -127,7 +127,7 @@ type EndpointEvent struct {
 }
 
 // Runtime 是 TUI、CLI 和未来平台 binding 消费的连接控制面 application interface。
-// 实现是每个 Endpoint session/generation 的唯一 owner；consumer 不得缓存 ReadySession 或自行 dial。
+// 实现是每个 Endpoint session/generation 的唯一 owner；consumer 不得缓存 ReadyPeerSession 或自行 dial。
 type Runtime interface {
 	EnsureSession(context.Context, ConnectRequest) (SessionLease, error)
 	Disconnect(context.Context, DisconnectRequest) error
@@ -177,7 +177,7 @@ func (request AttemptRequest) Validate() error {
 	}
 }
 
-// Stamp 返回该 attempt 成功后必须写入 ReadySession 的 generation fence。
+// Stamp 返回该 attempt 成功后必须写入 ReadyPeerSession 的 generation fence。
 func (request AttemptRequest) Stamp() EndpointSessionStamp {
 	return EndpointSessionStamp{EndpointID: request.endpointID, RouteID: request.route.ID, Generation: request.generation}
 }
@@ -202,21 +202,21 @@ func (request AttemptRequest) Intent() ConnectIntent {
 	return request.intent
 }
 
-// ReadySession 表示单 route attempt 已完成 transport、身份、授权和 protocol Hello。
+// ReadyPeerSession 表示单 route attempt 已完成 transport、身份、授权和 protocol Hello。
 // Close 必须释放 protocol、transport 和子进程资源；Done 关闭后 Err 返回最终失败，正常关闭返回 nil。
-type ReadySession interface {
+type ReadyPeerSession interface {
 	Stamp() EndpointSessionStamp
 	ObservedPath() string
-	Readiness() ReadySessionEvidence
+	Readiness() ReadyPeerSessionEvidence
 	Done() <-chan struct{}
 	Err() error
 	Close() error
 }
 
-// ReadySessionEvidence 冻结单次 route attempt 成为 ReadySession 前已经完成的安全边界。
+// ReadyPeerSessionEvidence 冻结单次 route attempt 成为 ReadyPeerSession 前已经完成的安全边界。
 // IdentityVerified 表示 adapter 已按 route 类型完成身份边界并取得 fresh daemon identity；managed 使用 channel-bound DeviceHello，local/SSH 使用 Proto challenge proof。
 // AuthorizationVerified 与 ProtocolVersion 分别证明该 route 的授权条件和 protocol Hello 已完成；Identity 始终非空，并在 Endpoint 已有 pin 时要求精确匹配。
-type ReadySessionEvidence struct {
+type ReadyPeerSessionEvidence struct {
 	Identity              endpoint.DaemonIdentity
 	IdentityVerified      bool
 	AuthorizationVerified bool
@@ -224,7 +224,7 @@ type ReadySessionEvidence struct {
 }
 
 // Validate 校验 evidence 是否足以参加 winner 线性化，并在 Endpoint 已有 pin 时要求精确匹配。
-func (evidence ReadySessionEvidence) Validate(expected endpoint.DaemonIdentity) error {
+func (evidence ReadyPeerSessionEvidence) Validate(expected endpoint.DaemonIdentity) error {
 	if !evidence.IdentityVerified {
 		return runtimeError(ErrorIdentity, "route attempt did not verify daemon identity", nil)
 	}
@@ -243,15 +243,15 @@ func (evidence ReadySessionEvidence) Validate(expected endpoint.DaemonIdentity) 
 	return nil
 }
 
-// RouteAttemptDialer 是具体 route adapter 提供给 runtime 的单 attempt 边界。
-// Dial 只能尝试 request.Route；context 取消后必须停止建连并释放已创建资源，不能 fallback 到其它 route。
-type RouteAttemptDialer interface {
-	Dial(context.Context, AttemptRequest) (ReadySession, error)
+// PeerConnector 是具体 route adapter 提供给 runtime 的单 attempt 边界。
+// Connect 只能尝试 request.Route；context 取消后必须停止建连并释放已创建资源，不能 fallback 到其它 route。
+type PeerConnector interface {
+	Connect(context.Context, AttemptRequest) (ReadyPeerSession, error)
 }
 
-// ValidateReadySession 校验 adapter 产出的 session 是否严格属于原始 attempt。
+// ValidateReadyPeerSession 校验 adapter 产出的 session 是否严格属于原始 attempt。
 // stamp 不一致、缺失 Done signal 或 nil session 都必须在 winner CAS 前失败并关闭该资源，不能进入 runtime 当前 generation。
-func ValidateReadySession(request AttemptRequest, session ReadySession) error {
+func ValidateReadyPeerSession(request AttemptRequest, session ReadyPeerSession) error {
 	if session == nil || (reflect.ValueOf(session).Kind() == reflect.Pointer && reflect.ValueOf(session).IsNil()) {
 		return runtimeError(ErrorUnavailable, "route attempt returned no ready session", nil)
 	}

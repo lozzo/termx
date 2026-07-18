@@ -19,37 +19,37 @@ type RoutePlanEnvironment struct {
 	AvailableCredentialRefs []string
 }
 
-// RouteAttemptDialerResolver 按 planner 已选定的 RouteKind 返回 concrete single-route adapter。
-// resolver 不得选择 route、执行 fallback 或缓存 ReadySession；同一种 kind 的 adapter 必须严格执行 AttemptRequest.Route。
-type RouteAttemptDialerResolver interface {
-	Dialer(endpoint.RouteKind) (RouteAttemptDialer, bool)
+// PeerConnectorResolver 按 planner 已选定的 RouteKind 返回 concrete single-route adapter。
+// resolver 不得选择 route、执行 fallback 或缓存 ReadyPeerSession；同一种 kind 的 adapter 必须严格执行 AttemptRequest.Route。
+type PeerConnectorResolver interface {
+	Connector(endpoint.RouteKind) (PeerConnector, bool)
 }
 
-// RouteDialerMap 是 composition root 使用的不可变 RouteKind 到 adapter 映射。
-// NewRouteDialerMap 会复制输入 map，后续调用方修改原 map 不得改变正在运行的 race。
-type RouteDialerMap struct {
-	dialers map[endpoint.RouteKind]RouteAttemptDialer
+// PeerConnectorMap 是 composition root 使用的不可变 RouteKind 到 adapter 映射。
+// NewPeerConnectorMap 会复制输入 map，后续调用方修改原 map 不得改变正在运行的 race。
+type PeerConnectorMap struct {
+	connectors map[endpoint.RouteKind]PeerConnector
 }
 
-// NewRouteDialerMap 校验并复制 route adapter 映射；nil adapter 会在启动 race 前失败，不能变成运行期 fallback。
-func NewRouteDialerMap(values map[endpoint.RouteKind]RouteAttemptDialer) (RouteDialerMap, error) {
-	dialers := make(map[endpoint.RouteKind]RouteAttemptDialer, len(values))
-	for kind, dialer := range values {
-		if dialer == nil || (reflect.ValueOf(dialer).Kind() == reflect.Pointer && reflect.ValueOf(dialer).IsNil()) {
-			return RouteDialerMap{}, runtimeError(ErrorInvalidRequest, fmt.Sprintf("route %q dialer is required", kind), nil)
+// NewPeerConnectorMap 校验并复制 route adapter 映射；nil adapter 会在启动 race 前失败，不能变成运行期 fallback。
+func NewPeerConnectorMap(values map[endpoint.RouteKind]PeerConnector) (PeerConnectorMap, error) {
+	connectors := make(map[endpoint.RouteKind]PeerConnector, len(values))
+	for kind, connector := range values {
+		if connector == nil || (reflect.ValueOf(connector).Kind() == reflect.Pointer && reflect.ValueOf(connector).IsNil()) {
+			return PeerConnectorMap{}, runtimeError(ErrorInvalidRequest, fmt.Sprintf("route %q connector is required", kind), nil)
 		}
-		dialers[kind] = dialer
+		connectors[kind] = connector
 	}
-	return RouteDialerMap{dialers: dialers}, nil
+	return PeerConnectorMap{connectors: connectors}, nil
 }
 
-// Dialer 返回指定 route kind 的 adapter；返回值只读，不能借此修改 registry 或其它 kind 的 adapter。
-func (registry RouteDialerMap) Dialer(kind endpoint.RouteKind) (RouteAttemptDialer, bool) {
-	dialer, ok := registry.dialers[kind]
-	return dialer, ok
+// Connector 返回指定 route kind 的 adapter；返回值只读，不能借此修改 registry 或其它 kind 的 adapter。
+func (registry PeerConnectorMap) Connector(kind endpoint.RouteKind) (PeerConnector, bool) {
+	connector, ok := registry.connectors[kind]
+	return connector, ok
 }
 
-// ConnectPlanned 为一个 Endpoint generation 执行 C3B attempt groups，并只发布首个完整 ReadySession。
+// ConnectPlanned 为一个 Endpoint generation 执行 C3B attempt groups，并只发布首个完整 ReadyPeerSession。
 // winner 选定后会取消并等待全部 loser；任何迟到成功都在返回前关闭，cleanup 未完成时本方法不会提前发布 lease。
 func (owner *SessionOwner) ConnectPlanned(
 	ctx context.Context,
@@ -58,7 +58,7 @@ func (owner *SessionOwner) ConnectPlanned(
 	intent ConnectIntent,
 	environment RoutePlanEnvironment,
 	clock port.Clock,
-	dialers RouteAttemptDialerResolver,
+	dialers PeerConnectorResolver,
 ) (SessionLease, error) {
 	if owner == nil || ctx == nil || clock == nil || dialers == nil {
 		return SessionLease{}, runtimeError(ErrorInvalidRequest, "session owner, context, clock, and route dialers are required", nil)
@@ -69,7 +69,7 @@ func (owner *SessionOwner) ConnectPlanned(
 	return owner.connectPlanned(ctx, target, routeOverride, intent, environment, clock, dialers)
 }
 
-func (owner *SessionOwner) connectPlanned(ctx context.Context, target endpoint.Endpoint, routeOverride endpoint.RouteID, intent ConnectIntent, environment RoutePlanEnvironment, clock port.Clock, dialers RouteAttemptDialerResolver) (SessionLease, error) {
+func (owner *SessionOwner) connectPlanned(ctx context.Context, target endpoint.Endpoint, routeOverride endpoint.RouteID, intent ConnectIntent, environment RoutePlanEnvironment, clock port.Clock, dialers PeerConnectorResolver) (SessionLease, error) {
 	override := owner.effectiveRouteOverride(target.ID, routeOverride)
 	preflight := endpoint.RouteSelectionRequest{
 		Endpoint: target, Intent: endpoint.ConnectIntent{Kind: string(intent)}, RouteOverride: override, Generation: 1,
@@ -117,8 +117,8 @@ func (owner *SessionOwner) AcquirePlanned(
 	configKey string,
 	environment RoutePlanEnvironment,
 	clock port.Clock,
-	dialers RouteAttemptDialerResolver,
-) (ApplicationReadySession, error) {
+	dialers PeerConnectorResolver,
+) (ApplicationReadyPeerSession, error) {
 	if owner == nil || ctx == nil || configKey == "" || clock == nil || dialers == nil {
 		return nil, runtimeError(ErrorInvalidRequest, "session owner, context, config key, clock, and route dialers are required", nil)
 	}
@@ -174,7 +174,7 @@ func (owner *SessionOwner) EnsurePlanned(
 	configKey string,
 	environment RoutePlanEnvironment,
 	clock port.Clock,
-	dialers RouteAttemptDialerResolver,
+	dialers PeerConnectorResolver,
 ) (SessionLease, error) {
 	if owner == nil || ctx == nil || configKey == "" || clock == nil || dialers == nil {
 		return SessionLease{}, runtimeError(ErrorInvalidRequest, "session owner, context, config key, clock, and route dialers are required", nil)
@@ -272,11 +272,11 @@ func (owner *SessionOwner) WatchEndpoint(ctx context.Context, endpointID endpoin
 type routeAttemptResult struct {
 	index   int
 	request AttemptRequest
-	ready   ReadySession
+	ready   ReadyPeerSession
 	err     error
 }
 
-func (owner *SessionOwner) runRoutePlan(ctx context.Context, target endpoint.Endpoint, intent ConnectIntent, plan endpoint.RouteSelectionPlan, selectionReason string, clock port.Clock, dialers RouteAttemptDialerResolver) (SessionLease, error) {
+func (owner *SessionOwner) runRoutePlan(ctx context.Context, target endpoint.Endpoint, intent ConnectIntent, plan endpoint.RouteSelectionPlan, selectionReason string, clock port.Clock, dialers PeerConnectorResolver) (SessionLease, error) {
 	type scheduledAttempt struct {
 		request AttemptRequest
 		delay   time.Duration
@@ -341,7 +341,7 @@ func (owner *SessionOwner) runRoutePlan(ctx context.Context, target endpoint.End
 		_ = winner.ready.Close()
 		return SessionLease{}, &Error{Code: ErrorCanceled, Message: "route race was canceled before winner publication", Cause: ctx.Err(), Attempted: true}
 	}
-	lease, err := owner.AdoptReadySession(winner.request, winner.ready)
+	lease, err := owner.AdoptReadyPeerSession(winner.request, winner.ready)
 	if err != nil {
 		return SessionLease{}, err
 	}
@@ -349,7 +349,7 @@ func (owner *SessionOwner) runRoutePlan(ctx context.Context, target endpoint.End
 	return lease, nil
 }
 
-func (owner *SessionOwner) executeScheduledAttempt(ctx context.Context, index int, request AttemptRequest, delay time.Duration, clock port.Clock, dialers RouteAttemptDialerResolver) routeAttemptResult {
+func (owner *SessionOwner) executeScheduledAttempt(ctx context.Context, index int, request AttemptRequest, delay time.Duration, clock port.Clock, dialers PeerConnectorResolver) routeAttemptResult {
 	if delay > 0 {
 		timer := clock.NewTimer(delay)
 		if timer == nil {
@@ -362,25 +362,25 @@ func (owner *SessionOwner) executeScheduledAttempt(ctx context.Context, index in
 		case <-timer.C():
 		}
 	}
-	dialer, ok := dialers.Dialer(request.Route().Kind)
-	if !ok || dialer == nil {
+	connector, ok := dialers.Connector(request.Route().Kind)
+	if !ok || connector == nil {
 		return routeAttemptResult{index: index, request: request, err: runtimeError(ErrorUnsupportedRoute, fmt.Sprintf("route kind %q has no adapter", request.Route().Kind), nil)}
 	}
 	owner.publishEndpointEvent(EndpointEvent{EndpointID: request.EndpointID(), Stamp: request.Stamp(), Phase: EndpointPhaseConnecting})
-	ready, err := dialer.Dial(ctx, request)
+	ready, err := connector.Connect(ctx, request)
 	if err != nil {
 		if ready != nil {
 			_ = ready.Close()
 		}
 		return routeAttemptResult{index: index, request: request, err: attemptedRuntimeError(err)}
 	}
-	if err := ValidateReadySession(request, ready); err != nil {
+	if err := ValidateReadyPeerSession(request, ready); err != nil {
 		if ready != nil {
 			_ = ready.Close()
 		}
 		return routeAttemptResult{index: index, request: request, err: attemptedRuntimeError(err)}
 	}
-	if _, ok := ready.(ApplicationReadySession); !ok {
+	if _, ok := ready.(ApplicationReadyPeerSession); !ok {
 		_ = ready.Close()
 		return routeAttemptResult{index: index, request: request, err: attemptedRuntimeError(runtimeError(ErrorUnavailable, "route attempt returned no Proto application session", nil))}
 	}
@@ -440,4 +440,4 @@ func plannerRuntimeError(err error) error {
 	}
 }
 
-var _ RouteAttemptDialerResolver = RouteDialerMap{}
+var _ PeerConnectorResolver = PeerConnectorMap{}

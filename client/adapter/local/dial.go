@@ -55,7 +55,7 @@ func NewDialer(options Options) *Dialer {
 }
 
 // Dial 建立 Unix transport、完成 protocol Hello，并返回与 attempt stamp 严格匹配的 ready session。
-func (dialer *Dialer) Dial(ctx context.Context, request clientruntime.AttemptRequest) (clientruntime.ReadySession, error) {
+func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.AttemptRequest) (clientruntime.ReadyPeerSession, error) {
 	route := request.Route()
 	if route.Kind != endpoint.RouteLocalUnix {
 		return nil, fmt.Errorf("local adapter cannot dial route kind %s", route.Kind)
@@ -102,7 +102,7 @@ func (dialer *Dialer) Dial(ctx context.Context, request clientruntime.AttemptReq
 		_ = ready.Close()
 		return nil, err
 	}
-	if err := ready.MarkReady(clientruntime.ReadySessionEvidence{
+	if err := ready.MarkReady(clientruntime.ReadyPeerSessionEvidence{
 		Identity: identity, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version,
 	}); err != nil {
 		_ = ready.Close()
@@ -135,4 +135,4 @@ func DialTransport(ctx context.Context, path string) (*Transport, error) {
 	return unixtransport.DialContext(ctx, path)
 }
 
-var _ clientruntime.RouteAttemptDialer = (*Dialer)(nil)
+var _ clientruntime.PeerConnector = (*Dialer)(nil)

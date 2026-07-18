@@ -48,7 +48,7 @@ client/runtime -> client/endpoint -> generated Endpoint Proto
 TUI 可保存和展示：
 
 - EndpointID、label、连接状态和稳定诊断。
-- 当前 ReadySession 的 RouteID、generation 和 observed managed path。
+- 当前 ReadyPeerSession 的 RouteID、generation 和 observed managed path。
 - `TerminalRef`、terminal lifecycle projection 和用户工作台绑定。
 
 TUI 不得保存：

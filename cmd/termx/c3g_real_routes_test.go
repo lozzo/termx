@@ -54,7 +54,7 @@ func TestC3GRealLocalAndOpenSSHRoutes(t *testing.T) {
 		inner:   localadapter.NewDialer(localadapter.Options{SocketOverride: socketPath, ClientName: "c3g-real-local"}),
 		pidFile: sshHost.clientPIDFile,
 	}
-	dialers, err := clientruntime.NewRouteDialerMap(map[clientendpoint.RouteKind]clientruntime.RouteAttemptDialer{
+	dialers, err := clientruntime.NewPeerConnectorMap(map[clientendpoint.RouteKind]clientruntime.PeerConnector{
 		clientendpoint.RouteLocalUnix: localDialer, clientendpoint.RouteSSHWebRTCTCP: sshDialer,
 	})
 	if err != nil {
@@ -152,7 +152,7 @@ func TestC3GRealLocalAndOpenSSHRoutes(t *testing.T) {
 		ClientName: "c3g-priority-ssh", SSHBinary: sshHost.clientWrapper,
 		ExtraArgs: sshHost.clientArgs(), ConnectTimeout: 3 * time.Second,
 	}), started: make(chan struct{})}
-	priorityDialers, err := clientruntime.NewRouteDialerMap(map[clientendpoint.RouteKind]clientruntime.RouteAttemptDialer{
+	priorityDialers, err := clientruntime.NewPeerConnectorMap(map[clientendpoint.RouteKind]clientruntime.PeerConnector{
 		clientendpoint.RouteLocalUnix:    localadapter.NewDialer(localadapter.Options{SocketOverride: socketPath, ClientName: "c3g-priority-local"}),
 		clientendpoint.RouteSSHWebRTCTCP: prioritySSH,
 	})
@@ -187,24 +187,24 @@ func (source c3gPlanSource) Snapshot(_ context.Context, endpointID clientendpoin
 }
 
 type c3gTrackingDialer struct {
-	inner   clientruntime.RouteAttemptDialer
+	inner   clientruntime.PeerConnector
 	started chan struct{}
 	once    sync.Once
 	calls   atomic.Int32
 }
 
-func (dialer *c3gTrackingDialer) Dial(ctx context.Context, request clientruntime.AttemptRequest) (clientruntime.ReadySession, error) {
+func (dialer *c3gTrackingDialer) Connect(ctx context.Context, request clientruntime.AttemptRequest) (clientruntime.ReadyPeerSession, error) {
 	dialer.calls.Add(1)
 	dialer.once.Do(func() { close(dialer.started) })
-	return dialer.inner.Dial(ctx, request)
+	return dialer.inner.Connect(ctx, request)
 }
 
 type c3gWaitForSSHProcessDialer struct {
-	inner   clientruntime.RouteAttemptDialer
+	inner   clientruntime.PeerConnector
 	pidFile string
 }
 
-func (dialer *c3gWaitForSSHProcessDialer) Dial(ctx context.Context, request clientruntime.AttemptRequest) (clientruntime.ReadySession, error) {
+func (dialer *c3gWaitForSSHProcessDialer) Connect(ctx context.Context, request clientruntime.AttemptRequest) (clientruntime.ReadyPeerSession, error) {
 	for {
 		content, _ := os.ReadFile(dialer.pidFile)
 		if len(strings.Fields(string(content))) > 0 {
@@ -218,7 +218,7 @@ func (dialer *c3gWaitForSSHProcessDialer) Dial(ctx context.Context, request clie
 		case <-timer.C:
 		}
 	}
-	return dialer.inner.Dial(ctx, request)
+	return dialer.inner.Connect(ctx, request)
 }
 
 func c3gEndpoint(socketPath string, sshHost *c3gSSHHost) clientendpoint.Endpoint {

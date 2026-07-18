@@ -19,30 +19,25 @@ func TestRouteSelectionPlannerFullRaceAndImmutableOutput(t *testing.T) {
 	if len(groups) != 1 || groups[0].StartDelay() != 0 || groups[0].Priority() != nil {
 		t.Fatalf("full-race groups = %#v", groups)
 	}
-	diagnostics := plan.Diagnostics()
-	if len(diagnostics) != 1 || diagnostics[0].RouteID != "cloud" || diagnostics[0].Reason != RoutePlanAutomaticRaceUnsupported {
+	if diagnostics := plan.Diagnostics(); len(diagnostics) != 0 {
 		t.Fatalf("full-race diagnostics = %#v", diagnostics)
 	}
-	diagnostics[0].RouteID = "changed"
-	if plan.Diagnostics()[0].RouteID != "cloud" {
-		t.Fatal("plan diagnostics were mutated through getter")
-	}
 	attempts := groups[0].Attempts()
-	if len(attempts) != 2 || attempts[0].Route.ID != "local" || attempts[1].Route.ID != "ssh" {
+	if len(attempts) != 3 || attempts[0].Route.ID != "cloud" || attempts[1].Route.ID != "local" || attempts[2].Route.ID != "ssh" {
 		t.Fatalf("full-race attempts = %#v", attempts)
 	}
-	if attempts[0].Generation != 7 || attempts[0].AttemptID != "studio:7:local" {
-		t.Fatalf("attempt identity = %#v", attempts[0])
+	if attempts[1].Generation != 7 || attempts[1].AttemptID != "studio:7:local" {
+		t.Fatalf("attempt identity = %#v", attempts[1])
 	}
-	attempts[0].Route.Socket = "changed"
-	attempts[0].Intent.RequiredScopes = append(attempts[0].Intent.RequiredScopes, "changed")
-	if current := plan.Groups()[0].Attempts()[0]; current.Route.Socket != "auto" || len(current.Intent.RequiredScopes) != 0 {
+	attempts[1].Route.Socket = "changed"
+	attempts[1].Intent.RequiredScopes = append(attempts[1].Intent.RequiredScopes, "changed")
+	if current := plan.Groups()[0].Attempts()[1]; current.Route.Socket != "auto" || len(current.Intent.RequiredScopes) != 0 {
 		t.Fatalf("plan output was mutated through getter: %#v", current)
 	}
 	local := target.Routes["local"]
 	local.Socket = "registry-change"
 	target.Routes["local"] = local
-	if current := plan.Groups()[0].Attempts()[0]; current.Route.Socket != "auto" {
+	if current := plan.Groups()[0].Attempts()[1]; current.Route.Socket != "auto" {
 		t.Fatalf("plan output followed registry mutation: %#v", current)
 	}
 }
@@ -73,8 +68,8 @@ func TestRouteSelectionPlannerGroupsPriorityWithCumulativeHedge(t *testing.T) {
 	if len(groups) != 2 || *groups[0].Priority() != 10 || groups[0].StartDelay() != 0 || *groups[1].Priority() != 20 || groups[1].StartDelay() != 250*time.Millisecond {
 		t.Fatalf("priority groups = %#v", groups)
 	}
-	if attempts := groups[1].Attempts(); len(attempts) != 1 || attempts[0].Route.ID != "ssh" {
-		t.Fatalf("managed route entered common race: %#v", attempts)
+	if attempts := groups[1].Attempts(); len(attempts) != 2 || attempts[0].Route.ID != "cloud" || attempts[1].Route.ID != "ssh" {
+		t.Fatalf("priority group attempts = %#v", attempts)
 	}
 }
 

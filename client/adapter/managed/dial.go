@@ -1,5 +1,5 @@
 // Package managed 实现跨 native 与浏览器平台复用的 managed WebRTC route attempt。
-// 本包拥有 Cloud signaling、remote auth、protocol Hello 与 ReadySession 装配顺序；具体 RTCPeerConnection 只能通过 client/port 注入。
+// 本包拥有 Cloud signaling、remote auth、protocol Hello 与 ReadyPeerSession 装配顺序；具体 RTCPeerConnection 只能通过 client/port 注入。
 package managed
 
 import (
@@ -69,8 +69,8 @@ type Dialer struct {
 }
 
 // Dial 完成 Cloud route、WebRTC、DTLS-bound remote auth、protocol Hello 和 application session 装配。
-// 返回值已经是当前 AttemptRequest generation 的 ReadySession；任一步失败都会关闭已创建的 peer/channel/protocol 资源。
-func (dialer *Dialer) Dial(ctx context.Context, request clientruntime.AttemptRequest) (clientruntime.ReadySession, error) {
+// 返回值已经是当前 AttemptRequest generation 的 ReadyPeerSession；任一步失败都会关闭已创建的 peer/channel/protocol 资源。
+func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.AttemptRequest) (clientruntime.ReadyPeerSession, error) {
 	if err := request.Validate(); err != nil {
 		return nil, err
 	}
@@ -198,7 +198,7 @@ func (dialer *Dialer) Dial(ctx context.Context, request clientruntime.AttemptReq
 	}
 	session := &Session{
 		stamp: request.Stamp(), observedPath: string(peer.ObservedPath()), selectionReason: string(selected.selectionReason),
-		evidence: clientruntime.ReadySessionEvidence{
+		evidence: clientruntime.ReadyPeerSessionEvidence{
 			Identity: request.DaemonIdentity(), IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version,
 		},
 		peer: peer, protocol: protocolClient, application: application,
@@ -276,12 +276,12 @@ func receiveAnswer(stream cloudcompanion.SignalingStream) (*cloudpb.SignalingAns
 }
 
 // Session 是 managed adapter 产出的 authenticated protocol session。
-// runtime/binding 应只消费 ApplicationReadySession；FramingClient 仅供当前仓库内 attachment/file stream adapter 使用，不得跨 JNI/WASM 暴露。
+// runtime/binding 应只消费 ApplicationReadyPeerSession；FramingClient 仅供当前仓库内 attachment/file stream adapter 使用，不得跨 JNI/WASM 暴露。
 type Session struct {
 	stamp           clientruntime.EndpointSessionStamp
 	observedPath    string
 	selectionReason string
-	evidence        clientruntime.ReadySessionEvidence
+	evidence        clientruntime.ReadyPeerSessionEvidence
 	peer            port.ManagedPeer
 	protocol        *internalprotocol.Client
 	application     *clientruntime.ApplicationSession
@@ -299,7 +299,7 @@ func (session *Session) Stamp() clientruntime.EndpointSessionStamp { return sess
 func (session *Session) ObservedPath() string { return session.observedPath }
 
 // Readiness 返回 remote-auth 与 protocol Hello 已完成的冻结证据。
-func (session *Session) Readiness() clientruntime.ReadySessionEvidence { return session.evidence }
+func (session *Session) Readiness() clientruntime.ReadyPeerSessionEvidence { return session.evidence }
 
 // Done 返回 protocol connection 生命周期终止信号；不能据此推断 daemon terminal lifecycle。
 func (session *Session) Done() <-chan struct{} { return session.protocol.Done() }
@@ -405,7 +405,7 @@ func (stream *managedResourceStream) Close() error {
 }
 
 // FramingClient 返回当前 authenticated connection 的内部 framing client。
-// 该入口只允许 Go attachment/file stream adapter 使用；业务 command 仍必须走 ApplicationReadySession，平台 binding 不得导出此对象。
+// 该入口只允许 Go attachment/file stream adapter 使用；业务 command 仍必须走 ApplicationReadyPeerSession，平台 binding 不得导出此对象。
 func (session *Session) FramingClient() *internalprotocol.Client {
 	if session == nil {
 		return nil
@@ -413,8 +413,8 @@ func (session *Session) FramingClient() *internalprotocol.Client {
 	return session.protocol
 }
 
-var _ clientruntime.ReadySession = (*Session)(nil)
+var _ clientruntime.ReadyPeerSession = (*Session)(nil)
 var _ clientruntime.ProtoApplicationExecutor = (*Session)(nil)
-var _ clientruntime.ApplicationReadySession = (*Session)(nil)
+var _ clientruntime.ApplicationReadyPeerSession = (*Session)(nil)
 var _ clientruntime.ResourceStreamSession = (*Session)(nil)
 var _ clientruntime.ApplicationAttachmentSession = (*Session)(nil)

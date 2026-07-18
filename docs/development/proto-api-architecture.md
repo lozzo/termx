@@ -54,7 +54,8 @@ core
 - Direct、SSH 和 Cloud connector 必须返回同一种 Go-owned ReadyPeerSession；Route 差异只存在于 signaling、ICE 和 SSH tunnel 建立阶段。
 - native/Android 使用 Go/Pion；Android 通过 C ABI + JNI。浏览器 Web 当前冻结，未来恢复时由 Go/WASM 使用浏览器 WebRTC/WebCrypto primitive，不允许 TypeScript 建立第二套 session truth。
 - remote-auth 通过异步 `ClientAccessSigner` 使用平台 secure key。native 文件 store 可以适配内存 Ed25519 signer；Android Keystore/WebCrypto 只提供 public projection 与不可导出 signer，Go 在发送 proof 前必须用绑定 public key 重新验签。
-- `client/endpoint.RouteSelectionPlanner` 只根据不可变 endpoint、intent、override、generation 和平台能力生成 attempt groups；`client/runtime.SessionOwner` 执行 race、线性化唯一 ReadySession winner 并精确清理 loser。planner 不进入 platform binding 或 managed adapter，adapter 也不得选择其它 route。
+- `client/endpoint.RouteSelectionPlanner` 只根据不可变 endpoint、intent、override、generation 和平台能力生成 attempt groups；`client/runtime.SessionOwner` 执行 race、线性化唯一 ReadyPeerSession winner 并精确清理 loser。planner 不进入 platform binding 或 managed adapter，adapter 也不得选择其它 route。
+- `client/runtime.PeerConnector` 是 Local/Direct/SSH/Cloud 的统一 attempt 边界；远程 connector 必须返回同一种 `ReadyPeerSession`。`PairingService` 统一拥有 Endpoint pin、实际 DTLS binding、PairingTicket handshake 和 pairing peer exact-close，Cloud adapter 只拥有 Cloud signaling/ICE。
 - 任一远程 attempt 成功结果必须已经完成 remote auth、Hello，并只通过 generated `apipb` 执行业务 command/event。attachment/file 的内部 framing channel 不属于公共 API，跨语言 binding 必须在 opaque resource 边界重新封装。
 - `client/binding` 只接收 serialized `bindingpb.OpenSessionRequest`、`bindingpb.EngineCommand`、`apipb.CommandEnvelope` 和 `uint64` opaque handle；异步输出统一为 `bindingpb.EventEnvelope`。C/JNI/WASM 共享同一 engine/operation/session registry 与有界事件队列，平台 wrapper 不能建立第二份 handle truth，也不能为 pairing、credential 或其它业务 command 增加专用导出符号。
 

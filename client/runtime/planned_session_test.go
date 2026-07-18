@@ -22,7 +22,7 @@ func TestSessionOwnerFullRaceChoosesFirstReadyAndWaitsLoserCleanup(t *testing.T)
 		"local": {release: localRelease, succeedAfterCancel: true},
 		"ssh":   {release: sshRelease},
 	})
-	resolver, err := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
+	resolver, err := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{
 		endpoint.RouteLocalUnix:    dialer,
 		endpoint.RouteSSHWebRTCTCP: dialer,
 	})
@@ -69,6 +69,80 @@ func TestSessionOwnerFullRaceChoosesFirstReadyAndWaitsLoserCleanup(t *testing.T)
 	}
 }
 
+func TestDirectSSHAndCloudConnectorsReturnOneReadyPeerSessionContract(t *testing.T) {
+	owner := NewSessionOwner()
+	defer owner.Close()
+	identity := endpoint.DaemonIdentity{DeviceID: "device-peer", DeviceFingerprint: "SHA256:peer"}
+	target := endpoint.Endpoint{
+		ID: "peer", Label: "Peer", LabelSource: endpoint.SourceUser, DaemonIdentity: identity,
+		ConnectMode: endpoint.ConnectOnDemand, Enabled: true,
+		Routes: map[endpoint.RouteID]endpoint.AccessRoute{
+			"direct": {
+				ID: "direct", Kind: endpoint.RouteDirectWebRTCTCP, Enabled: true, CredentialRef: "grant:peer",
+				Source: endpoint.SourceBootstrap, PolicySource: endpoint.SourceUser,
+				SignalingAddresses: []string{"peer.local:41120"}, ICETCPAddresses: []string{"peer.local:41121"},
+			},
+			"ssh": {
+				ID: "ssh", Kind: endpoint.RouteSSHWebRTCTCP, Enabled: true, CredentialRef: "ssh:peer",
+				Source: endpoint.SourceManual, PolicySource: endpoint.SourceUser, Host: "peer-ssh",
+				RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121",
+			},
+			"cloud": {
+				ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true, CredentialRef: "grant:peer",
+				Source: endpoint.SourceCloud, PolicySource: endpoint.SourceUser, TargetDeviceID: identity.DeviceID, RelayMode: endpoint.RelayAuto,
+			},
+		},
+	}
+	directRelease := make(chan struct{})
+	sshRelease := make(chan struct{})
+	cloudRelease := make(chan struct{})
+	connector := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{
+		"direct": {release: directRelease, succeedAfterCancel: true},
+		"ssh":    {release: sshRelease, succeedAfterCancel: true},
+		"cloud":  {release: cloudRelease},
+	})
+	connectors, err := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{
+		endpoint.RouteDirectWebRTCTCP: routeBoundTestConnector{kind: endpoint.RouteDirectWebRTCTCP, inner: connector},
+		endpoint.RouteSSHWebRTCTCP:    routeBoundTestConnector{kind: endpoint.RouteSSHWebRTCTCP, inner: connector},
+		endpoint.RouteManagedWebRTC:   routeBoundTestConnector{kind: endpoint.RouteManagedWebRTC, inner: connector},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := make(chan plannedResult, 1)
+	go func() {
+		lease, connectErr := owner.ConnectPlanned(context.Background(), target, "", ConnectIntentInteractive, RoutePlanEnvironment{
+			SupportedRouteKinds:     []endpoint.RouteKind{endpoint.RouteDirectWebRTCTCP, endpoint.RouteSSHWebRTCTCP, endpoint.RouteManagedWebRTC},
+			AvailableCredentialRefs: []string{"grant:peer", "ssh:peer"},
+		}, realTestClock{}, connectors)
+		result <- plannedResult{lease: lease, err: connectErr}
+	}()
+	waitPlannedStarts(t, connector.started, "direct", "ssh", "cloud")
+	close(cloudRelease)
+	connected := <-result
+	if connected.err != nil || connected.lease.Stamp.RouteID != "cloud" {
+		t.Fatalf("connected=%#v err=%v", connected.lease, connected.err)
+	}
+	direct := connector.session("direct", 0)
+	ssh := connector.session("ssh", 0)
+	cloud := connector.session("cloud", 0)
+	if closeCalls(direct) != 1 || closeCalls(ssh) != 1 || closeCalls(cloud) != 0 {
+		t.Fatalf("close calls direct=%d ssh=%d cloud=%d", closeCalls(direct), closeCalls(ssh), closeCalls(cloud))
+	}
+}
+
+type routeBoundTestConnector struct {
+	kind  endpoint.RouteKind
+	inner PeerConnector
+}
+
+func (connector routeBoundTestConnector) Connect(ctx context.Context, request AttemptRequest) (ReadyPeerSession, error) {
+	if request.Route().Kind != connector.kind {
+		return nil, errors.New("connector received a different route kind")
+	}
+	return connector.inner.Connect(ctx, request)
+}
+
 func TestSessionOwnerPriorityHedgeUsesClockAndStopsTimer(t *testing.T) {
 	owner := NewSessionOwner()
 	defer owner.Close()
@@ -77,7 +151,7 @@ func TestSessionOwnerPriorityHedgeUsesClockAndStopsTimer(t *testing.T) {
 		"local": {release: make(chan struct{})},
 		"ssh":   {},
 	})
-	resolver, _ := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
+	resolver, _ := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{
 		endpoint.RouteLocalUnix:    dialer,
 		endpoint.RouteSSHWebRTCTCP: dialer,
 	})
@@ -113,7 +187,7 @@ func TestSessionOwnerAcquirePlannedSharesLeaseAndKeepsExplicitRouteSticky(t *tes
 	defer owner.Close()
 	target := plannedEndpoint(false)
 	dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"local": {}, "ssh": {}})
-	resolver, _ := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
+	resolver, _ := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{
 		endpoint.RouteLocalUnix:    dialer,
 		endpoint.RouteSSHWebRTCTCP: dialer,
 	})
@@ -151,7 +225,7 @@ func TestSessionOwnerEnsurePlannedExplicitOverrideReplacesDifferentCurrentWinner
 	owner := NewSessionOwner()
 	target := plannedEndpoint(false)
 	dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"local": {}, "ssh": {}})
-	resolver, err := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
+	resolver, err := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{
 		endpoint.RouteLocalUnix: dialer, endpoint.RouteSSHWebRTCTCP: dialer,
 	})
 	if err != nil {
@@ -175,7 +249,7 @@ func TestSessionOwnerEnsurePlannedExplicitCurrentRouteBecomesSticky(t *testing.T
 	defer owner.Close()
 	target := plannedEndpoint(true)
 	dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"local": {}, "ssh": {}})
-	resolver, err := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
+	resolver, err := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{
 		endpoint.RouteLocalUnix: dialer, endpoint.RouteSSHWebRTCTCP: dialer,
 	})
 	if err != nil {
@@ -212,7 +286,7 @@ func TestSessionOwnerPlannedRaceCancellationFailsAfterAdapterAttempt(t *testing.
 		"local": {release: make(chan struct{})},
 		"ssh":   {release: make(chan struct{})},
 	})
-	resolver, _ := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
+	resolver, _ := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{
 		endpoint.RouteLocalUnix:    dialer,
 		endpoint.RouteSSHWebRTCTCP: dialer,
 	})
@@ -238,7 +312,7 @@ func TestSessionOwnerPlannedRaceReturnsStableFirstFailure(t *testing.T) {
 		"local": {err: io.ErrUnexpectedEOF},
 		"ssh":   {err: errors.New("ssh unavailable")},
 	})
-	resolver, _ := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
+	resolver, _ := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{
 		endpoint.RouteLocalUnix:    dialer,
 		endpoint.RouteSSHWebRTCTCP: dialer,
 	})
@@ -274,7 +348,7 @@ func TestClientRuntimeEnsureSessionReusesOwnerWinner(t *testing.T) {
 	owner := NewSessionOwner()
 	target := plannedEndpoint(false)
 	dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"local": {}, "ssh": {}})
-	resolver, _ := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{
+	resolver, _ := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{
 		endpoint.RouteLocalUnix:    dialer,
 		endpoint.RouteSSHWebRTCTCP: dialer,
 	})
@@ -306,7 +380,7 @@ func TestSessionOwnerSerializesPlannedRacePerEndpoint(t *testing.T) {
 	target := plannedEndpoint(false)
 	release := make(chan struct{})
 	dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"ssh": {release: release}})
-	resolver, _ := NewRouteDialerMap(map[endpoint.RouteKind]RouteAttemptDialer{endpoint.RouteSSHWebRTCTCP: dialer})
+	resolver, _ := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{endpoint.RouteSSHWebRTCTCP: dialer})
 	results := make(chan plannedResult, 2)
 	connect := func() {
 		lease, err := owner.ConnectPlanned(context.Background(), target, "ssh", ConnectIntentInteractive, plannedEnvironment(), realTestClock{}, resolver)
@@ -369,7 +443,7 @@ func newPlannedDialer(behaviors map[endpoint.RouteID]*plannedBehavior) *plannedD
 	return &plannedDialer{behaviors: behaviors, started: make(chan endpoint.RouteID, 16), sessions: make(map[endpoint.RouteID][]*ownerSession), counts: make(map[endpoint.RouteID]int)}
 }
 
-func (dialer *plannedDialer) Dial(ctx context.Context, request AttemptRequest) (ReadySession, error) {
+func (dialer *plannedDialer) Connect(ctx context.Context, request AttemptRequest) (ReadyPeerSession, error) {
 	routeID := request.Route().ID
 	dialer.mu.Lock()
 	behavior := dialer.behaviors[routeID]
@@ -392,7 +466,7 @@ func (dialer *plannedDialer) Dial(ctx context.Context, request AttemptRequest) (
 		return nil, behavior.err
 	}
 	session := newOwnerSession(request.Stamp())
-	session.evidence = ReadySessionEvidence{Identity: request.DaemonIdentity(), IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: 1}
+	session.evidence = ReadyPeerSessionEvidence{Identity: request.DaemonIdentity(), IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: 1}
 	dialer.mu.Lock()
 	dialer.sessions[routeID] = append(dialer.sessions[routeID], session)
 	dialer.mu.Unlock()

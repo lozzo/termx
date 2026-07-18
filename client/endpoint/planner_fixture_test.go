@@ -128,6 +128,9 @@ func endpointFromPlannerFixture(test plannerFixtureCase) Endpoint {
 			route.Host = "fixture-host"
 			route.RemoteSignalingAddress = "127.0.0.1:41120"
 			route.RemoteICETCPAddress = "127.0.0.1:41121"
+		case RouteDirectWebRTCTCP:
+			route.SignalingAddresses = []string{"fixture.local:41120"}
+			route.ICETCPAddresses = []string{"fixture.local:41121"}
 		case RouteManagedWebRTC:
 			route.TargetDeviceID = identity.DeviceID
 			route.RelayMode = RelayAuto

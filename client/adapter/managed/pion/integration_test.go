@@ -69,12 +69,12 @@ func TestPionICETCPCompletesAuthHelloAndProtoAPI(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	ready, err := dialer.Dial(ctx, attemptFixture(t, identity))
+	ready, err := dialer.Connect(ctx, attemptFixture(t, identity))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ready.Close()
-	result, err := ready.(clientruntime.ApplicationReadySession).ExecuteApplication(ctx, &apipb.CommandEnvelope{
+	result, err := ready.(clientruntime.ApplicationReadyPeerSession).ExecuteApplication(ctx, &apipb.CommandEnvelope{
 		Command: &apipb.CommandEnvelope_TerminalList{TerminalList: &apipb.TerminalListCommand{}},
 	})
 	if err != nil || result.GetTerminalList() == nil {
@@ -131,7 +131,7 @@ func TestPionICETCPCancelClosesPeer(t *testing.T) {
 	attempt := attemptFixture(t, identity)
 	done := make(chan error, 1)
 	go func() {
-		_, dialErr := dialer.Dial(ctx, attempt)
+		_, dialErr := dialer.Connect(ctx, attempt)
 		done <- dialErr
 	}()
 	select {
@@ -172,12 +172,12 @@ func TestPionAdapterCompletesAuthHelloAndProtoAPI(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	ready, err := dialer.Dial(ctx, attempt)
+	ready, err := dialer.Connect(ctx, attempt)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ready.Close()
-	application := ready.(clientruntime.ApplicationReadySession)
+	application := ready.(clientruntime.ApplicationReadyPeerSession)
 	result, err := application.ExecuteApplication(ctx, &apipb.CommandEnvelope{
 		Command: &apipb.CommandEnvelope_TerminalList{TerminalList: &apipb.TerminalListCommand{}},
 	})
@@ -233,7 +233,7 @@ func TestPionAdapterCompletesPairingExchangeAndClosesPairingChannel(t *testing.T
 	attempt := attemptFixture(t, identity)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	paired, err := (&managed.PairingDialer{
+	paired, err := (&managed.PairingConnector{
 		Cloud: signalingCompanion(answerer), Peers: pionadapter.Factory{}, Now: func() time.Time { return now },
 	}).Redeem(ctx, attempt, remoteauth.ClientPairingRequest{
 		ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.Fingerprint,

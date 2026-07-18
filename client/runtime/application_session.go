@@ -28,10 +28,10 @@ type TerminalResponseApplicationExecutor interface {
 	ExecuteApplicationTerminal(context.Context, *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error)
 }
 
-// ApplicationReadySession 是已经完成 transport、授权与 protocol Hello 的可执行 session。
-// route adapter 返回该接口后，runtime/binding 只能通过 generated Proto command/event 访问 daemon；关闭和 generation fence 仍由 ReadySession 约束。
-type ApplicationReadySession interface {
-	ReadySession
+// ApplicationReadyPeerSession 是已经完成 transport、授权与 protocol Hello 的可执行 session。
+// route adapter 返回该接口后，runtime/binding 只能通过 generated Proto command/event 访问 daemon；关闭和 generation fence 仍由 ReadyPeerSession 约束。
+type ApplicationReadyPeerSession interface {
+	ReadyPeerSession
 	ProtoApplicationExecutor
 	ApplicationEvents(context.Context) (<-chan *apipb.EventEnvelope, error)
 }
@@ -43,7 +43,7 @@ type ResourceStreamSession interface {
 }
 
 // ApplicationAttachmentSession 是 protocol connection 对 attachment resource 与私有 stream channel 的相关性投影。
-// channel 只在当前 ReadySession 内有效；TUI 必须携带原 resource/stamp，不能把 uint16 channel 当成跨 generation API identity。
+// channel 只在当前 ReadyPeerSession 内有效；TUI 必须携带原 resource/stamp，不能把 uint16 channel 当成跨 generation API identity。
 type ApplicationAttachmentSession interface {
 	ApplicationAttachmentChannel(*apipb.ResourceHandle) (uint16, bool)
 	ApplicationAttachment(uint16) (*apipb.ResourceHandle, bool)
@@ -61,7 +61,7 @@ type protoApplicationEventSource interface {
 	ApplicationEvents(context.Context) (<-chan *apipb.EventEnvelope, error)
 }
 
-// ApplicationSession 把 generated Proto command 绑定到一个不可变 ReadySession generation。
+// ApplicationSession 把 generated Proto command 绑定到一个不可变 ReadyPeerSession generation。
 // request ID 与 operation ID 由该对象单调分配；调用方不得自行重建 session stamp 或跨 generation 复用资源。
 type ApplicationSession struct {
 	stamp    EndpointSessionStamp

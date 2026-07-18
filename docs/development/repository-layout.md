@@ -11,7 +11,7 @@
 ```text
 client/
   endpoint/          Endpoint/Route registry、assembler、planner、portable contract
-  runtime/           route race、ReadySession、generation、session owner、command/event
+  runtime/           PeerConnector、route race、ReadyPeerSession、pairing、generation、session owner、command/event
   port/              host capability、credential、cloud、clock、lifecycle 接口
   adapter/
     local/           local Unix attempt adapter
@@ -115,8 +115,8 @@ Proto 在图中表示 schema/message boundary，不表示网络 transport 或独
 ## 接口优先约束
 
 - `client/runtime.Runtime` 是 TUI、CLI 和未来平台 binding 使用的连接控制面接口，只返回不可变 `SessionLease` 与 endpoint event，不暴露 transport 或 protocol client。
-- `client/runtime.RouteAttemptDialer` 是 runtime 到单 route adapter 的边界；adapter 只能执行指定 attempt，不能选择其它 route 或 fallback。
-- `client/runtime.ReadySession` 只在 transport、identity、authorization 和 protocol Hello 全部完成后成立，并拥有明确的 Done/Err/Close 生命周期。
+- `client/runtime.PeerConnector` 是 runtime 到单 route adapter 的边界；adapter 只能执行指定 attempt，不能选择其它 route 或 fallback。
+- `client/runtime.ReadyPeerSession` 只在 transport、identity、authorization 和 protocol Hello 全部完成后成立，并拥有明确的 Done/Err/Close 生命周期。
 - `client/port.Clock` 等 host capability 必须先定义接口和取消/释放语义，再接系统实现。
 - TUI/CLI consumer 迁移必须发生在上述 contract 和 harness 之后；不得根据当前 concrete method 集合反向生成宽接口。
 

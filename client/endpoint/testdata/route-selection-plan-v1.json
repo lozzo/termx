@@ -2,7 +2,7 @@
   "version": 1,
   "cases": [
     {
-      "name": "local_ssh_full_race_excludes_managed",
+      "name": "local_ssh_managed_full_race",
       "generation": 7,
       "intent": "interactive",
       "supported_route_kinds": ["local-unix", "ssh-webrtc-tcp", "managed-webrtc"],
@@ -13,10 +13,7 @@
         {"id": "cloud", "kind": "managed-webrtc", "enabled": true, "credential_ref": "credential:fixture"}
       ],
       "expected_groups": [
-        {"start_delay_millis": 0, "route_ids": ["local", "ssh"]}
-      ],
-      "expected_diagnostics": [
-        {"route_id": "cloud", "code": "route_unavailable", "reason": "automatic_race_unsupported"}
+        {"start_delay_millis": 0, "route_ids": ["cloud", "local", "ssh"]}
       ]
     },
     {
@@ -34,6 +31,19 @@
       "expected_groups": [
         {"priority": 10, "start_delay_millis": 0, "route_ids": ["local"]},
         {"priority": 20, "start_delay_millis": 300, "route_ids": ["ssh-a", "ssh-b"]}
+      ]
+    },
+    {
+      "name": "direct_connector_uses_same_attempt_contract",
+      "generation": 12,
+      "intent": "interactive",
+      "supported_route_kinds": ["direct-webrtc-tcp"],
+      "available_credential_refs": ["grant:fixture"],
+      "routes": [
+        {"id": "direct", "kind": "direct-webrtc-tcp", "enabled": true, "credential_ref": "grant:fixture"}
+      ],
+      "expected_groups": [
+        {"start_delay_millis": 0, "route_ids": ["direct"]}
       ]
     },
     {

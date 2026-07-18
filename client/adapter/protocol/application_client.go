@@ -21,15 +21,15 @@ import (
 type ApplicationClient struct {
 	*internalprotocol.Client
 	*clientruntime.ApplicationSession
-	ready    clientruntime.ApplicationReadySession
+	ready    clientruntime.ApplicationReadyPeerSession
 	control  clientruntime.Runtime
 	path     string
-	evidence clientruntime.ReadySessionEvidence
+	evidence clientruntime.ReadyPeerSessionEvidence
 }
 
 // MarkReady 在 adapter 按 route 类型完成身份边界、authorization 与 Hello 后冻结 readiness evidence。
 // 该方法只能在 session 发布给 SessionOwner 前调用一次；缺失或重复 evidence 都直接失败。
-func (client *ApplicationClient) MarkReady(evidence clientruntime.ReadySessionEvidence) error {
+func (client *ApplicationClient) MarkReady(evidence clientruntime.ReadyPeerSessionEvidence) error {
 	if client == nil {
 		return errors.New("protocol application client is required")
 	}
@@ -126,13 +126,13 @@ func NewApplicationClientWithObservedPath(client *internalprotocol.Client, stamp
 
 // NewReadyApplicationClient 把 runtime-owned ready session 投影为现有 typed Proto client facade。
 // 它不暴露 raw framing client；attachment/file primitive 只能经 ready session 的 generation-fenced capability 调用。
-func NewReadyApplicationClient(ready clientruntime.ApplicationReadySession) (*ApplicationClient, error) {
+func NewReadyApplicationClient(ready clientruntime.ApplicationReadyPeerSession) (*ApplicationClient, error) {
 	return NewRuntimeApplicationClient(ready, nil)
 }
 
 // NewRuntimeApplicationClient 在 ready data plane 之外保留同一 ClientRuntime control plane，供 TUI lifecycle adapter 订阅 endpoint event。
 // control 不能执行 Proto command 或暴露 transport；nil 仅用于不需要重连/事件的测试与内部 harness。
-func NewRuntimeApplicationClient(ready clientruntime.ApplicationReadySession, control clientruntime.Runtime) (*ApplicationClient, error) {
+func NewRuntimeApplicationClient(ready clientruntime.ApplicationReadyPeerSession, control clientruntime.Runtime) (*ApplicationClient, error) {
 	if ready == nil {
 		return nil, errors.New("ready application session is required")
 	}
@@ -160,9 +160,9 @@ func (client *ApplicationClient) ObservedPath() string {
 }
 
 // Readiness 返回 adapter 在 session 发布前冻结的 identity、authorization 与 Hello 证据。
-func (client *ApplicationClient) Readiness() clientruntime.ReadySessionEvidence {
+func (client *ApplicationClient) Readiness() clientruntime.ReadyPeerSessionEvidence {
 	if client == nil {
-		return clientruntime.ReadySessionEvidence{}
+		return clientruntime.ReadyPeerSessionEvidence{}
 	}
 	if client.ready != nil {
 		return client.ready.Readiness()
@@ -309,6 +309,6 @@ func (client *ApplicationClient) Close() error {
 	return client.Client.Close()
 }
 
-var _ clientruntime.ApplicationReadySession = (*ApplicationClient)(nil)
+var _ clientruntime.ApplicationReadyPeerSession = (*ApplicationClient)(nil)
 var _ clientruntime.ApplicationAttachmentSession = (*ApplicationClient)(nil)
 var _ clientruntime.ResourceStreamSession = (*ApplicationClient)(nil)

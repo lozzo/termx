@@ -2497,10 +2497,10 @@ func installV3LocalApplicationTestClient(t *testing.T, socketPath string, client
 		if err != nil {
 			return nil, endpointdomain.AccessRoute{}, err
 		}
-		if err := ready.MarkReady(clientruntime.ReadySessionEvidence{Identity: endpointdomain.DaemonIdentity{DeviceID: "device-cli-fixture", DeviceFingerprint: "SHA256:device-cli-fixture"}, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version}); err != nil {
+		if err := ready.MarkReady(clientruntime.ReadyPeerSessionEvidence{Identity: endpointdomain.DaemonIdentity{DeviceID: "device-cli-fixture", DeviceFingerprint: "SHA256:device-cli-fixture"}, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version}); err != nil {
 			return nil, endpointdomain.AccessRoute{}, err
 		}
-		lease, err := owner.AdoptReadySession(attempt, ready)
+		lease, err := owner.AdoptReadyPeerSession(attempt, ready)
 		if err != nil {
 			return nil, endpointdomain.AccessRoute{}, err
 		}
@@ -2542,10 +2542,10 @@ func wrapCLIProtocolClientForTestContext(ctx context.Context, client *protocol.C
 	if err != nil {
 		return nil, err
 	}
-	if err := ready.MarkReady(clientruntime.ReadySessionEvidence{Identity: identity, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version}); err != nil {
+	if err := ready.MarkReady(clientruntime.ReadyPeerSessionEvidence{Identity: identity, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: wire.Version}); err != nil {
 		return nil, err
 	}
-	lease, err := owner.AdoptReadySession(attempt, ready)
+	lease, err := owner.AdoptReadyPeerSession(attempt, ready)
 	if err != nil {
 		return nil, err
 	}

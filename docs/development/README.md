@@ -12,7 +12,7 @@
 | --- | --- |
 | `cmd/termx/` | 公开 CLI、daemon 与 TUI 装配入口 |
 | `client/endpoint/` | Endpoint/Route registry、assembler、planner 与 portable contract |
-| `client/runtime/` | 跨端 route race、ReadySession、generation 与 session owner |
+| `client/runtime/` | 跨端 route race、ReadyPeerSession、generation 与 session owner |
 | `client/port/`、`client/adapter/` | host capability 接口和 local/SSH/managed/protocol adapter |
 | `core/` | terminal lifecycle、live surface、history 与 daemon storage truth |
 | `api_layer/`、`api_mapping/` | generated proto 驱动的 application API 与 core/proto 无状态字段映射；transport/framing 归独立 adapter 与 protocol |

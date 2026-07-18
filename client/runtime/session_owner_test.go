@@ -321,7 +321,7 @@ type ownerDialer struct {
 	delayDone bool
 }
 
-func (dialer *ownerDialer) Dial(_ context.Context, request AttemptRequest) (ReadySession, error) {
+func (dialer *ownerDialer) Connect(_ context.Context, request AttemptRequest) (ReadyPeerSession, error) {
 	dialer.calls++
 	if dialer.err != nil {
 		return nil, dialer.err
@@ -337,7 +337,7 @@ func (dialer *ownerDialer) Dial(_ context.Context, request AttemptRequest) (Read
 	if identity.Empty() {
 		identity = endpoint.DaemonIdentity{DeviceID: "device-owner-test", DeviceFingerprint: "SHA256:device-owner-test"}
 	}
-	dialer.session.evidence = ReadySessionEvidence{
+	dialer.session.evidence = ReadyPeerSessionEvidence{
 		Identity: identity, IdentityVerified: true, AuthorizationVerified: true, ProtocolVersion: 1,
 	}
 	dialer.session.delayDone = dialer.delayDone
@@ -346,7 +346,7 @@ func (dialer *ownerDialer) Dial(_ context.Context, request AttemptRequest) (Read
 
 type ownerSession struct {
 	stamp          EndpointSessionStamp
-	evidence       ReadySessionEvidence
+	evidence       ReadyPeerSessionEvidence
 	done           chan struct{}
 	closeOnce      sync.Once
 	closed         bool
@@ -362,10 +362,10 @@ func newOwnerSession(stamp EndpointSessionStamp) *ownerSession {
 	return &ownerSession{stamp: stamp, done: make(chan struct{}), removeObserved: make(chan struct{})}
 }
 
-func (session *ownerSession) Stamp() EndpointSessionStamp     { return session.stamp }
-func (session *ownerSession) ObservedPath() string            { return "direct" }
-func (session *ownerSession) Readiness() ReadySessionEvidence { return session.evidence }
-func (session *ownerSession) Done() <-chan struct{}           { return session.done }
+func (session *ownerSession) Stamp() EndpointSessionStamp         { return session.stamp }
+func (session *ownerSession) ObservedPath() string                { return "direct" }
+func (session *ownerSession) Readiness() ReadyPeerSessionEvidence { return session.evidence }
+func (session *ownerSession) Done() <-chan struct{}               { return session.done }
 func (session *ownerSession) Err() error {
 	if session.closed {
 		return io.EOF
@@ -417,5 +417,5 @@ func (ownerResourceStream) Receive(context.Context) (uint8, []byte, error) { ret
 func (ownerResourceStream) Send(context.Context, uint8, []byte) error      { return nil }
 func (ownerResourceStream) Close() error                                   { return nil }
 
-var _ ApplicationReadySession = (*ownerSession)(nil)
+var _ ApplicationReadyPeerSession = (*ownerSession)(nil)
 var _ ResourceStreamSession = (*ownerSession)(nil)

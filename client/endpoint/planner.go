@@ -52,8 +52,6 @@ const (
 	RoutePlanPlatformUnsupported RoutePlanDiagnosticReason = "platform_unsupported"
 	// RoutePlanCredentialUnavailable 表示 route 引用的 credential 当前不可用。
 	RoutePlanCredentialUnavailable RoutePlanDiagnosticReason = "credential_unavailable"
-	// RoutePlanAutomaticRaceUnsupported 表示 route 可单独使用，但当前阶段不参加 local/SSH 自动竞速。
-	RoutePlanAutomaticRaceUnsupported RoutePlanDiagnosticReason = "automatic_race_unsupported"
 )
 
 // EndpointID 返回本计划唯一对应的 Endpoint。
@@ -72,7 +70,7 @@ func (plan RouteSelectionPlan) Groups() []RouteAttemptGroup {
 }
 
 // RouteAttemptGroup 表示同一时刻启动的一组 route attempt。
-// priority 只决定分组和启动计划，不能覆盖后续第一个完成完整 ReadySession 校验的 winner。
+// priority 只决定分组和启动计划，不能覆盖后续第一个完成完整 ReadyPeerSession 校验的 winner。
 type RouteAttemptGroup struct {
 	priority   *int
 	startDelay time.Duration
@@ -98,8 +96,8 @@ func (group RouteAttemptGroup) Attempts() []RouteAttempt {
 // planner 不 dial、不解析 credential、不选择 winner、不修改输入，也不为 unsupported route 建立 fallback。
 type RouteSelectionPlanner struct{}
 
-// Plan 生成当前 C3B 支持的 local/SSH 自动竞速计划。
-// managed WebRTC 只在它是唯一 eligible 自动 route 或被显式 override 时保留单路能力；Direct/SSH/managed 的统一 PeerSession 竞速由 RTC002 收口。
+// Plan 为当前平台明确支持的 Local、Direct、SSH 和 Cloud connector 生成统一 attempt groups。
+// connector 尚未装配时由 SupportedRouteKinds 过滤；planner 不把新 Route 降级到旧 transport。
 func (RouteSelectionPlanner) Plan(request RouteSelectionRequest) (RouteSelectionPlan, error) {
 	target := cloneEndpoint(request.Endpoint)
 	if err := target.Validate(); err != nil {
@@ -136,7 +134,6 @@ func (RouteSelectionPlanner) Plan(request RouteSelectionRequest) (RouteSelection
 	}
 
 	automatic := make([]AccessRoute, 0, len(target.Routes))
-	managed := make([]AccessRoute, 0, 1)
 	diagnostics := make([]RoutePlanDiagnostic, 0, len(target.Routes))
 	credentialBlocked := false
 	for _, route := range target.RouteList() {
@@ -160,25 +157,17 @@ func (RouteSelectionPlanner) Plan(request RouteSelectionRequest) (RouteSelection
 			}
 		}
 		switch route.Kind {
-		case RouteLocalUnix, RouteSSHWebRTCTCP:
+		case RouteLocalUnix, RouteDirectWebRTCTCP, RouteSSHWebRTCTCP, RouteManagedWebRTC:
 			automatic = append(automatic, route)
-		case RouteManagedWebRTC:
-			managed = append(managed, route)
 		default:
-			diagnostics = append(diagnostics, routePlanDiagnostic(route, ErrorRouteUnavailable, RoutePlanAutomaticRaceUnsupported))
+			diagnostics = append(diagnostics, routePlanDiagnostic(route, ErrorRouteUnavailable, RoutePlanPlatformUnsupported))
 		}
 	}
 	if len(automatic) == 0 {
-		if len(managed) == 1 {
-			automatic = managed
-		} else if credentialBlocked {
+		if credentialBlocked {
 			return RouteSelectionPlan{}, connectionError(ErrorCredentialRequired, "endpoint %q has no eligible route with an available credential", target.ID)
 		} else {
 			return RouteSelectionPlan{}, connectionError(ErrorRouteUnavailable, "endpoint %q has no eligible route for the current platform", target.ID)
-		}
-	} else {
-		for _, route := range managed {
-			diagnostics = append(diagnostics, routePlanDiagnostic(route, ErrorRouteUnavailable, RoutePlanAutomaticRaceUnsupported))
 		}
 	}
 

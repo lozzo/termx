@@ -89,7 +89,7 @@ func newAndroidSpikeHost(runtimeDir string) (androidHost, error) {
 	return host, nil
 }
 
-func (host *androidSpikeHost) OpenSession(ctx context.Context, request *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadySession, error) {
+func (host *androidSpikeHost) OpenSession(ctx context.Context, request *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadyPeerSession, error) {
 	if request.GetEndpointId() == "cancel" {
 		<-ctx.Done()
 		return nil, ctx.Err()

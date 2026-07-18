@@ -75,7 +75,7 @@
 - `api_layer/`：core application API 的执行边界，负责调用编排、授权、取消、错误分类和资源生命周期；所有跨边界 request/result/event 必须使用 `proto/` 生成类型，不得定义第二套业务 DTO。
 - `api_mapping/`：`generated proto <-> core domain` 以及必要的平台 projection 映射；只做确定性字段映射和结构 validation，不建立连接，不处理 framing，也不拥有 lifecycle、session、history、route 或 UI state。
 - `client/endpoint/`：客户端 Endpoint/Route 持久领域、assembler、planner 与 portable contract；不负责网络 IO、credential、protocol session 或 UI。
-- `client/runtime/`：跨端客户端 route race、ReadySession、generation、session owner 和 proto command/event 执行生命周期；不得自定义 application DTO，不得依赖 TUI、CLI、平台 UI 或私有 Cloud 实现。
+- `client/runtime/`：跨端客户端 route race、ReadyPeerSession、generation、session owner 和 proto command/event 执行生命周期；不得自定义 application DTO，不得依赖 TUI、CLI、平台 UI 或私有 Cloud 实现。
 - `client/port/` 与 `client/adapter/`：host capability 接口与 local/SSH/managed/protocol adapter；adapter 不得创建第二份 route/session truth。
 - `client/binding/`：跨语言调用边界。C ABI 供 Android JNI 以及未来 iOS/Desktop wrapper 使用；WASM binding 是未来浏览器预留边界。binding 只做参数所有权、异步调度、handle/event/release 和 Proto bytes 转交，不拥有 endpoint、route、session、credential、API 或重连真值。
 - `core/`：新 core 主线目录，负责 terminal lifecycle、daemon-local terminal identity、screen-backed history 模型、terminal semantic transaction 消费、`HistoryWindow`、storage/backend 与相关 harness。

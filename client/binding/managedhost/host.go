@@ -65,7 +65,7 @@ func New(options Options) (*Host, error) {
 }
 
 // OpenSession 建立 Go-owned managed generation；平台 UI 状态不能参与 endpoint、auth 或协议判断。
-func (host *Host) OpenSession(ctx context.Context, request *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadySession, error) {
+func (host *Host) OpenSession(ctx context.Context, request *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadyPeerSession, error) {
 	managedConfig := request.GetManaged()
 	if managedConfig == nil {
 		return nil, fmt.Errorf("managed endpoint configuration is required")
@@ -162,7 +162,7 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 		return nil, fmt.Errorf("pairing identity is invalid: %w", err)
 	}
 	signer := platformSigner{broker: host.options.Broker, credentialRef: credentialRef, identity: identity}
-	paired, err := (&managed.PairingDialer{Cloud: platformCloud{broker: host.options.Broker}, Peers: host.options.Peers, Now: host.options.Now}).Redeem(
+	paired, err := (&managed.PairingConnector{Cloud: platformCloud{broker: host.options.Broker}, Peers: host.options.Peers, Now: host.options.Now}).Redeem(
 		ctx, attempt, remoteauth.ClientPairingRequest{
 			ExpectedDeviceID: bundle.GetIdentity().GetDeviceId(), ExpectedDeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint(),
 			PairingBundle: payload, Identity: identity, Signer: signer, ClientLabel: host.options.ClientName,

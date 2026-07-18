@@ -39,8 +39,8 @@ var (
 // Host 是 binding 到跨端 Go Client Engine composition root 的唯一依赖。
 // request 来自 bindingpb；返回 session 必须已经完成 transport、remote auth、Hello，并由 client/runtime 持有 generation truth。
 type Host interface {
-	// OpenSession 按 generated binding request 建立一个 ApplicationReadySession；context 取消必须释放未发布资源。
-	OpenSession(context.Context, *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadySession, error)
+	// OpenSession 按 generated binding request 建立一个 ApplicationReadyPeerSession；context 取消必须释放未发布资源。
+	OpenSession(context.Context, *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadyPeerSession, error)
 }
 
 // Engine 持有当前跨语言实例的 operation/session handle registry 和有界事件队列。
@@ -73,7 +73,7 @@ type operation struct {
 }
 
 type sessionRecord struct {
-	session      clientruntime.ApplicationReadySession
+	session      clientruntime.ApplicationReadyPeerSession
 	activeOps    int
 	closing      bool
 	closeStarted bool
@@ -461,7 +461,7 @@ func (engine *Engine) Close() error {
 		for _, operation := range engine.operations {
 			operation.cancel()
 		}
-		sessions := make([]clientruntime.ApplicationReadySession, 0, len(engine.sessions))
+		sessions := make([]clientruntime.ApplicationReadyPeerSession, 0, len(engine.sessions))
 		for _, record := range engine.sessions {
 			if !record.closed && !record.closeStarted {
 				record.closeStarted = true
@@ -573,7 +573,7 @@ func (engine *Engine) runOpen(handle uint64, ctx context.Context, request *bindi
 	}
 }
 
-func (engine *Engine) runExecute(handle, sessionHandle uint64, ctx context.Context, session clientruntime.ApplicationReadySession, command *apipb.CommandEnvelope) {
+func (engine *Engine) runExecute(handle, sessionHandle uint64, ctx context.Context, session clientruntime.ApplicationReadyPeerSession, command *apipb.CommandEnvelope) {
 	var result *apipb.ResultEnvelope
 	var err error
 	if command.GetFileDownloadOpen() != nil || command.GetFileUploadOpen() != nil {
@@ -609,7 +609,7 @@ func (engine *Engine) runExecute(handle, sessionHandle uint64, ctx context.Conte
 
 // cleanupCancelledFileOpen 销毁已在 daemon 创建、但因跨语言 operation 取消而不能交付给 consumer 的 file resource。
 // upload 使用 principal-bound resume 凭据，download 使用 current-session resource release；清理失败会作为 operation failure 暴露，禁止静默泄漏。
-func (engine *Engine) cleanupCancelledFileOpen(session clientruntime.ApplicationReadySession, result *apipb.ResultEnvelope) error {
+func (engine *Engine) cleanupCancelledFileOpen(session clientruntime.ApplicationReadyPeerSession, result *apipb.ResultEnvelope) error {
 	transfer := result.GetFileTransferOpen().GetTransfer()
 	if transfer == nil || transfer.GetResource() == nil {
 		return nil
@@ -635,7 +635,7 @@ func (engine *Engine) cleanupCancelledFileOpen(session clientruntime.Application
 	return nil
 }
 
-func (engine *Engine) forwardSession(handle uint64, session clientruntime.ApplicationReadySession) {
+func (engine *Engine) forwardSession(handle uint64, session clientruntime.ApplicationReadyPeerSession) {
 	eventCtx, cancelEvents := context.WithCancel(engine.ctx)
 	defer cancelEvents()
 	events, err := session.ApplicationEvents(eventCtx)
@@ -666,7 +666,7 @@ func (engine *Engine) forwardSession(handle uint64, session clientruntime.Applic
 	}
 }
 
-func (engine *Engine) finishSession(handle uint64, session clientruntime.ApplicationReadySession, err error) {
+func (engine *Engine) finishSession(handle uint64, session clientruntime.ApplicationReadyPeerSession, err error) {
 	engine.mu.Lock()
 	record := engine.sessions[handle]
 	if record == nil || record.session != session || record.closed {
@@ -699,7 +699,7 @@ func (engine *Engine) startOperation() (uint64, context.Context, error) {
 	return handle, ctx, nil
 }
 
-func (engine *Engine) startSessionOperation(sessionHandle uint64) (uint64, context.Context, clientruntime.ApplicationReadySession, error) {
+func (engine *Engine) startSessionOperation(sessionHandle uint64) (uint64, context.Context, clientruntime.ApplicationReadyPeerSession, error) {
 	engine.mu.Lock()
 	defer engine.mu.Unlock()
 	if engine.closed {
@@ -731,7 +731,7 @@ func (engine *Engine) allocateHandleLocked() (uint64, error) {
 }
 
 func (engine *Engine) markOperationDone(handle uint64) {
-	var closeSession clientruntime.ApplicationReadySession
+	var closeSession clientruntime.ApplicationReadyPeerSession
 	var closeSessionHandle uint64
 	engine.mu.Lock()
 	if operation := engine.operations[handle]; operation != nil {
@@ -758,7 +758,7 @@ func (engine *Engine) markOperationDone(handle uint64) {
 	}
 }
 
-func (engine *Engine) activeSession(handle uint64) (clientruntime.ApplicationReadySession, error) {
+func (engine *Engine) activeSession(handle uint64) (clientruntime.ApplicationReadyPeerSession, error) {
 	engine.mu.Lock()
 	defer engine.mu.Unlock()
 	if engine.closed {
