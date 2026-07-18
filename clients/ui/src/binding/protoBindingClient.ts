@@ -9,8 +9,7 @@ import type { ProtoClientSession, ProtoClientSubscription, ProtoResourceStream }
 export const BindingOperation = {
   OPEN_SESSION: 0x10,
   EXECUTE: 0x11,
-  IMPORT_PAIRING: 0x12,
-  DELETE_CREDENTIAL: 0x13,
+  ENGINE_COMMAND: 0x12,
   CANCEL: 0x14,
   CLOSE_SESSION: 0x15,
   RELEASE: 0x16,
@@ -43,6 +42,9 @@ export class ProtoBindingClient {
   private readonly executeOperations = new Map<bigint, PendingOperation<TermxApiApplication.ResultEnvelope>>()
   private readonly importOperations = new Map<bigint, PendingOperation<TermxClientBinding.ImportPairingResult>>()
   private readonly deleteOperations = new Map<bigint, PendingOperation<void>>()
+  private readonly registryGetOperations = new Map<bigint, PendingOperation<TermxRemoteAuth.EndpointRegistryV1>>()
+  private readonly endpointUpsertOperations = new Map<bigint, PendingOperation<TermxClientBinding.EndpointUpsertResult>>()
+  private readonly endpointDeleteOperations = new Map<bigint, PendingOperation<TermxClientBinding.EndpointDeleteResult>>()
   private readonly sessions = new Map<bigint, ProtoBindingSession>()
   private readonly streams = new Map<bigint, ProtoBindingResourceStream>()
   private readonly earlyOperationEvents = new Map<bigint, TermxClientBinding.EventEnvelope>()
@@ -67,13 +69,35 @@ export class ProtoBindingClient {
   }
 
   async importPairing(request: TermxClientBinding.ImportPairingRequest, signal?: AbortSignal): Promise<TermxClientBinding.ImportPairingResult> {
-    const operation = await this.backend.request(BindingOperation.IMPORT_PAIRING, toBinary(TermxClientBinding.ImportPairingRequestSchema, request), undefined, signal)
+    const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'importPairing', value: request } }), signal)
     return await this.waitOperation(this.importOperations, operation, signal)
   }
 
   async deleteCredential(request: TermxClientBinding.DeleteCredentialRequest, signal?: AbortSignal): Promise<void> {
-    const operation = await this.backend.request(BindingOperation.DELETE_CREDENTIAL, toBinary(TermxClientBinding.DeleteCredentialRequestSchema, request), undefined, signal)
+    const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'deleteCredential', value: request } }), signal)
     await this.waitOperation(this.deleteOperations, operation, signal)
+  }
+
+  async getEndpointRegistry(signal?: AbortSignal): Promise<TermxRemoteAuth.EndpointRegistryV1> {
+    const request = create(TermxClientBinding.EndpointRegistryGetRequestSchema, { requestId: crypto.randomUUID() })
+    const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'endpointRegistryGet', value: request } }), signal)
+    return await this.waitOperation(this.registryGetOperations, operation, signal)
+  }
+
+  async upsertEndpoint(endpoint: TermxRemoteAuth.EndpointConfigV1, makeDefault = false, signal?: AbortSignal): Promise<TermxClientBinding.EndpointUpsertResult> {
+    const request = create(TermxClientBinding.EndpointUpsertRequestSchema, { requestId: crypto.randomUUID(), endpoint, makeDefault })
+    const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'endpointUpsert', value: request } }), signal)
+    return await this.waitOperation(this.endpointUpsertOperations, operation, signal)
+  }
+
+  async deleteEndpoint(endpointId: string, signal?: AbortSignal): Promise<TermxClientBinding.EndpointDeleteResult> {
+    const request = create(TermxClientBinding.EndpointDeleteRequestSchema, { requestId: crypto.randomUUID(), endpointId })
+    const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'endpointDelete', value: request } }), signal)
+    return await this.waitOperation(this.endpointDeleteOperations, operation, signal)
+  }
+
+  private async engineCommand(command: TermxClientBinding.EngineCommand, signal?: AbortSignal): Promise<bigint> {
+    return await this.backend.request(BindingOperation.ENGINE_COMMAND, toBinary(TermxClientBinding.EngineCommandSchema, command), undefined, signal)
   }
 
   async close(): Promise<void> {
@@ -233,6 +257,33 @@ export class ProtoBindingClient {
         void this.release(event.value.operationHandle)
         return
       }
+      case 'endpointRegistryGet': {
+        const pending = this.registryGetOperations.get(event.value.operationHandle)
+        if (!pending) return
+        this.registryGetOperations.delete(event.value.operationHandle)
+        if (event.value.error || !event.value.registry) pending.reject(apiError(event.value.error, 'endpoint registry get failed'))
+        else pending.resolve(event.value.registry)
+        void this.release(event.value.operationHandle)
+        return
+      }
+      case 'endpointUpsert': {
+        const pending = this.endpointUpsertOperations.get(event.value.operationHandle)
+        if (!pending) return
+        this.endpointUpsertOperations.delete(event.value.operationHandle)
+        if (event.value.error) pending.reject(apiError(event.value.error, 'endpoint upsert failed'))
+        else pending.resolve(event.value)
+        void this.release(event.value.operationHandle)
+        return
+      }
+      case 'endpointDelete': {
+        const pending = this.endpointDeleteOperations.get(event.value.operationHandle)
+        if (!pending) return
+        this.endpointDeleteOperations.delete(event.value.operationHandle)
+        if (event.value.error) pending.reject(apiError(event.value.error, 'endpoint delete failed'))
+        else pending.resolve(event.value)
+        void this.release(event.value.operationHandle)
+        return
+      }
       case 'application':
         this.sessions.get(event.value.sessionHandle)?.publish(event.value.event)
         return
@@ -280,6 +331,9 @@ export class ProtoBindingClient {
       case 'execute': return this.executeOperations.has(handle)
       case 'importPairing': return this.importOperations.has(handle)
       case 'deleteCredential': return this.deleteOperations.has(handle)
+      case 'endpointRegistryGet': return this.registryGetOperations.has(handle)
+      case 'endpointUpsert': return this.endpointUpsertOperations.has(handle)
+      case 'endpointDelete': return this.endpointDeleteOperations.has(handle)
       default: return true
     }
   }
@@ -297,7 +351,7 @@ export class ProtoBindingClient {
   }
 
   private rejectAll(error: Error): void {
-    for (const registry of [this.openOperations, this.executeOperations, this.importOperations, this.deleteOperations]) {
+    for (const registry of [this.openOperations, this.executeOperations, this.importOperations, this.deleteOperations, this.registryGetOperations, this.endpointUpsertOperations, this.endpointDeleteOperations]) {
       for (const pending of registry.values()) pending.reject(error)
       registry.clear()
     }
@@ -380,7 +434,7 @@ export class ProtoBindingClient {
 }
 
 export interface EndpointInput {
-	endpoint: TermxRemoteAuth.EndpointConfigV1
+	endpointId: string
 	routeId?: string
 }
 
@@ -389,19 +443,17 @@ export class ProtoBindingConnector {
   constructor(private readonly client: () => ProtoBindingClient, private readonly input: EndpointInput) {}
 
   async connect(input: { machineId: string }, options?: { signal?: AbortSignal; forceRelay?: boolean; onStatus?: (status: string) => void; onConnectionState?: (snapshot: { machineId: string; phase: 'connecting' | 'connected' | 'failed'; statusText: string; relayInUse: boolean }) => void }): Promise<ProtoClientSession> {
-	const endpoint = create(TermxRemoteAuth.EndpointConfigV1Schema, this.input.endpoint)
-    if (input.machineId !== endpoint.endpointId) throw new Error('endpoint identity mismatch')
+	const endpointId = this.input.endpointId.trim()
+    if (!endpointId || input.machineId !== endpointId) throw new Error('endpoint identity mismatch')
     options?.onStatus?.('Connecting...')
     options?.onConnectionState?.({ machineId: input.machineId, phase: 'connecting', statusText: 'Connecting...', relayInUse: options.forceRelay === true })
 	if (options?.forceRelay) {
-		const managedRoute = endpoint.routes.find((route) => route.route.case === 'managedWebrtc')
-		if (!managedRoute || managedRoute.route.case !== 'managedWebrtc') throw new Error('force relay requires a managed WebRTC route')
-		managedRoute.route.value.relayMode = TermxRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY
+		throw new Error('force relay requires a Go-owned route policy update')
 	}
     try {
       const session = await this.client().openSession(create(TermxClientBinding.OpenSessionRequestSchema, {
-		requestId: crypto.randomUUID(), endpointId: endpoint.endpointId, routeOverride: this.input.routeId ?? '',
-		intent: TermxClientBinding.ConnectIntent.INTERACTIVE, endpoint,
+		requestId: crypto.randomUUID(), endpointId, routeOverride: this.input.routeId ?? '',
+		intent: TermxClientBinding.ConnectIntent.INTERACTIVE,
       }), options?.signal)
       options?.onStatus?.('Connected')
       options?.onConnectionState?.({ machineId: input.machineId, phase: 'connected', statusText: 'Connected', relayInUse: options?.forceRelay === true })
@@ -506,6 +558,9 @@ function bindingOperationHandle(envelope: TermxClientBinding.EventEnvelope): big
     case 'execute':
     case 'importPairing':
     case 'deleteCredential':
+    case 'endpointRegistryGet':
+    case 'endpointUpsert':
+    case 'endpointDelete':
       return envelope.event.value.operationHandle
     default:
       return undefined

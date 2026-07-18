@@ -1,5 +1,3 @@
-import { create, fromBinary, toBinary } from '@bufbuild/protobuf'
-import * as TermxClientBinding from '../generated/bindingpb/client_binding_pb'
 import { BindingOperation, type BindingOperationCode, type ProtoBindingBackend } from './protoBindingClient'
 import type { TermxWasmRuntime } from './wasmRuntime'
 
@@ -28,14 +26,8 @@ export class WasmBindingBackend implements ProtoBindingBackend {
         return BigInt(this.runtime.openSession(payload))
       case BindingOperation.EXECUTE:
         return BigInt(this.runtime.execute(requiredHandle(handle), payload))
-      case BindingOperation.IMPORT_PAIRING:
-        return BigInt(this.runtime.engineCommand(toBinary(TermxClientBinding.EngineCommandSchema, create(TermxClientBinding.EngineCommandSchema, {
-          command: { case: 'importPairing', value: fromBinary(TermxClientBinding.ImportPairingRequestSchema, payload) },
-        }))))
-      case BindingOperation.DELETE_CREDENTIAL:
-        return BigInt(this.runtime.engineCommand(toBinary(TermxClientBinding.EngineCommandSchema, create(TermxClientBinding.EngineCommandSchema, {
-          command: { case: 'deleteCredential', value: fromBinary(TermxClientBinding.DeleteCredentialRequestSchema, payload) },
-        }))))
+      case BindingOperation.ENGINE_COMMAND:
+        return BigInt(this.runtime.engineCommand(payload))
       case BindingOperation.CANCEL:
         this.runtime.cancel(requiredHandle(handle))
         return 0n

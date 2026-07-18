@@ -22,6 +22,7 @@ class AndroidClientPlatform(
     private val engineHandle: Long,
     private val cloud: ManagedCloudAdapter = ManagedCloudAssembly.create(context.applicationContext),
     private val credentials: AndroidClientAccessCredentialStore = AndroidClientAccessCredentialStore(context.applicationContext),
+    private val endpointRegistry: AndroidEndpointRegistryStore = AndroidEndpointRegistryStore(context.applicationContext),
 ) : AutoCloseable {
     private val active = AtomicBoolean(true)
     private val executor = Executors.newSingleThreadExecutor { runnable ->
@@ -85,6 +86,16 @@ class AndroidClientPlatform(
                         request.credentialBind.endpointId,
                         request.credentialBind.capabilityGrant,
                     ))
+                ClientBinding.PlatformRequest.RequestCase.ENDPOINT_REGISTRY_LOAD ->
+                    response.setEndpointRegistry(ClientBinding.EndpointRegistryLoaded.newBuilder()
+                        .setRegistryProto(ByteString.copyFrom(endpointRegistry.load())))
+                ClientBinding.PlatformRequest.RequestCase.ENDPOINT_REGISTRY_STORE -> {
+                    endpointRegistry.store(
+                        request.endpointRegistryStore.registryProto.toByteArray(),
+                        request.endpointRegistryStore.deleteCredentialRefsList,
+                        credentials,
+                    )
+                }
                 ClientBinding.PlatformRequest.RequestCase.CLOUD_RESOLVE_ENDPOINT ->
                     response.setCloudResolvedEndpoint(runBlocking { cloud.resolveProto(request.cloudResolveEndpoint) })
                 ClientBinding.PlatformRequest.RequestCase.CLOUD_CREATE_SIGNALING ->

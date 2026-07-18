@@ -44,9 +44,12 @@ type Options struct {
 
 // Host 是跨 Android/Web 共用的 binding.Host、PairingHost 与 CredentialHost。
 type Host struct {
-	options   Options
-	owner     *clientruntime.SessionOwner
-	closeOnce sync.Once
+	options        Options
+	owner          *clientruntime.SessionOwner
+	registryMu     sync.Mutex
+	registry       endpoint.Registry
+	registryLoaded bool
+	closeOnce      sync.Once
 }
 
 // New 校验平台依赖并创建共享 managed host。
@@ -70,20 +73,20 @@ func New(options Options) (*Host, error) {
 
 // OpenSession 从 generated EndpointConfigV1 建立 Go-owned generation；平台 UI 状态不能参与 endpoint、Route、auth 或协议判断。
 func (host *Host) OpenSession(ctx context.Context, request *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadyPeerSession, error) {
-	if request == nil || request.GetEndpoint() == nil {
-		return nil, fmt.Errorf("endpoint configuration is required")
-	}
-	target, err := endpoint.EndpointFromProto(request.GetEndpoint())
-	if err != nil {
-		return nil, err
+	if request == nil {
+		return nil, fmt.Errorf("open session request is required")
 	}
 	intent, err := connectIntent(request.GetIntent())
 	if err != nil {
 		return nil, err
 	}
 	endpointID := strings.TrimSpace(request.GetEndpointId())
-	if endpointID == "" || endpointID != string(target.ID) {
-		return nil, fmt.Errorf("open session endpoint_id does not match endpoint config")
+	if endpointID == "" {
+		return nil, fmt.Errorf("open session endpoint_id is required")
+	}
+	target, err := host.registryEndpoint(ctx, endpoint.EndpointID(endpointID))
+	if err != nil {
+		return nil, err
 	}
 	routeID := endpoint.RouteID(strings.TrimSpace(request.GetRouteOverride()))
 	if routeID == "" {
@@ -99,7 +102,11 @@ func (host *Host) OpenSession(ctx context.Context, request *bindingpb.OpenSessio
 	}
 	credentials := platformCredentials{broker: host.options.Broker}
 	authorizer := peeradapter.CapabilityAuthorizer{Credentials: credentials, Signers: credentials, Now: host.options.Now}
-	config := sessionConfig(request.GetEndpoint(), routeID, request.GetIntent())
+	wireTarget, err := endpoint.EndpointToProto(target)
+	if err != nil {
+		return nil, err
+	}
+	config := sessionConfig(wireTarget, routeID, request.GetIntent())
 	switch route.Kind {
 	case endpoint.RouteDirectWebRTCTCP:
 		if host.options.DirectPeers == nil {
@@ -216,20 +223,18 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 	if bound.GetKeyFingerprint() != identity.Fingerprint || bound.GetCapabilityGrant() != paired.Grant {
 		return nil, fmt.Errorf("platform secure store bound a different pairing credential")
 	}
-	label := strings.TrimSpace(bundle.GetSuggestedLabel())
-	if label == "" {
-		label = bundle.GetIdentity().GetDeviceId()
-	}
-	target.Label = label
-	target.LabelSource = endpoint.SourceBootstrap
-	target.ConnectMode = endpoint.ConnectOnDemand
-	target.Enabled = true
-	wireEndpoint, err := endpoint.EndpointToProto(target)
+	committed, registry, err := host.commitPairingEndpoint(ctx, endpoint.EndpointID(endpointID), candidate, credentialRef)
 	if err != nil {
+		rollbackContext, cancelRollback := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelRollback()
+		rollbackErr := host.rollbackPreparedCredential(rollbackContext, record, paired.Grant)
+		if rollbackErr != nil {
+			return nil, fmt.Errorf("commit paired endpoint: %v; rollback credential: %w", err, rollbackErr)
+		}
 		return nil, err
 	}
 	return &bindingpb.ImportPairingResult{
-		Endpoint: wireEndpoint, TicketId: claims.TicketID, ClientKeyFingerprint: record.GetKeyFingerprint(),
+		Endpoint: committed, Registry: registry, TicketId: claims.TicketID, ClientKeyFingerprint: record.GetKeyFingerprint(),
 		ExpiresAtUnixNano: paired.ExpiresAt.UnixNano(), AuthorizationRequired: false,
 	}, nil
 }
@@ -485,6 +490,7 @@ func cloneSignalingEvents(values []*cloudpb.SignalingEvent) []*cloudpb.Signaling
 var _ binding.Host = (*Host)(nil)
 var _ binding.PairingHost = (*Host)(nil)
 var _ binding.CredentialHost = (*Host)(nil)
+var _ binding.EndpointRegistryHost = (*Host)(nil)
 var _ peeradapter.CredentialSource = platformCredentials{}
 var _ peeradapter.SignerSource = platformCredentials{}
 var _ remoteauth.ClientAccessSigner = platformSigner{}

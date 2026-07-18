@@ -1,6 +1,5 @@
 package com.termx.app.goclient
 
-import termx.client.binding.v1.ClientBinding
 import org.java_websocket.WebSocket
 import org.java_websocket.handshake.ClientHandshake
 import org.java_websocket.server.WebSocketServer
@@ -121,14 +120,7 @@ class GoClientBridgeServer(
                 GoClientNative.closeResourceStream(engine.handle, input.long)
                 sendAck(conn, requestId)
             }
-            OP_IMPORT_PAIRING -> accept(conn, requestId, GoClientNative.engineCommand(engine.handle,
-                ClientBinding.EngineCommand.newBuilder()
-                    .setImportPairing(ClientBinding.ImportPairingRequest.parseFrom(remaining(input)))
-                    .build().toByteArray()))
-            OP_DELETE_CREDENTIAL -> accept(conn, requestId, GoClientNative.engineCommand(engine.handle,
-                ClientBinding.EngineCommand.newBuilder()
-                    .setDeleteCredential(ClientBinding.DeleteCredentialRequest.parseFrom(remaining(input)))
-                    .build().toByteArray()))
+            OP_ENGINE_COMMAND -> accept(conn, requestId, GoClientNative.engineCommand(engine.handle, remaining(input)))
             OP_CANCEL -> {
                 GoClientNative.cancel(engine.handle, input.long)
                 sendAck(conn, requestId)
@@ -191,8 +183,7 @@ class GoClientBridgeServer(
         const val OP_AUTH: Byte = 0x01
         const val OP_OPEN_SESSION: Byte = 0x10
         const val OP_EXECUTE: Byte = 0x11
-        const val OP_IMPORT_PAIRING: Byte = 0x12
-        const val OP_DELETE_CREDENTIAL: Byte = 0x13
+        const val OP_ENGINE_COMMAND: Byte = 0x12
         const val OP_CANCEL: Byte = 0x14
         const val OP_CLOSE_SESSION: Byte = 0x15
         const val OP_RELEASE: Byte = 0x16

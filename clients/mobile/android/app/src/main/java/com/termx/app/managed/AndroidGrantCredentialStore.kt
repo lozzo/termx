@@ -85,9 +85,23 @@ class AndroidClientAccessCredentialStore(context: Context) {
         }
     }
 
+    /** deleteMany 使用一次 preferences commit 清理 Go registry 已确认不再引用的 credential refs。 */
+    fun deleteMany(credentialRefs: List<String>) = synchronized(lock) {
+        val normalized = credentialRefs.map(::validateRef).distinct()
+        if (normalized.isEmpty()) return@synchronized
+        val editor = preferences.edit()
+        normalized.forEach { editor.remove(preferenceKey(it)) }
+        if (!editor.commit()) {
+            throw ManagedEndpointFailure("temporary", "failed to delete client access credentials")
+        }
+    }
+
     /** prepareRecord 为 Go Client Engine 准备 public identity projection；private seed 不离开本 secure-store owner。 */
-    fun prepareRecord(credentialRef: String, endpointId: String): ClientBinding.CredentialRecord =
-        loadOrCreateIdentity(credentialRef, endpointId).toPlatformRecord(credentialRef)
+    fun prepareRecord(credentialRef: String, endpointId: String): ClientBinding.CredentialRecord = synchronized(lock) {
+        val normalizedRef = validateRef(credentialRef)
+        val newlyCreated = readCredential(normalizedRef, requireGrant = false) == null
+        loadOrCreateIdentity(normalizedRef, endpointId).toPlatformRecord(normalizedRef, newlyCreated)
+    }
 
     /** resolveRecord 返回 public identity 与 bound grant；private seed 不进入 JNI/Go。 */
     fun resolveRecord(credentialRef: String, endpointId: String): ClientBinding.CredentialRecord = synchronized(lock) {
@@ -184,13 +198,14 @@ class AndroidClientAccessCredentialStore(context: Context) {
         }
     }
 
-    private fun AndroidClientAccessCredential.toPlatformRecord(credentialRef: String): ClientBinding.CredentialRecord =
+    private fun AndroidClientAccessCredential.toPlatformRecord(credentialRef: String, newlyCreated: Boolean = false): ClientBinding.CredentialRecord =
         ClientBinding.CredentialRecord.newBuilder()
             .setEndpointId(identity.endpointId)
             .setCredentialRef(credentialRef)
             .setPublicKey(com.google.protobuf.ByteString.copyFrom(identity.publicKey))
             .setKeyFingerprint(identity.fingerprint)
             .setCapabilityGrant(capabilityGrant)
+            .setNewlyCreated(newlyCreated)
             .build()
 
     private fun secretKey(): SecretKey {

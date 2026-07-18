@@ -60,6 +60,7 @@ core
 - `client/runtime.PeerConnector` 是 Local/Direct/SSH/Cloud 的统一 attempt 边界；远程 connector 必须返回同一种 `ReadyPeerSession`。`PairingService` 统一拥有 Endpoint pin、实际 DTLS binding、PairingTicket handshake 和 pairing peer exact-close，Cloud adapter 只拥有 Cloud signaling/ICE。
 - 任一远程 attempt 成功结果必须已经完成 remote auth、Hello，并只通过 generated `apipb` 执行业务 command/event。attachment/file 的内部 framing channel 不属于公共 API，跨语言 binding 必须在 opaque resource 边界重新封装。
 - `client/binding` 只接收 serialized `bindingpb.OpenSessionRequest`、`bindingpb.EngineCommand`、`apipb.CommandEnvelope` 和 `uint64` opaque handle；异步输出统一为 `bindingpb.EventEnvelope`。C/JNI/WASM 共享同一 engine/operation/session registry 与有界事件队列，平台 wrapper 不能建立第二份 handle truth，也不能为 pairing、credential 或其它业务 command 增加专用导出符号。
+- `OpenSessionRequest` 只携带 EndpointID、可选 Route override 和 intent；当前 `EndpointConfigV1` 必须由 Go Client Engine registry 解析。registry get/upsert/delete、pairing import 与 credential lifecycle 都通过同一个 `EngineCommand` 入口，Android/Web 平台只持久化 opaque `EndpointRegistryV1` bytes。
 
 ### Core
 
@@ -152,4 +153,5 @@ proto schema
 - CLI/TUI 必须通过同一 `ClientRuntime/SessionOwner` 使用 local、Direct、SSH 与 managed connector；任何 consumer 不得自行选择 route、缓存 protocol client 或增加 fallback。
 - Android engine 重建通过 Go `SessionGenerationAuthority` 保持进程内 endpoint generation 单调递增；未来 WASM 沿用同一 contract，平台只持有 authority 引用，不生成或缓存 generation 数值。
 - 同一 engine 内，`client/runtime.SessionOwner.AcquireRoute` 让同 endpoint 且连接配置相同的 `OpenSession` 共享一条 Go-owned ready session；binding handle 只持有 consumer lease，`enginehost` 不保存第二份 current-session map。关闭 list/inventory/file/workspace 任一 lease 不关闭底层 session，只有配置变化、显式 generation replacement、lifecycle teardown 或 engine close 才替换底层连接。
+- `enginehost` 是跨端 Endpoint registry 事务 owner：加载后先做 Proto/领域校验，upsert 禁止替换既有 identity pin，pairing 在 credential bind 后提交 registry 且失败时补偿 credential，delete 只清理新 registry 中不再引用的 credential ref。TypeScript/Kotlin 只能缓存只读 projection，不得持久化 `configProto` 或建立 Route 索引。
 - application event 必须按完整 subscription `ResourceHandle`（token、kind、session、generation）关联；session 级 event pump 只是 transport fan-out，consumer 不得把它当作 subscription filter。

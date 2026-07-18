@@ -4,8 +4,9 @@
 
 ## Payloads
 
-- `OpenSession` input is serialized `bindingpb.OpenSessionRequest`.
+- `OpenSession` input is serialized `bindingpb.OpenSessionRequest` containing only endpoint ID, optional route override, and intent. The Go engine resolves the current `EndpointConfigV1` from its registry.
 - Engine-scoped business operations use one serialized `bindingpb.EngineCommand` entry point.
+- Registry get/upsert/delete and pairing import are `EngineCommand` variants; JNI/WASM must not add command-specific bridge operations.
 - `Execute` input is serialized `apipb.CommandEnvelope`.
 - `NextEvent` output is serialized `bindingpb.EventEnvelope`.
 - Business commands, results, events, errors, cancellation, and daemon resources remain generated Proto contracts.
@@ -32,6 +33,8 @@ ABI v3 removed pairing and credential-specific exports. The ABI must not add com
 ## Platform Primitives
 
 - Android and Web both use `enginehost.Host` for endpoint generation, route opening, credential resolution, remote auth, Hello, Proto API, session, and resource ownership.
+- `enginehost.Host` owns the normalized Endpoint registry and serializes all registry transactions. Android SharedPreferences and browser IndexedDB only load/store opaque `EndpointRegistryV1` bytes and cannot index, merge, or select Routes.
+- Pairing publishes a registry snapshot only after credential bind succeeds. Registry persistence failure restores or deletes the prepared credential; endpoint deletion submits the new registry and unreferenced credential refs through one platform transaction.
 - Matching `OpenSession` requests call `client/runtime.SessionOwner.AcquireRoute` and share the same underlying ready session. Each binding session handle is a consumer lease; `enginehost` keeps no parallel current-session registry.
 - Android injects the native Pion peer factory. Web injects `adapter/managed/platform.Factory`, which exchanges serialized `bindingpb.PlatformRequest`, `PlatformResponse`, and `PlatformEvent` with the browser adapter.
 - Browser JavaScript owns only `RTCPeerConnection`, `RTCDataChannel`, WebCrypto/IndexedDB, and page lifecycle primitives. It cannot interpret remote-auth or application payloads.

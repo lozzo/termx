@@ -25,6 +25,17 @@ type CredentialHost interface {
 	DeleteCredential(context.Context, *bindingpb.DeleteCredentialRequest) error
 }
 
+// EndpointRegistryHost 是 binding 对 Go-owned Endpoint registry 的唯一业务入口。
+// 平台只能持久化 opaque Proto bytes；读取、校验、identity 冲突、更新和删除事务必须由实现持有。
+type EndpointRegistryHost interface {
+	// GetEndpointRegistry 返回当前 generation 读取到的规范化 registry projection。
+	GetEndpointRegistry(context.Context, *bindingpb.EndpointRegistryGetRequest) (*bindingpb.EndpointRegistryGetResult, error)
+	// UpsertEndpoint 校验并原子写入一个 generated EndpointConfigV1，禁止替换已 pin 的 daemon identity。
+	UpsertEndpoint(context.Context, *bindingpb.EndpointUpsertRequest) (*bindingpb.EndpointUpsertResult, error)
+	// DeleteEndpoint 原子移除 endpoint 配置，并在提交后清理不再引用的本地 credential。
+	DeleteEndpoint(context.Context, *bindingpb.EndpointDeleteRequest) (*bindingpb.EndpointDeleteResult, error)
+}
+
 // PlatformBroker 是 Go Client Engine 与 Android/WASM platform adapter 之间的 request/response owner。
 // 请求和响应均为 bindingpb，平台通过 NextRequest/Complete 驱动；broker 不解释 Cloud 或 credential 字段。
 type PlatformBroker struct {

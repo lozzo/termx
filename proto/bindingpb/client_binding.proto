@@ -31,7 +31,7 @@ message OpenSessionRequest {
   string endpoint_id = 2;
   string route_override = 3;
   ConnectIntent intent = 4;
-  termx.remote.auth.v1.EndpointConfigV1 endpoint = 5;
+  reserved 5;
 }
 
 message ImportPairingRequest {
@@ -49,6 +49,7 @@ message ImportPairingResult {
   int64 expires_at_unix_nano = 6;
   bool authorization_required = 7;
   termx.api.v1.ApiError error = 8;
+  termx.remote.auth.v1.EndpointRegistryV1 registry = 9;
 }
 
 message DeleteCredentialRequest {
@@ -62,10 +63,49 @@ message DeleteCredentialResult {
   termx.api.v1.ApiError error = 3;
 }
 
+message EndpointRegistryGetRequest { string request_id = 1; }
+
+message EndpointRegistryGetResult {
+  string request_id = 1;
+  uint64 operation_handle = 2;
+  termx.remote.auth.v1.EndpointRegistryV1 registry = 3;
+  termx.api.v1.ApiError error = 4;
+}
+
+message EndpointUpsertRequest {
+  string request_id = 1;
+  termx.remote.auth.v1.EndpointConfigV1 endpoint = 2;
+  bool make_default = 3;
+}
+
+message EndpointUpsertResult {
+  string request_id = 1;
+  uint64 operation_handle = 2;
+  termx.remote.auth.v1.EndpointConfigV1 endpoint = 3;
+  termx.remote.auth.v1.EndpointRegistryV1 registry = 4;
+  termx.api.v1.ApiError error = 5;
+}
+
+message EndpointDeleteRequest {
+  string request_id = 1;
+  string endpoint_id = 2;
+}
+
+message EndpointDeleteResult {
+  string request_id = 1;
+  uint64 operation_handle = 2;
+  string endpoint_id = 3;
+  termx.remote.auth.v1.EndpointRegistryV1 registry = 4;
+  termx.api.v1.ApiError error = 5;
+}
+
 message EngineCommand {
   oneof command {
     ImportPairingRequest import_pairing = 1;
     DeleteCredentialRequest delete_credential = 2;
+    EndpointRegistryGetRequest endpoint_registry_get = 3;
+    EndpointUpsertRequest endpoint_upsert = 4;
+    EndpointDeleteRequest endpoint_delete = 5;
   }
 }
 
@@ -123,6 +163,9 @@ message EventEnvelope {
     DeleteCredentialResult delete_credential = 15;
     ResourceStreamFrame resource_stream_frame = 16;
     ResourceStreamClosedEvent resource_stream_closed = 17;
+    EndpointRegistryGetResult endpoint_registry_get = 18;
+    EndpointUpsertResult endpoint_upsert = 19;
+    EndpointDeleteResult endpoint_delete = 20;
   }
 }
 
@@ -150,6 +193,7 @@ message CredentialRecord {
   bytes public_key = 3;
   string key_fingerprint = 4;
   string capability_grant = 5;
+  bool newly_created = 6;
 }
 
 message CredentialSignRequest {
@@ -158,6 +202,14 @@ message CredentialSignRequest {
 }
 
 message CredentialSignResponse { bytes signature = 1; }
+
+// EndpointRegistryLoad/Store 是平台 opaque blob primitive；平台不得解析 registry 字段或建立第二份索引。
+message EndpointRegistryLoadRequest {}
+message EndpointRegistryStoreRequest {
+  bytes registry_proto = 1;
+  repeated string delete_credential_refs = 2;
+}
+message EndpointRegistryLoaded { bytes registry_proto = 1; }
 
 message SignalingEvents { repeated termx.cloud.v1.SignalingEvent events = 1; }
 
@@ -252,6 +304,8 @@ message PlatformRequest {
     CredentialDeleteRequest credential_delete = 12;
     CredentialSignRequest credential_sign = 13;
     CredentialBindRequest credential_bind = 14;
+    EndpointRegistryLoadRequest endpoint_registry_load = 15;
+    EndpointRegistryStoreRequest endpoint_registry_store = 16;
     termx.cloud.v1.ResolveEndpointRequest cloud_resolve_endpoint = 20;
     termx.cloud.v1.CreateSignalingSessionRequest cloud_create_signaling = 21;
     termx.cloud.v1.AcquireRelayLeaseRequest cloud_acquire_relay = 22;
@@ -276,6 +330,7 @@ message PlatformResponse {
   oneof response {
     CredentialRecord credential = 10;
     CredentialSignResponse credential_sign = 11;
+    EndpointRegistryLoaded endpoint_registry = 12;
     termx.cloud.v1.ResolvedEndpoint cloud_resolved_endpoint = 20;
     SignalingEvents cloud_signaling = 21;
     termx.cloud.v1.RelayLease cloud_relay_lease = 22;

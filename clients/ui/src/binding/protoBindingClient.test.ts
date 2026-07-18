@@ -4,7 +4,8 @@ import { CommandEnvelopeSchema, ResultEnvelopeSchema } from '../generated/apipb/
 import { ApiErrorCode, ApiErrorSchema, EndpointSessionStampSchema, ResourceHandleSchema, ResourceKind } from '../generated/apipb/common_pb'
 import { FileTransferCancelResultSchema, FileTransferHandleSchema, FileTransferOpenResultSchema, FileUploadOpenCommandSchema, FileUploadResumeHandleSchema } from '../generated/apipb/file_pb'
 import { TerminalListCommandSchema } from '../generated/apipb/terminal_pb'
-import { EventEnvelopeSchema, ExecuteResultSchema, OpenSessionRequestSchema, OpenSessionResultSchema, ResourceStreamClosedEventSchema, ResourceStreamFrameSchema, ResourceStreamFrameType, SessionClosedEventSchema } from '../generated/bindingpb/client_binding_pb'
+import { EndpointRegistryGetResultSchema, EngineCommandSchema, EventEnvelopeSchema, ExecuteResultSchema, OpenSessionRequestSchema, OpenSessionResultSchema, ResourceStreamClosedEventSchema, ResourceStreamFrameSchema, ResourceStreamFrameType, SessionClosedEventSchema } from '../generated/bindingpb/client_binding_pb'
+import { EndpointRegistryV1Schema } from '../generated/remoteauthpb/remote_auth_pb'
 import { BindingOperation, ProtoBindingClient, type BindingOperationCode, type ProtoBindingBackend } from './protoBindingClient'
 
 class CancellationBackend implements ProtoBindingBackend {
@@ -44,6 +45,32 @@ describe('ProtoBindingClient cancellation ownership', () => {
     }
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(backend.released).toHaveLength(4100)
+    await client.close()
+  })
+})
+
+describe('ProtoBindingClient engine command boundary', () => {
+  it('queries the Go-owned endpoint registry through one generic command operation', async () => {
+    const backend = new CancellationBackend()
+    backend.request = async (operation, payload, handle) => {
+      if (operation === BindingOperation.ENGINE_COMMAND) {
+        const command = fromBinary(EngineCommandSchema, payload)
+        expect(command.command.case).toBe('endpointRegistryGet')
+        queueMicrotask(() => backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+          event: { case: 'endpointRegistryGet', value: create(EndpointRegistryGetResultSchema, {
+            operationHandle: 1n,
+            registry: create(EndpointRegistryV1Schema, { schemaVersion: 1, defaultEndpointId: 'studio' }),
+          }) },
+        }))))
+        return 1n
+      }
+      if (operation === BindingOperation.RELEASE && handle) backend.released.push(handle)
+      return 0n
+    }
+    const client = new ProtoBindingClient(backend)
+    await expect(client.getEndpointRegistry()).resolves.toMatchObject({ defaultEndpointId: 'studio' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(backend.released).toEqual([1n])
     await client.close()
   })
 })

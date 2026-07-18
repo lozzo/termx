@@ -3,6 +3,7 @@ import { ApiErrorCode, ApiErrorSchema } from '../generated/apipb/common_pb'
 import {
   CredentialRecordSchema,
   CredentialSignResponseSchema,
+  EndpointRegistryLoadedSchema,
   PlatformEventSchema,
   PlatformRequestSchema,
   PlatformResponseSchema,
@@ -36,8 +37,9 @@ import { splitOutAnswerCandidates } from '../webrtc/rtcSdpUtils'
 import type { WasmPlatformDispatcher } from './wasmRuntime'
 
 const DATABASE_NAME = 'termx-web-client'
-const DATABASE_VERSION = 1
+const DATABASE_VERSION = 2
 const CREDENTIAL_STORE = 'credentials'
+const ENDPOINT_REGISTRY_STORE = 'endpoint-registry'
 const CHANNEL_LABEL = 'protocol'
 
 export interface BrowserCloudPlatform {
@@ -52,6 +54,7 @@ export type BrowserPlatformDiagnostic = (stage: string) => void
 /** BrowserWasmPlatform is the only JS owner of browser-only WebRTC and WebCrypto primitives. */
 export class BrowserWasmPlatform implements WasmPlatformDispatcher {
   private readonly credentials = new BrowserCredentialStore()
+  private readonly endpointRegistry = new BrowserEndpointRegistryStore()
   private readonly peers: BrowserPeerStore
   private closed = false
 
@@ -113,6 +116,11 @@ export class BrowserWasmPlatform implements WasmPlatformDispatcher {
           case: 'credentialSign',
           value: create(CredentialSignResponseSchema, { signature: await this.credentials.sign(request.request.value.credentialRef, request.request.value.payload) }),
         }
+      case 'endpointRegistryLoad':
+        return { case: 'endpointRegistry', value: create(EndpointRegistryLoadedSchema, { registryProto: await this.endpointRegistry.load() }) }
+      case 'endpointRegistryStore':
+        await this.endpointRegistry.store(request.request.value.registryProto, request.request.value.deleteCredentialRefs)
+        return { case: undefined }
       case 'cloudResolveEndpoint':
         return await this.cloud.resolveEndpoint(request.request.value)
       case 'cloudCreateSignaling':
@@ -178,7 +186,7 @@ class BrowserCredentialStore {
       capabilityGrant: '',
     }
     await this.write(record)
-    return credentialRecord(record)
+    return credentialRecord(record, true)
   }
 
   async resolve(endpointId: string, credentialRef: string): Promise<CredentialRecord> {
@@ -215,6 +223,24 @@ class BrowserCredentialStore {
   private async write(record: StoredCredential): Promise<void> {
     const db = await openCredentialDatabase()
     await transactionResult(db.transaction(CREDENTIAL_STORE, 'readwrite').objectStore(CREDENTIAL_STORE).put(record))
+  }
+}
+
+class BrowserEndpointRegistryStore {
+  async load(): Promise<Uint8Array> {
+    const db = await openCredentialDatabase()
+    const value = await transactionResult<ArrayBuffer | undefined>(db.transaction(ENDPOINT_REGISTRY_STORE).objectStore(ENDPOINT_REGISTRY_STORE).get('registry'))
+    return value ? new Uint8Array(value.slice(0)) : new Uint8Array()
+  }
+
+  async store(registryProto: Uint8Array, deleteCredentialRefs: string[]): Promise<void> {
+    if (registryProto.byteLength === 0 || registryProto.byteLength > 1 << 20) throw new Error('browser endpoint registry payload size is invalid')
+    const db = await openCredentialDatabase()
+    const transaction = db.transaction([ENDPOINT_REGISTRY_STORE, CREDENTIAL_STORE], 'readwrite')
+    transaction.objectStore(ENDPOINT_REGISTRY_STORE).put(registryProto.slice().buffer, 'registry')
+    const credentials = transaction.objectStore(CREDENTIAL_STORE)
+    for (const credentialRef of new Set(deleteCredentialRefs)) credentials.delete(credentialRef)
+    await transactionCompletion(transaction)
   }
 }
 
@@ -390,13 +416,14 @@ class BrowserPeerStore {
   }
 }
 
-function credentialRecord(record: StoredCredential): CredentialRecord {
+function credentialRecord(record: StoredCredential, newlyCreated = false): CredentialRecord {
   return create(CredentialRecordSchema, {
     endpointId: record.endpointId,
     credentialRef: record.credentialRef,
     publicKey: new Uint8Array(record.publicKey.slice(0)),
     keyFingerprint: record.keyFingerprint,
     capabilityGrant: record.capabilityGrant,
+    newlyCreated,
   })
 }
 
@@ -408,11 +435,20 @@ function openCredentialDatabase(): Promise<IDBDatabase> {
     const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION)
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(CREDENTIAL_STORE)) request.result.createObjectStore(CREDENTIAL_STORE, { keyPath: 'credentialRef' })
+      if (!request.result.objectStoreNames.contains(ENDPOINT_REGISTRY_STORE)) request.result.createObjectStore(ENDPOINT_REGISTRY_STORE)
     }
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error ?? new Error('browser credential database failed'))
   })
   return credentialDatabase
+}
+
+function transactionCompletion(transaction: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => reject(transaction.error ?? new Error('browser endpoint registry transaction failed'))
+    transaction.onabort = () => reject(transaction.error ?? new Error('browser endpoint registry transaction aborted'))
+  })
 }
 
 function transactionResult<T = undefined>(request: IDBRequest<T>): Promise<T> {

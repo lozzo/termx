@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { App as CapApp } from '@capacitor/app'
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { Keyboard } from '@capacitor/keyboard'
-import { create, fromBinary, toBinary } from '@bufbuild/protobuf'
+import { create } from '@bufbuild/protobuf'
 import { Html5Qrcode } from 'html5-qrcode'
 import {
   RemoteControlApp,
@@ -29,7 +29,6 @@ import type {
   RtcConnectionStateSnapshot,
   RtcEvent,
   RtcSubscription,
-  StoredMachineRecord,
   TerminalInventoryEvents,
   WebControlMachine,
   RemoteControlAppProps,
@@ -66,15 +65,30 @@ type NativeSessionLease = ProtoClientSession
 
 export function TermxApp() {
   useAndroidBackButton()
-  useAppResumeSync()
   useNativeKeyboardEvents()
   useNativeStatusBarSync()
 
   const networkRuntime = useMemo(() => createNativeNetworkRuntime(), [])
-  const nativeAppRuntime = useMemo(() => createNativeAppRuntime(), [])
+  const endpointRegistry = useMemo(() => new NativeEndpointRegistryProjection(), [])
+  const [registryReady, setRegistryReady] = useState(false)
+  const [registryError, setRegistryError] = useState<string | null>(null)
+  const refreshRegistry = useCallback(async () => {
+    try {
+      await endpointRegistry.reload()
+      if (networkRuntime.storage) syncRegistryMachineProjection(networkRuntime.storage, endpointRegistry.snapshot())
+      setRegistryError(null)
+      setRegistryReady(true)
+    } catch (error) {
+      setRegistryError(error instanceof Error ? error.message : String(error))
+      setRegistryReady(false)
+    }
+  }, [endpointRegistry, networkRuntime])
+  useEffect(() => { void refreshRegistry() }, [refreshRegistry])
+  useAppResumeSync(refreshRegistry)
+  const nativeAppRuntime = useMemo(() => createNativeAppRuntime(endpointRegistry), [endpointRegistry])
   const externalPairingAdapter = useMemo(
-    () => networkRuntime.storage ? createNativeExternalPairingAdapter(networkRuntime.storage) : undefined,
-    [networkRuntime],
+    () => createNativeExternalPairingAdapter(endpointRegistry),
+    [endpointRegistry],
   )
   const cloudAccountAdapter = useMemo<CloudAccountAdapter>(() => ({
     async current() {
@@ -114,6 +128,10 @@ export function TermxApp() {
     [nativeAppRuntime],
   )
 
+  if (!registryReady) {
+    return <section className="termx-app-page flex h-[100dvh] w-screen items-center justify-center bg-[var(--termx-app-bg)] text-sm text-red-600">{registryError ?? ''}</section>
+  }
+
   return (
     <section className="termx-app-page flex h-[100dvh] w-screen flex-col overflow-hidden antialiased">
       <RemoteControlApp
@@ -130,8 +148,7 @@ export function TermxApp() {
   )
 }
 
-function createNativeExternalPairingAdapter(storage: RemoteRuntimeStorage): ExternalPairingAdapter {
-  const key = (machineId: string, field: string) => `termx.endpoint.${machineId}.${field}`
+function createNativeExternalPairingAdapter(registry: NativeEndpointRegistryProjection): ExternalPairingAdapter {
   return {
     async import(rawValue, expectedMachineId) {
 	  const imported = await goBindingClient.importPairing(create(TermxClientBinding.ImportPairingRequestSchema, {
@@ -142,33 +159,67 @@ function createNativeExternalPairingAdapter(storage: RemoteRuntimeStorage): Exte
 	  const endpoint = imported.endpoint
 	  if (!endpoint?.endpointId || !endpoint.identity || endpoint.routes.length === 0) return null
 	  const expiresAt = new Date(Number(imported.expiresAtUnixNano / 1_000_000n)).toISOString()
-	  storage.setItem(key(endpoint.endpointId, 'configProto'), bytesToBase64(toBinary(TermxRemoteAuth.EndpointConfigV1Schema, endpoint)))
-	  storage.setItem(key(endpoint.endpointId, 'grantExpiresAt'), expiresAt)
+	  registry.replace(imported.registry ?? await goBindingClient.getEndpointRegistry())
+	  registry.setAuthorizationExpiry(endpoint.endpointId, expiresAt)
       return {
 		machine: { id: endpoint.endpointId, name: endpoint.label || endpoint.endpointId, accessClass: 'local' },
 		expiresAt,
       }
     },
     isAuthorized(machineId) {
-      return Boolean(
-		storage.getItem(key(machineId, 'configProto'))?.trim(),
-      )
+	  return registry.has(machineId)
     },
     authorizationExpiresAt(machineId) {
-      return storage.getItem(key(machineId, 'grantExpiresAt'))?.trim() || undefined
+	  return registry.authorizationExpiry(machineId)
     },
     async forget(machineId) {
-	  const config = loadEndpointConfig(storage.getItem(key(machineId, 'configProto')))
-	  const credentialRefs = config?.routes.map((route) => route.credentialRef.trim()).filter(Boolean) ?? []
-	  storage.removeItem(key(machineId, 'configProto'))
-	  storage.removeItem(key(machineId, 'grantExpiresAt'))
-	  for (const credentialRef of credentialRefs) {
-		await goBindingClient.deleteCredential(create(TermxClientBinding.DeleteCredentialRequestSchema, {
-		  requestId: crypto.randomUUID(),
-		  credentialRef,
-		}))
-	  }
+	  const deleted = await goBindingClient.deleteEndpoint(machineId)
+	  if (deleted.registry) registry.replace(deleted.registry)
+	  registry.setAuthorizationExpiry(machineId, undefined)
     },
+  }
+}
+
+/** NativeEndpointRegistryProjection 是 Go registry 的只读 UI projection，不执行字段合并或持久化。 */
+class NativeEndpointRegistryProjection {
+  private registry = create(TermxRemoteAuth.EndpointRegistryV1Schema, { schemaVersion: 1 })
+  private readonly expiries = new Map<string, string>()
+  private versionValue = 0
+
+  async reload(): Promise<void> { this.replace(await goBindingClient.getEndpointRegistry()) }
+
+  replace(registry: TermxRemoteAuth.EndpointRegistryV1): void {
+    this.registry = create(TermxRemoteAuth.EndpointRegistryV1Schema, registry)
+    this.versionValue += 1
+  }
+
+  snapshot(): TermxRemoteAuth.EndpointRegistryV1 { return create(TermxRemoteAuth.EndpointRegistryV1Schema, this.registry) }
+  has(endpointId: string): boolean { return this.registry.endpoints.some((endpoint) => endpoint.endpointId === endpointId) }
+  version(): number { return this.versionValue }
+  authorizationExpiry(endpointId: string): string | undefined { return this.expiries.get(endpointId) }
+  setAuthorizationExpiry(endpointId: string, expiresAt: string | undefined): void {
+    if (expiresAt) this.expiries.set(endpointId, expiresAt)
+    else this.expiries.delete(endpointId)
+  }
+}
+
+function syncRegistryMachineProjection(storage: RemoteRuntimeStorage, registry: TermxRemoteAuth.EndpointRegistryV1): void {
+  const store = createMachineStore({ storage })
+  const now = new Date().toISOString()
+  for (const endpoint of registry.endpoints) {
+    const existing = store.getMachine(endpoint.endpointId)
+    store.saveMachine({
+      machineId: endpoint.endpointId,
+      name: endpoint.label || existing?.name || endpoint.endpointId,
+      state: existing?.state ?? 'offline',
+      terminalCount: existing?.terminalCount ?? 0,
+      source: existing?.source ?? 'manual',
+      accessClass: existing?.accessClass ?? 'local',
+      addresses: existing?.addresses ?? { local: [], lan: [], public: [] },
+      endpoints: existing?.endpoints ?? {},
+      addedAt: existing?.addedAt ?? now,
+      updatedAt: now,
+    })
   }
 }
 
@@ -202,7 +253,7 @@ function useNativeKeyboardEvents(): void {
 }
 
 /** When the app resumes from background, trigger a sync request on all active sessions. */
-function useAppResumeSync(): void {
+function useAppResumeSync(refreshRegistry: () => Promise<void>): void {
   useEffect(() => {
     const promise = CapApp.addListener('appStateChange', (state) => {
       if (!state.isActive) {
@@ -212,12 +263,13 @@ function useAppResumeSync(): void {
 		const staleClient = goBindingClient
 		goBindingClient = new GoBindingClient()
 		await staleClient.close()
+		await refreshRegistry()
         // Native 已创建新 generation 后再通知 UI；冻结前的 session/resource handle 不得继续使用。
         document.dispatchEvent(new Event('termx:resume'))
 	  })
     })
     return () => { void promise.then((sub) => sub.remove()) }
-  }, [])
+  }, [refreshRegistry])
 }
 
 function useAndroidBackButton(): void {
@@ -451,28 +503,7 @@ function browserStorage(): RemoteRuntimeStorage | undefined {
   return storage
 }
 
-function loadEndpointConfig(encoded: string | null | undefined): TermxRemoteAuth.EndpointConfigV1 | null {
-	const normalized = encoded?.trim()
-	if (!normalized) return null
-	try {
-		return fromBinary(TermxRemoteAuth.EndpointConfigV1Schema, base64ToBytes(normalized))
-	} catch {
-		return null
-	}
-}
-
-function bytesToBase64(value: Uint8Array): string {
-	let binary = ''
-	for (const byte of value) binary += String.fromCharCode(byte)
-	return btoa(binary)
-}
-
-function base64ToBytes(value: string): Uint8Array {
-	const binary = atob(value)
-	return Uint8Array.from(binary, (character) => character.charCodeAt(0))
-}
-
-function createNativeAppRuntime(): {
+function createNativeAppRuntime(endpointRegistry: NativeEndpointRegistryProjection): {
   createMachineRuntime: MachineRuntimeFactory
   fileTransfer: FileTransferContext
 } {
@@ -485,7 +516,7 @@ function createNativeAppRuntime(): {
   return {
     fileTransfer: createFileTransferContext(undefined, transferStore),
     createMachineRuntime(input) {
-      return createNativeMachineRuntime(input.machine, input.storage, {
+      return createNativeMachineRuntime(input.machine, input.storage, endpointRegistry, {
         sessionManagers,
         transferStore,
       })
@@ -496,6 +527,7 @@ function createNativeAppRuntime(): {
 function createNativeMachineRuntime(
   machine: WebControlMachine,
   storage: RemoteRuntimeStorage,
+  endpointRegistry: NativeEndpointRegistryProjection,
   shared: {
     sessionManagers: Map<string, NativeSessionEntry>
     transferStore: NativeFileTransferStore
@@ -505,13 +537,13 @@ function createNativeMachineRuntime(
   const storedMachine = machineStore.getMachine(machine.id)
   const endpointIdentity = [
     machine.id,
-	storage.getItem(`termx.endpoint.${machine.id}.configProto`)?.trim() ?? '',
+	endpointRegistry.version(),
   ].join('|')
   let entry = shared.sessionManagers.get(machine.id)
   if (!entry || entry.endpointIdentity !== endpointIdentity) {
     void entry?.manager.reset().catch(() => {})
     void entry?.connector.release?.(machine.id).catch(() => {})
-    const connector = createNativeConnector(machine, storedMachine, storage)
+    const connector = createNativeConnector(machine, endpointRegistry)
     entry = {
       endpointIdentity,
       connector,
@@ -631,11 +663,9 @@ function createFileTransferContext(machineId: string | undefined, store: NativeF
 
 function createNativeConnector(
   machine: WebControlMachine,
-  _storedMachine: StoredMachineRecord | null,
-  storage: RemoteRuntimeStorage,
+  endpointRegistry: NativeEndpointRegistryProjection,
 ): NativeConnector {
-	const endpoint = loadEndpointConfig(storage.getItem(`termx.endpoint.${machine.id}.configProto`))
-	if (!endpoint || endpoint.endpointId !== machine.id || !endpoint.identity || endpoint.routes.length === 0) {
+	if (!endpointRegistry.has(machine.id)) {
     return {
       async connect() {
 		throw new Error('Endpoint requires a valid Proto configuration from the pairing flow')
@@ -644,7 +674,7 @@ function createNativeConnector(
   }
 
   const connector = new GoBindingConnector(() => goBindingClient, {
-	endpoint,
+	endpointId: machine.id,
   })
   return {
     connect: (target, options) => connector.connect(target, options),

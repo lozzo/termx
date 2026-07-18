@@ -31,9 +31,71 @@ func (engine *Engine) EngineCommand(payload []byte) (uint64, error) {
 			return 0, err
 		}
 		return engine.DeleteCredential(encoded)
+	case *bindingpb.EngineCommand_EndpointRegistryGet:
+		return engine.startEndpointRegistryGet(value.EndpointRegistryGet)
+	case *bindingpb.EngineCommand_EndpointUpsert:
+		return engine.startEndpointUpsert(value.EndpointUpsert)
+	case *bindingpb.EngineCommand_EndpointDelete:
+		return engine.startEndpointDelete(value.EndpointDelete)
 	default:
 		return 0, fmt.Errorf("engine command is required")
 	}
+}
+
+func (engine *Engine) registryHost() (EndpointRegistryHost, error) {
+	host, ok := engine.host.(EndpointRegistryHost)
+	if !ok {
+		return nil, fmt.Errorf("binding host does not support endpoint registry operations")
+	}
+	return host, nil
+}
+
+func (engine *Engine) startEndpointRegistryGet(request *bindingpb.EndpointRegistryGetRequest) (uint64, error) {
+	if request == nil || request.GetRequestId() == "" {
+		return 0, fmt.Errorf("endpoint registry get request is incomplete")
+	}
+	host, err := engine.registryHost()
+	if err != nil {
+		return 0, err
+	}
+	handle, operationContext, err := engine.startOperation()
+	if err != nil {
+		return 0, err
+	}
+	go engine.runEndpointRegistryGet(handle, operationContext, host, proto.Clone(request).(*bindingpb.EndpointRegistryGetRequest))
+	return handle, nil
+}
+
+func (engine *Engine) startEndpointUpsert(request *bindingpb.EndpointUpsertRequest) (uint64, error) {
+	if request == nil || request.GetRequestId() == "" || request.GetEndpoint() == nil {
+		return 0, fmt.Errorf("endpoint upsert request is incomplete")
+	}
+	host, err := engine.registryHost()
+	if err != nil {
+		return 0, err
+	}
+	handle, operationContext, err := engine.startOperation()
+	if err != nil {
+		return 0, err
+	}
+	go engine.runEndpointUpsert(handle, operationContext, host, proto.Clone(request).(*bindingpb.EndpointUpsertRequest))
+	return handle, nil
+}
+
+func (engine *Engine) startEndpointDelete(request *bindingpb.EndpointDeleteRequest) (uint64, error) {
+	if request == nil || request.GetRequestId() == "" || request.GetEndpointId() == "" {
+		return 0, fmt.Errorf("endpoint delete request is incomplete")
+	}
+	host, err := engine.registryHost()
+	if err != nil {
+		return 0, err
+	}
+	handle, operationContext, err := engine.startOperation()
+	if err != nil {
+		return 0, err
+	}
+	go engine.runEndpointDelete(handle, operationContext, host, proto.Clone(request).(*bindingpb.EndpointDeleteRequest))
+	return handle, nil
 }
 
 // ImportPairing 解析 bindingpb.ImportPairingRequest 并异步请求可选 PairingHost。
@@ -117,4 +179,58 @@ func (engine *Engine) runDeleteCredential(handle uint64, ctx context.Context, ho
 		result.Error = apiError(err)
 	}
 	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_DeleteCredential{DeleteCredential: result}})
+}
+
+func (engine *Engine) runEndpointRegistryGet(handle uint64, ctx context.Context, host EndpointRegistryHost, request *bindingpb.EndpointRegistryGetRequest) {
+	result, err := host.GetEndpointRegistry(ctx, request)
+	if ctx.Err() != nil {
+		result, err = nil, ctx.Err()
+	}
+	engine.markOperationDone(handle)
+	if result == nil {
+		result = &bindingpb.EndpointRegistryGetResult{}
+	} else {
+		result = proto.Clone(result).(*bindingpb.EndpointRegistryGetResult)
+	}
+	result.RequestId, result.OperationHandle = request.GetRequestId(), handle
+	if err != nil {
+		result.Error = apiError(err)
+	}
+	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_EndpointRegistryGet{EndpointRegistryGet: result}})
+}
+
+func (engine *Engine) runEndpointUpsert(handle uint64, ctx context.Context, host EndpointRegistryHost, request *bindingpb.EndpointUpsertRequest) {
+	result, err := host.UpsertEndpoint(ctx, request)
+	if ctx.Err() != nil {
+		result, err = nil, ctx.Err()
+	}
+	engine.markOperationDone(handle)
+	if result == nil {
+		result = &bindingpb.EndpointUpsertResult{}
+	} else {
+		result = proto.Clone(result).(*bindingpb.EndpointUpsertResult)
+	}
+	result.RequestId, result.OperationHandle = request.GetRequestId(), handle
+	if err != nil {
+		result.Error = apiError(err)
+	}
+	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_EndpointUpsert{EndpointUpsert: result}})
+}
+
+func (engine *Engine) runEndpointDelete(handle uint64, ctx context.Context, host EndpointRegistryHost, request *bindingpb.EndpointDeleteRequest) {
+	result, err := host.DeleteEndpoint(ctx, request)
+	if ctx.Err() != nil {
+		result, err = nil, ctx.Err()
+	}
+	engine.markOperationDone(handle)
+	if result == nil {
+		result = &bindingpb.EndpointDeleteResult{}
+	} else {
+		result = proto.Clone(result).(*bindingpb.EndpointDeleteResult)
+	}
+	result.RequestId, result.OperationHandle = request.GetRequestId(), handle
+	if err != nil {
+		result.Error = apiError(err)
+	}
+	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_EndpointDelete{EndpointDelete: result}})
 }

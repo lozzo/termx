@@ -91,12 +91,12 @@ async function run(): Promise<void> {
 }
 
 async function openAndProve(client: ProtoBindingClient, proveEvent = true): Promise<{ generation: bigint; fingerprint: string; observedEvent: boolean }> {
+  await client.upsertEndpoint(managedEndpointConfig(), true)
   const session = await client.openSession(create(OpenSessionRequestSchema, {
     requestId: crypto.randomUUID(),
     endpointId,
     routeOverride: 'managed',
     intent: ConnectIntent.INTERACTIVE,
-    endpoint: managedEndpointConfig(),
   }))
   const generation = session.stamp.generation
 
@@ -132,7 +132,6 @@ async function openAndProve(client: ProtoBindingClient, proveEvent = true): Prom
     const controller = new AbortController()
     const cancelled = client.openSession(create(OpenSessionRequestSchema, {
       requestId: crypto.randomUUID(), endpointId, routeOverride: 'managed', intent: ConnectIntent.PROBE,
-      endpoint: managedEndpointConfig(),
     }), controller.signal)
     controller.abort(new DOMException('cancel proof', 'AbortError'))
     await cancelled.then(() => { throw new Error('WASM cancel proof unexpectedly opened a session') }, () => undefined)

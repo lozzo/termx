@@ -109,6 +109,15 @@ func TestEnginePairingAndCredentialOperationsUseGenericEvents(t *testing.T) {
 	if deleteEvent.GetDeleteCredential().GetOperationHandle() != deleteOperation || deleteEvent.GetDeleteCredential().GetError() != nil || host.deleted != "credential:studio" {
 		t.Fatalf("delete event = %#v deleted=%q", deleteEvent, host.deleted)
 	}
+	registryPayload, _ := proto.Marshal(&bindingpb.EngineCommand{Command: &bindingpb.EngineCommand_EndpointRegistryGet{EndpointRegistryGet: &bindingpb.EndpointRegistryGetRequest{RequestId: "registry-1"}}})
+	registryOperation, err := engine.EngineCommand(registryPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registryEvent := nextBindingEvent(t, engine)
+	if registryEvent.GetEndpointRegistryGet().GetOperationHandle() != registryOperation || registryEvent.GetEndpointRegistryGet().GetRegistry().GetDefaultEndpointId() != "studio" {
+		t.Fatalf("registry event = %#v", registryEvent)
+	}
 }
 
 type extendedBindingHost struct {
@@ -125,5 +134,18 @@ func (host *extendedBindingHost) DeleteCredential(_ context.Context, request *bi
 	return nil
 }
 
+func (host *extendedBindingHost) GetEndpointRegistry(context.Context, *bindingpb.EndpointRegistryGetRequest) (*bindingpb.EndpointRegistryGetResult, error) {
+	return &bindingpb.EndpointRegistryGetResult{Registry: &remoteauthpb.EndpointRegistryV1{DefaultEndpointId: "studio"}}, nil
+}
+
+func (host *extendedBindingHost) UpsertEndpoint(_ context.Context, request *bindingpb.EndpointUpsertRequest) (*bindingpb.EndpointUpsertResult, error) {
+	return &bindingpb.EndpointUpsertResult{Endpoint: request.GetEndpoint()}, nil
+}
+
+func (host *extendedBindingHost) DeleteEndpoint(_ context.Context, request *bindingpb.EndpointDeleteRequest) (*bindingpb.EndpointDeleteResult, error) {
+	return &bindingpb.EndpointDeleteResult{EndpointId: request.GetEndpointId()}, nil
+}
+
 var _ PairingHost = (*extendedBindingHost)(nil)
 var _ CredentialHost = (*extendedBindingHost)(nil)
+var _ EndpointRegistryHost = (*extendedBindingHost)(nil)

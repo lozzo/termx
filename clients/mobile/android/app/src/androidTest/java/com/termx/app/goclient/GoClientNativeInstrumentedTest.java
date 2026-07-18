@@ -24,6 +24,7 @@ import termx.api.v1.Common;
 import termx.api.v1.Events;
 import termx.api.v1.Storage;
 import termx.client.binding.v1.ClientBinding;
+import termx.remote.auth.v1.RemoteAuth;
 
 /** GoClientNativeInstrumentedTest 在 APK 进程中证明 Go/Pion/auth/Hello/API/event/cancel/close 纵向链路。 */
 @RunWith(AndroidJUnit4.class)
@@ -192,6 +193,80 @@ public final class GoClientNativeInstrumentedTest {
         } finally {
             GoClientNative.INSTANCE.close(secondEngine);
         }
+    }
+
+    @Test
+    public void endpointRegistrySurvivesProductionEngineRecreation() throws Exception {
+        String endpointId = "android-registry-test";
+        AndroidGoClientEngine first = new AndroidGoClientEngine(ApplicationProvider.getApplicationContext());
+        try {
+            long operation = GoClientNative.INSTANCE.engineCommand(first.getHandle(),
+                    ClientBinding.EngineCommand.newBuilder()
+                            .setEndpointUpsert(ClientBinding.EndpointUpsertRequest.newBuilder()
+                                    .setRequestId("registry-upsert")
+                                    .setEndpoint(testEndpoint(endpointId)))
+                            .build().toByteArray());
+            ClientBinding.EventEnvelope event = next(first.getHandle());
+            assertTrue(event.toString(), event.hasEndpointUpsert());
+            assertEquals(operation, event.getEndpointUpsert().getOperationHandle());
+            assertEquals(endpointId, event.getEndpointUpsert().getEndpoint().getEndpointId());
+            GoClientNative.INSTANCE.release(first.getHandle(), operation);
+        } finally {
+            first.close();
+        }
+
+        AndroidGoClientEngine second = new AndroidGoClientEngine(ApplicationProvider.getApplicationContext());
+        try {
+            long operation = GoClientNative.INSTANCE.engineCommand(second.getHandle(),
+                    ClientBinding.EngineCommand.newBuilder()
+                            .setEndpointRegistryGet(ClientBinding.EndpointRegistryGetRequest.newBuilder()
+                                    .setRequestId("registry-get"))
+                            .build().toByteArray());
+            ClientBinding.EventEnvelope event = next(second.getHandle());
+            assertTrue(event.toString(), event.hasEndpointRegistryGet());
+            assertTrue(event.getEndpointRegistryGet().getRegistry().getEndpointsList().stream()
+                    .anyMatch(endpoint -> endpointId.equals(endpoint.getEndpointId())));
+            GoClientNative.INSTANCE.release(second.getHandle(), operation);
+
+            long deleteOperation = GoClientNative.INSTANCE.engineCommand(second.getHandle(),
+                    ClientBinding.EngineCommand.newBuilder()
+                            .setEndpointDelete(ClientBinding.EndpointDeleteRequest.newBuilder()
+                                    .setRequestId("registry-delete")
+                                    .setEndpointId(endpointId))
+                            .build().toByteArray());
+            ClientBinding.EventEnvelope deleted = next(second.getHandle());
+            assertTrue(deleted.toString(), deleted.hasEndpointDelete());
+            assertEquals(deleteOperation, deleted.getEndpointDelete().getOperationHandle());
+            GoClientNative.INSTANCE.release(second.getHandle(), deleteOperation);
+        } finally {
+            second.close();
+        }
+    }
+
+    private static RemoteAuth.EndpointConfigV1 testEndpoint(String endpointId) {
+        RemoteAuth.EndpointRouteConfigV1 route = RemoteAuth.EndpointRouteConfigV1.newBuilder()
+                .setSchemaVersion(1)
+                .setRouteId("direct")
+                .setEnabled(true)
+                .setCredentialRef("android-registry-test")
+                .setSource(RemoteAuth.EndpointSource.ENDPOINT_SOURCE_BOOTSTRAP)
+                .setPolicySource(RemoteAuth.EndpointSource.ENDPOINT_SOURCE_BOOTSTRAP)
+                .setDirectWebrtcTcp(RemoteAuth.DirectWebRTCTCPRouteConfig.newBuilder()
+                        .addSignalingAddresses("127.0.0.1:41120")
+                        .addIceTcpAddresses("127.0.0.1:41121"))
+                .build();
+        return RemoteAuth.EndpointConfigV1.newBuilder()
+                .setSchemaVersion(1)
+                .setEndpointId(endpointId)
+                .setLabel("Android registry test")
+                .setLabelSource(RemoteAuth.EndpointSource.ENDPOINT_SOURCE_USER)
+                .setIdentity(RemoteAuth.EndpointDaemonIdentity.newBuilder()
+                        .setDeviceId("daemon-android-registry-test")
+                        .setDeviceFingerprint("ed25519-sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"))
+                .setConnectMode(RemoteAuth.EndpointConnectMode.ENDPOINT_CONNECT_MODE_ON_DEMAND)
+                .setEnabled(true)
+                .addRoutes(route)
+                .build();
     }
 
     private static ClientBinding.EventEnvelope next(long engine) throws Exception {
