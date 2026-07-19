@@ -1,5 +1,5 @@
 import { registerPlugin } from '@capacitor/core'
-import type { Plugin } from '@capacitor/core'
+import type { Plugin, PluginListenerHandle } from '@capacitor/core'
 
 export type NativeRelayMode = 'auto' | 'direct' | 'relay_only' | 'smart_route'
 
@@ -38,6 +38,7 @@ export interface NativeCloudDevice {
 }
 
 export interface NativeConnectionPlugin extends Plugin {
+  addListener(eventName: 'generationChanged', listener: (event: { reason: string }) => void): Promise<PluginListenerHandle>
   cloudBeginActivation(): Promise<NativeCloudActivation>
   cloudClaimActivation(opts: { payload: string }): Promise<NativeCloudActivation>
   cloudAwaitActivation(): Promise<NativeCloudAccount>

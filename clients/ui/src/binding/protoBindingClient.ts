@@ -47,6 +47,7 @@ export class ProtoBindingClient {
   private readonly endpointDeleteOperations = new Map<bigint, PendingOperation<TermxClientBinding.EndpointDeleteResult>>()
   private readonly endpointShareReceiveOperations = new Map<bigint, PendingOperation<TermxClientBinding.EndpointShareReceiveResult>>()
   private readonly endpointShareCommitOperations = new Map<bigint, PendingOperation<TermxClientBinding.EndpointShareCommitResult>>()
+  private readonly sshCredentialProvisionOperations = new Map<bigint, PendingOperation<TermxClientBinding.SSHCredentialProvisionResult>>()
   private readonly sessions = new Map<bigint, ProtoBindingSession>()
   private readonly streams = new Map<bigint, ProtoBindingResourceStream>()
   private readonly earlyOperationEvents = new Map<bigint, TermxClientBinding.EventEnvelope>()
@@ -108,6 +109,12 @@ export class ProtoBindingClient {
     const request = create(TermxClientBinding.EndpointShareCommitRequestSchema, { requestId: crypto.randomUUID(), importToken })
     const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'endpointShareCommit', value: request } }), signal)
     return await this.waitOperation(this.endpointShareCommitOperations, operation, signal)
+  }
+
+  async provisionSSHCredential(endpointId: string, routeId: string, signal?: AbortSignal): Promise<TermxClientBinding.SSHCredentialProvisionResult> {
+    const request = create(TermxClientBinding.SSHCredentialProvisionRequestSchema, { requestId: crypto.randomUUID(), endpointId, routeId })
+    const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'sshCredentialProvision', value: request } }), signal)
+    return await this.waitOperation(this.sshCredentialProvisionOperations, operation, signal)
   }
 
   private async engineCommand(command: TermxClientBinding.EngineCommand, signal?: AbortSignal): Promise<bigint> {
@@ -316,6 +323,18 @@ export class ProtoBindingClient {
         void this.release(event.value.operationHandle)
         return
       }
+      case 'sshCredentialProvision': {
+        const pending = this.sshCredentialProvisionOperations.get(event.value.operationHandle)
+        if (!pending) return
+        this.sshCredentialProvisionOperations.delete(event.value.operationHandle)
+        if (event.value.error || !event.value.endpoint || !event.value.registry || !event.value.authorizedKey) {
+          pending.reject(apiError(event.value.error, 'SSH credential provision failed'))
+        } else {
+          pending.resolve(event.value)
+        }
+        void this.release(event.value.operationHandle)
+        return
+      }
       case 'application':
         this.sessions.get(event.value.sessionHandle)?.publish(event.value.event)
         return
@@ -368,6 +387,7 @@ export class ProtoBindingClient {
       case 'endpointDelete': return this.endpointDeleteOperations.has(handle)
       case 'endpointShareReceive': return this.endpointShareReceiveOperations.has(handle)
       case 'endpointShareCommit': return this.endpointShareCommitOperations.has(handle)
+      case 'sshCredentialProvision': return this.sshCredentialProvisionOperations.has(handle)
       default: return true
     }
   }
@@ -385,7 +405,7 @@ export class ProtoBindingClient {
   }
 
   private rejectAll(error: Error): void {
-    for (const registry of [this.openOperations, this.executeOperations, this.importOperations, this.deleteOperations, this.registryGetOperations, this.endpointUpsertOperations, this.endpointDeleteOperations, this.endpointShareReceiveOperations, this.endpointShareCommitOperations]) {
+    for (const registry of [this.openOperations, this.executeOperations, this.importOperations, this.deleteOperations, this.registryGetOperations, this.endpointUpsertOperations, this.endpointDeleteOperations, this.endpointShareReceiveOperations, this.endpointShareCommitOperations, this.sshCredentialProvisionOperations]) {
       for (const pending of registry.values()) pending.reject(error)
       registry.clear()
     }
@@ -597,6 +617,7 @@ function bindingOperationHandle(envelope: TermxClientBinding.EventEnvelope): big
     case 'endpointDelete':
     case 'endpointShareReceive':
     case 'endpointShareCommit':
+    case 'sshCredentialProvision':
       return envelope.event.value.operationHandle
     default:
       return undefined

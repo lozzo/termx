@@ -287,11 +287,6 @@ func (host *Host) storeRegistryLocked(ctx context.Context, registry endpoint.Reg
 }
 
 func (host *Host) commitPairingEndpoint(ctx context.Context, preferredID endpoint.EndpointID, candidate endpoint.EndpointCandidate, credentialRef string) (*remoteauthpb.EndpointConfigV1, *remoteauthpb.EndpointRegistryV1, error) {
-	for index := range candidate.Routes {
-		if candidate.Routes[index].Kind == endpoint.RouteDirectWebRTCTCP || candidate.Routes[index].Kind == endpoint.RouteSSHWebRTCTCP || candidate.Routes[index].Kind == endpoint.RouteManagedWebRTC {
-			candidate.Routes[index].CredentialRef = credentialRef
-		}
-	}
 	host.registryMu.Lock()
 	defer host.registryMu.Unlock()
 	current, err := host.loadRegistryLocked(ctx)
@@ -328,6 +323,20 @@ func (host *Host) commitPairingEndpoint(ctx context.Context, preferredID endpoin
 			return nil, nil, err
 		}
 		resolvedID = preferredID
+	}
+	// grant 属于已验证 daemon Endpoint，不属于某个低优先级 bootstrap candidate。
+	// 必须在 assembler 完成后绑定全部远程 Route，否则 share/manual Route 会保留配置却丢失 terminal capability。
+	pairedEndpoint := assembled.Registry.Endpoints[resolvedID]
+	for routeID, route := range pairedEndpoint.Routes {
+		if route.Kind == endpoint.RouteDirectWebRTCTCP || route.Kind == endpoint.RouteSSHWebRTCTCP || route.Kind == endpoint.RouteManagedWebRTC {
+			route.CredentialRef = credentialRef
+			pairedEndpoint.Routes[routeID] = route
+		}
+	}
+	assembled.Registry.Endpoints[resolvedID] = pairedEndpoint
+	assembled.Registry, err = assembled.Registry.Normalize()
+	if err != nil {
+		return nil, nil, err
 	}
 	wireRegistry, err := host.storeRegistryLocked(ctx, assembled.Registry, nil)
 	if err != nil {

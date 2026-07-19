@@ -15,6 +15,7 @@ import {
   encodeFileTransferDataPayload,
   encodeFileTransferFinishPayload,
 } from '@termx/ui'
+import NativeFilePicker from './plugins/nativeFilePicker'
 
 export type TransferStatus = 'pending' | 'transferring' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'missing'
 
@@ -45,6 +46,7 @@ export interface FileTransferStoreSnapshot {
 }
 
 type NativeTransferSessionResolver = (machineId: string, signal: AbortSignal) => Promise<ProtoClientSession | null | undefined>
+type CleanupConfirmation = { confirmed: boolean, error?: Error }
 
 type ActiveTransfer = {
   epoch: number
@@ -117,7 +119,14 @@ export class NativeFileTransferStore {
       this.pendingTeardowns.delete(id)
     }
     this.downloadChunks.delete(id)
-    this.update(id, { status: 'cancelled', updatedAt: Date.now(), bytesPerSecond: 0 })
+    if (cleanup) {
+      void cleanup.then(
+        () => this.update(id, { status: 'cancelled', error: undefined, updatedAt: Date.now(), bytesPerSecond: 0 }),
+        (error) => this.fail(id, error),
+      )
+    } else {
+      this.update(id, { status: 'cancelled', updatedAt: Date.now(), bytesPerSecond: 0 })
+    }
     return cleanup
   }
 
@@ -241,13 +250,26 @@ export class NativeFileTransferStore {
       const retained = this.downloadChunks.get(id) ?? []
       const blob = await receiveDownload(stream, remote, retained, task.cancel.signal, (received) => this.progress(id, received))
       this.assertCurrentAttempt(id, task)
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = transfer.name
-      anchor.click()
-      setTimeout(() => URL.revokeObjectURL(url), 60_000)
-      this.update(id, { status: 'completed', transferredSize: Number(remote.size), savedUri: url, updatedAt: Date.now(), bytesPerSecond: 0 })
+      if (Capacitor.isNativePlatform()) {
+        const saved = await NativeFilePicker.saveFile({
+          name: transfer.name,
+          mimeType: blob.type || 'application/octet-stream',
+          dataBase64: await blobBase64(blob),
+        })
+        if (saved.bytes !== blob.size) throw new Error('Android download persistence size mismatch')
+        this.update(id, {
+          status: 'completed', transferredSize: Number(remote.size), savedUri: saved.uri, savedPath: saved.path,
+          updatedAt: Date.now(), bytesPerSecond: 0,
+        })
+      } else {
+        const url = URL.createObjectURL(blob)
+        const anchor = document.createElement('a')
+        anchor.href = url
+        anchor.download = transfer.name
+        anchor.click()
+        setTimeout(() => URL.revokeObjectURL(url), 60_000)
+        this.update(id, { status: 'completed', transferredSize: Number(remote.size), savedUri: url, updatedAt: Date.now(), bytesPerSecond: 0 })
+      }
       this.downloadChunks.delete(id)
     } finally {
       task.markReadyForClose()
@@ -301,17 +323,43 @@ export class NativeFileTransferStore {
     }
   }
 
-  private async cancelRemote(task: ActiveTransfer): Promise<boolean> {
-    if (!task.session || (!task.resource && !task.uploadResume)) return false
+  private async cancelRemote(task: ActiveTransfer): Promise<CleanupConfirmation> {
+    if (!task.session || (!task.resource && !task.uploadResume)) {
+      return { confirmed: false, error: new Error('remote file transfer cancellation has no credential') }
+    }
+    const useSessionResource = task.resource && sameSession(task.resource.session, task.session.stamp)
+    let cancelError: Error | undefined
     try {
-      const useSessionResource = task.resource && sameSession(task.resource.session, task.session.stamp)
       const result = await task.session.execute(command('fileTransferCancel', create(TermxApiFile.FileTransferCancelCommandSchema, {
         transfer: useSessionResource ? task.resource : undefined,
         uploadResume: useSessionResource ? undefined : task.uploadResume,
       })))
-      return result.result.case === 'fileTransferCancel' && result.result.value.cancelled
-    } catch {
-      return false
+      if (result.result.case === 'fileTransferCancel') {
+        // Download 的 false 表示 daemon 已处理命令且 resource 已不存在；upload 临时文件仍要求明确 cancelled=true。
+        if (result.result.value.cancelled || task.direction === 'download') return { confirmed: true }
+        return { confirmed: false, error: new Error('daemon did not confirm upload cancellation') }
+      }
+      cancelError = new Error('daemon returned no file transfer cancellation result')
+    } catch (error) {
+      cancelError = error instanceof Error ? error : new Error(String(error))
+    }
+    const released = await this.releaseCancelledDownload(task, useSessionResource)
+    if (released.confirmed) return released
+    return {
+      confirmed: false,
+      error: new Error(`file transfer cancel failed: ${cancelError.message}; release failed: ${released.error?.message ?? 'unavailable'}`),
+    }
+  }
+
+  private async releaseCancelledDownload(task: ActiveTransfer, useSessionResource: boolean | undefined): Promise<CleanupConfirmation> {
+    if (task.direction !== 'download' || !useSessionResource || !task.session || !task.resource) {
+      return { confirmed: false, error: new Error('download resource is not bound to the current session') }
+    }
+    try {
+      await this.releaseRemote(task.session, task.resource)
+      return { confirmed: true }
+    } catch (error) {
+      return { confirmed: false, error: error instanceof Error ? error : new Error(String(error)) }
     }
   }
 
@@ -346,13 +394,21 @@ export class NativeFileTransferStore {
     }
     if (task.destructiveCancel && task.session && task.resource) {
       destructiveAttempted = true
-      destructiveConfirmed = await this.cancelRemote(task)
-      cleanupError = destructiveConfirmed ? undefined : new Error('remote file transfer cancellation was not confirmed')
+      const cancellation = await this.cancelRemote(task)
+      destructiveConfirmed = cancellation.confirmed
+      cleanupError = cancellation.confirmed ? undefined : cancellation.error
     }
     await task.stream?.close().catch(() => undefined)
     if (task.destructiveCancel && !destructiveAttempted && task.session && task.resource) {
-      destructiveConfirmed = await this.cancelRemote(task)
-      cleanupError = destructiveConfirmed ? undefined : new Error('remote file transfer cancellation was not confirmed')
+      const cancellation = await this.cancelRemote(task)
+      destructiveConfirmed = cancellation.confirmed
+      cleanupError = cancellation.confirmed ? undefined : cancellation.error
+    }
+    if (task.destructiveCancel && !task.resource && !task.uploadResume) {
+      // FileUploadOpen/FileDownloadOpen 尚未交付 resource 时，binding cancelled-execute owner 负责销毁迟到结果。
+      // Store 不能要求一个尚未产生的 resume credential，也不能建立第二套 operation cleanup。
+      destructiveConfirmed = true
+      cleanupError = undefined
     }
     if (cleanupError) {
       if (this.active.get(id) === task) this.active.delete(id)
@@ -365,7 +421,9 @@ export class NativeFileTransferStore {
     task.stream = undefined
     if (task.destructiveCancel && !destructiveConfirmed) {
       try {
-        destructiveConfirmed = await this.cancelWithFreshSession(task)
+        const cancellation = await this.cancelWithFreshSession(task)
+        destructiveConfirmed = cancellation.confirmed
+        cleanupError = cancellation.error
       } catch (error) {
         if (this.active.get(id) === task) this.active.delete(id)
         this.failedCleanupOwners.set(id, task)
@@ -374,7 +432,7 @@ export class NativeFileTransferStore {
       if (!destructiveConfirmed) {
         if (this.active.get(id) === task) this.active.delete(id)
         this.failedCleanupOwners.set(id, task)
-        throw new Error('remote file transfer cancellation was not confirmed')
+        throw cleanupError ?? new Error('remote file transfer cancellation was not confirmed')
       }
     }
     const transfer = this.transfers.find((item) => item.id === id)
@@ -405,23 +463,36 @@ export class NativeFileTransferStore {
   }
 
   private async finishDestructiveCleanup(id: string, task: ActiveTransfer): Promise<void> {
-	if (!await this.cancelWithFreshSession(task)) throw new Error('remote file transfer cancellation was not confirmed')
+    const cancellation = await this.cancelWithFreshSession(task)
+    if (!cancellation.confirmed) throw cancellation.error ?? new Error('remote file transfer cancellation was not confirmed')
     this.failedCleanupOwners.delete(id)
     this.detachedCleanupOwners.delete(id)
     await task.stream?.close().catch(() => undefined)
 	await task.session?.close().catch(() => undefined)
   }
 
-  private async cancelWithFreshSession(task: ActiveTransfer): Promise<boolean> {
+  private async cancelWithFreshSession(task: ActiveTransfer): Promise<CleanupConfirmation> {
+	let priorError: Error | undefined
 	if (task.session?.isAlive()) {
-	  if (await this.cancelRemote(task)) return true
+	  const cancellation = await this.cancelRemote(task)
+	  if (cancellation.confirmed) return cancellation
+	  priorError = cancellation.error
 	  await task.session.close().catch(() => undefined)
 	  task.session = undefined
 	}
-    if (!task.uploadResume) return false
+	if (!task.uploadResume) {
+	  return { confirmed: false, error: priorError ?? new Error('fresh-session cancellation has no upload resume credential') }
+	}
 	const controller = new AbortController()
-	task.session = await this.session(task.machineId, controller.signal)
-	return await this.cancelRemote(task)
+	try {
+	  task.session = await this.session(task.machineId, controller.signal)
+	  const cancellation = await this.cancelRemote(task)
+	  if (cancellation.confirmed || !priorError) return cancellation
+	  return { confirmed: false, error: new Error(`existing-session cleanup failed: ${priorError.message}; fresh-session cleanup failed: ${cancellation.error?.message ?? 'unavailable'}`) }
+	} catch (error) {
+	  const freshError = error instanceof Error ? error : new Error(String(error))
+	  return { confirmed: false, error: new Error(`existing-session cleanup failed: ${priorError?.message ?? 'unavailable'}; fresh-session resolution failed: ${freshError.message}`) }
+	}
   }
 
   private completeDismiss(id: string): void {
@@ -498,6 +569,7 @@ export class NativeFileTransferStore {
 
   private fail(id: string, error: unknown): void {
     if (error instanceof DOMException && error.name === 'AbortError') return
+    if (this.transfers.find((item) => item.id === id)?.status === 'cancelled' && !this.failedCleanupOwners.has(id)) return
     this.update(id, { status: 'failed', error: error instanceof Error ? error.message : String(error), updatedAt: Date.now(), bytesPerSecond: 0 })
   }
 
@@ -518,6 +590,18 @@ export class NativeFileTransferStore {
     this.cachedMachineSnapshots.clear()
     for (const listener of this.listeners) listener()
   }
+}
+
+async function blobBase64(blob: Blob): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error('download file encoding failed'))
+    reader.onload = () => resolve(String(reader.result ?? ''))
+    reader.readAsDataURL(blob)
+  })
+  const separator = dataUrl.indexOf(',')
+  if (separator < 0) throw new Error('download file encoding failed')
+  return dataUrl.slice(separator + 1)
 }
 
 async function receiveDownload(
@@ -584,44 +668,53 @@ async function sendUpload(
   progress: (bytes: number) => void,
 ): Promise<void> {
   let offset = Number(transfer.offset)
+  let acknowledgedOffset = offset
   let credit = Number(transfer.windowBytes)
   let wake: (() => void) | null = null
+  let terminalError: unknown
   let resultResolve: (() => void) | null = null
   let resultReject: ((error: unknown) => void) | null = null
   const result = new Promise<void>((resolve, reject) => { resultResolve = resolve; resultReject = reject })
+  void result.catch(() => undefined)
+  const fail = (error: unknown) => {
+    if (terminalError) return
+    terminalError = error
+    wake?.()
+    wake = null
+    resultReject?.(error)
+  }
   const subscription = stream.subscribe((type, payload) => {
     if (type === TermxClientBinding.ResourceStreamFrameType.FILE_ACK) {
       const ack = decodeFileTransferAckPayload(payload)
-      if (ack.offset !== offset) { resultReject?.(new Error('upload ACK offset mismatch')); return }
+      const acknowledgedBytes = ack.offset - acknowledgedOffset
+      if (ack.offset <= acknowledgedOffset || ack.offset > offset || ack.windowBytes !== acknowledgedBytes) {
+        fail(new Error('upload ACK offset mismatch'))
+        return
+      }
+      acknowledgedOffset = ack.offset
       credit += ack.windowBytes
       wake?.()
       wake = null
     } else if (type === TermxClientBinding.ResourceStreamFrameType.FILE_RESULT) {
       const completed = decodeFileTransferResultPayload(payload)
       if (completed.size !== blob.size) {
-        resultReject?.(new Error('upload completed with the wrong size'))
+        fail(new Error('upload completed with the wrong size'))
         return
       }
       resultResolve?.()
     } else if (type === TermxClientBinding.ResourceStreamFrameType.ERROR) {
-      resultReject?.(new Error(decodeFileStreamErrorPayload(payload)))
+      fail(new Error(decodeFileStreamErrorPayload(payload)))
     }
   })
-  const closeSubscription = stream.subscribeClosed((error) => {
-    wake?.()
-    wake = null
-    resultReject?.(error)
-  })
-  const abort = () => {
-    wake?.()
-    wake = null
-    resultReject?.(new DOMException('Aborted', 'AbortError'))
-  }
+  const closeSubscription = stream.subscribeClosed(fail)
+  const abort = () => fail(new DOMException('Aborted', 'AbortError'))
   signal.addEventListener('abort', abort, { once: true })
   try {
     while (offset < blob.size) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+      if (terminalError) throw terminalError
       if (credit <= 0) await new Promise<void>((resolve) => { wake = resolve })
+      if (terminalError) throw terminalError
       const length = Math.min(transfer.chunkBytes, credit, blob.size - offset)
       const data = new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer())
       const chunkOffset = offset

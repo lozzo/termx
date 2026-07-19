@@ -182,15 +182,25 @@ function createNativeExternalPairingAdapter(registry: NativeEndpointRegistryProj
 		credentialKinds: preview.credentialDescriptors.map((descriptor) => String(descriptor.kind)),
 	  }
 	},
-	async commitShare(importToken) {
-	  const committed = await goBindingClient.commitEndpointShare(importToken)
-	  const endpoint = committed.endpoint
-	  if (!endpoint?.endpointId || !endpoint.identity || !committed.registry) throw new Error('Endpoint share commit is incomplete')
-	  registry.replace(committed.registry)
-	  return {
-		machine: { id: endpoint.endpointId, name: endpoint.label || endpoint.endpointId, accessClass: 'local' },
-		authorizationRequired: committed.authorizationRequired,
-	  }
+		async commitShare(importToken) {
+		  const committed = await goBindingClient.commitEndpointShare(importToken)
+		  let endpoint = committed.endpoint
+		  if (!endpoint?.endpointId || !endpoint.identity || !committed.registry) throw new Error('Endpoint share commit is incomplete')
+		  registry.replace(committed.registry)
+		  const sshCredentials: NonNullable<import('@termx/ui').ExternalPairingImportResult['sshCredentials']> = []
+		  for (const route of endpoint.routes) {
+			if (route.route.case !== 'sshWebrtcTcp' || route.route.value.credentialDescriptor?.kind !== TermxRemoteAuth.EndpointCredentialKind.SSH_PRIVATE_KEY) continue
+			const provisioned = await goBindingClient.provisionSSHCredential(endpoint.endpointId, route.routeId)
+			if (!provisioned.endpoint || !provisioned.registry) throw new Error('SSH credential provision result is incomplete')
+			registry.replace(provisioned.registry)
+			endpoint = provisioned.endpoint
+			sshCredentials.push({ routeId: route.routeId, authorizedKey: provisioned.authorizedKey, fingerprint: provisioned.keyFingerprint })
+		  }
+		  return {
+			machine: { id: endpoint.endpointId, name: endpoint.label || endpoint.endpointId, accessClass: 'local' },
+			authorizationRequired: !registry.isAuthorized(endpoint.endpointId),
+			...(sshCredentials.length > 0 ? { sshCredentials } : {}),
+		  }
 	},
     isAuthorized(machineId) {
 	  return registry.isAuthorized(machineId)
@@ -282,23 +292,60 @@ function useNativeKeyboardEvents(): void {
   }, [])
 }
 
+let nativeForegroundReady: Promise<Error | undefined> = Promise.resolve(undefined)
+let resolveNativeForeground: ((failure?: Error) => void) | null = null
+
+function markNativeBackground(): void {
+  if (resolveNativeForeground) return
+  nativeForegroundReady = new Promise<Error | undefined>((resolve) => { resolveNativeForeground = resolve })
+}
+
+function finishNativeForeground(failure?: unknown): void {
+  const resolve = resolveNativeForeground
+  resolveNativeForeground = null
+  resolve?.(failure instanceof Error ? failure : failure ? new Error(String(failure)) : undefined)
+}
+
+async function waitForNativeForeground(): Promise<void> {
+  const failure = await nativeForegroundReady
+  if (failure) throw failure
+}
+
+let nativeGenerationReplacement: Promise<void> = Promise.resolve()
+
+function replaceNativeGeneration(refreshRegistry: () => Promise<void>): Promise<void> {
+  const replacement = nativeGenerationReplacement.catch(() => undefined).then(async () => {
+    const staleClient = goBindingClient
+    goBindingClient = new GoBindingClient()
+    await staleClient.close()
+    await refreshRegistry()
+    document.dispatchEvent(new Event('termx:resume'))
+  })
+  nativeGenerationReplacement = replacement
+  return replacement
+}
+
 /** When the app resumes from background, trigger a sync request on all active sessions. */
 function useAppResumeSync(refreshRegistry: () => Promise<void>): void {
   useEffect(() => {
     const promise = CapApp.addListener('appStateChange', (state) => {
       if (!state.isActive) {
+        markNativeBackground()
         return
       }
 	  void NativeConnection.handleForegroundResume().then(async () => {
-		const staleClient = goBindingClient
-		goBindingClient = new GoBindingClient()
-		await staleClient.close()
-		await refreshRegistry()
-        // Native 已创建新 generation 后再通知 UI；冻结前的 session/resource handle 不得继续使用。
-        document.dispatchEvent(new Event('termx:resume'))
-	  })
+		// Native 已创建新 generation 后再通知 UI；冻结前的 session/resource handle 不得继续使用。
+		await replaceNativeGeneration(refreshRegistry)
+	  }).then(() => finishNativeForeground(), finishNativeForeground)
     })
-    return () => { void promise.then((sub) => sub.remove()) }
+    const generationPromise = NativeConnection.addListener('generationChanged', () => {
+      markNativeBackground()
+      void replaceNativeGeneration(refreshRegistry).then(() => finishNativeForeground(), finishNativeForeground)
+    })
+    return () => {
+      void promise.then((sub) => sub.remove())
+      void generationPromise.then((sub) => sub.remove())
+    }
   }, [refreshRegistry])
 }
 
@@ -677,7 +724,9 @@ function createFileTransferContext(machineId: string | undefined, store: NativeF
       }
     },
     pickAndUpload(mid, targetDir) {
-      NativeFilePicker.pickFiles({ multiple: true }).then((result) => {
+      NativeFilePicker.pickFiles({ multiple: true }).then(async (result) => {
+        // SAF picker 会冻结 Activity 并关闭旧 Go generation；只有 foreground barrier 完成后才能创建 upload session。
+        await waitForNativeForeground()
         for (const f of result.files) {
           store.startUpload(mid, f.uri, f.name, f.size, targetDir)
         }

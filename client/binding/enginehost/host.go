@@ -74,6 +74,10 @@ func New(options Options) (*Host, error) {
 	if options.Now == nil {
 		options.Now = time.Now
 	}
+	if options.SSHCredentials == nil && options.DirectPeers != nil {
+		// Android/native binding 默认复用同一 platform broker 的不可导出 SSH signer；浏览器没有 Direct primitive，不会启用该 Route。
+		options.SSHCredentials = platformSSHCredential{broker: options.Broker}
+	}
 	if options.ShareReceive == nil {
 		options.ShareReceive = shareadapter.Receive
 	}
@@ -168,25 +172,9 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 	if err != nil {
 		return nil, err
 	}
-	var directRoute endpoint.AccessRoute
-	var managedRoute endpoint.AccessRoute
-	for _, route := range candidate.Routes {
-		if !route.Enabled {
-			continue
-		}
-		if route.Kind == endpoint.RouteDirectWebRTCTCP && directRoute.ID == "" {
-			directRoute = route
-		}
-		if route.Kind == endpoint.RouteManagedWebRTC && managedRoute.ID == "" {
-			managedRoute = route
-		}
-	}
-	pairingRoute := directRoute
-	if pairingRoute.ID == "" {
-		pairingRoute = managedRoute
-	}
-	if pairingRoute.ID == "" {
-		return nil, fmt.Errorf("pairing bundle has no supported WebRTC route")
+	pairingRoute, err := directPairingRoute(candidate)
+	if err != nil {
+		return nil, err
 	}
 	target := pairingTarget(endpointID, candidate.Identity, pairingRoute, credentialRef)
 	attempt, err := host.owner.BeginRouteAttempt(target, pairingRoute.ID, clientruntime.ConnectIntentInteractive)
@@ -204,19 +192,10 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 		ExpectedDeviceID: bundle.GetIdentity().GetDeviceId(), ExpectedDeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint(),
 		PairingBundle: payload, Identity: identity, Signer: signer, ClientLabel: host.options.ClientName,
 	}
-	var paired remoteauth.PairingExchangeResult
-	switch pairingRoute.Kind {
-	case endpoint.RouteDirectWebRTCTCP:
-		if host.options.DirectPeers == nil {
-			return nil, fmt.Errorf("Direct pairing peer factory is unavailable")
-		}
-		paired, err = (&direct.PairingConnector{Peers: host.options.DirectPeers, Now: host.options.Now}).Redeem(ctx, attempt, pairingRequest)
-	case endpoint.RouteManagedWebRTC:
-		if host.options.ManagedPeers == nil {
-			return nil, fmt.Errorf("managed pairing peer factory is unavailable")
-		}
-		paired, err = (&managed.PairingConnector{Cloud: platformCloud{broker: host.options.Broker}, Peers: host.options.ManagedPeers, Now: host.options.Now}).Redeem(ctx, attempt, pairingRequest)
+	if host.options.DirectPeers == nil {
+		return nil, fmt.Errorf("Direct pairing peer factory is unavailable")
 	}
+	paired, err := (&direct.PairingConnector{Peers: host.options.DirectPeers, Now: host.options.Now}).Redeem(ctx, attempt, pairingRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -247,6 +226,17 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 		Endpoint: committed, Registry: registry, TicketId: claims.TicketID, ClientKeyFingerprint: record.GetKeyFingerprint(),
 		ExpiresAtUnixNano: paired.ExpiresAt.UnixNano(), AuthorizationRequired: false,
 	}, nil
+}
+
+// directPairingRoute 固定使用 daemon embedded signaling 兑换一次性 grant。
+// Cloud Route 只作为同一 Endpoint 的后续连接方式，不能建立第二套 managed-only 配对协议。
+func directPairingRoute(candidate endpoint.EndpointCandidate) (endpoint.AccessRoute, error) {
+	for _, route := range candidate.Routes {
+		if route.Enabled && route.Kind == endpoint.RouteDirectWebRTCTCP {
+			return route, nil
+		}
+	}
+	return endpoint.AccessRoute{}, fmt.Errorf("pairing bundle requires an enabled Direct WebRTC TCP route")
 }
 
 // DeleteCredential 删除当前平台 secure store 中的 credential record。
@@ -301,6 +291,10 @@ type sshCredentialAvailability interface {
 	Available(string) bool
 }
 
+type contextSSHCredentialAvailability interface {
+	AvailableContext(context.Context, string) bool
+}
+
 // routePlanEnvironment 生成当前调用的能力快照，并在副本中禁用当前账号不可用的 managed Route。
 // Cloud 查询或登出只改变 managed eligibility，不能删除持久 Endpoint，也不能阻断 Direct/SSH。
 func routePlanEnvironment(ctx context.Context, target endpoint.Endpoint, options Options, credentials clientCredentialAvailability, cloud managedRouteEligibility) (endpoint.Endpoint, clientruntime.RoutePlanEnvironment, error) {
@@ -316,8 +310,10 @@ func routePlanEnvironment(ctx context.Context, target endpoint.Endpoint, options
 	if options.DirectPeers != nil {
 		environment.SupportedRouteKinds = append(environment.SupportedRouteKinds, endpoint.RouteDirectWebRTCTCP)
 	}
-	sshAvailability, sshSupported := options.SSHCredentials.(sshCredentialAvailability)
-	if options.DirectPeers != nil && options.SSHCredentials != nil && sshSupported {
+	_, sshContextSupported := options.SSHCredentials.(contextSSHCredentialAvailability)
+	_, sshLegacySupported := options.SSHCredentials.(sshCredentialAvailability)
+	sshSupported := options.DirectPeers != nil && options.SSHCredentials != nil && (sshContextSupported || sshLegacySupported)
+	if sshSupported {
 		environment.SupportedRouteKinds = append(environment.SupportedRouteKinds, endpoint.RouteSSHWebRTCTCP)
 	}
 	managedSupported := false
@@ -336,7 +332,7 @@ func routePlanEnvironment(ctx context.Context, target endpoint.Endpoint, options
 		}
 		switch route.Kind {
 		case endpoint.RouteSSHWebRTCTCP:
-			if sshSupported && sshAvailability.Available(route.SSHCredentialRef) {
+			if sshSupported && sshCredentialAvailable(ctx, options.SSHCredentials, route.SSHCredentialRef) {
 				available[route.SSHCredentialRef] = struct{}{}
 			}
 		case endpoint.RouteManagedWebRTC:
@@ -360,6 +356,16 @@ func routePlanEnvironment(ctx context.Context, target endpoint.Endpoint, options
 		}
 	}
 	return planningTarget, environment, nil
+}
+
+func sshCredentialAvailable(ctx context.Context, source port.SSHCredentialSource, reference string) bool {
+	if availability, ok := source.(contextSSHCredentialAvailability); ok {
+		return availability.AvailableContext(ctx, reference)
+	}
+	if availability, ok := source.(sshCredentialAvailability); ok {
+		return availability.Available(reference)
+	}
+	return false
 }
 
 func joinRouteKinds(kinds []endpoint.RouteKind) string {

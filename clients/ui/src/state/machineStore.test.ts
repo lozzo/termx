@@ -28,6 +28,13 @@ describe('machine store', () => {
     expect(createMachineStore({ storage }).listMachines()).toEqual([])
   })
 
+  it('rejects records that omit the explicit access class', () => {
+    const storage = new MemoryStorage()
+    const { accessClass: _accessClass, ...legacy } = machine()
+    storage.setItem('termx.app.machines.v2', JSON.stringify([legacy]))
+    expect(() => createMachineStore({ storage }).listMachines()).toThrow('invalid machine access class')
+  })
+
   it('rejects removed connection path names', () => {
     const storage = new MemoryStorage()
     storage.setItem('termx.app.machines.v2', JSON.stringify([{ ...machine(), lastConnectionPath: 'managed' }]))

@@ -685,17 +685,14 @@ func (c *Client) failAll(err error) {
 		err = io.EOF
 	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	waiters := make([]chan result, 0, len(c.waiters))
 	for id, ch := range c.waiters {
-		ch <- result{err: err}
+		waiters = append(waiters, ch)
 		delete(c.waiters, id)
 	}
-	select {
-	case c.helloCh <- result{err: err}:
-	default:
-	}
+	streams := make([]*clientStream, 0, len(c.streams))
 	for id, stream := range c.streams {
-		stream.close()
+		streams = append(streams, stream)
 		delete(c.streams, id)
 	}
 	for id := range c.pending {
@@ -711,4 +708,20 @@ func (c *Client) failAll(err error) {
 		delete(c.applicationEventSubscribers, id)
 	}
 	c.pendingApplicationEvents = nil
+	c.mu.Unlock()
+
+	// waiter 可能已经收到 terminal result 并正等待 c.mu 删除自身；通知与 stream close 必须在 registry 锁外执行。
+	for _, ch := range waiters {
+		select {
+		case ch <- result{err: err}:
+		default:
+		}
+	}
+	select {
+	case c.helloCh <- result{err: err}:
+	default:
+	}
+	for _, stream := range streams {
+		stream.close()
+	}
 }

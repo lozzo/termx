@@ -22,6 +22,12 @@ type ApplicationSessionValidator interface {
 	ValidateApplicationSession(EndpointSessionStamp) error
 }
 
+// ApplicationSessionInvalidator 在无法确认 session-owned 远端资源已销毁时撤销精确 generation。
+// 实现必须使同一底层 ReadyPeerSession 的全部 consumer lease 失效并关闭 transport；调用方不得把它用于普通 consumer release。
+type ApplicationSessionInvalidator interface {
+	InvalidateApplicationSession(error) error
+}
+
 // TerminalResponseApplicationExecutor 在调用 context 取消后仍等待一个有界 terminal response。
 // 只有会创建远端资源、且必须取得迟到结果完成销毁的 binding owner 可以选择该能力；transport 不得自行解释业务 command。
 type TerminalResponseApplicationExecutor interface {

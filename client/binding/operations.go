@@ -41,9 +41,35 @@ func (engine *Engine) EngineCommand(payload []byte) (uint64, error) {
 		return engine.startEndpointShareReceive(value.EndpointShareReceive)
 	case *bindingpb.EngineCommand_EndpointShareCommit:
 		return engine.startEndpointShareCommit(value.EndpointShareCommit)
+	case *bindingpb.EngineCommand_SshCredentialProvision:
+		return engine.startSSHCredentialProvision(value.SshCredentialProvision)
 	default:
 		return 0, fmt.Errorf("engine command is required")
 	}
+}
+
+func (engine *Engine) sshCredentialHost() (SSHCredentialHost, error) {
+	host, ok := engine.host.(SSHCredentialHost)
+	if !ok {
+		return nil, fmt.Errorf("binding host does not support SSH credential provisioning")
+	}
+	return host, nil
+}
+
+func (engine *Engine) startSSHCredentialProvision(request *bindingpb.SSHCredentialProvisionRequest) (uint64, error) {
+	if request == nil || request.GetRequestId() == "" || request.GetEndpointId() == "" || request.GetRouteId() == "" {
+		return 0, fmt.Errorf("SSH credential provision request is incomplete")
+	}
+	host, err := engine.sshCredentialHost()
+	if err != nil {
+		return 0, err
+	}
+	handle, operationContext, err := engine.startOperation()
+	if err != nil {
+		return 0, err
+	}
+	go engine.runSSHCredentialProvision(handle, operationContext, host, proto.Clone(request).(*bindingpb.SSHCredentialProvisionRequest))
+	return handle, nil
 }
 
 func (engine *Engine) shareHost() (EndpointShareHost, error) {
@@ -313,4 +339,22 @@ func (engine *Engine) runEndpointShareCommit(handle uint64, ctx context.Context,
 		result.Error = apiError(err)
 	}
 	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_EndpointShareCommit{EndpointShareCommit: result}})
+}
+
+func (engine *Engine) runSSHCredentialProvision(handle uint64, ctx context.Context, host SSHCredentialHost, request *bindingpb.SSHCredentialProvisionRequest) {
+	result, err := host.ProvisionSSHCredential(ctx, request)
+	if ctx.Err() != nil {
+		result, err = nil, ctx.Err()
+	}
+	engine.markOperationDone(handle)
+	if result == nil {
+		result = &bindingpb.SSHCredentialProvisionResult{}
+	} else {
+		result = proto.Clone(result).(*bindingpb.SSHCredentialProvisionResult)
+	}
+	result.RequestId, result.OperationHandle = request.GetRequestId(), handle
+	if err != nil {
+		result.Error = apiError(err)
+	}
+	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_SshCredentialProvision{SshCredentialProvision: result}})
 }

@@ -214,6 +214,14 @@ func TestEngineCancellationReportsLateFileOpenCleanupFailure(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			session := newBindingSession()
+			var closeCount atomic.Int32
+			session.closeFunc = func() error {
+				session.closeOnce.Do(func() {
+					closeCount.Add(1)
+					close(session.done)
+				})
+				return nil
+			}
 			started := make(chan struct{})
 			release := make(chan struct{})
 			session.execute = func(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
@@ -244,9 +252,26 @@ func TestEngineCancellationReportsLateFileOpenCleanupFailure(t *testing.T) {
 				t.Fatal(err)
 			}
 			close(release)
-			event := nextBindingEvent(t, engine)
-			if event.GetExecute().GetError() == nil || event.GetExecute().GetError().GetCode() == apipb.ApiErrorCode_API_ERROR_CODE_CANCELLED {
-				t.Fatalf("cleanup failure was not observable: %#v", event)
+			var executeEvent, closedEvent *bindingpb.EventEnvelope
+			for range 2 {
+				event := nextBindingEvent(t, engine)
+				switch event.GetEvent().(type) {
+				case *bindingpb.EventEnvelope_Execute:
+					executeEvent = event
+				case *bindingpb.EventEnvelope_SessionClosed:
+					closedEvent = event
+				default:
+					t.Fatalf("unexpected cleanup failure event: %#v", event)
+				}
+			}
+			if executeEvent == nil || executeEvent.GetExecute().GetError() == nil || executeEvent.GetExecute().GetError().GetCode() == apipb.ApiErrorCode_API_ERROR_CODE_CANCELLED {
+				t.Fatalf("cleanup failure was not observable: %#v", executeEvent)
+			}
+			if closedEvent == nil || closedEvent.GetSessionClosed().GetSessionHandle() != sessionHandle {
+				t.Fatalf("invalidated session close event = %#v", closedEvent)
+			}
+			if closeCount.Load() != 1 {
+				t.Fatalf("cleanup failure session close count=%d want=1", closeCount.Load())
 			}
 		})
 	}

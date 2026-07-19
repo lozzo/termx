@@ -587,7 +587,12 @@ func (engine *Engine) runExecute(handle, sessionHandle uint64, ctx context.Conte
 	}
 	if ctx.Err() != nil {
 		if cleanupErr := engine.cleanupCancelledFileOpen(session, result); cleanupErr != nil {
-			err = fmt.Errorf("cancelled file open cleanup: %w", cleanupErr)
+			cleanupErr = fmt.Errorf("cancelled file open cleanup: %w", cleanupErr)
+			if invalidateErr := invalidateSessionAfterCleanupFailure(session, cleanupErr); invalidateErr != nil {
+				err = fmt.Errorf("%v; invalidate session: %w", cleanupErr, invalidateErr)
+			} else {
+				err = cleanupErr
+			}
 		} else {
 			err = ctx.Err()
 		}
@@ -605,6 +610,14 @@ func (engine *Engine) runExecute(handle, sessionHandle uint64, ctx context.Conte
 		event.GetExecute().Result = proto.Clone(result).(*apipb.ResultEnvelope)
 	}
 	engine.emit(event)
+}
+
+func invalidateSessionAfterCleanupFailure(session clientruntime.ApplicationReadyPeerSession, cause error) error {
+	if invalidator, ok := session.(clientruntime.ApplicationSessionInvalidator); ok {
+		return invalidator.InvalidateApplicationSession(cause)
+	}
+	// 非 runtime owner 的测试或嵌入实现没有 generation invalidator 时，至少必须关闭其完整 session。
+	return session.Close()
 }
 
 // cleanupCancelledFileOpen 销毁已在 daemon 创建、但因跨语言 operation 取消而不能交付给 consumer 的 file resource。

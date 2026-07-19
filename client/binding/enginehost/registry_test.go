@@ -2,9 +2,14 @@ package enginehost
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +19,7 @@ import (
 	"github.com/lozzow/termx/proto/apipb"
 	"github.com/lozzow/termx/proto/bindingpb"
 	"github.com/lozzow/termx/proto/remoteauthpb"
+	golangssh "golang.org/x/crypto/ssh"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -149,6 +155,49 @@ func TestPairingCredentialRollbackRestoresPreparedState(t *testing.T) {
 	}
 }
 
+func TestPairingBindsGrantToExistingShareRoutesAfterAssembly(t *testing.T) {
+	platform := newRegistryPlatform(t)
+	host := platform.host()
+	identity := endpoint.DaemonIdentity{DeviceID: "daemon-shared", DeviceFingerprint: "SHA256:shared"}
+	shared := endpoint.Endpoint{
+		ID: "shared", Label: "Shared", LabelSource: endpoint.SourceShare, DaemonIdentity: identity,
+		ConnectMode: endpoint.ConnectOnDemand, Enabled: true,
+		Routes: map[endpoint.RouteID]endpoint.AccessRoute{
+			"direct": {ID: "direct", Kind: endpoint.RouteDirectWebRTCTCP, Enabled: true, Source: endpoint.SourceShare, PolicySource: endpoint.SourceShare, SignalingAddresses: []string{"127.0.0.1:41120"}, ICETCPAddresses: []string{"127.0.0.1:41121"}},
+			"ssh":    {ID: "ssh", Kind: endpoint.RouteSSHWebRTCTCP, Enabled: true, Source: endpoint.SourceShare, PolicySource: endpoint.SourceShare, Host: "127.0.0.1", User: "termx", HostKeyFingerprints: []string{"SHA256:test"}, CredentialDescriptor: &endpoint.CredentialDescriptor{DescriptorID: "ssh-key", Kind: endpoint.CredentialSSHPrivateKey}, SSHCredentialRef: "ssh-platform-existing", RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121"},
+			"cloud":  {ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true, Source: endpoint.SourceShare, PolicySource: endpoint.SourceShare, TargetDeviceID: identity.DeviceID, RelayMode: endpoint.RelayAuto},
+		},
+	}
+	wireShared, err := endpoint.EndpointToProto(shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := host.UpsertEndpoint(context.Background(), &bindingpb.EndpointUpsertRequest{Endpoint: wireShared}); err != nil {
+		t.Fatal(err)
+	}
+	candidate := endpoint.EndpointCandidate{Source: endpoint.SourceBootstrap, Identity: identity, Routes: []endpoint.AccessRoute{{
+		ID: "direct", Kind: endpoint.RouteDirectWebRTCTCP, Enabled: true, Source: endpoint.SourceBootstrap, PolicySource: endpoint.SourceBootstrap,
+		SignalingAddresses: []string{"127.0.0.1:41120"}, ICETCPAddresses: []string{"127.0.0.1:41121"},
+	}}}
+	paired, _, err := host.commitPairingEndpoint(context.Background(), "shared", candidate, "grant-shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paired.GetRoutes()) != 3 {
+		t.Fatalf("paired routes = %#v", paired.GetRoutes())
+	}
+	for _, route := range paired.GetRoutes() {
+		if route.GetCredentialRef() != "grant-shared" {
+			t.Fatalf("route %q credential_ref = %q", route.GetRouteId(), route.GetCredentialRef())
+		}
+	}
+	for _, route := range paired.GetRoutes() {
+		if route.GetRouteId() == "ssh" && route.GetSshWebrtcTcp().GetSshCredentialRef() != "ssh-platform-existing" {
+			t.Fatalf("SSH signer ref was replaced: %#v", route)
+		}
+	}
+}
+
 func TestEndpointSharePreviewCommitsAtomicallyAndTokenIsSingleUse(t *testing.T) {
 	platform := newRegistryPlatform(t)
 	host := platform.host()
@@ -209,6 +258,53 @@ func TestEndpointSharePreviewCommitsAtomicallyAndTokenIsSingleUse(t *testing.T) 
 	}
 }
 
+func TestSSHCredentialProvisionCommitsRouteAndRollsBackNewKeyOnStoreFailure(t *testing.T) {
+	platform := newRegistryPlatform(t)
+	host := platform.host()
+	if _, err := host.UpsertEndpoint(context.Background(), &bindingpb.EndpointUpsertRequest{Endpoint: testSSHEndpointProto(t, "studio")}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := host.ProvisionSSHCredential(context.Background(), &bindingpb.SSHCredentialProvisionRequest{EndpointId: "studio", RouteId: "ssh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := result.GetEndpoint().GetRoutes()[0].GetSshWebrtcTcp()
+	if route.GetSshCredentialRef() != result.GetCredentialRef() || !strings.HasPrefix(result.GetCredentialRef(), platformSSHCredentialPrefix) {
+		t.Fatalf("provisioned SSH route = %#v result=%#v", route, result)
+	}
+	if result.GetEndpoint().GetRoutes()[0].GetCredentialRef() != "" {
+		t.Fatalf("SSH signer provisioning unexpectedly authorized config-only endpoint: %#v", result.GetEndpoint())
+	}
+	publicKey, _, _, _, err := golangssh.ParseAuthorizedKey([]byte(result.GetAuthorizedKey()))
+	if err != nil || golangssh.FingerprintSHA256(publicKey) != result.GetKeyFingerprint() {
+		t.Fatalf("provisioned authorized key is invalid: key=%v err=%v result=%#v", publicKey, err, result)
+	}
+
+	if _, err := host.UpsertEndpoint(context.Background(), &bindingpb.EndpointUpsertRequest{Endpoint: testSSHEndpointProto(t, "backup")}); err != nil {
+		t.Fatal(err)
+	}
+	platform.failNextStore()
+	if _, err := host.ProvisionSSHCredential(context.Background(), &bindingpb.SSHCredentialProvisionRequest{EndpointId: "backup", RouteId: "ssh"}); err == nil {
+		t.Fatal("failed registry store unexpectedly kept provisioned SSH credential")
+	}
+	failedRef := platformSSHCredentialRef("backup", "ssh")
+	platform.mu.Lock()
+	_, keySurvived := platform.sshKeys[failedRef]
+	platform.mu.Unlock()
+	if keySurvived {
+		t.Fatal("new platform SSH key survived failed registry transaction")
+	}
+	registry, err := host.GetEndpointRegistry(context.Background(), &bindingpb.EndpointRegistryGetRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range registry.GetRegistry().GetEndpoints() {
+		if value.GetEndpointId() == "backup" && value.GetRoutes()[0].GetSshWebrtcTcp().GetSshCredentialRef() != "" {
+			t.Fatalf("failed provision published SSH credential ref: %#v", value)
+		}
+	}
+}
+
 func testEndpointProto(t *testing.T, id, deviceID, credentialRef string) *remoteauthpb.EndpointConfigV1 {
 	t.Helper()
 	digest := sha256.Sum256([]byte(deviceID))
@@ -230,16 +326,40 @@ func testEndpointProto(t *testing.T, id, deviceID, credentialRef string) *remote
 	return wire
 }
 
+func testSSHEndpointProto(t *testing.T, id string) *remoteauthpb.EndpointConfigV1 {
+	t.Helper()
+	digest := sha256.Sum256([]byte(id))
+	model := endpoint.Endpoint{
+		ID: endpoint.EndpointID(id), Label: id, LabelSource: endpoint.SourceUser,
+		DaemonIdentity: endpoint.DaemonIdentity{DeviceID: "daemon-" + id, DeviceFingerprint: "ed25519-sha256:" + base64.RawURLEncoding.EncodeToString(digest[:])},
+		ConnectMode:    endpoint.ConnectOnDemand, Enabled: true,
+		Routes: map[endpoint.RouteID]endpoint.AccessRoute{
+			"ssh": {
+				ID: "ssh", Kind: endpoint.RouteSSHWebRTCTCP, Enabled: true, Source: endpoint.SourceShare, PolicySource: endpoint.SourceShare,
+				Host: "127.0.0.1", User: "termx", HostKeyFingerprints: []string{"SHA256:test"},
+				CredentialDescriptor:   &endpoint.CredentialDescriptor{DescriptorID: "ssh-key", Kind: endpoint.CredentialSSHPrivateKey},
+				RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121",
+			},
+		},
+	}
+	wire, err := endpoint.EndpointToProto(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return wire
+}
+
 type registryPlatform struct {
 	t           *testing.T
 	mu          sync.Mutex
 	registry    []byte
 	credentials map[string]string
+	sshKeys     map[string][]byte
 	failStore   bool
 }
 
 func newRegistryPlatform(t *testing.T) *registryPlatform {
-	return &registryPlatform{t: t, credentials: make(map[string]string)}
+	return &registryPlatform{t: t, credentials: make(map[string]string), sshKeys: make(map[string][]byte)}
 }
 
 func (platform *registryPlatform) host() *Host {
@@ -288,6 +408,35 @@ func (platform *registryPlatform) pump(broker *binding.PlatformBroker) {
 			response.Response = &bindingpb.PlatformResponse_Credential{Credential: &bindingpb.CredentialRecord{
 				EndpointId: value.CredentialBind.GetEndpointId(), CredentialRef: value.CredentialBind.GetCredentialRef(), CapabilityGrant: value.CredentialBind.GetCapabilityGrant(),
 			}}
+		case *bindingpb.PlatformRequest_SshCredentialLookup:
+			ref := value.SshCredentialLookup.GetCredentialRef()
+			publicKey := platform.sshKeys[ref]
+			newlyCreated := false
+			if len(publicKey) == 0 && value.SshCredentialLookup.GetCreateIfMissing() {
+				privateKey, keyErr := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+				if keyErr != nil {
+					platform.t.Errorf("generate test SSH key: %v", keyErr)
+					platform.mu.Unlock()
+					return
+				}
+				publicKey, keyErr = x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+				if keyErr != nil {
+					platform.t.Errorf("marshal test SSH key: %v", keyErr)
+					platform.mu.Unlock()
+					return
+				}
+				platform.sshKeys[ref] = publicKey
+				newlyCreated = true
+			}
+			if len(publicKey) == 0 {
+				response.Error = &apipb.ApiError{Code: apipb.ApiErrorCode_API_ERROR_CODE_UNAUTHORIZED, Message: "SSH credential is missing"}
+				break
+			}
+			response.Response = &bindingpb.PlatformResponse_SshCredential{SshCredential: &bindingpb.SSHCredentialRecord{
+				CredentialRef: ref, PublicKeyPkix: append([]byte(nil), publicKey...), NewlyCreated: newlyCreated,
+			}}
+		case *bindingpb.PlatformRequest_SshCredentialDelete:
+			delete(platform.sshKeys, value.SshCredentialDelete.GetCredentialRef())
 		default:
 			response.Error = &apipb.ApiError{Code: apipb.ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST, Message: "unexpected platform request"}
 		}

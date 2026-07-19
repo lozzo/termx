@@ -44,6 +44,19 @@ func TestPairingTargetKeepsManagedFieldsOutOfDirectRoute(t *testing.T) {
 	}
 }
 
+func TestDirectPairingRouteRejectsManagedOnlyBundle(t *testing.T) {
+	direct := endpoint.AccessRoute{ID: "direct", Kind: endpoint.RouteDirectWebRTCTCP, Enabled: true}
+	cloud := endpoint.AccessRoute{ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true}
+	target := endpoint.EndpointCandidate{Routes: []endpoint.AccessRoute{cloud, direct}}
+	route, err := directPairingRoute(target)
+	if err != nil || route.ID != direct.ID {
+		t.Fatalf("Direct + Cloud pairing route = %#v err=%v", route, err)
+	}
+	if _, err := directPairingRoute(endpoint.EndpointCandidate{Routes: []endpoint.AccessRoute{cloud}}); err == nil {
+		t.Fatal("managed-only pairing bundle was accepted")
+	}
+}
+
 func TestRoutePlanEnvironmentFiltersOnlyUnavailableManagedRoute(t *testing.T) {
 	directPriority, cloudPriority := 10, 20
 	target := endpoint.Endpoint{

@@ -4,7 +4,7 @@ import { CommandEnvelopeSchema, ResultEnvelopeSchema } from '../generated/apipb/
 import { ApiErrorCode, ApiErrorSchema, EndpointSessionStampSchema, ResourceHandleSchema, ResourceKind } from '../generated/apipb/common_pb'
 import { FileTransferCancelResultSchema, FileTransferHandleSchema, FileTransferOpenResultSchema, FileUploadOpenCommandSchema, FileUploadResumeHandleSchema } from '../generated/apipb/file_pb'
 import { TerminalListCommandSchema } from '../generated/apipb/terminal_pb'
-import { EndpointRegistryGetResultSchema, EndpointShareCommitResultSchema, EndpointSharePreviewSchema, EndpointShareReceiveResultSchema, EngineCommandSchema, EventEnvelopeSchema, ExecuteResultSchema, OpenSessionRequestSchema, OpenSessionResultSchema, ResourceStreamClosedEventSchema, ResourceStreamFrameSchema, ResourceStreamFrameType, SessionClosedEventSchema } from '../generated/bindingpb/client_binding_pb'
+import { EndpointRegistryGetResultSchema, EndpointShareCommitResultSchema, EndpointSharePreviewSchema, EndpointShareReceiveResultSchema, EngineCommandSchema, EventEnvelopeSchema, ExecuteResultSchema, OpenSessionRequestSchema, OpenSessionResultSchema, ResourceStreamClosedEventSchema, ResourceStreamFrameSchema, ResourceStreamFrameType, SessionClosedEventSchema, SSHCredentialProvisionResultSchema } from '../generated/bindingpb/client_binding_pb'
 import { EndpointConfigV1Schema, EndpointRegistryV1Schema } from '../generated/remoteauthpb/remote_auth_pb'
 import { BindingOperation, ProtoBindingClient, type BindingOperationCode, type ProtoBindingBackend } from './protoBindingClient'
 
@@ -114,6 +114,36 @@ describe('ProtoBindingClient engine command boundary', () => {
 	await new Promise((resolve) => setTimeout(resolve, 0))
 	expect(backend.released).toEqual([1n, 2n])
 	await client.close()
+  })
+
+  it('provisions an SSH signer through the generic Proto engine command', async () => {
+    const backend = new CancellationBackend()
+    backend.request = async (operation, payload, handle) => {
+      if (operation === BindingOperation.ENGINE_COMMAND) {
+        const command = fromBinary(EngineCommandSchema, payload)
+        expect(command.command.case).toBe('sshCredentialProvision')
+        if (command.command.case !== 'sshCredentialProvision') throw new Error('unexpected command')
+        expect(command.command.value).toMatchObject({ endpointId: 'studio', routeId: 'ssh' })
+        queueMicrotask(() => backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+          event: { case: 'sshCredentialProvision', value: create(SSHCredentialProvisionResultSchema, {
+            operationHandle: 1n,
+            endpoint: create(EndpointConfigV1Schema, { schemaVersion: 1, endpointId: 'studio' }),
+            registry: create(EndpointRegistryV1Schema, { schemaVersion: 1, defaultEndpointId: 'studio' }),
+            credentialRef: 'ssh-platform-test',
+            authorizedKey: 'ecdsa-sha2-nistp256 AAAA',
+            keyFingerprint: 'SHA256:test',
+          }) },
+        }))))
+        return 1n
+      }
+      if (operation === BindingOperation.RELEASE && handle) backend.released.push(handle)
+      return 0n
+    }
+    const client = new ProtoBindingClient(backend)
+    await expect(client.provisionSSHCredential('studio', 'ssh')).resolves.toMatchObject({ credentialRef: 'ssh-platform-test' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(backend.released).toEqual([1n])
+    await client.close()
   })
 })
 

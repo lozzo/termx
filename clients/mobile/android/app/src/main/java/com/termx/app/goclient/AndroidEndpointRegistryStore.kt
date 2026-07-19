@@ -27,7 +27,12 @@ class AndroidEndpointRegistryStore(context: Context) {
      * store 先提交 registry bytes，再用一次 preferences commit 清理 Go 已判定不再引用的 credential refs。
      * credential commit 失败时恢复旧 registry，使 Go 只在整组平台写入成功后发布新 snapshot。
      */
-    fun store(registryProto: ByteArray, deleteCredentialRefs: List<String>, credentials: AndroidClientAccessCredentialStore) = synchronized(lock) {
+    fun store(
+        registryProto: ByteArray,
+        deleteCredentialRefs: List<String>,
+        credentials: AndroidClientAccessCredentialStore,
+        sshCredentials: AndroidSSHCredentialStore,
+    ) = synchronized(lock) {
         if (registryProto.isEmpty() || registryProto.size > MAX_REGISTRY_BYTES) {
             throw ManagedEndpointFailure("protocol", "endpoint registry payload size is invalid")
         }
@@ -37,7 +42,8 @@ class AndroidEndpointRegistryStore(context: Context) {
             throw ManagedEndpointFailure("temporary", "failed to persist endpoint registry")
         }
         try {
-            credentials.deleteMany(deleteCredentialRefs)
+            credentials.deleteMany(deleteCredentialRefs.filterNot { it.startsWith(AndroidSSHCredentialStore.REF_PREFIX) })
+            sshCredentials.deleteMany(deleteCredentialRefs.filter { it.startsWith(AndroidSSHCredentialStore.REF_PREFIX) })
         } catch (failure: Throwable) {
             val rollback = preferences.edit()
             if (previous == null) rollback.remove(REGISTRY_KEY) else rollback.putString(REGISTRY_KEY, previous)

@@ -45,6 +45,13 @@ type EndpointShareHost interface {
 	CommitEndpointShare(context.Context, *bindingpb.EndpointShareCommitRequest) (*bindingpb.EndpointShareCommitResult, error)
 }
 
+// SSHCredentialHost 是 binding 对 Go-owned SSH Route credential provisioning 的业务入口。
+// 平台只持有不可导出 signer；Endpoint/Route 选择、credential ref 绑定和 registry 事务由实现负责。
+type SSHCredentialHost interface {
+	// ProvisionSSHCredential 为指定 SSH Route 准备平台 signer，并返回更新后的 registry 与公开 SSH key。
+	ProvisionSSHCredential(context.Context, *bindingpb.SSHCredentialProvisionRequest) (*bindingpb.SSHCredentialProvisionResult, error)
+}
+
 // PlatformBroker 是 Go Client Engine 与 Android/WASM platform adapter 之间的 request/response owner。
 // 请求和响应均为 bindingpb，平台通过 NextRequest/Complete 驱动；broker 不解释 Cloud 或 credential 字段。
 type PlatformBroker struct {

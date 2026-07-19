@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- `RTC009` Cloud Route 收口已完成；当前活动主线是 `RTC010` 删除旧路径与最终验收。
+- `RTC010` 删除旧路径与最终验收已完成；统一 WebRTC Route 的 Android/native Go 主线当前无未完成活动切片，`WEB001` 继续延后。
 - TermX 只有一个面向用户的 App。Direct 与 SSH 是无需登录和订阅的基础能力；TermX Cloud 是同一 App 内可选的 managed Route，提供账号目录、托管信令、ICE-UDP、TURN Relay 和跨网络能力。
 - 所有远程业务连接最终统一为可靠有序 WebRTC DataChannel：Direct 使用 daemon embedded signaling + ICE-TCP；SSH 使用 Go SSH client/direct-tcpip tunnel + daemon loopback ICE-TCP；Cloud 使用 TermX Cloud signaling + ICE-UDP 或 TURN Relay。
 - Local Unix 仍是本机 CLI/TUI 到本机 daemon 的本地 transport，不要求为了形式统一改成 WebRTC。
@@ -140,8 +140,10 @@ Android / TUI / CLI / future iOS/Desktop / future Web
 | RTC007 | 已完成 | 地址覆盖、LAN 与 FRP | `pair create` 已支持 signaling/ICE 地址与端口覆盖、自动 RFC1918 LAN seed、安全 identity/Route 预览和 wildcard/端口校验；真实 TCP mapping、不可达 fail-closed、identity/ticket 回归与 race 通过；ARM64 模拟器最终 APK 已从 App UI 导入映射 bundle、打开 terminal、输入并捕获 `rtc007-final-apk-ok`，crash scan 无异常 |
 | RTC008 | 已完成 | Endpoint share | 已实现 CLI/TUI 同源 `endpoint share`、临时 TLS certificate pin、一次性 secret、nonce + Ed25519 receiver proof、单次消费、过期/重放/pin fail-closed、Route/policy diff 和 config-only 原子导入；binding 使用 generation-local preview token 且 store 失败可重试；ARM64 模拟器最终 APK 已从 App UI 接收预览、确认导入、显示未授权 action-required，并在进程重启后恢复，crash scan 无异常 |
 | RTC009 | 已完成 | Cloud Route 收口 | binding host 已使用统一 planner/PeerSession 竞速 Direct、SSH、Cloud；平台只通过 Proto 返回账号 eligibility，未登录、登出或 Cloud 故障只过滤 planning 副本中的 managed Route，不修改 Go registry；Relay 订阅/配额由 lease 准入；`pair create --cloud` 同时签发 Direct + Cloud Route 并由 daemon DeviceIdentity 填充 target；Android 已删除旧 flavor 装配。真实 managed direct/Relay E2E、配额拒绝、Direct/SSH 回归、Proto/WASM contract、CLI、两种单 App APK 构建和 class boundary 均通过；ARM64 模拟器真实 App UI 经 Hub 完成 terminal 列表、打开、三次输入输出和后台恢复，Cloud 登出后 Endpoint 保留且 Direct 可用，crash scan 无异常 |
-| RTC010 | 待开始 | 删除旧路径与最终验收 | 删除 managed-only pairing、旧 Route、重复平台真值和旧 proxy，确认 RTC009 已移除旧 App flavor 分支；在 ARM64 Android 模拟器从真实 App UI 完成 Direct/SSH/Cloud、LAN/TCP mapping、terminal 列表与持续交互、文件上传/下载及摘要校验、取消、锁屏/后台恢复、网络切换、弱网和 crash 扫描；双 Agent 仅按本切片完成条件审查 |
+| RTC010 | 已完成 | 删除旧路径与最终验收 | 删除 managed-only pairing、旧 Route、重复平台真值和旧 proxy，确认 RTC009 已移除旧 App flavor 分支；在 ARM64 Android 模拟器从真实 App UI 完成 Direct/SSH/Cloud、LAN/TCP mapping、terminal 列表与持续交互、文件上传/下载及摘要校验、取消、锁屏/后台恢复、网络切换、弱网和 crash 扫描；双 Agent 仅按本切片完成条件审查 |
 | WEB001 | 延后 | Web/WASM 产品恢复 | 仅用户明确恢复 Web 后启动；Go/WASM + Cloud managed WebRTC，纯浏览器不支持 Direct/SSH |
+
+`RTC010` 最终 APK、Route、文件、取消、生命周期、网络、弱网、稳定性和仓库准入证据见 `docs/remote-platform/rtc010-android-final-e2e.md`。架构 reviewer 与代码 reviewer 均明确 `PASS`，无当前切片阻塞 finding；deferred observation 不影响本切片完成。
 
 ## 测试准入
 
@@ -153,6 +155,24 @@ Android / TUI / CLI / future iOS/Desktop / future Web
 - 必须覆盖锁屏、后台或等价 Activity/WebView freeze -> 旧 generation/handle 失效 -> 恢复后新 generation 重建 -> terminal 重新连接，并扫描 logcat、`AndroidRuntime`、native crash 和无界等待。
 - 测试夹具可以准备 daemon、terminal command 和校验文件，但不得绕过 APK UI 直接调用 Go/JNI 来冒充用户端到端结果。物理设备只作为补充，不替代模拟器门禁。
 - daemon capture、目标文件系统、SHA-256、服务日志和 logcat 只作为真实 UI 操作后的结果 oracle；每个 Route、terminal、文件传输、取消和 lifecycle 流程都必须记录 App UI 操作、实际结果与对应证据。
+- 验收对象必须是本切片最终构建并安装的同一个 APK；记录 APK 路径、SHA-256、构建 profile、模拟器 AVD/ABI/API 和安装时间。较早切片 APK、单测、instrumentation、直接 Go/JNI 调用或仅检查 DOM 状态不能替代最终 APK E2E。
+- UI 自动化允许使用 UIAutomator、ADB 输入或 WebView DevTools/CDP，但所有连接、terminal 输入、文件上传/下载、取消和恢复动作必须由真实 App UI 发起；夹具和脚本只能准备环境或读取结果。
+
+### RTC010 最终证据矩阵
+
+`RTC010` 标记完成前必须在本文件的当前状态说明或对应的 `docs/remote-platform/` 验收记录中逐项记录以下证据；任何强制项缺失都属于当前切片阻塞，不得交双 Agent 审查：
+
+| 流程 | 强制证据 |
+| --- | --- |
+| 最终产物 | APK 路径与 SHA-256、构建 profile、ARM64 AVD/ABI/API、安装与启动结果 |
+| Direct | App UI 导入/选择 Endpoint、建连、terminal 列表、打开、两次以上输入输出和持续交互 |
+| SSH | App UI 配置或导入 SSH Route、平台 Keystore credential、建连、terminal 列表、打开和持续交互；不得把私钥暴露给 UI |
+| Cloud | App UI 登录/准入、managed Route 建连、terminal 列表、打开和持续交互；Cloud 不可用后 Direct/SSH 仍可用 |
+| LAN/TCP mapping | App UI 导入带地址覆盖的 Route，通过真实 TCP mapping 完成连接和 terminal 交互 |
+| 文件传输 | App UI 上传、下载，双方长度和 SHA-256 一致；进行中取消后 operation/resource 被释放 |
+| 生命周期 | 锁屏/后台/WebView freeze 使旧 generation/handle 失效；恢复后新 generation 重建并重新连接 terminal |
+| 网络与弱网 | 网络切换后重连；受控丢包/延迟/限速下记录连接、交互、传输或明确失败语义，无无界等待 |
+| 稳定性 | 对上述流程扫描 logcat、`AndroidRuntime`、native crash、ANR 和遗留 operation/session/resource |
 
 - `BASE001`：文本守卫确认 AGENTS/workflow 只定义单一 App、Web/WASM 延后且 Direct/SSH/Cloud 统一使用 WebRTC DataChannel；`git diff --check`。
 - `RTC001`：generated-code check；Proto round-trip、unknown-field、descriptor compatibility；Endpoint parser/assembler/planner tests；旧 Route enum/name 扫描；`make doctor`；`git diff --check`。
@@ -175,5 +195,5 @@ Android / TUI / CLI / future iOS/Desktop / future Web
 5. 先做最小真实纵向 harness，再接生产入口；不得只以 fake、接口或文档宣布完成。
 6. 不为旧内部 Route、storage、proxy、App flavor 或 Web runtime 保留双路径、alias、wrapper 和 fallback。
 7. 每个切片运行对应准入、更新状态并使用中文提交信息提交。
-8. `RTC010` 执行双 Agent 审查；其它切片只有用户或本文件明确要求时使用子 Agent。
-9. reviewer 只能用当前切片的范围、契约、完成条件、可复现行为和测试证据判定 `PASS/FAIL`；未来优化建议记录为 deferred，不得扩大切片或阻塞提交。
+8. `RTC010` 只有在最终 APK 证据矩阵完整后才执行双 Agent 审查；其它切片只有用户或本文件明确要求时使用子 Agent。
+9. reviewer 只能用当前切片的范围、契约、完成条件、可复现行为和测试证据判定 `PASS/FAIL`；阻塞 finding 必须给出具体代码/契约位置、触发条件、当前影响和最小复现。未来优化、理论风险和无法举证的假设只能记录为 deferred，不得扩大切片或阻塞提交。

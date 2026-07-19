@@ -225,6 +225,41 @@ func TestSessionOwnerAcquireRouteSharesConsumerLeases(t *testing.T) {
 	}
 }
 
+func TestSessionOwnerInvalidationClosesSharedGeneration(t *testing.T) {
+	owner := NewSessionOwner()
+	defer owner.Close()
+	target := ownerEndpoint()
+	dialer := &ownerDialer{}
+	first, err := owner.AcquireRoute(context.Background(), target, "cloud", ConnectIntentInteractive, "config-a", dialer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := owner.AcquireRoute(context.Background(), target, "cloud", ConnectIntentInteractive, "config-a", &ownerDialer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cause := errors.New("cancelled file open cleanup failed")
+	if err := first.(ApplicationSessionInvalidator).InvalidateApplicationSession(cause); err != nil {
+		t.Fatal(err)
+	}
+	if !dialer.session.closed {
+		t.Fatal("session invalidation did not close the shared ready session")
+	}
+	for index, lease := range []ApplicationReadyPeerSession{first, second} {
+		select {
+		case <-lease.Done():
+			if !errors.Is(lease.Err(), cause) {
+				t.Fatalf("lease %d error=%v want=%v", index, lease.Err(), cause)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("lease %d remained alive after generation invalidation", index)
+		}
+	}
+	if _, err := second.ExecuteApplication(context.Background(), &apipb.CommandEnvelope{}); CodeOf(err) != ErrorStaleSession {
+		t.Fatalf("second lease execute error=%v", err)
+	}
+}
+
 func TestSessionOwnerAcquireRouteDoesNotReuseEndedOrFailedReplacement(t *testing.T) {
 	owner := NewSessionOwner()
 	defer owner.Close()

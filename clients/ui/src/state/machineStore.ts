@@ -111,8 +111,7 @@ function normalizeStoredMachine(value: Record<string, unknown> | StoredMachineRe
       : {}),
     ...(typeof record.relayInUse === 'boolean' ? { relayInUse: record.relayInUse } : {}),
     source,
-    // 旧 Official managed pairing 以 manual source 落盘且没有地址；缺少新字段时只能 local source 推导为本地能力。
-    accessClass: machineAccessClassOrUndefined(record.accessClass) ?? (source === 'local' ? 'local' : 'cloud'),
+	accessClass: machineAccessClass(record.accessClass),
     addresses,
     endpoints,
     addedAt: stringField(record, 'addedAt'),
@@ -190,10 +189,9 @@ function machineSource(value: unknown): AppMachineSource {
   throw new Error(`invalid machine source ${String(value)}`)
 }
 
-function machineAccessClassOrUndefined(value: unknown): MachineAccessClass | undefined {
-  if (value === undefined || value === null) return undefined
-  if (value === 'local' || value === 'cloud' || value === 'local_cloud') return value
-  throw new Error(`invalid machine access class ${String(value)}`)
+function machineAccessClass(value: unknown): MachineAccessClass {
+	if (value === 'local' || value === 'cloud' || value === 'local_cloud') return value
+	throw new Error(`invalid machine access class ${String(value)}`)
 }
 
 function connectionPathOrUndefined(value: unknown): ConnectionPath | undefined {

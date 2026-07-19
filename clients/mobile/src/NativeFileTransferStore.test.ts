@@ -1,8 +1,11 @@
-import { create } from '@bufbuild/protobuf'
+import { create, toBinary } from '@bufbuild/protobuf'
 import type { ProtoClientSession, ProtoResourceStream } from '../../ui/src/core/protoClientSession'
+import { decodeFileTransferDataPayload, encodeFileTransferAckPayload } from '../../ui/src/files/fileStreamProtocol'
 import * as TermxApiApplication from '../../ui/src/generated/apipb/application_pb'
 import * as TermxApiCommon from '../../ui/src/generated/apipb/common_pb'
 import * as TermxApiFile from '../../ui/src/generated/apipb/file_pb'
+import * as TermxClientBinding from '../../ui/src/generated/bindingpb/client_binding_pb'
+import { ErrorEnvelopeSchema, FileTransferResultSchema, ProtocolErrorSchema } from '../../ui/src/generated/wirepb/terminal_pb'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 describe('NativeFileTransferStore', () => {
@@ -87,6 +90,28 @@ describe('NativeFileTransferStore', () => {
     expect(harness.counters.openStreamCalls).toBe(0)
     expect(harness.statuses).not.toContain('transferring')
     expect(harness.store.getSnapshot().transfers[0]?.status).toBe('paused')
+  })
+
+  it('lets binding own cleanup when cancel wins before FileUploadOpen delivers a resource', async () => {
+    const openGate = deferred<void>()
+    const openStarted = deferred<void>()
+    const harness = await createUploadHarness({
+      releaseResource: async () => undefined,
+      cancelOpenBeforeDelivery: true,
+      beforeOpenResult: async () => {
+        openStarted.resolve()
+        await openGate.promise
+      },
+    })
+    await openStarted.promise
+    harness.store.cancelTransfer(harness.id)
+    openGate.resolve()
+
+    await waitFor(() => harness.counters.sessionCloses === 1)
+    expect(harness.store.getSnapshot().transfers[0]?.status).toBe('cancelled')
+    expect(harness.counters.cancelCommands).toBe(0)
+    expect(harness.counters.releaseCommands).toBe(0)
+    expect(harness.counters.bindingCancelledOpenCleanups).toBe(1)
   })
 
   it('closes a late stream and cancels its resource when cancel wins during stream open', async () => {
@@ -263,7 +288,272 @@ describe('NativeFileTransferStore', () => {
     })
     await waitFor(() => lateSessionCloses === 1)
   })
+
+  it('accepts ordered upload ACKs that lag behind the current send offset', async () => {
+    vi.stubGlobal('self', globalThis)
+    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
+    const subscribers: Array<(type: number, payload: Uint8Array) => void> = []
+    const sentChunks: Array<{ offset: number, size: number }> = []
+    const stream: ProtoResourceStream = {
+      handle: 1n,
+      send: async (type, payload) => {
+        if (type === TermxClientBinding.ResourceStreamFrameType.FILE_DATA) {
+          const data = decodeFileTransferDataPayload(payload)
+          sentChunks.push({ offset: data.offset, size: data.data.byteLength })
+          return
+        }
+        if (type === TermxClientBinding.ResourceStreamFrameType.FILE_FINISH) {
+          for (const chunk of sentChunks) {
+            const ack = encodeFileTransferAckPayload({ offset: chunk.offset + chunk.size, windowBytes: chunk.size })
+            for (const subscriber of subscribers) subscriber(TermxClientBinding.ResourceStreamFrameType.FILE_ACK, ack)
+          }
+          const result = toBinary(FileTransferResultSchema, create(FileTransferResultSchema, { size: 8n }))
+          for (const subscriber of subscribers) subscriber(TermxClientBinding.ResourceStreamFrameType.FILE_RESULT, result)
+        }
+      },
+      subscribe: (listener) => {
+        subscribers.push(listener)
+        return { close() {} }
+      },
+      subscribeClosed: () => ({ close() {} }),
+      close: async () => undefined,
+    }
+    const session = uploadSession(stream, 8, 4, 8)
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Blob([new Uint8Array(8)]))))
+    const store = new NativeFileTransferStore()
+    store.setSessionResolver(async () => session)
+
+    store.startUpload('studio', 'content://upload', 'demo.bin', 8, '/tmp')
+
+    await waitFor(() => store.getSnapshot().transfers[0]?.status === 'completed')
+    expect(sentChunks).toEqual([{ offset: 0, size: 4 }, { offset: 4, size: 4 }])
+  })
+
+  it('fails a window-blocked upload when the daemon sends FILE_ERROR without closing the stream', async () => {
+    vi.stubGlobal('self', globalThis)
+    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
+    const subscribers: Array<(type: number, payload: Uint8Array) => void> = []
+    const sentOffsets: number[] = []
+    const stream: ProtoResourceStream = {
+      handle: 1n,
+      send: async (type, payload) => {
+        if (type !== TermxClientBinding.ResourceStreamFrameType.FILE_DATA) return
+        const data = decodeFileTransferDataPayload(payload)
+        sentOffsets.push(data.offset)
+        const error = toBinary(ErrorEnvelopeSchema, create(ErrorEnvelopeSchema, {
+          error: create(ProtocolErrorSchema, { code: 500, message: 'daemon write failed' }),
+        }))
+        for (const subscriber of subscribers) subscriber(TermxClientBinding.ResourceStreamFrameType.ERROR, error)
+      },
+      subscribe: (listener) => {
+        subscribers.push(listener)
+        return { close() {} }
+      },
+      subscribeClosed: () => ({ close() {} }),
+      close: async () => undefined,
+    }
+    const store = new NativeFileTransferStore()
+    store.setSessionResolver(async () => uploadSession(stream, 8, 4, 4))
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Blob([new Uint8Array(8)]))))
+
+    store.startUpload('studio', 'content://upload', 'demo.bin', 8, '/tmp')
+
+    await waitFor(() => store.getSnapshot().transfers[0]?.status === 'failed')
+    expect(store.getSnapshot().transfers[0]?.error).toBe('daemon write failed')
+    expect(sentOffsets).toEqual([0])
+  })
+
+  it('closes the session-owned download when the cancel RPC has no usable result', async () => {
+    vi.stubGlobal('self', globalThis)
+    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
+    const counters = { cancelCommands: 0, releaseCommands: 0, sessionCloses: 0, streamCloses: 0, activeResources: 1 }
+    const session = downloadSession(counters)
+    const store = new NativeFileTransferStore()
+    store.setSessionResolver(async () => session)
+    store.startDownload('studio', 'large.bin', 1024, '/tmp/large.bin')
+    await waitFor(() => store.getSnapshot().transfers[0]?.status === 'transferring')
+
+    store.cancelTransfer(store.getSnapshot().transfers[0]!.id)
+
+    await waitFor(() => counters.cancelCommands === 1 && counters.releaseCommands === 1 && counters.sessionCloses === 1 && counters.streamCloses === 1)
+    expect(store.getSnapshot().transfers[0]?.status).toBe('cancelled')
+    expect(counters.activeResources).toBe(0)
+  })
+
+  it('keeps a download failed when neither cancel nor release reaches the daemon', async () => {
+    vi.stubGlobal('self', globalThis)
+    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
+    const counters = { cancelCommands: 0, releaseCommands: 0, sessionCloses: 0, streamCloses: 0, activeResources: 1 }
+    const session = downloadSession(counters, true)
+    const store = new NativeFileTransferStore()
+    store.setSessionResolver(async () => session)
+    store.startDownload('studio', 'large.bin', 1024, '/tmp/large.bin')
+    await waitFor(() => store.getSnapshot().transfers[0]?.status === 'transferring')
+
+    store.cancelTransfer(store.getSnapshot().transfers[0]!.id)
+
+    await waitFor(() => store.getSnapshot().transfers[0]?.status === 'failed')
+    expect(counters.activeResources).toBe(1)
+    expect(counters.sessionCloses).toBe(0)
+  })
+
+  it('does not let a late download cleanup error overwrite cancelled state', async () => {
+    vi.stubGlobal('self', globalThis)
+    const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
+    const releaseGate = deferred<void>()
+    const releaseStarted = deferred<void>()
+    let closeListener: ((error: Error) => void) | undefined
+    let sessionCloses = 0
+    let releaseCommands = 0
+    let activeResources = 1
+    const stamp = create(TermxApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'direct', generation: 1n })
+    const resource = create(TermxApiCommon.ResourceHandleSchema, {
+      kind: TermxApiCommon.ResourceKind.FILE_TRANSFER,
+      opaqueToken: new Uint8Array([4]),
+      session: stamp,
+    })
+    const session: ProtoClientSession = {
+      stamp,
+      isAlive: () => true,
+      close: async () => { sessionCloses += 1 },
+      subscribeEvents: () => ({ close() {} }),
+      openResourceStream: async () => ({
+        handle: 1n,
+        send: async () => undefined,
+        subscribe: () => ({ close() {} }),
+        subscribeClosed: (listener) => { closeListener = listener; return { close() {} } },
+        close: async () => undefined,
+      }),
+      execute: async (envelope) => {
+        if (envelope.command.case === 'fileDownloadOpen') {
+          return create(TermxApiApplication.ResultEnvelopeSchema, {
+            result: {
+              case: 'fileTransferOpen',
+              value: create(TermxApiFile.FileTransferOpenResultSchema, {
+                transfer: create(TermxApiFile.FileTransferHandleSchema, { resource, size: 1024n, chunkBytes: 4, windowBytes: 8n }),
+              }),
+            },
+          })
+        }
+        if (envelope.command.case === 'releaseResource') {
+          releaseCommands += 1
+          if (releaseCommands === 1) {
+            releaseStarted.resolve()
+            await releaseGate.promise
+            throw new Error('late release failure')
+          }
+          activeResources = 0
+          return create(TermxApiApplication.ResultEnvelopeSchema)
+        }
+        if (envelope.command.case === 'fileTransferCancel') {
+          throw new Error('cancel response unavailable')
+        }
+        throw new Error(`unexpected command ${envelope.command.case}`)
+      },
+    }
+    const store = new NativeFileTransferStore()
+    store.setSessionResolver(async () => session)
+    store.startDownload('studio', 'large.bin', 1024, '/tmp/large.bin')
+    await waitFor(() => store.getSnapshot().transfers[0]?.status === 'transferring' && closeListener !== undefined)
+    closeListener!(new Error('producer closed'))
+    await releaseStarted.promise
+
+    store.cancelTransfer(store.getSnapshot().transfers[0]!.id)
+    releaseGate.resolve()
+
+    await waitFor(() => sessionCloses === 1)
+    expect(store.getSnapshot().transfers[0]?.status).toBe('cancelled')
+    expect(activeResources).toBe(0)
+  })
 })
+
+function uploadSession(stream: ProtoResourceStream, size: number, chunkBytes: number, windowBytes: number): ProtoClientSession {
+  const stamp = create(TermxApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'cloud', generation: 1n })
+  return {
+    stamp,
+    isAlive: () => true,
+    close: async () => undefined,
+    subscribeEvents: () => ({ close() {} }),
+    openResourceStream: async () => stream,
+    execute: async (envelope) => {
+      if (envelope.command.case === 'fileUploadOpen') {
+        return create(TermxApiApplication.ResultEnvelopeSchema, {
+          result: {
+            case: 'fileTransferOpen',
+            value: create(TermxApiFile.FileTransferOpenResultSchema, {
+              transfer: create(TermxApiFile.FileTransferHandleSchema, {
+                resource: create(TermxApiCommon.ResourceHandleSchema, {
+                  kind: TermxApiCommon.ResourceKind.FILE_TRANSFER,
+                  opaqueToken: new Uint8Array([1]),
+                  session: stamp,
+                }),
+                size: BigInt(size),
+                chunkBytes,
+                windowBytes: BigInt(windowBytes),
+                resume: create(TermxApiFile.FileUploadResumeHandleSchema, { opaqueToken: new Uint8Array([2]) }),
+              }),
+            }),
+          },
+        })
+      }
+      if (envelope.command.case === 'releaseResource') return create(TermxApiApplication.ResultEnvelopeSchema)
+      throw new Error(`unexpected command ${envelope.command.case}`)
+    },
+  }
+}
+
+function downloadSession(
+  counters: { cancelCommands: number, releaseCommands: number, sessionCloses: number, streamCloses: number, activeResources: number },
+  releaseFails = false,
+): ProtoClientSession {
+  const stamp = create(TermxApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'direct', generation: 1n })
+  const resource = create(TermxApiCommon.ResourceHandleSchema, {
+    kind: TermxApiCommon.ResourceKind.FILE_TRANSFER,
+    opaqueToken: new Uint8Array([3]),
+    session: stamp,
+  })
+  return {
+    stamp,
+    isAlive: () => true,
+    close: async () => { counters.sessionCloses += 1 },
+    subscribeEvents: () => ({ close() {} }),
+    openResourceStream: async () => ({
+      handle: 1n,
+      send: async () => undefined,
+      subscribe: () => ({ close() {} }),
+      subscribeClosed: () => ({ close() {} }),
+      close: async () => { counters.streamCloses += 1 },
+    }),
+    execute: async (envelope) => {
+      if (envelope.command.case === 'fileDownloadOpen') {
+        return create(TermxApiApplication.ResultEnvelopeSchema, {
+          result: {
+            case: 'fileTransferOpen',
+            value: create(TermxApiFile.FileTransferOpenResultSchema, {
+              transfer: create(TermxApiFile.FileTransferHandleSchema, {
+                resource,
+                size: 1024n,
+                chunkBytes: 4,
+                windowBytes: 8n,
+              }),
+            }),
+          },
+        })
+      }
+      if (envelope.command.case === 'fileTransferCancel') {
+        counters.cancelCommands += 1
+        throw new Error('cancel response unavailable')
+      }
+      if (envelope.command.case === 'releaseResource') {
+        counters.releaseCommands += 1
+        if (releaseFails) throw new Error('release response unavailable')
+        counters.activeResources = 0
+        return create(TermxApiApplication.ResultEnvelopeSchema)
+      }
+      throw new Error(`unexpected command ${envelope.command.case}`)
+    },
+  }
+}
 
 async function createPausedUpload(releaseResource: () => Promise<void>) {
   const harness = await createUploadHarness({ releaseResource })
@@ -277,7 +567,8 @@ async function createUploadHarness(options: {
   beforeOpenResult?: () => Promise<void>
   beforeStreamResult?: () => Promise<void>
 	beforeSessionClose?: () => Promise<void>
-	freshResolverFailures?: number
+  freshResolverFailures?: number
+  cancelOpenBeforeDelivery?: boolean
   cancelBehavior?: 'success' | 'false' | 'throw' | 'false_then_success'
 }) {
   vi.stubGlobal('self', globalThis)
@@ -288,7 +579,7 @@ async function createUploadHarness(options: {
     opaqueToken: new Uint8Array([1, 2, 3]),
 	session: create(TermxApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'cloud', generation: 1n }),
   })
-  const counters = { openStreamCalls: 0, releaseCommands: 0, cancelCommands: 0, streamCloses: 0, sessionCloses: 0 }
+  const counters = { openStreamCalls: 0, releaseCommands: 0, cancelCommands: 0, streamCloses: 0, sessionCloses: 0, bindingCancelledOpenCleanups: 0 }
   const stream: ProtoResourceStream = {
     handle: 1n,
     send: async () => undefined,
@@ -316,11 +607,15 @@ async function createUploadHarness(options: {
         await options.beforeStreamResult?.()
         return stream
       },
-      execute: async (envelope) => {
+      execute: async (envelope, executeOptions) => {
       if (envelope.command.case === 'fileUploadOpen') {
         openCommands.push(envelope.command.value)
         if (openCommands.length > 1) throw new Error('resume-open-observed')
         await options.beforeOpenResult?.()
+        if (options.cancelOpenBeforeDelivery && executeOptions?.signal?.aborted) {
+          counters.bindingCancelledOpenCleanups += 1
+          throw new DOMException('Aborted', 'AbortError')
+        }
         return create(TermxApiApplication.ResultEnvelopeSchema, {
           result: {
             case: 'fileTransferOpen',

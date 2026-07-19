@@ -67,6 +67,9 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
             if (previous == network || !lifecycleReady) return
             if (!ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
             runCatching { restartGoBridgeServer() }
+                .onSuccess {
+                    notifyListeners("generationChanged", JSObject().put("reason", "network_available"))
+                }
                 .onFailure { TermxDebugLog.e(TAG, "Go client engine could not follow Android network epoch", it) }
         }
     }

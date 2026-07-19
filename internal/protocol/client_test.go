@@ -3,6 +3,7 @@ package protocol
 import (
 	"context"
 	"fmt"
+	"io"
 	"testing"
 	"time"
 
@@ -158,6 +159,33 @@ func TestClientPublishesGeneratedApplicationEvents(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
+	}
+}
+
+func TestClientFailAllDoesNotBlockOnCompletedWaiter(t *testing.T) {
+	completed := make(chan result, 1)
+	completed <- result{payload: []byte("done")}
+	client := &Client{
+		waiters:                     map[uint64]chan result{1: completed},
+		streams:                     make(map[uint16]*clientStream),
+		pending:                     make(map[uint16][]StreamFrame),
+		reused:                      make(map[uint16][]StreamFrame),
+		dropped:                     make(map[uint16]struct{}),
+		applicationEventSubscribers: make(map[uint64]chan *apipb.EventEnvelope),
+		helloCh:                     make(chan result, 1),
+	}
+	done := make(chan struct{})
+	go func() {
+		client.failAll(io.EOF)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("failAll blocked behind a completed waiter")
+	}
+	if got := <-completed; string(got.payload) != "done" || got.err != nil {
+		t.Fatalf("completed waiter result=%#v", got)
 	}
 }
 

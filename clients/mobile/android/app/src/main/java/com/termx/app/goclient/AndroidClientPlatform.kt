@@ -22,6 +22,7 @@ class AndroidClientPlatform(
     private val engineHandle: Long,
     private val cloud: ManagedCloudAdapter = ManagedCloudAssembly.create(context.applicationContext),
     private val credentials: AndroidClientAccessCredentialStore = AndroidClientAccessCredentialStore(context.applicationContext),
+    private val sshCredentials: AndroidSSHCredentialStore = AndroidSSHCredentialStore(),
     private val endpointRegistry: AndroidEndpointRegistryStore = AndroidEndpointRegistryStore(context.applicationContext),
 ) : AutoCloseable {
     private val active = AtomicBoolean(true)
@@ -94,8 +95,23 @@ class AndroidClientPlatform(
                         request.endpointRegistryStore.registryProto.toByteArray(),
                         request.endpointRegistryStore.deleteCredentialRefsList,
                         credentials,
+                        sshCredentials,
                     )
                 }
+                ClientBinding.PlatformRequest.RequestCase.SSH_CREDENTIAL_LOOKUP ->
+                    response.setSshCredential(sshCredentials.lookup(
+                        request.sshCredentialLookup.credentialRef,
+                        request.sshCredentialLookup.createIfMissing,
+                    ))
+                ClientBinding.PlatformRequest.RequestCase.SSH_CREDENTIAL_SIGN ->
+                    response.setSshCredentialSign(ClientBinding.SSHCredentialSignResponse.newBuilder()
+                        .setSignature(ByteString.copyFrom(sshCredentials.sign(
+                            request.sshCredentialSign.credentialRef,
+                            request.sshCredentialSign.digest.toByteArray(),
+                            request.sshCredentialSign.hash,
+                        ))))
+                ClientBinding.PlatformRequest.RequestCase.SSH_CREDENTIAL_DELETE ->
+                    sshCredentials.delete(request.sshCredentialDelete.credentialRef)
                 ClientBinding.PlatformRequest.RequestCase.CLOUD_RESOLVE_ENDPOINT ->
                     response.setCloudResolvedEndpoint(runBlocking { cloud.resolveProto(request.cloudResolveEndpoint) })
                 ClientBinding.PlatformRequest.RequestCase.CLOUD_CREATE_SIGNALING ->

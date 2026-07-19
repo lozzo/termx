@@ -5,6 +5,7 @@ import android.content.Intent
 import android.database.Cursor
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Base64
 import android.util.Log
 import androidx.activity.result.ActivityResult
 import com.getcapacitor.JSArray
@@ -42,6 +43,27 @@ class NativeFilePickerPlugin : Plugin() {
         }
 
         startActivityForResult(call, intent, "pickFilesResult")
+    }
+
+    /** saveFile 在 Go resource stream 完整校验后把下载内容明确提交到 Android Downloads/TermX。 */
+    @PluginMethod
+    fun saveFile(call: PluginCall) {
+        val name = call.getString("name").orEmpty()
+        val mimeType = call.getString("mimeType") ?: "application/octet-stream"
+        val encoded = call.getString("dataBase64").orEmpty()
+        try {
+            val bytes = Base64.decode(encoded, Base64.DEFAULT)
+            val saved = AndroidDownloadStore(context.applicationContext).save(name, mimeType, bytes)
+            call.resolve(JSObject().apply {
+                put("uri", saved.uri.toString())
+                put("path", saved.path)
+                put("bytes", saved.bytes)
+                put("sha256", saved.sha256)
+            })
+        } catch (failure: Exception) {
+            Log.e(TAG, "saveFile failed", failure)
+            call.reject("failed to save download: ${failure.message}", failure)
+        }
     }
 
     @ActivityCallback

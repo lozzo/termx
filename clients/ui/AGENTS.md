@@ -20,7 +20,7 @@
 
 - WebRTC 是 endpoint transport；direct、single relay 和 relay mesh 只是 observed path，不是不同 endpoint 或 terminal protocol。
 - 原始 `CapabilityGrant` 只在 DTLS DataChannel 建立后的端到端握手中交给 owning daemon，不能进入 Hub/Control Plane HTTP、SDP、日志或 Web storage。
-- AccountAccessToken、HubAdmissionTicket 和 RelayLease 只属于 managed cloud adapter；Community/adapter 缺失时必须 fail closed，并且只影响对应 managed endpoint。
+- AccountAccessToken、HubAdmissionTicket 和 RelayLease 只属于 managed cloud adapter；Cloud adapter 未配置或不可用时必须 fail closed，并且只影响对应 managed Route。
 - 组件层不得直接创建 `RTCPeerConnection`、`RTCDataChannel`，也不得直接调用 `fetch`、`localStorage` 或 native bridge；这些能力必须通过可替换 interface 注入。
 
 ## History Boundary

@@ -283,6 +283,32 @@ func (owner *SessionOwner) Disconnect(_ context.Context, request DisconnectReque
 	return session.Close()
 }
 
+// invalidateApplicationSession 在资源清理无法确认时撤销精确 session generation。
+// 它关闭底层 ReadyPeerSession 并终止同 generation 的全部 shared lease，避免其它 consumer 让未知 daemon resource 继续存活。
+func (owner *SessionOwner) invalidateApplicationSession(stamp EndpointSessionStamp, cause error) error {
+	if err := stamp.Validate(); err != nil {
+		return err
+	}
+	if cause == nil {
+		cause = runtimeError(ErrorUnavailable, "application session was invalidated", nil)
+	}
+	owner.mu.Lock()
+	session := owner.current[stamp.EndpointID]
+	if session == nil || session.Stamp() != stamp || !owner.authority.isCurrent(stamp.EndpointID, stamp.Generation, session) {
+		owner.mu.Unlock()
+		return runtimeError(ErrorStaleSession, "invalidate session stamp is not current", nil)
+	}
+	delete(owner.current, stamp.EndpointID)
+	delete(owner.configs, stamp.EndpointID)
+	shared := owner.takeSharedLeasesForSessionLocked(stamp.EndpointID, session)
+	owner.authority.removeCurrent(stamp.EndpointID, session)
+	owner.mu.Unlock()
+	for _, lease := range shared {
+		lease.finish(cause)
+	}
+	return session.Close()
+}
+
 // Close 关闭 owner 持有的全部当前 session 并禁止新连接。
 // 方法可重复调用；它不修改 endpoint registry、credential store 或 daemon terminal lifecycle。
 func (owner *SessionOwner) Close() error {
@@ -412,7 +438,9 @@ func (owner *SessionOwner) takeSharedLeasesForSessionLocked(endpointID endpoint.
 	leasing := owner.sharedLeases[endpointID]
 	result := make([]*sharedApplicationLease, 0, len(leasing))
 	for lease := range leasing {
-		if lease.ready != ready {
+		// 首个 AcquireRoute consumer 可能包装 ownedApplicationSession，后续 consumer 直接包装底层 ready；
+		// stamp 才是两者共享的精确 generation identity，不能用 wrapper pointer 判断 ownership。
+		if lease.ready.Stamp() != ready.Stamp() {
 			continue
 		}
 		result = append(result, lease)
@@ -462,6 +490,11 @@ func (session *ownedApplicationSession) Err() error            { return session.
 
 func (session *ownedApplicationSession) Close() error {
 	return session.owner.Disconnect(context.Background(), DisconnectRequest{Stamp: session.stamp})
+}
+
+// InvalidateApplicationSession 在资源清理失败时撤销 owned wrapper 绑定的精确 generation。
+func (session *ownedApplicationSession) InvalidateApplicationSession(cause error) error {
+	return session.owner.invalidateApplicationSession(session.stamp, cause)
 }
 
 func (session *ownedApplicationSession) ExecuteApplication(ctx context.Context, command *apipb.CommandEnvelope) (*apipb.ResultEnvelope, error) {
@@ -534,6 +567,7 @@ var _ ApplicationReadyPeerSession = (*ownedApplicationSession)(nil)
 var _ ResourceStreamSession = (*ownedApplicationSession)(nil)
 var _ ApplicationAttachmentSession = (*ownedApplicationSession)(nil)
 var _ ApplicationSessionValidator = (*ownedApplicationSession)(nil)
+var _ ApplicationSessionInvalidator = (*ownedApplicationSession)(nil)
 
 type sharedApplicationLease struct {
 	owner      *SessionOwner
@@ -563,11 +597,16 @@ func (lease *sharedApplicationLease) Close() error {
 	})
 	return nil
 }
+
+// InvalidateApplicationSession 在资源清理失败时撤销 shared lease 所属的完整 generation，而不是只释放当前 consumer。
+func (lease *sharedApplicationLease) InvalidateApplicationSession(cause error) error {
+	return lease.owner.invalidateApplicationSession(lease.ready.Stamp(), cause)
+}
 func (lease *sharedApplicationLease) finish(err error) {
-	lease.errMu.Lock()
-	lease.err = err
-	lease.errMu.Unlock()
 	lease.closeOnce.Do(func() {
+		lease.errMu.Lock()
+		lease.err = err
+		lease.errMu.Unlock()
 		lease.owner.releaseSharedLease(lease)
 		close(lease.done)
 	})
@@ -645,6 +684,8 @@ func (lease *sharedApplicationLease) ApplicationAttachment(channel uint16) (*api
 	}
 	return provider.ApplicationAttachment(channel)
 }
+
+var _ ApplicationSessionInvalidator = (*sharedApplicationLease)(nil)
 
 func (lease *sharedApplicationLease) active() error {
 	select {

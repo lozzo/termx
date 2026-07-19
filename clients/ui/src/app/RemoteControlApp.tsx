@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode } from 'react'
-import { ArrowLeft, Camera, ChevronRight, Cloud, Download, Keyboard, LaptopMinimal, LogIn, LogOut, Monitor, MoreHorizontal, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Wifi, X } from 'lucide-react'
+import { ArrowLeft, Camera, ChevronRight, Cloud, Copy, Download, Keyboard, LaptopMinimal, LogIn, LogOut, Monitor, MoreHorizontal, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Wifi, X } from 'lucide-react'
 import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorkspaceConnector } from './MachineWorkspace'
 import { createMachineStore, type StoredMachineRecord } from '../state/machineStore'
 import type { MachineConnectionSnapshot } from '../connection/machineConnectionSnapshot'
@@ -80,6 +80,7 @@ export interface ExternalPairingImportResult {
   machine: { id: string; name: string; hostname?: string | undefined; accessClass?: MachineAccessClass | undefined }
   expiresAt?: string | undefined
   authorizationRequired?: boolean | undefined
+  sshCredentials?: { routeId: string; authorizedKey: string; fingerprint: string }[] | undefined
 }
 
 /** EndpointSharePreviewView 是 Go Client Engine 验证并计算后的 config-only 导入差异。 */
@@ -190,6 +191,7 @@ export function RemoteControlApp({
   const [loading, setLoading] = useState(false)
   const [pairing, setPairing] = useState(false)
   const [sharePreview, setSharePreview] = useState<EndpointSharePreviewView | null>(null)
+  const [sshCredentialNotice, setSSHCredentialNotice] = useState<NonNullable<ExternalPairingImportResult['sshCredentials']> | null>(null)
   const [cameraScanning, setCameraScanning] = useState(false)
   const [scanFlowState, setScanFlowState] = useState<ScanFlowState>('idle')
   const [scanAutoStartToken, setScanAutoStartToken] = useState(0)
@@ -628,7 +630,9 @@ export function RemoteControlApp({
     setPairVersion((current) => current + 1)
     setManualScanValue('')
     setSharePreview(null)
-    setScanOpen(false)
+    const sshCredentials = external.sshCredentials?.filter((credential) => credential.authorizedKey.trim() !== '') ?? []
+    setSSHCredentialNotice(sshCredentials.length > 0 ? sshCredentials : null)
+    setScanOpen(sshCredentials.length > 0)
     setView(external.authorizationRequired ? 'home' : 'machine')
     hapticSuccess()
   }, [dropMachineRuntime, externalPairingAdapter, machines, selectedMachine, storage, user?.id])
@@ -780,6 +784,7 @@ export function RemoteControlApp({
 
   useEffect(() => addNativeBackHandler(() => {
     if (scanOpen) {
+      setSSHCredentialNotice(null)
       setScanOpen(false)
       return true
     }
@@ -868,14 +873,15 @@ export function RemoteControlApp({
           pairError={error}
           scanFlowState={scanFlowState}
           pairing={pairing}
-		  sharePreview={sharePreview}
+          sharePreview={sharePreview}
+          sshCredentialNotice={sshCredentialNotice}
           cameraScanning={cameraScanning}
           pairIntent={pairIntent}
           selectedMachine={selectedMachine}
           signedIn={signedIn}
           canScanWithCamera={Boolean(scanPairingCode)}
 		  onCommitShare={() => void commitEndpointShare()}
-          onClose={() => { hapticSelection(); setSharePreview(null); setScanOpen(false) }}
+          onClose={() => { hapticSelection(); setSharePreview(null); setSSHCredentialNotice(null); setScanOpen(false) }}
           onImport={() => void importManualScan()}
           onManualEntryOpen={() => { hapticSelection(); setManualEntryOpen(true) }}
           onManualScanValueChange={setManualScanValue}
@@ -1805,6 +1811,7 @@ function PairSheet({
   pairIntent,
   pairing,
   sharePreview,
+  sshCredentialNotice,
   selectedMachine,
   signedIn,
   onClose,
@@ -1823,6 +1830,7 @@ function PairSheet({
   pairIntent: PairIntent
   pairing: boolean
   sharePreview: EndpointSharePreviewView | null
+  sshCredentialNotice: NonNullable<ExternalPairingImportResult['sshCredentials']> | null
   selectedMachine: WebControlMachine | null
   signedIn: boolean
   onClose: () => void
@@ -1832,7 +1840,7 @@ function PairSheet({
   onManualScanValueChange: (value: string) => void
   onScanWithCamera: () => void
 }) {
-  const title = sharePreview ? 'Import Endpoint Config' : pairIntent === 'add-local' ? 'Add Local Device' : 'Authorize Device'
+  const title = sshCredentialNotice ? 'SSH Key Ready' : sharePreview ? 'Import Endpoint Config' : pairIntent === 'add-local' ? 'Add Local Device' : 'Authorize Device'
   const primaryLabel = pairIntent === 'add-local' ? 'Add Device' : 'Pair Device'
   const showManualEntry = manualEntryOpen || !canScanWithCamera
   const statusMessage = scanFlowState === 'pairing'
@@ -1860,7 +1868,32 @@ function PairSheet({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">
           <div className="mx-auto w-full max-w-md">
-            {sharePreview ? (
+            {sshCredentialNotice ? (
+              <div className="termx-app-panel bg-[var(--termx-app-soft)] px-3 py-3">
+                {sshCredentialNotice.map((credential) => (
+                  <div className="mb-4 last:mb-0" key={credential.routeId}>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-semibold text-zinc-950">{credential.routeId}</span>
+                      <span className="font-mono text-xs text-zinc-500">{credential.fingerprint}</span>
+                    </div>
+                    <textarea
+                      aria-label={`SSH authorized key for ${credential.routeId}`}
+                      className="mt-3 h-32 w-full resize-none border border-[var(--termx-app-line)] bg-white p-2 font-mono text-xs leading-5 text-zinc-950 outline-none"
+                      value={credential.authorizedKey}
+                      readOnly
+                    />
+                    <button
+                      className="termx-app-secondary-button mt-3 h-11 w-full gap-2 px-3 text-sm font-semibold"
+                      type="button"
+                      onClick={() => { void navigator.clipboard.writeText(credential.authorizedKey); hapticSuccess() }}
+                    >
+                      <Copy className="h-4 w-4" />
+                      Copy public key
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : sharePreview ? (
               <div className="termx-app-panel bg-[var(--termx-app-soft)] px-3 py-3">
                 <div className="text-sm font-semibold text-zinc-950">{sharePreview.label || sharePreview.endpointId}</div>
                 <div className="mt-1 break-all font-mono text-xs text-zinc-500">{sharePreview.deviceFingerprint}</div>
@@ -1889,7 +1922,7 @@ function PairSheet({
               </div>
             ) : null}
 
-            {!sharePreview ? <>
+            {!sharePreview && !sshCredentialNotice ? <>
             {selectedMachine ? (
               <div className="termx-app-panel bg-[var(--termx-app-soft)] px-3 py-2">
                 <div className="truncate text-sm font-semibold text-zinc-950">{selectedMachine.name}</div>
@@ -1952,7 +1985,7 @@ function PairSheet({
             {pairError ? (
               <p className="mt-3 border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-500">{pairError}</p>
             ) : null}
-			</> : pairError ? (
+				</> : !sshCredentialNotice && pairError ? (
 			  <p className="mt-3 border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-500">{pairError}</p>
 			) : null}
 
