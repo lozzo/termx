@@ -18,6 +18,7 @@ import (
 	peeradapter "github.com/lozzow/termx/client/adapter/peer"
 	shareadapter "github.com/lozzow/termx/client/adapter/share"
 	sshadapter "github.com/lozzow/termx/client/adapter/ssh"
+	systemadapter "github.com/lozzow/termx/client/adapter/system"
 	"github.com/lozzow/termx/client/binding"
 	"github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/client/port"
@@ -97,51 +98,44 @@ func (host *Host) OpenSession(ctx context.Context, request *bindingpb.OpenSessio
 		return nil, err
 	}
 	routeID := endpoint.RouteID(strings.TrimSpace(request.GetRouteOverride()))
-	if routeID == "" {
-		routes := target.RouteList()
-		if len(routes) != 1 {
-			return nil, fmt.Errorf("open session route_override is required for multi-route endpoint")
-		}
-		routeID = routes[0].ID
-	}
-	route, ok := target.Route(routeID)
-	if !ok {
-		return nil, fmt.Errorf("endpoint %q has no route %q", target.ID, routeID)
-	}
 	credentials := platformCredentials{broker: host.options.Broker}
 	authorizer := peeradapter.CapabilityAuthorizer{Credentials: credentials, Signers: credentials, Now: host.options.Now}
-	wireTarget, err := endpoint.EndpointToProto(target)
+	planningTarget, environment, err := routePlanEnvironment(ctx, target, host.options, credentials, platformManagedEligibility{broker: host.options.Broker})
 	if err != nil {
 		return nil, err
 	}
-	config := sessionConfig(wireTarget, routeID, request.GetIntent())
-	switch route.Kind {
-	case endpoint.RouteDirectWebRTCTCP:
-		if host.options.DirectPeers == nil {
-			return nil, fmt.Errorf("Direct WebRTC peer factory is unavailable")
-		}
-		return host.owner.AcquireRoute(ctx, target, routeID, intent, config, &direct.Dialer{
+	dialers, err := clientruntime.NewPeerConnectorMap(host.routeConnectors(authorizer))
+	if err != nil {
+		return nil, err
+	}
+	wireTarget, err := endpoint.EndpointToProto(planningTarget)
+	if err != nil {
+		return nil, err
+	}
+	config := sessionConfig(wireTarget, routeID, request.GetIntent(), environment)
+	return host.owner.AcquirePlanned(ctx, planningTarget, routeID, intent, config, environment, systemadapter.Clock{}, dialers)
+}
+
+func (host *Host) routeConnectors(authorizer peeradapter.CapabilityAuthorizer) map[endpoint.RouteKind]clientruntime.PeerConnector {
+	connectors := make(map[endpoint.RouteKind]clientruntime.PeerConnector, 3)
+	if host.options.DirectPeers != nil {
+		connectors[endpoint.RouteDirectWebRTCTCP] = &direct.Dialer{
 			Peers: host.options.DirectPeers, Authorization: authorizer, ClientName: host.options.ClientName, Now: host.options.Now,
-		})
-	case endpoint.RouteSSHWebRTCTCP:
-		if host.options.DirectPeers == nil || host.options.SSHCredentials == nil {
-			return nil, fmt.Errorf("SSH WebRTC peer factory or credential source is unavailable")
 		}
-		return host.owner.AcquireRoute(ctx, target, routeID, intent, config, sshadapter.NewDialer(sshadapter.Options{
-			Peers: host.options.DirectPeers, Authorization: authorizer, Credentials: host.options.SSHCredentials,
-			ClientName: host.options.ClientName,
-		}))
-	case endpoint.RouteManagedWebRTC:
-		if host.options.ManagedPeers == nil {
-			return nil, fmt.Errorf("managed WebRTC peer factory is unavailable")
+		if host.options.SSHCredentials != nil {
+			connectors[endpoint.RouteSSHWebRTCTCP] = sshadapter.NewDialer(sshadapter.Options{
+				Peers: host.options.DirectPeers, Authorization: authorizer, Credentials: host.options.SSHCredentials,
+				ClientName: host.options.ClientName,
+			})
 		}
-		return host.owner.AcquireRoute(ctx, target, routeID, intent, config, &managed.Dialer{
+	}
+	if host.options.ManagedPeers != nil {
+		connectors[endpoint.RouteManagedWebRTC] = &managed.Dialer{
 			Cloud: platformCloud{broker: host.options.Broker}, Peers: host.options.ManagedPeers, ClientName: host.options.ClientName,
 			Authorization: authorizer, Now: host.options.Now,
-		})
-	default:
-		return nil, fmt.Errorf("binding engine host does not support route kind %q", route.Kind)
+		}
 	}
+	return connectors
 }
 
 // ImportPairing 验证 bootstrap、使用平台不可导出 signer 完成 PairingExchange，并原子绑定 grant。
@@ -290,9 +284,90 @@ func (host *Host) Close() error {
 // Broker 返回当前 engine 独占的平台 broker，供 JNI/WASM wrapper 驱动。
 func (host *Host) Broker() *binding.PlatformBroker { return host.options.Broker }
 
-func sessionConfig(config *remoteauthpb.EndpointConfigV1, routeID endpoint.RouteID, intent bindingpb.ConnectIntent) string {
+func sessionConfig(config *remoteauthpb.EndpointConfigV1, routeID endpoint.RouteID, intent bindingpb.ConnectIntent, environment clientruntime.RoutePlanEnvironment) string {
 	payload, _ := (proto.MarshalOptions{Deterministic: true}).Marshal(config)
-	return fmt.Sprintf("%s\x00%d\x00%x", routeID, intent, sha256.Sum256(payload))
+	return fmt.Sprintf("%s\x00%d\x00%x\x00%s\x00%s", routeID, intent, sha256.Sum256(payload), joinRouteKinds(environment.SupportedRouteKinds), strings.Join(environment.AvailableCredentialRefs, "\x00"))
+}
+
+type clientCredentialAvailability interface {
+	Available(context.Context, string, string) bool
+}
+
+type managedRouteEligibility interface {
+	Available(context.Context, endpoint.AccessRoute) bool
+}
+
+type sshCredentialAvailability interface {
+	Available(string) bool
+}
+
+// routePlanEnvironment 生成当前调用的能力快照，并在副本中禁用当前账号不可用的 managed Route。
+// Cloud 查询或登出只改变 managed eligibility，不能删除持久 Endpoint，也不能阻断 Direct/SSH。
+func routePlanEnvironment(ctx context.Context, target endpoint.Endpoint, options Options, credentials clientCredentialAvailability, cloud managedRouteEligibility) (endpoint.Endpoint, clientruntime.RoutePlanEnvironment, error) {
+	wireTarget, err := endpoint.EndpointToProto(target)
+	if err != nil {
+		return endpoint.Endpoint{}, clientruntime.RoutePlanEnvironment{}, err
+	}
+	planningTarget, err := endpoint.EndpointFromProto(wireTarget)
+	if err != nil {
+		return endpoint.Endpoint{}, clientruntime.RoutePlanEnvironment{}, err
+	}
+	environment := clientruntime.RoutePlanEnvironment{}
+	if options.DirectPeers != nil {
+		environment.SupportedRouteKinds = append(environment.SupportedRouteKinds, endpoint.RouteDirectWebRTCTCP)
+	}
+	sshAvailability, sshSupported := options.SSHCredentials.(sshCredentialAvailability)
+	if options.DirectPeers != nil && options.SSHCredentials != nil && sshSupported {
+		environment.SupportedRouteKinds = append(environment.SupportedRouteKinds, endpoint.RouteSSHWebRTCTCP)
+	}
+	managedSupported := false
+	available := make(map[string]struct{})
+	credentialChecked := make(map[string]bool)
+	for _, route := range planningTarget.RouteList() {
+		if route.CredentialRef != "" && credentials != nil {
+			credentialAvailable, checked := credentialChecked[route.CredentialRef]
+			if !checked {
+				credentialAvailable = credentials.Available(ctx, string(planningTarget.ID), route.CredentialRef)
+				credentialChecked[route.CredentialRef] = credentialAvailable
+			}
+			if credentialAvailable {
+				available[route.CredentialRef] = struct{}{}
+			}
+		}
+		switch route.Kind {
+		case endpoint.RouteSSHWebRTCTCP:
+			if sshSupported && sshAvailability.Available(route.SSHCredentialRef) {
+				available[route.SSHCredentialRef] = struct{}{}
+			}
+		case endpoint.RouteManagedWebRTC:
+			if options.ManagedPeers != nil && cloud != nil && cloud.Available(ctx, route) {
+				managedSupported = true
+				continue
+			}
+			route.Enabled = false
+			planningTarget.Routes[route.ID] = route
+		}
+	}
+	if managedSupported {
+		environment.SupportedRouteKinds = append(environment.SupportedRouteKinds, endpoint.RouteManagedWebRTC)
+	}
+	for _, route := range planningTarget.RouteList() {
+		for _, reference := range []string{route.CredentialRef, route.SSHCredentialRef} {
+			if _, ok := available[reference]; ok {
+				environment.AvailableCredentialRefs = append(environment.AvailableCredentialRefs, reference)
+				delete(available, reference)
+			}
+		}
+	}
+	return planningTarget, environment, nil
+}
+
+func joinRouteKinds(kinds []endpoint.RouteKind) string {
+	values := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		values = append(values, string(kind))
+	}
+	return strings.Join(values, "\x00")
 }
 
 func pairingTarget(endpointID string, identity endpoint.DaemonIdentity, route endpoint.AccessRoute, credentialRef string) endpoint.Endpoint {
@@ -307,6 +382,11 @@ func pairingTarget(endpointID string, identity endpoint.DaemonIdentity, route en
 }
 
 type platformCredentials struct{ broker *binding.PlatformBroker }
+
+func (source platformCredentials) Available(ctx context.Context, endpointID, reference string) bool {
+	_, err := source.ResolveClientCredential(ctx, endpointID, reference)
+	return err == nil
+}
 
 func (source platformCredentials) ResolveClientCredential(ctx context.Context, endpointID, reference string) (remoteauth.ClientAccessCredential, error) {
 	response, err := source.broker.Exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CredentialResolve{
@@ -357,6 +437,45 @@ func (signer platformSigner) Sign(ctx context.Context, payload []byte) ([]byte, 
 }
 
 type platformCloud struct{ broker *binding.PlatformBroker }
+
+type platformManagedEligibility struct{ broker *binding.PlatformBroker }
+
+func (eligibility platformManagedEligibility) Available(ctx context.Context, route endpoint.AccessRoute) bool {
+	response, err := eligibility.broker.Exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CloudRouteEligibility{
+		CloudRouteEligibility: &bindingpb.CloudRouteEligibilityRequest{
+			AccountProfileRef: route.AccountProfileRef,
+			RelayMode:         managedRelayMode(route.RelayMode),
+		},
+	}})
+	if err != nil || platformResponseError(response) != nil {
+		return false
+	}
+	value := response.GetCloudRouteEligibility()
+	if value == nil || !value.GetAccountSessionAvailable() {
+		return false
+	}
+	switch route.RelayMode {
+	case endpoint.RelayDirect:
+		return value.GetManagedDirectAvailable()
+	case endpoint.RelayOnly:
+		return value.GetRelayAvailable()
+	default:
+		return value.GetManagedDirectAvailable() || value.GetRelayAvailable()
+	}
+}
+
+func managedRelayMode(mode endpoint.RelayMode) remoteauthpb.ManagedWebRTCRelayMode {
+	switch mode {
+	case endpoint.RelayDirect:
+		return remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_DIRECT
+	case endpoint.RelayOnly:
+		return remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY
+	case endpoint.RelaySmart:
+		return remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_SMART_ROUTE
+	default:
+		return remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_AUTO
+	}
+}
 
 func (cloud platformCloud) ResolveEndpoint(ctx context.Context, request *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
 	response, err := cloud.exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CloudResolveEndpoint{CloudResolveEndpoint: proto.Clone(request).(*cloudpb.ResolveEndpointRequest)}})

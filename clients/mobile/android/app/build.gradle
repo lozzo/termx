@@ -1,6 +1,14 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'com.google.protobuf'
+
+def termxCloudModuleRoot = new File(rootProject.rootDir, '../../../private/cloud/mobile/android').canonicalFile
+def termxDevCloudEnabled = project.hasProperty('termxDevCloud') && project.property('termxDevCloud') == 'true'
+def termxPublicHTTPStagingEnabled = project.hasProperty('termxPublicHTTPStaging') && project.property('termxPublicHTTPStaging') == 'true'
+if (termxDevCloudEnabled && termxPublicHTTPStagingEnabled) {
+    throw new GradleException('Loopback and public HTTP staging profiles are mutually exclusive')
+}
+
 android {
     namespace = "com.termx.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -12,6 +20,10 @@ android {
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField 'boolean', 'TERMX_DEV_CLOUD_ENABLED', (termxDevCloudEnabled || termxPublicHTTPStagingEnabled).toString()
+        buildConfigField 'boolean', 'TERMX_PUBLIC_HTTP_STAGING_ENABLED', termxPublicHTTPStagingEnabled.toString()
+        buildConfigField 'String', 'TERMX_DEV_CONTROL_URL', termxPublicHTTPStagingEnabled ? '"http://114.66.58.243:41101"' : '"http://127.0.0.1:41001"'
+        buildConfigField 'String', 'TERMX_DEV_HUB_URL', termxPublicHTTPStagingEnabled ? '"http://114.66.58.243:41102"' : '"http://127.0.0.1:41002"'
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
@@ -26,6 +38,8 @@ android {
         test.resources.srcDir '../../../../client/endpoint/testdata'
         main.proto.srcDir '../../../../proto'
         main.jniLibs.srcDir "$buildDir/generated/termxJniLibs"
+        main.java.srcDir new File(termxCloudModuleRoot, 'src/main/kotlin')
+        test.java.srcDir new File(termxCloudModuleRoot, 'src/test/kotlin')
     }
     if (project.hasProperty("termxArmOnly")) {
         splits {
@@ -42,6 +56,7 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            proguardFiles new File(termxCloudModuleRoot, 'official-proguard-rules.pro')
         }
     }
 }

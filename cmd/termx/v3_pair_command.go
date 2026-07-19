@@ -66,6 +66,8 @@ type pairRouteView struct {
 	ICETCPAddresses     []string `json:"ice_tcp_addresses,omitempty"`
 	AdvertisedAddresses []string `json:"advertised_addresses,omitempty"`
 	ServerName          string   `json:"server_name,omitempty"`
+	TargetDeviceID      string   `json:"target_device_id,omitempty"`
+	RelayMode           string   `json:"relay_mode,omitempty"`
 }
 
 func v3PairInspectCommand() *cobra.Command {
@@ -110,6 +112,7 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 	var signalingAddresses []string
 	var iceTCPAddresses []string
 	var serverName string
+	var includeCloud bool
 	command := &cobra.Command{
 		Use:   "create",
 		Short: "Issue a short-lived one-time pairing ticket from the local daemon",
@@ -150,9 +153,13 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 			if err != nil {
 				return usageCLIError(err.Error())
 			}
+			routes := []*remoteauthpb.EndpointRouteConfigV1{directRoute}
+			if includeCloud {
+				routes = append(routes, v3ManagedPairingRoute())
+			}
 			response, err := application.ClientAccessTicketCreate(cmd.Context(), &apipb.ClientAccessTicketCreateCommand{Request: &remoteauthpb.ClientAccessTicketCreateRequest{
 				Label: label, Scope: clientAccessScopeToProto(scope), TicketTtlSeconds: int64(ticketTTL / time.Second), GrantLifetimeSeconds: int64(grantLifetime / time.Second),
-				Routes: []*remoteauthpb.EndpointRouteConfigV1{directRoute},
+				Routes: routes,
 			}})
 			if err != nil {
 				return err
@@ -188,7 +195,17 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 	command.Flags().StringArrayVar(&signalingAddresses, "signaling-address", nil, "published Direct signaling HOST:PORT (repeatable; requires --ice-tcp-address)")
 	command.Flags().StringArrayVar(&iceTCPAddresses, "ice-tcp-address", nil, "published Direct ICE-TCP HOST:PORT (repeatable; requires --signaling-address)")
 	command.Flags().StringVar(&serverName, "server-name", "", "optional Direct server name bound into the signed Route hint")
+	command.Flags().BoolVar(&includeCloud, "cloud", false, "include a TermX Cloud managed Route for this daemon DeviceID (requires Cloud enrollment)")
 	return command
+}
+
+func v3ManagedPairingRoute() *remoteauthpb.EndpointRouteConfigV1 {
+	return &remoteauthpb.EndpointRouteConfigV1{
+		SchemaVersion: endpointdomain.RouteConfigVersion, RouteId: "cloud", Enabled: true,
+		Route: &remoteauthpb.EndpointRouteConfigV1_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.ManagedWebRTCRouteConfig{
+			AccountProfileRef: "default", RelayMode: remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_AUTO,
+		}},
+	}
 }
 
 func clientAccessScopeToProto(scope remoteauth.Scope) *remoteauthpb.ClientAccessScope {
@@ -252,6 +269,12 @@ func renderV3PairingPreview(output io.Writer, payload []byte, expiresAt time.Tim
 		return err
 	}
 	for _, route := range pairRouteViews(bundle) {
+		if route.Kind == string(endpointdomain.RouteManagedWebRTC) {
+			if _, err := fmt.Fprintf(output, "Route %s: target=%s relay-mode=%s\n", route.RouteID, route.TargetDeviceID, route.RelayMode); err != nil {
+				return err
+			}
+			continue
+		}
 		if _, err := fmt.Fprintf(output, "Route %s: signaling=%s ice-tcp=%s",
 			route.RouteID, strings.Join(route.SignalingAddresses, ","), strings.Join(route.ICETCPAddresses, ",")); err != nil {
 			return err
@@ -277,6 +300,12 @@ func pairRouteViews(bundle *remoteauth.PairingBundle) []pairRouteView {
 				SignalingAddresses:  append([]string(nil), direct.GetSignalingAddresses()...),
 				ICETCPAddresses:     append([]string(nil), direct.GetIceTcpAddresses()...),
 				AdvertisedAddresses: append([]string(nil), direct.GetAdvertisedAddresses()...), ServerName: direct.GetServerName(),
+			})
+		}
+		if managed := route.GetManagedWebrtc(); managed != nil {
+			views = append(views, pairRouteView{
+				RouteID: route.GetRouteId(), Kind: string(endpointdomain.RouteManagedWebRTC),
+				TargetDeviceID: managed.GetTargetDeviceId(), RelayMode: managed.GetRelayMode().String(),
 			})
 		}
 	}

@@ -1,6 +1,6 @@
 # TermX Cloud 单区域 Staging 纵向路线图
 
-状态：唯一活动实现真值
+状态：CLOUD001-CLOUD005 历史实施记录；当前执行顺序与产品决策只以根 `workflow.md` 为准
 
 生效日期：2026-07-11
 
@@ -8,22 +8,22 @@
 
 ## 1. 文档权威性
 
-本文件回答三个问题：当前 managed cloud 到底能不能用、下一切片要打通哪一条真实消息链路、什么用户行为才算完成。
+本文件保留 CLOUD001-CLOUD005 的历史实施背景，不再决定当前切片或 App 构建模型。
 
 - `product-prd.md`、`architecture-spec.md`、`security-protocol-spec.md`、`network-topology.md`、`distribution-and-cloud-companion-spec.md` 和 `global-acceleration-spec.md` 继续定义产品、安全和目标架构。
 - 旧文档中的 RP/GA “完成”只表示 contract、领域组件或 harness 已落地，不再作为 runtime 完成度依据。
-- 当前实现状态、执行顺序和用户可观察 DoD 只以本文件和根 `workflow.md` 为准。
+- 当前实现状态、执行顺序和用户可观察 DoD 只以根 `workflow.md` 为准。
 - 如果实现为了通过单个测试而绕过本文消息链路，切片仍未完成。
 
 ## 2. 当前阶段目标
 
-当前只建设一个单区域、可在开发机启动、可由真实 TUI 和 Official Android 使用的纵向闭环：
+该历史阶段建设的是一个单区域、可在开发机启动、可由真实 TUI 和 Android App 使用的纵向闭环：
 
 1. 一个命令启动显式 dev cloud。
 2. daemon 通过本机 Companion 在 Hub 建立 presence。
 3. TUI 通过本机 Companion resolve 目标并完成 direct WebRTC。
 4. 同一链路可以显式强制经过一个 lease-bound TURN Relay。
-5. Official Android 通过同一 cloud contract 连接同一个 daemon。
+5. Android App 通过同一 cloud contract 连接同一个 daemon。
 6. direct、Relay 和 Android 最终都在 DTLS DataChannel 内执行同一套 DeviceIdentity 和 CapabilityGrant 授权，再运行同一种 termx protocol。
 
 当前明确不做：生产 OAuth、生产 TLS 和域名、持久化数据库、Kubernetes、多区域、Relay Mesh、transit、复杂 billing、团队治理、通用插件、public snapshot 和正式发布流水线。
@@ -200,7 +200,7 @@ raw grant: QR/text import -> Android Keystore -> public Android authorizer -> DT
 terminal traffic: public WebRTCTransport -> DTLS DataChannel -> public daemon -> core-v2
 ```
 
-Official module 不能接收原始 grant。Community APK 继续使用 disabled adapter，不能因 Official 接线而获得隐藏 cloud fallback。
+first-party Cloud module 不能接收原始 grant。当前单一 App 的标准构建在没有 Cloud profile 或账号时只过滤 managed Route，不能因此隐藏或阻断 Direct/SSH。
 
 ## 6. Truth 与凭据可见性
 
@@ -314,7 +314,7 @@ CLOUD002 建立名为 `dev-local` 的显式 staging 剖面：
 
 用户可观察完成条件：
 
-1. Official APK 通过 `adb reverse` 连接 `dev-local` cloud，Community APK 仍稳定显示 cloud module missing。
+1. 单一 App 的 devcloud APK 通过 `adb reverse` 连接 `dev-local` cloud；标准 APK 的 managed Route稳定 fail closed，Direct/SSH 保持可用。
 2. 用户扫码或导入 pairing bundle 后，App 能 resolve、signaling、direct WebRTC、验证 daemon、提交 grant。
 3. App 能列出远程 terminal、attach、输入并看到真实输出；失败时没有 legacy WebSocket/旧 Hub fallback。
 4. App 进入后台再恢复后，连接状态与 endpoint identity 正确；恢复失败只影响该 endpoint，并提供可重试状态。

@@ -173,6 +173,7 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 	attached, err := managed.Attach(ctx, port.TerminalAttachRequest{
 		EndpointID: managedEndpointID, TerminalID: "relay-remote-terminal", Cols: 72, Rows: 20,
 		Mode: "collaborator", ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "managed-relay", ViewID: "managed-relay-view",
+		OperationID: "attach:managed-relay",
 	})
 	if err != nil || attached.Channel == 0 {
 		t.Fatalf("managed Relay attach = (%#v, %v)", attached, err)
@@ -180,7 +181,7 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 	inputPayload := []byte("managed-relay-payload\n")
 	if err := managed.SendInput(ctx, port.TerminalInputRequest{
 		EndpointID: managedEndpointID, TerminalID: "relay-remote-terminal", Channel: attached.Channel,
-		SurfaceID: "managed-relay", ViewID: "managed-relay-view", Bytes: inputPayload,
+		SurfaceID: "managed-relay", ViewID: "managed-relay-view", Session: attached.Session, OperationID: "input:managed-relay", Bytes: inputPayload,
 	}); err != nil {
 		t.Fatal(err)
 	}

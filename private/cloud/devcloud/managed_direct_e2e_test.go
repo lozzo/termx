@@ -18,6 +18,7 @@ import (
 	apilayer "github.com/lozzow/termx/api_layer"
 	managedadapter "github.com/lozzow/termx/client/adapter/managed"
 	pionadapter "github.com/lozzow/termx/client/adapter/managed/pion"
+	peeradapter "github.com/lozzow/termx/client/adapter/peer"
 	clientendpoint "github.com/lozzow/termx/client/endpoint"
 	clientruntime "github.com/lozzow/termx/client/runtime"
 	corev2 "github.com/lozzow/termx/core"
@@ -152,6 +153,7 @@ func TestManagedDirectE2EAcrossRealBoundaries(t *testing.T) {
 	attached, err := managed.Attach(ctx, port.TerminalAttachRequest{
 		EndpointID: managedEndpointID, TerminalID: "remote-terminal", Cols: 72, Rows: 20,
 		Mode: "collaborator", ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "managed-e2e", ViewID: "managed-e2e-view",
+		OperationID: "attach:managed-direct",
 	})
 	if err != nil || attached.Channel == 0 {
 		t.Fatalf("managed attach = (%#v, %v)", attached, err)
@@ -159,6 +161,7 @@ func TestManagedDirectE2EAcrossRealBoundaries(t *testing.T) {
 	resized, err := managed.Resize(ctx, port.TerminalResizeRequest{
 		EndpointID: managedEndpointID, TerminalID: "remote-terminal", Channel: attached.Channel,
 		Cols: 68, Rows: 18, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "managed-e2e", ViewID: "managed-e2e-view",
+		Session: attached.Session, OperationID: "resize:managed-direct",
 	})
 	if err != nil || !resized.Resized || resized.Cols != 68 || resized.Rows != 18 {
 		t.Fatalf("managed resize = (%#v, %v)", resized, err)
@@ -166,7 +169,7 @@ func TestManagedDirectE2EAcrossRealBoundaries(t *testing.T) {
 	inputPayload := []byte("managed-direct-payload\n")
 	if err := managed.SendInput(ctx, port.TerminalInputRequest{
 		EndpointID: managedEndpointID, TerminalID: "remote-terminal", Channel: attached.Channel,
-		SurfaceID: "managed-e2e", ViewID: "managed-e2e-view", Bytes: inputPayload,
+		SurfaceID: "managed-e2e", ViewID: "managed-e2e-view", Session: attached.Session, OperationID: "input:managed-direct", Bytes: inputPayload,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -233,11 +236,11 @@ func dialManagedE2ESession(
 	}
 	dialer := &managedadapter.Dialer{
 		Cloud: cloud, Peers: pionadapter.Factory{}, ClientName: clientName, Now: now, Phase: phase,
-		Authorization: managedadapter.CapabilityAuthorizer{
+		Authorization: peeradapter.CapabilityAuthorizer{
 			Credentials: managedE2ECredentialSource{credential: credential}, Now: now,
 		},
 	}
-	ready, err := dialer.Dial(ctx, attempt)
+	ready, err := dialer.Connect(ctx, attempt)
 	if err != nil {
 		return nil, err
 	}

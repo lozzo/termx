@@ -354,20 +354,20 @@ CloudCompanionRelease {
 
 移动端不采用运行时下载 executable 的桌面 sidecar 模式：
 
-- Community build 只包含公开 App、公开 contract 和 disabled/fake cloud adapter。
-- Official build 由私有 CI 将闭源 cloud module 与公开 App 组合签名。
-- 私有模块只能实现公开 domain contract，WebRTC、DTLS peer verification、grant 和 DataChannel 仍由公开 App 层或可审计的公开 platform adapter 拥有。
-- Official build 与 Community build 使用相同 endpoint、error、capability 和 protocol fixtures。
+- TermX 只发布一个 App；Direct、SSH 与可选 Cloud Route 共用同一个 Go Client Engine。
+- 当前 private monorepo 将 first-party Cloud module 作为标准 Android source set 编译，默认无 development Cloud origin并保持 managed Route fail closed。
+- 私有模块只能实现公开 platform primitive contract；WebRTC、DTLS peer verification、grant、Proto API 和 DataChannel 仍由 Go Client Engine 或可审计的平台 adapter 拥有。
+- 登录、订阅或 Cloud 故障只过滤 managed Route，不得阻断 Direct/SSH。
 
-当前仓库只有活动 Android target。Community 与 Official Debug 构建分别使用：
+当前仓库只有活动 Android target。标准与显式 devcloud Debug 构建分别使用：
 
 ```bash
 cd clients/mobile/android
 ./gradlew testDebugUnitTest assembleDebug
-./gradlew -I ../../../private/cloud/mobile/android/official-cloud.init.gradle testDebugUnitTest assembleDebug
+./gradlew -PtermxDevCloud=true testDebugUnitTest assembleDebug
 ```
 
-Official init script 只把固定 `com.termx.cloud.OfficialManagedCloudFactory` 私有 source set 装入官方 APK；Community classpath 不引用 `private/`。未来建立 iOS target 时必须先补同一 contract 的 Swift vector 和私有装配，不把 Android 完成状态外推为 iOS 已实现。
+两个 APK 都包含固定 `com.termx.cloud.OfficialManagedCloudFactory`；区别仅是 devcloud build flag 是否启用 loopback测试 origin，不是产品 flavor。未来建立 iOS target 时必须先补同一 C ABI contract 的 Swift wrapper 和平台 primitive，不把 Android 完成状态外推为 iOS 已实现。
 
 GA001A 后，Android 公开层还拥有 selected candidate pair stats 采样、质量窗口聚合和 `ManagedPathQualitySummary` 隐私校验；Official 私有模块只实现 `reportPathQuality` 转发，不能接收原始 stats、候选地址、grant、terminal 数据或成本输入。Go 与 Android 从 `shared/cloudcompanion/testdata/path_quality_contract.json` 读取同一 v2 fixture；Community/Official 都必须通过相同窗口测试和 APK class 边界检查。质量上报错误只丢 telemetry，不参与连接成功、transport close、重连或 route selection。
 

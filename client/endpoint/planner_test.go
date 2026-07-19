@@ -110,6 +110,24 @@ func TestRouteSelectionPlannerExplicitManualRouteAndFailures(t *testing.T) {
 	}
 }
 
+func TestRouteSelectionPlannerAllowsExplicitDirectRoute(t *testing.T) {
+	target := plannerEndpoint()
+	target.Routes["direct"] = AccessRoute{
+		ID: "direct", Kind: RouteDirectWebRTCTCP, Enabled: true, Source: SourceManual, PolicySource: SourceUser,
+		CredentialRef: "credential:studio", SignalingAddresses: []string{"studio:41120"}, ICETCPAddresses: []string{"studio:41121"},
+	}
+	plan, err := (RouteSelectionPlanner{}).Plan(RouteSelectionRequest{
+		Endpoint: target, Intent: ConnectIntent{Kind: "interactive"}, RouteOverride: "direct", Generation: 2,
+		SupportedRouteKinds: []RouteKind{RouteDirectWebRTCTCP}, AvailableCredentialRefs: []string{"credential:studio"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts := plan.Groups()[0].Attempts(); len(attempts) != 1 || attempts[0].Route.ID != "direct" {
+		t.Fatalf("Direct override attempts = %#v", attempts)
+	}
+}
+
 func TestRouteSelectionPlannerKeepsSingleManagedRouteOutOfCommonRace(t *testing.T) {
 	target := plannerEndpoint()
 	for _, routeID := range []RouteID{"local", "ssh"} {

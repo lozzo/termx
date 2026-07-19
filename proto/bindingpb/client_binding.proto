@@ -264,6 +264,19 @@ message EndpointRegistryLoaded { bytes registry_proto = 1; }
 
 message SignalingEvents { repeated termx.cloud.v1.SignalingEvent events = 1; }
 
+// CloudRouteEligibilityRequest 只查询当前平台账号 session 是否允许 Go planner 尝试 managed Route。
+// Relay 的最终订阅和配额准入仍由 Control Plane 在签发 RelayLease 时判断。
+message CloudRouteEligibilityRequest {
+  string account_profile_ref = 1;
+  termx.remote.auth.v1.ManagedWebRTCRelayMode relay_mode = 2;
+}
+
+message CloudRouteEligibility {
+  bool account_session_available = 1;
+  bool managed_direct_available = 2;
+  bool relay_available = 3;
+}
+
 // WebRTCOpenPeerRequest 只描述浏览器创建 RTCPeerConnection 所需的平台 primitive。
 // route/auth/session 真值仍由 Go managed engine 持有。
 message WebRTCOpenPeerRequest {
@@ -363,6 +376,7 @@ message PlatformRequest {
     termx.cloud.v1.PlanManagedRouteRequest cloud_plan_route = 23;
     termx.cloud.v1.ReportPathQualityRequest cloud_report_quality = 24;
     termx.cloud.v1.ReportConnectionOutcomeRequest cloud_report_outcome = 25;
+    CloudRouteEligibilityRequest cloud_route_eligibility = 26;
     WebRTCOpenPeerRequest webrtc_open_peer = 30;
     WebRTCPeerRequest webrtc_create_offer = 31;
     WebRTCApplyAnswerRequest webrtc_apply_answer = 32;
@@ -388,6 +402,7 @@ message PlatformResponse {
     termx.cloud.v1.ManagedRoutePlan cloud_route_plan = 23;
     termx.cloud.v1.ReportPathQualityResponse cloud_quality_reported = 24;
     termx.cloud.v1.ReportConnectionOutcomeResponse cloud_outcome_reported = 25;
+    CloudRouteEligibility cloud_route_eligibility = 26;
     WebRTCPeerOpened webrtc_peer_opened = 30;
     WebRTCCreateOfferResult webrtc_offer = 31;
     WebRTCPeerReady webrtc_peer_ready = 32;

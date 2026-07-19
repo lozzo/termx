@@ -1,8 +1,8 @@
-# Official Android Dev Cloud 手测
+# Android Dev Cloud 手测
 
-状态：CLOUD005/CLOUD008/CLOUD011 ADB 验收完成；2026-07-12
+状态：历史 Cloud 验收已完成；当前命令按 RTC009 单一 App 装配更新。
 
-本清单只验证显式 `dev-local`、单区域 direct WebRTC。默认 Official 和 Community 继续 fail closed；生产 OAuth/TLS、Android Relay 和公网环境不在本切片内。
+本清单验证同一个 TermX App 的显式 `dev-local` Cloud profile。标准 APK 仍包含 first-party Cloud module，但没有 development origin时 managed Route fail closed；Direct/SSH 始终独立可用。生产 OAuth/TLS 不由本清单替代。
 
 ## 1. 前置条件
 
@@ -13,7 +13,7 @@
 
 ## 2. 构建产物
 
-完整 Community/Official 边界：
+完整单 App 边界：
 
 ```bash
 make test-clients
@@ -25,16 +25,13 @@ make test-android
 ```bash
 npm run cap:build
 cd clients/mobile/android
-./gradlew \
-  -I ../../../private/cloud/mobile/android/official-cloud.init.gradle \
-  -PtermxOfficialDevCloud=true \
-  testDebugUnitTest assembleDebug
+./gradlew -PtermxDevCloud=true testDebugUnitTest assembleDebug
 cd ../../..
 cp clients/mobile/android/app/build/outputs/apk/debug/app-debug.apk \
-  .artifacts/android/official-devcloud-debug.apk
+  .artifacts/android/app-devcloud-debug.apk
 ```
 
-`official-debug.apk` 不启用 dev gateway；ADB 手测必须安装 `official-devcloud-debug.apk`。
+`app-debug.apk` 不启用 dev gateway；ADB 手测必须安装 `app-devcloud-debug.apk`。
 `npm run cap:build` 负责先构建共享 UI 并同步 Capacitor assets；只运行 Gradle 可能把旧 Web 资源打进 APK。
 
 ## 3. 启动 Cloud 与 Daemon
@@ -98,7 +95,7 @@ export HUB_PORT="$(jq -r '.hub_url | capture(":(?<port>[0-9]+)$").port' .artifac
 
 adb reverse tcp:41001 "tcp:$CONTROL_PORT"
 adb reverse tcp:41002 "tcp:$HUB_PORT"
-adb install -r .artifacts/android/official-devcloud-debug.apk
+adb install -r .artifacts/android/app-devcloud-debug.apk
 adb shell am force-stop com.termx.app
 adb shell monkey -p com.termx.app -c android.intent.category.LAUNCHER 1
 ```
@@ -151,7 +148,7 @@ adb shell monkey -p com.termx.app -c android.intent.category.LAUNCHER 1
 
 成功标准：App 可以短暂显示 verifying/reconnecting，随后回到 connected；machine identity 不重复，terminal 可重新 attach 并继续输入。若旧 PeerConnection 不可恢复，只重建该 managed endpoint。
 
-## 7. 局部失败与 Community
+## 7. 局部失败与 Direct/SSH 隔离
 
 移除 Hub reverse 后强制一次新连接：
 
@@ -161,21 +158,21 @@ adb shell am force-stop com.termx.app
 adb shell monkey -p com.termx.app -c android.intent.category.LAUNCHER 1
 ```
 
-当前 managed endpoint 必须显示稳定失败/可重试状态，不能改走旧 Hub、Web Controller、local 或 SSH。恢复映射后重试：
+当前 managed Route 必须显示稳定失败/可重试状态，不能改走旧 Hub 或 Web Controller。其它已配置 Direct/SSH Endpoint 必须仍可连接。恢复映射后重试：
 
 ```bash
 adb reverse tcp:41002 "tcp:$HUB_PORT"
 ```
 
-Community fail-closed 检查会替换同 application ID 的当前 APK：
+标准 APK fail-closed 检查会替换同 application ID 的当前 APK：
 
 ```bash
-adb install -r .artifacts/android/community-debug.apk
+adb install -r .artifacts/android/app-debug.apk
 adb shell am force-stop com.termx.app
 adb shell monkey -p com.termx.app -c android.intent.category.LAUNCHER 1
 ```
 
-Community 对 managed endpoint 必须返回 `companion_missing`/官方 cloud module missing，不能建立隐藏 cloud 连接。完成后重新安装 `official-devcloud-debug.apk`。
+标准 APK 对 managed Route 必须返回稳定的 Cloud 未配置/未登录错误，不能建立隐藏 cloud 连接；Direct/SSH 不受影响。完成后重新安装 `app-devcloud-debug.apk`。
 
 ## 8. 结果记录
 
@@ -186,9 +183,11 @@ Community 对 managed endpoint 必须返回 `companion_missing`/官方 cloud mod
 - 真实 daemon List/Attach/Input/Output 成功。
 - 2 秒和 10 秒后台恢复成功。
 - Hub reverse 失败保持 endpoint 局部且无 fallback。
-- Community fail closed。
+- 标准 APK 的 managed Route fail closed，Direct/SSH 保持可用。
 
-### 2026-07-12 实测
+### 2026-07-12 历史实测
+
+以下记录来自旧双构建时期，仅保留仍能说明 Cloud 消息链路和失败边界的历史证据；产物名与 flavor 结论不再是当前构建基准。
 
 - 设备：`24129PN74C`，Android 16；Official dev APK 安装、启动和保留应用数据覆盖安装均成功。
 - pairing：清空旧应用数据后通过 native importer 导入，raw grant 进入 Android Keystore；页面和 Web storage 只暴露 endpoint metadata 与 `grant_ref`。
@@ -198,11 +197,8 @@ Community 对 managed endpoint 必须返回 `companion_missing`/官方 cloud mod
 - presence：daemon 从 06:39 持续到 07:15 后仍可被新 App 进程 resolve，跨越多个两分钟 admission TTL；期间没有新的 `managed cloud presence stopped`，证明每轮使用 fresh proof 续约。
 - 恢复：2 秒和 10 秒后台后都经过 verifying 回到 connected，machine identity 未变化，并分别继续输入 `resume-2s-ok`、`resume-10s-ok`。
 - Hub 局部失败：移除 `tcp:41002` 后新连接停在 signaling 并进入 failed，没有 WebRTC connected，也没有 local、SSH、旧 Hub 或 Web Controller fallback；恢复 reverse 后同一 endpoint 重新连接成功。
-- Community：保留同一 managed endpoint 数据覆盖安装 Community APK，连接立即以 `companion_missing` fail closed，未进入 signaling/WebRTC。
 - 日志：对完整 logcat 扫描未发现测试输入、`termx-grant-v1`、账号 token、Hub ticket 或 CapabilityGrant；terminal diagnostics 只记录长度、revision 和帧统计。
-- 准入：`remote` 全量测试、clean-env `cmd/termx` 测试、`make test-clients`（62 files / 449 tests）和 `make test-android` 均通过，APK class boundary 通过。
-- 产物：Community `sha256:839148503661e2f07bae215d9372086d16b76aea7e2984b288724a9d0585d8bf`；默认 Official `sha256:0600696cd68a3ab789ae9e9a5ed21cf4031a34d6cd2b9c368a038a42c19cf8a0`；Official dev `sha256:b6aa1bab3a652c0ad3ded7ef00a4ceb286718befabf21d8dfca682dffe326466`。
-- 设备清理：Community 负向验收后设备从 `adb devices` 消失，当前手机仍安装 Community APK；这不改变已经观察到的产品 DoD，设备重连后应重新执行 Official dev APK 安装命令恢复日常测试环境。
+- 准入：当时的 `remote` 全量测试、clean-env `cmd/termx` 测试、客户端测试和 Android 构建均通过；当前准入以 `workflow.md` 为准。
 
 ## 9. CLOUD011 Control Plane 中断验收
 
@@ -221,7 +217,7 @@ Community 对 managed endpoint 必须返回 `companion_missing`/官方 cloud mod
 
 ### 2026-07-12 公网 HTTP staging 真机实测
 
-- 使用 `-PtermxOfficialPublicHTTPStaging=true` 构建并覆盖安装 Official debug APK；手机全程走 5G，`adb reverse --list` 为空。
+- 使用当时的公网 HTTP staging profile 构建并覆盖安装旧 Official debug APK；当前等价属性为 `-PtermxPublicHTTPStaging=true`。手机全程走 5G，`adb reverse --list` 为空。
 - 从安全渠道导入短期 pairing 后，`Public staging daemon` 完成 List/Attach/Input/Output；`echo android-mobile-input-ok` 在同一远端 shell 得到回显。
 - Connection Info 显示 `P2P direct`、`prflx / host`、手机公网映射到 daemon 公网 UDP 候选，实测 RTT 约 51-64 ms。
 - 后台 8 秒再启动 App 后恢复到同一 terminal，core-v2 屏幕和输入回显仍在，没有创建第二份 terminal lifecycle truth。

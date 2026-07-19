@@ -235,7 +235,7 @@ func validatePlannedRoute(route AccessRoute, supported map[RouteKind]struct{}, c
 		return connectionError(ErrorRouteUnavailable, "route %q kind %q is not supported by the current platform", route.ID, route.Kind)
 	}
 	switch route.Kind {
-	case RouteLocalUnix, RouteSSHWebRTCTCP, RouteManagedWebRTC:
+	case RouteLocalUnix, RouteDirectWebRTCTCP, RouteSSHWebRTCTCP, RouteManagedWebRTC:
 	default:
 		return connectionError(ErrorRouteUnavailable, "route %q kind %q is not available in C3B", route.ID, route.Kind)
 	}

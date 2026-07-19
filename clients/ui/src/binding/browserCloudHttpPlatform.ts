@@ -1,5 +1,6 @@
 import { fromBinary, toBinary, type DescMessage, type MessageShape } from '@bufbuild/protobuf'
-import type { PlatformRequest, PlatformResponse } from '../generated/bindingpb/client_binding_pb'
+import { CloudRouteEligibilitySchema, type PlatformRequest, type PlatformResponse } from '../generated/bindingpb/client_binding_pb'
+import { create } from '@bufbuild/protobuf'
 import {
   AcquireRelayLeaseRequestSchema,
   CloudErrorSchema,
@@ -62,6 +63,9 @@ export class BrowserCloudHttpPlatform implements BrowserCloudPlatform {
         throw new Error('browser path quality reporting is unavailable')
       case 'cloudReportOutcome':
         throw new Error('browser connection outcome reporting is unavailable')
+      case 'cloudRouteEligibility':
+        browserEdgeIdentity(this.storage)
+        return { case: 'cloudRouteEligibility', value: create(CloudRouteEligibilitySchema, { accountSessionAvailable: true, managedDirectAvailable: true, relayAvailable: true }) }
       default:
         throw new Error('unsupported browser Cloud request')
     }

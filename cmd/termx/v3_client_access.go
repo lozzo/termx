@@ -11,10 +11,12 @@ import (
 	"sync"
 
 	corev2 "github.com/lozzow/termx/core"
+	"github.com/lozzow/termx/proto/remoteauthpb"
 	remotev2daemon "github.com/lozzow/termx/remote/daemon"
 	"github.com/lozzow/termx/shared/remoteauth"
 	"github.com/lozzow/termx/shared/transport"
 	unixtransport "github.com/lozzow/termx/shared/transport/unix"
+	"google.golang.org/protobuf/proto"
 )
 
 // v3ClientAccessRuntime 是当前 daemon 进程唯一装配的 DeviceIdentity、AccessStore 与 local pairing socket。
@@ -148,9 +150,21 @@ func (service v3ClientAccessService) CreateTicket(_ context.Context, request cor
 	if service.store == nil {
 		return corev2.ClientAccessTicket{}, fmt.Errorf("client access store is unavailable")
 	}
+	routes := make([]*remoteauthpb.EndpointRouteConfigV1, 0, len(request.Routes))
+	for _, value := range request.Routes {
+		if value == nil {
+			continue
+		}
+		route := proto.Clone(value).(*remoteauthpb.EndpointRouteConfigV1)
+		if managed := route.GetManagedWebrtc(); managed != nil {
+			// managed target 属于 daemon DeviceIdentity 真值，CLI 只能请求包含该 Route，不能自行填写另一个设备。
+			managed.TargetDeviceId = service.identity.DeviceID
+		}
+		routes = append(routes, route)
+	}
 	bundle, claims, err := service.store.IssuePairingBundle(remoteauth.PairingIssueOptions{
 		Label: request.Label, Scope: remoteAuthScopeFromCore(request.Scope), TicketTTL: request.TicketTTL, GrantLifetime: request.GrantLifetime,
-		Routes: request.Routes,
+		Routes: routes,
 	})
 	if err != nil {
 		return corev2.ClientAccessTicket{}, err

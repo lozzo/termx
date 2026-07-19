@@ -2,15 +2,16 @@ package com.termx.app.managed
 
 import android.content.Context
 import termx.cloud.v1.CloudCompanion
+import termx.client.binding.v1.ClientBinding
 
-/** Official App 私有 cloud module 必须实现的固定 first-party factory contract。 */
+/** 单一 TermX App 私有 cloud module 必须实现的固定 first-party factory contract。 */
 interface ManagedCloudModuleFactory {
     fun create(context: Context): ManagedCloudAdapter
 }
 
 /**
- * ManagedCloudAssembly 只查找官方 APK 构建期固定加入的 factory class。
- * Community APK 未包含该 class 时使用 disabled adapter；class 存在但损坏时 fail closed，不回退旧 Hub 或 Community 路径。
+ * ManagedCloudAssembly 只查找标准 APK 构建期固定加入的 factory class。
+ * class 缺失或损坏表示构建装配错误，必须 fail closed，不回退旧 Hub 或第二种 App 路径。
  */
 object ManagedCloudAssembly {
     private const val OFFICIAL_FACTORY = "com.termx.cloud.OfficialManagedCloudFactory"
@@ -19,7 +20,7 @@ object ManagedCloudAssembly {
         val factoryClass = try {
             Class.forName(OFFICIAL_FACTORY)
         } catch (_: ClassNotFoundException) {
-            return CommunityCloudAdapter()
+            return BrokenOfficialCloudAdapter("Managed cloud factory is missing from the TermX App")
         }
         return try {
             val factory = factoryClass.getDeclaredConstructor().newInstance() as? ManagedCloudModuleFactory
@@ -32,6 +33,7 @@ object ManagedCloudAssembly {
 }
 
 private class BrokenOfficialCloudAdapter(private val detail: String) : ManagedCloudAdapter {
+    override suspend fun routeEligibilityProto(request: ClientBinding.CloudRouteEligibilityRequest): ClientBinding.CloudRouteEligibility = unavailable()
     override suspend fun beginLogin(metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow = unavailable()
     override suspend fun claimLogin(userCode: String, metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow = unavailable()
     override suspend fun completeLogin(flowId: String): ManagedCloudAccount = unavailable()

@@ -10,6 +10,7 @@ import com.termx.app.managed.ManagedCloudDevice
 import com.termx.app.managed.ManagedCloudModuleFactory
 import com.termx.app.managed.ManagedEndpointFailure
 import termx.cloud.v1.CloudCompanion
+import termx.client.binding.v1.ClientBinding
 
 /** OfficialManagedCloudFactory 是官方签名 APK 中唯一允许的私有 cloud module 入口。 */
 class OfficialManagedCloudFactory : ManagedCloudModuleFactory {
@@ -21,6 +22,7 @@ class OfficialManagedCloudFactory : ManagedCloudModuleFactory {
  * 它不接收 grant、DeviceIdentity private key、DataChannel 或 terminal payload。
  */
 internal class OfficialManagedCloudAdapter(private val gateway: OfficialCloudGateway) : ManagedCloudAdapter {
+    override suspend fun routeEligibilityProto(request: ClientBinding.CloudRouteEligibilityRequest): ClientBinding.CloudRouteEligibility = gateway.routeEligibilityProto(request)
     override suspend fun beginLogin(metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow = gateway.beginLogin(metadata)
     override suspend fun claimLogin(userCode: String, metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow = gateway.claimLogin(userCode, metadata)
     override suspend fun completeLogin(flowId: String): ManagedCloudAccount = gateway.completeLogin(flowId)
@@ -41,11 +43,11 @@ internal class OfficialManagedCloudAdapter(private val gateway: OfficialCloudGat
  * 只有显式 loopback 或 public HTTP development profile 启用 dev contract；其他 Official 构建继续 fail closed。
  */
 internal class OfficialCloudGateway(context: Context) {
-    private val development = if (BuildConfig.TERMX_OFFICIAL_DEV_CLOUD_ENABLED) {
+    private val development = if (BuildConfig.TERMX_DEV_CLOUD_ENABLED) {
         DevCloudMobileGateway(
-            BuildConfig.TERMX_OFFICIAL_DEV_CONTROL_URL,
-            BuildConfig.TERMX_OFFICIAL_DEV_HUB_URL,
-            allowPublicHTTP = BuildConfig.TERMX_OFFICIAL_PUBLIC_HTTP_STAGING_ENABLED,
+            BuildConfig.TERMX_DEV_CONTROL_URL,
+            BuildConfig.TERMX_DEV_HUB_URL,
+            allowPublicHTTP = BuildConfig.TERMX_PUBLIC_HTTP_STAGING_ENABLED,
             sessionStore = AndroidCloudSessionStore(context),
         )
     } else {
@@ -53,6 +55,12 @@ internal class OfficialCloudGateway(context: Context) {
     }
 
     suspend fun resolveProto(request: CloudCompanion.ResolveEndpointRequest): CloudCompanion.ResolvedEndpoint = configured().resolveProto(request)
+    suspend fun routeEligibilityProto(request: ClientBinding.CloudRouteEligibilityRequest): ClientBinding.CloudRouteEligibility =
+        if (development == null) {
+            ClientBinding.CloudRouteEligibility.getDefaultInstance()
+        } else {
+            development.routeEligibilityProto(request)
+        }
     suspend fun createSignalingProto(request: CloudCompanion.CreateSignalingSessionRequest): List<CloudCompanion.SignalingEvent> = configured().createSignalingProto(request)
     suspend fun acquireRelayProto(request: CloudCompanion.AcquireRelayLeaseRequest): CloudCompanion.RelayLease = configured().acquireRelayProto(request)
     suspend fun planRouteProto(request: CloudCompanion.PlanManagedRouteRequest): CloudCompanion.ManagedRoutePlan = configured().planRouteProto(request)

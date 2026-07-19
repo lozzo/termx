@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- `RTC008` Endpoint share 已完成；当前活动主线从 `RTC009` 开始。
+- `RTC009` Cloud Route 收口已完成；当前活动主线是 `RTC010` 删除旧路径与最终验收。
 - TermX 只有一个面向用户的 App。Direct 与 SSH 是无需登录和订阅的基础能力；TermX Cloud 是同一 App 内可选的 managed Route，提供账号目录、托管信令、ICE-UDP、TURN Relay 和跨网络能力。
 - 所有远程业务连接最终统一为可靠有序 WebRTC DataChannel：Direct 使用 daemon embedded signaling + ICE-TCP；SSH 使用 Go SSH client/direct-tcpip tunnel + daemon loopback ICE-TCP；Cloud 使用 TermX Cloud signaling + ICE-UDP 或 TURN Relay。
 - Local Unix 仍是本机 CLI/TUI 到本机 daemon 的本地 transport，不要求为了形式统一改成 WebRTC。
@@ -11,7 +11,7 @@
 - Web/WASM 当前冻结。仓库维持现有编译与 contract 不回归，但不建设默认 Web 访问界面、不迁移浏览器 consumer，也不允许 Web 工作抢占 Android/native Go 主线。未来恢复时必须使用 Go/WASM；纯浏览器只支持 TermX Cloud managed WebRTC。
 - `ICE001` 已证明 Pion 双端仅启用 TCP4 时，真实 selected candidate pair 为 TCP，并完成 DeviceIdentity/CapabilityGrant auth、Hello、Proto API、取消 teardown、race 和 100 次连续独立建连。
 - Go SSH client 已通过 host-key pin、key/password credential、`direct-tcpip` signaling/ICE-TCP、DataChannel auth/Hello/Proto API 和 cleanup E2E；进程型 OpenSSH transport 与远端 `stdio-proxy` 已删除。
-- 旧 App flavor 构建语义等剩余迁移债不得围绕旧路径继续打补丁，按后续切片删除。
+- Android 已收口为单一 App 装配；标准构建和显式 devcloud 构建都包含同一个 first-party Cloud factory，development profile 只改变测试 origin，不形成产品 flavor。
 
 ## 产品要求
 
@@ -139,8 +139,8 @@ Android / TUI / CLI / future iOS/Desktop / future Web
 | RTC006 | 已完成 | SSH WebRTC TCP | Go SSH client、host-key/credential port、direct-tcpip backed signaling/ICE-TCP 已接入统一 ReadyPeerSession；真实 sshd key E2E、password、host-key pin、selected TCP pair、auth/Hello/API、cancel/cleanup 与 race 通过；OpenSSH 子进程 transport 和远端 `stdio-proxy` 已删除 |
 | RTC007 | 已完成 | 地址覆盖、LAN 与 FRP | `pair create` 已支持 signaling/ICE 地址与端口覆盖、自动 RFC1918 LAN seed、安全 identity/Route 预览和 wildcard/端口校验；真实 TCP mapping、不可达 fail-closed、identity/ticket 回归与 race 通过；ARM64 模拟器最终 APK 已从 App UI 导入映射 bundle、打开 terminal、输入并捕获 `rtc007-final-apk-ok`，crash scan 无异常 |
 | RTC008 | 已完成 | Endpoint share | 已实现 CLI/TUI 同源 `endpoint share`、临时 TLS certificate pin、一次性 secret、nonce + Ed25519 receiver proof、单次消费、过期/重放/pin fail-closed、Route/policy diff 和 config-only 原子导入；binding 使用 generation-local preview token 且 store 失败可重试；ARM64 模拟器最终 APK 已从 App UI 接收预览、确认导入、显示未授权 action-required，并在进程重启后恢复，crash scan 无异常 |
-| RTC009 | 待开始 | Cloud Route 收口 | 现有 managed WebRTC 接到统一 PeerSession；单一 App 内按账号/订阅决定 eligibility；Cloud logout/failure 不影响 Direct/SSH |
-| RTC010 | 待开始 | 删除旧路径与最终验收 | 删除 managed-only pairing、旧 Route、旧 App flavor 分支、重复平台真值和旧 proxy；在 Android 模拟器完成最终 APK 的 Direct/SSH/Cloud、LAN/TCP mapping、terminal 交互、文件传输、弱网、lifecycle 与双 Agent 审查 |
+| RTC009 | 已完成 | Cloud Route 收口 | binding host 已使用统一 planner/PeerSession 竞速 Direct、SSH、Cloud；平台只通过 Proto 返回账号 eligibility，未登录、登出或 Cloud 故障只过滤 planning 副本中的 managed Route，不修改 Go registry；Relay 订阅/配额由 lease 准入；`pair create --cloud` 同时签发 Direct + Cloud Route 并由 daemon DeviceIdentity 填充 target；Android 已删除旧 flavor 装配。真实 managed direct/Relay E2E、配额拒绝、Direct/SSH 回归、Proto/WASM contract、CLI、两种单 App APK 构建和 class boundary 均通过；ARM64 模拟器真实 App UI 经 Hub 完成 terminal 列表、打开、三次输入输出和后台恢复，Cloud 登出后 Endpoint 保留且 Direct 可用，crash scan 无异常 |
+| RTC010 | 待开始 | 删除旧路径与最终验收 | 删除 managed-only pairing、旧 Route、重复平台真值和旧 proxy，确认 RTC009 已移除旧 App flavor 分支；在 ARM64 Android 模拟器从真实 App UI 完成 Direct/SSH/Cloud、LAN/TCP mapping、terminal 列表与持续交互、文件上传/下载及摘要校验、取消、锁屏/后台恢复、网络切换、弱网和 crash 扫描；双 Agent 仅按本切片完成条件审查 |
 | WEB001 | 延后 | Web/WASM 产品恢复 | 仅用户明确恢复 Web 后启动；Go/WASM + Cloud managed WebRTC，纯浏览器不支持 Direct/SSH |
 
 ## 测试准入
@@ -152,6 +152,7 @@ Android / TUI / CLI / future iOS/Desktop / future Web
 - 最终验收还必须从 App UI 完成文件上传与下载，并按文件长度和摘要校验内容；必须覆盖取消或失败后资源释放，不能只证明文件 API 可调用。
 - 必须覆盖锁屏、后台或等价 Activity/WebView freeze -> 旧 generation/handle 失效 -> 恢复后新 generation 重建 -> terminal 重新连接，并扫描 logcat、`AndroidRuntime`、native crash 和无界等待。
 - 测试夹具可以准备 daemon、terminal command 和校验文件，但不得绕过 APK UI 直接调用 Go/JNI 来冒充用户端到端结果。物理设备只作为补充，不替代模拟器门禁。
+- daemon capture、目标文件系统、SHA-256、服务日志和 logcat 只作为真实 UI 操作后的结果 oracle；每个 Route、terminal、文件传输、取消和 lifecycle 流程都必须记录 App UI 操作、实际结果与对应证据。
 
 - `BASE001`：文本守卫确认 AGENTS/workflow 只定义单一 App、Web/WASM 延后且 Direct/SSH/Cloud 统一使用 WebRTC DataChannel；`git diff --check`。
 - `RTC001`：generated-code check；Proto round-trip、unknown-field、descriptor compatibility；Endpoint parser/assembler/planner tests；旧 Route enum/name 扫描；`make doctor`；`git diff --check`。
@@ -163,7 +164,7 @@ Android / TUI / CLI / future iOS/Desktop / future Web
 - `RTC007`：LAN 与 TCP mapping harness；二维码 route override round-trip；错误 advertised address、identity mismatch、过期 ticket 和端口不可达 fail closed；Android 模拟器经真实 TCP 映射完成 App E2E；`git diff --check`。
 - `RTC008`：ShareSessionOffer/Bundle compatibility、一次消费、过期、receiver proof、config diff、config-only、secret 扫描；CLI/TUI/Android E2E；`git diff --check`。
 - `RTC009`：managed direct/Relay E2E；未登录/无订阅/Cloud 故障只过滤 managed Route；Direct/SSH regression；Cloud 私有边界扫描；`git diff --check`。
-- `RTC010`：全仓 Go/race、Android tests/build/instrumentation；ARM64 Android 模拟器安装最终 APK，并从真实 App UI 完成 Direct、SSH、Cloud、LAN/TCP mapping、terminal 列表、terminal 打开、命令输入/输出、持续交互、文件上传/下载内容校验、取消、锁屏/后台恢复和网络切换；执行弱网与 crash 扫描；旧路径/重复真值/fallback 扫描；双 reviewer 只按当前切片既定完成条件审查，不得以提前优化或未来能力阻塞，架构与代码 reviewer 均 PASS；`make doctor`；`git diff --check`。
+- `RTC010`：全仓 Go/race、Android tests/build/instrumentation；ARM64 Android 模拟器安装最终 APK，并从真实 App UI 分别完成 Direct、SSH、Cloud 建连以及 LAN/TCP mapping；每条要求的 Route 至少完成 terminal 列表、打开 terminal、命令输入/可识别输出和持续交互；从 App UI 完成文件上传、下载、长度与 SHA-256 校验，并覆盖进行中取消及资源释放；覆盖锁屏/后台冻结后新 generation 重连、网络切换和受控弱网；扫描 logcat、AndroidRuntime 与 native crash；扫描旧路径、重复真值和 fallback；两个 reviewer 只按当前切片范围、契约、完成条件和可复现证据判定，只有已证明的当前切片问题可以阻塞，提前优化和未来能力只能 deferred，架构与代码 reviewer 均 PASS；`make doctor`；`git diff --check`。
 
 ## 执行规则
 

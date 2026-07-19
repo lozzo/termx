@@ -1,11 +1,12 @@
 package com.termx.app.managed
 
 import termx.cloud.v1.CloudCompanion
+import termx.client.binding.v1.ClientBinding
 
 /** ManagedEndpointFailure 是 Android platform adapter 映射到稳定 ApiError 的失败边界。 */
 class ManagedEndpointFailure(val code: String, message: String) : Exception(message)
 
-/** ManagedCloudLoginFlow 是 Official 模块返回给 Android 壳的短期浏览器设备码投影。 */
+/** ManagedCloudLoginFlow 是私有 Cloud 模块返回给 Android 壳的短期浏览器设备码投影。 */
 data class ManagedCloudLoginFlow(
     val flowId: String,
     val verificationUri: String,
@@ -36,10 +37,11 @@ data class ManagedCloudDevice(
 )
 
 /**
- * ManagedCloudAdapter 是移动端私有 cloud module 必须实现的公开边界。
+ * ManagedCloudAdapter 是单一移动 App 的私有 cloud module 必须实现的公开边界。
  * 它只处理账号控制面与生成的 cloudpb 请求，禁止接收 grant、设备私钥、DataChannel 或 terminal payload。
  */
 interface ManagedCloudProtoAdapter {
+    suspend fun routeEligibilityProto(request: ClientBinding.CloudRouteEligibilityRequest): ClientBinding.CloudRouteEligibility = protoUnavailable()
     suspend fun resolveProto(request: CloudCompanion.ResolveEndpointRequest): CloudCompanion.ResolvedEndpoint = protoUnavailable()
     suspend fun createSignalingProto(request: CloudCompanion.CreateSignalingSessionRequest): List<CloudCompanion.SignalingEvent> = protoUnavailable()
     suspend fun acquireRelayProto(request: CloudCompanion.AcquireRelayLeaseRequest): CloudCompanion.RelayLease = protoUnavailable()
@@ -64,25 +66,4 @@ interface ManagedCloudAdapter : ManagedCloudProtoAdapter {
     suspend fun listDevices(): List<ManagedCloudDevice>
     /** logout 删除账号 edge session，不删除 daemon capability grant。 */
     suspend fun logout()
-}
-
-/** CommunityCloudAdapter 明确表示公开 Community build 未包含官方 cloud module。 */
-class CommunityCloudAdapter : ManagedCloudAdapter {
-    override suspend fun beginLogin(metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow = unavailable()
-    override suspend fun claimLogin(userCode: String, metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow = unavailable()
-    override suspend fun completeLogin(flowId: String): ManagedCloudAccount = unavailable()
-    override suspend fun currentAccount(): ManagedCloudAccount? = null
-    override suspend fun listDevices(): List<ManagedCloudDevice> = unavailable()
-    override suspend fun logout() = Unit
-    override suspend fun resolveProto(request: CloudCompanion.ResolveEndpointRequest): CloudCompanion.ResolvedEndpoint = unavailable()
-    override suspend fun createSignalingProto(request: CloudCompanion.CreateSignalingSessionRequest): List<CloudCompanion.SignalingEvent> = unavailable()
-    override suspend fun acquireRelayProto(request: CloudCompanion.AcquireRelayLeaseRequest): CloudCompanion.RelayLease = unavailable()
-    override suspend fun planRouteProto(request: CloudCompanion.PlanManagedRouteRequest): CloudCompanion.ManagedRoutePlan = unavailable()
-    override suspend fun reportQualityProto(request: CloudCompanion.ReportPathQualityRequest): CloudCompanion.ReportPathQualityResponse = unavailable()
-    override suspend fun reportOutcomeProto(request: CloudCompanion.ReportConnectionOutcomeRequest): CloudCompanion.ReportConnectionOutcomeResponse = unavailable()
-
-    private fun unavailable(): Nothing {
-        throw ManagedEndpointFailure("companion_missing", "Official managed cloud module is not installed")
-    }
-
 }

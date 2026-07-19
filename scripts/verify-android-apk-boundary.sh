@@ -3,16 +3,16 @@
 set -euo pipefail
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
-  echo "usage: $0 COMMUNITY_APK [OFFICIAL_APK]" >&2
+  echo "usage: $0 APP_APK [DEV_CLOUD_APK]" >&2
   exit 2
 fi
 
-community_apk="$1"
-official_apk="${2:-}"
+app_apk="$1"
+dev_cloud_apk="${2:-}"
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/termx-apk-boundary.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
 
-for apk in "$community_apk" ${official_apk:+"$official_apk"}; do
+for apk in "$app_apk" ${dev_cloud_apk:+"$dev_cloud_apk"}; do
   if [[ ! -s "$apk" ]]; then
     echo "Android APK is missing or empty: $apk" >&2
     exit 1
@@ -32,19 +32,12 @@ if ! command -v apkanalyzer >/dev/null 2>&1; then
   exit 1
 fi
 
-apkanalyzer dex packages --defined-only "$community_apk" >"$tmp_dir/community.txt"
-if rg -q 'com\.termx\.cloud(?:\.|$)' "$tmp_dir/community.txt"; then
-  echo "Community APK contains private cloud classes" >&2
-  rg 'com\.termx\.cloud(?:\.|$)' "$tmp_dir/community.txt" >&2
-  exit 1
-fi
-
-if [[ -n "$official_apk" ]]; then
-  apkanalyzer dex packages --defined-only "$official_apk" >"$tmp_dir/official.txt"
-  if ! rg -q 'com\.termx\.cloud\.OfficialManagedCloudFactory(?:[[:space:]]|$)' "$tmp_dir/official.txt"; then
-    echo "Official APK does not define OfficialManagedCloudFactory" >&2
+for apk in "$app_apk" ${dev_cloud_apk:+"$dev_cloud_apk"}; do
+  apkanalyzer dex packages --defined-only "$apk" >"$tmp_dir/classes.txt"
+  if ! rg -q 'com\.termx\.cloud\.OfficialManagedCloudFactory(?:[[:space:]]|$)' "$tmp_dir/classes.txt"; then
+    echo "TermX APK does not define its managed Cloud factory: $apk" >&2
     exit 1
   fi
-fi
+done
 
-echo "Android APK class boundary passed"
+echo "Android single-App Cloud assembly passed"

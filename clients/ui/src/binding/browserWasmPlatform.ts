@@ -1,6 +1,7 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf'
 import { ApiErrorCode, ApiErrorSchema } from '../generated/apipb/common_pb'
 import {
+  CloudRouteEligibilitySchema,
   CredentialRecordSchema,
   CredentialSignResponseSchema,
   EndpointRegistryLoadedSchema,
@@ -129,6 +130,7 @@ export class BrowserWasmPlatform implements WasmPlatformDispatcher {
       case 'cloudPlanRoute':
       case 'cloudReportQuality':
       case 'cloudReportOutcome':
+      case 'cloudRouteEligibility':
         return await this.cloud.handleOther(request)
       case 'webrtcOpenPeer':
         return { case: 'webrtcPeerOpened', value: await this.peers.open(request.request.value) }
@@ -589,6 +591,7 @@ export const emptyBrowserCloudPlatform: BrowserCloudPlatform = {
       case 'cloudPlanRoute': return { case: 'cloudRoutePlan', value: create(ManagedRoutePlanSchema, {}) }
       case 'cloudReportQuality': return { case: 'cloudQualityReported', value: create(ReportPathQualityResponseSchema, {}) }
       case 'cloudReportOutcome': return { case: 'cloudOutcomeReported', value: create(ReportConnectionOutcomeResponseSchema, {}) }
+      case 'cloudRouteEligibility': return { case: 'cloudRouteEligibility', value: create(CloudRouteEligibilitySchema, {}) }
       default: throw new Error('unsupported browser Cloud request')
     }
   },

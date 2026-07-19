@@ -11,6 +11,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import termx.cloud.v1.CloudCompanion
+import termx.client.binding.v1.ClientBinding
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
@@ -29,6 +30,30 @@ import kotlin.concurrent.thread
 /** DevCloudMobileGatewayTest 证明 Official Android 使用真实 dev Control Plane/Hub wire contract，而非占位 gateway。 */
 class DevCloudMobileGatewayTest {
     private val now = Instant.parse("2026-07-11T12:00:00Z")
+
+    @Test
+    fun routeEligibilityTracksCachedAccountSessionAndLogout() = runBlocking {
+        val store = MemoryCloudSessionStore()
+        val gateway = DevCloudMobileGateway("http://127.0.0.1:41001", "http://127.0.0.1:41002", now = { now }, sessionStore = store)
+        val request = ClientBinding.CloudRouteEligibilityRequest.newBuilder()
+            .setAccountProfileRef("default")
+            .setRelayMode(termx.remote.auth.v1.RemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_AUTO)
+            .build()
+
+        assertFalse(gateway.routeEligibilityProto(request).accountSessionAvailable)
+        store.save(AccountSession(ByteArray(32) { 1 }, now.plusSeconds(300), ByteArray(32) { 2 }, now.plusSeconds(3600), "account-1", "Account One", "client-1", "hub-1", "https://hub.example.test", "region-1", 2))
+
+        val loggedIn = gateway.routeEligibilityProto(request)
+        assertTrue(loggedIn.accountSessionAvailable)
+        assertTrue(loggedIn.managedDirectAvailable)
+        assertTrue(loggedIn.relayAvailable)
+
+        gateway.logout()
+        val loggedOut = gateway.routeEligibilityProto(request)
+        assertFalse(loggedOut.accountSessionAvailable)
+        assertFalse(loggedOut.managedDirectAvailable)
+        assertFalse(loggedOut.relayAvailable)
+    }
 
     @Test
     fun resolvesAndSignalsThroughLoopbackCloudWithOnePrivateAccountSession() = runBlocking {

@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import org.bouncycastle.util.encoders.Base64
 import org.json.JSONObject
 import termx.cloud.v1.CloudCompanion
+import termx.client.binding.v1.ClientBinding
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.IOException
@@ -39,6 +40,17 @@ internal class DevCloudMobileGateway(
     private val hubOrigin = validateOrigin(hubURL, allowPublicHTTP)
     private val sessionLock = Mutex()
     @Volatile private var accountSession: AccountSession? = null
+
+    /** routeEligibilityProto 只投影当前账号 session；Relay entitlement 仍在 AcquireRelayLease 时由服务端判定。 */
+    @Suppress("UNUSED_PARAMETER")
+    suspend fun routeEligibilityProto(request: ClientBinding.CloudRouteEligibilityRequest): ClientBinding.CloudRouteEligibility {
+        val accountAvailable = currentAccount() != null
+        return ClientBinding.CloudRouteEligibility.newBuilder()
+            .setAccountSessionAvailable(accountAvailable)
+            .setManagedDirectAvailable(accountAvailable)
+            .setRelayAvailable(accountAvailable)
+            .build()
+    }
 
     /** beginLogin 只返回短期设备码；账号密码和浏览器 Cookie 不进入 Official App。 */
     suspend fun beginLogin(metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow = withContext(Dispatchers.IO) {

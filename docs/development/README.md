@@ -48,7 +48,7 @@ make clean
 - `make test` 清理调用终端继承的全部 `TERMX_*`，并使用 `GOWORK=off` 测试根公开 module，保证结果不受当前远程会话污染且 public snapshot 不依赖私有 workspace。
 - `make test-private` 逐个测试六个私有 Go module；public snapshot 没有 `private/cloud` 时明确跳过。
 - `make test-clients` 依次生成 protobuf、运行共享 UI 测试与类型检查，并构建 UI/Mobile Web。
-- `make test-android` 先同步 Capacitor，再 clean 构建 Community APK；私有 source set 存在时继续 clean 构建 Official APK，并验证 DEX class 边界。可交付 APK 副本写入 `.artifacts/android/`。
+- `make test-android` 先同步 Capacitor，再分别 clean 构建标准 APK 与显式 devcloud APK，并验证两者都使用同一 App/Cloud factory 装配。可交付 APK 副本写入 `.artifacts/android/`。
 - `make test-all` 顺序组合全部测试，不吞掉子命令失败。
 - `make clean` 只删除 `.artifacts`、旧根构建残留和标准 Go/Node/Gradle 输出，不删除依赖缓存或源码。
 
@@ -67,7 +67,7 @@ Go 生成物需要当前 `protoc` 与 `protoc-gen-go`；TypeScript 生成器由�
 
 Android 自定义源码唯一真值是 `clients/mobile/android/app/src/main/`。`clients/mobile/native/android` 不得恢复；`cap sync` 后 `clients/mobile/scripts/verify-android-source.sh` 会检查源码、manifest、network config 和 Gradle 关键配置。
 
-Community 构建不得引用 `private/cloud/mobile`。Official 构建只通过 `private/cloud/mobile/android/official-cloud.init.gradle` 注入固定 source set；`scripts/verify-android-apk-boundary.sh` 验证 Community 不含私有 cloud class，Official 必须包含 `OfficialManagedCloudFactory`。
+TermX 只构建一个 Android App。`private/cloud/mobile/android` 作为标准 first-party source set 编入 APK；默认没有 development Cloud origin并保持 managed Route fail closed，`-PtermxDevCloud=true` 和 `-PtermxPublicHTTPStaging=true` 只启用互斥的测试 profile。`scripts/verify-android-apk-boundary.sh` 验证标准与 devcloud APK 都包含固定 `OfficialManagedCloudFactory`，且 Cloud module 不拥有 WebRTC、grant 或 terminal payload。
 
 ## 产物与发布
 

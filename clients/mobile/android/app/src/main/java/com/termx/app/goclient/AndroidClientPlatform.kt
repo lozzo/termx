@@ -109,6 +109,8 @@ class AndroidClientPlatform(
                     response.setCloudQualityReported(runBlocking { cloud.reportQualityProto(request.cloudReportQuality) })
                 ClientBinding.PlatformRequest.RequestCase.CLOUD_REPORT_OUTCOME ->
                     response.setCloudOutcomeReported(runBlocking { cloud.reportOutcomeProto(request.cloudReportOutcome) })
+                ClientBinding.PlatformRequest.RequestCase.CLOUD_ROUTE_ELIGIBILITY ->
+                    response.setCloudRouteEligibility(runBlocking { cloud.routeEligibilityProto(request.cloudRouteEligibility) })
                 ClientBinding.PlatformRequest.RequestCase.WEBRTC_OPEN_PEER,
                 ClientBinding.PlatformRequest.RequestCase.WEBRTC_CREATE_OFFER,
                 ClientBinding.PlatformRequest.RequestCase.WEBRTC_APPLY_ANSWER,

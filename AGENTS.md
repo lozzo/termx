@@ -28,6 +28,7 @@
 - 禁止提前优化和过度优化：只允许处理当前切片完成条件、现有契约直接要求、可复现失败或准入测试已经证明的问题；不得因为未来可能需要、理论上更通用、reviewer 的纯假设场景或“顺手更完整”而扩大模型、增加通用机制、跨层能力、状态 registry 或防御性框架。
 - reviewer finding 必须先由主 Agent 判断是否属于当前切片并由代码链路、契约或最小 harness 证明。无法证明现实风险、只覆盖假设性扩展或需要扩大切片才能成立的 finding，应记录为 deferred item，不得为取得 PASS 机械实现。
 - 双 Agent 审查只判断当前切片是否满足 `workflow.md` 已声明的范围、契约、完成条件和测试准入。reviewer 不得以未来平台、未来规模、可选 hardening、理论性能、未排期产品能力或“可以更通用”为由给出阻塞性 `FAIL`；这类观察只能记为 deferred item，且不影响当前切片 `PASS`。
+- reviewer 只有在当前切片存在可由代码链路、契约冲突、可复现行为或准入测试证明的未解决问题时才能给出 `FAIL`。仅有命名偏好、抽象建议、未来扩展、理论竞态或未进入当前完成条件的增强项时，结论必须是 `PASS`，并把建议记录为不阻塞的 deferred observation。
 - 优先实现最小但真实的纵向闭环；允许在显式 dev/staging harness 中使用内存 store、固定测试身份和本地进程装配，但不得把 dev 凭据、宽松鉴权或 fallback 带入默认生产路径。
 - “文档、接口、领域模型和 fake 测试完成”不等于产品完成。活动切片的完成条件必须包含当前阶段可观察的用户行为或真实跨组件消息链路。
 - 不做与当前切片无关的仓库级整理、命名统一、性能优化、发布自动化或防御性抽象；发现这类工作时记录为 deferred item，继续完成当前纵向目标。
@@ -110,6 +111,7 @@
 - binding 调用必须是可取消的异步模型。Android process/activity 重建和网络切换后必须由 Go runtime 建立新的 session generation；不得复用 stale DataChannel、SSH tunnel、resource handle 或旧授权状态。未来浏览器恢复时沿用同一规则。
 - Android 锁屏或进程进入后台时，即使 JNI/Go 线程仍可运行，WebView 也视为不可消费事件；native owner 必须关闭当前 Go engine、loopback bridge、session/resource 与事件泵，禁止后台维持第二套重连或积累无界事件。WebView 恢复时必须先创建进程内严格递增的新 generation，再通知 UI 重建 binding；冻结前的 socket、operation/session/resource handle 和迟到 callback 一律失效，不得复活或重放到新 generation。
 - Android 用户可用性不能只由 Go unit test、binding harness、Gradle build 或单个 API instrumentation 证明。凡 `workflow.md` 要求 Android 纵向验收，必须在仓库指定的 ARM64 Android 模拟器安装真实 APK，通过真实 App UI 完成该切片声明的用户流程；连接纵向至少覆盖添加 Endpoint、建立连接、查看 terminal 列表、打开 terminal、输入命令并验证输出、持续交互和 crash 扫描。最终 APK 验收还必须覆盖 Direct/SSH/Cloud、上传与下载文件并校验内容、取消、锁屏/后台恢复后重新连接、网络切换及 logcat/native crash 扫描。物理设备测试可以补充，但不得替代默认可复现的模拟器门禁。
+- Android 最终 E2E 必须由 App UI 发起用户动作。测试夹具、daemon capture、文件系统检查、摘要计算和日志可以作为结果 oracle，但不得直接调用 Go/JNI/binding、绕过 UI 发起连接、terminal 输入、文件上传/下载或取消操作后再把结果记作 App E2E。每个流程都要记录可复现步骤、预期结果和实际证据。
 - DeviceIdentity、ClientAccessIdentity 和 SSH 私钥不得以裸字节长期暴露给 Kotlin/JavaScript。Go Client Engine 必须通过 signer/credential port 使用 Android Keystore、未来 Keychain/keychain 或 WebCrypto 等平台实现，并明确不可导出 key、签名失败和用户/系统取消语义。
 - `core/` 可以拥有内部领域 struct、value object 和状态机，但这些类型不得成为插件/客户端契约，也不得为了复用而移动到所谓 shared API DTO 目录。
 - `api_layer/` 的公开方法参数、返回值、command、event、stream item 和稳定错误 detail 必须来自 proto 生成类型；允许的非 proto 参数仅限 `context.Context`、内部依赖接口和不越过调用边界的资源句柄实现。
@@ -196,6 +198,7 @@
 - 架构 reviewer 必须在当前切片范围内检查 domain owner、truth source、消息链路、失败条件、模块边界、重复真值、fallback、本切片要求删除的旧代码，以及实现是否为了局部 case 引入补丁分支。
 - 代码 reviewer 必须在当前切片范围内检查行为 bug、状态竞态、输入边界、错误处理、安全/隐私、已由代码或测试证明的性能退化、测试有效性和用户可观察回归；不得只做格式或命名检查，也不得把假设性优化列为阻塞项。
 - reviewer 必须基于当前阶段实现 diff、相关实现和测试给出 `PASS` 或 `FAIL`，并把结论分为“当前切片阻塞 finding”和“不阻塞的 deferred observation”。审查范围不包含 reviewer PASS 后机械写入的 `workflow.md` 状态/审查证据；没有明确结论或仍有未解决的当前切片阻塞 finding，视为 `FAIL`。仅存在 deferred observation 时必须允许 `PASS`。
+- reviewer 不得要求主 Agent 为获得 `PASS` 实现未排期能力、通用化当前单一实现、增加假设性 fallback/hardening、改造无关目录或提前处理未来 Web/iOS/Desktop/多区域能力。此类要求违反审查范围，主 Agent 应拒绝扩大切片并记录为 deferred observation。
 - 主 Agent 必须独立判断并处理 findings，不能机械接受或忽略。修复任何实质 finding 后必须重新运行受影响测试，并把更新后的阶段实现 diff 交给原 reviewer 复审；架构与代码 reviewer 都明确 `PASS` 才满足门禁。
 - reviewer 只读，不得直接改文件、提交或替主 Agent扩大切片。若双审查所需子 Agent 不可用，该切片标记阻塞，不得降低为单 Agent、自审或跳过。
 - 两个 reviewer PASS 后只允许机械更新 `workflow.md` 的切片状态、reviewer 结论和已处理 finding 摘要，再运行 `git diff --check` 后提交；若同时修改任何实现、测试、其他文档或非审查元数据，必须重新交原 reviewer 复审。该终止规则避免“记录 PASS 本身又制造待审 diff”的无限循环。

@@ -255,12 +255,12 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 
 - CLI 实现 install/login/enroll/status/doctor/update/logout/uninstall。
 - manifest、artifact、hash、签名、平台和 protocol version 全部验证后原子安装。
-- 当前活动 Android official build 接私有 cloud module；Community build 使用 disabled/fake adapter。未来建立 iOS target 时先补 Swift contract vector，再按同一边界装配。
+- 当前活动 Android 只有一个 App，标准 source set 固定接入 first-party cloud module；默认无开发 Cloud origin时 managed Route fail closed。未来建立 iOS target 时先补同一 C ABI contract 的 Swift wrapper，再按同一平台 primitive 边界装配。
 - companion 缺失、崩溃和不兼容只影响 managed endpoint。
 
 完成条件：桌面 signed install/update/uninstall harness 与移动端 contract fixture 通过；普通公开构建不需要私有源码。
 
-实现结果：公开 `cloudcompanion/installer`、`ipc`、`activation` 与 CLI lifecycle 已完成；私有 desktop artifact、OS keyring adapter、外部 Ed25519 release tool 和 Android Official source set 已完成。公开构建通过固定 factory 反射缺失稳定落到 disabled adapter，不 import/link `private/`；Official init script 才加入私有 Kotlin source。installer 覆盖签名/hash/size/平台/protocol/downgrade/script/truncation、旧 active 保留、owner/mode/SID/symlink/hash 复验和 uninstall 边界；activation smoke 把 binary 自报 version/channel 绑定到签名 manifest，并在 active version 变化时有序替换旧进程。正式 release root、artifact origin、OAuth/TLS SDK 属于外部发布注入；缺失时 fail closed。daemon presence-proof contract 仍需后续协议切片，不以 enrollment proof 或 legacy heartbeat 替代。
+实现结果：公开 `cloudcompanion/installer`、`ipc`、`activation` 与 CLI lifecycle 已完成；私有 desktop artifact、OS keyring adapter、外部 Ed25519 release tool 和 Android first-party Cloud source set 已完成。当前 private monorepo 的标准 APK 固定包含 Cloud factory；没有显式 development profile时账号与 managed Route fail closed，Direct/SSH 仍可用。installer 覆盖签名/hash/size/平台/protocol/downgrade/script/truncation、旧 active 保留、owner/mode/SID/symlink/hash 复验和 uninstall 边界；activation smoke 把 binary 自报 version/channel 绑定到签名 manifest，并在 active version 变化时有序替换旧进程。正式 release root、artifact origin、OAuth/TLS SDK 属于外部发布注入；缺失时 fail closed。daemon presence-proof contract 仍需后续协议切片，不以 enrollment proof 或 legacy heartbeat 替代。
 
 ### RP007：私有命名空间与开源快照准备
 

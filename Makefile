@@ -28,7 +28,7 @@ help:
 		'  make test          Test the public Go module' \
 		'  make test-private  Test each private cloud Go module when present' \
 		'  make test-clients  Generate, test, typecheck, and build both clients' \
-		'  make test-android  Build/test Community and optional Official APKs' \
+		'  make test-android  Build/test the standard and dev-cloud TermX APK' \
 		'  make test-all      Run all repository test gates sequentially' \
 		'  make doctor        Check toolchain, generated code, and repository layout' \
 		'  make clean         Remove known generated build outputs'
@@ -79,16 +79,10 @@ test-android:
 	npm run cap:build
 	mkdir -p "$(ANDROID_ARTIFACT_DIR)"
 	cd "$(ANDROID_DIR)" && ./gradlew clean testDebugUnitTest assembleDebug
-	cp "$(ANDROID_DIR)/app/build/outputs/apk/debug/app-debug.apk" "$(ANDROID_ARTIFACT_DIR)/community-debug.apk"
-	@if [[ -d "$(CURDIR)/private/cloud/mobile/android" ]]; then \
-		cd "$(ANDROID_DIR)"; \
-		./gradlew -I ../../../private/cloud/mobile/android/official-cloud.init.gradle clean testDebugUnitTest assembleDebug; \
-		cp app/build/outputs/apk/debug/app-debug.apk "$(ANDROID_ARTIFACT_DIR)/official-debug.apk"; \
-		scripts="$(CURDIR)/scripts/verify-android-apk-boundary.sh"; \
-		"$$scripts" "$(ANDROID_ARTIFACT_DIR)/community-debug.apk" "$(ANDROID_ARTIFACT_DIR)/official-debug.apk"; \
-	else \
-		"$(CURDIR)/scripts/verify-android-apk-boundary.sh" "$(ANDROID_ARTIFACT_DIR)/community-debug.apk"; \
-	fi
+	cp "$(ANDROID_DIR)/app/build/outputs/apk/debug/app-debug.apk" "$(ANDROID_ARTIFACT_DIR)/app-debug.apk"
+	cd "$(ANDROID_DIR)" && ./gradlew -PtermxDevCloud=true clean testDebugUnitTest assembleDebug
+	cp "$(ANDROID_DIR)/app/build/outputs/apk/debug/app-debug.apk" "$(ANDROID_ARTIFACT_DIR)/app-devcloud-debug.apk"
+	scripts/verify-android-apk-boundary.sh "$(ANDROID_ARTIFACT_DIR)/app-debug.apk" "$(ANDROID_ARTIFACT_DIR)/app-devcloud-debug.apk"
 
 test-all:
 	$(MAKE) test

@@ -3,6 +3,7 @@ import { CommandEnvelopeSchema } from '../../src/generated/apipb/application_pb'
 import { ApplicationEventType, EventSubscribeCommandSchema } from '../../src/generated/apipb/events_pb'
 import { StorageKeySchema, StoragePutCommandSchema, StorageScope } from '../../src/generated/apipb/storage_pb'
 import {
+  CloudRouteEligibilitySchema,
   CredentialRecordSchema,
   OpenSessionRequestSchema,
   PlatformResponseSchema,
@@ -192,6 +193,7 @@ class SpikeCloudPlatform implements BrowserCloudPlatform {
       case 'cloudPlanRoute': return { case: 'cloudRoutePlan', value: create(ManagedRoutePlanSchema, {}) }
       case 'cloudReportQuality': return { case: 'cloudQualityReported', value: create(ReportPathQualityResponseSchema, {}) }
       case 'cloudReportOutcome': return { case: 'cloudOutcomeReported', value: create(ReportConnectionOutcomeResponseSchema, {}) }
+      case 'cloudRouteEligibility': return { case: 'cloudRouteEligibility', value: create(CloudRouteEligibilitySchema, { accountSessionAvailable: true, managedDirectAvailable: true, relayAvailable: true }) }
       default: throw new Error('unexpected spike Cloud request')
     }
   }

@@ -15,6 +15,7 @@ import (
 
 	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	corev2 "github.com/lozzow/termx/core"
+	"github.com/lozzow/termx/proto/remoteauthpb"
 	"github.com/lozzow/termx/shared/filelock"
 	"github.com/lozzow/termx/shared/remoteauth"
 	unixtransport "github.com/lozzow/termx/shared/transport/unix"
@@ -153,6 +154,29 @@ func TestPairCreatePublishesExplicitTCPMappingWithoutChangingIdentity(t *testing
 	inspect := executePairCommand(t, mapped, "pair", "inspect", "--json", "-")
 	if !strings.Contains(string(inspect), `"signaling_addresses":["frp.example:51020"]`) || !strings.Contains(string(inspect), `"server_name":"frp.example"`) {
 		t.Fatalf("mapped inspect preview = %s", inspect)
+	}
+}
+
+func TestPairCreateCanSignDirectAndCloudRoutesForSameDaemonIdentity(t *testing.T) {
+	runtimeDir, _, _ := configurePairCommandTest(t)
+	created := executePairCommand(t, nil, "--socket", filepath.Join(runtimeDir, "daemon.sock"), "pair", "create", "--raw", "--cloud")
+	bundle, _, err := remoteauth.ParsePairingBundle(created, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bundle.GetRoutes()) != 2 {
+		t.Fatalf("pairing routes = %#v", bundle.GetRoutes())
+	}
+	managed := bundle.GetRoutes()[0].GetManagedWebrtc()
+	if managed == nil {
+		managed = bundle.GetRoutes()[1].GetManagedWebrtc()
+	}
+	if managed == nil || managed.GetTargetDeviceId() != bundle.GetIdentity().GetDeviceId() || managed.GetRelayMode() != remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_AUTO {
+		t.Fatalf("managed pairing route = %#v identity=%#v", managed, bundle.GetIdentity())
+	}
+	inspect := executePairCommand(t, created, "pair", "inspect", "--json", "-")
+	if !strings.Contains(string(inspect), `"kind":"managed-webrtc"`) || !strings.Contains(string(inspect), `"target_device_id":"`+bundle.GetIdentity().GetDeviceId()+`"`) {
+		t.Fatalf("managed pair inspect = %s", inspect)
 	}
 }
 
