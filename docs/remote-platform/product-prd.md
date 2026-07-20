@@ -4,6 +4,8 @@
 
 活动切片、顺序和完成证据只记录在仓库根目录 `workflow.md`。本文定义稳定产品要求，不维护研发状态表。
 
+Cloud 账号、套餐、交易、Subscription、Entitlement、managed P2P/Relay 准入、限额、用量和管理面的产品真值见 `cloud-product-spec.md`。本文只定义 TermX 整体产品形态和连接边界。
+
 ## 1. 产品形态
 
 - TermX 只有一个面向用户的 App。
@@ -64,6 +66,8 @@ Endpoint
 - Cloud 账号和订阅只控制 managed Route eligibility。
 - Control Plane、Hub 和 Relay 不能读取 terminal payload、CapabilityGrant body 或判断 terminal scope。
 - Cloud 退出登录或服务失败只影响 managed Route。
+- 开发模式也必须完整执行账号、交易、Subscription、Entitlement、Hub policy、Relay lease、usage 和管理链路；只允许外部 provider 使用显式测试实现。
+- 不同套餐可以分别控制 managed P2P、Relay、region、并发、速率和周期流量；套餐不得影响 Direct、SSH 或 daemon terminal capability。
 
 ## 4. 统一会话
 
@@ -145,6 +149,6 @@ Android 用户可用性必须由 ARM64 模拟器上的真实 APK UI 证明，不
 - 用户自建 TermX managed Cloud provider。
 - KCP、QUIC 或替代 WebRTC 传输框架。
 - Relay Mesh、全球多区域高可用和无中断动态换路。
-- 复杂计费平台、通用插件和未来发布工程。
+- 多区域计费平台、通用插件和未来发布工程。
 
 这些事项不得作为当前连接纵向闭环或 reviewer PASS 的前置条件。

@@ -6,7 +6,7 @@
 
 ## 1. 文档目的
 
-本目录保存 TermX 远程平台的产品、架构、安全和历史迁移背景。统一 Route 的当前结论以 `product-prd.md`、`unified-endpoint-route-refactor-plan.md`、`architecture-spec.md`、`security-protocol-spec.md` 和根 `workflow.md` 为准。
+本目录保存 TermX 远程平台的产品、架构、安全和历史迁移背景。统一 Route 的当前结论以 `product-prd.md`、`cloud-product-spec.md`、`unified-endpoint-route-refactor-plan.md`、`architecture-spec.md`、`security-protocol-spec.md` 和根 `workflow.md` 为准。
 
 仓库目录 ownership 与依赖方向统一见 [`../development/repository-layout.md`](../development/repository-layout.md)。
 
@@ -17,12 +17,13 @@
 ## 2. 文档顺序
 
 1. `product-prd.md`：单一 App、免费 Direct/SSH、可选 Cloud 和 Android 用户验收。
-2. `unified-endpoint-route-refactor-plan.md`：versioned Proto Endpoint/Route contract、Go owner 和失败语义。
-3. `architecture-spec.md`：Go Client Engine、daemon、Control Plane、Hub 和 Relay 的状态边界。
-4. `security-protocol-spec.md`：设备身份、channel binding、terminal capability 和云服务准入隔离。
-5. `network-topology.md`：Local、Direct WebRTC TCP、SSH WebRTC TCP 和 managed WebRTC 拓扑。
-6. `file-transfer-spec.md`：同一 Proto session 上的文件 owner、授权、流控和失败语义。
-7. 其余文件：历史验收、旧阶段决策或延后能力，仅在 `workflow.md` 明确引用时读取。
+2. `cloud-product-spec.md`：账号、套餐、交易、Subscription、Entitlement、managed P2P/Relay、quota、usage 和管理面。
+3. `unified-endpoint-route-refactor-plan.md`：versioned Proto Endpoint/Route contract、Go owner 和失败语义。
+4. `architecture-spec.md`：Go Client Engine、daemon、Control Plane、Hub 和 Relay 的状态边界。
+5. `security-protocol-spec.md`：设备身份、channel binding、terminal capability 和云服务准入隔离。
+6. `network-topology.md`：Local、Direct WebRTC TCP、SSH WebRTC TCP 和 managed WebRTC 拓扑。
+7. `file-transfer-spec.md`：同一 Proto session 上的文件 owner、授权、流控和失败语义。
+8. 其余文件：历史验收、旧阶段决策或延后能力，仅在 `workflow.md` 明确引用时读取。
 
 若这些文档发生冲突，按以下顺序处理：
 
@@ -44,6 +45,7 @@
 - public CLI、private Companion 与 App 分别携带可重复生成的第三方 notice；sidecar IPC 不替代 Official/Enterprise 的书面商业条款和专业审查。
 - terminal capability 由 owning daemon 签发和验证。Hub、Relay、Web Controller 永远看不到 capability grant，也不拥有 terminal authorization。
 - Control Plane 可以签发短期 Hub 服务准入票据；Relay entitlement 通过独立短期 `RelayLease` 表达。
+- development Cloud 必须走完整账号、交易、Subscription、Entitlement、准入、限额和 usage 链路；固定测试账号或测试支付 provider 不能绕过这些领域状态。
 - 旧代码保留 git 历史和归档引用，但迁移完成后不得继续存在公开/私有双实现或旧 session token fallback。
 
 ## 4. 统一术语
@@ -74,10 +76,12 @@
 
 ## 6. 实现门禁
 
-当前实现顺序和完成条件以 `cloud-staging-roadmap.md` 为准。进入 CLOUD002-CLOUD005 时，至少满足：
+当前实现顺序和完成条件只以仓库根 `workflow.md` 为准。`cloud-staging-roadmap.md` 只记录已完成历史阶段，不再提供活动任务队列。Cloud 产品切片至少满足：
 
 - 每个切片先有 contract/harness，再接真实服务。
 - 公开 client contract 可以用 fake Hub/Control Plane 独立测试。
 - 私有服务不可成为 core-v2、TUI、CLI 或 protocol package 的构建依赖。
 - 任何请求、日志、指标或持久化中出现原始 `CapabilityGrant` 都视为安全回归。
 - 任何订阅判断直接改变 terminal scope 都视为领域边界回归。
+- development profile 必须走完整账号、交易、Subscription、Entitlement、准入、quota 和 usage settlement；测试 provider 不得直接写最终 entitlement。
+- 所有跨进程、跨语言和官方客户端 Cloud API 必须先定义在 `proto/cloudpb/`，不得在 Go、Kotlin 或 TypeScript 中复制平行业务 DTO。

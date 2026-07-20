@@ -4,9 +4,10 @@
 
 - 仓库根目录 `workflow.md` 是当前分支唯一有效的活动驱动文件。
 - 本仓库内所有工作必须先读取 `workflow.md`，并以它作为范围、任务顺序、测试准入和提交规则的唯一基准。
-- 当前活动主线只由 `workflow.md` 最早未完成切片决定；Go 端 Proto API 与基础 Client Engine 已完成，当前主线是把 Direct、SSH、Cloud 三种远程 Route 统一到 Go-owned WebRTC DataChannel session，并先完成 Android JNI 纵向闭环。浏览器 Web/WASM 当前冻结，不得抢占 Android 与 native Go 主线。
+- 当前活动主线只由 `workflow.md` 最早未完成切片决定；统一 WebRTC Route、Android JNI 和最终 APK 连接纵向已完成，当前主线是 Cloud development 产品能力闭环：账号、套餐、交易、Subscription、Entitlement、managed P2P/Relay 准入、quota、usage 和管理面。浏览器 Web/WASM terminal 产品当前冻结，不得抢占 Cloud 产品主线。
 - 插件系统已经拆到独立分支，本分支不新增插件系统代码、协议或文档。
 - `docs/remote-platform/` 是远程平台产品、架构、安全和迁移背景文档；统一 WebRTC Route 的当前决策以 `workflow.md` 为准，并由对应活动切片同步更新该目录，旧文档不得覆盖活动工作流。
+- `docs/remote-platform/cloud-product-spec.md` 是 Cloud 账号、套餐、交易、服务能力、限额、用量和管理面的唯一稳定产品基准；实现不得用 staging 硬编码或旧交易字段覆盖该规格。
 - `tui/docs/multi-endpoint-transport-plan.md` 是当前多 endpoint / 多 transport 技术规划。
 - `core/docs/architecture.md` 是 core-v2 技术设计基准。
 - `tui/docs/architecture.md` 是 tui-v3 技术设计基准。
@@ -25,6 +26,7 @@
 - 正式开源时再从选定稳定提交执行一次性代码审查、许可证确认、secret audit、目录复制和新 Git 历史初始化；这些工作默认延后，不得阻塞当前功能开发。
 - 若 `workflow.md` 把 public snapshot、开源许可证收口或 private 物理隔离排成当前活动切片，但用户没有明确要求进入发布阶段，必须先修正 `workflow.md`，不得机械执行该切片。
 - 开发阶段禁止提前优化：单区域端到端链路完成前，不做 Relay Mesh、多 transit、全球多区域高可用、复杂计费平台、通用插件、分布式状态、无中断动态换路或为假设性扩展设计的大型抽象。
+- development Cloud 仍必须具备完整账号、交易、Subscription、Entitlement、managed P2P/Relay 准入、周期 quota、usage settlement 和用户/运营管理闭环；“不做复杂计费平台”不能解释为允许固定 entitlement、硬编码 plan 或跳过交易和结算状态机。
 - 禁止提前优化和过度优化：只允许处理当前切片完成条件、现有契约直接要求、可复现失败或准入测试已经证明的问题；不得因为未来可能需要、理论上更通用、reviewer 的纯假设场景或“顺手更完整”而扩大模型、增加通用机制、跨层能力、状态 registry 或防御性框架。
 - reviewer finding 必须先由主 Agent 判断是否属于当前切片并由代码链路、契约或最小 harness 证明。无法证明现实风险、只覆盖假设性扩展或需要扩大切片才能成立的 finding，应记录为 deferred item，不得为取得 PASS 机械实现。
 - 双 Agent 审查只判断当前切片是否满足 `workflow.md` 已声明的范围、契约、完成条件和测试准入。reviewer 不得以未来平台、未来规模、可选 hardening、理论性能、未排期产品能力或“可以更通用”为由给出阻塞性 `FAIL`；这类观察只能记为 deferred item，且不影响当前切片 `PASS`。

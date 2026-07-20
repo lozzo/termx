@@ -1,199 +1,116 @@
-# 工作流：统一 WebRTC DataChannel 远程连接
+# 工作流：Cloud Development 产品能力闭环
 
 ## 当前结论
 
-- `RTC010` 删除旧路径与最终验收已完成；统一 WebRTC Route 的 Android/native Go 主线当前无未完成活动切片，`WEB001` 继续延后。
-- TermX 只有一个面向用户的 App。Direct 与 SSH 是无需登录和订阅的基础能力；TermX Cloud 是同一 App 内可选的 managed Route，提供账号目录、托管信令、ICE-UDP、TURN Relay 和跨网络能力。
-- 所有远程业务连接最终统一为可靠有序 WebRTC DataChannel：Direct 使用 daemon embedded signaling + ICE-TCP；SSH 使用 Go SSH client/direct-tcpip tunnel + daemon loopback ICE-TCP；Cloud 使用 TermX Cloud signaling + ICE-UDP 或 TURN Relay。
-- Local Unix 仍是本机 CLI/TUI 到本机 daemon 的本地 transport，不要求为了形式统一改成 WebRTC。
-- 所有官方客户端和仓库提供的外部客户端接入，其连接对象、Endpoint/Route 配置、pairing、remote auth、session generation、Hello、Proto command/event、资源和重连真值都属于 Go Client Engine。Go/native 直接调用，Android 使用 C ABI + JNI，未来 iOS/Desktop 使用 C ABI wrapper，未来浏览器使用 Go/WASM。
-- Android 通过稳定 C ABI + 薄 JNI/Capacitor bridge 使用 Go；Kotlin/Java 只提供 lifecycle、Keystore、安全存储、权限和平台 primitive。
-- Web/WASM 当前冻结。仓库维持现有编译与 contract 不回归，但不建设默认 Web 访问界面、不迁移浏览器 consumer，也不允许 Web 工作抢占 Android/native Go 主线。未来恢复时必须使用 Go/WASM；纯浏览器只支持 TermX Cloud managed WebRTC。
-- `ICE001` 已证明 Pion 双端仅启用 TCP4 时，真实 selected candidate pair 为 TCP，并完成 DeviceIdentity/CapabilityGrant auth、Hello、Proto API、取消 teardown、race 和 100 次连续独立建连。
-- Go SSH client 已通过 host-key pin、key/password credential、`direct-tcpip` signaling/ICE-TCP、DataChannel auth/Hello/Proto API 和 cleanup E2E；进程型 OpenSSH transport 与远端 `stdio-proxy` 已删除。
-- Android 已收口为单一 App 装配；标准构建和显式 devcloud 构建都包含同一个 first-party Cloud factory，development profile 只改变测试 origin，不形成产品 flavor。
+- `RTC001-RTC010` 已完成统一 WebRTC Route、Android JNI、Direct/SSH/Cloud、Endpoint registry/share、文件传输、生命周期、弱网和最终 APK E2E。历史完成证据见 `docs/remote-platform/rtc010-android-final-e2e.md`，不再在本文件重复展开。
+- 当前最早未完成切片是 `CLOUDP001`：统一套餐能力与 Entitlement contract。
+- 当前目标不是先做生产部署，而是在显式 development Cloud 中完成真实账号、交易、Subscription、Entitlement、managed P2P/Relay 准入、周期 quota、usage 和管理闭环。
+- development 只允许支付、邮件、短信、DNS/TLS 等外部 provider 使用测试实现；不得使用固定 entitlement、硬编码套餐能力或绕过交易/结算状态机。
+- Cloud 产品稳定语义以 `docs/remote-platform/cloud-product-spec.md` 为准；连接和安全边界继续以 `product-prd.md`、`architecture-spec.md` 和 `security-protocol-spec.md` 为准。
+- Web/WASM terminal 产品、iOS/Desktop GUI、多区域、Relay Mesh、真实支付 provider 和复杂计费平台继续延后。
 
-## 产品要求
-
-### 单一 App
-
-- 只发布一个面向用户的 App；Cloud 是其中的可选托管能力，不是独立产品或 App flavor。
-- Cloud 未登录、订阅失效或服务不可用时，只使 managed Route unavailable；不得隐藏、删除或阻断 Direct/SSH Endpoint。
-- Cloud 服务端可以验证账号、订阅、信令和 Relay 租约，但不能看到 terminal payload，也不能签发或判断 terminal capability。
-
-### Endpoint 与 Route
-
-- 一个 daemon 只有一个 Endpoint，以经过验证的 DeviceIdentity/fingerprint 归并。
-- 地址、域名、SSH alias、Cloud DeviceID 和 label 都不是身份真值。
-- 目标 Route contract：
+## 产品链路
 
 ```text
-EndpointConfig
-  identity
-  connect_mode
-  selection_policy
-  routes[]
-
-RouteConfig oneof
-  direct_webrtc_tcp
-    signaling_addresses[]
-    ice_tcp_addresses[]
-    advertised_addresses[]
-    server_name?
-
-  ssh_webrtc_tcp
-    host / port / user
-    host_key_fingerprints[]
-    proxy_jump?
-    credential_descriptor
-    remote_signaling_address
-    remote_ice_tcp_address
-
-  managed_webrtc
-    target_device_id
-    account_profile_ref
-    relay_mode
+PlanCatalog
+  -> Subscription
+  -> Entitlement
+  -> signed Hub EdgePolicy / RelayBudget
+  -> managed P2P admission / RelayLease
+  -> signed Relay UsageEvent
+  -> durable UsageLedger + billing-period quota
+  -> Account Center / Operator Console
 ```
 
-- 上述字段、枚举、版本和 share/bootstrap contract 必须先进入 `proto/`；Go、JNI 和未来 WASM 只消费生成类型。
-- Endpoint registry 与 Route policy 属于 Go truth。平台可以使用不同物理存储 backend，但不得在 Kotlin/TypeScript 复制一份连接配置真值。
-
-### 配对与分享
-
-- `termx pair create` 分享当前 daemon 的签名 identity、一次性 PairingTicket 和可达 Route hint，用于 App 添加并授权 daemon。
-- `pair create` 必须支持用户显式覆盖 Direct 公网 IP、域名、signaling/ICE-TCP 端口和 server name，以支持 LAN、FRP 和其它 TCP 映射。
-- 地址覆盖只改变 locator，不得覆盖 DeviceIdentity、fingerprint、DTLS binding 或授权 scope。
-- `termx endpoint share <endpoint>` 迁移 TUI/CLI 已配置的 portable Route 和本地 selection policy；导入前 App 必须展示 diff。
-- share 不传 SSH 私钥、密码、Cloud token、源 credential ref、源客户端 grant、runtime winner 或 session。
-
-### SSH
-
-- SSH Route 使用 Go SSH client 完成 host-key 校验、用户认证和 `direct-tcpip` tunnel。
-- Pion ICE-TCP 通过 SSH-backed dialer 到达 daemon loopback ICE-TCP listener。
-- 最终 DataChannel、remote auth、Hello 和 Proto API 与 Direct/Cloud 完全共用。
-- 新路径稳定后删除远端 `termx daemon stdio-proxy` 和进程型 OpenSSH transport，不保留 fallback。
-
-### Cloud
-
-- TermX Cloud 是唯一 managed WebRTC provider；不实现用户自建 Hub/Relay/signaling provider。
-- managed Route 使用 Cloud signaling，优先 ICE-UDP，必要时使用 TURN Relay。
-- 订阅只控制 managed Route eligibility，不进入 Endpoint、CapabilityGrant、terminal protocol 或 core truth。
-
-### 弱网
-
-- 当前不引入 KCP。可靠有序 DataChannel 已由 SCTP 提供重传、排序和拥塞控制；在 ICE-TCP/SSH TCP 上叠加 KCP 会形成重复可靠层。
-- 弱网、文件吞吐和 head-of-line blocking 在纵向链路完成后、删除旧路径前统一验收；不得现在提前设计替代传输框架。
-
-## 架构边界
-
-```text
-Android / TUI / CLI / future iOS/Desktop / future Web
-                         |
-                         v
-                  Go Client Engine
-  Endpoint registry / planner / pairing / PeerSession / generation
-                         |
-          +--------------+----------------+
-          |              |                |
-     Direct connector  SSH connector   Cloud connector
-     embedded signal   SSH tunnel       Cloud signaling
-       ICE-TCP          ICE-TCP         ICE-UDP/TURN
-          +--------------+----------------+
-                         |
-               reliable ordered DataChannel
-                         |
-        remote auth -> Hello -> generated Proto API
-                         |
-            api_layer -> api_mapping -> core
-```
-
-- `client/endpoint`：Endpoint/Route/config/share contract、assembler 和 planner truth。
-- `client/runtime`：attempt、ReadyPeerSession、winner、generation、lease、取消和 replacement truth。
-- `client/adapter`：Direct/SSH/Cloud route connector；不能选择其它 Route 或持有第二份 session truth。
-- `remote/`：daemon embedded signaling、ICE mux、Pion/DataChannel primitive 和 daemon auth 接线。
-- `client/binding`：Proto bytes、opaque handle、异步 event/cancel/close/release；不拥有业务或连接真值。
-- `clients/mobile`：Android UI/platform shell 与薄 JNI adapter。
-- `clients/ui`：Android 当前使用的共享 UI；browser-specific runtime、entry 和 WASM consumer 当前冻结。
-- `private/cloud`：Cloud 账号、信令、Hub、Relay 和订阅服务；只在 Cloud 切片主动修改。
-- `cmd/termx`：命令参数、composition root 和输出；网络状态机必须位于 Go client/remote domain package，不得堆在 Cobra command 内。
+- Local、Direct、SSH、Endpoint、pairing、terminal 和 file 不依赖 Cloud 套餐。
+- managed P2P 与 Relay 是两个独立套餐能力；禁止 Relay 不等于禁止 managed P2P。
+- Cloud 套餐不能扩大或撤销 daemon `CapabilityGrant`。
+- managed P2P 不经过云数据面，只统计 signaling/session metadata，不伪造精确 bytes。
+- Relay 可以按加密 packet bytes 统计流量，但不能读取 DataChannel payload。
 
 ## 当前允许范围
 
-- 主动范围：`AGENTS.md`、`workflow.md`、`docs/remote-platform/`、`docs/development/`、`proto/`、`client/{endpoint,runtime,port,adapter,binding}/`、`remote/`、`cmd/termx/`、`clients/mobile/` 和当前切片对应 tests。
-- Android 共享 UI 联动：`clients/ui/` 只允许为 Android 当前用户流程最小修改；browser entry、browser runtime、WASM loader/worker 和默认 Web 页面冻结。
-- 受限联动：`internal/protocol/`、`api_layer/`、`api_mapping/`、`core/`、`shared/{transport,remoteauth}/`、`scripts/`、`Makefile`、`go.work*`，仅在当前切片真实消息链路需要时触及。
-- Cloud 专属范围：`private/cloud/` 只有 `RTC009` 可以主动修改。
-- `RTC001` 例外只允许对 `tui/state` 和 `private/cloud` 测试做 generated Route contract 引起的机械编译同步；不得改变 TUI 行为、Cloud eligibility、signaling、Relay 或私有服务逻辑。
-- 禁止范围：插件系统、`private/archive/`、多区域 Cloud、计费平台扩张、iOS/Desktop 产物、默认 Web 访问产品、KCP/QUIC 替代层和开源发布工程。
+- 主动范围：`AGENTS.md`、`workflow.md`、`docs/remote-platform/`、`private/cloud/` 和当前切片对应测试。
+- Proto 联动：`proto/cloudpb/` schema 及生成代码，只在当前切片存在跨进程或跨语言产品 contract 时按 proto-first 顺序修改。
+- Android/UI 联动：`clients/mobile/android/`、`clients/ui/` 只在账号中心、Cloud 登录、套餐/usage 展示或 Android E2E 切片最小修改。
+- Client 联动：`client/adapter/managed/`、`client/runtime/`、`client/binding/` 和 `cmd/termx/` 只在服务能力错误、managed Route eligibility 或真实纵向消息链路需要时修改。
+- 受限联动：`scripts/`、`Makefile`、`go.work*`，只用于当前切片测试和装配。
+- 冻结：Web/WASM terminal consumer、iOS/Desktop GUI、插件、KCP/QUIC、Relay Mesh、多区域、开源发布工程和 archive。
 
 ## 任务队列
 
 | ID | 状态 | 内容 | 完成条件 |
 | --- | --- | --- | --- |
-| BASE001 | 已完成 | 产品与工作流基线 | 单一 App、Go-owned clients、统一 DataChannel、Cloud 边界、Web 延后和后续切片写入 AGENTS/workflow；删除旧活动噪声 |
-| RTC001 | 已完成 | Proto Route/config contract | `EndpointRouteConfigV1` oneof、`EndpointConfigV1`、`EndpointRegistryV1`、portable credential descriptor 和地址覆盖已生成；Go/YAML v3/parser/assembler/planner/CLI 已迁移；旧 Route enum/name 无 alias；descriptor、round-trip、unknown-field、生成代码、架构文档与 doctor 通过 |
-| RTC002 | 已完成 | 通用 PeerSession 与 pairing | Local/Direct/SSH/Cloud 统一使用 `PeerConnector.Connect -> ReadyPeerSession`；planner 支持平台声明的四类 connector 同组竞速；`PairingService` 统一 Endpoint pin、实际 DTLS binding、PairingTicket handshake 和 exact-close；三类远程 fake connector、managed Pion E2E、cancel、stale generation、唯一 winner 与 race 通过 |
-| RTC003 | 已完成 | daemon embedded signaling + ICE-TCP | versioned Direct signaling Proto、一次性 expiry/replay/pin admission、DeviceIdentity 签名 answer、共享 Pion TCPMux、Go Direct connector、DTLS-bound auth、Hello、Proto API、SessionClose 和有界 peer admission 已完成；真实 TCP candidate、篡改拒绝、取消、100 次连续建连/listener cleanup 与 race 通过；未接 App |
-| RTC004 | 已完成 | Android Direct 纵向闭环 | `pair create` QR -> Android JNI -> Go Direct connector -> PairingTicket -> client-bound grant -> terminal list/attach；无 Cloud 登录可用；锁屏/恢复 generation 正确；ARM64 模拟器真实 APK 已完成扫码导入、terminal 输入输出、持续交互与 crash scan |
-| RTC005 | 已完成 | Go-owned Endpoint registry | `enginehost` 已拥有 registry load/get/upsert/delete、identity pin、pairing credential 补偿和 unreferenced credential cleanup；Android/Web 只保存 opaque Proto bytes，UI 只缓存 projection；race、失败事务、5 个 instrumentation、模拟器冷启动恢复和重复真值扫描通过 |
-| RTC006 | 已完成 | SSH WebRTC TCP | Go SSH client、host-key/credential port、direct-tcpip backed signaling/ICE-TCP 已接入统一 ReadyPeerSession；真实 sshd key E2E、password、host-key pin、selected TCP pair、auth/Hello/API、cancel/cleanup 与 race 通过；OpenSSH 子进程 transport 和远端 `stdio-proxy` 已删除 |
-| RTC007 | 已完成 | 地址覆盖、LAN 与 FRP | `pair create` 已支持 signaling/ICE 地址与端口覆盖、自动 RFC1918 LAN seed、安全 identity/Route 预览和 wildcard/端口校验；真实 TCP mapping、不可达 fail-closed、identity/ticket 回归与 race 通过；ARM64 模拟器最终 APK 已从 App UI 导入映射 bundle、打开 terminal、输入并捕获 `rtc007-final-apk-ok`，crash scan 无异常 |
-| RTC008 | 已完成 | Endpoint share | 已实现 CLI/TUI 同源 `endpoint share`、临时 TLS certificate pin、一次性 secret、nonce + Ed25519 receiver proof、单次消费、过期/重放/pin fail-closed、Route/policy diff 和 config-only 原子导入；binding 使用 generation-local preview token 且 store 失败可重试；ARM64 模拟器最终 APK 已从 App UI 接收预览、确认导入、显示未授权 action-required，并在进程重启后恢复，crash scan 无异常 |
-| RTC009 | 已完成 | Cloud Route 收口 | binding host 已使用统一 planner/PeerSession 竞速 Direct、SSH、Cloud；平台只通过 Proto 返回账号 eligibility，未登录、登出或 Cloud 故障只过滤 planning 副本中的 managed Route，不修改 Go registry；Relay 订阅/配额由 lease 准入；`pair create --cloud` 同时签发 Direct + Cloud Route 并由 daemon DeviceIdentity 填充 target；Android 已删除旧 flavor 装配。真实 managed direct/Relay E2E、配额拒绝、Direct/SSH 回归、Proto/WASM contract、CLI、两种单 App APK 构建和 class boundary 均通过；ARM64 模拟器真实 App UI 经 Hub 完成 terminal 列表、打开、三次输入输出和后台恢复，Cloud 登出后 Endpoint 保留且 Direct 可用，crash scan 无异常 |
-| RTC010 | 已完成 | 删除旧路径与最终验收 | 删除 managed-only pairing、旧 Route、重复平台真值和旧 proxy，确认 RTC009 已移除旧 App flavor 分支；在 ARM64 Android 模拟器从真实 App UI 完成 Direct/SSH/Cloud、LAN/TCP mapping、terminal 列表与持续交互、文件上传/下载及摘要校验、取消、锁屏/后台恢复、网络切换、弱网和 crash 扫描；双 Agent 仅按本切片完成条件审查 |
-| WEB001 | 延后 | Web/WASM 产品恢复 | 仅用户明确恢复 Web 后启动；Go/WASM + Cloud managed WebRTC，纯浏览器不支持 Direct/SSH |
+| CBASE001 | 已完成 | Cloud 产品文档基线 | `cloud-product-spec.md` 定义账号、套餐、交易、Subscription、Entitlement、P2P/Relay、quota、usage、用户/运营管理和 development E2E；AGENTS、PRD、README 与本工作流引用一致 |
+| CLOUDP001 | 待开始 | 统一 PlanCapability 与 Entitlement contract | 删除 devcloud 按 plan/有效期硬编码能力；catalog、Subscription 和 Entitlement 使用同一能力模型；development fixture 至少证明 P2P-only、P2P+Relay、suspended 三种结果；跨边界字段 proto-first |
+| CLOUDP002 | 待开始 | 账号、Subscription 与交易状态机 | 注册/登录/session/refresh、订单、测试支付 normalized event、trial/active/grace/past_due/suspended/cancelled/expired、续费/取消/升级降级和幂等审计形成持久闭环；测试 provider 不直接写 Entitlement |
+| CLOUDP003 | 待开始 | managed P2P 套餐准入 | Subscription -> Entitlement -> signed EdgePolicy；Hub 离线执行 managed P2P enabled、账号/device ownership、revoke、auth epoch 和 concurrency；失败/取消/过期释放 reservation，不伪造 target offline 或 Relay fallback |
+| CLOUDP004 | 待开始 | Relay 周期 quota 与 lease reservation | 在已有 per-lease bytes/bitrate/concurrency enforcement 上增加 billing period used/reserved/remaining、账号/设备并发、region、lease refresh 复核、到期释放和 quota deny；重复申请 lease 不能绕过周期额度 |
+| CLOUDP005 | 待开始 | durable UsageLedger 与结算 | signed usage event/outbox/幂等/sequence 规则保留；event journal、reservation、settlement、周期聚合和重启恢复持久化；按 session+route 只计一次，提供账号和管理查询 contract |
+| CLOUDP006 | 待开始 | 用户账号中心与运营管理面 | 用户可见套餐、Subscription、周期、used/reserved/remaining、订单、登录设备和 daemon；运营侧可查询、suspend/restore、撤销 device、调整测试账号套餐并查看 quota deny/audit；不暴露 terminal/grant/payload |
+| CLOUDP007 | 待开始 | Development 全产品 E2E | Web UI 注册/登录/checkout/test payment -> Entitlement/EdgePolicy；Android ARM64 模拟器真实 APK 登录、enroll/pair、P2P terminal、升级后 Relay terminal/file；验证速率/并发/per-lease/period quota、suspend、Direct/SSH 不回归、重启恢复和 crash/secret scan；双 Agent 审查 |
+| CLOUDP008 | 延后 | Production Cloud 装配与发布 | 仅 CLOUDP007 完成后启动；production HTTPS adapter、正式存储、Companion 签名发布、Android production origin、真实 provider 和邀请制发布 |
+| WEB001 | 延后 | Web/WASM terminal 产品恢复 | 仅用户明确恢复 Web 后启动；不能抢占 Cloud development 产品闭环 |
 
-`RTC010` 最终 APK、Route、文件、取消、生命周期、网络、弱网、稳定性和仓库准入证据见 `docs/remote-platform/rtc010-android-final-e2e.md`。架构 reviewer 与代码 reviewer 均明确 `PASS`，无当前切片阻塞 finding；deferred observation 不影响本切片完成。
+## 切片准入
 
-## 测试准入
+### CLOUDP001
 
-### Android APK 端到端基线
+- PlanCapability validation、catalog round-trip、unknown/duplicate plan 和非法 quota 测试。
+- P2P-only、P2P+Relay、suspended fixture 必须从同一 PlanCapability 生成 Entitlement 和 EdgePolicy。
+- 扫描禁止 `if plan == "pro"`、按 `validUntil` 猜能力以及 devcloud 固定 quota 成为运行真值。
+- `go test ./... -count=1` 覆盖受影响 private Cloud modules；`git diff --check`。
 
-- Android 纵向切片和 `RTC010` 必须构建并安装真实 APK 到仓库指定的 ARM64 Android 模拟器；不能只运行 Go、JNI、TypeScript 或 Gradle 的隔离测试。
-- 自动化流程必须从真实 App UI 驱动：添加或扫码导入 Endpoint -> 建立 Direct/SSH/Cloud 对应连接 -> 查看 terminal 列表 -> 打开 terminal -> 输入命令并等待可识别输出 -> 继续发送输入并验证交互状态。
-- 最终验收还必须从 App UI 完成文件上传与下载，并按文件长度和摘要校验内容；必须覆盖取消或失败后资源释放，不能只证明文件 API 可调用。
-- 必须覆盖锁屏、后台或等价 Activity/WebView freeze -> 旧 generation/handle 失效 -> 恢复后新 generation 重建 -> terminal 重新连接，并扫描 logcat、`AndroidRuntime`、native crash 和无界等待。
-- 测试夹具可以准备 daemon、terminal command 和校验文件，但不得绕过 APK UI 直接调用 Go/JNI 来冒充用户端到端结果。物理设备只作为补充，不替代模拟器门禁。
-- daemon capture、目标文件系统、SHA-256、服务日志和 logcat 只作为真实 UI 操作后的结果 oracle；每个 Route、terminal、文件传输、取消和 lifecycle 流程都必须记录 App UI 操作、实际结果与对应证据。
-- 验收对象必须是本切片最终构建并安装的同一个 APK；记录 APK 路径、SHA-256、构建 profile、模拟器 AVD/ABI/API 和安装时间。较早切片 APK、单测、instrumentation、直接 Go/JNI 调用或仅检查 DOM 状态不能替代最终 APK E2E。
-- UI 自动化允许使用 UIAutomator、ADB 输入或 WebView DevTools/CDP，但所有连接、terminal 输入、文件上传/下载、取消和恢复动作必须由真实 App UI 发起；夹具和脚本只能准备环境或读取结果。
+### CLOUDP002
 
-### RTC010 最终证据矩阵
+- Subscription 状态转换表测试；非法转换 fail closed。
+- checkout 不改变 Entitlement；只有 normalized、已验签、幂等 payment event 可以提交商业状态。
+- payment replay、失败、取消、续费、升级降级、到期和 suspend 测试。
+- 账号/session/Subscription/order/payment event 重启恢复。
+- `git diff --check`。
 
-`RTC010` 标记完成前必须在本文件的当前状态说明或对应的 `docs/remote-platform/` 验收记录中逐项记录以下证据；任何强制项缺失都属于当前切片阻塞，不得交双 Agent 审查：
+### CLOUDP003
 
-| 流程 | 强制证据 |
-| --- | --- |
-| 最终产物 | APK 路径与 SHA-256、构建 profile、ARM64 AVD/ABI/API、安装与启动结果 |
-| Direct | App UI 导入/选择 Endpoint、建连、terminal 列表、打开、两次以上输入输出和持续交互 |
-| SSH | App UI 配置或导入 SSH Route、平台 Keystore credential、建连、terminal 列表、打开和持续交互；不得把私钥暴露给 UI |
-| Cloud | App UI 登录/准入、managed Route 建连、terminal 列表、打开和持续交互；Cloud 不可用后 Direct/SSH 仍可用 |
-| LAN/TCP mapping | App UI 导入带地址覆盖的 Route，通过真实 TCP mapping 完成连接和 terminal 交互 |
-| 文件传输 | App UI 上传、下载，双方长度和 SHA-256 一致；进行中取消后 operation/resource 被释放 |
-| 生命周期 | 锁屏/后台/WebView freeze 使旧 generation/handle 失效；恢复后新 generation 重建并重新连接 terminal |
-| 网络与弱网 | 网络切换后重连；受控丢包/延迟/限速下记录连接、交互、传输或明确失败语义，无无界等待 |
-| 稳定性 | 对上述流程扫描 logcat、`AndroidRuntime`、native crash、ANR 和遗留 operation/session/resource |
+- Hub 不回源的 signed policy harness。
+- managed P2P enabled/disabled、账号隔离、device revoke、stale revision、并发耗尽和释放测试。
+- entitlement deny 与 target offline 使用不同稳定错误；不得自动 Relay fallback。
+- 相关 race；`git diff --check`。
 
-- `BASE001`：文本守卫确认 AGENTS/workflow 只定义单一 App、Web/WASM 延后且 Direct/SSH/Cloud 统一使用 WebRTC DataChannel；`git diff --check`。
-- `RTC001`：generated-code check；Proto round-trip、unknown-field、descriptor compatibility；Endpoint parser/assembler/planner tests；旧 Route enum/name 扫描；`make doctor`；`git diff --check`。
-- `RTC002`：PeerSession/pairing unit + race；Direct/SSH/Cloud fake connector exact-close、cancel、stale generation 和唯一 winner harness；managed-only import owner 扫描；`make doctor`；`git diff --check`。
-- `RTC003`：ICE-TCP candidate protocol assertion；auth/Hello/Proto API；signaling expiry/replay/pin mismatch；100 次建连、取消和 listener cleanup；相关 race；`make doctor`；`git diff --check`。
-- `RTC004`：mobile build、`:app:assembleDebug`、`:app:connectedDebugAndroidTest`；ARM64 Android 模拟器安装真实 APK，并从 App UI 完成无 Cloud 扫码、连接、terminal 列表、打开 terminal、输入命令、验证输出、持续交互、锁屏恢复和 crash scan；`make doctor`；`git diff --check`。
-- `RTC005`：registry transaction/race、identity conflict、credential atomicity、Android process recreation；平台源码扫描禁止第二份 Endpoint/Route/session registry；mobile tests/build；`git diff --check`。
-- `RTC006`：隔离真实 sshd、host-key pin、key/password credential、SSH-backed ICE selected TCP pair、auth/Hello/API、tunnel cancel/cleanup；扫描确认新路径不启动 `stdio-proxy`；`make doctor`；`git diff --check`。
-- `RTC007`：LAN 与 TCP mapping harness；二维码 route override round-trip；错误 advertised address、identity mismatch、过期 ticket 和端口不可达 fail closed；Android 模拟器经真实 TCP 映射完成 App E2E；`git diff --check`。
-- `RTC008`：ShareSessionOffer/Bundle compatibility、一次消费、过期、receiver proof、config diff、config-only、secret 扫描；CLI/TUI/Android E2E；`git diff --check`。
-- `RTC009`：managed direct/Relay E2E；未登录/无订阅/Cloud 故障只过滤 managed Route；Direct/SSH regression；Cloud 私有边界扫描；`git diff --check`。
-- `RTC010`：全仓 Go/race、Android tests/build/instrumentation；ARM64 Android 模拟器安装最终 APK，并从真实 App UI 分别完成 Direct、SSH、Cloud 建连以及 LAN/TCP mapping；每条要求的 Route 至少完成 terminal 列表、打开 terminal、命令输入/可识别输出和持续交互；从 App UI 完成文件上传、下载、长度与 SHA-256 校验，并覆盖进行中取消及资源释放；覆盖锁屏/后台冻结后新 generation 重连、网络切换和受控弱网；扫描 logcat、AndroidRuntime 与 native crash；扫描旧路径、重复真值和 fallback；两个 reviewer 只按当前切片范围、契约、完成条件和可复现证据判定，只有已证明的当前切片问题可以阻塞，提前优化和未来能力只能 deferred，架构与代码 reviewer 均 PASS；`make doctor`；`git diff --check`。
+### CLOUDP004
+
+- period reservation 并发一致性和 crash/restart 恢复。
+- 多次 lease、refresh、expiry、cancel、超额、region、账号/设备 concurrency 测试。
+- Relay 实际执行 bitrate、bytes、allocation concurrency；无共享 credential fallback。
+- 相关 race；`git diff --check`。
+
+### CLOUDP005
+
+- signed usage、重复、冲突、sequence rollback、迟到和 lease 越界测试。
+- outbox/ledger/reconciliation 重启恢复和 reservation settlement 测试。
+- 同 session/route 多事件和未来 multi-hop fixture 只聚合一次。
+- `git diff --check`。
+
+### CLOUDP006
+
+- Web/API 账号隔离、CSRF/session、用户 usage 查询、运营审计和敏感字段扫描。
+- UI 不推导套餐能力，不读取 terminal inventory 或 CapabilityGrant。
+- build/typecheck；`git diff --check`。
+
+### CLOUDP007
+
+- Web 交易动作必须由真实 Web UI 发起；Android 连接、terminal、file 和恢复动作必须由真实 APK UI 发起。
+- 使用同一个最终 development APK，记录 APK SHA-256、AVD/ABI/API、服务配置和证据矩阵。
+- 覆盖 P2P-only、升级后 Relay、四类 quota、suspend、重启恢复、Direct/SSH 回归、logcat/native crash 和 secret scan。
+- 全仓相关 Go/race、Web build/test、Android unit/instrumentation/build 和 `git diff --check`。
+- 架构 reviewer 与代码 reviewer 只按本切片规格和证据判断；两者均 PASS 后提交。
 
 ## 执行规则
 
-1. 每轮先读取 `AGENTS.md` 和本文件，再检查 `git status --short --branch`。
+1. 每轮先读取 `AGENTS.md`、`docs/remote-platform/cloud-product-spec.md` 和本文件，再检查 `git status --short --branch`。
 2. 只执行任务队列中最早的 `进行中` 或 `待开始` 切片；`延后` 不属于活动队列。
-3. 待开始切片先标记 `进行中`；没有明确阻塞时不请求普通实现确认。
-4. 新增或修改跨边界字段时固定执行 `proto -> generated -> compatibility harness -> runtime/adapter -> binding/platform consumer`。
-5. 先做最小真实纵向 harness，再接生产入口；不得只以 fake、接口或文档宣布完成。
-6. 不为旧内部 Route、storage、proxy、App flavor 或 Web runtime 保留双路径、alias、wrapper 和 fallback。
-7. 每个切片运行对应准入、更新状态并使用中文提交信息提交。
-8. `RTC010` 只有在最终 APK 证据矩阵完整后才执行双 Agent 审查；其它切片只有用户或本文件明确要求时使用子 Agent。
-9. reviewer 只能用当前切片的范围、契约、完成条件、可复现行为和测试证据判定 `PASS/FAIL`；阻塞 finding 必须给出具体代码/契约位置、触发条件、当前影响和最小复现。未来优化、理论风险和无法举证的假设只能记录为 deferred，不得扩大切片或阻塞提交。
+3. 待开始切片先标记 `进行中`，只实现该切片，不跨切片扩张。
+4. 新跨边界字段固定执行 `proto -> generated -> compatibility harness -> domain/runtime -> adapter -> UI/client`。
+5. 先补当前切片最小真实 harness，再修改实现；不得把固定测试账号或直接写 store 当作产品链路证据。
+6. 不为未来多区域、真实支付、复杂优惠、Web terminal 或分布式 quota 提前增加抽象。
+7. 每个切片完成准入、更新状态并使用中文提交信息提交。
+8. 只有 `CLOUDP007` 默认执行双 Agent 审查；其它切片仅在用户明确要求时执行。
