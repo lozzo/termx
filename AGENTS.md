@@ -7,6 +7,7 @@
 - 当前活动主线只由 `workflow.md` 最早未完成切片决定；统一 WebRTC Route、Android JNI 和最终 APK 连接纵向已完成，当前主线是多 Hub 控制面与 Cloud development 产品能力交错闭环，最早切片为 Hub/control/topology/management Proto contract。浏览器 Web/WASM terminal 产品当前冻结。
 - 插件系统已经拆到独立分支，本分支不新增插件系统代码、协议或文档。
 - `docs/remote-platform/` 是远程平台产品、架构、安全和迁移背景文档；统一 WebRTC Route 的当前决策以 `workflow.md` 为准，并由对应活动切片同步更新该目录，旧文档不得覆盖活动工作流。
+- `docs/remote-platform/multi-hub-technical-plan.md` 是当前多 Hub/Cloud 主线的实现级规划，规定 Proto 文件、Go package owner、控制链路、持久化事务、迁移删除项与测试矩阵；它必须服从 `workflow.md` 的切片顺序，不得被当作跨切片一次性实现清单。
 - `docs/remote-platform/cloud-product-spec.md` 是 Cloud 账号、套餐、交易、服务能力、限额、用量和管理面的唯一稳定产品基准；实现不得用 staging 硬编码或旧交易字段覆盖该规格。
 - `docs/remote-platform/multi-hub-control-topology-spec.md` 是多 Hub assignment、纯内存 Hub、daemon Presence/PeerSession topology、CommandOutbox 和 Web 远程管理的唯一稳定架构基准；旧 Hub snapshot/WAL 计划不得覆盖它。
 - `tui/docs/multi-endpoint-transport-plan.md` 是当前多 endpoint / 多 transport 技术规划。

@@ -3,7 +3,8 @@
 ## 当前结论
 
 - `RTC001-RTC010` 已完成统一 WebRTC Route、Android JNI、Direct/SSH/Cloud、Endpoint、文件、生命周期、弱网和最终 APK E2E；证据见 `docs/remote-platform/rtc010-android-final-e2e.md`。
-- Cloud 产品真值见 `docs/remote-platform/cloud-product-spec.md`；多 Hub assignment、纯内存 Hub、daemon topology、CommandOutbox 和 Web 管理真值见 `docs/remote-platform/multi-hub-control-topology-spec.md`。
+- Cloud 产品真值见 `docs/remote-platform/cloud-product-spec.md`；多 Hub assignment、纯内存 Hub、daemon topology、CommandOutbox 和 Web 管理真值见 `docs/remote-platform/multi-hub-control-topology-spec.md`；具体 Proto、package、存储、伪代码、迁移删除项和测试矩阵见 `docs/remote-platform/multi-hub-technical-plan.md`。
+- 多 Hub 技术实施规划已经过分布式一致性、安全权限、Go runtime 生命周期、实施测试交付四个独立 reviewer 复审，结论均为 `PASS`，没有当前阻塞 finding。
 - 当前最早未完成切片是 `HUB001`：Hub/control/topology/management Proto 与 daemon session registry contract。
 - 多 Hub 基础和产品能力存在交叉依赖，必须按本文件交错推进，不能先写完所有 Hub 再补套餐，也不能继续在单进程 devcloud 上堆硬编码。
 - development 必须走完整账号、交易、Subscription、Entitlement、managed P2P/Relay、周期 quota、usage、topology 和管理链路；外部 provider 可以使用显式测试实现。
@@ -46,6 +47,7 @@ Relay usage -> durable UsageLedger ---------------------+
 | --- | --- | --- | --- |
 | CBASE001 | 已完成 | Cloud 产品文档基线 | `cloud-product-spec.md` 与 AGENTS/PRD/README 一致 |
 | HBASE001 | 已完成 | 多 Hub 控制面设计基线 | `multi-hub-control-topology-spec.md` 经分布式、安全、运行时、产品/API 四角度审核收口；旧 Hub WAL 目标降为历史 |
+| TBASE001 | 已完成 | 多 Hub 技术实施规划 | `multi-hub-technical-plan.md` 明确 Proto、代码 owner、控制 transport、SQLite 事务、daemon lifecycle、切片修改范围、旧路径删除和 E2E 证据；四个独立 reviewer 均 PASS |
 | HUB001 | 待开始 | Proto 与 daemon registry contract | Hub identity/control stream、HubAssignment、per-Hub revision、Presence availability/freshness、PeerSession/access inventory、parent/child CommandOutbox/result、Web/Operator API 全部 proto-first；定义 daemon registry port/harness，不接真实网络 |
 | CLOUDP001 | 待开始 | PlanCapability 与 Entitlement | 删除 plan/有效期硬编码；catalog、Subscription projection、Entitlement 和 Hub policy 使用同一能力模型；P2P-only、P2P+Relay、suspended fixture |
 | HUB002 | 待开始 | Hub registry、assignment 与纯内存同步 | Hub deployment identity、唯一 control stream generation、strict assignment lease fencing、target-owner routing、per-Hub full/delta/reconciliation；Hub 重启不读磁盘 snapshot |
@@ -131,7 +133,7 @@ Relay usage -> durable UsageLedger ---------------------+
 
 ## 执行规则
 
-1. 每轮先读取 `AGENTS.md`、`cloud-product-spec.md`、`multi-hub-control-topology-spec.md` 和本文件，再检查 `git status --short --branch`。
+1. 每轮先读取 `AGENTS.md`、`cloud-product-spec.md`、`multi-hub-control-topology-spec.md`、`multi-hub-technical-plan.md` 和本文件，再检查 `git status --short --branch`。
 2. 只执行最早的 `进行中` 或 `待开始` 切片；`延后` 不属于活动队列。
 3. 待开始切片先标记 `进行中`，不得跨切片实现后续能力。
 4. 新跨边界字段固定执行 `proto -> generated -> compatibility harness -> domain/runtime -> adapter -> UI/client`。
