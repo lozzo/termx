@@ -87,10 +87,13 @@ func Normalize(subscription *cloudpb.SubscriptionProjection, plan *cloudpb.PlanD
 	}
 	status := StatusExpired
 	switch subscription.GetStatus() {
-	case cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE,
+	case cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_TRIALING,
+		cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE,
+		cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_GRACE,
 		cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_CANCEL_AT_PERIOD_END:
 		status = StatusActive
-	case cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_SUSPENDED:
+	case cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_PAST_DUE,
+		cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_SUSPENDED:
 		status = StatusSuspended
 	case cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_CANCELED,
 		cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_EXPIRED:

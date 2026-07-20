@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	cloudcommerce "github.com/lozzow/termx/private/cloud/control-plane/commerce"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubcontrol"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
 	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
@@ -47,6 +48,7 @@ type Config struct {
 	Accounts                   []*cloudpb.HubAccountPolicy  `json:"accounts"`
 	Devices                    []*cloudpb.CloudDevicePolicy `json:"devices"`
 	Assignments                []*cloudpb.HubAssignment     `json:"assignments"`
+	EnableTestPaymentProvider  bool                         `json:"enable_test_payment_provider"`
 }
 
 // Manifest 是 supervisor 和 E2E harness 使用的非秘密 Controller 进程描述。
@@ -172,6 +174,16 @@ func Start(config Config) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	commerceService, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalog.Contract(), Now: time.Now})
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	productHandler, err := webcontroller.ProductAPIHandler(webcontroller.ProductAPIConfig{Commerce: commerceService, EnableTestPaymentProvider: config.EnableTestPaymentProvider})
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	publicMux := http.NewServeMux()
 	publicMux.HandleFunc("/healthz", healthHandler)
 	publicMux.HandleFunc("/api/v1/catalog", func(writer http.ResponseWriter, request *http.Request) {
@@ -183,6 +195,7 @@ func Start(config Config) (*Runtime, error) {
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write(body)
 	})
+	publicMux.Handle("/api/v1/", productHandler)
 	operatorMux := http.NewServeMux()
 	operatorMux.HandleFunc("/healthz", healthHandler)
 	publicListener, err := listen(config.PublicListen)

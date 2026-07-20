@@ -150,10 +150,31 @@ func (catalog Catalog) IncludedPlan() (CatalogPlan, bool) {
 func (catalog Catalog) Contract() *cloudpb.PlanCatalogContract {
 	contract := &cloudpb.PlanCatalogContract{CatalogVersion: uint64(catalog.Version)}
 	for _, plan := range catalog.Plans {
+		price := &cloudpb.PlanPriceDefinition{Mode: catalogPriceMode(plan.Price.Mode), Currency: catalog.Currency, Label: plan.Price.Label}
+		if plan.Price.MonthlyMinor != nil {
+			price.MonthlyMinor = *plan.Price.MonthlyMinor
+		}
+		if plan.Price.YearlyMinor != nil {
+			price.YearlyMinor = *plan.Price.YearlyMinor
+		}
 		contract.Plans = append(contract.Plans, &cloudpb.PlanDefinition{
 			PlanId: plan.ID, PlanVersion: plan.Version, BillingPeriodDays: plan.BillingPeriodDays,
-			Capability: entitlement.ClonePlanCapability(plan.Capability),
+			Capability: entitlement.ClonePlanCapability(plan.Capability), Included: plan.Price.Mode == "included", Price: price,
+			Presentation: &cloudpb.PlanPresentation{Name: plan.Name, Eyebrow: plan.Eyebrow, Description: plan.Description, CtaLabel: plan.CTA.Label, CtaHref: plan.CTA.Href, Featured: plan.Featured, Features: append([]string(nil), plan.Features...)},
 		})
 	}
 	return proto.Clone(contract).(*cloudpb.PlanCatalogContract)
+}
+
+func catalogPriceMode(value string) cloudpb.CatalogPriceMode {
+	switch value {
+	case "included":
+		return cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_INCLUDED
+	case "configured":
+		return cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_CONFIGURED
+	case "contact":
+		return cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_CONTACT
+	default:
+		return cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_UNSPECIFIED
+	}
 }

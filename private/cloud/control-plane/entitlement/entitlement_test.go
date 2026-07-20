@@ -58,6 +58,19 @@ func TestSuspendedSubscriptionDeniesP2PAndRelayDespiteFuturePeriod(t *testing.T)
 	}
 }
 
+func TestTrialGraceAndPastDueNormalizeWithoutPlanInference(t *testing.T) {
+	now := time.Date(2026, 7, 20, 18, 30, 0, 0, time.UTC)
+	capability := &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 1, CloudDeviceLimit: 2}
+	for _, status := range []cloudpb.SubscriptionStatus{cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_TRIALING, cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_GRACE} {
+		if err := normalizeFixture(t, now, status, capability).AuthorizeManagedP2P(now); err != nil {
+			t.Fatalf("status %s authorization = %v", status, err)
+		}
+	}
+	if err := normalizeFixture(t, now, cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_PAST_DUE, capability).AuthorizeManagedP2P(now); !errors.Is(err, entitlement.ErrNotEntitled) {
+		t.Fatalf("past-due authorization = %v", err)
+	}
+}
+
 func TestEntitlementStoreClonesGeneratedCapability(t *testing.T) {
 	now := time.Date(2026, 7, 20, 19, 0, 0, 0, time.UTC)
 	value := normalizeFixture(t, now, cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE, &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 1, CloudDeviceLimit: 2})

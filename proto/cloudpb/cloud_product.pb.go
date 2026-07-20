@@ -32,6 +32,9 @@ const (
 	SubscriptionStatus_SUBSCRIPTION_STATUS_CANCELED             SubscriptionStatus = 4
 	SubscriptionStatus_SUBSCRIPTION_STATUS_SUSPENDED            SubscriptionStatus = 5
 	SubscriptionStatus_SUBSCRIPTION_STATUS_EXPIRED              SubscriptionStatus = 6
+	SubscriptionStatus_SUBSCRIPTION_STATUS_TRIALING             SubscriptionStatus = 7
+	SubscriptionStatus_SUBSCRIPTION_STATUS_GRACE                SubscriptionStatus = 8
+	SubscriptionStatus_SUBSCRIPTION_STATUS_PAST_DUE             SubscriptionStatus = 9
 )
 
 // Enum value maps for SubscriptionStatus.
@@ -44,6 +47,9 @@ var (
 		4: "SUBSCRIPTION_STATUS_CANCELED",
 		5: "SUBSCRIPTION_STATUS_SUSPENDED",
 		6: "SUBSCRIPTION_STATUS_EXPIRED",
+		7: "SUBSCRIPTION_STATUS_TRIALING",
+		8: "SUBSCRIPTION_STATUS_GRACE",
+		9: "SUBSCRIPTION_STATUS_PAST_DUE",
 	}
 	SubscriptionStatus_value = map[string]int32{
 		"SUBSCRIPTION_STATUS_UNSPECIFIED":          0,
@@ -53,6 +59,9 @@ var (
 		"SUBSCRIPTION_STATUS_CANCELED":             4,
 		"SUBSCRIPTION_STATUS_SUSPENDED":            5,
 		"SUBSCRIPTION_STATUS_EXPIRED":              6,
+		"SUBSCRIPTION_STATUS_TRIALING":             7,
+		"SUBSCRIPTION_STATUS_GRACE":                8,
+		"SUBSCRIPTION_STATUS_PAST_DUE":             9,
 	}
 )
 
@@ -81,6 +90,363 @@ func (x SubscriptionStatus) Number() protoreflect.EnumNumber {
 // Deprecated: Use SubscriptionStatus.Descriptor instead.
 func (SubscriptionStatus) EnumDescriptor() ([]byte, []int) {
 	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{0}
+}
+
+// OrderStatus 是 checkout 到 provider settlement 的持久订单状态。
+type OrderStatus int32
+
+const (
+	OrderStatus_ORDER_STATUS_UNSPECIFIED    OrderStatus = 0
+	OrderStatus_ORDER_STATUS_PENDING        OrderStatus = 1
+	OrderStatus_ORDER_STATUS_PAID           OrderStatus = 2
+	OrderStatus_ORDER_STATUS_PAYMENT_FAILED OrderStatus = 3
+	OrderStatus_ORDER_STATUS_REFUNDED       OrderStatus = 4
+	OrderStatus_ORDER_STATUS_REVOKED        OrderStatus = 5
+)
+
+// Enum value maps for OrderStatus.
+var (
+	OrderStatus_name = map[int32]string{
+		0: "ORDER_STATUS_UNSPECIFIED",
+		1: "ORDER_STATUS_PENDING",
+		2: "ORDER_STATUS_PAID",
+		3: "ORDER_STATUS_PAYMENT_FAILED",
+		4: "ORDER_STATUS_REFUNDED",
+		5: "ORDER_STATUS_REVOKED",
+	}
+	OrderStatus_value = map[string]int32{
+		"ORDER_STATUS_UNSPECIFIED":    0,
+		"ORDER_STATUS_PENDING":        1,
+		"ORDER_STATUS_PAID":           2,
+		"ORDER_STATUS_PAYMENT_FAILED": 3,
+		"ORDER_STATUS_REFUNDED":       4,
+		"ORDER_STATUS_REVOKED":        5,
+	}
+)
+
+func (x OrderStatus) Enum() *OrderStatus {
+	p := new(OrderStatus)
+	*p = x
+	return p
+}
+
+func (x OrderStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (OrderStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloudpb_cloud_product_proto_enumTypes[1].Descriptor()
+}
+
+func (OrderStatus) Type() protoreflect.EnumType {
+	return &file_cloudpb_cloud_product_proto_enumTypes[1]
+}
+
+func (x OrderStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use OrderStatus.Descriptor instead.
+func (OrderStatus) EnumDescriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{1}
+}
+
+// CatalogPriceMode 区分免费、已发布价格和联系销售，不允许 UI 从金额缺失猜测。
+type CatalogPriceMode int32
+
+const (
+	CatalogPriceMode_CATALOG_PRICE_MODE_UNSPECIFIED CatalogPriceMode = 0
+	CatalogPriceMode_CATALOG_PRICE_MODE_INCLUDED    CatalogPriceMode = 1
+	CatalogPriceMode_CATALOG_PRICE_MODE_CONFIGURED  CatalogPriceMode = 2
+	CatalogPriceMode_CATALOG_PRICE_MODE_CONTACT     CatalogPriceMode = 3
+)
+
+// Enum value maps for CatalogPriceMode.
+var (
+	CatalogPriceMode_name = map[int32]string{
+		0: "CATALOG_PRICE_MODE_UNSPECIFIED",
+		1: "CATALOG_PRICE_MODE_INCLUDED",
+		2: "CATALOG_PRICE_MODE_CONFIGURED",
+		3: "CATALOG_PRICE_MODE_CONTACT",
+	}
+	CatalogPriceMode_value = map[string]int32{
+		"CATALOG_PRICE_MODE_UNSPECIFIED": 0,
+		"CATALOG_PRICE_MODE_INCLUDED":    1,
+		"CATALOG_PRICE_MODE_CONFIGURED":  2,
+		"CATALOG_PRICE_MODE_CONTACT":     3,
+	}
+)
+
+func (x CatalogPriceMode) Enum() *CatalogPriceMode {
+	p := new(CatalogPriceMode)
+	*p = x
+	return p
+}
+
+func (x CatalogPriceMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CatalogPriceMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloudpb_cloud_product_proto_enumTypes[2].Descriptor()
+}
+
+func (CatalogPriceMode) Type() protoreflect.EnumType {
+	return &file_cloudpb_cloud_product_proto_enumTypes[2]
+}
+
+func (x CatalogPriceMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CatalogPriceMode.Descriptor instead.
+func (CatalogPriceMode) EnumDescriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{2}
+}
+
+// PaymentAttemptStatus 是一次 provider 支付尝试的持久状态。
+type PaymentAttemptStatus int32
+
+const (
+	PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_UNSPECIFIED PaymentAttemptStatus = 0
+	PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_PENDING     PaymentAttemptStatus = 1
+	PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_SUCCEEDED   PaymentAttemptStatus = 2
+	PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_FAILED      PaymentAttemptStatus = 3
+)
+
+// Enum value maps for PaymentAttemptStatus.
+var (
+	PaymentAttemptStatus_name = map[int32]string{
+		0: "PAYMENT_ATTEMPT_STATUS_UNSPECIFIED",
+		1: "PAYMENT_ATTEMPT_STATUS_PENDING",
+		2: "PAYMENT_ATTEMPT_STATUS_SUCCEEDED",
+		3: "PAYMENT_ATTEMPT_STATUS_FAILED",
+	}
+	PaymentAttemptStatus_value = map[string]int32{
+		"PAYMENT_ATTEMPT_STATUS_UNSPECIFIED": 0,
+		"PAYMENT_ATTEMPT_STATUS_PENDING":     1,
+		"PAYMENT_ATTEMPT_STATUS_SUCCEEDED":   2,
+		"PAYMENT_ATTEMPT_STATUS_FAILED":      3,
+	}
+)
+
+func (x PaymentAttemptStatus) Enum() *PaymentAttemptStatus {
+	p := new(PaymentAttemptStatus)
+	*p = x
+	return p
+}
+
+func (x PaymentAttemptStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PaymentAttemptStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloudpb_cloud_product_proto_enumTypes[3].Descriptor()
+}
+
+func (PaymentAttemptStatus) Type() protoreflect.EnumType {
+	return &file_cloudpb_cloud_product_proto_enumTypes[3]
+}
+
+func (x PaymentAttemptStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PaymentAttemptStatus.Descriptor instead.
+func (PaymentAttemptStatus) EnumDescriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{3}
+}
+
+// PaymentEventType 是 provider adapter 归一化后的稳定交易事件。
+type PaymentEventType int32
+
+const (
+	PaymentEventType_PAYMENT_EVENT_TYPE_UNSPECIFIED PaymentEventType = 0
+	PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED   PaymentEventType = 1
+	PaymentEventType_PAYMENT_EVENT_TYPE_FAILED      PaymentEventType = 2
+	PaymentEventType_PAYMENT_EVENT_TYPE_REFUNDED    PaymentEventType = 3
+	PaymentEventType_PAYMENT_EVENT_TYPE_REVOKED     PaymentEventType = 4
+	PaymentEventType_PAYMENT_EVENT_TYPE_CHARGEBACK  PaymentEventType = 5
+)
+
+// Enum value maps for PaymentEventType.
+var (
+	PaymentEventType_name = map[int32]string{
+		0: "PAYMENT_EVENT_TYPE_UNSPECIFIED",
+		1: "PAYMENT_EVENT_TYPE_SUCCEEDED",
+		2: "PAYMENT_EVENT_TYPE_FAILED",
+		3: "PAYMENT_EVENT_TYPE_REFUNDED",
+		4: "PAYMENT_EVENT_TYPE_REVOKED",
+		5: "PAYMENT_EVENT_TYPE_CHARGEBACK",
+	}
+	PaymentEventType_value = map[string]int32{
+		"PAYMENT_EVENT_TYPE_UNSPECIFIED": 0,
+		"PAYMENT_EVENT_TYPE_SUCCEEDED":   1,
+		"PAYMENT_EVENT_TYPE_FAILED":      2,
+		"PAYMENT_EVENT_TYPE_REFUNDED":    3,
+		"PAYMENT_EVENT_TYPE_REVOKED":     4,
+		"PAYMENT_EVENT_TYPE_CHARGEBACK":  5,
+	}
+)
+
+func (x PaymentEventType) Enum() *PaymentEventType {
+	p := new(PaymentEventType)
+	*p = x
+	return p
+}
+
+func (x PaymentEventType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PaymentEventType) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloudpb_cloud_product_proto_enumTypes[4].Descriptor()
+}
+
+func (PaymentEventType) Type() protoreflect.EnumType {
+	return &file_cloudpb_cloud_product_proto_enumTypes[4]
+}
+
+func (x PaymentEventType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PaymentEventType.Descriptor instead.
+func (PaymentEventType) EnumDescriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{4}
+}
+
+// PaymentEventState 表示 durable provider journal 的处理阶段。
+type PaymentEventState int32
+
+const (
+	PaymentEventState_PAYMENT_EVENT_STATE_UNSPECIFIED PaymentEventState = 0
+	PaymentEventState_PAYMENT_EVENT_STATE_RECEIVED    PaymentEventState = 1
+	PaymentEventState_PAYMENT_EVENT_STATE_APPLIED     PaymentEventState = 2
+	PaymentEventState_PAYMENT_EVENT_STATE_REJECTED    PaymentEventState = 3
+)
+
+// Enum value maps for PaymentEventState.
+var (
+	PaymentEventState_name = map[int32]string{
+		0: "PAYMENT_EVENT_STATE_UNSPECIFIED",
+		1: "PAYMENT_EVENT_STATE_RECEIVED",
+		2: "PAYMENT_EVENT_STATE_APPLIED",
+		3: "PAYMENT_EVENT_STATE_REJECTED",
+	}
+	PaymentEventState_value = map[string]int32{
+		"PAYMENT_EVENT_STATE_UNSPECIFIED": 0,
+		"PAYMENT_EVENT_STATE_RECEIVED":    1,
+		"PAYMENT_EVENT_STATE_APPLIED":     2,
+		"PAYMENT_EVENT_STATE_REJECTED":    3,
+	}
+)
+
+func (x PaymentEventState) Enum() *PaymentEventState {
+	p := new(PaymentEventState)
+	*p = x
+	return p
+}
+
+func (x PaymentEventState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PaymentEventState) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloudpb_cloud_product_proto_enumTypes[5].Descriptor()
+}
+
+func (PaymentEventState) Type() protoreflect.EnumType {
+	return &file_cloudpb_cloud_product_proto_enumTypes[5]
+}
+
+func (x PaymentEventState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PaymentEventState.Descriptor instead.
+func (PaymentEventState) EnumDescriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{5}
+}
+
+// SubscriptionTransitionKind 是所有商业状态变化共用的显式原因。
+type SubscriptionTransitionKind int32
+
+const (
+	SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_UNSPECIFIED          SubscriptionTransitionKind = 0
+	SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_ACTIVATE             SubscriptionTransitionKind = 1
+	SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_RENEW                SubscriptionTransitionKind = 2
+	SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_UPGRADE              SubscriptionTransitionKind = 3
+	SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_DOWNGRADE            SubscriptionTransitionKind = 4
+	SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_CANCEL_AT_PERIOD_END SubscriptionTransitionKind = 5
+	SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_RESUME               SubscriptionTransitionKind = 6
+	SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_PAYMENT_FAILED       SubscriptionTransitionKind = 7
+	SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_SUSPEND              SubscriptionTransitionKind = 8
+	SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_RESTORE              SubscriptionTransitionKind = 9
+	SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_EXPIRE               SubscriptionTransitionKind = 10
+	SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_REFUND               SubscriptionTransitionKind = 11
+	SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_REVOKE               SubscriptionTransitionKind = 12
+)
+
+// Enum value maps for SubscriptionTransitionKind.
+var (
+	SubscriptionTransitionKind_name = map[int32]string{
+		0:  "SUBSCRIPTION_TRANSITION_KIND_UNSPECIFIED",
+		1:  "SUBSCRIPTION_TRANSITION_KIND_ACTIVATE",
+		2:  "SUBSCRIPTION_TRANSITION_KIND_RENEW",
+		3:  "SUBSCRIPTION_TRANSITION_KIND_UPGRADE",
+		4:  "SUBSCRIPTION_TRANSITION_KIND_DOWNGRADE",
+		5:  "SUBSCRIPTION_TRANSITION_KIND_CANCEL_AT_PERIOD_END",
+		6:  "SUBSCRIPTION_TRANSITION_KIND_RESUME",
+		7:  "SUBSCRIPTION_TRANSITION_KIND_PAYMENT_FAILED",
+		8:  "SUBSCRIPTION_TRANSITION_KIND_SUSPEND",
+		9:  "SUBSCRIPTION_TRANSITION_KIND_RESTORE",
+		10: "SUBSCRIPTION_TRANSITION_KIND_EXPIRE",
+		11: "SUBSCRIPTION_TRANSITION_KIND_REFUND",
+		12: "SUBSCRIPTION_TRANSITION_KIND_REVOKE",
+	}
+	SubscriptionTransitionKind_value = map[string]int32{
+		"SUBSCRIPTION_TRANSITION_KIND_UNSPECIFIED":          0,
+		"SUBSCRIPTION_TRANSITION_KIND_ACTIVATE":             1,
+		"SUBSCRIPTION_TRANSITION_KIND_RENEW":                2,
+		"SUBSCRIPTION_TRANSITION_KIND_UPGRADE":              3,
+		"SUBSCRIPTION_TRANSITION_KIND_DOWNGRADE":            4,
+		"SUBSCRIPTION_TRANSITION_KIND_CANCEL_AT_PERIOD_END": 5,
+		"SUBSCRIPTION_TRANSITION_KIND_RESUME":               6,
+		"SUBSCRIPTION_TRANSITION_KIND_PAYMENT_FAILED":       7,
+		"SUBSCRIPTION_TRANSITION_KIND_SUSPEND":              8,
+		"SUBSCRIPTION_TRANSITION_KIND_RESTORE":              9,
+		"SUBSCRIPTION_TRANSITION_KIND_EXPIRE":               10,
+		"SUBSCRIPTION_TRANSITION_KIND_REFUND":               11,
+		"SUBSCRIPTION_TRANSITION_KIND_REVOKE":               12,
+	}
+)
+
+func (x SubscriptionTransitionKind) Enum() *SubscriptionTransitionKind {
+	p := new(SubscriptionTransitionKind)
+	*p = x
+	return p
+}
+
+func (x SubscriptionTransitionKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SubscriptionTransitionKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloudpb_cloud_product_proto_enumTypes[6].Descriptor()
+}
+
+func (SubscriptionTransitionKind) Type() protoreflect.EnumType {
+	return &file_cloudpb_cloud_product_proto_enumTypes[6]
+}
+
+func (x SubscriptionTransitionKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SubscriptionTransitionKind.Descriptor instead.
+func (SubscriptionTransitionKind) EnumDescriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{6}
 }
 
 // EntitlementStatus 是 Hub/Relay 准入读取的归一化商业状态。
@@ -120,11 +486,11 @@ func (x EntitlementStatus) String() string {
 }
 
 func (EntitlementStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_product_proto_enumTypes[1].Descriptor()
+	return file_cloudpb_cloud_product_proto_enumTypes[7].Descriptor()
 }
 
 func (EntitlementStatus) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_product_proto_enumTypes[1]
+	return &file_cloudpb_cloud_product_proto_enumTypes[7]
 }
 
 func (x EntitlementStatus) Number() protoreflect.EnumNumber {
@@ -133,7 +499,7 @@ func (x EntitlementStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EntitlementStatus.Descriptor instead.
 func (EntitlementStatus) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{1}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{7}
 }
 
 // RelayServiceCapability 是 plan 对 Relay lease 和账期的硬上限。
@@ -315,6 +681,9 @@ type PlanDefinition struct {
 	PlanVersion       uint64                 `protobuf:"varint,2,opt,name=plan_version,json=planVersion,proto3" json:"plan_version,omitempty"`
 	BillingPeriodDays uint32                 `protobuf:"varint,3,opt,name=billing_period_days,json=billingPeriodDays,proto3" json:"billing_period_days,omitempty"`
 	Capability        *PlanCapability        `protobuf:"bytes,4,opt,name=capability,proto3" json:"capability,omitempty"`
+	Included          bool                   `protobuf:"varint,5,opt,name=included,proto3" json:"included,omitempty"`
+	Price             *PlanPriceDefinition   `protobuf:"bytes,6,opt,name=price,proto3" json:"price,omitempty"`
+	Presentation      *PlanPresentation      `protobuf:"bytes,7,opt,name=presentation,proto3" json:"presentation,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -377,6 +746,197 @@ func (x *PlanDefinition) GetCapability() *PlanCapability {
 	return nil
 }
 
+func (x *PlanDefinition) GetIncluded() bool {
+	if x != nil {
+		return x.Included
+	}
+	return false
+}
+
+func (x *PlanDefinition) GetPrice() *PlanPriceDefinition {
+	if x != nil {
+		return x.Price
+	}
+	return nil
+}
+
+func (x *PlanDefinition) GetPresentation() *PlanPresentation {
+	if x != nil {
+		return x.Presentation
+	}
+	return nil
+}
+
+// PlanPriceDefinition 是 catalog 与订单快照共用的价格契约。
+type PlanPriceDefinition struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Mode          CatalogPriceMode       `protobuf:"varint,1,opt,name=mode,proto3,enum=termx.cloud.v1.CatalogPriceMode" json:"mode,omitempty"`
+	Currency      string                 `protobuf:"bytes,2,opt,name=currency,proto3" json:"currency,omitempty"`
+	MonthlyMinor  int64                  `protobuf:"varint,3,opt,name=monthly_minor,json=monthlyMinor,proto3" json:"monthly_minor,omitempty"`
+	YearlyMinor   int64                  `protobuf:"varint,4,opt,name=yearly_minor,json=yearlyMinor,proto3" json:"yearly_minor,omitempty"`
+	Label         string                 `protobuf:"bytes,5,opt,name=label,proto3" json:"label,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanPriceDefinition) Reset() {
+	*x = PlanPriceDefinition{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanPriceDefinition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanPriceDefinition) ProtoMessage() {}
+
+func (x *PlanPriceDefinition) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanPriceDefinition.ProtoReflect.Descriptor instead.
+func (*PlanPriceDefinition) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *PlanPriceDefinition) GetMode() CatalogPriceMode {
+	if x != nil {
+		return x.Mode
+	}
+	return CatalogPriceMode_CATALOG_PRICE_MODE_UNSPECIFIED
+}
+
+func (x *PlanPriceDefinition) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
+}
+
+func (x *PlanPriceDefinition) GetMonthlyMinor() int64 {
+	if x != nil {
+		return x.MonthlyMinor
+	}
+	return 0
+}
+
+func (x *PlanPriceDefinition) GetYearlyMinor() int64 {
+	if x != nil {
+		return x.YearlyMinor
+	}
+	return 0
+}
+
+func (x *PlanPriceDefinition) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+// PlanPresentation 是官方客户端展示套餐所需的 versioned 文案。
+type PlanPresentation struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Eyebrow       string                 `protobuf:"bytes,2,opt,name=eyebrow,proto3" json:"eyebrow,omitempty"`
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	CtaLabel      string                 `protobuf:"bytes,4,opt,name=cta_label,json=ctaLabel,proto3" json:"cta_label,omitempty"`
+	CtaHref       string                 `protobuf:"bytes,5,opt,name=cta_href,json=ctaHref,proto3" json:"cta_href,omitempty"`
+	Featured      bool                   `protobuf:"varint,6,opt,name=featured,proto3" json:"featured,omitempty"`
+	Features      []string               `protobuf:"bytes,7,rep,name=features,proto3" json:"features,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanPresentation) Reset() {
+	*x = PlanPresentation{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanPresentation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanPresentation) ProtoMessage() {}
+
+func (x *PlanPresentation) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanPresentation.ProtoReflect.Descriptor instead.
+func (*PlanPresentation) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *PlanPresentation) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *PlanPresentation) GetEyebrow() string {
+	if x != nil {
+		return x.Eyebrow
+	}
+	return ""
+}
+
+func (x *PlanPresentation) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *PlanPresentation) GetCtaLabel() string {
+	if x != nil {
+		return x.CtaLabel
+	}
+	return ""
+}
+
+func (x *PlanPresentation) GetCtaHref() string {
+	if x != nil {
+		return x.CtaHref
+	}
+	return ""
+}
+
+func (x *PlanPresentation) GetFeatured() bool {
+	if x != nil {
+		return x.Featured
+	}
+	return false
+}
+
+func (x *PlanPresentation) GetFeatures() []string {
+	if x != nil {
+		return x.Features
+	}
+	return nil
+}
+
 // PlanCatalogContract 是 Control Plane 发布的机器可读套餐能力目录。
 type PlanCatalogContract struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
@@ -388,7 +948,7 @@ type PlanCatalogContract struct {
 
 func (x *PlanCatalogContract) Reset() {
 	*x = PlanCatalogContract{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[3]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -400,7 +960,7 @@ func (x *PlanCatalogContract) String() string {
 func (*PlanCatalogContract) ProtoMessage() {}
 
 func (x *PlanCatalogContract) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[3]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -413,7 +973,7 @@ func (x *PlanCatalogContract) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanCatalogContract.ProtoReflect.Descriptor instead.
 func (*PlanCatalogContract) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{3}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *PlanCatalogContract) GetCatalogVersion() uint64 {
@@ -442,13 +1002,16 @@ type SubscriptionProjection struct {
 	CurrentPeriodStartUnixMillis int64                  `protobuf:"varint,7,opt,name=current_period_start_unix_millis,json=currentPeriodStartUnixMillis,proto3" json:"current_period_start_unix_millis,omitempty"`
 	CurrentPeriodEndUnixMillis   int64                  `protobuf:"varint,8,opt,name=current_period_end_unix_millis,json=currentPeriodEndUnixMillis,proto3" json:"current_period_end_unix_millis,omitempty"`
 	UpdatedAtUnixMillis          int64                  `protobuf:"varint,9,opt,name=updated_at_unix_millis,json=updatedAtUnixMillis,proto3" json:"updated_at_unix_millis,omitempty"`
+	CancelAtPeriodEnd            bool                   `protobuf:"varint,10,opt,name=cancel_at_period_end,json=cancelAtPeriodEnd,proto3" json:"cancel_at_period_end,omitempty"`
+	ProviderReference            string                 `protobuf:"bytes,11,opt,name=provider_reference,json=providerReference,proto3" json:"provider_reference,omitempty"`
+	Revision                     uint64                 `protobuf:"varint,12,opt,name=revision,proto3" json:"revision,omitempty"`
 	unknownFields                protoimpl.UnknownFields
 	sizeCache                    protoimpl.SizeCache
 }
 
 func (x *SubscriptionProjection) Reset() {
 	*x = SubscriptionProjection{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[4]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -460,7 +1023,7 @@ func (x *SubscriptionProjection) String() string {
 func (*SubscriptionProjection) ProtoMessage() {}
 
 func (x *SubscriptionProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[4]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -473,7 +1036,7 @@ func (x *SubscriptionProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionProjection.ProtoReflect.Descriptor instead.
 func (*SubscriptionProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{4}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *SubscriptionProjection) GetSubscriptionId() string {
@@ -539,6 +1102,27 @@ func (x *SubscriptionProjection) GetUpdatedAtUnixMillis() int64 {
 	return 0
 }
 
+func (x *SubscriptionProjection) GetCancelAtPeriodEnd() bool {
+	if x != nil {
+		return x.CancelAtPeriodEnd
+	}
+	return false
+}
+
+func (x *SubscriptionProjection) GetProviderReference() string {
+	if x != nil {
+		return x.ProviderReference
+	}
+	return ""
+}
+
+func (x *SubscriptionProjection) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
 // EntitlementProjection 是 Subscription、PlanCapability 与风控归一化后的准入真值。
 type EntitlementProjection struct {
 	state                    protoimpl.MessageState `protogen:"open.v1"`
@@ -558,7 +1142,7 @@ type EntitlementProjection struct {
 
 func (x *EntitlementProjection) Reset() {
 	*x = EntitlementProjection{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[5]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -570,7 +1154,7 @@ func (x *EntitlementProjection) String() string {
 func (*EntitlementProjection) ProtoMessage() {}
 
 func (x *EntitlementProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[5]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -583,7 +1167,7 @@ func (x *EntitlementProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EntitlementProjection.ProtoReflect.Descriptor instead.
 func (*EntitlementProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{5}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *EntitlementProjection) GetAccountId() string {
@@ -665,7 +1249,7 @@ type GetPlanCatalogRequest struct {
 
 func (x *GetPlanCatalogRequest) Reset() {
 	*x = GetPlanCatalogRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[6]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -677,7 +1261,7 @@ func (x *GetPlanCatalogRequest) String() string {
 func (*GetPlanCatalogRequest) ProtoMessage() {}
 
 func (x *GetPlanCatalogRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[6]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -690,7 +1274,7 @@ func (x *GetPlanCatalogRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPlanCatalogRequest.ProtoReflect.Descriptor instead.
 func (*GetPlanCatalogRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{6}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{8}
 }
 
 // GetPlanCatalogResponse 返回 versioned PlanCatalog contract。
@@ -703,7 +1287,7 @@ type GetPlanCatalogResponse struct {
 
 func (x *GetPlanCatalogResponse) Reset() {
 	*x = GetPlanCatalogResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[7]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -715,7 +1299,7 @@ func (x *GetPlanCatalogResponse) String() string {
 func (*GetPlanCatalogResponse) ProtoMessage() {}
 
 func (x *GetPlanCatalogResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[7]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -728,7 +1312,7 @@ func (x *GetPlanCatalogResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPlanCatalogResponse.ProtoReflect.Descriptor instead.
 func (*GetPlanCatalogResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{7}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetPlanCatalogResponse) GetCatalog() *PlanCatalogContract {
@@ -748,7 +1332,7 @@ type GetAccountSubscriptionRequest struct {
 
 func (x *GetAccountSubscriptionRequest) Reset() {
 	*x = GetAccountSubscriptionRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[8]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -760,7 +1344,7 @@ func (x *GetAccountSubscriptionRequest) String() string {
 func (*GetAccountSubscriptionRequest) ProtoMessage() {}
 
 func (x *GetAccountSubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[8]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -773,7 +1357,7 @@ func (x *GetAccountSubscriptionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountSubscriptionRequest.ProtoReflect.Descriptor instead.
 func (*GetAccountSubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{8}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetAccountSubscriptionRequest) GetAccountId() string {
@@ -793,7 +1377,7 @@ type GetAccountSubscriptionResponse struct {
 
 func (x *GetAccountSubscriptionResponse) Reset() {
 	*x = GetAccountSubscriptionResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[9]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -805,7 +1389,7 @@ func (x *GetAccountSubscriptionResponse) String() string {
 func (*GetAccountSubscriptionResponse) ProtoMessage() {}
 
 func (x *GetAccountSubscriptionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[9]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -818,7 +1402,7 @@ func (x *GetAccountSubscriptionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountSubscriptionResponse.ProtoReflect.Descriptor instead.
 func (*GetAccountSubscriptionResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{9}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetAccountSubscriptionResponse) GetSubscription() *SubscriptionProjection {
@@ -838,7 +1422,7 @@ type GetAccountEntitlementRequest struct {
 
 func (x *GetAccountEntitlementRequest) Reset() {
 	*x = GetAccountEntitlementRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[10]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -850,7 +1434,7 @@ func (x *GetAccountEntitlementRequest) String() string {
 func (*GetAccountEntitlementRequest) ProtoMessage() {}
 
 func (x *GetAccountEntitlementRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[10]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -863,7 +1447,7 @@ func (x *GetAccountEntitlementRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountEntitlementRequest.ProtoReflect.Descriptor instead.
 func (*GetAccountEntitlementRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{10}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetAccountEntitlementRequest) GetAccountId() string {
@@ -883,7 +1467,7 @@ type GetAccountEntitlementResponse struct {
 
 func (x *GetAccountEntitlementResponse) Reset() {
 	*x = GetAccountEntitlementResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[11]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -895,7 +1479,7 @@ func (x *GetAccountEntitlementResponse) String() string {
 func (*GetAccountEntitlementResponse) ProtoMessage() {}
 
 func (x *GetAccountEntitlementResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[11]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -908,7 +1492,7 @@ func (x *GetAccountEntitlementResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountEntitlementResponse.ProtoReflect.Descriptor instead.
 func (*GetAccountEntitlementResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{11}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetAccountEntitlementResponse) GetEntitlement() *EntitlementProjection {
@@ -916,6 +1500,1850 @@ func (x *GetAccountEntitlementResponse) GetEntitlement() *EntitlementProjection 
 		return x.Entitlement
 	}
 	return nil
+}
+
+// AccountProjection 是账号 API 可返回的最小身份投影，不包含密码 hash 或 session secret。
+type AccountProjection struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	AccountId           string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	UserId              string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Email               string                 `protobuf:"bytes,3,opt,name=email,proto3" json:"email,omitempty"`
+	DisplayName         string                 `protobuf:"bytes,4,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	AuthRevision        uint64                 `protobuf:"varint,5,opt,name=auth_revision,json=authRevision,proto3" json:"auth_revision,omitempty"`
+	CreatedAtUnixMillis int64                  `protobuf:"varint,6,opt,name=created_at_unix_millis,json=createdAtUnixMillis,proto3" json:"created_at_unix_millis,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *AccountProjection) Reset() {
+	*x = AccountProjection{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AccountProjection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AccountProjection) ProtoMessage() {}
+
+func (x *AccountProjection) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AccountProjection.ProtoReflect.Descriptor instead.
+func (*AccountProjection) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *AccountProjection) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+func (x *AccountProjection) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *AccountProjection) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *AccountProjection) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *AccountProjection) GetAuthRevision() uint64 {
+	if x != nil {
+		return x.AuthRevision
+	}
+	return 0
+}
+
+func (x *AccountProjection) GetCreatedAtUnixMillis() int64 {
+	if x != nil {
+		return x.CreatedAtUnixMillis
+	}
+	return 0
+}
+
+// AccountSessionCredential 是注册、登录和 refresh 返回一次的短期/长期 credential。
+type AccountSessionCredential struct {
+	state                      protoimpl.MessageState `protogen:"open.v1"`
+	SessionId                  string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Account                    *AccountProjection     `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
+	AccessToken                []byte                 `protobuf:"bytes,3,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
+	RefreshToken               []byte                 `protobuf:"bytes,4,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
+	AccessExpiresAtUnixMillis  int64                  `protobuf:"varint,5,opt,name=access_expires_at_unix_millis,json=accessExpiresAtUnixMillis,proto3" json:"access_expires_at_unix_millis,omitempty"`
+	RefreshExpiresAtUnixMillis int64                  `protobuf:"varint,6,opt,name=refresh_expires_at_unix_millis,json=refreshExpiresAtUnixMillis,proto3" json:"refresh_expires_at_unix_millis,omitempty"`
+	SessionRevision            uint64                 `protobuf:"varint,7,opt,name=session_revision,json=sessionRevision,proto3" json:"session_revision,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
+}
+
+func (x *AccountSessionCredential) Reset() {
+	*x = AccountSessionCredential{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AccountSessionCredential) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AccountSessionCredential) ProtoMessage() {}
+
+func (x *AccountSessionCredential) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AccountSessionCredential.ProtoReflect.Descriptor instead.
+func (*AccountSessionCredential) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *AccountSessionCredential) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *AccountSessionCredential) GetAccount() *AccountProjection {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+func (x *AccountSessionCredential) GetAccessToken() []byte {
+	if x != nil {
+		return x.AccessToken
+	}
+	return nil
+}
+
+func (x *AccountSessionCredential) GetRefreshToken() []byte {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return nil
+}
+
+func (x *AccountSessionCredential) GetAccessExpiresAtUnixMillis() int64 {
+	if x != nil {
+		return x.AccessExpiresAtUnixMillis
+	}
+	return 0
+}
+
+func (x *AccountSessionCredential) GetRefreshExpiresAtUnixMillis() int64 {
+	if x != nil {
+		return x.RefreshExpiresAtUnixMillis
+	}
+	return 0
+}
+
+func (x *AccountSessionCredential) GetSessionRevision() uint64 {
+	if x != nil {
+		return x.SessionRevision
+	}
+	return 0
+}
+
+// RegisterAccountRequest 创建邮箱密码账号；密码只进入 credential verifier，不得写日志或审计 body。
+type RegisterAccountRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
+	ReferralCode  string                 `protobuf:"bytes,3,opt,name=referral_code,json=referralCode,proto3" json:"referral_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegisterAccountRequest) Reset() {
+	*x = RegisterAccountRequest{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterAccountRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterAccountRequest) ProtoMessage() {}
+
+func (x *RegisterAccountRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterAccountRequest.ProtoReflect.Descriptor instead.
+func (*RegisterAccountRequest) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *RegisterAccountRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *RegisterAccountRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+func (x *RegisterAccountRequest) GetReferralCode() string {
+	if x != nil {
+		return x.ReferralCode
+	}
+	return ""
+}
+
+type RegisterAccountResponse struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Session       *AccountSessionCredential `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegisterAccountResponse) Reset() {
+	*x = RegisterAccountResponse{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterAccountResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterAccountResponse) ProtoMessage() {}
+
+func (x *RegisterAccountResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterAccountResponse.ProtoReflect.Descriptor instead.
+func (*RegisterAccountResponse) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *RegisterAccountResponse) GetSession() *AccountSessionCredential {
+	if x != nil {
+		return x.Session
+	}
+	return nil
+}
+
+// PasswordLoginRequest 使用邮箱密码创建新的账号 session。
+type PasswordLoginRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PasswordLoginRequest) Reset() {
+	*x = PasswordLoginRequest{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PasswordLoginRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PasswordLoginRequest) ProtoMessage() {}
+
+func (x *PasswordLoginRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PasswordLoginRequest.ProtoReflect.Descriptor instead.
+func (*PasswordLoginRequest) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *PasswordLoginRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *PasswordLoginRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+type PasswordLoginResponse struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Session       *AccountSessionCredential `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PasswordLoginResponse) Reset() {
+	*x = PasswordLoginResponse{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PasswordLoginResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PasswordLoginResponse) ProtoMessage() {}
+
+func (x *PasswordLoginResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PasswordLoginResponse.ProtoReflect.Descriptor instead.
+func (*PasswordLoginResponse) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *PasswordLoginResponse) GetSession() *AccountSessionCredential {
+	if x != nil {
+		return x.Session
+	}
+	return nil
+}
+
+// RefreshAccountSessionRequest 单次使用并轮换 refresh token。
+type RefreshAccountSessionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RefreshToken  []byte                 `protobuf:"bytes,1,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RefreshAccountSessionRequest) Reset() {
+	*x = RefreshAccountSessionRequest{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefreshAccountSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefreshAccountSessionRequest) ProtoMessage() {}
+
+func (x *RefreshAccountSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefreshAccountSessionRequest.ProtoReflect.Descriptor instead.
+func (*RefreshAccountSessionRequest) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *RefreshAccountSessionRequest) GetRefreshToken() []byte {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return nil
+}
+
+type RefreshAccountSessionResponse struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Session       *AccountSessionCredential `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RefreshAccountSessionResponse) Reset() {
+	*x = RefreshAccountSessionResponse{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefreshAccountSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefreshAccountSessionResponse) ProtoMessage() {}
+
+func (x *RefreshAccountSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefreshAccountSessionResponse.ProtoReflect.Descriptor instead.
+func (*RefreshAccountSessionResponse) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *RefreshAccountSessionResponse) GetSession() *AccountSessionCredential {
+	if x != nil {
+		return x.Session
+	}
+	return nil
+}
+
+// LogoutAccountSessionRequest 撤销精确 session；all_account_sessions 用于改密后的全量撤销。
+type LogoutAccountSessionRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	SessionId          string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	AllAccountSessions bool                   `protobuf:"varint,2,opt,name=all_account_sessions,json=allAccountSessions,proto3" json:"all_account_sessions,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *LogoutAccountSessionRequest) Reset() {
+	*x = LogoutAccountSessionRequest{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogoutAccountSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogoutAccountSessionRequest) ProtoMessage() {}
+
+func (x *LogoutAccountSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogoutAccountSessionRequest.ProtoReflect.Descriptor instead.
+func (*LogoutAccountSessionRequest) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *LogoutAccountSessionRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *LogoutAccountSessionRequest) GetAllAccountSessions() bool {
+	if x != nil {
+		return x.AllAccountSessions
+	}
+	return false
+}
+
+type LogoutAccountSessionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogoutAccountSessionResponse) Reset() {
+	*x = LogoutAccountSessionResponse{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogoutAccountSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogoutAccountSessionResponse) ProtoMessage() {}
+
+func (x *LogoutAccountSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogoutAccountSessionResponse.ProtoReflect.Descriptor instead.
+func (*LogoutAccountSessionResponse) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{23}
+}
+
+// ChangeAccountPasswordRequest 验证当前密码后替换 verifier，并撤销账号全部旧 session。
+type ChangeAccountPasswordRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	CurrentPassword string                 `protobuf:"bytes,1,opt,name=current_password,json=currentPassword,proto3" json:"current_password,omitempty"`
+	NewPassword     string                 `protobuf:"bytes,2,opt,name=new_password,json=newPassword,proto3" json:"new_password,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ChangeAccountPasswordRequest) Reset() {
+	*x = ChangeAccountPasswordRequest{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeAccountPasswordRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeAccountPasswordRequest) ProtoMessage() {}
+
+func (x *ChangeAccountPasswordRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeAccountPasswordRequest.ProtoReflect.Descriptor instead.
+func (*ChangeAccountPasswordRequest) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ChangeAccountPasswordRequest) GetCurrentPassword() string {
+	if x != nil {
+		return x.CurrentPassword
+	}
+	return ""
+}
+
+func (x *ChangeAccountPasswordRequest) GetNewPassword() string {
+	if x != nil {
+		return x.NewPassword
+	}
+	return ""
+}
+
+type ChangeAccountPasswordResponse struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Session       *AccountSessionCredential `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangeAccountPasswordResponse) Reset() {
+	*x = ChangeAccountPasswordResponse{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeAccountPasswordResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeAccountPasswordResponse) ProtoMessage() {}
+
+func (x *ChangeAccountPasswordResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeAccountPasswordResponse.ProtoReflect.Descriptor instead.
+func (*ChangeAccountPasswordResponse) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ChangeAccountPasswordResponse) GetSession() *AccountSessionCredential {
+	if x != nil {
+		return x.Session
+	}
+	return nil
+}
+
+// OrderProjection 是用户、provider 和运营面共用的持久订单投影。
+type OrderProjection struct {
+	state                      protoimpl.MessageState     `protogen:"open.v1"`
+	OrderId                    string                     `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	AccountId                  string                     `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	PlanId                     string                     `protobuf:"bytes,3,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
+	PlanVersion                uint64                     `protobuf:"varint,4,opt,name=plan_version,json=planVersion,proto3" json:"plan_version,omitempty"`
+	Status                     OrderStatus                `protobuf:"varint,5,opt,name=status,proto3,enum=termx.cloud.v1.OrderStatus" json:"status,omitempty"`
+	CreatedAtUnixMillis        int64                      `protobuf:"varint,6,opt,name=created_at_unix_millis,json=createdAtUnixMillis,proto3" json:"created_at_unix_millis,omitempty"`
+	SettledAtUnixMillis        int64                      `protobuf:"varint,7,opt,name=settled_at_unix_millis,json=settledAtUnixMillis,proto3" json:"settled_at_unix_millis,omitempty"`
+	ProviderReference          string                     `protobuf:"bytes,8,opt,name=provider_reference,json=providerReference,proto3" json:"provider_reference,omitempty"`
+	Revision                   uint64                     `protobuf:"varint,9,opt,name=revision,proto3" json:"revision,omitempty"`
+	RequestedTransition        SubscriptionTransitionKind `protobuf:"varint,10,opt,name=requested_transition,json=requestedTransition,proto3,enum=termx.cloud.v1.SubscriptionTransitionKind" json:"requested_transition,omitempty"`
+	SourceSubscriptionRevision uint64                     `protobuf:"varint,11,opt,name=source_subscription_revision,json=sourceSubscriptionRevision,proto3" json:"source_subscription_revision,omitempty"`
+	SourcePlanId               string                     `protobuf:"bytes,12,opt,name=source_plan_id,json=sourcePlanId,proto3" json:"source_plan_id,omitempty"`
+	SourcePlanVersion          uint64                     `protobuf:"varint,13,opt,name=source_plan_version,json=sourcePlanVersion,proto3" json:"source_plan_version,omitempty"`
+	Price                      *PlanPriceDefinition       `protobuf:"bytes,14,opt,name=price,proto3" json:"price,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
+}
+
+func (x *OrderProjection) Reset() {
+	*x = OrderProjection{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OrderProjection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OrderProjection) ProtoMessage() {}
+
+func (x *OrderProjection) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OrderProjection.ProtoReflect.Descriptor instead.
+func (*OrderProjection) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *OrderProjection) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *OrderProjection) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+func (x *OrderProjection) GetPlanId() string {
+	if x != nil {
+		return x.PlanId
+	}
+	return ""
+}
+
+func (x *OrderProjection) GetPlanVersion() uint64 {
+	if x != nil {
+		return x.PlanVersion
+	}
+	return 0
+}
+
+func (x *OrderProjection) GetStatus() OrderStatus {
+	if x != nil {
+		return x.Status
+	}
+	return OrderStatus_ORDER_STATUS_UNSPECIFIED
+}
+
+func (x *OrderProjection) GetCreatedAtUnixMillis() int64 {
+	if x != nil {
+		return x.CreatedAtUnixMillis
+	}
+	return 0
+}
+
+func (x *OrderProjection) GetSettledAtUnixMillis() int64 {
+	if x != nil {
+		return x.SettledAtUnixMillis
+	}
+	return 0
+}
+
+func (x *OrderProjection) GetProviderReference() string {
+	if x != nil {
+		return x.ProviderReference
+	}
+	return ""
+}
+
+func (x *OrderProjection) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *OrderProjection) GetRequestedTransition() SubscriptionTransitionKind {
+	if x != nil {
+		return x.RequestedTransition
+	}
+	return SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_UNSPECIFIED
+}
+
+func (x *OrderProjection) GetSourceSubscriptionRevision() uint64 {
+	if x != nil {
+		return x.SourceSubscriptionRevision
+	}
+	return 0
+}
+
+func (x *OrderProjection) GetSourcePlanId() string {
+	if x != nil {
+		return x.SourcePlanId
+	}
+	return ""
+}
+
+func (x *OrderProjection) GetSourcePlanVersion() uint64 {
+	if x != nil {
+		return x.SourcePlanVersion
+	}
+	return 0
+}
+
+func (x *OrderProjection) GetPrice() *PlanPriceDefinition {
+	if x != nil {
+		return x.Price
+	}
+	return nil
+}
+
+// PaymentAttemptProjection 是 checkout order 与 provider event 之间的持久尝试。
+type PaymentAttemptProjection struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	PaymentAttemptId    string                 `protobuf:"bytes,1,opt,name=payment_attempt_id,json=paymentAttemptId,proto3" json:"payment_attempt_id,omitempty"`
+	OrderId             string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	AccountId           string                 `protobuf:"bytes,3,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	Provider            string                 `protobuf:"bytes,4,opt,name=provider,proto3" json:"provider,omitempty"`
+	Status              PaymentAttemptStatus   `protobuf:"varint,5,opt,name=status,proto3,enum=termx.cloud.v1.PaymentAttemptStatus" json:"status,omitempty"`
+	CreatedAtUnixMillis int64                  `protobuf:"varint,6,opt,name=created_at_unix_millis,json=createdAtUnixMillis,proto3" json:"created_at_unix_millis,omitempty"`
+	UpdatedAtUnixMillis int64                  `protobuf:"varint,7,opt,name=updated_at_unix_millis,json=updatedAtUnixMillis,proto3" json:"updated_at_unix_millis,omitempty"`
+	ProviderReference   string                 `protobuf:"bytes,8,opt,name=provider_reference,json=providerReference,proto3" json:"provider_reference,omitempty"`
+	Revision            uint64                 `protobuf:"varint,9,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *PaymentAttemptProjection) Reset() {
+	*x = PaymentAttemptProjection{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PaymentAttemptProjection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PaymentAttemptProjection) ProtoMessage() {}
+
+func (x *PaymentAttemptProjection) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PaymentAttemptProjection.ProtoReflect.Descriptor instead.
+func (*PaymentAttemptProjection) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *PaymentAttemptProjection) GetPaymentAttemptId() string {
+	if x != nil {
+		return x.PaymentAttemptId
+	}
+	return ""
+}
+
+func (x *PaymentAttemptProjection) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *PaymentAttemptProjection) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+func (x *PaymentAttemptProjection) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *PaymentAttemptProjection) GetStatus() PaymentAttemptStatus {
+	if x != nil {
+		return x.Status
+	}
+	return PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_UNSPECIFIED
+}
+
+func (x *PaymentAttemptProjection) GetCreatedAtUnixMillis() int64 {
+	if x != nil {
+		return x.CreatedAtUnixMillis
+	}
+	return 0
+}
+
+func (x *PaymentAttemptProjection) GetUpdatedAtUnixMillis() int64 {
+	if x != nil {
+		return x.UpdatedAtUnixMillis
+	}
+	return 0
+}
+
+func (x *PaymentAttemptProjection) GetProviderReference() string {
+	if x != nil {
+		return x.ProviderReference
+	}
+	return ""
+}
+
+func (x *PaymentAttemptProjection) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+// CreateCheckoutRequest 只创建 pending order，不修改 Subscription 或 Entitlement。
+type CreateCheckoutRequest struct {
+	state               protoimpl.MessageState     `protogen:"open.v1"`
+	PlanId              string                     `protobuf:"bytes,1,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
+	RequestedTransition SubscriptionTransitionKind `protobuf:"varint,2,opt,name=requested_transition,json=requestedTransition,proto3,enum=termx.cloud.v1.SubscriptionTransitionKind" json:"requested_transition,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *CreateCheckoutRequest) Reset() {
+	*x = CreateCheckoutRequest{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateCheckoutRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateCheckoutRequest) ProtoMessage() {}
+
+func (x *CreateCheckoutRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateCheckoutRequest.ProtoReflect.Descriptor instead.
+func (*CreateCheckoutRequest) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *CreateCheckoutRequest) GetPlanId() string {
+	if x != nil {
+		return x.PlanId
+	}
+	return ""
+}
+
+func (x *CreateCheckoutRequest) GetRequestedTransition() SubscriptionTransitionKind {
+	if x != nil {
+		return x.RequestedTransition
+	}
+	return SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_UNSPECIFIED
+}
+
+type CreateCheckoutResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Order         *OrderProjection       `protobuf:"bytes,1,opt,name=order,proto3" json:"order,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateCheckoutResponse) Reset() {
+	*x = CreateCheckoutResponse{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateCheckoutResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateCheckoutResponse) ProtoMessage() {}
+
+func (x *CreateCheckoutResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateCheckoutResponse.ProtoReflect.Descriptor instead.
+func (*CreateCheckoutResponse) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *CreateCheckoutResponse) GetOrder() *OrderProjection {
+	if x != nil {
+		return x.Order
+	}
+	return nil
+}
+
+type CreatePaymentAttemptRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	Provider      string                 `protobuf:"bytes,2,opt,name=provider,proto3" json:"provider,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreatePaymentAttemptRequest) Reset() {
+	*x = CreatePaymentAttemptRequest{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreatePaymentAttemptRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreatePaymentAttemptRequest) ProtoMessage() {}
+
+func (x *CreatePaymentAttemptRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreatePaymentAttemptRequest.ProtoReflect.Descriptor instead.
+func (*CreatePaymentAttemptRequest) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *CreatePaymentAttemptRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *CreatePaymentAttemptRequest) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+type CreatePaymentAttemptResponse struct {
+	state          protoimpl.MessageState    `protogen:"open.v1"`
+	PaymentAttempt *PaymentAttemptProjection `protobuf:"bytes,1,opt,name=payment_attempt,json=paymentAttempt,proto3" json:"payment_attempt,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *CreatePaymentAttemptResponse) Reset() {
+	*x = CreatePaymentAttemptResponse{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreatePaymentAttemptResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreatePaymentAttemptResponse) ProtoMessage() {}
+
+func (x *CreatePaymentAttemptResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreatePaymentAttemptResponse.ProtoReflect.Descriptor instead.
+func (*CreatePaymentAttemptResponse) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *CreatePaymentAttemptResponse) GetPaymentAttempt() *PaymentAttemptProjection {
+	if x != nil {
+		return x.PaymentAttempt
+	}
+	return nil
+}
+
+// NormalizedPaymentEvent 是所有正式/测试 provider 共用的 durable journal 输入。
+type NormalizedPaymentEvent struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	ProviderEventId      string                 `protobuf:"bytes,1,opt,name=provider_event_id,json=providerEventId,proto3" json:"provider_event_id,omitempty"`
+	Provider             string                 `protobuf:"bytes,2,opt,name=provider,proto3" json:"provider,omitempty"`
+	EventType            PaymentEventType       `protobuf:"varint,3,opt,name=event_type,json=eventType,proto3,enum=termx.cloud.v1.PaymentEventType" json:"event_type,omitempty"`
+	OrderId              string                 `protobuf:"bytes,4,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	AccountId            string                 `protobuf:"bytes,5,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	PlanId               string                 `protobuf:"bytes,6,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
+	PlanVersion          uint64                 `protobuf:"varint,7,opt,name=plan_version,json=planVersion,proto3" json:"plan_version,omitempty"`
+	ProviderReference    string                 `protobuf:"bytes,8,opt,name=provider_reference,json=providerReference,proto3" json:"provider_reference,omitempty"`
+	OccurredAtUnixMillis int64                  `protobuf:"varint,9,opt,name=occurred_at_unix_millis,json=occurredAtUnixMillis,proto3" json:"occurred_at_unix_millis,omitempty"`
+	PaymentAttemptId     string                 `protobuf:"bytes,10,opt,name=payment_attempt_id,json=paymentAttemptId,proto3" json:"payment_attempt_id,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *NormalizedPaymentEvent) Reset() {
+	*x = NormalizedPaymentEvent{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NormalizedPaymentEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NormalizedPaymentEvent) ProtoMessage() {}
+
+func (x *NormalizedPaymentEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NormalizedPaymentEvent.ProtoReflect.Descriptor instead.
+func (*NormalizedPaymentEvent) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *NormalizedPaymentEvent) GetProviderEventId() string {
+	if x != nil {
+		return x.ProviderEventId
+	}
+	return ""
+}
+
+func (x *NormalizedPaymentEvent) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *NormalizedPaymentEvent) GetEventType() PaymentEventType {
+	if x != nil {
+		return x.EventType
+	}
+	return PaymentEventType_PAYMENT_EVENT_TYPE_UNSPECIFIED
+}
+
+func (x *NormalizedPaymentEvent) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *NormalizedPaymentEvent) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+func (x *NormalizedPaymentEvent) GetPlanId() string {
+	if x != nil {
+		return x.PlanId
+	}
+	return ""
+}
+
+func (x *NormalizedPaymentEvent) GetPlanVersion() uint64 {
+	if x != nil {
+		return x.PlanVersion
+	}
+	return 0
+}
+
+func (x *NormalizedPaymentEvent) GetProviderReference() string {
+	if x != nil {
+		return x.ProviderReference
+	}
+	return ""
+}
+
+func (x *NormalizedPaymentEvent) GetOccurredAtUnixMillis() int64 {
+	if x != nil {
+		return x.OccurredAtUnixMillis
+	}
+	return 0
+}
+
+func (x *NormalizedPaymentEvent) GetPaymentAttemptId() string {
+	if x != nil {
+		return x.PaymentAttemptId
+	}
+	return ""
+}
+
+// ApplyPaymentEventRequest 仅供 provider adapter 使用；签名验证发生在调用本 API 前。
+type ApplyPaymentEventRequest struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Event         *NormalizedPaymentEvent `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApplyPaymentEventRequest) Reset() {
+	*x = ApplyPaymentEventRequest{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyPaymentEventRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyPaymentEventRequest) ProtoMessage() {}
+
+func (x *ApplyPaymentEventRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyPaymentEventRequest.ProtoReflect.Descriptor instead.
+func (*ApplyPaymentEventRequest) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *ApplyPaymentEventRequest) GetEvent() *NormalizedPaymentEvent {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+type ApplyPaymentEventResponse struct {
+	state          protoimpl.MessageState    `protogen:"open.v1"`
+	Order          *OrderProjection          `protobuf:"bytes,1,opt,name=order,proto3" json:"order,omitempty"`
+	Subscription   *SubscriptionProjection   `protobuf:"bytes,2,opt,name=subscription,proto3" json:"subscription,omitempty"`
+	EventState     PaymentEventState         `protobuf:"varint,3,opt,name=event_state,json=eventState,proto3,enum=termx.cloud.v1.PaymentEventState" json:"event_state,omitempty"`
+	PaymentAttempt *PaymentAttemptProjection `protobuf:"bytes,4,opt,name=payment_attempt,json=paymentAttempt,proto3" json:"payment_attempt,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ApplyPaymentEventResponse) Reset() {
+	*x = ApplyPaymentEventResponse{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyPaymentEventResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyPaymentEventResponse) ProtoMessage() {}
+
+func (x *ApplyPaymentEventResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyPaymentEventResponse.ProtoReflect.Descriptor instead.
+func (*ApplyPaymentEventResponse) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *ApplyPaymentEventResponse) GetOrder() *OrderProjection {
+	if x != nil {
+		return x.Order
+	}
+	return nil
+}
+
+func (x *ApplyPaymentEventResponse) GetSubscription() *SubscriptionProjection {
+	if x != nil {
+		return x.Subscription
+	}
+	return nil
+}
+
+func (x *ApplyPaymentEventResponse) GetEventState() PaymentEventState {
+	if x != nil {
+		return x.EventState
+	}
+	return PaymentEventState_PAYMENT_EVENT_STATE_UNSPECIFIED
+}
+
+func (x *ApplyPaymentEventResponse) GetPaymentAttempt() *PaymentAttemptProjection {
+	if x != nil {
+		return x.PaymentAttempt
+	}
+	return nil
+}
+
+// ConfirmTestPaymentRequest 让显式 development provider 为当前账号订单生成 normalized event。
+type ConfirmTestPaymentRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	EventType     PaymentEventType       `protobuf:"varint,2,opt,name=event_type,json=eventType,proto3,enum=termx.cloud.v1.PaymentEventType" json:"event_type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfirmTestPaymentRequest) Reset() {
+	*x = ConfirmTestPaymentRequest{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfirmTestPaymentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfirmTestPaymentRequest) ProtoMessage() {}
+
+func (x *ConfirmTestPaymentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfirmTestPaymentRequest.ProtoReflect.Descriptor instead.
+func (*ConfirmTestPaymentRequest) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *ConfirmTestPaymentRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *ConfirmTestPaymentRequest) GetEventType() PaymentEventType {
+	if x != nil {
+		return x.EventType
+	}
+	return PaymentEventType_PAYMENT_EVENT_TYPE_UNSPECIFIED
+}
+
+type ConfirmTestPaymentResponse struct {
+	state         protoimpl.MessageState     `protogen:"open.v1"`
+	Result        *ApplyPaymentEventResponse `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfirmTestPaymentResponse) Reset() {
+	*x = ConfirmTestPaymentResponse{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfirmTestPaymentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfirmTestPaymentResponse) ProtoMessage() {}
+
+func (x *ConfirmTestPaymentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfirmTestPaymentResponse.ProtoReflect.Descriptor instead.
+func (*ConfirmTestPaymentResponse) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *ConfirmTestPaymentResponse) GetResult() *ApplyPaymentEventResponse {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
+// TransitionSubscriptionRequest 执行不依赖 provider payment 的显式用户/运营状态转换。
+type TransitionSubscriptionRequest struct {
+	state                 protoimpl.MessageState     `protogen:"open.v1"`
+	AccountId             string                     `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	Transition            SubscriptionTransitionKind `protobuf:"varint,2,opt,name=transition,proto3,enum=termx.cloud.v1.SubscriptionTransitionKind" json:"transition,omitempty"`
+	TargetPlanId          string                     `protobuf:"bytes,3,opt,name=target_plan_id,json=targetPlanId,proto3" json:"target_plan_id,omitempty"`
+	TargetPlanVersion     uint64                     `protobuf:"varint,4,opt,name=target_plan_version,json=targetPlanVersion,proto3" json:"target_plan_version,omitempty"`
+	EffectiveAtUnixMillis int64                      `protobuf:"varint,5,opt,name=effective_at_unix_millis,json=effectiveAtUnixMillis,proto3" json:"effective_at_unix_millis,omitempty"`
+	ActorId               string                     `protobuf:"bytes,6,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *TransitionSubscriptionRequest) Reset() {
+	*x = TransitionSubscriptionRequest{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TransitionSubscriptionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TransitionSubscriptionRequest) ProtoMessage() {}
+
+func (x *TransitionSubscriptionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TransitionSubscriptionRequest.ProtoReflect.Descriptor instead.
+func (*TransitionSubscriptionRequest) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *TransitionSubscriptionRequest) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+func (x *TransitionSubscriptionRequest) GetTransition() SubscriptionTransitionKind {
+	if x != nil {
+		return x.Transition
+	}
+	return SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_UNSPECIFIED
+}
+
+func (x *TransitionSubscriptionRequest) GetTargetPlanId() string {
+	if x != nil {
+		return x.TargetPlanId
+	}
+	return ""
+}
+
+func (x *TransitionSubscriptionRequest) GetTargetPlanVersion() uint64 {
+	if x != nil {
+		return x.TargetPlanVersion
+	}
+	return 0
+}
+
+func (x *TransitionSubscriptionRequest) GetEffectiveAtUnixMillis() int64 {
+	if x != nil {
+		return x.EffectiveAtUnixMillis
+	}
+	return 0
+}
+
+func (x *TransitionSubscriptionRequest) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+type TransitionSubscriptionResponse struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Subscription  *SubscriptionProjection `protobuf:"bytes,1,opt,name=subscription,proto3" json:"subscription,omitempty"`
+	Entitlement   *EntitlementProjection  `protobuf:"bytes,2,opt,name=entitlement,proto3" json:"entitlement,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TransitionSubscriptionResponse) Reset() {
+	*x = TransitionSubscriptionResponse{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TransitionSubscriptionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TransitionSubscriptionResponse) ProtoMessage() {}
+
+func (x *TransitionSubscriptionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TransitionSubscriptionResponse.ProtoReflect.Descriptor instead.
+func (*TransitionSubscriptionResponse) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *TransitionSubscriptionResponse) GetSubscription() *SubscriptionProjection {
+	if x != nil {
+		return x.Subscription
+	}
+	return nil
+}
+
+func (x *TransitionSubscriptionResponse) GetEntitlement() *EntitlementProjection {
+	if x != nil {
+		return x.Entitlement
+	}
+	return nil
+}
+
+// CommerceAuditProjection 是账号可见的稳定交易审计，不包含密码、token 或 provider secret。
+type CommerceAuditProjection struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	AuditId              string                 `protobuf:"bytes,1,opt,name=audit_id,json=auditId,proto3" json:"audit_id,omitempty"`
+	AccountId            string                 `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	ActorId              string                 `protobuf:"bytes,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Action               string                 `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"`
+	ResourceId           string                 `protobuf:"bytes,5,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
+	OccurredAtUnixMillis int64                  `protobuf:"varint,6,opt,name=occurred_at_unix_millis,json=occurredAtUnixMillis,proto3" json:"occurred_at_unix_millis,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *CommerceAuditProjection) Reset() {
+	*x = CommerceAuditProjection{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommerceAuditProjection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommerceAuditProjection) ProtoMessage() {}
+
+func (x *CommerceAuditProjection) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommerceAuditProjection.ProtoReflect.Descriptor instead.
+func (*CommerceAuditProjection) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *CommerceAuditProjection) GetAuditId() string {
+	if x != nil {
+		return x.AuditId
+	}
+	return ""
+}
+
+func (x *CommerceAuditProjection) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+func (x *CommerceAuditProjection) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *CommerceAuditProjection) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *CommerceAuditProjection) GetResourceId() string {
+	if x != nil {
+		return x.ResourceId
+	}
+	return ""
+}
+
+func (x *CommerceAuditProjection) GetOccurredAtUnixMillis() int64 {
+	if x != nil {
+		return x.OccurredAtUnixMillis
+	}
+	return 0
+}
+
+type GetAccountCommerceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AccountId     string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAccountCommerceRequest) Reset() {
+	*x = GetAccountCommerceRequest{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAccountCommerceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAccountCommerceRequest) ProtoMessage() {}
+
+func (x *GetAccountCommerceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAccountCommerceRequest.ProtoReflect.Descriptor instead.
+func (*GetAccountCommerceRequest) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *GetAccountCommerceRequest) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+type GetAccountCommerceResponse struct {
+	state           protoimpl.MessageState      `protogen:"open.v1"`
+	Account         *AccountProjection          `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	Subscription    *SubscriptionProjection     `protobuf:"bytes,2,opt,name=subscription,proto3" json:"subscription,omitempty"`
+	Entitlement     *EntitlementProjection      `protobuf:"bytes,3,opt,name=entitlement,proto3" json:"entitlement,omitempty"`
+	Orders          []*OrderProjection          `protobuf:"bytes,4,rep,name=orders,proto3" json:"orders,omitempty"`
+	Audit           []*CommerceAuditProjection  `protobuf:"bytes,5,rep,name=audit,proto3" json:"audit,omitempty"`
+	PaymentAttempts []*PaymentAttemptProjection `protobuf:"bytes,6,rep,name=payment_attempts,json=paymentAttempts,proto3" json:"payment_attempts,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *GetAccountCommerceResponse) Reset() {
+	*x = GetAccountCommerceResponse{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAccountCommerceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAccountCommerceResponse) ProtoMessage() {}
+
+func (x *GetAccountCommerceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAccountCommerceResponse.ProtoReflect.Descriptor instead.
+func (*GetAccountCommerceResponse) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *GetAccountCommerceResponse) GetAccount() *AccountProjection {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+func (x *GetAccountCommerceResponse) GetSubscription() *SubscriptionProjection {
+	if x != nil {
+		return x.Subscription
+	}
+	return nil
+}
+
+func (x *GetAccountCommerceResponse) GetEntitlement() *EntitlementProjection {
+	if x != nil {
+		return x.Entitlement
+	}
+	return nil
+}
+
+func (x *GetAccountCommerceResponse) GetOrders() []*OrderProjection {
+	if x != nil {
+		return x.Orders
+	}
+	return nil
+}
+
+func (x *GetAccountCommerceResponse) GetAudit() []*CommerceAuditProjection {
+	if x != nil {
+		return x.Audit
+	}
+	return nil
+}
+
+func (x *GetAccountCommerceResponse) GetPaymentAttempts() []*PaymentAttemptProjection {
+	if x != nil {
+		return x.PaymentAttempts
+	}
+	return nil
+}
+
+// CloudProductError 是账号与交易 HTTP/Companion adapter 返回的稳定失败投影。
+type CloudProductError struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	Retryable     bool                   `protobuf:"varint,3,opt,name=retryable,proto3" json:"retryable,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CloudProductError) Reset() {
+	*x = CloudProductError{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CloudProductError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CloudProductError) ProtoMessage() {}
+
+func (x *CloudProductError) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CloudProductError.ProtoReflect.Descriptor instead.
+func (*CloudProductError) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *CloudProductError) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *CloudProductError) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *CloudProductError) GetRetryable() bool {
+	if x != nil {
+		return x.Retryable
+	}
+	return false
 }
 
 var File_cloudpb_cloud_product_proto protoreflect.FileDescriptor
@@ -936,17 +3364,34 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x1bmanaged_p2p_max_concurrency\x18\x02 \x01(\rR\x18managedP2pMaxConcurrency\x124\n" +
 	"\x16standard_relay_enabled\x18\x03 \x01(\bR\x14standardRelayEnabled\x12<\n" +
 	"\x05relay\x18\x04 \x01(\v2&.termx.cloud.v1.RelayServiceCapabilityR\x05relay\x12,\n" +
-	"\x12cloud_device_limit\x18\x05 \x01(\rR\x10cloudDeviceLimit\"\xbc\x01\n" +
+	"\x12cloud_device_limit\x18\x05 \x01(\rR\x10cloudDeviceLimit\"\xd9\x02\n" +
 	"\x0ePlanDefinition\x12\x17\n" +
 	"\aplan_id\x18\x01 \x01(\tR\x06planId\x12!\n" +
 	"\fplan_version\x18\x02 \x01(\x04R\vplanVersion\x12.\n" +
 	"\x13billing_period_days\x18\x03 \x01(\rR\x11billingPeriodDays\x12>\n" +
 	"\n" +
 	"capability\x18\x04 \x01(\v2\x1e.termx.cloud.v1.PlanCapabilityR\n" +
-	"capability\"t\n" +
+	"capability\x12\x1a\n" +
+	"\bincluded\x18\x05 \x01(\bR\bincluded\x129\n" +
+	"\x05price\x18\x06 \x01(\v2#.termx.cloud.v1.PlanPriceDefinitionR\x05price\x12D\n" +
+	"\fpresentation\x18\a \x01(\v2 .termx.cloud.v1.PlanPresentationR\fpresentation\"\xc5\x01\n" +
+	"\x13PlanPriceDefinition\x124\n" +
+	"\x04mode\x18\x01 \x01(\x0e2 .termx.cloud.v1.CatalogPriceModeR\x04mode\x12\x1a\n" +
+	"\bcurrency\x18\x02 \x01(\tR\bcurrency\x12#\n" +
+	"\rmonthly_minor\x18\x03 \x01(\x03R\fmonthlyMinor\x12!\n" +
+	"\fyearly_minor\x18\x04 \x01(\x03R\vyearlyMinor\x12\x14\n" +
+	"\x05label\x18\x05 \x01(\tR\x05label\"\xd2\x01\n" +
+	"\x10PlanPresentation\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\aeyebrow\x18\x02 \x01(\tR\aeyebrow\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1b\n" +
+	"\tcta_label\x18\x04 \x01(\tR\bctaLabel\x12\x19\n" +
+	"\bcta_href\x18\x05 \x01(\tR\actaHref\x12\x1a\n" +
+	"\bfeatured\x18\x06 \x01(\bR\bfeatured\x12\x1a\n" +
+	"\bfeatures\x18\a \x03(\tR\bfeatures\"t\n" +
 	"\x13PlanCatalogContract\x12'\n" +
 	"\x0fcatalog_version\x18\x01 \x01(\x04R\x0ecatalogVersion\x124\n" +
-	"\x05plans\x18\x02 \x03(\v2\x1e.termx.cloud.v1.PlanDefinitionR\x05plans\"\xc1\x03\n" +
+	"\x05plans\x18\x02 \x03(\v2\x1e.termx.cloud.v1.PlanDefinitionR\x05plans\"\xbd\x04\n" +
 	"\x16SubscriptionProjection\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x1d\n" +
 	"\n" +
@@ -957,7 +3402,11 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x06status\x18\x06 \x01(\x0e2\".termx.cloud.v1.SubscriptionStatusR\x06status\x12F\n" +
 	" current_period_start_unix_millis\x18\a \x01(\x03R\x1ccurrentPeriodStartUnixMillis\x12B\n" +
 	"\x1ecurrent_period_end_unix_millis\x18\b \x01(\x03R\x1acurrentPeriodEndUnixMillis\x123\n" +
-	"\x16updated_at_unix_millis\x18\t \x01(\x03R\x13updatedAtUnixMillis\"\x96\x04\n" +
+	"\x16updated_at_unix_millis\x18\t \x01(\x03R\x13updatedAtUnixMillis\x12/\n" +
+	"\x14cancel_at_period_end\x18\n" +
+	" \x01(\bR\x11cancelAtPeriodEnd\x12-\n" +
+	"\x12provider_reference\x18\v \x01(\tR\x11providerReference\x12\x1a\n" +
+	"\brevision\x18\f \x01(\x04R\brevision\"\x96\x04\n" +
 	"\x15EntitlementProjection\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x129\n" +
@@ -985,7 +3434,151 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\"h\n" +
 	"\x1dGetAccountEntitlementResponse\x12G\n" +
-	"\ventitlement\x18\x01 \x01(\v2%.termx.cloud.v1.EntitlementProjectionR\ventitlement*\x8e\x02\n" +
+	"\ventitlement\x18\x01 \x01(\v2%.termx.cloud.v1.EntitlementProjectionR\ventitlement\"\xde\x01\n" +
+	"\x11AccountProjection\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x14\n" +
+	"\x05email\x18\x03 \x01(\tR\x05email\x12!\n" +
+	"\fdisplay_name\x18\x04 \x01(\tR\vdisplayName\x12#\n" +
+	"\rauth_revision\x18\x05 \x01(\x04R\fauthRevision\x123\n" +
+	"\x16created_at_unix_millis\x18\x06 \x01(\x03R\x13createdAtUnixMillis\"\xef\x02\n" +
+	"\x18AccountSessionCredential\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12;\n" +
+	"\aaccount\x18\x02 \x01(\v2!.termx.cloud.v1.AccountProjectionR\aaccount\x12!\n" +
+	"\faccess_token\x18\x03 \x01(\fR\vaccessToken\x12#\n" +
+	"\rrefresh_token\x18\x04 \x01(\fR\frefreshToken\x12@\n" +
+	"\x1daccess_expires_at_unix_millis\x18\x05 \x01(\x03R\x19accessExpiresAtUnixMillis\x12B\n" +
+	"\x1erefresh_expires_at_unix_millis\x18\x06 \x01(\x03R\x1arefreshExpiresAtUnixMillis\x12)\n" +
+	"\x10session_revision\x18\a \x01(\x04R\x0fsessionRevision\"o\n" +
+	"\x16RegisterAccountRequest\x12\x14\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
+	"\bpassword\x18\x02 \x01(\tR\bpassword\x12#\n" +
+	"\rreferral_code\x18\x03 \x01(\tR\freferralCode\"]\n" +
+	"\x17RegisterAccountResponse\x12B\n" +
+	"\asession\x18\x01 \x01(\v2(.termx.cloud.v1.AccountSessionCredentialR\asession\"H\n" +
+	"\x14PasswordLoginRequest\x12\x14\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
+	"\bpassword\x18\x02 \x01(\tR\bpassword\"[\n" +
+	"\x15PasswordLoginResponse\x12B\n" +
+	"\asession\x18\x01 \x01(\v2(.termx.cloud.v1.AccountSessionCredentialR\asession\"C\n" +
+	"\x1cRefreshAccountSessionRequest\x12#\n" +
+	"\rrefresh_token\x18\x01 \x01(\fR\frefreshToken\"c\n" +
+	"\x1dRefreshAccountSessionResponse\x12B\n" +
+	"\asession\x18\x01 \x01(\v2(.termx.cloud.v1.AccountSessionCredentialR\asession\"n\n" +
+	"\x1bLogoutAccountSessionRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x120\n" +
+	"\x14all_account_sessions\x18\x02 \x01(\bR\x12allAccountSessions\"\x1e\n" +
+	"\x1cLogoutAccountSessionResponse\"l\n" +
+	"\x1cChangeAccountPasswordRequest\x12)\n" +
+	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\x12!\n" +
+	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"c\n" +
+	"\x1dChangeAccountPasswordResponse\x12B\n" +
+	"\asession\x18\x01 \x01(\v2(.termx.cloud.v1.AccountSessionCredentialR\asession\"\xa3\x05\n" +
+	"\x0fOrderProjection\x12\x19\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x02 \x01(\tR\taccountId\x12\x17\n" +
+	"\aplan_id\x18\x03 \x01(\tR\x06planId\x12!\n" +
+	"\fplan_version\x18\x04 \x01(\x04R\vplanVersion\x123\n" +
+	"\x06status\x18\x05 \x01(\x0e2\x1b.termx.cloud.v1.OrderStatusR\x06status\x123\n" +
+	"\x16created_at_unix_millis\x18\x06 \x01(\x03R\x13createdAtUnixMillis\x123\n" +
+	"\x16settled_at_unix_millis\x18\a \x01(\x03R\x13settledAtUnixMillis\x12-\n" +
+	"\x12provider_reference\x18\b \x01(\tR\x11providerReference\x12\x1a\n" +
+	"\brevision\x18\t \x01(\x04R\brevision\x12]\n" +
+	"\x14requested_transition\x18\n" +
+	" \x01(\x0e2*.termx.cloud.v1.SubscriptionTransitionKindR\x13requestedTransition\x12@\n" +
+	"\x1csource_subscription_revision\x18\v \x01(\x04R\x1asourceSubscriptionRevision\x12$\n" +
+	"\x0esource_plan_id\x18\f \x01(\tR\fsourcePlanId\x12.\n" +
+	"\x13source_plan_version\x18\r \x01(\x04R\x11sourcePlanVersion\x129\n" +
+	"\x05price\x18\x0e \x01(\v2#.termx.cloud.v1.PlanPriceDefinitionR\x05price\"\x91\x03\n" +
+	"\x18PaymentAttemptProjection\x12,\n" +
+	"\x12payment_attempt_id\x18\x01 \x01(\tR\x10paymentAttemptId\x12\x19\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x03 \x01(\tR\taccountId\x12\x1a\n" +
+	"\bprovider\x18\x04 \x01(\tR\bprovider\x12<\n" +
+	"\x06status\x18\x05 \x01(\x0e2$.termx.cloud.v1.PaymentAttemptStatusR\x06status\x123\n" +
+	"\x16created_at_unix_millis\x18\x06 \x01(\x03R\x13createdAtUnixMillis\x123\n" +
+	"\x16updated_at_unix_millis\x18\a \x01(\x03R\x13updatedAtUnixMillis\x12-\n" +
+	"\x12provider_reference\x18\b \x01(\tR\x11providerReference\x12\x1a\n" +
+	"\brevision\x18\t \x01(\x04R\brevision\"\x8f\x01\n" +
+	"\x15CreateCheckoutRequest\x12\x17\n" +
+	"\aplan_id\x18\x01 \x01(\tR\x06planId\x12]\n" +
+	"\x14requested_transition\x18\x02 \x01(\x0e2*.termx.cloud.v1.SubscriptionTransitionKindR\x13requestedTransition\"O\n" +
+	"\x16CreateCheckoutResponse\x125\n" +
+	"\x05order\x18\x01 \x01(\v2\x1f.termx.cloud.v1.OrderProjectionR\x05order\"T\n" +
+	"\x1bCreatePaymentAttemptRequest\x12\x19\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x1a\n" +
+	"\bprovider\x18\x02 \x01(\tR\bprovider\"q\n" +
+	"\x1cCreatePaymentAttemptResponse\x12Q\n" +
+	"\x0fpayment_attempt\x18\x01 \x01(\v2(.termx.cloud.v1.PaymentAttemptProjectionR\x0epaymentAttempt\"\xab\x03\n" +
+	"\x16NormalizedPaymentEvent\x12*\n" +
+	"\x11provider_event_id\x18\x01 \x01(\tR\x0fproviderEventId\x12\x1a\n" +
+	"\bprovider\x18\x02 \x01(\tR\bprovider\x12?\n" +
+	"\n" +
+	"event_type\x18\x03 \x01(\x0e2 .termx.cloud.v1.PaymentEventTypeR\teventType\x12\x19\n" +
+	"\border_id\x18\x04 \x01(\tR\aorderId\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x05 \x01(\tR\taccountId\x12\x17\n" +
+	"\aplan_id\x18\x06 \x01(\tR\x06planId\x12!\n" +
+	"\fplan_version\x18\a \x01(\x04R\vplanVersion\x12-\n" +
+	"\x12provider_reference\x18\b \x01(\tR\x11providerReference\x125\n" +
+	"\x17occurred_at_unix_millis\x18\t \x01(\x03R\x14occurredAtUnixMillis\x12,\n" +
+	"\x12payment_attempt_id\x18\n" +
+	" \x01(\tR\x10paymentAttemptId\"X\n" +
+	"\x18ApplyPaymentEventRequest\x12<\n" +
+	"\x05event\x18\x01 \x01(\v2&.termx.cloud.v1.NormalizedPaymentEventR\x05event\"\xb5\x02\n" +
+	"\x19ApplyPaymentEventResponse\x125\n" +
+	"\x05order\x18\x01 \x01(\v2\x1f.termx.cloud.v1.OrderProjectionR\x05order\x12J\n" +
+	"\fsubscription\x18\x02 \x01(\v2&.termx.cloud.v1.SubscriptionProjectionR\fsubscription\x12B\n" +
+	"\vevent_state\x18\x03 \x01(\x0e2!.termx.cloud.v1.PaymentEventStateR\n" +
+	"eventState\x12Q\n" +
+	"\x0fpayment_attempt\x18\x04 \x01(\v2(.termx.cloud.v1.PaymentAttemptProjectionR\x0epaymentAttempt\"w\n" +
+	"\x19ConfirmTestPaymentRequest\x12\x19\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\x12?\n" +
+	"\n" +
+	"event_type\x18\x02 \x01(\x0e2 .termx.cloud.v1.PaymentEventTypeR\teventType\"_\n" +
+	"\x1aConfirmTestPaymentResponse\x12A\n" +
+	"\x06result\x18\x01 \x01(\v2).termx.cloud.v1.ApplyPaymentEventResponseR\x06result\"\xb4\x02\n" +
+	"\x1dTransitionSubscriptionRequest\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\x12J\n" +
+	"\n" +
+	"transition\x18\x02 \x01(\x0e2*.termx.cloud.v1.SubscriptionTransitionKindR\n" +
+	"transition\x12$\n" +
+	"\x0etarget_plan_id\x18\x03 \x01(\tR\ftargetPlanId\x12.\n" +
+	"\x13target_plan_version\x18\x04 \x01(\x04R\x11targetPlanVersion\x127\n" +
+	"\x18effective_at_unix_millis\x18\x05 \x01(\x03R\x15effectiveAtUnixMillis\x12\x19\n" +
+	"\bactor_id\x18\x06 \x01(\tR\aactorId\"\xb5\x01\n" +
+	"\x1eTransitionSubscriptionResponse\x12J\n" +
+	"\fsubscription\x18\x01 \x01(\v2&.termx.cloud.v1.SubscriptionProjectionR\fsubscription\x12G\n" +
+	"\ventitlement\x18\x02 \x01(\v2%.termx.cloud.v1.EntitlementProjectionR\ventitlement\"\xde\x01\n" +
+	"\x17CommerceAuditProjection\x12\x19\n" +
+	"\baudit_id\x18\x01 \x01(\tR\aauditId\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x02 \x01(\tR\taccountId\x12\x19\n" +
+	"\bactor_id\x18\x03 \x01(\tR\aactorId\x12\x16\n" +
+	"\x06action\x18\x04 \x01(\tR\x06action\x12\x1f\n" +
+	"\vresource_id\x18\x05 \x01(\tR\n" +
+	"resourceId\x125\n" +
+	"\x17occurred_at_unix_millis\x18\x06 \x01(\x03R\x14occurredAtUnixMillis\":\n" +
+	"\x19GetAccountCommerceRequest\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\"\xbb\x03\n" +
+	"\x1aGetAccountCommerceResponse\x12;\n" +
+	"\aaccount\x18\x01 \x01(\v2!.termx.cloud.v1.AccountProjectionR\aaccount\x12J\n" +
+	"\fsubscription\x18\x02 \x01(\v2&.termx.cloud.v1.SubscriptionProjectionR\fsubscription\x12G\n" +
+	"\ventitlement\x18\x03 \x01(\v2%.termx.cloud.v1.EntitlementProjectionR\ventitlement\x127\n" +
+	"\x06orders\x18\x04 \x03(\v2\x1f.termx.cloud.v1.OrderProjectionR\x06orders\x12=\n" +
+	"\x05audit\x18\x05 \x03(\v2'.termx.cloud.v1.CommerceAuditProjectionR\x05audit\x12S\n" +
+	"\x10payment_attempts\x18\x06 \x03(\v2(.termx.cloud.v1.PaymentAttemptProjectionR\x0fpaymentAttempts\"_\n" +
+	"\x11CloudProductError\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +
+	"\tretryable\x18\x03 \x01(\bR\tretryable*\xf1\x02\n" +
 	"\x12SubscriptionStatus\x12#\n" +
 	"\x1fSUBSCRIPTION_STATUS_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bSUBSCRIPTION_STATUS_PENDING\x10\x01\x12\x1e\n" +
@@ -993,7 +3586,54 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"(SUBSCRIPTION_STATUS_CANCEL_AT_PERIOD_END\x10\x03\x12 \n" +
 	"\x1cSUBSCRIPTION_STATUS_CANCELED\x10\x04\x12!\n" +
 	"\x1dSUBSCRIPTION_STATUS_SUSPENDED\x10\x05\x12\x1f\n" +
-	"\x1bSUBSCRIPTION_STATUS_EXPIRED\x10\x06*\x98\x01\n" +
+	"\x1bSUBSCRIPTION_STATUS_EXPIRED\x10\x06\x12 \n" +
+	"\x1cSUBSCRIPTION_STATUS_TRIALING\x10\a\x12\x1d\n" +
+	"\x19SUBSCRIPTION_STATUS_GRACE\x10\b\x12 \n" +
+	"\x1cSUBSCRIPTION_STATUS_PAST_DUE\x10\t*\xb2\x01\n" +
+	"\vOrderStatus\x12\x1c\n" +
+	"\x18ORDER_STATUS_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14ORDER_STATUS_PENDING\x10\x01\x12\x15\n" +
+	"\x11ORDER_STATUS_PAID\x10\x02\x12\x1f\n" +
+	"\x1bORDER_STATUS_PAYMENT_FAILED\x10\x03\x12\x19\n" +
+	"\x15ORDER_STATUS_REFUNDED\x10\x04\x12\x18\n" +
+	"\x14ORDER_STATUS_REVOKED\x10\x05*\x9a\x01\n" +
+	"\x10CatalogPriceMode\x12\"\n" +
+	"\x1eCATALOG_PRICE_MODE_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bCATALOG_PRICE_MODE_INCLUDED\x10\x01\x12!\n" +
+	"\x1dCATALOG_PRICE_MODE_CONFIGURED\x10\x02\x12\x1e\n" +
+	"\x1aCATALOG_PRICE_MODE_CONTACT\x10\x03*\xab\x01\n" +
+	"\x14PaymentAttemptStatus\x12&\n" +
+	"\"PAYMENT_ATTEMPT_STATUS_UNSPECIFIED\x10\x00\x12\"\n" +
+	"\x1ePAYMENT_ATTEMPT_STATUS_PENDING\x10\x01\x12$\n" +
+	" PAYMENT_ATTEMPT_STATUS_SUCCEEDED\x10\x02\x12!\n" +
+	"\x1dPAYMENT_ATTEMPT_STATUS_FAILED\x10\x03*\xdb\x01\n" +
+	"\x10PaymentEventType\x12\"\n" +
+	"\x1ePAYMENT_EVENT_TYPE_UNSPECIFIED\x10\x00\x12 \n" +
+	"\x1cPAYMENT_EVENT_TYPE_SUCCEEDED\x10\x01\x12\x1d\n" +
+	"\x19PAYMENT_EVENT_TYPE_FAILED\x10\x02\x12\x1f\n" +
+	"\x1bPAYMENT_EVENT_TYPE_REFUNDED\x10\x03\x12\x1e\n" +
+	"\x1aPAYMENT_EVENT_TYPE_REVOKED\x10\x04\x12!\n" +
+	"\x1dPAYMENT_EVENT_TYPE_CHARGEBACK\x10\x05*\x9d\x01\n" +
+	"\x11PaymentEventState\x12#\n" +
+	"\x1fPAYMENT_EVENT_STATE_UNSPECIFIED\x10\x00\x12 \n" +
+	"\x1cPAYMENT_EVENT_STATE_RECEIVED\x10\x01\x12\x1f\n" +
+	"\x1bPAYMENT_EVENT_STATE_APPLIED\x10\x02\x12 \n" +
+	"\x1cPAYMENT_EVENT_STATE_REJECTED\x10\x03*\xd3\x04\n" +
+	"\x1aSubscriptionTransitionKind\x12,\n" +
+	"(SUBSCRIPTION_TRANSITION_KIND_UNSPECIFIED\x10\x00\x12)\n" +
+	"%SUBSCRIPTION_TRANSITION_KIND_ACTIVATE\x10\x01\x12&\n" +
+	"\"SUBSCRIPTION_TRANSITION_KIND_RENEW\x10\x02\x12(\n" +
+	"$SUBSCRIPTION_TRANSITION_KIND_UPGRADE\x10\x03\x12*\n" +
+	"&SUBSCRIPTION_TRANSITION_KIND_DOWNGRADE\x10\x04\x125\n" +
+	"1SUBSCRIPTION_TRANSITION_KIND_CANCEL_AT_PERIOD_END\x10\x05\x12'\n" +
+	"#SUBSCRIPTION_TRANSITION_KIND_RESUME\x10\x06\x12/\n" +
+	"+SUBSCRIPTION_TRANSITION_KIND_PAYMENT_FAILED\x10\a\x12(\n" +
+	"$SUBSCRIPTION_TRANSITION_KIND_SUSPEND\x10\b\x12(\n" +
+	"$SUBSCRIPTION_TRANSITION_KIND_RESTORE\x10\t\x12'\n" +
+	"#SUBSCRIPTION_TRANSITION_KIND_EXPIRE\x10\n" +
+	"\x12'\n" +
+	"#SUBSCRIPTION_TRANSITION_KIND_REFUND\x10\v\x12'\n" +
+	"#SUBSCRIPTION_TRANSITION_KIND_REVOKE\x10\f*\x98\x01\n" +
 	"\x11EntitlementStatus\x12\"\n" +
 	"\x1eENTITLEMENT_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19ENTITLEMENT_STATUS_ACTIVE\x10\x01\x12 \n" +
@@ -1012,39 +3652,108 @@ func file_cloudpb_cloud_product_proto_rawDescGZIP() []byte {
 	return file_cloudpb_cloud_product_proto_rawDescData
 }
 
-var file_cloudpb_cloud_product_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_cloudpb_cloud_product_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_cloudpb_cloud_product_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
+var file_cloudpb_cloud_product_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
 var file_cloudpb_cloud_product_proto_goTypes = []any{
 	(SubscriptionStatus)(0),                // 0: termx.cloud.v1.SubscriptionStatus
-	(EntitlementStatus)(0),                 // 1: termx.cloud.v1.EntitlementStatus
-	(*RelayServiceCapability)(nil),         // 2: termx.cloud.v1.RelayServiceCapability
-	(*PlanCapability)(nil),                 // 3: termx.cloud.v1.PlanCapability
-	(*PlanDefinition)(nil),                 // 4: termx.cloud.v1.PlanDefinition
-	(*PlanCatalogContract)(nil),            // 5: termx.cloud.v1.PlanCatalogContract
-	(*SubscriptionProjection)(nil),         // 6: termx.cloud.v1.SubscriptionProjection
-	(*EntitlementProjection)(nil),          // 7: termx.cloud.v1.EntitlementProjection
-	(*GetPlanCatalogRequest)(nil),          // 8: termx.cloud.v1.GetPlanCatalogRequest
-	(*GetPlanCatalogResponse)(nil),         // 9: termx.cloud.v1.GetPlanCatalogResponse
-	(*GetAccountSubscriptionRequest)(nil),  // 10: termx.cloud.v1.GetAccountSubscriptionRequest
-	(*GetAccountSubscriptionResponse)(nil), // 11: termx.cloud.v1.GetAccountSubscriptionResponse
-	(*GetAccountEntitlementRequest)(nil),   // 12: termx.cloud.v1.GetAccountEntitlementRequest
-	(*GetAccountEntitlementResponse)(nil),  // 13: termx.cloud.v1.GetAccountEntitlementResponse
+	(OrderStatus)(0),                       // 1: termx.cloud.v1.OrderStatus
+	(CatalogPriceMode)(0),                  // 2: termx.cloud.v1.CatalogPriceMode
+	(PaymentAttemptStatus)(0),              // 3: termx.cloud.v1.PaymentAttemptStatus
+	(PaymentEventType)(0),                  // 4: termx.cloud.v1.PaymentEventType
+	(PaymentEventState)(0),                 // 5: termx.cloud.v1.PaymentEventState
+	(SubscriptionTransitionKind)(0),        // 6: termx.cloud.v1.SubscriptionTransitionKind
+	(EntitlementStatus)(0),                 // 7: termx.cloud.v1.EntitlementStatus
+	(*RelayServiceCapability)(nil),         // 8: termx.cloud.v1.RelayServiceCapability
+	(*PlanCapability)(nil),                 // 9: termx.cloud.v1.PlanCapability
+	(*PlanDefinition)(nil),                 // 10: termx.cloud.v1.PlanDefinition
+	(*PlanPriceDefinition)(nil),            // 11: termx.cloud.v1.PlanPriceDefinition
+	(*PlanPresentation)(nil),               // 12: termx.cloud.v1.PlanPresentation
+	(*PlanCatalogContract)(nil),            // 13: termx.cloud.v1.PlanCatalogContract
+	(*SubscriptionProjection)(nil),         // 14: termx.cloud.v1.SubscriptionProjection
+	(*EntitlementProjection)(nil),          // 15: termx.cloud.v1.EntitlementProjection
+	(*GetPlanCatalogRequest)(nil),          // 16: termx.cloud.v1.GetPlanCatalogRequest
+	(*GetPlanCatalogResponse)(nil),         // 17: termx.cloud.v1.GetPlanCatalogResponse
+	(*GetAccountSubscriptionRequest)(nil),  // 18: termx.cloud.v1.GetAccountSubscriptionRequest
+	(*GetAccountSubscriptionResponse)(nil), // 19: termx.cloud.v1.GetAccountSubscriptionResponse
+	(*GetAccountEntitlementRequest)(nil),   // 20: termx.cloud.v1.GetAccountEntitlementRequest
+	(*GetAccountEntitlementResponse)(nil),  // 21: termx.cloud.v1.GetAccountEntitlementResponse
+	(*AccountProjection)(nil),              // 22: termx.cloud.v1.AccountProjection
+	(*AccountSessionCredential)(nil),       // 23: termx.cloud.v1.AccountSessionCredential
+	(*RegisterAccountRequest)(nil),         // 24: termx.cloud.v1.RegisterAccountRequest
+	(*RegisterAccountResponse)(nil),        // 25: termx.cloud.v1.RegisterAccountResponse
+	(*PasswordLoginRequest)(nil),           // 26: termx.cloud.v1.PasswordLoginRequest
+	(*PasswordLoginResponse)(nil),          // 27: termx.cloud.v1.PasswordLoginResponse
+	(*RefreshAccountSessionRequest)(nil),   // 28: termx.cloud.v1.RefreshAccountSessionRequest
+	(*RefreshAccountSessionResponse)(nil),  // 29: termx.cloud.v1.RefreshAccountSessionResponse
+	(*LogoutAccountSessionRequest)(nil),    // 30: termx.cloud.v1.LogoutAccountSessionRequest
+	(*LogoutAccountSessionResponse)(nil),   // 31: termx.cloud.v1.LogoutAccountSessionResponse
+	(*ChangeAccountPasswordRequest)(nil),   // 32: termx.cloud.v1.ChangeAccountPasswordRequest
+	(*ChangeAccountPasswordResponse)(nil),  // 33: termx.cloud.v1.ChangeAccountPasswordResponse
+	(*OrderProjection)(nil),                // 34: termx.cloud.v1.OrderProjection
+	(*PaymentAttemptProjection)(nil),       // 35: termx.cloud.v1.PaymentAttemptProjection
+	(*CreateCheckoutRequest)(nil),          // 36: termx.cloud.v1.CreateCheckoutRequest
+	(*CreateCheckoutResponse)(nil),         // 37: termx.cloud.v1.CreateCheckoutResponse
+	(*CreatePaymentAttemptRequest)(nil),    // 38: termx.cloud.v1.CreatePaymentAttemptRequest
+	(*CreatePaymentAttemptResponse)(nil),   // 39: termx.cloud.v1.CreatePaymentAttemptResponse
+	(*NormalizedPaymentEvent)(nil),         // 40: termx.cloud.v1.NormalizedPaymentEvent
+	(*ApplyPaymentEventRequest)(nil),       // 41: termx.cloud.v1.ApplyPaymentEventRequest
+	(*ApplyPaymentEventResponse)(nil),      // 42: termx.cloud.v1.ApplyPaymentEventResponse
+	(*ConfirmTestPaymentRequest)(nil),      // 43: termx.cloud.v1.ConfirmTestPaymentRequest
+	(*ConfirmTestPaymentResponse)(nil),     // 44: termx.cloud.v1.ConfirmTestPaymentResponse
+	(*TransitionSubscriptionRequest)(nil),  // 45: termx.cloud.v1.TransitionSubscriptionRequest
+	(*TransitionSubscriptionResponse)(nil), // 46: termx.cloud.v1.TransitionSubscriptionResponse
+	(*CommerceAuditProjection)(nil),        // 47: termx.cloud.v1.CommerceAuditProjection
+	(*GetAccountCommerceRequest)(nil),      // 48: termx.cloud.v1.GetAccountCommerceRequest
+	(*GetAccountCommerceResponse)(nil),     // 49: termx.cloud.v1.GetAccountCommerceResponse
+	(*CloudProductError)(nil),              // 50: termx.cloud.v1.CloudProductError
 }
 var file_cloudpb_cloud_product_proto_depIdxs = []int32{
-	2, // 0: termx.cloud.v1.PlanCapability.relay:type_name -> termx.cloud.v1.RelayServiceCapability
-	3, // 1: termx.cloud.v1.PlanDefinition.capability:type_name -> termx.cloud.v1.PlanCapability
-	4, // 2: termx.cloud.v1.PlanCatalogContract.plans:type_name -> termx.cloud.v1.PlanDefinition
-	0, // 3: termx.cloud.v1.SubscriptionProjection.status:type_name -> termx.cloud.v1.SubscriptionStatus
-	1, // 4: termx.cloud.v1.EntitlementProjection.status:type_name -> termx.cloud.v1.EntitlementStatus
-	3, // 5: termx.cloud.v1.EntitlementProjection.capability:type_name -> termx.cloud.v1.PlanCapability
-	5, // 6: termx.cloud.v1.GetPlanCatalogResponse.catalog:type_name -> termx.cloud.v1.PlanCatalogContract
-	6, // 7: termx.cloud.v1.GetAccountSubscriptionResponse.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
-	7, // 8: termx.cloud.v1.GetAccountEntitlementResponse.entitlement:type_name -> termx.cloud.v1.EntitlementProjection
-	9, // [9:9] is the sub-list for method output_type
-	9, // [9:9] is the sub-list for method input_type
-	9, // [9:9] is the sub-list for extension type_name
-	9, // [9:9] is the sub-list for extension extendee
-	0, // [0:9] is the sub-list for field type_name
+	8,  // 0: termx.cloud.v1.PlanCapability.relay:type_name -> termx.cloud.v1.RelayServiceCapability
+	9,  // 1: termx.cloud.v1.PlanDefinition.capability:type_name -> termx.cloud.v1.PlanCapability
+	11, // 2: termx.cloud.v1.PlanDefinition.price:type_name -> termx.cloud.v1.PlanPriceDefinition
+	12, // 3: termx.cloud.v1.PlanDefinition.presentation:type_name -> termx.cloud.v1.PlanPresentation
+	2,  // 4: termx.cloud.v1.PlanPriceDefinition.mode:type_name -> termx.cloud.v1.CatalogPriceMode
+	10, // 5: termx.cloud.v1.PlanCatalogContract.plans:type_name -> termx.cloud.v1.PlanDefinition
+	0,  // 6: termx.cloud.v1.SubscriptionProjection.status:type_name -> termx.cloud.v1.SubscriptionStatus
+	7,  // 7: termx.cloud.v1.EntitlementProjection.status:type_name -> termx.cloud.v1.EntitlementStatus
+	9,  // 8: termx.cloud.v1.EntitlementProjection.capability:type_name -> termx.cloud.v1.PlanCapability
+	13, // 9: termx.cloud.v1.GetPlanCatalogResponse.catalog:type_name -> termx.cloud.v1.PlanCatalogContract
+	14, // 10: termx.cloud.v1.GetAccountSubscriptionResponse.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
+	15, // 11: termx.cloud.v1.GetAccountEntitlementResponse.entitlement:type_name -> termx.cloud.v1.EntitlementProjection
+	22, // 12: termx.cloud.v1.AccountSessionCredential.account:type_name -> termx.cloud.v1.AccountProjection
+	23, // 13: termx.cloud.v1.RegisterAccountResponse.session:type_name -> termx.cloud.v1.AccountSessionCredential
+	23, // 14: termx.cloud.v1.PasswordLoginResponse.session:type_name -> termx.cloud.v1.AccountSessionCredential
+	23, // 15: termx.cloud.v1.RefreshAccountSessionResponse.session:type_name -> termx.cloud.v1.AccountSessionCredential
+	23, // 16: termx.cloud.v1.ChangeAccountPasswordResponse.session:type_name -> termx.cloud.v1.AccountSessionCredential
+	1,  // 17: termx.cloud.v1.OrderProjection.status:type_name -> termx.cloud.v1.OrderStatus
+	6,  // 18: termx.cloud.v1.OrderProjection.requested_transition:type_name -> termx.cloud.v1.SubscriptionTransitionKind
+	11, // 19: termx.cloud.v1.OrderProjection.price:type_name -> termx.cloud.v1.PlanPriceDefinition
+	3,  // 20: termx.cloud.v1.PaymentAttemptProjection.status:type_name -> termx.cloud.v1.PaymentAttemptStatus
+	6,  // 21: termx.cloud.v1.CreateCheckoutRequest.requested_transition:type_name -> termx.cloud.v1.SubscriptionTransitionKind
+	34, // 22: termx.cloud.v1.CreateCheckoutResponse.order:type_name -> termx.cloud.v1.OrderProjection
+	35, // 23: termx.cloud.v1.CreatePaymentAttemptResponse.payment_attempt:type_name -> termx.cloud.v1.PaymentAttemptProjection
+	4,  // 24: termx.cloud.v1.NormalizedPaymentEvent.event_type:type_name -> termx.cloud.v1.PaymentEventType
+	40, // 25: termx.cloud.v1.ApplyPaymentEventRequest.event:type_name -> termx.cloud.v1.NormalizedPaymentEvent
+	34, // 26: termx.cloud.v1.ApplyPaymentEventResponse.order:type_name -> termx.cloud.v1.OrderProjection
+	14, // 27: termx.cloud.v1.ApplyPaymentEventResponse.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
+	5,  // 28: termx.cloud.v1.ApplyPaymentEventResponse.event_state:type_name -> termx.cloud.v1.PaymentEventState
+	35, // 29: termx.cloud.v1.ApplyPaymentEventResponse.payment_attempt:type_name -> termx.cloud.v1.PaymentAttemptProjection
+	4,  // 30: termx.cloud.v1.ConfirmTestPaymentRequest.event_type:type_name -> termx.cloud.v1.PaymentEventType
+	42, // 31: termx.cloud.v1.ConfirmTestPaymentResponse.result:type_name -> termx.cloud.v1.ApplyPaymentEventResponse
+	6,  // 32: termx.cloud.v1.TransitionSubscriptionRequest.transition:type_name -> termx.cloud.v1.SubscriptionTransitionKind
+	14, // 33: termx.cloud.v1.TransitionSubscriptionResponse.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
+	15, // 34: termx.cloud.v1.TransitionSubscriptionResponse.entitlement:type_name -> termx.cloud.v1.EntitlementProjection
+	22, // 35: termx.cloud.v1.GetAccountCommerceResponse.account:type_name -> termx.cloud.v1.AccountProjection
+	14, // 36: termx.cloud.v1.GetAccountCommerceResponse.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
+	15, // 37: termx.cloud.v1.GetAccountCommerceResponse.entitlement:type_name -> termx.cloud.v1.EntitlementProjection
+	34, // 38: termx.cloud.v1.GetAccountCommerceResponse.orders:type_name -> termx.cloud.v1.OrderProjection
+	47, // 39: termx.cloud.v1.GetAccountCommerceResponse.audit:type_name -> termx.cloud.v1.CommerceAuditProjection
+	35, // 40: termx.cloud.v1.GetAccountCommerceResponse.payment_attempts:type_name -> termx.cloud.v1.PaymentAttemptProjection
+	41, // [41:41] is the sub-list for method output_type
+	41, // [41:41] is the sub-list for method input_type
+	41, // [41:41] is the sub-list for extension type_name
+	41, // [41:41] is the sub-list for extension extendee
+	0,  // [0:41] is the sub-list for field type_name
 }
 
 func init() { file_cloudpb_cloud_product_proto_init() }
@@ -1057,8 +3766,8 @@ func file_cloudpb_cloud_product_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloudpb_cloud_product_proto_rawDesc), len(file_cloudpb_cloud_product_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   12,
+			NumEnums:      8,
+			NumMessages:   43,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

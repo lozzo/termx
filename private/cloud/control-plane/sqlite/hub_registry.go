@@ -80,6 +80,40 @@ CREATE TABLE IF NOT EXISTS managed_peer_topology(
   account_id TEXT NOT NULL, hub_id TEXT NOT NULL, control_generation INTEGER NOT NULL,
   projection BLOB NOT NULL, updated_at TEXT NOT NULL,
   PRIMARY KEY(daemon_device_id, managed_session_id, session_incarnation)
+);
+CREATE TABLE IF NOT EXISTS commerce_accounts(
+  account_id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, projection BLOB NOT NULL,
+  password_hash BLOB NOT NULL, auth_revision INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS commerce_sessions(
+  session_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, access_hash BLOB NOT NULL UNIQUE,
+  refresh_hash BLOB NOT NULL UNIQUE, access_expires_at INTEGER NOT NULL,
+  refresh_expires_at INTEGER NOT NULL, revision INTEGER NOT NULL, revoked INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS commerce_sessions_account ON commerce_sessions(account_id);
+CREATE TABLE IF NOT EXISTS commerce_orders(
+  order_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, revision INTEGER NOT NULL,
+  projection BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS commerce_orders_account ON commerce_orders(account_id);
+CREATE TABLE IF NOT EXISTS commerce_payment_attempts(
+  payment_attempt_id TEXT PRIMARY KEY, order_id TEXT NOT NULL, account_id TEXT NOT NULL,
+  revision INTEGER NOT NULL, projection BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS commerce_payment_attempts_account ON commerce_payment_attempts(account_id);
+CREATE TABLE IF NOT EXISTS commerce_payment_events(
+  provider_event_id TEXT PRIMARY KEY, digest BLOB NOT NULL, event BLOB NOT NULL,
+  state INTEGER NOT NULL, result BLOB
+);
+CREATE TABLE IF NOT EXISTS commerce_subscriptions(
+  account_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, projection BLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS commerce_entitlements(
+  account_id TEXT PRIMARY KEY, projection BLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS commerce_audit(
+  audit_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, occurred_at INTEGER NOT NULL,
+  projection BLOB NOT NULL
 );`)
 	return err
 }

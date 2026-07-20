@@ -145,9 +145,20 @@ func TestCloudProductUsesOnePlanCapabilityAcrossCatalogEntitlementAndHubPolicy(t
 	}
 	for _, name := range []protoreflect.Name{
 		"GetPlanCatalogRequest", "GetPlanCatalogResponse", "GetAccountSubscriptionRequest", "GetAccountSubscriptionResponse", "GetAccountEntitlementRequest", "GetAccountEntitlementResponse",
+		"RegisterAccountRequest", "RegisterAccountResponse", "PasswordLoginRequest", "PasswordLoginResponse", "RefreshAccountSessionRequest", "RefreshAccountSessionResponse",
+		"LogoutAccountSessionRequest", "LogoutAccountSessionResponse", "ChangeAccountPasswordRequest", "ChangeAccountPasswordResponse",
+		"PlanPriceDefinition", "PlanPresentation", "CreateCheckoutRequest", "CreateCheckoutResponse", "PaymentAttemptProjection", "CreatePaymentAttemptRequest", "CreatePaymentAttemptResponse",
+		"ApplyPaymentEventRequest", "ApplyPaymentEventResponse", "ConfirmTestPaymentRequest", "ConfirmTestPaymentResponse",
+		"TransitionSubscriptionRequest", "TransitionSubscriptionResponse", "GetAccountCommerceRequest", "GetAccountCommerceResponse", "CloudProductError",
 	} {
 		if File_cloudpb_cloud_product_proto.Messages().ByName(name) == nil {
 			t.Fatalf("cloud product proto missing %s", name)
+		}
+	}
+	orderFields := descriptorFieldNames((&OrderProjection{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"requested_transition", "source_subscription_revision", "source_plan_id", "source_plan_version", "price"} {
+		if !orderFields[required] {
+			t.Fatalf("OrderProjection missing %q: %v", required, orderFields)
 		}
 	}
 }

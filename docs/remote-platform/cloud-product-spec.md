@@ -222,6 +222,8 @@ Refund/Revocation
 - 相同 provider event 重放必须返回原结果，不得重复延长周期或重复奖励。
 - 支付成功、失败、退款、撤销和 chargeback 都必须有明确状态转换和审计记录。
 - development `TestPaymentProvider` 必须走与正式 provider 相同的 normalized event 入口，不能直接调用 `SetEntitlement`。
+- development test provider 必须由 Controller 显式配置启用；默认配置不得暴露测试付款入口。
+- checkout 必须记录创建时的 Subscription revision 与源套餐版本。迟到 payment event 不能覆盖后续套餐变化；拒绝结果必须进入 durable journal 和审计。
 - 第一阶段不要求接入真实支付 provider，但测试交易必须从 Web 用户操作开始，经过 checkout、provider event、subscription、entitlement 和 Hub policy 全链路。
 
 ## 8. 用户账号中心

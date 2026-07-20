@@ -19,11 +19,11 @@
 - `private/cloud/devcloud` 只负责启动一个 Controller 与两个独立 Edge 子进程，不再持有 Cloud 业务状态或通过 Go pointer 连接网络边界。
 - Hub policy、assignment、Presence 和 signaling 不落盘；Edge 重启必须重新 full sync，Relay 只恢复未确认 usage outbox。
 - Hub admission 显式消费当前 assignment epoch，projection remove/replace/expiry 只 fence 精确旧 epoch。
-- daemon Presence 是 Hub 到 daemon 的 HTTP response stream；daemon 没有独立上行 runtime report。
-- `remote/webrtc.Answerer` 和 `remote/daemon.SessionAcceptor` 已完成 WebRTC、DTLS channel binding、CapabilityGrant 和 core transport 接线，但没有 managed session metadata 与 READY/CLOSED hook。
-- `core.Server.ServeScopedTransport` 没有暴露 protocol Hello 已被接受的最小生命周期观察点。
-- Control Plane 已有持久 Hub registry、assignment、control generation 与 per-Hub projection head；topology projection 和 durable CommandOutbox 尚未实现。
-- Web 用户中心使用 online bool，不能表达 `UNKNOWN`、`STALE`、控制 Hub 与实际数据路径。
+- daemon 已在 auth + protocol Hello 后注册 READY ManagedPeerSession，并在完整 teardown 后注册 CLOSED；单 reporter 上报完整 runtime inventory。
+- Control Plane 已持久拥有 Hub registry、assignment、control generation、per-Hub projection head 和 topology replacement；CommandOutbox 尚未实现。
+- Controller 已持久拥有账号 verifier、单次 refresh session、versioned Subscription、Entitlement、订单、provider event journal 和交易审计。
+- Controller public listener 已暴露 Proto JSON 注册、登录、refresh、logout、改密、checkout、显式测试付款、Subscription transition 和账号交易查询；测试付款默认关闭。
+- 旧 Web Controller 自有的账号密码、browser session、订单 map/SQLite 表、webhook 和直接 Entitlement 写入口已经删除；`CLOUDP006` 在当前 API 上重建完整用户/运营页面。
 
 迁移原则：不重写已工作的 WebRTC、remote auth、terminal protocol 和 Presence 下行流。新增最小 owner/port，把单进程 direct call 替换为 Proto 网络链路；对应新路径通过后直接删除旧调用和旧 snapshot 路径。
 
@@ -162,6 +162,7 @@ target_generation/epoch/incarnation
 
 ```text
 private/cloud/control-plane/
+  commerce/          账号、session、订单、provider journal 与 Subscription 状态机
   hubregistry/       Hub deployment、control generation、assignment lease
   hubcontrol/        per-Hub projection 发布、stream coordination、reconciliation
   topology/          validated Presence/session/access projection
@@ -232,6 +233,34 @@ terminal_access_projections(
   daemon_runtime_generation, registry_revision, observed_at,
   PRIMARY KEY(daemon_device_id, opaque_access_ref)
 )
+
+commerce_accounts(
+  account_id PRIMARY KEY, email UNIQUE, projection,
+  password_hash, auth_revision
+)
+
+commerce_sessions(
+  session_id PRIMARY KEY, account_id,
+  access_hash UNIQUE, refresh_hash UNIQUE,
+  access_expires_at, refresh_expires_at, revision, revoked
+)
+
+commerce_orders(
+  order_id PRIMARY KEY, account_id, revision, projection
+)
+
+commerce_payment_attempts(
+  payment_attempt_id PRIMARY KEY, order_id, account_id,
+  revision, projection
+)
+
+commerce_payment_events(
+  provider_event_id PRIMARY KEY, digest, event, state, result
+)
+
+commerce_subscriptions(account_id PRIMARY KEY, revision, projection)
+commerce_entitlements(account_id PRIMARY KEY, projection)
+commerce_audit(audit_id PRIMARY KEY, account_id, occurred_at, projection)
 
 management_commands(
   command_id PRIMARY KEY, parent_command_id, account_id,
@@ -641,8 +670,15 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 
 ### CLOUDP002：账号、Subscription 与交易
 
-- 实现注册、登录、refresh、订单、测试 payment provider event 和 Subscription 状态机。
-- provider 事件先进入 durable order/payment journal，再驱动 Subscription/Entitlement；禁止测试接口直接写 Entitlement。
+- `cloud_product.proto` 定义账号/session、Price/展示目录、订单价格快照、PaymentAttempt、normalized payment event、Subscription transition、交易审计和稳定错误；Go/Web 只消费 generated 类型。
+- `control-plane/commerce` 拥有注册、登录、单次 refresh rotation、logout、改密后全 session revoke、checkout、测试 provider 和 Subscription 状态机。
+- SQLite adapter 原子保存账号、session、Subscription、Entitlement、订单、PaymentAttempt 和审计；payment event 必须先写 `RECEIVED` journal，再以 order/attempt/subscription revision CAS 提交，拒绝写 `REJECTED`，成功保存精确响应供重放。
+- checkout 记录源 Subscription revision/plan version；迟到 payment event fail closed，不能覆盖后续套餐变化。退款、撤销和 chargeback 只作用于当前 Subscription 的 source order。
+- Controller public listener 暴露 `/api/v1/account/*`、`/api/v1/checkout*` 和 `/api/v1/subscription/transition` Proto JSON API，使用 HttpOnly access/refresh Cookie、same-origin 与 CSRF；响应不把 token 暴露给 Web JavaScript。
+- development test provider 只有 `enable_test_payment_provider=true` 时注册；它生成 normalized event，禁止直接写 Entitlement。
+- 公开用户 transition 只允许取消续订和恢复续订；升级、降级、续费必须经过订单/payment event，运营 suspend/restore/expire 留给后续 operator authorization。
+- 删除旧 `web-controller` 自有 `CommerceService`、`UserCenterStore`、手写 Order/PaymentEvent/Session DTO、旧 webhook 和 `SetEntitlement` direct write。
+- harness 覆盖注册/登录、refresh replay、改密撤销、Price 快照、PaymentAttempt、Controller/SQLite 重启、支付成功/失败/退款/撤销/chargeback、精确 event replay、stale order reject、升级/降级/续费/取消/恢复/暂停/到期和 Cookie/CSRF。
 
 ### CLOUDP003：managed P2P 准入与并发
 
@@ -696,6 +732,7 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 | --- | --- |
 | HUB002 | `EdgeSnapshotPath`、Hub runtime 文件 snapshot restore、Control Plane 到 Hub policy direct pointer call |
 | HUB003 | `SetCloudDaemonOnline` direct projection、Presence bool 作为 Web truth、无 registry 的 managed session 推断 |
+| CLOUDP002 | Web Controller 自有账号/password/session/order/payment 表、内存 commerce map、签名 staging webhook、测试付款直接发布 Entitlement、`SetEntitlement` direct write |
 | HUB004 | staging 直接 `Hub.RevokeDevice` 作为管理操作完成条件、用 topology CLOSED 冒充 ack |
 | HUB006 | 只按 lease metadata 撤销但不关闭 allocation 的路径 |
 | CLOUDP006 | Web hand-written Cloud management DTO 和 direct store mutation handler |

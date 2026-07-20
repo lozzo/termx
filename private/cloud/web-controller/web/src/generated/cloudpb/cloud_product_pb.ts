@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloudpb/cloud_product.proto.
  */
 export const file_cloudpb_cloud_product: GenFile = /*@__PURE__*/
-  fileDesc("ChtjbG91ZHBiL2Nsb3VkX3Byb2R1Y3QucHJvdG8SDnRlcm14LmNsb3VkLnYxItQBChZSZWxheVNlcnZpY2VDYXBhYmlsaXR5EhcKD2FsbG93ZWRfcmVnaW9ucxgBIAMoCRIYChBhbGxvd19yZWxheV9tZXNoGAIgASgIEhkKEW1heF9sZWFzZV9zZWNvbmRzGAMgASgNEhsKE21heF9ieXRlc19wZXJfbGVhc2UYBCABKAQSGAoQbWF4X2JpdHJhdGVfa2JwcxgFIAEoDRIXCg9tYXhfY29uY3VycmVuY3kYBiABKA0SHAoUbWF4X2J5dGVzX3Blcl9wZXJpb2QYByABKAQixQEKDlBsYW5DYXBhYmlsaXR5EhsKE21hbmFnZWRfcDJwX2VuYWJsZWQYASABKAgSIwobbWFuYWdlZF9wMnBfbWF4X2NvbmN1cnJlbmN5GAIgASgNEh4KFnN0YW5kYXJkX3JlbGF5X2VuYWJsZWQYAyABKAgSNQoFcmVsYXkYBCABKAsyJi50ZXJteC5jbG91ZC52MS5SZWxheVNlcnZpY2VDYXBhYmlsaXR5EhoKEmNsb3VkX2RldmljZV9saW1pdBgFIAEoDSKIAQoOUGxhbkRlZmluaXRpb24SDwoHcGxhbl9pZBgBIAEoCRIUCgxwbGFuX3ZlcnNpb24YAiABKAQSGwoTYmlsbGluZ19wZXJpb2RfZGF5cxgDIAEoDRIyCgpjYXBhYmlsaXR5GAQgASgLMh4udGVybXguY2xvdWQudjEuUGxhbkNhcGFiaWxpdHkiXQoTUGxhbkNhdGFsb2dDb250cmFjdBIXCg9jYXRhbG9nX3ZlcnNpb24YASABKAQSLQoFcGxhbnMYAiADKAsyHi50ZXJteC5jbG91ZC52MS5QbGFuRGVmaW5pdGlvbiKrAgoWU3Vic2NyaXB0aW9uUHJvamVjdGlvbhIXCg9zdWJzY3JpcHRpb25faWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIXCg9zb3VyY2Vfb3JkZXJfaWQYAyABKAkSDwoHcGxhbl9pZBgEIAEoCRIUCgxwbGFuX3ZlcnNpb24YBSABKAQSMgoGc3RhdHVzGAYgASgOMiIudGVybXguY2xvdWQudjEuU3Vic2NyaXB0aW9uU3RhdHVzEigKIGN1cnJlbnRfcGVyaW9kX3N0YXJ0X3VuaXhfbWlsbGlzGAcgASgDEiYKHmN1cnJlbnRfcGVyaW9kX2VuZF91bml4X21pbGxpcxgIIAEoAxIeChZ1cGRhdGVkX2F0X3VuaXhfbWlsbGlzGAkgASgDIukCChVFbnRpdGxlbWVudFByb2plY3Rpb24SEgoKYWNjb3VudF9pZBgBIAEoCRIxCgZzdGF0dXMYAiABKA4yIS50ZXJteC5jbG91ZC52MS5FbnRpdGxlbWVudFN0YXR1cxIeChZzb3VyY2Vfc3Vic2NyaXB0aW9uX2lkGAMgASgJEhcKD3NvdXJjZV9vcmRlcl9pZBgEIAEoCRIWCg5zb3VyY2VfcGxhbl9pZBgFIAEoCRIbChNzb3VyY2VfcGxhbl92ZXJzaW9uGAYgASgEEiIKGmVmZmVjdGl2ZV9mcm9tX3VuaXhfbWlsbGlzGAcgASgDEiMKG2VmZmVjdGl2ZV91bnRpbF91bml4X21pbGxpcxgIIAEoAxIyCgpjYXBhYmlsaXR5GAkgASgLMh4udGVybXguY2xvdWQudjEuUGxhbkNhcGFiaWxpdHkSHgoWdXBkYXRlZF9hdF91bml4X21pbGxpcxgKIAEoAyIXChVHZXRQbGFuQ2F0YWxvZ1JlcXVlc3QiTgoWR2V0UGxhbkNhdGFsb2dSZXNwb25zZRI0CgdjYXRhbG9nGAEgASgLMiMudGVybXguY2xvdWQudjEuUGxhbkNhdGFsb2dDb250cmFjdCIzCh1HZXRBY2NvdW50U3Vic2NyaXB0aW9uUmVxdWVzdBISCgphY2NvdW50X2lkGAEgASgJIl4KHkdldEFjY291bnRTdWJzY3JpcHRpb25SZXNwb25zZRI8CgxzdWJzY3JpcHRpb24YASABKAsyJi50ZXJteC5jbG91ZC52MS5TdWJzY3JpcHRpb25Qcm9qZWN0aW9uIjIKHEdldEFjY291bnRFbnRpdGxlbWVudFJlcXVlc3QSEgoKYWNjb3VudF9pZBgBIAEoCSJbCh1HZXRBY2NvdW50RW50aXRsZW1lbnRSZXNwb25zZRI6CgtlbnRpdGxlbWVudBgBIAEoCzIlLnRlcm14LmNsb3VkLnYxLkVudGl0bGVtZW50UHJvamVjdGlvbiqOAgoSU3Vic2NyaXB0aW9uU3RhdHVzEiMKH1NVQlNDUklQVElPTl9TVEFUVVNfVU5TUEVDSUZJRUQQABIfChtTVUJTQ1JJUFRJT05fU1RBVFVTX1BFTkRJTkcQARIeChpTVUJTQ1JJUFRJT05fU1RBVFVTX0FDVElWRRACEiwKKFNVQlNDUklQVElPTl9TVEFUVVNfQ0FOQ0VMX0FUX1BFUklPRF9FTkQQAxIgChxTVUJTQ1JJUFRJT05fU1RBVFVTX0NBTkNFTEVEEAQSIQodU1VCU0NSSVBUSU9OX1NUQVRVU19TVVNQRU5ERUQQBRIfChtTVUJTQ1JJUFRJT05fU1RBVFVTX0VYUElSRUQQBiqYAQoRRW50aXRsZW1lbnRTdGF0dXMSIgoeRU5USVRMRU1FTlRfU1RBVFVTX1VOU1BFQ0lGSUVEEAASHQoZRU5USVRMRU1FTlRfU1RBVFVTX0FDVElWRRABEiAKHEVOVElUTEVNRU5UX1NUQVRVU19TVVNQRU5ERUQQAhIeChpFTlRJVExFTUVOVF9TVEFUVVNfRVhQSVJFRBADQidaJWdpdGh1Yi5jb20vbG96em93L3Rlcm14L3Byb3RvL2Nsb3VkcGJiBnByb3RvMw");
+  fileDesc("ChtjbG91ZHBiL2Nsb3VkX3Byb2R1Y3QucHJvdG8SDnRlcm14LmNsb3VkLnYxItQBChZSZWxheVNlcnZpY2VDYXBhYmlsaXR5EhcKD2FsbG93ZWRfcmVnaW9ucxgBIAMoCRIYChBhbGxvd19yZWxheV9tZXNoGAIgASgIEhkKEW1heF9sZWFzZV9zZWNvbmRzGAMgASgNEhsKE21heF9ieXRlc19wZXJfbGVhc2UYBCABKAQSGAoQbWF4X2JpdHJhdGVfa2JwcxgFIAEoDRIXCg9tYXhfY29uY3VycmVuY3kYBiABKA0SHAoUbWF4X2J5dGVzX3Blcl9wZXJpb2QYByABKAQixQEKDlBsYW5DYXBhYmlsaXR5EhsKE21hbmFnZWRfcDJwX2VuYWJsZWQYASABKAgSIwobbWFuYWdlZF9wMnBfbWF4X2NvbmN1cnJlbmN5GAIgASgNEh4KFnN0YW5kYXJkX3JlbGF5X2VuYWJsZWQYAyABKAgSNQoFcmVsYXkYBCABKAsyJi50ZXJteC5jbG91ZC52MS5SZWxheVNlcnZpY2VDYXBhYmlsaXR5EhoKEmNsb3VkX2RldmljZV9saW1pdBgFIAEoDSKGAgoOUGxhbkRlZmluaXRpb24SDwoHcGxhbl9pZBgBIAEoCRIUCgxwbGFuX3ZlcnNpb24YAiABKAQSGwoTYmlsbGluZ19wZXJpb2RfZGF5cxgDIAEoDRIyCgpjYXBhYmlsaXR5GAQgASgLMh4udGVybXguY2xvdWQudjEuUGxhbkNhcGFiaWxpdHkSEAoIaW5jbHVkZWQYBSABKAgSMgoFcHJpY2UYBiABKAsyIy50ZXJteC5jbG91ZC52MS5QbGFuUHJpY2VEZWZpbml0aW9uEjYKDHByZXNlbnRhdGlvbhgHIAEoCzIgLnRlcm14LmNsb3VkLnYxLlBsYW5QcmVzZW50YXRpb24ikwEKE1BsYW5QcmljZURlZmluaXRpb24SLgoEbW9kZRgBIAEoDjIgLnRlcm14LmNsb3VkLnYxLkNhdGFsb2dQcmljZU1vZGUSEAoIY3VycmVuY3kYAiABKAkSFQoNbW9udGhseV9taW5vchgDIAEoAxIUCgx5ZWFybHlfbWlub3IYBCABKAMSDQoFbGFiZWwYBSABKAkijwEKEFBsYW5QcmVzZW50YXRpb24SDAoEbmFtZRgBIAEoCRIPCgdleWVicm93GAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhEKCWN0YV9sYWJlbBgEIAEoCRIQCghjdGFfaHJlZhgFIAEoCRIQCghmZWF0dXJlZBgGIAEoCBIQCghmZWF0dXJlcxgHIAMoCSJdChNQbGFuQ2F0YWxvZ0NvbnRyYWN0EhcKD2NhdGFsb2dfdmVyc2lvbhgBIAEoBBItCgVwbGFucxgCIAMoCzIeLnRlcm14LmNsb3VkLnYxLlBsYW5EZWZpbml0aW9uIvcCChZTdWJzY3JpcHRpb25Qcm9qZWN0aW9uEhcKD3N1YnNjcmlwdGlvbl9pZBgBIAEoCRISCgphY2NvdW50X2lkGAIgASgJEhcKD3NvdXJjZV9vcmRlcl9pZBgDIAEoCRIPCgdwbGFuX2lkGAQgASgJEhQKDHBsYW5fdmVyc2lvbhgFIAEoBBIyCgZzdGF0dXMYBiABKA4yIi50ZXJteC5jbG91ZC52MS5TdWJzY3JpcHRpb25TdGF0dXMSKAogY3VycmVudF9wZXJpb2Rfc3RhcnRfdW5peF9taWxsaXMYByABKAMSJgoeY3VycmVudF9wZXJpb2RfZW5kX3VuaXhfbWlsbGlzGAggASgDEh4KFnVwZGF0ZWRfYXRfdW5peF9taWxsaXMYCSABKAMSHAoUY2FuY2VsX2F0X3BlcmlvZF9lbmQYCiABKAgSGgoScHJvdmlkZXJfcmVmZXJlbmNlGAsgASgJEhAKCHJldmlzaW9uGAwgASgEIukCChVFbnRpdGxlbWVudFByb2plY3Rpb24SEgoKYWNjb3VudF9pZBgBIAEoCRIxCgZzdGF0dXMYAiABKA4yIS50ZXJteC5jbG91ZC52MS5FbnRpdGxlbWVudFN0YXR1cxIeChZzb3VyY2Vfc3Vic2NyaXB0aW9uX2lkGAMgASgJEhcKD3NvdXJjZV9vcmRlcl9pZBgEIAEoCRIWCg5zb3VyY2VfcGxhbl9pZBgFIAEoCRIbChNzb3VyY2VfcGxhbl92ZXJzaW9uGAYgASgEEiIKGmVmZmVjdGl2ZV9mcm9tX3VuaXhfbWlsbGlzGAcgASgDEiMKG2VmZmVjdGl2ZV91bnRpbF91bml4X21pbGxpcxgIIAEoAxIyCgpjYXBhYmlsaXR5GAkgASgLMh4udGVybXguY2xvdWQudjEuUGxhbkNhcGFiaWxpdHkSHgoWdXBkYXRlZF9hdF91bml4X21pbGxpcxgKIAEoAyIXChVHZXRQbGFuQ2F0YWxvZ1JlcXVlc3QiTgoWR2V0UGxhbkNhdGFsb2dSZXNwb25zZRI0CgdjYXRhbG9nGAEgASgLMiMudGVybXguY2xvdWQudjEuUGxhbkNhdGFsb2dDb250cmFjdCIzCh1HZXRBY2NvdW50U3Vic2NyaXB0aW9uUmVxdWVzdBISCgphY2NvdW50X2lkGAEgASgJIl4KHkdldEFjY291bnRTdWJzY3JpcHRpb25SZXNwb25zZRI8CgxzdWJzY3JpcHRpb24YASABKAsyJi50ZXJteC5jbG91ZC52MS5TdWJzY3JpcHRpb25Qcm9qZWN0aW9uIjIKHEdldEFjY291bnRFbnRpdGxlbWVudFJlcXVlc3QSEgoKYWNjb3VudF9pZBgBIAEoCSJbCh1HZXRBY2NvdW50RW50aXRsZW1lbnRSZXNwb25zZRI6CgtlbnRpdGxlbWVudBgBIAEoCzIlLnRlcm14LmNsb3VkLnYxLkVudGl0bGVtZW50UHJvamVjdGlvbiKUAQoRQWNjb3VudFByb2plY3Rpb24SEgoKYWNjb3VudF9pZBgBIAEoCRIPCgd1c2VyX2lkGAIgASgJEg0KBWVtYWlsGAMgASgJEhQKDGRpc3BsYXlfbmFtZRgEIAEoCRIVCg1hdXRoX3JldmlzaW9uGAUgASgEEh4KFmNyZWF0ZWRfYXRfdW5peF9taWxsaXMYBiABKAMi+AEKGEFjY291bnRTZXNzaW9uQ3JlZGVudGlhbBISCgpzZXNzaW9uX2lkGAEgASgJEjIKB2FjY291bnQYAiABKAsyIS50ZXJteC5jbG91ZC52MS5BY2NvdW50UHJvamVjdGlvbhIUCgxhY2Nlc3NfdG9rZW4YAyABKAwSFQoNcmVmcmVzaF90b2tlbhgEIAEoDBIlCh1hY2Nlc3NfZXhwaXJlc19hdF91bml4X21pbGxpcxgFIAEoAxImCh5yZWZyZXNoX2V4cGlyZXNfYXRfdW5peF9taWxsaXMYBiABKAMSGAoQc2Vzc2lvbl9yZXZpc2lvbhgHIAEoBCJQChZSZWdpc3RlckFjY291bnRSZXF1ZXN0Eg0KBWVtYWlsGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEhUKDXJlZmVycmFsX2NvZGUYAyABKAkiVAoXUmVnaXN0ZXJBY2NvdW50UmVzcG9uc2USOQoHc2Vzc2lvbhgBIAEoCzIoLnRlcm14LmNsb3VkLnYxLkFjY291bnRTZXNzaW9uQ3JlZGVudGlhbCI3ChRQYXNzd29yZExvZ2luUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCSJSChVQYXNzd29yZExvZ2luUmVzcG9uc2USOQoHc2Vzc2lvbhgBIAEoCzIoLnRlcm14LmNsb3VkLnYxLkFjY291bnRTZXNzaW9uQ3JlZGVudGlhbCI1ChxSZWZyZXNoQWNjb3VudFNlc3Npb25SZXF1ZXN0EhUKDXJlZnJlc2hfdG9rZW4YASABKAwiWgodUmVmcmVzaEFjY291bnRTZXNzaW9uUmVzcG9uc2USOQoHc2Vzc2lvbhgBIAEoCzIoLnRlcm14LmNsb3VkLnYxLkFjY291bnRTZXNzaW9uQ3JlZGVudGlhbCJPChtMb2dvdXRBY2NvdW50U2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIcChRhbGxfYWNjb3VudF9zZXNzaW9ucxgCIAEoCCIeChxMb2dvdXRBY2NvdW50U2Vzc2lvblJlc3BvbnNlIk4KHENoYW5nZUFjY291bnRQYXNzd29yZFJlcXVlc3QSGAoQY3VycmVudF9wYXNzd29yZBgBIAEoCRIUCgxuZXdfcGFzc3dvcmQYAiABKAkiWgodQ2hhbmdlQWNjb3VudFBhc3N3b3JkUmVzcG9uc2USOQoHc2Vzc2lvbhgBIAEoCzIoLnRlcm14LmNsb3VkLnYxLkFjY291bnRTZXNzaW9uQ3JlZGVudGlhbCLSAwoPT3JkZXJQcm9qZWN0aW9uEhAKCG9yZGVyX2lkGAEgASgJEhIKCmFjY291bnRfaWQYAiABKAkSDwoHcGxhbl9pZBgDIAEoCRIUCgxwbGFuX3ZlcnNpb24YBCABKAQSKwoGc3RhdHVzGAUgASgOMhsudGVybXguY2xvdWQudjEuT3JkZXJTdGF0dXMSHgoWY3JlYXRlZF9hdF91bml4X21pbGxpcxgGIAEoAxIeChZzZXR0bGVkX2F0X3VuaXhfbWlsbGlzGAcgASgDEhoKEnByb3ZpZGVyX3JlZmVyZW5jZRgIIAEoCRIQCghyZXZpc2lvbhgJIAEoBBJIChRyZXF1ZXN0ZWRfdHJhbnNpdGlvbhgKIAEoDjIqLnRlcm14LmNsb3VkLnYxLlN1YnNjcmlwdGlvblRyYW5zaXRpb25LaW5kEiQKHHNvdXJjZV9zdWJzY3JpcHRpb25fcmV2aXNpb24YCyABKAQSFgoOc291cmNlX3BsYW5faWQYDCABKAkSGwoTc291cmNlX3BsYW5fdmVyc2lvbhgNIAEoBBIyCgVwcmljZRgOIAEoCzIjLnRlcm14LmNsb3VkLnYxLlBsYW5QcmljZURlZmluaXRpb24ikgIKGFBheW1lbnRBdHRlbXB0UHJvamVjdGlvbhIaChJwYXltZW50X2F0dGVtcHRfaWQYASABKAkSEAoIb3JkZXJfaWQYAiABKAkSEgoKYWNjb3VudF9pZBgDIAEoCRIQCghwcm92aWRlchgEIAEoCRI0CgZzdGF0dXMYBSABKA4yJC50ZXJteC5jbG91ZC52MS5QYXltZW50QXR0ZW1wdFN0YXR1cxIeChZjcmVhdGVkX2F0X3VuaXhfbWlsbGlzGAYgASgDEh4KFnVwZGF0ZWRfYXRfdW5peF9taWxsaXMYByABKAMSGgoScHJvdmlkZXJfcmVmZXJlbmNlGAggASgJEhAKCHJldmlzaW9uGAkgASgEInIKFUNyZWF0ZUNoZWNrb3V0UmVxdWVzdBIPCgdwbGFuX2lkGAEgASgJEkgKFHJlcXVlc3RlZF90cmFuc2l0aW9uGAIgASgOMioudGVybXguY2xvdWQudjEuU3Vic2NyaXB0aW9uVHJhbnNpdGlvbktpbmQiSAoWQ3JlYXRlQ2hlY2tvdXRSZXNwb25zZRIuCgVvcmRlchgBIAEoCzIfLnRlcm14LmNsb3VkLnYxLk9yZGVyUHJvamVjdGlvbiJBChtDcmVhdGVQYXltZW50QXR0ZW1wdFJlcXVlc3QSEAoIb3JkZXJfaWQYASABKAkSEAoIcHJvdmlkZXIYAiABKAkiYQocQ3JlYXRlUGF5bWVudEF0dGVtcHRSZXNwb25zZRJBCg9wYXltZW50X2F0dGVtcHQYASABKAsyKC50ZXJteC5jbG91ZC52MS5QYXltZW50QXR0ZW1wdFByb2plY3Rpb24ioQIKFk5vcm1hbGl6ZWRQYXltZW50RXZlbnQSGQoRcHJvdmlkZXJfZXZlbnRfaWQYASABKAkSEAoIcHJvdmlkZXIYAiABKAkSNAoKZXZlbnRfdHlwZRgDIAEoDjIgLnRlcm14LmNsb3VkLnYxLlBheW1lbnRFdmVudFR5cGUSEAoIb3JkZXJfaWQYBCABKAkSEgoKYWNjb3VudF9pZBgFIAEoCRIPCgdwbGFuX2lkGAYgASgJEhQKDHBsYW5fdmVyc2lvbhgHIAEoBBIaChJwcm92aWRlcl9yZWZlcmVuY2UYCCABKAkSHwoXb2NjdXJyZWRfYXRfdW5peF9taWxsaXMYCSABKAMSGgoScGF5bWVudF9hdHRlbXB0X2lkGAogASgJIlEKGEFwcGx5UGF5bWVudEV2ZW50UmVxdWVzdBI1CgVldmVudBgBIAEoCzImLnRlcm14LmNsb3VkLnYxLk5vcm1hbGl6ZWRQYXltZW50RXZlbnQihAIKGUFwcGx5UGF5bWVudEV2ZW50UmVzcG9uc2USLgoFb3JkZXIYASABKAsyHy50ZXJteC5jbG91ZC52MS5PcmRlclByb2plY3Rpb24SPAoMc3Vic2NyaXB0aW9uGAIgASgLMiYudGVybXguY2xvdWQudjEuU3Vic2NyaXB0aW9uUHJvamVjdGlvbhI2CgtldmVudF9zdGF0ZRgDIAEoDjIhLnRlcm14LmNsb3VkLnYxLlBheW1lbnRFdmVudFN0YXRlEkEKD3BheW1lbnRfYXR0ZW1wdBgEIAEoCzIoLnRlcm14LmNsb3VkLnYxLlBheW1lbnRBdHRlbXB0UHJvamVjdGlvbiJjChlDb25maXJtVGVzdFBheW1lbnRSZXF1ZXN0EhAKCG9yZGVyX2lkGAEgASgJEjQKCmV2ZW50X3R5cGUYAiABKA4yIC50ZXJteC5jbG91ZC52MS5QYXltZW50RXZlbnRUeXBlIlcKGkNvbmZpcm1UZXN0UGF5bWVudFJlc3BvbnNlEjkKBnJlc3VsdBgBIAEoCzIpLnRlcm14LmNsb3VkLnYxLkFwcGx5UGF5bWVudEV2ZW50UmVzcG9uc2Ui3AEKHVRyYW5zaXRpb25TdWJzY3JpcHRpb25SZXF1ZXN0EhIKCmFjY291bnRfaWQYASABKAkSPgoKdHJhbnNpdGlvbhgCIAEoDjIqLnRlcm14LmNsb3VkLnYxLlN1YnNjcmlwdGlvblRyYW5zaXRpb25LaW5kEhYKDnRhcmdldF9wbGFuX2lkGAMgASgJEhsKE3RhcmdldF9wbGFuX3ZlcnNpb24YBCABKAQSIAoYZWZmZWN0aXZlX2F0X3VuaXhfbWlsbGlzGAUgASgDEhAKCGFjdG9yX2lkGAYgASgJIpoBCh5UcmFuc2l0aW9uU3Vic2NyaXB0aW9uUmVzcG9uc2USPAoMc3Vic2NyaXB0aW9uGAEgASgLMiYudGVybXguY2xvdWQudjEuU3Vic2NyaXB0aW9uUHJvamVjdGlvbhI6CgtlbnRpdGxlbWVudBgCIAEoCzIlLnRlcm14LmNsb3VkLnYxLkVudGl0bGVtZW50UHJvamVjdGlvbiKXAQoXQ29tbWVyY2VBdWRpdFByb2plY3Rpb24SEAoIYXVkaXRfaWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIQCghhY3Rvcl9pZBgDIAEoCRIOCgZhY3Rpb24YBCABKAkSEwoLcmVzb3VyY2VfaWQYBSABKAkSHwoXb2NjdXJyZWRfYXRfdW5peF9taWxsaXMYBiABKAMiLwoZR2V0QWNjb3VudENvbW1lcmNlUmVxdWVzdBISCgphY2NvdW50X2lkGAEgASgJIvcCChpHZXRBY2NvdW50Q29tbWVyY2VSZXNwb25zZRIyCgdhY2NvdW50GAEgASgLMiEudGVybXguY2xvdWQudjEuQWNjb3VudFByb2plY3Rpb24SPAoMc3Vic2NyaXB0aW9uGAIgASgLMiYudGVybXguY2xvdWQudjEuU3Vic2NyaXB0aW9uUHJvamVjdGlvbhI6CgtlbnRpdGxlbWVudBgDIAEoCzIlLnRlcm14LmNsb3VkLnYxLkVudGl0bGVtZW50UHJvamVjdGlvbhIvCgZvcmRlcnMYBCADKAsyHy50ZXJteC5jbG91ZC52MS5PcmRlclByb2plY3Rpb24SNgoFYXVkaXQYBSADKAsyJy50ZXJteC5jbG91ZC52MS5Db21tZXJjZUF1ZGl0UHJvamVjdGlvbhJCChBwYXltZW50X2F0dGVtcHRzGAYgAygLMigudGVybXguY2xvdWQudjEuUGF5bWVudEF0dGVtcHRQcm9qZWN0aW9uIkUKEUNsb3VkUHJvZHVjdEVycm9yEgwKBGNvZGUYASABKAkSDwoHbWVzc2FnZRgCIAEoCRIRCglyZXRyeWFibGUYAyABKAgq8QIKElN1YnNjcmlwdGlvblN0YXR1cxIjCh9TVUJTQ1JJUFRJT05fU1RBVFVTX1VOU1BFQ0lGSUVEEAASHwobU1VCU0NSSVBUSU9OX1NUQVRVU19QRU5ESU5HEAESHgoaU1VCU0NSSVBUSU9OX1NUQVRVU19BQ1RJVkUQAhIsCihTVUJTQ1JJUFRJT05fU1RBVFVTX0NBTkNFTF9BVF9QRVJJT0RfRU5EEAMSIAocU1VCU0NSSVBUSU9OX1NUQVRVU19DQU5DRUxFRBAEEiEKHVNVQlNDUklQVElPTl9TVEFUVVNfU1VTUEVOREVEEAUSHwobU1VCU0NSSVBUSU9OX1NUQVRVU19FWFBJUkVEEAYSIAocU1VCU0NSSVBUSU9OX1NUQVRVU19UUklBTElORxAHEh0KGVNVQlNDUklQVElPTl9TVEFUVVNfR1JBQ0UQCBIgChxTVUJTQ1JJUFRJT05fU1RBVFVTX1BBU1RfRFVFEAkqsgEKC09yZGVyU3RhdHVzEhwKGE9SREVSX1NUQVRVU19VTlNQRUNJRklFRBAAEhgKFE9SREVSX1NUQVRVU19QRU5ESU5HEAESFQoRT1JERVJfU1RBVFVTX1BBSUQQAhIfChtPUkRFUl9TVEFUVVNfUEFZTUVOVF9GQUlMRUQQAxIZChVPUkRFUl9TVEFUVVNfUkVGVU5ERUQQBBIYChRPUkRFUl9TVEFUVVNfUkVWT0tFRBAFKpoBChBDYXRhbG9nUHJpY2VNb2RlEiIKHkNBVEFMT0dfUFJJQ0VfTU9ERV9VTlNQRUNJRklFRBAAEh8KG0NBVEFMT0dfUFJJQ0VfTU9ERV9JTkNMVURFRBABEiEKHUNBVEFMT0dfUFJJQ0VfTU9ERV9DT05GSUdVUkVEEAISHgoaQ0FUQUxPR19QUklDRV9NT0RFX0NPTlRBQ1QQAyqrAQoUUGF5bWVudEF0dGVtcHRTdGF0dXMSJgoiUEFZTUVOVF9BVFRFTVBUX1NUQVRVU19VTlNQRUNJRklFRBAAEiIKHlBBWU1FTlRfQVRURU1QVF9TVEFUVVNfUEVORElORxABEiQKIFBBWU1FTlRfQVRURU1QVF9TVEFUVVNfU1VDQ0VFREVEEAISIQodUEFZTUVOVF9BVFRFTVBUX1NUQVRVU19GQUlMRUQQAyrbAQoQUGF5bWVudEV2ZW50VHlwZRIiCh5QQVlNRU5UX0VWRU5UX1RZUEVfVU5TUEVDSUZJRUQQABIgChxQQVlNRU5UX0VWRU5UX1RZUEVfU1VDQ0VFREVEEAESHQoZUEFZTUVOVF9FVkVOVF9UWVBFX0ZBSUxFRBACEh8KG1BBWU1FTlRfRVZFTlRfVFlQRV9SRUZVTkRFRBADEh4KGlBBWU1FTlRfRVZFTlRfVFlQRV9SRVZPS0VEEAQSIQodUEFZTUVOVF9FVkVOVF9UWVBFX0NIQVJHRUJBQ0sQBSqdAQoRUGF5bWVudEV2ZW50U3RhdGUSIwofUEFZTUVOVF9FVkVOVF9TVEFURV9VTlNQRUNJRklFRBAAEiAKHFBBWU1FTlRfRVZFTlRfU1RBVEVfUkVDRUlWRUQQARIfChtQQVlNRU5UX0VWRU5UX1NUQVRFX0FQUExJRUQQAhIgChxQQVlNRU5UX0VWRU5UX1NUQVRFX1JFSkVDVEVEEAMq0wQKGlN1YnNjcmlwdGlvblRyYW5zaXRpb25LaW5kEiwKKFNVQlNDUklQVElPTl9UUkFOU0lUSU9OX0tJTkRfVU5TUEVDSUZJRUQQABIpCiVTVUJTQ1JJUFRJT05fVFJBTlNJVElPTl9LSU5EX0FDVElWQVRFEAESJgoiU1VCU0NSSVBUSU9OX1RSQU5TSVRJT05fS0lORF9SRU5FVxACEigKJFNVQlNDUklQVElPTl9UUkFOU0lUSU9OX0tJTkRfVVBHUkFERRADEioKJlNVQlNDUklQVElPTl9UUkFOU0lUSU9OX0tJTkRfRE9XTkdSQURFEAQSNQoxU1VCU0NSSVBUSU9OX1RSQU5TSVRJT05fS0lORF9DQU5DRUxfQVRfUEVSSU9EX0VORBAFEicKI1NVQlNDUklQVElPTl9UUkFOU0lUSU9OX0tJTkRfUkVTVU1FEAYSLworU1VCU0NSSVBUSU9OX1RSQU5TSVRJT05fS0lORF9QQVlNRU5UX0ZBSUxFRBAHEigKJFNVQlNDUklQVElPTl9UUkFOU0lUSU9OX0tJTkRfU1VTUEVORBAIEigKJFNVQlNDUklQVElPTl9UUkFOU0lUSU9OX0tJTkRfUkVTVE9SRRAJEicKI1NVQlNDUklQVElPTl9UUkFOU0lUSU9OX0tJTkRfRVhQSVJFEAoSJwojU1VCU0NSSVBUSU9OX1RSQU5TSVRJT05fS0lORF9SRUZVTkQQCxInCiNTVUJTQ1JJUFRJT05fVFJBTlNJVElPTl9LSU5EX1JFVk9LRRAMKpgBChFFbnRpdGxlbWVudFN0YXR1cxIiCh5FTlRJVExFTUVOVF9TVEFUVVNfVU5TUEVDSUZJRUQQABIdChlFTlRJVExFTUVOVF9TVEFUVVNfQUNUSVZFEAESIAocRU5USVRMRU1FTlRfU1RBVFVTX1NVU1BFTkRFRBACEh4KGkVOVElUTEVNRU5UX1NUQVRVU19FWFBJUkVEEANCJ1olZ2l0aHViLmNvbS9sb3p6b3cvdGVybXgvcHJvdG8vY2xvdWRwYmIGcHJvdG8z");
 
 /**
  * RelayServiceCapability 是 plan 对 Relay lease 和账期的硬上限。
@@ -127,6 +127,21 @@ export type PlanDefinition = Message<"termx.cloud.v1.PlanDefinition"> & {
    * @generated from field: termx.cloud.v1.PlanCapability capability = 4;
    */
   capability?: PlanCapability | undefined;
+
+  /**
+   * @generated from field: bool included = 5;
+   */
+  included: boolean;
+
+  /**
+   * @generated from field: termx.cloud.v1.PlanPriceDefinition price = 6;
+   */
+  price?: PlanPriceDefinition | undefined;
+
+  /**
+   * @generated from field: termx.cloud.v1.PlanPresentation presentation = 7;
+   */
+  presentation?: PlanPresentation | undefined;
 };
 
 /**
@@ -135,6 +150,94 @@ export type PlanDefinition = Message<"termx.cloud.v1.PlanDefinition"> & {
  */
 export const PlanDefinitionSchema: GenMessage<PlanDefinition> = /*@__PURE__*/
   messageDesc(file_cloudpb_cloud_product, 2);
+
+/**
+ * PlanPriceDefinition 是 catalog 与订单快照共用的价格契约。
+ *
+ * @generated from message termx.cloud.v1.PlanPriceDefinition
+ */
+export type PlanPriceDefinition = Message<"termx.cloud.v1.PlanPriceDefinition"> & {
+  /**
+   * @generated from field: termx.cloud.v1.CatalogPriceMode mode = 1;
+   */
+  mode: CatalogPriceMode;
+
+  /**
+   * @generated from field: string currency = 2;
+   */
+  currency: string;
+
+  /**
+   * @generated from field: int64 monthly_minor = 3;
+   */
+  monthlyMinor: bigint;
+
+  /**
+   * @generated from field: int64 yearly_minor = 4;
+   */
+  yearlyMinor: bigint;
+
+  /**
+   * @generated from field: string label = 5;
+   */
+  label: string;
+};
+
+/**
+ * Describes the message termx.cloud.v1.PlanPriceDefinition.
+ * Use `create(PlanPriceDefinitionSchema)` to create a new message.
+ */
+export const PlanPriceDefinitionSchema: GenMessage<PlanPriceDefinition> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 3);
+
+/**
+ * PlanPresentation 是官方客户端展示套餐所需的 versioned 文案。
+ *
+ * @generated from message termx.cloud.v1.PlanPresentation
+ */
+export type PlanPresentation = Message<"termx.cloud.v1.PlanPresentation"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string eyebrow = 2;
+   */
+  eyebrow: string;
+
+  /**
+   * @generated from field: string description = 3;
+   */
+  description: string;
+
+  /**
+   * @generated from field: string cta_label = 4;
+   */
+  ctaLabel: string;
+
+  /**
+   * @generated from field: string cta_href = 5;
+   */
+  ctaHref: string;
+
+  /**
+   * @generated from field: bool featured = 6;
+   */
+  featured: boolean;
+
+  /**
+   * @generated from field: repeated string features = 7;
+   */
+  features: string[];
+};
+
+/**
+ * Describes the message termx.cloud.v1.PlanPresentation.
+ * Use `create(PlanPresentationSchema)` to create a new message.
+ */
+export const PlanPresentationSchema: GenMessage<PlanPresentation> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 4);
 
 /**
  * PlanCatalogContract 是 Control Plane 发布的机器可读套餐能力目录。
@@ -158,7 +261,7 @@ export type PlanCatalogContract = Message<"termx.cloud.v1.PlanCatalogContract"> 
  * Use `create(PlanCatalogContractSchema)` to create a new message.
  */
 export const PlanCatalogContractSchema: GenMessage<PlanCatalogContract> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_product, 3);
+  messageDesc(file_cloudpb_cloud_product, 5);
 
 /**
  * SubscriptionProjection 是订单/支付状态机输出的账号订阅投影。
@@ -210,6 +313,21 @@ export type SubscriptionProjection = Message<"termx.cloud.v1.SubscriptionProject
    * @generated from field: int64 updated_at_unix_millis = 9;
    */
   updatedAtUnixMillis: bigint;
+
+  /**
+   * @generated from field: bool cancel_at_period_end = 10;
+   */
+  cancelAtPeriodEnd: boolean;
+
+  /**
+   * @generated from field: string provider_reference = 11;
+   */
+  providerReference: string;
+
+  /**
+   * @generated from field: uint64 revision = 12;
+   */
+  revision: bigint;
 };
 
 /**
@@ -217,7 +335,7 @@ export type SubscriptionProjection = Message<"termx.cloud.v1.SubscriptionProject
  * Use `create(SubscriptionProjectionSchema)` to create a new message.
  */
 export const SubscriptionProjectionSchema: GenMessage<SubscriptionProjection> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_product, 4);
+  messageDesc(file_cloudpb_cloud_product, 6);
 
 /**
  * EntitlementProjection 是 Subscription、PlanCapability 与风控归一化后的准入真值。
@@ -281,7 +399,7 @@ export type EntitlementProjection = Message<"termx.cloud.v1.EntitlementProjectio
  * Use `create(EntitlementProjectionSchema)` to create a new message.
  */
 export const EntitlementProjectionSchema: GenMessage<EntitlementProjection> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_product, 5);
+  messageDesc(file_cloudpb_cloud_product, 7);
 
 /**
  * GetPlanCatalogRequest 查询当前发布的机器能力目录。
@@ -296,7 +414,7 @@ export type GetPlanCatalogRequest = Message<"termx.cloud.v1.GetPlanCatalogReques
  * Use `create(GetPlanCatalogRequestSchema)` to create a new message.
  */
 export const GetPlanCatalogRequestSchema: GenMessage<GetPlanCatalogRequest> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_product, 6);
+  messageDesc(file_cloudpb_cloud_product, 8);
 
 /**
  * GetPlanCatalogResponse 返回 versioned PlanCatalog contract。
@@ -315,7 +433,7 @@ export type GetPlanCatalogResponse = Message<"termx.cloud.v1.GetPlanCatalogRespo
  * Use `create(GetPlanCatalogResponseSchema)` to create a new message.
  */
 export const GetPlanCatalogResponseSchema: GenMessage<GetPlanCatalogResponse> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_product, 7);
+  messageDesc(file_cloudpb_cloud_product, 9);
 
 /**
  * GetAccountSubscriptionRequest 查询当前账号订阅投影。
@@ -334,7 +452,7 @@ export type GetAccountSubscriptionRequest = Message<"termx.cloud.v1.GetAccountSu
  * Use `create(GetAccountSubscriptionRequestSchema)` to create a new message.
  */
 export const GetAccountSubscriptionRequestSchema: GenMessage<GetAccountSubscriptionRequest> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_product, 8);
+  messageDesc(file_cloudpb_cloud_product, 10);
 
 /**
  * GetAccountSubscriptionResponse 返回交易状态机的当前投影。
@@ -353,7 +471,7 @@ export type GetAccountSubscriptionResponse = Message<"termx.cloud.v1.GetAccountS
  * Use `create(GetAccountSubscriptionResponseSchema)` to create a new message.
  */
 export const GetAccountSubscriptionResponseSchema: GenMessage<GetAccountSubscriptionResponse> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_product, 9);
+  messageDesc(file_cloudpb_cloud_product, 11);
 
 /**
  * GetAccountEntitlementRequest 查询当前账号归一化准入能力。
@@ -372,7 +490,7 @@ export type GetAccountEntitlementRequest = Message<"termx.cloud.v1.GetAccountEnt
  * Use `create(GetAccountEntitlementRequestSchema)` to create a new message.
  */
 export const GetAccountEntitlementRequestSchema: GenMessage<GetAccountEntitlementRequest> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_product, 10);
+  messageDesc(file_cloudpb_cloud_product, 12);
 
 /**
  * GetAccountEntitlementResponse 返回 Hub/Relay policy 的来源投影。
@@ -391,7 +509,878 @@ export type GetAccountEntitlementResponse = Message<"termx.cloud.v1.GetAccountEn
  * Use `create(GetAccountEntitlementResponseSchema)` to create a new message.
  */
 export const GetAccountEntitlementResponseSchema: GenMessage<GetAccountEntitlementResponse> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_product, 11);
+  messageDesc(file_cloudpb_cloud_product, 13);
+
+/**
+ * AccountProjection 是账号 API 可返回的最小身份投影，不包含密码 hash 或 session secret。
+ *
+ * @generated from message termx.cloud.v1.AccountProjection
+ */
+export type AccountProjection = Message<"termx.cloud.v1.AccountProjection"> & {
+  /**
+   * @generated from field: string account_id = 1;
+   */
+  accountId: string;
+
+  /**
+   * @generated from field: string user_id = 2;
+   */
+  userId: string;
+
+  /**
+   * @generated from field: string email = 3;
+   */
+  email: string;
+
+  /**
+   * @generated from field: string display_name = 4;
+   */
+  displayName: string;
+
+  /**
+   * @generated from field: uint64 auth_revision = 5;
+   */
+  authRevision: bigint;
+
+  /**
+   * @generated from field: int64 created_at_unix_millis = 6;
+   */
+  createdAtUnixMillis: bigint;
+};
+
+/**
+ * Describes the message termx.cloud.v1.AccountProjection.
+ * Use `create(AccountProjectionSchema)` to create a new message.
+ */
+export const AccountProjectionSchema: GenMessage<AccountProjection> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 14);
+
+/**
+ * AccountSessionCredential 是注册、登录和 refresh 返回一次的短期/长期 credential。
+ *
+ * @generated from message termx.cloud.v1.AccountSessionCredential
+ */
+export type AccountSessionCredential = Message<"termx.cloud.v1.AccountSessionCredential"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: termx.cloud.v1.AccountProjection account = 2;
+   */
+  account?: AccountProjection | undefined;
+
+  /**
+   * @generated from field: bytes access_token = 3;
+   */
+  accessToken: Uint8Array;
+
+  /**
+   * @generated from field: bytes refresh_token = 4;
+   */
+  refreshToken: Uint8Array;
+
+  /**
+   * @generated from field: int64 access_expires_at_unix_millis = 5;
+   */
+  accessExpiresAtUnixMillis: bigint;
+
+  /**
+   * @generated from field: int64 refresh_expires_at_unix_millis = 6;
+   */
+  refreshExpiresAtUnixMillis: bigint;
+
+  /**
+   * @generated from field: uint64 session_revision = 7;
+   */
+  sessionRevision: bigint;
+};
+
+/**
+ * Describes the message termx.cloud.v1.AccountSessionCredential.
+ * Use `create(AccountSessionCredentialSchema)` to create a new message.
+ */
+export const AccountSessionCredentialSchema: GenMessage<AccountSessionCredential> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 15);
+
+/**
+ * RegisterAccountRequest 创建邮箱密码账号；密码只进入 credential verifier，不得写日志或审计 body。
+ *
+ * @generated from message termx.cloud.v1.RegisterAccountRequest
+ */
+export type RegisterAccountRequest = Message<"termx.cloud.v1.RegisterAccountRequest"> & {
+  /**
+   * @generated from field: string email = 1;
+   */
+  email: string;
+
+  /**
+   * @generated from field: string password = 2;
+   */
+  password: string;
+
+  /**
+   * @generated from field: string referral_code = 3;
+   */
+  referralCode: string;
+};
+
+/**
+ * Describes the message termx.cloud.v1.RegisterAccountRequest.
+ * Use `create(RegisterAccountRequestSchema)` to create a new message.
+ */
+export const RegisterAccountRequestSchema: GenMessage<RegisterAccountRequest> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 16);
+
+/**
+ * @generated from message termx.cloud.v1.RegisterAccountResponse
+ */
+export type RegisterAccountResponse = Message<"termx.cloud.v1.RegisterAccountResponse"> & {
+  /**
+   * @generated from field: termx.cloud.v1.AccountSessionCredential session = 1;
+   */
+  session?: AccountSessionCredential | undefined;
+};
+
+/**
+ * Describes the message termx.cloud.v1.RegisterAccountResponse.
+ * Use `create(RegisterAccountResponseSchema)` to create a new message.
+ */
+export const RegisterAccountResponseSchema: GenMessage<RegisterAccountResponse> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 17);
+
+/**
+ * PasswordLoginRequest 使用邮箱密码创建新的账号 session。
+ *
+ * @generated from message termx.cloud.v1.PasswordLoginRequest
+ */
+export type PasswordLoginRequest = Message<"termx.cloud.v1.PasswordLoginRequest"> & {
+  /**
+   * @generated from field: string email = 1;
+   */
+  email: string;
+
+  /**
+   * @generated from field: string password = 2;
+   */
+  password: string;
+};
+
+/**
+ * Describes the message termx.cloud.v1.PasswordLoginRequest.
+ * Use `create(PasswordLoginRequestSchema)` to create a new message.
+ */
+export const PasswordLoginRequestSchema: GenMessage<PasswordLoginRequest> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 18);
+
+/**
+ * @generated from message termx.cloud.v1.PasswordLoginResponse
+ */
+export type PasswordLoginResponse = Message<"termx.cloud.v1.PasswordLoginResponse"> & {
+  /**
+   * @generated from field: termx.cloud.v1.AccountSessionCredential session = 1;
+   */
+  session?: AccountSessionCredential | undefined;
+};
+
+/**
+ * Describes the message termx.cloud.v1.PasswordLoginResponse.
+ * Use `create(PasswordLoginResponseSchema)` to create a new message.
+ */
+export const PasswordLoginResponseSchema: GenMessage<PasswordLoginResponse> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 19);
+
+/**
+ * RefreshAccountSessionRequest 单次使用并轮换 refresh token。
+ *
+ * @generated from message termx.cloud.v1.RefreshAccountSessionRequest
+ */
+export type RefreshAccountSessionRequest = Message<"termx.cloud.v1.RefreshAccountSessionRequest"> & {
+  /**
+   * @generated from field: bytes refresh_token = 1;
+   */
+  refreshToken: Uint8Array;
+};
+
+/**
+ * Describes the message termx.cloud.v1.RefreshAccountSessionRequest.
+ * Use `create(RefreshAccountSessionRequestSchema)` to create a new message.
+ */
+export const RefreshAccountSessionRequestSchema: GenMessage<RefreshAccountSessionRequest> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 20);
+
+/**
+ * @generated from message termx.cloud.v1.RefreshAccountSessionResponse
+ */
+export type RefreshAccountSessionResponse = Message<"termx.cloud.v1.RefreshAccountSessionResponse"> & {
+  /**
+   * @generated from field: termx.cloud.v1.AccountSessionCredential session = 1;
+   */
+  session?: AccountSessionCredential | undefined;
+};
+
+/**
+ * Describes the message termx.cloud.v1.RefreshAccountSessionResponse.
+ * Use `create(RefreshAccountSessionResponseSchema)` to create a new message.
+ */
+export const RefreshAccountSessionResponseSchema: GenMessage<RefreshAccountSessionResponse> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 21);
+
+/**
+ * LogoutAccountSessionRequest 撤销精确 session；all_account_sessions 用于改密后的全量撤销。
+ *
+ * @generated from message termx.cloud.v1.LogoutAccountSessionRequest
+ */
+export type LogoutAccountSessionRequest = Message<"termx.cloud.v1.LogoutAccountSessionRequest"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: bool all_account_sessions = 2;
+   */
+  allAccountSessions: boolean;
+};
+
+/**
+ * Describes the message termx.cloud.v1.LogoutAccountSessionRequest.
+ * Use `create(LogoutAccountSessionRequestSchema)` to create a new message.
+ */
+export const LogoutAccountSessionRequestSchema: GenMessage<LogoutAccountSessionRequest> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 22);
+
+/**
+ * @generated from message termx.cloud.v1.LogoutAccountSessionResponse
+ */
+export type LogoutAccountSessionResponse = Message<"termx.cloud.v1.LogoutAccountSessionResponse"> & {
+};
+
+/**
+ * Describes the message termx.cloud.v1.LogoutAccountSessionResponse.
+ * Use `create(LogoutAccountSessionResponseSchema)` to create a new message.
+ */
+export const LogoutAccountSessionResponseSchema: GenMessage<LogoutAccountSessionResponse> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 23);
+
+/**
+ * ChangeAccountPasswordRequest 验证当前密码后替换 verifier，并撤销账号全部旧 session。
+ *
+ * @generated from message termx.cloud.v1.ChangeAccountPasswordRequest
+ */
+export type ChangeAccountPasswordRequest = Message<"termx.cloud.v1.ChangeAccountPasswordRequest"> & {
+  /**
+   * @generated from field: string current_password = 1;
+   */
+  currentPassword: string;
+
+  /**
+   * @generated from field: string new_password = 2;
+   */
+  newPassword: string;
+};
+
+/**
+ * Describes the message termx.cloud.v1.ChangeAccountPasswordRequest.
+ * Use `create(ChangeAccountPasswordRequestSchema)` to create a new message.
+ */
+export const ChangeAccountPasswordRequestSchema: GenMessage<ChangeAccountPasswordRequest> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 24);
+
+/**
+ * @generated from message termx.cloud.v1.ChangeAccountPasswordResponse
+ */
+export type ChangeAccountPasswordResponse = Message<"termx.cloud.v1.ChangeAccountPasswordResponse"> & {
+  /**
+   * @generated from field: termx.cloud.v1.AccountSessionCredential session = 1;
+   */
+  session?: AccountSessionCredential | undefined;
+};
+
+/**
+ * Describes the message termx.cloud.v1.ChangeAccountPasswordResponse.
+ * Use `create(ChangeAccountPasswordResponseSchema)` to create a new message.
+ */
+export const ChangeAccountPasswordResponseSchema: GenMessage<ChangeAccountPasswordResponse> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 25);
+
+/**
+ * OrderProjection 是用户、provider 和运营面共用的持久订单投影。
+ *
+ * @generated from message termx.cloud.v1.OrderProjection
+ */
+export type OrderProjection = Message<"termx.cloud.v1.OrderProjection"> & {
+  /**
+   * @generated from field: string order_id = 1;
+   */
+  orderId: string;
+
+  /**
+   * @generated from field: string account_id = 2;
+   */
+  accountId: string;
+
+  /**
+   * @generated from field: string plan_id = 3;
+   */
+  planId: string;
+
+  /**
+   * @generated from field: uint64 plan_version = 4;
+   */
+  planVersion: bigint;
+
+  /**
+   * @generated from field: termx.cloud.v1.OrderStatus status = 5;
+   */
+  status: OrderStatus;
+
+  /**
+   * @generated from field: int64 created_at_unix_millis = 6;
+   */
+  createdAtUnixMillis: bigint;
+
+  /**
+   * @generated from field: int64 settled_at_unix_millis = 7;
+   */
+  settledAtUnixMillis: bigint;
+
+  /**
+   * @generated from field: string provider_reference = 8;
+   */
+  providerReference: string;
+
+  /**
+   * @generated from field: uint64 revision = 9;
+   */
+  revision: bigint;
+
+  /**
+   * @generated from field: termx.cloud.v1.SubscriptionTransitionKind requested_transition = 10;
+   */
+  requestedTransition: SubscriptionTransitionKind;
+
+  /**
+   * @generated from field: uint64 source_subscription_revision = 11;
+   */
+  sourceSubscriptionRevision: bigint;
+
+  /**
+   * @generated from field: string source_plan_id = 12;
+   */
+  sourcePlanId: string;
+
+  /**
+   * @generated from field: uint64 source_plan_version = 13;
+   */
+  sourcePlanVersion: bigint;
+
+  /**
+   * @generated from field: termx.cloud.v1.PlanPriceDefinition price = 14;
+   */
+  price?: PlanPriceDefinition | undefined;
+};
+
+/**
+ * Describes the message termx.cloud.v1.OrderProjection.
+ * Use `create(OrderProjectionSchema)` to create a new message.
+ */
+export const OrderProjectionSchema: GenMessage<OrderProjection> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 26);
+
+/**
+ * PaymentAttemptProjection 是 checkout order 与 provider event 之间的持久尝试。
+ *
+ * @generated from message termx.cloud.v1.PaymentAttemptProjection
+ */
+export type PaymentAttemptProjection = Message<"termx.cloud.v1.PaymentAttemptProjection"> & {
+  /**
+   * @generated from field: string payment_attempt_id = 1;
+   */
+  paymentAttemptId: string;
+
+  /**
+   * @generated from field: string order_id = 2;
+   */
+  orderId: string;
+
+  /**
+   * @generated from field: string account_id = 3;
+   */
+  accountId: string;
+
+  /**
+   * @generated from field: string provider = 4;
+   */
+  provider: string;
+
+  /**
+   * @generated from field: termx.cloud.v1.PaymentAttemptStatus status = 5;
+   */
+  status: PaymentAttemptStatus;
+
+  /**
+   * @generated from field: int64 created_at_unix_millis = 6;
+   */
+  createdAtUnixMillis: bigint;
+
+  /**
+   * @generated from field: int64 updated_at_unix_millis = 7;
+   */
+  updatedAtUnixMillis: bigint;
+
+  /**
+   * @generated from field: string provider_reference = 8;
+   */
+  providerReference: string;
+
+  /**
+   * @generated from field: uint64 revision = 9;
+   */
+  revision: bigint;
+};
+
+/**
+ * Describes the message termx.cloud.v1.PaymentAttemptProjection.
+ * Use `create(PaymentAttemptProjectionSchema)` to create a new message.
+ */
+export const PaymentAttemptProjectionSchema: GenMessage<PaymentAttemptProjection> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 27);
+
+/**
+ * CreateCheckoutRequest 只创建 pending order，不修改 Subscription 或 Entitlement。
+ *
+ * @generated from message termx.cloud.v1.CreateCheckoutRequest
+ */
+export type CreateCheckoutRequest = Message<"termx.cloud.v1.CreateCheckoutRequest"> & {
+  /**
+   * @generated from field: string plan_id = 1;
+   */
+  planId: string;
+
+  /**
+   * @generated from field: termx.cloud.v1.SubscriptionTransitionKind requested_transition = 2;
+   */
+  requestedTransition: SubscriptionTransitionKind;
+};
+
+/**
+ * Describes the message termx.cloud.v1.CreateCheckoutRequest.
+ * Use `create(CreateCheckoutRequestSchema)` to create a new message.
+ */
+export const CreateCheckoutRequestSchema: GenMessage<CreateCheckoutRequest> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 28);
+
+/**
+ * @generated from message termx.cloud.v1.CreateCheckoutResponse
+ */
+export type CreateCheckoutResponse = Message<"termx.cloud.v1.CreateCheckoutResponse"> & {
+  /**
+   * @generated from field: termx.cloud.v1.OrderProjection order = 1;
+   */
+  order?: OrderProjection | undefined;
+};
+
+/**
+ * Describes the message termx.cloud.v1.CreateCheckoutResponse.
+ * Use `create(CreateCheckoutResponseSchema)` to create a new message.
+ */
+export const CreateCheckoutResponseSchema: GenMessage<CreateCheckoutResponse> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 29);
+
+/**
+ * @generated from message termx.cloud.v1.CreatePaymentAttemptRequest
+ */
+export type CreatePaymentAttemptRequest = Message<"termx.cloud.v1.CreatePaymentAttemptRequest"> & {
+  /**
+   * @generated from field: string order_id = 1;
+   */
+  orderId: string;
+
+  /**
+   * @generated from field: string provider = 2;
+   */
+  provider: string;
+};
+
+/**
+ * Describes the message termx.cloud.v1.CreatePaymentAttemptRequest.
+ * Use `create(CreatePaymentAttemptRequestSchema)` to create a new message.
+ */
+export const CreatePaymentAttemptRequestSchema: GenMessage<CreatePaymentAttemptRequest> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 30);
+
+/**
+ * @generated from message termx.cloud.v1.CreatePaymentAttemptResponse
+ */
+export type CreatePaymentAttemptResponse = Message<"termx.cloud.v1.CreatePaymentAttemptResponse"> & {
+  /**
+   * @generated from field: termx.cloud.v1.PaymentAttemptProjection payment_attempt = 1;
+   */
+  paymentAttempt?: PaymentAttemptProjection | undefined;
+};
+
+/**
+ * Describes the message termx.cloud.v1.CreatePaymentAttemptResponse.
+ * Use `create(CreatePaymentAttemptResponseSchema)` to create a new message.
+ */
+export const CreatePaymentAttemptResponseSchema: GenMessage<CreatePaymentAttemptResponse> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 31);
+
+/**
+ * NormalizedPaymentEvent 是所有正式/测试 provider 共用的 durable journal 输入。
+ *
+ * @generated from message termx.cloud.v1.NormalizedPaymentEvent
+ */
+export type NormalizedPaymentEvent = Message<"termx.cloud.v1.NormalizedPaymentEvent"> & {
+  /**
+   * @generated from field: string provider_event_id = 1;
+   */
+  providerEventId: string;
+
+  /**
+   * @generated from field: string provider = 2;
+   */
+  provider: string;
+
+  /**
+   * @generated from field: termx.cloud.v1.PaymentEventType event_type = 3;
+   */
+  eventType: PaymentEventType;
+
+  /**
+   * @generated from field: string order_id = 4;
+   */
+  orderId: string;
+
+  /**
+   * @generated from field: string account_id = 5;
+   */
+  accountId: string;
+
+  /**
+   * @generated from field: string plan_id = 6;
+   */
+  planId: string;
+
+  /**
+   * @generated from field: uint64 plan_version = 7;
+   */
+  planVersion: bigint;
+
+  /**
+   * @generated from field: string provider_reference = 8;
+   */
+  providerReference: string;
+
+  /**
+   * @generated from field: int64 occurred_at_unix_millis = 9;
+   */
+  occurredAtUnixMillis: bigint;
+
+  /**
+   * @generated from field: string payment_attempt_id = 10;
+   */
+  paymentAttemptId: string;
+};
+
+/**
+ * Describes the message termx.cloud.v1.NormalizedPaymentEvent.
+ * Use `create(NormalizedPaymentEventSchema)` to create a new message.
+ */
+export const NormalizedPaymentEventSchema: GenMessage<NormalizedPaymentEvent> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 32);
+
+/**
+ * ApplyPaymentEventRequest 仅供 provider adapter 使用；签名验证发生在调用本 API 前。
+ *
+ * @generated from message termx.cloud.v1.ApplyPaymentEventRequest
+ */
+export type ApplyPaymentEventRequest = Message<"termx.cloud.v1.ApplyPaymentEventRequest"> & {
+  /**
+   * @generated from field: termx.cloud.v1.NormalizedPaymentEvent event = 1;
+   */
+  event?: NormalizedPaymentEvent | undefined;
+};
+
+/**
+ * Describes the message termx.cloud.v1.ApplyPaymentEventRequest.
+ * Use `create(ApplyPaymentEventRequestSchema)` to create a new message.
+ */
+export const ApplyPaymentEventRequestSchema: GenMessage<ApplyPaymentEventRequest> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 33);
+
+/**
+ * @generated from message termx.cloud.v1.ApplyPaymentEventResponse
+ */
+export type ApplyPaymentEventResponse = Message<"termx.cloud.v1.ApplyPaymentEventResponse"> & {
+  /**
+   * @generated from field: termx.cloud.v1.OrderProjection order = 1;
+   */
+  order?: OrderProjection | undefined;
+
+  /**
+   * @generated from field: termx.cloud.v1.SubscriptionProjection subscription = 2;
+   */
+  subscription?: SubscriptionProjection | undefined;
+
+  /**
+   * @generated from field: termx.cloud.v1.PaymentEventState event_state = 3;
+   */
+  eventState: PaymentEventState;
+
+  /**
+   * @generated from field: termx.cloud.v1.PaymentAttemptProjection payment_attempt = 4;
+   */
+  paymentAttempt?: PaymentAttemptProjection | undefined;
+};
+
+/**
+ * Describes the message termx.cloud.v1.ApplyPaymentEventResponse.
+ * Use `create(ApplyPaymentEventResponseSchema)` to create a new message.
+ */
+export const ApplyPaymentEventResponseSchema: GenMessage<ApplyPaymentEventResponse> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 34);
+
+/**
+ * ConfirmTestPaymentRequest 让显式 development provider 为当前账号订单生成 normalized event。
+ *
+ * @generated from message termx.cloud.v1.ConfirmTestPaymentRequest
+ */
+export type ConfirmTestPaymentRequest = Message<"termx.cloud.v1.ConfirmTestPaymentRequest"> & {
+  /**
+   * @generated from field: string order_id = 1;
+   */
+  orderId: string;
+
+  /**
+   * @generated from field: termx.cloud.v1.PaymentEventType event_type = 2;
+   */
+  eventType: PaymentEventType;
+};
+
+/**
+ * Describes the message termx.cloud.v1.ConfirmTestPaymentRequest.
+ * Use `create(ConfirmTestPaymentRequestSchema)` to create a new message.
+ */
+export const ConfirmTestPaymentRequestSchema: GenMessage<ConfirmTestPaymentRequest> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 35);
+
+/**
+ * @generated from message termx.cloud.v1.ConfirmTestPaymentResponse
+ */
+export type ConfirmTestPaymentResponse = Message<"termx.cloud.v1.ConfirmTestPaymentResponse"> & {
+  /**
+   * @generated from field: termx.cloud.v1.ApplyPaymentEventResponse result = 1;
+   */
+  result?: ApplyPaymentEventResponse | undefined;
+};
+
+/**
+ * Describes the message termx.cloud.v1.ConfirmTestPaymentResponse.
+ * Use `create(ConfirmTestPaymentResponseSchema)` to create a new message.
+ */
+export const ConfirmTestPaymentResponseSchema: GenMessage<ConfirmTestPaymentResponse> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 36);
+
+/**
+ * TransitionSubscriptionRequest 执行不依赖 provider payment 的显式用户/运营状态转换。
+ *
+ * @generated from message termx.cloud.v1.TransitionSubscriptionRequest
+ */
+export type TransitionSubscriptionRequest = Message<"termx.cloud.v1.TransitionSubscriptionRequest"> & {
+  /**
+   * @generated from field: string account_id = 1;
+   */
+  accountId: string;
+
+  /**
+   * @generated from field: termx.cloud.v1.SubscriptionTransitionKind transition = 2;
+   */
+  transition: SubscriptionTransitionKind;
+
+  /**
+   * @generated from field: string target_plan_id = 3;
+   */
+  targetPlanId: string;
+
+  /**
+   * @generated from field: uint64 target_plan_version = 4;
+   */
+  targetPlanVersion: bigint;
+
+  /**
+   * @generated from field: int64 effective_at_unix_millis = 5;
+   */
+  effectiveAtUnixMillis: bigint;
+
+  /**
+   * @generated from field: string actor_id = 6;
+   */
+  actorId: string;
+};
+
+/**
+ * Describes the message termx.cloud.v1.TransitionSubscriptionRequest.
+ * Use `create(TransitionSubscriptionRequestSchema)` to create a new message.
+ */
+export const TransitionSubscriptionRequestSchema: GenMessage<TransitionSubscriptionRequest> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 37);
+
+/**
+ * @generated from message termx.cloud.v1.TransitionSubscriptionResponse
+ */
+export type TransitionSubscriptionResponse = Message<"termx.cloud.v1.TransitionSubscriptionResponse"> & {
+  /**
+   * @generated from field: termx.cloud.v1.SubscriptionProjection subscription = 1;
+   */
+  subscription?: SubscriptionProjection | undefined;
+
+  /**
+   * @generated from field: termx.cloud.v1.EntitlementProjection entitlement = 2;
+   */
+  entitlement?: EntitlementProjection | undefined;
+};
+
+/**
+ * Describes the message termx.cloud.v1.TransitionSubscriptionResponse.
+ * Use `create(TransitionSubscriptionResponseSchema)` to create a new message.
+ */
+export const TransitionSubscriptionResponseSchema: GenMessage<TransitionSubscriptionResponse> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 38);
+
+/**
+ * CommerceAuditProjection 是账号可见的稳定交易审计，不包含密码、token 或 provider secret。
+ *
+ * @generated from message termx.cloud.v1.CommerceAuditProjection
+ */
+export type CommerceAuditProjection = Message<"termx.cloud.v1.CommerceAuditProjection"> & {
+  /**
+   * @generated from field: string audit_id = 1;
+   */
+  auditId: string;
+
+  /**
+   * @generated from field: string account_id = 2;
+   */
+  accountId: string;
+
+  /**
+   * @generated from field: string actor_id = 3;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string action = 4;
+   */
+  action: string;
+
+  /**
+   * @generated from field: string resource_id = 5;
+   */
+  resourceId: string;
+
+  /**
+   * @generated from field: int64 occurred_at_unix_millis = 6;
+   */
+  occurredAtUnixMillis: bigint;
+};
+
+/**
+ * Describes the message termx.cloud.v1.CommerceAuditProjection.
+ * Use `create(CommerceAuditProjectionSchema)` to create a new message.
+ */
+export const CommerceAuditProjectionSchema: GenMessage<CommerceAuditProjection> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 39);
+
+/**
+ * @generated from message termx.cloud.v1.GetAccountCommerceRequest
+ */
+export type GetAccountCommerceRequest = Message<"termx.cloud.v1.GetAccountCommerceRequest"> & {
+  /**
+   * @generated from field: string account_id = 1;
+   */
+  accountId: string;
+};
+
+/**
+ * Describes the message termx.cloud.v1.GetAccountCommerceRequest.
+ * Use `create(GetAccountCommerceRequestSchema)` to create a new message.
+ */
+export const GetAccountCommerceRequestSchema: GenMessage<GetAccountCommerceRequest> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 40);
+
+/**
+ * @generated from message termx.cloud.v1.GetAccountCommerceResponse
+ */
+export type GetAccountCommerceResponse = Message<"termx.cloud.v1.GetAccountCommerceResponse"> & {
+  /**
+   * @generated from field: termx.cloud.v1.AccountProjection account = 1;
+   */
+  account?: AccountProjection | undefined;
+
+  /**
+   * @generated from field: termx.cloud.v1.SubscriptionProjection subscription = 2;
+   */
+  subscription?: SubscriptionProjection | undefined;
+
+  /**
+   * @generated from field: termx.cloud.v1.EntitlementProjection entitlement = 3;
+   */
+  entitlement?: EntitlementProjection | undefined;
+
+  /**
+   * @generated from field: repeated termx.cloud.v1.OrderProjection orders = 4;
+   */
+  orders: OrderProjection[];
+
+  /**
+   * @generated from field: repeated termx.cloud.v1.CommerceAuditProjection audit = 5;
+   */
+  audit: CommerceAuditProjection[];
+
+  /**
+   * @generated from field: repeated termx.cloud.v1.PaymentAttemptProjection payment_attempts = 6;
+   */
+  paymentAttempts: PaymentAttemptProjection[];
+};
+
+/**
+ * Describes the message termx.cloud.v1.GetAccountCommerceResponse.
+ * Use `create(GetAccountCommerceResponseSchema)` to create a new message.
+ */
+export const GetAccountCommerceResponseSchema: GenMessage<GetAccountCommerceResponse> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 41);
+
+/**
+ * CloudProductError 是账号与交易 HTTP/Companion adapter 返回的稳定失败投影。
+ *
+ * @generated from message termx.cloud.v1.CloudProductError
+ */
+export type CloudProductError = Message<"termx.cloud.v1.CloudProductError"> & {
+  /**
+   * @generated from field: string code = 1;
+   */
+  code: string;
+
+  /**
+   * @generated from field: string message = 2;
+   */
+  message: string;
+
+  /**
+   * @generated from field: bool retryable = 3;
+   */
+  retryable: boolean;
+};
+
+/**
+ * Describes the message termx.cloud.v1.CloudProductError.
+ * Use `create(CloudProductErrorSchema)` to create a new message.
+ */
+export const CloudProductErrorSchema: GenMessage<CloudProductError> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_product, 42);
 
 /**
  * SubscriptionStatus 是交易状态机投影到服务能力层的稳定订阅状态。
@@ -433,6 +1422,21 @@ export enum SubscriptionStatus {
    * @generated from enum value: SUBSCRIPTION_STATUS_EXPIRED = 6;
    */
   EXPIRED = 6,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_STATUS_TRIALING = 7;
+   */
+  TRIALING = 7,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_STATUS_GRACE = 8;
+   */
+  GRACE = 8,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_STATUS_PAST_DUE = 9;
+   */
+  PAST_DUE = 9,
 }
 
 /**
@@ -440,6 +1444,269 @@ export enum SubscriptionStatus {
  */
 export const SubscriptionStatusSchema: GenEnum<SubscriptionStatus> = /*@__PURE__*/
   enumDesc(file_cloudpb_cloud_product, 0);
+
+/**
+ * OrderStatus 是 checkout 到 provider settlement 的持久订单状态。
+ *
+ * @generated from enum termx.cloud.v1.OrderStatus
+ */
+export enum OrderStatus {
+  /**
+   * @generated from enum value: ORDER_STATUS_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ORDER_STATUS_PENDING = 1;
+   */
+  PENDING = 1,
+
+  /**
+   * @generated from enum value: ORDER_STATUS_PAID = 2;
+   */
+  PAID = 2,
+
+  /**
+   * @generated from enum value: ORDER_STATUS_PAYMENT_FAILED = 3;
+   */
+  PAYMENT_FAILED = 3,
+
+  /**
+   * @generated from enum value: ORDER_STATUS_REFUNDED = 4;
+   */
+  REFUNDED = 4,
+
+  /**
+   * @generated from enum value: ORDER_STATUS_REVOKED = 5;
+   */
+  REVOKED = 5,
+}
+
+/**
+ * Describes the enum termx.cloud.v1.OrderStatus.
+ */
+export const OrderStatusSchema: GenEnum<OrderStatus> = /*@__PURE__*/
+  enumDesc(file_cloudpb_cloud_product, 1);
+
+/**
+ * CatalogPriceMode 区分免费、已发布价格和联系销售，不允许 UI 从金额缺失猜测。
+ *
+ * @generated from enum termx.cloud.v1.CatalogPriceMode
+ */
+export enum CatalogPriceMode {
+  /**
+   * @generated from enum value: CATALOG_PRICE_MODE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: CATALOG_PRICE_MODE_INCLUDED = 1;
+   */
+  INCLUDED = 1,
+
+  /**
+   * @generated from enum value: CATALOG_PRICE_MODE_CONFIGURED = 2;
+   */
+  CONFIGURED = 2,
+
+  /**
+   * @generated from enum value: CATALOG_PRICE_MODE_CONTACT = 3;
+   */
+  CONTACT = 3,
+}
+
+/**
+ * Describes the enum termx.cloud.v1.CatalogPriceMode.
+ */
+export const CatalogPriceModeSchema: GenEnum<CatalogPriceMode> = /*@__PURE__*/
+  enumDesc(file_cloudpb_cloud_product, 2);
+
+/**
+ * PaymentAttemptStatus 是一次 provider 支付尝试的持久状态。
+ *
+ * @generated from enum termx.cloud.v1.PaymentAttemptStatus
+ */
+export enum PaymentAttemptStatus {
+  /**
+   * @generated from enum value: PAYMENT_ATTEMPT_STATUS_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: PAYMENT_ATTEMPT_STATUS_PENDING = 1;
+   */
+  PENDING = 1,
+
+  /**
+   * @generated from enum value: PAYMENT_ATTEMPT_STATUS_SUCCEEDED = 2;
+   */
+  SUCCEEDED = 2,
+
+  /**
+   * @generated from enum value: PAYMENT_ATTEMPT_STATUS_FAILED = 3;
+   */
+  FAILED = 3,
+}
+
+/**
+ * Describes the enum termx.cloud.v1.PaymentAttemptStatus.
+ */
+export const PaymentAttemptStatusSchema: GenEnum<PaymentAttemptStatus> = /*@__PURE__*/
+  enumDesc(file_cloudpb_cloud_product, 3);
+
+/**
+ * PaymentEventType 是 provider adapter 归一化后的稳定交易事件。
+ *
+ * @generated from enum termx.cloud.v1.PaymentEventType
+ */
+export enum PaymentEventType {
+  /**
+   * @generated from enum value: PAYMENT_EVENT_TYPE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: PAYMENT_EVENT_TYPE_SUCCEEDED = 1;
+   */
+  SUCCEEDED = 1,
+
+  /**
+   * @generated from enum value: PAYMENT_EVENT_TYPE_FAILED = 2;
+   */
+  FAILED = 2,
+
+  /**
+   * @generated from enum value: PAYMENT_EVENT_TYPE_REFUNDED = 3;
+   */
+  REFUNDED = 3,
+
+  /**
+   * @generated from enum value: PAYMENT_EVENT_TYPE_REVOKED = 4;
+   */
+  REVOKED = 4,
+
+  /**
+   * @generated from enum value: PAYMENT_EVENT_TYPE_CHARGEBACK = 5;
+   */
+  CHARGEBACK = 5,
+}
+
+/**
+ * Describes the enum termx.cloud.v1.PaymentEventType.
+ */
+export const PaymentEventTypeSchema: GenEnum<PaymentEventType> = /*@__PURE__*/
+  enumDesc(file_cloudpb_cloud_product, 4);
+
+/**
+ * PaymentEventState 表示 durable provider journal 的处理阶段。
+ *
+ * @generated from enum termx.cloud.v1.PaymentEventState
+ */
+export enum PaymentEventState {
+  /**
+   * @generated from enum value: PAYMENT_EVENT_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: PAYMENT_EVENT_STATE_RECEIVED = 1;
+   */
+  RECEIVED = 1,
+
+  /**
+   * @generated from enum value: PAYMENT_EVENT_STATE_APPLIED = 2;
+   */
+  APPLIED = 2,
+
+  /**
+   * @generated from enum value: PAYMENT_EVENT_STATE_REJECTED = 3;
+   */
+  REJECTED = 3,
+}
+
+/**
+ * Describes the enum termx.cloud.v1.PaymentEventState.
+ */
+export const PaymentEventStateSchema: GenEnum<PaymentEventState> = /*@__PURE__*/
+  enumDesc(file_cloudpb_cloud_product, 5);
+
+/**
+ * SubscriptionTransitionKind 是所有商业状态变化共用的显式原因。
+ *
+ * @generated from enum termx.cloud.v1.SubscriptionTransitionKind
+ */
+export enum SubscriptionTransitionKind {
+  /**
+   * @generated from enum value: SUBSCRIPTION_TRANSITION_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_TRANSITION_KIND_ACTIVATE = 1;
+   */
+  ACTIVATE = 1,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_TRANSITION_KIND_RENEW = 2;
+   */
+  RENEW = 2,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_TRANSITION_KIND_UPGRADE = 3;
+   */
+  UPGRADE = 3,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_TRANSITION_KIND_DOWNGRADE = 4;
+   */
+  DOWNGRADE = 4,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_TRANSITION_KIND_CANCEL_AT_PERIOD_END = 5;
+   */
+  CANCEL_AT_PERIOD_END = 5,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_TRANSITION_KIND_RESUME = 6;
+   */
+  RESUME = 6,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_TRANSITION_KIND_PAYMENT_FAILED = 7;
+   */
+  PAYMENT_FAILED = 7,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_TRANSITION_KIND_SUSPEND = 8;
+   */
+  SUSPEND = 8,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_TRANSITION_KIND_RESTORE = 9;
+   */
+  RESTORE = 9,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_TRANSITION_KIND_EXPIRE = 10;
+   */
+  EXPIRE = 10,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_TRANSITION_KIND_REFUND = 11;
+   */
+  REFUND = 11,
+
+  /**
+   * @generated from enum value: SUBSCRIPTION_TRANSITION_KIND_REVOKE = 12;
+   */
+  REVOKE = 12,
+}
+
+/**
+ * Describes the enum termx.cloud.v1.SubscriptionTransitionKind.
+ */
+export const SubscriptionTransitionKindSchema: GenEnum<SubscriptionTransitionKind> = /*@__PURE__*/
+  enumDesc(file_cloudpb_cloud_product, 6);
 
 /**
  * EntitlementStatus 是 Hub/Relay 准入读取的归一化商业状态。
@@ -472,4 +1739,4 @@ export enum EntitlementStatus {
  * Describes the enum termx.cloud.v1.EntitlementStatus.
  */
 export const EntitlementStatusSchema: GenEnum<EntitlementStatus> = /*@__PURE__*/
-  enumDesc(file_cloudpb_cloud_product, 1);
+  enumDesc(file_cloudpb_cloud_product, 7);

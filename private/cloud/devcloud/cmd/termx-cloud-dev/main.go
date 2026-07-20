@@ -112,7 +112,7 @@ func run(ctx context.Context, args []string) error {
 	}
 	controllerDatabase := filepath.Join(artifactDir, "controller.db")
 	_ = os.Remove(controllerDatabase)
-	controllerConfig := controller.Config{DatabasePath: controllerDatabase, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: filepath.Join(root, "private/cloud/web-controller/config/plans.json"), ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), Deployments: deploymentConfigs, Accounts: []*cloudpb.HubAccountPolicy{account}, Devices: devices, Assignments: assignments}
+	controllerConfig := controller.Config{DatabasePath: controllerDatabase, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: filepath.Join(root, "private/cloud/web-controller/config/plans.json"), ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Accounts: []*cloudpb.HubAccountPolicy{account}, Devices: devices, Assignments: assignments}
 	controllerConfigPath := filepath.Join(artifactDir, "controller-config.json")
 	controllerManifestPath := filepath.Join(artifactDir, "controller-runtime.json")
 	if err := writeJSONFile(controllerConfigPath, controllerConfig); err != nil {

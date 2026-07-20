@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	webcontroller "github.com/lozzow/termx/private/cloud/web-controller"
+	"github.com/lozzow/termx/proto/cloudpb"
 )
 
 func TestCatalogLoadsUnpublishedPricesWithoutInventingAmounts(t *testing.T) {
@@ -26,7 +27,7 @@ func TestCatalogLoadsUnpublishedPricesWithoutInventingAmounts(t *testing.T) {
 		t.Fatalf("Pro capability = %#v", catalog.Plans[1].Capability)
 	}
 	contract := catalog.Contract()
-	if len(contract.GetPlans()) != 3 || contract.GetPlans()[1].GetCapability().GetRelay().GetMaxBytesPerLease() != 256<<20 {
+	if len(contract.GetPlans()) != 3 || contract.GetPlans()[1].GetCapability().GetRelay().GetMaxBytesPerLease() != 256<<20 || contract.GetPlans()[1].GetPrice().GetMode() != cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_CONTACT || contract.GetPlans()[1].GetPresentation().GetName() != "Pro" {
 		t.Fatalf("catalog contract = %#v", contract)
 	}
 }

@@ -13,6 +13,70 @@ enum SubscriptionStatus {
   SUBSCRIPTION_STATUS_CANCELED = 4;
   SUBSCRIPTION_STATUS_SUSPENDED = 5;
   SUBSCRIPTION_STATUS_EXPIRED = 6;
+  SUBSCRIPTION_STATUS_TRIALING = 7;
+  SUBSCRIPTION_STATUS_GRACE = 8;
+  SUBSCRIPTION_STATUS_PAST_DUE = 9;
+}
+
+// OrderStatus 是 checkout 到 provider settlement 的持久订单状态。
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  ORDER_STATUS_PENDING = 1;
+  ORDER_STATUS_PAID = 2;
+  ORDER_STATUS_PAYMENT_FAILED = 3;
+  ORDER_STATUS_REFUNDED = 4;
+  ORDER_STATUS_REVOKED = 5;
+}
+
+// CatalogPriceMode 区分免费、已发布价格和联系销售，不允许 UI 从金额缺失猜测。
+enum CatalogPriceMode {
+  CATALOG_PRICE_MODE_UNSPECIFIED = 0;
+  CATALOG_PRICE_MODE_INCLUDED = 1;
+  CATALOG_PRICE_MODE_CONFIGURED = 2;
+  CATALOG_PRICE_MODE_CONTACT = 3;
+}
+
+// PaymentAttemptStatus 是一次 provider 支付尝试的持久状态。
+enum PaymentAttemptStatus {
+  PAYMENT_ATTEMPT_STATUS_UNSPECIFIED = 0;
+  PAYMENT_ATTEMPT_STATUS_PENDING = 1;
+  PAYMENT_ATTEMPT_STATUS_SUCCEEDED = 2;
+  PAYMENT_ATTEMPT_STATUS_FAILED = 3;
+}
+
+// PaymentEventType 是 provider adapter 归一化后的稳定交易事件。
+enum PaymentEventType {
+  PAYMENT_EVENT_TYPE_UNSPECIFIED = 0;
+  PAYMENT_EVENT_TYPE_SUCCEEDED = 1;
+  PAYMENT_EVENT_TYPE_FAILED = 2;
+  PAYMENT_EVENT_TYPE_REFUNDED = 3;
+  PAYMENT_EVENT_TYPE_REVOKED = 4;
+  PAYMENT_EVENT_TYPE_CHARGEBACK = 5;
+}
+
+// PaymentEventState 表示 durable provider journal 的处理阶段。
+enum PaymentEventState {
+  PAYMENT_EVENT_STATE_UNSPECIFIED = 0;
+  PAYMENT_EVENT_STATE_RECEIVED = 1;
+  PAYMENT_EVENT_STATE_APPLIED = 2;
+  PAYMENT_EVENT_STATE_REJECTED = 3;
+}
+
+// SubscriptionTransitionKind 是所有商业状态变化共用的显式原因。
+enum SubscriptionTransitionKind {
+  SUBSCRIPTION_TRANSITION_KIND_UNSPECIFIED = 0;
+  SUBSCRIPTION_TRANSITION_KIND_ACTIVATE = 1;
+  SUBSCRIPTION_TRANSITION_KIND_RENEW = 2;
+  SUBSCRIPTION_TRANSITION_KIND_UPGRADE = 3;
+  SUBSCRIPTION_TRANSITION_KIND_DOWNGRADE = 4;
+  SUBSCRIPTION_TRANSITION_KIND_CANCEL_AT_PERIOD_END = 5;
+  SUBSCRIPTION_TRANSITION_KIND_RESUME = 6;
+  SUBSCRIPTION_TRANSITION_KIND_PAYMENT_FAILED = 7;
+  SUBSCRIPTION_TRANSITION_KIND_SUSPEND = 8;
+  SUBSCRIPTION_TRANSITION_KIND_RESTORE = 9;
+  SUBSCRIPTION_TRANSITION_KIND_EXPIRE = 10;
+  SUBSCRIPTION_TRANSITION_KIND_REFUND = 11;
+  SUBSCRIPTION_TRANSITION_KIND_REVOKE = 12;
 }
 
 // EntitlementStatus 是 Hub/Relay 准入读取的归一化商业状态。
@@ -51,6 +115,29 @@ message PlanDefinition {
   uint64 plan_version = 2;
   uint32 billing_period_days = 3;
   PlanCapability capability = 4;
+  bool included = 5;
+  PlanPriceDefinition price = 6;
+  PlanPresentation presentation = 7;
+}
+
+// PlanPriceDefinition 是 catalog 与订单快照共用的价格契约。
+message PlanPriceDefinition {
+  CatalogPriceMode mode = 1;
+  string currency = 2;
+  int64 monthly_minor = 3;
+  int64 yearly_minor = 4;
+  string label = 5;
+}
+
+// PlanPresentation 是官方客户端展示套餐所需的 versioned 文案。
+message PlanPresentation {
+  string name = 1;
+  string eyebrow = 2;
+  string description = 3;
+  string cta_label = 4;
+  string cta_href = 5;
+  bool featured = 6;
+  repeated string features = 7;
 }
 
 // PlanCatalogContract 是 Control Plane 发布的机器可读套餐能力目录。
@@ -70,6 +157,9 @@ message SubscriptionProjection {
   int64 current_period_start_unix_millis = 7;
   int64 current_period_end_unix_millis = 8;
   int64 updated_at_unix_millis = 9;
+  bool cancel_at_period_end = 10;
+  string provider_reference = 11;
+  uint64 revision = 12;
 }
 
 // EntitlementProjection 是 Subscription、PlanCapability 与风控归一化后的准入真值。
@@ -112,4 +202,204 @@ message GetAccountEntitlementRequest {
 // GetAccountEntitlementResponse 返回 Hub/Relay policy 的来源投影。
 message GetAccountEntitlementResponse {
   EntitlementProjection entitlement = 1;
+}
+
+// AccountProjection 是账号 API 可返回的最小身份投影，不包含密码 hash 或 session secret。
+message AccountProjection {
+  string account_id = 1;
+  string user_id = 2;
+  string email = 3;
+  string display_name = 4;
+  uint64 auth_revision = 5;
+  int64 created_at_unix_millis = 6;
+}
+
+// AccountSessionCredential 是注册、登录和 refresh 返回一次的短期/长期 credential。
+message AccountSessionCredential {
+  string session_id = 1;
+  AccountProjection account = 2;
+  bytes access_token = 3;
+  bytes refresh_token = 4;
+  int64 access_expires_at_unix_millis = 5;
+  int64 refresh_expires_at_unix_millis = 6;
+  uint64 session_revision = 7;
+}
+
+// RegisterAccountRequest 创建邮箱密码账号；密码只进入 credential verifier，不得写日志或审计 body。
+message RegisterAccountRequest {
+  string email = 1;
+  string password = 2;
+  string referral_code = 3;
+}
+
+message RegisterAccountResponse {
+  AccountSessionCredential session = 1;
+}
+
+// PasswordLoginRequest 使用邮箱密码创建新的账号 session。
+message PasswordLoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message PasswordLoginResponse {
+  AccountSessionCredential session = 1;
+}
+
+// RefreshAccountSessionRequest 单次使用并轮换 refresh token。
+message RefreshAccountSessionRequest {
+  bytes refresh_token = 1;
+}
+
+message RefreshAccountSessionResponse {
+  AccountSessionCredential session = 1;
+}
+
+// LogoutAccountSessionRequest 撤销精确 session；all_account_sessions 用于改密后的全量撤销。
+message LogoutAccountSessionRequest {
+  string session_id = 1;
+  bool all_account_sessions = 2;
+}
+
+message LogoutAccountSessionResponse {}
+
+// ChangeAccountPasswordRequest 验证当前密码后替换 verifier，并撤销账号全部旧 session。
+message ChangeAccountPasswordRequest {
+  string current_password = 1;
+  string new_password = 2;
+}
+
+message ChangeAccountPasswordResponse {
+  AccountSessionCredential session = 1;
+}
+
+// OrderProjection 是用户、provider 和运营面共用的持久订单投影。
+message OrderProjection {
+  string order_id = 1;
+  string account_id = 2;
+  string plan_id = 3;
+  uint64 plan_version = 4;
+  OrderStatus status = 5;
+  int64 created_at_unix_millis = 6;
+  int64 settled_at_unix_millis = 7;
+  string provider_reference = 8;
+  uint64 revision = 9;
+  SubscriptionTransitionKind requested_transition = 10;
+  uint64 source_subscription_revision = 11;
+  string source_plan_id = 12;
+  uint64 source_plan_version = 13;
+  PlanPriceDefinition price = 14;
+}
+
+// PaymentAttemptProjection 是 checkout order 与 provider event 之间的持久尝试。
+message PaymentAttemptProjection {
+  string payment_attempt_id = 1;
+  string order_id = 2;
+  string account_id = 3;
+  string provider = 4;
+  PaymentAttemptStatus status = 5;
+  int64 created_at_unix_millis = 6;
+  int64 updated_at_unix_millis = 7;
+  string provider_reference = 8;
+  uint64 revision = 9;
+}
+
+// CreateCheckoutRequest 只创建 pending order，不修改 Subscription 或 Entitlement。
+message CreateCheckoutRequest {
+  string plan_id = 1;
+  SubscriptionTransitionKind requested_transition = 2;
+}
+
+message CreateCheckoutResponse {
+  OrderProjection order = 1;
+}
+
+message CreatePaymentAttemptRequest {
+  string order_id = 1;
+  string provider = 2;
+}
+
+message CreatePaymentAttemptResponse {
+  PaymentAttemptProjection payment_attempt = 1;
+}
+
+// NormalizedPaymentEvent 是所有正式/测试 provider 共用的 durable journal 输入。
+message NormalizedPaymentEvent {
+  string provider_event_id = 1;
+  string provider = 2;
+  PaymentEventType event_type = 3;
+  string order_id = 4;
+  string account_id = 5;
+  string plan_id = 6;
+  uint64 plan_version = 7;
+  string provider_reference = 8;
+  int64 occurred_at_unix_millis = 9;
+  string payment_attempt_id = 10;
+}
+
+// ApplyPaymentEventRequest 仅供 provider adapter 使用；签名验证发生在调用本 API 前。
+message ApplyPaymentEventRequest {
+  NormalizedPaymentEvent event = 1;
+}
+
+message ApplyPaymentEventResponse {
+  OrderProjection order = 1;
+  SubscriptionProjection subscription = 2;
+  PaymentEventState event_state = 3;
+  PaymentAttemptProjection payment_attempt = 4;
+}
+
+// ConfirmTestPaymentRequest 让显式 development provider 为当前账号订单生成 normalized event。
+message ConfirmTestPaymentRequest {
+  string order_id = 1;
+  PaymentEventType event_type = 2;
+}
+
+message ConfirmTestPaymentResponse {
+  ApplyPaymentEventResponse result = 1;
+}
+
+// TransitionSubscriptionRequest 执行不依赖 provider payment 的显式用户/运营状态转换。
+message TransitionSubscriptionRequest {
+  string account_id = 1;
+  SubscriptionTransitionKind transition = 2;
+  string target_plan_id = 3;
+  uint64 target_plan_version = 4;
+  int64 effective_at_unix_millis = 5;
+  string actor_id = 6;
+}
+
+message TransitionSubscriptionResponse {
+  SubscriptionProjection subscription = 1;
+  EntitlementProjection entitlement = 2;
+}
+
+// CommerceAuditProjection 是账号可见的稳定交易审计，不包含密码、token 或 provider secret。
+message CommerceAuditProjection {
+  string audit_id = 1;
+  string account_id = 2;
+  string actor_id = 3;
+  string action = 4;
+  string resource_id = 5;
+  int64 occurred_at_unix_millis = 6;
+}
+
+message GetAccountCommerceRequest {
+  string account_id = 1;
+}
+
+message GetAccountCommerceResponse {
+  AccountProjection account = 1;
+  SubscriptionProjection subscription = 2;
+  EntitlementProjection entitlement = 3;
+  repeated OrderProjection orders = 4;
+  repeated CommerceAuditProjection audit = 5;
+  repeated PaymentAttemptProjection payment_attempts = 6;
+}
+
+// CloudProductError 是账号与交易 HTTP/Companion adapter 返回的稳定失败投影。
+message CloudProductError {
+  string code = 1;
+  string message = 2;
+  bool retryable = 3;
 }
