@@ -137,6 +137,11 @@ func (service *Service) forwardDaemonCommandLocked(command *cloudpb.DaemonContro
 		result.ErrorCode = "stale_managed_session"
 		return
 	}
+	if target := command.GetTerminalAccess(); target != nil && !runtimeHasTerminalAccess(runtime, target) {
+		result.ResultCode = cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_STALE_TARGET
+		result.ErrorCode = "stale_terminal_access"
+		return
+	}
 	select {
 	case presence.events <- PresenceEvent{DaemonCommand: proto.Clone(command).(*cloudpb.DaemonControlCommand)}:
 		result.ResultCode = cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED
@@ -197,10 +202,29 @@ func runtimeHasSession(runtime *daemonRuntimeTopology, target *cloudpb.ManagedPe
 	return false
 }
 
+func runtimeHasTerminalAccess(runtime *daemonRuntimeTopology, target *cloudpb.RevokeTerminalAccessTarget) bool {
+	inventory := runtime.terminalAccesses
+	if inventory == nil || target == nil || inventory.GetDaemonDeviceId() != target.GetDaemonDeviceId() || inventory.GetAssignmentEpoch() != target.GetAssignmentEpoch() || inventory.GetControlPresenceSessionId() != target.GetPresenceSessionId() || inventory.GetDaemonRuntimeGeneration() != target.GetDaemonRuntimeGeneration() {
+		return false
+	}
+	for _, access := range inventory.GetAccesses() {
+		// Hub 只证明 opaque reference 属于当前 runtime。状态和 revision 由 daemon AccessStore
+		// 验证；这样执行后 receipt 丢失时，REVOKED 新投影仍允许相同 signed command 重放。
+		if access.GetOpaqueAccessReference() == target.GetOpaqueAccessReference() {
+			return true
+		}
+	}
+	return false
+}
+
 func daemonResultMatchesCommand(command *cloudpb.DaemonControlCommand, result *cloudpb.DaemonCommandResult) bool {
 	if command.GetCommandId() != result.GetCommandId() || command.GetTargetDeviceId() != result.GetDaemonDeviceId() || command.GetAssignmentEpoch() != result.GetAssignmentEpoch() || command.GetPresenceSessionId() != result.GetPresenceSessionId() || command.GetDaemonRuntimeGeneration() != result.GetDaemonRuntimeGeneration() {
 		return false
 	}
 	target := command.GetManagedPeerSession()
-	return target != nil && target.GetManagedSessionId() == result.GetManagedSessionId() && target.GetSessionIncarnation() == result.GetSessionIncarnation()
+	if target != nil {
+		return target.GetManagedSessionId() == result.GetManagedSessionId() && target.GetSessionIncarnation() == result.GetSessionIncarnation() && result.GetOpaqueAccessReference() == ""
+	}
+	access := command.GetTerminalAccess()
+	return access != nil && access.GetOpaqueAccessReference() == result.GetOpaqueAccessReference() && result.GetManagedSessionId() == "" && result.GetSessionIncarnation() == 0 && result.GetAccessProjectionRevision() >= access.GetAccessProjectionRevision()
 }

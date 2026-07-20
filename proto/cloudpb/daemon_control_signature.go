@@ -56,21 +56,50 @@ func SignDaemonControlCommand(command *DaemonControlCommand, keyID string, priva
 	return owned, nil
 }
 
+type daemonControlVerificationMaterial struct {
+	publicKey ed25519.PublicKey
+	notBefore time.Time
+	notAfter  time.Time
+}
+
 // DaemonControlVerifier 是 daemon enrollment 装配的 control public key 集。
 // 它只拥有验签材料，不拥有账号、assignment、Presence 或 session 真值。
-type DaemonControlVerifier struct{ keys map[string]ed25519.PublicKey }
+type DaemonControlVerifier struct {
+	keys map[string]daemonControlVerificationMaterial
+}
 
 // NewDaemonControlVerifier 复制可信 control public key；空集合或非法 key 会 fail closed。
 func NewDaemonControlVerifier(keys map[string]ed25519.PublicKey) (*DaemonControlVerifier, error) {
 	if len(keys) == 0 {
 		return nil, ErrUnknownDaemonControlKey
 	}
-	owned := make(map[string]ed25519.PublicKey, len(keys))
+	owned := make(map[string]daemonControlVerificationMaterial, len(keys))
 	for keyID, publicKey := range keys {
 		if keyID == "" || len(publicKey) != ed25519.PublicKeySize {
 			return nil, ErrUnknownDaemonControlKey
 		}
-		owned[keyID] = append(ed25519.PublicKey(nil), publicKey...)
+		owned[keyID] = daemonControlVerificationMaterial{publicKey: append(ed25519.PublicKey(nil), publicKey...)}
+	}
+	return &DaemonControlVerifier{keys: owned}, nil
+}
+
+// NewDaemonControlEnrollmentVerifier 从 Proto enrollment 构造带 key window 的 verifier。
+// enrollment 的账号、设备和 auth epoch 仍由 daemon ControlReceiptStore 作为本地 binding 校验。
+func NewDaemonControlEnrollmentVerifier(enrollment *DaemonControlEnrollment) (*DaemonControlVerifier, error) {
+	if enrollment == nil || enrollment.GetAccountId() == "" || enrollment.GetDaemonDeviceId() == "" || enrollment.GetAuthEpoch() == 0 || enrollment.GetEnrolledAtUnixMillis() <= 0 || len(enrollment.GetVerificationKeys()) == 0 {
+		return nil, ErrInvalidDaemonControlCommand
+	}
+	owned := make(map[string]daemonControlVerificationMaterial, len(enrollment.GetVerificationKeys()))
+	for _, key := range enrollment.GetVerificationKeys() {
+		notBefore := time.UnixMilli(key.GetNotBeforeUnixMillis()).UTC()
+		notAfter := time.UnixMilli(key.GetNotAfterUnixMillis()).UTC()
+		if key == nil || key.GetKeyId() == "" || len(key.GetPublicKey()) != ed25519.PublicKeySize || key.GetNotBeforeUnixMillis() <= 0 || !notAfter.After(notBefore) {
+			return nil, ErrUnknownDaemonControlKey
+		}
+		if _, duplicate := owned[key.GetKeyId()]; duplicate {
+			return nil, ErrUnknownDaemonControlKey
+		}
+		owned[key.GetKeyId()] = daemonControlVerificationMaterial{publicKey: append(ed25519.PublicKey(nil), key.GetPublicKey()...), notBefore: notBefore, notAfter: notAfter}
 	}
 	return &DaemonControlVerifier{keys: owned}, nil
 }
@@ -84,15 +113,19 @@ func (verifier *DaemonControlVerifier) Verify(command *DaemonControlCommand, now
 	if command.GetIssuedAtUnixMillis() > now.UnixMilli() || command.GetExpiresAtUnixMillis() <= now.UnixMilli() {
 		return ErrExpiredDaemonControlCommand
 	}
-	publicKey := verifier.keys[command.GetControlKeyId()]
-	if len(publicKey) != ed25519.PublicKeySize {
+	key, ok := verifier.keys[command.GetControlKeyId()]
+	if !ok || len(key.publicKey) != ed25519.PublicKeySize {
 		return ErrUnknownDaemonControlKey
+	}
+	issuedAt := time.UnixMilli(command.GetIssuedAtUnixMillis()).UTC()
+	if !key.notBefore.IsZero() && (issuedAt.Before(key.notBefore) || !issuedAt.Before(key.notAfter)) {
+		return ErrExpiredDaemonControlCommand
 	}
 	canonical, err := DaemonControlSigningBytes(command)
 	if err != nil {
 		return err
 	}
-	if len(command.GetSignature()) != ed25519.SignatureSize || !ed25519.Verify(publicKey, canonical, command.GetSignature()) {
+	if len(command.GetSignature()) != ed25519.SignatureSize || !ed25519.Verify(key.publicKey, canonical, command.GetSignature()) {
 		return ErrInvalidDaemonControlSignature
 	}
 	return nil
@@ -110,7 +143,7 @@ func validateDaemonControlCommand(command *DaemonControlCommand) error {
 		}
 	case DaemonControlCommandKind_DAEMON_CONTROL_COMMAND_KIND_REVOKE_TERMINAL_ACCESS:
 		target := command.GetTerminalAccess()
-		if target == nil || target.GetDaemonDeviceId() != command.GetTargetDeviceId() || target.GetOpaqueAccessReference() == "" {
+		if target == nil || target.GetDaemonDeviceId() != command.GetTargetDeviceId() || target.GetOpaqueAccessReference() == "" || target.GetAssignmentEpoch() != command.GetAssignmentEpoch() || target.GetPresenceSessionId() != command.GetPresenceSessionId() || target.GetDaemonRuntimeGeneration() != command.GetDaemonRuntimeGeneration() || target.GetAccessProjectionRevision() == 0 {
 			return ErrInvalidDaemonControlCommand
 		}
 	default:

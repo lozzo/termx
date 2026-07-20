@@ -457,8 +457,15 @@ func TestAccessStoreConcurrentRedeemIdempotencyRevokeAndRestart(t *testing.T) {
 	if _, err := store.RedeemPairingBundle(expiredPayload, unusedClient.PublicKey, "expired", now.Add(2*time.Minute)); !errors.Is(err, ErrPairingTicketExpired) {
 		t.Fatalf("unconsumed expired ticket error = %v", err)
 	}
+	beforeRevokeRevision := store.AccessProjectionRevision()
+	if beforeRevokeRevision == 0 {
+		t.Fatal("grant creation did not advance access projection revision")
+	}
 	if _, err := store.RevokeGrant(winner.result.GrantID); err != nil {
 		t.Fatal(err)
+	}
+	if store.AccessProjectionRevision() != beforeRevokeRevision+1 {
+		t.Fatalf("revoke revision = %d, want %d", store.AccessProjectionRevision(), beforeRevokeRevision+1)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
@@ -470,6 +477,9 @@ func TestAccessStoreConcurrentRedeemIdempotencyRevokeAndRestart(t *testing.T) {
 	t.Cleanup(func() { _ = reloaded.Close() })
 	if !reloaded.Revoked(winner.result.GrantID) || len(reloaded.ListClientAccess()) != 1 {
 		t.Fatalf("access truth did not survive restart: %#v", reloaded.ListClientAccess())
+	}
+	if reloaded.AccessProjectionRevision() != beforeRevokeRevision+1 {
+		t.Fatalf("reloaded access projection revision = %d", reloaded.AccessProjectionRevision())
 	}
 	if _, err := Verify(winner.result.Grant, identity.Fingerprint, now.Add(time.Minute), reloaded); !errors.Is(err, ErrGrantRevoked) {
 		t.Fatalf("reloaded revocation error = %v", err)

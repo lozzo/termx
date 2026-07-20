@@ -32,3 +32,18 @@ func TestDaemonControlSignatureBindsExactManagedSession(t *testing.T) {
 		t.Fatalf("tampered Verify() error = %v", err)
 	}
 }
+
+func TestDaemonControlEnrollmentVerifierEnforcesKeyWindow(t *testing.T) {
+	publicKey, privateKey, _ := ed25519.GenerateKey(rand.Reader)
+	now := time.Date(2026, 7, 20, 13, 0, 0, 0, time.UTC)
+	target := &ManagedPeerSessionTarget{DaemonDeviceId: "daemon-1", ManagedSessionId: "managed-1", SessionIncarnation: 1, AssignmentEpoch: 1, ControlPresenceSessionId: "presence-1", DaemonRuntimeGeneration: "runtime-1"}
+	command := &DaemonControlCommand{CommandId: "command-1", CommandKind: DaemonControlCommandKind_DAEMON_CONTROL_COMMAND_KIND_CLOSE_MANAGED_PEER_SESSION, AccountId: "account-1", TargetDeviceId: "daemon-1", HubId: "hub-1", AssignmentEpoch: 1, AuthEpoch: 3, PresenceSessionId: "presence-1", DaemonRuntimeGeneration: "runtime-1", IssuedAtUnixMillis: now.UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Minute).UnixMilli(), Target: &DaemonControlCommand_ManagedPeerSession{ManagedPeerSession: target}}
+	signed, _ := SignDaemonControlCommand(command, "control-1", privateKey)
+	verifier, err := NewDaemonControlEnrollmentVerifier(&DaemonControlEnrollment{AccountId: "account-1", DaemonDeviceId: "daemon-1", AuthEpoch: 3, EnrolledAtUnixMillis: now.Add(-time.Hour).UnixMilli(), VerificationKeys: []*DaemonControlVerificationKey{{KeyId: "control-1", PublicKey: publicKey, NotBeforeUnixMillis: now.Add(time.Second).UnixMilli(), NotAfterUnixMillis: now.Add(time.Hour).UnixMilli()}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifier.Verify(signed, now); !errors.Is(err, ErrExpiredDaemonControlCommand) {
+		t.Fatalf("key window Verify() error = %v", err)
+	}
+}

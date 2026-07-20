@@ -241,8 +241,13 @@ func validateDaemonRuntimeResponse(request *cloudpb.ReportDaemonRuntimeRequest, 
 
 func validateDaemonCommandResultRequest(request *cloudpb.ReportDaemonCommandResultRequest, daemonDeviceID string) error {
 	result := request.GetResult()
-	if request == nil || result == nil || daemonDeviceID == "" || result.GetCommandId() == "" || result.GetDaemonDeviceId() != daemonDeviceID || result.GetManagedSessionId() == "" || result.GetSessionIncarnation() == 0 || result.GetAssignmentEpoch() == 0 || result.GetPresenceSessionId() == "" || result.GetDaemonRuntimeGeneration() == "" || result.GetResultCode() == cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_UNSPECIFIED || result.GetCompletedAtUnixMillis() <= 0 {
+	if request == nil || result == nil || daemonDeviceID == "" || result.GetCommandId() == "" || result.GetDaemonDeviceId() != daemonDeviceID || result.GetAssignmentEpoch() == 0 || result.GetPresenceSessionId() == "" || result.GetDaemonRuntimeGeneration() == "" || result.GetResultCode() == cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_UNSPECIFIED || result.GetCompletedAtUnixMillis() <= 0 {
 		return protocolError("daemon command result is invalid")
+	}
+	sessionResult := result.GetManagedSessionId() != "" && result.GetSessionIncarnation() != 0 && result.GetOpaqueAccessReference() == ""
+	accessResult := result.GetManagedSessionId() == "" && result.GetSessionIncarnation() == 0 && result.GetOpaqueAccessReference() != "" && result.GetAccessProjectionRevision() != 0
+	if sessionResult == accessResult {
+		return protocolError("daemon command result target is invalid")
 	}
 	return nil
 }

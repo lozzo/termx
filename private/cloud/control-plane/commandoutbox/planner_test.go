@@ -78,11 +78,45 @@ func TestPlannerDaemonRevokeUsesExactPresenceAndHubReceiptCompletesEnforcement(t
 	}
 }
 
+func TestPlannerTerminalRevokeUsesOpaqueProjectionAndExactInventoryFence(t *testing.T) {
+	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	outbox, _ := commandoutbox.New(store)
+	source := &plannerSource{terminal: cloudtopology.StoredTerminalAccess{
+		AccountID: "account-1", HubID: "hub-a",
+		Value:     &cloudpb.TerminalAccessProjection{DaemonDeviceId: "daemon-1", OpaqueAccessReference: "opaque-1", State: cloudpb.TerminalAccessState_TERMINAL_ACCESS_STATE_ACTIVE, AccessProjectionRevision: 12},
+		Inventory: &cloudpb.TerminalAccessInventorySnapshot{DaemonDeviceId: "daemon-1", ControlOwnerHubId: "hub-a", AssignmentEpoch: 8, ControlPresenceSessionId: "presence-8", DaemonRuntimeGeneration: "runtime-8", AccessProjectionRevision: 12},
+	}}
+	randomBytes := make([]byte, 36)
+	for index := range randomBytes {
+		randomBytes[index] = byte(index + 21)
+	}
+	planner, _ := commandoutbox.NewPlanner(outbox, source, bytes.NewReader(randomBytes), nil)
+	now := time.Date(2026, 7, 20, 14, 0, 0, 0, time.UTC)
+	requestTarget := &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_TerminalAccess{TerminalAccess: &cloudpb.RevokeTerminalAccessTarget{DaemonDeviceId: "daemon-1", OpaqueAccessReference: "opaque-1"}}}
+	created, inserted, err := planner.Create(context.Background(), &cloudpb.CreateManagementCommandRequest{AccountId: "account-1", CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_REVOKE_TERMINAL_ACCESS, Target: requestTarget, IdempotencyKey: "revoke-access"}, &cloudpb.ManagementActorProjection{ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_ACCOUNT_OWNER, ActorId: "user-1"}, now)
+	if err != nil || !inserted || len(created.GetChildren()) != 1 {
+		t.Fatalf("terminal revoke create = (%v, %v, %v)", created, inserted, err)
+	}
+	child := created.GetChildren()[0]
+	target := child.GetTarget().GetTerminalAccess()
+	if child.GetTargetHubId() != "hub-a" || target.GetAssignmentEpoch() != 8 || target.GetPresenceSessionId() != "presence-8" || target.GetDaemonRuntimeGeneration() != "runtime-8" || target.GetAccessProjectionRevision() != 12 {
+		t.Fatalf("terminal revoke = (%v, %v, %v)", created, inserted, err)
+	}
+	if created.GetTarget().GetTerminalAccess().GetAssignmentEpoch() != 0 {
+		t.Fatalf("user target was rewritten instead of preserving idempotency input: %v", created.GetTarget())
+	}
+}
+
 type plannerSource struct {
 	device   cloudtopology.DeviceOwnership
 	presence *cloudpb.PresenceProjection
 	session  cloudtopology.StoredPeerSession
 	sessions []cloudtopology.StoredPeerSession
+	terminal cloudtopology.StoredTerminalAccess
 }
 
 func (source *plannerSource) Device(context.Context, string) (cloudtopology.DeviceOwnership, error) {
@@ -99,6 +133,12 @@ func (source *plannerSource) PeerSession(context.Context, *cloudpb.ManagedPeerSe
 }
 func (source *plannerSource) PeerSessionsForClient(context.Context, string) ([]cloudtopology.StoredPeerSession, error) {
 	return source.sessions, nil
+}
+func (source *plannerSource) TerminalAccess(context.Context, string, string) (cloudtopology.StoredTerminalAccess, error) {
+	if source.terminal.Value == nil {
+		return cloudtopology.StoredTerminalAccess{}, cloudtopology.ErrTopologyRejected
+	}
+	return source.terminal, nil
 }
 
 func plannerSession(daemonID, managedID string, incarnation uint64, presenceID, runtimeID, clientID string) *cloudpb.ManagedPeerSessionProjection {

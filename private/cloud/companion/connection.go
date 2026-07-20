@@ -192,18 +192,22 @@ func (connection *Connection) CompleteDeviceEnrollment(ctx context.Context, requ
 	if err := validateCompleteEnrollmentRequest(request); err != nil {
 		return nil, err
 	}
-	stored, err := connection.service.controlPlane.CompleteDeviceEnrollment(ctx, cloneMessage(request))
+	result, err := connection.service.controlPlane.CompleteDeviceEnrollment(ctx, cloneMessage(request))
 	if err != nil {
 		return nil, sanitizeAdapterError(err)
 	}
+	stored := result.Session
 	defer stored.Destroy()
-	if stored.Metadata().Kind != session.KindDevice {
+	if stored.Metadata().Kind != session.KindDevice || result.ControlEnrollment == nil || result.ControlEnrollment.GetAccountId() != stored.Metadata().AccountID || result.ControlEnrollment.GetDaemonDeviceId() != stored.Metadata().DeviceID {
 		return nil, protocolError("Control Plane returned a non-device enrollment session")
+	}
+	if _, err := cloudpb.NewDaemonControlEnrollmentVerifier(result.ControlEnrollment); err != nil {
+		return nil, protocolError("Control Plane returned an invalid daemon control enrollment")
 	}
 	if err := connection.service.sessions.Save(ctx, stored, connection.service.now()); err != nil {
 		return nil, temporaryError("OS credential store rejected the device session")
 	}
-	return &cloudpb.CompleteDeviceEnrollmentResponse{Session: sessionSummary(stored.Metadata())}, nil
+	return &cloudpb.CompleteDeviceEnrollmentResponse{Session: sessionSummary(stored.Metadata()), ControlEnrollment: cloneMessage(result.ControlEnrollment)}, nil
 }
 
 // Logout 删除请求中明确选择的 account/device 云会话。

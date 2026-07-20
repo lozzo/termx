@@ -226,9 +226,43 @@ message CompleteDeviceEnrollmentRequest {
   DeviceProof proof = 2;
 }
 
+// DaemonControlVerificationKey 是 enrollment 固定给公开 daemon 的 deny-only command 公钥。
+message DaemonControlVerificationKey {
+  string key_id = 1;
+  bytes public_key = 2;
+  int64 not_before_unix_millis = 3;
+  int64 not_after_unix_millis = 4;
+}
+
+// DaemonControlEnrollment 把账号、设备 auth epoch 与专用 control key ring 绑定。
+// 它不包含 private key、CapabilityGrant、terminal identity 或 Cloud session token。
+message DaemonControlEnrollment {
+  string account_id = 1;
+  string daemon_device_id = 2;
+  uint64 auth_epoch = 3;
+  repeated DaemonControlVerificationKey verification_keys = 4;
+  int64 enrolled_at_unix_millis = 5;
+}
+
 // CompleteDeviceEnrollmentResponse 确认 device 云会话已写入 OS credential store。
 message CompleteDeviceEnrollmentResponse {
   CloudSessionSummary session = 1;
+  DaemonControlEnrollment control_enrollment = 2;
+}
+
+// DeviceEnrollmentServiceSession 是 Control Plane 返回给私有 Companion 的 enrollment 结果。
+// access/refresh token 只允许由 Companion 写入 OS credential store；公开 IPC 只能返回上面的
+// CompleteDeviceEnrollmentResponse，不能把这些 secret 转交 CLI、daemon API 或 WebView。
+message DeviceEnrollmentServiceSession {
+  CloudSessionSummary session = 1;
+  bytes access_token = 2;
+  bytes refresh_token = 3;
+  int64 refresh_expires_at_unix_millis = 4;
+  string hub_id = 5;
+  string hub_url = 6;
+  string hub_region = 7;
+  uint64 hub_directory_version = 8;
+  DaemonControlEnrollment control_enrollment = 9;
 }
 
 // LogoutRequest 显式选择要删除的账号或 daemon device 云会话。

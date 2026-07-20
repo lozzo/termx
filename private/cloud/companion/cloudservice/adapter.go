@@ -11,6 +11,14 @@ import (
 	"github.com/lozzow/termx/proto/cloudpb"
 )
 
+// DeviceEnrollmentResult 是 Companion 内部的 enrollment 兑换结果。
+// Session 只进入 OS credential store；ControlEnrollment 只返回公开 CLI 以写入 daemon-owned
+// ControlReceiptStore，不包含 Cloud token、CapabilityGrant 或 terminal identity。
+type DeviceEnrollmentResult struct {
+	Session           session.Session
+	ControlEnrollment *cloudpb.DaemonControlEnrollment
+}
+
 // ControlPlaneAdapter 是 companion 调用官方 Control Plane 的私有 TLS contract。
 // 实现负责把 Authorization 变成账号或设备 request credential，并返回稳定 cloudcompanion.Error。
 type ControlPlaneAdapter interface {
@@ -20,8 +28,8 @@ type ControlPlaneAdapter interface {
 	CompleteLogin(context.Context, *cloudpb.CompleteLoginRequest) (session.Session, error)
 	// BeginDeviceEnrollment 用一次性 code、public key 和设备 metadata 获取短期 challenge。
 	BeginDeviceEnrollment(context.Context, *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error)
-	// CompleteDeviceEnrollment 验证公开 daemon 的 DeviceProof 并返回 private device cloud session。
-	CompleteDeviceEnrollment(context.Context, *cloudpb.CompleteDeviceEnrollmentRequest) (session.Session, error)
+	// CompleteDeviceEnrollment 验证公开 daemon 的 DeviceProof，并返回 private session 与 control key binding。
+	CompleteDeviceEnrollment(context.Context, *cloudpb.CompleteDeviceEnrollmentRequest) (DeviceEnrollmentResult, error)
 	// RefreshSession 单次轮换 OS credential store 中的 refresh secret，并返回新的 edge session。
 	RefreshSession(context.Context, session.RefreshAuthorization) (session.Session, error)
 	// PlanManagedRoute 获取不含私有 score/cost 的 direct/single-relay SmartRoute 计划。

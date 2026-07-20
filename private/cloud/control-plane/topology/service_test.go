@@ -42,13 +42,18 @@ func TestTopologyDerivesAccountAndDegradesLostControlToUnknownStale(t *testing.T
 	}
 	presence := &cloudpb.PresenceProjection{DaemonDeviceId: "daemon-1", ControlOwnerHubId: "hub-1", AssignmentEpoch: 1, PresenceSessionId: "presence-1", Availability: cloudpb.Availability_AVAILABILITY_ONLINE, Freshness: cloudpb.Freshness_FRESHNESS_FRESH, ObservationSource: cloudpb.ObservationSource_OBSERVATION_SOURCE_DAEMON_INVENTORY, ObservedAtUnixMillis: now.UnixMilli(), FreshUntilUnixMillis: now.Add(time.Minute).UnixMilli(), DaemonRuntimeGeneration: "runtime-1", RegistryRevision: 1}
 	session := &cloudpb.ManagedPeerSessionProjection{Target: &cloudpb.ManagedPeerSessionTarget{DaemonDeviceId: "daemon-1", ManagedSessionId: "session-1", SessionIncarnation: 1, AssignmentEpoch: 1, ControlPresenceSessionId: "presence-1", DaemonRuntimeGeneration: "runtime-1"}, ClientDeviceId: "client-1", EstablishedPresenceSessionId: "presence-1", ControlOwnerHubId: "hub-1", ObservedDataPath: cloudpb.ObservedPath_OBSERVED_PATH_DIRECT, State: cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_READY, Freshness: cloudpb.Freshness_FRESHNESS_FRESH}
-	snapshot := signedTopologySnapshot("hub-1", 1, 1, now, []*cloudpb.PresenceProjection{presence}, []*cloudpb.ManagedPeerSessionProjection{session})
+	accessInventory := &cloudpb.TerminalAccessInventorySnapshot{DaemonDeviceId: "daemon-1", ControlOwnerHubId: "hub-1", AssignmentEpoch: 1, ControlPresenceSessionId: "presence-1", DaemonRuntimeGeneration: "runtime-1", AccessProjectionRevision: 4, ObservedAtUnixMillis: now.UnixMilli(), Accesses: []*cloudpb.TerminalAccessProjection{{DaemonDeviceId: "daemon-1", OpaqueAccessReference: "opaque-1", ClientLabel: "Phone", SubjectFingerprintSummary: "subject-1234", State: cloudpb.TerminalAccessState_TERMINAL_ACCESS_STATE_ACTIVE, IssuedAtUnixMillis: now.Add(-time.Hour).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli(), AccessProjectionRevision: 4}}}
+	snapshot := signedTopologySnapshot("hub-1", 1, 1, now, []*cloudpb.PresenceProjection{presence}, []*cloudpb.ManagedPeerSessionProjection{session}, []*cloudpb.TerminalAccessInventorySnapshot{accessInventory})
 	if err := service.Ingest(ctx, snapshot, now); err != nil {
 		t.Fatal(err)
 	}
 	accountID, projected, err := service.Presence(ctx, "daemon-1")
 	if err != nil || accountID != "account-1" || projected.GetAvailability() != cloudpb.Availability_AVAILABILITY_ONLINE || projected.GetFreshness() != cloudpb.Freshness_FRESHNESS_FRESH {
 		t.Fatalf("stored Presence = account=%q projection=%#v err=%v", accountID, projected, err)
+	}
+	accesses, freshness, _, err := service.ListTerminalAccess(ctx, "account-1", "daemon-1", cloudpb.TerminalAccessState_TERMINAL_ACCESS_STATE_ACTIVE, 10)
+	if err != nil || freshness != cloudpb.Freshness_FRESHNESS_FRESH || len(accesses) != 1 || accesses[0].Value.GetOpaqueAccessReference() != "opaque-1" {
+		t.Fatalf("stored terminal access = (%v, %s, %v)", accesses, freshness, err)
 	}
 	if err := service.MarkHubUnknown(ctx, "hub-1", 1, now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
@@ -57,6 +62,10 @@ func TestTopologyDerivesAccountAndDegradesLostControlToUnknownStale(t *testing.T
 	if err != nil || projected.GetAvailability() != cloudpb.Availability_AVAILABILITY_UNKNOWN || projected.GetFreshness() != cloudpb.Freshness_FRESHNESS_STALE || projected.GetObservationSource() != cloudpb.ObservationSource_OBSERVATION_SOURCE_CONTROL_STREAM_LOST {
 		t.Fatalf("lost-control Presence = %#v err=%v", projected, err)
 	}
+	_, freshness, _, err = service.ListTerminalAccess(ctx, "account-1", "daemon-1", cloudpb.TerminalAccessState_TERMINAL_ACCESS_STATE_ACTIVE, 10)
+	if err != nil || freshness != cloudpb.Freshness_FRESHNESS_STALE {
+		t.Fatalf("lost-control terminal access freshness = (%s, %v)", freshness, err)
+	}
 	conflict := proto.Clone(snapshot).(*cloudpb.HubTopologySnapshot)
 	conflict.Presences[0].Availability = cloudpb.Availability_AVAILABILITY_OFFLINE
 	if err := service.Ingest(ctx, conflict, now); !errors.Is(err, cloudtopology.ErrTopologyRejected) {
@@ -64,8 +73,8 @@ func TestTopologyDerivesAccountAndDegradesLostControlToUnknownStale(t *testing.T
 	}
 }
 
-func signedTopologySnapshot(hubID string, generation, revision uint64, observedAt time.Time, presences []*cloudpb.PresenceProjection, sessions []*cloudpb.ManagedPeerSessionProjection) *cloudpb.HubTopologySnapshot {
-	snapshot := &cloudpb.HubTopologySnapshot{HubId: hubID, ControlGeneration: generation, TopologyRevision: revision, ObservedAtUnixMillis: observedAt.UnixMilli(), Presences: presences, PeerSessions: sessions}
+func signedTopologySnapshot(hubID string, generation, revision uint64, observedAt time.Time, presences []*cloudpb.PresenceProjection, sessions []*cloudpb.ManagedPeerSessionProjection, accesses []*cloudpb.TerminalAccessInventorySnapshot) *cloudpb.HubTopologySnapshot {
+	snapshot := &cloudpb.HubTopologySnapshot{HubId: hubID, ControlGeneration: generation, TopologyRevision: revision, ObservedAtUnixMillis: observedAt.UnixMilli(), Presences: presences, PeerSessions: sessions, TerminalAccessInventories: accesses}
 	payload, _ := proto.MarshalOptions{Deterministic: true}.Marshal(snapshot)
 	digest := sha256.Sum256(payload)
 	snapshot.TopologyDigest = digest[:]

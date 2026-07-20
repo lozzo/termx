@@ -83,6 +83,11 @@ CREATE TABLE IF NOT EXISTS managed_peer_topology(
   projection BLOB NOT NULL, updated_at TEXT NOT NULL,
   PRIMARY KEY(daemon_device_id, managed_session_id, session_incarnation)
 );
+CREATE TABLE IF NOT EXISTS terminal_access_topology(
+  daemon_device_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, hub_id TEXT NOT NULL,
+  control_generation INTEGER NOT NULL, access_projection_revision INTEGER NOT NULL,
+  freshness INTEGER NOT NULL, inventory BLOB NOT NULL, updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS commerce_accounts(
   account_id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, projection BLOB NOT NULL,
   password_hash BLOB NOT NULL, auth_revision INTEGER NOT NULL

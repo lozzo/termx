@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
 	cloudcommerce "github.com/lozzow/termx/private/cloud/control-plane/commerce"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
 	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
@@ -37,11 +38,12 @@ type processRecord struct {
 }
 
 type supervisorManifest struct {
-	Version    uint32              `json:"version"`
-	StartedAt  string              `json:"started_at"`
-	Controller controller.Manifest `json:"controller"`
-	Edges      []edge.Manifest     `json:"edges"`
-	Processes  []processRecord     `json:"processes"`
+	Version               uint32              `json:"version"`
+	StartedAt             string              `json:"started_at"`
+	Controller            controller.Manifest `json:"controller"`
+	Edges                 []edge.Manifest     `json:"edges"`
+	Processes             []processRecord     `json:"processes"`
+	CompanionManifestPath string              `json:"companion_manifest_path"`
 }
 
 type childProcess struct {
@@ -129,6 +131,12 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	enrollmentBytes := make([]byte, 24)
+	if _, err := rand.Read(enrollmentBytes); err != nil {
+		return err
+	}
+	enrollmentCode := base64.RawURLEncoding.EncodeToString(enrollmentBytes)
+	clear(enrollmentBytes)
 	devices := []*cloudpb.CloudDevicePolicy{
 		{AccountId: account.GetAccountId(), DeviceId: "client-dev-local", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: account.GetAuthRevision()},
 		{AccountId: account.GetAccountId(), DeviceId: "daemon-edge-a", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision()},
@@ -148,7 +156,7 @@ func run(ctx context.Context, args []string) error {
 		deploymentConfigs = append(deploymentConfigs, controller.DeploymentConfig{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic)})
 		edgeKeys[hubID] = hubPrivate
 	}
-	controllerConfig := controller.Config{DatabasePath: controllerDatabase, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Devices: devices, Assignments: assignments}
+	controllerConfig := controller.Config{DatabasePath: controllerDatabase, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Devices: devices, Assignments: assignments, DevelopmentEnrollmentCode: enrollmentCode, DevelopmentEnrollmentAccountID: account.GetAccountId(), DevelopmentEnrollmentHubID: "hub-edge-a"}
 	controllerConfigPath := filepath.Join(artifactDir, "controller-config.json")
 	controllerManifestPath := filepath.Join(artifactDir, "controller-runtime.json")
 	if err := writeJSONFile(controllerConfigPath, controllerConfig); err != nil {
@@ -191,7 +199,21 @@ func run(ctx context.Context, args []string) error {
 		}
 		edgeManifests = append(edgeManifests, runtime)
 	}
-	manifest := supervisorManifest{Version: 1, StartedAt: now.Format(time.RFC3339Nano), Controller: controllerRuntime, Edges: edgeManifests}
+	companionManifestPath := filepath.Join(artifactDir, "companion-manifest.json")
+	var primaryEdge edge.Manifest
+	for _, value := range edgeManifests {
+		if value.HubID == "hub-edge-a" {
+			primaryEdge = value
+			break
+		}
+	}
+	if primaryEdge.HubID == "" {
+		return fmt.Errorf("development primary Edge did not start")
+	}
+	if err := writeJSONFile(companionManifestPath, httpapi.Manifest{Version: httpapi.ManifestVersion, Profile: httpapi.ProfileDevLocal, ControlPlaneURL: controllerRuntime.PublicURL, HubURL: primaryEdge.HubURL, RelayURL: primaryEdge.RelayURL, HubID: primaryEdge.HubID, Region: "local-1", AccountLabel: account.GetDisplayName(), EnrollmentCode: enrollmentCode, StartedAtRFC3339: now.Format(time.RFC3339)}); err != nil {
+		return err
+	}
+	manifest := supervisorManifest{Version: 1, StartedAt: now.Format(time.RFC3339Nano), Controller: controllerRuntime, Edges: edgeManifests, CompanionManifestPath: companionManifestPath}
 	for _, child := range children {
 		manifest.Processes = append(manifest.Processes, child.record)
 	}

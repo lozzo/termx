@@ -26,7 +26,8 @@ type OfferAnswerer interface {
 }
 
 // Agent 管理 daemon 通过本机 Cloud Companion 建立的一条 presence stream。
-// Companion 只拥有账号会话、设备目录和 signaling；Agent 不发布 terminal inventory，也不把 terminal capability 交给云侧。
+// Companion 只拥有账号会话、设备目录和 signaling；Agent 仅发布 AccessStore 生成的 opaque
+// 管理投影，不发布 CapabilityGrant、scope、terminal identity 或 terminal payload。
 type Agent struct {
 	Companion cloudcompanion.Client
 	// Identity 是 presence proof 与 DataChannel DeviceHello 共用的 daemon-local 身份真值。
@@ -37,8 +38,10 @@ type Agent struct {
 	Answerer OfferAnswerer
 	// Runtime 是 daemon process 级 managed session owner；Presence 续约不得重建该对象。
 	Runtime *ManagedRuntime
-	// CommandVerifier 来自 daemon enrollment 的 Controller control public key；Hub 不能替代该端到端验签。
-	CommandVerifier *cloudpb.DaemonControlVerifier
+	// AccessStore 是 terminal grant 与脱敏 access inventory 的 daemon-local 持久真值。
+	AccessStore *remoteauth.AccessStore
+	// ControlReceipts 持久拥有 enrollment control key binding 与 command replay receipt。
+	ControlReceipts *ControlReceiptStore
 	// Now 只用于 deterministic harness；零值使用 UTC 当前时间。
 	Now func() time.Time
 	// RuntimeReportRetryDelay 是 runtime report 失败后的有界重试间隔；零值使用一秒。
@@ -158,14 +161,14 @@ func (agent Agent) Run(ctx context.Context) error {
 			if payload.DaemonCommand == nil || presenceSessionID == "" {
 				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an invalid daemon command")
 			}
-			if agent.CommandVerifier == nil {
-				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "remote daemon control verifier is not configured")
+			if agent.ControlReceipts == nil {
+				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "remote daemon control receipt store is not configured")
 			}
 			now := time.Now().UTC()
 			if agent.Now != nil {
 				now = agent.Now().UTC()
 			}
-			result, err := agent.Runtime.ExecuteControlCommand(ctx, payload.DaemonCommand, agent.CommandVerifier, now)
+			result, err := agent.Runtime.ExecuteControlCommand(ctx, payload.DaemonCommand, agent.ControlReceipts, agent.AccessStore, now)
 			if err != nil {
 				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "remote daemon rejected control command")
 			}
@@ -189,7 +192,12 @@ func (agent Agent) runRuntimeReporter(ctx context.Context, registry *ManagedSess
 	}
 	var pending *cloudpb.ReportDaemonRuntimeRequest
 	var acceptedRevision uint64
+	var acceptedAccessRevision uint64
 	var hasAcceptedRevision bool
+	var accessChanges <-chan struct{}
+	if agent.AccessStore != nil {
+		accessChanges = agent.AccessStore.AccessChanges()
+	}
 	for {
 		if pending == nil {
 			observedAt := time.Now().UTC()
@@ -200,31 +208,43 @@ func (agent Agent) runRuntimeReporter(ctx context.Context, registry *ManagedSess
 			if err != nil {
 				return
 			}
-			if hasAcceptedRevision && inventory.GetRegistryRevision() == acceptedRevision {
+			accessRevision := uint64(0)
+			if agent.AccessStore != nil {
+				accessRevision = agent.AccessStore.AccessProjectionRevision()
+			}
+			if hasAcceptedRevision && inventory.GetRegistryRevision() == acceptedRevision && accessRevision == acceptedAccessRevision {
 				select {
 				case <-ctx.Done():
 					return
 				case <-registry.Changes():
 					continue
+				case <-accessChanges:
+					continue
 				}
 			}
-			reportID := fmt.Sprintf("%s:%d", agent.Runtime.RuntimeGeneration(), inventory.GetRegistryRevision())
+			reportID := fmt.Sprintf("%s:%d:%d", agent.Runtime.RuntimeGeneration(), inventory.GetRegistryRevision(), accessRevision)
 			inventory.ReportId = reportID
 			pending = &cloudpb.ReportDaemonRuntimeRequest{
 				ReportId: reportID, HubId: hubID, AssignmentEpoch: assignmentEpoch,
 				PresenceSessionId: presenceSessionID, DaemonRuntimeGeneration: agent.Runtime.RuntimeGeneration(),
 				RegistryRevision: inventory.GetRegistryRevision(), PeerSessions: inventory,
 			}
+			pending.TerminalAccesses = BuildTerminalAccessInventory(agent.AccessStore, reportID, agent.Identity.DeviceID, hubID, assignmentEpoch, presenceSessionID, agent.Runtime.RuntimeGeneration(), inventory.GetRegistryRevision(), observedAt)
 		}
 		response, reportErr := agent.Companion.ReportDaemonRuntime(ctx, pending)
-		if reportErr == nil && response != nil && response.GetReportId() == pending.GetReportId() && response.GetDaemonRuntimeGeneration() == pending.GetDaemonRuntimeGeneration() && response.GetAcceptedRegistryRevision() == pending.GetRegistryRevision() {
+		if reportErr == nil && response != nil && response.GetReportId() == pending.GetReportId() && response.GetDaemonRuntimeGeneration() == pending.GetDaemonRuntimeGeneration() && response.GetAcceptedRegistryRevision() == pending.GetRegistryRevision() && (pending.GetTerminalAccesses() == nil || response.GetAcceptedAccessProjectionRevision() == pending.GetTerminalAccesses().GetAccessProjectionRevision()) {
 			acceptedRevision = pending.GetRegistryRevision()
+			if pending.GetTerminalAccesses() != nil {
+				acceptedAccessRevision = pending.GetTerminalAccesses().GetAccessProjectionRevision()
+			}
 			hasAcceptedRevision = true
 			pending = nil
 			select {
 			case <-ctx.Done():
 				return
 			case <-registry.Changes():
+				continue
+			case <-accessChanges:
 				continue
 			}
 		}
@@ -236,6 +256,11 @@ func (agent Agent) runRuntimeReporter(ctx context.Context, registry *ManagedSess
 			}
 			return
 		case <-registry.Changes():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			pending = nil
+		case <-accessChanges:
 			if !timer.Stop() {
 				<-timer.C
 			}

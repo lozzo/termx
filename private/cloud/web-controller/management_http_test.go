@@ -46,7 +46,7 @@ func TestManagementAPIUsesAccountCSRFAndDurableCommandProjection(t *testing.T) {
 		randomBytes[index] = byte(index + 1)
 	}
 	planner, _ := commandoutbox.NewPlanner(outbox, source, bytes.NewReader(randomBytes), nil)
-	managementHandler, _ := webcontroller.ManagementAPIHandler(webcontroller.ManagementAPIConfig{Commerce: commerceService, Planner: planner, Outbox: outbox, Now: func() time.Time { return now }})
+	managementHandler, _ := webcontroller.ManagementAPIHandler(webcontroller.ManagementAPIConfig{Commerce: commerceService, Planner: planner, Outbox: outbox, Accesses: source, Now: func() time.Time { return now }})
 	body, _ := protojson.MarshalOptions{UseProtoNames: true}.Marshal(&cloudpb.CreateManagementCommandRequest{AccountId: "other-account", CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_CLOSE_MANAGED_PEER_SESSION, Target: &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_PeerSession{PeerSession: target}}, IdempotencyKey: "idem-1"})
 	create := productRequest(http.MethodPost, "/api/v1/management/commands", string(body), cookies)
 	createResponse := httptest.NewRecorder()
@@ -67,6 +67,13 @@ func TestManagementAPIUsesAccountCSRFAndDurableCommandProjection(t *testing.T) {
 	managementHandler.ServeHTTP(getResponse, get)
 	if getResponse.Code != http.StatusOK || !strings.Contains(getResponse.Body.String(), created.GetCommand().GetCommandId()) {
 		t.Fatalf("get = %d: %s", getResponse.Code, getResponse.Body.String())
+	}
+	accessBody, _ := protojson.Marshal(&cloudpb.ListDaemonTerminalAccessRequest{AccountId: "other-account", DaemonDeviceId: "daemon-1", Page: &cloudpb.PageRequest{PageSize: 10}})
+	accessRequest := productRequest(http.MethodPost, "/api/v1/management/terminal-access/list", string(accessBody), cookies)
+	accessResponse := httptest.NewRecorder()
+	managementHandler.ServeHTTP(accessResponse, accessRequest)
+	if accessResponse.Code != http.StatusOK || !strings.Contains(accessResponse.Body.String(), "opaque-access-1") {
+		t.Fatalf("terminal access list = %d: %s", accessResponse.Code, accessResponse.Body.String())
 	}
 	withoutCSRF := productRequest(http.MethodPost, "/api/v1/management/commands", string(body), cookies)
 	withoutCSRF.Header.Del("X-TermX-CSRF")
@@ -92,4 +99,11 @@ func (source *managementTargetSource) PeerSession(context.Context, *cloudpb.Mana
 }
 func (source *managementTargetSource) PeerSessionsForClient(context.Context, string) ([]cloudtopology.StoredPeerSession, error) {
 	return nil, nil
+}
+func (source *managementTargetSource) TerminalAccess(context.Context, string, string) (cloudtopology.StoredTerminalAccess, error) {
+	return cloudtopology.StoredTerminalAccess{}, cloudtopology.ErrTopologyRejected
+}
+
+func (source *managementTargetSource) ListTerminalAccess(_ context.Context, accountID, daemonDeviceID string, _ cloudpb.TerminalAccessState, _ int) ([]cloudtopology.StoredTerminalAccess, cloudpb.Freshness, time.Time, error) {
+	return []cloudtopology.StoredTerminalAccess{{AccountID: accountID, HubID: "hub-1", Value: &cloudpb.TerminalAccessProjection{DaemonDeviceId: daemonDeviceID, OpaqueAccessReference: "opaque-access-1", State: cloudpb.TerminalAccessState_TERMINAL_ACCESS_STATE_ACTIVE, AccessProjectionRevision: 3}}}, cloudpb.Freshness_FRESHNESS_FRESH, time.Date(2026, 7, 20, 15, 0, 0, 0, time.UTC), nil
 }

@@ -2031,11 +2031,15 @@ func (x *KickPresenceTarget) GetPresenceSessionId() string {
 
 // RevokeTerminalAccessTarget 只携带 daemon 生成的 opaque reference。
 type RevokeTerminalAccessTarget struct {
-	state                 protoimpl.MessageState `protogen:"open.v1"`
-	DaemonDeviceId        string                 `protobuf:"bytes,1,opt,name=daemon_device_id,json=daemonDeviceId,proto3" json:"daemon_device_id,omitempty"`
-	OpaqueAccessReference string                 `protobuf:"bytes,2,opt,name=opaque_access_reference,json=opaqueAccessReference,proto3" json:"opaque_access_reference,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	state                    protoimpl.MessageState `protogen:"open.v1"`
+	DaemonDeviceId           string                 `protobuf:"bytes,1,opt,name=daemon_device_id,json=daemonDeviceId,proto3" json:"daemon_device_id,omitempty"`
+	OpaqueAccessReference    string                 `protobuf:"bytes,2,opt,name=opaque_access_reference,json=opaqueAccessReference,proto3" json:"opaque_access_reference,omitempty"`
+	AssignmentEpoch          uint64                 `protobuf:"varint,3,opt,name=assignment_epoch,json=assignmentEpoch,proto3" json:"assignment_epoch,omitempty"`
+	PresenceSessionId        string                 `protobuf:"bytes,4,opt,name=presence_session_id,json=presenceSessionId,proto3" json:"presence_session_id,omitempty"`
+	DaemonRuntimeGeneration  string                 `protobuf:"bytes,5,opt,name=daemon_runtime_generation,json=daemonRuntimeGeneration,proto3" json:"daemon_runtime_generation,omitempty"`
+	AccessProjectionRevision uint64                 `protobuf:"varint,6,opt,name=access_projection_revision,json=accessProjectionRevision,proto3" json:"access_projection_revision,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *RevokeTerminalAccessTarget) Reset() {
@@ -2080,6 +2084,34 @@ func (x *RevokeTerminalAccessTarget) GetOpaqueAccessReference() string {
 		return x.OpaqueAccessReference
 	}
 	return ""
+}
+
+func (x *RevokeTerminalAccessTarget) GetAssignmentEpoch() uint64 {
+	if x != nil {
+		return x.AssignmentEpoch
+	}
+	return 0
+}
+
+func (x *RevokeTerminalAccessTarget) GetPresenceSessionId() string {
+	if x != nil {
+		return x.PresenceSessionId
+	}
+	return ""
+}
+
+func (x *RevokeTerminalAccessTarget) GetDaemonRuntimeGeneration() string {
+	if x != nil {
+		return x.DaemonRuntimeGeneration
+	}
+	return ""
+}
+
+func (x *RevokeTerminalAccessTarget) GetAccessProjectionRevision() uint64 {
+	if x != nil {
+		return x.AccessProjectionRevision
+	}
+	return 0
 }
 
 // DaemonControlCommand 是 Controller 签名、Hub 只转发的 deny-only command。
@@ -2495,20 +2527,23 @@ func (x *HubCommandResult) GetResultingProjectionRevision() uint64 {
 
 // DaemonCommandResult 是 daemon 完整执行并等待资源结束后的独立 receipt。
 type DaemonCommandResult struct {
-	state                   protoimpl.MessageState   `protogen:"open.v1"`
-	CommandId               string                   `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
-	DaemonDeviceId          string                   `protobuf:"bytes,2,opt,name=daemon_device_id,json=daemonDeviceId,proto3" json:"daemon_device_id,omitempty"`
-	ManagedSessionId        string                   `protobuf:"bytes,3,opt,name=managed_session_id,json=managedSessionId,proto3" json:"managed_session_id,omitempty"`
-	SessionIncarnation      uint64                   `protobuf:"varint,4,opt,name=session_incarnation,json=sessionIncarnation,proto3" json:"session_incarnation,omitempty"`
-	AssignmentEpoch         uint64                   `protobuf:"varint,5,opt,name=assignment_epoch,json=assignmentEpoch,proto3" json:"assignment_epoch,omitempty"`
-	PresenceSessionId       string                   `protobuf:"bytes,6,opt,name=presence_session_id,json=presenceSessionId,proto3" json:"presence_session_id,omitempty"`
-	DaemonRuntimeGeneration string                   `protobuf:"bytes,7,opt,name=daemon_runtime_generation,json=daemonRuntimeGeneration,proto3" json:"daemon_runtime_generation,omitempty"`
-	ResultCode              RuntimeCommandResultCode `protobuf:"varint,8,opt,name=result_code,json=resultCode,proto3,enum=termx.cloud.v1.RuntimeCommandResultCode" json:"result_code,omitempty"`
-	ClosedRegistryRevision  uint64                   `protobuf:"varint,9,opt,name=closed_registry_revision,json=closedRegistryRevision,proto3" json:"closed_registry_revision,omitempty"`
-	ErrorCode               string                   `protobuf:"bytes,10,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
-	CompletedAtUnixMillis   int64                    `protobuf:"varint,11,opt,name=completed_at_unix_millis,json=completedAtUnixMillis,proto3" json:"completed_at_unix_millis,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
+	state                    protoimpl.MessageState   `protogen:"open.v1"`
+	CommandId                string                   `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	DaemonDeviceId           string                   `protobuf:"bytes,2,opt,name=daemon_device_id,json=daemonDeviceId,proto3" json:"daemon_device_id,omitempty"`
+	ManagedSessionId         string                   `protobuf:"bytes,3,opt,name=managed_session_id,json=managedSessionId,proto3" json:"managed_session_id,omitempty"`
+	SessionIncarnation       uint64                   `protobuf:"varint,4,opt,name=session_incarnation,json=sessionIncarnation,proto3" json:"session_incarnation,omitempty"`
+	AssignmentEpoch          uint64                   `protobuf:"varint,5,opt,name=assignment_epoch,json=assignmentEpoch,proto3" json:"assignment_epoch,omitempty"`
+	PresenceSessionId        string                   `protobuf:"bytes,6,opt,name=presence_session_id,json=presenceSessionId,proto3" json:"presence_session_id,omitempty"`
+	DaemonRuntimeGeneration  string                   `protobuf:"bytes,7,opt,name=daemon_runtime_generation,json=daemonRuntimeGeneration,proto3" json:"daemon_runtime_generation,omitempty"`
+	ResultCode               RuntimeCommandResultCode `protobuf:"varint,8,opt,name=result_code,json=resultCode,proto3,enum=termx.cloud.v1.RuntimeCommandResultCode" json:"result_code,omitempty"`
+	ClosedRegistryRevision   uint64                   `protobuf:"varint,9,opt,name=closed_registry_revision,json=closedRegistryRevision,proto3" json:"closed_registry_revision,omitempty"`
+	ErrorCode                string                   `protobuf:"bytes,10,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	CompletedAtUnixMillis    int64                    `protobuf:"varint,11,opt,name=completed_at_unix_millis,json=completedAtUnixMillis,proto3" json:"completed_at_unix_millis,omitempty"`
+	OpaqueAccessReference    string                   `protobuf:"bytes,12,opt,name=opaque_access_reference,json=opaqueAccessReference,proto3" json:"opaque_access_reference,omitempty"`
+	AccessProjectionRevision uint64                   `protobuf:"varint,13,opt,name=access_projection_revision,json=accessProjectionRevision,proto3" json:"access_projection_revision,omitempty"`
+	ClosedSessionCount       uint32                   `protobuf:"varint,14,opt,name=closed_session_count,json=closedSessionCount,proto3" json:"closed_session_count,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *DaemonCommandResult) Reset() {
@@ -2614,6 +2649,27 @@ func (x *DaemonCommandResult) GetErrorCode() string {
 func (x *DaemonCommandResult) GetCompletedAtUnixMillis() int64 {
 	if x != nil {
 		return x.CompletedAtUnixMillis
+	}
+	return 0
+}
+
+func (x *DaemonCommandResult) GetOpaqueAccessReference() string {
+	if x != nil {
+		return x.OpaqueAccessReference
+	}
+	return ""
+}
+
+func (x *DaemonCommandResult) GetAccessProjectionRevision() uint64 {
+	if x != nil {
+		return x.AccessProjectionRevision
+	}
+	return 0
+}
+
+func (x *DaemonCommandResult) GetClosedSessionCount() uint32 {
+	if x != nil {
+		return x.ClosedSessionCount
 	}
 	return 0
 }
@@ -3811,10 +3867,14 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\x12KickPresenceTarget\x12(\n" +
 	"\x10daemon_device_id\x18\x01 \x01(\tR\x0edaemonDeviceId\x12)\n" +
 	"\x10assignment_epoch\x18\x02 \x01(\x04R\x0fassignmentEpoch\x12.\n" +
-	"\x13presence_session_id\x18\x03 \x01(\tR\x11presenceSessionId\"~\n" +
+	"\x13presence_session_id\x18\x03 \x01(\tR\x11presenceSessionId\"\xd3\x02\n" +
 	"\x1aRevokeTerminalAccessTarget\x12(\n" +
 	"\x10daemon_device_id\x18\x01 \x01(\tR\x0edaemonDeviceId\x126\n" +
-	"\x17opaque_access_reference\x18\x02 \x01(\tR\x15opaqueAccessReference\"\x83\x06\n" +
+	"\x17opaque_access_reference\x18\x02 \x01(\tR\x15opaqueAccessReference\x12)\n" +
+	"\x10assignment_epoch\x18\x03 \x01(\x04R\x0fassignmentEpoch\x12.\n" +
+	"\x13presence_session_id\x18\x04 \x01(\tR\x11presenceSessionId\x12:\n" +
+	"\x19daemon_runtime_generation\x18\x05 \x01(\tR\x17daemonRuntimeGeneration\x12<\n" +
+	"\x1aaccess_projection_revision\x18\x06 \x01(\x04R\x18accessProjectionRevision\"\x83\x06\n" +
 	"\x14DaemonControlCommand\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12K\n" +
@@ -3858,7 +3918,7 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\n" +
 	"error_code\x18\x05 \x01(\tR\terrorCode\x127\n" +
 	"\x18completed_at_unix_millis\x18\x06 \x01(\x03R\x15completedAtUnixMillis\x12B\n" +
-	"\x1dresulting_projection_revision\x18\a \x01(\x04R\x1bresultingProjectionRevision\"\xb1\x04\n" +
+	"\x1dresulting_projection_revision\x18\a \x01(\x04R\x1bresultingProjectionRevision\"\xd9\x05\n" +
 	"\x13DaemonCommandResult\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12(\n" +
@@ -3874,7 +3934,10 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\n" +
 	"error_code\x18\n" +
 	" \x01(\tR\terrorCode\x127\n" +
-	"\x18completed_at_unix_millis\x18\v \x01(\x03R\x15completedAtUnixMillis\"x\n" +
+	"\x18completed_at_unix_millis\x18\v \x01(\x03R\x15completedAtUnixMillis\x126\n" +
+	"\x17opaque_access_reference\x18\f \x01(\tR\x15opaqueAccessReference\x12<\n" +
+	"\x1aaccess_projection_revision\x18\r \x01(\x04R\x18accessProjectionRevision\x120\n" +
+	"\x14closed_session_count\x18\x0e \x01(\rR\x12closedSessionCount\"x\n" +
 	"\x12RelayControlTarget\x12\x19\n" +
 	"\brelay_id\x18\x01 \x01(\tR\arelayId\x12\x19\n" +
 	"\blease_id\x18\x02 \x01(\tR\aleaseId\x12,\n" +

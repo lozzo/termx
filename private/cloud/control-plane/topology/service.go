@@ -42,6 +42,14 @@ type StoredPeerSession struct {
 	Value     *cloudpb.ManagedPeerSessionProjection
 }
 
+// StoredTerminalAccess 是账号隔离、owning Hub 与当前 inventory fence 绑定的 opaque access projection。
+type StoredTerminalAccess struct {
+	AccountID string
+	HubID     string
+	Value     *cloudpb.TerminalAccessProjection
+	Inventory *cloudpb.TerminalAccessInventorySnapshot
+}
+
 // ValidatedPresence 是已经由 assignment 与 ownership 推导账号后的 Presence 投影。
 type ValidatedPresence struct {
 	AccountID string
@@ -63,6 +71,13 @@ type ValidatedSnapshot struct {
 	ObservedAt        time.Time
 	Presences         []ValidatedPresence
 	PeerSessions      []ValidatedPeerSession
+	TerminalAccesses  []ValidatedTerminalAccessInventory
+}
+
+// ValidatedTerminalAccessInventory 是已由 Presence、assignment 与 daemon ownership 校验的完整 replacement。
+type ValidatedTerminalAccessInventory struct {
+	AccountID string
+	Value     *cloudpb.TerminalAccessInventorySnapshot
 }
 
 // Store 是 topology ownership 与持久 projection 的事务边界。
@@ -72,6 +87,8 @@ type Store interface {
 	DevicePolicies(context.Context) ([]*cloudpb.CloudDevicePolicy, error)
 	PeerSessionProjection(context.Context, *cloudpb.ManagedPeerSessionTarget) (StoredPeerSession, error)
 	PeerSessionsByClient(context.Context, string) ([]StoredPeerSession, error)
+	TerminalAccessProjection(context.Context, string, string) (StoredTerminalAccess, error)
+	ListTerminalAccess(context.Context, string, string, cloudpb.TerminalAccessState, int) ([]StoredTerminalAccess, cloudpb.Freshness, time.Time, error)
 	ApplyTopologySnapshot(context.Context, ValidatedSnapshot) error
 	MarkHubTopologyUnknown(context.Context, string, uint64, time.Time) error
 	PresenceProjection(context.Context, string) (string, *cloudpb.PresenceProjection, error)
@@ -156,6 +173,28 @@ func (service *Service) Ingest(ctx context.Context, snapshot *cloudpb.HubTopolog
 		}
 		validated.PeerSessions = append(validated.PeerSessions, ValidatedPeerSession{AccountID: assignment.Value.GetAccountId(), Value: proto.Clone(session).(*cloudpb.ManagedPeerSessionProjection)})
 	}
+	seenInventories := make(map[string]struct{}, len(snapshot.GetTerminalAccessInventories()))
+	for _, inventory := range snapshot.GetTerminalAccessInventories() {
+		presence := presenceByDaemon[inventory.GetDaemonDeviceId()]
+		_, duplicate := seenInventories[inventory.GetDaemonDeviceId()]
+		if inventory == nil || duplicate || presence == nil || inventory.GetDaemonDeviceId() == "" || inventory.GetControlOwnerHubId() != snapshot.GetHubId() || inventory.GetAssignmentEpoch() != presence.GetAssignmentEpoch() || inventory.GetControlPresenceSessionId() != presence.GetPresenceSessionId() || inventory.GetDaemonRuntimeGeneration() != presence.GetDaemonRuntimeGeneration() || inventory.GetObservedAtUnixMillis() <= 0 {
+			return ErrTopologyRejected
+		}
+		seenInventories[inventory.GetDaemonDeviceId()] = struct{}{}
+		ownership, err := service.store.DeviceOwnership(ctx, inventory.GetDaemonDeviceId())
+		if err != nil || ownership.Kind != cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON {
+			return ErrTopologyRejected
+		}
+		seenAccess := make(map[string]struct{}, len(inventory.GetAccesses()))
+		for _, access := range inventory.GetAccesses() {
+			_, accessDuplicate := seenAccess[access.GetOpaqueAccessReference()]
+			if access == nil || accessDuplicate || access.GetDaemonDeviceId() != inventory.GetDaemonDeviceId() || access.GetOpaqueAccessReference() == "" || access.GetSubjectFingerprintSummary() == "" || access.GetState() == cloudpb.TerminalAccessState_TERMINAL_ACCESS_STATE_UNSPECIFIED || access.GetIssuedAtUnixMillis() <= 0 || access.GetExpiresAtUnixMillis() <= access.GetIssuedAtUnixMillis() || access.GetAccessProjectionRevision() != inventory.GetAccessProjectionRevision() {
+				return ErrTopologyRejected
+			}
+			seenAccess[access.GetOpaqueAccessReference()] = struct{}{}
+		}
+		validated.TerminalAccesses = append(validated.TerminalAccesses, ValidatedTerminalAccessInventory{AccountID: ownership.AccountID, Value: proto.Clone(inventory).(*cloudpb.TerminalAccessInventorySnapshot)})
+	}
 	return service.store.ApplyTopologySnapshot(ctx, validated)
 }
 
@@ -205,4 +244,20 @@ func (service *Service) PeerSessionsForClient(ctx context.Context, clientDeviceI
 		return nil, ErrTopologyRejected
 	}
 	return service.store.PeerSessionsByClient(ctx, clientDeviceID)
+}
+
+// TerminalAccess 返回一个当前 opaque reference 及其 inventory fencing。
+func (service *Service) TerminalAccess(ctx context.Context, daemonDeviceID, opaqueReference string) (StoredTerminalAccess, error) {
+	if service == nil || daemonDeviceID == "" || opaqueReference == "" {
+		return StoredTerminalAccess{}, ErrTopologyRejected
+	}
+	return service.store.TerminalAccessProjection(ctx, daemonDeviceID, opaqueReference)
+}
+
+// ListTerminalAccess 返回账号隔离的 daemon access 管理投影。
+func (service *Service) ListTerminalAccess(ctx context.Context, accountID, daemonDeviceID string, state cloudpb.TerminalAccessState, limit int) ([]StoredTerminalAccess, cloudpb.Freshness, time.Time, error) {
+	if service == nil || accountID == "" || limit < 1 {
+		return nil, cloudpb.Freshness_FRESHNESS_UNSPECIFIED, time.Time{}, ErrTopologyRejected
+	}
+	return service.store.ListTerminalAccess(ctx, accountID, daemonDeviceID, state, limit)
 }

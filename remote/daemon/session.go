@@ -146,7 +146,7 @@ func (acceptor SessionAcceptor) serveBoundTransport(ctx context.Context, connect
 	projection := &cloudpb.ManagedPeerSessionProjection{
 		Target:         &cloudpb.ManagedPeerSessionTarget{DaemonDeviceId: acceptor.Identity.DeviceID, ManagedSessionId: managed.ManagedSessionID, SessionIncarnation: managed.SessionIncarnation, AssignmentEpoch: managed.AssignmentEpoch, ControlPresenceSessionId: managed.PresenceSessionID, DaemonRuntimeGeneration: acceptor.ManagedRuntime.RuntimeGeneration()},
 		ClientDeviceId: managed.ClientDeviceID, EstablishedPresenceSessionId: managed.PresenceSessionID,
-		AuthenticatedClientFingerprint: claims.SubjectKeyFingerprint, OpaqueAccessReference: opaqueAccessReference(acceptor.Identity.DeviceID, claims.GrantID),
+		AuthenticatedClientFingerprint: claims.SubjectKeyFingerprint, OpaqueAccessReference: OpaqueAccessReference(acceptor.Identity.DeviceID, claims.GrantID),
 		ControlOwnerHubId: registry.controlOwnerHubID, ObservedDataPath: managed.ObservedPath,
 		State: cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_AUTHENTICATED, Freshness: cloudpb.Freshness_FRESHNESS_FRESH,
 		ConnectedAtUnixMillis: now.UnixMilli(), ObservedAtUnixMillis: now.UnixMilli(), FreshUntilUnixMillis: now.Add(5 * time.Minute).UnixMilli(),
@@ -209,7 +209,9 @@ func (observer *managedHelloObserver) HelloAccepted() {
 	}
 }
 
-func opaqueAccessReference(daemonDeviceID, grantID string) string {
+// OpaqueAccessReference 返回 Cloud 管理投影使用的不可逆 grant reference。
+// 它不包含 grant body、terminal ID、scope 或 client public key。
+func OpaqueAccessReference(daemonDeviceID, grantID string) string {
 	digest := sha256.Sum256([]byte("termx-access-ref-v1\x00" + daemonDeviceID + "\x00" + grantID))
 	return base64.RawURLEncoding.EncodeToString(digest[:])
 }

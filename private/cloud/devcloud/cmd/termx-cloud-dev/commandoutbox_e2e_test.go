@@ -22,7 +22,9 @@ import (
 	cloudedge "github.com/lozzow/termx/private/cloud/edge"
 	webcontroller "github.com/lozzow/termx/private/cloud/web-controller"
 	"github.com/lozzow/termx/proto/cloudpb"
+	remotedaemon "github.com/lozzow/termx/remote/daemon"
 	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/lozzow/termx/shared/remoteauth"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -112,7 +114,101 @@ func TestSignedCloseCommandCrossesControllerEdgeAndDaemonHTTPBoundaries(t *testi
 		t.Fatal(err)
 	}
 	waitCommandApplied(t, controllerRuntime.Manifest().PublicURL, cookies, created.GetCommandId())
+
+	daemonIdentity, err := remoteauth.NewIdentity("daemon-1", daemonPrivate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accessStore, err := remoteauth.LoadAccessStore(filepath.Join(t.TempDir(), "access"), daemonIdentity, remoteauth.AccessStoreOptions{Now: func() time.Time { return time.Now().UTC() }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer accessStore.Close()
+	clientIdentity, _ := remoteauth.GenerateClientAccessIdentity("endpoint-1", rand.Reader)
+	bundle, _, err := accessStore.IssuePairingBundle(remoteauth.PairingIssueOptions{Scope: remoteauth.Scope{AllowDaemon: true}, TicketTTL: time.Hour, GrantLifetime: time.Hour, Now: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundlePayload, _ := remoteauth.EncodePairingBundle(bundle)
+	if _, err := accessStore.RedeemPairingBundle(bundlePayload, clientIdentity.PublicKey, "Android", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	accessRecord := accessStore.ListClientAccess()[0]
+	opaqueReference := remotedaemon.OpaqueAccessReference("daemon-1", accessRecord.GrantID)
+	daemonRuntime, err := remotedaemon.NewManagedRuntime("daemon-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := daemonRuntime.BindPresence("hub-1", 1, challenge.GetPresenceSessionId(), time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	accessTarget := &cloudpb.ManagedPeerSessionTarget{DaemonDeviceId: "daemon-1", ManagedSessionId: "managed-access", SessionIncarnation: 1, AssignmentEpoch: 1, ControlPresenceSessionId: challenge.GetPresenceSessionId(), DaemonRuntimeGeneration: daemonRuntime.RuntimeGeneration()}
+	closer := &accessSessionCloser{done: make(chan struct{})}
+	handle, _, err := daemonRuntime.Registry().Begin(&cloudpb.ManagedPeerSessionProjection{Target: accessTarget, ClientDeviceId: "client-1", EstablishedPresenceSessionId: challenge.GetPresenceSessionId(), ControlOwnerHubId: "hub-1", OpaqueAccessReference: opaqueReference, ObservedDataPath: cloudpb.ObservedPath_OBSERVED_PATH_DIRECT, State: cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_AUTHENTICATED, Freshness: cloudpb.Freshness_FRESHNESS_FRESH}, closer, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	closer.handle = handle
+	if _, err := handle.MarkReady(time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	peerInventory, err := daemonRuntime.Registry().Inventory("access-report", time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	accessInventory := remotedaemon.BuildTerminalAccessInventory(accessStore, "access-report", "daemon-1", "hub-1", 1, challenge.GetPresenceSessionId(), daemonRuntime.RuntimeGeneration(), peerInventory.GetRegistryRevision(), time.Now().UTC())
+	accessReport := &cloudpb.ReportDaemonRuntimeRequest{ReportId: "access-report", HubId: "hub-1", AssignmentEpoch: 1, PresenceSessionId: challenge.GetPresenceSessionId(), DaemonRuntimeGeneration: daemonRuntime.RuntimeGeneration(), RegistryRevision: peerInventory.GetRegistryRevision(), PeerSessions: peerInventory, TerminalAccesses: accessInventory}
+	if _, err := adapter.ReportDaemonRuntime(context.Background(), daemonSession.Authorization(), accessReport); err != nil {
+		t.Fatal(err)
+	}
+	waitTerminalAccessProjection(t, controllerRuntime.Manifest().PublicURL, cookies, opaqueReference)
+	accessCommand := createTerminalAccessCommandWhenTopologyArrives(t, controllerRuntime.Manifest().PublicURL, cookies, account.GetAccountId(), opaqueReference)
+	accessCommandContext, cancelAccessCommand := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelAccessCommand()
+	accessEvent, err := presence.Receive(accessCommandContext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controlReceipts, err := remotedaemon.LoadControlReceiptStore(filepath.Join(t.TempDir(), "control"), daemonIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer controlReceipts.Close()
+	if err := controlReceipts.InstallEnrollment(&cloudpb.DaemonControlEnrollment{AccountId: account.GetAccountId(), DaemonDeviceId: "daemon-1", AuthEpoch: account.GetAuthRevision(), EnrolledAtUnixMillis: now.UnixMilli(), VerificationKeys: []*cloudpb.DaemonControlVerificationKey{{KeyId: "daemon-control-1", PublicKey: daemonControlPublic, NotBeforeUnixMillis: now.Add(-time.Hour).UnixMilli(), NotAfterUnixMillis: now.Add(time.Hour).UnixMilli()}}}); err != nil {
+		t.Fatal(err)
+	}
+	accessResult, err := daemonRuntime.ExecuteControlCommand(context.Background(), accessEvent.GetDaemonCommand(), controlReceipts, accessStore, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accessResult.GetOpaqueAccessReference() != opaqueReference || accessResult.GetClosedSessionCount() != 1 || accessResult.GetResultCode() != cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED || !closer.requested {
+		t.Fatalf("daemon terminal revoke result = %v closer=%v", accessResult, closer.requested)
+	}
+	if _, err := adapter.ReportDaemonCommandResult(context.Background(), daemonSession.Authorization(), &cloudpb.ReportDaemonCommandResultRequest{Result: accessResult}); err != nil {
+		t.Fatal(err)
+	}
+	waitCommandApplied(t, controllerRuntime.Manifest().PublicURL, cookies, accessCommand.GetCommandId())
+	if !accessStore.Revoked(accessRecord.RevocationID) {
+		t.Fatal("terminal grant remained active after applied Cloud revoke")
+	}
 }
+
+type accessSessionCloser struct {
+	handle    *remotedaemon.ManagedSessionHandle
+	done      chan struct{}
+	requested bool
+}
+
+func (closer *accessSessionCloser) RequestClose() {
+	if closer.requested {
+		return
+	}
+	closer.requested = true
+	_, _ = closer.handle.MarkClosed("terminal_access_revoked", time.Now().UTC())
+	close(closer.done)
+}
+
+func (closer *accessSessionCloser) Done() <-chan struct{} { return closer.done }
 
 func seedCommandAccount(t *testing.T, databasePath, catalogPath string, now time.Time) *cloudpb.AccountProjection {
 	t.Helper()
@@ -164,6 +260,56 @@ func createCloseCommandWhenTopologyArrives(t *testing.T, origin string, cookies 
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("management command topology did not become available: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func createTerminalAccessCommandWhenTopologyArrives(t *testing.T, origin string, cookies map[string]*http.Cookie, accountID, opaqueReference string) *cloudpb.ManagementCommandProjection {
+	t.Helper()
+	target := &cloudpb.RevokeTerminalAccessTarget{DaemonDeviceId: "daemon-1", OpaqueAccessReference: opaqueReference}
+	requestBody, _ := protojson.Marshal(&cloudpb.CreateManagementCommandRequest{AccountId: accountID, CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_REVOKE_TERMINAL_ACCESS, Target: &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_TerminalAccess{TerminalAccess: target}}, IdempotencyKey: "revoke-access-1"})
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		request := authenticatedCommandRequest(http.MethodPost, origin+"/api/v1/management/commands", requestBody, origin, cookies, true)
+		response, err := http.DefaultClient.Do(request)
+		if err == nil && response.StatusCode == http.StatusAccepted {
+			defer response.Body.Close()
+			value := &cloudpb.CreateManagementCommandResponse{}
+			if err := protojson.Unmarshal(readResponse(t, response), value); err != nil {
+				t.Fatal(err)
+			}
+			return value.GetCommand()
+		}
+		if response != nil {
+			response.Body.Close()
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("terminal access command topology did not become available: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func waitTerminalAccessProjection(t *testing.T, origin string, cookies map[string]*http.Cookie, opaqueReference string) {
+	t.Helper()
+	body, _ := protojson.Marshal(&cloudpb.ListDaemonTerminalAccessRequest{DaemonDeviceId: "daemon-1", State: cloudpb.TerminalAccessState_TERMINAL_ACCESS_STATE_ACTIVE, Page: &cloudpb.PageRequest{PageSize: 10}})
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		request := authenticatedCommandRequest(http.MethodPost, origin+"/api/v1/management/terminal-access/list", body, origin, cookies, false)
+		response, err := http.DefaultClient.Do(request)
+		if err == nil && response.StatusCode == http.StatusOK {
+			value := &cloudpb.ListDaemonTerminalAccessResponse{}
+			payload := readResponse(t, response)
+			response.Body.Close()
+			if protojson.Unmarshal(payload, value) == nil && len(value.GetAccesses()) == 1 && value.GetAccesses()[0].GetOpaqueAccessReference() == opaqueReference {
+				return
+			}
+		} else if response != nil {
+			response.Body.Close()
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("terminal access projection did not become visible: %v", err)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

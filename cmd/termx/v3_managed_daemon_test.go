@@ -12,6 +12,7 @@ import (
 
 	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/proto/cloudpb"
+	remotev2daemon "github.com/lozzow/termx/remote/daemon"
 	"github.com/lozzow/termx/shared/cloudcompanion"
 	"github.com/lozzow/termx/shared/transport"
 )
@@ -51,6 +52,17 @@ func TestStartV3ManagedDaemonBuildsPresenceWithoutStoppingCore(t *testing.T) {
 	core := &managedDaemonCoreFake{}
 	clientAccess, err := loadV3ClientAccessRuntime(resolveV3Socket(""))
 	if err != nil {
+		t.Fatal(err)
+	}
+	controlReceipts, err := remotev2daemon.LoadControlReceiptStore(v3RemoteControlDir(), clientAccess.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := controlReceipts.InstallEnrollment(&cloudpb.DaemonControlEnrollment{AccountId: "account-1", DaemonDeviceId: clientAccess.Identity.DeviceID, AuthEpoch: 1, EnrolledAtUnixMillis: now.UnixMilli(), VerificationKeys: []*cloudpb.DaemonControlVerificationKey{{KeyId: "control-1", PublicKey: bytes.Repeat([]byte{0x41}, 32), NotBeforeUnixMillis: now.Add(-time.Hour).UnixMilli(), NotAfterUnixMillis: now.Add(time.Hour).UnixMilli()}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := controlReceipts.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if err := startV3ManagedDaemon(context.Background(), core, clientAccess, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {

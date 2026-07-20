@@ -33,7 +33,37 @@ type ManagedSessionRegistryPort interface {
 	ReplaceControlPresence(string, string, uint64, string, time.Time) (*cloudpb.PeerSessionInventorySnapshot, error)
 	Inventory(string, time.Time) (*cloudpb.PeerSessionInventorySnapshot, error)
 	CloseExact(context.Context, *cloudpb.ManagedPeerSessionTarget, time.Time) (*cloudpb.ExactSessionCloseResult, error)
+	CloseAccess(context.Context, string, time.Time) (uint32, uint64, error)
 	Changes() <-chan struct{}
+}
+
+// CloseAccess 请求关闭所有绑定同一 opaque access reference 的 active managed session。
+// AccessStore revoke 必须先提交；本方法只负责等待 protocol/DataChannel/PeerConnection owner 完整结束。
+func (registry *ManagedSessionRegistry) CloseAccess(ctx context.Context, opaqueAccessReference string, observedAt time.Time) (uint32, uint64, error) {
+	if registry == nil || opaqueAccessReference == "" || observedAt.IsZero() {
+		return 0, 0, ErrManagedSessionRegistryTarget
+	}
+	registry.mu.Lock()
+	var targets []*cloudpb.ManagedPeerSessionTarget
+	for _, entry := range registry.sessions {
+		if entry.projection.GetOpaqueAccessReference() == opaqueAccessReference && entry.projection.GetState() != cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_CLOSED {
+			targets = append(targets, proto.Clone(entry.projection.GetTarget()).(*cloudpb.ManagedPeerSessionTarget))
+		}
+	}
+	revision := registry.revision
+	registry.mu.Unlock()
+	var closed uint32
+	for _, target := range targets {
+		result, err := registry.CloseExact(ctx, target, observedAt)
+		if err != nil {
+			return closed, revision, err
+		}
+		revision = result.GetRegistryRevision()
+		if result.GetDisposition() == cloudpb.ExactSessionCloseDisposition_EXACT_SESSION_CLOSE_DISPOSITION_REQUESTED || result.GetDisposition() == cloudpb.ExactSessionCloseDisposition_EXACT_SESSION_CLOSE_DISPOSITION_ALREADY_CLOSED {
+			closed++
+		}
+	}
+	return closed, revision, nil
 }
 
 type managedSessionKey struct {

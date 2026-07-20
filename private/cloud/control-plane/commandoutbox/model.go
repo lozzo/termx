@@ -89,16 +89,23 @@ func ApplyHubResult(projection *cloudpb.ManagementCommandProjection, result *clo
 // ApplyDaemonResult 应用 daemon 完整关闭 protocol/resource/DataChannel 后的独立 receipt。
 // 结果必须匹配 child 的精确 ManagedPeerSessionTarget，不能由 topology CLOSED 替代。
 func ApplyDaemonResult(projection *cloudpb.ManagementCommandProjection, result *cloudpb.DaemonCommandResult, now time.Time) (*cloudpb.ManagementCommandProjection, error) {
-	if projection == nil || result == nil || result.GetCommandId() == "" || result.GetDaemonDeviceId() == "" || result.GetManagedSessionId() == "" || result.GetSessionIncarnation() == 0 || result.GetAssignmentEpoch() == 0 || result.GetPresenceSessionId() == "" || result.GetDaemonRuntimeGeneration() == "" || result.GetCompletedAtUnixMillis() <= 0 || now.IsZero() {
+	if projection == nil || result == nil || result.GetCommandId() == "" || result.GetDaemonDeviceId() == "" || result.GetAssignmentEpoch() == 0 || result.GetPresenceSessionId() == "" || result.GetDaemonRuntimeGeneration() == "" || result.GetCompletedAtUnixMillis() <= 0 || now.IsZero() {
 		return nil, ErrCommandConflict
 	}
 	next := proto.Clone(projection).(*cloudpb.ManagementCommandProjection)
 	child := commandChild(next, result.GetCommandId())
-	if child == nil || child.GetTarget().GetPeerSession() == nil {
+	if child == nil {
 		return nil, ErrCommandConflict
 	}
-	target := child.GetTarget().GetPeerSession()
-	if target.GetDaemonDeviceId() != result.GetDaemonDeviceId() || target.GetManagedSessionId() != result.GetManagedSessionId() || target.GetSessionIncarnation() != result.GetSessionIncarnation() || target.GetAssignmentEpoch() != result.GetAssignmentEpoch() || target.GetControlPresenceSessionId() != result.GetPresenceSessionId() || target.GetDaemonRuntimeGeneration() != result.GetDaemonRuntimeGeneration() {
+	if target := child.GetTarget().GetPeerSession(); target != nil {
+		if target.GetDaemonDeviceId() != result.GetDaemonDeviceId() || target.GetManagedSessionId() != result.GetManagedSessionId() || target.GetSessionIncarnation() != result.GetSessionIncarnation() || target.GetAssignmentEpoch() != result.GetAssignmentEpoch() || target.GetControlPresenceSessionId() != result.GetPresenceSessionId() || target.GetDaemonRuntimeGeneration() != result.GetDaemonRuntimeGeneration() || result.GetOpaqueAccessReference() != "" {
+			return nil, ErrCommandConflict
+		}
+	} else if target := child.GetTarget().GetTerminalAccess(); target != nil {
+		if target.GetDaemonDeviceId() != result.GetDaemonDeviceId() || target.GetOpaqueAccessReference() != result.GetOpaqueAccessReference() || target.GetAssignmentEpoch() != result.GetAssignmentEpoch() || target.GetPresenceSessionId() != result.GetPresenceSessionId() || target.GetDaemonRuntimeGeneration() != result.GetDaemonRuntimeGeneration() || result.GetAccessProjectionRevision() < target.GetAccessProjectionRevision() || result.GetManagedSessionId() != "" || result.GetSessionIncarnation() != 0 {
+			return nil, ErrCommandConflict
+		}
+	} else {
 		return nil, ErrCommandConflict
 	}
 	child.DeliveryState = cloudpb.CommandDeliveryState_COMMAND_DELIVERY_STATE_RUNTIME_RECEIVED

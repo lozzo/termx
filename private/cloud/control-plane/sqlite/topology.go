@@ -148,6 +148,18 @@ ON CONFLICT(daemon_device_id,managed_session_id,session_incarnation) DO UPDATE S
 			return err
 		}
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM terminal_access_topology WHERE hub_id=?`, snapshot.HubID); err != nil {
+		return err
+	}
+	for _, value := range snapshot.TerminalAccesses {
+		payload, err := proto.Marshal(value.Value)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO terminal_access_topology(daemon_device_id,account_id,hub_id,control_generation,access_projection_revision,freshness,inventory,updated_at) VALUES(?,?,?,?,?,?,?,?)`, value.Value.GetDaemonDeviceId(), value.AccountID, snapshot.HubID, snapshot.ControlGeneration, value.Value.GetAccessProjectionRevision(), cloudpb.Freshness_FRESHNESS_FRESH, payload, updatedAt); err != nil {
+			return err
+		}
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO hub_topology_heads(hub_id,control_generation,topology_revision,topology_digest,observed_at) VALUES(?,?,?,?,?)
 ON CONFLICT(hub_id) DO UPDATE SET control_generation=excluded.control_generation,topology_revision=excluded.topology_revision,topology_digest=excluded.topology_digest,observed_at=excluded.observed_at`, snapshot.HubID, snapshot.ControlGeneration, snapshot.TopologyRevision, snapshot.Digest, updatedAt)
 	if err != nil {
@@ -261,7 +273,81 @@ func degradeHubTopologyTx(ctx context.Context, tx *sql.Tx, hubID string, generat
 			return err
 		}
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE terminal_access_topology SET control_generation=?,freshness=?,updated_at=? WHERE hub_id=?`, generation, cloudpb.Freshness_FRESHNESS_STALE, observedAt.UTC().Format(time.RFC3339Nano), hubID); err != nil {
+		return err
+	}
 	return nil
+}
+
+// TerminalAccessProjection 返回精确 opaque reference 与其 inventory fencing。
+func (store *Store) TerminalAccessProjection(ctx context.Context, daemonDeviceID, opaqueReference string) (cloudtopology.StoredTerminalAccess, error) {
+	var accountID, hubID string
+	var payload []byte
+	err := store.db.QueryRowContext(ctx, `SELECT account_id,hub_id,inventory FROM terminal_access_topology WHERE daemon_device_id=?`, daemonDeviceID).Scan(&accountID, &hubID, &payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		return cloudtopology.StoredTerminalAccess{}, cloudtopology.ErrTopologyRejected
+	}
+	inventory := &cloudpb.TerminalAccessInventorySnapshot{}
+	if err != nil || proto.Unmarshal(payload, inventory) != nil {
+		return cloudtopology.StoredTerminalAccess{}, cloudtopology.ErrTopologyRejected
+	}
+	for _, access := range inventory.GetAccesses() {
+		if access.GetOpaqueAccessReference() == opaqueReference {
+			return cloudtopology.StoredTerminalAccess{AccountID: accountID, HubID: hubID, Value: proto.Clone(access).(*cloudpb.TerminalAccessProjection), Inventory: inventory}, nil
+		}
+	}
+	return cloudtopology.StoredTerminalAccess{}, cloudtopology.ErrTopologyRejected
+}
+
+// ListTerminalAccess 返回账号隔离的当前 inventory 条目和 freshness。
+func (store *Store) ListTerminalAccess(ctx context.Context, accountID, daemonDeviceID string, state cloudpb.TerminalAccessState, limit int) ([]cloudtopology.StoredTerminalAccess, cloudpb.Freshness, time.Time, error) {
+	if limit < 1 || limit > 256 {
+		return nil, cloudpb.Freshness_FRESHNESS_UNSPECIFIED, time.Time{}, cloudtopology.ErrTopologyRejected
+	}
+	query := `SELECT account_id,hub_id,freshness,inventory,updated_at FROM terminal_access_topology WHERE account_id=?`
+	args := []any{accountID}
+	if daemonDeviceID != "" {
+		query += ` AND daemon_device_id=?`
+		args = append(args, daemonDeviceID)
+	}
+	query += ` ORDER BY daemon_device_id LIMIT ?`
+	args = append(args, limit)
+	rows, err := store.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, cloudpb.Freshness_FRESHNESS_UNSPECIFIED, time.Time{}, err
+	}
+	defer rows.Close()
+	var result []cloudtopology.StoredTerminalAccess
+	freshness := cloudpb.Freshness_FRESHNESS_FRESH
+	var latest time.Time
+	for rows.Next() {
+		var storedAccount, hubID, updated string
+		var storedFreshness int32
+		var payload []byte
+		if err := rows.Scan(&storedAccount, &hubID, &storedFreshness, &payload, &updated); err != nil {
+			return nil, cloudpb.Freshness_FRESHNESS_UNSPECIFIED, time.Time{}, err
+		}
+		inventory := &cloudpb.TerminalAccessInventorySnapshot{}
+		if proto.Unmarshal(payload, inventory) != nil {
+			return nil, cloudpb.Freshness_FRESHNESS_UNSPECIFIED, time.Time{}, cloudtopology.ErrTopologyRejected
+		}
+		observed, _ := time.Parse(time.RFC3339Nano, updated)
+		if observed.After(latest) {
+			latest = observed
+		}
+		if cloudpb.Freshness(storedFreshness) == cloudpb.Freshness_FRESHNESS_STALE {
+			freshness = cloudpb.Freshness_FRESHNESS_STALE
+		}
+		for _, access := range inventory.GetAccesses() {
+			if state == cloudpb.TerminalAccessState_TERMINAL_ACCESS_STATE_UNSPECIFIED || access.GetState() == state {
+				result = append(result, cloudtopology.StoredTerminalAccess{AccountID: storedAccount, HubID: hubID, Value: proto.Clone(access).(*cloudpb.TerminalAccessProjection), Inventory: proto.Clone(inventory).(*cloudpb.TerminalAccessInventorySnapshot)})
+				if len(result) == limit {
+					return result, freshness, latest, nil
+				}
+			}
+		}
+	}
+	return result, freshness, latest, rows.Err()
 }
 
 func bytesEqual(left, right []byte) bool {

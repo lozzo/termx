@@ -74,8 +74,12 @@ func (controlPlane *fakeControlPlane) BeginDeviceEnrollment(_ context.Context, _
 	return &cloudpb.DeviceEnrollmentChallenge{FlowId: "enroll-1", ChallengeId: "challenge-1", Challenge: bytes.Repeat([]byte{0x33}, 32), ExpiresAtUnix: uint64(controlPlane.now.Add(5 * time.Minute).Unix())}, nil
 }
 
-func (controlPlane *fakeControlPlane) CompleteDeviceEnrollment(_ context.Context, _ *cloudpb.CompleteDeviceEnrollmentRequest) (session.Session, error) {
-	return session.New(session.Metadata{Kind: session.KindDevice, AccountID: "account-1", DeviceID: "daemon-enrolled", ExpiresAt: controlPlane.now.Add(time.Hour), HubID: "hub-1", HubURL: "https://hub.example.test", HubRegion: "local", HubDirectoryVersion: 1}, []byte("new-device-token"), controlPlane.now)
+func (controlPlane *fakeControlPlane) CompleteDeviceEnrollment(_ context.Context, _ *cloudpb.CompleteDeviceEnrollmentRequest) (cloudservice.DeviceEnrollmentResult, error) {
+	stored, err := session.New(session.Metadata{Kind: session.KindDevice, AccountID: "account-1", DeviceID: "daemon-enrolled", ExpiresAt: controlPlane.now.Add(time.Hour), HubID: "hub-1", HubURL: "https://hub.example.test", HubRegion: "local", HubDirectoryVersion: 1}, []byte("new-device-token"), controlPlane.now)
+	if err != nil {
+		return cloudservice.DeviceEnrollmentResult{}, err
+	}
+	return cloudservice.DeviceEnrollmentResult{Session: stored, ControlEnrollment: &cloudpb.DaemonControlEnrollment{AccountId: "account-1", DaemonDeviceId: "daemon-enrolled", AuthEpoch: 1, EnrolledAtUnixMillis: controlPlane.now.UnixMilli(), VerificationKeys: []*cloudpb.DaemonControlVerificationKey{{KeyId: "control-1", PublicKey: bytes.Repeat([]byte{0x41}, 32), NotBeforeUnixMillis: controlPlane.now.Add(-time.Hour).UnixMilli(), NotAfterUnixMillis: controlPlane.now.Add(time.Hour).UnixMilli()}}}}, nil
 }
 
 func (controlPlane *fakeControlPlane) RefreshSession(_ context.Context, authorization session.RefreshAuthorization) (session.Session, error) {

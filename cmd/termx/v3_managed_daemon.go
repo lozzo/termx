@@ -42,8 +42,19 @@ func startV3ManagedDaemon(ctx context.Context, core v3ManagedDaemonCore, clientA
 	if err != nil {
 		return err
 	}
+	controlReceipts, err := remotev2daemon.LoadControlReceiptStore(v3RemoteControlDir(), identity)
+	if err != nil {
+		_ = companion.Close()
+		return err
+	}
+	if _, err := controlReceipts.Enrollment(); err != nil {
+		_ = controlReceipts.Close()
+		_ = companion.Close()
+		return err
+	}
 	managedRuntime, err := remotev2daemon.NewManagedRuntime(identity.DeviceID, nil)
 	if err != nil {
+		_ = controlReceipts.Close()
 		_ = companion.Close()
 		return err
 	}
@@ -58,9 +69,12 @@ func startV3ManagedDaemon(ctx context.Context, core v3ManagedDaemonCore, clientA
 		Answerer: remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
 			Core: core, Identity: identity, AccessStore: clientAccess.Store, ManagedRuntime: managedRuntime,
 		}},
-		Runtime: managedRuntime,
+		Runtime:         managedRuntime,
+		AccessStore:     clientAccess.Store,
+		ControlReceipts: controlReceipts,
 	}
 	go func() {
+		defer controlReceipts.Close()
 		defer companion.Close()
 		if runErr := agent.RunContinuously(ctx, v3ManagedPresenceRetryDelay); runErr != nil && ctx.Err() == nil {
 			// managed presence 是 endpoint transport；失败不能停止本地 listener 或 core terminal lifecycle。

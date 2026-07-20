@@ -704,14 +704,16 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 - Hub 对精确 Presence 执行 Kick；daemon registry 对精确 session incarnation 调用 `CloseExact`，等待真实 owner `Done` 后独立回报结果。
 - daemon/client revoke 先在同一 SQLite 事务提交 authority；daemon 生成单 Hub Presence child，client 按当前 topology 生成跨 Hub session children。
 - daemon command 使用独立 Ed25519 key、确定性 Proto bytes、expiry、device auth epoch、Hub/assignment/Presence/runtime/session fencing；Hub 只能转发。
-- HUB004 的 daemon replay receipt 只在当前进程内保留至 command expiry；HUB005 再由 enrollment-owned `ControlReceiptStore` 提供重启后幂等和 terminal grant revoke。
+- HUB004 的 daemon replay receipt 只覆盖当前进程；HUB005 已由 enrollment-owned `ControlReceiptStore` 持久化受信控制 key 与精确 command/result 回执，使 daemon 重启后仍可幂等返回原结果。
 - 真实 harness 已串联 Controller Web API、HubControl HTTP、Edge Presence、daemon result 回传与 SQLite parent `APPLIED`。
 
 ### HUB005：terminal grant revoke
 
-- enrollment 建立 daemon control public key binding。
-- daemon 上报 opaque access inventory。
-- CP 签名 `RevokeTerminalGrant`，daemon AccessStore 原子 revoke 并关闭相关 session。
+- enrollment 使用生成的 `DeviceEnrollmentServiceSession` 返回账号、Hub credential 和受有效期约束的 daemon control public key binding；Companion 验签后才安装 OS session，daemon 在消费一次性 enrollment 前先打开 owner-only `ControlReceiptStore`。
+- daemon AccessStore 持久维护单调 `access_projection_revision`，runtime report 只上报 opaque access reference、状态和必要 fence，不上传 grant、token、terminal capability 或 terminal 内容；Hub 用 registry/access 双 revision 替换内存 topology，允许 access-only 更新并拒绝回退。
+- Web 通过账号 session 查询 Controller SQLite 中的 terminal access projection；创建 revoke 时由 Control Plane 补齐 assignment、Presence、runtime generation 和 access revision fence，Controller 对确定性 Proto command 签名，Hub 仅做精确 Presence 转发。
+- daemon 先在 AccessStore 原子 revoke，再关闭所有匹配 opaque access reference 的 managed session，并把结果写入持久回执后回传；Cloud 路径没有 grant、expand 或直接修改 terminal capability 的入口。
+- 真实 harness 已串联 Controller enrollment、Edge runtime report、Web 查询/创建命令、Hub 转发、daemon 执行、AccessStore/session 可观察结果和 Controller SQLite `APPLIED`；generated、public/private、race、双 Edge、doctor 与受影响 vet 门禁通过。
 
 ### CLOUDP004-CLOUDP005：Relay quota、usage 与 settlement
 

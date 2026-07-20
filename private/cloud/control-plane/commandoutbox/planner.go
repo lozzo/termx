@@ -23,6 +23,7 @@ type TargetSource interface {
 	Presence(context.Context, string) (string, *cloudpb.PresenceProjection, error)
 	PeerSession(context.Context, *cloudpb.ManagedPeerSessionTarget) (cloudtopology.StoredPeerSession, error)
 	PeerSessionsForClient(context.Context, string) ([]cloudtopology.StoredPeerSession, error)
+	TerminalAccess(context.Context, string, string) (cloudtopology.StoredTerminalAccess, error)
 }
 
 // Planner 把 generated management request 解析为持久 parent/child CommandOutbox。
@@ -129,6 +130,16 @@ func (planner *Planner) Create(ctx context.Context, request *cloudpb.CreateManag
 			planner.notifyPolicyChange(request.GetAccountId())
 		}
 		return stored, created, err
+	case cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_REVOKE_TERMINAL_ACCESS:
+		requested := request.GetTarget().GetTerminalAccess()
+		stored, err := planner.targets.TerminalAccess(ctx, requested.GetDaemonDeviceId(), requested.GetOpaqueAccessReference())
+		if err != nil || stored.AccountID != request.GetAccountId() || stored.Value.GetState() != cloudpb.TerminalAccessState_TERMINAL_ACCESS_STATE_ACTIVE || stored.Inventory == nil || stored.Inventory.GetAccessProjectionRevision() == 0 {
+			return nil, false, ErrCommandNotFound
+		}
+		childTarget := &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_TerminalAccess{TerminalAccess: &cloudpb.RevokeTerminalAccessTarget{DaemonDeviceId: requested.GetDaemonDeviceId(), OpaqueAccessReference: requested.GetOpaqueAccessReference(), AssignmentEpoch: stored.Inventory.GetAssignmentEpoch(), PresenceSessionId: stored.Inventory.GetControlPresenceSessionId(), DaemonRuntimeGeneration: stored.Inventory.GetDaemonRuntimeGeneration(), AccessProjectionRevision: stored.Inventory.GetAccessProjectionRevision()}}}
+		if err := planner.appendChild(projection, stored.HubID, childTarget, now); err != nil {
+			return nil, false, err
+		}
 	default:
 		return nil, false, ErrCommandConflict
 	}

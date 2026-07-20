@@ -24,6 +24,7 @@ import (
 	"github.com/lozzow/termx/private/cloud/control-plane/hubcontrol"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
 	cloudpolicy "github.com/lozzow/termx/private/cloud/control-plane/policy"
+	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
 	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
 	webcontroller "github.com/lozzow/termx/private/cloud/web-controller"
@@ -44,19 +45,22 @@ type DeploymentConfig struct {
 
 // Config 是 Controller development composition 的显式配置。
 type Config struct {
-	DatabasePath                  string                       `json:"database_path"`
-	PublicListen                  string                       `json:"public_listen"`
-	InternalControlListen         string                       `json:"internal_control_listen"`
-	OperatorListen                string                       `json:"operator_listen"`
-	CatalogPath                   string                       `json:"catalog_path"`
-	ProjectionKeyID               string                       `json:"projection_key_id"`
-	ProjectionPrivateKeyBase64    string                       `json:"projection_private_key_base64"`
-	DaemonControlKeyID            string                       `json:"daemon_control_key_id"`
-	DaemonControlPrivateKeyBase64 string                       `json:"daemon_control_private_key_base64"`
-	Deployments                   []DeploymentConfig           `json:"deployments"`
-	Devices                       []*cloudpb.CloudDevicePolicy `json:"devices"`
-	Assignments                   []*cloudpb.HubAssignment     `json:"assignments"`
-	EnableTestPaymentProvider     bool                         `json:"enable_test_payment_provider"`
+	DatabasePath                   string                       `json:"database_path"`
+	PublicListen                   string                       `json:"public_listen"`
+	InternalControlListen          string                       `json:"internal_control_listen"`
+	OperatorListen                 string                       `json:"operator_listen"`
+	CatalogPath                    string                       `json:"catalog_path"`
+	ProjectionKeyID                string                       `json:"projection_key_id"`
+	ProjectionPrivateKeyBase64     string                       `json:"projection_private_key_base64"`
+	DaemonControlKeyID             string                       `json:"daemon_control_key_id"`
+	DaemonControlPrivateKeyBase64  string                       `json:"daemon_control_private_key_base64"`
+	Deployments                    []DeploymentConfig           `json:"deployments"`
+	Devices                        []*cloudpb.CloudDevicePolicy `json:"devices"`
+	Assignments                    []*cloudpb.HubAssignment     `json:"assignments"`
+	EnableTestPaymentProvider      bool                         `json:"enable_test_payment_provider"`
+	DevelopmentEnrollmentCode      string                       `json:"development_enrollment_code"`
+	DevelopmentEnrollmentAccountID string                       `json:"development_enrollment_account_id"`
+	DevelopmentEnrollmentHubID     string                       `json:"development_enrollment_hub_id"`
 }
 
 // Manifest 是 supervisor 和 E2E harness 使用的非秘密 Controller 进程描述。
@@ -116,11 +120,23 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	if refreshInterval <= 0 || refreshInterval >= projectionTTL {
 		return nil, fmt.Errorf("Controller projection refresh interval is invalid")
 	}
+	if (config.DevelopmentEnrollmentCode == "") != (config.DevelopmentEnrollmentAccountID == "") {
+		return nil, fmt.Errorf("development enrollment code and account must be configured together")
+	}
+	now := time.Now().UTC()
 	privateKeyBytes, err := base64.RawStdEncoding.DecodeString(config.ProjectionPrivateKeyBase64)
 	if err != nil || len(privateKeyBytes) != ed25519.PrivateKeySize {
 		return nil, fmt.Errorf("invalid Controller projection private key")
 	}
 	privateKey := ed25519.PrivateKey(privateKeyBytes)
+	credentialSigner, err := servicecredential.NewSigner(config.ProjectionKeyID, privateKey, now.Add(-time.Hour), now.Add(24*time.Hour))
+	if err != nil {
+		return nil, err
+	}
+	edgeIssuer, err := servicecredential.NewEdgeAccessIssuer("termx-cloud-controller", credentialSigner)
+	if err != nil {
+		return nil, err
+	}
 	daemonControlKeyBytes, err := base64.RawStdEncoding.DecodeString(config.DaemonControlPrivateKeyBase64)
 	if err != nil || len(daemonControlKeyBytes) != ed25519.PrivateKeySize {
 		return nil, fmt.Errorf("invalid Controller daemon control private key")
@@ -142,12 +158,13 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	}
 	policyChanges := make(chan string, 64)
 	policyDone := make(chan struct{})
-	commerceService, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalog.Contract(), Now: time.Now, NotifyPolicyChange: func(accountID string) {
+	notifyPolicyChange := func(accountID string) {
 		select {
 		case policyChanges <- accountID:
 		case <-policyDone:
 		}
-	}})
+	}
+	commerceService, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalog.Contract(), Now: time.Now, NotifyPolicyChange: notifyPolicyChange})
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -158,7 +175,6 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	now := time.Now().UTC()
 	for _, device := range config.Devices {
 		stored, loadErr := topologyService.Device(context.Background(), device.GetDeviceId())
 		if loadErr == nil {
@@ -204,16 +220,31 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	notifyPolicyChange := func(accountID string) {
-		select {
-		case policyChanges <- accountID:
-		case <-policyDone:
-		}
-	}
 	planner, err := commandoutbox.NewPlanner(outboxService, topologyService, nil, notifyPolicyChange)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
+	}
+	var enrollment *enrollmentService
+	if config.DevelopmentEnrollmentCode != "" {
+		hubID := config.DevelopmentEnrollmentHubID
+		if hubID == "" {
+			hubID = config.Deployments[0].Metadata.GetHubId()
+		}
+		if _, err := registry.Deployment(context.Background(), hubID); err != nil {
+			_ = store.Close()
+			return nil, fmt.Errorf("development enrollment Hub is invalid: %w", err)
+		}
+		enrollment, err = newEnrollmentService(enrollmentServiceConfig{
+			Code: config.DevelopmentEnrollmentCode, AccountID: config.DevelopmentEnrollmentAccountID, HubID: hubID,
+			Commerce: commerceService, Topology: topologyService, Registry: registry, EdgeIssuer: edgeIssuer,
+			ControlKeyID: config.DaemonControlKeyID, ControlPublicKey: daemonControlKey.Public().(ed25519.PublicKey),
+			ControlNotBefore: now.Add(-time.Hour), ControlNotAfter: now.Add(24 * time.Hour), Now: time.Now, NotifyPolicyChange: notifyPolicyChange,
+		})
+		if err != nil {
+			_ = store.Close()
+			return nil, err
+		}
 	}
 	dispatcher, err := commandoutbox.NewDispatcher(outboxService, publisher, topologyService, config.DaemonControlKeyID, daemonControlKey)
 	if err != nil {
@@ -256,13 +287,16 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	managementHandler, err := webcontroller.ManagementAPIHandler(webcontroller.ManagementAPIConfig{Commerce: commerceService, Planner: planner, Outbox: outboxService, Now: time.Now})
+	managementHandler, err := webcontroller.ManagementAPIHandler(webcontroller.ManagementAPIConfig{Commerce: commerceService, Planner: planner, Outbox: outboxService, Accesses: topologyService, Now: time.Now})
 	if err != nil {
 		_ = store.Close()
 		return nil, err
 	}
 	publicMux := http.NewServeMux()
 	publicMux.HandleFunc("/healthz", healthHandler)
+	if enrollment != nil {
+		enrollment.registerHTTP(publicMux)
+	}
 	publicMux.HandleFunc("/api/v1/catalog", func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet {
 			http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)

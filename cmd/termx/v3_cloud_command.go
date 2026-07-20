@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/proto/cloudpb"
+	remotev2daemon "github.com/lozzow/termx/remote/daemon"
 	"github.com/lozzow/termx/shared/cloudcompanion"
 	"github.com/lozzow/termx/shared/cloudcompanion/installer"
 	"github.com/lozzow/termx/shared/cloudcompanion/ipc"
@@ -293,6 +294,15 @@ func v3CloudEnrollCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			receipts, err := remotev2daemon.LoadControlReceiptStore(v3RemoteControlDir(), identity)
+			if err != nil {
+				return fmt.Errorf("open daemon control receipt store before enrollment: %w", err)
+			}
+			defer func() {
+				if receipts != nil {
+					_ = receipts.Close()
+				}
+			}()
 			client, err := openV3CloudLifecycleClient(cmd.Context(), cloudpb.CallerRole_CALLER_ROLE_CLI, cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT)
 			if err != nil {
 				return err
@@ -324,6 +334,13 @@ func v3CloudEnrollCommand() *cobra.Command {
 			if err != nil {
 				return actionableCloudEnrollmentError(err)
 			}
+			if err := receipts.InstallEnrollment(response.GetControlEnrollment()); err != nil {
+				return fmt.Errorf("persist daemon control enrollment: %w", err)
+			}
+			if err := receipts.Close(); err != nil {
+				return fmt.Errorf("close daemon control receipt store: %w", err)
+			}
+			receipts = nil
 			fmt.Fprintf(cmd.OutOrStdout(), "Enrolled daemon device %s\n", response.GetSession().GetDeviceId())
 			fmt.Fprintln(cmd.OutOrStdout(), "Verify with `termx cloud node status`.")
 			return nil
@@ -574,6 +591,10 @@ func defaultReadV3CloudEnrollmentCode(cmd *cobra.Command) ([]byte, error) {
 
 func v3RemoteIdentityDir() string {
 	return filepath.Join(filepath.Dir(v3RemoteCredentialDir()), "identity")
+}
+
+func v3RemoteControlDir() string {
+	return filepath.Join(filepath.Dir(v3RemoteIdentityDir()), "control")
 }
 
 func cloudAccountLabel(session *cloudpb.CloudSessionSummary) string {

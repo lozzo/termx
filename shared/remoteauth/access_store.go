@@ -24,7 +24,7 @@ import (
 const (
 	accessStoreFile             = "remote_client_access.json"
 	accessStoreLockFile         = "remote_client_access.lock"
-	accessStoreVersion          = 2
+	accessStoreVersion          = 3
 	accessStateSignatureDomain  = "termx.remoteauth.access-state.v2"
 	pairingReceiptDomain        = "termx.remoteauth.pairing-receipt.v1"
 	defaultDeliveryGrace        = 24 * time.Hour
@@ -67,16 +67,18 @@ type AccessStoreOptions struct {
 // AccessStore 是 owning daemon 的 PairingTicket 摘要、客户端 key 绑定、grant claims、delivery receipt 摘要与撤销唯一持久真值。
 // 一个 state 目录只允许一个进程 owner；普通 capability 验证只读内存且不写磁盘，低频 mutation 才批量 compact 并原子替换签名 state。
 type AccessStore struct {
-	mu        sync.RWMutex
-	path      string
-	identity  Identity
-	tickets   map[string]storedPairingTicket
-	grants    map[string]storedAccessGrant
-	now       func() time.Time
-	random    io.Reader
-	owner     *filelock.Lock
-	writeFile func(string, []byte) error
-	closed    bool
+	mu                       sync.RWMutex
+	path                     string
+	identity                 Identity
+	tickets                  map[string]storedPairingTicket
+	grants                   map[string]storedAccessGrant
+	now                      func() time.Time
+	random                   io.Reader
+	owner                    *filelock.Lock
+	writeFile                func(string, []byte) error
+	closed                   bool
+	accessProjectionRevision uint64
+	changes                  chan struct{}
 }
 
 // AccessSnapshot 是不取得 daemon mutation owner lock 的只读撤销快照。
@@ -86,12 +88,13 @@ type AccessSnapshot struct {
 }
 
 type storedAccessState struct {
-	Version           uint32                         `json:"version"`
-	IssuerDeviceID    string                         `json:"issuer_device_id"`
-	IssuerFingerprint string                         `json:"issuer_fingerprint"`
-	Tickets           map[string]storedPairingTicket `json:"tickets"`
-	Grants            map[string]storedAccessGrant   `json:"grants"`
-	StateSignature    string                         `json:"state_signature"`
+	Version                  uint32                         `json:"version"`
+	IssuerDeviceID           string                         `json:"issuer_device_id"`
+	IssuerFingerprint        string                         `json:"issuer_fingerprint"`
+	Tickets                  map[string]storedPairingTicket `json:"tickets"`
+	Grants                   map[string]storedAccessGrant   `json:"grants"`
+	StateSignature           string                         `json:"state_signature"`
+	AccessProjectionRevision uint64                         `json:"access_projection_revision"`
 }
 
 type storedPairingTicket struct {
@@ -134,7 +137,7 @@ func LoadAccessStore(dir string, identity Identity, options AccessStoreOptions) 
 	}
 	store := &AccessStore{
 		path: filepath.Join(dir, accessStoreFile), identity: identity, owner: owner,
-		tickets: map[string]storedPairingTicket{}, grants: map[string]storedAccessGrant{},
+		tickets: map[string]storedPairingTicket{}, grants: map[string]storedAccessGrant{}, changes: make(chan struct{}, 1),
 		now: options.Now, random: options.Random, writeFile: writePrivateFile,
 	}
 	if store.now == nil {
@@ -151,6 +154,7 @@ func LoadAccessStore(dir string, identity Identity, options AccessStoreOptions) 
 	if found {
 		store.tickets = state.Tickets
 		store.grants = state.Grants
+		store.accessProjectionRevision = state.AccessProjectionRevision
 		if err := store.validateLoadedState(); err != nil {
 			_ = owner.Close()
 			return nil, err
@@ -161,6 +165,31 @@ func LoadAccessStore(dir string, identity Identity, options AccessStoreOptions) 
 		}
 	}
 	return store, nil
+}
+
+// AccessProjectionRevision 返回 grant 管理投影的持久单调 revision。
+// pairing ticket 本身不改变该 revision；grant 新增、撤销或 retention 清理才推进。
+func (store *AccessStore) AccessProjectionRevision() uint64 {
+	if store == nil {
+		return 0
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	if store.closed {
+		return 0
+	}
+	return store.accessProjectionRevision
+}
+
+// AccessChanges 返回 grant 管理投影的有界变更通知。
+// 通知可以合并；consumer 每次必须重新读取完整 projection 与 revision。
+func (store *AccessStore) AccessChanges() <-chan struct{} {
+	if store == nil {
+		closed := make(chan struct{})
+		close(closed)
+		return closed
+	}
+	return store.changes
 }
 
 // LoadAccessSnapshot 验证并读取 daemon-local state 的只读撤销快照，不竞争 mutation owner lock。
@@ -176,7 +205,7 @@ func LoadAccessSnapshot(dir string, identity Identity) (*AccessSnapshot, error) 
 	if !found {
 		return &AccessSnapshot{grants: map[string]storedAccessGrant{}}, nil
 	}
-	store := &AccessStore{identity: identity, tickets: state.Tickets, grants: state.Grants}
+	store := &AccessStore{identity: identity, tickets: state.Tickets, grants: state.Grants, accessProjectionRevision: state.AccessProjectionRevision}
 	if err := store.validateLoadedState(); err != nil {
 		return nil, err
 	}
@@ -242,13 +271,19 @@ func (store *AccessStore) IssuePairingBundle(options PairingIssueOptions) (*Pair
 		return nil, PairingTicketClaims{}, fmt.Errorf("pairing ticket id collision")
 	}
 	oldTickets, oldGrants := cloneTicketRecords(store.tickets), cloneGrantRecords(store.grants)
-	store.compactLocked(options.Now.UTC())
+	oldRevision := store.accessProjectionRevision
+	if store.compactLocked(options.Now.UTC()) {
+		store.accessProjectionRevision++
+	}
 	store.tickets[claims.TicketID] = storedPairingTicket{Claims: claims, TicketDigest: payloadDigest(payload)}
 	if err := store.persistLocked(); err != nil {
 		if !privateFileWritePublished(err) {
-			store.tickets, store.grants = oldTickets, oldGrants
+			store.tickets, store.grants, store.accessProjectionRevision = oldTickets, oldGrants, oldRevision
 		}
 		return nil, PairingTicketClaims{}, err
+	}
+	if store.accessProjectionRevision != oldRevision {
+		store.notifyAccessChangedLocked()
 	}
 	return bundle, claims, nil
 }
@@ -338,15 +373,18 @@ func (store *AccessStore) RedeemPairingBundle(payload []byte, clientPublicKey ed
 	updatedTicket.DeliveryGraceUntil = now.Add(defaultDeliveryGrace)
 	grantRecord := storedAccessGrant{Claims: grantClaims, ClientLabel: clientLabel}
 	oldTickets, oldGrants := cloneTicketRecords(store.tickets), cloneGrantRecords(store.grants)
+	oldRevision := store.accessProjectionRevision
 	store.compactLocked(now)
 	store.tickets[claims.TicketID] = updatedTicket
 	store.grants[grantID] = grantRecord
+	store.accessProjectionRevision++
 	if err := store.persistLocked(); err != nil {
 		if !privateFileWritePublished(err) {
-			store.tickets, store.grants = oldTickets, oldGrants
+			store.tickets, store.grants, store.accessProjectionRevision = oldTickets, oldGrants, oldRevision
 		}
 		return PairingExchangeResult{}, err
 	}
+	store.notifyAccessChangedLocked()
 	return PairingExchangeResult{
 		TicketID: claims.TicketID, Grant: boundGrant, GrantID: grantID, DeliveryReceipt: receipt,
 		SubjectKeyFingerprint: subjectFingerprint, Scope: grantClaims.Scope, ExpiresAt: grantClaims.ExpiresAt,
@@ -396,16 +434,19 @@ func (store *AccessStore) RevokeGrant(grantID string) (ClientAccessRecord, error
 		return clientAccessRecordFromStored(record), nil
 	}
 	oldTickets, oldGrants := cloneTicketRecords(store.tickets), cloneGrantRecords(store.grants)
+	oldRevision := store.accessProjectionRevision
 	now := store.now().UTC()
 	store.compactLocked(now)
 	record.RevokedAt = now
 	store.grants[grantID] = record
+	store.accessProjectionRevision++
 	if err := store.persistLocked(); err != nil {
 		if !privateFileWritePublished(err) {
-			store.tickets, store.grants = oldTickets, oldGrants
+			store.tickets, store.grants, store.accessProjectionRevision = oldTickets, oldGrants, oldRevision
 		}
 		return ClientAccessRecord{}, err
 	}
+	store.notifyAccessChangedLocked()
 	return clientAccessRecordFromStored(record), nil
 }
 
@@ -441,7 +482,7 @@ func (store *AccessStore) ensureOpenLocked() error {
 func (store *AccessStore) persistLocked() error {
 	state := storedAccessState{
 		Version: accessStoreVersion, IssuerDeviceID: store.identity.DeviceID, IssuerFingerprint: store.identity.Fingerprint,
-		Tickets: store.tickets, Grants: store.grants,
+		Tickets: store.tickets, Grants: store.grants, AccessProjectionRevision: store.accessProjectionRevision,
 	}
 	signingBytes, err := accessStateSigningBytes(state)
 	if err != nil {
@@ -456,6 +497,13 @@ func (store *AccessStore) persistLocked() error {
 		return fmt.Errorf("persist client access store: %w", err)
 	}
 	return nil
+}
+
+func (store *AccessStore) notifyAccessChangedLocked() {
+	select {
+	case store.changes <- struct{}{}:
+	default:
+	}
 }
 
 func loadStoredAccessState(path string, identity Identity) (storedAccessState, bool, error) {
@@ -505,6 +553,9 @@ func accessStateSigningBytes(state storedAccessState) ([]byte, error) {
 }
 
 func (store *AccessStore) validateLoadedState() error {
+	if store.accessProjectionRevision == 0 && len(store.grants) != 0 {
+		return fmt.Errorf("client access store projection revision is invalid")
+	}
 	for ticketID, record := range store.tickets {
 		claims := normalizePairingTicketClaims(record.Claims)
 		if ticketID != claims.TicketID || claims.IssuerDeviceID != store.identity.DeviceID || claims.IssuerDeviceFingerprint != store.identity.Fingerprint ||
@@ -566,7 +617,8 @@ func (store *AccessStore) pairingResultFromStored(ticket storedPairingTicket) (P
 	}, nil
 }
 
-func (store *AccessStore) compactLocked(now time.Time) {
+func (store *AccessStore) compactLocked(now time.Time) bool {
+	changed := false
 	for ticketID, record := range store.tickets {
 		if record.GrantID == "" {
 			if !now.Before(record.Claims.ExpiresAt.Add(expiredTicketRetention)) {
@@ -581,8 +633,10 @@ func (store *AccessStore) compactLocked(now time.Time) {
 	for grantID, record := range store.grants {
 		if !now.Before(record.Claims.ExpiresAt.Add(expiredGrantRecordRetention)) {
 			delete(store.grants, grantID)
+			changed = true
 		}
 	}
+	return changed
 }
 
 func pairingDeliveryReceipt(privateKey ed25519.PrivateKey, ticketID, subjectFingerprint, grantID string) string {

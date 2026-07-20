@@ -226,7 +226,10 @@ func TestCloudEnrollSignsChallengeWithDaemonIdentity(t *testing.T) {
 			if err != nil || !ed25519.Verify(ed25519.PublicKey(proof.GetDevicePublicKey()), signingBytes, proof.GetSignature()) {
 				t.Fatalf("enrollment signature verification failed: %v", err)
 			}
-			return &cloudpb.CompleteDeviceEnrollmentResponse{Session: &cloudpb.CloudSessionSummary{DeviceId: proof.GetDeviceId()}}, nil
+			return &cloudpb.CompleteDeviceEnrollmentResponse{
+				Session:           &cloudpb.CloudSessionSummary{AccountId: "account-1", DeviceId: proof.GetDeviceId()},
+				ControlEnrollment: &cloudpb.DaemonControlEnrollment{AccountId: "account-1", DaemonDeviceId: proof.GetDeviceId(), AuthEpoch: 1, EnrolledAtUnixMillis: now.UnixMilli(), VerificationKeys: []*cloudpb.DaemonControlVerificationKey{{KeyId: "control-1", PublicKey: bytes.Repeat([]byte{0x41}, ed25519.PublicKeySize), NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), NotAfterUnixMillis: now.Add(time.Hour).UnixMilli()}}},
+			}, nil
 		},
 	}}
 	previousOpen := openV3CloudLifecycleClient

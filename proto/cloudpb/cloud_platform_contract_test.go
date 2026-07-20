@@ -207,6 +207,36 @@ func TestHubControlHTTPBoundaryIsProtoFirst(t *testing.T) {
 	}
 }
 
+func TestDaemonControlEnrollmentAndTerminalRevokeResultRoundTrip(t *testing.T) {
+	response := &CompleteDeviceEnrollmentResponse{Session: &CloudSessionSummary{AccountId: "account-1", DeviceId: "daemon-1"}, ControlEnrollment: &DaemonControlEnrollment{AccountId: "account-1", DaemonDeviceId: "daemon-1", AuthEpoch: 7, VerificationKeys: []*DaemonControlVerificationKey{{KeyId: "control-1", PublicKey: bytes.Repeat([]byte{0x41}, 32), NotBeforeUnixMillis: 1, NotAfterUnixMillis: 2}}, EnrolledAtUnixMillis: 1}}
+	payload, err := proto.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decodedResponse := &CompleteDeviceEnrollmentResponse{}
+	if err := proto.Unmarshal(payload, decodedResponse); err != nil || !proto.Equal(response, decodedResponse) {
+		t.Fatalf("enrollment round-trip = (%v, %v)", decodedResponse, err)
+	}
+	serviceSession := &DeviceEnrollmentServiceSession{Session: response.GetSession(), AccessToken: []byte("private-edge-token"), HubId: "hub-1", HubDirectoryVersion: 3, ControlEnrollment: response.GetControlEnrollment()}
+	payload, err = proto.Marshal(serviceSession)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decodedServiceSession := &DeviceEnrollmentServiceSession{}
+	if err := proto.Unmarshal(payload, decodedServiceSession); err != nil || !proto.Equal(serviceSession, decodedServiceSession) {
+		t.Fatalf("private enrollment service session round-trip = (%v, %v)", decodedServiceSession, err)
+	}
+	result := &DaemonCommandResult{CommandId: "command-1", DaemonDeviceId: "daemon-1", AssignmentEpoch: 3, PresenceSessionId: "presence-1", DaemonRuntimeGeneration: "runtime-1", ResultCode: RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED, OpaqueAccessReference: "opaque-1", AccessProjectionRevision: 9, ClosedSessionCount: 2, CompletedAtUnixMillis: 4}
+	payload, err = proto.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decodedResult := &DaemonCommandResult{}
+	if err := proto.Unmarshal(payload, decodedResult); err != nil || !proto.Equal(result, decodedResult) {
+		t.Fatalf("terminal revoke result round-trip = (%v, %v)", decodedResult, err)
+	}
+}
+
 func TestCloudPlatformDescriptorBaseline(t *testing.T) {
 	payload, err := os.ReadFile("testdata/cloud-platform-v1.pb")
 	if err != nil {

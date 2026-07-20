@@ -120,6 +120,7 @@ type daemonRuntimeTopology struct {
 	assignmentEpoch   uint64
 	runtimeGeneration string
 	registryRevision  uint64
+	accessRevision    uint64
 	digest            [sha256.Size]byte
 	superseded        map[string]struct{}
 	peerSessions      []*cloudpb.ManagedPeerSessionProjection
@@ -320,42 +321,74 @@ func (service *Service) ReportDaemonRuntime(daemonDeviceID string, request *clou
 		}
 		seenSessions[key] = struct{}{}
 	}
+	accessRevision, err := validateRuntimeAccessInventory(service.hubID, daemonDeviceID, request)
+	if err != nil {
+		return nil, ErrRuntimeReport
+	}
 	digestBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(request)
 	if err != nil {
 		return nil, ErrRuntimeReport
 	}
 	digest := sha256.Sum256(digestBytes)
 	current := service.runtimeTopology[daemonDeviceID]
+	peerChanged := true
 	if current != nil && current.presenceSessionID == presence.sessionID && current.assignmentEpoch == presence.assignmentEpoch {
 		if _, stale := current.superseded[request.GetDaemonRuntimeGeneration()]; stale {
 			return nil, ErrRuntimeReport
 		}
 		if current.runtimeGeneration == request.GetDaemonRuntimeGeneration() {
-			if request.GetRegistryRevision() < current.registryRevision || request.GetRegistryRevision() == current.registryRevision && current.digest != digest {
+			if request.GetRegistryRevision() < current.registryRevision || accessRevision < current.accessRevision {
 				return nil, ErrRuntimeReport
 			}
-			if request.GetRegistryRevision() == current.registryRevision {
+			if request.GetRegistryRevision() == current.registryRevision && accessRevision == current.accessRevision {
+				if current.digest != digest {
+					return nil, ErrRuntimeReport
+				}
 				return runtimeReportResponse(request), nil
 			}
+			peerChanged = request.GetRegistryRevision() != current.registryRevision
 		} else {
 			current.superseded[current.runtimeGeneration] = struct{}{}
 		}
 	} else {
 		current = &daemonRuntimeTopology{superseded: make(map[string]struct{})}
 	}
-	if err := service.edgeAuthorizer.ReconcileManagedP2P(daemonDeviceID, peer.GetSessions()); err != nil {
-		return nil, ErrRuntimeReport
+	if peerChanged {
+		if err := service.edgeAuthorizer.ReconcileManagedP2P(daemonDeviceID, peer.GetSessions()); err != nil {
+			return nil, ErrRuntimeReport
+		}
 	}
 	current.presenceSessionID = presence.sessionID
 	current.assignmentEpoch = presence.assignmentEpoch
 	current.runtimeGeneration = request.GetDaemonRuntimeGeneration()
 	current.registryRevision = request.GetRegistryRevision()
+	current.accessRevision = accessRevision
 	current.digest = digest
 	current.peerSessions = cloneManagedPeerSessions(peer.GetSessions())
 	current.terminalAccesses = cloneTerminalAccessInventory(request.GetTerminalAccesses())
 	service.runtimeTopology[daemonDeviceID] = current
 	service.observePresenceLocked(presence, cloudpb.Availability_AVAILABILITY_ONLINE, cloudpb.ObservationSource_OBSERVATION_SOURCE_DAEMON_INVENTORY, now)
 	return runtimeReportResponse(request), nil
+}
+
+func validateRuntimeAccessInventory(hubID, daemonDeviceID string, request *cloudpb.ReportDaemonRuntimeRequest) (uint64, error) {
+	inventory := request.GetTerminalAccesses()
+	if inventory == nil {
+		return 0, nil
+	}
+	if inventory.GetReportId() != request.GetReportId() || inventory.GetDaemonDeviceId() != daemonDeviceID || inventory.GetControlOwnerHubId() != hubID || inventory.GetAssignmentEpoch() != request.GetAssignmentEpoch() || inventory.GetControlPresenceSessionId() != request.GetPresenceSessionId() || inventory.GetDaemonRuntimeGeneration() != request.GetDaemonRuntimeGeneration() || inventory.GetRegistryRevision() != request.GetRegistryRevision() || inventory.GetObservedAtUnixMillis() <= 0 {
+		return 0, ErrRuntimeReport
+	}
+	revision := inventory.GetAccessProjectionRevision()
+	seen := make(map[string]struct{}, len(inventory.GetAccesses()))
+	for _, access := range inventory.GetAccesses() {
+		_, duplicate := seen[access.GetOpaqueAccessReference()]
+		if access == nil || duplicate || revision == 0 || access.GetDaemonDeviceId() != daemonDeviceID || access.GetOpaqueAccessReference() == "" || access.GetSubjectFingerprintSummary() == "" || access.GetState() == cloudpb.TerminalAccessState_TERMINAL_ACCESS_STATE_UNSPECIFIED || access.GetIssuedAtUnixMillis() <= 0 || access.GetExpiresAtUnixMillis() <= access.GetIssuedAtUnixMillis() || access.GetAccessProjectionRevision() != revision {
+			return 0, ErrRuntimeReport
+		}
+		seen[access.GetOpaqueAccessReference()] = struct{}{}
+	}
+	return revision, nil
 }
 
 // TopologyChanges 返回 Hub 内存 topology revision 的有界通知源；通知允许合并。

@@ -53,12 +53,16 @@ func TestAgentExecutesSignedCloseAndReportsIndependentReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	verifier, err := cloudpb.NewDaemonControlVerifier(map[string]ed25519.PublicKey{"control-1": publicKey})
+	now := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	identity := testAgentIdentity(t, "device-1")
+	receipts, err := LoadControlReceiptStore(t.TempDir(), identity)
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
-	identity := testAgentIdentity(t, "device-1")
+	defer receipts.Close()
+	if err := receipts.InstallEnrollment(&cloudpb.DaemonControlEnrollment{AccountId: "account-1", DaemonDeviceId: identity.DeviceID, AuthEpoch: 3, EnrolledAtUnixMillis: now.Add(-time.Hour).UnixMilli(), VerificationKeys: []*cloudpb.DaemonControlVerificationKey{{KeyId: "control-1", PublicKey: publicKey, NotBeforeUnixMillis: now.Add(-time.Hour).UnixMilli(), NotAfterUnixMillis: now.Add(time.Hour).UnixMilli()}}}); err != nil {
+		t.Fatal(err)
+	}
 	runtime := newTestManagedRuntime(t, identity.DeviceID)
 	if err := runtime.BindPresence("hub-1", 7, "presence-1", now); err != nil {
 		t.Fatal(err)
@@ -89,7 +93,7 @@ func TestAgentExecutesSignedCloseAndReportsIndependentReceipt(t *testing.T) {
 	companion.ReportDaemonCommandResultFunc = func(_ context.Context, request *cloudpb.ReportDaemonCommandResultRequest) (*cloudpb.ReportDaemonCommandResultResponse, error) {
 		return &cloudpb.ReportDaemonCommandResultResponse{AcceptedCommandId: request.GetResult().GetCommandId()}, nil
 	}
-	agent := Agent{Companion: companion, Identity: identity, Answerer: &fakeOfferAnswerer{}, Runtime: runtime, CommandVerifier: verifier, Now: func() time.Time { return now }}
+	agent := Agent{Companion: companion, Identity: identity, Answerer: &fakeOfferAnswerer{}, Runtime: runtime, ControlReceipts: receipts, Now: func() time.Time { return now }}
 	if err := agent.Run(context.Background()); !errors.Is(err, ErrPresenceClosed) {
 		t.Fatalf("Run() error = %v", err)
 	}

@@ -15,11 +15,85 @@ import (
 	cloudcommerce "github.com/lozzow/termx/private/cloud/control-plane/commerce"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubcontrol"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
+	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
 	webcontroller "github.com/lozzow/termx/private/cloud/web-controller"
 	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/lozzow/termx/shared/cloudcompanion"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
+
+func TestControllerEnrollmentBindsControlKeyAndPersistsDaemonAuthority(t *testing.T) {
+	now := time.Now().UTC()
+	hubPublic, _, _ := ed25519.GenerateKey(rand.Reader)
+	projectionPublic, projectionPrivate, _ := ed25519.GenerateKey(rand.Reader)
+	daemonControlPublic, daemonControlPrivate, _ := ed25519.GenerateKey(rand.Reader)
+	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local-1", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublic), RelayId: "relay-1", RelayControlIdentityFingerprint: "relay-fingerprint"}
+	databasePath := filepath.Join(t.TempDir(), "controller.db")
+	catalogPath := "../web-controller/config/plans.json"
+	account := seedControllerAccount(t, databasePath, catalogPath, now)
+	runtime, err := Start(Config{
+		DatabasePath: databasePath, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath,
+		ProjectionKeyID: "controller-key", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-key", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate),
+		Deployments:               []DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic)}},
+		DevelopmentEnrollmentCode: "one-time-code", DevelopmentEnrollmentAccountID: account.GetAccountId(), DevelopmentEnrollmentHubID: "hub-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close(context.Background())
+	devicePublic, devicePrivate, _ := ed25519.GenerateKey(rand.Reader)
+	begin := &cloudpb.BeginDeviceEnrollmentRequest{OneTimeCode: "one-time-code", DevicePublicKey: devicePublic, Metadata: &cloudpb.DeviceMetadata{DisplayName: "Test daemon", Platform: "test/arm64", TermxVersion: "test"}}
+	challenge := &cloudpb.DeviceEnrollmentChallenge{}
+	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/begin", begin, challenge, http.StatusOK)
+	signedAt := time.Now().UTC()
+	signingBytes, err := cloudcompanion.EnrollmentProofSigningBytes(&cloudpb.DeviceEnrollmentProofInput{FlowId: challenge.GetFlowId(), ChallengeId: challenge.GetChallengeId(), Challenge: challenge.GetChallenge(), DeviceId: "daemon-enrolled", DevicePublicKey: devicePublic, SignedAtUnixNano: signedAt.UnixNano()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	complete := &cloudpb.CompleteDeviceEnrollmentRequest{FlowId: challenge.GetFlowId(), Proof: &cloudpb.DeviceProof{DeviceId: "daemon-enrolled", DevicePublicKey: devicePublic, ChallengeId: challenge.GetChallengeId(), Signature: ed25519.Sign(devicePrivate, signingBytes), SignedAtUnixNano: signedAt.UnixNano()}}
+	result := &cloudpb.DeviceEnrollmentServiceSession{}
+	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/complete", complete, result, http.StatusOK)
+	if result.GetSession().GetAccountId() != account.GetAccountId() || result.GetSession().GetDeviceId() != "daemon-enrolled" || !bytes.Equal(result.GetControlEnrollment().GetVerificationKeys()[0].GetPublicKey(), daemonControlPublic) {
+		t.Fatalf("enrollment result = %v", result)
+	}
+	keyRing, _ := servicecredential.NewKeyRing(servicecredential.VerificationKey{ID: "controller-key", PublicKey: projectionPublic, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(24 * time.Hour)})
+	if _, err := servicecredential.VerifyEdgeAccess(keyRing, result.GetAccessToken(), servicecredential.EdgeAccessExpectation{Issuer: "termx-cloud-controller", AudienceHubID: "hub-1", AccountID: account.GetAccountId(), ClientDeviceID: "daemon-enrolled", PrincipalKind: servicecredential.EdgePrincipalDaemon}, time.Now().UTC()); err != nil {
+		t.Fatalf("verify daemon edge credential: %v", err)
+	}
+	owner, err := runtime.topology.Device(context.Background(), "daemon-enrolled")
+	if err != nil || owner.AccountID != account.GetAccountId() || !bytes.Equal(owner.PublicKey, devicePublic) {
+		t.Fatalf("persisted daemon ownership = (%v, %v)", owner, err)
+	}
+	assignment, err := runtime.registry.Assignment(context.Background(), "daemon-enrolled")
+	if err != nil || assignment.Value.GetHubId() != "hub-1" {
+		t.Fatalf("persisted assignment = (%v, %v)", assignment, err)
+	}
+	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/begin", begin, &cloudpb.CloudError{}, http.StatusForbidden)
+}
+
+func postControllerProto(t *testing.T, endpoint string, request, response proto.Message, expectedStatus int) {
+	t.Helper()
+	payload, err := proto.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpRequest, _ := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(payload))
+	httpRequest.Header.Set("Content-Type", cloudProtoMediaType)
+	httpResponse, err := http.DefaultClient.Do(httpRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(httpResponse.Body)
+	httpResponse.Body.Close()
+	if httpResponse.StatusCode != expectedStatus {
+		t.Fatalf("POST %s = %d: %s", endpoint, httpResponse.StatusCode, body)
+	}
+	if err := proto.Unmarshal(body, response); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestControllerRetriesSamePolicyRevisionAfterBackpressure(t *testing.T) {
 	publisher := hubcontrol.NewPublisher()

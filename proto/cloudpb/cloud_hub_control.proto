@@ -260,6 +260,10 @@ message KickPresenceTarget {
 message RevokeTerminalAccessTarget {
   string daemon_device_id = 1;
   string opaque_access_reference = 2;
+  uint64 assignment_epoch = 3;
+  string presence_session_id = 4;
+  string daemon_runtime_generation = 5;
+  uint64 access_projection_revision = 6;
 }
 
 // DaemonControlCommand 是 Controller 签名、Hub 只转发的 deny-only command。
@@ -320,6 +324,9 @@ message DaemonCommandResult {
   uint64 closed_registry_revision = 9;
   string error_code = 10;
   int64 completed_at_unix_millis = 11;
+  string opaque_access_reference = 12;
+  uint64 access_projection_revision = 13;
+  uint32 closed_session_count = 14;
 }
 
 // RelayControlTarget 精确定位 lease 或 managed session 的全部 allocation。

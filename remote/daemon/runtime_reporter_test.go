@@ -8,6 +8,7 @@ import (
 
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/lozzow/termx/shared/remoteauth"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -61,6 +62,47 @@ func TestRuntimeReporterRetriesExactRevisionAndThenPublishesNewestInventory(t *t
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("runtime reporter did not stop with Presence context")
+	}
+}
+
+func TestRuntimeReporterPublishesAccessRevisionAndRevokeReplacement(t *testing.T) {
+	identity, _, accessStore, now := sessionFixture(t, remoteauth.Scope{AllowDaemon: true})
+	runtime, err := NewManagedRuntime(identity.DeviceID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.BindPresence("hub-1", 3, "presence-1", now); err != nil {
+		t.Fatal(err)
+	}
+	reports := make(chan *cloudpb.ReportDaemonRuntimeRequest, 2)
+	fake := &cloudcompanion.FakeClient{ReportDaemonRuntimeFunc: func(_ context.Context, request *cloudpb.ReportDaemonRuntimeRequest) (*cloudpb.ReportDaemonRuntimeResponse, error) {
+		reports <- proto.Clone(request).(*cloudpb.ReportDaemonRuntimeRequest)
+		return &cloudpb.ReportDaemonRuntimeResponse{ReportId: request.GetReportId(), DaemonRuntimeGeneration: request.GetDaemonRuntimeGeneration(), AcceptedRegistryRevision: request.GetRegistryRevision(), AcceptedAccessProjectionRevision: request.GetTerminalAccesses().GetAccessProjectionRevision()}, nil
+	}}
+	agent := Agent{Companion: fake, Identity: identity, Runtime: runtime, AccessStore: accessStore, Now: func() time.Time { return now }, RuntimeReportRetryDelay: time.Millisecond}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		agent.runRuntimeReporter(ctx, runtime.Registry(), "hub-1", 3, "presence-1")
+	}()
+	initial := waitRuntimeReport(t, reports)
+	if initial.GetTerminalAccesses().GetAccessProjectionRevision() != accessStore.AccessProjectionRevision() || len(initial.GetTerminalAccesses().GetAccesses()) != 1 || initial.GetTerminalAccesses().GetAccesses()[0].GetState() != cloudpb.TerminalAccessState_TERMINAL_ACCESS_STATE_ACTIVE {
+		t.Fatalf("initial access inventory = %v", initial.GetTerminalAccesses())
+	}
+	records := accessStore.ListClientAccess()
+	if _, err := accessStore.RevokeGrant(records[0].GrantID); err != nil {
+		t.Fatal(err)
+	}
+	changed := waitRuntimeReport(t, reports)
+	if changed.GetTerminalAccesses().GetAccessProjectionRevision() <= initial.GetTerminalAccesses().GetAccessProjectionRevision() || changed.GetTerminalAccesses().GetAccesses()[0].GetState() != cloudpb.TerminalAccessState_TERMINAL_ACCESS_STATE_REVOKED {
+		t.Fatalf("revoked access inventory = %v", changed.GetTerminalAccesses())
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("access reporter did not stop")
 	}
 }
 

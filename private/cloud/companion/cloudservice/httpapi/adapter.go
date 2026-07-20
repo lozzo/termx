@@ -88,13 +88,17 @@ func (adapter *Adapter) BeginDeviceEnrollment(ctx context.Context, request *clou
 	return response, nil
 }
 
-// CompleteDeviceEnrollment 验证公开 proof 并返回 private device cloud session。
-func (adapter *Adapter) CompleteDeviceEnrollment(ctx context.Context, request *cloudpb.CompleteDeviceEnrollmentRequest) (session.Session, error) {
-	wire, err := adapter.postSession(ctx, ControlCompleteEnrollmentPath, request)
-	if err != nil {
-		return session.Session{}, err
+// CompleteDeviceEnrollment 验证公开 proof，并通过 generated Proto 接收 private session 与 control key binding。
+func (adapter *Adapter) CompleteDeviceEnrollment(ctx context.Context, request *cloudpb.CompleteDeviceEnrollmentRequest) (cloudservice.DeviceEnrollmentResult, error) {
+	wire := &cloudpb.DeviceEnrollmentServiceSession{}
+	if err := adapter.postProto(ctx, adapter.controlURL+ControlCompleteEnrollmentPath, session.Authorization{}, request, wire); err != nil {
+		return cloudservice.DeviceEnrollmentResult{}, err
 	}
-	return sessionFromWire(wire, adapter.now())
+	stored, err := deviceSessionFromProto(wire, adapter.now())
+	if err != nil {
+		return cloudservice.DeviceEnrollmentResult{}, err
+	}
+	return cloudservice.DeviceEnrollmentResult{Session: stored, ControlEnrollment: proto.Clone(wire.GetControlEnrollment()).(*cloudpb.DaemonControlEnrollment)}, nil
 }
 
 // RefreshSession 向 Control Plane 提交一次性 refresh secret，并接收轮换后的完整私有会话。
@@ -340,6 +344,28 @@ func sessionFromWire(wire SessionWire, now time.Time) (session.Session, error) {
 		return session.NewRefreshable(metadata, wire.AccessToken, wire.RefreshToken, time.Unix(wire.RefreshExpiresAt, 0).UTC(), now)
 	}
 	return session.New(metadata, wire.AccessToken, now)
+}
+
+func deviceSessionFromProto(wire *cloudpb.DeviceEnrollmentServiceSession, now time.Time) (session.Session, error) {
+	if wire == nil || wire.GetSession() == nil || wire.GetControlEnrollment() == nil {
+		return session.Session{}, protocolNetworkError("Control Plane returned an invalid device enrollment session")
+	}
+	accessToken := append([]byte(nil), wire.GetAccessToken()...)
+	refreshToken := append([]byte(nil), wire.GetRefreshToken()...)
+	defer clear(accessToken)
+	defer clear(refreshToken)
+	metadata := session.Metadata{
+		Kind: session.KindDevice, AccountID: wire.GetSession().GetAccountId(), AccountLabel: wire.GetSession().GetAccountLabel(),
+		DeviceID: wire.GetSession().GetDeviceId(), ExpiresAt: time.Unix(int64(wire.GetSession().GetExpiresAtUnix()), 0).UTC(),
+		HubID: wire.GetHubId(), HubURL: wire.GetHubUrl(), HubRegion: wire.GetHubRegion(), HubDirectoryVersion: wire.GetHubDirectoryVersion(),
+	}
+	if metadata.AccountID != wire.GetControlEnrollment().GetAccountId() || metadata.DeviceID != wire.GetControlEnrollment().GetDaemonDeviceId() {
+		return session.Session{}, protocolNetworkError("Control Plane returned a mismatched device enrollment binding")
+	}
+	if len(refreshToken) > 0 {
+		return session.NewRefreshable(metadata, accessToken, refreshToken, time.UnixMilli(wire.GetRefreshExpiresAtUnixMillis()).UTC(), now)
+	}
+	return session.New(metadata, accessToken, now)
 }
 
 func decodeJSON(reader io.Reader, target any) error {

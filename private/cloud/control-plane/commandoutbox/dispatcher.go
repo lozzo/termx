@@ -76,15 +76,31 @@ func (dispatcher *Dispatcher) hubCommand(ctx context.Context, parent *cloudpb.Ma
 		command.Target = &cloudpb.HubCommand_KickPresence{KickPresence: target}
 		return command, nil
 	}
-	target := child.GetTarget().GetPeerSession()
-	if target == nil {
+	peerTarget := child.GetTarget().GetPeerSession()
+	accessTarget := child.GetTarget().GetTerminalAccess()
+	if peerTarget == nil && accessTarget == nil {
 		return nil, ErrCommandConflict
 	}
-	device, err := dispatcher.devices.Device(ctx, target.GetDaemonDeviceId())
+	daemonDeviceID := ""
+	if peerTarget != nil {
+		daemonDeviceID = peerTarget.GetDaemonDeviceId()
+	} else {
+		daemonDeviceID = accessTarget.GetDaemonDeviceId()
+	}
+	device, err := dispatcher.devices.Device(ctx, daemonDeviceID)
 	if err != nil || device.AccountID != parent.GetAccountId() || device.Kind != cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON || device.AuthEpoch == 0 {
 		return nil, ErrCommandConflict
 	}
-	unsigned := &cloudpb.DaemonControlCommand{CommandId: child.GetChildCommandId(), CommandKind: cloudpb.DaemonControlCommandKind_DAEMON_CONTROL_COMMAND_KIND_CLOSE_MANAGED_PEER_SESSION, AccountId: parent.GetAccountId(), TargetDeviceId: target.GetDaemonDeviceId(), HubId: child.GetTargetHubId(), AssignmentEpoch: target.GetAssignmentEpoch(), AuthEpoch: device.AuthEpoch, PresenceSessionId: target.GetControlPresenceSessionId(), DaemonRuntimeGeneration: target.GetDaemonRuntimeGeneration(), IssuedAtUnixMillis: parent.GetCreatedAtUnixMillis(), ExpiresAtUnixMillis: parent.GetExpiresAtUnixMillis(), Target: &cloudpb.DaemonControlCommand_ManagedPeerSession{ManagedPeerSession: target}}
+	unsigned := &cloudpb.DaemonControlCommand{CommandId: child.GetChildCommandId(), AccountId: parent.GetAccountId(), TargetDeviceId: daemonDeviceID, HubId: child.GetTargetHubId(), AuthEpoch: device.AuthEpoch, IssuedAtUnixMillis: parent.GetCreatedAtUnixMillis(), ExpiresAtUnixMillis: parent.GetExpiresAtUnixMillis()}
+	if peerTarget != nil {
+		unsigned.CommandKind = cloudpb.DaemonControlCommandKind_DAEMON_CONTROL_COMMAND_KIND_CLOSE_MANAGED_PEER_SESSION
+		unsigned.AssignmentEpoch, unsigned.PresenceSessionId, unsigned.DaemonRuntimeGeneration = peerTarget.GetAssignmentEpoch(), peerTarget.GetControlPresenceSessionId(), peerTarget.GetDaemonRuntimeGeneration()
+		unsigned.Target = &cloudpb.DaemonControlCommand_ManagedPeerSession{ManagedPeerSession: peerTarget}
+	} else {
+		unsigned.CommandKind = cloudpb.DaemonControlCommandKind_DAEMON_CONTROL_COMMAND_KIND_REVOKE_TERMINAL_ACCESS
+		unsigned.AssignmentEpoch, unsigned.PresenceSessionId, unsigned.DaemonRuntimeGeneration = accessTarget.GetAssignmentEpoch(), accessTarget.GetPresenceSessionId(), accessTarget.GetDaemonRuntimeGeneration()
+		unsigned.Target = &cloudpb.DaemonControlCommand_TerminalAccess{TerminalAccess: accessTarget}
+	}
 	signed, err := cloudpb.SignDaemonControlCommand(unsigned, dispatcher.keyID, dispatcher.privateKey)
 	if err != nil {
 		return nil, err

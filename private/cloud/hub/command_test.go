@@ -84,3 +84,38 @@ func TestHubCommandForwardsExactDaemonSessionAndReportsIndependentResult(t *test
 		t.Fatalf("conflicting daemon result = %v", err)
 	}
 }
+
+func TestHubReplaysTerminalCommandAfterAccessProjectionBecomesRevoked(t *testing.T) {
+	fixture := newFixture(t, 8, 8)
+	presence, _ := fixture.openEdgePresence(t)
+	defer presence.Close()
+	presenceID := fixture.service.TopologySnapshot(1, fixture.clock.Now()).GetPresences()[0].GetPresenceSessionId()
+	request := runtimeRequest("runtime-1", 0, presenceID, nil, fixture.clock.Now().UnixMilli())
+	request.TerminalAccesses = &cloudpb.TerminalAccessInventorySnapshot{ReportId: request.GetReportId(), DaemonDeviceId: "daemon-1", ControlOwnerHubId: "hub-eu", AssignmentEpoch: 1, ControlPresenceSessionId: presenceID, DaemonRuntimeGeneration: "runtime-1", AccessProjectionRevision: 4, ObservedAtUnixMillis: fixture.clock.Now().UnixMilli(), Accesses: []*cloudpb.TerminalAccessProjection{{DaemonDeviceId: "daemon-1", OpaqueAccessReference: "opaque-1", SubjectFingerprintSummary: "subject-1234", State: cloudpb.TerminalAccessState_TERMINAL_ACCESS_STATE_ACTIVE, IssuedAtUnixMillis: fixture.clock.Now().Add(-time.Hour).UnixMilli(), ExpiresAtUnixMillis: fixture.clock.Now().Add(time.Hour).UnixMilli(), AccessProjectionRevision: 4}}}
+	if _, err := fixture.service.ReportDaemonRuntime("daemon-1", request); err != nil {
+		t.Fatal(err)
+	}
+	now := fixture.clock.Now()
+	target := &cloudpb.RevokeTerminalAccessTarget{DaemonDeviceId: "daemon-1", OpaqueAccessReference: "opaque-1", AssignmentEpoch: 1, PresenceSessionId: presenceID, DaemonRuntimeGeneration: "runtime-1", AccessProjectionRevision: 4}
+	daemonCommand := &cloudpb.DaemonControlCommand{CommandId: "access-1", CommandKind: cloudpb.DaemonControlCommandKind_DAEMON_CONTROL_COMMAND_KIND_REVOKE_TERMINAL_ACCESS, AccountId: "account-1", TargetDeviceId: "daemon-1", HubId: "hub-eu", AssignmentEpoch: 1, AuthEpoch: 1, PresenceSessionId: presenceID, DaemonRuntimeGeneration: "runtime-1", IssuedAtUnixMillis: now.UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Minute).UnixMilli(), ControlKeyId: "controller-control", Target: &cloudpb.DaemonControlCommand_TerminalAccess{TerminalAccess: target}, Signature: []byte("signature")}
+	command := &cloudpb.HubCommand{CommandId: "access-1", CommandKind: cloudpb.HubCommandKind_HUB_COMMAND_KIND_FORWARD_DAEMON_COMMAND, IssuedAtUnixMillis: now.UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Minute).UnixMilli(), Target: &cloudpb.HubCommand_DaemonCommand{DaemonCommand: daemonCommand}}
+	if result := fixture.service.ExecuteHubCommand(command, 5, now); result.GetResultCode() != cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED {
+		t.Fatalf("terminal forward result = %v", result)
+	}
+	if event, err := presence.Receive(context.Background()); err != nil || event.DaemonCommand.GetCommandId() != "access-1" {
+		t.Fatalf("terminal command event = (%v, %v)", event, err)
+	}
+	revoked := proto.Clone(request).(*cloudpb.ReportDaemonRuntimeRequest)
+	revoked.TerminalAccesses.AccessProjectionRevision = 5
+	revoked.TerminalAccesses.Accesses[0].AccessProjectionRevision = 5
+	revoked.TerminalAccesses.Accesses[0].State = cloudpb.TerminalAccessState_TERMINAL_ACCESS_STATE_REVOKED
+	if _, err := fixture.service.ReportDaemonRuntime("daemon-1", revoked); err != nil {
+		t.Fatal(err)
+	}
+	if replay := fixture.service.ExecuteHubCommand(proto.Clone(command).(*cloudpb.HubCommand), 6, now.Add(time.Second)); replay.GetResultCode() != cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED {
+		t.Fatalf("terminal replay result = %v", replay)
+	}
+	if event, err := presence.Receive(context.Background()); err != nil || event.DaemonCommand.GetCommandId() != "access-1" {
+		t.Fatalf("terminal replay event = (%v, %v)", event, err)
+	}
+}

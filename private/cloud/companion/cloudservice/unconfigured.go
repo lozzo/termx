@@ -32,8 +32,8 @@ func (*UnconfiguredAdapter) BeginDeviceEnrollment(context.Context, *cloudpb.Begi
 }
 
 // CompleteDeviceEnrollment 拒绝未装配的 device proof 兑换。
-func (*UnconfiguredAdapter) CompleteDeviceEnrollment(context.Context, *cloudpb.CompleteDeviceEnrollmentRequest) (session.Session, error) {
-	return session.Session{}, unavailableAdapterError()
+func (*UnconfiguredAdapter) CompleteDeviceEnrollment(context.Context, *cloudpb.CompleteDeviceEnrollmentRequest) (DeviceEnrollmentResult, error) {
+	return DeviceEnrollmentResult{}, unavailableAdapterError()
 }
 
 // RefreshSession 拒绝未装配的 session refresh 请求。
