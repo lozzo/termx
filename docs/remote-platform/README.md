@@ -6,11 +6,11 @@
 
 ## 1. 文档目的
 
-本目录保存 TermX 远程平台的产品、架构、安全和历史迁移背景。统一 Route 的当前结论以 `product-prd.md`、`cloud-product-spec.md`、`unified-endpoint-route-refactor-plan.md`、`architecture-spec.md`、`security-protocol-spec.md` 和根 `workflow.md` 为准。
+本目录保存 TermX 远程平台的产品、架构、安全和历史迁移背景。统一 Route 与 Cloud 的当前结论以 `product-prd.md`、`cloud-product-spec.md`、`multi-hub-control-topology-spec.md`、`unified-endpoint-route-refactor-plan.md`、`architecture-spec.md`、`security-protocol-spec.md` 和根 `workflow.md` 为准。
 
 仓库目录 ownership 与依赖方向统一见 [`../development/repository-layout.md`](../development/repository-layout.md)。
 
-`cloud-staging-roadmap.md`、旧 Android 手测、public staging、Hub edge、distribution、global acceleration、source boundary 和 snapshot 文档只记录历史阶段或延后能力，不再驱动当前任务。文档中的旧切片“完成”、旧 App flavor 或旧 transport 行为不能替代 `workflow.md` 的当前完成度判断。
+`cloud-staging-roadmap.md`、`hub-edge-control-plan.md`、旧 Android 手测、public staging、distribution、global acceleration、source boundary 和 snapshot 文档只记录历史阶段或延后能力，不再驱动当前任务。文档中的旧切片“完成”、旧持久 Hub snapshot/WAL、旧 App flavor 或旧 transport 行为不能替代当前设计和 `workflow.md`。
 
 `remote/` 是公开 managed WebRTC/E2E auth runtime，`clients/ui/` 与 `clients/mobile/` 消费同一公开 endpoint contract。旧 `termx-hub/`、`termx-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已收口到 `private/archive/termx-platform-legacy/`；archive 不得以兼容、fallback 或“先继续沿用”的方式反向约束新模型。
 
@@ -18,12 +18,13 @@
 
 1. `product-prd.md`：单一 App、免费 Direct/SSH、可选 Cloud 和 Android 用户验收。
 2. `cloud-product-spec.md`：账号、套餐、交易、Subscription、Entitlement、managed P2P/Relay、quota、usage 和管理面。
-3. `unified-endpoint-route-refactor-plan.md`：versioned Proto Endpoint/Route contract、Go owner 和失败语义。
-4. `architecture-spec.md`：Go Client Engine、daemon、Control Plane、Hub 和 Relay 的状态边界。
-5. `security-protocol-spec.md`：设备身份、channel binding、terminal capability 和云服务准入隔离。
-6. `network-topology.md`：Local、Direct WebRTC TCP、SSH WebRTC TCP 和 managed WebRTC 拓扑。
-7. `file-transfer-spec.md`：同一 Proto session 上的文件 owner、授权、流控和失败语义。
-8. 其余文件：历史验收、旧阶段决策或延后能力，仅在 `workflow.md` 明确引用时读取。
+3. `multi-hub-control-topology-spec.md`：多 Hub assignment、纯内存同步、Presence、PeerSession topology、CommandOutbox 和 Web 管理。
+4. `unified-endpoint-route-refactor-plan.md`：versioned Proto Endpoint/Route contract、Go owner 和失败语义。
+5. `architecture-spec.md`：Go Client Engine、daemon、Control Plane、Hub 和 Relay 的状态边界。
+6. `security-protocol-spec.md`：设备身份、channel binding、terminal capability 和云服务准入隔离。
+7. `network-topology.md`：Local、Direct WebRTC TCP、SSH WebRTC TCP 和 managed WebRTC 拓扑。
+8. `file-transfer-spec.md`：同一 Proto session 上的文件 owner、授权、流控和失败语义。
+9. 其余文件：历史验收、旧阶段决策或延后能力，仅在 `workflow.md` 明确引用时读取。
 
 若这些文档发生冲突，按以下顺序处理：
 
@@ -46,6 +47,8 @@
 - terminal capability 由 owning daemon 签发和验证。Hub、Relay、Web Controller 永远看不到 capability grant，也不拥有 terminal authorization。
 - Control Plane 可以签发短期 Hub 服务准入票据；Relay entitlement 通过独立短期 `RelayLease` 表达。
 - development Cloud 必须走完整账号、交易、Subscription、Entitlement、准入、限额和 usage 链路；固定测试账号或测试支付 provider 不能绕过这些领域状态。
+- 一个逻辑 Control Plane 管理多个纯内存 Hub；Hub 重启后必须重新 full sync，不能使用磁盘 snapshot/WAL 恢复授权投影。
+- Web 远程管理必须经过 Control Plane CommandOutbox；P2P 关闭和 terminal grant revoke 只有 daemon 精确 ack 后才能显示成功。
 - 旧代码保留 git 历史和归档引用，但迁移完成后不得继续存在公开/私有双实现或旧 session token fallback。
 
 ## 4. 统一术语

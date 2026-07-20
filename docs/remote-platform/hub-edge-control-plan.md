@@ -1,8 +1,8 @@
 # Hub 边缘授权与 Control Plane 降载计划
 
-状态：CLOUD009-CLOUD011 已完成；2026-07-12
+状态：CLOUD009-CLOUD011 历史实施记录；多 Hub 与纯内存 Hub 当前设计由 `multi-hub-control-topology-spec.md` 取代
 
-实现审计说明：本文件第 5.2 节描述的是 Hub 自治 Presence 的目标模型。2026-07-15 的代码审计确认，当前 staging 的 daemon Presence 仍通过 Control Plane `BeginPresence` 和 `AcquirePresenceAdmission` 后再打开 Hub stream；当前真实链路、故障窗口和待改造项以 `cloud-end-to-end-swimlanes.md` 为准。
+实现审计说明：本文保留旧单区域降载阶段和持久 snapshot/WAL 方案作为历史背景。后续不得按本文恢复 Hub 磁盘投影；当前多 Hub assignment、控制流、topology、command 和故障语义只以 `multi-hub-control-topology-spec.md` 与根 `workflow.md` 为准。
 
 ## 1. 目标
 
@@ -24,7 +24,7 @@ Hub 的请求热路径只读内存投影，不直接查询 Control Plane 或数�
 
 Control Plane 向 Hub 提供按 revision 严格有序的 snapshot/delta 流。Hub 原子应用完整 revision；发现 gap、rollback、签名失败或未知 schema 时拒绝 delta，并在后台请求完整 snapshot。cache miss 必须 fail closed，禁止隐藏的同步 Control Plane fallback；后台可使用 batch、singleflight 和指数退避刷新。
 
-生产 Hub 使用“内存热路径 + 原子持久化的已验证快照/WAL”。presence、signaling、replay 和 EdgeManagedSession 仍是易失短期状态。Hub 重启先恢复已验证快照，再由 client/daemon 重连；不能把易失 signaling 持久化成第二份 session truth。
+历史 CLOUD009-CLOUD011 方案曾要求“内存热路径 + 原子持久化的已验证快照/WAL”。该方案已被 `multi-hub-control-topology-spec.md` 的纯内存 Hub 取代，不得进入新实现；presence、signaling、replay 和 EdgeManagedSession 始终是易失短期状态。
 
 ## 4. 连接消息链路
 

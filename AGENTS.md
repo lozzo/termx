@@ -4,10 +4,11 @@
 
 - 仓库根目录 `workflow.md` 是当前分支唯一有效的活动驱动文件。
 - 本仓库内所有工作必须先读取 `workflow.md`，并以它作为范围、任务顺序、测试准入和提交规则的唯一基准。
-- 当前活动主线只由 `workflow.md` 最早未完成切片决定；统一 WebRTC Route、Android JNI 和最终 APK 连接纵向已完成，当前主线是 Cloud development 产品能力闭环：账号、套餐、交易、Subscription、Entitlement、managed P2P/Relay 准入、quota、usage 和管理面。浏览器 Web/WASM terminal 产品当前冻结，不得抢占 Cloud 产品主线。
+- 当前活动主线只由 `workflow.md` 最早未完成切片决定；统一 WebRTC Route、Android JNI 和最终 APK 连接纵向已完成，当前主线是多 Hub 控制面与 Cloud development 产品能力交错闭环，最早切片为 Hub/control/topology/management Proto contract。浏览器 Web/WASM terminal 产品当前冻结。
 - 插件系统已经拆到独立分支，本分支不新增插件系统代码、协议或文档。
 - `docs/remote-platform/` 是远程平台产品、架构、安全和迁移背景文档；统一 WebRTC Route 的当前决策以 `workflow.md` 为准，并由对应活动切片同步更新该目录，旧文档不得覆盖活动工作流。
 - `docs/remote-platform/cloud-product-spec.md` 是 Cloud 账号、套餐、交易、服务能力、限额、用量和管理面的唯一稳定产品基准；实现不得用 staging 硬编码或旧交易字段覆盖该规格。
+- `docs/remote-platform/multi-hub-control-topology-spec.md` 是多 Hub assignment、纯内存 Hub、daemon Presence/PeerSession topology、CommandOutbox 和 Web 远程管理的唯一稳定架构基准；旧 Hub snapshot/WAL 计划不得覆盖它。
 - `tui/docs/multi-endpoint-transport-plan.md` 是当前多 endpoint / 多 transport 技术规划。
 - `core/docs/architecture.md` 是 core-v2 技术设计基准。
 - `tui/docs/architecture.md` 是 tui-v3 技术设计基准。

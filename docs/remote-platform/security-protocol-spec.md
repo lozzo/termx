@@ -387,6 +387,19 @@ access list 只返回 grant/revocation ID、subject fingerprint、client label�
 
 当前不实现 Cloud 明文 grant/ticket 托管。未来若提供审批或加密投递，服务端也只能保存目标 ClientAccessIdentity 加密的一次性 envelope、expiry 和审计 metadata；Control Plane/Web Controller 不得获得可解密 grant，账号授权不得扩大 daemon signed scope。
 
+### 6.5 Cloud deny-only 授权管理
+
+daemon 完成 Cloud enrollment 时，daemon owner 可以显式信任 Control Plane 的 daemon-control verification key，用于账号 owner 从 Controller Panel 发起 deny-only 管理。该信任只允许减少权限：
+
+- Web 只能选择 daemon 投影的 opaque revoke reference，不能上传或读取 grant body、scope 或 client public key。
+- Cloud client DeviceID 与 `ClientAccessIdentity` 不等价；opaque reference 由 owning daemon 绑定本地 grant/revocation record 或 subject fingerprint。
+- Control Plane 使用 daemon-control 专用 key 和 domain separator 签发 deterministic Proto command，绑定 command ID、account、daemon、Hub、assignment epoch、auth epoch、Presence、目标 reference、签发时间和 expiry。
+- Hub 只能转发 command；daemon 必须端到端验签、拒绝 replay/错绑定/过期，并在 AccessStore 原子写 revoke 后关闭关联 PeerSession。
+- 只有 daemon 返回持久 revoke receipt 后，Web 才能显示 terminal access 已撤销。
+- Control Plane、Hub 和平台运营角色不能签发 grant、增加 scope、延长 expiry 或直接写 AccessStore。默认只有 daemon 所属账号 owner 可以发起该操作。
+
+具体 command、topology、fencing 和错误语义见 `multi-hub-control-topology-spec.md`。
+
 ## 7. Hub 本地准入协议
 
 ### 7.1 daemon presence

@@ -4,6 +4,8 @@
 
 活动切片、实现顺序、允许目录和验收证据只记录在仓库根目录 `workflow.md`。本文定义账号、套餐、交易、服务能力、限额、用量和管理面的稳定产品语义，不维护研发状态。
 
+多 Hub assignment、纯内存同步、daemon Presence、PeerSession topology、CommandOutbox 和 Web 远程管理以 `multi-hub-control-topology-spec.md` 为唯一稳定架构基准。
+
 ## 1. 产品目标
 
 TermX Cloud 是同一个 TermX App 内的可选托管连接能力，负责账号目录、managed WebRTC signaling、ICE-UDP、TURN Relay、套餐准入、用量统计和账号管理。
