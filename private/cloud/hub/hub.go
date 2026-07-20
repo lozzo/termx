@@ -111,6 +111,8 @@ type Service struct {
 	topologyChanges  chan struct{}
 	presenceTopology map[string]*cloudpb.PresenceProjection
 	runtimeTopology  map[string]*daemonRuntimeTopology
+	runtimeEvents    chan *cloudpb.HubRuntimeEnvelope
+	commands         map[string]*hubCommandState
 }
 
 type daemonRuntimeTopology struct {
@@ -152,7 +154,7 @@ func New(config Config) (*Service, error) {
 		maxSessionsPerClient: config.MaxSessionsPerClient, edgeAuthorizer: config.EdgeAuthorizer, assignmentSource: config.AssignmentSource,
 		presenceChallengeTTL: config.PresenceChallengeTTL, maxPresenceChallenges: config.MaxPresenceChallenges, random: config.Random,
 		presences: make(map[string]*presenceState), sessions: make(map[string]*sessionState), presenceChallenges: make(map[string]edgePresenceChallengeState),
-		topologyChanges: make(chan struct{}, 1), presenceTopology: make(map[string]*cloudpb.PresenceProjection), runtimeTopology: make(map[string]*daemonRuntimeTopology),
+		topologyChanges: make(chan struct{}, 1), presenceTopology: make(map[string]*cloudpb.PresenceProjection), runtimeTopology: make(map[string]*daemonRuntimeTopology), runtimeEvents: make(chan *cloudpb.HubRuntimeEnvelope, config.ClientQueueSize), commands: make(map[string]*hubCommandState),
 	}, nil
 }
 
@@ -249,6 +251,11 @@ func (service *Service) sessionsForClientLocked(clientDeviceID string) int {
 }
 
 func (service *Service) cleanupLocked(now time.Time) {
+	for commandID, command := range service.commands {
+		if !now.Before(command.expiresAt) {
+			delete(service.commands, commandID)
+		}
+	}
 	for sessionID, challenge := range service.presenceChallenges {
 		if !now.Before(challenge.challenge.ExpiresAt) {
 			clear(challenge.challenge.Value)

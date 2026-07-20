@@ -60,6 +60,17 @@ func (publisher *Publisher) PublishDelta(delta *cloudpb.PolicyDelta, resultingFu
 	return publisher.publish(delta.GetHubId(), clone, ProjectionHead{Revision: delta.GetProjectionRevision(), Digest: append([]byte(nil), delta.GetResultingDigest()...)}, fullClone)
 }
 
+// PublishCommand 向当前 Hub attachment 投递一个持久 CommandOutbox child。
+// command 不修改 projection head；断线或背压由 dispatcher 保留 pending 后重试。
+func (publisher *Publisher) PublishCommand(hubID string, command *cloudpb.HubCommand) error {
+	if hubID == "" || command == nil || command.GetCommandId() == "" || command.GetCommandKind() == cloudpb.HubCommandKind_HUB_COMMAND_KIND_UNSPECIFIED || command.GetExpiresAtUnixMillis() <= command.GetIssuedAtUnixMillis() {
+		return errors.New("invalid Hub command")
+	}
+	publisher.mu.Lock()
+	defer publisher.mu.Unlock()
+	return publisher.enqueueLocked(hubID, proto.Clone(command).(*cloudpb.HubCommand))
+}
+
 func equalDigest(left, right []byte) bool {
 	if len(left) != len(right) {
 		return false
@@ -79,8 +90,19 @@ func (publisher *Publisher) publish(hubID string, message proto.Message, head Pr
 	if current.Revision != 0 && head.Revision <= current.Revision {
 		return errors.New("Hub projection revision did not advance")
 	}
+	if err := publisher.enqueueLocked(hubID, message); err != nil {
+		return err
+	}
+	publisher.heads[hubID] = ProjectionHead{Revision: head.Revision, Digest: append([]byte(nil), head.Digest...)}
+	if full != nil {
+		publisher.currentFull[hubID] = proto.Clone(full).(*cloudpb.FullProjectionSnapshot)
+	}
+	return nil
+}
+
+func (publisher *Publisher) enqueueLocked(hubID string, message proto.Message) error {
 	// 先检查全部 attachment，避免只向部分 Hub control stream 投递后才发现背压。
-	// 这样 caller 可以用同一 revision/digest 安全重试，不会制造部分发布真值。
+	// 这样 caller 可以安全重试同一 projection 或持久 command，不制造部分发布真值。
 	for _, subscriber := range publisher.subscribers[hubID] {
 		if len(subscriber) == cap(subscriber) {
 			return ErrPublisherBackpressure
@@ -88,10 +110,6 @@ func (publisher *Publisher) publish(hubID string, message proto.Message, head Pr
 	}
 	for _, subscriber := range publisher.subscribers[hubID] {
 		subscriber <- proto.Clone(message)
-	}
-	publisher.heads[hubID] = ProjectionHead{Revision: head.Revision, Digest: append([]byte(nil), head.Digest...)}
-	if full != nil {
-		publisher.currentFull[hubID] = proto.Clone(full).(*cloudpb.FullProjectionSnapshot)
 	}
 	return nil
 }

@@ -45,10 +45,18 @@ type ServerConfig struct {
 	CursorStore  CursorStore
 	Publisher    *Publisher
 	Topology     *cloudtopology.Service
+	Results      RuntimeResultSink
 	Clock        func() time.Time
 	Random       io.Reader
 	ChallengeTTL time.Duration
 	EnvelopeTTL  time.Duration
+}
+
+// RuntimeResultSink 在 receive cursor ack 前持久化 Hub/daemon 独立 command receipt。
+// exact replay 必须幂等，冲突 digest 必须 fail closed。
+type RuntimeResultSink interface {
+	IngestHubResult(context.Context, *cloudpb.HubCommandResult, time.Time) error
+	IngestDaemonResult(context.Context, *cloudpb.DaemonCommandResult, time.Time) error
 }
 
 // Server 是 Hub control HTTP handler；public Web/Hub signaling listener 不得挂载这些路径。
@@ -57,6 +65,7 @@ type Server struct {
 	cursors      CursorStore
 	publisher    *Publisher
 	topology     *cloudtopology.Service
+	results      RuntimeResultSink
 	now          func() time.Time
 	random       io.Reader
 	challengeTTL time.Duration
@@ -94,7 +103,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if config.ChallengeTTL <= 0 || config.ChallengeTTL > time.Minute || config.EnvelopeTTL <= 0 || config.EnvelopeTTL > time.Hour {
 		return nil, fmt.Errorf("invalid Hub control TTL")
 	}
-	return &Server{registry: config.Registry, cursors: config.CursorStore, publisher: config.Publisher, topology: config.Topology, now: config.Clock, random: config.Random, challengeTTL: config.ChallengeTTL, envelopeTTL: config.EnvelopeTTL, challenges: make(map[string]pendingChallenge), attachments: make(map[string]attachment)}, nil
+	return &Server{registry: config.Registry, cursors: config.CursorStore, publisher: config.Publisher, topology: config.Topology, results: config.Results, now: config.Clock, random: config.Random, challengeTTL: config.ChallengeTTL, envelopeTTL: config.EnvelopeTTL, challenges: make(map[string]pendingChallenge), attachments: make(map[string]attachment)}, nil
 }
 
 // Handler 返回只包含 internal Hub control API 的 mux。
@@ -190,7 +199,7 @@ func (server *Server) handleOpen(writer http.ResponseWriter, request *http.Reque
 		return
 	}
 	sequence++
-	if writeFrame(writer, wrapProjection(attached, sequence, now, server.envelopeTTL, full)) != nil {
+	if writeFrame(writer, wrapControlMessage(attached, sequence, now, server.envelopeTTL, full)) != nil {
 		return
 	}
 	flusher.Flush()
@@ -205,7 +214,7 @@ func (server *Server) handleOpen(writer http.ResponseWriter, request *http.Reque
 				return
 			}
 			sequence++
-			envelope := wrapProjection(attached, sequence, server.now().UTC(), server.envelopeTTL, update)
+			envelope := wrapControlMessage(attached, sequence, server.now().UTC(), server.envelopeTTL, update)
 			if envelope == nil || writeFrame(writer, envelope) != nil {
 				return
 			}
@@ -243,7 +252,7 @@ func (server *Server) handleReport(writer http.ResponseWriter, request *http.Req
 	fullRequired := false
 	now := server.now().UTC()
 	for _, envelope := range input.GetEnvelopes() {
-		if envelope.GetHubId() != first.GetHubId() || envelope.GetEdgeDeploymentId() != first.GetEdgeDeploymentId() || envelope.GetControlGeneration() != first.GetControlGeneration() || envelope.GetSenderRole() != first.GetSenderRole() || envelope.GetExpiresAtUnixMillis() <= now.UnixMilli() || envelope.GetIssuedAtUnixMillis() > now.UnixMilli() || envelope.GetReconciliation() == nil && envelope.GetTopology() == nil {
+		if envelope.GetHubId() != first.GetHubId() || envelope.GetEdgeDeploymentId() != first.GetEdgeDeploymentId() || envelope.GetControlGeneration() != first.GetControlGeneration() || envelope.GetSenderRole() != first.GetSenderRole() || envelope.GetExpiresAtUnixMillis() <= now.UnixMilli() || envelope.GetIssuedAtUnixMillis() > now.UnixMilli() || envelope.GetReconciliation() == nil && envelope.GetTopology() == nil && envelope.GetHubCommandResult() == nil && envelope.GetDaemonCommandResult() == nil {
 			http.Error(writer, "Hub runtime envelope rejected", http.StatusBadRequest)
 			return
 		}
@@ -265,9 +274,21 @@ func (server *Server) handleReport(writer http.ResponseWriter, request *http.Req
 			if !ok || reconciliation.GetProjectionRevision() != head.Revision || !bytesEqual(reconciliation.GetProjectionDigest(), head.Digest) {
 				fullRequired = true
 			}
-		} else if topology := envelope.GetTopology(); topology.GetControlGeneration() != first.GetControlGeneration() || topology.GetHubId() != first.GetHubId() || server.topology.Ingest(request.Context(), topology, now) != nil {
-			http.Error(writer, "Hub topology snapshot rejected", http.StatusConflict)
-			return
+		} else if topology := envelope.GetTopology(); topology != nil {
+			if topology.GetControlGeneration() != first.GetControlGeneration() || topology.GetHubId() != first.GetHubId() || server.topology.Ingest(request.Context(), topology, now) != nil {
+				http.Error(writer, "Hub topology snapshot rejected", http.StatusConflict)
+				return
+			}
+		} else if result := envelope.GetHubCommandResult(); result != nil {
+			if server.results == nil || result.GetHubId() != first.GetHubId() || result.GetControlGeneration() != first.GetControlGeneration() || server.results.IngestHubResult(request.Context(), result, now) != nil {
+				http.Error(writer, "Hub command result rejected", http.StatusConflict)
+				return
+			}
+		} else if result := envelope.GetDaemonCommandResult(); result != nil {
+			if server.results == nil || server.results.IngestDaemonResult(request.Context(), result, now) != nil {
+				http.Error(writer, "daemon command result rejected", http.StatusConflict)
+				return
+			}
 		}
 	}
 	if err := server.cursors.PutControlCursor(request.Context(), first.GetHubId(), first.GetControlGeneration(), first.GetSenderRole(), accepted, acceptedDigest, now); err != nil {
@@ -327,13 +348,15 @@ func (server *Server) detach(hubID string, generation uint64) {
 	}
 }
 
-func wrapProjection(deployment hubregistry.Deployment, sequence uint64, now time.Time, ttl time.Duration, message proto.Message) *cloudpb.HubControlEnvelope {
+func wrapControlMessage(deployment hubregistry.Deployment, sequence uint64, now time.Time, ttl time.Duration, message proto.Message) *cloudpb.HubControlEnvelope {
 	envelope := &cloudpb.HubControlEnvelope{HubId: deployment.Metadata.GetHubId(), EdgeDeploymentId: deployment.Metadata.GetEdgeDeploymentId(), ControlGeneration: deployment.ControlGeneration, SenderRole: cloudpb.ControlSenderRole_CONTROL_SENDER_ROLE_CONTROLLER, SenderSequence: sequence, IssuedAtUnixMillis: now.UnixMilli(), ExpiresAtUnixMillis: now.Add(ttl).UnixMilli()}
 	switch value := message.(type) {
 	case *cloudpb.FullProjectionSnapshot:
 		envelope.Payload = &cloudpb.HubControlEnvelope_FullProjection{FullProjection: proto.Clone(value).(*cloudpb.FullProjectionSnapshot)}
 	case *cloudpb.PolicyDelta:
 		envelope.Payload = &cloudpb.HubControlEnvelope_PolicyDelta{PolicyDelta: proto.Clone(value).(*cloudpb.PolicyDelta)}
+	case *cloudpb.HubCommand:
+		envelope.Payload = &cloudpb.HubControlEnvelope_Command{Command: proto.Clone(value).(*cloudpb.HubCommand)}
 	default:
 		return nil
 	}

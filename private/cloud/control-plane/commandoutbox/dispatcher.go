@@ -1,0 +1,95 @@
+package commandoutbox
+
+import (
+	"context"
+	"crypto/ed25519"
+	"fmt"
+	"time"
+
+	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
+	"github.com/lozzow/termx/proto/cloudpb"
+)
+
+// CommandPublisher 是 Controller HubControl transport 的瞬时投递端口。
+// 成功返回不代表 Hub 已接收；delivery 只能由独立 HubCommandResult 推进。
+type CommandPublisher interface {
+	PublishCommand(string, *cloudpb.HubCommand) error
+}
+
+// DeviceSource 提供 daemon control command 所需的持久 auth epoch。
+type DeviceSource interface {
+	Device(context.Context, string) (cloudtopology.DeviceOwnership, error)
+}
+
+// Dispatcher 重试未完成 child 并收敛到 expiry。
+// 它不持有命令状态，重启后始终从 durable CommandOutbox 重新读取。
+type Dispatcher struct {
+	outbox     *Service
+	publisher  CommandPublisher
+	devices    DeviceSource
+	keyID      string
+	privateKey ed25519.PrivateKey
+}
+
+// NewDispatcher 创建 Hub command dispatcher；daemon control key 必须与 projection/edge/relay key 分离配置。
+func NewDispatcher(outbox *Service, publisher CommandPublisher, devices DeviceSource, keyID string, privateKey ed25519.PrivateKey) (*Dispatcher, error) {
+	if outbox == nil || publisher == nil || devices == nil || keyID == "" || len(privateKey) != ed25519.PrivateKeySize {
+		return nil, fmt.Errorf("CommandOutbox dispatcher dependencies are invalid")
+	}
+	return &Dispatcher{outbox: outbox, publisher: publisher, devices: devices, keyID: keyID, privateKey: append(ed25519.PrivateKey(nil), privateKey...)}, nil
+}
+
+// DispatchOnce 投递一批未过期 child，并把到期项收敛为 UNKNOWN/PARTIAL。
+// 同一 child 的 wire bytes 只依赖持久 projection，因此重试不会制造 replay digest 冲突。
+func (dispatcher *Dispatcher) DispatchOnce(ctx context.Context, now time.Time, limit int) error {
+	if dispatcher == nil || now.IsZero() {
+		return ErrCommandConflict
+	}
+	if _, err := dispatcher.outbox.ExpireDue(ctx, now, limit); err != nil {
+		return err
+	}
+	commands, err := dispatcher.outbox.Pending(ctx, now, limit)
+	if err != nil {
+		return err
+	}
+	for _, parent := range commands {
+		for _, child := range parent.GetChildren() {
+			if child.GetExecutionState() != cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_PENDING {
+				continue
+			}
+			command, err := dispatcher.hubCommand(ctx, parent, child)
+			if err != nil {
+				return err
+			}
+			if err := dispatcher.publisher.PublishCommand(child.GetTargetHubId(), command); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (dispatcher *Dispatcher) hubCommand(ctx context.Context, parent *cloudpb.ManagementCommandProjection, child *cloudpb.ManagementCommandChildProjection) (*cloudpb.HubCommand, error) {
+	command := &cloudpb.HubCommand{CommandId: child.GetChildCommandId(), IssuedAtUnixMillis: parent.GetCreatedAtUnixMillis(), ExpiresAtUnixMillis: parent.GetExpiresAtUnixMillis()}
+	if target := child.GetTarget().GetPresence(); target != nil {
+		command.CommandKind = cloudpb.HubCommandKind_HUB_COMMAND_KIND_KICK_PRESENCE
+		command.Target = &cloudpb.HubCommand_KickPresence{KickPresence: target}
+		return command, nil
+	}
+	target := child.GetTarget().GetPeerSession()
+	if target == nil {
+		return nil, ErrCommandConflict
+	}
+	device, err := dispatcher.devices.Device(ctx, target.GetDaemonDeviceId())
+	if err != nil || device.AccountID != parent.GetAccountId() || device.Kind != cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON || device.AuthEpoch == 0 {
+		return nil, ErrCommandConflict
+	}
+	unsigned := &cloudpb.DaemonControlCommand{CommandId: child.GetChildCommandId(), CommandKind: cloudpb.DaemonControlCommandKind_DAEMON_CONTROL_COMMAND_KIND_CLOSE_MANAGED_PEER_SESSION, AccountId: parent.GetAccountId(), TargetDeviceId: target.GetDaemonDeviceId(), HubId: child.GetTargetHubId(), AssignmentEpoch: target.GetAssignmentEpoch(), AuthEpoch: device.AuthEpoch, PresenceSessionId: target.GetControlPresenceSessionId(), DaemonRuntimeGeneration: target.GetDaemonRuntimeGeneration(), IssuedAtUnixMillis: parent.GetCreatedAtUnixMillis(), ExpiresAtUnixMillis: parent.GetExpiresAtUnixMillis(), Target: &cloudpb.DaemonControlCommand_ManagedPeerSession{ManagedPeerSession: target}}
+	signed, err := cloudpb.SignDaemonControlCommand(unsigned, dispatcher.keyID, dispatcher.privateKey)
+	if err != nil {
+		return nil, err
+	}
+	command.CommandKind = cloudpb.HubCommandKind_HUB_COMMAND_KIND_FORWARD_DAEMON_COMMAND
+	command.Target = &cloudpb.HubCommand_DaemonCommand{DaemonCommand: signed}
+	return command, nil
+}

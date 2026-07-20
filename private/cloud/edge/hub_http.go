@@ -57,9 +57,31 @@ func newHubHTTPHandler(config hubHTTPConfig) http.Handler {
 	mux.HandleFunc(httpapi.HubCreateSignalingPath, handler.handleCreateSignaling)
 	mux.HandleFunc(httpapi.HubCompleteSignalingPath, handler.handleCompleteSignaling)
 	mux.HandleFunc(httpapi.HubReportDaemonRuntimePath, handler.handleReportDaemonRuntime)
+	mux.HandleFunc(httpapi.HubReportDaemonCommandResultPath, handler.handleReportDaemonCommandResult)
 	mux.HandleFunc(httpapi.HubResolveEndpointPath, handler.handleResolveEndpoint)
 	mux.HandleFunc(httpapi.HubListManagedDevicesPath, handler.handleListManagedDevices)
 	return mux
+}
+
+func (handler *hubHTTPHandler) handleReportDaemonCommandResult(writer http.ResponseWriter, request *http.Request) {
+	token, envelope, payload, ok := readHubRequest[*cloudpb.ReportDaemonCommandResultRequest](writer, request, &cloudpb.ReportDaemonCommandResultRequest{})
+	if !ok {
+		return
+	}
+	defer clear(token)
+	defer clear(envelope.Payload)
+	claims, err := handler.authorizer.AuthorizeDaemon(token, envelope.AccountID, envelope.DeviceID)
+	result := payload.GetResult()
+	if err != nil || claims.ClientDeviceID != envelope.DeviceID || result == nil || result.GetDaemonDeviceId() != envelope.DeviceID {
+		writeHubError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub daemon command result binding was rejected", false)
+		return
+	}
+	response, err := handler.hub.ReportDaemonCommandResult(envelope.DeviceID, result)
+	if err != nil {
+		mapHubError(writer, err)
+		return
+	}
+	writeHubProto(writer, http.StatusOK, response)
 }
 
 func (handler *hubHTTPHandler) handleReportDaemonRuntime(writer http.ResponseWriter, request *http.Request) {
@@ -427,6 +449,8 @@ func presenceEventToWire(event cloudhub.PresenceEvent) (*cloudpb.PresenceEvent, 
 	switch {
 	case event.Offer != nil:
 		return &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{SignalingSessionId: event.Offer.SignalingSessionID, ManagedSessionId: event.Offer.ManagedSessionID, SourceDeviceId: event.Offer.SourceDeviceID, TargetDeviceId: event.Offer.TargetDeviceID, Sdp: event.Offer.SDP, Candidates: candidatesToWire(event.Offer.Candidates), RoutePreference: cloudpb.RoutePreference(event.Offer.RoutePreference), RelayOnly: event.Offer.RelayOnly, SessionIncarnation: event.Offer.SessionIncarnation, PresenceSessionId: event.Offer.PresenceSessionID, AssignmentEpoch: event.Offer.AssignmentEpoch}}}, true
+	case event.DaemonCommand != nil:
+		return &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_DaemonCommand{DaemonCommand: proto.Clone(event.DaemonCommand).(*cloudpb.DaemonControlCommand)}}, true
 	case event.Closed != nil:
 		return &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: event.Closed.Reason}}}, true
 	default:

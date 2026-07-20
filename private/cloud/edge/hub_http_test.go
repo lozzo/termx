@@ -1,6 +1,7 @@
 package edge
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -34,7 +35,7 @@ func TestHubPublicAdapterRunsPresenceResolveAndSignalingOverHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := authorizer.ApplySnapshot(cloudhub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []cloudhub.AccountAuthorization{{AccountID: "account-1", AuthEpoch: 1, EntitlementStatus: cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE, EntitlementEffectiveUntilUnix: now.Add(time.Hour).Unix(), Capability: &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 1, CloudDeviceLimit: 2}}}, Devices: []cloudhub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon", PublicKey: daemonPublic}}}); err != nil {
+	if err := authorizer.ApplySnapshot(cloudhub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []cloudhub.AccountAuthorization{{AccountID: "account-1", AuthEpoch: 1, EntitlementStatus: cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE, EntitlementEffectiveUntilUnix: now.Add(time.Hour).Unix(), Capability: &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 1, CloudDeviceLimit: 2}}}, Devices: []cloudhub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client", AuthEpoch: 1}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon", PublicKey: daemonPublic, AuthEpoch: 1}}}); err != nil {
 		t.Fatal(err)
 	}
 	hubService, err := cloudhub.New(cloudhub.Config{HubID: "hub-1", MaxPresenceTTL: time.Minute, MaxSignalingTTL: time.Minute, PresenceChallengeTTL: time.Minute, MaxPresenceChallenges: 8, PresenceQueueSize: 8, ClientQueueSize: 8, MaxSDPBytes: 4096, MaxCandidates: 8, MaxPresences: 8, MaxSessions: 8, MaxSessionsPerClient: 4, EdgeAuthorizer: authorizer, AssignmentSource: staticAssignmentSource{deviceID: "daemon-1", epoch: 1}})
@@ -119,6 +120,37 @@ func TestHubPublicAdapterRunsPresenceResolveAndSignalingOverHTTP(t *testing.T) {
 	answer, err := signaling.Receive(context.Background())
 	if err != nil || answer.GetAnswer().GetSdp() != "answer" {
 		t.Fatalf("signaling answer = (%#v, %v)", answer, err)
+	}
+	target := &cloudpb.ManagedPeerSessionTarget{DaemonDeviceId: "daemon-1", ManagedSessionId: resolved.GetManagedSessionId(), SessionIncarnation: offer.GetOffer().GetSessionIncarnation(), AssignmentEpoch: 1, ControlPresenceSessionId: challenge.GetPresenceSessionId(), DaemonRuntimeGeneration: "runtime-1"}
+	runtimeReport.ReportId = "runtime-1:1"
+	runtimeReport.RegistryRevision = 1
+	runtimeReport.PeerSessions.ReportId = runtimeReport.GetReportId()
+	runtimeReport.PeerSessions.RegistryRevision = 1
+	runtimeReport.PeerSessions.Sessions = []*cloudpb.ManagedPeerSessionProjection{{Target: target, ClientDeviceId: "client-1", EstablishedPresenceSessionId: challenge.GetPresenceSessionId(), ControlOwnerHubId: "hub-1", ObservedDataPath: cloudpb.ObservedPath_OBSERVED_PATH_DIRECT, State: cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_READY, Freshness: cloudpb.Freshness_FRESHNESS_FRESH}}
+	if _, err := adapter.ReportDaemonRuntime(context.Background(), daemonSession.Authorization(), runtimeReport); err != nil {
+		t.Fatal(err)
+	}
+	daemonCommand := &cloudpb.DaemonControlCommand{CommandId: "command-1", CommandKind: cloudpb.DaemonControlCommandKind_DAEMON_CONTROL_COMMAND_KIND_CLOSE_MANAGED_PEER_SESSION, AccountId: "account-1", TargetDeviceId: "daemon-1", HubId: "hub-1", AssignmentEpoch: 1, AuthEpoch: 1, PresenceSessionId: challenge.GetPresenceSessionId(), DaemonRuntimeGeneration: "runtime-1", IssuedAtUnixMillis: now.UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Minute).UnixMilli(), ControlKeyId: "control-1", Target: &cloudpb.DaemonControlCommand_ManagedPeerSession{ManagedPeerSession: target}, Signature: bytes.Repeat([]byte{0x42}, ed25519.SignatureSize)}
+	hubResult := hubService.ExecuteHubCommand(&cloudpb.HubCommand{CommandId: "command-1", CommandKind: cloudpb.HubCommandKind_HUB_COMMAND_KIND_FORWARD_DAEMON_COMMAND, IssuedAtUnixMillis: now.UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Minute).UnixMilli(), Target: &cloudpb.HubCommand_DaemonCommand{DaemonCommand: daemonCommand}}, 3, now)
+	if hubResult.GetResultCode() != cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED {
+		t.Fatalf("Hub command result = %v", hubResult)
+	}
+	commandEvent, err := presence.Receive(context.Background())
+	if err != nil || commandEvent.GetDaemonCommand().GetCommandId() != "command-1" {
+		t.Fatalf("daemon command event = (%v, %v)", commandEvent, err)
+	}
+	daemonResult := &cloudpb.DaemonCommandResult{CommandId: "command-1", DaemonDeviceId: "daemon-1", ManagedSessionId: target.GetManagedSessionId(), SessionIncarnation: target.GetSessionIncarnation(), AssignmentEpoch: 1, PresenceSessionId: challenge.GetPresenceSessionId(), DaemonRuntimeGeneration: "runtime-1", ResultCode: cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED, ClosedRegistryRevision: 2, CompletedAtUnixMillis: now.Add(time.Second).UnixMilli()}
+	accepted, err := adapter.ReportDaemonCommandResult(context.Background(), daemonSession.Authorization(), &cloudpb.ReportDaemonCommandResultRequest{Result: daemonResult})
+	if err != nil || accepted.GetAcceptedCommandId() != "command-1" {
+		t.Fatalf("daemon command result HTTP = (%v, %v)", accepted, err)
+	}
+	select {
+	case runtimeEvent := <-hubService.RuntimeEvents():
+		if !proto.Equal(runtimeEvent.GetDaemonCommandResult(), daemonResult) {
+			t.Fatalf("runtime daemon result = %v", runtimeEvent)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("daemon command result was not queued for HubControl")
 	}
 }
 

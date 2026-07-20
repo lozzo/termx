@@ -13,8 +13,10 @@ import (
 
 // PutDeviceOwnership 持久化 Controller 设备目录的账号归属。
 func (store *Store) PutDeviceOwnership(ctx context.Context, ownership cloudtopology.DeviceOwnership) error {
-	_, err := store.db.ExecContext(ctx, `INSERT INTO cloud_device_ownership(device_id,account_id,device_kind,updated_at) VALUES(?,?,?,?)
-ON CONFLICT(device_id) DO UPDATE SET account_id=excluded.account_id,device_kind=excluded.device_kind,updated_at=excluded.updated_at`, ownership.DeviceID, ownership.AccountID, int32(ownership.Kind), time.Now().UTC().Format(time.RFC3339Nano))
+	publicKey := make([]byte, len(ownership.PublicKey))
+	copy(publicKey, ownership.PublicKey)
+	_, err := store.db.ExecContext(ctx, `INSERT INTO cloud_device_ownership(device_id,account_id,device_kind,auth_epoch,revoked,public_key,updated_at) VALUES(?,?,?,?,?,?,?)
+ON CONFLICT(device_id) DO UPDATE SET account_id=excluded.account_id,device_kind=excluded.device_kind,auth_epoch=excluded.auth_epoch,revoked=excluded.revoked,public_key=excluded.public_key,updated_at=excluded.updated_at`, ownership.DeviceID, ownership.AccountID, int32(ownership.Kind), ownership.AuthEpoch, boolInt(ownership.Revoked), publicKey, time.Now().UTC().Format(time.RFC3339Nano))
 	return err
 }
 
@@ -22,12 +24,79 @@ ON CONFLICT(device_id) DO UPDATE SET account_id=excluded.account_id,device_kind=
 func (store *Store) DeviceOwnership(ctx context.Context, deviceID string) (cloudtopology.DeviceOwnership, error) {
 	value := cloudtopology.DeviceOwnership{DeviceID: deviceID}
 	var kind int32
-	err := store.db.QueryRowContext(ctx, `SELECT account_id,device_kind FROM cloud_device_ownership WHERE device_id=?`, deviceID).Scan(&value.AccountID, &kind)
+	var revoked int
+	err := store.db.QueryRowContext(ctx, `SELECT account_id,device_kind,auth_epoch,revoked,public_key FROM cloud_device_ownership WHERE device_id=?`, deviceID).Scan(&value.AccountID, &kind, &value.AuthEpoch, &revoked, &value.PublicKey)
 	if errors.Is(err, sql.ErrNoRows) {
 		return cloudtopology.DeviceOwnership{}, cloudtopology.ErrOwnershipNotFound
 	}
 	value.Kind = cloudpb.ManagedDeviceKind(kind)
+	value.Revoked = revoked != 0
 	return value, err
+}
+
+// DevicePolicies 返回 signed Hub projection 使用的完整持久设备策略。
+func (store *Store) DevicePolicies(ctx context.Context) ([]*cloudpb.CloudDevicePolicy, error) {
+	rows, err := store.db.QueryContext(ctx, `SELECT device_id,account_id,device_kind,auth_epoch,revoked,public_key FROM cloud_device_ownership ORDER BY device_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []*cloudpb.CloudDevicePolicy
+	for rows.Next() {
+		value := &cloudpb.CloudDevicePolicy{}
+		var kind int32
+		var revoked int
+		if err := rows.Scan(&value.DeviceId, &value.AccountId, &kind, &value.AuthEpoch, &revoked, &value.PublicKey); err != nil {
+			return nil, err
+		}
+		value.DeviceKind = cloudpb.ManagedDeviceKind(kind)
+		value.Revoked = revoked != 0
+		result = append(result, value)
+	}
+	return result, rows.Err()
+}
+
+// PeerSessionProjection 返回全部 fencing 字段精确匹配的 topology session。
+func (store *Store) PeerSessionProjection(ctx context.Context, target *cloudpb.ManagedPeerSessionTarget) (cloudtopology.StoredPeerSession, error) {
+	if target == nil {
+		return cloudtopology.StoredPeerSession{}, cloudtopology.ErrTopologyRejected
+	}
+	var accountID, hubID string
+	var payload []byte
+	err := store.db.QueryRowContext(ctx, `SELECT account_id,hub_id,projection FROM managed_peer_topology WHERE daemon_device_id=? AND managed_session_id=? AND session_incarnation=?`, target.GetDaemonDeviceId(), target.GetManagedSessionId(), target.GetSessionIncarnation()).Scan(&accountID, &hubID, &payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		return cloudtopology.StoredPeerSession{}, cloudtopology.ErrTopologyRejected
+	}
+	value := &cloudpb.ManagedPeerSessionProjection{}
+	if err != nil || proto.Unmarshal(payload, value) != nil || !proto.Equal(value.GetTarget(), target) {
+		return cloudtopology.StoredPeerSession{}, cloudtopology.ErrTopologyRejected
+	}
+	return cloudtopology.StoredPeerSession{AccountID: accountID, HubID: hubID, Value: value}, nil
+}
+
+// PeerSessionsByClient 返回该 client 当前非 CLOSED topology session，供 revoke fan-out 固定 child target。
+func (store *Store) PeerSessionsByClient(ctx context.Context, clientDeviceID string) ([]cloudtopology.StoredPeerSession, error) {
+	rows, err := store.db.QueryContext(ctx, `SELECT account_id,hub_id,projection FROM managed_peer_topology ORDER BY hub_id,daemon_device_id,managed_session_id,session_incarnation`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []cloudtopology.StoredPeerSession
+	for rows.Next() {
+		var accountID, hubID string
+		var payload []byte
+		if err := rows.Scan(&accountID, &hubID, &payload); err != nil {
+			return nil, err
+		}
+		value := &cloudpb.ManagedPeerSessionProjection{}
+		if proto.Unmarshal(payload, value) != nil {
+			return nil, cloudtopology.ErrTopologyRejected
+		}
+		if value.GetClientDeviceId() == clientDeviceID && value.GetState() != cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_CLOSED {
+			result = append(result, cloudtopology.StoredPeerSession{AccountID: accountID, HubID: hubID, Value: value})
+		}
+	}
+	return result, rows.Err()
 }
 
 // ApplyTopologySnapshot 原子完整替换一个 Hub 的最后可信 topology projection。

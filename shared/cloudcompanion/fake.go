@@ -12,26 +12,27 @@ import (
 // FakeClient 是 public client、daemon 与 UI harness 共用的可控 Companion 实现。
 // 每个 handler 代表一次明确的 IPC operation；fake 记录克隆后的请求，测试无需启动 Hub、Web Controller 或闭源进程。
 type FakeClient struct {
-	HelloFunc                    func(context.Context, *cloudpb.CompanionHelloRequest) (*cloudpb.CompanionHelloResponse, error)
-	StatusFunc                   func(context.Context, *cloudpb.StatusRequest) (*cloudpb.StatusResponse, error)
-	BeginLoginFunc               func(context.Context, *cloudpb.BeginLoginRequest) (*cloudpb.LoginFlow, error)
-	CompleteLoginFunc            func(context.Context, *cloudpb.CompleteLoginRequest) (*cloudpb.CompleteLoginResponse, error)
-	BeginDeviceEnrollmentFunc    func(context.Context, *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error)
-	CompleteDeviceEnrollmentFunc func(context.Context, *cloudpb.CompleteDeviceEnrollmentRequest) (*cloudpb.CompleteDeviceEnrollmentResponse, error)
-	LogoutFunc                   func(context.Context, *cloudpb.LogoutRequest) (*cloudpb.LogoutResponse, error)
-	DoctorFunc                   func(context.Context, *cloudpb.DoctorRequest) (*cloudpb.DoctorResponse, error)
-	ShutdownFunc                 func(context.Context, *cloudpb.ShutdownRequest) (*cloudpb.ShutdownResponse, error)
-	ResolveEndpointFunc          func(context.Context, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error)
-	ListManagedDevicesFunc       func(context.Context, *cloudpb.ListManagedDevicesRequest) (*cloudpb.ListManagedDevicesResponse, error)
-	BeginPresenceFunc            func(context.Context, *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error)
-	OpenPresenceFunc             func(context.Context, *cloudpb.OpenPresenceRequest) (PresenceStream, error)
-	CreateSignalingSessionFunc   func(context.Context, *cloudpb.CreateSignalingSessionRequest) (SignalingStream, error)
-	CompleteSignalingOfferFunc   func(context.Context, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error)
-	ReportDaemonRuntimeFunc      func(context.Context, *cloudpb.ReportDaemonRuntimeRequest) (*cloudpb.ReportDaemonRuntimeResponse, error)
-	AcquireRelayLeaseFunc        func(context.Context, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
-	PlanManagedRouteFunc         func(context.Context, *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error)
-	ReportPathQualityFunc        func(context.Context, *cloudpb.ReportPathQualityRequest) (*cloudpb.ReportPathQualityResponse, error)
-	ReportConnectionOutcomeFunc  func(context.Context, *cloudpb.ReportConnectionOutcomeRequest) (*cloudpb.ReportConnectionOutcomeResponse, error)
+	HelloFunc                     func(context.Context, *cloudpb.CompanionHelloRequest) (*cloudpb.CompanionHelloResponse, error)
+	StatusFunc                    func(context.Context, *cloudpb.StatusRequest) (*cloudpb.StatusResponse, error)
+	BeginLoginFunc                func(context.Context, *cloudpb.BeginLoginRequest) (*cloudpb.LoginFlow, error)
+	CompleteLoginFunc             func(context.Context, *cloudpb.CompleteLoginRequest) (*cloudpb.CompleteLoginResponse, error)
+	BeginDeviceEnrollmentFunc     func(context.Context, *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error)
+	CompleteDeviceEnrollmentFunc  func(context.Context, *cloudpb.CompleteDeviceEnrollmentRequest) (*cloudpb.CompleteDeviceEnrollmentResponse, error)
+	LogoutFunc                    func(context.Context, *cloudpb.LogoutRequest) (*cloudpb.LogoutResponse, error)
+	DoctorFunc                    func(context.Context, *cloudpb.DoctorRequest) (*cloudpb.DoctorResponse, error)
+	ShutdownFunc                  func(context.Context, *cloudpb.ShutdownRequest) (*cloudpb.ShutdownResponse, error)
+	ResolveEndpointFunc           func(context.Context, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error)
+	ListManagedDevicesFunc        func(context.Context, *cloudpb.ListManagedDevicesRequest) (*cloudpb.ListManagedDevicesResponse, error)
+	BeginPresenceFunc             func(context.Context, *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error)
+	OpenPresenceFunc              func(context.Context, *cloudpb.OpenPresenceRequest) (PresenceStream, error)
+	CreateSignalingSessionFunc    func(context.Context, *cloudpb.CreateSignalingSessionRequest) (SignalingStream, error)
+	CompleteSignalingOfferFunc    func(context.Context, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error)
+	ReportDaemonRuntimeFunc       func(context.Context, *cloudpb.ReportDaemonRuntimeRequest) (*cloudpb.ReportDaemonRuntimeResponse, error)
+	ReportDaemonCommandResultFunc func(context.Context, *cloudpb.ReportDaemonCommandResultRequest) (*cloudpb.ReportDaemonCommandResultResponse, error)
+	AcquireRelayLeaseFunc         func(context.Context, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
+	PlanManagedRouteFunc          func(context.Context, *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error)
+	ReportPathQualityFunc         func(context.Context, *cloudpb.ReportPathQualityRequest) (*cloudpb.ReportPathQualityResponse, error)
+	ReportConnectionOutcomeFunc   func(context.Context, *cloudpb.ReportConnectionOutcomeRequest) (*cloudpb.ReportConnectionOutcomeResponse, error)
 
 	mu       sync.Mutex
 	requests RecordedRequests
@@ -40,26 +41,27 @@ type FakeClient struct {
 // RecordedRequests 是 FakeClient 已接收 operation 的不可变快照。
 // 所有 protobuf 值都在写入和读取时克隆，测试修改快照不会改变 fake 内部真值。
 type RecordedRequests struct {
-	Hello                    []*cloudpb.CompanionHelloRequest
-	Status                   []*cloudpb.StatusRequest
-	BeginLogin               []*cloudpb.BeginLoginRequest
-	CompleteLogin            []*cloudpb.CompleteLoginRequest
-	BeginDeviceEnrollment    []*cloudpb.BeginDeviceEnrollmentRequest
-	CompleteDeviceEnrollment []*cloudpb.CompleteDeviceEnrollmentRequest
-	Logout                   []*cloudpb.LogoutRequest
-	Doctor                   []*cloudpb.DoctorRequest
-	Shutdown                 []*cloudpb.ShutdownRequest
-	ResolveEndpoint          []*cloudpb.ResolveEndpointRequest
-	ListManagedDevices       []*cloudpb.ListManagedDevicesRequest
-	BeginPresence            []*cloudpb.BeginPresenceRequest
-	OpenPresence             []*cloudpb.OpenPresenceRequest
-	CreateSignalingSession   []*cloudpb.CreateSignalingSessionRequest
-	CompleteSignalingOffer   []*cloudpb.CompleteSignalingOfferRequest
-	ReportDaemonRuntime      []*cloudpb.ReportDaemonRuntimeRequest
-	AcquireRelayLease        []*cloudpb.AcquireRelayLeaseRequest
-	PlanManagedRoute         []*cloudpb.PlanManagedRouteRequest
-	ReportPathQuality        []*cloudpb.ReportPathQualityRequest
-	ReportConnectionOutcome  []*cloudpb.ReportConnectionOutcomeRequest
+	Hello                     []*cloudpb.CompanionHelloRequest
+	Status                    []*cloudpb.StatusRequest
+	BeginLogin                []*cloudpb.BeginLoginRequest
+	CompleteLogin             []*cloudpb.CompleteLoginRequest
+	BeginDeviceEnrollment     []*cloudpb.BeginDeviceEnrollmentRequest
+	CompleteDeviceEnrollment  []*cloudpb.CompleteDeviceEnrollmentRequest
+	Logout                    []*cloudpb.LogoutRequest
+	Doctor                    []*cloudpb.DoctorRequest
+	Shutdown                  []*cloudpb.ShutdownRequest
+	ResolveEndpoint           []*cloudpb.ResolveEndpointRequest
+	ListManagedDevices        []*cloudpb.ListManagedDevicesRequest
+	BeginPresence             []*cloudpb.BeginPresenceRequest
+	OpenPresence              []*cloudpb.OpenPresenceRequest
+	CreateSignalingSession    []*cloudpb.CreateSignalingSessionRequest
+	CompleteSignalingOffer    []*cloudpb.CompleteSignalingOfferRequest
+	ReportDaemonRuntime       []*cloudpb.ReportDaemonRuntimeRequest
+	ReportDaemonCommandResult []*cloudpb.ReportDaemonCommandResultRequest
+	AcquireRelayLease         []*cloudpb.AcquireRelayLeaseRequest
+	PlanManagedRoute          []*cloudpb.PlanManagedRouteRequest
+	ReportPathQuality         []*cloudpb.ReportPathQualityRequest
+	ReportConnectionOutcome   []*cloudpb.ReportConnectionOutcomeRequest
 }
 
 // Requests 返回 fake 当前记录的请求快照。
@@ -237,6 +239,17 @@ func (fake *FakeClient) ReportDaemonRuntime(ctx context.Context, request *cloudp
 		return nil, missingFakeHandler("ReportDaemonRuntime")
 	}
 	return fake.ReportDaemonRuntimeFunc(ctx, request)
+}
+
+// ReportDaemonCommandResult 记录并转发 daemon command execution receipt；缺少 handler 时返回稳定 PROTOCOL 错误。
+func (fake *FakeClient) ReportDaemonCommandResult(ctx context.Context, request *cloudpb.ReportDaemonCommandResultRequest) (*cloudpb.ReportDaemonCommandResultResponse, error) {
+	fake.record(func(requests *RecordedRequests) {
+		requests.ReportDaemonCommandResult = append(requests.ReportDaemonCommandResult, cloneMessage(request))
+	})
+	if fake == nil || fake.ReportDaemonCommandResultFunc == nil {
+		return nil, missingFakeHandler("ReportDaemonCommandResult")
+	}
+	return fake.ReportDaemonCommandResultFunc(ctx, request)
 }
 
 // AcquireRelayLease 记录并转发 Relay 服务准入请求；缺少 handler 时返回稳定 PROTOCOL 错误。
@@ -417,26 +430,27 @@ func (stream *FakeSignalingStream) Close() error {
 
 func cloneRecordedRequests(source RecordedRequests) RecordedRequests {
 	return RecordedRequests{
-		Hello:                    cloneMessages(source.Hello),
-		Status:                   cloneMessages(source.Status),
-		BeginLogin:               cloneMessages(source.BeginLogin),
-		CompleteLogin:            cloneMessages(source.CompleteLogin),
-		BeginDeviceEnrollment:    cloneMessages(source.BeginDeviceEnrollment),
-		CompleteDeviceEnrollment: cloneMessages(source.CompleteDeviceEnrollment),
-		Logout:                   cloneMessages(source.Logout),
-		Doctor:                   cloneMessages(source.Doctor),
-		Shutdown:                 cloneMessages(source.Shutdown),
-		ResolveEndpoint:          cloneMessages(source.ResolveEndpoint),
-		ListManagedDevices:       cloneMessages(source.ListManagedDevices),
-		BeginPresence:            cloneMessages(source.BeginPresence),
-		OpenPresence:             cloneMessages(source.OpenPresence),
-		CreateSignalingSession:   cloneMessages(source.CreateSignalingSession),
-		CompleteSignalingOffer:   cloneMessages(source.CompleteSignalingOffer),
-		ReportDaemonRuntime:      cloneMessages(source.ReportDaemonRuntime),
-		AcquireRelayLease:        cloneMessages(source.AcquireRelayLease),
-		PlanManagedRoute:         cloneMessages(source.PlanManagedRoute),
-		ReportPathQuality:        cloneMessages(source.ReportPathQuality),
-		ReportConnectionOutcome:  cloneMessages(source.ReportConnectionOutcome),
+		Hello:                     cloneMessages(source.Hello),
+		Status:                    cloneMessages(source.Status),
+		BeginLogin:                cloneMessages(source.BeginLogin),
+		CompleteLogin:             cloneMessages(source.CompleteLogin),
+		BeginDeviceEnrollment:     cloneMessages(source.BeginDeviceEnrollment),
+		CompleteDeviceEnrollment:  cloneMessages(source.CompleteDeviceEnrollment),
+		Logout:                    cloneMessages(source.Logout),
+		Doctor:                    cloneMessages(source.Doctor),
+		Shutdown:                  cloneMessages(source.Shutdown),
+		ResolveEndpoint:           cloneMessages(source.ResolveEndpoint),
+		ListManagedDevices:        cloneMessages(source.ListManagedDevices),
+		BeginPresence:             cloneMessages(source.BeginPresence),
+		OpenPresence:              cloneMessages(source.OpenPresence),
+		CreateSignalingSession:    cloneMessages(source.CreateSignalingSession),
+		CompleteSignalingOffer:    cloneMessages(source.CompleteSignalingOffer),
+		ReportDaemonRuntime:       cloneMessages(source.ReportDaemonRuntime),
+		ReportDaemonCommandResult: cloneMessages(source.ReportDaemonCommandResult),
+		AcquireRelayLease:         cloneMessages(source.AcquireRelayLease),
+		PlanManagedRoute:          cloneMessages(source.PlanManagedRoute),
+		ReportPathQuality:         cloneMessages(source.ReportPathQuality),
+		ReportConnectionOutcome:   cloneMessages(source.ReportConnectionOutcome),
 	}
 }
 

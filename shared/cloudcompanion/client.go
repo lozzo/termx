@@ -44,6 +44,8 @@ type Client interface {
 	// ReportDaemonRuntime 上报当前 Presence 绑定的完整 managed session inventory。
 	// Companion 只转发 generated Proto，不读取 terminal、grant 或 DataChannel payload。
 	ReportDaemonRuntime(context.Context, *cloudpb.ReportDaemonRuntimeRequest) (*cloudpb.ReportDaemonRuntimeResponse, error)
+	// ReportDaemonCommandResult 上报 daemon 对精确 deny-only command 的独立执行 receipt。
+	ReportDaemonCommandResult(context.Context, *cloudpb.ReportDaemonCommandResultRequest) (*cloudpb.ReportDaemonCommandResultResponse, error)
 	// AcquireRelayLease 获取服务准入租约；租约不表达 terminal 权限，也不能替代 CapabilityGrant。
 	AcquireRelayLease(context.Context, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
 	// PlanManagedRoute 获取只含 direct/single-relay ICE 约束和稳定原因的短期 SmartRoute 计划。

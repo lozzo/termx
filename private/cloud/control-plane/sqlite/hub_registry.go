@@ -65,7 +65,9 @@ CREATE TABLE IF NOT EXISTS control_receive_cursors(
   PRIMARY KEY(hub_id, control_generation, sender_role)
 );
 CREATE TABLE IF NOT EXISTS cloud_device_ownership(
-  device_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, device_kind INTEGER NOT NULL, updated_at TEXT NOT NULL
+  device_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, device_kind INTEGER NOT NULL,
+  auth_epoch INTEGER NOT NULL DEFAULT 1, revoked INTEGER NOT NULL DEFAULT 0,
+  public_key BLOB NOT NULL DEFAULT X'', updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS hub_topology_heads(
   hub_id TEXT PRIMARY KEY, control_generation INTEGER NOT NULL, topology_revision INTEGER NOT NULL,
@@ -114,7 +116,62 @@ CREATE TABLE IF NOT EXISTS commerce_entitlements(
 CREATE TABLE IF NOT EXISTS commerce_audit(
   audit_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, occurred_at INTEGER NOT NULL,
   projection BLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS management_commands(
+  command_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, idempotency_key TEXT NOT NULL,
+  command_kind INTEGER NOT NULL, delivery_state INTEGER NOT NULL, execution_state INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL, projection BLOB NOT NULL,
+  UNIQUE(account_id,idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS management_commands_open ON management_commands(execution_state,updated_at);
+CREATE TABLE IF NOT EXISTS management_command_children(
+  child_command_id TEXT PRIMARY KEY, parent_command_id TEXT NOT NULL, target_hub_id TEXT NOT NULL,
+  FOREIGN KEY(parent_command_id) REFERENCES management_commands(command_id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS management_command_results(
+  child_command_id TEXT NOT NULL, result_kind TEXT NOT NULL, digest BLOB NOT NULL,
+  result BLOB NOT NULL, created_at INTEGER NOT NULL,
+  PRIMARY KEY(child_command_id,result_kind),
+  FOREIGN KEY(child_command_id) REFERENCES management_command_children(child_command_id) ON DELETE CASCADE
 );`)
+	if err != nil {
+		return err
+	}
+	if err := store.ensureColumn("cloud_device_ownership", "auth_epoch", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return err
+	}
+	if err := store.ensureColumn("cloud_device_ownership", "revoked", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	return store.ensureColumn("cloud_device_ownership", "public_key", "BLOB NOT NULL DEFAULT X''")
+}
+
+func (store *Store) ensureColumn(table, column, definition string) error {
+	rows, err := store.db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var cid int
+		var name, dataType string
+		var notNull, primaryKey int
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == column {
+			found = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	_, err = store.db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column + ` ` + definition)
 	return err
 }
 

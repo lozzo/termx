@@ -5,7 +5,6 @@ package termx.cloud.v1;
 option go_package = "github.com/lozzow/termx/proto/cloudpb";
 
 import "cloudpb/cloud_topology.proto";
-import "cloudpb/cloud_companion.proto";
 import "cloudpb/cloud_product.proto";
 
 // ControlServiceRole 区分同一个 Edge 进程内的 Hub 与 Relay control identity。

@@ -438,7 +438,7 @@ func newFixtureWithTTLs(t *testing.T, presenceQueue, clientQueue int, presenceTT
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := edgeAuthorizer.ApplySnapshot(hub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []hub.AccountAuthorization{activeHubP2PAccount("account-1", 1, now)}, Devices: []hub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon", PublicKey: daemonPublicKey}}}); err != nil {
+	if err := edgeAuthorizer.ApplySnapshot(hub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []hub.AccountAuthorization{activeHubP2PAccount("account-1", 1, now)}, Devices: []hub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client", AuthEpoch: 1}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon", PublicKey: daemonPublicKey, AuthEpoch: 1}}}); err != nil {
 		t.Fatal(err)
 	}
 	assignment := &assignmentSource{epoch: 1}

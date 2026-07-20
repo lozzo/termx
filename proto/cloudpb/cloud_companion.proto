@@ -5,6 +5,7 @@ package termx.cloud.v1;
 option go_package = "github.com/lozzow/termx/proto/cloudpb";
 
 import "cloudpb/cloud_topology.proto";
+import "cloudpb/cloud_hub_control.proto";
 
 // CallerRole 标识当前 IPC 连接代表的公开进程角色。
 enum CallerRole {
@@ -64,13 +65,6 @@ enum PresenceState {
   PRESENCE_STATE_UNSPECIFIED = 0;
   PRESENCE_STATE_OFFLINE = 1;
   PRESENCE_STATE_ONLINE = 2;
-}
-
-// ManagedDeviceKind 区分账号目录中的连接发起端与 daemon 目标；类型不表达 terminal capability。
-enum ManagedDeviceKind {
-  MANAGED_DEVICE_KIND_UNSPECIFIED = 0;
-  MANAGED_DEVICE_KIND_CLIENT = 1;
-  MANAGED_DEVICE_KIND_DAEMON = 2;
 }
 
 // RoutePreference 描述调用方允许的付费路径上限，不表达 terminal scope。
@@ -424,7 +418,19 @@ message PresenceEvent {
     IceCandidate candidate = 3;
     CloudError error = 4;
     PresenceClosed closed = 5;
+    DaemonControlCommand daemon_command = 6;
   }
+}
+
+// ReportDaemonCommandResultRequest 让 daemon 通过当前 authenticated Presence 上报独立执行 receipt。
+// result 必须携带 command、assignment、Presence、runtime generation 与精确 session fencing。
+message ReportDaemonCommandResultRequest {
+  DaemonCommandResult result = 1;
+}
+
+// ReportDaemonCommandResultResponse 只确认 Hub 已接收并进入 Hub runtime result 上行链路。
+message ReportDaemonCommandResultResponse {
+  string accepted_command_id = 1;
 }
 
 // CreateSignalingSessionRequest 提交不含 capability 的 WebRTC offer。
@@ -606,6 +612,7 @@ message IPCRequest {
     BeginPresenceRequest begin_presence = 29;
     ListManagedDevicesRequest list_managed_devices = 30;
     ReportDaemonRuntimeRequest report_daemon_runtime = 31;
+    ReportDaemonCommandResultRequest report_daemon_command_result = 32;
   }
 }
 
@@ -639,5 +646,6 @@ message IPCResponse {
     PresenceChallenge presence_challenge = 31;
     ListManagedDevicesResponse managed_devices = 32;
     ReportDaemonRuntimeResponse report_daemon_runtime = 33;
+    ReportDaemonCommandResultResponse report_daemon_command_result = 34;
   }
 }

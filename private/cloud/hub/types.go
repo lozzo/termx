@@ -5,6 +5,9 @@ import (
 	"io"
 	"sync"
 	"time"
+
+	"github.com/lozzow/termx/proto/cloudpb"
+	"google.golang.org/protobuf/proto"
 )
 
 // Candidate 是 Hub 允许转发的最小 trickle ICE metadata。
@@ -75,9 +78,10 @@ type Failure struct {
 // PresenceEvent 是 daemon presence stream 的有界下行事件。
 // v1 private contract 始终为 candidate 携带 SignalingSessionID；public DTO 未升级前 companion 对缺失绑定 fail closed。
 type PresenceEvent struct {
-	Offer     *Offer
-	Candidate *CandidateEvent
-	Closed    *Closed
+	Offer         *Offer
+	Candidate     *CandidateEvent
+	DaemonCommand *cloudpb.DaemonControlCommand
+	Closed        *Closed
 }
 
 // ClientEvent 是单个 client signaling session 的下行 answer/candidate/closed 事件。
@@ -294,6 +298,9 @@ func clonePresenceEvent(event PresenceEvent) PresenceEvent {
 	if event.Candidate != nil {
 		candidate := *event.Candidate
 		event.Candidate = &candidate
+	}
+	if event.DaemonCommand != nil {
+		event.DaemonCommand = proto.Clone(event.DaemonCommand).(*cloudpb.DaemonControlCommand)
 	}
 	if event.Closed != nil {
 		closed := *event.Closed

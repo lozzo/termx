@@ -256,6 +256,9 @@ func (connection *serverConnection) dispatch(ctx context.Context, request *cloud
 	case *cloudpb.IPCRequest_ReportDaemonRuntime:
 		response, err := connection.client.ReportDaemonRuntime(ctx, operation.ReportDaemonRuntime)
 		return &cloudpb.IPCResponse{Result: &cloudpb.IPCResponse_ReportDaemonRuntime{ReportDaemonRuntime: response}}, nil, err
+	case *cloudpb.IPCRequest_ReportDaemonCommandResult:
+		response, err := connection.client.ReportDaemonCommandResult(ctx, operation.ReportDaemonCommandResult)
+		return &cloudpb.IPCResponse{Result: &cloudpb.IPCResponse_ReportDaemonCommandResult{ReportDaemonCommandResult: response}}, nil, err
 	case *cloudpb.IPCRequest_AcquireRelayLease:
 		response, err := connection.client.AcquireRelayLease(ctx, operation.AcquireRelayLease)
 		return &cloudpb.IPCResponse{Result: &cloudpb.IPCResponse_RelayLease{RelayLease: response}}, nil, err

@@ -35,7 +35,7 @@ func TestTopologyDerivesAccountAndDegradesLostControlToUnknownStale(t *testing.T
 		t.Fatal(err)
 	}
 	service, _ := cloudtopology.New(registry, store)
-	for _, policy := range []*cloudpb.CloudDevicePolicy{{AccountId: "account-1", DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON}, {AccountId: "account-1", DeviceId: "client-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT}} {
+	for _, policy := range []*cloudpb.CloudDevicePolicy{{AccountId: "account-1", DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: 1}, {AccountId: "account-1", DeviceId: "client-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: 1}} {
 		if err := service.PutDeviceOwnership(ctx, policy); err != nil {
 			t.Fatal(err)
 		}

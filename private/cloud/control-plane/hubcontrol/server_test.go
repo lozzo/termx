@@ -39,7 +39,7 @@ func TestHubControlUsesRealStreamGenerationAndPersistentReportCursor(t *testing.
 	if _, err := registry.Assign(context.Background(), &cloudpb.HubAssignment{DaemonDeviceId: "daemon-1", AccountId: "account-1", HubId: "hub-1", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := topologyService.PutDeviceOwnership(context.Background(), &cloudpb.CloudDevicePolicy{AccountId: "account-1", DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON}); err != nil {
+	if err := topologyService.PutDeviceOwnership(context.Background(), &cloudpb.CloudDevicePolicy{AccountId: "account-1", DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: 1}); err != nil {
 		t.Fatal(err)
 	}
 	publisher := hubcontrol.NewPublisher()

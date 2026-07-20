@@ -91,6 +91,11 @@ func (*UnconfiguredAdapter) ReportDaemonRuntime(context.Context, session.Authori
 	return nil, unavailableAdapterError()
 }
 
+// ReportDaemonCommandResult 拒绝未装配的 daemon command result 上报。
+func (*UnconfiguredAdapter) ReportDaemonCommandResult(context.Context, session.Authorization, *cloudpb.ReportDaemonCommandResultRequest) (*cloudpb.ReportDaemonCommandResultResponse, error) {
+	return nil, unavailableAdapterError()
+}
+
 // AcquireRelayLease 拒绝未装配的 Hub Relay lease 请求。
 func (*UnconfiguredAdapter) AcquireRelayLease(context.Context, session.Authorization, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
 	return nil, unavailableAdapterError()

@@ -47,14 +47,16 @@ func TestControlClientBootstrapsMemoryProjectionAndReportsReconciliation(t *test
 	if err := publisher.PublishFull(full); err != nil {
 		t.Fatal(err)
 	}
-	controlServer, _ := hubcontrol.NewServer(hubcontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: publisher, Topology: topologyService, Clock: time.Now, Random: rand.Reader, ChallengeTTL: time.Minute, EnvelopeTTL: time.Minute})
+	results := &acceptingRuntimeResults{hub: make(chan *cloudpb.HubCommandResult, 1)}
+	controlServer, _ := hubcontrol.NewServer(hubcontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: publisher, Topology: topologyService, Results: results, Clock: time.Now, Random: rand.Reader, ChallengeTTL: time.Minute, EnvelopeTTL: time.Minute})
 	httpServer := httptest.NewServer(controlServer.Handler())
 	defer httpServer.Close()
 	projection, err := NewProjection(ProjectionConfig{HubID: "hub-1", ControllerKeyID: "controller-key", ControllerPublicKey: controllerPublicKey, MaxStaleness: time.Hour, PolicySink: &projectionSink{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := NewControlClient(ControlClientConfig{ControllerURL: httpServer.URL, Metadata: metadata, PrivateKey: hubPrivateKey, SoftwareVersion: "test", Projection: projection, Topology: newStaticTopology("hub-1"), MinBackoff: 10 * time.Millisecond, MaxBackoff: 20 * time.Millisecond})
+	topology := newStaticTopology("hub-1")
+	client, err := NewControlClient(ControlClientConfig{ControllerURL: httpServer.URL, Metadata: metadata, PrivateKey: hubPrivateKey, SoftwareVersion: "test", Projection: projection, Topology: topology, MinBackoff: 10 * time.Millisecond, MaxBackoff: 20 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +84,28 @@ func TestControlClientBootstrapsMemoryProjectionAndReportsReconciliation(t *test
 	if !state.Attached || state.ControlGeneration != 1 || state.LastSequence != 3 {
 		t.Fatalf("control client state = %#v", state)
 	}
+	commandNow := time.Now().UTC()
+	command := &cloudpb.HubCommand{CommandId: "command-1", CommandKind: cloudpb.HubCommandKind_HUB_COMMAND_KIND_KICK_PRESENCE, IssuedAtUnixMillis: commandNow.UnixMilli(), ExpiresAtUnixMillis: commandNow.Add(time.Minute).UnixMilli(), Target: &cloudpb.HubCommand_KickPresence{KickPresence: &cloudpb.KickPresenceTarget{DaemonDeviceId: "daemon-1", AssignmentEpoch: 2, PresenceSessionId: "presence-1"}}}
+	if err := publisher.PublishCommand("hub-1", command); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case received := <-topology.commands:
+		if received.GetCommandId() != command.GetCommandId() {
+			t.Fatalf("received command = %v", received)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Hub command was not delivered")
+	}
+	waitCursor(t, store, 4)
+	select {
+	case result := <-results.hub:
+		if result.GetCommandId() != command.GetCommandId() {
+			t.Fatalf("persisted result = %v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Hub command result was not persisted")
+	}
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run error = %v", err)
@@ -89,15 +113,39 @@ func TestControlClientBootstrapsMemoryProjectionAndReportsReconciliation(t *test
 }
 
 type staticTopology struct {
-	hubID   string
-	changes chan struct{}
+	hubID    string
+	changes  chan struct{}
+	events   chan *cloudpb.HubRuntimeEnvelope
+	commands chan *cloudpb.HubCommand
+}
+
+type acceptingRuntimeResults struct {
+	hub chan *cloudpb.HubCommandResult
+}
+
+func (results *acceptingRuntimeResults) IngestHubResult(_ context.Context, result *cloudpb.HubCommandResult, _ time.Time) error {
+	results.hub <- proto.Clone(result).(*cloudpb.HubCommandResult)
+	return nil
+}
+
+func (*acceptingRuntimeResults) IngestDaemonResult(context.Context, *cloudpb.DaemonCommandResult, time.Time) error {
+	return nil
 }
 
 func newStaticTopology(hubID string) *staticTopology {
-	return &staticTopology{hubID: hubID, changes: make(chan struct{})}
+	return &staticTopology{hubID: hubID, changes: make(chan struct{}), events: make(chan *cloudpb.HubRuntimeEnvelope), commands: make(chan *cloudpb.HubCommand, 1)}
 }
 
 func (topology *staticTopology) TopologyChanges() <-chan struct{} { return topology.changes }
+
+func (topology *staticTopology) RuntimeEvents() <-chan *cloudpb.HubRuntimeEnvelope {
+	return topology.events
+}
+
+func (topology *staticTopology) ExecuteHubCommand(command *cloudpb.HubCommand, generation uint64, now time.Time) *cloudpb.HubCommandResult {
+	topology.commands <- proto.Clone(command).(*cloudpb.HubCommand)
+	return &cloudpb.HubCommandResult{CommandId: command.GetCommandId(), HubId: topology.hubID, ControlGeneration: generation, ResultCode: cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED, CompletedAtUnixMillis: now.UnixMilli()}
+}
 
 func (topology *staticTopology) TopologySnapshot(generation uint64, observedAt time.Time) *cloudpb.HubTopologySnapshot {
 	snapshot := &cloudpb.HubTopologySnapshot{HubId: topology.hubID, ControlGeneration: generation, ObservedAtUnixMillis: observedAt.UnixMilli()}

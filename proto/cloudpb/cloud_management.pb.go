@@ -2420,7 +2420,7 @@ var File_cloudpb_cloud_management_proto protoreflect.FileDescriptor
 
 const file_cloudpb_cloud_management_proto_rawDesc = "" +
 	"\n" +
-	"\x1ecloudpb/cloud_management.proto\x12\x0etermx.cloud.v1\x1a\x1fcloudpb/cloud_hub_control.proto\x1a\x1ccloudpb/cloud_topology.proto\x1a\x1dcloudpb/cloud_companion.proto\"\"\n" +
+	"\x1ecloudpb/cloud_management.proto\x12\x0etermx.cloud.v1\x1a\x1fcloudpb/cloud_hub_control.proto\x1a\x1ccloudpb/cloud_topology.proto\"\"\n" +
 	"\n" +
 	"PageCursor\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\tR\x05value\"^\n" +
@@ -2769,7 +2769,6 @@ func file_cloudpb_cloud_management_proto_init() {
 	}
 	file_cloudpb_cloud_hub_control_proto_init()
 	file_cloudpb_cloud_topology_proto_init()
-	file_cloudpb_cloud_companion_proto_init()
 	file_cloudpb_cloud_management_proto_msgTypes[15].OneofWrappers = []any{
 		(*ManagementCommandTarget_Presence)(nil),
 		(*ManagementCommandTarget_CloudDevice)(nil),

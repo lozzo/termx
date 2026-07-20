@@ -422,7 +422,7 @@ func (candidate *projectionCandidate) authorizationSnapshot() AuthorizationSnaps
 		if device.GetDeviceKind() == cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON {
 			kind = "daemon"
 		}
-		result.Devices = append(result.Devices, DeviceAuthorization{DeviceID: device.GetDeviceId(), AccountID: device.GetAccountId(), Kind: kind, DisplayName: device.GetDeviceId(), PublicKey: append([]byte(nil), device.GetPublicKey()...), Revoked: device.GetRevoked()})
+		result.Devices = append(result.Devices, DeviceAuthorization{DeviceID: device.GetDeviceId(), AccountID: device.GetAccountId(), Kind: kind, DisplayName: device.GetDeviceId(), PublicKey: append([]byte(nil), device.GetPublicKey()...), Revoked: device.GetRevoked(), AuthEpoch: device.GetAuthEpoch()})
 	}
 	return result
 }

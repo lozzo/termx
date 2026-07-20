@@ -36,6 +36,7 @@ type DeviceAuthorization struct {
 	Platform    string
 	PublicKey   []byte
 	Revoked     bool
+	AuthEpoch   uint64
 }
 
 // AccountAuthorization 是 Hub 判断账号 edge token epoch 和 managed service 能力的本地投影。
@@ -453,4 +454,21 @@ func (authorizer *EdgeAuthorizer) AuthorizeDaemonDevice(token []byte, accountID,
 	}
 	device.PublicKey = append([]byte(nil), device.PublicKey...)
 	return claims, device, nil
+}
+
+// AuthorizeDaemonControl 验证 Controller 签名命令引用的账号、daemon 与 device auth epoch
+// 仍属于当前 fresh policy。它不验证命令签名或 session target，后两者分别属于 daemon 与 Hub runtime。
+func (authorizer *EdgeAuthorizer) AuthorizeDaemonControl(accountID, deviceID string, authEpoch uint64) error {
+	if authorizer == nil || accountID == "" || deviceID == "" || authEpoch == 0 {
+		return ErrEdgeAuthorization
+	}
+	now := authorizer.clock.Now().UTC()
+	authorizer.mu.RLock()
+	defer authorizer.mu.RUnlock()
+	account, accountOK := authorizer.accounts[accountID]
+	device, deviceOK := authorizer.devices[deviceID]
+	if authorizer.revision == 0 || now.Sub(authorizer.generatedAt) > authorizer.maxStaleness || !accountOK || !deviceOK || account.Revoked || device.Revoked || device.AccountID != accountID || device.Kind != "daemon" || device.AuthEpoch != authEpoch {
+		return ErrEdgeAuthorization
+	}
+	return nil
 }

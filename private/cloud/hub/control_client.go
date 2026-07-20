@@ -48,6 +48,8 @@ type ControlClientConfig struct {
 type TopologySource interface {
 	TopologyChanges() <-chan struct{}
 	TopologySnapshot(controlGeneration uint64, observedAt time.Time) *cloudpb.HubTopologySnapshot
+	RuntimeEvents() <-chan *cloudpb.HubRuntimeEnvelope
+	ExecuteHubCommand(*cloudpb.HubCommand, uint64, time.Time) *cloudpb.HubCommandResult
 }
 
 // ControlClientState 是 Edge health endpoint 可读取的 attachment 状态。
@@ -198,11 +200,21 @@ func (client *ControlClient) runConnection(ctx context.Context) error {
 			return ErrProjectionConflict
 		}
 		controllerSequence = envelope.GetSenderSequence()
+		projectionChanged := false
 		switch {
 		case envelope.GetFullProjection() != nil:
 			err = client.projection.ApplyFull(envelope.GetFullProjection())
+			projectionChanged = true
 		case envelope.GetPolicyDelta() != nil:
 			err = client.projection.ApplyDelta(envelope.GetPolicyDelta())
+			projectionChanged = true
+		case envelope.GetCommand() != nil:
+			result := client.topology.ExecuteHubCommand(envelope.GetCommand(), generation, now)
+			if result == nil {
+				err = ErrProjectionConflict
+			} else {
+				err = sender.report(connectionContext, now, &cloudpb.HubRuntimeEnvelope{Payload: &cloudpb.HubRuntimeEnvelope_HubCommandResult{HubCommandResult: result}})
+			}
 		default:
 			err = ErrProjectionConflict
 		}
@@ -210,8 +222,10 @@ func (client *ControlClient) runConnection(ctx context.Context) error {
 			return err
 		}
 		client.setAttached(generation, controllerSequence)
-		if err := client.reportReconciliation(connectionContext, sender); err != nil {
-			return err
+		if projectionChanged {
+			if err := client.reportReconciliation(connectionContext, sender); err != nil {
+				return err
+			}
 		}
 	}
 }
@@ -235,21 +249,35 @@ func (client *ControlClient) reportReconciliation(ctx context.Context, sender *h
 }
 
 func (client *ControlClient) runTopologyReporter(ctx context.Context, sender *hubRuntimeSender) error {
+	if err := client.reportTopologySnapshot(ctx, sender); err != nil {
+		return err
+	}
 	for {
-		now := client.clock.Now().UTC()
-		snapshot := client.topology.TopologySnapshot(sender.generation, now)
-		if snapshot == nil || snapshot.GetHubId() != client.metadata.GetHubId() || snapshot.GetControlGeneration() != sender.generation || len(snapshot.GetTopologyDigest()) == 0 {
-			return ErrProjectionConflict
-		}
-		if err := sender.report(ctx, now, &cloudpb.HubRuntimeEnvelope{Payload: &cloudpb.HubRuntimeEnvelope_Topology{Topology: snapshot}}); err != nil {
-			return err
-		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-client.topology.TopologyChanges():
+			if err := client.reportTopologySnapshot(ctx, sender); err != nil {
+				return err
+			}
+		case event := <-client.topology.RuntimeEvents():
+			if event == nil || event.GetPayload() == nil {
+				return ErrProjectionConflict
+			}
+			if err := sender.report(ctx, client.clock.Now().UTC(), proto.Clone(event).(*cloudpb.HubRuntimeEnvelope)); err != nil {
+				return err
+			}
 		}
 	}
+}
+
+func (client *ControlClient) reportTopologySnapshot(ctx context.Context, sender *hubRuntimeSender) error {
+	now := client.clock.Now().UTC()
+	snapshot := client.topology.TopologySnapshot(sender.generation, now)
+	if snapshot == nil || snapshot.GetHubId() != client.metadata.GetHubId() || snapshot.GetControlGeneration() != sender.generation || len(snapshot.GetTopologyDigest()) == 0 {
+		return ErrProjectionConflict
+	}
+	return sender.report(ctx, now, &cloudpb.HubRuntimeEnvelope{Payload: &cloudpb.HubRuntimeEnvelope_Topology{Topology: snapshot}})
 }
 
 type hubRuntimeSender struct {

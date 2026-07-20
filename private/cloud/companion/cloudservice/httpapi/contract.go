@@ -70,6 +70,8 @@ const (
 	HubCompleteSignalingPath = "/v1/signaling/complete"
 	// HubReportDaemonRuntimePath 接收当前 Presence 的完整 managed runtime replacement。
 	HubReportDaemonRuntimePath = "/v1/daemon/runtime"
+	// HubReportDaemonCommandResultPath 接收 daemon 对精确 deny-only command 的独立执行 receipt。
+	HubReportDaemonCommandResultPath = "/v1/daemon/command-result"
 	// HubAcquireRelayLeasePath 使用区域委派预算签发 caller-specific TURN material。
 	HubAcquireRelayLeasePath = "/v1/relay/leases/acquire"
 	// HubResolveEndpointPath 使用本地 policy/presence 解析 managed target。

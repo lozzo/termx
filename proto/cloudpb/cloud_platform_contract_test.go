@@ -59,6 +59,38 @@ func TestCloudPlatformOneofTargetsAreExclusive(t *testing.T) {
 	if envelope.GetFullProjection() != nil || envelope.GetCommand().GetCommandId() != "command-1" {
 		t.Fatalf("hub envelope oneof is not exclusive: %#v", envelope)
 	}
+
+	presence := &PresenceEvent{Payload: &PresenceEvent_Offer{Offer: &SignalingOffer{SignalingSessionId: "signal-1"}}}
+	presence.Payload = &PresenceEvent_DaemonCommand{DaemonCommand: &DaemonControlCommand{CommandId: "daemon-command-1"}}
+	if presence.GetOffer() != nil || presence.GetDaemonCommand().GetCommandId() != "daemon-command-1" {
+		t.Fatalf("presence command oneof is not exclusive: %#v", presence)
+	}
+}
+
+func TestDaemonCommandPresenceAndResultReportAreProtoFirst(t *testing.T) {
+	command := &DaemonControlCommand{CommandId: "command-1", CommandKind: DaemonControlCommandKind_DAEMON_CONTROL_COMMAND_KIND_CLOSE_MANAGED_PEER_SESSION, AccountId: "account-1", TargetDeviceId: "daemon-1", HubId: "hub-1", AssignmentEpoch: 7, AuthEpoch: 3, PresenceSessionId: "presence-1", DaemonRuntimeGeneration: "runtime-1", Target: &DaemonControlCommand_ManagedPeerSession{ManagedPeerSession: &ManagedPeerSessionTarget{DaemonDeviceId: "daemon-1", ManagedSessionId: "managed-1", SessionIncarnation: 2}}}
+	payload, err := proto.Marshal(&PresenceEvent{Payload: &PresenceEvent_DaemonCommand{DaemonCommand: command}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded := &PresenceEvent{}
+	if err := proto.Unmarshal(payload, decoded); err != nil || decoded.GetDaemonCommand().GetManagedPeerSession().GetSessionIncarnation() != 2 {
+		t.Fatalf("daemon command presence round trip = (%#v, %v)", decoded, err)
+	}
+	request := &IPCRequest{RequestId: 9, Operation: &IPCRequest_ReportDaemonCommandResult{ReportDaemonCommandResult: &ReportDaemonCommandResultRequest{Result: &DaemonCommandResult{CommandId: "command-1", ResultCode: RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED}}}}
+	payload, err = proto.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decodedRequest := &IPCRequest{}
+	if err := proto.Unmarshal(payload, decodedRequest); err != nil || decodedRequest.GetReportDaemonCommandResult().GetResult().GetCommandId() != "command-1" {
+		t.Fatalf("daemon result report round trip = (%#v, %v)", decodedRequest, err)
+	}
+	for _, name := range []protoreflect.Name{"ReportDaemonCommandResultRequest", "ReportDaemonCommandResultResponse"} {
+		if File_cloudpb_cloud_companion_proto.Messages().ByName(name) == nil {
+			t.Fatalf("daemon command companion contract missing %s", name)
+		}
+	}
 }
 
 func TestEdgeDeploymentKeepsHubAndRelayControlIdentitySeparate(t *testing.T) {

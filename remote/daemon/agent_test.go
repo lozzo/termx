@@ -48,6 +48,61 @@ func TestAgentAnswersOfferWithoutPublishingTerminalInventory(t *testing.T) {
 	}
 }
 
+func TestAgentExecutesSignedCloseAndReportsIndependentReceipt(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := cloudpb.NewDaemonControlVerifier(map[string]ed25519.PublicKey{"control-1": publicKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	identity := testAgentIdentity(t, "device-1")
+	runtime := newTestManagedRuntime(t, identity.DeviceID)
+	if err := runtime.BindPresence("hub-1", 7, "presence-1", now); err != nil {
+		t.Fatal(err)
+	}
+	target := &cloudpb.ManagedPeerSessionTarget{DaemonDeviceId: identity.DeviceID, ManagedSessionId: "managed-1", SessionIncarnation: 2, AssignmentEpoch: 7, ControlPresenceSessionId: "presence-1", DaemonRuntimeGeneration: runtime.RuntimeGeneration()}
+	owner := &agentCloseOwner{done: make(chan struct{})}
+	handle, _, err := runtime.Registry().Begin(&cloudpb.ManagedPeerSessionProjection{Target: target, ClientDeviceId: "client-1", EstablishedPresenceSessionId: "presence-1", ControlOwnerHubId: "hub-1", ObservedDataPath: cloudpb.ObservedPath_OBSERVED_PATH_DIRECT, State: cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_AUTHENTICATED}, owner, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handle.MarkReady(now); err != nil {
+		t.Fatal(err)
+	}
+	owner.request = func() {
+		_, _ = handle.MarkClosed("remote_command", now)
+		close(owner.done)
+	}
+	unsigned := &cloudpb.DaemonControlCommand{CommandId: "command-1", CommandKind: cloudpb.DaemonControlCommandKind_DAEMON_CONTROL_COMMAND_KIND_CLOSE_MANAGED_PEER_SESSION, AccountId: "account-1", TargetDeviceId: identity.DeviceID, HubId: "hub-1", AssignmentEpoch: 7, AuthEpoch: 3, PresenceSessionId: "presence-1", DaemonRuntimeGeneration: runtime.RuntimeGeneration(), IssuedAtUnixMillis: now.UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Minute).UnixMilli(), Target: &cloudpb.DaemonControlCommand_ManagedPeerSession{ManagedPeerSession: target}}
+	signed, err := cloudpb.SignDaemonControlCommand(unsigned, "control-1", privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := cloudcompanion.NewFakePresenceStream(3)
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: managedReady("presence-1")}})
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_DaemonCommand{DaemonCommand: signed}})
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: "test complete"}}})
+	companion := agentCompanion(t, identity, now, stream)
+	companion.ReportDaemonCommandResultFunc = func(_ context.Context, request *cloudpb.ReportDaemonCommandResultRequest) (*cloudpb.ReportDaemonCommandResultResponse, error) {
+		return &cloudpb.ReportDaemonCommandResultResponse{AcceptedCommandId: request.GetResult().GetCommandId()}, nil
+	}
+	agent := Agent{Companion: companion, Identity: identity, Answerer: &fakeOfferAnswerer{}, Runtime: runtime, CommandVerifier: verifier, Now: func() time.Time { return now }}
+	if err := agent.Run(context.Background()); !errors.Is(err, ErrPresenceClosed) {
+		t.Fatalf("Run() error = %v", err)
+	}
+	recorded := companion.Requests().ReportDaemonCommandResult
+	if len(recorded) != 1 {
+		t.Fatalf("reported daemon command results = %d, want 1", len(recorded))
+	}
+	result := recorded[0].GetResult()
+	if result.GetResultCode() != cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED || result.GetClosedRegistryRevision() == 0 || !owner.requested {
+		t.Fatalf("daemon result = %+v, owner requested = %v", result, owner.requested)
+	}
+}
+
 func TestAgentAcquiresDaemonCredentialForRelayOnlyOffer(t *testing.T) {
 	stream := cloudcompanion.NewFakePresenceStream(3)
 	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: managedReady("presence-1")}})
@@ -279,6 +334,21 @@ func newTestManagedRuntime(t *testing.T, deviceID string) *ManagedRuntime {
 	}
 	return runtime
 }
+
+type agentCloseOwner struct {
+	done      chan struct{}
+	request   func()
+	requested bool
+}
+
+func (owner *agentCloseOwner) RequestClose() {
+	owner.requested = true
+	if owner.request != nil {
+		owner.request()
+	}
+}
+
+func (owner *agentCloseOwner) Done() <-chan struct{} { return owner.done }
 
 type fakeOfferAnswerer struct {
 	calls      int

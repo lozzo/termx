@@ -239,6 +239,21 @@ func validateDaemonRuntimeResponse(request *cloudpb.ReportDaemonRuntimeRequest, 
 	return nil
 }
 
+func validateDaemonCommandResultRequest(request *cloudpb.ReportDaemonCommandResultRequest, daemonDeviceID string) error {
+	result := request.GetResult()
+	if request == nil || result == nil || daemonDeviceID == "" || result.GetCommandId() == "" || result.GetDaemonDeviceId() != daemonDeviceID || result.GetManagedSessionId() == "" || result.GetSessionIncarnation() == 0 || result.GetAssignmentEpoch() == 0 || result.GetPresenceSessionId() == "" || result.GetDaemonRuntimeGeneration() == "" || result.GetResultCode() == cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_UNSPECIFIED || result.GetCompletedAtUnixMillis() <= 0 {
+		return protocolError("daemon command result is invalid")
+	}
+	return nil
+}
+
+func validateDaemonCommandResultResponse(request *cloudpb.ReportDaemonCommandResultRequest, response *cloudpb.ReportDaemonCommandResultResponse) error {
+	if response == nil || response.GetAcceptedCommandId() == "" || response.GetAcceptedCommandId() != request.GetResult().GetCommandId() {
+		return protocolError("Hub daemon command result acknowledgement is invalid")
+	}
+	return nil
+}
+
 func validateRelayLeaseRequest(request *cloudpb.AcquireRelayLeaseRequest) error {
 	if request == nil || request.GetManagedSessionId() == "" || request.GetTargetDeviceId() == "" || !validRoutePreference(request.GetRoutePreference()) || request.GetRoutePreference() == cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY {
 		return protocolError("invalid Relay lease request")

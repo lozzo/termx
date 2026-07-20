@@ -282,6 +282,19 @@ func (client *Client) ReportDaemonRuntime(ctx context.Context, request *cloudpb.
 	return value, nil
 }
 
+// ReportDaemonCommandResult 转发 daemon 对精确 command 的独立 execution receipt。
+func (client *Client) ReportDaemonCommandResult(ctx context.Context, request *cloudpb.ReportDaemonCommandResultRequest) (*cloudpb.ReportDaemonCommandResultResponse, error) {
+	response, err := client.call(ctx, &cloudpb.IPCRequest{Operation: &cloudpb.IPCRequest_ReportDaemonCommandResult{ReportDaemonCommandResult: request}})
+	if err != nil {
+		return nil, err
+	}
+	value := response.GetReportDaemonCommandResult()
+	if value == nil {
+		return nil, protocolResponseError("ReportDaemonCommandResult")
+	}
+	return value, nil
+}
+
 // AcquireRelayLease 获取 caller-specific 短期 Relay lease。
 func (client *Client) AcquireRelayLease(ctx context.Context, request *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
 	response, err := client.call(ctx, &cloudpb.IPCRequest{Operation: &cloudpb.IPCRequest_AcquireRelayLease{AcquireRelayLease: request}})

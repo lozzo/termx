@@ -29,6 +29,17 @@ type DeviceOwnership struct {
 	DeviceID  string
 	AccountID string
 	Kind      cloudpb.ManagedDeviceKind
+	AuthEpoch uint64
+	Revoked   bool
+	PublicKey []byte
+}
+
+// StoredPeerSession 是 CommandOutbox target planner 使用的账号与 owning Hub 精确投影。
+// Value 仍是 generated Proto；该 wrapper 不跨 Controller 领域边界。
+type StoredPeerSession struct {
+	AccountID string
+	HubID     string
+	Value     *cloudpb.ManagedPeerSessionProjection
 }
 
 // ValidatedPresence 是已经由 assignment 与 ownership 推导账号后的 Presence 投影。
@@ -58,6 +69,9 @@ type ValidatedSnapshot struct {
 type Store interface {
 	PutDeviceOwnership(context.Context, DeviceOwnership) error
 	DeviceOwnership(context.Context, string) (DeviceOwnership, error)
+	DevicePolicies(context.Context) ([]*cloudpb.CloudDevicePolicy, error)
+	PeerSessionProjection(context.Context, *cloudpb.ManagedPeerSessionTarget) (StoredPeerSession, error)
+	PeerSessionsByClient(context.Context, string) ([]StoredPeerSession, error)
 	ApplyTopologySnapshot(context.Context, ValidatedSnapshot) error
 	MarkHubTopologyUnknown(context.Context, string, uint64, time.Time) error
 	PresenceProjection(context.Context, string) (string, *cloudpb.PresenceProjection, error)
@@ -82,7 +96,10 @@ func (service *Service) PutDeviceOwnership(ctx context.Context, policy *cloudpb.
 	if service == nil || policy == nil || policy.GetDeviceId() == "" || policy.GetAccountId() == "" || policy.GetDeviceKind() == cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_UNSPECIFIED {
 		return ErrTopologyRejected
 	}
-	return service.store.PutDeviceOwnership(ctx, DeviceOwnership{DeviceID: policy.GetDeviceId(), AccountID: policy.GetAccountId(), Kind: policy.GetDeviceKind()})
+	if policy.GetAuthEpoch() == 0 {
+		return ErrTopologyRejected
+	}
+	return service.store.PutDeviceOwnership(ctx, DeviceOwnership{DeviceID: policy.GetDeviceId(), AccountID: policy.GetAccountId(), Kind: policy.GetDeviceKind(), AuthEpoch: policy.GetAuthEpoch(), Revoked: policy.GetRevoked(), PublicKey: append([]byte(nil), policy.GetPublicKey()...)})
 }
 
 // Ingest 校验当前 Hub generation 的完整 topology snapshot 并替换持久投影。
@@ -156,4 +173,36 @@ func (service *Service) Presence(ctx context.Context, daemonDeviceID string) (st
 		return "", nil, ErrTopologyRejected
 	}
 	return service.store.PresenceProjection(ctx, daemonDeviceID)
+}
+
+// Device 返回 Controller 持久设备 authority；调用方必须继续执行账号隔离。
+func (service *Service) Device(ctx context.Context, deviceID string) (DeviceOwnership, error) {
+	if service == nil || deviceID == "" {
+		return DeviceOwnership{}, ErrTopologyRejected
+	}
+	return service.store.DeviceOwnership(ctx, deviceID)
+}
+
+// DevicePolicies 返回 signed Hub projection 使用的持久设备策略。
+func (service *Service) DevicePolicies(ctx context.Context) ([]*cloudpb.CloudDevicePolicy, error) {
+	if service == nil {
+		return nil, ErrTopologyRejected
+	}
+	return service.store.DevicePolicies(ctx)
+}
+
+// PeerSession 返回账号隔离前的精确 session projection；target 全字段必须匹配。
+func (service *Service) PeerSession(ctx context.Context, target *cloudpb.ManagedPeerSessionTarget) (StoredPeerSession, error) {
+	if service == nil || target == nil {
+		return StoredPeerSession{}, ErrTopologyRejected
+	}
+	return service.store.PeerSessionProjection(ctx, target)
+}
+
+// PeerSessionsForClient 返回当前 topology 中该 client 的全部 active 精确 session。
+func (service *Service) PeerSessionsForClient(ctx context.Context, clientDeviceID string) ([]StoredPeerSession, error) {
+	if service == nil || clientDeviceID == "" {
+		return nil, ErrTopologyRejected
+	}
+	return service.store.PeerSessionsByClient(ctx, clientDeviceID)
 }

@@ -39,6 +39,14 @@ enum ObservationSource {
   OBSERVATION_SOURCE_DAEMON_LIFECYCLE_EVENT = 6;
 }
 
+// ManagedDeviceKind 区分账号目录中的连接发起端与 daemon 目标；类型不表达 terminal capability。
+// 该枚举位于 topology schema，供 companion、Hub policy 与 management API 共同消费，避免 schema 循环依赖。
+enum ManagedDeviceKind {
+  MANAGED_DEVICE_KIND_UNSPECIFIED = 0;
+  MANAGED_DEVICE_KIND_CLIENT = 1;
+  MANAGED_DEVICE_KIND_DAEMON = 2;
+}
+
 // ManagedPeerSessionState 是 daemon-owned managed WebRTC session 的脱敏投影状态。
 enum ManagedPeerSessionState {
   MANAGED_PEER_SESSION_STATE_UNSPECIFIED = 0;

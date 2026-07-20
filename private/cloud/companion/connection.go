@@ -447,6 +447,28 @@ func (connection *Connection) ReportDaemonRuntime(ctx context.Context, request *
 	return cloneMessage(response), nil
 }
 
+// ReportDaemonCommandResult 转发当前 daemon 对精确 deny-only command 的独立 execution receipt。
+// Companion 只验证当前 device session 绑定，不把 topology CLOSED 当作 command ack。
+func (connection *Connection) ReportDaemonCommandResult(ctx context.Context, request *cloudpb.ReportDaemonCommandResultRequest) (*cloudpb.ReportDaemonCommandResultResponse, error) {
+	authorization, err := connection.authorize(ctx, cloudpb.CompanionCapability_COMPANION_CAPABILITY_DAEMON_RUNTIME, cloudpb.CallerRole_CALLER_ROLE_DAEMON)
+	if err != nil {
+		return nil, err
+	}
+	defer authorization.Destroy()
+	metadata := authorization.Metadata()
+	if err := validateDaemonCommandResultRequest(request, metadata.DeviceID); err != nil {
+		return nil, err
+	}
+	response, err := connection.service.hub.ReportDaemonCommandResult(ctx, authorization, cloneMessage(request))
+	if err != nil {
+		return nil, sanitizeAdapterError(err)
+	}
+	if err := validateDaemonCommandResultResponse(request, response); err != nil {
+		return nil, err
+	}
+	return cloneMessage(response), nil
+}
+
 // AcquireRelayLease 获取 entitlement-bound 短期 Relay lease 和 route metadata。
 // signed lease 只用于公开 WebRTC ICE/TURN 建连，不能替代 daemon capability。
 func (connection *Connection) AcquireRelayLease(ctx context.Context, request *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {

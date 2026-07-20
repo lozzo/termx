@@ -120,6 +120,8 @@ func run(ctx context.Context, args []string) error {
 	now := time.Now().UTC()
 	projectionPublic, projectionPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	projectionKeyID := "development-controller-projection"
+	_, daemonControlPrivate, _ := ed25519.GenerateKey(rand.Reader)
+	daemonControlKeyID := "development-daemon-control"
 	controllerDatabase := filepath.Join(artifactDir, "controller.db")
 	_ = os.Remove(controllerDatabase)
 	catalogPath := filepath.Join(root, "private/cloud/web-controller/config/plans.json")
@@ -146,7 +148,7 @@ func run(ctx context.Context, args []string) error {
 		deploymentConfigs = append(deploymentConfigs, controller.DeploymentConfig{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic)})
 		edgeKeys[hubID] = hubPrivate
 	}
-	controllerConfig := controller.Config{DatabasePath: controllerDatabase, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Devices: devices, Assignments: assignments}
+	controllerConfig := controller.Config{DatabasePath: controllerDatabase, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Devices: devices, Assignments: assignments}
 	controllerConfigPath := filepath.Join(artifactDir, "controller-config.json")
 	controllerManifestPath := filepath.Join(artifactDir, "controller-runtime.json")
 	if err := writeJSONFile(controllerConfigPath, controllerConfig); err != nil {

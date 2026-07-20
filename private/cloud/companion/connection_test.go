@@ -193,6 +193,10 @@ func (hub *fakeHub) ReportDaemonRuntime(_ context.Context, _ session.Authorizati
 	return &cloudpb.ReportDaemonRuntimeResponse{ReportId: request.GetReportId(), DaemonRuntimeGeneration: request.GetDaemonRuntimeGeneration(), AcceptedRegistryRevision: request.GetRegistryRevision()}, nil
 }
 
+func (hub *fakeHub) ReportDaemonCommandResult(_ context.Context, _ session.Authorization, request *cloudpb.ReportDaemonCommandResultRequest) (*cloudpb.ReportDaemonCommandResultResponse, error) {
+	return &cloudpb.ReportDaemonCommandResultResponse{AcceptedCommandId: request.GetResult().GetCommandId()}, nil
+}
+
 type presenceSource struct {
 	items  chan *cloudpb.PresenceEvent
 	done   chan struct{}

@@ -239,6 +239,57 @@ func (ObservationSource) EnumDescriptor() ([]byte, []int) {
 	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{3}
 }
 
+// ManagedDeviceKind 区分账号目录中的连接发起端与 daemon 目标；类型不表达 terminal capability。
+// 该枚举位于 topology schema，供 companion、Hub policy 与 management API 共同消费，避免 schema 循环依赖。
+type ManagedDeviceKind int32
+
+const (
+	ManagedDeviceKind_MANAGED_DEVICE_KIND_UNSPECIFIED ManagedDeviceKind = 0
+	ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT      ManagedDeviceKind = 1
+	ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON      ManagedDeviceKind = 2
+)
+
+// Enum value maps for ManagedDeviceKind.
+var (
+	ManagedDeviceKind_name = map[int32]string{
+		0: "MANAGED_DEVICE_KIND_UNSPECIFIED",
+		1: "MANAGED_DEVICE_KIND_CLIENT",
+		2: "MANAGED_DEVICE_KIND_DAEMON",
+	}
+	ManagedDeviceKind_value = map[string]int32{
+		"MANAGED_DEVICE_KIND_UNSPECIFIED": 0,
+		"MANAGED_DEVICE_KIND_CLIENT":      1,
+		"MANAGED_DEVICE_KIND_DAEMON":      2,
+	}
+)
+
+func (x ManagedDeviceKind) Enum() *ManagedDeviceKind {
+	p := new(ManagedDeviceKind)
+	*p = x
+	return p
+}
+
+func (x ManagedDeviceKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ManagedDeviceKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloudpb_cloud_topology_proto_enumTypes[4].Descriptor()
+}
+
+func (ManagedDeviceKind) Type() protoreflect.EnumType {
+	return &file_cloudpb_cloud_topology_proto_enumTypes[4]
+}
+
+func (x ManagedDeviceKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ManagedDeviceKind.Descriptor instead.
+func (ManagedDeviceKind) EnumDescriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{4}
+}
+
 // ManagedPeerSessionState 是 daemon-owned managed WebRTC session 的脱敏投影状态。
 type ManagedPeerSessionState int32
 
@@ -285,11 +336,11 @@ func (x ManagedPeerSessionState) String() string {
 }
 
 func (ManagedPeerSessionState) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_topology_proto_enumTypes[4].Descriptor()
+	return file_cloudpb_cloud_topology_proto_enumTypes[5].Descriptor()
 }
 
 func (ManagedPeerSessionState) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_topology_proto_enumTypes[4]
+	return &file_cloudpb_cloud_topology_proto_enumTypes[5]
 }
 
 func (x ManagedPeerSessionState) Number() protoreflect.EnumNumber {
@@ -298,7 +349,7 @@ func (x ManagedPeerSessionState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ManagedPeerSessionState.Descriptor instead.
 func (ManagedPeerSessionState) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{4}
+	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{5}
 }
 
 // TerminalAccessState 是 daemon AccessStore 提供的最小 deny-only 管理投影状态。
@@ -338,11 +389,11 @@ func (x TerminalAccessState) String() string {
 }
 
 func (TerminalAccessState) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_topology_proto_enumTypes[5].Descriptor()
+	return file_cloudpb_cloud_topology_proto_enumTypes[6].Descriptor()
 }
 
 func (TerminalAccessState) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_topology_proto_enumTypes[5]
+	return &file_cloudpb_cloud_topology_proto_enumTypes[6]
 }
 
 func (x TerminalAccessState) Number() protoreflect.EnumNumber {
@@ -351,7 +402,7 @@ func (x TerminalAccessState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TerminalAccessState.Descriptor instead.
 func (TerminalAccessState) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{5}
+	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{6}
 }
 
 // ExactSessionCloseDisposition 描述精确 session fencing 的关闭请求结果。
@@ -394,11 +445,11 @@ func (x ExactSessionCloseDisposition) String() string {
 }
 
 func (ExactSessionCloseDisposition) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_topology_proto_enumTypes[6].Descriptor()
+	return file_cloudpb_cloud_topology_proto_enumTypes[7].Descriptor()
 }
 
 func (ExactSessionCloseDisposition) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_topology_proto_enumTypes[6]
+	return &file_cloudpb_cloud_topology_proto_enumTypes[7]
 }
 
 func (x ExactSessionCloseDisposition) Number() protoreflect.EnumNumber {
@@ -407,7 +458,7 @@ func (x ExactSessionCloseDisposition) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ExactSessionCloseDisposition.Descriptor instead.
 func (ExactSessionCloseDisposition) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{6}
+	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{7}
 }
 
 // PresenceProjection 是 Control Plane 可展示的 daemon Presence 投影。
@@ -1677,7 +1728,11 @@ const file_cloudpb_cloud_topology_proto_rawDesc = "" +
 	"(OBSERVATION_SOURCE_HUB_TOPOLOGY_SNAPSHOT\x10\x03\x12*\n" +
 	"&OBSERVATION_SOURCE_CONTROL_STREAM_LOST\x10\x04\x12'\n" +
 	"#OBSERVATION_SOURCE_DAEMON_INVENTORY\x10\x05\x12-\n" +
-	")OBSERVATION_SOURCE_DAEMON_LIFECYCLE_EVENT\x10\x06*\xbb\x02\n" +
+	")OBSERVATION_SOURCE_DAEMON_LIFECYCLE_EVENT\x10\x06*x\n" +
+	"\x11ManagedDeviceKind\x12#\n" +
+	"\x1fMANAGED_DEVICE_KIND_UNSPECIFIED\x10\x00\x12\x1e\n" +
+	"\x1aMANAGED_DEVICE_KIND_CLIENT\x10\x01\x12\x1e\n" +
+	"\x1aMANAGED_DEVICE_KIND_DAEMON\x10\x02*\xbb\x02\n" +
 	"\x17ManagedPeerSessionState\x12*\n" +
 	"&MANAGED_PEER_SESSION_STATE_UNSPECIFIED\x10\x00\x12,\n" +
 	"(MANAGED_PEER_SESSION_STATE_AUTHENTICATED\x10\x01\x12$\n" +
@@ -1710,47 +1765,48 @@ func file_cloudpb_cloud_topology_proto_rawDescGZIP() []byte {
 	return file_cloudpb_cloud_topology_proto_rawDescData
 }
 
-var file_cloudpb_cloud_topology_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_cloudpb_cloud_topology_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
 var file_cloudpb_cloud_topology_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_cloudpb_cloud_topology_proto_goTypes = []any{
 	(ObservedPath)(0),                       // 0: termx.cloud.v1.ObservedPath
 	(Availability)(0),                       // 1: termx.cloud.v1.Availability
 	(Freshness)(0),                          // 2: termx.cloud.v1.Freshness
 	(ObservationSource)(0),                  // 3: termx.cloud.v1.ObservationSource
-	(ManagedPeerSessionState)(0),            // 4: termx.cloud.v1.ManagedPeerSessionState
-	(TerminalAccessState)(0),                // 5: termx.cloud.v1.TerminalAccessState
-	(ExactSessionCloseDisposition)(0),       // 6: termx.cloud.v1.ExactSessionCloseDisposition
-	(*PresenceProjection)(nil),              // 7: termx.cloud.v1.PresenceProjection
-	(*ManagedPeerSessionTarget)(nil),        // 8: termx.cloud.v1.ManagedPeerSessionTarget
-	(*ManagedPeerSessionProjection)(nil),    // 9: termx.cloud.v1.ManagedPeerSessionProjection
-	(*PeerSessionInventorySnapshot)(nil),    // 10: termx.cloud.v1.PeerSessionInventorySnapshot
-	(*PeerSessionLifecycleEvent)(nil),       // 11: termx.cloud.v1.PeerSessionLifecycleEvent
-	(*TerminalAccessProjection)(nil),        // 12: termx.cloud.v1.TerminalAccessProjection
-	(*TerminalAccessInventorySnapshot)(nil), // 13: termx.cloud.v1.TerminalAccessInventorySnapshot
-	(*HubTopologySnapshot)(nil),             // 14: termx.cloud.v1.HubTopologySnapshot
-	(*ReportDaemonRuntimeRequest)(nil),      // 15: termx.cloud.v1.ReportDaemonRuntimeRequest
-	(*ReportDaemonRuntimeResponse)(nil),     // 16: termx.cloud.v1.ReportDaemonRuntimeResponse
-	(*ExactSessionCloseResult)(nil),         // 17: termx.cloud.v1.ExactSessionCloseResult
+	(ManagedDeviceKind)(0),                  // 4: termx.cloud.v1.ManagedDeviceKind
+	(ManagedPeerSessionState)(0),            // 5: termx.cloud.v1.ManagedPeerSessionState
+	(TerminalAccessState)(0),                // 6: termx.cloud.v1.TerminalAccessState
+	(ExactSessionCloseDisposition)(0),       // 7: termx.cloud.v1.ExactSessionCloseDisposition
+	(*PresenceProjection)(nil),              // 8: termx.cloud.v1.PresenceProjection
+	(*ManagedPeerSessionTarget)(nil),        // 9: termx.cloud.v1.ManagedPeerSessionTarget
+	(*ManagedPeerSessionProjection)(nil),    // 10: termx.cloud.v1.ManagedPeerSessionProjection
+	(*PeerSessionInventorySnapshot)(nil),    // 11: termx.cloud.v1.PeerSessionInventorySnapshot
+	(*PeerSessionLifecycleEvent)(nil),       // 12: termx.cloud.v1.PeerSessionLifecycleEvent
+	(*TerminalAccessProjection)(nil),        // 13: termx.cloud.v1.TerminalAccessProjection
+	(*TerminalAccessInventorySnapshot)(nil), // 14: termx.cloud.v1.TerminalAccessInventorySnapshot
+	(*HubTopologySnapshot)(nil),             // 15: termx.cloud.v1.HubTopologySnapshot
+	(*ReportDaemonRuntimeRequest)(nil),      // 16: termx.cloud.v1.ReportDaemonRuntimeRequest
+	(*ReportDaemonRuntimeResponse)(nil),     // 17: termx.cloud.v1.ReportDaemonRuntimeResponse
+	(*ExactSessionCloseResult)(nil),         // 18: termx.cloud.v1.ExactSessionCloseResult
 }
 var file_cloudpb_cloud_topology_proto_depIdxs = []int32{
 	1,  // 0: termx.cloud.v1.PresenceProjection.availability:type_name -> termx.cloud.v1.Availability
 	2,  // 1: termx.cloud.v1.PresenceProjection.freshness:type_name -> termx.cloud.v1.Freshness
 	3,  // 2: termx.cloud.v1.PresenceProjection.observation_source:type_name -> termx.cloud.v1.ObservationSource
-	8,  // 3: termx.cloud.v1.ManagedPeerSessionProjection.target:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
+	9,  // 3: termx.cloud.v1.ManagedPeerSessionProjection.target:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
 	0,  // 4: termx.cloud.v1.ManagedPeerSessionProjection.observed_data_path:type_name -> termx.cloud.v1.ObservedPath
-	4,  // 5: termx.cloud.v1.ManagedPeerSessionProjection.state:type_name -> termx.cloud.v1.ManagedPeerSessionState
+	5,  // 5: termx.cloud.v1.ManagedPeerSessionProjection.state:type_name -> termx.cloud.v1.ManagedPeerSessionState
 	2,  // 6: termx.cloud.v1.ManagedPeerSessionProjection.freshness:type_name -> termx.cloud.v1.Freshness
-	9,  // 7: termx.cloud.v1.PeerSessionInventorySnapshot.sessions:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
-	9,  // 8: termx.cloud.v1.PeerSessionLifecycleEvent.session:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
-	5,  // 9: termx.cloud.v1.TerminalAccessProjection.state:type_name -> termx.cloud.v1.TerminalAccessState
-	12, // 10: termx.cloud.v1.TerminalAccessInventorySnapshot.accesses:type_name -> termx.cloud.v1.TerminalAccessProjection
-	7,  // 11: termx.cloud.v1.HubTopologySnapshot.presences:type_name -> termx.cloud.v1.PresenceProjection
-	9,  // 12: termx.cloud.v1.HubTopologySnapshot.peer_sessions:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
-	13, // 13: termx.cloud.v1.HubTopologySnapshot.terminal_access_inventories:type_name -> termx.cloud.v1.TerminalAccessInventorySnapshot
-	10, // 14: termx.cloud.v1.ReportDaemonRuntimeRequest.peer_sessions:type_name -> termx.cloud.v1.PeerSessionInventorySnapshot
-	13, // 15: termx.cloud.v1.ReportDaemonRuntimeRequest.terminal_accesses:type_name -> termx.cloud.v1.TerminalAccessInventorySnapshot
-	8,  // 16: termx.cloud.v1.ExactSessionCloseResult.target:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
-	6,  // 17: termx.cloud.v1.ExactSessionCloseResult.disposition:type_name -> termx.cloud.v1.ExactSessionCloseDisposition
+	10, // 7: termx.cloud.v1.PeerSessionInventorySnapshot.sessions:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
+	10, // 8: termx.cloud.v1.PeerSessionLifecycleEvent.session:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
+	6,  // 9: termx.cloud.v1.TerminalAccessProjection.state:type_name -> termx.cloud.v1.TerminalAccessState
+	13, // 10: termx.cloud.v1.TerminalAccessInventorySnapshot.accesses:type_name -> termx.cloud.v1.TerminalAccessProjection
+	8,  // 11: termx.cloud.v1.HubTopologySnapshot.presences:type_name -> termx.cloud.v1.PresenceProjection
+	10, // 12: termx.cloud.v1.HubTopologySnapshot.peer_sessions:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
+	14, // 13: termx.cloud.v1.HubTopologySnapshot.terminal_access_inventories:type_name -> termx.cloud.v1.TerminalAccessInventorySnapshot
+	11, // 14: termx.cloud.v1.ReportDaemonRuntimeRequest.peer_sessions:type_name -> termx.cloud.v1.PeerSessionInventorySnapshot
+	14, // 15: termx.cloud.v1.ReportDaemonRuntimeRequest.terminal_accesses:type_name -> termx.cloud.v1.TerminalAccessInventorySnapshot
+	9,  // 16: termx.cloud.v1.ExactSessionCloseResult.target:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
+	7,  // 17: termx.cloud.v1.ExactSessionCloseResult.disposition:type_name -> termx.cloud.v1.ExactSessionCloseDisposition
 	18, // [18:18] is the sub-list for method output_type
 	18, // [18:18] is the sub-list for method input_type
 	18, // [18:18] is the sub-list for extension type_name
@@ -1768,7 +1824,7 @@ func file_cloudpb_cloud_topology_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloudpb_cloud_topology_proto_rawDesc), len(file_cloudpb_cloud_topology_proto_rawDesc)),
-			NumEnums:      7,
+			NumEnums:      8,
 			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,

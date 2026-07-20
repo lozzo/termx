@@ -37,6 +37,8 @@ type Agent struct {
 	Answerer OfferAnswerer
 	// Runtime 是 daemon process 级 managed session owner；Presence 续约不得重建该对象。
 	Runtime *ManagedRuntime
+	// CommandVerifier 来自 daemon enrollment 的 Controller control public key；Hub 不能替代该端到端验签。
+	CommandVerifier *cloudpb.DaemonControlVerifier
 	// Now 只用于 deterministic harness；零值使用 UTC 当前时间。
 	Now func() time.Time
 	// RuntimeReportRetryDelay 是 runtime report 失败后的有界重试间隔；零值使用一秒。
@@ -152,6 +154,28 @@ func (agent Agent) Run(ctx context.Context) error {
 			return fmt.Errorf("%w: %s", ErrPresenceClosed, reason)
 		case *cloudpb.PresenceEvent_Candidate:
 			return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "trickle ICE is not enabled for the current public answerer")
+		case *cloudpb.PresenceEvent_DaemonCommand:
+			if payload.DaemonCommand == nil || presenceSessionID == "" {
+				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an invalid daemon command")
+			}
+			if agent.CommandVerifier == nil {
+				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "remote daemon control verifier is not configured")
+			}
+			now := time.Now().UTC()
+			if agent.Now != nil {
+				now = agent.Now().UTC()
+			}
+			result, err := agent.Runtime.ExecuteControlCommand(ctx, payload.DaemonCommand, agent.CommandVerifier, now)
+			if err != nil {
+				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "remote daemon rejected control command")
+			}
+			response, err := agent.Companion.ReportDaemonCommandResult(ctx, &cloudpb.ReportDaemonCommandResultRequest{Result: result})
+			if err != nil {
+				return err
+			}
+			if response == nil || response.GetAcceptedCommandId() != result.GetCommandId() {
+				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion did not acknowledge daemon command result")
+			}
 		default:
 			return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an unknown presence event")
 		}

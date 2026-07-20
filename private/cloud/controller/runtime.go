@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lozzow/termx/private/cloud/control-plane/commandoutbox"
 	cloudcommerce "github.com/lozzow/termx/private/cloud/control-plane/commerce"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubcontrol"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
@@ -43,17 +44,19 @@ type DeploymentConfig struct {
 
 // Config 是 Controller development composition 的显式配置。
 type Config struct {
-	DatabasePath               string                       `json:"database_path"`
-	PublicListen               string                       `json:"public_listen"`
-	InternalControlListen      string                       `json:"internal_control_listen"`
-	OperatorListen             string                       `json:"operator_listen"`
-	CatalogPath                string                       `json:"catalog_path"`
-	ProjectionKeyID            string                       `json:"projection_key_id"`
-	ProjectionPrivateKeyBase64 string                       `json:"projection_private_key_base64"`
-	Deployments                []DeploymentConfig           `json:"deployments"`
-	Devices                    []*cloudpb.CloudDevicePolicy `json:"devices"`
-	Assignments                []*cloudpb.HubAssignment     `json:"assignments"`
-	EnableTestPaymentProvider  bool                         `json:"enable_test_payment_provider"`
+	DatabasePath                  string                       `json:"database_path"`
+	PublicListen                  string                       `json:"public_listen"`
+	InternalControlListen         string                       `json:"internal_control_listen"`
+	OperatorListen                string                       `json:"operator_listen"`
+	CatalogPath                   string                       `json:"catalog_path"`
+	ProjectionKeyID               string                       `json:"projection_key_id"`
+	ProjectionPrivateKeyBase64    string                       `json:"projection_private_key_base64"`
+	DaemonControlKeyID            string                       `json:"daemon_control_key_id"`
+	DaemonControlPrivateKeyBase64 string                       `json:"daemon_control_private_key_base64"`
+	Deployments                   []DeploymentConfig           `json:"deployments"`
+	Devices                       []*cloudpb.CloudDevicePolicy `json:"devices"`
+	Assignments                   []*cloudpb.HubAssignment     `json:"assignments"`
+	EnableTestPaymentProvider     bool                         `json:"enable_test_payment_provider"`
 }
 
 // Manifest 是 supervisor 和 E2E harness 使用的非秘密 Controller 进程描述。
@@ -72,6 +75,9 @@ type Runtime struct {
 	publisher     *hubcontrol.Publisher
 	registry      *hubregistry.Registry
 	topology      *cloudtopology.Service
+	outbox        *commandoutbox.Service
+	planner       *commandoutbox.Planner
+	dispatcher    *commandoutbox.Dispatcher
 	manifest      Manifest
 	listeners     []net.Listener
 	servers       []*http.Server
@@ -79,6 +85,7 @@ type Runtime struct {
 	policyChanges chan string
 	policyDone    chan struct{}
 	policyWG      sync.WaitGroup
+	dispatcherWG  sync.WaitGroup
 	closeOnce     sync.Once
 }
 
@@ -103,8 +110,8 @@ func Start(config Config) (*Runtime, error) {
 }
 
 func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
-	if config.DatabasePath == "" || config.CatalogPath == "" || config.ProjectionKeyID == "" || len(config.Deployments) < 1 {
-		return nil, fmt.Errorf("Controller database, catalog, projection key and deployments are required")
+	if config.DatabasePath == "" || config.CatalogPath == "" || config.ProjectionKeyID == "" || config.DaemonControlKeyID == "" || len(config.Deployments) < 1 {
+		return nil, fmt.Errorf("Controller database, catalog, projection key, daemon control key and deployments are required")
 	}
 	if refreshInterval <= 0 || refreshInterval >= projectionTTL {
 		return nil, fmt.Errorf("Controller projection refresh interval is invalid")
@@ -114,6 +121,11 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		return nil, fmt.Errorf("invalid Controller projection private key")
 	}
 	privateKey := ed25519.PrivateKey(privateKeyBytes)
+	daemonControlKeyBytes, err := base64.RawStdEncoding.DecodeString(config.DaemonControlPrivateKeyBase64)
+	if err != nil || len(daemonControlKeyBytes) != ed25519.PrivateKeySize {
+		return nil, fmt.Errorf("invalid Controller daemon control private key")
+	}
+	daemonControlKey := ed25519.PrivateKey(daemonControlKeyBytes)
 	store, err := cloudsqlite.Open(config.DatabasePath)
 	if err != nil {
 		return nil, err
@@ -148,6 +160,18 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	}
 	now := time.Now().UTC()
 	for _, device := range config.Devices {
+		stored, loadErr := topologyService.Device(context.Background(), device.GetDeviceId())
+		if loadErr == nil {
+			if stored.AccountID != device.GetAccountId() || stored.Kind != device.GetDeviceKind() || !bytes.Equal(stored.PublicKey, device.GetPublicKey()) {
+				_ = store.Close()
+				return nil, fmt.Errorf("persisted topology device ownership %q conflicts with config", device.GetDeviceId())
+			}
+			continue
+		}
+		if !errors.Is(loadErr, cloudtopology.ErrOwnershipNotFound) {
+			_ = store.Close()
+			return nil, loadErr
+		}
 		if err := topologyService.PutDeviceOwnership(context.Background(), device); err != nil {
 			_ = store.Close()
 			return nil, fmt.Errorf("persist topology device ownership %q: %w", device.GetDeviceId(), err)
@@ -175,6 +199,27 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		}
 	}
 	publisher := hubcontrol.NewPublisher()
+	outboxService, err := commandoutbox.New(store)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	notifyPolicyChange := func(accountID string) {
+		select {
+		case policyChanges <- accountID:
+		case <-policyDone:
+		}
+	}
+	planner, err := commandoutbox.NewPlanner(outboxService, topologyService, nil, notifyPolicyChange)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	dispatcher, err := commandoutbox.NewDispatcher(outboxService, publisher, topologyService, config.DaemonControlKeyID, daemonControlKey)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	for _, deployment := range config.Deployments {
 		hubID := deployment.Metadata.GetHubId()
 		revision, err := store.AllocateProjectionRevision(context.Background(), hubID, now)
@@ -182,7 +227,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 			_ = store.Close()
 			return nil, err
 		}
-		accounts, devices, assignments, err := projectionForHub(registry, policyService, config, hubID, now)
+		accounts, devices, assignments, err := projectionForHub(registry, topologyService, policyService, hubID, now)
 		if err != nil {
 			_ = store.Close()
 			return nil, err
@@ -201,12 +246,17 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 			return nil, err
 		}
 	}
-	controlServer, err := hubcontrol.NewServer(hubcontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: publisher, Topology: topologyService, Clock: time.Now, ChallengeTTL: 30 * time.Second, EnvelopeTTL: 5 * time.Minute})
+	controlServer, err := hubcontrol.NewServer(hubcontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: publisher, Topology: topologyService, Results: outboxService, Clock: time.Now, ChallengeTTL: 30 * time.Second, EnvelopeTTL: 5 * time.Minute})
 	if err != nil {
 		_ = store.Close()
 		return nil, err
 	}
 	productHandler, err := webcontroller.ProductAPIHandler(webcontroller.ProductAPIConfig{Commerce: commerceService, EnableTestPaymentProvider: config.EnableTestPaymentProvider})
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	managementHandler, err := webcontroller.ManagementAPIHandler(webcontroller.ManagementAPIConfig{Commerce: commerceService, Planner: planner, Outbox: outboxService, Now: time.Now})
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -222,6 +272,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write(body)
 	})
+	publicMux.Handle("/api/v1/management/", managementHandler)
 	publicMux.Handle("/api/v1/", productHandler)
 	operatorMux := http.NewServeMux()
 	operatorMux.HandleFunc("/healthz", healthHandler)
@@ -243,7 +294,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	runtime := &Runtime{store: store, publisher: publisher, registry: registry, topology: topologyService, listeners: []net.Listener{publicListener, internalListener, operatorListener}, errors: make(chan error, 3), policyChanges: policyChanges, policyDone: policyDone}
+	runtime := &Runtime{store: store, publisher: publisher, registry: registry, topology: topologyService, outbox: outboxService, planner: planner, dispatcher: dispatcher, listeners: []net.Listener{publicListener, internalListener, operatorListener}, errors: make(chan error, 3), policyChanges: policyChanges, policyDone: policyDone}
 	runtime.servers = []*http.Server{{Handler: publicMux, ReadHeaderTimeout: 5 * time.Second}, {Handler: controlServer.Handler(), ReadHeaderTimeout: 5 * time.Second}, {Handler: operatorMux, ReadHeaderTimeout: 5 * time.Second}}
 	for index := range runtime.servers {
 		server, listener := runtime.servers[index], runtime.listeners[index]
@@ -255,6 +306,8 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	}
 	runtime.policyWG.Add(1)
 	go runtime.runPolicyPublisher(config, policyService, privateKey, refreshInterval)
+	runtime.dispatcherWG.Add(1)
+	go runtime.runCommandDispatcher()
 	manifest := Manifest{PID: os.Getpid(), PublicURL: origin(publicListener), InternalControlURL: origin(internalListener), OperatorURL: origin(operatorListener), DatabasePath: config.DatabasePath}
 	for _, deployment := range config.Deployments {
 		manifest.HubIDs = append(manifest.HubIDs, deployment.Metadata.GetHubId())
@@ -293,6 +346,7 @@ func (runtime *Runtime) Close(ctx context.Context) error {
 			}
 		}
 		runtime.policyWG.Wait()
+		runtime.dispatcherWG.Wait()
 		if err := runtime.store.Close(); err != nil && result == nil {
 			result = err
 		}
@@ -300,7 +354,24 @@ func (runtime *Runtime) Close(ctx context.Context) error {
 	return result
 }
 
-func projectionForHub(registry *hubregistry.Registry, policies *cloudpolicy.Service, config Config, hubID string, now time.Time) ([]*cloudpb.HubAccountPolicy, []*cloudpb.CloudDevicePolicy, []*cloudpb.HubAssignment, error) {
+func (runtime *Runtime) runCommandDispatcher() {
+	defer runtime.dispatcherWG.Done()
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		err := runtime.dispatcher.DispatchOnce(context.Background(), time.Now().UTC(), 128)
+		if err != nil && !errors.Is(err, hubcontrol.ErrPublisherBackpressure) && !errors.Is(err, commandoutbox.ErrCommandConflict) && !errors.Is(err, commandoutbox.ErrCommandNotFound) {
+			runtime.reportPolicyError(err)
+		}
+		select {
+		case <-ticker.C:
+		case <-runtime.policyDone:
+			return
+		}
+	}
+}
+
+func projectionForHub(registry *hubregistry.Registry, topology *cloudtopology.Service, policies *cloudpolicy.Service, hubID string, now time.Time) ([]*cloudpb.HubAccountPolicy, []*cloudpb.CloudDevicePolicy, []*cloudpb.HubAssignment, error) {
 	stored, err := registry.AssignmentsForHub(context.Background(), hubID, now)
 	if err != nil {
 		return nil, nil, nil, err
@@ -319,8 +390,12 @@ func projectionForHub(registry *hubregistry.Registry, policies *cloudpolicy.Serv
 		}
 		accounts = append(accounts, value)
 	}
+	storedDevices, err := topology.DevicePolicies(context.Background())
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	var devices []*cloudpb.CloudDevicePolicy
-	for _, value := range config.Devices {
+	for _, value := range storedDevices {
 		if accountsNeeded[value.GetAccountId()] {
 			devices = append(devices, value)
 		}
@@ -386,7 +461,7 @@ func (runtime *Runtime) publishHubPolicy(config Config, policies *cloudpolicy.Se
 	if err != nil {
 		return err
 	}
-	accounts, devices, assignments, err := projectionForHub(runtime.registry, policies, config, hubID, now)
+	accounts, devices, assignments, err := projectionForHub(runtime.registry, runtime.topology, policies, hubID, now)
 	if err != nil {
 		return err
 	}

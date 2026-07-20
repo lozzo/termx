@@ -3664,7 +3664,7 @@ var File_cloudpb_cloud_hub_control_proto protoreflect.FileDescriptor
 
 const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\n" +
-	"\x1fcloudpb/cloud_hub_control.proto\x12\x0etermx.cloud.v1\x1a\x1ccloudpb/cloud_topology.proto\x1a\x1dcloudpb/cloud_companion.proto\x1a\x1bcloudpb/cloud_product.proto\"\xc9\x02\n" +
+	"\x1fcloudpb/cloud_hub_control.proto\x12\x0etermx.cloud.v1\x1a\x1ccloudpb/cloud_topology.proto\x1a\x1bcloudpb/cloud_product.proto\"\xc9\x02\n" +
 	"\x16EdgeDeploymentMetadata\x12,\n" +
 	"\x12edge_deployment_id\x18\x01 \x01(\tR\x10edgeDeploymentId\x12\x16\n" +
 	"\x06region\x18\x02 \x01(\tR\x06region\x12!\n" +
@@ -4133,7 +4133,6 @@ func file_cloudpb_cloud_hub_control_proto_init() {
 		return
 	}
 	file_cloudpb_cloud_topology_proto_init()
-	file_cloudpb_cloud_companion_proto_init()
 	file_cloudpb_cloud_product_proto_init()
 	file_cloudpb_cloud_hub_control_proto_msgTypes[22].OneofWrappers = []any{
 		(*DaemonControlCommand_ManagedPeerSession)(nil),

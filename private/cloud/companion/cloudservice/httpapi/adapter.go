@@ -199,6 +199,15 @@ func (adapter *Adapter) ReportDaemonRuntime(ctx context.Context, authorization s
 	return response, nil
 }
 
+// ReportDaemonCommandResult 使用 daemon edge credential 提交独立 command execution receipt。
+func (adapter *Adapter) ReportDaemonCommandResult(ctx context.Context, authorization session.Authorization, request *cloudpb.ReportDaemonCommandResultRequest) (*cloudpb.ReportDaemonCommandResultResponse, error) {
+	response := &cloudpb.ReportDaemonCommandResultResponse{}
+	if err := adapter.postEdgeHubProto(ctx, HubReportDaemonCommandResultPath, authorization, request, response); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
 // AcquireRelayLease 通过 Hub 区域委派预算获取 caller-specific TURN material。
 func (adapter *Adapter) AcquireRelayLease(ctx context.Context, authorization session.Authorization, request *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
 	response := &cloudpb.RelayLease{}

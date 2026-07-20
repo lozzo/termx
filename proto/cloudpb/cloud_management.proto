@@ -6,7 +6,6 @@ option go_package = "github.com/lozzow/termx/proto/cloudpb";
 
 import "cloudpb/cloud_hub_control.proto";
 import "cloudpb/cloud_topology.proto";
-import "cloudpb/cloud_companion.proto";
 
 // ManagementActorKind 区分账号用户与运营角色。
 enum ManagementActorKind {

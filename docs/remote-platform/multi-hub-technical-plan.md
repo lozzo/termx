@@ -20,7 +20,9 @@
 - Hub policy、assignment、Presence 和 signaling 不落盘；Edge 重启必须重新 full sync，Relay 只恢复未确认 usage outbox。
 - Hub admission 显式消费当前 assignment epoch，projection remove/replace/expiry 只 fence 精确旧 epoch。
 - daemon 已在 auth + protocol Hello 后注册 READY ManagedPeerSession，并在完整 teardown 后注册 CLOSED；单 reporter 上报完整 runtime inventory。
-- Control Plane 已持久拥有 Hub registry、assignment、control generation、per-Hub projection head 和 topology replacement；CommandOutbox 尚未实现。
+- Control Plane 已持久拥有 Hub registry、assignment、control generation、per-Hub projection head、topology replacement 和 parent/child CommandOutbox。
+- Controller dispatcher 从 SQLite 重试未完成 child；Hub/daemon 独立 result 才推进 delivery/execution，topology 观察不能冒充执行 receipt。
+- 设备 ownership、auth epoch、revoke 与 Presence public key 已进入 SQLite authority；Controller 重启不会用静态配置覆盖已提交 revoke。
 - Controller 已持久拥有账号 verifier、单次 refresh session、versioned Subscription、Entitlement、订单、provider event journal 和交易审计。
 - Controller public listener 已暴露 Proto JSON 注册、登录、refresh、logout、改密、checkout、显式测试付款、Subscription transition 和账号交易查询；测试付款默认关闭。
 - Controller 已从持久 Account auth revision 与 Entitlement 构建 per-Hub signed policy；静态 `Config.Accounts` 已退出，账号/套餐变化按 assignment 只重发相关 Hub full projection。
@@ -698,10 +700,12 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 
 ### HUB004：CommandOutbox 与 session control
 
-- 实现 durable parent/child store、dispatcher 和 Web command query。
-- Hub 处理 KickPresence；daemon 处理 CloseManagedPeerSession。
-- client revoke 先持久 authority revoke，再按 topology fan-out。
-- 所有 target 使用 presence/session/runtime exact fence。
+- 已实现 durable parent/child store、dispatcher 和账号隔离的 Proto JSON command 创建/查询。
+- Hub 对精确 Presence 执行 Kick；daemon registry 对精确 session incarnation 调用 `CloseExact`，等待真实 owner `Done` 后独立回报结果。
+- daemon/client revoke 先在同一 SQLite 事务提交 authority；daemon 生成单 Hub Presence child，client 按当前 topology 生成跨 Hub session children。
+- daemon command 使用独立 Ed25519 key、确定性 Proto bytes、expiry、device auth epoch、Hub/assignment/Presence/runtime/session fencing；Hub 只能转发。
+- HUB004 的 daemon replay receipt 只在当前进程内保留至 command expiry；HUB005 再由 enrollment-owned `ControlReceiptStore` 提供重启后幂等和 terminal grant revoke。
+- 真实 harness 已串联 Controller Web API、HubControl HTTP、Edge Presence、daemon result 回传与 SQLite parent `APPLIED`。
 
 ### HUB005：terminal grant revoke
 
