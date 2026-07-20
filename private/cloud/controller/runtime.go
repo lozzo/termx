@@ -22,6 +22,7 @@ import (
 	"github.com/lozzow/termx/private/cloud/control-plane/hubcontrol"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
 	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
+	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
 	webcontroller "github.com/lozzow/termx/private/cloud/web-controller"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -63,6 +64,7 @@ type Runtime struct {
 	store     *cloudsqlite.Store
 	publisher *hubcontrol.Publisher
 	registry  *hubregistry.Registry
+	topology  *cloudtopology.Service
 	manifest  Manifest
 	listeners []net.Listener
 	servers   []*http.Server
@@ -100,7 +102,18 @@ func Start(config Config) (*Runtime, error) {
 		return nil, err
 	}
 	registry, _ := hubregistry.New(store)
+	topologyService, err := cloudtopology.New(registry, store)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	now := time.Now().UTC()
+	for _, device := range config.Devices {
+		if err := topologyService.PutDeviceOwnership(context.Background(), device); err != nil {
+			_ = store.Close()
+			return nil, fmt.Errorf("persist topology device ownership %q: %w", device.GetDeviceId(), err)
+		}
+	}
 	for _, deployment := range config.Deployments {
 		publicKey, decodeErr := base64.RawStdEncoding.DecodeString(deployment.HubControlPublicKeyBase64)
 		if decodeErr != nil {
@@ -149,7 +162,7 @@ func Start(config Config) (*Runtime, error) {
 			return nil, err
 		}
 	}
-	controlServer, err := hubcontrol.NewServer(hubcontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: publisher, Clock: time.Now, ChallengeTTL: 30 * time.Second, EnvelopeTTL: 5 * time.Minute})
+	controlServer, err := hubcontrol.NewServer(hubcontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: publisher, Topology: topologyService, Clock: time.Now, ChallengeTTL: 30 * time.Second, EnvelopeTTL: 5 * time.Minute})
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -190,7 +203,7 @@ func Start(config Config) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	runtime := &Runtime{store: store, publisher: publisher, registry: registry, listeners: []net.Listener{publicListener, internalListener, operatorListener}, errors: make(chan error, 3)}
+	runtime := &Runtime{store: store, publisher: publisher, registry: registry, topology: topologyService, listeners: []net.Listener{publicListener, internalListener, operatorListener}, errors: make(chan error, 3)}
 	runtime.servers = []*http.Server{{Handler: publicMux, ReadHeaderTimeout: 5 * time.Second}, {Handler: controlServer.Handler(), ReadHeaderTimeout: 5 * time.Second}, {Handler: operatorMux, ReadHeaderTimeout: 5 * time.Second}}
 	for index := range runtime.servers {
 		server, listener := runtime.servers[index], runtime.listeners[index]

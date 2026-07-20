@@ -137,7 +137,8 @@ func knownCapability(capability cloudpb.CompanionCapability) bool {
 		cloudpb.CompanionCapability_COMPANION_CAPABILITY_PATH_QUALITY,
 		cloudpb.CompanionCapability_COMPANION_CAPABILITY_SMART_ROUTE,
 		cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT,
-		cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_DIRECTORY:
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_DIRECTORY,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_DAEMON_RUNTIME:
 		return true
 	default:
 		return false
@@ -155,7 +156,8 @@ func capabilityAllowedForRole(capability cloudpb.CompanionCapability, role cloud
 			capability == cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING ||
 			capability == cloudpb.CompanionCapability_COMPANION_CAPABILITY_RELAY_LEASE ||
 			capability == cloudpb.CompanionCapability_COMPANION_CAPABILITY_PATH_QUALITY ||
-			capability == cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT
+			capability == cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT ||
+			capability == cloudpb.CompanionCapability_COMPANION_CAPABILITY_DAEMON_RUNTIME
 	default:
 		return false
 	}

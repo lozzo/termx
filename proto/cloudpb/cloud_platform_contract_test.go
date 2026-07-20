@@ -3,6 +3,7 @@ package cloudpb
 import (
 	"bytes"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 
@@ -179,6 +180,9 @@ func TestCloudPlatformDescriptorBaseline(t *testing.T) {
 		protodesc.ToFileDescriptorProto(File_cloudpb_cloud_hub_control_proto),
 		protodesc.ToFileDescriptorProto(File_cloudpb_cloud_management_proto),
 	}}
+	// protoc 按 import 拓扑输出 descriptor；schema ownership 调整后文件顺序可能变化，但契约内容不变。
+	sort.Slice(baseline.File, func(left, right int) bool { return baseline.File[left].GetName() < baseline.File[right].GetName() })
+	sort.Slice(current.File, func(left, right int) bool { return current.File[left].GetName() < current.File[right].GetName() })
 	if !proto.Equal(baseline, current) {
 		t.Fatal("cloud platform descriptor differs from testdata/cloud-platform-v1.pb")
 	}

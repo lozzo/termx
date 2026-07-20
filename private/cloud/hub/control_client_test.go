@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"net/http/httptest"
 	"path/filepath"
@@ -13,7 +14,9 @@ import (
 	"github.com/lozzow/termx/private/cloud/control-plane/hubcontrol"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
 	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
+	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
 	"github.com/lozzow/termx/proto/cloudpb"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestControlClientBootstrapsMemoryProjectionAndReportsReconciliation(t *testing.T) {
@@ -26,6 +29,7 @@ func TestControlClientBootstrapsMemoryProjectionAndReportsReconciliation(t *test
 	}
 	defer store.Close()
 	registry, _ := hubregistry.New(store)
+	topologyService, _ := cloudtopology.New(registry, store)
 	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local-1", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublicKey), RelayId: "relay-1", RelayControlIdentityFingerprint: "relay-fingerprint"}
 	if err := registry.RegisterDeployment(context.Background(), hubregistry.Deployment{Metadata: metadata, ControlPublicKey: hubPublicKey, Enabled: true, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
@@ -43,14 +47,14 @@ func TestControlClientBootstrapsMemoryProjectionAndReportsReconciliation(t *test
 	if err := publisher.PublishFull(full); err != nil {
 		t.Fatal(err)
 	}
-	controlServer, _ := hubcontrol.NewServer(hubcontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: publisher, Clock: time.Now, Random: rand.Reader, ChallengeTTL: time.Minute, EnvelopeTTL: time.Minute})
+	controlServer, _ := hubcontrol.NewServer(hubcontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: publisher, Topology: topologyService, Clock: time.Now, Random: rand.Reader, ChallengeTTL: time.Minute, EnvelopeTTL: time.Minute})
 	httpServer := httptest.NewServer(controlServer.Handler())
 	defer httpServer.Close()
 	projection, err := NewProjection(ProjectionConfig{HubID: "hub-1", ControllerKeyID: "controller-key", ControllerPublicKey: controllerPublicKey, MaxStaleness: time.Hour, PolicySink: &projectionSink{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := NewControlClient(ControlClientConfig{ControllerURL: httpServer.URL, Metadata: metadata, PrivateKey: hubPrivateKey, SoftwareVersion: "test", Projection: projection, MinBackoff: 10 * time.Millisecond, MaxBackoff: 20 * time.Millisecond})
+	client, err := NewControlClient(ControlClientConfig{ControllerURL: httpServer.URL, Metadata: metadata, PrivateKey: hubPrivateKey, SoftwareVersion: "test", Projection: projection, Topology: newStaticTopology("hub-1"), MinBackoff: 10 * time.Millisecond, MaxBackoff: 20 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +62,7 @@ func TestControlClientBootstrapsMemoryProjectionAndReportsReconciliation(t *test
 	done := make(chan error, 1)
 	go func() { done <- client.Run(ctx) }()
 	waitProjectionRevision(t, projection, 1)
-	waitCursor(t, store, 1)
+	waitCursor(t, store, 2)
 	deltaNow := time.Now().UTC()
 	deltaAssignment := &cloudpb.HubAssignment{DaemonDeviceId: "daemon-1", AccountId: "account-1", HubId: "hub-1", AssignmentEpoch: 2, NotBeforeUnixMillis: deltaNow.UnixMilli(), ExpiresAtUnixMillis: deltaNow.Add(time.Minute).UnixMilli()}
 	delta, err := hubcontrol.BuildSignedDelta(hubcontrol.DeltaProjectionInput{HubID: "hub-1", Revision: 2, PreviousRevision: 1, GeneratedAt: deltaNow, TTL: 30 * time.Minute, SigningKeyID: "controller-key", SigningKey: controllerPrivateKey, AssignmentOperations: []*cloudpb.HubAssignmentDelta{{Operation: cloudpb.ProjectionDeltaOperation_PROJECTION_DELTA_OPERATION_UPSERT, DaemonDeviceId: "daemon-1", Assignment: deltaAssignment}}, ResultingAccounts: full.GetAccounts(), ResultingDevices: full.GetDevices(), ResultingAssignments: []*cloudpb.HubAssignment{deltaAssignment}})
@@ -73,7 +77,7 @@ func TestControlClientBootstrapsMemoryProjectionAndReportsReconciliation(t *test
 		t.Fatal(err)
 	}
 	waitProjectionRevision(t, projection, 2)
-	waitCursor(t, store, 2)
+	waitCursor(t, store, 3)
 	state := client.State()
 	if !state.Attached || state.ControlGeneration != 1 || state.LastSequence != 3 {
 		t.Fatalf("control client state = %#v", state)
@@ -82,6 +86,25 @@ func TestControlClientBootstrapsMemoryProjectionAndReportsReconciliation(t *test
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run error = %v", err)
 	}
+}
+
+type staticTopology struct {
+	hubID   string
+	changes chan struct{}
+}
+
+func newStaticTopology(hubID string) *staticTopology {
+	return &staticTopology{hubID: hubID, changes: make(chan struct{})}
+}
+
+func (topology *staticTopology) TopologyChanges() <-chan struct{} { return topology.changes }
+
+func (topology *staticTopology) TopologySnapshot(generation uint64, observedAt time.Time) *cloudpb.HubTopologySnapshot {
+	snapshot := &cloudpb.HubTopologySnapshot{HubId: topology.hubID, ControlGeneration: generation, ObservedAtUnixMillis: observedAt.UnixMilli()}
+	payload, _ := proto.MarshalOptions{Deterministic: true}.Marshal(snapshot)
+	digest := sha256.Sum256(payload)
+	snapshot.TopologyDigest = digest[:]
+	return snapshot
 }
 
 func waitProjectionRevision(t *testing.T, projection *Projection, revision uint64) {

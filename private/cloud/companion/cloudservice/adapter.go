@@ -57,6 +57,8 @@ type HubAdapter interface {
 	CreateSignalingSession(context.Context, session.Authorization, *cloudpb.CreateSignalingSessionRequest) (SignalingSource, error)
 	// CompleteSignalingOffer 使用 daemon edge credential 和 active presence ownership 返回 answer。
 	CompleteSignalingOffer(context.Context, session.Authorization, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error)
+	// ReportDaemonRuntime 使用 daemon edge credential 上报当前 Presence 的完整 managed session inventory。
+	ReportDaemonRuntime(context.Context, session.Authorization, *cloudpb.ReportDaemonRuntimeRequest) (*cloudpb.ReportDaemonRuntimeResponse, error)
 	// AcquireRelayLease 使用 edge credential 和 Hub 本地区域预算取得 caller-specific TURN material。
 	AcquireRelayLease(context.Context, session.Authorization, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
 	// ResolveEndpoint 使用缓存 HubDirectory 和 edge credential 从 Hub 本地解析 target presence。

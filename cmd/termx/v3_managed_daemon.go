@@ -42,6 +42,11 @@ func startV3ManagedDaemon(ctx context.Context, core v3ManagedDaemonCore, clientA
 	if err != nil {
 		return err
 	}
+	managedRuntime, err := remotev2daemon.NewManagedRuntime(identity.DeviceID, nil)
+	if err != nil {
+		_ = companion.Close()
+		return err
+	}
 	hostname, _ := os.Hostname()
 	agent := remotev2daemon.Agent{
 		Companion: companion,
@@ -51,8 +56,9 @@ func startV3ManagedDaemon(ctx context.Context, core v3ManagedDaemonCore, clientA
 			TermxVersion: termxBuildVersion, SignalingVersions: []uint32{cloudcompanion.ProtocolVersionMax},
 		},
 		Answerer: remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
-			Core: core, Identity: identity, AccessStore: clientAccess.Store,
+			Core: core, Identity: identity, AccessStore: clientAccess.Store, ManagedRuntime: managedRuntime,
 		}},
+		Runtime: managedRuntime,
 	}
 	go func() {
 		defer companion.Close()

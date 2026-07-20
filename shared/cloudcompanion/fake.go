@@ -27,6 +27,7 @@ type FakeClient struct {
 	OpenPresenceFunc             func(context.Context, *cloudpb.OpenPresenceRequest) (PresenceStream, error)
 	CreateSignalingSessionFunc   func(context.Context, *cloudpb.CreateSignalingSessionRequest) (SignalingStream, error)
 	CompleteSignalingOfferFunc   func(context.Context, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error)
+	ReportDaemonRuntimeFunc      func(context.Context, *cloudpb.ReportDaemonRuntimeRequest) (*cloudpb.ReportDaemonRuntimeResponse, error)
 	AcquireRelayLeaseFunc        func(context.Context, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
 	PlanManagedRouteFunc         func(context.Context, *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error)
 	ReportPathQualityFunc        func(context.Context, *cloudpb.ReportPathQualityRequest) (*cloudpb.ReportPathQualityResponse, error)
@@ -54,6 +55,7 @@ type RecordedRequests struct {
 	OpenPresence             []*cloudpb.OpenPresenceRequest
 	CreateSignalingSession   []*cloudpb.CreateSignalingSessionRequest
 	CompleteSignalingOffer   []*cloudpb.CompleteSignalingOfferRequest
+	ReportDaemonRuntime      []*cloudpb.ReportDaemonRuntimeRequest
 	AcquireRelayLease        []*cloudpb.AcquireRelayLeaseRequest
 	PlanManagedRoute         []*cloudpb.PlanManagedRouteRequest
 	ReportPathQuality        []*cloudpb.ReportPathQualityRequest
@@ -224,6 +226,17 @@ func (fake *FakeClient) CompleteSignalingOffer(ctx context.Context, request *clo
 		return nil, missingFakeHandler("CompleteSignalingOffer")
 	}
 	return fake.CompleteSignalingOfferFunc(ctx, request)
+}
+
+// ReportDaemonRuntime 记录并转发 daemon 完整 runtime replacement；缺少 handler 时返回稳定 PROTOCOL 错误。
+func (fake *FakeClient) ReportDaemonRuntime(ctx context.Context, request *cloudpb.ReportDaemonRuntimeRequest) (*cloudpb.ReportDaemonRuntimeResponse, error) {
+	fake.record(func(requests *RecordedRequests) {
+		requests.ReportDaemonRuntime = append(requests.ReportDaemonRuntime, cloneMessage(request))
+	})
+	if fake == nil || fake.ReportDaemonRuntimeFunc == nil {
+		return nil, missingFakeHandler("ReportDaemonRuntime")
+	}
+	return fake.ReportDaemonRuntimeFunc(ctx, request)
 }
 
 // AcquireRelayLease 记录并转发 Relay 服务准入请求；缺少 handler 时返回稳定 PROTOCOL 错误。
@@ -419,6 +432,7 @@ func cloneRecordedRequests(source RecordedRequests) RecordedRequests {
 		OpenPresence:             cloneMessages(source.OpenPresence),
 		CreateSignalingSession:   cloneMessages(source.CreateSignalingSession),
 		CompleteSignalingOffer:   cloneMessages(source.CompleteSignalingOffer),
+		ReportDaemonRuntime:      cloneMessages(source.ReportDaemonRuntime),
 		AcquireRelayLease:        cloneMessages(source.AcquireRelayLease),
 		PlanManagedRoute:         cloneMessages(source.PlanManagedRoute),
 		ReportPathQuality:        cloneMessages(source.ReportPathQuality),

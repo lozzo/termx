@@ -35,8 +35,13 @@ type Agent struct {
 	// Metadata 是允许云设备目录看到的非秘密展示信息；不能包含 terminal inventory、capability 或本机凭据。
 	Metadata *cloudpb.DeviceMetadata
 	Answerer OfferAnswerer
+	// Runtime 是 daemon process 级 managed session owner；Presence 续约不得重建该对象。
+	Runtime *ManagedRuntime
 	// Now 只用于 deterministic harness；零值使用 UTC 当前时间。
 	Now func() time.Time
+	// RuntimeReportRetryDelay 是 runtime report 失败后的有界重试间隔；零值使用一秒。
+	// 它只供确定性 harness 缩短等待，不改变 revision、Presence 或 assignment fencing。
+	RuntimeReportRetryDelay time.Duration
 }
 
 // Run 持续消费当前 daemon presence，直到 context、stream 或 companion 明确结束。
@@ -47,6 +52,9 @@ func (agent Agent) Run(ctx context.Context) error {
 	}
 	if agent.Answerer == nil {
 		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "remote daemon offer answerer is not configured")
+	}
+	if agent.Runtime == nil {
+		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "remote daemon managed runtime is not configured")
 	}
 	if err := agent.Identity.Validate(); err != nil {
 		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "remote daemon DeviceIdentity is invalid")
@@ -63,8 +71,16 @@ func (agent Agent) Run(ctx context.Context) error {
 		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an empty presence stream")
 	}
 	defer stream.Close()
+	var stopReporter func()
+	defer func() {
+		if stopReporter != nil {
+			stopReporter()
+		}
+	}()
 
 	var presenceSessionID string
+	var controlOwnerHubID string
+	var assignmentEpoch uint64
 	var iceServers []*cloudpb.IceServer
 	for {
 		event, receiveErr := stream.Receive()
@@ -83,12 +99,41 @@ func (agent Agent) Run(ctx context.Context) error {
 			if presenceSessionID == "" {
 				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an empty presence session")
 			}
+			controlOwnerHubID = strings.TrimSpace(payload.Ready.GetHubId())
+			assignmentEpoch = payload.Ready.GetAssignmentEpoch()
+			if controlOwnerHubID == "" || assignmentEpoch == 0 {
+				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an incomplete Presence assignment")
+			}
+			observedAt := time.Now().UTC()
+			if agent.Now != nil {
+				observedAt = agent.Now().UTC()
+			}
+			if err := agent.Runtime.BindPresence(controlOwnerHubID, assignmentEpoch, presenceSessionID, observedAt); err != nil {
+				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "remote daemon could not bind managed Presence")
+			}
+			if stopReporter != nil {
+				stopReporter()
+			}
+			registry := agent.Runtime.Registry()
+			if registry == nil {
+				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "remote daemon managed registry is unavailable")
+			}
+			reporterContext, cancelReporter := context.WithCancel(ctx)
+			reporterDone := make(chan struct{})
+			go func() {
+				defer close(reporterDone)
+				agent.runRuntimeReporter(reporterContext, registry, controlOwnerHubID, assignmentEpoch, presenceSessionID)
+			}()
+			stopReporter = func() {
+				cancelReporter()
+				<-reporterDone
+			}
 			iceServers = cloneIceServers(payload.Ready.GetIceServers())
 		case *cloudpb.PresenceEvent_Offer:
 			if payload.Offer == nil || strings.TrimSpace(payload.Offer.GetSignalingSessionId()) == "" {
 				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an invalid signaling offer")
 			}
-			if presenceSessionID == "" || strings.TrimSpace(payload.Offer.GetManagedSessionId()) == "" {
+			if presenceSessionID == "" || strings.TrimSpace(payload.Offer.GetManagedSessionId()) == "" || payload.Offer.GetSessionIncarnation() == 0 || payload.Offer.GetPresenceSessionId() != presenceSessionID || payload.Offer.GetAssignmentEpoch() != assignmentEpoch || payload.Offer.GetTargetDeviceId() != agent.Identity.DeviceID {
 				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion routed an offer without an active presence or managed session")
 			}
 			if err := agent.completeOffer(ctx, payload.Offer, iceServers); err != nil {
@@ -109,6 +154,69 @@ func (agent Agent) Run(ctx context.Context) error {
 			return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "trickle ICE is not enabled for the current public answerer")
 		default:
 			return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an unknown presence event")
+		}
+	}
+}
+
+func (agent Agent) runRuntimeReporter(ctx context.Context, registry *ManagedSessionRegistry, hubID string, assignmentEpoch uint64, presenceSessionID string) {
+	retryDelay := agent.RuntimeReportRetryDelay
+	if retryDelay <= 0 {
+		retryDelay = time.Second
+	}
+	var pending *cloudpb.ReportDaemonRuntimeRequest
+	var acceptedRevision uint64
+	var hasAcceptedRevision bool
+	for {
+		if pending == nil {
+			observedAt := time.Now().UTC()
+			if agent.Now != nil {
+				observedAt = agent.Now().UTC()
+			}
+			inventory, err := registry.Inventory("runtime-report", observedAt)
+			if err != nil {
+				return
+			}
+			if hasAcceptedRevision && inventory.GetRegistryRevision() == acceptedRevision {
+				select {
+				case <-ctx.Done():
+					return
+				case <-registry.Changes():
+					continue
+				}
+			}
+			reportID := fmt.Sprintf("%s:%d", agent.Runtime.RuntimeGeneration(), inventory.GetRegistryRevision())
+			inventory.ReportId = reportID
+			pending = &cloudpb.ReportDaemonRuntimeRequest{
+				ReportId: reportID, HubId: hubID, AssignmentEpoch: assignmentEpoch,
+				PresenceSessionId: presenceSessionID, DaemonRuntimeGeneration: agent.Runtime.RuntimeGeneration(),
+				RegistryRevision: inventory.GetRegistryRevision(), PeerSessions: inventory,
+			}
+		}
+		response, reportErr := agent.Companion.ReportDaemonRuntime(ctx, pending)
+		if reportErr == nil && response != nil && response.GetReportId() == pending.GetReportId() && response.GetDaemonRuntimeGeneration() == pending.GetDaemonRuntimeGeneration() && response.GetAcceptedRegistryRevision() == pending.GetRegistryRevision() {
+			acceptedRevision = pending.GetRegistryRevision()
+			hasAcceptedRevision = true
+			pending = nil
+			select {
+			case <-ctx.Done():
+				return
+			case <-registry.Changes():
+				continue
+			}
+		}
+		timer := time.NewTimer(retryDelay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return
+		case <-registry.Changes():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			pending = nil
+		case <-timer.C:
 		}
 	}
 }

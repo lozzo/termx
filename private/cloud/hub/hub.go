@@ -7,11 +7,15 @@ package hub
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
 	"sync"
 	"time"
+
+	"github.com/lozzow/termx/proto/cloudpb"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -31,6 +35,8 @@ var (
 	ErrCapacity = errors.New("Hub signaling capacity exhausted")
 	// ErrInvalidSignal 表示 SDP、candidate 或 identity binding 非法。
 	ErrInvalidSignal = errors.New("invalid Hub signaling payload")
+	// ErrRuntimeReport 表示 daemon runtime report 与当前 Presence、assignment 或 revision 冲突。
+	ErrRuntimeReport = errors.New("invalid or stale Hub daemon runtime report")
 )
 
 // Clock 是 Hub TTL harness 使用的时间来源。
@@ -99,6 +105,23 @@ type Service struct {
 	presences          map[string]*presenceState
 	sessions           map[string]*sessionState
 	presenceChallenges map[string]edgePresenceChallengeState
+	nextIncarnation    uint64
+
+	topologyRevision uint64
+	topologyChanges  chan struct{}
+	presenceTopology map[string]*cloudpb.PresenceProjection
+	runtimeTopology  map[string]*daemonRuntimeTopology
+}
+
+type daemonRuntimeTopology struct {
+	presenceSessionID string
+	assignmentEpoch   uint64
+	runtimeGeneration string
+	registryRevision  uint64
+	digest            [sha256.Size]byte
+	superseded        map[string]struct{}
+	peerSessions      []*cloudpb.ManagedPeerSessionProjection
+	terminalAccesses  *cloudpb.TerminalAccessInventorySnapshot
 }
 
 // New 创建一个无持久状态的 regional Hub service。
@@ -129,6 +152,7 @@ func New(config Config) (*Service, error) {
 		maxSessionsPerClient: config.MaxSessionsPerClient, edgeAuthorizer: config.EdgeAuthorizer, assignmentSource: config.AssignmentSource,
 		presenceChallengeTTL: config.PresenceChallengeTTL, maxPresenceChallenges: config.MaxPresenceChallenges, random: config.Random,
 		presences: make(map[string]*presenceState), sessions: make(map[string]*sessionState), presenceChallenges: make(map[string]edgePresenceChallengeState),
+		topologyChanges: make(chan struct{}, 1), presenceTopology: make(map[string]*cloudpb.PresenceProjection), runtimeTopology: make(map[string]*daemonRuntimeTopology),
 	}, nil
 }
 
@@ -250,6 +274,7 @@ func (service *Service) closePresenceLocked(presence *presenceState) {
 		return
 	}
 	presence.closed = true
+	service.observePresenceLocked(presence, cloudpb.Availability_AVAILABILITY_OFFLINE, cloudpb.ObservationSource_OBSERVATION_SOURCE_HUB_CLOSE, service.clock.Now().UTC())
 	close(presence.done)
 	for sessionID, state := range service.sessions {
 		if state.targetDeviceID == presence.deviceID {
@@ -257,6 +282,136 @@ func (service *Service) closePresenceLocked(presence *presenceState) {
 			delete(service.sessions, sessionID)
 		}
 	}
+}
+
+// ReportDaemonRuntime 原子接受当前 Presence 的完整 daemon runtime replacement。
+// 同 runtime 只允许 revision 单调前进；被新 generation 替换的旧 generation 永远不能复活。
+func (service *Service) ReportDaemonRuntime(daemonDeviceID string, request *cloudpb.ReportDaemonRuntimeRequest) (*cloudpb.ReportDaemonRuntimeResponse, error) {
+	if service == nil || daemonDeviceID == "" || request == nil || request.GetReportId() == "" || request.GetHubId() != service.hubID || request.GetAssignmentEpoch() == 0 || request.GetPresenceSessionId() == "" || request.GetDaemonRuntimeGeneration() == "" || request.GetPeerSessions() == nil {
+		return nil, ErrRuntimeReport
+	}
+	now := service.clock.Now().UTC()
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	service.cleanupLocked(now)
+	presence := service.presences[daemonDeviceID]
+	if presence == nil || presence.closed || presence.sessionID != request.GetPresenceSessionId() || presence.assignmentEpoch != request.GetAssignmentEpoch() || !now.Before(presence.expiresAt) {
+		return nil, ErrRuntimeReport
+	}
+	peer := request.GetPeerSessions()
+	if peer.GetReportId() != request.GetReportId() || peer.GetDaemonDeviceId() != daemonDeviceID || peer.GetControlOwnerHubId() != service.hubID || peer.GetAssignmentEpoch() != presence.assignmentEpoch || peer.GetControlPresenceSessionId() != presence.sessionID || peer.GetDaemonRuntimeGeneration() != request.GetDaemonRuntimeGeneration() || peer.GetRegistryRevision() != request.GetRegistryRevision() {
+		return nil, ErrRuntimeReport
+	}
+	seenSessions := make(map[string]struct{}, len(peer.GetSessions()))
+	for _, session := range peer.GetSessions() {
+		target := session.GetTarget()
+		key := fmt.Sprintf("%s\x00%d", target.GetManagedSessionId(), target.GetSessionIncarnation())
+		_, duplicate := seenSessions[key]
+		if session == nil || target == nil || duplicate || target.GetDaemonDeviceId() != daemonDeviceID || target.GetAssignmentEpoch() != presence.assignmentEpoch || target.GetControlPresenceSessionId() != presence.sessionID || target.GetDaemonRuntimeGeneration() != request.GetDaemonRuntimeGeneration() || session.GetControlOwnerHubId() != service.hubID || target.GetManagedSessionId() == "" || target.GetSessionIncarnation() == 0 || session.GetClientDeviceId() == "" || session.GetObservedDataPath() == cloudpb.ObservedPath_OBSERVED_PATH_UNSPECIFIED || session.GetState() == cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_UNSPECIFIED || session.GetFreshness() == cloudpb.Freshness_FRESHNESS_UNSPECIFIED {
+			return nil, ErrRuntimeReport
+		}
+		seenSessions[key] = struct{}{}
+	}
+	digestBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(request)
+	if err != nil {
+		return nil, ErrRuntimeReport
+	}
+	digest := sha256.Sum256(digestBytes)
+	current := service.runtimeTopology[daemonDeviceID]
+	if current != nil && current.presenceSessionID == presence.sessionID && current.assignmentEpoch == presence.assignmentEpoch {
+		if _, stale := current.superseded[request.GetDaemonRuntimeGeneration()]; stale {
+			return nil, ErrRuntimeReport
+		}
+		if current.runtimeGeneration == request.GetDaemonRuntimeGeneration() {
+			if request.GetRegistryRevision() < current.registryRevision || request.GetRegistryRevision() == current.registryRevision && current.digest != digest {
+				return nil, ErrRuntimeReport
+			}
+			if request.GetRegistryRevision() == current.registryRevision {
+				return runtimeReportResponse(request), nil
+			}
+		} else {
+			current.superseded[current.runtimeGeneration] = struct{}{}
+		}
+	} else {
+		current = &daemonRuntimeTopology{superseded: make(map[string]struct{})}
+	}
+	current.presenceSessionID = presence.sessionID
+	current.assignmentEpoch = presence.assignmentEpoch
+	current.runtimeGeneration = request.GetDaemonRuntimeGeneration()
+	current.registryRevision = request.GetRegistryRevision()
+	current.digest = digest
+	current.peerSessions = cloneManagedPeerSessions(peer.GetSessions())
+	current.terminalAccesses = cloneTerminalAccessInventory(request.GetTerminalAccesses())
+	service.runtimeTopology[daemonDeviceID] = current
+	service.observePresenceLocked(presence, cloudpb.Availability_AVAILABILITY_ONLINE, cloudpb.ObservationSource_OBSERVATION_SOURCE_DAEMON_INVENTORY, now)
+	return runtimeReportResponse(request), nil
+}
+
+// TopologyChanges 返回 Hub 内存 topology revision 的有界通知源；通知允许合并。
+func (service *Service) TopologyChanges() <-chan struct{} {
+	if service == nil {
+		closed := make(chan struct{})
+		close(closed)
+		return closed
+	}
+	return service.topologyChanges
+}
+
+// TopologySnapshot 返回当前 Hub control generation 的完整内存拓扑快照。
+// 快照不包含 terminal identity、SDP、ICE、IP、grant body 或 DataChannel payload。
+func (service *Service) TopologySnapshot(controlGeneration uint64, observedAt time.Time) *cloudpb.HubTopologySnapshot {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	snapshot := &cloudpb.HubTopologySnapshot{HubId: service.hubID, ControlGeneration: controlGeneration, TopologyRevision: service.topologyRevision, ObservedAtUnixMillis: observedAt.UTC().UnixMilli()}
+	for _, presence := range service.presenceTopology {
+		snapshot.Presences = append(snapshot.Presences, proto.Clone(presence).(*cloudpb.PresenceProjection))
+	}
+	for _, runtime := range service.runtimeTopology {
+		snapshot.PeerSessions = append(snapshot.PeerSessions, cloneManagedPeerSessions(runtime.peerSessions)...)
+		if runtime.terminalAccesses != nil {
+			snapshot.TerminalAccessInventories = append(snapshot.TerminalAccessInventories, cloneTerminalAccessInventory(runtime.terminalAccesses))
+		}
+	}
+	sortTopologySnapshot(snapshot)
+	unsigned := proto.Clone(snapshot).(*cloudpb.HubTopologySnapshot)
+	unsigned.TopologyDigest = nil
+	payload, _ := proto.MarshalOptions{Deterministic: true}.Marshal(unsigned)
+	digest := sha256.Sum256(payload)
+	snapshot.TopologyDigest = digest[:]
+	return snapshot
+}
+
+func (service *Service) observePresenceLocked(presence *presenceState, availability cloudpb.Availability, source cloudpb.ObservationSource, observedAt time.Time) {
+	if presence == nil {
+		return
+	}
+	current := service.presenceTopology[presence.deviceID]
+	if current != nil && (current.GetAssignmentEpoch() != presence.assignmentEpoch || current.GetPresenceSessionId() != presence.sessionID) && availability == cloudpb.Availability_AVAILABILITY_OFFLINE {
+		return
+	}
+	projection := &cloudpb.PresenceProjection{DaemonDeviceId: presence.deviceID, ControlOwnerHubId: service.hubID, AssignmentEpoch: presence.assignmentEpoch, PresenceSessionId: presence.sessionID, Availability: availability, Freshness: cloudpb.Freshness_FRESHNESS_FRESH, ObservationSource: source, ObservedAtUnixMillis: observedAt.UnixMilli(), FreshUntilUnixMillis: observedAt.Add(service.maxPresenceTTL).UnixMilli()}
+	if runtime := service.runtimeTopology[presence.deviceID]; runtime != nil && runtime.presenceSessionID == presence.sessionID && runtime.assignmentEpoch == presence.assignmentEpoch {
+		projection.DaemonRuntimeGeneration = runtime.runtimeGeneration
+		projection.RegistryRevision = runtime.registryRevision
+	}
+	service.presenceTopology[presence.deviceID] = projection
+	service.topologyRevision++
+	service.notifyTopologyLocked()
+}
+
+func (service *Service) notifyTopologyLocked() {
+	select {
+	case service.topologyChanges <- struct{}{}:
+	default:
+	}
+}
+
+func runtimeReportResponse(request *cloudpb.ReportDaemonRuntimeRequest) *cloudpb.ReportDaemonRuntimeResponse {
+	response := &cloudpb.ReportDaemonRuntimeResponse{ReportId: request.GetReportId(), DaemonRuntimeGeneration: request.GetDaemonRuntimeGeneration(), AcceptedRegistryRevision: request.GetRegistryRevision()}
+	if request.GetTerminalAccesses() != nil {
+		response.AcceptedAccessProjectionRevision = request.GetTerminalAccesses().GetAccessProjectionRevision()
+	}
+	return response
 }
 
 func (service *Service) closeSessionLocked(state *sessionState, reason string) {

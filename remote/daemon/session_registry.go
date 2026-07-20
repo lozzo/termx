@@ -33,6 +33,7 @@ type ManagedSessionRegistryPort interface {
 	ReplaceControlPresence(string, string, uint64, string, time.Time) (*cloudpb.PeerSessionInventorySnapshot, error)
 	Inventory(string, time.Time) (*cloudpb.PeerSessionInventorySnapshot, error)
 	CloseExact(context.Context, *cloudpb.ManagedPeerSessionTarget, time.Time) (*cloudpb.ExactSessionCloseResult, error)
+	Changes() <-chan struct{}
 }
 
 type managedSessionKey struct {
@@ -58,6 +59,7 @@ type ManagedSessionRegistry struct {
 	revision                 uint64
 	sessions                 map[managedSessionKey]*managedSessionEntry
 	maxIncarnation           map[string]uint64
+	changes                  chan struct{}
 }
 
 var _ ManagedSessionRegistryPort = (*ManagedSessionRegistry)(nil)
@@ -76,6 +78,7 @@ func NewManagedSessionRegistry(daemonDeviceID, runtimeGeneration, controlOwnerHu
 		controlPresenceSessionID: controlPresenceSessionID,
 		sessions:                 make(map[managedSessionKey]*managedSessionEntry),
 		maxIncarnation:           make(map[string]uint64),
+		changes:                  make(chan struct{}, 1),
 	}, nil
 }
 
@@ -116,6 +119,7 @@ func (registry *ManagedSessionRegistry) Begin(projection *cloudpb.ManagedPeerSes
 	registry.sessions[key] = &managedSessionEntry{projection: owned, closer: closer}
 	registry.maxIncarnation[key.managedSessionID] = key.sessionIncarnation
 	registry.revision++
+	registry.notifyLocked()
 	return &ManagedSessionHandle{registry: registry, key: key}, registry.lifecycleEventLocked(owned, observedAt), nil
 }
 
@@ -135,6 +139,7 @@ func (handle *ManagedSessionHandle) MarkReady(observedAt time.Time) (*cloudpb.Pe
 	entry.projection.State = cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_READY
 	entry.projection.ObservedAtUnixMillis = observedAt.UnixMilli()
 	registry.revision++
+	registry.notifyLocked()
 	return registry.lifecycleEventLocked(entry.projection, observedAt), nil
 }
 
@@ -155,6 +160,7 @@ func (handle *ManagedSessionHandle) MarkClosed(reasonCode string, observedAt tim
 	entry.projection.CloseReasonCode = reasonCode
 	entry.projection.ObservedAtUnixMillis = observedAt.UnixMilli()
 	registry.revision++
+	registry.notifyLocked()
 	return registry.lifecycleEventLocked(entry.projection, observedAt), nil
 }
 
@@ -178,6 +184,7 @@ func (registry *ManagedSessionRegistry) ReplaceControlPresence(reportID, control
 			}
 		}
 		registry.revision++
+		registry.notifyLocked()
 	}
 	snapshot := registry.inventoryLocked(observedAt)
 	snapshot.ReportId = reportID
@@ -228,6 +235,7 @@ func (registry *ManagedSessionRegistry) CloseExact(ctx context.Context, target *
 		entry.projection.State = cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_CLOSING
 		entry.projection.ObservedAtUnixMillis = observedAt.UnixMilli()
 		registry.revision++
+		registry.notifyLocked()
 	}
 	closer := entry.closer
 	registry.mu.Unlock()
@@ -251,6 +259,24 @@ func (registry *ManagedSessionRegistry) CloseExact(ctx context.Context, target *
 		RegistryRevision: registry.revision,
 		ReasonCode:       entry.projection.GetCloseReasonCode(),
 	}, nil
+}
+
+// Changes 返回 registry revision 的有界通知源。
+// 通知可以合并；reporter 必须每次重新读取完整 Inventory，不能把通知次数当作 revision。
+func (registry *ManagedSessionRegistry) Changes() <-chan struct{} {
+	if registry == nil {
+		closed := make(chan struct{})
+		close(closed)
+		return closed
+	}
+	return registry.changes
+}
+
+func (registry *ManagedSessionRegistry) notifyLocked() {
+	select {
+	case registry.changes <- struct{}{}:
+	default:
+	}
 }
 
 func (registry *ManagedSessionRegistry) lifecycleEventLocked(projection *cloudpb.ManagedPeerSessionProjection, observedAt time.Time) *cloudpb.PeerSessionLifecycleEvent {

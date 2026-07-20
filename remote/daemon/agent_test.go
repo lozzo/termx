@@ -18,13 +18,10 @@ import (
 
 func TestAgentAnswersOfferWithoutPublishingTerminalInventory(t *testing.T) {
 	stream := cloudcompanion.NewFakePresenceStream(3)
-	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{
-		PresenceSessionId: "presence-1",
-		IceServers:        []*cloudpb.IceServer{{Urls: []string{"stun:example.test"}}},
-	}}})
-	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{
-		SignalingSessionId: "signal-1", ManagedSessionId: "managed-1", Sdp: "offer-sdp",
-	}}})
+	ready := managedReady("presence-1")
+	ready.IceServers = []*cloudpb.IceServer{{Urls: []string{"stun:example.test"}}}
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: ready}})
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: managedOffer("device-1", "presence-1", "signal-1", "managed-1", 1)}})
 	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: "device revoked"}}})
 
 	answerer := &fakeOfferAnswerer{answer: &cloudpb.SignalingAnswer{Sdp: "answer-sdp"}}
@@ -34,7 +31,7 @@ func TestAgentAnswersOfferWithoutPublishingTerminalInventory(t *testing.T) {
 	companion.CompleteSignalingOfferFunc = func(context.Context, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error) {
 		return &cloudpb.CompleteSignalingOfferResponse{}, nil
 	}
-	agent := Agent{Companion: companion, Identity: identity, Metadata: &cloudpb.DeviceMetadata{DisplayName: "Lab"}, Answerer: answerer, Now: func() time.Time { return now }}
+	agent := Agent{Companion: companion, Identity: identity, Metadata: &cloudpb.DeviceMetadata{DisplayName: "Lab"}, Answerer: answerer, Runtime: newTestManagedRuntime(t, identity.DeviceID), Now: func() time.Time { return now }}
 	if err := agent.Run(context.Background()); !errors.Is(err, ErrPresenceClosed) {
 		t.Fatalf("Run error = %v, want ErrPresenceClosed", err)
 	}
@@ -53,11 +50,10 @@ func TestAgentAnswersOfferWithoutPublishingTerminalInventory(t *testing.T) {
 
 func TestAgentAcquiresDaemonCredentialForRelayOnlyOffer(t *testing.T) {
 	stream := cloudcompanion.NewFakePresenceStream(3)
-	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{PresenceSessionId: "presence-1"}}})
-	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{
-		SignalingSessionId: "signal-relay", ManagedSessionId: "managed-relay", TargetDeviceId: "device-relay", Sdp: "offer-sdp",
-		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY, RelayOnly: true,
-	}}})
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: managedReady("presence-1")}})
+	relayOffer := managedOffer("device-relay", "presence-1", "signal-relay", "managed-relay", 1)
+	relayOffer.RoutePreference, relayOffer.RelayOnly = cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY, true
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: relayOffer}})
 	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: "done"}}})
 
 	identity := testAgentIdentity(t, "device-relay")
@@ -74,7 +70,7 @@ func TestAgentAcquiresDaemonCredentialForRelayOnlyOffer(t *testing.T) {
 		return &cloudpb.CompleteSignalingOfferResponse{}, nil
 	}
 	answerer := &fakeOfferAnswerer{answer: &cloudpb.SignalingAnswer{Sdp: "answer-sdp"}}
-	if err := (Agent{Companion: companion, Identity: identity, Answerer: answerer, Now: func() time.Time { return now }}).Run(context.Background()); !errors.Is(err, ErrPresenceClosed) {
+	if err := (Agent{Companion: companion, Identity: identity, Answerer: answerer, Runtime: newTestManagedRuntime(t, identity.DeviceID), Now: func() time.Time { return now }}).Run(context.Background()); !errors.Is(err, ErrPresenceClosed) {
 		t.Fatalf("Run error = %v", err)
 	}
 	requests := companion.Requests().AcquireRelayLease
@@ -94,7 +90,7 @@ func TestAgentSignsFreshPresenceChallengeInsideDaemon(t *testing.T) {
 	identity := testAgentIdentity(t, "device-proof")
 	now := time.Date(2026, 7, 11, 12, 30, 0, 0, time.UTC)
 	companion := agentCompanion(t, identity, now, stream)
-	agent := Agent{Companion: companion, Identity: identity, Metadata: &cloudpb.DeviceMetadata{DisplayName: "Proof daemon"}, Answerer: &fakeOfferAnswerer{}, Now: func() time.Time { return now }}
+	agent := Agent{Companion: companion, Identity: identity, Metadata: &cloudpb.DeviceMetadata{DisplayName: "Proof daemon"}, Answerer: &fakeOfferAnswerer{}, Runtime: newTestManagedRuntime(t, identity.DeviceID), Now: func() time.Time { return now }}
 	if err := agent.Run(context.Background()); !errors.Is(err, io.EOF) {
 		t.Fatalf("Run error = %v, want stream EOF", err)
 	}
@@ -142,7 +138,7 @@ func TestAgentRunContinuouslyRenewsFreshPresenceAfterStreamEOF(t *testing.T) {
 			return second, nil
 		},
 	}
-	agent := Agent{Companion: companion, Identity: identity, Answerer: &fakeOfferAnswerer{}, Now: func() time.Time { return now }}
+	agent := Agent{Companion: companion, Identity: identity, Answerer: &fakeOfferAnswerer{}, Runtime: newTestManagedRuntime(t, identity.DeviceID), Now: func() time.Time { return now }}
 	err := agent.RunContinuously(context.Background(), time.Millisecond)
 	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL) {
 		t.Fatalf("RunContinuously error = %v, want terminal PROTOCOL error", err)
@@ -162,7 +158,7 @@ func TestAgentRunContinuouslyDoesNotRenewExplicitPresenceClose(t *testing.T) {
 	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: "device revoked"}}})
 	identity := testAgentIdentity(t, "device-revoked")
 	companion := agentCompanion(t, identity, time.Now().UTC(), stream)
-	err := (Agent{Companion: companion, Identity: identity, Answerer: &fakeOfferAnswerer{}}).RunContinuously(context.Background(), time.Millisecond)
+	err := (Agent{Companion: companion, Identity: identity, Answerer: &fakeOfferAnswerer{}, Runtime: newTestManagedRuntime(t, identity.DeviceID)}).RunContinuously(context.Background(), time.Millisecond)
 	if !errors.Is(err, ErrPresenceClosed) {
 		t.Fatalf("RunContinuously error = %v, want explicit close", err)
 	}
@@ -188,12 +184,8 @@ func agentCompanion(t *testing.T, identity remoteauth.Identity, now time.Time, s
 
 func TestAgentReturnsOfferFailureWithoutEndingPresence(t *testing.T) {
 	stream := cloudcompanion.NewFakePresenceStream(3)
-	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{
-		PresenceSessionId: "presence-1",
-	}}})
-	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{
-		SignalingSessionId: "signal-1", ManagedSessionId: "managed-1", Sdp: "offer-sdp",
-	}}})
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: managedReady("presence-1")}})
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: managedOffer("device-1", "presence-1", "signal-1", "managed-1", 1)}})
 	if err := stream.Fail(io.EOF); err != nil {
 		t.Fatalf("queue stream EOF: %v", err)
 	}
@@ -206,6 +198,7 @@ func TestAgentReturnsOfferFailureWithoutEndingPresence(t *testing.T) {
 		Companion: companion,
 		Identity:  identity,
 		Answerer:  &fakeOfferAnswerer{err: errors.New("webrtc negotiation failed")},
+		Runtime:   newTestManagedRuntime(t, identity.DeviceID),
 	}
 	if err := agent.Run(context.Background()); !errors.Is(err, io.EOF) {
 		t.Fatalf("Run error = %v, want stream EOF after offer failure", err)
@@ -231,15 +224,9 @@ func TestAgentRequiresCompanionAndAnswerer(t *testing.T) {
 
 func TestAgentAcceptsIndependentManagedSessionsOnOnePresence(t *testing.T) {
 	stream := cloudcompanion.NewFakePresenceStream(4)
-	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{
-		PresenceSessionId: "presence-1",
-	}}})
-	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{
-		SignalingSessionId: "signal-1", ManagedSessionId: "managed-1", Sdp: "offer-sdp",
-	}}})
-	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{
-		SignalingSessionId: "signal-2", ManagedSessionId: "managed-2", Sdp: "offer-sdp",
-	}}})
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: managedReady("presence-1")}})
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: managedOffer("device-1", "presence-1", "signal-1", "managed-1", 1)}})
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: managedOffer("device-1", "presence-1", "signal-2", "managed-2", 2)}})
 	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: "done"}}})
 	answerer := &fakeOfferAnswerer{answer: &cloudpb.SignalingAnswer{Sdp: "answer-sdp"}}
 	identity := testAgentIdentity(t, "device-1")
@@ -247,7 +234,7 @@ func TestAgentAcceptsIndependentManagedSessionsOnOnePresence(t *testing.T) {
 	companion.CompleteSignalingOfferFunc = func(context.Context, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error) {
 		return &cloudpb.CompleteSignalingOfferResponse{}, nil
 	}
-	err := (Agent{Companion: companion, Identity: identity, Answerer: answerer}).Run(context.Background())
+	err := (Agent{Companion: companion, Identity: identity, Answerer: answerer, Runtime: newTestManagedRuntime(t, identity.DeviceID)}).Run(context.Background())
 	if !errors.Is(err, ErrPresenceClosed) {
 		t.Fatalf("Run error = %v, want presence close", err)
 	}
@@ -274,6 +261,23 @@ func mustPushPresence(t *testing.T, stream *cloudcompanion.FakePresenceStream, e
 	if err := stream.Push(event); err != nil {
 		t.Fatalf("Push presence event: %v", err)
 	}
+}
+
+func managedReady(presenceSessionID string) *cloudpb.PresenceReady {
+	return &cloudpb.PresenceReady{PresenceSessionId: presenceSessionID, HubId: "hub-1", AssignmentEpoch: 7}
+}
+
+func managedOffer(deviceID, presenceSessionID, signalingSessionID, managedSessionID string, incarnation uint64) *cloudpb.SignalingOffer {
+	return &cloudpb.SignalingOffer{SignalingSessionId: signalingSessionID, ManagedSessionId: managedSessionID, TargetDeviceId: deviceID, Sdp: "offer-sdp", SessionIncarnation: incarnation, PresenceSessionId: presenceSessionID, AssignmentEpoch: 7}
+}
+
+func newTestManagedRuntime(t *testing.T, deviceID string) *ManagedRuntime {
+	t.Helper()
+	runtime, err := NewManagedRuntime(deviceID, bytes.NewReader(bytes.Repeat([]byte{0x33}, 18)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return runtime
 }
 
 type fakeOfferAnswerer struct {

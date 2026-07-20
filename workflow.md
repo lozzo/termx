@@ -8,7 +8,8 @@
 - `HUB001` 已完成 Edge/Hub/Relay control、topology、management Proto，双 TypeScript consumer、descriptor/compatibility 门禁和 daemon ManagedPeerSession registry 纯模型。
 - `CLOUDP001` 已完成 PlanCapability、versioned Subscription、Entitlement 与 Hub policy 的统一能力模型；catalog 不再按套餐名分支，devcloud 不再按有效期猜 Relay 配额。
 - `HUB002` 已完成 Controller/Edge 双 composition、一个 Controller + 两个 Edge 独立进程、真实 Proto Hub control、strict assignment epoch fencing、纯内存 full/delta/reconciliation、Hub public signaling、无 snapshot 重启和 Relay usage outbox 恢复。
-- 当前最早未完成切片是 `HUB003`：daemon ManagedPeerSession 与 topology。
+- `HUB003` 已完成 daemon auth + protocol Hello 后 READY、完整 peer teardown 后 CLOSED、单 reporter full inventory、Hub 内存 topology、Controller assignment/ownership 校验与 SQLite replacement，并删除 Web 在线状态直写。
+- 当前最早未完成切片是 `CLOUDP002`：账号、Subscription 与交易。
 - 多 Hub 基础和产品能力存在交叉依赖，必须按本文件交错推进，不能先写完所有 Hub 再补套餐，也不能继续在单进程 devcloud 上堆硬编码。
 - development 必须走完整账号、交易、Subscription、Entitlement、managed P2P/Relay、周期 quota、usage、topology 和管理链路；外部 provider 可以使用显式测试实现。
 - Web/WASM terminal 产品、iOS/Desktop GUI、多区域数据库、Relay Mesh、真实支付 provider 和复杂计费平台继续延后。
@@ -60,7 +61,7 @@ termx-cloud-edge × N
 | HUB001 | 已完成 | Proto 与 daemon registry contract | Edge deployment metadata、独立 Hub/Relay identity/control generation、HubAssignment、per-Hub revision、Presence availability/freshness、PeerSession/access inventory、parent/child CommandOutbox/result、Web/Operator API 全部 proto-first；daemon registry port/harness 证明 revision、READY/CLOSED、Presence replacement 和精确 close |
 | CLOUDP001 | 已完成 | PlanCapability 与 Entitlement | `cloud_product.proto` 定义 versioned catalog/Subscription/Entitlement 与统一 PlanCapability；catalog、commerce、Control Plane normalization、signed Hub policy 共用 generated capability；删除 plan/有效期 quota 推断；P2P-only、P2P+Relay、suspended fixture 与 generated/private/race/Web 门禁通过 |
 | HUB002 | 已完成 | Controller/Edge composition、assignment 与纯内存 Hub 同步 | 两个 composition root、一个 Controller + 两个 Edge 独立进程、Hub identity/generation、assignment epoch admission/fencing、full/delta/reconciliation、Hub public signaling、无 snapshot 重启与 Relay-only usage outbox 恢复均有真实 socket/process harness；generated、public/private、race、Web 与 layout 门禁通过 |
-| HUB003 | 待开始 | daemon ManagedPeerSession 与 topology | Hello 后 READY、完整关闭后 CLOSED；统一 registry revision、上行 runtime report、inventory replacement、Hub topology snapshot、CP 账号/epoch校验和 unknown/stale projection |
+| HUB003 | 已完成 | daemon ManagedPeerSession 与 topology | Hello 后 READY、完整关闭后 CLOSED；统一 registry revision、上行 runtime report、inventory replacement、Hub topology snapshot、CP 账号/epoch校验和 unknown/stale projection；generated/public/private/race/Web/layout 与双 Edge process harness 通过 |
 | CLOUDP002 | 待开始 | 账号、Subscription 与交易 | 注册/登录/session/refresh、订单、测试 payment event、状态转换、续费/取消/升级降级和持久审计；测试 provider 不直接写 Entitlement |
 | CLOUDP003 | 待开始 | managed P2P 准入与并发 | Entitlement -> signed per-Hub policy；P2P enabled、ownership、revoke、auth epoch、assignment 和 concurrency reservation 由 Hub 内存执行 |
 | HUB004 | 待开始 | CommandOutbox 与运行时控制 | authority/delivery/execution/effect 分离；KickPresence、daemon revoke 单 Hub、client revoke 跨 Hub child fan-out、CloseManagedPeerSession；精确 fencing、parent 聚合和独立 daemon ack |

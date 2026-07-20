@@ -425,6 +425,28 @@ func (connection *Connection) CompleteSignalingOffer(ctx context.Context, reques
 	return cloneMessage(response), nil
 }
 
+// ReportDaemonRuntime 转发当前 daemon Presence 的完整 runtime replacement。
+// Companion 只校验 envelope 与当前 device session 绑定，不解释 session capability 或 terminal 内容。
+func (connection *Connection) ReportDaemonRuntime(ctx context.Context, request *cloudpb.ReportDaemonRuntimeRequest) (*cloudpb.ReportDaemonRuntimeResponse, error) {
+	authorization, err := connection.authorize(ctx, cloudpb.CompanionCapability_COMPANION_CAPABILITY_DAEMON_RUNTIME, cloudpb.CallerRole_CALLER_ROLE_DAEMON)
+	if err != nil {
+		return nil, err
+	}
+	defer authorization.Destroy()
+	metadata := authorization.Metadata()
+	if err := validateDaemonRuntimeRequest(request, metadata.DeviceID, metadata.HubID); err != nil {
+		return nil, err
+	}
+	response, err := connection.service.hub.ReportDaemonRuntime(ctx, authorization, cloneMessage(request))
+	if err != nil {
+		return nil, sanitizeAdapterError(err)
+	}
+	if err := validateDaemonRuntimeResponse(request, response); err != nil {
+		return nil, err
+	}
+	return cloneMessage(response), nil
+}
+
 // AcquireRelayLease 获取 entitlement-bound 短期 Relay lease 和 route metadata。
 // signed lease 只用于公开 WebRTC ICE/TURN 建连，不能替代 daemon capability。
 func (connection *Connection) AcquireRelayLease(ctx context.Context, request *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {

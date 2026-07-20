@@ -145,6 +145,10 @@ func (service *Service) registerPresence(ctx context.Context, accountID, deviceI
 		return nil, ErrCapacity
 	}
 	service.presences[deviceID] = state
+	if runtime := service.runtimeTopology[deviceID]; runtime != nil && (runtime.presenceSessionID != presenceSessionID || runtime.assignmentEpoch != assignmentEpoch) {
+		delete(service.runtimeTopology, deviceID)
+	}
+	service.observePresenceLocked(state, cloudpb.Availability_AVAILABILITY_ONLINE, cloudpb.ObservationSource_OBSERVATION_SOURCE_HUB_OPEN, now)
 	service.mu.Unlock()
 	go func() {
 		timer := time.NewTimer(max(expiresAt.Sub(now), 0))

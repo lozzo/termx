@@ -142,7 +142,7 @@ func Start(config Config) (*Runtime, error) {
 		projection.Close()
 		return nil, err
 	}
-	controlClient, err := cloudhub.NewControlClient(cloudhub.ControlClientConfig{ControllerURL: config.ControllerURL, Metadata: config.Metadata, PrivateKey: ed25519.PrivateKey(hubPrivateBytes), SoftwareVersion: "development", Projection: projection})
+	controlClient, err := cloudhub.NewControlClient(cloudhub.ControlClientConfig{ControllerURL: config.ControllerURL, Metadata: config.Metadata, PrivateKey: ed25519.PrivateKey(hubPrivateBytes), SoftwareVersion: "development", Projection: projection, Topology: hubService})
 	if err != nil {
 		_ = hubListener.Close()
 		_ = healthListener.Close()

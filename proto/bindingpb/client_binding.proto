@@ -5,6 +5,7 @@ package termx.client.binding.v1;
 import "apipb/application.proto";
 import "apipb/common.proto";
 import "cloudpb/cloud_companion.proto";
+import "cloudpb/cloud_topology.proto";
 import "remoteauthpb/remote_auth.proto";
 
 option go_package = "github.com/lozzow/termx/proto/bindingpb";

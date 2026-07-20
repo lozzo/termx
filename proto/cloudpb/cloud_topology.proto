@@ -4,7 +4,14 @@ package termx.cloud.v1;
 
 option go_package = "github.com/lozzow/termx/proto/cloudpb";
 
-import "cloudpb/cloud_companion.proto";
+
+// ObservedPath 是一次 WebRTC transport 实际采用的网络路径。
+enum ObservedPath {
+  OBSERVED_PATH_UNSPECIFIED = 0;
+  OBSERVED_PATH_DIRECT = 1;
+  OBSERVED_PATH_SINGLE_RELAY = 2;
+  OBSERVED_PATH_RELAY_MESH = 3;
+}
 
 // Availability 表示最后一次经过验证的在线证据，不能由超时直接推导 OFFLINE。
 enum Availability {
@@ -165,6 +172,26 @@ message HubTopologySnapshot {
   repeated PresenceProjection presences = 6;
   repeated ManagedPeerSessionProjection peer_sessions = 7;
   repeated TerminalAccessInventorySnapshot terminal_access_inventories = 8;
+}
+
+// ReportDaemonRuntimeRequest 是 daemon Presence 上行的完整 runtime replacement。
+message ReportDaemonRuntimeRequest {
+  string report_id = 1;
+  string hub_id = 2;
+  uint64 assignment_epoch = 3;
+  string presence_session_id = 4;
+  string daemon_runtime_generation = 5;
+  uint64 registry_revision = 6;
+  PeerSessionInventorySnapshot peer_sessions = 7;
+  TerminalAccessInventorySnapshot terminal_accesses = 8;
+}
+
+// ReportDaemonRuntimeResponse 只确认已接收的精确 runtime revision。
+message ReportDaemonRuntimeResponse {
+  string report_id = 1;
+  string daemon_runtime_generation = 2;
+  uint64 accepted_registry_revision = 3;
+  uint64 accepted_access_projection_revision = 4;
 }
 
 // ExactSessionCloseResult 是 registry 对精确 close target 的线性化结果。

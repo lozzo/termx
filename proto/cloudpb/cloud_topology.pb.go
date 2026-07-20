@@ -21,6 +21,59 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// ObservedPath 是一次 WebRTC transport 实际采用的网络路径。
+type ObservedPath int32
+
+const (
+	ObservedPath_OBSERVED_PATH_UNSPECIFIED  ObservedPath = 0
+	ObservedPath_OBSERVED_PATH_DIRECT       ObservedPath = 1
+	ObservedPath_OBSERVED_PATH_SINGLE_RELAY ObservedPath = 2
+	ObservedPath_OBSERVED_PATH_RELAY_MESH   ObservedPath = 3
+)
+
+// Enum value maps for ObservedPath.
+var (
+	ObservedPath_name = map[int32]string{
+		0: "OBSERVED_PATH_UNSPECIFIED",
+		1: "OBSERVED_PATH_DIRECT",
+		2: "OBSERVED_PATH_SINGLE_RELAY",
+		3: "OBSERVED_PATH_RELAY_MESH",
+	}
+	ObservedPath_value = map[string]int32{
+		"OBSERVED_PATH_UNSPECIFIED":  0,
+		"OBSERVED_PATH_DIRECT":       1,
+		"OBSERVED_PATH_SINGLE_RELAY": 2,
+		"OBSERVED_PATH_RELAY_MESH":   3,
+	}
+)
+
+func (x ObservedPath) Enum() *ObservedPath {
+	p := new(ObservedPath)
+	*p = x
+	return p
+}
+
+func (x ObservedPath) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ObservedPath) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloudpb_cloud_topology_proto_enumTypes[0].Descriptor()
+}
+
+func (ObservedPath) Type() protoreflect.EnumType {
+	return &file_cloudpb_cloud_topology_proto_enumTypes[0]
+}
+
+func (x ObservedPath) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ObservedPath.Descriptor instead.
+func (ObservedPath) EnumDescriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{0}
+}
+
 // Availability 表示最后一次经过验证的在线证据，不能由超时直接推导 OFFLINE。
 type Availability int32
 
@@ -58,11 +111,11 @@ func (x Availability) String() string {
 }
 
 func (Availability) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_topology_proto_enumTypes[0].Descriptor()
+	return file_cloudpb_cloud_topology_proto_enumTypes[1].Descriptor()
 }
 
 func (Availability) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_topology_proto_enumTypes[0]
+	return &file_cloudpb_cloud_topology_proto_enumTypes[1]
 }
 
 func (x Availability) Number() protoreflect.EnumNumber {
@@ -71,7 +124,7 @@ func (x Availability) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Availability.Descriptor instead.
 func (Availability) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{0}
+	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{1}
 }
 
 // Freshness 表示投影是否仍处于有效观察窗口。
@@ -108,11 +161,11 @@ func (x Freshness) String() string {
 }
 
 func (Freshness) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_topology_proto_enumTypes[1].Descriptor()
+	return file_cloudpb_cloud_topology_proto_enumTypes[2].Descriptor()
 }
 
 func (Freshness) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_topology_proto_enumTypes[1]
+	return &file_cloudpb_cloud_topology_proto_enumTypes[2]
 }
 
 func (x Freshness) Number() protoreflect.EnumNumber {
@@ -121,7 +174,7 @@ func (x Freshness) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Freshness.Descriptor instead.
 func (Freshness) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{1}
+	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{2}
 }
 
 // ObservationSource 标识状态证据来源，不授予任何 terminal capability。
@@ -170,11 +223,11 @@ func (x ObservationSource) String() string {
 }
 
 func (ObservationSource) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_topology_proto_enumTypes[2].Descriptor()
+	return file_cloudpb_cloud_topology_proto_enumTypes[3].Descriptor()
 }
 
 func (ObservationSource) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_topology_proto_enumTypes[2]
+	return &file_cloudpb_cloud_topology_proto_enumTypes[3]
 }
 
 func (x ObservationSource) Number() protoreflect.EnumNumber {
@@ -183,7 +236,7 @@ func (x ObservationSource) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ObservationSource.Descriptor instead.
 func (ObservationSource) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{2}
+	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{3}
 }
 
 // ManagedPeerSessionState 是 daemon-owned managed WebRTC session 的脱敏投影状态。
@@ -232,11 +285,11 @@ func (x ManagedPeerSessionState) String() string {
 }
 
 func (ManagedPeerSessionState) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_topology_proto_enumTypes[3].Descriptor()
+	return file_cloudpb_cloud_topology_proto_enumTypes[4].Descriptor()
 }
 
 func (ManagedPeerSessionState) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_topology_proto_enumTypes[3]
+	return &file_cloudpb_cloud_topology_proto_enumTypes[4]
 }
 
 func (x ManagedPeerSessionState) Number() protoreflect.EnumNumber {
@@ -245,7 +298,7 @@ func (x ManagedPeerSessionState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ManagedPeerSessionState.Descriptor instead.
 func (ManagedPeerSessionState) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{3}
+	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{4}
 }
 
 // TerminalAccessState 是 daemon AccessStore 提供的最小 deny-only 管理投影状态。
@@ -285,11 +338,11 @@ func (x TerminalAccessState) String() string {
 }
 
 func (TerminalAccessState) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_topology_proto_enumTypes[4].Descriptor()
+	return file_cloudpb_cloud_topology_proto_enumTypes[5].Descriptor()
 }
 
 func (TerminalAccessState) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_topology_proto_enumTypes[4]
+	return &file_cloudpb_cloud_topology_proto_enumTypes[5]
 }
 
 func (x TerminalAccessState) Number() protoreflect.EnumNumber {
@@ -298,7 +351,7 @@ func (x TerminalAccessState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TerminalAccessState.Descriptor instead.
 func (TerminalAccessState) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{4}
+	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{5}
 }
 
 // ExactSessionCloseDisposition 描述精确 session fencing 的关闭请求结果。
@@ -341,11 +394,11 @@ func (x ExactSessionCloseDisposition) String() string {
 }
 
 func (ExactSessionCloseDisposition) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_topology_proto_enumTypes[5].Descriptor()
+	return file_cloudpb_cloud_topology_proto_enumTypes[6].Descriptor()
 }
 
 func (ExactSessionCloseDisposition) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_topology_proto_enumTypes[5]
+	return &file_cloudpb_cloud_topology_proto_enumTypes[6]
 }
 
 func (x ExactSessionCloseDisposition) Number() protoreflect.EnumNumber {
@@ -354,7 +407,7 @@ func (x ExactSessionCloseDisposition) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ExactSessionCloseDisposition.Descriptor instead.
 func (ExactSessionCloseDisposition) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{5}
+	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{6}
 }
 
 // PresenceProjection 是 Control Plane 可展示的 daemon Presence 投影。
@@ -1253,6 +1306,176 @@ func (x *HubTopologySnapshot) GetTerminalAccessInventories() []*TerminalAccessIn
 	return nil
 }
 
+// ReportDaemonRuntimeRequest 是 daemon Presence 上行的完整 runtime replacement。
+type ReportDaemonRuntimeRequest struct {
+	state                   protoimpl.MessageState           `protogen:"open.v1"`
+	ReportId                string                           `protobuf:"bytes,1,opt,name=report_id,json=reportId,proto3" json:"report_id,omitempty"`
+	HubId                   string                           `protobuf:"bytes,2,opt,name=hub_id,json=hubId,proto3" json:"hub_id,omitempty"`
+	AssignmentEpoch         uint64                           `protobuf:"varint,3,opt,name=assignment_epoch,json=assignmentEpoch,proto3" json:"assignment_epoch,omitempty"`
+	PresenceSessionId       string                           `protobuf:"bytes,4,opt,name=presence_session_id,json=presenceSessionId,proto3" json:"presence_session_id,omitempty"`
+	DaemonRuntimeGeneration string                           `protobuf:"bytes,5,opt,name=daemon_runtime_generation,json=daemonRuntimeGeneration,proto3" json:"daemon_runtime_generation,omitempty"`
+	RegistryRevision        uint64                           `protobuf:"varint,6,opt,name=registry_revision,json=registryRevision,proto3" json:"registry_revision,omitempty"`
+	PeerSessions            *PeerSessionInventorySnapshot    `protobuf:"bytes,7,opt,name=peer_sessions,json=peerSessions,proto3" json:"peer_sessions,omitempty"`
+	TerminalAccesses        *TerminalAccessInventorySnapshot `protobuf:"bytes,8,opt,name=terminal_accesses,json=terminalAccesses,proto3" json:"terminal_accesses,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *ReportDaemonRuntimeRequest) Reset() {
+	*x = ReportDaemonRuntimeRequest{}
+	mi := &file_cloudpb_cloud_topology_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportDaemonRuntimeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportDaemonRuntimeRequest) ProtoMessage() {}
+
+func (x *ReportDaemonRuntimeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_topology_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportDaemonRuntimeRequest.ProtoReflect.Descriptor instead.
+func (*ReportDaemonRuntimeRequest) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ReportDaemonRuntimeRequest) GetReportId() string {
+	if x != nil {
+		return x.ReportId
+	}
+	return ""
+}
+
+func (x *ReportDaemonRuntimeRequest) GetHubId() string {
+	if x != nil {
+		return x.HubId
+	}
+	return ""
+}
+
+func (x *ReportDaemonRuntimeRequest) GetAssignmentEpoch() uint64 {
+	if x != nil {
+		return x.AssignmentEpoch
+	}
+	return 0
+}
+
+func (x *ReportDaemonRuntimeRequest) GetPresenceSessionId() string {
+	if x != nil {
+		return x.PresenceSessionId
+	}
+	return ""
+}
+
+func (x *ReportDaemonRuntimeRequest) GetDaemonRuntimeGeneration() string {
+	if x != nil {
+		return x.DaemonRuntimeGeneration
+	}
+	return ""
+}
+
+func (x *ReportDaemonRuntimeRequest) GetRegistryRevision() uint64 {
+	if x != nil {
+		return x.RegistryRevision
+	}
+	return 0
+}
+
+func (x *ReportDaemonRuntimeRequest) GetPeerSessions() *PeerSessionInventorySnapshot {
+	if x != nil {
+		return x.PeerSessions
+	}
+	return nil
+}
+
+func (x *ReportDaemonRuntimeRequest) GetTerminalAccesses() *TerminalAccessInventorySnapshot {
+	if x != nil {
+		return x.TerminalAccesses
+	}
+	return nil
+}
+
+// ReportDaemonRuntimeResponse 只确认已接收的精确 runtime revision。
+type ReportDaemonRuntimeResponse struct {
+	state                            protoimpl.MessageState `protogen:"open.v1"`
+	ReportId                         string                 `protobuf:"bytes,1,opt,name=report_id,json=reportId,proto3" json:"report_id,omitempty"`
+	DaemonRuntimeGeneration          string                 `protobuf:"bytes,2,opt,name=daemon_runtime_generation,json=daemonRuntimeGeneration,proto3" json:"daemon_runtime_generation,omitempty"`
+	AcceptedRegistryRevision         uint64                 `protobuf:"varint,3,opt,name=accepted_registry_revision,json=acceptedRegistryRevision,proto3" json:"accepted_registry_revision,omitempty"`
+	AcceptedAccessProjectionRevision uint64                 `protobuf:"varint,4,opt,name=accepted_access_projection_revision,json=acceptedAccessProjectionRevision,proto3" json:"accepted_access_projection_revision,omitempty"`
+	unknownFields                    protoimpl.UnknownFields
+	sizeCache                        protoimpl.SizeCache
+}
+
+func (x *ReportDaemonRuntimeResponse) Reset() {
+	*x = ReportDaemonRuntimeResponse{}
+	mi := &file_cloudpb_cloud_topology_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportDaemonRuntimeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportDaemonRuntimeResponse) ProtoMessage() {}
+
+func (x *ReportDaemonRuntimeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_topology_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportDaemonRuntimeResponse.ProtoReflect.Descriptor instead.
+func (*ReportDaemonRuntimeResponse) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ReportDaemonRuntimeResponse) GetReportId() string {
+	if x != nil {
+		return x.ReportId
+	}
+	return ""
+}
+
+func (x *ReportDaemonRuntimeResponse) GetDaemonRuntimeGeneration() string {
+	if x != nil {
+		return x.DaemonRuntimeGeneration
+	}
+	return ""
+}
+
+func (x *ReportDaemonRuntimeResponse) GetAcceptedRegistryRevision() uint64 {
+	if x != nil {
+		return x.AcceptedRegistryRevision
+	}
+	return 0
+}
+
+func (x *ReportDaemonRuntimeResponse) GetAcceptedAccessProjectionRevision() uint64 {
+	if x != nil {
+		return x.AcceptedAccessProjectionRevision
+	}
+	return 0
+}
+
 // ExactSessionCloseResult 是 registry 对精确 close target 的线性化结果。
 type ExactSessionCloseResult struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
@@ -1266,7 +1489,7 @@ type ExactSessionCloseResult struct {
 
 func (x *ExactSessionCloseResult) Reset() {
 	*x = ExactSessionCloseResult{}
-	mi := &file_cloudpb_cloud_topology_proto_msgTypes[8]
+	mi := &file_cloudpb_cloud_topology_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1278,7 +1501,7 @@ func (x *ExactSessionCloseResult) String() string {
 func (*ExactSessionCloseResult) ProtoMessage() {}
 
 func (x *ExactSessionCloseResult) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_topology_proto_msgTypes[8]
+	mi := &file_cloudpb_cloud_topology_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1291,7 +1514,7 @@ func (x *ExactSessionCloseResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExactSessionCloseResult.ProtoReflect.Descriptor instead.
 func (*ExactSessionCloseResult) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{8}
+	return file_cloudpb_cloud_topology_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ExactSessionCloseResult) GetTarget() *ManagedPeerSessionTarget {
@@ -1326,7 +1549,7 @@ var File_cloudpb_cloud_topology_proto protoreflect.FileDescriptor
 
 const file_cloudpb_cloud_topology_proto_rawDesc = "" +
 	"\n" +
-	"\x1ccloudpb/cloud_topology.proto\x12\x0etermx.cloud.v1\x1a\x1dcloudpb/cloud_companion.proto\"\xee\x04\n" +
+	"\x1ccloudpb/cloud_topology.proto\x12\x0etermx.cloud.v1\"\xee\x04\n" +
 	"\x12PresenceProjection\x12(\n" +
 	"\x10daemon_device_id\x18\x01 \x01(\tR\x0edaemonDeviceId\x12/\n" +
 	"\x14control_owner_hub_id\x18\x02 \x01(\tR\x11controlOwnerHubId\x12)\n" +
@@ -1412,13 +1635,32 @@ const file_cloudpb_cloud_topology_proto_rawDesc = "" +
 	"\x17observed_at_unix_millis\x18\x05 \x01(\x03R\x14observedAtUnixMillis\x12@\n" +
 	"\tpresences\x18\x06 \x03(\v2\".termx.cloud.v1.PresenceProjectionR\tpresences\x12Q\n" +
 	"\rpeer_sessions\x18\a \x03(\v2,.termx.cloud.v1.ManagedPeerSessionProjectionR\fpeerSessions\x12o\n" +
-	"\x1bterminal_access_inventories\x18\b \x03(\v2/.termx.cloud.v1.TerminalAccessInventorySnapshotR\x19terminalAccessInventories\"\xf9\x01\n" +
+	"\x1bterminal_access_inventories\x18\b \x03(\v2/.termx.cloud.v1.TerminalAccessInventorySnapshotR\x19terminalAccessInventories\"\xc5\x03\n" +
+	"\x1aReportDaemonRuntimeRequest\x12\x1b\n" +
+	"\treport_id\x18\x01 \x01(\tR\breportId\x12\x15\n" +
+	"\x06hub_id\x18\x02 \x01(\tR\x05hubId\x12)\n" +
+	"\x10assignment_epoch\x18\x03 \x01(\x04R\x0fassignmentEpoch\x12.\n" +
+	"\x13presence_session_id\x18\x04 \x01(\tR\x11presenceSessionId\x12:\n" +
+	"\x19daemon_runtime_generation\x18\x05 \x01(\tR\x17daemonRuntimeGeneration\x12+\n" +
+	"\x11registry_revision\x18\x06 \x01(\x04R\x10registryRevision\x12Q\n" +
+	"\rpeer_sessions\x18\a \x01(\v2,.termx.cloud.v1.PeerSessionInventorySnapshotR\fpeerSessions\x12\\\n" +
+	"\x11terminal_accesses\x18\b \x01(\v2/.termx.cloud.v1.TerminalAccessInventorySnapshotR\x10terminalAccesses\"\x83\x02\n" +
+	"\x1bReportDaemonRuntimeResponse\x12\x1b\n" +
+	"\treport_id\x18\x01 \x01(\tR\breportId\x12:\n" +
+	"\x19daemon_runtime_generation\x18\x02 \x01(\tR\x17daemonRuntimeGeneration\x12<\n" +
+	"\x1aaccepted_registry_revision\x18\x03 \x01(\x04R\x18acceptedRegistryRevision\x12M\n" +
+	"#accepted_access_projection_revision\x18\x04 \x01(\x04R acceptedAccessProjectionRevision\"\xf9\x01\n" +
 	"\x17ExactSessionCloseResult\x12@\n" +
 	"\x06target\x18\x01 \x01(\v2(.termx.cloud.v1.ManagedPeerSessionTargetR\x06target\x12N\n" +
 	"\vdisposition\x18\x02 \x01(\x0e2,.termx.cloud.v1.ExactSessionCloseDispositionR\vdisposition\x12+\n" +
 	"\x11registry_revision\x18\x03 \x01(\x04R\x10registryRevision\x12\x1f\n" +
 	"\vreason_code\x18\x04 \x01(\tR\n" +
-	"reasonCode*y\n" +
+	"reasonCode*\x85\x01\n" +
+	"\fObservedPath\x12\x1d\n" +
+	"\x19OBSERVED_PATH_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14OBSERVED_PATH_DIRECT\x10\x01\x12\x1e\n" +
+	"\x1aOBSERVED_PATH_SINGLE_RELAY\x10\x02\x12\x1c\n" +
+	"\x18OBSERVED_PATH_RELAY_MESH\x10\x03*y\n" +
 	"\fAvailability\x12\x1c\n" +
 	"\x18AVAILABILITY_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13AVAILABILITY_ONLINE\x10\x01\x12\x18\n" +
@@ -1468,48 +1710,52 @@ func file_cloudpb_cloud_topology_proto_rawDescGZIP() []byte {
 	return file_cloudpb_cloud_topology_proto_rawDescData
 }
 
-var file_cloudpb_cloud_topology_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_cloudpb_cloud_topology_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_cloudpb_cloud_topology_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_cloudpb_cloud_topology_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_cloudpb_cloud_topology_proto_goTypes = []any{
-	(Availability)(0),                       // 0: termx.cloud.v1.Availability
-	(Freshness)(0),                          // 1: termx.cloud.v1.Freshness
-	(ObservationSource)(0),                  // 2: termx.cloud.v1.ObservationSource
-	(ManagedPeerSessionState)(0),            // 3: termx.cloud.v1.ManagedPeerSessionState
-	(TerminalAccessState)(0),                // 4: termx.cloud.v1.TerminalAccessState
-	(ExactSessionCloseDisposition)(0),       // 5: termx.cloud.v1.ExactSessionCloseDisposition
-	(*PresenceProjection)(nil),              // 6: termx.cloud.v1.PresenceProjection
-	(*ManagedPeerSessionTarget)(nil),        // 7: termx.cloud.v1.ManagedPeerSessionTarget
-	(*ManagedPeerSessionProjection)(nil),    // 8: termx.cloud.v1.ManagedPeerSessionProjection
-	(*PeerSessionInventorySnapshot)(nil),    // 9: termx.cloud.v1.PeerSessionInventorySnapshot
-	(*PeerSessionLifecycleEvent)(nil),       // 10: termx.cloud.v1.PeerSessionLifecycleEvent
-	(*TerminalAccessProjection)(nil),        // 11: termx.cloud.v1.TerminalAccessProjection
-	(*TerminalAccessInventorySnapshot)(nil), // 12: termx.cloud.v1.TerminalAccessInventorySnapshot
-	(*HubTopologySnapshot)(nil),             // 13: termx.cloud.v1.HubTopologySnapshot
-	(*ExactSessionCloseResult)(nil),         // 14: termx.cloud.v1.ExactSessionCloseResult
-	(ObservedPath)(0),                       // 15: termx.cloud.v1.ObservedPath
+	(ObservedPath)(0),                       // 0: termx.cloud.v1.ObservedPath
+	(Availability)(0),                       // 1: termx.cloud.v1.Availability
+	(Freshness)(0),                          // 2: termx.cloud.v1.Freshness
+	(ObservationSource)(0),                  // 3: termx.cloud.v1.ObservationSource
+	(ManagedPeerSessionState)(0),            // 4: termx.cloud.v1.ManagedPeerSessionState
+	(TerminalAccessState)(0),                // 5: termx.cloud.v1.TerminalAccessState
+	(ExactSessionCloseDisposition)(0),       // 6: termx.cloud.v1.ExactSessionCloseDisposition
+	(*PresenceProjection)(nil),              // 7: termx.cloud.v1.PresenceProjection
+	(*ManagedPeerSessionTarget)(nil),        // 8: termx.cloud.v1.ManagedPeerSessionTarget
+	(*ManagedPeerSessionProjection)(nil),    // 9: termx.cloud.v1.ManagedPeerSessionProjection
+	(*PeerSessionInventorySnapshot)(nil),    // 10: termx.cloud.v1.PeerSessionInventorySnapshot
+	(*PeerSessionLifecycleEvent)(nil),       // 11: termx.cloud.v1.PeerSessionLifecycleEvent
+	(*TerminalAccessProjection)(nil),        // 12: termx.cloud.v1.TerminalAccessProjection
+	(*TerminalAccessInventorySnapshot)(nil), // 13: termx.cloud.v1.TerminalAccessInventorySnapshot
+	(*HubTopologySnapshot)(nil),             // 14: termx.cloud.v1.HubTopologySnapshot
+	(*ReportDaemonRuntimeRequest)(nil),      // 15: termx.cloud.v1.ReportDaemonRuntimeRequest
+	(*ReportDaemonRuntimeResponse)(nil),     // 16: termx.cloud.v1.ReportDaemonRuntimeResponse
+	(*ExactSessionCloseResult)(nil),         // 17: termx.cloud.v1.ExactSessionCloseResult
 }
 var file_cloudpb_cloud_topology_proto_depIdxs = []int32{
-	0,  // 0: termx.cloud.v1.PresenceProjection.availability:type_name -> termx.cloud.v1.Availability
-	1,  // 1: termx.cloud.v1.PresenceProjection.freshness:type_name -> termx.cloud.v1.Freshness
-	2,  // 2: termx.cloud.v1.PresenceProjection.observation_source:type_name -> termx.cloud.v1.ObservationSource
-	7,  // 3: termx.cloud.v1.ManagedPeerSessionProjection.target:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
-	15, // 4: termx.cloud.v1.ManagedPeerSessionProjection.observed_data_path:type_name -> termx.cloud.v1.ObservedPath
-	3,  // 5: termx.cloud.v1.ManagedPeerSessionProjection.state:type_name -> termx.cloud.v1.ManagedPeerSessionState
-	1,  // 6: termx.cloud.v1.ManagedPeerSessionProjection.freshness:type_name -> termx.cloud.v1.Freshness
-	8,  // 7: termx.cloud.v1.PeerSessionInventorySnapshot.sessions:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
-	8,  // 8: termx.cloud.v1.PeerSessionLifecycleEvent.session:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
-	4,  // 9: termx.cloud.v1.TerminalAccessProjection.state:type_name -> termx.cloud.v1.TerminalAccessState
-	11, // 10: termx.cloud.v1.TerminalAccessInventorySnapshot.accesses:type_name -> termx.cloud.v1.TerminalAccessProjection
-	6,  // 11: termx.cloud.v1.HubTopologySnapshot.presences:type_name -> termx.cloud.v1.PresenceProjection
-	8,  // 12: termx.cloud.v1.HubTopologySnapshot.peer_sessions:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
-	12, // 13: termx.cloud.v1.HubTopologySnapshot.terminal_access_inventories:type_name -> termx.cloud.v1.TerminalAccessInventorySnapshot
-	7,  // 14: termx.cloud.v1.ExactSessionCloseResult.target:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
-	5,  // 15: termx.cloud.v1.ExactSessionCloseResult.disposition:type_name -> termx.cloud.v1.ExactSessionCloseDisposition
-	16, // [16:16] is the sub-list for method output_type
-	16, // [16:16] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	1,  // 0: termx.cloud.v1.PresenceProjection.availability:type_name -> termx.cloud.v1.Availability
+	2,  // 1: termx.cloud.v1.PresenceProjection.freshness:type_name -> termx.cloud.v1.Freshness
+	3,  // 2: termx.cloud.v1.PresenceProjection.observation_source:type_name -> termx.cloud.v1.ObservationSource
+	8,  // 3: termx.cloud.v1.ManagedPeerSessionProjection.target:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
+	0,  // 4: termx.cloud.v1.ManagedPeerSessionProjection.observed_data_path:type_name -> termx.cloud.v1.ObservedPath
+	4,  // 5: termx.cloud.v1.ManagedPeerSessionProjection.state:type_name -> termx.cloud.v1.ManagedPeerSessionState
+	2,  // 6: termx.cloud.v1.ManagedPeerSessionProjection.freshness:type_name -> termx.cloud.v1.Freshness
+	9,  // 7: termx.cloud.v1.PeerSessionInventorySnapshot.sessions:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
+	9,  // 8: termx.cloud.v1.PeerSessionLifecycleEvent.session:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
+	5,  // 9: termx.cloud.v1.TerminalAccessProjection.state:type_name -> termx.cloud.v1.TerminalAccessState
+	12, // 10: termx.cloud.v1.TerminalAccessInventorySnapshot.accesses:type_name -> termx.cloud.v1.TerminalAccessProjection
+	7,  // 11: termx.cloud.v1.HubTopologySnapshot.presences:type_name -> termx.cloud.v1.PresenceProjection
+	9,  // 12: termx.cloud.v1.HubTopologySnapshot.peer_sessions:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
+	13, // 13: termx.cloud.v1.HubTopologySnapshot.terminal_access_inventories:type_name -> termx.cloud.v1.TerminalAccessInventorySnapshot
+	10, // 14: termx.cloud.v1.ReportDaemonRuntimeRequest.peer_sessions:type_name -> termx.cloud.v1.PeerSessionInventorySnapshot
+	13, // 15: termx.cloud.v1.ReportDaemonRuntimeRequest.terminal_accesses:type_name -> termx.cloud.v1.TerminalAccessInventorySnapshot
+	8,  // 16: termx.cloud.v1.ExactSessionCloseResult.target:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
+	6,  // 17: termx.cloud.v1.ExactSessionCloseResult.disposition:type_name -> termx.cloud.v1.ExactSessionCloseDisposition
+	18, // [18:18] is the sub-list for method output_type
+	18, // [18:18] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_cloudpb_cloud_topology_proto_init() }
@@ -1517,14 +1763,13 @@ func file_cloudpb_cloud_topology_proto_init() {
 	if File_cloudpb_cloud_topology_proto != nil {
 		return
 	}
-	file_cloudpb_cloud_companion_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloudpb_cloud_topology_proto_rawDesc), len(file_cloudpb_cloud_topology_proto_rawDesc)),
-			NumEnums:      6,
-			NumMessages:   9,
+			NumEnums:      7,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

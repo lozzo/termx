@@ -41,6 +41,9 @@ type Client interface {
 	CreateSignalingSession(context.Context, *cloudpb.CreateSignalingSessionRequest) (SignalingStream, error)
 	// CompleteSignalingOffer 回传 daemon 对单个 offer 的 answer 或稳定失败，不结束其他 signaling session。
 	CompleteSignalingOffer(context.Context, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error)
+	// ReportDaemonRuntime 上报当前 Presence 绑定的完整 managed session inventory。
+	// Companion 只转发 generated Proto，不读取 terminal、grant 或 DataChannel payload。
+	ReportDaemonRuntime(context.Context, *cloudpb.ReportDaemonRuntimeRequest) (*cloudpb.ReportDaemonRuntimeResponse, error)
 	// AcquireRelayLease 获取服务准入租约；租约不表达 terminal 权限，也不能替代 CapabilityGrant。
 	AcquireRelayLease(context.Context, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
 	// PlanManagedRoute 获取只含 direct/single-relay ICE 约束和稳定原因的短期 SmartRoute 计划。

@@ -1,12 +1,15 @@
 package webcontroller
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/lozzow/termx/proto/cloudpb"
 )
 
 const (
@@ -27,6 +30,9 @@ type BrowserConfig struct {
 	Commerce *CommerceService
 	// UserCenter 是账号、身份、AFF、节点和审计的数据库 owner。
 	UserCenter *UserCenterStore
+	// Topology 是 Controller 持久 topology projection 的只读边界。
+	// Browser 只把 ONLINE/FRESH 确定性投影为旧页面 bool，不写回 UserCenter。
+	Topology TopologyProjectionReader
 	// IdentityProviders 只公开可用状态和跳转地址，不包含 OAuth secret。
 	IdentityProviders []IdentityProvider
 	// RelayURL 是只读运行 metadata，不用于浏览器建立 terminal transport。
@@ -38,6 +44,11 @@ type BrowserConfig struct {
 	// DeviceAccess 把浏览器审批和账号节点 enrollment 写回 Control Plane owner。
 	// 浏览器层只传递已认证账号身份，不签发 edge credential，也不接触 daemon capability。
 	DeviceAccess DeviceAccessService
+}
+
+// TopologyProjectionReader 返回 daemon 最后一次经过 Controller 校验的 Presence projection。
+type TopologyProjectionReader interface {
+	Presence(context.Context, string) (string, *cloudpb.PresenceProjection, error)
 }
 
 // DeviceLoginRequest 是浏览器可见的设备码投影；它不包含 flow ID、edge token 或客户端私钥。
@@ -170,6 +181,9 @@ func BrowserHandler(config BrowserConfig) (http.Handler, error) {
 			return
 		}
 		profile, nodes, referrals, audit, err := config.UserCenter.Snapshot(session.AccountID)
+		if err == nil {
+			projectNodePresence(r.Context(), config.Topology, session.AccountID, nodes)
+		}
 		writeCommerceJSON(w, http.StatusOK, map[string]any{"profile": profile, "nodes": nodes, "referrals": referrals, "audit": audit, "billing": config.Commerce.AccountView(session)}, err)
 	})
 	mux.HandleFunc("GET /api/device-login", func(w http.ResponseWriter, r *http.Request) {
@@ -302,6 +316,22 @@ func BrowserHandler(config BrowserConfig) (http.Handler, error) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	return mux, nil
+}
+
+func projectNodePresence(ctx context.Context, topology TopologyProjectionReader, accountID string, nodes []ManagedNode) {
+	for index := range nodes {
+		if nodes[index].Kind != "daemon" {
+			continue
+		}
+		nodes[index].Online = false
+		if topology == nil {
+			continue
+		}
+		owner, projection, err := topology.Presence(ctx, nodes[index].ID)
+		if err == nil && owner == accountID && projection.GetAvailability() == cloudpb.Availability_AVAILABILITY_ONLINE && projection.GetFreshness() == cloudpb.Freshness_FRESHNESS_FRESH {
+			nodes[index].Online = true
+		}
+	}
 }
 
 func setBrowserSession(w http.ResponseWriter, session CommerceSession, secure bool) error {

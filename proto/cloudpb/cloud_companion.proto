@@ -4,6 +4,8 @@ package termx.cloud.v1;
 
 option go_package = "github.com/lozzow/termx/proto/cloudpb";
 
+import "cloudpb/cloud_topology.proto";
+
 // CallerRole 标识当前 IPC 连接代表的公开进程角色。
 enum CallerRole {
   CALLER_ROLE_UNSPECIFIED = 0;
@@ -24,6 +26,7 @@ enum CompanionCapability {
   COMPANION_CAPABILITY_SMART_ROUTE = 6;
   COMPANION_CAPABILITY_DEVICE_ENROLLMENT = 7;
   COMPANION_CAPABILITY_DEVICE_DIRECTORY = 8;
+  COMPANION_CAPABILITY_DAEMON_RUNTIME = 9;
 }
 
 // CompanionState 描述 companion 本地安装与账号会话状态。
@@ -68,14 +71,6 @@ enum ManagedDeviceKind {
   MANAGED_DEVICE_KIND_UNSPECIFIED = 0;
   MANAGED_DEVICE_KIND_CLIENT = 1;
   MANAGED_DEVICE_KIND_DAEMON = 2;
-}
-
-// ObservedPath 是一次 WebRTC transport 实际采用的网络路径。
-enum ObservedPath {
-  OBSERVED_PATH_UNSPECIFIED = 0;
-  OBSERVED_PATH_DIRECT = 1;
-  OBSERVED_PATH_SINGLE_RELAY = 2;
-  OBSERVED_PATH_RELAY_MESH = 3;
 }
 
 // RoutePreference 描述调用方允许的付费路径上限，不表达 terminal scope。
@@ -610,6 +605,7 @@ message IPCRequest {
     PlanManagedRouteRequest plan_managed_route = 28;
     BeginPresenceRequest begin_presence = 29;
     ListManagedDevicesRequest list_managed_devices = 30;
+    ReportDaemonRuntimeRequest report_daemon_runtime = 31;
   }
 }
 
@@ -642,5 +638,6 @@ message IPCResponse {
     ManagedRoutePlan managed_route_plan = 30;
     PresenceChallenge presence_challenge = 31;
     ListManagedDevicesResponse managed_devices = 32;
+    ReportDaemonRuntimeResponse report_daemon_runtime = 33;
   }
 }

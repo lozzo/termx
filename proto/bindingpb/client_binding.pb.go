@@ -5030,7 +5030,7 @@ var File_bindingpb_client_binding_proto protoreflect.FileDescriptor
 
 const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\n" +
-	"\x1ebindingpb/client_binding.proto\x12\x17termx.client.binding.v1\x1a\x17apipb/application.proto\x1a\x12apipb/common.proto\x1a\x1dcloudpb/cloud_companion.proto\x1a\x1eremoteauthpb/remote_auth.proto\"\xc1\x01\n" +
+	"\x1ebindingpb/client_binding.proto\x12\x17termx.client.binding.v1\x1a\x17apipb/application.proto\x1a\x12apipb/common.proto\x1a\x1dcloudpb/cloud_companion.proto\x1a\x1ccloudpb/cloud_topology.proto\x1a\x1eremoteauthpb/remote_auth.proto\"\xc1\x01\n" +
 	"\x12OpenSessionRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +

@@ -104,6 +104,8 @@ type protocolSession struct {
 	fileMu             sync.Mutex
 	fileChannels       map[uint16]*sessionFileTransfer
 	fileIDs            map[string]uint16
+	lifecycleObserver  TransportLifecycleObserver
+	helloAccepted      bool
 }
 
 type applicationEventSubscription struct {
@@ -205,6 +207,10 @@ func protocolAttachmentEqual(left, right protocolAttachment) bool {
 }
 
 func newProtocolSession(server *Server, conn transport.Transport, scope TransportScope) *protocolSession {
+	return newProtocolSessionObserved(server, conn, scope, nil)
+}
+
+func newProtocolSessionObserved(server *Server, conn transport.Transport, scope TransportScope, observer TransportLifecycleObserver) *protocolSession {
 	session := &protocolSession{
 		server:             server,
 		conn:               conn,
@@ -215,6 +221,7 @@ func newProtocolSession(server *Server, conn transport.Transport, scope Transpor
 		fileChannels:       make(map[uint16]*sessionFileTransfer),
 		fileIDs:            make(map[string]uint16),
 		eventSubscriptions: make(map[uint64]applicationEventSubscription),
+		lifecycleObserver:  observer,
 	}
 	// 中文说明：application executor 与当前连接 session 同寿命；具体 API Layer 装配由 composition root 注入。
 	if server.cfg.applicationFactory != nil {
@@ -249,6 +256,12 @@ func (session *protocolSession) run(ctx context.Context) error {
 			}
 			continue
 		}
+		if !session.helloAccepted {
+			if err := session.sendStreamError(channel, protocolErrorBadRequest, "protocol Hello is required before stream frames"); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := session.handleStreamFrame(sessionCtx, channel, typ, payload); err != nil {
 			if sendErr := session.sendStreamError(channel, protocolErrorBadRequest, err.Error()); sendErr != nil {
 				return sendErr
@@ -260,6 +273,9 @@ func (session *protocolSession) run(ctx context.Context) error {
 func (session *protocolSession) handleControlFrame(ctx context.Context, typ uint8, payload []byte) error {
 	switch typ {
 	case wire.TypeHello:
+		if session.helloAccepted {
+			return session.sendError(0, protocolErrorBadRequest, "protocol Hello was already accepted")
+		}
 		hello, err := protocol.DecodeHelloPayload(payload)
 		if err != nil {
 			return session.sendError(0, protocolErrorBadRequest, err.Error())
@@ -271,8 +287,18 @@ func (session *protocolSession) handleControlFrame(ctx context.Context, typ uint
 		if err != nil {
 			return err
 		}
-		return session.sendFrame(0, wire.TypeHello, response)
+		if err := session.sendFrame(0, wire.TypeHello, response); err != nil {
+			return err
+		}
+		session.helloAccepted = true
+		if session.lifecycleObserver != nil {
+			session.lifecycleObserver.HelloAccepted()
+		}
+		return nil
 	case wire.TypeRequest:
+		if !session.helloAccepted {
+			return session.sendError(0, protocolErrorBadRequest, "protocol Hello is required before requests")
+		}
 		req, err := protocol.DecodeRequestPayload(payload)
 		if err != nil {
 			return session.sendError(0, protocolErrorBadRequest, err.Error())

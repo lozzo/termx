@@ -24,13 +24,10 @@ func TestUserCenterScopesNodeMutationToOwningAccount(t *testing.T) {
 	}
 }
 
-func TestUserCenterDaemonOnlineProjectionFollowsHubPresence(t *testing.T) {
+func TestUserCenterDoesNotPersistDaemonOnlineTruth(t *testing.T) {
 	store := webcontroller.NewUserCenterStore(time.Now)
 	defer store.Close()
-	if err := store.UpsertCloudDevice("account-dev-local", "daemon-online", "Build daemon", "daemon", true); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.MarkDaemonNodesOffline(); err != nil {
+	if err := store.UpsertCloudDevice("account-dev-local", "daemon-online", "Build daemon", "daemon"); err != nil {
 		t.Fatal(err)
 	}
 	_, nodes, _, _, err := store.Snapshot("account-dev-local")
@@ -38,29 +35,14 @@ func TestUserCenterDaemonOnlineProjectionFollowsHubPresence(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, node := range nodes {
-		if node.ID == "daemon-online" && node.Online {
-			t.Fatal("daemon remained online after process-start reset")
-		}
-	}
-	if err := store.SetCloudDaemonOnline("account-dev-local", "daemon-online", true); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SetCloudDaemonOnline("another-account", "daemon-online", false); err == nil {
-		t.Fatal("foreign account changed daemon presence projection")
-	}
-	_, nodes, _, _, err = store.Snapshot("account-dev-local")
-	if err != nil {
-		t.Fatal(err)
-	}
-	foundOnline := false
-	for _, node := range nodes {
 		if node.ID == "daemon-online" {
-			foundOnline = node.Online
+			if node.Online {
+				t.Fatal("UserCenter persisted daemon online truth")
+			}
+			return
 		}
 	}
-	if !foundOnline {
-		t.Fatal("Hub presence did not mark daemon online")
-	}
+	t.Fatal("upserted daemon was not found")
 }
 
 func TestReferralRewardsArePaymentBoundIdempotentAndPersistent(t *testing.T) {

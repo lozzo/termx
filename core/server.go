@@ -812,7 +812,22 @@ func (server *Server) ServeTransport(ctx context.Context, conn transport.Transpo
 	return server.ServeScopedTransport(ctx, conn, fullDaemonTransportScope())
 }
 
+// TransportLifecycleObserver 是 core protocol transport 的最小生命周期观察边界。
+// HelloAccepted 只表示合法 Hello response 已成功写入当前 transport；observer 不得读取业务 payload、
+// 修改 core state 或决定授权，调用方必须自行保证回调快速且不阻塞 protocol loop。
+type TransportLifecycleObserver interface {
+	HelloAccepted()
+}
+
+// ServeScopedTransport 按已验证 scope 服务 transport，不暴露生命周期回调。
+// remote managed session 需要 READY 证据时必须调用 ServeScopedTransportObserved。
 func (server *Server) ServeScopedTransport(ctx context.Context, conn transport.Transport, scope TransportScope) error {
+	return server.ServeScopedTransportObserved(ctx, conn, scope, nil)
+}
+
+// ServeScopedTransportObserved 按已验证 scope 服务 transport，并在 protocol Hello 真正接受后通知 observer。
+// observer 只属于当前连接；Hello 前请求、重复 Hello 或发送失败都不会触发回调。
+func (server *Server) ServeScopedTransportObserved(ctx context.Context, conn transport.Transport, scope TransportScope, observer TransportLifecycleObserver) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -829,7 +844,7 @@ func (server *Server) ServeScopedTransport(ctx context.Context, conn transport.T
 	}
 	server.trackTransport(conn)
 	server.wgMu.Unlock()
-	return server.serveTrackedTransport(ctx, conn, scope)
+	return server.serveTrackedTransportObserved(ctx, conn, scope, observer)
 }
 
 func (server *Server) Shutdown(ctx context.Context) error {
@@ -886,9 +901,13 @@ func (server *Server) handleTransport(ctx context.Context, conn transport.Transp
 }
 
 func (server *Server) serveTrackedTransport(ctx context.Context, conn transport.Transport, scope TransportScope) error {
+	return server.serveTrackedTransportObserved(ctx, conn, scope, nil)
+}
+
+func (server *Server) serveTrackedTransportObserved(ctx context.Context, conn transport.Transport, scope TransportScope, observer TransportLifecycleObserver) error {
 	defer server.untrackTransport(conn)
 	defer func() { _ = conn.Close() }()
-	session := newProtocolSession(server, conn, scope)
+	session := newProtocolSessionObserved(server, conn, scope, observer)
 	return session.run(ctx)
 }
 

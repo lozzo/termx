@@ -46,7 +46,6 @@ func (service *Service) CreateEdgeSession(_ context.Context, request CreateEdgeS
 	}
 	now := service.clock.Now().UTC()
 	state := &sessionState{id: request.SignalingSessionID, accountID: request.AccountID, managedSessionID: managedSessionID, clientDeviceID: request.ClientDeviceID, clientConnectionID: request.ClientConnectionID, targetDeviceID: request.TargetDeviceID, targetAssignmentEpoch: assignmentEpoch, clientCandidateAllowed: true, expiresAt: now.Add(service.maxSignalingTTL), clientEvents: make(chan ClientEvent, service.clientQueue), done: make(chan struct{})}
-	offer := Offer{SignalingSessionID: state.id, ManagedSessionID: state.managedSessionID, SourceDeviceID: state.clientDeviceID, TargetDeviceID: state.targetDeviceID, SDP: request.SDP, Candidates: cloneCandidates(request.Candidates), RoutePreference: request.RoutePreference, RelayOnly: request.RelayOnly}
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	service.cleanupLocked(now)
@@ -60,6 +59,9 @@ func (service *Service) CreateEdgeSession(_ context.Context, request CreateEdgeS
 	if len(service.sessions) >= service.maxSessions || service.sessionsForClientLocked(request.ClientDeviceID) >= service.maxSessionsPerClient {
 		return nil, ErrCapacity
 	}
+	service.nextIncarnation++
+	state.sessionIncarnation = service.nextIncarnation
+	offer := Offer{SignalingSessionID: state.id, ManagedSessionID: state.managedSessionID, SessionIncarnation: state.sessionIncarnation, PresenceSessionID: presence.sessionID, AssignmentEpoch: presence.assignmentEpoch, SourceDeviceID: state.clientDeviceID, TargetDeviceID: state.targetDeviceID, SDP: request.SDP, Candidates: cloneCandidates(request.Candidates), RoutePreference: request.RoutePreference, RelayOnly: request.RelayOnly}
 	select {
 	case presence.events <- PresenceEvent{Offer: &offer}:
 		service.sessions[state.id] = state

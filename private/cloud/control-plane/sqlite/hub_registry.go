@@ -63,6 +63,23 @@ CREATE TABLE IF NOT EXISTS control_receive_cursors(
   hub_id TEXT NOT NULL, control_generation INTEGER NOT NULL, sender_role INTEGER NOT NULL,
   accepted_sequence INTEGER NOT NULL, accepted_digest BLOB NOT NULL, updated_at TEXT NOT NULL,
   PRIMARY KEY(hub_id, control_generation, sender_role)
+);
+CREATE TABLE IF NOT EXISTS cloud_device_ownership(
+  device_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, device_kind INTEGER NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS hub_topology_heads(
+  hub_id TEXT PRIMARY KEY, control_generation INTEGER NOT NULL, topology_revision INTEGER NOT NULL,
+  topology_digest BLOB NOT NULL, observed_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS presence_topology(
+  daemon_device_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, hub_id TEXT NOT NULL,
+  control_generation INTEGER NOT NULL, projection BLOB NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS managed_peer_topology(
+  daemon_device_id TEXT NOT NULL, managed_session_id TEXT NOT NULL, session_incarnation INTEGER NOT NULL,
+  account_id TEXT NOT NULL, hub_id TEXT NOT NULL, control_generation INTEGER NOT NULL,
+  projection BLOB NOT NULL, updated_at TEXT NOT NULL,
+  PRIMARY KEY(daemon_device_id, managed_session_id, session_incarnation)
 );`)
 	return err
 }

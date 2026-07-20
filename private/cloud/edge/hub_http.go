@@ -28,7 +28,7 @@ const maxHubRequestBytes = 4 << 20
 type hubHTTPConfig struct {
 	Hub        *cloudhub.Service
 	Authorizer *cloudhub.EdgeAuthorizer
-	Projection *cloudhub.Projection
+	Projection hubProjection
 	HubID      string
 	HubURL     string
 }
@@ -36,9 +36,14 @@ type hubHTTPConfig struct {
 type hubHTTPHandler struct {
 	hub        *cloudhub.Service
 	authorizer *cloudhub.EdgeAuthorizer
-	projection *cloudhub.Projection
+	projection hubProjection
 	hubID      string
 	hubURL     string
+}
+
+type hubProjection interface {
+	Ready() bool
+	ActiveAssignment(deviceID string) (uint64, bool)
 }
 
 // newHubHTTPHandler 建立 Edge 公网 Hub adapter。它只消费纯内存 projection 和 Hub Service，
@@ -51,9 +56,35 @@ func newHubHTTPHandler(config hubHTTPConfig) http.Handler {
 	mux.HandleFunc(httpapi.HubOpenPresencePath, handler.handleOpenPresence)
 	mux.HandleFunc(httpapi.HubCreateSignalingPath, handler.handleCreateSignaling)
 	mux.HandleFunc(httpapi.HubCompleteSignalingPath, handler.handleCompleteSignaling)
+	mux.HandleFunc(httpapi.HubReportDaemonRuntimePath, handler.handleReportDaemonRuntime)
 	mux.HandleFunc(httpapi.HubResolveEndpointPath, handler.handleResolveEndpoint)
 	mux.HandleFunc(httpapi.HubListManagedDevicesPath, handler.handleListManagedDevices)
 	return mux
+}
+
+func (handler *hubHTTPHandler) handleReportDaemonRuntime(writer http.ResponseWriter, request *http.Request) {
+	token, envelope, payload, ok := readHubRequest[*cloudpb.ReportDaemonRuntimeRequest](writer, request, &cloudpb.ReportDaemonRuntimeRequest{})
+	if !ok {
+		return
+	}
+	defer clear(token)
+	defer clear(envelope.Payload)
+	claims, err := handler.authorizer.AuthorizeDaemon(token, envelope.AccountID, envelope.DeviceID)
+	if err != nil || claims.ClientDeviceID != envelope.DeviceID || payload.GetHubId() != handler.hubID {
+		writeHubError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub daemon runtime binding was rejected", false)
+		return
+	}
+	assignmentEpoch, assigned := handler.projection.ActiveAssignment(envelope.DeviceID)
+	if !assigned || assignmentEpoch != payload.GetAssignmentEpoch() {
+		writeHubError(writer, http.StatusConflict, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE, "Hub daemon runtime assignment is stale", false)
+		return
+	}
+	response, err := handler.hub.ReportDaemonRuntime(envelope.DeviceID, payload)
+	if err != nil {
+		mapHubError(writer, err)
+		return
+	}
+	writeHubProto(writer, http.StatusOK, response)
 }
 
 func (handler *hubHTTPHandler) handleHealth(writer http.ResponseWriter, request *http.Request) {
@@ -148,10 +179,15 @@ func (handler *hubHTTPHandler) handleOpenPresence(writer http.ResponseWriter, re
 		return
 	}
 	defer presence.Close()
+	assignmentEpoch, assigned := handler.projection.ActiveAssignment(envelope.DeviceID)
+	if !assigned {
+		writeHubError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub assignment is unavailable", true)
+		return
+	}
 	writer.Header().Set("Content-Type", httpapi.StreamMediaType)
 	writer.Header().Set("Cache-Control", "no-store")
 	writer.WriteHeader(http.StatusOK)
-	if err := httpapi.WriteFrame(writer, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{PresenceSessionId: payload.GetPresenceSessionId(), HeartbeatSeconds: 30}}}); err != nil {
+	if err := httpapi.WriteFrame(writer, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{PresenceSessionId: payload.GetPresenceSessionId(), HeartbeatSeconds: 30, HubId: handler.hubID, AssignmentEpoch: assignmentEpoch}}}); err != nil {
 		return
 	}
 	flushHub(writer)
@@ -368,6 +404,8 @@ func mapHubError(writer http.ResponseWriter, err error) {
 		writeHubError(writer, http.StatusTooManyRequests, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_BACKPRESSURE, "Hub signaling capacity is unavailable", true)
 	case errors.Is(err, cloudhub.ErrPresenceConflict), errors.Is(err, cloudhub.ErrSessionConflict), errors.Is(err, cloudhub.ErrSessionNotFound), errors.Is(err, cloudhub.ErrInvalidSignal):
 		writeHubError(writer, http.StatusConflict, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub signaling binding was rejected", false)
+	case errors.Is(err, cloudhub.ErrRuntimeReport):
+		writeHubError(writer, http.StatusConflict, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub daemon runtime report was rejected", false)
 	default:
 		writeHubError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub operation failed", true)
 	}
@@ -384,7 +422,7 @@ func randomHubID(prefix string) (string, error) {
 func presenceEventToWire(event cloudhub.PresenceEvent) (*cloudpb.PresenceEvent, bool) {
 	switch {
 	case event.Offer != nil:
-		return &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{SignalingSessionId: event.Offer.SignalingSessionID, ManagedSessionId: event.Offer.ManagedSessionID, SourceDeviceId: event.Offer.SourceDeviceID, TargetDeviceId: event.Offer.TargetDeviceID, Sdp: event.Offer.SDP, Candidates: candidatesToWire(event.Offer.Candidates), RoutePreference: cloudpb.RoutePreference(event.Offer.RoutePreference), RelayOnly: event.Offer.RelayOnly}}}, true
+		return &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{SignalingSessionId: event.Offer.SignalingSessionID, ManagedSessionId: event.Offer.ManagedSessionID, SourceDeviceId: event.Offer.SourceDeviceID, TargetDeviceId: event.Offer.TargetDeviceID, Sdp: event.Offer.SDP, Candidates: candidatesToWire(event.Offer.Candidates), RoutePreference: cloudpb.RoutePreference(event.Offer.RoutePreference), RelayOnly: event.Offer.RelayOnly, SessionIncarnation: event.Offer.SessionIncarnation, PresenceSessionId: event.Offer.PresenceSessionID, AssignmentEpoch: event.Offer.AssignmentEpoch}}}, true
 	case event.Closed != nil:
 		return &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: event.Closed.Reason}}}, true
 	default:

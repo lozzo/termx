@@ -129,6 +129,7 @@ func defaultOpenV3CloudDaemonCompanion(ctx context.Context) (v3CloudClient, erro
 		cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_PRESENCE,
 		cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING,
 		cloudpb.CompanionCapability_COMPANION_CAPABILITY_RELAY_LEASE,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_DAEMON_RUNTIME,
 	)
 }
 

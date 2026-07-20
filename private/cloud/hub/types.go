@@ -35,6 +35,9 @@ const (
 type Offer struct {
 	SignalingSessionID string
 	ManagedSessionID   string
+	SessionIncarnation uint64
+	PresenceSessionID  string
+	AssignmentEpoch    uint64
 	SourceDeviceID     string
 	TargetDeviceID     string
 	SDP                string
@@ -144,6 +147,7 @@ type sessionState struct {
 	id                     string
 	accountID              string
 	managedSessionID       string
+	sessionIncarnation     uint64
 	clientDeviceID         string
 	clientConnectionID     string
 	targetDeviceID         string

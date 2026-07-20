@@ -3204,176 +3204,6 @@ type RelayRuntimeEnvelope_CommandResult struct {
 
 func (*RelayRuntimeEnvelope_CommandResult) isRelayRuntimeEnvelope_Payload() {}
 
-// ReportDaemonRuntimeRequest 是 daemon Presence 上行的完整 runtime replacement。
-type ReportDaemonRuntimeRequest struct {
-	state                   protoimpl.MessageState           `protogen:"open.v1"`
-	ReportId                string                           `protobuf:"bytes,1,opt,name=report_id,json=reportId,proto3" json:"report_id,omitempty"`
-	HubId                   string                           `protobuf:"bytes,2,opt,name=hub_id,json=hubId,proto3" json:"hub_id,omitempty"`
-	AssignmentEpoch         uint64                           `protobuf:"varint,3,opt,name=assignment_epoch,json=assignmentEpoch,proto3" json:"assignment_epoch,omitempty"`
-	PresenceSessionId       string                           `protobuf:"bytes,4,opt,name=presence_session_id,json=presenceSessionId,proto3" json:"presence_session_id,omitempty"`
-	DaemonRuntimeGeneration string                           `protobuf:"bytes,5,opt,name=daemon_runtime_generation,json=daemonRuntimeGeneration,proto3" json:"daemon_runtime_generation,omitempty"`
-	RegistryRevision        uint64                           `protobuf:"varint,6,opt,name=registry_revision,json=registryRevision,proto3" json:"registry_revision,omitempty"`
-	PeerSessions            *PeerSessionInventorySnapshot    `protobuf:"bytes,7,opt,name=peer_sessions,json=peerSessions,proto3" json:"peer_sessions,omitempty"`
-	TerminalAccesses        *TerminalAccessInventorySnapshot `protobuf:"bytes,8,opt,name=terminal_accesses,json=terminalAccesses,proto3" json:"terminal_accesses,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
-}
-
-func (x *ReportDaemonRuntimeRequest) Reset() {
-	*x = ReportDaemonRuntimeRequest{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[32]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ReportDaemonRuntimeRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ReportDaemonRuntimeRequest) ProtoMessage() {}
-
-func (x *ReportDaemonRuntimeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[32]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ReportDaemonRuntimeRequest.ProtoReflect.Descriptor instead.
-func (*ReportDaemonRuntimeRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{32}
-}
-
-func (x *ReportDaemonRuntimeRequest) GetReportId() string {
-	if x != nil {
-		return x.ReportId
-	}
-	return ""
-}
-
-func (x *ReportDaemonRuntimeRequest) GetHubId() string {
-	if x != nil {
-		return x.HubId
-	}
-	return ""
-}
-
-func (x *ReportDaemonRuntimeRequest) GetAssignmentEpoch() uint64 {
-	if x != nil {
-		return x.AssignmentEpoch
-	}
-	return 0
-}
-
-func (x *ReportDaemonRuntimeRequest) GetPresenceSessionId() string {
-	if x != nil {
-		return x.PresenceSessionId
-	}
-	return ""
-}
-
-func (x *ReportDaemonRuntimeRequest) GetDaemonRuntimeGeneration() string {
-	if x != nil {
-		return x.DaemonRuntimeGeneration
-	}
-	return ""
-}
-
-func (x *ReportDaemonRuntimeRequest) GetRegistryRevision() uint64 {
-	if x != nil {
-		return x.RegistryRevision
-	}
-	return 0
-}
-
-func (x *ReportDaemonRuntimeRequest) GetPeerSessions() *PeerSessionInventorySnapshot {
-	if x != nil {
-		return x.PeerSessions
-	}
-	return nil
-}
-
-func (x *ReportDaemonRuntimeRequest) GetTerminalAccesses() *TerminalAccessInventorySnapshot {
-	if x != nil {
-		return x.TerminalAccesses
-	}
-	return nil
-}
-
-// ReportDaemonRuntimeResponse 只确认已接收的精确 runtime revision。
-type ReportDaemonRuntimeResponse struct {
-	state                            protoimpl.MessageState `protogen:"open.v1"`
-	ReportId                         string                 `protobuf:"bytes,1,opt,name=report_id,json=reportId,proto3" json:"report_id,omitempty"`
-	DaemonRuntimeGeneration          string                 `protobuf:"bytes,2,opt,name=daemon_runtime_generation,json=daemonRuntimeGeneration,proto3" json:"daemon_runtime_generation,omitempty"`
-	AcceptedRegistryRevision         uint64                 `protobuf:"varint,3,opt,name=accepted_registry_revision,json=acceptedRegistryRevision,proto3" json:"accepted_registry_revision,omitempty"`
-	AcceptedAccessProjectionRevision uint64                 `protobuf:"varint,4,opt,name=accepted_access_projection_revision,json=acceptedAccessProjectionRevision,proto3" json:"accepted_access_projection_revision,omitempty"`
-	unknownFields                    protoimpl.UnknownFields
-	sizeCache                        protoimpl.SizeCache
-}
-
-func (x *ReportDaemonRuntimeResponse) Reset() {
-	*x = ReportDaemonRuntimeResponse{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[33]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ReportDaemonRuntimeResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ReportDaemonRuntimeResponse) ProtoMessage() {}
-
-func (x *ReportDaemonRuntimeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[33]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ReportDaemonRuntimeResponse.ProtoReflect.Descriptor instead.
-func (*ReportDaemonRuntimeResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{33}
-}
-
-func (x *ReportDaemonRuntimeResponse) GetReportId() string {
-	if x != nil {
-		return x.ReportId
-	}
-	return ""
-}
-
-func (x *ReportDaemonRuntimeResponse) GetDaemonRuntimeGeneration() string {
-	if x != nil {
-		return x.DaemonRuntimeGeneration
-	}
-	return ""
-}
-
-func (x *ReportDaemonRuntimeResponse) GetAcceptedRegistryRevision() uint64 {
-	if x != nil {
-		return x.AcceptedRegistryRevision
-	}
-	return 0
-}
-
-func (x *ReportDaemonRuntimeResponse) GetAcceptedAccessProjectionRevision() uint64 {
-	if x != nil {
-		return x.AcceptedAccessProjectionRevision
-	}
-	return 0
-}
-
 // HubControlEnvelope 是 Controller 到 Hub 的下行 envelope。
 type HubControlEnvelope struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
@@ -3398,7 +3228,7 @@ type HubControlEnvelope struct {
 
 func (x *HubControlEnvelope) Reset() {
 	*x = HubControlEnvelope{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[34]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3410,7 +3240,7 @@ func (x *HubControlEnvelope) String() string {
 func (*HubControlEnvelope) ProtoMessage() {}
 
 func (x *HubControlEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[34]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3423,7 +3253,7 @@ func (x *HubControlEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HubControlEnvelope.ProtoReflect.Descriptor instead.
 func (*HubControlEnvelope) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{34}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *HubControlEnvelope) GetHubId() string {
@@ -3584,7 +3414,7 @@ type HubRuntimeEnvelope struct {
 
 func (x *HubRuntimeEnvelope) Reset() {
 	*x = HubRuntimeEnvelope{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[35]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3596,7 +3426,7 @@ func (x *HubRuntimeEnvelope) String() string {
 func (*HubRuntimeEnvelope) ProtoMessage() {}
 
 func (x *HubRuntimeEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[35]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3609,7 +3439,7 @@ func (x *HubRuntimeEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HubRuntimeEnvelope.ProtoReflect.Descriptor instead.
 func (*HubRuntimeEnvelope) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{35}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *HubRuntimeEnvelope) GetHubId() string {
@@ -3742,7 +3572,7 @@ type ReportHubRuntimeRequest struct {
 
 func (x *ReportHubRuntimeRequest) Reset() {
 	*x = ReportHubRuntimeRequest{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[36]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3754,7 +3584,7 @@ func (x *ReportHubRuntimeRequest) String() string {
 func (*ReportHubRuntimeRequest) ProtoMessage() {}
 
 func (x *ReportHubRuntimeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[36]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3767,7 +3597,7 @@ func (x *ReportHubRuntimeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportHubRuntimeRequest.ProtoReflect.Descriptor instead.
 func (*ReportHubRuntimeRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{36}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ReportHubRuntimeRequest) GetEnvelopes() []*HubRuntimeEnvelope {
@@ -3788,7 +3618,7 @@ type ReportHubRuntimeResponse struct {
 
 func (x *ReportHubRuntimeResponse) Reset() {
 	*x = ReportHubRuntimeResponse{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[37]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3800,7 +3630,7 @@ func (x *ReportHubRuntimeResponse) String() string {
 func (*ReportHubRuntimeResponse) ProtoMessage() {}
 
 func (x *ReportHubRuntimeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[37]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3813,7 +3643,7 @@ func (x *ReportHubRuntimeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportHubRuntimeResponse.ProtoReflect.Descriptor instead.
 func (*ReportHubRuntimeResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{37}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ReportHubRuntimeResponse) GetAcceptedSenderSequence() uint64 {
@@ -4102,21 +3932,7 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\x16expires_at_unix_millis\x18\a \x01(\x03R\x13expiresAtUnixMillis\x12K\n" +
 	"\x0ecommand_result\x18\n" +
 	" \x01(\v2\".termx.cloud.v1.RelayCommandResultH\x00R\rcommandResultB\t\n" +
-	"\apayload\"\xc5\x03\n" +
-	"\x1aReportDaemonRuntimeRequest\x12\x1b\n" +
-	"\treport_id\x18\x01 \x01(\tR\breportId\x12\x15\n" +
-	"\x06hub_id\x18\x02 \x01(\tR\x05hubId\x12)\n" +
-	"\x10assignment_epoch\x18\x03 \x01(\x04R\x0fassignmentEpoch\x12.\n" +
-	"\x13presence_session_id\x18\x04 \x01(\tR\x11presenceSessionId\x12:\n" +
-	"\x19daemon_runtime_generation\x18\x05 \x01(\tR\x17daemonRuntimeGeneration\x12+\n" +
-	"\x11registry_revision\x18\x06 \x01(\x04R\x10registryRevision\x12Q\n" +
-	"\rpeer_sessions\x18\a \x01(\v2,.termx.cloud.v1.PeerSessionInventorySnapshotR\fpeerSessions\x12\\\n" +
-	"\x11terminal_accesses\x18\b \x01(\v2/.termx.cloud.v1.TerminalAccessInventorySnapshotR\x10terminalAccesses\"\x83\x02\n" +
-	"\x1bReportDaemonRuntimeResponse\x12\x1b\n" +
-	"\treport_id\x18\x01 \x01(\tR\breportId\x12:\n" +
-	"\x19daemon_runtime_generation\x18\x02 \x01(\tR\x17daemonRuntimeGeneration\x12<\n" +
-	"\x1aaccepted_registry_revision\x18\x03 \x01(\x04R\x18acceptedRegistryRevision\x12M\n" +
-	"#accepted_access_projection_revision\x18\x04 \x01(\x04R acceptedAccessProjectionRevision\"\xbf\x05\n" +
+	"\apayload\"\xbf\x05\n" +
 	"\x12HubControlEnvelope\x12\x15\n" +
 	"\x06hub_id\x18\x01 \x01(\tR\x05hubId\x12,\n" +
 	"\x12edge_deployment_id\x18\x02 \x01(\tR\x10edgeDeploymentId\x12-\n" +
@@ -4203,68 +4019,64 @@ func file_cloudpb_cloud_hub_control_proto_rawDescGZIP() []byte {
 }
 
 var file_cloudpb_cloud_hub_control_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_cloudpb_cloud_hub_control_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
+var file_cloudpb_cloud_hub_control_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_cloudpb_cloud_hub_control_proto_goTypes = []any{
-	(ControlServiceRole)(0),                 // 0: termx.cloud.v1.ControlServiceRole
-	(ControlSenderRole)(0),                  // 1: termx.cloud.v1.ControlSenderRole
-	(ProjectionDeltaOperation)(0),           // 2: termx.cloud.v1.ProjectionDeltaOperation
-	(HubCommandKind)(0),                     // 3: termx.cloud.v1.HubCommandKind
-	(DaemonControlCommandKind)(0),           // 4: termx.cloud.v1.DaemonControlCommandKind
-	(RelayControlCommandKind)(0),            // 5: termx.cloud.v1.RelayControlCommandKind
-	(RuntimeCommandResultCode)(0),           // 6: termx.cloud.v1.RuntimeCommandResultCode
-	(*EdgeDeploymentMetadata)(nil),          // 7: termx.cloud.v1.EdgeDeploymentMetadata
-	(*HubControlChallenge)(nil),             // 8: termx.cloud.v1.HubControlChallenge
-	(*HubControlChallengeRequest)(nil),      // 9: termx.cloud.v1.HubControlChallengeRequest
-	(*HubControlChallengeResponse)(nil),     // 10: termx.cloud.v1.HubControlChallengeResponse
-	(*HubControlChallengeProofInput)(nil),   // 11: termx.cloud.v1.HubControlChallengeProofInput
-	(*HubHello)(nil),                        // 12: termx.cloud.v1.HubHello
-	(*ControlStreamReady)(nil),              // 13: termx.cloud.v1.ControlStreamReady
-	(*RelayControlChallenge)(nil),           // 14: termx.cloud.v1.RelayControlChallenge
-	(*RelayHello)(nil),                      // 15: termx.cloud.v1.RelayHello
-	(*RelayControlReady)(nil),               // 16: termx.cloud.v1.RelayControlReady
-	(*HubAssignment)(nil),                   // 17: termx.cloud.v1.HubAssignment
-	(*CloudDevicePolicy)(nil),               // 18: termx.cloud.v1.CloudDevicePolicy
-	(*HubAccountPolicy)(nil),                // 19: termx.cloud.v1.HubAccountPolicy
-	(*FullProjectionSnapshot)(nil),          // 20: termx.cloud.v1.FullProjectionSnapshot
-	(*DevicePolicyDelta)(nil),               // 21: termx.cloud.v1.DevicePolicyDelta
-	(*HubAssignmentDelta)(nil),              // 22: termx.cloud.v1.HubAssignmentDelta
-	(*HubAccountPolicyDelta)(nil),           // 23: termx.cloud.v1.HubAccountPolicyDelta
-	(*PolicyDelta)(nil),                     // 24: termx.cloud.v1.PolicyDelta
-	(*ReconciliationDigest)(nil),            // 25: termx.cloud.v1.ReconciliationDigest
-	(*FenceAssignment)(nil),                 // 26: termx.cloud.v1.FenceAssignment
-	(*KickPresenceTarget)(nil),              // 27: termx.cloud.v1.KickPresenceTarget
-	(*RevokeTerminalAccessTarget)(nil),      // 28: termx.cloud.v1.RevokeTerminalAccessTarget
-	(*DaemonControlCommand)(nil),            // 29: termx.cloud.v1.DaemonControlCommand
-	(*HubCommand)(nil),                      // 30: termx.cloud.v1.HubCommand
-	(*HubCommandResult)(nil),                // 31: termx.cloud.v1.HubCommandResult
-	(*DaemonCommandResult)(nil),             // 32: termx.cloud.v1.DaemonCommandResult
-	(*RelayControlTarget)(nil),              // 33: termx.cloud.v1.RelayControlTarget
-	(*RelayControlCommand)(nil),             // 34: termx.cloud.v1.RelayControlCommand
-	(*RelayAllocationCloseResult)(nil),      // 35: termx.cloud.v1.RelayAllocationCloseResult
-	(*RelayCommandResult)(nil),              // 36: termx.cloud.v1.RelayCommandResult
-	(*RelayControlEnvelope)(nil),            // 37: termx.cloud.v1.RelayControlEnvelope
-	(*RelayRuntimeEnvelope)(nil),            // 38: termx.cloud.v1.RelayRuntimeEnvelope
-	(*ReportDaemonRuntimeRequest)(nil),      // 39: termx.cloud.v1.ReportDaemonRuntimeRequest
-	(*ReportDaemonRuntimeResponse)(nil),     // 40: termx.cloud.v1.ReportDaemonRuntimeResponse
-	(*HubControlEnvelope)(nil),              // 41: termx.cloud.v1.HubControlEnvelope
-	(*HubRuntimeEnvelope)(nil),              // 42: termx.cloud.v1.HubRuntimeEnvelope
-	(*ReportHubRuntimeRequest)(nil),         // 43: termx.cloud.v1.ReportHubRuntimeRequest
-	(*ReportHubRuntimeResponse)(nil),        // 44: termx.cloud.v1.ReportHubRuntimeResponse
-	(ManagedDeviceKind)(0),                  // 45: termx.cloud.v1.ManagedDeviceKind
-	(EntitlementStatus)(0),                  // 46: termx.cloud.v1.EntitlementStatus
-	(*PlanCapability)(nil),                  // 47: termx.cloud.v1.PlanCapability
-	(*ManagedPeerSessionTarget)(nil),        // 48: termx.cloud.v1.ManagedPeerSessionTarget
-	(*PeerSessionInventorySnapshot)(nil),    // 49: termx.cloud.v1.PeerSessionInventorySnapshot
-	(*TerminalAccessInventorySnapshot)(nil), // 50: termx.cloud.v1.TerminalAccessInventorySnapshot
-	(*HubTopologySnapshot)(nil),             // 51: termx.cloud.v1.HubTopologySnapshot
+	(ControlServiceRole)(0),               // 0: termx.cloud.v1.ControlServiceRole
+	(ControlSenderRole)(0),                // 1: termx.cloud.v1.ControlSenderRole
+	(ProjectionDeltaOperation)(0),         // 2: termx.cloud.v1.ProjectionDeltaOperation
+	(HubCommandKind)(0),                   // 3: termx.cloud.v1.HubCommandKind
+	(DaemonControlCommandKind)(0),         // 4: termx.cloud.v1.DaemonControlCommandKind
+	(RelayControlCommandKind)(0),          // 5: termx.cloud.v1.RelayControlCommandKind
+	(RuntimeCommandResultCode)(0),         // 6: termx.cloud.v1.RuntimeCommandResultCode
+	(*EdgeDeploymentMetadata)(nil),        // 7: termx.cloud.v1.EdgeDeploymentMetadata
+	(*HubControlChallenge)(nil),           // 8: termx.cloud.v1.HubControlChallenge
+	(*HubControlChallengeRequest)(nil),    // 9: termx.cloud.v1.HubControlChallengeRequest
+	(*HubControlChallengeResponse)(nil),   // 10: termx.cloud.v1.HubControlChallengeResponse
+	(*HubControlChallengeProofInput)(nil), // 11: termx.cloud.v1.HubControlChallengeProofInput
+	(*HubHello)(nil),                      // 12: termx.cloud.v1.HubHello
+	(*ControlStreamReady)(nil),            // 13: termx.cloud.v1.ControlStreamReady
+	(*RelayControlChallenge)(nil),         // 14: termx.cloud.v1.RelayControlChallenge
+	(*RelayHello)(nil),                    // 15: termx.cloud.v1.RelayHello
+	(*RelayControlReady)(nil),             // 16: termx.cloud.v1.RelayControlReady
+	(*HubAssignment)(nil),                 // 17: termx.cloud.v1.HubAssignment
+	(*CloudDevicePolicy)(nil),             // 18: termx.cloud.v1.CloudDevicePolicy
+	(*HubAccountPolicy)(nil),              // 19: termx.cloud.v1.HubAccountPolicy
+	(*FullProjectionSnapshot)(nil),        // 20: termx.cloud.v1.FullProjectionSnapshot
+	(*DevicePolicyDelta)(nil),             // 21: termx.cloud.v1.DevicePolicyDelta
+	(*HubAssignmentDelta)(nil),            // 22: termx.cloud.v1.HubAssignmentDelta
+	(*HubAccountPolicyDelta)(nil),         // 23: termx.cloud.v1.HubAccountPolicyDelta
+	(*PolicyDelta)(nil),                   // 24: termx.cloud.v1.PolicyDelta
+	(*ReconciliationDigest)(nil),          // 25: termx.cloud.v1.ReconciliationDigest
+	(*FenceAssignment)(nil),               // 26: termx.cloud.v1.FenceAssignment
+	(*KickPresenceTarget)(nil),            // 27: termx.cloud.v1.KickPresenceTarget
+	(*RevokeTerminalAccessTarget)(nil),    // 28: termx.cloud.v1.RevokeTerminalAccessTarget
+	(*DaemonControlCommand)(nil),          // 29: termx.cloud.v1.DaemonControlCommand
+	(*HubCommand)(nil),                    // 30: termx.cloud.v1.HubCommand
+	(*HubCommandResult)(nil),              // 31: termx.cloud.v1.HubCommandResult
+	(*DaemonCommandResult)(nil),           // 32: termx.cloud.v1.DaemonCommandResult
+	(*RelayControlTarget)(nil),            // 33: termx.cloud.v1.RelayControlTarget
+	(*RelayControlCommand)(nil),           // 34: termx.cloud.v1.RelayControlCommand
+	(*RelayAllocationCloseResult)(nil),    // 35: termx.cloud.v1.RelayAllocationCloseResult
+	(*RelayCommandResult)(nil),            // 36: termx.cloud.v1.RelayCommandResult
+	(*RelayControlEnvelope)(nil),          // 37: termx.cloud.v1.RelayControlEnvelope
+	(*RelayRuntimeEnvelope)(nil),          // 38: termx.cloud.v1.RelayRuntimeEnvelope
+	(*HubControlEnvelope)(nil),            // 39: termx.cloud.v1.HubControlEnvelope
+	(*HubRuntimeEnvelope)(nil),            // 40: termx.cloud.v1.HubRuntimeEnvelope
+	(*ReportHubRuntimeRequest)(nil),       // 41: termx.cloud.v1.ReportHubRuntimeRequest
+	(*ReportHubRuntimeResponse)(nil),      // 42: termx.cloud.v1.ReportHubRuntimeResponse
+	(ManagedDeviceKind)(0),                // 43: termx.cloud.v1.ManagedDeviceKind
+	(EntitlementStatus)(0),                // 44: termx.cloud.v1.EntitlementStatus
+	(*PlanCapability)(nil),                // 45: termx.cloud.v1.PlanCapability
+	(*ManagedPeerSessionTarget)(nil),      // 46: termx.cloud.v1.ManagedPeerSessionTarget
+	(*HubTopologySnapshot)(nil),           // 47: termx.cloud.v1.HubTopologySnapshot
 }
 var file_cloudpb_cloud_hub_control_proto_depIdxs = []int32{
 	8,  // 0: termx.cloud.v1.HubControlChallengeResponse.challenge:type_name -> termx.cloud.v1.HubControlChallenge
 	7,  // 1: termx.cloud.v1.HubHello.deployment:type_name -> termx.cloud.v1.EdgeDeploymentMetadata
 	7,  // 2: termx.cloud.v1.RelayHello.deployment:type_name -> termx.cloud.v1.EdgeDeploymentMetadata
-	45, // 3: termx.cloud.v1.CloudDevicePolicy.device_kind:type_name -> termx.cloud.v1.ManagedDeviceKind
-	46, // 4: termx.cloud.v1.HubAccountPolicy.entitlement_status:type_name -> termx.cloud.v1.EntitlementStatus
-	47, // 5: termx.cloud.v1.HubAccountPolicy.capability:type_name -> termx.cloud.v1.PlanCapability
+	43, // 3: termx.cloud.v1.CloudDevicePolicy.device_kind:type_name -> termx.cloud.v1.ManagedDeviceKind
+	44, // 4: termx.cloud.v1.HubAccountPolicy.entitlement_status:type_name -> termx.cloud.v1.EntitlementStatus
+	45, // 5: termx.cloud.v1.HubAccountPolicy.capability:type_name -> termx.cloud.v1.PlanCapability
 	18, // 6: termx.cloud.v1.FullProjectionSnapshot.devices:type_name -> termx.cloud.v1.CloudDevicePolicy
 	17, // 7: termx.cloud.v1.FullProjectionSnapshot.assignments:type_name -> termx.cloud.v1.HubAssignment
 	19, // 8: termx.cloud.v1.FullProjectionSnapshot.accounts:type_name -> termx.cloud.v1.HubAccountPolicy
@@ -4278,7 +4090,7 @@ var file_cloudpb_cloud_hub_control_proto_depIdxs = []int32{
 	22, // 16: termx.cloud.v1.PolicyDelta.assignment_operations:type_name -> termx.cloud.v1.HubAssignmentDelta
 	23, // 17: termx.cloud.v1.PolicyDelta.account_operations:type_name -> termx.cloud.v1.HubAccountPolicyDelta
 	4,  // 18: termx.cloud.v1.DaemonControlCommand.command_kind:type_name -> termx.cloud.v1.DaemonControlCommandKind
-	48, // 19: termx.cloud.v1.DaemonControlCommand.managed_peer_session:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
+	46, // 19: termx.cloud.v1.DaemonControlCommand.managed_peer_session:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
 	28, // 20: termx.cloud.v1.DaemonControlCommand.terminal_access:type_name -> termx.cloud.v1.RevokeTerminalAccessTarget
 	3,  // 21: termx.cloud.v1.HubCommand.command_kind:type_name -> termx.cloud.v1.HubCommandKind
 	26, // 22: termx.cloud.v1.HubCommand.fence_assignment:type_name -> termx.cloud.v1.FenceAssignment
@@ -4296,25 +4108,23 @@ var file_cloudpb_cloud_hub_control_proto_depIdxs = []int32{
 	34, // 34: termx.cloud.v1.RelayControlEnvelope.command:type_name -> termx.cloud.v1.RelayControlCommand
 	1,  // 35: termx.cloud.v1.RelayRuntimeEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
 	36, // 36: termx.cloud.v1.RelayRuntimeEnvelope.command_result:type_name -> termx.cloud.v1.RelayCommandResult
-	49, // 37: termx.cloud.v1.ReportDaemonRuntimeRequest.peer_sessions:type_name -> termx.cloud.v1.PeerSessionInventorySnapshot
-	50, // 38: termx.cloud.v1.ReportDaemonRuntimeRequest.terminal_accesses:type_name -> termx.cloud.v1.TerminalAccessInventorySnapshot
-	1,  // 39: termx.cloud.v1.HubControlEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
-	13, // 40: termx.cloud.v1.HubControlEnvelope.ready:type_name -> termx.cloud.v1.ControlStreamReady
-	20, // 41: termx.cloud.v1.HubControlEnvelope.full_projection:type_name -> termx.cloud.v1.FullProjectionSnapshot
-	24, // 42: termx.cloud.v1.HubControlEnvelope.policy_delta:type_name -> termx.cloud.v1.PolicyDelta
-	26, // 43: termx.cloud.v1.HubControlEnvelope.fence_assignment:type_name -> termx.cloud.v1.FenceAssignment
-	30, // 44: termx.cloud.v1.HubControlEnvelope.command:type_name -> termx.cloud.v1.HubCommand
-	1,  // 45: termx.cloud.v1.HubRuntimeEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
-	25, // 46: termx.cloud.v1.HubRuntimeEnvelope.reconciliation:type_name -> termx.cloud.v1.ReconciliationDigest
-	51, // 47: termx.cloud.v1.HubRuntimeEnvelope.topology:type_name -> termx.cloud.v1.HubTopologySnapshot
-	31, // 48: termx.cloud.v1.HubRuntimeEnvelope.hub_command_result:type_name -> termx.cloud.v1.HubCommandResult
-	32, // 49: termx.cloud.v1.HubRuntimeEnvelope.daemon_command_result:type_name -> termx.cloud.v1.DaemonCommandResult
-	42, // 50: termx.cloud.v1.ReportHubRuntimeRequest.envelopes:type_name -> termx.cloud.v1.HubRuntimeEnvelope
-	51, // [51:51] is the sub-list for method output_type
-	51, // [51:51] is the sub-list for method input_type
-	51, // [51:51] is the sub-list for extension type_name
-	51, // [51:51] is the sub-list for extension extendee
-	0,  // [0:51] is the sub-list for field type_name
+	1,  // 37: termx.cloud.v1.HubControlEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
+	13, // 38: termx.cloud.v1.HubControlEnvelope.ready:type_name -> termx.cloud.v1.ControlStreamReady
+	20, // 39: termx.cloud.v1.HubControlEnvelope.full_projection:type_name -> termx.cloud.v1.FullProjectionSnapshot
+	24, // 40: termx.cloud.v1.HubControlEnvelope.policy_delta:type_name -> termx.cloud.v1.PolicyDelta
+	26, // 41: termx.cloud.v1.HubControlEnvelope.fence_assignment:type_name -> termx.cloud.v1.FenceAssignment
+	30, // 42: termx.cloud.v1.HubControlEnvelope.command:type_name -> termx.cloud.v1.HubCommand
+	1,  // 43: termx.cloud.v1.HubRuntimeEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
+	25, // 44: termx.cloud.v1.HubRuntimeEnvelope.reconciliation:type_name -> termx.cloud.v1.ReconciliationDigest
+	47, // 45: termx.cloud.v1.HubRuntimeEnvelope.topology:type_name -> termx.cloud.v1.HubTopologySnapshot
+	31, // 46: termx.cloud.v1.HubRuntimeEnvelope.hub_command_result:type_name -> termx.cloud.v1.HubCommandResult
+	32, // 47: termx.cloud.v1.HubRuntimeEnvelope.daemon_command_result:type_name -> termx.cloud.v1.DaemonCommandResult
+	40, // 48: termx.cloud.v1.ReportHubRuntimeRequest.envelopes:type_name -> termx.cloud.v1.HubRuntimeEnvelope
+	49, // [49:49] is the sub-list for method output_type
+	49, // [49:49] is the sub-list for method input_type
+	49, // [49:49] is the sub-list for extension type_name
+	49, // [49:49] is the sub-list for extension extendee
+	0,  // [0:49] is the sub-list for field type_name
 }
 
 func init() { file_cloudpb_cloud_hub_control_proto_init() }
@@ -4341,14 +4151,14 @@ func file_cloudpb_cloud_hub_control_proto_init() {
 	file_cloudpb_cloud_hub_control_proto_msgTypes[31].OneofWrappers = []any{
 		(*RelayRuntimeEnvelope_CommandResult)(nil),
 	}
-	file_cloudpb_cloud_hub_control_proto_msgTypes[34].OneofWrappers = []any{
+	file_cloudpb_cloud_hub_control_proto_msgTypes[32].OneofWrappers = []any{
 		(*HubControlEnvelope_Ready)(nil),
 		(*HubControlEnvelope_FullProjection)(nil),
 		(*HubControlEnvelope_PolicyDelta)(nil),
 		(*HubControlEnvelope_FenceAssignment)(nil),
 		(*HubControlEnvelope_Command)(nil),
 	}
-	file_cloudpb_cloud_hub_control_proto_msgTypes[35].OneofWrappers = []any{
+	file_cloudpb_cloud_hub_control_proto_msgTypes[33].OneofWrappers = []any{
 		(*HubRuntimeEnvelope_Reconciliation)(nil),
 		(*HubRuntimeEnvelope_Topology)(nil),
 		(*HubRuntimeEnvelope_HubCommandResult)(nil),
@@ -4360,7 +4170,7 @@ func file_cloudpb_cloud_hub_control_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloudpb_cloud_hub_control_proto_rawDesc), len(file_cloudpb_cloud_hub_control_proto_rawDesc)),
 			NumEnums:      7,
-			NumMessages:   38,
+			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

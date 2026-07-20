@@ -25,6 +25,9 @@ func TestIPCConnectionPreservesHelloUnaryAndStreamOwnership(t *testing.T) {
 		PlanManagedRouteFunc: func(context.Context, *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error) {
 			return &cloudpb.ManagedRoutePlan{PlanId: "plan-1", ManagedSessionId: "managed-1", TargetDeviceId: "daemon-1"}, nil
 		},
+		ReportDaemonRuntimeFunc: func(_ context.Context, request *cloudpb.ReportDaemonRuntimeRequest) (*cloudpb.ReportDaemonRuntimeResponse, error) {
+			return &cloudpb.ReportDaemonRuntimeResponse{ReportId: request.GetReportId(), DaemonRuntimeGeneration: request.GetDaemonRuntimeGeneration(), AcceptedRegistryRevision: request.GetRegistryRevision()}, nil
+		},
 		OpenPresenceFunc: func(context.Context, *cloudpb.OpenPresenceRequest) (cloudcompanion.PresenceStream, error) {
 			return presence, nil
 		},
@@ -43,6 +46,10 @@ func TestIPCConnectionPreservesHelloUnaryAndStreamOwnership(t *testing.T) {
 	plan, err := client.PlanManagedRoute(context.Background(), &cloudpb.PlanManagedRouteRequest{ManagedSessionId: "managed-1"})
 	if err != nil || plan.GetPlanId() != "plan-1" {
 		t.Fatalf("PlanManagedRoute = (%v, %v)", plan, err)
+	}
+	runtimeAck, err := client.ReportDaemonRuntime(context.Background(), &cloudpb.ReportDaemonRuntimeRequest{ReportId: "runtime-1:0", DaemonRuntimeGeneration: "runtime-1"})
+	if err != nil || runtimeAck.GetReportId() != "runtime-1:0" {
+		t.Fatalf("ReportDaemonRuntime = (%v, %v)", runtimeAck, err)
 	}
 
 	stream, err := client.OpenPresence(context.Background(), &cloudpb.OpenPresenceRequest{})

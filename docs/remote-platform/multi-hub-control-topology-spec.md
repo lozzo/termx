@@ -597,8 +597,6 @@ HubAssignment / FenceAssignment
 HubControlEnvelope / HubRuntimeEnvelope
 HubCommand / HubCommandResult / RelayCommandResult
 DaemonControlCommand / DaemonCommandResult
-ReportDaemonRuntimeRequest/Response
-TerminalAccessInventorySnapshot
 ```
 
 Topology：
@@ -608,6 +606,8 @@ PresenceProjection
 ManagedPeerSessionProjection
 PeerSessionInventorySnapshot
 PeerSessionLifecycleEvent
+ReportDaemonRuntimeRequest/Response
+TerminalAccessInventorySnapshot
 HubTopologySnapshot
 Availability / Freshness / ObservationSource
 ```

@@ -39,7 +39,8 @@ func TestHubPublicAdapterRunsPresenceResolveAndSignalingOverHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(newHubHTTPHandler(hubHTTPConfig{Hub: hubService, Authorizer: authorizer, HubID: "hub-1", HubURL: "http://127.0.0.1:1"}))
+	projection := &staticProjection{staticAssignmentSource: staticAssignmentSource{deviceID: "daemon-1", epoch: 1}}
+	server := httptest.NewServer(newHubHTTPHandler(hubHTTPConfig{Hub: hubService, Authorizer: authorizer, Projection: projection, HubID: "hub-1", HubURL: "http://127.0.0.1:1"}))
 	defer server.Close()
 	adapter, err := httpapi.New(httpapi.Config{ControlPlaneURL: server.URL, HubURL: server.URL})
 	if err != nil {
@@ -83,8 +84,18 @@ func TestHubPublicAdapterRunsPresenceResolveAndSignalingOverHTTP(t *testing.T) {
 	}
 	defer presence.Close()
 	ready, err := presence.Receive(context.Background())
-	if err != nil || ready.GetReady().GetPresenceSessionId() != challenge.GetPresenceSessionId() {
+	if err != nil || ready.GetReady().GetPresenceSessionId() != challenge.GetPresenceSessionId() || ready.GetReady().GetHubId() != "hub-1" || ready.GetReady().GetAssignmentEpoch() != 1 {
 		t.Fatalf("presence ready = (%#v, %v)", ready, err)
+	}
+	reportID := "runtime-1:0"
+	runtimeReport := &cloudpb.ReportDaemonRuntimeRequest{ReportId: reportID, HubId: "hub-1", AssignmentEpoch: 1, PresenceSessionId: challenge.GetPresenceSessionId(), DaemonRuntimeGeneration: "runtime-1", PeerSessions: &cloudpb.PeerSessionInventorySnapshot{ReportId: reportID, DaemonDeviceId: "daemon-1", ControlOwnerHubId: "hub-1", AssignmentEpoch: 1, ControlPresenceSessionId: challenge.GetPresenceSessionId(), DaemonRuntimeGeneration: "runtime-1", ObservedAtUnixMillis: now.UnixMilli()}}
+	runtimeAck, err := adapter.ReportDaemonRuntime(context.Background(), daemonSession.Authorization(), runtimeReport)
+	if err != nil || runtimeAck.GetReportId() != reportID || runtimeAck.GetAcceptedRegistryRevision() != 0 {
+		t.Fatalf("daemon runtime report = (%#v, %v)", runtimeAck, err)
+	}
+	topology := hubService.TopologySnapshot(1, now)
+	if len(topology.GetPresences()) != 1 || topology.GetPresences()[0].GetDaemonRuntimeGeneration() != "runtime-1" {
+		t.Fatalf("Hub runtime topology = %#v", topology)
 	}
 	resolved, err := adapter.ResolveEndpoint(context.Background(), clientSession.Authorization(), &cloudpb.ResolveEndpointRequest{EndpointId: "endpoint-1", TargetDeviceId: "daemon-1"})
 	if err != nil || resolved.GetHubId() != "hub-1" || resolved.GetPresence() != cloudpb.PresenceState_PRESENCE_STATE_ONLINE {
@@ -97,7 +108,7 @@ func TestHubPublicAdapterRunsPresenceResolveAndSignalingOverHTTP(t *testing.T) {
 	}
 	defer signaling.Close()
 	offer, err := presence.Receive(context.Background())
-	if err != nil || offer.GetOffer().GetSdp() != "offer" {
+	if err != nil || offer.GetOffer().GetSdp() != "offer" || offer.GetOffer().GetSessionIncarnation() == 0 || offer.GetOffer().GetPresenceSessionId() != challenge.GetPresenceSessionId() || offer.GetOffer().GetAssignmentEpoch() != 1 {
 		t.Fatalf("presence offer = (%#v, %v)", offer, err)
 	}
 	if _, err := adapter.CompleteSignalingOffer(context.Background(), daemonSession.Authorization(), &cloudpb.CompleteSignalingOfferRequest{SignalingSessionId: offer.GetOffer().GetSignalingSessionId(), Result: &cloudpb.CompleteSignalingOfferRequest_Answer{Answer: &cloudpb.SignalingAnswer{SignalingSessionId: offer.GetOffer().GetSignalingSessionId(), Sdp: "answer"}}}); err != nil {
@@ -113,6 +124,10 @@ type staticAssignmentSource struct {
 	deviceID string
 	epoch    uint64
 }
+
+type staticProjection struct{ staticAssignmentSource }
+
+func (*staticProjection) Ready() bool { return true }
 
 func (source staticAssignmentSource) ActiveAssignment(deviceID string) (uint64, bool) {
 	return source.epoch, source.epoch != 0 && deviceID == source.deviceID

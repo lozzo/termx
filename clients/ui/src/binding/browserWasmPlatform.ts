@@ -24,7 +24,6 @@ import {
   type WebRTCOpenPeerRequest,
 } from '../generated/bindingpb/client_binding_pb'
 import {
-  ObservedPath,
   RoutePreference,
   RelayLeaseSchema,
   ManagedRoutePlanSchema,
@@ -34,6 +33,7 @@ import {
   type CreateSignalingSessionRequest,
   type ResolveEndpointRequest,
 } from '../generated/cloudpb/cloud_companion_pb'
+import { ObservedPath } from '../generated/cloudpb/cloud_topology_pb'
 import { splitOutAnswerCandidates } from '../webrtc/rtcSdpUtils'
 import type { WasmPlatformDispatcher } from './wasmRuntime'
 

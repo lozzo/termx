@@ -269,6 +269,19 @@ func (client *Client) CompleteSignalingOffer(ctx context.Context, request *cloud
 	return value, nil
 }
 
+// ReportDaemonRuntime 转发当前 Presence 的完整 managed runtime replacement。
+func (client *Client) ReportDaemonRuntime(ctx context.Context, request *cloudpb.ReportDaemonRuntimeRequest) (*cloudpb.ReportDaemonRuntimeResponse, error) {
+	response, err := client.call(ctx, &cloudpb.IPCRequest{Operation: &cloudpb.IPCRequest_ReportDaemonRuntime{ReportDaemonRuntime: request}})
+	if err != nil {
+		return nil, err
+	}
+	value := response.GetReportDaemonRuntime()
+	if value == nil {
+		return nil, protocolResponseError("ReportDaemonRuntime")
+	}
+	return value, nil
+}
+
 // AcquireRelayLease 获取 caller-specific 短期 Relay lease。
 func (client *Client) AcquireRelayLease(ctx context.Context, request *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
 	response, err := client.call(ctx, &cloudpb.IPCRequest{Operation: &cloudpb.IPCRequest_AcquireRelayLease{AcquireRelayLease: request}})

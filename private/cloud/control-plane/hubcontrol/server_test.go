@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
 	"io"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"github.com/lozzow/termx/private/cloud/control-plane/hubcontrol"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
 	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
+	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
 )
@@ -29,15 +31,22 @@ func TestHubControlUsesRealStreamGenerationAndPersistentReportCursor(t *testing.
 	}
 	defer store.Close()
 	registry, _ := hubregistry.New(store)
+	topologyService, _ := cloudtopology.New(registry, store)
 	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local-1", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(publicKey), RelayId: "relay-1", RelayControlIdentityFingerprint: "relay-fingerprint"}
 	if err := registry.RegisterDeployment(context.Background(), hubregistry.Deployment{Metadata: metadata, ControlPublicKey: publicKey, Enabled: true, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.Assign(context.Background(), &cloudpb.HubAssignment{DaemonDeviceId: "daemon-1", AccountId: "account-1", HubId: "hub-1", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := topologyService.PutDeviceOwnership(context.Background(), &cloudpb.CloudDevicePolicy{AccountId: "account-1", DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON}); err != nil {
 		t.Fatal(err)
 	}
 	publisher := hubcontrol.NewPublisher()
 	if err := publisher.PublishFull(&cloudpb.FullProjectionSnapshot{HubId: "hub-1", ProjectionRevision: 1, SnapshotDigest: []byte("digest-1"), GeneratedAtUnixMillis: now.UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}); err != nil {
 		t.Fatal(err)
 	}
-	server, err := hubcontrol.NewServer(hubcontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: publisher, Clock: time.Now, Random: rand.Reader, ChallengeTTL: time.Minute, EnvelopeTTL: time.Minute})
+	server, err := hubcontrol.NewServer(hubcontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: publisher, Topology: topologyService, Clock: time.Now, Random: rand.Reader, ChallengeTTL: time.Minute, EnvelopeTTL: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,6 +107,19 @@ func TestHubControlUsesRealStreamGenerationAndPersistentReportCursor(t *testing.
 	conflict.GetReconciliation().ProjectionDigest = []byte("conflict")
 	if _, status := reportRuntime(t, httpServer.URL, conflict); status != http.StatusConflict {
 		t.Fatalf("conflicting replay status = %d", status)
+	}
+	topology := &cloudpb.HubTopologySnapshot{HubId: "hub-1", ControlGeneration: 3, TopologyRevision: 1, ObservedAtUnixMillis: now.UnixMilli(), Presences: []*cloudpb.PresenceProjection{{DaemonDeviceId: "daemon-1", ControlOwnerHubId: "hub-1", AssignmentEpoch: 1, PresenceSessionId: "presence-1", Availability: cloudpb.Availability_AVAILABILITY_ONLINE, Freshness: cloudpb.Freshness_FRESHNESS_FRESH, ObservationSource: cloudpb.ObservationSource_OBSERVATION_SOURCE_DAEMON_INVENTORY, ObservedAtUnixMillis: now.UnixMilli(), FreshUntilUnixMillis: now.Add(time.Minute).UnixMilli(), DaemonRuntimeGeneration: "runtime-1"}}}
+	topologyPayload, _ := proto.MarshalOptions{Deterministic: true}.Marshal(topology)
+	topologyDigest := sha256.Sum256(topologyPayload)
+	topology.TopologyDigest = topologyDigest[:]
+	topologyEnvelope := &cloudpb.HubRuntimeEnvelope{HubId: "hub-1", EdgeDeploymentId: "edge-1", ControlGeneration: 3, SenderRole: cloudpb.ControlSenderRole_CONTROL_SENDER_ROLE_HUB, SenderSequence: 2, IssuedAtUnixMillis: time.Now().UnixMilli(), ExpiresAtUnixMillis: time.Now().Add(time.Minute).UnixMilli(), Payload: &cloudpb.HubRuntimeEnvelope_Topology{Topology: topology}}
+	topologyResult, status := reportRuntime(t, httpServer.URL, topologyEnvelope)
+	if status != http.StatusOK || topologyResult.GetAcceptedSenderSequence() != 2 {
+		t.Fatalf("topology report = status=%d result=%#v", status, topologyResult)
+	}
+	accountID, projected, err := topologyService.Presence(context.Background(), "daemon-1")
+	if err != nil || accountID != "account-1" || projected.GetAvailability() != cloudpb.Availability_AVAILABILITY_ONLINE {
+		t.Fatalf("persisted topology = account=%q projection=%#v err=%v", accountID, projected, err)
 	}
 }
 

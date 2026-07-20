@@ -390,26 +390,6 @@ message RelayRuntimeEnvelope {
   }
 }
 
-// ReportDaemonRuntimeRequest 是 daemon Presence 上行的完整 runtime replacement。
-message ReportDaemonRuntimeRequest {
-  string report_id = 1;
-  string hub_id = 2;
-  uint64 assignment_epoch = 3;
-  string presence_session_id = 4;
-  string daemon_runtime_generation = 5;
-  uint64 registry_revision = 6;
-  PeerSessionInventorySnapshot peer_sessions = 7;
-  TerminalAccessInventorySnapshot terminal_accesses = 8;
-}
-
-// ReportDaemonRuntimeResponse 只确认已接收的精确 runtime revision。
-message ReportDaemonRuntimeResponse {
-  string report_id = 1;
-  string daemon_runtime_generation = 2;
-  uint64 accepted_registry_revision = 3;
-  uint64 accepted_access_projection_revision = 4;
-}
-
 // HubControlEnvelope 是 Controller 到 Hub 的下行 envelope。
 message HubControlEnvelope {
   string hub_id = 1;

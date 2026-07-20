@@ -190,6 +190,15 @@ func (adapter *Adapter) CompleteSignalingOffer(ctx context.Context, authorizatio
 	return response, nil
 }
 
+// ReportDaemonRuntime 使用 daemon edge credential 提交当前 Presence 的完整 runtime replacement。
+func (adapter *Adapter) ReportDaemonRuntime(ctx context.Context, authorization session.Authorization, request *cloudpb.ReportDaemonRuntimeRequest) (*cloudpb.ReportDaemonRuntimeResponse, error) {
+	response := &cloudpb.ReportDaemonRuntimeResponse{}
+	if err := adapter.postEdgeHubProto(ctx, HubReportDaemonRuntimePath, authorization, request, response); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
 // AcquireRelayLease 通过 Hub 区域委派预算获取 caller-specific TURN material。
 func (adapter *Adapter) AcquireRelayLease(ctx context.Context, authorization session.Authorization, request *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
 	response := &cloudpb.RelayLease{}

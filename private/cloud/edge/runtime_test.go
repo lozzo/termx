@@ -15,6 +15,7 @@ import (
 	"github.com/lozzow/termx/private/cloud/control-plane/hubcontrol"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
 	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
+	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
 	"github.com/lozzow/termx/private/cloud/control-plane/usage"
 	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
 	"github.com/lozzow/termx/proto/cloudpb"
@@ -27,6 +28,7 @@ func TestEdgeRestartRequiresFullSyncAndKeepsOnlyUsageOutbox(t *testing.T) {
 	store, _ := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
 	defer store.Close()
 	registry, _ := hubregistry.New(store)
+	topologyService, _ := cloudtopology.New(registry, store)
 	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local-1", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublic), RelayId: "relay-1", RelayControlIdentityFingerprint: "relay-fingerprint"}
 	if err := registry.RegisterDeployment(context.Background(), hubregistry.Deployment{Metadata: metadata, ControlPublicKey: hubPublic, Enabled: true, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
@@ -43,7 +45,10 @@ func TestEdgeRestartRequiresFullSyncAndKeepsOnlyUsageOutbox(t *testing.T) {
 	if err := publisher.PublishFull(full); err != nil {
 		t.Fatal(err)
 	}
-	control, _ := hubcontrol.NewServer(hubcontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: publisher, Clock: time.Now, Random: rand.Reader, ChallengeTTL: time.Minute, EnvelopeTTL: time.Minute})
+	control, err := hubcontrol.NewServer(hubcontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: publisher, Topology: topologyService, Clock: time.Now, Random: rand.Reader, ChallengeTTL: time.Minute, EnvelopeTTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewServer(control.Handler())
 	defer server.Close()
 	outboxPath := filepath.Join(t.TempDir(), "usage.outbox")

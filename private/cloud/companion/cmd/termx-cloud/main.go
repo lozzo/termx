@@ -119,6 +119,7 @@ func serve(ctx context.Context, endpoint string, smoke bool, devManifest, profil
 			cloudpb.CompanionCapability_COMPANION_CAPABILITY_PATH_QUALITY,
 			cloudpb.CompanionCapability_COMPANION_CAPABILITY_SMART_ROUTE,
 			cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_DIRECTORY,
+			cloudpb.CompanionCapability_COMPANION_CAPABILITY_DAEMON_RUNTIME,
 		},
 	}, sessions, runtimeConfiguration.controlPlane, runtimeConfiguration.hub)
 	if err != nil {

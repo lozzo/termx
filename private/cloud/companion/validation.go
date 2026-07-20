@@ -210,6 +210,35 @@ func validateCompleteOfferRequest(request *cloudpb.CompleteSignalingOfferRequest
 	return nil
 }
 
+func validateDaemonRuntimeRequest(request *cloudpb.ReportDaemonRuntimeRequest, daemonDeviceID, hubID string) error {
+	if request == nil || request.GetReportId() == "" || request.GetHubId() == "" || request.GetHubId() != hubID || request.GetAssignmentEpoch() == 0 || request.GetPresenceSessionId() == "" || request.GetDaemonRuntimeGeneration() == "" || request.GetPeerSessions() == nil {
+		return protocolError("invalid daemon runtime report")
+	}
+	peer := request.GetPeerSessions()
+	if peer.GetReportId() != request.GetReportId() || peer.GetDaemonDeviceId() != daemonDeviceID || peer.GetControlOwnerHubId() != request.GetHubId() || peer.GetAssignmentEpoch() != request.GetAssignmentEpoch() || peer.GetControlPresenceSessionId() != request.GetPresenceSessionId() || peer.GetDaemonRuntimeGeneration() != request.GetDaemonRuntimeGeneration() || peer.GetRegistryRevision() != request.GetRegistryRevision() || peer.GetObservedAtUnixMillis() <= 0 {
+		return protocolError("daemon runtime session inventory does not match its envelope")
+	}
+	for _, sessionProjection := range peer.GetSessions() {
+		target := sessionProjection.GetTarget()
+		if sessionProjection == nil || target == nil || target.GetDaemonDeviceId() != daemonDeviceID || target.GetAssignmentEpoch() != request.GetAssignmentEpoch() || target.GetControlPresenceSessionId() != request.GetPresenceSessionId() || target.GetDaemonRuntimeGeneration() != request.GetDaemonRuntimeGeneration() || sessionProjection.GetControlOwnerHubId() != request.GetHubId() || target.GetManagedSessionId() == "" || target.GetSessionIncarnation() == 0 || sessionProjection.GetClientDeviceId() == "" || !validObservedPath(sessionProjection.GetObservedDataPath()) || sessionProjection.GetState() == cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_UNSPECIFIED {
+			return protocolError("daemon runtime contains an invalid managed session")
+		}
+	}
+	if access := request.GetTerminalAccesses(); access != nil {
+		if access.GetReportId() != request.GetReportId() || access.GetDaemonDeviceId() != daemonDeviceID || access.GetControlOwnerHubId() != request.GetHubId() || access.GetAssignmentEpoch() != request.GetAssignmentEpoch() || access.GetControlPresenceSessionId() != request.GetPresenceSessionId() || access.GetDaemonRuntimeGeneration() != request.GetDaemonRuntimeGeneration() || access.GetRegistryRevision() != request.GetRegistryRevision() {
+			return protocolError("daemon runtime access inventory does not match its envelope")
+		}
+	}
+	return nil
+}
+
+func validateDaemonRuntimeResponse(request *cloudpb.ReportDaemonRuntimeRequest, response *cloudpb.ReportDaemonRuntimeResponse) error {
+	if response == nil || response.GetReportId() != request.GetReportId() || response.GetDaemonRuntimeGeneration() != request.GetDaemonRuntimeGeneration() || response.GetAcceptedRegistryRevision() != request.GetRegistryRevision() {
+		return protocolError("Hub returned an invalid daemon runtime acknowledgement")
+	}
+	return nil
+}
+
 func validateRelayLeaseRequest(request *cloudpb.AcquireRelayLeaseRequest) error {
 	if request == nil || request.GetManagedSessionId() == "" || request.GetTargetDeviceId() == "" || !validRoutePreference(request.GetRoutePreference()) || request.GetRoutePreference() == cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY {
 		return protocolError("invalid Relay lease request")

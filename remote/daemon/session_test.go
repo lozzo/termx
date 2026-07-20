@@ -6,10 +6,13 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	core "github.com/lozzow/termx/core"
+	"github.com/lozzow/termx/proto/cloudpb"
+	remotewebrtc "github.com/lozzow/termx/remote/webrtc"
 	"github.com/lozzow/termx/shared/remoteauth"
 	"github.com/lozzow/termx/shared/transport"
 	"github.com/lozzow/termx/shared/transport/memory"
@@ -35,6 +38,37 @@ func TestSessionAcceptorAuthenticatesBeforeServingScopedTransport(t *testing.T) 
 	}
 	if core.calls != 1 || core.scope.TerminalID != "term-1" || core.scope.AllowDaemon {
 		t.Fatalf("unexpected scoped core call: calls=%d scope=%#v", core.calls, core.scope)
+	}
+}
+
+func TestManagedSessionLifecycleUsesAuthHelloAndPeerTeardown(t *testing.T) {
+	identity, credential, store, now := sessionFixture(t, remoteauth.Scope{TerminalID: "term-1"})
+	runtime, err := NewManagedRuntime(identity.DeviceID, bytes.NewReader(bytes.Repeat([]byte{0x44}, 18)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.BindPresence("hub-1", 7, "presence-1", now); err != nil {
+		t.Fatal(err)
+	}
+	core := &recordingObservedCore{runtime: runtime, now: now}
+	owner := newFakeManagedOwner()
+	clientConn, serverConn := memory.NewPair()
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- (SessionAcceptor{Core: core, Identity: identity, AccessStore: store, ManagedRuntime: runtime, Now: fixedSessionNow(now)}).ServeManagedDataChannel(context.Background(), serverConn, sessionDTLSFingerprint(), remotewebrtc.ManagedSessionContext{ManagedSessionID: "managed-1", SessionIncarnation: 1, ClientDeviceID: "client-1", PresenceSessionID: "presence-1", AssignmentEpoch: 7, ObservedPath: cloudpb.ObservedPath_OBSERVED_PATH_DIRECT}, owner)
+	}()
+	if _, err := (remoteauth.ClientHandshake{Now: fixedSessionNow(now)}).Authenticate(context.Background(), clientConn, remoteauth.ClientHandshakeRequest{ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.Fingerprint, Credential: credential, ChannelBinding: sessionDTLSBinding(t)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+	if !core.ready || !owner.requested {
+		t.Fatalf("managed lifecycle ready=%v ownerRequested=%v", core.ready, owner.requested)
+	}
+	inventory, err := runtime.Registry().Inventory("final", now)
+	if err != nil || inventory.GetRegistryRevision() != 3 || len(inventory.GetSessions()) != 0 {
+		t.Fatalf("final managed inventory = (%#v, %v)", inventory, err)
 	}
 }
 
@@ -205,6 +239,40 @@ type recordingCore struct {
 	calls int
 	scope core.TransportScope
 }
+
+type recordingObservedCore struct {
+	runtime *ManagedRuntime
+	now     time.Time
+	ready   bool
+}
+
+func (server *recordingObservedCore) ServeScopedTransport(context.Context, transport.Transport, core.TransportScope) error {
+	return nil
+}
+
+func (server *recordingObservedCore) ServeScopedTransportObserved(_ context.Context, _ transport.Transport, _ core.TransportScope, observer core.TransportLifecycleObserver) error {
+	observer.HelloAccepted()
+	inventory, err := server.runtime.Registry().Inventory("ready", server.now)
+	server.ready = err == nil && inventory.GetRegistryRevision() == 2 && len(inventory.GetSessions()) == 1 && inventory.GetSessions()[0].GetState() == cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_READY
+	return nil
+}
+
+type fakeManagedOwner struct {
+	once      sync.Once
+	done      chan struct{}
+	requested bool
+}
+
+func newFakeManagedOwner() *fakeManagedOwner { return &fakeManagedOwner{done: make(chan struct{})} }
+
+func (owner *fakeManagedOwner) RequestClose() {
+	owner.once.Do(func() {
+		owner.requested = true
+		close(owner.done)
+	})
+}
+
+func (owner *fakeManagedOwner) Done() <-chan struct{} { return owner.done }
 
 func (core *recordingCore) ServeScopedTransport(_ context.Context, conn transport.Transport, scope core.TransportScope) error {
 	core.calls++

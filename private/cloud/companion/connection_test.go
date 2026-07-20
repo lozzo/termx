@@ -15,6 +15,7 @@ import (
 	"github.com/lozzow/termx/private/cloud/companion/session"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/shared/cloudcompanion"
+	"google.golang.org/protobuf/proto"
 )
 
 type testCredentialStore struct {
@@ -74,7 +75,7 @@ func (controlPlane *fakeControlPlane) BeginDeviceEnrollment(_ context.Context, _
 }
 
 func (controlPlane *fakeControlPlane) CompleteDeviceEnrollment(_ context.Context, _ *cloudpb.CompleteDeviceEnrollmentRequest) (session.Session, error) {
-	return session.New(session.Metadata{Kind: session.KindDevice, AccountID: "account-1", DeviceID: "daemon-enrolled", ExpiresAt: controlPlane.now.Add(time.Hour)}, []byte("new-device-token"), controlPlane.now)
+	return session.New(session.Metadata{Kind: session.KindDevice, AccountID: "account-1", DeviceID: "daemon-enrolled", ExpiresAt: controlPlane.now.Add(time.Hour), HubID: "hub-1", HubURL: "https://hub.example.test", HubRegion: "local", HubDirectoryVersion: 1}, []byte("new-device-token"), controlPlane.now)
 }
 
 func (controlPlane *fakeControlPlane) RefreshSession(_ context.Context, authorization session.RefreshAuthorization) (session.Session, error) {
@@ -186,6 +187,10 @@ func (hub *fakeHub) CompleteSignalingOffer(_ context.Context, _ session.Authoriz
 	hub.completed++
 	hub.mu.Unlock()
 	return &cloudpb.CompleteSignalingOfferResponse{}, nil
+}
+
+func (hub *fakeHub) ReportDaemonRuntime(_ context.Context, _ session.Authorization, request *cloudpb.ReportDaemonRuntimeRequest) (*cloudpb.ReportDaemonRuntimeResponse, error) {
+	return &cloudpb.ReportDaemonRuntimeResponse{ReportId: request.GetReportId(), DaemonRuntimeGeneration: request.GetDaemonRuntimeGeneration(), AcceptedRegistryRevision: request.GetRegistryRevision()}, nil
 }
 
 type presenceSource struct {
@@ -341,6 +346,25 @@ func TestManagedOperationsDrivePrivateAdapters(t *testing.T) {
 	}
 	if lease.GetExpiresAtUnix() != uint64(now.Add(5*time.Minute).Unix()) {
 		t.Fatalf("lease expiry = %d", lease.GetExpiresAtUnix())
+	}
+}
+
+func TestDaemonRuntimeReportRequiresNegotiatedDaemonCapabilityAndDeviceBinding(t *testing.T) {
+	now, service, _, _, _ := testService(t)
+	connection := service.NewConnection()
+	if _, err := connection.Hello(context.Background(), helloRequest(cloudpb.CallerRole_CALLER_ROLE_DAEMON, cloudpb.CompanionCapability_COMPANION_CAPABILITY_DAEMON_RUNTIME)); err != nil {
+		t.Fatal(err)
+	}
+	reportID := "runtime-1:0"
+	request := &cloudpb.ReportDaemonRuntimeRequest{ReportId: reportID, HubId: "hub-1", AssignmentEpoch: 1, PresenceSessionId: "presence-1", DaemonRuntimeGeneration: "runtime-1", PeerSessions: &cloudpb.PeerSessionInventorySnapshot{ReportId: reportID, DaemonDeviceId: "daemon-1", ControlOwnerHubId: "hub-1", AssignmentEpoch: 1, ControlPresenceSessionId: "presence-1", DaemonRuntimeGeneration: "runtime-1", ObservedAtUnixMillis: now.UnixMilli()}}
+	response, err := connection.ReportDaemonRuntime(context.Background(), request)
+	if err != nil || response.GetReportId() != reportID || response.GetAcceptedRegistryRevision() != 0 {
+		t.Fatalf("ReportDaemonRuntime = (%#v, %v)", response, err)
+	}
+	foreign := proto.Clone(request).(*cloudpb.ReportDaemonRuntimeRequest)
+	foreign.PeerSessions.DaemonDeviceId = "daemon-other"
+	if _, err := connection.ReportDaemonRuntime(context.Background(), foreign); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL) {
+		t.Fatalf("foreign daemon runtime error = %v", err)
 	}
 }
 
@@ -602,7 +626,7 @@ func testService(t *testing.T) (time.Time, *companion.Service, *fakeControlPlane
 		t.Fatal(err)
 	}
 	account, _ := session.New(session.Metadata{Kind: session.KindAccount, AccountID: "account-1", AccountLabel: "Alice", DeviceID: "client-1", ExpiresAt: now.Add(time.Hour)}, []byte("account-access-token"), now)
-	device, _ := session.New(session.Metadata{Kind: session.KindDevice, AccountID: "account-1", DeviceID: "daemon-1", ExpiresAt: now.Add(time.Hour)}, []byte("device-cloud-token"), now)
+	device, _ := session.New(session.Metadata{Kind: session.KindDevice, AccountID: "account-1", DeviceID: "daemon-1", ExpiresAt: now.Add(time.Hour), HubID: "hub-1", HubURL: "https://hub.example.test", HubRegion: "local", HubDirectoryVersion: 1}, []byte("device-cloud-token"), now)
 	if err := manager.Save(context.Background(), account, now); err != nil {
 		t.Fatal(err)
 	}
@@ -631,6 +655,7 @@ func testService(t *testing.T) (time.Time, *companion.Service, *fakeControlPlane
 			cloudpb.CompanionCapability_COMPANION_CAPABILITY_PATH_QUALITY,
 			cloudpb.CompanionCapability_COMPANION_CAPABILITY_SMART_ROUTE,
 			cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT,
+			cloudpb.CompanionCapability_COMPANION_CAPABILITY_DAEMON_RUNTIME,
 		},
 		Now: func() time.Time { return now }, NonceReader: bytes.NewReader(bytes.Repeat([]byte{0x5a}, 1024)),
 	}, manager, controlPlane, hub)

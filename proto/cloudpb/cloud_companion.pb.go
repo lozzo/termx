@@ -90,6 +90,7 @@ const (
 	CompanionCapability_COMPANION_CAPABILITY_SMART_ROUTE       CompanionCapability = 6
 	CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT CompanionCapability = 7
 	CompanionCapability_COMPANION_CAPABILITY_DEVICE_DIRECTORY  CompanionCapability = 8
+	CompanionCapability_COMPANION_CAPABILITY_DAEMON_RUNTIME    CompanionCapability = 9
 )
 
 // Enum value maps for CompanionCapability.
@@ -104,6 +105,7 @@ var (
 		6: "COMPANION_CAPABILITY_SMART_ROUTE",
 		7: "COMPANION_CAPABILITY_DEVICE_ENROLLMENT",
 		8: "COMPANION_CAPABILITY_DEVICE_DIRECTORY",
+		9: "COMPANION_CAPABILITY_DAEMON_RUNTIME",
 	}
 	CompanionCapability_value = map[string]int32{
 		"COMPANION_CAPABILITY_UNSPECIFIED":       0,
@@ -115,6 +117,7 @@ var (
 		"COMPANION_CAPABILITY_SMART_ROUTE":       6,
 		"COMPANION_CAPABILITY_DEVICE_ENROLLMENT": 7,
 		"COMPANION_CAPABILITY_DEVICE_DIRECTORY":  8,
+		"COMPANION_CAPABILITY_DAEMON_RUNTIME":    9,
 	}
 )
 
@@ -393,59 +396,6 @@ func (ManagedDeviceKind) EnumDescriptor() ([]byte, []int) {
 	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{5}
 }
 
-// ObservedPath 是一次 WebRTC transport 实际采用的网络路径。
-type ObservedPath int32
-
-const (
-	ObservedPath_OBSERVED_PATH_UNSPECIFIED  ObservedPath = 0
-	ObservedPath_OBSERVED_PATH_DIRECT       ObservedPath = 1
-	ObservedPath_OBSERVED_PATH_SINGLE_RELAY ObservedPath = 2
-	ObservedPath_OBSERVED_PATH_RELAY_MESH   ObservedPath = 3
-)
-
-// Enum value maps for ObservedPath.
-var (
-	ObservedPath_name = map[int32]string{
-		0: "OBSERVED_PATH_UNSPECIFIED",
-		1: "OBSERVED_PATH_DIRECT",
-		2: "OBSERVED_PATH_SINGLE_RELAY",
-		3: "OBSERVED_PATH_RELAY_MESH",
-	}
-	ObservedPath_value = map[string]int32{
-		"OBSERVED_PATH_UNSPECIFIED":  0,
-		"OBSERVED_PATH_DIRECT":       1,
-		"OBSERVED_PATH_SINGLE_RELAY": 2,
-		"OBSERVED_PATH_RELAY_MESH":   3,
-	}
-)
-
-func (x ObservedPath) Enum() *ObservedPath {
-	p := new(ObservedPath)
-	*p = x
-	return p
-}
-
-func (x ObservedPath) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (ObservedPath) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_companion_proto_enumTypes[6].Descriptor()
-}
-
-func (ObservedPath) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_companion_proto_enumTypes[6]
-}
-
-func (x ObservedPath) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use ObservedPath.Descriptor instead.
-func (ObservedPath) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{6}
-}
-
 // RoutePreference 描述调用方允许的付费路径上限，不表达 terminal scope。
 type RoutePreference int32
 
@@ -486,11 +436,11 @@ func (x RoutePreference) String() string {
 }
 
 func (RoutePreference) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_companion_proto_enumTypes[7].Descriptor()
+	return file_cloudpb_cloud_companion_proto_enumTypes[6].Descriptor()
 }
 
 func (RoutePreference) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_companion_proto_enumTypes[7]
+	return &file_cloudpb_cloud_companion_proto_enumTypes[6]
 }
 
 func (x RoutePreference) Number() protoreflect.EnumNumber {
@@ -499,7 +449,7 @@ func (x RoutePreference) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use RoutePreference.Descriptor instead.
 func (RoutePreference) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{7}
+	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{6}
 }
 
 // RouteSelectionReason 是公开诊断可见的稳定选路原因，不暴露私有评分权重或商业成本。
@@ -569,11 +519,11 @@ func (x RouteSelectionReason) String() string {
 }
 
 func (RouteSelectionReason) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_companion_proto_enumTypes[8].Descriptor()
+	return file_cloudpb_cloud_companion_proto_enumTypes[7].Descriptor()
 }
 
 func (RouteSelectionReason) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_companion_proto_enumTypes[8]
+	return &file_cloudpb_cloud_companion_proto_enumTypes[7]
 }
 
 func (x RouteSelectionReason) Number() protoreflect.EnumNumber {
@@ -582,7 +532,7 @@ func (x RouteSelectionReason) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use RouteSelectionReason.Descriptor instead.
 func (RouteSelectionReason) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{8}
+	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{7}
 }
 
 // LoginMethod 是 Companion 支持的官方账号登录交互方式。
@@ -619,11 +569,11 @@ func (x LoginMethod) String() string {
 }
 
 func (LoginMethod) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_companion_proto_enumTypes[9].Descriptor()
+	return file_cloudpb_cloud_companion_proto_enumTypes[8].Descriptor()
 }
 
 func (LoginMethod) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_companion_proto_enumTypes[9]
+	return &file_cloudpb_cloud_companion_proto_enumTypes[8]
 }
 
 func (x LoginMethod) Number() protoreflect.EnumNumber {
@@ -632,7 +582,7 @@ func (x LoginMethod) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LoginMethod.Descriptor instead.
 func (LoginMethod) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{9}
+	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{8}
 }
 
 // DiagnosticSeverity 是 doctor 返回的脱敏诊断级别。
@@ -672,11 +622,11 @@ func (x DiagnosticSeverity) String() string {
 }
 
 func (DiagnosticSeverity) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_companion_proto_enumTypes[10].Descriptor()
+	return file_cloudpb_cloud_companion_proto_enumTypes[9].Descriptor()
 }
 
 func (DiagnosticSeverity) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_companion_proto_enumTypes[10]
+	return &file_cloudpb_cloud_companion_proto_enumTypes[9]
 }
 
 func (x DiagnosticSeverity) Number() protoreflect.EnumNumber {
@@ -685,7 +635,7 @@ func (x DiagnosticSeverity) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DiagnosticSeverity.Descriptor instead.
 func (DiagnosticSeverity) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{10}
+	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{9}
 }
 
 // CloudError 包含稳定错误码和可脱敏展示的最小诊断信息。
@@ -4775,6 +4725,7 @@ type IPCRequest struct {
 	//	*IPCRequest_PlanManagedRoute
 	//	*IPCRequest_BeginPresence
 	//	*IPCRequest_ListManagedDevices
+	//	*IPCRequest_ReportDaemonRuntime
 	Operation     isIPCRequest_Operation `protobuf_oneof:"operation"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5013,6 +4964,15 @@ func (x *IPCRequest) GetListManagedDevices() *ListManagedDevicesRequest {
 	return nil
 }
 
+func (x *IPCRequest) GetReportDaemonRuntime() *ReportDaemonRuntimeRequest {
+	if x != nil {
+		if x, ok := x.Operation.(*IPCRequest_ReportDaemonRuntime); ok {
+			return x.ReportDaemonRuntime
+		}
+	}
+	return nil
+}
+
 type isIPCRequest_Operation interface {
 	isIPCRequest_Operation()
 }
@@ -5101,6 +5061,10 @@ type IPCRequest_ListManagedDevices struct {
 	ListManagedDevices *ListManagedDevicesRequest `protobuf:"bytes,30,opt,name=list_managed_devices,json=listManagedDevices,proto3,oneof"`
 }
 
+type IPCRequest_ReportDaemonRuntime struct {
+	ReportDaemonRuntime *ReportDaemonRuntimeRequest `protobuf:"bytes,31,opt,name=report_daemon_runtime,json=reportDaemonRuntime,proto3,oneof"`
+}
+
 func (*IPCRequest_Hello) isIPCRequest_Operation() {}
 
 func (*IPCRequest_Status) isIPCRequest_Operation() {}
@@ -5143,6 +5107,8 @@ func (*IPCRequest_BeginPresence) isIPCRequest_Operation() {}
 
 func (*IPCRequest_ListManagedDevices) isIPCRequest_Operation() {}
 
+func (*IPCRequest_ReportDaemonRuntime) isIPCRequest_Operation() {}
+
 // IPCResponse 是当前 OS connection 上 unary response 或 stream event 的统一 frame。
 // request_id 对应 unary request；stream_id 对应已打开的 presence/signaling stream。
 type IPCResponse struct {
@@ -5174,6 +5140,7 @@ type IPCResponse struct {
 	//	*IPCResponse_ManagedRoutePlan
 	//	*IPCResponse_PresenceChallenge
 	//	*IPCResponse_ManagedDevices
+	//	*IPCResponse_ReportDaemonRuntime
 	Result        isIPCResponse_Result `protobuf_oneof:"result"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5437,6 +5404,15 @@ func (x *IPCResponse) GetManagedDevices() *ListManagedDevicesResponse {
 	return nil
 }
 
+func (x *IPCResponse) GetReportDaemonRuntime() *ReportDaemonRuntimeResponse {
+	if x != nil {
+		if x, ok := x.Result.(*IPCResponse_ReportDaemonRuntime); ok {
+			return x.ReportDaemonRuntime
+		}
+	}
+	return nil
+}
+
 type isIPCResponse_Result interface {
 	isIPCResponse_Result()
 }
@@ -5533,6 +5509,10 @@ type IPCResponse_ManagedDevices struct {
 	ManagedDevices *ListManagedDevicesResponse `protobuf:"bytes,32,opt,name=managed_devices,json=managedDevices,proto3,oneof"`
 }
 
+type IPCResponse_ReportDaemonRuntime struct {
+	ReportDaemonRuntime *ReportDaemonRuntimeResponse `protobuf:"bytes,33,opt,name=report_daemon_runtime,json=reportDaemonRuntime,proto3,oneof"`
+}
+
 func (*IPCResponse_Hello) isIPCResponse_Result() {}
 
 func (*IPCResponse_Status) isIPCResponse_Result() {}
@@ -5579,11 +5559,13 @@ func (*IPCResponse_PresenceChallenge) isIPCResponse_Result() {}
 
 func (*IPCResponse_ManagedDevices) isIPCResponse_Result() {}
 
+func (*IPCResponse_ReportDaemonRuntime) isIPCResponse_Result() {}
+
 var File_cloudpb_cloud_companion_proto protoreflect.FileDescriptor
 
 const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\n" +
-	"\x1dcloudpb/cloud_companion.proto\x12\x0etermx.cloud.v1\"\xcd\x01\n" +
+	"\x1dcloudpb/cloud_companion.proto\x12\x0etermx.cloud.v1\x1a\x1ccloudpb/cloud_topology.proto\"\xcd\x01\n" +
 	"\n" +
 	"CloudError\x122\n" +
 	"\x04code\x18\x01 \x01(\x0e2\x1e.termx.cloud.v1.CloudErrorCodeR\x04code\x12\x18\n" +
@@ -5883,7 +5865,7 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\x10IPCCancelRequest\x12*\n" +
 	"\x11target_request_id\x18\x01 \x01(\x04R\x0ftargetRequestId\"\x14\n" +
 	"\x12IPCAcknowledgement\"\x11\n" +
-	"\x0fIPCStreamClosed\"\xfb\r\n" +
+	"\x0fIPCStreamClosed\"\xdd\x0e\n" +
 	"\n" +
 	"IPCRequest\x12\x1d\n" +
 	"\n" +
@@ -5910,8 +5892,9 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\x06cancel\x18\x1b \x01(\v2 .termx.cloud.v1.IPCCancelRequestH\x00R\x06cancel\x12W\n" +
 	"\x12plan_managed_route\x18\x1c \x01(\v2'.termx.cloud.v1.PlanManagedRouteRequestH\x00R\x10planManagedRoute\x12M\n" +
 	"\x0ebegin_presence\x18\x1d \x01(\v2$.termx.cloud.v1.BeginPresenceRequestH\x00R\rbeginPresence\x12]\n" +
-	"\x14list_managed_devices\x18\x1e \x01(\v2).termx.cloud.v1.ListManagedDevicesRequestH\x00R\x12listManagedDevicesB\v\n" +
-	"\toperation\"\xbe\x0e\n" +
+	"\x14list_managed_devices\x18\x1e \x01(\v2).termx.cloud.v1.ListManagedDevicesRequestH\x00R\x12listManagedDevices\x12`\n" +
+	"\x15report_daemon_runtime\x18\x1f \x01(\v2*.termx.cloud.v1.ReportDaemonRuntimeRequestH\x00R\x13reportDaemonRuntimeB\v\n" +
+	"\toperation\"\xa1\x0f\n" +
 	"\vIPCResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\x04R\trequestId\x12\x1b\n" +
@@ -5941,7 +5924,8 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\x05error\x18\x1d \x01(\v2\x1a.termx.cloud.v1.CloudErrorH\x00R\x05error\x12P\n" +
 	"\x12managed_route_plan\x18\x1e \x01(\v2 .termx.cloud.v1.ManagedRoutePlanH\x00R\x10managedRoutePlan\x12R\n" +
 	"\x12presence_challenge\x18\x1f \x01(\v2!.termx.cloud.v1.PresenceChallengeH\x00R\x11presenceChallenge\x12U\n" +
-	"\x0fmanaged_devices\x18  \x01(\v2*.termx.cloud.v1.ListManagedDevicesResponseH\x00R\x0emanagedDevicesB\b\n" +
+	"\x0fmanaged_devices\x18  \x01(\v2*.termx.cloud.v1.ListManagedDevicesResponseH\x00R\x0emanagedDevices\x12a\n" +
+	"\x15report_daemon_runtime\x18! \x01(\v2+.termx.cloud.v1.ReportDaemonRuntimeResponseH\x00R\x13reportDaemonRuntimeB\b\n" +
 	"\x06result*\x87\x01\n" +
 	"\n" +
 	"CallerRole\x12\x1b\n" +
@@ -5949,7 +5933,7 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\x0fCALLER_ROLE_TUI\x10\x01\x12\x13\n" +
 	"\x0fCALLER_ROLE_CLI\x10\x02\x12\x16\n" +
 	"\x12CALLER_ROLE_DAEMON\x10\x03\x12\x1a\n" +
-	"\x16CALLER_ROLE_MOBILE_APP\x10\x04*\xfd\x02\n" +
+	"\x16CALLER_ROLE_MOBILE_APP\x10\x04*\xa6\x03\n" +
 	"\x13CompanionCapability\x12$\n" +
 	" COMPANION_CAPABILITY_UNSPECIFIED\x10\x00\x12(\n" +
 	"$COMPANION_CAPABILITY_ACCOUNT_SESSION\x10\x01\x12(\n" +
@@ -5959,7 +5943,8 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"!COMPANION_CAPABILITY_PATH_QUALITY\x10\x05\x12$\n" +
 	" COMPANION_CAPABILITY_SMART_ROUTE\x10\x06\x12*\n" +
 	"&COMPANION_CAPABILITY_DEVICE_ENROLLMENT\x10\a\x12)\n" +
-	"%COMPANION_CAPABILITY_DEVICE_DIRECTORY\x10\b*\xe3\x01\n" +
+	"%COMPANION_CAPABILITY_DEVICE_DIRECTORY\x10\b\x12'\n" +
+	"#COMPANION_CAPABILITY_DAEMON_RUNTIME\x10\t*\xe3\x01\n" +
 	"\x0eCompanionState\x12\x1f\n" +
 	"\x1bCOMPANION_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15COMPANION_STATE_READY\x10\x01\x12\"\n" +
@@ -5992,12 +5977,7 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\x11ManagedDeviceKind\x12#\n" +
 	"\x1fMANAGED_DEVICE_KIND_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aMANAGED_DEVICE_KIND_CLIENT\x10\x01\x12\x1e\n" +
-	"\x1aMANAGED_DEVICE_KIND_DAEMON\x10\x02*\x85\x01\n" +
-	"\fObservedPath\x12\x1d\n" +
-	"\x19OBSERVED_PATH_UNSPECIFIED\x10\x00\x12\x18\n" +
-	"\x14OBSERVED_PATH_DIRECT\x10\x01\x12\x1e\n" +
-	"\x1aOBSERVED_PATH_SINGLE_RELAY\x10\x02\x12\x1c\n" +
-	"\x18OBSERVED_PATH_RELAY_MESH\x10\x03*\xc5\x01\n" +
+	"\x1aMANAGED_DEVICE_KIND_DAEMON\x10\x02*\xc5\x01\n" +
 	"\x0fRoutePreference\x12 \n" +
 	"\x1cROUTE_PREFERENCE_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cROUTE_PREFERENCE_DIRECT_ONLY\x10\x01\x12#\n" +
@@ -6042,7 +6022,7 @@ func file_cloudpb_cloud_companion_proto_rawDescGZIP() []byte {
 	return file_cloudpb_cloud_companion_proto_rawDescData
 }
 
-var file_cloudpb_cloud_companion_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
+var file_cloudpb_cloud_companion_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
 var file_cloudpb_cloud_companion_proto_msgTypes = make([]protoimpl.MessageInfo, 63)
 var file_cloudpb_cloud_companion_proto_goTypes = []any{
 	(CallerRole)(0),                          // 0: termx.cloud.v1.CallerRole
@@ -6051,74 +6031,76 @@ var file_cloudpb_cloud_companion_proto_goTypes = []any{
 	(CloudErrorCode)(0),                      // 3: termx.cloud.v1.CloudErrorCode
 	(PresenceState)(0),                       // 4: termx.cloud.v1.PresenceState
 	(ManagedDeviceKind)(0),                   // 5: termx.cloud.v1.ManagedDeviceKind
-	(ObservedPath)(0),                        // 6: termx.cloud.v1.ObservedPath
-	(RoutePreference)(0),                     // 7: termx.cloud.v1.RoutePreference
-	(RouteSelectionReason)(0),                // 8: termx.cloud.v1.RouteSelectionReason
-	(LoginMethod)(0),                         // 9: termx.cloud.v1.LoginMethod
-	(DiagnosticSeverity)(0),                  // 10: termx.cloud.v1.DiagnosticSeverity
-	(*CloudError)(nil),                       // 11: termx.cloud.v1.CloudError
-	(*CompanionHelloRequest)(nil),            // 12: termx.cloud.v1.CompanionHelloRequest
-	(*CompanionHelloResponse)(nil),           // 13: termx.cloud.v1.CompanionHelloResponse
-	(*StatusRequest)(nil),                    // 14: termx.cloud.v1.StatusRequest
-	(*StatusResponse)(nil),                   // 15: termx.cloud.v1.StatusResponse
-	(*BeginLoginRequest)(nil),                // 16: termx.cloud.v1.BeginLoginRequest
-	(*LoginFlow)(nil),                        // 17: termx.cloud.v1.LoginFlow
-	(*CompleteLoginRequest)(nil),             // 18: termx.cloud.v1.CompleteLoginRequest
-	(*ClaimMobileActivationRequest)(nil),     // 19: termx.cloud.v1.ClaimMobileActivationRequest
-	(*CloudSessionSummary)(nil),              // 20: termx.cloud.v1.CloudSessionSummary
-	(*CompleteLoginResponse)(nil),            // 21: termx.cloud.v1.CompleteLoginResponse
-	(*BeginDeviceEnrollmentRequest)(nil),     // 22: termx.cloud.v1.BeginDeviceEnrollmentRequest
-	(*DeviceEnrollmentChallenge)(nil),        // 23: termx.cloud.v1.DeviceEnrollmentChallenge
-	(*DeviceEnrollmentProofInput)(nil),       // 24: termx.cloud.v1.DeviceEnrollmentProofInput
-	(*CompleteDeviceEnrollmentRequest)(nil),  // 25: termx.cloud.v1.CompleteDeviceEnrollmentRequest
-	(*CompleteDeviceEnrollmentResponse)(nil), // 26: termx.cloud.v1.CompleteDeviceEnrollmentResponse
-	(*LogoutRequest)(nil),                    // 27: termx.cloud.v1.LogoutRequest
-	(*LogoutResponse)(nil),                   // 28: termx.cloud.v1.LogoutResponse
-	(*DoctorRequest)(nil),                    // 29: termx.cloud.v1.DoctorRequest
-	(*DiagnosticItem)(nil),                   // 30: termx.cloud.v1.DiagnosticItem
-	(*DoctorResponse)(nil),                   // 31: termx.cloud.v1.DoctorResponse
-	(*ShutdownRequest)(nil),                  // 32: termx.cloud.v1.ShutdownRequest
-	(*ShutdownResponse)(nil),                 // 33: termx.cloud.v1.ShutdownResponse
-	(*DeviceProof)(nil),                      // 34: termx.cloud.v1.DeviceProof
-	(*BeginPresenceRequest)(nil),             // 35: termx.cloud.v1.BeginPresenceRequest
-	(*PresenceChallenge)(nil),                // 36: termx.cloud.v1.PresenceChallenge
-	(*PresenceProofInput)(nil),               // 37: termx.cloud.v1.PresenceProofInput
-	(*DeviceMetadata)(nil),                   // 38: termx.cloud.v1.DeviceMetadata
-	(*ResolveEndpointRequest)(nil),           // 39: termx.cloud.v1.ResolveEndpointRequest
-	(*ListManagedDevicesRequest)(nil),        // 40: termx.cloud.v1.ListManagedDevicesRequest
-	(*ManagedDevice)(nil),                    // 41: termx.cloud.v1.ManagedDevice
-	(*ListManagedDevicesResponse)(nil),       // 42: termx.cloud.v1.ListManagedDevicesResponse
-	(*IceServer)(nil),                        // 43: termx.cloud.v1.IceServer
-	(*ResolvedEndpoint)(nil),                 // 44: termx.cloud.v1.ResolvedEndpoint
-	(*OpenPresenceRequest)(nil),              // 45: termx.cloud.v1.OpenPresenceRequest
-	(*PresenceReady)(nil),                    // 46: termx.cloud.v1.PresenceReady
-	(*SignalingOffer)(nil),                   // 47: termx.cloud.v1.SignalingOffer
-	(*SignalingAnswer)(nil),                  // 48: termx.cloud.v1.SignalingAnswer
-	(*IceCandidate)(nil),                     // 49: termx.cloud.v1.IceCandidate
-	(*PresenceClosed)(nil),                   // 50: termx.cloud.v1.PresenceClosed
-	(*PresenceEvent)(nil),                    // 51: termx.cloud.v1.PresenceEvent
-	(*CreateSignalingSessionRequest)(nil),    // 52: termx.cloud.v1.CreateSignalingSessionRequest
-	(*SignalingClosed)(nil),                  // 53: termx.cloud.v1.SignalingClosed
-	(*SignalingEvent)(nil),                   // 54: termx.cloud.v1.SignalingEvent
-	(*CompleteSignalingOfferRequest)(nil),    // 55: termx.cloud.v1.CompleteSignalingOfferRequest
-	(*CompleteSignalingOfferResponse)(nil),   // 56: termx.cloud.v1.CompleteSignalingOfferResponse
-	(*AcquireRelayLeaseRequest)(nil),         // 57: termx.cloud.v1.AcquireRelayLeaseRequest
-	(*RelayLease)(nil),                       // 58: termx.cloud.v1.RelayLease
-	(*PlanManagedRouteRequest)(nil),          // 59: termx.cloud.v1.PlanManagedRouteRequest
-	(*ManagedRoutePlan)(nil),                 // 60: termx.cloud.v1.ManagedRoutePlan
-	(*PathQualitySummary)(nil),               // 61: termx.cloud.v1.PathQualitySummary
-	(*ReportPathQualityRequest)(nil),         // 62: termx.cloud.v1.ReportPathQualityRequest
-	(*ReportPathQualityResponse)(nil),        // 63: termx.cloud.v1.ReportPathQualityResponse
-	(*ConnectionOutcome)(nil),                // 64: termx.cloud.v1.ConnectionOutcome
-	(*ReportConnectionOutcomeRequest)(nil),   // 65: termx.cloud.v1.ReportConnectionOutcomeRequest
-	(*ReportConnectionOutcomeResponse)(nil),  // 66: termx.cloud.v1.ReportConnectionOutcomeResponse
-	(*IPCStreamOpened)(nil),                  // 67: termx.cloud.v1.IPCStreamOpened
-	(*IPCCloseStreamRequest)(nil),            // 68: termx.cloud.v1.IPCCloseStreamRequest
-	(*IPCCancelRequest)(nil),                 // 69: termx.cloud.v1.IPCCancelRequest
-	(*IPCAcknowledgement)(nil),               // 70: termx.cloud.v1.IPCAcknowledgement
-	(*IPCStreamClosed)(nil),                  // 71: termx.cloud.v1.IPCStreamClosed
-	(*IPCRequest)(nil),                       // 72: termx.cloud.v1.IPCRequest
-	(*IPCResponse)(nil),                      // 73: termx.cloud.v1.IPCResponse
+	(RoutePreference)(0),                     // 6: termx.cloud.v1.RoutePreference
+	(RouteSelectionReason)(0),                // 7: termx.cloud.v1.RouteSelectionReason
+	(LoginMethod)(0),                         // 8: termx.cloud.v1.LoginMethod
+	(DiagnosticSeverity)(0),                  // 9: termx.cloud.v1.DiagnosticSeverity
+	(*CloudError)(nil),                       // 10: termx.cloud.v1.CloudError
+	(*CompanionHelloRequest)(nil),            // 11: termx.cloud.v1.CompanionHelloRequest
+	(*CompanionHelloResponse)(nil),           // 12: termx.cloud.v1.CompanionHelloResponse
+	(*StatusRequest)(nil),                    // 13: termx.cloud.v1.StatusRequest
+	(*StatusResponse)(nil),                   // 14: termx.cloud.v1.StatusResponse
+	(*BeginLoginRequest)(nil),                // 15: termx.cloud.v1.BeginLoginRequest
+	(*LoginFlow)(nil),                        // 16: termx.cloud.v1.LoginFlow
+	(*CompleteLoginRequest)(nil),             // 17: termx.cloud.v1.CompleteLoginRequest
+	(*ClaimMobileActivationRequest)(nil),     // 18: termx.cloud.v1.ClaimMobileActivationRequest
+	(*CloudSessionSummary)(nil),              // 19: termx.cloud.v1.CloudSessionSummary
+	(*CompleteLoginResponse)(nil),            // 20: termx.cloud.v1.CompleteLoginResponse
+	(*BeginDeviceEnrollmentRequest)(nil),     // 21: termx.cloud.v1.BeginDeviceEnrollmentRequest
+	(*DeviceEnrollmentChallenge)(nil),        // 22: termx.cloud.v1.DeviceEnrollmentChallenge
+	(*DeviceEnrollmentProofInput)(nil),       // 23: termx.cloud.v1.DeviceEnrollmentProofInput
+	(*CompleteDeviceEnrollmentRequest)(nil),  // 24: termx.cloud.v1.CompleteDeviceEnrollmentRequest
+	(*CompleteDeviceEnrollmentResponse)(nil), // 25: termx.cloud.v1.CompleteDeviceEnrollmentResponse
+	(*LogoutRequest)(nil),                    // 26: termx.cloud.v1.LogoutRequest
+	(*LogoutResponse)(nil),                   // 27: termx.cloud.v1.LogoutResponse
+	(*DoctorRequest)(nil),                    // 28: termx.cloud.v1.DoctorRequest
+	(*DiagnosticItem)(nil),                   // 29: termx.cloud.v1.DiagnosticItem
+	(*DoctorResponse)(nil),                   // 30: termx.cloud.v1.DoctorResponse
+	(*ShutdownRequest)(nil),                  // 31: termx.cloud.v1.ShutdownRequest
+	(*ShutdownResponse)(nil),                 // 32: termx.cloud.v1.ShutdownResponse
+	(*DeviceProof)(nil),                      // 33: termx.cloud.v1.DeviceProof
+	(*BeginPresenceRequest)(nil),             // 34: termx.cloud.v1.BeginPresenceRequest
+	(*PresenceChallenge)(nil),                // 35: termx.cloud.v1.PresenceChallenge
+	(*PresenceProofInput)(nil),               // 36: termx.cloud.v1.PresenceProofInput
+	(*DeviceMetadata)(nil),                   // 37: termx.cloud.v1.DeviceMetadata
+	(*ResolveEndpointRequest)(nil),           // 38: termx.cloud.v1.ResolveEndpointRequest
+	(*ListManagedDevicesRequest)(nil),        // 39: termx.cloud.v1.ListManagedDevicesRequest
+	(*ManagedDevice)(nil),                    // 40: termx.cloud.v1.ManagedDevice
+	(*ListManagedDevicesResponse)(nil),       // 41: termx.cloud.v1.ListManagedDevicesResponse
+	(*IceServer)(nil),                        // 42: termx.cloud.v1.IceServer
+	(*ResolvedEndpoint)(nil),                 // 43: termx.cloud.v1.ResolvedEndpoint
+	(*OpenPresenceRequest)(nil),              // 44: termx.cloud.v1.OpenPresenceRequest
+	(*PresenceReady)(nil),                    // 45: termx.cloud.v1.PresenceReady
+	(*SignalingOffer)(nil),                   // 46: termx.cloud.v1.SignalingOffer
+	(*SignalingAnswer)(nil),                  // 47: termx.cloud.v1.SignalingAnswer
+	(*IceCandidate)(nil),                     // 48: termx.cloud.v1.IceCandidate
+	(*PresenceClosed)(nil),                   // 49: termx.cloud.v1.PresenceClosed
+	(*PresenceEvent)(nil),                    // 50: termx.cloud.v1.PresenceEvent
+	(*CreateSignalingSessionRequest)(nil),    // 51: termx.cloud.v1.CreateSignalingSessionRequest
+	(*SignalingClosed)(nil),                  // 52: termx.cloud.v1.SignalingClosed
+	(*SignalingEvent)(nil),                   // 53: termx.cloud.v1.SignalingEvent
+	(*CompleteSignalingOfferRequest)(nil),    // 54: termx.cloud.v1.CompleteSignalingOfferRequest
+	(*CompleteSignalingOfferResponse)(nil),   // 55: termx.cloud.v1.CompleteSignalingOfferResponse
+	(*AcquireRelayLeaseRequest)(nil),         // 56: termx.cloud.v1.AcquireRelayLeaseRequest
+	(*RelayLease)(nil),                       // 57: termx.cloud.v1.RelayLease
+	(*PlanManagedRouteRequest)(nil),          // 58: termx.cloud.v1.PlanManagedRouteRequest
+	(*ManagedRoutePlan)(nil),                 // 59: termx.cloud.v1.ManagedRoutePlan
+	(*PathQualitySummary)(nil),               // 60: termx.cloud.v1.PathQualitySummary
+	(*ReportPathQualityRequest)(nil),         // 61: termx.cloud.v1.ReportPathQualityRequest
+	(*ReportPathQualityResponse)(nil),        // 62: termx.cloud.v1.ReportPathQualityResponse
+	(*ConnectionOutcome)(nil),                // 63: termx.cloud.v1.ConnectionOutcome
+	(*ReportConnectionOutcomeRequest)(nil),   // 64: termx.cloud.v1.ReportConnectionOutcomeRequest
+	(*ReportConnectionOutcomeResponse)(nil),  // 65: termx.cloud.v1.ReportConnectionOutcomeResponse
+	(*IPCStreamOpened)(nil),                  // 66: termx.cloud.v1.IPCStreamOpened
+	(*IPCCloseStreamRequest)(nil),            // 67: termx.cloud.v1.IPCCloseStreamRequest
+	(*IPCCancelRequest)(nil),                 // 68: termx.cloud.v1.IPCCancelRequest
+	(*IPCAcknowledgement)(nil),               // 69: termx.cloud.v1.IPCAcknowledgement
+	(*IPCStreamClosed)(nil),                  // 70: termx.cloud.v1.IPCStreamClosed
+	(*IPCRequest)(nil),                       // 71: termx.cloud.v1.IPCRequest
+	(*IPCResponse)(nil),                      // 72: termx.cloud.v1.IPCResponse
+	(ObservedPath)(0),                        // 73: termx.cloud.v1.ObservedPath
+	(*ReportDaemonRuntimeRequest)(nil),       // 74: termx.cloud.v1.ReportDaemonRuntimeRequest
+	(*ReportDaemonRuntimeResponse)(nil),      // 75: termx.cloud.v1.ReportDaemonRuntimeResponse
 }
 var file_cloudpb_cloud_companion_proto_depIdxs = []int32{
 	3,  // 0: termx.cloud.v1.CloudError.code:type_name -> termx.cloud.v1.CloudErrorCode
@@ -6127,101 +6109,103 @@ var file_cloudpb_cloud_companion_proto_depIdxs = []int32{
 	1,  // 3: termx.cloud.v1.CompanionHelloResponse.supported_capabilities:type_name -> termx.cloud.v1.CompanionCapability
 	2,  // 4: termx.cloud.v1.StatusResponse.state:type_name -> termx.cloud.v1.CompanionState
 	1,  // 5: termx.cloud.v1.StatusResponse.capabilities:type_name -> termx.cloud.v1.CompanionCapability
-	9,  // 6: termx.cloud.v1.BeginLoginRequest.method:type_name -> termx.cloud.v1.LoginMethod
-	38, // 7: termx.cloud.v1.BeginLoginRequest.client_metadata:type_name -> termx.cloud.v1.DeviceMetadata
-	38, // 8: termx.cloud.v1.ClaimMobileActivationRequest.client_metadata:type_name -> termx.cloud.v1.DeviceMetadata
-	20, // 9: termx.cloud.v1.CompleteLoginResponse.session:type_name -> termx.cloud.v1.CloudSessionSummary
-	38, // 10: termx.cloud.v1.BeginDeviceEnrollmentRequest.metadata:type_name -> termx.cloud.v1.DeviceMetadata
-	34, // 11: termx.cloud.v1.CompleteDeviceEnrollmentRequest.proof:type_name -> termx.cloud.v1.DeviceProof
-	20, // 12: termx.cloud.v1.CompleteDeviceEnrollmentResponse.session:type_name -> termx.cloud.v1.CloudSessionSummary
-	10, // 13: termx.cloud.v1.DiagnosticItem.severity:type_name -> termx.cloud.v1.DiagnosticSeverity
-	15, // 14: termx.cloud.v1.DoctorResponse.status:type_name -> termx.cloud.v1.StatusResponse
-	30, // 15: termx.cloud.v1.DoctorResponse.items:type_name -> termx.cloud.v1.DiagnosticItem
+	8,  // 6: termx.cloud.v1.BeginLoginRequest.method:type_name -> termx.cloud.v1.LoginMethod
+	37, // 7: termx.cloud.v1.BeginLoginRequest.client_metadata:type_name -> termx.cloud.v1.DeviceMetadata
+	37, // 8: termx.cloud.v1.ClaimMobileActivationRequest.client_metadata:type_name -> termx.cloud.v1.DeviceMetadata
+	19, // 9: termx.cloud.v1.CompleteLoginResponse.session:type_name -> termx.cloud.v1.CloudSessionSummary
+	37, // 10: termx.cloud.v1.BeginDeviceEnrollmentRequest.metadata:type_name -> termx.cloud.v1.DeviceMetadata
+	33, // 11: termx.cloud.v1.CompleteDeviceEnrollmentRequest.proof:type_name -> termx.cloud.v1.DeviceProof
+	19, // 12: termx.cloud.v1.CompleteDeviceEnrollmentResponse.session:type_name -> termx.cloud.v1.CloudSessionSummary
+	9,  // 13: termx.cloud.v1.DiagnosticItem.severity:type_name -> termx.cloud.v1.DiagnosticSeverity
+	14, // 14: termx.cloud.v1.DoctorResponse.status:type_name -> termx.cloud.v1.StatusResponse
+	29, // 15: termx.cloud.v1.DoctorResponse.items:type_name -> termx.cloud.v1.DiagnosticItem
 	5,  // 16: termx.cloud.v1.ManagedDevice.kind:type_name -> termx.cloud.v1.ManagedDeviceKind
 	4,  // 17: termx.cloud.v1.ManagedDevice.presence:type_name -> termx.cloud.v1.PresenceState
-	41, // 18: termx.cloud.v1.ListManagedDevicesResponse.devices:type_name -> termx.cloud.v1.ManagedDevice
+	40, // 18: termx.cloud.v1.ListManagedDevicesResponse.devices:type_name -> termx.cloud.v1.ManagedDevice
 	4,  // 19: termx.cloud.v1.ResolvedEndpoint.presence:type_name -> termx.cloud.v1.PresenceState
-	43, // 20: termx.cloud.v1.ResolvedEndpoint.ice_servers:type_name -> termx.cloud.v1.IceServer
-	34, // 21: termx.cloud.v1.OpenPresenceRequest.proof:type_name -> termx.cloud.v1.DeviceProof
-	38, // 22: termx.cloud.v1.OpenPresenceRequest.metadata:type_name -> termx.cloud.v1.DeviceMetadata
-	43, // 23: termx.cloud.v1.PresenceReady.ice_servers:type_name -> termx.cloud.v1.IceServer
-	49, // 24: termx.cloud.v1.SignalingOffer.candidates:type_name -> termx.cloud.v1.IceCandidate
-	7,  // 25: termx.cloud.v1.SignalingOffer.route_preference:type_name -> termx.cloud.v1.RoutePreference
-	49, // 26: termx.cloud.v1.SignalingAnswer.candidates:type_name -> termx.cloud.v1.IceCandidate
-	46, // 27: termx.cloud.v1.PresenceEvent.ready:type_name -> termx.cloud.v1.PresenceReady
-	47, // 28: termx.cloud.v1.PresenceEvent.offer:type_name -> termx.cloud.v1.SignalingOffer
-	49, // 29: termx.cloud.v1.PresenceEvent.candidate:type_name -> termx.cloud.v1.IceCandidate
-	11, // 30: termx.cloud.v1.PresenceEvent.error:type_name -> termx.cloud.v1.CloudError
-	50, // 31: termx.cloud.v1.PresenceEvent.closed:type_name -> termx.cloud.v1.PresenceClosed
-	49, // 32: termx.cloud.v1.CreateSignalingSessionRequest.candidates:type_name -> termx.cloud.v1.IceCandidate
-	7,  // 33: termx.cloud.v1.CreateSignalingSessionRequest.route_preference:type_name -> termx.cloud.v1.RoutePreference
-	48, // 34: termx.cloud.v1.SignalingEvent.answer:type_name -> termx.cloud.v1.SignalingAnswer
-	49, // 35: termx.cloud.v1.SignalingEvent.candidate:type_name -> termx.cloud.v1.IceCandidate
-	11, // 36: termx.cloud.v1.SignalingEvent.error:type_name -> termx.cloud.v1.CloudError
-	53, // 37: termx.cloud.v1.SignalingEvent.closed:type_name -> termx.cloud.v1.SignalingClosed
-	48, // 38: termx.cloud.v1.CompleteSignalingOfferRequest.answer:type_name -> termx.cloud.v1.SignalingAnswer
-	11, // 39: termx.cloud.v1.CompleteSignalingOfferRequest.error:type_name -> termx.cloud.v1.CloudError
-	7,  // 40: termx.cloud.v1.AcquireRelayLeaseRequest.route_preference:type_name -> termx.cloud.v1.RoutePreference
-	6,  // 41: termx.cloud.v1.RelayLease.path_kind:type_name -> termx.cloud.v1.ObservedPath
-	43, // 42: termx.cloud.v1.RelayLease.ice_servers:type_name -> termx.cloud.v1.IceServer
-	7,  // 43: termx.cloud.v1.PlanManagedRouteRequest.route_preference:type_name -> termx.cloud.v1.RoutePreference
-	6,  // 44: termx.cloud.v1.ManagedRoutePlan.selected_path:type_name -> termx.cloud.v1.ObservedPath
-	8,  // 45: termx.cloud.v1.ManagedRoutePlan.selection_reason:type_name -> termx.cloud.v1.RouteSelectionReason
-	43, // 46: termx.cloud.v1.ManagedRoutePlan.ice_servers:type_name -> termx.cloud.v1.IceServer
-	6,  // 47: termx.cloud.v1.PathQualitySummary.observed_path:type_name -> termx.cloud.v1.ObservedPath
-	61, // 48: termx.cloud.v1.ReportPathQualityRequest.summary:type_name -> termx.cloud.v1.PathQualitySummary
-	6,  // 49: termx.cloud.v1.ConnectionOutcome.observed_path:type_name -> termx.cloud.v1.ObservedPath
+	42, // 20: termx.cloud.v1.ResolvedEndpoint.ice_servers:type_name -> termx.cloud.v1.IceServer
+	33, // 21: termx.cloud.v1.OpenPresenceRequest.proof:type_name -> termx.cloud.v1.DeviceProof
+	37, // 22: termx.cloud.v1.OpenPresenceRequest.metadata:type_name -> termx.cloud.v1.DeviceMetadata
+	42, // 23: termx.cloud.v1.PresenceReady.ice_servers:type_name -> termx.cloud.v1.IceServer
+	48, // 24: termx.cloud.v1.SignalingOffer.candidates:type_name -> termx.cloud.v1.IceCandidate
+	6,  // 25: termx.cloud.v1.SignalingOffer.route_preference:type_name -> termx.cloud.v1.RoutePreference
+	48, // 26: termx.cloud.v1.SignalingAnswer.candidates:type_name -> termx.cloud.v1.IceCandidate
+	45, // 27: termx.cloud.v1.PresenceEvent.ready:type_name -> termx.cloud.v1.PresenceReady
+	46, // 28: termx.cloud.v1.PresenceEvent.offer:type_name -> termx.cloud.v1.SignalingOffer
+	48, // 29: termx.cloud.v1.PresenceEvent.candidate:type_name -> termx.cloud.v1.IceCandidate
+	10, // 30: termx.cloud.v1.PresenceEvent.error:type_name -> termx.cloud.v1.CloudError
+	49, // 31: termx.cloud.v1.PresenceEvent.closed:type_name -> termx.cloud.v1.PresenceClosed
+	48, // 32: termx.cloud.v1.CreateSignalingSessionRequest.candidates:type_name -> termx.cloud.v1.IceCandidate
+	6,  // 33: termx.cloud.v1.CreateSignalingSessionRequest.route_preference:type_name -> termx.cloud.v1.RoutePreference
+	47, // 34: termx.cloud.v1.SignalingEvent.answer:type_name -> termx.cloud.v1.SignalingAnswer
+	48, // 35: termx.cloud.v1.SignalingEvent.candidate:type_name -> termx.cloud.v1.IceCandidate
+	10, // 36: termx.cloud.v1.SignalingEvent.error:type_name -> termx.cloud.v1.CloudError
+	52, // 37: termx.cloud.v1.SignalingEvent.closed:type_name -> termx.cloud.v1.SignalingClosed
+	47, // 38: termx.cloud.v1.CompleteSignalingOfferRequest.answer:type_name -> termx.cloud.v1.SignalingAnswer
+	10, // 39: termx.cloud.v1.CompleteSignalingOfferRequest.error:type_name -> termx.cloud.v1.CloudError
+	6,  // 40: termx.cloud.v1.AcquireRelayLeaseRequest.route_preference:type_name -> termx.cloud.v1.RoutePreference
+	73, // 41: termx.cloud.v1.RelayLease.path_kind:type_name -> termx.cloud.v1.ObservedPath
+	42, // 42: termx.cloud.v1.RelayLease.ice_servers:type_name -> termx.cloud.v1.IceServer
+	6,  // 43: termx.cloud.v1.PlanManagedRouteRequest.route_preference:type_name -> termx.cloud.v1.RoutePreference
+	73, // 44: termx.cloud.v1.ManagedRoutePlan.selected_path:type_name -> termx.cloud.v1.ObservedPath
+	7,  // 45: termx.cloud.v1.ManagedRoutePlan.selection_reason:type_name -> termx.cloud.v1.RouteSelectionReason
+	42, // 46: termx.cloud.v1.ManagedRoutePlan.ice_servers:type_name -> termx.cloud.v1.IceServer
+	73, // 47: termx.cloud.v1.PathQualitySummary.observed_path:type_name -> termx.cloud.v1.ObservedPath
+	60, // 48: termx.cloud.v1.ReportPathQualityRequest.summary:type_name -> termx.cloud.v1.PathQualitySummary
+	73, // 49: termx.cloud.v1.ConnectionOutcome.observed_path:type_name -> termx.cloud.v1.ObservedPath
 	3,  // 50: termx.cloud.v1.ConnectionOutcome.error_code:type_name -> termx.cloud.v1.CloudErrorCode
-	64, // 51: termx.cloud.v1.ReportConnectionOutcomeRequest.outcome:type_name -> termx.cloud.v1.ConnectionOutcome
-	12, // 52: termx.cloud.v1.IPCRequest.hello:type_name -> termx.cloud.v1.CompanionHelloRequest
-	14, // 53: termx.cloud.v1.IPCRequest.status:type_name -> termx.cloud.v1.StatusRequest
-	16, // 54: termx.cloud.v1.IPCRequest.begin_login:type_name -> termx.cloud.v1.BeginLoginRequest
-	18, // 55: termx.cloud.v1.IPCRequest.complete_login:type_name -> termx.cloud.v1.CompleteLoginRequest
-	22, // 56: termx.cloud.v1.IPCRequest.begin_device_enrollment:type_name -> termx.cloud.v1.BeginDeviceEnrollmentRequest
-	25, // 57: termx.cloud.v1.IPCRequest.complete_device_enrollment:type_name -> termx.cloud.v1.CompleteDeviceEnrollmentRequest
-	27, // 58: termx.cloud.v1.IPCRequest.logout:type_name -> termx.cloud.v1.LogoutRequest
-	29, // 59: termx.cloud.v1.IPCRequest.doctor:type_name -> termx.cloud.v1.DoctorRequest
-	32, // 60: termx.cloud.v1.IPCRequest.shutdown:type_name -> termx.cloud.v1.ShutdownRequest
-	39, // 61: termx.cloud.v1.IPCRequest.resolve_endpoint:type_name -> termx.cloud.v1.ResolveEndpointRequest
-	45, // 62: termx.cloud.v1.IPCRequest.open_presence:type_name -> termx.cloud.v1.OpenPresenceRequest
-	52, // 63: termx.cloud.v1.IPCRequest.create_signaling_session:type_name -> termx.cloud.v1.CreateSignalingSessionRequest
-	55, // 64: termx.cloud.v1.IPCRequest.complete_signaling_offer:type_name -> termx.cloud.v1.CompleteSignalingOfferRequest
-	57, // 65: termx.cloud.v1.IPCRequest.acquire_relay_lease:type_name -> termx.cloud.v1.AcquireRelayLeaseRequest
-	62, // 66: termx.cloud.v1.IPCRequest.report_path_quality:type_name -> termx.cloud.v1.ReportPathQualityRequest
-	65, // 67: termx.cloud.v1.IPCRequest.report_connection_outcome:type_name -> termx.cloud.v1.ReportConnectionOutcomeRequest
-	68, // 68: termx.cloud.v1.IPCRequest.close_stream:type_name -> termx.cloud.v1.IPCCloseStreamRequest
-	69, // 69: termx.cloud.v1.IPCRequest.cancel:type_name -> termx.cloud.v1.IPCCancelRequest
-	59, // 70: termx.cloud.v1.IPCRequest.plan_managed_route:type_name -> termx.cloud.v1.PlanManagedRouteRequest
-	35, // 71: termx.cloud.v1.IPCRequest.begin_presence:type_name -> termx.cloud.v1.BeginPresenceRequest
-	40, // 72: termx.cloud.v1.IPCRequest.list_managed_devices:type_name -> termx.cloud.v1.ListManagedDevicesRequest
-	13, // 73: termx.cloud.v1.IPCResponse.hello:type_name -> termx.cloud.v1.CompanionHelloResponse
-	15, // 74: termx.cloud.v1.IPCResponse.status:type_name -> termx.cloud.v1.StatusResponse
-	17, // 75: termx.cloud.v1.IPCResponse.login_flow:type_name -> termx.cloud.v1.LoginFlow
-	21, // 76: termx.cloud.v1.IPCResponse.complete_login:type_name -> termx.cloud.v1.CompleteLoginResponse
-	23, // 77: termx.cloud.v1.IPCResponse.enrollment_challenge:type_name -> termx.cloud.v1.DeviceEnrollmentChallenge
-	26, // 78: termx.cloud.v1.IPCResponse.complete_enrollment:type_name -> termx.cloud.v1.CompleteDeviceEnrollmentResponse
-	28, // 79: termx.cloud.v1.IPCResponse.logout:type_name -> termx.cloud.v1.LogoutResponse
-	31, // 80: termx.cloud.v1.IPCResponse.doctor:type_name -> termx.cloud.v1.DoctorResponse
-	33, // 81: termx.cloud.v1.IPCResponse.shutdown:type_name -> termx.cloud.v1.ShutdownResponse
-	44, // 82: termx.cloud.v1.IPCResponse.resolved_endpoint:type_name -> termx.cloud.v1.ResolvedEndpoint
-	67, // 83: termx.cloud.v1.IPCResponse.stream_opened:type_name -> termx.cloud.v1.IPCStreamOpened
-	56, // 84: termx.cloud.v1.IPCResponse.complete_signaling_offer:type_name -> termx.cloud.v1.CompleteSignalingOfferResponse
-	58, // 85: termx.cloud.v1.IPCResponse.relay_lease:type_name -> termx.cloud.v1.RelayLease
-	63, // 86: termx.cloud.v1.IPCResponse.report_path_quality:type_name -> termx.cloud.v1.ReportPathQualityResponse
-	66, // 87: termx.cloud.v1.IPCResponse.report_connection_outcome:type_name -> termx.cloud.v1.ReportConnectionOutcomeResponse
-	51, // 88: termx.cloud.v1.IPCResponse.presence_event:type_name -> termx.cloud.v1.PresenceEvent
-	54, // 89: termx.cloud.v1.IPCResponse.signaling_event:type_name -> termx.cloud.v1.SignalingEvent
-	70, // 90: termx.cloud.v1.IPCResponse.acknowledgement:type_name -> termx.cloud.v1.IPCAcknowledgement
-	71, // 91: termx.cloud.v1.IPCResponse.stream_closed:type_name -> termx.cloud.v1.IPCStreamClosed
-	11, // 92: termx.cloud.v1.IPCResponse.error:type_name -> termx.cloud.v1.CloudError
-	60, // 93: termx.cloud.v1.IPCResponse.managed_route_plan:type_name -> termx.cloud.v1.ManagedRoutePlan
-	36, // 94: termx.cloud.v1.IPCResponse.presence_challenge:type_name -> termx.cloud.v1.PresenceChallenge
-	42, // 95: termx.cloud.v1.IPCResponse.managed_devices:type_name -> termx.cloud.v1.ListManagedDevicesResponse
-	96, // [96:96] is the sub-list for method output_type
-	96, // [96:96] is the sub-list for method input_type
-	96, // [96:96] is the sub-list for extension type_name
-	96, // [96:96] is the sub-list for extension extendee
-	0,  // [0:96] is the sub-list for field type_name
+	63, // 51: termx.cloud.v1.ReportConnectionOutcomeRequest.outcome:type_name -> termx.cloud.v1.ConnectionOutcome
+	11, // 52: termx.cloud.v1.IPCRequest.hello:type_name -> termx.cloud.v1.CompanionHelloRequest
+	13, // 53: termx.cloud.v1.IPCRequest.status:type_name -> termx.cloud.v1.StatusRequest
+	15, // 54: termx.cloud.v1.IPCRequest.begin_login:type_name -> termx.cloud.v1.BeginLoginRequest
+	17, // 55: termx.cloud.v1.IPCRequest.complete_login:type_name -> termx.cloud.v1.CompleteLoginRequest
+	21, // 56: termx.cloud.v1.IPCRequest.begin_device_enrollment:type_name -> termx.cloud.v1.BeginDeviceEnrollmentRequest
+	24, // 57: termx.cloud.v1.IPCRequest.complete_device_enrollment:type_name -> termx.cloud.v1.CompleteDeviceEnrollmentRequest
+	26, // 58: termx.cloud.v1.IPCRequest.logout:type_name -> termx.cloud.v1.LogoutRequest
+	28, // 59: termx.cloud.v1.IPCRequest.doctor:type_name -> termx.cloud.v1.DoctorRequest
+	31, // 60: termx.cloud.v1.IPCRequest.shutdown:type_name -> termx.cloud.v1.ShutdownRequest
+	38, // 61: termx.cloud.v1.IPCRequest.resolve_endpoint:type_name -> termx.cloud.v1.ResolveEndpointRequest
+	44, // 62: termx.cloud.v1.IPCRequest.open_presence:type_name -> termx.cloud.v1.OpenPresenceRequest
+	51, // 63: termx.cloud.v1.IPCRequest.create_signaling_session:type_name -> termx.cloud.v1.CreateSignalingSessionRequest
+	54, // 64: termx.cloud.v1.IPCRequest.complete_signaling_offer:type_name -> termx.cloud.v1.CompleteSignalingOfferRequest
+	56, // 65: termx.cloud.v1.IPCRequest.acquire_relay_lease:type_name -> termx.cloud.v1.AcquireRelayLeaseRequest
+	61, // 66: termx.cloud.v1.IPCRequest.report_path_quality:type_name -> termx.cloud.v1.ReportPathQualityRequest
+	64, // 67: termx.cloud.v1.IPCRequest.report_connection_outcome:type_name -> termx.cloud.v1.ReportConnectionOutcomeRequest
+	67, // 68: termx.cloud.v1.IPCRequest.close_stream:type_name -> termx.cloud.v1.IPCCloseStreamRequest
+	68, // 69: termx.cloud.v1.IPCRequest.cancel:type_name -> termx.cloud.v1.IPCCancelRequest
+	58, // 70: termx.cloud.v1.IPCRequest.plan_managed_route:type_name -> termx.cloud.v1.PlanManagedRouteRequest
+	34, // 71: termx.cloud.v1.IPCRequest.begin_presence:type_name -> termx.cloud.v1.BeginPresenceRequest
+	39, // 72: termx.cloud.v1.IPCRequest.list_managed_devices:type_name -> termx.cloud.v1.ListManagedDevicesRequest
+	74, // 73: termx.cloud.v1.IPCRequest.report_daemon_runtime:type_name -> termx.cloud.v1.ReportDaemonRuntimeRequest
+	12, // 74: termx.cloud.v1.IPCResponse.hello:type_name -> termx.cloud.v1.CompanionHelloResponse
+	14, // 75: termx.cloud.v1.IPCResponse.status:type_name -> termx.cloud.v1.StatusResponse
+	16, // 76: termx.cloud.v1.IPCResponse.login_flow:type_name -> termx.cloud.v1.LoginFlow
+	20, // 77: termx.cloud.v1.IPCResponse.complete_login:type_name -> termx.cloud.v1.CompleteLoginResponse
+	22, // 78: termx.cloud.v1.IPCResponse.enrollment_challenge:type_name -> termx.cloud.v1.DeviceEnrollmentChallenge
+	25, // 79: termx.cloud.v1.IPCResponse.complete_enrollment:type_name -> termx.cloud.v1.CompleteDeviceEnrollmentResponse
+	27, // 80: termx.cloud.v1.IPCResponse.logout:type_name -> termx.cloud.v1.LogoutResponse
+	30, // 81: termx.cloud.v1.IPCResponse.doctor:type_name -> termx.cloud.v1.DoctorResponse
+	32, // 82: termx.cloud.v1.IPCResponse.shutdown:type_name -> termx.cloud.v1.ShutdownResponse
+	43, // 83: termx.cloud.v1.IPCResponse.resolved_endpoint:type_name -> termx.cloud.v1.ResolvedEndpoint
+	66, // 84: termx.cloud.v1.IPCResponse.stream_opened:type_name -> termx.cloud.v1.IPCStreamOpened
+	55, // 85: termx.cloud.v1.IPCResponse.complete_signaling_offer:type_name -> termx.cloud.v1.CompleteSignalingOfferResponse
+	57, // 86: termx.cloud.v1.IPCResponse.relay_lease:type_name -> termx.cloud.v1.RelayLease
+	62, // 87: termx.cloud.v1.IPCResponse.report_path_quality:type_name -> termx.cloud.v1.ReportPathQualityResponse
+	65, // 88: termx.cloud.v1.IPCResponse.report_connection_outcome:type_name -> termx.cloud.v1.ReportConnectionOutcomeResponse
+	50, // 89: termx.cloud.v1.IPCResponse.presence_event:type_name -> termx.cloud.v1.PresenceEvent
+	53, // 90: termx.cloud.v1.IPCResponse.signaling_event:type_name -> termx.cloud.v1.SignalingEvent
+	69, // 91: termx.cloud.v1.IPCResponse.acknowledgement:type_name -> termx.cloud.v1.IPCAcknowledgement
+	70, // 92: termx.cloud.v1.IPCResponse.stream_closed:type_name -> termx.cloud.v1.IPCStreamClosed
+	10, // 93: termx.cloud.v1.IPCResponse.error:type_name -> termx.cloud.v1.CloudError
+	59, // 94: termx.cloud.v1.IPCResponse.managed_route_plan:type_name -> termx.cloud.v1.ManagedRoutePlan
+	35, // 95: termx.cloud.v1.IPCResponse.presence_challenge:type_name -> termx.cloud.v1.PresenceChallenge
+	41, // 96: termx.cloud.v1.IPCResponse.managed_devices:type_name -> termx.cloud.v1.ListManagedDevicesResponse
+	75, // 97: termx.cloud.v1.IPCResponse.report_daemon_runtime:type_name -> termx.cloud.v1.ReportDaemonRuntimeResponse
+	98, // [98:98] is the sub-list for method output_type
+	98, // [98:98] is the sub-list for method input_type
+	98, // [98:98] is the sub-list for extension type_name
+	98, // [98:98] is the sub-list for extension extendee
+	0,  // [0:98] is the sub-list for field type_name
 }
 
 func init() { file_cloudpb_cloud_companion_proto_init() }
@@ -6229,6 +6213,7 @@ func file_cloudpb_cloud_companion_proto_init() {
 	if File_cloudpb_cloud_companion_proto != nil {
 		return
 	}
+	file_cloudpb_cloud_topology_proto_init()
 	file_cloudpb_cloud_companion_proto_msgTypes[40].OneofWrappers = []any{
 		(*PresenceEvent_Ready)(nil),
 		(*PresenceEvent_Offer)(nil),
@@ -6268,6 +6253,7 @@ func file_cloudpb_cloud_companion_proto_init() {
 		(*IPCRequest_PlanManagedRoute)(nil),
 		(*IPCRequest_BeginPresence)(nil),
 		(*IPCRequest_ListManagedDevices)(nil),
+		(*IPCRequest_ReportDaemonRuntime)(nil),
 	}
 	file_cloudpb_cloud_companion_proto_msgTypes[62].OneofWrappers = []any{
 		(*IPCResponse_Hello)(nil),
@@ -6293,13 +6279,14 @@ func file_cloudpb_cloud_companion_proto_init() {
 		(*IPCResponse_ManagedRoutePlan)(nil),
 		(*IPCResponse_PresenceChallenge)(nil),
 		(*IPCResponse_ManagedDevices)(nil),
+		(*IPCResponse_ReportDaemonRuntime)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloudpb_cloud_companion_proto_rawDesc), len(file_cloudpb_cloud_companion_proto_rawDesc)),
-			NumEnums:      11,
+			NumEnums:      10,
 			NumMessages:   63,
 			NumExtensions: 0,
 			NumServices:   0,

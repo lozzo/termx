@@ -22,6 +22,63 @@ type DataChannelSessionHandler interface {
 	ServeDataChannel(context.Context, transport.Transport, string) error
 }
 
+// ManagedSessionContext 是 Hub 已验证并随 signaling offer 传入 daemon 的 session fencing metadata。
+// 它不包含 terminal、CapabilityGrant、SDP、ICE credential 或 payload；零值不能进入 managed handler。
+type ManagedSessionContext struct {
+	ManagedSessionID   string
+	SessionIncarnation uint64
+	ClientDeviceID     string
+	PresenceSessionID  string
+	AssignmentEpoch    uint64
+	ObservedPath       cloudpb.ObservedPath
+}
+
+// ManagedSessionOwner 是 Answerer 持有的 PeerConnection 关闭边界。
+// RequestClose 必须幂等；Done 只在 DataChannel/PeerConnection teardown 完成后关闭。
+type ManagedSessionOwner interface {
+	RequestClose()
+	Done() <-chan struct{}
+}
+
+// ManagedDataChannelSessionHandler 在 managed Cloud route 中接收精确 SessionContext 与 peer owner。
+// 实现仍必须先完成 DataChannel 内 remote auth，不能把 Hub metadata 当作 terminal capability。
+type ManagedDataChannelSessionHandler interface {
+	ServeManagedDataChannel(context.Context, transport.Transport, string, ManagedSessionContext, ManagedSessionOwner) error
+}
+
+type peerSessionOwner struct {
+	requestOnce sync.Once
+	doneOnce    sync.Once
+	cancel      context.CancelFunc
+	closePeer   func()
+	done        chan struct{}
+}
+
+func (owner *peerSessionOwner) RequestClose() {
+	if owner == nil {
+		return
+	}
+	owner.requestOnce.Do(func() {
+		owner.cancel()
+		owner.closePeer()
+		owner.markDone()
+	})
+}
+
+func (owner *peerSessionOwner) Done() <-chan struct{} { return owner.done }
+
+func (owner *peerSessionOwner) peerClosed() {
+	if owner == nil {
+		return
+	}
+	owner.cancel()
+	owner.markDone()
+}
+
+func (owner *peerSessionOwner) markDone() {
+	owner.doneOnce.Do(func() { close(owner.done) })
+}
+
 // Answerer 把 Cloud Companion 中继的公开 WebRTC offer 协商成 daemon answer。
 // PeerConnection 只负责 ICE/DTLS/SCTP；它不接收 grant、terminal payload 或 Hub 私有 runtime 类型。
 type Answerer struct {
@@ -54,6 +111,15 @@ func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOff
 	if offer.GetRelayOnly() && !containsOnlyRelayCandidates(offer.GetSdp(), offer.GetCandidates()) {
 		return nil, fmt.Errorf("remote daemon relay-only offer contains a non-relay ICE candidate")
 	}
+	managedContext, managed := managedContextFromOffer(offer)
+	if managed {
+		if _, ok := answerer.Handler.(ManagedDataChannelSessionHandler); !ok {
+			return nil, fmt.Errorf("remote daemon managed data channel handler is not configured")
+		}
+		if managedContext.ManagedSessionID == "" || managedContext.SessionIncarnation == 0 || managedContext.ClientDeviceID == "" || managedContext.PresenceSessionID == "" || managedContext.AssignmentEpoch == 0 || managedContext.ObservedPath == cloudpb.ObservedPath_OBSERVED_PATH_UNSPECIFIED {
+			return nil, fmt.Errorf("remote daemon managed signaling context is incomplete")
+		}
+	}
 	configuration := pion.Configuration{ICEServers: make([]pion.ICEServer, 0, len(iceServers))}
 	// single Relay 由 offer 侧 relay-only candidate 保证；daemon 与 TURN 同机时必须发布 host candidate 供 Relay 转发。
 	for _, server := range iceServers {
@@ -82,6 +148,7 @@ func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOff
 		})
 	}
 	sessionCtx, cancel := context.WithCancel(ctx)
+	owner := &peerSessionOwner{cancel: cancel, closePeer: closePeer, done: make(chan struct{})}
 	var candidateMu sync.Mutex
 	candidates := make([]*cloudpb.IceCandidate, 0, 4)
 	// daemon gathering truth 必须显式进入 signaling answer，不能依赖 candidate 是否被内联进 SDP。
@@ -105,11 +172,12 @@ func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOff
 		candidateMu.Unlock()
 	})
 	peer.OnConnectionStateChange(func(state pion.PeerConnectionState) {
-		if state == pion.PeerConnectionStateFailed || state == pion.PeerConnectionStateClosed || answerer.CloseOnDisconnected && state == pion.PeerConnectionStateDisconnected {
-			cancel()
-			if state != pion.PeerConnectionStateClosed {
-				go closePeer()
-			}
+		if state == pion.PeerConnectionStateClosed {
+			owner.peerClosed()
+			return
+		}
+		if state == pion.PeerConnectionStateFailed || answerer.CloseOnDisconnected && state == pion.PeerConnectionStateDisconnected {
+			go owner.RequestClose()
 		}
 	})
 	peer.OnDataChannel(func(channel *pion.DataChannel) {
@@ -123,43 +191,41 @@ func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOff
 			go func() {
 				dtlsFingerprint, err := LocalCertificateFingerprint(peer)
 				if err == nil {
-					err = answerer.Handler.ServeDataChannel(sessionCtx, protocolTransport, dtlsFingerprint)
+					if managed {
+						err = answerer.Handler.(ManagedDataChannelSessionHandler).ServeManagedDataChannel(sessionCtx, protocolTransport, dtlsFingerprint, managedContext, owner)
+					} else {
+						err = answerer.Handler.ServeDataChannel(sessionCtx, protocolTransport, dtlsFingerprint)
+					}
 				} else {
 					_ = protocolTransport.Close()
 				}
-				cancel()
-				closePeer()
+				owner.RequestClose()
 			}()
 		})
 	})
 	if err := peer.SetRemoteDescription(pion.SessionDescription{Type: pion.SDPTypeOffer, SDP: offer.GetSdp()}); err != nil {
-		cancel()
-		closePeer()
+		owner.RequestClose()
 		return nil, fmt.Errorf("set remote daemon offer: %w", err)
 	}
 	localAnswer, err := peer.CreateAnswer(nil)
 	if err != nil {
-		cancel()
-		closePeer()
+		owner.RequestClose()
 		return nil, fmt.Errorf("create remote daemon answer: %w", err)
 	}
 	gatherComplete := pion.GatheringCompletePromise(peer)
 	if err := peer.SetLocalDescription(localAnswer); err != nil {
-		cancel()
-		closePeer()
+		owner.RequestClose()
 		return nil, fmt.Errorf("set remote daemon answer: %w", err)
 	}
 	select {
 	case <-ctx.Done():
-		cancel()
-		closePeer()
+		owner.RequestClose()
 		return nil, ctx.Err()
 	case <-gatherComplete:
 	}
 	description := peer.LocalDescription()
 	if description == nil || strings.TrimSpace(description.SDP) == "" {
-		cancel()
-		closePeer()
+		owner.RequestClose()
 		return nil, fmt.Errorf("remote daemon answer has no local description")
 	}
 	candidateMu.Lock()
@@ -168,6 +234,19 @@ func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOff
 	return &cloudpb.SignalingAnswer{
 		SignalingSessionId: offer.GetSignalingSessionId(), Sdp: description.SDP, Candidates: wireCandidates,
 	}, nil
+}
+
+func managedContextFromOffer(offer *cloudpb.SignalingOffer) (ManagedSessionContext, bool) {
+	if offer == nil {
+		return ManagedSessionContext{}, false
+	}
+	// managed_session_id 也用于客户端本地 correlation；只有 Hub server fencing metadata 出现时才进入 daemon topology lifecycle。
+	managed := offer.GetSessionIncarnation() != 0 || offer.GetPresenceSessionId() != "" || offer.GetAssignmentEpoch() != 0
+	path := cloudpb.ObservedPath_OBSERVED_PATH_DIRECT
+	if offer.GetRelayOnly() {
+		path = cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY
+	}
+	return ManagedSessionContext{ManagedSessionID: offer.GetManagedSessionId(), SessionIncarnation: offer.GetSessionIncarnation(), ClientDeviceID: offer.GetSourceDeviceId(), PresenceSessionID: offer.GetPresenceSessionId(), AssignmentEpoch: offer.GetAssignmentEpoch(), ObservedPath: path}, managed
 }
 
 func containsOnlyRelayCandidates(sdp string, extra []*cloudpb.IceCandidate) bool {

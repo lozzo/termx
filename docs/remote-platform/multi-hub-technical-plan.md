@@ -71,8 +71,8 @@ client <========== reliable ordered WebRTC DataChannel ==========> daemon
 
 | 文件 | 内容 |
 | --- | --- |
-| `proto/cloudpb/cloud_hub_control.proto` | Hub identity/control stream、assignment、policy projection、Hub/daemon/Relay command、runtime report |
-| `proto/cloudpb/cloud_topology.proto` | Presence、ManagedPeerSession、terminal access、Hub snapshot、availability/freshness |
+| `proto/cloudpb/cloud_hub_control.proto` | Hub identity/control stream、assignment、policy projection、Hub/daemon/Relay command |
+| `proto/cloudpb/cloud_topology.proto` | Presence、ManagedPeerSession、daemon runtime report、terminal access、Hub snapshot、availability/freshness |
 | `proto/cloudpb/cloud_management.proto` | 用户与 operator 查询、CommandOutbox、分页、过滤、稳定错误 |
 
 `cloud_companion.proto` 继续拥有账号登录、设备 enrollment、客户端 route/signaling、Presence 连接和 Relay lease。新 schema 不复制这些字段；通过 message reference 或稳定 ID 关联。
@@ -634,6 +634,10 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 - Companion 增加 `ReportDaemonRuntime`，Agent 启动单 reporter pump。
 - Hub 聚合 daemon full inventory，Control Plane 校验并替换 topology projection。
 - 删除 Web `SetCloudDaemonOnline` direct write；Web 后端从 topology store 查询 availability/freshness。HUB003 期间旧页面允许把查询结果确定性投影为显示 bool，但不落盘、不成为第二份 truth；CLOUDP006 只迁移页面和 Proto JSON consumer，并删除该临时 UI projection。
+- 当前实现把 `ObservedPath` 与 `ReportDaemonRuntimeRequest/Response` 归到 `cloud_topology.proto`；`cloud_companion.proto` 只增加 daemon runtime capability 与 IPC operation，Hub HTTP 与 HubControl 复用同一 generated message。
+- daemon reporter 对同一 revision 保留并重试同一份 Proto，只有 registry 新 revision 才重建 full inventory；Presence replacement 会先停止并等待旧 reporter。
+- Hub 只在当前 assignment/Presence 下接受 inventory，同 runtime revision 单调、同 revision digest 幂等、被替换 runtime generation 永不复活；每个 control generation 首包为完整 `HubTopologySnapshot`。
+- Controller 从持久 assignment 与 device ownership 推导账号，SQLite full replacement 对缺失项降级为 `UNKNOWN/STALE`；control stream 丢失同样只降级，不伪造 offline。
 
 ### CLOUDP002：账号、Subscription 与交易
 

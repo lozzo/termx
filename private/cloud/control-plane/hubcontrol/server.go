@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
+	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
 )
@@ -43,6 +44,7 @@ type ServerConfig struct {
 	Registry     *hubregistry.Registry
 	CursorStore  CursorStore
 	Publisher    *Publisher
+	Topology     *cloudtopology.Service
 	Clock        func() time.Time
 	Random       io.Reader
 	ChallengeTTL time.Duration
@@ -54,6 +56,7 @@ type Server struct {
 	registry     *hubregistry.Registry
 	cursors      CursorStore
 	publisher    *Publisher
+	topology     *cloudtopology.Service
 	now          func() time.Time
 	random       io.Reader
 	challengeTTL time.Duration
@@ -79,7 +82,7 @@ type attachment struct {
 
 // NewServer 创建 Hub control handler。
 func NewServer(config ServerConfig) (*Server, error) {
-	if config.Registry == nil || config.CursorStore == nil || config.Publisher == nil {
+	if config.Registry == nil || config.CursorStore == nil || config.Publisher == nil || config.Topology == nil {
 		return nil, fmt.Errorf("Hub control registry, cursor store and publisher are required")
 	}
 	if config.Clock == nil {
@@ -91,7 +94,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if config.ChallengeTTL <= 0 || config.ChallengeTTL > time.Minute || config.EnvelopeTTL <= 0 || config.EnvelopeTTL > time.Hour {
 		return nil, fmt.Errorf("invalid Hub control TTL")
 	}
-	return &Server{registry: config.Registry, cursors: config.CursorStore, publisher: config.Publisher, now: config.Clock, random: config.Random, challengeTTL: config.ChallengeTTL, envelopeTTL: config.EnvelopeTTL, challenges: make(map[string]pendingChallenge), attachments: make(map[string]attachment)}, nil
+	return &Server{registry: config.Registry, cursors: config.CursorStore, publisher: config.Publisher, topology: config.Topology, now: config.Clock, random: config.Random, challengeTTL: config.ChallengeTTL, envelopeTTL: config.EnvelopeTTL, challenges: make(map[string]pendingChallenge), attachments: make(map[string]attachment)}, nil
 }
 
 // Handler 返回只包含 internal Hub control API 的 mux。
@@ -240,7 +243,7 @@ func (server *Server) handleReport(writer http.ResponseWriter, request *http.Req
 	fullRequired := false
 	now := server.now().UTC()
 	for _, envelope := range input.GetEnvelopes() {
-		if envelope.GetHubId() != first.GetHubId() || envelope.GetEdgeDeploymentId() != first.GetEdgeDeploymentId() || envelope.GetControlGeneration() != first.GetControlGeneration() || envelope.GetSenderRole() != first.GetSenderRole() || envelope.GetExpiresAtUnixMillis() <= now.UnixMilli() || envelope.GetIssuedAtUnixMillis() > now.UnixMilli() || envelope.GetReconciliation() == nil {
+		if envelope.GetHubId() != first.GetHubId() || envelope.GetEdgeDeploymentId() != first.GetEdgeDeploymentId() || envelope.GetControlGeneration() != first.GetControlGeneration() || envelope.GetSenderRole() != first.GetSenderRole() || envelope.GetExpiresAtUnixMillis() <= now.UnixMilli() || envelope.GetIssuedAtUnixMillis() > now.UnixMilli() || envelope.GetReconciliation() == nil && envelope.GetTopology() == nil {
 			http.Error(writer, "Hub runtime envelope rejected", http.StatusBadRequest)
 			return
 		}
@@ -257,10 +260,14 @@ func (server *Server) handleReport(writer http.ResponseWriter, request *http.Req
 			return
 		}
 		accepted, acceptedDigest = envelope.GetSenderSequence(), digest
-		head, ok := server.publisher.Head(first.GetHubId())
-		reconciliation := envelope.GetReconciliation()
-		if !ok || reconciliation.GetProjectionRevision() != head.Revision || !bytesEqual(reconciliation.GetProjectionDigest(), head.Digest) {
-			fullRequired = true
+		if reconciliation := envelope.GetReconciliation(); reconciliation != nil {
+			head, ok := server.publisher.Head(first.GetHubId())
+			if !ok || reconciliation.GetProjectionRevision() != head.Revision || !bytesEqual(reconciliation.GetProjectionDigest(), head.Digest) {
+				fullRequired = true
+			}
+		} else if topology := envelope.GetTopology(); topology.GetControlGeneration() != first.GetControlGeneration() || topology.GetHubId() != first.GetHubId() || server.topology.Ingest(request.Context(), topology, now) != nil {
+			http.Error(writer, "Hub topology snapshot rejected", http.StatusConflict)
+			return
 		}
 	}
 	if err := server.cursors.PutControlCursor(request.Context(), first.GetHubId(), first.GetControlGeneration(), first.GetSenderRole(), accepted, acceptedDigest, now); err != nil {
@@ -309,10 +316,15 @@ func (server *Server) cleanupChallengesLocked(now time.Time) {
 
 func (server *Server) detach(hubID string, generation uint64) {
 	server.mu.Lock()
+	detached := false
 	if current := server.attachments[hubID]; current.generation == generation {
 		delete(server.attachments, hubID)
+		detached = true
 	}
 	server.mu.Unlock()
+	if detached {
+		_ = server.topology.MarkHubUnknown(context.Background(), hubID, generation, server.now().UTC())
+	}
 }
 
 func wrapProjection(deployment hubregistry.Deployment, sequence uint64, now time.Time, ttl time.Duration, message proto.Message) *cloudpb.HubControlEnvelope {
