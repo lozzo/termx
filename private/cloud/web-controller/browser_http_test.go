@@ -13,15 +13,15 @@ import (
 func TestBrowserHandlerOwnsCookieOriginAndCSRF(t *testing.T) {
 	center := webcontroller.NewUserCenterStore(time.Now)
 	defer center.Close()
-	commerce, err := webcontroller.NewCommerceService([]byte("0123456789abcdef0123456789abcdef"), &entitlementPublisher{}, time.Now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	commerce.AttachUserCenter(center)
 	catalog, err := webcontroller.LoadCatalog("config/plans.json")
 	if err != nil {
 		t.Fatal(err)
 	}
+	commerce, err := webcontroller.NewCommerceService([]byte("0123456789abcdef0123456789abcdef"), &entitlementPublisher{}, catalog, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commerce.AttachUserCenter(center)
 	handler, err := webcontroller.BrowserHandler(webcontroller.BrowserConfig{Catalog: &catalog, Commerce: commerce, UserCenter: center, RelayURL: "turn:127.0.0.1:41003", StagingLogin: true})
 	if err != nil {
 		t.Fatal(err)

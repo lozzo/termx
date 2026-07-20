@@ -3,6 +3,9 @@ package servicecredential
 import (
 	"fmt"
 	"time"
+
+	"github.com/lozzow/termx/proto/cloudpb"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -14,15 +17,12 @@ const (
 // EdgePolicyAccount 是签名 Hub 授权快照中的最小账号投影。
 // 它只包含 edge admission 所需状态，不包含账单明细、refresh token 或 terminal capability。
 type EdgePolicyAccount struct {
-	AccountID            string `json:"account_id"`
-	AuthEpoch            uint64 `json:"auth_epoch"`
-	ManagedDirectEnabled bool   `json:"managed_direct_enabled"`
-	Revoked              bool   `json:"revoked"`
-	StandardRelayEnabled bool   `json:"standard_relay_enabled"`
-	RelayMaxLeaseSeconds uint32 `json:"relay_max_lease_seconds"`
-	RelayMaxBytes        uint64 `json:"relay_max_bytes"`
-	RelayMaxBitrateKbps  uint32 `json:"relay_max_bitrate_kbps"`
-	RelayMaxConcurrency  uint32 `json:"relay_max_concurrency"`
+	AccountID                     string                    `json:"account_id"`
+	AuthEpoch                     uint64                    `json:"auth_epoch"`
+	Revoked                       bool                      `json:"revoked"`
+	EntitlementStatus             cloudpb.EntitlementStatus `json:"entitlement_status"`
+	EntitlementEffectiveUntilUnix int64                     `json:"entitlement_effective_until_unix"`
+	Capability                    *cloudpb.PlanCapability   `json:"capability"`
 }
 
 // EdgePolicyDevice 是签名 Hub 授权快照中的最小设备 ownership/public-key 投影。
@@ -104,10 +104,16 @@ func validateEdgePolicyClaims(claims EdgePolicyClaims, issuer, hubID string, now
 	}
 	accounts := make(map[string]struct{}, len(claims.Accounts))
 	for _, account := range claims.Accounts {
-		if account.AccountID == "" || account.AuthEpoch == 0 {
+		if account.AccountID == "" || account.AuthEpoch == 0 || !validEdgePlanCapability(account.Capability) {
 			return ErrMalformedCredential
 		}
-		if account.StandardRelayEnabled && (account.RelayMaxLeaseSeconds == 0 || account.RelayMaxBytes == 0 || account.RelayMaxBitrateKbps == 0 || account.RelayMaxConcurrency == 0) {
+		switch account.EntitlementStatus {
+		case cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE:
+			if account.EntitlementEffectiveUntilUnix <= now.Unix() {
+				return ErrCredentialExpired
+			}
+		case cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_SUSPENDED, cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_EXPIRED:
+		default:
 			return ErrMalformedCredential
 		}
 		if _, exists := accounts[account.AccountID]; exists {
@@ -132,7 +138,13 @@ func validateEdgePolicyClaims(claims EdgePolicyClaims, issuer, hubID string, now
 }
 
 func cloneEdgePolicyAccounts(source []EdgePolicyAccount) []EdgePolicyAccount {
-	return append([]EdgePolicyAccount(nil), source...)
+	result := append([]EdgePolicyAccount(nil), source...)
+	for index := range result {
+		if result[index].Capability != nil {
+			result[index].Capability = proto.Clone(result[index].Capability).(*cloudpb.PlanCapability)
+		}
+	}
+	return result
 }
 
 func cloneEdgePolicyDevices(source []EdgePolicyDevice) []EdgePolicyDevice {
@@ -141,4 +153,18 @@ func cloneEdgePolicyDevices(source []EdgePolicyDevice) []EdgePolicyDevice {
 		result[index].PublicKey = append([]byte(nil), result[index].PublicKey...)
 	}
 	return result
+}
+
+func validEdgePlanCapability(capability *cloudpb.PlanCapability) bool {
+	if capability == nil || capability.GetCloudDeviceLimit() == 0 || !capability.GetManagedP2PEnabled() && !capability.GetStandardRelayEnabled() {
+		return false
+	}
+	if capability.GetManagedP2PEnabled() != (capability.GetManagedP2PMaxConcurrency() > 0) {
+		return false
+	}
+	relay := capability.GetRelay()
+	if !capability.GetStandardRelayEnabled() {
+		return relay == nil || len(relay.GetAllowedRegions()) == 0 && !relay.GetAllowRelayMesh() && relay.GetMaxLeaseSeconds() == 0 && relay.GetMaxBytesPerLease() == 0 && relay.GetMaxBitrateKbps() == 0 && relay.GetMaxConcurrency() == 0 && relay.GetMaxBytesPerPeriod() == 0
+	}
+	return relay != nil && !relay.GetAllowRelayMesh() && len(relay.GetAllowedRegions()) > 0 && relay.GetMaxLeaseSeconds() > 0 && relay.GetMaxBytesPerLease() > 0 && relay.GetMaxBitrateKbps() > 0 && relay.GetMaxConcurrency() > 0 && relay.GetMaxBytesPerPeriod() >= relay.GetMaxBytesPerLease()
 }

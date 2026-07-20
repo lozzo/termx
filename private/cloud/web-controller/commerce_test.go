@@ -8,13 +8,24 @@ import (
 	"time"
 
 	webcontroller "github.com/lozzow/termx/private/cloud/web-controller"
+	"github.com/lozzow/termx/proto/cloudpb"
+	"google.golang.org/protobuf/proto"
 )
 
 type entitlementPublisher struct{ calls int }
 
-func (publisher *entitlementPublisher) Activate(accountID, planID, orderID string, validUntil time.Time) error {
+func (publisher *entitlementPublisher) PublishSubscription(*cloudpb.SubscriptionProjection) error {
 	publisher.calls++
 	return nil
+}
+
+func testCatalog(t *testing.T) webcontroller.Catalog {
+	t.Helper()
+	catalog, err := webcontroller.LoadCatalog("config/plans.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return catalog
 }
 
 func TestCommerceSessionAndOrderSurviveDatabaseRestart(t *testing.T) {
@@ -24,7 +35,7 @@ func TestCommerceSessionAndOrderSurviveDatabaseRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, _ := webcontroller.NewCommerceService([]byte("0123456789abcdef0123456789abcdef"), &entitlementPublisher{}, func() time.Time { return now })
+	service, _ := webcontroller.NewCommerceService([]byte("0123456789abcdef0123456789abcdef"), &entitlementPublisher{}, testCatalog(t), func() time.Time { return now })
 	service.AttachUserCenter(center)
 	session, _ := service.BeginStagingSession("account-dev-local", "user-dev-local", "dev-local@termx.invalid")
 	order, err := service.CreateCheckout(session, "pro")
@@ -37,7 +48,7 @@ func TestCommerceSessionAndOrderSurviveDatabaseRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	restarted, _ := webcontroller.NewCommerceService([]byte("0123456789abcdef0123456789abcdef"), &entitlementPublisher{}, func() time.Time { return now })
+	restarted, _ := webcontroller.NewCommerceService([]byte("0123456789abcdef0123456789abcdef"), &entitlementPublisher{}, testCatalog(t), func() time.Time { return now })
 	restarted.AttachUserCenter(reopened)
 	authenticated, err := restarted.Authenticate(session.Token)
 	if err != nil {
@@ -50,26 +61,25 @@ func TestCommerceSessionAndOrderSurviveDatabaseRestart(t *testing.T) {
 }
 
 type recordedEntitlement struct {
-	accountID  string
-	validUntil time.Time
+	subscription *cloudpb.SubscriptionProjection
 }
 type recordingPublisher struct{ values []recordedEntitlement }
 
 type failingPublisher struct{}
 
-func (failingPublisher) Activate(string, string, string, time.Time) error {
+func (failingPublisher) PublishSubscription(*cloudpb.SubscriptionProjection) error {
 	return errors.New("control plane unavailable")
 }
 
-func (publisher *recordingPublisher) Activate(accountID, planID, orderID string, validUntil time.Time) error {
-	publisher.values = append(publisher.values, recordedEntitlement{accountID: accountID, validUntil: validUntil})
+func (publisher *recordingPublisher) PublishSubscription(subscription *cloudpb.SubscriptionProjection) error {
+	publisher.values = append(publisher.values, recordedEntitlement{subscription: proto.Clone(subscription).(*cloudpb.SubscriptionProjection)})
 	return nil
 }
 
 func TestCommerceWebhookIsSignedAndIdempotent(t *testing.T) {
 	now := time.Date(2026, 7, 13, 1, 0, 0, 0, time.UTC)
 	publisher := &entitlementPublisher{}
-	service, err := webcontroller.NewCommerceService([]byte("0123456789abcdef0123456789abcdef"), publisher, func() time.Time { return now })
+	service, err := webcontroller.NewCommerceService([]byte("0123456789abcdef0123456789abcdef"), publisher, testCatalog(t), func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +92,7 @@ func TestCommerceWebhookIsSignedAndIdempotent(t *testing.T) {
 	if err != nil || publisher.calls != 0 {
 		t.Fatalf("checkout = (%#v, %v), publisher=%d", order, err, publisher.calls)
 	}
-	event := webcontroller.PaymentEvent{EventID: "event-1", Type: "payment.succeeded", OrderID: order.ID, AccountID: order.AccountID, PlanID: order.PlanID}
+	event := webcontroller.PaymentEvent{EventID: "event-1", Type: "payment.succeeded", OrderID: order.ID, AccountID: order.AccountID, PlanID: order.PlanID, PlanVersion: order.PlanVersion}
 	body, _ := json.Marshal(event)
 	if _, err := service.ApplyWebhook(body, "invalid"); err == nil {
 		t.Fatal("unsigned payment webhook accepted")
@@ -96,6 +106,25 @@ func TestCommerceWebhookIsSignedAndIdempotent(t *testing.T) {
 	}
 }
 
+func TestCheckoutUsesCatalogInsteadOfPlanNameBranches(t *testing.T) {
+	now := time.Date(2026, 7, 13, 2, 0, 0, 0, time.UTC)
+	service, err := webcontroller.NewCommerceService([]byte("0123456789abcdef0123456789abcdef"), &entitlementPublisher{}, testCatalog(t), func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, _ := service.BeginStagingSession("account-1", "user-1", "user@example.test")
+	team, err := service.CreateCheckout(session, "team")
+	if err != nil || team.PlanID != "team" || team.PlanVersion != 1 {
+		t.Fatalf("team checkout = (%#v, %v)", team, err)
+	}
+	if _, err := service.CreateCheckout(session, "managed-free"); !errors.Is(err, webcontroller.ErrCommerceConflict) {
+		t.Fatalf("included checkout error = %v", err)
+	}
+	if _, err := service.CreateCheckout(session, "missing-plan"); !errors.Is(err, webcontroller.ErrCommerceConflict) {
+		t.Fatalf("unknown checkout error = %v", err)
+	}
+}
+
 func TestFirstPaidReferralExtendsInviteeSubscription(t *testing.T) {
 	now := time.Date(2026, 7, 13, 1, 0, 0, 0, time.UTC)
 	center := webcontroller.NewUserCenterStore(func() time.Time { return now })
@@ -106,7 +135,7 @@ func TestFirstPaidReferralExtendsInviteeSubscription(t *testing.T) {
 		t.Fatal(err)
 	}
 	publisher := &recordingPublisher{}
-	service, err := webcontroller.NewCommerceService([]byte("0123456789abcdef0123456789abcdef"), publisher, func() time.Time { return now })
+	service, err := webcontroller.NewCommerceService([]byte("0123456789abcdef0123456789abcdef"), publisher, testCatalog(t), func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +151,7 @@ func TestFirstPaidReferralExtendsInviteeSubscription(t *testing.T) {
 	if view.ValidUntil == nil || !view.ValidUntil.Equal(want) {
 		t.Fatalf("valid until = %v, want %v", view.ValidUntil, want)
 	}
-	if len(publisher.values) != 1 || !publisher.values[0].validUntil.Equal(want) {
+	if len(publisher.values) != 1 || !time.UnixMilli(publisher.values[0].subscription.GetCurrentPeriodEndUnixMillis()).Equal(want) {
 		t.Fatalf("published = %#v", publisher.values)
 	}
 }
@@ -133,7 +162,7 @@ func TestReferralRewardIsNotCommittedBeforeEntitlement(t *testing.T) {
 	defer center.Close()
 	_, _, program, _, _ := center.Snapshot("account-dev-local")
 	invitee, _ := center.RegisterPasswordAccount("failed@example.com", "secure-password", program.Code)
-	service, _ := webcontroller.NewCommerceService([]byte("0123456789abcdef0123456789abcdef"), failingPublisher{}, func() time.Time { return now })
+	service, _ := webcontroller.NewCommerceService([]byte("0123456789abcdef0123456789abcdef"), failingPublisher{}, testCatalog(t), func() time.Time { return now })
 	service.AttachUserCenter(center)
 	session, _ := service.BeginStagingSession(invitee.AccountID, invitee.UserID, invitee.Email)
 	order, _ := service.CreateCheckout(session, "pro")

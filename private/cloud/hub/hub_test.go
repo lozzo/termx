@@ -107,7 +107,7 @@ func TestHubEdgePresenceRejectsWrongKeyRevocationAndStalePolicy(t *testing.T) {
 	}
 	if err := fixture.edgeAuthorizer.ApplySnapshot(hub.AuthorizationSnapshot{
 		Revision: 2, GeneratedAt: fixture.clock.Now(),
-		Accounts: []hub.AccountAuthorization{{AccountID: "account-1", AuthEpoch: 1, ManagedDirectEnabled: true}},
+		Accounts: []hub.AccountAuthorization{activeHubP2PAccount("account-1", 1, fixture.clock.Now())},
 		Devices:  []hub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon", PublicKey: fixture.daemonPublicKey, Revoked: true}},
 	}); err != nil {
 		t.Fatal(err)
@@ -155,7 +155,7 @@ func newFixture(t *testing.T, presenceQueue, clientQueue int) fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := edgeAuthorizer.ApplySnapshot(hub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []hub.AccountAuthorization{{AccountID: "account-1", AuthEpoch: 1, ManagedDirectEnabled: true}}, Devices: []hub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon", PublicKey: daemonPublicKey}}}); err != nil {
+	if err := edgeAuthorizer.ApplySnapshot(hub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []hub.AccountAuthorization{activeHubP2PAccount("account-1", 1, now)}, Devices: []hub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon", PublicKey: daemonPublicKey}}}); err != nil {
 		t.Fatal(err)
 	}
 	service, err := hub.New(hub.Config{HubID: "hub-eu", Clock: clock, MaxPresenceTTL: 5 * time.Minute, MaxSignalingTTL: 5 * time.Minute, PresenceChallengeTTL: time.Minute, MaxPresenceChallenges: 16, PresenceQueueSize: presenceQueue, ClientQueueSize: clientQueue, MaxSDPBytes: 1024, MaxCandidates: 8, MaxPresences: 16, MaxSessions: 32, MaxSessionsPerClient: 4, EdgeAuthorizer: edgeAuthorizer})
@@ -163,6 +163,15 @@ func newFixture(t *testing.T, presenceQueue, clientQueue int) fixture {
 		t.Fatal(err)
 	}
 	return fixture{now: now, clock: clock, signer: signer, edgeAuthorizer: edgeAuthorizer, daemonPublicKey: daemonPublicKey, daemonPrivateKey: daemonPrivateKey, service: service}
+}
+
+func activeHubP2PAccount(accountID string, authEpoch uint64, now time.Time) hub.AccountAuthorization {
+	return hub.AccountAuthorization{
+		AccountID: accountID, AuthEpoch: authEpoch,
+		EntitlementStatus:             cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE,
+		EntitlementEffectiveUntilUnix: now.Add(time.Hour).Unix(),
+		Capability:                    &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 2, CloudDeviceLimit: 10},
+	}
 }
 
 func (fixture fixture) issueDaemonEdgeToken(t *testing.T) []byte {

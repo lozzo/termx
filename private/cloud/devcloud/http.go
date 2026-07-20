@@ -15,6 +15,7 @@ import (
 
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
 	"github.com/lozzow/termx/private/cloud/companion/session"
+	"github.com/lozzow/termx/private/cloud/control-plane/entitlement"
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudhub "github.com/lozzow/termx/private/cloud/hub"
 	"github.com/lozzow/termx/proto/cloudpb"
@@ -251,11 +252,14 @@ func (state *serviceState) publishEdgeSnapshot(now time.Time) error {
 		accountIDs[accountID] = struct{}{}
 	}
 	for accountID := range accountIDs {
-		maxBytes, maxConcurrency := uint64(64<<20), uint32(2)
-		if validUntil, ok := state.webEntitlements[accountID]; ok && now.Before(validUntil) {
-			maxBytes, maxConcurrency = 256<<20, 4
+		value, ok := state.webEntitlements[accountID]
+		if !ok {
+			return fmt.Errorf("account %q has no entitlement projection", accountID)
 		}
-		accounts = append(accounts, servicecredential.EdgePolicyAccount{AccountID: accountID, AuthEpoch: 1, ManagedDirectEnabled: true, StandardRelayEnabled: true, RelayMaxLeaseSeconds: uint32(relayLeaseTTL / time.Second), RelayMaxBytes: maxBytes, RelayMaxBitrateKbps: 100_000, RelayMaxConcurrency: maxConcurrency})
+		accounts = append(accounts, servicecredential.EdgePolicyAccount{
+			AccountID: accountID, AuthEpoch: 1, EntitlementStatus: value.Status,
+			EntitlementEffectiveUntilUnix: value.EffectiveUntil.Unix(), Capability: entitlement.ClonePlanCapability(value.Capability),
+		})
 	}
 	encoded, err := state.edgePolicyIssuer.Issue(devHubID, state.edgeRevision, accounts, devices, 30*time.Minute, now.UTC())
 	if err != nil {

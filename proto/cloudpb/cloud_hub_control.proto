@@ -6,6 +6,7 @@ option go_package = "github.com/lozzow/termx/proto/cloudpb";
 
 import "cloudpb/cloud_topology.proto";
 import "cloudpb/cloud_companion.proto";
+import "cloudpb/cloud_product.proto";
 
 // ControlServiceRole 区分同一个 Edge 进程内的 Hub 与 Relay control identity。
 enum ControlServiceRole {
@@ -147,6 +148,16 @@ message CloudDevicePolicy {
   bytes public_key = 6;
 }
 
+// HubAccountPolicy 使用与 PlanCatalog/Entitlement 相同的 PlanCapability schema。
+message HubAccountPolicy {
+  string account_id = 1;
+  uint64 auth_epoch = 2;
+  bool revoked = 3;
+  EntitlementStatus entitlement_status = 4;
+  int64 entitlement_effective_until_unix_millis = 5;
+  PlanCapability capability = 6;
+}
+
 // FullProjectionSnapshot 是一个 Hub 独享 revision 的完整内存投影。
 message FullProjectionSnapshot {
   string hub_id = 1;
@@ -159,6 +170,7 @@ message FullProjectionSnapshot {
   repeated HubAssignment assignments = 8;
   bytes signature = 9;
   string signing_key_id = 10;
+  repeated HubAccountPolicy accounts = 11;
 }
 
 // DevicePolicyDelta 是单个 device policy 的 upsert/remove 操作。
@@ -175,6 +187,13 @@ message HubAssignmentDelta {
   HubAssignment assignment = 3;
 }
 
+// HubAccountPolicyDelta 是单个账号能力投影的 upsert/remove 操作。
+message HubAccountPolicyDelta {
+  ProjectionDeltaOperation operation = 1;
+  string account_id = 2;
+  HubAccountPolicy policy = 3;
+}
+
 // PolicyDelta 从 previous revision 原子生成 next revision。
 message PolicyDelta {
   string hub_id = 1;
@@ -187,6 +206,7 @@ message PolicyDelta {
   repeated HubAssignmentDelta assignment_operations = 8;
   bytes signature = 9;
   string signing_key_id = 10;
+  repeated HubAccountPolicyDelta account_operations = 11;
 }
 
 // ReconciliationDigest 比较 Controller 与 Hub 当前完整投影。

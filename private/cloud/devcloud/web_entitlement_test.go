@@ -3,26 +3,29 @@ package devcloud
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
+	"github.com/lozzow/termx/proto/cloudpb"
+	"google.golang.org/protobuf/proto"
 )
 
-func TestWebEntitlementPublishesUpdatedHubRelayBudget(t *testing.T) {
+func TestWebSubscriptionPublishesCatalogCapabilityToHub(t *testing.T) {
 	clock := &testClock{now: time.Date(2026, 7, 13, 1, 0, 0, 0, time.UTC)}
-	runtime, err := Start(Config{Now: clock.Now, EnrollmentCode: "web-entitlement"})
+	runtime, err := Start(Config{Now: clock.Now, EnrollmentCode: "web-entitlement", WebAccountDBPath: filepath.Join(t.TempDir(), "accounts.db"), WebCatalogPath: "../web-controller/config/plans.json", WebStaging: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer runtime.Close(context.Background())
-	before, err := runtime.state.edgeAuth.RelayBudget(devAccountID)
-	if err != nil || before.MaxConcurrency != 2 {
-		t.Fatalf("before = (%#v, %v)", before, err)
+	if before, err := runtime.state.edgeAuth.RelayBudget(devAccountID); err == nil {
+		t.Fatalf("included P2P-only plan unexpectedly has Relay budget: %#v", before)
 	}
-	payload, _ := json.Marshal(map[string]any{"account_id": devAccountID, "plan_id": "pro", "order_id": "order-1", "valid_until": clock.Now().Add(30 * 24 * time.Hour)})
+	payload, _ := proto.Marshal(&cloudpb.SubscriptionProjection{SubscriptionId: "subscription-1", AccountId: devAccountID, SourceOrderId: "order-1", PlanId: "team", PlanVersion: 1, Status: cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE, CurrentPeriodStartUnixMillis: clock.Now().UnixMilli(), CurrentPeriodEndUnixMillis: clock.Now().Add(30 * 24 * time.Hour).UnixMilli(), UpdatedAtUnixMillis: clock.Now().UnixMilli()})
 	request, _ := http.NewRequest(http.MethodPost, runtime.manifest.ControlPlaneURL+"/v1/internal/web/entitlements", bytes.NewReader(payload))
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Type", httpapi.ProtobufMediaType)
 	request.Header.Set("X-TermX-Internal-Service", "web-controller-staging-v1")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
@@ -33,21 +36,21 @@ func TestWebEntitlementPublishesUpdatedHubRelayBudget(t *testing.T) {
 		t.Fatalf("status = %d", response.StatusCode)
 	}
 	after, err := runtime.state.edgeAuth.RelayBudget(devAccountID)
-	if err != nil || after.MaxConcurrency != 4 || after.MaxBytes != 256<<20 {
+	if err != nil || after.MaxConcurrency != 10 || after.MaxBytes != 1<<30 {
 		t.Fatalf("after = (%#v, %v)", after, err)
 	}
 }
 
 func TestWebEntitlementAcceptsNewRegisteredAccount(t *testing.T) {
 	clock := &testClock{now: time.Date(2026, 7, 13, 1, 0, 0, 0, time.UTC)}
-	runtime, err := Start(Config{Now: clock.Now, EnrollmentCode: "web-new-account"})
+	runtime, err := Start(Config{Now: clock.Now, EnrollmentCode: "web-new-account", WebAccountDBPath: filepath.Join(t.TempDir(), "accounts.db"), WebCatalogPath: "../web-controller/config/plans.json", WebStaging: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer runtime.Close(context.Background())
-	payload, _ := json.Marshal(map[string]any{"account_id": "account-from-web", "plan_id": "pro", "order_id": "order-new", "valid_until": clock.Now().Add(37 * 24 * time.Hour)})
+	payload, _ := proto.Marshal(&cloudpb.SubscriptionProjection{SubscriptionId: "subscription-new", AccountId: "account-from-web", SourceOrderId: "order-new", PlanId: "pro", PlanVersion: 1, Status: cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE, CurrentPeriodStartUnixMillis: clock.Now().UnixMilli(), CurrentPeriodEndUnixMillis: clock.Now().Add(37 * 24 * time.Hour).UnixMilli(), UpdatedAtUnixMillis: clock.Now().UnixMilli()})
 	request, _ := http.NewRequest(http.MethodPost, runtime.manifest.ControlPlaneURL+"/v1/internal/web/entitlements", bytes.NewReader(payload))
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Type", httpapi.ProtobufMediaType)
 	request.Header.Set("X-TermX-Internal-Service", "web-controller-staging-v1")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {

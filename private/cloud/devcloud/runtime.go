@@ -26,6 +26,7 @@ import (
 	"github.com/lozzow/termx/private/cloud/companion/session"
 	"github.com/lozzow/termx/private/cloud/control-plane/directory"
 	"github.com/lozzow/termx/private/cloud/control-plane/domain"
+	"github.com/lozzow/termx/private/cloud/control-plane/entitlement"
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudhub "github.com/lozzow/termx/private/cloud/hub"
 	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
@@ -191,8 +192,9 @@ type serviceState struct {
 	edgeRevision      uint64
 	edgeDevices       map[string]cloudhub.DeviceAuthorization
 	directoryAccounts map[string]struct{}
-	webEntitlements   map[string]time.Time
+	webEntitlements   map[string]entitlement.Entitlement
 	webAccounts       map[string]struct{}
+	webCatalog        *webcontroller.Catalog
 	usageOutboxPath   string
 	relayControl      *relayControlState
 	webCenter         *webcontroller.UserCenterStore
@@ -244,9 +246,14 @@ func start(config Config, options runtimeOptions) (*Runtime, error) {
 	}()
 	state := &serviceState{
 		now: config.Now, random: &synchronizedReader{source: config.Random},
-		loginFlows: make(map[string]loginFlow), loginCodes: make(map[string]string), enrollmentClaims: make(map[string]enrollmentClaim), enrollmentFlows: make(map[string]enrollmentFlow), sessions: make(map[[sha256.Size]byte]cloudSession), webEntitlements: make(map[string]time.Time), webAccounts: make(map[string]struct{}), directoryAccounts: make(map[string]struct{}),
+		loginFlows: make(map[string]loginFlow), loginCodes: make(map[string]string), enrollmentClaims: make(map[string]enrollmentClaim), enrollmentFlows: make(map[string]enrollmentFlow), sessions: make(map[[sha256.Size]byte]cloudSession), webEntitlements: make(map[string]entitlement.Entitlement), webAccounts: make(map[string]struct{}), directoryAccounts: make(map[string]struct{}),
 		presenceQueueSize: options.presenceQueueSize, clientQueueSize: options.clientQueueSize,
 	}
+	development, err := developmentEntitlement(now)
+	if err != nil {
+		return nil, fmt.Errorf("build development entitlement: %w", err)
+	}
+	state.webEntitlements[devAccountID] = development
 	state.webPublicURL = strings.TrimRight(strings.TrimSpace(config.WebPublicURL), "/")
 	if state.webPublicURL == "" {
 		state.webPublicURL = "https://login.dev.invalid"

@@ -122,6 +122,35 @@ func TestCloudManagementAPIMessagesAreProtoFirst(t *testing.T) {
 	}
 }
 
+func TestCloudProductUsesOnePlanCapabilityAcrossCatalogEntitlementAndHubPolicy(t *testing.T) {
+	capabilityFields := descriptorFieldNames((&PlanCapability{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"managed_p2p_enabled", "managed_p2p_max_concurrency", "standard_relay_enabled", "relay", "cloud_device_limit"} {
+		if !capabilityFields[required] {
+			t.Fatalf("PlanCapability missing %q: %v", required, capabilityFields)
+		}
+	}
+	relayFields := descriptorFieldNames((&RelayServiceCapability{}).ProtoReflect().Descriptor())
+	if !relayFields["max_bytes_per_period"] {
+		t.Fatalf("RelayServiceCapability missing period quota: %v", relayFields)
+	}
+	if (&PlanDefinition{}).ProtoReflect().Descriptor().Fields().ByName("capability").Message().FullName() != (&PlanCapability{}).ProtoReflect().Descriptor().FullName() {
+		t.Fatal("PlanDefinition does not use PlanCapability")
+	}
+	if (&EntitlementProjection{}).ProtoReflect().Descriptor().Fields().ByName("capability").Message().FullName() != (&PlanCapability{}).ProtoReflect().Descriptor().FullName() {
+		t.Fatal("EntitlementProjection does not use PlanCapability")
+	}
+	if (&HubAccountPolicy{}).ProtoReflect().Descriptor().Fields().ByName("capability").Message().FullName() != (&PlanCapability{}).ProtoReflect().Descriptor().FullName() {
+		t.Fatal("HubAccountPolicy does not use PlanCapability")
+	}
+	for _, name := range []protoreflect.Name{
+		"GetPlanCatalogRequest", "GetPlanCatalogResponse", "GetAccountSubscriptionRequest", "GetAccountSubscriptionResponse", "GetAccountEntitlementRequest", "GetAccountEntitlementResponse",
+	} {
+		if File_cloudpb_cloud_product_proto.Messages().ByName(name) == nil {
+			t.Fatalf("cloud product proto missing %s", name)
+		}
+	}
+}
+
 func TestCloudPlatformDescriptorBaseline(t *testing.T) {
 	payload, err := os.ReadFile("testdata/cloud-platform-v1.pb")
 	if err != nil {
@@ -133,6 +162,7 @@ func TestCloudPlatformDescriptorBaseline(t *testing.T) {
 	}
 	current := &descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{
 		protodesc.ToFileDescriptorProto(File_cloudpb_cloud_companion_proto),
+		protodesc.ToFileDescriptorProto(File_cloudpb_cloud_product_proto),
 		protodesc.ToFileDescriptorProto(File_cloudpb_cloud_topology_proto),
 		protodesc.ToFileDescriptorProto(File_cloudpb_cloud_hub_control_proto),
 		protodesc.ToFileDescriptorProto(File_cloudpb_cloud_management_proto),

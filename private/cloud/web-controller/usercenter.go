@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lozzow/termx/proto/cloudpb"
 	"golang.org/x/crypto/bcrypt"
 	_ "modernc.org/sqlite"
 )
@@ -53,15 +54,6 @@ type ReferralProgram struct {
 	ReferredCount int              `json:"referred_count"`
 	RewardDays    int              `json:"reward_days"`
 	Rewards       []ReferralReward `json:"rewards"`
-}
-
-// AccountEntitlement 是 Control Plane 启动时从 paid order 与奖励账本重建的订阅投影。
-// 它只包含托管服务能力期限，不包含 terminal capability。
-type AccountEntitlement struct {
-	AccountID  string
-	PlanID     string
-	OrderID    string
-	ValidUntil time.Time
 }
 
 // UserAuditEvent 是账号中心可展示的持久审计投影。
@@ -122,7 +114,7 @@ CREATE TABLE IF NOT EXISTS nodes(id TEXT PRIMARY KEY, account_id TEXT NOT NULL, 
 CREATE TABLE IF NOT EXISTS referral_attributions(referred_account_id TEXT PRIMARY KEY, referrer_account_id TEXT NOT NULL, code TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY(referred_account_id) REFERENCES accounts(account_id), FOREIGN KEY(referrer_account_id) REFERENCES accounts(account_id));
 CREATE TABLE IF NOT EXISTS referral_rewards(id TEXT PRIMARY KEY, order_id TEXT NOT NULL, beneficiary_account_id TEXT NOT NULL, kind TEXT NOT NULL, days INTEGER NOT NULL, created_at TEXT NOT NULL, UNIQUE(order_id, beneficiary_account_id), FOREIGN KEY(beneficiary_account_id) REFERENCES accounts(account_id));
 CREATE TABLE IF NOT EXISTS commerce_sessions(token_hash BLOB PRIMARY KEY, account_id TEXT NOT NULL, user_id TEXT NOT NULL, email TEXT NOT NULL, expires_at TEXT NOT NULL, FOREIGN KEY(account_id) REFERENCES accounts(account_id));
-CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY, account_id TEXT NOT NULL, plan_id TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, paid_at TEXT, FOREIGN KEY(account_id) REFERENCES accounts(account_id));
+CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY, account_id TEXT NOT NULL, plan_id TEXT NOT NULL, plan_version INTEGER NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, paid_at TEXT, FOREIGN KEY(account_id) REFERENCES accounts(account_id));
 CREATE TABLE IF NOT EXISTS payment_events(event_id TEXT PRIMARY KEY, order_id TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY(order_id) REFERENCES orders(id));
 CREATE TABLE IF NOT EXISTS audit_events(id TEXT PRIMARY KEY, account_id TEXT NOT NULL, action TEXT NOT NULL, resource_id TEXT NOT NULL, occurred_at TEXT NOT NULL, FOREIGN KEY(account_id) REFERENCES accounts(account_id));`
 	if _, err := store.db.Exec(schema); err != nil {
@@ -257,37 +249,43 @@ func (store *UserCenterStore) ReferralRewardDays(accountID string) int {
 	return days
 }
 
-// ActiveEntitlements 从持久订单和奖励账本重建当前有效订阅，供 Control Plane 启动时恢复 Hub 投影。
-func (store *UserCenterStore) ActiveEntitlements(now time.Time) []AccountEntitlement {
-	rows, err := store.db.Query(`SELECT id,account_id,plan_id,paid_at FROM orders WHERE status='paid' AND paid_at IS NOT NULL ORDER BY paid_at`)
+// ActiveSubscriptions 从持久订单、精确 catalog version 和奖励账本重建当前订阅投影。
+// Control Plane 必须再通过 entitlement.Normalize 生成准入真值，不能把订单直接当成 Hub policy。
+func (store *UserCenterStore) ActiveSubscriptions(catalog Catalog, now time.Time) []*cloudpb.SubscriptionProjection {
+	rows, err := store.db.Query(`SELECT id,account_id,plan_id,plan_version,paid_at FROM orders WHERE status='paid' AND paid_at IS NOT NULL ORDER BY paid_at`)
 	if err != nil {
 		return nil
 	}
 	type paidOrder struct {
 		orderID, accountID, planID string
+		planVersion                uint64
 		paidAt                     time.Time
 	}
 	orders := []paidOrder{}
 	for rows.Next() {
 		var value paidOrder
 		var paidAtText string
-		if rows.Scan(&value.orderID, &value.accountID, &value.planID, &paidAtText) != nil {
+		if rows.Scan(&value.orderID, &value.accountID, &value.planID, &value.planVersion, &paidAtText) != nil {
 			continue
 		}
 		value.paidAt, _ = time.Parse(time.RFC3339Nano, paidAtText)
 		orders = append(orders, value)
 	}
 	rows.Close()
-	latest := map[string]AccountEntitlement{}
+	latest := map[string]*cloudpb.SubscriptionProjection{}
 	for _, order := range orders {
-		validUntil := order.paidAt.Add(time.Duration(30+store.ReferralRewardDays(order.accountID)) * 24 * time.Hour)
-		if now.Before(validUntil) {
-			latest[order.accountID] = AccountEntitlement{AccountID: order.accountID, PlanID: order.planID, OrderID: order.orderID, ValidUntil: validUntil}
+		plan, ok := catalog.Plan(order.planID)
+		if !ok || plan.Version != order.planVersion || plan.BillingPeriodDays == 0 {
+			continue
+		}
+		projection := subscriptionForOrder(Order{ID: order.orderID, AccountID: order.accountID, PlanID: order.planID, PlanVersion: order.planVersion}, order.paidAt, plan.BillingPeriodDays, store.ReferralRewardDays(order.accountID))
+		if now.Before(time.UnixMilli(projection.GetCurrentPeriodEndUnixMillis())) {
+			latest[order.accountID] = projection
 		}
 	}
-	result := make([]AccountEntitlement, 0, len(latest))
+	result := make([]*cloudpb.SubscriptionProjection, 0, len(latest))
 	for _, value := range latest {
-		result = append(result, value)
+		result = append(result, cloneSubscription(value))
 	}
 	return result
 }
@@ -506,7 +504,7 @@ func (store *UserCenterStore) saveOrder(order Order) error {
 	if !order.PaidAt.IsZero() {
 		paid = order.PaidAt.UTC().Format(time.RFC3339Nano)
 	}
-	_, err := store.db.Exec(`INSERT INTO orders(id,account_id,plan_id,status,created_at,paid_at) VALUES(?,?,?,?,?,?)`, order.ID, order.AccountID, order.PlanID, order.Status, order.CreatedAt.UTC().Format(time.RFC3339Nano), paid)
+	_, err := store.db.Exec(`INSERT INTO orders(id,account_id,plan_id,plan_version,status,created_at,paid_at) VALUES(?,?,?,?,?,?,?)`, order.ID, order.AccountID, order.PlanID, order.PlanVersion, order.Status, order.CreatedAt.UTC().Format(time.RFC3339Nano), paid)
 	return err
 }
 
@@ -514,7 +512,7 @@ func (store *UserCenterStore) order(id string) (Order, error) {
 	var order Order
 	var created string
 	var paid sql.NullString
-	err := store.db.QueryRow(`SELECT id,account_id,plan_id,status,created_at,paid_at FROM orders WHERE id=?`, id).Scan(&order.ID, &order.AccountID, &order.PlanID, &order.Status, &created, &paid)
+	err := store.db.QueryRow(`SELECT id,account_id,plan_id,plan_version,status,created_at,paid_at FROM orders WHERE id=?`, id).Scan(&order.ID, &order.AccountID, &order.PlanID, &order.PlanVersion, &order.Status, &created, &paid)
 	if err != nil {
 		return Order{}, ErrCommerceConflict
 	}
@@ -526,7 +524,7 @@ func (store *UserCenterStore) order(id string) (Order, error) {
 }
 
 func (store *UserCenterStore) accountOrders(accountID string) []Order {
-	rows, err := store.db.Query(`SELECT id,account_id,plan_id,status,created_at,paid_at FROM orders WHERE account_id=? ORDER BY created_at`, accountID)
+	rows, err := store.db.Query(`SELECT id,account_id,plan_id,plan_version,status,created_at,paid_at FROM orders WHERE account_id=? ORDER BY created_at`, accountID)
 	if err != nil {
 		return nil
 	}
@@ -536,7 +534,7 @@ func (store *UserCenterStore) accountOrders(accountID string) []Order {
 		var order Order
 		var created string
 		var paid sql.NullString
-		if rows.Scan(&order.ID, &order.AccountID, &order.PlanID, &order.Status, &created, &paid) == nil {
+		if rows.Scan(&order.ID, &order.AccountID, &order.PlanID, &order.PlanVersion, &order.Status, &created, &paid) == nil {
 			order.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
 			if paid.Valid {
 				order.PaidAt, _ = time.Parse(time.RFC3339Nano, paid.String)

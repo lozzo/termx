@@ -14,6 +14,7 @@ import (
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
 	"github.com/lozzow/termx/private/cloud/companion/session"
 	"github.com/lozzow/termx/private/cloud/control-plane/domain"
+	"github.com/lozzow/termx/private/cloud/control-plane/entitlement"
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudhub "github.com/lozzow/termx/private/cloud/hub"
 	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
@@ -42,8 +43,8 @@ func (state *serviceState) controlHandler() http.Handler {
 
 type webEntitlementPublisher struct{ state *serviceState }
 
-func (publisher webEntitlementPublisher) Activate(accountID, planID, orderID string, validUntil time.Time) error {
-	return publisher.state.activateWebEntitlement(accountID, planID, orderID, validUntil)
+func (publisher webEntitlementPublisher) PublishSubscription(subscription *cloudpb.SubscriptionProjection) error {
+	return publisher.state.publishWebSubscription(subscription)
 }
 
 // InspectDeviceLogin 实现浏览器对设备码的只读确认；flow ID 与客户端凭据不会进入 Web surface。
@@ -293,6 +294,11 @@ func (state *serviceState) ensureDirectoryAccount(profile webcontroller.UserProf
 	}
 	state.mu.Lock()
 	state.directoryAccounts[profile.AccountID] = struct{}{}
+	if err := state.ensureIncludedEntitlementLocked(profile.AccountID, now); err != nil {
+		delete(state.directoryAccounts, profile.AccountID)
+		state.mu.Unlock()
+		return err
+	}
 	state.mu.Unlock()
 	return nil
 }
@@ -316,25 +322,30 @@ func (state *serviceState) initializeWeb(config Config) error {
 		_ = center.Close()
 		return err
 	}
-	commerce, err := webcontroller.NewCommerceService([]byte("termx-staging-payment-secret-v1-32-bytes"), webEntitlementPublisher{state}, state.now)
+	commerce, err := webcontroller.NewCommerceService([]byte("termx-staging-payment-secret-v1-32-bytes"), webEntitlementPublisher{state}, catalog, state.now)
 	if err != nil {
 		_ = center.Close()
 		return err
 	}
+	state.webCatalog = &catalog
 	commerce.AttachUserCenter(center)
 	for _, accountID := range center.AccountIDs() {
 		state.webAccounts[accountID] = struct{}{}
+		if err := state.applyIncludedEntitlementLocked(accountID, state.now().UTC()); err != nil {
+			_ = center.Close()
+			return err
+		}
+	}
+	for _, subscription := range center.ActiveSubscriptions(catalog, state.now().UTC()) {
+		if err := state.applyWebSubscriptionLocked(subscription); err != nil {
+			_ = center.Close()
+			return err
+		}
 	}
 	state.edgeRevision++
 	if err := state.publishEdgeSnapshot(state.now().UTC()); err != nil {
 		_ = center.Close()
 		return err
-	}
-	for _, entitlement := range center.ActiveEntitlements(state.now().UTC()) {
-		if err := state.activateWebEntitlement(entitlement.AccountID, entitlement.PlanID, entitlement.OrderID, entitlement.ValidUntil); err != nil {
-			_ = center.Close()
-			return err
-		}
 	}
 	providers := []webcontroller.IdentityProvider{{ID: "github", Name: "GitHub", Configured: false}, {ID: "google", Name: "Google", Configured: false}}
 	handler, err := webcontroller.BrowserHandler(webcontroller.BrowserConfig{Catalog: &catalog, Commerce: commerce, UserCenter: center, IdentityProviders: providers, RelayURL: state.relayControl.url, StagingLogin: config.WebStaging, SecureCookie: config.WebSecureCookie, DeviceAccess: state})
@@ -353,16 +364,11 @@ func (state *serviceState) handleWebEntitlement(writer http.ResponseWriter, requ
 		}
 		return
 	}
-	var input struct {
-		AccountID  string    `json:"account_id"`
-		PlanID     string    `json:"plan_id"`
-		OrderID    string    `json:"order_id"`
-		ValidUntil time.Time `json:"valid_until"`
-	}
-	if !readJSON(writer, request, &input) {
+	input := &cloudpb.SubscriptionProjection{}
+	if !readProto(writer, request, input) {
 		return
 	}
-	if err := state.activateWebEntitlement(input.AccountID, input.PlanID, input.OrderID, input.ValidUntil); err != nil {
+	if err := state.publishWebSubscription(input); err != nil {
 		writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "web entitlement update is invalid", false)
 		return
 	}
@@ -370,28 +376,95 @@ func (state *serviceState) handleWebEntitlement(writer http.ResponseWriter, requ
 	writer.WriteHeader(http.StatusNoContent)
 }
 
-func (state *serviceState) activateWebEntitlement(accountID, planID, orderID string, validUntil time.Time) error {
+func (state *serviceState) publishWebSubscription(subscription *cloudpb.SubscriptionProjection) error {
 	now := state.now().UTC()
-	if accountID == "" || planID != "pro" || orderID == "" || !validUntil.After(now) {
-		return fmt.Errorf("invalid web entitlement")
-	}
 	state.mu.Lock()
-	oldValid, existed, oldRevision := state.webEntitlements[accountID], false, state.edgeRevision
-	_, existed = state.webEntitlements[accountID]
-	state.webEntitlements[accountID] = validUntil.UTC()
+	defer state.mu.Unlock()
+	accountID := subscription.GetAccountId()
+	oldValue, existed := state.webEntitlements[accountID]
+	_, accountExisted := state.webAccounts[accountID]
+	oldRevision := state.edgeRevision
+	if err := state.applyWebSubscriptionLocked(subscription); err != nil {
+		return err
+	}
 	state.webAccounts[accountID] = struct{}{}
 	state.edgeRevision++
 	err := state.publishEdgeSnapshot(now)
 	if err != nil {
 		if existed {
-			state.webEntitlements[accountID] = oldValid
+			state.webEntitlements[accountID] = oldValue
 		} else {
 			delete(state.webEntitlements, accountID)
 		}
+		if !accountExisted {
+			delete(state.webAccounts, accountID)
+		}
 		state.edgeRevision = oldRevision
 	}
-	state.mu.Unlock()
 	return err
+}
+
+func (state *serviceState) applyWebSubscriptionLocked(subscription *cloudpb.SubscriptionProjection) error {
+	if state.webCatalog == nil || subscription == nil {
+		return fmt.Errorf("web subscription catalog is unavailable")
+	}
+	plan, ok := state.webCatalog.Plan(subscription.GetPlanId())
+	if !ok || plan.Version != subscription.GetPlanVersion() {
+		return fmt.Errorf("web subscription references an unknown plan version")
+	}
+	value, err := entitlement.Normalize(subscription, &cloudpb.PlanDefinition{
+		PlanId: plan.ID, PlanVersion: plan.Version, BillingPeriodDays: plan.BillingPeriodDays,
+		Capability: entitlement.ClonePlanCapability(plan.Capability),
+	}, state.now().UTC())
+	if err != nil {
+		return err
+	}
+	state.webEntitlements[value.AccountID] = value
+	return nil
+}
+
+func (state *serviceState) ensureIncludedEntitlementLocked(accountID string, now time.Time) error {
+	if _, ok := state.webEntitlements[accountID]; ok {
+		return nil
+	}
+	return state.applyIncludedEntitlementLocked(accountID, now)
+}
+
+func (state *serviceState) applyIncludedEntitlementLocked(accountID string, now time.Time) error {
+	if state.webCatalog == nil {
+		return fmt.Errorf("web catalog is unavailable")
+	}
+	plan, ok := state.webCatalog.IncludedPlan()
+	if !ok {
+		return fmt.Errorf("web catalog must contain one included plan")
+	}
+	return state.applyWebSubscriptionLocked(&cloudpb.SubscriptionProjection{
+		SubscriptionId: "included-" + accountID, AccountId: accountID, PlanId: plan.ID, PlanVersion: plan.Version,
+		Status:                       cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE,
+		CurrentPeriodStartUnixMillis: now.UnixMilli(),
+		CurrentPeriodEndUnixMillis:   now.Add(time.Duration(plan.BillingPeriodDays) * 24 * time.Hour).UnixMilli(),
+		UpdatedAtUnixMillis:          now.UnixMilli(),
+	})
+}
+
+func developmentEntitlement(now time.Time) (entitlement.Entitlement, error) {
+	plan := &cloudpb.PlanDefinition{
+		PlanId: "development-managed", PlanVersion: 1, BillingPeriodDays: 30,
+		Capability: &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 2, StandardRelayEnabled: true, CloudDeviceLimit: 10, Relay: &cloudpb.RelayServiceCapability{
+			AllowedRegions: []string{devRegion}, MaxLeaseSeconds: uint32(relayLeaseTTL / time.Second),
+			MaxBytesPerLease: 64 << 20, MaxBitrateKbps: 100_000, MaxConcurrency: 2, MaxBytesPerPeriod: 10 << 30,
+		}},
+	}
+	subscription := &cloudpb.SubscriptionProjection{
+		SubscriptionId: "subscription-development", AccountId: devAccountID, PlanId: plan.PlanId, PlanVersion: plan.PlanVersion,
+		Status:                       cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE,
+		CurrentPeriodStartUnixMillis: now.UnixMilli(), CurrentPeriodEndUnixMillis: now.Add(30 * 24 * time.Hour).UnixMilli(), UpdatedAtUnixMillis: now.UnixMilli(),
+	}
+	value, err := entitlement.Normalize(subscription, plan, now)
+	if err != nil {
+		return entitlement.Entitlement{}, err
+	}
+	return value, nil
 }
 
 func (state *serviceState) handleControlHealth(writer http.ResponseWriter, request *http.Request) {

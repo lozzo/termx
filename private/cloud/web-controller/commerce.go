@@ -10,6 +10,9 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/lozzow/termx/proto/cloudpb"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -19,9 +22,9 @@ var (
 )
 
 // EntitlementProjectionPublisher 是付款事务对 Control Plane 的唯一写边界。
-// 实现必须在持久 entitlement 更新后发布 Hub snapshot；它不得接触 terminal capability。
+// 实现必须接收 versioned Subscription，再由 Control Plane 归一化 Entitlement；它不得接触 terminal capability。
 type EntitlementProjectionPublisher interface {
-	Activate(accountID, planID, orderID string, validUntil time.Time) error
+	PublishSubscription(subscription *cloudpb.SubscriptionProjection) error
 }
 
 // CommerceSession 是 BFF 持有的浏览器账号会话投影；原始 token 只返回一次，store 仅保存摘要。
@@ -35,21 +38,23 @@ type CommerceSession struct {
 
 // Order 是 checkout 与 provider webhook 之间的幂等事务记录。
 type Order struct {
-	ID        string    `json:"id"`
-	AccountID string    `json:"account_id"`
-	PlanID    string    `json:"plan_id"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	PaidAt    time.Time `json:"paid_at,omitempty"`
+	ID          string    `json:"id"`
+	AccountID   string    `json:"account_id"`
+	PlanID      string    `json:"plan_id"`
+	PlanVersion uint64    `json:"plan_version"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	PaidAt      time.Time `json:"paid_at,omitempty"`
 }
 
 // PaymentEvent 是 provider webhook 的规范化输入；EventID 是幂等键。
 type PaymentEvent struct {
-	EventID   string `json:"event_id"`
-	Type      string `json:"type"`
-	OrderID   string `json:"order_id"`
-	AccountID string `json:"account_id"`
-	PlanID    string `json:"plan_id"`
+	EventID     string `json:"event_id"`
+	Type        string `json:"type"`
+	OrderID     string `json:"order_id"`
+	AccountID   string `json:"account_id"`
+	PlanID      string `json:"plan_id"`
+	PlanVersion uint64 `json:"plan_version"`
 }
 
 // CommerceService 拥有 staging 浏览器 session、订单状态机和 webhook 幂等记录。
@@ -58,6 +63,7 @@ type CommerceService struct {
 	mu        sync.Mutex
 	now       func() time.Time
 	publisher EntitlementProjectionPublisher
+	catalog   Catalog
 	secret    []byte
 	sessions  map[[sha256.Size]byte]CommerceSession
 	orders    map[string]Order
@@ -79,14 +85,17 @@ type AccountCommerceView struct {
 }
 
 // NewCommerceService 创建 commerce transaction owner；secret 至少 32 bytes，避免伪造 staging webhook。
-func NewCommerceService(secret []byte, publisher EntitlementProjectionPublisher, now func() time.Time) (*CommerceService, error) {
+func NewCommerceService(secret []byte, publisher EntitlementProjectionPublisher, catalog Catalog, now func() time.Time) (*CommerceService, error) {
 	if len(secret) < 32 || publisher == nil {
 		return nil, fmt.Errorf("commerce secret and entitlement publisher are required")
+	}
+	if err := validateCatalog(catalog); err != nil {
+		return nil, err
 	}
 	if now == nil {
 		now = time.Now
 	}
-	return &CommerceService{secret: append([]byte(nil), secret...), publisher: publisher, now: now, sessions: make(map[[sha256.Size]byte]CommerceSession), orders: make(map[string]Order), events: make(map[string]struct{})}, nil
+	return &CommerceService{secret: append([]byte(nil), secret...), publisher: publisher, catalog: catalog, now: now, sessions: make(map[[sha256.Size]byte]CommerceSession), orders: make(map[string]Order), events: make(map[string]struct{})}, nil
 }
 
 // BeginStagingSession 为已由显式 staging identity provider 确认的固定账号签发短期浏览器 session。
@@ -153,16 +162,17 @@ func (service *CommerceService) EndSession(token string) {
 	}
 }
 
-// CreateCheckout 创建 pending order；当前仅允许 catalog 已声明的 Pro plan，绝不在此时更新 entitlement。
+// CreateCheckout 创建 pending order；只接受 catalog 中精确 versioned、可购买的套餐，绝不在此时更新 entitlement。
 func (service *CommerceService) CreateCheckout(session CommerceSession, planID string) (Order, error) {
-	if session.AccountID == "" || planID != "pro" {
+	plan, ok := service.catalog.Plan(planID)
+	if session.AccountID == "" || !ok || plan.Price.Mode == "included" || plan.BillingPeriodDays == 0 {
 		return Order{}, ErrCommerceConflict
 	}
 	id, err := randomToken(18)
 	if err != nil {
 		return Order{}, err
 	}
-	order := Order{ID: "order-" + id, AccountID: session.AccountID, PlanID: planID, Status: "pending", CreatedAt: service.now().UTC()}
+	order := Order{ID: "order-" + id, AccountID: session.AccountID, PlanID: plan.ID, PlanVersion: plan.Version, Status: "pending", CreatedAt: service.now().UTC()}
 	service.mu.Lock()
 	if service.center != nil {
 		err = service.center.saveOrder(order)
@@ -180,7 +190,10 @@ func (service *CommerceService) CreateCheckout(session CommerceSession, planID s
 func (service *CommerceService) AccountView(session CommerceSession) AccountCommerceView {
 	service.mu.Lock()
 	defer service.mu.Unlock()
-	view := AccountCommerceView{AccountID: session.AccountID, UserID: session.UserID, Email: session.Email, PlanID: "managed-free", Orders: []Order{}}
+	view := AccountCommerceView{AccountID: session.AccountID, UserID: session.UserID, Email: session.Email, Orders: []Order{}}
+	if included, ok := service.catalog.IncludedPlan(); ok {
+		view.PlanID = included.ID
+	}
 	orders := service.orders
 	if service.center != nil {
 		orders = map[string]Order{}
@@ -194,12 +207,16 @@ func (service *CommerceService) AccountView(session CommerceSession) AccountComm
 		}
 		view.Orders = append(view.Orders, order)
 		if order.Status == "paid" {
+			plan, ok := service.catalog.Plan(order.PlanID)
+			if !ok || plan.Version != order.PlanVersion {
+				continue
+			}
 			view.PlanID = order.PlanID
 			bonusDays := 0
 			if service.center != nil {
 				bonusDays = service.center.ReferralRewardDays(session.AccountID)
 			}
-			validUntil := order.PaidAt.Add(time.Duration(30+bonusDays) * 24 * time.Hour)
+			validUntil := order.PaidAt.Add(time.Duration(int(plan.BillingPeriodDays)+bonusDays) * 24 * time.Hour)
 			view.ValidUntil = &validUntil
 		}
 	}
@@ -223,7 +240,7 @@ func (service *CommerceService) ConfirmStagingPayment(session CommerceSession, o
 	if err != nil {
 		return Order{}, err
 	}
-	body, _ := json.Marshal(PaymentEvent{EventID: "event-" + eventID, Type: "payment.succeeded", OrderID: order.ID, AccountID: order.AccountID, PlanID: order.PlanID})
+	body, _ := json.Marshal(PaymentEvent{EventID: "event-" + eventID, Type: "payment.succeeded", OrderID: order.ID, AccountID: order.AccountID, PlanID: order.PlanID, PlanVersion: order.PlanVersion})
 	return service.ApplyWebhook(body, service.SignStagingEvent(body))
 }
 
@@ -252,7 +269,11 @@ func (service *CommerceService) ApplyWebhook(body []byte, signature string) (Ord
 		order, loadErr = service.center.order(event.OrderID)
 		ok = loadErr == nil
 	}
-	if !ok || order.AccountID != event.AccountID || order.PlanID != event.PlanID {
+	if !ok || order.AccountID != event.AccountID || order.PlanID != event.PlanID || order.PlanVersion != event.PlanVersion {
+		return Order{}, ErrCommerceConflict
+	}
+	plan, ok := service.catalog.Plan(order.PlanID)
+	if !ok || plan.Version != order.PlanVersion || plan.BillingPeriodDays == 0 {
 		return Order{}, ErrCommerceConflict
 	}
 	duplicate := false
@@ -279,7 +300,7 @@ func (service *CommerceService) ApplyWebhook(body []byte, signature string) (Ord
 			paidBonus += 7
 		}
 	}
-	if err := service.publisher.Activate(order.AccountID, order.PlanID, order.ID, paidAt.Add(time.Duration(30+paidBonus)*24*time.Hour)); err != nil {
+	if err := service.publisher.PublishSubscription(subscriptionForOrder(order, paidAt, plan.BillingPeriodDays, paidBonus)); err != nil {
 		return Order{}, err
 	}
 	if referrer != "" {
@@ -292,8 +313,12 @@ func (service *CommerceService) ApplyWebhook(body []byte, signature string) (Ord
 		}
 		for _, candidate := range candidates {
 			if candidate.AccountID == referrer && candidate.Status == "paid" {
+				candidatePlan, exists := service.catalog.Plan(candidate.PlanID)
+				if !exists || candidatePlan.Version != candidate.PlanVersion || candidatePlan.BillingPeriodDays == 0 {
+					return Order{}, ErrCommerceConflict
+				}
 				bonus := service.center.ReferralRewardDays(referrer) + 15
-				if err := service.publisher.Activate(referrer, candidate.PlanID, "reward-"+order.ID, candidate.PaidAt.Add(time.Duration(30+bonus)*24*time.Hour)); err != nil {
+				if err := service.publisher.PublishSubscription(subscriptionForOrder(candidate, candidate.PaidAt, candidatePlan.BillingPeriodDays, bonus)); err != nil {
 					return Order{}, err
 				}
 				break
@@ -310,6 +335,28 @@ func (service *CommerceService) ApplyWebhook(body []byte, signature string) (Ord
 		service.events[event.EventID] = struct{}{}
 	}
 	return order, nil
+}
+
+func subscriptionForOrder(order Order, periodStart time.Time, billingPeriodDays uint32, bonusDays int) *cloudpb.SubscriptionProjection {
+	periodStart = periodStart.UTC()
+	return &cloudpb.SubscriptionProjection{
+		SubscriptionId:               "subscription-" + order.ID,
+		AccountId:                    order.AccountID,
+		SourceOrderId:                order.ID,
+		PlanId:                       order.PlanID,
+		PlanVersion:                  order.PlanVersion,
+		Status:                       cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE,
+		CurrentPeriodStartUnixMillis: periodStart.UnixMilli(),
+		CurrentPeriodEndUnixMillis:   periodStart.Add(time.Duration(int(billingPeriodDays)+bonusDays) * 24 * time.Hour).UnixMilli(),
+		UpdatedAtUnixMillis:          periodStart.UnixMilli(),
+	}
+}
+
+func cloneSubscription(subscription *cloudpb.SubscriptionProjection) *cloudpb.SubscriptionProjection {
+	if subscription == nil {
+		return nil
+	}
+	return proto.Clone(subscription).(*cloudpb.SubscriptionProjection)
 }
 
 func randomToken(size int) (string, error) {

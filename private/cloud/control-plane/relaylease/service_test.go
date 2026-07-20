@@ -10,6 +10,7 @@ import (
 	"github.com/lozzow/termx/private/cloud/control-plane/entitlement"
 	"github.com/lozzow/termx/private/cloud/control-plane/relaylease"
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
+	"github.com/lozzow/termx/proto/cloudpb"
 )
 
 type sessionSource struct {
@@ -31,8 +32,9 @@ func TestServiceIssuesEntitlementClampedLease(t *testing.T) {
 	issuer, _ := servicecredential.NewRelayLeaseIssuer("control-plane.test", signer)
 	store := entitlement.NewStore()
 	if err := store.Put(entitlement.Entitlement{
-		AccountID: "account-1", Status: entitlement.StatusActive, ValidUntil: now.Add(time.Hour), UpdatedAt: now,
-		Policy: entitlement.QuotaPolicy{AllowedRegions: []string{"eu-west"}, MaxLeaseDuration: 4 * time.Minute, MaxBytesPerLease: 500_000, MaxBitrateKbps: 6_000, MaxConcurrency: 1},
+		AccountID: "account-1", Status: entitlement.StatusActive, EffectiveFrom: now.Add(-time.Minute), EffectiveUntil: now.Add(time.Hour), UpdatedAt: now,
+		SourceSubscriptionID: "subscription-1", SourcePlanID: "relay-test", SourcePlanVersion: 1,
+		Capability: &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 1, StandardRelayEnabled: true, CloudDeviceLimit: 2, Relay: &cloudpb.RelayServiceCapability{AllowedRegions: []string{"eu-west"}, MaxLeaseSeconds: uint32((4 * time.Minute) / time.Second), MaxBytesPerLease: 500_000, MaxBitrateKbps: 6_000, MaxConcurrency: 1, MaxBytesPerPeriod: 1_000_000}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +56,7 @@ func TestServiceIssuesEntitlementClampedLease(t *testing.T) {
 		t.Fatalf("issued claims = %#v", claims)
 	}
 
-	expired := entitlement.Entitlement{AccountID: "account-1", Status: entitlement.StatusExpired, ValidUntil: now.Add(time.Hour), UpdatedAt: now, Policy: entitlement.QuotaPolicy{AllowedRegions: []string{"eu-west"}, MaxLeaseDuration: time.Minute, MaxBytesPerLease: 1, MaxBitrateKbps: 1, MaxConcurrency: 1}}
+	expired := entitlement.Entitlement{AccountID: "account-1", Status: entitlement.StatusExpired, EffectiveFrom: now.Add(-time.Minute), EffectiveUntil: now.Add(time.Hour), UpdatedAt: now, SourceSubscriptionID: "subscription-1", SourcePlanID: "relay-test", SourcePlanVersion: 1, Capability: &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 1, StandardRelayEnabled: true, CloudDeviceLimit: 2, Relay: &cloudpb.RelayServiceCapability{AllowedRegions: []string{"eu-west"}, MaxLeaseSeconds: 60, MaxBytesPerLease: 1, MaxBitrateKbps: 1, MaxConcurrency: 1, MaxBytesPerPeriod: 1}}}
 	if err := store.Put(expired); err != nil {
 		t.Fatal(err)
 	}

@@ -61,7 +61,7 @@ func TestControllerIsThinAuditedManagementFacade(t *testing.T) {
 	if err := controller.RegisterDevice("admin", device, "audit-1", now); err != nil {
 		t.Fatal(err)
 	}
-	value := entitlement.Entitlement{AccountID: "account", Status: entitlement.StatusExpired, ValidUntil: now, UpdatedAt: now}
+	value := entitlement.Entitlement{AccountID: "account", Status: entitlement.StatusExpired, EffectiveUntil: now, UpdatedAt: now}
 	if err := controller.SetEntitlement("admin", value, "audit-2", now); err != nil {
 		t.Fatal(err)
 	}

@@ -48,6 +48,7 @@ portable_ts_proto=(
 )
 cloud_proto=(
   proto/cloudpb/cloud_companion.proto
+  proto/cloudpb/cloud_product.proto
   proto/cloudpb/cloud_topology.proto
   proto/cloudpb/cloud_hub_control.proto
   proto/cloudpb/cloud_management.proto

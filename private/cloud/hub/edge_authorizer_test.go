@@ -11,6 +11,7 @@ import (
 
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	"github.com/lozzow/termx/private/cloud/hub"
+	"github.com/lozzow/termx/proto/cloudpb"
 )
 
 type edgeClock struct{ now time.Time }
@@ -47,7 +48,7 @@ func TestEdgeAuthorizerUsesOnlyVersionedLocalProjection(t *testing.T) {
 	if _, err := authorizer.AuthorizeDirect(token, "account-1", "client-1", "daemon-1"); !errors.Is(err, hub.ErrPolicySnapshot) {
 		t.Fatalf("missing snapshot error = %v", err)
 	}
-	snapshot := hub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []hub.AccountAuthorization{{AccountID: "account-1", AuthEpoch: 7, ManagedDirectEnabled: true}}, Devices: []hub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon"}, {DeviceID: "daemon-other", AccountID: "account-2", Kind: "daemon", DisplayName: "Other daemon"}}}
+	snapshot := hub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []hub.AccountAuthorization{activeP2PAccount("account-1", 7, now)}, Devices: []hub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon"}, {DeviceID: "daemon-other", AccountID: "account-2", Kind: "daemon", DisplayName: "Other daemon"}}}
 	if err := authorizer.ApplySnapshot(snapshot); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +105,7 @@ func TestEdgeAuthorizerPersistsAndReverifiesSignedSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := issuer.Issue("hub-1", 1, []servicecredential.EdgePolicyAccount{{AccountID: "account-1", AuthEpoch: 3, ManagedDirectEnabled: true}}, []servicecredential.EdgePolicyDevice{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon"}}, time.Hour, now)
+	encoded, err := issuer.Issue("hub-1", 1, []servicecredential.EdgePolicyAccount{{AccountID: "account-1", AuthEpoch: 3, EntitlementStatus: cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE, EntitlementEffectiveUntilUnix: now.Add(time.Hour).Unix(), Capability: &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 2, CloudDeviceLimit: 10}}}, []servicecredential.EdgePolicyDevice{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon"}}, time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,5 +149,14 @@ func TestEdgeAuthorizerPersistsAndReverifiesSignedSnapshot(t *testing.T) {
 	}
 	if err := tampered.RestoreSignedSnapshot(); !errors.Is(err, hub.ErrPolicySnapshot) {
 		t.Fatalf("tampered restore error = %v", err)
+	}
+}
+
+func activeP2PAccount(accountID string, authEpoch uint64, now time.Time) hub.AccountAuthorization {
+	return hub.AccountAuthorization{
+		AccountID: accountID, AuthEpoch: authEpoch,
+		EntitlementStatus:             cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE,
+		EntitlementEffectiveUntilUnix: now.Add(time.Hour).Unix(),
+		Capability:                    &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 2, CloudDeviceLimit: 10},
 	}
 }

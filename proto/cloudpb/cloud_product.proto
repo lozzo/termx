@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package termx.cloud.v1;
+
+option go_package = "github.com/lozzow/termx/proto/cloudpb";
+
+// SubscriptionStatus 是交易状态机投影到服务能力层的稳定订阅状态。
+enum SubscriptionStatus {
+  SUBSCRIPTION_STATUS_UNSPECIFIED = 0;
+  SUBSCRIPTION_STATUS_PENDING = 1;
+  SUBSCRIPTION_STATUS_ACTIVE = 2;
+  SUBSCRIPTION_STATUS_CANCEL_AT_PERIOD_END = 3;
+  SUBSCRIPTION_STATUS_CANCELED = 4;
+  SUBSCRIPTION_STATUS_SUSPENDED = 5;
+  SUBSCRIPTION_STATUS_EXPIRED = 6;
+}
+
+// EntitlementStatus 是 Hub/Relay 准入读取的归一化商业状态。
+enum EntitlementStatus {
+  ENTITLEMENT_STATUS_UNSPECIFIED = 0;
+  ENTITLEMENT_STATUS_ACTIVE = 1;
+  ENTITLEMENT_STATUS_SUSPENDED = 2;
+  ENTITLEMENT_STATUS_EXPIRED = 3;
+}
+
+// RelayServiceCapability 是 plan 对 Relay lease 和账期的硬上限。
+// reservation/used/remaining 状态在 CLOUDP004 定义，本消息只表达静态套餐能力。
+message RelayServiceCapability {
+  repeated string allowed_regions = 1;
+  bool allow_relay_mesh = 2;
+  uint32 max_lease_seconds = 3;
+  uint64 max_bytes_per_lease = 4;
+  uint32 max_bitrate_kbps = 5;
+  uint32 max_concurrency = 6;
+  uint64 max_bytes_per_period = 7;
+}
+
+// PlanCapability 是 catalog、Entitlement 与 Hub policy 共用的唯一机器能力模型。
+// Hub 后续只执行这里声明的并发与设备上限，不能根据 plan ID 补默认值。
+message PlanCapability {
+  bool managed_p2p_enabled = 1;
+  uint32 managed_p2p_max_concurrency = 2;
+  bool standard_relay_enabled = 3;
+  RelayServiceCapability relay = 4;
+  uint32 cloud_device_limit = 5;
+}
+
+// PlanDefinition 是 PlanCatalog 的 versioned 产品能力条目。
+message PlanDefinition {
+  string plan_id = 1;
+  uint64 plan_version = 2;
+  uint32 billing_period_days = 3;
+  PlanCapability capability = 4;
+}
+
+// PlanCatalogContract 是 Control Plane 发布的机器可读套餐能力目录。
+message PlanCatalogContract {
+  uint64 catalog_version = 1;
+  repeated PlanDefinition plans = 2;
+}
+
+// SubscriptionProjection 是订单/支付状态机输出的账号订阅投影。
+message SubscriptionProjection {
+  string subscription_id = 1;
+  string account_id = 2;
+  string source_order_id = 3;
+  string plan_id = 4;
+  uint64 plan_version = 5;
+  SubscriptionStatus status = 6;
+  int64 current_period_start_unix_millis = 7;
+  int64 current_period_end_unix_millis = 8;
+  int64 updated_at_unix_millis = 9;
+}
+
+// EntitlementProjection 是 Subscription、PlanCapability 与风控归一化后的准入真值。
+message EntitlementProjection {
+  string account_id = 1;
+  EntitlementStatus status = 2;
+  string source_subscription_id = 3;
+  string source_order_id = 4;
+  string source_plan_id = 5;
+  uint64 source_plan_version = 6;
+  int64 effective_from_unix_millis = 7;
+  int64 effective_until_unix_millis = 8;
+  PlanCapability capability = 9;
+  int64 updated_at_unix_millis = 10;
+}
+
+// GetPlanCatalogRequest 查询当前发布的机器能力目录。
+message GetPlanCatalogRequest {}
+
+// GetPlanCatalogResponse 返回 versioned PlanCatalog contract。
+message GetPlanCatalogResponse {
+  PlanCatalogContract catalog = 1;
+}
+
+// GetAccountSubscriptionRequest 查询当前账号订阅投影。
+message GetAccountSubscriptionRequest {
+  string account_id = 1;
+}
+
+// GetAccountSubscriptionResponse 返回交易状态机的当前投影。
+message GetAccountSubscriptionResponse {
+  SubscriptionProjection subscription = 1;
+}
+
+// GetAccountEntitlementRequest 查询当前账号归一化准入能力。
+message GetAccountEntitlementRequest {
+  string account_id = 1;
+}
+
+// GetAccountEntitlementResponse 返回 Hub/Relay policy 的来源投影。
+message GetAccountEntitlementResponse {
+  EntitlementProjection entitlement = 1;
+}

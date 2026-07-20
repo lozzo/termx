@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
+	"github.com/lozzow/termx/proto/cloudpb"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -31,18 +33,15 @@ type DeviceAuthorization struct {
 	Revoked     bool
 }
 
-// AccountAuthorization 是 Hub 判断账号 edge token epoch 和 managed direct 能力的本地投影。
-// AuthEpoch 变化会使旧 token 立即失效；ManagedDirectEnabled 只控制托管 direct，不扩大 daemon capability。
+// AccountAuthorization 是 Hub 判断账号 edge token epoch 和 managed service 能力的本地投影。
+// AuthEpoch 变化会使旧 token 立即失效；Capability 直接复用 PlanCatalog/Entitlement 的 generated schema。
 type AccountAuthorization struct {
-	AccountID            string
-	AuthEpoch            uint64
-	ManagedDirectEnabled bool
-	Revoked              bool
-	StandardRelayEnabled bool
-	RelayMaxLeaseSeconds uint32
-	RelayMaxBytes        uint64
-	RelayMaxBitrateKbps  uint32
-	RelayMaxConcurrency  uint32
+	AccountID                     string
+	AuthEpoch                     uint64
+	Revoked                       bool
+	EntitlementStatus             cloudpb.EntitlementStatus
+	EntitlementEffectiveUntilUnix int64
+	Capability                    *cloudpb.PlanCapability
 }
 
 // AuthorizationSnapshot 是 Hub 原子应用的、带严格单调 revision 的授权快照。
@@ -155,7 +154,7 @@ func (authorizer *EdgeAuthorizer) validateNextSnapshot(snapshot AuthorizationSna
 func snapshotFromPolicyClaims(claims servicecredential.EdgePolicyClaims) AuthorizationSnapshot {
 	accounts := make([]AccountAuthorization, 0, len(claims.Accounts))
 	for _, account := range claims.Accounts {
-		accounts = append(accounts, AccountAuthorization{AccountID: account.AccountID, AuthEpoch: account.AuthEpoch, ManagedDirectEnabled: account.ManagedDirectEnabled, Revoked: account.Revoked, StandardRelayEnabled: account.StandardRelayEnabled, RelayMaxLeaseSeconds: account.RelayMaxLeaseSeconds, RelayMaxBytes: account.RelayMaxBytes, RelayMaxBitrateKbps: account.RelayMaxBitrateKbps, RelayMaxConcurrency: account.RelayMaxConcurrency})
+		accounts = append(accounts, AccountAuthorization{AccountID: account.AccountID, AuthEpoch: account.AuthEpoch, Revoked: account.Revoked, EntitlementStatus: account.EntitlementStatus, EntitlementEffectiveUntilUnix: account.EntitlementEffectiveUntilUnix, Capability: cloneHubPlanCapability(account.Capability)})
 	}
 	devices := make([]DeviceAuthorization, 0, len(claims.Devices))
 	for _, device := range claims.Devices {
@@ -180,10 +179,14 @@ func (authorizer *EdgeAuthorizer) RelayBudget(accountID string) (RelayBudget, er
 	authorizer.mu.RLock()
 	defer authorizer.mu.RUnlock()
 	account, ok := authorizer.accounts[accountID]
-	if authorizer.revision == 0 || now.Sub(authorizer.generatedAt) > authorizer.maxStaleness || !ok || account.Revoked || !account.StandardRelayEnabled || account.RelayMaxLeaseSeconds == 0 || account.RelayMaxBytes == 0 || account.RelayMaxBitrateKbps == 0 || account.RelayMaxConcurrency == 0 {
+	if authorizer.revision == 0 || now.Sub(authorizer.generatedAt) > authorizer.maxStaleness || !ok || !account.activeAt(now) || account.Capability == nil || !account.Capability.GetStandardRelayEnabled() {
 		return RelayBudget{}, ErrEdgeAuthorization
 	}
-	return RelayBudget{MaxLeaseDuration: time.Duration(account.RelayMaxLeaseSeconds) * time.Second, MaxBytes: account.RelayMaxBytes, MaxBitrateKbps: account.RelayMaxBitrateKbps, MaxConcurrency: account.RelayMaxConcurrency}, nil
+	relay := account.Capability.GetRelay()
+	if relay == nil || relay.GetMaxLeaseSeconds() == 0 || relay.GetMaxBytesPerLease() == 0 || relay.GetMaxBitrateKbps() == 0 || relay.GetMaxConcurrency() == 0 {
+		return RelayBudget{}, ErrEdgeAuthorization
+	}
+	return RelayBudget{MaxLeaseDuration: time.Duration(relay.GetMaxLeaseSeconds()) * time.Second, MaxBytes: relay.GetMaxBytesPerLease(), MaxBitrateKbps: relay.GetMaxBitrateKbps(), MaxConcurrency: relay.GetMaxConcurrency()}, nil
 }
 
 // ApplySnapshot 原子替换完整授权投影。
@@ -195,12 +198,13 @@ func (authorizer *EdgeAuthorizer) ApplySnapshot(snapshot AuthorizationSnapshot) 
 	}
 	accounts := make(map[string]AccountAuthorization, len(snapshot.Accounts))
 	for _, account := range snapshot.Accounts {
-		if account.AccountID == "" || account.AuthEpoch == 0 {
+		if account.AccountID == "" || account.AuthEpoch == 0 || account.Capability == nil {
 			return ErrPolicySnapshot
 		}
 		if _, exists := accounts[account.AccountID]; exists {
 			return ErrPolicySnapshot
 		}
+		account.Capability = cloneHubPlanCapability(account.Capability)
 		accounts[account.AccountID] = account
 	}
 	devices := make(map[string]DeviceAuthorization, len(snapshot.Devices))
@@ -240,13 +244,24 @@ func (authorizer *EdgeAuthorizer) AuthorizeDirect(token []byte, accountID, clien
 	account, accountOK := authorizer.accounts[accountID]
 	client, clientOK := authorizer.devices[clientDeviceID]
 	device, deviceOK := authorizer.devices[targetDeviceID]
-	if !accountOK || !clientOK || account.Revoked || !account.ManagedDirectEnabled || account.AuthEpoch != claims.AuthEpoch || client.Revoked || client.AccountID != accountID || client.Kind != "client" {
+	if !accountOK || !clientOK || !account.activeAt(now) || account.Capability == nil || !account.Capability.GetManagedP2PEnabled() || account.AuthEpoch != claims.AuthEpoch || client.Revoked || client.AccountID != accountID || client.Kind != "client" {
 		return servicecredential.EdgeAccessClaims{}, ErrEdgeAuthorization
 	}
 	if !deviceOK || device.Revoked || device.AccountID != accountID || device.Kind != "daemon" {
 		return servicecredential.EdgeAccessClaims{}, ErrTargetUnavailable
 	}
 	return claims, nil
+}
+
+func (account AccountAuthorization) activeAt(now time.Time) bool {
+	return !account.Revoked && account.EntitlementStatus == cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE && now.Unix() < account.EntitlementEffectiveUntilUnix
+}
+
+func cloneHubPlanCapability(capability *cloudpb.PlanCapability) *cloudpb.PlanCapability {
+	if capability == nil {
+		return nil
+	}
+	return proto.Clone(capability).(*cloudpb.PlanCapability)
 }
 
 // AuthorizeClient 验证当前连接发起端自身仍存在于 Hub 签名内存投影且未撤销。

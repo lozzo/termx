@@ -4,6 +4,14 @@
   "plans": [
     {
       "id": "managed-free",
+      "version": 1,
+      "billing_period_days": 30,
+      "capabilities": {
+        "managed_p2p_enabled": true,
+        "managed_p2p_max_concurrency": 1,
+        "standard_relay_enabled": false,
+        "cloud_device_limit": 2
+      },
       "name": "Managed Free",
       "eyebrow": "Start with direct",
       "description": "Official device discovery and managed signaling for personal endpoints.",
@@ -14,11 +22,28 @@
         "Managed device directory",
         "Direct P2P signaling",
         "Connection path diagnostics",
-        "Small Relay trial allowance"
+        "Direct connection availability"
       ]
     },
     {
       "id": "pro",
+      "version": 1,
+      "billing_period_days": 30,
+      "capabilities": {
+        "managed_p2p_enabled": true,
+        "managed_p2p_max_concurrency": 4,
+        "standard_relay_enabled": true,
+        "cloud_device_limit": 10,
+        "relay": {
+          "allowed_regions": ["local-1"],
+          "allow_relay_mesh": false,
+          "max_lease_seconds": 300,
+          "max_bytes_per_lease": 268435456,
+          "max_bitrate_kbps": 100000,
+          "max_concurrency": 4,
+          "max_bytes_per_period": 10737418240
+        }
+      },
       "name": "Pro",
       "eyebrow": "Reliable from anywhere",
       "description": "Managed Relay capacity and route intelligence for people who work across networks.",
@@ -34,6 +59,23 @@
     },
     {
       "id": "team",
+      "version": 1,
+      "billing_period_days": 30,
+      "capabilities": {
+        "managed_p2p_enabled": true,
+        "managed_p2p_max_concurrency": 10,
+        "standard_relay_enabled": true,
+        "cloud_device_limit": 50,
+        "relay": {
+          "allowed_regions": ["local-1"],
+          "allow_relay_mesh": false,
+          "max_lease_seconds": 300,
+          "max_bytes_per_lease": 1073741824,
+          "max_bitrate_kbps": 200000,
+          "max_concurrency": 10,
+          "max_bytes_per_period": 107374182400
+        }
+      },
       "name": "Team",
       "eyebrow": "Govern shared access",
       "description": "Organization controls and auditable endpoint access without moving terminal truth to the cloud.",
