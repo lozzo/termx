@@ -71,7 +71,7 @@ func ApplyHubResult(projection *cloudpb.ManagementCommandProjection, result *clo
 		return nil, ErrCommandConflict
 	}
 	child.DeliveryState = cloudpb.CommandDeliveryState_COMMAND_DELIVERY_STATE_HUB_RECEIVED
-	if child.GetTarget().GetPresence() != nil {
+	if child.GetTarget().GetPresence() != nil || child.GetTarget().GetAssignmentMigration() != nil {
 		child.ExecutionState = executionState(result.GetResultCode())
 	} else if result.GetResultCode() == cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED {
 		child.DeliveryState = cloudpb.CommandDeliveryState_COMMAND_DELIVERY_STATE_RUNTIME_RECEIVED

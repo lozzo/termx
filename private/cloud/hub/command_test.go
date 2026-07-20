@@ -35,6 +35,33 @@ func TestHubCommandKicksOnlyExactPresenceAndReplaysResult(t *testing.T) {
 	}
 }
 
+func TestHubCommandFencesOnlyExactAssignmentGeneration(t *testing.T) {
+	fixture := newFixture(t, 8, 8)
+	presence, _ := fixture.openEdgePresence(t)
+	now := fixture.clock.Now()
+	command := &cloudpb.HubCommand{CommandId: "fence-1", CommandKind: cloudpb.HubCommandKind_HUB_COMMAND_KIND_FENCE_ASSIGNMENT, IssuedAtUnixMillis: now.UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Minute).UnixMilli(), Target: &cloudpb.HubCommand_FenceAssignment{FenceAssignment: &cloudpb.FenceAssignment{MigrationId: "migration-1", FenceCommandId: "fence-1", DaemonDeviceId: "daemon-1", SourceHubId: "hub-eu", SourceAssignmentEpoch: 1, SourceControlGeneration: 5, ExpiresAtUnixMillis: now.Add(time.Minute).UnixMilli()}}}
+	if result := fixture.service.ExecuteHubCommand(command, 4, now); result.GetErrorCode() != "invalid_assignment_fence" || !fixture.service.HasPresence("daemon-1") {
+		t.Fatalf("stale fence result = %v", result)
+	}
+	exact := proto.Clone(command).(*cloudpb.HubCommand)
+	exact.CommandId = "fence-2"
+	exact.GetFenceAssignment().FenceCommandId = "fence-2"
+	result := fixture.service.ExecuteHubCommand(exact, 5, now)
+	if result.GetResultCode() != cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED || fixture.service.HasPresence("daemon-1") {
+		t.Fatalf("exact fence result = %v", result)
+	}
+	if replay := fixture.service.ExecuteHubCommand(proto.Clone(exact).(*cloudpb.HubCommand), 6, now.Add(time.Second)); replay.GetResultCode() != cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED || replay.GetControlGeneration() != 6 || replay.GetExecutionControlGeneration() != 5 {
+		t.Fatalf("fence replay = %v", replay)
+	}
+	restartedCommand := proto.Clone(command).(*cloudpb.HubCommand)
+	restartedCommand.CommandId = "fence-after-restart"
+	restartedCommand.GetFenceAssignment().FenceCommandId = "fence-after-restart"
+	if result := fixture.service.ExecuteHubCommand(restartedCommand, 6, now.Add(2*time.Second)); result.GetErrorCode() != "invalid_assignment_fence" {
+		t.Fatalf("new process generation must not attest old fence = %v", result)
+	}
+	_ = presence.Close()
+}
+
 func TestHubCommandForwardsExactDaemonSessionAndReportsIndependentResult(t *testing.T) {
 	fixture := newFixture(t, 8, 8)
 	presence, _ := fixture.openEdgePresence(t)

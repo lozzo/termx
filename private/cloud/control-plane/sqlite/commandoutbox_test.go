@@ -69,6 +69,45 @@ func TestCommandOutboxPersistsIdempotencyAndExactResultReplay(t *testing.T) {
 	}
 }
 
+func TestAssignmentMigrationResultMovesAssignmentAtomically(t *testing.T) {
+	now := time.Date(2026, 7, 21, 18, 0, 0, 0, time.UTC)
+	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if _, err := store.MoveAssignment(context.Background(), &cloudpb.HubAssignment{DaemonDeviceId: "daemon-1", AccountId: "account-1", HubId: "hub-a", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}, now); err != nil {
+		t.Fatal(err)
+	}
+	service, _ := commandoutbox.New(store)
+	migration := &cloudpb.AssignmentMigrationTarget{MigrationId: "migration-1", DaemonDeviceId: "daemon-1", SourceHubId: "hub-a", SourceAssignmentEpoch: 1, SourceControlGeneration: 4, TargetHubId: "hub-b", TargetAssignmentEpoch: 2, TargetNotBeforeUnixMillis: now.UnixMilli(), TargetExpiresAtUnixMillis: now.Add(2 * time.Hour).UnixMilli()}
+	target := &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_AssignmentMigration{AssignmentMigration: migration}}
+	projection := &cloudpb.ManagementCommandProjection{CommandId: "parent-migration", AccountId: "account-1", Actor: &cloudpb.ManagementActorProjection{ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN, ActorId: "operator-1"}, CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_MIGRATE_ASSIGNMENT, Target: target, AuthorityResult: cloudpb.CommandAuthorityResult_COMMAND_AUTHORITY_RESULT_NOT_APPLICABLE, DeliveryState: cloudpb.CommandDeliveryState_COMMAND_DELIVERY_STATE_PENDING, ExecutionState: cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_PENDING, ObservedEffect: cloudpb.CommandObservedEffect_COMMAND_OBSERVED_EFFECT_UNKNOWN, Children: []*cloudpb.ManagementCommandChildProjection{{ChildCommandId: "child-migration", TargetHubId: "hub-a", Target: target, DeliveryState: cloudpb.CommandDeliveryState_COMMAND_DELIVERY_STATE_PENDING, ExecutionState: cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_PENDING, ObservedEffect: cloudpb.CommandObservedEffect_COMMAND_OBSERVED_EFFECT_UNKNOWN, UpdatedAtUnixMillis: now.UnixMilli()}}, CreatedAtUnixMillis: now.UnixMilli(), ExpiresAtUnixMillis: now.Add(5 * time.Minute).UnixMilli(), UpdatedAtUnixMillis: now.UnixMilli()}
+	if _, _, err := service.Create(context.Background(), projection, "migration-idem", now); err != nil {
+		t.Fatal(err)
+	}
+	wrongGeneration := &cloudpb.HubCommandResult{CommandId: "child-migration", HubId: "hub-a", ControlGeneration: 3, ExecutionControlGeneration: 3, ResultCode: cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED, CompletedAtUnixMillis: now.Add(time.Second).UnixMilli()}
+	if _, _, err := service.ApplyHubResult(context.Background(), wrongGeneration, now.Add(time.Second)); !errors.Is(err, commandoutbox.ErrCommandConflict) {
+		t.Fatalf("wrong generation error = %v", err)
+	}
+	assignment, _ := store.Assignment(context.Background(), "daemon-1")
+	command, _ := service.Get(context.Background(), "account-1", "parent-migration")
+	if assignment.Value.GetHubId() != "hub-a" || assignment.Value.GetAssignmentEpoch() != 1 || command.GetExecutionState() != cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_PENDING {
+		t.Fatalf("failed transaction leaked state: assignment=%v command=%v", assignment, command)
+	}
+	result := proto.Clone(wrongGeneration).(*cloudpb.HubCommandResult)
+	result.ControlGeneration = 5
+	result.ExecutionControlGeneration = 4
+	completed, replay, err := service.ApplyHubResult(context.Background(), result, now.Add(2*time.Second))
+	if err != nil || replay || completed.GetExecutionState() != cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_APPLIED {
+		t.Fatalf("migration result = (%v, %v, %v)", completed, replay, err)
+	}
+	assignment, _ = store.Assignment(context.Background(), "daemon-1")
+	if assignment.Value.GetHubId() != "hub-b" || assignment.Value.GetAssignmentEpoch() != 2 || assignment.PreviousHubID != "hub-a" || assignment.PreviousEpoch != 1 {
+		t.Fatalf("moved assignment = %+v", assignment)
+	}
+}
+
 func sqliteCloseSessionCommand(now time.Time) *cloudpb.ManagementCommandProjection {
 	target := &cloudpb.ManagedPeerSessionTarget{DaemonDeviceId: "daemon-1", ManagedSessionId: "managed-1", SessionIncarnation: 2, AssignmentEpoch: 7, ControlPresenceSessionId: "presence-1", DaemonRuntimeGeneration: "runtime-1"}
 	commandTarget := &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_PeerSession{PeerSession: target}}

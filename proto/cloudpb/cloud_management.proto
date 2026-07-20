@@ -24,6 +24,7 @@ enum ManagementCommandKind {
   MANAGEMENT_COMMAND_KIND_CLOSE_MANAGED_PEER_SESSION = 3;
   MANAGEMENT_COMMAND_KIND_REVOKE_TERMINAL_ACCESS = 4;
   MANAGEMENT_COMMAND_KIND_CLOSE_RELAY_ALLOCATIONS = 5;
+  MANAGEMENT_COMMAND_KIND_MIGRATE_ASSIGNMENT = 6;
 }
 
 // CommandAuthorityResult 表示持久 authority mutation 的独立结果。
@@ -260,6 +261,20 @@ message RevokeCloudDeviceTarget {
   uint64 expected_auth_epoch = 2;
 }
 
+// AssignmentMigrationTarget 固化一次严格单活迁移的 source fence 与 target lease。
+// Web 请求只填写 daemon_device_id/target_hub_id，其余字段由 Controller registry canonicalize。
+message AssignmentMigrationTarget {
+  string migration_id = 1;
+  string daemon_device_id = 2;
+  string source_hub_id = 3;
+  uint64 source_assignment_epoch = 4;
+  uint64 source_control_generation = 5;
+  string target_hub_id = 6;
+  uint64 target_assignment_epoch = 7;
+  int64 target_not_before_unix_millis = 8;
+  int64 target_expires_at_unix_millis = 9;
+}
+
 // ManagementCommandTarget 是用户/运营命令的强类型目标。
 message ManagementCommandTarget {
   oneof target {
@@ -268,6 +283,7 @@ message ManagementCommandTarget {
     ManagedPeerSessionTarget peer_session = 3;
     RevokeTerminalAccessTarget terminal_access = 4;
     RelayControlTarget relay_allocations = 5;
+    AssignmentMigrationTarget assignment_migration = 6;
   }
 }
 

@@ -118,6 +118,35 @@ func TestDispatcherUsesIndependentRelayPublisher(t *testing.T) {
 	}
 }
 
+func TestDispatcherPublishesExactAssignmentFenceToSourceHub(t *testing.T) {
+	_, privateKey, _ := ed25519.GenerateKey(rand.Reader)
+	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	outbox, _ := commandoutbox.New(store)
+	now := time.Date(2026, 7, 21, 17, 30, 0, 0, time.UTC)
+	migration := &cloudpb.AssignmentMigrationTarget{MigrationId: "migration-1", DaemonDeviceId: "daemon-1", SourceHubId: "hub-a", SourceAssignmentEpoch: 4, SourceControlGeneration: 7, TargetHubId: "hub-b", TargetAssignmentEpoch: 5, TargetNotBeforeUnixMillis: now.UnixMilli(), TargetExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}
+	target := &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_AssignmentMigration{AssignmentMigration: migration}}
+	projection := &cloudpb.ManagementCommandProjection{CommandId: "parent-migration", AccountId: "account-1", Actor: &cloudpb.ManagementActorProjection{ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN, ActorId: "operator-1"}, CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_MIGRATE_ASSIGNMENT, Target: target, AuthorityResult: cloudpb.CommandAuthorityResult_COMMAND_AUTHORITY_RESULT_NOT_APPLICABLE, DeliveryState: cloudpb.CommandDeliveryState_COMMAND_DELIVERY_STATE_PENDING, ExecutionState: cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_PENDING, ObservedEffect: cloudpb.CommandObservedEffect_COMMAND_OBSERVED_EFFECT_UNKNOWN, Children: []*cloudpb.ManagementCommandChildProjection{{ChildCommandId: "child-migration", TargetHubId: "hub-a", Target: target, DeliveryState: cloudpb.CommandDeliveryState_COMMAND_DELIVERY_STATE_PENDING, ExecutionState: cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_PENDING, ObservedEffect: cloudpb.CommandObservedEffect_COMMAND_OBSERVED_EFFECT_UNKNOWN, UpdatedAtUnixMillis: now.UnixMilli()}}, CreatedAtUnixMillis: now.UnixMilli(), ExpiresAtUnixMillis: now.Add(5 * time.Minute).UnixMilli(), UpdatedAtUnixMillis: now.UnixMilli()}
+	if _, _, err := outbox.Create(context.Background(), projection, "migration-idem", now); err != nil {
+		t.Fatal(err)
+	}
+	publisher := &recordingCommandPublisher{}
+	dispatcher, _ := commandoutbox.NewDispatcher(outbox, publisher, nil, &plannerSource{}, "control-1", privateKey)
+	if err := dispatcher.DispatchOnce(context.Background(), now.Add(time.Second), 32); err != nil {
+		t.Fatal(err)
+	}
+	if len(publisher.commands) != 1 || publisher.hubIDs[0] != "hub-a" {
+		t.Fatalf("migration publish = %v %v", publisher.hubIDs, publisher.commands)
+	}
+	fence := publisher.commands[0].GetFenceAssignment()
+	if fence.GetMigrationId() != "migration-1" || fence.GetFenceCommandId() != "child-migration" || fence.GetDaemonDeviceId() != "daemon-1" || fence.GetSourceHubId() != "hub-a" || fence.GetSourceAssignmentEpoch() != 4 || fence.GetSourceControlGeneration() != 7 {
+		t.Fatalf("assignment fence = %v", fence)
+	}
+}
+
 type recordingCommandPublisher struct {
 	hubIDs   []string
 	commands []*cloudpb.HubCommand

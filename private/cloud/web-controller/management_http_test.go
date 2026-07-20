@@ -77,6 +77,13 @@ func TestManagementAPIUsesAccountCSRFAndDurableCommandProjection(t *testing.T) {
 	if created.GetCommand().GetAccountId() != account.GetAccountId() || len(created.GetCommand().GetChildren()) != 1 {
 		t.Fatalf("created command = %v", created.GetCommand())
 	}
+	migrationBody, _ := protojson.Marshal(&cloudpb.CreateManagementCommandRequest{CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_MIGRATE_ASSIGNMENT, Target: &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_AssignmentMigration{AssignmentMigration: &cloudpb.AssignmentMigrationTarget{DaemonDeviceId: "daemon-1", TargetHubId: "hub-2"}}}, IdempotencyKey: "account-migration"})
+	migrationRequest := productRequest(http.MethodPost, "/api/v1/management/commands", string(migrationBody), cookies)
+	migrationResponse := httptest.NewRecorder()
+	managementHandler.ServeHTTP(migrationResponse, migrationRequest)
+	if migrationResponse.Code != http.StatusConflict {
+		t.Fatalf("account owner assignment migration = %d: %s", migrationResponse.Code, migrationResponse.Body.String())
+	}
 	getBody, _ := protojson.Marshal(&cloudpb.GetManagementCommandRequest{AccountId: "other-account", CommandId: created.GetCommand().GetCommandId()})
 	get := productRequest(http.MethodPost, "/api/v1/management/commands/get", string(getBody), cookies)
 	getResponse := httptest.NewRecorder()

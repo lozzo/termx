@@ -29,6 +29,7 @@ import {
   CreateManagementCommandResponseSchema,
   ManagementCommandKind,
   ManagementCommandTargetSchema,
+  AssignmentMigrationTargetSchema,
   RevokeCloudDeviceTargetSchema,
   type GetOperatorAccountResponse,
   type ListHubFleetResponse,
@@ -38,7 +39,10 @@ import {
   SubscriptionStatus,
   SubscriptionTransitionKind,
 } from "@/generated/cloudpb/cloud_product_pb";
-import { Freshness } from "@/generated/cloudpb/cloud_topology_pb";
+import {
+  Freshness,
+  ManagedDeviceKind,
+} from "@/generated/cloudpb/cloud_topology_pb";
 import { ProtoHTTPError, protoPost } from "@/protoApi";
 
 export default function OperatorPage() {
@@ -177,6 +181,39 @@ export default function OperatorPage() {
     }
   }
 
+  async function migrateAssignment(daemonDeviceId: string, targetHubId: string) {
+    const accountId = detail?.commerce?.account?.accountId;
+    if (!accountId) return;
+    try {
+      await protoPost(
+        "/api/v1/operator/commands",
+        CreateManagementCommandRequestSchema,
+        create(CreateManagementCommandRequestSchema, {
+          accountId,
+          commandKind: ManagementCommandKind.MIGRATE_ASSIGNMENT,
+          idempotencyKey: crypto.randomUUID(),
+          target: create(ManagementCommandTargetSchema, {
+            target: {
+              case: "assignmentMigration",
+              value: create(AssignmentMigrationTargetSchema, {
+                daemonDeviceId,
+                targetHubId,
+              }),
+            },
+          }),
+        }),
+        CreateManagementCommandResponseSchema,
+        "termx_cloud_operator_csrf",
+      );
+      await select(accountId);
+      await load();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Assignment migration failed",
+      );
+    }
+  }
+
   async function logout() {
     await protoPost(
       "/api/v1/operator/logout",
@@ -263,6 +300,7 @@ export default function OperatorPage() {
             <button
               className="grid w-full gap-2 border-b border-line p-4 text-left hover:bg-soft"
               key={item.account?.accountId}
+              data-testid={`operator-account-${item.account?.accountId}`}
               onClick={() =>
                 item.account && void select(item.account.accountId)
               }
@@ -295,6 +333,7 @@ export default function OperatorPage() {
                 <div className="mt-4 flex gap-2">
                   <Button
                     variant="outline"
+                    data-testid="operator-suspend"
                     onClick={() =>
                       void transition(SubscriptionTransitionKind.SUSPEND)
                     }
@@ -303,6 +342,7 @@ export default function OperatorPage() {
                   </Button>
                   <Button
                     variant="outline"
+                    data-testid="operator-restore"
                     onClick={() =>
                       void transition(SubscriptionTransitionKind.RESTORE)
                     }
@@ -335,30 +375,68 @@ export default function OperatorPage() {
               </div>
               <div className="border-t border-line">
                 <h3 className="p-4 text-sm font-medium">Devices</h3>
-                {detail.devices?.devices.map((device) => (
-                  <div
-                    className="flex items-center justify-between gap-3 border-t border-line px-4 py-3 text-xs"
-                    key={device.deviceId}
-                  >
-                    <span className="min-w-0">
-                      <strong className="block truncate">
-                        {device.displayName || device.deviceId}
-                      </strong>
-                      <small className="font-mono text-muted-foreground">
-                        {device.deviceId}
-                      </small>
-                    </span>
-                    <Button
-                      variant="outline"
-                      disabled={device.revoked}
-                      onClick={() =>
-                        void revokeDevice(device.deviceId, device.authEpoch)
-                      }
+                {detail.devices?.devices.map((device) => {
+                  const presence = detail.topology?.presences.find(
+                    (item) => item.daemonDeviceId === device.deviceId,
+                  );
+                  const currentHubId =
+                    device.assignedHubId || presence?.controlOwnerHubId;
+                  return (
+                    <div
+                      className="grid gap-3 border-t border-line px-4 py-3 text-xs md:grid-cols-[minmax(0,1fr)_auto]"
+                      key={device.deviceId}
+                      data-testid={`operator-device-${device.deviceId}`}
                     >
-                      Revoke
-                    </Button>
-                  </div>
-                ))}
+                      <span className="min-w-0">
+                        <strong className="block truncate">
+                          {device.displayName || device.deviceId}
+                        </strong>
+                        <small className="font-mono text-muted-foreground">
+                          {device.deviceId}
+                          {currentHubId
+                            ? ` / ${currentHubId}`
+                            : ""}
+                        </small>
+                      </span>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {device.deviceKind ===
+                          ManagedDeviceKind.DAEMON &&
+                          fleet?.hubs
+                            .filter(
+                              (hub) =>
+                                hub.hubReady &&
+                                hub.deployment?.hubId &&
+                                hub.deployment.hubId !== currentHubId,
+                            )
+                            .map((hub) => (
+                              <Button
+                                key={hub.deployment?.hubId}
+                                variant="outline"
+                                data-testid={`migrate-${device.deviceId}-${hub.deployment?.hubId}`}
+                                onClick={() =>
+                                  void migrateAssignment(
+                                    device.deviceId,
+                                    hub.deployment?.hubId ?? "",
+                                  )
+                                }
+                              >
+                                Move to {hub.deployment?.publicLabel || hub.deployment?.hubId}
+                              </Button>
+                            ))}
+                        <Button
+                          variant="outline"
+                          disabled={device.revoked}
+                          data-testid={`revoke-${device.deviceId}`}
+                          onClick={() =>
+                            void revokeDevice(device.deviceId, device.authEpoch)
+                          }
+                        >
+                          Revoke
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
               <div className="border-t border-line">
                 <h3 className="p-4 text-sm font-medium">

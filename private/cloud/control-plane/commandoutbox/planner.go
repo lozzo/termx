@@ -9,6 +9,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
 	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
@@ -32,26 +33,37 @@ type RelayTargetSource interface {
 	RelayReservationsForSession(context.Context, string) ([]*cloudpb.RelayLeaseReservation, error)
 }
 
+// MigrationSource 提供 assignment 与当前 Hub control generation 的持久真值。
+type MigrationSource interface {
+	Assignment(context.Context, string) (hubregistry.Assignment, error)
+	Deployment(context.Context, string) (hubregistry.Deployment, error)
+}
+
 // Planner 把 generated management request 解析为持久 parent/child CommandOutbox。
 // 它不执行网络投递，也不根据后续 topology 变化改写已经固定的 child fencing。
 type Planner struct {
 	outbox             *Service
 	targets            TargetSource
 	relayTargets       RelayTargetSource
+	migrations         MigrationSource
 	random             io.Reader
 	ttl                time.Duration
 	notifyPolicyChange func(string)
 }
 
 // NewPlanner 创建 CommandOutbox target planner。
-func NewPlanner(outbox *Service, targets TargetSource, relayTargets RelayTargetSource, random io.Reader, notifyPolicyChange func(string)) (*Planner, error) {
+func NewPlanner(outbox *Service, targets TargetSource, relayTargets RelayTargetSource, random io.Reader, notifyPolicyChange func(string), migrationSources ...MigrationSource) (*Planner, error) {
 	if outbox == nil || targets == nil {
 		return nil, fmt.Errorf("CommandOutbox planner dependencies are required")
 	}
 	if random == nil {
 		random = rand.Reader
 	}
-	return &Planner{outbox: outbox, targets: targets, relayTargets: relayTargets, random: random, ttl: defaultCommandTTL, notifyPolicyChange: notifyPolicyChange}, nil
+	planner := &Planner{outbox: outbox, targets: targets, relayTargets: relayTargets, random: random, ttl: defaultCommandTTL, notifyPolicyChange: notifyPolicyChange}
+	if len(migrationSources) > 0 {
+		planner.migrations = migrationSources[0]
+	}
+	return planner, nil
 }
 
 // Create 校验账号隔离与精确 target，随后持久创建 command。
@@ -61,7 +73,7 @@ func (planner *Planner) Create(ctx context.Context, request *cloudpb.CreateManag
 		return nil, false, ErrCommandConflict
 	}
 	if existing, err := planner.outbox.ByIdempotency(ctx, request.GetAccountId(), request.GetIdempotencyKey()); err == nil {
-		if existing.GetCommandKind() != request.GetCommandKind() || !proto.Equal(existing.GetTarget(), request.GetTarget()) {
+		if existing.GetCommandKind() != request.GetCommandKind() || !sameRequestedTarget(existing.GetTarget(), request.GetTarget(), request.GetCommandKind()) {
 			return nil, false, ErrCommandConflict
 		}
 		return existing, false, nil
@@ -184,10 +196,44 @@ func (planner *Planner) Create(ctx context.Context, request *cloudpb.CreateManag
 		if len(projection.GetChildren()) == 0 {
 			return nil, false, ErrCommandNotFound
 		}
+	case cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_MIGRATE_ASSIGNMENT:
+		requested := request.GetTarget().GetAssignmentMigration()
+		if planner.migrations == nil || requested == nil || requested.GetDaemonDeviceId() == "" || requested.GetTargetHubId() == "" {
+			return nil, false, ErrCommandConflict
+		}
+		current, err := planner.migrations.Assignment(ctx, requested.GetDaemonDeviceId())
+		if err != nil || current.Value.GetAccountId() != request.GetAccountId() || current.Value.GetHubId() == requested.GetTargetHubId() || current.Value.GetExpiresAtUnixMillis() <= now.UnixMilli() {
+			return nil, false, ErrCommandNotFound
+		}
+		sourceDeployment, err := planner.migrations.Deployment(ctx, current.Value.GetHubId())
+		if err != nil || !sourceDeployment.Enabled || sourceDeployment.ControlGeneration == 0 {
+			return nil, false, ErrCommandConflict
+		}
+		targetDeployment, err := planner.migrations.Deployment(ctx, requested.GetTargetHubId())
+		if err != nil || !targetDeployment.Enabled {
+			return nil, false, ErrCommandNotFound
+		}
+		migrationID, err := planner.nextID("migration")
+		if err != nil {
+			return nil, false, err
+		}
+		canonical := &cloudpb.AssignmentMigrationTarget{MigrationId: migrationID, DaemonDeviceId: requested.GetDaemonDeviceId(), SourceHubId: current.Value.GetHubId(), SourceAssignmentEpoch: current.Value.GetAssignmentEpoch(), SourceControlGeneration: sourceDeployment.ControlGeneration, TargetHubId: requested.GetTargetHubId(), TargetAssignmentEpoch: current.Value.GetAssignmentEpoch() + 1, TargetNotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), TargetExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}
+		projection.Target = &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_AssignmentMigration{AssignmentMigration: canonical}}
+		if err := planner.appendChild(projection, current.Value.GetHubId(), projection.GetTarget(), now); err != nil {
+			return nil, false, err
+		}
 	default:
 		return nil, false, ErrCommandConflict
 	}
 	return planner.outbox.Create(ctx, projection, request.GetIdempotencyKey(), now)
+}
+
+func sameRequestedTarget(existing, requested *cloudpb.ManagementCommandTarget, kind cloudpb.ManagementCommandKind) bool {
+	if kind != cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_MIGRATE_ASSIGNMENT {
+		return proto.Equal(existing, requested)
+	}
+	left, right := existing.GetAssignmentMigration(), requested.GetAssignmentMigration()
+	return left != nil && right != nil && left.GetDaemonDeviceId() == right.GetDaemonDeviceId() && left.GetTargetHubId() == right.GetTargetHubId()
 }
 
 func (planner *Planner) appendChild(parent *cloudpb.ManagementCommandProjection, hubID string, target *cloudpb.ManagementCommandTarget, now time.Time) error {

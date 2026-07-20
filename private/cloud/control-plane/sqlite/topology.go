@@ -137,6 +137,9 @@ ON CONFLICT(daemon_device_id) DO UPDATE SET account_id=excluded.account_id,hub_i
 			return err
 		}
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM managed_peer_topology WHERE hub_id=?`, snapshot.HubID); err != nil {
+		return err
+	}
 	for _, value := range snapshot.PeerSessions {
 		payload, err := proto.Marshal(value.Value)
 		if err != nil {

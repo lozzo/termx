@@ -5,11 +5,13 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -67,6 +69,7 @@ type childProcess struct {
 	cmd    *exec.Cmd
 	log    *os.File
 	done   chan error
+	exited chan struct{}
 }
 
 func seedDevelopmentAccount(databasePath, catalogPath string, now time.Time) (*developmentAccount, error) {
@@ -110,6 +113,7 @@ func run(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("termx-cloud-dev", flag.ContinueOnError)
 	manifestPath := flags.String("manifest", ".artifacts/cloud-dev/runtime.json", "supervisor runtime manifest path")
 	repoRoot := flags.String("repo-root", "", "repository root; defaults to current directory")
+	faultHarness := flags.Bool("fault-harness", false, "use stable listeners and keep surviving child processes running after an injected exit")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -166,8 +170,9 @@ func run(ctx context.Context, args []string) error {
 	clear(enrollmentBytes)
 	devices := []*cloudpb.CloudDevicePolicy{
 		{AccountId: account.GetAccountId(), DeviceId: "client-dev-local", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: account.GetAuthRevision()},
-		{AccountId: account.GetAccountId(), DeviceId: "daemon-edge-a", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision()},
-		{AccountId: account.GetAccountId(), DeviceId: "daemon-edge-b", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision()},
+		{AccountId: account.GetAccountId(), DeviceId: "client-dev-secondary", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: account.GetAuthRevision()},
+		{AccountId: account.GetAccountId(), DeviceId: "daemon-edge-a", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision(), PublicKey: developmentDevicePrivateKey("daemon-edge-a").Public().(ed25519.PublicKey)},
+		{AccountId: account.GetAccountId(), DeviceId: "daemon-edge-b", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision(), PublicKey: developmentDevicePrivateKey("daemon-edge-b").Public().(ed25519.PublicKey)},
 	}
 	assignments := []*cloudpb.HubAssignment{
 		{DaemonDeviceId: "daemon-edge-a", AccountId: account.GetAccountId(), HubId: "hub-edge-a", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()},
@@ -186,6 +191,20 @@ func run(ctx context.Context, args []string) error {
 		relayKeys[hubID] = relayPrivate
 	}
 	controllerConfig := controller.Config{DatabasePath: controllerDatabase, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Devices: devices, Assignments: assignments, DevelopmentEnrollmentCode: enrollmentCode, DevelopmentEnrollmentAccountID: account.GetAccountId(), DevelopmentEnrollmentHubID: "hub-edge-a", OperatorID: "development-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes), WebStaticDir: webStaticDir}
+	if *faultHarness {
+		controllerConfig.PublicListen, err = reserveTCPAddress()
+		if err != nil {
+			return err
+		}
+		controllerConfig.InternalControlListen, err = reserveTCPAddress()
+		if err != nil {
+			return err
+		}
+		controllerConfig.OperatorListen, err = reserveTCPAddress()
+		if err != nil {
+			return err
+		}
+	}
 	clear(operatorTokenBytes)
 	controllerConfigPath := filepath.Join(artifactDir, "controller-config.json")
 	controllerManifestPath := filepath.Join(artifactDir, "controller-runtime.json")
@@ -211,9 +230,37 @@ func run(ctx context.Context, args []string) error {
 	}
 
 	edgeManifests := make([]edge.Manifest, 0, len(deploymentConfigs))
+	var faultProxies []*controlFaultProxy
+	defer func() {
+		for _, proxy := range faultProxies {
+			_ = proxy.Close()
+		}
+	}()
 	for _, deployment := range deploymentConfigs {
 		hubID := deployment.Metadata.GetHubId()
 		config := edge.Config{ControllerURL: controllerRuntime.InternalControlURL, HubListen: "127.0.0.1:0", HealthListen: "127.0.0.1:0", RelayListen: "127.0.0.1:0", UsageOutboxPath: filepath.Join(artifactDir, hubID+"-usage.outbox"), Metadata: deployment.Metadata, HubControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(edgeKeys[hubID]), RelayControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(relayKeys[hubID]), ControllerProjectionKeyID: projectionKeyID, ControllerProjectionPublicKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPublic)}
+		if *faultHarness {
+			proxy, proxyErr := newControlFaultProxy(controllerRuntime.InternalControlURL[len("http://"):])
+			if proxyErr != nil {
+				return proxyErr
+			}
+			faultProxies = append(faultProxies, proxy)
+			hub007FaultProxies.Store(hubID, proxy)
+			defer hub007FaultProxies.Delete(hubID)
+			config.ControllerURL = proxy.URL()
+			config.HubListen, err = reserveTCPAddress()
+			if err != nil {
+				return err
+			}
+			config.HealthListen, err = reserveTCPAddress()
+			if err != nil {
+				return err
+			}
+			config.RelayListen, err = reserveUDPAddress()
+			if err != nil {
+				return err
+			}
+		}
 		configPath := filepath.Join(artifactDir, hubID+"-config.json")
 		manifestPath := filepath.Join(artifactDir, hubID+"-runtime.json")
 		if err := writeJSONFile(configPath, config); err != nil {
@@ -264,12 +311,37 @@ func run(ctx context.Context, args []string) error {
 		for _, child := range children {
 			select {
 			case err := <-child.done:
-				return fmt.Errorf("%s exited: %w", child.record.Name, err)
+				if !*faultHarness {
+					return fmt.Errorf("%s exited: %w", child.record.Name, err)
+				}
 			default:
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+func reserveTCPAddress() (string, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", err
+	}
+	address := listener.Addr().String()
+	return address, listener.Close()
+}
+
+func reserveUDPAddress() (string, error) {
+	listener, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		return "", err
+	}
+	address := listener.LocalAddr().String()
+	return address, listener.Close()
+}
+
+func developmentDevicePrivateKey(deviceID string) ed25519.PrivateKey {
+	seed := sha256.Sum256([]byte("termx-development-device-v1\x00" + deviceID))
+	return ed25519.NewKeyFromSeed(seed[:])
 }
 
 func resolveRepoRoot(value string) (string, error) {
@@ -318,10 +390,11 @@ func startChild(binary, configPath, manifestPath, logPath, name string) (*childP
 		_ = logFile.Close()
 		return nil, err
 	}
-	child := &childProcess{record: processRecord{Name: name, PID: command.Process.Pid, BinaryPath: binary, ConfigPath: configPath, ManifestPath: manifestPath, LogPath: logPath}, cmd: command, log: logFile, done: make(chan error, 1)}
+	child := &childProcess{record: processRecord{Name: name, PID: command.Process.Pid, BinaryPath: binary, ConfigPath: configPath, ManifestPath: manifestPath, LogPath: logPath}, cmd: command, log: logFile, done: make(chan error, 1), exited: make(chan struct{})}
 	go func() {
 		err := command.Wait()
 		_ = logFile.Close()
+		close(child.exited)
 		child.done <- err
 	}()
 	return child, nil
@@ -330,6 +403,11 @@ func startChild(binary, configPath, manifestPath, logPath, name string) (*childP
 func stopChildren(children []*childProcess) {
 	for index := len(children) - 1; index >= 0; index-- {
 		child := children[index]
+		select {
+		case <-child.exited:
+			continue
+		default:
+		}
 		if child.cmd.Process != nil {
 			_ = child.cmd.Process.Signal(syscall.SIGTERM)
 		}
@@ -337,14 +415,14 @@ func stopChildren(children []*childProcess) {
 	for _, child := range children {
 		timer := time.NewTimer(3 * time.Second)
 		select {
-		case <-child.done:
+		case <-child.exited:
 			timer.Stop()
 		case <-timer.C:
 			if child.cmd.Process != nil {
 				_ = child.cmd.Process.Kill()
 			}
 			select {
-			case <-child.done:
+			case <-child.exited:
 			case <-time.After(2 * time.Second):
 			}
 		}

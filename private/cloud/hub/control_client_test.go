@@ -145,7 +145,7 @@ func (topology *staticTopology) RuntimeEvents() <-chan *cloudpb.HubRuntimeEnvelo
 
 func (topology *staticTopology) ExecuteHubCommand(command *cloudpb.HubCommand, generation uint64, now time.Time) *cloudpb.HubCommandResult {
 	topology.commands <- proto.Clone(command).(*cloudpb.HubCommand)
-	return &cloudpb.HubCommandResult{CommandId: command.GetCommandId(), HubId: topology.hubID, ControlGeneration: generation, ResultCode: cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED, CompletedAtUnixMillis: now.UnixMilli()}
+	return &cloudpb.HubCommandResult{CommandId: command.GetCommandId(), HubId: topology.hubID, ControlGeneration: generation, ExecutionControlGeneration: generation, ResultCode: cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED, CompletedAtUnixMillis: now.UnixMilli()}
 }
 
 func (topology *staticTopology) TopologySnapshot(generation uint64, observedAt time.Time) *cloudpb.HubTopologySnapshot {

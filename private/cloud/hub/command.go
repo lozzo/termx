@@ -19,7 +19,7 @@ type hubCommandState struct {
 // ExecuteHubCommand 验证当前 Hub command envelope 后执行本地 Kick 或转发 daemon deny-only command。
 // exact replay 返回首次 Hub result；相同 command ID 的不同 digest 被拒绝且不影响新 Presence/session。
 func (service *Service) ExecuteHubCommand(command *cloudpb.HubCommand, controlGeneration uint64, now time.Time) *cloudpb.HubCommandResult {
-	result := &cloudpb.HubCommandResult{ControlGeneration: controlGeneration, ResultCode: cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_REJECTED, CompletedAtUnixMillis: now.UTC().UnixMilli()}
+	result := &cloudpb.HubCommandResult{ControlGeneration: controlGeneration, ExecutionControlGeneration: controlGeneration, ResultCode: cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_REJECTED, CompletedAtUnixMillis: now.UTC().UnixMilli()}
 	if service == nil || command == nil || command.GetCommandId() == "" || controlGeneration == 0 || now.IsZero() {
 		result.ErrorCode = "invalid_command"
 		return result
@@ -75,6 +75,8 @@ func (service *Service) ExecuteHubCommand(command *cloudpb.HubCommand, controlGe
 		return result
 	}
 	switch command.GetCommandKind() {
+	case cloudpb.HubCommandKind_HUB_COMMAND_KIND_FENCE_ASSIGNMENT:
+		service.executeFenceAssignmentLocked(command.GetFenceAssignment(), controlGeneration, result)
 	case cloudpb.HubCommandKind_HUB_COMMAND_KIND_KICK_PRESENCE:
 		service.executeKickPresenceLocked(command.GetKickPresence(), result)
 	case cloudpb.HubCommandKind_HUB_COMMAND_KIND_FORWARD_DAEMON_COMMAND:
@@ -84,6 +86,18 @@ func (service *Service) ExecuteHubCommand(command *cloudpb.HubCommand, controlGe
 	}
 	service.rememberCommandLocked(command, digest, result)
 	return result
+}
+
+func (service *Service) executeFenceAssignmentLocked(target *cloudpb.FenceAssignment, controlGeneration uint64, result *cloudpb.HubCommandResult) {
+	if target == nil || target.GetMigrationId() == "" || target.GetFenceCommandId() != result.GetCommandId() || target.GetDaemonDeviceId() == "" || target.GetSourceHubId() != service.hubID || target.GetSourceAssignmentEpoch() == 0 || target.GetSourceControlGeneration() != controlGeneration || target.GetExpiresAtUnixMillis() <= result.GetCompletedAtUnixMillis() {
+		result.ErrorCode = "invalid_assignment_fence"
+		return
+	}
+	if service.fenceAssignmentLocked(target.GetDaemonDeviceId(), target.GetSourceAssignmentEpoch()) {
+		result.ResultCode = cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED
+	} else {
+		result.ResultCode = cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_ALREADY_SATISFIED
+	}
 }
 
 func (service *Service) rememberCommandLocked(command *cloudpb.HubCommand, digest [sha256.Size]byte, result *cloudpb.HubCommandResult) {

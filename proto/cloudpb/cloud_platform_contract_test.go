@@ -53,6 +53,10 @@ func TestCloudPlatformOneofTargetsAreExclusive(t *testing.T) {
 	if target.GetPresence() != nil || target.GetPeerSession().GetManagedSessionId() != "managed-1" {
 		t.Fatalf("management target oneof is not exclusive: %#v", target)
 	}
+	target.Target = &ManagementCommandTarget_AssignmentMigration{AssignmentMigration: &AssignmentMigrationTarget{DaemonDeviceId: "daemon-1", TargetHubId: "hub-2"}}
+	if target.GetPeerSession() != nil || target.GetAssignmentMigration().GetTargetHubId() != "hub-2" {
+		t.Fatalf("assignment migration target oneof is not exclusive: %#v", target)
+	}
 
 	envelope := &HubControlEnvelope{Payload: &HubControlEnvelope_FullProjection{FullProjection: &FullProjectionSnapshot{ProjectionRevision: 1}}}
 	envelope.Payload = &HubControlEnvelope_Command{Command: &HubCommand{CommandId: "command-1"}}
@@ -170,6 +174,22 @@ func TestManagementCommandSeparatesAuthorityDeliveryExecutionAndEffect(t *testin
 		if !fields[required] {
 			t.Fatalf("ManagementCommandProjection missing %q: %v", required, fields)
 		}
+	}
+}
+
+func TestAssignmentMigrationContractCarriesExactSourceAndTargetFences(t *testing.T) {
+	fields := descriptorFieldNames((&AssignmentMigrationTarget{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"migration_id", "daemon_device_id", "source_hub_id", "source_assignment_epoch", "source_control_generation", "target_hub_id", "target_assignment_epoch", "target_not_before_unix_millis", "target_expires_at_unix_millis"} {
+		if !fields[required] {
+			t.Fatalf("AssignmentMigrationTarget missing %q: %v", required, fields)
+		}
+	}
+	if ManagementCommandKind_MANAGEMENT_COMMAND_KIND_MIGRATE_ASSIGNMENT == ManagementCommandKind_MANAGEMENT_COMMAND_KIND_UNSPECIFIED {
+		t.Fatal("assignment migration command kind is unspecified")
+	}
+	resultFields := descriptorFieldNames((&HubCommandResult{}).ProtoReflect().Descriptor())
+	if !resultFields["control_generation"] || !resultFields["execution_control_generation"] {
+		t.Fatalf("HubCommandResult does not separate transport and execution generation: %v", resultFields)
 	}
 }
 

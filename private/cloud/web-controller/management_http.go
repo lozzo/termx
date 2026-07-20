@@ -86,6 +86,9 @@ func ManagementAPIHandler(config ManagementAPIConfig) (http.Handler, error) {
 		if err == nil {
 			err = decodeProductProto(r, request)
 		}
+		if err == nil && request.GetCommandKind() == cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_MIGRATE_ASSIGNMENT {
+			err = commandoutbox.ErrCommandConflict
+		}
 		var response *cloudpb.CreateManagementCommandResponse
 		if err == nil {
 			request.AccountId = account.GetAccountId()

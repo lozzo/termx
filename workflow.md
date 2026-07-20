@@ -15,7 +15,8 @@
 - `CLOUDP005` 已完成 Proto-first signed usage record、独立 Relay control key、Edge durable outbox/pump、Controller 双签名验证、SQLite event journal/sequence 幂等、period/session 聚合、reservation settlement 与重启补报。
 - `HUB006` 已完成独立 Relay control identity/generation/stream、lease/session allocation remote close、final usage drain、Controller settlement 与 CommandOutbox PARTIAL/APPLIED 收口。
 - `CLOUDP006` 已完成 Controller 同 composition Web build、generated Proto JSON 用户账号中心与 operator 工作台、账号隔离、角色/CSRF/近期认证、套餐/usage/device/topology/command/fleet 页面、development 凭据和旧 Web DTO/API 删除。
-- 当前最早未完成切片是 `HUB007`：双 Edge 控制面 E2E，并要求架构与代码双 Agent 审查。
+- `HUB007` 已完成双 Edge 控制面 E2E：assignment migration、Edge restart、Controller outage、HubControl network outage、inventory full replacement、stale/replay fencing、命令链路、Playwright Operator UI 和隐私扫描均通过；证据见 `docs/remote-platform/hub007-control-plane-e2e.md`，架构与代码 reviewer 均 PASS。
+- 当前最早未完成切片是 `CLOUDP007`：Development 全产品 E2E。
 - 多 Hub 基础和产品能力存在交叉依赖，必须按本文件交错推进，不能先写完所有 Hub 再补套餐，也不能继续在单进程 devcloud 上堆硬编码。
 - development 必须走完整账号、交易、Subscription、Entitlement、managed P2P/Relay、周期 quota、usage、topology 和管理链路；外部 provider 可以使用显式测试实现。
 - Web/WASM terminal 产品、iOS/Desktop GUI、多区域数据库、Relay Mesh、真实支付 provider 和复杂计费平台继续延后。
@@ -76,7 +77,7 @@ termx-cloud-edge × N
 | CLOUDP005 | 已完成 | durable UsageLedger 与 settlement | generated RelayUsageEvent/Record/Report/Ack 与 RelayUsageAggregate；Edge 使用稳定独立 Relay control key，authority 先写 durable outbox 再清 pending bytes，at-least-once pump 仅在 Controller 事务提交后 ack；Controller 重验 signed lease 和 Relay event，SQLite 原子提交 event journal、严格 sequence、精确 replay、period/session aggregate、reservation used/release；same-second shutdown、Controller outage、Edge/Controller/SQLite 重启和真实 Pion relay-only DataChannel usage E2E 通过；public/private/race/client/双 Edge/doctor 门禁通过 |
 | HUB006 | 已完成 | Edge 内 Relay allocation remote revoke | generated Relay challenge/report/settlement contract；Controller 与 Edge 使用独立 Relay identity、generation、sender sequence 和 result cursor；reservation 持久绑定 account/Hub/Relay/route，planner/dispatcher 不经过 Hub command；Relay 按 lease/session 精确关闭真实 socket，零字节或有流量都只生成一次 final usage，Edge 串行等待 Controller ack/SQLite release 后回传 RelayCommandResult；单 child PARTIAL、真实 Pion remote close、public/private/race/client/双 Edge/doctor 门禁通过 |
 | CLOUDP006 | 已完成 | Controller 用户账号中心与运营管理面 | Web/API 与 Control Plane 同一 Controller composition；generated Proto JSON 用户/运营页面覆盖套餐、usage、device、topology、command、订单、审计和 fleet；账号隔离、readonly/admin、CSRF、五分钟近期认证、0600 development 凭据、旧 DTO/API 删除；public/private/race/client/双 Edge/doctor/Web build 门禁通过 |
-| HUB007 | 待开始 | 双 Edge 控制面 E2E | 一个 Controller + 两个 Edge 独立进程、assignment migration、Controller outage、Edge restart、inventory recovery、四类 command、P2P/Relay close 和隐私扫描；双 Agent 审查 |
+| HUB007 | 已完成 | 双 Edge 控制面 E2E | 一个 Controller + 两个 Edge 独立进程、assignment migration、Controller outage、Edge restart、inventory recovery、四类 command、P2P/Relay close 和隐私扫描；双 Agent 审查 |
 | CLOUDP007 | 待开始 | Development 全产品 E2E | Web UI 注册/交易/管理 + Android ARM64 真实 APK P2P/Relay terminal/file、quota、suspend、topology、命令、重启恢复、Direct/SSH 回归；双 Agent 审查 |
 | CLOUDP008 | 延后 | Production Cloud 装配与发布 | 仅 HUB007/CLOUDP007 完成后启动；HTTPS、正式存储、Companion 签名、Android production origin、真实 provider |
 | WEB001 | 延后 | Web/WASM terminal 产品 | 仅用户明确恢复后启动 |

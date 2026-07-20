@@ -84,6 +84,7 @@ const (
 	ManagementCommandKind_MANAGEMENT_COMMAND_KIND_CLOSE_MANAGED_PEER_SESSION ManagementCommandKind = 3
 	ManagementCommandKind_MANAGEMENT_COMMAND_KIND_REVOKE_TERMINAL_ACCESS     ManagementCommandKind = 4
 	ManagementCommandKind_MANAGEMENT_COMMAND_KIND_CLOSE_RELAY_ALLOCATIONS    ManagementCommandKind = 5
+	ManagementCommandKind_MANAGEMENT_COMMAND_KIND_MIGRATE_ASSIGNMENT         ManagementCommandKind = 6
 )
 
 // Enum value maps for ManagementCommandKind.
@@ -95,6 +96,7 @@ var (
 		3: "MANAGEMENT_COMMAND_KIND_CLOSE_MANAGED_PEER_SESSION",
 		4: "MANAGEMENT_COMMAND_KIND_REVOKE_TERMINAL_ACCESS",
 		5: "MANAGEMENT_COMMAND_KIND_CLOSE_RELAY_ALLOCATIONS",
+		6: "MANAGEMENT_COMMAND_KIND_MIGRATE_ASSIGNMENT",
 	}
 	ManagementCommandKind_value = map[string]int32{
 		"MANAGEMENT_COMMAND_KIND_UNSPECIFIED":                0,
@@ -103,6 +105,7 @@ var (
 		"MANAGEMENT_COMMAND_KIND_CLOSE_MANAGED_PEER_SESSION": 3,
 		"MANAGEMENT_COMMAND_KIND_REVOKE_TERMINAL_ACCESS":     4,
 		"MANAGEMENT_COMMAND_KIND_CLOSE_RELAY_ALLOCATIONS":    5,
+		"MANAGEMENT_COMMAND_KIND_MIGRATE_ASSIGNMENT":         6,
 	}
 )
 
@@ -2111,6 +2114,116 @@ func (x *RevokeCloudDeviceTarget) GetExpectedAuthEpoch() uint64 {
 	return 0
 }
 
+// AssignmentMigrationTarget 固化一次严格单活迁移的 source fence 与 target lease。
+// Web 请求只填写 daemon_device_id/target_hub_id，其余字段由 Controller registry canonicalize。
+type AssignmentMigrationTarget struct {
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId               string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"`
+	DaemonDeviceId            string                 `protobuf:"bytes,2,opt,name=daemon_device_id,json=daemonDeviceId,proto3" json:"daemon_device_id,omitempty"`
+	SourceHubId               string                 `protobuf:"bytes,3,opt,name=source_hub_id,json=sourceHubId,proto3" json:"source_hub_id,omitempty"`
+	SourceAssignmentEpoch     uint64                 `protobuf:"varint,4,opt,name=source_assignment_epoch,json=sourceAssignmentEpoch,proto3" json:"source_assignment_epoch,omitempty"`
+	SourceControlGeneration   uint64                 `protobuf:"varint,5,opt,name=source_control_generation,json=sourceControlGeneration,proto3" json:"source_control_generation,omitempty"`
+	TargetHubId               string                 `protobuf:"bytes,6,opt,name=target_hub_id,json=targetHubId,proto3" json:"target_hub_id,omitempty"`
+	TargetAssignmentEpoch     uint64                 `protobuf:"varint,7,opt,name=target_assignment_epoch,json=targetAssignmentEpoch,proto3" json:"target_assignment_epoch,omitempty"`
+	TargetNotBeforeUnixMillis int64                  `protobuf:"varint,8,opt,name=target_not_before_unix_millis,json=targetNotBeforeUnixMillis,proto3" json:"target_not_before_unix_millis,omitempty"`
+	TargetExpiresAtUnixMillis int64                  `protobuf:"varint,9,opt,name=target_expires_at_unix_millis,json=targetExpiresAtUnixMillis,proto3" json:"target_expires_at_unix_millis,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
+}
+
+func (x *AssignmentMigrationTarget) Reset() {
+	*x = AssignmentMigrationTarget{}
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AssignmentMigrationTarget) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AssignmentMigrationTarget) ProtoMessage() {}
+
+func (x *AssignmentMigrationTarget) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AssignmentMigrationTarget.ProtoReflect.Descriptor instead.
+func (*AssignmentMigrationTarget) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *AssignmentMigrationTarget) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+func (x *AssignmentMigrationTarget) GetDaemonDeviceId() string {
+	if x != nil {
+		return x.DaemonDeviceId
+	}
+	return ""
+}
+
+func (x *AssignmentMigrationTarget) GetSourceHubId() string {
+	if x != nil {
+		return x.SourceHubId
+	}
+	return ""
+}
+
+func (x *AssignmentMigrationTarget) GetSourceAssignmentEpoch() uint64 {
+	if x != nil {
+		return x.SourceAssignmentEpoch
+	}
+	return 0
+}
+
+func (x *AssignmentMigrationTarget) GetSourceControlGeneration() uint64 {
+	if x != nil {
+		return x.SourceControlGeneration
+	}
+	return 0
+}
+
+func (x *AssignmentMigrationTarget) GetTargetHubId() string {
+	if x != nil {
+		return x.TargetHubId
+	}
+	return ""
+}
+
+func (x *AssignmentMigrationTarget) GetTargetAssignmentEpoch() uint64 {
+	if x != nil {
+		return x.TargetAssignmentEpoch
+	}
+	return 0
+}
+
+func (x *AssignmentMigrationTarget) GetTargetNotBeforeUnixMillis() int64 {
+	if x != nil {
+		return x.TargetNotBeforeUnixMillis
+	}
+	return 0
+}
+
+func (x *AssignmentMigrationTarget) GetTargetExpiresAtUnixMillis() int64 {
+	if x != nil {
+		return x.TargetExpiresAtUnixMillis
+	}
+	return 0
+}
+
 // ManagementCommandTarget 是用户/运营命令的强类型目标。
 type ManagementCommandTarget struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2121,6 +2234,7 @@ type ManagementCommandTarget struct {
 	//	*ManagementCommandTarget_PeerSession
 	//	*ManagementCommandTarget_TerminalAccess
 	//	*ManagementCommandTarget_RelayAllocations
+	//	*ManagementCommandTarget_AssignmentMigration
 	Target        isManagementCommandTarget_Target `protobuf_oneof:"target"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2128,7 +2242,7 @@ type ManagementCommandTarget struct {
 
 func (x *ManagementCommandTarget) Reset() {
 	*x = ManagementCommandTarget{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[29]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2140,7 +2254,7 @@ func (x *ManagementCommandTarget) String() string {
 func (*ManagementCommandTarget) ProtoMessage() {}
 
 func (x *ManagementCommandTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[29]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2153,7 +2267,7 @@ func (x *ManagementCommandTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ManagementCommandTarget.ProtoReflect.Descriptor instead.
 func (*ManagementCommandTarget) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{29}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ManagementCommandTarget) GetTarget() isManagementCommandTarget_Target {
@@ -2208,6 +2322,15 @@ func (x *ManagementCommandTarget) GetRelayAllocations() *RelayControlTarget {
 	return nil
 }
 
+func (x *ManagementCommandTarget) GetAssignmentMigration() *AssignmentMigrationTarget {
+	if x != nil {
+		if x, ok := x.Target.(*ManagementCommandTarget_AssignmentMigration); ok {
+			return x.AssignmentMigration
+		}
+	}
+	return nil
+}
+
 type isManagementCommandTarget_Target interface {
 	isManagementCommandTarget_Target()
 }
@@ -2232,6 +2355,10 @@ type ManagementCommandTarget_RelayAllocations struct {
 	RelayAllocations *RelayControlTarget `protobuf:"bytes,5,opt,name=relay_allocations,json=relayAllocations,proto3,oneof"`
 }
 
+type ManagementCommandTarget_AssignmentMigration struct {
+	AssignmentMigration *AssignmentMigrationTarget `protobuf:"bytes,6,opt,name=assignment_migration,json=assignmentMigration,proto3,oneof"`
+}
+
 func (*ManagementCommandTarget_Presence) isManagementCommandTarget_Target() {}
 
 func (*ManagementCommandTarget_CloudDevice) isManagementCommandTarget_Target() {}
@@ -2241,6 +2368,8 @@ func (*ManagementCommandTarget_PeerSession) isManagementCommandTarget_Target() {
 func (*ManagementCommandTarget_TerminalAccess) isManagementCommandTarget_Target() {}
 
 func (*ManagementCommandTarget_RelayAllocations) isManagementCommandTarget_Target() {}
+
+func (*ManagementCommandTarget_AssignmentMigration) isManagementCommandTarget_Target() {}
 
 // ManagementCommandChildProjection 是一个精确 Hub/daemon/Relay enforcement child。
 type ManagementCommandChildProjection struct {
@@ -2259,7 +2388,7 @@ type ManagementCommandChildProjection struct {
 
 func (x *ManagementCommandChildProjection) Reset() {
 	*x = ManagementCommandChildProjection{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[30]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2271,7 +2400,7 @@ func (x *ManagementCommandChildProjection) String() string {
 func (*ManagementCommandChildProjection) ProtoMessage() {}
 
 func (x *ManagementCommandChildProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[30]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2284,7 +2413,7 @@ func (x *ManagementCommandChildProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ManagementCommandChildProjection.ProtoReflect.Descriptor instead.
 func (*ManagementCommandChildProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{30}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ManagementCommandChildProjection) GetChildCommandId() string {
@@ -2366,7 +2495,7 @@ type ManagementCommandProjection struct {
 
 func (x *ManagementCommandProjection) Reset() {
 	*x = ManagementCommandProjection{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[31]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2378,7 +2507,7 @@ func (x *ManagementCommandProjection) String() string {
 func (*ManagementCommandProjection) ProtoMessage() {}
 
 func (x *ManagementCommandProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[31]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2391,7 +2520,7 @@ func (x *ManagementCommandProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ManagementCommandProjection.ProtoReflect.Descriptor instead.
 func (*ManagementCommandProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{31}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ManagementCommandProjection) GetCommandId() string {
@@ -2505,7 +2634,7 @@ type CreateManagementCommandRequest struct {
 
 func (x *CreateManagementCommandRequest) Reset() {
 	*x = CreateManagementCommandRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[32]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2517,7 +2646,7 @@ func (x *CreateManagementCommandRequest) String() string {
 func (*CreateManagementCommandRequest) ProtoMessage() {}
 
 func (x *CreateManagementCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[32]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2530,7 +2659,7 @@ func (x *CreateManagementCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateManagementCommandRequest.ProtoReflect.Descriptor instead.
 func (*CreateManagementCommandRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{32}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *CreateManagementCommandRequest) GetAccountId() string {
@@ -2571,7 +2700,7 @@ type CreateManagementCommandResponse struct {
 
 func (x *CreateManagementCommandResponse) Reset() {
 	*x = CreateManagementCommandResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[33]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2583,7 +2712,7 @@ func (x *CreateManagementCommandResponse) String() string {
 func (*CreateManagementCommandResponse) ProtoMessage() {}
 
 func (x *CreateManagementCommandResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[33]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2596,7 +2725,7 @@ func (x *CreateManagementCommandResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateManagementCommandResponse.ProtoReflect.Descriptor instead.
 func (*CreateManagementCommandResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{33}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *CreateManagementCommandResponse) GetCommand() *ManagementCommandProjection {
@@ -2617,7 +2746,7 @@ type GetManagementCommandRequest struct {
 
 func (x *GetManagementCommandRequest) Reset() {
 	*x = GetManagementCommandRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[34]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2629,7 +2758,7 @@ func (x *GetManagementCommandRequest) String() string {
 func (*GetManagementCommandRequest) ProtoMessage() {}
 
 func (x *GetManagementCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[34]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2642,7 +2771,7 @@ func (x *GetManagementCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetManagementCommandRequest.ProtoReflect.Descriptor instead.
 func (*GetManagementCommandRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{34}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *GetManagementCommandRequest) GetAccountId() string {
@@ -2669,7 +2798,7 @@ type GetManagementCommandResponse struct {
 
 func (x *GetManagementCommandResponse) Reset() {
 	*x = GetManagementCommandResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[35]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2681,7 +2810,7 @@ func (x *GetManagementCommandResponse) String() string {
 func (*GetManagementCommandResponse) ProtoMessage() {}
 
 func (x *GetManagementCommandResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[35]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2694,7 +2823,7 @@ func (x *GetManagementCommandResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetManagementCommandResponse.ProtoReflect.Descriptor instead.
 func (*GetManagementCommandResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{35}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *GetManagementCommandResponse) GetCommand() *ManagementCommandProjection {
@@ -2717,7 +2846,7 @@ type ListManagementCommandsRequest struct {
 
 func (x *ListManagementCommandsRequest) Reset() {
 	*x = ListManagementCommandsRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[36]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2729,7 +2858,7 @@ func (x *ListManagementCommandsRequest) String() string {
 func (*ListManagementCommandsRequest) ProtoMessage() {}
 
 func (x *ListManagementCommandsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[36]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2742,7 +2871,7 @@ func (x *ListManagementCommandsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListManagementCommandsRequest.ProtoReflect.Descriptor instead.
 func (*ListManagementCommandsRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{36}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ListManagementCommandsRequest) GetAccountId() string {
@@ -2784,7 +2913,7 @@ type ListManagementCommandsResponse struct {
 
 func (x *ListManagementCommandsResponse) Reset() {
 	*x = ListManagementCommandsResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[37]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2796,7 +2925,7 @@ func (x *ListManagementCommandsResponse) String() string {
 func (*ListManagementCommandsResponse) ProtoMessage() {}
 
 func (x *ListManagementCommandsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[37]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2809,7 +2938,7 @@ func (x *ListManagementCommandsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListManagementCommandsResponse.ProtoReflect.Descriptor instead.
 func (*ListManagementCommandsResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{37}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ListManagementCommandsResponse) GetCommands() []*ManagementCommandProjection {
@@ -2843,7 +2972,7 @@ type HubFleetProjection struct {
 
 func (x *HubFleetProjection) Reset() {
 	*x = HubFleetProjection{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[38]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2855,7 +2984,7 @@ func (x *HubFleetProjection) String() string {
 func (*HubFleetProjection) ProtoMessage() {}
 
 func (x *HubFleetProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[38]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2868,7 +2997,7 @@ func (x *HubFleetProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HubFleetProjection.ProtoReflect.Descriptor instead.
 func (*HubFleetProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{38}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *HubFleetProjection) GetDeployment() *EdgeDeploymentMetadata {
@@ -2939,7 +3068,7 @@ type ListHubFleetRequest struct {
 
 func (x *ListHubFleetRequest) Reset() {
 	*x = ListHubFleetRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[39]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2951,7 +3080,7 @@ func (x *ListHubFleetRequest) String() string {
 func (*ListHubFleetRequest) ProtoMessage() {}
 
 func (x *ListHubFleetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[39]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2964,7 +3093,7 @@ func (x *ListHubFleetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListHubFleetRequest.ProtoReflect.Descriptor instead.
 func (*ListHubFleetRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{39}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ListHubFleetRequest) GetRegion() string {
@@ -2999,7 +3128,7 @@ type ListHubFleetResponse struct {
 
 func (x *ListHubFleetResponse) Reset() {
 	*x = ListHubFleetResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[40]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3011,7 +3140,7 @@ func (x *ListHubFleetResponse) String() string {
 func (*ListHubFleetResponse) ProtoMessage() {}
 
 func (x *ListHubFleetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[40]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3024,7 +3153,7 @@ func (x *ListHubFleetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListHubFleetResponse.ProtoReflect.Descriptor instead.
 func (*ListHubFleetResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{40}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *ListHubFleetResponse) GetHubs() []*HubFleetProjection {
@@ -3051,7 +3180,7 @@ type GetHubStatusRequest struct {
 
 func (x *GetHubStatusRequest) Reset() {
 	*x = GetHubStatusRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[41]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3063,7 +3192,7 @@ func (x *GetHubStatusRequest) String() string {
 func (*GetHubStatusRequest) ProtoMessage() {}
 
 func (x *GetHubStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[41]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3076,7 +3205,7 @@ func (x *GetHubStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetHubStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetHubStatusRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{41}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *GetHubStatusRequest) GetHubId() string {
@@ -3096,7 +3225,7 @@ type GetHubStatusResponse struct {
 
 func (x *GetHubStatusResponse) Reset() {
 	*x = GetHubStatusResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[42]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3108,7 +3237,7 @@ func (x *GetHubStatusResponse) String() string {
 func (*GetHubStatusResponse) ProtoMessage() {}
 
 func (x *GetHubStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[42]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3121,7 +3250,7 @@ func (x *GetHubStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetHubStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetHubStatusResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{42}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *GetHubStatusResponse) GetHub() *HubFleetProjection {
@@ -3259,13 +3388,24 @@ const file_cloudpb_cloud_management_proto_rawDesc = "" +
 	"\x04page\x18\x04 \x01(\v2\x1c.termx.cloud.v1.PageResponseR\x04page\"f\n" +
 	"\x17RevokeCloudDeviceTarget\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12.\n" +
-	"\x13expected_auth_epoch\x18\x02 \x01(\x04R\x11expectedAuthEpoch\"\xac\x03\n" +
+	"\x13expected_auth_epoch\x18\x02 \x01(\x04R\x11expectedAuthEpoch\"\xe0\x03\n" +
+	"\x19AssignmentMigrationTarget\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12(\n" +
+	"\x10daemon_device_id\x18\x02 \x01(\tR\x0edaemonDeviceId\x12\"\n" +
+	"\rsource_hub_id\x18\x03 \x01(\tR\vsourceHubId\x126\n" +
+	"\x17source_assignment_epoch\x18\x04 \x01(\x04R\x15sourceAssignmentEpoch\x12:\n" +
+	"\x19source_control_generation\x18\x05 \x01(\x04R\x17sourceControlGeneration\x12\"\n" +
+	"\rtarget_hub_id\x18\x06 \x01(\tR\vtargetHubId\x126\n" +
+	"\x17target_assignment_epoch\x18\a \x01(\x04R\x15targetAssignmentEpoch\x12@\n" +
+	"\x1dtarget_not_before_unix_millis\x18\b \x01(\x03R\x19targetNotBeforeUnixMillis\x12@\n" +
+	"\x1dtarget_expires_at_unix_millis\x18\t \x01(\x03R\x19targetExpiresAtUnixMillis\"\x8c\x04\n" +
 	"\x17ManagementCommandTarget\x12@\n" +
 	"\bpresence\x18\x01 \x01(\v2\".termx.cloud.v1.KickPresenceTargetH\x00R\bpresence\x12L\n" +
 	"\fcloud_device\x18\x02 \x01(\v2'.termx.cloud.v1.RevokeCloudDeviceTargetH\x00R\vcloudDevice\x12M\n" +
 	"\fpeer_session\x18\x03 \x01(\v2(.termx.cloud.v1.ManagedPeerSessionTargetH\x00R\vpeerSession\x12U\n" +
 	"\x0fterminal_access\x18\x04 \x01(\v2*.termx.cloud.v1.RevokeTerminalAccessTargetH\x00R\x0eterminalAccess\x12Q\n" +
-	"\x11relay_allocations\x18\x05 \x01(\v2\".termx.cloud.v1.RelayControlTargetH\x00R\x10relayAllocationsB\b\n" +
+	"\x11relay_allocations\x18\x05 \x01(\v2\".termx.cloud.v1.RelayControlTargetH\x00R\x10relayAllocations\x12^\n" +
+	"\x14assignment_migration\x18\x06 \x01(\v2).termx.cloud.v1.AssignmentMigrationTargetH\x00R\x13assignmentMigrationB\b\n" +
 	"\x06target\"\x99\x04\n" +
 	" ManagementCommandChildProjection\x12(\n" +
 	"\x10child_command_id\x18\x01 \x01(\tR\x0echildCommandId\x12\"\n" +
@@ -3346,14 +3486,15 @@ const file_cloudpb_cloud_management_proto_rawDesc = "" +
 	"!MANAGEMENT_ACTOR_KIND_UNSPECIFIED\x10\x00\x12'\n" +
 	"#MANAGEMENT_ACTOR_KIND_ACCOUNT_OWNER\x10\x01\x12+\n" +
 	"'MANAGEMENT_ACTOR_KIND_OPERATOR_READONLY\x10\x02\x12(\n" +
-	"$MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN\x10\x03*\xbd\x02\n" +
+	"$MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN\x10\x03*\xed\x02\n" +
 	"\x15ManagementCommandKind\x12'\n" +
 	"#MANAGEMENT_COMMAND_KIND_UNSPECIFIED\x10\x00\x12)\n" +
 	"%MANAGEMENT_COMMAND_KIND_KICK_PRESENCE\x10\x01\x12/\n" +
 	"+MANAGEMENT_COMMAND_KIND_REVOKE_CLOUD_DEVICE\x10\x02\x126\n" +
 	"2MANAGEMENT_COMMAND_KIND_CLOSE_MANAGED_PEER_SESSION\x10\x03\x122\n" +
 	".MANAGEMENT_COMMAND_KIND_REVOKE_TERMINAL_ACCESS\x10\x04\x123\n" +
-	"/MANAGEMENT_COMMAND_KIND_CLOSE_RELAY_ALLOCATIONS\x10\x05*\xbe\x01\n" +
+	"/MANAGEMENT_COMMAND_KIND_CLOSE_RELAY_ALLOCATIONS\x10\x05\x12.\n" +
+	"*MANAGEMENT_COMMAND_KIND_MIGRATE_ASSIGNMENT\x10\x06*\xbe\x01\n" +
 	"\x16CommandAuthorityResult\x12(\n" +
 	"$COMMAND_AUTHORITY_RESULT_UNSPECIFIED\x10\x00\x12+\n" +
 	"'COMMAND_AUTHORITY_RESULT_NOT_APPLICABLE\x10\x01\x12&\n" +
@@ -3411,7 +3552,7 @@ func file_cloudpb_cloud_management_proto_rawDescGZIP() []byte {
 }
 
 var file_cloudpb_cloud_management_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_cloudpb_cloud_management_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_cloudpb_cloud_management_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
 var file_cloudpb_cloud_management_proto_goTypes = []any{
 	(ManagementActorKind)(0),                       // 0: termx.cloud.v1.ManagementActorKind
 	(ManagementCommandKind)(0),                     // 1: termx.cloud.v1.ManagementCommandKind
@@ -3449,40 +3590,41 @@ var file_cloudpb_cloud_management_proto_goTypes = []any{
 	(*ListDaemonTerminalAccessRequest)(nil),        // 33: termx.cloud.v1.ListDaemonTerminalAccessRequest
 	(*ListDaemonTerminalAccessResponse)(nil),       // 34: termx.cloud.v1.ListDaemonTerminalAccessResponse
 	(*RevokeCloudDeviceTarget)(nil),                // 35: termx.cloud.v1.RevokeCloudDeviceTarget
-	(*ManagementCommandTarget)(nil),                // 36: termx.cloud.v1.ManagementCommandTarget
-	(*ManagementCommandChildProjection)(nil),       // 37: termx.cloud.v1.ManagementCommandChildProjection
-	(*ManagementCommandProjection)(nil),            // 38: termx.cloud.v1.ManagementCommandProjection
-	(*CreateManagementCommandRequest)(nil),         // 39: termx.cloud.v1.CreateManagementCommandRequest
-	(*CreateManagementCommandResponse)(nil),        // 40: termx.cloud.v1.CreateManagementCommandResponse
-	(*GetManagementCommandRequest)(nil),            // 41: termx.cloud.v1.GetManagementCommandRequest
-	(*GetManagementCommandResponse)(nil),           // 42: termx.cloud.v1.GetManagementCommandResponse
-	(*ListManagementCommandsRequest)(nil),          // 43: termx.cloud.v1.ListManagementCommandsRequest
-	(*ListManagementCommandsResponse)(nil),         // 44: termx.cloud.v1.ListManagementCommandsResponse
-	(*HubFleetProjection)(nil),                     // 45: termx.cloud.v1.HubFleetProjection
-	(*ListHubFleetRequest)(nil),                    // 46: termx.cloud.v1.ListHubFleetRequest
-	(*ListHubFleetResponse)(nil),                   // 47: termx.cloud.v1.ListHubFleetResponse
-	(*GetHubStatusRequest)(nil),                    // 48: termx.cloud.v1.GetHubStatusRequest
-	(*GetHubStatusResponse)(nil),                   // 49: termx.cloud.v1.GetHubStatusResponse
-	(*AccountProjection)(nil),                      // 50: termx.cloud.v1.AccountProjection
-	(*SubscriptionProjection)(nil),                 // 51: termx.cloud.v1.SubscriptionProjection
-	(*EntitlementProjection)(nil),                  // 52: termx.cloud.v1.EntitlementProjection
-	(*RelayQuotaPeriod)(nil),                       // 53: termx.cloud.v1.RelayQuotaPeriod
-	(SubscriptionStatus)(0),                        // 54: termx.cloud.v1.SubscriptionStatus
-	(*GetAccountCommerceResponse)(nil),             // 55: termx.cloud.v1.GetAccountCommerceResponse
-	(*GetAccountRelayQuotaResponse)(nil),           // 56: termx.cloud.v1.GetAccountRelayQuotaResponse
-	(SubscriptionTransitionKind)(0),                // 57: termx.cloud.v1.SubscriptionTransitionKind
-	(*TransitionSubscriptionResponse)(nil),         // 58: termx.cloud.v1.TransitionSubscriptionResponse
-	(ManagedDeviceKind)(0),                         // 59: termx.cloud.v1.ManagedDeviceKind
-	(*PresenceProjection)(nil),                     // 60: termx.cloud.v1.PresenceProjection
-	(Freshness)(0),                                 // 61: termx.cloud.v1.Freshness
-	(*ManagedPeerSessionProjection)(nil),           // 62: termx.cloud.v1.ManagedPeerSessionProjection
-	(*ManagedPeerSessionTarget)(nil),               // 63: termx.cloud.v1.ManagedPeerSessionTarget
-	(TerminalAccessState)(0),                       // 64: termx.cloud.v1.TerminalAccessState
-	(*TerminalAccessProjection)(nil),               // 65: termx.cloud.v1.TerminalAccessProjection
-	(*KickPresenceTarget)(nil),                     // 66: termx.cloud.v1.KickPresenceTarget
-	(*RevokeTerminalAccessTarget)(nil),             // 67: termx.cloud.v1.RevokeTerminalAccessTarget
-	(*RelayControlTarget)(nil),                     // 68: termx.cloud.v1.RelayControlTarget
-	(*EdgeDeploymentMetadata)(nil),                 // 69: termx.cloud.v1.EdgeDeploymentMetadata
+	(*AssignmentMigrationTarget)(nil),              // 36: termx.cloud.v1.AssignmentMigrationTarget
+	(*ManagementCommandTarget)(nil),                // 37: termx.cloud.v1.ManagementCommandTarget
+	(*ManagementCommandChildProjection)(nil),       // 38: termx.cloud.v1.ManagementCommandChildProjection
+	(*ManagementCommandProjection)(nil),            // 39: termx.cloud.v1.ManagementCommandProjection
+	(*CreateManagementCommandRequest)(nil),         // 40: termx.cloud.v1.CreateManagementCommandRequest
+	(*CreateManagementCommandResponse)(nil),        // 41: termx.cloud.v1.CreateManagementCommandResponse
+	(*GetManagementCommandRequest)(nil),            // 42: termx.cloud.v1.GetManagementCommandRequest
+	(*GetManagementCommandResponse)(nil),           // 43: termx.cloud.v1.GetManagementCommandResponse
+	(*ListManagementCommandsRequest)(nil),          // 44: termx.cloud.v1.ListManagementCommandsRequest
+	(*ListManagementCommandsResponse)(nil),         // 45: termx.cloud.v1.ListManagementCommandsResponse
+	(*HubFleetProjection)(nil),                     // 46: termx.cloud.v1.HubFleetProjection
+	(*ListHubFleetRequest)(nil),                    // 47: termx.cloud.v1.ListHubFleetRequest
+	(*ListHubFleetResponse)(nil),                   // 48: termx.cloud.v1.ListHubFleetResponse
+	(*GetHubStatusRequest)(nil),                    // 49: termx.cloud.v1.GetHubStatusRequest
+	(*GetHubStatusResponse)(nil),                   // 50: termx.cloud.v1.GetHubStatusResponse
+	(*AccountProjection)(nil),                      // 51: termx.cloud.v1.AccountProjection
+	(*SubscriptionProjection)(nil),                 // 52: termx.cloud.v1.SubscriptionProjection
+	(*EntitlementProjection)(nil),                  // 53: termx.cloud.v1.EntitlementProjection
+	(*RelayQuotaPeriod)(nil),                       // 54: termx.cloud.v1.RelayQuotaPeriod
+	(SubscriptionStatus)(0),                        // 55: termx.cloud.v1.SubscriptionStatus
+	(*GetAccountCommerceResponse)(nil),             // 56: termx.cloud.v1.GetAccountCommerceResponse
+	(*GetAccountRelayQuotaResponse)(nil),           // 57: termx.cloud.v1.GetAccountRelayQuotaResponse
+	(SubscriptionTransitionKind)(0),                // 58: termx.cloud.v1.SubscriptionTransitionKind
+	(*TransitionSubscriptionResponse)(nil),         // 59: termx.cloud.v1.TransitionSubscriptionResponse
+	(ManagedDeviceKind)(0),                         // 60: termx.cloud.v1.ManagedDeviceKind
+	(*PresenceProjection)(nil),                     // 61: termx.cloud.v1.PresenceProjection
+	(Freshness)(0),                                 // 62: termx.cloud.v1.Freshness
+	(*ManagedPeerSessionProjection)(nil),           // 63: termx.cloud.v1.ManagedPeerSessionProjection
+	(*ManagedPeerSessionTarget)(nil),               // 64: termx.cloud.v1.ManagedPeerSessionTarget
+	(TerminalAccessState)(0),                       // 65: termx.cloud.v1.TerminalAccessState
+	(*TerminalAccessProjection)(nil),               // 66: termx.cloud.v1.TerminalAccessProjection
+	(*KickPresenceTarget)(nil),                     // 67: termx.cloud.v1.KickPresenceTarget
+	(*RevokeTerminalAccessTarget)(nil),             // 68: termx.cloud.v1.RevokeTerminalAccessTarget
+	(*RelayControlTarget)(nil),                     // 69: termx.cloud.v1.RelayControlTarget
+	(*EdgeDeploymentMetadata)(nil),                 // 70: termx.cloud.v1.EdgeDeploymentMetadata
 }
 var file_cloudpb_cloud_management_proto_depIdxs = []int32{
 	7,  // 0: termx.cloud.v1.PageRequest.cursor:type_name -> termx.cloud.v1.PageCursor
@@ -3491,78 +3633,79 @@ var file_cloudpb_cloud_management_proto_depIdxs = []int32{
 	6,  // 3: termx.cloud.v1.ManagementErrorDetail.code:type_name -> termx.cloud.v1.ManagementErrorCode
 	0,  // 4: termx.cloud.v1.OperatorSessionProjection.actor_kind:type_name -> termx.cloud.v1.ManagementActorKind
 	15, // 5: termx.cloud.v1.OperatorLoginResponse.session:type_name -> termx.cloud.v1.OperatorSessionProjection
-	50, // 6: termx.cloud.v1.OperatorAccountSummary.account:type_name -> termx.cloud.v1.AccountProjection
-	51, // 7: termx.cloud.v1.OperatorAccountSummary.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
-	52, // 8: termx.cloud.v1.OperatorAccountSummary.entitlement:type_name -> termx.cloud.v1.EntitlementProjection
-	53, // 9: termx.cloud.v1.OperatorAccountSummary.relay_quota:type_name -> termx.cloud.v1.RelayQuotaPeriod
-	54, // 10: termx.cloud.v1.ListOperatorAccountsRequest.subscription_status:type_name -> termx.cloud.v1.SubscriptionStatus
+	51, // 6: termx.cloud.v1.OperatorAccountSummary.account:type_name -> termx.cloud.v1.AccountProjection
+	52, // 7: termx.cloud.v1.OperatorAccountSummary.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
+	53, // 8: termx.cloud.v1.OperatorAccountSummary.entitlement:type_name -> termx.cloud.v1.EntitlementProjection
+	54, // 9: termx.cloud.v1.OperatorAccountSummary.relay_quota:type_name -> termx.cloud.v1.RelayQuotaPeriod
+	55, // 10: termx.cloud.v1.ListOperatorAccountsRequest.subscription_status:type_name -> termx.cloud.v1.SubscriptionStatus
 	8,  // 11: termx.cloud.v1.ListOperatorAccountsRequest.page:type_name -> termx.cloud.v1.PageRequest
 	19, // 12: termx.cloud.v1.ListOperatorAccountsResponse.accounts:type_name -> termx.cloud.v1.OperatorAccountSummary
 	9,  // 13: termx.cloud.v1.ListOperatorAccountsResponse.page:type_name -> termx.cloud.v1.PageResponse
-	55, // 14: termx.cloud.v1.GetOperatorAccountResponse.commerce:type_name -> termx.cloud.v1.GetAccountCommerceResponse
-	56, // 15: termx.cloud.v1.GetOperatorAccountResponse.relay_quota:type_name -> termx.cloud.v1.GetAccountRelayQuotaResponse
+	56, // 14: termx.cloud.v1.GetOperatorAccountResponse.commerce:type_name -> termx.cloud.v1.GetAccountCommerceResponse
+	57, // 15: termx.cloud.v1.GetOperatorAccountResponse.relay_quota:type_name -> termx.cloud.v1.GetAccountRelayQuotaResponse
 	28, // 16: termx.cloud.v1.GetOperatorAccountResponse.devices:type_name -> termx.cloud.v1.ListAccountDevicesResponse
 	30, // 17: termx.cloud.v1.GetOperatorAccountResponse.topology:type_name -> termx.cloud.v1.ListAccountTopologyResponse
-	38, // 18: termx.cloud.v1.GetOperatorAccountResponse.commands:type_name -> termx.cloud.v1.ManagementCommandProjection
-	57, // 19: termx.cloud.v1.OperatorTransitionSubscriptionRequest.transition:type_name -> termx.cloud.v1.SubscriptionTransitionKind
-	58, // 20: termx.cloud.v1.OperatorTransitionSubscriptionResponse.result:type_name -> termx.cloud.v1.TransitionSubscriptionResponse
-	59, // 21: termx.cloud.v1.AccountDeviceProjection.device_kind:type_name -> termx.cloud.v1.ManagedDeviceKind
-	60, // 22: termx.cloud.v1.AccountDeviceProjection.presence:type_name -> termx.cloud.v1.PresenceProjection
-	59, // 23: termx.cloud.v1.ListAccountDevicesRequest.device_kind:type_name -> termx.cloud.v1.ManagedDeviceKind
+	39, // 18: termx.cloud.v1.GetOperatorAccountResponse.commands:type_name -> termx.cloud.v1.ManagementCommandProjection
+	58, // 19: termx.cloud.v1.OperatorTransitionSubscriptionRequest.transition:type_name -> termx.cloud.v1.SubscriptionTransitionKind
+	59, // 20: termx.cloud.v1.OperatorTransitionSubscriptionResponse.result:type_name -> termx.cloud.v1.TransitionSubscriptionResponse
+	60, // 21: termx.cloud.v1.AccountDeviceProjection.device_kind:type_name -> termx.cloud.v1.ManagedDeviceKind
+	61, // 22: termx.cloud.v1.AccountDeviceProjection.presence:type_name -> termx.cloud.v1.PresenceProjection
+	60, // 23: termx.cloud.v1.ListAccountDevicesRequest.device_kind:type_name -> termx.cloud.v1.ManagedDeviceKind
 	8,  // 24: termx.cloud.v1.ListAccountDevicesRequest.page:type_name -> termx.cloud.v1.PageRequest
 	26, // 25: termx.cloud.v1.ListAccountDevicesResponse.devices:type_name -> termx.cloud.v1.AccountDeviceProjection
 	9,  // 26: termx.cloud.v1.ListAccountDevicesResponse.page:type_name -> termx.cloud.v1.PageResponse
-	61, // 27: termx.cloud.v1.ListAccountTopologyRequest.freshness:type_name -> termx.cloud.v1.Freshness
+	62, // 27: termx.cloud.v1.ListAccountTopologyRequest.freshness:type_name -> termx.cloud.v1.Freshness
 	8,  // 28: termx.cloud.v1.ListAccountTopologyRequest.page:type_name -> termx.cloud.v1.PageRequest
-	60, // 29: termx.cloud.v1.ListAccountTopologyResponse.presences:type_name -> termx.cloud.v1.PresenceProjection
-	62, // 30: termx.cloud.v1.ListAccountTopologyResponse.peer_sessions:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
+	61, // 29: termx.cloud.v1.ListAccountTopologyResponse.presences:type_name -> termx.cloud.v1.PresenceProjection
+	63, // 30: termx.cloud.v1.ListAccountTopologyResponse.peer_sessions:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
 	9,  // 31: termx.cloud.v1.ListAccountTopologyResponse.page:type_name -> termx.cloud.v1.PageResponse
-	63, // 32: termx.cloud.v1.GetManagedSessionRequest.target:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
-	62, // 33: termx.cloud.v1.GetManagedSessionResponse.session:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
-	64, // 34: termx.cloud.v1.ListDaemonTerminalAccessRequest.state:type_name -> termx.cloud.v1.TerminalAccessState
+	64, // 32: termx.cloud.v1.GetManagedSessionRequest.target:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
+	63, // 33: termx.cloud.v1.GetManagedSessionResponse.session:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
+	65, // 34: termx.cloud.v1.ListDaemonTerminalAccessRequest.state:type_name -> termx.cloud.v1.TerminalAccessState
 	8,  // 35: termx.cloud.v1.ListDaemonTerminalAccessRequest.page:type_name -> termx.cloud.v1.PageRequest
-	65, // 36: termx.cloud.v1.ListDaemonTerminalAccessResponse.accesses:type_name -> termx.cloud.v1.TerminalAccessProjection
-	61, // 37: termx.cloud.v1.ListDaemonTerminalAccessResponse.freshness:type_name -> termx.cloud.v1.Freshness
+	66, // 36: termx.cloud.v1.ListDaemonTerminalAccessResponse.accesses:type_name -> termx.cloud.v1.TerminalAccessProjection
+	62, // 37: termx.cloud.v1.ListDaemonTerminalAccessResponse.freshness:type_name -> termx.cloud.v1.Freshness
 	9,  // 38: termx.cloud.v1.ListDaemonTerminalAccessResponse.page:type_name -> termx.cloud.v1.PageResponse
-	66, // 39: termx.cloud.v1.ManagementCommandTarget.presence:type_name -> termx.cloud.v1.KickPresenceTarget
+	67, // 39: termx.cloud.v1.ManagementCommandTarget.presence:type_name -> termx.cloud.v1.KickPresenceTarget
 	35, // 40: termx.cloud.v1.ManagementCommandTarget.cloud_device:type_name -> termx.cloud.v1.RevokeCloudDeviceTarget
-	63, // 41: termx.cloud.v1.ManagementCommandTarget.peer_session:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
-	67, // 42: termx.cloud.v1.ManagementCommandTarget.terminal_access:type_name -> termx.cloud.v1.RevokeTerminalAccessTarget
-	68, // 43: termx.cloud.v1.ManagementCommandTarget.relay_allocations:type_name -> termx.cloud.v1.RelayControlTarget
-	36, // 44: termx.cloud.v1.ManagementCommandChildProjection.target:type_name -> termx.cloud.v1.ManagementCommandTarget
-	3,  // 45: termx.cloud.v1.ManagementCommandChildProjection.delivery_state:type_name -> termx.cloud.v1.CommandDeliveryState
-	4,  // 46: termx.cloud.v1.ManagementCommandChildProjection.execution_state:type_name -> termx.cloud.v1.CommandExecutionState
-	5,  // 47: termx.cloud.v1.ManagementCommandChildProjection.observed_effect:type_name -> termx.cloud.v1.CommandObservedEffect
-	11, // 48: termx.cloud.v1.ManagementCommandChildProjection.last_error:type_name -> termx.cloud.v1.ManagementErrorDetail
-	10, // 49: termx.cloud.v1.ManagementCommandProjection.actor:type_name -> termx.cloud.v1.ManagementActorProjection
-	1,  // 50: termx.cloud.v1.ManagementCommandProjection.command_kind:type_name -> termx.cloud.v1.ManagementCommandKind
-	36, // 51: termx.cloud.v1.ManagementCommandProjection.target:type_name -> termx.cloud.v1.ManagementCommandTarget
-	2,  // 52: termx.cloud.v1.ManagementCommandProjection.authority_result:type_name -> termx.cloud.v1.CommandAuthorityResult
-	3,  // 53: termx.cloud.v1.ManagementCommandProjection.delivery_state:type_name -> termx.cloud.v1.CommandDeliveryState
-	4,  // 54: termx.cloud.v1.ManagementCommandProjection.execution_state:type_name -> termx.cloud.v1.CommandExecutionState
-	5,  // 55: termx.cloud.v1.ManagementCommandProjection.observed_effect:type_name -> termx.cloud.v1.CommandObservedEffect
-	37, // 56: termx.cloud.v1.ManagementCommandProjection.children:type_name -> termx.cloud.v1.ManagementCommandChildProjection
-	1,  // 57: termx.cloud.v1.CreateManagementCommandRequest.command_kind:type_name -> termx.cloud.v1.ManagementCommandKind
-	36, // 58: termx.cloud.v1.CreateManagementCommandRequest.target:type_name -> termx.cloud.v1.ManagementCommandTarget
-	38, // 59: termx.cloud.v1.CreateManagementCommandResponse.command:type_name -> termx.cloud.v1.ManagementCommandProjection
-	38, // 60: termx.cloud.v1.GetManagementCommandResponse.command:type_name -> termx.cloud.v1.ManagementCommandProjection
-	1,  // 61: termx.cloud.v1.ListManagementCommandsRequest.command_kind:type_name -> termx.cloud.v1.ManagementCommandKind
-	4,  // 62: termx.cloud.v1.ListManagementCommandsRequest.execution_state:type_name -> termx.cloud.v1.CommandExecutionState
-	8,  // 63: termx.cloud.v1.ListManagementCommandsRequest.page:type_name -> termx.cloud.v1.PageRequest
-	38, // 64: termx.cloud.v1.ListManagementCommandsResponse.commands:type_name -> termx.cloud.v1.ManagementCommandProjection
-	9,  // 65: termx.cloud.v1.ListManagementCommandsResponse.page:type_name -> termx.cloud.v1.PageResponse
-	69, // 66: termx.cloud.v1.HubFleetProjection.deployment:type_name -> termx.cloud.v1.EdgeDeploymentMetadata
-	61, // 67: termx.cloud.v1.HubFleetProjection.freshness:type_name -> termx.cloud.v1.Freshness
-	61, // 68: termx.cloud.v1.ListHubFleetRequest.freshness:type_name -> termx.cloud.v1.Freshness
-	8,  // 69: termx.cloud.v1.ListHubFleetRequest.page:type_name -> termx.cloud.v1.PageRequest
-	45, // 70: termx.cloud.v1.ListHubFleetResponse.hubs:type_name -> termx.cloud.v1.HubFleetProjection
-	9,  // 71: termx.cloud.v1.ListHubFleetResponse.page:type_name -> termx.cloud.v1.PageResponse
-	45, // 72: termx.cloud.v1.GetHubStatusResponse.hub:type_name -> termx.cloud.v1.HubFleetProjection
-	73, // [73:73] is the sub-list for method output_type
-	73, // [73:73] is the sub-list for method input_type
-	73, // [73:73] is the sub-list for extension type_name
-	73, // [73:73] is the sub-list for extension extendee
-	0,  // [0:73] is the sub-list for field type_name
+	64, // 41: termx.cloud.v1.ManagementCommandTarget.peer_session:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
+	68, // 42: termx.cloud.v1.ManagementCommandTarget.terminal_access:type_name -> termx.cloud.v1.RevokeTerminalAccessTarget
+	69, // 43: termx.cloud.v1.ManagementCommandTarget.relay_allocations:type_name -> termx.cloud.v1.RelayControlTarget
+	36, // 44: termx.cloud.v1.ManagementCommandTarget.assignment_migration:type_name -> termx.cloud.v1.AssignmentMigrationTarget
+	37, // 45: termx.cloud.v1.ManagementCommandChildProjection.target:type_name -> termx.cloud.v1.ManagementCommandTarget
+	3,  // 46: termx.cloud.v1.ManagementCommandChildProjection.delivery_state:type_name -> termx.cloud.v1.CommandDeliveryState
+	4,  // 47: termx.cloud.v1.ManagementCommandChildProjection.execution_state:type_name -> termx.cloud.v1.CommandExecutionState
+	5,  // 48: termx.cloud.v1.ManagementCommandChildProjection.observed_effect:type_name -> termx.cloud.v1.CommandObservedEffect
+	11, // 49: termx.cloud.v1.ManagementCommandChildProjection.last_error:type_name -> termx.cloud.v1.ManagementErrorDetail
+	10, // 50: termx.cloud.v1.ManagementCommandProjection.actor:type_name -> termx.cloud.v1.ManagementActorProjection
+	1,  // 51: termx.cloud.v1.ManagementCommandProjection.command_kind:type_name -> termx.cloud.v1.ManagementCommandKind
+	37, // 52: termx.cloud.v1.ManagementCommandProjection.target:type_name -> termx.cloud.v1.ManagementCommandTarget
+	2,  // 53: termx.cloud.v1.ManagementCommandProjection.authority_result:type_name -> termx.cloud.v1.CommandAuthorityResult
+	3,  // 54: termx.cloud.v1.ManagementCommandProjection.delivery_state:type_name -> termx.cloud.v1.CommandDeliveryState
+	4,  // 55: termx.cloud.v1.ManagementCommandProjection.execution_state:type_name -> termx.cloud.v1.CommandExecutionState
+	5,  // 56: termx.cloud.v1.ManagementCommandProjection.observed_effect:type_name -> termx.cloud.v1.CommandObservedEffect
+	38, // 57: termx.cloud.v1.ManagementCommandProjection.children:type_name -> termx.cloud.v1.ManagementCommandChildProjection
+	1,  // 58: termx.cloud.v1.CreateManagementCommandRequest.command_kind:type_name -> termx.cloud.v1.ManagementCommandKind
+	37, // 59: termx.cloud.v1.CreateManagementCommandRequest.target:type_name -> termx.cloud.v1.ManagementCommandTarget
+	39, // 60: termx.cloud.v1.CreateManagementCommandResponse.command:type_name -> termx.cloud.v1.ManagementCommandProjection
+	39, // 61: termx.cloud.v1.GetManagementCommandResponse.command:type_name -> termx.cloud.v1.ManagementCommandProjection
+	1,  // 62: termx.cloud.v1.ListManagementCommandsRequest.command_kind:type_name -> termx.cloud.v1.ManagementCommandKind
+	4,  // 63: termx.cloud.v1.ListManagementCommandsRequest.execution_state:type_name -> termx.cloud.v1.CommandExecutionState
+	8,  // 64: termx.cloud.v1.ListManagementCommandsRequest.page:type_name -> termx.cloud.v1.PageRequest
+	39, // 65: termx.cloud.v1.ListManagementCommandsResponse.commands:type_name -> termx.cloud.v1.ManagementCommandProjection
+	9,  // 66: termx.cloud.v1.ListManagementCommandsResponse.page:type_name -> termx.cloud.v1.PageResponse
+	70, // 67: termx.cloud.v1.HubFleetProjection.deployment:type_name -> termx.cloud.v1.EdgeDeploymentMetadata
+	62, // 68: termx.cloud.v1.HubFleetProjection.freshness:type_name -> termx.cloud.v1.Freshness
+	62, // 69: termx.cloud.v1.ListHubFleetRequest.freshness:type_name -> termx.cloud.v1.Freshness
+	8,  // 70: termx.cloud.v1.ListHubFleetRequest.page:type_name -> termx.cloud.v1.PageRequest
+	46, // 71: termx.cloud.v1.ListHubFleetResponse.hubs:type_name -> termx.cloud.v1.HubFleetProjection
+	9,  // 72: termx.cloud.v1.ListHubFleetResponse.page:type_name -> termx.cloud.v1.PageResponse
+	46, // 73: termx.cloud.v1.GetHubStatusResponse.hub:type_name -> termx.cloud.v1.HubFleetProjection
+	74, // [74:74] is the sub-list for method output_type
+	74, // [74:74] is the sub-list for method input_type
+	74, // [74:74] is the sub-list for extension type_name
+	74, // [74:74] is the sub-list for extension extendee
+	0,  // [0:74] is the sub-list for field type_name
 }
 
 func init() { file_cloudpb_cloud_management_proto_init() }
@@ -3573,12 +3716,13 @@ func file_cloudpb_cloud_management_proto_init() {
 	file_cloudpb_cloud_hub_control_proto_init()
 	file_cloudpb_cloud_product_proto_init()
 	file_cloudpb_cloud_topology_proto_init()
-	file_cloudpb_cloud_management_proto_msgTypes[29].OneofWrappers = []any{
+	file_cloudpb_cloud_management_proto_msgTypes[30].OneofWrappers = []any{
 		(*ManagementCommandTarget_Presence)(nil),
 		(*ManagementCommandTarget_CloudDevice)(nil),
 		(*ManagementCommandTarget_PeerSession)(nil),
 		(*ManagementCommandTarget_TerminalAccess)(nil),
 		(*ManagementCommandTarget_RelayAllocations)(nil),
+		(*ManagementCommandTarget_AssignmentMigration)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -3586,7 +3730,7 @@ func file_cloudpb_cloud_management_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloudpb_cloud_management_proto_rawDesc), len(file_cloudpb_cloud_management_proto_rawDesc)),
 			NumEnums:      7,
-			NumMessages:   43,
+			NumMessages:   44,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

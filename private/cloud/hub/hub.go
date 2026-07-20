@@ -215,9 +215,15 @@ func (service *Service) FenceAssignment(deviceID string, assignmentEpoch uint64)
 	}
 	service.mu.Lock()
 	defer service.mu.Unlock()
+	service.fenceAssignmentLocked(deviceID, assignmentEpoch)
+}
+
+func (service *Service) fenceAssignmentLocked(deviceID string, assignmentEpoch uint64) bool {
+	changed := false
 	service.edgeAuthorizer.ReleaseManagedP2PForAssignment(deviceID, assignmentEpoch)
 	for sessionID, challenge := range service.presenceChallenges {
 		if challenge.deviceID == deviceID && challenge.assignmentEpoch == assignmentEpoch {
+			changed = true
 			clear(challenge.challenge.Value)
 			clear(challenge.publicKey)
 			delete(service.presenceChallenges, sessionID)
@@ -225,10 +231,12 @@ func (service *Service) FenceAssignment(deviceID string, assignmentEpoch uint64)
 	}
 	presence := service.presences[deviceID]
 	if presence == nil || presence.assignmentEpoch != assignmentEpoch {
-		return
+		return changed
 	}
+	changed = true
 	service.closePresenceLocked(presence)
 	delete(service.presences, deviceID)
+	return changed
 }
 
 func (service *Service) validateOffer(accountID, clientDeviceID, targetDeviceID, managedSessionID, signalingSessionID, sdp string, candidates []Candidate, routePreference RoutePreference, relayOnly bool) error {

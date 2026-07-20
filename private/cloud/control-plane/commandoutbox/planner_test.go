@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/private/cloud/control-plane/commandoutbox"
+	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
 	"github.com/lozzow/termx/private/cloud/control-plane/relayquota"
 	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
 	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
@@ -139,12 +140,65 @@ func TestPlannerRelayCloseUsesPersistentReservationBinding(t *testing.T) {
 	}
 }
 
+func TestPlannerCanonicalizesAssignmentMigrationAndReplaysUserTarget(t *testing.T) {
+	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	outbox, _ := commandoutbox.New(store)
+	source := &migrationSource{
+		assignment: hubregistry.Assignment{Value: &cloudpb.HubAssignment{DaemonDeviceId: "daemon-1", AccountId: "account-1", HubId: "hub-a", AssignmentEpoch: 4, NotBeforeUnixMillis: 1, ExpiresAtUnixMillis: time.Date(2026, 7, 21, 18, 0, 0, 0, time.UTC).UnixMilli()}},
+		deployments: map[string]hubregistry.Deployment{
+			"hub-a": {Enabled: true, ControlGeneration: 7},
+			"hub-b": {Enabled: true, ControlGeneration: 3},
+		},
+	}
+	planner, _ := commandoutbox.NewPlanner(outbox, &plannerSource{}, nil, bytes.NewReader(make([]byte, 72)), nil, source)
+	now := time.Date(2026, 7, 21, 17, 0, 0, 0, time.UTC)
+	requestTarget := &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_AssignmentMigration{AssignmentMigration: &cloudpb.AssignmentMigrationTarget{DaemonDeviceId: "daemon-1", TargetHubId: "hub-b"}}}
+	request := &cloudpb.CreateManagementCommandRequest{AccountId: "account-1", CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_MIGRATE_ASSIGNMENT, Target: requestTarget, IdempotencyKey: "move-daemon-1"}
+	actor := &cloudpb.ManagementActorProjection{ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN, ActorId: "operator-1"}
+	created, inserted, err := planner.Create(context.Background(), request, actor, now)
+	if err != nil || !inserted || len(created.GetChildren()) != 1 {
+		t.Fatalf("migration create = (%v, %v, %v)", created, inserted, err)
+	}
+	target := created.GetTarget().GetAssignmentMigration()
+	if target.GetMigrationId() == "" || target.GetSourceHubId() != "hub-a" || target.GetSourceAssignmentEpoch() != 4 || target.GetSourceControlGeneration() != 7 || target.GetTargetHubId() != "hub-b" || target.GetTargetAssignmentEpoch() != 5 {
+		t.Fatalf("canonical migration target = %v", target)
+	}
+	if child := created.GetChildren()[0]; child.GetTargetHubId() != "hub-a" || !proto.Equal(child.GetTarget(), created.GetTarget()) {
+		t.Fatalf("migration child = %v", child)
+	}
+	replayed, inserted, err := planner.Create(context.Background(), request, actor, now.Add(time.Second))
+	if err != nil || inserted || replayed.GetCommandId() != created.GetCommandId() {
+		t.Fatalf("migration replay = (%v, %v, %v)", replayed, inserted, err)
+	}
+}
+
 type plannerSource struct {
 	device   cloudtopology.DeviceOwnership
 	presence *cloudpb.PresenceProjection
 	session  cloudtopology.StoredPeerSession
 	sessions []cloudtopology.StoredPeerSession
 	terminal cloudtopology.StoredTerminalAccess
+}
+
+type migrationSource struct {
+	assignment  hubregistry.Assignment
+	deployments map[string]hubregistry.Deployment
+}
+
+func (source *migrationSource) Assignment(context.Context, string) (hubregistry.Assignment, error) {
+	return source.assignment, nil
+}
+
+func (source *migrationSource) Deployment(_ context.Context, hubID string) (hubregistry.Deployment, error) {
+	deployment, ok := source.deployments[hubID]
+	if !ok {
+		return hubregistry.Deployment{}, hubregistry.ErrDeploymentNotFound
+	}
+	return deployment, nil
 }
 
 func (source *plannerSource) Device(context.Context, string) (cloudtopology.DeviceOwnership, error) {

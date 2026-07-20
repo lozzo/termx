@@ -2624,8 +2624,10 @@ type HubCommandResult struct {
 	ErrorCode                   string                   `protobuf:"bytes,5,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
 	CompletedAtUnixMillis       int64                    `protobuf:"varint,6,opt,name=completed_at_unix_millis,json=completedAtUnixMillis,proto3" json:"completed_at_unix_millis,omitempty"`
 	ResultingProjectionRevision uint64                   `protobuf:"varint,7,opt,name=resulting_projection_revision,json=resultingProjectionRevision,proto3" json:"resulting_projection_revision,omitempty"`
-	unknownFields               protoimpl.UnknownFields
-	sizeCache                   protoimpl.SizeCache
+	// execution_control_generation 固定命令首次产生副作用的精确 Hub generation；重连 replay 不改写。
+	ExecutionControlGeneration uint64 `protobuf:"varint,8,opt,name=execution_control_generation,json=executionControlGeneration,proto3" json:"execution_control_generation,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *HubCommandResult) Reset() {
@@ -2703,6 +2705,13 @@ func (x *HubCommandResult) GetCompletedAtUnixMillis() int64 {
 func (x *HubCommandResult) GetResultingProjectionRevision() uint64 {
 	if x != nil {
 		return x.ResultingProjectionRevision
+	}
+	return 0
+}
+
+func (x *HubCommandResult) GetExecutionControlGeneration() uint64 {
+	if x != nil {
+		return x.ExecutionControlGeneration
 	}
 	return 0
 }
@@ -4693,7 +4702,7 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	" \x01(\v2\x1f.termx.cloud.v1.FenceAssignmentH\x00R\x0ffenceAssignment\x12I\n" +
 	"\rkick_presence\x18\v \x01(\v2\".termx.cloud.v1.KickPresenceTargetH\x00R\fkickPresence\x12M\n" +
 	"\x0edaemon_command\x18\f \x01(\v2$.termx.cloud.v1.DaemonControlCommandH\x00R\rdaemonCommandB\b\n" +
-	"\x06target\"\xde\x02\n" +
+	"\x06target\"\xa0\x03\n" +
 	"\x10HubCommandResult\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x15\n" +
@@ -4704,7 +4713,8 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\n" +
 	"error_code\x18\x05 \x01(\tR\terrorCode\x127\n" +
 	"\x18completed_at_unix_millis\x18\x06 \x01(\x03R\x15completedAtUnixMillis\x12B\n" +
-	"\x1dresulting_projection_revision\x18\a \x01(\x04R\x1bresultingProjectionRevision\"\xd9\x05\n" +
+	"\x1dresulting_projection_revision\x18\a \x01(\x04R\x1bresultingProjectionRevision\x12@\n" +
+	"\x1cexecution_control_generation\x18\b \x01(\x04R\x1aexecutionControlGeneration\"\xd9\x05\n" +
 	"\x13DaemonCommandResult\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12(\n" +

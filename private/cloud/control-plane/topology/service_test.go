@@ -72,6 +72,21 @@ func TestTopologyDerivesAccountAndDegradesLostControlToUnknownStale(t *testing.T
 	if err := service.Ingest(ctx, conflict, now); !errors.Is(err, cloudtopology.ErrTopologyRejected) {
 		t.Fatalf("same revision digest conflict = %v", err)
 	}
+	replacementPresence := proto.Clone(presence).(*cloudpb.PresenceProjection)
+	replacementPresence.RegistryRevision = 2
+	replacementPresence.ObservedAtUnixMillis = now.Add(2 * time.Minute).UnixMilli()
+	replacementPresence.FreshUntilUnixMillis = now.Add(3 * time.Minute).UnixMilli()
+	replacement := signedTopologySnapshot("hub-1", 2, 2, now.Add(2*time.Minute), []*cloudpb.PresenceProjection{replacementPresence}, nil, nil)
+	if err := service.Ingest(ctx, replacement, now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	_, sessions, err := service.ListAccountTopology(ctx, "account-1", "daemon-1", "", cloudpb.Freshness_FRESHNESS_UNSPECIFIED, 10)
+	if err != nil || len(sessions) != 0 {
+		t.Fatalf("empty full snapshot did not remove old managed sessions: (%v, %v)", sessions, err)
+	}
+	if err := service.Ingest(ctx, snapshot, now.Add(3*time.Minute)); !errors.Is(err, cloudtopology.ErrTopologyRejected) {
+		t.Fatalf("stale control generation topology = %v", err)
+	}
 }
 
 func signedTopologySnapshot(hubID string, generation, revision uint64, observedAt time.Time, presences []*cloudpb.PresenceProjection, sessions []*cloudpb.ManagedPeerSessionProjection, accesses []*cloudpb.TerminalAccessInventorySnapshot) *cloudpb.HubTopologySnapshot {

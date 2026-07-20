@@ -220,9 +220,13 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		}
 	}
 	for _, assignment := range config.Assignments {
-		current, currentErr := registry.Assignment(context.Background(), assignment.GetDaemonDeviceId())
-		if currentErr == nil && equalAssignment(current.Value, assignment) {
+		_, currentErr := registry.Assignment(context.Background(), assignment.GetDaemonDeviceId())
+		if currentErr == nil {
 			continue
+		}
+		if !errors.Is(currentErr, hubregistry.ErrAssignmentConflict) {
+			_ = store.Close()
+			return nil, fmt.Errorf("load initial assignment %q: %w", assignment.GetDaemonDeviceId(), currentErr)
 		}
 		if _, err := registry.Assign(context.Background(), assignment, now); err != nil {
 			_ = store.Close()
@@ -236,7 +240,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	planner, err := commandoutbox.NewPlanner(outboxService, topologyService, store, nil, notifyPolicyChange)
+	planner, err := commandoutbox.NewPlanner(outboxService, topologyService, store, nil, notifyPolicyChange, registry)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -293,7 +297,17 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 			return nil, err
 		}
 	}
-	controlServer, err := hubcontrol.NewServer(hubcontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: publisher, Topology: topologyService, Results: outboxService, Clock: time.Now, ChallengeTTL: 30 * time.Second, EnvelopeTTL: 5 * time.Minute})
+	var runtime *Runtime
+	resultSink := &migrationResultSink{outbox: outboxService, refresh: func(projection *cloudpb.ManagementCommandProjection, completedAt time.Time) error {
+		migration := projection.GetTarget().GetAssignmentMigration()
+		for _, hubID := range []string{migration.GetSourceHubId(), migration.GetTargetHubId()} {
+			if err := runtime.publishHubPolicy(config, policyService, privateKey, hubID, completedAt); err != nil {
+				return err
+			}
+		}
+		return nil
+	}}
+	controlServer, err := hubcontrol.NewServer(hubcontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: publisher, Topology: topologyService, Results: resultSink, Clock: time.Now, ChallengeTTL: 30 * time.Second, EnvelopeTTL: 5 * time.Minute})
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -396,7 +410,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	runtime := &Runtime{store: store, publisher: publisher, relayPublisher: relayPublisher, registry: registry, topology: topologyService, outbox: outboxService, planner: planner, dispatcher: dispatcher, listeners: []net.Listener{publicListener, internalListener, operatorListener}, errors: make(chan error, 3), policyChanges: policyChanges, policyDone: policyDone}
+	runtime = &Runtime{store: store, publisher: publisher, relayPublisher: relayPublisher, registry: registry, topology: topologyService, outbox: outboxService, planner: planner, dispatcher: dispatcher, listeners: []net.Listener{publicListener, internalListener, operatorListener}, errors: make(chan error, 3), policyChanges: policyChanges, policyDone: policyDone}
 	runtime.servers = []*http.Server{{Handler: publicMux, ReadHeaderTimeout: 5 * time.Second}, {Handler: internalMux, ReadHeaderTimeout: 5 * time.Second}, {Handler: operatorMux, ReadHeaderTimeout: 5 * time.Second}}
 	for index := range runtime.servers {
 		server, listener := runtime.servers[index], runtime.listeners[index]
@@ -598,13 +612,6 @@ func (runtime *Runtime) publishFullWithRetry(full *cloudpb.FullProjectionSnapsho
 			return nil
 		}
 	}
-}
-
-func equalAssignment(left, right *cloudpb.HubAssignment) bool {
-	if left == nil || right == nil {
-		return false
-	}
-	return left.GetDaemonDeviceId() == right.GetDaemonDeviceId() && left.GetAccountId() == right.GetAccountId() && left.GetHubId() == right.GetHubId() && left.GetAssignmentEpoch() == right.GetAssignmentEpoch() && left.GetNotBeforeUnixMillis() == right.GetNotBeforeUnixMillis() && left.GetExpiresAtUnixMillis() == right.GetExpiresAtUnixMillis()
 }
 
 func listen(address string) (net.Listener, error) {

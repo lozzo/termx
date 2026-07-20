@@ -329,6 +329,8 @@ message HubCommandResult {
   string error_code = 5;
   int64 completed_at_unix_millis = 6;
   uint64 resulting_projection_revision = 7;
+  // execution_control_generation 固定命令首次产生副作用的精确 Hub generation；重连 replay 不改写。
+  uint64 execution_control_generation = 8;
 }
 
 // DaemonCommandResult 是 daemon 完整执行并等待资源结束后的独立 receipt。

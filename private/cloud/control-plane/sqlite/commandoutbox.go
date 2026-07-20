@@ -187,10 +187,37 @@ func (store *Store) ApplyCommandResult(ctx context.Context, next commandoutbox.R
 	if _, err := tx.ExecContext(ctx, `INSERT INTO management_command_results(child_command_id,result_kind,digest,result,created_at) VALUES(?,?,?,?,?)`, childID, resultKind, digest[:], append([]byte(nil), resultBody...), next.Projection.GetUpdatedAtUnixMillis()); err != nil {
 		return commandoutbox.Record{}, false, commandoutbox.ErrCommandConflict
 	}
+	if migration := commandMigrationTarget(next.Projection, childID); migration != nil && resultKind == "hub" {
+		result := &cloudpb.HubCommandResult{}
+		if err := proto.Unmarshal(resultBody, result); err != nil || result.GetHubId() != migration.GetSourceHubId() || result.GetExecutionControlGeneration() != migration.GetSourceControlGeneration() {
+			return commandoutbox.Record{}, false, commandoutbox.ErrCommandConflict
+		}
+		if result.GetResultCode() == cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED || result.GetResultCode() == cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_ALREADY_SATISFIED {
+			moved, err := tx.ExecContext(ctx, `UPDATE hub_assignments SET hub_id=?,assignment_epoch=?,not_before_unix_millis=?,expires_at_unix_millis=?,fence_satisfied=0,previous_hub_id=?,previous_epoch=?,updated_at=? WHERE daemon_device_id=? AND account_id=? AND hub_id=? AND assignment_epoch=?`, migration.GetTargetHubId(), migration.GetTargetAssignmentEpoch(), migration.GetTargetNotBeforeUnixMillis(), migration.GetTargetExpiresAtUnixMillis(), migration.GetSourceHubId(), migration.GetSourceAssignmentEpoch(), time.UnixMilli(result.GetCompletedAtUnixMillis()).UTC().Format(time.RFC3339Nano), migration.GetDaemonDeviceId(), next.Projection.GetAccountId(), migration.GetSourceHubId(), migration.GetSourceAssignmentEpoch())
+			if err != nil {
+				return commandoutbox.Record{}, false, err
+			}
+			if changed, _ := moved.RowsAffected(); changed != 1 {
+				return commandoutbox.Record{}, false, commandoutbox.ErrCommandConflict
+			}
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return commandoutbox.Record{}, false, err
 	}
 	return cloneCommandRecord(next), false, nil
+}
+
+func commandMigrationTarget(projection *cloudpb.ManagementCommandProjection, childID string) *cloudpb.AssignmentMigrationTarget {
+	if projection == nil || projection.GetCommandKind() != cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_MIGRATE_ASSIGNMENT {
+		return nil
+	}
+	for _, child := range projection.GetChildren() {
+		if child.GetChildCommandId() == childID {
+			return child.GetTarget().GetAssignmentMigration()
+		}
+	}
+	return nil
 }
 
 // ReplaceCommand 使用版本 CAS 保存 expiry 或其它非 receipt 状态推进。

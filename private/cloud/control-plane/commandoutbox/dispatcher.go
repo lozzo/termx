@@ -92,6 +92,14 @@ func (dispatcher *Dispatcher) DispatchOnce(ctx context.Context, now time.Time, l
 
 func (dispatcher *Dispatcher) hubCommand(ctx context.Context, parent *cloudpb.ManagementCommandProjection, child *cloudpb.ManagementCommandChildProjection) (*cloudpb.HubCommand, error) {
 	command := &cloudpb.HubCommand{CommandId: child.GetChildCommandId(), IssuedAtUnixMillis: parent.GetCreatedAtUnixMillis(), ExpiresAtUnixMillis: parent.GetExpiresAtUnixMillis()}
+	if target := child.GetTarget().GetAssignmentMigration(); target != nil {
+		if target.GetSourceHubId() != child.GetTargetHubId() || target.GetSourceControlGeneration() == 0 || target.GetSourceAssignmentEpoch() == 0 || target.GetMigrationId() == "" {
+			return nil, ErrCommandConflict
+		}
+		command.CommandKind = cloudpb.HubCommandKind_HUB_COMMAND_KIND_FENCE_ASSIGNMENT
+		command.Target = &cloudpb.HubCommand_FenceAssignment{FenceAssignment: &cloudpb.FenceAssignment{MigrationId: target.GetMigrationId(), FenceCommandId: child.GetChildCommandId(), DaemonDeviceId: target.GetDaemonDeviceId(), SourceHubId: target.GetSourceHubId(), SourceAssignmentEpoch: target.GetSourceAssignmentEpoch(), SourceControlGeneration: target.GetSourceControlGeneration(), ExpiresAtUnixMillis: parent.GetExpiresAtUnixMillis()}}
+		return command, nil
+	}
 	if target := child.GetTarget().GetPresence(); target != nil {
 		command.CommandKind = cloudpb.HubCommandKind_HUB_COMMAND_KIND_KICK_PRESENCE
 		command.Target = &cloudpb.HubCommand_KickPresence{KickPresence: target}
