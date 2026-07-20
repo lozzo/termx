@@ -1,0 +1,404 @@
+syntax = "proto3";
+
+package termx.cloud.v1;
+
+option go_package = "github.com/lozzow/termx/proto/cloudpb";
+
+import "cloudpb/cloud_topology.proto";
+import "cloudpb/cloud_companion.proto";
+
+// ControlServiceRole 区分同一个 Edge 进程内的 Hub 与 Relay control identity。
+enum ControlServiceRole {
+  CONTROL_SERVICE_ROLE_UNSPECIFIED = 0;
+  CONTROL_SERVICE_ROLE_HUB = 1;
+  CONTROL_SERVICE_ROLE_RELAY = 2;
+  CONTROL_SERVICE_ROLE_CONTROLLER = 3;
+}
+
+// ControlSenderRole 防止双向 envelope 在同一 generation 内被跨方向重放。
+enum ControlSenderRole {
+  CONTROL_SENDER_ROLE_UNSPECIFIED = 0;
+  CONTROL_SENDER_ROLE_CONTROLLER = 1;
+  CONTROL_SENDER_ROLE_HUB = 2;
+  CONTROL_SENDER_ROLE_RELAY = 3;
+}
+
+// ProjectionDeltaOperation 是当前 per-Hub policy projection 的确定性操作。
+enum ProjectionDeltaOperation {
+  PROJECTION_DELTA_OPERATION_UNSPECIFIED = 0;
+  PROJECTION_DELTA_OPERATION_UPSERT = 1;
+  PROJECTION_DELTA_OPERATION_REMOVE = 2;
+}
+
+// HubCommandKind 是 Hub 本地执行或转发的 deny-only command 分类。
+enum HubCommandKind {
+  HUB_COMMAND_KIND_UNSPECIFIED = 0;
+  HUB_COMMAND_KIND_FENCE_ASSIGNMENT = 1;
+  HUB_COMMAND_KIND_KICK_PRESENCE = 2;
+  HUB_COMMAND_KIND_FORWARD_DAEMON_COMMAND = 3;
+}
+
+// DaemonControlCommandKind 是 daemon 可接受的 deny-only command 分类。
+enum DaemonControlCommandKind {
+  DAEMON_CONTROL_COMMAND_KIND_UNSPECIFIED = 0;
+  DAEMON_CONTROL_COMMAND_KIND_CLOSE_MANAGED_PEER_SESSION = 1;
+  DAEMON_CONTROL_COMMAND_KIND_REVOKE_TERMINAL_ACCESS = 2;
+}
+
+// RelayControlCommandKind 是 Relay runtime 可接受的精确关闭分类。
+enum RelayControlCommandKind {
+  RELAY_CONTROL_COMMAND_KIND_UNSPECIFIED = 0;
+  RELAY_CONTROL_COMMAND_KIND_CLOSE_LEASE_ALLOCATIONS = 1;
+  RELAY_CONTROL_COMMAND_KIND_CLOSE_SESSION_ALLOCATIONS = 2;
+}
+
+// RuntimeCommandResultCode 是 runtime 独立确认的稳定执行结果。
+enum RuntimeCommandResultCode {
+  RUNTIME_COMMAND_RESULT_CODE_UNSPECIFIED = 0;
+  RUNTIME_COMMAND_RESULT_CODE_APPLIED = 1;
+  RUNTIME_COMMAND_RESULT_CODE_ALREADY_SATISFIED = 2;
+  RUNTIME_COMMAND_RESULT_CODE_PARTIAL = 3;
+  RUNTIME_COMMAND_RESULT_CODE_REJECTED = 4;
+  RUNTIME_COMMAND_RESULT_CODE_STALE_TARGET = 5;
+  RUNTIME_COMMAND_RESULT_CODE_EXPIRED = 6;
+  RUNTIME_COMMAND_RESULT_CODE_UNKNOWN = 7;
+}
+
+// EdgeDeploymentMetadata 描述同一个 Edge deployment 中独立的 Hub/Relay 身份。
+message EdgeDeploymentMetadata {
+  string edge_deployment_id = 1;
+  string region = 2;
+  string public_label = 3;
+  string hub_id = 4;
+  string hub_control_identity_fingerprint = 5;
+  string relay_id = 6;
+  string relay_control_identity_fingerprint = 7;
+}
+
+// HubControlChallenge 是 Controller 为 Hub control handshake 签发的 fresh challenge。
+message HubControlChallenge {
+  string challenge_id = 1;
+  bytes challenge = 2;
+  int64 expires_at_unix_millis = 3;
+}
+
+// HubHello 绑定 authenticated transport identity、challenge proof 与本地 revision。
+message HubHello {
+  EdgeDeploymentMetadata deployment = 1;
+  string challenge_id = 2;
+  bytes challenge_signature = 3;
+  string software_version = 4;
+  uint64 last_projection_revision = 5;
+  bytes last_projection_digest = 6;
+}
+
+// ControlStreamReady 由 Controller 签发当前唯一 Hub control generation。
+message ControlStreamReady {
+  string hub_id = 1;
+  uint64 control_generation = 2;
+  bool full_snapshot_required = 3;
+  uint64 accepted_hub_sender_sequence = 4;
+  int64 issued_at_unix_millis = 5;
+  int64 expires_at_unix_millis = 6;
+}
+
+// RelayControlChallenge 是 Controller 为同一 Edge 内 Relay identity 签发的独立挑战。
+message RelayControlChallenge {
+  string challenge_id = 1;
+  bytes challenge = 2;
+  int64 expires_at_unix_millis = 3;
+}
+
+// RelayHello 使用 Relay control key role，不能复用 Hub challenge proof。
+message RelayHello {
+  EdgeDeploymentMetadata deployment = 1;
+  string challenge_id = 2;
+  bytes challenge_signature = 3;
+  string software_version = 4;
+  uint64 last_confirmed_usage_sequence = 5;
+}
+
+// RelayControlReady 签发独立 Relay control generation。
+message RelayControlReady {
+  string relay_id = 1;
+  uint64 relay_control_generation = 2;
+  uint64 accepted_relay_sender_sequence = 3;
+  int64 issued_at_unix_millis = 4;
+  int64 expires_at_unix_millis = 5;
+}
+
+// HubAssignment 是 daemon 到 owning Hub 的唯一 lease/epoch 真值投影。
+message HubAssignment {
+  string daemon_device_id = 1;
+  string account_id = 2;
+  string hub_id = 3;
+  uint64 assignment_epoch = 4;
+  int64 not_before_unix_millis = 5;
+  int64 expires_at_unix_millis = 6;
+}
+
+// CloudDevicePolicy 是 HUB001 所需的最小 ownership/revoke/auth epoch 投影。
+message CloudDevicePolicy {
+  string account_id = 1;
+  string device_id = 2;
+  ManagedDeviceKind device_kind = 3;
+  uint64 auth_epoch = 4;
+  bool revoked = 5;
+  bytes public_key = 6;
+}
+
+// FullProjectionSnapshot 是一个 Hub 独享 revision 的完整内存投影。
+message FullProjectionSnapshot {
+  string hub_id = 1;
+  uint64 projection_revision = 2;
+  uint64 previous_projection_revision = 3;
+  bytes snapshot_digest = 4;
+  int64 generated_at_unix_millis = 5;
+  int64 expires_at_unix_millis = 6;
+  repeated CloudDevicePolicy devices = 7;
+  repeated HubAssignment assignments = 8;
+  bytes signature = 9;
+  string signing_key_id = 10;
+}
+
+// DevicePolicyDelta 是单个 device policy 的 upsert/remove 操作。
+message DevicePolicyDelta {
+  ProjectionDeltaOperation operation = 1;
+  string device_id = 2;
+  CloudDevicePolicy policy = 3;
+}
+
+// HubAssignmentDelta 是单个 assignment 的 upsert/remove 操作。
+message HubAssignmentDelta {
+  ProjectionDeltaOperation operation = 1;
+  string daemon_device_id = 2;
+  HubAssignment assignment = 3;
+}
+
+// PolicyDelta 从 previous revision 原子生成 next revision。
+message PolicyDelta {
+  string hub_id = 1;
+  uint64 projection_revision = 2;
+  uint64 previous_projection_revision = 3;
+  bytes resulting_digest = 4;
+  int64 generated_at_unix_millis = 5;
+  int64 expires_at_unix_millis = 6;
+  repeated DevicePolicyDelta device_operations = 7;
+  repeated HubAssignmentDelta assignment_operations = 8;
+  bytes signature = 9;
+  string signing_key_id = 10;
+}
+
+// ReconciliationDigest 比较 Controller 与 Hub 当前完整投影。
+message ReconciliationDigest {
+  string hub_id = 1;
+  uint64 projection_revision = 2;
+  bytes projection_digest = 3;
+  int64 observed_at_unix_millis = 4;
+}
+
+// FenceAssignment 要求旧 Hub 关闭精确 assignment epoch。
+message FenceAssignment {
+  string migration_id = 1;
+  string fence_command_id = 2;
+  string daemon_device_id = 3;
+  string source_hub_id = 4;
+  uint64 source_assignment_epoch = 5;
+  uint64 source_control_generation = 6;
+  int64 expires_at_unix_millis = 7;
+}
+
+// KickPresenceTarget 只定位当前 Hub 内的精确 Presence incarnation。
+message KickPresenceTarget {
+  string daemon_device_id = 1;
+  uint64 assignment_epoch = 2;
+  string presence_session_id = 3;
+}
+
+// RevokeTerminalAccessTarget 只携带 daemon 生成的 opaque reference。
+message RevokeTerminalAccessTarget {
+  string daemon_device_id = 1;
+  string opaque_access_reference = 2;
+}
+
+// DaemonControlCommand 是 Controller 签名、Hub 只转发的 deny-only command。
+message DaemonControlCommand {
+  string command_id = 1;
+  DaemonControlCommandKind command_kind = 2;
+  string account_id = 3;
+  string target_device_id = 4;
+  string hub_id = 5;
+  uint64 assignment_epoch = 6;
+  uint64 auth_epoch = 7;
+  string presence_session_id = 8;
+  string daemon_runtime_generation = 9;
+  int64 issued_at_unix_millis = 10;
+  int64 expires_at_unix_millis = 11;
+  string control_key_id = 12;
+  oneof target {
+    ManagedPeerSessionTarget managed_peer_session = 20;
+    RevokeTerminalAccessTarget terminal_access = 21;
+  }
+  bytes signature = 30;
+}
+
+// HubCommand 是 Controller 下发给 owning Hub 的精确 command。
+message HubCommand {
+  string command_id = 1;
+  HubCommandKind command_kind = 2;
+  int64 issued_at_unix_millis = 3;
+  int64 expires_at_unix_millis = 4;
+  oneof target {
+    FenceAssignment fence_assignment = 10;
+    KickPresenceTarget kick_presence = 11;
+    DaemonControlCommand daemon_command = 12;
+  }
+}
+
+// HubCommandResult 是 Hub 本地执行或转发接收的独立结果。
+message HubCommandResult {
+  string command_id = 1;
+  string hub_id = 2;
+  uint64 control_generation = 3;
+  RuntimeCommandResultCode result_code = 4;
+  string error_code = 5;
+  int64 completed_at_unix_millis = 6;
+  uint64 resulting_projection_revision = 7;
+}
+
+// DaemonCommandResult 是 daemon 完整执行并等待资源结束后的独立 receipt。
+message DaemonCommandResult {
+  string command_id = 1;
+  string daemon_device_id = 2;
+  string managed_session_id = 3;
+  uint64 session_incarnation = 4;
+  uint64 assignment_epoch = 5;
+  string presence_session_id = 6;
+  string daemon_runtime_generation = 7;
+  RuntimeCommandResultCode result_code = 8;
+  uint64 closed_registry_revision = 9;
+  string error_code = 10;
+  int64 completed_at_unix_millis = 11;
+}
+
+// RelayControlTarget 精确定位 lease 或 managed session 的全部 allocation。
+message RelayControlTarget {
+  string relay_id = 1;
+  string lease_id = 2;
+  string managed_session_id = 3;
+}
+
+// RelayControlCommand 使用独立 Relay identity/generation，不借用 Hub command state。
+message RelayControlCommand {
+  string command_id = 1;
+  RelayControlCommandKind command_kind = 2;
+  RelayControlTarget target = 3;
+  uint64 relay_control_generation = 4;
+  int64 issued_at_unix_millis = 5;
+  int64 expires_at_unix_millis = 6;
+}
+
+// RelayAllocationCloseResult 是单个 allocation 的关闭结果。
+message RelayAllocationCloseResult {
+  string allocation_id = 1;
+  RuntimeCommandResultCode result_code = 2;
+  string error_code = 3;
+}
+
+// RelayCommandResult 分离 allocation close、usage drain 与 settlement correlation。
+message RelayCommandResult {
+  string command_id = 1;
+  string relay_id = 2;
+  uint64 relay_control_generation = 3;
+  RuntimeCommandResultCode result_code = 4;
+  repeated RelayAllocationCloseResult allocations = 5;
+  string lease_id = 6;
+  uint64 final_usage_sequence = 7;
+  bool usage_drain_complete = 8;
+  string error_code = 9;
+  int64 completed_at_unix_millis = 10;
+}
+
+// RelayControlEnvelope 是 Controller 到 Relay runtime 的独立下行 envelope。
+message RelayControlEnvelope {
+  string relay_id = 1;
+  string edge_deployment_id = 2;
+  uint64 relay_control_generation = 3;
+  ControlSenderRole sender_role = 4;
+  uint64 sender_sequence = 5;
+  int64 issued_at_unix_millis = 6;
+  int64 expires_at_unix_millis = 7;
+  oneof payload {
+    RelayControlReady ready = 10;
+    RelayControlCommand command = 11;
+  }
+}
+
+// RelayRuntimeEnvelope 是 Relay runtime 到 Controller 的独立上行 envelope。
+message RelayRuntimeEnvelope {
+  string relay_id = 1;
+  string edge_deployment_id = 2;
+  uint64 relay_control_generation = 3;
+  ControlSenderRole sender_role = 4;
+  uint64 sender_sequence = 5;
+  int64 issued_at_unix_millis = 6;
+  int64 expires_at_unix_millis = 7;
+  oneof payload {
+    RelayCommandResult command_result = 10;
+  }
+}
+
+// ReportDaemonRuntimeRequest 是 daemon Presence 上行的完整 runtime replacement。
+message ReportDaemonRuntimeRequest {
+  string report_id = 1;
+  string hub_id = 2;
+  uint64 assignment_epoch = 3;
+  string presence_session_id = 4;
+  string daemon_runtime_generation = 5;
+  uint64 registry_revision = 6;
+  PeerSessionInventorySnapshot peer_sessions = 7;
+  TerminalAccessInventorySnapshot terminal_accesses = 8;
+}
+
+// ReportDaemonRuntimeResponse 只确认已接收的精确 runtime revision。
+message ReportDaemonRuntimeResponse {
+  string report_id = 1;
+  string daemon_runtime_generation = 2;
+  uint64 accepted_registry_revision = 3;
+  uint64 accepted_access_projection_revision = 4;
+}
+
+// HubControlEnvelope 是 Controller 到 Hub 的下行 envelope。
+message HubControlEnvelope {
+  string hub_id = 1;
+  string edge_deployment_id = 2;
+  uint64 control_generation = 3;
+  ControlSenderRole sender_role = 4;
+  uint64 sender_sequence = 5;
+  int64 issued_at_unix_millis = 6;
+  int64 expires_at_unix_millis = 7;
+  oneof payload {
+    ControlStreamReady ready = 10;
+    FullProjectionSnapshot full_projection = 11;
+    PolicyDelta policy_delta = 12;
+    FenceAssignment fence_assignment = 13;
+    HubCommand command = 14;
+  }
+}
+
+// HubRuntimeEnvelope 是 Hub 到 Controller 的上行 envelope。
+message HubRuntimeEnvelope {
+  string hub_id = 1;
+  string edge_deployment_id = 2;
+  uint64 control_generation = 3;
+  ControlSenderRole sender_role = 4;
+  uint64 sender_sequence = 5;
+  int64 issued_at_unix_millis = 6;
+  int64 expires_at_unix_millis = 7;
+  oneof payload {
+    ReconciliationDigest reconciliation = 10;
+    HubTopologySnapshot topology = 11;
+    HubCommandResult hub_command_result = 12;
+    DaemonCommandResult daemon_command_result = 13;
+  }
+}

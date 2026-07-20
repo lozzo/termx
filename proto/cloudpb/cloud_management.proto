@@ -1,0 +1,307 @@
+syntax = "proto3";
+
+package termx.cloud.v1;
+
+option go_package = "github.com/lozzow/termx/proto/cloudpb";
+
+import "cloudpb/cloud_hub_control.proto";
+import "cloudpb/cloud_topology.proto";
+import "cloudpb/cloud_companion.proto";
+
+// ManagementActorKind 区分账号用户与运营角色。
+enum ManagementActorKind {
+  MANAGEMENT_ACTOR_KIND_UNSPECIFIED = 0;
+  MANAGEMENT_ACTOR_KIND_ACCOUNT_OWNER = 1;
+  MANAGEMENT_ACTOR_KIND_OPERATOR_READONLY = 2;
+  MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN = 3;
+}
+
+// ManagementCommandKind 是 Web/Operator 可创建的稳定命令分类。
+enum ManagementCommandKind {
+  MANAGEMENT_COMMAND_KIND_UNSPECIFIED = 0;
+  MANAGEMENT_COMMAND_KIND_KICK_PRESENCE = 1;
+  MANAGEMENT_COMMAND_KIND_REVOKE_CLOUD_DEVICE = 2;
+  MANAGEMENT_COMMAND_KIND_CLOSE_MANAGED_PEER_SESSION = 3;
+  MANAGEMENT_COMMAND_KIND_REVOKE_TERMINAL_ACCESS = 4;
+  MANAGEMENT_COMMAND_KIND_CLOSE_RELAY_ALLOCATIONS = 5;
+}
+
+// CommandAuthorityResult 表示持久 authority mutation 的独立结果。
+enum CommandAuthorityResult {
+  COMMAND_AUTHORITY_RESULT_UNSPECIFIED = 0;
+  COMMAND_AUTHORITY_RESULT_NOT_APPLICABLE = 1;
+  COMMAND_AUTHORITY_RESULT_COMMITTED = 2;
+  COMMAND_AUTHORITY_RESULT_REJECTED = 3;
+}
+
+// CommandDeliveryState 表示 command 从 durable outbox 到 runtime 的交付状态。
+enum CommandDeliveryState {
+  COMMAND_DELIVERY_STATE_UNSPECIFIED = 0;
+  COMMAND_DELIVERY_STATE_PENDING = 1;
+  COMMAND_DELIVERY_STATE_HUB_RECEIVED = 2;
+  COMMAND_DELIVERY_STATE_RUNTIME_RECEIVED = 3;
+  COMMAND_DELIVERY_STATE_EXPIRED = 4;
+}
+
+// CommandExecutionState 表示 runtime 独立确认的执行状态。
+enum CommandExecutionState {
+  COMMAND_EXECUTION_STATE_UNSPECIFIED = 0;
+  COMMAND_EXECUTION_STATE_PENDING = 1;
+  COMMAND_EXECUTION_STATE_APPLIED = 2;
+  COMMAND_EXECUTION_STATE_ALREADY_SATISFIED = 3;
+  COMMAND_EXECUTION_STATE_PARTIAL = 4;
+  COMMAND_EXECUTION_STATE_REJECTED = 5;
+  COMMAND_EXECUTION_STATE_UNKNOWN = 6;
+}
+
+// CommandObservedEffect 是 topology/usage 后续观察，不替代 execution ack。
+enum CommandObservedEffect {
+  COMMAND_OBSERVED_EFFECT_UNSPECIFIED = 0;
+  COMMAND_OBSERVED_EFFECT_PRESENCE_OFFLINE = 1;
+  COMMAND_OBSERVED_EFFECT_SESSION_CLOSED = 2;
+  COMMAND_OBSERVED_EFFECT_RELAY_CLOSED = 3;
+  COMMAND_OBSERVED_EFFECT_ACCESS_REVOKED = 4;
+  COMMAND_OBSERVED_EFFECT_UNKNOWN = 5;
+}
+
+// ManagementErrorCode 是 Web/Operator API 的稳定错误分类。
+enum ManagementErrorCode {
+  MANAGEMENT_ERROR_CODE_UNSPECIFIED = 0;
+  MANAGEMENT_ERROR_CODE_UNAUTHENTICATED = 1;
+  MANAGEMENT_ERROR_CODE_FORBIDDEN = 2;
+  MANAGEMENT_ERROR_CODE_RECENT_AUTH_REQUIRED = 3;
+  MANAGEMENT_ERROR_CODE_NOT_FOUND = 4;
+  MANAGEMENT_ERROR_CODE_STALE_TARGET = 5;
+  MANAGEMENT_ERROR_CODE_ASSIGNMENT_CHANGED = 6;
+  MANAGEMENT_ERROR_CODE_PRESENCE_CHANGED = 7;
+  MANAGEMENT_ERROR_CODE_SESSION_INCARNATION_CHANGED = 8;
+  MANAGEMENT_ERROR_CODE_POLICY_UNAVAILABLE = 9;
+  MANAGEMENT_ERROR_CODE_COMMAND_EXPIRED = 10;
+  MANAGEMENT_ERROR_CODE_COMMAND_PARTIAL = 11;
+  MANAGEMENT_ERROR_CODE_RUNTIME_UNAVAILABLE = 12;
+  MANAGEMENT_ERROR_CODE_RELAY_UNAVAILABLE = 13;
+  MANAGEMENT_ERROR_CODE_TEMPORARY = 14;
+}
+
+// PageCursor 是 opaque pagination cursor，不允许客户端自行解释排序字段。
+message PageCursor {
+  string value = 1;
+}
+
+// PageRequest 是所有列表 API 共用的有界分页输入。
+message PageRequest {
+  uint32 page_size = 1;
+  PageCursor cursor = 2;
+}
+
+// PageResponse 返回下一页 opaque cursor。
+message PageResponse {
+  PageCursor next_cursor = 1;
+}
+
+// ManagementActorProjection 是审计可展示的最小 actor 信息。
+message ManagementActorProjection {
+  ManagementActorKind actor_kind = 1;
+  string actor_id = 2;
+  string display_label = 3;
+}
+
+// ManagementErrorDetail 是 Proto JSON API 的稳定错误 detail。
+message ManagementErrorDetail {
+  ManagementErrorCode code = 1;
+  string message = 2;
+  bool retryable = 3;
+  uint64 retry_after_millis = 4;
+  string correlation_id = 5;
+}
+
+// AccountDeviceProjection 是账号隔离后的设备与 assignment 摘要。
+message AccountDeviceProjection {
+  string account_id = 1;
+  string device_id = 2;
+  string display_name = 3;
+  string platform = 4;
+  ManagedDeviceKind device_kind = 5;
+  bool revoked = 6;
+  uint64 auth_epoch = 7;
+  string assigned_hub_id = 8;
+  uint64 assignment_epoch = 9;
+  PresenceProjection presence = 10;
+}
+
+// ListAccountDevicesRequest 查询当前 actor 有权访问的账号设备。
+message ListAccountDevicesRequest {
+  string account_id = 1;
+  ManagedDeviceKind device_kind = 2;
+  bool include_revoked = 3;
+  PageRequest page = 4;
+}
+
+// ListAccountDevicesResponse 返回账号隔离的设备列表。
+message ListAccountDevicesResponse {
+  repeated AccountDeviceProjection devices = 1;
+  PageResponse page = 2;
+}
+
+// ListAccountTopologyRequest 查询账号下的 Presence 与 managed session projection。
+message ListAccountTopologyRequest {
+  string account_id = 1;
+  string daemon_device_id = 2;
+  string client_device_id = 3;
+  Freshness freshness = 4;
+  PageRequest page = 5;
+}
+
+// ListAccountTopologyResponse 分开返回 Presence 与数据路径投影。
+message ListAccountTopologyResponse {
+  repeated PresenceProjection presences = 1;
+  repeated ManagedPeerSessionProjection peer_sessions = 2;
+  PageResponse page = 3;
+}
+
+// GetManagedSessionRequest 查询一个精确 managed session incarnation。
+message GetManagedSessionRequest {
+  string account_id = 1;
+  ManagedPeerSessionTarget target = 2;
+}
+
+// GetManagedSessionResponse 返回经过账号与 assignment 校验的 projection。
+message GetManagedSessionResponse {
+  ManagedPeerSessionProjection session = 1;
+}
+
+// ListDaemonTerminalAccessRequest 查询 daemon 上报的 opaque access references。
+message ListDaemonTerminalAccessRequest {
+  string account_id = 1;
+  string daemon_device_id = 2;
+  TerminalAccessState state = 3;
+  PageRequest page = 4;
+}
+
+// ListDaemonTerminalAccessResponse 不包含 grant body、scope 或 terminal identity。
+message ListDaemonTerminalAccessResponse {
+  repeated TerminalAccessProjection accesses = 1;
+  Freshness freshness = 2;
+  int64 observed_at_unix_millis = 3;
+  PageResponse page = 4;
+}
+
+// RevokeCloudDeviceTarget 是持久 authority revoke 目标。
+message RevokeCloudDeviceTarget {
+  string device_id = 1;
+  uint64 expected_auth_epoch = 2;
+}
+
+// ManagementCommandTarget 是用户/运营命令的强类型目标。
+message ManagementCommandTarget {
+  oneof target {
+    KickPresenceTarget presence = 1;
+    RevokeCloudDeviceTarget cloud_device = 2;
+    ManagedPeerSessionTarget peer_session = 3;
+    RevokeTerminalAccessTarget terminal_access = 4;
+    RelayControlTarget relay_allocations = 5;
+  }
+}
+
+// ManagementCommandChildProjection 是一个精确 Hub/daemon/Relay enforcement child。
+message ManagementCommandChildProjection {
+  string child_command_id = 1;
+  string target_hub_id = 2;
+  ManagementCommandTarget target = 3;
+  CommandDeliveryState delivery_state = 4;
+  CommandExecutionState execution_state = 5;
+  CommandObservedEffect observed_effect = 6;
+  ManagementErrorDetail last_error = 7;
+  int64 updated_at_unix_millis = 8;
+}
+
+// ManagementCommandProjection 分离 authority、delivery、execution 与 observed effect。
+message ManagementCommandProjection {
+  string command_id = 1;
+  string parent_operation_id = 2;
+  string account_id = 3;
+  ManagementActorProjection actor = 4;
+  ManagementCommandKind command_kind = 5;
+  ManagementCommandTarget target = 6;
+  CommandAuthorityResult authority_result = 7;
+  CommandDeliveryState delivery_state = 8;
+  CommandExecutionState execution_state = 9;
+  CommandObservedEffect observed_effect = 10;
+  repeated ManagementCommandChildProjection children = 11;
+  int64 created_at_unix_millis = 12;
+  int64 expires_at_unix_millis = 13;
+  int64 updated_at_unix_millis = 14;
+}
+
+// CreateManagementCommandRequest 创建一个经过近期重认证和 CSRF 校验的 command。
+message CreateManagementCommandRequest {
+  string account_id = 1;
+  ManagementCommandKind command_kind = 2;
+  ManagementCommandTarget target = 3;
+  string idempotency_key = 4;
+}
+
+// CreateManagementCommandResponse 返回持久 CommandOutbox projection。
+message CreateManagementCommandResponse {
+  ManagementCommandProjection command = 1;
+}
+
+// GetManagementCommandRequest 查询当前账号可见的 command。
+message GetManagementCommandRequest {
+  string account_id = 1;
+  string command_id = 2;
+}
+
+// GetManagementCommandResponse 返回 parent/child 完整状态。
+message GetManagementCommandResponse {
+  ManagementCommandProjection command = 1;
+}
+
+// ListManagementCommandsRequest 按账号、类型和状态过滤 command。
+message ListManagementCommandsRequest {
+  string account_id = 1;
+  ManagementCommandKind command_kind = 2;
+  CommandExecutionState execution_state = 3;
+  PageRequest page = 4;
+}
+
+// ListManagementCommandsResponse 返回有界 command 列表。
+message ListManagementCommandsResponse {
+  repeated ManagementCommandProjection commands = 1;
+  PageResponse page = 2;
+}
+
+// HubFleetProjection 是 operator 可见的 Hub control/readiness 摘要。
+message HubFleetProjection {
+  EdgeDeploymentMetadata deployment = 1;
+  uint64 hub_control_generation = 2;
+  uint64 relay_control_generation = 3;
+  uint64 projection_revision = 4;
+  Freshness freshness = 5;
+  bool hub_ready = 6;
+  bool relay_ready = 7;
+  int64 last_control_seen_at_unix_millis = 8;
+}
+
+// ListHubFleetRequest 是 operator-only fleet 查询。
+message ListHubFleetRequest {
+  string region = 1;
+  Freshness freshness = 2;
+  PageRequest page = 3;
+}
+
+// ListHubFleetResponse 返回脱敏 fleet 状态。
+message ListHubFleetResponse {
+  repeated HubFleetProjection hubs = 1;
+  PageResponse page = 2;
+}
+
+// GetHubStatusRequest 查询一个 Hub identity，而不是整个 Edge 的合并状态机。
+message GetHubStatusRequest {
+  string hub_id = 1;
+}
+
+// GetHubStatusResponse 返回 Hub/Relay 独立 generation 的组合展示。
+message GetHubStatusResponse {
+  HubFleetProjection hub = 1;
+}

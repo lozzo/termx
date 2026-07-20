@@ -15,4 +15,7 @@ while IFS='=' read -r name _; do
 done < <(env)
 
 # 测试必须只使用自身显式设置的 TERMX 变量，不能继承调用终端或远程会话状态。
+if [[ ${#unset_args[@]} -eq 0 ]]; then
+  exec env "$@"
+fi
 exec env "${unset_args[@]}" "$@"

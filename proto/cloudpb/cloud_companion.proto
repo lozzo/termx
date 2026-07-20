@@ -365,6 +365,7 @@ message ResolvedEndpoint {
   string hub_url = 5;
   string managed_session_id = 6;
   repeated IceServer ice_servers = 7;
+  uint64 assignment_epoch = 8;
 }
 
 // OpenPresenceRequest 让 companion 为一个已证明身份的 daemon 打开 presence stream。
@@ -380,6 +381,8 @@ message PresenceReady {
   string presence_session_id = 1;
   uint32 heartbeat_seconds = 2;
   repeated IceServer ice_servers = 3;
+  string hub_id = 4;
+  uint64 assignment_epoch = 5;
 }
 
 // SignalingOffer 是 Hub 中继的 WebRTC offer；它不能包含 terminal 或 capability 字段。
@@ -393,6 +396,9 @@ message SignalingOffer {
   // route_preference 保留原始服务能力意图；relay_only 才表示本次 ICE 必须只使用租约绑定的 TURN。
   RoutePreference route_preference = 7;
   bool relay_only = 8;
+  uint64 session_incarnation = 9;
+  string presence_session_id = 10;
+  uint64 assignment_epoch = 11;
 }
 
 // SignalingAnswer 是 daemon 返回的 WebRTC answer。

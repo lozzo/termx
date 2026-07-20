@@ -5,7 +5,8 @@
 - `RTC001-RTC010` 已完成统一 WebRTC Route、Android JNI、Direct/SSH/Cloud、Endpoint、文件、生命周期、弱网和最终 APK E2E；证据见 `docs/remote-platform/rtc010-android-final-e2e.md`。
 - Cloud 产品真值见 `docs/remote-platform/cloud-product-spec.md`；多 Hub assignment、纯内存 Hub、daemon topology、CommandOutbox 和 Web 管理真值见 `docs/remote-platform/multi-hub-control-topology-spec.md`；具体 Proto、package、存储、伪代码、迁移删除项和测试矩阵见 `docs/remote-platform/multi-hub-technical-plan.md`。
 - 多 Hub 的 assignment、topology、安全和 runtime 核心规划此前已经过四维度 reviewer 复审；最新部署决策进一步收敛为两个二进制：`termx-cloud-controller` 组合 Control Plane + Web Controller，`termx-cloud-edge` 组合 Hub + Relay，但四个领域 owner、身份、generation、状态机和存储边界不合并。
-- 当前最早未完成切片是 `HUB001`：Hub/control/topology/management Proto 与 daemon session registry contract。
+- `HUB001` 已完成 Edge/Hub/Relay control、topology、management Proto，双 TypeScript consumer、descriptor/compatibility 门禁和 daemon ManagedPeerSession registry 纯模型。
+- 当前最早未完成切片是 `CLOUDP001`：PlanCapability 与 Entitlement 统一能力模型。
 - 多 Hub 基础和产品能力存在交叉依赖，必须按本文件交错推进，不能先写完所有 Hub 再补套餐，也不能继续在单进程 devcloud 上堆硬编码。
 - development 必须走完整账号、交易、Subscription、Entitlement、managed P2P/Relay、周期 quota、usage、topology 和管理链路；外部 provider 可以使用显式测试实现。
 - Web/WASM terminal 产品、iOS/Desktop GUI、多区域数据库、Relay Mesh、真实支付 provider 和复杂计费平台继续延后。
@@ -54,7 +55,7 @@ termx-cloud-edge × N
 | HBASE001 | 已完成 | 多 Hub 控制面设计基线 | `multi-hub-control-topology-spec.md` 经分布式、安全、运行时、产品/API 四角度审核收口；旧 Hub WAL 目标降为历史 |
 | TBASE001 | 已完成 | 多 Hub 技术实施规划 | `multi-hub-technical-plan.md` 明确 Proto、代码 owner、控制 transport、SQLite 事务、daemon lifecycle、切片修改范围、旧路径删除和 E2E 证据；四个独立 reviewer 均 PASS |
 | DBASE001 | 已完成 | Controller/Edge 双二进制部署基线 | 稳定架构与技术规划冻结 `termx-cloud-controller = Control Plane + Web Controller`、`termx-cloud-edge = Hub + Relay`；只合并 composition/deployment，不合并领域真值或安全身份 |
-| HUB001 | 待开始 | Proto 与 daemon registry contract | Edge deployment metadata、独立 Hub/Relay identity/control generation、HubAssignment、per-Hub revision、Presence availability/freshness、PeerSession/access inventory、parent/child CommandOutbox/result、Web/Operator API 全部 proto-first；定义 daemon registry port/harness，不接真实网络 |
+| HUB001 | 已完成 | Proto 与 daemon registry contract | Edge deployment metadata、独立 Hub/Relay identity/control generation、HubAssignment、per-Hub revision、Presence availability/freshness、PeerSession/access inventory、parent/child CommandOutbox/result、Web/Operator API 全部 proto-first；daemon registry port/harness 证明 revision、READY/CLOSED、Presence replacement 和精确 close |
 | CLOUDP001 | 待开始 | PlanCapability 与 Entitlement | 删除 plan/有效期硬编码；catalog、Subscription projection、Entitlement 和 Hub policy 使用同一能力模型；P2P-only、P2P+Relay、suspended fixture |
 | HUB002 | 待开始 | Controller/Edge composition、assignment 与纯内存 Hub 同步 | 建立两个 composition root；一个 Controller + 至少两个 Edge 独立进程；Hub deployment identity、唯一 generation、strict assignment fencing、per-Hub full/delta/reconciliation；Hub 重启不读 snapshot，Relay 只恢复 usage outbox |
 | HUB003 | 待开始 | daemon ManagedPeerSession 与 topology | Hello 后 READY、完整关闭后 CLOSED；统一 registry revision、上行 runtime report、inventory replacement、Hub topology snapshot、CP 账号/epoch校验和 unknown/stale projection |

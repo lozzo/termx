@@ -2713,6 +2713,7 @@ type ResolvedEndpoint struct {
 	HubUrl           string                 `protobuf:"bytes,5,opt,name=hub_url,json=hubUrl,proto3" json:"hub_url,omitempty"`
 	ManagedSessionId string                 `protobuf:"bytes,6,opt,name=managed_session_id,json=managedSessionId,proto3" json:"managed_session_id,omitempty"`
 	IceServers       []*IceServer           `protobuf:"bytes,7,rep,name=ice_servers,json=iceServers,proto3" json:"ice_servers,omitempty"`
+	AssignmentEpoch  uint64                 `protobuf:"varint,8,opt,name=assignment_epoch,json=assignmentEpoch,proto3" json:"assignment_epoch,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -2796,6 +2797,13 @@ func (x *ResolvedEndpoint) GetIceServers() []*IceServer {
 	return nil
 }
 
+func (x *ResolvedEndpoint) GetAssignmentEpoch() uint64 {
+	if x != nil {
+		return x.AssignmentEpoch
+	}
+	return 0
+}
+
 // OpenPresenceRequest 让 companion 为一个已证明身份的 daemon 打开 presence stream。
 type OpenPresenceRequest struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
@@ -2864,6 +2872,8 @@ type PresenceReady struct {
 	PresenceSessionId string                 `protobuf:"bytes,1,opt,name=presence_session_id,json=presenceSessionId,proto3" json:"presence_session_id,omitempty"`
 	HeartbeatSeconds  uint32                 `protobuf:"varint,2,opt,name=heartbeat_seconds,json=heartbeatSeconds,proto3" json:"heartbeat_seconds,omitempty"`
 	IceServers        []*IceServer           `protobuf:"bytes,3,rep,name=ice_servers,json=iceServers,proto3" json:"ice_servers,omitempty"`
+	HubId             string                 `protobuf:"bytes,4,opt,name=hub_id,json=hubId,proto3" json:"hub_id,omitempty"`
+	AssignmentEpoch   uint64                 `protobuf:"varint,5,opt,name=assignment_epoch,json=assignmentEpoch,proto3" json:"assignment_epoch,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -2919,6 +2929,20 @@ func (x *PresenceReady) GetIceServers() []*IceServer {
 	return nil
 }
 
+func (x *PresenceReady) GetHubId() string {
+	if x != nil {
+		return x.HubId
+	}
+	return ""
+}
+
+func (x *PresenceReady) GetAssignmentEpoch() uint64 {
+	if x != nil {
+		return x.AssignmentEpoch
+	}
+	return 0
+}
+
 // SignalingOffer 是 Hub 中继的 WebRTC offer；它不能包含 terminal 或 capability 字段。
 type SignalingOffer struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
@@ -2929,10 +2953,13 @@ type SignalingOffer struct {
 	Sdp                string                 `protobuf:"bytes,5,opt,name=sdp,proto3" json:"sdp,omitempty"`
 	Candidates         []*IceCandidate        `protobuf:"bytes,6,rep,name=candidates,proto3" json:"candidates,omitempty"`
 	// route_preference 保留原始服务能力意图；relay_only 才表示本次 ICE 必须只使用租约绑定的 TURN。
-	RoutePreference RoutePreference `protobuf:"varint,7,opt,name=route_preference,json=routePreference,proto3,enum=termx.cloud.v1.RoutePreference" json:"route_preference,omitempty"`
-	RelayOnly       bool            `protobuf:"varint,8,opt,name=relay_only,json=relayOnly,proto3" json:"relay_only,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	RoutePreference    RoutePreference `protobuf:"varint,7,opt,name=route_preference,json=routePreference,proto3,enum=termx.cloud.v1.RoutePreference" json:"route_preference,omitempty"`
+	RelayOnly          bool            `protobuf:"varint,8,opt,name=relay_only,json=relayOnly,proto3" json:"relay_only,omitempty"`
+	SessionIncarnation uint64          `protobuf:"varint,9,opt,name=session_incarnation,json=sessionIncarnation,proto3" json:"session_incarnation,omitempty"`
+	PresenceSessionId  string          `protobuf:"bytes,10,opt,name=presence_session_id,json=presenceSessionId,proto3" json:"presence_session_id,omitempty"`
+	AssignmentEpoch    uint64          `protobuf:"varint,11,opt,name=assignment_epoch,json=assignmentEpoch,proto3" json:"assignment_epoch,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *SignalingOffer) Reset() {
@@ -3019,6 +3046,27 @@ func (x *SignalingOffer) GetRelayOnly() bool {
 		return x.RelayOnly
 	}
 	return false
+}
+
+func (x *SignalingOffer) GetSessionIncarnation() uint64 {
+	if x != nil {
+		return x.SessionIncarnation
+	}
+	return 0
+}
+
+func (x *SignalingOffer) GetPresenceSessionId() string {
+	if x != nil {
+		return x.PresenceSessionId
+	}
+	return ""
+}
+
+func (x *SignalingOffer) GetAssignmentEpoch() uint64 {
+	if x != nil {
+		return x.AssignmentEpoch
+	}
+	return 0
 }
 
 // SignalingAnswer 是 daemon 返回的 WebRTC answer。
@@ -5673,7 +5721,7 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\busername\x18\x02 \x01(\tR\busername\x12\x1e\n" +
 	"\n" +
 	"credential\x18\x03 \x01(\tR\n" +
-	"credential\"\xb2\x02\n" +
+	"credential\"\xdd\x02\n" +
 	"\x10ResolvedEndpoint\x12\x1f\n" +
 	"\vendpoint_id\x18\x01 \x01(\tR\n" +
 	"endpointId\x12(\n" +
@@ -5683,16 +5731,19 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\ahub_url\x18\x05 \x01(\tR\x06hubUrl\x12,\n" +
 	"\x12managed_session_id\x18\x06 \x01(\tR\x10managedSessionId\x12:\n" +
 	"\vice_servers\x18\a \x03(\v2\x19.termx.cloud.v1.IceServerR\n" +
-	"iceServers\"\xb4\x01\n" +
+	"iceServers\x12)\n" +
+	"\x10assignment_epoch\x18\b \x01(\x04R\x0fassignmentEpoch\"\xb4\x01\n" +
 	"\x13OpenPresenceRequest\x12.\n" +
 	"\x13presence_session_id\x18\x01 \x01(\tR\x11presenceSessionId\x121\n" +
 	"\x05proof\x18\x02 \x01(\v2\x1b.termx.cloud.v1.DeviceProofR\x05proof\x12:\n" +
-	"\bmetadata\x18\x03 \x01(\v2\x1e.termx.cloud.v1.DeviceMetadataR\bmetadata\"\xa8\x01\n" +
+	"\bmetadata\x18\x03 \x01(\v2\x1e.termx.cloud.v1.DeviceMetadataR\bmetadata\"\xea\x01\n" +
 	"\rPresenceReady\x12.\n" +
 	"\x13presence_session_id\x18\x01 \x01(\tR\x11presenceSessionId\x12+\n" +
 	"\x11heartbeat_seconds\x18\x02 \x01(\rR\x10heartbeatSeconds\x12:\n" +
 	"\vice_servers\x18\x03 \x03(\v2\x19.termx.cloud.v1.IceServerR\n" +
-	"iceServers\"\xff\x02\n" +
+	"iceServers\x12\x15\n" +
+	"\x06hub_id\x18\x04 \x01(\tR\x05hubId\x12)\n" +
+	"\x10assignment_epoch\x18\x05 \x01(\x04R\x0fassignmentEpoch\"\x8b\x04\n" +
 	"\x0eSignalingOffer\x120\n" +
 	"\x14signaling_session_id\x18\x01 \x01(\tR\x12signalingSessionId\x12,\n" +
 	"\x12managed_session_id\x18\x02 \x01(\tR\x10managedSessionId\x12(\n" +
@@ -5704,7 +5755,11 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"candidates\x12J\n" +
 	"\x10route_preference\x18\a \x01(\x0e2\x1f.termx.cloud.v1.RoutePreferenceR\x0froutePreference\x12\x1d\n" +
 	"\n" +
-	"relay_only\x18\b \x01(\bR\trelayOnly\"\x93\x01\n" +
+	"relay_only\x18\b \x01(\bR\trelayOnly\x12/\n" +
+	"\x13session_incarnation\x18\t \x01(\x04R\x12sessionIncarnation\x12.\n" +
+	"\x13presence_session_id\x18\n" +
+	" \x01(\tR\x11presenceSessionId\x12)\n" +
+	"\x10assignment_epoch\x18\v \x01(\x04R\x0fassignmentEpoch\"\x93\x01\n" +
 	"\x0fSignalingAnswer\x120\n" +
 	"\x14signaling_session_id\x18\x01 \x01(\tR\x12signalingSessionId\x12\x10\n" +
 	"\x03sdp\x18\x02 \x01(\tR\x03sdp\x12<\n" +

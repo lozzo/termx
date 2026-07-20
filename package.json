@@ -25,7 +25,7 @@
     "undici-types": "7.19.2"
   },
   "scripts": {
-    "proto": "npm run proto --workspace @termx/ui",
+    "proto": "npm run proto --workspace @termx/ui && npm run proto --workspace @termx/web-controller",
     "test": "npm test --workspace @termx/ui && npm test --workspace @termx/mobile",
     "typecheck": "npm run typecheck --workspace @termx/ui",
     "build": "npm run build --workspace @termx/ui && npm run build --workspace @termx/mobile",

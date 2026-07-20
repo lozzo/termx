@@ -6,9 +6,11 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "proto": "mkdir -p src/generated && protoc --es_out=src/generated --es_opt=target=ts,import_extension=none -I ../../../../proto ../../../../proto/cloudpb/*.proto && perl -0pi -e 's/\\s*\\z/\\n/' src/generated/cloudpb/*_pb.ts"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "2.12.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "i18next": "^26.3.6",
@@ -20,6 +22,7 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@bufbuild/protoc-gen-es": "2.12.0",
     "@tailwindcss/vite": "^4.3.2",
     "@types/node": "25.6.2",
     "@types/qrcode": "^1.5.6",
