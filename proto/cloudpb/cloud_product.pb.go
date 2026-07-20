@@ -2968,6 +2968,60 @@ func (x *PaymentAttemptProjection) GetRevision() uint64 {
 	return 0
 }
 
+// PaymentEventProjection 是 operator/账号审计可见的 provider event journal 摘要。
+// 不包含 provider secret、签名 header 或原始 webhook body。
+type PaymentEventProjection struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Event         *NormalizedPaymentEvent `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"`
+	State         PaymentEventState       `protobuf:"varint,2,opt,name=state,proto3,enum=termx.cloud.v1.PaymentEventState" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PaymentEventProjection) Reset() {
+	*x = PaymentEventProjection{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PaymentEventProjection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PaymentEventProjection) ProtoMessage() {}
+
+func (x *PaymentEventProjection) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PaymentEventProjection.ProtoReflect.Descriptor instead.
+func (*PaymentEventProjection) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *PaymentEventProjection) GetEvent() *NormalizedPaymentEvent {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+func (x *PaymentEventProjection) GetState() PaymentEventState {
+	if x != nil {
+		return x.State
+	}
+	return PaymentEventState_PAYMENT_EVENT_STATE_UNSPECIFIED
+}
+
 // CreateCheckoutRequest 只创建 pending order，不修改 Subscription 或 Entitlement。
 type CreateCheckoutRequest struct {
 	state               protoimpl.MessageState     `protogen:"open.v1"`
@@ -2979,7 +3033,7 @@ type CreateCheckoutRequest struct {
 
 func (x *CreateCheckoutRequest) Reset() {
 	*x = CreateCheckoutRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[33]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2991,7 +3045,7 @@ func (x *CreateCheckoutRequest) String() string {
 func (*CreateCheckoutRequest) ProtoMessage() {}
 
 func (x *CreateCheckoutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[33]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3004,7 +3058,7 @@ func (x *CreateCheckoutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCheckoutRequest.ProtoReflect.Descriptor instead.
 func (*CreateCheckoutRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{33}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *CreateCheckoutRequest) GetPlanId() string {
@@ -3030,7 +3084,7 @@ type CreateCheckoutResponse struct {
 
 func (x *CreateCheckoutResponse) Reset() {
 	*x = CreateCheckoutResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[34]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3042,7 +3096,7 @@ func (x *CreateCheckoutResponse) String() string {
 func (*CreateCheckoutResponse) ProtoMessage() {}
 
 func (x *CreateCheckoutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[34]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3055,7 +3109,7 @@ func (x *CreateCheckoutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCheckoutResponse.ProtoReflect.Descriptor instead.
 func (*CreateCheckoutResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{34}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *CreateCheckoutResponse) GetOrder() *OrderProjection {
@@ -3075,7 +3129,7 @@ type CreatePaymentAttemptRequest struct {
 
 func (x *CreatePaymentAttemptRequest) Reset() {
 	*x = CreatePaymentAttemptRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[35]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3087,7 +3141,7 @@ func (x *CreatePaymentAttemptRequest) String() string {
 func (*CreatePaymentAttemptRequest) ProtoMessage() {}
 
 func (x *CreatePaymentAttemptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[35]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3100,7 +3154,7 @@ func (x *CreatePaymentAttemptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePaymentAttemptRequest.ProtoReflect.Descriptor instead.
 func (*CreatePaymentAttemptRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{35}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *CreatePaymentAttemptRequest) GetOrderId() string {
@@ -3126,7 +3180,7 @@ type CreatePaymentAttemptResponse struct {
 
 func (x *CreatePaymentAttemptResponse) Reset() {
 	*x = CreatePaymentAttemptResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[36]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3138,7 +3192,7 @@ func (x *CreatePaymentAttemptResponse) String() string {
 func (*CreatePaymentAttemptResponse) ProtoMessage() {}
 
 func (x *CreatePaymentAttemptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[36]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3151,7 +3205,7 @@ func (x *CreatePaymentAttemptResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePaymentAttemptResponse.ProtoReflect.Descriptor instead.
 func (*CreatePaymentAttemptResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{36}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *CreatePaymentAttemptResponse) GetPaymentAttempt() *PaymentAttemptProjection {
@@ -3180,7 +3234,7 @@ type NormalizedPaymentEvent struct {
 
 func (x *NormalizedPaymentEvent) Reset() {
 	*x = NormalizedPaymentEvent{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[37]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3192,7 +3246,7 @@ func (x *NormalizedPaymentEvent) String() string {
 func (*NormalizedPaymentEvent) ProtoMessage() {}
 
 func (x *NormalizedPaymentEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[37]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3205,7 +3259,7 @@ func (x *NormalizedPaymentEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NormalizedPaymentEvent.ProtoReflect.Descriptor instead.
 func (*NormalizedPaymentEvent) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{37}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *NormalizedPaymentEvent) GetProviderEventId() string {
@@ -3288,7 +3342,7 @@ type ApplyPaymentEventRequest struct {
 
 func (x *ApplyPaymentEventRequest) Reset() {
 	*x = ApplyPaymentEventRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[38]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3300,7 +3354,7 @@ func (x *ApplyPaymentEventRequest) String() string {
 func (*ApplyPaymentEventRequest) ProtoMessage() {}
 
 func (x *ApplyPaymentEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[38]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3313,7 +3367,7 @@ func (x *ApplyPaymentEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyPaymentEventRequest.ProtoReflect.Descriptor instead.
 func (*ApplyPaymentEventRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{38}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ApplyPaymentEventRequest) GetEvent() *NormalizedPaymentEvent {
@@ -3335,7 +3389,7 @@ type ApplyPaymentEventResponse struct {
 
 func (x *ApplyPaymentEventResponse) Reset() {
 	*x = ApplyPaymentEventResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[39]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3347,7 +3401,7 @@ func (x *ApplyPaymentEventResponse) String() string {
 func (*ApplyPaymentEventResponse) ProtoMessage() {}
 
 func (x *ApplyPaymentEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[39]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3360,7 +3414,7 @@ func (x *ApplyPaymentEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyPaymentEventResponse.ProtoReflect.Descriptor instead.
 func (*ApplyPaymentEventResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{39}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ApplyPaymentEventResponse) GetOrder() *OrderProjection {
@@ -3402,7 +3456,7 @@ type ConfirmTestPaymentRequest struct {
 
 func (x *ConfirmTestPaymentRequest) Reset() {
 	*x = ConfirmTestPaymentRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[40]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3414,7 +3468,7 @@ func (x *ConfirmTestPaymentRequest) String() string {
 func (*ConfirmTestPaymentRequest) ProtoMessage() {}
 
 func (x *ConfirmTestPaymentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[40]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3427,7 +3481,7 @@ func (x *ConfirmTestPaymentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfirmTestPaymentRequest.ProtoReflect.Descriptor instead.
 func (*ConfirmTestPaymentRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{40}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *ConfirmTestPaymentRequest) GetOrderId() string {
@@ -3453,7 +3507,7 @@ type ConfirmTestPaymentResponse struct {
 
 func (x *ConfirmTestPaymentResponse) Reset() {
 	*x = ConfirmTestPaymentResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[41]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3465,7 +3519,7 @@ func (x *ConfirmTestPaymentResponse) String() string {
 func (*ConfirmTestPaymentResponse) ProtoMessage() {}
 
 func (x *ConfirmTestPaymentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[41]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3478,7 +3532,7 @@ func (x *ConfirmTestPaymentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfirmTestPaymentResponse.ProtoReflect.Descriptor instead.
 func (*ConfirmTestPaymentResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{41}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ConfirmTestPaymentResponse) GetResult() *ApplyPaymentEventResponse {
@@ -3503,7 +3557,7 @@ type TransitionSubscriptionRequest struct {
 
 func (x *TransitionSubscriptionRequest) Reset() {
 	*x = TransitionSubscriptionRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[42]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3515,7 +3569,7 @@ func (x *TransitionSubscriptionRequest) String() string {
 func (*TransitionSubscriptionRequest) ProtoMessage() {}
 
 func (x *TransitionSubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[42]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3528,7 +3582,7 @@ func (x *TransitionSubscriptionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransitionSubscriptionRequest.ProtoReflect.Descriptor instead.
 func (*TransitionSubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{42}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *TransitionSubscriptionRequest) GetAccountId() string {
@@ -3583,7 +3637,7 @@ type TransitionSubscriptionResponse struct {
 
 func (x *TransitionSubscriptionResponse) Reset() {
 	*x = TransitionSubscriptionResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[43]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3595,7 +3649,7 @@ func (x *TransitionSubscriptionResponse) String() string {
 func (*TransitionSubscriptionResponse) ProtoMessage() {}
 
 func (x *TransitionSubscriptionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[43]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3608,7 +3662,7 @@ func (x *TransitionSubscriptionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransitionSubscriptionResponse.ProtoReflect.Descriptor instead.
 func (*TransitionSubscriptionResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{43}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *TransitionSubscriptionResponse) GetSubscription() *SubscriptionProjection {
@@ -3640,7 +3694,7 @@ type CommerceAuditProjection struct {
 
 func (x *CommerceAuditProjection) Reset() {
 	*x = CommerceAuditProjection{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[44]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3652,7 +3706,7 @@ func (x *CommerceAuditProjection) String() string {
 func (*CommerceAuditProjection) ProtoMessage() {}
 
 func (x *CommerceAuditProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[44]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3665,7 +3719,7 @@ func (x *CommerceAuditProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommerceAuditProjection.ProtoReflect.Descriptor instead.
 func (*CommerceAuditProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{44}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *CommerceAuditProjection) GetAuditId() string {
@@ -3719,7 +3773,7 @@ type GetAccountCommerceRequest struct {
 
 func (x *GetAccountCommerceRequest) Reset() {
 	*x = GetAccountCommerceRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[45]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3731,7 +3785,7 @@ func (x *GetAccountCommerceRequest) String() string {
 func (*GetAccountCommerceRequest) ProtoMessage() {}
 
 func (x *GetAccountCommerceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[45]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3744,7 +3798,7 @@ func (x *GetAccountCommerceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountCommerceRequest.ProtoReflect.Descriptor instead.
 func (*GetAccountCommerceRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{45}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *GetAccountCommerceRequest) GetAccountId() string {
@@ -3762,13 +3816,14 @@ type GetAccountCommerceResponse struct {
 	Orders          []*OrderProjection          `protobuf:"bytes,4,rep,name=orders,proto3" json:"orders,omitempty"`
 	Audit           []*CommerceAuditProjection  `protobuf:"bytes,5,rep,name=audit,proto3" json:"audit,omitempty"`
 	PaymentAttempts []*PaymentAttemptProjection `protobuf:"bytes,6,rep,name=payment_attempts,json=paymentAttempts,proto3" json:"payment_attempts,omitempty"`
+	PaymentEvents   []*PaymentEventProjection   `protobuf:"bytes,7,rep,name=payment_events,json=paymentEvents,proto3" json:"payment_events,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *GetAccountCommerceResponse) Reset() {
 	*x = GetAccountCommerceResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[46]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3780,7 +3835,7 @@ func (x *GetAccountCommerceResponse) String() string {
 func (*GetAccountCommerceResponse) ProtoMessage() {}
 
 func (x *GetAccountCommerceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[46]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3793,7 +3848,7 @@ func (x *GetAccountCommerceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountCommerceResponse.ProtoReflect.Descriptor instead.
 func (*GetAccountCommerceResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{46}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *GetAccountCommerceResponse) GetAccount() *AccountProjection {
@@ -3838,6 +3893,13 @@ func (x *GetAccountCommerceResponse) GetPaymentAttempts() []*PaymentAttemptProje
 	return nil
 }
 
+func (x *GetAccountCommerceResponse) GetPaymentEvents() []*PaymentEventProjection {
+	if x != nil {
+		return x.PaymentEvents
+	}
+	return nil
+}
+
 // CloudProductError 是账号与交易 HTTP/Companion adapter 返回的稳定失败投影。
 type CloudProductError struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -3850,7 +3912,7 @@ type CloudProductError struct {
 
 func (x *CloudProductError) Reset() {
 	*x = CloudProductError{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[47]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3862,7 +3924,7 @@ func (x *CloudProductError) String() string {
 func (*CloudProductError) ProtoMessage() {}
 
 func (x *CloudProductError) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[47]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3875,7 +3937,7 @@ func (x *CloudProductError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloudProductError.ProtoReflect.Descriptor instead.
 func (*CloudProductError) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{47}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *CloudProductError) GetCode() string {
@@ -4111,6 +4173,9 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x16updated_at_unix_millis\x18\a \x01(\x03R\x13updatedAtUnixMillis\x12-\n" +
 	"\x12provider_reference\x18\b \x01(\tR\x11providerReference\x12\x1a\n" +
 	"\brevision\x18\t \x01(\x04R\brevision\"\x8f\x01\n" +
+	"\x16PaymentEventProjection\x12<\n" +
+	"\x05event\x18\x01 \x01(\v2&.termx.cloud.v1.NormalizedPaymentEventR\x05event\x127\n" +
+	"\x05state\x18\x02 \x01(\x0e2!.termx.cloud.v1.PaymentEventStateR\x05state\"\x8f\x01\n" +
 	"\x15CreateCheckoutRequest\x12\x17\n" +
 	"\aplan_id\x18\x01 \x01(\tR\x06planId\x12]\n" +
 	"\x14requested_transition\x18\x02 \x01(\x0e2*.termx.cloud.v1.SubscriptionTransitionKindR\x13requestedTransition\"O\n" +
@@ -4173,14 +4238,15 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x17occurred_at_unix_millis\x18\x06 \x01(\x03R\x14occurredAtUnixMillis\":\n" +
 	"\x19GetAccountCommerceRequest\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x01 \x01(\tR\taccountId\"\xbb\x03\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\"\x8a\x04\n" +
 	"\x1aGetAccountCommerceResponse\x12;\n" +
 	"\aaccount\x18\x01 \x01(\v2!.termx.cloud.v1.AccountProjectionR\aaccount\x12J\n" +
 	"\fsubscription\x18\x02 \x01(\v2&.termx.cloud.v1.SubscriptionProjectionR\fsubscription\x12G\n" +
 	"\ventitlement\x18\x03 \x01(\v2%.termx.cloud.v1.EntitlementProjectionR\ventitlement\x127\n" +
 	"\x06orders\x18\x04 \x03(\v2\x1f.termx.cloud.v1.OrderProjectionR\x06orders\x12=\n" +
 	"\x05audit\x18\x05 \x03(\v2'.termx.cloud.v1.CommerceAuditProjectionR\x05audit\x12S\n" +
-	"\x10payment_attempts\x18\x06 \x03(\v2(.termx.cloud.v1.PaymentAttemptProjectionR\x0fpaymentAttempts\"_\n" +
+	"\x10payment_attempts\x18\x06 \x03(\v2(.termx.cloud.v1.PaymentAttemptProjectionR\x0fpaymentAttempts\x12M\n" +
+	"\x0epayment_events\x18\a \x03(\v2&.termx.cloud.v1.PaymentEventProjectionR\rpaymentEvents\"_\n" +
 	"\x11CloudProductError\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +
@@ -4264,7 +4330,7 @@ func file_cloudpb_cloud_product_proto_rawDescGZIP() []byte {
 }
 
 var file_cloudpb_cloud_product_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
-var file_cloudpb_cloud_product_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
+var file_cloudpb_cloud_product_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
 var file_cloudpb_cloud_product_proto_goTypes = []any{
 	(SubscriptionStatus)(0),                // 0: termx.cloud.v1.SubscriptionStatus
 	(OrderStatus)(0),                       // 1: termx.cloud.v1.OrderStatus
@@ -4308,21 +4374,22 @@ var file_cloudpb_cloud_product_proto_goTypes = []any{
 	(*ChangeAccountPasswordResponse)(nil),  // 39: termx.cloud.v1.ChangeAccountPasswordResponse
 	(*OrderProjection)(nil),                // 40: termx.cloud.v1.OrderProjection
 	(*PaymentAttemptProjection)(nil),       // 41: termx.cloud.v1.PaymentAttemptProjection
-	(*CreateCheckoutRequest)(nil),          // 42: termx.cloud.v1.CreateCheckoutRequest
-	(*CreateCheckoutResponse)(nil),         // 43: termx.cloud.v1.CreateCheckoutResponse
-	(*CreatePaymentAttemptRequest)(nil),    // 44: termx.cloud.v1.CreatePaymentAttemptRequest
-	(*CreatePaymentAttemptResponse)(nil),   // 45: termx.cloud.v1.CreatePaymentAttemptResponse
-	(*NormalizedPaymentEvent)(nil),         // 46: termx.cloud.v1.NormalizedPaymentEvent
-	(*ApplyPaymentEventRequest)(nil),       // 47: termx.cloud.v1.ApplyPaymentEventRequest
-	(*ApplyPaymentEventResponse)(nil),      // 48: termx.cloud.v1.ApplyPaymentEventResponse
-	(*ConfirmTestPaymentRequest)(nil),      // 49: termx.cloud.v1.ConfirmTestPaymentRequest
-	(*ConfirmTestPaymentResponse)(nil),     // 50: termx.cloud.v1.ConfirmTestPaymentResponse
-	(*TransitionSubscriptionRequest)(nil),  // 51: termx.cloud.v1.TransitionSubscriptionRequest
-	(*TransitionSubscriptionResponse)(nil), // 52: termx.cloud.v1.TransitionSubscriptionResponse
-	(*CommerceAuditProjection)(nil),        // 53: termx.cloud.v1.CommerceAuditProjection
-	(*GetAccountCommerceRequest)(nil),      // 54: termx.cloud.v1.GetAccountCommerceRequest
-	(*GetAccountCommerceResponse)(nil),     // 55: termx.cloud.v1.GetAccountCommerceResponse
-	(*CloudProductError)(nil),              // 56: termx.cloud.v1.CloudProductError
+	(*PaymentEventProjection)(nil),         // 42: termx.cloud.v1.PaymentEventProjection
+	(*CreateCheckoutRequest)(nil),          // 43: termx.cloud.v1.CreateCheckoutRequest
+	(*CreateCheckoutResponse)(nil),         // 44: termx.cloud.v1.CreateCheckoutResponse
+	(*CreatePaymentAttemptRequest)(nil),    // 45: termx.cloud.v1.CreatePaymentAttemptRequest
+	(*CreatePaymentAttemptResponse)(nil),   // 46: termx.cloud.v1.CreatePaymentAttemptResponse
+	(*NormalizedPaymentEvent)(nil),         // 47: termx.cloud.v1.NormalizedPaymentEvent
+	(*ApplyPaymentEventRequest)(nil),       // 48: termx.cloud.v1.ApplyPaymentEventRequest
+	(*ApplyPaymentEventResponse)(nil),      // 49: termx.cloud.v1.ApplyPaymentEventResponse
+	(*ConfirmTestPaymentRequest)(nil),      // 50: termx.cloud.v1.ConfirmTestPaymentRequest
+	(*ConfirmTestPaymentResponse)(nil),     // 51: termx.cloud.v1.ConfirmTestPaymentResponse
+	(*TransitionSubscriptionRequest)(nil),  // 52: termx.cloud.v1.TransitionSubscriptionRequest
+	(*TransitionSubscriptionResponse)(nil), // 53: termx.cloud.v1.TransitionSubscriptionResponse
+	(*CommerceAuditProjection)(nil),        // 54: termx.cloud.v1.CommerceAuditProjection
+	(*GetAccountCommerceRequest)(nil),      // 55: termx.cloud.v1.GetAccountCommerceRequest
+	(*GetAccountCommerceResponse)(nil),     // 56: termx.cloud.v1.GetAccountCommerceResponse
+	(*CloudProductError)(nil),              // 57: termx.cloud.v1.CloudProductError
 }
 var file_cloudpb_cloud_product_proto_depIdxs = []int32{
 	9,  // 0: termx.cloud.v1.PlanCapability.relay:type_name -> termx.cloud.v1.RelayServiceCapability
@@ -4349,31 +4416,34 @@ var file_cloudpb_cloud_product_proto_depIdxs = []int32{
 	6,  // 21: termx.cloud.v1.OrderProjection.requested_transition:type_name -> termx.cloud.v1.SubscriptionTransitionKind
 	12, // 22: termx.cloud.v1.OrderProjection.price:type_name -> termx.cloud.v1.PlanPriceDefinition
 	3,  // 23: termx.cloud.v1.PaymentAttemptProjection.status:type_name -> termx.cloud.v1.PaymentAttemptStatus
-	6,  // 24: termx.cloud.v1.CreateCheckoutRequest.requested_transition:type_name -> termx.cloud.v1.SubscriptionTransitionKind
-	40, // 25: termx.cloud.v1.CreateCheckoutResponse.order:type_name -> termx.cloud.v1.OrderProjection
-	41, // 26: termx.cloud.v1.CreatePaymentAttemptResponse.payment_attempt:type_name -> termx.cloud.v1.PaymentAttemptProjection
-	4,  // 27: termx.cloud.v1.NormalizedPaymentEvent.event_type:type_name -> termx.cloud.v1.PaymentEventType
-	46, // 28: termx.cloud.v1.ApplyPaymentEventRequest.event:type_name -> termx.cloud.v1.NormalizedPaymentEvent
-	40, // 29: termx.cloud.v1.ApplyPaymentEventResponse.order:type_name -> termx.cloud.v1.OrderProjection
-	15, // 30: termx.cloud.v1.ApplyPaymentEventResponse.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
-	5,  // 31: termx.cloud.v1.ApplyPaymentEventResponse.event_state:type_name -> termx.cloud.v1.PaymentEventState
-	41, // 32: termx.cloud.v1.ApplyPaymentEventResponse.payment_attempt:type_name -> termx.cloud.v1.PaymentAttemptProjection
-	4,  // 33: termx.cloud.v1.ConfirmTestPaymentRequest.event_type:type_name -> termx.cloud.v1.PaymentEventType
-	48, // 34: termx.cloud.v1.ConfirmTestPaymentResponse.result:type_name -> termx.cloud.v1.ApplyPaymentEventResponse
-	6,  // 35: termx.cloud.v1.TransitionSubscriptionRequest.transition:type_name -> termx.cloud.v1.SubscriptionTransitionKind
-	15, // 36: termx.cloud.v1.TransitionSubscriptionResponse.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
-	16, // 37: termx.cloud.v1.TransitionSubscriptionResponse.entitlement:type_name -> termx.cloud.v1.EntitlementProjection
-	28, // 38: termx.cloud.v1.GetAccountCommerceResponse.account:type_name -> termx.cloud.v1.AccountProjection
-	15, // 39: termx.cloud.v1.GetAccountCommerceResponse.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
-	16, // 40: termx.cloud.v1.GetAccountCommerceResponse.entitlement:type_name -> termx.cloud.v1.EntitlementProjection
-	40, // 41: termx.cloud.v1.GetAccountCommerceResponse.orders:type_name -> termx.cloud.v1.OrderProjection
-	53, // 42: termx.cloud.v1.GetAccountCommerceResponse.audit:type_name -> termx.cloud.v1.CommerceAuditProjection
-	41, // 43: termx.cloud.v1.GetAccountCommerceResponse.payment_attempts:type_name -> termx.cloud.v1.PaymentAttemptProjection
-	44, // [44:44] is the sub-list for method output_type
-	44, // [44:44] is the sub-list for method input_type
-	44, // [44:44] is the sub-list for extension type_name
-	44, // [44:44] is the sub-list for extension extendee
-	0,  // [0:44] is the sub-list for field type_name
+	47, // 24: termx.cloud.v1.PaymentEventProjection.event:type_name -> termx.cloud.v1.NormalizedPaymentEvent
+	5,  // 25: termx.cloud.v1.PaymentEventProjection.state:type_name -> termx.cloud.v1.PaymentEventState
+	6,  // 26: termx.cloud.v1.CreateCheckoutRequest.requested_transition:type_name -> termx.cloud.v1.SubscriptionTransitionKind
+	40, // 27: termx.cloud.v1.CreateCheckoutResponse.order:type_name -> termx.cloud.v1.OrderProjection
+	41, // 28: termx.cloud.v1.CreatePaymentAttemptResponse.payment_attempt:type_name -> termx.cloud.v1.PaymentAttemptProjection
+	4,  // 29: termx.cloud.v1.NormalizedPaymentEvent.event_type:type_name -> termx.cloud.v1.PaymentEventType
+	47, // 30: termx.cloud.v1.ApplyPaymentEventRequest.event:type_name -> termx.cloud.v1.NormalizedPaymentEvent
+	40, // 31: termx.cloud.v1.ApplyPaymentEventResponse.order:type_name -> termx.cloud.v1.OrderProjection
+	15, // 32: termx.cloud.v1.ApplyPaymentEventResponse.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
+	5,  // 33: termx.cloud.v1.ApplyPaymentEventResponse.event_state:type_name -> termx.cloud.v1.PaymentEventState
+	41, // 34: termx.cloud.v1.ApplyPaymentEventResponse.payment_attempt:type_name -> termx.cloud.v1.PaymentAttemptProjection
+	4,  // 35: termx.cloud.v1.ConfirmTestPaymentRequest.event_type:type_name -> termx.cloud.v1.PaymentEventType
+	49, // 36: termx.cloud.v1.ConfirmTestPaymentResponse.result:type_name -> termx.cloud.v1.ApplyPaymentEventResponse
+	6,  // 37: termx.cloud.v1.TransitionSubscriptionRequest.transition:type_name -> termx.cloud.v1.SubscriptionTransitionKind
+	15, // 38: termx.cloud.v1.TransitionSubscriptionResponse.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
+	16, // 39: termx.cloud.v1.TransitionSubscriptionResponse.entitlement:type_name -> termx.cloud.v1.EntitlementProjection
+	28, // 40: termx.cloud.v1.GetAccountCommerceResponse.account:type_name -> termx.cloud.v1.AccountProjection
+	15, // 41: termx.cloud.v1.GetAccountCommerceResponse.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
+	16, // 42: termx.cloud.v1.GetAccountCommerceResponse.entitlement:type_name -> termx.cloud.v1.EntitlementProjection
+	40, // 43: termx.cloud.v1.GetAccountCommerceResponse.orders:type_name -> termx.cloud.v1.OrderProjection
+	54, // 44: termx.cloud.v1.GetAccountCommerceResponse.audit:type_name -> termx.cloud.v1.CommerceAuditProjection
+	41, // 45: termx.cloud.v1.GetAccountCommerceResponse.payment_attempts:type_name -> termx.cloud.v1.PaymentAttemptProjection
+	42, // 46: termx.cloud.v1.GetAccountCommerceResponse.payment_events:type_name -> termx.cloud.v1.PaymentEventProjection
+	47, // [47:47] is the sub-list for method output_type
+	47, // [47:47] is the sub-list for method input_type
+	47, // [47:47] is the sub-list for extension type_name
+	47, // [47:47] is the sub-list for extension extendee
+	0,  // [0:47] is the sub-list for field type_name
 }
 
 func init() { file_cloudpb_cloud_product_proto_init() }
@@ -4387,7 +4457,7 @@ func file_cloudpb_cloud_product_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloudpb_cloud_product_proto_rawDesc), len(file_cloudpb_cloud_product_proto_rawDesc)),
 			NumEnums:      9,
-			NumMessages:   48,
+			NumMessages:   49,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

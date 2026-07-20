@@ -374,6 +374,13 @@ message PaymentAttemptProjection {
   uint64 revision = 9;
 }
 
+// PaymentEventProjection 是 operator/账号审计可见的 provider event journal 摘要。
+// 不包含 provider secret、签名 header 或原始 webhook body。
+message PaymentEventProjection {
+  NormalizedPaymentEvent event = 1;
+  PaymentEventState state = 2;
+}
+
 // CreateCheckoutRequest 只创建 pending order，不修改 Subscription 或 Entitlement。
 message CreateCheckoutRequest {
   string plan_id = 1;
@@ -465,6 +472,7 @@ message GetAccountCommerceResponse {
   repeated OrderProjection orders = 4;
   repeated CommerceAuditProjection audit = 5;
   repeated PaymentAttemptProjection payment_attempts = 6;
+  repeated PaymentEventProjection payment_events = 7;
 }
 
 // CloudProductError 是账号与交易 HTTP/Companion adapter 返回的稳定失败投影。

@@ -742,8 +742,14 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 
 ### CLOUDP006：用户与运营管理面
 
-- Proto JSON API 与真实页面接入 topology/command/usage/subscription。
-- Web Controller 使用自身 generated cloudpb consumer，移除手写平行业务 DTO 和 HUB003 期间的旧页面 bool view projection。
+- Controller public/operator listener 从同一个可选 `web_static_dir` 提供生产 Web build；账号 API、operator API、Control Plane service 与静态资源仍在同一 `termx-cloud-controller` composition 内，internal control listener 不提供页面。
+- `cloud_management.proto` 已定义近期认证、operator session/角色、账号列表/详情和 suspend/restore；`cloud_product.proto` 的账号交易查询同时返回 normalized payment event journal。Go 与 TypeScript consumer 都从同一 schema 生成。
+- 用户账号中心直接消费 generated Proto JSON，展示账号、Subscription/Entitlement、Relay quota、设备、Presence、managed PeerSession data path、CommandOutbox、订单、payment event 与审计；signaling control Hub 和 `DIRECT`/`SINGLE_RELAY` data path 分开显示，stale 不投影成 offline。
+- 账号 destructive command 必须先使用当前密码换取五分钟 HttpOnly recent proof，并同时通过账号 Cookie、same-origin 和 CSRF；请求中的 `account_id` 被当前账号覆盖，不能跨账号查询或控制。
+- 独立 operator listener 使用高熵部署 token、HttpOnly session、独立 CSRF Cookie 与 `readonly/admin` 角色；只读角色只能查询，admin 在登录后五分钟内可以 suspend/restore、撤销设备或创建已有 management command，结果进入 Subscription/Commerce audit 或 CommandOutbox 持久投影。
+- fleet 页面只把同时存在的 Hub/Relay attachment 标记为 fresh，`last_control_seen_at` 只来自真实 attachment，不用 deployment 配置时间伪造在线证据。
+- development supervisor 构建同一 Web 资产，并把随机账号密码和 operator token 写入独立 `0600` credentials 文件；runtime manifest 只记录文件路径，不复制 secret。
+- 已删除旧 `web-controller/controller.go` hand-written facade、`Center/Node/Billing` DTO、旧 `/api/center`、旧 `/api/auth/*`、无 Proto 后端的 `/api/device-login*` 页面、referrals 与 staging 登录 fallback。
 
 ### HUB007：双 Hub 控制面 E2E
 

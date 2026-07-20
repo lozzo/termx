@@ -25,6 +25,23 @@ func TestSupervisorStartsControllerAndTwoIndependentEdges(t *testing.T) {
 		cancel()
 		t.Fatalf("supervisor manifest = %#v", manifest)
 	}
+	credentialsInfo, err := os.Stat(manifest.CredentialsPath)
+	if err != nil {
+		cancel()
+		t.Fatalf("development credentials = %q err=%v", manifest.CredentialsPath, err)
+	}
+	if credentialsInfo.Mode().Perm() != 0o600 {
+		cancel()
+		t.Fatalf("development credentials = %q mode=%v", manifest.CredentialsPath, credentialsInfo.Mode().Perm())
+	}
+	for _, pageURL := range []string{manifest.Controller.PublicURL + "/login", manifest.Controller.PublicURL + "/account", manifest.Controller.OperatorURL + "/operator"} {
+		response, requestErr := http.Get(pageURL)
+		if requestErr != nil || response.StatusCode != http.StatusOK {
+			cancel()
+			t.Fatalf("Controller Web page %q status=%v err=%v", pageURL, response.StatusCode, requestErr)
+		}
+		response.Body.Close()
+	}
 	pids := map[int]bool{manifest.Controller.PID: true}
 	hubs := map[string]bool{}
 	for _, edge := range manifest.Edges {

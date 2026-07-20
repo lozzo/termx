@@ -57,6 +57,7 @@ type Store interface {
 	PutDeployment(context.Context, Deployment) error
 	Deployment(context.Context, string) (Deployment, error)
 	DeploymentByRelay(context.Context, string) (Deployment, error)
+	Deployments(context.Context) ([]Deployment, error)
 	AdvanceControlGeneration(context.Context, string, string, string, time.Time) (Deployment, error)
 	ControlGenerationCurrent(context.Context, string, uint64) (bool, error)
 	AdvanceRelayControlGeneration(context.Context, string, string, string, time.Time) (Deployment, error)
@@ -104,6 +105,11 @@ func (registry *Registry) Deployment(ctx context.Context, hubID string) (Deploym
 // DeploymentByRelay 返回 Relay control handshake 使用的同一 deployment 记录。
 func (registry *Registry) DeploymentByRelay(ctx context.Context, relayID string) (Deployment, error) {
 	return registry.store.DeploymentByRelay(ctx, relayID)
+}
+
+// Deployments 返回 operator fleet 使用的持久 deployment 快照。
+func (registry *Registry) Deployments(ctx context.Context) ([]Deployment, error) {
+	return registry.store.Deployments(ctx)
 }
 
 // AttachHub 验证 HubHello metadata 后原子签发唯一递增 control generation。

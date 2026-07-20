@@ -6,6 +6,8 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { EdgeDeploymentMetadata, KickPresenceTarget, RelayControlTarget, RevokeTerminalAccessTarget } from "./cloud_hub_control_pb";
 import { file_cloudpb_cloud_hub_control } from "./cloud_hub_control_pb";
+import type { AccountProjection, EntitlementProjection, GetAccountCommerceResponse, GetAccountRelayQuotaResponse, RelayQuotaPeriod, SubscriptionProjection, SubscriptionStatus, SubscriptionTransitionKind, TransitionSubscriptionResponse } from "./cloud_product_pb";
+import { file_cloudpb_cloud_product } from "./cloud_product_pb";
 import type { Freshness, ManagedDeviceKind, ManagedPeerSessionProjection, ManagedPeerSessionTarget, PresenceProjection, TerminalAccessProjection, TerminalAccessState } from "./cloud_topology_pb";
 import { file_cloudpb_cloud_topology } from "./cloud_topology_pb";
 import type { Message } from "@bufbuild/protobuf";
@@ -14,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloudpb/cloud_management.proto.
  */
 export const file_cloudpb_cloud_management: GenFile = /*@__PURE__*/
-  fileDesc("Ch5jbG91ZHBiL2Nsb3VkX21hbmFnZW1lbnQucHJvdG8SDnRlcm14LmNsb3VkLnYxIhsKClBhZ2VDdXJzb3ISDQoFdmFsdWUYASABKAkiTAoLUGFnZVJlcXVlc3QSEQoJcGFnZV9zaXplGAEgASgNEioKBmN1cnNvchgCIAEoCzIaLnRlcm14LmNsb3VkLnYxLlBhZ2VDdXJzb3IiPwoMUGFnZVJlc3BvbnNlEi8KC25leHRfY3Vyc29yGAEgASgLMhoudGVybXguY2xvdWQudjEuUGFnZUN1cnNvciJ9ChlNYW5hZ2VtZW50QWN0b3JQcm9qZWN0aW9uEjcKCmFjdG9yX2tpbmQYASABKA4yIy50ZXJteC5jbG91ZC52MS5NYW5hZ2VtZW50QWN0b3JLaW5kEhAKCGFjdG9yX2lkGAIgASgJEhUKDWRpc3BsYXlfbGFiZWwYAyABKAkiogEKFU1hbmFnZW1lbnRFcnJvckRldGFpbBIxCgRjb2RlGAEgASgOMiMudGVybXguY2xvdWQudjEuTWFuYWdlbWVudEVycm9yQ29kZRIPCgdtZXNzYWdlGAIgASgJEhEKCXJldHJ5YWJsZRgDIAEoCBIaChJyZXRyeV9hZnRlcl9taWxsaXMYBCABKAQSFgoOY29ycmVsYXRpb25faWQYBSABKAkirgIKF0FjY291bnREZXZpY2VQcm9qZWN0aW9uEhIKCmFjY291bnRfaWQYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCRIQCghwbGF0Zm9ybRgEIAEoCRI2CgtkZXZpY2Vfa2luZBgFIAEoDjIhLnRlcm14LmNsb3VkLnYxLk1hbmFnZWREZXZpY2VLaW5kEg8KB3Jldm9rZWQYBiABKAgSEgoKYXV0aF9lcG9jaBgHIAEoBBIXCg9hc3NpZ25lZF9odWJfaWQYCCABKAkSGAoQYXNzaWdubWVudF9lcG9jaBgJIAEoBBI0CghwcmVzZW5jZRgKIAEoCzIiLnRlcm14LmNsb3VkLnYxLlByZXNlbmNlUHJvamVjdGlvbiKrAQoZTGlzdEFjY291bnREZXZpY2VzUmVxdWVzdBISCgphY2NvdW50X2lkGAEgASgJEjYKC2RldmljZV9raW5kGAIgASgOMiEudGVybXguY2xvdWQudjEuTWFuYWdlZERldmljZUtpbmQSFwoPaW5jbHVkZV9yZXZva2VkGAMgASgIEikKBHBhZ2UYBCABKAsyGy50ZXJteC5jbG91ZC52MS5QYWdlUmVxdWVzdCKCAQoaTGlzdEFjY291bnREZXZpY2VzUmVzcG9uc2USOAoHZGV2aWNlcxgBIAMoCzInLnRlcm14LmNsb3VkLnYxLkFjY291bnREZXZpY2VQcm9qZWN0aW9uEioKBHBhZ2UYAiABKAsyHC50ZXJteC5jbG91ZC52MS5QYWdlUmVzcG9uc2UivQEKGkxpc3RBY2NvdW50VG9wb2xvZ3lSZXF1ZXN0EhIKCmFjY291bnRfaWQYASABKAkSGAoQZGFlbW9uX2RldmljZV9pZBgCIAEoCRIYChBjbGllbnRfZGV2aWNlX2lkGAMgASgJEiwKCWZyZXNobmVzcxgEIAEoDjIZLnRlcm14LmNsb3VkLnYxLkZyZXNobmVzcxIpCgRwYWdlGAUgASgLMhsudGVybXguY2xvdWQudjEuUGFnZVJlcXVlc3QixQEKG0xpc3RBY2NvdW50VG9wb2xvZ3lSZXNwb25zZRI1CglwcmVzZW5jZXMYASADKAsyIi50ZXJteC5jbG91ZC52MS5QcmVzZW5jZVByb2plY3Rpb24SQwoNcGVlcl9zZXNzaW9ucxgCIAMoCzIsLnRlcm14LmNsb3VkLnYxLk1hbmFnZWRQZWVyU2Vzc2lvblByb2plY3Rpb24SKgoEcGFnZRgDIAEoCzIcLnRlcm14LmNsb3VkLnYxLlBhZ2VSZXNwb25zZSJoChhHZXRNYW5hZ2VkU2Vzc2lvblJlcXVlc3QSEgoKYWNjb3VudF9pZBgBIAEoCRI4CgZ0YXJnZXQYAiABKAsyKC50ZXJteC5jbG91ZC52MS5NYW5hZ2VkUGVlclNlc3Npb25UYXJnZXQiWgoZR2V0TWFuYWdlZFNlc3Npb25SZXNwb25zZRI9CgdzZXNzaW9uGAEgASgLMiwudGVybXguY2xvdWQudjEuTWFuYWdlZFBlZXJTZXNzaW9uUHJvamVjdGlvbiKuAQofTGlzdERhZW1vblRlcm1pbmFsQWNjZXNzUmVxdWVzdBISCgphY2NvdW50X2lkGAEgASgJEhgKEGRhZW1vbl9kZXZpY2VfaWQYAiABKAkSMgoFc3RhdGUYAyABKA4yIy50ZXJteC5jbG91ZC52MS5UZXJtaW5hbEFjY2Vzc1N0YXRlEikKBHBhZ2UYBCABKAsyGy50ZXJteC5jbG91ZC52MS5QYWdlUmVxdWVzdCLZAQogTGlzdERhZW1vblRlcm1pbmFsQWNjZXNzUmVzcG9uc2USOgoIYWNjZXNzZXMYASADKAsyKC50ZXJteC5jbG91ZC52MS5UZXJtaW5hbEFjY2Vzc1Byb2plY3Rpb24SLAoJZnJlc2huZXNzGAIgASgOMhkudGVybXguY2xvdWQudjEuRnJlc2huZXNzEh8KF29ic2VydmVkX2F0X3VuaXhfbWlsbGlzGAMgASgDEioKBHBhZ2UYBCABKAsyHC50ZXJteC5jbG91ZC52MS5QYWdlUmVzcG9uc2UiSQoXUmV2b2tlQ2xvdWREZXZpY2VUYXJnZXQSEQoJZGV2aWNlX2lkGAEgASgJEhsKE2V4cGVjdGVkX2F1dGhfZXBvY2gYAiABKAQi5gIKF01hbmFnZW1lbnRDb21tYW5kVGFyZ2V0EjYKCHByZXNlbmNlGAEgASgLMiIudGVybXguY2xvdWQudjEuS2lja1ByZXNlbmNlVGFyZ2V0SAASPwoMY2xvdWRfZGV2aWNlGAIgASgLMicudGVybXguY2xvdWQudjEuUmV2b2tlQ2xvdWREZXZpY2VUYXJnZXRIABJACgxwZWVyX3Nlc3Npb24YAyABKAsyKC50ZXJteC5jbG91ZC52MS5NYW5hZ2VkUGVlclNlc3Npb25UYXJnZXRIABJFCg90ZXJtaW5hbF9hY2Nlc3MYBCABKAsyKi50ZXJteC5jbG91ZC52MS5SZXZva2VUZXJtaW5hbEFjY2Vzc1RhcmdldEgAEj8KEXJlbGF5X2FsbG9jYXRpb25zGAUgASgLMiIudGVybXguY2xvdWQudjEuUmVsYXlDb250cm9sVGFyZ2V0SABCCAoGdGFyZ2V0IqUDCiBNYW5hZ2VtZW50Q29tbWFuZENoaWxkUHJvamVjdGlvbhIYChBjaGlsZF9jb21tYW5kX2lkGAEgASgJEhUKDXRhcmdldF9odWJfaWQYAiABKAkSNwoGdGFyZ2V0GAMgASgLMicudGVybXguY2xvdWQudjEuTWFuYWdlbWVudENvbW1hbmRUYXJnZXQSPAoOZGVsaXZlcnlfc3RhdGUYBCABKA4yJC50ZXJteC5jbG91ZC52MS5Db21tYW5kRGVsaXZlcnlTdGF0ZRI+Cg9leGVjdXRpb25fc3RhdGUYBSABKA4yJS50ZXJteC5jbG91ZC52MS5Db21tYW5kRXhlY3V0aW9uU3RhdGUSPgoPb2JzZXJ2ZWRfZWZmZWN0GAYgASgOMiUudGVybXguY2xvdWQudjEuQ29tbWFuZE9ic2VydmVkRWZmZWN0EjkKCmxhc3RfZXJyb3IYByABKAsyJS50ZXJteC5jbG91ZC52MS5NYW5hZ2VtZW50RXJyb3JEZXRhaWwSHgoWdXBkYXRlZF9hdF91bml4X21pbGxpcxgIIAEoAyK2BQobTWFuYWdlbWVudENvbW1hbmRQcm9qZWN0aW9uEhIKCmNvbW1hbmRfaWQYASABKAkSGwoTcGFyZW50X29wZXJhdGlvbl9pZBgCIAEoCRISCgphY2NvdW50X2lkGAMgASgJEjgKBWFjdG9yGAQgASgLMikudGVybXguY2xvdWQudjEuTWFuYWdlbWVudEFjdG9yUHJvamVjdGlvbhI7Cgxjb21tYW5kX2tpbmQYBSABKA4yJS50ZXJteC5jbG91ZC52MS5NYW5hZ2VtZW50Q29tbWFuZEtpbmQSNwoGdGFyZ2V0GAYgASgLMicudGVybXguY2xvdWQudjEuTWFuYWdlbWVudENvbW1hbmRUYXJnZXQSQAoQYXV0aG9yaXR5X3Jlc3VsdBgHIAEoDjImLnRlcm14LmNsb3VkLnYxLkNvbW1hbmRBdXRob3JpdHlSZXN1bHQSPAoOZGVsaXZlcnlfc3RhdGUYCCABKA4yJC50ZXJteC5jbG91ZC52MS5Db21tYW5kRGVsaXZlcnlTdGF0ZRI+Cg9leGVjdXRpb25fc3RhdGUYCSABKA4yJS50ZXJteC5jbG91ZC52MS5Db21tYW5kRXhlY3V0aW9uU3RhdGUSPgoPb2JzZXJ2ZWRfZWZmZWN0GAogASgOMiUudGVybXguY2xvdWQudjEuQ29tbWFuZE9ic2VydmVkRWZmZWN0EkIKCGNoaWxkcmVuGAsgAygLMjAudGVybXguY2xvdWQudjEuTWFuYWdlbWVudENvbW1hbmRDaGlsZFByb2plY3Rpb24SHgoWY3JlYXRlZF9hdF91bml4X21pbGxpcxgMIAEoAxIeChZleHBpcmVzX2F0X3VuaXhfbWlsbGlzGA0gASgDEh4KFnVwZGF0ZWRfYXRfdW5peF9taWxsaXMYDiABKAMiwwEKHkNyZWF0ZU1hbmFnZW1lbnRDb21tYW5kUmVxdWVzdBISCgphY2NvdW50X2lkGAEgASgJEjsKDGNvbW1hbmRfa2luZBgCIAEoDjIlLnRlcm14LmNsb3VkLnYxLk1hbmFnZW1lbnRDb21tYW5kS2luZBI3CgZ0YXJnZXQYAyABKAsyJy50ZXJteC5jbG91ZC52MS5NYW5hZ2VtZW50Q29tbWFuZFRhcmdldBIXCg9pZGVtcG90ZW5jeV9rZXkYBCABKAkiXwofQ3JlYXRlTWFuYWdlbWVudENvbW1hbmRSZXNwb25zZRI8Cgdjb21tYW5kGAEgASgLMisudGVybXguY2xvdWQudjEuTWFuYWdlbWVudENvbW1hbmRQcm9qZWN0aW9uIkUKG0dldE1hbmFnZW1lbnRDb21tYW5kUmVxdWVzdBISCgphY2NvdW50X2lkGAEgASgJEhIKCmNvbW1hbmRfaWQYAiABKAkiXAocR2V0TWFuYWdlbWVudENvbW1hbmRSZXNwb25zZRI8Cgdjb21tYW5kGAEgASgLMisudGVybXguY2xvdWQudjEuTWFuYWdlbWVudENvbW1hbmRQcm9qZWN0aW9uItsBCh1MaXN0TWFuYWdlbWVudENvbW1hbmRzUmVxdWVzdBISCgphY2NvdW50X2lkGAEgASgJEjsKDGNvbW1hbmRfa2luZBgCIAEoDjIlLnRlcm14LmNsb3VkLnYxLk1hbmFnZW1lbnRDb21tYW5kS2luZBI+Cg9leGVjdXRpb25fc3RhdGUYAyABKA4yJS50ZXJteC5jbG91ZC52MS5Db21tYW5kRXhlY3V0aW9uU3RhdGUSKQoEcGFnZRgEIAEoCzIbLnRlcm14LmNsb3VkLnYxLlBhZ2VSZXF1ZXN0IosBCh5MaXN0TWFuYWdlbWVudENvbW1hbmRzUmVzcG9uc2USPQoIY29tbWFuZHMYASADKAsyKy50ZXJteC5jbG91ZC52MS5NYW5hZ2VtZW50Q29tbWFuZFByb2plY3Rpb24SKgoEcGFnZRgCIAEoCzIcLnRlcm14LmNsb3VkLnYxLlBhZ2VSZXNwb25zZSKvAgoSSHViRmxlZXRQcm9qZWN0aW9uEjoKCmRlcGxveW1lbnQYASABKAsyJi50ZXJteC5jbG91ZC52MS5FZGdlRGVwbG95bWVudE1ldGFkYXRhEh4KFmh1Yl9jb250cm9sX2dlbmVyYXRpb24YAiABKAQSIAoYcmVsYXlfY29udHJvbF9nZW5lcmF0aW9uGAMgASgEEhsKE3Byb2plY3Rpb25fcmV2aXNpb24YBCABKAQSLAoJZnJlc2huZXNzGAUgASgOMhkudGVybXguY2xvdWQudjEuRnJlc2huZXNzEhEKCWh1Yl9yZWFkeRgGIAEoCBITCgtyZWxheV9yZWFkeRgHIAEoCBIoCiBsYXN0X2NvbnRyb2xfc2Vlbl9hdF91bml4X21pbGxpcxgIIAEoAyJ+ChNMaXN0SHViRmxlZXRSZXF1ZXN0Eg4KBnJlZ2lvbhgBIAEoCRIsCglmcmVzaG5lc3MYAiABKA4yGS50ZXJteC5jbG91ZC52MS5GcmVzaG5lc3MSKQoEcGFnZRgDIAEoCzIbLnRlcm14LmNsb3VkLnYxLlBhZ2VSZXF1ZXN0InQKFExpc3RIdWJGbGVldFJlc3BvbnNlEjAKBGh1YnMYASADKAsyIi50ZXJteC5jbG91ZC52MS5IdWJGbGVldFByb2plY3Rpb24SKgoEcGFnZRgCIAEoCzIcLnRlcm14LmNsb3VkLnYxLlBhZ2VSZXNwb25zZSIlChNHZXRIdWJTdGF0dXNSZXF1ZXN0Eg4KBmh1Yl9pZBgBIAEoCSJHChRHZXRIdWJTdGF0dXNSZXNwb25zZRIvCgNodWIYASABKAsyIi50ZXJteC5jbG91ZC52MS5IdWJGbGVldFByb2plY3Rpb24qvAEKE01hbmFnZW1lbnRBY3RvcktpbmQSJQohTUFOQUdFTUVOVF9BQ1RPUl9LSU5EX1VOU1BFQ0lGSUVEEAASJwojTUFOQUdFTUVOVF9BQ1RPUl9LSU5EX0FDQ09VTlRfT1dORVIQARIrCidNQU5BR0VNRU5UX0FDVE9SX0tJTkRfT1BFUkFUT1JfUkVBRE9OTFkQAhIoCiRNQU5BR0VNRU5UX0FDVE9SX0tJTkRfT1BFUkFUT1JfQURNSU4QAyq9AgoVTWFuYWdlbWVudENvbW1hbmRLaW5kEicKI01BTkFHRU1FTlRfQ09NTUFORF9LSU5EX1VOU1BFQ0lGSUVEEAASKQolTUFOQUdFTUVOVF9DT01NQU5EX0tJTkRfS0lDS19QUkVTRU5DRRABEi8KK01BTkFHRU1FTlRfQ09NTUFORF9LSU5EX1JFVk9LRV9DTE9VRF9ERVZJQ0UQAhI2CjJNQU5BR0VNRU5UX0NPTU1BTkRfS0lORF9DTE9TRV9NQU5BR0VEX1BFRVJfU0VTU0lPThADEjIKLk1BTkFHRU1FTlRfQ09NTUFORF9LSU5EX1JFVk9LRV9URVJNSU5BTF9BQ0NFU1MQBBIzCi9NQU5BR0VNRU5UX0NPTU1BTkRfS0lORF9DTE9TRV9SRUxBWV9BTExPQ0FUSU9OUxAFKr4BChZDb21tYW5kQXV0aG9yaXR5UmVzdWx0EigKJENPTU1BTkRfQVVUSE9SSVRZX1JFU1VMVF9VTlNQRUNJRklFRBAAEisKJ0NPTU1BTkRfQVVUSE9SSVRZX1JFU1VMVF9OT1RfQVBQTElDQUJMRRABEiYKIkNPTU1BTkRfQVVUSE9SSVRZX1JFU1VMVF9DT01NSVRURUQQAhIlCiFDT01NQU5EX0FVVEhPUklUWV9SRVNVTFRfUkVKRUNURUQQAyrcAQoUQ29tbWFuZERlbGl2ZXJ5U3RhdGUSJgoiQ09NTUFORF9ERUxJVkVSWV9TVEFURV9VTlNQRUNJRklFRBAAEiIKHkNPTU1BTkRfREVMSVZFUllfU1RBVEVfUEVORElORxABEicKI0NPTU1BTkRfREVMSVZFUllfU1RBVEVfSFVCX1JFQ0VJVkVEEAISKwonQ09NTUFORF9ERUxJVkVSWV9TVEFURV9SVU5USU1FX1JFQ0VJVkVEEAMSIgoeQ09NTUFORF9ERUxJVkVSWV9TVEFURV9FWFBJUkVEEAQqqQIKFUNvbW1hbmRFeGVjdXRpb25TdGF0ZRInCiNDT01NQU5EX0VYRUNVVElPTl9TVEFURV9VTlNQRUNJRklFRBAAEiMKH0NPTU1BTkRfRVhFQ1VUSU9OX1NUQVRFX1BFTkRJTkcQARIjCh9DT01NQU5EX0VYRUNVVElPTl9TVEFURV9BUFBMSUVEEAISLQopQ09NTUFORF9FWEVDVVRJT05fU1RBVEVfQUxSRUFEWV9TQVRJU0ZJRUQQAxIjCh9DT01NQU5EX0VYRUNVVElPTl9TVEFURV9QQVJUSUFMEAQSJAogQ09NTUFORF9FWEVDVVRJT05fU1RBVEVfUkVKRUNURUQQBRIjCh9DT01NQU5EX0VYRUNVVElPTl9TVEFURV9VTktOT1dOEAYqlQIKFUNvbW1hbmRPYnNlcnZlZEVmZmVjdBInCiNDT01NQU5EX09CU0VSVkVEX0VGRkVDVF9VTlNQRUNJRklFRBAAEiwKKENPTU1BTkRfT0JTRVJWRURfRUZGRUNUX1BSRVNFTkNFX09GRkxJTkUQARIqCiZDT01NQU5EX09CU0VSVkVEX0VGRkVDVF9TRVNTSU9OX0NMT1NFRBACEigKJENPTU1BTkRfT0JTRVJWRURfRUZGRUNUX1JFTEFZX0NMT1NFRBADEioKJkNPTU1BTkRfT0JTRVJWRURfRUZGRUNUX0FDQ0VTU19SRVZPS0VEEAQSIwofQ09NTUFORF9PQlNFUlZFRF9FRkZFQ1RfVU5LTk9XThAFKp8FChNNYW5hZ2VtZW50RXJyb3JDb2RlEiUKIU1BTkFHRU1FTlRfRVJST1JfQ09ERV9VTlNQRUNJRklFRBAAEikKJU1BTkFHRU1FTlRfRVJST1JfQ09ERV9VTkFVVEhFTlRJQ0FURUQQARIjCh9NQU5BR0VNRU5UX0VSUk9SX0NPREVfRk9SQklEREVOEAISLgoqTUFOQUdFTUVOVF9FUlJPUl9DT0RFX1JFQ0VOVF9BVVRIX1JFUVVJUkVEEAMSIwofTUFOQUdFTUVOVF9FUlJPUl9DT0RFX05PVF9GT1VORBAEEiYKIk1BTkFHRU1FTlRfRVJST1JfQ09ERV9TVEFMRV9UQVJHRVQQBRIsCihNQU5BR0VNRU5UX0VSUk9SX0NPREVfQVNTSUdOTUVOVF9DSEFOR0VEEAYSKgomTUFOQUdFTUVOVF9FUlJPUl9DT0RFX1BSRVNFTkNFX0NIQU5HRUQQBxI1CjFNQU5BR0VNRU5UX0VSUk9SX0NPREVfU0VTU0lPTl9JTkNBUk5BVElPTl9DSEFOR0VEEAgSLAooTUFOQUdFTUVOVF9FUlJPUl9DT0RFX1BPTElDWV9VTkFWQUlMQUJMRRAJEikKJU1BTkFHRU1FTlRfRVJST1JfQ09ERV9DT01NQU5EX0VYUElSRUQQChIpCiVNQU5BR0VNRU5UX0VSUk9SX0NPREVfQ09NTUFORF9QQVJUSUFMEAsSLQopTUFOQUdFTUVOVF9FUlJPUl9DT0RFX1JVTlRJTUVfVU5BVkFJTEFCTEUQDBIrCidNQU5BR0VNRU5UX0VSUk9SX0NPREVfUkVMQVlfVU5BVkFJTEFCTEUQDRIjCh9NQU5BR0VNRU5UX0VSUk9SX0NPREVfVEVNUE9SQVJZEA5CJ1olZ2l0aHViLmNvbS9sb3p6b3cvdGVybXgvcHJvdG8vY2xvdWRwYmIGcHJvdG8z", [file_cloudpb_cloud_hub_control, file_cloudpb_cloud_topology]);
+  fileDesc("Ch5jbG91ZHBiL2Nsb3VkX21hbmFnZW1lbnQucHJvdG8SDnRlcm14LmNsb3VkLnYxIhsKClBhZ2VDdXJzb3ISDQoFdmFsdWUYASABKAkiTAoLUGFnZVJlcXVlc3QSEQoJcGFnZV9zaXplGAEgASgNEioKBmN1cnNvchgCIAEoCzIaLnRlcm14LmNsb3VkLnYxLlBhZ2VDdXJzb3IiPwoMUGFnZVJlc3BvbnNlEi8KC25leHRfY3Vyc29yGAEgASgLMhoudGVybXguY2xvdWQudjEuUGFnZUN1cnNvciJ9ChlNYW5hZ2VtZW50QWN0b3JQcm9qZWN0aW9uEjcKCmFjdG9yX2tpbmQYASABKA4yIy50ZXJteC5jbG91ZC52MS5NYW5hZ2VtZW50QWN0b3JLaW5kEhAKCGFjdG9yX2lkGAIgASgJEhUKDWRpc3BsYXlfbGFiZWwYAyABKAkiogEKFU1hbmFnZW1lbnRFcnJvckRldGFpbBIxCgRjb2RlGAEgASgOMiMudGVybXguY2xvdWQudjEuTWFuYWdlbWVudEVycm9yQ29kZRIPCgdtZXNzYWdlGAIgASgJEhEKCXJldHJ5YWJsZRgDIAEoCBIaChJyZXRyeV9hZnRlcl9taWxsaXMYBCABKAQSFgoOY29ycmVsYXRpb25faWQYBSABKAkiLwobUmVjZW50QXV0aGVudGljYXRpb25SZXF1ZXN0EhAKCHBhc3N3b3JkGAEgASgJIj4KHFJlY2VudEF1dGhlbnRpY2F0aW9uUmVzcG9uc2USHgoWZXhwaXJlc19hdF91bml4X21pbGxpcxgBIAEoAyIsChRPcGVyYXRvckxvZ2luUmVxdWVzdBIUCgxhY2Nlc3NfdG9rZW4YASABKAwirwEKGU9wZXJhdG9yU2Vzc2lvblByb2plY3Rpb24SEwoLb3BlcmF0b3JfaWQYASABKAkSNwoKYWN0b3Jfa2luZBgCIAEoDjIjLnRlcm14LmNsb3VkLnYxLk1hbmFnZW1lbnRBY3RvcktpbmQSJAocYXV0aGVudGljYXRlZF9hdF91bml4X21pbGxpcxgDIAEoAxIeChZleHBpcmVzX2F0X3VuaXhfbWlsbGlzGAQgASgDIlMKFU9wZXJhdG9yTG9naW5SZXNwb25zZRI6CgdzZXNzaW9uGAEgASgLMikudGVybXguY2xvdWQudjEuT3BlcmF0b3JTZXNzaW9uUHJvamVjdGlvbiIXChVPcGVyYXRvckxvZ291dFJlcXVlc3QiGAoWT3BlcmF0b3JMb2dvdXRSZXNwb25zZSL9AQoWT3BlcmF0b3JBY2NvdW50U3VtbWFyeRIyCgdhY2NvdW50GAEgASgLMiEudGVybXguY2xvdWQudjEuQWNjb3VudFByb2plY3Rpb24SPAoMc3Vic2NyaXB0aW9uGAIgASgLMiYudGVybXguY2xvdWQudjEuU3Vic2NyaXB0aW9uUHJvamVjdGlvbhI6CgtlbnRpdGxlbWVudBgDIAEoCzIlLnRlcm14LmNsb3VkLnYxLkVudGl0bGVtZW50UHJvamVjdGlvbhI1CgtyZWxheV9xdW90YRgEIAEoCzIgLnRlcm14LmNsb3VkLnYxLlJlbGF5UXVvdGFQZXJpb2QimAEKG0xpc3RPcGVyYXRvckFjY291bnRzUmVxdWVzdBINCgVxdWVyeRgBIAEoCRI/ChNzdWJzY3JpcHRpb25fc3RhdHVzGAIgASgOMiIudGVybXguY2xvdWQudjEuU3Vic2NyaXB0aW9uU3RhdHVzEikKBHBhZ2UYAyABKAsyGy50ZXJteC5jbG91ZC52MS5QYWdlUmVxdWVzdCKEAQocTGlzdE9wZXJhdG9yQWNjb3VudHNSZXNwb25zZRI4CghhY2NvdW50cxgBIAMoCzImLnRlcm14LmNsb3VkLnYxLk9wZXJhdG9yQWNjb3VudFN1bW1hcnkSKgoEcGFnZRgCIAEoCzIcLnRlcm14LmNsb3VkLnYxLlBhZ2VSZXNwb25zZSIvChlHZXRPcGVyYXRvckFjY291bnRSZXF1ZXN0EhIKCmFjY291bnRfaWQYASABKAki2AIKGkdldE9wZXJhdG9yQWNjb3VudFJlc3BvbnNlEjwKCGNvbW1lcmNlGAEgASgLMioudGVybXguY2xvdWQudjEuR2V0QWNjb3VudENvbW1lcmNlUmVzcG9uc2USQQoLcmVsYXlfcXVvdGEYAiABKAsyLC50ZXJteC5jbG91ZC52MS5HZXRBY2NvdW50UmVsYXlRdW90YVJlc3BvbnNlEjsKB2RldmljZXMYAyABKAsyKi50ZXJteC5jbG91ZC52MS5MaXN0QWNjb3VudERldmljZXNSZXNwb25zZRI9Cgh0b3BvbG9neRgEIAEoCzIrLnRlcm14LmNsb3VkLnYxLkxpc3RBY2NvdW50VG9wb2xvZ3lSZXNwb25zZRI9Cghjb21tYW5kcxgFIAMoCzIrLnRlcm14LmNsb3VkLnYxLk1hbmFnZW1lbnRDb21tYW5kUHJvamVjdGlvbiJ7CiVPcGVyYXRvclRyYW5zaXRpb25TdWJzY3JpcHRpb25SZXF1ZXN0EhIKCmFjY291bnRfaWQYASABKAkSPgoKdHJhbnNpdGlvbhgCIAEoDjIqLnRlcm14LmNsb3VkLnYxLlN1YnNjcmlwdGlvblRyYW5zaXRpb25LaW5kImgKJk9wZXJhdG9yVHJhbnNpdGlvblN1YnNjcmlwdGlvblJlc3BvbnNlEj4KBnJlc3VsdBgBIAEoCzIuLnRlcm14LmNsb3VkLnYxLlRyYW5zaXRpb25TdWJzY3JpcHRpb25SZXNwb25zZSKuAgoXQWNjb3VudERldmljZVByb2plY3Rpb24SEgoKYWNjb3VudF9pZBgBIAEoCRIRCglkZXZpY2VfaWQYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJEhAKCHBsYXRmb3JtGAQgASgJEjYKC2RldmljZV9raW5kGAUgASgOMiEudGVybXguY2xvdWQudjEuTWFuYWdlZERldmljZUtpbmQSDwoHcmV2b2tlZBgGIAEoCBISCgphdXRoX2Vwb2NoGAcgASgEEhcKD2Fzc2lnbmVkX2h1Yl9pZBgIIAEoCRIYChBhc3NpZ25tZW50X2Vwb2NoGAkgASgEEjQKCHByZXNlbmNlGAogASgLMiIudGVybXguY2xvdWQudjEuUHJlc2VuY2VQcm9qZWN0aW9uIqsBChlMaXN0QWNjb3VudERldmljZXNSZXF1ZXN0EhIKCmFjY291bnRfaWQYASABKAkSNgoLZGV2aWNlX2tpbmQYAiABKA4yIS50ZXJteC5jbG91ZC52MS5NYW5hZ2VkRGV2aWNlS2luZBIXCg9pbmNsdWRlX3Jldm9rZWQYAyABKAgSKQoEcGFnZRgEIAEoCzIbLnRlcm14LmNsb3VkLnYxLlBhZ2VSZXF1ZXN0IoIBChpMaXN0QWNjb3VudERldmljZXNSZXNwb25zZRI4CgdkZXZpY2VzGAEgAygLMicudGVybXguY2xvdWQudjEuQWNjb3VudERldmljZVByb2plY3Rpb24SKgoEcGFnZRgCIAEoCzIcLnRlcm14LmNsb3VkLnYxLlBhZ2VSZXNwb25zZSK9AQoaTGlzdEFjY291bnRUb3BvbG9neVJlcXVlc3QSEgoKYWNjb3VudF9pZBgBIAEoCRIYChBkYWVtb25fZGV2aWNlX2lkGAIgASgJEhgKEGNsaWVudF9kZXZpY2VfaWQYAyABKAkSLAoJZnJlc2huZXNzGAQgASgOMhkudGVybXguY2xvdWQudjEuRnJlc2huZXNzEikKBHBhZ2UYBSABKAsyGy50ZXJteC5jbG91ZC52MS5QYWdlUmVxdWVzdCLFAQobTGlzdEFjY291bnRUb3BvbG9neVJlc3BvbnNlEjUKCXByZXNlbmNlcxgBIAMoCzIiLnRlcm14LmNsb3VkLnYxLlByZXNlbmNlUHJvamVjdGlvbhJDCg1wZWVyX3Nlc3Npb25zGAIgAygLMiwudGVybXguY2xvdWQudjEuTWFuYWdlZFBlZXJTZXNzaW9uUHJvamVjdGlvbhIqCgRwYWdlGAMgASgLMhwudGVybXguY2xvdWQudjEuUGFnZVJlc3BvbnNlImgKGEdldE1hbmFnZWRTZXNzaW9uUmVxdWVzdBISCgphY2NvdW50X2lkGAEgASgJEjgKBnRhcmdldBgCIAEoCzIoLnRlcm14LmNsb3VkLnYxLk1hbmFnZWRQZWVyU2Vzc2lvblRhcmdldCJaChlHZXRNYW5hZ2VkU2Vzc2lvblJlc3BvbnNlEj0KB3Nlc3Npb24YASABKAsyLC50ZXJteC5jbG91ZC52MS5NYW5hZ2VkUGVlclNlc3Npb25Qcm9qZWN0aW9uIq4BCh9MaXN0RGFlbW9uVGVybWluYWxBY2Nlc3NSZXF1ZXN0EhIKCmFjY291bnRfaWQYASABKAkSGAoQZGFlbW9uX2RldmljZV9pZBgCIAEoCRIyCgVzdGF0ZRgDIAEoDjIjLnRlcm14LmNsb3VkLnYxLlRlcm1pbmFsQWNjZXNzU3RhdGUSKQoEcGFnZRgEIAEoCzIbLnRlcm14LmNsb3VkLnYxLlBhZ2VSZXF1ZXN0ItkBCiBMaXN0RGFlbW9uVGVybWluYWxBY2Nlc3NSZXNwb25zZRI6CghhY2Nlc3NlcxgBIAMoCzIoLnRlcm14LmNsb3VkLnYxLlRlcm1pbmFsQWNjZXNzUHJvamVjdGlvbhIsCglmcmVzaG5lc3MYAiABKA4yGS50ZXJteC5jbG91ZC52MS5GcmVzaG5lc3MSHwoXb2JzZXJ2ZWRfYXRfdW5peF9taWxsaXMYAyABKAMSKgoEcGFnZRgEIAEoCzIcLnRlcm14LmNsb3VkLnYxLlBhZ2VSZXNwb25zZSJJChdSZXZva2VDbG91ZERldmljZVRhcmdldBIRCglkZXZpY2VfaWQYASABKAkSGwoTZXhwZWN0ZWRfYXV0aF9lcG9jaBgCIAEoBCLmAgoXTWFuYWdlbWVudENvbW1hbmRUYXJnZXQSNgoIcHJlc2VuY2UYASABKAsyIi50ZXJteC5jbG91ZC52MS5LaWNrUHJlc2VuY2VUYXJnZXRIABI/CgxjbG91ZF9kZXZpY2UYAiABKAsyJy50ZXJteC5jbG91ZC52MS5SZXZva2VDbG91ZERldmljZVRhcmdldEgAEkAKDHBlZXJfc2Vzc2lvbhgDIAEoCzIoLnRlcm14LmNsb3VkLnYxLk1hbmFnZWRQZWVyU2Vzc2lvblRhcmdldEgAEkUKD3Rlcm1pbmFsX2FjY2VzcxgEIAEoCzIqLnRlcm14LmNsb3VkLnYxLlJldm9rZVRlcm1pbmFsQWNjZXNzVGFyZ2V0SAASPwoRcmVsYXlfYWxsb2NhdGlvbnMYBSABKAsyIi50ZXJteC5jbG91ZC52MS5SZWxheUNvbnRyb2xUYXJnZXRIAEIICgZ0YXJnZXQipQMKIE1hbmFnZW1lbnRDb21tYW5kQ2hpbGRQcm9qZWN0aW9uEhgKEGNoaWxkX2NvbW1hbmRfaWQYASABKAkSFQoNdGFyZ2V0X2h1Yl9pZBgCIAEoCRI3CgZ0YXJnZXQYAyABKAsyJy50ZXJteC5jbG91ZC52MS5NYW5hZ2VtZW50Q29tbWFuZFRhcmdldBI8Cg5kZWxpdmVyeV9zdGF0ZRgEIAEoDjIkLnRlcm14LmNsb3VkLnYxLkNvbW1hbmREZWxpdmVyeVN0YXRlEj4KD2V4ZWN1dGlvbl9zdGF0ZRgFIAEoDjIlLnRlcm14LmNsb3VkLnYxLkNvbW1hbmRFeGVjdXRpb25TdGF0ZRI+Cg9vYnNlcnZlZF9lZmZlY3QYBiABKA4yJS50ZXJteC5jbG91ZC52MS5Db21tYW5kT2JzZXJ2ZWRFZmZlY3QSOQoKbGFzdF9lcnJvchgHIAEoCzIlLnRlcm14LmNsb3VkLnYxLk1hbmFnZW1lbnRFcnJvckRldGFpbBIeChZ1cGRhdGVkX2F0X3VuaXhfbWlsbGlzGAggASgDIrYFChtNYW5hZ2VtZW50Q29tbWFuZFByb2plY3Rpb24SEgoKY29tbWFuZF9pZBgBIAEoCRIbChNwYXJlbnRfb3BlcmF0aW9uX2lkGAIgASgJEhIKCmFjY291bnRfaWQYAyABKAkSOAoFYWN0b3IYBCABKAsyKS50ZXJteC5jbG91ZC52MS5NYW5hZ2VtZW50QWN0b3JQcm9qZWN0aW9uEjsKDGNvbW1hbmRfa2luZBgFIAEoDjIlLnRlcm14LmNsb3VkLnYxLk1hbmFnZW1lbnRDb21tYW5kS2luZBI3CgZ0YXJnZXQYBiABKAsyJy50ZXJteC5jbG91ZC52MS5NYW5hZ2VtZW50Q29tbWFuZFRhcmdldBJAChBhdXRob3JpdHlfcmVzdWx0GAcgASgOMiYudGVybXguY2xvdWQudjEuQ29tbWFuZEF1dGhvcml0eVJlc3VsdBI8Cg5kZWxpdmVyeV9zdGF0ZRgIIAEoDjIkLnRlcm14LmNsb3VkLnYxLkNvbW1hbmREZWxpdmVyeVN0YXRlEj4KD2V4ZWN1dGlvbl9zdGF0ZRgJIAEoDjIlLnRlcm14LmNsb3VkLnYxLkNvbW1hbmRFeGVjdXRpb25TdGF0ZRI+Cg9vYnNlcnZlZF9lZmZlY3QYCiABKA4yJS50ZXJteC5jbG91ZC52MS5Db21tYW5kT2JzZXJ2ZWRFZmZlY3QSQgoIY2hpbGRyZW4YCyADKAsyMC50ZXJteC5jbG91ZC52MS5NYW5hZ2VtZW50Q29tbWFuZENoaWxkUHJvamVjdGlvbhIeChZjcmVhdGVkX2F0X3VuaXhfbWlsbGlzGAwgASgDEh4KFmV4cGlyZXNfYXRfdW5peF9taWxsaXMYDSABKAMSHgoWdXBkYXRlZF9hdF91bml4X21pbGxpcxgOIAEoAyLDAQoeQ3JlYXRlTWFuYWdlbWVudENvbW1hbmRSZXF1ZXN0EhIKCmFjY291bnRfaWQYASABKAkSOwoMY29tbWFuZF9raW5kGAIgASgOMiUudGVybXguY2xvdWQudjEuTWFuYWdlbWVudENvbW1hbmRLaW5kEjcKBnRhcmdldBgDIAEoCzInLnRlcm14LmNsb3VkLnYxLk1hbmFnZW1lbnRDb21tYW5kVGFyZ2V0EhcKD2lkZW1wb3RlbmN5X2tleRgEIAEoCSJfCh9DcmVhdGVNYW5hZ2VtZW50Q29tbWFuZFJlc3BvbnNlEjwKB2NvbW1hbmQYASABKAsyKy50ZXJteC5jbG91ZC52MS5NYW5hZ2VtZW50Q29tbWFuZFByb2plY3Rpb24iRQobR2V0TWFuYWdlbWVudENvbW1hbmRSZXF1ZXN0EhIKCmFjY291bnRfaWQYASABKAkSEgoKY29tbWFuZF9pZBgCIAEoCSJcChxHZXRNYW5hZ2VtZW50Q29tbWFuZFJlc3BvbnNlEjwKB2NvbW1hbmQYASABKAsyKy50ZXJteC5jbG91ZC52MS5NYW5hZ2VtZW50Q29tbWFuZFByb2plY3Rpb24i2wEKHUxpc3RNYW5hZ2VtZW50Q29tbWFuZHNSZXF1ZXN0EhIKCmFjY291bnRfaWQYASABKAkSOwoMY29tbWFuZF9raW5kGAIgASgOMiUudGVybXguY2xvdWQudjEuTWFuYWdlbWVudENvbW1hbmRLaW5kEj4KD2V4ZWN1dGlvbl9zdGF0ZRgDIAEoDjIlLnRlcm14LmNsb3VkLnYxLkNvbW1hbmRFeGVjdXRpb25TdGF0ZRIpCgRwYWdlGAQgASgLMhsudGVybXguY2xvdWQudjEuUGFnZVJlcXVlc3QiiwEKHkxpc3RNYW5hZ2VtZW50Q29tbWFuZHNSZXNwb25zZRI9Cghjb21tYW5kcxgBIAMoCzIrLnRlcm14LmNsb3VkLnYxLk1hbmFnZW1lbnRDb21tYW5kUHJvamVjdGlvbhIqCgRwYWdlGAIgASgLMhwudGVybXguY2xvdWQudjEuUGFnZVJlc3BvbnNlIq8CChJIdWJGbGVldFByb2plY3Rpb24SOgoKZGVwbG95bWVudBgBIAEoCzImLnRlcm14LmNsb3VkLnYxLkVkZ2VEZXBsb3ltZW50TWV0YWRhdGESHgoWaHViX2NvbnRyb2xfZ2VuZXJhdGlvbhgCIAEoBBIgChhyZWxheV9jb250cm9sX2dlbmVyYXRpb24YAyABKAQSGwoTcHJvamVjdGlvbl9yZXZpc2lvbhgEIAEoBBIsCglmcmVzaG5lc3MYBSABKA4yGS50ZXJteC5jbG91ZC52MS5GcmVzaG5lc3MSEQoJaHViX3JlYWR5GAYgASgIEhMKC3JlbGF5X3JlYWR5GAcgASgIEigKIGxhc3RfY29udHJvbF9zZWVuX2F0X3VuaXhfbWlsbGlzGAggASgDIn4KE0xpc3RIdWJGbGVldFJlcXVlc3QSDgoGcmVnaW9uGAEgASgJEiwKCWZyZXNobmVzcxgCIAEoDjIZLnRlcm14LmNsb3VkLnYxLkZyZXNobmVzcxIpCgRwYWdlGAMgASgLMhsudGVybXguY2xvdWQudjEuUGFnZVJlcXVlc3QidAoUTGlzdEh1YkZsZWV0UmVzcG9uc2USMAoEaHVicxgBIAMoCzIiLnRlcm14LmNsb3VkLnYxLkh1YkZsZWV0UHJvamVjdGlvbhIqCgRwYWdlGAIgASgLMhwudGVybXguY2xvdWQudjEuUGFnZVJlc3BvbnNlIiUKE0dldEh1YlN0YXR1c1JlcXVlc3QSDgoGaHViX2lkGAEgASgJIkcKFEdldEh1YlN0YXR1c1Jlc3BvbnNlEi8KA2h1YhgBIAEoCzIiLnRlcm14LmNsb3VkLnYxLkh1YkZsZWV0UHJvamVjdGlvbiq8AQoTTWFuYWdlbWVudEFjdG9yS2luZBIlCiFNQU5BR0VNRU5UX0FDVE9SX0tJTkRfVU5TUEVDSUZJRUQQABInCiNNQU5BR0VNRU5UX0FDVE9SX0tJTkRfQUNDT1VOVF9PV05FUhABEisKJ01BTkFHRU1FTlRfQUNUT1JfS0lORF9PUEVSQVRPUl9SRUFET05MWRACEigKJE1BTkFHRU1FTlRfQUNUT1JfS0lORF9PUEVSQVRPUl9BRE1JThADKr0CChVNYW5hZ2VtZW50Q29tbWFuZEtpbmQSJwojTUFOQUdFTUVOVF9DT01NQU5EX0tJTkRfVU5TUEVDSUZJRUQQABIpCiVNQU5BR0VNRU5UX0NPTU1BTkRfS0lORF9LSUNLX1BSRVNFTkNFEAESLworTUFOQUdFTUVOVF9DT01NQU5EX0tJTkRfUkVWT0tFX0NMT1VEX0RFVklDRRACEjYKMk1BTkFHRU1FTlRfQ09NTUFORF9LSU5EX0NMT1NFX01BTkFHRURfUEVFUl9TRVNTSU9OEAMSMgouTUFOQUdFTUVOVF9DT01NQU5EX0tJTkRfUkVWT0tFX1RFUk1JTkFMX0FDQ0VTUxAEEjMKL01BTkFHRU1FTlRfQ09NTUFORF9LSU5EX0NMT1NFX1JFTEFZX0FMTE9DQVRJT05TEAUqvgEKFkNvbW1hbmRBdXRob3JpdHlSZXN1bHQSKAokQ09NTUFORF9BVVRIT1JJVFlfUkVTVUxUX1VOU1BFQ0lGSUVEEAASKwonQ09NTUFORF9BVVRIT1JJVFlfUkVTVUxUX05PVF9BUFBMSUNBQkxFEAESJgoiQ09NTUFORF9BVVRIT1JJVFlfUkVTVUxUX0NPTU1JVFRFRBACEiUKIUNPTU1BTkRfQVVUSE9SSVRZX1JFU1VMVF9SRUpFQ1RFRBADKtwBChRDb21tYW5kRGVsaXZlcnlTdGF0ZRImCiJDT01NQU5EX0RFTElWRVJZX1NUQVRFX1VOU1BFQ0lGSUVEEAASIgoeQ09NTUFORF9ERUxJVkVSWV9TVEFURV9QRU5ESU5HEAESJwojQ09NTUFORF9ERUxJVkVSWV9TVEFURV9IVUJfUkVDRUlWRUQQAhIrCidDT01NQU5EX0RFTElWRVJZX1NUQVRFX1JVTlRJTUVfUkVDRUlWRUQQAxIiCh5DT01NQU5EX0RFTElWRVJZX1NUQVRFX0VYUElSRUQQBCqpAgoVQ29tbWFuZEV4ZWN1dGlvblN0YXRlEicKI0NPTU1BTkRfRVhFQ1VUSU9OX1NUQVRFX1VOU1BFQ0lGSUVEEAASIwofQ09NTUFORF9FWEVDVVRJT05fU1RBVEVfUEVORElORxABEiMKH0NPTU1BTkRfRVhFQ1VUSU9OX1NUQVRFX0FQUExJRUQQAhItCilDT01NQU5EX0VYRUNVVElPTl9TVEFURV9BTFJFQURZX1NBVElTRklFRBADEiMKH0NPTU1BTkRfRVhFQ1VUSU9OX1NUQVRFX1BBUlRJQUwQBBIkCiBDT01NQU5EX0VYRUNVVElPTl9TVEFURV9SRUpFQ1RFRBAFEiMKH0NPTU1BTkRfRVhFQ1VUSU9OX1NUQVRFX1VOS05PV04QBiqVAgoVQ29tbWFuZE9ic2VydmVkRWZmZWN0EicKI0NPTU1BTkRfT0JTRVJWRURfRUZGRUNUX1VOU1BFQ0lGSUVEEAASLAooQ09NTUFORF9PQlNFUlZFRF9FRkZFQ1RfUFJFU0VOQ0VfT0ZGTElORRABEioKJkNPTU1BTkRfT0JTRVJWRURfRUZGRUNUX1NFU1NJT05fQ0xPU0VEEAISKAokQ09NTUFORF9PQlNFUlZFRF9FRkZFQ1RfUkVMQVlfQ0xPU0VEEAMSKgomQ09NTUFORF9PQlNFUlZFRF9FRkZFQ1RfQUNDRVNTX1JFVk9LRUQQBBIjCh9DT01NQU5EX09CU0VSVkVEX0VGRkVDVF9VTktOT1dOEAUqnwUKE01hbmFnZW1lbnRFcnJvckNvZGUSJQohTUFOQUdFTUVOVF9FUlJPUl9DT0RFX1VOU1BFQ0lGSUVEEAASKQolTUFOQUdFTUVOVF9FUlJPUl9DT0RFX1VOQVVUSEVOVElDQVRFRBABEiMKH01BTkFHRU1FTlRfRVJST1JfQ09ERV9GT1JCSURERU4QAhIuCipNQU5BR0VNRU5UX0VSUk9SX0NPREVfUkVDRU5UX0FVVEhfUkVRVUlSRUQQAxIjCh9NQU5BR0VNRU5UX0VSUk9SX0NPREVfTk9UX0ZPVU5EEAQSJgoiTUFOQUdFTUVOVF9FUlJPUl9DT0RFX1NUQUxFX1RBUkdFVBAFEiwKKE1BTkFHRU1FTlRfRVJST1JfQ09ERV9BU1NJR05NRU5UX0NIQU5HRUQQBhIqCiZNQU5BR0VNRU5UX0VSUk9SX0NPREVfUFJFU0VOQ0VfQ0hBTkdFRBAHEjUKMU1BTkFHRU1FTlRfRVJST1JfQ09ERV9TRVNTSU9OX0lOQ0FSTkFUSU9OX0NIQU5HRUQQCBIsCihNQU5BR0VNRU5UX0VSUk9SX0NPREVfUE9MSUNZX1VOQVZBSUxBQkxFEAkSKQolTUFOQUdFTUVOVF9FUlJPUl9DT0RFX0NPTU1BTkRfRVhQSVJFRBAKEikKJU1BTkFHRU1FTlRfRVJST1JfQ09ERV9DT01NQU5EX1BBUlRJQUwQCxItCilNQU5BR0VNRU5UX0VSUk9SX0NPREVfUlVOVElNRV9VTkFWQUlMQUJMRRAMEisKJ01BTkFHRU1FTlRfRVJST1JfQ09ERV9SRUxBWV9VTkFWQUlMQUJMRRANEiMKH01BTkFHRU1FTlRfRVJST1JfQ09ERV9URU1QT1JBUlkQDkInWiVnaXRodWIuY29tL2xvenpvdy90ZXJteC9wcm90by9jbG91ZHBiYgZwcm90bzM", [file_cloudpb_cloud_hub_control, file_cloudpb_cloud_product, file_cloudpb_cloud_topology]);
 
 /**
  * PageCursor 是 opaque pagination cursor，不允许客户端自行解释排序字段。
@@ -147,6 +149,312 @@ export const ManagementErrorDetailSchema: GenMessage<ManagementErrorDetail> = /*
   messageDesc(file_cloudpb_cloud_management, 4);
 
 /**
+ * RecentAuthenticationRequest 用当前账号密码换取短期 destructive-action proof。
+ *
+ * @generated from message termx.cloud.v1.RecentAuthenticationRequest
+ */
+export type RecentAuthenticationRequest = Message<"termx.cloud.v1.RecentAuthenticationRequest"> & {
+  /**
+   * @generated from field: string password = 1;
+   */
+  password: string;
+};
+
+/**
+ * Describes the message termx.cloud.v1.RecentAuthenticationRequest.
+ * Use `create(RecentAuthenticationRequestSchema)` to create a new message.
+ */
+export const RecentAuthenticationRequestSchema: GenMessage<RecentAuthenticationRequest> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_management, 5);
+
+/**
+ * @generated from message termx.cloud.v1.RecentAuthenticationResponse
+ */
+export type RecentAuthenticationResponse = Message<"termx.cloud.v1.RecentAuthenticationResponse"> & {
+  /**
+   * @generated from field: int64 expires_at_unix_millis = 1;
+   */
+  expiresAtUnixMillis: bigint;
+};
+
+/**
+ * Describes the message termx.cloud.v1.RecentAuthenticationResponse.
+ * Use `create(RecentAuthenticationResponseSchema)` to create a new message.
+ */
+export const RecentAuthenticationResponseSchema: GenMessage<RecentAuthenticationResponse> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_management, 6);
+
+/**
+ * OperatorLoginRequest 只在独立 operator listener 消费部署配置的高熵 token。
+ *
+ * @generated from message termx.cloud.v1.OperatorLoginRequest
+ */
+export type OperatorLoginRequest = Message<"termx.cloud.v1.OperatorLoginRequest"> & {
+  /**
+   * @generated from field: bytes access_token = 1;
+   */
+  accessToken: Uint8Array;
+};
+
+/**
+ * Describes the message termx.cloud.v1.OperatorLoginRequest.
+ * Use `create(OperatorLoginRequestSchema)` to create a new message.
+ */
+export const OperatorLoginRequestSchema: GenMessage<OperatorLoginRequest> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_management, 7);
+
+/**
+ * @generated from message termx.cloud.v1.OperatorSessionProjection
+ */
+export type OperatorSessionProjection = Message<"termx.cloud.v1.OperatorSessionProjection"> & {
+  /**
+   * @generated from field: string operator_id = 1;
+   */
+  operatorId: string;
+
+  /**
+   * @generated from field: termx.cloud.v1.ManagementActorKind actor_kind = 2;
+   */
+  actorKind: ManagementActorKind;
+
+  /**
+   * @generated from field: int64 authenticated_at_unix_millis = 3;
+   */
+  authenticatedAtUnixMillis: bigint;
+
+  /**
+   * @generated from field: int64 expires_at_unix_millis = 4;
+   */
+  expiresAtUnixMillis: bigint;
+};
+
+/**
+ * Describes the message termx.cloud.v1.OperatorSessionProjection.
+ * Use `create(OperatorSessionProjectionSchema)` to create a new message.
+ */
+export const OperatorSessionProjectionSchema: GenMessage<OperatorSessionProjection> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_management, 8);
+
+/**
+ * @generated from message termx.cloud.v1.OperatorLoginResponse
+ */
+export type OperatorLoginResponse = Message<"termx.cloud.v1.OperatorLoginResponse"> & {
+  /**
+   * @generated from field: termx.cloud.v1.OperatorSessionProjection session = 1;
+   */
+  session?: OperatorSessionProjection | undefined;
+};
+
+/**
+ * Describes the message termx.cloud.v1.OperatorLoginResponse.
+ * Use `create(OperatorLoginResponseSchema)` to create a new message.
+ */
+export const OperatorLoginResponseSchema: GenMessage<OperatorLoginResponse> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_management, 9);
+
+/**
+ * @generated from message termx.cloud.v1.OperatorLogoutRequest
+ */
+export type OperatorLogoutRequest = Message<"termx.cloud.v1.OperatorLogoutRequest"> & {
+};
+
+/**
+ * Describes the message termx.cloud.v1.OperatorLogoutRequest.
+ * Use `create(OperatorLogoutRequestSchema)` to create a new message.
+ */
+export const OperatorLogoutRequestSchema: GenMessage<OperatorLogoutRequest> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_management, 10);
+
+/**
+ * @generated from message termx.cloud.v1.OperatorLogoutResponse
+ */
+export type OperatorLogoutResponse = Message<"termx.cloud.v1.OperatorLogoutResponse"> & {
+};
+
+/**
+ * Describes the message termx.cloud.v1.OperatorLogoutResponse.
+ * Use `create(OperatorLogoutResponseSchema)` to create a new message.
+ */
+export const OperatorLogoutResponseSchema: GenMessage<OperatorLogoutResponse> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_management, 11);
+
+/**
+ * OperatorAccountSummary 是 fleet 列表中的账号、subscription、entitlement 与 quota 摘要。
+ *
+ * @generated from message termx.cloud.v1.OperatorAccountSummary
+ */
+export type OperatorAccountSummary = Message<"termx.cloud.v1.OperatorAccountSummary"> & {
+  /**
+   * @generated from field: termx.cloud.v1.AccountProjection account = 1;
+   */
+  account?: AccountProjection | undefined;
+
+  /**
+   * @generated from field: termx.cloud.v1.SubscriptionProjection subscription = 2;
+   */
+  subscription?: SubscriptionProjection | undefined;
+
+  /**
+   * @generated from field: termx.cloud.v1.EntitlementProjection entitlement = 3;
+   */
+  entitlement?: EntitlementProjection | undefined;
+
+  /**
+   * @generated from field: termx.cloud.v1.RelayQuotaPeriod relay_quota = 4;
+   */
+  relayQuota?: RelayQuotaPeriod | undefined;
+};
+
+/**
+ * Describes the message termx.cloud.v1.OperatorAccountSummary.
+ * Use `create(OperatorAccountSummarySchema)` to create a new message.
+ */
+export const OperatorAccountSummarySchema: GenMessage<OperatorAccountSummary> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_management, 12);
+
+/**
+ * @generated from message termx.cloud.v1.ListOperatorAccountsRequest
+ */
+export type ListOperatorAccountsRequest = Message<"termx.cloud.v1.ListOperatorAccountsRequest"> & {
+  /**
+   * @generated from field: string query = 1;
+   */
+  query: string;
+
+  /**
+   * @generated from field: termx.cloud.v1.SubscriptionStatus subscription_status = 2;
+   */
+  subscriptionStatus: SubscriptionStatus;
+
+  /**
+   * @generated from field: termx.cloud.v1.PageRequest page = 3;
+   */
+  page?: PageRequest | undefined;
+};
+
+/**
+ * Describes the message termx.cloud.v1.ListOperatorAccountsRequest.
+ * Use `create(ListOperatorAccountsRequestSchema)` to create a new message.
+ */
+export const ListOperatorAccountsRequestSchema: GenMessage<ListOperatorAccountsRequest> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_management, 13);
+
+/**
+ * @generated from message termx.cloud.v1.ListOperatorAccountsResponse
+ */
+export type ListOperatorAccountsResponse = Message<"termx.cloud.v1.ListOperatorAccountsResponse"> & {
+  /**
+   * @generated from field: repeated termx.cloud.v1.OperatorAccountSummary accounts = 1;
+   */
+  accounts: OperatorAccountSummary[];
+
+  /**
+   * @generated from field: termx.cloud.v1.PageResponse page = 2;
+   */
+  page?: PageResponse | undefined;
+};
+
+/**
+ * Describes the message termx.cloud.v1.ListOperatorAccountsResponse.
+ * Use `create(ListOperatorAccountsResponseSchema)` to create a new message.
+ */
+export const ListOperatorAccountsResponseSchema: GenMessage<ListOperatorAccountsResponse> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_management, 14);
+
+/**
+ * @generated from message termx.cloud.v1.GetOperatorAccountRequest
+ */
+export type GetOperatorAccountRequest = Message<"termx.cloud.v1.GetOperatorAccountRequest"> & {
+  /**
+   * @generated from field: string account_id = 1;
+   */
+  accountId: string;
+};
+
+/**
+ * Describes the message termx.cloud.v1.GetOperatorAccountRequest.
+ * Use `create(GetOperatorAccountRequestSchema)` to create a new message.
+ */
+export const GetOperatorAccountRequestSchema: GenMessage<GetOperatorAccountRequest> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_management, 15);
+
+/**
+ * @generated from message termx.cloud.v1.GetOperatorAccountResponse
+ */
+export type GetOperatorAccountResponse = Message<"termx.cloud.v1.GetOperatorAccountResponse"> & {
+  /**
+   * @generated from field: termx.cloud.v1.GetAccountCommerceResponse commerce = 1;
+   */
+  commerce?: GetAccountCommerceResponse | undefined;
+
+  /**
+   * @generated from field: termx.cloud.v1.GetAccountRelayQuotaResponse relay_quota = 2;
+   */
+  relayQuota?: GetAccountRelayQuotaResponse | undefined;
+
+  /**
+   * @generated from field: termx.cloud.v1.ListAccountDevicesResponse devices = 3;
+   */
+  devices?: ListAccountDevicesResponse | undefined;
+
+  /**
+   * @generated from field: termx.cloud.v1.ListAccountTopologyResponse topology = 4;
+   */
+  topology?: ListAccountTopologyResponse | undefined;
+
+  /**
+   * @generated from field: repeated termx.cloud.v1.ManagementCommandProjection commands = 5;
+   */
+  commands: ManagementCommandProjection[];
+};
+
+/**
+ * Describes the message termx.cloud.v1.GetOperatorAccountResponse.
+ * Use `create(GetOperatorAccountResponseSchema)` to create a new message.
+ */
+export const GetOperatorAccountResponseSchema: GenMessage<GetOperatorAccountResponse> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_management, 16);
+
+/**
+ * @generated from message termx.cloud.v1.OperatorTransitionSubscriptionRequest
+ */
+export type OperatorTransitionSubscriptionRequest = Message<"termx.cloud.v1.OperatorTransitionSubscriptionRequest"> & {
+  /**
+   * @generated from field: string account_id = 1;
+   */
+  accountId: string;
+
+  /**
+   * @generated from field: termx.cloud.v1.SubscriptionTransitionKind transition = 2;
+   */
+  transition: SubscriptionTransitionKind;
+};
+
+/**
+ * Describes the message termx.cloud.v1.OperatorTransitionSubscriptionRequest.
+ * Use `create(OperatorTransitionSubscriptionRequestSchema)` to create a new message.
+ */
+export const OperatorTransitionSubscriptionRequestSchema: GenMessage<OperatorTransitionSubscriptionRequest> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_management, 17);
+
+/**
+ * @generated from message termx.cloud.v1.OperatorTransitionSubscriptionResponse
+ */
+export type OperatorTransitionSubscriptionResponse = Message<"termx.cloud.v1.OperatorTransitionSubscriptionResponse"> & {
+  /**
+   * @generated from field: termx.cloud.v1.TransitionSubscriptionResponse result = 1;
+   */
+  result?: TransitionSubscriptionResponse | undefined;
+};
+
+/**
+ * Describes the message termx.cloud.v1.OperatorTransitionSubscriptionResponse.
+ * Use `create(OperatorTransitionSubscriptionResponseSchema)` to create a new message.
+ */
+export const OperatorTransitionSubscriptionResponseSchema: GenMessage<OperatorTransitionSubscriptionResponse> = /*@__PURE__*/
+  messageDesc(file_cloudpb_cloud_management, 18);
+
+/**
  * AccountDeviceProjection 是账号隔离后的设备与 assignment 摘要。
  *
  * @generated from message termx.cloud.v1.AccountDeviceProjection
@@ -208,7 +516,7 @@ export type AccountDeviceProjection = Message<"termx.cloud.v1.AccountDeviceProje
  * Use `create(AccountDeviceProjectionSchema)` to create a new message.
  */
 export const AccountDeviceProjectionSchema: GenMessage<AccountDeviceProjection> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 5);
+  messageDesc(file_cloudpb_cloud_management, 19);
 
 /**
  * ListAccountDevicesRequest 查询当前 actor 有权访问的账号设备。
@@ -242,7 +550,7 @@ export type ListAccountDevicesRequest = Message<"termx.cloud.v1.ListAccountDevic
  * Use `create(ListAccountDevicesRequestSchema)` to create a new message.
  */
 export const ListAccountDevicesRequestSchema: GenMessage<ListAccountDevicesRequest> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 6);
+  messageDesc(file_cloudpb_cloud_management, 20);
 
 /**
  * ListAccountDevicesResponse 返回账号隔离的设备列表。
@@ -266,7 +574,7 @@ export type ListAccountDevicesResponse = Message<"termx.cloud.v1.ListAccountDevi
  * Use `create(ListAccountDevicesResponseSchema)` to create a new message.
  */
 export const ListAccountDevicesResponseSchema: GenMessage<ListAccountDevicesResponse> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 7);
+  messageDesc(file_cloudpb_cloud_management, 21);
 
 /**
  * ListAccountTopologyRequest 查询账号下的 Presence 与 managed session projection。
@@ -305,7 +613,7 @@ export type ListAccountTopologyRequest = Message<"termx.cloud.v1.ListAccountTopo
  * Use `create(ListAccountTopologyRequestSchema)` to create a new message.
  */
 export const ListAccountTopologyRequestSchema: GenMessage<ListAccountTopologyRequest> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 8);
+  messageDesc(file_cloudpb_cloud_management, 22);
 
 /**
  * ListAccountTopologyResponse 分开返回 Presence 与数据路径投影。
@@ -334,7 +642,7 @@ export type ListAccountTopologyResponse = Message<"termx.cloud.v1.ListAccountTop
  * Use `create(ListAccountTopologyResponseSchema)` to create a new message.
  */
 export const ListAccountTopologyResponseSchema: GenMessage<ListAccountTopologyResponse> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 9);
+  messageDesc(file_cloudpb_cloud_management, 23);
 
 /**
  * GetManagedSessionRequest 查询一个精确 managed session incarnation。
@@ -358,7 +666,7 @@ export type GetManagedSessionRequest = Message<"termx.cloud.v1.GetManagedSession
  * Use `create(GetManagedSessionRequestSchema)` to create a new message.
  */
 export const GetManagedSessionRequestSchema: GenMessage<GetManagedSessionRequest> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 10);
+  messageDesc(file_cloudpb_cloud_management, 24);
 
 /**
  * GetManagedSessionResponse 返回经过账号与 assignment 校验的 projection。
@@ -377,7 +685,7 @@ export type GetManagedSessionResponse = Message<"termx.cloud.v1.GetManagedSessio
  * Use `create(GetManagedSessionResponseSchema)` to create a new message.
  */
 export const GetManagedSessionResponseSchema: GenMessage<GetManagedSessionResponse> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 11);
+  messageDesc(file_cloudpb_cloud_management, 25);
 
 /**
  * ListDaemonTerminalAccessRequest 查询 daemon 上报的 opaque access references。
@@ -411,7 +719,7 @@ export type ListDaemonTerminalAccessRequest = Message<"termx.cloud.v1.ListDaemon
  * Use `create(ListDaemonTerminalAccessRequestSchema)` to create a new message.
  */
 export const ListDaemonTerminalAccessRequestSchema: GenMessage<ListDaemonTerminalAccessRequest> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 12);
+  messageDesc(file_cloudpb_cloud_management, 26);
 
 /**
  * ListDaemonTerminalAccessResponse 不包含 grant body、scope 或 terminal identity。
@@ -445,7 +753,7 @@ export type ListDaemonTerminalAccessResponse = Message<"termx.cloud.v1.ListDaemo
  * Use `create(ListDaemonTerminalAccessResponseSchema)` to create a new message.
  */
 export const ListDaemonTerminalAccessResponseSchema: GenMessage<ListDaemonTerminalAccessResponse> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 13);
+  messageDesc(file_cloudpb_cloud_management, 27);
 
 /**
  * RevokeCloudDeviceTarget 是持久 authority revoke 目标。
@@ -469,7 +777,7 @@ export type RevokeCloudDeviceTarget = Message<"termx.cloud.v1.RevokeCloudDeviceT
  * Use `create(RevokeCloudDeviceTargetSchema)` to create a new message.
  */
 export const RevokeCloudDeviceTargetSchema: GenMessage<RevokeCloudDeviceTarget> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 14);
+  messageDesc(file_cloudpb_cloud_management, 28);
 
 /**
  * ManagementCommandTarget 是用户/运营命令的强类型目标。
@@ -518,7 +826,7 @@ export type ManagementCommandTarget = Message<"termx.cloud.v1.ManagementCommandT
  * Use `create(ManagementCommandTargetSchema)` to create a new message.
  */
 export const ManagementCommandTargetSchema: GenMessage<ManagementCommandTarget> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 15);
+  messageDesc(file_cloudpb_cloud_management, 29);
 
 /**
  * ManagementCommandChildProjection 是一个精确 Hub/daemon/Relay enforcement child。
@@ -572,7 +880,7 @@ export type ManagementCommandChildProjection = Message<"termx.cloud.v1.Managemen
  * Use `create(ManagementCommandChildProjectionSchema)` to create a new message.
  */
 export const ManagementCommandChildProjectionSchema: GenMessage<ManagementCommandChildProjection> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 16);
+  messageDesc(file_cloudpb_cloud_management, 30);
 
 /**
  * ManagementCommandProjection 分离 authority、delivery、execution 与 observed effect。
@@ -656,7 +964,7 @@ export type ManagementCommandProjection = Message<"termx.cloud.v1.ManagementComm
  * Use `create(ManagementCommandProjectionSchema)` to create a new message.
  */
 export const ManagementCommandProjectionSchema: GenMessage<ManagementCommandProjection> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 17);
+  messageDesc(file_cloudpb_cloud_management, 31);
 
 /**
  * CreateManagementCommandRequest 创建一个经过近期重认证和 CSRF 校验的 command。
@@ -690,7 +998,7 @@ export type CreateManagementCommandRequest = Message<"termx.cloud.v1.CreateManag
  * Use `create(CreateManagementCommandRequestSchema)` to create a new message.
  */
 export const CreateManagementCommandRequestSchema: GenMessage<CreateManagementCommandRequest> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 18);
+  messageDesc(file_cloudpb_cloud_management, 32);
 
 /**
  * CreateManagementCommandResponse 返回持久 CommandOutbox projection。
@@ -709,7 +1017,7 @@ export type CreateManagementCommandResponse = Message<"termx.cloud.v1.CreateMana
  * Use `create(CreateManagementCommandResponseSchema)` to create a new message.
  */
 export const CreateManagementCommandResponseSchema: GenMessage<CreateManagementCommandResponse> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 19);
+  messageDesc(file_cloudpb_cloud_management, 33);
 
 /**
  * GetManagementCommandRequest 查询当前账号可见的 command。
@@ -733,7 +1041,7 @@ export type GetManagementCommandRequest = Message<"termx.cloud.v1.GetManagementC
  * Use `create(GetManagementCommandRequestSchema)` to create a new message.
  */
 export const GetManagementCommandRequestSchema: GenMessage<GetManagementCommandRequest> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 20);
+  messageDesc(file_cloudpb_cloud_management, 34);
 
 /**
  * GetManagementCommandResponse 返回 parent/child 完整状态。
@@ -752,7 +1060,7 @@ export type GetManagementCommandResponse = Message<"termx.cloud.v1.GetManagement
  * Use `create(GetManagementCommandResponseSchema)` to create a new message.
  */
 export const GetManagementCommandResponseSchema: GenMessage<GetManagementCommandResponse> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 21);
+  messageDesc(file_cloudpb_cloud_management, 35);
 
 /**
  * ListManagementCommandsRequest 按账号、类型和状态过滤 command。
@@ -786,7 +1094,7 @@ export type ListManagementCommandsRequest = Message<"termx.cloud.v1.ListManageme
  * Use `create(ListManagementCommandsRequestSchema)` to create a new message.
  */
 export const ListManagementCommandsRequestSchema: GenMessage<ListManagementCommandsRequest> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 22);
+  messageDesc(file_cloudpb_cloud_management, 36);
 
 /**
  * ListManagementCommandsResponse 返回有界 command 列表。
@@ -810,7 +1118,7 @@ export type ListManagementCommandsResponse = Message<"termx.cloud.v1.ListManagem
  * Use `create(ListManagementCommandsResponseSchema)` to create a new message.
  */
 export const ListManagementCommandsResponseSchema: GenMessage<ListManagementCommandsResponse> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 23);
+  messageDesc(file_cloudpb_cloud_management, 37);
 
 /**
  * HubFleetProjection 是 operator 可见的 Hub control/readiness 摘要。
@@ -864,7 +1172,7 @@ export type HubFleetProjection = Message<"termx.cloud.v1.HubFleetProjection"> & 
  * Use `create(HubFleetProjectionSchema)` to create a new message.
  */
 export const HubFleetProjectionSchema: GenMessage<HubFleetProjection> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 24);
+  messageDesc(file_cloudpb_cloud_management, 38);
 
 /**
  * ListHubFleetRequest 是 operator-only fleet 查询。
@@ -893,7 +1201,7 @@ export type ListHubFleetRequest = Message<"termx.cloud.v1.ListHubFleetRequest"> 
  * Use `create(ListHubFleetRequestSchema)` to create a new message.
  */
 export const ListHubFleetRequestSchema: GenMessage<ListHubFleetRequest> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 25);
+  messageDesc(file_cloudpb_cloud_management, 39);
 
 /**
  * ListHubFleetResponse 返回脱敏 fleet 状态。
@@ -917,7 +1225,7 @@ export type ListHubFleetResponse = Message<"termx.cloud.v1.ListHubFleetResponse"
  * Use `create(ListHubFleetResponseSchema)` to create a new message.
  */
 export const ListHubFleetResponseSchema: GenMessage<ListHubFleetResponse> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 26);
+  messageDesc(file_cloudpb_cloud_management, 40);
 
 /**
  * GetHubStatusRequest 查询一个 Hub identity，而不是整个 Edge 的合并状态机。
@@ -936,7 +1244,7 @@ export type GetHubStatusRequest = Message<"termx.cloud.v1.GetHubStatusRequest"> 
  * Use `create(GetHubStatusRequestSchema)` to create a new message.
  */
 export const GetHubStatusRequestSchema: GenMessage<GetHubStatusRequest> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 27);
+  messageDesc(file_cloudpb_cloud_management, 41);
 
 /**
  * GetHubStatusResponse 返回 Hub/Relay 独立 generation 的组合展示。
@@ -955,7 +1263,7 @@ export type GetHubStatusResponse = Message<"termx.cloud.v1.GetHubStatusResponse"
  * Use `create(GetHubStatusResponseSchema)` to create a new message.
  */
 export const GetHubStatusResponseSchema: GenMessage<GetHubStatusResponse> = /*@__PURE__*/
-  messageDesc(file_cloudpb_cloud_management, 28);
+  messageDesc(file_cloudpb_cloud_management, 42);
 
 /**
  * ManagementActorKind 区分账号用户与运营角色。

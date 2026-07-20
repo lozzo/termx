@@ -62,6 +62,7 @@ type Store interface {
 	CreateAccount(context.Context, AccountRecord, SessionRecord, *cloudpb.SubscriptionProjection, *cloudpb.EntitlementProjection, *cloudpb.CommerceAuditProjection) error
 	AccountByEmail(context.Context, string) (AccountRecord, error)
 	Account(context.Context, string) (AccountRecord, error)
+	Accounts(context.Context, int) ([]AccountRecord, error)
 	PutSession(context.Context, SessionRecord, *cloudpb.CommerceAuditProjection) error
 	SessionByAccessHash(context.Context, [sha256.Size]byte) (SessionRecord, error)
 	SessionByRefreshHash(context.Context, [sha256.Size]byte) (SessionRecord, error)
@@ -80,6 +81,7 @@ type Store interface {
 	Entitlement(context.Context, string) (*cloudpb.EntitlementProjection, error)
 	Orders(context.Context, string) ([]*cloudpb.OrderProjection, error)
 	PaymentAttempts(context.Context, string) ([]*cloudpb.PaymentAttemptProjection, error)
+	PaymentEvents(context.Context, string) ([]*cloudpb.PaymentEventProjection, error)
 	Audit(context.Context, string) ([]*cloudpb.CommerceAuditProjection, error)
 }
 
@@ -203,6 +205,34 @@ func (service *Service) AuthenticateAccess(ctx context.Context, accessToken []by
 		return nil, "", ErrUnauthorized
 	}
 	return proto.Clone(account.Projection).(*cloudpb.AccountProjection), record.SessionID, nil
+}
+
+// VerifyPassword 为已认证账号创建近期认证 proof；它不创建新 session，也不暴露 verifier。
+func (service *Service) VerifyPassword(ctx context.Context, accountID, password string) error {
+	if accountID == "" || password == "" {
+		return ErrUnauthorized
+	}
+	account, err := service.store.Account(ctx, accountID)
+	if err != nil || bcrypt.CompareHashAndPassword(account.PasswordHash, []byte(password)) != nil {
+		return ErrUnauthorized
+	}
+	return nil
+}
+
+// Accounts 返回 operator 列表使用的有界账号投影。
+func (service *Service) Accounts(ctx context.Context, limit int) ([]*cloudpb.AccountProjection, error) {
+	if limit < 1 || limit > 200 {
+		return nil, ErrConflict
+	}
+	records, err := service.store.Accounts(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*cloudpb.AccountProjection, 0, len(records))
+	for _, record := range records {
+		result = append(result, proto.Clone(record.Projection).(*cloudpb.AccountProjection))
+	}
+	return result, nil
 }
 
 // Refresh 单次消费 refresh token，撤销旧 session 并返回新 token pair。
@@ -562,11 +592,15 @@ func (service *Service) AccountCommerce(ctx context.Context, accountID string) (
 	if err != nil {
 		return nil, err
 	}
+	events, err := service.store.PaymentEvents(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
 	audit, err := service.store.Audit(ctx, accountID)
 	if err != nil {
 		return nil, err
 	}
-	return &cloudpb.GetAccountCommerceResponse{Account: proto.Clone(account.Projection).(*cloudpb.AccountProjection), Subscription: subscription, Entitlement: entitlementProjection, Orders: orders, Audit: audit, PaymentAttempts: attempts}, nil
+	return &cloudpb.GetAccountCommerceResponse{Account: proto.Clone(account.Projection).(*cloudpb.AccountProjection), Subscription: subscription, Entitlement: entitlementProjection, Orders: orders, Audit: audit, PaymentAttempts: attempts, PaymentEvents: events}, nil
 }
 
 func (service *Service) newSession(account *cloudpb.AccountProjection, revision uint64, now time.Time) (*cloudpb.AccountSessionCredential, SessionRecord, error) {

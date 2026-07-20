@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS commerce_payment_attempts(
 );
 CREATE INDEX IF NOT EXISTS commerce_payment_attempts_account ON commerce_payment_attempts(account_id);
 CREATE TABLE IF NOT EXISTS commerce_payment_events(
-  provider_event_id TEXT PRIMARY KEY, digest BLOB NOT NULL, event BLOB NOT NULL,
+  provider_event_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, digest BLOB NOT NULL, event BLOB NOT NULL,
   state INTEGER NOT NULL, result BLOB
 );
 CREATE TABLE IF NOT EXISTS commerce_subscriptions(
@@ -180,6 +180,9 @@ CREATE TABLE IF NOT EXISTS management_command_results(
 		return err
 	}
 	if err := store.ensureColumn("hub_deployments", "last_relay_control_generation", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := store.ensureColumn("commerce_payment_events", "account_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	return store.ensureColumn("cloud_device_ownership", "public_key", "BLOB NOT NULL DEFAULT X''")
@@ -258,6 +261,35 @@ func (store *Store) DeploymentByRelay(ctx context.Context, relayID string) (hubr
 		return hubregistry.Deployment{}, err
 	}
 	return store.Deployment(ctx, hubID)
+}
+
+// Deployments 按 hub_id 稳定返回全部 deployment。
+func (store *Store) Deployments(ctx context.Context) ([]hubregistry.Deployment, error) {
+	rows, err := store.db.QueryContext(ctx, `SELECT hub_id FROM hub_deployments ORDER BY hub_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	result := make([]hubregistry.Deployment, 0, len(ids))
+	for _, id := range ids {
+		value, err := store.Deployment(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+	return result, nil
 }
 
 // AdvanceControlGeneration 事务校验 deployment identity 并签发唯一递增 generation。

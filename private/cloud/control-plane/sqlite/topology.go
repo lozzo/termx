@@ -205,6 +205,70 @@ func (store *Store) PresenceProjection(ctx context.Context, daemonDeviceID strin
 	return accountID, projection, nil
 }
 
+// ListAccountTopology 查询账号隔离后的最后可信 topology projection。
+func (store *Store) ListAccountTopology(ctx context.Context, accountID, daemonDeviceID, clientDeviceID string, freshness cloudpb.Freshness, limit int) ([]*cloudpb.PresenceProjection, []*cloudpb.ManagedPeerSessionProjection, error) {
+	presenceQuery := `SELECT projection FROM presence_topology WHERE account_id=?`
+	presenceArgs := []any{accountID}
+	if daemonDeviceID != "" {
+		presenceQuery += ` AND daemon_device_id=?`
+		presenceArgs = append(presenceArgs, daemonDeviceID)
+	}
+	presenceQuery += ` ORDER BY daemon_device_id LIMIT ?`
+	presenceArgs = append(presenceArgs, limit)
+	rows, err := store.db.QueryContext(ctx, presenceQuery, presenceArgs...)
+	if err != nil {
+		return nil, nil, err
+	}
+	var presences []*cloudpb.PresenceProjection
+	for rows.Next() {
+		var body []byte
+		if err := rows.Scan(&body); err != nil {
+			rows.Close()
+			return nil, nil, err
+		}
+		value := &cloudpb.PresenceProjection{}
+		if err := proto.Unmarshal(body, value); err != nil {
+			rows.Close()
+			return nil, nil, err
+		}
+		if freshness == cloudpb.Freshness_FRESHNESS_UNSPECIFIED || value.GetFreshness() == freshness {
+			presences = append(presences, value)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return nil, nil, err
+	}
+	peerQuery := `SELECT projection FROM managed_peer_topology WHERE account_id=?`
+	peerArgs := []any{accountID}
+	if daemonDeviceID != "" {
+		peerQuery += ` AND daemon_device_id=?`
+		peerArgs = append(peerArgs, daemonDeviceID)
+	}
+	peerQuery += ` ORDER BY daemon_device_id,managed_session_id,session_incarnation LIMIT ?`
+	peerArgs = append(peerArgs, limit)
+	rows, err = store.db.QueryContext(ctx, peerQuery, peerArgs...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	var sessions []*cloudpb.ManagedPeerSessionProjection
+	for rows.Next() {
+		var body []byte
+		if err := rows.Scan(&body); err != nil {
+			return nil, nil, err
+		}
+		value := &cloudpb.ManagedPeerSessionProjection{}
+		if err := proto.Unmarshal(body, value); err != nil {
+			return nil, nil, err
+		}
+		if clientDeviceID != "" && value.GetClientDeviceId() != clientDeviceID || freshness != cloudpb.Freshness_FRESHNESS_UNSPECIFIED && value.GetFreshness() != freshness {
+			continue
+		}
+		sessions = append(sessions, value)
+	}
+	return presences, sessions, rows.Err()
+}
+
 func degradeHubTopologyTx(ctx context.Context, tx *sql.Tx, hubID string, generation uint64, observedAt time.Time, source cloudpb.ObservationSource) error {
 	presenceRows, err := tx.QueryContext(ctx, `SELECT daemon_device_id,projection FROM presence_topology WHERE hub_id=?`, hubID)
 	if err != nil {

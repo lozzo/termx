@@ -79,6 +79,15 @@ type pendingChallenge struct {
 type attachment struct {
 	generation uint64
 	cancel     context.CancelFunc
+	attachedAt time.Time
+}
+
+// AttachmentStatus 返回当前进程是否仍持有精确 Relay generation 的 active stream。
+func (server *Server) AttachmentStatus(relayID string) (uint64, time.Time, bool) {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	value, ok := server.attachments[relayID]
+	return value.generation, value.attachedAt, ok
 }
 
 // NewServer 创建独立 Relay control server。
@@ -157,7 +166,7 @@ func (server *Server) handleOpen(writer http.ResponseWriter, request *http.Reque
 	if previous := server.attachments[attached.Metadata.GetRelayId()]; previous.cancel != nil {
 		previous.cancel()
 	}
-	server.attachments[attached.Metadata.GetRelayId()] = attachment{generation: attached.RelayControlGeneration, cancel: cancel}
+	server.attachments[attached.Metadata.GetRelayId()] = attachment{generation: attached.RelayControlGeneration, cancel: cancel, attachedAt: now}
 	server.mu.Unlock()
 	defer server.detach(attached.Metadata.GetRelayId(), attached.RelayControlGeneration)
 	flusher, ok := writer.(http.Flusher)

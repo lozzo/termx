@@ -89,6 +89,7 @@ type Store interface {
 	PeerSessionsByClient(context.Context, string) ([]StoredPeerSession, error)
 	TerminalAccessProjection(context.Context, string, string) (StoredTerminalAccess, error)
 	ListTerminalAccess(context.Context, string, string, cloudpb.TerminalAccessState, int) ([]StoredTerminalAccess, cloudpb.Freshness, time.Time, error)
+	ListAccountTopology(context.Context, string, string, string, cloudpb.Freshness, int) ([]*cloudpb.PresenceProjection, []*cloudpb.ManagedPeerSessionProjection, error)
 	ApplyTopologySnapshot(context.Context, ValidatedSnapshot) error
 	MarkHubTopologyUnknown(context.Context, string, uint64, time.Time) error
 	PresenceProjection(context.Context, string) (string, *cloudpb.PresenceProjection, error)
@@ -228,6 +229,45 @@ func (service *Service) DevicePolicies(ctx context.Context) ([]*cloudpb.CloudDev
 		return nil, ErrTopologyRejected
 	}
 	return service.store.DevicePolicies(ctx)
+}
+
+// ListAccountDevices 组合持久 ownership、assignment 与最后可信 Presence，且始终按账号隔离。
+func (service *Service) ListAccountDevices(ctx context.Context, accountID string, kind cloudpb.ManagedDeviceKind, includeRevoked bool, limit int) ([]*cloudpb.AccountDeviceProjection, error) {
+	if service == nil || accountID == "" || limit < 1 {
+		return nil, ErrTopologyRejected
+	}
+	policies, err := service.store.DevicePolicies(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*cloudpb.AccountDeviceProjection, 0)
+	for _, policy := range policies {
+		if policy.GetAccountId() != accountID || kind != cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_UNSPECIFIED && policy.GetDeviceKind() != kind || !includeRevoked && policy.GetRevoked() {
+			continue
+		}
+		value := &cloudpb.AccountDeviceProjection{AccountId: accountID, DeviceId: policy.GetDeviceId(), DisplayName: policy.GetDeviceId(), DeviceKind: policy.GetDeviceKind(), Revoked: policy.GetRevoked(), AuthEpoch: policy.GetAuthEpoch()}
+		if policy.GetDeviceKind() == cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON {
+			if assignment, assignmentErr := service.registry.Assignment(ctx, policy.GetDeviceId()); assignmentErr == nil && assignment.Value.GetAccountId() == accountID {
+				value.AssignedHubId, value.AssignmentEpoch = assignment.Value.GetHubId(), assignment.Value.GetAssignmentEpoch()
+			}
+			if presenceAccount, presence, presenceErr := service.store.PresenceProjection(ctx, policy.GetDeviceId()); presenceErr == nil && presenceAccount == accountID {
+				value.Presence = presence
+			}
+		}
+		result = append(result, value)
+		if len(result) == limit {
+			break
+		}
+	}
+	return result, nil
+}
+
+// ListAccountTopology 返回账号隔离的 Presence 与 managed data path 投影。
+func (service *Service) ListAccountTopology(ctx context.Context, accountID, daemonDeviceID, clientDeviceID string, freshness cloudpb.Freshness, limit int) ([]*cloudpb.PresenceProjection, []*cloudpb.ManagedPeerSessionProjection, error) {
+	if service == nil || accountID == "" || limit < 1 {
+		return nil, nil, ErrTopologyRejected
+	}
+	return service.store.ListAccountTopology(ctx, accountID, daemonDeviceID, clientDeviceID, freshness, limit)
 }
 
 // PeerSession 返回账号隔离前的精确 session projection；target 全字段必须匹配。

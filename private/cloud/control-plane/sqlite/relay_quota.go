@@ -183,6 +183,53 @@ func (store *Store) Snapshot(ctx context.Context, accountID string, periodStart,
 	return response, nil
 }
 
+// SnapshotForPeriod 确保尚无 reservation 的新账期也返回真实 limit/remaining。
+func (store *Store) SnapshotForPeriod(ctx context.Context, accountID string, periodStart, periodEnd time.Time, limit uint64, now time.Time) (*cloudpb.GetAccountRelayQuotaResponse, error) {
+	if accountID == "" || periodStart.IsZero() || periodEnd.IsZero() || !periodEnd.After(periodStart) {
+		return nil, relayquota.ErrReservationNotFound
+	}
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO relay_quota_periods(account_id,period_start_unix_millis,period_end_unix_millis,limit_bytes,used_bytes,revision) VALUES(?,?,?,?,0,1)`, accountID, periodStart.UnixMilli(), periodEnd.UnixMilli(), limit); err != nil {
+		return nil, err
+	}
+	if err := expireRelayReservations(ctx, tx, now.UTC()); err != nil {
+		return nil, err
+	}
+	period, err := relayQuotaPeriod(ctx, tx, accountID, periodStart, periodEnd, limit)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT projection FROM relay_lease_reservations WHERE account_id=? AND period_start_unix_millis=? AND state=? ORDER BY lease_id`, accountID, periodStart.UnixMilli(), cloudpb.RelayReservationState_RELAY_RESERVATION_STATE_ACTIVE)
+	if err != nil {
+		return nil, err
+	}
+	response := &cloudpb.GetAccountRelayQuotaResponse{Period: period}
+	for rows.Next() {
+		var body []byte
+		if err := rows.Scan(&body); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		value := &cloudpb.RelayLeaseReservation{}
+		if err := proto.Unmarshal(body, value); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		response.ActiveReservations = append(response.ActiveReservations, value)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
 func ensureRelayPeriod(ctx context.Context, tx *sql.Tx, request relayquota.ReserveRequest) error {
 	result, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO relay_quota_periods(account_id,period_start_unix_millis,period_end_unix_millis,limit_bytes,used_bytes,revision) VALUES(?,?,?,?,0,1)`, request.AccountID, request.PeriodStart.UnixMilli(), request.PeriodEnd.UnixMilli(), request.PeriodLimitBytes)
 	if err != nil {

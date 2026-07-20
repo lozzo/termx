@@ -87,6 +87,15 @@ type pendingChallenge struct {
 type attachment struct {
 	generation uint64
 	cancel     context.CancelFunc
+	attachedAt time.Time
+}
+
+// AttachmentStatus 返回当前进程是否仍持有精确 Hub generation 的 active stream。
+func (server *Server) AttachmentStatus(hubID string) (uint64, time.Time, bool) {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	value, ok := server.attachments[hubID]
+	return value.generation, value.attachedAt, ok
 }
 
 // NewServer 创建 Hub control handler。
@@ -182,7 +191,7 @@ func (server *Server) handleOpen(writer http.ResponseWriter, request *http.Reque
 	if previous := server.attachments[attached.Metadata.GetHubId()]; previous.cancel != nil {
 		previous.cancel()
 	}
-	server.attachments[attached.Metadata.GetHubId()] = attachment{generation: attached.ControlGeneration, cancel: cancel}
+	server.attachments[attached.Metadata.GetHubId()] = attachment{generation: attached.ControlGeneration, cancel: cancel, attachedAt: now}
 	server.mu.Unlock()
 	defer server.detach(attached.Metadata.GetHubId(), attached.ControlGeneration)
 

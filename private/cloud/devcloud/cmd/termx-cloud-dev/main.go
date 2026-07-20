@@ -44,6 +44,22 @@ type supervisorManifest struct {
 	Edges                 []edge.Manifest     `json:"edges"`
 	Processes             []processRecord     `json:"processes"`
 	CompanionManifestPath string              `json:"companion_manifest_path"`
+	CredentialsPath       string              `json:"credentials_path"`
+}
+
+type developmentAccount struct {
+	Projection *cloudpb.AccountProjection
+	Email      string
+	Password   string
+}
+
+type developmentCredentials struct {
+	PublicURL           string `json:"public_url"`
+	AccountEmail        string `json:"account_email"`
+	AccountPassword     string `json:"account_password"`
+	OperatorURL         string `json:"operator_url"`
+	OperatorID          string `json:"operator_id"`
+	OperatorAccessToken string `json:"operator_access_token"`
 }
 
 type childProcess struct {
@@ -53,7 +69,7 @@ type childProcess struct {
 	done   chan error
 }
 
-func seedDevelopmentAccount(databasePath, catalogPath string, now time.Time) (*cloudpb.AccountProjection, error) {
+func seedDevelopmentAccount(databasePath, catalogPath string, now time.Time) (*developmentAccount, error) {
 	store, err := cloudsqlite.Open(databasePath)
 	if err != nil {
 		return nil, err
@@ -73,11 +89,12 @@ func seedDevelopmentAccount(databasePath, catalogPath string, now time.Time) (*c
 	if err != nil {
 		return nil, err
 	}
-	registered, err := service.Register(context.Background(), &cloudpb.RegisterAccountRequest{Email: "devcloud-fixture@termx.invalid", Password: password})
+	email := "devcloud-fixture@termx.invalid"
+	registered, err := service.Register(context.Background(), &cloudpb.RegisterAccountRequest{Email: email, Password: password})
 	if err != nil {
 		return nil, err
 	}
-	return registered.GetSession().GetAccount(), nil
+	return &developmentAccount{Projection: registered.GetSession().GetAccount(), Email: email, Password: password}, nil
 }
 
 func main() {
@@ -118,6 +135,10 @@ func run(ctx context.Context, args []string) error {
 	if err := buildBinary(ctx, root, edgeBinary, "./private/cloud/edge/cmd/termx-cloud-edge"); err != nil {
 		return err
 	}
+	webStaticDir := filepath.Join(root, "private/cloud/web-controller/web/dist")
+	if err := buildWeb(ctx, filepath.Join(root, "private/cloud/web-controller/web")); err != nil {
+		return err
+	}
 
 	now := time.Now().UTC()
 	projectionPublic, projectionPrivate, _ := ed25519.GenerateKey(rand.Reader)
@@ -127,10 +148,16 @@ func run(ctx context.Context, args []string) error {
 	controllerDatabase := filepath.Join(artifactDir, "controller.db")
 	_ = os.Remove(controllerDatabase)
 	catalogPath := filepath.Join(root, "private/cloud/web-controller/config/plans.json")
-	account, err := seedDevelopmentAccount(controllerDatabase, catalogPath, now)
+	development, err := seedDevelopmentAccount(controllerDatabase, catalogPath, now)
 	if err != nil {
 		return err
 	}
+	account := development.Projection
+	operatorTokenBytes := make([]byte, 32)
+	if _, err := rand.Read(operatorTokenBytes); err != nil {
+		return err
+	}
+	operatorToken := base64.RawURLEncoding.EncodeToString(operatorTokenBytes)
 	enrollmentBytes := make([]byte, 24)
 	if _, err := rand.Read(enrollmentBytes); err != nil {
 		return err
@@ -158,7 +185,8 @@ func run(ctx context.Context, args []string) error {
 		edgeKeys[hubID] = hubPrivate
 		relayKeys[hubID] = relayPrivate
 	}
-	controllerConfig := controller.Config{DatabasePath: controllerDatabase, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Devices: devices, Assignments: assignments, DevelopmentEnrollmentCode: enrollmentCode, DevelopmentEnrollmentAccountID: account.GetAccountId(), DevelopmentEnrollmentHubID: "hub-edge-a"}
+	controllerConfig := controller.Config{DatabasePath: controllerDatabase, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Devices: devices, Assignments: assignments, DevelopmentEnrollmentCode: enrollmentCode, DevelopmentEnrollmentAccountID: account.GetAccountId(), DevelopmentEnrollmentHubID: "hub-edge-a", OperatorID: "development-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes), WebStaticDir: webStaticDir}
+	clear(operatorTokenBytes)
 	controllerConfigPath := filepath.Join(artifactDir, "controller-config.json")
 	controllerManifestPath := filepath.Join(artifactDir, "controller-runtime.json")
 	if err := writeJSONFile(controllerConfigPath, controllerConfig); err != nil {
@@ -175,6 +203,10 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	if err := waitHealth(ctx, controllerRuntime.OperatorURL+"/healthz", true); err != nil {
+		return err
+	}
+	credentialsPath := filepath.Join(artifactDir, "development-credentials.json")
+	if err := writeJSONFile(credentialsPath, developmentCredentials{PublicURL: controllerRuntime.PublicURL, AccountEmail: development.Email, AccountPassword: development.Password, OperatorURL: controllerRuntime.OperatorURL, OperatorID: "development-admin", OperatorAccessToken: operatorToken}); err != nil {
 		return err
 	}
 
@@ -215,7 +247,7 @@ func run(ctx context.Context, args []string) error {
 	if err := writeJSONFile(companionManifestPath, httpapi.Manifest{Version: httpapi.ManifestVersion, Profile: httpapi.ProfileDevLocal, ControlPlaneURL: controllerRuntime.PublicURL, HubURL: primaryEdge.HubURL, RelayURL: primaryEdge.RelayURL, HubID: primaryEdge.HubID, Region: "local-1", AccountLabel: account.GetDisplayName(), EnrollmentCode: enrollmentCode, StartedAtRFC3339: now.Format(time.RFC3339)}); err != nil {
 		return err
 	}
-	manifest := supervisorManifest{Version: 1, StartedAt: now.Format(time.RFC3339Nano), Controller: controllerRuntime, Edges: edgeManifests, CompanionManifestPath: companionManifestPath}
+	manifest := supervisorManifest{Version: 1, StartedAt: now.Format(time.RFC3339Nano), Controller: controllerRuntime, Edges: edgeManifests, CompanionManifestPath: companionManifestPath, CredentialsPath: credentialsPath}
 	for _, child := range children {
 		manifest.Processes = append(manifest.Processes, child.record)
 	}
@@ -261,6 +293,16 @@ func buildBinary(ctx context.Context, root, output, packagePath string) error {
 	command.Stdout, command.Stderr = os.Stdout, os.Stderr
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("build %s: %w", packagePath, err)
+	}
+	return nil
+}
+
+func buildWeb(ctx context.Context, directory string) error {
+	command := exec.CommandContext(ctx, "npm", "run", "build")
+	command.Dir = directory
+	command.Stdout, command.Stderr = os.Stdout, os.Stderr
+	if err := command.Run(); err != nil {
+		return fmt.Errorf("build Web Controller: %w", err)
 	}
 	return nil
 }

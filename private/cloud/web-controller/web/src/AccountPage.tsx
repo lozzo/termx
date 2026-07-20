@@ -1,213 +1,641 @@
-import { Activity, Check, Copy, CreditCard, Gauge, Gift, KeyRound, Laptop, LogOut, MonitorSmartphone, Moon, QrCode, Server, Settings, ShieldCheck, Smartphone, Sun } from "lucide-react";
+import { create } from "@bufbuild/protobuf";
+import {
+  Activity,
+  Cable,
+  CreditCard,
+  Gauge,
+  KeyRound,
+  Laptop,
+  LogOut,
+  RefreshCw,
+  ShieldAlert,
+  Smartphone,
+} from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import QRCode from "qrcode";
-import { useTranslation } from "react-i18next";
-import type { TFunction } from "i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { LanguageSwitcher } from "@/components/LanguageSwitcher";
-import { intlLocale } from "@/i18n";
-import { cn } from "@/lib/utils";
+import {
+  CreateManagementCommandRequestSchema,
+  CreateManagementCommandResponseSchema,
+  ListAccountDevicesRequestSchema,
+  ListAccountDevicesResponseSchema,
+  ListAccountTopologyRequestSchema,
+  ListAccountTopologyResponseSchema,
+  ListManagementCommandsRequestSchema,
+  ListManagementCommandsResponseSchema,
+  ManagementCommandKind,
+  ManagementCommandTargetSchema,
+  PageRequestSchema,
+  RecentAuthenticationRequestSchema,
+  RecentAuthenticationResponseSchema,
+  RevokeCloudDeviceTargetSchema,
+  type ListAccountDevicesResponse,
+  type ListAccountTopologyResponse,
+  type ListManagementCommandsResponse,
+} from "@/generated/cloudpb/cloud_management_pb";
+import { KickPresenceTargetSchema } from "@/generated/cloudpb/cloud_hub_control_pb";
+import {
+  ConfirmTestPaymentRequestSchema,
+  ConfirmTestPaymentResponseSchema,
+  CreateCheckoutRequestSchema,
+  CreateCheckoutResponseSchema,
+  GetAccountCommerceResponseSchema,
+  GetAccountRelayQuotaRequestSchema,
+  GetAccountRelayQuotaResponseSchema,
+  LogoutAccountSessionRequestSchema,
+  LogoutAccountSessionResponseSchema,
+  PaymentEventType,
+  SubscriptionStatus,
+  SubscriptionTransitionKind,
+  TransitionSubscriptionRequestSchema,
+  TransitionSubscriptionResponseSchema,
+  type GetAccountCommerceResponse,
+  type GetAccountRelayQuotaResponse,
+} from "@/generated/cloudpb/cloud_product_pb";
+import {
+  Availability,
+  Freshness,
+  ManagedDeviceKind,
+  ObservedPath,
+} from "@/generated/cloudpb/cloud_topology_pb";
+import { ProtoHTTPError, protoGet, protoPost } from "@/protoApi";
 
-type Tab = "overview" | "nodes" | "billing" | "account" | "referrals";
-type Theme = "light-gray" | "neutral-dark";
-interface Order { id: string; plan_id: string; status: string; created_at: string; }
-interface Billing { plan_id: string; valid_until?: string; orders: Order[]; }
-interface Profile { account_id: string; user_id: string; email: string; display_name: string; password_configured: boolean; }
-interface Node { id: string; name: string; kind: string; online: boolean; revoked: boolean; updated_at: string; }
-interface ReferralReward { id: string; order_id: string; kind: string; days: number; created_at: string; }
-interface ReferralProgram { code: string; referred_count: number; reward_days: number; rewards: ReferralReward[]; }
-interface AuditEvent { id: string; action: string; resource_id: string; occurred_at: string; }
-interface Center { profile: Profile; nodes: Node[]; referrals: ReferralProgram; audit: AuditEvent[]; billing: Billing; }
-interface MobileActivation { user_code: string; qr_payload: string; expires_at: string; state: "waiting_for_device" | "waiting_for_approval"; client_label?: string; client_platform?: string; }
-
-const tabs = [["overview", Gauge], ["nodes", Laptop], ["billing", CreditCard], ["account", Settings], ["referrals", Gift]] as const;
-const csrf = () => document.cookie.split("; ").find((value) => value.startsWith("termx_csrf="))?.split("=")[1] ?? "";
-const request = (path: string, body: object, method = "POST") => fetch(path, { method, headers: { "Content-Type": "application/json", "X-TermX-CSRF": csrf() }, body: JSON.stringify(body) });
-const when = (value: string, language: string) => new Date(value).toLocaleString(intlLocale(language));
-const date = (value: string, language: string) => new Date(value).toLocaleDateString(intlLocale(language));
-const savedTheme = (): Theme => localStorage.getItem("termx-wx-theme") === "neutral-dark" ? "neutral-dark" : "light-gray";
-async function copyText(value: string) {
-  if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(value); return; }
-  const input = document.createElement("textarea");
-  input.value = value; input.setAttribute("readonly", ""); input.style.position = "fixed"; input.style.opacity = "0";
-  document.body.appendChild(input); input.select();
-  const copied = document.execCommand("copy");
-  input.remove();
-  if (!copied) throw new Error("copy unavailable");
-}
+type Tab = "overview" | "devices" | "topology" | "commands" | "billing";
+type AccountState = {
+  commerce: GetAccountCommerceResponse;
+  quota: GetAccountRelayQuotaResponse;
+  devices: ListAccountDevicesResponse;
+  topology: ListAccountTopologyResponse;
+  commands: ListManagementCommandsResponse;
+};
+const tabs: [Tab, typeof Gauge][] = [
+  ["overview", Gauge],
+  ["devices", Laptop],
+  ["topology", Cable],
+  ["commands", Activity],
+  ["billing", CreditCard],
+];
 
 export default function AccountPage() {
-  const { t, i18n } = useTranslation();
-  const [tab, setTab] = useState<Tab>("overview"), [center, setCenter] = useState<Center | null>(null), [busy, setBusy] = useState(""), [error, setError] = useState("");
-  async function load() { const response = await fetch("/api/center", { cache: "no-store" }); if (response.status === 401) { location.href = "/login"; return; } setCenter(await response.json()); }
-  useEffect(() => { document.documentElement.dataset.wxTheme = savedTheme(); void load(); }, []);
-  async function action(key: string, fn: () => Promise<Response>) { setBusy(key); setError(""); const response = await fn(); if (!response.ok) setError((await response.json().catch(() => ({ error: t("account.requestFailed") }))).error); else await load(); setBusy(""); }
-  async function logout() { await request("/api/auth/logout", {}); location.href = "/"; }
+  const [tab, setTab] = useState<Tab>("overview");
+  const [state, setState] = useState<AccountState>();
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
+  const [password, setPassword] = useState("");
+  const [controlsUnlocked, setControlsUnlocked] = useState(false);
 
-  if (!center) return <main data-theme-surface className="grid min-h-dvh place-items-center bg-background text-sm text-muted-foreground"><span className="flex items-center gap-3"><i className="size-2 animate-pulse bg-primary" />{t("account.loading")}</span></main>;
-  return (
-    <div data-theme-surface className="min-h-dvh bg-background text-foreground md:grid md:grid-cols-[224px_minmax(0,1fr)]">
-      <a className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:bg-primary focus:px-4 focus:py-3 focus:text-primary-foreground" href="#account-content">{t("account.skip")}</a>
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 flex-col border-r border-line bg-background md:flex">
-        <Logo />
-        <nav className="flex-1 p-5">{tabs.map(([id, Icon]) => <button className={cn("flex h-11 w-full items-center gap-3 border-b border-transparent text-sm text-muted-foreground hover:text-foreground", tab === id && "border-primary text-foreground")} key={id} onClick={() => setTab(id)}><Icon className={cn("size-4", tab === id && "text-primary")} />{t(`account.tabs.${id}`)}</button>)}</nav>
-        <div className="grid grid-cols-[32px_minmax(0,1fr)_32px] items-center gap-2.5 border-t border-line p-4"><span className="grid size-8 place-items-center border border-line text-[10px]">{center.profile.display_name.slice(0, 2).toUpperCase()}</span><div className="min-w-0"><strong className="block truncate text-xs font-medium">{center.profile.display_name}</strong><small className="block truncate text-[9px] text-muted-foreground">{center.profile.email}</small></div><Button aria-label={t("account.signOut")} variant="ghost" size="icon" onClick={logout}><LogOut /></Button></div>
-      </aside>
+  async function load() {
+    try {
+      const page = create(PageRequestSchema, { pageSize: 100 });
+      const [commerce, quota, devices, topology, commands] = await Promise.all([
+        protoGet("/api/v1/account/commerce", GetAccountCommerceResponseSchema),
+        protoPost(
+          "/api/v1/management/relay/quota",
+          GetAccountRelayQuotaRequestSchema,
+          create(GetAccountRelayQuotaRequestSchema),
+          GetAccountRelayQuotaResponseSchema,
+        ),
+        protoPost(
+          "/api/v1/management/devices/list",
+          ListAccountDevicesRequestSchema,
+          create(ListAccountDevicesRequestSchema, {
+            includeRevoked: true,
+            page,
+          }),
+          ListAccountDevicesResponseSchema,
+        ),
+        protoPost(
+          "/api/v1/management/topology/list",
+          ListAccountTopologyRequestSchema,
+          create(ListAccountTopologyRequestSchema, { page }),
+          ListAccountTopologyResponseSchema,
+        ),
+        protoPost(
+          "/api/v1/management/commands/list",
+          ListManagementCommandsRequestSchema,
+          create(ListManagementCommandsRequestSchema, { page }),
+          ListManagementCommandsResponseSchema,
+        ),
+      ]);
+      setState({ commerce, quota, devices, topology, commands });
+    } catch (cause) {
+      if (cause instanceof ProtoHTTPError && cause.status === 401)
+        location.href = "/login";
+      else
+        setError(
+          cause instanceof Error ? cause.message : "Could not load account",
+        );
+    }
+  }
 
-      <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-2 border-b border-line bg-background px-4 md:hidden"><Logo compact /><div className="flex items-center gap-2"><LanguageSwitcher compact /><ThemePicker compact /></div></header>
-      <main id="account-content" className="min-w-0 pb-28 md:col-start-2 md:pb-16">
-        <header className="hidden h-16 items-center justify-between border-b border-line px-8 text-[9px] text-muted-foreground md:flex"><span>{t("account.controller")}</span><div className="flex items-center gap-3"><LanguageSwitcher /><ThemePicker /><b className="border border-line px-2.5 py-1.5 text-[9px] font-medium text-success">{t("common.staging")}</b></div></header>
-        <div className="mx-auto w-full max-w-[1120px] px-4 py-8 md:px-8 md:py-12">
-          <header className="mb-8"><p className="m-0 font-mono text-[9px] text-primary">{t("account.cloudControl")}</p><h1 className="mt-2 text-4xl font-light md:text-5xl">{t(`account.tabs.${tab}`)}</h1></header>
-          {error && <p className="mb-5 border border-destructive p-3 text-xs text-destructive" role="alert">{error}</p>}
-          {tab === "overview" && <Overview value={center} />}
-          {tab === "nodes" && <Nodes value={center.nodes} busy={busy} action={action} />}
-          {tab === "billing" && <BillingView value={center.billing} busy={busy} action={action} />}
-          {tab === "account" && <Account value={center.profile} busy={busy} action={action} />}
-          {tab === "referrals" && <Referrals value={center.referrals} />}
-        </div>
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function run(key: string, action: () => Promise<unknown>) {
+    setBusy(key);
+    setError("");
+    try {
+      await action();
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Request failed");
+    }
+    setBusy("");
+  }
+
+  async function unlock() {
+    await run("reauth", async () => {
+      await protoPost(
+        "/api/v1/management/reauth",
+        RecentAuthenticationRequestSchema,
+        create(RecentAuthenticationRequestSchema, { password }),
+        RecentAuthenticationResponseSchema,
+      );
+      setPassword("");
+      setControlsUnlocked(true);
+    });
+  }
+
+  async function command(
+    kind: ManagementCommandKind,
+    target: ReturnType<typeof create<typeof ManagementCommandTargetSchema>>,
+  ) {
+    await run("command", () =>
+      protoPost(
+        "/api/v1/management/commands",
+        CreateManagementCommandRequestSchema,
+        create(CreateManagementCommandRequestSchema, {
+          commandKind: kind,
+          target,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+        CreateManagementCommandResponseSchema,
+      ),
+    );
+  }
+
+  async function logout() {
+    await protoPost(
+      "/api/v1/account/logout",
+      LogoutAccountSessionRequestSchema,
+      create(LogoutAccountSessionRequestSchema),
+      LogoutAccountSessionResponseSchema,
+    );
+    location.href = "/login";
+  }
+
+  if (!state)
+    return (
+      <main className="grid min-h-dvh place-items-center bg-background text-muted-foreground">
+        Loading account...
       </main>
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid h-[88px] grid-cols-5 border-t border-line bg-background md:hidden">{tabs.map(([id, Icon]) => <button className={cn("grid min-w-0 grid-rows-[16px_24px] place-items-center content-center gap-1 px-0.5 text-[8px] text-muted-foreground", tab === id && "bg-soft text-primary")} key={id} onClick={() => setTab(id)}><Icon className="size-4" /><span className="flex max-w-full items-center justify-center text-center leading-[11px] [overflow-wrap:anywhere]">{t(`account.tabs.${id}`)}</span></button>)}</nav>
+    );
+  const { commerce, quota, devices, topology, commands } = state;
+  return (
+    <div className="min-h-dvh bg-background text-foreground md:grid md:grid-cols-[220px_minmax(0,1fr)]">
+      <aside className="border-r border-line bg-panel p-5 md:min-h-dvh">
+        <a className="flex h-12 items-center gap-3" href="/">
+          <b className="grid size-8 place-items-center bg-primary font-mono text-xs text-primary-foreground">
+            TX
+          </b>
+          <span className="font-medium">TermX Cloud</span>
+        </a>
+        <nav className="mt-8 grid grid-cols-5 border border-line md:grid-cols-1 md:border-0">
+          {tabs.map(([id, Icon]) => (
+            <button
+              key={id}
+              className={`flex min-h-11 items-center justify-center gap-2 border-b border-line px-2 text-xs capitalize md:justify-start ${tab === id ? "bg-soft text-primary" : "text-muted-foreground"}`}
+              onClick={() => setTab(id)}
+            >
+              <Icon className="size-4" />
+              <span>{id}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="mt-8 hidden border-t border-line pt-5 text-xs md:block">
+          <strong>{commerce.account?.displayName}</strong>
+          <p className="truncate text-muted-foreground">
+            {commerce.account?.email}
+          </p>
+          <Button
+            className="mt-4 w-full justify-start"
+            variant="outline"
+            onClick={logout}
+          >
+            <LogOut />
+            Sign out
+          </Button>
+        </div>
+      </aside>
+      <main className="min-w-0 p-5 md:p-10">
+        <header className="flex flex-wrap items-start justify-between gap-4 border-b border-line pb-6">
+          <div>
+            <p className="font-mono text-[10px] text-primary">
+              ACCOUNT CONTROL PLANE
+            </p>
+            <h1 className="mt-2 text-3xl font-light capitalize">{tab}</h1>
+          </div>
+          <Button
+            variant="outline"
+            size="icon"
+            title="Refresh"
+            onClick={() => void load()}
+          >
+            <RefreshCw />
+          </Button>
+        </header>
+        {error && (
+          <p
+            className="mt-5 border border-destructive p-3 text-xs text-destructive"
+            role="alert"
+          >
+            {error}
+          </p>
+        )}
+        <section className="mt-6 border border-line bg-panel p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="grid min-w-56 flex-1 gap-2 font-mono text-[9px] text-muted-foreground">
+              CURRENT PASSWORD
+              <Input
+                data-testid="recent-password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </label>
+            <Button
+              data-testid="unlock-controls"
+              disabled={!password || busy === "reauth"}
+              onClick={() => void unlock()}
+            >
+              <KeyRound />
+              {controlsUnlocked ? "Refresh authorization" : "Unlock controls"}
+            </Button>
+            <span
+              className={`text-xs ${controlsUnlocked ? "text-success" : "text-muted-foreground"}`}
+            >
+              {controlsUnlocked
+                ? "Destructive controls unlocked for 5 minutes"
+                : "Required for revoke and disconnect"}
+            </span>
+          </div>
+        </section>
+        {tab === "overview" && (
+          <div className="mt-6 grid gap-4 lg:grid-cols-3">
+            <Metric label="Plan" value={commerce.subscription?.planId ?? "-"} />
+            <Metric
+              label="Subscription"
+              value={SubscriptionStatus[commerce.subscription?.status ?? 0]}
+            />
+            <Metric
+              label="Relay remaining"
+              value={bytes(quota.period?.remainingBytes ?? 0n)}
+            />
+            <Panel title="Account">
+              <Row
+                label="Account ID"
+                value={commerce.account?.accountId ?? "-"}
+              />
+              <Row
+                label="Auth revision"
+                value={String(commerce.account?.authRevision ?? 0n)}
+              />
+            </Panel>
+            <Panel title="Capability">
+              <Row
+                label="P2P sessions"
+                value={String(
+                  commerce.entitlement?.capability?.managedP2pMaxConcurrency ??
+                    0,
+                )}
+              />
+              <Row
+                label="Relay period"
+                value={bytes(
+                  commerce.entitlement?.capability?.relay?.maxBytesPerPeriod ??
+                    0n,
+                )}
+              />
+            </Panel>
+            <Panel title="Recent audit">
+              {commerce.audit
+                .slice(-5)
+                .reverse()
+                .map((item) => (
+                  <Row
+                    key={item.auditId}
+                    label={when(item.occurredAtUnixMillis)}
+                    value={item.action}
+                  />
+                ))}
+            </Panel>
+          </div>
+        )}
+        {tab === "devices" && (
+          <Panel title="Registered devices" className="mt-6">
+            {devices.devices.map((device) => (
+              <div
+                className="grid gap-3 border-b border-line p-4 lg:grid-cols-[1fr_160px_160px_auto] lg:items-center"
+                key={device.deviceId}
+              >
+                <div>
+                  <strong className="text-sm">
+                    {device.displayName || device.deviceId}
+                  </strong>
+                  <p className="font-mono text-[10px] text-muted-foreground">
+                    {device.deviceId}
+                  </p>
+                </div>
+                <span className="text-xs">
+                  {ManagedDeviceKind[device.deviceKind]}
+                </span>
+                <span className="text-xs">
+                  {device.presence
+                    ? `${Availability[device.presence.availability]} / ${Freshness[device.presence.freshness]}`
+                    : "UNKNOWN / STALE"}
+                </span>
+                <Button
+                  variant="outline"
+                  disabled={
+                    !controlsUnlocked || device.revoked || busy === "command"
+                  }
+                  onClick={() =>
+                    void command(
+                      ManagementCommandKind.REVOKE_CLOUD_DEVICE,
+                      create(ManagementCommandTargetSchema, {
+                        target: {
+                          case: "cloudDevice",
+                          value: create(RevokeCloudDeviceTargetSchema, {
+                            deviceId: device.deviceId,
+                            expectedAuthEpoch: device.authEpoch,
+                          }),
+                        },
+                      }),
+                    )
+                  }
+                >
+                  <ShieldAlert />
+                  Revoke
+                </Button>
+              </div>
+            ))}
+          </Panel>
+        )}
+        {tab === "topology" && (
+          <div className="mt-6 grid gap-5">
+            <Panel title="Signaling control relations">
+              {topology.presences.map((presence) => (
+                <div
+                  className="grid gap-3 border-b border-line p-4 lg:grid-cols-[1fr_1fr_160px_auto] lg:items-center"
+                  key={presence.presenceSessionId}
+                >
+                  <span className="font-mono text-xs">
+                    {presence.daemonDeviceId}
+                  </span>
+                  <span className="text-xs">
+                    Control Hub: {presence.controlOwnerHubId}
+                  </span>
+                  <span className="text-xs">
+                    {Availability[presence.availability]} /{" "}
+                    {Freshness[presence.freshness]}
+                  </span>
+                  <Button
+                    variant="outline"
+                    disabled={!controlsUnlocked || busy === "command"}
+                    onClick={() =>
+                      void command(
+                        ManagementCommandKind.KICK_PRESENCE,
+                        create(ManagementCommandTargetSchema, {
+                          target: {
+                            case: "presence",
+                            value: create(KickPresenceTargetSchema, {
+                              daemonDeviceId: presence.daemonDeviceId,
+                              assignmentEpoch: presence.assignmentEpoch,
+                              presenceSessionId: presence.presenceSessionId,
+                            }),
+                          },
+                        }),
+                      )
+                    }
+                  >
+                    Disconnect
+                  </Button>
+                </div>
+              ))}
+            </Panel>
+            <Panel title="Observed data paths">
+              {topology.peerSessions.map((session) => (
+                <div
+                  className="grid gap-3 border-b border-line p-4 lg:grid-cols-[1fr_1fr_160px_auto] lg:items-center"
+                  key={`${session.target?.managedSessionId}-${session.target?.sessionIncarnation}`}
+                >
+                  <span className="font-mono text-xs">
+                    {session.clientDeviceId} to {session.target?.daemonDeviceId}
+                  </span>
+                  <span className="text-xs">
+                    Data path: {ObservedPath[session.observedDataPath]}
+                  </span>
+                  <span className="text-xs">
+                    Control Hub: {session.controlOwnerHubId}
+                  </span>
+                  <Button
+                    variant="outline"
+                    disabled={
+                      !controlsUnlocked || !session.target || busy === "command"
+                    }
+                    onClick={() =>
+                      session.target &&
+                      void command(
+                        ManagementCommandKind.CLOSE_MANAGED_PEER_SESSION,
+                        create(ManagementCommandTargetSchema, {
+                          target: {
+                            case: "peerSession",
+                            value: session.target,
+                          },
+                        }),
+                      )
+                    }
+                  >
+                    Close session
+                  </Button>
+                </div>
+              ))}
+            </Panel>
+          </div>
+        )}
+        {tab === "commands" && (
+          <Panel title="Command outbox" className="mt-6">
+            {commands.commands.length === 0 ? (
+              <Empty />
+            ) : (
+              commands.commands.map((item) => (
+                <div
+                  className="grid gap-2 border-b border-line p-4 lg:grid-cols-[1fr_160px_160px]"
+                  key={item.commandId}
+                >
+                  <div>
+                    <strong className="text-xs">
+                      {ManagementCommandKind[item.commandKind]}
+                    </strong>
+                    <p className="font-mono text-[9px] text-muted-foreground">
+                      {item.commandId}
+                    </p>
+                  </div>
+                  <span className="text-xs">
+                    {item.children.length} child operations
+                  </span>
+                  <span className="text-xs">{item.executionState}</span>
+                </div>
+              ))
+            )}
+          </Panel>
+        )}
+        {tab === "billing" && (
+          <div className="mt-6 grid gap-5 lg:grid-cols-2">
+            <Panel title="Subscription">
+              <Row label="Plan" value={commerce.subscription?.planId ?? "-"} />
+              <Row
+                label="Status"
+                value={SubscriptionStatus[commerce.subscription?.status ?? 0]}
+              />
+              <div className="flex flex-wrap gap-2 p-4">
+                <Button
+                  disabled={
+                    busy === "billing" ||
+                    commerce.subscription?.planId === "pro"
+                  }
+                  onClick={() =>
+                    void run("billing", async () => {
+                      const checkout = await protoPost(
+                        "/api/v1/checkout",
+                        CreateCheckoutRequestSchema,
+                        create(CreateCheckoutRequestSchema, {
+                          planId: "pro",
+                          requestedTransition:
+                            SubscriptionTransitionKind.UPGRADE,
+                        }),
+                        CreateCheckoutResponseSchema,
+                      );
+                      if (checkout.order)
+                        await protoPost(
+                          "/api/v1/checkout/test-payment",
+                          ConfirmTestPaymentRequestSchema,
+                          create(ConfirmTestPaymentRequestSchema, {
+                            orderId: checkout.order.orderId,
+                            eventType: PaymentEventType.SUCCEEDED,
+                          }),
+                          ConfirmTestPaymentResponseSchema,
+                        );
+                    })
+                  }
+                >
+                  Activate Pro with test provider
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    void run("billing", () =>
+                      protoPost(
+                        "/api/v1/subscription/transition",
+                        TransitionSubscriptionRequestSchema,
+                        create(TransitionSubscriptionRequestSchema, {
+                          transition:
+                            SubscriptionTransitionKind.CANCEL_AT_PERIOD_END,
+                        }),
+                        TransitionSubscriptionResponseSchema,
+                      ),
+                    )
+                  }
+                >
+                  Cancel renewal
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    void run("billing", () =>
+                      protoPost(
+                        "/api/v1/subscription/transition",
+                        TransitionSubscriptionRequestSchema,
+                        create(TransitionSubscriptionRequestSchema, {
+                          transition: SubscriptionTransitionKind.RESUME,
+                        }),
+                        TransitionSubscriptionResponseSchema,
+                      ),
+                    )
+                  }
+                >
+                  Resume renewal
+                </Button>
+              </div>
+            </Panel>
+            <Panel title="Orders and provider events">
+              {commerce.orders.map((order) => (
+                <Row
+                  key={order.orderId}
+                  label={order.planId}
+                  value={`${order.status} / ${order.orderId}`}
+                />
+              ))}
+              {commerce.paymentEvents.map((event) => (
+                <Row
+                  key={event.event?.providerEventId}
+                  label={event.event?.provider ?? "provider"}
+                  value={`${event.state} / ${event.event?.eventType}`}
+                />
+              ))}
+            </Panel>
+          </div>
+        )}
+      </main>
     </div>
   );
 }
 
-function Logo({ compact = false }: { compact?: boolean }) { const { t } = useTranslation(); return <a className={cn("flex h-16 min-w-0 items-center gap-3 border-b border-line px-5", compact && "h-auto border-0 p-0")} href="/"><b className="grid size-8 shrink-0 place-items-center bg-primary font-mono text-[11px] font-medium text-primary-foreground">TX</b><span className="grid min-w-0 text-sm font-medium">TermX<small className="truncate text-[9px] font-normal text-muted-foreground">{t("account.brandSubtitle")}</small></span></a>; }
-function ThemePicker({ compact = false }: { compact?: boolean }) {
-  const { t } = useTranslation();
-  const [theme, setTheme] = useState<Theme>(savedTheme());
-  function choose(next: Theme) { setTheme(next); localStorage.setItem("termx-wx-theme", next); document.documentElement.dataset.wxTheme = next; }
-  return <div className="flex border border-line" aria-label={t("common.colorTheme")}><Button className={cn("border-0 border-r border-line", theme === "light-gray" && "bg-soft text-foreground")} variant="ghost" size={compact ? "icon" : "sm"} aria-label={t("common.useLight")} aria-pressed={theme === "light-gray"} onClick={() => choose("light-gray")}><Sun />{!compact && <span>{t("common.light")}</span>}</Button><Button className={cn("border-0", theme === "neutral-dark" && "bg-soft text-foreground")} variant="ghost" size={compact ? "icon" : "sm"} aria-label={t("common.useDark")} aria-pressed={theme === "neutral-dark"} onClick={() => choose("neutral-dark")}><Moon />{!compact && <span>{t("common.dark")}</span>}</Button></div>;
+function Panel({
+  title,
+  className = "",
+  children,
+}: {
+  title: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className={`border border-line bg-panel ${className}`}>
+      <h2 className="border-b border-line px-4 py-3 text-sm font-medium">
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
 }
-function PanelTitle({ title, end, icon }: { title: string; end?: string; icon?: ReactNode }) { return <header className="flex min-h-14 items-center justify-between gap-3 border-b border-line px-5"><h2 className="text-sm font-medium">{title}</h2>{end ? <b className="text-right text-[9px] font-medium text-success">{end}</b> : icon}</header>; }
-function LedgerRow({ label, value, live }: { label: string; value: string; live?: boolean }) { return <div className="grid min-h-14 grid-cols-[120px_1fr] items-center gap-4 border-b border-line px-5 last:border-0 max-sm:grid-cols-[100px_1fr]"><dt className="text-[10px] text-muted-foreground">{label}</dt><dd className="m-0 flex items-center gap-2 text-xs">{live && <i className="size-1.5 shrink-0 bg-success" />}{value}</dd></div>; }
-function Panel({ children, className }: { children: ReactNode; className?: string }) { return <section className={cn("border border-line bg-panel", className)}>{children}</section>; }
-
-function Overview({ value }: { value: Center }) {
-  const { t, i18n } = useTranslation();
-  const daemonNodes = value.nodes.filter((node) => node.kind === "daemon");
-  const active = daemonNodes.filter((node) => node.online && !node.revoked).length;
-  return <div className="grid gap-4 lg:grid-cols-[1.7fr_1fr]">
-    <Panel><PanelTitle title={t("account.overview.system")} end={t("account.overview.operational")} /><dl className="m-0"><LedgerRow label={t("account.overview.nodes")} value={t("account.overview.nodesValue", { active, total: daemonNodes.length })} live /><LedgerRow label={t("account.overview.plan")} value={value.billing.plan_id === "pro" ? t("account.billing.pro") : t("account.billing.free")} /><LedgerRow label={t("account.overview.route")} value={t("account.overview.routeValue")} /><LedgerRow label={t("account.overview.rewards")} value={t("account.overview.rewardsValue", { days: value.referrals.reward_days })} /></dl><p className="m-0 flex items-center gap-2 border-t border-line p-5 text-[10px] leading-5 text-muted-foreground"><ShieldCheck className="shrink-0 text-primary" />{t("account.overview.proof")}</p></Panel>
-    <Panel><PanelTitle title={t("account.overview.account")} /><div className="p-5"><b className="block text-lg font-normal">{value.profile.display_name}</b><span className="mt-1 block text-xs text-muted-foreground">{value.profile.email}</span></div><dl className="grid grid-cols-2 border-t border-line"><div className="p-5"><dt className="text-[8px] text-muted-foreground">{t("account.overview.accountId")}</dt><dd className="mt-2 break-all text-[10px]">{value.profile.account_id}</dd></div><div className="border-l border-line p-5"><dt className="text-[8px] text-muted-foreground">{t("account.overview.orders")}</dt><dd className="mt-2 text-lg">{value.billing.orders.length}</dd></div></dl></Panel>
-    <Panel className="lg:col-span-2"><PanelTitle title={t("account.overview.activity")} icon={<Activity className="size-4 text-primary" />} />{value.audit.length ? value.audit.map((event) => <Event key={event.id} title={localizeAudit(event.action, t)} detail={event.resource_id} time={when(event.occurred_at, i18n.language)} />) : <Empty text={t("account.overview.noActivity")} />}</Panel>
-  </div>;
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <section className="border border-line bg-panel p-5">
+      <p className="font-mono text-[9px] text-muted-foreground">
+        {label.toUpperCase()}
+      </p>
+      <strong className="mt-3 block text-2xl font-light">{value}</strong>
+    </section>
+  );
 }
-
-function Nodes({ value, busy, action }: { value: Node[]; busy: string; action: (key: string, fn: () => Promise<Response>) => Promise<void>; }) {
-  const { t, i18n } = useTranslation();
-  const daemonNodes = value.filter((node) => node.kind === "daemon");
-  const clientNodes = value.filter((node) => node.kind === "client");
-  const [enrollment, setEnrollment] = useState<{ code: string; expires_at: string } | null>(null), [creating, setCreating] = useState(false), [enrollmentError, setEnrollmentError] = useState(""), [copied, setCopied] = useState(false), [enrollmentNow, setEnrollmentNow] = useState(Date.now());
-  const [activation, setActivation] = useState<MobileActivation | null>(null), [activationBusy, setActivationBusy] = useState(false), [activationError, setActivationError] = useState(""), [activationApproved, setActivationApproved] = useState(false), [qrDataURL, setQRDataURL] = useState("");
-  async function createEnrollment() {
-    setCreating(true); setEnrollmentError(""); setCopied(false);
-    try {
-      const response = await request("/api/nodes/enrollment", {});
-      if (!response.ok) setEnrollmentError(t("account.enrollmentUx.error"));
-      else { setEnrollment(await response.json()); setEnrollmentNow(Date.now()); }
-    } catch { setEnrollmentError(t("account.enrollmentUx.error")); }
-    setCreating(false);
-  }
-  async function createActivation() {
-    setActivationBusy(true); setActivationError(""); setActivationApproved(false);
-    const response = await request("/api/mobile-activations", {});
-    if (!response.ok) setActivationError(t("account.nodes.activationError"));
-    else setActivation(await response.json());
-    setActivationBusy(false);
-  }
-  async function approveActivation() {
-    if (!activation) return;
-    setActivationBusy(true); setActivationError("");
-    const response = await request("/api/device-login/approve", { user_code: activation.user_code });
-    if (!response.ok) setActivationError(t("account.nodes.activationError"));
-    else setActivationApproved(true);
-    setActivationBusy(false);
-  }
-  useEffect(() => {
-    if (!activation?.qr_payload) { setQRDataURL(""); return; }
-    void QRCode.toDataURL(activation.qr_payload, { width: 240, margin: 2, errorCorrectionLevel: "M", color: { dark: "#111111", light: "#ffffff" } }).then(setQRDataURL).catch(() => setActivationError(t("account.nodes.activationError")));
-  }, [activation?.qr_payload]);
-  useEffect(() => {
-    if (!activation || activationApproved || activation.state === "waiting_for_approval") return;
-    let stopped = false;
-    async function inspect() {
-      if (Date.now() >= Date.parse(activation!.expires_at)) {
-        if (!stopped) {
-          setActivation(null);
-          setActivationError(t("account.nodes.activationExpired"));
-        }
-        return;
-      }
-      try {
-        const response = await fetch(`/api/device-login?code=${encodeURIComponent(activation!.user_code)}`, { cache: "no-store" });
-        if (!stopped && response.ok) {
-          const inspected = await response.json() as MobileActivation;
-          setActivation((current) => current ? { ...current, ...inspected, qr_payload: current.qr_payload } : current);
-        }
-      } catch {
-        if (!stopped) setActivationError(t("account.nodes.activationError"));
-      }
-    }
-    void inspect();
-    const timer = window.setInterval(() => { void inspect(); }, 1500);
-    return () => { stopped = true; window.clearInterval(timer); };
-  }, [activation, activationApproved]);
-  useEffect(() => {
-    if (!enrollment) return;
-    const timer = window.setInterval(() => setEnrollmentNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [enrollment]);
-  const enrollmentSeconds = enrollment ? Math.max(0, Math.ceil((Date.parse(enrollment.expires_at) - enrollmentNow) / 1000)) : 0;
-  const enrollmentCommand = enrollment ? `termx cloud enroll ${enrollment.code}` : "";
-  return <div className="grid gap-4">
-    <Panel><PanelTitle title={t("account.nodes.clientTitle")} end={t("account.nodes.clientCount", { count: clientNodes.filter((node) => !node.revoked).length })} />
-      {!activation && <div className="grid gap-4 border-b border-line p-5 sm:grid-cols-[1fr_auto] sm:items-center"><div className="flex items-start gap-3"><Smartphone className="mt-0.5 size-4 shrink-0 text-primary" /><div><p className="m-0 text-sm font-medium">{t("account.nodes.mobileTitle")}</p><p className="mb-0 mt-2 max-w-2xl text-[10px] leading-5 text-muted-foreground">{t("account.nodes.mobileCopy")}</p></div></div><Button disabled={activationBusy} onClick={createActivation}><QrCode />{activationBusy ? t("account.nodes.creating") : t("account.nodes.createQR")}</Button></div>}
-      {activation && <div className="grid md:grid-cols-[272px_1fr]">
-        <div className="grid min-h-[272px] place-items-center border-b border-line bg-white p-4 md:border-b-0 md:border-r">{qrDataURL ? <img alt={t("account.nodes.qrAlt")} className="aspect-square h-auto w-full max-w-60 object-contain" height="240" src={qrDataURL} width="240" /> : <i className="size-3 animate-pulse bg-primary" />}</div>
-        <div className="flex flex-col justify-center p-5 md:p-7"><span className="font-mono text-[9px] text-primary">{activationApproved ? t("account.nodes.approved") : activation.state === "waiting_for_device" ? t("account.nodes.waitingScan") : t("account.nodes.waitingApproval")}</span><strong className="mt-3 font-mono text-2xl font-normal">{activation.user_code}</strong>
-          {activation.client_label ? <p className="mt-5 flex items-center gap-3 border-y border-line py-4 text-xs"><Smartphone className="size-4 text-primary" /><span><b className="block font-medium">{activation.client_label}</b><small className="text-muted-foreground">{activation.client_platform}</small></span></p> : <p className="mt-4 text-xs leading-6 text-muted-foreground">{t("account.nodes.scanCopy")}</p>}
-          {activation.state === "waiting_for_approval" && !activationApproved && <Button className="mt-5 self-start" disabled={activationBusy} onClick={approveActivation}><ShieldCheck />{activationBusy ? t("device.loading") : t("device.approve")}</Button>}
-          {activationApproved && <p className="mt-5 text-xs text-success">{t("account.nodes.approvedCopy")}</p>}
-          <Button className="mt-3 self-start" variant="ghost" onClick={() => { setActivation(null); setActivationApproved(false); setActivationError(""); }}>{activationApproved ? t("account.nodes.done") : t("account.nodes.cancel")}</Button>
-        </div>
-      </div>}
-      {activationError && <p className="m-5 border border-destructive p-3 text-xs text-destructive" role="alert">{activationError}</p>}
-      <p className="m-0 border-b border-line px-5 py-4 text-[10px] leading-5 text-muted-foreground">{t("account.nodes.clientNote")}</p>
-      <NodeTable nodes={clientNodes} kind="client" busy={busy} language={i18n.language} action={action} />
-    </Panel>
-    <Panel><PanelTitle title={t("account.nodes.daemonTitle")} end={t("account.nodes.online", { count: daemonNodes.filter((node) => node.online && !node.revoked).length })} /><div className="grid gap-4 border-b border-line px-5 py-4 sm:grid-cols-[1fr_auto] sm:items-center"><div><p className="m-0 text-[10px] leading-5 text-muted-foreground">{t("account.nodes.daemonNote")}</p><p className="mb-0 mt-1 text-[9px] leading-5 text-muted-foreground">{t("account.enrollmentUx.reenrollNote")}</p></div><Button variant="outline" size="sm" disabled={creating} onClick={createEnrollment}><KeyRound />{creating ? t("account.nodes.creating") : t("account.nodes.enroll")}</Button>{enrollment && <div className="grid gap-3 border border-primary bg-background p-4 sm:col-span-2 sm:grid-cols-[1fr_auto] sm:items-end"><div className="min-w-0"><span className="font-mono text-[9px] text-muted-foreground">{t("account.nodes.enrollmentCode")}</span><strong className="mt-2 block break-all font-mono text-sm font-normal">{enrollment.code}</strong><code className="mt-3 block overflow-x-auto border-t border-line pt-3 font-mono text-[10px] text-foreground">{enrollmentCommand}</code><small className={cn("mt-2 block font-mono text-[9px] tabular-nums", enrollmentSeconds > 0 ? "text-muted-foreground" : "text-destructive")}>{enrollmentSeconds > 0 ? t("account.enrollmentUx.expiresIn", { minutes: Math.floor(enrollmentSeconds / 60), seconds: String(enrollmentSeconds % 60).padStart(2, "0") }) : t("account.enrollmentUx.expired")}</small></div><Button className="min-h-11" variant="outline" disabled={enrollmentSeconds === 0} onClick={() => { void copyText(enrollmentCommand).then(() => setCopied(true)).catch(() => setEnrollmentError(t("account.enrollmentUx.copyError"))); }}>{copied ? <Check /> : <Copy />}{copied ? t("account.enrollmentUx.copied") : t("account.enrollmentUx.copyCommand")}</Button></div>}{enrollmentError && <p className="m-0 border border-destructive p-3 text-xs text-destructive sm:col-span-2" role="alert">{enrollmentError}</p>}<span className="sr-only" aria-live="polite">{copied ? t("account.enrollmentUx.copied") : ""}</span></div><NodeTable nodes={daemonNodes} kind="daemon" busy={busy} language={i18n.language} action={action} /></Panel>
-  </div>;
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid min-h-12 grid-cols-[130px_1fr] items-center gap-3 border-b border-line px-4 text-xs last:border-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="min-w-0 break-all">{value}</span>
+    </div>
+  );
 }
-
-function NodeTable({ nodes, kind, busy, language, action }: { nodes: Node[]; kind: "daemon" | "client"; busy: string; language: string; action: (key: string, fn: () => Promise<Response>) => Promise<void>; }) {
-  const { t } = useTranslation();
-  const Icon = kind === "daemon" ? Server : MonitorSmartphone;
-  if (!nodes.length) return <Empty text={t(kind === "daemon" ? "account.nodes.noDaemons" : "account.nodes.noClients")} />;
-  return <Table><TableHeader><TableRow><TableHead>{t(kind === "daemon" ? "account.nodes.daemon" : "account.nodes.client")}</TableHead><TableHead>{t("account.nodes.updated")}</TableHead><TableHead>{t("account.nodes.status")}</TableHead><TableHead /></TableRow></TableHeader><TableBody>{nodes.map((node) => { const status = node.revoked ? "revoked" : kind === "client" ? "accessEnabled" : node.online ? "onlineStatus" : "offlineStatus"; return <TableRow key={node.id}><TableCell><span className="flex min-w-40 items-center gap-3"><Icon className="size-4 text-primary" /><span><b className="block text-xs font-medium">{node.name}</b><small className="text-[9px] text-muted-foreground">{t(`account.nodes.kind.${kind}`)}</small></span></span></TableCell><TableCell className="whitespace-nowrap text-[10px] text-muted-foreground">{when(node.updated_at, language)}</TableCell><TableCell><span className={cn("text-[9px] font-medium", status === "onlineStatus" || status === "accessEnabled" ? "text-success" : status === "revoked" ? "text-destructive" : "text-muted-foreground")}>{t(`account.nodes.${status}`)}</span></TableCell><TableCell className="text-right">{!node.revoked && <Button variant="destructive" size="sm" disabled={busy === node.id} onClick={() => action(node.id, () => request("/api/nodes/revoke", { node_id: node.id }))}>{t(kind === "client" ? "account.nodes.removeAccess" : "account.nodes.revoke")}</Button>}</TableCell></TableRow>; })}</TableBody></Table>;
+function Empty() {
+  return <p className="p-5 text-sm text-muted-foreground">No records.</p>;
 }
-
-function BillingView({ value, busy, action }: { value: Billing; busy: string; action: (key: string, fn: () => Promise<Response>) => Promise<void>; }) {
-  const { t, i18n } = useTranslation();
-  async function checkout() { const checkoutResponse = await request("/api/checkout", { plan_id: "pro" }); if (!checkoutResponse.ok) return checkoutResponse; return request("/api/checkout/confirm", { order_id: (await checkoutResponse.json()).id }); }
-  return <div className="grid gap-4"><Panel><PanelTitle title={t("account.billing.subscription")} /><div className="bg-inverse p-7 text-inverse-foreground"><span className="text-[9px] text-success">{t("account.billing.current")}</span><h2 className="my-3 text-3xl font-light">{value.plan_id === "pro" ? t("account.billing.pro") : t("account.billing.free")}</h2><p className="text-xs text-inverse-foreground/60">{value.valid_until ? t("account.billing.activeUntil", { date: date(value.valid_until, i18n.language) }) : t("account.billing.included")}</p>{value.plan_id !== "pro" && <Button className="mt-6" disabled={busy === "checkout"} onClick={() => action("checkout", checkout)}>{busy === "checkout" ? t("account.billing.processing") : t("account.billing.checkout")}</Button>}</div></Panel><Panel><PanelTitle title={t("account.billing.history")} />{value.orders.length ? value.orders.map((order) => <Event key={order.id} title={order.plan_id.toUpperCase()} detail={order.id} time={`${date(order.created_at, i18n.language)} / ${t(`account.billing.status.${order.status}`, { defaultValue: order.status })}`} />) : <Empty text={t("account.billing.noOrders")} />}</Panel></div>;
+function bytes(value: bigint) {
+  return value === 0n
+    ? "0 B"
+    : `${(Number(value) / 1024 / 1024).toFixed(1)} MiB`;
 }
-
-function Account({ value, busy, action }: { value: Profile; busy: string; action: (key: string, fn: () => Promise<Response>) => Promise<void>; }) {
-  const { t } = useTranslation();
-  const [name, setName] = useState(value.display_name), [currentPassword, setCurrentPassword] = useState(""), [newPassword, setNewPassword] = useState("");
-  return <div className="grid gap-4"><Panel><PanelTitle title={t("account.profile.title")} /><form className="grid max-w-2xl gap-5 p-5" onSubmit={(event) => { event.preventDefault(); void action("profile", () => request("/api/profile", { display_name: name }, "PATCH")); }}><Field label={t("account.profile.displayName")}><Input value={name} onChange={(event) => setName(event.target.value)} /></Field><Field label={t("account.profile.email")} hint={t("account.profile.emailHint")}><Input value={value.email} disabled /></Field><div className="flex items-center gap-3 bg-soft p-4 text-[9px]"><ShieldCheck className="shrink-0 text-primary" /><span>{t("account.profile.identity")}<small className="mt-1 block break-all text-muted-foreground">{value.user_id} / {value.account_id}</small></span></div><Button className="justify-self-start" disabled={busy === "profile"}>{busy === "profile" ? t("account.profile.saving") : t("account.profile.save")}</Button></form></Panel><Panel><PanelTitle title={value.password_configured ? t("account.profile.changePassword") : t("account.profile.setPassword")} /><form className="grid max-w-2xl gap-5 p-5" onSubmit={(event) => { event.preventDefault(); void action("password", () => request("/api/password", { current_password: currentPassword, new_password: newPassword })).then(() => { setCurrentPassword(""); setNewPassword(""); }); }}>{value.password_configured && <Field label={t("account.profile.currentPassword")}><Input required type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></Field>}<Field label={t("account.profile.newPassword")} hint={t("account.profile.passwordHint")}><Input required minLength={10} type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></Field><Button className="justify-self-start" disabled={busy === "password"}>{busy === "password" ? t("account.profile.saving") : value.password_configured ? t("account.profile.changePassword") : t("account.profile.setPassword")}</Button></form></Panel></div>;
+function when(value: bigint) {
+  return value ? new Date(Number(value)).toLocaleString() : "-";
 }
-
-function Referrals({ value }: { value: ReferralProgram }) {
-  const { t, i18n } = useTranslation();
-  const link = `${window.location.origin}/login?aff=${value.code}`;
-  return <div className="grid gap-4"><Panel><PanelTitle title={t("account.referrals.title")} end={t("account.referrals.bonus", { days: value.reward_days })} /><div className="bg-inverse p-7 text-inverse-foreground"><span className="text-[9px] text-success">{t("account.referrals.link")}</span><h2 className="my-3 text-3xl font-light">{value.code}</h2><p className="break-all text-xs text-inverse-foreground/60">{link}</p><Button className="mt-6" onClick={() => navigator.clipboard.writeText(link)}>{t("account.referrals.copy")}</Button></div><dl className="m-0"><LedgerRow label={t("account.referrals.successful")} value={`${value.referred_count}`} /><LedgerRow label={t("account.referrals.yourReward")} value={t("account.referrals.yourRewardValue")} /><LedgerRow label={t("account.referrals.friendReward")} value={t("account.referrals.friendRewardValue")} /></dl></Panel><Panel><PanelTitle title={t("account.referrals.history")} />{value.rewards.length ? value.rewards.map((reward) => <Event key={reward.id} title={reward.kind === "referrer" ? t("account.referrals.paid") : t("account.referrals.welcome")} detail={reward.order_id} time={`${date(reward.created_at, i18n.language)} / ${t("account.referrals.days", { days: reward.days })}`} />) : <Empty text={t("account.referrals.noRewards")} />}</Panel></div>;
-}
-
-function localizeAudit(action: string, t: TFunction): string { return action === "account.created" ? t("account.activity.accountCreated") : action.replace(".", " "); }
-function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) { return <label className="grid gap-2 font-mono text-[9px] text-muted-foreground">{label}{children}{hint && <small className="font-sans text-[10px]">{hint}</small>}</label>; }
-function Event({ title, detail, time }: { title: string; detail: string; time: string }) { return <div className="grid min-h-16 grid-cols-[1fr_auto] items-center gap-4 border-b border-line px-5 last:border-0"><span className="min-w-0"><b className="block text-xs font-medium">{title}</b><small className="block truncate text-[9px] text-muted-foreground">{detail}</small></span><time className="text-right text-[9px] text-muted-foreground">{time}</time></div>; }
-function Empty({ text }: { text: string }) { return <p className="m-0 p-10 text-center text-xs text-muted-foreground">{text}</p>; }

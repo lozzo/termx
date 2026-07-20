@@ -5,6 +5,7 @@ package termx.cloud.v1;
 option go_package = "github.com/lozzow/termx/proto/cloudpb";
 
 import "cloudpb/cloud_hub_control.proto";
+import "cloudpb/cloud_product.proto";
 import "cloudpb/cloud_topology.proto";
 
 // ManagementActorKind 区分账号用户与运营角色。
@@ -112,6 +113,74 @@ message ManagementErrorDetail {
   bool retryable = 3;
   uint64 retry_after_millis = 4;
   string correlation_id = 5;
+}
+
+// RecentAuthenticationRequest 用当前账号密码换取短期 destructive-action proof。
+message RecentAuthenticationRequest {
+  string password = 1;
+}
+
+message RecentAuthenticationResponse {
+  int64 expires_at_unix_millis = 1;
+}
+
+// OperatorLoginRequest 只在独立 operator listener 消费部署配置的高熵 token。
+message OperatorLoginRequest {
+  bytes access_token = 1;
+}
+
+message OperatorSessionProjection {
+  string operator_id = 1;
+  ManagementActorKind actor_kind = 2;
+  int64 authenticated_at_unix_millis = 3;
+  int64 expires_at_unix_millis = 4;
+}
+
+message OperatorLoginResponse {
+  OperatorSessionProjection session = 1;
+}
+
+message OperatorLogoutRequest {}
+message OperatorLogoutResponse {}
+
+// OperatorAccountSummary 是 fleet 列表中的账号、subscription、entitlement 与 quota 摘要。
+message OperatorAccountSummary {
+  AccountProjection account = 1;
+  SubscriptionProjection subscription = 2;
+  EntitlementProjection entitlement = 3;
+  RelayQuotaPeriod relay_quota = 4;
+}
+
+message ListOperatorAccountsRequest {
+  string query = 1;
+  SubscriptionStatus subscription_status = 2;
+  PageRequest page = 3;
+}
+
+message ListOperatorAccountsResponse {
+  repeated OperatorAccountSummary accounts = 1;
+  PageResponse page = 2;
+}
+
+message GetOperatorAccountRequest {
+  string account_id = 1;
+}
+
+message GetOperatorAccountResponse {
+  GetAccountCommerceResponse commerce = 1;
+  GetAccountRelayQuotaResponse relay_quota = 2;
+  ListAccountDevicesResponse devices = 3;
+  ListAccountTopologyResponse topology = 4;
+  repeated ManagementCommandProjection commands = 5;
+}
+
+message OperatorTransitionSubscriptionRequest {
+  string account_id = 1;
+  SubscriptionTransitionKind transition = 2;
+}
+
+message OperatorTransitionSubscriptionResponse {
+  TransitionSubscriptionResponse result = 1;
 }
 
 // AccountDeviceProjection 是账号隔离后的设备与 assignment 摘要。

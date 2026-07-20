@@ -46,8 +46,24 @@ func TestManagementAPIUsesAccountCSRFAndDurableCommandProjection(t *testing.T) {
 		randomBytes[index] = byte(index + 1)
 	}
 	planner, _ := commandoutbox.NewPlanner(outbox, source, nil, bytes.NewReader(randomBytes), nil)
-	managementHandler, _ := webcontroller.ManagementAPIHandler(webcontroller.ManagementAPIConfig{Commerce: commerceService, Planner: planner, Outbox: outbox, Accesses: source, Now: func() time.Time { return now }})
+	managementHandler, _ := webcontroller.ManagementAPIHandler(webcontroller.ManagementAPIConfig{Commerce: commerceService, Planner: planner, Outbox: outbox, Topology: source, Quota: store, Now: func() time.Time { return now }})
 	body, _ := protojson.MarshalOptions{UseProtoNames: true}.Marshal(&cloudpb.CreateManagementCommandRequest{AccountId: "other-account", CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_CLOSE_MANAGED_PEER_SESSION, Target: &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_PeerSession{PeerSession: target}}, IdempotencyKey: "idem-1"})
+	withoutRecent := productRequest(http.MethodPost, "/api/v1/management/commands", string(body), cookies)
+	withoutRecentResponse := httptest.NewRecorder()
+	managementHandler.ServeHTTP(withoutRecentResponse, withoutRecent)
+	if withoutRecentResponse.Code != http.StatusForbidden || !strings.Contains(withoutRecentResponse.Body.String(), "MANAGEMENT_ERROR_CODE_RECENT_AUTH_REQUIRED") {
+		t.Fatalf("create without recent authentication = %d: %s", withoutRecentResponse.Code, withoutRecentResponse.Body.String())
+	}
+	reauthBody, _ := protojson.Marshal(&cloudpb.RecentAuthenticationRequest{Password: "secure-password"})
+	reauth := productRequest(http.MethodPost, "/api/v1/management/reauth", string(reauthBody), cookies)
+	reauthResponse := httptest.NewRecorder()
+	managementHandler.ServeHTTP(reauthResponse, reauth)
+	if reauthResponse.Code != http.StatusOK {
+		t.Fatalf("reauth = %d: %s", reauthResponse.Code, reauthResponse.Body.String())
+	}
+	for _, cookie := range reauthResponse.Result().Cookies() {
+		cookies[cookie.Name] = cookie
+	}
 	create := productRequest(http.MethodPost, "/api/v1/management/commands", string(body), cookies)
 	createResponse := httptest.NewRecorder()
 	managementHandler.ServeHTTP(createResponse, create)
@@ -75,6 +91,31 @@ func TestManagementAPIUsesAccountCSRFAndDurableCommandProjection(t *testing.T) {
 	if accessResponse.Code != http.StatusOK || !strings.Contains(accessResponse.Body.String(), "opaque-access-1") {
 		t.Fatalf("terminal access list = %d: %s", accessResponse.Code, accessResponse.Body.String())
 	}
+	devicesBody, _ := protojson.Marshal(&cloudpb.ListAccountDevicesRequest{AccountId: "other-account", IncludeRevoked: true, Page: &cloudpb.PageRequest{PageSize: 10}})
+	devicesRequest := productRequest(http.MethodPost, "/api/v1/management/devices/list", string(devicesBody), cookies)
+	devicesResponse := httptest.NewRecorder()
+	managementHandler.ServeHTTP(devicesResponse, devicesRequest)
+	if devicesResponse.Code != http.StatusOK || source.lastDevicesAccountID != account.GetAccountId() {
+		t.Fatalf("account-isolated devices = %d account=%q: %s", devicesResponse.Code, source.lastDevicesAccountID, devicesResponse.Body.String())
+	}
+	topologyBody, _ := protojson.Marshal(&cloudpb.ListAccountTopologyRequest{AccountId: "other-account", Page: &cloudpb.PageRequest{PageSize: 10}})
+	topologyRequest := productRequest(http.MethodPost, "/api/v1/management/topology/list", string(topologyBody), cookies)
+	topologyResponse := httptest.NewRecorder()
+	managementHandler.ServeHTTP(topologyResponse, topologyRequest)
+	if topologyResponse.Code != http.StatusOK || source.lastTopologyAccountID != account.GetAccountId() {
+		t.Fatalf("account-isolated topology = %d account=%q: %s", topologyResponse.Code, source.lastTopologyAccountID, topologyResponse.Body.String())
+	}
+	quotaBody, _ := protojson.Marshal(&cloudpb.GetAccountRelayQuotaRequest{AccountId: "other-account"})
+	quotaRequest := productRequest(http.MethodPost, "/api/v1/management/relay/quota", string(quotaBody), cookies)
+	quotaResponse := httptest.NewRecorder()
+	managementHandler.ServeHTTP(quotaResponse, quotaRequest)
+	quota := &cloudpb.GetAccountRelayQuotaResponse{}
+	if err := protojson.Unmarshal(quotaResponse.Body.Bytes(), quota); err != nil {
+		t.Fatal(err)
+	}
+	if quotaResponse.Code != http.StatusOK || quota.GetPeriod().GetAccountId() != account.GetAccountId() {
+		t.Fatalf("account relay quota = %d: %s", quotaResponse.Code, quotaResponse.Body.String())
+	}
 	withoutCSRF := productRequest(http.MethodPost, "/api/v1/management/commands", string(body), cookies)
 	withoutCSRF.Header.Del("X-TermX-CSRF")
 	withoutCSRFResponse := httptest.NewRecorder()
@@ -85,7 +126,9 @@ func TestManagementAPIUsesAccountCSRFAndDurableCommandProjection(t *testing.T) {
 }
 
 type managementTargetSource struct {
-	session cloudtopology.StoredPeerSession
+	session               cloudtopology.StoredPeerSession
+	lastDevicesAccountID  string
+	lastTopologyAccountID string
 }
 
 func (source *managementTargetSource) Device(context.Context, string) (cloudtopology.DeviceOwnership, error) {
@@ -106,4 +149,13 @@ func (source *managementTargetSource) TerminalAccess(context.Context, string, st
 
 func (source *managementTargetSource) ListTerminalAccess(_ context.Context, accountID, daemonDeviceID string, _ cloudpb.TerminalAccessState, _ int) ([]cloudtopology.StoredTerminalAccess, cloudpb.Freshness, time.Time, error) {
 	return []cloudtopology.StoredTerminalAccess{{AccountID: accountID, HubID: "hub-1", Value: &cloudpb.TerminalAccessProjection{DaemonDeviceId: daemonDeviceID, OpaqueAccessReference: "opaque-access-1", State: cloudpb.TerminalAccessState_TERMINAL_ACCESS_STATE_ACTIVE, AccessProjectionRevision: 3}}}, cloudpb.Freshness_FRESHNESS_FRESH, time.Date(2026, 7, 20, 15, 0, 0, 0, time.UTC), nil
+}
+
+func (source *managementTargetSource) ListAccountDevices(_ context.Context, accountID string, _ cloudpb.ManagedDeviceKind, _ bool, _ int) ([]*cloudpb.AccountDeviceProjection, error) {
+	source.lastDevicesAccountID = accountID
+	return nil, nil
+}
+func (source *managementTargetSource) ListAccountTopology(_ context.Context, accountID, _, _ string, _ cloudpb.Freshness, _ int) ([]*cloudpb.PresenceProjection, []*cloudpb.ManagedPeerSessionProjection, error) {
+	source.lastTopologyAccountID = accountID
+	return nil, nil, nil
 }

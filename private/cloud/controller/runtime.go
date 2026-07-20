@@ -65,6 +65,11 @@ type Config struct {
 	DevelopmentEnrollmentCode      string                       `json:"development_enrollment_code"`
 	DevelopmentEnrollmentAccountID string                       `json:"development_enrollment_account_id"`
 	DevelopmentEnrollmentHubID     string                       `json:"development_enrollment_hub_id"`
+	OperatorID                     string                       `json:"operator_id"`
+	OperatorRole                   string                       `json:"operator_role"`
+	OperatorAccessTokenBase64      string                       `json:"operator_access_token_base64"`
+	SecureCookie                   bool                         `json:"secure_cookie"`
+	WebStaticDir                   string                       `json:"web_static_dir"`
 }
 
 // Manifest 是 supervisor 和 E2E harness 使用的非秘密 Controller 进程描述。
@@ -308,12 +313,12 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	productHandler, err := webcontroller.ProductAPIHandler(webcontroller.ProductAPIConfig{Commerce: commerceService, EnableTestPaymentProvider: config.EnableTestPaymentProvider})
+	productHandler, err := webcontroller.ProductAPIHandler(webcontroller.ProductAPIConfig{Commerce: commerceService, EnableTestPaymentProvider: config.EnableTestPaymentProvider, SecureCookie: config.SecureCookie})
 	if err != nil {
 		_ = store.Close()
 		return nil, err
 	}
-	managementHandler, err := webcontroller.ManagementAPIHandler(webcontroller.ManagementAPIConfig{Commerce: commerceService, Planner: planner, Outbox: outboxService, Accesses: topologyService, Now: time.Now})
+	managementHandler, err := webcontroller.ManagementAPIHandler(webcontroller.ManagementAPIConfig{Commerce: commerceService, Planner: planner, Outbox: outboxService, Topology: topologyService, Quota: store, Now: time.Now, SecureCookie: config.SecureCookie})
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -336,6 +341,38 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	publicMux.Handle("/api/v1/", productHandler)
 	operatorMux := http.NewServeMux()
 	operatorMux.HandleFunc("/healthz", healthHandler)
+	if config.OperatorAccessTokenBase64 != "" {
+		operatorToken, decodeErr := base64.RawStdEncoding.DecodeString(config.OperatorAccessTokenBase64)
+		if decodeErr != nil || len(operatorToken) < 32 || config.OperatorID == "" {
+			_ = store.Close()
+			return nil, fmt.Errorf("invalid operator identity or access token")
+		}
+		actorKind := cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN
+		if config.OperatorRole == "readonly" {
+			actorKind = cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_READONLY
+		} else if config.OperatorRole != "admin" {
+			clear(operatorToken)
+			_ = store.Close()
+			return nil, fmt.Errorf("invalid operator role")
+		}
+		fleet := &fleetQuery{registry: registry, publisher: publisher, hubControl: controlServer, relayControl: relayControlServer}
+		operatorHandler, handlerErr := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{AccessToken: operatorToken, OperatorID: config.OperatorID, ActorKind: actorKind, Commerce: commerceService, Topology: topologyService, Quota: store, Outbox: outboxService, Planner: planner, Fleet: fleet, Now: time.Now, SecureCookie: config.SecureCookie})
+		clear(operatorToken)
+		if handlerErr != nil {
+			_ = store.Close()
+			return nil, handlerErr
+		}
+		operatorMux.Handle("/api/v1/operator/", operatorHandler)
+	}
+	if config.WebStaticDir != "" {
+		staticHandler, staticErr := webStaticHandler(config.WebStaticDir)
+		if staticErr != nil {
+			_ = store.Close()
+			return nil, staticErr
+		}
+		publicMux.Handle("/", staticHandler)
+		operatorMux.Handle("/", staticHandler)
+	}
 	internalMux := http.NewServeMux()
 	internalMux.Handle(relaylease.InternalReservePath, relayLeaseHandler)
 	internalMux.Handle(usage.InternalReportPath, relayUsageHandler)

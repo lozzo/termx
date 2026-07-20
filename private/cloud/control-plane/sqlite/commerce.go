@@ -63,6 +63,28 @@ func (store *Store) Account(ctx context.Context, accountID string) (commerce.Acc
 	return scanAccount(store.db.QueryRowContext(ctx, `SELECT projection,password_hash FROM commerce_accounts WHERE account_id=?`, accountID))
 }
 
+// Accounts 返回 operator 使用的有界账号记录，按 account_id 稳定排序。
+func (store *Store) Accounts(ctx context.Context, limit int) ([]commerce.AccountRecord, error) {
+	rows, err := store.db.QueryContext(ctx, `SELECT projection,password_hash FROM commerce_accounts ORDER BY account_id LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []commerce.AccountRecord
+	for rows.Next() {
+		var body, passwordHash []byte
+		if err := rows.Scan(&body, &passwordHash); err != nil {
+			return nil, err
+		}
+		record := commerce.AccountRecord{Projection: &cloudpb.AccountProjection{}, PasswordHash: append([]byte(nil), passwordHash...)}
+		if err := proto.Unmarshal(body, record.Projection); err != nil {
+			return nil, err
+		}
+		result = append(result, record)
+	}
+	return result, rows.Err()
+}
+
 // PutSession 原子保存新的登录 session 和审计。
 func (store *Store) PutSession(ctx context.Context, session commerce.SessionRecord, audit *cloudpb.CommerceAuditProjection) error {
 	tx, err := store.db.BeginTx(ctx, nil)
@@ -250,7 +272,7 @@ func (store *Store) RecordPaymentEvent(ctx context.Context, record commerce.Paym
 		return commerce.PaymentEventRecord{}, false, err
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, `INSERT INTO commerce_payment_events(provider_event_id,digest,event,state,result) VALUES(?,?,?,?,NULL) ON CONFLICT(provider_event_id) DO NOTHING`, record.Event.GetProviderEventId(), record.Digest[:], eventBody, record.State)
+	result, err := tx.ExecContext(ctx, `INSERT INTO commerce_payment_events(provider_event_id,account_id,digest,event,state,result) VALUES(?,?,?,?,?,NULL) ON CONFLICT(provider_event_id) DO NOTHING`, record.Event.GetProviderEventId(), record.Event.GetAccountId(), record.Digest[:], eventBody, record.State)
 	if err != nil {
 		return commerce.PaymentEventRecord{}, false, err
 	}
@@ -473,6 +495,29 @@ func (store *Store) PaymentAttempts(ctx context.Context, accountID string) ([]*c
 		values = append(values, value)
 	}
 	return values, rows.Err()
+}
+
+// PaymentEvents 返回账号隔离后的 provider journal 摘要。
+func (store *Store) PaymentEvents(ctx context.Context, accountID string) ([]*cloudpb.PaymentEventProjection, error) {
+	rows, err := store.db.QueryContext(ctx, `SELECT event,state FROM commerce_payment_events WHERE account_id=? ORDER BY provider_event_id`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []*cloudpb.PaymentEventProjection
+	for rows.Next() {
+		var body []byte
+		var state cloudpb.PaymentEventState
+		if err := rows.Scan(&body, &state); err != nil {
+			return nil, err
+		}
+		event := &cloudpb.NormalizedPaymentEvent{}
+		if err := proto.Unmarshal(body, event); err != nil {
+			return nil, err
+		}
+		result = append(result, &cloudpb.PaymentEventProjection{Event: event, State: state})
+	}
+	return result, rows.Err()
 }
 
 // Audit 返回账号持久交易审计，按发生时间和 ID 稳定排序。

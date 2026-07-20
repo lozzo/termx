@@ -194,6 +194,9 @@ func TestCloudManagementAPIMessagesAreProtoFirst(t *testing.T) {
 		"GetManagementCommandRequest", "GetManagementCommandResponse",
 		"ListManagementCommandsRequest", "ListManagementCommandsResponse",
 		"ListHubFleetRequest", "ListHubFleetResponse", "GetHubStatusRequest", "GetHubStatusResponse",
+		"RecentAuthenticationRequest", "RecentAuthenticationResponse", "OperatorLoginRequest", "OperatorLoginResponse",
+		"ListOperatorAccountsRequest", "ListOperatorAccountsResponse", "GetOperatorAccountRequest", "GetOperatorAccountResponse",
+		"OperatorTransitionSubscriptionRequest", "OperatorTransitionSubscriptionResponse",
 	} {
 		if messages.ByName(name) == nil {
 			t.Fatalf("cloud management proto missing %s", name)
@@ -228,6 +231,7 @@ func TestCloudProductUsesOnePlanCapabilityAcrossCatalogEntitlementAndHubPolicy(t
 		"PlanPriceDefinition", "PlanPresentation", "CreateCheckoutRequest", "CreateCheckoutResponse", "PaymentAttemptProjection", "CreatePaymentAttemptRequest", "CreatePaymentAttemptResponse",
 		"ApplyPaymentEventRequest", "ApplyPaymentEventResponse", "ConfirmTestPaymentRequest", "ConfirmTestPaymentResponse",
 		"TransitionSubscriptionRequest", "TransitionSubscriptionResponse", "GetAccountCommerceRequest", "GetAccountCommerceResponse", "CloudProductError",
+		"PaymentEventProjection",
 	} {
 		if File_cloudpb_cloud_product_proto.Messages().ByName(name) == nil {
 			t.Fatalf("cloud product proto missing %s", name)

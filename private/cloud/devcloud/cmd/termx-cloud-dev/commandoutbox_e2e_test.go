@@ -419,6 +419,16 @@ func loginCommandAccount(t *testing.T, origin string) map[string]*http.Cookie {
 	for _, cookie := range response.Cookies() {
 		result[cookie.Name] = cookie
 	}
+	reauthBody, _ := protojson.Marshal(&cloudpb.RecentAuthenticationRequest{Password: "secure-password"})
+	reauthRequest := authenticatedCommandRequest(http.MethodPost, origin+"/api/v1/management/reauth", reauthBody, origin, result, true)
+	reauthResponse, err := http.DefaultClient.Do(reauthRequest)
+	if err != nil || reauthResponse.StatusCode != http.StatusOK {
+		t.Fatalf("recent authentication = (%v, %v)", reauthResponse, err)
+	}
+	defer reauthResponse.Body.Close()
+	for _, cookie := range reauthResponse.Cookies() {
+		result[cookie.Name] = cookie
+	}
 	return result
 }
 
