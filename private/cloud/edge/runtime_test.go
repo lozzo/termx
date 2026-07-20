@@ -14,9 +14,11 @@ import (
 
 	"github.com/lozzow/termx/private/cloud/control-plane/hubcontrol"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
+	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
 	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
 	"github.com/lozzow/termx/private/cloud/control-plane/usage"
+	cloudhub "github.com/lozzow/termx/private/cloud/hub"
 	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
 	"github.com/lozzow/termx/proto/cloudpb"
 )
@@ -36,7 +38,7 @@ func TestEdgeRestartRequiresFullSyncAndKeepsOnlyUsageOutbox(t *testing.T) {
 	publisher := hubcontrol.NewPublisher()
 	full, err := hubcontrol.BuildSignedFullProjection(hubcontrol.FullProjectionInput{HubID: "hub-1", Revision: 1, GeneratedAt: now, TTL: 30 * time.Minute, SigningKeyID: "controller-key", SigningKey: controllerPrivate,
 		Accounts:    []*cloudpb.HubAccountPolicy{{AccountId: "account-1", AuthEpoch: 1, EntitlementStatus: cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE, EntitlementEffectiveUntilUnixMillis: now.Add(time.Hour).UnixMilli(), Capability: &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 1, CloudDeviceLimit: 2}}},
-		Devices:     []*cloudpb.CloudDevicePolicy{{AccountId: "account-1", DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: 1}},
+		Devices:     []*cloudpb.CloudDevicePolicy{{AccountId: "account-1", DeviceId: "client-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: 1}, {AccountId: "account-1", DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: 1}},
 		Assignments: []*cloudpb.HubAssignment{{DaemonDeviceId: "daemon-1", AccountId: "account-1", HubId: "hub-1", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}},
 	})
 	if err != nil {
@@ -66,6 +68,46 @@ func TestEdgeRestartRequiresFullSyncAndKeepsOnlyUsageOutbox(t *testing.T) {
 	if first.Manifest().ControlGeneration != 1 || first.Manifest().ProjectionRevision != 1 {
 		t.Fatalf("first Edge manifest = %#v", first.Manifest())
 	}
+	signer, err := servicecredential.NewSigner("controller-key", controllerPrivate, now.Add(-time.Minute), now.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	issuer, err := servicecredential.NewEdgeAccessIssuer("termx-cloud-controller", signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := issuer.IssueEdgeAccess("token-1", "hub-1", "account-1", "client-1", 1, time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.authorizer.ReserveManagedP2P(token, "account-1", "client-1", "daemon-1", "reservation-1", "managed-1", 1, now.Add(5*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.authorizer.ReserveManagedP2P(token, "account-1", "client-1", "daemon-1", "reservation-2", "managed-2", 1, now.Add(5*time.Minute)); !errors.Is(err, cloudhub.ErrP2PConcurrency) {
+		t.Fatalf("signed policy concurrency = %v", err)
+	}
+	first.authorizer.ReleaseManagedP2P("reservation-1")
+	suspended, err := hubcontrol.BuildSignedFullProjection(hubcontrol.FullProjectionInput{HubID: "hub-1", Revision: 2, GeneratedAt: time.Now().UTC(), TTL: 30 * time.Minute, SigningKeyID: "controller-key", SigningKey: controllerPrivate,
+		Accounts:    []*cloudpb.HubAccountPolicy{{AccountId: "account-1", AuthEpoch: 1, EntitlementStatus: cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_SUSPENDED, EntitlementEffectiveUntilUnixMillis: now.Add(time.Hour).UnixMilli(), Capability: &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 1, CloudDeviceLimit: 2}}},
+		Devices:     full.GetDevices(),
+		Assignments: full.GetAssignments(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := publisher.PublishFull(suspended); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for first.Manifest().ProjectionRevision < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if first.Manifest().ProjectionRevision != 2 {
+		t.Fatalf("Edge did not apply suspended policy: %#v", first.Manifest())
+	}
+	if _, err := first.authorizer.ReserveManagedP2P(token, "account-1", "client-1", "daemon-1", "reservation-3", "managed-3", 1, now.Add(5*time.Minute)); !errors.Is(err, cloudhub.ErrP2PNotEntitled) {
+		t.Fatalf("suspended signed policy admission = %v", err)
+	}
 	record := cloudrelay.UsageRecord{SignedLease: []byte("signed-lease"), Event: usage.Event{EventID: "usage-1", Sequence: 1, Signature: []byte("signature")}}
 	if err := first.usageOutbox.Enqueue(record); err != nil {
 		t.Fatal(err)
@@ -88,7 +130,7 @@ func TestEdgeRestartRequiresFullSyncAndKeepsOnlyUsageOutbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	cancel()
-	if second.Manifest().ControlGeneration != 2 || second.Manifest().ProjectionRevision != 1 {
+	if second.Manifest().ControlGeneration != 2 || second.Manifest().ProjectionRevision != 2 {
 		t.Fatalf("restarted Edge manifest = %#v", second.Manifest())
 	}
 	pending, err := second.usageOutbox.Pending()
@@ -97,7 +139,7 @@ func TestEdgeRestartRequiresFullSyncAndKeepsOnlyUsageOutbox(t *testing.T) {
 	}
 	server.CloseClientConnections()
 	_ = server.Listener.Close()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline = time.Now().Add(2 * time.Second)
 	for second.control.State().Attached && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}

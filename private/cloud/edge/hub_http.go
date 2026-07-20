@@ -396,6 +396,10 @@ func mapHubError(writer http.ResponseWriter, err error) {
 		writeHubError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub authorization was rejected", false)
 	case errors.Is(err, cloudhub.ErrPolicySnapshot):
 		writeHubError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub authorization projection is unavailable", true)
+	case errors.Is(err, cloudhub.ErrP2PNotEntitled):
+		writeHubError(writer, http.StatusForbidden, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENTITLEMENT_DENIED, "managed P2P is not enabled for this account", false)
+	case errors.Is(err, cloudhub.ErrP2PConcurrency):
+		writeHubError(writer, http.StatusTooManyRequests, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_QUOTA_EXHAUSTED, "managed P2P concurrency is exhausted", true)
 	case errors.Is(err, cloudhub.ErrTargetUnavailable):
 		writeHubError(writer, http.StatusNotFound, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_NOT_FOUND, "target managed device is unavailable", false)
 	case errors.Is(err, cloudhub.ErrPresenceNotFound):

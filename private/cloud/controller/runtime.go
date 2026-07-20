@@ -22,11 +22,17 @@ import (
 	cloudcommerce "github.com/lozzow/termx/private/cloud/control-plane/commerce"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubcontrol"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
+	cloudpolicy "github.com/lozzow/termx/private/cloud/control-plane/policy"
 	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
 	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
 	webcontroller "github.com/lozzow/termx/private/cloud/web-controller"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"google.golang.org/protobuf/encoding/protojson"
+)
+
+const (
+	projectionTTL             = 30 * time.Minute
+	projectionRefreshInterval = 10 * time.Minute
 )
 
 // DeploymentConfig 绑定一个 Hub deployment metadata 与其独立 control public key。
@@ -45,7 +51,6 @@ type Config struct {
 	ProjectionKeyID            string                       `json:"projection_key_id"`
 	ProjectionPrivateKeyBase64 string                       `json:"projection_private_key_base64"`
 	Deployments                []DeploymentConfig           `json:"deployments"`
-	Accounts                   []*cloudpb.HubAccountPolicy  `json:"accounts"`
 	Devices                    []*cloudpb.CloudDevicePolicy `json:"devices"`
 	Assignments                []*cloudpb.HubAssignment     `json:"assignments"`
 	EnableTestPaymentProvider  bool                         `json:"enable_test_payment_provider"`
@@ -63,15 +68,18 @@ type Manifest struct {
 
 // Runtime 持有 Controller listener、SQLite 与 control publisher 生命周期。
 type Runtime struct {
-	store     *cloudsqlite.Store
-	publisher *hubcontrol.Publisher
-	registry  *hubregistry.Registry
-	topology  *cloudtopology.Service
-	manifest  Manifest
-	listeners []net.Listener
-	servers   []*http.Server
-	errors    chan error
-	closeOnce sync.Once
+	store         *cloudsqlite.Store
+	publisher     *hubcontrol.Publisher
+	registry      *hubregistry.Registry
+	topology      *cloudtopology.Service
+	manifest      Manifest
+	listeners     []net.Listener
+	servers       []*http.Server
+	errors        chan error
+	policyChanges chan string
+	policyDone    chan struct{}
+	policyWG      sync.WaitGroup
+	closeOnce     sync.Once
 }
 
 // LoadConfig 读取 0600 development config；未知字段 fail closed。
@@ -91,8 +99,15 @@ func LoadConfig(path string) (Config, error) {
 
 // Start 建立三个独立 listener，并在 serving 前发布每个 Hub 的持久递增 full projection。
 func Start(config Config) (*Runtime, error) {
+	return start(config, projectionRefreshInterval)
+}
+
+func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	if config.DatabasePath == "" || config.CatalogPath == "" || config.ProjectionKeyID == "" || len(config.Deployments) < 1 {
 		return nil, fmt.Errorf("Controller database, catalog, projection key and deployments are required")
+	}
+	if refreshInterval <= 0 || refreshInterval >= projectionTTL {
+		return nil, fmt.Errorf("Controller projection refresh interval is invalid")
 	}
 	privateKeyBytes, err := base64.RawStdEncoding.DecodeString(config.ProjectionPrivateKeyBase64)
 	if err != nil || len(privateKeyBytes) != ed25519.PrivateKeySize {
@@ -101,6 +116,28 @@ func Start(config Config) (*Runtime, error) {
 	privateKey := ed25519.PrivateKey(privateKeyBytes)
 	store, err := cloudsqlite.Open(config.DatabasePath)
 	if err != nil {
+		return nil, err
+	}
+	catalog, err := webcontroller.LoadCatalog(config.CatalogPath)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	policyService, err := cloudpolicy.New(store)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	policyChanges := make(chan string, 64)
+	policyDone := make(chan struct{})
+	commerceService, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalog.Contract(), Now: time.Now, NotifyPolicyChange: func(accountID string) {
+		select {
+		case policyChanges <- accountID:
+		case <-policyDone:
+		}
+	}})
+	if err != nil {
+		_ = store.Close()
 		return nil, err
 	}
 	registry, _ := hubregistry.New(store)
@@ -145,12 +182,12 @@ func Start(config Config) (*Runtime, error) {
 			_ = store.Close()
 			return nil, err
 		}
-		accounts, devices, assignments, err := projectionForHub(registry, config, hubID, now)
+		accounts, devices, assignments, err := projectionForHub(registry, policyService, config, hubID, now)
 		if err != nil {
 			_ = store.Close()
 			return nil, err
 		}
-		full, err := hubcontrol.BuildSignedFullProjection(hubcontrol.FullProjectionInput{HubID: hubID, Revision: revision, GeneratedAt: now, TTL: 30 * time.Minute, Accounts: accounts, Devices: devices, Assignments: assignments, SigningKeyID: config.ProjectionKeyID, SigningKey: privateKey})
+		full, err := hubcontrol.BuildSignedFullProjection(hubcontrol.FullProjectionInput{HubID: hubID, Revision: revision, GeneratedAt: now, TTL: projectionTTL, Accounts: accounts, Devices: devices, Assignments: assignments, SigningKeyID: config.ProjectionKeyID, SigningKey: privateKey})
 		if err != nil {
 			_ = store.Close()
 			return nil, err
@@ -165,16 +202,6 @@ func Start(config Config) (*Runtime, error) {
 		}
 	}
 	controlServer, err := hubcontrol.NewServer(hubcontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: publisher, Topology: topologyService, Clock: time.Now, ChallengeTTL: 30 * time.Second, EnvelopeTTL: 5 * time.Minute})
-	if err != nil {
-		_ = store.Close()
-		return nil, err
-	}
-	catalog, err := webcontroller.LoadCatalog(config.CatalogPath)
-	if err != nil {
-		_ = store.Close()
-		return nil, err
-	}
-	commerceService, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalog.Contract(), Now: time.Now})
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -216,7 +243,7 @@ func Start(config Config) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	runtime := &Runtime{store: store, publisher: publisher, registry: registry, topology: topologyService, listeners: []net.Listener{publicListener, internalListener, operatorListener}, errors: make(chan error, 3)}
+	runtime := &Runtime{store: store, publisher: publisher, registry: registry, topology: topologyService, listeners: []net.Listener{publicListener, internalListener, operatorListener}, errors: make(chan error, 3), policyChanges: policyChanges, policyDone: policyDone}
 	runtime.servers = []*http.Server{{Handler: publicMux, ReadHeaderTimeout: 5 * time.Second}, {Handler: controlServer.Handler(), ReadHeaderTimeout: 5 * time.Second}, {Handler: operatorMux, ReadHeaderTimeout: 5 * time.Second}}
 	for index := range runtime.servers {
 		server, listener := runtime.servers[index], runtime.listeners[index]
@@ -226,6 +253,8 @@ func Start(config Config) (*Runtime, error) {
 			}
 		}()
 	}
+	runtime.policyWG.Add(1)
+	go runtime.runPolicyPublisher(config, policyService, privateKey, refreshInterval)
 	manifest := Manifest{PID: os.Getpid(), PublicURL: origin(publicListener), InternalControlURL: origin(internalListener), OperatorURL: origin(operatorListener), DatabasePath: config.DatabasePath}
 	for _, deployment := range config.Deployments {
 		manifest.HubIDs = append(manifest.HubIDs, deployment.Metadata.GetHubId())
@@ -257,11 +286,13 @@ func (runtime *Runtime) Wait() error { return <-runtime.errors }
 func (runtime *Runtime) Close(ctx context.Context) error {
 	var result error
 	runtime.closeOnce.Do(func() {
+		close(runtime.policyDone)
 		for _, server := range runtime.servers {
 			if err := server.Shutdown(ctx); err != nil && result == nil {
 				result = err
 			}
 		}
+		runtime.policyWG.Wait()
 		if err := runtime.store.Close(); err != nil && result == nil {
 			result = err
 		}
@@ -269,7 +300,7 @@ func (runtime *Runtime) Close(ctx context.Context) error {
 	return result
 }
 
-func projectionForHub(registry *hubregistry.Registry, config Config, hubID string, now time.Time) ([]*cloudpb.HubAccountPolicy, []*cloudpb.CloudDevicePolicy, []*cloudpb.HubAssignment, error) {
+func projectionForHub(registry *hubregistry.Registry, policies *cloudpolicy.Service, config Config, hubID string, now time.Time) ([]*cloudpb.HubAccountPolicy, []*cloudpb.CloudDevicePolicy, []*cloudpb.HubAssignment, error) {
 	stored, err := registry.AssignmentsForHub(context.Background(), hubID, now)
 	if err != nil {
 		return nil, nil, nil, err
@@ -281,10 +312,12 @@ func projectionForHub(registry *hubregistry.Registry, config Config, hubID strin
 		accountsNeeded[value.Value.GetAccountId()] = true
 	}
 	var accounts []*cloudpb.HubAccountPolicy
-	for _, value := range config.Accounts {
-		if accountsNeeded[value.GetAccountId()] {
-			accounts = append(accounts, value)
+	for accountID := range accountsNeeded {
+		value, err := policies.HubAccountPolicy(context.Background(), accountID)
+		if err != nil {
+			return nil, nil, nil, err
 		}
+		accounts = append(accounts, value)
 	}
 	var devices []*cloudpb.CloudDevicePolicy
 	for _, value := range config.Devices {
@@ -293,6 +326,101 @@ func projectionForHub(registry *hubregistry.Registry, config Config, hubID strin
 		}
 	}
 	return accounts, devices, assignments, nil
+}
+
+func (runtime *Runtime) runPolicyPublisher(config Config, policies *cloudpolicy.Service, signingKey ed25519.PrivateKey, refreshInterval time.Duration) {
+	defer runtime.policyWG.Done()
+	refresh := time.NewTicker(refreshInterval)
+	defer refresh.Stop()
+	for {
+		select {
+		case accountID := <-runtime.policyChanges:
+			if err := runtime.publishAccountPolicy(config, policies, signingKey, accountID, time.Now().UTC()); err != nil {
+				runtime.reportPolicyError(err)
+			}
+		case now := <-refresh.C:
+			if err := runtime.publishAllPolicies(config, policies, signingKey, now.UTC()); err != nil {
+				runtime.reportPolicyError(err)
+			}
+		case <-runtime.policyDone:
+			return
+		}
+	}
+}
+
+func (runtime *Runtime) publishAccountPolicy(config Config, policies *cloudpolicy.Service, signingKey ed25519.PrivateKey, accountID string, now time.Time) error {
+	for _, deployment := range config.Deployments {
+		hubID := deployment.Metadata.GetHubId()
+		assignments, err := runtime.registry.AssignmentsForHub(context.Background(), hubID, now)
+		if err != nil {
+			return err
+		}
+		assigned := false
+		for _, assignment := range assignments {
+			if assignment.Value.GetAccountId() == accountID {
+				assigned = true
+				break
+			}
+		}
+		if !assigned {
+			continue
+		}
+		if err := runtime.publishHubPolicy(config, policies, signingKey, hubID, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (runtime *Runtime) publishAllPolicies(config Config, policies *cloudpolicy.Service, signingKey ed25519.PrivateKey, now time.Time) error {
+	for _, deployment := range config.Deployments {
+		if err := runtime.publishHubPolicy(config, policies, signingKey, deployment.Metadata.GetHubId(), now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (runtime *Runtime) publishHubPolicy(config Config, policies *cloudpolicy.Service, signingKey ed25519.PrivateKey, hubID string, now time.Time) error {
+	revision, err := runtime.store.AllocateProjectionRevision(context.Background(), hubID, now)
+	if err != nil {
+		return err
+	}
+	accounts, devices, assignments, err := projectionForHub(runtime.registry, policies, config, hubID, now)
+	if err != nil {
+		return err
+	}
+	full, err := hubcontrol.BuildSignedFullProjection(hubcontrol.FullProjectionInput{HubID: hubID, Revision: revision, GeneratedAt: now, TTL: projectionTTL, Accounts: accounts, Devices: devices, Assignments: assignments, SigningKeyID: config.ProjectionKeyID, SigningKey: signingKey})
+	if err != nil {
+		return err
+	}
+	if err := runtime.store.SetProjectionDigest(context.Background(), hubID, revision, full.GetSnapshotDigest()); err != nil {
+		return err
+	}
+	return runtime.publishFullWithRetry(full)
+}
+
+func (runtime *Runtime) reportPolicyError(err error) {
+	select {
+	case runtime.errors <- err:
+	default:
+	}
+}
+
+func (runtime *Runtime) publishFullWithRetry(full *cloudpb.FullProjectionSnapshot) error {
+	for {
+		err := runtime.publisher.PublishFull(full)
+		if !errors.Is(err, hubcontrol.ErrPublisherBackpressure) {
+			return err
+		}
+		timer := time.NewTimer(10 * time.Millisecond)
+		select {
+		case <-timer.C:
+		case <-runtime.policyDone:
+			timer.Stop()
+			return nil
+		}
+	}
 }
 
 func equalAssignment(left, right *cloudpb.HubAssignment) bool {

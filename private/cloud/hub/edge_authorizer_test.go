@@ -47,6 +47,7 @@ func TestEdgeAuthorizerUsesOnlyVersionedLocalProjection(t *testing.T) {
 		t.Fatalf("missing snapshot error = %v", err)
 	}
 	snapshot := hub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []hub.AccountAuthorization{activeP2PAccount("account-1", 7, now)}, Devices: []hub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon"}, {DeviceID: "daemon-other", AccountID: "account-2", Kind: "daemon", DisplayName: "Other daemon"}}}
+	snapshot.Accounts[0].Capability.ManagedP2PMaxConcurrency = 1
 	if err := authorizer.ApplySnapshot(snapshot); err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +70,19 @@ func TestEdgeAuthorizerUsesOnlyVersionedLocalProjection(t *testing.T) {
 	if err := authorizer.ApplySnapshot(snapshot); !errors.Is(err, hub.ErrPolicySnapshot) {
 		t.Fatalf("revision rollback error = %v", err)
 	}
+	if _, err := authorizer.ReserveManagedP2P(token, "account-1", "client-1", "daemon-1", "pending-1", "managed-1", 1, now.Add(30*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	valid := &cloudpb.ManagedPeerSessionProjection{Target: &cloudpb.ManagedPeerSessionTarget{DaemonDeviceId: "daemon-1", ManagedSessionId: "managed-1", SessionIncarnation: 1, AssignmentEpoch: 1, DaemonRuntimeGeneration: "runtime-1"}, ClientDeviceId: "client-1", ObservedDataPath: cloudpb.ObservedPath_OBSERVED_PATH_DIRECT, State: cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_READY}
+	invalid := &cloudpb.ManagedPeerSessionProjection{Target: &cloudpb.ManagedPeerSessionTarget{DaemonDeviceId: "daemon-1", ManagedSessionId: "managed-invalid", SessionIncarnation: 2, AssignmentEpoch: 1, DaemonRuntimeGeneration: "runtime-1"}, ClientDeviceId: "unknown-client", ObservedDataPath: cloudpb.ObservedPath_OBSERVED_PATH_DIRECT, State: cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_READY}
+	if err := authorizer.ReconcileManagedP2P("daemon-1", []*cloudpb.ManagedPeerSessionProjection{valid, invalid}); !errors.Is(err, hub.ErrEdgeAuthorization) {
+		t.Fatalf("invalid full runtime replacement = %v", err)
+	}
+	clock.now = now.Add(time.Minute)
+	if _, err := authorizer.ReserveManagedP2P(token, "account-1", "client-1", "daemon-1", "pending-2", "managed-2", 1, clock.now.Add(time.Minute)); err != nil {
+		t.Fatalf("rejected runtime report mutated reservations: %v", err)
+	}
+	authorizer.ReleaseManagedP2P("pending-2")
 	clock.now = now.Add(6 * time.Minute)
 	if _, err := authorizer.AuthorizeDirect(token, "account-1", "client-1", "daemon-1"); !errors.Is(err, hub.ErrPolicySnapshot) {
 		t.Fatalf("stale snapshot error = %v", err)
@@ -82,53 +96,6 @@ func TestEdgeAuthorizerUsesOnlyVersionedLocalProjection(t *testing.T) {
 	}
 	if _, err := authorizer.AuthorizeDirect(token, "account-1", "client-1", "daemon-1"); !errors.Is(err, hub.ErrEdgeAuthorization) {
 		t.Fatalf("revoked epoch error = %v", err)
-	}
-}
-
-func TestEdgeAuthorizerRestartStartsWithoutPolicyProjection(t *testing.T) {
-	now := time.Date(2026, 7, 12, 11, 0, 0, 0, time.UTC)
-	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	signer, err := servicecredential.NewSigner("policy-key-1", privateKey, now.Add(-time.Hour), now.Add(48*time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
-	ring, err := servicecredential.NewKeyRing(signer.PublicKey())
-	if err != nil {
-		t.Fatal(err)
-	}
-	issuer, err := servicecredential.NewEdgePolicyIssuer("control-plane.edge", signer)
-	if err != nil {
-		t.Fatal(err)
-	}
-	encoded, err := issuer.Issue("hub-1", 1, []servicecredential.EdgePolicyAccount{{AccountID: "account-1", AuthEpoch: 3, EntitlementStatus: cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE, EntitlementEffectiveUntilUnix: now.Add(time.Hour).Unix(), Capability: &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 2, CloudDeviceLimit: 10}}}, []servicecredential.EdgePolicyDevice{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon"}}, time.Hour, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	clock := &edgeClock{now: now}
-	first, err := hub.NewEdgeAuthorizer(hub.EdgeAuthorizerConfig{HubID: "hub-1", Issuer: "control-plane.edge", KeyRing: ring, Clock: clock, MaxStaleness: time.Hour})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := first.ApplySignedSnapshot(encoded); err != nil {
-		t.Fatal(err)
-	}
-	restarted, err := hub.NewEdgeAuthorizer(hub.EdgeAuthorizerConfig{HubID: "hub-1", Issuer: "control-plane.edge", KeyRing: ring, Clock: clock, MaxStaleness: time.Hour})
-	if err != nil {
-		t.Fatal(err)
-	}
-	edgeIssuer, err := servicecredential.NewEdgeAccessIssuer("control-plane.edge", signer)
-	if err != nil {
-		t.Fatal(err)
-	}
-	token, err := edgeIssuer.IssueEdgeAccess("client-token", "hub-1", "account-1", "client-1", 3, time.Hour, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := restarted.AuthorizeDirect(token, "account-1", "client-1", "daemon-1"); !errors.Is(err, hub.ErrPolicySnapshot) {
-		t.Fatalf("restarted Hub restored policy from disk: %v", err)
 	}
 }
 

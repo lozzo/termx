@@ -9,6 +9,7 @@ require (
 	github.com/lozzow/termx/private/cloud/control-plane v0.0.0
 	github.com/lozzow/termx/private/cloud/controller v0.0.0
 	github.com/lozzow/termx/private/cloud/edge v0.0.0
+	github.com/lozzow/termx/private/cloud/web-controller v0.0.0
 )
 
 require (
@@ -34,7 +35,6 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/lozzow/termx/private/cloud/companion v0.0.0 // indirect
-	github.com/lozzow/termx/private/cloud/web-controller v0.0.0 // indirect
 	github.com/pion/dtls/v3 v3.1.2 // indirect
 	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/randutil v0.1.0 // indirect

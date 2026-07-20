@@ -41,7 +41,7 @@ TermX Cloud 是同一个 TermX App 内的可选托管连接能力，负责账号
 PlanCatalog
   -> Subscription
   -> Entitlement
-  -> EdgePolicy / RelayBudget
+  -> signed Hub policy / RelayBudget
   -> Hub admission / RelayLease
   -> Relay UsageEvent
   -> UsageLedger / BillingPeriodUsage

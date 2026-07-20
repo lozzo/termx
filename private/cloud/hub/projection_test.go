@@ -112,6 +112,26 @@ func TestProjectionAssignmentTimerFencesExactEpoch(t *testing.T) {
 	}
 }
 
+func TestProjectionRejectsCrossAccountAssignment(t *testing.T) {
+	now := time.Now().UTC()
+	publicKey, privateKey, _ := ed25519.GenerateKey(rand.Reader)
+	projection, _ := NewProjection(ProjectionConfig{HubID: "hub-1", ControllerKeyID: "controller-key", ControllerPublicKey: publicKey, Clock: &projectionClock{now: now}, MaxStaleness: time.Hour, PolicySink: &projectionSink{}})
+	full := fullFixture(t, privateKey, now, 1, now.Add(30*time.Minute))
+	full.Accounts = append(full.Accounts, &cloudpb.HubAccountPolicy{AccountId: "account-2", AuthEpoch: 1, EntitlementStatus: cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE, EntitlementEffectiveUntilUnixMillis: now.Add(time.Hour).UnixMilli(), Capability: &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 1}})
+	full.Assignments[0].AccountId = "account-2"
+	candidate, _ := unsignedCandidate(full)
+	full.SnapshotDigest, _ = digestCandidate(candidate)
+	signingBytes, _ := fullSigningBytes(full)
+	full.Signature = ed25519.Sign(privateKey, signingBytes)
+
+	if err := projection.ApplyFull(full); !errors.Is(err, ErrProjectionConflict) {
+		t.Fatalf("cross-account assignment error = %v", err)
+	}
+	if projection.Snapshot().Revision != 0 {
+		t.Fatal("invalid assignment changed projection truth")
+	}
+}
+
 func fullFixture(t *testing.T, privateKey ed25519.PrivateKey, now time.Time, revision uint64, assignmentExpiry time.Time) *cloudpb.FullProjectionSnapshot {
 	t.Helper()
 	capability := &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 1, CloudDeviceLimit: 2}

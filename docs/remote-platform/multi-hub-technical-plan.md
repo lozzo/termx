@@ -23,6 +23,7 @@
 - Control Plane 已持久拥有 Hub registry、assignment、control generation、per-Hub projection head 和 topology replacement；CommandOutbox 尚未实现。
 - Controller 已持久拥有账号 verifier、单次 refresh session、versioned Subscription、Entitlement、订单、provider event journal 和交易审计。
 - Controller public listener 已暴露 Proto JSON 注册、登录、refresh、logout、改密、checkout、显式测试付款、Subscription transition 和账号交易查询；测试付款默认关闭。
+- Controller 已从持久 Account auth revision 与 Entitlement 构建 per-Hub signed policy；静态 `Config.Accounts` 已退出，账号/套餐变化按 assignment 只重发相关 Hub full projection。
 - 旧 Web Controller 自有的账号密码、browser session、订单 map/SQLite 表、webhook 和直接 Entitlement 写入口已经删除；`CLOUDP006` 在当前 API 上重建完整用户/运营页面。
 
 迁移原则：不重写已工作的 WebRTC、remote auth、terminal protocol 和 Presence 下行流。新增最小 owner/port，把单进程 direct call 替换为 Proto 网络链路；对应新路径通过后直接删除旧调用和旧 snapshot 路径。
@@ -163,6 +164,7 @@ target_generation/epoch/incarnation
 ```text
 private/cloud/control-plane/
   commerce/          账号、session、订单、provider journal 与 Subscription 状态机
+  policy/            Account/Entitlement 到 HubAccountPolicy 的确定性映射
   hubregistry/       Hub deployment、control generation、assignment lease
   hubcontrol/        per-Hub projection 发布、stream coordination、reconciliation
   topology/          validated Presence/session/access projection
@@ -682,9 +684,17 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 
 ### CLOUDP003：managed P2P 准入与并发
 
-- Control Plane 发布 signed per-Hub policy。
-- Hub 内存执行 ownership、auth epoch、assignment、P2P capability 和 reservation。
-- reservation 在 signaling/session lifecycle 明确释放，不靠定时猜 active count。
+- `control-plane/policy` 从持久账号 `auth_revision` 与 Entitlement status/effective window/PlanCapability 确定性生成 `HubAccountPolicy`；不读取 plan name、价格或 terminal 数据。
+- Controller 初始 full projection 与 commerce 变更重发都读取同一 SQLite 真值；静态 `Config.Accounts` 和 supervisor 手写 HubAccountPolicy 删除。显式 dev supervisor 先走真实 commerce 注册，再创建设备/assignment。
+- commerce 在注册、改密 auth revision、payment replay/commit 和 Subscription transition 持久提交后通知 Controller；Controller 只对该账号当前 assignment 所在 Hub 分配新 revision 并发布 signed full。
+- Controller 还必须在 projection TTL 内周期性从 SQLite 重建并签发 fresh full，避免无账号变更的稳定运行在旧 full 过期后拒绝全部 managed P2P；刷新仍使用同一 per-Hub persistent revision 与 HubControl，不增加第二套 scheduler 真值。
+- Edge 继续通过真实 HubControl 接收并验签 full/delta；Hub authorizer 对 capability 执行与 Control Plane 相同的结构 validation，错误/陈旧/revoke/epoch mismatch fail closed。
+- 删除旧 JSON-token `servicecredential.EdgePolicy` 与 `ApplySignedSnapshot`；唯一 policy wire truth 是 Proto `FullProjectionSnapshot/PolicyDelta`，Edge 重启不能从磁盘恢复 Hub policy。
+- Hub `ReserveManagedP2P` 在签名 policy、client/daemon ownership、revoke、auth epoch 和账号 concurrency limit 的同一内存锁下占用精确 signaling reservation。
+- Hub HTTP 保持失败分类：无有效 Entitlement 返回 `ENTITLEMENT_DENIED`，账号并发占满返回可重试 `QUOTA_EXHAUSTED`，credential/epoch/revoke 仍返回认证失败，目标 ownership 不泄漏跨账号存在性。
+- reservation 首先绑定 signaling session；answer 后由 daemon-owned 完整 PeerSession inventory 转交为 runtime reservation，AUTHENTICATED/READY/CLOSING 的 DIRECT session 持续占用，完整 inventory 缺失、未 answer 取消、pending TTL、daemon failure 或精确 assignment fence 才释放。新 owning Hub 可从完整 inventory 重建仍存活的 P2P；Relay-only session 留给 `CLOUDP004` Relay reservation，不占 managed P2P 名额。
+- policy suspend/revoke 只拒绝新 reservation，不伪造对已有端到端 DataChannel 的即时 Cloud 控制能力。
+- harness 覆盖真实 Controller public 交易到 signed policy revision、真实 Controller/Edge control transport、P2P limit、释放、ownership、target/client/account revoke、auth epoch、suspend、assignment 缺失和 stale policy。
 
 ### HUB004：CommandOutbox 与 session control
 
@@ -733,6 +743,7 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 | HUB002 | `EdgeSnapshotPath`、Hub runtime 文件 snapshot restore、Control Plane 到 Hub policy direct pointer call |
 | HUB003 | `SetCloudDaemonOnline` direct projection、Presence bool 作为 Web truth、无 registry 的 managed session 推断 |
 | CLOUDP002 | Web Controller 自有账号/password/session/order/payment 表、内存 commerce map、签名 staging webhook、测试付款直接发布 Entitlement、`SetEntitlement` direct write |
+| CLOUDP003 | Controller `Config.Accounts` 静态 HubAccountPolicy、dev supervisor 手写套餐能力、旧 JSON-token EdgePolicy/持久快照语义、按 session map 数量猜账号套餐并发、Relay-only 复用 P2P reservation |
 | HUB004 | staging 直接 `Hub.RevokeDevice` 作为管理操作完成条件、用 topology CLOSED 冒充 ack |
 | HUB006 | 只按 lease metadata 撤销但不关闭 allocation 的路径 |
 | CLOUDP006 | Web hand-written Cloud management DTO 和 direct store mutation handler |

@@ -27,9 +27,6 @@ func (service *Service) CreateEdgeSession(_ context.Context, request CreateEdgeS
 	if service.edgeAuthorizer == nil || request.ClientConnectionID == "" {
 		return nil, ErrAdmission
 	}
-	if _, err := service.edgeAuthorizer.AuthorizeDirect(request.EdgeToken, request.AccountID, request.ClientDeviceID, request.TargetDeviceID); err != nil {
-		return nil, err
-	}
 	assignmentEpoch, assigned := service.assignmentSource.ActiveAssignment(request.TargetDeviceID)
 	if !assigned {
 		return nil, ErrAdmission
@@ -45,7 +42,27 @@ func (service *Service) CreateEdgeSession(_ context.Context, request CreateEdgeS
 		return nil, err
 	}
 	now := service.clock.Now().UTC()
-	state := &sessionState{id: request.SignalingSessionID, accountID: request.AccountID, managedSessionID: managedSessionID, clientDeviceID: request.ClientDeviceID, clientConnectionID: request.ClientConnectionID, targetDeviceID: request.TargetDeviceID, targetAssignmentEpoch: assignmentEpoch, clientCandidateAllowed: true, expiresAt: now.Add(service.maxSignalingTTL), clientEvents: make(chan ClientEvent, service.clientQueue), done: make(chan struct{})}
+	reservationID := ""
+	reserved := false
+	if request.RelayOnly {
+		// CLOUDP004 接管 Relay reservation 前，Relay-only 仍必须复用当前签名 policy 的
+		// client/target ownership 准入，但不得占用 managed P2P 并发名额。
+		if _, err := service.edgeAuthorizer.AuthorizeDirect(request.EdgeToken, request.AccountID, request.ClientDeviceID, request.TargetDeviceID); err != nil {
+			return nil, err
+		}
+	} else {
+		if _, err := service.edgeAuthorizer.ReserveManagedP2P(request.EdgeToken, request.AccountID, request.ClientDeviceID, request.TargetDeviceID, request.SignalingSessionID, managedSessionID, assignmentEpoch, now.Add(service.maxSignalingTTL)); err != nil {
+			return nil, err
+		}
+		reservationID = request.SignalingSessionID
+		reserved = true
+	}
+	defer func() {
+		if reserved {
+			service.edgeAuthorizer.ReleaseManagedP2P(reservationID)
+		}
+	}()
+	state := &sessionState{id: request.SignalingSessionID, accountID: request.AccountID, managedSessionID: managedSessionID, clientDeviceID: request.ClientDeviceID, clientConnectionID: request.ClientConnectionID, targetDeviceID: request.TargetDeviceID, targetAssignmentEpoch: assignmentEpoch, p2pReservationID: reservationID, clientCandidateAllowed: true, expiresAt: now.Add(service.maxSignalingTTL), clientEvents: make(chan ClientEvent, service.clientQueue), done: make(chan struct{})}
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	service.cleanupLocked(now)
@@ -65,6 +82,7 @@ func (service *Service) CreateEdgeSession(_ context.Context, request CreateEdgeS
 	select {
 	case presence.events <- PresenceEvent{Offer: &offer}:
 		service.sessions[state.id] = state
+		reserved = false
 	default:
 		return nil, ErrBackpressure
 	}
@@ -157,6 +175,8 @@ func (service *Service) CompleteEdgeFailure(_ context.Context, request CompleteE
 	case state.clientEvents <- ClientEvent{Failure: &Failure{Code: request.Code, Retryable: request.Retryable}}:
 		state.answered = true
 		state.closed = true
+		service.edgeAuthorizer.ReleaseManagedP2P(state.p2pReservationID)
+		state.p2pReservationID = ""
 		close(state.done)
 		delete(service.sessions, state.id)
 		return nil

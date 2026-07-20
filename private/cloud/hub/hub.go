@@ -206,6 +206,7 @@ func (service *Service) FenceAssignment(deviceID string, assignmentEpoch uint64)
 	}
 	service.mu.Lock()
 	defer service.mu.Unlock()
+	service.edgeAuthorizer.ReleaseManagedP2PForAssignment(deviceID, assignmentEpoch)
 	for sessionID, challenge := range service.presenceChallenges {
 		if challenge.deviceID == deviceID && challenge.assignmentEpoch == assignmentEpoch {
 			clear(challenge.challenge.Value)
@@ -335,6 +336,9 @@ func (service *Service) ReportDaemonRuntime(daemonDeviceID string, request *clou
 	} else {
 		current = &daemonRuntimeTopology{superseded: make(map[string]struct{})}
 	}
+	if err := service.edgeAuthorizer.ReconcileManagedP2P(daemonDeviceID, peer.GetSessions()); err != nil {
+		return nil, ErrRuntimeReport
+	}
 	current.presenceSessionID = presence.sessionID
 	current.assignmentEpoch = presence.assignmentEpoch
 	current.runtimeGeneration = request.GetDaemonRuntimeGeneration()
@@ -419,6 +423,8 @@ func (service *Service) closeSessionLocked(state *sessionState, reason string) {
 		return
 	}
 	state.closed = true
+	service.edgeAuthorizer.CloseManagedP2PSignaling(state.p2pReservationID, state.answered)
+	state.p2pReservationID = ""
 	select {
 	case state.clientEvents <- ClientEvent{Closed: &Closed{Reason: reason}}:
 	default:

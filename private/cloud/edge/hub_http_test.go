@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	cloudhub "github.com/lozzow/termx/private/cloud/hub"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/shared/cloudcompanion"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestHubPublicAdapterRunsPresenceResolveAndSignalingOverHTTP(t *testing.T) {
@@ -32,7 +34,7 @@ func TestHubPublicAdapterRunsPresenceResolveAndSignalingOverHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := authorizer.ApplySnapshot(cloudhub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []cloudhub.AccountAuthorization{{AccountID: "account-1", AuthEpoch: 1, EntitlementStatus: cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE, EntitlementEffectiveUntilUnix: now.Add(time.Hour).Unix(), Capability: &cloudpb.PlanCapability{ManagedP2PEnabled: true}}}, Devices: []cloudhub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon", PublicKey: daemonPublic}}}); err != nil {
+	if err := authorizer.ApplySnapshot(cloudhub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []cloudhub.AccountAuthorization{{AccountID: "account-1", AuthEpoch: 1, EntitlementStatus: cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE, EntitlementEffectiveUntilUnix: now.Add(time.Hour).Unix(), Capability: &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 1, CloudDeviceLimit: 2}}}, Devices: []cloudhub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon", PublicKey: daemonPublic}}}); err != nil {
 		t.Fatal(err)
 	}
 	hubService, err := cloudhub.New(cloudhub.Config{HubID: "hub-1", MaxPresenceTTL: time.Minute, MaxSignalingTTL: time.Minute, PresenceChallengeTTL: time.Minute, MaxPresenceChallenges: 8, PresenceQueueSize: 8, ClientQueueSize: 8, MaxSDPBytes: 4096, MaxCandidates: 8, MaxPresences: 8, MaxSessions: 8, MaxSessionsPerClient: 4, EdgeAuthorizer: authorizer, AssignmentSource: staticAssignmentSource{deviceID: "daemon-1", epoch: 1}})
@@ -117,6 +119,27 @@ func TestHubPublicAdapterRunsPresenceResolveAndSignalingOverHTTP(t *testing.T) {
 	answer, err := signaling.Receive(context.Background())
 	if err != nil || answer.GetAnswer().GetSdp() != "answer" {
 		t.Fatalf("signaling answer = (%#v, %v)", answer, err)
+	}
+}
+
+func TestHubP2PAdmissionErrorsRemainDistinct(t *testing.T) {
+	for _, test := range []struct {
+		err    error
+		status int
+		code   cloudpb.CloudErrorCode
+	}{
+		{err: cloudhub.ErrP2PNotEntitled, status: http.StatusForbidden, code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENTITLEMENT_DENIED},
+		{err: cloudhub.ErrP2PConcurrency, status: http.StatusTooManyRequests, code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_QUOTA_EXHAUSTED},
+	} {
+		response := httptest.NewRecorder()
+		mapHubError(response, test.err)
+		value := &cloudpb.CloudError{}
+		if err := proto.Unmarshal(response.Body.Bytes(), value); err != nil {
+			t.Fatal(err)
+		}
+		if response.Code != test.status || value.GetCode() != test.code {
+			t.Fatalf("error %v = status %d contract %v", test.err, response.Code, value)
+		}
 	}
 }
 

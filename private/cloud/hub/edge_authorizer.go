@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lozzow/termx/private/cloud/control-plane/entitlement"
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
@@ -19,6 +20,10 @@ var (
 	// ErrTargetUnavailable 表示已认证 client 请求的 daemon 已移除、类型错误或不属于当前账号。
 	// 所有 target 失败统一使用该错误，避免跨账号探测设备是否存在。
 	ErrTargetUnavailable = errors.New("Hub target device unavailable")
+	// ErrP2PConcurrency 表示账号当前 managed P2P reservation 已达到签名套餐上限。
+	ErrP2PConcurrency = errors.New("Hub managed P2P concurrency exhausted")
+	// ErrP2PNotEntitled 表示账号身份有效，但当前 Entitlement 不允许新的 managed P2P。
+	ErrP2PNotEntitled = errors.New("Hub managed P2P entitlement denied")
 )
 
 // DeviceAuthorization 是 Control Plane 同步给 Hub 的最小 daemon 授权投影。
@@ -63,8 +68,8 @@ type EdgeAuthorizerConfig struct {
 	MaxStaleness time.Duration
 }
 
-// EdgeAuthorizer 是 Hub managed direct 授权决策的内存 owner。
-// 它只接受完整 snapshot 的原子替换；生产持久快照/WAL 由外层同步组件负责验证后恢复。
+// EdgeAuthorizer 是 Hub managed direct 授权决策和 P2P reservation 的纯内存 owner。
+// 它只接受当前 HubControl generation 验签后的 projection；Edge 重启必须重新 full sync，不得恢复磁盘快照。
 type EdgeAuthorizer struct {
 	mu           sync.RWMutex
 	hubID        string
@@ -76,6 +81,17 @@ type EdgeAuthorizer struct {
 	generatedAt  time.Time
 	accounts     map[string]AccountAuthorization
 	devices      map[string]DeviceAuthorization
+	reservations map[string]managedP2PReservation
+}
+
+type managedP2PReservation struct {
+	accountID        string
+	clientDeviceID   string
+	targetDeviceID   string
+	managedSessionID string
+	assignmentEpoch  uint64
+	pendingUntil     time.Time
+	runtimeKey       string
 }
 
 // Revision 返回当前已验签并发布的 policy revision。
@@ -98,43 +114,7 @@ func NewEdgeAuthorizer(config EdgeAuthorizerConfig) (*EdgeAuthorizer, error) {
 	if config.Clock == nil {
 		config.Clock = realClock{}
 	}
-	return &EdgeAuthorizer{hubID: config.HubID, issuer: config.Issuer, keyRing: config.KeyRing, clock: config.Clock, maxStaleness: config.MaxStaleness}, nil
-}
-
-// ApplySignedSnapshot 验证 Control Plane 签名快照并原子发布纯内存投影。
-// Edge 重启不得恢复该 token；新的 control generation 必须重新发送 full projection。
-func (authorizer *EdgeAuthorizer) ApplySignedSnapshot(encoded []byte) error {
-	now := authorizer.clock.Now().UTC()
-	claims, err := servicecredential.VerifyEdgePolicy(authorizer.keyRing, encoded, authorizer.issuer, authorizer.hubID, now)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrPolicySnapshot, err)
-	}
-	snapshot := snapshotFromPolicyClaims(claims)
-	if err := authorizer.validateNextSnapshot(snapshot); err != nil {
-		return err
-	}
-	return authorizer.ApplySnapshot(snapshot)
-}
-
-func (authorizer *EdgeAuthorizer) validateNextSnapshot(snapshot AuthorizationSnapshot) error {
-	authorizer.mu.RLock()
-	defer authorizer.mu.RUnlock()
-	if snapshot.Revision == 0 || snapshot.Revision <= authorizer.revision {
-		return ErrPolicySnapshot
-	}
-	return nil
-}
-
-func snapshotFromPolicyClaims(claims servicecredential.EdgePolicyClaims) AuthorizationSnapshot {
-	accounts := make([]AccountAuthorization, 0, len(claims.Accounts))
-	for _, account := range claims.Accounts {
-		accounts = append(accounts, AccountAuthorization{AccountID: account.AccountID, AuthEpoch: account.AuthEpoch, Revoked: account.Revoked, EntitlementStatus: account.EntitlementStatus, EntitlementEffectiveUntilUnix: account.EntitlementEffectiveUntilUnix, Capability: cloneHubPlanCapability(account.Capability)})
-	}
-	devices := make([]DeviceAuthorization, 0, len(claims.Devices))
-	for _, device := range claims.Devices {
-		devices = append(devices, DeviceAuthorization{DeviceID: device.DeviceID, AccountID: device.AccountID, Kind: device.Kind, DisplayName: device.DisplayName, Platform: device.Platform, PublicKey: append([]byte(nil), device.PublicKey...), Revoked: device.Revoked})
-	}
-	return AuthorizationSnapshot{Revision: claims.Revision, GeneratedAt: time.Unix(claims.GeneratedUnix, 0).UTC(), Accounts: accounts, Devices: devices}
+	return &EdgeAuthorizer{hubID: config.HubID, issuer: config.Issuer, keyRing: config.KeyRing, clock: config.Clock, maxStaleness: config.MaxStaleness, reservations: make(map[string]managedP2PReservation)}, nil
 }
 
 // RelayBudget 是 Hub 从签名账号投影读取的 single Relay 区域预算。
@@ -172,7 +152,7 @@ func (authorizer *EdgeAuthorizer) ApplySnapshot(snapshot AuthorizationSnapshot) 
 	}
 	accounts := make(map[string]AccountAuthorization, len(snapshot.Accounts))
 	for _, account := range snapshot.Accounts {
-		if account.AccountID == "" || account.AuthEpoch == 0 || account.Capability == nil {
+		if account.AccountID == "" || account.AuthEpoch == 0 || account.Capability == nil || entitlement.ValidatePlanCapability(account.Capability) != nil {
 			return ErrPolicySnapshot
 		}
 		if _, exists := accounts[account.AccountID]; exists {
@@ -206,25 +186,199 @@ func (authorizer *EdgeAuthorizer) ApplySnapshot(snapshot AuthorizationSnapshot) 
 // 返回 claims 只供 Hub 创建短期 EdgeManagedSession；任何缺失、撤销、epoch 不匹配或陈旧快照都 fail closed。
 func (authorizer *EdgeAuthorizer) AuthorizeDirect(token []byte, accountID, clientDeviceID, targetDeviceID string) (servicecredential.EdgeAccessClaims, error) {
 	now := authorizer.clock.Now().UTC()
+	claims, err := authorizer.verifyClientClaims(token, accountID, clientDeviceID, now)
+	if err != nil {
+		return servicecredential.EdgeAccessClaims{}, err
+	}
+	authorizer.mu.RLock()
+	defer authorizer.mu.RUnlock()
+	if _, err := authorizer.authorizeManagedP2PLocked(claims, accountID, clientDeviceID, targetDeviceID, now); err != nil {
+		return servicecredential.EdgeAccessClaims{}, err
+	}
+	return claims, nil
+}
+
+// ReserveManagedP2P 在当前签名 policy、ownership、revoke 和 auth epoch 下原子占用账号并发名额。
+// reservationID 先绑定 signaling；answer 后由 daemon 完整 runtime inventory 转交为存活 session reservation。
+func (authorizer *EdgeAuthorizer) ReserveManagedP2P(token []byte, accountID, clientDeviceID, targetDeviceID, reservationID, managedSessionID string, assignmentEpoch uint64, pendingUntil time.Time) (servicecredential.EdgeAccessClaims, error) {
+	if reservationID == "" || managedSessionID == "" || assignmentEpoch == 0 || !pendingUntil.After(authorizer.clock.Now().UTC()) {
+		return servicecredential.EdgeAccessClaims{}, ErrEdgeAuthorization
+	}
+	now := authorizer.clock.Now().UTC()
+	claims, err := authorizer.verifyClientClaims(token, accountID, clientDeviceID, now)
+	if err != nil {
+		return servicecredential.EdgeAccessClaims{}, err
+	}
+	authorizer.mu.Lock()
+	defer authorizer.mu.Unlock()
+	authorizer.cleanupReservationsLocked(now)
+	account, err := authorizer.authorizeManagedP2PLocked(claims, accountID, clientDeviceID, targetDeviceID, now)
+	if err != nil {
+		return servicecredential.EdgeAccessClaims{}, err
+	}
+	if _, exists := authorizer.reservations[reservationID]; exists {
+		return servicecredential.EdgeAccessClaims{}, ErrP2PConcurrency
+	}
+	active := uint32(0)
+	for _, reservation := range authorizer.reservations {
+		if reservation.accountID == accountID {
+			active++
+		}
+	}
+	if limit := account.Capability.GetManagedP2PMaxConcurrency(); limit == 0 || active >= limit {
+		return servicecredential.EdgeAccessClaims{}, ErrP2PConcurrency
+	}
+	authorizer.reservations[reservationID] = managedP2PReservation{accountID: accountID, clientDeviceID: clientDeviceID, targetDeviceID: targetDeviceID, managedSessionID: managedSessionID, assignmentEpoch: assignmentEpoch, pendingUntil: pendingUntil.UTC()}
+	return claims, nil
+}
+
+func (authorizer *EdgeAuthorizer) verifyClientClaims(token []byte, accountID, clientDeviceID string, now time.Time) (servicecredential.EdgeAccessClaims, error) {
 	claims, err := servicecredential.VerifyEdgeAccess(authorizer.keyRing, token, servicecredential.EdgeAccessExpectation{Issuer: authorizer.issuer, AudienceHubID: authorizer.hubID, AccountID: accountID, ClientDeviceID: clientDeviceID, PrincipalKind: servicecredential.EdgePrincipalClient}, now)
 	if err != nil {
 		return servicecredential.EdgeAccessClaims{}, fmt.Errorf("%w: %v", ErrEdgeAuthorization, err)
 	}
-	authorizer.mu.RLock()
-	defer authorizer.mu.RUnlock()
+	return claims, nil
+}
+
+func (authorizer *EdgeAuthorizer) authorizeManagedP2PLocked(claims servicecredential.EdgeAccessClaims, accountID, clientDeviceID, targetDeviceID string, now time.Time) (AccountAuthorization, error) {
 	if authorizer.revision == 0 || now.Sub(authorizer.generatedAt) > authorizer.maxStaleness {
-		return servicecredential.EdgeAccessClaims{}, ErrPolicySnapshot
+		return AccountAuthorization{}, ErrPolicySnapshot
 	}
 	account, accountOK := authorizer.accounts[accountID]
 	client, clientOK := authorizer.devices[clientDeviceID]
-	device, deviceOK := authorizer.devices[targetDeviceID]
-	if !accountOK || !clientOK || !account.activeAt(now) || account.Capability == nil || !account.Capability.GetManagedP2PEnabled() || account.AuthEpoch != claims.AuthEpoch || client.Revoked || client.AccountID != accountID || client.Kind != "client" {
-		return servicecredential.EdgeAccessClaims{}, ErrEdgeAuthorization
+	target, targetOK := authorizer.devices[targetDeviceID]
+	if !accountOK || !clientOK || account.Revoked || account.AuthEpoch != claims.AuthEpoch || client.Revoked || client.AccountID != accountID || client.Kind != "client" {
+		return AccountAuthorization{}, ErrEdgeAuthorization
 	}
-	if !deviceOK || device.Revoked || device.AccountID != accountID || device.Kind != "daemon" {
-		return servicecredential.EdgeAccessClaims{}, ErrTargetUnavailable
+	if account.EntitlementStatus != cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE || now.Unix() >= account.EntitlementEffectiveUntilUnix || account.Capability == nil || !account.Capability.GetManagedP2PEnabled() {
+		return AccountAuthorization{}, ErrP2PNotEntitled
 	}
-	return claims, nil
+	if !targetOK || target.Revoked || target.AccountID != accountID || target.Kind != "daemon" {
+		return AccountAuthorization{}, ErrTargetUnavailable
+	}
+	return account, nil
+}
+
+// ReleaseManagedP2P 幂等释放精确 signaling reservation；它不按账号计数猜测要释放的 session。
+func (authorizer *EdgeAuthorizer) ReleaseManagedP2P(reservationID string) {
+	if authorizer == nil || reservationID == "" {
+		return
+	}
+	authorizer.mu.Lock()
+	delete(authorizer.reservations, reservationID)
+	authorizer.mu.Unlock()
+}
+
+// CloseManagedP2PSignaling 结束 signaling 对 reservation 的所有权。
+// 已收到 answer 的 reservation 必须保留到 daemon runtime inventory 接管或 pending TTL 到期；未 answer 的请求立即释放。
+func (authorizer *EdgeAuthorizer) CloseManagedP2PSignaling(reservationID string, answered bool) {
+	if authorizer == nil || reservationID == "" {
+		return
+	}
+	authorizer.mu.Lock()
+	reservation, ok := authorizer.reservations[reservationID]
+	if ok && !answered && reservation.runtimeKey == "" {
+		delete(authorizer.reservations, reservationID)
+	}
+	authorizer.mu.Unlock()
+}
+
+// ReconcileManagedP2P 使用 daemon-owned 完整 PeerSession inventory 替换指定 daemon 的存活 P2P reservation。
+// 它只消费 DIRECT 且处于 AUTHENTICATED/READY/CLOSING 的 session；Relay 和 CLOSED 不占 managed P2P 名额。
+func (authorizer *EdgeAuthorizer) ReconcileManagedP2P(daemonDeviceID string, sessions []*cloudpb.ManagedPeerSessionProjection) error {
+	if authorizer == nil || daemonDeviceID == "" {
+		return ErrPolicySnapshot
+	}
+	now := authorizer.clock.Now().UTC()
+	authorizer.mu.Lock()
+	defer authorizer.mu.Unlock()
+	candidate := make(map[string]managedP2PReservation, len(authorizer.reservations)+len(sessions))
+	for reservationID, reservation := range authorizer.reservations {
+		candidate[reservationID] = reservation
+	}
+	cleanupManagedP2PReservations(candidate, now)
+	target, targetOK := authorizer.devices[daemonDeviceID]
+	if !targetOK || target.Kind != "daemon" || target.AccountID == "" {
+		return ErrTargetUnavailable
+	}
+	active := make(map[string]struct{}, len(sessions))
+	for _, session := range sessions {
+		if !managedP2PSessionActive(session) {
+			continue
+		}
+		targetRef := session.GetTarget()
+		client := authorizer.devices[session.GetClientDeviceId()]
+		if targetRef.GetDaemonDeviceId() != daemonDeviceID || targetRef.GetManagedSessionId() == "" || targetRef.GetSessionIncarnation() == 0 || targetRef.GetAssignmentEpoch() == 0 || client.DeviceID == "" || client.Kind != "client" || client.AccountID != target.AccountID {
+			return ErrEdgeAuthorization
+		}
+		runtimeKey := managedP2PRuntimeKey(targetRef)
+		active[runtimeKey] = struct{}{}
+		matched := ""
+		for reservationID, reservation := range candidate {
+			if reservation.runtimeKey == runtimeKey || reservation.runtimeKey == "" && reservation.managedSessionID == targetRef.GetManagedSessionId() && reservation.clientDeviceID == session.GetClientDeviceId() && reservation.targetDeviceID == daemonDeviceID && reservation.assignmentEpoch == targetRef.GetAssignmentEpoch() {
+				matched = reservationID
+				reservation.runtimeKey = runtimeKey
+				reservation.pendingUntil = time.Time{}
+				candidate[reservationID] = reservation
+				break
+			}
+		}
+		if matched == "" {
+			candidate["runtime\x00"+runtimeKey] = managedP2PReservation{accountID: target.AccountID, clientDeviceID: session.GetClientDeviceId(), targetDeviceID: daemonDeviceID, managedSessionID: targetRef.GetManagedSessionId(), assignmentEpoch: targetRef.GetAssignmentEpoch(), runtimeKey: runtimeKey}
+		}
+	}
+	for reservationID, reservation := range candidate {
+		if reservation.targetDeviceID == daemonDeviceID && reservation.runtimeKey != "" {
+			if _, exists := active[reservation.runtimeKey]; !exists {
+				delete(candidate, reservationID)
+			}
+		}
+	}
+	authorizer.reservations = candidate
+	return nil
+}
+
+// ReleaseManagedP2PForAssignment 在 assignment fence 时释放精确 daemon+epoch 的本 Hub reservation。
+// 新 epoch 的 reservation 不得被迟到 fence 误删；新 owning Hub 会从 daemon 完整 inventory 重建仍存活的 session。
+func (authorizer *EdgeAuthorizer) ReleaseManagedP2PForAssignment(daemonDeviceID string, assignmentEpoch uint64) {
+	if authorizer == nil || daemonDeviceID == "" || assignmentEpoch == 0 {
+		return
+	}
+	authorizer.mu.Lock()
+	for reservationID, reservation := range authorizer.reservations {
+		if reservation.targetDeviceID == daemonDeviceID && reservation.assignmentEpoch == assignmentEpoch {
+			delete(authorizer.reservations, reservationID)
+		}
+	}
+	authorizer.mu.Unlock()
+}
+
+func (authorizer *EdgeAuthorizer) cleanupReservationsLocked(now time.Time) {
+	cleanupManagedP2PReservations(authorizer.reservations, now)
+}
+
+func cleanupManagedP2PReservations(reservations map[string]managedP2PReservation, now time.Time) {
+	for reservationID, reservation := range reservations {
+		if reservation.runtimeKey == "" && !reservation.pendingUntil.IsZero() && !now.Before(reservation.pendingUntil) {
+			delete(reservations, reservationID)
+		}
+	}
+}
+
+func managedP2PSessionActive(session *cloudpb.ManagedPeerSessionProjection) bool {
+	if session == nil || session.GetObservedDataPath() != cloudpb.ObservedPath_OBSERVED_PATH_DIRECT {
+		return false
+	}
+	switch session.GetState() {
+	case cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_AUTHENTICATED, cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_READY, cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_CLOSING:
+		return true
+	default:
+		return false
+	}
+}
+
+func managedP2PRuntimeKey(target *cloudpb.ManagedPeerSessionTarget) string {
+	return fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s", target.GetDaemonDeviceId(), target.GetManagedSessionId(), target.GetSessionIncarnation(), target.GetAssignmentEpoch(), target.GetDaemonRuntimeGeneration())
 }
 
 func (account AccountAuthorization) activeAt(now time.Time) bool {

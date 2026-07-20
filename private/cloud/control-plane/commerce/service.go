@@ -89,15 +89,18 @@ type Config struct {
 	Catalog *cloudpb.PlanCatalogContract
 	Now     func() time.Time
 	Random  io.Reader
+	// NotifyPolicyChange 在账号 auth revision 或 Entitlement 持久提交后通知 Controller。
+	NotifyPolicyChange func(string)
 }
 
 // Service 是 Controller 内账号、交易与 Subscription 的应用边界。
 type Service struct {
-	store             Store
-	catalog           *cloudpb.PlanCatalogContract
-	now               func() time.Time
-	random            io.Reader
-	dummyPasswordHash []byte
+	store              Store
+	catalog            *cloudpb.PlanCatalogContract
+	now                func() time.Time
+	random             io.Reader
+	dummyPasswordHash  []byte
+	notifyPolicyChange func(string)
 }
 
 // New 创建 commerce service；catalog 或 Store 缺失时 fail closed。
@@ -115,7 +118,7 @@ func New(config Config) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{store: config.Store, catalog: proto.Clone(config.Catalog).(*cloudpb.PlanCatalogContract), now: config.Now, random: config.Random, dummyPasswordHash: dummyPasswordHash}, nil
+	return &Service{store: config.Store, catalog: proto.Clone(config.Catalog).(*cloudpb.PlanCatalogContract), now: config.Now, random: config.Random, dummyPasswordHash: dummyPasswordHash, notifyPolicyChange: config.NotifyPolicyChange}, nil
 }
 
 // Register 创建账号、首个 session、included Subscription 与 Entitlement。
@@ -158,6 +161,7 @@ func (service *Service) Register(ctx context.Context, request *cloudpb.RegisterA
 	if err := service.store.CreateAccount(ctx, AccountRecord{Projection: account, PasswordHash: passwordHash}, session, subscription, entitlementProjection, audit); err != nil {
 		return nil, err
 	}
+	service.notifyPolicy(accountID)
 	return &cloudpb.RegisterAccountResponse{Session: credential}, nil
 }
 
@@ -260,6 +264,7 @@ func (service *Service) ChangePassword(ctx context.Context, accountID string, re
 	if err := service.store.ChangePassword(ctx, AccountRecord{Projection: projection, PasswordHash: passwordHash}, session, service.audit(accountID, projection.GetUserId(), "account.password_changed", accountID, now)); err != nil {
 		return nil, err
 	}
+	service.notifyPolicy(accountID)
 	return &cloudpb.ChangeAccountPasswordResponse{Session: credential}, nil
 }
 
@@ -387,6 +392,7 @@ func (service *Service) ApplyPaymentEvent(ctx context.Context, request *cloudpb.
 		return nil, ErrConflict
 	}
 	if stored.State == cloudpb.PaymentEventState_PAYMENT_EVENT_STATE_APPLIED && stored.Result != nil {
+		service.notifyPolicy(stored.Result.GetSubscription().GetAccountId())
 		return proto.Clone(stored.Result).(*cloudpb.ApplyPaymentEventResponse), nil
 	}
 	order, err := service.store.Order(ctx, event.GetOrderId())
@@ -483,6 +489,7 @@ func (service *Service) ApplyPaymentEvent(ctx context.Context, request *cloudpb.
 	if err := service.store.CommitPaymentEvent(ctx, event.GetProviderEventId(), result, entitlementProjection, audit); err != nil {
 		return nil, err
 	}
+	service.notifyPolicy(order.GetAccountId())
 	return proto.Clone(result).(*cloudpb.ApplyPaymentEventResponse), nil
 }
 
@@ -491,6 +498,12 @@ func (service *Service) rejectPaymentEvent(ctx context.Context, event *cloudpb.N
 		return
 	}
 	_ = service.store.RejectPaymentEvent(ctx, event.GetProviderEventId(), service.audit(event.GetAccountId(), event.GetProvider(), action, event.GetProviderEventId(), service.now().UTC()))
+}
+
+func (service *Service) notifyPolicy(accountID string) {
+	if service.notifyPolicyChange != nil && accountID != "" {
+		service.notifyPolicyChange(accountID)
+	}
 }
 
 // Transition 执行取消续订、恢复、暂停、恢复服务和到期等非支付状态变化。
@@ -523,6 +536,7 @@ func (service *Service) Transition(ctx context.Context, request *cloudpb.Transit
 	if err := service.store.CommitSubscriptionTransition(ctx, next, entitlementProjection, audit); err != nil {
 		return nil, err
 	}
+	service.notifyPolicy(next.GetAccountId())
 	return &cloudpb.TransitionSubscriptionResponse{Subscription: next, Entitlement: entitlementProjection}, nil
 }
 

@@ -152,6 +152,7 @@ type sessionState struct {
 	clientConnectionID     string
 	targetDeviceID         string
 	targetAssignmentEpoch  uint64
+	p2pReservationID       string
 	clientCandidateAllowed bool
 	expiresAt              time.Time
 	clientEvents           chan ClientEvent

@@ -18,9 +18,12 @@ import (
 	"syscall"
 	"time"
 
+	cloudcommerce "github.com/lozzow/termx/private/cloud/control-plane/commerce"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
+	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
 	"github.com/lozzow/termx/private/cloud/controller"
 	"github.com/lozzow/termx/private/cloud/edge"
+	webcontroller "github.com/lozzow/termx/private/cloud/web-controller"
 	"github.com/lozzow/termx/proto/cloudpb"
 )
 
@@ -46,6 +49,33 @@ type childProcess struct {
 	cmd    *exec.Cmd
 	log    *os.File
 	done   chan error
+}
+
+func seedDevelopmentAccount(databasePath, catalogPath string, now time.Time) (*cloudpb.AccountProjection, error) {
+	store, err := cloudsqlite.Open(databasePath)
+	if err != nil {
+		return nil, err
+	}
+	defer store.Close()
+	catalog, err := webcontroller.LoadCatalog(catalogPath)
+	if err != nil {
+		return nil, err
+	}
+	passwordBytes := make([]byte, 24)
+	if _, err := rand.Read(passwordBytes); err != nil {
+		return nil, err
+	}
+	password := base64.RawURLEncoding.EncodeToString(passwordBytes)
+	clear(passwordBytes)
+	service, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalog.Contract(), Now: func() time.Time { return now }})
+	if err != nil {
+		return nil, err
+	}
+	registered, err := service.Register(context.Background(), &cloudpb.RegisterAccountRequest{Email: "devcloud-fixture@termx.invalid", Password: password})
+	if err != nil {
+		return nil, err
+	}
+	return registered.GetSession().GetAccount(), nil
 }
 
 func main() {
@@ -90,11 +120,17 @@ func run(ctx context.Context, args []string) error {
 	now := time.Now().UTC()
 	projectionPublic, projectionPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	projectionKeyID := "development-controller-projection"
-	account := &cloudpb.HubAccountPolicy{AccountId: "account-dev-local", AuthEpoch: 1, EntitlementStatus: cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE, EntitlementEffectiveUntilUnixMillis: now.Add(24 * time.Hour).UnixMilli(), Capability: &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 4, StandardRelayEnabled: true, CloudDeviceLimit: 10, Relay: &cloudpb.RelayServiceCapability{AllowedRegions: []string{"local-1"}, MaxLeaseSeconds: 300, MaxBytesPerLease: 256 << 20, MaxBitrateKbps: 100_000, MaxConcurrency: 4, MaxBytesPerPeriod: 10 << 30}}}
+	controllerDatabase := filepath.Join(artifactDir, "controller.db")
+	_ = os.Remove(controllerDatabase)
+	catalogPath := filepath.Join(root, "private/cloud/web-controller/config/plans.json")
+	account, err := seedDevelopmentAccount(controllerDatabase, catalogPath, now)
+	if err != nil {
+		return err
+	}
 	devices := []*cloudpb.CloudDevicePolicy{
-		{AccountId: account.GetAccountId(), DeviceId: "client-dev-local", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: 1},
-		{AccountId: account.GetAccountId(), DeviceId: "daemon-edge-a", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: 1},
-		{AccountId: account.GetAccountId(), DeviceId: "daemon-edge-b", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: 1},
+		{AccountId: account.GetAccountId(), DeviceId: "client-dev-local", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: account.GetAuthRevision()},
+		{AccountId: account.GetAccountId(), DeviceId: "daemon-edge-a", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision()},
+		{AccountId: account.GetAccountId(), DeviceId: "daemon-edge-b", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision()},
 	}
 	assignments := []*cloudpb.HubAssignment{
 		{DaemonDeviceId: "daemon-edge-a", AccountId: account.GetAccountId(), HubId: "hub-edge-a", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()},
@@ -110,9 +146,7 @@ func run(ctx context.Context, args []string) error {
 		deploymentConfigs = append(deploymentConfigs, controller.DeploymentConfig{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic)})
 		edgeKeys[hubID] = hubPrivate
 	}
-	controllerDatabase := filepath.Join(artifactDir, "controller.db")
-	_ = os.Remove(controllerDatabase)
-	controllerConfig := controller.Config{DatabasePath: controllerDatabase, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: filepath.Join(root, "private/cloud/web-controller/config/plans.json"), ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Accounts: []*cloudpb.HubAccountPolicy{account}, Devices: devices, Assignments: assignments}
+	controllerConfig := controller.Config{DatabasePath: controllerDatabase, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Devices: devices, Assignments: assignments}
 	controllerConfigPath := filepath.Join(artifactDir, "controller-config.json")
 	controllerManifestPath := filepath.Join(artifactDir, "controller-runtime.json")
 	if err := writeJSONFile(controllerConfigPath, controllerConfig); err != nil {

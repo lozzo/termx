@@ -79,12 +79,15 @@ func (publisher *Publisher) publish(hubID string, message proto.Message, head Pr
 	if current.Revision != 0 && head.Revision <= current.Revision {
 		return errors.New("Hub projection revision did not advance")
 	}
+	// 先检查全部 attachment，避免只向部分 Hub control stream 投递后才发现背压。
+	// 这样 caller 可以用同一 revision/digest 安全重试，不会制造部分发布真值。
 	for _, subscriber := range publisher.subscribers[hubID] {
-		select {
-		case subscriber <- proto.Clone(message):
-		default:
+		if len(subscriber) == cap(subscriber) {
 			return ErrPublisherBackpressure
 		}
+	}
+	for _, subscriber := range publisher.subscribers[hubID] {
+		subscriber <- proto.Clone(message)
 	}
 	publisher.heads[hubID] = ProjectionHead{Revision: head.Revision, Digest: append([]byte(nil), head.Digest...)}
 	if full != nil {

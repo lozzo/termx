@@ -12,10 +12,74 @@ import (
 	"testing"
 	"time"
 
+	cloudcommerce "github.com/lozzow/termx/private/cloud/control-plane/commerce"
+	"github.com/lozzow/termx/private/cloud/control-plane/hubcontrol"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
+	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
+	webcontroller "github.com/lozzow/termx/private/cloud/web-controller"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"google.golang.org/protobuf/encoding/protojson"
 )
+
+func TestControllerRetriesSamePolicyRevisionAfterBackpressure(t *testing.T) {
+	publisher := hubcontrol.NewPublisher()
+	updates, cancel := publisher.Subscribe("hub-1")
+	defer cancel()
+	for revision := uint64(1); revision <= 16; revision++ {
+		if err := publisher.PublishFull(&cloudpb.FullProjectionSnapshot{HubId: "hub-1", ProjectionRevision: revision, SnapshotDigest: []byte{byte(revision)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runtime := &Runtime{publisher: publisher, policyDone: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() {
+		done <- runtime.publishFullWithRetry(&cloudpb.FullProjectionSnapshot{HubId: "hub-1", ProjectionRevision: 17, SnapshotDigest: []byte{17}})
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("publish returned before backpressure cleared: %v", err)
+	case <-time.After(30 * time.Millisecond):
+	}
+	<-updates
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("policy publish was not retried")
+	}
+	if head, _ := publisher.Head("hub-1"); head.Revision != 17 {
+		t.Fatalf("retried head = %#v", head)
+	}
+}
+
+func TestControllerPeriodicallyRefreshesSignedProjection(t *testing.T) {
+	hubPublic, _, _ := ed25519.GenerateKey(rand.Reader)
+	_, projectionPrivate, _ := ed25519.GenerateKey(rand.Reader)
+	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local-1", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublic), RelayId: "relay-1", RelayControlIdentityFingerprint: "relay-fingerprint"}
+	config := Config{DatabasePath: filepath.Join(t.TempDir(), "controller.db"), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: "../web-controller/config/plans.json", ProjectionKeyID: "controller-key", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), Deployments: []DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic)}}}
+	runtime, err := start(config, 20*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close(context.Background())
+	deadline := time.Now().Add(time.Second)
+	for {
+		head, _ := runtime.publisher.Head("hub-1")
+		if head.Revision >= 2 {
+			full, _ := runtime.publisher.CurrentFull("hub-1")
+			if full.GetExpiresAtUnixMillis() <= full.GetGeneratedAtUnixMillis() {
+				t.Fatalf("refreshed projection expiry = %v", full)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("periodic projection refresh did not run: %#v", head)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
 
 func TestControllerKeepsListenersSeparateAndProjectionRevisionPersistent(t *testing.T) {
 	now := time.Now().UTC()
@@ -23,7 +87,10 @@ func TestControllerKeepsListenersSeparateAndProjectionRevisionPersistent(t *test
 	projectionPublic, projectionPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	_ = projectionPublic
 	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local-1", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublic), RelayId: "relay-1", RelayControlIdentityFingerprint: "relay-fingerprint"}
-	config := Config{DatabasePath: filepath.Join(t.TempDir(), "controller.db"), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: "../web-controller/config/plans.json", ProjectionKeyID: "controller-key", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), EnableTestPaymentProvider: true, Deployments: []DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic)}}, Accounts: []*cloudpb.HubAccountPolicy{{AccountId: "account-1", AuthEpoch: 1, EntitlementStatus: cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE, EntitlementEffectiveUntilUnixMillis: now.Add(time.Hour).UnixMilli(), Capability: &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 1, CloudDeviceLimit: 2}}}, Devices: []*cloudpb.CloudDevicePolicy{{AccountId: "account-1", DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: 1}}, Assignments: []*cloudpb.HubAssignment{{DaemonDeviceId: "daemon-1", AccountId: "account-1", HubId: "hub-1", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}}}
+	databasePath := filepath.Join(t.TempDir(), "controller.db")
+	catalogPath := "../web-controller/config/plans.json"
+	account := seedControllerAccount(t, databasePath, catalogPath, now)
+	config := Config{DatabasePath: databasePath, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: "controller-key", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), EnableTestPaymentProvider: true, Deployments: []DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic)}}, Devices: []*cloudpb.CloudDevicePolicy{{AccountId: account.GetAccountId(), DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision()}}, Assignments: []*cloudpb.HubAssignment{{DaemonDeviceId: "daemon-1", AccountId: account.GetAccountId(), HubId: "hub-1", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}}}
 	first, err := Start(config)
 	if err != nil {
 		t.Fatal(err)
@@ -54,6 +121,47 @@ func TestControllerKeepsListenersSeparateAndProjectionRevisionPersistent(t *test
 	if head, ok := first.publisher.Head("hub-1"); !ok || head.Revision != 1 {
 		t.Fatalf("first projection head = %#v, %v", head, ok)
 	}
+	seedLoginBody, _ := protojson.Marshal(&cloudpb.PasswordLoginRequest{Email: "controller-fixture@example.com", Password: "secure-password"})
+	seedLoginRequest, _ := http.NewRequest(http.MethodPost, manifest.PublicURL+"/api/v1/account/login", bytes.NewReader(seedLoginBody))
+	seedLoginRequest.Header.Set("Origin", manifest.PublicURL)
+	seedLoginResponse, err := http.DefaultClient.Do(seedLoginRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedLoginResponse.Body.Close()
+	if seedLoginResponse.StatusCode != http.StatusOK {
+		t.Fatalf("seed login status = %d", seedLoginResponse.StatusCode)
+	}
+	cookies := seedLoginResponse.Cookies()
+	csrf := ""
+	for _, cookie := range cookies {
+		if cookie.Name == "termx_cloud_csrf" {
+			csrf = cookie.Value
+		}
+	}
+	checkoutBody, _ := protojson.Marshal(&cloudpb.CreateCheckoutRequest{PlanId: "pro", RequestedTransition: cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_UPGRADE})
+	checkoutResponse := productMutation(t, manifest.PublicURL+"/api/v1/checkout", manifest.PublicURL, csrf, cookies, checkoutBody)
+	checkoutContract := &cloudpb.CreateCheckoutResponse{}
+	if err := protojson.Unmarshal(checkoutResponse, checkoutContract); err != nil {
+		t.Fatal(err)
+	}
+	confirmBody, _ := protojson.Marshal(&cloudpb.ConfirmTestPaymentRequest{OrderId: checkoutContract.GetOrder().GetOrderId(), EventType: cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED})
+	_ = productMutation(t, manifest.PublicURL+"/api/v1/checkout/test-payment", manifest.PublicURL, csrf, cookies, confirmBody)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		head, _ := first.publisher.Head("hub-1")
+		if head.Revision >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("payment did not publish Hub policy: %#v", head)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	full, ok := first.publisher.CurrentFull("hub-1")
+	if !ok || len(full.GetAccounts()) != 1 || full.GetAccounts()[0].GetAccountId() != account.GetAccountId() || !full.GetAccounts()[0].GetCapability().GetStandardRelayEnabled() {
+		t.Fatalf("upgraded Hub policy = %v", full)
+	}
 	closeContext, cancel := context.WithTimeout(context.Background(), time.Second)
 	if err := first.Close(closeContext); err != nil {
 		cancel()
@@ -65,7 +173,7 @@ func TestControllerKeepsListenersSeparateAndProjectionRevisionPersistent(t *test
 		t.Fatal(err)
 	}
 	defer second.Close(context.Background())
-	if head, ok := second.publisher.Head("hub-1"); !ok || head.Revision != 2 {
+	if head, ok := second.publisher.Head("hub-1"); !ok || head.Revision != 3 {
 		t.Fatalf("restarted projection head = %#v, %v", head, ok)
 	}
 	loginBody, _ := protojson.Marshal(&cloudpb.PasswordLoginRequest{Email: "runtime@example.com", Password: "secure-password"})
@@ -80,4 +188,50 @@ func TestControllerKeepsListenersSeparateAndProjectionRevisionPersistent(t *test
 	if loginResponse.StatusCode != http.StatusOK {
 		t.Fatalf("login after Controller restart = %d: %s", loginResponse.StatusCode, responseBody)
 	}
+}
+
+func seedControllerAccount(t *testing.T, databasePath, catalogPath string, now time.Time) *cloudpb.AccountProjection {
+	t.Helper()
+	store, err := cloudsqlite.Open(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := webcontroller.LoadCatalog(catalogPath)
+	if err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	service, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalog.Contract(), Now: func() time.Time { return now }})
+	if err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	registered, err := service.Register(context.Background(), &cloudpb.RegisterAccountRequest{Email: "controller-fixture@example.com", Password: "secure-password"})
+	if closeErr := store.Close(); err == nil && closeErr != nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return registered.GetSession().GetAccount()
+}
+
+func productMutation(t *testing.T, endpoint, origin, csrf string, cookies []*http.Cookie, body []byte) []byte {
+	t.Helper()
+	request, _ := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+	request.Header.Set("Origin", origin)
+	request.Header.Set("X-TermX-CSRF", csrf)
+	for _, cookie := range cookies {
+		request.AddCookie(cookie)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	responseBody, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		t.Fatalf("product mutation %s = %d: %s", endpoint, response.StatusCode, responseBody)
+	}
+	return responseBody
 }
