@@ -95,6 +95,15 @@ func (server *Server) Addr() net.Addr {
 	return server.packet.LocalAddr()
 }
 
+// ActivateLease 让 Edge HTTP adapter 把 Controller 签名 lease 交给 Relay authority，
+// 并取得 principal-specific TURN credential；Server 不自行签发或扩大 quota。
+func (server *Server) ActivateLease(request ActivationRequest) (Activation, error) {
+	if server == nil || server.authority == nil {
+		return Activation{}, ErrLeaseRejected
+	}
+	return server.authority.ActivateLease(request)
+}
+
 // Close 幂等关闭 TURN server 和所有 active allocations。
 func (server *Server) Close() error {
 	if server == nil {

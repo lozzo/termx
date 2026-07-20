@@ -715,9 +715,17 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 - daemon 先在 AccessStore 原子 revoke，再关闭所有匹配 opaque access reference 的 managed session，并把结果写入持久回执后回传；Cloud 路径没有 grant、expand 或直接修改 terminal capability 的入口。
 - 真实 harness 已串联 Controller enrollment、Edge runtime report、Web 查询/创建命令、Hub 转发、daemon 执行、AccessStore/session 可观察结果和 Controller SQLite `APPLIED`；generated、public/private、race、双 Edge、doctor 与受影响 vet 门禁通过。
 
-### CLOUDP004-CLOUDP005：Relay quota、usage 与 settlement
+### CLOUDP004：Relay quota 与 reservation
 
-- 建立 billing period `used/reserved/remaining` 和 lease reservation。
+- `RelayQuotaPeriod`、`RelayLeaseReservation` 和 Edge 到 Controller 的 `ReserveRelayLeaseRequest` 已进入 Proto；SQLite 是 billing period 与 reservation 唯一持久 owner，原子计算 `used/reserved/remaining`、active lease count、revision 和单 lease clamp。
+- reservation 输入只来自当前 Entitlement period/capability、已验证 client/target ownership、精确 Hub assignment、region 和 Edge deployment；同 lease 相同输入精确 replay，不同输入冲突，账号/设备并发或周期剩余额度不足返回稳定 quota exhausted。
+- Hub 为 endpoint resolution 保存纯内存短 TTL relay intent；client 与 daemon 使用同一 managed session、client/target binding 和 lease ID，因此共享一个 reservation 和 signed lease，但 Edge Relay authority 分别派生 caller-specific TURN username/password。
+- 临近 lease expiry 时 Hub 单调轮换 lease ID；Controller 对新 ID 重新读取 Entitlement 和 quota。旧 reservation 在 expiry 加 usage report grace 后释放，显式 cancel 只用于已确认无 allocation 和待 drain usage 的 lease。
+- 真实 harness 已走账号注册、订单/payment event 升级、Controller 与 Edge 独立 listener、daemon Presence、endpoint resolve、client/daemon Relay lease、隔离 credential、并发耗尽和 Relay session topology；generated、public/private、race、client、双 Edge 和 doctor 门禁通过。
+
+### CLOUDP005：durable usage 与 settlement
+
+- `used_bytes` 字段和 reservation owner 已存在，但 signed usage event 的 durable journal、sequence/idempotency、period aggregation 与 reservation settlement 仍由 CLOUDP005 接入，CLOUDP004 不把未验证 Relay/Web 汇总值写入 used truth。
 - Relay signed usage 进入 durable journal/outbox；幂等键保持 `relay_id + lease_id + sequence`。
 - settlement 只消费已验证 usage，不信任 Web 或 Hub 汇总值。
 

@@ -3716,6 +3716,108 @@ func (x *ReportHubRuntimeResponse) GetFullSnapshotRequired() bool {
 	return false
 }
 
+// ReserveRelayLeaseRequest 是 owning Edge 向 Controller 提交的持久 quota reservation 输入。
+// client/target binding 来自 Hub 短期 relay intent；edge bearer 仍必须由 Controller 独立验签。
+type ReserveRelayLeaseRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	AccountId        string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	ManagedSessionId string                 `protobuf:"bytes,2,opt,name=managed_session_id,json=managedSessionId,proto3" json:"managed_session_id,omitempty"`
+	ClientDeviceId   string                 `protobuf:"bytes,3,opt,name=client_device_id,json=clientDeviceId,proto3" json:"client_device_id,omitempty"`
+	TargetDeviceId   string                 `protobuf:"bytes,4,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
+	HubId            string                 `protobuf:"bytes,5,opt,name=hub_id,json=hubId,proto3" json:"hub_id,omitempty"`
+	RelayId          string                 `protobuf:"bytes,6,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
+	Region           string                 `protobuf:"bytes,7,opt,name=region,proto3" json:"region,omitempty"`
+	LeaseId          string                 `protobuf:"bytes,8,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ReserveRelayLeaseRequest) Reset() {
+	*x = ReserveRelayLeaseRequest{}
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReserveRelayLeaseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReserveRelayLeaseRequest) ProtoMessage() {}
+
+func (x *ReserveRelayLeaseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReserveRelayLeaseRequest.ProtoReflect.Descriptor instead.
+func (*ReserveRelayLeaseRequest) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *ReserveRelayLeaseRequest) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+func (x *ReserveRelayLeaseRequest) GetManagedSessionId() string {
+	if x != nil {
+		return x.ManagedSessionId
+	}
+	return ""
+}
+
+func (x *ReserveRelayLeaseRequest) GetClientDeviceId() string {
+	if x != nil {
+		return x.ClientDeviceId
+	}
+	return ""
+}
+
+func (x *ReserveRelayLeaseRequest) GetTargetDeviceId() string {
+	if x != nil {
+		return x.TargetDeviceId
+	}
+	return ""
+}
+
+func (x *ReserveRelayLeaseRequest) GetHubId() string {
+	if x != nil {
+		return x.HubId
+	}
+	return ""
+}
+
+func (x *ReserveRelayLeaseRequest) GetRelayId() string {
+	if x != nil {
+		return x.RelayId
+	}
+	return ""
+}
+
+func (x *ReserveRelayLeaseRequest) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *ReserveRelayLeaseRequest) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
+}
+
 var File_cloudpb_cloud_hub_control_proto protoreflect.FileDescriptor
 
 const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
@@ -4031,7 +4133,17 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\tenvelopes\x18\x01 \x03(\v2\".termx.cloud.v1.HubRuntimeEnvelopeR\tenvelopes\"\x8a\x01\n" +
 	"\x18ReportHubRuntimeResponse\x128\n" +
 	"\x18accepted_sender_sequence\x18\x01 \x01(\x04R\x16acceptedSenderSequence\x124\n" +
-	"\x16full_snapshot_required\x18\x02 \x01(\bR\x14fullSnapshotRequired*\x9d\x01\n" +
+	"\x16full_snapshot_required\x18\x02 \x01(\bR\x14fullSnapshotRequired\"\xa0\x02\n" +
+	"\x18ReserveRelayLeaseRequest\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\x12,\n" +
+	"\x12managed_session_id\x18\x02 \x01(\tR\x10managedSessionId\x12(\n" +
+	"\x10client_device_id\x18\x03 \x01(\tR\x0eclientDeviceId\x12(\n" +
+	"\x10target_device_id\x18\x04 \x01(\tR\x0etargetDeviceId\x12\x15\n" +
+	"\x06hub_id\x18\x05 \x01(\tR\x05hubId\x12\x19\n" +
+	"\brelay_id\x18\x06 \x01(\tR\arelayId\x12\x16\n" +
+	"\x06region\x18\a \x01(\tR\x06region\x12\x19\n" +
+	"\blease_id\x18\b \x01(\tR\aleaseId*\x9d\x01\n" +
 	"\x12ControlServiceRole\x12$\n" +
 	" CONTROL_SERVICE_ROLE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18CONTROL_SERVICE_ROLE_HUB\x10\x01\x12\x1e\n" +
@@ -4082,7 +4194,7 @@ func file_cloudpb_cloud_hub_control_proto_rawDescGZIP() []byte {
 }
 
 var file_cloudpb_cloud_hub_control_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_cloudpb_cloud_hub_control_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
+var file_cloudpb_cloud_hub_control_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
 var file_cloudpb_cloud_hub_control_proto_goTypes = []any{
 	(ControlServiceRole)(0),               // 0: termx.cloud.v1.ControlServiceRole
 	(ControlSenderRole)(0),                // 1: termx.cloud.v1.ControlSenderRole
@@ -4127,19 +4239,20 @@ var file_cloudpb_cloud_hub_control_proto_goTypes = []any{
 	(*HubRuntimeEnvelope)(nil),            // 40: termx.cloud.v1.HubRuntimeEnvelope
 	(*ReportHubRuntimeRequest)(nil),       // 41: termx.cloud.v1.ReportHubRuntimeRequest
 	(*ReportHubRuntimeResponse)(nil),      // 42: termx.cloud.v1.ReportHubRuntimeResponse
-	(ManagedDeviceKind)(0),                // 43: termx.cloud.v1.ManagedDeviceKind
-	(EntitlementStatus)(0),                // 44: termx.cloud.v1.EntitlementStatus
-	(*PlanCapability)(nil),                // 45: termx.cloud.v1.PlanCapability
-	(*ManagedPeerSessionTarget)(nil),      // 46: termx.cloud.v1.ManagedPeerSessionTarget
-	(*HubTopologySnapshot)(nil),           // 47: termx.cloud.v1.HubTopologySnapshot
+	(*ReserveRelayLeaseRequest)(nil),      // 43: termx.cloud.v1.ReserveRelayLeaseRequest
+	(ManagedDeviceKind)(0),                // 44: termx.cloud.v1.ManagedDeviceKind
+	(EntitlementStatus)(0),                // 45: termx.cloud.v1.EntitlementStatus
+	(*PlanCapability)(nil),                // 46: termx.cloud.v1.PlanCapability
+	(*ManagedPeerSessionTarget)(nil),      // 47: termx.cloud.v1.ManagedPeerSessionTarget
+	(*HubTopologySnapshot)(nil),           // 48: termx.cloud.v1.HubTopologySnapshot
 }
 var file_cloudpb_cloud_hub_control_proto_depIdxs = []int32{
 	8,  // 0: termx.cloud.v1.HubControlChallengeResponse.challenge:type_name -> termx.cloud.v1.HubControlChallenge
 	7,  // 1: termx.cloud.v1.HubHello.deployment:type_name -> termx.cloud.v1.EdgeDeploymentMetadata
 	7,  // 2: termx.cloud.v1.RelayHello.deployment:type_name -> termx.cloud.v1.EdgeDeploymentMetadata
-	43, // 3: termx.cloud.v1.CloudDevicePolicy.device_kind:type_name -> termx.cloud.v1.ManagedDeviceKind
-	44, // 4: termx.cloud.v1.HubAccountPolicy.entitlement_status:type_name -> termx.cloud.v1.EntitlementStatus
-	45, // 5: termx.cloud.v1.HubAccountPolicy.capability:type_name -> termx.cloud.v1.PlanCapability
+	44, // 3: termx.cloud.v1.CloudDevicePolicy.device_kind:type_name -> termx.cloud.v1.ManagedDeviceKind
+	45, // 4: termx.cloud.v1.HubAccountPolicy.entitlement_status:type_name -> termx.cloud.v1.EntitlementStatus
+	46, // 5: termx.cloud.v1.HubAccountPolicy.capability:type_name -> termx.cloud.v1.PlanCapability
 	18, // 6: termx.cloud.v1.FullProjectionSnapshot.devices:type_name -> termx.cloud.v1.CloudDevicePolicy
 	17, // 7: termx.cloud.v1.FullProjectionSnapshot.assignments:type_name -> termx.cloud.v1.HubAssignment
 	19, // 8: termx.cloud.v1.FullProjectionSnapshot.accounts:type_name -> termx.cloud.v1.HubAccountPolicy
@@ -4153,7 +4266,7 @@ var file_cloudpb_cloud_hub_control_proto_depIdxs = []int32{
 	22, // 16: termx.cloud.v1.PolicyDelta.assignment_operations:type_name -> termx.cloud.v1.HubAssignmentDelta
 	23, // 17: termx.cloud.v1.PolicyDelta.account_operations:type_name -> termx.cloud.v1.HubAccountPolicyDelta
 	4,  // 18: termx.cloud.v1.DaemonControlCommand.command_kind:type_name -> termx.cloud.v1.DaemonControlCommandKind
-	46, // 19: termx.cloud.v1.DaemonControlCommand.managed_peer_session:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
+	47, // 19: termx.cloud.v1.DaemonControlCommand.managed_peer_session:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
 	28, // 20: termx.cloud.v1.DaemonControlCommand.terminal_access:type_name -> termx.cloud.v1.RevokeTerminalAccessTarget
 	3,  // 21: termx.cloud.v1.HubCommand.command_kind:type_name -> termx.cloud.v1.HubCommandKind
 	26, // 22: termx.cloud.v1.HubCommand.fence_assignment:type_name -> termx.cloud.v1.FenceAssignment
@@ -4179,7 +4292,7 @@ var file_cloudpb_cloud_hub_control_proto_depIdxs = []int32{
 	30, // 42: termx.cloud.v1.HubControlEnvelope.command:type_name -> termx.cloud.v1.HubCommand
 	1,  // 43: termx.cloud.v1.HubRuntimeEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
 	25, // 44: termx.cloud.v1.HubRuntimeEnvelope.reconciliation:type_name -> termx.cloud.v1.ReconciliationDigest
-	47, // 45: termx.cloud.v1.HubRuntimeEnvelope.topology:type_name -> termx.cloud.v1.HubTopologySnapshot
+	48, // 45: termx.cloud.v1.HubRuntimeEnvelope.topology:type_name -> termx.cloud.v1.HubTopologySnapshot
 	31, // 46: termx.cloud.v1.HubRuntimeEnvelope.hub_command_result:type_name -> termx.cloud.v1.HubCommandResult
 	32, // 47: termx.cloud.v1.HubRuntimeEnvelope.daemon_command_result:type_name -> termx.cloud.v1.DaemonCommandResult
 	40, // 48: termx.cloud.v1.ReportHubRuntimeRequest.envelopes:type_name -> termx.cloud.v1.HubRuntimeEnvelope
@@ -4232,7 +4345,7 @@ func file_cloudpb_cloud_hub_control_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloudpb_cloud_hub_control_proto_rawDesc), len(file_cloudpb_cloud_hub_control_proto_rawDesc)),
 			NumEnums:      7,
-			NumMessages:   36,
+			NumMessages:   37,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

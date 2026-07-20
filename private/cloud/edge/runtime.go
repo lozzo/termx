@@ -151,7 +151,7 @@ func Start(config Config) (*Runtime, error) {
 		return nil, err
 	}
 	runtime := &Runtime{config: config, projection: projection, control: controlClient, authorizer: authorizer, hub: hubService, relay: relayServer, usageOutbox: usageOutbox, listeners: []net.Listener{hubListener, healthListener}, errors: make(chan error, 3)}
-	hubMux := newHubHTTPHandler(hubHTTPConfig{Hub: hubService, Authorizer: authorizer, Projection: projection, HubID: config.Metadata.GetHubId(), HubURL: origin(hubListener)})
+	hubMux := newHubHTTPHandler(hubHTTPConfig{Hub: hubService, Authorizer: authorizer, Projection: projection, HubID: config.Metadata.GetHubId(), HubURL: origin(hubListener), ControllerURL: config.ControllerURL, Relay: relayServer, RelayID: config.Metadata.GetRelayId(), Region: config.Metadata.GetRegion()})
 	healthMux := http.NewServeMux()
 	healthMux.HandleFunc("/healthz", runtime.healthHandler)
 	runtime.servers = []*http.Server{{Handler: hubMux, ReadHeaderTimeout: 5 * time.Second}, {Handler: healthMux, ReadHeaderTimeout: 5 * time.Second}}

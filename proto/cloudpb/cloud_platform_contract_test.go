@@ -118,6 +118,28 @@ func TestPresenceProjectionSeparatesAvailabilityAndFreshness(t *testing.T) {
 	}
 }
 
+func TestRelayQuotaAndReservationAreProtoFirst(t *testing.T) {
+	periodFields := descriptorFieldNames((&RelayQuotaPeriod{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"account_id", "period_start_unix_millis", "period_end_unix_millis", "limit_bytes", "used_bytes", "reserved_bytes", "remaining_bytes", "active_lease_count", "revision"} {
+		if !periodFields[required] {
+			t.Fatalf("RelayQuotaPeriod missing %q: %v", required, periodFields)
+		}
+	}
+	reservationFields := descriptorFieldNames((&RelayLeaseReservation{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"lease_id", "account_id", "managed_session_id", "client_device_id", "target_device_id", "region", "reserved_bytes", "used_bytes", "state", "issued_at_unix_millis", "expires_at_unix_millis", "revision"} {
+		if !reservationFields[required] {
+			t.Fatalf("RelayLeaseReservation missing %q: %v", required, reservationFields)
+		}
+	}
+	assertFieldsExcludeFragments(t, (&RelayLeaseReservation{}).ProtoReflect().Descriptor(), []string{"terminal", "grant", "capability", "credential", "private_key", "payload"})
+	reserveFields := descriptorFieldNames((&ReserveRelayLeaseRequest{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"account_id", "managed_session_id", "client_device_id", "target_device_id", "hub_id", "relay_id", "region", "lease_id"} {
+		if !reserveFields[required] {
+			t.Fatalf("ReserveRelayLeaseRequest missing %q: %v", required, reserveFields)
+		}
+	}
+}
+
 func TestManagementCommandSeparatesAuthorityDeliveryExecutionAndEffect(t *testing.T) {
 	fields := descriptorFieldNames((&ManagementCommandProjection{}).ProtoReflect().Descriptor())
 	for _, required := range []string{"authority_result", "delivery_state", "execution_state", "observed_effect", "children"} {

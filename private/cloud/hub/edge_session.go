@@ -45,8 +45,8 @@ func (service *Service) CreateEdgeSession(_ context.Context, request CreateEdgeS
 	reservationID := ""
 	reserved := false
 	if request.RelayOnly {
-		// CLOUDP004 接管 Relay reservation 前，Relay-only 仍必须复用当前签名 policy 的
-		// client/target ownership 准入，但不得占用 managed P2P 并发名额。
+		// Relay quota reservation 已由同一 Hub relay intent 在 offer 前完成；这里仍重新校验
+		// client/target ownership，但不得把 Relay session 计入 managed P2P 并发。
 		if _, err := service.edgeAuthorizer.AuthorizeDirect(request.EdgeToken, request.AccountID, request.ClientDeviceID, request.TargetDeviceID); err != nil {
 			return nil, err
 		}

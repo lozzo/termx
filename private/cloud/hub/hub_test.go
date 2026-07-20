@@ -65,6 +65,32 @@ func TestHubCreatesEdgeSessionAndAcceptsAnswerFromOwningPresence(t *testing.T) {
 	}
 }
 
+func TestRelayIntentSharesLeaseAndRotatesNearExpiry(t *testing.T) {
+	fixture := newFixture(t, 4, 4)
+	if err := fixture.service.CreateRelayIntent("managed-1", "account-1", "client-1", "daemon-1"); err != nil {
+		t.Fatal(err)
+	}
+	client, err := fixture.service.RelayIntent("managed-1", "client-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.service.BindRelayIntentLease("managed-1", client.LeaseID, fixture.clock.Now().Add(5*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	daemon, err := fixture.service.RelayIntent("managed-1", "daemon-1")
+	if err != nil || daemon.LeaseID != client.LeaseID {
+		t.Fatalf("shared Relay intent = (%v, %v)", daemon, err)
+	}
+	fixture.clock.Advance(4*time.Minute + 31*time.Second)
+	refreshed, err := fixture.service.RelayIntent("managed-1", "client-1")
+	if err != nil || refreshed.LeaseID == client.LeaseID {
+		t.Fatalf("rotated Relay intent = (%v, %v)", refreshed, err)
+	}
+	if other, err := fixture.service.RelayIntent("managed-1", "other"); !errors.Is(err, hub.ErrAdmission) || other.LeaseID != "" {
+		t.Fatalf("unbound Relay intent = (%v, %v)", other, err)
+	}
+}
+
 func TestHubManagedP2PReservationUsesPolicyLimitAndExactLifecycleRelease(t *testing.T) {
 	fixture := newFixture(t, 8, 8)
 	presence, daemonToken := fixture.openEdgePresence(t)

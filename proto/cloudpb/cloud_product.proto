@@ -87,6 +87,15 @@ enum EntitlementStatus {
   ENTITLEMENT_STATUS_EXPIRED = 3;
 }
 
+// RelayReservationState 是 Control Plane 持久 Relay reservation 的生命周期。
+// ACTIVE 占用账期额度；RELEASED 和 EXPIRED 不再占用 reserved_bytes。
+enum RelayReservationState {
+  RELAY_RESERVATION_STATE_UNSPECIFIED = 0;
+  RELAY_RESERVATION_STATE_ACTIVE = 1;
+  RELAY_RESERVATION_STATE_RELEASED = 2;
+  RELAY_RESERVATION_STATE_EXPIRED = 3;
+}
+
 // RelayServiceCapability 是 plan 对 Relay lease 和账期的硬上限。
 // reservation/used/remaining 状态在 CLOUDP004 定义，本消息只表达静态套餐能力。
 message RelayServiceCapability {
@@ -174,6 +183,51 @@ message EntitlementProjection {
   int64 effective_until_unix_millis = 8;
   PlanCapability capability = 9;
   int64 updated_at_unix_millis = 10;
+}
+
+// RelayQuotaPeriod 是账号当前 billing period 的持久额度投影。
+// used_bytes 只由后续已验证 usage settlement 增加；reserved_bytes 来自 ACTIVE reservation。
+message RelayQuotaPeriod {
+  string account_id = 1;
+  int64 period_start_unix_millis = 2;
+  int64 period_end_unix_millis = 3;
+  uint64 limit_bytes = 4;
+  uint64 used_bytes = 5;
+  uint64 reserved_bytes = 6;
+  uint64 remaining_bytes = 7;
+  uint32 active_lease_count = 8;
+  uint64 revision = 9;
+}
+
+// RelayLeaseReservation 是单个短期 lease 对账期额度的持久占用。
+// 它不包含 TURN credential、terminal identity、CapabilityGrant 或 DataChannel payload。
+message RelayLeaseReservation {
+  string lease_id = 1;
+  string account_id = 2;
+  string managed_session_id = 3;
+  string client_device_id = 4;
+  string target_device_id = 5;
+  string region = 6;
+  int64 period_start_unix_millis = 7;
+  int64 period_end_unix_millis = 8;
+  uint64 reserved_bytes = 9;
+  uint64 used_bytes = 10;
+  RelayReservationState state = 11;
+  int64 expires_at_unix_millis = 12;
+  int64 updated_at_unix_millis = 13;
+  uint64 revision = 14;
+  int64 issued_at_unix_millis = 15;
+}
+
+// GetAccountRelayQuotaRequest 查询认证账号当前账期 Relay 额度。
+message GetAccountRelayQuotaRequest {
+  string account_id = 1;
+}
+
+// GetAccountRelayQuotaResponse 返回周期聚合及仍占用额度的 reservation。
+message GetAccountRelayQuotaResponse {
+  RelayQuotaPeriod period = 1;
+  repeated RelayLeaseReservation active_reservations = 2;
 }
 
 // GetPlanCatalogRequest 查询当前发布的机器能力目录。

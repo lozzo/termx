@@ -24,6 +24,7 @@ import (
 	"github.com/lozzow/termx/private/cloud/control-plane/hubcontrol"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
 	cloudpolicy "github.com/lozzow/termx/private/cloud/control-plane/policy"
+	"github.com/lozzow/termx/private/cloud/control-plane/relaylease"
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
 	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
@@ -282,6 +283,11 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	relayLeaseHandler, err := newRelayLeaseHTTPHandler(store, topologyService, registry, credentialSigner, config.Deployments)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	productHandler, err := webcontroller.ProductAPIHandler(webcontroller.ProductAPIConfig{Commerce: commerceService, EnableTestPaymentProvider: config.EnableTestPaymentProvider})
 	if err != nil {
 		_ = store.Close()
@@ -310,6 +316,9 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	publicMux.Handle("/api/v1/", productHandler)
 	operatorMux := http.NewServeMux()
 	operatorMux.HandleFunc("/healthz", healthHandler)
+	internalMux := http.NewServeMux()
+	internalMux.Handle(relaylease.InternalReservePath, relayLeaseHandler)
+	internalMux.Handle("/", controlServer.Handler())
 	publicListener, err := listen(config.PublicListen)
 	if err != nil {
 		_ = store.Close()
@@ -329,7 +338,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		return nil, err
 	}
 	runtime := &Runtime{store: store, publisher: publisher, registry: registry, topology: topologyService, outbox: outboxService, planner: planner, dispatcher: dispatcher, listeners: []net.Listener{publicListener, internalListener, operatorListener}, errors: make(chan error, 3), policyChanges: policyChanges, policyDone: policyDone}
-	runtime.servers = []*http.Server{{Handler: publicMux, ReadHeaderTimeout: 5 * time.Second}, {Handler: controlServer.Handler(), ReadHeaderTimeout: 5 * time.Second}, {Handler: operatorMux, ReadHeaderTimeout: 5 * time.Second}}
+	runtime.servers = []*http.Server{{Handler: publicMux, ReadHeaderTimeout: 5 * time.Second}, {Handler: internalMux, ReadHeaderTimeout: 5 * time.Second}, {Handler: operatorMux, ReadHeaderTimeout: 5 * time.Second}}
 	for index := range runtime.servers {
 		server, listener := runtime.servers[index], runtime.listeners[index]
 		go func() {

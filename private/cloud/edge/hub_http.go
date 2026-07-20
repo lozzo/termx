@@ -17,7 +17,10 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
+	"github.com/lozzow/termx/private/cloud/control-plane/relaylease"
+	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudhub "github.com/lozzow/termx/private/cloud/hub"
+	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/shared/remoteauth"
 	"google.golang.org/protobuf/proto"
@@ -26,19 +29,29 @@ import (
 const maxHubRequestBytes = 4 << 20
 
 type hubHTTPConfig struct {
-	Hub        *cloudhub.Service
-	Authorizer *cloudhub.EdgeAuthorizer
-	Projection hubProjection
-	HubID      string
-	HubURL     string
+	Hub           *cloudhub.Service
+	Authorizer    *cloudhub.EdgeAuthorizer
+	Projection    hubProjection
+	HubID         string
+	HubURL        string
+	ControllerURL string
+	Relay         *cloudrelay.Server
+	RelayID       string
+	Region        string
+	HTTPClient    *http.Client
 }
 
 type hubHTTPHandler struct {
-	hub        *cloudhub.Service
-	authorizer *cloudhub.EdgeAuthorizer
-	projection hubProjection
-	hubID      string
-	hubURL     string
+	hub           *cloudhub.Service
+	authorizer    *cloudhub.EdgeAuthorizer
+	projection    hubProjection
+	hubID         string
+	hubURL        string
+	controllerURL string
+	relay         *cloudrelay.Server
+	relayID       string
+	region        string
+	httpClient    *http.Client
 }
 
 type hubProjection interface {
@@ -49,7 +62,11 @@ type hubProjection interface {
 // newHubHTTPHandler 建立 Edge 公网 Hub adapter。它只消费纯内存 projection 和 Hub Service，
 // 不访问 Controller store，也不拥有 account、assignment、Presence 或 signaling 真值。
 func newHubHTTPHandler(config hubHTTPConfig) http.Handler {
-	handler := &hubHTTPHandler{hub: config.Hub, authorizer: config.Authorizer, projection: config.Projection, hubID: config.HubID, hubURL: config.HubURL}
+	client := config.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
+	handler := &hubHTTPHandler{hub: config.Hub, authorizer: config.Authorizer, projection: config.Projection, hubID: config.HubID, hubURL: config.HubURL, controllerURL: strings.TrimSuffix(config.ControllerURL, "/"), relay: config.Relay, relayID: config.RelayID, region: config.Region, httpClient: client}
 	mux := http.NewServeMux()
 	mux.HandleFunc(httpapi.HubHealthPath, handler.handleHealth)
 	mux.HandleFunc(httpapi.HubBeginPresencePath, handler.handleBeginPresence)
@@ -58,6 +75,7 @@ func newHubHTTPHandler(config hubHTTPConfig) http.Handler {
 	mux.HandleFunc(httpapi.HubCompleteSignalingPath, handler.handleCompleteSignaling)
 	mux.HandleFunc(httpapi.HubReportDaemonRuntimePath, handler.handleReportDaemonRuntime)
 	mux.HandleFunc(httpapi.HubReportDaemonCommandResultPath, handler.handleReportDaemonCommandResult)
+	mux.HandleFunc(httpapi.HubAcquireRelayLeasePath, handler.handleAcquireRelayLease)
 	mux.HandleFunc(httpapi.HubResolveEndpointPath, handler.handleResolveEndpoint)
 	mux.HandleFunc(httpapi.HubListManagedDevicesPath, handler.handleListManagedDevices)
 	return mux
@@ -301,6 +319,104 @@ func (handler *hubHTTPHandler) handleCompleteSignaling(writer http.ResponseWrite
 	writeHubProto(writer, http.StatusOK, &cloudpb.CompleteSignalingOfferResponse{})
 }
 
+func (handler *hubHTTPHandler) handleAcquireRelayLease(writer http.ResponseWriter, request *http.Request) {
+	token, envelope, payload, ok := readHubRequest[*cloudpb.AcquireRelayLeaseRequest](writer, request, &cloudpb.AcquireRelayLeaseRequest{})
+	if !ok {
+		return
+	}
+	defer clear(token)
+	defer clear(envelope.Payload)
+	if handler.relay == nil || handler.controllerURL == "" || handler.relayID == "" || handler.region == "" || payload.GetManagedSessionId() == "" || payload.GetTargetDeviceId() == "" || payload.GetRoutePreference() != cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY || payload.GetPreferredRegion() != "" && payload.GetPreferredRegion() != handler.region {
+		writeHubError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Relay lease request is invalid", false)
+		return
+	}
+	intent, err := handler.hub.RelayIntent(payload.GetManagedSessionId(), envelope.DeviceID)
+	if err != nil || intent.AccountID != envelope.AccountID || intent.TargetDeviceID != payload.GetTargetDeviceId() {
+		writeHubError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Relay intent binding was rejected", false)
+		return
+	}
+	principalClient := envelope.DeviceID == intent.ClientDeviceID
+	if principalClient {
+		if _, err := handler.authorizer.AuthorizeClient(token, envelope.AccountID, envelope.DeviceID); err != nil {
+			mapHubError(writer, err)
+			return
+		}
+	} else if envelope.DeviceID == intent.TargetDeviceID {
+		if _, err := handler.authorizer.AuthorizeDaemon(token, envelope.AccountID, envelope.DeviceID); err != nil {
+			mapHubError(writer, err)
+			return
+		}
+	} else {
+		writeHubError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Relay principal binding was rejected", false)
+		return
+	}
+	budget, err := handler.authorizer.RelayBudget(envelope.AccountID)
+	if err != nil {
+		mapHubError(writer, err)
+		return
+	}
+	reserve := &cloudpb.ReserveRelayLeaseRequest{AccountId: envelope.AccountID, ManagedSessionId: payload.GetManagedSessionId(), ClientDeviceId: intent.ClientDeviceID, TargetDeviceId: intent.TargetDeviceID, HubId: handler.hubID, RelayId: handler.relayID, Region: handler.region, LeaseId: intent.LeaseID}
+	signed, status, cloudErr := handler.reserveRelayLease(request.Context(), token, reserve)
+	if cloudErr != nil {
+		writeHubProto(writer, status, cloudErr)
+		return
+	}
+	if err := handler.hub.BindRelayIntentLease(payload.GetManagedSessionId(), signed.GetLeaseId(), time.Unix(int64(signed.GetExpiresAtUnix()), 0).UTC()); err != nil {
+		writeHubError(writer, http.StatusConflict, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE, "Relay lease intent became stale", true)
+		return
+	}
+	activation, err := handler.relay.ActivateLease(cloudrelay.ActivationRequest{SignedLease: signed.GetSignedLease(), AccountID: envelope.AccountID, ManagedSessionID: payload.GetManagedSessionId(), ClientDeviceID: intent.ClientDeviceID, TargetDeviceID: intent.TargetDeviceID, PathKind: servicecredential.RelayPathSingle})
+	if err != nil || activation.Claims.MaxBytes > budget.MaxBytes || activation.Claims.MaxBitrateKbps > budget.MaxBitrateKbps || activation.Claims.MaxConcurrency > budget.MaxConcurrency || time.Unix(activation.Claims.ExpiresAtUnix, 0).Sub(time.Unix(activation.Claims.NotBeforeUnix, 0)) > budget.MaxLeaseDuration {
+		writeHubError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Relay lease verification was rejected", false)
+		return
+	}
+	credential := activation.DaemonCredential
+	if principalClient {
+		credential = activation.ClientCredential
+	}
+	if credential.Username == "" || credential.Password == "" || !time.Now().UTC().Before(credential.ExpiresAt) {
+		writeHubError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Relay credential is unavailable", true)
+		return
+	}
+	response := proto.Clone(signed).(*cloudpb.RelayLease)
+	response.IceServers = []*cloudpb.IceServer{{Urls: []string{handler.relay.URL()}, Username: credential.Username, Credential: credential.Password}}
+	writeHubProto(writer, http.StatusOK, response)
+}
+
+func (handler *hubHTTPHandler) reserveRelayLease(ctx context.Context, token []byte, payload *cloudpb.ReserveRelayLeaseRequest) (*cloudpb.RelayLease, int, *cloudpb.CloudError) {
+	wire, err := proto.Marshal(payload)
+	if err != nil {
+		return nil, http.StatusInternalServerError, &cloudpb.CloudError{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, Message: "Relay reservation encoding failed", Retryable: true}
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, handler.controllerURL+relaylease.InternalReservePath, bytes.NewReader(wire))
+	if err != nil {
+		return nil, http.StatusServiceUnavailable, &cloudpb.CloudError{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, Message: "Relay reservation service is unavailable", Retryable: true}
+	}
+	request.Header.Set("Content-Type", httpapi.ProtobufMediaType)
+	request.Header.Set("Authorization", "Bearer "+base64.RawURLEncoding.EncodeToString(token))
+	response, err := handler.httpClient.Do(request)
+	if err != nil {
+		return nil, http.StatusServiceUnavailable, &cloudpb.CloudError{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, Message: "Relay reservation service is unavailable", Retryable: true}
+	}
+	defer response.Body.Close()
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxHubRequestBytes))
+	if err != nil || response.Header.Get("Content-Type") != httpapi.ProtobufMediaType {
+		return nil, http.StatusServiceUnavailable, &cloudpb.CloudError{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, Message: "Relay reservation response is invalid"}
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		cloudErr := &cloudpb.CloudError{}
+		if proto.Unmarshal(responseBody, cloudErr) != nil || cloudErr.GetCode() == cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNSPECIFIED {
+			return nil, http.StatusServiceUnavailable, &cloudpb.CloudError{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, Message: "Relay reservation response is invalid"}
+		}
+		return nil, response.StatusCode, cloudErr
+	}
+	lease := &cloudpb.RelayLease{}
+	if proto.Unmarshal(responseBody, lease) != nil || lease.GetLeaseId() == "" || len(lease.GetSignedLease()) == 0 || lease.GetPathKind() != cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY || len(lease.GetIceServers()) != 0 {
+		return nil, http.StatusServiceUnavailable, &cloudpb.CloudError{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, Message: "Relay reservation response is invalid"}
+	}
+	return lease, http.StatusOK, nil
+}
+
 func (handler *hubHTTPHandler) handleResolveEndpoint(writer http.ResponseWriter, request *http.Request) {
 	token, envelope, payload, ok := readHubRequest[*cloudpb.ResolveEndpointRequest](writer, request, &cloudpb.ResolveEndpointRequest{})
 	if !ok {
@@ -323,6 +439,10 @@ func (handler *hubHTTPHandler) handleResolveEndpoint(writer http.ResponseWriter,
 	correlationID, err := randomHubID("managed")
 	if err != nil {
 		writeHubError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub session correlation could not be created", true)
+		return
+	}
+	if err := handler.hub.CreateRelayIntent(correlationID, envelope.AccountID, envelope.DeviceID, payload.GetTargetDeviceId()); err != nil {
+		mapHubError(writer, err)
 		return
 	}
 	writeHubProto(writer, http.StatusOK, &cloudpb.ResolvedEndpoint{EndpointId: payload.GetEndpointId(), TargetDeviceId: payload.GetTargetDeviceId(), Presence: cloudpb.PresenceState_PRESENCE_STATE_ONLINE, HubId: handler.hubID, HubUrl: handler.hubURL, ManagedSessionId: correlationID})

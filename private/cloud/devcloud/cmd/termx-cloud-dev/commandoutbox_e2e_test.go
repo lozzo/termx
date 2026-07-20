@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -80,20 +81,47 @@ func TestSignedCloseCommandCrossesControllerEdgeAndDaemonHTTPBoundaries(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	signaling, err := adapter.CreateSignalingSession(context.Background(), clientSession.Authorization(), &cloudpb.CreateSignalingSessionRequest{EndpointId: "endpoint-1", ManagedSessionId: resolved.GetManagedSessionId(), TargetDeviceId: "daemon-1", OfferSdp: "offer", RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY})
+	clientLease, err := adapter.AcquireRelayLease(context.Background(), clientSession.Authorization(), &cloudpb.AcquireRelayLeaseRequest{ManagedSessionId: resolved.GetManagedSessionId(), TargetDeviceId: "daemon-1", RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < 3; index++ {
+		extra, resolveErr := adapter.ResolveEndpoint(context.Background(), clientSession.Authorization(), &cloudpb.ResolveEndpointRequest{EndpointId: fmt.Sprintf("quota-endpoint-%d", index), TargetDeviceId: "daemon-1"})
+		if resolveErr != nil {
+			t.Fatal(resolveErr)
+		}
+		if _, leaseErr := adapter.AcquireRelayLease(context.Background(), clientSession.Authorization(), &cloudpb.AcquireRelayLeaseRequest{ManagedSessionId: extra.GetManagedSessionId(), TargetDeviceId: "daemon-1", RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY}); leaseErr != nil {
+			t.Fatal(leaseErr)
+		}
+	}
+	exhausted, err := adapter.ResolveEndpoint(context.Background(), clientSession.Authorization(), &cloudpb.ResolveEndpointRequest{EndpointId: "quota-exhausted", TargetDeviceId: "daemon-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapter.AcquireRelayLease(context.Background(), clientSession.Authorization(), &cloudpb.AcquireRelayLeaseRequest{ManagedSessionId: exhausted.GetManagedSessionId(), TargetDeviceId: "daemon-1", RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY}); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_QUOTA_EXHAUSTED) {
+		t.Fatalf("Relay account/device concurrency exhaustion = %v", err)
+	}
+	signaling, err := adapter.CreateSignalingSession(context.Background(), clientSession.Authorization(), &cloudpb.CreateSignalingSessionRequest{EndpointId: "endpoint-1", ManagedSessionId: resolved.GetManagedSessionId(), TargetDeviceId: "daemon-1", OfferSdp: "offer", RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY, RelayOnly: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer signaling.Close()
 	offerEvent, _ := presence.Receive(context.Background())
 	offer := offerEvent.GetOffer()
+	daemonLease, err := adapter.AcquireRelayLease(context.Background(), daemonSession.Authorization(), &cloudpb.AcquireRelayLeaseRequest{ManagedSessionId: offer.GetManagedSessionId(), TargetDeviceId: "daemon-1", RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clientLease.GetLeaseId() != daemonLease.GetLeaseId() || !bytes.Equal(clientLease.GetSignedLease(), daemonLease.GetSignedLease()) || len(clientLease.GetIceServers()) != 1 || len(daemonLease.GetIceServers()) != 1 || clientLease.GetIceServers()[0].GetUsername() == daemonLease.GetIceServers()[0].GetUsername() || clientLease.GetIceServers()[0].GetCredential() == daemonLease.GetIceServers()[0].GetCredential() {
+		t.Fatalf("caller-specific Relay lease mismatch: client=%v daemon=%v", clientLease, daemonLease)
+	}
 	_, err = adapter.CompleteSignalingOffer(context.Background(), daemonSession.Authorization(), &cloudpb.CompleteSignalingOfferRequest{SignalingSessionId: offer.GetSignalingSessionId(), Result: &cloudpb.CompleteSignalingOfferRequest_Answer{Answer: &cloudpb.SignalingAnswer{SignalingSessionId: offer.GetSignalingSessionId(), Sdp: "answer"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, _ = signaling.Receive(context.Background())
 	target := &cloudpb.ManagedPeerSessionTarget{DaemonDeviceId: "daemon-1", ManagedSessionId: resolved.GetManagedSessionId(), SessionIncarnation: offer.GetSessionIncarnation(), AssignmentEpoch: 1, ControlPresenceSessionId: challenge.GetPresenceSessionId(), DaemonRuntimeGeneration: "runtime-1"}
-	report := &cloudpb.ReportDaemonRuntimeRequest{ReportId: "runtime-1:1", HubId: "hub-1", AssignmentEpoch: 1, PresenceSessionId: challenge.GetPresenceSessionId(), DaemonRuntimeGeneration: "runtime-1", RegistryRevision: 1, PeerSessions: &cloudpb.PeerSessionInventorySnapshot{ReportId: "runtime-1:1", DaemonDeviceId: "daemon-1", ControlOwnerHubId: "hub-1", AssignmentEpoch: 1, ControlPresenceSessionId: challenge.GetPresenceSessionId(), DaemonRuntimeGeneration: "runtime-1", RegistryRevision: 1, Sessions: []*cloudpb.ManagedPeerSessionProjection{{Target: target, ClientDeviceId: "client-1", EstablishedPresenceSessionId: challenge.GetPresenceSessionId(), ControlOwnerHubId: "hub-1", ObservedDataPath: cloudpb.ObservedPath_OBSERVED_PATH_DIRECT, State: cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_READY, Freshness: cloudpb.Freshness_FRESHNESS_FRESH}}, ObservedAtUnixMillis: now.UnixMilli()}}
+	report := &cloudpb.ReportDaemonRuntimeRequest{ReportId: "runtime-1:1", HubId: "hub-1", AssignmentEpoch: 1, PresenceSessionId: challenge.GetPresenceSessionId(), DaemonRuntimeGeneration: "runtime-1", RegistryRevision: 1, PeerSessions: &cloudpb.PeerSessionInventorySnapshot{ReportId: "runtime-1:1", DaemonDeviceId: "daemon-1", ControlOwnerHubId: "hub-1", AssignmentEpoch: 1, ControlPresenceSessionId: challenge.GetPresenceSessionId(), DaemonRuntimeGeneration: "runtime-1", RegistryRevision: 1, Sessions: []*cloudpb.ManagedPeerSessionProjection{{Target: target, ClientDeviceId: "client-1", EstablishedPresenceSessionId: challenge.GetPresenceSessionId(), ControlOwnerHubId: "hub-1", ObservedDataPath: cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY, RelayLeaseId: clientLease.GetLeaseId(), State: cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_READY, Freshness: cloudpb.Freshness_FRESHNESS_FRESH}}, ObservedAtUnixMillis: now.UnixMilli()}}
 	if _, err := adapter.ReportDaemonRuntime(context.Background(), daemonSession.Authorization(), report); err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +248,19 @@ func seedCommandAccount(t *testing.T, databasePath, catalogPath string, now time
 	if err != nil {
 		t.Fatal(err)
 	}
-	return registered.GetSession().GetAccount()
+	account := registered.GetSession().GetAccount()
+	checkout, err := service.CreateCheckout(context.Background(), account.GetAccountId(), account.GetUserId(), &cloudpb.CreateCheckoutRequest{PlanId: "pro", RequestedTransition: cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_UPGRADE})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, err := service.CreatePaymentAttempt(context.Background(), account.GetAccountId(), account.GetUserId(), &cloudpb.CreatePaymentAttemptRequest{OrderId: checkout.GetOrder().GetOrderId(), Provider: "test-provider"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ApplyPaymentEvent(context.Background(), &cloudpb.ApplyPaymentEventRequest{Event: &cloudpb.NormalizedPaymentEvent{ProviderEventId: "event-pro-upgrade", Provider: "test-provider", EventType: cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED, OrderId: checkout.GetOrder().GetOrderId(), AccountId: account.GetAccountId(), PlanId: "pro", PlanVersion: 1, ProviderReference: "provider-pro", OccurredAtUnixMillis: now.Add(time.Second).UnixMilli(), PaymentAttemptId: attempt.GetPaymentAttempt().GetPaymentAttemptId()}}); err != nil {
+		t.Fatal(err)
+	}
+	return account
 }
 
 func loginCommandAccount(t *testing.T, origin string) map[string]*http.Cookie {

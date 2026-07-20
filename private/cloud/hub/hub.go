@@ -104,6 +104,7 @@ type Service struct {
 
 	presences          map[string]*presenceState
 	sessions           map[string]*sessionState
+	relayIntents       map[string]relayIntentState
 	presenceChallenges map[string]edgePresenceChallengeState
 	nextIncarnation    uint64
 
@@ -154,7 +155,7 @@ func New(config Config) (*Service, error) {
 		maxPresences:    config.MaxPresences, maxSessions: config.MaxSessions,
 		maxSessionsPerClient: config.MaxSessionsPerClient, edgeAuthorizer: config.EdgeAuthorizer, assignmentSource: config.AssignmentSource,
 		presenceChallengeTTL: config.PresenceChallengeTTL, maxPresenceChallenges: config.MaxPresenceChallenges, random: config.Random,
-		presences: make(map[string]*presenceState), sessions: make(map[string]*sessionState), presenceChallenges: make(map[string]edgePresenceChallengeState),
+		presences: make(map[string]*presenceState), sessions: make(map[string]*sessionState), relayIntents: make(map[string]relayIntentState), presenceChallenges: make(map[string]edgePresenceChallengeState),
 		topologyChanges: make(chan struct{}, 1), presenceTopology: make(map[string]*cloudpb.PresenceProjection), runtimeTopology: make(map[string]*daemonRuntimeTopology), runtimeEvents: make(chan *cloudpb.HubRuntimeEnvelope, config.ClientQueueSize), commands: make(map[string]*hubCommandState),
 	}, nil
 }
@@ -197,6 +198,11 @@ func (service *Service) RevokeDevice(deviceID string) {
 		if state.clientDeviceID == deviceID || state.targetDeviceID == deviceID {
 			service.closeSessionLocked(state, "device revoked")
 			delete(service.sessions, sessionID)
+		}
+	}
+	for managedSessionID, intent := range service.relayIntents {
+		if intent.clientDeviceID == deviceID || intent.targetDeviceID == deviceID {
+			delete(service.relayIntents, managedSessionID)
 		}
 	}
 }
@@ -274,6 +280,11 @@ func (service *Service) cleanupLocked(now time.Time) {
 		if state.closed || !now.Before(state.expiresAt) {
 			service.closeSessionLocked(state, "signaling session expired")
 			delete(service.sessions, sessionID)
+		}
+	}
+	for managedSessionID, intent := range service.relayIntents {
+		if !now.Before(intent.expiresAt) {
+			delete(service.relayIntents, managedSessionID)
 		}
 	}
 }

@@ -202,6 +202,25 @@ func (entitlement Entitlement) Projection() *cloudpb.EntitlementProjection {
 	}
 }
 
+// FromProjection 把持久 generated projection 恢复为 Relay/P2P 准入领域值。
+// 数据库 projection 仍需重新执行完整 capability 与周期校验，不能因已落盘而被默认信任。
+func FromProjection(projection *cloudpb.EntitlementProjection) (Entitlement, error) {
+	if projection == nil || projection.GetAccountId() == "" || projection.GetSourceSubscriptionId() == "" || projection.GetSourcePlanId() == "" || projection.GetSourcePlanVersion() == 0 || projection.GetUpdatedAtUnixMillis() <= 0 {
+		return Entitlement{}, ErrEntitlementNotFound
+	}
+	from := time.UnixMilli(projection.GetEffectiveFromUnixMillis()).UTC()
+	until := time.UnixMilli(projection.GetEffectiveUntilUnixMillis()).UTC()
+	if !until.After(from) || ValidatePlanCapability(projection.GetCapability()) != nil {
+		return Entitlement{}, ErrPlanCapability
+	}
+	return Entitlement{
+		AccountID: projection.GetAccountId(), Status: projection.GetStatus(), EffectiveFrom: from, EffectiveUntil: until,
+		SourceSubscriptionID: projection.GetSourceSubscriptionId(), SourceOrderID: projection.GetSourceOrderId(),
+		SourcePlanID: projection.GetSourcePlanId(), SourcePlanVersion: projection.GetSourcePlanVersion(),
+		Capability: ClonePlanCapability(projection.GetCapability()), UpdatedAt: time.UnixMilli(projection.GetUpdatedAtUnixMillis()).UTC(),
+	}, nil
+}
+
 func (entitlement Entitlement) activeAt(now time.Time) bool {
 	now = now.UTC()
 	return entitlement.AccountID != "" && entitlement.Status == StatusActive && !now.Before(entitlement.EffectiveFrom) && now.Before(entitlement.EffectiveUntil)

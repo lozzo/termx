@@ -441,3 +441,16 @@ message ReportHubRuntimeResponse {
   uint64 accepted_sender_sequence = 1;
   bool full_snapshot_required = 2;
 }
+
+// ReserveRelayLeaseRequest 是 owning Edge 向 Controller 提交的持久 quota reservation 输入。
+// client/target binding 来自 Hub 短期 relay intent；edge bearer 仍必须由 Controller 独立验签。
+message ReserveRelayLeaseRequest {
+  string account_id = 1;
+  string managed_session_id = 2;
+  string client_device_id = 3;
+  string target_device_id = 4;
+  string hub_id = 5;
+  string relay_id = 6;
+  string region = 7;
+  string lease_id = 8;
+}

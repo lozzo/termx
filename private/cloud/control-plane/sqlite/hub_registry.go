@@ -118,6 +118,21 @@ CREATE TABLE IF NOT EXISTS commerce_subscriptions(
 CREATE TABLE IF NOT EXISTS commerce_entitlements(
   account_id TEXT PRIMARY KEY, projection BLOB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS relay_quota_periods(
+  account_id TEXT NOT NULL, period_start_unix_millis INTEGER NOT NULL,
+  period_end_unix_millis INTEGER NOT NULL, limit_bytes INTEGER NOT NULL,
+  used_bytes INTEGER NOT NULL, revision INTEGER NOT NULL,
+  PRIMARY KEY(account_id,period_start_unix_millis)
+);
+CREATE TABLE IF NOT EXISTS relay_lease_reservations(
+  lease_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, managed_session_id TEXT NOT NULL,
+  client_device_id TEXT NOT NULL, target_device_id TEXT NOT NULL, region TEXT NOT NULL,
+  period_start_unix_millis INTEGER NOT NULL, period_end_unix_millis INTEGER NOT NULL,
+  reserved_bytes INTEGER NOT NULL, used_bytes INTEGER NOT NULL, state INTEGER NOT NULL,
+  expires_at_unix_millis INTEGER NOT NULL, release_after_unix_millis INTEGER NOT NULL,
+  revision INTEGER NOT NULL, projection BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS relay_reservations_account_period ON relay_lease_reservations(account_id,period_start_unix_millis,state);
 CREATE TABLE IF NOT EXISTS commerce_audit(
   audit_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, occurred_at INTEGER NOT NULL,
   projection BLOB NOT NULL
