@@ -8,12 +8,18 @@ import (
 
 	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
 	"github.com/lozzow/termx/proto/cloudpb"
+	"google.golang.org/protobuf/proto"
 )
 
 // CommandPublisher 是 Controller HubControl transport 的瞬时投递端口。
 // 成功返回不代表 Hub 已接收；delivery 只能由独立 HubCommandResult 推进。
 type CommandPublisher interface {
 	PublishCommand(string, *cloudpb.HubCommand) error
+}
+
+// RelayCommandPublisher 使用独立 Relay control generation 投递 close command。
+type RelayCommandPublisher interface {
+	PublishCommand(string, *cloudpb.RelayControlCommand) error
 }
 
 // DeviceSource 提供 daemon control command 所需的持久 auth epoch。
@@ -24,19 +30,20 @@ type DeviceSource interface {
 // Dispatcher 重试未完成 child 并收敛到 expiry。
 // 它不持有命令状态，重启后始终从 durable CommandOutbox 重新读取。
 type Dispatcher struct {
-	outbox     *Service
-	publisher  CommandPublisher
-	devices    DeviceSource
-	keyID      string
-	privateKey ed25519.PrivateKey
+	outbox         *Service
+	publisher      CommandPublisher
+	relayPublisher RelayCommandPublisher
+	devices        DeviceSource
+	keyID          string
+	privateKey     ed25519.PrivateKey
 }
 
 // NewDispatcher 创建 Hub command dispatcher；daemon control key 必须与 projection/edge/relay key 分离配置。
-func NewDispatcher(outbox *Service, publisher CommandPublisher, devices DeviceSource, keyID string, privateKey ed25519.PrivateKey) (*Dispatcher, error) {
+func NewDispatcher(outbox *Service, publisher CommandPublisher, relayPublisher RelayCommandPublisher, devices DeviceSource, keyID string, privateKey ed25519.PrivateKey) (*Dispatcher, error) {
 	if outbox == nil || publisher == nil || devices == nil || keyID == "" || len(privateKey) != ed25519.PrivateKeySize {
 		return nil, fmt.Errorf("CommandOutbox dispatcher dependencies are invalid")
 	}
-	return &Dispatcher{outbox: outbox, publisher: publisher, devices: devices, keyID: keyID, privateKey: append(ed25519.PrivateKey(nil), privateKey...)}, nil
+	return &Dispatcher{outbox: outbox, publisher: publisher, relayPublisher: relayPublisher, devices: devices, keyID: keyID, privateKey: append(ed25519.PrivateKey(nil), privateKey...)}, nil
 }
 
 // DispatchOnce 投递一批未过期 child，并把到期项收敛为 UNKNOWN/PARTIAL。
@@ -55,6 +62,20 @@ func (dispatcher *Dispatcher) DispatchOnce(ctx context.Context, now time.Time, l
 	for _, parent := range commands {
 		for _, child := range parent.GetChildren() {
 			if child.GetExecutionState() != cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_PENDING {
+				continue
+			}
+			if target := child.GetTarget().GetRelayAllocations(); target != nil {
+				if dispatcher.relayPublisher == nil {
+					return ErrCommandConflict
+				}
+				kind := cloudpb.RelayControlCommandKind_RELAY_CONTROL_COMMAND_KIND_CLOSE_LEASE_ALLOCATIONS
+				if target.GetManagedSessionId() != "" {
+					kind = cloudpb.RelayControlCommandKind_RELAY_CONTROL_COMMAND_KIND_CLOSE_SESSION_ALLOCATIONS
+				}
+				command := &cloudpb.RelayControlCommand{CommandId: child.GetChildCommandId(), CommandKind: kind, Target: proto.Clone(target).(*cloudpb.RelayControlTarget), IssuedAtUnixMillis: parent.GetCreatedAtUnixMillis(), ExpiresAtUnixMillis: parent.GetExpiresAtUnixMillis()}
+				if err := dispatcher.relayPublisher.PublishCommand(target.GetRelayId(), command); err != nil {
+					return err
+				}
 				continue
 			}
 			command, err := dispatcher.hubCommand(ctx, parent, child)

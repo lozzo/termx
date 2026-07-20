@@ -60,6 +60,28 @@ func TestCommandOutboxExpiryKeepsCommittedAuthorityAndAggregatesPartial(t *testi
 	}
 }
 
+func TestRelayResultRequiresSettlementAndPreservesPartial(t *testing.T) {
+	now := time.Date(2026, 7, 21, 11, 0, 0, 0, time.UTC)
+	target := &cloudpb.RelayControlTarget{RelayId: "relay-1", LeaseId: "lease-1"}
+	commandTarget := &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_RelayAllocations{RelayAllocations: target}}
+	projection := &cloudpb.ManagementCommandProjection{CommandId: "parent-relay", AccountId: "account-1", Actor: &cloudpb.ManagementActorProjection{ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_ACCOUNT_OWNER, ActorId: "user-1"}, CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_CLOSE_RELAY_ALLOCATIONS, Target: commandTarget, AuthorityResult: cloudpb.CommandAuthorityResult_COMMAND_AUTHORITY_RESULT_NOT_APPLICABLE, DeliveryState: cloudpb.CommandDeliveryState_COMMAND_DELIVERY_STATE_PENDING, ExecutionState: cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_PENDING, ObservedEffect: cloudpb.CommandObservedEffect_COMMAND_OBSERVED_EFFECT_UNKNOWN, Children: []*cloudpb.ManagementCommandChildProjection{{ChildCommandId: "child-relay", TargetHubId: "hub-1", Target: commandTarget, DeliveryState: cloudpb.CommandDeliveryState_COMMAND_DELIVERY_STATE_PENDING, ExecutionState: cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_PENDING, ObservedEffect: cloudpb.CommandObservedEffect_COMMAND_OBSERVED_EFFECT_UNKNOWN, UpdatedAtUnixMillis: now.UnixMilli()}}, CreatedAtUnixMillis: now.UnixMilli(), ExpiresAtUnixMillis: now.Add(5 * time.Minute).UnixMilli(), UpdatedAtUnixMillis: now.UnixMilli()}
+	validated, err := commandoutbox.ValidateCreate(projection, "idem-relay", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial, err := commandoutbox.ApplyRelayResult(validated, &cloudpb.RelayCommandResult{CommandId: "child-relay", RelayId: "relay-1", RelayControlGeneration: 3, ResultCode: cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_PARTIAL, Allocations: []*cloudpb.RelayAllocationCloseResult{{AllocationId: "allocation-1", ResultCode: cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED}}, LeaseId: "lease-1", UsageDrainComplete: true, ErrorCode: "usage_settlement_incomplete", CompletedAtUnixMillis: now.Add(time.Second).UnixMilli()}, now.Add(time.Second))
+	if err != nil || partial.GetExecutionState() != cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_PARTIAL {
+		t.Fatalf("partial Relay result = (%v, %v)", partial, err)
+	}
+	if _, err := commandoutbox.ApplyRelayResult(validated, &cloudpb.RelayCommandResult{CommandId: "child-relay", RelayId: "relay-1", RelayControlGeneration: 3, ResultCode: cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED, LeaseId: "lease-1", UsageDrainComplete: true, CompletedAtUnixMillis: now.Add(time.Second).UnixMilli()}, now.Add(time.Second)); !errors.Is(err, commandoutbox.ErrCommandConflict) {
+		t.Fatalf("unsettled APPLIED Relay result = %v", err)
+	}
+	applied, err := commandoutbox.ApplyRelayResult(validated, &cloudpb.RelayCommandResult{CommandId: "child-relay", RelayId: "relay-1", RelayControlGeneration: 3, ResultCode: cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED, Allocations: []*cloudpb.RelayAllocationCloseResult{{AllocationId: "allocation-1", ResultCode: cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED}}, LeaseId: "lease-1", FinalUsageSequence: 2, UsageDrainComplete: true, UsageSettlementComplete: true, SettledUsage: []*cloudpb.RelayUsageAck{{EventId: "usage-2", Sequence: 2}}, CompletedAtUnixMillis: now.Add(2 * time.Second).UnixMilli()}, now.Add(2*time.Second))
+	if err != nil || applied.GetExecutionState() != cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_APPLIED {
+		t.Fatalf("applied Relay result = (%v, %v)", applied, err)
+	}
+}
+
 func closeSessionCommand(now time.Time, childID string) *cloudpb.ManagementCommandProjection {
 	target := &cloudpb.ManagedPeerSessionTarget{DaemonDeviceId: "daemon-1", ManagedSessionId: "managed-1", SessionIncarnation: 2, AssignmentEpoch: 7, ControlPresenceSessionId: "presence-1", DaemonRuntimeGeneration: "runtime-1"}
 	commandTarget := &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_PeerSession{PeerSession: target}}

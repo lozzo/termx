@@ -3,14 +3,17 @@ package commandoutbox_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/lozzow/termx/private/cloud/control-plane/commandoutbox"
+	"github.com/lozzow/termx/private/cloud/control-plane/relayquota"
 	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
 	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
 	"github.com/lozzow/termx/proto/cloudpb"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestPlannerClientRevokeCommitsAuthorityAndFansOutAcrossHubs(t *testing.T) {
@@ -31,7 +34,7 @@ func TestPlannerClientRevokeCommitsAuthorityAndFansOutAcrossHubs(t *testing.T) {
 	for index := range randomBytes {
 		randomBytes[index] = byte(index + 1)
 	}
-	planner, _ := commandoutbox.NewPlanner(outbox, source, bytes.NewReader(randomBytes), nil)
+	planner, _ := commandoutbox.NewPlanner(outbox, source, nil, bytes.NewReader(randomBytes), nil)
 	now := time.Date(2026, 7, 20, 13, 0, 0, 0, time.UTC)
 	target := &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_CloudDevice{CloudDevice: &cloudpb.RevokeCloudDeviceTarget{DeviceId: "client-1", ExpectedAuthEpoch: 4}}}
 	created, inserted, err := planner.Create(context.Background(), &cloudpb.CreateManagementCommandRequest{AccountId: "account-1", CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_REVOKE_CLOUD_DEVICE, Target: target, IdempotencyKey: "idem-1"}, &cloudpb.ManagementActorProjection{ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_ACCOUNT_OWNER, ActorId: "user-1"}, now)
@@ -65,7 +68,7 @@ func TestPlannerDaemonRevokeUsesExactPresenceAndHubReceiptCompletesEnforcement(t
 	for index := range randomBytes {
 		randomBytes[index] = byte(index + 11)
 	}
-	planner, _ := commandoutbox.NewPlanner(outbox, source, bytes.NewReader(randomBytes), nil)
+	planner, _ := commandoutbox.NewPlanner(outbox, source, nil, bytes.NewReader(randomBytes), nil)
 	now := time.Date(2026, 7, 20, 13, 30, 0, 0, time.UTC)
 	target := &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_CloudDevice{CloudDevice: &cloudpb.RevokeCloudDeviceTarget{DeviceId: "daemon-1", ExpectedAuthEpoch: 2}}}
 	created, _, err := planner.Create(context.Background(), &cloudpb.CreateManagementCommandRequest{AccountId: "account-1", CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_REVOKE_CLOUD_DEVICE, Target: target, IdempotencyKey: "daemon-revoke"}, &cloudpb.ManagementActorProjection{ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_ACCOUNT_OWNER, ActorId: "user-1"}, now)
@@ -94,7 +97,7 @@ func TestPlannerTerminalRevokeUsesOpaqueProjectionAndExactInventoryFence(t *test
 	for index := range randomBytes {
 		randomBytes[index] = byte(index + 21)
 	}
-	planner, _ := commandoutbox.NewPlanner(outbox, source, bytes.NewReader(randomBytes), nil)
+	planner, _ := commandoutbox.NewPlanner(outbox, source, nil, bytes.NewReader(randomBytes), nil)
 	now := time.Date(2026, 7, 20, 14, 0, 0, 0, time.UTC)
 	requestTarget := &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_TerminalAccess{TerminalAccess: &cloudpb.RevokeTerminalAccessTarget{DaemonDeviceId: "daemon-1", OpaqueAccessReference: "opaque-1"}}}
 	created, inserted, err := planner.Create(context.Background(), &cloudpb.CreateManagementCommandRequest{AccountId: "account-1", CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_REVOKE_TERMINAL_ACCESS, Target: requestTarget, IdempotencyKey: "revoke-access"}, &cloudpb.ManagementActorProjection{ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_ACCOUNT_OWNER, ActorId: "user-1"}, now)
@@ -108,6 +111,31 @@ func TestPlannerTerminalRevokeUsesOpaqueProjectionAndExactInventoryFence(t *test
 	}
 	if created.GetTarget().GetTerminalAccess().GetAssignmentEpoch() != 0 {
 		t.Fatalf("user target was rewritten instead of preserving idempotency input: %v", created.GetTarget())
+	}
+}
+
+func TestPlannerRelayCloseUsesPersistentReservationBinding(t *testing.T) {
+	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Date(2026, 7, 20, 15, 0, 0, 0, time.UTC)
+	request := relayquota.ReserveRequest{LeaseID: "lease-1", AccountID: "account-1", ManagedSessionID: "managed-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1", Region: "local-1", HubID: "hub-1", RelayID: "relay-1", PeriodStart: now.Add(-time.Hour), PeriodEnd: now.Add(time.Hour), PeriodLimitBytes: 1024, MaxBytesPerLease: 512, MaxConcurrency: 2, ExpiresAt: now.Add(10 * time.Minute), ReleaseAfter: now.Add(12 * time.Minute)}
+	if _, _, _, err := store.Reserve(context.Background(), request, now); err != nil {
+		t.Fatal(err)
+	}
+	outbox, _ := commandoutbox.New(store)
+	planner, _ := commandoutbox.NewPlanner(outbox, &plannerSource{}, store, bytes.NewReader(make([]byte, 72)), nil)
+	target := &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_RelayAllocations{RelayAllocations: &cloudpb.RelayControlTarget{RelayId: "relay-1", LeaseId: "lease-1"}}}
+	created, inserted, err := planner.Create(context.Background(), &cloudpb.CreateManagementCommandRequest{AccountId: "account-1", CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_CLOSE_RELAY_ALLOCATIONS, Target: target, IdempotencyKey: "close-relay"}, &cloudpb.ManagementActorProjection{ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_ACCOUNT_OWNER, ActorId: "user-1"}, now)
+	if err != nil || !inserted || len(created.GetChildren()) != 1 || created.GetChildren()[0].GetTargetHubId() != "hub-1" {
+		t.Fatalf("Relay close create = (%v, %v, %v)", created, inserted, err)
+	}
+	wrong := proto.Clone(target).(*cloudpb.ManagementCommandTarget)
+	wrong.GetRelayAllocations().RelayId = "relay-2"
+	if _, _, err := planner.Create(context.Background(), &cloudpb.CreateManagementCommandRequest{AccountId: "account-1", CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_CLOSE_RELAY_ALLOCATIONS, Target: wrong, IdempotencyKey: "wrong-relay"}, &cloudpb.ManagementActorProjection{ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_ACCOUNT_OWNER, ActorId: "user-1"}, now); !errors.Is(err, commandoutbox.ErrCommandNotFound) {
+		t.Fatalf("wrong Relay binding = %v", err)
 	}
 }
 

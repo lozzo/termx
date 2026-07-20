@@ -80,6 +80,18 @@ func (generator *meteredRelayGenerator) forget(allocationID string) {
 	}
 }
 
+func (generator *meteredRelayGenerator) closeAllocation(allocationID string) bool {
+	generator.mu.Lock()
+	relayAddress := generator.byAlloc[allocationID]
+	binder := generator.relays[relayAddress]
+	generator.mu.Unlock()
+	if binder == nil {
+		return false
+	}
+	binder.closeForQuota()
+	return true
+}
+
 type meteredPacketConn struct {
 	net.PacketConn
 	authority  *Authority

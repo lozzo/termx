@@ -120,7 +120,7 @@ func (handler *relayLeaseHTTPHandler) ServeHTTP(writer http.ResponseWriter, requ
 	}
 	lease, leaseClaims, err := handler.service.Issue(request.Context(), relaylease.Command{
 		LeaseID: payload.GetLeaseId(), AccountID: claims.AccountID, ManagedSessionID: payload.GetManagedSessionId(), ClientDeviceID: payload.GetClientDeviceId(), TargetDeviceID: payload.GetTargetDeviceId(),
-		HubID: payload.GetHubId(), AudienceRelayPool: "pool-" + metadata.GetRegion(), Region: metadata.GetRegion(), PathKind: servicecredential.RelayPathSingle,
+		HubID: payload.GetHubId(), RelayID: payload.GetRelayId(), AudienceRelayPool: "pool-" + metadata.GetRegion(), Region: metadata.GetRegion(), PathKind: servicecredential.RelayPathSingle,
 		RequestedTTL: 5 * time.Minute, CredentialBindingID: "binding-" + metadata.GetRelayId(),
 	}, now)
 	if err != nil {

@@ -118,6 +118,41 @@ func ApplyDaemonResult(projection *cloudpb.ManagementCommandProjection, result *
 	return next, nil
 }
 
+// ApplyRelayResult 只接受精确 Relay target 的独立 execution receipt。
+// APPLIED/ALREADY_SATISFIED 必须同时证明 final usage 已 drain 且 Controller 已结算。
+func ApplyRelayResult(projection *cloudpb.ManagementCommandProjection, result *cloudpb.RelayCommandResult, now time.Time) (*cloudpb.ManagementCommandProjection, error) {
+	if projection == nil || result == nil || result.GetCommandId() == "" || result.GetRelayId() == "" || result.GetRelayControlGeneration() == 0 || result.GetCompletedAtUnixMillis() <= 0 || now.IsZero() {
+		return nil, ErrCommandConflict
+	}
+	next := proto.Clone(projection).(*cloudpb.ManagementCommandProjection)
+	child := commandChild(next, result.GetCommandId())
+	if child == nil || child.GetTarget().GetRelayAllocations() == nil {
+		return nil, ErrCommandConflict
+	}
+	target := child.GetTarget().GetRelayAllocations()
+	if target.GetRelayId() != result.GetRelayId() || target.GetLeaseId() != result.GetLeaseId() {
+		return nil, ErrCommandConflict
+	}
+	if result.GetResultCode() == cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED || result.GetResultCode() == cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_ALREADY_SATISFIED {
+		if !result.GetUsageDrainComplete() || !result.GetUsageSettlementComplete() || len(result.GetSettledUsage()) == 0 || target.GetLeaseId() != "" && result.GetFinalUsageSequence() == 0 {
+			return nil, ErrCommandConflict
+		}
+	}
+	for _, allocation := range result.GetAllocations() {
+		if allocation.GetAllocationId() == "" || allocation.GetResultCode() == cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_UNSPECIFIED {
+			return nil, ErrCommandConflict
+		}
+	}
+	child.DeliveryState = cloudpb.CommandDeliveryState_COMMAND_DELIVERY_STATE_RUNTIME_RECEIVED
+	child.ExecutionState = executionState(result.GetResultCode())
+	if result.GetErrorCode() != "" {
+		child.LastError = &cloudpb.ManagementErrorDetail{Code: cloudpb.ManagementErrorCode_MANAGEMENT_ERROR_CODE_COMMAND_PARTIAL, Message: result.GetErrorCode(), Retryable: false}
+	}
+	child.UpdatedAtUnixMillis = result.GetCompletedAtUnixMillis()
+	aggregate(next, now)
+	return next, nil
+}
+
 // Expire 把尚未取得 execution receipt 的 child 标记为 EXPIRED/UNKNOWN。
 // authority_result 保持不变；已经 APPLIED 的 sibling 不回滚。
 func Expire(projection *cloudpb.ManagementCommandProjection, now time.Time) (*cloudpb.ManagementCommandProjection, error) {
@@ -166,7 +201,7 @@ func aggregate(projection *cloudpb.ManagementCommandProjection, now time.Time) {
 		return
 	}
 	allDelivered, allApplied, allAlready := true, true, true
-	anySuccess, anyFailure, anyPending := false, false, false
+	anySuccess, anyFailure, anyPartial, anyPending := false, false, false, false
 	delivery := cloudpb.CommandDeliveryState_COMMAND_DELIVERY_STATE_RUNTIME_RECEIVED
 	for _, child := range projection.GetChildren() {
 		if child.GetDeliveryState() == cloudpb.CommandDeliveryState_COMMAND_DELIVERY_STATE_PENDING {
@@ -184,6 +219,8 @@ func aggregate(projection *cloudpb.ManagementCommandProjection, now time.Time) {
 			allAlready, anySuccess = false, true
 		case cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_ALREADY_SATISFIED:
 			allApplied, anySuccess = false, true
+		case cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_PARTIAL:
+			allApplied, allAlready, anyPartial = false, false, true
 		default:
 			allApplied, allAlready, anyFailure = false, false, true
 		}
@@ -200,6 +237,8 @@ func aggregate(projection *cloudpb.ManagementCommandProjection, now time.Time) {
 		projection.ExecutionState = cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_APPLIED
 	case allAlready:
 		projection.ExecutionState = cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_ALREADY_SATISFIED
+	case anyPartial:
+		projection.ExecutionState = cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_PARTIAL
 	case anySuccess && anyFailure:
 		projection.ExecutionState = cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_PARTIAL
 	case anyFailure:

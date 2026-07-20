@@ -1423,6 +1423,9 @@ type RelayLeaseReservation struct {
 	UpdatedAtUnixMillis   int64                  `protobuf:"varint,13,opt,name=updated_at_unix_millis,json=updatedAtUnixMillis,proto3" json:"updated_at_unix_millis,omitempty"`
 	Revision              uint64                 `protobuf:"varint,14,opt,name=revision,proto3" json:"revision,omitempty"`
 	IssuedAtUnixMillis    int64                  `protobuf:"varint,15,opt,name=issued_at_unix_millis,json=issuedAtUnixMillis,proto3" json:"issued_at_unix_millis,omitempty"`
+	HubId                 string                 `protobuf:"bytes,16,opt,name=hub_id,json=hubId,proto3" json:"hub_id,omitempty"`
+	RelayId               string                 `protobuf:"bytes,17,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
+	RouteId               string                 `protobuf:"bytes,18,opt,name=route_id,json=routeId,proto3" json:"route_id,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -1560,6 +1563,27 @@ func (x *RelayLeaseReservation) GetIssuedAtUnixMillis() int64 {
 		return x.IssuedAtUnixMillis
 	}
 	return 0
+}
+
+func (x *RelayLeaseReservation) GetHubId() string {
+	if x != nil {
+		return x.HubId
+	}
+	return ""
+}
+
+func (x *RelayLeaseReservation) GetRelayId() string {
+	if x != nil {
+		return x.RelayId
+	}
+	return ""
+}
+
+func (x *RelayLeaseReservation) GetRouteId() string {
+	if x != nil {
+		return x.RouteId
+	}
+	return ""
 }
 
 // RelayUsageAggregate 是当前 billing period 内按 managed session/route 聚合的已验证用量。
@@ -3963,7 +3987,7 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x0ereserved_bytes\x18\x06 \x01(\x04R\rreservedBytes\x12'\n" +
 	"\x0fremaining_bytes\x18\a \x01(\x04R\x0eremainingBytes\x12,\n" +
 	"\x12active_lease_count\x18\b \x01(\rR\x10activeLeaseCount\x12\x1a\n" +
-	"\brevision\x18\t \x01(\x04R\brevision\"\x95\x05\n" +
+	"\brevision\x18\t \x01(\x04R\brevision\"\xe2\x05\n" +
 	"\x15RelayLeaseReservation\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x1d\n" +
 	"\n" +
@@ -3982,7 +4006,10 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x16expires_at_unix_millis\x18\f \x01(\x03R\x13expiresAtUnixMillis\x123\n" +
 	"\x16updated_at_unix_millis\x18\r \x01(\x03R\x13updatedAtUnixMillis\x12\x1a\n" +
 	"\brevision\x18\x0e \x01(\x04R\brevision\x121\n" +
-	"\x15issued_at_unix_millis\x18\x0f \x01(\x03R\x12issuedAtUnixMillis\"\xe8\x02\n" +
+	"\x15issued_at_unix_millis\x18\x0f \x01(\x03R\x12issuedAtUnixMillis\x12\x15\n" +
+	"\x06hub_id\x18\x10 \x01(\tR\x05hubId\x12\x19\n" +
+	"\brelay_id\x18\x11 \x01(\tR\arelayId\x12\x19\n" +
+	"\broute_id\x18\x12 \x01(\tR\arouteId\"\xe8\x02\n" +
 	"\x13RelayUsageAggregate\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12,\n" +

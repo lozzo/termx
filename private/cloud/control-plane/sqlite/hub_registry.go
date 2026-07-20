@@ -47,8 +47,10 @@ CREATE TABLE IF NOT EXISTS hub_deployments(
   hub_id TEXT PRIMARY KEY, deployment_id TEXT NOT NULL, credential_fingerprint TEXT NOT NULL,
   control_public_key BLOB NOT NULL, relay_control_public_key BLOB NOT NULL, region TEXT NOT NULL, public_label TEXT NOT NULL,
   relay_id TEXT NOT NULL, relay_credential_fingerprint TEXT NOT NULL,
-  enabled INTEGER NOT NULL, last_control_generation INTEGER NOT NULL, updated_at TEXT NOT NULL
+  enabled INTEGER NOT NULL, last_control_generation INTEGER NOT NULL,
+  last_relay_control_generation INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL
 );
+CREATE UNIQUE INDEX IF NOT EXISTS hub_deployments_relay_id ON hub_deployments(relay_id);
 CREATE TABLE IF NOT EXISTS hub_assignments(
   daemon_device_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, hub_id TEXT NOT NULL,
   assignment_epoch INTEGER NOT NULL, not_before_unix_millis INTEGER NOT NULL,
@@ -177,6 +179,9 @@ CREATE TABLE IF NOT EXISTS management_command_results(
 	if err := store.ensureColumn("hub_deployments", "relay_control_public_key", "BLOB NOT NULL DEFAULT X''"); err != nil {
 		return err
 	}
+	if err := store.ensureColumn("hub_deployments", "last_relay_control_generation", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	return store.ensureColumn("cloud_device_ownership", "public_key", "BLOB NOT NULL DEFAULT X''")
 }
 
@@ -213,12 +218,12 @@ func (store *Store) ensureColumn(table, column, definition string) error {
 func (store *Store) PutDeployment(ctx context.Context, value hubregistry.Deployment) error {
 	metadata := value.Metadata
 	_, err := store.db.ExecContext(ctx, `INSERT INTO hub_deployments(
-hub_id,deployment_id,credential_fingerprint,control_public_key,relay_control_public_key,region,public_label,relay_id,relay_credential_fingerprint,enabled,last_control_generation,updated_at)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(hub_id) DO UPDATE SET
+hub_id,deployment_id,credential_fingerprint,control_public_key,relay_control_public_key,region,public_label,relay_id,relay_credential_fingerprint,enabled,last_control_generation,last_relay_control_generation,updated_at)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(hub_id) DO UPDATE SET
 deployment_id=excluded.deployment_id,credential_fingerprint=excluded.credential_fingerprint,control_public_key=excluded.control_public_key,
 relay_control_public_key=excluded.relay_control_public_key,
 region=excluded.region,public_label=excluded.public_label,relay_id=excluded.relay_id,relay_credential_fingerprint=excluded.relay_credential_fingerprint,
-enabled=excluded.enabled,updated_at=excluded.updated_at`, metadata.GetHubId(), metadata.GetEdgeDeploymentId(), metadata.GetHubControlIdentityFingerprint(), []byte(value.ControlPublicKey), []byte(value.RelayControlPublicKey), metadata.GetRegion(), metadata.GetPublicLabel(), metadata.GetRelayId(), metadata.GetRelayControlIdentityFingerprint(), boolInt(value.Enabled), value.ControlGeneration, value.UpdatedAt.UTC().Format(time.RFC3339Nano))
+enabled=excluded.enabled,updated_at=excluded.updated_at`, metadata.GetHubId(), metadata.GetEdgeDeploymentId(), metadata.GetHubControlIdentityFingerprint(), []byte(value.ControlPublicKey), []byte(value.RelayControlPublicKey), metadata.GetRegion(), metadata.GetPublicLabel(), metadata.GetRelayId(), metadata.GetRelayControlIdentityFingerprint(), boolInt(value.Enabled), value.ControlGeneration, value.RelayControlGeneration, value.UpdatedAt.UTC().Format(time.RFC3339Nano))
 	return err
 }
 
@@ -229,7 +234,7 @@ func (store *Store) Deployment(ctx context.Context, hubID string) (hubregistry.D
 	var publicKey, relayPublicKey []byte
 	var enabled int
 	var updated string
-	err := store.db.QueryRowContext(ctx, `SELECT deployment_id,credential_fingerprint,control_public_key,relay_control_public_key,region,public_label,relay_id,relay_credential_fingerprint,enabled,last_control_generation,updated_at FROM hub_deployments WHERE hub_id=?`, hubID).Scan(&metadata.EdgeDeploymentId, &metadata.HubControlIdentityFingerprint, &publicKey, &relayPublicKey, &metadata.Region, &metadata.PublicLabel, &metadata.RelayId, &metadata.RelayControlIdentityFingerprint, &enabled, &value.ControlGeneration, &updated)
+	err := store.db.QueryRowContext(ctx, `SELECT deployment_id,credential_fingerprint,control_public_key,relay_control_public_key,region,public_label,relay_id,relay_credential_fingerprint,enabled,last_control_generation,last_relay_control_generation,updated_at FROM hub_deployments WHERE hub_id=?`, hubID).Scan(&metadata.EdgeDeploymentId, &metadata.HubControlIdentityFingerprint, &publicKey, &relayPublicKey, &metadata.Region, &metadata.PublicLabel, &metadata.RelayId, &metadata.RelayControlIdentityFingerprint, &enabled, &value.ControlGeneration, &value.RelayControlGeneration, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return hubregistry.Deployment{}, hubregistry.ErrDeploymentNotFound
 	}
@@ -240,6 +245,19 @@ func (store *Store) Deployment(ctx context.Context, hubID string) (hubregistry.D
 	value.Metadata, value.ControlPublicKey, value.RelayControlPublicKey, value.Enabled = &metadata, append(ed25519.PublicKey(nil), publicKey...), append(ed25519.PublicKey(nil), relayPublicKey...), enabled != 0
 	value.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
 	return value, nil
+}
+
+// DeploymentByRelay 按唯一 relay_id 解析 deployment。
+func (store *Store) DeploymentByRelay(ctx context.Context, relayID string) (hubregistry.Deployment, error) {
+	var hubID string
+	err := store.db.QueryRowContext(ctx, `SELECT hub_id FROM hub_deployments WHERE relay_id=?`, relayID).Scan(&hubID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return hubregistry.Deployment{}, hubregistry.ErrDeploymentNotFound
+	}
+	if err != nil {
+		return hubregistry.Deployment{}, err
+	}
+	return store.Deployment(ctx, hubID)
 }
 
 // AdvanceControlGeneration 事务校验 deployment identity 并签发唯一递增 generation。
@@ -278,6 +296,52 @@ func (store *Store) ControlGenerationCurrent(ctx context.Context, hubID string, 
 	var current uint64
 	var enabled int
 	err := store.db.QueryRowContext(ctx, `SELECT last_control_generation,enabled FROM hub_deployments WHERE hub_id=?`, hubID).Scan(&current, &enabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, hubregistry.ErrDeploymentNotFound
+	}
+	return err == nil && enabled != 0 && current == generation, err
+}
+
+// AdvanceRelayControlGeneration 按 relay_id 校验独立 identity 并推进 Relay generation。
+func (store *Store) AdvanceRelayControlGeneration(ctx context.Context, relayID, deploymentID, fingerprint string, now time.Time) (hubregistry.Deployment, error) {
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return hubregistry.Deployment{}, err
+	}
+	defer tx.Rollback()
+	var hubID, storedDeployment, storedFingerprint string
+	var enabled int
+	var generation uint64
+	err = tx.QueryRowContext(ctx, `SELECT hub_id,deployment_id,relay_credential_fingerprint,enabled,last_relay_control_generation FROM hub_deployments WHERE relay_id=?`, relayID).Scan(&hubID, &storedDeployment, &storedFingerprint, &enabled, &generation)
+	if errors.Is(err, sql.ErrNoRows) || enabled == 0 {
+		return hubregistry.Deployment{}, hubregistry.ErrDeploymentNotFound
+	}
+	if err != nil {
+		return hubregistry.Deployment{}, err
+	}
+	if storedDeployment != deploymentID || storedFingerprint != fingerprint {
+		return hubregistry.Deployment{}, hubregistry.ErrDeploymentIdentity
+	}
+	generation++
+	result, err := tx.ExecContext(ctx, `UPDATE hub_deployments SET last_relay_control_generation=?,updated_at=? WHERE hub_id=? AND last_relay_control_generation=?`, generation, now.Format(time.RFC3339Nano), hubID, generation-1)
+	if err != nil {
+		return hubregistry.Deployment{}, err
+	}
+	changed, _ := result.RowsAffected()
+	if changed != 1 {
+		return hubregistry.Deployment{}, hubregistry.ErrStaleControlGeneration
+	}
+	if err := tx.Commit(); err != nil {
+		return hubregistry.Deployment{}, err
+	}
+	return store.Deployment(ctx, hubID)
+}
+
+// RelayControlGenerationCurrent 查询 Relay handler generation 是否仍为当前值。
+func (store *Store) RelayControlGenerationCurrent(ctx context.Context, relayID string, generation uint64) (bool, error) {
+	var current uint64
+	var enabled int
+	err := store.db.QueryRowContext(ctx, `SELECT last_relay_control_generation,enabled FROM hub_deployments WHERE relay_id=?`, relayID).Scan(&current, &enabled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, hubregistry.ErrDeploymentNotFound
 	}

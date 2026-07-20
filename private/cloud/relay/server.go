@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/lozzow/termx/proto/cloudpb"
 	pionturn "github.com/pion/turn/v4"
 )
 
@@ -118,6 +119,40 @@ func (server *Server) FlushUsageOutbox(outbox *UsageOutbox, terminationReason st
 		return ErrLeaseRejected
 	}
 	return server.authority.FlushUsageOutbox(outbox, terminationReason)
+}
+
+// FlushUsageOutboxFor 只提交 command target 对应的终止 usage。
+func (server *Server) FlushUsageOutboxFor(outbox *UsageOutbox, terminationReason, leaseID, managedSessionID string) error {
+	if server == nil || server.authority == nil {
+		return ErrLeaseRejected
+	}
+	return server.authority.FlushUsageOutboxFor(outbox, terminationReason, leaseID, managedSessionID)
+}
+
+// CloseAllocations 精确关闭 lease 或 managed session 的全部实际 relay connection。
+func (server *Server) CloseAllocations(leaseID, managedSessionID string) []*cloudpb.RelayAllocationCloseResult {
+	if server == nil || server.authority == nil || server.generator == nil || leaseID == "" && managedSessionID == "" {
+		return nil
+	}
+	allocationIDs := server.authority.AllocationIDs(leaseID, managedSessionID)
+	results := make([]*cloudpb.RelayAllocationCloseResult, 0, len(allocationIDs))
+	for _, allocationID := range allocationIDs {
+		result := &cloudpb.RelayAllocationCloseResult{AllocationId: allocationID, ResultCode: cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED}
+		if !server.generator.closeAllocation(allocationID) {
+			result.ResultCode = cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_PARTIAL
+			result.ErrorCode = "allocation_socket_unavailable"
+		}
+		results = append(results, result)
+	}
+	return results
+}
+
+// FinalUsageSequence 返回 lease 当前 durable drain sequence。
+func (server *Server) FinalUsageSequence(leaseID string) uint64 {
+	if server == nil || server.authority == nil {
+		return 0
+	}
+	return server.authority.FinalUsageSequence(leaseID)
 }
 
 // Close 幂等关闭 TURN server 和所有 active allocations。

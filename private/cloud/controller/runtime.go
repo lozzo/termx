@@ -24,6 +24,7 @@ import (
 	"github.com/lozzow/termx/private/cloud/control-plane/hubcontrol"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
 	cloudpolicy "github.com/lozzow/termx/private/cloud/control-plane/policy"
+	"github.com/lozzow/termx/private/cloud/control-plane/relaycontrol"
 	"github.com/lozzow/termx/private/cloud/control-plane/relaylease"
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
@@ -78,22 +79,23 @@ type Manifest struct {
 
 // Runtime 持有 Controller listener、SQLite 与 control publisher 生命周期。
 type Runtime struct {
-	store         *cloudsqlite.Store
-	publisher     *hubcontrol.Publisher
-	registry      *hubregistry.Registry
-	topology      *cloudtopology.Service
-	outbox        *commandoutbox.Service
-	planner       *commandoutbox.Planner
-	dispatcher    *commandoutbox.Dispatcher
-	manifest      Manifest
-	listeners     []net.Listener
-	servers       []*http.Server
-	errors        chan error
-	policyChanges chan string
-	policyDone    chan struct{}
-	policyWG      sync.WaitGroup
-	dispatcherWG  sync.WaitGroup
-	closeOnce     sync.Once
+	store          *cloudsqlite.Store
+	publisher      *hubcontrol.Publisher
+	relayPublisher *relaycontrol.Publisher
+	registry       *hubregistry.Registry
+	topology       *cloudtopology.Service
+	outbox         *commandoutbox.Service
+	planner        *commandoutbox.Planner
+	dispatcher     *commandoutbox.Dispatcher
+	manifest       Manifest
+	listeners      []net.Listener
+	servers        []*http.Server
+	errors         chan error
+	policyChanges  chan string
+	policyDone     chan struct{}
+	policyWG       sync.WaitGroup
+	dispatcherWG   sync.WaitGroup
+	closeOnce      sync.Once
 }
 
 // LoadConfig 读取 0600 development config；未知字段 fail closed。
@@ -223,12 +225,13 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		}
 	}
 	publisher := hubcontrol.NewPublisher()
+	relayPublisher := relaycontrol.NewPublisher()
 	outboxService, err := commandoutbox.New(store)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
 	}
-	planner, err := commandoutbox.NewPlanner(outboxService, topologyService, nil, notifyPolicyChange)
+	planner, err := commandoutbox.NewPlanner(outboxService, topologyService, store, nil, notifyPolicyChange)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -254,7 +257,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 			return nil, err
 		}
 	}
-	dispatcher, err := commandoutbox.NewDispatcher(outboxService, publisher, topologyService, config.DaemonControlKeyID, daemonControlKey)
+	dispatcher, err := commandoutbox.NewDispatcher(outboxService, publisher, relayPublisher, topologyService, config.DaemonControlKeyID, daemonControlKey)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -286,6 +289,11 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		}
 	}
 	controlServer, err := hubcontrol.NewServer(hubcontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: publisher, Topology: topologyService, Results: outboxService, Clock: time.Now, ChallengeTTL: 30 * time.Second, EnvelopeTTL: 5 * time.Minute})
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	relayControlServer, err := relaycontrol.NewServer(relaycontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: relayPublisher, Results: outboxService, Clock: time.Now, ChallengeTTL: 30 * time.Second, EnvelopeTTL: 5 * time.Minute})
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -331,6 +339,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	internalMux := http.NewServeMux()
 	internalMux.Handle(relaylease.InternalReservePath, relayLeaseHandler)
 	internalMux.Handle(usage.InternalReportPath, relayUsageHandler)
+	internalMux.Handle("/v1/relay/control/", relayControlServer.Handler())
 	internalMux.Handle("/", controlServer.Handler())
 	publicListener, err := listen(config.PublicListen)
 	if err != nil {
@@ -350,7 +359,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	runtime := &Runtime{store: store, publisher: publisher, registry: registry, topology: topologyService, outbox: outboxService, planner: planner, dispatcher: dispatcher, listeners: []net.Listener{publicListener, internalListener, operatorListener}, errors: make(chan error, 3), policyChanges: policyChanges, policyDone: policyDone}
+	runtime := &Runtime{store: store, publisher: publisher, relayPublisher: relayPublisher, registry: registry, topology: topologyService, outbox: outboxService, planner: planner, dispatcher: dispatcher, listeners: []net.Listener{publicListener, internalListener, operatorListener}, errors: make(chan error, 3), policyChanges: policyChanges, policyDone: policyDone}
 	runtime.servers = []*http.Server{{Handler: publicMux, ReadHeaderTimeout: 5 * time.Second}, {Handler: internalMux, ReadHeaderTimeout: 5 * time.Second}, {Handler: operatorMux, ReadHeaderTimeout: 5 * time.Second}}
 	for index := range runtime.servers {
 		server, listener := runtime.servers[index], runtime.listeners[index]
@@ -416,7 +425,7 @@ func (runtime *Runtime) runCommandDispatcher() {
 	defer ticker.Stop()
 	for {
 		err := runtime.dispatcher.DispatchOnce(context.Background(), time.Now().UTC(), 128)
-		if err != nil && !errors.Is(err, hubcontrol.ErrPublisherBackpressure) && !errors.Is(err, commandoutbox.ErrCommandConflict) && !errors.Is(err, commandoutbox.ErrCommandNotFound) {
+		if err != nil && !errors.Is(err, hubcontrol.ErrPublisherBackpressure) && !errors.Is(err, relaycontrol.ErrPublisherBackpressure) && !errors.Is(err, commandoutbox.ErrCommandConflict) && !errors.Is(err, commandoutbox.ErrCommandNotFound) {
 			runtime.reportPolicyError(err)
 		}
 		select {

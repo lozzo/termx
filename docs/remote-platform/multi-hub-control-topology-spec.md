@@ -680,17 +680,12 @@ temporary
 - daemon Presence challenge、Presence 和 signaling session 都绑定当前 assignment epoch；remove、replace、expiry 只关闭精确旧 epoch，迟到 fence 不影响新 epoch。
 - Hub projection 不再使用文件 snapshot；Edge 重启重新 full sync，Relay usage outbox 独立持久。
 - Relay 已有 lease enforcement、usage event 和 durable outbox。
+- daemon-owned ManagedPeerSession registry、runtime inventory、CP topology replacement、opaque terminal access、durable CommandOutbox 和 signed daemon deny-only command 已接通。
+- Relay 使用独立 challenge/open/report control stream、generation、sender sequence 和 result cursor；remote close 会关闭真实 allocation、drain final usage、settlement reservation 后推进 CommandOutbox。
 
 缺失：
 
-- daemon-owned ManagedPeerSession registry 和 lifecycle hooks。
-- 上行 `ReportDaemonRuntime`、inventory/event 线性化。
-- CP topology validation、full replacement 和 Web topology API。
-- daemon AccessStore 的 opaque terminal access inventory 与 Web 查询 API。
-- durable CommandOutbox 与精确 target fencing。
-- CP-signed daemon control command。
-- Relay control stream、allocation registry 和精确 revoke ack。
-- 当前 Web online bool 不能表达 unknown/stale。
+- CLOUDP006 尚需把已有账号、交易、subscription、usage、topology 和 command Proto API 组织成完整用户/运营页面，并移除旧 Web bool 投影噪声。
 
 旧 `hub-edge-control-plan.md` 中“生产 Hub 持久 snapshot/WAL”的目标由本文纯内存设计取代；该文档只保留历史背景。
 

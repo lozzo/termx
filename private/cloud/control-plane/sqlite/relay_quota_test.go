@@ -21,7 +21,7 @@ func TestRelayQuotaReserveReplayReleaseAndDelayedExpiry(t *testing.T) {
 	defer store.Close()
 	request := relayquota.ReserveRequest{
 		LeaseID: "lease-1", AccountID: "account-1", ManagedSessionID: "managed-1",
-		ClientDeviceID: "client-1", TargetDeviceID: "daemon-1", Region: "local-1",
+		ClientDeviceID: "client-1", TargetDeviceID: "daemon-1", Region: "local-1", HubID: "hub-1", RelayID: "relay-1",
 		PeriodStart: now.Add(-time.Hour), PeriodEnd: now.Add(24 * time.Hour), PeriodLimitBytes: 1_000,
 		MaxBytesPerLease: 600, MaxConcurrency: 2, ExpiresAt: now.Add(time.Minute), ReleaseAfter: now.Add(3 * time.Minute),
 	}

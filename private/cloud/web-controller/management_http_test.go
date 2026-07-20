@@ -45,7 +45,7 @@ func TestManagementAPIUsesAccountCSRFAndDurableCommandProjection(t *testing.T) {
 	for index := range randomBytes {
 		randomBytes[index] = byte(index + 1)
 	}
-	planner, _ := commandoutbox.NewPlanner(outbox, source, bytes.NewReader(randomBytes), nil)
+	planner, _ := commandoutbox.NewPlanner(outbox, source, nil, bytes.NewReader(randomBytes), nil)
 	managementHandler, _ := webcontroller.ManagementAPIHandler(webcontroller.ManagementAPIConfig{Commerce: commerceService, Planner: planner, Outbox: outbox, Accesses: source, Now: func() time.Time { return now }})
 	body, _ := protojson.MarshalOptions{UseProtoNames: true}.Marshal(&cloudpb.CreateManagementCommandRequest{AccountId: "other-account", CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_CLOSE_MANAGED_PEER_SESSION, Target: &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_PeerSession{PeerSession: target}}, IdempotencyKey: "idem-1"})
 	create := productRequest(http.MethodPost, "/api/v1/management/commands", string(body), cookies)

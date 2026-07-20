@@ -964,6 +964,188 @@ func (x *RelayControlChallenge) GetExpiresAtUnixMillis() int64 {
 	return 0
 }
 
+// RelayControlChallengeRequest 使用 Relay identity 请求一次性挑战。
+type RelayControlChallengeRequest struct {
+	state                           protoimpl.MessageState `protogen:"open.v1"`
+	RelayId                         string                 `protobuf:"bytes,1,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
+	EdgeDeploymentId                string                 `protobuf:"bytes,2,opt,name=edge_deployment_id,json=edgeDeploymentId,proto3" json:"edge_deployment_id,omitempty"`
+	RelayControlIdentityFingerprint string                 `protobuf:"bytes,3,opt,name=relay_control_identity_fingerprint,json=relayControlIdentityFingerprint,proto3" json:"relay_control_identity_fingerprint,omitempty"`
+	unknownFields                   protoimpl.UnknownFields
+	sizeCache                       protoimpl.SizeCache
+}
+
+func (x *RelayControlChallengeRequest) Reset() {
+	*x = RelayControlChallengeRequest{}
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RelayControlChallengeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RelayControlChallengeRequest) ProtoMessage() {}
+
+func (x *RelayControlChallengeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RelayControlChallengeRequest.ProtoReflect.Descriptor instead.
+func (*RelayControlChallengeRequest) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *RelayControlChallengeRequest) GetRelayId() string {
+	if x != nil {
+		return x.RelayId
+	}
+	return ""
+}
+
+func (x *RelayControlChallengeRequest) GetEdgeDeploymentId() string {
+	if x != nil {
+		return x.EdgeDeploymentId
+	}
+	return ""
+}
+
+func (x *RelayControlChallengeRequest) GetRelayControlIdentityFingerprint() string {
+	if x != nil {
+		return x.RelayControlIdentityFingerprint
+	}
+	return ""
+}
+
+type RelayControlChallengeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Challenge     *RelayControlChallenge `protobuf:"bytes,1,opt,name=challenge,proto3" json:"challenge,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RelayControlChallengeResponse) Reset() {
+	*x = RelayControlChallengeResponse{}
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RelayControlChallengeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RelayControlChallengeResponse) ProtoMessage() {}
+
+func (x *RelayControlChallengeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RelayControlChallengeResponse.ProtoReflect.Descriptor instead.
+func (*RelayControlChallengeResponse) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *RelayControlChallengeResponse) GetChallenge() *RelayControlChallenge {
+	if x != nil {
+		return x.Challenge
+	}
+	return nil
+}
+
+// RelayControlChallengeProofInput 是 Relay 与 Controller 共用的确定性签名输入。
+type RelayControlChallengeProofInput struct {
+	state                           protoimpl.MessageState `protogen:"open.v1"`
+	ChallengeId                     string                 `protobuf:"bytes,1,opt,name=challenge_id,json=challengeId,proto3" json:"challenge_id,omitempty"`
+	Challenge                       []byte                 `protobuf:"bytes,2,opt,name=challenge,proto3" json:"challenge,omitempty"`
+	RelayId                         string                 `protobuf:"bytes,3,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
+	EdgeDeploymentId                string                 `protobuf:"bytes,4,opt,name=edge_deployment_id,json=edgeDeploymentId,proto3" json:"edge_deployment_id,omitempty"`
+	RelayControlIdentityFingerprint string                 `protobuf:"bytes,5,opt,name=relay_control_identity_fingerprint,json=relayControlIdentityFingerprint,proto3" json:"relay_control_identity_fingerprint,omitempty"`
+	unknownFields                   protoimpl.UnknownFields
+	sizeCache                       protoimpl.SizeCache
+}
+
+func (x *RelayControlChallengeProofInput) Reset() {
+	*x = RelayControlChallengeProofInput{}
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RelayControlChallengeProofInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RelayControlChallengeProofInput) ProtoMessage() {}
+
+func (x *RelayControlChallengeProofInput) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RelayControlChallengeProofInput.ProtoReflect.Descriptor instead.
+func (*RelayControlChallengeProofInput) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RelayControlChallengeProofInput) GetChallengeId() string {
+	if x != nil {
+		return x.ChallengeId
+	}
+	return ""
+}
+
+func (x *RelayControlChallengeProofInput) GetChallenge() []byte {
+	if x != nil {
+		return x.Challenge
+	}
+	return nil
+}
+
+func (x *RelayControlChallengeProofInput) GetRelayId() string {
+	if x != nil {
+		return x.RelayId
+	}
+	return ""
+}
+
+func (x *RelayControlChallengeProofInput) GetEdgeDeploymentId() string {
+	if x != nil {
+		return x.EdgeDeploymentId
+	}
+	return ""
+}
+
+func (x *RelayControlChallengeProofInput) GetRelayControlIdentityFingerprint() string {
+	if x != nil {
+		return x.RelayControlIdentityFingerprint
+	}
+	return ""
+}
+
 // RelayHello 使用 Relay control key role，不能复用 Hub challenge proof。
 type RelayHello struct {
 	state                      protoimpl.MessageState  `protogen:"open.v1"`
@@ -978,7 +1160,7 @@ type RelayHello struct {
 
 func (x *RelayHello) Reset() {
 	*x = RelayHello{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[8]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -990,7 +1172,7 @@ func (x *RelayHello) String() string {
 func (*RelayHello) ProtoMessage() {}
 
 func (x *RelayHello) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[8]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1003,7 +1185,7 @@ func (x *RelayHello) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayHello.ProtoReflect.Descriptor instead.
 func (*RelayHello) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{8}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RelayHello) GetDeployment() *EdgeDeploymentMetadata {
@@ -1055,7 +1237,7 @@ type RelayControlReady struct {
 
 func (x *RelayControlReady) Reset() {
 	*x = RelayControlReady{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[9]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1067,7 +1249,7 @@ func (x *RelayControlReady) String() string {
 func (*RelayControlReady) ProtoMessage() {}
 
 func (x *RelayControlReady) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[9]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1080,7 +1262,7 @@ func (x *RelayControlReady) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayControlReady.ProtoReflect.Descriptor instead.
 func (*RelayControlReady) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{9}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RelayControlReady) GetRelayId() string {
@@ -1133,7 +1315,7 @@ type HubAssignment struct {
 
 func (x *HubAssignment) Reset() {
 	*x = HubAssignment{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[10]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1145,7 +1327,7 @@ func (x *HubAssignment) String() string {
 func (*HubAssignment) ProtoMessage() {}
 
 func (x *HubAssignment) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[10]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1158,7 +1340,7 @@ func (x *HubAssignment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HubAssignment.ProtoReflect.Descriptor instead.
 func (*HubAssignment) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{10}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *HubAssignment) GetDaemonDeviceId() string {
@@ -1218,7 +1400,7 @@ type CloudDevicePolicy struct {
 
 func (x *CloudDevicePolicy) Reset() {
 	*x = CloudDevicePolicy{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[11]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1230,7 +1412,7 @@ func (x *CloudDevicePolicy) String() string {
 func (*CloudDevicePolicy) ProtoMessage() {}
 
 func (x *CloudDevicePolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[11]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1243,7 +1425,7 @@ func (x *CloudDevicePolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloudDevicePolicy.ProtoReflect.Descriptor instead.
 func (*CloudDevicePolicy) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{11}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *CloudDevicePolicy) GetAccountId() string {
@@ -1303,7 +1485,7 @@ type HubAccountPolicy struct {
 
 func (x *HubAccountPolicy) Reset() {
 	*x = HubAccountPolicy{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[12]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1315,7 +1497,7 @@ func (x *HubAccountPolicy) String() string {
 func (*HubAccountPolicy) ProtoMessage() {}
 
 func (x *HubAccountPolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[12]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1328,7 +1510,7 @@ func (x *HubAccountPolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HubAccountPolicy.ProtoReflect.Descriptor instead.
 func (*HubAccountPolicy) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{12}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *HubAccountPolicy) GetAccountId() string {
@@ -1393,7 +1575,7 @@ type FullProjectionSnapshot struct {
 
 func (x *FullProjectionSnapshot) Reset() {
 	*x = FullProjectionSnapshot{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[13]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1405,7 +1587,7 @@ func (x *FullProjectionSnapshot) String() string {
 func (*FullProjectionSnapshot) ProtoMessage() {}
 
 func (x *FullProjectionSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[13]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1418,7 +1600,7 @@ func (x *FullProjectionSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FullProjectionSnapshot.ProtoReflect.Descriptor instead.
 func (*FullProjectionSnapshot) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{13}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *FullProjectionSnapshot) GetHubId() string {
@@ -1510,7 +1692,7 @@ type DevicePolicyDelta struct {
 
 func (x *DevicePolicyDelta) Reset() {
 	*x = DevicePolicyDelta{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[14]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1522,7 +1704,7 @@ func (x *DevicePolicyDelta) String() string {
 func (*DevicePolicyDelta) ProtoMessage() {}
 
 func (x *DevicePolicyDelta) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[14]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1535,7 +1717,7 @@ func (x *DevicePolicyDelta) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DevicePolicyDelta.ProtoReflect.Descriptor instead.
 func (*DevicePolicyDelta) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{14}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *DevicePolicyDelta) GetOperation() ProjectionDeltaOperation {
@@ -1571,7 +1753,7 @@ type HubAssignmentDelta struct {
 
 func (x *HubAssignmentDelta) Reset() {
 	*x = HubAssignmentDelta{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[15]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1583,7 +1765,7 @@ func (x *HubAssignmentDelta) String() string {
 func (*HubAssignmentDelta) ProtoMessage() {}
 
 func (x *HubAssignmentDelta) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[15]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1596,7 +1778,7 @@ func (x *HubAssignmentDelta) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HubAssignmentDelta.ProtoReflect.Descriptor instead.
 func (*HubAssignmentDelta) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{15}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *HubAssignmentDelta) GetOperation() ProjectionDeltaOperation {
@@ -1632,7 +1814,7 @@ type HubAccountPolicyDelta struct {
 
 func (x *HubAccountPolicyDelta) Reset() {
 	*x = HubAccountPolicyDelta{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[16]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1644,7 +1826,7 @@ func (x *HubAccountPolicyDelta) String() string {
 func (*HubAccountPolicyDelta) ProtoMessage() {}
 
 func (x *HubAccountPolicyDelta) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[16]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1657,7 +1839,7 @@ func (x *HubAccountPolicyDelta) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HubAccountPolicyDelta.ProtoReflect.Descriptor instead.
 func (*HubAccountPolicyDelta) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{16}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *HubAccountPolicyDelta) GetOperation() ProjectionDeltaOperation {
@@ -1701,7 +1883,7 @@ type PolicyDelta struct {
 
 func (x *PolicyDelta) Reset() {
 	*x = PolicyDelta{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[17]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1713,7 +1895,7 @@ func (x *PolicyDelta) String() string {
 func (*PolicyDelta) ProtoMessage() {}
 
 func (x *PolicyDelta) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[17]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1726,7 +1908,7 @@ func (x *PolicyDelta) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PolicyDelta.ProtoReflect.Descriptor instead.
 func (*PolicyDelta) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{17}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *PolicyDelta) GetHubId() string {
@@ -1819,7 +2001,7 @@ type ReconciliationDigest struct {
 
 func (x *ReconciliationDigest) Reset() {
 	*x = ReconciliationDigest{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[18]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1831,7 +2013,7 @@ func (x *ReconciliationDigest) String() string {
 func (*ReconciliationDigest) ProtoMessage() {}
 
 func (x *ReconciliationDigest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[18]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1844,7 +2026,7 @@ func (x *ReconciliationDigest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReconciliationDigest.ProtoReflect.Descriptor instead.
 func (*ReconciliationDigest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{18}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ReconciliationDigest) GetHubId() string {
@@ -1891,7 +2073,7 @@ type FenceAssignment struct {
 
 func (x *FenceAssignment) Reset() {
 	*x = FenceAssignment{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[19]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1903,7 +2085,7 @@ func (x *FenceAssignment) String() string {
 func (*FenceAssignment) ProtoMessage() {}
 
 func (x *FenceAssignment) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[19]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1916,7 +2098,7 @@ func (x *FenceAssignment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FenceAssignment.ProtoReflect.Descriptor instead.
 func (*FenceAssignment) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{19}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *FenceAssignment) GetMigrationId() string {
@@ -1980,7 +2162,7 @@ type KickPresenceTarget struct {
 
 func (x *KickPresenceTarget) Reset() {
 	*x = KickPresenceTarget{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[20]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1992,7 +2174,7 @@ func (x *KickPresenceTarget) String() string {
 func (*KickPresenceTarget) ProtoMessage() {}
 
 func (x *KickPresenceTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[20]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2005,7 +2187,7 @@ func (x *KickPresenceTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KickPresenceTarget.ProtoReflect.Descriptor instead.
 func (*KickPresenceTarget) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{20}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *KickPresenceTarget) GetDaemonDeviceId() string {
@@ -2044,7 +2226,7 @@ type RevokeTerminalAccessTarget struct {
 
 func (x *RevokeTerminalAccessTarget) Reset() {
 	*x = RevokeTerminalAccessTarget{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[21]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2056,7 +2238,7 @@ func (x *RevokeTerminalAccessTarget) String() string {
 func (*RevokeTerminalAccessTarget) ProtoMessage() {}
 
 func (x *RevokeTerminalAccessTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[21]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2069,7 +2251,7 @@ func (x *RevokeTerminalAccessTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeTerminalAccessTarget.ProtoReflect.Descriptor instead.
 func (*RevokeTerminalAccessTarget) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{21}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *RevokeTerminalAccessTarget) GetDaemonDeviceId() string {
@@ -2141,7 +2323,7 @@ type DaemonControlCommand struct {
 
 func (x *DaemonControlCommand) Reset() {
 	*x = DaemonControlCommand{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[22]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2153,7 +2335,7 @@ func (x *DaemonControlCommand) String() string {
 func (*DaemonControlCommand) ProtoMessage() {}
 
 func (x *DaemonControlCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[22]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2166,7 +2348,7 @@ func (x *DaemonControlCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonControlCommand.ProtoReflect.Descriptor instead.
 func (*DaemonControlCommand) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{22}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *DaemonControlCommand) GetCommandId() string {
@@ -2320,7 +2502,7 @@ type HubCommand struct {
 
 func (x *HubCommand) Reset() {
 	*x = HubCommand{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[23]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2332,7 +2514,7 @@ func (x *HubCommand) String() string {
 func (*HubCommand) ProtoMessage() {}
 
 func (x *HubCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[23]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2345,7 +2527,7 @@ func (x *HubCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HubCommand.ProtoReflect.Descriptor instead.
 func (*HubCommand) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{23}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *HubCommand) GetCommandId() string {
@@ -2448,7 +2630,7 @@ type HubCommandResult struct {
 
 func (x *HubCommandResult) Reset() {
 	*x = HubCommandResult{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[24]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2460,7 +2642,7 @@ func (x *HubCommandResult) String() string {
 func (*HubCommandResult) ProtoMessage() {}
 
 func (x *HubCommandResult) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[24]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2473,7 +2655,7 @@ func (x *HubCommandResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HubCommandResult.ProtoReflect.Descriptor instead.
 func (*HubCommandResult) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{24}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *HubCommandResult) GetCommandId() string {
@@ -2548,7 +2730,7 @@ type DaemonCommandResult struct {
 
 func (x *DaemonCommandResult) Reset() {
 	*x = DaemonCommandResult{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[25]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2560,7 +2742,7 @@ func (x *DaemonCommandResult) String() string {
 func (*DaemonCommandResult) ProtoMessage() {}
 
 func (x *DaemonCommandResult) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[25]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2573,7 +2755,7 @@ func (x *DaemonCommandResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonCommandResult.ProtoReflect.Descriptor instead.
 func (*DaemonCommandResult) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{25}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *DaemonCommandResult) GetCommandId() string {
@@ -2686,7 +2868,7 @@ type RelayControlTarget struct {
 
 func (x *RelayControlTarget) Reset() {
 	*x = RelayControlTarget{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[26]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2698,7 +2880,7 @@ func (x *RelayControlTarget) String() string {
 func (*RelayControlTarget) ProtoMessage() {}
 
 func (x *RelayControlTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[26]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2711,7 +2893,7 @@ func (x *RelayControlTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayControlTarget.ProtoReflect.Descriptor instead.
 func (*RelayControlTarget) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{26}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *RelayControlTarget) GetRelayId() string {
@@ -2750,7 +2932,7 @@ type RelayControlCommand struct {
 
 func (x *RelayControlCommand) Reset() {
 	*x = RelayControlCommand{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[27]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2762,7 +2944,7 @@ func (x *RelayControlCommand) String() string {
 func (*RelayControlCommand) ProtoMessage() {}
 
 func (x *RelayControlCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[27]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2775,7 +2957,7 @@ func (x *RelayControlCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayControlCommand.ProtoReflect.Descriptor instead.
 func (*RelayControlCommand) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{27}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *RelayControlCommand) GetCommandId() string {
@@ -2832,7 +3014,7 @@ type RelayAllocationCloseResult struct {
 
 func (x *RelayAllocationCloseResult) Reset() {
 	*x = RelayAllocationCloseResult{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[28]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2844,7 +3026,7 @@ func (x *RelayAllocationCloseResult) String() string {
 func (*RelayAllocationCloseResult) ProtoMessage() {}
 
 func (x *RelayAllocationCloseResult) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[28]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2857,7 +3039,7 @@ func (x *RelayAllocationCloseResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayAllocationCloseResult.ProtoReflect.Descriptor instead.
 func (*RelayAllocationCloseResult) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{28}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *RelayAllocationCloseResult) GetAllocationId() string {
@@ -2883,24 +3065,26 @@ func (x *RelayAllocationCloseResult) GetErrorCode() string {
 
 // RelayCommandResult 分离 allocation close、usage drain 与 settlement correlation。
 type RelayCommandResult struct {
-	state                  protoimpl.MessageState        `protogen:"open.v1"`
-	CommandId              string                        `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
-	RelayId                string                        `protobuf:"bytes,2,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
-	RelayControlGeneration uint64                        `protobuf:"varint,3,opt,name=relay_control_generation,json=relayControlGeneration,proto3" json:"relay_control_generation,omitempty"`
-	ResultCode             RuntimeCommandResultCode      `protobuf:"varint,4,opt,name=result_code,json=resultCode,proto3,enum=termx.cloud.v1.RuntimeCommandResultCode" json:"result_code,omitempty"`
-	Allocations            []*RelayAllocationCloseResult `protobuf:"bytes,5,rep,name=allocations,proto3" json:"allocations,omitempty"`
-	LeaseId                string                        `protobuf:"bytes,6,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
-	FinalUsageSequence     uint64                        `protobuf:"varint,7,opt,name=final_usage_sequence,json=finalUsageSequence,proto3" json:"final_usage_sequence,omitempty"`
-	UsageDrainComplete     bool                          `protobuf:"varint,8,opt,name=usage_drain_complete,json=usageDrainComplete,proto3" json:"usage_drain_complete,omitempty"`
-	ErrorCode              string                        `protobuf:"bytes,9,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
-	CompletedAtUnixMillis  int64                         `protobuf:"varint,10,opt,name=completed_at_unix_millis,json=completedAtUnixMillis,proto3" json:"completed_at_unix_millis,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	state                   protoimpl.MessageState        `protogen:"open.v1"`
+	CommandId               string                        `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	RelayId                 string                        `protobuf:"bytes,2,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
+	RelayControlGeneration  uint64                        `protobuf:"varint,3,opt,name=relay_control_generation,json=relayControlGeneration,proto3" json:"relay_control_generation,omitempty"`
+	ResultCode              RuntimeCommandResultCode      `protobuf:"varint,4,opt,name=result_code,json=resultCode,proto3,enum=termx.cloud.v1.RuntimeCommandResultCode" json:"result_code,omitempty"`
+	Allocations             []*RelayAllocationCloseResult `protobuf:"bytes,5,rep,name=allocations,proto3" json:"allocations,omitempty"`
+	LeaseId                 string                        `protobuf:"bytes,6,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	FinalUsageSequence      uint64                        `protobuf:"varint,7,opt,name=final_usage_sequence,json=finalUsageSequence,proto3" json:"final_usage_sequence,omitempty"`
+	UsageDrainComplete      bool                          `protobuf:"varint,8,opt,name=usage_drain_complete,json=usageDrainComplete,proto3" json:"usage_drain_complete,omitempty"`
+	ErrorCode               string                        `protobuf:"bytes,9,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	CompletedAtUnixMillis   int64                         `protobuf:"varint,10,opt,name=completed_at_unix_millis,json=completedAtUnixMillis,proto3" json:"completed_at_unix_millis,omitempty"`
+	UsageSettlementComplete bool                          `protobuf:"varint,11,opt,name=usage_settlement_complete,json=usageSettlementComplete,proto3" json:"usage_settlement_complete,omitempty"`
+	SettledUsage            []*RelayUsageAck              `protobuf:"bytes,12,rep,name=settled_usage,json=settledUsage,proto3" json:"settled_usage,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *RelayCommandResult) Reset() {
 	*x = RelayCommandResult{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[29]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2912,7 +3096,7 @@ func (x *RelayCommandResult) String() string {
 func (*RelayCommandResult) ProtoMessage() {}
 
 func (x *RelayCommandResult) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[29]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2925,7 +3109,7 @@ func (x *RelayCommandResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayCommandResult.ProtoReflect.Descriptor instead.
 func (*RelayCommandResult) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{29}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *RelayCommandResult) GetCommandId() string {
@@ -2998,6 +3182,20 @@ func (x *RelayCommandResult) GetCompletedAtUnixMillis() int64 {
 	return 0
 }
 
+func (x *RelayCommandResult) GetUsageSettlementComplete() bool {
+	if x != nil {
+		return x.UsageSettlementComplete
+	}
+	return false
+}
+
+func (x *RelayCommandResult) GetSettledUsage() []*RelayUsageAck {
+	if x != nil {
+		return x.SettledUsage
+	}
+	return nil
+}
+
 // RelayControlEnvelope 是 Controller 到 Relay runtime 的独立下行 envelope。
 type RelayControlEnvelope struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
@@ -3019,7 +3217,7 @@ type RelayControlEnvelope struct {
 
 func (x *RelayControlEnvelope) Reset() {
 	*x = RelayControlEnvelope{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[30]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3031,7 +3229,7 @@ func (x *RelayControlEnvelope) String() string {
 func (*RelayControlEnvelope) ProtoMessage() {}
 
 func (x *RelayControlEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[30]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3044,7 +3242,7 @@ func (x *RelayControlEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayControlEnvelope.ProtoReflect.Descriptor instead.
 func (*RelayControlEnvelope) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{30}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *RelayControlEnvelope) GetRelayId() string {
@@ -3157,7 +3355,7 @@ type RelayRuntimeEnvelope struct {
 
 func (x *RelayRuntimeEnvelope) Reset() {
 	*x = RelayRuntimeEnvelope{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[31]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3169,7 +3367,7 @@ func (x *RelayRuntimeEnvelope) String() string {
 func (*RelayRuntimeEnvelope) ProtoMessage() {}
 
 func (x *RelayRuntimeEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[31]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3182,7 +3380,7 @@ func (x *RelayRuntimeEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayRuntimeEnvelope.ProtoReflect.Descriptor instead.
 func (*RelayRuntimeEnvelope) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{31}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *RelayRuntimeEnvelope) GetRelayId() string {
@@ -3260,6 +3458,95 @@ type RelayRuntimeEnvelope_CommandResult struct {
 
 func (*RelayRuntimeEnvelope_CommandResult) isRelayRuntimeEnvelope_Payload() {}
 
+// ReportRelayRuntimeRequest 是 Relay 独立 control stream 的有界结果 batch。
+type ReportRelayRuntimeRequest struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Envelopes     []*RelayRuntimeEnvelope `protobuf:"bytes,1,rep,name=envelopes,proto3" json:"envelopes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportRelayRuntimeRequest) Reset() {
+	*x = ReportRelayRuntimeRequest{}
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportRelayRuntimeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportRelayRuntimeRequest) ProtoMessage() {}
+
+func (x *ReportRelayRuntimeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportRelayRuntimeRequest.ProtoReflect.Descriptor instead.
+func (*ReportRelayRuntimeRequest) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *ReportRelayRuntimeRequest) GetEnvelopes() []*RelayRuntimeEnvelope {
+	if x != nil {
+		return x.Envelopes
+	}
+	return nil
+}
+
+type ReportRelayRuntimeResponse struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	AcceptedSenderSequence uint64                 `protobuf:"varint,1,opt,name=accepted_sender_sequence,json=acceptedSenderSequence,proto3" json:"accepted_sender_sequence,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *ReportRelayRuntimeResponse) Reset() {
+	*x = ReportRelayRuntimeResponse{}
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportRelayRuntimeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportRelayRuntimeResponse) ProtoMessage() {}
+
+func (x *ReportRelayRuntimeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportRelayRuntimeResponse.ProtoReflect.Descriptor instead.
+func (*ReportRelayRuntimeResponse) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *ReportRelayRuntimeResponse) GetAcceptedSenderSequence() uint64 {
+	if x != nil {
+		return x.AcceptedSenderSequence
+	}
+	return 0
+}
+
 // HubControlEnvelope 是 Controller 到 Hub 的下行 envelope。
 type HubControlEnvelope struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
@@ -3284,7 +3571,7 @@ type HubControlEnvelope struct {
 
 func (x *HubControlEnvelope) Reset() {
 	*x = HubControlEnvelope{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[32]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3296,7 +3583,7 @@ func (x *HubControlEnvelope) String() string {
 func (*HubControlEnvelope) ProtoMessage() {}
 
 func (x *HubControlEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[32]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3309,7 +3596,7 @@ func (x *HubControlEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HubControlEnvelope.ProtoReflect.Descriptor instead.
 func (*HubControlEnvelope) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{32}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *HubControlEnvelope) GetHubId() string {
@@ -3470,7 +3757,7 @@ type HubRuntimeEnvelope struct {
 
 func (x *HubRuntimeEnvelope) Reset() {
 	*x = HubRuntimeEnvelope{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[33]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3482,7 +3769,7 @@ func (x *HubRuntimeEnvelope) String() string {
 func (*HubRuntimeEnvelope) ProtoMessage() {}
 
 func (x *HubRuntimeEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[33]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3495,7 +3782,7 @@ func (x *HubRuntimeEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HubRuntimeEnvelope.ProtoReflect.Descriptor instead.
 func (*HubRuntimeEnvelope) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{33}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *HubRuntimeEnvelope) GetHubId() string {
@@ -3628,7 +3915,7 @@ type ReportHubRuntimeRequest struct {
 
 func (x *ReportHubRuntimeRequest) Reset() {
 	*x = ReportHubRuntimeRequest{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[34]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3640,7 +3927,7 @@ func (x *ReportHubRuntimeRequest) String() string {
 func (*ReportHubRuntimeRequest) ProtoMessage() {}
 
 func (x *ReportHubRuntimeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[34]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3653,7 +3940,7 @@ func (x *ReportHubRuntimeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportHubRuntimeRequest.ProtoReflect.Descriptor instead.
 func (*ReportHubRuntimeRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{34}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ReportHubRuntimeRequest) GetEnvelopes() []*HubRuntimeEnvelope {
@@ -3674,7 +3961,7 @@ type ReportHubRuntimeResponse struct {
 
 func (x *ReportHubRuntimeResponse) Reset() {
 	*x = ReportHubRuntimeResponse{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[35]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3686,7 +3973,7 @@ func (x *ReportHubRuntimeResponse) String() string {
 func (*ReportHubRuntimeResponse) ProtoMessage() {}
 
 func (x *ReportHubRuntimeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[35]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3699,7 +3986,7 @@ func (x *ReportHubRuntimeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportHubRuntimeResponse.ProtoReflect.Descriptor instead.
 func (*ReportHubRuntimeResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{35}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ReportHubRuntimeResponse) GetAcceptedSenderSequence() uint64 {
@@ -3734,7 +4021,7 @@ type ReserveRelayLeaseRequest struct {
 
 func (x *ReserveRelayLeaseRequest) Reset() {
 	*x = ReserveRelayLeaseRequest{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[36]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3746,7 +4033,7 @@ func (x *ReserveRelayLeaseRequest) String() string {
 func (*ReserveRelayLeaseRequest) ProtoMessage() {}
 
 func (x *ReserveRelayLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[36]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3759,7 +4046,7 @@ func (x *ReserveRelayLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReserveRelayLeaseRequest.ProtoReflect.Descriptor instead.
 func (*ReserveRelayLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{36}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *ReserveRelayLeaseRequest) GetAccountId() string {
@@ -3844,7 +4131,7 @@ type RelayUsageEvent struct {
 
 func (x *RelayUsageEvent) Reset() {
 	*x = RelayUsageEvent{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[37]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3856,7 +4143,7 @@ func (x *RelayUsageEvent) String() string {
 func (*RelayUsageEvent) ProtoMessage() {}
 
 func (x *RelayUsageEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[37]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3869,7 +4156,7 @@ func (x *RelayUsageEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayUsageEvent.ProtoReflect.Descriptor instead.
 func (*RelayUsageEvent) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{37}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *RelayUsageEvent) GetEventId() string {
@@ -3995,7 +4282,7 @@ type RelayUsageRecord struct {
 
 func (x *RelayUsageRecord) Reset() {
 	*x = RelayUsageRecord{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[38]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4007,7 +4294,7 @@ func (x *RelayUsageRecord) String() string {
 func (*RelayUsageRecord) ProtoMessage() {}
 
 func (x *RelayUsageRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[38]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4020,7 +4307,7 @@ func (x *RelayUsageRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayUsageRecord.ProtoReflect.Descriptor instead.
 func (*RelayUsageRecord) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{38}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *RelayUsageRecord) GetSignedLease() []byte {
@@ -4049,7 +4336,7 @@ type ReportRelayUsageRequest struct {
 
 func (x *ReportRelayUsageRequest) Reset() {
 	*x = ReportRelayUsageRequest{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[39]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4061,7 +4348,7 @@ func (x *ReportRelayUsageRequest) String() string {
 func (*ReportRelayUsageRequest) ProtoMessage() {}
 
 func (x *ReportRelayUsageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[39]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4074,7 +4361,7 @@ func (x *ReportRelayUsageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportRelayUsageRequest.ProtoReflect.Descriptor instead.
 func (*ReportRelayUsageRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{39}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *ReportRelayUsageRequest) GetRelayId() string {
@@ -4110,7 +4397,7 @@ type RelayUsageAck struct {
 
 func (x *RelayUsageAck) Reset() {
 	*x = RelayUsageAck{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[40]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4122,7 +4409,7 @@ func (x *RelayUsageAck) String() string {
 func (*RelayUsageAck) ProtoMessage() {}
 
 func (x *RelayUsageAck) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[40]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4135,7 +4422,7 @@ func (x *RelayUsageAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayUsageAck.ProtoReflect.Descriptor instead.
 func (*RelayUsageAck) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{40}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *RelayUsageAck) GetEventId() string {
@@ -4168,7 +4455,7 @@ type ReportRelayUsageResponse struct {
 
 func (x *ReportRelayUsageResponse) Reset() {
 	*x = ReportRelayUsageResponse{}
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[41]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4180,7 +4467,7 @@ func (x *ReportRelayUsageResponse) String() string {
 func (*ReportRelayUsageResponse) ProtoMessage() {}
 
 func (x *ReportRelayUsageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[41]
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4193,7 +4480,7 @@ func (x *ReportRelayUsageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportRelayUsageResponse.ProtoReflect.Descriptor instead.
 func (*ReportRelayUsageResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{41}
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *ReportRelayUsageResponse) GetAcknowledgements() []*RelayUsageAck {
@@ -4251,7 +4538,19 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\x15RelayControlChallenge\x12!\n" +
 	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12\x1c\n" +
 	"\tchallenge\x18\x02 \x01(\fR\tchallenge\x123\n" +
-	"\x16expires_at_unix_millis\x18\x03 \x01(\x03R\x13expiresAtUnixMillis\"\x96\x02\n" +
+	"\x16expires_at_unix_millis\x18\x03 \x01(\x03R\x13expiresAtUnixMillis\"\xb4\x01\n" +
+	"\x1cRelayControlChallengeRequest\x12\x19\n" +
+	"\brelay_id\x18\x01 \x01(\tR\arelayId\x12,\n" +
+	"\x12edge_deployment_id\x18\x02 \x01(\tR\x10edgeDeploymentId\x12K\n" +
+	"\"relay_control_identity_fingerprint\x18\x03 \x01(\tR\x1frelayControlIdentityFingerprint\"d\n" +
+	"\x1dRelayControlChallengeResponse\x12C\n" +
+	"\tchallenge\x18\x01 \x01(\v2%.termx.cloud.v1.RelayControlChallengeR\tchallenge\"\xf8\x01\n" +
+	"\x1fRelayControlChallengeProofInput\x12!\n" +
+	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12\x1c\n" +
+	"\tchallenge\x18\x02 \x01(\fR\tchallenge\x12\x19\n" +
+	"\brelay_id\x18\x03 \x01(\tR\arelayId\x12,\n" +
+	"\x12edge_deployment_id\x18\x04 \x01(\tR\x10edgeDeploymentId\x12K\n" +
+	"\"relay_control_identity_fingerprint\x18\x05 \x01(\tR\x1frelayControlIdentityFingerprint\"\x96\x02\n" +
 	"\n" +
 	"RelayHello\x12F\n" +
 	"\n" +
@@ -4442,7 +4741,7 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\vresult_code\x18\x02 \x01(\x0e2(.termx.cloud.v1.RuntimeCommandResultCodeR\n" +
 	"resultCode\x12\x1d\n" +
 	"\n" +
-	"error_code\x18\x03 \x01(\tR\terrorCode\"\xf8\x03\n" +
+	"error_code\x18\x03 \x01(\tR\terrorCode\"\xf8\x04\n" +
 	"\x12RelayCommandResult\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x19\n" +
@@ -4457,7 +4756,9 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\n" +
 	"error_code\x18\t \x01(\tR\terrorCode\x127\n" +
 	"\x18completed_at_unix_millis\x18\n" +
-	" \x01(\x03R\x15completedAtUnixMillis\"\xf5\x03\n" +
+	" \x01(\x03R\x15completedAtUnixMillis\x12:\n" +
+	"\x19usage_settlement_complete\x18\v \x01(\bR\x17usageSettlementComplete\x12B\n" +
+	"\rsettled_usage\x18\f \x03(\v2\x1d.termx.cloud.v1.RelayUsageAckR\fsettledUsage\"\xf5\x03\n" +
 	"\x14RelayControlEnvelope\x12\x19\n" +
 	"\brelay_id\x18\x01 \x01(\tR\arelayId\x12,\n" +
 	"\x12edge_deployment_id\x18\x02 \x01(\tR\x10edgeDeploymentId\x128\n" +
@@ -4482,7 +4783,11 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\x16expires_at_unix_millis\x18\a \x01(\x03R\x13expiresAtUnixMillis\x12K\n" +
 	"\x0ecommand_result\x18\n" +
 	" \x01(\v2\".termx.cloud.v1.RelayCommandResultH\x00R\rcommandResultB\t\n" +
-	"\apayload\"\xbf\x05\n" +
+	"\apayload\"_\n" +
+	"\x19ReportRelayRuntimeRequest\x12B\n" +
+	"\tenvelopes\x18\x01 \x03(\v2$.termx.cloud.v1.RelayRuntimeEnvelopeR\tenvelopes\"V\n" +
+	"\x1aReportRelayRuntimeResponse\x128\n" +
+	"\x18accepted_sender_sequence\x18\x01 \x01(\x04R\x16acceptedSenderSequence\"\xbf\x05\n" +
 	"\x12HubControlEnvelope\x12\x15\n" +
 	"\x06hub_id\x18\x01 \x01(\tR\x05hubId\x12,\n" +
 	"\x12edge_deployment_id\x18\x02 \x01(\tR\x10edgeDeploymentId\x12-\n" +
@@ -4611,123 +4916,131 @@ func file_cloudpb_cloud_hub_control_proto_rawDescGZIP() []byte {
 }
 
 var file_cloudpb_cloud_hub_control_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_cloudpb_cloud_hub_control_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
+var file_cloudpb_cloud_hub_control_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
 var file_cloudpb_cloud_hub_control_proto_goTypes = []any{
-	(ControlServiceRole)(0),               // 0: termx.cloud.v1.ControlServiceRole
-	(ControlSenderRole)(0),                // 1: termx.cloud.v1.ControlSenderRole
-	(ProjectionDeltaOperation)(0),         // 2: termx.cloud.v1.ProjectionDeltaOperation
-	(HubCommandKind)(0),                   // 3: termx.cloud.v1.HubCommandKind
-	(DaemonControlCommandKind)(0),         // 4: termx.cloud.v1.DaemonControlCommandKind
-	(RelayControlCommandKind)(0),          // 5: termx.cloud.v1.RelayControlCommandKind
-	(RuntimeCommandResultCode)(0),         // 6: termx.cloud.v1.RuntimeCommandResultCode
-	(*EdgeDeploymentMetadata)(nil),        // 7: termx.cloud.v1.EdgeDeploymentMetadata
-	(*HubControlChallenge)(nil),           // 8: termx.cloud.v1.HubControlChallenge
-	(*HubControlChallengeRequest)(nil),    // 9: termx.cloud.v1.HubControlChallengeRequest
-	(*HubControlChallengeResponse)(nil),   // 10: termx.cloud.v1.HubControlChallengeResponse
-	(*HubControlChallengeProofInput)(nil), // 11: termx.cloud.v1.HubControlChallengeProofInput
-	(*HubHello)(nil),                      // 12: termx.cloud.v1.HubHello
-	(*ControlStreamReady)(nil),            // 13: termx.cloud.v1.ControlStreamReady
-	(*RelayControlChallenge)(nil),         // 14: termx.cloud.v1.RelayControlChallenge
-	(*RelayHello)(nil),                    // 15: termx.cloud.v1.RelayHello
-	(*RelayControlReady)(nil),             // 16: termx.cloud.v1.RelayControlReady
-	(*HubAssignment)(nil),                 // 17: termx.cloud.v1.HubAssignment
-	(*CloudDevicePolicy)(nil),             // 18: termx.cloud.v1.CloudDevicePolicy
-	(*HubAccountPolicy)(nil),              // 19: termx.cloud.v1.HubAccountPolicy
-	(*FullProjectionSnapshot)(nil),        // 20: termx.cloud.v1.FullProjectionSnapshot
-	(*DevicePolicyDelta)(nil),             // 21: termx.cloud.v1.DevicePolicyDelta
-	(*HubAssignmentDelta)(nil),            // 22: termx.cloud.v1.HubAssignmentDelta
-	(*HubAccountPolicyDelta)(nil),         // 23: termx.cloud.v1.HubAccountPolicyDelta
-	(*PolicyDelta)(nil),                   // 24: termx.cloud.v1.PolicyDelta
-	(*ReconciliationDigest)(nil),          // 25: termx.cloud.v1.ReconciliationDigest
-	(*FenceAssignment)(nil),               // 26: termx.cloud.v1.FenceAssignment
-	(*KickPresenceTarget)(nil),            // 27: termx.cloud.v1.KickPresenceTarget
-	(*RevokeTerminalAccessTarget)(nil),    // 28: termx.cloud.v1.RevokeTerminalAccessTarget
-	(*DaemonControlCommand)(nil),          // 29: termx.cloud.v1.DaemonControlCommand
-	(*HubCommand)(nil),                    // 30: termx.cloud.v1.HubCommand
-	(*HubCommandResult)(nil),              // 31: termx.cloud.v1.HubCommandResult
-	(*DaemonCommandResult)(nil),           // 32: termx.cloud.v1.DaemonCommandResult
-	(*RelayControlTarget)(nil),            // 33: termx.cloud.v1.RelayControlTarget
-	(*RelayControlCommand)(nil),           // 34: termx.cloud.v1.RelayControlCommand
-	(*RelayAllocationCloseResult)(nil),    // 35: termx.cloud.v1.RelayAllocationCloseResult
-	(*RelayCommandResult)(nil),            // 36: termx.cloud.v1.RelayCommandResult
-	(*RelayControlEnvelope)(nil),          // 37: termx.cloud.v1.RelayControlEnvelope
-	(*RelayRuntimeEnvelope)(nil),          // 38: termx.cloud.v1.RelayRuntimeEnvelope
-	(*HubControlEnvelope)(nil),            // 39: termx.cloud.v1.HubControlEnvelope
-	(*HubRuntimeEnvelope)(nil),            // 40: termx.cloud.v1.HubRuntimeEnvelope
-	(*ReportHubRuntimeRequest)(nil),       // 41: termx.cloud.v1.ReportHubRuntimeRequest
-	(*ReportHubRuntimeResponse)(nil),      // 42: termx.cloud.v1.ReportHubRuntimeResponse
-	(*ReserveRelayLeaseRequest)(nil),      // 43: termx.cloud.v1.ReserveRelayLeaseRequest
-	(*RelayUsageEvent)(nil),               // 44: termx.cloud.v1.RelayUsageEvent
-	(*RelayUsageRecord)(nil),              // 45: termx.cloud.v1.RelayUsageRecord
-	(*ReportRelayUsageRequest)(nil),       // 46: termx.cloud.v1.ReportRelayUsageRequest
-	(*RelayUsageAck)(nil),                 // 47: termx.cloud.v1.RelayUsageAck
-	(*ReportRelayUsageResponse)(nil),      // 48: termx.cloud.v1.ReportRelayUsageResponse
-	(ManagedDeviceKind)(0),                // 49: termx.cloud.v1.ManagedDeviceKind
-	(EntitlementStatus)(0),                // 50: termx.cloud.v1.EntitlementStatus
-	(*PlanCapability)(nil),                // 51: termx.cloud.v1.PlanCapability
-	(*ManagedPeerSessionTarget)(nil),      // 52: termx.cloud.v1.ManagedPeerSessionTarget
-	(*HubTopologySnapshot)(nil),           // 53: termx.cloud.v1.HubTopologySnapshot
-	(ObservedPath)(0),                     // 54: termx.cloud.v1.ObservedPath
+	(ControlServiceRole)(0),                 // 0: termx.cloud.v1.ControlServiceRole
+	(ControlSenderRole)(0),                  // 1: termx.cloud.v1.ControlSenderRole
+	(ProjectionDeltaOperation)(0),           // 2: termx.cloud.v1.ProjectionDeltaOperation
+	(HubCommandKind)(0),                     // 3: termx.cloud.v1.HubCommandKind
+	(DaemonControlCommandKind)(0),           // 4: termx.cloud.v1.DaemonControlCommandKind
+	(RelayControlCommandKind)(0),            // 5: termx.cloud.v1.RelayControlCommandKind
+	(RuntimeCommandResultCode)(0),           // 6: termx.cloud.v1.RuntimeCommandResultCode
+	(*EdgeDeploymentMetadata)(nil),          // 7: termx.cloud.v1.EdgeDeploymentMetadata
+	(*HubControlChallenge)(nil),             // 8: termx.cloud.v1.HubControlChallenge
+	(*HubControlChallengeRequest)(nil),      // 9: termx.cloud.v1.HubControlChallengeRequest
+	(*HubControlChallengeResponse)(nil),     // 10: termx.cloud.v1.HubControlChallengeResponse
+	(*HubControlChallengeProofInput)(nil),   // 11: termx.cloud.v1.HubControlChallengeProofInput
+	(*HubHello)(nil),                        // 12: termx.cloud.v1.HubHello
+	(*ControlStreamReady)(nil),              // 13: termx.cloud.v1.ControlStreamReady
+	(*RelayControlChallenge)(nil),           // 14: termx.cloud.v1.RelayControlChallenge
+	(*RelayControlChallengeRequest)(nil),    // 15: termx.cloud.v1.RelayControlChallengeRequest
+	(*RelayControlChallengeResponse)(nil),   // 16: termx.cloud.v1.RelayControlChallengeResponse
+	(*RelayControlChallengeProofInput)(nil), // 17: termx.cloud.v1.RelayControlChallengeProofInput
+	(*RelayHello)(nil),                      // 18: termx.cloud.v1.RelayHello
+	(*RelayControlReady)(nil),               // 19: termx.cloud.v1.RelayControlReady
+	(*HubAssignment)(nil),                   // 20: termx.cloud.v1.HubAssignment
+	(*CloudDevicePolicy)(nil),               // 21: termx.cloud.v1.CloudDevicePolicy
+	(*HubAccountPolicy)(nil),                // 22: termx.cloud.v1.HubAccountPolicy
+	(*FullProjectionSnapshot)(nil),          // 23: termx.cloud.v1.FullProjectionSnapshot
+	(*DevicePolicyDelta)(nil),               // 24: termx.cloud.v1.DevicePolicyDelta
+	(*HubAssignmentDelta)(nil),              // 25: termx.cloud.v1.HubAssignmentDelta
+	(*HubAccountPolicyDelta)(nil),           // 26: termx.cloud.v1.HubAccountPolicyDelta
+	(*PolicyDelta)(nil),                     // 27: termx.cloud.v1.PolicyDelta
+	(*ReconciliationDigest)(nil),            // 28: termx.cloud.v1.ReconciliationDigest
+	(*FenceAssignment)(nil),                 // 29: termx.cloud.v1.FenceAssignment
+	(*KickPresenceTarget)(nil),              // 30: termx.cloud.v1.KickPresenceTarget
+	(*RevokeTerminalAccessTarget)(nil),      // 31: termx.cloud.v1.RevokeTerminalAccessTarget
+	(*DaemonControlCommand)(nil),            // 32: termx.cloud.v1.DaemonControlCommand
+	(*HubCommand)(nil),                      // 33: termx.cloud.v1.HubCommand
+	(*HubCommandResult)(nil),                // 34: termx.cloud.v1.HubCommandResult
+	(*DaemonCommandResult)(nil),             // 35: termx.cloud.v1.DaemonCommandResult
+	(*RelayControlTarget)(nil),              // 36: termx.cloud.v1.RelayControlTarget
+	(*RelayControlCommand)(nil),             // 37: termx.cloud.v1.RelayControlCommand
+	(*RelayAllocationCloseResult)(nil),      // 38: termx.cloud.v1.RelayAllocationCloseResult
+	(*RelayCommandResult)(nil),              // 39: termx.cloud.v1.RelayCommandResult
+	(*RelayControlEnvelope)(nil),            // 40: termx.cloud.v1.RelayControlEnvelope
+	(*RelayRuntimeEnvelope)(nil),            // 41: termx.cloud.v1.RelayRuntimeEnvelope
+	(*ReportRelayRuntimeRequest)(nil),       // 42: termx.cloud.v1.ReportRelayRuntimeRequest
+	(*ReportRelayRuntimeResponse)(nil),      // 43: termx.cloud.v1.ReportRelayRuntimeResponse
+	(*HubControlEnvelope)(nil),              // 44: termx.cloud.v1.HubControlEnvelope
+	(*HubRuntimeEnvelope)(nil),              // 45: termx.cloud.v1.HubRuntimeEnvelope
+	(*ReportHubRuntimeRequest)(nil),         // 46: termx.cloud.v1.ReportHubRuntimeRequest
+	(*ReportHubRuntimeResponse)(nil),        // 47: termx.cloud.v1.ReportHubRuntimeResponse
+	(*ReserveRelayLeaseRequest)(nil),        // 48: termx.cloud.v1.ReserveRelayLeaseRequest
+	(*RelayUsageEvent)(nil),                 // 49: termx.cloud.v1.RelayUsageEvent
+	(*RelayUsageRecord)(nil),                // 50: termx.cloud.v1.RelayUsageRecord
+	(*ReportRelayUsageRequest)(nil),         // 51: termx.cloud.v1.ReportRelayUsageRequest
+	(*RelayUsageAck)(nil),                   // 52: termx.cloud.v1.RelayUsageAck
+	(*ReportRelayUsageResponse)(nil),        // 53: termx.cloud.v1.ReportRelayUsageResponse
+	(ManagedDeviceKind)(0),                  // 54: termx.cloud.v1.ManagedDeviceKind
+	(EntitlementStatus)(0),                  // 55: termx.cloud.v1.EntitlementStatus
+	(*PlanCapability)(nil),                  // 56: termx.cloud.v1.PlanCapability
+	(*ManagedPeerSessionTarget)(nil),        // 57: termx.cloud.v1.ManagedPeerSessionTarget
+	(*HubTopologySnapshot)(nil),             // 58: termx.cloud.v1.HubTopologySnapshot
+	(ObservedPath)(0),                       // 59: termx.cloud.v1.ObservedPath
 }
 var file_cloudpb_cloud_hub_control_proto_depIdxs = []int32{
 	8,  // 0: termx.cloud.v1.HubControlChallengeResponse.challenge:type_name -> termx.cloud.v1.HubControlChallenge
 	7,  // 1: termx.cloud.v1.HubHello.deployment:type_name -> termx.cloud.v1.EdgeDeploymentMetadata
-	7,  // 2: termx.cloud.v1.RelayHello.deployment:type_name -> termx.cloud.v1.EdgeDeploymentMetadata
-	49, // 3: termx.cloud.v1.CloudDevicePolicy.device_kind:type_name -> termx.cloud.v1.ManagedDeviceKind
-	50, // 4: termx.cloud.v1.HubAccountPolicy.entitlement_status:type_name -> termx.cloud.v1.EntitlementStatus
-	51, // 5: termx.cloud.v1.HubAccountPolicy.capability:type_name -> termx.cloud.v1.PlanCapability
-	18, // 6: termx.cloud.v1.FullProjectionSnapshot.devices:type_name -> termx.cloud.v1.CloudDevicePolicy
-	17, // 7: termx.cloud.v1.FullProjectionSnapshot.assignments:type_name -> termx.cloud.v1.HubAssignment
-	19, // 8: termx.cloud.v1.FullProjectionSnapshot.accounts:type_name -> termx.cloud.v1.HubAccountPolicy
-	2,  // 9: termx.cloud.v1.DevicePolicyDelta.operation:type_name -> termx.cloud.v1.ProjectionDeltaOperation
-	18, // 10: termx.cloud.v1.DevicePolicyDelta.policy:type_name -> termx.cloud.v1.CloudDevicePolicy
-	2,  // 11: termx.cloud.v1.HubAssignmentDelta.operation:type_name -> termx.cloud.v1.ProjectionDeltaOperation
-	17, // 12: termx.cloud.v1.HubAssignmentDelta.assignment:type_name -> termx.cloud.v1.HubAssignment
-	2,  // 13: termx.cloud.v1.HubAccountPolicyDelta.operation:type_name -> termx.cloud.v1.ProjectionDeltaOperation
-	19, // 14: termx.cloud.v1.HubAccountPolicyDelta.policy:type_name -> termx.cloud.v1.HubAccountPolicy
-	21, // 15: termx.cloud.v1.PolicyDelta.device_operations:type_name -> termx.cloud.v1.DevicePolicyDelta
-	22, // 16: termx.cloud.v1.PolicyDelta.assignment_operations:type_name -> termx.cloud.v1.HubAssignmentDelta
-	23, // 17: termx.cloud.v1.PolicyDelta.account_operations:type_name -> termx.cloud.v1.HubAccountPolicyDelta
-	4,  // 18: termx.cloud.v1.DaemonControlCommand.command_kind:type_name -> termx.cloud.v1.DaemonControlCommandKind
-	52, // 19: termx.cloud.v1.DaemonControlCommand.managed_peer_session:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
-	28, // 20: termx.cloud.v1.DaemonControlCommand.terminal_access:type_name -> termx.cloud.v1.RevokeTerminalAccessTarget
-	3,  // 21: termx.cloud.v1.HubCommand.command_kind:type_name -> termx.cloud.v1.HubCommandKind
-	26, // 22: termx.cloud.v1.HubCommand.fence_assignment:type_name -> termx.cloud.v1.FenceAssignment
-	27, // 23: termx.cloud.v1.HubCommand.kick_presence:type_name -> termx.cloud.v1.KickPresenceTarget
-	29, // 24: termx.cloud.v1.HubCommand.daemon_command:type_name -> termx.cloud.v1.DaemonControlCommand
-	6,  // 25: termx.cloud.v1.HubCommandResult.result_code:type_name -> termx.cloud.v1.RuntimeCommandResultCode
-	6,  // 26: termx.cloud.v1.DaemonCommandResult.result_code:type_name -> termx.cloud.v1.RuntimeCommandResultCode
-	5,  // 27: termx.cloud.v1.RelayControlCommand.command_kind:type_name -> termx.cloud.v1.RelayControlCommandKind
-	33, // 28: termx.cloud.v1.RelayControlCommand.target:type_name -> termx.cloud.v1.RelayControlTarget
-	6,  // 29: termx.cloud.v1.RelayAllocationCloseResult.result_code:type_name -> termx.cloud.v1.RuntimeCommandResultCode
-	6,  // 30: termx.cloud.v1.RelayCommandResult.result_code:type_name -> termx.cloud.v1.RuntimeCommandResultCode
-	35, // 31: termx.cloud.v1.RelayCommandResult.allocations:type_name -> termx.cloud.v1.RelayAllocationCloseResult
-	1,  // 32: termx.cloud.v1.RelayControlEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
-	16, // 33: termx.cloud.v1.RelayControlEnvelope.ready:type_name -> termx.cloud.v1.RelayControlReady
-	34, // 34: termx.cloud.v1.RelayControlEnvelope.command:type_name -> termx.cloud.v1.RelayControlCommand
-	1,  // 35: termx.cloud.v1.RelayRuntimeEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
-	36, // 36: termx.cloud.v1.RelayRuntimeEnvelope.command_result:type_name -> termx.cloud.v1.RelayCommandResult
-	1,  // 37: termx.cloud.v1.HubControlEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
-	13, // 38: termx.cloud.v1.HubControlEnvelope.ready:type_name -> termx.cloud.v1.ControlStreamReady
-	20, // 39: termx.cloud.v1.HubControlEnvelope.full_projection:type_name -> termx.cloud.v1.FullProjectionSnapshot
-	24, // 40: termx.cloud.v1.HubControlEnvelope.policy_delta:type_name -> termx.cloud.v1.PolicyDelta
-	26, // 41: termx.cloud.v1.HubControlEnvelope.fence_assignment:type_name -> termx.cloud.v1.FenceAssignment
-	30, // 42: termx.cloud.v1.HubControlEnvelope.command:type_name -> termx.cloud.v1.HubCommand
-	1,  // 43: termx.cloud.v1.HubRuntimeEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
-	25, // 44: termx.cloud.v1.HubRuntimeEnvelope.reconciliation:type_name -> termx.cloud.v1.ReconciliationDigest
-	53, // 45: termx.cloud.v1.HubRuntimeEnvelope.topology:type_name -> termx.cloud.v1.HubTopologySnapshot
-	31, // 46: termx.cloud.v1.HubRuntimeEnvelope.hub_command_result:type_name -> termx.cloud.v1.HubCommandResult
-	32, // 47: termx.cloud.v1.HubRuntimeEnvelope.daemon_command_result:type_name -> termx.cloud.v1.DaemonCommandResult
-	40, // 48: termx.cloud.v1.ReportHubRuntimeRequest.envelopes:type_name -> termx.cloud.v1.HubRuntimeEnvelope
-	54, // 49: termx.cloud.v1.RelayUsageEvent.path_kind:type_name -> termx.cloud.v1.ObservedPath
-	44, // 50: termx.cloud.v1.RelayUsageRecord.event:type_name -> termx.cloud.v1.RelayUsageEvent
-	45, // 51: termx.cloud.v1.ReportRelayUsageRequest.records:type_name -> termx.cloud.v1.RelayUsageRecord
-	47, // 52: termx.cloud.v1.ReportRelayUsageResponse.acknowledgements:type_name -> termx.cloud.v1.RelayUsageAck
-	53, // [53:53] is the sub-list for method output_type
-	53, // [53:53] is the sub-list for method input_type
-	53, // [53:53] is the sub-list for extension type_name
-	53, // [53:53] is the sub-list for extension extendee
-	0,  // [0:53] is the sub-list for field type_name
+	14, // 2: termx.cloud.v1.RelayControlChallengeResponse.challenge:type_name -> termx.cloud.v1.RelayControlChallenge
+	7,  // 3: termx.cloud.v1.RelayHello.deployment:type_name -> termx.cloud.v1.EdgeDeploymentMetadata
+	54, // 4: termx.cloud.v1.CloudDevicePolicy.device_kind:type_name -> termx.cloud.v1.ManagedDeviceKind
+	55, // 5: termx.cloud.v1.HubAccountPolicy.entitlement_status:type_name -> termx.cloud.v1.EntitlementStatus
+	56, // 6: termx.cloud.v1.HubAccountPolicy.capability:type_name -> termx.cloud.v1.PlanCapability
+	21, // 7: termx.cloud.v1.FullProjectionSnapshot.devices:type_name -> termx.cloud.v1.CloudDevicePolicy
+	20, // 8: termx.cloud.v1.FullProjectionSnapshot.assignments:type_name -> termx.cloud.v1.HubAssignment
+	22, // 9: termx.cloud.v1.FullProjectionSnapshot.accounts:type_name -> termx.cloud.v1.HubAccountPolicy
+	2,  // 10: termx.cloud.v1.DevicePolicyDelta.operation:type_name -> termx.cloud.v1.ProjectionDeltaOperation
+	21, // 11: termx.cloud.v1.DevicePolicyDelta.policy:type_name -> termx.cloud.v1.CloudDevicePolicy
+	2,  // 12: termx.cloud.v1.HubAssignmentDelta.operation:type_name -> termx.cloud.v1.ProjectionDeltaOperation
+	20, // 13: termx.cloud.v1.HubAssignmentDelta.assignment:type_name -> termx.cloud.v1.HubAssignment
+	2,  // 14: termx.cloud.v1.HubAccountPolicyDelta.operation:type_name -> termx.cloud.v1.ProjectionDeltaOperation
+	22, // 15: termx.cloud.v1.HubAccountPolicyDelta.policy:type_name -> termx.cloud.v1.HubAccountPolicy
+	24, // 16: termx.cloud.v1.PolicyDelta.device_operations:type_name -> termx.cloud.v1.DevicePolicyDelta
+	25, // 17: termx.cloud.v1.PolicyDelta.assignment_operations:type_name -> termx.cloud.v1.HubAssignmentDelta
+	26, // 18: termx.cloud.v1.PolicyDelta.account_operations:type_name -> termx.cloud.v1.HubAccountPolicyDelta
+	4,  // 19: termx.cloud.v1.DaemonControlCommand.command_kind:type_name -> termx.cloud.v1.DaemonControlCommandKind
+	57, // 20: termx.cloud.v1.DaemonControlCommand.managed_peer_session:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
+	31, // 21: termx.cloud.v1.DaemonControlCommand.terminal_access:type_name -> termx.cloud.v1.RevokeTerminalAccessTarget
+	3,  // 22: termx.cloud.v1.HubCommand.command_kind:type_name -> termx.cloud.v1.HubCommandKind
+	29, // 23: termx.cloud.v1.HubCommand.fence_assignment:type_name -> termx.cloud.v1.FenceAssignment
+	30, // 24: termx.cloud.v1.HubCommand.kick_presence:type_name -> termx.cloud.v1.KickPresenceTarget
+	32, // 25: termx.cloud.v1.HubCommand.daemon_command:type_name -> termx.cloud.v1.DaemonControlCommand
+	6,  // 26: termx.cloud.v1.HubCommandResult.result_code:type_name -> termx.cloud.v1.RuntimeCommandResultCode
+	6,  // 27: termx.cloud.v1.DaemonCommandResult.result_code:type_name -> termx.cloud.v1.RuntimeCommandResultCode
+	5,  // 28: termx.cloud.v1.RelayControlCommand.command_kind:type_name -> termx.cloud.v1.RelayControlCommandKind
+	36, // 29: termx.cloud.v1.RelayControlCommand.target:type_name -> termx.cloud.v1.RelayControlTarget
+	6,  // 30: termx.cloud.v1.RelayAllocationCloseResult.result_code:type_name -> termx.cloud.v1.RuntimeCommandResultCode
+	6,  // 31: termx.cloud.v1.RelayCommandResult.result_code:type_name -> termx.cloud.v1.RuntimeCommandResultCode
+	38, // 32: termx.cloud.v1.RelayCommandResult.allocations:type_name -> termx.cloud.v1.RelayAllocationCloseResult
+	52, // 33: termx.cloud.v1.RelayCommandResult.settled_usage:type_name -> termx.cloud.v1.RelayUsageAck
+	1,  // 34: termx.cloud.v1.RelayControlEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
+	19, // 35: termx.cloud.v1.RelayControlEnvelope.ready:type_name -> termx.cloud.v1.RelayControlReady
+	37, // 36: termx.cloud.v1.RelayControlEnvelope.command:type_name -> termx.cloud.v1.RelayControlCommand
+	1,  // 37: termx.cloud.v1.RelayRuntimeEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
+	39, // 38: termx.cloud.v1.RelayRuntimeEnvelope.command_result:type_name -> termx.cloud.v1.RelayCommandResult
+	41, // 39: termx.cloud.v1.ReportRelayRuntimeRequest.envelopes:type_name -> termx.cloud.v1.RelayRuntimeEnvelope
+	1,  // 40: termx.cloud.v1.HubControlEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
+	13, // 41: termx.cloud.v1.HubControlEnvelope.ready:type_name -> termx.cloud.v1.ControlStreamReady
+	23, // 42: termx.cloud.v1.HubControlEnvelope.full_projection:type_name -> termx.cloud.v1.FullProjectionSnapshot
+	27, // 43: termx.cloud.v1.HubControlEnvelope.policy_delta:type_name -> termx.cloud.v1.PolicyDelta
+	29, // 44: termx.cloud.v1.HubControlEnvelope.fence_assignment:type_name -> termx.cloud.v1.FenceAssignment
+	33, // 45: termx.cloud.v1.HubControlEnvelope.command:type_name -> termx.cloud.v1.HubCommand
+	1,  // 46: termx.cloud.v1.HubRuntimeEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
+	28, // 47: termx.cloud.v1.HubRuntimeEnvelope.reconciliation:type_name -> termx.cloud.v1.ReconciliationDigest
+	58, // 48: termx.cloud.v1.HubRuntimeEnvelope.topology:type_name -> termx.cloud.v1.HubTopologySnapshot
+	34, // 49: termx.cloud.v1.HubRuntimeEnvelope.hub_command_result:type_name -> termx.cloud.v1.HubCommandResult
+	35, // 50: termx.cloud.v1.HubRuntimeEnvelope.daemon_command_result:type_name -> termx.cloud.v1.DaemonCommandResult
+	45, // 51: termx.cloud.v1.ReportHubRuntimeRequest.envelopes:type_name -> termx.cloud.v1.HubRuntimeEnvelope
+	59, // 52: termx.cloud.v1.RelayUsageEvent.path_kind:type_name -> termx.cloud.v1.ObservedPath
+	49, // 53: termx.cloud.v1.RelayUsageRecord.event:type_name -> termx.cloud.v1.RelayUsageEvent
+	50, // 54: termx.cloud.v1.ReportRelayUsageRequest.records:type_name -> termx.cloud.v1.RelayUsageRecord
+	52, // 55: termx.cloud.v1.ReportRelayUsageResponse.acknowledgements:type_name -> termx.cloud.v1.RelayUsageAck
+	56, // [56:56] is the sub-list for method output_type
+	56, // [56:56] is the sub-list for method input_type
+	56, // [56:56] is the sub-list for extension type_name
+	56, // [56:56] is the sub-list for extension extendee
+	0,  // [0:56] is the sub-list for field type_name
 }
 
 func init() { file_cloudpb_cloud_hub_control_proto_init() }
@@ -4737,30 +5050,30 @@ func file_cloudpb_cloud_hub_control_proto_init() {
 	}
 	file_cloudpb_cloud_topology_proto_init()
 	file_cloudpb_cloud_product_proto_init()
-	file_cloudpb_cloud_hub_control_proto_msgTypes[22].OneofWrappers = []any{
+	file_cloudpb_cloud_hub_control_proto_msgTypes[25].OneofWrappers = []any{
 		(*DaemonControlCommand_ManagedPeerSession)(nil),
 		(*DaemonControlCommand_TerminalAccess)(nil),
 	}
-	file_cloudpb_cloud_hub_control_proto_msgTypes[23].OneofWrappers = []any{
+	file_cloudpb_cloud_hub_control_proto_msgTypes[26].OneofWrappers = []any{
 		(*HubCommand_FenceAssignment)(nil),
 		(*HubCommand_KickPresence)(nil),
 		(*HubCommand_DaemonCommand)(nil),
 	}
-	file_cloudpb_cloud_hub_control_proto_msgTypes[30].OneofWrappers = []any{
+	file_cloudpb_cloud_hub_control_proto_msgTypes[33].OneofWrappers = []any{
 		(*RelayControlEnvelope_Ready)(nil),
 		(*RelayControlEnvelope_Command)(nil),
 	}
-	file_cloudpb_cloud_hub_control_proto_msgTypes[31].OneofWrappers = []any{
+	file_cloudpb_cloud_hub_control_proto_msgTypes[34].OneofWrappers = []any{
 		(*RelayRuntimeEnvelope_CommandResult)(nil),
 	}
-	file_cloudpb_cloud_hub_control_proto_msgTypes[32].OneofWrappers = []any{
+	file_cloudpb_cloud_hub_control_proto_msgTypes[37].OneofWrappers = []any{
 		(*HubControlEnvelope_Ready)(nil),
 		(*HubControlEnvelope_FullProjection)(nil),
 		(*HubControlEnvelope_PolicyDelta)(nil),
 		(*HubControlEnvelope_FenceAssignment)(nil),
 		(*HubControlEnvelope_Command)(nil),
 	}
-	file_cloudpb_cloud_hub_control_proto_msgTypes[33].OneofWrappers = []any{
+	file_cloudpb_cloud_hub_control_proto_msgTypes[38].OneofWrappers = []any{
 		(*HubRuntimeEnvelope_Reconciliation)(nil),
 		(*HubRuntimeEnvelope_Topology)(nil),
 		(*HubRuntimeEnvelope_HubCommandResult)(nil),
@@ -4772,7 +5085,7 @@ func file_cloudpb_cloud_hub_control_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloudpb_cloud_hub_control_proto_rawDesc), len(file_cloudpb_cloud_hub_control_proto_rawDesc)),
 			NumEnums:      7,
-			NumMessages:   42,
+			NumMessages:   47,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

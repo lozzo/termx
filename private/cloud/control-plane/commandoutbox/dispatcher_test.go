@@ -33,7 +33,7 @@ func TestDispatcherRetriesIdenticalSignedDaemonCommandUntilExecutionReceipt(t *t
 	}
 	publisher := &recordingCommandPublisher{}
 	source := &plannerSource{device: cloudtopology.DeviceOwnership{DeviceID: "daemon-1", AccountID: "account-1", Kind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: 9}}
-	dispatcher, err := commandoutbox.NewDispatcher(outbox, publisher, source, "control-1", privateKey)
+	dispatcher, err := commandoutbox.NewDispatcher(outbox, publisher, nil, source, "control-1", privateKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestDispatcherSignsTerminalRevokeAndPersistsDaemonResult(t *testing.T) {
 	}
 	publisher := &recordingCommandPublisher{}
 	source := &plannerSource{device: cloudtopology.DeviceOwnership{DeviceID: "daemon-1", AccountID: "account-1", Kind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: 9}}
-	dispatcher, _ := commandoutbox.NewDispatcher(outbox, publisher, source, "control-1", privateKey)
+	dispatcher, _ := commandoutbox.NewDispatcher(outbox, publisher, nil, source, "control-1", privateKey)
 	if err := dispatcher.DispatchOnce(context.Background(), now.Add(time.Second), 32); err != nil {
 		t.Fatal(err)
 	}
@@ -93,6 +93,31 @@ func TestDispatcherSignsTerminalRevokeAndPersistsDaemonResult(t *testing.T) {
 	}
 }
 
+func TestDispatcherUsesIndependentRelayPublisher(t *testing.T) {
+	_, privateKey, _ := ed25519.GenerateKey(rand.Reader)
+	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	outbox, _ := commandoutbox.New(store)
+	now := time.Date(2026, 7, 20, 15, 0, 0, 0, time.UTC)
+	target := &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_RelayAllocations{RelayAllocations: &cloudpb.RelayControlTarget{RelayId: "relay-1", LeaseId: "lease-1"}}}
+	projection := &cloudpb.ManagementCommandProjection{CommandId: "parent-relay", AccountId: "account-1", Actor: &cloudpb.ManagementActorProjection{ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_ACCOUNT_OWNER, ActorId: "user-1"}, CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_CLOSE_RELAY_ALLOCATIONS, Target: target, AuthorityResult: cloudpb.CommandAuthorityResult_COMMAND_AUTHORITY_RESULT_NOT_APPLICABLE, DeliveryState: cloudpb.CommandDeliveryState_COMMAND_DELIVERY_STATE_PENDING, ExecutionState: cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_PENDING, ObservedEffect: cloudpb.CommandObservedEffect_COMMAND_OBSERVED_EFFECT_UNKNOWN, Children: []*cloudpb.ManagementCommandChildProjection{{ChildCommandId: "child-relay", TargetHubId: "hub-1", Target: target, DeliveryState: cloudpb.CommandDeliveryState_COMMAND_DELIVERY_STATE_PENDING, ExecutionState: cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_PENDING, ObservedEffect: cloudpb.CommandObservedEffect_COMMAND_OBSERVED_EFFECT_UNKNOWN, UpdatedAtUnixMillis: now.UnixMilli()}}, CreatedAtUnixMillis: now.UnixMilli(), ExpiresAtUnixMillis: now.Add(5 * time.Minute).UnixMilli(), UpdatedAtUnixMillis: now.UnixMilli()}
+	if _, _, err := outbox.Create(context.Background(), projection, "idem-relay", now); err != nil {
+		t.Fatal(err)
+	}
+	hubPublisher := &recordingCommandPublisher{}
+	relayPublisher := &recordingRelayPublisher{}
+	dispatcher, _ := commandoutbox.NewDispatcher(outbox, hubPublisher, relayPublisher, &plannerSource{}, "control-1", privateKey)
+	if err := dispatcher.DispatchOnce(context.Background(), now.Add(time.Second), 32); err != nil {
+		t.Fatal(err)
+	}
+	if len(hubPublisher.commands) != 0 || len(relayPublisher.commands) != 1 || relayPublisher.relayIDs[0] != "relay-1" || relayPublisher.commands[0].GetRelayControlGeneration() != 0 || relayPublisher.commands[0].GetCommandKind() != cloudpb.RelayControlCommandKind_RELAY_CONTROL_COMMAND_KIND_CLOSE_LEASE_ALLOCATIONS {
+		t.Fatalf("Relay dispatch = hub:%v relay:%v", hubPublisher.commands, relayPublisher.commands)
+	}
+}
+
 type recordingCommandPublisher struct {
 	hubIDs   []string
 	commands []*cloudpb.HubCommand
@@ -101,5 +126,16 @@ type recordingCommandPublisher struct {
 func (publisher *recordingCommandPublisher) PublishCommand(hubID string, command *cloudpb.HubCommand) error {
 	publisher.hubIDs = append(publisher.hubIDs, hubID)
 	publisher.commands = append(publisher.commands, proto.Clone(command).(*cloudpb.HubCommand))
+	return nil
+}
+
+type recordingRelayPublisher struct {
+	relayIDs []string
+	commands []*cloudpb.RelayControlCommand
+}
+
+func (publisher *recordingRelayPublisher) PublishCommand(relayID string, command *cloudpb.RelayControlCommand) error {
+	publisher.relayIDs = append(publisher.relayIDs, relayID)
+	publisher.commands = append(publisher.commands, proto.Clone(command).(*cloudpb.RelayControlCommand))
 	return nil
 }

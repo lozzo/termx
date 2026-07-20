@@ -16,6 +16,7 @@ import (
 
 	"github.com/lozzow/termx/private/cloud/control-plane/hubcontrol"
 	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
+	"github.com/lozzow/termx/private/cloud/control-plane/relaycontrol"
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
 	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
@@ -55,8 +56,14 @@ func TestEdgeRestartRequiresFullSyncAndKeepsOnlyUsageOutbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	relayPublisher := relaycontrol.NewPublisher()
+	relayControl, err := relaycontrol.NewServer(relaycontrol.ServerConfig{Registry: registry, CursorStore: store, Publisher: relayPublisher, Results: relayResultSink{}, Clock: time.Now, Random: rand.Reader, ChallengeTTL: time.Minute, EnvelopeTTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
 	var usageAvailable atomic.Bool
 	mux := http.NewServeMux()
+	mux.Handle("/v1/relay/control/", relayControl.Handler())
 	mux.Handle("/", control.Handler())
 	mux.HandleFunc(usage.InternalReportPath, func(writer http.ResponseWriter, request *http.Request) {
 		if !usageAvailable.Load() {
@@ -88,7 +95,7 @@ func TestEdgeRestartRequiresFullSyncAndKeepsOnlyUsageOutbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	cancel()
-	if first.Manifest().ControlGeneration != 1 || first.Manifest().ProjectionRevision != 1 {
+	if first.Manifest().ControlGeneration != 1 || first.Manifest().RelayControlGeneration != 1 || first.Manifest().ProjectionRevision != 1 {
 		t.Fatalf("first Edge manifest = %#v", first.Manifest())
 	}
 	signer, err := servicecredential.NewSigner("controller-key", controllerPrivate, now.Add(-time.Minute), now.Add(time.Hour))
@@ -153,7 +160,7 @@ func TestEdgeRestartRequiresFullSyncAndKeepsOnlyUsageOutbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	cancel()
-	if second.Manifest().ControlGeneration != 2 || second.Manifest().ProjectionRevision != 2 {
+	if second.Manifest().ControlGeneration != 2 || second.Manifest().RelayControlGeneration != 2 || second.Manifest().ProjectionRevision != 2 {
 		t.Fatalf("restarted Edge manifest = %#v", second.Manifest())
 	}
 	pending, err := second.usageOutbox.Pending()
@@ -211,4 +218,10 @@ func TestEdgeRestartRequiresFullSyncAndKeepsOnlyUsageOutbox(t *testing.T) {
 	if response.StatusCode != http.StatusServiceUnavailable || third.projection.Snapshot().Revision != 0 {
 		t.Fatalf("Controller-less restart health=%d revision=%d", response.StatusCode, third.projection.Snapshot().Revision)
 	}
+}
+
+type relayResultSink struct{}
+
+func (relayResultSink) IngestRelayResult(context.Context, *cloudpb.RelayCommandResult, time.Time) error {
+	return nil
 }

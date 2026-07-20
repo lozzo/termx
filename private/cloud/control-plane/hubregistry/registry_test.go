@@ -23,11 +23,13 @@ func TestRegistryFencesGenerationAndCrossHubAssignment(t *testing.T) {
 	defer store.Close()
 	registry, _ := hubregistry.New(store)
 	fingerprints := map[string]string{}
+	relayFingerprints := map[string]string{}
 	for _, hubID := range []string{"hub-a", "hub-b"} {
 		publicKey, _, _ := ed25519.GenerateKey(rand.Reader)
 		relayPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
 		fingerprints[hubID] = hubregistry.IdentityFingerprint(publicKey)
-		metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-" + hubID, Region: "local-1", HubId: hubID, HubControlIdentityFingerprint: fingerprints[hubID], RelayId: "relay-" + hubID, RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(relayPublicKey)}
+		relayFingerprints[hubID] = hubregistry.IdentityFingerprint(relayPublicKey)
+		metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-" + hubID, Region: "local-1", HubId: hubID, HubControlIdentityFingerprint: fingerprints[hubID], RelayId: "relay-" + hubID, RelayControlIdentityFingerprint: relayFingerprints[hubID]}
 		if err := registry.RegisterDeployment(context.Background(), hubregistry.Deployment{Metadata: metadata, ControlPublicKey: publicKey, RelayControlPublicKey: relayPublicKey, Enabled: true, UpdatedAt: now}); err != nil {
 			t.Fatal(err)
 		}
@@ -42,6 +44,14 @@ func TestRegistryFencesGenerationAndCrossHubAssignment(t *testing.T) {
 	}
 	if err := registry.RequireCurrentGeneration(context.Background(), "hub-a", 1); !errors.Is(err, hubregistry.ErrStaleControlGeneration) {
 		t.Fatalf("old generation = %v", err)
+	}
+	relayHello := &cloudpb.RelayHello{Deployment: &cloudpb.EdgeDeploymentMetadata{RelayId: "relay-hub-a", EdgeDeploymentId: "edge-hub-a", RelayControlIdentityFingerprint: relayFingerprints["hub-a"]}}
+	relayAttached, err := registry.AttachRelay(context.Background(), relayHello, now.Add(2*time.Second))
+	if err != nil || relayAttached.RelayControlGeneration != 1 || relayAttached.ControlGeneration != 2 {
+		t.Fatalf("independent Relay generation = (%#v, %v)", relayAttached, err)
+	}
+	if err := registry.RequireCurrentRelayGeneration(context.Background(), "relay-hub-a", 1); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := registry.Assign(context.Background(), assignment("hub-a", 1, now, now.Add(time.Minute)), now); err != nil {
 		t.Fatal(err)

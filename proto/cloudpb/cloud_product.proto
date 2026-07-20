@@ -217,6 +217,9 @@ message RelayLeaseReservation {
   int64 updated_at_unix_millis = 13;
   uint64 revision = 14;
   int64 issued_at_unix_millis = 15;
+  string hub_id = 16;
+  string relay_id = 17;
+  string route_id = 18;
 }
 
 // RelayUsageAggregate 是当前 billing period 内按 managed session/route 聚合的已验证用量。

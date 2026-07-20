@@ -65,6 +65,7 @@ func (store *Store) Reserve(ctx context.Context, request relayquota.ReserveReque
 	reservation := &cloudpb.RelayLeaseReservation{
 		LeaseId: request.LeaseID, AccountId: request.AccountID, ManagedSessionId: request.ManagedSessionID,
 		ClientDeviceId: request.ClientDeviceID, TargetDeviceId: request.TargetDeviceID, Region: request.Region,
+		HubId: request.HubID, RelayId: request.RelayID, RouteId: request.RouteID,
 		PeriodStartUnixMillis: request.PeriodStart.UnixMilli(), PeriodEndUnixMillis: request.PeriodEnd.UnixMilli(),
 		ReservedBytes: reserved, State: cloudpb.RelayReservationState_RELAY_RESERVATION_STATE_ACTIVE,
 		ExpiresAtUnixMillis: request.ExpiresAt.UnixMilli(), UpdatedAtUnixMillis: now.UnixMilli(), Revision: 1, IssuedAtUnixMillis: now.UnixMilli(),
@@ -281,5 +282,49 @@ func relayQuotaPeriod(ctx context.Context, tx *sql.Tx, accountID string, periodS
 }
 
 func sameReservation(value *cloudpb.RelayLeaseReservation, request relayquota.ReserveRequest) bool {
-	return value.GetLeaseId() == request.LeaseID && value.GetAccountId() == request.AccountID && value.GetManagedSessionId() == request.ManagedSessionID && value.GetClientDeviceId() == request.ClientDeviceID && value.GetTargetDeviceId() == request.TargetDeviceID && value.GetRegion() == request.Region && value.GetPeriodStartUnixMillis() == request.PeriodStart.UnixMilli() && value.GetPeriodEndUnixMillis() == request.PeriodEnd.UnixMilli()
+	return value.GetLeaseId() == request.LeaseID && value.GetAccountId() == request.AccountID && value.GetManagedSessionId() == request.ManagedSessionID && value.GetClientDeviceId() == request.ClientDeviceID && value.GetTargetDeviceId() == request.TargetDeviceID && value.GetRegion() == request.Region && value.GetHubId() == request.HubID && value.GetRelayId() == request.RelayID && value.GetRouteId() == request.RouteID && value.GetPeriodStartUnixMillis() == request.PeriodStart.UnixMilli() && value.GetPeriodEndUnixMillis() == request.PeriodEnd.UnixMilli()
+}
+
+// RelayReservation 返回 CommandOutbox target planner 使用的持久 reservation 深拷贝。
+func (store *Store) RelayReservation(ctx context.Context, leaseID string) (*cloudpb.RelayLeaseReservation, error) {
+	var body []byte
+	if err := store.db.QueryRowContext(ctx, `SELECT projection FROM relay_lease_reservations WHERE lease_id=?`, leaseID).Scan(&body); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, relayquota.ErrReservationNotFound
+		}
+		return nil, err
+	}
+	value := &cloudpb.RelayLeaseReservation{}
+	if err := proto.Unmarshal(body, value); err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+// RelayReservationsForSession 返回 managed session 当前全部 reservation。
+func (store *Store) RelayReservationsForSession(ctx context.Context, managedSessionID string) ([]*cloudpb.RelayLeaseReservation, error) {
+	rows, err := store.db.QueryContext(ctx, `SELECT projection FROM relay_lease_reservations WHERE managed_session_id=? ORDER BY lease_id`, managedSessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []*cloudpb.RelayLeaseReservation
+	for rows.Next() {
+		var body []byte
+		if err := rows.Scan(&body); err != nil {
+			return nil, err
+		}
+		value := &cloudpb.RelayLeaseReservation{}
+		if err := proto.Unmarshal(body, value); err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(result) == 0 {
+		return nil, relayquota.ErrReservationNotFound
+	}
+	return result, nil
 }

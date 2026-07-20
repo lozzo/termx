@@ -119,8 +119,19 @@ func TestSignedCloseCommandCrossesControllerEdgeAndDaemonHTTPBoundaries(t *testi
 	if clientLease.GetLeaseId() != daemonLease.GetLeaseId() || !bytes.Equal(clientLease.GetSignedLease(), daemonLease.GetSignedLease()) || len(clientLease.GetIceServers()) != 1 || len(daemonLease.GetIceServers()) != 1 || clientLease.GetIceServers()[0].GetUsername() == daemonLease.GetIceServers()[0].GetUsername() || clientLease.GetIceServers()[0].GetCredential() == daemonLease.GetIceServers()[0].GetCredential() {
 		t.Fatalf("caller-specific Relay lease mismatch: client=%v daemon=%v", clientLease, daemonLease)
 	}
-	exchangeRelayData(t, clientLease.GetIceServers()[0], daemonLease.GetIceServers()[0], "cloudp005-usage-marker")
+	closeRelayPeers, sendRelayProbe, relayMessages := exchangeRelayData(t, clientLease.GetIceServers()[0], daemonLease.GetIceServers()[0], "cloudp005-usage-marker")
+	defer closeRelayPeers()
 	waitRelayUsageSettled(t, databasePath, usageOutboxPath, account.GetAccountId())
+	cookies := loginCommandAccount(t, controllerRuntime.Manifest().PublicURL)
+	relayCommand := createRelayCloseCommand(t, controllerRuntime.Manifest().PublicURL, cookies, account.GetAccountId(), metadata.GetRelayId(), clientLease.GetLeaseId())
+	waitCommandApplied(t, controllerRuntime.Manifest().PublicURL, cookies, relayCommand.GetCommandId())
+	waitRelayReservationReleased(t, databasePath, usageOutboxPath, clientLease.GetLeaseId())
+	_ = sendRelayProbe("after-remote-close")
+	select {
+	case message := <-relayMessages:
+		t.Fatalf("Relay remote close still forwarded payload %q", message)
+	case <-time.After(time.Second):
+	}
 	_, err = adapter.CompleteSignalingOffer(context.Background(), daemonSession.Authorization(), &cloudpb.CompleteSignalingOfferRequest{SignalingSessionId: offer.GetSignalingSessionId(), Result: &cloudpb.CompleteSignalingOfferRequest_Answer{Answer: &cloudpb.SignalingAnswer{SignalingSessionId: offer.GetSignalingSessionId(), Sdp: "answer"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +142,6 @@ func TestSignedCloseCommandCrossesControllerEdgeAndDaemonHTTPBoundaries(t *testi
 	if _, err := adapter.ReportDaemonRuntime(context.Background(), daemonSession.Authorization(), report); err != nil {
 		t.Fatal(err)
 	}
-	cookies := loginCommandAccount(t, controllerRuntime.Manifest().PublicURL)
 	created := createCloseCommandWhenTopologyArrives(t, controllerRuntime.Manifest().PublicURL, cookies, account.GetAccountId(), target)
 	commandContext, cancelCommand := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancelCommand()
@@ -269,7 +279,7 @@ func seedCommandAccount(t *testing.T, databasePath, catalogPath string, now time
 	return account
 }
 
-func exchangeRelayData(t *testing.T, clientServer, daemonServer *cloudpb.IceServer, marker string) {
+func exchangeRelayData(t *testing.T, clientServer, daemonServer *cloudpb.IceServer, marker string) (func(), func(string) error, <-chan string) {
 	t.Helper()
 	settingEngine := webrtc.SettingEngine{}
 	settingEngine.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
@@ -282,12 +292,10 @@ func exchangeRelayData(t *testing.T, clientServer, daemonServer *cloudpb.IceServ
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer left.Close()
 	right, err := api.NewPeerConnection(configuration(daemonServer))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer right.Close()
 	received := make(chan string, 1)
 	right.OnDataChannel(func(channel *webrtc.DataChannel) {
 		channel.OnMessage(func(message webrtc.DataChannelMessage) { received <- string(message.Data) })
@@ -332,6 +340,10 @@ func exchangeRelayData(t *testing.T, clientServer, daemonServer *cloudpb.IceServ
 	if err != nil || pair == nil || pair.Local == nil || pair.Local.Typ != webrtc.ICECandidateTypeRelay {
 		t.Fatalf("Relay selected candidate = (%v, %v)", pair, err)
 	}
+	return func() {
+		_ = left.Close()
+		_ = right.Close()
+	}, channel.SendText, received
 }
 
 func waitCloudSignal(t *testing.T, signal <-chan struct{}, operation string) {
@@ -370,6 +382,29 @@ func waitRelayUsageSettled(t *testing.T, databasePath, outboxPath, accountID str
 	t.Fatal("Relay usage did not settle and clear durable outbox")
 }
 
+func waitRelayReservationReleased(t *testing.T, databasePath, outboxPath, leaseID string) {
+	t.Helper()
+	store, err := cloudsqlite.Open(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	outbox, err := cloudrelay.NewUsageOutbox(outboxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		reservation, reservationErr := store.RelayReservation(context.Background(), leaseID)
+		pending, pendingErr := outbox.Pending()
+		if reservationErr == nil && reservation.GetState() == cloudpb.RelayReservationState_RELAY_RESERVATION_STATE_RELEASED && pendingErr == nil && len(pending) == 0 {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("Relay close did not release reservation after final usage settlement")
+}
+
 func loginCommandAccount(t *testing.T, origin string) map[string]*http.Cookie {
 	t.Helper()
 	body, _ := protojson.Marshal(&cloudpb.PasswordLoginRequest{Email: "command@example.com", Password: "secure-password"})
@@ -385,6 +420,26 @@ func loginCommandAccount(t *testing.T, origin string) map[string]*http.Cookie {
 		result[cookie.Name] = cookie
 	}
 	return result
+}
+
+func createRelayCloseCommand(t *testing.T, origin string, cookies map[string]*http.Cookie, accountID, relayID, leaseID string) *cloudpb.ManagementCommandProjection {
+	t.Helper()
+	target := &cloudpb.RelayControlTarget{RelayId: relayID, LeaseId: leaseID}
+	body, _ := protojson.Marshal(&cloudpb.CreateManagementCommandRequest{AccountId: accountID, CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_CLOSE_RELAY_ALLOCATIONS, Target: &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_RelayAllocations{RelayAllocations: target}}, IdempotencyKey: "close-relay-1"})
+	request := authenticatedCommandRequest(http.MethodPost, origin+"/api/v1/management/commands", body, origin, cookies, true)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil || response.StatusCode != http.StatusAccepted {
+		if response != nil {
+			response.Body.Close()
+		}
+		t.Fatalf("create Relay close command = (%v, %v)", response, err)
+	}
+	defer response.Body.Close()
+	value := &cloudpb.CreateManagementCommandResponse{}
+	if err := protojson.Unmarshal(readResponse(t, response), value); err != nil {
+		t.Fatal(err)
+	}
+	return value.GetCommand()
 }
 
 func createCloseCommandWhenTopologyArrives(t *testing.T, origin string, cookies map[string]*http.Cookie, accountID string, target *cloudpb.ManagedPeerSessionTarget) *cloudpb.ManagementCommandProjection {

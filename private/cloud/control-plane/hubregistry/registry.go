@@ -33,12 +33,13 @@ var (
 // Deployment 是 Controller 持久保存的 Hub control identity。
 // PublicKey 只验证 Hub challenge proof；Relay 使用独立 registry 与 key role。
 type Deployment struct {
-	Metadata              *cloudpb.EdgeDeploymentMetadata
-	ControlPublicKey      ed25519.PublicKey
-	RelayControlPublicKey ed25519.PublicKey
-	Enabled               bool
-	ControlGeneration     uint64
-	UpdatedAt             time.Time
+	Metadata               *cloudpb.EdgeDeploymentMetadata
+	ControlPublicKey       ed25519.PublicKey
+	RelayControlPublicKey  ed25519.PublicKey
+	Enabled                bool
+	ControlGeneration      uint64
+	RelayControlGeneration uint64
+	UpdatedAt              time.Time
 }
 
 // Assignment 是 daemon 到 owning Hub 的持久 lease 与 fencing 状态。
@@ -55,8 +56,11 @@ type Assignment struct {
 type Store interface {
 	PutDeployment(context.Context, Deployment) error
 	Deployment(context.Context, string) (Deployment, error)
+	DeploymentByRelay(context.Context, string) (Deployment, error)
 	AdvanceControlGeneration(context.Context, string, string, string, time.Time) (Deployment, error)
 	ControlGenerationCurrent(context.Context, string, uint64) (bool, error)
+	AdvanceRelayControlGeneration(context.Context, string, string, string, time.Time) (Deployment, error)
+	RelayControlGenerationCurrent(context.Context, string, uint64) (bool, error)
 	MoveAssignment(context.Context, *cloudpb.HubAssignment, time.Time) (Assignment, error)
 	FenceAssignment(context.Context, string, string, uint64, time.Time) (Assignment, error)
 	Assignment(context.Context, string) (Assignment, error)
@@ -97,6 +101,11 @@ func (registry *Registry) Deployment(ctx context.Context, hubID string) (Deploym
 	return registry.store.Deployment(ctx, hubID)
 }
 
+// DeploymentByRelay 返回 Relay control handshake 使用的同一 deployment 记录。
+func (registry *Registry) DeploymentByRelay(ctx context.Context, relayID string) (Deployment, error) {
+	return registry.store.DeploymentByRelay(ctx, relayID)
+}
+
 // AttachHub 验证 HubHello metadata 后原子签发唯一递增 control generation。
 func (registry *Registry) AttachHub(ctx context.Context, hello *cloudpb.HubHello, now time.Time) (Deployment, error) {
 	if hello == nil || hello.GetDeployment() == nil || now.IsZero() {
@@ -109,6 +118,27 @@ func (registry *Registry) AttachHub(ctx context.Context, hello *cloudpb.HubHello
 // RequireCurrentGeneration 在每个旧 handler 处理 envelope 前重新检查 CAS 真值。
 func (registry *Registry) RequireCurrentGeneration(ctx context.Context, hubID string, generation uint64) error {
 	current, err := registry.store.ControlGenerationCurrent(ctx, hubID, generation)
+	if err != nil {
+		return err
+	}
+	if !current {
+		return ErrStaleControlGeneration
+	}
+	return nil
+}
+
+// AttachRelay 验证 RelayHello metadata 后原子签发独立于 Hub 的递增 control generation。
+func (registry *Registry) AttachRelay(ctx context.Context, hello *cloudpb.RelayHello, now time.Time) (Deployment, error) {
+	if hello == nil || hello.GetDeployment() == nil || now.IsZero() {
+		return Deployment{}, ErrDeploymentIdentity
+	}
+	metadata := hello.GetDeployment()
+	return registry.store.AdvanceRelayControlGeneration(ctx, metadata.GetRelayId(), metadata.GetEdgeDeploymentId(), metadata.GetRelayControlIdentityFingerprint(), now.UTC())
+}
+
+// RequireCurrentRelayGeneration 拒绝被新 Relay attachment 替换的旧 generation。
+func (registry *Registry) RequireCurrentRelayGeneration(ctx context.Context, relayID string, generation uint64) error {
+	current, err := registry.store.RelayControlGenerationCurrent(ctx, relayID, generation)
 	if err != nil {
 		return err
 	}

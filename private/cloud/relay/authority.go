@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"sort"
 	"sync"
 	"time"
 
@@ -115,6 +116,7 @@ type leaseState struct {
 	windowBytesUp     uint64
 	windowBytesDown   uint64
 	activeAllocations int
+	terminated        bool
 }
 
 type credentialState struct {
@@ -344,6 +346,22 @@ func (authority *Authority) ReleaseAllocation(allocationID string) {
 	}
 }
 
+// AllocationIDs 返回精确 lease 或 managed session 当前拥有的 allocation 快照。
+func (authority *Authority) AllocationIDs(leaseID, managedSessionID string) []string {
+	authority.mu.Lock()
+	defer authority.mu.Unlock()
+	result := make([]string, 0)
+	for allocationID, allocation := range authority.allocations {
+		lease := authority.leases[allocation.leaseID]
+		if lease == nil || leaseID != "" && allocation.leaseID != leaseID || managedSessionID != "" && lease.claims.ManagedSessionID != managedSessionID {
+			continue
+		}
+		result = append(result, allocationID)
+	}
+	sort.Strings(result)
+	return result
+}
+
 // RecordTraffic 把 opaque packet bytes 计入 allocation 对应 lease，并执行总字节和每秒 bitrate 上限。
 // bytesUp/bytesDown 只表示方向计数，Relay 不读取 payload 内容。
 func (authority *Authority) RecordTraffic(allocationID string, bytesUp, bytesDown uint64) error {
@@ -409,7 +427,7 @@ func (authority *Authority) DrainUsageRecords(terminationReason string) ([]Usage
 	authority.cleanupPendingLocked(now)
 	records := make([]UsageRecord, 0)
 	for _, lease := range authority.leases {
-		if lease.pendingBytesUp == 0 && lease.pendingBytesDown == 0 {
+		if lease.terminated || terminationReason == "" && lease.pendingBytesUp == 0 && lease.pendingBytesDown == 0 {
 			continue
 		}
 		if now.Unix() <= lease.lastUsageAt.Unix() {
@@ -432,6 +450,9 @@ func (authority *Authority) DrainUsageRecords(terminationReason string) ([]Usage
 		lease.pendingBytesUp = 0
 		lease.pendingBytesDown = 0
 		lease.lastUsageAt = now
+		if terminationReason != "" {
+			lease.terminated = true
+		}
 	}
 	return records, nil
 }
@@ -439,6 +460,18 @@ func (authority *Authority) DrainUsageRecords(terminationReason string) ([]Usage
 // FlushUsageOutbox 先持久化全部新增 signed usage，再清除内存 pending counters。
 // outbox 写入失败时不推进 sequence、lastUsageAt 或 bytes，避免计量丢失。
 func (authority *Authority) FlushUsageOutbox(outbox *UsageOutbox, terminationReason string) error {
+	return authority.flushUsageOutbox(outbox, terminationReason, "", "")
+}
+
+// FlushUsageOutboxFor 只 drain 精确 lease 或 managed session，供 remote close settlement 使用。
+func (authority *Authority) FlushUsageOutboxFor(outbox *UsageOutbox, terminationReason, leaseID, managedSessionID string) error {
+	if leaseID == "" && managedSessionID == "" {
+		return fmt.Errorf("Relay usage target is required")
+	}
+	return authority.flushUsageOutbox(outbox, terminationReason, leaseID, managedSessionID)
+}
+
+func (authority *Authority) flushUsageOutbox(outbox *UsageOutbox, terminationReason, leaseID, managedSessionID string) error {
 	if outbox == nil {
 		return fmt.Errorf("Relay usage outbox is required")
 	}
@@ -453,7 +486,10 @@ func (authority *Authority) FlushUsageOutbox(outbox *UsageOutbox, terminationRea
 	}
 	prepared := make([]pendingRecord, 0)
 	for _, lease := range authority.leases {
-		if lease.pendingBytesUp == 0 && lease.pendingBytesDown == 0 {
+		if leaseID != "" && lease.claims.LeaseID != leaseID || managedSessionID != "" && lease.claims.ManagedSessionID != managedSessionID {
+			continue
+		}
+		if lease.terminated || terminationReason == "" && lease.pendingBytesUp == 0 && lease.pendingBytesDown == 0 {
 			continue
 		}
 		intervalEndUnix := now.Unix()
@@ -491,8 +527,21 @@ func (authority *Authority) FlushUsageOutbox(outbox *UsageOutbox, terminationRea
 		value.lease.pendingBytesUp = 0
 		value.lease.pendingBytesDown = 0
 		value.lease.lastUsageAt = value.intervalEnd
+		if terminationReason != "" {
+			value.lease.terminated = true
+		}
 	}
 	return nil
+}
+
+// FinalUsageSequence 返回 lease 当前已经写入 durable outbox 的 sequence。
+func (authority *Authority) FinalUsageSequence(leaseID string) uint64 {
+	authority.mu.Lock()
+	defer authority.mu.Unlock()
+	if lease := authority.leases[leaseID]; lease != nil {
+		return lease.sequence
+	}
+	return 0
 }
 
 func (authority *Authority) newCredentialLocked(lease *leaseState, principal Principal, deviceID string, now time.Time) (Credential, error) {

@@ -43,33 +43,36 @@ type Config struct {
 
 // Manifest 是 supervisor 和 E2E harness 使用的非秘密 Edge 进程描述。
 type Manifest struct {
-	PID                int    `json:"pid"`
-	EdgeDeploymentID   string `json:"edge_deployment_id"`
-	HubID              string `json:"hub_id"`
-	RelayID            string `json:"relay_id"`
-	HubURL             string `json:"hub_url"`
-	HealthURL          string `json:"health_url"`
-	RelayURL           string `json:"relay_url"`
-	UsageOutboxPath    string `json:"usage_outbox_path"`
-	ControlGeneration  uint64 `json:"control_generation"`
-	ProjectionRevision uint64 `json:"projection_revision"`
+	PID                    int    `json:"pid"`
+	EdgeDeploymentID       string `json:"edge_deployment_id"`
+	HubID                  string `json:"hub_id"`
+	RelayID                string `json:"relay_id"`
+	HubURL                 string `json:"hub_url"`
+	HealthURL              string `json:"health_url"`
+	RelayURL               string `json:"relay_url"`
+	UsageOutboxPath        string `json:"usage_outbox_path"`
+	ControlGeneration      uint64 `json:"control_generation"`
+	RelayControlGeneration uint64 `json:"relay_control_generation"`
+	ProjectionRevision     uint64 `json:"projection_revision"`
 }
 
 // Runtime 持有 Edge listener、Hub/Relay owner 与 control client 生命周期。
 type Runtime struct {
-	config      Config
-	projection  *cloudhub.Projection
-	control     *cloudhub.ControlClient
-	authorizer  *cloudhub.EdgeAuthorizer
-	hub         *cloudhub.Service
-	relay       *cloudrelay.Server
-	usageOutbox *cloudrelay.UsageOutbox
-	listeners   []net.Listener
-	servers     []*http.Server
-	cancel      context.CancelFunc
-	errors      chan error
-	closeOnce   sync.Once
-	usageWG     sync.WaitGroup
+	config       Config
+	projection   *cloudhub.Projection
+	control      *cloudhub.ControlClient
+	relayControl *relayControlClient
+	authorizer   *cloudhub.EdgeAuthorizer
+	hub          *cloudhub.Service
+	relay        *cloudrelay.Server
+	usageOutbox  *cloudrelay.UsageOutbox
+	listeners    []net.Listener
+	servers      []*http.Server
+	cancel       context.CancelFunc
+	errors       chan error
+	closeOnce    sync.Once
+	usageWG      sync.WaitGroup
+	usageMu      sync.Mutex
 }
 
 // LoadConfig 读取 Edge JSON config，未知字段 fail closed。
@@ -95,6 +98,10 @@ func Start(config Config) (*Runtime, error) {
 	hubPrivateBytes, err := base64.RawStdEncoding.DecodeString(config.HubControlPrivateKeyBase64)
 	if err != nil || len(hubPrivateBytes) != ed25519.PrivateKeySize {
 		return nil, fmt.Errorf("invalid Hub control private key")
+	}
+	relayPrivateBytes, err := base64.RawStdEncoding.DecodeString(config.RelayControlPrivateKeyBase64)
+	if err != nil || len(relayPrivateBytes) != ed25519.PrivateKeySize {
+		return nil, fmt.Errorf("invalid Relay control private key")
 	}
 	controllerPublicBytes, err := base64.RawStdEncoding.DecodeString(config.ControllerProjectionPublicKeyBase64)
 	if err != nil || len(controllerPublicBytes) != ed25519.PublicKeySize {
@@ -126,7 +133,7 @@ func Start(config Config) (*Runtime, error) {
 		projection.Close()
 		return nil, err
 	}
-	relayServer, err := startRelay(config, verificationKey, now)
+	relayServer, err := startRelay(config, verificationKey, ed25519.PrivateKey(relayPrivateBytes), now)
 	if err != nil {
 		projection.Close()
 		return nil, err
@@ -152,7 +159,16 @@ func Start(config Config) (*Runtime, error) {
 		projection.Close()
 		return nil, err
 	}
-	runtime := &Runtime{config: config, projection: projection, control: controlClient, authorizer: authorizer, hub: hubService, relay: relayServer, usageOutbox: usageOutbox, listeners: []net.Listener{hubListener, healthListener}, errors: make(chan error, 3)}
+	runtime := &Runtime{config: config, projection: projection, control: controlClient, authorizer: authorizer, hub: hubService, relay: relayServer, usageOutbox: usageOutbox, listeners: []net.Listener{hubListener, healthListener}, errors: make(chan error, 4)}
+	relayControl, err := newRelayControlClient(config.ControllerURL, config.Metadata, ed25519.PrivateKey(relayPrivateBytes), relayServer, usageOutbox, &runtime.usageMu, runtime.reportPendingUsage)
+	if err != nil {
+		_ = hubListener.Close()
+		_ = healthListener.Close()
+		_ = relayServer.Close()
+		projection.Close()
+		return nil, err
+	}
+	runtime.relayControl = relayControl
 	hubMux := newHubHTTPHandler(hubHTTPConfig{Hub: hubService, Authorizer: authorizer, Projection: projection, HubID: config.Metadata.GetHubId(), HubURL: origin(hubListener), ControllerURL: config.ControllerURL, Relay: relayServer, RelayID: config.Metadata.GetRelayId(), Region: config.Metadata.GetRegion()})
 	healthMux := http.NewServeMux()
 	healthMux.HandleFunc("/healthz", runtime.healthHandler)
@@ -172,6 +188,11 @@ func Start(config Config) (*Runtime, error) {
 			runtime.errors <- err
 		}
 	}()
+	go func() {
+		if err := relayControl.Run(controlContext); err != nil && !errors.Is(err, context.Canceled) {
+			runtime.errors <- err
+		}
+	}()
 	runtime.usageWG.Add(1)
 	go runtime.runUsagePump(controlContext)
 	return runtime, nil
@@ -183,7 +204,8 @@ func (runtime *Runtime) WaitReady(ctx context.Context) error {
 	defer ticker.Stop()
 	for {
 		state := runtime.control.State()
-		if state.Attached && runtime.projection.Ready() {
+		relayState := runtime.relayControl.State()
+		if state.Attached && relayState.Attached && runtime.projection.Ready() {
 			return nil
 		}
 		select {
@@ -199,8 +221,9 @@ func (runtime *Runtime) WaitReady(ctx context.Context) error {
 // Manifest 返回实时 control generation 与 projection revision。
 func (runtime *Runtime) Manifest() Manifest {
 	state := runtime.control.State()
+	relayState := runtime.relayControl.State()
 	projection := runtime.projection.Snapshot()
-	return Manifest{PID: os.Getpid(), EdgeDeploymentID: runtime.config.Metadata.GetEdgeDeploymentId(), HubID: runtime.config.Metadata.GetHubId(), RelayID: runtime.config.Metadata.GetRelayId(), HubURL: origin(runtime.listeners[0]), HealthURL: origin(runtime.listeners[1]), RelayURL: runtime.relay.URL(), UsageOutboxPath: runtime.config.UsageOutboxPath, ControlGeneration: state.ControlGeneration, ProjectionRevision: projection.Revision}
+	return Manifest{PID: os.Getpid(), EdgeDeploymentID: runtime.config.Metadata.GetEdgeDeploymentId(), HubID: runtime.config.Metadata.GetHubId(), RelayID: runtime.config.Metadata.GetRelayId(), HubURL: origin(runtime.listeners[0]), HealthURL: origin(runtime.listeners[1]), RelayURL: runtime.relay.URL(), UsageOutboxPath: runtime.config.UsageOutboxPath, ControlGeneration: state.ControlGeneration, RelayControlGeneration: relayState.Generation, ProjectionRevision: projection.Revision}
 }
 
 // WriteManifest 原子写入 Edge runtime manifest。
@@ -261,13 +284,12 @@ func (fence *assignmentFence) FenceAssignment(daemonDeviceID string, assignmentE
 	}
 }
 
-func startRelay(config Config, controllerKey servicecredential.VerificationKey, now time.Time) (*cloudrelay.Server, error) {
+func startRelay(config Config, controllerKey servicecredential.VerificationKey, relayPrivateKey ed25519.PrivateKey, now time.Time) (*cloudrelay.Server, error) {
 	keyRing, _ := servicecredential.NewKeyRing(controllerKey)
-	relayPrivateBytes, err := base64.RawStdEncoding.DecodeString(config.RelayControlPrivateKeyBase64)
-	if err != nil || len(relayPrivateBytes) != ed25519.PrivateKeySize {
+	if len(relayPrivateKey) != ed25519.PrivateKeySize {
 		return nil, fmt.Errorf("invalid Relay control private key")
 	}
-	usageSigner, err := servicecredential.NewSigner("relay-control-"+config.Metadata.GetRelayId(), ed25519.PrivateKey(relayPrivateBytes), now.Add(-time.Hour), now.Add(365*24*time.Hour))
+	usageSigner, err := servicecredential.NewSigner("relay-control-"+config.Metadata.GetRelayId(), relayPrivateKey, now.Add(-time.Hour), now.Add(365*24*time.Hour))
 	if err != nil {
 		return nil, err
 	}

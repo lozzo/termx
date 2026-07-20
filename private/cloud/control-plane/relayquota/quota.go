@@ -30,6 +30,9 @@ type ReserveRequest struct {
 	ClientDeviceID   string
 	TargetDeviceID   string
 	Region           string
+	HubID            string
+	RelayID          string
+	RouteID          string
 	PeriodStart      time.Time
 	PeriodEnd        time.Time
 	PeriodLimitBytes uint64
@@ -41,7 +44,7 @@ type ReserveRequest struct {
 
 // Validate 验证 reservation 输入完整且所有窗口使用 UTC 可比较时间。
 func (request ReserveRequest) Validate(now time.Time) error {
-	if request.LeaseID == "" || request.AccountID == "" || request.ManagedSessionID == "" || request.ClientDeviceID == "" || request.TargetDeviceID == "" || request.Region == "" ||
+	if request.LeaseID == "" || request.AccountID == "" || request.ManagedSessionID == "" || request.ClientDeviceID == "" || request.TargetDeviceID == "" || request.Region == "" || request.HubID == "" || request.RelayID == "" ||
 		request.PeriodStart.IsZero() || request.PeriodEnd.IsZero() || !request.PeriodEnd.After(request.PeriodStart) || request.PeriodLimitBytes == 0 || request.PeriodLimitBytes > math.MaxInt64 || request.MaxBytesPerLease == 0 || request.MaxBytesPerLease > request.PeriodLimitBytes || request.MaxBytesPerLease > math.MaxInt64 || request.MaxConcurrency == 0 ||
 		request.ExpiresAt.IsZero() || !request.ExpiresAt.After(now.UTC()) || request.ExpiresAt.After(request.PeriodEnd) || request.ReleaseAfter.Before(request.ExpiresAt) {
 		return fmt.Errorf("invalid Relay reservation request")

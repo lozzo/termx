@@ -62,7 +62,7 @@ func TestServiceIssuesEntitlementClampedLease(t *testing.T) {
 	}
 	lease, claims, err := service.Issue(context.Background(), relaylease.Command{
 		LeaseID: "lease-1", AccountID: "account-1", ManagedSessionID: "managed-1", AudienceRelayPool: "pool-eu",
-		HubID: "hub-eu", Region: "eu-west", PathKind: servicecredential.RelayPathSingle, RequestedTTL: 9 * time.Minute, CredentialBindingID: "binding-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1",
+		HubID: "hub-eu", RelayID: "relay-eu", Region: "eu-west", PathKind: servicecredential.RelayPathSingle, RequestedTTL: 9 * time.Minute, CredentialBindingID: "binding-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1",
 	}, now)
 	if err != nil {
 		t.Fatal(err)
@@ -72,12 +72,12 @@ func TestServiceIssuesEntitlementClampedLease(t *testing.T) {
 	}
 	replayed, replayClaims, err := service.Issue(context.Background(), relaylease.Command{
 		LeaseID: "lease-1", AccountID: "account-1", ManagedSessionID: "managed-1", AudienceRelayPool: "pool-eu",
-		HubID: "hub-eu", Region: "eu-west", PathKind: servicecredential.RelayPathSingle, RequestedTTL: 9 * time.Minute, CredentialBindingID: "binding-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1",
+		HubID: "hub-eu", RelayID: "relay-eu", Region: "eu-west", PathKind: servicecredential.RelayPathSingle, RequestedTTL: 9 * time.Minute, CredentialBindingID: "binding-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1",
 	}, now.Add(30*time.Second))
 	if err != nil || string(replayed.Bytes()) != string(lease.Bytes()) || replayClaims.ExpiresAtUnix != claims.ExpiresAtUnix {
 		t.Fatalf("lease replay = (%v, %#v, %v)", replayed, replayClaims, err)
 	}
-	refresh := relaylease.RefreshCommand{PreviousLeaseID: "lease-1", Next: relaylease.Command{LeaseID: "lease-2", AccountID: "account-1", ManagedSessionID: "managed-1", AudienceRelayPool: "pool-eu", HubID: "hub-eu", Region: "eu-west", PathKind: servicecredential.RelayPathSingle, CredentialBindingID: "binding-2", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1"}}
+	refresh := relaylease.RefreshCommand{PreviousLeaseID: "lease-1", Next: relaylease.Command{LeaseID: "lease-2", AccountID: "account-1", ManagedSessionID: "managed-1", AudienceRelayPool: "pool-eu", HubID: "hub-eu", RelayID: "relay-eu", Region: "eu-west", PathKind: servicecredential.RelayPathSingle, CredentialBindingID: "binding-2", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1"}}
 	if _, _, err := service.Refresh(context.Background(), refresh, now.Add(4*time.Minute+30*time.Second)); !errors.Is(err, relayquota.ErrQuotaExhausted) {
 		t.Fatalf("refresh before report grace release = %v", err)
 	}

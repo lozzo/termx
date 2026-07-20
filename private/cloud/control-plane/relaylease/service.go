@@ -37,6 +37,7 @@ type Command struct {
 	AudienceRelayPool   string
 	Region              string
 	HubID               string
+	RelayID             string
 	PathKind            servicecredential.RelayPathKind
 	RouteID             string
 	RouteVersion        uint32
@@ -115,6 +116,7 @@ func (service *Service) Issue(ctx context.Context, command Command, now time.Tim
 	reservation, _, created, err := service.reservations.Reserve(ctx, relayquota.ReserveRequest{
 		LeaseID: command.LeaseID, AccountID: command.AccountID, ManagedSessionID: command.ManagedSessionID,
 		ClientDeviceID: session.ClientDeviceID, TargetDeviceID: session.TargetDeviceID, Region: command.Region,
+		HubID: command.HubID, RelayID: command.RelayID, RouteID: command.RouteID,
 		PeriodStart: accountEntitlement.EffectiveFrom, PeriodEnd: accountEntitlement.EffectiveUntil,
 		PeriodLimitBytes: policy.GetMaxBytesPerPeriod(), MaxBytesPerLease: allocation.MaxBytes, MaxConcurrency: allocation.MaxConcurrency,
 		ExpiresAt: now.Add(leaseTTL), ReleaseAfter: now.Add(leaseTTL).Add(service.reportGrace),

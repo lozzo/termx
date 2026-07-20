@@ -734,8 +734,11 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 
 ### HUB006：Relay allocation remote revoke
 
-- 在现有 Edge composition 内接通独立 Relay control identity/stream、allocation registry 和 precise close；不得新增第三类 Cloud 服务二进制。
-- CommandOutbox 等待 close ack、final usage 和 settlement；部分完成可解释。
+- `RelayControlChallengeRequest/ProofInput`、`ReportRelayRuntimeRequest/Response` 与显式 `usage_settlement_complete/settled_usage` 已进入 Proto；Hub/Relay control generation、sender sequence、cursor 和 replay 空间完全分离。
+- Controller 内 `relaycontrol` publisher/server 只拥有 authenticated stream 与 result transport；CommandOutbox planner 从持久 reservation 校验 account/Hub/Relay binding，dispatcher 直接发布 `RelayControlCommand`，Hub module 不接触 Relay allocation map。
+- Edge 内独立 Relay control client 按 generation/sequence fail closed，并通过 Relay Server port 按 lease 或 managed session 关闭真实 relay socket；command replay digest 排除传输 generation，ack 丢失重连不会重复执行数据面副作用。
+- final close 与周期 usage pump 共享单一提交锁；零字节 lease 也生成一次 termination event，Controller SQLite settlement 释放剩余额度后 Edge 才回传完成结果。allocation close、usage drain 或 settlement 任一步不完整时返回可解释 `PARTIAL`。
+- harness 已覆盖独立 generation、reservation target binding、Relay dispatcher、零字节 final event、单 child PARTIAL、race，以及真实 Controller-Edge-Pion relay-only DataChannel remote close、payload 停止转发、usage ack、reservation release 和 CommandOutbox `APPLIED`。
 
 ### CLOUDP006：用户与运营管理面
 

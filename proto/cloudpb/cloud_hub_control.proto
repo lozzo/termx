@@ -131,6 +131,26 @@ message RelayControlChallenge {
   int64 expires_at_unix_millis = 3;
 }
 
+// RelayControlChallengeRequest 使用 Relay identity 请求一次性挑战。
+message RelayControlChallengeRequest {
+  string relay_id = 1;
+  string edge_deployment_id = 2;
+  string relay_control_identity_fingerprint = 3;
+}
+
+message RelayControlChallengeResponse {
+  RelayControlChallenge challenge = 1;
+}
+
+// RelayControlChallengeProofInput 是 Relay 与 Controller 共用的确定性签名输入。
+message RelayControlChallengeProofInput {
+  string challenge_id = 1;
+  bytes challenge = 2;
+  string relay_id = 3;
+  string edge_deployment_id = 4;
+  string relay_control_identity_fingerprint = 5;
+}
+
 // RelayHello 使用 Relay control key role，不能复用 Hub challenge proof。
 message RelayHello {
   EdgeDeploymentMetadata deployment = 1;
@@ -365,6 +385,8 @@ message RelayCommandResult {
   bool usage_drain_complete = 8;
   string error_code = 9;
   int64 completed_at_unix_millis = 10;
+  bool usage_settlement_complete = 11;
+  repeated RelayUsageAck settled_usage = 12;
 }
 
 // RelayControlEnvelope 是 Controller 到 Relay runtime 的独立下行 envelope。
@@ -394,6 +416,15 @@ message RelayRuntimeEnvelope {
   oneof payload {
     RelayCommandResult command_result = 10;
   }
+}
+
+// ReportRelayRuntimeRequest 是 Relay 独立 control stream 的有界结果 batch。
+message ReportRelayRuntimeRequest {
+  repeated RelayRuntimeEnvelope envelopes = 1;
+}
+
+message ReportRelayRuntimeResponse {
+  uint64 accepted_sender_sequence = 1;
 }
 
 // HubControlEnvelope 是 Controller 到 Hub 的下行 envelope。

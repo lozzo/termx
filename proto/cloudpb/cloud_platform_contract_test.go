@@ -126,7 +126,7 @@ func TestRelayQuotaAndReservationAreProtoFirst(t *testing.T) {
 		}
 	}
 	reservationFields := descriptorFieldNames((&RelayLeaseReservation{}).ProtoReflect().Descriptor())
-	for _, required := range []string{"lease_id", "account_id", "managed_session_id", "client_device_id", "target_device_id", "region", "reserved_bytes", "used_bytes", "state", "issued_at_unix_millis", "expires_at_unix_millis", "revision"} {
+	for _, required := range []string{"lease_id", "account_id", "managed_session_id", "client_device_id", "target_device_id", "region", "hub_id", "relay_id", "route_id", "reserved_bytes", "used_bytes", "state", "issued_at_unix_millis", "expires_at_unix_millis", "revision"} {
 		if !reservationFields[required] {
 			t.Fatalf("RelayLeaseReservation missing %q: %v", required, reservationFields)
 		}
@@ -151,6 +151,17 @@ func TestRelayQuotaAndReservationAreProtoFirst(t *testing.T) {
 		}
 	}
 	assertFieldsExcludeFragments(t, (&RelayUsageEvent{}).ProtoReflect().Descriptor(), []string{"terminal", "grant", "credential", "private_key", "payload"})
+	for _, name := range []protoreflect.Name{"RelayControlChallengeRequest", "RelayControlChallengeResponse", "RelayControlChallengeProofInput", "ReportRelayRuntimeRequest", "ReportRelayRuntimeResponse"} {
+		if File_cloudpb_cloud_hub_control_proto.Messages().ByName(name) == nil {
+			t.Fatalf("Relay control contract missing %s", name)
+		}
+	}
+	resultFields := descriptorFieldNames((&RelayCommandResult{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"allocations", "final_usage_sequence", "usage_drain_complete", "usage_settlement_complete", "settled_usage"} {
+		if !resultFields[required] {
+			t.Fatalf("RelayCommandResult missing %q: %v", required, resultFields)
+		}
+	}
 }
 
 func TestManagementCommandSeparatesAuthorityDeliveryExecutionAndEffect(t *testing.T) {

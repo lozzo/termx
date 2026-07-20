@@ -26,25 +26,32 @@ type TargetSource interface {
 	TerminalAccess(context.Context, string, string) (cloudtopology.StoredTerminalAccess, error)
 }
 
+// RelayTargetSource 从持久 reservation 解析账号、Hub 与 Relay binding。
+type RelayTargetSource interface {
+	RelayReservation(context.Context, string) (*cloudpb.RelayLeaseReservation, error)
+	RelayReservationsForSession(context.Context, string) ([]*cloudpb.RelayLeaseReservation, error)
+}
+
 // Planner 把 generated management request 解析为持久 parent/child CommandOutbox。
 // 它不执行网络投递，也不根据后续 topology 变化改写已经固定的 child fencing。
 type Planner struct {
 	outbox             *Service
 	targets            TargetSource
+	relayTargets       RelayTargetSource
 	random             io.Reader
 	ttl                time.Duration
 	notifyPolicyChange func(string)
 }
 
 // NewPlanner 创建 CommandOutbox target planner。
-func NewPlanner(outbox *Service, targets TargetSource, random io.Reader, notifyPolicyChange func(string)) (*Planner, error) {
+func NewPlanner(outbox *Service, targets TargetSource, relayTargets RelayTargetSource, random io.Reader, notifyPolicyChange func(string)) (*Planner, error) {
 	if outbox == nil || targets == nil {
 		return nil, fmt.Errorf("CommandOutbox planner dependencies are required")
 	}
 	if random == nil {
 		random = rand.Reader
 	}
-	return &Planner{outbox: outbox, targets: targets, random: random, ttl: defaultCommandTTL, notifyPolicyChange: notifyPolicyChange}, nil
+	return &Planner{outbox: outbox, targets: targets, relayTargets: relayTargets, random: random, ttl: defaultCommandTTL, notifyPolicyChange: notifyPolicyChange}, nil
 }
 
 // Create 校验账号隔离与精确 target，随后持久创建 command。
@@ -139,6 +146,43 @@ func (planner *Planner) Create(ctx context.Context, request *cloudpb.CreateManag
 		childTarget := &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_TerminalAccess{TerminalAccess: &cloudpb.RevokeTerminalAccessTarget{DaemonDeviceId: requested.GetDaemonDeviceId(), OpaqueAccessReference: requested.GetOpaqueAccessReference(), AssignmentEpoch: stored.Inventory.GetAssignmentEpoch(), PresenceSessionId: stored.Inventory.GetControlPresenceSessionId(), DaemonRuntimeGeneration: stored.Inventory.GetDaemonRuntimeGeneration(), AccessProjectionRevision: stored.Inventory.GetAccessProjectionRevision()}}}
 		if err := planner.appendChild(projection, stored.HubID, childTarget, now); err != nil {
 			return nil, false, err
+		}
+	case cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_CLOSE_RELAY_ALLOCATIONS:
+		if planner.relayTargets == nil {
+			return nil, false, ErrCommandConflict
+		}
+		target := request.GetTarget().GetRelayAllocations()
+		if target == nil || target.GetRelayId() == "" || (target.GetLeaseId() == "") == (target.GetManagedSessionId() == "") {
+			return nil, false, ErrCommandConflict
+		}
+		var reservations []*cloudpb.RelayLeaseReservation
+		if target.GetLeaseId() != "" {
+			reservation, err := planner.relayTargets.RelayReservation(ctx, target.GetLeaseId())
+			if err != nil {
+				return nil, false, ErrCommandNotFound
+			}
+			reservations = []*cloudpb.RelayLeaseReservation{reservation}
+		} else {
+			reservations, err = planner.relayTargets.RelayReservationsForSession(ctx, target.GetManagedSessionId())
+			if err != nil {
+				return nil, false, ErrCommandNotFound
+			}
+		}
+		seen := map[string]bool{}
+		for _, reservation := range reservations {
+			if reservation.GetAccountId() != request.GetAccountId() || reservation.GetRelayId() != target.GetRelayId() || reservation.GetState() != cloudpb.RelayReservationState_RELAY_RESERVATION_STATE_ACTIVE || reservation.GetHubId() == "" {
+				continue
+			}
+			key := reservation.GetHubId() + "\x00" + reservation.GetRelayId()
+			if !seen[key] {
+				seen[key] = true
+				if err := planner.appendChild(projection, reservation.GetHubId(), request.GetTarget(), now); err != nil {
+					return nil, false, err
+				}
+			}
+		}
+		if len(projection.GetChildren()) == 0 {
+			return nil, false, ErrCommandNotFound
 		}
 	default:
 		return nil, false, ErrCommandConflict

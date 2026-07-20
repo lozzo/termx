@@ -66,3 +66,25 @@ func TestFlushUsageOutboxPersistsSameSecondTrafficBeforeClearingCounters(t *test
 		t.Fatalf("flushed counters were emitted twice = (%#v, %v)", events, err)
 	}
 }
+
+func TestTargetedFinalUsageReleasesZeroByteLeaseExactlyOnce(t *testing.T) {
+	fixture := newRelayFixture(t, 2, 10_000, 1_000)
+	if _, err := fixture.authority.ActivateLease(fixture.activationRequest); err != nil {
+		t.Fatal(err)
+	}
+	outbox, _ := relay.NewUsageOutbox(filepath.Join(t.TempDir(), "targeted-final.outbox"))
+	if err := fixture.authority.FlushUsageOutboxFor(outbox, "remote_revoke", "lease-1", ""); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := outbox.Pending()
+	if err != nil || len(pending) != 1 || pending[0].Event.LeaseID != "lease-1" || pending[0].Event.TerminationReason != "remote_revoke" || pending[0].Event.BytesUp != 0 || pending[0].Event.BytesDown != 0 || pending[0].Event.Sequence != 1 {
+		t.Fatalf("targeted final usage = (%#v, %v)", pending, err)
+	}
+	if err := fixture.authority.FlushUsageOutboxFor(outbox, "remote_revoke", "lease-1", ""); err != nil {
+		t.Fatal(err)
+	}
+	pending, err = outbox.Pending()
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("duplicate final usage = (%#v, %v)", pending, err)
+	}
+}

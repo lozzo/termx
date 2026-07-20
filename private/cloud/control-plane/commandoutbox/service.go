@@ -13,6 +13,7 @@ import (
 const (
 	resultKindHub    = "hub"
 	resultKindDaemon = "daemon"
+	resultKindRelay  = "relay"
 )
 
 // Store 是 CommandOutbox 的持久事务边界。
@@ -145,6 +146,22 @@ func (service *Service) ApplyDaemonResult(ctx context.Context, result *cloudpb.D
 // IngestDaemonResult 实现 HubControl runtime result sink；只有独立 daemon receipt 才推进 execution。
 func (service *Service) IngestDaemonResult(ctx context.Context, result *cloudpb.DaemonCommandResult, now time.Time) error {
 	_, _, err := service.ApplyDaemonResult(ctx, result, now)
+	return err
+}
+
+// ApplyRelayResult 持久 journal Relay close、final drain 与 settlement receipt。
+func (service *Service) ApplyRelayResult(ctx context.Context, result *cloudpb.RelayCommandResult, now time.Time) (*cloudpb.ManagementCommandProjection, bool, error) {
+	stable := proto.Clone(result).(*cloudpb.RelayCommandResult)
+	stable.RelayControlGeneration = 0
+	stable.CompletedAtUnixMillis = 0
+	return service.applyResult(ctx, result.GetCommandId(), resultKindRelay, result, stable, now, func(current *cloudpb.ManagementCommandProjection) (*cloudpb.ManagementCommandProjection, error) {
+		return ApplyRelayResult(current, result, now)
+	})
+}
+
+// IngestRelayResult 实现 Relay control runtime result sink。
+func (service *Service) IngestRelayResult(ctx context.Context, result *cloudpb.RelayCommandResult, now time.Time) error {
+	_, _, err := service.ApplyRelayResult(ctx, result, now)
 	return err
 }
 
