@@ -70,7 +70,7 @@
 - `remote/`、`clients/mobile/` 与 `clients/ui/` 是活动远程客户端资产；只能按 `workflow.md` 对应纵向切片演进，不得恢复旧 fallback。
 - `client/binding/` 是 Android、未来 iOS/Desktop 的 C ABI 与预留 WebAssembly 外部边界；只能暴露序列化 Proto、opaque handle、异步事件和显式释放，不得暴露 Go pointer、core domain struct 或平台 UI 类型。WASM 当前只维持不回归，不主动开发 Web 产品入口。
 - 旧 `termx-hub/`、`termx-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已迁入 `private/archive/termx-platform-legacy/`，只能作为只读历史资产；archive 不进入 workspace、构建脚本或 runtime。
-- Hub/Relay 服务端实现位于 `private/cloud/hub/` 与 `private/cloud/relay/`；当前只保持必要逻辑依赖边界，不为未来 public repo 继续增加物理隔离工作。
+- Hub/Relay 服务端实现位于 `private/cloud/hub/` 与 `private/cloud/relay/`；`private/cloud/edge/` 是二者唯一允许的组合部署层。Hub/Relay 可以同二进制、同进程、同配置部署，但不得共享业务 map、identity、control generation、command state 或 lifecycle owner。
 - `vterm/` 是受限联动目录，只能在 terminal semantic transaction 接口、事件或 harness 需要时最小化触及。
 - `internal/protocol/` 与 `proto/` 是受限联动目录，只能在 endpoint routing、history window/copy 或 semantic history contract 需要跨进程时最小化触及。
 - 如果确实必须恢复旧目录或解冻目录，先修改 `workflow.md` 的范围表并说明原因；默认不允许恢复。
@@ -97,6 +97,8 @@
 - `remote/`：公开 daemon WebRTC endpoint、ICE-TCP/ICE-UDP primitive、DataChannel E2E auth 与 session 接线；不承载 Cloud 账号、订阅、Hub/Relay server 或计费业务。
 - `clients/ui/` 与 `clients/mobile/`：共享 UI 和移动平台壳；消费 Go Client Engine 投影，不拥有 daemon terminal truth、Endpoint/Route/session/credential 真值。Android/Kotlin 只保留 lifecycle、Keystore、安全存储、权限和薄 JNI/Capacitor adapter；TypeScript 只保留 UI，不得复制认证、重连、Proto codec、resource/session、SSH 或 WebRTC 状态机。
 - `private/cloud/`：闭源 Control Plane、Companion、Hub、Relay、Web Controller 与 Cloud 移动装配；它是同一个 App 的可选 managed Route 能力，不是第二个面向用户的 App 版本。可以依赖 public contract，public namespace 不得反向依赖。
+- `private/cloud/controller/`：`termx-cloud-controller` composition root，只组合 Control Plane、Controller/User/Operator API、Web Controller 静态资源、持久 store 和独立 listener/middleware；不得把 Web view state 写成第二份 Control Plane truth。
+- `private/cloud/edge/`：`termx-cloud-edge` composition root，只组合 Hub、Relay、listener、健康检查和进程生命周期。Hub 部分必须纯内存；Relay 只允许持久化未确认 usage outbox，不得恢复旧 allocation/connection。
 - `cmd/termx/`：Cobra、参数/target 解析、composition root、输出和退出码；不得实现网络连接、credential resolution、Hello、授权、session cache 或 cleanup。
 - `shared/`：迁移期遗留 primitive/contract 容器，不得新增领域 owner；目标去向和当前允许迁移范围以 repository layout 文档和 `workflow.md` 为准。
 - `testkit/`、`scripts/`、`Makefile`、`go.work`、`go.work.sum`、必要顶层说明文档：受限联动范围，只在当前切片需要时最小化触及。

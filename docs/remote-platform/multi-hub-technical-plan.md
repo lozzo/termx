@@ -26,17 +26,21 @@
 
 ## 3. 目标进程与依赖方向
 
-development 最终运行至少五类独立进程：
+development 最终只维护两类 Cloud 服务二进制：
 
 ```text
-Web Controller/API
-        |
-        v
-Control Plane ---- HTTPS Proto control ---- Hub A (memory only)
-       |   \                               Hub B (memory only)
-       |    \---- HTTPS Proto control ----/
-       |
-       +---- HTTPS Proto control ---------- Relay
+termx-cloud-controller
+├── Control Plane
+├── Controller/User/Operator API
+├── Web Controller static assets
+└── SQLite persistent store
+          |
+          +---- HubControl ---- termx-cloud-edge A/B/...
+          +---- RelayControl -- termx-cloud-edge A/B/...
+
+termx-cloud-edge
+├── Hub runtime: memory only
+└── Relay runtime: allocation + durable usage outbox
 
 daemon Companion/Agent ---- Presence/signaling ---- owning Hub
 client Companion/Engine ---- resolve/signaling ----- owning Hub
@@ -47,12 +51,14 @@ client <========== reliable ordered WebRTC DataChannel ==========> daemon
 
 依赖规则：
 
-1. Control Plane 持久化账号、设备、Subscription、Entitlement、Hub registry、assignment、topology projection、CommandOutbox、quota 和 usage。
-2. Hub 只持有当前 control generation 下的 policy、assignment、Presence、signaling、runtime inventory 和 command delivery 状态；进程退出即丢失。
+1. Controller 内的 Control Plane 持久化账号、设备、Subscription、Entitlement、Hub registry、assignment、topology projection、CommandOutbox、quota 和 usage；Web Controller 只消费这些 service/projection。
+2. Edge 内的 Hub 只持有当前 control generation 下的 policy、assignment、Presence、signaling、runtime inventory 和 command delivery 状态；进程退出即丢失。
 3. daemon Go runtime 持有 authenticated managed PeerSession 与 terminal access 真值。
-4. Relay 持有 active allocation 与短期计量状态；durable usage 和 settlement 属于 Control Plane。
+4. Edge 内的 Relay 持有 active allocation、短期计量状态和未确认 usage event 的 durable outbox；已接收 usage、周期聚合和 settlement 属于 Control Plane。
 5. Web 只读 Control Plane projection，只通过 CommandOutbox 发起控制，不能直接调用 Hub、daemon 或 Relay。
 6. P2P payload 不进入 Hub/Control Plane；Relay 只能看到传输统计，不能看到 terminal payload 或 CapabilityGrant。
+
+合并约束：Controller 与 Edge 只是 composition root。`control-plane`、`web-controller`、`hub`、`relay` 继续是独立 package；HubControl 与 RelayControl 继续使用独立 identity/key role、generation、sequence、command/result 和 lifecycle。
 
 ## 4. Proto 契约拆分
 
@@ -158,9 +164,15 @@ private/cloud/control-plane/
   topology/          validated Presence/session/access projection
   command/           durable parent/child CommandOutbox 与结果聚合
   sqlite/            上述领域 store port 的 development 持久化 adapter
+
+private/cloud/controller/
+  cmd/termx-cloud-controller/  Control Plane + Web Controller composition root
+
+private/cloud/edge/
+  cmd/termx-cloud-edge/        Hub + Relay composition root
 ```
 
-已有 `directory`、`entitlement`、`usage` 等 package 保持各自领域。`sqlite` 只实现存储 port，不拥有业务状态机。
+已有 `directory`、`entitlement`、`usage` 等 package 保持各自领域。`sqlite` 只实现存储 port，不拥有业务状态机。`controller` 与 `edge` 只负责配置、listener、依赖装配、进程生命周期和健康检查，不得定义第二份业务模型。
 
 ### 5.1 development SQLite schema
 
@@ -547,7 +559,7 @@ parent command 只聚合 children，不作为额外网络消息。client device 
 
 ## 10. Relay remote revoke
 
-Relay 增加独立 service identity/control stream，不能借用 Hub control generation。`private/cloud/relay` 在内存中维护：
+Relay 与 Hub 由同一个 `termx-cloud-edge` 进程装配，但 Relay 增加独立 service identity/logical control stream，不能借用 Hub control generation。`private/cloud/relay` 在内存中维护：
 
 ```text
 lease_id -> allocation IDs
@@ -607,9 +619,10 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 
 - 实现 Control Plane `hubregistry/hubcontrol/sqlite`。
 - 实现 Hub 双向逻辑 control transport、full/delta/reconciliation 和 expiry timer。
-- 增加 `private/cloud/control-plane/cmd/termx-cloud-control`、`private/cloud/hub/cmd/termx-cloud-hub`、`private/cloud/relay/cmd/termx-cloud-relay` 三个 composition root。参数只包含监听地址、Control Plane URL、SQLite 路径、deployment/relay identity credential 和显式 dev fixture 路径。
-- `private/cloud/devcloud/cmd/termx-cloud-dev` 降为 development supervisor：启动/停止子进程，写入包含 PID、监听地址、identity、数据库和日志路径的 manifest，并提供只杀指定 Hub、只停 Control Plane、重启 Hub 与触发 assignment migration 的测试控制入口。
-- devcloud 启动至少两个独立 Hub listener/process harness，Control Plane 不再通过 `state.hub` pointer 发布 policy。
+- 增加两个 composition root：`private/cloud/controller/cmd/termx-cloud-controller` 组合 Control Plane + Web Controller；`private/cloud/edge/cmd/termx-cloud-edge` 组合 Hub + Relay。参数只包含各自 listener、Controller URL、SQLite/usage-outbox 路径、Hub/Relay identity credential 和显式 dev fixture 路径。
+- Controller 同一进程使用 public、internal-control、operator 三个独立 listener/middleware；Edge 同一进程使用 Hub public/signaling、Relay data、health 三类 listener，不允许 public handler 访问 Controller store。
+- `private/cloud/devcloud/cmd/termx-cloud-dev` 降为 development supervisor：启动一个 Controller 和至少两个 Edge 子进程，写入包含 PID、监听地址、Hub/Relay identity、数据库、usage outbox 和日志路径的 manifest，并提供只杀指定 Edge、只停 Controller、重启 Edge 与触发 assignment migration 的测试控制入口。
+- Control Plane 不再通过 `state.hub` pointer 发布 policy，Hub module 不通过 Go pointer 直接控制 Relay allocation。
 - 删除 `EdgeSnapshotPath`、runtime snapshot restore 和 active `FileEdgeSnapshotStore`。
 
 ### HUB003：daemon registry 与 topology
@@ -651,7 +664,7 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 
 ### HUB006：Relay allocation remote revoke
 
-- Relay control identity/stream、allocation registry 和 precise close。
+- 在现有 Edge composition 内接通独立 Relay control identity/stream、allocation registry 和 precise close；不得新增第三类 Cloud 服务二进制。
 - CommandOutbox 等待 close ack、final usage 和 settlement；部分完成可解释。
 
 ### CLOUDP006：用户与运营管理面
@@ -661,8 +674,8 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 
 ### HUB007：双 Hub 控制面 E2E
 
-- 独立进程运行一个 Control Plane、两个无盘 Hub、Relay、多个 daemon/client。
-- 验证 assignment migration、旧 epoch fencing、CP outage、Hub restart、inventory recovery、四类 command、P2P/Relay close 和隐私扫描。
+- 独立进程运行一个 Controller、两个 Edge 和多个 daemon/client；每个 Edge 内 Hub 无盘，Relay 只有 usage outbox 可持久化。
+- 验证 assignment migration、旧 epoch fencing、Controller outage、Edge restart、inventory recovery、四类 command、P2P/Relay close 和隐私扫描。
 
 ### CLOUDP007：Development 全产品 E2E
 
@@ -679,7 +692,7 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 | HUB004 | staging 直接 `Hub.RevokeDevice` 作为管理操作完成条件、用 topology CLOSED 冒充 ack |
 | HUB006 | 只按 lease metadata 撤销但不关闭 allocation 的路径 |
 | CLOUDP006 | Web hand-written Cloud management DTO 和 direct store mutation handler |
-| HUB007 | devcloud 单 Hub-only E2E 装配作为主验收入口 |
+| HUB007 | devcloud 单进程/单 Edge E2E 装配作为主验收入口 |
 
 `control-plane/directory` 中短期 `ManagedSession` 只保留到真实 daemon registry/topology 和 signaling correlation 接管完成。若届时无调用者，直接删除该 map/API，不把它改造成第二份 active session truth。
 
@@ -735,11 +748,11 @@ HUB007/CLOUDP007 的操作必须从真实入口发起，不得直接调用 store
 - Relay allocation/final usage/settlement correlation。
 - Android APK SHA-256、模拟器 ABI/API、UI 操作步骤、terminal/file 输出与 logcat。
 
-HUB002 必须新增 `make test-cloud-control`，调用仓库脚本启动独立 Control Plane/Hub A/Hub B/Relay，支持按 manifest 精确 kill/restart 单个进程和 CP 网络故障注入。HUB007 使用该入口，不允许回退到同进程 Go pointer harness。
+HUB002 必须新增 `make test-cloud-controller-edge`，调用仓库脚本启动一个独立 Controller 和 Edge A/Edge B，支持按 manifest 精确 kill/restart 单个 Edge、停止 Controller 和控制网络故障注入。HUB007 使用该入口，不允许回退到把 Controller、Hub、Relay 全部放在一个进程的 Go pointer harness。
 
 CLOUDP007 必须新增 `make e2e-cloud-development`，先运行 `make test-android` 生成唯一 `.artifacts/android/app-devcloud-debug.apk`，记录其 SHA-256，再将同一文件安装到仓库指定 ARM64 AVD 并运行 UI instrumentation。Gradle build output 与安装文件必须 hash 一致。
 
-HUB007 证据矩阵至少逐项记录：assignment migration、CP outage、Hub restart、断线丢失 CLOSED 后 full snapshot、stale event、command replay、KickPresence、device revoke、session close、grant revoke、Relay revoke 及其独立 ack/partial result。
+HUB007 证据矩阵至少逐项记录：assignment migration、Controller outage、Edge restart、断线丢失 CLOSED 后 full snapshot、stale event、command replay、KickPresence、device revoke、session close、grant revoke、Relay revoke 及其独立 ack/partial result。
 
 CLOUDP007 证据矩阵至少逐项记录：Web UI 注册/登录/测试交易/套餐管理/命令发起；同一 APK 的 P2P/Relay terminal 与文件上传下载；quota exhausted、suspended 后 managed Route 拒绝；未登录或 suspended 时 Direct/SSH 继续可用；锁屏/后台/网络切换恢复；crash、ANR、native fatal、secret、SDP/credential 与 terminal payload 日志扫描及产物路径。
 
@@ -748,7 +761,7 @@ CLOUDP007 证据矩阵至少逐项记录：Web UI 注册/登录/测试交易/套
 1. 最大风险是多处 active truth：directory managed session、Hub signaling session、daemon registry、Web online bool 必须按切片逐步降为各自明确的 correlation/projection，不得同时声称 active session owner。
 2. 第二风险是通过时间戳或断线推断状态。所有状态更新必须使用 generation/epoch/revision/incarnation；超时只能产生 `UNKNOWN/STALE`。
 3. 第三风险是 command 成功虚报。authority、delivery、execution、effect 必须分别持久化和展示。
-4. 第四风险是单进程测试掩盖网络边界。HUB002 起新增实现必须通过真实 HTTP Proto adapter；单元测试可用 in-memory port，但最终 E2E 必须独立进程。
+4. 第四风险是 composition 合并掩盖领域边界。HUB002 起 Controller 与 Edge 之间必须通过真实 HTTP Proto adapter；Edge 内 Hub/Relay 只能通过窄 port 或各自 control handler 协作，不能共享业务 map。最终 E2E 必须是一个 Controller 与至少两个独立 Edge 进程。
 5. 不做 Hub-to-Hub forwarding、Relay Mesh、动态无中断换路、多区域数据库、真实支付 provider、通用事件总线或 Web terminal。这些发现只能记录 deferred observation。
 
 ## 16. 执行约束

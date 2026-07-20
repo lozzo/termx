@@ -4,7 +4,7 @@
 
 - `RTC001-RTC010` 已完成统一 WebRTC Route、Android JNI、Direct/SSH/Cloud、Endpoint、文件、生命周期、弱网和最终 APK E2E；证据见 `docs/remote-platform/rtc010-android-final-e2e.md`。
 - Cloud 产品真值见 `docs/remote-platform/cloud-product-spec.md`；多 Hub assignment、纯内存 Hub、daemon topology、CommandOutbox 和 Web 管理真值见 `docs/remote-platform/multi-hub-control-topology-spec.md`；具体 Proto、package、存储、伪代码、迁移删除项和测试矩阵见 `docs/remote-platform/multi-hub-technical-plan.md`。
-- 多 Hub 技术实施规划已经过分布式一致性、安全权限、Go runtime 生命周期、实施测试交付四个独立 reviewer 复审，结论均为 `PASS`，没有当前阻塞 finding。
+- 多 Hub 的 assignment、topology、安全和 runtime 核心规划此前已经过四维度 reviewer 复审；最新部署决策进一步收敛为两个二进制：`termx-cloud-controller` 组合 Control Plane + Web Controller，`termx-cloud-edge` 组合 Hub + Relay，但四个领域 owner、身份、generation、状态机和存储边界不合并。
 - 当前最早未完成切片是 `HUB001`：Hub/control/topology/management Proto 与 daemon session registry contract。
 - 多 Hub 基础和产品能力存在交叉依赖，必须按本文件交错推进，不能先写完所有 Hub 再补套餐，也不能继续在单进程 devcloud 上堆硬编码。
 - development 必须走完整账号、交易、Subscription、Entitlement、managed P2P/Relay、周期 quota、usage、topology 和管理链路；外部 provider 可以使用显式测试实现。
@@ -16,26 +16,31 @@
 PlanCatalog -> Subscription -> Entitlement
                          |
                          v
-Control Plane -> per-Hub projection/control stream -> memory-only Hub
-                         |                              |
-                         |                         daemon Presence
-                         |                              |
-Web CommandOutbox -------+----------------------> daemon PeerSession owner
-                                                        |
-                              P2P DataChannel or Relay <-+
-                                                        |
-Relay usage -> durable UsageLedger ---------------------+
+termx-cloud-controller
+  Control Plane + Web/API + persistent store
+                         |
+              HubControl | RelayControl
+                         v
+termx-cloud-edge × N
+  memory-only Hub + Relay runtime/usage outbox
+                         |
+                    daemon Presence
+                         |
+                 daemon PeerSession owner
+                         |
+              P2P DataChannel or Edge Relay
 ```
 
 - P2P 数据不经过 Hub；Web 分开显示 control owner Hub 和 observed data path。
 - Hub 不落盘 policy、Presence、signaling、topology 或 command dedupe。
+- Relay 与 Hub 同进程部署，但只允许 Relay usage outbox 落盘；Hub/Relay 不共享业务 map、identity、generation 或 command state。
 - daemon Go runtime 是 authenticated managed PeerSession 的 owner。
 - Cloud command 只能减少服务或权限，不能扩大 daemon CapabilityGrant。
 - Local、Direct、SSH、terminal 和 file 不依赖 Cloud 套餐或 Hub。
 
 ## 当前允许范围
 
-- 主动范围：`AGENTS.md`、`workflow.md`、`docs/remote-platform/`、`proto/cloudpb/`、`private/cloud/`、`remote/daemon/`、`remote/webrtc/` 和当前切片测试。
+- 主动范围：`AGENTS.md`、`workflow.md`、`docs/remote-platform/`、`proto/cloudpb/`、`private/cloud/`（包括后续 `controller/`、`edge/` composition root）、`remote/daemon/`、`remote/webrtc/` 和当前切片测试。
 - Client/Companion 联动：`private/cloud/companion/`、`client/adapter/managed/`、`client/runtime/`、`client/binding/`、`cmd/termx/`，只在当前消息链路需要时修改。
 - Android/Web 管理联动：`clients/mobile/android/`、`clients/ui/`、`private/cloud/web-controller/`，只在对应登录、topology、management 或 E2E 切片修改。
 - 受限联动：`core/` 只允许为 daemon-owned PeerSession lifecycle 和 deny-only AccessStore command 增加最小 port；`scripts/`、`Makefile`、`go.work*` 只用于测试装配。
@@ -48,9 +53,10 @@ Relay usage -> durable UsageLedger ---------------------+
 | CBASE001 | 已完成 | Cloud 产品文档基线 | `cloud-product-spec.md` 与 AGENTS/PRD/README 一致 |
 | HBASE001 | 已完成 | 多 Hub 控制面设计基线 | `multi-hub-control-topology-spec.md` 经分布式、安全、运行时、产品/API 四角度审核收口；旧 Hub WAL 目标降为历史 |
 | TBASE001 | 已完成 | 多 Hub 技术实施规划 | `multi-hub-technical-plan.md` 明确 Proto、代码 owner、控制 transport、SQLite 事务、daemon lifecycle、切片修改范围、旧路径删除和 E2E 证据；四个独立 reviewer 均 PASS |
-| HUB001 | 待开始 | Proto 与 daemon registry contract | Hub identity/control stream、HubAssignment、per-Hub revision、Presence availability/freshness、PeerSession/access inventory、parent/child CommandOutbox/result、Web/Operator API 全部 proto-first；定义 daemon registry port/harness，不接真实网络 |
+| DBASE001 | 已完成 | Controller/Edge 双二进制部署基线 | 稳定架构与技术规划冻结 `termx-cloud-controller = Control Plane + Web Controller`、`termx-cloud-edge = Hub + Relay`；只合并 composition/deployment，不合并领域真值或安全身份 |
+| HUB001 | 待开始 | Proto 与 daemon registry contract | Edge deployment metadata、独立 Hub/Relay identity/control generation、HubAssignment、per-Hub revision、Presence availability/freshness、PeerSession/access inventory、parent/child CommandOutbox/result、Web/Operator API 全部 proto-first；定义 daemon registry port/harness，不接真实网络 |
 | CLOUDP001 | 待开始 | PlanCapability 与 Entitlement | 删除 plan/有效期硬编码；catalog、Subscription projection、Entitlement 和 Hub policy 使用同一能力模型；P2P-only、P2P+Relay、suspended fixture |
-| HUB002 | 待开始 | Hub registry、assignment 与纯内存同步 | Hub deployment identity、唯一 control stream generation、strict assignment lease fencing、target-owner routing、per-Hub full/delta/reconciliation；Hub 重启不读磁盘 snapshot |
+| HUB002 | 待开始 | Controller/Edge composition、assignment 与纯内存 Hub 同步 | 建立两个 composition root；一个 Controller + 至少两个 Edge 独立进程；Hub deployment identity、唯一 generation、strict assignment fencing、per-Hub full/delta/reconciliation；Hub 重启不读 snapshot，Relay 只恢复 usage outbox |
 | HUB003 | 待开始 | daemon ManagedPeerSession 与 topology | Hello 后 READY、完整关闭后 CLOSED；统一 registry revision、上行 runtime report、inventory replacement、Hub topology snapshot、CP 账号/epoch校验和 unknown/stale projection |
 | CLOUDP002 | 待开始 | 账号、Subscription 与交易 | 注册/登录/session/refresh、订单、测试 payment event、状态转换、续费/取消/升级降级和持久审计；测试 provider 不直接写 Entitlement |
 | CLOUDP003 | 待开始 | managed P2P 准入与并发 | Entitlement -> signed per-Hub policy；P2P enabled、ownership、revoke、auth epoch、assignment 和 concurrency reservation 由 Hub 内存执行 |
@@ -58,9 +64,9 @@ Relay usage -> durable UsageLedger ---------------------+
 | HUB005 | 待开始 | daemon deny-only grant revoke | enrollment control key、CP-signed deterministic command、opaque revoke reference、daemon AccessStore 原子撤销和 session close；Cloud 不能 grant/expand |
 | CLOUDP004 | 待开始 | Relay 周期 quota 与 reservation | period used/reserved/remaining、账号/设备并发、region、per-lease bytes/bitrate、refresh 复核、expiry/cancel release |
 | CLOUDP005 | 待开始 | durable UsageLedger 与 settlement | signed usage/outbox、event journal、幂等/sequence、period aggregation、reservation settlement 和重启恢复 |
-| HUB006 | 待开始 | Relay allocation remote revoke | Relay control identity/stream、lease/session allocation registry、close ack、final usage drain、reservation settlement 和 PARTIAL 结果 |
-| CLOUDP006 | 待开始 | 用户账号中心与运营管理面 | Proto JSON API；套餐/usage/device/topology/command 页面；权限矩阵、账号隔离、CSRF、近期重认证和审计 |
-| HUB007 | 待开始 | 双 Hub 控制面 E2E | 两个独立纯内存 Hub、assignment migration、CP outage、Hub restart、inventory recovery、四类 command、P2P/Relay close 和隐私扫描；双 Agent 审查 |
+| HUB006 | 待开始 | Edge 内 Relay allocation remote revoke | 在 Edge composition 内接通独立 Relay identity/control generation、lease/session allocation registry、close ack、final usage drain、reservation settlement 和 PARTIAL 结果；不新增第三类服务二进制 |
+| CLOUDP006 | 待开始 | Controller 用户账号中心与运营管理面 | Web/API 与 Control Plane 同一 Controller composition；Proto JSON API、套餐/usage/device/topology/command 页面、权限矩阵、账号隔离、CSRF、近期重认证和审计 |
+| HUB007 | 待开始 | 双 Edge 控制面 E2E | 一个 Controller + 两个 Edge 独立进程、assignment migration、Controller outage、Edge restart、inventory recovery、四类 command、P2P/Relay close 和隐私扫描；双 Agent 审查 |
 | CLOUDP007 | 待开始 | Development 全产品 E2E | Web UI 注册/交易/管理 + Android ARM64 真实 APK P2P/Relay terminal/file、quota、suspend、topology、命令、重启恢复、Direct/SSH 回归；双 Agent 审查 |
 | CLOUDP008 | 延后 | Production Cloud 装配与发布 | 仅 HUB007/CLOUDP007 完成后启动；HTTPS、正式存储、Companion 签名、Android production origin、真实 provider |
 | WEB001 | 延后 | Web/WASM terminal 产品 | 仅用户明确恢复后启动 |
@@ -70,6 +76,7 @@ Relay usage -> durable UsageLedger ---------------------+
 ### HUB001
 
 - 新 contract 位于 `proto/cloudpb/`，generated/descriptor/round-trip/unknown-field 通过。
+- Edge deployment metadata 不得替代 Hub/Relay 独立 identity、sender role、control generation 和 sequence。
 - 明确 `assignment_epoch`、`presence_session_id`、`session_incarnation`、`daemon_runtime_generation`、`registry_revision` 和 per-Hub `projection_revision`。
 - Presence availability 与 freshness 分离；command authority/delivery/execution/effect 分离。
 - Browser management query/command、pagination/filter/error 也必须 proto-first。
@@ -85,11 +92,14 @@ Relay usage -> durable UsageLedger ---------------------+
 
 ### HUB002
 
+- `termx-cloud-controller` 只组合 Control Plane、Web/API、store 和独立 listener；`termx-cloud-edge` 只组合 Hub、Relay 和 health/listener。
+- 至少启动一个 Controller 与两个 Edge 独立进程；禁止继续把 Controller、Hub、Relay 全放在同一进程或用 direct pointer 连接网络边界。
 - 两个 Hub identity 不能冒充；同 Hub ID 旧 control generation 被 fencing。
 - 新 assignment 只有旧 Hub fence ack 或旧 lease expiry 后生效，禁止跨 Hub 双活。
 - Hub 必须使用 timer 或等价生命周期机制在 assignment expiry 主动关闭旧 Presence/signaling，不能只等下一次请求触发检查。
 - 每 Hub projection revision 连续；同 revision/digest reconciliation 幂等，gap/rollback/digest conflict fail closed。
 - Hub 无 snapshot store；CP 不可用重启时 readiness=false。
+- Edge 重启时 Hub 必须 full sync；Relay 只能恢复未确认 usage event，不能恢复 allocation/connection。
 - 相关 race；`git diff --check`。
 
 ### HUB003
@@ -114,6 +124,7 @@ Relay usage -> durable UsageLedger ---------------------+
 - P2P close 使用独立 daemon CommandResult，不用 topology CLOSED 冒充 ack。
 - grant revoke 端到端验签、deny-only、daemon owner 执行。
 - Relay close 必须精确关闭全部 lease allocation、drain usage 并 settlement；部分完成返回 PARTIAL。
+- Hub 与 Relay 即使同 Edge 进程也必须通过独立 port/control owner 协作，禁止 Hub 直接修改 Relay allocation map。
 - 错 Hub/epoch/auth/presence/session/replay/expiry 全部 fail closed。
 
 ### CLOUDP006
@@ -125,10 +136,10 @@ Relay usage -> durable UsageLedger ---------------------+
 
 ### HUB007/CLOUDP007
 
-- 使用独立进程的一个 Control Plane、至少两个纯内存 Hub、Relay、多个 daemon/client。
+- 使用独立进程的一个 Controller、至少两个 Edge、多个 daemon/client；每个 Edge 内 Hub 纯内存，Relay 只有 usage outbox 可持久化。
 - Web 行为从真实 Web UI 发起；Android 行为从同一个最终 ARM64 APK UI 发起。
 - 记录 APK SHA-256、AVD/ABI/API、Hub identity/assignment revision、command receipt 和 topology evidence。
-- 覆盖 CP outage、Hub restart、assignment migration、stale event、command replay、P2P/Relay close、grant revoke、quota、usage、Direct/SSH 回归、crash/secret scan。
+- 覆盖 Controller outage、Edge restart、assignment migration、stale event、command replay、P2P/Relay close、grant revoke、quota、usage、Direct/SSH 回归、crash/secret scan。
 - 架构 reviewer 与代码 reviewer 均 PASS。
 
 ## 执行规则

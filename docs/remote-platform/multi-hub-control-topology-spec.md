@@ -2,14 +2,14 @@
 
 状态：多 Hub 控制面稳定设计基准
 
-活动切片、实现顺序和完成证据只记录在仓库根目录 `workflow.md`。本文定义一个逻辑 Control Plane/Controller Panel 管理多个纯内存 Hub、daemon 长连接、实时连接拓扑和远程控制的稳定架构。
+活动切片、实现顺序和完成证据只记录在仓库根目录 `workflow.md`。本文定义一个逻辑 Cloud Controller 管理多个 Cloud Edge；每个 Edge 在同一个部署单元中组合纯内存 Hub 与 Relay，负责 daemon 长连接、实时连接拓扑、信令和 Relay 数据转发。
 
 ## 1. 目标与边界
 
 TermX Cloud 需要支持：
 
-- 一个逻辑 Control Plane authority 和一个面向用户的 Controller Panel。
-- 多个独立部署、可横向扩容的 Hub server。
+- 一个逻辑 Cloud Controller：同一二进制/进程组合 Control Plane authority、Controller API、Web Controller API 和 Web 静态页面。
+- 多个独立部署、可横向扩容的 Cloud Edge：同一二进制/进程组合 Hub 与 Relay。
 - 每个 daemon Companion 与唯一 owning Hub 建立经过 DeviceIdentity 证明的长 Presence 连接。
 - Hub 的授权投影、Presence、signaling、managed session、topology 和 command execution state 只存在内存，不落盘。
 - Control Plane 持久拥有账号、设备、Subscription、Entitlement、Hub registry、HubAssignment、CommandOutbox、审计和 Web topology projection。
@@ -32,22 +32,19 @@ TermX Cloud 需要支持：
                            Browser
                               |
                               v
-                    Controller Panel/API
-                              |
-                              v
-                    Control Plane authority
+             termx-cloud-controller
+     Web + API + Control Plane + persistent store
  Account / Device / Subscription / Entitlement / HubDirectory
  HubAssignment / CommandOutbox / Audit / TopologyProjection
                               |
-             authenticated bidirectional control streams
+              authenticated logical control streams
              +----------------+----------------+
              |                |                |
-           Hub A            Hub B            Hub C
-        memory only      memory only      memory only
-        policy cache     policy cache     policy cache
-        presence map     presence map     presence map
-        session map      session map      session map
-        topology map     topology map     topology map
+      termx-cloud-edge A  termx-cloud-edge B  termx-cloud-edge C
+      +----------------+  +----------------+  +----------------+
+      | Hub: memory    |  | Hub: memory    |  | Hub: memory    |
+      | Relay: data    |  | Relay: data    |  | Relay: data    |
+      +----------------+  +----------------+  +----------------+
              |                |                |
         daemon Presence  daemon Presence  daemon Presence
 ```
@@ -64,7 +61,14 @@ Relay 数据：Client <=> Relay <=> Daemon
 
 P2P DataChannel 不经过 Hub。Web topology 和 Proto 需要分别使用 `control_owner_hub_id` 与 `observed_data_path`，不得用一条边暗示 P2P 数据经过 Hub。
 
-“一个 Controller Panel”表示只有一个逻辑管理入口和 Control Plane authority。后续可以部署多个无状态 HTTP replica，但它们必须共享同一持久真值和 revision。
+“一个 Cloud Controller”表示只有一个逻辑管理入口和 Control Plane authority。Controller Panel/Web Controller 是该服务的官方 UI，不是第二个服务真值。后续可以部署多个无状态 HTTP replica，但它们必须共享同一持久真值和 revision。
+
+“Hub + Relay 位于同一个 Cloud Edge”只表示二进制、进程、配置和部署单元合并，不表示领域合并：
+
+- Hub 仍是纯内存控制面 owner，不能读取 Relay allocation 内存，也不能落盘 policy、Presence、signaling、topology 或 command dedupe。
+- Relay 仍是数据面 owner，拥有 allocation、带宽 enforcement、usage meter 和 durable usage outbox。
+- Hub control 与 Relay control 使用独立 Proto command、sender sequence、control generation 和 key role；可以复用同一个 Edge 进程和底层 HTTP client，但不能共用状态机或重放空间。
+- Edge 进程重启时 Hub 必须重新 full sync；Relay 只恢复未确认 usage event，不能恢复旧 allocation 或连接。
 
 ## 3. 真值归属
 
@@ -515,7 +519,7 @@ control_key_id
 
 ## 14. Relay allocation revoke
 
-Relay 需要独立 authenticated control stream 或等价固定管理通道；Hub 不直接操作 Relay 内存。
+Relay 与 Hub 部署在同一个 Cloud Edge 进程，但 Relay 仍需要独立 authenticated logical control stream 或等价固定管理通道；Hub module 不直接操作 Relay 内存。Controller 分别面向 HubControl 与 RelayControl 发命令和接收结果。
 
 ```text
 CP CommandOutbox
@@ -714,7 +718,7 @@ temporary
 
 必须证明：
 
-1. 两个独立纯内存 Hub 从同一 Control Plane 建立唯一 control stream identity。
+1. 一个 `termx-cloud-controller` 与至少两个独立 `termx-cloud-edge` 进程运行；每个 Edge 的 Hub 从同一 Control Plane 建立唯一 Hub control identity，Relay 建立独立 Relay control identity。
 2. daemon 只在有效 assignment lease 的 owning Hub 建立 active Presence。
 3. 旧 Hub 未 fence 时 Control Plane 不签发重叠 assignment；旧 epoch event 不能覆盖新 projection。
 4. Control Plane 停止后，运行中 Hub 在有效 projection/assignment 窗口内仍可完成新 managed P2P。
@@ -741,5 +745,7 @@ temporary
 - 产品管理面、状态可解释性和 Proto-first API。
 
 初审指出的 assignment 双活、per-Hub revision、command replay、inventory 线性化、控制/数据路径混淆、freshness、daemon command 签名、跨账号 topology、P2P/Relay 虚报、跨 Hub client revoke 和 opaque access reference 等问题均已写入本文和 `workflow.md`。四个 reviewer 复审结论均为 `PASS`，没有当前设计阻塞 finding。
+
+后续 `DBASE001` 根据用户确认把部署单元收敛为 `termx-cloud-controller` 与 `termx-cloud-edge`。该调整只合并 composition root、进程和部署，不改变上述已审核的 Control Plane、Hub、Relay、Web owner、安全身份、generation、command 或数据路径语义。
 
 不阻塞的 deferred observation 只包括：实现时使用 timer 主动收敛 assignment expiry、后续评估 Presence 真双向 transport、生产数据保留期和复杂 fleet scheduling；这些不得扩大 `HUB001-HUB007` 当前范围。
