@@ -454,3 +454,48 @@ message ReserveRelayLeaseRequest {
   string region = 7;
   string lease_id = 8;
 }
+
+// RelayUsageEvent 是 Relay 对单 lease 时间窗口签名的用量 metadata。
+// 它不包含 terminal、CapabilityGrant、TURN credential 或 DataChannel payload。
+message RelayUsageEvent {
+  string event_id = 1;
+  string lease_id = 2;
+  string managed_session_id = 3;
+  string relay_id = 4;
+  string route_id = 5;
+  ObservedPath path_kind = 6;
+  string hop_id = 7;
+  uint64 sequence = 8;
+  int64 interval_start_unix = 9;
+  int64 interval_end_unix = 10;
+  uint64 bytes_up = 11;
+  uint64 bytes_down = 12;
+  uint64 active_seconds = 13;
+  string termination_reason = 14;
+  string key_id = 15;
+  bytes signature = 16;
+}
+
+// RelayUsageRecord 把 event 与签发它的原始 lease 绑定，Controller 必须重新验两层签名。
+message RelayUsageRecord {
+  bytes signed_lease = 1;
+  RelayUsageEvent event = 2;
+}
+
+// ReportRelayUsageRequest 是 Edge usage outbox 的有界 at-least-once batch。
+message ReportRelayUsageRequest {
+  string relay_id = 1;
+  string edge_deployment_id = 2;
+  repeated RelayUsageRecord records = 3;
+}
+
+// RelayUsageAck 只确认 Controller 已持久提交的精确 event sequence/body。
+message RelayUsageAck {
+  string event_id = 1;
+  uint64 sequence = 2;
+  bool duplicate = 3;
+}
+
+message ReportRelayUsageResponse {
+  repeated RelayUsageAck acknowledgements = 1;
+}

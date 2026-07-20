@@ -22,6 +22,7 @@ import (
 func TestControlClientBootstrapsMemoryProjectionAndReportsReconciliation(t *testing.T) {
 	now := time.Now().UTC()
 	hubPublicKey, hubPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
+	relayPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
 	controllerPublicKey, controllerPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
 	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
 	if err != nil {
@@ -30,8 +31,8 @@ func TestControlClientBootstrapsMemoryProjectionAndReportsReconciliation(t *test
 	defer store.Close()
 	registry, _ := hubregistry.New(store)
 	topologyService, _ := cloudtopology.New(registry, store)
-	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local-1", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublicKey), RelayId: "relay-1", RelayControlIdentityFingerprint: "relay-fingerprint"}
-	if err := registry.RegisterDeployment(context.Background(), hubregistry.Deployment{Metadata: metadata, ControlPublicKey: hubPublicKey, Enabled: true, UpdatedAt: now}); err != nil {
+	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local-1", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublicKey), RelayId: "relay-1", RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(relayPublicKey)}
+	if err := registry.RegisterDeployment(context.Background(), hubregistry.Deployment{Metadata: metadata, ControlPublicKey: hubPublicKey, RelayControlPublicKey: relayPublicKey, Enabled: true, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	publisher := hubcontrol.NewPublisher()

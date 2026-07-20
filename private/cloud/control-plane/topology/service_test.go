@@ -27,8 +27,9 @@ func TestTopologyDerivesAccountAndDegradesLostControlToUnknownStale(t *testing.T
 	defer store.Close()
 	registry, _ := hubregistry.New(store)
 	publicKey, _, _ := ed25519.GenerateKey(rand.Reader)
-	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(publicKey), RelayId: "relay-1", RelayControlIdentityFingerprint: "relay-fingerprint"}
-	if err := registry.RegisterDeployment(ctx, hubregistry.Deployment{Metadata: metadata, ControlPublicKey: publicKey, Enabled: true, UpdatedAt: now}); err != nil {
+	relayPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(publicKey), RelayId: "relay-1", RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(relayPublicKey)}
+	if err := registry.RegisterDeployment(ctx, hubregistry.Deployment{Metadata: metadata, ControlPublicKey: publicKey, RelayControlPublicKey: relayPublicKey, Enabled: true, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := registry.Assign(ctx, &cloudpb.HubAssignment{DaemonDeviceId: "daemon-1", AccountId: "account-1", HubId: "hub-1", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}, now); err != nil {

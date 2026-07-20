@@ -104,6 +104,22 @@ func (server *Server) ActivateLease(request ActivationRequest) (Activation, erro
 	return server.authority.ActivateLease(request)
 }
 
+// DrainUsageRecords 从 Relay authority 取得已签名增量记录；调用方必须先写 durable outbox 再上报。
+func (server *Server) DrainUsageRecords(terminationReason string) ([]UsageRecord, error) {
+	if server == nil || server.authority == nil {
+		return nil, ErrLeaseRejected
+	}
+	return server.authority.DrainUsageRecords(terminationReason)
+}
+
+// FlushUsageOutbox 让 Relay authority 以落盘成功为计量提交点。
+func (server *Server) FlushUsageOutbox(outbox *UsageOutbox, terminationReason string) error {
+	if server == nil || server.authority == nil {
+		return ErrLeaseRejected
+	}
+	return server.authority.FlushUsageOutbox(outbox, terminationReason)
+}
+
 // Close 幂等关闭 TURN server 和所有 active allocations。
 func (server *Server) Close() error {
 	if server == nil {

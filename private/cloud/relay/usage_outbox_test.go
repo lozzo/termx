@@ -3,6 +3,7 @@ package relay_test
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	"github.com/lozzow/termx/private/cloud/control-plane/usage"
@@ -34,5 +35,34 @@ func TestUsageOutboxSurvivesRestartAndAcksIdempotently(t *testing.T) {
 	pending, err = restarted.Pending()
 	if err != nil || len(pending) != 0 {
 		t.Fatalf("acked pending = (%#v, %v)", pending, err)
+	}
+}
+
+func TestFlushUsageOutboxPersistsSameSecondTrafficBeforeClearingCounters(t *testing.T) {
+	fixture := newRelayFixture(t, 2, 10_000, 1_000)
+	activation, err := fixture.authority.ActivateLease(fixture.activationRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "termx-relay", "source"); !ok {
+		t.Fatal("TURN auth failed")
+	}
+	if err := fixture.authority.ConfirmAllocation("source", "allocation", activation.ClientCredential.Username); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.authority.RecordTraffic("allocation", 100, 200); err != nil {
+		t.Fatal(err)
+	}
+	outbox, _ := relay.NewUsageOutbox(filepath.Join(t.TempDir(), "same-second.outbox"))
+	if err := fixture.authority.FlushUsageOutbox(outbox, "edge_shutdown"); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := outbox.Pending()
+	if err != nil || len(pending) != 1 || pending[0].Event.BytesUp != 100 || pending[0].Event.BytesDown != 200 || pending[0].Event.IntervalEndUnix != pending[0].Event.IntervalStartUnix+1 {
+		t.Fatalf("same-second durable usage = (%#v, %v)", pending, err)
+	}
+	fixture.clock.Advance(time.Second)
+	if events, err := fixture.authority.DrainUsage(""); err != nil || len(events) != 0 {
+		t.Fatalf("flushed counters were emitted twice = (%#v, %v)", events, err)
 	}
 }

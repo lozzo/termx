@@ -45,7 +45,7 @@ PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
 CREATE TABLE IF NOT EXISTS hub_deployments(
   hub_id TEXT PRIMARY KEY, deployment_id TEXT NOT NULL, credential_fingerprint TEXT NOT NULL,
-  control_public_key BLOB NOT NULL, region TEXT NOT NULL, public_label TEXT NOT NULL,
+  control_public_key BLOB NOT NULL, relay_control_public_key BLOB NOT NULL, region TEXT NOT NULL, public_label TEXT NOT NULL,
   relay_id TEXT NOT NULL, relay_credential_fingerprint TEXT NOT NULL,
   enabled INTEGER NOT NULL, last_control_generation INTEGER NOT NULL, updated_at TEXT NOT NULL
 );
@@ -133,6 +133,17 @@ CREATE TABLE IF NOT EXISTS relay_lease_reservations(
   revision INTEGER NOT NULL, projection BLOB NOT NULL
 );
 CREATE INDEX IF NOT EXISTS relay_reservations_account_period ON relay_lease_reservations(account_id,period_start_unix_millis,state);
+CREATE TABLE IF NOT EXISTS relay_usage_events(
+  relay_id TEXT NOT NULL, lease_id TEXT NOT NULL, sequence INTEGER NOT NULL,
+  event_id TEXT NOT NULL UNIQUE, digest BLOB NOT NULL, record BLOB NOT NULL,
+  created_at_unix_millis INTEGER NOT NULL,
+  PRIMARY KEY(relay_id,lease_id,sequence)
+);
+CREATE TABLE IF NOT EXISTS relay_usage_aggregates(
+  account_id TEXT NOT NULL, managed_session_id TEXT NOT NULL, route_id TEXT NOT NULL,
+  period_start_unix_millis INTEGER NOT NULL, projection BLOB NOT NULL,
+  PRIMARY KEY(account_id,managed_session_id,route_id,period_start_unix_millis)
+);
 CREATE TABLE IF NOT EXISTS commerce_audit(
   audit_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, occurred_at INTEGER NOT NULL,
   projection BLOB NOT NULL
@@ -161,6 +172,9 @@ CREATE TABLE IF NOT EXISTS management_command_results(
 		return err
 	}
 	if err := store.ensureColumn("cloud_device_ownership", "revoked", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := store.ensureColumn("hub_deployments", "relay_control_public_key", "BLOB NOT NULL DEFAULT X''"); err != nil {
 		return err
 	}
 	return store.ensureColumn("cloud_device_ownership", "public_key", "BLOB NOT NULL DEFAULT X''")
@@ -199,11 +213,12 @@ func (store *Store) ensureColumn(table, column, definition string) error {
 func (store *Store) PutDeployment(ctx context.Context, value hubregistry.Deployment) error {
 	metadata := value.Metadata
 	_, err := store.db.ExecContext(ctx, `INSERT INTO hub_deployments(
-hub_id,deployment_id,credential_fingerprint,control_public_key,region,public_label,relay_id,relay_credential_fingerprint,enabled,last_control_generation,updated_at)
-VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(hub_id) DO UPDATE SET
+hub_id,deployment_id,credential_fingerprint,control_public_key,relay_control_public_key,region,public_label,relay_id,relay_credential_fingerprint,enabled,last_control_generation,updated_at)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(hub_id) DO UPDATE SET
 deployment_id=excluded.deployment_id,credential_fingerprint=excluded.credential_fingerprint,control_public_key=excluded.control_public_key,
+relay_control_public_key=excluded.relay_control_public_key,
 region=excluded.region,public_label=excluded.public_label,relay_id=excluded.relay_id,relay_credential_fingerprint=excluded.relay_credential_fingerprint,
-enabled=excluded.enabled,updated_at=excluded.updated_at`, metadata.GetHubId(), metadata.GetEdgeDeploymentId(), metadata.GetHubControlIdentityFingerprint(), []byte(value.ControlPublicKey), metadata.GetRegion(), metadata.GetPublicLabel(), metadata.GetRelayId(), metadata.GetRelayControlIdentityFingerprint(), boolInt(value.Enabled), value.ControlGeneration, value.UpdatedAt.UTC().Format(time.RFC3339Nano))
+enabled=excluded.enabled,updated_at=excluded.updated_at`, metadata.GetHubId(), metadata.GetEdgeDeploymentId(), metadata.GetHubControlIdentityFingerprint(), []byte(value.ControlPublicKey), []byte(value.RelayControlPublicKey), metadata.GetRegion(), metadata.GetPublicLabel(), metadata.GetRelayId(), metadata.GetRelayControlIdentityFingerprint(), boolInt(value.Enabled), value.ControlGeneration, value.UpdatedAt.UTC().Format(time.RFC3339Nano))
 	return err
 }
 
@@ -211,10 +226,10 @@ enabled=excluded.enabled,updated_at=excluded.updated_at`, metadata.GetHubId(), m
 func (store *Store) Deployment(ctx context.Context, hubID string) (hubregistry.Deployment, error) {
 	var value hubregistry.Deployment
 	var metadata cloudpb.EdgeDeploymentMetadata
-	var publicKey []byte
+	var publicKey, relayPublicKey []byte
 	var enabled int
 	var updated string
-	err := store.db.QueryRowContext(ctx, `SELECT deployment_id,credential_fingerprint,control_public_key,region,public_label,relay_id,relay_credential_fingerprint,enabled,last_control_generation,updated_at FROM hub_deployments WHERE hub_id=?`, hubID).Scan(&metadata.EdgeDeploymentId, &metadata.HubControlIdentityFingerprint, &publicKey, &metadata.Region, &metadata.PublicLabel, &metadata.RelayId, &metadata.RelayControlIdentityFingerprint, &enabled, &value.ControlGeneration, &updated)
+	err := store.db.QueryRowContext(ctx, `SELECT deployment_id,credential_fingerprint,control_public_key,relay_control_public_key,region,public_label,relay_id,relay_credential_fingerprint,enabled,last_control_generation,updated_at FROM hub_deployments WHERE hub_id=?`, hubID).Scan(&metadata.EdgeDeploymentId, &metadata.HubControlIdentityFingerprint, &publicKey, &relayPublicKey, &metadata.Region, &metadata.PublicLabel, &metadata.RelayId, &metadata.RelayControlIdentityFingerprint, &enabled, &value.ControlGeneration, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return hubregistry.Deployment{}, hubregistry.ErrDeploymentNotFound
 	}
@@ -222,7 +237,7 @@ func (store *Store) Deployment(ctx context.Context, hubID string) (hubregistry.D
 		return hubregistry.Deployment{}, err
 	}
 	metadata.HubId = hubID
-	value.Metadata, value.ControlPublicKey, value.Enabled = &metadata, append(ed25519.PublicKey(nil), publicKey...), enabled != 0
+	value.Metadata, value.ControlPublicKey, value.RelayControlPublicKey, value.Enabled = &metadata, append(ed25519.PublicKey(nil), publicKey...), append(ed25519.PublicKey(nil), relayPublicKey...), enabled != 0
 	value.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
 	return value, nil
 }

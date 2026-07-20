@@ -36,6 +36,7 @@ type Config struct {
 	UsageOutboxPath                     string                          `json:"usage_outbox_path"`
 	Metadata                            *cloudpb.EdgeDeploymentMetadata `json:"metadata"`
 	HubControlPrivateKeyBase64          string                          `json:"hub_control_private_key_base64"`
+	RelayControlPrivateKeyBase64        string                          `json:"relay_control_private_key_base64"`
 	ControllerProjectionKeyID           string                          `json:"controller_projection_key_id"`
 	ControllerProjectionPublicKeyBase64 string                          `json:"controller_projection_public_key_base64"`
 }
@@ -68,6 +69,7 @@ type Runtime struct {
 	cancel      context.CancelFunc
 	errors      chan error
 	closeOnce   sync.Once
+	usageWG     sync.WaitGroup
 }
 
 // LoadConfig 读取 Edge JSON config，未知字段 fail closed。
@@ -170,6 +172,8 @@ func Start(config Config) (*Runtime, error) {
 			runtime.errors <- err
 		}
 	}()
+	runtime.usageWG.Add(1)
+	go runtime.runUsagePump(controlContext)
 	return runtime, nil
 }
 
@@ -220,6 +224,7 @@ func (runtime *Runtime) Close(ctx context.Context) error {
 	var result error
 	runtime.closeOnce.Do(func() {
 		runtime.cancel()
+		runtime.usageWG.Wait()
 		for _, server := range runtime.servers {
 			if err := server.Shutdown(ctx); err != nil && result == nil {
 				result = err
@@ -227,6 +232,9 @@ func (runtime *Runtime) Close(ctx context.Context) error {
 		}
 		runtime.projection.Close()
 		if err := runtime.relay.Close(); err != nil && result == nil {
+			result = err
+		}
+		if err := runtime.relay.FlushUsageOutbox(runtime.usageOutbox, "edge_shutdown"); err != nil && result == nil {
 			result = err
 		}
 	})
@@ -255,11 +263,11 @@ func (fence *assignmentFence) FenceAssignment(daemonDeviceID string, assignmentE
 
 func startRelay(config Config, controllerKey servicecredential.VerificationKey, now time.Time) (*cloudrelay.Server, error) {
 	keyRing, _ := servicecredential.NewKeyRing(controllerKey)
-	_, usagePrivateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return nil, err
+	relayPrivateBytes, err := base64.RawStdEncoding.DecodeString(config.RelayControlPrivateKeyBase64)
+	if err != nil || len(relayPrivateBytes) != ed25519.PrivateKeySize {
+		return nil, fmt.Errorf("invalid Relay control private key")
 	}
-	usageSigner, err := servicecredential.NewSigner("edge-usage-"+config.Metadata.GetRelayId(), usagePrivateKey, now.Add(-time.Minute), now.Add(24*time.Hour))
+	usageSigner, err := servicecredential.NewSigner("relay-control-"+config.Metadata.GetRelayId(), ed25519.PrivateKey(relayPrivateBytes), now.Add(-time.Hour), now.Add(365*24*time.Hour))
 	if err != nil {
 		return nil, err
 	}

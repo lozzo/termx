@@ -33,11 +33,12 @@ var (
 // Deployment 是 Controller 持久保存的 Hub control identity。
 // PublicKey 只验证 Hub challenge proof；Relay 使用独立 registry 与 key role。
 type Deployment struct {
-	Metadata          *cloudpb.EdgeDeploymentMetadata
-	ControlPublicKey  ed25519.PublicKey
-	Enabled           bool
-	ControlGeneration uint64
-	UpdatedAt         time.Time
+	Metadata              *cloudpb.EdgeDeploymentMetadata
+	ControlPublicKey      ed25519.PublicKey
+	RelayControlPublicKey ed25519.PublicKey
+	Enabled               bool
+	ControlGeneration     uint64
+	UpdatedAt             time.Time
 }
 
 // Assignment 是 daemon 到 owning Hub 的持久 lease 与 fencing 状态。
@@ -76,14 +77,18 @@ func New(store Store) (*Registry, error) {
 // RegisterDeployment 写入或更新一个显式部署记录。
 // metadata fingerprint 必须与 public key 一致，防止配置把 Hub ID 绑定到错误 key。
 func (registry *Registry) RegisterDeployment(ctx context.Context, deployment Deployment) error {
-	if deployment.Metadata == nil || deployment.Metadata.GetHubId() == "" || deployment.Metadata.GetEdgeDeploymentId() == "" || deployment.Metadata.GetRegion() == "" || len(deployment.ControlPublicKey) != ed25519.PublicKeySize {
+	if deployment.Metadata == nil || deployment.Metadata.GetHubId() == "" || deployment.Metadata.GetEdgeDeploymentId() == "" || deployment.Metadata.GetRegion() == "" || len(deployment.ControlPublicKey) != ed25519.PublicKeySize || len(deployment.RelayControlPublicKey) != ed25519.PublicKeySize {
 		return ErrDeploymentIdentity
 	}
 	if deployment.Metadata.GetHubControlIdentityFingerprint() != IdentityFingerprint(deployment.ControlPublicKey) {
 		return ErrDeploymentIdentity
 	}
+	if deployment.Metadata.GetRelayControlIdentityFingerprint() != IdentityFingerprint(deployment.RelayControlPublicKey) {
+		return ErrDeploymentIdentity
+	}
 	deployment.Metadata = proto.Clone(deployment.Metadata).(*cloudpb.EdgeDeploymentMetadata)
 	deployment.ControlPublicKey = append(ed25519.PublicKey(nil), deployment.ControlPublicKey...)
+	deployment.RelayControlPublicKey = append(ed25519.PublicKey(nil), deployment.RelayControlPublicKey...)
 	return registry.store.PutDeployment(ctx, deployment)
 }
 

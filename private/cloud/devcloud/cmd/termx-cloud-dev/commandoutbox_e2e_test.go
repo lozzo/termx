@@ -21,30 +21,34 @@ import (
 	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
 	"github.com/lozzow/termx/private/cloud/controller"
 	cloudedge "github.com/lozzow/termx/private/cloud/edge"
+	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
 	webcontroller "github.com/lozzow/termx/private/cloud/web-controller"
 	"github.com/lozzow/termx/proto/cloudpb"
 	remotedaemon "github.com/lozzow/termx/remote/daemon"
 	"github.com/lozzow/termx/shared/cloudcompanion"
 	"github.com/lozzow/termx/shared/remoteauth"
+	"github.com/pion/webrtc/v4"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestSignedCloseCommandCrossesControllerEdgeAndDaemonHTTPBoundaries(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	hubPublic, hubPrivate, _ := ed25519.GenerateKey(rand.Reader)
+	relayPublic, relayPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	projectionPublic, projectionPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	daemonControlPublic, daemonControlPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	daemonPublic, daemonPrivate, _ := ed25519.GenerateKey(rand.Reader)
-	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local-1", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublic), RelayId: "relay-1", RelayControlIdentityFingerprint: "relay-fingerprint"}
+	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local-1", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublic), RelayId: "relay-1", RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(relayPublic)}
 	databasePath := filepath.Join(t.TempDir(), "controller.db")
 	catalogPath := filepath.Join(findRepoRoot(t), "private/cloud/web-controller/config/plans.json")
 	account := seedCommandAccount(t, databasePath, catalogPath, now)
-	controllerRuntime, err := controller.Start(controller.Config{DatabasePath: databasePath, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: "projection-1", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-1", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), Deployments: []controller.DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic)}}, Devices: []*cloudpb.CloudDevicePolicy{{AccountId: account.GetAccountId(), DeviceId: "client-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: account.GetAuthRevision()}, {AccountId: account.GetAccountId(), DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision(), PublicKey: daemonPublic}}, Assignments: []*cloudpb.HubAssignment{{DaemonDeviceId: "daemon-1", AccountId: account.GetAccountId(), HubId: "hub-1", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}}})
+	controllerRuntime, err := controller.Start(controller.Config{DatabasePath: databasePath, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: "projection-1", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-1", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), Deployments: []controller.DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic)}}, Devices: []*cloudpb.CloudDevicePolicy{{AccountId: account.GetAccountId(), DeviceId: "client-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: account.GetAuthRevision()}, {AccountId: account.GetAccountId(), DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision(), PublicKey: daemonPublic}}, Assignments: []*cloudpb.HubAssignment{{DaemonDeviceId: "daemon-1", AccountId: account.GetAccountId(), HubId: "hub-1", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer controllerRuntime.Close(context.Background())
-	edgeRuntime, err := cloudedge.Start(cloudedge.Config{ControllerURL: controllerRuntime.Manifest().InternalControlURL, HubListen: "127.0.0.1:0", HealthListen: "127.0.0.1:0", RelayListen: "127.0.0.1:0", UsageOutboxPath: filepath.Join(t.TempDir(), "usage.outbox"), Metadata: metadata, HubControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(hubPrivate), ControllerProjectionKeyID: "projection-1", ControllerProjectionPublicKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPublic)})
+	usageOutboxPath := filepath.Join(t.TempDir(), "usage.outbox")
+	edgeRuntime, err := cloudedge.Start(cloudedge.Config{ControllerURL: controllerRuntime.Manifest().InternalControlURL, HubListen: "127.0.0.1:0", HealthListen: "127.0.0.1:0", RelayListen: "127.0.0.1:0", UsageOutboxPath: usageOutboxPath, Metadata: metadata, HubControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(hubPrivate), RelayControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(relayPrivate), ControllerProjectionKeyID: "projection-1", ControllerProjectionPublicKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPublic)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,6 +119,8 @@ func TestSignedCloseCommandCrossesControllerEdgeAndDaemonHTTPBoundaries(t *testi
 	if clientLease.GetLeaseId() != daemonLease.GetLeaseId() || !bytes.Equal(clientLease.GetSignedLease(), daemonLease.GetSignedLease()) || len(clientLease.GetIceServers()) != 1 || len(daemonLease.GetIceServers()) != 1 || clientLease.GetIceServers()[0].GetUsername() == daemonLease.GetIceServers()[0].GetUsername() || clientLease.GetIceServers()[0].GetCredential() == daemonLease.GetIceServers()[0].GetCredential() {
 		t.Fatalf("caller-specific Relay lease mismatch: client=%v daemon=%v", clientLease, daemonLease)
 	}
+	exchangeRelayData(t, clientLease.GetIceServers()[0], daemonLease.GetIceServers()[0], "cloudp005-usage-marker")
+	waitRelayUsageSettled(t, databasePath, usageOutboxPath, account.GetAccountId())
 	_, err = adapter.CompleteSignalingOffer(context.Background(), daemonSession.Authorization(), &cloudpb.CompleteSignalingOfferRequest{SignalingSessionId: offer.GetSignalingSessionId(), Result: &cloudpb.CompleteSignalingOfferRequest_Answer{Answer: &cloudpb.SignalingAnswer{SignalingSessionId: offer.GetSignalingSessionId(), Sdp: "answer"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -261,6 +267,107 @@ func seedCommandAccount(t *testing.T, databasePath, catalogPath string, now time
 		t.Fatal(err)
 	}
 	return account
+}
+
+func exchangeRelayData(t *testing.T, clientServer, daemonServer *cloudpb.IceServer, marker string) {
+	t.Helper()
+	settingEngine := webrtc.SettingEngine{}
+	settingEngine.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
+	settingEngine.SetIncludeLoopbackCandidate(true)
+	api := webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine))
+	configuration := func(server *cloudpb.IceServer) webrtc.Configuration {
+		return webrtc.Configuration{ICEServers: []webrtc.ICEServer{{URLs: append([]string(nil), server.GetUrls()...), Username: server.GetUsername(), Credential: server.GetCredential()}}, ICETransportPolicy: webrtc.ICETransportPolicyRelay}
+	}
+	left, err := api.NewPeerConnection(configuration(clientServer))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer left.Close()
+	right, err := api.NewPeerConnection(configuration(daemonServer))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer right.Close()
+	received := make(chan string, 1)
+	right.OnDataChannel(func(channel *webrtc.DataChannel) {
+		channel.OnMessage(func(message webrtc.DataChannelMessage) { received <- string(message.Data) })
+	})
+	channel, err := left.CreateDataChannel("protocol", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened := make(chan struct{})
+	channel.OnOpen(func() { close(opened) })
+	offer, _ := left.CreateOffer(nil)
+	leftGathered := webrtc.GatheringCompletePromise(left)
+	if err := left.SetLocalDescription(offer); err != nil {
+		t.Fatal(err)
+	}
+	waitCloudSignal(t, leftGathered, "client ICE gathering")
+	if err := right.SetRemoteDescription(*left.LocalDescription()); err != nil {
+		t.Fatal(err)
+	}
+	answer, _ := right.CreateAnswer(nil)
+	rightGathered := webrtc.GatheringCompletePromise(right)
+	if err := right.SetLocalDescription(answer); err != nil {
+		t.Fatal(err)
+	}
+	waitCloudSignal(t, rightGathered, "daemon ICE gathering")
+	if err := left.SetRemoteDescription(*right.LocalDescription()); err != nil {
+		t.Fatal(err)
+	}
+	waitCloudSignal(t, opened, "Relay DataChannel open")
+	if err := channel.SendText(marker); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-received:
+		if got != marker {
+			t.Fatalf("Relay DataChannel payload = %q", got)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for Relay DataChannel payload")
+	}
+	pair, err := left.SCTP().Transport().ICETransport().GetSelectedCandidatePair()
+	if err != nil || pair == nil || pair.Local == nil || pair.Local.Typ != webrtc.ICECandidateTypeRelay {
+		t.Fatalf("Relay selected candidate = (%v, %v)", pair, err)
+	}
+}
+
+func waitCloudSignal(t *testing.T, signal <-chan struct{}, operation string) {
+	t.Helper()
+	select {
+	case <-signal:
+	case <-time.After(15 * time.Second):
+		t.Fatalf("timed out waiting for %s", operation)
+	}
+}
+
+func waitRelayUsageSettled(t *testing.T, databasePath, outboxPath, accountID string) {
+	t.Helper()
+	store, err := cloudsqlite.Open(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	entitlement, err := store.Entitlement(context.Background(), accountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outbox, err := cloudrelay.NewUsageOutbox(outboxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		quota, quotaErr := store.Snapshot(context.Background(), accountID, time.UnixMilli(entitlement.GetEffectiveFromUnixMillis()), time.UnixMilli(entitlement.GetEffectiveUntilUnixMillis()), time.Now().UTC())
+		pending, pendingErr := outbox.Pending()
+		if quotaErr == nil && pendingErr == nil && quota.GetPeriod().GetUsedBytes() > 0 && len(pending) == 0 {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("Relay usage did not settle and clear durable outbox")
 }
 
 func loginCommandAccount(t *testing.T, origin string) map[string]*http.Cookie {

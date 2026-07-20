@@ -725,9 +725,12 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 
 ### CLOUDP005：durable usage 与 settlement
 
-- `used_bytes` 字段和 reservation owner 已存在，但 signed usage event 的 durable journal、sequence/idempotency、period aggregation 与 reservation settlement 仍由 CLOUDP005 接入，CLOUDP004 不把未验证 Relay/Web 汇总值写入 used truth。
-- Relay signed usage 进入 durable journal/outbox；幂等键保持 `relay_id + lease_id + sequence`。
-- settlement 只消费已验证 usage，不信任 Web 或 Hub 汇总值。
+- `RelayUsageEvent`、`RelayUsageRecord`、report/ack 和 `RelayUsageAggregate` 已进入 Proto；Go `usage.Event` 只保留为 Relay 内部 canonical signing model，Edge 到 Controller wire 只传 generated message。
+- Edge 从 0600 配置加载独立 Relay control private key，Controller deployment registry 持久化并校验对应公钥/fingerprint；Hub control、Relay usage、Controller projection 和 daemon command key role 不复用。
+- Relay authority 以 `FlushUsageOutbox` 作为本地计量提交点：先签名并原子写 0600 durable outbox，成功后才推进 sequence、窗口和 pending counters；同秒 shutdown 使用最小一秒窗口，Controller 暂时拒绝未来 end 时 outbox 保留并在下一秒重试。
+- Edge pump 把原始 signed lease 与 signed event 组成有界 at-least-once batch；Controller 重新验证 RelayLease issuer/audience/region/binding，再按 deployment Relay key 验 event。只有 SQLite settlement 完整提交后才返回精确 event/sequence ack，网络失败、Controller outage 或 ack 丢失都保留队列。
+- SQLite 在一个事务内维护 `(relay_id, lease_id, sequence)` journal/digest、严格递增 sequence、period used、reservation used/state 和 managed session/route aggregate；相同 body replay 返回 duplicate，不同 body、回退、越界或错误 binding fail closed。termination event 结算后释放未使用 reservation；无 final event 的 reservation 继续由 expiry+report grace 收敛。
+- harness 已覆盖 journal/aggregate/settlement 的 SQLite 重启、Edge outbox 重启补报、same-second shutdown、重复/冲突/sequence/bytes 边界，以及真实 Controller-Edge-Relay Pion relay-only DataChannel 产生流量、outbox 上报、Controller 入账和 ack 清空。Relay allocation 的远程关闭与强制 final drain 仍属于 HUB006。
 
 ### HUB006：Relay allocation remote revoke
 

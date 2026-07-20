@@ -132,12 +132,25 @@ func TestRelayQuotaAndReservationAreProtoFirst(t *testing.T) {
 		}
 	}
 	assertFieldsExcludeFragments(t, (&RelayLeaseReservation{}).ProtoReflect().Descriptor(), []string{"terminal", "grant", "capability", "credential", "private_key", "payload"})
+	aggregateFields := descriptorFieldNames((&RelayUsageAggregate{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"account_id", "managed_session_id", "route_id", "period_start_unix_millis", "period_end_unix_millis", "bytes_up", "bytes_down", "active_seconds", "revision"} {
+		if !aggregateFields[required] {
+			t.Fatalf("RelayUsageAggregate missing %q: %v", required, aggregateFields)
+		}
+	}
 	reserveFields := descriptorFieldNames((&ReserveRelayLeaseRequest{}).ProtoReflect().Descriptor())
 	for _, required := range []string{"account_id", "managed_session_id", "client_device_id", "target_device_id", "hub_id", "relay_id", "region", "lease_id"} {
 		if !reserveFields[required] {
 			t.Fatalf("ReserveRelayLeaseRequest missing %q: %v", required, reserveFields)
 		}
 	}
+	usageFields := descriptorFieldNames((&RelayUsageEvent{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"event_id", "lease_id", "managed_session_id", "relay_id", "path_kind", "sequence", "interval_start_unix", "interval_end_unix", "bytes_up", "bytes_down", "active_seconds", "key_id", "signature"} {
+		if !usageFields[required] {
+			t.Fatalf("RelayUsageEvent missing %q: %v", required, usageFields)
+		}
+	}
+	assertFieldsExcludeFragments(t, (&RelayUsageEvent{}).ProtoReflect().Descriptor(), []string{"terminal", "grant", "credential", "private_key", "payload"})
 }
 
 func TestManagementCommandSeparatesAuthorityDeliveryExecutionAndEffect(t *testing.T) {

@@ -28,6 +28,7 @@ import (
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
 	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
+	"github.com/lozzow/termx/private/cloud/control-plane/usage"
 	webcontroller "github.com/lozzow/termx/private/cloud/web-controller"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -40,8 +41,9 @@ const (
 
 // DeploymentConfig 绑定一个 Hub deployment metadata 与其独立 control public key。
 type DeploymentConfig struct {
-	Metadata                  *cloudpb.EdgeDeploymentMetadata `json:"metadata"`
-	HubControlPublicKeyBase64 string                          `json:"hub_control_public_key_base64"`
+	Metadata                    *cloudpb.EdgeDeploymentMetadata `json:"metadata"`
+	HubControlPublicKeyBase64   string                          `json:"hub_control_public_key_base64"`
+	RelayControlPublicKeyBase64 string                          `json:"relay_control_public_key_base64"`
 }
 
 // Config 是 Controller development composition 的显式配置。
@@ -200,7 +202,12 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 			_ = store.Close()
 			return nil, fmt.Errorf("decode Hub control public key: %w", decodeErr)
 		}
-		if err := registry.RegisterDeployment(context.Background(), hubregistry.Deployment{Metadata: deployment.Metadata, ControlPublicKey: ed25519.PublicKey(publicKey), Enabled: true, UpdatedAt: now}); err != nil {
+		relayPublicKey, decodeErr := base64.RawStdEncoding.DecodeString(deployment.RelayControlPublicKeyBase64)
+		if decodeErr != nil || len(relayPublicKey) != ed25519.PublicKeySize {
+			_ = store.Close()
+			return nil, fmt.Errorf("decode Relay control public key")
+		}
+		if err := registry.RegisterDeployment(context.Background(), hubregistry.Deployment{Metadata: deployment.Metadata, ControlPublicKey: ed25519.PublicKey(publicKey), RelayControlPublicKey: ed25519.PublicKey(relayPublicKey), Enabled: true, UpdatedAt: now}); err != nil {
 			_ = store.Close()
 			return nil, err
 		}
@@ -288,6 +295,11 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	relayUsageHandler, err := newRelayUsageHTTPHandler(store, credentialSigner, config.Deployments, now)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	productHandler, err := webcontroller.ProductAPIHandler(webcontroller.ProductAPIConfig{Commerce: commerceService, EnableTestPaymentProvider: config.EnableTestPaymentProvider})
 	if err != nil {
 		_ = store.Close()
@@ -318,6 +330,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	operatorMux.HandleFunc("/healthz", healthHandler)
 	internalMux := http.NewServeMux()
 	internalMux.Handle(relaylease.InternalReservePath, relayLeaseHandler)
+	internalMux.Handle(usage.InternalReportPath, relayUsageHandler)
 	internalMux.Handle("/", controlServer.Handler())
 	publicListener, err := listen(config.PublicListen)
 	if err != nil {

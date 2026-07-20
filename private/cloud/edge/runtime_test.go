@@ -6,9 +6,11 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,18 +23,20 @@ import (
 	cloudhub "github.com/lozzow/termx/private/cloud/hub"
 	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
 	"github.com/lozzow/termx/proto/cloudpb"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestEdgeRestartRequiresFullSyncAndKeepsOnlyUsageOutbox(t *testing.T) {
 	now := time.Now().UTC()
 	hubPublic, hubPrivate, _ := ed25519.GenerateKey(rand.Reader)
+	relayPublic, relayPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	controllerPublic, controllerPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	store, _ := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
 	defer store.Close()
 	registry, _ := hubregistry.New(store)
 	topologyService, _ := cloudtopology.New(registry, store)
-	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local-1", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublic), RelayId: "relay-1", RelayControlIdentityFingerprint: "relay-fingerprint"}
-	if err := registry.RegisterDeployment(context.Background(), hubregistry.Deployment{Metadata: metadata, ControlPublicKey: hubPublic, Enabled: true, UpdatedAt: now}); err != nil {
+	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local-1", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublic), RelayId: "relay-1", RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(relayPublic)}
+	if err := registry.RegisterDeployment(context.Background(), hubregistry.Deployment{Metadata: metadata, ControlPublicKey: hubPublic, RelayControlPublicKey: relayPublic, Enabled: true, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	publisher := hubcontrol.NewPublisher()
@@ -51,10 +55,29 @@ func TestEdgeRestartRequiresFullSyncAndKeepsOnlyUsageOutbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(control.Handler())
+	var usageAvailable atomic.Bool
+	mux := http.NewServeMux()
+	mux.Handle("/", control.Handler())
+	mux.HandleFunc(usage.InternalReportPath, func(writer http.ResponseWriter, request *http.Request) {
+		if !usageAvailable.Load() {
+			http.Error(writer, "usage unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		body, _ := io.ReadAll(request.Body)
+		payload := &cloudpb.ReportRelayUsageRequest{}
+		_ = proto.Unmarshal(body, payload)
+		response := &cloudpb.ReportRelayUsageResponse{}
+		for _, record := range payload.GetRecords() {
+			response.Acknowledgements = append(response.Acknowledgements, &cloudpb.RelayUsageAck{EventId: record.GetEvent().GetEventId(), Sequence: record.GetEvent().GetSequence()})
+		}
+		encoded, _ := proto.Marshal(response)
+		writer.Header().Set("Content-Type", "application/x-protobuf")
+		_, _ = writer.Write(encoded)
+	})
+	server := httptest.NewServer(mux)
 	defer server.Close()
 	outboxPath := filepath.Join(t.TempDir(), "usage.outbox")
-	config := Config{ControllerURL: server.URL, HubListen: "127.0.0.1:0", HealthListen: "127.0.0.1:0", RelayListen: "127.0.0.1:0", UsageOutboxPath: outboxPath, Metadata: metadata, HubControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(hubPrivate), ControllerProjectionKeyID: "controller-key", ControllerProjectionPublicKeyBase64: base64.RawStdEncoding.EncodeToString(controllerPublic)}
+	config := Config{ControllerURL: server.URL, HubListen: "127.0.0.1:0", HealthListen: "127.0.0.1:0", RelayListen: "127.0.0.1:0", UsageOutboxPath: outboxPath, Metadata: metadata, HubControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(hubPrivate), RelayControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(relayPrivate), ControllerProjectionKeyID: "controller-key", ControllerProjectionPublicKeyBase64: base64.RawStdEncoding.EncodeToString(controllerPublic)}
 	first, err := Start(config)
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +131,7 @@ func TestEdgeRestartRequiresFullSyncAndKeepsOnlyUsageOutbox(t *testing.T) {
 	if _, err := first.authorizer.ReserveManagedP2P(token, "account-1", "client-1", "daemon-1", "reservation-3", "managed-3", 1, now.Add(5*time.Minute)); !errors.Is(err, cloudhub.ErrP2PNotEntitled) {
 		t.Fatalf("suspended signed policy admission = %v", err)
 	}
-	record := cloudrelay.UsageRecord{SignedLease: []byte("signed-lease"), Event: usage.Event{EventID: "usage-1", Sequence: 1, Signature: []byte("signature")}}
+	record := cloudrelay.UsageRecord{SignedLease: []byte("signed-lease"), Event: usage.Event{EventID: "usage-1", LeaseID: "lease-1", ManagedSessionID: "managed-1", RelayID: "relay-1", PathKind: servicecredential.RelayPathSingle, HopID: "relay-1", Sequence: 1, IntervalStartUnix: now.Unix(), IntervalEndUnix: now.Add(time.Second).Unix(), ActiveSeconds: 1, KeyID: "usage-key", Signature: []byte("signature")}}
 	if err := first.usageOutbox.Enqueue(record); err != nil {
 		t.Fatal(err)
 	}
@@ -136,6 +159,18 @@ func TestEdgeRestartRequiresFullSyncAndKeepsOnlyUsageOutbox(t *testing.T) {
 	pending, err := second.usageOutbox.Pending()
 	if err != nil || len(pending) != 1 || pending[0].Event.EventID != "usage-1" {
 		t.Fatalf("restored usage outbox = (%#v, %v)", pending, err)
+	}
+	usageAvailable.Store(true)
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		pending, err = second.usageOutbox.Pending()
+		if err == nil && len(pending) == 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("restarted usage pump did not ack durable outbox: (%#v, %v)", pending, err)
 	}
 	server.CloseClientConnections()
 	_ = server.Listener.Close()

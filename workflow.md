@@ -12,7 +12,8 @@
 - `CLOUDP003` 已完成持久 Entitlement 到 signed per-Hub policy、周期 fresh full、Hub 内存 managed P2P reservation、稳定拒绝分类及 signaling 到 daemon runtime inventory 的生命周期转交。
 - `HUB005` 已完成 enrollment control key、daemon 持久控制回执、opaque terminal access inventory、Web 查询、Controller 签名 revoke、AccessStore 原子撤销和关联 session close 的真实闭环。
 - `CLOUDP004` 已完成 Proto-first Relay 周期额度、SQLite 原子 reservation、账号/设备并发、region 与 per-lease clamp、refresh 复核、取消和延迟过期释放，并接通 Controller-Edge-Companion caller-specific TURN credential 纵向链路。
-- 当前最早未完成切片是 `CLOUDP005`：durable UsageLedger 与 settlement。
+- `CLOUDP005` 已完成 Proto-first signed usage record、独立 Relay control key、Edge durable outbox/pump、Controller 双签名验证、SQLite event journal/sequence 幂等、period/session 聚合、reservation settlement 与重启补报。
+- 当前最早未完成切片是 `HUB006`：Edge 内 Relay allocation remote revoke。
 - 多 Hub 基础和产品能力存在交叉依赖，必须按本文件交错推进，不能先写完所有 Hub 再补套餐，也不能继续在单进程 devcloud 上堆硬编码。
 - development 必须走完整账号、交易、Subscription、Entitlement、managed P2P/Relay、周期 quota、usage、topology 和管理链路；外部 provider 可以使用显式测试实现。
 - Web/WASM terminal 产品、iOS/Desktop GUI、多区域数据库、Relay Mesh、真实支付 provider 和复杂计费平台继续延后。
@@ -70,7 +71,7 @@ termx-cloud-edge × N
 | HUB004 | 已完成 | CommandOutbox 与运行时控制 | SQLite parent/child/result journal 与 device revoke 原子事务；Web Proto JSON 创建/查询；KickPresence、daemon revoke 单 Hub、client revoke 跨 Hub fan-out、签名 CloseManagedPeerSession；generation/epoch/Presence/runtime/session/replay/expiry fencing、parent 聚合和独立 daemon ack；真实 Controller-Edge-Presence HTTP harness、public/private/race/client/双 Edge/doctor 门禁通过 |
 | HUB005 | 已完成 | daemon deny-only grant revoke | enrollment 返回受窗口约束的 daemon control key；daemon 持久化 enrollment 与精确 replay receipt；双 revision runtime report 上报无 secret 的 opaque access inventory；Web 账号隔离查询并创建 fenced terminal revoke；Controller 签名、Hub 精确转发、daemon AccessStore 原子撤销并关闭关联 session，结果持久回传；真实 Controller-Edge-daemon-Web harness 与 public/private/race/generated/doctor 门禁通过 |
 | CLOUDP004 | 已完成 | Relay 周期 quota 与 reservation | generated RelayQuotaPeriod/RelayLeaseReservation/Edge reservation contract；SQLite 原子维护 used/reserved/remaining、精确 replay、账号/设备并发、region、单 lease clamp、取消和 expiry+report-grace 释放；Hub 短期 relay intent 让 client/daemon 共用同一 reservation 并近到期轮换；Controller 重新验证 edge principal、ownership、assignment 与 Entitlement，Edge 离线验签并派生隔离 TURN credential；真实 Controller-Edge-Presence harness、public/private/race/client/双 Edge/doctor 门禁通过 |
-| CLOUDP005 | 待开始 | durable UsageLedger 与 settlement | signed usage/outbox、event journal、幂等/sequence、period aggregation、reservation settlement 和重启恢复 |
+| CLOUDP005 | 已完成 | durable UsageLedger 与 settlement | generated RelayUsageEvent/Record/Report/Ack 与 RelayUsageAggregate；Edge 使用稳定独立 Relay control key，authority 先写 durable outbox 再清 pending bytes，at-least-once pump 仅在 Controller 事务提交后 ack；Controller 重验 signed lease 和 Relay event，SQLite 原子提交 event journal、严格 sequence、精确 replay、period/session aggregate、reservation used/release；same-second shutdown、Controller outage、Edge/Controller/SQLite 重启和真实 Pion relay-only DataChannel usage E2E 通过；public/private/race/client/双 Edge/doctor 门禁通过 |
 | HUB006 | 待开始 | Edge 内 Relay allocation remote revoke | 在 Edge composition 内接通独立 Relay identity/control generation、lease/session allocation registry、close ack、final usage drain、reservation settlement 和 PARTIAL 结果；不新增第三类服务二进制 |
 | CLOUDP006 | 待开始 | Controller 用户账号中心与运营管理面 | Web/API 与 Control Plane 同一 Controller composition；Proto JSON API、套餐/usage/device/topology/command 页面、权限矩阵、账号隔离、CSRF、近期重认证和审计 |
 | HUB007 | 待开始 | 双 Edge 控制面 E2E | 一个 Controller + 两个 Edge 独立进程、assignment migration、Controller outage、Edge restart、inventory recovery、四类 command、P2P/Relay close 和隐私扫描；双 Agent 审查 |

@@ -104,6 +104,7 @@ type Authority struct {
 
 type leaseState struct {
 	claims            servicecredential.RelayLeaseClaims
+	signedLease       []byte
 	activatedAt       time.Time
 	lastUsageAt       time.Time
 	sequence          uint64
@@ -247,7 +248,7 @@ func (authority *Authority) ActivateLease(request ActivationRequest) (Activation
 		}
 		return Activation{Claims: claims, ClientCredential: client, DaemonCredential: daemon}, nil
 	}
-	state := &leaseState{claims: claims, activatedAt: now, lastUsageAt: now, windowStartedAt: now.Truncate(time.Second)}
+	state := &leaseState{claims: claims, signedLease: append([]byte(nil), request.SignedLease...), activatedAt: now, lastUsageAt: now, windowStartedAt: now.Truncate(time.Second)}
 	authority.leases[claims.LeaseID] = state
 	var client Credential
 	if authority.principalAllowed(claims, PrincipalClient) {
@@ -389,11 +390,24 @@ func (authority *Authority) RecordTraffic(allocationID string, bytesUp, bytesDow
 // DrainUsage 签发每个有新增流量 lease 的幂等递增 UsageEvent。
 // Relay Mesh 每个 hop 独立上报；Control Plane ledger 负责按 route/session 聚合一次。
 func (authority *Authority) DrainUsage(terminationReason string) ([]usage.Event, error) {
+	records, err := authority.DrainUsageRecords(terminationReason)
+	if err != nil {
+		return nil, err
+	}
+	events := make([]usage.Event, 0, len(records))
+	for _, record := range records {
+		events = append(events, record.Event)
+	}
+	return events, nil
+}
+
+// DrainUsageRecords 在同一锁内把 signed event 与原始 signed lease 配对，供 durable outbox 上传。
+func (authority *Authority) DrainUsageRecords(terminationReason string) ([]UsageRecord, error) {
 	now := authority.clock.Now().UTC()
 	authority.mu.Lock()
 	defer authority.mu.Unlock()
 	authority.cleanupPendingLocked(now)
-	events := make([]usage.Event, 0)
+	records := make([]UsageRecord, 0)
 	for _, lease := range authority.leases {
 		if lease.pendingBytesUp == 0 && lease.pendingBytesDown == 0 {
 			continue
@@ -414,12 +428,71 @@ func (authority *Authority) DrainUsage(terminationReason string) ([]usage.Event,
 		if err != nil {
 			return nil, err
 		}
-		events = append(events, signed)
+		records = append(records, UsageRecord{SignedLease: append([]byte(nil), lease.signedLease...), Event: signed})
 		lease.pendingBytesUp = 0
 		lease.pendingBytesDown = 0
 		lease.lastUsageAt = now
 	}
-	return events, nil
+	return records, nil
+}
+
+// FlushUsageOutbox 先持久化全部新增 signed usage，再清除内存 pending counters。
+// outbox 写入失败时不推进 sequence、lastUsageAt 或 bytes，避免计量丢失。
+func (authority *Authority) FlushUsageOutbox(outbox *UsageOutbox, terminationReason string) error {
+	if outbox == nil {
+		return fmt.Errorf("Relay usage outbox is required")
+	}
+	now := authority.clock.Now().UTC()
+	authority.mu.Lock()
+	defer authority.mu.Unlock()
+	authority.cleanupPendingLocked(now)
+	type pendingRecord struct {
+		lease       *leaseState
+		record      UsageRecord
+		intervalEnd time.Time
+	}
+	prepared := make([]pendingRecord, 0)
+	for _, lease := range authority.leases {
+		if lease.pendingBytesUp == 0 && lease.pendingBytesDown == 0 {
+			continue
+		}
+		intervalEndUnix := now.Unix()
+		if intervalEndUnix <= lease.lastUsageAt.Unix() {
+			intervalEndUnix = lease.lastUsageAt.Unix() + 1
+		}
+		if intervalEndUnix > lease.claims.ExpiresAtUnix {
+			intervalEndUnix = lease.claims.ExpiresAtUnix
+		}
+		if intervalEndUnix <= lease.lastUsageAt.Unix() {
+			return usage.ErrUsageOutOfRange
+		}
+		intervalEnd := time.Unix(intervalEndUnix, 0).UTC()
+		sequence := lease.sequence + 1
+		activeSeconds := uint64(intervalEndUnix - lease.lastUsageAt.Unix())
+		event := usage.Event{EventID: fmt.Sprintf("%s-%s-%d", authority.relayID, lease.claims.LeaseID, sequence), LeaseID: lease.claims.LeaseID, ManagedSessionID: lease.claims.ManagedSessionID, RelayID: authority.relayID, RouteID: lease.claims.RouteID, PathKind: lease.claims.PathKind, HopID: authority.relayID, Sequence: sequence, IntervalStartUnix: lease.lastUsageAt.Unix(), IntervalEndUnix: intervalEndUnix, BytesUp: lease.pendingBytesUp, BytesDown: lease.pendingBytesDown, ActiveSeconds: activeSeconds, TerminationReason: terminationReason}
+		signed, err := usage.SignEvent(event, authority.usageSigner, now)
+		if err != nil {
+			return err
+		}
+		prepared = append(prepared, pendingRecord{lease: lease, record: UsageRecord{SignedLease: append([]byte(nil), lease.signedLease...), Event: signed}, intervalEnd: intervalEnd})
+	}
+	if len(prepared) == 0 {
+		return nil
+	}
+	records := make([]UsageRecord, 0, len(prepared))
+	for _, value := range prepared {
+		records = append(records, value.record)
+	}
+	if err := outbox.Enqueue(records...); err != nil {
+		return err
+	}
+	for _, value := range prepared {
+		value.lease.sequence = value.record.Event.Sequence
+		value.lease.pendingBytesUp = 0
+		value.lease.pendingBytesDown = 0
+		value.lease.lastUsageAt = value.intervalEnd
+	}
+	return nil
 }
 
 func (authority *Authority) newCredentialLocked(lease *leaseState, principal Principal, deviceID string, now time.Time) (Credential, error) {

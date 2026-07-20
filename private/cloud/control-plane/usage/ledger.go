@@ -16,7 +16,11 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
+	"github.com/lozzow/termx/proto/cloudpb"
 )
+
+// InternalReportPath 是 Edge durable usage outbox 向 Controller 上报 Proto batch 的内部路径。
+const InternalReportPath = "/v1/internal/relay/usage/report"
 
 const usageEventPrefix = "TXUE1"
 
@@ -29,6 +33,8 @@ var (
 	ErrSequenceRollback = errors.New("relay usage sequence rollback")
 	// ErrUsageOutOfRange 表示 event 超出 lease 时间、带宽或总字节配额。
 	ErrUsageOutOfRange = errors.New("relay usage outside lease bounds")
+	// ErrJournalConflict 表示 durable usage event、sequence 或 reservation settlement 冲突。
+	ErrJournalConflict = errors.New("relay usage journal conflict")
 )
 
 // Event 是 Relay 对单个 lease、hop 和时间窗口的签名计量记录。
@@ -50,6 +56,37 @@ type Event struct {
 	TerminationReason string                          `json:"termination_reason,omitempty"`
 	KeyID             string                          `json:"key_id"`
 	Signature         []byte                          `json:"signature,omitempty"`
+}
+
+// ToProto 把 Relay 内部签名事件映射为唯一跨进程 generated contract。
+func ToProto(event Event) (*cloudpb.RelayUsageEvent, error) {
+	path := cloudpb.ObservedPath_OBSERVED_PATH_UNSPECIFIED
+	switch event.PathKind {
+	case servicecredential.RelayPathSingle:
+		path = cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY
+	case servicecredential.RelayPathMesh:
+		path = cloudpb.ObservedPath_OBSERVED_PATH_RELAY_MESH
+	default:
+		return nil, ErrInvalidEvent
+	}
+	return &cloudpb.RelayUsageEvent{EventId: event.EventID, LeaseId: event.LeaseID, ManagedSessionId: event.ManagedSessionID, RelayId: event.RelayID, RouteId: event.RouteID, PathKind: path, HopId: event.HopID, Sequence: event.Sequence, IntervalStartUnix: event.IntervalStartUnix, IntervalEndUnix: event.IntervalEndUnix, BytesUp: event.BytesUp, BytesDown: event.BytesDown, ActiveSeconds: event.ActiveSeconds, TerminationReason: event.TerminationReason, KeyId: event.KeyID, Signature: append([]byte(nil), event.Signature...)}, nil
+}
+
+// FromProto 恢复签名 canonical model；未知 path 或缺失消息 fail closed。
+func FromProto(event *cloudpb.RelayUsageEvent) (Event, error) {
+	if event == nil {
+		return Event{}, ErrInvalidEvent
+	}
+	path := servicecredential.RelayPathKind("")
+	switch event.GetPathKind() {
+	case cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY:
+		path = servicecredential.RelayPathSingle
+	case cloudpb.ObservedPath_OBSERVED_PATH_RELAY_MESH:
+		path = servicecredential.RelayPathMesh
+	default:
+		return Event{}, ErrInvalidEvent
+	}
+	return Event{EventID: event.GetEventId(), LeaseID: event.GetLeaseId(), ManagedSessionID: event.GetManagedSessionId(), RelayID: event.GetRelayId(), RouteID: event.GetRouteId(), PathKind: path, HopID: event.GetHopId(), Sequence: event.GetSequence(), IntervalStartUnix: event.GetIntervalStartUnix(), IntervalEndUnix: event.GetIntervalEndUnix(), BytesUp: event.GetBytesUp(), BytesDown: event.GetBytesDown(), ActiveSeconds: event.GetActiveSeconds(), TerminationReason: event.GetTerminationReason(), KeyID: event.GetKeyId(), Signature: append([]byte(nil), event.GetSignature()...)}, nil
 }
 
 // SignEvent 使用 Relay 自身 Ed25519 key 对固定 TXUE1 canonical JSON 签名。
@@ -162,21 +199,14 @@ func NewLedger(keyRing *servicecredential.KeyRing, relayKeyIDs map[string]string
 // Apply 验签、检查 lease bounds，并以 `(relay_id, lease_id, sequence)` 幂等写入账本。
 // 延迟补报只要求 event 窗口位于 lease 内且上报时间不超过 MaxReportDelay；sequence 仍必须单调。
 func (ledger *Ledger) Apply(lease servicecredential.RelayLeaseClaims, event Event, now time.Time) (ApplyResult, error) {
-	canonical, err := canonicalEvent(event)
+	expectedKeyID, ok := ledger.relayKeyIDs[event.RelayID]
+	if !ok {
+		return ApplyResult{}, ErrInvalidEvent
+	}
+	digest, err := VerifyEvent(ledger.keyRing, expectedKeyID, lease, event, now, ledger.maxReportDelay)
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	expectedKeyID, ok := ledger.relayKeyIDs[event.RelayID]
-	if !ok || expectedKeyID != event.KeyID {
-		return ApplyResult{}, ErrInvalidEvent
-	}
-	if err := ledger.keyRing.Verify(event.KeyID, canonical, event.Signature, now); err != nil {
-		return ApplyResult{}, fmt.Errorf("verify usage signature: %w", err)
-	}
-	if err := validateEventAgainstLease(lease, event, now, ledger.maxReportDelay); err != nil {
-		return ApplyResult{}, err
-	}
-	digest := sha256.Sum256(canonical)
 	idempotency := idempotencyKey{relayID: event.RelayID, leaseID: event.LeaseID, sequence: event.Sequence}
 	sequence := sequenceKey{relayID: event.RelayID, leaseID: event.LeaseID}
 	window := windowKey{leaseID: event.LeaseID, routeID: event.RouteID, start: event.IntervalStartUnix, end: event.IntervalEndUnix}
@@ -222,6 +252,25 @@ func (ledger *Ledger) Apply(lease servicecredential.RelayLeaseClaims, event Even
 	aggregate.ActiveSeconds += after.activeSeconds - before.activeSeconds
 	ledger.aggregates[aggregateID] = aggregate
 	return ApplyResult{Aggregate: aggregate}, nil
+}
+
+// VerifyEvent 验证 Relay key binding、event signature、lease 字段和时间/bitrate/bytes 边界，
+// 返回不含 signature 的 canonical digest，供 durable store 做精确 replay 判断。
+func VerifyEvent(keyRing *servicecredential.KeyRing, expectedKeyID string, lease servicecredential.RelayLeaseClaims, event Event, now time.Time, maxReportDelay time.Duration) ([sha256.Size]byte, error) {
+	if keyRing == nil || expectedKeyID == "" || expectedKeyID != event.KeyID || maxReportDelay < 0 {
+		return [sha256.Size]byte{}, ErrInvalidEvent
+	}
+	canonical, err := canonicalEvent(event)
+	if err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	if err := keyRing.Verify(event.KeyID, canonical, event.Signature, now); err != nil {
+		return [sha256.Size]byte{}, fmt.Errorf("verify usage signature: %w", err)
+	}
+	if err := validateEventAgainstLease(lease, event, now, maxReportDelay); err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	return sha256.Sum256(canonical), nil
 }
 
 // Aggregate 返回某个 managed session/route 已结算的 usage 快照。

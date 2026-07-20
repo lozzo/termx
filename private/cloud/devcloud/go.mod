@@ -11,12 +11,13 @@ require (
 	github.com/lozzow/termx/private/cloud/controller v0.0.0
 	github.com/lozzow/termx/private/cloud/edge v0.0.0
 	github.com/lozzow/termx/private/cloud/web-controller v0.0.0
+	github.com/pion/webrtc/v4 v4.2.9
 )
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/lozzow/termx/private/cloud/hub v0.0.0 // indirect
-	github.com/lozzow/termx/private/cloud/relay v0.0.0 // indirect
+	github.com/lozzow/termx/private/cloud/relay v0.0.0
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
@@ -61,7 +62,6 @@ require (
 	github.com/pion/stun/v3 v3.1.1 // indirect
 	github.com/pion/transport/v4 v4.0.1 // indirect
 	github.com/pion/turn/v4 v4.1.4 // indirect
-	github.com/pion/webrtc/v4 v4.2.9 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect

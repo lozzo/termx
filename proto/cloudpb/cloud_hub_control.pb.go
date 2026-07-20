@@ -3818,6 +3818,391 @@ func (x *ReserveRelayLeaseRequest) GetLeaseId() string {
 	return ""
 }
 
+// RelayUsageEvent 是 Relay 对单 lease 时间窗口签名的用量 metadata。
+// 它不包含 terminal、CapabilityGrant、TURN credential 或 DataChannel payload。
+type RelayUsageEvent struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	EventId           string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	LeaseId           string                 `protobuf:"bytes,2,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	ManagedSessionId  string                 `protobuf:"bytes,3,opt,name=managed_session_id,json=managedSessionId,proto3" json:"managed_session_id,omitempty"`
+	RelayId           string                 `protobuf:"bytes,4,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
+	RouteId           string                 `protobuf:"bytes,5,opt,name=route_id,json=routeId,proto3" json:"route_id,omitempty"`
+	PathKind          ObservedPath           `protobuf:"varint,6,opt,name=path_kind,json=pathKind,proto3,enum=termx.cloud.v1.ObservedPath" json:"path_kind,omitempty"`
+	HopId             string                 `protobuf:"bytes,7,opt,name=hop_id,json=hopId,proto3" json:"hop_id,omitempty"`
+	Sequence          uint64                 `protobuf:"varint,8,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	IntervalStartUnix int64                  `protobuf:"varint,9,opt,name=interval_start_unix,json=intervalStartUnix,proto3" json:"interval_start_unix,omitempty"`
+	IntervalEndUnix   int64                  `protobuf:"varint,10,opt,name=interval_end_unix,json=intervalEndUnix,proto3" json:"interval_end_unix,omitempty"`
+	BytesUp           uint64                 `protobuf:"varint,11,opt,name=bytes_up,json=bytesUp,proto3" json:"bytes_up,omitempty"`
+	BytesDown         uint64                 `protobuf:"varint,12,opt,name=bytes_down,json=bytesDown,proto3" json:"bytes_down,omitempty"`
+	ActiveSeconds     uint64                 `protobuf:"varint,13,opt,name=active_seconds,json=activeSeconds,proto3" json:"active_seconds,omitempty"`
+	TerminationReason string                 `protobuf:"bytes,14,opt,name=termination_reason,json=terminationReason,proto3" json:"termination_reason,omitempty"`
+	KeyId             string                 `protobuf:"bytes,15,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	Signature         []byte                 `protobuf:"bytes,16,opt,name=signature,proto3" json:"signature,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *RelayUsageEvent) Reset() {
+	*x = RelayUsageEvent{}
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RelayUsageEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RelayUsageEvent) ProtoMessage() {}
+
+func (x *RelayUsageEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RelayUsageEvent.ProtoReflect.Descriptor instead.
+func (*RelayUsageEvent) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *RelayUsageEvent) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *RelayUsageEvent) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
+}
+
+func (x *RelayUsageEvent) GetManagedSessionId() string {
+	if x != nil {
+		return x.ManagedSessionId
+	}
+	return ""
+}
+
+func (x *RelayUsageEvent) GetRelayId() string {
+	if x != nil {
+		return x.RelayId
+	}
+	return ""
+}
+
+func (x *RelayUsageEvent) GetRouteId() string {
+	if x != nil {
+		return x.RouteId
+	}
+	return ""
+}
+
+func (x *RelayUsageEvent) GetPathKind() ObservedPath {
+	if x != nil {
+		return x.PathKind
+	}
+	return ObservedPath_OBSERVED_PATH_UNSPECIFIED
+}
+
+func (x *RelayUsageEvent) GetHopId() string {
+	if x != nil {
+		return x.HopId
+	}
+	return ""
+}
+
+func (x *RelayUsageEvent) GetSequence() uint64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *RelayUsageEvent) GetIntervalStartUnix() int64 {
+	if x != nil {
+		return x.IntervalStartUnix
+	}
+	return 0
+}
+
+func (x *RelayUsageEvent) GetIntervalEndUnix() int64 {
+	if x != nil {
+		return x.IntervalEndUnix
+	}
+	return 0
+}
+
+func (x *RelayUsageEvent) GetBytesUp() uint64 {
+	if x != nil {
+		return x.BytesUp
+	}
+	return 0
+}
+
+func (x *RelayUsageEvent) GetBytesDown() uint64 {
+	if x != nil {
+		return x.BytesDown
+	}
+	return 0
+}
+
+func (x *RelayUsageEvent) GetActiveSeconds() uint64 {
+	if x != nil {
+		return x.ActiveSeconds
+	}
+	return 0
+}
+
+func (x *RelayUsageEvent) GetTerminationReason() string {
+	if x != nil {
+		return x.TerminationReason
+	}
+	return ""
+}
+
+func (x *RelayUsageEvent) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
+func (x *RelayUsageEvent) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+// RelayUsageRecord 把 event 与签发它的原始 lease 绑定，Controller 必须重新验两层签名。
+type RelayUsageRecord struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SignedLease   []byte                 `protobuf:"bytes,1,opt,name=signed_lease,json=signedLease,proto3" json:"signed_lease,omitempty"`
+	Event         *RelayUsageEvent       `protobuf:"bytes,2,opt,name=event,proto3" json:"event,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RelayUsageRecord) Reset() {
+	*x = RelayUsageRecord{}
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RelayUsageRecord) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RelayUsageRecord) ProtoMessage() {}
+
+func (x *RelayUsageRecord) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RelayUsageRecord.ProtoReflect.Descriptor instead.
+func (*RelayUsageRecord) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *RelayUsageRecord) GetSignedLease() []byte {
+	if x != nil {
+		return x.SignedLease
+	}
+	return nil
+}
+
+func (x *RelayUsageRecord) GetEvent() *RelayUsageEvent {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+// ReportRelayUsageRequest 是 Edge usage outbox 的有界 at-least-once batch。
+type ReportRelayUsageRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	RelayId          string                 `protobuf:"bytes,1,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
+	EdgeDeploymentId string                 `protobuf:"bytes,2,opt,name=edge_deployment_id,json=edgeDeploymentId,proto3" json:"edge_deployment_id,omitempty"`
+	Records          []*RelayUsageRecord    `protobuf:"bytes,3,rep,name=records,proto3" json:"records,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ReportRelayUsageRequest) Reset() {
+	*x = ReportRelayUsageRequest{}
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportRelayUsageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportRelayUsageRequest) ProtoMessage() {}
+
+func (x *ReportRelayUsageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportRelayUsageRequest.ProtoReflect.Descriptor instead.
+func (*ReportRelayUsageRequest) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *ReportRelayUsageRequest) GetRelayId() string {
+	if x != nil {
+		return x.RelayId
+	}
+	return ""
+}
+
+func (x *ReportRelayUsageRequest) GetEdgeDeploymentId() string {
+	if x != nil {
+		return x.EdgeDeploymentId
+	}
+	return ""
+}
+
+func (x *ReportRelayUsageRequest) GetRecords() []*RelayUsageRecord {
+	if x != nil {
+		return x.Records
+	}
+	return nil
+}
+
+// RelayUsageAck 只确认 Controller 已持久提交的精确 event sequence/body。
+type RelayUsageAck struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	Sequence      uint64                 `protobuf:"varint,2,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	Duplicate     bool                   `protobuf:"varint,3,opt,name=duplicate,proto3" json:"duplicate,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RelayUsageAck) Reset() {
+	*x = RelayUsageAck{}
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RelayUsageAck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RelayUsageAck) ProtoMessage() {}
+
+func (x *RelayUsageAck) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RelayUsageAck.ProtoReflect.Descriptor instead.
+func (*RelayUsageAck) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *RelayUsageAck) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *RelayUsageAck) GetSequence() uint64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *RelayUsageAck) GetDuplicate() bool {
+	if x != nil {
+		return x.Duplicate
+	}
+	return false
+}
+
+type ReportRelayUsageResponse struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Acknowledgements []*RelayUsageAck       `protobuf:"bytes,1,rep,name=acknowledgements,proto3" json:"acknowledgements,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ReportRelayUsageResponse) Reset() {
+	*x = ReportRelayUsageResponse{}
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportRelayUsageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportRelayUsageResponse) ProtoMessage() {}
+
+func (x *ReportRelayUsageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_hub_control_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportRelayUsageResponse.ProtoReflect.Descriptor instead.
+func (*ReportRelayUsageResponse) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_hub_control_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *ReportRelayUsageResponse) GetAcknowledgements() []*RelayUsageAck {
+	if x != nil {
+		return x.Acknowledgements
+	}
+	return nil
+}
+
 var File_cloudpb_cloud_hub_control_proto protoreflect.FileDescriptor
 
 const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
@@ -4143,7 +4528,39 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\x06hub_id\x18\x05 \x01(\tR\x05hubId\x12\x19\n" +
 	"\brelay_id\x18\x06 \x01(\tR\arelayId\x12\x16\n" +
 	"\x06region\x18\a \x01(\tR\x06region\x12\x19\n" +
-	"\blease_id\x18\b \x01(\tR\aleaseId*\x9d\x01\n" +
+	"\blease_id\x18\b \x01(\tR\aleaseId\"\xba\x04\n" +
+	"\x0fRelayUsageEvent\x12\x19\n" +
+	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x19\n" +
+	"\blease_id\x18\x02 \x01(\tR\aleaseId\x12,\n" +
+	"\x12managed_session_id\x18\x03 \x01(\tR\x10managedSessionId\x12\x19\n" +
+	"\brelay_id\x18\x04 \x01(\tR\arelayId\x12\x19\n" +
+	"\broute_id\x18\x05 \x01(\tR\arouteId\x129\n" +
+	"\tpath_kind\x18\x06 \x01(\x0e2\x1c.termx.cloud.v1.ObservedPathR\bpathKind\x12\x15\n" +
+	"\x06hop_id\x18\a \x01(\tR\x05hopId\x12\x1a\n" +
+	"\bsequence\x18\b \x01(\x04R\bsequence\x12.\n" +
+	"\x13interval_start_unix\x18\t \x01(\x03R\x11intervalStartUnix\x12*\n" +
+	"\x11interval_end_unix\x18\n" +
+	" \x01(\x03R\x0fintervalEndUnix\x12\x19\n" +
+	"\bbytes_up\x18\v \x01(\x04R\abytesUp\x12\x1d\n" +
+	"\n" +
+	"bytes_down\x18\f \x01(\x04R\tbytesDown\x12%\n" +
+	"\x0eactive_seconds\x18\r \x01(\x04R\ractiveSeconds\x12-\n" +
+	"\x12termination_reason\x18\x0e \x01(\tR\x11terminationReason\x12\x15\n" +
+	"\x06key_id\x18\x0f \x01(\tR\x05keyId\x12\x1c\n" +
+	"\tsignature\x18\x10 \x01(\fR\tsignature\"l\n" +
+	"\x10RelayUsageRecord\x12!\n" +
+	"\fsigned_lease\x18\x01 \x01(\fR\vsignedLease\x125\n" +
+	"\x05event\x18\x02 \x01(\v2\x1f.termx.cloud.v1.RelayUsageEventR\x05event\"\x9e\x01\n" +
+	"\x17ReportRelayUsageRequest\x12\x19\n" +
+	"\brelay_id\x18\x01 \x01(\tR\arelayId\x12,\n" +
+	"\x12edge_deployment_id\x18\x02 \x01(\tR\x10edgeDeploymentId\x12:\n" +
+	"\arecords\x18\x03 \x03(\v2 .termx.cloud.v1.RelayUsageRecordR\arecords\"d\n" +
+	"\rRelayUsageAck\x12\x19\n" +
+	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1a\n" +
+	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12\x1c\n" +
+	"\tduplicate\x18\x03 \x01(\bR\tduplicate\"e\n" +
+	"\x18ReportRelayUsageResponse\x12I\n" +
+	"\x10acknowledgements\x18\x01 \x03(\v2\x1d.termx.cloud.v1.RelayUsageAckR\x10acknowledgements*\x9d\x01\n" +
 	"\x12ControlServiceRole\x12$\n" +
 	" CONTROL_SERVICE_ROLE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18CONTROL_SERVICE_ROLE_HUB\x10\x01\x12\x1e\n" +
@@ -4194,7 +4611,7 @@ func file_cloudpb_cloud_hub_control_proto_rawDescGZIP() []byte {
 }
 
 var file_cloudpb_cloud_hub_control_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_cloudpb_cloud_hub_control_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
+var file_cloudpb_cloud_hub_control_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
 var file_cloudpb_cloud_hub_control_proto_goTypes = []any{
 	(ControlServiceRole)(0),               // 0: termx.cloud.v1.ControlServiceRole
 	(ControlSenderRole)(0),                // 1: termx.cloud.v1.ControlSenderRole
@@ -4240,19 +4657,25 @@ var file_cloudpb_cloud_hub_control_proto_goTypes = []any{
 	(*ReportHubRuntimeRequest)(nil),       // 41: termx.cloud.v1.ReportHubRuntimeRequest
 	(*ReportHubRuntimeResponse)(nil),      // 42: termx.cloud.v1.ReportHubRuntimeResponse
 	(*ReserveRelayLeaseRequest)(nil),      // 43: termx.cloud.v1.ReserveRelayLeaseRequest
-	(ManagedDeviceKind)(0),                // 44: termx.cloud.v1.ManagedDeviceKind
-	(EntitlementStatus)(0),                // 45: termx.cloud.v1.EntitlementStatus
-	(*PlanCapability)(nil),                // 46: termx.cloud.v1.PlanCapability
-	(*ManagedPeerSessionTarget)(nil),      // 47: termx.cloud.v1.ManagedPeerSessionTarget
-	(*HubTopologySnapshot)(nil),           // 48: termx.cloud.v1.HubTopologySnapshot
+	(*RelayUsageEvent)(nil),               // 44: termx.cloud.v1.RelayUsageEvent
+	(*RelayUsageRecord)(nil),              // 45: termx.cloud.v1.RelayUsageRecord
+	(*ReportRelayUsageRequest)(nil),       // 46: termx.cloud.v1.ReportRelayUsageRequest
+	(*RelayUsageAck)(nil),                 // 47: termx.cloud.v1.RelayUsageAck
+	(*ReportRelayUsageResponse)(nil),      // 48: termx.cloud.v1.ReportRelayUsageResponse
+	(ManagedDeviceKind)(0),                // 49: termx.cloud.v1.ManagedDeviceKind
+	(EntitlementStatus)(0),                // 50: termx.cloud.v1.EntitlementStatus
+	(*PlanCapability)(nil),                // 51: termx.cloud.v1.PlanCapability
+	(*ManagedPeerSessionTarget)(nil),      // 52: termx.cloud.v1.ManagedPeerSessionTarget
+	(*HubTopologySnapshot)(nil),           // 53: termx.cloud.v1.HubTopologySnapshot
+	(ObservedPath)(0),                     // 54: termx.cloud.v1.ObservedPath
 }
 var file_cloudpb_cloud_hub_control_proto_depIdxs = []int32{
 	8,  // 0: termx.cloud.v1.HubControlChallengeResponse.challenge:type_name -> termx.cloud.v1.HubControlChallenge
 	7,  // 1: termx.cloud.v1.HubHello.deployment:type_name -> termx.cloud.v1.EdgeDeploymentMetadata
 	7,  // 2: termx.cloud.v1.RelayHello.deployment:type_name -> termx.cloud.v1.EdgeDeploymentMetadata
-	44, // 3: termx.cloud.v1.CloudDevicePolicy.device_kind:type_name -> termx.cloud.v1.ManagedDeviceKind
-	45, // 4: termx.cloud.v1.HubAccountPolicy.entitlement_status:type_name -> termx.cloud.v1.EntitlementStatus
-	46, // 5: termx.cloud.v1.HubAccountPolicy.capability:type_name -> termx.cloud.v1.PlanCapability
+	49, // 3: termx.cloud.v1.CloudDevicePolicy.device_kind:type_name -> termx.cloud.v1.ManagedDeviceKind
+	50, // 4: termx.cloud.v1.HubAccountPolicy.entitlement_status:type_name -> termx.cloud.v1.EntitlementStatus
+	51, // 5: termx.cloud.v1.HubAccountPolicy.capability:type_name -> termx.cloud.v1.PlanCapability
 	18, // 6: termx.cloud.v1.FullProjectionSnapshot.devices:type_name -> termx.cloud.v1.CloudDevicePolicy
 	17, // 7: termx.cloud.v1.FullProjectionSnapshot.assignments:type_name -> termx.cloud.v1.HubAssignment
 	19, // 8: termx.cloud.v1.FullProjectionSnapshot.accounts:type_name -> termx.cloud.v1.HubAccountPolicy
@@ -4266,7 +4689,7 @@ var file_cloudpb_cloud_hub_control_proto_depIdxs = []int32{
 	22, // 16: termx.cloud.v1.PolicyDelta.assignment_operations:type_name -> termx.cloud.v1.HubAssignmentDelta
 	23, // 17: termx.cloud.v1.PolicyDelta.account_operations:type_name -> termx.cloud.v1.HubAccountPolicyDelta
 	4,  // 18: termx.cloud.v1.DaemonControlCommand.command_kind:type_name -> termx.cloud.v1.DaemonControlCommandKind
-	47, // 19: termx.cloud.v1.DaemonControlCommand.managed_peer_session:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
+	52, // 19: termx.cloud.v1.DaemonControlCommand.managed_peer_session:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
 	28, // 20: termx.cloud.v1.DaemonControlCommand.terminal_access:type_name -> termx.cloud.v1.RevokeTerminalAccessTarget
 	3,  // 21: termx.cloud.v1.HubCommand.command_kind:type_name -> termx.cloud.v1.HubCommandKind
 	26, // 22: termx.cloud.v1.HubCommand.fence_assignment:type_name -> termx.cloud.v1.FenceAssignment
@@ -4292,15 +4715,19 @@ var file_cloudpb_cloud_hub_control_proto_depIdxs = []int32{
 	30, // 42: termx.cloud.v1.HubControlEnvelope.command:type_name -> termx.cloud.v1.HubCommand
 	1,  // 43: termx.cloud.v1.HubRuntimeEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
 	25, // 44: termx.cloud.v1.HubRuntimeEnvelope.reconciliation:type_name -> termx.cloud.v1.ReconciliationDigest
-	48, // 45: termx.cloud.v1.HubRuntimeEnvelope.topology:type_name -> termx.cloud.v1.HubTopologySnapshot
+	53, // 45: termx.cloud.v1.HubRuntimeEnvelope.topology:type_name -> termx.cloud.v1.HubTopologySnapshot
 	31, // 46: termx.cloud.v1.HubRuntimeEnvelope.hub_command_result:type_name -> termx.cloud.v1.HubCommandResult
 	32, // 47: termx.cloud.v1.HubRuntimeEnvelope.daemon_command_result:type_name -> termx.cloud.v1.DaemonCommandResult
 	40, // 48: termx.cloud.v1.ReportHubRuntimeRequest.envelopes:type_name -> termx.cloud.v1.HubRuntimeEnvelope
-	49, // [49:49] is the sub-list for method output_type
-	49, // [49:49] is the sub-list for method input_type
-	49, // [49:49] is the sub-list for extension type_name
-	49, // [49:49] is the sub-list for extension extendee
-	0,  // [0:49] is the sub-list for field type_name
+	54, // 49: termx.cloud.v1.RelayUsageEvent.path_kind:type_name -> termx.cloud.v1.ObservedPath
+	44, // 50: termx.cloud.v1.RelayUsageRecord.event:type_name -> termx.cloud.v1.RelayUsageEvent
+	45, // 51: termx.cloud.v1.ReportRelayUsageRequest.records:type_name -> termx.cloud.v1.RelayUsageRecord
+	47, // 52: termx.cloud.v1.ReportRelayUsageResponse.acknowledgements:type_name -> termx.cloud.v1.RelayUsageAck
+	53, // [53:53] is the sub-list for method output_type
+	53, // [53:53] is the sub-list for method input_type
+	53, // [53:53] is the sub-list for extension type_name
+	53, // [53:53] is the sub-list for extension extendee
+	0,  // [0:53] is the sub-list for field type_name
 }
 
 func init() { file_cloudpb_cloud_hub_control_proto_init() }
@@ -4345,7 +4772,7 @@ func file_cloudpb_cloud_hub_control_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloudpb_cloud_hub_control_proto_rawDesc), len(file_cloudpb_cloud_hub_control_proto_rawDesc)),
 			NumEnums:      7,
-			NumMessages:   37,
+			NumMessages:   42,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

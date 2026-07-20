@@ -25,9 +25,10 @@ func TestRegistryFencesGenerationAndCrossHubAssignment(t *testing.T) {
 	fingerprints := map[string]string{}
 	for _, hubID := range []string{"hub-a", "hub-b"} {
 		publicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+		relayPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
 		fingerprints[hubID] = hubregistry.IdentityFingerprint(publicKey)
-		metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-" + hubID, Region: "local-1", HubId: hubID, HubControlIdentityFingerprint: fingerprints[hubID], RelayId: "relay-" + hubID, RelayControlIdentityFingerprint: "relay-fingerprint-" + hubID}
-		if err := registry.RegisterDeployment(context.Background(), hubregistry.Deployment{Metadata: metadata, ControlPublicKey: publicKey, Enabled: true, UpdatedAt: now}); err != nil {
+		metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-" + hubID, Region: "local-1", HubId: hubID, HubControlIdentityFingerprint: fingerprints[hubID], RelayId: "relay-" + hubID, RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(relayPublicKey)}
+		if err := registry.RegisterDeployment(context.Background(), hubregistry.Deployment{Metadata: metadata, ControlPublicKey: publicKey, RelayControlPublicKey: relayPublicKey, Enabled: true, UpdatedAt: now}); err != nil {
 			t.Fatal(err)
 		}
 	}

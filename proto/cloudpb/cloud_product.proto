@@ -219,6 +219,19 @@ message RelayLeaseReservation {
   int64 issued_at_unix_millis = 15;
 }
 
+// RelayUsageAggregate 是当前 billing period 内按 managed session/route 聚合的已验证用量。
+message RelayUsageAggregate {
+  string account_id = 1;
+  string managed_session_id = 2;
+  string route_id = 3;
+  int64 period_start_unix_millis = 4;
+  int64 period_end_unix_millis = 5;
+  uint64 bytes_up = 6;
+  uint64 bytes_down = 7;
+  uint64 active_seconds = 8;
+  uint64 revision = 9;
+}
+
 // GetAccountRelayQuotaRequest 查询认证账号当前账期 Relay 额度。
 message GetAccountRelayQuotaRequest {
   string account_id = 1;

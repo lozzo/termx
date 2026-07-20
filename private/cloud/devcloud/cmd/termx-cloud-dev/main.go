@@ -148,13 +148,15 @@ func run(ctx context.Context, args []string) error {
 	}
 	deploymentConfigs := make([]controller.DeploymentConfig, 0, 2)
 	edgeKeys := map[string]ed25519.PrivateKey{}
+	relayKeys := map[string]ed25519.PrivateKey{}
 	for _, hubID := range []string{"hub-edge-a", "hub-edge-b"} {
 		hubPublic, hubPrivate, _ := ed25519.GenerateKey(rand.Reader)
-		relayPublic, _, _ := ed25519.GenerateKey(rand.Reader)
+		relayPublic, relayPrivate, _ := ed25519.GenerateKey(rand.Reader)
 		edgeID := "edge-" + hubID
 		metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: edgeID, Region: "local-1", PublicLabel: hubID, HubId: hubID, HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublic), RelayId: "relay-" + hubID, RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(relayPublic)}
-		deploymentConfigs = append(deploymentConfigs, controller.DeploymentConfig{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic)})
+		deploymentConfigs = append(deploymentConfigs, controller.DeploymentConfig{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic)})
 		edgeKeys[hubID] = hubPrivate
+		relayKeys[hubID] = relayPrivate
 	}
 	controllerConfig := controller.Config{DatabasePath: controllerDatabase, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Devices: devices, Assignments: assignments, DevelopmentEnrollmentCode: enrollmentCode, DevelopmentEnrollmentAccountID: account.GetAccountId(), DevelopmentEnrollmentHubID: "hub-edge-a"}
 	controllerConfigPath := filepath.Join(artifactDir, "controller-config.json")
@@ -179,7 +181,7 @@ func run(ctx context.Context, args []string) error {
 	edgeManifests := make([]edge.Manifest, 0, len(deploymentConfigs))
 	for _, deployment := range deploymentConfigs {
 		hubID := deployment.Metadata.GetHubId()
-		config := edge.Config{ControllerURL: controllerRuntime.InternalControlURL, HubListen: "127.0.0.1:0", HealthListen: "127.0.0.1:0", RelayListen: "127.0.0.1:0", UsageOutboxPath: filepath.Join(artifactDir, hubID+"-usage.outbox"), Metadata: deployment.Metadata, HubControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(edgeKeys[hubID]), ControllerProjectionKeyID: projectionKeyID, ControllerProjectionPublicKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPublic)}
+		config := edge.Config{ControllerURL: controllerRuntime.InternalControlURL, HubListen: "127.0.0.1:0", HealthListen: "127.0.0.1:0", RelayListen: "127.0.0.1:0", UsageOutboxPath: filepath.Join(artifactDir, hubID+"-usage.outbox"), Metadata: deployment.Metadata, HubControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(edgeKeys[hubID]), RelayControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(relayKeys[hubID]), ControllerProjectionKeyID: projectionKeyID, ControllerProjectionPublicKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPublic)}
 		configPath := filepath.Join(artifactDir, hubID+"-config.json")
 		manifestPath := filepath.Join(artifactDir, hubID+"-runtime.json")
 		if err := writeJSONFile(configPath, config); err != nil {
