@@ -78,7 +78,7 @@ termx-cloud-edge × N
 | HUB006 | 已完成 | Edge 内 Relay allocation remote revoke | generated Relay challenge/report/settlement contract；Controller 与 Edge 使用独立 Relay identity、generation、sender sequence 和 result cursor；reservation 持久绑定 account/Hub/Relay/route，planner/dispatcher 不经过 Hub command；Relay 按 lease/session 精确关闭真实 socket，零字节或有流量都只生成一次 final usage，Edge 串行等待 Controller ack/SQLite release 后回传 RelayCommandResult；单 child PARTIAL、真实 Pion remote close、public/private/race/client/双 Edge/doctor 门禁通过 |
 | CLOUDP006 | 已完成 | Controller 用户账号中心与运营管理面 | Web/API 与 Control Plane 同一 Controller composition；generated Proto JSON 用户/运营页面覆盖套餐、usage、device、topology、command、订单、审计和 fleet；账号隔离、readonly/admin、CSRF、五分钟近期认证、0600 development 凭据、旧 DTO/API 删除；public/private/race/client/双 Edge/doctor/Web build 门禁通过 |
 | HUB007 | 已完成 | 双 Edge 控制面 E2E | 一个 Controller + 两个 Edge 独立进程、assignment migration、Controller outage、Edge restart、inventory recovery、四类 command、P2P/Relay close 和隐私扫描；双 Agent 审查 |
-| CLOUDP007 | 待开始 | Development 全产品 E2E | Web UI 注册/交易/管理 + Android ARM64 真实 APK P2P/Relay terminal/file、quota、suspend、topology、命令、重启恢复、Direct/SSH 回归；双 Agent 审查 |
+| CLOUDP007 | 进行中 | Development 全产品 E2E | Web UI 注册/交易/管理 + Android ARM64 真实 APK P2P/Relay terminal/file、quota、suspend、topology、命令、重启恢复、Direct/SSH 回归；双 Agent 审查 |
 | CLOUDP008 | 延后 | Production Cloud 装配与发布 | 仅 HUB007/CLOUDP007 完成后启动；HTTPS、正式存储、Companion 签名、Android production origin、真实 provider |
 | WEB001 | 延后 | Web/WASM terminal 产品 | 仅用户明确恢复后启动 |
 
