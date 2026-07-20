@@ -85,6 +85,35 @@ func TestHubEdgePresenceUsesFreshDeviceProofAndRejectsReplay(t *testing.T) {
 	}
 }
 
+func TestHubPresenceRequiresAssignmentAndFencesExactEpoch(t *testing.T) {
+	fixture := newFixture(t, 4, 4)
+	token := fixture.issueDaemonEdgeToken(t)
+	fixture.assignmentSource.Set(0)
+	if _, err := fixture.service.BeginEdgePresence(context.Background(), token, "account-1", "daemon-1"); !errors.Is(err, hub.ErrAdmission) {
+		t.Fatalf("unassigned presence error = %v", err)
+	}
+
+	fixture.assignmentSource.Set(1)
+	first, _ := fixture.openEdgePresence(t)
+	fixture.assignmentSource.Set(2)
+	fixture.service.FenceAssignment("daemon-1", 1)
+	if fixture.service.HasPresence("daemon-1") {
+		t.Fatal("old assignment presence survived exact fence")
+	}
+	_ = first.Close()
+
+	second, _ := fixture.openEdgePresence(t)
+	defer second.Close()
+	fixture.service.FenceAssignment("daemon-1", 1)
+	if !fixture.service.HasPresence("daemon-1") {
+		t.Fatal("stale assignment fence closed new epoch presence")
+	}
+	fixture.service.FenceAssignment("daemon-1", 2)
+	if fixture.service.HasPresence("daemon-1") {
+		t.Fatal("current assignment fence did not close presence")
+	}
+}
+
 func TestHubEdgePresenceRejectsWrongKeyRevocationAndStalePolicy(t *testing.T) {
 	fixture := newFixture(t, 4, 4)
 	token := fixture.issueDaemonEdgeToken(t)
@@ -129,9 +158,27 @@ type fixture struct {
 	clock            *fakeClock
 	signer           servicecredential.Signer
 	edgeAuthorizer   *hub.EdgeAuthorizer
+	assignmentSource *assignmentSource
 	daemonPublicKey  ed25519.PublicKey
 	daemonPrivateKey ed25519.PrivateKey
 	service          *hub.Service
+}
+
+type assignmentSource struct {
+	mu    sync.Mutex
+	epoch uint64
+}
+
+func (source *assignmentSource) ActiveAssignment(deviceID string) (uint64, bool) {
+	source.mu.Lock()
+	defer source.mu.Unlock()
+	return source.epoch, deviceID == "daemon-1" && source.epoch != 0
+}
+
+func (source *assignmentSource) Set(epoch uint64) {
+	source.mu.Lock()
+	source.epoch = epoch
+	source.mu.Unlock()
 }
 
 func newFixture(t *testing.T, presenceQueue, clientQueue int) fixture {
@@ -158,11 +205,12 @@ func newFixture(t *testing.T, presenceQueue, clientQueue int) fixture {
 	if err := edgeAuthorizer.ApplySnapshot(hub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []hub.AccountAuthorization{activeHubP2PAccount("account-1", 1, now)}, Devices: []hub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon", PublicKey: daemonPublicKey}}}); err != nil {
 		t.Fatal(err)
 	}
-	service, err := hub.New(hub.Config{HubID: "hub-eu", Clock: clock, MaxPresenceTTL: 5 * time.Minute, MaxSignalingTTL: 5 * time.Minute, PresenceChallengeTTL: time.Minute, MaxPresenceChallenges: 16, PresenceQueueSize: presenceQueue, ClientQueueSize: clientQueue, MaxSDPBytes: 1024, MaxCandidates: 8, MaxPresences: 16, MaxSessions: 32, MaxSessionsPerClient: 4, EdgeAuthorizer: edgeAuthorizer})
+	assignment := &assignmentSource{epoch: 1}
+	service, err := hub.New(hub.Config{HubID: "hub-eu", Clock: clock, MaxPresenceTTL: 5 * time.Minute, MaxSignalingTTL: 5 * time.Minute, PresenceChallengeTTL: time.Minute, MaxPresenceChallenges: 16, PresenceQueueSize: presenceQueue, ClientQueueSize: clientQueue, MaxSDPBytes: 1024, MaxCandidates: 8, MaxPresences: 16, MaxSessions: 32, MaxSessionsPerClient: 4, EdgeAuthorizer: edgeAuthorizer, AssignmentSource: assignment})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return fixture{now: now, clock: clock, signer: signer, edgeAuthorizer: edgeAuthorizer, daemonPublicKey: daemonPublicKey, daemonPrivateKey: daemonPrivateKey, service: service}
+	return fixture{now: now, clock: clock, signer: signer, edgeAuthorizer: edgeAuthorizer, assignmentSource: assignment, daemonPublicKey: daemonPublicKey, daemonPrivateKey: daemonPrivateKey, service: service}
 }
 
 func activeHubP2PAccount(accountID string, authEpoch uint64, now time.Time) hub.AccountAuthorization {

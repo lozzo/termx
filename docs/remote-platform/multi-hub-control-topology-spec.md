@@ -674,16 +674,15 @@ temporary
 - `private/cloud/hub.Service` 使用内存 map 持有 Presence、signaling、challenge 和有界队列。
 - daemon 使用 Hub fresh challenge/DeviceProof 打开下行 Presence stream。
 - Hub 离线验证 edge token、ownership、revoke、auth epoch 和 managed direct/Relay policy。
-- Web 可以显示 daemon online/offline 和 revoked。
-- 单进程 staging `RevokeCloudDevice` 会更新目录、refresh session、policy revision 并调用 `Hub.RevokeDevice`。
+- `termx-cloud-controller` 与 `termx-cloud-edge` 已成为独立 composition；development supervisor 会启动一个 Controller 与两个 Edge 真实进程。
+- Hub control 已通过 Proto challenge/open/report 网络边界完成唯一 generation、full/delta projection 和 reconciliation sequence。
+- Edge Hub public listener 已恢复真实 Proto presence、device directory、resolve 和 signaling socket；它只消费 Hub/authorizer/projection，不访问 Controller store。
+- daemon Presence challenge、Presence 和 signaling session 都绑定当前 assignment epoch；remove、replace、expiry 只关闭精确旧 epoch，迟到 fence 不影响新 epoch。
+- Hub projection 不再使用文件 snapshot；Edge 重启重新 full sync，Relay usage outbox 独立持久。
 - Relay 已有 lease enforcement、usage event 和 durable outbox。
 
 缺失：
 
-- 独立多 Hub registry、control identity 和 per-Hub control stream。
-- HubAssignment lease/epoch/fencing。
-- 每 Hub projection revision、delta 和 reconciliation。
-- 正式 Hub 纯内存装配。
 - daemon-owned ManagedPeerSession registry 和 lifecycle hooks。
 - 上行 `ReportDaemonRuntime`、inventory/event 线性化。
 - CP topology validation、full replacement 和 Web topology API。

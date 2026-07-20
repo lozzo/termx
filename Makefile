@@ -9,13 +9,15 @@ ANDROID_ARTIFACT_DIR := $(ARTIFACT_DIR)/android
 PRIVATE_MODULES := \
 	private/cloud/companion \
 	private/cloud/control-plane \
+	private/cloud/controller \
 	private/cloud/devcloud \
+	private/cloud/edge \
 	private/cloud/hub \
 	private/cloud/relay \
 	private/cloud/route-planner \
 	private/cloud/web-controller
 
-.PHONY: help build build-cloud-test build-web-controller build-web-controller-linux cloud-dev test test-private test-clients test-android test-all doctor clean
+.PHONY: help build build-cloud-test build-web-controller build-web-controller-linux cloud-dev test test-private test-cloud-controller-edge test-clients test-android test-all doctor clean
 
 help:
 	@printf '%s\n' \
@@ -27,6 +29,7 @@ help:
 		'  make cloud-dev     Start the explicit single-region dev cloud' \
 		'  make test          Test the public Go module' \
 		'  make test-private  Test each private cloud Go module when present' \
+		'  make test-cloud-controller-edge  Test one Controller plus two Edge processes' \
 		'  make test-clients  Generate, test, typecheck, and build both clients' \
 		'  make test-android  Build/test the standard and dev-cloud TermX APK' \
 		'  make test-all      Run all repository test gates sequentially' \
@@ -67,6 +70,9 @@ test-private:
 			(cd "$$module" && "$(CURDIR)/scripts/with-clean-termx-env.sh" env GOWORK=off go test ./... -count=1); \
 		done; \
 	fi
+
+test-cloud-controller-edge:
+	cd private/cloud/devcloud && "$(CURDIR)/scripts/with-clean-termx-env.sh" env GOWORK=off go test ./cmd/termx-cloud-dev -run TestSupervisorStartsControllerAndTwoIndependentEdges -count=1
 
 test-clients:
 	node scripts/client-workspace-guard.mjs

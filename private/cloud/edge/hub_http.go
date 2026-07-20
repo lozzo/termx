@@ -1,0 +1,446 @@
+package edge
+
+import (
+	"bytes"
+	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"mime"
+	"net/http"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
+	cloudhub "github.com/lozzow/termx/private/cloud/hub"
+	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/lozzow/termx/shared/remoteauth"
+	"google.golang.org/protobuf/proto"
+)
+
+const maxHubRequestBytes = 4 << 20
+
+type hubHTTPConfig struct {
+	Hub        *cloudhub.Service
+	Authorizer *cloudhub.EdgeAuthorizer
+	Projection *cloudhub.Projection
+	HubID      string
+	HubURL     string
+}
+
+type hubHTTPHandler struct {
+	hub        *cloudhub.Service
+	authorizer *cloudhub.EdgeAuthorizer
+	projection *cloudhub.Projection
+	hubID      string
+	hubURL     string
+}
+
+// newHubHTTPHandler 建立 Edge 公网 Hub adapter。它只消费纯内存 projection 和 Hub Service，
+// 不访问 Controller store，也不拥有 account、assignment、Presence 或 signaling 真值。
+func newHubHTTPHandler(config hubHTTPConfig) http.Handler {
+	handler := &hubHTTPHandler{hub: config.Hub, authorizer: config.Authorizer, projection: config.Projection, hubID: config.HubID, hubURL: config.HubURL}
+	mux := http.NewServeMux()
+	mux.HandleFunc(httpapi.HubHealthPath, handler.handleHealth)
+	mux.HandleFunc(httpapi.HubBeginPresencePath, handler.handleBeginPresence)
+	mux.HandleFunc(httpapi.HubOpenPresencePath, handler.handleOpenPresence)
+	mux.HandleFunc(httpapi.HubCreateSignalingPath, handler.handleCreateSignaling)
+	mux.HandleFunc(httpapi.HubCompleteSignalingPath, handler.handleCompleteSignaling)
+	mux.HandleFunc(httpapi.HubResolveEndpointPath, handler.handleResolveEndpoint)
+	mux.HandleFunc(httpapi.HubListManagedDevicesPath, handler.handleListManagedDevices)
+	return mux
+}
+
+func (handler *hubHTTPHandler) handleHealth(writer http.ResponseWriter, request *http.Request) {
+	if !requireHubMethod(writer, request, http.MethodGet) {
+		return
+	}
+	if request.Header.Get("Authorization") != "" {
+		writeHubError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "authorization is not accepted for this operation", false)
+		return
+	}
+	if handler.projection == nil || !handler.projection.Ready() {
+		writeHubError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub projection is unavailable", true)
+		return
+	}
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (handler *hubHTTPHandler) handleBeginPresence(writer http.ResponseWriter, request *http.Request) {
+	token, envelope, payload, ok := readHubRequest[*cloudpb.BeginPresenceRequest](writer, request, &cloudpb.BeginPresenceRequest{})
+	if !ok {
+		return
+	}
+	defer clear(token)
+	defer clear(envelope.Payload)
+	if payload.GetDeviceId() == "" || payload.GetDeviceId() != envelope.DeviceID {
+		writeHubError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub presence identity was rejected", false)
+		return
+	}
+	challenge, err := handler.hub.BeginEdgePresence(request.Context(), token, envelope.AccountID, envelope.DeviceID)
+	if err != nil {
+		mapHubError(writer, err)
+		return
+	}
+	defer clear(challenge.Value)
+	writeHubProto(writer, http.StatusOK, &cloudpb.PresenceChallenge{PresenceSessionId: challenge.PresenceSessionID, ChallengeId: challenge.ChallengeID, Challenge: append([]byte(nil), challenge.Value...), ExpiresAtUnix: uint64(challenge.ExpiresAt.Unix())})
+}
+
+func (handler *hubHTTPHandler) handleListManagedDevices(writer http.ResponseWriter, request *http.Request) {
+	token, envelope, payload, ok := readHubRequest[*cloudpb.ListManagedDevicesRequest](writer, request, &cloudpb.ListManagedDevicesRequest{})
+	if !ok {
+		return
+	}
+	defer clear(token)
+	defer clear(envelope.Payload)
+	if payload.GetSchemaVersion() != 1 {
+		writeHubError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "managed device directory version is invalid", false)
+		return
+	}
+	if _, err := handler.authorizer.AuthorizeClient(token, envelope.AccountID, envelope.DeviceID); err != nil {
+		mapHubError(writer, err)
+		return
+	}
+	devices := handler.authorizer.AccountDevices(envelope.AccountID)
+	sort.Slice(devices, func(left, right int) bool { return devices[left].DeviceID < devices[right].DeviceID })
+	response := &cloudpb.ListManagedDevicesResponse{}
+	for _, device := range devices {
+		kind := cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT
+		presence := cloudpb.PresenceState_PRESENCE_STATE_OFFLINE
+		fingerprint := ""
+		if device.Kind == "daemon" {
+			kind = cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON
+			if len(device.PublicKey) != ed25519.PublicKeySize {
+				writeHubError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "managed daemon identity projection is invalid", true)
+				return
+			}
+			fingerprint = remoteauth.Fingerprint(ed25519.PublicKey(device.PublicKey))
+			if !device.Revoked && handler.hub.HasPresence(device.DeviceID) {
+				presence = cloudpb.PresenceState_PRESENCE_STATE_ONLINE
+			}
+		}
+		response.Devices = append(response.Devices, &cloudpb.ManagedDevice{DeviceId: device.DeviceID, DisplayName: device.DisplayName, Platform: device.Platform, Kind: kind, Presence: presence, Revoked: device.Revoked, DeviceFingerprint: fingerprint})
+	}
+	writeHubProto(writer, http.StatusOK, response)
+}
+
+func (handler *hubHTTPHandler) handleOpenPresence(writer http.ResponseWriter, request *http.Request) {
+	token, envelope, payload, ok := readHubRequest[*cloudpb.OpenPresenceRequest](writer, request, &cloudpb.OpenPresenceRequest{})
+	if !ok {
+		return
+	}
+	defer clear(token)
+	defer clear(envelope.Payload)
+	proof := payload.GetProof()
+	if proof == nil || envelope.DeviceID != proof.GetDeviceId() {
+		writeHubError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub presence proof binding was rejected", false)
+		return
+	}
+	presence, err := handler.hub.OpenEdgePresence(request.Context(), token, envelope.AccountID, cloudhub.EdgePresenceProof{PresenceSessionID: payload.GetPresenceSessionId(), ChallengeID: proof.GetChallengeId(), DeviceID: proof.GetDeviceId(), PublicKey: append([]byte(nil), proof.GetDevicePublicKey()...), Signature: append([]byte(nil), proof.GetSignature()...), SignedAt: time.Unix(0, proof.GetSignedAtUnixNano()).UTC()})
+	if err != nil {
+		mapHubError(writer, err)
+		return
+	}
+	defer presence.Close()
+	writer.Header().Set("Content-Type", httpapi.StreamMediaType)
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.WriteHeader(http.StatusOK)
+	if err := httpapi.WriteFrame(writer, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{PresenceSessionId: payload.GetPresenceSessionId(), HeartbeatSeconds: 30}}}); err != nil {
+		return
+	}
+	flushHub(writer)
+	for {
+		event, err := presence.Receive(request.Context())
+		if err != nil {
+			if !errors.Is(err, io.EOF) && !errors.Is(err, context.Canceled) {
+				_ = httpapi.WriteFrame(writer, hubPresenceError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub presence stream failed", true))
+				flushHub(writer)
+			}
+			return
+		}
+		wire, valid := presenceEventToWire(event)
+		if !valid || httpapi.WriteFrame(writer, wire) != nil {
+			return
+		}
+		flushHub(writer)
+	}
+}
+
+func (handler *hubHTTPHandler) handleCreateSignaling(writer http.ResponseWriter, request *http.Request) {
+	token, envelope, payload, ok := readHubRequest[*cloudpb.CreateSignalingSessionRequest](writer, request, &cloudpb.CreateSignalingSessionRequest{})
+	if !ok {
+		return
+	}
+	defer clear(token)
+	defer clear(envelope.Payload)
+	claims, err := handler.authorizer.AuthorizeDirect(token, envelope.AccountID, envelope.DeviceID, payload.GetTargetDeviceId())
+	if err != nil {
+		mapHubError(writer, err)
+		return
+	}
+	signalingSessionID, err := randomHubID("signal")
+	if err != nil {
+		writeHubError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub signaling session could not be created", true)
+		return
+	}
+	session, err := handler.hub.CreateEdgeSession(request.Context(), cloudhub.CreateEdgeSessionRequest{EdgeToken: token, AccountID: claims.AccountID, ClientDeviceID: claims.ClientDeviceID, ClientConnectionID: claims.TokenID, TargetDeviceID: payload.GetTargetDeviceId(), SignalingSessionID: signalingSessionID, RelayCorrelationID: payload.GetManagedSessionId(), SDP: payload.GetOfferSdp(), Candidates: candidatesFromWire(payload.GetCandidates()), RoutePreference: cloudhub.RoutePreference(payload.GetRoutePreference()), RelayOnly: payload.GetRelayOnly()})
+	if err != nil {
+		mapHubError(writer, err)
+		return
+	}
+	defer session.Close()
+	writer.Header().Set("Content-Type", httpapi.StreamMediaType)
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.WriteHeader(http.StatusOK)
+	flushHub(writer)
+	for {
+		event, err := session.Receive(request.Context())
+		if err != nil {
+			return
+		}
+		wire, valid := clientEventToWire(event)
+		if !valid || httpapi.WriteFrame(writer, wire) != nil {
+			return
+		}
+		flushHub(writer)
+	}
+}
+
+func (handler *hubHTTPHandler) handleCompleteSignaling(writer http.ResponseWriter, request *http.Request) {
+	token, envelope, payload, ok := readHubRequest[*cloudpb.CompleteSignalingOfferRequest](writer, request, &cloudpb.CompleteSignalingOfferRequest{})
+	if !ok {
+		return
+	}
+	defer clear(token)
+	defer clear(envelope.Payload)
+	claims, err := handler.authorizer.AuthorizeDaemon(token, envelope.AccountID, envelope.DeviceID)
+	if err != nil || payload.GetSignalingSessionId() == "" {
+		writeHubError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub daemon edge binding was rejected", false)
+		return
+	}
+	if answer := payload.GetAnswer(); answer != nil && payload.GetError() == nil {
+		if answer.GetSignalingSessionId() != payload.GetSignalingSessionId() || answer.GetSdp() == "" {
+			writeHubError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub signaling answer is invalid", false)
+			return
+		}
+		_, err = handler.hub.CompleteEdgeAnswer(request.Context(), cloudhub.CompleteEdgeAnswerRequest{EdgeToken: token, AccountID: claims.AccountID, DaemonDeviceID: claims.ClientDeviceID, SignalingSessionID: payload.GetSignalingSessionId(), SDP: answer.GetSdp(), Candidates: candidatesFromWire(answer.GetCandidates())})
+	} else if failure := payload.GetError(); failure != nil && payload.GetAnswer() == nil && validSignalingFailureCode(failure.GetCode()) {
+		err = handler.hub.CompleteEdgeFailure(request.Context(), cloudhub.CompleteEdgeFailureRequest{EdgeToken: token, AccountID: claims.AccountID, DaemonDeviceID: claims.ClientDeviceID, SignalingSessionID: payload.GetSignalingSessionId(), Code: int32(failure.GetCode()), Retryable: failure.GetRetryable()})
+	} else {
+		writeHubError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub signaling result is invalid", false)
+		return
+	}
+	if err != nil {
+		mapHubError(writer, err)
+		return
+	}
+	writeHubProto(writer, http.StatusOK, &cloudpb.CompleteSignalingOfferResponse{})
+}
+
+func (handler *hubHTTPHandler) handleResolveEndpoint(writer http.ResponseWriter, request *http.Request) {
+	token, envelope, payload, ok := readHubRequest[*cloudpb.ResolveEndpointRequest](writer, request, &cloudpb.ResolveEndpointRequest{})
+	if !ok {
+		return
+	}
+	defer clear(token)
+	defer clear(envelope.Payload)
+	if payload.GetEndpointId() == "" || payload.GetTargetDeviceId() == "" {
+		writeHubError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "managed endpoint request is invalid", false)
+		return
+	}
+	if _, err := handler.authorizer.AuthorizeDirect(token, envelope.AccountID, envelope.DeviceID, payload.GetTargetDeviceId()); err != nil {
+		mapHubError(writer, err)
+		return
+	}
+	if !handler.hub.HasPresence(payload.GetTargetDeviceId()) {
+		writeHubError(writer, http.StatusNotFound, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_NOT_FOUND, "target device is offline", true)
+		return
+	}
+	correlationID, err := randomHubID("managed")
+	if err != nil {
+		writeHubError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub session correlation could not be created", true)
+		return
+	}
+	writeHubProto(writer, http.StatusOK, &cloudpb.ResolvedEndpoint{EndpointId: payload.GetEndpointId(), TargetDeviceId: payload.GetTargetDeviceId(), Presence: cloudpb.PresenceState_PRESENCE_STATE_ONLINE, HubId: handler.hubID, HubUrl: handler.hubURL, ManagedSessionId: correlationID})
+}
+
+func readHubRequest[T proto.Message](writer http.ResponseWriter, request *http.Request, payload T) ([]byte, httpapi.EdgeHubRequest, T, bool) {
+	var zero T
+	if !requireHubMethod(writer, request, http.MethodPost) {
+		return nil, httpapi.EdgeHubRequest{}, zero, false
+	}
+	token, ok := readHubBearer(writer, request)
+	if !ok {
+		return nil, httpapi.EdgeHubRequest{}, zero, false
+	}
+	if !contentTypeIs(request, httpapi.JSONMediaType) {
+		clear(token)
+		writeHubError(writer, http.StatusUnsupportedMediaType, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub request content type is invalid", false)
+		return nil, httpapi.EdgeHubRequest{}, zero, false
+	}
+	reader := http.MaxBytesReader(writer, request.Body, maxHubRequestBytes)
+	defer reader.Close()
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		clear(token)
+		writeHubError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub request is invalid", false)
+		return nil, httpapi.EdgeHubRequest{}, zero, false
+	}
+	defer clear(body)
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	var envelope httpapi.EdgeHubRequest
+	if decoder.Decode(&envelope) != nil || decoder.Decode(&struct{}{}) != io.EOF || envelope.AccountID == "" || envelope.DeviceID == "" || len(envelope.Payload) == 0 || len(envelope.Payload) > maxHubRequestBytes || proto.Unmarshal(envelope.Payload, payload) != nil || len(payload.ProtoReflect().GetUnknown()) != 0 {
+		clear(token)
+		clear(envelope.Payload)
+		writeHubError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub request is invalid", false)
+		return nil, httpapi.EdgeHubRequest{}, zero, false
+	}
+	return token, envelope, payload, true
+}
+
+func readHubBearer(writer http.ResponseWriter, request *http.Request) ([]byte, bool) {
+	header := request.Header.Get("Authorization")
+	if strings.Count(header, " ") != 1 {
+		writeHubError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub edge authorization is required", false)
+		return nil, false
+	}
+	scheme, encoded, _ := strings.Cut(header, " ")
+	token, err := base64.RawURLEncoding.DecodeString(encoded)
+	if scheme != "Bearer" || err != nil || len(token) == 0 || len(token) > 4096 {
+		clear(token)
+		writeHubError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub edge authorization is invalid", false)
+		return nil, false
+	}
+	return token, true
+}
+
+func requireHubMethod(writer http.ResponseWriter, request *http.Request, method string) bool {
+	if request.Method == method {
+		return true
+	}
+	writeHubError(writer, http.StatusMethodNotAllowed, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub method is not allowed", false)
+	return false
+}
+
+func contentTypeIs(request *http.Request, expected string) bool {
+	mediaType, parameters, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
+	return err == nil && mediaType == expected && len(parameters) == 0
+}
+
+func writeHubProto(writer http.ResponseWriter, status int, message proto.Message) {
+	payload, err := proto.Marshal(message)
+	if err != nil {
+		writeHubError(writer, http.StatusInternalServerError, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub response encoding failed", true)
+		return
+	}
+	writer.Header().Set("Content-Type", httpapi.ProtobufMediaType)
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.WriteHeader(status)
+	_, _ = writer.Write(payload)
+}
+
+func writeHubError(writer http.ResponseWriter, status int, code cloudpb.CloudErrorCode, message string, retryable bool) {
+	payload, _ := proto.Marshal(&cloudpb.CloudError{Code: code, Message: message, Retryable: retryable})
+	writer.Header().Set("Content-Type", httpapi.ProtobufMediaType)
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.WriteHeader(status)
+	_, _ = writer.Write(payload)
+}
+
+func mapHubError(writer http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, cloudhub.ErrAdmission), errors.Is(err, cloudhub.ErrEdgeAuthorization):
+		writeHubError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub authorization was rejected", false)
+	case errors.Is(err, cloudhub.ErrPolicySnapshot):
+		writeHubError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub authorization projection is unavailable", true)
+	case errors.Is(err, cloudhub.ErrTargetUnavailable):
+		writeHubError(writer, http.StatusNotFound, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_NOT_FOUND, "target managed device is unavailable", false)
+	case errors.Is(err, cloudhub.ErrPresenceNotFound):
+		writeHubError(writer, http.StatusNotFound, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_NOT_FOUND, "target device is offline", true)
+	case errors.Is(err, cloudhub.ErrBackpressure), errors.Is(err, cloudhub.ErrCapacity):
+		writeHubError(writer, http.StatusTooManyRequests, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_BACKPRESSURE, "Hub signaling capacity is unavailable", true)
+	case errors.Is(err, cloudhub.ErrPresenceConflict), errors.Is(err, cloudhub.ErrSessionConflict), errors.Is(err, cloudhub.ErrSessionNotFound), errors.Is(err, cloudhub.ErrInvalidSignal):
+		writeHubError(writer, http.StatusConflict, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub signaling binding was rejected", false)
+	default:
+		writeHubError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub operation failed", true)
+	}
+}
+
+func randomHubID(prefix string) (string, error) {
+	value := make([]byte, 18)
+	if _, err := rand.Read(value); err != nil {
+		return "", fmt.Errorf("generate Hub ID: %w", err)
+	}
+	return prefix + "-" + base64.RawURLEncoding.EncodeToString(value), nil
+}
+
+func presenceEventToWire(event cloudhub.PresenceEvent) (*cloudpb.PresenceEvent, bool) {
+	switch {
+	case event.Offer != nil:
+		return &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{SignalingSessionId: event.Offer.SignalingSessionID, ManagedSessionId: event.Offer.ManagedSessionID, SourceDeviceId: event.Offer.SourceDeviceID, TargetDeviceId: event.Offer.TargetDeviceID, Sdp: event.Offer.SDP, Candidates: candidatesToWire(event.Offer.Candidates), RoutePreference: cloudpb.RoutePreference(event.Offer.RoutePreference), RelayOnly: event.Offer.RelayOnly}}}, true
+	case event.Closed != nil:
+		return &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: event.Closed.Reason}}}, true
+	default:
+		return nil, false
+	}
+}
+
+func clientEventToWire(event cloudhub.ClientEvent) (*cloudpb.SignalingEvent, bool) {
+	switch {
+	case event.Answer != nil:
+		return &cloudpb.SignalingEvent{Payload: &cloudpb.SignalingEvent_Answer{Answer: &cloudpb.SignalingAnswer{SignalingSessionId: event.Answer.SignalingSessionID, Sdp: event.Answer.SDP, Candidates: candidatesToWire(event.Answer.Candidates)}}}, true
+	case event.Candidate != nil:
+		return &cloudpb.SignalingEvent{Payload: &cloudpb.SignalingEvent_Candidate{Candidate: candidateToWire(event.Candidate.Candidate)}}, true
+	case event.Failure != nil && validSignalingFailureCode(cloudpb.CloudErrorCode(event.Failure.Code)):
+		return &cloudpb.SignalingEvent{Payload: &cloudpb.SignalingEvent_Error{Error: &cloudpb.CloudError{Code: cloudpb.CloudErrorCode(event.Failure.Code), Message: "daemon could not establish managed transport", Retryable: event.Failure.Retryable}}}, true
+	case event.Closed != nil:
+		return &cloudpb.SignalingEvent{Payload: &cloudpb.SignalingEvent_Closed{Closed: &cloudpb.SignalingClosed{Reason: event.Closed.Reason}}}, true
+	default:
+		return nil, false
+	}
+}
+
+func candidatesFromWire(candidates []*cloudpb.IceCandidate) []cloudhub.Candidate {
+	result := make([]cloudhub.Candidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate == nil {
+			result = append(result, cloudhub.Candidate{})
+			continue
+		}
+		result = append(result, cloudhub.Candidate{Candidate: candidate.GetCandidate(), SDPMid: candidate.GetSdpMid(), SDPMLineIndex: candidate.GetSdpMlineIndex(), UsernameFragment: candidate.GetUsernameFragment()})
+	}
+	return result
+}
+
+func candidatesToWire(candidates []cloudhub.Candidate) []*cloudpb.IceCandidate {
+	result := make([]*cloudpb.IceCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		result = append(result, candidateToWire(candidate))
+	}
+	return result
+}
+
+func candidateToWire(candidate cloudhub.Candidate) *cloudpb.IceCandidate {
+	return &cloudpb.IceCandidate{Candidate: candidate.Candidate, SdpMid: candidate.SDPMid, SdpMlineIndex: candidate.SDPMLineIndex, UsernameFragment: candidate.UsernameFragment}
+}
+
+func hubPresenceError(code cloudpb.CloudErrorCode, message string, retryable bool) *cloudpb.PresenceEvent {
+	return &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Error{Error: &cloudpb.CloudError{Code: code, Message: message, Retryable: retryable}}}
+}
+
+func validSignalingFailureCode(code cloudpb.CloudErrorCode) bool {
+	return code >= cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING && code <= cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY
+}
+
+func flushHub(writer http.ResponseWriter) {
+	if flusher, ok := writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}

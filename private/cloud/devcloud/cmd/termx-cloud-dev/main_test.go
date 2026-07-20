@@ -1,0 +1,86 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestSupervisorStartsControllerAndTwoIndependentEdges(t *testing.T) {
+	root := findRepoRoot(t)
+	manifestPath := filepath.Join(t.TempDir(), "runtime.json")
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, []string{"--manifest", manifestPath, "--repo-root", root}) }()
+	var manifest supervisorManifest
+	if err := waitManifest(ctx, manifestPath, &manifest, done); err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	if manifest.Controller.PID == 0 || len(manifest.Edges) != 2 || len(manifest.Processes) != 3 {
+		cancel()
+		t.Fatalf("supervisor manifest = %#v", manifest)
+	}
+	pids := map[int]bool{manifest.Controller.PID: true}
+	hubs := map[string]bool{}
+	for _, edge := range manifest.Edges {
+		if edge.PID == 0 || edge.ControlGeneration != 1 || edge.ProjectionRevision != 1 || edge.HubID == "" || edge.RelayID == "" || edge.HealthURL == "" || edge.RelayURL == "" {
+			cancel()
+			t.Fatalf("Edge manifest = %#v", edge)
+		}
+		if pids[edge.PID] || hubs[edge.HubID] {
+			cancel()
+			t.Fatalf("duplicate Edge process or Hub identity: %#v", manifest.Edges)
+		}
+		pids[edge.PID], hubs[edge.HubID] = true, true
+		if err := waitHealth(ctx, edge.HealthURL+"/healthz", true); err != nil {
+			cancel()
+			t.Fatal(err)
+		}
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("supervisor exit = %v", err)
+	}
+	for _, endpoint := range []string{manifest.Controller.OperatorURL + "/healthz", manifest.Edges[0].HealthURL + "/healthz", manifest.Edges[1].HealthURL + "/healthz"} {
+		if !waitUnavailable(endpoint, 5*time.Second) {
+			t.Fatalf("child listener survived supervisor shutdown: %s", endpoint)
+		}
+	}
+}
+
+func findRepoRoot(t *testing.T) string {
+	t.Helper()
+	directory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(directory, "go.work")); err == nil {
+			return directory
+		}
+		parent := filepath.Dir(directory)
+		if parent == directory {
+			t.Fatal("repository root not found")
+		}
+		directory = parent
+	}
+}
+
+func waitUnavailable(endpoint string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: 100 * time.Millisecond}
+	for time.Now().Before(deadline) {
+		response, err := client.Get(endpoint)
+		if err != nil {
+			return true
+		}
+		_ = response.Body.Close()
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
+}

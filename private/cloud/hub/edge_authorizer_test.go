@@ -4,8 +4,6 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -87,7 +85,7 @@ func TestEdgeAuthorizerUsesOnlyVersionedLocalProjection(t *testing.T) {
 	}
 }
 
-func TestEdgeAuthorizerPersistsAndReverifiesSignedSnapshot(t *testing.T) {
+func TestEdgeAuthorizerRestartStartsWithoutPolicyProjection(t *testing.T) {
 	now := time.Date(2026, 7, 12, 11, 0, 0, 0, time.UTC)
 	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -109,24 +107,16 @@ func TestEdgeAuthorizerPersistsAndReverifiesSignedSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "edge-policy.snapshot")
-	store, err := hub.NewFileEdgeSnapshotStore(path)
-	if err != nil {
-		t.Fatal(err)
-	}
 	clock := &edgeClock{now: now}
-	first, err := hub.NewEdgeAuthorizer(hub.EdgeAuthorizerConfig{HubID: "hub-1", Issuer: "control-plane.edge", KeyRing: ring, Clock: clock, MaxStaleness: time.Hour, SnapshotStore: store})
+	first, err := hub.NewEdgeAuthorizer(hub.EdgeAuthorizerConfig{HubID: "hub-1", Issuer: "control-plane.edge", KeyRing: ring, Clock: clock, MaxStaleness: time.Hour})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := first.ApplySignedSnapshot(encoded); err != nil {
 		t.Fatal(err)
 	}
-	restarted, err := hub.NewEdgeAuthorizer(hub.EdgeAuthorizerConfig{HubID: "hub-1", Issuer: "control-plane.edge", KeyRing: ring, Clock: clock, MaxStaleness: time.Hour, SnapshotStore: store})
+	restarted, err := hub.NewEdgeAuthorizer(hub.EdgeAuthorizerConfig{HubID: "hub-1", Issuer: "control-plane.edge", KeyRing: ring, Clock: clock, MaxStaleness: time.Hour})
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := restarted.RestoreSignedSnapshot(); err != nil {
 		t.Fatal(err)
 	}
 	edgeIssuer, err := servicecredential.NewEdgeAccessIssuer("control-plane.edge", signer)
@@ -137,18 +127,8 @@ func TestEdgeAuthorizerPersistsAndReverifiesSignedSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := restarted.AuthorizeDirect(token, "account-1", "client-1", "daemon-1"); err != nil {
-		t.Fatalf("restored authorization = %v", err)
-	}
-	if err := os.WriteFile(path, []byte("tampered"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	tampered, err := hub.NewEdgeAuthorizer(hub.EdgeAuthorizerConfig{HubID: "hub-1", Issuer: "control-plane.edge", KeyRing: ring, Clock: clock, MaxStaleness: time.Hour, SnapshotStore: store})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := tampered.RestoreSignedSnapshot(); !errors.Is(err, hub.ErrPolicySnapshot) {
-		t.Fatalf("tampered restore error = %v", err)
+	if _, err := restarted.AuthorizeDirect(token, "account-1", "client-1", "daemon-1"); !errors.Is(err, hub.ErrPolicySnapshot) {
+		t.Fatalf("restarted Hub restored policy from disk: %v", err)
 	}
 }
 

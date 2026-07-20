@@ -151,6 +151,18 @@ func TestCloudProductUsesOnePlanCapabilityAcrossCatalogEntitlementAndHubPolicy(t
 	}
 }
 
+func TestHubControlHTTPBoundaryIsProtoFirst(t *testing.T) {
+	messages := File_cloudpb_cloud_hub_control_proto.Messages()
+	for _, name := range []protoreflect.Name{
+		"HubControlChallengeRequest", "HubControlChallengeResponse", "HubHello",
+		"ReportHubRuntimeRequest", "ReportHubRuntimeResponse",
+	} {
+		if messages.ByName(name) == nil {
+			t.Fatalf("Hub control HTTP contract missing %s", name)
+		}
+	}
+}
+
 func TestCloudPlatformDescriptorBaseline(t *testing.T) {
 	payload, err := os.ReadFile("testdata/cloud-platform-v1.pb")
 	if err != nil {

@@ -61,24 +61,21 @@ type EdgeAuthorizerConfig struct {
 	KeyRing      *servicecredential.KeyRing
 	Clock        Clock
 	MaxStaleness time.Duration
-	// SnapshotStore 可选持久化已验签快照；恢复时仍会重新验签。
-	SnapshotStore EdgeSnapshotStore
 }
 
 // EdgeAuthorizer 是 Hub managed direct 授权决策的内存 owner。
 // 它只接受完整 snapshot 的原子替换；生产持久快照/WAL 由外层同步组件负责验证后恢复。
 type EdgeAuthorizer struct {
-	mu            sync.RWMutex
-	hubID         string
-	issuer        string
-	keyRing       *servicecredential.KeyRing
-	clock         Clock
-	maxStaleness  time.Duration
-	snapshotStore EdgeSnapshotStore
-	revision      uint64
-	generatedAt   time.Time
-	accounts      map[string]AccountAuthorization
-	devices       map[string]DeviceAuthorization
+	mu           sync.RWMutex
+	hubID        string
+	issuer       string
+	keyRing      *servicecredential.KeyRing
+	clock        Clock
+	maxStaleness time.Duration
+	revision     uint64
+	generatedAt  time.Time
+	accounts     map[string]AccountAuthorization
+	devices      map[string]DeviceAuthorization
 }
 
 // Revision 返回当前已验签并发布的 policy revision。
@@ -101,11 +98,11 @@ func NewEdgeAuthorizer(config EdgeAuthorizerConfig) (*EdgeAuthorizer, error) {
 	if config.Clock == nil {
 		config.Clock = realClock{}
 	}
-	return &EdgeAuthorizer{hubID: config.HubID, issuer: config.Issuer, keyRing: config.KeyRing, clock: config.Clock, maxStaleness: config.MaxStaleness, snapshotStore: config.SnapshotStore}, nil
+	return &EdgeAuthorizer{hubID: config.HubID, issuer: config.Issuer, keyRing: config.KeyRing, clock: config.Clock, maxStaleness: config.MaxStaleness}, nil
 }
 
-// ApplySignedSnapshot 验证 Control Plane 签名快照、持久化原始 token，再原子发布内存投影。
-// 持久化失败时不发布新 revision，避免重启后恢复到已经落后的授权状态。
+// ApplySignedSnapshot 验证 Control Plane 签名快照并原子发布纯内存投影。
+// Edge 重启不得恢复该 token；新的 control generation 必须重新发送 full projection。
 func (authorizer *EdgeAuthorizer) ApplySignedSnapshot(encoded []byte) error {
 	now := authorizer.clock.Now().UTC()
 	claims, err := servicecredential.VerifyEdgePolicy(authorizer.keyRing, encoded, authorizer.issuer, authorizer.hubID, now)
@@ -116,30 +113,7 @@ func (authorizer *EdgeAuthorizer) ApplySignedSnapshot(encoded []byte) error {
 	if err := authorizer.validateNextSnapshot(snapshot); err != nil {
 		return err
 	}
-	if authorizer.snapshotStore != nil {
-		if err := authorizer.snapshotStore.Save(append([]byte(nil), encoded...)); err != nil {
-			return fmt.Errorf("%w: persist snapshot: %v", ErrPolicySnapshot, err)
-		}
-	}
 	return authorizer.ApplySnapshot(snapshot)
-}
-
-// RestoreSignedSnapshot 从 store 读取原始快照并重新验证签名、audience、expiry 和 schema 后发布。
-// 缺少 store、磁盘损坏或快照过期均 fail closed，不恢复 presence 或 signaling 状态。
-func (authorizer *EdgeAuthorizer) RestoreSignedSnapshot() error {
-	if authorizer.snapshotStore == nil {
-		return ErrPolicySnapshot
-	}
-	encoded, err := authorizer.snapshotStore.Load()
-	if err != nil {
-		return fmt.Errorf("%w: load snapshot: %v", ErrPolicySnapshot, err)
-	}
-	claims, err := servicecredential.VerifyEdgePolicy(authorizer.keyRing, encoded, authorizer.issuer, authorizer.hubID, authorizer.clock.Now().UTC())
-	clear(encoded)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrPolicySnapshot, err)
-	}
-	return authorizer.ApplySnapshot(snapshotFromPolicyClaims(claims))
 }
 
 func (authorizer *EdgeAuthorizer) validateNextSnapshot(snapshot AuthorizationSnapshot) error {

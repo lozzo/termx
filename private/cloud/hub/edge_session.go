@@ -30,6 +30,10 @@ func (service *Service) CreateEdgeSession(_ context.Context, request CreateEdgeS
 	if _, err := service.edgeAuthorizer.AuthorizeDirect(request.EdgeToken, request.AccountID, request.ClientDeviceID, request.TargetDeviceID); err != nil {
 		return nil, err
 	}
+	assignmentEpoch, assigned := service.assignmentSource.ActiveAssignment(request.TargetDeviceID)
+	if !assigned {
+		return nil, ErrAdmission
+	}
 	managedSessionID := "edge-" + request.SignalingSessionID
 	if request.RelayOnly {
 		if request.RelayCorrelationID == "" {
@@ -41,13 +45,13 @@ func (service *Service) CreateEdgeSession(_ context.Context, request CreateEdgeS
 		return nil, err
 	}
 	now := service.clock.Now().UTC()
-	state := &sessionState{id: request.SignalingSessionID, accountID: request.AccountID, managedSessionID: managedSessionID, clientDeviceID: request.ClientDeviceID, clientConnectionID: request.ClientConnectionID, targetDeviceID: request.TargetDeviceID, clientCandidateAllowed: true, expiresAt: now.Add(service.maxSignalingTTL), clientEvents: make(chan ClientEvent, service.clientQueue), done: make(chan struct{})}
+	state := &sessionState{id: request.SignalingSessionID, accountID: request.AccountID, managedSessionID: managedSessionID, clientDeviceID: request.ClientDeviceID, clientConnectionID: request.ClientConnectionID, targetDeviceID: request.TargetDeviceID, targetAssignmentEpoch: assignmentEpoch, clientCandidateAllowed: true, expiresAt: now.Add(service.maxSignalingTTL), clientEvents: make(chan ClientEvent, service.clientQueue), done: make(chan struct{})}
 	offer := Offer{SignalingSessionID: state.id, ManagedSessionID: state.managedSessionID, SourceDeviceID: state.clientDeviceID, TargetDeviceID: state.targetDeviceID, SDP: request.SDP, Candidates: cloneCandidates(request.Candidates), RoutePreference: request.RoutePreference, RelayOnly: request.RelayOnly}
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	service.cleanupLocked(now)
 	presence := service.presences[request.TargetDeviceID]
-	if presence == nil || presence.closed || !now.Before(presence.expiresAt) || presence.accountID != request.AccountID {
+	if presence == nil || presence.closed || !now.Before(presence.expiresAt) || presence.accountID != request.AccountID || presence.assignmentEpoch != assignmentEpoch {
 		return nil, ErrPresenceNotFound
 	}
 	if _, exists := service.sessions[state.id]; exists {
@@ -96,13 +100,17 @@ func (service *Service) CompleteEdgeAnswer(_ context.Context, request CompleteEd
 	if _, err := service.edgeAuthorizer.AuthorizeDaemon(request.EdgeToken, request.AccountID, request.DaemonDeviceID); err != nil {
 		return nil, err
 	}
+	assignmentEpoch, assigned := service.assignmentSource.ActiveAssignment(request.DaemonDeviceID)
+	if !assigned {
+		return nil, ErrAdmission
+	}
 	now := service.clock.Now().UTC()
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	service.cleanupLocked(now)
 	presence := service.presences[request.DaemonDeviceID]
 	state := service.sessions[request.SignalingSessionID]
-	if presence == nil || presence.closed || presence.accountID != request.AccountID || request.PresenceSessionID != "" && presence.sessionID != request.PresenceSessionID || state == nil || state.closed || state.accountID != request.AccountID || state.targetDeviceID != request.DaemonDeviceID {
+	if presence == nil || presence.closed || presence.accountID != request.AccountID || presence.assignmentEpoch != assignmentEpoch || request.PresenceSessionID != "" && presence.sessionID != request.PresenceSessionID || state == nil || state.closed || state.accountID != request.AccountID || state.targetDeviceID != request.DaemonDeviceID || state.targetAssignmentEpoch != assignmentEpoch {
 		return nil, ErrAdmission
 	}
 	if state.answered {
@@ -127,13 +135,17 @@ func (service *Service) CompleteEdgeFailure(_ context.Context, request CompleteE
 	if _, err := service.edgeAuthorizer.AuthorizeDaemon(request.EdgeToken, request.AccountID, request.DaemonDeviceID); err != nil {
 		return err
 	}
+	assignmentEpoch, assigned := service.assignmentSource.ActiveAssignment(request.DaemonDeviceID)
+	if !assigned {
+		return ErrAdmission
+	}
 	now := service.clock.Now().UTC()
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	service.cleanupLocked(now)
 	presence := service.presences[request.DaemonDeviceID]
 	state := service.sessions[request.SignalingSessionID]
-	if presence == nil || presence.closed || presence.accountID != request.AccountID || state == nil || state.closed || state.accountID != request.AccountID || state.targetDeviceID != request.DaemonDeviceID {
+	if presence == nil || presence.closed || presence.accountID != request.AccountID || presence.assignmentEpoch != assignmentEpoch || state == nil || state.closed || state.accountID != request.AccountID || state.targetDeviceID != request.DaemonDeviceID || state.targetAssignmentEpoch != assignmentEpoch {
 		return ErrAdmission
 	}
 	if state.answered {

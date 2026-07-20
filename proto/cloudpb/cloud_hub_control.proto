@@ -83,6 +83,28 @@ message HubControlChallenge {
   int64 expires_at_unix_millis = 3;
 }
 
+// HubControlChallengeRequest 以持久 registry 中的 deployment identity 定位 Hub。
+// fingerprint 只用于选择候选公钥，最终身份必须由 challenge signature 证明。
+message HubControlChallengeRequest {
+  string hub_id = 1;
+  string edge_deployment_id = 2;
+  string hub_control_identity_fingerprint = 3;
+}
+
+// HubControlChallengeResponse 返回一次性、短期 challenge。
+message HubControlChallengeResponse {
+  HubControlChallenge challenge = 1;
+}
+
+// HubControlChallengeProofInput 是 Hub control identity 的确定性签名输入。
+message HubControlChallengeProofInput {
+  string challenge_id = 1;
+  bytes challenge = 2;
+  string hub_id = 3;
+  string edge_deployment_id = 4;
+  string hub_control_identity_fingerprint = 5;
+}
+
 // HubHello 绑定 authenticated transport identity、challenge proof 与本地 revision。
 message HubHello {
   EdgeDeploymentMetadata deployment = 1;
@@ -421,4 +443,15 @@ message HubRuntimeEnvelope {
     HubCommandResult hub_command_result = 12;
     DaemonCommandResult daemon_command_result = 13;
   }
+}
+
+// ReportHubRuntimeRequest 是 Hub 有界重试 batch；batch 内 sequence 必须严格连续。
+message ReportHubRuntimeRequest {
+  repeated HubRuntimeEnvelope envelopes = 1;
+}
+
+// ReportHubRuntimeResponse 只确认 Controller 已持久接受的连续 sender sequence。
+message ReportHubRuntimeResponse {
+  uint64 accepted_sender_sequence = 1;
+  bool full_snapshot_required = 2;
 }

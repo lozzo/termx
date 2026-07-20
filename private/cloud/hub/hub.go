@@ -43,6 +43,12 @@ type realClock struct{}
 
 func (realClock) Now() time.Time { return time.Now().UTC() }
 
+// AssignmentSource 是 Hub admission 查询当前 daemon assignment 的纯内存边界。
+// 返回的 epoch 来自 Projection；缺失或过期时 Presence/signaling 必须 fail closed。
+type AssignmentSource interface {
+	ActiveAssignment(deviceID string) (assignmentEpoch uint64, ok bool)
+}
+
 // Config 固定 regional Hub identity、TTL 上限、本地 edge authorizer 和有界队列容量。
 type Config struct {
 	HubID                string
@@ -64,6 +70,8 @@ type Config struct {
 	Random io.Reader
 	// EdgeAuthorizer 是 managed Presence/direct/Relay 的本地授权 owner；缺失时 fail closed。
 	EdgeAuthorizer *EdgeAuthorizer
+	// AssignmentSource 是 per-Hub assignment 真值投影；Hub 不得只凭 device ownership 接纳 Presence。
+	AssignmentSource AssignmentSource
 }
 
 // Service 是 Hub 的内存 TTL 状态 owner。
@@ -83,6 +91,7 @@ type Service struct {
 	maxSessions           int
 	maxSessionsPerClient  int
 	edgeAuthorizer        *EdgeAuthorizer
+	assignmentSource      AssignmentSource
 	presenceChallengeTTL  time.Duration
 	maxPresenceChallenges int
 	random                io.Reader
@@ -95,8 +104,8 @@ type Service struct {
 // New 创建一个无持久状态的 regional Hub service。
 // 缺少 Hub identity、本地 authorizer 或有限 TTL/queue 配置时 fail closed。
 func New(config Config) (*Service, error) {
-	if config.HubID == "" || config.EdgeAuthorizer == nil {
-		return nil, fmt.Errorf("Hub identity and edge authorizer are required")
+	if config.HubID == "" || config.EdgeAuthorizer == nil || config.AssignmentSource == nil {
+		return nil, fmt.Errorf("Hub identity, edge authorizer and assignment source are required")
 	}
 	if config.Clock == nil {
 		config.Clock = realClock{}
@@ -117,7 +126,7 @@ func New(config Config) (*Service, error) {
 		maxSDPBytes:     config.MaxSDPBytes,
 		maxCandidates:   config.MaxCandidates,
 		maxPresences:    config.MaxPresences, maxSessions: config.MaxSessions,
-		maxSessionsPerClient: config.MaxSessionsPerClient, edgeAuthorizer: config.EdgeAuthorizer,
+		maxSessionsPerClient: config.MaxSessionsPerClient, edgeAuthorizer: config.EdgeAuthorizer, assignmentSource: config.AssignmentSource,
 		presenceChallengeTTL: config.PresenceChallengeTTL, maxPresenceChallenges: config.MaxPresenceChallenges, random: config.Random,
 		presences: make(map[string]*presenceState), sessions: make(map[string]*sessionState), presenceChallenges: make(map[string]edgePresenceChallengeState),
 	}, nil
@@ -163,6 +172,29 @@ func (service *Service) RevokeDevice(deviceID string) {
 			delete(service.sessions, sessionID)
 		}
 	}
+}
+
+// FenceAssignment 只关闭仍绑定精确 assignment epoch 的 daemon Presence 和 signaling。
+// 迟到的旧 epoch fence 不得影响已经重新接入的新 epoch。
+func (service *Service) FenceAssignment(deviceID string, assignmentEpoch uint64) {
+	if service == nil || deviceID == "" || assignmentEpoch == 0 {
+		return
+	}
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	for sessionID, challenge := range service.presenceChallenges {
+		if challenge.deviceID == deviceID && challenge.assignmentEpoch == assignmentEpoch {
+			clear(challenge.challenge.Value)
+			clear(challenge.publicKey)
+			delete(service.presenceChallenges, sessionID)
+		}
+	}
+	presence := service.presences[deviceID]
+	if presence == nil || presence.assignmentEpoch != assignmentEpoch {
+		return
+	}
+	service.closePresenceLocked(presence)
+	delete(service.presences, deviceID)
 }
 
 func (service *Service) validateOffer(accountID, clientDeviceID, targetDeviceID, managedSessionID, signalingSessionID, sdp string, candidates []Candidate, routePreference RoutePreference, relayOnly bool) error {

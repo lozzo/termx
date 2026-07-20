@@ -86,13 +86,14 @@ type ClientEvent struct {
 }
 
 type presenceState struct {
-	deviceID  string
-	accountID string
-	sessionID string
-	expiresAt time.Time
-	events    chan PresenceEvent
-	done      chan struct{}
-	closed    bool
+	deviceID        string
+	accountID       string
+	sessionID       string
+	assignmentEpoch uint64
+	expiresAt       time.Time
+	events          chan PresenceEvent
+	done            chan struct{}
+	closed          bool
 }
 
 // Presence 是一个 daemon device 的短期 Hub presence owner。
@@ -146,6 +147,7 @@ type sessionState struct {
 	clientDeviceID         string
 	clientConnectionID     string
 	targetDeviceID         string
+	targetAssignmentEpoch  uint64
 	clientCandidateAllowed bool
 	expiresAt              time.Time
 	clientEvents           chan ClientEvent

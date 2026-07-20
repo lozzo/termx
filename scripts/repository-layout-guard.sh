@@ -50,7 +50,9 @@ if [[ -d private/cloud ]]; then
   expected_modules+=(
     private/cloud/companion/go.mod
     private/cloud/control-plane/go.mod
+    private/cloud/controller/go.mod
     private/cloud/devcloud/go.mod
+    private/cloud/edge/go.mod
     private/cloud/hub/go.mod
     private/cloud/relay/go.mod
     private/cloud/route-planner/go.mod

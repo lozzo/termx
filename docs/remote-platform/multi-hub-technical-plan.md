@@ -12,14 +12,17 @@
 
 ## 2. 当前实现与迁移结论
 
-当前仓库已经具备单 Hub development 纵向链路，但仍是单进程直接装配：
+当前仓库已经完成 Controller/Edge composition 与 Hub control 基础：
 
-- `private/cloud/devcloud` 同时持有 Control Plane、Hub、Relay 和 Web 状态，部分调用通过 Go pointer 直接完成。
-- `private/cloud/hub.Service` 已是内存 Presence/signaling owner，但 `EdgeAuthorizer` 仍可使用磁盘 snapshot。
+- `private/cloud/controller` 组合 Control Plane、Web catalog、SQLite 与 public/internal/operator 三个 listener。
+- `private/cloud/edge` 组合纯内存 Hub、Hub public signaling、Relay data listener、health listener 与唯一 Hub control client。
+- `private/cloud/devcloud` 只负责启动一个 Controller 与两个独立 Edge 子进程，不再持有 Cloud 业务状态或通过 Go pointer 连接网络边界。
+- Hub policy、assignment、Presence 和 signaling 不落盘；Edge 重启必须重新 full sync，Relay 只恢复未确认 usage outbox。
+- Hub admission 显式消费当前 assignment epoch，projection remove/replace/expiry 只 fence 精确旧 epoch。
 - daemon Presence 是 Hub 到 daemon 的 HTTP response stream；daemon 没有独立上行 runtime report。
 - `remote/webrtc.Answerer` 和 `remote/daemon.SessionAcceptor` 已完成 WebRTC、DTLS channel binding、CapabilityGrant 和 core transport 接线，但没有 managed session metadata 与 READY/CLOSED hook。
 - `core.Server.ServeScopedTransport` 没有暴露 protocol Hello 已被接受的最小生命周期观察点。
-- Control Plane 只有账号、设备、准入、usage 等局部 store；没有 Hub registry、assignment、topology projection 和 durable CommandOutbox。
+- Control Plane 已有持久 Hub registry、assignment、control generation 与 per-Hub projection head；topology projection 和 durable CommandOutbox 尚未实现。
 - Web 用户中心使用 online bool，不能表达 `UNKNOWN`、`STALE`、控制 Hub 与实际数据路径。
 
 迁移原则：不重写已工作的 WebRTC、remote auth、terminal protocol 和 Presence 下行流。新增最小 owner/port，把单进程 direct call 替换为 Proto 网络链路；对应新路径通过后直接删除旧调用和旧 snapshot 路径。
@@ -281,7 +284,7 @@ AssignDaemon(device, targetHub, now):
   commit
 ```
 
-旧 Hub fence ack 与绝对 lease expiry 是仅有的迁移放行条件。fence ack 必须匹配 `migration_id + fence_command_id + source_hub_id + source_assignment_epoch + fence_control_generation`。不能因为 control stream 断开、健康检查失败或用户再次点击就跳过 fencing。`assignment_migrations` 是 HUB002 专用持久 outbox，不提前复用 HUB004 通用 CommandOutbox。
+旧 Hub fence ack 与绝对 lease expiry 是仅有的迁移放行条件。fence ack 必须匹配 `migration_id + fence_command_id + source_hub_id + source_assignment_epoch + fence_control_generation`。不能因为 control stream 断开、健康检查失败或用户再次点击就跳过 fencing。`HUB002` 先冻结 assignment 事务与精确 epoch fence 状态；`HUB004` 使用统一 CommandOutbox 持久投递 `FenceAssignment` 和接收独立结果，不再建立第二套 migration-only outbox。
 
 ### 5.3 topology ingest 事务
 
@@ -621,7 +624,7 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 - 实现 Hub 双向逻辑 control transport、full/delta/reconciliation 和 expiry timer。
 - 增加两个 composition root：`private/cloud/controller/cmd/termx-cloud-controller` 组合 Control Plane + Web Controller；`private/cloud/edge/cmd/termx-cloud-edge` 组合 Hub + Relay。参数只包含各自 listener、Controller URL、SQLite/usage-outbox 路径、Hub/Relay identity credential 和显式 dev fixture 路径。
 - Controller 同一进程使用 public、internal-control、operator 三个独立 listener/middleware；Edge 同一进程使用 Hub public/signaling、Relay data、health 三类 listener，不允许 public handler 访问 Controller store。
-- `private/cloud/devcloud/cmd/termx-cloud-dev` 降为 development supervisor：启动一个 Controller 和至少两个 Edge 子进程，写入包含 PID、监听地址、Hub/Relay identity、数据库、usage outbox 和日志路径的 manifest，并提供只杀指定 Edge、只停 Controller、重启 Edge 与触发 assignment migration 的测试控制入口。
+- `private/cloud/devcloud/cmd/termx-cloud-dev` 降为 development supervisor：启动一个 Controller 和至少两个 Edge 子进程，写入包含 PID、监听地址、Hub/Relay identity、数据库、usage outbox、配置和日志路径的 manifest。`HUB007` 在该稳定进程 harness 上增加精确 stop/restart/migration 故障控制，不得回退单进程装配或 fake ack。
 - Control Plane 不再通过 `state.hub` pointer 发布 policy，Hub module 不通过 Go pointer 直接控制 Relay allocation。
 - 删除 `EdgeSnapshotPath`、runtime snapshot restore 和 active `FileEdgeSnapshotStore`。
 
@@ -692,7 +695,7 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 | HUB004 | staging 直接 `Hub.RevokeDevice` 作为管理操作完成条件、用 topology CLOSED 冒充 ack |
 | HUB006 | 只按 lease metadata 撤销但不关闭 allocation 的路径 |
 | CLOUDP006 | Web hand-written Cloud management DTO 和 direct store mutation handler |
-| HUB007 | devcloud 单进程/单 Edge E2E 装配作为主验收入口 |
+| HUB002 | devcloud 单进程/单 Edge E2E 装配作为主验收入口 |
 
 `control-plane/directory` 中短期 `ManagedSession` 只保留到真实 daemon registry/topology 和 signaling correlation 接管完成。若届时无调用者，直接删除该 map/API，不把它改造成第二份 active session truth。
 
@@ -748,7 +751,7 @@ HUB007/CLOUDP007 的操作必须从真实入口发起，不得直接调用 store
 - Relay allocation/final usage/settlement correlation。
 - Android APK SHA-256、模拟器 ABI/API、UI 操作步骤、terminal/file 输出与 logcat。
 
-HUB002 必须新增 `make test-cloud-controller-edge`，调用仓库脚本启动一个独立 Controller 和 Edge A/Edge B，支持按 manifest 精确 kill/restart 单个 Edge、停止 Controller 和控制网络故障注入。HUB007 使用该入口，不允许回退到把 Controller、Hub、Relay 全部放在一个进程的 Go pointer harness。
+HUB002 提供 `make test-cloud-controller-edge`，启动一个独立 Controller 和 Edge A/Edge B，并输出包含进程、配置、listener、数据库、usage outbox 和日志路径的 manifest。HUB007 必须基于该入口增加精确 kill/restart 单个 Edge、停止 Controller、assignment migration 和网络故障注入；不得回退到单进程 Go pointer harness，也不得用 fake ack 代替真实 command/result。
 
 CLOUDP007 必须新增 `make e2e-cloud-development`，先运行 `make test-android` 生成唯一 `.artifacts/android/app-devcloud-debug.apk`，记录其 SHA-256，再将同一文件安装到仓库指定 ARM64 AVD 并运行 UI instrumentation。Gradle build output 与安装文件必须 hash 一致。
 

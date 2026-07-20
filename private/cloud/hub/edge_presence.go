@@ -34,10 +34,11 @@ type EdgePresenceProof struct {
 }
 
 type edgePresenceChallengeState struct {
-	accountID string
-	deviceID  string
-	publicKey []byte
-	challenge EdgePresenceChallenge
+	accountID       string
+	deviceID        string
+	assignmentEpoch uint64
+	publicKey       []byte
+	challenge       EdgePresenceChallenge
 }
 
 // BeginEdgePresence 使用 daemon edge token 和本地 policy 创建 fresh Presence challenge。
@@ -51,6 +52,10 @@ func (service *Service) BeginEdgePresence(ctx context.Context, edgeToken []byte,
 	}
 	_, device, err := service.edgeAuthorizer.AuthorizeDaemonDevice(edgeToken, accountID, deviceID)
 	if err != nil || len(device.PublicKey) != ed25519.PublicKeySize {
+		return EdgePresenceChallenge{}, ErrAdmission
+	}
+	assignmentEpoch, assigned := service.assignmentSource.ActiveAssignment(deviceID)
+	if !assigned {
 		return EdgePresenceChallenge{}, ErrAdmission
 	}
 	now := service.clock.Now().UTC()
@@ -74,7 +79,7 @@ func (service *Service) BeginEdgePresence(ctx context.Context, edgeToken []byte,
 		return EdgePresenceChallenge{}, fmt.Errorf("generate Hub presence challenge: %w", err)
 	}
 	challenge := EdgePresenceChallenge{PresenceSessionID: presenceSessionID, ChallengeID: challengeID, Value: value, ExpiresAt: now.Add(service.presenceChallengeTTL)}
-	service.presenceChallenges[presenceSessionID] = edgePresenceChallengeState{accountID: accountID, deviceID: deviceID, publicKey: append([]byte(nil), device.PublicKey...), challenge: cloneEdgePresenceChallenge(challenge)}
+	service.presenceChallenges[presenceSessionID] = edgePresenceChallengeState{accountID: accountID, deviceID: deviceID, assignmentEpoch: assignmentEpoch, publicKey: append([]byte(nil), device.PublicKey...), challenge: cloneEdgePresenceChallenge(challenge)}
 	return cloneEdgePresenceChallenge(challenge), nil
 }
 
@@ -102,6 +107,9 @@ func (service *Service) OpenEdgePresence(ctx context.Context, edgeToken []byte, 
 	if !ok || state.accountID != accountID || state.deviceID != proof.DeviceID || state.challenge.ChallengeID != proof.ChallengeID || !now.Before(state.challenge.ExpiresAt) {
 		return nil, ErrAdmission
 	}
+	if currentEpoch, assigned := service.assignmentSource.ActiveAssignment(proof.DeviceID); !assigned || currentEpoch != state.assignmentEpoch {
+		return nil, ErrAdmission
+	}
 	defer clear(state.challenge.Value)
 	defer clear(state.publicKey)
 	if len(proof.PublicKey) != ed25519.PublicKeySize || len(proof.Signature) != ed25519.SignatureSize || subtle.ConstantTimeCompare(proof.PublicKey, state.publicKey) != 1 || subtle.ConstantTimeCompare(device.PublicKey, state.publicKey) != 1 {
@@ -119,12 +127,12 @@ func (service *Service) OpenEdgePresence(ctx context.Context, edgeToken []byte, 
 	if err != nil || !ed25519.Verify(ed25519.PublicKey(state.publicKey), signingBytes, proof.Signature) {
 		return nil, ErrAdmission
 	}
-	return service.registerPresence(ctx, accountID, proof.DeviceID, proof.PresenceSessionID, now.Add(service.maxPresenceTTL))
+	return service.registerPresence(ctx, accountID, proof.DeviceID, proof.PresenceSessionID, state.assignmentEpoch, now.Add(service.maxPresenceTTL))
 }
 
-func (service *Service) registerPresence(ctx context.Context, accountID, deviceID, presenceSessionID string, expiresAt time.Time) (*Presence, error) {
+func (service *Service) registerPresence(ctx context.Context, accountID, deviceID, presenceSessionID string, assignmentEpoch uint64, expiresAt time.Time) (*Presence, error) {
 	now := service.clock.Now().UTC()
-	state := &presenceState{deviceID: deviceID, accountID: accountID, sessionID: presenceSessionID, expiresAt: expiresAt.UTC(), events: make(chan PresenceEvent, service.presenceQueue), done: make(chan struct{})}
+	state := &presenceState{deviceID: deviceID, accountID: accountID, sessionID: presenceSessionID, assignmentEpoch: assignmentEpoch, expiresAt: expiresAt.UTC(), events: make(chan PresenceEvent, service.presenceQueue), done: make(chan struct{})}
 	presence := &Presence{service: service, state: state}
 	service.mu.Lock()
 	service.cleanupLocked(now)
