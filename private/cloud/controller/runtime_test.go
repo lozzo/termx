@@ -314,3 +314,19 @@ func productMutation(t *testing.T, endpoint, origin, csrf string, cookies []*htt
 	}
 	return responseBody
 }
+
+func TestControllerCredentialWindowUsesAbsoluteDeploymentBounds(t *testing.T) {
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	notBefore := now.Add(-2 * time.Hour)
+	notAfter := now.Add(30 * 24 * time.Hour)
+	gotBefore, gotAfter, err := credentialWindow(now, notBefore.UnixMilli(), notAfter.UnixMilli())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gotBefore.Equal(notBefore) || !gotAfter.Equal(notAfter) {
+		t.Fatalf("credential window = (%s, %s)", gotBefore, gotAfter)
+	}
+	if _, _, err := credentialWindow(now, notBefore.UnixMilli(), now.UnixMilli()); err == nil {
+		t.Fatal("inactive credential window was accepted")
+	}
+}

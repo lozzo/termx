@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -17,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	cloudpostgres "github.com/muxvia/muxvia/private/cloud/control-plane/postgres"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	cloudpostgres "github.com/muxvia/muxvia/private/cloud/control-plane/postgres"
 )
 
 type fixture struct {
@@ -27,8 +28,9 @@ type fixture struct {
 }
 
 var (
-	fixturesMu sync.Mutex
-	fixtures   = make(map[string]fixture)
+	fixturesMu             sync.Mutex
+	fixtures               = make(map[string]fixture)
+	errDatabaseUnavailable = errors.New("PostgreSQL integration database is unavailable")
 )
 
 // Open 打开 key 对应的隔离 PostgreSQL schema。
@@ -45,9 +47,12 @@ func DSN(t testing.TB, key string) string {
 	fixturesMu.Lock()
 	value, ok := fixtures[key]
 	if !ok {
-		created, err := createFixture(t, key)
+		created, err := createFixture(key)
 		if err != nil {
 			fixturesMu.Unlock()
+			if errors.Is(err, errDatabaseUnavailable) {
+				t.Skipf("PostgreSQL integration database is unavailable: %v", err)
+			}
 			t.Fatal(err)
 		}
 		value = created
@@ -58,7 +63,7 @@ func DSN(t testing.TB, key string) string {
 	return value.dsn
 }
 
-func createFixture(t testing.TB, key string) (fixture, error) {
+func createFixture(key string) (fixture, error) {
 	base := os.Getenv("MUXVIA_TEST_POSTGRES_DSN")
 	if base == "" {
 		base = "postgres://127.0.0.1:55432/postgres?sslmode=disable"
@@ -71,7 +76,7 @@ func createFixture(t testing.TB, key string) (fixture, error) {
 	defer cancel()
 	if err := admin.PingContext(ctx); err != nil {
 		admin.Close()
-		t.Skipf("PostgreSQL integration database is unavailable: %v", err)
+		return fixture{}, fmt.Errorf("%w: %v", errDatabaseUnavailable, err)
 	}
 	digest := sha256.Sum256([]byte(key + "\x00" + os.Getenv("GO_TEST_SHARD_INDEX")))
 	schema := "muxvia_test_" + hex.EncodeToString(digest[:8])

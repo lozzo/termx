@@ -15,8 +15,10 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,7 +30,9 @@ import (
 
 // Config 是 Edge development composition 的显式配置。
 type Config struct {
-	ControllerURL                       string                          `json:"controller_url"`
+	ControllerURL string `json:"controller_url"`
+	// PublicHubURL 是客户端可达的 HTTPS Hub origin；为空只允许 development 使用实际 listener origin。
+	PublicHubURL                        string                          `json:"public_hub_url"`
 	HubListen                           string                          `json:"hub_listen"`
 	HealthListen                        string                          `json:"health_listen"`
 	RelayListen                         string                          `json:"relay_listen"`
@@ -39,6 +43,9 @@ type Config struct {
 	RelayControlPrivateKeyBase64        string                          `json:"relay_control_private_key_base64"`
 	ControllerProjectionKeyID           string                          `json:"controller_projection_key_id"`
 	ControllerProjectionPublicKeyBase64 string                          `json:"controller_projection_public_key_base64"`
+	// CredentialNotBeforeUnixMillis 和 CredentialNotAfterUnixMillis 必须与 Controller 的部署密钥窗口一致。
+	CredentialNotBeforeUnixMillis int64 `json:"credential_not_before_unix_millis"`
+	CredentialNotAfterUnixMillis  int64 `json:"credential_not_after_unix_millis"`
 }
 
 // Manifest 是 supervisor 和 E2E harness 使用的非秘密 Edge 进程描述。
@@ -108,7 +115,11 @@ func Start(config Config) (*Runtime, error) {
 		return nil, fmt.Errorf("invalid Controller projection public key")
 	}
 	now := time.Now().UTC()
-	verificationKey := servicecredential.VerificationKey{ID: config.ControllerProjectionKeyID, PublicKey: ed25519.PublicKey(controllerPublicBytes), NotBefore: now.Add(-time.Hour), NotAfter: now.Add(24 * time.Hour)}
+	credentialNotBefore, credentialNotAfter, err := credentialWindow(now, config.CredentialNotBeforeUnixMillis, config.CredentialNotAfterUnixMillis)
+	if err != nil {
+		return nil, err
+	}
+	verificationKey := servicecredential.VerificationKey{ID: config.ControllerProjectionKeyID, PublicKey: ed25519.PublicKey(controllerPublicBytes), NotBefore: credentialNotBefore, NotAfter: credentialNotAfter}
 	keyRing, err := servicecredential.NewKeyRing(verificationKey)
 	if err != nil {
 		return nil, err
@@ -169,7 +180,15 @@ func Start(config Config) (*Runtime, error) {
 		return nil, err
 	}
 	runtime.relayControl = relayControl
-	hubMux := newHubHTTPHandler(hubHTTPConfig{Hub: hubService, Authorizer: authorizer, Projection: projection, HubID: config.Metadata.GetHubId(), HubURL: origin(hubListener), ControllerURL: config.ControllerURL, Relay: relayServer, RelayID: config.Metadata.GetRelayId(), Region: config.Metadata.GetRegion()})
+	publicHubURL, err := normalizedPublicHubURL(config.PublicHubURL, hubListener)
+	if err != nil {
+		_ = hubListener.Close()
+		_ = healthListener.Close()
+		_ = relayServer.Close()
+		projection.Close()
+		return nil, err
+	}
+	hubMux := newHubHTTPHandler(hubHTTPConfig{Hub: hubService, Authorizer: authorizer, Projection: projection, HubID: config.Metadata.GetHubId(), HubURL: publicHubURL, ControllerURL: config.ControllerURL, Relay: relayServer, RelayID: config.Metadata.GetRelayId(), Region: config.Metadata.GetRegion()})
 	healthMux := http.NewServeMux()
 	healthMux.HandleFunc("/healthz", runtime.healthHandler)
 	runtime.servers = []*http.Server{{Handler: hubMux, ReadHeaderTimeout: 5 * time.Second}, {Handler: healthMux, ReadHeaderTimeout: 5 * time.Second}}
@@ -223,7 +242,8 @@ func (runtime *Runtime) Manifest() Manifest {
 	state := runtime.control.State()
 	relayState := runtime.relayControl.State()
 	projection := runtime.projection.Snapshot()
-	return Manifest{PID: os.Getpid(), EdgeDeploymentID: runtime.config.Metadata.GetEdgeDeploymentId(), HubID: runtime.config.Metadata.GetHubId(), RelayID: runtime.config.Metadata.GetRelayId(), HubURL: origin(runtime.listeners[0]), HealthURL: origin(runtime.listeners[1]), RelayURL: runtime.relay.URL(), UsageOutboxPath: runtime.config.UsageOutboxPath, ControlGeneration: state.ControlGeneration, RelayControlGeneration: relayState.Generation, ProjectionRevision: projection.Revision}
+	publicHubURL, _ := normalizedPublicHubURL(runtime.config.PublicHubURL, runtime.listeners[0])
+	return Manifest{PID: os.Getpid(), EdgeDeploymentID: runtime.config.Metadata.GetEdgeDeploymentId(), HubID: runtime.config.Metadata.GetHubId(), RelayID: runtime.config.Metadata.GetRelayId(), HubURL: publicHubURL, HealthURL: origin(runtime.listeners[1]), RelayURL: runtime.relay.URL(), UsageOutboxPath: runtime.config.UsageOutboxPath, ControlGeneration: state.ControlGeneration, RelayControlGeneration: relayState.Generation, ProjectionRevision: projection.Revision}
 }
 
 // WriteManifest 原子写入 Edge runtime manifest。
@@ -311,6 +331,37 @@ func listenTCP(address string) (net.Listener, error) {
 		address = "127.0.0.1:0"
 	}
 	return net.Listen("tcp", address)
+}
+
+// credentialWindow 返回 Edge 验证 Controller projection 和 lease 的部署密钥窗口。
+// 零值只保留 development harness 的既有行为；公网配置必须与 Controller 使用同一绝对窗口。
+func credentialWindow(now time.Time, notBeforeMillis, notAfterMillis int64) (time.Time, time.Time, error) {
+	if notBeforeMillis == 0 && notAfterMillis == 0 {
+		return now.Add(-time.Hour), now.Add(24 * time.Hour), nil
+	}
+	if notBeforeMillis == 0 || notAfterMillis == 0 {
+		return time.Time{}, time.Time{}, fmt.Errorf("Edge credential window must be configured together")
+	}
+	notBefore := time.UnixMilli(notBeforeMillis).UTC()
+	notAfter := time.UnixMilli(notAfterMillis).UTC()
+	if !notAfter.After(notBefore) || now.Before(notBefore) || !now.Before(notAfter) {
+		return time.Time{}, time.Time{}, fmt.Errorf("Edge credential window is invalid or inactive")
+	}
+	return notBefore, notAfter, nil
+}
+
+// normalizedPublicHubURL 确保对客户端发布的是部署入口，而不是容器内 loopback listener。
+// development 未配置时仍返回实际 listener；公网配置只接受无 path、query 和 userinfo 的 HTTP(S) origin。
+func normalizedPublicHubURL(configured string, listener net.Listener) (string, error) {
+	configured = strings.TrimSpace(configured)
+	if configured == "" {
+		return origin(listener), nil
+	}
+	parsed, err := url.Parse(configured)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.Path != "" && parsed.Path != "/" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("Edge public Hub URL is invalid")
+	}
+	return strings.TrimSuffix(parsed.String(), "/"), nil
 }
 
 func origin(listener net.Listener) string { return "http://" + listener.Addr().String() }

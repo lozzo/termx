@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -224,4 +225,26 @@ type relayResultSink struct{}
 
 func (relayResultSink) IngestRelayResult(context.Context, *cloudpb.RelayCommandResult, time.Time) error {
 	return nil
+}
+
+func TestEdgeDeploymentWindowAndPublicHubURLStayExplicit(t *testing.T) {
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	notBefore := now.Add(-2 * time.Hour)
+	notAfter := now.Add(30 * 24 * time.Hour)
+	gotBefore, gotAfter, err := credentialWindow(now, notBefore.UnixMilli(), notAfter.UnixMilli())
+	if err != nil || !gotBefore.Equal(notBefore) || !gotAfter.Equal(notAfter) {
+		t.Fatalf("credential window = (%s, %s, %v)", gotBefore, gotAfter, err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	publicURL, err := normalizedPublicHubURL("https://cn1.edge.muxvia.com:41102/", listener)
+	if err != nil || publicURL != "https://cn1.edge.muxvia.com:41102" {
+		t.Fatalf("public Hub URL = (%q, %v)", publicURL, err)
+	}
+	if _, err := normalizedPublicHubURL("https://user@cn1.edge.muxvia.com/path", listener); err == nil {
+		t.Fatal("Hub URL with userinfo/path was accepted")
+	}
 }

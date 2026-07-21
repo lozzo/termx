@@ -50,13 +50,17 @@ type DeploymentConfig struct {
 
 // Config 是 Controller development composition 的显式配置。
 type Config struct {
-	PostgresDSN                    string                       `json:"postgres_dsn"`
-	PublicListen                   string                       `json:"public_listen"`
-	InternalControlListen          string                       `json:"internal_control_listen"`
-	OperatorListen                 string                       `json:"operator_listen"`
-	CatalogPath                    string                       `json:"catalog_path"`
-	ProjectionKeyID                string                       `json:"projection_key_id"`
-	ProjectionPrivateKeyBase64     string                       `json:"projection_private_key_base64"`
+	PostgresDSN                string `json:"postgres_dsn"`
+	PublicListen               string `json:"public_listen"`
+	InternalControlListen      string `json:"internal_control_listen"`
+	OperatorListen             string `json:"operator_listen"`
+	CatalogPath                string `json:"catalog_path"`
+	ProjectionKeyID            string `json:"projection_key_id"`
+	ProjectionPrivateKeyBase64 string `json:"projection_private_key_base64"`
+	// CredentialNotBeforeUnixMillis 和 CredentialNotAfterUnixMillis 是部署密钥的绝对验证窗口，
+	// Controller 与全部 Edge 必须使用相同值，避免各进程按启动时间建立第二份 key validity 真值。
+	CredentialNotBeforeUnixMillis  int64                        `json:"credential_not_before_unix_millis"`
+	CredentialNotAfterUnixMillis   int64                        `json:"credential_not_after_unix_millis"`
 	DaemonControlKeyID             string                       `json:"daemon_control_key_id"`
 	DaemonControlPrivateKeyBase64  string                       `json:"daemon_control_private_key_base64"`
 	Deployments                    []DeploymentConfig           `json:"deployments"`
@@ -142,12 +146,16 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		return nil, fmt.Errorf("development mobile Hub ID, URL and region must be configured together")
 	}
 	now := time.Now().UTC()
+	credentialNotBefore, credentialNotAfter, err := credentialWindow(now, config.CredentialNotBeforeUnixMillis, config.CredentialNotAfterUnixMillis)
+	if err != nil {
+		return nil, err
+	}
 	privateKeyBytes, err := base64.RawStdEncoding.DecodeString(config.ProjectionPrivateKeyBase64)
 	if err != nil || len(privateKeyBytes) != ed25519.PrivateKeySize {
 		return nil, fmt.Errorf("invalid Controller projection private key")
 	}
 	privateKey := ed25519.PrivateKey(privateKeyBytes)
-	credentialSigner, err := servicecredential.NewSigner(config.ProjectionKeyID, privateKey, now.Add(-time.Hour), now.Add(24*time.Hour))
+	credentialSigner, err := servicecredential.NewSigner(config.ProjectionKeyID, privateKey, credentialNotBefore, credentialNotAfter)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +282,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 			Code: config.DevelopmentEnrollmentCode, AccountID: config.DevelopmentEnrollmentAccountID, HubID: hubID,
 			Commerce: commerceService, Topology: topologyService, Registry: registry, EdgeIssuer: edgeIssuer,
 			ControlKeyID: config.DaemonControlKeyID, ControlPublicKey: daemonControlKey.Public().(ed25519.PublicKey),
-			ControlNotBefore: now.Add(-time.Hour), ControlNotAfter: now.Add(24 * time.Hour), Now: time.Now, NotifyPolicyChange: notifyPolicyChange,
+			ControlNotBefore: credentialNotBefore, ControlNotAfter: credentialNotAfter, Now: time.Now, NotifyPolicyChange: notifyPolicyChange,
 		})
 		if err != nil {
 			_ = store.Close()
@@ -650,6 +658,24 @@ func listen(address string) (net.Listener, error) {
 		address = "127.0.0.1:0"
 	}
 	return net.Listen("tcp", address)
+}
+
+// credentialWindow 返回 Controller projection、edge access 与 daemon control 共用的部署密钥窗口。
+// 零值只用于保持 development harness 的原有 24 小时行为；公网装配必须显式给出窗口，
+// 避免进程运行一天后重启时因为重新推导窗口而接受已经越界的部署密钥。
+func credentialWindow(now time.Time, notBeforeMillis, notAfterMillis int64) (time.Time, time.Time, error) {
+	if notBeforeMillis == 0 && notAfterMillis == 0 {
+		return now.Add(-time.Hour), now.Add(24 * time.Hour), nil
+	}
+	if notBeforeMillis == 0 || notAfterMillis == 0 {
+		return time.Time{}, time.Time{}, fmt.Errorf("Controller credential window must be configured together")
+	}
+	notBefore := time.UnixMilli(notBeforeMillis).UTC()
+	notAfter := time.UnixMilli(notAfterMillis).UTC()
+	if !notAfter.After(notBefore) || now.Before(notBefore) || !now.Before(notAfter) {
+		return time.Time{}, time.Time{}, fmt.Errorf("Controller credential window is invalid or inactive")
+	}
+	return notBefore, notAfter, nil
 }
 
 func origin(listener net.Listener) string { return "http://" + listener.Addr().String() }
