@@ -1054,7 +1054,7 @@ function HomeView({
     <section className="muxvia-app-page flex min-h-0 flex-1 flex-col" data-testid="muxvia-app-home">
       <header className="muxvia-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] lg:h-16 lg:px-6 lg:py-0">
         <div className="flex min-w-0 items-center gap-3 lg:gap-5">
-          <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center bg-[var(--muxvia-app-text)] font-mono text-[10px] font-semibold text-white lg:hidden">TX</span>
+          <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center bg-[var(--muxvia-app-text)] font-mono text-[10px] font-semibold text-white lg:hidden">MV</span>
           <span aria-hidden="true" className="hidden text-base font-bold text-zinc-950 lg:inline">Muxvia</span>
           <div className="hidden h-5 w-px bg-zinc-200 lg:block" />
           <div className="min-w-0 lg:flex lg:items-center lg:gap-3">

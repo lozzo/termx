@@ -209,7 +209,7 @@ export default function AccountPage() {
       <aside className="border-r border-line bg-panel p-5 md:min-h-dvh">
         <a className="flex h-12 items-center gap-3" href="/">
           <b className="grid size-8 place-items-center bg-primary font-mono text-xs text-primary-foreground">
-            TX
+            MV
           </b>
           <span className="font-medium">Muxvia Cloud</span>
         </a>

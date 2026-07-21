@@ -12,7 +12,7 @@
 
 `cloud-staging-roadmap.md`、`hub-edge-control-plan.md`、旧 Android 手测、public staging、distribution、global acceleration、source boundary 和 snapshot 文档只记录历史阶段或延后能力，不再驱动当前任务。文档中的旧切片“完成”、旧持久 Hub snapshot/WAL、旧 App flavor 或旧 transport 行为不能替代当前设计和 `workflow.md`。
 
-`remote/` 是公开 managed WebRTC/E2E auth runtime，`clients/ui/` 与 `clients/mobile/` 消费同一公开 endpoint contract。旧 `muxvia-hub/`、`muxvia-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已收口到 `private/archive/muxvia-platform-legacy/`；archive 不得以兼容、fallback 或“先继续沿用”的方式反向约束新模型。
+`remote/` 是公开 managed WebRTC/E2E auth runtime，`clients/ui/` 与 `clients/mobile/` 消费同一公开 endpoint contract。旧 `termx-hub/`、`termx-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已收口到 `private/archive/termx-platform-legacy/`；这些旧名称是归档路径事实，archive 不得以兼容、fallback 或“先继续沿用”的方式反向约束新模型。
 
 ## 2. 文档顺序
 

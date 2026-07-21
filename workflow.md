@@ -3,7 +3,8 @@
 ## 当前结论
 
 - 产品正式名称为 `Muxvia`，主域名为 `muxvia.com`，GitHub 组织为 `github.com/muxvia`。首发前必须完成无兼容层的全量发布身份迁移：`Muxvia`、`Muxvia Cloud`、`github.com/muxvia/muxvia`、CLI `muxvia`、Android `com.muxvia.app`、URI `muxvia://`、npm scope `@muxvia`、Proto namespace `muxvia.*`、C ABI `muxvia_*`、环境变量 `MUXVIA_*`。
-- 当前最早未完成切片是 `BRAND005`：全仓残留与发布候选验收。`BRAND004` 已完成 `com.muxvia.app`、`@muxvia/*`、Muxvia/Muxvia Cloud 文案、UI/CSS/event/storage key、下载目录、Web/Android/Cloud origin 与活动文档迁移；standard/devcloud APK 均以 `com.muxvia.app` 构建并通过边界校验。`CLOUDP007` 暂停继续扩展，待 `BRAND005` 完成后从现有进度恢复。品牌迁移不得改变领域 owner、消息链路、安全边界或产品能力。
+- `BRAND001-BRAND005` 已完成 Muxvia 全量发布身份迁移、活动残留收口、standard/devcloud APK、真实 ARM64 Direct terminal UI smoke 和双 Agent 审查；证据见 `docs/development/muxvia-brand005-e2e.md`。品牌迁移未改变 Proto/API/Core、Endpoint/Route/session、安全或目录 ownership。
+- 当前最早未完成切片恢复为 `CLOUDP007`：Development 全产品 E2E。下一步只继续 managed P2P/Relay terminal/file、quota、suspend、topology/management command、真实锁屏恢复与最终双审查，不重新打开品牌迁移或 Web/WASM terminal 产品范围。
 - `RTC001-RTC010` 已完成统一 WebRTC Route、Android JNI、Direct/SSH/Cloud、Endpoint、文件、生命周期、弱网和最终 APK E2E；证据见 `docs/remote-platform/rtc010-android-final-e2e.md`。
 - Cloud 产品真值见 `docs/remote-platform/cloud-product-spec.md`；多 Hub assignment、纯内存 Hub、daemon topology、CommandOutbox 和 Web 管理真值见 `docs/remote-platform/multi-hub-control-topology-spec.md`；具体 Proto、package、存储、伪代码、迁移删除项和测试矩阵见 `docs/remote-platform/multi-hub-technical-plan.md`。
 - 多 Hub 的 assignment、topology、安全和 runtime 核心规划此前已经过四维度 reviewer 复审；最新部署决策进一步收敛为两个二进制：`muxvia-cloud-controller` 组合 Control Plane + Web Controller，`muxvia-cloud-edge` 组合 Hub + Relay，但四个领域 owner、身份、generation、状态机和存储边界不合并。
@@ -53,7 +54,6 @@ muxvia-cloud-edge × N
 
 ## 当前允许范围
 
-- `BRAND001-BRAND005` 期间主动范围临时扩大为除 `.git/`、`private/archive/`、`docs/history/` 和生成/构建产物外的全部活动仓库文件；只允许做品牌、发布身份、路径、生成代码和直接受影响测试迁移，不得借机重构领域模型。
 - 主动范围：`AGENTS.md`、`workflow.md`、`docs/remote-platform/`、`proto/cloudpb/`、`private/cloud/`（包括后续 `controller/`、`edge/` composition root）、`remote/daemon/`、`remote/webrtc/` 和当前切片测试。
 - Client/Companion 联动：`private/cloud/companion/`、`client/adapter/managed/`、`client/runtime/`、`client/binding/`、`cmd/muxvia/`，只在当前消息链路需要时修改。
 - Android/Web 管理联动：`clients/mobile/android/`、`clients/ui/`、`private/cloud/web-controller/`，只在对应登录、topology、management 或 E2E 切片修改。
@@ -68,7 +68,7 @@ muxvia-cloud-edge × N
 | BRAND002 | 已完成 | Proto、Go module 与生成代码迁移 | module/import/go_package/proto package/type URL 全部迁移到 `github.com/muxvia/muxvia` 与 `muxvia.*`，字段编号和语义不变；generated、binding generated、descriptor/round-trip、`make test`、`make test-private`、`make test-clients` 通过 |
 | BRAND003 | 已完成 | CLI、C ABI 与 runtime identity 迁移 | `muxvia` CLI、`muxvia://`、`MUXVIA_*`、C ABI/JNI/native library、WASM export、配置/socket/log/state 路径和 Cloud 二进制完成破坏性迁移；ARM64/x86_64 native build、`make test`、`make test-private`、Node test/typecheck/build、generated 与 doctor 通过 |
 | BRAND004 | 已完成 | Android、npm/UI、Cloud 与活动文档迁移 | `com.muxvia.app`、`@muxvia/*`、Muxvia/Muxvia Cloud 文案、下载目录、Web/Android origin、法律/发布资产和活动文档完成迁移；Node、Go、private Cloud、doctor、standard/devcloud APK 与边界校验通过，历史目录保持只读 |
-| BRAND005 | 进行中 | 全仓残留与发布候选验收 | 活动源码/配置/测试/文档无旧品牌残留，允许项仅限明确历史引用；Go/Node/Android/Cloud 全量门禁、真实 ARM64 APK Direct terminal smoke、双 Agent 审查通过 |
+| BRAND005 | 已完成 | 全仓残留与发布候选验收 | 活动源码/配置/测试/文档无旧品牌残留，允许项仅限明确历史引用；Go/Node/Android/Cloud 全量门禁、真实 ARM64 APK Direct terminal smoke、双 Agent 审查通过 |
 | CBASE001 | 已完成 | Cloud 产品文档基线 | `cloud-product-spec.md` 与 AGENTS/PRD/README 一致 |
 | HBASE001 | 已完成 | 多 Hub 控制面设计基线 | `multi-hub-control-topology-spec.md` 经分布式、安全、运行时、产品/API 四角度审核收口；旧 Hub WAL 目标降为历史 |
 | TBASE001 | 已完成 | 多 Hub 技术实施规划 | `multi-hub-technical-plan.md` 明确 Proto、代码 owner、控制 transport、SQLite 事务、daemon lifecycle、切片修改范围、旧路径删除和 E2E 证据；四个独立 reviewer 均 PASS |
@@ -86,7 +86,7 @@ muxvia-cloud-edge × N
 | HUB006 | 已完成 | Edge 内 Relay allocation remote revoke | generated Relay challenge/report/settlement contract；Controller 与 Edge 使用独立 Relay identity、generation、sender sequence 和 result cursor；reservation 持久绑定 account/Hub/Relay/route，planner/dispatcher 不经过 Hub command；Relay 按 lease/session 精确关闭真实 socket，零字节或有流量都只生成一次 final usage，Edge 串行等待 Controller ack/SQLite release 后回传 RelayCommandResult；单 child PARTIAL、真实 Pion remote close、public/private/race/client/双 Edge/doctor 门禁通过 |
 | CLOUDP006 | 已完成 | Controller 用户账号中心与运营管理面 | Web/API 与 Control Plane 同一 Controller composition；generated Proto JSON 用户/运营页面覆盖套餐、usage、device、topology、command、订单、审计和 fleet；账号隔离、readonly/admin、CSRF、五分钟近期认证、0600 development 凭据、旧 DTO/API 删除；public/private/race/client/双 Edge/doctor/Web build 门禁通过 |
 | HUB007 | 已完成 | 双 Edge 控制面 E2E | 一个 Controller + 两个 Edge 独立进程、assignment migration、Controller outage、Edge restart、inventory recovery、四类 command、P2P/Relay close 和隐私扫描；双 Agent 审查 |
-| CLOUDP007 | 待继续 | Development 全产品 E2E | `BRAND005` 完成后从现有进度恢复；Web UI 注册/交易/管理 + Android ARM64 真实 APK P2P/Relay terminal/file、quota、suspend、topology、命令、重启恢复、Direct/SSH 回归；双 Agent 审查 |
+| CLOUDP007 | 进行中 | Development 全产品 E2E | 从现有进度恢复；Web UI 注册/交易/管理 + Android ARM64 真实 APK P2P/Relay terminal/file、quota、suspend、topology、命令、重启恢复、Direct/SSH 回归；双 Agent 审查 |
 | CLOUDP008 | 延后 | Production Cloud 装配与发布 | 仅 HUB007/CLOUDP007 完成后启动；HTTPS、正式存储、Companion 签名、Android production origin、真实 provider |
 | WEB001 | 延后 | Web/WASM terminal 产品 | 仅用户明确恢复后启动 |
 

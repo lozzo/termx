@@ -17,7 +17,7 @@
 - Pairing：`.artifacts/file004/pairing.json`，owner-only；不得提交其内容。
 - 本机 SSH tunnel：`127.0.0.1:41001` 到远端 Control Plane，`127.0.0.1:41002` 到远端 Hub。
 
-现有 `muxvia-hub`、`tgent-hub`、`muxvia-web-control` 和 3478/8447 监听保持运行；FILE004 服务不覆盖这些进程或端口。
+验收当时已有的 legacy 进程 `termx-hub`、`tgent-hub`、`termx-web-control` 和 3478/8447 监听保持运行；这些名称只记录历史测试环境，FILE004 服务不覆盖这些进程或端口。
 
 ## 设备接入
 

@@ -578,7 +578,7 @@ function Brand({ href, inverse = false }: { href: string; inverse?: boolean }) {
           inverse && "bg-inverse-foreground text-inverse",
         )}
       >
-        TX
+        MV
       </b>
       <span className="grid text-[13px] font-semibold leading-tight">
         MUXVIA

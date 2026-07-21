@@ -52,7 +52,7 @@ export default function LoginPage() {
       <section className="hidden border-r border-line bg-inverse p-12 text-inverse-foreground lg:flex lg:flex-col lg:justify-between">
         <a className="flex items-center gap-3" href="/">
           <b className="grid size-9 place-items-center bg-primary font-mono text-xs">
-            TX
+            MV
           </b>
           <span>Muxvia Cloud</span>
         </a>

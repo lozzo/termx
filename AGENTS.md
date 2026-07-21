@@ -4,7 +4,7 @@
 
 - 仓库根目录 `workflow.md` 是当前分支唯一有效的活动驱动文件。
 - 本仓库内所有工作必须先读取 `workflow.md`，并以它作为范围、任务顺序、测试准入和提交规则的唯一基准。
-- 当前活动主线只由 `workflow.md` 最早未完成切片决定；当前最早切片是 `BRAND005`，必须完成 Muxvia 全仓残留、发布候选和真实 ARM64 APK 验收，再恢复 `CLOUDP007`。浏览器 Web/WASM terminal 产品当前冻结。
+- 当前活动主线只由 `workflow.md` 最早未完成切片决定；`BRAND001-BRAND005` 已完成，当前最早切片是 `CLOUDP007` Development 全产品 E2E。浏览器 Web/WASM terminal 产品当前冻结。
 - 插件系统已经拆到独立分支，本分支不新增插件系统代码、协议或文档。
 - `docs/remote-platform/` 是远程平台产品、架构、安全和迁移背景文档；统一 WebRTC Route 的当前决策以 `workflow.md` 为准，并由对应活动切片同步更新该目录，旧文档不得覆盖活动工作流。
 - `docs/remote-platform/multi-hub-technical-plan.md` 是当前多 Hub/Cloud 主线的实现级规划，规定 Proto 文件、Go package owner、控制链路、持久化事务、迁移删除项与测试矩阵；它必须服从 `workflow.md` 的切片顺序，不得被当作跨切片一次性实现清单。
@@ -71,13 +71,13 @@
 
 - 允许主动工作目录只能来自 `workflow.md` 的“当前主线允许主动修改”和“受限联动范围”。
 - 不允许因为“看起来有关”自行扩散到其他目录。
-- 旧 `muxvia-core/` 与 `tuiv2/` 已退出本分支，不再作为只读参考、legacy fallback 或默认依赖存在。
+- 旧 `termx-core/` 与 `tuiv2/` 已退出本分支，不再作为只读参考、legacy fallback 或默认依赖存在。
 - 当前默认本地 CLI 入口必须走 `core/` 与 `tui/`；不得重新引入 `muxvia legacy ...`、旧 daemon、旧 TUI 或 remote legacy/fallback。
 - `cmd/muxvia/legacy_*.go` 不得重新出现；旧本地入口已经删除。
-- `cmd/muxvia/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `muxvia-core` 或 `tuiv2`。
+- `cmd/muxvia/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
 - `remote/`、`clients/mobile/` 与 `clients/ui/` 是活动远程客户端资产；只能按 `workflow.md` 对应纵向切片演进，不得恢复旧 fallback。
 - `client/binding/` 是 Android、未来 iOS/Desktop 的 C ABI 与预留 WebAssembly 外部边界；只能暴露序列化 Proto、opaque handle、异步事件和显式释放，不得暴露 Go pointer、core domain struct 或平台 UI 类型。WASM 当前只维持不回归，不主动开发 Web 产品入口。
-- 旧 `muxvia-hub/`、`muxvia-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已迁入 `private/archive/muxvia-platform-legacy/`，只能作为只读历史资产；archive 不进入 workspace、构建脚本或 runtime。
+- 旧 `termx-hub/`、`termx-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已迁入 `private/archive/termx-platform-legacy/`，只能作为只读历史资产；archive 不进入 workspace、构建脚本或 runtime。
 - Hub/Relay 服务端实现位于 `private/cloud/hub/` 与 `private/cloud/relay/`；`private/cloud/edge/` 是二者唯一允许的组合部署层。Hub/Relay 可以同二进制、同进程、同配置部署，但不得共享业务 map、identity、control generation、command state 或 lifecycle owner。
 - `vterm/` 是受限联动目录，只能在 terminal semantic transaction 接口、事件或 harness 需要时最小化触及。
 - `internal/protocol/` 与 `proto/` 是受限联动目录，只能在 endpoint routing、history window/copy 或 semantic history contract 需要跨进程时最小化触及。
@@ -98,7 +98,7 @@
 - `vterm/`：终端语义解释来源；负责把 PTY bytes 解释成 terminal 语义事件或 transaction，不负责持有无限历史 truth。
 - `tui/`：TUI 产品目录，负责 UI state、reducer/effect、AppRuntime、TerminalHost、FrameSink、workbench/layout、copy/history 投影、输入和 render；只通过 `tui/port` 与 `tui/adapter` 消费 client/core projection，不拥有 endpoint route/session、committed history 或 daemon terminal lifecycle。
 - `tui/docs/architecture.md`：tui-v3 技术设计基准。
-- `muxvia-core/`：已删除旧 core 目录；不得作为 fallback 恢复。
+- `termx-core/`：已删除旧 core 目录；不得作为 fallback 恢复。
 - `tuiv2/`：已删除旧 TUI 目录；不得作为 fallback 恢复。
 - `proto/`：所有跨 core API Layer、插件、第三方客户端、官方客户端、进程和语言边界 API 的唯一 schema truth；生成代码不得手改。
 - `internal/protocol/`：连接 framing、握手、channel、request correlation 和 proto payload 传输实现；不得重新定义 proto 已表达的业务 request/result/event DTO。
