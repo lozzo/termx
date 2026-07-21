@@ -4,7 +4,7 @@
 
 - 仓库根目录 `workflow.md` 是当前分支唯一有效的活动驱动文件。
 - 本仓库内所有工作必须先读取 `workflow.md`，并以它作为范围、任务顺序、测试准入和提交规则的唯一基准。
-- 当前活动主线只由 `workflow.md` 最早未完成切片决定；统一 WebRTC Route、Android JNI 和最终 APK 连接纵向已完成，当前主线是多 Hub 控制面与 Cloud development 产品能力交错闭环，最早切片为 Hub/control/topology/management Proto contract。浏览器 Web/WASM terminal 产品当前冻结。
+- 当前活动主线只由 `workflow.md` 最早未完成切片决定；当前最早切片是 `BRAND002`，必须先完成 Muxvia 全量发布身份迁移，再恢复 `CLOUDP007`。浏览器 Web/WASM terminal 产品当前冻结。
 - 插件系统已经拆到独立分支，本分支不新增插件系统代码、协议或文档。
 - `docs/remote-platform/` 是远程平台产品、架构、安全和迁移背景文档；统一 WebRTC Route 的当前决策以 `workflow.md` 为准，并由对应活动切片同步更新该目录，旧文档不得覆盖活动工作流。
 - `docs/remote-platform/multi-hub-technical-plan.md` 是当前多 Hub/Cloud 主线的实现级规划，规定 Proto 文件、Go package owner、控制链路、持久化事务、迁移删除项与测试矩阵；它必须服从 `workflow.md` 的切片顺序，不得被当作跨切片一次性实现清单。
@@ -17,6 +17,14 @@
 - `docs/development/proto-api-architecture.md` 是 Proto API、API Layer、API Mapping、transport、插件与客户端依赖关系的唯一架构基准。
 - `AGENTS.md` 只规定代理执行方式和目录职责，不替代 `workflow.md` 的范围判断。
 - 若 `workflow.md` 与旧说明、聊天记录、旧代码行为或局部假设冲突，默认以 `workflow.md` 为准。
+
+## Muxvia 品牌与发布身份
+
+- 产品正式名称是 `Muxvia`，托管能力名称是 `Muxvia Cloud`，主域名是 `muxvia.com`，GitHub module 是 `github.com/muxvia/muxvia`。
+- 首发发布身份固定为：CLI `muxvia`、Android applicationId/package `com.muxvia.app`、URI scheme `muxvia://`、npm scope `@muxvia`、Proto namespace `muxvia.*`、C ABI prefix `muxvia_*`、环境变量 prefix `MUXVIA_*`、Cloud 二进制 `muxvia-cloud-controller`、`muxvia-cloud-edge` 与 `muxvia-cloud`。
+- 当前尚未公开发布，品牌迁移不得保留 `termx` CLI、URI、applicationId、package、配置目录、socket、环境变量、C ABI、Proto namespace、npm scope、Go module/import 或运行时 fallback；开发数据可以直接重置。
+- 品牌迁移只改变名称和发布身份，不改变 Proto 字段号、枚举值、领域 owner、truth source、消息链路、安全边界或业务能力。禁止借品牌迁移进行架构重构或提前优化。
+- `private/archive/`、`docs/history/` 与 Git 历史保留 `TermX/termx` 作为历史事实且保持只读；其它活动源码、配置、测试、生成代码、法律文本、发布资产和产品文档必须迁移到 Muxvia。
 
 ## 当前私有开发阶段原则
 
