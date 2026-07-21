@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	actiondomain "github.com/lozzow/termx/tui/action"
-	"github.com/lozzow/termx/tui/state"
+	actiondomain "github.com/muxvia/muxvia/tui/action"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 // reduceCanonicalSurfaceAction 执行带点击目标上下文的 canonical action。

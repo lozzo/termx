@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	clientendpoint "github.com/lozzow/termx/client/endpoint"
+	clientendpoint "github.com/muxvia/muxvia/client/endpoint"
 )
 
 func TestCLIRoutePlanEnvironmentRequiresCapabilityAndSSHCredentials(t *testing.T) {

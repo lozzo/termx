@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lozzow/termx/proto/bindingpb"
+	"github.com/muxvia/muxvia/proto/bindingpb"
 	"google.golang.org/protobuf/proto"
 )
 

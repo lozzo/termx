@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
 )
 
 func TestInstallRejectsSymlinkedVersionsDirectory(t *testing.T) {

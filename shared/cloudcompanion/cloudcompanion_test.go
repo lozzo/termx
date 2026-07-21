@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 func TestFakeClientNegotiatesAndRecordsHello(t *testing.T) {

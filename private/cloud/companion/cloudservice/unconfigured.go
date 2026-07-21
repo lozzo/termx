@@ -3,9 +3,9 @@ package cloudservice
 import (
 	"context"
 
-	"github.com/lozzow/termx/private/cloud/companion/session"
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/muxvia/muxvia/private/cloud/companion/session"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
 )
 
 // UnconfiguredAdapter 是未注入官方 TLS service adapter 时的显式 fail-closed 边界。

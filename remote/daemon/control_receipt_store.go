@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/filelock"
-	"github.com/lozzow/termx/shared/remoteauth"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/filelock"
+	"github.com/muxvia/muxvia/shared/remoteauth"
 	"google.golang.org/protobuf/proto"
 )
 

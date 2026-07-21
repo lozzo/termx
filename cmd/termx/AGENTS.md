@@ -13,7 +13,7 @@
 
 - 不得新增 remote app、remote-ui、web-control、旧 hub URL、QR payload 或旧 token 流程。
 - 不得把 remote 失败 fallback 成 local daemon、原始 shell/PTY 或旧 app/web 控制面。
-- 不得重新 import `github.com/lozzow/termx/termx-remote`；如确需新控制协议，先在 `workflow.md` 拆设计切片。
+- 不得重新 import `github.com/muxvia/muxvia/termx-remote`；如确需新控制协议，先在 `workflow.md` 拆设计切片。
 
 `cmd/termx` **不应实现**：Hub 逻辑、session token 验证、TURN relay、Web Controller、支付、quota。
 

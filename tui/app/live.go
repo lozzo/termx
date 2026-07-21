@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/proto/apipb"
-	"github.com/lozzow/termx/shared/perftrace"
-	"github.com/lozzow/termx/shared/terminalmeta"
-	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/port"
-	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/muxvia/muxvia/shared/perftrace"
+	"github.com/muxvia/muxvia/shared/terminalmeta"
+	"github.com/muxvia/muxvia/tui/input"
+	"github.com/muxvia/muxvia/tui/port"
+	"github.com/muxvia/muxvia/tui/render"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 const DefaultRuntimeSurfaceID = "tui"

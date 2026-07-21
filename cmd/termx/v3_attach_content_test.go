@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/proto/apipb"
-	"github.com/lozzow/termx/tui/app"
-	tuistate "github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/muxvia/muxvia/tui/app"
+	tuistate "github.com/muxvia/muxvia/tui/state"
 )
 
 func TestV3InteractiveRuntimeRendersInitialTerminalOutput(t *testing.T) {

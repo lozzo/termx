@@ -1,7 +1,7 @@
 package protocol
 
 import (
-	"github.com/lozzow/termx/proto/wirepb"
+	"github.com/muxvia/muxvia/proto/wirepb"
 	"google.golang.org/protobuf/proto"
 )
 

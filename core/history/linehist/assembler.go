@@ -1,7 +1,7 @@
 package linehist
 
 import (
-	vterm "github.com/lozzow/termx/vterm/vterm"
+	vterm "github.com/muxvia/muxvia/vterm/vterm"
 )
 
 // DefaultMaxOpenLineBytes 是未闭合 logical line 的 chunk-flush 阈值。

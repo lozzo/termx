@@ -10,10 +10,10 @@ import (
 	"sync"
 	"syscall/js"
 
-	platformpeer "github.com/lozzow/termx/client/adapter/managed/platform"
-	"github.com/lozzow/termx/client/binding"
-	"github.com/lozzow/termx/client/binding/enginehost"
-	clientruntime "github.com/lozzow/termx/client/runtime"
+	platformpeer "github.com/muxvia/muxvia/client/adapter/managed/platform"
+	"github.com/muxvia/muxvia/client/binding"
+	"github.com/muxvia/muxvia/client/binding/enginehost"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
 )
 
 const (

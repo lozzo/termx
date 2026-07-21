@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/shared/cloudcompanion"
-	"github.com/lozzow/termx/shared/cloudcompanion/installer"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
+	"github.com/muxvia/muxvia/shared/cloudcompanion/installer"
 )
 
 func main() {

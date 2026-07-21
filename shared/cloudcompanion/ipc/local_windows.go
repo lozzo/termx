@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/Microsoft/go-winio"
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
 	"golang.org/x/sys/windows"
 )
 

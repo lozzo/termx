@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	clientendpoint "github.com/lozzow/termx/client/endpoint"
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	corev2 "github.com/lozzow/termx/core"
-	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/proto/apipb"
-	"github.com/lozzow/termx/proto/wire"
-	"github.com/lozzow/termx/shared/transport/memory"
+	clientendpoint "github.com/muxvia/muxvia/client/endpoint"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	corev2 "github.com/muxvia/muxvia/core"
+	"github.com/muxvia/muxvia/internal/protocol"
+	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/muxvia/muxvia/proto/wire"
+	"github.com/muxvia/muxvia/shared/transport/memory"
 )
 
 func TestCoreApplicationAdapterRunsTerminalProtoE2E(t *testing.T) {

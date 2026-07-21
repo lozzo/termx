@@ -3,8 +3,8 @@ package apimapping
 import (
 	"time"
 
-	corev2 "github.com/lozzow/termx/core"
-	"github.com/lozzow/termx/proto/apipb"
+	corev2 "github.com/muxvia/muxvia/core"
+	"github.com/muxvia/muxvia/proto/apipb"
 )
 
 // ValidateFileStorageCommand 校验 file/storage command 的边界字段和 operation/resource fence。

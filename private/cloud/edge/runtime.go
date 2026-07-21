@@ -20,10 +20,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
-	cloudhub "github.com/lozzow/termx/private/cloud/hub"
-	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
+	cloudhub "github.com/muxvia/muxvia/private/cloud/hub"
+	cloudrelay "github.com/muxvia/muxvia/private/cloud/relay"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 // Config 是 Edge development composition 的显式配置。

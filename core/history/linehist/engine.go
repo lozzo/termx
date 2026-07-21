@@ -3,7 +3,7 @@ package linehist
 import (
 	"sync"
 
-	vterm "github.com/lozzow/termx/vterm/vterm"
+	vterm "github.com/muxvia/muxvia/vterm/vterm"
 )
 
 // Engine 组合拼装器与文件 backend，是 logical-line 历史的落盘入口。

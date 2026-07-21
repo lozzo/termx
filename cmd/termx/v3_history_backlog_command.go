@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	"github.com/lozzow/termx/proto/apipb"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/proto/apipb"
 	"github.com/spf13/cobra"
 )
 

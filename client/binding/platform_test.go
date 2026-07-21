@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/proto/bindingpb"
-	"github.com/lozzow/termx/proto/remoteauthpb"
+	"github.com/muxvia/muxvia/proto/bindingpb"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
 	"google.golang.org/protobuf/proto"
 )
 

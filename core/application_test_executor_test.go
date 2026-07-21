@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/lozzow/termx/proto/apipb"
+	"github.com/muxvia/muxvia/proto/apipb"
 )
 
 type applicationTestExecutor struct {

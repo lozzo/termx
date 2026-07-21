@@ -11,11 +11,11 @@ import (
 	"strings"
 	"sync"
 
-	systemadapter "github.com/lozzow/termx/client/adapter/system"
-	"github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/proto/remoteauthpb"
-	remotev2daemon "github.com/lozzow/termx/remote/daemon"
-	remotev2webrtc "github.com/lozzow/termx/remote/webrtc"
+	systemadapter "github.com/muxvia/muxvia/client/adapter/system"
+	"github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	remotev2daemon "github.com/muxvia/muxvia/remote/daemon"
+	remotev2webrtc "github.com/muxvia/muxvia/remote/webrtc"
 )
 
 var v3DirectRuntimeAddresses struct {

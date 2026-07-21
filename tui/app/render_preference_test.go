@@ -3,9 +3,9 @@ package app
 import (
 	"testing"
 
-	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/tui/input"
+	"github.com/muxvia/muxvia/tui/render"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 func TestHostRenderFuncUsesANSIOnlyWhenSinkDoesNotNeedCompleteFrame(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	tuiconfig "github.com/lozzow/termx/tui/config"
+	tuiconfig "github.com/muxvia/muxvia/tui/config"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )

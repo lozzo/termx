@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/lozzow/termx/shared/transport"
+	"github.com/muxvia/muxvia/shared/transport"
 )
 
 // Transport 是本机 unix socket 上的压缩 frame transport。

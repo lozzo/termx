@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/route-planner/quality"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/route-planner/quality"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 var (

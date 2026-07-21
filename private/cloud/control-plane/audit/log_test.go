@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/audit"
-	"github.com/lozzow/termx/private/cloud/control-plane/domain"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/audit"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/domain"
 )
 
 func TestLogAcceptsOnlyHashedPairingReference(t *testing.T) {

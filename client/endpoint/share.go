@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/proto/remoteauthpb"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
 )
 
 // ShareRouteDiff 描述 share bundle 相对当前 registry 的单条 Route 变化。

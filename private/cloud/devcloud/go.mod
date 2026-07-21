@@ -1,23 +1,23 @@
-module github.com/lozzow/termx/private/cloud/devcloud
+module github.com/muxvia/muxvia/private/cloud/devcloud
 
 go 1.26.0
 
 toolchain go1.26.1
 
 require (
-	github.com/lozzow/termx v0.0.0
-	github.com/lozzow/termx/private/cloud/companion v0.0.0
-	github.com/lozzow/termx/private/cloud/control-plane v0.0.0
-	github.com/lozzow/termx/private/cloud/controller v0.0.0
-	github.com/lozzow/termx/private/cloud/edge v0.0.0
-	github.com/lozzow/termx/private/cloud/web-controller v0.0.0
+	github.com/muxvia/muxvia v0.0.0
+	github.com/muxvia/muxvia/private/cloud/companion v0.0.0
+	github.com/muxvia/muxvia/private/cloud/control-plane v0.0.0
+	github.com/muxvia/muxvia/private/cloud/controller v0.0.0
+	github.com/muxvia/muxvia/private/cloud/edge v0.0.0
+	github.com/muxvia/muxvia/private/cloud/web-controller v0.0.0
 	github.com/pion/webrtc/v4 v4.2.9
 )
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/lozzow/termx/private/cloud/hub v0.0.0 // indirect
-	github.com/lozzow/termx/private/cloud/relay v0.0.0
+	github.com/muxvia/muxvia/private/cloud/hub v0.0.0 // indirect
+	github.com/muxvia/muxvia/private/cloud/relay v0.0.0
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
@@ -74,18 +74,18 @@ require (
 	golang.org/x/time v0.10.0 // indirect
 )
 
-replace github.com/lozzow/termx => ../../..
+replace github.com/muxvia/muxvia => ../../..
 
-replace github.com/lozzow/termx/private/cloud/companion => ../companion
+replace github.com/muxvia/muxvia/private/cloud/companion => ../companion
 
-replace github.com/lozzow/termx/private/cloud/control-plane => ../control-plane
+replace github.com/muxvia/muxvia/private/cloud/control-plane => ../control-plane
 
-replace github.com/lozzow/termx/private/cloud/controller => ../controller
+replace github.com/muxvia/muxvia/private/cloud/controller => ../controller
 
-replace github.com/lozzow/termx/private/cloud/edge => ../edge
+replace github.com/muxvia/muxvia/private/cloud/edge => ../edge
 
-replace github.com/lozzow/termx/private/cloud/hub => ../hub
+replace github.com/muxvia/muxvia/private/cloud/hub => ../hub
 
-replace github.com/lozzow/termx/private/cloud/relay => ../relay
+replace github.com/muxvia/muxvia/private/cloud/relay => ../relay
 
-replace github.com/lozzow/termx/private/cloud/web-controller => ../web-controller
+replace github.com/muxvia/muxvia/private/cloud/web-controller => ../web-controller

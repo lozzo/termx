@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 // NativeScreenSource 是 TUI live render loop 拉取 core latest native screen 的唯一接口。

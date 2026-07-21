@@ -1285,9 +1285,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/proto/wire"
-	unixtransport "github.com/lozzow/termx/shared/transport/unix"
+	"github.com/muxvia/muxvia/internal/protocol"
+	"github.com/muxvia/muxvia/proto/wire"
+	unixtransport "github.com/muxvia/muxvia/shared/transport/unix"
 )
 
 func main() {

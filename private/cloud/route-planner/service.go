@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/route-planner/smartroute"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/route-planner/smartroute"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
 )
 

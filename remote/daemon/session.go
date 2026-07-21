@@ -10,12 +10,12 @@ import (
 	"sync"
 	"time"
 
-	core "github.com/lozzow/termx/core"
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/proto/remoteauthpb"
-	remotewebrtc "github.com/lozzow/termx/remote/webrtc"
-	"github.com/lozzow/termx/shared/remoteauth"
-	"github.com/lozzow/termx/shared/transport"
+	core "github.com/muxvia/muxvia/core"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	remotewebrtc "github.com/muxvia/muxvia/remote/webrtc"
+	"github.com/muxvia/muxvia/shared/remoteauth"
+	"github.com/muxvia/muxvia/shared/transport"
 )
 
 // ScopedTransportServer 是 remote-v2 允许调用的 core-v2 transport 边界。

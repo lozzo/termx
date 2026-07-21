@@ -1,6 +1,6 @@
 package app
 
-import actiondomain "github.com/lozzow/termx/tui/action"
+import actiondomain "github.com/muxvia/muxvia/tui/action"
 
 func shortcutTestMessage(id actiondomain.ID, paneID string, floating bool, row int) ShellShortcutActionMsg {
 	return ShellShortcutActionMsg{

@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/lozzow/termx/tui/render"
+	"github.com/muxvia/muxvia/tui/render"
 )
 
 const v3TmuxDaemonReadyTimeout = 10 * time.Second

@@ -1390,7 +1390,7 @@ type CloudDevicePolicy struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AccountId     string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	DeviceKind    ManagedDeviceKind      `protobuf:"varint,3,opt,name=device_kind,json=deviceKind,proto3,enum=termx.cloud.v1.ManagedDeviceKind" json:"device_kind,omitempty"`
+	DeviceKind    ManagedDeviceKind      `protobuf:"varint,3,opt,name=device_kind,json=deviceKind,proto3,enum=muxvia.cloud.v1.ManagedDeviceKind" json:"device_kind,omitempty"`
 	AuthEpoch     uint64                 `protobuf:"varint,4,opt,name=auth_epoch,json=authEpoch,proto3" json:"auth_epoch,omitempty"`
 	Revoked       bool                   `protobuf:"varint,5,opt,name=revoked,proto3" json:"revoked,omitempty"`
 	PublicKey     []byte                 `protobuf:"bytes,6,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
@@ -1476,7 +1476,7 @@ type HubAccountPolicy struct {
 	AccountId                           string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	AuthEpoch                           uint64                 `protobuf:"varint,2,opt,name=auth_epoch,json=authEpoch,proto3" json:"auth_epoch,omitempty"`
 	Revoked                             bool                   `protobuf:"varint,3,opt,name=revoked,proto3" json:"revoked,omitempty"`
-	EntitlementStatus                   EntitlementStatus      `protobuf:"varint,4,opt,name=entitlement_status,json=entitlementStatus,proto3,enum=termx.cloud.v1.EntitlementStatus" json:"entitlement_status,omitempty"`
+	EntitlementStatus                   EntitlementStatus      `protobuf:"varint,4,opt,name=entitlement_status,json=entitlementStatus,proto3,enum=muxvia.cloud.v1.EntitlementStatus" json:"entitlement_status,omitempty"`
 	EntitlementEffectiveUntilUnixMillis int64                  `protobuf:"varint,5,opt,name=entitlement_effective_until_unix_millis,json=entitlementEffectiveUntilUnixMillis,proto3" json:"entitlement_effective_until_unix_millis,omitempty"`
 	Capability                          *PlanCapability        `protobuf:"bytes,6,opt,name=capability,proto3" json:"capability,omitempty"`
 	unknownFields                       protoimpl.UnknownFields
@@ -1683,7 +1683,7 @@ func (x *FullProjectionSnapshot) GetAccounts() []*HubAccountPolicy {
 // DevicePolicyDelta 是单个 device policy 的 upsert/remove 操作。
 type DevicePolicyDelta struct {
 	state         protoimpl.MessageState   `protogen:"open.v1"`
-	Operation     ProjectionDeltaOperation `protobuf:"varint,1,opt,name=operation,proto3,enum=termx.cloud.v1.ProjectionDeltaOperation" json:"operation,omitempty"`
+	Operation     ProjectionDeltaOperation `protobuf:"varint,1,opt,name=operation,proto3,enum=muxvia.cloud.v1.ProjectionDeltaOperation" json:"operation,omitempty"`
 	DeviceId      string                   `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	Policy        *CloudDevicePolicy       `protobuf:"bytes,3,opt,name=policy,proto3" json:"policy,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1744,7 +1744,7 @@ func (x *DevicePolicyDelta) GetPolicy() *CloudDevicePolicy {
 // HubAssignmentDelta 是单个 assignment 的 upsert/remove 操作。
 type HubAssignmentDelta struct {
 	state          protoimpl.MessageState   `protogen:"open.v1"`
-	Operation      ProjectionDeltaOperation `protobuf:"varint,1,opt,name=operation,proto3,enum=termx.cloud.v1.ProjectionDeltaOperation" json:"operation,omitempty"`
+	Operation      ProjectionDeltaOperation `protobuf:"varint,1,opt,name=operation,proto3,enum=muxvia.cloud.v1.ProjectionDeltaOperation" json:"operation,omitempty"`
 	DaemonDeviceId string                   `protobuf:"bytes,2,opt,name=daemon_device_id,json=daemonDeviceId,proto3" json:"daemon_device_id,omitempty"`
 	Assignment     *HubAssignment           `protobuf:"bytes,3,opt,name=assignment,proto3" json:"assignment,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -1805,7 +1805,7 @@ func (x *HubAssignmentDelta) GetAssignment() *HubAssignment {
 // HubAccountPolicyDelta 是单个账号能力投影的 upsert/remove 操作。
 type HubAccountPolicyDelta struct {
 	state         protoimpl.MessageState   `protogen:"open.v1"`
-	Operation     ProjectionDeltaOperation `protobuf:"varint,1,opt,name=operation,proto3,enum=termx.cloud.v1.ProjectionDeltaOperation" json:"operation,omitempty"`
+	Operation     ProjectionDeltaOperation `protobuf:"varint,1,opt,name=operation,proto3,enum=muxvia.cloud.v1.ProjectionDeltaOperation" json:"operation,omitempty"`
 	AccountId     string                   `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	Policy        *HubAccountPolicy        `protobuf:"bytes,3,opt,name=policy,proto3" json:"policy,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -2300,7 +2300,7 @@ func (x *RevokeTerminalAccessTarget) GetAccessProjectionRevision() uint64 {
 type DaemonControlCommand struct {
 	state                   protoimpl.MessageState   `protogen:"open.v1"`
 	CommandId               string                   `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
-	CommandKind             DaemonControlCommandKind `protobuf:"varint,2,opt,name=command_kind,json=commandKind,proto3,enum=termx.cloud.v1.DaemonControlCommandKind" json:"command_kind,omitempty"`
+	CommandKind             DaemonControlCommandKind `protobuf:"varint,2,opt,name=command_kind,json=commandKind,proto3,enum=muxvia.cloud.v1.DaemonControlCommandKind" json:"command_kind,omitempty"`
 	AccountId               string                   `protobuf:"bytes,3,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	TargetDeviceId          string                   `protobuf:"bytes,4,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
 	HubId                   string                   `protobuf:"bytes,5,opt,name=hub_id,json=hubId,proto3" json:"hub_id,omitempty"`
@@ -2487,7 +2487,7 @@ func (*DaemonControlCommand_TerminalAccess) isDaemonControlCommand_Target() {}
 type HubCommand struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	CommandId           string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
-	CommandKind         HubCommandKind         `protobuf:"varint,2,opt,name=command_kind,json=commandKind,proto3,enum=termx.cloud.v1.HubCommandKind" json:"command_kind,omitempty"`
+	CommandKind         HubCommandKind         `protobuf:"varint,2,opt,name=command_kind,json=commandKind,proto3,enum=muxvia.cloud.v1.HubCommandKind" json:"command_kind,omitempty"`
 	IssuedAtUnixMillis  int64                  `protobuf:"varint,3,opt,name=issued_at_unix_millis,json=issuedAtUnixMillis,proto3" json:"issued_at_unix_millis,omitempty"`
 	ExpiresAtUnixMillis int64                  `protobuf:"varint,4,opt,name=expires_at_unix_millis,json=expiresAtUnixMillis,proto3" json:"expires_at_unix_millis,omitempty"`
 	// Types that are valid to be assigned to Target:
@@ -2620,7 +2620,7 @@ type HubCommandResult struct {
 	CommandId                   string                   `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	HubId                       string                   `protobuf:"bytes,2,opt,name=hub_id,json=hubId,proto3" json:"hub_id,omitempty"`
 	ControlGeneration           uint64                   `protobuf:"varint,3,opt,name=control_generation,json=controlGeneration,proto3" json:"control_generation,omitempty"`
-	ResultCode                  RuntimeCommandResultCode `protobuf:"varint,4,opt,name=result_code,json=resultCode,proto3,enum=termx.cloud.v1.RuntimeCommandResultCode" json:"result_code,omitempty"`
+	ResultCode                  RuntimeCommandResultCode `protobuf:"varint,4,opt,name=result_code,json=resultCode,proto3,enum=muxvia.cloud.v1.RuntimeCommandResultCode" json:"result_code,omitempty"`
 	ErrorCode                   string                   `protobuf:"bytes,5,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
 	CompletedAtUnixMillis       int64                    `protobuf:"varint,6,opt,name=completed_at_unix_millis,json=completedAtUnixMillis,proto3" json:"completed_at_unix_millis,omitempty"`
 	ResultingProjectionRevision uint64                   `protobuf:"varint,7,opt,name=resulting_projection_revision,json=resultingProjectionRevision,proto3" json:"resulting_projection_revision,omitempty"`
@@ -2726,7 +2726,7 @@ type DaemonCommandResult struct {
 	AssignmentEpoch          uint64                   `protobuf:"varint,5,opt,name=assignment_epoch,json=assignmentEpoch,proto3" json:"assignment_epoch,omitempty"`
 	PresenceSessionId        string                   `protobuf:"bytes,6,opt,name=presence_session_id,json=presenceSessionId,proto3" json:"presence_session_id,omitempty"`
 	DaemonRuntimeGeneration  string                   `protobuf:"bytes,7,opt,name=daemon_runtime_generation,json=daemonRuntimeGeneration,proto3" json:"daemon_runtime_generation,omitempty"`
-	ResultCode               RuntimeCommandResultCode `protobuf:"varint,8,opt,name=result_code,json=resultCode,proto3,enum=termx.cloud.v1.RuntimeCommandResultCode" json:"result_code,omitempty"`
+	ResultCode               RuntimeCommandResultCode `protobuf:"varint,8,opt,name=result_code,json=resultCode,proto3,enum=muxvia.cloud.v1.RuntimeCommandResultCode" json:"result_code,omitempty"`
 	ClosedRegistryRevision   uint64                   `protobuf:"varint,9,opt,name=closed_registry_revision,json=closedRegistryRevision,proto3" json:"closed_registry_revision,omitempty"`
 	ErrorCode                string                   `protobuf:"bytes,10,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
 	CompletedAtUnixMillis    int64                    `protobuf:"varint,11,opt,name=completed_at_unix_millis,json=completedAtUnixMillis,proto3" json:"completed_at_unix_millis,omitempty"`
@@ -2930,7 +2930,7 @@ func (x *RelayControlTarget) GetManagedSessionId() string {
 type RelayControlCommand struct {
 	state                  protoimpl.MessageState  `protogen:"open.v1"`
 	CommandId              string                  `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
-	CommandKind            RelayControlCommandKind `protobuf:"varint,2,opt,name=command_kind,json=commandKind,proto3,enum=termx.cloud.v1.RelayControlCommandKind" json:"command_kind,omitempty"`
+	CommandKind            RelayControlCommandKind `protobuf:"varint,2,opt,name=command_kind,json=commandKind,proto3,enum=muxvia.cloud.v1.RelayControlCommandKind" json:"command_kind,omitempty"`
 	Target                 *RelayControlTarget     `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
 	RelayControlGeneration uint64                  `protobuf:"varint,4,opt,name=relay_control_generation,json=relayControlGeneration,proto3" json:"relay_control_generation,omitempty"`
 	IssuedAtUnixMillis     int64                   `protobuf:"varint,5,opt,name=issued_at_unix_millis,json=issuedAtUnixMillis,proto3" json:"issued_at_unix_millis,omitempty"`
@@ -3015,7 +3015,7 @@ func (x *RelayControlCommand) GetExpiresAtUnixMillis() int64 {
 type RelayAllocationCloseResult struct {
 	state         protoimpl.MessageState   `protogen:"open.v1"`
 	AllocationId  string                   `protobuf:"bytes,1,opt,name=allocation_id,json=allocationId,proto3" json:"allocation_id,omitempty"`
-	ResultCode    RuntimeCommandResultCode `protobuf:"varint,2,opt,name=result_code,json=resultCode,proto3,enum=termx.cloud.v1.RuntimeCommandResultCode" json:"result_code,omitempty"`
+	ResultCode    RuntimeCommandResultCode `protobuf:"varint,2,opt,name=result_code,json=resultCode,proto3,enum=muxvia.cloud.v1.RuntimeCommandResultCode" json:"result_code,omitempty"`
 	ErrorCode     string                   `protobuf:"bytes,3,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3078,7 +3078,7 @@ type RelayCommandResult struct {
 	CommandId               string                        `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	RelayId                 string                        `protobuf:"bytes,2,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
 	RelayControlGeneration  uint64                        `protobuf:"varint,3,opt,name=relay_control_generation,json=relayControlGeneration,proto3" json:"relay_control_generation,omitempty"`
-	ResultCode              RuntimeCommandResultCode      `protobuf:"varint,4,opt,name=result_code,json=resultCode,proto3,enum=termx.cloud.v1.RuntimeCommandResultCode" json:"result_code,omitempty"`
+	ResultCode              RuntimeCommandResultCode      `protobuf:"varint,4,opt,name=result_code,json=resultCode,proto3,enum=muxvia.cloud.v1.RuntimeCommandResultCode" json:"result_code,omitempty"`
 	Allocations             []*RelayAllocationCloseResult `protobuf:"bytes,5,rep,name=allocations,proto3" json:"allocations,omitempty"`
 	LeaseId                 string                        `protobuf:"bytes,6,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
 	FinalUsageSequence      uint64                        `protobuf:"varint,7,opt,name=final_usage_sequence,json=finalUsageSequence,proto3" json:"final_usage_sequence,omitempty"`
@@ -3211,7 +3211,7 @@ type RelayControlEnvelope struct {
 	RelayId                string                 `protobuf:"bytes,1,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
 	EdgeDeploymentId       string                 `protobuf:"bytes,2,opt,name=edge_deployment_id,json=edgeDeploymentId,proto3" json:"edge_deployment_id,omitempty"`
 	RelayControlGeneration uint64                 `protobuf:"varint,3,opt,name=relay_control_generation,json=relayControlGeneration,proto3" json:"relay_control_generation,omitempty"`
-	SenderRole             ControlSenderRole      `protobuf:"varint,4,opt,name=sender_role,json=senderRole,proto3,enum=termx.cloud.v1.ControlSenderRole" json:"sender_role,omitempty"`
+	SenderRole             ControlSenderRole      `protobuf:"varint,4,opt,name=sender_role,json=senderRole,proto3,enum=muxvia.cloud.v1.ControlSenderRole" json:"sender_role,omitempty"`
 	SenderSequence         uint64                 `protobuf:"varint,5,opt,name=sender_sequence,json=senderSequence,proto3" json:"sender_sequence,omitempty"`
 	IssuedAtUnixMillis     int64                  `protobuf:"varint,6,opt,name=issued_at_unix_millis,json=issuedAtUnixMillis,proto3" json:"issued_at_unix_millis,omitempty"`
 	ExpiresAtUnixMillis    int64                  `protobuf:"varint,7,opt,name=expires_at_unix_millis,json=expiresAtUnixMillis,proto3" json:"expires_at_unix_millis,omitempty"`
@@ -3350,7 +3350,7 @@ type RelayRuntimeEnvelope struct {
 	RelayId                string                 `protobuf:"bytes,1,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
 	EdgeDeploymentId       string                 `protobuf:"bytes,2,opt,name=edge_deployment_id,json=edgeDeploymentId,proto3" json:"edge_deployment_id,omitempty"`
 	RelayControlGeneration uint64                 `protobuf:"varint,3,opt,name=relay_control_generation,json=relayControlGeneration,proto3" json:"relay_control_generation,omitempty"`
-	SenderRole             ControlSenderRole      `protobuf:"varint,4,opt,name=sender_role,json=senderRole,proto3,enum=termx.cloud.v1.ControlSenderRole" json:"sender_role,omitempty"`
+	SenderRole             ControlSenderRole      `protobuf:"varint,4,opt,name=sender_role,json=senderRole,proto3,enum=muxvia.cloud.v1.ControlSenderRole" json:"sender_role,omitempty"`
 	SenderSequence         uint64                 `protobuf:"varint,5,opt,name=sender_sequence,json=senderSequence,proto3" json:"sender_sequence,omitempty"`
 	IssuedAtUnixMillis     int64                  `protobuf:"varint,6,opt,name=issued_at_unix_millis,json=issuedAtUnixMillis,proto3" json:"issued_at_unix_millis,omitempty"`
 	ExpiresAtUnixMillis    int64                  `protobuf:"varint,7,opt,name=expires_at_unix_millis,json=expiresAtUnixMillis,proto3" json:"expires_at_unix_millis,omitempty"`
@@ -3562,7 +3562,7 @@ type HubControlEnvelope struct {
 	HubId               string                 `protobuf:"bytes,1,opt,name=hub_id,json=hubId,proto3" json:"hub_id,omitempty"`
 	EdgeDeploymentId    string                 `protobuf:"bytes,2,opt,name=edge_deployment_id,json=edgeDeploymentId,proto3" json:"edge_deployment_id,omitempty"`
 	ControlGeneration   uint64                 `protobuf:"varint,3,opt,name=control_generation,json=controlGeneration,proto3" json:"control_generation,omitempty"`
-	SenderRole          ControlSenderRole      `protobuf:"varint,4,opt,name=sender_role,json=senderRole,proto3,enum=termx.cloud.v1.ControlSenderRole" json:"sender_role,omitempty"`
+	SenderRole          ControlSenderRole      `protobuf:"varint,4,opt,name=sender_role,json=senderRole,proto3,enum=muxvia.cloud.v1.ControlSenderRole" json:"sender_role,omitempty"`
 	SenderSequence      uint64                 `protobuf:"varint,5,opt,name=sender_sequence,json=senderSequence,proto3" json:"sender_sequence,omitempty"`
 	IssuedAtUnixMillis  int64                  `protobuf:"varint,6,opt,name=issued_at_unix_millis,json=issuedAtUnixMillis,proto3" json:"issued_at_unix_millis,omitempty"`
 	ExpiresAtUnixMillis int64                  `protobuf:"varint,7,opt,name=expires_at_unix_millis,json=expiresAtUnixMillis,proto3" json:"expires_at_unix_millis,omitempty"`
@@ -3749,7 +3749,7 @@ type HubRuntimeEnvelope struct {
 	HubId               string                 `protobuf:"bytes,1,opt,name=hub_id,json=hubId,proto3" json:"hub_id,omitempty"`
 	EdgeDeploymentId    string                 `protobuf:"bytes,2,opt,name=edge_deployment_id,json=edgeDeploymentId,proto3" json:"edge_deployment_id,omitempty"`
 	ControlGeneration   uint64                 `protobuf:"varint,3,opt,name=control_generation,json=controlGeneration,proto3" json:"control_generation,omitempty"`
-	SenderRole          ControlSenderRole      `protobuf:"varint,4,opt,name=sender_role,json=senderRole,proto3,enum=termx.cloud.v1.ControlSenderRole" json:"sender_role,omitempty"`
+	SenderRole          ControlSenderRole      `protobuf:"varint,4,opt,name=sender_role,json=senderRole,proto3,enum=muxvia.cloud.v1.ControlSenderRole" json:"sender_role,omitempty"`
 	SenderSequence      uint64                 `protobuf:"varint,5,opt,name=sender_sequence,json=senderSequence,proto3" json:"sender_sequence,omitempty"`
 	IssuedAtUnixMillis  int64                  `protobuf:"varint,6,opt,name=issued_at_unix_millis,json=issuedAtUnixMillis,proto3" json:"issued_at_unix_millis,omitempty"`
 	ExpiresAtUnixMillis int64                  `protobuf:"varint,7,opt,name=expires_at_unix_millis,json=expiresAtUnixMillis,proto3" json:"expires_at_unix_millis,omitempty"`
@@ -4123,7 +4123,7 @@ type RelayUsageEvent struct {
 	ManagedSessionId  string                 `protobuf:"bytes,3,opt,name=managed_session_id,json=managedSessionId,proto3" json:"managed_session_id,omitempty"`
 	RelayId           string                 `protobuf:"bytes,4,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
 	RouteId           string                 `protobuf:"bytes,5,opt,name=route_id,json=routeId,proto3" json:"route_id,omitempty"`
-	PathKind          ObservedPath           `protobuf:"varint,6,opt,name=path_kind,json=pathKind,proto3,enum=termx.cloud.v1.ObservedPath" json:"path_kind,omitempty"`
+	PathKind          ObservedPath           `protobuf:"varint,6,opt,name=path_kind,json=pathKind,proto3,enum=muxvia.cloud.v1.ObservedPath" json:"path_kind,omitempty"`
 	HopId             string                 `protobuf:"bytes,7,opt,name=hop_id,json=hopId,proto3" json:"hop_id,omitempty"`
 	Sequence          uint64                 `protobuf:"varint,8,opt,name=sequence,proto3" json:"sequence,omitempty"`
 	IntervalStartUnix int64                  `protobuf:"varint,9,opt,name=interval_start_unix,json=intervalStartUnix,proto3" json:"interval_start_unix,omitempty"`
@@ -4503,7 +4503,7 @@ var File_cloudpb_cloud_hub_control_proto protoreflect.FileDescriptor
 
 const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\n" +
-	"\x1fcloudpb/cloud_hub_control.proto\x12\x0etermx.cloud.v1\x1a\x1ccloudpb/cloud_topology.proto\x1a\x1bcloudpb/cloud_product.proto\"\xc9\x02\n" +
+	"\x1fcloudpb/cloud_hub_control.proto\x12\x0fmuxvia.cloud.v1\x1a\x1ccloudpb/cloud_topology.proto\x1a\x1bcloudpb/cloud_product.proto\"\xc9\x02\n" +
 	"\x16EdgeDeploymentMetadata\x12,\n" +
 	"\x12edge_deployment_id\x18\x01 \x01(\tR\x10edgeDeploymentId\x12\x16\n" +
 	"\x06region\x18\x02 \x01(\tR\x06region\x12!\n" +
@@ -4519,18 +4519,18 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\x1aHubControlChallengeRequest\x12\x15\n" +
 	"\x06hub_id\x18\x01 \x01(\tR\x05hubId\x12,\n" +
 	"\x12edge_deployment_id\x18\x02 \x01(\tR\x10edgeDeploymentId\x12G\n" +
-	" hub_control_identity_fingerprint\x18\x03 \x01(\tR\x1dhubControlIdentityFingerprint\"`\n" +
-	"\x1bHubControlChallengeResponse\x12A\n" +
-	"\tchallenge\x18\x01 \x01(\v2#.termx.cloud.v1.HubControlChallengeR\tchallenge\"\xee\x01\n" +
+	" hub_control_identity_fingerprint\x18\x03 \x01(\tR\x1dhubControlIdentityFingerprint\"a\n" +
+	"\x1bHubControlChallengeResponse\x12B\n" +
+	"\tchallenge\x18\x01 \x01(\v2$.muxvia.cloud.v1.HubControlChallengeR\tchallenge\"\xee\x01\n" +
 	"\x1dHubControlChallengeProofInput\x12!\n" +
 	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12\x1c\n" +
 	"\tchallenge\x18\x02 \x01(\fR\tchallenge\x12\x15\n" +
 	"\x06hub_id\x18\x03 \x01(\tR\x05hubId\x12,\n" +
 	"\x12edge_deployment_id\x18\x04 \x01(\tR\x10edgeDeploymentId\x12G\n" +
-	" hub_control_identity_fingerprint\x18\x05 \x01(\tR\x1dhubControlIdentityFingerprint\"\xc1\x02\n" +
-	"\bHubHello\x12F\n" +
+	" hub_control_identity_fingerprint\x18\x05 \x01(\tR\x1dhubControlIdentityFingerprint\"\xc2\x02\n" +
+	"\bHubHello\x12G\n" +
 	"\n" +
-	"deployment\x18\x01 \x01(\v2&.termx.cloud.v1.EdgeDeploymentMetadataR\n" +
+	"deployment\x18\x01 \x01(\v2'.muxvia.cloud.v1.EdgeDeploymentMetadataR\n" +
 	"deployment\x12!\n" +
 	"\fchallenge_id\x18\x02 \x01(\tR\vchallengeId\x12/\n" +
 	"\x13challenge_signature\x18\x03 \x01(\fR\x12challengeSignature\x12)\n" +
@@ -4551,19 +4551,19 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\x1cRelayControlChallengeRequest\x12\x19\n" +
 	"\brelay_id\x18\x01 \x01(\tR\arelayId\x12,\n" +
 	"\x12edge_deployment_id\x18\x02 \x01(\tR\x10edgeDeploymentId\x12K\n" +
-	"\"relay_control_identity_fingerprint\x18\x03 \x01(\tR\x1frelayControlIdentityFingerprint\"d\n" +
-	"\x1dRelayControlChallengeResponse\x12C\n" +
-	"\tchallenge\x18\x01 \x01(\v2%.termx.cloud.v1.RelayControlChallengeR\tchallenge\"\xf8\x01\n" +
+	"\"relay_control_identity_fingerprint\x18\x03 \x01(\tR\x1frelayControlIdentityFingerprint\"e\n" +
+	"\x1dRelayControlChallengeResponse\x12D\n" +
+	"\tchallenge\x18\x01 \x01(\v2&.muxvia.cloud.v1.RelayControlChallengeR\tchallenge\"\xf8\x01\n" +
 	"\x1fRelayControlChallengeProofInput\x12!\n" +
 	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12\x1c\n" +
 	"\tchallenge\x18\x02 \x01(\fR\tchallenge\x12\x19\n" +
 	"\brelay_id\x18\x03 \x01(\tR\arelayId\x12,\n" +
 	"\x12edge_deployment_id\x18\x04 \x01(\tR\x10edgeDeploymentId\x12K\n" +
-	"\"relay_control_identity_fingerprint\x18\x05 \x01(\tR\x1frelayControlIdentityFingerprint\"\x96\x02\n" +
+	"\"relay_control_identity_fingerprint\x18\x05 \x01(\tR\x1frelayControlIdentityFingerprint\"\x97\x02\n" +
 	"\n" +
-	"RelayHello\x12F\n" +
+	"RelayHello\x12G\n" +
 	"\n" +
-	"deployment\x18\x01 \x01(\v2&.termx.cloud.v1.EdgeDeploymentMetadataR\n" +
+	"deployment\x18\x01 \x01(\v2'.muxvia.cloud.v1.EdgeDeploymentMetadataR\n" +
 	"deployment\x12!\n" +
 	"\fchallenge_id\x18\x02 \x01(\tR\vchallengeId\x12/\n" +
 	"\x13challenge_signature\x18\x03 \x01(\fR\x12challengeSignature\x12)\n" +
@@ -4582,70 +4582,70 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\x06hub_id\x18\x03 \x01(\tR\x05hubId\x12)\n" +
 	"\x10assignment_epoch\x18\x04 \x01(\x04R\x0fassignmentEpoch\x123\n" +
 	"\x16not_before_unix_millis\x18\x05 \x01(\x03R\x13notBeforeUnixMillis\x123\n" +
-	"\x16expires_at_unix_millis\x18\x06 \x01(\x03R\x13expiresAtUnixMillis\"\xeb\x01\n" +
+	"\x16expires_at_unix_millis\x18\x06 \x01(\x03R\x13expiresAtUnixMillis\"\xec\x01\n" +
 	"\x11CloudDevicePolicy\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12\x1b\n" +
-	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12B\n" +
-	"\vdevice_kind\x18\x03 \x01(\x0e2!.termx.cloud.v1.ManagedDeviceKindR\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12C\n" +
+	"\vdevice_kind\x18\x03 \x01(\x0e2\".muxvia.cloud.v1.ManagedDeviceKindR\n" +
 	"deviceKind\x12\x1d\n" +
 	"\n" +
 	"auth_epoch\x18\x04 \x01(\x04R\tauthEpoch\x12\x18\n" +
 	"\arevoked\x18\x05 \x01(\bR\arevoked\x12\x1d\n" +
 	"\n" +
-	"public_key\x18\x06 \x01(\fR\tpublicKey\"\xd2\x02\n" +
+	"public_key\x18\x06 \x01(\fR\tpublicKey\"\xd4\x02\n" +
 	"\x10HubAccountPolicy\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12\x1d\n" +
 	"\n" +
 	"auth_epoch\x18\x02 \x01(\x04R\tauthEpoch\x12\x18\n" +
-	"\arevoked\x18\x03 \x01(\bR\arevoked\x12P\n" +
-	"\x12entitlement_status\x18\x04 \x01(\x0e2!.termx.cloud.v1.EntitlementStatusR\x11entitlementStatus\x12T\n" +
-	"'entitlement_effective_until_unix_millis\x18\x05 \x01(\x03R#entitlementEffectiveUntilUnixMillis\x12>\n" +
+	"\arevoked\x18\x03 \x01(\bR\arevoked\x12Q\n" +
+	"\x12entitlement_status\x18\x04 \x01(\x0e2\".muxvia.cloud.v1.EntitlementStatusR\x11entitlementStatus\x12T\n" +
+	"'entitlement_effective_until_unix_millis\x18\x05 \x01(\x03R#entitlementEffectiveUntilUnixMillis\x12?\n" +
 	"\n" +
-	"capability\x18\x06 \x01(\v2\x1e.termx.cloud.v1.PlanCapabilityR\n" +
-	"capability\"\xb9\x04\n" +
+	"capability\x18\x06 \x01(\v2\x1f.muxvia.cloud.v1.PlanCapabilityR\n" +
+	"capability\"\xbc\x04\n" +
 	"\x16FullProjectionSnapshot\x12\x15\n" +
 	"\x06hub_id\x18\x01 \x01(\tR\x05hubId\x12/\n" +
 	"\x13projection_revision\x18\x02 \x01(\x04R\x12projectionRevision\x12@\n" +
 	"\x1cprevious_projection_revision\x18\x03 \x01(\x04R\x1apreviousProjectionRevision\x12'\n" +
 	"\x0fsnapshot_digest\x18\x04 \x01(\fR\x0esnapshotDigest\x127\n" +
 	"\x18generated_at_unix_millis\x18\x05 \x01(\x03R\x15generatedAtUnixMillis\x123\n" +
-	"\x16expires_at_unix_millis\x18\x06 \x01(\x03R\x13expiresAtUnixMillis\x12;\n" +
-	"\adevices\x18\a \x03(\v2!.termx.cloud.v1.CloudDevicePolicyR\adevices\x12?\n" +
-	"\vassignments\x18\b \x03(\v2\x1d.termx.cloud.v1.HubAssignmentR\vassignments\x12\x1c\n" +
+	"\x16expires_at_unix_millis\x18\x06 \x01(\x03R\x13expiresAtUnixMillis\x12<\n" +
+	"\adevices\x18\a \x03(\v2\".muxvia.cloud.v1.CloudDevicePolicyR\adevices\x12@\n" +
+	"\vassignments\x18\b \x03(\v2\x1e.muxvia.cloud.v1.HubAssignmentR\vassignments\x12\x1c\n" +
 	"\tsignature\x18\t \x01(\fR\tsignature\x12$\n" +
 	"\x0esigning_key_id\x18\n" +
-	" \x01(\tR\fsigningKeyId\x12<\n" +
-	"\baccounts\x18\v \x03(\v2 .termx.cloud.v1.HubAccountPolicyR\baccounts\"\xb3\x01\n" +
-	"\x11DevicePolicyDelta\x12F\n" +
-	"\toperation\x18\x01 \x01(\x0e2(.termx.cloud.v1.ProjectionDeltaOperationR\toperation\x12\x1b\n" +
-	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x129\n" +
-	"\x06policy\x18\x03 \x01(\v2!.termx.cloud.v1.CloudDevicePolicyR\x06policy\"\xc5\x01\n" +
-	"\x12HubAssignmentDelta\x12F\n" +
-	"\toperation\x18\x01 \x01(\x0e2(.termx.cloud.v1.ProjectionDeltaOperationR\toperation\x12(\n" +
-	"\x10daemon_device_id\x18\x02 \x01(\tR\x0edaemonDeviceId\x12=\n" +
+	" \x01(\tR\fsigningKeyId\x12=\n" +
+	"\baccounts\x18\v \x03(\v2!.muxvia.cloud.v1.HubAccountPolicyR\baccounts\"\xb5\x01\n" +
+	"\x11DevicePolicyDelta\x12G\n" +
+	"\toperation\x18\x01 \x01(\x0e2).muxvia.cloud.v1.ProjectionDeltaOperationR\toperation\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12:\n" +
+	"\x06policy\x18\x03 \x01(\v2\".muxvia.cloud.v1.CloudDevicePolicyR\x06policy\"\xc7\x01\n" +
+	"\x12HubAssignmentDelta\x12G\n" +
+	"\toperation\x18\x01 \x01(\x0e2).muxvia.cloud.v1.ProjectionDeltaOperationR\toperation\x12(\n" +
+	"\x10daemon_device_id\x18\x02 \x01(\tR\x0edaemonDeviceId\x12>\n" +
 	"\n" +
-	"assignment\x18\x03 \x01(\v2\x1d.termx.cloud.v1.HubAssignmentR\n" +
-	"assignment\"\xb8\x01\n" +
-	"\x15HubAccountPolicyDelta\x12F\n" +
-	"\toperation\x18\x01 \x01(\x0e2(.termx.cloud.v1.ProjectionDeltaOperationR\toperation\x12\x1d\n" +
+	"assignment\x18\x03 \x01(\v2\x1e.muxvia.cloud.v1.HubAssignmentR\n" +
+	"assignment\"\xba\x01\n" +
+	"\x15HubAccountPolicyDelta\x12G\n" +
+	"\toperation\x18\x01 \x01(\x0e2).muxvia.cloud.v1.ProjectionDeltaOperationR\toperation\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x02 \x01(\tR\taccountId\x128\n" +
-	"\x06policy\x18\x03 \x01(\v2 .termx.cloud.v1.HubAccountPolicyR\x06policy\"\xf3\x04\n" +
+	"account_id\x18\x02 \x01(\tR\taccountId\x129\n" +
+	"\x06policy\x18\x03 \x01(\v2!.muxvia.cloud.v1.HubAccountPolicyR\x06policy\"\xf6\x04\n" +
 	"\vPolicyDelta\x12\x15\n" +
 	"\x06hub_id\x18\x01 \x01(\tR\x05hubId\x12/\n" +
 	"\x13projection_revision\x18\x02 \x01(\x04R\x12projectionRevision\x12@\n" +
 	"\x1cprevious_projection_revision\x18\x03 \x01(\x04R\x1apreviousProjectionRevision\x12)\n" +
 	"\x10resulting_digest\x18\x04 \x01(\fR\x0fresultingDigest\x127\n" +
 	"\x18generated_at_unix_millis\x18\x05 \x01(\x03R\x15generatedAtUnixMillis\x123\n" +
-	"\x16expires_at_unix_millis\x18\x06 \x01(\x03R\x13expiresAtUnixMillis\x12N\n" +
-	"\x11device_operations\x18\a \x03(\v2!.termx.cloud.v1.DevicePolicyDeltaR\x10deviceOperations\x12W\n" +
-	"\x15assignment_operations\x18\b \x03(\v2\".termx.cloud.v1.HubAssignmentDeltaR\x14assignmentOperations\x12\x1c\n" +
+	"\x16expires_at_unix_millis\x18\x06 \x01(\x03R\x13expiresAtUnixMillis\x12O\n" +
+	"\x11device_operations\x18\a \x03(\v2\".muxvia.cloud.v1.DevicePolicyDeltaR\x10deviceOperations\x12X\n" +
+	"\x15assignment_operations\x18\b \x03(\v2#.muxvia.cloud.v1.HubAssignmentDeltaR\x14assignmentOperations\x12\x1c\n" +
 	"\tsignature\x18\t \x01(\fR\tsignature\x12$\n" +
 	"\x0esigning_key_id\x18\n" +
-	" \x01(\tR\fsigningKeyId\x12T\n" +
-	"\x12account_operations\x18\v \x03(\v2%.termx.cloud.v1.HubAccountPolicyDeltaR\x11accountOperations\"\xc2\x01\n" +
+	" \x01(\tR\fsigningKeyId\x12U\n" +
+	"\x12account_operations\x18\v \x03(\v2&.muxvia.cloud.v1.HubAccountPolicyDeltaR\x11accountOperations\"\xc2\x01\n" +
 	"\x14ReconciliationDigest\x12\x15\n" +
 	"\x06hub_id\x18\x01 \x01(\tR\x05hubId\x12/\n" +
 	"\x13projection_revision\x18\x02 \x01(\x04R\x12projectionRevision\x12+\n" +
@@ -4669,11 +4669,11 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\x10assignment_epoch\x18\x03 \x01(\x04R\x0fassignmentEpoch\x12.\n" +
 	"\x13presence_session_id\x18\x04 \x01(\tR\x11presenceSessionId\x12:\n" +
 	"\x19daemon_runtime_generation\x18\x05 \x01(\tR\x17daemonRuntimeGeneration\x12<\n" +
-	"\x1aaccess_projection_revision\x18\x06 \x01(\x04R\x18accessProjectionRevision\"\x83\x06\n" +
+	"\x1aaccess_projection_revision\x18\x06 \x01(\x04R\x18accessProjectionRevision\"\x86\x06\n" +
 	"\x14DaemonControlCommand\x12\x1d\n" +
 	"\n" +
-	"command_id\x18\x01 \x01(\tR\tcommandId\x12K\n" +
-	"\fcommand_kind\x18\x02 \x01(\x0e2(.termx.cloud.v1.DaemonControlCommandKindR\vcommandKind\x12\x1d\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\x12L\n" +
+	"\fcommand_kind\x18\x02 \x01(\x0e2).muxvia.cloud.v1.DaemonControlCommandKindR\vcommandKind\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x03 \x01(\tR\taccountId\x12(\n" +
 	"\x10target_device_id\x18\x04 \x01(\tR\x0etargetDeviceId\x12\x15\n" +
@@ -4686,35 +4686,35 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\x15issued_at_unix_millis\x18\n" +
 	" \x01(\x03R\x12issuedAtUnixMillis\x123\n" +
 	"\x16expires_at_unix_millis\x18\v \x01(\x03R\x13expiresAtUnixMillis\x12$\n" +
-	"\x0econtrol_key_id\x18\f \x01(\tR\fcontrolKeyId\x12\\\n" +
-	"\x14managed_peer_session\x18\x14 \x01(\v2(.termx.cloud.v1.ManagedPeerSessionTargetH\x00R\x12managedPeerSession\x12U\n" +
-	"\x0fterminal_access\x18\x15 \x01(\v2*.termx.cloud.v1.RevokeTerminalAccessTargetH\x00R\x0eterminalAccess\x12\x1c\n" +
+	"\x0econtrol_key_id\x18\f \x01(\tR\fcontrolKeyId\x12]\n" +
+	"\x14managed_peer_session\x18\x14 \x01(\v2).muxvia.cloud.v1.ManagedPeerSessionTargetH\x00R\x12managedPeerSession\x12V\n" +
+	"\x0fterminal_access\x18\x15 \x01(\v2+.muxvia.cloud.v1.RevokeTerminalAccessTargetH\x00R\x0eterminalAccess\x12\x1c\n" +
 	"\tsignature\x18\x1e \x01(\fR\tsignatureB\b\n" +
-	"\x06target\"\xc8\x03\n" +
+	"\x06target\"\xcc\x03\n" +
 	"\n" +
 	"HubCommand\x12\x1d\n" +
 	"\n" +
-	"command_id\x18\x01 \x01(\tR\tcommandId\x12A\n" +
-	"\fcommand_kind\x18\x02 \x01(\x0e2\x1e.termx.cloud.v1.HubCommandKindR\vcommandKind\x121\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\x12B\n" +
+	"\fcommand_kind\x18\x02 \x01(\x0e2\x1f.muxvia.cloud.v1.HubCommandKindR\vcommandKind\x121\n" +
 	"\x15issued_at_unix_millis\x18\x03 \x01(\x03R\x12issuedAtUnixMillis\x123\n" +
-	"\x16expires_at_unix_millis\x18\x04 \x01(\x03R\x13expiresAtUnixMillis\x12L\n" +
+	"\x16expires_at_unix_millis\x18\x04 \x01(\x03R\x13expiresAtUnixMillis\x12M\n" +
 	"\x10fence_assignment\x18\n" +
-	" \x01(\v2\x1f.termx.cloud.v1.FenceAssignmentH\x00R\x0ffenceAssignment\x12I\n" +
-	"\rkick_presence\x18\v \x01(\v2\".termx.cloud.v1.KickPresenceTargetH\x00R\fkickPresence\x12M\n" +
-	"\x0edaemon_command\x18\f \x01(\v2$.termx.cloud.v1.DaemonControlCommandH\x00R\rdaemonCommandB\b\n" +
-	"\x06target\"\xa0\x03\n" +
+	" \x01(\v2 .muxvia.cloud.v1.FenceAssignmentH\x00R\x0ffenceAssignment\x12J\n" +
+	"\rkick_presence\x18\v \x01(\v2#.muxvia.cloud.v1.KickPresenceTargetH\x00R\fkickPresence\x12N\n" +
+	"\x0edaemon_command\x18\f \x01(\v2%.muxvia.cloud.v1.DaemonControlCommandH\x00R\rdaemonCommandB\b\n" +
+	"\x06target\"\xa1\x03\n" +
 	"\x10HubCommandResult\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x15\n" +
 	"\x06hub_id\x18\x02 \x01(\tR\x05hubId\x12-\n" +
-	"\x12control_generation\x18\x03 \x01(\x04R\x11controlGeneration\x12I\n" +
-	"\vresult_code\x18\x04 \x01(\x0e2(.termx.cloud.v1.RuntimeCommandResultCodeR\n" +
+	"\x12control_generation\x18\x03 \x01(\x04R\x11controlGeneration\x12J\n" +
+	"\vresult_code\x18\x04 \x01(\x0e2).muxvia.cloud.v1.RuntimeCommandResultCodeR\n" +
 	"resultCode\x12\x1d\n" +
 	"\n" +
 	"error_code\x18\x05 \x01(\tR\terrorCode\x127\n" +
 	"\x18completed_at_unix_millis\x18\x06 \x01(\x03R\x15completedAtUnixMillis\x12B\n" +
 	"\x1dresulting_projection_revision\x18\a \x01(\x04R\x1bresultingProjectionRevision\x12@\n" +
-	"\x1cexecution_control_generation\x18\b \x01(\x04R\x1aexecutionControlGeneration\"\xd9\x05\n" +
+	"\x1cexecution_control_generation\x18\b \x01(\x04R\x1aexecutionControlGeneration\"\xda\x05\n" +
 	"\x13DaemonCommandResult\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12(\n" +
@@ -4723,8 +4723,8 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\x13session_incarnation\x18\x04 \x01(\x04R\x12sessionIncarnation\x12)\n" +
 	"\x10assignment_epoch\x18\x05 \x01(\x04R\x0fassignmentEpoch\x12.\n" +
 	"\x13presence_session_id\x18\x06 \x01(\tR\x11presenceSessionId\x12:\n" +
-	"\x19daemon_runtime_generation\x18\a \x01(\tR\x17daemonRuntimeGeneration\x12I\n" +
-	"\vresult_code\x18\b \x01(\x0e2(.termx.cloud.v1.RuntimeCommandResultCodeR\n" +
+	"\x19daemon_runtime_generation\x18\a \x01(\tR\x17daemonRuntimeGeneration\x12J\n" +
+	"\vresult_code\x18\b \x01(\x0e2).muxvia.cloud.v1.RuntimeCommandResultCodeR\n" +
 	"resultCode\x128\n" +
 	"\x18closed_registry_revision\x18\t \x01(\x04R\x16closedRegistryRevision\x12\x1d\n" +
 	"\n" +
@@ -4737,29 +4737,29 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\x12RelayControlTarget\x12\x19\n" +
 	"\brelay_id\x18\x01 \x01(\tR\arelayId\x12\x19\n" +
 	"\blease_id\x18\x02 \x01(\tR\aleaseId\x12,\n" +
-	"\x12managed_session_id\x18\x03 \x01(\tR\x10managedSessionId\"\xde\x02\n" +
+	"\x12managed_session_id\x18\x03 \x01(\tR\x10managedSessionId\"\xe0\x02\n" +
 	"\x13RelayControlCommand\x12\x1d\n" +
 	"\n" +
-	"command_id\x18\x01 \x01(\tR\tcommandId\x12J\n" +
-	"\fcommand_kind\x18\x02 \x01(\x0e2'.termx.cloud.v1.RelayControlCommandKindR\vcommandKind\x12:\n" +
-	"\x06target\x18\x03 \x01(\v2\".termx.cloud.v1.RelayControlTargetR\x06target\x128\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\x12K\n" +
+	"\fcommand_kind\x18\x02 \x01(\x0e2(.muxvia.cloud.v1.RelayControlCommandKindR\vcommandKind\x12;\n" +
+	"\x06target\x18\x03 \x01(\v2#.muxvia.cloud.v1.RelayControlTargetR\x06target\x128\n" +
 	"\x18relay_control_generation\x18\x04 \x01(\x04R\x16relayControlGeneration\x121\n" +
 	"\x15issued_at_unix_millis\x18\x05 \x01(\x03R\x12issuedAtUnixMillis\x123\n" +
-	"\x16expires_at_unix_millis\x18\x06 \x01(\x03R\x13expiresAtUnixMillis\"\xab\x01\n" +
+	"\x16expires_at_unix_millis\x18\x06 \x01(\x03R\x13expiresAtUnixMillis\"\xac\x01\n" +
 	"\x1aRelayAllocationCloseResult\x12#\n" +
-	"\rallocation_id\x18\x01 \x01(\tR\fallocationId\x12I\n" +
-	"\vresult_code\x18\x02 \x01(\x0e2(.termx.cloud.v1.RuntimeCommandResultCodeR\n" +
+	"\rallocation_id\x18\x01 \x01(\tR\fallocationId\x12J\n" +
+	"\vresult_code\x18\x02 \x01(\x0e2).muxvia.cloud.v1.RuntimeCommandResultCodeR\n" +
 	"resultCode\x12\x1d\n" +
 	"\n" +
-	"error_code\x18\x03 \x01(\tR\terrorCode\"\xf8\x04\n" +
+	"error_code\x18\x03 \x01(\tR\terrorCode\"\xfb\x04\n" +
 	"\x12RelayCommandResult\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x19\n" +
 	"\brelay_id\x18\x02 \x01(\tR\arelayId\x128\n" +
-	"\x18relay_control_generation\x18\x03 \x01(\x04R\x16relayControlGeneration\x12I\n" +
-	"\vresult_code\x18\x04 \x01(\x0e2(.termx.cloud.v1.RuntimeCommandResultCodeR\n" +
-	"resultCode\x12L\n" +
-	"\vallocations\x18\x05 \x03(\v2*.termx.cloud.v1.RelayAllocationCloseResultR\vallocations\x12\x19\n" +
+	"\x18relay_control_generation\x18\x03 \x01(\x04R\x16relayControlGeneration\x12J\n" +
+	"\vresult_code\x18\x04 \x01(\x0e2).muxvia.cloud.v1.RuntimeCommandResultCodeR\n" +
+	"resultCode\x12M\n" +
+	"\vallocations\x18\x05 \x03(\v2+.muxvia.cloud.v1.RelayAllocationCloseResultR\vallocations\x12\x19\n" +
 	"\blease_id\x18\x06 \x01(\tR\aleaseId\x120\n" +
 	"\x14final_usage_sequence\x18\a \x01(\x04R\x12finalUsageSequence\x120\n" +
 	"\x14usage_drain_complete\x18\b \x01(\bR\x12usageDrainComplete\x12\x1d\n" +
@@ -4767,70 +4767,70 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"error_code\x18\t \x01(\tR\terrorCode\x127\n" +
 	"\x18completed_at_unix_millis\x18\n" +
 	" \x01(\x03R\x15completedAtUnixMillis\x12:\n" +
-	"\x19usage_settlement_complete\x18\v \x01(\bR\x17usageSettlementComplete\x12B\n" +
-	"\rsettled_usage\x18\f \x03(\v2\x1d.termx.cloud.v1.RelayUsageAckR\fsettledUsage\"\xf5\x03\n" +
+	"\x19usage_settlement_complete\x18\v \x01(\bR\x17usageSettlementComplete\x12C\n" +
+	"\rsettled_usage\x18\f \x03(\v2\x1e.muxvia.cloud.v1.RelayUsageAckR\fsettledUsage\"\xf8\x03\n" +
 	"\x14RelayControlEnvelope\x12\x19\n" +
 	"\brelay_id\x18\x01 \x01(\tR\arelayId\x12,\n" +
 	"\x12edge_deployment_id\x18\x02 \x01(\tR\x10edgeDeploymentId\x128\n" +
-	"\x18relay_control_generation\x18\x03 \x01(\x04R\x16relayControlGeneration\x12B\n" +
-	"\vsender_role\x18\x04 \x01(\x0e2!.termx.cloud.v1.ControlSenderRoleR\n" +
-	"senderRole\x12'\n" +
-	"\x0fsender_sequence\x18\x05 \x01(\x04R\x0esenderSequence\x121\n" +
-	"\x15issued_at_unix_millis\x18\x06 \x01(\x03R\x12issuedAtUnixMillis\x123\n" +
-	"\x16expires_at_unix_millis\x18\a \x01(\x03R\x13expiresAtUnixMillis\x129\n" +
-	"\x05ready\x18\n" +
-	" \x01(\v2!.termx.cloud.v1.RelayControlReadyH\x00R\x05ready\x12?\n" +
-	"\acommand\x18\v \x01(\v2#.termx.cloud.v1.RelayControlCommandH\x00R\acommandB\t\n" +
-	"\apayload\"\xc6\x03\n" +
-	"\x14RelayRuntimeEnvelope\x12\x19\n" +
-	"\brelay_id\x18\x01 \x01(\tR\arelayId\x12,\n" +
-	"\x12edge_deployment_id\x18\x02 \x01(\tR\x10edgeDeploymentId\x128\n" +
-	"\x18relay_control_generation\x18\x03 \x01(\x04R\x16relayControlGeneration\x12B\n" +
-	"\vsender_role\x18\x04 \x01(\x0e2!.termx.cloud.v1.ControlSenderRoleR\n" +
-	"senderRole\x12'\n" +
-	"\x0fsender_sequence\x18\x05 \x01(\x04R\x0esenderSequence\x121\n" +
-	"\x15issued_at_unix_millis\x18\x06 \x01(\x03R\x12issuedAtUnixMillis\x123\n" +
-	"\x16expires_at_unix_millis\x18\a \x01(\x03R\x13expiresAtUnixMillis\x12K\n" +
-	"\x0ecommand_result\x18\n" +
-	" \x01(\v2\".termx.cloud.v1.RelayCommandResultH\x00R\rcommandResultB\t\n" +
-	"\apayload\"_\n" +
-	"\x19ReportRelayRuntimeRequest\x12B\n" +
-	"\tenvelopes\x18\x01 \x03(\v2$.termx.cloud.v1.RelayRuntimeEnvelopeR\tenvelopes\"V\n" +
-	"\x1aReportRelayRuntimeResponse\x128\n" +
-	"\x18accepted_sender_sequence\x18\x01 \x01(\x04R\x16acceptedSenderSequence\"\xbf\x05\n" +
-	"\x12HubControlEnvelope\x12\x15\n" +
-	"\x06hub_id\x18\x01 \x01(\tR\x05hubId\x12,\n" +
-	"\x12edge_deployment_id\x18\x02 \x01(\tR\x10edgeDeploymentId\x12-\n" +
-	"\x12control_generation\x18\x03 \x01(\x04R\x11controlGeneration\x12B\n" +
-	"\vsender_role\x18\x04 \x01(\x0e2!.termx.cloud.v1.ControlSenderRoleR\n" +
+	"\x18relay_control_generation\x18\x03 \x01(\x04R\x16relayControlGeneration\x12C\n" +
+	"\vsender_role\x18\x04 \x01(\x0e2\".muxvia.cloud.v1.ControlSenderRoleR\n" +
 	"senderRole\x12'\n" +
 	"\x0fsender_sequence\x18\x05 \x01(\x04R\x0esenderSequence\x121\n" +
 	"\x15issued_at_unix_millis\x18\x06 \x01(\x03R\x12issuedAtUnixMillis\x123\n" +
 	"\x16expires_at_unix_millis\x18\a \x01(\x03R\x13expiresAtUnixMillis\x12:\n" +
 	"\x05ready\x18\n" +
-	" \x01(\v2\".termx.cloud.v1.ControlStreamReadyH\x00R\x05ready\x12Q\n" +
-	"\x0ffull_projection\x18\v \x01(\v2&.termx.cloud.v1.FullProjectionSnapshotH\x00R\x0efullProjection\x12@\n" +
-	"\fpolicy_delta\x18\f \x01(\v2\x1b.termx.cloud.v1.PolicyDeltaH\x00R\vpolicyDelta\x12L\n" +
-	"\x10fence_assignment\x18\r \x01(\v2\x1f.termx.cloud.v1.FenceAssignmentH\x00R\x0ffenceAssignment\x126\n" +
-	"\acommand\x18\x0e \x01(\v2\x1a.termx.cloud.v1.HubCommandH\x00R\acommandB\t\n" +
-	"\apayload\"\xa8\x05\n" +
-	"\x12HubRuntimeEnvelope\x12\x15\n" +
-	"\x06hub_id\x18\x01 \x01(\tR\x05hubId\x12,\n" +
-	"\x12edge_deployment_id\x18\x02 \x01(\tR\x10edgeDeploymentId\x12-\n" +
-	"\x12control_generation\x18\x03 \x01(\x04R\x11controlGeneration\x12B\n" +
-	"\vsender_role\x18\x04 \x01(\x0e2!.termx.cloud.v1.ControlSenderRoleR\n" +
+	" \x01(\v2\".muxvia.cloud.v1.RelayControlReadyH\x00R\x05ready\x12@\n" +
+	"\acommand\x18\v \x01(\v2$.muxvia.cloud.v1.RelayControlCommandH\x00R\acommandB\t\n" +
+	"\apayload\"\xc8\x03\n" +
+	"\x14RelayRuntimeEnvelope\x12\x19\n" +
+	"\brelay_id\x18\x01 \x01(\tR\arelayId\x12,\n" +
+	"\x12edge_deployment_id\x18\x02 \x01(\tR\x10edgeDeploymentId\x128\n" +
+	"\x18relay_control_generation\x18\x03 \x01(\x04R\x16relayControlGeneration\x12C\n" +
+	"\vsender_role\x18\x04 \x01(\x0e2\".muxvia.cloud.v1.ControlSenderRoleR\n" +
 	"senderRole\x12'\n" +
 	"\x0fsender_sequence\x18\x05 \x01(\x04R\x0esenderSequence\x121\n" +
 	"\x15issued_at_unix_millis\x18\x06 \x01(\x03R\x12issuedAtUnixMillis\x123\n" +
-	"\x16expires_at_unix_millis\x18\a \x01(\x03R\x13expiresAtUnixMillis\x12N\n" +
+	"\x16expires_at_unix_millis\x18\a \x01(\x03R\x13expiresAtUnixMillis\x12L\n" +
+	"\x0ecommand_result\x18\n" +
+	" \x01(\v2#.muxvia.cloud.v1.RelayCommandResultH\x00R\rcommandResultB\t\n" +
+	"\apayload\"`\n" +
+	"\x19ReportRelayRuntimeRequest\x12C\n" +
+	"\tenvelopes\x18\x01 \x03(\v2%.muxvia.cloud.v1.RelayRuntimeEnvelopeR\tenvelopes\"V\n" +
+	"\x1aReportRelayRuntimeResponse\x128\n" +
+	"\x18accepted_sender_sequence\x18\x01 \x01(\x04R\x16acceptedSenderSequence\"\xc5\x05\n" +
+	"\x12HubControlEnvelope\x12\x15\n" +
+	"\x06hub_id\x18\x01 \x01(\tR\x05hubId\x12,\n" +
+	"\x12edge_deployment_id\x18\x02 \x01(\tR\x10edgeDeploymentId\x12-\n" +
+	"\x12control_generation\x18\x03 \x01(\x04R\x11controlGeneration\x12C\n" +
+	"\vsender_role\x18\x04 \x01(\x0e2\".muxvia.cloud.v1.ControlSenderRoleR\n" +
+	"senderRole\x12'\n" +
+	"\x0fsender_sequence\x18\x05 \x01(\x04R\x0esenderSequence\x121\n" +
+	"\x15issued_at_unix_millis\x18\x06 \x01(\x03R\x12issuedAtUnixMillis\x123\n" +
+	"\x16expires_at_unix_millis\x18\a \x01(\x03R\x13expiresAtUnixMillis\x12;\n" +
+	"\x05ready\x18\n" +
+	" \x01(\v2#.muxvia.cloud.v1.ControlStreamReadyH\x00R\x05ready\x12R\n" +
+	"\x0ffull_projection\x18\v \x01(\v2'.muxvia.cloud.v1.FullProjectionSnapshotH\x00R\x0efullProjection\x12A\n" +
+	"\fpolicy_delta\x18\f \x01(\v2\x1c.muxvia.cloud.v1.PolicyDeltaH\x00R\vpolicyDelta\x12M\n" +
+	"\x10fence_assignment\x18\r \x01(\v2 .muxvia.cloud.v1.FenceAssignmentH\x00R\x0ffenceAssignment\x127\n" +
+	"\acommand\x18\x0e \x01(\v2\x1b.muxvia.cloud.v1.HubCommandH\x00R\acommandB\t\n" +
+	"\apayload\"\xad\x05\n" +
+	"\x12HubRuntimeEnvelope\x12\x15\n" +
+	"\x06hub_id\x18\x01 \x01(\tR\x05hubId\x12,\n" +
+	"\x12edge_deployment_id\x18\x02 \x01(\tR\x10edgeDeploymentId\x12-\n" +
+	"\x12control_generation\x18\x03 \x01(\x04R\x11controlGeneration\x12C\n" +
+	"\vsender_role\x18\x04 \x01(\x0e2\".muxvia.cloud.v1.ControlSenderRoleR\n" +
+	"senderRole\x12'\n" +
+	"\x0fsender_sequence\x18\x05 \x01(\x04R\x0esenderSequence\x121\n" +
+	"\x15issued_at_unix_millis\x18\x06 \x01(\x03R\x12issuedAtUnixMillis\x123\n" +
+	"\x16expires_at_unix_millis\x18\a \x01(\x03R\x13expiresAtUnixMillis\x12O\n" +
 	"\x0ereconciliation\x18\n" +
-	" \x01(\v2$.termx.cloud.v1.ReconciliationDigestH\x00R\x0ereconciliation\x12A\n" +
-	"\btopology\x18\v \x01(\v2#.termx.cloud.v1.HubTopologySnapshotH\x00R\btopology\x12P\n" +
-	"\x12hub_command_result\x18\f \x01(\v2 .termx.cloud.v1.HubCommandResultH\x00R\x10hubCommandResult\x12Y\n" +
-	"\x15daemon_command_result\x18\r \x01(\v2#.termx.cloud.v1.DaemonCommandResultH\x00R\x13daemonCommandResultB\t\n" +
-	"\apayload\"[\n" +
-	"\x17ReportHubRuntimeRequest\x12@\n" +
-	"\tenvelopes\x18\x01 \x03(\v2\".termx.cloud.v1.HubRuntimeEnvelopeR\tenvelopes\"\x8a\x01\n" +
+	" \x01(\v2%.muxvia.cloud.v1.ReconciliationDigestH\x00R\x0ereconciliation\x12B\n" +
+	"\btopology\x18\v \x01(\v2$.muxvia.cloud.v1.HubTopologySnapshotH\x00R\btopology\x12Q\n" +
+	"\x12hub_command_result\x18\f \x01(\v2!.muxvia.cloud.v1.HubCommandResultH\x00R\x10hubCommandResult\x12Z\n" +
+	"\x15daemon_command_result\x18\r \x01(\v2$.muxvia.cloud.v1.DaemonCommandResultH\x00R\x13daemonCommandResultB\t\n" +
+	"\apayload\"\\\n" +
+	"\x17ReportHubRuntimeRequest\x12A\n" +
+	"\tenvelopes\x18\x01 \x03(\v2#.muxvia.cloud.v1.HubRuntimeEnvelopeR\tenvelopes\"\x8a\x01\n" +
 	"\x18ReportHubRuntimeResponse\x128\n" +
 	"\x18accepted_sender_sequence\x18\x01 \x01(\x04R\x16acceptedSenderSequence\x124\n" +
 	"\x16full_snapshot_required\x18\x02 \x01(\bR\x14fullSnapshotRequired\"\xa0\x02\n" +
@@ -4843,14 +4843,14 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\x06hub_id\x18\x05 \x01(\tR\x05hubId\x12\x19\n" +
 	"\brelay_id\x18\x06 \x01(\tR\arelayId\x12\x16\n" +
 	"\x06region\x18\a \x01(\tR\x06region\x12\x19\n" +
-	"\blease_id\x18\b \x01(\tR\aleaseId\"\xba\x04\n" +
+	"\blease_id\x18\b \x01(\tR\aleaseId\"\xbb\x04\n" +
 	"\x0fRelayUsageEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x19\n" +
 	"\blease_id\x18\x02 \x01(\tR\aleaseId\x12,\n" +
 	"\x12managed_session_id\x18\x03 \x01(\tR\x10managedSessionId\x12\x19\n" +
 	"\brelay_id\x18\x04 \x01(\tR\arelayId\x12\x19\n" +
-	"\broute_id\x18\x05 \x01(\tR\arouteId\x129\n" +
-	"\tpath_kind\x18\x06 \x01(\x0e2\x1c.termx.cloud.v1.ObservedPathR\bpathKind\x12\x15\n" +
+	"\broute_id\x18\x05 \x01(\tR\arouteId\x12:\n" +
+	"\tpath_kind\x18\x06 \x01(\x0e2\x1d.muxvia.cloud.v1.ObservedPathR\bpathKind\x12\x15\n" +
 	"\x06hop_id\x18\a \x01(\tR\x05hopId\x12\x1a\n" +
 	"\bsequence\x18\b \x01(\x04R\bsequence\x12.\n" +
 	"\x13interval_start_unix\x18\t \x01(\x03R\x11intervalStartUnix\x12*\n" +
@@ -4862,20 +4862,20 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"\x0eactive_seconds\x18\r \x01(\x04R\ractiveSeconds\x12-\n" +
 	"\x12termination_reason\x18\x0e \x01(\tR\x11terminationReason\x12\x15\n" +
 	"\x06key_id\x18\x0f \x01(\tR\x05keyId\x12\x1c\n" +
-	"\tsignature\x18\x10 \x01(\fR\tsignature\"l\n" +
+	"\tsignature\x18\x10 \x01(\fR\tsignature\"m\n" +
 	"\x10RelayUsageRecord\x12!\n" +
-	"\fsigned_lease\x18\x01 \x01(\fR\vsignedLease\x125\n" +
-	"\x05event\x18\x02 \x01(\v2\x1f.termx.cloud.v1.RelayUsageEventR\x05event\"\x9e\x01\n" +
+	"\fsigned_lease\x18\x01 \x01(\fR\vsignedLease\x126\n" +
+	"\x05event\x18\x02 \x01(\v2 .muxvia.cloud.v1.RelayUsageEventR\x05event\"\x9f\x01\n" +
 	"\x17ReportRelayUsageRequest\x12\x19\n" +
 	"\brelay_id\x18\x01 \x01(\tR\arelayId\x12,\n" +
-	"\x12edge_deployment_id\x18\x02 \x01(\tR\x10edgeDeploymentId\x12:\n" +
-	"\arecords\x18\x03 \x03(\v2 .termx.cloud.v1.RelayUsageRecordR\arecords\"d\n" +
+	"\x12edge_deployment_id\x18\x02 \x01(\tR\x10edgeDeploymentId\x12;\n" +
+	"\arecords\x18\x03 \x03(\v2!.muxvia.cloud.v1.RelayUsageRecordR\arecords\"d\n" +
 	"\rRelayUsageAck\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1a\n" +
 	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12\x1c\n" +
-	"\tduplicate\x18\x03 \x01(\bR\tduplicate\"e\n" +
-	"\x18ReportRelayUsageResponse\x12I\n" +
-	"\x10acknowledgements\x18\x01 \x03(\v2\x1d.termx.cloud.v1.RelayUsageAckR\x10acknowledgements*\x9d\x01\n" +
+	"\tduplicate\x18\x03 \x01(\bR\tduplicate\"f\n" +
+	"\x18ReportRelayUsageResponse\x12J\n" +
+	"\x10acknowledgements\x18\x01 \x03(\v2\x1e.muxvia.cloud.v1.RelayUsageAckR\x10acknowledgements*\x9d\x01\n" +
 	"\x12ControlServiceRole\x12$\n" +
 	" CONTROL_SERVICE_ROLE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18CONTROL_SERVICE_ROLE_HUB\x10\x01\x12\x1e\n" +
@@ -4911,7 +4911,7 @@ const file_cloudpb_cloud_hub_control_proto_rawDesc = "" +
 	"$RUNTIME_COMMAND_RESULT_CODE_REJECTED\x10\x04\x12,\n" +
 	"(RUNTIME_COMMAND_RESULT_CODE_STALE_TARGET\x10\x05\x12'\n" +
 	"#RUNTIME_COMMAND_RESULT_CODE_EXPIRED\x10\x06\x12'\n" +
-	"#RUNTIME_COMMAND_RESULT_CODE_UNKNOWN\x10\aB'Z%github.com/lozzow/termx/proto/cloudpbb\x06proto3"
+	"#RUNTIME_COMMAND_RESULT_CODE_UNKNOWN\x10\aB(Z&github.com/muxvia/muxvia/proto/cloudpbb\x06proto3"
 
 var (
 	file_cloudpb_cloud_hub_control_proto_rawDescOnce sync.Once
@@ -4928,124 +4928,124 @@ func file_cloudpb_cloud_hub_control_proto_rawDescGZIP() []byte {
 var file_cloudpb_cloud_hub_control_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
 var file_cloudpb_cloud_hub_control_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
 var file_cloudpb_cloud_hub_control_proto_goTypes = []any{
-	(ControlServiceRole)(0),                 // 0: termx.cloud.v1.ControlServiceRole
-	(ControlSenderRole)(0),                  // 1: termx.cloud.v1.ControlSenderRole
-	(ProjectionDeltaOperation)(0),           // 2: termx.cloud.v1.ProjectionDeltaOperation
-	(HubCommandKind)(0),                     // 3: termx.cloud.v1.HubCommandKind
-	(DaemonControlCommandKind)(0),           // 4: termx.cloud.v1.DaemonControlCommandKind
-	(RelayControlCommandKind)(0),            // 5: termx.cloud.v1.RelayControlCommandKind
-	(RuntimeCommandResultCode)(0),           // 6: termx.cloud.v1.RuntimeCommandResultCode
-	(*EdgeDeploymentMetadata)(nil),          // 7: termx.cloud.v1.EdgeDeploymentMetadata
-	(*HubControlChallenge)(nil),             // 8: termx.cloud.v1.HubControlChallenge
-	(*HubControlChallengeRequest)(nil),      // 9: termx.cloud.v1.HubControlChallengeRequest
-	(*HubControlChallengeResponse)(nil),     // 10: termx.cloud.v1.HubControlChallengeResponse
-	(*HubControlChallengeProofInput)(nil),   // 11: termx.cloud.v1.HubControlChallengeProofInput
-	(*HubHello)(nil),                        // 12: termx.cloud.v1.HubHello
-	(*ControlStreamReady)(nil),              // 13: termx.cloud.v1.ControlStreamReady
-	(*RelayControlChallenge)(nil),           // 14: termx.cloud.v1.RelayControlChallenge
-	(*RelayControlChallengeRequest)(nil),    // 15: termx.cloud.v1.RelayControlChallengeRequest
-	(*RelayControlChallengeResponse)(nil),   // 16: termx.cloud.v1.RelayControlChallengeResponse
-	(*RelayControlChallengeProofInput)(nil), // 17: termx.cloud.v1.RelayControlChallengeProofInput
-	(*RelayHello)(nil),                      // 18: termx.cloud.v1.RelayHello
-	(*RelayControlReady)(nil),               // 19: termx.cloud.v1.RelayControlReady
-	(*HubAssignment)(nil),                   // 20: termx.cloud.v1.HubAssignment
-	(*CloudDevicePolicy)(nil),               // 21: termx.cloud.v1.CloudDevicePolicy
-	(*HubAccountPolicy)(nil),                // 22: termx.cloud.v1.HubAccountPolicy
-	(*FullProjectionSnapshot)(nil),          // 23: termx.cloud.v1.FullProjectionSnapshot
-	(*DevicePolicyDelta)(nil),               // 24: termx.cloud.v1.DevicePolicyDelta
-	(*HubAssignmentDelta)(nil),              // 25: termx.cloud.v1.HubAssignmentDelta
-	(*HubAccountPolicyDelta)(nil),           // 26: termx.cloud.v1.HubAccountPolicyDelta
-	(*PolicyDelta)(nil),                     // 27: termx.cloud.v1.PolicyDelta
-	(*ReconciliationDigest)(nil),            // 28: termx.cloud.v1.ReconciliationDigest
-	(*FenceAssignment)(nil),                 // 29: termx.cloud.v1.FenceAssignment
-	(*KickPresenceTarget)(nil),              // 30: termx.cloud.v1.KickPresenceTarget
-	(*RevokeTerminalAccessTarget)(nil),      // 31: termx.cloud.v1.RevokeTerminalAccessTarget
-	(*DaemonControlCommand)(nil),            // 32: termx.cloud.v1.DaemonControlCommand
-	(*HubCommand)(nil),                      // 33: termx.cloud.v1.HubCommand
-	(*HubCommandResult)(nil),                // 34: termx.cloud.v1.HubCommandResult
-	(*DaemonCommandResult)(nil),             // 35: termx.cloud.v1.DaemonCommandResult
-	(*RelayControlTarget)(nil),              // 36: termx.cloud.v1.RelayControlTarget
-	(*RelayControlCommand)(nil),             // 37: termx.cloud.v1.RelayControlCommand
-	(*RelayAllocationCloseResult)(nil),      // 38: termx.cloud.v1.RelayAllocationCloseResult
-	(*RelayCommandResult)(nil),              // 39: termx.cloud.v1.RelayCommandResult
-	(*RelayControlEnvelope)(nil),            // 40: termx.cloud.v1.RelayControlEnvelope
-	(*RelayRuntimeEnvelope)(nil),            // 41: termx.cloud.v1.RelayRuntimeEnvelope
-	(*ReportRelayRuntimeRequest)(nil),       // 42: termx.cloud.v1.ReportRelayRuntimeRequest
-	(*ReportRelayRuntimeResponse)(nil),      // 43: termx.cloud.v1.ReportRelayRuntimeResponse
-	(*HubControlEnvelope)(nil),              // 44: termx.cloud.v1.HubControlEnvelope
-	(*HubRuntimeEnvelope)(nil),              // 45: termx.cloud.v1.HubRuntimeEnvelope
-	(*ReportHubRuntimeRequest)(nil),         // 46: termx.cloud.v1.ReportHubRuntimeRequest
-	(*ReportHubRuntimeResponse)(nil),        // 47: termx.cloud.v1.ReportHubRuntimeResponse
-	(*ReserveRelayLeaseRequest)(nil),        // 48: termx.cloud.v1.ReserveRelayLeaseRequest
-	(*RelayUsageEvent)(nil),                 // 49: termx.cloud.v1.RelayUsageEvent
-	(*RelayUsageRecord)(nil),                // 50: termx.cloud.v1.RelayUsageRecord
-	(*ReportRelayUsageRequest)(nil),         // 51: termx.cloud.v1.ReportRelayUsageRequest
-	(*RelayUsageAck)(nil),                   // 52: termx.cloud.v1.RelayUsageAck
-	(*ReportRelayUsageResponse)(nil),        // 53: termx.cloud.v1.ReportRelayUsageResponse
-	(ManagedDeviceKind)(0),                  // 54: termx.cloud.v1.ManagedDeviceKind
-	(EntitlementStatus)(0),                  // 55: termx.cloud.v1.EntitlementStatus
-	(*PlanCapability)(nil),                  // 56: termx.cloud.v1.PlanCapability
-	(*ManagedPeerSessionTarget)(nil),        // 57: termx.cloud.v1.ManagedPeerSessionTarget
-	(*HubTopologySnapshot)(nil),             // 58: termx.cloud.v1.HubTopologySnapshot
-	(ObservedPath)(0),                       // 59: termx.cloud.v1.ObservedPath
+	(ControlServiceRole)(0),                 // 0: muxvia.cloud.v1.ControlServiceRole
+	(ControlSenderRole)(0),                  // 1: muxvia.cloud.v1.ControlSenderRole
+	(ProjectionDeltaOperation)(0),           // 2: muxvia.cloud.v1.ProjectionDeltaOperation
+	(HubCommandKind)(0),                     // 3: muxvia.cloud.v1.HubCommandKind
+	(DaemonControlCommandKind)(0),           // 4: muxvia.cloud.v1.DaemonControlCommandKind
+	(RelayControlCommandKind)(0),            // 5: muxvia.cloud.v1.RelayControlCommandKind
+	(RuntimeCommandResultCode)(0),           // 6: muxvia.cloud.v1.RuntimeCommandResultCode
+	(*EdgeDeploymentMetadata)(nil),          // 7: muxvia.cloud.v1.EdgeDeploymentMetadata
+	(*HubControlChallenge)(nil),             // 8: muxvia.cloud.v1.HubControlChallenge
+	(*HubControlChallengeRequest)(nil),      // 9: muxvia.cloud.v1.HubControlChallengeRequest
+	(*HubControlChallengeResponse)(nil),     // 10: muxvia.cloud.v1.HubControlChallengeResponse
+	(*HubControlChallengeProofInput)(nil),   // 11: muxvia.cloud.v1.HubControlChallengeProofInput
+	(*HubHello)(nil),                        // 12: muxvia.cloud.v1.HubHello
+	(*ControlStreamReady)(nil),              // 13: muxvia.cloud.v1.ControlStreamReady
+	(*RelayControlChallenge)(nil),           // 14: muxvia.cloud.v1.RelayControlChallenge
+	(*RelayControlChallengeRequest)(nil),    // 15: muxvia.cloud.v1.RelayControlChallengeRequest
+	(*RelayControlChallengeResponse)(nil),   // 16: muxvia.cloud.v1.RelayControlChallengeResponse
+	(*RelayControlChallengeProofInput)(nil), // 17: muxvia.cloud.v1.RelayControlChallengeProofInput
+	(*RelayHello)(nil),                      // 18: muxvia.cloud.v1.RelayHello
+	(*RelayControlReady)(nil),               // 19: muxvia.cloud.v1.RelayControlReady
+	(*HubAssignment)(nil),                   // 20: muxvia.cloud.v1.HubAssignment
+	(*CloudDevicePolicy)(nil),               // 21: muxvia.cloud.v1.CloudDevicePolicy
+	(*HubAccountPolicy)(nil),                // 22: muxvia.cloud.v1.HubAccountPolicy
+	(*FullProjectionSnapshot)(nil),          // 23: muxvia.cloud.v1.FullProjectionSnapshot
+	(*DevicePolicyDelta)(nil),               // 24: muxvia.cloud.v1.DevicePolicyDelta
+	(*HubAssignmentDelta)(nil),              // 25: muxvia.cloud.v1.HubAssignmentDelta
+	(*HubAccountPolicyDelta)(nil),           // 26: muxvia.cloud.v1.HubAccountPolicyDelta
+	(*PolicyDelta)(nil),                     // 27: muxvia.cloud.v1.PolicyDelta
+	(*ReconciliationDigest)(nil),            // 28: muxvia.cloud.v1.ReconciliationDigest
+	(*FenceAssignment)(nil),                 // 29: muxvia.cloud.v1.FenceAssignment
+	(*KickPresenceTarget)(nil),              // 30: muxvia.cloud.v1.KickPresenceTarget
+	(*RevokeTerminalAccessTarget)(nil),      // 31: muxvia.cloud.v1.RevokeTerminalAccessTarget
+	(*DaemonControlCommand)(nil),            // 32: muxvia.cloud.v1.DaemonControlCommand
+	(*HubCommand)(nil),                      // 33: muxvia.cloud.v1.HubCommand
+	(*HubCommandResult)(nil),                // 34: muxvia.cloud.v1.HubCommandResult
+	(*DaemonCommandResult)(nil),             // 35: muxvia.cloud.v1.DaemonCommandResult
+	(*RelayControlTarget)(nil),              // 36: muxvia.cloud.v1.RelayControlTarget
+	(*RelayControlCommand)(nil),             // 37: muxvia.cloud.v1.RelayControlCommand
+	(*RelayAllocationCloseResult)(nil),      // 38: muxvia.cloud.v1.RelayAllocationCloseResult
+	(*RelayCommandResult)(nil),              // 39: muxvia.cloud.v1.RelayCommandResult
+	(*RelayControlEnvelope)(nil),            // 40: muxvia.cloud.v1.RelayControlEnvelope
+	(*RelayRuntimeEnvelope)(nil),            // 41: muxvia.cloud.v1.RelayRuntimeEnvelope
+	(*ReportRelayRuntimeRequest)(nil),       // 42: muxvia.cloud.v1.ReportRelayRuntimeRequest
+	(*ReportRelayRuntimeResponse)(nil),      // 43: muxvia.cloud.v1.ReportRelayRuntimeResponse
+	(*HubControlEnvelope)(nil),              // 44: muxvia.cloud.v1.HubControlEnvelope
+	(*HubRuntimeEnvelope)(nil),              // 45: muxvia.cloud.v1.HubRuntimeEnvelope
+	(*ReportHubRuntimeRequest)(nil),         // 46: muxvia.cloud.v1.ReportHubRuntimeRequest
+	(*ReportHubRuntimeResponse)(nil),        // 47: muxvia.cloud.v1.ReportHubRuntimeResponse
+	(*ReserveRelayLeaseRequest)(nil),        // 48: muxvia.cloud.v1.ReserveRelayLeaseRequest
+	(*RelayUsageEvent)(nil),                 // 49: muxvia.cloud.v1.RelayUsageEvent
+	(*RelayUsageRecord)(nil),                // 50: muxvia.cloud.v1.RelayUsageRecord
+	(*ReportRelayUsageRequest)(nil),         // 51: muxvia.cloud.v1.ReportRelayUsageRequest
+	(*RelayUsageAck)(nil),                   // 52: muxvia.cloud.v1.RelayUsageAck
+	(*ReportRelayUsageResponse)(nil),        // 53: muxvia.cloud.v1.ReportRelayUsageResponse
+	(ManagedDeviceKind)(0),                  // 54: muxvia.cloud.v1.ManagedDeviceKind
+	(EntitlementStatus)(0),                  // 55: muxvia.cloud.v1.EntitlementStatus
+	(*PlanCapability)(nil),                  // 56: muxvia.cloud.v1.PlanCapability
+	(*ManagedPeerSessionTarget)(nil),        // 57: muxvia.cloud.v1.ManagedPeerSessionTarget
+	(*HubTopologySnapshot)(nil),             // 58: muxvia.cloud.v1.HubTopologySnapshot
+	(ObservedPath)(0),                       // 59: muxvia.cloud.v1.ObservedPath
 }
 var file_cloudpb_cloud_hub_control_proto_depIdxs = []int32{
-	8,  // 0: termx.cloud.v1.HubControlChallengeResponse.challenge:type_name -> termx.cloud.v1.HubControlChallenge
-	7,  // 1: termx.cloud.v1.HubHello.deployment:type_name -> termx.cloud.v1.EdgeDeploymentMetadata
-	14, // 2: termx.cloud.v1.RelayControlChallengeResponse.challenge:type_name -> termx.cloud.v1.RelayControlChallenge
-	7,  // 3: termx.cloud.v1.RelayHello.deployment:type_name -> termx.cloud.v1.EdgeDeploymentMetadata
-	54, // 4: termx.cloud.v1.CloudDevicePolicy.device_kind:type_name -> termx.cloud.v1.ManagedDeviceKind
-	55, // 5: termx.cloud.v1.HubAccountPolicy.entitlement_status:type_name -> termx.cloud.v1.EntitlementStatus
-	56, // 6: termx.cloud.v1.HubAccountPolicy.capability:type_name -> termx.cloud.v1.PlanCapability
-	21, // 7: termx.cloud.v1.FullProjectionSnapshot.devices:type_name -> termx.cloud.v1.CloudDevicePolicy
-	20, // 8: termx.cloud.v1.FullProjectionSnapshot.assignments:type_name -> termx.cloud.v1.HubAssignment
-	22, // 9: termx.cloud.v1.FullProjectionSnapshot.accounts:type_name -> termx.cloud.v1.HubAccountPolicy
-	2,  // 10: termx.cloud.v1.DevicePolicyDelta.operation:type_name -> termx.cloud.v1.ProjectionDeltaOperation
-	21, // 11: termx.cloud.v1.DevicePolicyDelta.policy:type_name -> termx.cloud.v1.CloudDevicePolicy
-	2,  // 12: termx.cloud.v1.HubAssignmentDelta.operation:type_name -> termx.cloud.v1.ProjectionDeltaOperation
-	20, // 13: termx.cloud.v1.HubAssignmentDelta.assignment:type_name -> termx.cloud.v1.HubAssignment
-	2,  // 14: termx.cloud.v1.HubAccountPolicyDelta.operation:type_name -> termx.cloud.v1.ProjectionDeltaOperation
-	22, // 15: termx.cloud.v1.HubAccountPolicyDelta.policy:type_name -> termx.cloud.v1.HubAccountPolicy
-	24, // 16: termx.cloud.v1.PolicyDelta.device_operations:type_name -> termx.cloud.v1.DevicePolicyDelta
-	25, // 17: termx.cloud.v1.PolicyDelta.assignment_operations:type_name -> termx.cloud.v1.HubAssignmentDelta
-	26, // 18: termx.cloud.v1.PolicyDelta.account_operations:type_name -> termx.cloud.v1.HubAccountPolicyDelta
-	4,  // 19: termx.cloud.v1.DaemonControlCommand.command_kind:type_name -> termx.cloud.v1.DaemonControlCommandKind
-	57, // 20: termx.cloud.v1.DaemonControlCommand.managed_peer_session:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
-	31, // 21: termx.cloud.v1.DaemonControlCommand.terminal_access:type_name -> termx.cloud.v1.RevokeTerminalAccessTarget
-	3,  // 22: termx.cloud.v1.HubCommand.command_kind:type_name -> termx.cloud.v1.HubCommandKind
-	29, // 23: termx.cloud.v1.HubCommand.fence_assignment:type_name -> termx.cloud.v1.FenceAssignment
-	30, // 24: termx.cloud.v1.HubCommand.kick_presence:type_name -> termx.cloud.v1.KickPresenceTarget
-	32, // 25: termx.cloud.v1.HubCommand.daemon_command:type_name -> termx.cloud.v1.DaemonControlCommand
-	6,  // 26: termx.cloud.v1.HubCommandResult.result_code:type_name -> termx.cloud.v1.RuntimeCommandResultCode
-	6,  // 27: termx.cloud.v1.DaemonCommandResult.result_code:type_name -> termx.cloud.v1.RuntimeCommandResultCode
-	5,  // 28: termx.cloud.v1.RelayControlCommand.command_kind:type_name -> termx.cloud.v1.RelayControlCommandKind
-	36, // 29: termx.cloud.v1.RelayControlCommand.target:type_name -> termx.cloud.v1.RelayControlTarget
-	6,  // 30: termx.cloud.v1.RelayAllocationCloseResult.result_code:type_name -> termx.cloud.v1.RuntimeCommandResultCode
-	6,  // 31: termx.cloud.v1.RelayCommandResult.result_code:type_name -> termx.cloud.v1.RuntimeCommandResultCode
-	38, // 32: termx.cloud.v1.RelayCommandResult.allocations:type_name -> termx.cloud.v1.RelayAllocationCloseResult
-	52, // 33: termx.cloud.v1.RelayCommandResult.settled_usage:type_name -> termx.cloud.v1.RelayUsageAck
-	1,  // 34: termx.cloud.v1.RelayControlEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
-	19, // 35: termx.cloud.v1.RelayControlEnvelope.ready:type_name -> termx.cloud.v1.RelayControlReady
-	37, // 36: termx.cloud.v1.RelayControlEnvelope.command:type_name -> termx.cloud.v1.RelayControlCommand
-	1,  // 37: termx.cloud.v1.RelayRuntimeEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
-	39, // 38: termx.cloud.v1.RelayRuntimeEnvelope.command_result:type_name -> termx.cloud.v1.RelayCommandResult
-	41, // 39: termx.cloud.v1.ReportRelayRuntimeRequest.envelopes:type_name -> termx.cloud.v1.RelayRuntimeEnvelope
-	1,  // 40: termx.cloud.v1.HubControlEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
-	13, // 41: termx.cloud.v1.HubControlEnvelope.ready:type_name -> termx.cloud.v1.ControlStreamReady
-	23, // 42: termx.cloud.v1.HubControlEnvelope.full_projection:type_name -> termx.cloud.v1.FullProjectionSnapshot
-	27, // 43: termx.cloud.v1.HubControlEnvelope.policy_delta:type_name -> termx.cloud.v1.PolicyDelta
-	29, // 44: termx.cloud.v1.HubControlEnvelope.fence_assignment:type_name -> termx.cloud.v1.FenceAssignment
-	33, // 45: termx.cloud.v1.HubControlEnvelope.command:type_name -> termx.cloud.v1.HubCommand
-	1,  // 46: termx.cloud.v1.HubRuntimeEnvelope.sender_role:type_name -> termx.cloud.v1.ControlSenderRole
-	28, // 47: termx.cloud.v1.HubRuntimeEnvelope.reconciliation:type_name -> termx.cloud.v1.ReconciliationDigest
-	58, // 48: termx.cloud.v1.HubRuntimeEnvelope.topology:type_name -> termx.cloud.v1.HubTopologySnapshot
-	34, // 49: termx.cloud.v1.HubRuntimeEnvelope.hub_command_result:type_name -> termx.cloud.v1.HubCommandResult
-	35, // 50: termx.cloud.v1.HubRuntimeEnvelope.daemon_command_result:type_name -> termx.cloud.v1.DaemonCommandResult
-	45, // 51: termx.cloud.v1.ReportHubRuntimeRequest.envelopes:type_name -> termx.cloud.v1.HubRuntimeEnvelope
-	59, // 52: termx.cloud.v1.RelayUsageEvent.path_kind:type_name -> termx.cloud.v1.ObservedPath
-	49, // 53: termx.cloud.v1.RelayUsageRecord.event:type_name -> termx.cloud.v1.RelayUsageEvent
-	50, // 54: termx.cloud.v1.ReportRelayUsageRequest.records:type_name -> termx.cloud.v1.RelayUsageRecord
-	52, // 55: termx.cloud.v1.ReportRelayUsageResponse.acknowledgements:type_name -> termx.cloud.v1.RelayUsageAck
+	8,  // 0: muxvia.cloud.v1.HubControlChallengeResponse.challenge:type_name -> muxvia.cloud.v1.HubControlChallenge
+	7,  // 1: muxvia.cloud.v1.HubHello.deployment:type_name -> muxvia.cloud.v1.EdgeDeploymentMetadata
+	14, // 2: muxvia.cloud.v1.RelayControlChallengeResponse.challenge:type_name -> muxvia.cloud.v1.RelayControlChallenge
+	7,  // 3: muxvia.cloud.v1.RelayHello.deployment:type_name -> muxvia.cloud.v1.EdgeDeploymentMetadata
+	54, // 4: muxvia.cloud.v1.CloudDevicePolicy.device_kind:type_name -> muxvia.cloud.v1.ManagedDeviceKind
+	55, // 5: muxvia.cloud.v1.HubAccountPolicy.entitlement_status:type_name -> muxvia.cloud.v1.EntitlementStatus
+	56, // 6: muxvia.cloud.v1.HubAccountPolicy.capability:type_name -> muxvia.cloud.v1.PlanCapability
+	21, // 7: muxvia.cloud.v1.FullProjectionSnapshot.devices:type_name -> muxvia.cloud.v1.CloudDevicePolicy
+	20, // 8: muxvia.cloud.v1.FullProjectionSnapshot.assignments:type_name -> muxvia.cloud.v1.HubAssignment
+	22, // 9: muxvia.cloud.v1.FullProjectionSnapshot.accounts:type_name -> muxvia.cloud.v1.HubAccountPolicy
+	2,  // 10: muxvia.cloud.v1.DevicePolicyDelta.operation:type_name -> muxvia.cloud.v1.ProjectionDeltaOperation
+	21, // 11: muxvia.cloud.v1.DevicePolicyDelta.policy:type_name -> muxvia.cloud.v1.CloudDevicePolicy
+	2,  // 12: muxvia.cloud.v1.HubAssignmentDelta.operation:type_name -> muxvia.cloud.v1.ProjectionDeltaOperation
+	20, // 13: muxvia.cloud.v1.HubAssignmentDelta.assignment:type_name -> muxvia.cloud.v1.HubAssignment
+	2,  // 14: muxvia.cloud.v1.HubAccountPolicyDelta.operation:type_name -> muxvia.cloud.v1.ProjectionDeltaOperation
+	22, // 15: muxvia.cloud.v1.HubAccountPolicyDelta.policy:type_name -> muxvia.cloud.v1.HubAccountPolicy
+	24, // 16: muxvia.cloud.v1.PolicyDelta.device_operations:type_name -> muxvia.cloud.v1.DevicePolicyDelta
+	25, // 17: muxvia.cloud.v1.PolicyDelta.assignment_operations:type_name -> muxvia.cloud.v1.HubAssignmentDelta
+	26, // 18: muxvia.cloud.v1.PolicyDelta.account_operations:type_name -> muxvia.cloud.v1.HubAccountPolicyDelta
+	4,  // 19: muxvia.cloud.v1.DaemonControlCommand.command_kind:type_name -> muxvia.cloud.v1.DaemonControlCommandKind
+	57, // 20: muxvia.cloud.v1.DaemonControlCommand.managed_peer_session:type_name -> muxvia.cloud.v1.ManagedPeerSessionTarget
+	31, // 21: muxvia.cloud.v1.DaemonControlCommand.terminal_access:type_name -> muxvia.cloud.v1.RevokeTerminalAccessTarget
+	3,  // 22: muxvia.cloud.v1.HubCommand.command_kind:type_name -> muxvia.cloud.v1.HubCommandKind
+	29, // 23: muxvia.cloud.v1.HubCommand.fence_assignment:type_name -> muxvia.cloud.v1.FenceAssignment
+	30, // 24: muxvia.cloud.v1.HubCommand.kick_presence:type_name -> muxvia.cloud.v1.KickPresenceTarget
+	32, // 25: muxvia.cloud.v1.HubCommand.daemon_command:type_name -> muxvia.cloud.v1.DaemonControlCommand
+	6,  // 26: muxvia.cloud.v1.HubCommandResult.result_code:type_name -> muxvia.cloud.v1.RuntimeCommandResultCode
+	6,  // 27: muxvia.cloud.v1.DaemonCommandResult.result_code:type_name -> muxvia.cloud.v1.RuntimeCommandResultCode
+	5,  // 28: muxvia.cloud.v1.RelayControlCommand.command_kind:type_name -> muxvia.cloud.v1.RelayControlCommandKind
+	36, // 29: muxvia.cloud.v1.RelayControlCommand.target:type_name -> muxvia.cloud.v1.RelayControlTarget
+	6,  // 30: muxvia.cloud.v1.RelayAllocationCloseResult.result_code:type_name -> muxvia.cloud.v1.RuntimeCommandResultCode
+	6,  // 31: muxvia.cloud.v1.RelayCommandResult.result_code:type_name -> muxvia.cloud.v1.RuntimeCommandResultCode
+	38, // 32: muxvia.cloud.v1.RelayCommandResult.allocations:type_name -> muxvia.cloud.v1.RelayAllocationCloseResult
+	52, // 33: muxvia.cloud.v1.RelayCommandResult.settled_usage:type_name -> muxvia.cloud.v1.RelayUsageAck
+	1,  // 34: muxvia.cloud.v1.RelayControlEnvelope.sender_role:type_name -> muxvia.cloud.v1.ControlSenderRole
+	19, // 35: muxvia.cloud.v1.RelayControlEnvelope.ready:type_name -> muxvia.cloud.v1.RelayControlReady
+	37, // 36: muxvia.cloud.v1.RelayControlEnvelope.command:type_name -> muxvia.cloud.v1.RelayControlCommand
+	1,  // 37: muxvia.cloud.v1.RelayRuntimeEnvelope.sender_role:type_name -> muxvia.cloud.v1.ControlSenderRole
+	39, // 38: muxvia.cloud.v1.RelayRuntimeEnvelope.command_result:type_name -> muxvia.cloud.v1.RelayCommandResult
+	41, // 39: muxvia.cloud.v1.ReportRelayRuntimeRequest.envelopes:type_name -> muxvia.cloud.v1.RelayRuntimeEnvelope
+	1,  // 40: muxvia.cloud.v1.HubControlEnvelope.sender_role:type_name -> muxvia.cloud.v1.ControlSenderRole
+	13, // 41: muxvia.cloud.v1.HubControlEnvelope.ready:type_name -> muxvia.cloud.v1.ControlStreamReady
+	23, // 42: muxvia.cloud.v1.HubControlEnvelope.full_projection:type_name -> muxvia.cloud.v1.FullProjectionSnapshot
+	27, // 43: muxvia.cloud.v1.HubControlEnvelope.policy_delta:type_name -> muxvia.cloud.v1.PolicyDelta
+	29, // 44: muxvia.cloud.v1.HubControlEnvelope.fence_assignment:type_name -> muxvia.cloud.v1.FenceAssignment
+	33, // 45: muxvia.cloud.v1.HubControlEnvelope.command:type_name -> muxvia.cloud.v1.HubCommand
+	1,  // 46: muxvia.cloud.v1.HubRuntimeEnvelope.sender_role:type_name -> muxvia.cloud.v1.ControlSenderRole
+	28, // 47: muxvia.cloud.v1.HubRuntimeEnvelope.reconciliation:type_name -> muxvia.cloud.v1.ReconciliationDigest
+	58, // 48: muxvia.cloud.v1.HubRuntimeEnvelope.topology:type_name -> muxvia.cloud.v1.HubTopologySnapshot
+	34, // 49: muxvia.cloud.v1.HubRuntimeEnvelope.hub_command_result:type_name -> muxvia.cloud.v1.HubCommandResult
+	35, // 50: muxvia.cloud.v1.HubRuntimeEnvelope.daemon_command_result:type_name -> muxvia.cloud.v1.DaemonCommandResult
+	45, // 51: muxvia.cloud.v1.ReportHubRuntimeRequest.envelopes:type_name -> muxvia.cloud.v1.HubRuntimeEnvelope
+	59, // 52: muxvia.cloud.v1.RelayUsageEvent.path_kind:type_name -> muxvia.cloud.v1.ObservedPath
+	49, // 53: muxvia.cloud.v1.RelayUsageRecord.event:type_name -> muxvia.cloud.v1.RelayUsageEvent
+	50, // 54: muxvia.cloud.v1.ReportRelayUsageRequest.records:type_name -> muxvia.cloud.v1.RelayUsageRecord
+	52, // 55: muxvia.cloud.v1.ReportRelayUsageResponse.acknowledgements:type_name -> muxvia.cloud.v1.RelayUsageAck
 	56, // [56:56] is the sub-list for method output_type
 	56, // [56:56] is the sub-list for method input_type
 	56, // [56:56] is the sub-list for extension type_name

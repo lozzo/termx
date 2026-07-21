@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lozzow/termx/proto/remoteauthpb"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
 )
 
 func TestClientProofAcceptsNonExportableSignerProjection(t *testing.T) {

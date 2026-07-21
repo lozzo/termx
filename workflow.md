@@ -3,7 +3,7 @@
 ## 当前结论
 
 - 产品正式名称已从 `TermX` 变更为 `Muxvia`，主域名为 `muxvia.com`，GitHub 组织为 `github.com/muxvia`。首发前必须完成无兼容层的全量发布身份迁移：`Muxvia`、`Muxvia Cloud`、`github.com/muxvia/muxvia`、CLI `muxvia`、Android `com.muxvia.app`、URI `muxvia://`、npm scope `@muxvia`、Proto namespace `muxvia.*`、C ABI `muxvia_*`、环境变量 `MUXVIA_*`。
-- 当前最早未完成切片是 `BRAND002`：Proto、Go module 与生成代码迁移。`BRAND001` 已冻结品牌与发布身份矩阵；`CLOUDP007` 暂停继续扩展，待 `BRAND001-BRAND005` 完成后从现有进度恢复。品牌迁移不得改变 Proto 字段编号、领域 owner、消息链路、安全边界或产品能力。
+- 当前最早未完成切片是 `BRAND003`：CLI、C ABI 与 runtime identity 迁移。`BRAND002` 已把活动 Go module/import/go_package、Proto package/type URL、生成代码和 descriptor fixture 迁移到 `github.com/muxvia/muxvia` 与 `muxvia.*`，根模块、私有 Cloud 和 Node 门禁通过；`CLOUDP007` 暂停继续扩展，待 `BRAND001-BRAND005` 完成后从现有进度恢复。品牌迁移不得改变 Proto 字段编号、领域 owner、消息链路、安全边界或产品能力。
 - `RTC001-RTC010` 已完成统一 WebRTC Route、Android JNI、Direct/SSH/Cloud、Endpoint、文件、生命周期、弱网和最终 APK E2E；证据见 `docs/remote-platform/rtc010-android-final-e2e.md`。
 - Cloud 产品真值见 `docs/remote-platform/cloud-product-spec.md`；多 Hub assignment、纯内存 Hub、daemon topology、CommandOutbox 和 Web 管理真值见 `docs/remote-platform/multi-hub-control-topology-spec.md`；具体 Proto、package、存储、伪代码、迁移删除项和测试矩阵见 `docs/remote-platform/multi-hub-technical-plan.md`。
 - 多 Hub 的 assignment、topology、安全和 runtime 核心规划此前已经过四维度 reviewer 复审；最新部署决策进一步收敛为两个二进制：`termx-cloud-controller` 组合 Control Plane + Web Controller，`termx-cloud-edge` 组合 Hub + Relay，但四个领域 owner、身份、generation、状态机和存储边界不合并。
@@ -65,8 +65,8 @@ muxvia-cloud-edge × N
 | ID | 状态 | 内容 | 完成条件 |
 | --- | --- | --- | --- |
 | BRAND001 | 已完成 | Muxvia 品牌与发布身份基线 | AGENTS/workflow 冻结正式名称、域名、GitHub module、CLI、Android、URI、npm、Proto、C ABI、环境变量、二进制和历史排除边界；全仓迁移矩阵明确 |
-| BRAND002 | 进行中 | Proto、Go module 与生成代码迁移 | module/import/go_package/proto package/type URL 全部迁移到 `github.com/muxvia/muxvia` 与 `muxvia.*`，字段编号和语义不变，generated/descriptor/round-trip/race 通过 |
-| BRAND003 | 待开始 | CLI、C ABI 与 runtime identity 迁移 | `muxvia` CLI、`muxvia://`、`MUXVIA_*`、C ABI/JNI/native library、配置/socket/log/state 路径和 Cloud 二进制完成破坏性迁移；活动 runtime 不保留 `termx` fallback |
+| BRAND002 | 已完成 | Proto、Go module 与生成代码迁移 | module/import/go_package/proto package/type URL 全部迁移到 `github.com/muxvia/muxvia` 与 `muxvia.*`，字段编号和语义不变；generated、binding generated、descriptor/round-trip、`make test`、`make test-private`、`make test-clients` 通过 |
+| BRAND003 | 进行中 | CLI、C ABI 与 runtime identity 迁移 | `muxvia` CLI、`muxvia://`、`MUXVIA_*`、C ABI/JNI/native library、配置/socket/log/state 路径和 Cloud 二进制完成破坏性迁移；活动 runtime 不保留 `termx` fallback |
 | BRAND004 | 待开始 | Android、npm/UI、Cloud 与活动文档迁移 | `com.muxvia.app`、`@muxvia/*`、Muxvia/Muxvia Cloud 文案、下载目录、Web/Android origin、法律/发布资产和活动文档完成迁移；历史目录保持只读 |
 | BRAND005 | 待开始 | 全仓残留与发布候选验收 | 活动源码/配置/测试/文档无旧品牌残留，允许项仅限明确历史引用；Go/Node/Android/Cloud 全量门禁、真实 ARM64 APK Direct terminal smoke、双 Agent 审查通过 |
 | CBASE001 | 已完成 | Cloud 产品文档基线 | `cloud-product-spec.md` 与 AGENTS/PRD/README 一致 |

@@ -6,8 +6,8 @@ import (
 	"math"
 	"sync"
 
-	"github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/proto/apipb"
+	"github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/proto/apipb"
 )
 
 // SessionOwner 是跨端 Go Client Engine 的 endpoint generation、planner race 与当前 ready session 真值。

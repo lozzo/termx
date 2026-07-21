@@ -3,7 +3,7 @@ package port
 import (
 	"context"
 
-	"github.com/lozzow/termx/client/endpoint"
+	"github.com/muxvia/muxvia/client/endpoint"
 	golangssh "golang.org/x/crypto/ssh"
 )
 

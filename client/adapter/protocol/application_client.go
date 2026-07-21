@@ -9,11 +9,11 @@ import (
 	"io"
 	"sync"
 
-	"github.com/lozzow/termx/client/endpoint"
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	internalprotocol "github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/proto/apipb"
-	"github.com/lozzow/termx/shared/remoteauth"
+	"github.com/muxvia/muxvia/client/endpoint"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	internalprotocol "github.com/muxvia/muxvia/internal/protocol"
+	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/muxvia/muxvia/shared/remoteauth"
 )
 
 // ApplicationClient 组合单条 ready connection 的 Proto application session 与可选 runtime control plane。

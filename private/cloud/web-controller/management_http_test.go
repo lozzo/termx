@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/commandoutbox"
-	"github.com/lozzow/termx/private/cloud/control-plane/commerce"
-	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
-	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
-	webcontroller "github.com/lozzow/termx/private/cloud/web-controller"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
+	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
+	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
+	webcontroller "github.com/muxvia/muxvia/private/cloud/web-controller"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 

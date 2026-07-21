@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/commandoutbox"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 // migrationResultSink 在 Hub receipt 持久提交后刷新迁移涉及的两个 Hub projection。

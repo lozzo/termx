@@ -6,10 +6,10 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/lozzow/termx/client/endpoint"
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/muxvia/muxvia/client/endpoint"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
 )
 
 const managedRoutePlanMaxTTL = 10 * time.Minute

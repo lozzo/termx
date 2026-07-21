@@ -8,7 +8,7 @@ import (
 	"time"
 
 	uv "github.com/charmbracelet/ultraviolet"
-	charmvt "github.com/lozzow/termx/vterm/internal/vt"
+	charmvt "github.com/muxvia/muxvia/vterm/internal/vt"
 )
 
 func TestLoadSnapshotRestoresScreenAndCursor(t *testing.T) {

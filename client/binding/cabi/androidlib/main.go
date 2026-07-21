@@ -31,7 +31,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/lozzow/termx/client/binding"
+	"github.com/muxvia/muxvia/client/binding"
 )
 
 var androidLibrary = struct {

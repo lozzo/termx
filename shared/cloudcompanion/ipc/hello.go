@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
 )
 
 // HelloOptions 固定一条公开进程到本机 Companion IPC connection 的 caller role 与能力请求。

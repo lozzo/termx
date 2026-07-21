@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lozzow/termx/core/history"
+	"github.com/muxvia/muxvia/core/history"
 )
 
 // LineFile 是 append-only 二进制文件：offset 索引 + 分页读 + 崩溃截尾恢复。

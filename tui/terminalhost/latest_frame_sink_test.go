@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/tui/render"
+	"github.com/muxvia/muxvia/tui/render"
 )
 
 func TestLatestFrameSinkDropsIntermediateFramesWhileWriterBusy(t *testing.T) {

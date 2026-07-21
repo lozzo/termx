@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)

@@ -12,7 +12,7 @@ import (
 func TestPortableManagedAdapterDoesNotImportNativePlatformOwners(t *testing.T) {
 	forbidden := []string{
 		"github.com/pion/webrtc",
-		"github.com/lozzow/termx/remote/webrtc",
+		"github.com/muxvia/muxvia/remote/webrtc",
 		"syscall/js",
 		"C",
 	}

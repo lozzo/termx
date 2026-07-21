@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	corev2 "github.com/lozzow/termx/core"
+	corev2 "github.com/muxvia/muxvia/core"
 )
 
 const daemonMemoryLimitMBEnv = "TERMX_DAEMON_MEMORY_LIMIT_MB"

@@ -10,12 +10,12 @@ import (
 	"strings"
 	"sync"
 
-	corev2 "github.com/lozzow/termx/core"
-	"github.com/lozzow/termx/proto/remoteauthpb"
-	remotev2daemon "github.com/lozzow/termx/remote/daemon"
-	"github.com/lozzow/termx/shared/remoteauth"
-	"github.com/lozzow/termx/shared/transport"
-	unixtransport "github.com/lozzow/termx/shared/transport/unix"
+	corev2 "github.com/muxvia/muxvia/core"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	remotev2daemon "github.com/muxvia/muxvia/remote/daemon"
+	"github.com/muxvia/muxvia/shared/remoteauth"
+	"github.com/muxvia/muxvia/shared/transport"
+	unixtransport "github.com/muxvia/muxvia/shared/transport/unix"
 	"google.golang.org/protobuf/proto"
 )
 

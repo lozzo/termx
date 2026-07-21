@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 // WorkbenchStorageService 是 reducer-owned workbench snapshot 的持久化 application port。

@@ -7,12 +7,12 @@ import (
 	"os"
 	"time"
 
-	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/shared/perftrace"
-	"github.com/lozzow/termx/tui/app"
-	"github.com/lozzow/termx/tui/state"
-	"github.com/lozzow/termx/tui/terminalhost"
+	protocoladapter "github.com/muxvia/muxvia/client/adapter/protocol"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/shared/perftrace"
+	"github.com/muxvia/muxvia/tui/app"
+	"github.com/muxvia/muxvia/tui/state"
+	"github.com/muxvia/muxvia/tui/terminalhost"
 	"github.com/spf13/cobra"
 )
 

@@ -10,17 +10,17 @@ import (
 	"strings"
 	"time"
 
-	localadapter "github.com/lozzow/termx/client/adapter/local"
-	managedadapter "github.com/lozzow/termx/client/adapter/managed"
-	pionadapter "github.com/lozzow/termx/client/adapter/managed/pion"
-	peeradapter "github.com/lozzow/termx/client/adapter/peer"
-	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
-	sshadapter "github.com/lozzow/termx/client/adapter/ssh"
-	systemadapter "github.com/lozzow/termx/client/adapter/system"
-	clientendpoint "github.com/lozzow/termx/client/endpoint"
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/remoteauth"
+	localadapter "github.com/muxvia/muxvia/client/adapter/local"
+	managedadapter "github.com/muxvia/muxvia/client/adapter/managed"
+	pionadapter "github.com/muxvia/muxvia/client/adapter/managed/pion"
+	peeradapter "github.com/muxvia/muxvia/client/adapter/peer"
+	protocoladapter "github.com/muxvia/muxvia/client/adapter/protocol"
+	sshadapter "github.com/muxvia/muxvia/client/adapter/ssh"
+	systemadapter "github.com/muxvia/muxvia/client/adapter/system"
+	clientendpoint "github.com/muxvia/muxvia/client/endpoint"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/remoteauth"
 )
 
 type cliEndpointPlanSource struct {

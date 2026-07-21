@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/proto/cloudpb"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 const (

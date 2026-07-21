@@ -7,9 +7,9 @@
 package bindingpb
 
 import (
-	apipb "github.com/lozzow/termx/proto/apipb"
-	cloudpb "github.com/lozzow/termx/proto/cloudpb"
-	remoteauthpb "github.com/lozzow/termx/proto/remoteauthpb"
+	apipb "github.com/muxvia/muxvia/proto/apipb"
+	cloudpb "github.com/muxvia/muxvia/proto/cloudpb"
+	remoteauthpb "github.com/muxvia/muxvia/proto/remoteauthpb"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -142,7 +142,7 @@ type OpenSessionRequest struct {
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	EndpointId    string                 `protobuf:"bytes,2,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
 	RouteOverride string                 `protobuf:"bytes,3,opt,name=route_override,json=routeOverride,proto3" json:"route_override,omitempty"`
-	Intent        ConnectIntent          `protobuf:"varint,4,opt,name=intent,proto3,enum=termx.client.binding.v1.ConnectIntent" json:"intent,omitempty"`
+	Intent        ConnectIntent          `protobuf:"varint,4,opt,name=intent,proto3,enum=muxvia.client.binding.v1.ConnectIntent" json:"intent,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1881,7 +1881,7 @@ func (x *OpenResourceStreamRequest) GetInitialUploadOffset() int64 {
 type ResourceStreamFrame struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
 	StreamHandle  uint64                  `protobuf:"varint,1,opt,name=stream_handle,json=streamHandle,proto3" json:"stream_handle,omitempty"`
-	Type          ResourceStreamFrameType `protobuf:"varint,2,opt,name=type,proto3,enum=termx.client.binding.v1.ResourceStreamFrameType" json:"type,omitempty"`
+	Type          ResourceStreamFrameType `protobuf:"varint,2,opt,name=type,proto3,enum=muxvia.client.binding.v1.ResourceStreamFrameType" json:"type,omitempty"`
 	Payload       []byte                  `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3175,7 +3175,7 @@ func (x *SignalingEvents) GetEvents() []*cloudpb.SignalingEvent {
 type CloudRouteEligibilityRequest struct {
 	state             protoimpl.MessageState              `protogen:"open.v1"`
 	AccountProfileRef string                              `protobuf:"bytes,1,opt,name=account_profile_ref,json=accountProfileRef,proto3" json:"account_profile_ref,omitempty"`
-	RelayMode         remoteauthpb.ManagedWebRTCRelayMode `protobuf:"varint,2,opt,name=relay_mode,json=relayMode,proto3,enum=termx.remote.auth.v1.ManagedWebRTCRelayMode" json:"relay_mode,omitempty"`
+	RelayMode         remoteauthpb.ManagedWebRTCRelayMode `protobuf:"varint,2,opt,name=relay_mode,json=relayMode,proto3,enum=muxvia.remote.auth.v1.ManagedWebRTCRelayMode" json:"relay_mode,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -3289,7 +3289,7 @@ func (x *CloudRouteEligibility) GetRelayAvailable() bool {
 type WebRTCOpenPeerRequest struct {
 	state           protoimpl.MessageState  `protogen:"open.v1"`
 	IceServers      []*cloudpb.IceServer    `protobuf:"bytes,1,rep,name=ice_servers,json=iceServers,proto3" json:"ice_servers,omitempty"`
-	RoutePreference cloudpb.RoutePreference `protobuf:"varint,2,opt,name=route_preference,json=routePreference,proto3,enum=termx.cloud.v1.RoutePreference" json:"route_preference,omitempty"`
+	RoutePreference cloudpb.RoutePreference `protobuf:"varint,2,opt,name=route_preference,json=routePreference,proto3,enum=muxvia.cloud.v1.RoutePreference" json:"route_preference,omitempty"`
 	RelayOnly       bool                    `protobuf:"varint,3,opt,name=relay_only,json=relayOnly,proto3" json:"relay_only,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -3549,7 +3549,7 @@ func (x *WebRTCApplyAnswerRequest) GetCandidates() []*cloudpb.IceCandidate {
 type WebRTCPeerReady struct {
 	state                        protoimpl.MessageState `protogen:"open.v1"`
 	RemoteCertificateFingerprint string                 `protobuf:"bytes,1,opt,name=remote_certificate_fingerprint,json=remoteCertificateFingerprint,proto3" json:"remote_certificate_fingerprint,omitempty"`
-	ObservedPath                 cloudpb.ObservedPath   `protobuf:"varint,2,opt,name=observed_path,json=observedPath,proto3,enum=termx.cloud.v1.ObservedPath" json:"observed_path,omitempty"`
+	ObservedPath                 cloudpb.ObservedPath   `protobuf:"varint,2,opt,name=observed_path,json=observedPath,proto3,enum=muxvia.cloud.v1.ObservedPath" json:"observed_path,omitempty"`
 	unknownFields                protoimpl.UnknownFields
 	sizeCache                    protoimpl.SizeCache
 }
@@ -3802,7 +3802,7 @@ type WebRTCPeerSnapshot struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Valid             bool                   `protobuf:"varint,1,opt,name=valid,proto3" json:"valid,omitempty"`
 	PairId            string                 `protobuf:"bytes,2,opt,name=pair_id,json=pairId,proto3" json:"pair_id,omitempty"`
-	Path              cloudpb.ObservedPath   `protobuf:"varint,3,opt,name=path,proto3,enum=termx.cloud.v1.ObservedPath" json:"path,omitempty"`
+	Path              cloudpb.ObservedPath   `protobuf:"varint,3,opt,name=path,proto3,enum=muxvia.cloud.v1.ObservedPath" json:"path,omitempty"`
 	NetworkClass      string                 `protobuf:"bytes,4,opt,name=network_class,json=networkClass,proto3" json:"network_class,omitempty"`
 	SampledAtUnixNano int64                  `protobuf:"varint,5,opt,name=sampled_at_unix_nano,json=sampledAtUnixNano,proto3" json:"sampled_at_unix_nano,omitempty"`
 	RoundTripNanos    int64                  `protobuf:"varint,6,opt,name=round_trip_nanos,json=roundTripNanos,proto3" json:"round_trip_nanos,omitempty"`
@@ -5030,73 +5030,73 @@ var File_bindingpb_client_binding_proto protoreflect.FileDescriptor
 
 const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\n" +
-	"\x1ebindingpb/client_binding.proto\x12\x17termx.client.binding.v1\x1a\x17apipb/application.proto\x1a\x12apipb/common.proto\x1a\x1dcloudpb/cloud_companion.proto\x1a\x1ccloudpb/cloud_topology.proto\x1a\x1eremoteauthpb/remote_auth.proto\"\xc1\x01\n" +
+	"\x1ebindingpb/client_binding.proto\x12\x18muxvia.client.binding.v1\x1a\x17apipb/application.proto\x1a\x12apipb/common.proto\x1a\x1dcloudpb/cloud_companion.proto\x1a\x1ccloudpb/cloud_topology.proto\x1a\x1eremoteauthpb/remote_auth.proto\"\xc2\x01\n" +
 	"\x12OpenSessionRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
 	"\vendpoint_id\x18\x02 \x01(\tR\n" +
 	"endpointId\x12%\n" +
-	"\x0eroute_override\x18\x03 \x01(\tR\rrouteOverride\x12>\n" +
-	"\x06intent\x18\x04 \x01(\x0e2&.termx.client.binding.v1.ConnectIntentR\x06intentJ\x04\b\x05\x10\x06\"\x92\x01\n" +
+	"\x0eroute_override\x18\x03 \x01(\tR\rrouteOverride\x12?\n" +
+	"\x06intent\x18\x04 \x01(\x0e2'.muxvia.client.binding.v1.ConnectIntentR\x06intentJ\x04\b\x05\x10\x06\"\x92\x01\n" +
 	"\x14ImportPairingRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
 	"\x10portable_payload\x18\x02 \x01(\tR\x0fportablePayload\x120\n" +
-	"\x14expected_endpoint_id\x18\x03 \x01(\tR\x12expectedEndpointId\"\xd2\x03\n" +
+	"\x14expected_endpoint_id\x18\x03 \x01(\tR\x12expectedEndpointId\"\xd5\x03\n" +
 	"\x13ImportPairingResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
-	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12B\n" +
-	"\bendpoint\x18\x03 \x01(\v2&.termx.remote.auth.v1.EndpointConfigV1R\bendpoint\x12\x1b\n" +
+	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12C\n" +
+	"\bendpoint\x18\x03 \x01(\v2'.muxvia.remote.auth.v1.EndpointConfigV1R\bendpoint\x12\x1b\n" +
 	"\tticket_id\x18\x04 \x01(\tR\bticketId\x124\n" +
 	"\x16client_key_fingerprint\x18\x05 \x01(\tR\x14clientKeyFingerprint\x12/\n" +
 	"\x14expires_at_unix_nano\x18\x06 \x01(\x03R\x11expiresAtUnixNano\x125\n" +
-	"\x16authorization_required\x18\a \x01(\bR\x15authorizationRequired\x12,\n" +
-	"\x05error\x18\b \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\x12D\n" +
-	"\bregistry\x18\t \x01(\v2(.termx.remote.auth.v1.EndpointRegistryV1R\bregistry\"_\n" +
+	"\x16authorization_required\x18\a \x01(\bR\x15authorizationRequired\x12-\n" +
+	"\x05error\x18\b \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\x12E\n" +
+	"\bregistry\x18\t \x01(\v2).muxvia.remote.auth.v1.EndpointRegistryV1R\bregistry\"_\n" +
 	"\x17DeleteCredentialRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
-	"\x0ecredential_ref\x18\x02 \x01(\tR\rcredentialRef\"\x90\x01\n" +
+	"\x0ecredential_ref\x18\x02 \x01(\tR\rcredentialRef\"\x91\x01\n" +
 	"\x16DeleteCredentialResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
-	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12,\n" +
-	"\x05error\x18\x03 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\";\n" +
+	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12-\n" +
+	"\x05error\x18\x03 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\";\n" +
 	"\x1aEndpointRegistryGetRequest\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\"\xd9\x01\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\"\xdb\x01\n" +
 	"\x19EndpointRegistryGetResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
-	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12D\n" +
-	"\bregistry\x18\x03 \x01(\v2(.termx.remote.auth.v1.EndpointRegistryV1R\bregistry\x12,\n" +
-	"\x05error\x18\x04 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\"\x9d\x01\n" +
+	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12E\n" +
+	"\bregistry\x18\x03 \x01(\v2).muxvia.remote.auth.v1.EndpointRegistryV1R\bregistry\x12-\n" +
+	"\x05error\x18\x04 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\x9e\x01\n" +
 	"\x15EndpointUpsertRequest\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\x12B\n" +
-	"\bendpoint\x18\x02 \x01(\v2&.termx.remote.auth.v1.EndpointConfigV1R\bendpoint\x12!\n" +
-	"\fmake_default\x18\x03 \x01(\bR\vmakeDefault\"\x98\x02\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12C\n" +
+	"\bendpoint\x18\x02 \x01(\v2'.muxvia.remote.auth.v1.EndpointConfigV1R\bendpoint\x12!\n" +
+	"\fmake_default\x18\x03 \x01(\bR\vmakeDefault\"\x9b\x02\n" +
 	"\x14EndpointUpsertResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
-	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12B\n" +
-	"\bendpoint\x18\x03 \x01(\v2&.termx.remote.auth.v1.EndpointConfigV1R\bendpoint\x12D\n" +
-	"\bregistry\x18\x04 \x01(\v2(.termx.remote.auth.v1.EndpointRegistryV1R\bregistry\x12,\n" +
-	"\x05error\x18\x05 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\"W\n" +
+	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12C\n" +
+	"\bendpoint\x18\x03 \x01(\v2'.muxvia.remote.auth.v1.EndpointConfigV1R\bendpoint\x12E\n" +
+	"\bregistry\x18\x04 \x01(\v2).muxvia.remote.auth.v1.EndpointRegistryV1R\bregistry\x12-\n" +
+	"\x05error\x18\x05 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"W\n" +
 	"\x15EndpointDeleteRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
 	"\vendpoint_id\x18\x02 \x01(\tR\n" +
-	"endpointId\"\xf5\x01\n" +
+	"endpointId\"\xf7\x01\n" +
 	"\x14EndpointDeleteResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
 	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12\x1f\n" +
 	"\vendpoint_id\x18\x03 \x01(\tR\n" +
-	"endpointId\x12D\n" +
-	"\bregistry\x18\x04 \x01(\v2(.termx.remote.auth.v1.EndpointRegistryV1R\bregistry\x12,\n" +
-	"\x05error\x18\x05 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\"c\n" +
+	"endpointId\x12E\n" +
+	"\bregistry\x18\x04 \x01(\v2).muxvia.remote.auth.v1.EndpointRegistryV1R\bregistry\x12-\n" +
+	"\x05error\x18\x05 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"c\n" +
 	"\x1bEndpointShareReceiveRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
@@ -5105,112 +5105,111 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\broute_id\x18\x01 \x01(\tR\arouteId\x12\x1d\n" +
 	"\n" +
 	"route_kind\x18\x02 \x01(\tR\trouteKind\x12\x16\n" +
-	"\x06action\x18\x03 \x01(\tR\x06action\"\x94\x04\n" +
+	"\x06action\x18\x03 \x01(\tR\x06action\"\x97\x04\n" +
 	"\x14EndpointSharePreview\x12!\n" +
 	"\fimport_token\x18\x01 \x01(\tR\vimportToken\x12\x1f\n" +
 	"\vendpoint_id\x18\x02 \x01(\tR\n" +
 	"endpointId\x12\x14\n" +
-	"\x05label\x18\x03 \x01(\tR\x05label\x12H\n" +
-	"\bidentity\x18\x04 \x01(\v2,.termx.remote.auth.v1.EndpointDaemonIdentityR\bidentity\x12P\n" +
-	"\vroute_diffs\x18\x05 \x03(\v2/.termx.client.binding.v1.EndpointShareRouteDiffR\n" +
+	"\x05label\x18\x03 \x01(\tR\x05label\x12I\n" +
+	"\bidentity\x18\x04 \x01(\v2-.muxvia.remote.auth.v1.EndpointDaemonIdentityR\bidentity\x12Q\n" +
+	"\vroute_diffs\x18\x05 \x03(\v20.muxvia.client.binding.v1.EndpointShareRouteDiffR\n" +
 	"routeDiffs\x120\n" +
 	"\x14connect_mode_changed\x18\x06 \x01(\bR\x12connectModeChanged\x128\n" +
-	"\x18selection_policy_changed\x18\a \x01(\bR\x16selectionPolicyChanged\x12i\n" +
-	"\x16credential_descriptors\x18\b \x03(\v22.termx.remote.auth.v1.EndpointCredentialDescriptorR\x15credentialDescriptors\x12/\n" +
-	"\x14expires_at_unix_nano\x18\t \x01(\x03R\x11expiresAtUnixNano\"\xdd\x01\n" +
+	"\x18selection_policy_changed\x18\a \x01(\bR\x16selectionPolicyChanged\x12j\n" +
+	"\x16credential_descriptors\x18\b \x03(\v23.muxvia.remote.auth.v1.EndpointCredentialDescriptorR\x15credentialDescriptors\x12/\n" +
+	"\x14expires_at_unix_nano\x18\t \x01(\x03R\x11expiresAtUnixNano\"\xdf\x01\n" +
 	"\x1aEndpointShareReceiveResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
-	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12G\n" +
-	"\apreview\x18\x03 \x01(\v2-.termx.client.binding.v1.EndpointSharePreviewR\apreview\x12,\n" +
-	"\x05error\x18\x04 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\"^\n" +
+	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12H\n" +
+	"\apreview\x18\x03 \x01(\v2..muxvia.client.binding.v1.EndpointSharePreviewR\apreview\x12-\n" +
+	"\x05error\x18\x04 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"^\n" +
 	"\x1aEndpointShareCommitRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12!\n" +
-	"\fimport_token\x18\x02 \x01(\tR\vimportToken\"\xd4\x02\n" +
+	"\fimport_token\x18\x02 \x01(\tR\vimportToken\"\xd7\x02\n" +
 	"\x19EndpointShareCommitResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
-	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12B\n" +
-	"\bendpoint\x18\x03 \x01(\v2&.termx.remote.auth.v1.EndpointConfigV1R\bendpoint\x12D\n" +
-	"\bregistry\x18\x04 \x01(\v2(.termx.remote.auth.v1.EndpointRegistryV1R\bregistry\x125\n" +
-	"\x16authorization_required\x18\x05 \x01(\bR\x15authorizationRequired\x12,\n" +
-	"\x05error\x18\x06 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\"z\n" +
+	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12C\n" +
+	"\bendpoint\x18\x03 \x01(\v2'.muxvia.remote.auth.v1.EndpointConfigV1R\bendpoint\x12E\n" +
+	"\bregistry\x18\x04 \x01(\v2).muxvia.remote.auth.v1.EndpointRegistryV1R\bregistry\x125\n" +
+	"\x16authorization_required\x18\x05 \x01(\bR\x15authorizationRequired\x12-\n" +
+	"\x05error\x18\x06 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"z\n" +
 	"\x1dSSHCredentialProvisionRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
 	"\vendpoint_id\x18\x02 \x01(\tR\n" +
 	"endpointId\x12\x19\n" +
-	"\broute_id\x18\x03 \x01(\tR\arouteId\"\x97\x03\n" +
+	"\broute_id\x18\x03 \x01(\tR\arouteId\"\x9a\x03\n" +
 	"\x1cSSHCredentialProvisionResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
-	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12B\n" +
-	"\bendpoint\x18\x03 \x01(\v2&.termx.remote.auth.v1.EndpointConfigV1R\bendpoint\x12D\n" +
-	"\bregistry\x18\x04 \x01(\v2(.termx.remote.auth.v1.EndpointRegistryV1R\bregistry\x12%\n" +
+	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12C\n" +
+	"\bendpoint\x18\x03 \x01(\v2'.muxvia.remote.auth.v1.EndpointConfigV1R\bendpoint\x12E\n" +
+	"\bregistry\x18\x04 \x01(\v2).muxvia.remote.auth.v1.EndpointRegistryV1R\bregistry\x12%\n" +
 	"\x0ecredential_ref\x18\x05 \x01(\tR\rcredentialRef\x12%\n" +
 	"\x0eauthorized_key\x18\x06 \x01(\tR\rauthorizedKey\x12'\n" +
-	"\x0fkey_fingerprint\x18\a \x01(\tR\x0ekeyFingerprint\x12,\n" +
-	"\x05error\x18\b \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\"\xc1\x06\n" +
-	"\rEngineCommand\x12V\n" +
-	"\x0eimport_pairing\x18\x01 \x01(\v2-.termx.client.binding.v1.ImportPairingRequestH\x00R\rimportPairing\x12_\n" +
-	"\x11delete_credential\x18\x02 \x01(\v20.termx.client.binding.v1.DeleteCredentialRequestH\x00R\x10deleteCredential\x12i\n" +
-	"\x15endpoint_registry_get\x18\x03 \x01(\v23.termx.client.binding.v1.EndpointRegistryGetRequestH\x00R\x13endpointRegistryGet\x12Y\n" +
-	"\x0fendpoint_upsert\x18\x04 \x01(\v2..termx.client.binding.v1.EndpointUpsertRequestH\x00R\x0eendpointUpsert\x12Y\n" +
-	"\x0fendpoint_delete\x18\x05 \x01(\v2..termx.client.binding.v1.EndpointDeleteRequestH\x00R\x0eendpointDelete\x12l\n" +
-	"\x16endpoint_share_receive\x18\x06 \x01(\v24.termx.client.binding.v1.EndpointShareReceiveRequestH\x00R\x14endpointShareReceive\x12i\n" +
-	"\x15endpoint_share_commit\x18\a \x01(\v23.termx.client.binding.v1.EndpointShareCommitRequestH\x00R\x13endpointShareCommit\x12r\n" +
-	"\x18ssh_credential_provision\x18\b \x01(\v26.termx.client.binding.v1.SSHCredentialProvisionRequestH\x00R\x16sshCredentialProvisionB\t\n" +
-	"\acommand\"\xf0\x01\n" +
+	"\x0fkey_fingerprint\x18\a \x01(\tR\x0ekeyFingerprint\x12-\n" +
+	"\x05error\x18\b \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\xc9\x06\n" +
+	"\rEngineCommand\x12W\n" +
+	"\x0eimport_pairing\x18\x01 \x01(\v2..muxvia.client.binding.v1.ImportPairingRequestH\x00R\rimportPairing\x12`\n" +
+	"\x11delete_credential\x18\x02 \x01(\v21.muxvia.client.binding.v1.DeleteCredentialRequestH\x00R\x10deleteCredential\x12j\n" +
+	"\x15endpoint_registry_get\x18\x03 \x01(\v24.muxvia.client.binding.v1.EndpointRegistryGetRequestH\x00R\x13endpointRegistryGet\x12Z\n" +
+	"\x0fendpoint_upsert\x18\x04 \x01(\v2/.muxvia.client.binding.v1.EndpointUpsertRequestH\x00R\x0eendpointUpsert\x12Z\n" +
+	"\x0fendpoint_delete\x18\x05 \x01(\v2/.muxvia.client.binding.v1.EndpointDeleteRequestH\x00R\x0eendpointDelete\x12m\n" +
+	"\x16endpoint_share_receive\x18\x06 \x01(\v25.muxvia.client.binding.v1.EndpointShareReceiveRequestH\x00R\x14endpointShareReceive\x12j\n" +
+	"\x15endpoint_share_commit\x18\a \x01(\v24.muxvia.client.binding.v1.EndpointShareCommitRequestH\x00R\x13endpointShareCommit\x12s\n" +
+	"\x18ssh_credential_provision\x18\b \x01(\v27.muxvia.client.binding.v1.SSHCredentialProvisionRequestH\x00R\x16sshCredentialProvisionB\t\n" +
+	"\acommand\"\xf2\x01\n" +
 	"\x11OpenSessionResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
 	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12%\n" +
-	"\x0esession_handle\x18\x03 \x01(\x04R\rsessionHandle\x12<\n" +
-	"\asession\x18\x04 \x01(\v2\".termx.api.v1.EndpointSessionStampR\asession\x12,\n" +
-	"\x05error\x18\x05 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\"\xc5\x01\n" +
+	"\x0esession_handle\x18\x03 \x01(\x04R\rsessionHandle\x12=\n" +
+	"\asession\x18\x04 \x01(\v2#.muxvia.api.v1.EndpointSessionStampR\asession\x12-\n" +
+	"\x05error\x18\x05 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\xc7\x01\n" +
 	"\rExecuteResult\x12)\n" +
 	"\x10operation_handle\x18\x01 \x01(\x04R\x0foperationHandle\x12%\n" +
-	"\x0esession_handle\x18\x02 \x01(\x04R\rsessionHandle\x124\n" +
-	"\x06result\x18\x03 \x01(\v2\x1c.termx.api.v1.ResultEnvelopeR\x06result\x12,\n" +
-	"\x05error\x18\x04 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\"l\n" +
+	"\x0esession_handle\x18\x02 \x01(\x04R\rsessionHandle\x125\n" +
+	"\x06result\x18\x03 \x01(\v2\x1d.muxvia.api.v1.ResultEnvelopeR\x06result\x12-\n" +
+	"\x05error\x18\x04 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"m\n" +
 	"\x10ApplicationEvent\x12%\n" +
-	"\x0esession_handle\x18\x01 \x01(\x04R\rsessionHandle\x121\n" +
-	"\x05event\x18\x02 \x01(\v2\x1b.termx.api.v1.EventEnvelopeR\x05event\"\x89\x01\n" +
-	"\x19OpenResourceStreamRequest\x128\n" +
-	"\bresource\x18\x01 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresource\x122\n" +
-	"\x15initial_upload_offset\x18\x02 \x01(\x03R\x13initialUploadOffset\"\x9a\x01\n" +
+	"\x0esession_handle\x18\x01 \x01(\x04R\rsessionHandle\x122\n" +
+	"\x05event\x18\x02 \x01(\v2\x1c.muxvia.api.v1.EventEnvelopeR\x05event\"\x8a\x01\n" +
+	"\x19OpenResourceStreamRequest\x129\n" +
+	"\bresource\x18\x01 \x01(\v2\x1d.muxvia.api.v1.ResourceHandleR\bresource\x122\n" +
+	"\x15initial_upload_offset\x18\x02 \x01(\x03R\x13initialUploadOffset\"\x9b\x01\n" +
 	"\x13ResourceStreamFrame\x12#\n" +
-	"\rstream_handle\x18\x01 \x01(\x04R\fstreamHandle\x12D\n" +
-	"\x04type\x18\x02 \x01(\x0e20.termx.client.binding.v1.ResourceStreamFrameTypeR\x04type\x12\x18\n" +
-	"\apayload\x18\x03 \x01(\fR\apayload\"n\n" +
+	"\rstream_handle\x18\x01 \x01(\x04R\fstreamHandle\x12E\n" +
+	"\x04type\x18\x02 \x01(\x0e21.muxvia.client.binding.v1.ResourceStreamFrameTypeR\x04type\x12\x18\n" +
+	"\apayload\x18\x03 \x01(\fR\apayload\"o\n" +
 	"\x19ResourceStreamClosedEvent\x12#\n" +
-	"\rstream_handle\x18\x01 \x01(\x04R\fstreamHandle\x12,\n" +
-	"\x05error\x18\x02 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\"\xa7\x01\n" +
+	"\rstream_handle\x18\x01 \x01(\x04R\fstreamHandle\x12-\n" +
+	"\x05error\x18\x02 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\xa9\x01\n" +
 	"\x12SessionClosedEvent\x12%\n" +
-	"\x0esession_handle\x18\x01 \x01(\x04R\rsessionHandle\x12<\n" +
-	"\asession\x18\x02 \x01(\v2\".termx.api.v1.EndpointSessionStampR\asession\x12,\n" +
-	"\x05error\x18\x03 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\"\xfe\n" +
-	"\n" +
+	"\x0esession_handle\x18\x01 \x01(\x04R\rsessionHandle\x12=\n" +
+	"\asession\x18\x02 \x01(\v2#.muxvia.api.v1.EndpointSessionStampR\asession\x12-\n" +
+	"\x05error\x18\x03 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\x8c\v\n" +
 	"\rEventEnvelope\x12\x1f\n" +
 	"\vabi_version\x18\x01 \x01(\rR\n" +
 	"abiVersion\x12\x1a\n" +
-	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12O\n" +
+	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12P\n" +
 	"\fopen_session\x18\n" +
-	" \x01(\v2*.termx.client.binding.v1.OpenSessionResultH\x00R\vopenSession\x12B\n" +
-	"\aexecute\x18\v \x01(\v2&.termx.client.binding.v1.ExecuteResultH\x00R\aexecute\x12M\n" +
-	"\vapplication\x18\f \x01(\v2).termx.client.binding.v1.ApplicationEventH\x00R\vapplication\x12T\n" +
-	"\x0esession_closed\x18\r \x01(\v2+.termx.client.binding.v1.SessionClosedEventH\x00R\rsessionClosed\x12U\n" +
-	"\x0eimport_pairing\x18\x0e \x01(\v2,.termx.client.binding.v1.ImportPairingResultH\x00R\rimportPairing\x12^\n" +
-	"\x11delete_credential\x18\x0f \x01(\v2/.termx.client.binding.v1.DeleteCredentialResultH\x00R\x10deleteCredential\x12b\n" +
-	"\x15resource_stream_frame\x18\x10 \x01(\v2,.termx.client.binding.v1.ResourceStreamFrameH\x00R\x13resourceStreamFrame\x12j\n" +
-	"\x16resource_stream_closed\x18\x11 \x01(\v22.termx.client.binding.v1.ResourceStreamClosedEventH\x00R\x14resourceStreamClosed\x12h\n" +
-	"\x15endpoint_registry_get\x18\x12 \x01(\v22.termx.client.binding.v1.EndpointRegistryGetResultH\x00R\x13endpointRegistryGet\x12X\n" +
-	"\x0fendpoint_upsert\x18\x13 \x01(\v2-.termx.client.binding.v1.EndpointUpsertResultH\x00R\x0eendpointUpsert\x12X\n" +
-	"\x0fendpoint_delete\x18\x14 \x01(\v2-.termx.client.binding.v1.EndpointDeleteResultH\x00R\x0eendpointDelete\x12k\n" +
-	"\x16endpoint_share_receive\x18\x15 \x01(\v23.termx.client.binding.v1.EndpointShareReceiveResultH\x00R\x14endpointShareReceive\x12h\n" +
-	"\x15endpoint_share_commit\x18\x16 \x01(\v22.termx.client.binding.v1.EndpointShareCommitResultH\x00R\x13endpointShareCommit\x12q\n" +
-	"\x18ssh_credential_provision\x18\x17 \x01(\v25.termx.client.binding.v1.SSHCredentialProvisionResultH\x00R\x16sshCredentialProvisionB\a\n" +
+	" \x01(\v2+.muxvia.client.binding.v1.OpenSessionResultH\x00R\vopenSession\x12C\n" +
+	"\aexecute\x18\v \x01(\v2'.muxvia.client.binding.v1.ExecuteResultH\x00R\aexecute\x12N\n" +
+	"\vapplication\x18\f \x01(\v2*.muxvia.client.binding.v1.ApplicationEventH\x00R\vapplication\x12U\n" +
+	"\x0esession_closed\x18\r \x01(\v2,.muxvia.client.binding.v1.SessionClosedEventH\x00R\rsessionClosed\x12V\n" +
+	"\x0eimport_pairing\x18\x0e \x01(\v2-.muxvia.client.binding.v1.ImportPairingResultH\x00R\rimportPairing\x12_\n" +
+	"\x11delete_credential\x18\x0f \x01(\v20.muxvia.client.binding.v1.DeleteCredentialResultH\x00R\x10deleteCredential\x12c\n" +
+	"\x15resource_stream_frame\x18\x10 \x01(\v2-.muxvia.client.binding.v1.ResourceStreamFrameH\x00R\x13resourceStreamFrame\x12k\n" +
+	"\x16resource_stream_closed\x18\x11 \x01(\v23.muxvia.client.binding.v1.ResourceStreamClosedEventH\x00R\x14resourceStreamClosed\x12i\n" +
+	"\x15endpoint_registry_get\x18\x12 \x01(\v23.muxvia.client.binding.v1.EndpointRegistryGetResultH\x00R\x13endpointRegistryGet\x12Y\n" +
+	"\x0fendpoint_upsert\x18\x13 \x01(\v2..muxvia.client.binding.v1.EndpointUpsertResultH\x00R\x0eendpointUpsert\x12Y\n" +
+	"\x0fendpoint_delete\x18\x14 \x01(\v2..muxvia.client.binding.v1.EndpointDeleteResultH\x00R\x0eendpointDelete\x12l\n" +
+	"\x16endpoint_share_receive\x18\x15 \x01(\v24.muxvia.client.binding.v1.EndpointShareReceiveResultH\x00R\x14endpointShareReceive\x12i\n" +
+	"\x15endpoint_share_commit\x18\x16 \x01(\v23.muxvia.client.binding.v1.EndpointShareCommitResultH\x00R\x13endpointShareCommit\x12r\n" +
+	"\x18ssh_credential_provision\x18\x17 \x01(\v26.muxvia.client.binding.v1.SSHCredentialProvisionResultH\x00R\x16sshCredentialProvisionB\a\n" +
 	"\x05event\"b\n" +
 	"\x18CredentialResolveRequest\x12\x1f\n" +
 	"\vendpoint_id\x18\x01 \x01(\tR\n" +
@@ -5261,21 +5260,21 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\x0eregistry_proto\x18\x01 \x01(\fR\rregistryProto\x124\n" +
 	"\x16delete_credential_refs\x18\x02 \x03(\tR\x14deleteCredentialRefs\"?\n" +
 	"\x16EndpointRegistryLoaded\x12%\n" +
-	"\x0eregistry_proto\x18\x01 \x01(\fR\rregistryProto\"I\n" +
-	"\x0fSignalingEvents\x126\n" +
-	"\x06events\x18\x01 \x03(\v2\x1e.termx.cloud.v1.SignalingEventR\x06events\"\x9b\x01\n" +
+	"\x0eregistry_proto\x18\x01 \x01(\fR\rregistryProto\"J\n" +
+	"\x0fSignalingEvents\x127\n" +
+	"\x06events\x18\x01 \x03(\v2\x1f.muxvia.cloud.v1.SignalingEventR\x06events\"\x9c\x01\n" +
 	"\x1cCloudRouteEligibilityRequest\x12.\n" +
-	"\x13account_profile_ref\x18\x01 \x01(\tR\x11accountProfileRef\x12K\n" +
+	"\x13account_profile_ref\x18\x01 \x01(\tR\x11accountProfileRef\x12L\n" +
 	"\n" +
-	"relay_mode\x18\x02 \x01(\x0e2,.termx.remote.auth.v1.ManagedWebRTCRelayModeR\trelayMode\"\xb6\x01\n" +
+	"relay_mode\x18\x02 \x01(\x0e2-.muxvia.remote.auth.v1.ManagedWebRTCRelayModeR\trelayMode\"\xb6\x01\n" +
 	"\x15CloudRouteEligibility\x12:\n" +
 	"\x19account_session_available\x18\x01 \x01(\bR\x17accountSessionAvailable\x128\n" +
 	"\x18managed_direct_available\x18\x02 \x01(\bR\x16managedDirectAvailable\x12'\n" +
-	"\x0frelay_available\x18\x03 \x01(\bR\x0erelayAvailable\"\xbe\x01\n" +
-	"\x15WebRTCOpenPeerRequest\x12:\n" +
-	"\vice_servers\x18\x01 \x03(\v2\x19.termx.cloud.v1.IceServerR\n" +
-	"iceServers\x12J\n" +
-	"\x10route_preference\x18\x02 \x01(\x0e2\x1f.termx.cloud.v1.RoutePreferenceR\x0froutePreference\x12\x1d\n" +
+	"\x0frelay_available\x18\x03 \x01(\bR\x0erelayAvailable\"\xc0\x01\n" +
+	"\x15WebRTCOpenPeerRequest\x12;\n" +
+	"\vice_servers\x18\x01 \x03(\v2\x1a.muxvia.cloud.v1.IceServerR\n" +
+	"iceServers\x12K\n" +
+	"\x10route_preference\x18\x02 \x01(\x0e2 .muxvia.cloud.v1.RoutePreferenceR\x0froutePreference\x12\x1d\n" +
 	"\n" +
 	"relay_only\x18\x03 \x01(\bR\trelayOnly\"Z\n" +
 	"\x10WebRTCPeerOpened\x12\x1f\n" +
@@ -5286,18 +5285,18 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\vpeer_handle\x18\x01 \x01(\x04R\n" +
 	"peerHandle\"6\n" +
 	"\x17WebRTCCreateOfferResult\x12\x1b\n" +
-	"\toffer_sdp\x18\x01 \x01(\tR\bofferSdp\"\x98\x01\n" +
+	"\toffer_sdp\x18\x01 \x01(\tR\bofferSdp\"\x99\x01\n" +
 	"\x18WebRTCApplyAnswerRequest\x12\x1f\n" +
 	"\vpeer_handle\x18\x01 \x01(\x04R\n" +
 	"peerHandle\x12\x1d\n" +
 	"\n" +
-	"answer_sdp\x18\x02 \x01(\tR\tanswerSdp\x12<\n" +
+	"answer_sdp\x18\x02 \x01(\tR\tanswerSdp\x12=\n" +
 	"\n" +
-	"candidates\x18\x03 \x03(\v2\x1c.termx.cloud.v1.IceCandidateR\n" +
-	"candidates\"\x9a\x01\n" +
+	"candidates\x18\x03 \x03(\v2\x1d.muxvia.cloud.v1.IceCandidateR\n" +
+	"candidates\"\x9b\x01\n" +
 	"\x0fWebRTCPeerReady\x12D\n" +
-	"\x1eremote_certificate_fingerprint\x18\x01 \x01(\tR\x1cremoteCertificateFingerprint\x12A\n" +
-	"\robserved_path\x18\x02 \x01(\x0e2\x1c.termx.cloud.v1.ObservedPathR\fobservedPath\"[\n" +
+	"\x1eremote_certificate_fingerprint\x18\x01 \x01(\tR\x1cremoteCertificateFingerprint\x12B\n" +
+	"\robserved_path\x18\x02 \x01(\x0e2\x1d.muxvia.cloud.v1.ObservedPathR\fobservedPath\"[\n" +
 	"\x18WebRTCChannelSendRequest\x12%\n" +
 	"\x0echannel_handle\x18\x01 \x01(\x04R\rchannelHandle\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\fR\apayload\"B\n" +
@@ -5309,11 +5308,11 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\x19WebRTCPeerSnapshotRequest\x12\x1f\n" +
 	"\vpeer_handle\x18\x01 \x01(\x04R\n" +
 	"peerHandle\x12/\n" +
-	"\x14sampled_at_unix_nano\x18\x02 \x01(\x03R\x11sampledAtUnixNano\"\x9d\x03\n" +
+	"\x14sampled_at_unix_nano\x18\x02 \x01(\x03R\x11sampledAtUnixNano\"\x9e\x03\n" +
 	"\x12WebRTCPeerSnapshot\x12\x14\n" +
 	"\x05valid\x18\x01 \x01(\bR\x05valid\x12\x17\n" +
-	"\apair_id\x18\x02 \x01(\tR\x06pairId\x120\n" +
-	"\x04path\x18\x03 \x01(\x0e2\x1c.termx.cloud.v1.ObservedPathR\x04path\x12#\n" +
+	"\apair_id\x18\x02 \x01(\tR\x06pairId\x121\n" +
+	"\x04path\x18\x03 \x01(\x0e2\x1d.muxvia.cloud.v1.ObservedPathR\x04path\x12#\n" +
 	"\rnetwork_class\x18\x04 \x01(\tR\fnetworkClass\x12/\n" +
 	"\x14sampled_at_unix_nano\x18\x05 \x01(\x03R\x11sampledAtUnixNano\x12(\n" +
 	"\x10round_trip_nanos\x18\x06 \x01(\x03R\x0eroundTripNanos\x12\x1d\n" +
@@ -5334,68 +5333,68 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\x0echannel_handle\x18\x01 \x01(\x04R\rchannelHandle\"n\n" +
 	"\x1cWebRTCBufferedAmountLowEvent\x12%\n" +
 	"\x0echannel_handle\x18\x01 \x01(\x04R\rchannelHandle\x12'\n" +
-	"\x0fbuffered_amount\x18\x02 \x01(\x04R\x0ebufferedAmount\"\xe3\x02\n" +
-	"\rPlatformEvent\x12j\n" +
+	"\x0fbuffered_amount\x18\x02 \x01(\x04R\x0ebufferedAmount\"\xe6\x02\n" +
+	"\rPlatformEvent\x12k\n" +
 	"\x16webrtc_channel_message\x18\n" +
-	" \x01(\v22.termx.client.binding.v1.WebRTCChannelMessageEventH\x00R\x14webrtcChannelMessage\x12g\n" +
-	"\x15webrtc_channel_closed\x18\v \x01(\v21.termx.client.binding.v1.WebRTCChannelClosedEventH\x00R\x13webrtcChannelClosed\x12t\n" +
-	"\x1awebrtc_buffered_amount_low\x18\f \x01(\v25.termx.client.binding.v1.WebRTCBufferedAmountLowEventH\x00R\x17webrtcBufferedAmountLowB\a\n" +
-	"\x05event\"\xd5\x14\n" +
+	" \x01(\v23.muxvia.client.binding.v1.WebRTCChannelMessageEventH\x00R\x14webrtcChannelMessage\x12h\n" +
+	"\x15webrtc_channel_closed\x18\v \x01(\v22.muxvia.client.binding.v1.WebRTCChannelClosedEventH\x00R\x13webrtcChannelClosed\x12u\n" +
+	"\x1awebrtc_buffered_amount_low\x18\f \x01(\v26.muxvia.client.binding.v1.WebRTCBufferedAmountLowEventH\x00R\x17webrtcBufferedAmountLowB\a\n" +
+	"\x05event\"\xef\x14\n" +
 	"\x0fPlatformRequest\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\x04R\trequestId\x12b\n" +
+	"request_id\x18\x01 \x01(\x04R\trequestId\x12c\n" +
 	"\x12credential_resolve\x18\n" +
-	" \x01(\v21.termx.client.binding.v1.CredentialResolveRequestH\x00R\x11credentialResolve\x12b\n" +
-	"\x12credential_prepare\x18\v \x01(\v21.termx.client.binding.v1.CredentialPrepareRequestH\x00R\x11credentialPrepare\x12_\n" +
-	"\x11credential_delete\x18\f \x01(\v20.termx.client.binding.v1.CredentialDeleteRequestH\x00R\x10credentialDelete\x12Y\n" +
-	"\x0fcredential_sign\x18\r \x01(\v2..termx.client.binding.v1.CredentialSignRequestH\x00R\x0ecredentialSign\x12Y\n" +
-	"\x0fcredential_bind\x18\x0e \x01(\v2..termx.client.binding.v1.CredentialBindRequestH\x00R\x0ecredentialBind\x12l\n" +
-	"\x16endpoint_registry_load\x18\x0f \x01(\v24.termx.client.binding.v1.EndpointRegistryLoadRequestH\x00R\x14endpointRegistryLoad\x12o\n" +
-	"\x17endpoint_registry_store\x18\x10 \x01(\v25.termx.client.binding.v1.EndpointRegistryStoreRequestH\x00R\x15endpointRegistryStore\x12i\n" +
-	"\x15ssh_credential_lookup\x18\x11 \x01(\v23.termx.client.binding.v1.SSHCredentialLookupRequestH\x00R\x13sshCredentialLookup\x12c\n" +
-	"\x13ssh_credential_sign\x18\x12 \x01(\v21.termx.client.binding.v1.SSHCredentialSignRequestH\x00R\x11sshCredentialSign\x12i\n" +
-	"\x15ssh_credential_delete\x18\x13 \x01(\v23.termx.client.binding.v1.SSHCredentialDeleteRequestH\x00R\x13sshCredentialDelete\x12^\n" +
-	"\x16cloud_resolve_endpoint\x18\x14 \x01(\v2&.termx.cloud.v1.ResolveEndpointRequestH\x00R\x14cloudResolveEndpoint\x12e\n" +
-	"\x16cloud_create_signaling\x18\x15 \x01(\v2-.termx.cloud.v1.CreateSignalingSessionRequestH\x00R\x14cloudCreateSignaling\x12Z\n" +
-	"\x13cloud_acquire_relay\x18\x16 \x01(\v2(.termx.cloud.v1.AcquireRelayLeaseRequestH\x00R\x11cloudAcquireRelay\x12S\n" +
-	"\x10cloud_plan_route\x18\x17 \x01(\v2'.termx.cloud.v1.PlanManagedRouteRequestH\x00R\x0ecloudPlanRoute\x12\\\n" +
-	"\x14cloud_report_quality\x18\x18 \x01(\v2(.termx.cloud.v1.ReportPathQualityRequestH\x00R\x12cloudReportQuality\x12b\n" +
-	"\x14cloud_report_outcome\x18\x19 \x01(\v2..termx.cloud.v1.ReportConnectionOutcomeRequestH\x00R\x12cloudReportOutcome\x12o\n" +
-	"\x17cloud_route_eligibility\x18\x1a \x01(\v25.termx.client.binding.v1.CloudRouteEligibilityRequestH\x00R\x15cloudRouteEligibility\x12Z\n" +
-	"\x10webrtc_open_peer\x18\x1e \x01(\v2..termx.client.binding.v1.WebRTCOpenPeerRequestH\x00R\x0ewebrtcOpenPeer\x12\\\n" +
-	"\x13webrtc_create_offer\x18\x1f \x01(\v2*.termx.client.binding.v1.WebRTCPeerRequestH\x00R\x11webrtcCreateOffer\x12c\n" +
-	"\x13webrtc_apply_answer\x18  \x01(\v21.termx.client.binding.v1.WebRTCApplyAnswerRequestH\x00R\x11webrtcApplyAnswer\x12X\n" +
-	"\x11webrtc_wait_ready\x18! \x01(\v2*.termx.client.binding.v1.WebRTCPeerRequestH\x00R\x0fwebrtcWaitReady\x12c\n" +
-	"\x13webrtc_channel_send\x18\" \x01(\v21.termx.client.binding.v1.WebRTCChannelSendRequestH\x00R\x11webrtcChannelSend\x12r\n" +
-	"\x18webrtc_channel_threshold\x18# \x01(\v26.termx.client.binding.v1.WebRTCChannelThresholdRequestH\x00R\x16webrtcChannelThreshold\x12f\n" +
-	"\x14webrtc_peer_snapshot\x18$ \x01(\v22.termx.client.binding.v1.WebRTCPeerSnapshotRequestH\x00R\x12webrtcPeerSnapshot\x12Y\n" +
-	"\x11webrtc_close_peer\x18% \x01(\v2+.termx.client.binding.v1.WebRTCCloseRequestH\x00R\x0fwebrtcClosePeer\x12_\n" +
-	"\x14webrtc_close_channel\x18& \x01(\v2+.termx.client.binding.v1.WebRTCCloseRequestH\x00R\x12webrtcCloseChannelB\t\n" +
-	"\arequest\"\xff\f\n" +
+	" \x01(\v22.muxvia.client.binding.v1.CredentialResolveRequestH\x00R\x11credentialResolve\x12c\n" +
+	"\x12credential_prepare\x18\v \x01(\v22.muxvia.client.binding.v1.CredentialPrepareRequestH\x00R\x11credentialPrepare\x12`\n" +
+	"\x11credential_delete\x18\f \x01(\v21.muxvia.client.binding.v1.CredentialDeleteRequestH\x00R\x10credentialDelete\x12Z\n" +
+	"\x0fcredential_sign\x18\r \x01(\v2/.muxvia.client.binding.v1.CredentialSignRequestH\x00R\x0ecredentialSign\x12Z\n" +
+	"\x0fcredential_bind\x18\x0e \x01(\v2/.muxvia.client.binding.v1.CredentialBindRequestH\x00R\x0ecredentialBind\x12m\n" +
+	"\x16endpoint_registry_load\x18\x0f \x01(\v25.muxvia.client.binding.v1.EndpointRegistryLoadRequestH\x00R\x14endpointRegistryLoad\x12p\n" +
+	"\x17endpoint_registry_store\x18\x10 \x01(\v26.muxvia.client.binding.v1.EndpointRegistryStoreRequestH\x00R\x15endpointRegistryStore\x12j\n" +
+	"\x15ssh_credential_lookup\x18\x11 \x01(\v24.muxvia.client.binding.v1.SSHCredentialLookupRequestH\x00R\x13sshCredentialLookup\x12d\n" +
+	"\x13ssh_credential_sign\x18\x12 \x01(\v22.muxvia.client.binding.v1.SSHCredentialSignRequestH\x00R\x11sshCredentialSign\x12j\n" +
+	"\x15ssh_credential_delete\x18\x13 \x01(\v24.muxvia.client.binding.v1.SSHCredentialDeleteRequestH\x00R\x13sshCredentialDelete\x12_\n" +
+	"\x16cloud_resolve_endpoint\x18\x14 \x01(\v2'.muxvia.cloud.v1.ResolveEndpointRequestH\x00R\x14cloudResolveEndpoint\x12f\n" +
+	"\x16cloud_create_signaling\x18\x15 \x01(\v2..muxvia.cloud.v1.CreateSignalingSessionRequestH\x00R\x14cloudCreateSignaling\x12[\n" +
+	"\x13cloud_acquire_relay\x18\x16 \x01(\v2).muxvia.cloud.v1.AcquireRelayLeaseRequestH\x00R\x11cloudAcquireRelay\x12T\n" +
+	"\x10cloud_plan_route\x18\x17 \x01(\v2(.muxvia.cloud.v1.PlanManagedRouteRequestH\x00R\x0ecloudPlanRoute\x12]\n" +
+	"\x14cloud_report_quality\x18\x18 \x01(\v2).muxvia.cloud.v1.ReportPathQualityRequestH\x00R\x12cloudReportQuality\x12c\n" +
+	"\x14cloud_report_outcome\x18\x19 \x01(\v2/.muxvia.cloud.v1.ReportConnectionOutcomeRequestH\x00R\x12cloudReportOutcome\x12p\n" +
+	"\x17cloud_route_eligibility\x18\x1a \x01(\v26.muxvia.client.binding.v1.CloudRouteEligibilityRequestH\x00R\x15cloudRouteEligibility\x12[\n" +
+	"\x10webrtc_open_peer\x18\x1e \x01(\v2/.muxvia.client.binding.v1.WebRTCOpenPeerRequestH\x00R\x0ewebrtcOpenPeer\x12]\n" +
+	"\x13webrtc_create_offer\x18\x1f \x01(\v2+.muxvia.client.binding.v1.WebRTCPeerRequestH\x00R\x11webrtcCreateOffer\x12d\n" +
+	"\x13webrtc_apply_answer\x18  \x01(\v22.muxvia.client.binding.v1.WebRTCApplyAnswerRequestH\x00R\x11webrtcApplyAnswer\x12Y\n" +
+	"\x11webrtc_wait_ready\x18! \x01(\v2+.muxvia.client.binding.v1.WebRTCPeerRequestH\x00R\x0fwebrtcWaitReady\x12d\n" +
+	"\x13webrtc_channel_send\x18\" \x01(\v22.muxvia.client.binding.v1.WebRTCChannelSendRequestH\x00R\x11webrtcChannelSend\x12s\n" +
+	"\x18webrtc_channel_threshold\x18# \x01(\v27.muxvia.client.binding.v1.WebRTCChannelThresholdRequestH\x00R\x16webrtcChannelThreshold\x12g\n" +
+	"\x14webrtc_peer_snapshot\x18$ \x01(\v23.muxvia.client.binding.v1.WebRTCPeerSnapshotRequestH\x00R\x12webrtcPeerSnapshot\x12Z\n" +
+	"\x11webrtc_close_peer\x18% \x01(\v2,.muxvia.client.binding.v1.WebRTCCloseRequestH\x00R\x0fwebrtcClosePeer\x12`\n" +
+	"\x14webrtc_close_channel\x18& \x01(\v2,.muxvia.client.binding.v1.WebRTCCloseRequestH\x00R\x12webrtcCloseChannelB\t\n" +
+	"\arequest\"\x91\r\n" +
 	"\x10PlatformResponse\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\x04R\trequestId\x12,\n" +
-	"\x05error\x18\x02 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error\x12K\n" +
+	"request_id\x18\x01 \x01(\x04R\trequestId\x12-\n" +
+	"\x05error\x18\x02 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\x12L\n" +
 	"\n" +
 	"credential\x18\n" +
-	" \x01(\v2).termx.client.binding.v1.CredentialRecordH\x00R\n" +
-	"credential\x12Z\n" +
-	"\x0fcredential_sign\x18\v \x01(\v2/.termx.client.binding.v1.CredentialSignResponseH\x00R\x0ecredentialSign\x12^\n" +
-	"\x11endpoint_registry\x18\f \x01(\v2/.termx.client.binding.v1.EndpointRegistryLoadedH\x00R\x10endpointRegistry\x12U\n" +
-	"\x0essh_credential\x18\r \x01(\v2,.termx.client.binding.v1.SSHCredentialRecordH\x00R\rsshCredential\x12d\n" +
-	"\x13ssh_credential_sign\x18\x0e \x01(\v22.termx.client.binding.v1.SSHCredentialSignResponseH\x00R\x11sshCredentialSign\x12Z\n" +
-	"\x17cloud_resolved_endpoint\x18\x14 \x01(\v2 .termx.cloud.v1.ResolvedEndpointH\x00R\x15cloudResolvedEndpoint\x12S\n" +
-	"\x0fcloud_signaling\x18\x15 \x01(\v2(.termx.client.binding.v1.SignalingEventsH\x00R\x0ecloudSignaling\x12H\n" +
-	"\x11cloud_relay_lease\x18\x16 \x01(\v2\x1a.termx.cloud.v1.RelayLeaseH\x00R\x0fcloudRelayLease\x12L\n" +
-	"\x10cloud_route_plan\x18\x17 \x01(\v2 .termx.cloud.v1.ManagedRoutePlanH\x00R\x0ecloudRoutePlan\x12a\n" +
-	"\x16cloud_quality_reported\x18\x18 \x01(\v2).termx.cloud.v1.ReportPathQualityResponseH\x00R\x14cloudQualityReported\x12g\n" +
-	"\x16cloud_outcome_reported\x18\x19 \x01(\v2/.termx.cloud.v1.ReportConnectionOutcomeResponseH\x00R\x14cloudOutcomeReported\x12h\n" +
-	"\x17cloud_route_eligibility\x18\x1a \x01(\v2..termx.client.binding.v1.CloudRouteEligibilityH\x00R\x15cloudRouteEligibility\x12Y\n" +
-	"\x12webrtc_peer_opened\x18\x1e \x01(\v2).termx.client.binding.v1.WebRTCPeerOpenedH\x00R\x10webrtcPeerOpened\x12U\n" +
-	"\fwebrtc_offer\x18\x1f \x01(\v20.termx.client.binding.v1.WebRTCCreateOfferResultH\x00R\vwebrtcOffer\x12V\n" +
-	"\x11webrtc_peer_ready\x18  \x01(\v2(.termx.client.binding.v1.WebRTCPeerReadyH\x00R\x0fwebrtcPeerReady\x12b\n" +
-	"\x13webrtc_channel_sent\x18! \x01(\v20.termx.client.binding.v1.WebRTCChannelSendResultH\x00R\x11webrtcChannelSent\x12_\n" +
-	"\x14webrtc_peer_snapshot\x18\" \x01(\v2+.termx.client.binding.v1.WebRTCPeerSnapshotH\x00R\x12webrtcPeerSnapshotB\n" +
+	" \x01(\v2*.muxvia.client.binding.v1.CredentialRecordH\x00R\n" +
+	"credential\x12[\n" +
+	"\x0fcredential_sign\x18\v \x01(\v20.muxvia.client.binding.v1.CredentialSignResponseH\x00R\x0ecredentialSign\x12_\n" +
+	"\x11endpoint_registry\x18\f \x01(\v20.muxvia.client.binding.v1.EndpointRegistryLoadedH\x00R\x10endpointRegistry\x12V\n" +
+	"\x0essh_credential\x18\r \x01(\v2-.muxvia.client.binding.v1.SSHCredentialRecordH\x00R\rsshCredential\x12e\n" +
+	"\x13ssh_credential_sign\x18\x0e \x01(\v23.muxvia.client.binding.v1.SSHCredentialSignResponseH\x00R\x11sshCredentialSign\x12[\n" +
+	"\x17cloud_resolved_endpoint\x18\x14 \x01(\v2!.muxvia.cloud.v1.ResolvedEndpointH\x00R\x15cloudResolvedEndpoint\x12T\n" +
+	"\x0fcloud_signaling\x18\x15 \x01(\v2).muxvia.client.binding.v1.SignalingEventsH\x00R\x0ecloudSignaling\x12I\n" +
+	"\x11cloud_relay_lease\x18\x16 \x01(\v2\x1b.muxvia.cloud.v1.RelayLeaseH\x00R\x0fcloudRelayLease\x12M\n" +
+	"\x10cloud_route_plan\x18\x17 \x01(\v2!.muxvia.cloud.v1.ManagedRoutePlanH\x00R\x0ecloudRoutePlan\x12b\n" +
+	"\x16cloud_quality_reported\x18\x18 \x01(\v2*.muxvia.cloud.v1.ReportPathQualityResponseH\x00R\x14cloudQualityReported\x12h\n" +
+	"\x16cloud_outcome_reported\x18\x19 \x01(\v20.muxvia.cloud.v1.ReportConnectionOutcomeResponseH\x00R\x14cloudOutcomeReported\x12i\n" +
+	"\x17cloud_route_eligibility\x18\x1a \x01(\v2/.muxvia.client.binding.v1.CloudRouteEligibilityH\x00R\x15cloudRouteEligibility\x12Z\n" +
+	"\x12webrtc_peer_opened\x18\x1e \x01(\v2*.muxvia.client.binding.v1.WebRTCPeerOpenedH\x00R\x10webrtcPeerOpened\x12V\n" +
+	"\fwebrtc_offer\x18\x1f \x01(\v21.muxvia.client.binding.v1.WebRTCCreateOfferResultH\x00R\vwebrtcOffer\x12W\n" +
+	"\x11webrtc_peer_ready\x18  \x01(\v2).muxvia.client.binding.v1.WebRTCPeerReadyH\x00R\x0fwebrtcPeerReady\x12c\n" +
+	"\x13webrtc_channel_sent\x18! \x01(\v21.muxvia.client.binding.v1.WebRTCChannelSendResultH\x00R\x11webrtcChannelSent\x12`\n" +
+	"\x14webrtc_peer_snapshot\x18\" \x01(\v2,.muxvia.client.binding.v1.WebRTCPeerSnapshotH\x00R\x12webrtcPeerSnapshotB\n" +
 	"\n" +
 	"\bresponse*\x88\x01\n" +
 	"\rConnectIntent\x12\x1e\n" +
@@ -5410,7 +5409,7 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"&RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH\x10\x03\x12*\n" +
 	"&RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT\x10\x04\x12$\n" +
 	" RESOURCE_STREAM_FRAME_TYPE_ERROR\x10\x05\x12/\n" +
-	"+RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO\x10\x06B)Z'github.com/lozzow/termx/proto/bindingpbb\x06proto3"
+	"+RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO\x10\x06B*Z(github.com/muxvia/muxvia/proto/bindingpbb\x06proto3"
 
 var (
 	file_bindingpb_client_binding_proto_rawDescOnce sync.Once
@@ -5427,210 +5426,210 @@ func file_bindingpb_client_binding_proto_rawDescGZIP() []byte {
 var file_bindingpb_client_binding_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_bindingpb_client_binding_proto_msgTypes = make([]protoimpl.MessageInfo, 64)
 var file_bindingpb_client_binding_proto_goTypes = []any{
-	(ConnectIntent)(0),                                // 0: termx.client.binding.v1.ConnectIntent
-	(ResourceStreamFrameType)(0),                      // 1: termx.client.binding.v1.ResourceStreamFrameType
-	(*OpenSessionRequest)(nil),                        // 2: termx.client.binding.v1.OpenSessionRequest
-	(*ImportPairingRequest)(nil),                      // 3: termx.client.binding.v1.ImportPairingRequest
-	(*ImportPairingResult)(nil),                       // 4: termx.client.binding.v1.ImportPairingResult
-	(*DeleteCredentialRequest)(nil),                   // 5: termx.client.binding.v1.DeleteCredentialRequest
-	(*DeleteCredentialResult)(nil),                    // 6: termx.client.binding.v1.DeleteCredentialResult
-	(*EndpointRegistryGetRequest)(nil),                // 7: termx.client.binding.v1.EndpointRegistryGetRequest
-	(*EndpointRegistryGetResult)(nil),                 // 8: termx.client.binding.v1.EndpointRegistryGetResult
-	(*EndpointUpsertRequest)(nil),                     // 9: termx.client.binding.v1.EndpointUpsertRequest
-	(*EndpointUpsertResult)(nil),                      // 10: termx.client.binding.v1.EndpointUpsertResult
-	(*EndpointDeleteRequest)(nil),                     // 11: termx.client.binding.v1.EndpointDeleteRequest
-	(*EndpointDeleteResult)(nil),                      // 12: termx.client.binding.v1.EndpointDeleteResult
-	(*EndpointShareReceiveRequest)(nil),               // 13: termx.client.binding.v1.EndpointShareReceiveRequest
-	(*EndpointShareRouteDiff)(nil),                    // 14: termx.client.binding.v1.EndpointShareRouteDiff
-	(*EndpointSharePreview)(nil),                      // 15: termx.client.binding.v1.EndpointSharePreview
-	(*EndpointShareReceiveResult)(nil),                // 16: termx.client.binding.v1.EndpointShareReceiveResult
-	(*EndpointShareCommitRequest)(nil),                // 17: termx.client.binding.v1.EndpointShareCommitRequest
-	(*EndpointShareCommitResult)(nil),                 // 18: termx.client.binding.v1.EndpointShareCommitResult
-	(*SSHCredentialProvisionRequest)(nil),             // 19: termx.client.binding.v1.SSHCredentialProvisionRequest
-	(*SSHCredentialProvisionResult)(nil),              // 20: termx.client.binding.v1.SSHCredentialProvisionResult
-	(*EngineCommand)(nil),                             // 21: termx.client.binding.v1.EngineCommand
-	(*OpenSessionResult)(nil),                         // 22: termx.client.binding.v1.OpenSessionResult
-	(*ExecuteResult)(nil),                             // 23: termx.client.binding.v1.ExecuteResult
-	(*ApplicationEvent)(nil),                          // 24: termx.client.binding.v1.ApplicationEvent
-	(*OpenResourceStreamRequest)(nil),                 // 25: termx.client.binding.v1.OpenResourceStreamRequest
-	(*ResourceStreamFrame)(nil),                       // 26: termx.client.binding.v1.ResourceStreamFrame
-	(*ResourceStreamClosedEvent)(nil),                 // 27: termx.client.binding.v1.ResourceStreamClosedEvent
-	(*SessionClosedEvent)(nil),                        // 28: termx.client.binding.v1.SessionClosedEvent
-	(*EventEnvelope)(nil),                             // 29: termx.client.binding.v1.EventEnvelope
-	(*CredentialResolveRequest)(nil),                  // 30: termx.client.binding.v1.CredentialResolveRequest
-	(*CredentialPrepareRequest)(nil),                  // 31: termx.client.binding.v1.CredentialPrepareRequest
-	(*CredentialDeleteRequest)(nil),                   // 32: termx.client.binding.v1.CredentialDeleteRequest
-	(*CredentialBindRequest)(nil),                     // 33: termx.client.binding.v1.CredentialBindRequest
-	(*CredentialRecord)(nil),                          // 34: termx.client.binding.v1.CredentialRecord
-	(*CredentialSignRequest)(nil),                     // 35: termx.client.binding.v1.CredentialSignRequest
-	(*CredentialSignResponse)(nil),                    // 36: termx.client.binding.v1.CredentialSignResponse
-	(*SSHCredentialLookupRequest)(nil),                // 37: termx.client.binding.v1.SSHCredentialLookupRequest
-	(*SSHCredentialDeleteRequest)(nil),                // 38: termx.client.binding.v1.SSHCredentialDeleteRequest
-	(*SSHCredentialRecord)(nil),                       // 39: termx.client.binding.v1.SSHCredentialRecord
-	(*SSHCredentialSignRequest)(nil),                  // 40: termx.client.binding.v1.SSHCredentialSignRequest
-	(*SSHCredentialSignResponse)(nil),                 // 41: termx.client.binding.v1.SSHCredentialSignResponse
-	(*EndpointRegistryLoadRequest)(nil),               // 42: termx.client.binding.v1.EndpointRegistryLoadRequest
-	(*EndpointRegistryStoreRequest)(nil),              // 43: termx.client.binding.v1.EndpointRegistryStoreRequest
-	(*EndpointRegistryLoaded)(nil),                    // 44: termx.client.binding.v1.EndpointRegistryLoaded
-	(*SignalingEvents)(nil),                           // 45: termx.client.binding.v1.SignalingEvents
-	(*CloudRouteEligibilityRequest)(nil),              // 46: termx.client.binding.v1.CloudRouteEligibilityRequest
-	(*CloudRouteEligibility)(nil),                     // 47: termx.client.binding.v1.CloudRouteEligibility
-	(*WebRTCOpenPeerRequest)(nil),                     // 48: termx.client.binding.v1.WebRTCOpenPeerRequest
-	(*WebRTCPeerOpened)(nil),                          // 49: termx.client.binding.v1.WebRTCPeerOpened
-	(*WebRTCPeerRequest)(nil),                         // 50: termx.client.binding.v1.WebRTCPeerRequest
-	(*WebRTCCreateOfferResult)(nil),                   // 51: termx.client.binding.v1.WebRTCCreateOfferResult
-	(*WebRTCApplyAnswerRequest)(nil),                  // 52: termx.client.binding.v1.WebRTCApplyAnswerRequest
-	(*WebRTCPeerReady)(nil),                           // 53: termx.client.binding.v1.WebRTCPeerReady
-	(*WebRTCChannelSendRequest)(nil),                  // 54: termx.client.binding.v1.WebRTCChannelSendRequest
-	(*WebRTCChannelSendResult)(nil),                   // 55: termx.client.binding.v1.WebRTCChannelSendResult
-	(*WebRTCChannelThresholdRequest)(nil),             // 56: termx.client.binding.v1.WebRTCChannelThresholdRequest
-	(*WebRTCPeerSnapshotRequest)(nil),                 // 57: termx.client.binding.v1.WebRTCPeerSnapshotRequest
-	(*WebRTCPeerSnapshot)(nil),                        // 58: termx.client.binding.v1.WebRTCPeerSnapshot
-	(*WebRTCCloseRequest)(nil),                        // 59: termx.client.binding.v1.WebRTCCloseRequest
-	(*WebRTCChannelMessageEvent)(nil),                 // 60: termx.client.binding.v1.WebRTCChannelMessageEvent
-	(*WebRTCChannelClosedEvent)(nil),                  // 61: termx.client.binding.v1.WebRTCChannelClosedEvent
-	(*WebRTCBufferedAmountLowEvent)(nil),              // 62: termx.client.binding.v1.WebRTCBufferedAmountLowEvent
-	(*PlatformEvent)(nil),                             // 63: termx.client.binding.v1.PlatformEvent
-	(*PlatformRequest)(nil),                           // 64: termx.client.binding.v1.PlatformRequest
-	(*PlatformResponse)(nil),                          // 65: termx.client.binding.v1.PlatformResponse
-	(*remoteauthpb.EndpointConfigV1)(nil),             // 66: termx.remote.auth.v1.EndpointConfigV1
-	(*apipb.ApiError)(nil),                            // 67: termx.api.v1.ApiError
-	(*remoteauthpb.EndpointRegistryV1)(nil),           // 68: termx.remote.auth.v1.EndpointRegistryV1
-	(*remoteauthpb.EndpointDaemonIdentity)(nil),       // 69: termx.remote.auth.v1.EndpointDaemonIdentity
-	(*remoteauthpb.EndpointCredentialDescriptor)(nil), // 70: termx.remote.auth.v1.EndpointCredentialDescriptor
-	(*apipb.EndpointSessionStamp)(nil),                // 71: termx.api.v1.EndpointSessionStamp
-	(*apipb.ResultEnvelope)(nil),                      // 72: termx.api.v1.ResultEnvelope
-	(*apipb.EventEnvelope)(nil),                       // 73: termx.api.v1.EventEnvelope
-	(*apipb.ResourceHandle)(nil),                      // 74: termx.api.v1.ResourceHandle
-	(*cloudpb.SignalingEvent)(nil),                    // 75: termx.cloud.v1.SignalingEvent
-	(remoteauthpb.ManagedWebRTCRelayMode)(0),          // 76: termx.remote.auth.v1.ManagedWebRTCRelayMode
-	(*cloudpb.IceServer)(nil),                         // 77: termx.cloud.v1.IceServer
-	(cloudpb.RoutePreference)(0),                      // 78: termx.cloud.v1.RoutePreference
-	(*cloudpb.IceCandidate)(nil),                      // 79: termx.cloud.v1.IceCandidate
-	(cloudpb.ObservedPath)(0),                         // 80: termx.cloud.v1.ObservedPath
-	(*cloudpb.ResolveEndpointRequest)(nil),            // 81: termx.cloud.v1.ResolveEndpointRequest
-	(*cloudpb.CreateSignalingSessionRequest)(nil),     // 82: termx.cloud.v1.CreateSignalingSessionRequest
-	(*cloudpb.AcquireRelayLeaseRequest)(nil),          // 83: termx.cloud.v1.AcquireRelayLeaseRequest
-	(*cloudpb.PlanManagedRouteRequest)(nil),           // 84: termx.cloud.v1.PlanManagedRouteRequest
-	(*cloudpb.ReportPathQualityRequest)(nil),          // 85: termx.cloud.v1.ReportPathQualityRequest
-	(*cloudpb.ReportConnectionOutcomeRequest)(nil),    // 86: termx.cloud.v1.ReportConnectionOutcomeRequest
-	(*cloudpb.ResolvedEndpoint)(nil),                  // 87: termx.cloud.v1.ResolvedEndpoint
-	(*cloudpb.RelayLease)(nil),                        // 88: termx.cloud.v1.RelayLease
-	(*cloudpb.ManagedRoutePlan)(nil),                  // 89: termx.cloud.v1.ManagedRoutePlan
-	(*cloudpb.ReportPathQualityResponse)(nil),         // 90: termx.cloud.v1.ReportPathQualityResponse
-	(*cloudpb.ReportConnectionOutcomeResponse)(nil),   // 91: termx.cloud.v1.ReportConnectionOutcomeResponse
+	(ConnectIntent)(0),                                // 0: muxvia.client.binding.v1.ConnectIntent
+	(ResourceStreamFrameType)(0),                      // 1: muxvia.client.binding.v1.ResourceStreamFrameType
+	(*OpenSessionRequest)(nil),                        // 2: muxvia.client.binding.v1.OpenSessionRequest
+	(*ImportPairingRequest)(nil),                      // 3: muxvia.client.binding.v1.ImportPairingRequest
+	(*ImportPairingResult)(nil),                       // 4: muxvia.client.binding.v1.ImportPairingResult
+	(*DeleteCredentialRequest)(nil),                   // 5: muxvia.client.binding.v1.DeleteCredentialRequest
+	(*DeleteCredentialResult)(nil),                    // 6: muxvia.client.binding.v1.DeleteCredentialResult
+	(*EndpointRegistryGetRequest)(nil),                // 7: muxvia.client.binding.v1.EndpointRegistryGetRequest
+	(*EndpointRegistryGetResult)(nil),                 // 8: muxvia.client.binding.v1.EndpointRegistryGetResult
+	(*EndpointUpsertRequest)(nil),                     // 9: muxvia.client.binding.v1.EndpointUpsertRequest
+	(*EndpointUpsertResult)(nil),                      // 10: muxvia.client.binding.v1.EndpointUpsertResult
+	(*EndpointDeleteRequest)(nil),                     // 11: muxvia.client.binding.v1.EndpointDeleteRequest
+	(*EndpointDeleteResult)(nil),                      // 12: muxvia.client.binding.v1.EndpointDeleteResult
+	(*EndpointShareReceiveRequest)(nil),               // 13: muxvia.client.binding.v1.EndpointShareReceiveRequest
+	(*EndpointShareRouteDiff)(nil),                    // 14: muxvia.client.binding.v1.EndpointShareRouteDiff
+	(*EndpointSharePreview)(nil),                      // 15: muxvia.client.binding.v1.EndpointSharePreview
+	(*EndpointShareReceiveResult)(nil),                // 16: muxvia.client.binding.v1.EndpointShareReceiveResult
+	(*EndpointShareCommitRequest)(nil),                // 17: muxvia.client.binding.v1.EndpointShareCommitRequest
+	(*EndpointShareCommitResult)(nil),                 // 18: muxvia.client.binding.v1.EndpointShareCommitResult
+	(*SSHCredentialProvisionRequest)(nil),             // 19: muxvia.client.binding.v1.SSHCredentialProvisionRequest
+	(*SSHCredentialProvisionResult)(nil),              // 20: muxvia.client.binding.v1.SSHCredentialProvisionResult
+	(*EngineCommand)(nil),                             // 21: muxvia.client.binding.v1.EngineCommand
+	(*OpenSessionResult)(nil),                         // 22: muxvia.client.binding.v1.OpenSessionResult
+	(*ExecuteResult)(nil),                             // 23: muxvia.client.binding.v1.ExecuteResult
+	(*ApplicationEvent)(nil),                          // 24: muxvia.client.binding.v1.ApplicationEvent
+	(*OpenResourceStreamRequest)(nil),                 // 25: muxvia.client.binding.v1.OpenResourceStreamRequest
+	(*ResourceStreamFrame)(nil),                       // 26: muxvia.client.binding.v1.ResourceStreamFrame
+	(*ResourceStreamClosedEvent)(nil),                 // 27: muxvia.client.binding.v1.ResourceStreamClosedEvent
+	(*SessionClosedEvent)(nil),                        // 28: muxvia.client.binding.v1.SessionClosedEvent
+	(*EventEnvelope)(nil),                             // 29: muxvia.client.binding.v1.EventEnvelope
+	(*CredentialResolveRequest)(nil),                  // 30: muxvia.client.binding.v1.CredentialResolveRequest
+	(*CredentialPrepareRequest)(nil),                  // 31: muxvia.client.binding.v1.CredentialPrepareRequest
+	(*CredentialDeleteRequest)(nil),                   // 32: muxvia.client.binding.v1.CredentialDeleteRequest
+	(*CredentialBindRequest)(nil),                     // 33: muxvia.client.binding.v1.CredentialBindRequest
+	(*CredentialRecord)(nil),                          // 34: muxvia.client.binding.v1.CredentialRecord
+	(*CredentialSignRequest)(nil),                     // 35: muxvia.client.binding.v1.CredentialSignRequest
+	(*CredentialSignResponse)(nil),                    // 36: muxvia.client.binding.v1.CredentialSignResponse
+	(*SSHCredentialLookupRequest)(nil),                // 37: muxvia.client.binding.v1.SSHCredentialLookupRequest
+	(*SSHCredentialDeleteRequest)(nil),                // 38: muxvia.client.binding.v1.SSHCredentialDeleteRequest
+	(*SSHCredentialRecord)(nil),                       // 39: muxvia.client.binding.v1.SSHCredentialRecord
+	(*SSHCredentialSignRequest)(nil),                  // 40: muxvia.client.binding.v1.SSHCredentialSignRequest
+	(*SSHCredentialSignResponse)(nil),                 // 41: muxvia.client.binding.v1.SSHCredentialSignResponse
+	(*EndpointRegistryLoadRequest)(nil),               // 42: muxvia.client.binding.v1.EndpointRegistryLoadRequest
+	(*EndpointRegistryStoreRequest)(nil),              // 43: muxvia.client.binding.v1.EndpointRegistryStoreRequest
+	(*EndpointRegistryLoaded)(nil),                    // 44: muxvia.client.binding.v1.EndpointRegistryLoaded
+	(*SignalingEvents)(nil),                           // 45: muxvia.client.binding.v1.SignalingEvents
+	(*CloudRouteEligibilityRequest)(nil),              // 46: muxvia.client.binding.v1.CloudRouteEligibilityRequest
+	(*CloudRouteEligibility)(nil),                     // 47: muxvia.client.binding.v1.CloudRouteEligibility
+	(*WebRTCOpenPeerRequest)(nil),                     // 48: muxvia.client.binding.v1.WebRTCOpenPeerRequest
+	(*WebRTCPeerOpened)(nil),                          // 49: muxvia.client.binding.v1.WebRTCPeerOpened
+	(*WebRTCPeerRequest)(nil),                         // 50: muxvia.client.binding.v1.WebRTCPeerRequest
+	(*WebRTCCreateOfferResult)(nil),                   // 51: muxvia.client.binding.v1.WebRTCCreateOfferResult
+	(*WebRTCApplyAnswerRequest)(nil),                  // 52: muxvia.client.binding.v1.WebRTCApplyAnswerRequest
+	(*WebRTCPeerReady)(nil),                           // 53: muxvia.client.binding.v1.WebRTCPeerReady
+	(*WebRTCChannelSendRequest)(nil),                  // 54: muxvia.client.binding.v1.WebRTCChannelSendRequest
+	(*WebRTCChannelSendResult)(nil),                   // 55: muxvia.client.binding.v1.WebRTCChannelSendResult
+	(*WebRTCChannelThresholdRequest)(nil),             // 56: muxvia.client.binding.v1.WebRTCChannelThresholdRequest
+	(*WebRTCPeerSnapshotRequest)(nil),                 // 57: muxvia.client.binding.v1.WebRTCPeerSnapshotRequest
+	(*WebRTCPeerSnapshot)(nil),                        // 58: muxvia.client.binding.v1.WebRTCPeerSnapshot
+	(*WebRTCCloseRequest)(nil),                        // 59: muxvia.client.binding.v1.WebRTCCloseRequest
+	(*WebRTCChannelMessageEvent)(nil),                 // 60: muxvia.client.binding.v1.WebRTCChannelMessageEvent
+	(*WebRTCChannelClosedEvent)(nil),                  // 61: muxvia.client.binding.v1.WebRTCChannelClosedEvent
+	(*WebRTCBufferedAmountLowEvent)(nil),              // 62: muxvia.client.binding.v1.WebRTCBufferedAmountLowEvent
+	(*PlatformEvent)(nil),                             // 63: muxvia.client.binding.v1.PlatformEvent
+	(*PlatformRequest)(nil),                           // 64: muxvia.client.binding.v1.PlatformRequest
+	(*PlatformResponse)(nil),                          // 65: muxvia.client.binding.v1.PlatformResponse
+	(*remoteauthpb.EndpointConfigV1)(nil),             // 66: muxvia.remote.auth.v1.EndpointConfigV1
+	(*apipb.ApiError)(nil),                            // 67: muxvia.api.v1.ApiError
+	(*remoteauthpb.EndpointRegistryV1)(nil),           // 68: muxvia.remote.auth.v1.EndpointRegistryV1
+	(*remoteauthpb.EndpointDaemonIdentity)(nil),       // 69: muxvia.remote.auth.v1.EndpointDaemonIdentity
+	(*remoteauthpb.EndpointCredentialDescriptor)(nil), // 70: muxvia.remote.auth.v1.EndpointCredentialDescriptor
+	(*apipb.EndpointSessionStamp)(nil),                // 71: muxvia.api.v1.EndpointSessionStamp
+	(*apipb.ResultEnvelope)(nil),                      // 72: muxvia.api.v1.ResultEnvelope
+	(*apipb.EventEnvelope)(nil),                       // 73: muxvia.api.v1.EventEnvelope
+	(*apipb.ResourceHandle)(nil),                      // 74: muxvia.api.v1.ResourceHandle
+	(*cloudpb.SignalingEvent)(nil),                    // 75: muxvia.cloud.v1.SignalingEvent
+	(remoteauthpb.ManagedWebRTCRelayMode)(0),          // 76: muxvia.remote.auth.v1.ManagedWebRTCRelayMode
+	(*cloudpb.IceServer)(nil),                         // 77: muxvia.cloud.v1.IceServer
+	(cloudpb.RoutePreference)(0),                      // 78: muxvia.cloud.v1.RoutePreference
+	(*cloudpb.IceCandidate)(nil),                      // 79: muxvia.cloud.v1.IceCandidate
+	(cloudpb.ObservedPath)(0),                         // 80: muxvia.cloud.v1.ObservedPath
+	(*cloudpb.ResolveEndpointRequest)(nil),            // 81: muxvia.cloud.v1.ResolveEndpointRequest
+	(*cloudpb.CreateSignalingSessionRequest)(nil),     // 82: muxvia.cloud.v1.CreateSignalingSessionRequest
+	(*cloudpb.AcquireRelayLeaseRequest)(nil),          // 83: muxvia.cloud.v1.AcquireRelayLeaseRequest
+	(*cloudpb.PlanManagedRouteRequest)(nil),           // 84: muxvia.cloud.v1.PlanManagedRouteRequest
+	(*cloudpb.ReportPathQualityRequest)(nil),          // 85: muxvia.cloud.v1.ReportPathQualityRequest
+	(*cloudpb.ReportConnectionOutcomeRequest)(nil),    // 86: muxvia.cloud.v1.ReportConnectionOutcomeRequest
+	(*cloudpb.ResolvedEndpoint)(nil),                  // 87: muxvia.cloud.v1.ResolvedEndpoint
+	(*cloudpb.RelayLease)(nil),                        // 88: muxvia.cloud.v1.RelayLease
+	(*cloudpb.ManagedRoutePlan)(nil),                  // 89: muxvia.cloud.v1.ManagedRoutePlan
+	(*cloudpb.ReportPathQualityResponse)(nil),         // 90: muxvia.cloud.v1.ReportPathQualityResponse
+	(*cloudpb.ReportConnectionOutcomeResponse)(nil),   // 91: muxvia.cloud.v1.ReportConnectionOutcomeResponse
 }
 var file_bindingpb_client_binding_proto_depIdxs = []int32{
-	0,   // 0: termx.client.binding.v1.OpenSessionRequest.intent:type_name -> termx.client.binding.v1.ConnectIntent
-	66,  // 1: termx.client.binding.v1.ImportPairingResult.endpoint:type_name -> termx.remote.auth.v1.EndpointConfigV1
-	67,  // 2: termx.client.binding.v1.ImportPairingResult.error:type_name -> termx.api.v1.ApiError
-	68,  // 3: termx.client.binding.v1.ImportPairingResult.registry:type_name -> termx.remote.auth.v1.EndpointRegistryV1
-	67,  // 4: termx.client.binding.v1.DeleteCredentialResult.error:type_name -> termx.api.v1.ApiError
-	68,  // 5: termx.client.binding.v1.EndpointRegistryGetResult.registry:type_name -> termx.remote.auth.v1.EndpointRegistryV1
-	67,  // 6: termx.client.binding.v1.EndpointRegistryGetResult.error:type_name -> termx.api.v1.ApiError
-	66,  // 7: termx.client.binding.v1.EndpointUpsertRequest.endpoint:type_name -> termx.remote.auth.v1.EndpointConfigV1
-	66,  // 8: termx.client.binding.v1.EndpointUpsertResult.endpoint:type_name -> termx.remote.auth.v1.EndpointConfigV1
-	68,  // 9: termx.client.binding.v1.EndpointUpsertResult.registry:type_name -> termx.remote.auth.v1.EndpointRegistryV1
-	67,  // 10: termx.client.binding.v1.EndpointUpsertResult.error:type_name -> termx.api.v1.ApiError
-	68,  // 11: termx.client.binding.v1.EndpointDeleteResult.registry:type_name -> termx.remote.auth.v1.EndpointRegistryV1
-	67,  // 12: termx.client.binding.v1.EndpointDeleteResult.error:type_name -> termx.api.v1.ApiError
-	69,  // 13: termx.client.binding.v1.EndpointSharePreview.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	14,  // 14: termx.client.binding.v1.EndpointSharePreview.route_diffs:type_name -> termx.client.binding.v1.EndpointShareRouteDiff
-	70,  // 15: termx.client.binding.v1.EndpointSharePreview.credential_descriptors:type_name -> termx.remote.auth.v1.EndpointCredentialDescriptor
-	15,  // 16: termx.client.binding.v1.EndpointShareReceiveResult.preview:type_name -> termx.client.binding.v1.EndpointSharePreview
-	67,  // 17: termx.client.binding.v1.EndpointShareReceiveResult.error:type_name -> termx.api.v1.ApiError
-	66,  // 18: termx.client.binding.v1.EndpointShareCommitResult.endpoint:type_name -> termx.remote.auth.v1.EndpointConfigV1
-	68,  // 19: termx.client.binding.v1.EndpointShareCommitResult.registry:type_name -> termx.remote.auth.v1.EndpointRegistryV1
-	67,  // 20: termx.client.binding.v1.EndpointShareCommitResult.error:type_name -> termx.api.v1.ApiError
-	66,  // 21: termx.client.binding.v1.SSHCredentialProvisionResult.endpoint:type_name -> termx.remote.auth.v1.EndpointConfigV1
-	68,  // 22: termx.client.binding.v1.SSHCredentialProvisionResult.registry:type_name -> termx.remote.auth.v1.EndpointRegistryV1
-	67,  // 23: termx.client.binding.v1.SSHCredentialProvisionResult.error:type_name -> termx.api.v1.ApiError
-	3,   // 24: termx.client.binding.v1.EngineCommand.import_pairing:type_name -> termx.client.binding.v1.ImportPairingRequest
-	5,   // 25: termx.client.binding.v1.EngineCommand.delete_credential:type_name -> termx.client.binding.v1.DeleteCredentialRequest
-	7,   // 26: termx.client.binding.v1.EngineCommand.endpoint_registry_get:type_name -> termx.client.binding.v1.EndpointRegistryGetRequest
-	9,   // 27: termx.client.binding.v1.EngineCommand.endpoint_upsert:type_name -> termx.client.binding.v1.EndpointUpsertRequest
-	11,  // 28: termx.client.binding.v1.EngineCommand.endpoint_delete:type_name -> termx.client.binding.v1.EndpointDeleteRequest
-	13,  // 29: termx.client.binding.v1.EngineCommand.endpoint_share_receive:type_name -> termx.client.binding.v1.EndpointShareReceiveRequest
-	17,  // 30: termx.client.binding.v1.EngineCommand.endpoint_share_commit:type_name -> termx.client.binding.v1.EndpointShareCommitRequest
-	19,  // 31: termx.client.binding.v1.EngineCommand.ssh_credential_provision:type_name -> termx.client.binding.v1.SSHCredentialProvisionRequest
-	71,  // 32: termx.client.binding.v1.OpenSessionResult.session:type_name -> termx.api.v1.EndpointSessionStamp
-	67,  // 33: termx.client.binding.v1.OpenSessionResult.error:type_name -> termx.api.v1.ApiError
-	72,  // 34: termx.client.binding.v1.ExecuteResult.result:type_name -> termx.api.v1.ResultEnvelope
-	67,  // 35: termx.client.binding.v1.ExecuteResult.error:type_name -> termx.api.v1.ApiError
-	73,  // 36: termx.client.binding.v1.ApplicationEvent.event:type_name -> termx.api.v1.EventEnvelope
-	74,  // 37: termx.client.binding.v1.OpenResourceStreamRequest.resource:type_name -> termx.api.v1.ResourceHandle
-	1,   // 38: termx.client.binding.v1.ResourceStreamFrame.type:type_name -> termx.client.binding.v1.ResourceStreamFrameType
-	67,  // 39: termx.client.binding.v1.ResourceStreamClosedEvent.error:type_name -> termx.api.v1.ApiError
-	71,  // 40: termx.client.binding.v1.SessionClosedEvent.session:type_name -> termx.api.v1.EndpointSessionStamp
-	67,  // 41: termx.client.binding.v1.SessionClosedEvent.error:type_name -> termx.api.v1.ApiError
-	22,  // 42: termx.client.binding.v1.EventEnvelope.open_session:type_name -> termx.client.binding.v1.OpenSessionResult
-	23,  // 43: termx.client.binding.v1.EventEnvelope.execute:type_name -> termx.client.binding.v1.ExecuteResult
-	24,  // 44: termx.client.binding.v1.EventEnvelope.application:type_name -> termx.client.binding.v1.ApplicationEvent
-	28,  // 45: termx.client.binding.v1.EventEnvelope.session_closed:type_name -> termx.client.binding.v1.SessionClosedEvent
-	4,   // 46: termx.client.binding.v1.EventEnvelope.import_pairing:type_name -> termx.client.binding.v1.ImportPairingResult
-	6,   // 47: termx.client.binding.v1.EventEnvelope.delete_credential:type_name -> termx.client.binding.v1.DeleteCredentialResult
-	26,  // 48: termx.client.binding.v1.EventEnvelope.resource_stream_frame:type_name -> termx.client.binding.v1.ResourceStreamFrame
-	27,  // 49: termx.client.binding.v1.EventEnvelope.resource_stream_closed:type_name -> termx.client.binding.v1.ResourceStreamClosedEvent
-	8,   // 50: termx.client.binding.v1.EventEnvelope.endpoint_registry_get:type_name -> termx.client.binding.v1.EndpointRegistryGetResult
-	10,  // 51: termx.client.binding.v1.EventEnvelope.endpoint_upsert:type_name -> termx.client.binding.v1.EndpointUpsertResult
-	12,  // 52: termx.client.binding.v1.EventEnvelope.endpoint_delete:type_name -> termx.client.binding.v1.EndpointDeleteResult
-	16,  // 53: termx.client.binding.v1.EventEnvelope.endpoint_share_receive:type_name -> termx.client.binding.v1.EndpointShareReceiveResult
-	18,  // 54: termx.client.binding.v1.EventEnvelope.endpoint_share_commit:type_name -> termx.client.binding.v1.EndpointShareCommitResult
-	20,  // 55: termx.client.binding.v1.EventEnvelope.ssh_credential_provision:type_name -> termx.client.binding.v1.SSHCredentialProvisionResult
-	75,  // 56: termx.client.binding.v1.SignalingEvents.events:type_name -> termx.cloud.v1.SignalingEvent
-	76,  // 57: termx.client.binding.v1.CloudRouteEligibilityRequest.relay_mode:type_name -> termx.remote.auth.v1.ManagedWebRTCRelayMode
-	77,  // 58: termx.client.binding.v1.WebRTCOpenPeerRequest.ice_servers:type_name -> termx.cloud.v1.IceServer
-	78,  // 59: termx.client.binding.v1.WebRTCOpenPeerRequest.route_preference:type_name -> termx.cloud.v1.RoutePreference
-	79,  // 60: termx.client.binding.v1.WebRTCApplyAnswerRequest.candidates:type_name -> termx.cloud.v1.IceCandidate
-	80,  // 61: termx.client.binding.v1.WebRTCPeerReady.observed_path:type_name -> termx.cloud.v1.ObservedPath
-	80,  // 62: termx.client.binding.v1.WebRTCPeerSnapshot.path:type_name -> termx.cloud.v1.ObservedPath
-	60,  // 63: termx.client.binding.v1.PlatformEvent.webrtc_channel_message:type_name -> termx.client.binding.v1.WebRTCChannelMessageEvent
-	61,  // 64: termx.client.binding.v1.PlatformEvent.webrtc_channel_closed:type_name -> termx.client.binding.v1.WebRTCChannelClosedEvent
-	62,  // 65: termx.client.binding.v1.PlatformEvent.webrtc_buffered_amount_low:type_name -> termx.client.binding.v1.WebRTCBufferedAmountLowEvent
-	30,  // 66: termx.client.binding.v1.PlatformRequest.credential_resolve:type_name -> termx.client.binding.v1.CredentialResolveRequest
-	31,  // 67: termx.client.binding.v1.PlatformRequest.credential_prepare:type_name -> termx.client.binding.v1.CredentialPrepareRequest
-	32,  // 68: termx.client.binding.v1.PlatformRequest.credential_delete:type_name -> termx.client.binding.v1.CredentialDeleteRequest
-	35,  // 69: termx.client.binding.v1.PlatformRequest.credential_sign:type_name -> termx.client.binding.v1.CredentialSignRequest
-	33,  // 70: termx.client.binding.v1.PlatformRequest.credential_bind:type_name -> termx.client.binding.v1.CredentialBindRequest
-	42,  // 71: termx.client.binding.v1.PlatformRequest.endpoint_registry_load:type_name -> termx.client.binding.v1.EndpointRegistryLoadRequest
-	43,  // 72: termx.client.binding.v1.PlatformRequest.endpoint_registry_store:type_name -> termx.client.binding.v1.EndpointRegistryStoreRequest
-	37,  // 73: termx.client.binding.v1.PlatformRequest.ssh_credential_lookup:type_name -> termx.client.binding.v1.SSHCredentialLookupRequest
-	40,  // 74: termx.client.binding.v1.PlatformRequest.ssh_credential_sign:type_name -> termx.client.binding.v1.SSHCredentialSignRequest
-	38,  // 75: termx.client.binding.v1.PlatformRequest.ssh_credential_delete:type_name -> termx.client.binding.v1.SSHCredentialDeleteRequest
-	81,  // 76: termx.client.binding.v1.PlatformRequest.cloud_resolve_endpoint:type_name -> termx.cloud.v1.ResolveEndpointRequest
-	82,  // 77: termx.client.binding.v1.PlatformRequest.cloud_create_signaling:type_name -> termx.cloud.v1.CreateSignalingSessionRequest
-	83,  // 78: termx.client.binding.v1.PlatformRequest.cloud_acquire_relay:type_name -> termx.cloud.v1.AcquireRelayLeaseRequest
-	84,  // 79: termx.client.binding.v1.PlatformRequest.cloud_plan_route:type_name -> termx.cloud.v1.PlanManagedRouteRequest
-	85,  // 80: termx.client.binding.v1.PlatformRequest.cloud_report_quality:type_name -> termx.cloud.v1.ReportPathQualityRequest
-	86,  // 81: termx.client.binding.v1.PlatformRequest.cloud_report_outcome:type_name -> termx.cloud.v1.ReportConnectionOutcomeRequest
-	46,  // 82: termx.client.binding.v1.PlatformRequest.cloud_route_eligibility:type_name -> termx.client.binding.v1.CloudRouteEligibilityRequest
-	48,  // 83: termx.client.binding.v1.PlatformRequest.webrtc_open_peer:type_name -> termx.client.binding.v1.WebRTCOpenPeerRequest
-	50,  // 84: termx.client.binding.v1.PlatformRequest.webrtc_create_offer:type_name -> termx.client.binding.v1.WebRTCPeerRequest
-	52,  // 85: termx.client.binding.v1.PlatformRequest.webrtc_apply_answer:type_name -> termx.client.binding.v1.WebRTCApplyAnswerRequest
-	50,  // 86: termx.client.binding.v1.PlatformRequest.webrtc_wait_ready:type_name -> termx.client.binding.v1.WebRTCPeerRequest
-	54,  // 87: termx.client.binding.v1.PlatformRequest.webrtc_channel_send:type_name -> termx.client.binding.v1.WebRTCChannelSendRequest
-	56,  // 88: termx.client.binding.v1.PlatformRequest.webrtc_channel_threshold:type_name -> termx.client.binding.v1.WebRTCChannelThresholdRequest
-	57,  // 89: termx.client.binding.v1.PlatformRequest.webrtc_peer_snapshot:type_name -> termx.client.binding.v1.WebRTCPeerSnapshotRequest
-	59,  // 90: termx.client.binding.v1.PlatformRequest.webrtc_close_peer:type_name -> termx.client.binding.v1.WebRTCCloseRequest
-	59,  // 91: termx.client.binding.v1.PlatformRequest.webrtc_close_channel:type_name -> termx.client.binding.v1.WebRTCCloseRequest
-	67,  // 92: termx.client.binding.v1.PlatformResponse.error:type_name -> termx.api.v1.ApiError
-	34,  // 93: termx.client.binding.v1.PlatformResponse.credential:type_name -> termx.client.binding.v1.CredentialRecord
-	36,  // 94: termx.client.binding.v1.PlatformResponse.credential_sign:type_name -> termx.client.binding.v1.CredentialSignResponse
-	44,  // 95: termx.client.binding.v1.PlatformResponse.endpoint_registry:type_name -> termx.client.binding.v1.EndpointRegistryLoaded
-	39,  // 96: termx.client.binding.v1.PlatformResponse.ssh_credential:type_name -> termx.client.binding.v1.SSHCredentialRecord
-	41,  // 97: termx.client.binding.v1.PlatformResponse.ssh_credential_sign:type_name -> termx.client.binding.v1.SSHCredentialSignResponse
-	87,  // 98: termx.client.binding.v1.PlatformResponse.cloud_resolved_endpoint:type_name -> termx.cloud.v1.ResolvedEndpoint
-	45,  // 99: termx.client.binding.v1.PlatformResponse.cloud_signaling:type_name -> termx.client.binding.v1.SignalingEvents
-	88,  // 100: termx.client.binding.v1.PlatformResponse.cloud_relay_lease:type_name -> termx.cloud.v1.RelayLease
-	89,  // 101: termx.client.binding.v1.PlatformResponse.cloud_route_plan:type_name -> termx.cloud.v1.ManagedRoutePlan
-	90,  // 102: termx.client.binding.v1.PlatformResponse.cloud_quality_reported:type_name -> termx.cloud.v1.ReportPathQualityResponse
-	91,  // 103: termx.client.binding.v1.PlatformResponse.cloud_outcome_reported:type_name -> termx.cloud.v1.ReportConnectionOutcomeResponse
-	47,  // 104: termx.client.binding.v1.PlatformResponse.cloud_route_eligibility:type_name -> termx.client.binding.v1.CloudRouteEligibility
-	49,  // 105: termx.client.binding.v1.PlatformResponse.webrtc_peer_opened:type_name -> termx.client.binding.v1.WebRTCPeerOpened
-	51,  // 106: termx.client.binding.v1.PlatformResponse.webrtc_offer:type_name -> termx.client.binding.v1.WebRTCCreateOfferResult
-	53,  // 107: termx.client.binding.v1.PlatformResponse.webrtc_peer_ready:type_name -> termx.client.binding.v1.WebRTCPeerReady
-	55,  // 108: termx.client.binding.v1.PlatformResponse.webrtc_channel_sent:type_name -> termx.client.binding.v1.WebRTCChannelSendResult
-	58,  // 109: termx.client.binding.v1.PlatformResponse.webrtc_peer_snapshot:type_name -> termx.client.binding.v1.WebRTCPeerSnapshot
+	0,   // 0: muxvia.client.binding.v1.OpenSessionRequest.intent:type_name -> muxvia.client.binding.v1.ConnectIntent
+	66,  // 1: muxvia.client.binding.v1.ImportPairingResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	67,  // 2: muxvia.client.binding.v1.ImportPairingResult.error:type_name -> muxvia.api.v1.ApiError
+	68,  // 3: muxvia.client.binding.v1.ImportPairingResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	67,  // 4: muxvia.client.binding.v1.DeleteCredentialResult.error:type_name -> muxvia.api.v1.ApiError
+	68,  // 5: muxvia.client.binding.v1.EndpointRegistryGetResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	67,  // 6: muxvia.client.binding.v1.EndpointRegistryGetResult.error:type_name -> muxvia.api.v1.ApiError
+	66,  // 7: muxvia.client.binding.v1.EndpointUpsertRequest.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	66,  // 8: muxvia.client.binding.v1.EndpointUpsertResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	68,  // 9: muxvia.client.binding.v1.EndpointUpsertResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	67,  // 10: muxvia.client.binding.v1.EndpointUpsertResult.error:type_name -> muxvia.api.v1.ApiError
+	68,  // 11: muxvia.client.binding.v1.EndpointDeleteResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	67,  // 12: muxvia.client.binding.v1.EndpointDeleteResult.error:type_name -> muxvia.api.v1.ApiError
+	69,  // 13: muxvia.client.binding.v1.EndpointSharePreview.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
+	14,  // 14: muxvia.client.binding.v1.EndpointSharePreview.route_diffs:type_name -> muxvia.client.binding.v1.EndpointShareRouteDiff
+	70,  // 15: muxvia.client.binding.v1.EndpointSharePreview.credential_descriptors:type_name -> muxvia.remote.auth.v1.EndpointCredentialDescriptor
+	15,  // 16: muxvia.client.binding.v1.EndpointShareReceiveResult.preview:type_name -> muxvia.client.binding.v1.EndpointSharePreview
+	67,  // 17: muxvia.client.binding.v1.EndpointShareReceiveResult.error:type_name -> muxvia.api.v1.ApiError
+	66,  // 18: muxvia.client.binding.v1.EndpointShareCommitResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	68,  // 19: muxvia.client.binding.v1.EndpointShareCommitResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	67,  // 20: muxvia.client.binding.v1.EndpointShareCommitResult.error:type_name -> muxvia.api.v1.ApiError
+	66,  // 21: muxvia.client.binding.v1.SSHCredentialProvisionResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	68,  // 22: muxvia.client.binding.v1.SSHCredentialProvisionResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	67,  // 23: muxvia.client.binding.v1.SSHCredentialProvisionResult.error:type_name -> muxvia.api.v1.ApiError
+	3,   // 24: muxvia.client.binding.v1.EngineCommand.import_pairing:type_name -> muxvia.client.binding.v1.ImportPairingRequest
+	5,   // 25: muxvia.client.binding.v1.EngineCommand.delete_credential:type_name -> muxvia.client.binding.v1.DeleteCredentialRequest
+	7,   // 26: muxvia.client.binding.v1.EngineCommand.endpoint_registry_get:type_name -> muxvia.client.binding.v1.EndpointRegistryGetRequest
+	9,   // 27: muxvia.client.binding.v1.EngineCommand.endpoint_upsert:type_name -> muxvia.client.binding.v1.EndpointUpsertRequest
+	11,  // 28: muxvia.client.binding.v1.EngineCommand.endpoint_delete:type_name -> muxvia.client.binding.v1.EndpointDeleteRequest
+	13,  // 29: muxvia.client.binding.v1.EngineCommand.endpoint_share_receive:type_name -> muxvia.client.binding.v1.EndpointShareReceiveRequest
+	17,  // 30: muxvia.client.binding.v1.EngineCommand.endpoint_share_commit:type_name -> muxvia.client.binding.v1.EndpointShareCommitRequest
+	19,  // 31: muxvia.client.binding.v1.EngineCommand.ssh_credential_provision:type_name -> muxvia.client.binding.v1.SSHCredentialProvisionRequest
+	71,  // 32: muxvia.client.binding.v1.OpenSessionResult.session:type_name -> muxvia.api.v1.EndpointSessionStamp
+	67,  // 33: muxvia.client.binding.v1.OpenSessionResult.error:type_name -> muxvia.api.v1.ApiError
+	72,  // 34: muxvia.client.binding.v1.ExecuteResult.result:type_name -> muxvia.api.v1.ResultEnvelope
+	67,  // 35: muxvia.client.binding.v1.ExecuteResult.error:type_name -> muxvia.api.v1.ApiError
+	73,  // 36: muxvia.client.binding.v1.ApplicationEvent.event:type_name -> muxvia.api.v1.EventEnvelope
+	74,  // 37: muxvia.client.binding.v1.OpenResourceStreamRequest.resource:type_name -> muxvia.api.v1.ResourceHandle
+	1,   // 38: muxvia.client.binding.v1.ResourceStreamFrame.type:type_name -> muxvia.client.binding.v1.ResourceStreamFrameType
+	67,  // 39: muxvia.client.binding.v1.ResourceStreamClosedEvent.error:type_name -> muxvia.api.v1.ApiError
+	71,  // 40: muxvia.client.binding.v1.SessionClosedEvent.session:type_name -> muxvia.api.v1.EndpointSessionStamp
+	67,  // 41: muxvia.client.binding.v1.SessionClosedEvent.error:type_name -> muxvia.api.v1.ApiError
+	22,  // 42: muxvia.client.binding.v1.EventEnvelope.open_session:type_name -> muxvia.client.binding.v1.OpenSessionResult
+	23,  // 43: muxvia.client.binding.v1.EventEnvelope.execute:type_name -> muxvia.client.binding.v1.ExecuteResult
+	24,  // 44: muxvia.client.binding.v1.EventEnvelope.application:type_name -> muxvia.client.binding.v1.ApplicationEvent
+	28,  // 45: muxvia.client.binding.v1.EventEnvelope.session_closed:type_name -> muxvia.client.binding.v1.SessionClosedEvent
+	4,   // 46: muxvia.client.binding.v1.EventEnvelope.import_pairing:type_name -> muxvia.client.binding.v1.ImportPairingResult
+	6,   // 47: muxvia.client.binding.v1.EventEnvelope.delete_credential:type_name -> muxvia.client.binding.v1.DeleteCredentialResult
+	26,  // 48: muxvia.client.binding.v1.EventEnvelope.resource_stream_frame:type_name -> muxvia.client.binding.v1.ResourceStreamFrame
+	27,  // 49: muxvia.client.binding.v1.EventEnvelope.resource_stream_closed:type_name -> muxvia.client.binding.v1.ResourceStreamClosedEvent
+	8,   // 50: muxvia.client.binding.v1.EventEnvelope.endpoint_registry_get:type_name -> muxvia.client.binding.v1.EndpointRegistryGetResult
+	10,  // 51: muxvia.client.binding.v1.EventEnvelope.endpoint_upsert:type_name -> muxvia.client.binding.v1.EndpointUpsertResult
+	12,  // 52: muxvia.client.binding.v1.EventEnvelope.endpoint_delete:type_name -> muxvia.client.binding.v1.EndpointDeleteResult
+	16,  // 53: muxvia.client.binding.v1.EventEnvelope.endpoint_share_receive:type_name -> muxvia.client.binding.v1.EndpointShareReceiveResult
+	18,  // 54: muxvia.client.binding.v1.EventEnvelope.endpoint_share_commit:type_name -> muxvia.client.binding.v1.EndpointShareCommitResult
+	20,  // 55: muxvia.client.binding.v1.EventEnvelope.ssh_credential_provision:type_name -> muxvia.client.binding.v1.SSHCredentialProvisionResult
+	75,  // 56: muxvia.client.binding.v1.SignalingEvents.events:type_name -> muxvia.cloud.v1.SignalingEvent
+	76,  // 57: muxvia.client.binding.v1.CloudRouteEligibilityRequest.relay_mode:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRelayMode
+	77,  // 58: muxvia.client.binding.v1.WebRTCOpenPeerRequest.ice_servers:type_name -> muxvia.cloud.v1.IceServer
+	78,  // 59: muxvia.client.binding.v1.WebRTCOpenPeerRequest.route_preference:type_name -> muxvia.cloud.v1.RoutePreference
+	79,  // 60: muxvia.client.binding.v1.WebRTCApplyAnswerRequest.candidates:type_name -> muxvia.cloud.v1.IceCandidate
+	80,  // 61: muxvia.client.binding.v1.WebRTCPeerReady.observed_path:type_name -> muxvia.cloud.v1.ObservedPath
+	80,  // 62: muxvia.client.binding.v1.WebRTCPeerSnapshot.path:type_name -> muxvia.cloud.v1.ObservedPath
+	60,  // 63: muxvia.client.binding.v1.PlatformEvent.webrtc_channel_message:type_name -> muxvia.client.binding.v1.WebRTCChannelMessageEvent
+	61,  // 64: muxvia.client.binding.v1.PlatformEvent.webrtc_channel_closed:type_name -> muxvia.client.binding.v1.WebRTCChannelClosedEvent
+	62,  // 65: muxvia.client.binding.v1.PlatformEvent.webrtc_buffered_amount_low:type_name -> muxvia.client.binding.v1.WebRTCBufferedAmountLowEvent
+	30,  // 66: muxvia.client.binding.v1.PlatformRequest.credential_resolve:type_name -> muxvia.client.binding.v1.CredentialResolveRequest
+	31,  // 67: muxvia.client.binding.v1.PlatformRequest.credential_prepare:type_name -> muxvia.client.binding.v1.CredentialPrepareRequest
+	32,  // 68: muxvia.client.binding.v1.PlatformRequest.credential_delete:type_name -> muxvia.client.binding.v1.CredentialDeleteRequest
+	35,  // 69: muxvia.client.binding.v1.PlatformRequest.credential_sign:type_name -> muxvia.client.binding.v1.CredentialSignRequest
+	33,  // 70: muxvia.client.binding.v1.PlatformRequest.credential_bind:type_name -> muxvia.client.binding.v1.CredentialBindRequest
+	42,  // 71: muxvia.client.binding.v1.PlatformRequest.endpoint_registry_load:type_name -> muxvia.client.binding.v1.EndpointRegistryLoadRequest
+	43,  // 72: muxvia.client.binding.v1.PlatformRequest.endpoint_registry_store:type_name -> muxvia.client.binding.v1.EndpointRegistryStoreRequest
+	37,  // 73: muxvia.client.binding.v1.PlatformRequest.ssh_credential_lookup:type_name -> muxvia.client.binding.v1.SSHCredentialLookupRequest
+	40,  // 74: muxvia.client.binding.v1.PlatformRequest.ssh_credential_sign:type_name -> muxvia.client.binding.v1.SSHCredentialSignRequest
+	38,  // 75: muxvia.client.binding.v1.PlatformRequest.ssh_credential_delete:type_name -> muxvia.client.binding.v1.SSHCredentialDeleteRequest
+	81,  // 76: muxvia.client.binding.v1.PlatformRequest.cloud_resolve_endpoint:type_name -> muxvia.cloud.v1.ResolveEndpointRequest
+	82,  // 77: muxvia.client.binding.v1.PlatformRequest.cloud_create_signaling:type_name -> muxvia.cloud.v1.CreateSignalingSessionRequest
+	83,  // 78: muxvia.client.binding.v1.PlatformRequest.cloud_acquire_relay:type_name -> muxvia.cloud.v1.AcquireRelayLeaseRequest
+	84,  // 79: muxvia.client.binding.v1.PlatformRequest.cloud_plan_route:type_name -> muxvia.cloud.v1.PlanManagedRouteRequest
+	85,  // 80: muxvia.client.binding.v1.PlatformRequest.cloud_report_quality:type_name -> muxvia.cloud.v1.ReportPathQualityRequest
+	86,  // 81: muxvia.client.binding.v1.PlatformRequest.cloud_report_outcome:type_name -> muxvia.cloud.v1.ReportConnectionOutcomeRequest
+	46,  // 82: muxvia.client.binding.v1.PlatformRequest.cloud_route_eligibility:type_name -> muxvia.client.binding.v1.CloudRouteEligibilityRequest
+	48,  // 83: muxvia.client.binding.v1.PlatformRequest.webrtc_open_peer:type_name -> muxvia.client.binding.v1.WebRTCOpenPeerRequest
+	50,  // 84: muxvia.client.binding.v1.PlatformRequest.webrtc_create_offer:type_name -> muxvia.client.binding.v1.WebRTCPeerRequest
+	52,  // 85: muxvia.client.binding.v1.PlatformRequest.webrtc_apply_answer:type_name -> muxvia.client.binding.v1.WebRTCApplyAnswerRequest
+	50,  // 86: muxvia.client.binding.v1.PlatformRequest.webrtc_wait_ready:type_name -> muxvia.client.binding.v1.WebRTCPeerRequest
+	54,  // 87: muxvia.client.binding.v1.PlatformRequest.webrtc_channel_send:type_name -> muxvia.client.binding.v1.WebRTCChannelSendRequest
+	56,  // 88: muxvia.client.binding.v1.PlatformRequest.webrtc_channel_threshold:type_name -> muxvia.client.binding.v1.WebRTCChannelThresholdRequest
+	57,  // 89: muxvia.client.binding.v1.PlatformRequest.webrtc_peer_snapshot:type_name -> muxvia.client.binding.v1.WebRTCPeerSnapshotRequest
+	59,  // 90: muxvia.client.binding.v1.PlatformRequest.webrtc_close_peer:type_name -> muxvia.client.binding.v1.WebRTCCloseRequest
+	59,  // 91: muxvia.client.binding.v1.PlatformRequest.webrtc_close_channel:type_name -> muxvia.client.binding.v1.WebRTCCloseRequest
+	67,  // 92: muxvia.client.binding.v1.PlatformResponse.error:type_name -> muxvia.api.v1.ApiError
+	34,  // 93: muxvia.client.binding.v1.PlatformResponse.credential:type_name -> muxvia.client.binding.v1.CredentialRecord
+	36,  // 94: muxvia.client.binding.v1.PlatformResponse.credential_sign:type_name -> muxvia.client.binding.v1.CredentialSignResponse
+	44,  // 95: muxvia.client.binding.v1.PlatformResponse.endpoint_registry:type_name -> muxvia.client.binding.v1.EndpointRegistryLoaded
+	39,  // 96: muxvia.client.binding.v1.PlatformResponse.ssh_credential:type_name -> muxvia.client.binding.v1.SSHCredentialRecord
+	41,  // 97: muxvia.client.binding.v1.PlatformResponse.ssh_credential_sign:type_name -> muxvia.client.binding.v1.SSHCredentialSignResponse
+	87,  // 98: muxvia.client.binding.v1.PlatformResponse.cloud_resolved_endpoint:type_name -> muxvia.cloud.v1.ResolvedEndpoint
+	45,  // 99: muxvia.client.binding.v1.PlatformResponse.cloud_signaling:type_name -> muxvia.client.binding.v1.SignalingEvents
+	88,  // 100: muxvia.client.binding.v1.PlatformResponse.cloud_relay_lease:type_name -> muxvia.cloud.v1.RelayLease
+	89,  // 101: muxvia.client.binding.v1.PlatformResponse.cloud_route_plan:type_name -> muxvia.cloud.v1.ManagedRoutePlan
+	90,  // 102: muxvia.client.binding.v1.PlatformResponse.cloud_quality_reported:type_name -> muxvia.cloud.v1.ReportPathQualityResponse
+	91,  // 103: muxvia.client.binding.v1.PlatformResponse.cloud_outcome_reported:type_name -> muxvia.cloud.v1.ReportConnectionOutcomeResponse
+	47,  // 104: muxvia.client.binding.v1.PlatformResponse.cloud_route_eligibility:type_name -> muxvia.client.binding.v1.CloudRouteEligibility
+	49,  // 105: muxvia.client.binding.v1.PlatformResponse.webrtc_peer_opened:type_name -> muxvia.client.binding.v1.WebRTCPeerOpened
+	51,  // 106: muxvia.client.binding.v1.PlatformResponse.webrtc_offer:type_name -> muxvia.client.binding.v1.WebRTCCreateOfferResult
+	53,  // 107: muxvia.client.binding.v1.PlatformResponse.webrtc_peer_ready:type_name -> muxvia.client.binding.v1.WebRTCPeerReady
+	55,  // 108: muxvia.client.binding.v1.PlatformResponse.webrtc_channel_sent:type_name -> muxvia.client.binding.v1.WebRTCChannelSendResult
+	58,  // 109: muxvia.client.binding.v1.PlatformResponse.webrtc_peer_snapshot:type_name -> muxvia.client.binding.v1.WebRTCPeerSnapshot
 	110, // [110:110] is the sub-list for method output_type
 	110, // [110:110] is the sub-list for method input_type
 	110, // [110:110] is the sub-list for extension type_name

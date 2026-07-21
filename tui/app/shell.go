@@ -8,11 +8,11 @@ import (
 	"time"
 	"unicode"
 
-	actiondomain "github.com/lozzow/termx/tui/action"
-	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/port"
-	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/state"
+	actiondomain "github.com/muxvia/muxvia/tui/action"
+	"github.com/muxvia/muxvia/tui/input"
+	"github.com/muxvia/muxvia/tui/port"
+	"github.com/muxvia/muxvia/tui/render"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 type ShellSetPanelPresentationMsg struct {

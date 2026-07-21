@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/client/port"
+	"github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/client/port"
 )
 
 // RoutePlanEnvironment 是 composition root 提供给纯 planner 的当前平台能力快照。

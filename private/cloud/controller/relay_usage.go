@@ -8,11 +8,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
-	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
-	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
-	"github.com/lozzow/termx/private/cloud/control-plane/usage"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
+	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/usage"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
 )
 

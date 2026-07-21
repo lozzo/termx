@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
-	"github.com/lozzow/termx/private/cloud/control-plane/usage"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/companion/cloudservice/httpapi"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/usage"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
 )
 

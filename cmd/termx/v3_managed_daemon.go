@@ -8,12 +8,12 @@ import (
 	"runtime"
 	"time"
 
-	corev2 "github.com/lozzow/termx/core"
-	"github.com/lozzow/termx/proto/cloudpb"
-	remotev2daemon "github.com/lozzow/termx/remote/daemon"
-	remotev2webrtc "github.com/lozzow/termx/remote/webrtc"
-	"github.com/lozzow/termx/shared/cloudcompanion"
-	"github.com/lozzow/termx/shared/transport"
+	corev2 "github.com/muxvia/muxvia/core"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	remotev2daemon "github.com/muxvia/muxvia/remote/daemon"
+	remotev2webrtc "github.com/muxvia/muxvia/remote/webrtc"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
+	"github.com/muxvia/muxvia/shared/transport"
 )
 
 var openV3CloudDaemonCompanion = defaultOpenV3CloudDaemonCompanion

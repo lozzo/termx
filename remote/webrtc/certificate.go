@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lozzow/termx/shared/remoteauth"
+	"github.com/muxvia/muxvia/shared/remoteauth"
 	pion "github.com/pion/webrtc/v4"
 )
 

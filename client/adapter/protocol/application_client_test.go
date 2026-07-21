@@ -5,11 +5,11 @@ import (
 	"crypto/ed25519"
 	"testing"
 
-	"github.com/lozzow/termx/client/endpoint"
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	"github.com/lozzow/termx/proto/apipb"
-	"github.com/lozzow/termx/proto/remoteauthpb"
-	"github.com/lozzow/termx/shared/remoteauth"
+	"github.com/muxvia/muxvia/client/endpoint"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/muxvia/muxvia/shared/remoteauth"
 	"google.golang.org/protobuf/proto"
 )
 

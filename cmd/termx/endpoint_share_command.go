@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	shareadapter "github.com/lozzow/termx/client/adapter/share"
-	systemadapter "github.com/lozzow/termx/client/adapter/system"
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
+	shareadapter "github.com/muxvia/muxvia/client/adapter/share"
+	systemadapter "github.com/muxvia/muxvia/client/adapter/system"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
 	qrcode "github.com/skip2/go-qrcode"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"

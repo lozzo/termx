@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/commerce"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 // MobileActivationService 是 Web 账号 surface 到 Controller 扫码登录状态机的唯一边界。

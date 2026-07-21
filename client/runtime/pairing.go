@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/shared/remoteauth"
-	"github.com/lozzow/termx/shared/transport"
+	"github.com/muxvia/muxvia/shared/remoteauth"
+	"github.com/muxvia/muxvia/shared/transport"
 )
 
 // PairingPeerSession 是 Route connector 完成 signaling、ICE、DTLS 和 DataChannel 后交给通用 pairing service 的最小边界。

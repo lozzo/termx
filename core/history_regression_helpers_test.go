@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lozzow/termx/core/history"
+	"github.com/muxvia/muxvia/core/history"
 )
 
 func historyTextCount(rows []history.HistoryRow, needle string) int {

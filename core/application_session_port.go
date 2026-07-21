@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/binary"
 
-	"github.com/lozzow/termx/core/history"
-	"github.com/lozzow/termx/proto/wire"
+	"github.com/muxvia/muxvia/core/history"
+	"github.com/muxvia/muxvia/proto/wire"
 )
 
 type protocolAdmissionLease struct{}

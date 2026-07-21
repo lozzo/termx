@@ -10,9 +10,9 @@ import (
 
 func TestPublicRemoteRuntimeDoesNotDependOnPrivateServices(t *testing.T) {
 	forbidden := []string{
-		"github.com/lozzow/termx/termx-hub",
-		"github.com/lozzow/termx/web-control",
-		"github.com/lozzow/termx/private/",
+		"github.com/muxvia/muxvia/termx-hub",
+		"github.com/muxvia/muxvia/web-control",
+		"github.com/muxvia/muxvia/private/",
 		"session_token",
 		"/api/v1/sessions",
 	}

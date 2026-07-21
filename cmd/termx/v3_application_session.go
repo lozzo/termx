@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
-	clientruntime "github.com/lozzow/termx/client/runtime"
+	protocoladapter "github.com/muxvia/muxvia/client/adapter/protocol"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
 )
 
 func newLocalApplicationSession(client *protocoladapter.ApplicationClient) (*clientruntime.ApplicationSession, error) {

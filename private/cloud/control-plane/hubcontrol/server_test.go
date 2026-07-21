@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/hubcontrol"
-	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
-	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
-	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/hubcontrol"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
+	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
+	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
 )
 

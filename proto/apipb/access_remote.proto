@@ -1,23 +1,23 @@
 syntax = "proto3";
 
-package termx.api.v1;
+package muxvia.api.v1;
 
 import "remoteauthpb/remote_auth.proto";
 
-option go_package = "github.com/lozzow/termx/proto/apipb";
+option go_package = "github.com/muxvia/muxvia/proto/apipb";
 
 message ClientAccessIdentityCommand { reserved 1; bytes challenge = 2; }
 message ClientAccessListCommand { reserved 1; }
-message ClientAccessTicketCreateCommand { reserved 1; termx.remote.auth.v1.ClientAccessTicketCreateRequest request = 2; }
-message ClientAccessRevokeCommand { reserved 1; termx.remote.auth.v1.ClientAccessRevokeRequest request = 2; }
+message ClientAccessTicketCreateCommand { reserved 1; muxvia.remote.auth.v1.ClientAccessTicketCreateRequest request = 2; }
+message ClientAccessRevokeCommand { reserved 1; muxvia.remote.auth.v1.ClientAccessRevokeRequest request = 2; }
 message ClientAccessIdentityResult {
-  termx.remote.auth.v1.ClientAccessIdentityResult identity = 1;
+  muxvia.remote.auth.v1.ClientAccessIdentityResult identity = 1;
   bytes challenge = 2;
   bytes proof = 3;
 }
-message ClientAccessListResult { termx.remote.auth.v1.ClientAccessListResult access = 1; }
-message ClientAccessTicketCreateResult { termx.remote.auth.v1.ClientAccessTicketCreateResult ticket = 1; }
-message ClientAccessRevokeResult { termx.remote.auth.v1.ClientAccessRecord record = 1; }
+message ClientAccessListResult { muxvia.remote.auth.v1.ClientAccessListResult access = 1; }
+message ClientAccessTicketCreateResult { muxvia.remote.auth.v1.ClientAccessTicketCreateResult ticket = 1; }
+message ClientAccessRevokeResult { muxvia.remote.auth.v1.ClientAccessRecord record = 1; }
 
 message RemoteStatusCommand { reserved 1; }
 message RemotePairStartCommand { reserved 1; string local_pair_url = 2; int32 ttl_seconds = 3; int32 auth_ttl_seconds = 4; }

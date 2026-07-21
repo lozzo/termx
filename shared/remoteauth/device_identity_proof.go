@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lozzow/termx/proto/remoteauthpb"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
 	"google.golang.org/protobuf/proto"
 )
 

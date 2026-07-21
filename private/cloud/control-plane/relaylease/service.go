@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/domain"
-	"github.com/lozzow/termx/private/cloud/control-plane/entitlement"
-	"github.com/lozzow/termx/private/cloud/control-plane/relayquota"
-	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/domain"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/entitlement"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/relayquota"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
 )
 
 // InternalReservePath 是 Edge 向 Controller 提交 Proto reservation 的专用内部路径。

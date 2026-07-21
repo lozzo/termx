@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/proto/remoteauthpb"
-	"github.com/lozzow/termx/shared/transport"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/muxvia/muxvia/shared/transport"
 )
 
 const (

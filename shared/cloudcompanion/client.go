@@ -7,7 +7,7 @@ package cloudcompanion
 import (
 	"context"
 
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 const (

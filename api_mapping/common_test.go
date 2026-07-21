@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lozzow/termx/proto/apipb"
+	"github.com/muxvia/muxvia/proto/apipb"
 	"google.golang.org/protobuf/encoding/protowire"
 )
 

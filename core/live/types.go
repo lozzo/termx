@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	vterm "github.com/lozzow/termx/vterm/vterm"
+	vterm "github.com/muxvia/muxvia/vterm/vterm"
 )
 
 const preserveAltScreenOnExitEnv = "TERMX_PRESERVE_ALT_SCREEN_ON_EXIT"

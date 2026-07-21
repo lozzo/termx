@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	clientprotocol "github.com/lozzow/termx/client/adapter/protocol"
-	clientendpoint "github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/proto/apipb"
-	"github.com/lozzow/termx/proto/remoteauthpb"
+	clientprotocol "github.com/muxvia/muxvia/client/adapter/protocol"
+	clientendpoint "github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
 	"github.com/spf13/cobra"
 )
 

@@ -50,7 +50,7 @@ export class BrowserCloudHttpPlatform implements BrowserCloudPlatform {
     const response = await this.post(request.endpointId, '/v1/signaling/create', toBinary(CreateSignalingSessionRequestSchema, request))
     requireMediaType(response, STREAM_MEDIA_TYPE)
     const frames = decodeCloudFrames(new Uint8Array(await response.arrayBuffer()))
-    return { case: 'cloudSignaling', value: { $typeName: 'termx.client.binding.v1.SignalingEvents', events: frames.map((frame) => fromBinary(SignalingEventSchema, frame)) } }
+    return { case: 'cloudSignaling', value: { $typeName: 'muxvia.client.binding.v1.SignalingEvents', events: frames.map((frame) => fromBinary(SignalingEventSchema, frame)) } }
   }
 
   async handleOther(request: PlatformRequest): Promise<PlatformResponse['response']> {

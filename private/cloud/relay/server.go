@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 	pionturn "github.com/pion/turn/v4"
 )
 

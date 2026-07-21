@@ -44,7 +44,7 @@ validate_report() {
   local dependency_package ignored license
   while IFS=, read -r dependency_package ignored license; do
     [[ -n "$dependency_package" ]] || continue
-    if [[ "$dependency_package" == github.com/lozzow/termx/* ]]; then
+    if [[ "$dependency_package" == github.com/muxvia/muxvia/* ]]; then
       continue
     fi
     case "$license" in
@@ -122,7 +122,7 @@ generate_artifact() {
   done
 
   cat "$reports_dir"/*.csv \
-    | awk -F, '$1 !~ /^github.com\/lozzow\/termx\// || $1 == "github.com/lozzow/termx/vterm/internal/vt"' \
+    | awk -F, '$1 !~ /^github.com\/lozzow\/termx\// || $1 == "github.com/muxvia/muxvia/vterm/internal/vt"' \
     | LC_ALL=C sort -u >"$artifact_dir/report.csv"
 
   local raw_output="$artifact_dir/THIRD_PARTY_NOTICES.raw.txt"

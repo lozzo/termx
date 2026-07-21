@@ -3,9 +3,9 @@ package input
 import (
 	"testing"
 
-	actiondomain "github.com/lozzow/termx/tui/action"
-	"github.com/lozzow/termx/tui/shortcut"
-	"github.com/lozzow/termx/tui/state"
+	actiondomain "github.com/muxvia/muxvia/tui/action"
+	"github.com/muxvia/muxvia/tui/shortcut"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 func TestDefaultShortcutCatalogIsAllowedByDomainRegistry(t *testing.T) {

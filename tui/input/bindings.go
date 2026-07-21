@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	actiondomain "github.com/lozzow/termx/tui/action"
-	"github.com/lozzow/termx/tui/shortcut"
-	"github.com/lozzow/termx/tui/state"
+	actiondomain "github.com/muxvia/muxvia/tui/action"
+	"github.com/muxvia/muxvia/tui/shortcut"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 // Binding 是 shortcut catalog 编译后的运行时路由项。

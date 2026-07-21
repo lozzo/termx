@@ -3,15 +3,15 @@ package app
 import (
 	"context"
 	"errors"
-	"github.com/lozzow/termx/tui/testkit"
+	"github.com/muxvia/muxvia/tui/testkit"
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/proto/apipb"
-	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/port"
-	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/muxvia/muxvia/tui/input"
+	"github.com/muxvia/muxvia/tui/port"
+	"github.com/muxvia/muxvia/tui/render"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 func TestWorkbenchStorageReducerLoadsSnapshotFromOpaqueStorage(t *testing.T) {

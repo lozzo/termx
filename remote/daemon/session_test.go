@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	core "github.com/lozzow/termx/core"
-	"github.com/lozzow/termx/proto/cloudpb"
-	remotewebrtc "github.com/lozzow/termx/remote/webrtc"
-	"github.com/lozzow/termx/shared/remoteauth"
-	"github.com/lozzow/termx/shared/transport"
-	"github.com/lozzow/termx/shared/transport/memory"
+	core "github.com/muxvia/muxvia/core"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	remotewebrtc "github.com/muxvia/muxvia/remote/webrtc"
+	"github.com/muxvia/muxvia/shared/remoteauth"
+	"github.com/muxvia/muxvia/shared/transport"
+	"github.com/muxvia/muxvia/shared/transport/memory"
 )
 
 func TestSessionAcceptorAuthenticatesBeforeServingScopedTransport(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/lozzow/termx/tui/input"
+	"github.com/muxvia/muxvia/tui/input"
 )
 
 // InputParser 是 raw TTY 输入分帧与规范化的 owner。

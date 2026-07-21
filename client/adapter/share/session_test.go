@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	shareadapter "github.com/lozzow/termx/client/adapter/share"
-	"github.com/lozzow/termx/client/endpoint"
+	shareadapter "github.com/muxvia/muxvia/client/adapter/share"
+	"github.com/muxvia/muxvia/client/endpoint"
 	"google.golang.org/protobuf/proto"
 )
 

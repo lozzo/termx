@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package termx.cloud.v1;
+package muxvia.cloud.v1;
 
-option go_package = "github.com/lozzow/termx/proto/cloudpb";
+option go_package = "github.com/muxvia/muxvia/proto/cloudpb";
 
 // SubscriptionStatus 是交易状态机投影到服务能力层的稳定订阅状态。
 enum SubscriptionStatus {

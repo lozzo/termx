@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lozzow/termx/internal/protocol"
+	"github.com/muxvia/muxvia/internal/protocol"
 )
 
 func (session *protocolSession) dispatchApplicationPayload(ctx context.Context, payload []byte) ([]byte, bool, int, error) {

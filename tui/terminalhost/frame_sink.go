@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/tui/render"
+	"github.com/muxvia/muxvia/tui/render"
 )
 
 const (

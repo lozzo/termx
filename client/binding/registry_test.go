@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/lozzow/termx/proto/bindingpb"
+	"github.com/muxvia/muxvia/proto/bindingpb"
 	"google.golang.org/protobuf/proto"
 )
 

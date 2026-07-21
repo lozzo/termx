@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/proto/apipb"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/proto/apipb"
 	"github.com/spf13/cobra"
 )
 

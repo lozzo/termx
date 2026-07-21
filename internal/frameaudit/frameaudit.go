@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	localvterm "github.com/lozzow/termx/vterm/vterm"
+	localvterm "github.com/muxvia/muxvia/vterm/vterm"
 )
 
 var dumpHeaderPattern = regexp.MustCompile(`^--- ([a-z_]+) (.+) len=([0-9]+) ---$`)

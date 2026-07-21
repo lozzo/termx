@@ -3,13 +3,13 @@ package app
 import (
 	"context"
 	"fmt"
-	"github.com/lozzow/termx/tui/testkit"
+	"github.com/muxvia/muxvia/tui/testkit"
 	"strings"
 	"testing"
 
-	"github.com/lozzow/termx/tui/port"
-	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/tui/port"
+	"github.com/muxvia/muxvia/tui/render"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 func TestPanelContentAcceptanceMatrix(t *testing.T) {

@@ -1,10 +1,10 @@
 package main
 
 import (
-	pionadapter "github.com/lozzow/termx/client/adapter/managed/pion"
-	"github.com/lozzow/termx/client/binding"
-	"github.com/lozzow/termx/client/binding/enginehost"
-	clientruntime "github.com/lozzow/termx/client/runtime"
+	pionadapter "github.com/muxvia/muxvia/client/adapter/managed/pion"
+	"github.com/muxvia/muxvia/client/binding"
+	"github.com/muxvia/muxvia/client/binding/enginehost"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
 )
 
 var androidSessionAuthority = clientruntime.NewSessionGenerationAuthority()

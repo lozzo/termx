@@ -4,7 +4,7 @@ package system
 import (
 	"time"
 
-	"github.com/lozzow/termx/client/port"
+	"github.com/muxvia/muxvia/client/port"
 )
 
 // Clock 是 native CLI/Desktop composition 注入 client runtime 的系统时间 primitive。

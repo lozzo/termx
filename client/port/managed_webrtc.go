@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 // ManagedMessageChannel 是 Go Client Engine 对可靠有序 WebRTC DataChannel 的最小平台要求。

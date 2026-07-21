@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/transport"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/transport"
 	pion "github.com/pion/webrtc/v4"
 )
 

@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	"github.com/lozzow/termx/proto/apipb"
-	"github.com/lozzow/termx/shared/perftrace"
-	"github.com/lozzow/termx/tui/port"
-	"github.com/lozzow/termx/tui/state"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/muxvia/muxvia/shared/perftrace"
+	"github.com/muxvia/muxvia/tui/port"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 // ProtocolPathServiceAdapter 把 endpoint path completion service 映射到 core-v2 protocol。

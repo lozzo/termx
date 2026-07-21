@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/lozzow/termx/proto/remoteauthpb"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
 )
 
 // EndpointFromProto 把跨 binding/进程传入的 generated EndpointConfigV1 转为 Go Client Engine 领域模型。

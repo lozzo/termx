@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
 )
 

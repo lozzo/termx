@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/companion/cloudservice"
-	"github.com/lozzow/termx/private/cloud/companion/session"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/companion/cloudservice"
+	"github.com/muxvia/muxvia/private/cloud/companion/session"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 // Config 固定 companion build identity、可协商能力和有界 stream 容量。

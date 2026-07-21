@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	corev2 "github.com/lozzow/termx/core"
-	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/proto/wire"
-	unixtransport "github.com/lozzow/termx/shared/transport/unix"
+	corev2 "github.com/muxvia/muxvia/core"
+	"github.com/muxvia/muxvia/internal/protocol"
+	"github.com/muxvia/muxvia/proto/wire"
+	unixtransport "github.com/muxvia/muxvia/shared/transport/unix"
 )
 
 const (

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lozzow/termx/core/history"
+	"github.com/muxvia/muxvia/core/history"
 )
 
 // R435 准入（stress 级）：大流量下投影精确、分页闭环、冷历史跨重启不丢不重。

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 func intPtr(value int) *int {

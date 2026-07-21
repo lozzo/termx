@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/proto/wire"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/proto/wire"
 )
 
 func TestResolveLogFilePathPrefersExplicitValue(t *testing.T) {

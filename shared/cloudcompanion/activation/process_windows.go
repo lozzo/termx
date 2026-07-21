@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"syscall"
 
-	"github.com/lozzow/termx/shared/cloudcompanion/ipc"
+	"github.com/muxvia/muxvia/shared/cloudcompanion/ipc"
 )
 
 func configureDetachedProcess(command *exec.Cmd) {

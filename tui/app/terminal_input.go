@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/port"
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/tui/input"
+	"github.com/muxvia/muxvia/tui/port"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 // NewTerminalInputRouterReducer 是普通 terminal 输入的唯一入口。

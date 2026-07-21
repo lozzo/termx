@@ -824,7 +824,7 @@ func (x *PlanDefinition) GetPresentation() *PlanPresentation {
 // PlanPriceDefinition 是 catalog 与订单快照共用的价格契约。
 type PlanPriceDefinition struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Mode          CatalogPriceMode       `protobuf:"varint,1,opt,name=mode,proto3,enum=termx.cloud.v1.CatalogPriceMode" json:"mode,omitempty"`
+	Mode          CatalogPriceMode       `protobuf:"varint,1,opt,name=mode,proto3,enum=muxvia.cloud.v1.CatalogPriceMode" json:"mode,omitempty"`
 	Currency      string                 `protobuf:"bytes,2,opt,name=currency,proto3" json:"currency,omitempty"`
 	MonthlyMinor  int64                  `protobuf:"varint,3,opt,name=monthly_minor,json=monthlyMinor,proto3" json:"monthly_minor,omitempty"`
 	YearlyMinor   int64                  `protobuf:"varint,4,opt,name=yearly_minor,json=yearlyMinor,proto3" json:"yearly_minor,omitempty"`
@@ -1052,7 +1052,7 @@ type SubscriptionProjection struct {
 	SourceOrderId                string                 `protobuf:"bytes,3,opt,name=source_order_id,json=sourceOrderId,proto3" json:"source_order_id,omitempty"`
 	PlanId                       string                 `protobuf:"bytes,4,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
 	PlanVersion                  uint64                 `protobuf:"varint,5,opt,name=plan_version,json=planVersion,proto3" json:"plan_version,omitempty"`
-	Status                       SubscriptionStatus     `protobuf:"varint,6,opt,name=status,proto3,enum=termx.cloud.v1.SubscriptionStatus" json:"status,omitempty"`
+	Status                       SubscriptionStatus     `protobuf:"varint,6,opt,name=status,proto3,enum=muxvia.cloud.v1.SubscriptionStatus" json:"status,omitempty"`
 	CurrentPeriodStartUnixMillis int64                  `protobuf:"varint,7,opt,name=current_period_start_unix_millis,json=currentPeriodStartUnixMillis,proto3" json:"current_period_start_unix_millis,omitempty"`
 	CurrentPeriodEndUnixMillis   int64                  `protobuf:"varint,8,opt,name=current_period_end_unix_millis,json=currentPeriodEndUnixMillis,proto3" json:"current_period_end_unix_millis,omitempty"`
 	UpdatedAtUnixMillis          int64                  `protobuf:"varint,9,opt,name=updated_at_unix_millis,json=updatedAtUnixMillis,proto3" json:"updated_at_unix_millis,omitempty"`
@@ -1181,7 +1181,7 @@ func (x *SubscriptionProjection) GetRevision() uint64 {
 type EntitlementProjection struct {
 	state                    protoimpl.MessageState `protogen:"open.v1"`
 	AccountId                string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	Status                   EntitlementStatus      `protobuf:"varint,2,opt,name=status,proto3,enum=termx.cloud.v1.EntitlementStatus" json:"status,omitempty"`
+	Status                   EntitlementStatus      `protobuf:"varint,2,opt,name=status,proto3,enum=muxvia.cloud.v1.EntitlementStatus" json:"status,omitempty"`
 	SourceSubscriptionId     string                 `protobuf:"bytes,3,opt,name=source_subscription_id,json=sourceSubscriptionId,proto3" json:"source_subscription_id,omitempty"`
 	SourceOrderId            string                 `protobuf:"bytes,4,opt,name=source_order_id,json=sourceOrderId,proto3" json:"source_order_id,omitempty"`
 	SourcePlanId             string                 `protobuf:"bytes,5,opt,name=source_plan_id,json=sourcePlanId,proto3" json:"source_plan_id,omitempty"`
@@ -1418,7 +1418,7 @@ type RelayLeaseReservation struct {
 	PeriodEndUnixMillis   int64                  `protobuf:"varint,8,opt,name=period_end_unix_millis,json=periodEndUnixMillis,proto3" json:"period_end_unix_millis,omitempty"`
 	ReservedBytes         uint64                 `protobuf:"varint,9,opt,name=reserved_bytes,json=reservedBytes,proto3" json:"reserved_bytes,omitempty"`
 	UsedBytes             uint64                 `protobuf:"varint,10,opt,name=used_bytes,json=usedBytes,proto3" json:"used_bytes,omitempty"`
-	State                 RelayReservationState  `protobuf:"varint,11,opt,name=state,proto3,enum=termx.cloud.v1.RelayReservationState" json:"state,omitempty"`
+	State                 RelayReservationState  `protobuf:"varint,11,opt,name=state,proto3,enum=muxvia.cloud.v1.RelayReservationState" json:"state,omitempty"`
 	ExpiresAtUnixMillis   int64                  `protobuf:"varint,12,opt,name=expires_at_unix_millis,json=expiresAtUnixMillis,proto3" json:"expires_at_unix_millis,omitempty"`
 	UpdatedAtUnixMillis   int64                  `protobuf:"varint,13,opt,name=updated_at_unix_millis,json=updatedAtUnixMillis,proto3" json:"updated_at_unix_millis,omitempty"`
 	Revision              uint64                 `protobuf:"varint,14,opt,name=revision,proto3" json:"revision,omitempty"`
@@ -2717,12 +2717,12 @@ type OrderProjection struct {
 	AccountId                  string                     `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	PlanId                     string                     `protobuf:"bytes,3,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
 	PlanVersion                uint64                     `protobuf:"varint,4,opt,name=plan_version,json=planVersion,proto3" json:"plan_version,omitempty"`
-	Status                     OrderStatus                `protobuf:"varint,5,opt,name=status,proto3,enum=termx.cloud.v1.OrderStatus" json:"status,omitempty"`
+	Status                     OrderStatus                `protobuf:"varint,5,opt,name=status,proto3,enum=muxvia.cloud.v1.OrderStatus" json:"status,omitempty"`
 	CreatedAtUnixMillis        int64                      `protobuf:"varint,6,opt,name=created_at_unix_millis,json=createdAtUnixMillis,proto3" json:"created_at_unix_millis,omitempty"`
 	SettledAtUnixMillis        int64                      `protobuf:"varint,7,opt,name=settled_at_unix_millis,json=settledAtUnixMillis,proto3" json:"settled_at_unix_millis,omitempty"`
 	ProviderReference          string                     `protobuf:"bytes,8,opt,name=provider_reference,json=providerReference,proto3" json:"provider_reference,omitempty"`
 	Revision                   uint64                     `protobuf:"varint,9,opt,name=revision,proto3" json:"revision,omitempty"`
-	RequestedTransition        SubscriptionTransitionKind `protobuf:"varint,10,opt,name=requested_transition,json=requestedTransition,proto3,enum=termx.cloud.v1.SubscriptionTransitionKind" json:"requested_transition,omitempty"`
+	RequestedTransition        SubscriptionTransitionKind `protobuf:"varint,10,opt,name=requested_transition,json=requestedTransition,proto3,enum=muxvia.cloud.v1.SubscriptionTransitionKind" json:"requested_transition,omitempty"`
 	SourceSubscriptionRevision uint64                     `protobuf:"varint,11,opt,name=source_subscription_revision,json=sourceSubscriptionRevision,proto3" json:"source_subscription_revision,omitempty"`
 	SourcePlanId               string                     `protobuf:"bytes,12,opt,name=source_plan_id,json=sourcePlanId,proto3" json:"source_plan_id,omitempty"`
 	SourcePlanVersion          uint64                     `protobuf:"varint,13,opt,name=source_plan_version,json=sourcePlanVersion,proto3" json:"source_plan_version,omitempty"`
@@ -2866,7 +2866,7 @@ type PaymentAttemptProjection struct {
 	OrderId             string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
 	AccountId           string                 `protobuf:"bytes,3,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	Provider            string                 `protobuf:"bytes,4,opt,name=provider,proto3" json:"provider,omitempty"`
-	Status              PaymentAttemptStatus   `protobuf:"varint,5,opt,name=status,proto3,enum=termx.cloud.v1.PaymentAttemptStatus" json:"status,omitempty"`
+	Status              PaymentAttemptStatus   `protobuf:"varint,5,opt,name=status,proto3,enum=muxvia.cloud.v1.PaymentAttemptStatus" json:"status,omitempty"`
 	CreatedAtUnixMillis int64                  `protobuf:"varint,6,opt,name=created_at_unix_millis,json=createdAtUnixMillis,proto3" json:"created_at_unix_millis,omitempty"`
 	UpdatedAtUnixMillis int64                  `protobuf:"varint,7,opt,name=updated_at_unix_millis,json=updatedAtUnixMillis,proto3" json:"updated_at_unix_millis,omitempty"`
 	ProviderReference   string                 `protobuf:"bytes,8,opt,name=provider_reference,json=providerReference,proto3" json:"provider_reference,omitempty"`
@@ -2973,7 +2973,7 @@ func (x *PaymentAttemptProjection) GetRevision() uint64 {
 type PaymentEventProjection struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
 	Event         *NormalizedPaymentEvent `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"`
-	State         PaymentEventState       `protobuf:"varint,2,opt,name=state,proto3,enum=termx.cloud.v1.PaymentEventState" json:"state,omitempty"`
+	State         PaymentEventState       `protobuf:"varint,2,opt,name=state,proto3,enum=muxvia.cloud.v1.PaymentEventState" json:"state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3026,7 +3026,7 @@ func (x *PaymentEventProjection) GetState() PaymentEventState {
 type CreateCheckoutRequest struct {
 	state               protoimpl.MessageState     `protogen:"open.v1"`
 	PlanId              string                     `protobuf:"bytes,1,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
-	RequestedTransition SubscriptionTransitionKind `protobuf:"varint,2,opt,name=requested_transition,json=requestedTransition,proto3,enum=termx.cloud.v1.SubscriptionTransitionKind" json:"requested_transition,omitempty"`
+	RequestedTransition SubscriptionTransitionKind `protobuf:"varint,2,opt,name=requested_transition,json=requestedTransition,proto3,enum=muxvia.cloud.v1.SubscriptionTransitionKind" json:"requested_transition,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -3220,7 +3220,7 @@ type NormalizedPaymentEvent struct {
 	state                protoimpl.MessageState `protogen:"open.v1"`
 	ProviderEventId      string                 `protobuf:"bytes,1,opt,name=provider_event_id,json=providerEventId,proto3" json:"provider_event_id,omitempty"`
 	Provider             string                 `protobuf:"bytes,2,opt,name=provider,proto3" json:"provider,omitempty"`
-	EventType            PaymentEventType       `protobuf:"varint,3,opt,name=event_type,json=eventType,proto3,enum=termx.cloud.v1.PaymentEventType" json:"event_type,omitempty"`
+	EventType            PaymentEventType       `protobuf:"varint,3,opt,name=event_type,json=eventType,proto3,enum=muxvia.cloud.v1.PaymentEventType" json:"event_type,omitempty"`
 	OrderId              string                 `protobuf:"bytes,4,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
 	AccountId            string                 `protobuf:"bytes,5,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	PlanId               string                 `protobuf:"bytes,6,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
@@ -3381,7 +3381,7 @@ type ApplyPaymentEventResponse struct {
 	state          protoimpl.MessageState    `protogen:"open.v1"`
 	Order          *OrderProjection          `protobuf:"bytes,1,opt,name=order,proto3" json:"order,omitempty"`
 	Subscription   *SubscriptionProjection   `protobuf:"bytes,2,opt,name=subscription,proto3" json:"subscription,omitempty"`
-	EventState     PaymentEventState         `protobuf:"varint,3,opt,name=event_state,json=eventState,proto3,enum=termx.cloud.v1.PaymentEventState" json:"event_state,omitempty"`
+	EventState     PaymentEventState         `protobuf:"varint,3,opt,name=event_state,json=eventState,proto3,enum=muxvia.cloud.v1.PaymentEventState" json:"event_state,omitempty"`
 	PaymentAttempt *PaymentAttemptProjection `protobuf:"bytes,4,opt,name=payment_attempt,json=paymentAttempt,proto3" json:"payment_attempt,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -3449,7 +3449,7 @@ func (x *ApplyPaymentEventResponse) GetPaymentAttempt() *PaymentAttemptProjectio
 type ConfirmTestPaymentRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
-	EventType     PaymentEventType       `protobuf:"varint,2,opt,name=event_type,json=eventType,proto3,enum=termx.cloud.v1.PaymentEventType" json:"event_type,omitempty"`
+	EventType     PaymentEventType       `protobuf:"varint,2,opt,name=event_type,json=eventType,proto3,enum=muxvia.cloud.v1.PaymentEventType" json:"event_type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3546,7 +3546,7 @@ func (x *ConfirmTestPaymentResponse) GetResult() *ApplyPaymentEventResponse {
 type TransitionSubscriptionRequest struct {
 	state                 protoimpl.MessageState     `protogen:"open.v1"`
 	AccountId             string                     `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	Transition            SubscriptionTransitionKind `protobuf:"varint,2,opt,name=transition,proto3,enum=termx.cloud.v1.SubscriptionTransitionKind" json:"transition,omitempty"`
+	Transition            SubscriptionTransitionKind `protobuf:"varint,2,opt,name=transition,proto3,enum=muxvia.cloud.v1.SubscriptionTransitionKind" json:"transition,omitempty"`
 	TargetPlanId          string                     `protobuf:"bytes,3,opt,name=target_plan_id,json=targetPlanId,proto3" json:"target_plan_id,omitempty"`
 	TargetPlanVersion     uint64                     `protobuf:"varint,4,opt,name=target_plan_version,json=targetPlanVersion,proto3" json:"target_plan_version,omitempty"`
 	EffectiveAtUnixMillis int64                      `protobuf:"varint,5,opt,name=effective_at_unix_millis,json=effectiveAtUnixMillis,proto3" json:"effective_at_unix_millis,omitempty"`
@@ -3965,7 +3965,7 @@ var File_cloudpb_cloud_product_proto protoreflect.FileDescriptor
 
 const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\n" +
-	"\x1bcloudpb/cloud_product.proto\x12\x0etermx.cloud.v1\"\xca\x02\n" +
+	"\x1bcloudpb/cloud_product.proto\x12\x0fmuxvia.cloud.v1\"\xca\x02\n" +
 	"\x16RelayServiceCapability\x12'\n" +
 	"\x0fallowed_regions\x18\x01 \x03(\tR\x0eallowedRegions\x12(\n" +
 	"\x10allow_relay_mesh\x18\x02 \x01(\bR\x0eallowRelayMesh\x12*\n" +
@@ -3973,25 +3973,25 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x13max_bytes_per_lease\x18\x04 \x01(\x04R\x10maxBytesPerLease\x12(\n" +
 	"\x10max_bitrate_kbps\x18\x05 \x01(\rR\x0emaxBitrateKbps\x12'\n" +
 	"\x0fmax_concurrency\x18\x06 \x01(\rR\x0emaxConcurrency\x12/\n" +
-	"\x14max_bytes_per_period\x18\a \x01(\x04R\x11maxBytesPerPeriod\"\xa1\x02\n" +
+	"\x14max_bytes_per_period\x18\a \x01(\x04R\x11maxBytesPerPeriod\"\xa2\x02\n" +
 	"\x0ePlanCapability\x12.\n" +
 	"\x13managed_p2p_enabled\x18\x01 \x01(\bR\x11managedP2pEnabled\x12=\n" +
 	"\x1bmanaged_p2p_max_concurrency\x18\x02 \x01(\rR\x18managedP2pMaxConcurrency\x124\n" +
-	"\x16standard_relay_enabled\x18\x03 \x01(\bR\x14standardRelayEnabled\x12<\n" +
-	"\x05relay\x18\x04 \x01(\v2&.termx.cloud.v1.RelayServiceCapabilityR\x05relay\x12,\n" +
-	"\x12cloud_device_limit\x18\x05 \x01(\rR\x10cloudDeviceLimit\"\xd9\x02\n" +
+	"\x16standard_relay_enabled\x18\x03 \x01(\bR\x14standardRelayEnabled\x12=\n" +
+	"\x05relay\x18\x04 \x01(\v2'.muxvia.cloud.v1.RelayServiceCapabilityR\x05relay\x12,\n" +
+	"\x12cloud_device_limit\x18\x05 \x01(\rR\x10cloudDeviceLimit\"\xdc\x02\n" +
 	"\x0ePlanDefinition\x12\x17\n" +
 	"\aplan_id\x18\x01 \x01(\tR\x06planId\x12!\n" +
 	"\fplan_version\x18\x02 \x01(\x04R\vplanVersion\x12.\n" +
-	"\x13billing_period_days\x18\x03 \x01(\rR\x11billingPeriodDays\x12>\n" +
+	"\x13billing_period_days\x18\x03 \x01(\rR\x11billingPeriodDays\x12?\n" +
 	"\n" +
-	"capability\x18\x04 \x01(\v2\x1e.termx.cloud.v1.PlanCapabilityR\n" +
+	"capability\x18\x04 \x01(\v2\x1f.muxvia.cloud.v1.PlanCapabilityR\n" +
 	"capability\x12\x1a\n" +
-	"\bincluded\x18\x05 \x01(\bR\bincluded\x129\n" +
-	"\x05price\x18\x06 \x01(\v2#.termx.cloud.v1.PlanPriceDefinitionR\x05price\x12D\n" +
-	"\fpresentation\x18\a \x01(\v2 .termx.cloud.v1.PlanPresentationR\fpresentation\"\xc5\x01\n" +
-	"\x13PlanPriceDefinition\x124\n" +
-	"\x04mode\x18\x01 \x01(\x0e2 .termx.cloud.v1.CatalogPriceModeR\x04mode\x12\x1a\n" +
+	"\bincluded\x18\x05 \x01(\bR\bincluded\x12:\n" +
+	"\x05price\x18\x06 \x01(\v2$.muxvia.cloud.v1.PlanPriceDefinitionR\x05price\x12E\n" +
+	"\fpresentation\x18\a \x01(\v2!.muxvia.cloud.v1.PlanPresentationR\fpresentation\"\xc6\x01\n" +
+	"\x13PlanPriceDefinition\x125\n" +
+	"\x04mode\x18\x01 \x01(\x0e2!.muxvia.cloud.v1.CatalogPriceModeR\x04mode\x12\x1a\n" +
 	"\bcurrency\x18\x02 \x01(\tR\bcurrency\x12#\n" +
 	"\rmonthly_minor\x18\x03 \x01(\x03R\fmonthlyMinor\x12!\n" +
 	"\fyearly_minor\x18\x04 \x01(\x03R\vyearlyMinor\x12\x14\n" +
@@ -4003,37 +4003,37 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\tcta_label\x18\x04 \x01(\tR\bctaLabel\x12\x19\n" +
 	"\bcta_href\x18\x05 \x01(\tR\actaHref\x12\x1a\n" +
 	"\bfeatured\x18\x06 \x01(\bR\bfeatured\x12\x1a\n" +
-	"\bfeatures\x18\a \x03(\tR\bfeatures\"t\n" +
+	"\bfeatures\x18\a \x03(\tR\bfeatures\"u\n" +
 	"\x13PlanCatalogContract\x12'\n" +
-	"\x0fcatalog_version\x18\x01 \x01(\x04R\x0ecatalogVersion\x124\n" +
-	"\x05plans\x18\x02 \x03(\v2\x1e.termx.cloud.v1.PlanDefinitionR\x05plans\"\xbd\x04\n" +
+	"\x0fcatalog_version\x18\x01 \x01(\x04R\x0ecatalogVersion\x125\n" +
+	"\x05plans\x18\x02 \x03(\v2\x1f.muxvia.cloud.v1.PlanDefinitionR\x05plans\"\xbe\x04\n" +
 	"\x16SubscriptionProjection\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x02 \x01(\tR\taccountId\x12&\n" +
 	"\x0fsource_order_id\x18\x03 \x01(\tR\rsourceOrderId\x12\x17\n" +
 	"\aplan_id\x18\x04 \x01(\tR\x06planId\x12!\n" +
-	"\fplan_version\x18\x05 \x01(\x04R\vplanVersion\x12:\n" +
-	"\x06status\x18\x06 \x01(\x0e2\".termx.cloud.v1.SubscriptionStatusR\x06status\x12F\n" +
+	"\fplan_version\x18\x05 \x01(\x04R\vplanVersion\x12;\n" +
+	"\x06status\x18\x06 \x01(\x0e2#.muxvia.cloud.v1.SubscriptionStatusR\x06status\x12F\n" +
 	" current_period_start_unix_millis\x18\a \x01(\x03R\x1ccurrentPeriodStartUnixMillis\x12B\n" +
 	"\x1ecurrent_period_end_unix_millis\x18\b \x01(\x03R\x1acurrentPeriodEndUnixMillis\x123\n" +
 	"\x16updated_at_unix_millis\x18\t \x01(\x03R\x13updatedAtUnixMillis\x12/\n" +
 	"\x14cancel_at_period_end\x18\n" +
 	" \x01(\bR\x11cancelAtPeriodEnd\x12-\n" +
 	"\x12provider_reference\x18\v \x01(\tR\x11providerReference\x12\x1a\n" +
-	"\brevision\x18\f \x01(\x04R\brevision\"\x96\x04\n" +
+	"\brevision\x18\f \x01(\x04R\brevision\"\x98\x04\n" +
 	"\x15EntitlementProjection\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x01 \x01(\tR\taccountId\x129\n" +
-	"\x06status\x18\x02 \x01(\x0e2!.termx.cloud.v1.EntitlementStatusR\x06status\x124\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\x12:\n" +
+	"\x06status\x18\x02 \x01(\x0e2\".muxvia.cloud.v1.EntitlementStatusR\x06status\x124\n" +
 	"\x16source_subscription_id\x18\x03 \x01(\tR\x14sourceSubscriptionId\x12&\n" +
 	"\x0fsource_order_id\x18\x04 \x01(\tR\rsourceOrderId\x12$\n" +
 	"\x0esource_plan_id\x18\x05 \x01(\tR\fsourcePlanId\x12.\n" +
 	"\x13source_plan_version\x18\x06 \x01(\x04R\x11sourcePlanVersion\x12;\n" +
 	"\x1aeffective_from_unix_millis\x18\a \x01(\x03R\x17effectiveFromUnixMillis\x12=\n" +
-	"\x1beffective_until_unix_millis\x18\b \x01(\x03R\x18effectiveUntilUnixMillis\x12>\n" +
+	"\x1beffective_until_unix_millis\x18\b \x01(\x03R\x18effectiveUntilUnixMillis\x12?\n" +
 	"\n" +
-	"capability\x18\t \x01(\v2\x1e.termx.cloud.v1.PlanCapabilityR\n" +
+	"capability\x18\t \x01(\v2\x1f.muxvia.cloud.v1.PlanCapabilityR\n" +
 	"capability\x123\n" +
 	"\x16updated_at_unix_millis\x18\n" +
 	" \x01(\x03R\x13updatedAtUnixMillis\"\xf9\x02\n" +
@@ -4049,7 +4049,7 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x0ereserved_bytes\x18\x06 \x01(\x04R\rreservedBytes\x12'\n" +
 	"\x0fremaining_bytes\x18\a \x01(\x04R\x0eremainingBytes\x12,\n" +
 	"\x12active_lease_count\x18\b \x01(\rR\x10activeLeaseCount\x12\x1a\n" +
-	"\brevision\x18\t \x01(\x04R\brevision\"\xe2\x05\n" +
+	"\brevision\x18\t \x01(\x04R\brevision\"\xe3\x05\n" +
 	"\x15RelayLeaseReservation\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x1d\n" +
 	"\n" +
@@ -4063,8 +4063,8 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x0ereserved_bytes\x18\t \x01(\x04R\rreservedBytes\x12\x1d\n" +
 	"\n" +
 	"used_bytes\x18\n" +
-	" \x01(\x04R\tusedBytes\x12;\n" +
-	"\x05state\x18\v \x01(\x0e2%.termx.cloud.v1.RelayReservationStateR\x05state\x123\n" +
+	" \x01(\x04R\tusedBytes\x12<\n" +
+	"\x05state\x18\v \x01(\x0e2&.muxvia.cloud.v1.RelayReservationStateR\x05state\x123\n" +
 	"\x16expires_at_unix_millis\x18\f \x01(\x03R\x13expiresAtUnixMillis\x123\n" +
 	"\x16updated_at_unix_millis\x18\r \x01(\x03R\x13updatedAtUnixMillis\x12\x1a\n" +
 	"\brevision\x18\x0e \x01(\x04R\brevision\x121\n" +
@@ -4086,23 +4086,23 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\brevision\x18\t \x01(\x04R\brevision\"<\n" +
 	"\x1bGetAccountRelayQuotaRequest\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x01 \x01(\tR\taccountId\"\xb0\x01\n" +
-	"\x1cGetAccountRelayQuotaResponse\x128\n" +
-	"\x06period\x18\x01 \x01(\v2 .termx.cloud.v1.RelayQuotaPeriodR\x06period\x12V\n" +
-	"\x13active_reservations\x18\x02 \x03(\v2%.termx.cloud.v1.RelayLeaseReservationR\x12activeReservations\"\x17\n" +
-	"\x15GetPlanCatalogRequest\"W\n" +
-	"\x16GetPlanCatalogResponse\x12=\n" +
-	"\acatalog\x18\x01 \x01(\v2#.termx.cloud.v1.PlanCatalogContractR\acatalog\">\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\"\xb2\x01\n" +
+	"\x1cGetAccountRelayQuotaResponse\x129\n" +
+	"\x06period\x18\x01 \x01(\v2!.muxvia.cloud.v1.RelayQuotaPeriodR\x06period\x12W\n" +
+	"\x13active_reservations\x18\x02 \x03(\v2&.muxvia.cloud.v1.RelayLeaseReservationR\x12activeReservations\"\x17\n" +
+	"\x15GetPlanCatalogRequest\"X\n" +
+	"\x16GetPlanCatalogResponse\x12>\n" +
+	"\acatalog\x18\x01 \x01(\v2$.muxvia.cloud.v1.PlanCatalogContractR\acatalog\">\n" +
 	"\x1dGetAccountSubscriptionRequest\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x01 \x01(\tR\taccountId\"l\n" +
-	"\x1eGetAccountSubscriptionResponse\x12J\n" +
-	"\fsubscription\x18\x01 \x01(\v2&.termx.cloud.v1.SubscriptionProjectionR\fsubscription\"=\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\"m\n" +
+	"\x1eGetAccountSubscriptionResponse\x12K\n" +
+	"\fsubscription\x18\x01 \x01(\v2'.muxvia.cloud.v1.SubscriptionProjectionR\fsubscription\"=\n" +
 	"\x1cGetAccountEntitlementRequest\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x01 \x01(\tR\taccountId\"h\n" +
-	"\x1dGetAccountEntitlementResponse\x12G\n" +
-	"\ventitlement\x18\x01 \x01(\v2%.termx.cloud.v1.EntitlementProjectionR\ventitlement\"\xde\x01\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\"i\n" +
+	"\x1dGetAccountEntitlementResponse\x12H\n" +
+	"\ventitlement\x18\x01 \x01(\v2&.muxvia.cloud.v1.EntitlementProjectionR\ventitlement\"\xde\x01\n" +
 	"\x11AccountProjection\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12\x17\n" +
@@ -4110,11 +4110,11 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x05email\x18\x03 \x01(\tR\x05email\x12!\n" +
 	"\fdisplay_name\x18\x04 \x01(\tR\vdisplayName\x12#\n" +
 	"\rauth_revision\x18\x05 \x01(\x04R\fauthRevision\x123\n" +
-	"\x16created_at_unix_millis\x18\x06 \x01(\x03R\x13createdAtUnixMillis\"\xef\x02\n" +
+	"\x16created_at_unix_millis\x18\x06 \x01(\x03R\x13createdAtUnixMillis\"\xf0\x02\n" +
 	"\x18AccountSessionCredential\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\x12;\n" +
-	"\aaccount\x18\x02 \x01(\v2!.termx.cloud.v1.AccountProjectionR\aaccount\x12!\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12<\n" +
+	"\aaccount\x18\x02 \x01(\v2\".muxvia.cloud.v1.AccountProjectionR\aaccount\x12!\n" +
 	"\faccess_token\x18\x03 \x01(\fR\vaccessToken\x12#\n" +
 	"\rrefresh_token\x18\x04 \x01(\fR\frefreshToken\x12@\n" +
 	"\x1daccess_expires_at_unix_millis\x18\x05 \x01(\x03R\x19accessExpiresAtUnixMillis\x12B\n" +
@@ -4123,18 +4123,18 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x16RegisterAccountRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12#\n" +
-	"\rreferral_code\x18\x03 \x01(\tR\freferralCode\"]\n" +
-	"\x17RegisterAccountResponse\x12B\n" +
-	"\asession\x18\x01 \x01(\v2(.termx.cloud.v1.AccountSessionCredentialR\asession\"H\n" +
+	"\rreferral_code\x18\x03 \x01(\tR\freferralCode\"^\n" +
+	"\x17RegisterAccountResponse\x12C\n" +
+	"\asession\x18\x01 \x01(\v2).muxvia.cloud.v1.AccountSessionCredentialR\asession\"H\n" +
 	"\x14PasswordLoginRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
-	"\bpassword\x18\x02 \x01(\tR\bpassword\"[\n" +
-	"\x15PasswordLoginResponse\x12B\n" +
-	"\asession\x18\x01 \x01(\v2(.termx.cloud.v1.AccountSessionCredentialR\asession\"C\n" +
+	"\bpassword\x18\x02 \x01(\tR\bpassword\"\\\n" +
+	"\x15PasswordLoginResponse\x12C\n" +
+	"\asession\x18\x01 \x01(\v2).muxvia.cloud.v1.AccountSessionCredentialR\asession\"C\n" +
 	"\x1cRefreshAccountSessionRequest\x12#\n" +
-	"\rrefresh_token\x18\x01 \x01(\fR\frefreshToken\"c\n" +
-	"\x1dRefreshAccountSessionResponse\x12B\n" +
-	"\asession\x18\x01 \x01(\v2(.termx.cloud.v1.AccountSessionCredentialR\asession\"n\n" +
+	"\rrefresh_token\x18\x01 \x01(\fR\frefreshToken\"d\n" +
+	"\x1dRefreshAccountSessionResponse\x12C\n" +
+	"\asession\x18\x01 \x01(\v2).muxvia.cloud.v1.AccountSessionCredentialR\asession\"n\n" +
 	"\x1bLogoutAccountSessionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x120\n" +
@@ -4142,55 +4142,55 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x1cLogoutAccountSessionResponse\"l\n" +
 	"\x1cChangeAccountPasswordRequest\x12)\n" +
 	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\x12!\n" +
-	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"c\n" +
-	"\x1dChangeAccountPasswordResponse\x12B\n" +
-	"\asession\x18\x01 \x01(\v2(.termx.cloud.v1.AccountSessionCredentialR\asession\"\xa3\x05\n" +
+	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"d\n" +
+	"\x1dChangeAccountPasswordResponse\x12C\n" +
+	"\asession\x18\x01 \x01(\v2).muxvia.cloud.v1.AccountSessionCredentialR\asession\"\xa6\x05\n" +
 	"\x0fOrderProjection\x12\x19\n" +
 	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x02 \x01(\tR\taccountId\x12\x17\n" +
 	"\aplan_id\x18\x03 \x01(\tR\x06planId\x12!\n" +
-	"\fplan_version\x18\x04 \x01(\x04R\vplanVersion\x123\n" +
-	"\x06status\x18\x05 \x01(\x0e2\x1b.termx.cloud.v1.OrderStatusR\x06status\x123\n" +
+	"\fplan_version\x18\x04 \x01(\x04R\vplanVersion\x124\n" +
+	"\x06status\x18\x05 \x01(\x0e2\x1c.muxvia.cloud.v1.OrderStatusR\x06status\x123\n" +
 	"\x16created_at_unix_millis\x18\x06 \x01(\x03R\x13createdAtUnixMillis\x123\n" +
 	"\x16settled_at_unix_millis\x18\a \x01(\x03R\x13settledAtUnixMillis\x12-\n" +
 	"\x12provider_reference\x18\b \x01(\tR\x11providerReference\x12\x1a\n" +
-	"\brevision\x18\t \x01(\x04R\brevision\x12]\n" +
+	"\brevision\x18\t \x01(\x04R\brevision\x12^\n" +
 	"\x14requested_transition\x18\n" +
-	" \x01(\x0e2*.termx.cloud.v1.SubscriptionTransitionKindR\x13requestedTransition\x12@\n" +
+	" \x01(\x0e2+.muxvia.cloud.v1.SubscriptionTransitionKindR\x13requestedTransition\x12@\n" +
 	"\x1csource_subscription_revision\x18\v \x01(\x04R\x1asourceSubscriptionRevision\x12$\n" +
 	"\x0esource_plan_id\x18\f \x01(\tR\fsourcePlanId\x12.\n" +
-	"\x13source_plan_version\x18\r \x01(\x04R\x11sourcePlanVersion\x129\n" +
-	"\x05price\x18\x0e \x01(\v2#.termx.cloud.v1.PlanPriceDefinitionR\x05price\"\x91\x03\n" +
+	"\x13source_plan_version\x18\r \x01(\x04R\x11sourcePlanVersion\x12:\n" +
+	"\x05price\x18\x0e \x01(\v2$.muxvia.cloud.v1.PlanPriceDefinitionR\x05price\"\x92\x03\n" +
 	"\x18PaymentAttemptProjection\x12,\n" +
 	"\x12payment_attempt_id\x18\x01 \x01(\tR\x10paymentAttemptId\x12\x19\n" +
 	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x03 \x01(\tR\taccountId\x12\x1a\n" +
-	"\bprovider\x18\x04 \x01(\tR\bprovider\x12<\n" +
-	"\x06status\x18\x05 \x01(\x0e2$.termx.cloud.v1.PaymentAttemptStatusR\x06status\x123\n" +
+	"\bprovider\x18\x04 \x01(\tR\bprovider\x12=\n" +
+	"\x06status\x18\x05 \x01(\x0e2%.muxvia.cloud.v1.PaymentAttemptStatusR\x06status\x123\n" +
 	"\x16created_at_unix_millis\x18\x06 \x01(\x03R\x13createdAtUnixMillis\x123\n" +
 	"\x16updated_at_unix_millis\x18\a \x01(\x03R\x13updatedAtUnixMillis\x12-\n" +
 	"\x12provider_reference\x18\b \x01(\tR\x11providerReference\x12\x1a\n" +
-	"\brevision\x18\t \x01(\x04R\brevision\"\x8f\x01\n" +
-	"\x16PaymentEventProjection\x12<\n" +
-	"\x05event\x18\x01 \x01(\v2&.termx.cloud.v1.NormalizedPaymentEventR\x05event\x127\n" +
-	"\x05state\x18\x02 \x01(\x0e2!.termx.cloud.v1.PaymentEventStateR\x05state\"\x8f\x01\n" +
+	"\brevision\x18\t \x01(\x04R\brevision\"\x91\x01\n" +
+	"\x16PaymentEventProjection\x12=\n" +
+	"\x05event\x18\x01 \x01(\v2'.muxvia.cloud.v1.NormalizedPaymentEventR\x05event\x128\n" +
+	"\x05state\x18\x02 \x01(\x0e2\".muxvia.cloud.v1.PaymentEventStateR\x05state\"\x90\x01\n" +
 	"\x15CreateCheckoutRequest\x12\x17\n" +
-	"\aplan_id\x18\x01 \x01(\tR\x06planId\x12]\n" +
-	"\x14requested_transition\x18\x02 \x01(\x0e2*.termx.cloud.v1.SubscriptionTransitionKindR\x13requestedTransition\"O\n" +
-	"\x16CreateCheckoutResponse\x125\n" +
-	"\x05order\x18\x01 \x01(\v2\x1f.termx.cloud.v1.OrderProjectionR\x05order\"T\n" +
+	"\aplan_id\x18\x01 \x01(\tR\x06planId\x12^\n" +
+	"\x14requested_transition\x18\x02 \x01(\x0e2+.muxvia.cloud.v1.SubscriptionTransitionKindR\x13requestedTransition\"P\n" +
+	"\x16CreateCheckoutResponse\x126\n" +
+	"\x05order\x18\x01 \x01(\v2 .muxvia.cloud.v1.OrderProjectionR\x05order\"T\n" +
 	"\x1bCreatePaymentAttemptRequest\x12\x19\n" +
 	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x1a\n" +
-	"\bprovider\x18\x02 \x01(\tR\bprovider\"q\n" +
-	"\x1cCreatePaymentAttemptResponse\x12Q\n" +
-	"\x0fpayment_attempt\x18\x01 \x01(\v2(.termx.cloud.v1.PaymentAttemptProjectionR\x0epaymentAttempt\"\xab\x03\n" +
+	"\bprovider\x18\x02 \x01(\tR\bprovider\"r\n" +
+	"\x1cCreatePaymentAttemptResponse\x12R\n" +
+	"\x0fpayment_attempt\x18\x01 \x01(\v2).muxvia.cloud.v1.PaymentAttemptProjectionR\x0epaymentAttempt\"\xac\x03\n" +
 	"\x16NormalizedPaymentEvent\x12*\n" +
 	"\x11provider_event_id\x18\x01 \x01(\tR\x0fproviderEventId\x12\x1a\n" +
-	"\bprovider\x18\x02 \x01(\tR\bprovider\x12?\n" +
+	"\bprovider\x18\x02 \x01(\tR\bprovider\x12@\n" +
 	"\n" +
-	"event_type\x18\x03 \x01(\x0e2 .termx.cloud.v1.PaymentEventTypeR\teventType\x12\x19\n" +
+	"event_type\x18\x03 \x01(\x0e2!.muxvia.cloud.v1.PaymentEventTypeR\teventType\x12\x19\n" +
 	"\border_id\x18\x04 \x01(\tR\aorderId\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x05 \x01(\tR\taccountId\x12\x17\n" +
@@ -4199,34 +4199,34 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x12provider_reference\x18\b \x01(\tR\x11providerReference\x125\n" +
 	"\x17occurred_at_unix_millis\x18\t \x01(\x03R\x14occurredAtUnixMillis\x12,\n" +
 	"\x12payment_attempt_id\x18\n" +
-	" \x01(\tR\x10paymentAttemptId\"X\n" +
-	"\x18ApplyPaymentEventRequest\x12<\n" +
-	"\x05event\x18\x01 \x01(\v2&.termx.cloud.v1.NormalizedPaymentEventR\x05event\"\xb5\x02\n" +
-	"\x19ApplyPaymentEventResponse\x125\n" +
-	"\x05order\x18\x01 \x01(\v2\x1f.termx.cloud.v1.OrderProjectionR\x05order\x12J\n" +
-	"\fsubscription\x18\x02 \x01(\v2&.termx.cloud.v1.SubscriptionProjectionR\fsubscription\x12B\n" +
-	"\vevent_state\x18\x03 \x01(\x0e2!.termx.cloud.v1.PaymentEventStateR\n" +
-	"eventState\x12Q\n" +
-	"\x0fpayment_attempt\x18\x04 \x01(\v2(.termx.cloud.v1.PaymentAttemptProjectionR\x0epaymentAttempt\"w\n" +
+	" \x01(\tR\x10paymentAttemptId\"Y\n" +
+	"\x18ApplyPaymentEventRequest\x12=\n" +
+	"\x05event\x18\x01 \x01(\v2'.muxvia.cloud.v1.NormalizedPaymentEventR\x05event\"\xb9\x02\n" +
+	"\x19ApplyPaymentEventResponse\x126\n" +
+	"\x05order\x18\x01 \x01(\v2 .muxvia.cloud.v1.OrderProjectionR\x05order\x12K\n" +
+	"\fsubscription\x18\x02 \x01(\v2'.muxvia.cloud.v1.SubscriptionProjectionR\fsubscription\x12C\n" +
+	"\vevent_state\x18\x03 \x01(\x0e2\".muxvia.cloud.v1.PaymentEventStateR\n" +
+	"eventState\x12R\n" +
+	"\x0fpayment_attempt\x18\x04 \x01(\v2).muxvia.cloud.v1.PaymentAttemptProjectionR\x0epaymentAttempt\"x\n" +
 	"\x19ConfirmTestPaymentRequest\x12\x19\n" +
-	"\border_id\x18\x01 \x01(\tR\aorderId\x12?\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\x12@\n" +
 	"\n" +
-	"event_type\x18\x02 \x01(\x0e2 .termx.cloud.v1.PaymentEventTypeR\teventType\"_\n" +
-	"\x1aConfirmTestPaymentResponse\x12A\n" +
-	"\x06result\x18\x01 \x01(\v2).termx.cloud.v1.ApplyPaymentEventResponseR\x06result\"\xb4\x02\n" +
+	"event_type\x18\x02 \x01(\x0e2!.muxvia.cloud.v1.PaymentEventTypeR\teventType\"`\n" +
+	"\x1aConfirmTestPaymentResponse\x12B\n" +
+	"\x06result\x18\x01 \x01(\v2*.muxvia.cloud.v1.ApplyPaymentEventResponseR\x06result\"\xb5\x02\n" +
 	"\x1dTransitionSubscriptionRequest\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x01 \x01(\tR\taccountId\x12J\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\x12K\n" +
 	"\n" +
-	"transition\x18\x02 \x01(\x0e2*.termx.cloud.v1.SubscriptionTransitionKindR\n" +
+	"transition\x18\x02 \x01(\x0e2+.muxvia.cloud.v1.SubscriptionTransitionKindR\n" +
 	"transition\x12$\n" +
 	"\x0etarget_plan_id\x18\x03 \x01(\tR\ftargetPlanId\x12.\n" +
 	"\x13target_plan_version\x18\x04 \x01(\x04R\x11targetPlanVersion\x127\n" +
 	"\x18effective_at_unix_millis\x18\x05 \x01(\x03R\x15effectiveAtUnixMillis\x12\x19\n" +
-	"\bactor_id\x18\x06 \x01(\tR\aactorId\"\xb5\x01\n" +
-	"\x1eTransitionSubscriptionResponse\x12J\n" +
-	"\fsubscription\x18\x01 \x01(\v2&.termx.cloud.v1.SubscriptionProjectionR\fsubscription\x12G\n" +
-	"\ventitlement\x18\x02 \x01(\v2%.termx.cloud.v1.EntitlementProjectionR\ventitlement\"\xde\x01\n" +
+	"\bactor_id\x18\x06 \x01(\tR\aactorId\"\xb7\x01\n" +
+	"\x1eTransitionSubscriptionResponse\x12K\n" +
+	"\fsubscription\x18\x01 \x01(\v2'.muxvia.cloud.v1.SubscriptionProjectionR\fsubscription\x12H\n" +
+	"\ventitlement\x18\x02 \x01(\v2&.muxvia.cloud.v1.EntitlementProjectionR\ventitlement\"\xde\x01\n" +
 	"\x17CommerceAuditProjection\x12\x19\n" +
 	"\baudit_id\x18\x01 \x01(\tR\aauditId\x12\x1d\n" +
 	"\n" +
@@ -4238,15 +4238,15 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x17occurred_at_unix_millis\x18\x06 \x01(\x03R\x14occurredAtUnixMillis\":\n" +
 	"\x19GetAccountCommerceRequest\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x01 \x01(\tR\taccountId\"\x8a\x04\n" +
-	"\x1aGetAccountCommerceResponse\x12;\n" +
-	"\aaccount\x18\x01 \x01(\v2!.termx.cloud.v1.AccountProjectionR\aaccount\x12J\n" +
-	"\fsubscription\x18\x02 \x01(\v2&.termx.cloud.v1.SubscriptionProjectionR\fsubscription\x12G\n" +
-	"\ventitlement\x18\x03 \x01(\v2%.termx.cloud.v1.EntitlementProjectionR\ventitlement\x127\n" +
-	"\x06orders\x18\x04 \x03(\v2\x1f.termx.cloud.v1.OrderProjectionR\x06orders\x12=\n" +
-	"\x05audit\x18\x05 \x03(\v2'.termx.cloud.v1.CommerceAuditProjectionR\x05audit\x12S\n" +
-	"\x10payment_attempts\x18\x06 \x03(\v2(.termx.cloud.v1.PaymentAttemptProjectionR\x0fpaymentAttempts\x12M\n" +
-	"\x0epayment_events\x18\a \x03(\v2&.termx.cloud.v1.PaymentEventProjectionR\rpaymentEvents\"_\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\"\x91\x04\n" +
+	"\x1aGetAccountCommerceResponse\x12<\n" +
+	"\aaccount\x18\x01 \x01(\v2\".muxvia.cloud.v1.AccountProjectionR\aaccount\x12K\n" +
+	"\fsubscription\x18\x02 \x01(\v2'.muxvia.cloud.v1.SubscriptionProjectionR\fsubscription\x12H\n" +
+	"\ventitlement\x18\x03 \x01(\v2&.muxvia.cloud.v1.EntitlementProjectionR\ventitlement\x128\n" +
+	"\x06orders\x18\x04 \x03(\v2 .muxvia.cloud.v1.OrderProjectionR\x06orders\x12>\n" +
+	"\x05audit\x18\x05 \x03(\v2(.muxvia.cloud.v1.CommerceAuditProjectionR\x05audit\x12T\n" +
+	"\x10payment_attempts\x18\x06 \x03(\v2).muxvia.cloud.v1.PaymentAttemptProjectionR\x0fpaymentAttempts\x12N\n" +
+	"\x0epayment_events\x18\a \x03(\v2'.muxvia.cloud.v1.PaymentEventProjectionR\rpaymentEvents\"_\n" +
 	"\x11CloudProductError\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +
@@ -4315,7 +4315,7 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"#RELAY_RESERVATION_STATE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eRELAY_RESERVATION_STATE_ACTIVE\x10\x01\x12$\n" +
 	" RELAY_RESERVATION_STATE_RELEASED\x10\x02\x12#\n" +
-	"\x1fRELAY_RESERVATION_STATE_EXPIRED\x10\x03B'Z%github.com/lozzow/termx/proto/cloudpbb\x06proto3"
+	"\x1fRELAY_RESERVATION_STATE_EXPIRED\x10\x03B(Z&github.com/muxvia/muxvia/proto/cloudpbb\x06proto3"
 
 var (
 	file_cloudpb_cloud_product_proto_rawDescOnce sync.Once
@@ -4332,113 +4332,113 @@ func file_cloudpb_cloud_product_proto_rawDescGZIP() []byte {
 var file_cloudpb_cloud_product_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
 var file_cloudpb_cloud_product_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
 var file_cloudpb_cloud_product_proto_goTypes = []any{
-	(SubscriptionStatus)(0),                // 0: termx.cloud.v1.SubscriptionStatus
-	(OrderStatus)(0),                       // 1: termx.cloud.v1.OrderStatus
-	(CatalogPriceMode)(0),                  // 2: termx.cloud.v1.CatalogPriceMode
-	(PaymentAttemptStatus)(0),              // 3: termx.cloud.v1.PaymentAttemptStatus
-	(PaymentEventType)(0),                  // 4: termx.cloud.v1.PaymentEventType
-	(PaymentEventState)(0),                 // 5: termx.cloud.v1.PaymentEventState
-	(SubscriptionTransitionKind)(0),        // 6: termx.cloud.v1.SubscriptionTransitionKind
-	(EntitlementStatus)(0),                 // 7: termx.cloud.v1.EntitlementStatus
-	(RelayReservationState)(0),             // 8: termx.cloud.v1.RelayReservationState
-	(*RelayServiceCapability)(nil),         // 9: termx.cloud.v1.RelayServiceCapability
-	(*PlanCapability)(nil),                 // 10: termx.cloud.v1.PlanCapability
-	(*PlanDefinition)(nil),                 // 11: termx.cloud.v1.PlanDefinition
-	(*PlanPriceDefinition)(nil),            // 12: termx.cloud.v1.PlanPriceDefinition
-	(*PlanPresentation)(nil),               // 13: termx.cloud.v1.PlanPresentation
-	(*PlanCatalogContract)(nil),            // 14: termx.cloud.v1.PlanCatalogContract
-	(*SubscriptionProjection)(nil),         // 15: termx.cloud.v1.SubscriptionProjection
-	(*EntitlementProjection)(nil),          // 16: termx.cloud.v1.EntitlementProjection
-	(*RelayQuotaPeriod)(nil),               // 17: termx.cloud.v1.RelayQuotaPeriod
-	(*RelayLeaseReservation)(nil),          // 18: termx.cloud.v1.RelayLeaseReservation
-	(*RelayUsageAggregate)(nil),            // 19: termx.cloud.v1.RelayUsageAggregate
-	(*GetAccountRelayQuotaRequest)(nil),    // 20: termx.cloud.v1.GetAccountRelayQuotaRequest
-	(*GetAccountRelayQuotaResponse)(nil),   // 21: termx.cloud.v1.GetAccountRelayQuotaResponse
-	(*GetPlanCatalogRequest)(nil),          // 22: termx.cloud.v1.GetPlanCatalogRequest
-	(*GetPlanCatalogResponse)(nil),         // 23: termx.cloud.v1.GetPlanCatalogResponse
-	(*GetAccountSubscriptionRequest)(nil),  // 24: termx.cloud.v1.GetAccountSubscriptionRequest
-	(*GetAccountSubscriptionResponse)(nil), // 25: termx.cloud.v1.GetAccountSubscriptionResponse
-	(*GetAccountEntitlementRequest)(nil),   // 26: termx.cloud.v1.GetAccountEntitlementRequest
-	(*GetAccountEntitlementResponse)(nil),  // 27: termx.cloud.v1.GetAccountEntitlementResponse
-	(*AccountProjection)(nil),              // 28: termx.cloud.v1.AccountProjection
-	(*AccountSessionCredential)(nil),       // 29: termx.cloud.v1.AccountSessionCredential
-	(*RegisterAccountRequest)(nil),         // 30: termx.cloud.v1.RegisterAccountRequest
-	(*RegisterAccountResponse)(nil),        // 31: termx.cloud.v1.RegisterAccountResponse
-	(*PasswordLoginRequest)(nil),           // 32: termx.cloud.v1.PasswordLoginRequest
-	(*PasswordLoginResponse)(nil),          // 33: termx.cloud.v1.PasswordLoginResponse
-	(*RefreshAccountSessionRequest)(nil),   // 34: termx.cloud.v1.RefreshAccountSessionRequest
-	(*RefreshAccountSessionResponse)(nil),  // 35: termx.cloud.v1.RefreshAccountSessionResponse
-	(*LogoutAccountSessionRequest)(nil),    // 36: termx.cloud.v1.LogoutAccountSessionRequest
-	(*LogoutAccountSessionResponse)(nil),   // 37: termx.cloud.v1.LogoutAccountSessionResponse
-	(*ChangeAccountPasswordRequest)(nil),   // 38: termx.cloud.v1.ChangeAccountPasswordRequest
-	(*ChangeAccountPasswordResponse)(nil),  // 39: termx.cloud.v1.ChangeAccountPasswordResponse
-	(*OrderProjection)(nil),                // 40: termx.cloud.v1.OrderProjection
-	(*PaymentAttemptProjection)(nil),       // 41: termx.cloud.v1.PaymentAttemptProjection
-	(*PaymentEventProjection)(nil),         // 42: termx.cloud.v1.PaymentEventProjection
-	(*CreateCheckoutRequest)(nil),          // 43: termx.cloud.v1.CreateCheckoutRequest
-	(*CreateCheckoutResponse)(nil),         // 44: termx.cloud.v1.CreateCheckoutResponse
-	(*CreatePaymentAttemptRequest)(nil),    // 45: termx.cloud.v1.CreatePaymentAttemptRequest
-	(*CreatePaymentAttemptResponse)(nil),   // 46: termx.cloud.v1.CreatePaymentAttemptResponse
-	(*NormalizedPaymentEvent)(nil),         // 47: termx.cloud.v1.NormalizedPaymentEvent
-	(*ApplyPaymentEventRequest)(nil),       // 48: termx.cloud.v1.ApplyPaymentEventRequest
-	(*ApplyPaymentEventResponse)(nil),      // 49: termx.cloud.v1.ApplyPaymentEventResponse
-	(*ConfirmTestPaymentRequest)(nil),      // 50: termx.cloud.v1.ConfirmTestPaymentRequest
-	(*ConfirmTestPaymentResponse)(nil),     // 51: termx.cloud.v1.ConfirmTestPaymentResponse
-	(*TransitionSubscriptionRequest)(nil),  // 52: termx.cloud.v1.TransitionSubscriptionRequest
-	(*TransitionSubscriptionResponse)(nil), // 53: termx.cloud.v1.TransitionSubscriptionResponse
-	(*CommerceAuditProjection)(nil),        // 54: termx.cloud.v1.CommerceAuditProjection
-	(*GetAccountCommerceRequest)(nil),      // 55: termx.cloud.v1.GetAccountCommerceRequest
-	(*GetAccountCommerceResponse)(nil),     // 56: termx.cloud.v1.GetAccountCommerceResponse
-	(*CloudProductError)(nil),              // 57: termx.cloud.v1.CloudProductError
+	(SubscriptionStatus)(0),                // 0: muxvia.cloud.v1.SubscriptionStatus
+	(OrderStatus)(0),                       // 1: muxvia.cloud.v1.OrderStatus
+	(CatalogPriceMode)(0),                  // 2: muxvia.cloud.v1.CatalogPriceMode
+	(PaymentAttemptStatus)(0),              // 3: muxvia.cloud.v1.PaymentAttemptStatus
+	(PaymentEventType)(0),                  // 4: muxvia.cloud.v1.PaymentEventType
+	(PaymentEventState)(0),                 // 5: muxvia.cloud.v1.PaymentEventState
+	(SubscriptionTransitionKind)(0),        // 6: muxvia.cloud.v1.SubscriptionTransitionKind
+	(EntitlementStatus)(0),                 // 7: muxvia.cloud.v1.EntitlementStatus
+	(RelayReservationState)(0),             // 8: muxvia.cloud.v1.RelayReservationState
+	(*RelayServiceCapability)(nil),         // 9: muxvia.cloud.v1.RelayServiceCapability
+	(*PlanCapability)(nil),                 // 10: muxvia.cloud.v1.PlanCapability
+	(*PlanDefinition)(nil),                 // 11: muxvia.cloud.v1.PlanDefinition
+	(*PlanPriceDefinition)(nil),            // 12: muxvia.cloud.v1.PlanPriceDefinition
+	(*PlanPresentation)(nil),               // 13: muxvia.cloud.v1.PlanPresentation
+	(*PlanCatalogContract)(nil),            // 14: muxvia.cloud.v1.PlanCatalogContract
+	(*SubscriptionProjection)(nil),         // 15: muxvia.cloud.v1.SubscriptionProjection
+	(*EntitlementProjection)(nil),          // 16: muxvia.cloud.v1.EntitlementProjection
+	(*RelayQuotaPeriod)(nil),               // 17: muxvia.cloud.v1.RelayQuotaPeriod
+	(*RelayLeaseReservation)(nil),          // 18: muxvia.cloud.v1.RelayLeaseReservation
+	(*RelayUsageAggregate)(nil),            // 19: muxvia.cloud.v1.RelayUsageAggregate
+	(*GetAccountRelayQuotaRequest)(nil),    // 20: muxvia.cloud.v1.GetAccountRelayQuotaRequest
+	(*GetAccountRelayQuotaResponse)(nil),   // 21: muxvia.cloud.v1.GetAccountRelayQuotaResponse
+	(*GetPlanCatalogRequest)(nil),          // 22: muxvia.cloud.v1.GetPlanCatalogRequest
+	(*GetPlanCatalogResponse)(nil),         // 23: muxvia.cloud.v1.GetPlanCatalogResponse
+	(*GetAccountSubscriptionRequest)(nil),  // 24: muxvia.cloud.v1.GetAccountSubscriptionRequest
+	(*GetAccountSubscriptionResponse)(nil), // 25: muxvia.cloud.v1.GetAccountSubscriptionResponse
+	(*GetAccountEntitlementRequest)(nil),   // 26: muxvia.cloud.v1.GetAccountEntitlementRequest
+	(*GetAccountEntitlementResponse)(nil),  // 27: muxvia.cloud.v1.GetAccountEntitlementResponse
+	(*AccountProjection)(nil),              // 28: muxvia.cloud.v1.AccountProjection
+	(*AccountSessionCredential)(nil),       // 29: muxvia.cloud.v1.AccountSessionCredential
+	(*RegisterAccountRequest)(nil),         // 30: muxvia.cloud.v1.RegisterAccountRequest
+	(*RegisterAccountResponse)(nil),        // 31: muxvia.cloud.v1.RegisterAccountResponse
+	(*PasswordLoginRequest)(nil),           // 32: muxvia.cloud.v1.PasswordLoginRequest
+	(*PasswordLoginResponse)(nil),          // 33: muxvia.cloud.v1.PasswordLoginResponse
+	(*RefreshAccountSessionRequest)(nil),   // 34: muxvia.cloud.v1.RefreshAccountSessionRequest
+	(*RefreshAccountSessionResponse)(nil),  // 35: muxvia.cloud.v1.RefreshAccountSessionResponse
+	(*LogoutAccountSessionRequest)(nil),    // 36: muxvia.cloud.v1.LogoutAccountSessionRequest
+	(*LogoutAccountSessionResponse)(nil),   // 37: muxvia.cloud.v1.LogoutAccountSessionResponse
+	(*ChangeAccountPasswordRequest)(nil),   // 38: muxvia.cloud.v1.ChangeAccountPasswordRequest
+	(*ChangeAccountPasswordResponse)(nil),  // 39: muxvia.cloud.v1.ChangeAccountPasswordResponse
+	(*OrderProjection)(nil),                // 40: muxvia.cloud.v1.OrderProjection
+	(*PaymentAttemptProjection)(nil),       // 41: muxvia.cloud.v1.PaymentAttemptProjection
+	(*PaymentEventProjection)(nil),         // 42: muxvia.cloud.v1.PaymentEventProjection
+	(*CreateCheckoutRequest)(nil),          // 43: muxvia.cloud.v1.CreateCheckoutRequest
+	(*CreateCheckoutResponse)(nil),         // 44: muxvia.cloud.v1.CreateCheckoutResponse
+	(*CreatePaymentAttemptRequest)(nil),    // 45: muxvia.cloud.v1.CreatePaymentAttemptRequest
+	(*CreatePaymentAttemptResponse)(nil),   // 46: muxvia.cloud.v1.CreatePaymentAttemptResponse
+	(*NormalizedPaymentEvent)(nil),         // 47: muxvia.cloud.v1.NormalizedPaymentEvent
+	(*ApplyPaymentEventRequest)(nil),       // 48: muxvia.cloud.v1.ApplyPaymentEventRequest
+	(*ApplyPaymentEventResponse)(nil),      // 49: muxvia.cloud.v1.ApplyPaymentEventResponse
+	(*ConfirmTestPaymentRequest)(nil),      // 50: muxvia.cloud.v1.ConfirmTestPaymentRequest
+	(*ConfirmTestPaymentResponse)(nil),     // 51: muxvia.cloud.v1.ConfirmTestPaymentResponse
+	(*TransitionSubscriptionRequest)(nil),  // 52: muxvia.cloud.v1.TransitionSubscriptionRequest
+	(*TransitionSubscriptionResponse)(nil), // 53: muxvia.cloud.v1.TransitionSubscriptionResponse
+	(*CommerceAuditProjection)(nil),        // 54: muxvia.cloud.v1.CommerceAuditProjection
+	(*GetAccountCommerceRequest)(nil),      // 55: muxvia.cloud.v1.GetAccountCommerceRequest
+	(*GetAccountCommerceResponse)(nil),     // 56: muxvia.cloud.v1.GetAccountCommerceResponse
+	(*CloudProductError)(nil),              // 57: muxvia.cloud.v1.CloudProductError
 }
 var file_cloudpb_cloud_product_proto_depIdxs = []int32{
-	9,  // 0: termx.cloud.v1.PlanCapability.relay:type_name -> termx.cloud.v1.RelayServiceCapability
-	10, // 1: termx.cloud.v1.PlanDefinition.capability:type_name -> termx.cloud.v1.PlanCapability
-	12, // 2: termx.cloud.v1.PlanDefinition.price:type_name -> termx.cloud.v1.PlanPriceDefinition
-	13, // 3: termx.cloud.v1.PlanDefinition.presentation:type_name -> termx.cloud.v1.PlanPresentation
-	2,  // 4: termx.cloud.v1.PlanPriceDefinition.mode:type_name -> termx.cloud.v1.CatalogPriceMode
-	11, // 5: termx.cloud.v1.PlanCatalogContract.plans:type_name -> termx.cloud.v1.PlanDefinition
-	0,  // 6: termx.cloud.v1.SubscriptionProjection.status:type_name -> termx.cloud.v1.SubscriptionStatus
-	7,  // 7: termx.cloud.v1.EntitlementProjection.status:type_name -> termx.cloud.v1.EntitlementStatus
-	10, // 8: termx.cloud.v1.EntitlementProjection.capability:type_name -> termx.cloud.v1.PlanCapability
-	8,  // 9: termx.cloud.v1.RelayLeaseReservation.state:type_name -> termx.cloud.v1.RelayReservationState
-	17, // 10: termx.cloud.v1.GetAccountRelayQuotaResponse.period:type_name -> termx.cloud.v1.RelayQuotaPeriod
-	18, // 11: termx.cloud.v1.GetAccountRelayQuotaResponse.active_reservations:type_name -> termx.cloud.v1.RelayLeaseReservation
-	14, // 12: termx.cloud.v1.GetPlanCatalogResponse.catalog:type_name -> termx.cloud.v1.PlanCatalogContract
-	15, // 13: termx.cloud.v1.GetAccountSubscriptionResponse.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
-	16, // 14: termx.cloud.v1.GetAccountEntitlementResponse.entitlement:type_name -> termx.cloud.v1.EntitlementProjection
-	28, // 15: termx.cloud.v1.AccountSessionCredential.account:type_name -> termx.cloud.v1.AccountProjection
-	29, // 16: termx.cloud.v1.RegisterAccountResponse.session:type_name -> termx.cloud.v1.AccountSessionCredential
-	29, // 17: termx.cloud.v1.PasswordLoginResponse.session:type_name -> termx.cloud.v1.AccountSessionCredential
-	29, // 18: termx.cloud.v1.RefreshAccountSessionResponse.session:type_name -> termx.cloud.v1.AccountSessionCredential
-	29, // 19: termx.cloud.v1.ChangeAccountPasswordResponse.session:type_name -> termx.cloud.v1.AccountSessionCredential
-	1,  // 20: termx.cloud.v1.OrderProjection.status:type_name -> termx.cloud.v1.OrderStatus
-	6,  // 21: termx.cloud.v1.OrderProjection.requested_transition:type_name -> termx.cloud.v1.SubscriptionTransitionKind
-	12, // 22: termx.cloud.v1.OrderProjection.price:type_name -> termx.cloud.v1.PlanPriceDefinition
-	3,  // 23: termx.cloud.v1.PaymentAttemptProjection.status:type_name -> termx.cloud.v1.PaymentAttemptStatus
-	47, // 24: termx.cloud.v1.PaymentEventProjection.event:type_name -> termx.cloud.v1.NormalizedPaymentEvent
-	5,  // 25: termx.cloud.v1.PaymentEventProjection.state:type_name -> termx.cloud.v1.PaymentEventState
-	6,  // 26: termx.cloud.v1.CreateCheckoutRequest.requested_transition:type_name -> termx.cloud.v1.SubscriptionTransitionKind
-	40, // 27: termx.cloud.v1.CreateCheckoutResponse.order:type_name -> termx.cloud.v1.OrderProjection
-	41, // 28: termx.cloud.v1.CreatePaymentAttemptResponse.payment_attempt:type_name -> termx.cloud.v1.PaymentAttemptProjection
-	4,  // 29: termx.cloud.v1.NormalizedPaymentEvent.event_type:type_name -> termx.cloud.v1.PaymentEventType
-	47, // 30: termx.cloud.v1.ApplyPaymentEventRequest.event:type_name -> termx.cloud.v1.NormalizedPaymentEvent
-	40, // 31: termx.cloud.v1.ApplyPaymentEventResponse.order:type_name -> termx.cloud.v1.OrderProjection
-	15, // 32: termx.cloud.v1.ApplyPaymentEventResponse.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
-	5,  // 33: termx.cloud.v1.ApplyPaymentEventResponse.event_state:type_name -> termx.cloud.v1.PaymentEventState
-	41, // 34: termx.cloud.v1.ApplyPaymentEventResponse.payment_attempt:type_name -> termx.cloud.v1.PaymentAttemptProjection
-	4,  // 35: termx.cloud.v1.ConfirmTestPaymentRequest.event_type:type_name -> termx.cloud.v1.PaymentEventType
-	49, // 36: termx.cloud.v1.ConfirmTestPaymentResponse.result:type_name -> termx.cloud.v1.ApplyPaymentEventResponse
-	6,  // 37: termx.cloud.v1.TransitionSubscriptionRequest.transition:type_name -> termx.cloud.v1.SubscriptionTransitionKind
-	15, // 38: termx.cloud.v1.TransitionSubscriptionResponse.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
-	16, // 39: termx.cloud.v1.TransitionSubscriptionResponse.entitlement:type_name -> termx.cloud.v1.EntitlementProjection
-	28, // 40: termx.cloud.v1.GetAccountCommerceResponse.account:type_name -> termx.cloud.v1.AccountProjection
-	15, // 41: termx.cloud.v1.GetAccountCommerceResponse.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
-	16, // 42: termx.cloud.v1.GetAccountCommerceResponse.entitlement:type_name -> termx.cloud.v1.EntitlementProjection
-	40, // 43: termx.cloud.v1.GetAccountCommerceResponse.orders:type_name -> termx.cloud.v1.OrderProjection
-	54, // 44: termx.cloud.v1.GetAccountCommerceResponse.audit:type_name -> termx.cloud.v1.CommerceAuditProjection
-	41, // 45: termx.cloud.v1.GetAccountCommerceResponse.payment_attempts:type_name -> termx.cloud.v1.PaymentAttemptProjection
-	42, // 46: termx.cloud.v1.GetAccountCommerceResponse.payment_events:type_name -> termx.cloud.v1.PaymentEventProjection
+	9,  // 0: muxvia.cloud.v1.PlanCapability.relay:type_name -> muxvia.cloud.v1.RelayServiceCapability
+	10, // 1: muxvia.cloud.v1.PlanDefinition.capability:type_name -> muxvia.cloud.v1.PlanCapability
+	12, // 2: muxvia.cloud.v1.PlanDefinition.price:type_name -> muxvia.cloud.v1.PlanPriceDefinition
+	13, // 3: muxvia.cloud.v1.PlanDefinition.presentation:type_name -> muxvia.cloud.v1.PlanPresentation
+	2,  // 4: muxvia.cloud.v1.PlanPriceDefinition.mode:type_name -> muxvia.cloud.v1.CatalogPriceMode
+	11, // 5: muxvia.cloud.v1.PlanCatalogContract.plans:type_name -> muxvia.cloud.v1.PlanDefinition
+	0,  // 6: muxvia.cloud.v1.SubscriptionProjection.status:type_name -> muxvia.cloud.v1.SubscriptionStatus
+	7,  // 7: muxvia.cloud.v1.EntitlementProjection.status:type_name -> muxvia.cloud.v1.EntitlementStatus
+	10, // 8: muxvia.cloud.v1.EntitlementProjection.capability:type_name -> muxvia.cloud.v1.PlanCapability
+	8,  // 9: muxvia.cloud.v1.RelayLeaseReservation.state:type_name -> muxvia.cloud.v1.RelayReservationState
+	17, // 10: muxvia.cloud.v1.GetAccountRelayQuotaResponse.period:type_name -> muxvia.cloud.v1.RelayQuotaPeriod
+	18, // 11: muxvia.cloud.v1.GetAccountRelayQuotaResponse.active_reservations:type_name -> muxvia.cloud.v1.RelayLeaseReservation
+	14, // 12: muxvia.cloud.v1.GetPlanCatalogResponse.catalog:type_name -> muxvia.cloud.v1.PlanCatalogContract
+	15, // 13: muxvia.cloud.v1.GetAccountSubscriptionResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	16, // 14: muxvia.cloud.v1.GetAccountEntitlementResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
+	28, // 15: muxvia.cloud.v1.AccountSessionCredential.account:type_name -> muxvia.cloud.v1.AccountProjection
+	29, // 16: muxvia.cloud.v1.RegisterAccountResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
+	29, // 17: muxvia.cloud.v1.PasswordLoginResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
+	29, // 18: muxvia.cloud.v1.RefreshAccountSessionResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
+	29, // 19: muxvia.cloud.v1.ChangeAccountPasswordResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
+	1,  // 20: muxvia.cloud.v1.OrderProjection.status:type_name -> muxvia.cloud.v1.OrderStatus
+	6,  // 21: muxvia.cloud.v1.OrderProjection.requested_transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
+	12, // 22: muxvia.cloud.v1.OrderProjection.price:type_name -> muxvia.cloud.v1.PlanPriceDefinition
+	3,  // 23: muxvia.cloud.v1.PaymentAttemptProjection.status:type_name -> muxvia.cloud.v1.PaymentAttemptStatus
+	47, // 24: muxvia.cloud.v1.PaymentEventProjection.event:type_name -> muxvia.cloud.v1.NormalizedPaymentEvent
+	5,  // 25: muxvia.cloud.v1.PaymentEventProjection.state:type_name -> muxvia.cloud.v1.PaymentEventState
+	6,  // 26: muxvia.cloud.v1.CreateCheckoutRequest.requested_transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
+	40, // 27: muxvia.cloud.v1.CreateCheckoutResponse.order:type_name -> muxvia.cloud.v1.OrderProjection
+	41, // 28: muxvia.cloud.v1.CreatePaymentAttemptResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
+	4,  // 29: muxvia.cloud.v1.NormalizedPaymentEvent.event_type:type_name -> muxvia.cloud.v1.PaymentEventType
+	47, // 30: muxvia.cloud.v1.ApplyPaymentEventRequest.event:type_name -> muxvia.cloud.v1.NormalizedPaymentEvent
+	40, // 31: muxvia.cloud.v1.ApplyPaymentEventResponse.order:type_name -> muxvia.cloud.v1.OrderProjection
+	15, // 32: muxvia.cloud.v1.ApplyPaymentEventResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	5,  // 33: muxvia.cloud.v1.ApplyPaymentEventResponse.event_state:type_name -> muxvia.cloud.v1.PaymentEventState
+	41, // 34: muxvia.cloud.v1.ApplyPaymentEventResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
+	4,  // 35: muxvia.cloud.v1.ConfirmTestPaymentRequest.event_type:type_name -> muxvia.cloud.v1.PaymentEventType
+	49, // 36: muxvia.cloud.v1.ConfirmTestPaymentResponse.result:type_name -> muxvia.cloud.v1.ApplyPaymentEventResponse
+	6,  // 37: muxvia.cloud.v1.TransitionSubscriptionRequest.transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
+	15, // 38: muxvia.cloud.v1.TransitionSubscriptionResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	16, // 39: muxvia.cloud.v1.TransitionSubscriptionResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
+	28, // 40: muxvia.cloud.v1.GetAccountCommerceResponse.account:type_name -> muxvia.cloud.v1.AccountProjection
+	15, // 41: muxvia.cloud.v1.GetAccountCommerceResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	16, // 42: muxvia.cloud.v1.GetAccountCommerceResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
+	40, // 43: muxvia.cloud.v1.GetAccountCommerceResponse.orders:type_name -> muxvia.cloud.v1.OrderProjection
+	54, // 44: muxvia.cloud.v1.GetAccountCommerceResponse.audit:type_name -> muxvia.cloud.v1.CommerceAuditProjection
+	41, // 45: muxvia.cloud.v1.GetAccountCommerceResponse.payment_attempts:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
+	42, // 46: muxvia.cloud.v1.GetAccountCommerceResponse.payment_events:type_name -> muxvia.cloud.v1.PaymentEventProjection
 	47, // [47:47] is the sub-list for method output_type
 	47, // [47:47] is the sub-list for method input_type
 	47, // [47:47] is the sub-list for extension type_name

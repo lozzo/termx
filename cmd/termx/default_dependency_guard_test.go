@@ -29,13 +29,13 @@ func TestDefaultRuntimeSourceDoesNotImportLegacyCoreOrTUI(t *testing.T) {
 		}
 		text := string(data)
 		for _, forbidden := range []string{
-			"\"github.com/lozzow/termx/termx-core\"",
-			"\"github.com/lozzow/termx/tuiv2",
-			"\"github.com/lozzow/termx/termx-remote\"",
-			"\"github.com/lozzow/termx/termx-remote/",
-			"\"github.com/lozzow/termx/termx-hub",
-			"\"github.com/lozzow/termx/web-control",
-			"github.com/lozzow/termx/private/",
+			"\"github.com/muxvia/muxvia/termx-core\"",
+			"\"github.com/muxvia/muxvia/tuiv2",
+			"\"github.com/muxvia/muxvia/termx-remote\"",
+			"\"github.com/muxvia/muxvia/termx-remote/",
+			"\"github.com/muxvia/muxvia/termx-hub",
+			"\"github.com/muxvia/muxvia/web-control",
+			"github.com/muxvia/muxvia/private/",
 			"TERMX_HUB_AGENT_TOKEN",
 			"TERMX_HUB_URL",
 			"session_token",
@@ -51,12 +51,12 @@ func TestDefaultRuntimeSourceDoesNotImportLegacyCoreOrTUI(t *testing.T) {
 		t.Fatalf("read go.mod: %v", err)
 	}
 	for _, legacyModule := range []string{
-		"github.com/lozzow/termx/termx-core v0.0.0",
-		"github.com/lozzow/termx/tuiv2 v0.0.0",
-		"github.com/lozzow/termx/termx-remote v0.0.0",
-		"github.com/lozzow/termx/termx-hub v0.0.0",
-		"github.com/lozzow/termx/web-control v0.0.0",
-		"github.com/lozzow/termx/private/",
+		"github.com/muxvia/muxvia/termx-core v0.0.0",
+		"github.com/muxvia/muxvia/tuiv2 v0.0.0",
+		"github.com/muxvia/muxvia/termx-remote v0.0.0",
+		"github.com/muxvia/muxvia/termx-hub v0.0.0",
+		"github.com/muxvia/muxvia/web-control v0.0.0",
+		"github.com/muxvia/muxvia/private/",
 	} {
 		if strings.Contains(string(goMod), legacyModule) {
 			t.Fatalf("legacy module %s must not remain in root go.mod:\n%s", legacyModule, goMod)

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/core/history"
+	"github.com/muxvia/muxvia/core/history"
 )
 
 func TestR326TmuxAndCoreAuthoritativeHistoryAlignForScreenAppHistory(t *testing.T) {

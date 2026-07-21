@@ -5,7 +5,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/lozzow/termx/shared/transport"
+	"github.com/muxvia/muxvia/shared/transport"
 )
 
 // Transport 是同进程测试用 frame transport。

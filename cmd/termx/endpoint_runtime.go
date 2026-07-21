@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
 )
 
 type resolvedTerminalRef struct {

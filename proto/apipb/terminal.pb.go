@@ -411,7 +411,7 @@ type TerminalInfo struct {
 	Command           []string               `protobuf:"bytes,3,rep,name=command,proto3" json:"command,omitempty"`
 	Tags              map[string]string      `protobuf:"bytes,4,rep,name=tags,proto3" json:"tags,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Size              *TerminalSize          `protobuf:"bytes,5,opt,name=size,proto3" json:"size,omitempty"`
-	State             TerminalState          `protobuf:"varint,6,opt,name=state,proto3,enum=termx.api.v1.TerminalState" json:"state,omitempty"`
+	State             TerminalState          `protobuf:"varint,6,opt,name=state,proto3,enum=muxvia.api.v1.TerminalState" json:"state,omitempty"`
 	Cwd               string                 `protobuf:"bytes,7,opt,name=cwd,proto3" json:"cwd,omitempty"`
 	LiveCwd           string                 `protobuf:"bytes,8,opt,name=live_cwd,json=liveCwd,proto3" json:"live_cwd,omitempty"`
 	CreatedAtUnixNano int64                  `protobuf:"varint,9,opt,name=created_at_unix_nano,json=createdAtUnixNano,proto3" json:"created_at_unix_nano,omitempty"`
@@ -799,7 +799,7 @@ func (x *ResizeOwnership) GetEpoch() uint64 {
 type ResizeControl struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	CanResize      bool                   `protobuf:"varint,1,opt,name=can_resize,json=canResize,proto3" json:"can_resize,omitempty"`
-	Reason         ResizeControlReason    `protobuf:"varint,2,opt,name=reason,proto3,enum=termx.api.v1.ResizeControlReason" json:"reason,omitempty"`
+	Reason         ResizeControlReason    `protobuf:"varint,2,opt,name=reason,proto3,enum=muxvia.api.v1.ResizeControlReason" json:"reason,omitempty"`
 	SizeLocked     bool                   `protobuf:"varint,3,opt,name=size_locked,json=sizeLocked,proto3" json:"size_locked,omitempty"`
 	SurfaceId      string                 `protobuf:"bytes,4,opt,name=surface_id,json=surfaceId,proto3" json:"surface_id,omitempty"`
 	OwnerSurfaceId string                 `protobuf:"bytes,5,opt,name=owner_surface_id,json=ownerSurfaceId,proto3" json:"owner_surface_id,omitempty"`
@@ -1423,8 +1423,8 @@ func (x *TerminalSetTagsCommand) GetTags() map[string]string {
 type TerminalAttachCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Terminal      *TerminalRef           `protobuf:"bytes,2,opt,name=terminal,proto3" json:"terminal,omitempty"`
-	Mode          AttachmentMode         `protobuf:"varint,3,opt,name=mode,proto3,enum=termx.api.v1.AttachmentMode" json:"mode,omitempty"`
-	ResizePolicy  ResizePolicy           `protobuf:"varint,4,opt,name=resize_policy,json=resizePolicy,proto3,enum=termx.api.v1.ResizePolicy" json:"resize_policy,omitempty"`
+	Mode          AttachmentMode         `protobuf:"varint,3,opt,name=mode,proto3,enum=muxvia.api.v1.AttachmentMode" json:"mode,omitempty"`
+	ResizePolicy  ResizePolicy           `protobuf:"varint,4,opt,name=resize_policy,json=resizePolicy,proto3,enum=muxvia.api.v1.ResizePolicy" json:"resize_policy,omitempty"`
 	SurfaceId     string                 `protobuf:"bytes,5,opt,name=surface_id,json=surfaceId,proto3" json:"surface_id,omitempty"`
 	ViewId        string                 `protobuf:"bytes,6,opt,name=view_id,json=viewId,proto3" json:"view_id,omitempty"`
 	Operation     *OperationStamp        `protobuf:"bytes,7,opt,name=operation,proto3" json:"operation,omitempty"`
@@ -1621,7 +1621,7 @@ type TerminalResizeCommand struct {
 	Attachment    *ResourceHandle        `protobuf:"bytes,2,opt,name=attachment,proto3" json:"attachment,omitempty"`
 	Operation     *OperationStamp        `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`
 	Size          *TerminalSize          `protobuf:"bytes,4,opt,name=size,proto3" json:"size,omitempty"`
-	ResizePolicy  ResizePolicy           `protobuf:"varint,5,opt,name=resize_policy,json=resizePolicy,proto3,enum=termx.api.v1.ResizePolicy" json:"resize_policy,omitempty"`
+	ResizePolicy  ResizePolicy           `protobuf:"varint,5,opt,name=resize_policy,json=resizePolicy,proto3,enum=muxvia.api.v1.ResizePolicy" json:"resize_policy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1975,8 +1975,8 @@ func (x *TerminalDefaultsResult) GetDefaults() *TerminalDefaults {
 type TerminalAttachResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Attachment    *AttachmentHandle      `protobuf:"bytes,1,opt,name=attachment,proto3" json:"attachment,omitempty"`
-	Mode          AttachmentMode         `protobuf:"varint,2,opt,name=mode,proto3,enum=termx.api.v1.AttachmentMode" json:"mode,omitempty"`
-	ResizePolicy  ResizePolicy           `protobuf:"varint,3,opt,name=resize_policy,json=resizePolicy,proto3,enum=termx.api.v1.ResizePolicy" json:"resize_policy,omitempty"`
+	Mode          AttachmentMode         `protobuf:"varint,2,opt,name=mode,proto3,enum=muxvia.api.v1.AttachmentMode" json:"mode,omitempty"`
+	ResizePolicy  ResizePolicy           `protobuf:"varint,3,opt,name=resize_policy,json=resizePolicy,proto3,enum=muxvia.api.v1.ResizePolicy" json:"resize_policy,omitempty"`
 	Size          *TerminalSize          `protobuf:"bytes,4,opt,name=size,proto3" json:"size,omitempty"`
 	ResizeControl *ResizeControl         `protobuf:"bytes,5,opt,name=resize_control,json=resizeControl,proto3" json:"resize_control,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -2276,7 +2276,7 @@ var File_apipb_terminal_proto protoreflect.FileDescriptor
 
 const file_apipb_terminal_proto_rawDesc = "" +
 	"\n" +
-	"\x14apipb/terminal.proto\x12\ftermx.api.v1\x1a\x12apipb/common.proto\"O\n" +
+	"\x14apipb/terminal.proto\x12\rmuxvia.api.v1\x1a\x12apipb/common.proto\"O\n" +
 	"\vTerminalRef\x12\x1f\n" +
 	"\vendpoint_id\x18\x01 \x01(\tR\n" +
 	"endpointId\x12\x1f\n" +
@@ -2289,34 +2289,34 @@ const file_apipb_terminal_proto_rawDesc = "" +
 	"\x03pid\x18\x01 \x01(\x05R\x03pid\x12(\n" +
 	"\x10cpu_percent_x100\x18\x02 \x01(\x05R\x0ecpuPercentX100\x12!\n" +
 	"\fmemory_bytes\x18\x03 \x01(\x04R\vmemoryBytes\x12/\n" +
-	"\x14sampled_at_unix_nano\x18\x04 \x01(\x03R\x11sampledAtUnixNano\"\xea\x04\n" +
-	"\fTerminalInfo\x12+\n" +
-	"\x03ref\x18\x01 \x01(\v2\x19.termx.api.v1.TerminalRefR\x03ref\x12\x12\n" +
+	"\x14sampled_at_unix_nano\x18\x04 \x01(\x03R\x11sampledAtUnixNano\"\xef\x04\n" +
+	"\fTerminalInfo\x12,\n" +
+	"\x03ref\x18\x01 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\x03ref\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
-	"\acommand\x18\x03 \x03(\tR\acommand\x128\n" +
-	"\x04tags\x18\x04 \x03(\v2$.termx.api.v1.TerminalInfo.TagsEntryR\x04tags\x12.\n" +
-	"\x04size\x18\x05 \x01(\v2\x1a.termx.api.v1.TerminalSizeR\x04size\x121\n" +
-	"\x05state\x18\x06 \x01(\x0e2\x1b.termx.api.v1.TerminalStateR\x05state\x12\x10\n" +
+	"\acommand\x18\x03 \x03(\tR\acommand\x129\n" +
+	"\x04tags\x18\x04 \x03(\v2%.muxvia.api.v1.TerminalInfo.TagsEntryR\x04tags\x12/\n" +
+	"\x04size\x18\x05 \x01(\v2\x1b.muxvia.api.v1.TerminalSizeR\x04size\x122\n" +
+	"\x05state\x18\x06 \x01(\x0e2\x1c.muxvia.api.v1.TerminalStateR\x05state\x12\x10\n" +
 	"\x03cwd\x18\a \x01(\tR\x03cwd\x12\x19\n" +
 	"\blive_cwd\x18\b \x01(\tR\aliveCwd\x12/\n" +
 	"\x14created_at_unix_nano\x18\t \x01(\x03R\x11createdAtUnixNano\x12 \n" +
 	"\texit_code\x18\n" +
 	" \x01(\x05H\x00R\bexitCode\x88\x01\x01\x12-\n" +
 	"\x13exited_at_unix_nano\x18\v \x01(\x03R\x10exitedAtUnixNano\x12)\n" +
-	"\x10attachment_count\x18\f \x01(\x05R\x0fattachmentCount\x12A\n" +
-	"\tresources\x18\r \x01(\v2#.termx.api.v1.TerminalResourceUsageR\tresources\x1a7\n" +
+	"\x10attachment_count\x18\f \x01(\x05R\x0fattachmentCount\x12B\n" +
+	"\tresources\x18\r \x01(\v2$.muxvia.api.v1.TerminalResourceUsageR\tresources\x1a7\n" +
 	"\tTagsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\f\n" +
 	"\n" +
-	"_exit_code\"\xc8\x03\n" +
+	"_exit_code\"\xca\x03\n" +
 	"\x12TerminalCreateSpec\x12\x1f\n" +
 	"\vterminal_id\x18\x01 \x01(\tR\n" +
 	"terminalId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
-	"\acommand\x18\x03 \x03(\tR\acommand\x12>\n" +
-	"\x04tags\x18\x04 \x03(\v2*.termx.api.v1.TerminalCreateSpec.TagsEntryR\x04tags\x12.\n" +
-	"\x04size\x18\x05 \x01(\v2\x1a.termx.api.v1.TerminalSizeR\x04size\x12\x10\n" +
+	"\acommand\x18\x03 \x03(\tR\acommand\x12?\n" +
+	"\x04tags\x18\x04 \x03(\v2+.muxvia.api.v1.TerminalCreateSpec.TagsEntryR\x04tags\x12/\n" +
+	"\x04size\x18\x05 \x01(\v2\x1b.muxvia.api.v1.TerminalSizeR\x04size\x12\x10\n" +
 	"\x03cwd\x18\x06 \x01(\tR\x03cwd\x12\x10\n" +
 	"\x03env\x18\a \x03(\tR\x03env\x12'\n" +
 	"\x0fscrollback_rows\x18\b \x01(\x05R\x0escrollbackRows\x120\n" +
@@ -2329,126 +2329,126 @@ const file_apipb_terminal_proto_rawDesc = "" +
 	"\x10TerminalDefaults\x12'\n" +
 	"\x0fdefault_command\x18\x01 \x03(\tR\x0edefaultCommand\x12\x1f\n" +
 	"\vdefault_cwd\x18\x02 \x01(\tR\n" +
-	"defaultCwd\"\xf6\x01\n" +
+	"defaultCwd\"\xf7\x01\n" +
 	"\x0fResizeOwnership\x12.\n" +
 	"\x13owner_attachment_id\x18\x01 \x01(\tR\x11ownerAttachmentId\x12(\n" +
 	"\x10owner_surface_id\x18\x02 \x01(\tR\x0eownerSurfaceId\x12\"\n" +
-	"\rowner_view_id\x18\x03 \x01(\tR\vownerViewId\x12.\n" +
-	"\x04size\x18\x04 \x01(\v2\x1a.termx.api.v1.TerminalSizeR\x04size\x12\x1f\n" +
+	"\rowner_view_id\x18\x03 \x01(\tR\vownerViewId\x12/\n" +
+	"\x04size\x18\x04 \x01(\v2\x1b.muxvia.api.v1.TerminalSizeR\x04size\x12\x1f\n" +
 	"\vsize_locked\x18\x05 \x01(\bR\n" +
 	"sizeLocked\x12\x14\n" +
-	"\x05epoch\x18\x06 \x01(\x04R\x05epoch\"\xb4\x02\n" +
+	"\x05epoch\x18\x06 \x01(\x04R\x05epoch\"\xb6\x02\n" +
 	"\rResizeControl\x12\x1d\n" +
 	"\n" +
-	"can_resize\x18\x01 \x01(\bR\tcanResize\x129\n" +
-	"\x06reason\x18\x02 \x01(\x0e2!.termx.api.v1.ResizeControlReasonR\x06reason\x12\x1f\n" +
+	"can_resize\x18\x01 \x01(\bR\tcanResize\x12:\n" +
+	"\x06reason\x18\x02 \x01(\x0e2\".muxvia.api.v1.ResizeControlReasonR\x06reason\x12\x1f\n" +
 	"\vsize_locked\x18\x03 \x01(\bR\n" +
 	"sizeLocked\x12\x1d\n" +
 	"\n" +
 	"surface_id\x18\x04 \x01(\tR\tsurfaceId\x12(\n" +
 	"\x10owner_surface_id\x18\x05 \x01(\tR\x0eownerSurfaceId\x12\"\n" +
-	"\rowner_view_id\x18\x06 \x01(\tR\vownerViewId\x12;\n" +
-	"\townership\x18\a \x01(\v2\x1d.termx.api.v1.ResizeOwnershipR\townership\"\xf7\x01\n" +
-	"\x10AttachmentHandle\x128\n" +
-	"\bresource\x18\x01 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresource\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x12:\n" +
-	"\toperation\x18\x03 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\x12\x1d\n" +
+	"\rowner_view_id\x18\x06 \x01(\tR\vownerViewId\x12<\n" +
+	"\townership\x18\a \x01(\v2\x1e.muxvia.api.v1.ResizeOwnershipR\townership\"\xfa\x01\n" +
+	"\x10AttachmentHandle\x129\n" +
+	"\bresource\x18\x01 \x01(\v2\x1d.muxvia.api.v1.ResourceHandleR\bresource\x126\n" +
+	"\bterminal\x18\x02 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminal\x12;\n" +
+	"\toperation\x18\x03 \x01(\v2\x1d.muxvia.api.v1.OperationStampR\toperation\x12\x1d\n" +
 	"\n" +
 	"surface_id\x18\x04 \x01(\tR\tsurfaceId\x12\x17\n" +
 	"\aview_id\x18\x05 \x01(\tR\x06viewId\"<\n" +
 	"\x12PathDirectoryEntry\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\"\x1f\n" +
-	"\x17TerminalDefaultsCommandJ\x04\b\x01\x10\x02\"[\n" +
-	"\x15TerminalCreateCommand\x12<\n" +
-	"\bterminal\x18\x02 \x01(\v2 .termx.api.v1.TerminalCreateSpecR\bterminalJ\x04\b\x01\x10\x02\"\x1b\n" +
-	"\x13TerminalListCommandJ\x04\b\x01\x10\x02\"Q\n" +
-	"\x12TerminalGetCommand\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"U\n" +
-	"\x16TerminalRestartCommand\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"R\n" +
-	"\x13TerminalKillCommand\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"T\n" +
-	"\x15TerminalRemoveCommand\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"\xee\x01\n" +
-	"\x1aTerminalSetMetadataCommand\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\x12F\n" +
-	"\x04tags\x18\x04 \x03(\v22.termx.api.v1.TerminalSetMetadataCommand.TagsEntryR\x04tags\x1a7\n" +
+	"\x17TerminalDefaultsCommandJ\x04\b\x01\x10\x02\"\\\n" +
+	"\x15TerminalCreateCommand\x12=\n" +
+	"\bterminal\x18\x02 \x01(\v2!.muxvia.api.v1.TerminalCreateSpecR\bterminalJ\x04\b\x01\x10\x02\"\x1b\n" +
+	"\x13TerminalListCommandJ\x04\b\x01\x10\x02\"R\n" +
+	"\x12TerminalGetCommand\x126\n" +
+	"\bterminal\x18\x02 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"V\n" +
+	"\x16TerminalRestartCommand\x126\n" +
+	"\bterminal\x18\x02 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"S\n" +
+	"\x13TerminalKillCommand\x126\n" +
+	"\bterminal\x18\x02 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"U\n" +
+	"\x15TerminalRemoveCommand\x126\n" +
+	"\bterminal\x18\x02 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"\xf0\x01\n" +
+	"\x1aTerminalSetMetadataCommand\x126\n" +
+	"\bterminal\x18\x02 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminal\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12G\n" +
+	"\x04tags\x18\x04 \x03(\v23.muxvia.api.v1.TerminalSetMetadataCommand.TagsEntryR\x04tags\x1a7\n" +
 	"\tTagsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x01\x10\x02\"\xd2\x01\n" +
-	"\x16TerminalSetTagsCommand\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x12B\n" +
-	"\x04tags\x18\x03 \x03(\v2..termx.api.v1.TerminalSetTagsCommand.TagsEntryR\x04tags\x1a7\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x01\x10\x02\"\xd4\x01\n" +
+	"\x16TerminalSetTagsCommand\x126\n" +
+	"\bterminal\x18\x02 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminal\x12C\n" +
+	"\x04tags\x18\x03 \x03(\v2/.muxvia.api.v1.TerminalSetTagsCommand.TagsEntryR\x04tags\x1a7\n" +
 	"\tTagsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x01\x10\x02\"\xbb\x02\n" +
-	"\x15TerminalAttachCommand\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x120\n" +
-	"\x04mode\x18\x03 \x01(\x0e2\x1c.termx.api.v1.AttachmentModeR\x04mode\x12?\n" +
-	"\rresize_policy\x18\x04 \x01(\x0e2\x1a.termx.api.v1.ResizePolicyR\fresizePolicy\x12\x1d\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x01\x10\x02\"\xbf\x02\n" +
+	"\x15TerminalAttachCommand\x126\n" +
+	"\bterminal\x18\x02 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminal\x121\n" +
+	"\x04mode\x18\x03 \x01(\x0e2\x1d.muxvia.api.v1.AttachmentModeR\x04mode\x12@\n" +
+	"\rresize_policy\x18\x04 \x01(\x0e2\x1b.muxvia.api.v1.ResizePolicyR\fresizePolicy\x12\x1d\n" +
 	"\n" +
 	"surface_id\x18\x05 \x01(\tR\tsurfaceId\x12\x17\n" +
-	"\aview_id\x18\x06 \x01(\tR\x06viewId\x12:\n" +
-	"\toperation\x18\a \x01(\v2\x1c.termx.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"\x97\x01\n" +
-	"\x15TerminalDetachCommand\x12<\n" +
+	"\aview_id\x18\x06 \x01(\tR\x06viewId\x12;\n" +
+	"\toperation\x18\a \x01(\v2\x1d.muxvia.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"\x99\x01\n" +
+	"\x15TerminalDetachCommand\x12=\n" +
 	"\n" +
-	"attachment\x18\x02 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\n" +
-	"attachment\x12:\n" +
-	"\toperation\x18\x03 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"\xaa\x01\n" +
-	"\x14TerminalInputCommand\x12<\n" +
+	"attachment\x18\x02 \x01(\v2\x1d.muxvia.api.v1.ResourceHandleR\n" +
+	"attachment\x12;\n" +
+	"\toperation\x18\x03 \x01(\v2\x1d.muxvia.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"\xac\x01\n" +
+	"\x14TerminalInputCommand\x12=\n" +
 	"\n" +
-	"attachment\x18\x02 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\n" +
-	"attachment\x12:\n" +
-	"\toperation\x18\x03 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\x12\x12\n" +
-	"\x04data\x18\x04 \x01(\fR\x04dataJ\x04\b\x01\x10\x02\"\x88\x02\n" +
-	"\x15TerminalResizeCommand\x12<\n" +
+	"attachment\x18\x02 \x01(\v2\x1d.muxvia.api.v1.ResourceHandleR\n" +
+	"attachment\x12;\n" +
+	"\toperation\x18\x03 \x01(\v2\x1d.muxvia.api.v1.OperationStampR\toperation\x12\x12\n" +
+	"\x04data\x18\x04 \x01(\fR\x04dataJ\x04\b\x01\x10\x02\"\x8c\x02\n" +
+	"\x15TerminalResizeCommand\x12=\n" +
 	"\n" +
-	"attachment\x18\x02 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\n" +
-	"attachment\x12:\n" +
-	"\toperation\x18\x03 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\x12.\n" +
-	"\x04size\x18\x04 \x01(\v2\x1a.termx.api.v1.TerminalSizeR\x04size\x12?\n" +
-	"\rresize_policy\x18\x05 \x01(\x0e2\x1a.termx.api.v1.ResizePolicyR\fresizePolicyJ\x04\b\x01\x10\x02\"\xb3\x01\n" +
-	"\x19TerminalResizeLockCommand\x12<\n" +
+	"attachment\x18\x02 \x01(\v2\x1d.muxvia.api.v1.ResourceHandleR\n" +
+	"attachment\x12;\n" +
+	"\toperation\x18\x03 \x01(\v2\x1d.muxvia.api.v1.OperationStampR\toperation\x12/\n" +
+	"\x04size\x18\x04 \x01(\v2\x1b.muxvia.api.v1.TerminalSizeR\x04size\x12@\n" +
+	"\rresize_policy\x18\x05 \x01(\x0e2\x1b.muxvia.api.v1.ResizePolicyR\fresizePolicyJ\x04\b\x01\x10\x02\"\xb5\x01\n" +
+	"\x19TerminalResizeLockCommand\x12=\n" +
 	"\n" +
-	"attachment\x18\x02 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\n" +
-	"attachment\x12:\n" +
-	"\toperation\x18\x03 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\x12\x16\n" +
+	"attachment\x18\x02 \x01(\v2\x1d.muxvia.api.v1.ResourceHandleR\n" +
+	"attachment\x12;\n" +
+	"\toperation\x18\x03 \x01(\v2\x1d.muxvia.api.v1.OperationStampR\toperation\x12\x16\n" +
 	"\x06locked\x18\x04 \x01(\bR\x06lockedJ\x04\b\x01\x10\x02\"P\n" +
 	"\x1aPathListDirectoriesCommand\x12\x16\n" +
 	"\x06prefix\x18\x02 \x01(\tR\x06prefix\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\x05R\x05limitJ\x04\b\x01\x10\x02\"N\n" +
-	"\x14TerminalCreateResult\x126\n" +
-	"\bterminal\x18\x01 \x01(\v2\x1a.termx.api.v1.TerminalInfoR\bterminal\"N\n" +
-	"\x12TerminalListResult\x128\n" +
-	"\tterminals\x18\x01 \x03(\v2\x1a.termx.api.v1.TerminalInfoR\tterminals\"K\n" +
-	"\x11TerminalGetResult\x126\n" +
-	"\bterminal\x18\x01 \x01(\v2\x1a.termx.api.v1.TerminalInfoR\bterminal\"T\n" +
-	"\x16TerminalDefaultsResult\x12:\n" +
-	"\bdefaults\x18\x01 \x01(\v2\x1e.termx.api.v1.TerminalDefaultsR\bdefaults\"\xbd\x02\n" +
-	"\x14TerminalAttachResult\x12>\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limitJ\x04\b\x01\x10\x02\"O\n" +
+	"\x14TerminalCreateResult\x127\n" +
+	"\bterminal\x18\x01 \x01(\v2\x1b.muxvia.api.v1.TerminalInfoR\bterminal\"O\n" +
+	"\x12TerminalListResult\x129\n" +
+	"\tterminals\x18\x01 \x03(\v2\x1b.muxvia.api.v1.TerminalInfoR\tterminals\"L\n" +
+	"\x11TerminalGetResult\x127\n" +
+	"\bterminal\x18\x01 \x01(\v2\x1b.muxvia.api.v1.TerminalInfoR\bterminal\"U\n" +
+	"\x16TerminalDefaultsResult\x12;\n" +
+	"\bdefaults\x18\x01 \x01(\v2\x1f.muxvia.api.v1.TerminalDefaultsR\bdefaults\"\xc2\x02\n" +
+	"\x14TerminalAttachResult\x12?\n" +
 	"\n" +
-	"attachment\x18\x01 \x01(\v2\x1e.termx.api.v1.AttachmentHandleR\n" +
-	"attachment\x120\n" +
-	"\x04mode\x18\x02 \x01(\x0e2\x1c.termx.api.v1.AttachmentModeR\x04mode\x12?\n" +
-	"\rresize_policy\x18\x03 \x01(\x0e2\x1a.termx.api.v1.ResizePolicyR\fresizePolicy\x12.\n" +
-	"\x04size\x18\x04 \x01(\v2\x1a.termx.api.v1.TerminalSizeR\x04size\x12B\n" +
-	"\x0eresize_control\x18\x05 \x01(\v2\x1b.termx.api.v1.ResizeControlR\rresizeControl\"\xa4\x01\n" +
-	"\x14TerminalResizeResult\x12.\n" +
-	"\x04size\x18\x01 \x01(\v2\x1a.termx.api.v1.TerminalSizeR\x04size\x12\x18\n" +
-	"\aresized\x18\x02 \x01(\bR\aresized\x12B\n" +
-	"\x0eresize_control\x18\x03 \x01(\v2\x1b.termx.api.v1.ResizeControlR\rresizeControl\"\xac\x01\n" +
+	"attachment\x18\x01 \x01(\v2\x1f.muxvia.api.v1.AttachmentHandleR\n" +
+	"attachment\x121\n" +
+	"\x04mode\x18\x02 \x01(\x0e2\x1d.muxvia.api.v1.AttachmentModeR\x04mode\x12@\n" +
+	"\rresize_policy\x18\x03 \x01(\x0e2\x1b.muxvia.api.v1.ResizePolicyR\fresizePolicy\x12/\n" +
+	"\x04size\x18\x04 \x01(\v2\x1b.muxvia.api.v1.TerminalSizeR\x04size\x12C\n" +
+	"\x0eresize_control\x18\x05 \x01(\v2\x1c.muxvia.api.v1.ResizeControlR\rresizeControl\"\xa6\x01\n" +
+	"\x14TerminalResizeResult\x12/\n" +
+	"\x04size\x18\x01 \x01(\v2\x1b.muxvia.api.v1.TerminalSizeR\x04size\x12\x18\n" +
+	"\aresized\x18\x02 \x01(\bR\aresized\x12C\n" +
+	"\x0eresize_control\x18\x03 \x01(\v2\x1c.muxvia.api.v1.ResizeControlR\rresizeControl\"\xad\x01\n" +
 	"\x19PathListDirectoriesResult\x12\x1b\n" +
-	"\tbase_path\x18\x01 \x01(\tR\bbasePath\x12:\n" +
-	"\aentries\x18\x02 \x03(\v2 .termx.api.v1.PathDirectoryEntryR\aentries\x12\x18\n" +
+	"\tbase_path\x18\x01 \x01(\tR\bbasePath\x12;\n" +
+	"\aentries\x18\x02 \x03(\v2!.muxvia.api.v1.PathDirectoryEntryR\aentries\x12\x18\n" +
 	"\amissing\x18\x03 \x01(\bR\amissing\x12\x1c\n" +
-	"\ttruncated\x18\x04 \x01(\bR\ttruncated\"P\n" +
-	"\x16TerminalLifecycleEvent\x126\n" +
-	"\bterminal\x18\x01 \x01(\v2\x1a.termx.api.v1.TerminalInfoR\bterminal\"\x97\x01\n" +
-	"\x1aTerminalResizeControlEvent\x125\n" +
-	"\bterminal\x18\x01 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x12B\n" +
-	"\x0eresize_control\x18\x02 \x01(\v2\x1b.termx.api.v1.ResizeControlR\rresizeControl*\x9e\x01\n" +
+	"\ttruncated\x18\x04 \x01(\bR\ttruncated\"Q\n" +
+	"\x16TerminalLifecycleEvent\x127\n" +
+	"\bterminal\x18\x01 \x01(\v2\x1b.muxvia.api.v1.TerminalInfoR\bterminal\"\x99\x01\n" +
+	"\x1aTerminalResizeControlEvent\x126\n" +
+	"\bterminal\x18\x01 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminal\x12C\n" +
+	"\x0eresize_control\x18\x02 \x01(\v2\x1c.muxvia.api.v1.ResizeControlR\rresizeControl*\x9e\x01\n" +
 	"\rTerminalState\x12\x1e\n" +
 	"\x1aTERMINAL_STATE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16TERMINAL_STATE_CREATED\x10\x01\x12\x1a\n" +
@@ -2469,7 +2469,7 @@ const file_apipb_terminal_proto_rawDesc = "" +
 	"\x1bRESIZE_CONTROL_REASON_OWNER\x10\x01\x12\"\n" +
 	"\x1eRESIZE_CONTROL_REASON_FOLLOWER\x10\x02\x12\"\n" +
 	"\x1eRESIZE_CONTROL_REASON_OBSERVER\x10\x03\x12%\n" +
-	"!RESIZE_CONTROL_REASON_SIZE_LOCKED\x10\x04B%Z#github.com/lozzow/termx/proto/apipbb\x06proto3"
+	"!RESIZE_CONTROL_REASON_SIZE_LOCKED\x10\x04B&Z$github.com/muxvia/muxvia/proto/apipbb\x06proto3"
 
 var (
 	file_apipb_terminal_proto_rawDescOnce sync.Once
@@ -2486,103 +2486,103 @@ func file_apipb_terminal_proto_rawDescGZIP() []byte {
 var file_apipb_terminal_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
 var file_apipb_terminal_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
 var file_apipb_terminal_proto_goTypes = []any{
-	(TerminalState)(0),                 // 0: termx.api.v1.TerminalState
-	(AttachmentMode)(0),                // 1: termx.api.v1.AttachmentMode
-	(ResizePolicy)(0),                  // 2: termx.api.v1.ResizePolicy
-	(ResizeControlReason)(0),           // 3: termx.api.v1.ResizeControlReason
-	(*TerminalRef)(nil),                // 4: termx.api.v1.TerminalRef
-	(*TerminalSize)(nil),               // 5: termx.api.v1.TerminalSize
-	(*TerminalResourceUsage)(nil),      // 6: termx.api.v1.TerminalResourceUsage
-	(*TerminalInfo)(nil),               // 7: termx.api.v1.TerminalInfo
-	(*TerminalCreateSpec)(nil),         // 8: termx.api.v1.TerminalCreateSpec
-	(*TerminalDefaults)(nil),           // 9: termx.api.v1.TerminalDefaults
-	(*ResizeOwnership)(nil),            // 10: termx.api.v1.ResizeOwnership
-	(*ResizeControl)(nil),              // 11: termx.api.v1.ResizeControl
-	(*AttachmentHandle)(nil),           // 12: termx.api.v1.AttachmentHandle
-	(*PathDirectoryEntry)(nil),         // 13: termx.api.v1.PathDirectoryEntry
-	(*TerminalDefaultsCommand)(nil),    // 14: termx.api.v1.TerminalDefaultsCommand
-	(*TerminalCreateCommand)(nil),      // 15: termx.api.v1.TerminalCreateCommand
-	(*TerminalListCommand)(nil),        // 16: termx.api.v1.TerminalListCommand
-	(*TerminalGetCommand)(nil),         // 17: termx.api.v1.TerminalGetCommand
-	(*TerminalRestartCommand)(nil),     // 18: termx.api.v1.TerminalRestartCommand
-	(*TerminalKillCommand)(nil),        // 19: termx.api.v1.TerminalKillCommand
-	(*TerminalRemoveCommand)(nil),      // 20: termx.api.v1.TerminalRemoveCommand
-	(*TerminalSetMetadataCommand)(nil), // 21: termx.api.v1.TerminalSetMetadataCommand
-	(*TerminalSetTagsCommand)(nil),     // 22: termx.api.v1.TerminalSetTagsCommand
-	(*TerminalAttachCommand)(nil),      // 23: termx.api.v1.TerminalAttachCommand
-	(*TerminalDetachCommand)(nil),      // 24: termx.api.v1.TerminalDetachCommand
-	(*TerminalInputCommand)(nil),       // 25: termx.api.v1.TerminalInputCommand
-	(*TerminalResizeCommand)(nil),      // 26: termx.api.v1.TerminalResizeCommand
-	(*TerminalResizeLockCommand)(nil),  // 27: termx.api.v1.TerminalResizeLockCommand
-	(*PathListDirectoriesCommand)(nil), // 28: termx.api.v1.PathListDirectoriesCommand
-	(*TerminalCreateResult)(nil),       // 29: termx.api.v1.TerminalCreateResult
-	(*TerminalListResult)(nil),         // 30: termx.api.v1.TerminalListResult
-	(*TerminalGetResult)(nil),          // 31: termx.api.v1.TerminalGetResult
-	(*TerminalDefaultsResult)(nil),     // 32: termx.api.v1.TerminalDefaultsResult
-	(*TerminalAttachResult)(nil),       // 33: termx.api.v1.TerminalAttachResult
-	(*TerminalResizeResult)(nil),       // 34: termx.api.v1.TerminalResizeResult
-	(*PathListDirectoriesResult)(nil),  // 35: termx.api.v1.PathListDirectoriesResult
-	(*TerminalLifecycleEvent)(nil),     // 36: termx.api.v1.TerminalLifecycleEvent
-	(*TerminalResizeControlEvent)(nil), // 37: termx.api.v1.TerminalResizeControlEvent
-	nil,                                // 38: termx.api.v1.TerminalInfo.TagsEntry
-	nil,                                // 39: termx.api.v1.TerminalCreateSpec.TagsEntry
-	nil,                                // 40: termx.api.v1.TerminalSetMetadataCommand.TagsEntry
-	nil,                                // 41: termx.api.v1.TerminalSetTagsCommand.TagsEntry
-	(*ResourceHandle)(nil),             // 42: termx.api.v1.ResourceHandle
-	(*OperationStamp)(nil),             // 43: termx.api.v1.OperationStamp
+	(TerminalState)(0),                 // 0: muxvia.api.v1.TerminalState
+	(AttachmentMode)(0),                // 1: muxvia.api.v1.AttachmentMode
+	(ResizePolicy)(0),                  // 2: muxvia.api.v1.ResizePolicy
+	(ResizeControlReason)(0),           // 3: muxvia.api.v1.ResizeControlReason
+	(*TerminalRef)(nil),                // 4: muxvia.api.v1.TerminalRef
+	(*TerminalSize)(nil),               // 5: muxvia.api.v1.TerminalSize
+	(*TerminalResourceUsage)(nil),      // 6: muxvia.api.v1.TerminalResourceUsage
+	(*TerminalInfo)(nil),               // 7: muxvia.api.v1.TerminalInfo
+	(*TerminalCreateSpec)(nil),         // 8: muxvia.api.v1.TerminalCreateSpec
+	(*TerminalDefaults)(nil),           // 9: muxvia.api.v1.TerminalDefaults
+	(*ResizeOwnership)(nil),            // 10: muxvia.api.v1.ResizeOwnership
+	(*ResizeControl)(nil),              // 11: muxvia.api.v1.ResizeControl
+	(*AttachmentHandle)(nil),           // 12: muxvia.api.v1.AttachmentHandle
+	(*PathDirectoryEntry)(nil),         // 13: muxvia.api.v1.PathDirectoryEntry
+	(*TerminalDefaultsCommand)(nil),    // 14: muxvia.api.v1.TerminalDefaultsCommand
+	(*TerminalCreateCommand)(nil),      // 15: muxvia.api.v1.TerminalCreateCommand
+	(*TerminalListCommand)(nil),        // 16: muxvia.api.v1.TerminalListCommand
+	(*TerminalGetCommand)(nil),         // 17: muxvia.api.v1.TerminalGetCommand
+	(*TerminalRestartCommand)(nil),     // 18: muxvia.api.v1.TerminalRestartCommand
+	(*TerminalKillCommand)(nil),        // 19: muxvia.api.v1.TerminalKillCommand
+	(*TerminalRemoveCommand)(nil),      // 20: muxvia.api.v1.TerminalRemoveCommand
+	(*TerminalSetMetadataCommand)(nil), // 21: muxvia.api.v1.TerminalSetMetadataCommand
+	(*TerminalSetTagsCommand)(nil),     // 22: muxvia.api.v1.TerminalSetTagsCommand
+	(*TerminalAttachCommand)(nil),      // 23: muxvia.api.v1.TerminalAttachCommand
+	(*TerminalDetachCommand)(nil),      // 24: muxvia.api.v1.TerminalDetachCommand
+	(*TerminalInputCommand)(nil),       // 25: muxvia.api.v1.TerminalInputCommand
+	(*TerminalResizeCommand)(nil),      // 26: muxvia.api.v1.TerminalResizeCommand
+	(*TerminalResizeLockCommand)(nil),  // 27: muxvia.api.v1.TerminalResizeLockCommand
+	(*PathListDirectoriesCommand)(nil), // 28: muxvia.api.v1.PathListDirectoriesCommand
+	(*TerminalCreateResult)(nil),       // 29: muxvia.api.v1.TerminalCreateResult
+	(*TerminalListResult)(nil),         // 30: muxvia.api.v1.TerminalListResult
+	(*TerminalGetResult)(nil),          // 31: muxvia.api.v1.TerminalGetResult
+	(*TerminalDefaultsResult)(nil),     // 32: muxvia.api.v1.TerminalDefaultsResult
+	(*TerminalAttachResult)(nil),       // 33: muxvia.api.v1.TerminalAttachResult
+	(*TerminalResizeResult)(nil),       // 34: muxvia.api.v1.TerminalResizeResult
+	(*PathListDirectoriesResult)(nil),  // 35: muxvia.api.v1.PathListDirectoriesResult
+	(*TerminalLifecycleEvent)(nil),     // 36: muxvia.api.v1.TerminalLifecycleEvent
+	(*TerminalResizeControlEvent)(nil), // 37: muxvia.api.v1.TerminalResizeControlEvent
+	nil,                                // 38: muxvia.api.v1.TerminalInfo.TagsEntry
+	nil,                                // 39: muxvia.api.v1.TerminalCreateSpec.TagsEntry
+	nil,                                // 40: muxvia.api.v1.TerminalSetMetadataCommand.TagsEntry
+	nil,                                // 41: muxvia.api.v1.TerminalSetTagsCommand.TagsEntry
+	(*ResourceHandle)(nil),             // 42: muxvia.api.v1.ResourceHandle
+	(*OperationStamp)(nil),             // 43: muxvia.api.v1.OperationStamp
 }
 var file_apipb_terminal_proto_depIdxs = []int32{
-	4,  // 0: termx.api.v1.TerminalInfo.ref:type_name -> termx.api.v1.TerminalRef
-	38, // 1: termx.api.v1.TerminalInfo.tags:type_name -> termx.api.v1.TerminalInfo.TagsEntry
-	5,  // 2: termx.api.v1.TerminalInfo.size:type_name -> termx.api.v1.TerminalSize
-	0,  // 3: termx.api.v1.TerminalInfo.state:type_name -> termx.api.v1.TerminalState
-	6,  // 4: termx.api.v1.TerminalInfo.resources:type_name -> termx.api.v1.TerminalResourceUsage
-	39, // 5: termx.api.v1.TerminalCreateSpec.tags:type_name -> termx.api.v1.TerminalCreateSpec.TagsEntry
-	5,  // 6: termx.api.v1.TerminalCreateSpec.size:type_name -> termx.api.v1.TerminalSize
-	5,  // 7: termx.api.v1.ResizeOwnership.size:type_name -> termx.api.v1.TerminalSize
-	3,  // 8: termx.api.v1.ResizeControl.reason:type_name -> termx.api.v1.ResizeControlReason
-	10, // 9: termx.api.v1.ResizeControl.ownership:type_name -> termx.api.v1.ResizeOwnership
-	42, // 10: termx.api.v1.AttachmentHandle.resource:type_name -> termx.api.v1.ResourceHandle
-	4,  // 11: termx.api.v1.AttachmentHandle.terminal:type_name -> termx.api.v1.TerminalRef
-	43, // 12: termx.api.v1.AttachmentHandle.operation:type_name -> termx.api.v1.OperationStamp
-	8,  // 13: termx.api.v1.TerminalCreateCommand.terminal:type_name -> termx.api.v1.TerminalCreateSpec
-	4,  // 14: termx.api.v1.TerminalGetCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	4,  // 15: termx.api.v1.TerminalRestartCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	4,  // 16: termx.api.v1.TerminalKillCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	4,  // 17: termx.api.v1.TerminalRemoveCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	4,  // 18: termx.api.v1.TerminalSetMetadataCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	40, // 19: termx.api.v1.TerminalSetMetadataCommand.tags:type_name -> termx.api.v1.TerminalSetMetadataCommand.TagsEntry
-	4,  // 20: termx.api.v1.TerminalSetTagsCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	41, // 21: termx.api.v1.TerminalSetTagsCommand.tags:type_name -> termx.api.v1.TerminalSetTagsCommand.TagsEntry
-	4,  // 22: termx.api.v1.TerminalAttachCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	1,  // 23: termx.api.v1.TerminalAttachCommand.mode:type_name -> termx.api.v1.AttachmentMode
-	2,  // 24: termx.api.v1.TerminalAttachCommand.resize_policy:type_name -> termx.api.v1.ResizePolicy
-	43, // 25: termx.api.v1.TerminalAttachCommand.operation:type_name -> termx.api.v1.OperationStamp
-	42, // 26: termx.api.v1.TerminalDetachCommand.attachment:type_name -> termx.api.v1.ResourceHandle
-	43, // 27: termx.api.v1.TerminalDetachCommand.operation:type_name -> termx.api.v1.OperationStamp
-	42, // 28: termx.api.v1.TerminalInputCommand.attachment:type_name -> termx.api.v1.ResourceHandle
-	43, // 29: termx.api.v1.TerminalInputCommand.operation:type_name -> termx.api.v1.OperationStamp
-	42, // 30: termx.api.v1.TerminalResizeCommand.attachment:type_name -> termx.api.v1.ResourceHandle
-	43, // 31: termx.api.v1.TerminalResizeCommand.operation:type_name -> termx.api.v1.OperationStamp
-	5,  // 32: termx.api.v1.TerminalResizeCommand.size:type_name -> termx.api.v1.TerminalSize
-	2,  // 33: termx.api.v1.TerminalResizeCommand.resize_policy:type_name -> termx.api.v1.ResizePolicy
-	42, // 34: termx.api.v1.TerminalResizeLockCommand.attachment:type_name -> termx.api.v1.ResourceHandle
-	43, // 35: termx.api.v1.TerminalResizeLockCommand.operation:type_name -> termx.api.v1.OperationStamp
-	7,  // 36: termx.api.v1.TerminalCreateResult.terminal:type_name -> termx.api.v1.TerminalInfo
-	7,  // 37: termx.api.v1.TerminalListResult.terminals:type_name -> termx.api.v1.TerminalInfo
-	7,  // 38: termx.api.v1.TerminalGetResult.terminal:type_name -> termx.api.v1.TerminalInfo
-	9,  // 39: termx.api.v1.TerminalDefaultsResult.defaults:type_name -> termx.api.v1.TerminalDefaults
-	12, // 40: termx.api.v1.TerminalAttachResult.attachment:type_name -> termx.api.v1.AttachmentHandle
-	1,  // 41: termx.api.v1.TerminalAttachResult.mode:type_name -> termx.api.v1.AttachmentMode
-	2,  // 42: termx.api.v1.TerminalAttachResult.resize_policy:type_name -> termx.api.v1.ResizePolicy
-	5,  // 43: termx.api.v1.TerminalAttachResult.size:type_name -> termx.api.v1.TerminalSize
-	11, // 44: termx.api.v1.TerminalAttachResult.resize_control:type_name -> termx.api.v1.ResizeControl
-	5,  // 45: termx.api.v1.TerminalResizeResult.size:type_name -> termx.api.v1.TerminalSize
-	11, // 46: termx.api.v1.TerminalResizeResult.resize_control:type_name -> termx.api.v1.ResizeControl
-	13, // 47: termx.api.v1.PathListDirectoriesResult.entries:type_name -> termx.api.v1.PathDirectoryEntry
-	7,  // 48: termx.api.v1.TerminalLifecycleEvent.terminal:type_name -> termx.api.v1.TerminalInfo
-	4,  // 49: termx.api.v1.TerminalResizeControlEvent.terminal:type_name -> termx.api.v1.TerminalRef
-	11, // 50: termx.api.v1.TerminalResizeControlEvent.resize_control:type_name -> termx.api.v1.ResizeControl
+	4,  // 0: muxvia.api.v1.TerminalInfo.ref:type_name -> muxvia.api.v1.TerminalRef
+	38, // 1: muxvia.api.v1.TerminalInfo.tags:type_name -> muxvia.api.v1.TerminalInfo.TagsEntry
+	5,  // 2: muxvia.api.v1.TerminalInfo.size:type_name -> muxvia.api.v1.TerminalSize
+	0,  // 3: muxvia.api.v1.TerminalInfo.state:type_name -> muxvia.api.v1.TerminalState
+	6,  // 4: muxvia.api.v1.TerminalInfo.resources:type_name -> muxvia.api.v1.TerminalResourceUsage
+	39, // 5: muxvia.api.v1.TerminalCreateSpec.tags:type_name -> muxvia.api.v1.TerminalCreateSpec.TagsEntry
+	5,  // 6: muxvia.api.v1.TerminalCreateSpec.size:type_name -> muxvia.api.v1.TerminalSize
+	5,  // 7: muxvia.api.v1.ResizeOwnership.size:type_name -> muxvia.api.v1.TerminalSize
+	3,  // 8: muxvia.api.v1.ResizeControl.reason:type_name -> muxvia.api.v1.ResizeControlReason
+	10, // 9: muxvia.api.v1.ResizeControl.ownership:type_name -> muxvia.api.v1.ResizeOwnership
+	42, // 10: muxvia.api.v1.AttachmentHandle.resource:type_name -> muxvia.api.v1.ResourceHandle
+	4,  // 11: muxvia.api.v1.AttachmentHandle.terminal:type_name -> muxvia.api.v1.TerminalRef
+	43, // 12: muxvia.api.v1.AttachmentHandle.operation:type_name -> muxvia.api.v1.OperationStamp
+	8,  // 13: muxvia.api.v1.TerminalCreateCommand.terminal:type_name -> muxvia.api.v1.TerminalCreateSpec
+	4,  // 14: muxvia.api.v1.TerminalGetCommand.terminal:type_name -> muxvia.api.v1.TerminalRef
+	4,  // 15: muxvia.api.v1.TerminalRestartCommand.terminal:type_name -> muxvia.api.v1.TerminalRef
+	4,  // 16: muxvia.api.v1.TerminalKillCommand.terminal:type_name -> muxvia.api.v1.TerminalRef
+	4,  // 17: muxvia.api.v1.TerminalRemoveCommand.terminal:type_name -> muxvia.api.v1.TerminalRef
+	4,  // 18: muxvia.api.v1.TerminalSetMetadataCommand.terminal:type_name -> muxvia.api.v1.TerminalRef
+	40, // 19: muxvia.api.v1.TerminalSetMetadataCommand.tags:type_name -> muxvia.api.v1.TerminalSetMetadataCommand.TagsEntry
+	4,  // 20: muxvia.api.v1.TerminalSetTagsCommand.terminal:type_name -> muxvia.api.v1.TerminalRef
+	41, // 21: muxvia.api.v1.TerminalSetTagsCommand.tags:type_name -> muxvia.api.v1.TerminalSetTagsCommand.TagsEntry
+	4,  // 22: muxvia.api.v1.TerminalAttachCommand.terminal:type_name -> muxvia.api.v1.TerminalRef
+	1,  // 23: muxvia.api.v1.TerminalAttachCommand.mode:type_name -> muxvia.api.v1.AttachmentMode
+	2,  // 24: muxvia.api.v1.TerminalAttachCommand.resize_policy:type_name -> muxvia.api.v1.ResizePolicy
+	43, // 25: muxvia.api.v1.TerminalAttachCommand.operation:type_name -> muxvia.api.v1.OperationStamp
+	42, // 26: muxvia.api.v1.TerminalDetachCommand.attachment:type_name -> muxvia.api.v1.ResourceHandle
+	43, // 27: muxvia.api.v1.TerminalDetachCommand.operation:type_name -> muxvia.api.v1.OperationStamp
+	42, // 28: muxvia.api.v1.TerminalInputCommand.attachment:type_name -> muxvia.api.v1.ResourceHandle
+	43, // 29: muxvia.api.v1.TerminalInputCommand.operation:type_name -> muxvia.api.v1.OperationStamp
+	42, // 30: muxvia.api.v1.TerminalResizeCommand.attachment:type_name -> muxvia.api.v1.ResourceHandle
+	43, // 31: muxvia.api.v1.TerminalResizeCommand.operation:type_name -> muxvia.api.v1.OperationStamp
+	5,  // 32: muxvia.api.v1.TerminalResizeCommand.size:type_name -> muxvia.api.v1.TerminalSize
+	2,  // 33: muxvia.api.v1.TerminalResizeCommand.resize_policy:type_name -> muxvia.api.v1.ResizePolicy
+	42, // 34: muxvia.api.v1.TerminalResizeLockCommand.attachment:type_name -> muxvia.api.v1.ResourceHandle
+	43, // 35: muxvia.api.v1.TerminalResizeLockCommand.operation:type_name -> muxvia.api.v1.OperationStamp
+	7,  // 36: muxvia.api.v1.TerminalCreateResult.terminal:type_name -> muxvia.api.v1.TerminalInfo
+	7,  // 37: muxvia.api.v1.TerminalListResult.terminals:type_name -> muxvia.api.v1.TerminalInfo
+	7,  // 38: muxvia.api.v1.TerminalGetResult.terminal:type_name -> muxvia.api.v1.TerminalInfo
+	9,  // 39: muxvia.api.v1.TerminalDefaultsResult.defaults:type_name -> muxvia.api.v1.TerminalDefaults
+	12, // 40: muxvia.api.v1.TerminalAttachResult.attachment:type_name -> muxvia.api.v1.AttachmentHandle
+	1,  // 41: muxvia.api.v1.TerminalAttachResult.mode:type_name -> muxvia.api.v1.AttachmentMode
+	2,  // 42: muxvia.api.v1.TerminalAttachResult.resize_policy:type_name -> muxvia.api.v1.ResizePolicy
+	5,  // 43: muxvia.api.v1.TerminalAttachResult.size:type_name -> muxvia.api.v1.TerminalSize
+	11, // 44: muxvia.api.v1.TerminalAttachResult.resize_control:type_name -> muxvia.api.v1.ResizeControl
+	5,  // 45: muxvia.api.v1.TerminalResizeResult.size:type_name -> muxvia.api.v1.TerminalSize
+	11, // 46: muxvia.api.v1.TerminalResizeResult.resize_control:type_name -> muxvia.api.v1.ResizeControl
+	13, // 47: muxvia.api.v1.PathListDirectoriesResult.entries:type_name -> muxvia.api.v1.PathDirectoryEntry
+	7,  // 48: muxvia.api.v1.TerminalLifecycleEvent.terminal:type_name -> muxvia.api.v1.TerminalInfo
+	4,  // 49: muxvia.api.v1.TerminalResizeControlEvent.terminal:type_name -> muxvia.api.v1.TerminalRef
+	11, // 50: muxvia.api.v1.TerminalResizeControlEvent.resize_control:type_name -> muxvia.api.v1.ResizeControl
 	51, // [51:51] is the sub-list for method output_type
 	51, // [51:51] is the sub-list for method input_type
 	51, // [51:51] is the sub-list for extension type_name

@@ -16,10 +16,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/proto/wire"
-	"github.com/lozzow/termx/shared/perftrace"
-	"github.com/lozzow/termx/shared/transport"
+	"github.com/muxvia/muxvia/internal/protocol"
+	"github.com/muxvia/muxvia/proto/wire"
+	"github.com/muxvia/muxvia/shared/perftrace"
+	"github.com/muxvia/muxvia/shared/transport"
 )
 
 const (

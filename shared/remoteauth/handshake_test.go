@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/proto/remoteauthpb"
-	"github.com/lozzow/termx/shared/transport"
-	"github.com/lozzow/termx/shared/transport/memory"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/muxvia/muxvia/shared/transport"
+	"github.com/muxvia/muxvia/shared/transport/memory"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )

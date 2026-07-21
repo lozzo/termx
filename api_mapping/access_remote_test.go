@@ -3,7 +3,7 @@ package apimapping
 import (
 	"testing"
 
-	"github.com/lozzow/termx/proto/apipb"
+	"github.com/muxvia/muxvia/proto/apipb"
 )
 
 func TestValidateClientAccessIdentityRequiresFreshChallenge(t *testing.T) {

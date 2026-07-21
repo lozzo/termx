@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	actiondomain "github.com/lozzow/termx/tui/action"
-	"github.com/lozzow/termx/tui/state"
+	actiondomain "github.com/muxvia/muxvia/tui/action"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 type RenderVM struct {

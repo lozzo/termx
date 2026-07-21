@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package termx.api.v1;
+package muxvia.api.v1;
 
 import "apipb/common.proto";
 import "apipb/access_remote.proto";
@@ -10,7 +10,7 @@ import "apipb/history.proto";
 import "apipb/storage.proto";
 import "apipb/terminal.proto";
 
-option go_package = "github.com/lozzow/termx/proto/apipb";
+option go_package = "github.com/muxvia/muxvia/proto/apipb";
 
 message CancelOperationCommand {
   reserved 1;

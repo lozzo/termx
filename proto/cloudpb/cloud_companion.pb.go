@@ -643,7 +643,7 @@ func (MobileActivationState) EnumDescriptor() ([]byte, []int) {
 // CloudError 包含稳定错误码和可脱敏展示的最小诊断信息。
 type CloudError struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	Code             CloudErrorCode         `protobuf:"varint,1,opt,name=code,proto3,enum=termx.cloud.v1.CloudErrorCode" json:"code,omitempty"`
+	Code             CloudErrorCode         `protobuf:"varint,1,opt,name=code,proto3,enum=muxvia.cloud.v1.CloudErrorCode" json:"code,omitempty"`
 	Message          string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	Retryable        bool                   `protobuf:"varint,3,opt,name=retryable,proto3" json:"retryable,omitempty"`
 	RetryAfterMillis uint64                 `protobuf:"varint,4,opt,name=retry_after_millis,json=retryAfterMillis,proto3" json:"retry_after_millis,omitempty"`
@@ -723,8 +723,8 @@ type CompanionHelloRequest struct {
 	ProtocolMin           uint32                 `protobuf:"varint,1,opt,name=protocol_min,json=protocolMin,proto3" json:"protocol_min,omitempty"`
 	ProtocolMax           uint32                 `protobuf:"varint,2,opt,name=protocol_max,json=protocolMax,proto3" json:"protocol_max,omitempty"`
 	TermxVersion          string                 `protobuf:"bytes,3,opt,name=termx_version,json=termxVersion,proto3" json:"termx_version,omitempty"`
-	CallerRole            CallerRole             `protobuf:"varint,4,opt,name=caller_role,json=callerRole,proto3,enum=termx.cloud.v1.CallerRole" json:"caller_role,omitempty"`
-	RequestedCapabilities []CompanionCapability  `protobuf:"varint,5,rep,packed,name=requested_capabilities,json=requestedCapabilities,proto3,enum=termx.cloud.v1.CompanionCapability" json:"requested_capabilities,omitempty"`
+	CallerRole            CallerRole             `protobuf:"varint,4,opt,name=caller_role,json=callerRole,proto3,enum=muxvia.cloud.v1.CallerRole" json:"caller_role,omitempty"`
+	RequestedCapabilities []CompanionCapability  `protobuf:"varint,5,rep,packed,name=requested_capabilities,json=requestedCapabilities,proto3,enum=muxvia.cloud.v1.CompanionCapability" json:"requested_capabilities,omitempty"`
 	RequestNonce          []byte                 `protobuf:"bytes,6,opt,name=request_nonce,json=requestNonce,proto3" json:"request_nonce,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
@@ -807,7 +807,7 @@ type CompanionHelloResponse struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
 	SelectedProtocol      uint32                 `protobuf:"varint,1,opt,name=selected_protocol,json=selectedProtocol,proto3" json:"selected_protocol,omitempty"`
 	CompanionVersion      string                 `protobuf:"bytes,2,opt,name=companion_version,json=companionVersion,proto3" json:"companion_version,omitempty"`
-	SupportedCapabilities []CompanionCapability  `protobuf:"varint,3,rep,packed,name=supported_capabilities,json=supportedCapabilities,proto3,enum=termx.cloud.v1.CompanionCapability" json:"supported_capabilities,omitempty"`
+	SupportedCapabilities []CompanionCapability  `protobuf:"varint,3,rep,packed,name=supported_capabilities,json=supportedCapabilities,proto3,enum=muxvia.cloud.v1.CompanionCapability" json:"supported_capabilities,omitempty"`
 	BuildChannel          string                 `protobuf:"bytes,4,opt,name=build_channel,json=buildChannel,proto3" json:"build_channel,omitempty"`
 	ResponseNonce         []byte                 `protobuf:"bytes,5,opt,name=response_nonce,json=responseNonce,proto3" json:"response_nonce,omitempty"`
 	// executable_sha256 绑定当前运行进程与 installer 已复验的 artifact，避免同版本构建复用旧进程。
@@ -928,12 +928,12 @@ func (*StatusRequest) Descriptor() ([]byte, []int) {
 // StatusResponse 返回可展示的账号与设备会话摘要。
 type StatusResponse struct {
 	state                protoimpl.MessageState `protogen:"open.v1"`
-	State                CompanionState         `protobuf:"varint,1,opt,name=state,proto3,enum=termx.cloud.v1.CompanionState" json:"state,omitempty"`
+	State                CompanionState         `protobuf:"varint,1,opt,name=state,proto3,enum=muxvia.cloud.v1.CompanionState" json:"state,omitempty"`
 	AccountLabel         string                 `protobuf:"bytes,2,opt,name=account_label,json=accountLabel,proto3" json:"account_label,omitempty"`
 	AccountId            string                 `protobuf:"bytes,3,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	DeviceId             string                 `protobuf:"bytes,4,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	SessionExpiresAtUnix uint64                 `protobuf:"varint,5,opt,name=session_expires_at_unix,json=sessionExpiresAtUnix,proto3" json:"session_expires_at_unix,omitempty"`
-	Capabilities         []CompanionCapability  `protobuf:"varint,6,rep,packed,name=capabilities,proto3,enum=termx.cloud.v1.CompanionCapability" json:"capabilities,omitempty"`
+	Capabilities         []CompanionCapability  `protobuf:"varint,6,rep,packed,name=capabilities,proto3,enum=muxvia.cloud.v1.CompanionCapability" json:"capabilities,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -1013,7 +1013,7 @@ func (x *StatusResponse) GetCapabilities() []CompanionCapability {
 // BeginLoginRequest 启动 browser 或 device-code 登录，不携带账号 token。
 type BeginLoginRequest struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
-	Method LoginMethod            `protobuf:"varint,1,opt,name=method,proto3,enum=termx.cloud.v1.LoginMethod" json:"method,omitempty"`
+	Method LoginMethod            `protobuf:"varint,1,opt,name=method,proto3,enum=muxvia.cloud.v1.LoginMethod" json:"method,omitempty"`
 	// client_metadata 只用于浏览器批准页展示申请客户端，不进入 Hub 或 terminal capability。
 	ClientMetadata *DeviceMetadata `protobuf:"bytes,2,opt,name=client_metadata,json=clientMetadata,proto3" json:"client_metadata,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -1373,7 +1373,7 @@ type MobileActivationProjection struct {
 	UserCode       string                 `protobuf:"bytes,1,opt,name=user_code,json=userCode,proto3" json:"user_code,omitempty"`
 	QrPayload      string                 `protobuf:"bytes,2,opt,name=qr_payload,json=qrPayload,proto3" json:"qr_payload,omitempty"`
 	ExpiresAtUnix  uint64                 `protobuf:"varint,3,opt,name=expires_at_unix,json=expiresAtUnix,proto3" json:"expires_at_unix,omitempty"`
-	State          MobileActivationState  `protobuf:"varint,4,opt,name=state,proto3,enum=termx.cloud.v1.MobileActivationState" json:"state,omitempty"`
+	State          MobileActivationState  `protobuf:"varint,4,opt,name=state,proto3,enum=muxvia.cloud.v1.MobileActivationState" json:"state,omitempty"`
 	ClientMetadata *DeviceMetadata        `protobuf:"bytes,5,opt,name=client_metadata,json=clientMetadata,proto3" json:"client_metadata,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -2315,7 +2315,7 @@ func (*DoctorRequest) Descriptor() ([]byte, []int) {
 type DiagnosticItem struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
-	Severity      DiagnosticSeverity     `protobuf:"varint,2,opt,name=severity,proto3,enum=termx.cloud.v1.DiagnosticSeverity" json:"severity,omitempty"`
+	Severity      DiagnosticSeverity     `protobuf:"varint,2,opt,name=severity,proto3,enum=muxvia.cloud.v1.DiagnosticSeverity" json:"severity,omitempty"`
 	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
 	Reference     string                 `protobuf:"bytes,4,opt,name=reference,proto3" json:"reference,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -2975,8 +2975,8 @@ type ManagedDevice struct {
 	DeviceId    string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	DisplayName string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	Platform    string                 `protobuf:"bytes,3,opt,name=platform,proto3" json:"platform,omitempty"`
-	Kind        ManagedDeviceKind      `protobuf:"varint,4,opt,name=kind,proto3,enum=termx.cloud.v1.ManagedDeviceKind" json:"kind,omitempty"`
-	Presence    PresenceState          `protobuf:"varint,5,opt,name=presence,proto3,enum=termx.cloud.v1.PresenceState" json:"presence,omitempty"`
+	Kind        ManagedDeviceKind      `protobuf:"varint,4,opt,name=kind,proto3,enum=muxvia.cloud.v1.ManagedDeviceKind" json:"kind,omitempty"`
+	Presence    PresenceState          `protobuf:"varint,5,opt,name=presence,proto3,enum=muxvia.cloud.v1.PresenceState" json:"presence,omitempty"`
 	Revoked     bool                   `protobuf:"varint,6,opt,name=revoked,proto3" json:"revoked,omitempty"`
 	// device_fingerprint 由 Hub 的已签名 daemon public-key 投影计算；它只用于客户端安全归并 Endpoint，不授予 terminal capability。
 	DeviceFingerprint string `protobuf:"bytes,7,opt,name=device_fingerprint,json=deviceFingerprint,proto3" json:"device_fingerprint,omitempty"`
@@ -3174,7 +3174,7 @@ type ResolvedEndpoint struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	EndpointId       string                 `protobuf:"bytes,1,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
 	TargetDeviceId   string                 `protobuf:"bytes,2,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
-	Presence         PresenceState          `protobuf:"varint,3,opt,name=presence,proto3,enum=termx.cloud.v1.PresenceState" json:"presence,omitempty"`
+	Presence         PresenceState          `protobuf:"varint,3,opt,name=presence,proto3,enum=muxvia.cloud.v1.PresenceState" json:"presence,omitempty"`
 	HubId            string                 `protobuf:"bytes,4,opt,name=hub_id,json=hubId,proto3" json:"hub_id,omitempty"`
 	HubUrl           string                 `protobuf:"bytes,5,opt,name=hub_url,json=hubUrl,proto3" json:"hub_url,omitempty"`
 	ManagedSessionId string                 `protobuf:"bytes,6,opt,name=managed_session_id,json=managedSessionId,proto3" json:"managed_session_id,omitempty"`
@@ -3419,7 +3419,7 @@ type SignalingOffer struct {
 	Sdp                string                 `protobuf:"bytes,5,opt,name=sdp,proto3" json:"sdp,omitempty"`
 	Candidates         []*IceCandidate        `protobuf:"bytes,6,rep,name=candidates,proto3" json:"candidates,omitempty"`
 	// route_preference 保留原始服务能力意图；relay_only 才表示本次 ICE 必须只使用租约绑定的 TURN。
-	RoutePreference    RoutePreference `protobuf:"varint,7,opt,name=route_preference,json=routePreference,proto3,enum=termx.cloud.v1.RoutePreference" json:"route_preference,omitempty"`
+	RoutePreference    RoutePreference `protobuf:"varint,7,opt,name=route_preference,json=routePreference,proto3,enum=muxvia.cloud.v1.RoutePreference" json:"route_preference,omitempty"`
 	RelayOnly          bool            `protobuf:"varint,8,opt,name=relay_only,json=relayOnly,proto3" json:"relay_only,omitempty"`
 	SessionIncarnation uint64          `protobuf:"varint,9,opt,name=session_incarnation,json=sessionIncarnation,proto3" json:"session_incarnation,omitempty"`
 	PresenceSessionId  string          `protobuf:"bytes,10,opt,name=presence_session_id,json=presenceSessionId,proto3" json:"presence_session_id,omitempty"`
@@ -3956,7 +3956,7 @@ type CreateSignalingSessionRequest struct {
 	TargetDeviceId   string                 `protobuf:"bytes,3,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
 	OfferSdp         string                 `protobuf:"bytes,4,opt,name=offer_sdp,json=offerSdp,proto3" json:"offer_sdp,omitempty"`
 	Candidates       []*IceCandidate        `protobuf:"bytes,5,rep,name=candidates,proto3" json:"candidates,omitempty"`
-	RoutePreference  RoutePreference        `protobuf:"varint,6,opt,name=route_preference,json=routePreference,proto3,enum=termx.cloud.v1.RoutePreference" json:"route_preference,omitempty"`
+	RoutePreference  RoutePreference        `protobuf:"varint,6,opt,name=route_preference,json=routePreference,proto3,enum=muxvia.cloud.v1.RoutePreference" json:"route_preference,omitempty"`
 	// relay_only 是本次执行约束，不得从 STANDARD_RELAY 自动推断。
 	RelayOnly     bool `protobuf:"varint,7,opt,name=relay_only,json=relayOnly,proto3" json:"relay_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -4335,7 +4335,7 @@ type AcquireRelayLeaseRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	ManagedSessionId string                 `protobuf:"bytes,1,opt,name=managed_session_id,json=managedSessionId,proto3" json:"managed_session_id,omitempty"`
 	TargetDeviceId   string                 `protobuf:"bytes,2,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
-	RoutePreference  RoutePreference        `protobuf:"varint,3,opt,name=route_preference,json=routePreference,proto3,enum=termx.cloud.v1.RoutePreference" json:"route_preference,omitempty"`
+	RoutePreference  RoutePreference        `protobuf:"varint,3,opt,name=route_preference,json=routePreference,proto3,enum=muxvia.cloud.v1.RoutePreference" json:"route_preference,omitempty"`
 	PreferredRegion  string                 `protobuf:"bytes,4,opt,name=preferred_region,json=preferredRegion,proto3" json:"preferred_region,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -4405,7 +4405,7 @@ type RelayLease struct {
 	LeaseId            string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
 	SignedLease        []byte                 `protobuf:"bytes,2,opt,name=signed_lease,json=signedLease,proto3" json:"signed_lease,omitempty"`
 	ExpiresAtUnix      uint64                 `protobuf:"varint,3,opt,name=expires_at_unix,json=expiresAtUnix,proto3" json:"expires_at_unix,omitempty"`
-	PathKind           ObservedPath           `protobuf:"varint,4,opt,name=path_kind,json=pathKind,proto3,enum=termx.cloud.v1.ObservedPath" json:"path_kind,omitempty"`
+	PathKind           ObservedPath           `protobuf:"varint,4,opt,name=path_kind,json=pathKind,proto3,enum=muxvia.cloud.v1.ObservedPath" json:"path_kind,omitempty"`
 	RouteId            string                 `protobuf:"bytes,5,opt,name=route_id,json=routeId,proto3" json:"route_id,omitempty"`
 	RouteVersion       uint32                 `protobuf:"varint,6,opt,name=route_version,json=routeVersion,proto3" json:"route_version,omitempty"`
 	ClientEdgeRelayId  string                 `protobuf:"bytes,7,opt,name=client_edge_relay_id,json=clientEdgeRelayId,proto3" json:"client_edge_relay_id,omitempty"`
@@ -4523,7 +4523,7 @@ type PlanManagedRouteRequest struct {
 	EndpointId       string                 `protobuf:"bytes,1,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
 	ManagedSessionId string                 `protobuf:"bytes,2,opt,name=managed_session_id,json=managedSessionId,proto3" json:"managed_session_id,omitempty"`
 	TargetDeviceId   string                 `protobuf:"bytes,3,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
-	RoutePreference  RoutePreference        `protobuf:"varint,4,opt,name=route_preference,json=routePreference,proto3,enum=termx.cloud.v1.RoutePreference" json:"route_preference,omitempty"`
+	RoutePreference  RoutePreference        `protobuf:"varint,4,opt,name=route_preference,json=routePreference,proto3,enum=muxvia.cloud.v1.RoutePreference" json:"route_preference,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -4593,8 +4593,8 @@ type ManagedRoutePlan struct {
 	PlanId           string                 `protobuf:"bytes,1,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
 	ManagedSessionId string                 `protobuf:"bytes,2,opt,name=managed_session_id,json=managedSessionId,proto3" json:"managed_session_id,omitempty"`
 	TargetDeviceId   string                 `protobuf:"bytes,3,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
-	SelectedPath     ObservedPath           `protobuf:"varint,4,opt,name=selected_path,json=selectedPath,proto3,enum=termx.cloud.v1.ObservedPath" json:"selected_path,omitempty"`
-	SelectionReason  RouteSelectionReason   `protobuf:"varint,5,opt,name=selection_reason,json=selectionReason,proto3,enum=termx.cloud.v1.RouteSelectionReason" json:"selection_reason,omitempty"`
+	SelectedPath     ObservedPath           `protobuf:"varint,4,opt,name=selected_path,json=selectedPath,proto3,enum=muxvia.cloud.v1.ObservedPath" json:"selected_path,omitempty"`
+	SelectionReason  RouteSelectionReason   `protobuf:"varint,5,opt,name=selection_reason,json=selectionReason,proto3,enum=muxvia.cloud.v1.RouteSelectionReason" json:"selection_reason,omitempty"`
 	ValidUntilUnix   uint64                 `protobuf:"varint,6,opt,name=valid_until_unix,json=validUntilUnix,proto3" json:"valid_until_unix,omitempty"`
 	IceServers       []*IceServer           `protobuf:"bytes,7,rep,name=ice_servers,json=iceServers,proto3" json:"ice_servers,omitempty"`
 	RelayOnly        bool                   `protobuf:"varint,8,opt,name=relay_only,json=relayOnly,proto3" json:"relay_only,omitempty"`
@@ -4701,7 +4701,7 @@ func (x *ManagedRoutePlan) GetRelayRegion() string {
 type PathQualitySummary struct {
 	state                     protoimpl.MessageState `protogen:"open.v1"`
 	ManagedSessionId          string                 `protobuf:"bytes,1,opt,name=managed_session_id,json=managedSessionId,proto3" json:"managed_session_id,omitempty"`
-	ObservedPath              ObservedPath           `protobuf:"varint,2,opt,name=observed_path,json=observedPath,proto3,enum=termx.cloud.v1.ObservedPath" json:"observed_path,omitempty"`
+	ObservedPath              ObservedPath           `protobuf:"varint,2,opt,name=observed_path,json=observedPath,proto3,enum=muxvia.cloud.v1.ObservedPath" json:"observed_path,omitempty"`
 	RttP50Millis              uint32                 `protobuf:"varint,3,opt,name=rtt_p50_millis,json=rttP50Millis,proto3" json:"rtt_p50_millis,omitempty"`
 	JitterMillis              uint32                 `protobuf:"varint,4,opt,name=jitter_millis,json=jitterMillis,proto3" json:"jitter_millis,omitempty"`
 	LossBasisPoints           uint32                 `protobuf:"varint,5,opt,name=loss_basis_points,json=lossBasisPoints,proto3" json:"loss_basis_points,omitempty"`
@@ -4964,8 +4964,8 @@ func (*ReportPathQualityResponse) Descriptor() ([]byte, []int) {
 type ConnectionOutcome struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	ManagedSessionId string                 `protobuf:"bytes,1,opt,name=managed_session_id,json=managedSessionId,proto3" json:"managed_session_id,omitempty"`
-	ObservedPath     ObservedPath           `protobuf:"varint,2,opt,name=observed_path,json=observedPath,proto3,enum=termx.cloud.v1.ObservedPath" json:"observed_path,omitempty"`
-	ErrorCode        CloudErrorCode         `protobuf:"varint,3,opt,name=error_code,json=errorCode,proto3,enum=termx.cloud.v1.CloudErrorCode" json:"error_code,omitempty"`
+	ObservedPath     ObservedPath           `protobuf:"varint,2,opt,name=observed_path,json=observedPath,proto3,enum=muxvia.cloud.v1.ObservedPath" json:"observed_path,omitempty"`
+	ErrorCode        CloudErrorCode         `protobuf:"varint,3,opt,name=error_code,json=errorCode,proto3,enum=muxvia.cloud.v1.CloudErrorCode" json:"error_code,omitempty"`
 	ConnectedMillis  uint64                 `protobuf:"varint,4,opt,name=connected_millis,json=connectedMillis,proto3" json:"connected_millis,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -6220,41 +6220,41 @@ var File_cloudpb_cloud_companion_proto protoreflect.FileDescriptor
 
 const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\n" +
-	"\x1dcloudpb/cloud_companion.proto\x12\x0etermx.cloud.v1\x1a\x1ccloudpb/cloud_topology.proto\x1a\x1fcloudpb/cloud_hub_control.proto\"\xcd\x01\n" +
+	"\x1dcloudpb/cloud_companion.proto\x12\x0fmuxvia.cloud.v1\x1a\x1ccloudpb/cloud_topology.proto\x1a\x1fcloudpb/cloud_hub_control.proto\"\xce\x01\n" +
 	"\n" +
-	"CloudError\x122\n" +
-	"\x04code\x18\x01 \x01(\x0e2\x1e.termx.cloud.v1.CloudErrorCodeR\x04code\x12\x18\n" +
+	"CloudError\x123\n" +
+	"\x04code\x18\x01 \x01(\x0e2\x1f.muxvia.cloud.v1.CloudErrorCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +
 	"\tretryable\x18\x03 \x01(\bR\tretryable\x12,\n" +
 	"\x12retry_after_millis\x18\x04 \x01(\x04R\x10retryAfterMillis\x12%\n" +
-	"\x0ecorrelation_id\x18\x05 \x01(\tR\rcorrelationId\"\xc0\x02\n" +
+	"\x0ecorrelation_id\x18\x05 \x01(\tR\rcorrelationId\"\xc2\x02\n" +
 	"\x15CompanionHelloRequest\x12!\n" +
 	"\fprotocol_min\x18\x01 \x01(\rR\vprotocolMin\x12!\n" +
 	"\fprotocol_max\x18\x02 \x01(\rR\vprotocolMax\x12#\n" +
-	"\rtermx_version\x18\x03 \x01(\tR\ftermxVersion\x12;\n" +
-	"\vcaller_role\x18\x04 \x01(\x0e2\x1a.termx.cloud.v1.CallerRoleR\n" +
-	"callerRole\x12Z\n" +
-	"\x16requested_capabilities\x18\x05 \x03(\x0e2#.termx.cloud.v1.CompanionCapabilityR\x15requestedCapabilities\x12#\n" +
-	"\rrequest_nonce\x18\x06 \x01(\fR\frequestNonce\"\xc7\x02\n" +
+	"\rtermx_version\x18\x03 \x01(\tR\ftermxVersion\x12<\n" +
+	"\vcaller_role\x18\x04 \x01(\x0e2\x1b.muxvia.cloud.v1.CallerRoleR\n" +
+	"callerRole\x12[\n" +
+	"\x16requested_capabilities\x18\x05 \x03(\x0e2$.muxvia.cloud.v1.CompanionCapabilityR\x15requestedCapabilities\x12#\n" +
+	"\rrequest_nonce\x18\x06 \x01(\fR\frequestNonce\"\xc8\x02\n" +
 	"\x16CompanionHelloResponse\x12+\n" +
 	"\x11selected_protocol\x18\x01 \x01(\rR\x10selectedProtocol\x12+\n" +
-	"\x11companion_version\x18\x02 \x01(\tR\x10companionVersion\x12Z\n" +
-	"\x16supported_capabilities\x18\x03 \x03(\x0e2#.termx.cloud.v1.CompanionCapabilityR\x15supportedCapabilities\x12#\n" +
+	"\x11companion_version\x18\x02 \x01(\tR\x10companionVersion\x12[\n" +
+	"\x16supported_capabilities\x18\x03 \x03(\x0e2$.muxvia.cloud.v1.CompanionCapabilityR\x15supportedCapabilities\x12#\n" +
 	"\rbuild_channel\x18\x04 \x01(\tR\fbuildChannel\x12%\n" +
 	"\x0eresponse_nonce\x18\x05 \x01(\fR\rresponseNonce\x12+\n" +
 	"\x11executable_sha256\x18\x06 \x01(\fR\x10executableSha256\"\x0f\n" +
-	"\rStatusRequest\"\xa7\x02\n" +
-	"\x0eStatusResponse\x124\n" +
-	"\x05state\x18\x01 \x01(\x0e2\x1e.termx.cloud.v1.CompanionStateR\x05state\x12#\n" +
+	"\rStatusRequest\"\xa9\x02\n" +
+	"\x0eStatusResponse\x125\n" +
+	"\x05state\x18\x01 \x01(\x0e2\x1f.muxvia.cloud.v1.CompanionStateR\x05state\x12#\n" +
 	"\raccount_label\x18\x02 \x01(\tR\faccountLabel\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x03 \x01(\tR\taccountId\x12\x1b\n" +
 	"\tdevice_id\x18\x04 \x01(\tR\bdeviceId\x125\n" +
-	"\x17session_expires_at_unix\x18\x05 \x01(\x04R\x14sessionExpiresAtUnix\x12G\n" +
-	"\fcapabilities\x18\x06 \x03(\x0e2#.termx.cloud.v1.CompanionCapabilityR\fcapabilities\"\x91\x01\n" +
-	"\x11BeginLoginRequest\x123\n" +
-	"\x06method\x18\x01 \x01(\x0e2\x1b.termx.cloud.v1.LoginMethodR\x06method\x12G\n" +
-	"\x0fclient_metadata\x18\x02 \x01(\v2\x1e.termx.cloud.v1.DeviceMetadataR\x0eclientMetadata\"\xc6\x01\n" +
+	"\x17session_expires_at_unix\x18\x05 \x01(\x04R\x14sessionExpiresAtUnix\x12H\n" +
+	"\fcapabilities\x18\x06 \x03(\x0e2$.muxvia.cloud.v1.CompanionCapabilityR\fcapabilities\"\x93\x01\n" +
+	"\x11BeginLoginRequest\x124\n" +
+	"\x06method\x18\x01 \x01(\x0e2\x1c.muxvia.cloud.v1.LoginMethodR\x06method\x12H\n" +
+	"\x0fclient_metadata\x18\x02 \x01(\v2\x1f.muxvia.cloud.v1.DeviceMetadataR\x0eclientMetadata\"\xc6\x01\n" +
 	"\tLoginFlow\x12\x17\n" +
 	"\aflow_id\x18\x01 \x01(\tR\x06flowId\x12)\n" +
 	"\x10verification_uri\x18\x02 \x01(\tR\x0fverificationUri\x12\x1b\n" +
@@ -6262,22 +6262,22 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\x0fexpires_at_unix\x18\x04 \x01(\x04R\rexpiresAtUnix\x120\n" +
 	"\x14poll_interval_millis\x18\x05 \x01(\x04R\x12pollIntervalMillis\"/\n" +
 	"\x14CompleteLoginRequest\x12\x17\n" +
-	"\aflow_id\x18\x01 \x01(\tR\x06flowId\"\x84\x01\n" +
+	"\aflow_id\x18\x01 \x01(\tR\x06flowId\"\x85\x01\n" +
 	"\x1cClaimMobileActivationRequest\x12\x1b\n" +
-	"\tuser_code\x18\x01 \x01(\tR\buserCode\x12G\n" +
-	"\x0fclient_metadata\x18\x02 \x01(\v2\x1e.termx.cloud.v1.DeviceMetadataR\x0eclientMetadata\"\x1f\n" +
+	"\tuser_code\x18\x01 \x01(\tR\buserCode\x12H\n" +
+	"\x0fclient_metadata\x18\x02 \x01(\v2\x1f.muxvia.cloud.v1.DeviceMetadataR\x0eclientMetadata\"\x1f\n" +
 	"\x1dMobileActivationCreateRequest\"=\n" +
 	"\x1eMobileActivationInspectRequest\x12\x1b\n" +
 	"\tuser_code\x18\x01 \x01(\tR\buserCode\"=\n" +
 	"\x1eMobileActivationApproveRequest\x12\x1b\n" +
-	"\tuser_code\x18\x01 \x01(\tR\buserCode\"\x86\x02\n" +
+	"\tuser_code\x18\x01 \x01(\tR\buserCode\"\x88\x02\n" +
 	"\x1aMobileActivationProjection\x12\x1b\n" +
 	"\tuser_code\x18\x01 \x01(\tR\buserCode\x12\x1d\n" +
 	"\n" +
 	"qr_payload\x18\x02 \x01(\tR\tqrPayload\x12&\n" +
-	"\x0fexpires_at_unix\x18\x03 \x01(\x04R\rexpiresAtUnix\x12;\n" +
-	"\x05state\x18\x04 \x01(\x0e2%.termx.cloud.v1.MobileActivationStateR\x05state\x12G\n" +
-	"\x0fclient_metadata\x18\x05 \x01(\v2\x1e.termx.cloud.v1.DeviceMetadataR\x0eclientMetadata\"=\n" +
+	"\x0fexpires_at_unix\x18\x03 \x01(\x04R\rexpiresAtUnix\x12<\n" +
+	"\x05state\x18\x04 \x01(\x0e2&.muxvia.cloud.v1.MobileActivationStateR\x05state\x12H\n" +
+	"\x0fclient_metadata\x18\x05 \x01(\v2\x1f.muxvia.cloud.v1.DeviceMetadataR\x0eclientMetadata\"=\n" +
 	"\x1fMobileActivationApproveResponse\x12\x1a\n" +
 	"\bapproved\x18\x01 \x01(\bR\bapproved\"\x9e\x01\n" +
 	"\x13CloudSessionSummary\x12#\n" +
@@ -6285,13 +6285,13 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\n" +
 	"account_id\x18\x02 \x01(\tR\taccountId\x12\x1b\n" +
 	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x12&\n" +
-	"\x0fexpires_at_unix\x18\x04 \x01(\x04R\rexpiresAtUnix\"V\n" +
-	"\x15CompleteLoginResponse\x12=\n" +
-	"\asession\x18\x01 \x01(\v2#.termx.cloud.v1.CloudSessionSummaryR\asession\"\xaa\x01\n" +
+	"\x0fexpires_at_unix\x18\x04 \x01(\x04R\rexpiresAtUnix\"W\n" +
+	"\x15CompleteLoginResponse\x12>\n" +
+	"\asession\x18\x01 \x01(\v2$.muxvia.cloud.v1.CloudSessionSummaryR\asession\"\xab\x01\n" +
 	"\x1cBeginDeviceEnrollmentRequest\x12\"\n" +
 	"\rone_time_code\x18\x01 \x01(\tR\voneTimeCode\x12*\n" +
-	"\x11device_public_key\x18\x02 \x01(\fR\x0fdevicePublicKey\x12:\n" +
-	"\bmetadata\x18\x03 \x01(\v2\x1e.termx.cloud.v1.DeviceMetadataR\bmetadata\"\x9d\x01\n" +
+	"\x11device_public_key\x18\x02 \x01(\fR\x0fdevicePublicKey\x12;\n" +
+	"\bmetadata\x18\x03 \x01(\v2\x1f.muxvia.cloud.v1.DeviceMetadataR\bmetadata\"\x9d\x01\n" +
 	"\x19DeviceEnrollmentChallenge\x12\x17\n" +
 	"\aflow_id\x18\x01 \x01(\tR\x06flowId\x12!\n" +
 	"\fchallenge_id\x18\x02 \x01(\tR\vchallengeId\x12\x1c\n" +
@@ -6303,29 +6303,29 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\tchallenge\x18\x03 \x01(\fR\tchallenge\x12\x1b\n" +
 	"\tdevice_id\x18\x04 \x01(\tR\bdeviceId\x12*\n" +
 	"\x11device_public_key\x18\x05 \x01(\fR\x0fdevicePublicKey\x12-\n" +
-	"\x13signed_at_unix_nano\x18\x06 \x01(\x03R\x10signedAtUnixNano\"m\n" +
+	"\x13signed_at_unix_nano\x18\x06 \x01(\x03R\x10signedAtUnixNano\"n\n" +
 	"\x1fCompleteDeviceEnrollmentRequest\x12\x17\n" +
-	"\aflow_id\x18\x01 \x01(\tR\x06flowId\x121\n" +
-	"\x05proof\x18\x02 \x01(\v2\x1b.termx.cloud.v1.DeviceProofR\x05proof\"\xbc\x01\n" +
+	"\aflow_id\x18\x01 \x01(\tR\x06flowId\x122\n" +
+	"\x05proof\x18\x02 \x01(\v2\x1c.muxvia.cloud.v1.DeviceProofR\x05proof\"\xbc\x01\n" +
 	"\x1cDaemonControlVerificationKey\x12\x15\n" +
 	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x1d\n" +
 	"\n" +
 	"public_key\x18\x02 \x01(\fR\tpublicKey\x123\n" +
 	"\x16not_before_unix_millis\x18\x03 \x01(\x03R\x13notBeforeUnixMillis\x121\n" +
-	"\x15not_after_unix_millis\x18\x04 \x01(\x03R\x12notAfterUnixMillis\"\x93\x02\n" +
+	"\x15not_after_unix_millis\x18\x04 \x01(\x03R\x12notAfterUnixMillis\"\x94\x02\n" +
 	"\x17DaemonControlEnrollment\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12(\n" +
 	"\x10daemon_device_id\x18\x02 \x01(\tR\x0edaemonDeviceId\x12\x1d\n" +
 	"\n" +
-	"auth_epoch\x18\x03 \x01(\x04R\tauthEpoch\x12Y\n" +
-	"\x11verification_keys\x18\x04 \x03(\v2,.termx.cloud.v1.DaemonControlVerificationKeyR\x10verificationKeys\x125\n" +
-	"\x17enrolled_at_unix_millis\x18\x05 \x01(\x03R\x14enrolledAtUnixMillis\"\xb9\x01\n" +
-	" CompleteDeviceEnrollmentResponse\x12=\n" +
-	"\asession\x18\x01 \x01(\v2#.termx.cloud.v1.CloudSessionSummaryR\asession\x12V\n" +
-	"\x12control_enrollment\x18\x02 \x01(\v2'.termx.cloud.v1.DaemonControlEnrollmentR\x11controlEnrollment\"\xc6\x03\n" +
-	"\x1eDeviceEnrollmentServiceSession\x12=\n" +
-	"\asession\x18\x01 \x01(\v2#.termx.cloud.v1.CloudSessionSummaryR\asession\x12!\n" +
+	"auth_epoch\x18\x03 \x01(\x04R\tauthEpoch\x12Z\n" +
+	"\x11verification_keys\x18\x04 \x03(\v2-.muxvia.cloud.v1.DaemonControlVerificationKeyR\x10verificationKeys\x125\n" +
+	"\x17enrolled_at_unix_millis\x18\x05 \x01(\x03R\x14enrolledAtUnixMillis\"\xbb\x01\n" +
+	" CompleteDeviceEnrollmentResponse\x12>\n" +
+	"\asession\x18\x01 \x01(\v2$.muxvia.cloud.v1.CloudSessionSummaryR\asession\x12W\n" +
+	"\x12control_enrollment\x18\x02 \x01(\v2(.muxvia.cloud.v1.DaemonControlEnrollmentR\x11controlEnrollment\"\xc8\x03\n" +
+	"\x1eDeviceEnrollmentServiceSession\x12>\n" +
+	"\asession\x18\x01 \x01(\v2$.muxvia.cloud.v1.CloudSessionSummaryR\asession\x12!\n" +
 	"\faccess_token\x18\x02 \x01(\fR\vaccessToken\x12#\n" +
 	"\rrefresh_token\x18\x03 \x01(\fR\frefreshToken\x12B\n" +
 	"\x1erefresh_expires_at_unix_millis\x18\x04 \x01(\x03R\x1arefreshExpiresAtUnixMillis\x12\x15\n" +
@@ -6333,21 +6333,21 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\ahub_url\x18\x06 \x01(\tR\x06hubUrl\x12\x1d\n" +
 	"\n" +
 	"hub_region\x18\a \x01(\tR\thubRegion\x122\n" +
-	"\x15hub_directory_version\x18\b \x01(\x04R\x13hubDirectoryVersion\x12V\n" +
-	"\x12control_enrollment\x18\t \x01(\v2'.termx.cloud.v1.DaemonControlEnrollmentR\x11controlEnrollment\"_\n" +
+	"\x15hub_directory_version\x18\b \x01(\x04R\x13hubDirectoryVersion\x12W\n" +
+	"\x12control_enrollment\x18\t \x01(\v2(.muxvia.cloud.v1.DaemonControlEnrollmentR\x11controlEnrollment\"_\n" +
 	"\rLogoutRequest\x12'\n" +
 	"\x0faccount_session\x18\x01 \x01(\bR\x0eaccountSession\x12%\n" +
 	"\x0edevice_session\x18\x02 \x01(\bR\rdeviceSession\"\x10\n" +
 	"\x0eLogoutResponse\"\x0f\n" +
-	"\rDoctorRequest\"\x9c\x01\n" +
+	"\rDoctorRequest\"\x9d\x01\n" +
 	"\x0eDiagnosticItem\x12\x12\n" +
-	"\x04code\x18\x01 \x01(\tR\x04code\x12>\n" +
-	"\bseverity\x18\x02 \x01(\x0e2\".termx.cloud.v1.DiagnosticSeverityR\bseverity\x12\x18\n" +
+	"\x04code\x18\x01 \x01(\tR\x04code\x12?\n" +
+	"\bseverity\x18\x02 \x01(\x0e2#.muxvia.cloud.v1.DiagnosticSeverityR\bseverity\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12\x1c\n" +
-	"\treference\x18\x04 \x01(\tR\treference\"~\n" +
-	"\x0eDoctorResponse\x126\n" +
-	"\x06status\x18\x01 \x01(\v2\x1e.termx.cloud.v1.StatusResponseR\x06status\x124\n" +
-	"\x05items\x18\x02 \x03(\v2\x1e.termx.cloud.v1.DiagnosticItemR\x05items\")\n" +
+	"\treference\x18\x04 \x01(\tR\treference\"\x80\x01\n" +
+	"\x0eDoctorResponse\x127\n" +
+	"\x06status\x18\x01 \x01(\v2\x1f.muxvia.cloud.v1.StatusResponseR\x06status\x125\n" +
+	"\x05items\x18\x02 \x03(\v2\x1f.muxvia.cloud.v1.DiagnosticItemR\x05items\")\n" +
 	"\x0fShutdownRequest\x12\x16\n" +
 	"\x06reason\x18\x01 \x01(\tR\x06reason\"\x12\n" +
 	"\x10ShutdownResponse\"\xc6\x01\n" +
@@ -6382,66 +6382,66 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"endpointId\x12(\n" +
 	"\x10target_device_id\x18\x02 \x01(\tR\x0etargetDeviceId\"B\n" +
 	"\x19ListManagedDevicesRequest\x12%\n" +
-	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\"\xa6\x02\n" +
+	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\"\xa8\x02\n" +
 	"\rManagedDevice\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x1a\n" +
-	"\bplatform\x18\x03 \x01(\tR\bplatform\x125\n" +
-	"\x04kind\x18\x04 \x01(\x0e2!.termx.cloud.v1.ManagedDeviceKindR\x04kind\x129\n" +
-	"\bpresence\x18\x05 \x01(\x0e2\x1d.termx.cloud.v1.PresenceStateR\bpresence\x12\x18\n" +
+	"\bplatform\x18\x03 \x01(\tR\bplatform\x126\n" +
+	"\x04kind\x18\x04 \x01(\x0e2\".muxvia.cloud.v1.ManagedDeviceKindR\x04kind\x12:\n" +
+	"\bpresence\x18\x05 \x01(\x0e2\x1e.muxvia.cloud.v1.PresenceStateR\bpresence\x12\x18\n" +
 	"\arevoked\x18\x06 \x01(\bR\arevoked\x12-\n" +
-	"\x12device_fingerprint\x18\a \x01(\tR\x11deviceFingerprint\"U\n" +
-	"\x1aListManagedDevicesResponse\x127\n" +
-	"\adevices\x18\x01 \x03(\v2\x1d.termx.cloud.v1.ManagedDeviceR\adevices\"[\n" +
+	"\x12device_fingerprint\x18\a \x01(\tR\x11deviceFingerprint\"V\n" +
+	"\x1aListManagedDevicesResponse\x128\n" +
+	"\adevices\x18\x01 \x03(\v2\x1e.muxvia.cloud.v1.ManagedDeviceR\adevices\"[\n" +
 	"\tIceServer\x12\x12\n" +
 	"\x04urls\x18\x01 \x03(\tR\x04urls\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12\x1e\n" +
 	"\n" +
 	"credential\x18\x03 \x01(\tR\n" +
-	"credential\"\xdd\x02\n" +
+	"credential\"\xdf\x02\n" +
 	"\x10ResolvedEndpoint\x12\x1f\n" +
 	"\vendpoint_id\x18\x01 \x01(\tR\n" +
 	"endpointId\x12(\n" +
-	"\x10target_device_id\x18\x02 \x01(\tR\x0etargetDeviceId\x129\n" +
-	"\bpresence\x18\x03 \x01(\x0e2\x1d.termx.cloud.v1.PresenceStateR\bpresence\x12\x15\n" +
+	"\x10target_device_id\x18\x02 \x01(\tR\x0etargetDeviceId\x12:\n" +
+	"\bpresence\x18\x03 \x01(\x0e2\x1e.muxvia.cloud.v1.PresenceStateR\bpresence\x12\x15\n" +
 	"\x06hub_id\x18\x04 \x01(\tR\x05hubId\x12\x17\n" +
 	"\ahub_url\x18\x05 \x01(\tR\x06hubUrl\x12,\n" +
-	"\x12managed_session_id\x18\x06 \x01(\tR\x10managedSessionId\x12:\n" +
-	"\vice_servers\x18\a \x03(\v2\x19.termx.cloud.v1.IceServerR\n" +
+	"\x12managed_session_id\x18\x06 \x01(\tR\x10managedSessionId\x12;\n" +
+	"\vice_servers\x18\a \x03(\v2\x1a.muxvia.cloud.v1.IceServerR\n" +
 	"iceServers\x12)\n" +
-	"\x10assignment_epoch\x18\b \x01(\x04R\x0fassignmentEpoch\"\xb4\x01\n" +
+	"\x10assignment_epoch\x18\b \x01(\x04R\x0fassignmentEpoch\"\xb6\x01\n" +
 	"\x13OpenPresenceRequest\x12.\n" +
-	"\x13presence_session_id\x18\x01 \x01(\tR\x11presenceSessionId\x121\n" +
-	"\x05proof\x18\x02 \x01(\v2\x1b.termx.cloud.v1.DeviceProofR\x05proof\x12:\n" +
-	"\bmetadata\x18\x03 \x01(\v2\x1e.termx.cloud.v1.DeviceMetadataR\bmetadata\"\xea\x01\n" +
+	"\x13presence_session_id\x18\x01 \x01(\tR\x11presenceSessionId\x122\n" +
+	"\x05proof\x18\x02 \x01(\v2\x1c.muxvia.cloud.v1.DeviceProofR\x05proof\x12;\n" +
+	"\bmetadata\x18\x03 \x01(\v2\x1f.muxvia.cloud.v1.DeviceMetadataR\bmetadata\"\xeb\x01\n" +
 	"\rPresenceReady\x12.\n" +
 	"\x13presence_session_id\x18\x01 \x01(\tR\x11presenceSessionId\x12+\n" +
-	"\x11heartbeat_seconds\x18\x02 \x01(\rR\x10heartbeatSeconds\x12:\n" +
-	"\vice_servers\x18\x03 \x03(\v2\x19.termx.cloud.v1.IceServerR\n" +
+	"\x11heartbeat_seconds\x18\x02 \x01(\rR\x10heartbeatSeconds\x12;\n" +
+	"\vice_servers\x18\x03 \x03(\v2\x1a.muxvia.cloud.v1.IceServerR\n" +
 	"iceServers\x12\x15\n" +
 	"\x06hub_id\x18\x04 \x01(\tR\x05hubId\x12)\n" +
-	"\x10assignment_epoch\x18\x05 \x01(\x04R\x0fassignmentEpoch\"\x8b\x04\n" +
+	"\x10assignment_epoch\x18\x05 \x01(\x04R\x0fassignmentEpoch\"\x8d\x04\n" +
 	"\x0eSignalingOffer\x120\n" +
 	"\x14signaling_session_id\x18\x01 \x01(\tR\x12signalingSessionId\x12,\n" +
 	"\x12managed_session_id\x18\x02 \x01(\tR\x10managedSessionId\x12(\n" +
 	"\x10source_device_id\x18\x03 \x01(\tR\x0esourceDeviceId\x12(\n" +
 	"\x10target_device_id\x18\x04 \x01(\tR\x0etargetDeviceId\x12\x10\n" +
-	"\x03sdp\x18\x05 \x01(\tR\x03sdp\x12<\n" +
+	"\x03sdp\x18\x05 \x01(\tR\x03sdp\x12=\n" +
 	"\n" +
-	"candidates\x18\x06 \x03(\v2\x1c.termx.cloud.v1.IceCandidateR\n" +
-	"candidates\x12J\n" +
-	"\x10route_preference\x18\a \x01(\x0e2\x1f.termx.cloud.v1.RoutePreferenceR\x0froutePreference\x12\x1d\n" +
+	"candidates\x18\x06 \x03(\v2\x1d.muxvia.cloud.v1.IceCandidateR\n" +
+	"candidates\x12K\n" +
+	"\x10route_preference\x18\a \x01(\x0e2 .muxvia.cloud.v1.RoutePreferenceR\x0froutePreference\x12\x1d\n" +
 	"\n" +
 	"relay_only\x18\b \x01(\bR\trelayOnly\x12/\n" +
 	"\x13session_incarnation\x18\t \x01(\x04R\x12sessionIncarnation\x12.\n" +
 	"\x13presence_session_id\x18\n" +
 	" \x01(\tR\x11presenceSessionId\x12)\n" +
-	"\x10assignment_epoch\x18\v \x01(\x04R\x0fassignmentEpoch\"\x93\x01\n" +
+	"\x10assignment_epoch\x18\v \x01(\x04R\x0fassignmentEpoch\"\x94\x01\n" +
 	"\x0fSignalingAnswer\x120\n" +
 	"\x14signaling_session_id\x18\x01 \x01(\tR\x12signalingSessionId\x12\x10\n" +
-	"\x03sdp\x18\x02 \x01(\tR\x03sdp\x12<\n" +
+	"\x03sdp\x18\x02 \x01(\tR\x03sdp\x12=\n" +
 	"\n" +
-	"candidates\x18\x03 \x03(\v2\x1c.termx.cloud.v1.IceCandidateR\n" +
+	"candidates\x18\x03 \x03(\v2\x1d.muxvia.cloud.v1.IceCandidateR\n" +
 	"candidates\"\x9a\x01\n" +
 	"\fIceCandidate\x12\x1c\n" +
 	"\tcandidate\x18\x01 \x01(\tR\tcandidate\x12\x17\n" +
@@ -6449,85 +6449,85 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\x0fsdp_mline_index\x18\x03 \x01(\rR\rsdpMlineIndex\x12+\n" +
 	"\x11username_fragment\x18\x04 \x01(\tR\x10usernameFragment\"(\n" +
 	"\x0ePresenceClosed\x12\x16\n" +
-	"\x06reason\x18\x01 \x01(\tR\x06reason\"\x84\x03\n" +
-	"\rPresenceEvent\x125\n" +
-	"\x05ready\x18\x01 \x01(\v2\x1d.termx.cloud.v1.PresenceReadyH\x00R\x05ready\x126\n" +
-	"\x05offer\x18\x02 \x01(\v2\x1e.termx.cloud.v1.SignalingOfferH\x00R\x05offer\x12<\n" +
-	"\tcandidate\x18\x03 \x01(\v2\x1c.termx.cloud.v1.IceCandidateH\x00R\tcandidate\x122\n" +
-	"\x05error\x18\x04 \x01(\v2\x1a.termx.cloud.v1.CloudErrorH\x00R\x05error\x128\n" +
-	"\x06closed\x18\x05 \x01(\v2\x1e.termx.cloud.v1.PresenceClosedH\x00R\x06closed\x12M\n" +
-	"\x0edaemon_command\x18\x06 \x01(\v2$.termx.cloud.v1.DaemonControlCommandH\x00R\rdaemonCommandB\t\n" +
-	"\apayload\"_\n" +
-	" ReportDaemonCommandResultRequest\x12;\n" +
-	"\x06result\x18\x01 \x01(\v2#.termx.cloud.v1.DaemonCommandResultR\x06result\"S\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\"\x8a\x03\n" +
+	"\rPresenceEvent\x126\n" +
+	"\x05ready\x18\x01 \x01(\v2\x1e.muxvia.cloud.v1.PresenceReadyH\x00R\x05ready\x127\n" +
+	"\x05offer\x18\x02 \x01(\v2\x1f.muxvia.cloud.v1.SignalingOfferH\x00R\x05offer\x12=\n" +
+	"\tcandidate\x18\x03 \x01(\v2\x1d.muxvia.cloud.v1.IceCandidateH\x00R\tcandidate\x123\n" +
+	"\x05error\x18\x04 \x01(\v2\x1b.muxvia.cloud.v1.CloudErrorH\x00R\x05error\x129\n" +
+	"\x06closed\x18\x05 \x01(\v2\x1f.muxvia.cloud.v1.PresenceClosedH\x00R\x06closed\x12N\n" +
+	"\x0edaemon_command\x18\x06 \x01(\v2%.muxvia.cloud.v1.DaemonControlCommandH\x00R\rdaemonCommandB\t\n" +
+	"\apayload\"`\n" +
+	" ReportDaemonCommandResultRequest\x12<\n" +
+	"\x06result\x18\x01 \x01(\v2$.muxvia.cloud.v1.DaemonCommandResultR\x06result\"S\n" +
 	"!ReportDaemonCommandResultResponse\x12.\n" +
-	"\x13accepted_command_id\x18\x01 \x01(\tR\x11acceptedCommandId\"\xde\x02\n" +
+	"\x13accepted_command_id\x18\x01 \x01(\tR\x11acceptedCommandId\"\xe0\x02\n" +
 	"\x1dCreateSignalingSessionRequest\x12\x1f\n" +
 	"\vendpoint_id\x18\x01 \x01(\tR\n" +
 	"endpointId\x12,\n" +
 	"\x12managed_session_id\x18\x02 \x01(\tR\x10managedSessionId\x12(\n" +
 	"\x10target_device_id\x18\x03 \x01(\tR\x0etargetDeviceId\x12\x1b\n" +
-	"\toffer_sdp\x18\x04 \x01(\tR\bofferSdp\x12<\n" +
+	"\toffer_sdp\x18\x04 \x01(\tR\bofferSdp\x12=\n" +
 	"\n" +
-	"candidates\x18\x05 \x03(\v2\x1c.termx.cloud.v1.IceCandidateR\n" +
-	"candidates\x12J\n" +
-	"\x10route_preference\x18\x06 \x01(\x0e2\x1f.termx.cloud.v1.RoutePreferenceR\x0froutePreference\x12\x1d\n" +
+	"candidates\x18\x05 \x03(\v2\x1d.muxvia.cloud.v1.IceCandidateR\n" +
+	"candidates\x12K\n" +
+	"\x10route_preference\x18\x06 \x01(\x0e2 .muxvia.cloud.v1.RoutePreferenceR\x0froutePreference\x12\x1d\n" +
 	"\n" +
 	"relay_only\x18\a \x01(\bR\trelayOnly\")\n" +
 	"\x0fSignalingClosed\x12\x16\n" +
-	"\x06reason\x18\x01 \x01(\tR\x06reason\"\x83\x02\n" +
-	"\x0eSignalingEvent\x129\n" +
-	"\x06answer\x18\x01 \x01(\v2\x1f.termx.cloud.v1.SignalingAnswerH\x00R\x06answer\x12<\n" +
-	"\tcandidate\x18\x02 \x01(\v2\x1c.termx.cloud.v1.IceCandidateH\x00R\tcandidate\x122\n" +
-	"\x05error\x18\x03 \x01(\v2\x1a.termx.cloud.v1.CloudErrorH\x00R\x05error\x129\n" +
-	"\x06closed\x18\x04 \x01(\v2\x1f.termx.cloud.v1.SignalingClosedH\x00R\x06closedB\t\n" +
-	"\apayload\"\xca\x01\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\"\x87\x02\n" +
+	"\x0eSignalingEvent\x12:\n" +
+	"\x06answer\x18\x01 \x01(\v2 .muxvia.cloud.v1.SignalingAnswerH\x00R\x06answer\x12=\n" +
+	"\tcandidate\x18\x02 \x01(\v2\x1d.muxvia.cloud.v1.IceCandidateH\x00R\tcandidate\x123\n" +
+	"\x05error\x18\x03 \x01(\v2\x1b.muxvia.cloud.v1.CloudErrorH\x00R\x05error\x12:\n" +
+	"\x06closed\x18\x04 \x01(\v2 .muxvia.cloud.v1.SignalingClosedH\x00R\x06closedB\t\n" +
+	"\apayload\"\xcc\x01\n" +
 	"\x1dCompleteSignalingOfferRequest\x120\n" +
-	"\x14signaling_session_id\x18\x01 \x01(\tR\x12signalingSessionId\x129\n" +
-	"\x06answer\x18\x02 \x01(\v2\x1f.termx.cloud.v1.SignalingAnswerH\x00R\x06answer\x122\n" +
-	"\x05error\x18\x03 \x01(\v2\x1a.termx.cloud.v1.CloudErrorH\x00R\x05errorB\b\n" +
+	"\x14signaling_session_id\x18\x01 \x01(\tR\x12signalingSessionId\x12:\n" +
+	"\x06answer\x18\x02 \x01(\v2 .muxvia.cloud.v1.SignalingAnswerH\x00R\x06answer\x123\n" +
+	"\x05error\x18\x03 \x01(\v2\x1b.muxvia.cloud.v1.CloudErrorH\x00R\x05errorB\b\n" +
 	"\x06result\" \n" +
-	"\x1eCompleteSignalingOfferResponse\"\xe9\x01\n" +
+	"\x1eCompleteSignalingOfferResponse\"\xea\x01\n" +
 	"\x18AcquireRelayLeaseRequest\x12,\n" +
 	"\x12managed_session_id\x18\x01 \x01(\tR\x10managedSessionId\x12(\n" +
-	"\x10target_device_id\x18\x02 \x01(\tR\x0etargetDeviceId\x12J\n" +
-	"\x10route_preference\x18\x03 \x01(\x0e2\x1f.termx.cloud.v1.RoutePreferenceR\x0froutePreference\x12)\n" +
-	"\x10preferred_region\x18\x04 \x01(\tR\x0fpreferredRegion\"\xbd\x03\n" +
+	"\x10target_device_id\x18\x02 \x01(\tR\x0etargetDeviceId\x12K\n" +
+	"\x10route_preference\x18\x03 \x01(\x0e2 .muxvia.cloud.v1.RoutePreferenceR\x0froutePreference\x12)\n" +
+	"\x10preferred_region\x18\x04 \x01(\tR\x0fpreferredRegion\"\xbf\x03\n" +
 	"\n" +
 	"RelayLease\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12!\n" +
 	"\fsigned_lease\x18\x02 \x01(\fR\vsignedLease\x12&\n" +
-	"\x0fexpires_at_unix\x18\x03 \x01(\x04R\rexpiresAtUnix\x129\n" +
-	"\tpath_kind\x18\x04 \x01(\x0e2\x1c.termx.cloud.v1.ObservedPathR\bpathKind\x12\x19\n" +
+	"\x0fexpires_at_unix\x18\x03 \x01(\x04R\rexpiresAtUnix\x12:\n" +
+	"\tpath_kind\x18\x04 \x01(\x0e2\x1d.muxvia.cloud.v1.ObservedPathR\bpathKind\x12\x19\n" +
 	"\broute_id\x18\x05 \x01(\tR\arouteId\x12#\n" +
 	"\rroute_version\x18\x06 \x01(\rR\frouteVersion\x12/\n" +
 	"\x14client_edge_relay_id\x18\a \x01(\tR\x11clientEdgeRelayId\x12/\n" +
 	"\x14daemon_edge_relay_id\x18\b \x01(\tR\x11daemonEdgeRelayId\x120\n" +
-	"\x14max_internal_transit\x18\t \x01(\rR\x12maxInternalTransit\x12:\n" +
+	"\x14max_internal_transit\x18\t \x01(\rR\x12maxInternalTransit\x12;\n" +
 	"\vice_servers\x18\n" +
-	" \x03(\v2\x19.termx.cloud.v1.IceServerR\n" +
-	"iceServers\"\xde\x01\n" +
+	" \x03(\v2\x1a.muxvia.cloud.v1.IceServerR\n" +
+	"iceServers\"\xdf\x01\n" +
 	"\x17PlanManagedRouteRequest\x12\x1f\n" +
 	"\vendpoint_id\x18\x01 \x01(\tR\n" +
 	"endpointId\x12,\n" +
 	"\x12managed_session_id\x18\x02 \x01(\tR\x10managedSessionId\x12(\n" +
-	"\x10target_device_id\x18\x03 \x01(\tR\x0etargetDeviceId\x12J\n" +
-	"\x10route_preference\x18\x04 \x01(\x0e2\x1f.termx.cloud.v1.RoutePreferenceR\x0froutePreference\"\xbf\x03\n" +
+	"\x10target_device_id\x18\x03 \x01(\tR\x0etargetDeviceId\x12K\n" +
+	"\x10route_preference\x18\x04 \x01(\x0e2 .muxvia.cloud.v1.RoutePreferenceR\x0froutePreference\"\xc2\x03\n" +
 	"\x10ManagedRoutePlan\x12\x17\n" +
 	"\aplan_id\x18\x01 \x01(\tR\x06planId\x12,\n" +
 	"\x12managed_session_id\x18\x02 \x01(\tR\x10managedSessionId\x12(\n" +
-	"\x10target_device_id\x18\x03 \x01(\tR\x0etargetDeviceId\x12A\n" +
-	"\rselected_path\x18\x04 \x01(\x0e2\x1c.termx.cloud.v1.ObservedPathR\fselectedPath\x12O\n" +
-	"\x10selection_reason\x18\x05 \x01(\x0e2$.termx.cloud.v1.RouteSelectionReasonR\x0fselectionReason\x12(\n" +
-	"\x10valid_until_unix\x18\x06 \x01(\x04R\x0evalidUntilUnix\x12:\n" +
-	"\vice_servers\x18\a \x03(\v2\x19.termx.cloud.v1.IceServerR\n" +
+	"\x10target_device_id\x18\x03 \x01(\tR\x0etargetDeviceId\x12B\n" +
+	"\rselected_path\x18\x04 \x01(\x0e2\x1d.muxvia.cloud.v1.ObservedPathR\fselectedPath\x12P\n" +
+	"\x10selection_reason\x18\x05 \x01(\x0e2%.muxvia.cloud.v1.RouteSelectionReasonR\x0fselectionReason\x12(\n" +
+	"\x10valid_until_unix\x18\x06 \x01(\x04R\x0evalidUntilUnix\x12;\n" +
+	"\vice_servers\x18\a \x03(\v2\x1a.muxvia.cloud.v1.IceServerR\n" +
 	"iceServers\x12\x1d\n" +
 	"\n" +
 	"relay_only\x18\b \x01(\bR\trelayOnly\x12!\n" +
-	"\frelay_region\x18\t \x01(\tR\vrelayRegion\"\x90\x06\n" +
+	"\frelay_region\x18\t \x01(\tR\vrelayRegion\"\x91\x06\n" +
 	"\x12PathQualitySummary\x12,\n" +
-	"\x12managed_session_id\x18\x01 \x01(\tR\x10managedSessionId\x12A\n" +
-	"\robserved_path\x18\x02 \x01(\x0e2\x1c.termx.cloud.v1.ObservedPathR\fobservedPath\x12$\n" +
+	"\x12managed_session_id\x18\x01 \x01(\tR\x10managedSessionId\x12B\n" +
+	"\robserved_path\x18\x02 \x01(\x0e2\x1d.muxvia.cloud.v1.ObservedPathR\fobservedPath\x12$\n" +
 	"\x0ertt_p50_millis\x18\x03 \x01(\rR\frttP50Millis\x12#\n" +
 	"\rjitter_millis\x18\x04 \x01(\rR\fjitterMillis\x12*\n" +
 	"\x11loss_basis_points\x18\x05 \x01(\rR\x0flossBasisPoints\x12%\n" +
@@ -6545,18 +6545,18 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\x10loss_event_count\x18\x10 \x01(\x04R\x0elossEventCount\x12\x1f\n" +
 	"\vcarrier_tag\x18\x11 \x01(\tR\n" +
 	"carrierTag\x12!\n" +
-	"\fprovider_tag\x18\x12 \x01(\tR\vproviderTag\"X\n" +
-	"\x18ReportPathQualityRequest\x12<\n" +
-	"\asummary\x18\x01 \x01(\v2\".termx.cloud.v1.PathQualitySummaryR\asummary\"\x1b\n" +
-	"\x19ReportPathQualityResponse\"\xee\x01\n" +
+	"\fprovider_tag\x18\x12 \x01(\tR\vproviderTag\"Y\n" +
+	"\x18ReportPathQualityRequest\x12=\n" +
+	"\asummary\x18\x01 \x01(\v2#.muxvia.cloud.v1.PathQualitySummaryR\asummary\"\x1b\n" +
+	"\x19ReportPathQualityResponse\"\xf0\x01\n" +
 	"\x11ConnectionOutcome\x12,\n" +
-	"\x12managed_session_id\x18\x01 \x01(\tR\x10managedSessionId\x12A\n" +
-	"\robserved_path\x18\x02 \x01(\x0e2\x1c.termx.cloud.v1.ObservedPathR\fobservedPath\x12=\n" +
+	"\x12managed_session_id\x18\x01 \x01(\tR\x10managedSessionId\x12B\n" +
+	"\robserved_path\x18\x02 \x01(\x0e2\x1d.muxvia.cloud.v1.ObservedPathR\fobservedPath\x12>\n" +
 	"\n" +
-	"error_code\x18\x03 \x01(\x0e2\x1e.termx.cloud.v1.CloudErrorCodeR\terrorCode\x12)\n" +
-	"\x10connected_millis\x18\x04 \x01(\x04R\x0fconnectedMillis\"]\n" +
-	"\x1eReportConnectionOutcomeRequest\x12;\n" +
-	"\aoutcome\x18\x01 \x01(\v2!.termx.cloud.v1.ConnectionOutcomeR\aoutcome\"!\n" +
+	"error_code\x18\x03 \x01(\x0e2\x1f.muxvia.cloud.v1.CloudErrorCodeR\terrorCode\x12)\n" +
+	"\x10connected_millis\x18\x04 \x01(\x04R\x0fconnectedMillis\"^\n" +
+	"\x1eReportConnectionOutcomeRequest\x12<\n" +
+	"\aoutcome\x18\x01 \x01(\v2\".muxvia.cloud.v1.ConnectionOutcomeR\aoutcome\"!\n" +
 	"\x1fReportConnectionOutcomeResponse\".\n" +
 	"\x0fIPCStreamOpened\x12\x1b\n" +
 	"\tstream_id\x18\x01 \x01(\x04R\bstreamId\"4\n" +
@@ -6565,69 +6565,69 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\x10IPCCancelRequest\x12*\n" +
 	"\x11target_request_id\x18\x01 \x01(\x04R\x0ftargetRequestId\"\x14\n" +
 	"\x12IPCAcknowledgement\"\x11\n" +
-	"\x0fIPCStreamClosed\"\xd2\x0f\n" +
+	"\x0fIPCStreamClosed\"\xe9\x0f\n" +
 	"\n" +
 	"IPCRequest\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\x04R\trequestId\x12=\n" +
+	"request_id\x18\x01 \x01(\x04R\trequestId\x12>\n" +
 	"\x05hello\x18\n" +
-	" \x01(\v2%.termx.cloud.v1.CompanionHelloRequestH\x00R\x05hello\x127\n" +
-	"\x06status\x18\v \x01(\v2\x1d.termx.cloud.v1.StatusRequestH\x00R\x06status\x12D\n" +
-	"\vbegin_login\x18\f \x01(\v2!.termx.cloud.v1.BeginLoginRequestH\x00R\n" +
-	"beginLogin\x12M\n" +
-	"\x0ecomplete_login\x18\r \x01(\v2$.termx.cloud.v1.CompleteLoginRequestH\x00R\rcompleteLogin\x12f\n" +
-	"\x17begin_device_enrollment\x18\x0e \x01(\v2,.termx.cloud.v1.BeginDeviceEnrollmentRequestH\x00R\x15beginDeviceEnrollment\x12o\n" +
-	"\x1acomplete_device_enrollment\x18\x0f \x01(\v2/.termx.cloud.v1.CompleteDeviceEnrollmentRequestH\x00R\x18completeDeviceEnrollment\x127\n" +
-	"\x06logout\x18\x10 \x01(\v2\x1d.termx.cloud.v1.LogoutRequestH\x00R\x06logout\x127\n" +
-	"\x06doctor\x18\x11 \x01(\v2\x1d.termx.cloud.v1.DoctorRequestH\x00R\x06doctor\x12=\n" +
-	"\bshutdown\x18\x12 \x01(\v2\x1f.termx.cloud.v1.ShutdownRequestH\x00R\bshutdown\x12S\n" +
-	"\x10resolve_endpoint\x18\x13 \x01(\v2&.termx.cloud.v1.ResolveEndpointRequestH\x00R\x0fresolveEndpoint\x12J\n" +
-	"\ropen_presence\x18\x14 \x01(\v2#.termx.cloud.v1.OpenPresenceRequestH\x00R\fopenPresence\x12i\n" +
-	"\x18create_signaling_session\x18\x15 \x01(\v2-.termx.cloud.v1.CreateSignalingSessionRequestH\x00R\x16createSignalingSession\x12i\n" +
-	"\x18complete_signaling_offer\x18\x16 \x01(\v2-.termx.cloud.v1.CompleteSignalingOfferRequestH\x00R\x16completeSignalingOffer\x12Z\n" +
-	"\x13acquire_relay_lease\x18\x17 \x01(\v2(.termx.cloud.v1.AcquireRelayLeaseRequestH\x00R\x11acquireRelayLease\x12Z\n" +
-	"\x13report_path_quality\x18\x18 \x01(\v2(.termx.cloud.v1.ReportPathQualityRequestH\x00R\x11reportPathQuality\x12l\n" +
-	"\x19report_connection_outcome\x18\x19 \x01(\v2..termx.cloud.v1.ReportConnectionOutcomeRequestH\x00R\x17reportConnectionOutcome\x12J\n" +
-	"\fclose_stream\x18\x1a \x01(\v2%.termx.cloud.v1.IPCCloseStreamRequestH\x00R\vcloseStream\x12:\n" +
-	"\x06cancel\x18\x1b \x01(\v2 .termx.cloud.v1.IPCCancelRequestH\x00R\x06cancel\x12W\n" +
-	"\x12plan_managed_route\x18\x1c \x01(\v2'.termx.cloud.v1.PlanManagedRouteRequestH\x00R\x10planManagedRoute\x12M\n" +
-	"\x0ebegin_presence\x18\x1d \x01(\v2$.termx.cloud.v1.BeginPresenceRequestH\x00R\rbeginPresence\x12]\n" +
-	"\x14list_managed_devices\x18\x1e \x01(\v2).termx.cloud.v1.ListManagedDevicesRequestH\x00R\x12listManagedDevices\x12`\n" +
-	"\x15report_daemon_runtime\x18\x1f \x01(\v2*.termx.cloud.v1.ReportDaemonRuntimeRequestH\x00R\x13reportDaemonRuntime\x12s\n" +
-	"\x1creport_daemon_command_result\x18  \x01(\v20.termx.cloud.v1.ReportDaemonCommandResultRequestH\x00R\x19reportDaemonCommandResultB\v\n" +
-	"\toperation\"\x97\x10\n" +
+	" \x01(\v2&.muxvia.cloud.v1.CompanionHelloRequestH\x00R\x05hello\x128\n" +
+	"\x06status\x18\v \x01(\v2\x1e.muxvia.cloud.v1.StatusRequestH\x00R\x06status\x12E\n" +
+	"\vbegin_login\x18\f \x01(\v2\".muxvia.cloud.v1.BeginLoginRequestH\x00R\n" +
+	"beginLogin\x12N\n" +
+	"\x0ecomplete_login\x18\r \x01(\v2%.muxvia.cloud.v1.CompleteLoginRequestH\x00R\rcompleteLogin\x12g\n" +
+	"\x17begin_device_enrollment\x18\x0e \x01(\v2-.muxvia.cloud.v1.BeginDeviceEnrollmentRequestH\x00R\x15beginDeviceEnrollment\x12p\n" +
+	"\x1acomplete_device_enrollment\x18\x0f \x01(\v20.muxvia.cloud.v1.CompleteDeviceEnrollmentRequestH\x00R\x18completeDeviceEnrollment\x128\n" +
+	"\x06logout\x18\x10 \x01(\v2\x1e.muxvia.cloud.v1.LogoutRequestH\x00R\x06logout\x128\n" +
+	"\x06doctor\x18\x11 \x01(\v2\x1e.muxvia.cloud.v1.DoctorRequestH\x00R\x06doctor\x12>\n" +
+	"\bshutdown\x18\x12 \x01(\v2 .muxvia.cloud.v1.ShutdownRequestH\x00R\bshutdown\x12T\n" +
+	"\x10resolve_endpoint\x18\x13 \x01(\v2'.muxvia.cloud.v1.ResolveEndpointRequestH\x00R\x0fresolveEndpoint\x12K\n" +
+	"\ropen_presence\x18\x14 \x01(\v2$.muxvia.cloud.v1.OpenPresenceRequestH\x00R\fopenPresence\x12j\n" +
+	"\x18create_signaling_session\x18\x15 \x01(\v2..muxvia.cloud.v1.CreateSignalingSessionRequestH\x00R\x16createSignalingSession\x12j\n" +
+	"\x18complete_signaling_offer\x18\x16 \x01(\v2..muxvia.cloud.v1.CompleteSignalingOfferRequestH\x00R\x16completeSignalingOffer\x12[\n" +
+	"\x13acquire_relay_lease\x18\x17 \x01(\v2).muxvia.cloud.v1.AcquireRelayLeaseRequestH\x00R\x11acquireRelayLease\x12[\n" +
+	"\x13report_path_quality\x18\x18 \x01(\v2).muxvia.cloud.v1.ReportPathQualityRequestH\x00R\x11reportPathQuality\x12m\n" +
+	"\x19report_connection_outcome\x18\x19 \x01(\v2/.muxvia.cloud.v1.ReportConnectionOutcomeRequestH\x00R\x17reportConnectionOutcome\x12K\n" +
+	"\fclose_stream\x18\x1a \x01(\v2&.muxvia.cloud.v1.IPCCloseStreamRequestH\x00R\vcloseStream\x12;\n" +
+	"\x06cancel\x18\x1b \x01(\v2!.muxvia.cloud.v1.IPCCancelRequestH\x00R\x06cancel\x12X\n" +
+	"\x12plan_managed_route\x18\x1c \x01(\v2(.muxvia.cloud.v1.PlanManagedRouteRequestH\x00R\x10planManagedRoute\x12N\n" +
+	"\x0ebegin_presence\x18\x1d \x01(\v2%.muxvia.cloud.v1.BeginPresenceRequestH\x00R\rbeginPresence\x12^\n" +
+	"\x14list_managed_devices\x18\x1e \x01(\v2*.muxvia.cloud.v1.ListManagedDevicesRequestH\x00R\x12listManagedDevices\x12a\n" +
+	"\x15report_daemon_runtime\x18\x1f \x01(\v2+.muxvia.cloud.v1.ReportDaemonRuntimeRequestH\x00R\x13reportDaemonRuntime\x12t\n" +
+	"\x1creport_daemon_command_result\x18  \x01(\v21.muxvia.cloud.v1.ReportDaemonCommandResultRequestH\x00R\x19reportDaemonCommandResultB\v\n" +
+	"\toperation\"\xb0\x10\n" +
 	"\vIPCResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\x04R\trequestId\x12\x1b\n" +
-	"\tstream_id\x18\x02 \x01(\x04R\bstreamId\x12>\n" +
+	"\tstream_id\x18\x02 \x01(\x04R\bstreamId\x12?\n" +
 	"\x05hello\x18\n" +
-	" \x01(\v2&.termx.cloud.v1.CompanionHelloResponseH\x00R\x05hello\x128\n" +
-	"\x06status\x18\v \x01(\v2\x1e.termx.cloud.v1.StatusResponseH\x00R\x06status\x12:\n" +
+	" \x01(\v2'.muxvia.cloud.v1.CompanionHelloResponseH\x00R\x05hello\x129\n" +
+	"\x06status\x18\v \x01(\v2\x1f.muxvia.cloud.v1.StatusResponseH\x00R\x06status\x12;\n" +
 	"\n" +
-	"login_flow\x18\f \x01(\v2\x19.termx.cloud.v1.LoginFlowH\x00R\tloginFlow\x12N\n" +
-	"\x0ecomplete_login\x18\r \x01(\v2%.termx.cloud.v1.CompleteLoginResponseH\x00R\rcompleteLogin\x12^\n" +
-	"\x14enrollment_challenge\x18\x0e \x01(\v2).termx.cloud.v1.DeviceEnrollmentChallengeH\x00R\x13enrollmentChallenge\x12c\n" +
-	"\x13complete_enrollment\x18\x0f \x01(\v20.termx.cloud.v1.CompleteDeviceEnrollmentResponseH\x00R\x12completeEnrollment\x128\n" +
-	"\x06logout\x18\x10 \x01(\v2\x1e.termx.cloud.v1.LogoutResponseH\x00R\x06logout\x128\n" +
-	"\x06doctor\x18\x11 \x01(\v2\x1e.termx.cloud.v1.DoctorResponseH\x00R\x06doctor\x12>\n" +
-	"\bshutdown\x18\x12 \x01(\v2 .termx.cloud.v1.ShutdownResponseH\x00R\bshutdown\x12O\n" +
-	"\x11resolved_endpoint\x18\x13 \x01(\v2 .termx.cloud.v1.ResolvedEndpointH\x00R\x10resolvedEndpoint\x12F\n" +
-	"\rstream_opened\x18\x14 \x01(\v2\x1f.termx.cloud.v1.IPCStreamOpenedH\x00R\fstreamOpened\x12j\n" +
-	"\x18complete_signaling_offer\x18\x15 \x01(\v2..termx.cloud.v1.CompleteSignalingOfferResponseH\x00R\x16completeSignalingOffer\x12=\n" +
-	"\vrelay_lease\x18\x16 \x01(\v2\x1a.termx.cloud.v1.RelayLeaseH\x00R\n" +
-	"relayLease\x12[\n" +
-	"\x13report_path_quality\x18\x17 \x01(\v2).termx.cloud.v1.ReportPathQualityResponseH\x00R\x11reportPathQuality\x12m\n" +
-	"\x19report_connection_outcome\x18\x18 \x01(\v2/.termx.cloud.v1.ReportConnectionOutcomeResponseH\x00R\x17reportConnectionOutcome\x12F\n" +
-	"\x0epresence_event\x18\x19 \x01(\v2\x1d.termx.cloud.v1.PresenceEventH\x00R\rpresenceEvent\x12I\n" +
-	"\x0fsignaling_event\x18\x1a \x01(\v2\x1e.termx.cloud.v1.SignalingEventH\x00R\x0esignalingEvent\x12N\n" +
-	"\x0facknowledgement\x18\x1b \x01(\v2\".termx.cloud.v1.IPCAcknowledgementH\x00R\x0facknowledgement\x12F\n" +
-	"\rstream_closed\x18\x1c \x01(\v2\x1f.termx.cloud.v1.IPCStreamClosedH\x00R\fstreamClosed\x122\n" +
-	"\x05error\x18\x1d \x01(\v2\x1a.termx.cloud.v1.CloudErrorH\x00R\x05error\x12P\n" +
-	"\x12managed_route_plan\x18\x1e \x01(\v2 .termx.cloud.v1.ManagedRoutePlanH\x00R\x10managedRoutePlan\x12R\n" +
-	"\x12presence_challenge\x18\x1f \x01(\v2!.termx.cloud.v1.PresenceChallengeH\x00R\x11presenceChallenge\x12U\n" +
-	"\x0fmanaged_devices\x18  \x01(\v2*.termx.cloud.v1.ListManagedDevicesResponseH\x00R\x0emanagedDevices\x12a\n" +
-	"\x15report_daemon_runtime\x18! \x01(\v2+.termx.cloud.v1.ReportDaemonRuntimeResponseH\x00R\x13reportDaemonRuntime\x12t\n" +
-	"\x1creport_daemon_command_result\x18\" \x01(\v21.termx.cloud.v1.ReportDaemonCommandResultResponseH\x00R\x19reportDaemonCommandResultB\b\n" +
+	"login_flow\x18\f \x01(\v2\x1a.muxvia.cloud.v1.LoginFlowH\x00R\tloginFlow\x12O\n" +
+	"\x0ecomplete_login\x18\r \x01(\v2&.muxvia.cloud.v1.CompleteLoginResponseH\x00R\rcompleteLogin\x12_\n" +
+	"\x14enrollment_challenge\x18\x0e \x01(\v2*.muxvia.cloud.v1.DeviceEnrollmentChallengeH\x00R\x13enrollmentChallenge\x12d\n" +
+	"\x13complete_enrollment\x18\x0f \x01(\v21.muxvia.cloud.v1.CompleteDeviceEnrollmentResponseH\x00R\x12completeEnrollment\x129\n" +
+	"\x06logout\x18\x10 \x01(\v2\x1f.muxvia.cloud.v1.LogoutResponseH\x00R\x06logout\x129\n" +
+	"\x06doctor\x18\x11 \x01(\v2\x1f.muxvia.cloud.v1.DoctorResponseH\x00R\x06doctor\x12?\n" +
+	"\bshutdown\x18\x12 \x01(\v2!.muxvia.cloud.v1.ShutdownResponseH\x00R\bshutdown\x12P\n" +
+	"\x11resolved_endpoint\x18\x13 \x01(\v2!.muxvia.cloud.v1.ResolvedEndpointH\x00R\x10resolvedEndpoint\x12G\n" +
+	"\rstream_opened\x18\x14 \x01(\v2 .muxvia.cloud.v1.IPCStreamOpenedH\x00R\fstreamOpened\x12k\n" +
+	"\x18complete_signaling_offer\x18\x15 \x01(\v2/.muxvia.cloud.v1.CompleteSignalingOfferResponseH\x00R\x16completeSignalingOffer\x12>\n" +
+	"\vrelay_lease\x18\x16 \x01(\v2\x1b.muxvia.cloud.v1.RelayLeaseH\x00R\n" +
+	"relayLease\x12\\\n" +
+	"\x13report_path_quality\x18\x17 \x01(\v2*.muxvia.cloud.v1.ReportPathQualityResponseH\x00R\x11reportPathQuality\x12n\n" +
+	"\x19report_connection_outcome\x18\x18 \x01(\v20.muxvia.cloud.v1.ReportConnectionOutcomeResponseH\x00R\x17reportConnectionOutcome\x12G\n" +
+	"\x0epresence_event\x18\x19 \x01(\v2\x1e.muxvia.cloud.v1.PresenceEventH\x00R\rpresenceEvent\x12J\n" +
+	"\x0fsignaling_event\x18\x1a \x01(\v2\x1f.muxvia.cloud.v1.SignalingEventH\x00R\x0esignalingEvent\x12O\n" +
+	"\x0facknowledgement\x18\x1b \x01(\v2#.muxvia.cloud.v1.IPCAcknowledgementH\x00R\x0facknowledgement\x12G\n" +
+	"\rstream_closed\x18\x1c \x01(\v2 .muxvia.cloud.v1.IPCStreamClosedH\x00R\fstreamClosed\x123\n" +
+	"\x05error\x18\x1d \x01(\v2\x1b.muxvia.cloud.v1.CloudErrorH\x00R\x05error\x12Q\n" +
+	"\x12managed_route_plan\x18\x1e \x01(\v2!.muxvia.cloud.v1.ManagedRoutePlanH\x00R\x10managedRoutePlan\x12S\n" +
+	"\x12presence_challenge\x18\x1f \x01(\v2\".muxvia.cloud.v1.PresenceChallengeH\x00R\x11presenceChallenge\x12V\n" +
+	"\x0fmanaged_devices\x18  \x01(\v2+.muxvia.cloud.v1.ListManagedDevicesResponseH\x00R\x0emanagedDevices\x12b\n" +
+	"\x15report_daemon_runtime\x18! \x01(\v2,.muxvia.cloud.v1.ReportDaemonRuntimeResponseH\x00R\x13reportDaemonRuntime\x12u\n" +
+	"\x1creport_daemon_command_result\x18\" \x01(\v22.muxvia.cloud.v1.ReportDaemonCommandResultResponseH\x00R\x19reportDaemonCommandResultB\b\n" +
 	"\x06result*\x87\x01\n" +
 	"\n" +
 	"CallerRole\x12\x1b\n" +
@@ -6711,7 +6711,7 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"#MOBILE_ACTIVATION_STATE_UNSPECIFIED\x10\x00\x12.\n" +
 	"*MOBILE_ACTIVATION_STATE_WAITING_FOR_DEVICE\x10\x01\x120\n" +
 	",MOBILE_ACTIVATION_STATE_WAITING_FOR_APPROVAL\x10\x02\x12$\n" +
-	" MOBILE_ACTIVATION_STATE_APPROVED\x10\x03B'Z%github.com/lozzow/termx/proto/cloudpbb\x06proto3"
+	" MOBILE_ACTIVATION_STATE_APPROVED\x10\x03B(Z&github.com/muxvia/muxvia/proto/cloudpbb\x06proto3"
 
 var (
 	file_cloudpb_cloud_companion_proto_rawDescOnce sync.Once
@@ -6728,205 +6728,205 @@ func file_cloudpb_cloud_companion_proto_rawDescGZIP() []byte {
 var file_cloudpb_cloud_companion_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
 var file_cloudpb_cloud_companion_proto_msgTypes = make([]protoimpl.MessageInfo, 73)
 var file_cloudpb_cloud_companion_proto_goTypes = []any{
-	(CallerRole)(0),                           // 0: termx.cloud.v1.CallerRole
-	(CompanionCapability)(0),                  // 1: termx.cloud.v1.CompanionCapability
-	(CompanionState)(0),                       // 2: termx.cloud.v1.CompanionState
-	(CloudErrorCode)(0),                       // 3: termx.cloud.v1.CloudErrorCode
-	(PresenceState)(0),                        // 4: termx.cloud.v1.PresenceState
-	(RoutePreference)(0),                      // 5: termx.cloud.v1.RoutePreference
-	(RouteSelectionReason)(0),                 // 6: termx.cloud.v1.RouteSelectionReason
-	(LoginMethod)(0),                          // 7: termx.cloud.v1.LoginMethod
-	(DiagnosticSeverity)(0),                   // 8: termx.cloud.v1.DiagnosticSeverity
-	(MobileActivationState)(0),                // 9: termx.cloud.v1.MobileActivationState
-	(*CloudError)(nil),                        // 10: termx.cloud.v1.CloudError
-	(*CompanionHelloRequest)(nil),             // 11: termx.cloud.v1.CompanionHelloRequest
-	(*CompanionHelloResponse)(nil),            // 12: termx.cloud.v1.CompanionHelloResponse
-	(*StatusRequest)(nil),                     // 13: termx.cloud.v1.StatusRequest
-	(*StatusResponse)(nil),                    // 14: termx.cloud.v1.StatusResponse
-	(*BeginLoginRequest)(nil),                 // 15: termx.cloud.v1.BeginLoginRequest
-	(*LoginFlow)(nil),                         // 16: termx.cloud.v1.LoginFlow
-	(*CompleteLoginRequest)(nil),              // 17: termx.cloud.v1.CompleteLoginRequest
-	(*ClaimMobileActivationRequest)(nil),      // 18: termx.cloud.v1.ClaimMobileActivationRequest
-	(*MobileActivationCreateRequest)(nil),     // 19: termx.cloud.v1.MobileActivationCreateRequest
-	(*MobileActivationInspectRequest)(nil),    // 20: termx.cloud.v1.MobileActivationInspectRequest
-	(*MobileActivationApproveRequest)(nil),    // 21: termx.cloud.v1.MobileActivationApproveRequest
-	(*MobileActivationProjection)(nil),        // 22: termx.cloud.v1.MobileActivationProjection
-	(*MobileActivationApproveResponse)(nil),   // 23: termx.cloud.v1.MobileActivationApproveResponse
-	(*CloudSessionSummary)(nil),               // 24: termx.cloud.v1.CloudSessionSummary
-	(*CompleteLoginResponse)(nil),             // 25: termx.cloud.v1.CompleteLoginResponse
-	(*BeginDeviceEnrollmentRequest)(nil),      // 26: termx.cloud.v1.BeginDeviceEnrollmentRequest
-	(*DeviceEnrollmentChallenge)(nil),         // 27: termx.cloud.v1.DeviceEnrollmentChallenge
-	(*DeviceEnrollmentProofInput)(nil),        // 28: termx.cloud.v1.DeviceEnrollmentProofInput
-	(*CompleteDeviceEnrollmentRequest)(nil),   // 29: termx.cloud.v1.CompleteDeviceEnrollmentRequest
-	(*DaemonControlVerificationKey)(nil),      // 30: termx.cloud.v1.DaemonControlVerificationKey
-	(*DaemonControlEnrollment)(nil),           // 31: termx.cloud.v1.DaemonControlEnrollment
-	(*CompleteDeviceEnrollmentResponse)(nil),  // 32: termx.cloud.v1.CompleteDeviceEnrollmentResponse
-	(*DeviceEnrollmentServiceSession)(nil),    // 33: termx.cloud.v1.DeviceEnrollmentServiceSession
-	(*LogoutRequest)(nil),                     // 34: termx.cloud.v1.LogoutRequest
-	(*LogoutResponse)(nil),                    // 35: termx.cloud.v1.LogoutResponse
-	(*DoctorRequest)(nil),                     // 36: termx.cloud.v1.DoctorRequest
-	(*DiagnosticItem)(nil),                    // 37: termx.cloud.v1.DiagnosticItem
-	(*DoctorResponse)(nil),                    // 38: termx.cloud.v1.DoctorResponse
-	(*ShutdownRequest)(nil),                   // 39: termx.cloud.v1.ShutdownRequest
-	(*ShutdownResponse)(nil),                  // 40: termx.cloud.v1.ShutdownResponse
-	(*DeviceProof)(nil),                       // 41: termx.cloud.v1.DeviceProof
-	(*BeginPresenceRequest)(nil),              // 42: termx.cloud.v1.BeginPresenceRequest
-	(*PresenceChallenge)(nil),                 // 43: termx.cloud.v1.PresenceChallenge
-	(*PresenceProofInput)(nil),                // 44: termx.cloud.v1.PresenceProofInput
-	(*DeviceMetadata)(nil),                    // 45: termx.cloud.v1.DeviceMetadata
-	(*ResolveEndpointRequest)(nil),            // 46: termx.cloud.v1.ResolveEndpointRequest
-	(*ListManagedDevicesRequest)(nil),         // 47: termx.cloud.v1.ListManagedDevicesRequest
-	(*ManagedDevice)(nil),                     // 48: termx.cloud.v1.ManagedDevice
-	(*ListManagedDevicesResponse)(nil),        // 49: termx.cloud.v1.ListManagedDevicesResponse
-	(*IceServer)(nil),                         // 50: termx.cloud.v1.IceServer
-	(*ResolvedEndpoint)(nil),                  // 51: termx.cloud.v1.ResolvedEndpoint
-	(*OpenPresenceRequest)(nil),               // 52: termx.cloud.v1.OpenPresenceRequest
-	(*PresenceReady)(nil),                     // 53: termx.cloud.v1.PresenceReady
-	(*SignalingOffer)(nil),                    // 54: termx.cloud.v1.SignalingOffer
-	(*SignalingAnswer)(nil),                   // 55: termx.cloud.v1.SignalingAnswer
-	(*IceCandidate)(nil),                      // 56: termx.cloud.v1.IceCandidate
-	(*PresenceClosed)(nil),                    // 57: termx.cloud.v1.PresenceClosed
-	(*PresenceEvent)(nil),                     // 58: termx.cloud.v1.PresenceEvent
-	(*ReportDaemonCommandResultRequest)(nil),  // 59: termx.cloud.v1.ReportDaemonCommandResultRequest
-	(*ReportDaemonCommandResultResponse)(nil), // 60: termx.cloud.v1.ReportDaemonCommandResultResponse
-	(*CreateSignalingSessionRequest)(nil),     // 61: termx.cloud.v1.CreateSignalingSessionRequest
-	(*SignalingClosed)(nil),                   // 62: termx.cloud.v1.SignalingClosed
-	(*SignalingEvent)(nil),                    // 63: termx.cloud.v1.SignalingEvent
-	(*CompleteSignalingOfferRequest)(nil),     // 64: termx.cloud.v1.CompleteSignalingOfferRequest
-	(*CompleteSignalingOfferResponse)(nil),    // 65: termx.cloud.v1.CompleteSignalingOfferResponse
-	(*AcquireRelayLeaseRequest)(nil),          // 66: termx.cloud.v1.AcquireRelayLeaseRequest
-	(*RelayLease)(nil),                        // 67: termx.cloud.v1.RelayLease
-	(*PlanManagedRouteRequest)(nil),           // 68: termx.cloud.v1.PlanManagedRouteRequest
-	(*ManagedRoutePlan)(nil),                  // 69: termx.cloud.v1.ManagedRoutePlan
-	(*PathQualitySummary)(nil),                // 70: termx.cloud.v1.PathQualitySummary
-	(*ReportPathQualityRequest)(nil),          // 71: termx.cloud.v1.ReportPathQualityRequest
-	(*ReportPathQualityResponse)(nil),         // 72: termx.cloud.v1.ReportPathQualityResponse
-	(*ConnectionOutcome)(nil),                 // 73: termx.cloud.v1.ConnectionOutcome
-	(*ReportConnectionOutcomeRequest)(nil),    // 74: termx.cloud.v1.ReportConnectionOutcomeRequest
-	(*ReportConnectionOutcomeResponse)(nil),   // 75: termx.cloud.v1.ReportConnectionOutcomeResponse
-	(*IPCStreamOpened)(nil),                   // 76: termx.cloud.v1.IPCStreamOpened
-	(*IPCCloseStreamRequest)(nil),             // 77: termx.cloud.v1.IPCCloseStreamRequest
-	(*IPCCancelRequest)(nil),                  // 78: termx.cloud.v1.IPCCancelRequest
-	(*IPCAcknowledgement)(nil),                // 79: termx.cloud.v1.IPCAcknowledgement
-	(*IPCStreamClosed)(nil),                   // 80: termx.cloud.v1.IPCStreamClosed
-	(*IPCRequest)(nil),                        // 81: termx.cloud.v1.IPCRequest
-	(*IPCResponse)(nil),                       // 82: termx.cloud.v1.IPCResponse
-	(ManagedDeviceKind)(0),                    // 83: termx.cloud.v1.ManagedDeviceKind
-	(*DaemonControlCommand)(nil),              // 84: termx.cloud.v1.DaemonControlCommand
-	(*DaemonCommandResult)(nil),               // 85: termx.cloud.v1.DaemonCommandResult
-	(ObservedPath)(0),                         // 86: termx.cloud.v1.ObservedPath
-	(*ReportDaemonRuntimeRequest)(nil),        // 87: termx.cloud.v1.ReportDaemonRuntimeRequest
-	(*ReportDaemonRuntimeResponse)(nil),       // 88: termx.cloud.v1.ReportDaemonRuntimeResponse
+	(CallerRole)(0),                           // 0: muxvia.cloud.v1.CallerRole
+	(CompanionCapability)(0),                  // 1: muxvia.cloud.v1.CompanionCapability
+	(CompanionState)(0),                       // 2: muxvia.cloud.v1.CompanionState
+	(CloudErrorCode)(0),                       // 3: muxvia.cloud.v1.CloudErrorCode
+	(PresenceState)(0),                        // 4: muxvia.cloud.v1.PresenceState
+	(RoutePreference)(0),                      // 5: muxvia.cloud.v1.RoutePreference
+	(RouteSelectionReason)(0),                 // 6: muxvia.cloud.v1.RouteSelectionReason
+	(LoginMethod)(0),                          // 7: muxvia.cloud.v1.LoginMethod
+	(DiagnosticSeverity)(0),                   // 8: muxvia.cloud.v1.DiagnosticSeverity
+	(MobileActivationState)(0),                // 9: muxvia.cloud.v1.MobileActivationState
+	(*CloudError)(nil),                        // 10: muxvia.cloud.v1.CloudError
+	(*CompanionHelloRequest)(nil),             // 11: muxvia.cloud.v1.CompanionHelloRequest
+	(*CompanionHelloResponse)(nil),            // 12: muxvia.cloud.v1.CompanionHelloResponse
+	(*StatusRequest)(nil),                     // 13: muxvia.cloud.v1.StatusRequest
+	(*StatusResponse)(nil),                    // 14: muxvia.cloud.v1.StatusResponse
+	(*BeginLoginRequest)(nil),                 // 15: muxvia.cloud.v1.BeginLoginRequest
+	(*LoginFlow)(nil),                         // 16: muxvia.cloud.v1.LoginFlow
+	(*CompleteLoginRequest)(nil),              // 17: muxvia.cloud.v1.CompleteLoginRequest
+	(*ClaimMobileActivationRequest)(nil),      // 18: muxvia.cloud.v1.ClaimMobileActivationRequest
+	(*MobileActivationCreateRequest)(nil),     // 19: muxvia.cloud.v1.MobileActivationCreateRequest
+	(*MobileActivationInspectRequest)(nil),    // 20: muxvia.cloud.v1.MobileActivationInspectRequest
+	(*MobileActivationApproveRequest)(nil),    // 21: muxvia.cloud.v1.MobileActivationApproveRequest
+	(*MobileActivationProjection)(nil),        // 22: muxvia.cloud.v1.MobileActivationProjection
+	(*MobileActivationApproveResponse)(nil),   // 23: muxvia.cloud.v1.MobileActivationApproveResponse
+	(*CloudSessionSummary)(nil),               // 24: muxvia.cloud.v1.CloudSessionSummary
+	(*CompleteLoginResponse)(nil),             // 25: muxvia.cloud.v1.CompleteLoginResponse
+	(*BeginDeviceEnrollmentRequest)(nil),      // 26: muxvia.cloud.v1.BeginDeviceEnrollmentRequest
+	(*DeviceEnrollmentChallenge)(nil),         // 27: muxvia.cloud.v1.DeviceEnrollmentChallenge
+	(*DeviceEnrollmentProofInput)(nil),        // 28: muxvia.cloud.v1.DeviceEnrollmentProofInput
+	(*CompleteDeviceEnrollmentRequest)(nil),   // 29: muxvia.cloud.v1.CompleteDeviceEnrollmentRequest
+	(*DaemonControlVerificationKey)(nil),      // 30: muxvia.cloud.v1.DaemonControlVerificationKey
+	(*DaemonControlEnrollment)(nil),           // 31: muxvia.cloud.v1.DaemonControlEnrollment
+	(*CompleteDeviceEnrollmentResponse)(nil),  // 32: muxvia.cloud.v1.CompleteDeviceEnrollmentResponse
+	(*DeviceEnrollmentServiceSession)(nil),    // 33: muxvia.cloud.v1.DeviceEnrollmentServiceSession
+	(*LogoutRequest)(nil),                     // 34: muxvia.cloud.v1.LogoutRequest
+	(*LogoutResponse)(nil),                    // 35: muxvia.cloud.v1.LogoutResponse
+	(*DoctorRequest)(nil),                     // 36: muxvia.cloud.v1.DoctorRequest
+	(*DiagnosticItem)(nil),                    // 37: muxvia.cloud.v1.DiagnosticItem
+	(*DoctorResponse)(nil),                    // 38: muxvia.cloud.v1.DoctorResponse
+	(*ShutdownRequest)(nil),                   // 39: muxvia.cloud.v1.ShutdownRequest
+	(*ShutdownResponse)(nil),                  // 40: muxvia.cloud.v1.ShutdownResponse
+	(*DeviceProof)(nil),                       // 41: muxvia.cloud.v1.DeviceProof
+	(*BeginPresenceRequest)(nil),              // 42: muxvia.cloud.v1.BeginPresenceRequest
+	(*PresenceChallenge)(nil),                 // 43: muxvia.cloud.v1.PresenceChallenge
+	(*PresenceProofInput)(nil),                // 44: muxvia.cloud.v1.PresenceProofInput
+	(*DeviceMetadata)(nil),                    // 45: muxvia.cloud.v1.DeviceMetadata
+	(*ResolveEndpointRequest)(nil),            // 46: muxvia.cloud.v1.ResolveEndpointRequest
+	(*ListManagedDevicesRequest)(nil),         // 47: muxvia.cloud.v1.ListManagedDevicesRequest
+	(*ManagedDevice)(nil),                     // 48: muxvia.cloud.v1.ManagedDevice
+	(*ListManagedDevicesResponse)(nil),        // 49: muxvia.cloud.v1.ListManagedDevicesResponse
+	(*IceServer)(nil),                         // 50: muxvia.cloud.v1.IceServer
+	(*ResolvedEndpoint)(nil),                  // 51: muxvia.cloud.v1.ResolvedEndpoint
+	(*OpenPresenceRequest)(nil),               // 52: muxvia.cloud.v1.OpenPresenceRequest
+	(*PresenceReady)(nil),                     // 53: muxvia.cloud.v1.PresenceReady
+	(*SignalingOffer)(nil),                    // 54: muxvia.cloud.v1.SignalingOffer
+	(*SignalingAnswer)(nil),                   // 55: muxvia.cloud.v1.SignalingAnswer
+	(*IceCandidate)(nil),                      // 56: muxvia.cloud.v1.IceCandidate
+	(*PresenceClosed)(nil),                    // 57: muxvia.cloud.v1.PresenceClosed
+	(*PresenceEvent)(nil),                     // 58: muxvia.cloud.v1.PresenceEvent
+	(*ReportDaemonCommandResultRequest)(nil),  // 59: muxvia.cloud.v1.ReportDaemonCommandResultRequest
+	(*ReportDaemonCommandResultResponse)(nil), // 60: muxvia.cloud.v1.ReportDaemonCommandResultResponse
+	(*CreateSignalingSessionRequest)(nil),     // 61: muxvia.cloud.v1.CreateSignalingSessionRequest
+	(*SignalingClosed)(nil),                   // 62: muxvia.cloud.v1.SignalingClosed
+	(*SignalingEvent)(nil),                    // 63: muxvia.cloud.v1.SignalingEvent
+	(*CompleteSignalingOfferRequest)(nil),     // 64: muxvia.cloud.v1.CompleteSignalingOfferRequest
+	(*CompleteSignalingOfferResponse)(nil),    // 65: muxvia.cloud.v1.CompleteSignalingOfferResponse
+	(*AcquireRelayLeaseRequest)(nil),          // 66: muxvia.cloud.v1.AcquireRelayLeaseRequest
+	(*RelayLease)(nil),                        // 67: muxvia.cloud.v1.RelayLease
+	(*PlanManagedRouteRequest)(nil),           // 68: muxvia.cloud.v1.PlanManagedRouteRequest
+	(*ManagedRoutePlan)(nil),                  // 69: muxvia.cloud.v1.ManagedRoutePlan
+	(*PathQualitySummary)(nil),                // 70: muxvia.cloud.v1.PathQualitySummary
+	(*ReportPathQualityRequest)(nil),          // 71: muxvia.cloud.v1.ReportPathQualityRequest
+	(*ReportPathQualityResponse)(nil),         // 72: muxvia.cloud.v1.ReportPathQualityResponse
+	(*ConnectionOutcome)(nil),                 // 73: muxvia.cloud.v1.ConnectionOutcome
+	(*ReportConnectionOutcomeRequest)(nil),    // 74: muxvia.cloud.v1.ReportConnectionOutcomeRequest
+	(*ReportConnectionOutcomeResponse)(nil),   // 75: muxvia.cloud.v1.ReportConnectionOutcomeResponse
+	(*IPCStreamOpened)(nil),                   // 76: muxvia.cloud.v1.IPCStreamOpened
+	(*IPCCloseStreamRequest)(nil),             // 77: muxvia.cloud.v1.IPCCloseStreamRequest
+	(*IPCCancelRequest)(nil),                  // 78: muxvia.cloud.v1.IPCCancelRequest
+	(*IPCAcknowledgement)(nil),                // 79: muxvia.cloud.v1.IPCAcknowledgement
+	(*IPCStreamClosed)(nil),                   // 80: muxvia.cloud.v1.IPCStreamClosed
+	(*IPCRequest)(nil),                        // 81: muxvia.cloud.v1.IPCRequest
+	(*IPCResponse)(nil),                       // 82: muxvia.cloud.v1.IPCResponse
+	(ManagedDeviceKind)(0),                    // 83: muxvia.cloud.v1.ManagedDeviceKind
+	(*DaemonControlCommand)(nil),              // 84: muxvia.cloud.v1.DaemonControlCommand
+	(*DaemonCommandResult)(nil),               // 85: muxvia.cloud.v1.DaemonCommandResult
+	(ObservedPath)(0),                         // 86: muxvia.cloud.v1.ObservedPath
+	(*ReportDaemonRuntimeRequest)(nil),        // 87: muxvia.cloud.v1.ReportDaemonRuntimeRequest
+	(*ReportDaemonRuntimeResponse)(nil),       // 88: muxvia.cloud.v1.ReportDaemonRuntimeResponse
 }
 var file_cloudpb_cloud_companion_proto_depIdxs = []int32{
-	3,   // 0: termx.cloud.v1.CloudError.code:type_name -> termx.cloud.v1.CloudErrorCode
-	0,   // 1: termx.cloud.v1.CompanionHelloRequest.caller_role:type_name -> termx.cloud.v1.CallerRole
-	1,   // 2: termx.cloud.v1.CompanionHelloRequest.requested_capabilities:type_name -> termx.cloud.v1.CompanionCapability
-	1,   // 3: termx.cloud.v1.CompanionHelloResponse.supported_capabilities:type_name -> termx.cloud.v1.CompanionCapability
-	2,   // 4: termx.cloud.v1.StatusResponse.state:type_name -> termx.cloud.v1.CompanionState
-	1,   // 5: termx.cloud.v1.StatusResponse.capabilities:type_name -> termx.cloud.v1.CompanionCapability
-	7,   // 6: termx.cloud.v1.BeginLoginRequest.method:type_name -> termx.cloud.v1.LoginMethod
-	45,  // 7: termx.cloud.v1.BeginLoginRequest.client_metadata:type_name -> termx.cloud.v1.DeviceMetadata
-	45,  // 8: termx.cloud.v1.ClaimMobileActivationRequest.client_metadata:type_name -> termx.cloud.v1.DeviceMetadata
-	9,   // 9: termx.cloud.v1.MobileActivationProjection.state:type_name -> termx.cloud.v1.MobileActivationState
-	45,  // 10: termx.cloud.v1.MobileActivationProjection.client_metadata:type_name -> termx.cloud.v1.DeviceMetadata
-	24,  // 11: termx.cloud.v1.CompleteLoginResponse.session:type_name -> termx.cloud.v1.CloudSessionSummary
-	45,  // 12: termx.cloud.v1.BeginDeviceEnrollmentRequest.metadata:type_name -> termx.cloud.v1.DeviceMetadata
-	41,  // 13: termx.cloud.v1.CompleteDeviceEnrollmentRequest.proof:type_name -> termx.cloud.v1.DeviceProof
-	30,  // 14: termx.cloud.v1.DaemonControlEnrollment.verification_keys:type_name -> termx.cloud.v1.DaemonControlVerificationKey
-	24,  // 15: termx.cloud.v1.CompleteDeviceEnrollmentResponse.session:type_name -> termx.cloud.v1.CloudSessionSummary
-	31,  // 16: termx.cloud.v1.CompleteDeviceEnrollmentResponse.control_enrollment:type_name -> termx.cloud.v1.DaemonControlEnrollment
-	24,  // 17: termx.cloud.v1.DeviceEnrollmentServiceSession.session:type_name -> termx.cloud.v1.CloudSessionSummary
-	31,  // 18: termx.cloud.v1.DeviceEnrollmentServiceSession.control_enrollment:type_name -> termx.cloud.v1.DaemonControlEnrollment
-	8,   // 19: termx.cloud.v1.DiagnosticItem.severity:type_name -> termx.cloud.v1.DiagnosticSeverity
-	14,  // 20: termx.cloud.v1.DoctorResponse.status:type_name -> termx.cloud.v1.StatusResponse
-	37,  // 21: termx.cloud.v1.DoctorResponse.items:type_name -> termx.cloud.v1.DiagnosticItem
-	83,  // 22: termx.cloud.v1.ManagedDevice.kind:type_name -> termx.cloud.v1.ManagedDeviceKind
-	4,   // 23: termx.cloud.v1.ManagedDevice.presence:type_name -> termx.cloud.v1.PresenceState
-	48,  // 24: termx.cloud.v1.ListManagedDevicesResponse.devices:type_name -> termx.cloud.v1.ManagedDevice
-	4,   // 25: termx.cloud.v1.ResolvedEndpoint.presence:type_name -> termx.cloud.v1.PresenceState
-	50,  // 26: termx.cloud.v1.ResolvedEndpoint.ice_servers:type_name -> termx.cloud.v1.IceServer
-	41,  // 27: termx.cloud.v1.OpenPresenceRequest.proof:type_name -> termx.cloud.v1.DeviceProof
-	45,  // 28: termx.cloud.v1.OpenPresenceRequest.metadata:type_name -> termx.cloud.v1.DeviceMetadata
-	50,  // 29: termx.cloud.v1.PresenceReady.ice_servers:type_name -> termx.cloud.v1.IceServer
-	56,  // 30: termx.cloud.v1.SignalingOffer.candidates:type_name -> termx.cloud.v1.IceCandidate
-	5,   // 31: termx.cloud.v1.SignalingOffer.route_preference:type_name -> termx.cloud.v1.RoutePreference
-	56,  // 32: termx.cloud.v1.SignalingAnswer.candidates:type_name -> termx.cloud.v1.IceCandidate
-	53,  // 33: termx.cloud.v1.PresenceEvent.ready:type_name -> termx.cloud.v1.PresenceReady
-	54,  // 34: termx.cloud.v1.PresenceEvent.offer:type_name -> termx.cloud.v1.SignalingOffer
-	56,  // 35: termx.cloud.v1.PresenceEvent.candidate:type_name -> termx.cloud.v1.IceCandidate
-	10,  // 36: termx.cloud.v1.PresenceEvent.error:type_name -> termx.cloud.v1.CloudError
-	57,  // 37: termx.cloud.v1.PresenceEvent.closed:type_name -> termx.cloud.v1.PresenceClosed
-	84,  // 38: termx.cloud.v1.PresenceEvent.daemon_command:type_name -> termx.cloud.v1.DaemonControlCommand
-	85,  // 39: termx.cloud.v1.ReportDaemonCommandResultRequest.result:type_name -> termx.cloud.v1.DaemonCommandResult
-	56,  // 40: termx.cloud.v1.CreateSignalingSessionRequest.candidates:type_name -> termx.cloud.v1.IceCandidate
-	5,   // 41: termx.cloud.v1.CreateSignalingSessionRequest.route_preference:type_name -> termx.cloud.v1.RoutePreference
-	55,  // 42: termx.cloud.v1.SignalingEvent.answer:type_name -> termx.cloud.v1.SignalingAnswer
-	56,  // 43: termx.cloud.v1.SignalingEvent.candidate:type_name -> termx.cloud.v1.IceCandidate
-	10,  // 44: termx.cloud.v1.SignalingEvent.error:type_name -> termx.cloud.v1.CloudError
-	62,  // 45: termx.cloud.v1.SignalingEvent.closed:type_name -> termx.cloud.v1.SignalingClosed
-	55,  // 46: termx.cloud.v1.CompleteSignalingOfferRequest.answer:type_name -> termx.cloud.v1.SignalingAnswer
-	10,  // 47: termx.cloud.v1.CompleteSignalingOfferRequest.error:type_name -> termx.cloud.v1.CloudError
-	5,   // 48: termx.cloud.v1.AcquireRelayLeaseRequest.route_preference:type_name -> termx.cloud.v1.RoutePreference
-	86,  // 49: termx.cloud.v1.RelayLease.path_kind:type_name -> termx.cloud.v1.ObservedPath
-	50,  // 50: termx.cloud.v1.RelayLease.ice_servers:type_name -> termx.cloud.v1.IceServer
-	5,   // 51: termx.cloud.v1.PlanManagedRouteRequest.route_preference:type_name -> termx.cloud.v1.RoutePreference
-	86,  // 52: termx.cloud.v1.ManagedRoutePlan.selected_path:type_name -> termx.cloud.v1.ObservedPath
-	6,   // 53: termx.cloud.v1.ManagedRoutePlan.selection_reason:type_name -> termx.cloud.v1.RouteSelectionReason
-	50,  // 54: termx.cloud.v1.ManagedRoutePlan.ice_servers:type_name -> termx.cloud.v1.IceServer
-	86,  // 55: termx.cloud.v1.PathQualitySummary.observed_path:type_name -> termx.cloud.v1.ObservedPath
-	70,  // 56: termx.cloud.v1.ReportPathQualityRequest.summary:type_name -> termx.cloud.v1.PathQualitySummary
-	86,  // 57: termx.cloud.v1.ConnectionOutcome.observed_path:type_name -> termx.cloud.v1.ObservedPath
-	3,   // 58: termx.cloud.v1.ConnectionOutcome.error_code:type_name -> termx.cloud.v1.CloudErrorCode
-	73,  // 59: termx.cloud.v1.ReportConnectionOutcomeRequest.outcome:type_name -> termx.cloud.v1.ConnectionOutcome
-	11,  // 60: termx.cloud.v1.IPCRequest.hello:type_name -> termx.cloud.v1.CompanionHelloRequest
-	13,  // 61: termx.cloud.v1.IPCRequest.status:type_name -> termx.cloud.v1.StatusRequest
-	15,  // 62: termx.cloud.v1.IPCRequest.begin_login:type_name -> termx.cloud.v1.BeginLoginRequest
-	17,  // 63: termx.cloud.v1.IPCRequest.complete_login:type_name -> termx.cloud.v1.CompleteLoginRequest
-	26,  // 64: termx.cloud.v1.IPCRequest.begin_device_enrollment:type_name -> termx.cloud.v1.BeginDeviceEnrollmentRequest
-	29,  // 65: termx.cloud.v1.IPCRequest.complete_device_enrollment:type_name -> termx.cloud.v1.CompleteDeviceEnrollmentRequest
-	34,  // 66: termx.cloud.v1.IPCRequest.logout:type_name -> termx.cloud.v1.LogoutRequest
-	36,  // 67: termx.cloud.v1.IPCRequest.doctor:type_name -> termx.cloud.v1.DoctorRequest
-	39,  // 68: termx.cloud.v1.IPCRequest.shutdown:type_name -> termx.cloud.v1.ShutdownRequest
-	46,  // 69: termx.cloud.v1.IPCRequest.resolve_endpoint:type_name -> termx.cloud.v1.ResolveEndpointRequest
-	52,  // 70: termx.cloud.v1.IPCRequest.open_presence:type_name -> termx.cloud.v1.OpenPresenceRequest
-	61,  // 71: termx.cloud.v1.IPCRequest.create_signaling_session:type_name -> termx.cloud.v1.CreateSignalingSessionRequest
-	64,  // 72: termx.cloud.v1.IPCRequest.complete_signaling_offer:type_name -> termx.cloud.v1.CompleteSignalingOfferRequest
-	66,  // 73: termx.cloud.v1.IPCRequest.acquire_relay_lease:type_name -> termx.cloud.v1.AcquireRelayLeaseRequest
-	71,  // 74: termx.cloud.v1.IPCRequest.report_path_quality:type_name -> termx.cloud.v1.ReportPathQualityRequest
-	74,  // 75: termx.cloud.v1.IPCRequest.report_connection_outcome:type_name -> termx.cloud.v1.ReportConnectionOutcomeRequest
-	77,  // 76: termx.cloud.v1.IPCRequest.close_stream:type_name -> termx.cloud.v1.IPCCloseStreamRequest
-	78,  // 77: termx.cloud.v1.IPCRequest.cancel:type_name -> termx.cloud.v1.IPCCancelRequest
-	68,  // 78: termx.cloud.v1.IPCRequest.plan_managed_route:type_name -> termx.cloud.v1.PlanManagedRouteRequest
-	42,  // 79: termx.cloud.v1.IPCRequest.begin_presence:type_name -> termx.cloud.v1.BeginPresenceRequest
-	47,  // 80: termx.cloud.v1.IPCRequest.list_managed_devices:type_name -> termx.cloud.v1.ListManagedDevicesRequest
-	87,  // 81: termx.cloud.v1.IPCRequest.report_daemon_runtime:type_name -> termx.cloud.v1.ReportDaemonRuntimeRequest
-	59,  // 82: termx.cloud.v1.IPCRequest.report_daemon_command_result:type_name -> termx.cloud.v1.ReportDaemonCommandResultRequest
-	12,  // 83: termx.cloud.v1.IPCResponse.hello:type_name -> termx.cloud.v1.CompanionHelloResponse
-	14,  // 84: termx.cloud.v1.IPCResponse.status:type_name -> termx.cloud.v1.StatusResponse
-	16,  // 85: termx.cloud.v1.IPCResponse.login_flow:type_name -> termx.cloud.v1.LoginFlow
-	25,  // 86: termx.cloud.v1.IPCResponse.complete_login:type_name -> termx.cloud.v1.CompleteLoginResponse
-	27,  // 87: termx.cloud.v1.IPCResponse.enrollment_challenge:type_name -> termx.cloud.v1.DeviceEnrollmentChallenge
-	32,  // 88: termx.cloud.v1.IPCResponse.complete_enrollment:type_name -> termx.cloud.v1.CompleteDeviceEnrollmentResponse
-	35,  // 89: termx.cloud.v1.IPCResponse.logout:type_name -> termx.cloud.v1.LogoutResponse
-	38,  // 90: termx.cloud.v1.IPCResponse.doctor:type_name -> termx.cloud.v1.DoctorResponse
-	40,  // 91: termx.cloud.v1.IPCResponse.shutdown:type_name -> termx.cloud.v1.ShutdownResponse
-	51,  // 92: termx.cloud.v1.IPCResponse.resolved_endpoint:type_name -> termx.cloud.v1.ResolvedEndpoint
-	76,  // 93: termx.cloud.v1.IPCResponse.stream_opened:type_name -> termx.cloud.v1.IPCStreamOpened
-	65,  // 94: termx.cloud.v1.IPCResponse.complete_signaling_offer:type_name -> termx.cloud.v1.CompleteSignalingOfferResponse
-	67,  // 95: termx.cloud.v1.IPCResponse.relay_lease:type_name -> termx.cloud.v1.RelayLease
-	72,  // 96: termx.cloud.v1.IPCResponse.report_path_quality:type_name -> termx.cloud.v1.ReportPathQualityResponse
-	75,  // 97: termx.cloud.v1.IPCResponse.report_connection_outcome:type_name -> termx.cloud.v1.ReportConnectionOutcomeResponse
-	58,  // 98: termx.cloud.v1.IPCResponse.presence_event:type_name -> termx.cloud.v1.PresenceEvent
-	63,  // 99: termx.cloud.v1.IPCResponse.signaling_event:type_name -> termx.cloud.v1.SignalingEvent
-	79,  // 100: termx.cloud.v1.IPCResponse.acknowledgement:type_name -> termx.cloud.v1.IPCAcknowledgement
-	80,  // 101: termx.cloud.v1.IPCResponse.stream_closed:type_name -> termx.cloud.v1.IPCStreamClosed
-	10,  // 102: termx.cloud.v1.IPCResponse.error:type_name -> termx.cloud.v1.CloudError
-	69,  // 103: termx.cloud.v1.IPCResponse.managed_route_plan:type_name -> termx.cloud.v1.ManagedRoutePlan
-	43,  // 104: termx.cloud.v1.IPCResponse.presence_challenge:type_name -> termx.cloud.v1.PresenceChallenge
-	49,  // 105: termx.cloud.v1.IPCResponse.managed_devices:type_name -> termx.cloud.v1.ListManagedDevicesResponse
-	88,  // 106: termx.cloud.v1.IPCResponse.report_daemon_runtime:type_name -> termx.cloud.v1.ReportDaemonRuntimeResponse
-	60,  // 107: termx.cloud.v1.IPCResponse.report_daemon_command_result:type_name -> termx.cloud.v1.ReportDaemonCommandResultResponse
+	3,   // 0: muxvia.cloud.v1.CloudError.code:type_name -> muxvia.cloud.v1.CloudErrorCode
+	0,   // 1: muxvia.cloud.v1.CompanionHelloRequest.caller_role:type_name -> muxvia.cloud.v1.CallerRole
+	1,   // 2: muxvia.cloud.v1.CompanionHelloRequest.requested_capabilities:type_name -> muxvia.cloud.v1.CompanionCapability
+	1,   // 3: muxvia.cloud.v1.CompanionHelloResponse.supported_capabilities:type_name -> muxvia.cloud.v1.CompanionCapability
+	2,   // 4: muxvia.cloud.v1.StatusResponse.state:type_name -> muxvia.cloud.v1.CompanionState
+	1,   // 5: muxvia.cloud.v1.StatusResponse.capabilities:type_name -> muxvia.cloud.v1.CompanionCapability
+	7,   // 6: muxvia.cloud.v1.BeginLoginRequest.method:type_name -> muxvia.cloud.v1.LoginMethod
+	45,  // 7: muxvia.cloud.v1.BeginLoginRequest.client_metadata:type_name -> muxvia.cloud.v1.DeviceMetadata
+	45,  // 8: muxvia.cloud.v1.ClaimMobileActivationRequest.client_metadata:type_name -> muxvia.cloud.v1.DeviceMetadata
+	9,   // 9: muxvia.cloud.v1.MobileActivationProjection.state:type_name -> muxvia.cloud.v1.MobileActivationState
+	45,  // 10: muxvia.cloud.v1.MobileActivationProjection.client_metadata:type_name -> muxvia.cloud.v1.DeviceMetadata
+	24,  // 11: muxvia.cloud.v1.CompleteLoginResponse.session:type_name -> muxvia.cloud.v1.CloudSessionSummary
+	45,  // 12: muxvia.cloud.v1.BeginDeviceEnrollmentRequest.metadata:type_name -> muxvia.cloud.v1.DeviceMetadata
+	41,  // 13: muxvia.cloud.v1.CompleteDeviceEnrollmentRequest.proof:type_name -> muxvia.cloud.v1.DeviceProof
+	30,  // 14: muxvia.cloud.v1.DaemonControlEnrollment.verification_keys:type_name -> muxvia.cloud.v1.DaemonControlVerificationKey
+	24,  // 15: muxvia.cloud.v1.CompleteDeviceEnrollmentResponse.session:type_name -> muxvia.cloud.v1.CloudSessionSummary
+	31,  // 16: muxvia.cloud.v1.CompleteDeviceEnrollmentResponse.control_enrollment:type_name -> muxvia.cloud.v1.DaemonControlEnrollment
+	24,  // 17: muxvia.cloud.v1.DeviceEnrollmentServiceSession.session:type_name -> muxvia.cloud.v1.CloudSessionSummary
+	31,  // 18: muxvia.cloud.v1.DeviceEnrollmentServiceSession.control_enrollment:type_name -> muxvia.cloud.v1.DaemonControlEnrollment
+	8,   // 19: muxvia.cloud.v1.DiagnosticItem.severity:type_name -> muxvia.cloud.v1.DiagnosticSeverity
+	14,  // 20: muxvia.cloud.v1.DoctorResponse.status:type_name -> muxvia.cloud.v1.StatusResponse
+	37,  // 21: muxvia.cloud.v1.DoctorResponse.items:type_name -> muxvia.cloud.v1.DiagnosticItem
+	83,  // 22: muxvia.cloud.v1.ManagedDevice.kind:type_name -> muxvia.cloud.v1.ManagedDeviceKind
+	4,   // 23: muxvia.cloud.v1.ManagedDevice.presence:type_name -> muxvia.cloud.v1.PresenceState
+	48,  // 24: muxvia.cloud.v1.ListManagedDevicesResponse.devices:type_name -> muxvia.cloud.v1.ManagedDevice
+	4,   // 25: muxvia.cloud.v1.ResolvedEndpoint.presence:type_name -> muxvia.cloud.v1.PresenceState
+	50,  // 26: muxvia.cloud.v1.ResolvedEndpoint.ice_servers:type_name -> muxvia.cloud.v1.IceServer
+	41,  // 27: muxvia.cloud.v1.OpenPresenceRequest.proof:type_name -> muxvia.cloud.v1.DeviceProof
+	45,  // 28: muxvia.cloud.v1.OpenPresenceRequest.metadata:type_name -> muxvia.cloud.v1.DeviceMetadata
+	50,  // 29: muxvia.cloud.v1.PresenceReady.ice_servers:type_name -> muxvia.cloud.v1.IceServer
+	56,  // 30: muxvia.cloud.v1.SignalingOffer.candidates:type_name -> muxvia.cloud.v1.IceCandidate
+	5,   // 31: muxvia.cloud.v1.SignalingOffer.route_preference:type_name -> muxvia.cloud.v1.RoutePreference
+	56,  // 32: muxvia.cloud.v1.SignalingAnswer.candidates:type_name -> muxvia.cloud.v1.IceCandidate
+	53,  // 33: muxvia.cloud.v1.PresenceEvent.ready:type_name -> muxvia.cloud.v1.PresenceReady
+	54,  // 34: muxvia.cloud.v1.PresenceEvent.offer:type_name -> muxvia.cloud.v1.SignalingOffer
+	56,  // 35: muxvia.cloud.v1.PresenceEvent.candidate:type_name -> muxvia.cloud.v1.IceCandidate
+	10,  // 36: muxvia.cloud.v1.PresenceEvent.error:type_name -> muxvia.cloud.v1.CloudError
+	57,  // 37: muxvia.cloud.v1.PresenceEvent.closed:type_name -> muxvia.cloud.v1.PresenceClosed
+	84,  // 38: muxvia.cloud.v1.PresenceEvent.daemon_command:type_name -> muxvia.cloud.v1.DaemonControlCommand
+	85,  // 39: muxvia.cloud.v1.ReportDaemonCommandResultRequest.result:type_name -> muxvia.cloud.v1.DaemonCommandResult
+	56,  // 40: muxvia.cloud.v1.CreateSignalingSessionRequest.candidates:type_name -> muxvia.cloud.v1.IceCandidate
+	5,   // 41: muxvia.cloud.v1.CreateSignalingSessionRequest.route_preference:type_name -> muxvia.cloud.v1.RoutePreference
+	55,  // 42: muxvia.cloud.v1.SignalingEvent.answer:type_name -> muxvia.cloud.v1.SignalingAnswer
+	56,  // 43: muxvia.cloud.v1.SignalingEvent.candidate:type_name -> muxvia.cloud.v1.IceCandidate
+	10,  // 44: muxvia.cloud.v1.SignalingEvent.error:type_name -> muxvia.cloud.v1.CloudError
+	62,  // 45: muxvia.cloud.v1.SignalingEvent.closed:type_name -> muxvia.cloud.v1.SignalingClosed
+	55,  // 46: muxvia.cloud.v1.CompleteSignalingOfferRequest.answer:type_name -> muxvia.cloud.v1.SignalingAnswer
+	10,  // 47: muxvia.cloud.v1.CompleteSignalingOfferRequest.error:type_name -> muxvia.cloud.v1.CloudError
+	5,   // 48: muxvia.cloud.v1.AcquireRelayLeaseRequest.route_preference:type_name -> muxvia.cloud.v1.RoutePreference
+	86,  // 49: muxvia.cloud.v1.RelayLease.path_kind:type_name -> muxvia.cloud.v1.ObservedPath
+	50,  // 50: muxvia.cloud.v1.RelayLease.ice_servers:type_name -> muxvia.cloud.v1.IceServer
+	5,   // 51: muxvia.cloud.v1.PlanManagedRouteRequest.route_preference:type_name -> muxvia.cloud.v1.RoutePreference
+	86,  // 52: muxvia.cloud.v1.ManagedRoutePlan.selected_path:type_name -> muxvia.cloud.v1.ObservedPath
+	6,   // 53: muxvia.cloud.v1.ManagedRoutePlan.selection_reason:type_name -> muxvia.cloud.v1.RouteSelectionReason
+	50,  // 54: muxvia.cloud.v1.ManagedRoutePlan.ice_servers:type_name -> muxvia.cloud.v1.IceServer
+	86,  // 55: muxvia.cloud.v1.PathQualitySummary.observed_path:type_name -> muxvia.cloud.v1.ObservedPath
+	70,  // 56: muxvia.cloud.v1.ReportPathQualityRequest.summary:type_name -> muxvia.cloud.v1.PathQualitySummary
+	86,  // 57: muxvia.cloud.v1.ConnectionOutcome.observed_path:type_name -> muxvia.cloud.v1.ObservedPath
+	3,   // 58: muxvia.cloud.v1.ConnectionOutcome.error_code:type_name -> muxvia.cloud.v1.CloudErrorCode
+	73,  // 59: muxvia.cloud.v1.ReportConnectionOutcomeRequest.outcome:type_name -> muxvia.cloud.v1.ConnectionOutcome
+	11,  // 60: muxvia.cloud.v1.IPCRequest.hello:type_name -> muxvia.cloud.v1.CompanionHelloRequest
+	13,  // 61: muxvia.cloud.v1.IPCRequest.status:type_name -> muxvia.cloud.v1.StatusRequest
+	15,  // 62: muxvia.cloud.v1.IPCRequest.begin_login:type_name -> muxvia.cloud.v1.BeginLoginRequest
+	17,  // 63: muxvia.cloud.v1.IPCRequest.complete_login:type_name -> muxvia.cloud.v1.CompleteLoginRequest
+	26,  // 64: muxvia.cloud.v1.IPCRequest.begin_device_enrollment:type_name -> muxvia.cloud.v1.BeginDeviceEnrollmentRequest
+	29,  // 65: muxvia.cloud.v1.IPCRequest.complete_device_enrollment:type_name -> muxvia.cloud.v1.CompleteDeviceEnrollmentRequest
+	34,  // 66: muxvia.cloud.v1.IPCRequest.logout:type_name -> muxvia.cloud.v1.LogoutRequest
+	36,  // 67: muxvia.cloud.v1.IPCRequest.doctor:type_name -> muxvia.cloud.v1.DoctorRequest
+	39,  // 68: muxvia.cloud.v1.IPCRequest.shutdown:type_name -> muxvia.cloud.v1.ShutdownRequest
+	46,  // 69: muxvia.cloud.v1.IPCRequest.resolve_endpoint:type_name -> muxvia.cloud.v1.ResolveEndpointRequest
+	52,  // 70: muxvia.cloud.v1.IPCRequest.open_presence:type_name -> muxvia.cloud.v1.OpenPresenceRequest
+	61,  // 71: muxvia.cloud.v1.IPCRequest.create_signaling_session:type_name -> muxvia.cloud.v1.CreateSignalingSessionRequest
+	64,  // 72: muxvia.cloud.v1.IPCRequest.complete_signaling_offer:type_name -> muxvia.cloud.v1.CompleteSignalingOfferRequest
+	66,  // 73: muxvia.cloud.v1.IPCRequest.acquire_relay_lease:type_name -> muxvia.cloud.v1.AcquireRelayLeaseRequest
+	71,  // 74: muxvia.cloud.v1.IPCRequest.report_path_quality:type_name -> muxvia.cloud.v1.ReportPathQualityRequest
+	74,  // 75: muxvia.cloud.v1.IPCRequest.report_connection_outcome:type_name -> muxvia.cloud.v1.ReportConnectionOutcomeRequest
+	77,  // 76: muxvia.cloud.v1.IPCRequest.close_stream:type_name -> muxvia.cloud.v1.IPCCloseStreamRequest
+	78,  // 77: muxvia.cloud.v1.IPCRequest.cancel:type_name -> muxvia.cloud.v1.IPCCancelRequest
+	68,  // 78: muxvia.cloud.v1.IPCRequest.plan_managed_route:type_name -> muxvia.cloud.v1.PlanManagedRouteRequest
+	42,  // 79: muxvia.cloud.v1.IPCRequest.begin_presence:type_name -> muxvia.cloud.v1.BeginPresenceRequest
+	47,  // 80: muxvia.cloud.v1.IPCRequest.list_managed_devices:type_name -> muxvia.cloud.v1.ListManagedDevicesRequest
+	87,  // 81: muxvia.cloud.v1.IPCRequest.report_daemon_runtime:type_name -> muxvia.cloud.v1.ReportDaemonRuntimeRequest
+	59,  // 82: muxvia.cloud.v1.IPCRequest.report_daemon_command_result:type_name -> muxvia.cloud.v1.ReportDaemonCommandResultRequest
+	12,  // 83: muxvia.cloud.v1.IPCResponse.hello:type_name -> muxvia.cloud.v1.CompanionHelloResponse
+	14,  // 84: muxvia.cloud.v1.IPCResponse.status:type_name -> muxvia.cloud.v1.StatusResponse
+	16,  // 85: muxvia.cloud.v1.IPCResponse.login_flow:type_name -> muxvia.cloud.v1.LoginFlow
+	25,  // 86: muxvia.cloud.v1.IPCResponse.complete_login:type_name -> muxvia.cloud.v1.CompleteLoginResponse
+	27,  // 87: muxvia.cloud.v1.IPCResponse.enrollment_challenge:type_name -> muxvia.cloud.v1.DeviceEnrollmentChallenge
+	32,  // 88: muxvia.cloud.v1.IPCResponse.complete_enrollment:type_name -> muxvia.cloud.v1.CompleteDeviceEnrollmentResponse
+	35,  // 89: muxvia.cloud.v1.IPCResponse.logout:type_name -> muxvia.cloud.v1.LogoutResponse
+	38,  // 90: muxvia.cloud.v1.IPCResponse.doctor:type_name -> muxvia.cloud.v1.DoctorResponse
+	40,  // 91: muxvia.cloud.v1.IPCResponse.shutdown:type_name -> muxvia.cloud.v1.ShutdownResponse
+	51,  // 92: muxvia.cloud.v1.IPCResponse.resolved_endpoint:type_name -> muxvia.cloud.v1.ResolvedEndpoint
+	76,  // 93: muxvia.cloud.v1.IPCResponse.stream_opened:type_name -> muxvia.cloud.v1.IPCStreamOpened
+	65,  // 94: muxvia.cloud.v1.IPCResponse.complete_signaling_offer:type_name -> muxvia.cloud.v1.CompleteSignalingOfferResponse
+	67,  // 95: muxvia.cloud.v1.IPCResponse.relay_lease:type_name -> muxvia.cloud.v1.RelayLease
+	72,  // 96: muxvia.cloud.v1.IPCResponse.report_path_quality:type_name -> muxvia.cloud.v1.ReportPathQualityResponse
+	75,  // 97: muxvia.cloud.v1.IPCResponse.report_connection_outcome:type_name -> muxvia.cloud.v1.ReportConnectionOutcomeResponse
+	58,  // 98: muxvia.cloud.v1.IPCResponse.presence_event:type_name -> muxvia.cloud.v1.PresenceEvent
+	63,  // 99: muxvia.cloud.v1.IPCResponse.signaling_event:type_name -> muxvia.cloud.v1.SignalingEvent
+	79,  // 100: muxvia.cloud.v1.IPCResponse.acknowledgement:type_name -> muxvia.cloud.v1.IPCAcknowledgement
+	80,  // 101: muxvia.cloud.v1.IPCResponse.stream_closed:type_name -> muxvia.cloud.v1.IPCStreamClosed
+	10,  // 102: muxvia.cloud.v1.IPCResponse.error:type_name -> muxvia.cloud.v1.CloudError
+	69,  // 103: muxvia.cloud.v1.IPCResponse.managed_route_plan:type_name -> muxvia.cloud.v1.ManagedRoutePlan
+	43,  // 104: muxvia.cloud.v1.IPCResponse.presence_challenge:type_name -> muxvia.cloud.v1.PresenceChallenge
+	49,  // 105: muxvia.cloud.v1.IPCResponse.managed_devices:type_name -> muxvia.cloud.v1.ListManagedDevicesResponse
+	88,  // 106: muxvia.cloud.v1.IPCResponse.report_daemon_runtime:type_name -> muxvia.cloud.v1.ReportDaemonRuntimeResponse
+	60,  // 107: muxvia.cloud.v1.IPCResponse.report_daemon_command_result:type_name -> muxvia.cloud.v1.ReportDaemonCommandResultResponse
 	108, // [108:108] is the sub-list for method output_type
 	108, // [108:108] is the sub-list for method input_type
 	108, // [108:108] is the sub-list for extension type_name

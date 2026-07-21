@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lozzow/termx/proto/apipb"
-	"github.com/lozzow/termx/proto/remoteauthpb"
+	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
 )
 
 func TestEndpointAndAccessContractsDoNotExposeConnectionOrCredentialOwners(t *testing.T) {

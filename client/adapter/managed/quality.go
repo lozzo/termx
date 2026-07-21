@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/client/port"
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/cloudcompanion/pathquality"
+	"github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/client/port"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/cloudcompanion/pathquality"
 )
 
 const (

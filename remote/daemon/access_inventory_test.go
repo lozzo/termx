@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/remoteauth"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/remoteauth"
 )
 
 func TestTerminalAccessInventoryIsOpaqueAndRevisioned(t *testing.T) {

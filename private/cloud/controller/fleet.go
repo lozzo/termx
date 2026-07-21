@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/hubcontrol"
-	"github.com/lozzow/termx/private/cloud/control-plane/hubregistry"
-	"github.com/lozzow/termx/private/cloud/control-plane/relaycontrol"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/hubcontrol"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/relaycontrol"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 type fleetQuery struct {

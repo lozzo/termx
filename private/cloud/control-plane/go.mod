@@ -1,9 +1,9 @@
-module github.com/lozzow/termx/private/cloud/control-plane
+module github.com/muxvia/muxvia/private/cloud/control-plane
 
 go 1.26.0
 
 require (
-	github.com/lozzow/termx v0.0.0
+	github.com/muxvia/muxvia v0.0.0
 	golang.org/x/crypto v0.48.0
 	modernc.org/sqlite v1.53.0
 )
@@ -21,4 +21,4 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 )
 
-replace github.com/lozzow/termx => ../../..
+replace github.com/muxvia/muxvia => ../../..

@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/tui/input"
+	"github.com/muxvia/muxvia/tui/render"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 // ParsePaneMiniCommand 是 CLI mini command / command palette 到 PaneCommand 的稳定 adapter。

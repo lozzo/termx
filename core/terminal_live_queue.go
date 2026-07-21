@@ -7,7 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/lozzow/termx/shared/perftrace"
+	"github.com/muxvia/muxvia/shared/perftrace"
 )
 
 // terminalLiveIngestBatchMaxBytes 是 PTY 输出消费者热路径的交互批次上限。

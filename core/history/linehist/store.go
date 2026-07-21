@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/core/history"
-	"github.com/lozzow/termx/shared/perftrace"
-	vterm "github.com/lozzow/termx/vterm/vterm"
+	"github.com/muxvia/muxvia/core/history"
+	"github.com/muxvia/muxvia/shared/perftrace"
+	vterm "github.com/muxvia/muxvia/vterm/vterm"
 )
 
 // ScreenRow 是查询时刻 emulator 当前屏的一条物理行快照。

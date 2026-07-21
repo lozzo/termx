@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	webcontroller "github.com/lozzow/termx/private/cloud/web-controller"
-	"github.com/lozzow/termx/proto/cloudpb"
+	webcontroller "github.com/muxvia/muxvia/private/cloud/web-controller"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 func TestCatalogLoadsUnpublishedPricesWithoutInventingAmounts(t *testing.T) {

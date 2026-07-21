@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
 )
 
 func TestMain(m *testing.M) {

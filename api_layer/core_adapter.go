@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 
-	apimapping "github.com/lozzow/termx/api_mapping"
-	corev2 "github.com/lozzow/termx/core"
-	"github.com/lozzow/termx/core/history"
-	"github.com/lozzow/termx/proto/apipb"
+	apimapping "github.com/muxvia/muxvia/api_mapping"
+	corev2 "github.com/muxvia/muxvia/core"
+	"github.com/muxvia/muxvia/core/history"
+	"github.com/muxvia/muxvia/proto/apipb"
 )
 
 // CoreApplicationExecutorFactory 为一条 ready protocol connection 装配 API Layer。

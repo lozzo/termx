@@ -12,13 +12,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
-	"github.com/lozzow/termx/private/cloud/companion/session"
-	cloudcommerce "github.com/lozzow/termx/private/cloud/control-plane/commerce"
-	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
-	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
-	webcontroller "github.com/lozzow/termx/private/cloud/web-controller"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/companion/cloudservice/httpapi"
+	"github.com/muxvia/muxvia/private/cloud/companion/session"
+	cloudcommerce "github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
+	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
+	webcontroller "github.com/muxvia/muxvia/private/cloud/web-controller"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
 )
 

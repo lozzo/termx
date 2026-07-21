@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/lozzow/termx/core/history"
-	"github.com/lozzow/termx/proto/apipb"
+	"github.com/muxvia/muxvia/core/history"
+	"github.com/muxvia/muxvia/proto/apipb"
 )
 
 // ApplicationCapability 表示 connection admission 需要的 core-native 能力类别。

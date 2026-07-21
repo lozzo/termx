@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/shared/filelock"
+	"github.com/muxvia/muxvia/shared/filelock"
 )
 
 func TestCredentialStoreKeepsEndpointIdentityStableAcrossLostResponseRecovery(t *testing.T) {

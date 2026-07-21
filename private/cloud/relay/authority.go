@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
-	"github.com/lozzow/termx/private/cloud/control-plane/usage"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/usage"
 	pionturn "github.com/pion/turn/v4"
 )
 

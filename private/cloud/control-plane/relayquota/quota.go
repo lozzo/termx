@@ -9,7 +9,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 var (

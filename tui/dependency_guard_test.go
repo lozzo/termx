@@ -14,21 +14,21 @@ import (
 // TestTUIDirectoryDependencies 保证 TUI 的 application port、adapter 和测试资产保持单向依赖。
 func TestTUIDirectoryDependencies(t *testing.T) {
 	assertImportsExclude(t, "port", []string{
-		"github.com/lozzow/termx/internal/protocol",
-		"github.com/lozzow/termx/tui/adapter",
-		"github.com/lozzow/termx/tui/testkit",
+		"github.com/muxvia/muxvia/internal/protocol",
+		"github.com/muxvia/muxvia/tui/adapter",
+		"github.com/muxvia/muxvia/tui/testkit",
 		"os/exec",
 	})
 	for _, root := range []string{"state", "app", "render"} {
 		assertImportsExclude(t, root, []string{
-			"github.com/lozzow/termx/internal/protocol",
-			"github.com/lozzow/termx/shared/transport",
-			"github.com/lozzow/termx/shared/cloudcompanion",
-			"github.com/lozzow/termx/shared/remoteauth",
-			"github.com/lozzow/termx/remote/client",
-			"github.com/lozzow/termx/remote/webrtc",
-			"github.com/lozzow/termx/tui/adapter",
-			"github.com/lozzow/termx/tui/testkit",
+			"github.com/muxvia/muxvia/internal/protocol",
+			"github.com/muxvia/muxvia/shared/transport",
+			"github.com/muxvia/muxvia/shared/cloudcompanion",
+			"github.com/muxvia/muxvia/shared/remoteauth",
+			"github.com/muxvia/muxvia/remote/client",
+			"github.com/muxvia/muxvia/remote/webrtc",
+			"github.com/muxvia/muxvia/tui/adapter",
+			"github.com/muxvia/muxvia/tui/testkit",
 		})
 	}
 }
@@ -37,9 +37,9 @@ func TestTUIDirectoryDependencies(t *testing.T) {
 func TestTUIPortContainsOnlyProductionContracts(t *testing.T) {
 	allowedImports := map[string]struct{}{
 		"context": {}, "errors": {}, "time": {},
-		"github.com/lozzow/termx/proto/apipb": {},
-		"github.com/lozzow/termx/tui/input":   {},
-		"github.com/lozzow/termx/tui/state":   {},
+		"github.com/muxvia/muxvia/proto/apipb": {},
+		"github.com/muxvia/muxvia/tui/input":   {},
+		"github.com/muxvia/muxvia/tui/state":   {},
 	}
 	err := filepath.WalkDir("port", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {

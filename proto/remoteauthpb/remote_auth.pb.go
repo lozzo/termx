@@ -559,7 +559,7 @@ func (EndpointCredentialKind) EnumDescriptor() ([]byte, []int) {
 // binding_hash 固定为 32 bytes；SDP、route 地址或 Cloud signaling 字段不能替代该值。
 type ChannelBinding struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kind          ChannelBindingKind     `protobuf:"varint,1,opt,name=kind,proto3,enum=termx.remote.auth.v1.ChannelBindingKind" json:"kind,omitempty"`
+	Kind          ChannelBindingKind     `protobuf:"varint,1,opt,name=kind,proto3,enum=muxvia.remote.auth.v1.ChannelBindingKind" json:"kind,omitempty"`
 	BindingHash   []byte                 `protobuf:"bytes,2,opt,name=binding_hash,json=bindingHash,proto3" json:"binding_hash,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1025,7 +1025,7 @@ func (x *PairingOpen) GetProof() []byte {
 // ScopeSummary 是 daemon 已接受 capability 的最小无歧义投影。
 type ScopeSummary struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
-	Kind               ScopeKind              `protobuf:"varint,1,opt,name=kind,proto3,enum=termx.remote.auth.v1.ScopeKind" json:"kind,omitempty"`
+	Kind               ScopeKind              `protobuf:"varint,1,opt,name=kind,proto3,enum=muxvia.remote.auth.v1.ScopeKind" json:"kind,omitempty"`
 	TerminalId         string                 `protobuf:"bytes,2,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
 	ManageClientAccess bool                   `protobuf:"varint,3,opt,name=manage_client_access,json=manageClientAccess,proto3" json:"manage_client_access,omitempty"`
 	unknownFields      protoimpl.UnknownFields
@@ -1781,7 +1781,7 @@ func (x *PairingAccepted) GetScope() *ScopeSummary {
 // CapabilityRejected 返回稳定错误类别和固定脱敏消息，随后 channel 必须关闭。
 type CapabilityRejected struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Code          AuthErrorCode          `protobuf:"varint,1,opt,name=code,proto3,enum=termx.remote.auth.v1.AuthErrorCode" json:"code,omitempty"`
+	Code          AuthErrorCode          `protobuf:"varint,1,opt,name=code,proto3,enum=muxvia.remote.auth.v1.AuthErrorCode" json:"code,omitempty"`
 	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1953,7 +1953,7 @@ type ClientProofInput struct {
 	ChannelBinding   *ChannelBinding        `protobuf:"bytes,6,opt,name=channel_binding,json=channelBinding,proto3" json:"channel_binding,omitempty"`
 	CredentialSha256 []byte                 `protobuf:"bytes,7,opt,name=credential_sha256,json=credentialSha256,proto3" json:"credential_sha256,omitempty"`
 	ClientPublicKey  []byte                 `protobuf:"bytes,8,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
-	OpenKind         AuthOpenKind           `protobuf:"varint,9,opt,name=open_kind,json=openKind,proto3,enum=termx.remote.auth.v1.AuthOpenKind" json:"open_kind,omitempty"`
+	OpenKind         AuthOpenKind           `protobuf:"varint,9,opt,name=open_kind,json=openKind,proto3,enum=muxvia.remote.auth.v1.AuthOpenKind" json:"open_kind,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -2382,7 +2382,7 @@ func (x *DirectSignalingAnswerSignatureInput) GetAnswer() *DirectSignalingAnswer
 // DirectSignalingErrorV1 返回不含内部状态的信令失败；错误响应后当前 TCP connection 必须关闭。
 type DirectSignalingErrorV1 struct {
 	state         protoimpl.MessageState   `protogen:"open.v1"`
-	Code          DirectSignalingErrorCode `protobuf:"varint,1,opt,name=code,proto3,enum=termx.remote.auth.v1.DirectSignalingErrorCode" json:"code,omitempty"`
+	Code          DirectSignalingErrorCode `protobuf:"varint,1,opt,name=code,proto3,enum=muxvia.remote.auth.v1.DirectSignalingErrorCode" json:"code,omitempty"`
 	Message       string                   `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2634,7 +2634,7 @@ func (x *EndpointSelectionPolicy) GetHedgeDelayMillis() uint64 {
 type EndpointCredentialDescriptor struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	DescriptorId  string                 `protobuf:"bytes,1,opt,name=descriptor_id,json=descriptorId,proto3" json:"descriptor_id,omitempty"`
-	Kind          EndpointCredentialKind `protobuf:"varint,2,opt,name=kind,proto3,enum=termx.remote.auth.v1.EndpointCredentialKind" json:"kind,omitempty"`
+	Kind          EndpointCredentialKind `protobuf:"varint,2,opt,name=kind,proto3,enum=muxvia.remote.auth.v1.EndpointCredentialKind" json:"kind,omitempty"`
 	Exportable    bool                   `protobuf:"varint,3,opt,name=exportable,proto3" json:"exportable,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2921,7 +2921,7 @@ type ManagedWebRTCRouteConfig struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	TargetDeviceId    string                 `protobuf:"bytes,1,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
 	AccountProfileRef string                 `protobuf:"bytes,2,opt,name=account_profile_ref,json=accountProfileRef,proto3" json:"account_profile_ref,omitempty"`
-	RelayMode         ManagedWebRTCRelayMode `protobuf:"varint,3,opt,name=relay_mode,json=relayMode,proto3,enum=termx.remote.auth.v1.ManagedWebRTCRelayMode" json:"relay_mode,omitempty"`
+	RelayMode         ManagedWebRTCRelayMode `protobuf:"varint,3,opt,name=relay_mode,json=relayMode,proto3,enum=muxvia.remote.auth.v1.ManagedWebRTCRelayMode" json:"relay_mode,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -2987,8 +2987,8 @@ type EndpointRouteConfigV1 struct {
 	ManualOnly    bool                   `protobuf:"varint,4,opt,name=manual_only,json=manualOnly,proto3" json:"manual_only,omitempty"`
 	Priority      *int32                 `protobuf:"varint,5,opt,name=priority,proto3,oneof" json:"priority,omitempty"`
 	CredentialRef string                 `protobuf:"bytes,6,opt,name=credential_ref,json=credentialRef,proto3" json:"credential_ref,omitempty"`
-	Source        EndpointSource         `protobuf:"varint,7,opt,name=source,proto3,enum=termx.remote.auth.v1.EndpointSource" json:"source,omitempty"`
-	PolicySource  EndpointSource         `protobuf:"varint,8,opt,name=policy_source,json=policySource,proto3,enum=termx.remote.auth.v1.EndpointSource" json:"policy_source,omitempty"`
+	Source        EndpointSource         `protobuf:"varint,7,opt,name=source,proto3,enum=muxvia.remote.auth.v1.EndpointSource" json:"source,omitempty"`
+	PolicySource  EndpointSource         `protobuf:"varint,8,opt,name=policy_source,json=policySource,proto3,enum=muxvia.remote.auth.v1.EndpointSource" json:"policy_source,omitempty"`
 	// Types that are valid to be assigned to Route:
 	//
 	//	*EndpointRouteConfigV1_LocalUnix
@@ -3163,9 +3163,9 @@ type EndpointConfigV1 struct {
 	SchemaVersion   uint32                   `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
 	EndpointId      string                   `protobuf:"bytes,2,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
 	Label           string                   `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"`
-	LabelSource     EndpointSource           `protobuf:"varint,4,opt,name=label_source,json=labelSource,proto3,enum=termx.remote.auth.v1.EndpointSource" json:"label_source,omitempty"`
+	LabelSource     EndpointSource           `protobuf:"varint,4,opt,name=label_source,json=labelSource,proto3,enum=muxvia.remote.auth.v1.EndpointSource" json:"label_source,omitempty"`
 	Identity        *EndpointDaemonIdentity  `protobuf:"bytes,5,opt,name=identity,proto3" json:"identity,omitempty"`
-	ConnectMode     EndpointConnectMode      `protobuf:"varint,6,opt,name=connect_mode,json=connectMode,proto3,enum=termx.remote.auth.v1.EndpointConnectMode" json:"connect_mode,omitempty"`
+	ConnectMode     EndpointConnectMode      `protobuf:"varint,6,opt,name=connect_mode,json=connectMode,proto3,enum=muxvia.remote.auth.v1.EndpointConnectMode" json:"connect_mode,omitempty"`
 	Enabled         bool                     `protobuf:"varint,7,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	SelectionPolicy *EndpointSelectionPolicy `protobuf:"bytes,8,opt,name=selection_policy,json=selectionPolicy,proto3" json:"selection_policy,omitempty"`
 	Routes          []*EndpointRouteConfigV1 `protobuf:"bytes,9,rep,name=routes,proto3" json:"routes,omitempty"`
@@ -3770,7 +3770,7 @@ type ClientEndpointShareBundleV1 struct {
 	Identity              *EndpointDaemonIdentity         `protobuf:"bytes,3,opt,name=identity,proto3" json:"identity,omitempty"`
 	SuggestedLabel        string                          `protobuf:"bytes,4,opt,name=suggested_label,json=suggestedLabel,proto3" json:"suggested_label,omitempty"`
 	Routes                []*EndpointRouteConfigV1        `protobuf:"bytes,5,rep,name=routes,proto3" json:"routes,omitempty"`
-	ConnectMode           EndpointConnectMode             `protobuf:"varint,6,opt,name=connect_mode,json=connectMode,proto3,enum=termx.remote.auth.v1.EndpointConnectMode" json:"connect_mode,omitempty"`
+	ConnectMode           EndpointConnectMode             `protobuf:"varint,6,opt,name=connect_mode,json=connectMode,proto3,enum=muxvia.remote.auth.v1.EndpointConnectMode" json:"connect_mode,omitempty"`
 	SelectionPolicy       *EndpointSelectionPolicy        `protobuf:"bytes,7,opt,name=selection_policy,json=selectionPolicy,proto3" json:"selection_policy,omitempty"`
 	CredentialDescriptors []*EndpointCredentialDescriptor `protobuf:"bytes,8,rep,name=credential_descriptors,json=credentialDescriptors,proto3" json:"credential_descriptors,omitempty"`
 	// bound_grant 预留给 CONN002 生成并验证的目标 ClientAccessIdentity-bound grant；不得放入源客户端 bearer grant。
@@ -4521,27 +4521,27 @@ var File_remoteauthpb_remote_auth_proto protoreflect.FileDescriptor
 
 const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\n" +
-	"\x1eremoteauthpb/remote_auth.proto\x12\x14termx.remote.auth.v1\"q\n" +
-	"\x0eChannelBinding\x12<\n" +
-	"\x04kind\x18\x01 \x01(\x0e2(.termx.remote.auth.v1.ChannelBindingKindR\x04kind\x12!\n" +
-	"\fbinding_hash\x18\x02 \x01(\fR\vbindingHash\"\xe6\x04\n" +
+	"\x1eremoteauthpb/remote_auth.proto\x12\x15muxvia.remote.auth.v1\"r\n" +
+	"\x0eChannelBinding\x12=\n" +
+	"\x04kind\x18\x01 \x01(\x0e2).muxvia.remote.auth.v1.ChannelBindingKindR\x04kind\x12!\n" +
+	"\fbinding_hash\x18\x02 \x01(\fR\vbindingHash\"\xec\x04\n" +
 	"\fAuthEnvelope\x12\x1a\n" +
 	"\bprotocol\x18\x01 \x01(\tR\bprotocol\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\rR\aversion\x12&\n" +
-	"\x0fauth_session_id\x18\x03 \x01(\tR\rauthSessionId\x12F\n" +
-	"\fdevice_hello\x18\x04 \x01(\v2!.termx.remote.auth.v1.DeviceHelloH\x00R\vdeviceHello\x12O\n" +
-	"\x0fcapability_open\x18\x05 \x01(\v2$.termx.remote.auth.v1.CapabilityOpenH\x00R\x0ecapabilityOpen\x12[\n" +
-	"\x13capability_accepted\x18\x06 \x01(\v2(.termx.remote.auth.v1.CapabilityAcceptedH\x00R\x12capabilityAccepted\x12[\n" +
-	"\x13capability_rejected\x18\a \x01(\v2(.termx.remote.auth.v1.CapabilityRejectedH\x00R\x12capabilityRejected\x12F\n" +
-	"\fpairing_open\x18\b \x01(\v2!.termx.remote.auth.v1.PairingOpenH\x00R\vpairingOpen\x12R\n" +
-	"\x10pairing_accepted\x18\t \x01(\v2%.termx.remote.auth.v1.PairingAcceptedH\x00R\x0fpairingAcceptedB\t\n" +
-	"\apayload\"\xc4\x02\n" +
+	"\x0fauth_session_id\x18\x03 \x01(\tR\rauthSessionId\x12G\n" +
+	"\fdevice_hello\x18\x04 \x01(\v2\".muxvia.remote.auth.v1.DeviceHelloH\x00R\vdeviceHello\x12P\n" +
+	"\x0fcapability_open\x18\x05 \x01(\v2%.muxvia.remote.auth.v1.CapabilityOpenH\x00R\x0ecapabilityOpen\x12\\\n" +
+	"\x13capability_accepted\x18\x06 \x01(\v2).muxvia.remote.auth.v1.CapabilityAcceptedH\x00R\x12capabilityAccepted\x12\\\n" +
+	"\x13capability_rejected\x18\a \x01(\v2).muxvia.remote.auth.v1.CapabilityRejectedH\x00R\x12capabilityRejected\x12G\n" +
+	"\fpairing_open\x18\b \x01(\v2\".muxvia.remote.auth.v1.PairingOpenH\x00R\vpairingOpen\x12S\n" +
+	"\x10pairing_accepted\x18\t \x01(\v2&.muxvia.remote.auth.v1.PairingAcceptedH\x00R\x0fpairingAcceptedB\t\n" +
+	"\apayload\"\xc5\x02\n" +
 	"\vDeviceHello\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12*\n" +
 	"\x11device_public_key\x18\x02 \x01(\fR\x0fdevicePublicKey\x12-\n" +
 	"\x12device_fingerprint\x18\x03 \x01(\tR\x11deviceFingerprint\x12!\n" +
-	"\fserver_nonce\x18\x04 \x01(\fR\vserverNonce\x12M\n" +
-	"\x0fchannel_binding\x18\x05 \x01(\v2$.termx.remote.auth.v1.ChannelBindingR\x0echannelBinding\x12-\n" +
+	"\fserver_nonce\x18\x04 \x01(\fR\vserverNonce\x12N\n" +
+	"\x0fchannel_binding\x18\x05 \x01(\v2%.muxvia.remote.auth.v1.ChannelBindingR\x0echannelBinding\x12-\n" +
 	"\x13issued_at_unix_nano\x18\x06 \x01(\x03R\x10issuedAtUnixNano\x12\x1c\n" +
 	"\tsignature\x18\a \x01(\fR\tsignature\"\x8b\x01\n" +
 	"\x0eCapabilityOpen\x12\x14\n" +
@@ -4554,9 +4554,9 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x11client_public_key\x18\x02 \x01(\fR\x0fclientPublicKey\x12!\n" +
 	"\fclient_label\x18\x03 \x01(\tR\vclientLabel\x12!\n" +
 	"\fclient_nonce\x18\x04 \x01(\fR\vclientNonce\x12\x14\n" +
-	"\x05proof\x18\x05 \x01(\fR\x05proof\"\x96\x01\n" +
-	"\fScopeSummary\x123\n" +
-	"\x04kind\x18\x01 \x01(\x0e2\x1f.termx.remote.auth.v1.ScopeKindR\x04kind\x12\x1f\n" +
+	"\x05proof\x18\x05 \x01(\fR\x05proof\"\x97\x01\n" +
+	"\fScopeSummary\x124\n" +
+	"\x04kind\x18\x01 \x01(\x0e2 .muxvia.remote.auth.v1.ScopeKindR\x04kind\x12\x1f\n" +
 	"\vterminal_id\x18\x02 \x01(\tR\n" +
 	"terminalId\x120\n" +
 	"\x14manage_client_access\x18\x03 \x01(\bR\x12manageClientAccess\"\xe2\x02\n" +
@@ -4580,42 +4580,42 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\tchallenge\x18\x02 \x01(\fR\tchallenge\x12\x1b\n" +
 	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x12-\n" +
 	"\x12device_fingerprint\x18\x04 \x01(\tR\x11deviceFingerprint\x12*\n" +
-	"\x11device_public_key\x18\x05 \x01(\fR\x0fdevicePublicKey\"\x9f\x02\n" +
+	"\x11device_public_key\x18\x05 \x01(\fR\x0fdevicePublicKey\"\xa1\x02\n" +
 	"\x1fClientAccessTicketCreateRequest\x12\x14\n" +
-	"\x05label\x18\x01 \x01(\tR\x05label\x12=\n" +
-	"\x05scope\x18\x02 \x01(\v2'.termx.remote.auth.v1.ClientAccessScopeR\x05scope\x12,\n" +
+	"\x05label\x18\x01 \x01(\tR\x05label\x12>\n" +
+	"\x05scope\x18\x02 \x01(\v2(.muxvia.remote.auth.v1.ClientAccessScopeR\x05scope\x12,\n" +
 	"\x12ticket_ttl_seconds\x18\x03 \x01(\x03R\x10ticketTtlSeconds\x124\n" +
-	"\x16grant_lifetime_seconds\x18\x04 \x01(\x03R\x14grantLifetimeSeconds\x12C\n" +
-	"\x06routes\x18\x05 \x03(\v2+.termx.remote.auth.v1.EndpointRouteConfigV1R\x06routes\"\x86\x01\n" +
+	"\x16grant_lifetime_seconds\x18\x04 \x01(\x03R\x14grantLifetimeSeconds\x12D\n" +
+	"\x06routes\x18\x05 \x03(\v2,.muxvia.remote.auth.v1.EndpointRouteConfigV1R\x06routes\"\x86\x01\n" +
 	"\x1eClientAccessTicketCreateResult\x12\x16\n" +
 	"\x06bundle\x18\x01 \x01(\fR\x06bundle\x12\x1b\n" +
 	"\tticket_id\x18\x02 \x01(\tR\bticketId\x12/\n" +
 	"\x14expires_at_unix_nano\x18\x03 \x01(\x03R\x11expiresAtUnixNano\"6\n" +
 	"\x19ClientAccessRevokeRequest\x12\x19\n" +
-	"\bgrant_id\x18\x01 \x01(\tR\agrantId\"\xff\x02\n" +
+	"\bgrant_id\x18\x01 \x01(\tR\agrantId\"\x80\x03\n" +
 	"\x12ClientAccessRecord\x12\x19\n" +
 	"\bgrant_id\x18\x01 \x01(\tR\agrantId\x12#\n" +
 	"\rrevocation_id\x18\x02 \x01(\tR\frevocationId\x126\n" +
 	"\x17subject_key_fingerprint\x18\x03 \x01(\tR\x15subjectKeyFingerprint\x12!\n" +
-	"\fclient_label\x18\x04 \x01(\tR\vclientLabel\x12=\n" +
-	"\x05scope\x18\x05 \x01(\v2'.termx.remote.auth.v1.ClientAccessScopeR\x05scope\x12-\n" +
+	"\fclient_label\x18\x04 \x01(\tR\vclientLabel\x12>\n" +
+	"\x05scope\x18\x05 \x01(\v2(.muxvia.remote.auth.v1.ClientAccessScopeR\x05scope\x12-\n" +
 	"\x13issued_at_unix_nano\x18\x06 \x01(\x03R\x10issuedAtUnixNano\x12/\n" +
 	"\x14expires_at_unix_nano\x18\a \x01(\x03R\x11expiresAtUnixNano\x12/\n" +
-	"\x14revoked_at_unix_nano\x18\b \x01(\x03R\x11revokedAtUnixNano\"\\\n" +
-	"\x16ClientAccessListResult\x12B\n" +
-	"\arecords\x18\x01 \x03(\v2(.termx.remote.auth.v1.ClientAccessRecordR\arecords\"\xa1\x01\n" +
+	"\x14revoked_at_unix_nano\x18\b \x01(\x03R\x11revokedAtUnixNano\"]\n" +
+	"\x16ClientAccessListResult\x12C\n" +
+	"\arecords\x18\x01 \x03(\v2).muxvia.remote.auth.v1.ClientAccessRecordR\arecords\"\xa2\x01\n" +
 	"\x12CapabilityAccepted\x12\x19\n" +
-	"\bgrant_id\x18\x01 \x01(\tR\agrantId\x128\n" +
-	"\x05scope\x18\x02 \x01(\v2\".termx.remote.auth.v1.ScopeSummaryR\x05scope\x126\n" +
-	"\x17subject_key_fingerprint\x18\x03 \x01(\tR\x15subjectKeyFingerprint\"\xc4\x01\n" +
+	"\bgrant_id\x18\x01 \x01(\tR\agrantId\x129\n" +
+	"\x05scope\x18\x02 \x01(\v2#.muxvia.remote.auth.v1.ScopeSummaryR\x05scope\x126\n" +
+	"\x17subject_key_fingerprint\x18\x03 \x01(\tR\x15subjectKeyFingerprint\"\xc5\x01\n" +
 	"\x0fPairingAccepted\x12\x14\n" +
 	"\x05grant\x18\x01 \x01(\tR\x05grant\x12)\n" +
 	"\x10delivery_receipt\x18\x02 \x01(\tR\x0fdeliveryReceipt\x126\n" +
-	"\x17subject_key_fingerprint\x18\x03 \x01(\tR\x15subjectKeyFingerprint\x128\n" +
-	"\x05scope\x18\x04 \x01(\v2\".termx.remote.auth.v1.ScopeSummaryR\x05scope\"g\n" +
-	"\x12CapabilityRejected\x127\n" +
-	"\x04code\x18\x01 \x01(\x0e2#.termx.remote.auth.v1.AuthErrorCodeR\x04code\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\x92\x03\n" +
+	"\x17subject_key_fingerprint\x18\x03 \x01(\tR\x15subjectKeyFingerprint\x129\n" +
+	"\x05scope\x18\x04 \x01(\v2#.muxvia.remote.auth.v1.ScopeSummaryR\x05scope\"h\n" +
+	"\x12CapabilityRejected\x128\n" +
+	"\x04code\x18\x01 \x01(\x0e2$.muxvia.remote.auth.v1.AuthErrorCodeR\x04code\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\x93\x03\n" +
 	"\x19DeviceHelloSignatureInput\x12\x1a\n" +
 	"\bprotocol\x18\x01 \x01(\tR\bprotocol\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\rR\aversion\x12&\n" +
@@ -4623,19 +4623,19 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\tdevice_id\x18\x04 \x01(\tR\bdeviceId\x12*\n" +
 	"\x11device_public_key\x18\x05 \x01(\fR\x0fdevicePublicKey\x12-\n" +
 	"\x12device_fingerprint\x18\x06 \x01(\tR\x11deviceFingerprint\x12!\n" +
-	"\fserver_nonce\x18\a \x01(\fR\vserverNonce\x12M\n" +
-	"\x0fchannel_binding\x18\b \x01(\v2$.termx.remote.auth.v1.ChannelBindingR\x0echannelBinding\x12-\n" +
-	"\x13issued_at_unix_nano\x18\t \x01(\x03R\x10issuedAtUnixNano\"\x9f\x03\n" +
+	"\fserver_nonce\x18\a \x01(\fR\vserverNonce\x12N\n" +
+	"\x0fchannel_binding\x18\b \x01(\v2%.muxvia.remote.auth.v1.ChannelBindingR\x0echannelBinding\x12-\n" +
+	"\x13issued_at_unix_nano\x18\t \x01(\x03R\x10issuedAtUnixNano\"\xa1\x03\n" +
 	"\x10ClientProofInput\x12\x1a\n" +
 	"\bprotocol\x18\x01 \x01(\tR\bprotocol\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\rR\aversion\x12&\n" +
 	"\x0fauth_session_id\x18\x03 \x01(\tR\rauthSessionId\x12!\n" +
 	"\fserver_nonce\x18\x04 \x01(\fR\vserverNonce\x12!\n" +
-	"\fclient_nonce\x18\x05 \x01(\fR\vclientNonce\x12M\n" +
-	"\x0fchannel_binding\x18\x06 \x01(\v2$.termx.remote.auth.v1.ChannelBindingR\x0echannelBinding\x12+\n" +
+	"\fclient_nonce\x18\x05 \x01(\fR\vclientNonce\x12N\n" +
+	"\x0fchannel_binding\x18\x06 \x01(\v2%.muxvia.remote.auth.v1.ChannelBindingR\x0echannelBinding\x12+\n" +
 	"\x11credential_sha256\x18\a \x01(\fR\x10credentialSha256\x12*\n" +
-	"\x11client_public_key\x18\b \x01(\fR\x0fclientPublicKey\x12?\n" +
-	"\topen_kind\x18\t \x01(\x0e2\".termx.remote.auth.v1.AuthOpenKindR\bopenKind\"\xa0\x01\n" +
+	"\x11client_public_key\x18\b \x01(\fR\x0fclientPublicKey\x12@\n" +
+	"\topen_kind\x18\t \x01(\x0e2#.muxvia.remote.auth.v1.AuthOpenKindR\bopenKind\"\xa0\x01\n" +
 	"\x12DirectIceCandidate\x12\x1c\n" +
 	"\tcandidate\x18\x01 \x01(\tR\tcandidate\x12\x17\n" +
 	"\asdp_mid\x18\x02 \x01(\tR\x06sdpMid\x12&\n" +
@@ -4649,30 +4649,30 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x1bexpected_device_fingerprint\x18\x04 \x01(\tR\x19expectedDeviceFingerprint\x12\x1b\n" +
 	"\toffer_sdp\x18\x05 \x01(\tR\bofferSdp\x12-\n" +
 	"\x13issued_at_unix_nano\x18\x06 \x01(\x03R\x10issuedAtUnixNano\x12/\n" +
-	"\x14expires_at_unix_nano\x18\a \x01(\x03R\x11expiresAtUnixNano\"\x90\x03\n" +
+	"\x14expires_at_unix_nano\x18\a \x01(\x03R\x11expiresAtUnixNano\"\x92\x03\n" +
 	"\x17DirectSignalingAnswerV1\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x02 \x01(\tR\trequestId\x12H\n" +
-	"\bidentity\x18\x03 \x01(\v2,.termx.remote.auth.v1.EndpointDaemonIdentityR\bidentity\x12\x1d\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12I\n" +
+	"\bidentity\x18\x03 \x01(\v2-.muxvia.remote.auth.v1.EndpointDaemonIdentityR\bidentity\x12\x1d\n" +
 	"\n" +
-	"answer_sdp\x18\x04 \x01(\tR\tanswerSdp\x12H\n" +
+	"answer_sdp\x18\x04 \x01(\tR\tanswerSdp\x12I\n" +
 	"\n" +
-	"candidates\x18\x05 \x03(\v2(.termx.remote.auth.v1.DirectIceCandidateR\n" +
+	"candidates\x18\x05 \x03(\v2).muxvia.remote.auth.v1.DirectIceCandidateR\n" +
 	"candidates\x12-\n" +
 	"\x13issued_at_unix_nano\x18\x06 \x01(\x03R\x10issuedAtUnixNano\x12/\n" +
 	"\x14expires_at_unix_nano\x18\a \x01(\x03R\x11expiresAtUnixNano\x12\x1c\n" +
-	"\tsignature\x18\b \x01(\fR\tsignature\"\xa2\x01\n" +
+	"\tsignature\x18\b \x01(\fR\tsignature\"\xa3\x01\n" +
 	"#DirectSignalingAnswerSignatureInput\x12\x1a\n" +
 	"\bprotocol\x18\x01 \x01(\tR\bprotocol\x12\x18\n" +
-	"\aversion\x18\x02 \x01(\rR\aversion\x12E\n" +
-	"\x06answer\x18\x03 \x01(\v2-.termx.remote.auth.v1.DirectSignalingAnswerV1R\x06answer\"v\n" +
-	"\x16DirectSignalingErrorV1\x12B\n" +
-	"\x04code\x18\x01 \x01(\x0e2..termx.remote.auth.v1.DirectSignalingErrorCodeR\x04code\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\xb5\x01\n" +
-	"\x19DirectSignalingResponseV1\x12G\n" +
-	"\x06answer\x18\x01 \x01(\v2-.termx.remote.auth.v1.DirectSignalingAnswerV1H\x00R\x06answer\x12D\n" +
-	"\x05error\x18\x02 \x01(\v2,.termx.remote.auth.v1.DirectSignalingErrorV1H\x00R\x05errorB\t\n" +
+	"\aversion\x18\x02 \x01(\rR\aversion\x12F\n" +
+	"\x06answer\x18\x03 \x01(\v2..muxvia.remote.auth.v1.DirectSignalingAnswerV1R\x06answer\"w\n" +
+	"\x16DirectSignalingErrorV1\x12C\n" +
+	"\x04code\x18\x01 \x01(\x0e2/.muxvia.remote.auth.v1.DirectSignalingErrorCodeR\x04code\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xb7\x01\n" +
+	"\x19DirectSignalingResponseV1\x12H\n" +
+	"\x06answer\x18\x01 \x01(\v2..muxvia.remote.auth.v1.DirectSignalingAnswerV1H\x00R\x06answer\x12E\n" +
+	"\x05error\x18\x02 \x01(\v2-.muxvia.remote.auth.v1.DirectSignalingErrorV1H\x00R\x05errorB\t\n" +
 	"\apayload\"\x90\x01\n" +
 	"\x16EndpointDaemonIdentity\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12*\n" +
@@ -4680,10 +4680,10 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x12device_fingerprint\x18\x03 \x01(\tR\x11deviceFingerprint\"}\n" +
 	"\x17EndpointSelectionPolicy\x124\n" +
 	"\x16hedge_delay_configured\x18\x01 \x01(\bR\x14hedgeDelayConfigured\x12,\n" +
-	"\x12hedge_delay_millis\x18\x02 \x01(\x04R\x10hedgeDelayMillis\"\xa5\x01\n" +
+	"\x12hedge_delay_millis\x18\x02 \x01(\x04R\x10hedgeDelayMillis\"\xa6\x01\n" +
 	"\x1cEndpointCredentialDescriptor\x12#\n" +
-	"\rdescriptor_id\x18\x01 \x01(\tR\fdescriptorId\x12@\n" +
-	"\x04kind\x18\x02 \x01(\x0e2,.termx.remote.auth.v1.EndpointCredentialKindR\x04kind\x12\x1e\n" +
+	"\rdescriptor_id\x18\x01 \x01(\tR\fdescriptorId\x12A\n" +
+	"\x04kind\x18\x02 \x01(\x0e2-.muxvia.remote.auth.v1.EndpointCredentialKindR\x04kind\x12\x1e\n" +
 	"\n" +
 	"exportable\x18\x03 \x01(\bR\n" +
 	"exportable\".\n" +
@@ -4694,23 +4694,23 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x11ice_tcp_addresses\x18\x02 \x03(\tR\x0ficeTcpAddresses\x121\n" +
 	"\x14advertised_addresses\x18\x03 \x03(\tR\x13advertisedAddresses\x12\x1f\n" +
 	"\vserver_name\x18\x04 \x01(\tR\n" +
-	"serverName\"\xae\x03\n" +
+	"serverName\"\xaf\x03\n" +
 	"\x17SSHWebRTCTCPRouteConfig\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\rR\x04port\x12\x12\n" +
 	"\x04user\x18\x03 \x01(\tR\x04user\x122\n" +
 	"\x15host_key_fingerprints\x18\x04 \x03(\tR\x13hostKeyFingerprints\x12\x1d\n" +
 	"\n" +
-	"proxy_jump\x18\x05 \x01(\tR\tproxyJump\x12g\n" +
-	"\x15credential_descriptor\x18\x06 \x01(\v22.termx.remote.auth.v1.EndpointCredentialDescriptorR\x14credentialDescriptor\x128\n" +
+	"proxy_jump\x18\x05 \x01(\tR\tproxyJump\x12h\n" +
+	"\x15credential_descriptor\x18\x06 \x01(\v23.muxvia.remote.auth.v1.EndpointCredentialDescriptorR\x14credentialDescriptor\x128\n" +
 	"\x18remote_signaling_address\x18\a \x01(\tR\x16remoteSignalingAddress\x123\n" +
 	"\x16remote_ice_tcp_address\x18\b \x01(\tR\x13remoteIceTcpAddress\x12,\n" +
-	"\x12ssh_credential_ref\x18\t \x01(\tR\x10sshCredentialRef\"\xc1\x01\n" +
+	"\x12ssh_credential_ref\x18\t \x01(\tR\x10sshCredentialRef\"\xc2\x01\n" +
 	"\x18ManagedWebRTCRouteConfig\x12(\n" +
 	"\x10target_device_id\x18\x01 \x01(\tR\x0etargetDeviceId\x12.\n" +
-	"\x13account_profile_ref\x18\x02 \x01(\tR\x11accountProfileRef\x12K\n" +
+	"\x13account_profile_ref\x18\x02 \x01(\tR\x11accountProfileRef\x12L\n" +
 	"\n" +
-	"relay_mode\x18\x03 \x01(\x0e2,.termx.remote.auth.v1.ManagedWebRTCRelayModeR\trelayMode\"\xd8\x05\n" +
+	"relay_mode\x18\x03 \x01(\x0e2-.muxvia.remote.auth.v1.ManagedWebRTCRelayModeR\trelayMode\"\xde\x05\n" +
 	"\x15EndpointRouteConfigV1\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x19\n" +
 	"\broute_id\x18\x02 \x01(\tR\arouteId\x12\x18\n" +
@@ -4718,31 +4718,31 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\vmanual_only\x18\x04 \x01(\bR\n" +
 	"manualOnly\x12\x1f\n" +
 	"\bpriority\x18\x05 \x01(\x05H\x01R\bpriority\x88\x01\x01\x12%\n" +
-	"\x0ecredential_ref\x18\x06 \x01(\tR\rcredentialRef\x12<\n" +
-	"\x06source\x18\a \x01(\x0e2$.termx.remote.auth.v1.EndpointSourceR\x06source\x12I\n" +
-	"\rpolicy_source\x18\b \x01(\x0e2$.termx.remote.auth.v1.EndpointSourceR\fpolicySource\x12K\n" +
+	"\x0ecredential_ref\x18\x06 \x01(\tR\rcredentialRef\x12=\n" +
+	"\x06source\x18\a \x01(\x0e2%.muxvia.remote.auth.v1.EndpointSourceR\x06source\x12J\n" +
+	"\rpolicy_source\x18\b \x01(\x0e2%.muxvia.remote.auth.v1.EndpointSourceR\fpolicySource\x12L\n" +
 	"\n" +
-	"local_unix\x18\x14 \x01(\v2*.termx.remote.auth.v1.LocalUnixRouteConfigH\x00R\tlocalUnix\x12^\n" +
-	"\x11direct_webrtc_tcp\x18\x15 \x01(\v20.termx.remote.auth.v1.DirectWebRTCTCPRouteConfigH\x00R\x0fdirectWebrtcTcp\x12U\n" +
-	"\x0essh_webrtc_tcp\x18\x16 \x01(\v2-.termx.remote.auth.v1.SSHWebRTCTCPRouteConfigH\x00R\fsshWebrtcTcp\x12W\n" +
-	"\x0emanaged_webrtc\x18\x17 \x01(\v2..termx.remote.auth.v1.ManagedWebRTCRouteConfigH\x00R\rmanagedWebrtcB\a\n" +
+	"local_unix\x18\x14 \x01(\v2+.muxvia.remote.auth.v1.LocalUnixRouteConfigH\x00R\tlocalUnix\x12_\n" +
+	"\x11direct_webrtc_tcp\x18\x15 \x01(\v21.muxvia.remote.auth.v1.DirectWebRTCTCPRouteConfigH\x00R\x0fdirectWebrtcTcp\x12V\n" +
+	"\x0essh_webrtc_tcp\x18\x16 \x01(\v2..muxvia.remote.auth.v1.SSHWebRTCTCPRouteConfigH\x00R\fsshWebrtcTcp\x12X\n" +
+	"\x0emanaged_webrtc\x18\x17 \x01(\v2/.muxvia.remote.auth.v1.ManagedWebRTCRouteConfigH\x00R\rmanagedWebrtcB\a\n" +
 	"\x05routeB\v\n" +
-	"\t_priority\"\x8a\x04\n" +
+	"\t_priority\"\x8f\x04\n" +
 	"\x10EndpointConfigV1\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x1f\n" +
 	"\vendpoint_id\x18\x02 \x01(\tR\n" +
 	"endpointId\x12\x14\n" +
-	"\x05label\x18\x03 \x01(\tR\x05label\x12G\n" +
-	"\flabel_source\x18\x04 \x01(\x0e2$.termx.remote.auth.v1.EndpointSourceR\vlabelSource\x12H\n" +
-	"\bidentity\x18\x05 \x01(\v2,.termx.remote.auth.v1.EndpointDaemonIdentityR\bidentity\x12L\n" +
-	"\fconnect_mode\x18\x06 \x01(\x0e2).termx.remote.auth.v1.EndpointConnectModeR\vconnectMode\x12\x18\n" +
-	"\aenabled\x18\a \x01(\bR\aenabled\x12X\n" +
-	"\x10selection_policy\x18\b \x01(\v2-.termx.remote.auth.v1.EndpointSelectionPolicyR\x0fselectionPolicy\x12C\n" +
-	"\x06routes\x18\t \x03(\v2+.termx.remote.auth.v1.EndpointRouteConfigV1R\x06routes\"\xb1\x01\n" +
+	"\x05label\x18\x03 \x01(\tR\x05label\x12H\n" +
+	"\flabel_source\x18\x04 \x01(\x0e2%.muxvia.remote.auth.v1.EndpointSourceR\vlabelSource\x12I\n" +
+	"\bidentity\x18\x05 \x01(\v2-.muxvia.remote.auth.v1.EndpointDaemonIdentityR\bidentity\x12M\n" +
+	"\fconnect_mode\x18\x06 \x01(\x0e2*.muxvia.remote.auth.v1.EndpointConnectModeR\vconnectMode\x12\x18\n" +
+	"\aenabled\x18\a \x01(\bR\aenabled\x12Y\n" +
+	"\x10selection_policy\x18\b \x01(\v2..muxvia.remote.auth.v1.EndpointSelectionPolicyR\x0fselectionPolicy\x12D\n" +
+	"\x06routes\x18\t \x03(\v2,.muxvia.remote.auth.v1.EndpointRouteConfigV1R\x06routes\"\xb2\x01\n" +
 	"\x12EndpointRegistryV1\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12.\n" +
-	"\x13default_endpoint_id\x18\x02 \x01(\tR\x11defaultEndpointId\x12D\n" +
-	"\tendpoints\x18\x03 \x03(\v2&.termx.remote.auth.v1.EndpointConfigV1R\tendpoints\"\xce\x02\n" +
+	"\x13default_endpoint_id\x18\x02 \x01(\tR\x11defaultEndpointId\x12E\n" +
+	"\tendpoints\x18\x03 \x03(\v2'.muxvia.remote.auth.v1.EndpointConfigV1R\tendpoints\"\xce\x02\n" +
 	"\x17PairingTicketDescriptor\x12\x1b\n" +
 	"\tticket_id\x18\x01 \x01(\tR\bticketId\x12#\n" +
 	"\rscope_ceiling\x18\x02 \x03(\tR\fscopeCeiling\x12/\n" +
@@ -4751,42 +4751,42 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x0fmax_redemptions\x18\x05 \x01(\rR\x0emaxRedemptions\x12\x1c\n" +
 	"\tsignature\x18\x06 \x01(\fR\tsignature\x12-\n" +
 	"\x13issued_at_unix_nano\x18\a \x01(\x03R\x10issuedAtUnixNano\x124\n" +
-	"\x16grant_lifetime_seconds\x18\b \x01(\x03R\x14grantLifetimeSeconds\"\xa6\x01\n" +
-	"\x1eEndpointAuthorizationBootstrap\x12V\n" +
-	"\x0epairing_ticket\x18\x01 \x01(\v2-.termx.remote.auth.v1.PairingTicketDescriptorH\x00R\rpairingTicket\x12!\n" +
+	"\x16grant_lifetime_seconds\x18\b \x01(\x03R\x14grantLifetimeSeconds\"\xa7\x01\n" +
+	"\x1eEndpointAuthorizationBootstrap\x12W\n" +
+	"\x0epairing_ticket\x18\x01 \x01(\v2..muxvia.remote.auth.v1.PairingTicketDescriptorH\x00R\rpairingTicket\x12!\n" +
 	"\vbound_grant\x18\x02 \x01(\fH\x00R\n" +
 	"boundGrantB\t\n" +
-	"\apayload\"\xfe\x03\n" +
+	"\apayload\"\x81\x04\n" +
 	"\x19EndpointBootstrapBundleV2\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x1b\n" +
-	"\tbundle_id\x18\x02 \x01(\tR\bbundleId\x12H\n" +
-	"\bidentity\x18\x03 \x01(\v2,.termx.remote.auth.v1.EndpointDaemonIdentityR\bidentity\x12'\n" +
-	"\x0fsuggested_label\x18\x04 \x01(\tR\x0esuggestedLabel\x12C\n" +
-	"\x06routes\x18\x05 \x03(\v2+.termx.remote.auth.v1.EndpointRouteConfigV1R\x06routes\x12Z\n" +
-	"\rauthorization\x18\x06 \x01(\v24.termx.remote.auth.v1.EndpointAuthorizationBootstrapR\rauthorization\x12-\n" +
+	"\tbundle_id\x18\x02 \x01(\tR\bbundleId\x12I\n" +
+	"\bidentity\x18\x03 \x01(\v2-.muxvia.remote.auth.v1.EndpointDaemonIdentityR\bidentity\x12'\n" +
+	"\x0fsuggested_label\x18\x04 \x01(\tR\x0esuggestedLabel\x12D\n" +
+	"\x06routes\x18\x05 \x03(\v2,.muxvia.remote.auth.v1.EndpointRouteConfigV1R\x06routes\x12[\n" +
+	"\rauthorization\x18\x06 \x01(\v25.muxvia.remote.auth.v1.EndpointAuthorizationBootstrapR\rauthorization\x12-\n" +
 	"\x13issued_at_unix_nano\x18\a \x01(\x03R\x10issuedAtUnixNano\x12/\n" +
 	"\x14expires_at_unix_nano\x18\b \x01(\x03R\x11expiresAtUnixNano\x12)\n" +
-	"\x10bundle_signature\x18\t \x01(\fR\x0fbundleSignature\"\x80\x02\n" +
+	"\x10bundle_signature\x18\t \x01(\fR\x0fbundleSignature\"\x81\x02\n" +
 	"\x1bPairingTicketSignatureInput\x12\x1a\n" +
 	"\bprotocol\x18\x01 \x01(\tR\bprotocol\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\rR\aversion\x12(\n" +
 	"\x10issuer_device_id\x18\x03 \x01(\tR\x0eissuerDeviceId\x12:\n" +
-	"\x19issuer_device_fingerprint\x18\x04 \x01(\tR\x17issuerDeviceFingerprint\x12E\n" +
-	"\x06ticket\x18\x05 \x01(\v2-.termx.remote.auth.v1.PairingTicketDescriptorR\x06ticket\"\xa0\x01\n" +
+	"\x19issuer_device_fingerprint\x18\x04 \x01(\tR\x17issuerDeviceFingerprint\x12F\n" +
+	"\x06ticket\x18\x05 \x01(\v2..muxvia.remote.auth.v1.PairingTicketDescriptorR\x06ticket\"\xa1\x01\n" +
 	"\x1fEndpointBootstrapSignatureInput\x12\x1a\n" +
 	"\bprotocol\x18\x01 \x01(\tR\bprotocol\x12\x18\n" +
-	"\aversion\x18\x02 \x01(\rR\aversion\x12G\n" +
-	"\x06bundle\x18\x03 \x01(\v2/.termx.remote.auth.v1.EndpointBootstrapBundleV2R\x06bundle\"\xb1\x05\n" +
+	"\aversion\x18\x02 \x01(\rR\aversion\x12H\n" +
+	"\x06bundle\x18\x03 \x01(\v20.muxvia.remote.auth.v1.EndpointBootstrapBundleV2R\x06bundle\"\xb6\x05\n" +
 	"\x1bClientEndpointShareBundleV1\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x1f\n" +
 	"\vtransfer_id\x18\x02 \x01(\tR\n" +
-	"transferId\x12H\n" +
-	"\bidentity\x18\x03 \x01(\v2,.termx.remote.auth.v1.EndpointDaemonIdentityR\bidentity\x12'\n" +
-	"\x0fsuggested_label\x18\x04 \x01(\tR\x0esuggestedLabel\x12C\n" +
-	"\x06routes\x18\x05 \x03(\v2+.termx.remote.auth.v1.EndpointRouteConfigV1R\x06routes\x12L\n" +
-	"\fconnect_mode\x18\x06 \x01(\x0e2).termx.remote.auth.v1.EndpointConnectModeR\vconnectMode\x12X\n" +
-	"\x10selection_policy\x18\a \x01(\v2-.termx.remote.auth.v1.EndpointSelectionPolicyR\x0fselectionPolicy\x12i\n" +
-	"\x16credential_descriptors\x18\b \x03(\v22.termx.remote.auth.v1.EndpointCredentialDescriptorR\x15credentialDescriptors\x12\x1f\n" +
+	"transferId\x12I\n" +
+	"\bidentity\x18\x03 \x01(\v2-.muxvia.remote.auth.v1.EndpointDaemonIdentityR\bidentity\x12'\n" +
+	"\x0fsuggested_label\x18\x04 \x01(\tR\x0esuggestedLabel\x12D\n" +
+	"\x06routes\x18\x05 \x03(\v2,.muxvia.remote.auth.v1.EndpointRouteConfigV1R\x06routes\x12M\n" +
+	"\fconnect_mode\x18\x06 \x01(\x0e2*.muxvia.remote.auth.v1.EndpointConnectModeR\vconnectMode\x12Y\n" +
+	"\x10selection_policy\x18\a \x01(\v2..muxvia.remote.auth.v1.EndpointSelectionPolicyR\x0fselectionPolicy\x12j\n" +
+	"\x16credential_descriptors\x18\b \x03(\v23.muxvia.remote.auth.v1.EndpointCredentialDescriptorR\x15credentialDescriptors\x12\x1f\n" +
 	"\vbound_grant\x18\t \x01(\fR\n" +
 	"boundGrant\x12-\n" +
 	"\x13issued_at_unix_nano\x18\n" +
@@ -4827,18 +4827,18 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x1f\n" +
 	"\vtransfer_id\x18\x02 \x01(\tR\n" +
 	"transferId\x12\x1c\n" +
-	"\tsignature\x18\x03 \x01(\fR\tsignature\"\xab\x01\n" +
-	"\x1aShareSessionClientEnvelope\x12@\n" +
-	"\x05hello\x18\x01 \x01(\v2(.termx.remote.auth.v1.ShareReceiverHelloH\x00R\x05hello\x12@\n" +
-	"\x05proof\x18\x02 \x01(\v2(.termx.remote.auth.v1.ShareReceiverProofH\x00R\x05proofB\t\n" +
+	"\tsignature\x18\x03 \x01(\fR\tsignature\"\xad\x01\n" +
+	"\x1aShareSessionClientEnvelope\x12A\n" +
+	"\x05hello\x18\x01 \x01(\v2).muxvia.remote.auth.v1.ShareReceiverHelloH\x00R\x05hello\x12A\n" +
+	"\x05proof\x18\x02 \x01(\v2).muxvia.remote.auth.v1.ShareReceiverProofH\x00R\x05proofB\t\n" +
 	"\amessage\"A\n" +
 	"\x11ShareSessionError\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\x81\x02\n" +
-	"\x1aShareSessionServerEnvelope\x12J\n" +
-	"\tchallenge\x18\x01 \x01(\v2*.termx.remote.auth.v1.ShareSenderChallengeH\x00R\tchallenge\x12K\n" +
-	"\x06bundle\x18\x02 \x01(\v21.termx.remote.auth.v1.ClientEndpointShareBundleV1H\x00R\x06bundle\x12?\n" +
-	"\x05error\x18\x03 \x01(\v2'.termx.remote.auth.v1.ShareSessionErrorH\x00R\x05errorB\t\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\x84\x02\n" +
+	"\x1aShareSessionServerEnvelope\x12K\n" +
+	"\tchallenge\x18\x01 \x01(\v2+.muxvia.remote.auth.v1.ShareSenderChallengeH\x00R\tchallenge\x12L\n" +
+	"\x06bundle\x18\x02 \x01(\v22.muxvia.remote.auth.v1.ClientEndpointShareBundleV1H\x00R\x06bundle\x12@\n" +
+	"\x05error\x18\x03 \x01(\v2(.muxvia.remote.auth.v1.ShareSessionErrorH\x00R\x05errorB\t\n" +
 	"\amessage*\xb0\x04\n" +
 	"\rAuthErrorCode\x12\x1f\n" +
 	"\x1bAUTH_ERROR_CODE_UNSPECIFIED\x10\x00\x12\x1c\n" +
@@ -4903,7 +4903,7 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"(ENDPOINT_CREDENTIAL_KIND_SSH_PRIVATE_KEY\x10\x02\x12)\n" +
 	"%ENDPOINT_CREDENTIAL_KIND_SSH_PASSWORD\x10\x03\x12-\n" +
 	")ENDPOINT_CREDENTIAL_KIND_CAPABILITY_GRANT\x10\x04\x12*\n" +
-	"&ENDPOINT_CREDENTIAL_KIND_CLOUD_PROFILE\x10\x05B,Z*github.com/lozzow/termx/proto/remoteauthpbb\x06proto3"
+	"&ENDPOINT_CREDENTIAL_KIND_CLOUD_PROFILE\x10\x05B-Z+github.com/muxvia/muxvia/proto/remoteauthpbb\x06proto3"
 
 var (
 	file_remoteauthpb_remote_auth_proto_rawDescOnce sync.Once
@@ -4920,122 +4920,122 @@ func file_remoteauthpb_remote_auth_proto_rawDescGZIP() []byte {
 var file_remoteauthpb_remote_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
 var file_remoteauthpb_remote_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
 var file_remoteauthpb_remote_auth_proto_goTypes = []any{
-	(AuthErrorCode)(0),                          // 0: termx.remote.auth.v1.AuthErrorCode
-	(ScopeKind)(0),                              // 1: termx.remote.auth.v1.ScopeKind
-	(ChannelBindingKind)(0),                     // 2: termx.remote.auth.v1.ChannelBindingKind
-	(AuthOpenKind)(0),                           // 3: termx.remote.auth.v1.AuthOpenKind
-	(DirectSignalingErrorCode)(0),               // 4: termx.remote.auth.v1.DirectSignalingErrorCode
-	(EndpointConnectMode)(0),                    // 5: termx.remote.auth.v1.EndpointConnectMode
-	(ManagedWebRTCRelayMode)(0),                 // 6: termx.remote.auth.v1.ManagedWebRTCRelayMode
-	(EndpointSource)(0),                         // 7: termx.remote.auth.v1.EndpointSource
-	(EndpointCredentialKind)(0),                 // 8: termx.remote.auth.v1.EndpointCredentialKind
-	(*ChannelBinding)(nil),                      // 9: termx.remote.auth.v1.ChannelBinding
-	(*AuthEnvelope)(nil),                        // 10: termx.remote.auth.v1.AuthEnvelope
-	(*DeviceHello)(nil),                         // 11: termx.remote.auth.v1.DeviceHello
-	(*CapabilityOpen)(nil),                      // 12: termx.remote.auth.v1.CapabilityOpen
-	(*PairingOpen)(nil),                         // 13: termx.remote.auth.v1.PairingOpen
-	(*ScopeSummary)(nil),                        // 14: termx.remote.auth.v1.ScopeSummary
-	(*ClientAccessScope)(nil),                   // 15: termx.remote.auth.v1.ClientAccessScope
-	(*ClientAccessIdentityResult)(nil),          // 16: termx.remote.auth.v1.ClientAccessIdentityResult
-	(*DeviceIdentityProofInput)(nil),            // 17: termx.remote.auth.v1.DeviceIdentityProofInput
-	(*ClientAccessTicketCreateRequest)(nil),     // 18: termx.remote.auth.v1.ClientAccessTicketCreateRequest
-	(*ClientAccessTicketCreateResult)(nil),      // 19: termx.remote.auth.v1.ClientAccessTicketCreateResult
-	(*ClientAccessRevokeRequest)(nil),           // 20: termx.remote.auth.v1.ClientAccessRevokeRequest
-	(*ClientAccessRecord)(nil),                  // 21: termx.remote.auth.v1.ClientAccessRecord
-	(*ClientAccessListResult)(nil),              // 22: termx.remote.auth.v1.ClientAccessListResult
-	(*CapabilityAccepted)(nil),                  // 23: termx.remote.auth.v1.CapabilityAccepted
-	(*PairingAccepted)(nil),                     // 24: termx.remote.auth.v1.PairingAccepted
-	(*CapabilityRejected)(nil),                  // 25: termx.remote.auth.v1.CapabilityRejected
-	(*DeviceHelloSignatureInput)(nil),           // 26: termx.remote.auth.v1.DeviceHelloSignatureInput
-	(*ClientProofInput)(nil),                    // 27: termx.remote.auth.v1.ClientProofInput
-	(*DirectIceCandidate)(nil),                  // 28: termx.remote.auth.v1.DirectIceCandidate
-	(*DirectSignalingRequestV1)(nil),            // 29: termx.remote.auth.v1.DirectSignalingRequestV1
-	(*DirectSignalingAnswerV1)(nil),             // 30: termx.remote.auth.v1.DirectSignalingAnswerV1
-	(*DirectSignalingAnswerSignatureInput)(nil), // 31: termx.remote.auth.v1.DirectSignalingAnswerSignatureInput
-	(*DirectSignalingErrorV1)(nil),              // 32: termx.remote.auth.v1.DirectSignalingErrorV1
-	(*DirectSignalingResponseV1)(nil),           // 33: termx.remote.auth.v1.DirectSignalingResponseV1
-	(*EndpointDaemonIdentity)(nil),              // 34: termx.remote.auth.v1.EndpointDaemonIdentity
-	(*EndpointSelectionPolicy)(nil),             // 35: termx.remote.auth.v1.EndpointSelectionPolicy
-	(*EndpointCredentialDescriptor)(nil),        // 36: termx.remote.auth.v1.EndpointCredentialDescriptor
-	(*LocalUnixRouteConfig)(nil),                // 37: termx.remote.auth.v1.LocalUnixRouteConfig
-	(*DirectWebRTCTCPRouteConfig)(nil),          // 38: termx.remote.auth.v1.DirectWebRTCTCPRouteConfig
-	(*SSHWebRTCTCPRouteConfig)(nil),             // 39: termx.remote.auth.v1.SSHWebRTCTCPRouteConfig
-	(*ManagedWebRTCRouteConfig)(nil),            // 40: termx.remote.auth.v1.ManagedWebRTCRouteConfig
-	(*EndpointRouteConfigV1)(nil),               // 41: termx.remote.auth.v1.EndpointRouteConfigV1
-	(*EndpointConfigV1)(nil),                    // 42: termx.remote.auth.v1.EndpointConfigV1
-	(*EndpointRegistryV1)(nil),                  // 43: termx.remote.auth.v1.EndpointRegistryV1
-	(*PairingTicketDescriptor)(nil),             // 44: termx.remote.auth.v1.PairingTicketDescriptor
-	(*EndpointAuthorizationBootstrap)(nil),      // 45: termx.remote.auth.v1.EndpointAuthorizationBootstrap
-	(*EndpointBootstrapBundleV2)(nil),           // 46: termx.remote.auth.v1.EndpointBootstrapBundleV2
-	(*PairingTicketSignatureInput)(nil),         // 47: termx.remote.auth.v1.PairingTicketSignatureInput
-	(*EndpointBootstrapSignatureInput)(nil),     // 48: termx.remote.auth.v1.EndpointBootstrapSignatureInput
-	(*ClientEndpointShareBundleV1)(nil),         // 49: termx.remote.auth.v1.ClientEndpointShareBundleV1
-	(*ShareSessionOffer)(nil),                   // 50: termx.remote.auth.v1.ShareSessionOffer
-	(*ShareReceiverHello)(nil),                  // 51: termx.remote.auth.v1.ShareReceiverHello
-	(*ShareSenderChallenge)(nil),                // 52: termx.remote.auth.v1.ShareSenderChallenge
-	(*ShareReceiverProofInput)(nil),             // 53: termx.remote.auth.v1.ShareReceiverProofInput
-	(*ShareReceiverProof)(nil),                  // 54: termx.remote.auth.v1.ShareReceiverProof
-	(*ShareSessionClientEnvelope)(nil),          // 55: termx.remote.auth.v1.ShareSessionClientEnvelope
-	(*ShareSessionError)(nil),                   // 56: termx.remote.auth.v1.ShareSessionError
-	(*ShareSessionServerEnvelope)(nil),          // 57: termx.remote.auth.v1.ShareSessionServerEnvelope
+	(AuthErrorCode)(0),                          // 0: muxvia.remote.auth.v1.AuthErrorCode
+	(ScopeKind)(0),                              // 1: muxvia.remote.auth.v1.ScopeKind
+	(ChannelBindingKind)(0),                     // 2: muxvia.remote.auth.v1.ChannelBindingKind
+	(AuthOpenKind)(0),                           // 3: muxvia.remote.auth.v1.AuthOpenKind
+	(DirectSignalingErrorCode)(0),               // 4: muxvia.remote.auth.v1.DirectSignalingErrorCode
+	(EndpointConnectMode)(0),                    // 5: muxvia.remote.auth.v1.EndpointConnectMode
+	(ManagedWebRTCRelayMode)(0),                 // 6: muxvia.remote.auth.v1.ManagedWebRTCRelayMode
+	(EndpointSource)(0),                         // 7: muxvia.remote.auth.v1.EndpointSource
+	(EndpointCredentialKind)(0),                 // 8: muxvia.remote.auth.v1.EndpointCredentialKind
+	(*ChannelBinding)(nil),                      // 9: muxvia.remote.auth.v1.ChannelBinding
+	(*AuthEnvelope)(nil),                        // 10: muxvia.remote.auth.v1.AuthEnvelope
+	(*DeviceHello)(nil),                         // 11: muxvia.remote.auth.v1.DeviceHello
+	(*CapabilityOpen)(nil),                      // 12: muxvia.remote.auth.v1.CapabilityOpen
+	(*PairingOpen)(nil),                         // 13: muxvia.remote.auth.v1.PairingOpen
+	(*ScopeSummary)(nil),                        // 14: muxvia.remote.auth.v1.ScopeSummary
+	(*ClientAccessScope)(nil),                   // 15: muxvia.remote.auth.v1.ClientAccessScope
+	(*ClientAccessIdentityResult)(nil),          // 16: muxvia.remote.auth.v1.ClientAccessIdentityResult
+	(*DeviceIdentityProofInput)(nil),            // 17: muxvia.remote.auth.v1.DeviceIdentityProofInput
+	(*ClientAccessTicketCreateRequest)(nil),     // 18: muxvia.remote.auth.v1.ClientAccessTicketCreateRequest
+	(*ClientAccessTicketCreateResult)(nil),      // 19: muxvia.remote.auth.v1.ClientAccessTicketCreateResult
+	(*ClientAccessRevokeRequest)(nil),           // 20: muxvia.remote.auth.v1.ClientAccessRevokeRequest
+	(*ClientAccessRecord)(nil),                  // 21: muxvia.remote.auth.v1.ClientAccessRecord
+	(*ClientAccessListResult)(nil),              // 22: muxvia.remote.auth.v1.ClientAccessListResult
+	(*CapabilityAccepted)(nil),                  // 23: muxvia.remote.auth.v1.CapabilityAccepted
+	(*PairingAccepted)(nil),                     // 24: muxvia.remote.auth.v1.PairingAccepted
+	(*CapabilityRejected)(nil),                  // 25: muxvia.remote.auth.v1.CapabilityRejected
+	(*DeviceHelloSignatureInput)(nil),           // 26: muxvia.remote.auth.v1.DeviceHelloSignatureInput
+	(*ClientProofInput)(nil),                    // 27: muxvia.remote.auth.v1.ClientProofInput
+	(*DirectIceCandidate)(nil),                  // 28: muxvia.remote.auth.v1.DirectIceCandidate
+	(*DirectSignalingRequestV1)(nil),            // 29: muxvia.remote.auth.v1.DirectSignalingRequestV1
+	(*DirectSignalingAnswerV1)(nil),             // 30: muxvia.remote.auth.v1.DirectSignalingAnswerV1
+	(*DirectSignalingAnswerSignatureInput)(nil), // 31: muxvia.remote.auth.v1.DirectSignalingAnswerSignatureInput
+	(*DirectSignalingErrorV1)(nil),              // 32: muxvia.remote.auth.v1.DirectSignalingErrorV1
+	(*DirectSignalingResponseV1)(nil),           // 33: muxvia.remote.auth.v1.DirectSignalingResponseV1
+	(*EndpointDaemonIdentity)(nil),              // 34: muxvia.remote.auth.v1.EndpointDaemonIdentity
+	(*EndpointSelectionPolicy)(nil),             // 35: muxvia.remote.auth.v1.EndpointSelectionPolicy
+	(*EndpointCredentialDescriptor)(nil),        // 36: muxvia.remote.auth.v1.EndpointCredentialDescriptor
+	(*LocalUnixRouteConfig)(nil),                // 37: muxvia.remote.auth.v1.LocalUnixRouteConfig
+	(*DirectWebRTCTCPRouteConfig)(nil),          // 38: muxvia.remote.auth.v1.DirectWebRTCTCPRouteConfig
+	(*SSHWebRTCTCPRouteConfig)(nil),             // 39: muxvia.remote.auth.v1.SSHWebRTCTCPRouteConfig
+	(*ManagedWebRTCRouteConfig)(nil),            // 40: muxvia.remote.auth.v1.ManagedWebRTCRouteConfig
+	(*EndpointRouteConfigV1)(nil),               // 41: muxvia.remote.auth.v1.EndpointRouteConfigV1
+	(*EndpointConfigV1)(nil),                    // 42: muxvia.remote.auth.v1.EndpointConfigV1
+	(*EndpointRegistryV1)(nil),                  // 43: muxvia.remote.auth.v1.EndpointRegistryV1
+	(*PairingTicketDescriptor)(nil),             // 44: muxvia.remote.auth.v1.PairingTicketDescriptor
+	(*EndpointAuthorizationBootstrap)(nil),      // 45: muxvia.remote.auth.v1.EndpointAuthorizationBootstrap
+	(*EndpointBootstrapBundleV2)(nil),           // 46: muxvia.remote.auth.v1.EndpointBootstrapBundleV2
+	(*PairingTicketSignatureInput)(nil),         // 47: muxvia.remote.auth.v1.PairingTicketSignatureInput
+	(*EndpointBootstrapSignatureInput)(nil),     // 48: muxvia.remote.auth.v1.EndpointBootstrapSignatureInput
+	(*ClientEndpointShareBundleV1)(nil),         // 49: muxvia.remote.auth.v1.ClientEndpointShareBundleV1
+	(*ShareSessionOffer)(nil),                   // 50: muxvia.remote.auth.v1.ShareSessionOffer
+	(*ShareReceiverHello)(nil),                  // 51: muxvia.remote.auth.v1.ShareReceiverHello
+	(*ShareSenderChallenge)(nil),                // 52: muxvia.remote.auth.v1.ShareSenderChallenge
+	(*ShareReceiverProofInput)(nil),             // 53: muxvia.remote.auth.v1.ShareReceiverProofInput
+	(*ShareReceiverProof)(nil),                  // 54: muxvia.remote.auth.v1.ShareReceiverProof
+	(*ShareSessionClientEnvelope)(nil),          // 55: muxvia.remote.auth.v1.ShareSessionClientEnvelope
+	(*ShareSessionError)(nil),                   // 56: muxvia.remote.auth.v1.ShareSessionError
+	(*ShareSessionServerEnvelope)(nil),          // 57: muxvia.remote.auth.v1.ShareSessionServerEnvelope
 }
 var file_remoteauthpb_remote_auth_proto_depIdxs = []int32{
-	2,  // 0: termx.remote.auth.v1.ChannelBinding.kind:type_name -> termx.remote.auth.v1.ChannelBindingKind
-	11, // 1: termx.remote.auth.v1.AuthEnvelope.device_hello:type_name -> termx.remote.auth.v1.DeviceHello
-	12, // 2: termx.remote.auth.v1.AuthEnvelope.capability_open:type_name -> termx.remote.auth.v1.CapabilityOpen
-	23, // 3: termx.remote.auth.v1.AuthEnvelope.capability_accepted:type_name -> termx.remote.auth.v1.CapabilityAccepted
-	25, // 4: termx.remote.auth.v1.AuthEnvelope.capability_rejected:type_name -> termx.remote.auth.v1.CapabilityRejected
-	13, // 5: termx.remote.auth.v1.AuthEnvelope.pairing_open:type_name -> termx.remote.auth.v1.PairingOpen
-	24, // 6: termx.remote.auth.v1.AuthEnvelope.pairing_accepted:type_name -> termx.remote.auth.v1.PairingAccepted
-	9,  // 7: termx.remote.auth.v1.DeviceHello.channel_binding:type_name -> termx.remote.auth.v1.ChannelBinding
-	1,  // 8: termx.remote.auth.v1.ScopeSummary.kind:type_name -> termx.remote.auth.v1.ScopeKind
-	15, // 9: termx.remote.auth.v1.ClientAccessTicketCreateRequest.scope:type_name -> termx.remote.auth.v1.ClientAccessScope
-	41, // 10: termx.remote.auth.v1.ClientAccessTicketCreateRequest.routes:type_name -> termx.remote.auth.v1.EndpointRouteConfigV1
-	15, // 11: termx.remote.auth.v1.ClientAccessRecord.scope:type_name -> termx.remote.auth.v1.ClientAccessScope
-	21, // 12: termx.remote.auth.v1.ClientAccessListResult.records:type_name -> termx.remote.auth.v1.ClientAccessRecord
-	14, // 13: termx.remote.auth.v1.CapabilityAccepted.scope:type_name -> termx.remote.auth.v1.ScopeSummary
-	14, // 14: termx.remote.auth.v1.PairingAccepted.scope:type_name -> termx.remote.auth.v1.ScopeSummary
-	0,  // 15: termx.remote.auth.v1.CapabilityRejected.code:type_name -> termx.remote.auth.v1.AuthErrorCode
-	9,  // 16: termx.remote.auth.v1.DeviceHelloSignatureInput.channel_binding:type_name -> termx.remote.auth.v1.ChannelBinding
-	9,  // 17: termx.remote.auth.v1.ClientProofInput.channel_binding:type_name -> termx.remote.auth.v1.ChannelBinding
-	3,  // 18: termx.remote.auth.v1.ClientProofInput.open_kind:type_name -> termx.remote.auth.v1.AuthOpenKind
-	34, // 19: termx.remote.auth.v1.DirectSignalingAnswerV1.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	28, // 20: termx.remote.auth.v1.DirectSignalingAnswerV1.candidates:type_name -> termx.remote.auth.v1.DirectIceCandidate
-	30, // 21: termx.remote.auth.v1.DirectSignalingAnswerSignatureInput.answer:type_name -> termx.remote.auth.v1.DirectSignalingAnswerV1
-	4,  // 22: termx.remote.auth.v1.DirectSignalingErrorV1.code:type_name -> termx.remote.auth.v1.DirectSignalingErrorCode
-	30, // 23: termx.remote.auth.v1.DirectSignalingResponseV1.answer:type_name -> termx.remote.auth.v1.DirectSignalingAnswerV1
-	32, // 24: termx.remote.auth.v1.DirectSignalingResponseV1.error:type_name -> termx.remote.auth.v1.DirectSignalingErrorV1
-	8,  // 25: termx.remote.auth.v1.EndpointCredentialDescriptor.kind:type_name -> termx.remote.auth.v1.EndpointCredentialKind
-	36, // 26: termx.remote.auth.v1.SSHWebRTCTCPRouteConfig.credential_descriptor:type_name -> termx.remote.auth.v1.EndpointCredentialDescriptor
-	6,  // 27: termx.remote.auth.v1.ManagedWebRTCRouteConfig.relay_mode:type_name -> termx.remote.auth.v1.ManagedWebRTCRelayMode
-	7,  // 28: termx.remote.auth.v1.EndpointRouteConfigV1.source:type_name -> termx.remote.auth.v1.EndpointSource
-	7,  // 29: termx.remote.auth.v1.EndpointRouteConfigV1.policy_source:type_name -> termx.remote.auth.v1.EndpointSource
-	37, // 30: termx.remote.auth.v1.EndpointRouteConfigV1.local_unix:type_name -> termx.remote.auth.v1.LocalUnixRouteConfig
-	38, // 31: termx.remote.auth.v1.EndpointRouteConfigV1.direct_webrtc_tcp:type_name -> termx.remote.auth.v1.DirectWebRTCTCPRouteConfig
-	39, // 32: termx.remote.auth.v1.EndpointRouteConfigV1.ssh_webrtc_tcp:type_name -> termx.remote.auth.v1.SSHWebRTCTCPRouteConfig
-	40, // 33: termx.remote.auth.v1.EndpointRouteConfigV1.managed_webrtc:type_name -> termx.remote.auth.v1.ManagedWebRTCRouteConfig
-	7,  // 34: termx.remote.auth.v1.EndpointConfigV1.label_source:type_name -> termx.remote.auth.v1.EndpointSource
-	34, // 35: termx.remote.auth.v1.EndpointConfigV1.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	5,  // 36: termx.remote.auth.v1.EndpointConfigV1.connect_mode:type_name -> termx.remote.auth.v1.EndpointConnectMode
-	35, // 37: termx.remote.auth.v1.EndpointConfigV1.selection_policy:type_name -> termx.remote.auth.v1.EndpointSelectionPolicy
-	41, // 38: termx.remote.auth.v1.EndpointConfigV1.routes:type_name -> termx.remote.auth.v1.EndpointRouteConfigV1
-	42, // 39: termx.remote.auth.v1.EndpointRegistryV1.endpoints:type_name -> termx.remote.auth.v1.EndpointConfigV1
-	44, // 40: termx.remote.auth.v1.EndpointAuthorizationBootstrap.pairing_ticket:type_name -> termx.remote.auth.v1.PairingTicketDescriptor
-	34, // 41: termx.remote.auth.v1.EndpointBootstrapBundleV2.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	41, // 42: termx.remote.auth.v1.EndpointBootstrapBundleV2.routes:type_name -> termx.remote.auth.v1.EndpointRouteConfigV1
-	45, // 43: termx.remote.auth.v1.EndpointBootstrapBundleV2.authorization:type_name -> termx.remote.auth.v1.EndpointAuthorizationBootstrap
-	44, // 44: termx.remote.auth.v1.PairingTicketSignatureInput.ticket:type_name -> termx.remote.auth.v1.PairingTicketDescriptor
-	46, // 45: termx.remote.auth.v1.EndpointBootstrapSignatureInput.bundle:type_name -> termx.remote.auth.v1.EndpointBootstrapBundleV2
-	34, // 46: termx.remote.auth.v1.ClientEndpointShareBundleV1.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	41, // 47: termx.remote.auth.v1.ClientEndpointShareBundleV1.routes:type_name -> termx.remote.auth.v1.EndpointRouteConfigV1
-	5,  // 48: termx.remote.auth.v1.ClientEndpointShareBundleV1.connect_mode:type_name -> termx.remote.auth.v1.EndpointConnectMode
-	35, // 49: termx.remote.auth.v1.ClientEndpointShareBundleV1.selection_policy:type_name -> termx.remote.auth.v1.EndpointSelectionPolicy
-	36, // 50: termx.remote.auth.v1.ClientEndpointShareBundleV1.credential_descriptors:type_name -> termx.remote.auth.v1.EndpointCredentialDescriptor
-	51, // 51: termx.remote.auth.v1.ShareSessionClientEnvelope.hello:type_name -> termx.remote.auth.v1.ShareReceiverHello
-	54, // 52: termx.remote.auth.v1.ShareSessionClientEnvelope.proof:type_name -> termx.remote.auth.v1.ShareReceiverProof
-	52, // 53: termx.remote.auth.v1.ShareSessionServerEnvelope.challenge:type_name -> termx.remote.auth.v1.ShareSenderChallenge
-	49, // 54: termx.remote.auth.v1.ShareSessionServerEnvelope.bundle:type_name -> termx.remote.auth.v1.ClientEndpointShareBundleV1
-	56, // 55: termx.remote.auth.v1.ShareSessionServerEnvelope.error:type_name -> termx.remote.auth.v1.ShareSessionError
+	2,  // 0: muxvia.remote.auth.v1.ChannelBinding.kind:type_name -> muxvia.remote.auth.v1.ChannelBindingKind
+	11, // 1: muxvia.remote.auth.v1.AuthEnvelope.device_hello:type_name -> muxvia.remote.auth.v1.DeviceHello
+	12, // 2: muxvia.remote.auth.v1.AuthEnvelope.capability_open:type_name -> muxvia.remote.auth.v1.CapabilityOpen
+	23, // 3: muxvia.remote.auth.v1.AuthEnvelope.capability_accepted:type_name -> muxvia.remote.auth.v1.CapabilityAccepted
+	25, // 4: muxvia.remote.auth.v1.AuthEnvelope.capability_rejected:type_name -> muxvia.remote.auth.v1.CapabilityRejected
+	13, // 5: muxvia.remote.auth.v1.AuthEnvelope.pairing_open:type_name -> muxvia.remote.auth.v1.PairingOpen
+	24, // 6: muxvia.remote.auth.v1.AuthEnvelope.pairing_accepted:type_name -> muxvia.remote.auth.v1.PairingAccepted
+	9,  // 7: muxvia.remote.auth.v1.DeviceHello.channel_binding:type_name -> muxvia.remote.auth.v1.ChannelBinding
+	1,  // 8: muxvia.remote.auth.v1.ScopeSummary.kind:type_name -> muxvia.remote.auth.v1.ScopeKind
+	15, // 9: muxvia.remote.auth.v1.ClientAccessTicketCreateRequest.scope:type_name -> muxvia.remote.auth.v1.ClientAccessScope
+	41, // 10: muxvia.remote.auth.v1.ClientAccessTicketCreateRequest.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
+	15, // 11: muxvia.remote.auth.v1.ClientAccessRecord.scope:type_name -> muxvia.remote.auth.v1.ClientAccessScope
+	21, // 12: muxvia.remote.auth.v1.ClientAccessListResult.records:type_name -> muxvia.remote.auth.v1.ClientAccessRecord
+	14, // 13: muxvia.remote.auth.v1.CapabilityAccepted.scope:type_name -> muxvia.remote.auth.v1.ScopeSummary
+	14, // 14: muxvia.remote.auth.v1.PairingAccepted.scope:type_name -> muxvia.remote.auth.v1.ScopeSummary
+	0,  // 15: muxvia.remote.auth.v1.CapabilityRejected.code:type_name -> muxvia.remote.auth.v1.AuthErrorCode
+	9,  // 16: muxvia.remote.auth.v1.DeviceHelloSignatureInput.channel_binding:type_name -> muxvia.remote.auth.v1.ChannelBinding
+	9,  // 17: muxvia.remote.auth.v1.ClientProofInput.channel_binding:type_name -> muxvia.remote.auth.v1.ChannelBinding
+	3,  // 18: muxvia.remote.auth.v1.ClientProofInput.open_kind:type_name -> muxvia.remote.auth.v1.AuthOpenKind
+	34, // 19: muxvia.remote.auth.v1.DirectSignalingAnswerV1.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
+	28, // 20: muxvia.remote.auth.v1.DirectSignalingAnswerV1.candidates:type_name -> muxvia.remote.auth.v1.DirectIceCandidate
+	30, // 21: muxvia.remote.auth.v1.DirectSignalingAnswerSignatureInput.answer:type_name -> muxvia.remote.auth.v1.DirectSignalingAnswerV1
+	4,  // 22: muxvia.remote.auth.v1.DirectSignalingErrorV1.code:type_name -> muxvia.remote.auth.v1.DirectSignalingErrorCode
+	30, // 23: muxvia.remote.auth.v1.DirectSignalingResponseV1.answer:type_name -> muxvia.remote.auth.v1.DirectSignalingAnswerV1
+	32, // 24: muxvia.remote.auth.v1.DirectSignalingResponseV1.error:type_name -> muxvia.remote.auth.v1.DirectSignalingErrorV1
+	8,  // 25: muxvia.remote.auth.v1.EndpointCredentialDescriptor.kind:type_name -> muxvia.remote.auth.v1.EndpointCredentialKind
+	36, // 26: muxvia.remote.auth.v1.SSHWebRTCTCPRouteConfig.credential_descriptor:type_name -> muxvia.remote.auth.v1.EndpointCredentialDescriptor
+	6,  // 27: muxvia.remote.auth.v1.ManagedWebRTCRouteConfig.relay_mode:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRelayMode
+	7,  // 28: muxvia.remote.auth.v1.EndpointRouteConfigV1.source:type_name -> muxvia.remote.auth.v1.EndpointSource
+	7,  // 29: muxvia.remote.auth.v1.EndpointRouteConfigV1.policy_source:type_name -> muxvia.remote.auth.v1.EndpointSource
+	37, // 30: muxvia.remote.auth.v1.EndpointRouteConfigV1.local_unix:type_name -> muxvia.remote.auth.v1.LocalUnixRouteConfig
+	38, // 31: muxvia.remote.auth.v1.EndpointRouteConfigV1.direct_webrtc_tcp:type_name -> muxvia.remote.auth.v1.DirectWebRTCTCPRouteConfig
+	39, // 32: muxvia.remote.auth.v1.EndpointRouteConfigV1.ssh_webrtc_tcp:type_name -> muxvia.remote.auth.v1.SSHWebRTCTCPRouteConfig
+	40, // 33: muxvia.remote.auth.v1.EndpointRouteConfigV1.managed_webrtc:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRouteConfig
+	7,  // 34: muxvia.remote.auth.v1.EndpointConfigV1.label_source:type_name -> muxvia.remote.auth.v1.EndpointSource
+	34, // 35: muxvia.remote.auth.v1.EndpointConfigV1.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
+	5,  // 36: muxvia.remote.auth.v1.EndpointConfigV1.connect_mode:type_name -> muxvia.remote.auth.v1.EndpointConnectMode
+	35, // 37: muxvia.remote.auth.v1.EndpointConfigV1.selection_policy:type_name -> muxvia.remote.auth.v1.EndpointSelectionPolicy
+	41, // 38: muxvia.remote.auth.v1.EndpointConfigV1.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
+	42, // 39: muxvia.remote.auth.v1.EndpointRegistryV1.endpoints:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	44, // 40: muxvia.remote.auth.v1.EndpointAuthorizationBootstrap.pairing_ticket:type_name -> muxvia.remote.auth.v1.PairingTicketDescriptor
+	34, // 41: muxvia.remote.auth.v1.EndpointBootstrapBundleV2.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
+	41, // 42: muxvia.remote.auth.v1.EndpointBootstrapBundleV2.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
+	45, // 43: muxvia.remote.auth.v1.EndpointBootstrapBundleV2.authorization:type_name -> muxvia.remote.auth.v1.EndpointAuthorizationBootstrap
+	44, // 44: muxvia.remote.auth.v1.PairingTicketSignatureInput.ticket:type_name -> muxvia.remote.auth.v1.PairingTicketDescriptor
+	46, // 45: muxvia.remote.auth.v1.EndpointBootstrapSignatureInput.bundle:type_name -> muxvia.remote.auth.v1.EndpointBootstrapBundleV2
+	34, // 46: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
+	41, // 47: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
+	5,  // 48: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.connect_mode:type_name -> muxvia.remote.auth.v1.EndpointConnectMode
+	35, // 49: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.selection_policy:type_name -> muxvia.remote.auth.v1.EndpointSelectionPolicy
+	36, // 50: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.credential_descriptors:type_name -> muxvia.remote.auth.v1.EndpointCredentialDescriptor
+	51, // 51: muxvia.remote.auth.v1.ShareSessionClientEnvelope.hello:type_name -> muxvia.remote.auth.v1.ShareReceiverHello
+	54, // 52: muxvia.remote.auth.v1.ShareSessionClientEnvelope.proof:type_name -> muxvia.remote.auth.v1.ShareReceiverProof
+	52, // 53: muxvia.remote.auth.v1.ShareSessionServerEnvelope.challenge:type_name -> muxvia.remote.auth.v1.ShareSenderChallenge
+	49, // 54: muxvia.remote.auth.v1.ShareSessionServerEnvelope.bundle:type_name -> muxvia.remote.auth.v1.ClientEndpointShareBundleV1
+	56, // 55: muxvia.remote.auth.v1.ShareSessionServerEnvelope.error:type_name -> muxvia.remote.auth.v1.ShareSessionError
 	56, // [56:56] is the sub-list for method output_type
 	56, // [56:56] is the sub-list for method input_type
 	56, // [56:56] is the sub-list for extension type_name

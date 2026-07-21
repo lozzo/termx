@@ -75,10 +75,10 @@ func (ApplicationEventType) EnumDescriptor() ([]byte, []int) {
 
 type EventSubscribeCommand struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	Types            []ApplicationEventType `protobuf:"varint,2,rep,packed,name=types,proto3,enum=termx.api.v1.ApplicationEventType" json:"types,omitempty"`
+	Types            []ApplicationEventType `protobuf:"varint,2,rep,packed,name=types,proto3,enum=muxvia.api.v1.ApplicationEventType" json:"types,omitempty"`
 	Terminal         *TerminalRef           `protobuf:"bytes,3,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	StorageAppId     string                 `protobuf:"bytes,4,opt,name=storage_app_id,json=storageAppId,proto3" json:"storage_app_id,omitempty"`
-	StorageScope     StorageScope           `protobuf:"varint,5,opt,name=storage_scope,json=storageScope,proto3,enum=termx.api.v1.StorageScope" json:"storage_scope,omitempty"`
+	StorageScope     StorageScope           `protobuf:"varint,5,opt,name=storage_scope,json=storageScope,proto3,enum=muxvia.api.v1.StorageScope" json:"storage_scope,omitempty"`
 	StorageOwnerId   string                 `protobuf:"bytes,6,opt,name=storage_owner_id,json=storageOwnerId,proto3" json:"storage_owner_id,omitempty"`
 	StorageKeyPrefix string                 `protobuf:"bytes,7,opt,name=storage_key_prefix,json=storageKeyPrefix,proto3" json:"storage_key_prefix,omitempty"`
 	unknownFields    protoimpl.UnknownFields
@@ -205,21 +205,21 @@ var File_apipb_events_proto protoreflect.FileDescriptor
 
 const file_apipb_events_proto_rawDesc = "" +
 	"\n" +
-	"\x12apipb/events.proto\x12\ftermx.api.v1\x1a\x12apipb/common.proto\x1a\x13apipb/storage.proto\x1a\x14apipb/terminal.proto\"\xcd\x02\n" +
-	"\x15EventSubscribeCommand\x128\n" +
-	"\x05types\x18\x02 \x03(\x0e2\".termx.api.v1.ApplicationEventTypeR\x05types\x125\n" +
-	"\bterminal\x18\x03 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x12$\n" +
-	"\x0estorage_app_id\x18\x04 \x01(\tR\fstorageAppId\x12?\n" +
-	"\rstorage_scope\x18\x05 \x01(\x0e2\x1a.termx.api.v1.StorageScopeR\fstorageScope\x12(\n" +
+	"\x12apipb/events.proto\x12\rmuxvia.api.v1\x1a\x12apipb/common.proto\x1a\x13apipb/storage.proto\x1a\x14apipb/terminal.proto\"\xd0\x02\n" +
+	"\x15EventSubscribeCommand\x129\n" +
+	"\x05types\x18\x02 \x03(\x0e2#.muxvia.api.v1.ApplicationEventTypeR\x05types\x126\n" +
+	"\bterminal\x18\x03 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminal\x12$\n" +
+	"\x0estorage_app_id\x18\x04 \x01(\tR\fstorageAppId\x12@\n" +
+	"\rstorage_scope\x18\x05 \x01(\x0e2\x1b.muxvia.api.v1.StorageScopeR\fstorageScope\x12(\n" +
 	"\x10storage_owner_id\x18\x06 \x01(\tR\x0estorageOwnerId\x12,\n" +
-	"\x12storage_key_prefix\x18\a \x01(\tR\x10storageKeyPrefixJ\x04\b\x01\x10\x02\"[\n" +
-	"\x17EventSubscriptionResult\x12@\n" +
-	"\fsubscription\x18\x01 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\fsubscription*\xdb\x01\n" +
+	"\x12storage_key_prefix\x18\a \x01(\tR\x10storageKeyPrefixJ\x04\b\x01\x10\x02\"\\\n" +
+	"\x17EventSubscriptionResult\x12A\n" +
+	"\fsubscription\x18\x01 \x01(\v2\x1d.muxvia.api.v1.ResourceHandleR\fsubscription*\xdb\x01\n" +
 	"\x14ApplicationEventType\x12&\n" +
 	"\"APPLICATION_EVENT_TYPE_UNSPECIFIED\x10\x00\x12-\n" +
 	")APPLICATION_EVENT_TYPE_TERMINAL_LIFECYCLE\x10\x01\x124\n" +
 	"0APPLICATION_EVENT_TYPE_TERMINAL_LIVE_INVALIDATED\x10\x03\x12*\n" +
-	"&APPLICATION_EVENT_TYPE_STORAGE_CHANGED\x10\x05\"\x04\b\x02\x10\x02\"\x04\b\x04\x10\x04B%Z#github.com/lozzow/termx/proto/apipbb\x06proto3"
+	"&APPLICATION_EVENT_TYPE_STORAGE_CHANGED\x10\x05\"\x04\b\x02\x10\x02\"\x04\b\x04\x10\x04B&Z$github.com/muxvia/muxvia/proto/apipbb\x06proto3"
 
 var (
 	file_apipb_events_proto_rawDescOnce sync.Once
@@ -236,18 +236,18 @@ func file_apipb_events_proto_rawDescGZIP() []byte {
 var file_apipb_events_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_apipb_events_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_apipb_events_proto_goTypes = []any{
-	(ApplicationEventType)(0),       // 0: termx.api.v1.ApplicationEventType
-	(*EventSubscribeCommand)(nil),   // 1: termx.api.v1.EventSubscribeCommand
-	(*EventSubscriptionResult)(nil), // 2: termx.api.v1.EventSubscriptionResult
-	(*TerminalRef)(nil),             // 3: termx.api.v1.TerminalRef
-	(StorageScope)(0),               // 4: termx.api.v1.StorageScope
-	(*ResourceHandle)(nil),          // 5: termx.api.v1.ResourceHandle
+	(ApplicationEventType)(0),       // 0: muxvia.api.v1.ApplicationEventType
+	(*EventSubscribeCommand)(nil),   // 1: muxvia.api.v1.EventSubscribeCommand
+	(*EventSubscriptionResult)(nil), // 2: muxvia.api.v1.EventSubscriptionResult
+	(*TerminalRef)(nil),             // 3: muxvia.api.v1.TerminalRef
+	(StorageScope)(0),               // 4: muxvia.api.v1.StorageScope
+	(*ResourceHandle)(nil),          // 5: muxvia.api.v1.ResourceHandle
 }
 var file_apipb_events_proto_depIdxs = []int32{
-	0, // 0: termx.api.v1.EventSubscribeCommand.types:type_name -> termx.api.v1.ApplicationEventType
-	3, // 1: termx.api.v1.EventSubscribeCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	4, // 2: termx.api.v1.EventSubscribeCommand.storage_scope:type_name -> termx.api.v1.StorageScope
-	5, // 3: termx.api.v1.EventSubscriptionResult.subscription:type_name -> termx.api.v1.ResourceHandle
+	0, // 0: muxvia.api.v1.EventSubscribeCommand.types:type_name -> muxvia.api.v1.ApplicationEventType
+	3, // 1: muxvia.api.v1.EventSubscribeCommand.terminal:type_name -> muxvia.api.v1.TerminalRef
+	4, // 2: muxvia.api.v1.EventSubscribeCommand.storage_scope:type_name -> muxvia.api.v1.StorageScope
+	5, // 3: muxvia.api.v1.EventSubscriptionResult.subscription:type_name -> muxvia.api.v1.ResourceHandle
 	4, // [4:4] is the sub-list for method output_type
 	4, // [4:4] is the sub-list for method input_type
 	4, // [4:4] is the sub-list for extension type_name

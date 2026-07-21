@@ -12,12 +12,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lozzow/termx/client/adapter/direct"
-	peeradapter "github.com/lozzow/termx/client/adapter/peer"
-	"github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/client/port"
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	"github.com/lozzow/termx/proto/remoteauthpb"
+	"github.com/muxvia/muxvia/client/adapter/direct"
+	peeradapter "github.com/muxvia/muxvia/client/adapter/peer"
+	"github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/client/port"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
 	golangssh "golang.org/x/crypto/ssh"
 )
 

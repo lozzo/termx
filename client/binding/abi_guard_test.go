@@ -71,9 +71,9 @@ func TestBindingABIBaselinesStayGeneric(t *testing.T) {
 func TestBindingCoreDoesNotImportPlatformOrDomainOwners(t *testing.T) {
 	forbidden := []string{
 		"C", "unsafe", "syscall/js", "encoding/json", "encoding/base64",
-		"github.com/lozzow/termx/core", "github.com/lozzow/termx/tui", "github.com/lozzow/termx/cmd/termx",
-		"github.com/lozzow/termx/private", "github.com/lozzow/termx/internal/protocol",
-		"github.com/lozzow/termx/remote", "github.com/pion/webrtc",
+		"github.com/muxvia/muxvia/core", "github.com/muxvia/muxvia/tui", "github.com/muxvia/muxvia/cmd/termx",
+		"github.com/muxvia/muxvia/private", "github.com/muxvia/muxvia/internal/protocol",
+		"github.com/muxvia/muxvia/remote", "github.com/pion/webrtc",
 	}
 	err := filepath.WalkDir(".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {

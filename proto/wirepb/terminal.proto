@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package termx.protocol.wirepb;
+package muxvia.protocol.wirepb;
 
-option go_package = "github.com/lozzow/termx/proto/wirepb";
+option go_package = "github.com/muxvia/muxvia/proto/wirepb";
 
 // wirepb 只拥有 DataChannel framing 与 file resource stream payload。
 // application command/result/event 必须使用 apipb，不得在本包重新定义。

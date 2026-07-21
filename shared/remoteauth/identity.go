@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/shared/filelock"
+	"github.com/muxvia/muxvia/shared/filelock"
 )
 
 const (

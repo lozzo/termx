@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	localadapter "github.com/lozzow/termx/client/adapter/local"
-	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	clientruntime "github.com/lozzow/termx/client/runtime"
+	localadapter "github.com/muxvia/muxvia/client/adapter/local"
+	protocoladapter "github.com/muxvia/muxvia/client/adapter/protocol"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
 )
 
 func openEndpointProtocolClient(ctx context.Context, endpoint endpointdomain.Endpoint, socketOverride, logFile string) (*protocoladapter.ApplicationClient, func(), error) {

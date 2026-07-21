@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/proto/apipb"
-	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/port"
-	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/state"
-	"github.com/lozzow/termx/tui/testkit"
+	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/muxvia/muxvia/tui/input"
+	"github.com/muxvia/muxvia/tui/port"
+	"github.com/muxvia/muxvia/tui/render"
+	"github.com/muxvia/muxvia/tui/state"
+	"github.com/muxvia/muxvia/tui/testkit"
 )
 
 type refreshingInputTerminalService struct {

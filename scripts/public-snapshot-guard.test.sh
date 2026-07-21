@@ -31,7 +31,7 @@ for file in .gitignore CONTRIBUTING.md DCO LICENSE Makefile NOTICE README.md THI
   printf '%s\n' "fixture" >"$snapshot/$file"
 done
 cat >"$snapshot/go.mod" <<'EOF'
-module github.com/lozzow/termx
+module github.com/muxvia/muxvia
 
 go 1.26.0
 EOF

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/internal/protocol"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/internal/protocol"
 )
 
 func TestProductCommandTreeExposesTerminalAndRejectsV3(t *testing.T) {

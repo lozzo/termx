@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	actiondomain "github.com/lozzow/termx/tui/action"
-	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/shortcut"
-	"github.com/lozzow/termx/tui/state"
+	actiondomain "github.com/muxvia/muxvia/tui/action"
+	"github.com/muxvia/muxvia/tui/input"
+	"github.com/muxvia/muxvia/tui/shortcut"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 const DefaultFileName = "tui-v3.yaml"

@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/lozzow/termx/proto/apipb"
+	"github.com/muxvia/muxvia/proto/apipb"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"

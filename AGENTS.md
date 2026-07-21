@@ -4,7 +4,7 @@
 
 - 仓库根目录 `workflow.md` 是当前分支唯一有效的活动驱动文件。
 - 本仓库内所有工作必须先读取 `workflow.md`，并以它作为范围、任务顺序、测试准入和提交规则的唯一基准。
-- 当前活动主线只由 `workflow.md` 最早未完成切片决定；当前最早切片是 `BRAND002`，必须先完成 Muxvia 全量发布身份迁移，再恢复 `CLOUDP007`。浏览器 Web/WASM terminal 产品当前冻结。
+- 当前活动主线只由 `workflow.md` 最早未完成切片决定；当前最早切片是 `BRAND003`，必须先完成 Muxvia CLI、C ABI 与 runtime identity 迁移，再继续 Android/npm/UI/Cloud 身份迁移并恢复 `CLOUDP007`。浏览器 Web/WASM terminal 产品当前冻结。
 - 插件系统已经拆到独立分支，本分支不新增插件系统代码、协议或文档。
 - `docs/remote-platform/` 是远程平台产品、架构、安全和迁移背景文档；统一 WebRTC Route 的当前决策以 `workflow.md` 为准，并由对应活动切片同步更新该目录，旧文档不得覆盖活动工作流。
 - `docs/remote-platform/multi-hub-technical-plan.md` 是当前多 Hub/Cloud 主线的实现级规划，规定 Proto 文件、Go package owner、控制链路、持久化事务、迁移删除项与测试矩阵；它必须服从 `workflow.md` 的切片顺序，不得被当作跨切片一次性实现清单。

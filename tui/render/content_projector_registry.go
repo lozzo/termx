@@ -1,6 +1,6 @@
 package render
 
-import "github.com/lozzow/termx/tui/state"
+import "github.com/muxvia/muxvia/tui/state"
 
 type ContentProjector interface {
 	ProjectContent(ContentProjectorContext) ContentVM

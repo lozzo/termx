@@ -1,10 +1,10 @@
-module github.com/lozzow/termx/private/cloud/web-controller
+module github.com/muxvia/muxvia/private/cloud/web-controller
 
 go 1.26.0
 
 require (
-	github.com/lozzow/termx v0.0.0
-	github.com/lozzow/termx/private/cloud/control-plane v0.0.0
+	github.com/muxvia/muxvia v0.0.0
+	github.com/muxvia/muxvia/private/cloud/control-plane v0.0.0
 	google.golang.org/protobuf v1.36.11
 )
 
@@ -22,6 +22,6 @@ require (
 	modernc.org/sqlite v1.53.0 // indirect
 )
 
-replace github.com/lozzow/termx/private/cloud/control-plane => ../control-plane
+replace github.com/muxvia/muxvia/private/cloud/control-plane => ../control-plane
 
-replace github.com/lozzow/termx => ../../..
+replace github.com/muxvia/muxvia => ../../..

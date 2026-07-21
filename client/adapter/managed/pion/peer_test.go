@@ -3,7 +3,7 @@ package pion
 import (
 	"testing"
 
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 	pionwebrtc "github.com/pion/webrtc/v4"
 )
 

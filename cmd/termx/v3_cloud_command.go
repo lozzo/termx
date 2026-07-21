@@ -14,12 +14,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/proto/cloudpb"
-	remotev2daemon "github.com/lozzow/termx/remote/daemon"
-	"github.com/lozzow/termx/shared/cloudcompanion"
-	"github.com/lozzow/termx/shared/cloudcompanion/installer"
-	"github.com/lozzow/termx/shared/cloudcompanion/ipc"
-	"github.com/lozzow/termx/shared/remoteauth"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	remotev2daemon "github.com/muxvia/muxvia/remote/daemon"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
+	"github.com/muxvia/muxvia/shared/cloudcompanion/installer"
+	"github.com/muxvia/muxvia/shared/cloudcompanion/ipc"
+	"github.com/muxvia/muxvia/shared/remoteauth"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )

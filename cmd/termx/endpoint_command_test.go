@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	corev2 "github.com/lozzow/termx/core"
-	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/proto/apipb"
-	"github.com/lozzow/termx/shared/filelock"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
+	corev2 "github.com/muxvia/muxvia/core"
+	"github.com/muxvia/muxvia/internal/protocol"
+	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/muxvia/muxvia/shared/filelock"
 )
 
 func TestEndpointMutationHonorsRootTimeoutWhileRegistryLocked(t *testing.T) {

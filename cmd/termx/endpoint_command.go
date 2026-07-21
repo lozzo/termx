@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
 	"github.com/spf13/cobra"
 )
 

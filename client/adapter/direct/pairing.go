@@ -6,8 +6,8 @@ import (
 	"io"
 	"time"
 
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	"github.com/lozzow/termx/shared/remoteauth"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/shared/remoteauth"
 )
 
 // PairingConnector 通过 daemon embedded signaling 与 ICE-TCP 建立一次性 PairingExchange peer。

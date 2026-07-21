@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 type contractFixture struct {

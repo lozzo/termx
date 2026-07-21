@@ -10,13 +10,13 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/lozzow/termx/core/history"
-	"github.com/lozzow/termx/core/history/linehist"
-	"github.com/lozzow/termx/core/live"
-	"github.com/lozzow/termx/proto/wire"
-	"github.com/lozzow/termx/shared/perftrace"
-	"github.com/lozzow/termx/shared/transport"
-	unixtransport "github.com/lozzow/termx/shared/transport/unix"
+	"github.com/muxvia/muxvia/core/history"
+	"github.com/muxvia/muxvia/core/history/linehist"
+	"github.com/muxvia/muxvia/core/live"
+	"github.com/muxvia/muxvia/proto/wire"
+	"github.com/muxvia/muxvia/shared/perftrace"
+	"github.com/muxvia/muxvia/shared/transport"
+	unixtransport "github.com/muxvia/muxvia/shared/transport/unix"
 )
 
 type ListenerFactory func(socketPath string) (transport.Listener, error)

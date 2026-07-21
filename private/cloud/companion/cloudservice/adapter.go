@@ -7,8 +7,8 @@ package cloudservice
 import (
 	"context"
 
-	"github.com/lozzow/termx/private/cloud/companion/session"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/companion/session"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 // DeviceEnrollmentResult 是 Companion 内部的 enrollment 兑换结果。

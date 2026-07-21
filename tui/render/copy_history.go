@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 type copySelectionRange struct {

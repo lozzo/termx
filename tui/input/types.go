@@ -1,8 +1,8 @@
 package input
 
 import (
-	actiondomain "github.com/lozzow/termx/tui/action"
-	"github.com/lozzow/termx/tui/state"
+	actiondomain "github.com/muxvia/muxvia/tui/action"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 // EventKind 分类宿主输入，不依赖 Bubble Tea key/mouse 类型。

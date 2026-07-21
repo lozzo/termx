@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package termx.remote.auth.v1;
+package muxvia.remote.auth.v1;
 
-option go_package = "github.com/lozzow/termx/proto/remoteauthpb";
+option go_package = "github.com/muxvia/muxvia/proto/remoteauthpb";
 
 // AuthErrorCode 是端到端授权失败时允许返回给对端的稳定分类。
 // detail 必须脱敏，不能暴露 grant 是否对应某个已存在 terminal。

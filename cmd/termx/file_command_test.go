@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
 )
 
 func TestFileCommandRealDaemonLifecycleAndTransfers(t *testing.T) {

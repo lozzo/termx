@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package termx.cloud.v1;
+package muxvia.cloud.v1;
 
-option go_package = "github.com/lozzow/termx/proto/cloudpb";
+option go_package = "github.com/muxvia/muxvia/proto/cloudpb";
 
 
 // ObservedPath 是一次 WebRTC transport 实际采用的网络路径。

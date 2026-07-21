@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package termx.cloud.v1;
+package muxvia.cloud.v1;
 
-option go_package = "github.com/lozzow/termx/proto/cloudpb";
+option go_package = "github.com/muxvia/muxvia/proto/cloudpb";
 
 import "cloudpb/cloud_topology.proto";
 import "cloudpb/cloud_product.proto";

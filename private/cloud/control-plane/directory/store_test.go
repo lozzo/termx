@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/directory"
-	"github.com/lozzow/termx/private/cloud/control-plane/domain"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/directory"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/domain"
 )
 
 func TestPersistentSecurityDirectoryRestoresDeviceKeyAndRevocation(t *testing.T) {

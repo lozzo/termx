@@ -2,11 +2,11 @@ package app
 
 import (
 	"context"
-	"github.com/lozzow/termx/tui/testkit"
+	"github.com/muxvia/muxvia/tui/testkit"
 	"testing"
 
-	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/tui/input"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 func TestBackNavigationEscExitsOneLayerAtATime(t *testing.T) {

@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/client/port"
-	"github.com/lozzow/termx/proto/cloudpb"
-	remotewebrtc "github.com/lozzow/termx/remote/webrtc"
+	"github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/client/port"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	remotewebrtc "github.com/muxvia/muxvia/remote/webrtc"
 	pionwebrtc "github.com/pion/webrtc/v4"
 )
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 // RequestID 标识一个异步 service 请求。

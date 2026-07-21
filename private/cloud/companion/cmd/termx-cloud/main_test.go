@@ -12,13 +12,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/companion/cloudservice"
-	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/cloudcompanion"
-	"github.com/lozzow/termx/shared/cloudcompanion/activation"
-	"github.com/lozzow/termx/shared/cloudcompanion/installer"
-	"github.com/lozzow/termx/shared/cloudcompanion/ipc"
+	"github.com/muxvia/muxvia/private/cloud/companion/cloudservice"
+	"github.com/muxvia/muxvia/private/cloud/companion/cloudservice/httpapi"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
+	"github.com/muxvia/muxvia/shared/cloudcompanion/activation"
+	"github.com/muxvia/muxvia/shared/cloudcompanion/installer"
+	"github.com/muxvia/muxvia/shared/cloudcompanion/ipc"
 )
 
 func TestSmokeServerCompletesPublicHelloStatusAndShutdown(t *testing.T) {

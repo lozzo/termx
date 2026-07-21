@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
 )
 
 func TestEndpointShareCLITransfersConfigOnceAndImportsAtomically(t *testing.T) {

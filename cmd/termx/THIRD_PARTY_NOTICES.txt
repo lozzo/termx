@@ -23,7 +23,7 @@ github.com/klauspost/compress,https://github.com/klauspost/compress/blob/v1.18.5
 github.com/klauspost/compress,https://github.com/klauspost/compress/blob/v1.18.5/LICENSE,MIT
 github.com/klauspost/compress/internal/snapref,https://github.com/klauspost/compress/blob/v1.18.5/internal/snapref/LICENSE,BSD-3-Clause
 github.com/klauspost/compress/zstd/internal/xxhash,https://github.com/klauspost/compress/blob/v1.18.5/zstd/internal/xxhash/LICENSE.txt,MIT
-github.com/lozzow/termx/vterm/internal/vt,https://github.com/lozzow/termx/blob/HEAD/vterm/internal/vt/LICENSE,MIT
+github.com/muxvia/muxvia/vterm/internal/vt,https://github.com/muxvia/muxvia/blob/HEAD/vterm/internal/vt/LICENSE,MIT
 github.com/lucasb-eyer/go-colorful,https://github.com/lucasb-eyer/go-colorful/blob/v1.3.0/LICENSE,MIT
 github.com/mattn/go-runewidth,https://github.com/mattn/go-runewidth/blob/v0.0.19/LICENSE,MIT
 github.com/muesli/cancelreader,https://github.com/muesli/cancelreader/blob/v0.2.2/LICENSE,MIT
@@ -1000,7 +1000,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-github.com/lozzow/termx/vterm/internal/vt/LICENSE
+github.com/muxvia/muxvia/vterm/internal/vt/LICENSE
 ==============================================================================
 
 MIT License

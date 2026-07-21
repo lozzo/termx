@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 func TestCollectorBuildsRedactedQualityWindow(t *testing.T) {

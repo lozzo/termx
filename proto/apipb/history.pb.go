@@ -523,7 +523,7 @@ type TerminalCursor struct {
 	Row           int32                  `protobuf:"varint,1,opt,name=row,proto3" json:"row,omitempty"`
 	Col           int32                  `protobuf:"varint,2,opt,name=col,proto3" json:"col,omitempty"`
 	Visible       bool                   `protobuf:"varint,3,opt,name=visible,proto3" json:"visible,omitempty"`
-	Shape         CursorShape            `protobuf:"varint,4,opt,name=shape,proto3,enum=termx.api.v1.CursorShape" json:"shape,omitempty"`
+	Shape         CursorShape            `protobuf:"varint,4,opt,name=shape,proto3,enum=muxvia.api.v1.CursorShape" json:"shape,omitempty"`
 	Blink         bool                   `protobuf:"varint,5,opt,name=blink,proto3" json:"blink,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -723,7 +723,7 @@ type HistoryCursor struct {
 	LineId        uint64                 `protobuf:"varint,1,opt,name=line_id,json=lineId,proto3" json:"line_id,omitempty"`
 	RowInLine     int32                  `protobuf:"varint,2,opt,name=row_in_line,json=rowInLine,proto3" json:"row_in_line,omitempty"`
 	RowIndex      int32                  `protobuf:"varint,3,opt,name=row_index,json=rowIndex,proto3" json:"row_index,omitempty"`
-	Segment       HistoryCursorSegment   `protobuf:"varint,4,opt,name=segment,proto3,enum=termx.api.v1.HistoryCursorSegment" json:"segment,omitempty"`
+	Segment       HistoryCursorSegment   `protobuf:"varint,4,opt,name=segment,proto3,enum=muxvia.api.v1.HistoryCursorSegment" json:"segment,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -857,7 +857,7 @@ func (x *HistoryRange) GetEndCol() int32 {
 type HistoryWindowCommand struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	Terminal            *TerminalRef           `protobuf:"bytes,2,opt,name=terminal,proto3" json:"terminal,omitempty"`
-	Mode                HistoryWindowMode      `protobuf:"varint,3,opt,name=mode,proto3,enum=termx.api.v1.HistoryWindowMode" json:"mode,omitempty"`
+	Mode                HistoryWindowMode      `protobuf:"varint,3,opt,name=mode,proto3,enum=muxvia.api.v1.HistoryWindowMode" json:"mode,omitempty"`
 	BeforeOffset        int32                  `protobuf:"varint,4,opt,name=before_offset,json=beforeOffset,proto3" json:"before_offset,omitempty"`
 	Limit               int32                  `protobuf:"varint,5,opt,name=limit,proto3" json:"limit,omitempty"`
 	Cols                int32                  `protobuf:"varint,6,opt,name=cols,proto3" json:"cols,omitempty"`
@@ -1280,8 +1280,8 @@ type HistoryRow struct {
 	TimestampUnixNano int64                  `protobuf:"varint,2,opt,name=timestamp_unix_nano,json=timestampUnixNano,proto3" json:"timestamp_unix_nano,omitempty"`
 	RowKind           string                 `protobuf:"bytes,3,opt,name=row_kind,json=rowKind,proto3" json:"row_kind,omitempty"`
 	Wrapped           bool                   `protobuf:"varint,4,opt,name=wrapped,proto3" json:"wrapped,omitempty"`
-	Ownership         RowOwnership           `protobuf:"varint,5,opt,name=ownership,proto3,enum=termx.api.v1.RowOwnership" json:"ownership,omitempty"`
-	Segment           HistoryCursorSegment   `protobuf:"varint,6,opt,name=segment,proto3,enum=termx.api.v1.HistoryCursorSegment" json:"segment,omitempty"`
+	Ownership         RowOwnership           `protobuf:"varint,5,opt,name=ownership,proto3,enum=muxvia.api.v1.RowOwnership" json:"ownership,omitempty"`
+	Segment           HistoryCursorSegment   `protobuf:"varint,6,opt,name=segment,proto3,enum=muxvia.api.v1.HistoryCursorSegment" json:"segment,omitempty"`
 	SessionId         uint64                 `protobuf:"varint,7,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	FrameId           uint64                 `protobuf:"varint,8,opt,name=frame_id,json=frameId,proto3" json:"frame_id,omitempty"`
 	FixedGrid         bool                   `protobuf:"varint,9,opt,name=fixed_grid,json=fixedGrid,proto3" json:"fixed_grid,omitempty"`
@@ -1434,7 +1434,7 @@ type HistoryWindowResult struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Terminal          *TerminalRef           `protobuf:"bytes,1,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	Token             string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
-	Operation         HistoryWindowOperation `protobuf:"varint,3,opt,name=operation,proto3,enum=termx.api.v1.HistoryWindowOperation" json:"operation,omitempty"`
+	Operation         HistoryWindowOperation `protobuf:"varint,3,opt,name=operation,proto3,enum=muxvia.api.v1.HistoryWindowOperation" json:"operation,omitempty"`
 	Size              *TerminalSize          `protobuf:"bytes,4,opt,name=size,proto3" json:"size,omitempty"`
 	Rows              []*HistoryRow          `protobuf:"bytes,5,rep,name=rows,proto3" json:"rows,omitempty"`
 	Lines             []*HistoryLineSpan     `protobuf:"bytes,6,rep,name=lines,proto3" json:"lines,omitempty"`
@@ -2106,7 +2106,7 @@ var File_apipb_history_proto protoreflect.FileDescriptor
 
 const file_apipb_history_proto_rawDesc = "" +
 	"\n" +
-	"\x13apipb/history.proto\x12\ftermx.api.v1\x1a\x14apipb/terminal.proto\"\xeb\x01\n" +
+	"\x13apipb/history.proto\x12\rmuxvia.api.v1\x1a\x14apipb/terminal.proto\"\xeb\x01\n" +
 	"\tCellStyle\x12\x1e\n" +
 	"\n" +
 	"foreground\x18\x01 \x01(\tR\n" +
@@ -2119,23 +2119,23 @@ const file_apipb_history_proto_rawDesc = "" +
 	"\tunderline\x18\x05 \x01(\bR\tunderline\x12\x14\n" +
 	"\x05blink\x18\x06 \x01(\bR\x05blink\x12\x18\n" +
 	"\areverse\x18\a \x01(\bR\areverse\x12$\n" +
-	"\rstrikethrough\x18\b \x01(\bR\rstrikethrough\"\xa7\x01\n" +
+	"\rstrikethrough\x18\b \x01(\bR\rstrikethrough\"\xa8\x01\n" +
 	"\n" +
 	"ScreenCell\x12\x18\n" +
 	"\acontent\x18\x01 \x01(\tR\acontent\x12\x14\n" +
-	"\x05width\x18\x02 \x01(\x05R\x05width\x12-\n" +
-	"\x05style\x18\x03 \x01(\v2\x17.termx.api.v1.CellStyleR\x05style\x12\x19\n" +
+	"\x05width\x18\x02 \x01(\x05R\x05width\x12.\n" +
+	"\x05style\x18\x03 \x01(\v2\x18.muxvia.api.v1.CellStyleR\x05style\x12\x19\n" +
 	"\blink_url\x18\x04 \x01(\tR\alinkUrl\x12\x1f\n" +
 	"\vlink_params\x18\x05 \x01(\tR\n" +
-	"linkParams\"q\n" +
-	"\tScreenRow\x12.\n" +
-	"\x05cells\x18\x01 \x03(\v2\x18.termx.api.v1.ScreenCellR\x05cells\x124\n" +
-	"\ttail_fill\x18\x02 \x01(\v2\x17.termx.api.v1.CellStyleR\btailFill\"\x95\x01\n" +
+	"linkParams\"s\n" +
+	"\tScreenRow\x12/\n" +
+	"\x05cells\x18\x01 \x03(\v2\x19.muxvia.api.v1.ScreenCellR\x05cells\x125\n" +
+	"\ttail_fill\x18\x02 \x01(\v2\x18.muxvia.api.v1.CellStyleR\btailFill\"\x96\x01\n" +
 	"\x0eTerminalCursor\x12\x10\n" +
 	"\x03row\x18\x01 \x01(\x05R\x03row\x12\x10\n" +
 	"\x03col\x18\x02 \x01(\x05R\x03col\x12\x18\n" +
-	"\avisible\x18\x03 \x01(\bR\avisible\x12/\n" +
-	"\x05shape\x18\x04 \x01(\x0e2\x19.termx.api.v1.CursorShapeR\x05shape\x12\x14\n" +
+	"\avisible\x18\x03 \x01(\bR\avisible\x120\n" +
+	"\x05shape\x18\x04 \x01(\x0e2\x1a.muxvia.api.v1.CursorShapeR\x05shape\x12\x14\n" +
 	"\x05blink\x18\x05 \x01(\bR\x05blink\"\xb4\x03\n" +
 	"\rTerminalModes\x12)\n" +
 	"\x10alternate_screen\x18\x01 \x01(\bR\x0falternateScreen\x12)\n" +
@@ -2149,40 +2149,40 @@ const file_apipb_history_proto_rawDesc = "" +
 	"\x0fbracketed_paste\x18\t \x01(\bR\x0ebracketedPaste\x12-\n" +
 	"\x12application_cursor\x18\n" +
 	" \x01(\bR\x11applicationCursor\x12\x1b\n" +
-	"\tauto_wrap\x18\v \x01(\bR\bautoWrap\"\xa3\x01\n" +
+	"\tauto_wrap\x18\v \x01(\bR\bautoWrap\"\xa4\x01\n" +
 	"\rHistoryCursor\x12\x17\n" +
 	"\aline_id\x18\x01 \x01(\x04R\x06lineId\x12\x1e\n" +
 	"\vrow_in_line\x18\x02 \x01(\x05R\trowInLine\x12\x1b\n" +
-	"\trow_index\x18\x03 \x01(\x05R\browIndex\x12<\n" +
-	"\asegment\x18\x04 \x01(\x0e2\".termx.api.v1.HistoryCursorSegmentR\asegment\"\x88\x01\n" +
+	"\trow_index\x18\x03 \x01(\x05R\browIndex\x12=\n" +
+	"\asegment\x18\x04 \x01(\x0e2#.muxvia.api.v1.HistoryCursorSegmentR\asegment\"\x88\x01\n" +
 	"\fHistoryRange\x12\"\n" +
 	"\rstart_line_id\x18\x01 \x01(\x04R\vstartLineId\x12\x1b\n" +
 	"\tstart_col\x18\x02 \x01(\x05R\bstartCol\x12\x1e\n" +
 	"\vend_line_id\x18\x03 \x01(\x04R\tendLineId\x12\x17\n" +
-	"\aend_col\x18\x04 \x01(\x05R\x06endCol\"\xb8\x04\n" +
-	"\x14HistoryWindowCommand\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x123\n" +
-	"\x04mode\x18\x03 \x01(\x0e2\x1f.termx.api.v1.HistoryWindowModeR\x04mode\x12#\n" +
+	"\aend_col\x18\x04 \x01(\x05R\x06endCol\"\xbd\x04\n" +
+	"\x14HistoryWindowCommand\x126\n" +
+	"\bterminal\x18\x02 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminal\x124\n" +
+	"\x04mode\x18\x03 \x01(\x0e2 .muxvia.api.v1.HistoryWindowModeR\x04mode\x12#\n" +
 	"\rbefore_offset\x18\x04 \x01(\x05R\fbeforeOffset\x12\x14\n" +
 	"\x05limit\x18\x05 \x01(\x05R\x05limit\x12\x12\n" +
 	"\x04cols\x18\x06 \x01(\x05R\x04cols\x12\x14\n" +
 	"\x05token\x18\a \x01(\tR\x05token\x12-\n" +
-	"\x12history_generation\x18\b \x01(\x04R\x11historyGeneration\x12@\n" +
-	"\rbefore_cursor\x18\t \x01(\v2\x1b.termx.api.v1.HistoryCursorR\fbeforeCursor\x12>\n" +
+	"\x12history_generation\x18\b \x01(\x04R\x11historyGeneration\x12A\n" +
+	"\rbefore_cursor\x18\t \x01(\v2\x1c.muxvia.api.v1.HistoryCursorR\fbeforeCursor\x12?\n" +
 	"\fafter_cursor\x18\n" +
-	" \x01(\v2\x1b.termx.api.v1.HistoryCursorR\vafterCursor\x123\n" +
+	" \x01(\v2\x1c.muxvia.api.v1.HistoryCursorR\vafterCursor\x123\n" +
 	"\x16boundary_first_line_id\x18\v \x01(\x04R\x13boundaryFirstLineId\x121\n" +
-	"\x15boundary_last_line_id\x18\f \x01(\x04R\x12boundaryLastLineId\x120\n" +
-	"\x05range\x18\r \x01(\v2\x1a.termx.api.v1.HistoryRangeR\x05rangeJ\x04\b\x01\x10\x02\"\x8d\x01\n" +
-	"\x12HistoryCopyCommand\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x12:\n" +
-	"\x06window\x18\x03 \x01(\v2\".termx.api.v1.HistoryWindowCommandR\x06windowJ\x04\b\x01\x10\x02\"\x99\x01\n" +
-	"\x15HistoryReleaseCommand\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x12\x14\n" +
+	"\x15boundary_last_line_id\x18\f \x01(\x04R\x12boundaryLastLineId\x121\n" +
+	"\x05range\x18\r \x01(\v2\x1b.muxvia.api.v1.HistoryRangeR\x05rangeJ\x04\b\x01\x10\x02\"\x8f\x01\n" +
+	"\x12HistoryCopyCommand\x126\n" +
+	"\bterminal\x18\x02 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminal\x12;\n" +
+	"\x06window\x18\x03 \x01(\v2#.muxvia.api.v1.HistoryWindowCommandR\x06windowJ\x04\b\x01\x10\x02\"\x9a\x01\n" +
+	"\x15HistoryReleaseCommand\x126\n" +
+	"\bterminal\x18\x02 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminal\x12\x14\n" +
 	"\x05token\x18\x03 \x01(\tR\x05token\x12-\n" +
-	"\x12history_generation\x18\x04 \x01(\x04R\x11historyGenerationJ\x04\b\x01\x10\x02\"Z\n" +
-	"\x1bHistoryBacklogStatusCommand\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"\xc2\x03\n" +
+	"\x12history_generation\x18\x04 \x01(\x04R\x11historyGenerationJ\x04\b\x01\x10\x02\"[\n" +
+	"\x1bHistoryBacklogStatusCommand\x126\n" +
+	"\bterminal\x18\x02 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"\xc2\x03\n" +
 	"\x0fHistoryLineSpan\x12\x1b\n" +
 	"\tstart_row\x18\x01 \x01(\x05R\bstartRow\x12\x17\n" +
 	"\aend_row\x18\x02 \x01(\x05R\x06endRow\x12\x19\n" +
@@ -2199,15 +2199,15 @@ const file_apipb_history_proto_rawDesc = "" +
 	"\x17timestamp_end_unix_nano\x18\n" +
 	" \x01(\x03R\x14timestampEndUnixNano\x12%\n" +
 	"\x0eclipped_before\x18\v \x01(\bR\rclippedBefore\x12#\n" +
-	"\rclipped_after\x18\f \x01(\bR\fclippedAfter\"\xba\x04\n" +
+	"\rclipped_after\x18\f \x01(\bR\fclippedAfter\"\xbd\x04\n" +
 	"\n" +
-	"HistoryRow\x12)\n" +
-	"\x03row\x18\x01 \x01(\v2\x17.termx.api.v1.ScreenRowR\x03row\x12.\n" +
+	"HistoryRow\x12*\n" +
+	"\x03row\x18\x01 \x01(\v2\x18.muxvia.api.v1.ScreenRowR\x03row\x12.\n" +
 	"\x13timestamp_unix_nano\x18\x02 \x01(\x03R\x11timestampUnixNano\x12\x19\n" +
 	"\brow_kind\x18\x03 \x01(\tR\arowKind\x12\x18\n" +
-	"\awrapped\x18\x04 \x01(\bR\awrapped\x128\n" +
-	"\townership\x18\x05 \x01(\x0e2\x1a.termx.api.v1.RowOwnershipR\townership\x12<\n" +
-	"\asegment\x18\x06 \x01(\x0e2\".termx.api.v1.HistoryCursorSegmentR\asegment\x12\x1d\n" +
+	"\awrapped\x18\x04 \x01(\bR\awrapped\x129\n" +
+	"\townership\x18\x05 \x01(\x0e2\x1b.muxvia.api.v1.RowOwnershipR\townership\x12=\n" +
+	"\asegment\x18\x06 \x01(\x0e2#.muxvia.api.v1.HistoryCursorSegmentR\asegment\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\a \x01(\x04R\tsessionId\x12\x19\n" +
 	"\bframe_id\x18\b \x01(\x04R\aframeId\x12\x1d\n" +
@@ -2221,14 +2221,14 @@ const file_apipb_history_proto_rawDesc = "" +
 	"\x0escreen_row_set\x18\f \x01(\bR\fscreenRowSet\x12\x1b\n" +
 	"\trow_index\x18\r \x01(\x05R\browIndex\x12&\n" +
 	"\x0flogical_line_id\x18\x0e \x01(\x04R\rlogicalLineId\x12\x1e\n" +
-	"\vrow_in_line\x18\x0f \x01(\x05R\trowInLine\"\x9d\x06\n" +
-	"\x13HistoryWindowResult\x125\n" +
-	"\bterminal\x18\x01 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x12\x14\n" +
-	"\x05token\x18\x02 \x01(\tR\x05token\x12B\n" +
-	"\toperation\x18\x03 \x01(\x0e2$.termx.api.v1.HistoryWindowOperationR\toperation\x12.\n" +
-	"\x04size\x18\x04 \x01(\v2\x1a.termx.api.v1.TerminalSizeR\x04size\x12,\n" +
-	"\x04rows\x18\x05 \x03(\v2\x18.termx.api.v1.HistoryRowR\x04rows\x123\n" +
-	"\x05lines\x18\x06 \x03(\v2\x1d.termx.api.v1.HistoryLineSpanR\x05lines\x12#\n" +
+	"\vrow_in_line\x18\x0f \x01(\x05R\trowInLine\"\xa3\x06\n" +
+	"\x13HistoryWindowResult\x126\n" +
+	"\bterminal\x18\x01 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminal\x12\x14\n" +
+	"\x05token\x18\x02 \x01(\tR\x05token\x12C\n" +
+	"\toperation\x18\x03 \x01(\x0e2%.muxvia.api.v1.HistoryWindowOperationR\toperation\x12/\n" +
+	"\x04size\x18\x04 \x01(\v2\x1b.muxvia.api.v1.TerminalSizeR\x04size\x12-\n" +
+	"\x04rows\x18\x05 \x03(\v2\x19.muxvia.api.v1.HistoryRowR\x04rows\x124\n" +
+	"\x05lines\x18\x06 \x03(\v2\x1e.muxvia.api.v1.HistoryLineSpanR\x05lines\x12#\n" +
 	"\rbefore_offset\x18\a \x01(\x05R\fbeforeOffset\x12\x1f\n" +
 	"\vloaded_rows\x18\b \x01(\x05R\n" +
 	"loadedRows\x12\x1d\n" +
@@ -2244,13 +2244,13 @@ const file_apipb_history_proto_rawDesc = "" +
 	"\vlast_row_id\x18\x0f \x01(\x04R\tlastRowId\x12\"\n" +
 	"\rfirst_line_id\x18\x10 \x01(\x04R\vfirstLineId\x12 \n" +
 	"\flast_line_id\x18\x11 \x01(\x04R\n" +
-	"lastLineId\x123\n" +
-	"\x06cursor\x18\x12 \x01(\v2\x1b.termx.api.v1.HistoryCursorR\x06cursor\x12.\n" +
+	"lastLineId\x124\n" +
+	"\x06cursor\x18\x12 \x01(\v2\x1c.muxvia.api.v1.HistoryCursorR\x06cursor\x12.\n" +
 	"\x13timestamp_unix_nano\x18\x13 \x01(\x03R\x11timestampUnixNano\"'\n" +
 	"\x11HistoryCopyResult\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text\"\xb6\x04\n" +
-	"\x1aHistoryBacklogStatusResult\x125\n" +
-	"\bterminal\x18\x01 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x12'\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\"\xb7\x04\n" +
+	"\x1aHistoryBacklogStatusResult\x126\n" +
+	"\bterminal\x18\x01 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminal\x12'\n" +
 	"\x0fhistory_enabled\x18\x02 \x01(\bR\x0ehistoryEnabled\x12\x1f\n" +
 	"\vapplied_seq\x18\x03 \x01(\x04R\n" +
 	"appliedSeq\x12\x1d\n" +
@@ -2265,26 +2265,26 @@ const file_apipb_history_proto_rawDesc = "" +
 	" \x01(\x04R\x12backpressureEvents\x126\n" +
 	"\x17backpressure_wait_nanos\x18\v \x01(\x03R\x15backpressureWaitNanos\x12\x1b\n" +
 	"\tin_flight\x18\f \x01(\bR\binFlight\x12\x16\n" +
-	"\x06closed\x18\r \x01(\bR\x06closed\"S\n" +
-	"\x14LiveScreenGetCommand\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"\x87\x01\n" +
-	"\x1bLiveInvalidationNextCommand\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x12+\n" +
-	"\x11observed_revision\x18\x03 \x01(\x04R\x10observedRevisionJ\x04\b\x01\x10\x02\"\x91\x03\n" +
-	"\x12NativeScreenResult\x125\n" +
-	"\bterminal\x18\x01 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x12#\n" +
-	"\rlive_revision\x18\x02 \x01(\x04R\fliveRevision\x12.\n" +
-	"\x04size\x18\x03 \x01(\v2\x1a.termx.api.v1.TerminalSizeR\x04size\x12+\n" +
-	"\x04rows\x18\x04 \x03(\v2\x17.termx.api.v1.ScreenRowR\x04rows\x12)\n" +
-	"\x10alternate_screen\x18\x05 \x01(\bR\x0falternateScreen\x124\n" +
-	"\x06cursor\x18\x06 \x01(\v2\x1c.termx.api.v1.TerminalCursorR\x06cursor\x121\n" +
-	"\x05modes\x18\a \x01(\v2\x1b.termx.api.v1.TerminalModesR\x05modes\x12.\n" +
-	"\x13timestamp_unix_nano\x18\b \x01(\x03R\x11timestampUnixNano\"t\n" +
-	"\x16LiveInvalidationResult\x125\n" +
-	"\bterminal\x18\x01 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x12#\n" +
-	"\rlive_revision\x18\x02 \x01(\x04R\fliveRevision\"r\n" +
-	"\x14LiveInvalidatedEvent\x125\n" +
-	"\bterminal\x18\x01 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x12#\n" +
+	"\x06closed\x18\r \x01(\bR\x06closed\"T\n" +
+	"\x14LiveScreenGetCommand\x126\n" +
+	"\bterminal\x18\x02 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"\x88\x01\n" +
+	"\x1bLiveInvalidationNextCommand\x126\n" +
+	"\bterminal\x18\x02 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminal\x12+\n" +
+	"\x11observed_revision\x18\x03 \x01(\x04R\x10observedRevisionJ\x04\b\x01\x10\x02\"\x96\x03\n" +
+	"\x12NativeScreenResult\x126\n" +
+	"\bterminal\x18\x01 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminal\x12#\n" +
+	"\rlive_revision\x18\x02 \x01(\x04R\fliveRevision\x12/\n" +
+	"\x04size\x18\x03 \x01(\v2\x1b.muxvia.api.v1.TerminalSizeR\x04size\x12,\n" +
+	"\x04rows\x18\x04 \x03(\v2\x18.muxvia.api.v1.ScreenRowR\x04rows\x12)\n" +
+	"\x10alternate_screen\x18\x05 \x01(\bR\x0falternateScreen\x125\n" +
+	"\x06cursor\x18\x06 \x01(\v2\x1d.muxvia.api.v1.TerminalCursorR\x06cursor\x122\n" +
+	"\x05modes\x18\a \x01(\v2\x1c.muxvia.api.v1.TerminalModesR\x05modes\x12.\n" +
+	"\x13timestamp_unix_nano\x18\b \x01(\x03R\x11timestampUnixNano\"u\n" +
+	"\x16LiveInvalidationResult\x126\n" +
+	"\bterminal\x18\x01 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminal\x12#\n" +
+	"\rlive_revision\x18\x02 \x01(\x04R\fliveRevision\"s\n" +
+	"\x14LiveInvalidatedEvent\x126\n" +
+	"\bterminal\x18\x01 \x01(\v2\x1a.muxvia.api.v1.TerminalRefR\bterminal\x12#\n" +
 	"\rlive_revision\x18\x02 \x01(\x04R\fliveRevision*\xb6\x01\n" +
 	"\x11HistoryWindowMode\x12#\n" +
 	"\x1fHISTORY_WINDOW_MODE_UNSPECIFIED\x10\x00\x12\x1e\n" +
@@ -2313,7 +2313,7 @@ const file_apipb_history_proto_rawDesc = "" +
 	"\x18CURSOR_SHAPE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12CURSOR_SHAPE_BLOCK\x10\x01\x12\x1a\n" +
 	"\x16CURSOR_SHAPE_UNDERLINE\x10\x02\x12\x14\n" +
-	"\x10CURSOR_SHAPE_BAR\x10\x03B%Z#github.com/lozzow/termx/proto/apipbb\x06proto3"
+	"\x10CURSOR_SHAPE_BAR\x10\x03B&Z$github.com/muxvia/muxvia/proto/apipbb\x06proto3"
 
 var (
 	file_apipb_history_proto_rawDescOnce sync.Once
@@ -2330,69 +2330,69 @@ func file_apipb_history_proto_rawDescGZIP() []byte {
 var file_apipb_history_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
 var file_apipb_history_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_apipb_history_proto_goTypes = []any{
-	(HistoryWindowMode)(0),              // 0: termx.api.v1.HistoryWindowMode
-	(HistoryWindowOperation)(0),         // 1: termx.api.v1.HistoryWindowOperation
-	(HistoryCursorSegment)(0),           // 2: termx.api.v1.HistoryCursorSegment
-	(RowOwnership)(0),                   // 3: termx.api.v1.RowOwnership
-	(CursorShape)(0),                    // 4: termx.api.v1.CursorShape
-	(*CellStyle)(nil),                   // 5: termx.api.v1.CellStyle
-	(*ScreenCell)(nil),                  // 6: termx.api.v1.ScreenCell
-	(*ScreenRow)(nil),                   // 7: termx.api.v1.ScreenRow
-	(*TerminalCursor)(nil),              // 8: termx.api.v1.TerminalCursor
-	(*TerminalModes)(nil),               // 9: termx.api.v1.TerminalModes
-	(*HistoryCursor)(nil),               // 10: termx.api.v1.HistoryCursor
-	(*HistoryRange)(nil),                // 11: termx.api.v1.HistoryRange
-	(*HistoryWindowCommand)(nil),        // 12: termx.api.v1.HistoryWindowCommand
-	(*HistoryCopyCommand)(nil),          // 13: termx.api.v1.HistoryCopyCommand
-	(*HistoryReleaseCommand)(nil),       // 14: termx.api.v1.HistoryReleaseCommand
-	(*HistoryBacklogStatusCommand)(nil), // 15: termx.api.v1.HistoryBacklogStatusCommand
-	(*HistoryLineSpan)(nil),             // 16: termx.api.v1.HistoryLineSpan
-	(*HistoryRow)(nil),                  // 17: termx.api.v1.HistoryRow
-	(*HistoryWindowResult)(nil),         // 18: termx.api.v1.HistoryWindowResult
-	(*HistoryCopyResult)(nil),           // 19: termx.api.v1.HistoryCopyResult
-	(*HistoryBacklogStatusResult)(nil),  // 20: termx.api.v1.HistoryBacklogStatusResult
-	(*LiveScreenGetCommand)(nil),        // 21: termx.api.v1.LiveScreenGetCommand
-	(*LiveInvalidationNextCommand)(nil), // 22: termx.api.v1.LiveInvalidationNextCommand
-	(*NativeScreenResult)(nil),          // 23: termx.api.v1.NativeScreenResult
-	(*LiveInvalidationResult)(nil),      // 24: termx.api.v1.LiveInvalidationResult
-	(*LiveInvalidatedEvent)(nil),        // 25: termx.api.v1.LiveInvalidatedEvent
-	(*TerminalRef)(nil),                 // 26: termx.api.v1.TerminalRef
-	(*TerminalSize)(nil),                // 27: termx.api.v1.TerminalSize
+	(HistoryWindowMode)(0),              // 0: muxvia.api.v1.HistoryWindowMode
+	(HistoryWindowOperation)(0),         // 1: muxvia.api.v1.HistoryWindowOperation
+	(HistoryCursorSegment)(0),           // 2: muxvia.api.v1.HistoryCursorSegment
+	(RowOwnership)(0),                   // 3: muxvia.api.v1.RowOwnership
+	(CursorShape)(0),                    // 4: muxvia.api.v1.CursorShape
+	(*CellStyle)(nil),                   // 5: muxvia.api.v1.CellStyle
+	(*ScreenCell)(nil),                  // 6: muxvia.api.v1.ScreenCell
+	(*ScreenRow)(nil),                   // 7: muxvia.api.v1.ScreenRow
+	(*TerminalCursor)(nil),              // 8: muxvia.api.v1.TerminalCursor
+	(*TerminalModes)(nil),               // 9: muxvia.api.v1.TerminalModes
+	(*HistoryCursor)(nil),               // 10: muxvia.api.v1.HistoryCursor
+	(*HistoryRange)(nil),                // 11: muxvia.api.v1.HistoryRange
+	(*HistoryWindowCommand)(nil),        // 12: muxvia.api.v1.HistoryWindowCommand
+	(*HistoryCopyCommand)(nil),          // 13: muxvia.api.v1.HistoryCopyCommand
+	(*HistoryReleaseCommand)(nil),       // 14: muxvia.api.v1.HistoryReleaseCommand
+	(*HistoryBacklogStatusCommand)(nil), // 15: muxvia.api.v1.HistoryBacklogStatusCommand
+	(*HistoryLineSpan)(nil),             // 16: muxvia.api.v1.HistoryLineSpan
+	(*HistoryRow)(nil),                  // 17: muxvia.api.v1.HistoryRow
+	(*HistoryWindowResult)(nil),         // 18: muxvia.api.v1.HistoryWindowResult
+	(*HistoryCopyResult)(nil),           // 19: muxvia.api.v1.HistoryCopyResult
+	(*HistoryBacklogStatusResult)(nil),  // 20: muxvia.api.v1.HistoryBacklogStatusResult
+	(*LiveScreenGetCommand)(nil),        // 21: muxvia.api.v1.LiveScreenGetCommand
+	(*LiveInvalidationNextCommand)(nil), // 22: muxvia.api.v1.LiveInvalidationNextCommand
+	(*NativeScreenResult)(nil),          // 23: muxvia.api.v1.NativeScreenResult
+	(*LiveInvalidationResult)(nil),      // 24: muxvia.api.v1.LiveInvalidationResult
+	(*LiveInvalidatedEvent)(nil),        // 25: muxvia.api.v1.LiveInvalidatedEvent
+	(*TerminalRef)(nil),                 // 26: muxvia.api.v1.TerminalRef
+	(*TerminalSize)(nil),                // 27: muxvia.api.v1.TerminalSize
 }
 var file_apipb_history_proto_depIdxs = []int32{
-	5,  // 0: termx.api.v1.ScreenCell.style:type_name -> termx.api.v1.CellStyle
-	6,  // 1: termx.api.v1.ScreenRow.cells:type_name -> termx.api.v1.ScreenCell
-	5,  // 2: termx.api.v1.ScreenRow.tail_fill:type_name -> termx.api.v1.CellStyle
-	4,  // 3: termx.api.v1.TerminalCursor.shape:type_name -> termx.api.v1.CursorShape
-	2,  // 4: termx.api.v1.HistoryCursor.segment:type_name -> termx.api.v1.HistoryCursorSegment
-	26, // 5: termx.api.v1.HistoryWindowCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	0,  // 6: termx.api.v1.HistoryWindowCommand.mode:type_name -> termx.api.v1.HistoryWindowMode
-	10, // 7: termx.api.v1.HistoryWindowCommand.before_cursor:type_name -> termx.api.v1.HistoryCursor
-	10, // 8: termx.api.v1.HistoryWindowCommand.after_cursor:type_name -> termx.api.v1.HistoryCursor
-	11, // 9: termx.api.v1.HistoryWindowCommand.range:type_name -> termx.api.v1.HistoryRange
-	26, // 10: termx.api.v1.HistoryCopyCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	12, // 11: termx.api.v1.HistoryCopyCommand.window:type_name -> termx.api.v1.HistoryWindowCommand
-	26, // 12: termx.api.v1.HistoryReleaseCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	26, // 13: termx.api.v1.HistoryBacklogStatusCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	7,  // 14: termx.api.v1.HistoryRow.row:type_name -> termx.api.v1.ScreenRow
-	3,  // 15: termx.api.v1.HistoryRow.ownership:type_name -> termx.api.v1.RowOwnership
-	2,  // 16: termx.api.v1.HistoryRow.segment:type_name -> termx.api.v1.HistoryCursorSegment
-	26, // 17: termx.api.v1.HistoryWindowResult.terminal:type_name -> termx.api.v1.TerminalRef
-	1,  // 18: termx.api.v1.HistoryWindowResult.operation:type_name -> termx.api.v1.HistoryWindowOperation
-	27, // 19: termx.api.v1.HistoryWindowResult.size:type_name -> termx.api.v1.TerminalSize
-	17, // 20: termx.api.v1.HistoryWindowResult.rows:type_name -> termx.api.v1.HistoryRow
-	16, // 21: termx.api.v1.HistoryWindowResult.lines:type_name -> termx.api.v1.HistoryLineSpan
-	10, // 22: termx.api.v1.HistoryWindowResult.cursor:type_name -> termx.api.v1.HistoryCursor
-	26, // 23: termx.api.v1.HistoryBacklogStatusResult.terminal:type_name -> termx.api.v1.TerminalRef
-	26, // 24: termx.api.v1.LiveScreenGetCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	26, // 25: termx.api.v1.LiveInvalidationNextCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	26, // 26: termx.api.v1.NativeScreenResult.terminal:type_name -> termx.api.v1.TerminalRef
-	27, // 27: termx.api.v1.NativeScreenResult.size:type_name -> termx.api.v1.TerminalSize
-	7,  // 28: termx.api.v1.NativeScreenResult.rows:type_name -> termx.api.v1.ScreenRow
-	8,  // 29: termx.api.v1.NativeScreenResult.cursor:type_name -> termx.api.v1.TerminalCursor
-	9,  // 30: termx.api.v1.NativeScreenResult.modes:type_name -> termx.api.v1.TerminalModes
-	26, // 31: termx.api.v1.LiveInvalidationResult.terminal:type_name -> termx.api.v1.TerminalRef
-	26, // 32: termx.api.v1.LiveInvalidatedEvent.terminal:type_name -> termx.api.v1.TerminalRef
+	5,  // 0: muxvia.api.v1.ScreenCell.style:type_name -> muxvia.api.v1.CellStyle
+	6,  // 1: muxvia.api.v1.ScreenRow.cells:type_name -> muxvia.api.v1.ScreenCell
+	5,  // 2: muxvia.api.v1.ScreenRow.tail_fill:type_name -> muxvia.api.v1.CellStyle
+	4,  // 3: muxvia.api.v1.TerminalCursor.shape:type_name -> muxvia.api.v1.CursorShape
+	2,  // 4: muxvia.api.v1.HistoryCursor.segment:type_name -> muxvia.api.v1.HistoryCursorSegment
+	26, // 5: muxvia.api.v1.HistoryWindowCommand.terminal:type_name -> muxvia.api.v1.TerminalRef
+	0,  // 6: muxvia.api.v1.HistoryWindowCommand.mode:type_name -> muxvia.api.v1.HistoryWindowMode
+	10, // 7: muxvia.api.v1.HistoryWindowCommand.before_cursor:type_name -> muxvia.api.v1.HistoryCursor
+	10, // 8: muxvia.api.v1.HistoryWindowCommand.after_cursor:type_name -> muxvia.api.v1.HistoryCursor
+	11, // 9: muxvia.api.v1.HistoryWindowCommand.range:type_name -> muxvia.api.v1.HistoryRange
+	26, // 10: muxvia.api.v1.HistoryCopyCommand.terminal:type_name -> muxvia.api.v1.TerminalRef
+	12, // 11: muxvia.api.v1.HistoryCopyCommand.window:type_name -> muxvia.api.v1.HistoryWindowCommand
+	26, // 12: muxvia.api.v1.HistoryReleaseCommand.terminal:type_name -> muxvia.api.v1.TerminalRef
+	26, // 13: muxvia.api.v1.HistoryBacklogStatusCommand.terminal:type_name -> muxvia.api.v1.TerminalRef
+	7,  // 14: muxvia.api.v1.HistoryRow.row:type_name -> muxvia.api.v1.ScreenRow
+	3,  // 15: muxvia.api.v1.HistoryRow.ownership:type_name -> muxvia.api.v1.RowOwnership
+	2,  // 16: muxvia.api.v1.HistoryRow.segment:type_name -> muxvia.api.v1.HistoryCursorSegment
+	26, // 17: muxvia.api.v1.HistoryWindowResult.terminal:type_name -> muxvia.api.v1.TerminalRef
+	1,  // 18: muxvia.api.v1.HistoryWindowResult.operation:type_name -> muxvia.api.v1.HistoryWindowOperation
+	27, // 19: muxvia.api.v1.HistoryWindowResult.size:type_name -> muxvia.api.v1.TerminalSize
+	17, // 20: muxvia.api.v1.HistoryWindowResult.rows:type_name -> muxvia.api.v1.HistoryRow
+	16, // 21: muxvia.api.v1.HistoryWindowResult.lines:type_name -> muxvia.api.v1.HistoryLineSpan
+	10, // 22: muxvia.api.v1.HistoryWindowResult.cursor:type_name -> muxvia.api.v1.HistoryCursor
+	26, // 23: muxvia.api.v1.HistoryBacklogStatusResult.terminal:type_name -> muxvia.api.v1.TerminalRef
+	26, // 24: muxvia.api.v1.LiveScreenGetCommand.terminal:type_name -> muxvia.api.v1.TerminalRef
+	26, // 25: muxvia.api.v1.LiveInvalidationNextCommand.terminal:type_name -> muxvia.api.v1.TerminalRef
+	26, // 26: muxvia.api.v1.NativeScreenResult.terminal:type_name -> muxvia.api.v1.TerminalRef
+	27, // 27: muxvia.api.v1.NativeScreenResult.size:type_name -> muxvia.api.v1.TerminalSize
+	7,  // 28: muxvia.api.v1.NativeScreenResult.rows:type_name -> muxvia.api.v1.ScreenRow
+	8,  // 29: muxvia.api.v1.NativeScreenResult.cursor:type_name -> muxvia.api.v1.TerminalCursor
+	9,  // 30: muxvia.api.v1.NativeScreenResult.modes:type_name -> muxvia.api.v1.TerminalModes
+	26, // 31: muxvia.api.v1.LiveInvalidationResult.terminal:type_name -> muxvia.api.v1.TerminalRef
+	26, // 32: muxvia.api.v1.LiveInvalidatedEvent.terminal:type_name -> muxvia.api.v1.TerminalRef
 	33, // [33:33] is the sub-list for method output_type
 	33, // [33:33] is the sub-list for method input_type
 	33, // [33:33] is the sub-list for extension type_name

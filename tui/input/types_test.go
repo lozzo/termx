@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lozzow/termx/tui/shortcut"
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/tui/shortcut"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 func assertShortcutAction(t *testing.T, intent Intent, actionID string) {

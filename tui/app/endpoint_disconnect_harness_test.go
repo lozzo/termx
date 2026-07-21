@@ -3,14 +3,14 @@ package app
 import (
 	"context"
 	"errors"
-	"github.com/lozzow/termx/tui/testkit"
+	"github.com/muxvia/muxvia/tui/testkit"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/tui/port"
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/tui/port"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 func TestEndpointDisconnectHarnessKeepsPaneReasonAfterEmptyInventory(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 // Error 是 public runtime 可以稳定分类的 Cloud Companion 错误。

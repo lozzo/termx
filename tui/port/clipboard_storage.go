@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 // ClipboardStorageService 是 reducer-owned clipboard history 的持久化 application port。

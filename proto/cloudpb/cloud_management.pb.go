@@ -598,7 +598,7 @@ func (x *PageResponse) GetNextCursor() *PageCursor {
 // ManagementActorProjection 是审计可展示的最小 actor 信息。
 type ManagementActorProjection struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorKind     ManagementActorKind    `protobuf:"varint,1,opt,name=actor_kind,json=actorKind,proto3,enum=termx.cloud.v1.ManagementActorKind" json:"actor_kind,omitempty"`
+	ActorKind     ManagementActorKind    `protobuf:"varint,1,opt,name=actor_kind,json=actorKind,proto3,enum=muxvia.cloud.v1.ManagementActorKind" json:"actor_kind,omitempty"`
 	ActorId       string                 `protobuf:"bytes,2,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
 	DisplayLabel  string                 `protobuf:"bytes,3,opt,name=display_label,json=displayLabel,proto3" json:"display_label,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -659,7 +659,7 @@ func (x *ManagementActorProjection) GetDisplayLabel() string {
 // ManagementErrorDetail 是 Proto JSON API 的稳定错误 detail。
 type ManagementErrorDetail struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	Code             ManagementErrorCode    `protobuf:"varint,1,opt,name=code,proto3,enum=termx.cloud.v1.ManagementErrorCode" json:"code,omitempty"`
+	Code             ManagementErrorCode    `protobuf:"varint,1,opt,name=code,proto3,enum=muxvia.cloud.v1.ManagementErrorCode" json:"code,omitempty"`
 	Message          string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	Retryable        bool                   `protobuf:"varint,3,opt,name=retryable,proto3" json:"retryable,omitempty"`
 	RetryAfterMillis uint64                 `protobuf:"varint,4,opt,name=retry_after_millis,json=retryAfterMillis,proto3" json:"retry_after_millis,omitempty"`
@@ -870,7 +870,7 @@ func (x *OperatorLoginRequest) GetAccessToken() []byte {
 type OperatorSessionProjection struct {
 	state                     protoimpl.MessageState `protogen:"open.v1"`
 	OperatorId                string                 `protobuf:"bytes,1,opt,name=operator_id,json=operatorId,proto3" json:"operator_id,omitempty"`
-	ActorKind                 ManagementActorKind    `protobuf:"varint,2,opt,name=actor_kind,json=actorKind,proto3,enum=termx.cloud.v1.ManagementActorKind" json:"actor_kind,omitempty"`
+	ActorKind                 ManagementActorKind    `protobuf:"varint,2,opt,name=actor_kind,json=actorKind,proto3,enum=muxvia.cloud.v1.ManagementActorKind" json:"actor_kind,omitempty"`
 	AuthenticatedAtUnixMillis int64                  `protobuf:"varint,3,opt,name=authenticated_at_unix_millis,json=authenticatedAtUnixMillis,proto3" json:"authenticated_at_unix_millis,omitempty"`
 	ExpiresAtUnixMillis       int64                  `protobuf:"varint,4,opt,name=expires_at_unix_millis,json=expiresAtUnixMillis,proto3" json:"expires_at_unix_millis,omitempty"`
 	unknownFields             protoimpl.UnknownFields
@@ -1123,7 +1123,7 @@ func (x *OperatorAccountSummary) GetRelayQuota() *RelayQuotaPeriod {
 type ListOperatorAccountsRequest struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	Query              string                 `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`
-	SubscriptionStatus SubscriptionStatus     `protobuf:"varint,2,opt,name=subscription_status,json=subscriptionStatus,proto3,enum=termx.cloud.v1.SubscriptionStatus" json:"subscription_status,omitempty"`
+	SubscriptionStatus SubscriptionStatus     `protobuf:"varint,2,opt,name=subscription_status,json=subscriptionStatus,proto3,enum=muxvia.cloud.v1.SubscriptionStatus" json:"subscription_status,omitempty"`
 	Page               *PageRequest           `protobuf:"bytes,3,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
@@ -1355,7 +1355,7 @@ func (x *GetOperatorAccountResponse) GetCommands() []*ManagementCommandProjectio
 type OperatorTransitionSubscriptionRequest struct {
 	state         protoimpl.MessageState     `protogen:"open.v1"`
 	AccountId     string                     `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	Transition    SubscriptionTransitionKind `protobuf:"varint,2,opt,name=transition,proto3,enum=termx.cloud.v1.SubscriptionTransitionKind" json:"transition,omitempty"`
+	Transition    SubscriptionTransitionKind `protobuf:"varint,2,opt,name=transition,proto3,enum=muxvia.cloud.v1.SubscriptionTransitionKind" json:"transition,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1455,7 +1455,7 @@ type AccountDeviceProjection struct {
 	DeviceId        string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	DisplayName     string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	Platform        string                 `protobuf:"bytes,4,opt,name=platform,proto3" json:"platform,omitempty"`
-	DeviceKind      ManagedDeviceKind      `protobuf:"varint,5,opt,name=device_kind,json=deviceKind,proto3,enum=termx.cloud.v1.ManagedDeviceKind" json:"device_kind,omitempty"`
+	DeviceKind      ManagedDeviceKind      `protobuf:"varint,5,opt,name=device_kind,json=deviceKind,proto3,enum=muxvia.cloud.v1.ManagedDeviceKind" json:"device_kind,omitempty"`
 	Revoked         bool                   `protobuf:"varint,6,opt,name=revoked,proto3" json:"revoked,omitempty"`
 	AuthEpoch       uint64                 `protobuf:"varint,7,opt,name=auth_epoch,json=authEpoch,proto3" json:"auth_epoch,omitempty"`
 	AssignedHubId   string                 `protobuf:"bytes,8,opt,name=assigned_hub_id,json=assignedHubId,proto3" json:"assigned_hub_id,omitempty"`
@@ -1569,7 +1569,7 @@ func (x *AccountDeviceProjection) GetPresence() *PresenceProjection {
 type ListAccountDevicesRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	AccountId      string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	DeviceKind     ManagedDeviceKind      `protobuf:"varint,2,opt,name=device_kind,json=deviceKind,proto3,enum=termx.cloud.v1.ManagedDeviceKind" json:"device_kind,omitempty"`
+	DeviceKind     ManagedDeviceKind      `protobuf:"varint,2,opt,name=device_kind,json=deviceKind,proto3,enum=muxvia.cloud.v1.ManagedDeviceKind" json:"device_kind,omitempty"`
 	IncludeRevoked bool                   `protobuf:"varint,3,opt,name=include_revoked,json=includeRevoked,proto3" json:"include_revoked,omitempty"`
 	Page           *PageRequest           `protobuf:"bytes,4,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -1693,7 +1693,7 @@ type ListAccountTopologyRequest struct {
 	AccountId      string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	DaemonDeviceId string                 `protobuf:"bytes,2,opt,name=daemon_device_id,json=daemonDeviceId,proto3" json:"daemon_device_id,omitempty"`
 	ClientDeviceId string                 `protobuf:"bytes,3,opt,name=client_device_id,json=clientDeviceId,proto3" json:"client_device_id,omitempty"`
-	Freshness      Freshness              `protobuf:"varint,4,opt,name=freshness,proto3,enum=termx.cloud.v1.Freshness" json:"freshness,omitempty"`
+	Freshness      Freshness              `protobuf:"varint,4,opt,name=freshness,proto3,enum=muxvia.cloud.v1.Freshness" json:"freshness,omitempty"`
 	Page           *PageRequest           `protobuf:"bytes,5,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -1928,7 +1928,7 @@ type ListDaemonTerminalAccessRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	AccountId      string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	DaemonDeviceId string                 `protobuf:"bytes,2,opt,name=daemon_device_id,json=daemonDeviceId,proto3" json:"daemon_device_id,omitempty"`
-	State          TerminalAccessState    `protobuf:"varint,3,opt,name=state,proto3,enum=termx.cloud.v1.TerminalAccessState" json:"state,omitempty"`
+	State          TerminalAccessState    `protobuf:"varint,3,opt,name=state,proto3,enum=muxvia.cloud.v1.TerminalAccessState" json:"state,omitempty"`
 	Page           *PageRequest           `protobuf:"bytes,4,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -1996,7 +1996,7 @@ func (x *ListDaemonTerminalAccessRequest) GetPage() *PageRequest {
 type ListDaemonTerminalAccessResponse struct {
 	state                protoimpl.MessageState      `protogen:"open.v1"`
 	Accesses             []*TerminalAccessProjection `protobuf:"bytes,1,rep,name=accesses,proto3" json:"accesses,omitempty"`
-	Freshness            Freshness                   `protobuf:"varint,2,opt,name=freshness,proto3,enum=termx.cloud.v1.Freshness" json:"freshness,omitempty"`
+	Freshness            Freshness                   `protobuf:"varint,2,opt,name=freshness,proto3,enum=muxvia.cloud.v1.Freshness" json:"freshness,omitempty"`
 	ObservedAtUnixMillis int64                       `protobuf:"varint,3,opt,name=observed_at_unix_millis,json=observedAtUnixMillis,proto3" json:"observed_at_unix_millis,omitempty"`
 	Page                 *PageResponse               `protobuf:"bytes,4,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields        protoimpl.UnknownFields
@@ -2377,9 +2377,9 @@ type ManagementCommandChildProjection struct {
 	ChildCommandId      string                   `protobuf:"bytes,1,opt,name=child_command_id,json=childCommandId,proto3" json:"child_command_id,omitempty"`
 	TargetHubId         string                   `protobuf:"bytes,2,opt,name=target_hub_id,json=targetHubId,proto3" json:"target_hub_id,omitempty"`
 	Target              *ManagementCommandTarget `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
-	DeliveryState       CommandDeliveryState     `protobuf:"varint,4,opt,name=delivery_state,json=deliveryState,proto3,enum=termx.cloud.v1.CommandDeliveryState" json:"delivery_state,omitempty"`
-	ExecutionState      CommandExecutionState    `protobuf:"varint,5,opt,name=execution_state,json=executionState,proto3,enum=termx.cloud.v1.CommandExecutionState" json:"execution_state,omitempty"`
-	ObservedEffect      CommandObservedEffect    `protobuf:"varint,6,opt,name=observed_effect,json=observedEffect,proto3,enum=termx.cloud.v1.CommandObservedEffect" json:"observed_effect,omitempty"`
+	DeliveryState       CommandDeliveryState     `protobuf:"varint,4,opt,name=delivery_state,json=deliveryState,proto3,enum=muxvia.cloud.v1.CommandDeliveryState" json:"delivery_state,omitempty"`
+	ExecutionState      CommandExecutionState    `protobuf:"varint,5,opt,name=execution_state,json=executionState,proto3,enum=muxvia.cloud.v1.CommandExecutionState" json:"execution_state,omitempty"`
+	ObservedEffect      CommandObservedEffect    `protobuf:"varint,6,opt,name=observed_effect,json=observedEffect,proto3,enum=muxvia.cloud.v1.CommandObservedEffect" json:"observed_effect,omitempty"`
 	LastError           *ManagementErrorDetail   `protobuf:"bytes,7,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
 	UpdatedAtUnixMillis int64                    `protobuf:"varint,8,opt,name=updated_at_unix_millis,json=updatedAtUnixMillis,proto3" json:"updated_at_unix_millis,omitempty"`
 	unknownFields       protoimpl.UnknownFields
@@ -2479,12 +2479,12 @@ type ManagementCommandProjection struct {
 	ParentOperationId   string                              `protobuf:"bytes,2,opt,name=parent_operation_id,json=parentOperationId,proto3" json:"parent_operation_id,omitempty"`
 	AccountId           string                              `protobuf:"bytes,3,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	Actor               *ManagementActorProjection          `protobuf:"bytes,4,opt,name=actor,proto3" json:"actor,omitempty"`
-	CommandKind         ManagementCommandKind               `protobuf:"varint,5,opt,name=command_kind,json=commandKind,proto3,enum=termx.cloud.v1.ManagementCommandKind" json:"command_kind,omitempty"`
+	CommandKind         ManagementCommandKind               `protobuf:"varint,5,opt,name=command_kind,json=commandKind,proto3,enum=muxvia.cloud.v1.ManagementCommandKind" json:"command_kind,omitempty"`
 	Target              *ManagementCommandTarget            `protobuf:"bytes,6,opt,name=target,proto3" json:"target,omitempty"`
-	AuthorityResult     CommandAuthorityResult              `protobuf:"varint,7,opt,name=authority_result,json=authorityResult,proto3,enum=termx.cloud.v1.CommandAuthorityResult" json:"authority_result,omitempty"`
-	DeliveryState       CommandDeliveryState                `protobuf:"varint,8,opt,name=delivery_state,json=deliveryState,proto3,enum=termx.cloud.v1.CommandDeliveryState" json:"delivery_state,omitempty"`
-	ExecutionState      CommandExecutionState               `protobuf:"varint,9,opt,name=execution_state,json=executionState,proto3,enum=termx.cloud.v1.CommandExecutionState" json:"execution_state,omitempty"`
-	ObservedEffect      CommandObservedEffect               `protobuf:"varint,10,opt,name=observed_effect,json=observedEffect,proto3,enum=termx.cloud.v1.CommandObservedEffect" json:"observed_effect,omitempty"`
+	AuthorityResult     CommandAuthorityResult              `protobuf:"varint,7,opt,name=authority_result,json=authorityResult,proto3,enum=muxvia.cloud.v1.CommandAuthorityResult" json:"authority_result,omitempty"`
+	DeliveryState       CommandDeliveryState                `protobuf:"varint,8,opt,name=delivery_state,json=deliveryState,proto3,enum=muxvia.cloud.v1.CommandDeliveryState" json:"delivery_state,omitempty"`
+	ExecutionState      CommandExecutionState               `protobuf:"varint,9,opt,name=execution_state,json=executionState,proto3,enum=muxvia.cloud.v1.CommandExecutionState" json:"execution_state,omitempty"`
+	ObservedEffect      CommandObservedEffect               `protobuf:"varint,10,opt,name=observed_effect,json=observedEffect,proto3,enum=muxvia.cloud.v1.CommandObservedEffect" json:"observed_effect,omitempty"`
 	Children            []*ManagementCommandChildProjection `protobuf:"bytes,11,rep,name=children,proto3" json:"children,omitempty"`
 	CreatedAtUnixMillis int64                               `protobuf:"varint,12,opt,name=created_at_unix_millis,json=createdAtUnixMillis,proto3" json:"created_at_unix_millis,omitempty"`
 	ExpiresAtUnixMillis int64                               `protobuf:"varint,13,opt,name=expires_at_unix_millis,json=expiresAtUnixMillis,proto3" json:"expires_at_unix_millis,omitempty"`
@@ -2625,7 +2625,7 @@ func (x *ManagementCommandProjection) GetUpdatedAtUnixMillis() int64 {
 type CreateManagementCommandRequest struct {
 	state          protoimpl.MessageState   `protogen:"open.v1"`
 	AccountId      string                   `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	CommandKind    ManagementCommandKind    `protobuf:"varint,2,opt,name=command_kind,json=commandKind,proto3,enum=termx.cloud.v1.ManagementCommandKind" json:"command_kind,omitempty"`
+	CommandKind    ManagementCommandKind    `protobuf:"varint,2,opt,name=command_kind,json=commandKind,proto3,enum=muxvia.cloud.v1.ManagementCommandKind" json:"command_kind,omitempty"`
 	Target         *ManagementCommandTarget `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
 	IdempotencyKey string                   `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -2837,8 +2837,8 @@ func (x *GetManagementCommandResponse) GetCommand() *ManagementCommandProjection
 type ListManagementCommandsRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	AccountId      string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	CommandKind    ManagementCommandKind  `protobuf:"varint,2,opt,name=command_kind,json=commandKind,proto3,enum=termx.cloud.v1.ManagementCommandKind" json:"command_kind,omitempty"`
-	ExecutionState CommandExecutionState  `protobuf:"varint,3,opt,name=execution_state,json=executionState,proto3,enum=termx.cloud.v1.CommandExecutionState" json:"execution_state,omitempty"`
+	CommandKind    ManagementCommandKind  `protobuf:"varint,2,opt,name=command_kind,json=commandKind,proto3,enum=muxvia.cloud.v1.ManagementCommandKind" json:"command_kind,omitempty"`
+	ExecutionState CommandExecutionState  `protobuf:"varint,3,opt,name=execution_state,json=executionState,proto3,enum=muxvia.cloud.v1.CommandExecutionState" json:"execution_state,omitempty"`
 	Page           *PageRequest           `protobuf:"bytes,4,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -2962,7 +2962,7 @@ type HubFleetProjection struct {
 	HubControlGeneration        uint64                  `protobuf:"varint,2,opt,name=hub_control_generation,json=hubControlGeneration,proto3" json:"hub_control_generation,omitempty"`
 	RelayControlGeneration      uint64                  `protobuf:"varint,3,opt,name=relay_control_generation,json=relayControlGeneration,proto3" json:"relay_control_generation,omitempty"`
 	ProjectionRevision          uint64                  `protobuf:"varint,4,opt,name=projection_revision,json=projectionRevision,proto3" json:"projection_revision,omitempty"`
-	Freshness                   Freshness               `protobuf:"varint,5,opt,name=freshness,proto3,enum=termx.cloud.v1.Freshness" json:"freshness,omitempty"`
+	Freshness                   Freshness               `protobuf:"varint,5,opt,name=freshness,proto3,enum=muxvia.cloud.v1.Freshness" json:"freshness,omitempty"`
 	HubReady                    bool                    `protobuf:"varint,6,opt,name=hub_ready,json=hubReady,proto3" json:"hub_ready,omitempty"`
 	RelayReady                  bool                    `protobuf:"varint,7,opt,name=relay_ready,json=relayReady,proto3" json:"relay_ready,omitempty"`
 	LastControlSeenAtUnixMillis int64                   `protobuf:"varint,8,opt,name=last_control_seen_at_unix_millis,json=lastControlSeenAtUnixMillis,proto3" json:"last_control_seen_at_unix_millis,omitempty"`
@@ -3060,7 +3060,7 @@ func (x *HubFleetProjection) GetLastControlSeenAtUnixMillis() int64 {
 type ListHubFleetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Region        string                 `protobuf:"bytes,1,opt,name=region,proto3" json:"region,omitempty"`
-	Freshness     Freshness              `protobuf:"varint,2,opt,name=freshness,proto3,enum=termx.cloud.v1.Freshness" json:"freshness,omitempty"`
+	Freshness     Freshness              `protobuf:"varint,2,opt,name=freshness,proto3,enum=muxvia.cloud.v1.Freshness" json:"freshness,omitempty"`
 	Page          *PageRequest           `protobuf:"bytes,3,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3264,23 +3264,23 @@ var File_cloudpb_cloud_management_proto protoreflect.FileDescriptor
 
 const file_cloudpb_cloud_management_proto_rawDesc = "" +
 	"\n" +
-	"\x1ecloudpb/cloud_management.proto\x12\x0etermx.cloud.v1\x1a\x1fcloudpb/cloud_hub_control.proto\x1a\x1bcloudpb/cloud_product.proto\x1a\x1ccloudpb/cloud_topology.proto\"\"\n" +
+	"\x1ecloudpb/cloud_management.proto\x12\x0fmuxvia.cloud.v1\x1a\x1fcloudpb/cloud_hub_control.proto\x1a\x1bcloudpb/cloud_product.proto\x1a\x1ccloudpb/cloud_topology.proto\"\"\n" +
 	"\n" +
 	"PageCursor\x12\x14\n" +
-	"\x05value\x18\x01 \x01(\tR\x05value\"^\n" +
+	"\x05value\x18\x01 \x01(\tR\x05value\"_\n" +
 	"\vPageRequest\x12\x1b\n" +
-	"\tpage_size\x18\x01 \x01(\rR\bpageSize\x122\n" +
-	"\x06cursor\x18\x02 \x01(\v2\x1a.termx.cloud.v1.PageCursorR\x06cursor\"K\n" +
-	"\fPageResponse\x12;\n" +
-	"\vnext_cursor\x18\x01 \x01(\v2\x1a.termx.cloud.v1.PageCursorR\n" +
-	"nextCursor\"\x9f\x01\n" +
-	"\x19ManagementActorProjection\x12B\n" +
+	"\tpage_size\x18\x01 \x01(\rR\bpageSize\x123\n" +
+	"\x06cursor\x18\x02 \x01(\v2\x1b.muxvia.cloud.v1.PageCursorR\x06cursor\"L\n" +
+	"\fPageResponse\x12<\n" +
+	"\vnext_cursor\x18\x01 \x01(\v2\x1b.muxvia.cloud.v1.PageCursorR\n" +
+	"nextCursor\"\xa0\x01\n" +
+	"\x19ManagementActorProjection\x12C\n" +
 	"\n" +
-	"actor_kind\x18\x01 \x01(\x0e2#.termx.cloud.v1.ManagementActorKindR\tactorKind\x12\x19\n" +
+	"actor_kind\x18\x01 \x01(\x0e2$.muxvia.cloud.v1.ManagementActorKindR\tactorKind\x12\x19\n" +
 	"\bactor_id\x18\x02 \x01(\tR\aactorId\x12#\n" +
-	"\rdisplay_label\x18\x03 \x01(\tR\fdisplayLabel\"\xdd\x01\n" +
-	"\x15ManagementErrorDetail\x127\n" +
-	"\x04code\x18\x01 \x01(\x0e2#.termx.cloud.v1.ManagementErrorCodeR\x04code\x12\x18\n" +
+	"\rdisplay_label\x18\x03 \x01(\tR\fdisplayLabel\"\xde\x01\n" +
+	"\x15ManagementErrorDetail\x128\n" +
+	"\x04code\x18\x01 \x01(\x0e2$.muxvia.cloud.v1.ManagementErrorCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +
 	"\tretryable\x18\x03 \x01(\bR\tretryable\x12,\n" +
 	"\x12retry_after_millis\x18\x04 \x01(\x04R\x10retryAfterMillis\x12%\n" +
@@ -3290,102 +3290,102 @@ const file_cloudpb_cloud_management_proto_rawDesc = "" +
 	"\x1cRecentAuthenticationResponse\x123\n" +
 	"\x16expires_at_unix_millis\x18\x01 \x01(\x03R\x13expiresAtUnixMillis\"9\n" +
 	"\x14OperatorLoginRequest\x12!\n" +
-	"\faccess_token\x18\x01 \x01(\fR\vaccessToken\"\xf6\x01\n" +
+	"\faccess_token\x18\x01 \x01(\fR\vaccessToken\"\xf7\x01\n" +
 	"\x19OperatorSessionProjection\x12\x1f\n" +
 	"\voperator_id\x18\x01 \x01(\tR\n" +
-	"operatorId\x12B\n" +
+	"operatorId\x12C\n" +
 	"\n" +
-	"actor_kind\x18\x02 \x01(\x0e2#.termx.cloud.v1.ManagementActorKindR\tactorKind\x12?\n" +
+	"actor_kind\x18\x02 \x01(\x0e2$.muxvia.cloud.v1.ManagementActorKindR\tactorKind\x12?\n" +
 	"\x1cauthenticated_at_unix_millis\x18\x03 \x01(\x03R\x19authenticatedAtUnixMillis\x123\n" +
-	"\x16expires_at_unix_millis\x18\x04 \x01(\x03R\x13expiresAtUnixMillis\"\\\n" +
-	"\x15OperatorLoginResponse\x12C\n" +
-	"\asession\x18\x01 \x01(\v2).termx.cloud.v1.OperatorSessionProjectionR\asession\"\x17\n" +
+	"\x16expires_at_unix_millis\x18\x04 \x01(\x03R\x13expiresAtUnixMillis\"]\n" +
+	"\x15OperatorLoginResponse\x12D\n" +
+	"\asession\x18\x01 \x01(\v2*.muxvia.cloud.v1.OperatorSessionProjectionR\asession\"\x17\n" +
 	"\x15OperatorLogoutRequest\"\x18\n" +
-	"\x16OperatorLogoutResponse\"\xad\x02\n" +
-	"\x16OperatorAccountSummary\x12;\n" +
-	"\aaccount\x18\x01 \x01(\v2!.termx.cloud.v1.AccountProjectionR\aaccount\x12J\n" +
-	"\fsubscription\x18\x02 \x01(\v2&.termx.cloud.v1.SubscriptionProjectionR\fsubscription\x12G\n" +
-	"\ventitlement\x18\x03 \x01(\v2%.termx.cloud.v1.EntitlementProjectionR\ventitlement\x12A\n" +
-	"\vrelay_quota\x18\x04 \x01(\v2 .termx.cloud.v1.RelayQuotaPeriodR\n" +
-	"relayQuota\"\xb9\x01\n" +
+	"\x16OperatorLogoutResponse\"\xb1\x02\n" +
+	"\x16OperatorAccountSummary\x12<\n" +
+	"\aaccount\x18\x01 \x01(\v2\".muxvia.cloud.v1.AccountProjectionR\aaccount\x12K\n" +
+	"\fsubscription\x18\x02 \x01(\v2'.muxvia.cloud.v1.SubscriptionProjectionR\fsubscription\x12H\n" +
+	"\ventitlement\x18\x03 \x01(\v2&.muxvia.cloud.v1.EntitlementProjectionR\ventitlement\x12B\n" +
+	"\vrelay_quota\x18\x04 \x01(\v2!.muxvia.cloud.v1.RelayQuotaPeriodR\n" +
+	"relayQuota\"\xbb\x01\n" +
 	"\x1bListOperatorAccountsRequest\x12\x14\n" +
-	"\x05query\x18\x01 \x01(\tR\x05query\x12S\n" +
-	"\x13subscription_status\x18\x02 \x01(\x0e2\".termx.cloud.v1.SubscriptionStatusR\x12subscriptionStatus\x12/\n" +
-	"\x04page\x18\x03 \x01(\v2\x1b.termx.cloud.v1.PageRequestR\x04page\"\x94\x01\n" +
-	"\x1cListOperatorAccountsResponse\x12B\n" +
-	"\baccounts\x18\x01 \x03(\v2&.termx.cloud.v1.OperatorAccountSummaryR\baccounts\x120\n" +
-	"\x04page\x18\x02 \x01(\v2\x1c.termx.cloud.v1.PageResponseR\x04page\":\n" +
+	"\x05query\x18\x01 \x01(\tR\x05query\x12T\n" +
+	"\x13subscription_status\x18\x02 \x01(\x0e2#.muxvia.cloud.v1.SubscriptionStatusR\x12subscriptionStatus\x120\n" +
+	"\x04page\x18\x03 \x01(\v2\x1c.muxvia.cloud.v1.PageRequestR\x04page\"\x96\x01\n" +
+	"\x1cListOperatorAccountsResponse\x12C\n" +
+	"\baccounts\x18\x01 \x03(\v2'.muxvia.cloud.v1.OperatorAccountSummaryR\baccounts\x121\n" +
+	"\x04page\x18\x02 \x01(\v2\x1d.muxvia.cloud.v1.PageResponseR\x04page\":\n" +
 	"\x19GetOperatorAccountRequest\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x01 \x01(\tR\taccountId\"\x8b\x03\n" +
-	"\x1aGetOperatorAccountResponse\x12F\n" +
-	"\bcommerce\x18\x01 \x01(\v2*.termx.cloud.v1.GetAccountCommerceResponseR\bcommerce\x12M\n" +
-	"\vrelay_quota\x18\x02 \x01(\v2,.termx.cloud.v1.GetAccountRelayQuotaResponseR\n" +
-	"relayQuota\x12D\n" +
-	"\adevices\x18\x03 \x01(\v2*.termx.cloud.v1.ListAccountDevicesResponseR\adevices\x12G\n" +
-	"\btopology\x18\x04 \x01(\v2+.termx.cloud.v1.ListAccountTopologyResponseR\btopology\x12G\n" +
-	"\bcommands\x18\x05 \x03(\v2+.termx.cloud.v1.ManagementCommandProjectionR\bcommands\"\x92\x01\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\"\x90\x03\n" +
+	"\x1aGetOperatorAccountResponse\x12G\n" +
+	"\bcommerce\x18\x01 \x01(\v2+.muxvia.cloud.v1.GetAccountCommerceResponseR\bcommerce\x12N\n" +
+	"\vrelay_quota\x18\x02 \x01(\v2-.muxvia.cloud.v1.GetAccountRelayQuotaResponseR\n" +
+	"relayQuota\x12E\n" +
+	"\adevices\x18\x03 \x01(\v2+.muxvia.cloud.v1.ListAccountDevicesResponseR\adevices\x12H\n" +
+	"\btopology\x18\x04 \x01(\v2,.muxvia.cloud.v1.ListAccountTopologyResponseR\btopology\x12H\n" +
+	"\bcommands\x18\x05 \x03(\v2,.muxvia.cloud.v1.ManagementCommandProjectionR\bcommands\"\x93\x01\n" +
 	"%OperatorTransitionSubscriptionRequest\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x01 \x01(\tR\taccountId\x12J\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\x12K\n" +
 	"\n" +
-	"transition\x18\x02 \x01(\x0e2*.termx.cloud.v1.SubscriptionTransitionKindR\n" +
-	"transition\"p\n" +
-	"&OperatorTransitionSubscriptionResponse\x12F\n" +
-	"\x06result\x18\x01 \x01(\v2..termx.cloud.v1.TransitionSubscriptionResponseR\x06result\"\xa4\x03\n" +
+	"transition\x18\x02 \x01(\x0e2+.muxvia.cloud.v1.SubscriptionTransitionKindR\n" +
+	"transition\"q\n" +
+	"&OperatorTransitionSubscriptionResponse\x12G\n" +
+	"\x06result\x18\x01 \x01(\v2/.muxvia.cloud.v1.TransitionSubscriptionResponseR\x06result\"\xa6\x03\n" +
 	"\x17AccountDeviceProjection\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12!\n" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x1a\n" +
-	"\bplatform\x18\x04 \x01(\tR\bplatform\x12B\n" +
-	"\vdevice_kind\x18\x05 \x01(\x0e2!.termx.cloud.v1.ManagedDeviceKindR\n" +
+	"\bplatform\x18\x04 \x01(\tR\bplatform\x12C\n" +
+	"\vdevice_kind\x18\x05 \x01(\x0e2\".muxvia.cloud.v1.ManagedDeviceKindR\n" +
 	"deviceKind\x12\x18\n" +
 	"\arevoked\x18\x06 \x01(\bR\arevoked\x12\x1d\n" +
 	"\n" +
 	"auth_epoch\x18\a \x01(\x04R\tauthEpoch\x12&\n" +
 	"\x0fassigned_hub_id\x18\b \x01(\tR\rassignedHubId\x12)\n" +
-	"\x10assignment_epoch\x18\t \x01(\x04R\x0fassignmentEpoch\x12>\n" +
+	"\x10assignment_epoch\x18\t \x01(\x04R\x0fassignmentEpoch\x12?\n" +
 	"\bpresence\x18\n" +
-	" \x01(\v2\".termx.cloud.v1.PresenceProjectionR\bpresence\"\xd8\x01\n" +
+	" \x01(\v2#.muxvia.cloud.v1.PresenceProjectionR\bpresence\"\xda\x01\n" +
 	"\x19ListAccountDevicesRequest\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x01 \x01(\tR\taccountId\x12B\n" +
-	"\vdevice_kind\x18\x02 \x01(\x0e2!.termx.cloud.v1.ManagedDeviceKindR\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\x12C\n" +
+	"\vdevice_kind\x18\x02 \x01(\x0e2\".muxvia.cloud.v1.ManagedDeviceKindR\n" +
 	"deviceKind\x12'\n" +
-	"\x0finclude_revoked\x18\x03 \x01(\bR\x0eincludeRevoked\x12/\n" +
-	"\x04page\x18\x04 \x01(\v2\x1b.termx.cloud.v1.PageRequestR\x04page\"\x91\x01\n" +
-	"\x1aListAccountDevicesResponse\x12A\n" +
-	"\adevices\x18\x01 \x03(\v2'.termx.cloud.v1.AccountDeviceProjectionR\adevices\x120\n" +
-	"\x04page\x18\x02 \x01(\v2\x1c.termx.cloud.v1.PageResponseR\x04page\"\xf9\x01\n" +
+	"\x0finclude_revoked\x18\x03 \x01(\bR\x0eincludeRevoked\x120\n" +
+	"\x04page\x18\x04 \x01(\v2\x1c.muxvia.cloud.v1.PageRequestR\x04page\"\x93\x01\n" +
+	"\x1aListAccountDevicesResponse\x12B\n" +
+	"\adevices\x18\x01 \x03(\v2(.muxvia.cloud.v1.AccountDeviceProjectionR\adevices\x121\n" +
+	"\x04page\x18\x02 \x01(\v2\x1d.muxvia.cloud.v1.PageResponseR\x04page\"\xfb\x01\n" +
 	"\x1aListAccountTopologyRequest\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12(\n" +
 	"\x10daemon_device_id\x18\x02 \x01(\tR\x0edaemonDeviceId\x12(\n" +
-	"\x10client_device_id\x18\x03 \x01(\tR\x0eclientDeviceId\x127\n" +
-	"\tfreshness\x18\x04 \x01(\x0e2\x19.termx.cloud.v1.FreshnessR\tfreshness\x12/\n" +
-	"\x04page\x18\x05 \x01(\v2\x1b.termx.cloud.v1.PageRequestR\x04page\"\xe4\x01\n" +
-	"\x1bListAccountTopologyResponse\x12@\n" +
-	"\tpresences\x18\x01 \x03(\v2\".termx.cloud.v1.PresenceProjectionR\tpresences\x12Q\n" +
-	"\rpeer_sessions\x18\x02 \x03(\v2,.termx.cloud.v1.ManagedPeerSessionProjectionR\fpeerSessions\x120\n" +
-	"\x04page\x18\x03 \x01(\v2\x1c.termx.cloud.v1.PageResponseR\x04page\"{\n" +
+	"\x10client_device_id\x18\x03 \x01(\tR\x0eclientDeviceId\x128\n" +
+	"\tfreshness\x18\x04 \x01(\x0e2\x1a.muxvia.cloud.v1.FreshnessR\tfreshness\x120\n" +
+	"\x04page\x18\x05 \x01(\v2\x1c.muxvia.cloud.v1.PageRequestR\x04page\"\xe7\x01\n" +
+	"\x1bListAccountTopologyResponse\x12A\n" +
+	"\tpresences\x18\x01 \x03(\v2#.muxvia.cloud.v1.PresenceProjectionR\tpresences\x12R\n" +
+	"\rpeer_sessions\x18\x02 \x03(\v2-.muxvia.cloud.v1.ManagedPeerSessionProjectionR\fpeerSessions\x121\n" +
+	"\x04page\x18\x03 \x01(\v2\x1d.muxvia.cloud.v1.PageResponseR\x04page\"|\n" +
 	"\x18GetManagedSessionRequest\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x01 \x01(\tR\taccountId\x12@\n" +
-	"\x06target\x18\x02 \x01(\v2(.termx.cloud.v1.ManagedPeerSessionTargetR\x06target\"c\n" +
-	"\x19GetManagedSessionResponse\x12F\n" +
-	"\asession\x18\x01 \x01(\v2,.termx.cloud.v1.ManagedPeerSessionProjectionR\asession\"\xd6\x01\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\x12A\n" +
+	"\x06target\x18\x02 \x01(\v2).muxvia.cloud.v1.ManagedPeerSessionTargetR\x06target\"d\n" +
+	"\x19GetManagedSessionResponse\x12G\n" +
+	"\asession\x18\x01 \x01(\v2-.muxvia.cloud.v1.ManagedPeerSessionProjectionR\asession\"\xd8\x01\n" +
 	"\x1fListDaemonTerminalAccessRequest\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12(\n" +
-	"\x10daemon_device_id\x18\x02 \x01(\tR\x0edaemonDeviceId\x129\n" +
-	"\x05state\x18\x03 \x01(\x0e2#.termx.cloud.v1.TerminalAccessStateR\x05state\x12/\n" +
-	"\x04page\x18\x04 \x01(\v2\x1b.termx.cloud.v1.PageRequestR\x04page\"\x8a\x02\n" +
-	" ListDaemonTerminalAccessResponse\x12D\n" +
-	"\baccesses\x18\x01 \x03(\v2(.termx.cloud.v1.TerminalAccessProjectionR\baccesses\x127\n" +
-	"\tfreshness\x18\x02 \x01(\x0e2\x19.termx.cloud.v1.FreshnessR\tfreshness\x125\n" +
-	"\x17observed_at_unix_millis\x18\x03 \x01(\x03R\x14observedAtUnixMillis\x120\n" +
-	"\x04page\x18\x04 \x01(\v2\x1c.termx.cloud.v1.PageResponseR\x04page\"f\n" +
+	"\x10daemon_device_id\x18\x02 \x01(\tR\x0edaemonDeviceId\x12:\n" +
+	"\x05state\x18\x03 \x01(\x0e2$.muxvia.cloud.v1.TerminalAccessStateR\x05state\x120\n" +
+	"\x04page\x18\x04 \x01(\v2\x1c.muxvia.cloud.v1.PageRequestR\x04page\"\x8d\x02\n" +
+	" ListDaemonTerminalAccessResponse\x12E\n" +
+	"\baccesses\x18\x01 \x03(\v2).muxvia.cloud.v1.TerminalAccessProjectionR\baccesses\x128\n" +
+	"\tfreshness\x18\x02 \x01(\x0e2\x1a.muxvia.cloud.v1.FreshnessR\tfreshness\x125\n" +
+	"\x17observed_at_unix_millis\x18\x03 \x01(\x03R\x14observedAtUnixMillis\x121\n" +
+	"\x04page\x18\x04 \x01(\v2\x1d.muxvia.cloud.v1.PageResponseR\x04page\"f\n" +
 	"\x17RevokeCloudDeviceTarget\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12.\n" +
 	"\x13expected_auth_epoch\x18\x02 \x01(\x04R\x11expectedAuthEpoch\"\xe0\x03\n" +
@@ -3398,90 +3398,90 @@ const file_cloudpb_cloud_management_proto_rawDesc = "" +
 	"\rtarget_hub_id\x18\x06 \x01(\tR\vtargetHubId\x126\n" +
 	"\x17target_assignment_epoch\x18\a \x01(\x04R\x15targetAssignmentEpoch\x12@\n" +
 	"\x1dtarget_not_before_unix_millis\x18\b \x01(\x03R\x19targetNotBeforeUnixMillis\x12@\n" +
-	"\x1dtarget_expires_at_unix_millis\x18\t \x01(\x03R\x19targetExpiresAtUnixMillis\"\x8c\x04\n" +
-	"\x17ManagementCommandTarget\x12@\n" +
-	"\bpresence\x18\x01 \x01(\v2\".termx.cloud.v1.KickPresenceTargetH\x00R\bpresence\x12L\n" +
-	"\fcloud_device\x18\x02 \x01(\v2'.termx.cloud.v1.RevokeCloudDeviceTargetH\x00R\vcloudDevice\x12M\n" +
-	"\fpeer_session\x18\x03 \x01(\v2(.termx.cloud.v1.ManagedPeerSessionTargetH\x00R\vpeerSession\x12U\n" +
-	"\x0fterminal_access\x18\x04 \x01(\v2*.termx.cloud.v1.RevokeTerminalAccessTargetH\x00R\x0eterminalAccess\x12Q\n" +
-	"\x11relay_allocations\x18\x05 \x01(\v2\".termx.cloud.v1.RelayControlTargetH\x00R\x10relayAllocations\x12^\n" +
-	"\x14assignment_migration\x18\x06 \x01(\v2).termx.cloud.v1.AssignmentMigrationTargetH\x00R\x13assignmentMigrationB\b\n" +
-	"\x06target\"\x99\x04\n" +
+	"\x1dtarget_expires_at_unix_millis\x18\t \x01(\x03R\x19targetExpiresAtUnixMillis\"\x92\x04\n" +
+	"\x17ManagementCommandTarget\x12A\n" +
+	"\bpresence\x18\x01 \x01(\v2#.muxvia.cloud.v1.KickPresenceTargetH\x00R\bpresence\x12M\n" +
+	"\fcloud_device\x18\x02 \x01(\v2(.muxvia.cloud.v1.RevokeCloudDeviceTargetH\x00R\vcloudDevice\x12N\n" +
+	"\fpeer_session\x18\x03 \x01(\v2).muxvia.cloud.v1.ManagedPeerSessionTargetH\x00R\vpeerSession\x12V\n" +
+	"\x0fterminal_access\x18\x04 \x01(\v2+.muxvia.cloud.v1.RevokeTerminalAccessTargetH\x00R\x0eterminalAccess\x12R\n" +
+	"\x11relay_allocations\x18\x05 \x01(\v2#.muxvia.cloud.v1.RelayControlTargetH\x00R\x10relayAllocations\x12_\n" +
+	"\x14assignment_migration\x18\x06 \x01(\v2*.muxvia.cloud.v1.AssignmentMigrationTargetH\x00R\x13assignmentMigrationB\b\n" +
+	"\x06target\"\x9e\x04\n" +
 	" ManagementCommandChildProjection\x12(\n" +
 	"\x10child_command_id\x18\x01 \x01(\tR\x0echildCommandId\x12\"\n" +
-	"\rtarget_hub_id\x18\x02 \x01(\tR\vtargetHubId\x12?\n" +
-	"\x06target\x18\x03 \x01(\v2'.termx.cloud.v1.ManagementCommandTargetR\x06target\x12K\n" +
-	"\x0edelivery_state\x18\x04 \x01(\x0e2$.termx.cloud.v1.CommandDeliveryStateR\rdeliveryState\x12N\n" +
-	"\x0fexecution_state\x18\x05 \x01(\x0e2%.termx.cloud.v1.CommandExecutionStateR\x0eexecutionState\x12N\n" +
-	"\x0fobserved_effect\x18\x06 \x01(\x0e2%.termx.cloud.v1.CommandObservedEffectR\x0eobservedEffect\x12D\n" +
+	"\rtarget_hub_id\x18\x02 \x01(\tR\vtargetHubId\x12@\n" +
+	"\x06target\x18\x03 \x01(\v2(.muxvia.cloud.v1.ManagementCommandTargetR\x06target\x12L\n" +
+	"\x0edelivery_state\x18\x04 \x01(\x0e2%.muxvia.cloud.v1.CommandDeliveryStateR\rdeliveryState\x12O\n" +
+	"\x0fexecution_state\x18\x05 \x01(\x0e2&.muxvia.cloud.v1.CommandExecutionStateR\x0eexecutionState\x12O\n" +
+	"\x0fobserved_effect\x18\x06 \x01(\x0e2&.muxvia.cloud.v1.CommandObservedEffectR\x0eobservedEffect\x12E\n" +
 	"\n" +
-	"last_error\x18\a \x01(\v2%.termx.cloud.v1.ManagementErrorDetailR\tlastError\x123\n" +
-	"\x16updated_at_unix_millis\x18\b \x01(\x03R\x13updatedAtUnixMillis\"\x84\a\n" +
+	"last_error\x18\a \x01(\v2&.muxvia.cloud.v1.ManagementErrorDetailR\tlastError\x123\n" +
+	"\x16updated_at_unix_millis\x18\b \x01(\x03R\x13updatedAtUnixMillis\"\x8c\a\n" +
 	"\x1bManagementCommandProjection\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12.\n" +
 	"\x13parent_operation_id\x18\x02 \x01(\tR\x11parentOperationId\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x03 \x01(\tR\taccountId\x12?\n" +
-	"\x05actor\x18\x04 \x01(\v2).termx.cloud.v1.ManagementActorProjectionR\x05actor\x12H\n" +
-	"\fcommand_kind\x18\x05 \x01(\x0e2%.termx.cloud.v1.ManagementCommandKindR\vcommandKind\x12?\n" +
-	"\x06target\x18\x06 \x01(\v2'.termx.cloud.v1.ManagementCommandTargetR\x06target\x12Q\n" +
-	"\x10authority_result\x18\a \x01(\x0e2&.termx.cloud.v1.CommandAuthorityResultR\x0fauthorityResult\x12K\n" +
-	"\x0edelivery_state\x18\b \x01(\x0e2$.termx.cloud.v1.CommandDeliveryStateR\rdeliveryState\x12N\n" +
-	"\x0fexecution_state\x18\t \x01(\x0e2%.termx.cloud.v1.CommandExecutionStateR\x0eexecutionState\x12N\n" +
+	"account_id\x18\x03 \x01(\tR\taccountId\x12@\n" +
+	"\x05actor\x18\x04 \x01(\v2*.muxvia.cloud.v1.ManagementActorProjectionR\x05actor\x12I\n" +
+	"\fcommand_kind\x18\x05 \x01(\x0e2&.muxvia.cloud.v1.ManagementCommandKindR\vcommandKind\x12@\n" +
+	"\x06target\x18\x06 \x01(\v2(.muxvia.cloud.v1.ManagementCommandTargetR\x06target\x12R\n" +
+	"\x10authority_result\x18\a \x01(\x0e2'.muxvia.cloud.v1.CommandAuthorityResultR\x0fauthorityResult\x12L\n" +
+	"\x0edelivery_state\x18\b \x01(\x0e2%.muxvia.cloud.v1.CommandDeliveryStateR\rdeliveryState\x12O\n" +
+	"\x0fexecution_state\x18\t \x01(\x0e2&.muxvia.cloud.v1.CommandExecutionStateR\x0eexecutionState\x12O\n" +
 	"\x0fobserved_effect\x18\n" +
-	" \x01(\x0e2%.termx.cloud.v1.CommandObservedEffectR\x0eobservedEffect\x12L\n" +
-	"\bchildren\x18\v \x03(\v20.termx.cloud.v1.ManagementCommandChildProjectionR\bchildren\x123\n" +
+	" \x01(\x0e2&.muxvia.cloud.v1.CommandObservedEffectR\x0eobservedEffect\x12M\n" +
+	"\bchildren\x18\v \x03(\v21.muxvia.cloud.v1.ManagementCommandChildProjectionR\bchildren\x123\n" +
 	"\x16created_at_unix_millis\x18\f \x01(\x03R\x13createdAtUnixMillis\x123\n" +
 	"\x16expires_at_unix_millis\x18\r \x01(\x03R\x13expiresAtUnixMillis\x123\n" +
-	"\x16updated_at_unix_millis\x18\x0e \x01(\x03R\x13updatedAtUnixMillis\"\xf3\x01\n" +
+	"\x16updated_at_unix_millis\x18\x0e \x01(\x03R\x13updatedAtUnixMillis\"\xf5\x01\n" +
 	"\x1eCreateManagementCommandRequest\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x01 \x01(\tR\taccountId\x12H\n" +
-	"\fcommand_kind\x18\x02 \x01(\x0e2%.termx.cloud.v1.ManagementCommandKindR\vcommandKind\x12?\n" +
-	"\x06target\x18\x03 \x01(\v2'.termx.cloud.v1.ManagementCommandTargetR\x06target\x12'\n" +
-	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\"h\n" +
-	"\x1fCreateManagementCommandResponse\x12E\n" +
-	"\acommand\x18\x01 \x01(\v2+.termx.cloud.v1.ManagementCommandProjectionR\acommand\"[\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\x12I\n" +
+	"\fcommand_kind\x18\x02 \x01(\x0e2&.muxvia.cloud.v1.ManagementCommandKindR\vcommandKind\x12@\n" +
+	"\x06target\x18\x03 \x01(\v2(.muxvia.cloud.v1.ManagementCommandTargetR\x06target\x12'\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\"i\n" +
+	"\x1fCreateManagementCommandResponse\x12F\n" +
+	"\acommand\x18\x01 \x01(\v2,.muxvia.cloud.v1.ManagementCommandProjectionR\acommand\"[\n" +
 	"\x1bGetManagementCommandRequest\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12\x1d\n" +
 	"\n" +
-	"command_id\x18\x02 \x01(\tR\tcommandId\"e\n" +
-	"\x1cGetManagementCommandResponse\x12E\n" +
-	"\acommand\x18\x01 \x01(\v2+.termx.cloud.v1.ManagementCommandProjectionR\acommand\"\x89\x02\n" +
+	"command_id\x18\x02 \x01(\tR\tcommandId\"f\n" +
+	"\x1cGetManagementCommandResponse\x12F\n" +
+	"\acommand\x18\x01 \x01(\v2,.muxvia.cloud.v1.ManagementCommandProjectionR\acommand\"\x8c\x02\n" +
 	"\x1dListManagementCommandsRequest\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x01 \x01(\tR\taccountId\x12H\n" +
-	"\fcommand_kind\x18\x02 \x01(\x0e2%.termx.cloud.v1.ManagementCommandKindR\vcommandKind\x12N\n" +
-	"\x0fexecution_state\x18\x03 \x01(\x0e2%.termx.cloud.v1.CommandExecutionStateR\x0eexecutionState\x12/\n" +
-	"\x04page\x18\x04 \x01(\v2\x1b.termx.cloud.v1.PageRequestR\x04page\"\x9b\x01\n" +
-	"\x1eListManagementCommandsResponse\x12G\n" +
-	"\bcommands\x18\x01 \x03(\v2+.termx.cloud.v1.ManagementCommandProjectionR\bcommands\x120\n" +
-	"\x04page\x18\x02 \x01(\v2\x1c.termx.cloud.v1.PageResponseR\x04page\"\xbb\x03\n" +
-	"\x12HubFleetProjection\x12F\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\x12I\n" +
+	"\fcommand_kind\x18\x02 \x01(\x0e2&.muxvia.cloud.v1.ManagementCommandKindR\vcommandKind\x12O\n" +
+	"\x0fexecution_state\x18\x03 \x01(\x0e2&.muxvia.cloud.v1.CommandExecutionStateR\x0eexecutionState\x120\n" +
+	"\x04page\x18\x04 \x01(\v2\x1c.muxvia.cloud.v1.PageRequestR\x04page\"\x9d\x01\n" +
+	"\x1eListManagementCommandsResponse\x12H\n" +
+	"\bcommands\x18\x01 \x03(\v2,.muxvia.cloud.v1.ManagementCommandProjectionR\bcommands\x121\n" +
+	"\x04page\x18\x02 \x01(\v2\x1d.muxvia.cloud.v1.PageResponseR\x04page\"\xbd\x03\n" +
+	"\x12HubFleetProjection\x12G\n" +
 	"\n" +
-	"deployment\x18\x01 \x01(\v2&.termx.cloud.v1.EdgeDeploymentMetadataR\n" +
+	"deployment\x18\x01 \x01(\v2'.muxvia.cloud.v1.EdgeDeploymentMetadataR\n" +
 	"deployment\x124\n" +
 	"\x16hub_control_generation\x18\x02 \x01(\x04R\x14hubControlGeneration\x128\n" +
 	"\x18relay_control_generation\x18\x03 \x01(\x04R\x16relayControlGeneration\x12/\n" +
-	"\x13projection_revision\x18\x04 \x01(\x04R\x12projectionRevision\x127\n" +
-	"\tfreshness\x18\x05 \x01(\x0e2\x19.termx.cloud.v1.FreshnessR\tfreshness\x12\x1b\n" +
+	"\x13projection_revision\x18\x04 \x01(\x04R\x12projectionRevision\x128\n" +
+	"\tfreshness\x18\x05 \x01(\x0e2\x1a.muxvia.cloud.v1.FreshnessR\tfreshness\x12\x1b\n" +
 	"\thub_ready\x18\x06 \x01(\bR\bhubReady\x12\x1f\n" +
 	"\vrelay_ready\x18\a \x01(\bR\n" +
 	"relayReady\x12E\n" +
-	" last_control_seen_at_unix_millis\x18\b \x01(\x03R\x1blastControlSeenAtUnixMillis\"\x97\x01\n" +
+	" last_control_seen_at_unix_millis\x18\b \x01(\x03R\x1blastControlSeenAtUnixMillis\"\x99\x01\n" +
 	"\x13ListHubFleetRequest\x12\x16\n" +
-	"\x06region\x18\x01 \x01(\tR\x06region\x127\n" +
-	"\tfreshness\x18\x02 \x01(\x0e2\x19.termx.cloud.v1.FreshnessR\tfreshness\x12/\n" +
-	"\x04page\x18\x03 \x01(\v2\x1b.termx.cloud.v1.PageRequestR\x04page\"\x80\x01\n" +
-	"\x14ListHubFleetResponse\x126\n" +
-	"\x04hubs\x18\x01 \x03(\v2\".termx.cloud.v1.HubFleetProjectionR\x04hubs\x120\n" +
-	"\x04page\x18\x02 \x01(\v2\x1c.termx.cloud.v1.PageResponseR\x04page\",\n" +
+	"\x06region\x18\x01 \x01(\tR\x06region\x128\n" +
+	"\tfreshness\x18\x02 \x01(\x0e2\x1a.muxvia.cloud.v1.FreshnessR\tfreshness\x120\n" +
+	"\x04page\x18\x03 \x01(\v2\x1c.muxvia.cloud.v1.PageRequestR\x04page\"\x82\x01\n" +
+	"\x14ListHubFleetResponse\x127\n" +
+	"\x04hubs\x18\x01 \x03(\v2#.muxvia.cloud.v1.HubFleetProjectionR\x04hubs\x121\n" +
+	"\x04page\x18\x02 \x01(\v2\x1d.muxvia.cloud.v1.PageResponseR\x04page\",\n" +
 	"\x13GetHubStatusRequest\x12\x15\n" +
-	"\x06hub_id\x18\x01 \x01(\tR\x05hubId\"L\n" +
-	"\x14GetHubStatusResponse\x124\n" +
-	"\x03hub\x18\x01 \x01(\v2\".termx.cloud.v1.HubFleetProjectionR\x03hub*\xbc\x01\n" +
+	"\x06hub_id\x18\x01 \x01(\tR\x05hubId\"M\n" +
+	"\x14GetHubStatusResponse\x125\n" +
+	"\x03hub\x18\x01 \x01(\v2#.muxvia.cloud.v1.HubFleetProjectionR\x03hub*\xbc\x01\n" +
 	"\x13ManagementActorKind\x12%\n" +
 	"!MANAGEMENT_ACTOR_KIND_UNSPECIFIED\x10\x00\x12'\n" +
 	"#MANAGEMENT_ACTOR_KIND_ACCOUNT_OWNER\x10\x01\x12+\n" +
@@ -3537,7 +3537,7 @@ const file_cloudpb_cloud_management_proto_rawDesc = "" +
 	"%MANAGEMENT_ERROR_CODE_COMMAND_PARTIAL\x10\v\x12-\n" +
 	")MANAGEMENT_ERROR_CODE_RUNTIME_UNAVAILABLE\x10\f\x12+\n" +
 	"'MANAGEMENT_ERROR_CODE_RELAY_UNAVAILABLE\x10\r\x12#\n" +
-	"\x1fMANAGEMENT_ERROR_CODE_TEMPORARY\x10\x0eB'Z%github.com/lozzow/termx/proto/cloudpbb\x06proto3"
+	"\x1fMANAGEMENT_ERROR_CODE_TEMPORARY\x10\x0eB(Z&github.com/muxvia/muxvia/proto/cloudpbb\x06proto3"
 
 var (
 	file_cloudpb_cloud_management_proto_rawDescOnce sync.Once
@@ -3554,153 +3554,153 @@ func file_cloudpb_cloud_management_proto_rawDescGZIP() []byte {
 var file_cloudpb_cloud_management_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
 var file_cloudpb_cloud_management_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
 var file_cloudpb_cloud_management_proto_goTypes = []any{
-	(ManagementActorKind)(0),                       // 0: termx.cloud.v1.ManagementActorKind
-	(ManagementCommandKind)(0),                     // 1: termx.cloud.v1.ManagementCommandKind
-	(CommandAuthorityResult)(0),                    // 2: termx.cloud.v1.CommandAuthorityResult
-	(CommandDeliveryState)(0),                      // 3: termx.cloud.v1.CommandDeliveryState
-	(CommandExecutionState)(0),                     // 4: termx.cloud.v1.CommandExecutionState
-	(CommandObservedEffect)(0),                     // 5: termx.cloud.v1.CommandObservedEffect
-	(ManagementErrorCode)(0),                       // 6: termx.cloud.v1.ManagementErrorCode
-	(*PageCursor)(nil),                             // 7: termx.cloud.v1.PageCursor
-	(*PageRequest)(nil),                            // 8: termx.cloud.v1.PageRequest
-	(*PageResponse)(nil),                           // 9: termx.cloud.v1.PageResponse
-	(*ManagementActorProjection)(nil),              // 10: termx.cloud.v1.ManagementActorProjection
-	(*ManagementErrorDetail)(nil),                  // 11: termx.cloud.v1.ManagementErrorDetail
-	(*RecentAuthenticationRequest)(nil),            // 12: termx.cloud.v1.RecentAuthenticationRequest
-	(*RecentAuthenticationResponse)(nil),           // 13: termx.cloud.v1.RecentAuthenticationResponse
-	(*OperatorLoginRequest)(nil),                   // 14: termx.cloud.v1.OperatorLoginRequest
-	(*OperatorSessionProjection)(nil),              // 15: termx.cloud.v1.OperatorSessionProjection
-	(*OperatorLoginResponse)(nil),                  // 16: termx.cloud.v1.OperatorLoginResponse
-	(*OperatorLogoutRequest)(nil),                  // 17: termx.cloud.v1.OperatorLogoutRequest
-	(*OperatorLogoutResponse)(nil),                 // 18: termx.cloud.v1.OperatorLogoutResponse
-	(*OperatorAccountSummary)(nil),                 // 19: termx.cloud.v1.OperatorAccountSummary
-	(*ListOperatorAccountsRequest)(nil),            // 20: termx.cloud.v1.ListOperatorAccountsRequest
-	(*ListOperatorAccountsResponse)(nil),           // 21: termx.cloud.v1.ListOperatorAccountsResponse
-	(*GetOperatorAccountRequest)(nil),              // 22: termx.cloud.v1.GetOperatorAccountRequest
-	(*GetOperatorAccountResponse)(nil),             // 23: termx.cloud.v1.GetOperatorAccountResponse
-	(*OperatorTransitionSubscriptionRequest)(nil),  // 24: termx.cloud.v1.OperatorTransitionSubscriptionRequest
-	(*OperatorTransitionSubscriptionResponse)(nil), // 25: termx.cloud.v1.OperatorTransitionSubscriptionResponse
-	(*AccountDeviceProjection)(nil),                // 26: termx.cloud.v1.AccountDeviceProjection
-	(*ListAccountDevicesRequest)(nil),              // 27: termx.cloud.v1.ListAccountDevicesRequest
-	(*ListAccountDevicesResponse)(nil),             // 28: termx.cloud.v1.ListAccountDevicesResponse
-	(*ListAccountTopologyRequest)(nil),             // 29: termx.cloud.v1.ListAccountTopologyRequest
-	(*ListAccountTopologyResponse)(nil),            // 30: termx.cloud.v1.ListAccountTopologyResponse
-	(*GetManagedSessionRequest)(nil),               // 31: termx.cloud.v1.GetManagedSessionRequest
-	(*GetManagedSessionResponse)(nil),              // 32: termx.cloud.v1.GetManagedSessionResponse
-	(*ListDaemonTerminalAccessRequest)(nil),        // 33: termx.cloud.v1.ListDaemonTerminalAccessRequest
-	(*ListDaemonTerminalAccessResponse)(nil),       // 34: termx.cloud.v1.ListDaemonTerminalAccessResponse
-	(*RevokeCloudDeviceTarget)(nil),                // 35: termx.cloud.v1.RevokeCloudDeviceTarget
-	(*AssignmentMigrationTarget)(nil),              // 36: termx.cloud.v1.AssignmentMigrationTarget
-	(*ManagementCommandTarget)(nil),                // 37: termx.cloud.v1.ManagementCommandTarget
-	(*ManagementCommandChildProjection)(nil),       // 38: termx.cloud.v1.ManagementCommandChildProjection
-	(*ManagementCommandProjection)(nil),            // 39: termx.cloud.v1.ManagementCommandProjection
-	(*CreateManagementCommandRequest)(nil),         // 40: termx.cloud.v1.CreateManagementCommandRequest
-	(*CreateManagementCommandResponse)(nil),        // 41: termx.cloud.v1.CreateManagementCommandResponse
-	(*GetManagementCommandRequest)(nil),            // 42: termx.cloud.v1.GetManagementCommandRequest
-	(*GetManagementCommandResponse)(nil),           // 43: termx.cloud.v1.GetManagementCommandResponse
-	(*ListManagementCommandsRequest)(nil),          // 44: termx.cloud.v1.ListManagementCommandsRequest
-	(*ListManagementCommandsResponse)(nil),         // 45: termx.cloud.v1.ListManagementCommandsResponse
-	(*HubFleetProjection)(nil),                     // 46: termx.cloud.v1.HubFleetProjection
-	(*ListHubFleetRequest)(nil),                    // 47: termx.cloud.v1.ListHubFleetRequest
-	(*ListHubFleetResponse)(nil),                   // 48: termx.cloud.v1.ListHubFleetResponse
-	(*GetHubStatusRequest)(nil),                    // 49: termx.cloud.v1.GetHubStatusRequest
-	(*GetHubStatusResponse)(nil),                   // 50: termx.cloud.v1.GetHubStatusResponse
-	(*AccountProjection)(nil),                      // 51: termx.cloud.v1.AccountProjection
-	(*SubscriptionProjection)(nil),                 // 52: termx.cloud.v1.SubscriptionProjection
-	(*EntitlementProjection)(nil),                  // 53: termx.cloud.v1.EntitlementProjection
-	(*RelayQuotaPeriod)(nil),                       // 54: termx.cloud.v1.RelayQuotaPeriod
-	(SubscriptionStatus)(0),                        // 55: termx.cloud.v1.SubscriptionStatus
-	(*GetAccountCommerceResponse)(nil),             // 56: termx.cloud.v1.GetAccountCommerceResponse
-	(*GetAccountRelayQuotaResponse)(nil),           // 57: termx.cloud.v1.GetAccountRelayQuotaResponse
-	(SubscriptionTransitionKind)(0),                // 58: termx.cloud.v1.SubscriptionTransitionKind
-	(*TransitionSubscriptionResponse)(nil),         // 59: termx.cloud.v1.TransitionSubscriptionResponse
-	(ManagedDeviceKind)(0),                         // 60: termx.cloud.v1.ManagedDeviceKind
-	(*PresenceProjection)(nil),                     // 61: termx.cloud.v1.PresenceProjection
-	(Freshness)(0),                                 // 62: termx.cloud.v1.Freshness
-	(*ManagedPeerSessionProjection)(nil),           // 63: termx.cloud.v1.ManagedPeerSessionProjection
-	(*ManagedPeerSessionTarget)(nil),               // 64: termx.cloud.v1.ManagedPeerSessionTarget
-	(TerminalAccessState)(0),                       // 65: termx.cloud.v1.TerminalAccessState
-	(*TerminalAccessProjection)(nil),               // 66: termx.cloud.v1.TerminalAccessProjection
-	(*KickPresenceTarget)(nil),                     // 67: termx.cloud.v1.KickPresenceTarget
-	(*RevokeTerminalAccessTarget)(nil),             // 68: termx.cloud.v1.RevokeTerminalAccessTarget
-	(*RelayControlTarget)(nil),                     // 69: termx.cloud.v1.RelayControlTarget
-	(*EdgeDeploymentMetadata)(nil),                 // 70: termx.cloud.v1.EdgeDeploymentMetadata
+	(ManagementActorKind)(0),                       // 0: muxvia.cloud.v1.ManagementActorKind
+	(ManagementCommandKind)(0),                     // 1: muxvia.cloud.v1.ManagementCommandKind
+	(CommandAuthorityResult)(0),                    // 2: muxvia.cloud.v1.CommandAuthorityResult
+	(CommandDeliveryState)(0),                      // 3: muxvia.cloud.v1.CommandDeliveryState
+	(CommandExecutionState)(0),                     // 4: muxvia.cloud.v1.CommandExecutionState
+	(CommandObservedEffect)(0),                     // 5: muxvia.cloud.v1.CommandObservedEffect
+	(ManagementErrorCode)(0),                       // 6: muxvia.cloud.v1.ManagementErrorCode
+	(*PageCursor)(nil),                             // 7: muxvia.cloud.v1.PageCursor
+	(*PageRequest)(nil),                            // 8: muxvia.cloud.v1.PageRequest
+	(*PageResponse)(nil),                           // 9: muxvia.cloud.v1.PageResponse
+	(*ManagementActorProjection)(nil),              // 10: muxvia.cloud.v1.ManagementActorProjection
+	(*ManagementErrorDetail)(nil),                  // 11: muxvia.cloud.v1.ManagementErrorDetail
+	(*RecentAuthenticationRequest)(nil),            // 12: muxvia.cloud.v1.RecentAuthenticationRequest
+	(*RecentAuthenticationResponse)(nil),           // 13: muxvia.cloud.v1.RecentAuthenticationResponse
+	(*OperatorLoginRequest)(nil),                   // 14: muxvia.cloud.v1.OperatorLoginRequest
+	(*OperatorSessionProjection)(nil),              // 15: muxvia.cloud.v1.OperatorSessionProjection
+	(*OperatorLoginResponse)(nil),                  // 16: muxvia.cloud.v1.OperatorLoginResponse
+	(*OperatorLogoutRequest)(nil),                  // 17: muxvia.cloud.v1.OperatorLogoutRequest
+	(*OperatorLogoutResponse)(nil),                 // 18: muxvia.cloud.v1.OperatorLogoutResponse
+	(*OperatorAccountSummary)(nil),                 // 19: muxvia.cloud.v1.OperatorAccountSummary
+	(*ListOperatorAccountsRequest)(nil),            // 20: muxvia.cloud.v1.ListOperatorAccountsRequest
+	(*ListOperatorAccountsResponse)(nil),           // 21: muxvia.cloud.v1.ListOperatorAccountsResponse
+	(*GetOperatorAccountRequest)(nil),              // 22: muxvia.cloud.v1.GetOperatorAccountRequest
+	(*GetOperatorAccountResponse)(nil),             // 23: muxvia.cloud.v1.GetOperatorAccountResponse
+	(*OperatorTransitionSubscriptionRequest)(nil),  // 24: muxvia.cloud.v1.OperatorTransitionSubscriptionRequest
+	(*OperatorTransitionSubscriptionResponse)(nil), // 25: muxvia.cloud.v1.OperatorTransitionSubscriptionResponse
+	(*AccountDeviceProjection)(nil),                // 26: muxvia.cloud.v1.AccountDeviceProjection
+	(*ListAccountDevicesRequest)(nil),              // 27: muxvia.cloud.v1.ListAccountDevicesRequest
+	(*ListAccountDevicesResponse)(nil),             // 28: muxvia.cloud.v1.ListAccountDevicesResponse
+	(*ListAccountTopologyRequest)(nil),             // 29: muxvia.cloud.v1.ListAccountTopologyRequest
+	(*ListAccountTopologyResponse)(nil),            // 30: muxvia.cloud.v1.ListAccountTopologyResponse
+	(*GetManagedSessionRequest)(nil),               // 31: muxvia.cloud.v1.GetManagedSessionRequest
+	(*GetManagedSessionResponse)(nil),              // 32: muxvia.cloud.v1.GetManagedSessionResponse
+	(*ListDaemonTerminalAccessRequest)(nil),        // 33: muxvia.cloud.v1.ListDaemonTerminalAccessRequest
+	(*ListDaemonTerminalAccessResponse)(nil),       // 34: muxvia.cloud.v1.ListDaemonTerminalAccessResponse
+	(*RevokeCloudDeviceTarget)(nil),                // 35: muxvia.cloud.v1.RevokeCloudDeviceTarget
+	(*AssignmentMigrationTarget)(nil),              // 36: muxvia.cloud.v1.AssignmentMigrationTarget
+	(*ManagementCommandTarget)(nil),                // 37: muxvia.cloud.v1.ManagementCommandTarget
+	(*ManagementCommandChildProjection)(nil),       // 38: muxvia.cloud.v1.ManagementCommandChildProjection
+	(*ManagementCommandProjection)(nil),            // 39: muxvia.cloud.v1.ManagementCommandProjection
+	(*CreateManagementCommandRequest)(nil),         // 40: muxvia.cloud.v1.CreateManagementCommandRequest
+	(*CreateManagementCommandResponse)(nil),        // 41: muxvia.cloud.v1.CreateManagementCommandResponse
+	(*GetManagementCommandRequest)(nil),            // 42: muxvia.cloud.v1.GetManagementCommandRequest
+	(*GetManagementCommandResponse)(nil),           // 43: muxvia.cloud.v1.GetManagementCommandResponse
+	(*ListManagementCommandsRequest)(nil),          // 44: muxvia.cloud.v1.ListManagementCommandsRequest
+	(*ListManagementCommandsResponse)(nil),         // 45: muxvia.cloud.v1.ListManagementCommandsResponse
+	(*HubFleetProjection)(nil),                     // 46: muxvia.cloud.v1.HubFleetProjection
+	(*ListHubFleetRequest)(nil),                    // 47: muxvia.cloud.v1.ListHubFleetRequest
+	(*ListHubFleetResponse)(nil),                   // 48: muxvia.cloud.v1.ListHubFleetResponse
+	(*GetHubStatusRequest)(nil),                    // 49: muxvia.cloud.v1.GetHubStatusRequest
+	(*GetHubStatusResponse)(nil),                   // 50: muxvia.cloud.v1.GetHubStatusResponse
+	(*AccountProjection)(nil),                      // 51: muxvia.cloud.v1.AccountProjection
+	(*SubscriptionProjection)(nil),                 // 52: muxvia.cloud.v1.SubscriptionProjection
+	(*EntitlementProjection)(nil),                  // 53: muxvia.cloud.v1.EntitlementProjection
+	(*RelayQuotaPeriod)(nil),                       // 54: muxvia.cloud.v1.RelayQuotaPeriod
+	(SubscriptionStatus)(0),                        // 55: muxvia.cloud.v1.SubscriptionStatus
+	(*GetAccountCommerceResponse)(nil),             // 56: muxvia.cloud.v1.GetAccountCommerceResponse
+	(*GetAccountRelayQuotaResponse)(nil),           // 57: muxvia.cloud.v1.GetAccountRelayQuotaResponse
+	(SubscriptionTransitionKind)(0),                // 58: muxvia.cloud.v1.SubscriptionTransitionKind
+	(*TransitionSubscriptionResponse)(nil),         // 59: muxvia.cloud.v1.TransitionSubscriptionResponse
+	(ManagedDeviceKind)(0),                         // 60: muxvia.cloud.v1.ManagedDeviceKind
+	(*PresenceProjection)(nil),                     // 61: muxvia.cloud.v1.PresenceProjection
+	(Freshness)(0),                                 // 62: muxvia.cloud.v1.Freshness
+	(*ManagedPeerSessionProjection)(nil),           // 63: muxvia.cloud.v1.ManagedPeerSessionProjection
+	(*ManagedPeerSessionTarget)(nil),               // 64: muxvia.cloud.v1.ManagedPeerSessionTarget
+	(TerminalAccessState)(0),                       // 65: muxvia.cloud.v1.TerminalAccessState
+	(*TerminalAccessProjection)(nil),               // 66: muxvia.cloud.v1.TerminalAccessProjection
+	(*KickPresenceTarget)(nil),                     // 67: muxvia.cloud.v1.KickPresenceTarget
+	(*RevokeTerminalAccessTarget)(nil),             // 68: muxvia.cloud.v1.RevokeTerminalAccessTarget
+	(*RelayControlTarget)(nil),                     // 69: muxvia.cloud.v1.RelayControlTarget
+	(*EdgeDeploymentMetadata)(nil),                 // 70: muxvia.cloud.v1.EdgeDeploymentMetadata
 }
 var file_cloudpb_cloud_management_proto_depIdxs = []int32{
-	7,  // 0: termx.cloud.v1.PageRequest.cursor:type_name -> termx.cloud.v1.PageCursor
-	7,  // 1: termx.cloud.v1.PageResponse.next_cursor:type_name -> termx.cloud.v1.PageCursor
-	0,  // 2: termx.cloud.v1.ManagementActorProjection.actor_kind:type_name -> termx.cloud.v1.ManagementActorKind
-	6,  // 3: termx.cloud.v1.ManagementErrorDetail.code:type_name -> termx.cloud.v1.ManagementErrorCode
-	0,  // 4: termx.cloud.v1.OperatorSessionProjection.actor_kind:type_name -> termx.cloud.v1.ManagementActorKind
-	15, // 5: termx.cloud.v1.OperatorLoginResponse.session:type_name -> termx.cloud.v1.OperatorSessionProjection
-	51, // 6: termx.cloud.v1.OperatorAccountSummary.account:type_name -> termx.cloud.v1.AccountProjection
-	52, // 7: termx.cloud.v1.OperatorAccountSummary.subscription:type_name -> termx.cloud.v1.SubscriptionProjection
-	53, // 8: termx.cloud.v1.OperatorAccountSummary.entitlement:type_name -> termx.cloud.v1.EntitlementProjection
-	54, // 9: termx.cloud.v1.OperatorAccountSummary.relay_quota:type_name -> termx.cloud.v1.RelayQuotaPeriod
-	55, // 10: termx.cloud.v1.ListOperatorAccountsRequest.subscription_status:type_name -> termx.cloud.v1.SubscriptionStatus
-	8,  // 11: termx.cloud.v1.ListOperatorAccountsRequest.page:type_name -> termx.cloud.v1.PageRequest
-	19, // 12: termx.cloud.v1.ListOperatorAccountsResponse.accounts:type_name -> termx.cloud.v1.OperatorAccountSummary
-	9,  // 13: termx.cloud.v1.ListOperatorAccountsResponse.page:type_name -> termx.cloud.v1.PageResponse
-	56, // 14: termx.cloud.v1.GetOperatorAccountResponse.commerce:type_name -> termx.cloud.v1.GetAccountCommerceResponse
-	57, // 15: termx.cloud.v1.GetOperatorAccountResponse.relay_quota:type_name -> termx.cloud.v1.GetAccountRelayQuotaResponse
-	28, // 16: termx.cloud.v1.GetOperatorAccountResponse.devices:type_name -> termx.cloud.v1.ListAccountDevicesResponse
-	30, // 17: termx.cloud.v1.GetOperatorAccountResponse.topology:type_name -> termx.cloud.v1.ListAccountTopologyResponse
-	39, // 18: termx.cloud.v1.GetOperatorAccountResponse.commands:type_name -> termx.cloud.v1.ManagementCommandProjection
-	58, // 19: termx.cloud.v1.OperatorTransitionSubscriptionRequest.transition:type_name -> termx.cloud.v1.SubscriptionTransitionKind
-	59, // 20: termx.cloud.v1.OperatorTransitionSubscriptionResponse.result:type_name -> termx.cloud.v1.TransitionSubscriptionResponse
-	60, // 21: termx.cloud.v1.AccountDeviceProjection.device_kind:type_name -> termx.cloud.v1.ManagedDeviceKind
-	61, // 22: termx.cloud.v1.AccountDeviceProjection.presence:type_name -> termx.cloud.v1.PresenceProjection
-	60, // 23: termx.cloud.v1.ListAccountDevicesRequest.device_kind:type_name -> termx.cloud.v1.ManagedDeviceKind
-	8,  // 24: termx.cloud.v1.ListAccountDevicesRequest.page:type_name -> termx.cloud.v1.PageRequest
-	26, // 25: termx.cloud.v1.ListAccountDevicesResponse.devices:type_name -> termx.cloud.v1.AccountDeviceProjection
-	9,  // 26: termx.cloud.v1.ListAccountDevicesResponse.page:type_name -> termx.cloud.v1.PageResponse
-	62, // 27: termx.cloud.v1.ListAccountTopologyRequest.freshness:type_name -> termx.cloud.v1.Freshness
-	8,  // 28: termx.cloud.v1.ListAccountTopologyRequest.page:type_name -> termx.cloud.v1.PageRequest
-	61, // 29: termx.cloud.v1.ListAccountTopologyResponse.presences:type_name -> termx.cloud.v1.PresenceProjection
-	63, // 30: termx.cloud.v1.ListAccountTopologyResponse.peer_sessions:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
-	9,  // 31: termx.cloud.v1.ListAccountTopologyResponse.page:type_name -> termx.cloud.v1.PageResponse
-	64, // 32: termx.cloud.v1.GetManagedSessionRequest.target:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
-	63, // 33: termx.cloud.v1.GetManagedSessionResponse.session:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
-	65, // 34: termx.cloud.v1.ListDaemonTerminalAccessRequest.state:type_name -> termx.cloud.v1.TerminalAccessState
-	8,  // 35: termx.cloud.v1.ListDaemonTerminalAccessRequest.page:type_name -> termx.cloud.v1.PageRequest
-	66, // 36: termx.cloud.v1.ListDaemonTerminalAccessResponse.accesses:type_name -> termx.cloud.v1.TerminalAccessProjection
-	62, // 37: termx.cloud.v1.ListDaemonTerminalAccessResponse.freshness:type_name -> termx.cloud.v1.Freshness
-	9,  // 38: termx.cloud.v1.ListDaemonTerminalAccessResponse.page:type_name -> termx.cloud.v1.PageResponse
-	67, // 39: termx.cloud.v1.ManagementCommandTarget.presence:type_name -> termx.cloud.v1.KickPresenceTarget
-	35, // 40: termx.cloud.v1.ManagementCommandTarget.cloud_device:type_name -> termx.cloud.v1.RevokeCloudDeviceTarget
-	64, // 41: termx.cloud.v1.ManagementCommandTarget.peer_session:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
-	68, // 42: termx.cloud.v1.ManagementCommandTarget.terminal_access:type_name -> termx.cloud.v1.RevokeTerminalAccessTarget
-	69, // 43: termx.cloud.v1.ManagementCommandTarget.relay_allocations:type_name -> termx.cloud.v1.RelayControlTarget
-	36, // 44: termx.cloud.v1.ManagementCommandTarget.assignment_migration:type_name -> termx.cloud.v1.AssignmentMigrationTarget
-	37, // 45: termx.cloud.v1.ManagementCommandChildProjection.target:type_name -> termx.cloud.v1.ManagementCommandTarget
-	3,  // 46: termx.cloud.v1.ManagementCommandChildProjection.delivery_state:type_name -> termx.cloud.v1.CommandDeliveryState
-	4,  // 47: termx.cloud.v1.ManagementCommandChildProjection.execution_state:type_name -> termx.cloud.v1.CommandExecutionState
-	5,  // 48: termx.cloud.v1.ManagementCommandChildProjection.observed_effect:type_name -> termx.cloud.v1.CommandObservedEffect
-	11, // 49: termx.cloud.v1.ManagementCommandChildProjection.last_error:type_name -> termx.cloud.v1.ManagementErrorDetail
-	10, // 50: termx.cloud.v1.ManagementCommandProjection.actor:type_name -> termx.cloud.v1.ManagementActorProjection
-	1,  // 51: termx.cloud.v1.ManagementCommandProjection.command_kind:type_name -> termx.cloud.v1.ManagementCommandKind
-	37, // 52: termx.cloud.v1.ManagementCommandProjection.target:type_name -> termx.cloud.v1.ManagementCommandTarget
-	2,  // 53: termx.cloud.v1.ManagementCommandProjection.authority_result:type_name -> termx.cloud.v1.CommandAuthorityResult
-	3,  // 54: termx.cloud.v1.ManagementCommandProjection.delivery_state:type_name -> termx.cloud.v1.CommandDeliveryState
-	4,  // 55: termx.cloud.v1.ManagementCommandProjection.execution_state:type_name -> termx.cloud.v1.CommandExecutionState
-	5,  // 56: termx.cloud.v1.ManagementCommandProjection.observed_effect:type_name -> termx.cloud.v1.CommandObservedEffect
-	38, // 57: termx.cloud.v1.ManagementCommandProjection.children:type_name -> termx.cloud.v1.ManagementCommandChildProjection
-	1,  // 58: termx.cloud.v1.CreateManagementCommandRequest.command_kind:type_name -> termx.cloud.v1.ManagementCommandKind
-	37, // 59: termx.cloud.v1.CreateManagementCommandRequest.target:type_name -> termx.cloud.v1.ManagementCommandTarget
-	39, // 60: termx.cloud.v1.CreateManagementCommandResponse.command:type_name -> termx.cloud.v1.ManagementCommandProjection
-	39, // 61: termx.cloud.v1.GetManagementCommandResponse.command:type_name -> termx.cloud.v1.ManagementCommandProjection
-	1,  // 62: termx.cloud.v1.ListManagementCommandsRequest.command_kind:type_name -> termx.cloud.v1.ManagementCommandKind
-	4,  // 63: termx.cloud.v1.ListManagementCommandsRequest.execution_state:type_name -> termx.cloud.v1.CommandExecutionState
-	8,  // 64: termx.cloud.v1.ListManagementCommandsRequest.page:type_name -> termx.cloud.v1.PageRequest
-	39, // 65: termx.cloud.v1.ListManagementCommandsResponse.commands:type_name -> termx.cloud.v1.ManagementCommandProjection
-	9,  // 66: termx.cloud.v1.ListManagementCommandsResponse.page:type_name -> termx.cloud.v1.PageResponse
-	70, // 67: termx.cloud.v1.HubFleetProjection.deployment:type_name -> termx.cloud.v1.EdgeDeploymentMetadata
-	62, // 68: termx.cloud.v1.HubFleetProjection.freshness:type_name -> termx.cloud.v1.Freshness
-	62, // 69: termx.cloud.v1.ListHubFleetRequest.freshness:type_name -> termx.cloud.v1.Freshness
-	8,  // 70: termx.cloud.v1.ListHubFleetRequest.page:type_name -> termx.cloud.v1.PageRequest
-	46, // 71: termx.cloud.v1.ListHubFleetResponse.hubs:type_name -> termx.cloud.v1.HubFleetProjection
-	9,  // 72: termx.cloud.v1.ListHubFleetResponse.page:type_name -> termx.cloud.v1.PageResponse
-	46, // 73: termx.cloud.v1.GetHubStatusResponse.hub:type_name -> termx.cloud.v1.HubFleetProjection
+	7,  // 0: muxvia.cloud.v1.PageRequest.cursor:type_name -> muxvia.cloud.v1.PageCursor
+	7,  // 1: muxvia.cloud.v1.PageResponse.next_cursor:type_name -> muxvia.cloud.v1.PageCursor
+	0,  // 2: muxvia.cloud.v1.ManagementActorProjection.actor_kind:type_name -> muxvia.cloud.v1.ManagementActorKind
+	6,  // 3: muxvia.cloud.v1.ManagementErrorDetail.code:type_name -> muxvia.cloud.v1.ManagementErrorCode
+	0,  // 4: muxvia.cloud.v1.OperatorSessionProjection.actor_kind:type_name -> muxvia.cloud.v1.ManagementActorKind
+	15, // 5: muxvia.cloud.v1.OperatorLoginResponse.session:type_name -> muxvia.cloud.v1.OperatorSessionProjection
+	51, // 6: muxvia.cloud.v1.OperatorAccountSummary.account:type_name -> muxvia.cloud.v1.AccountProjection
+	52, // 7: muxvia.cloud.v1.OperatorAccountSummary.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	53, // 8: muxvia.cloud.v1.OperatorAccountSummary.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
+	54, // 9: muxvia.cloud.v1.OperatorAccountSummary.relay_quota:type_name -> muxvia.cloud.v1.RelayQuotaPeriod
+	55, // 10: muxvia.cloud.v1.ListOperatorAccountsRequest.subscription_status:type_name -> muxvia.cloud.v1.SubscriptionStatus
+	8,  // 11: muxvia.cloud.v1.ListOperatorAccountsRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	19, // 12: muxvia.cloud.v1.ListOperatorAccountsResponse.accounts:type_name -> muxvia.cloud.v1.OperatorAccountSummary
+	9,  // 13: muxvia.cloud.v1.ListOperatorAccountsResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	56, // 14: muxvia.cloud.v1.GetOperatorAccountResponse.commerce:type_name -> muxvia.cloud.v1.GetAccountCommerceResponse
+	57, // 15: muxvia.cloud.v1.GetOperatorAccountResponse.relay_quota:type_name -> muxvia.cloud.v1.GetAccountRelayQuotaResponse
+	28, // 16: muxvia.cloud.v1.GetOperatorAccountResponse.devices:type_name -> muxvia.cloud.v1.ListAccountDevicesResponse
+	30, // 17: muxvia.cloud.v1.GetOperatorAccountResponse.topology:type_name -> muxvia.cloud.v1.ListAccountTopologyResponse
+	39, // 18: muxvia.cloud.v1.GetOperatorAccountResponse.commands:type_name -> muxvia.cloud.v1.ManagementCommandProjection
+	58, // 19: muxvia.cloud.v1.OperatorTransitionSubscriptionRequest.transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
+	59, // 20: muxvia.cloud.v1.OperatorTransitionSubscriptionResponse.result:type_name -> muxvia.cloud.v1.TransitionSubscriptionResponse
+	60, // 21: muxvia.cloud.v1.AccountDeviceProjection.device_kind:type_name -> muxvia.cloud.v1.ManagedDeviceKind
+	61, // 22: muxvia.cloud.v1.AccountDeviceProjection.presence:type_name -> muxvia.cloud.v1.PresenceProjection
+	60, // 23: muxvia.cloud.v1.ListAccountDevicesRequest.device_kind:type_name -> muxvia.cloud.v1.ManagedDeviceKind
+	8,  // 24: muxvia.cloud.v1.ListAccountDevicesRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	26, // 25: muxvia.cloud.v1.ListAccountDevicesResponse.devices:type_name -> muxvia.cloud.v1.AccountDeviceProjection
+	9,  // 26: muxvia.cloud.v1.ListAccountDevicesResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	62, // 27: muxvia.cloud.v1.ListAccountTopologyRequest.freshness:type_name -> muxvia.cloud.v1.Freshness
+	8,  // 28: muxvia.cloud.v1.ListAccountTopologyRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	61, // 29: muxvia.cloud.v1.ListAccountTopologyResponse.presences:type_name -> muxvia.cloud.v1.PresenceProjection
+	63, // 30: muxvia.cloud.v1.ListAccountTopologyResponse.peer_sessions:type_name -> muxvia.cloud.v1.ManagedPeerSessionProjection
+	9,  // 31: muxvia.cloud.v1.ListAccountTopologyResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	64, // 32: muxvia.cloud.v1.GetManagedSessionRequest.target:type_name -> muxvia.cloud.v1.ManagedPeerSessionTarget
+	63, // 33: muxvia.cloud.v1.GetManagedSessionResponse.session:type_name -> muxvia.cloud.v1.ManagedPeerSessionProjection
+	65, // 34: muxvia.cloud.v1.ListDaemonTerminalAccessRequest.state:type_name -> muxvia.cloud.v1.TerminalAccessState
+	8,  // 35: muxvia.cloud.v1.ListDaemonTerminalAccessRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	66, // 36: muxvia.cloud.v1.ListDaemonTerminalAccessResponse.accesses:type_name -> muxvia.cloud.v1.TerminalAccessProjection
+	62, // 37: muxvia.cloud.v1.ListDaemonTerminalAccessResponse.freshness:type_name -> muxvia.cloud.v1.Freshness
+	9,  // 38: muxvia.cloud.v1.ListDaemonTerminalAccessResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	67, // 39: muxvia.cloud.v1.ManagementCommandTarget.presence:type_name -> muxvia.cloud.v1.KickPresenceTarget
+	35, // 40: muxvia.cloud.v1.ManagementCommandTarget.cloud_device:type_name -> muxvia.cloud.v1.RevokeCloudDeviceTarget
+	64, // 41: muxvia.cloud.v1.ManagementCommandTarget.peer_session:type_name -> muxvia.cloud.v1.ManagedPeerSessionTarget
+	68, // 42: muxvia.cloud.v1.ManagementCommandTarget.terminal_access:type_name -> muxvia.cloud.v1.RevokeTerminalAccessTarget
+	69, // 43: muxvia.cloud.v1.ManagementCommandTarget.relay_allocations:type_name -> muxvia.cloud.v1.RelayControlTarget
+	36, // 44: muxvia.cloud.v1.ManagementCommandTarget.assignment_migration:type_name -> muxvia.cloud.v1.AssignmentMigrationTarget
+	37, // 45: muxvia.cloud.v1.ManagementCommandChildProjection.target:type_name -> muxvia.cloud.v1.ManagementCommandTarget
+	3,  // 46: muxvia.cloud.v1.ManagementCommandChildProjection.delivery_state:type_name -> muxvia.cloud.v1.CommandDeliveryState
+	4,  // 47: muxvia.cloud.v1.ManagementCommandChildProjection.execution_state:type_name -> muxvia.cloud.v1.CommandExecutionState
+	5,  // 48: muxvia.cloud.v1.ManagementCommandChildProjection.observed_effect:type_name -> muxvia.cloud.v1.CommandObservedEffect
+	11, // 49: muxvia.cloud.v1.ManagementCommandChildProjection.last_error:type_name -> muxvia.cloud.v1.ManagementErrorDetail
+	10, // 50: muxvia.cloud.v1.ManagementCommandProjection.actor:type_name -> muxvia.cloud.v1.ManagementActorProjection
+	1,  // 51: muxvia.cloud.v1.ManagementCommandProjection.command_kind:type_name -> muxvia.cloud.v1.ManagementCommandKind
+	37, // 52: muxvia.cloud.v1.ManagementCommandProjection.target:type_name -> muxvia.cloud.v1.ManagementCommandTarget
+	2,  // 53: muxvia.cloud.v1.ManagementCommandProjection.authority_result:type_name -> muxvia.cloud.v1.CommandAuthorityResult
+	3,  // 54: muxvia.cloud.v1.ManagementCommandProjection.delivery_state:type_name -> muxvia.cloud.v1.CommandDeliveryState
+	4,  // 55: muxvia.cloud.v1.ManagementCommandProjection.execution_state:type_name -> muxvia.cloud.v1.CommandExecutionState
+	5,  // 56: muxvia.cloud.v1.ManagementCommandProjection.observed_effect:type_name -> muxvia.cloud.v1.CommandObservedEffect
+	38, // 57: muxvia.cloud.v1.ManagementCommandProjection.children:type_name -> muxvia.cloud.v1.ManagementCommandChildProjection
+	1,  // 58: muxvia.cloud.v1.CreateManagementCommandRequest.command_kind:type_name -> muxvia.cloud.v1.ManagementCommandKind
+	37, // 59: muxvia.cloud.v1.CreateManagementCommandRequest.target:type_name -> muxvia.cloud.v1.ManagementCommandTarget
+	39, // 60: muxvia.cloud.v1.CreateManagementCommandResponse.command:type_name -> muxvia.cloud.v1.ManagementCommandProjection
+	39, // 61: muxvia.cloud.v1.GetManagementCommandResponse.command:type_name -> muxvia.cloud.v1.ManagementCommandProjection
+	1,  // 62: muxvia.cloud.v1.ListManagementCommandsRequest.command_kind:type_name -> muxvia.cloud.v1.ManagementCommandKind
+	4,  // 63: muxvia.cloud.v1.ListManagementCommandsRequest.execution_state:type_name -> muxvia.cloud.v1.CommandExecutionState
+	8,  // 64: muxvia.cloud.v1.ListManagementCommandsRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	39, // 65: muxvia.cloud.v1.ListManagementCommandsResponse.commands:type_name -> muxvia.cloud.v1.ManagementCommandProjection
+	9,  // 66: muxvia.cloud.v1.ListManagementCommandsResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	70, // 67: muxvia.cloud.v1.HubFleetProjection.deployment:type_name -> muxvia.cloud.v1.EdgeDeploymentMetadata
+	62, // 68: muxvia.cloud.v1.HubFleetProjection.freshness:type_name -> muxvia.cloud.v1.Freshness
+	62, // 69: muxvia.cloud.v1.ListHubFleetRequest.freshness:type_name -> muxvia.cloud.v1.Freshness
+	8,  // 70: muxvia.cloud.v1.ListHubFleetRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	46, // 71: muxvia.cloud.v1.ListHubFleetResponse.hubs:type_name -> muxvia.cloud.v1.HubFleetProjection
+	9,  // 72: muxvia.cloud.v1.ListHubFleetResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	46, // 73: muxvia.cloud.v1.GetHubStatusResponse.hub:type_name -> muxvia.cloud.v1.HubFleetProjection
 	74, // [74:74] is the sub-list for method output_type
 	74, // [74:74] is the sub-list for method input_type
 	74, // [74:74] is the sub-list for extension type_name

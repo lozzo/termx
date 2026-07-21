@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/companion/session"
+	"github.com/muxvia/muxvia/private/cloud/companion/session"
 	"google.golang.org/protobuf/proto"
 )
 

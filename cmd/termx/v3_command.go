@@ -8,13 +8,13 @@ import (
 	"strings"
 	"syscall"
 
-	apilayer "github.com/lozzow/termx/api_layer"
-	corev2 "github.com/lozzow/termx/core"
-	"github.com/lozzow/termx/shared/perftrace"
-	tuiv3 "github.com/lozzow/termx/tui"
-	tuiapp "github.com/lozzow/termx/tui/app"
-	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/terminalhost"
+	apilayer "github.com/muxvia/muxvia/api_layer"
+	corev2 "github.com/muxvia/muxvia/core"
+	"github.com/muxvia/muxvia/shared/perftrace"
+	tuiv3 "github.com/muxvia/muxvia/tui"
+	tuiapp "github.com/muxvia/muxvia/tui/app"
+	"github.com/muxvia/muxvia/tui/render"
+	"github.com/muxvia/muxvia/tui/terminalhost"
 	"github.com/spf13/cobra"
 )
 

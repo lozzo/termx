@@ -80,7 +80,7 @@ type FileEntry struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	Path               string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
 	Name               string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Type               FileEntryType          `protobuf:"varint,3,opt,name=type,proto3,enum=termx.api.v1.FileEntryType" json:"type,omitempty"`
+	Type               FileEntryType          `protobuf:"varint,3,opt,name=type,proto3,enum=muxvia.api.v1.FileEntryType" json:"type,omitempty"`
 	Size               int64                  `protobuf:"varint,4,opt,name=size,proto3" json:"size,omitempty"`
 	Mode               uint32                 `protobuf:"varint,5,opt,name=mode,proto3" json:"mode,omitempty"`
 	ModifiedAtUnixNano int64                  `protobuf:"varint,6,opt,name=modified_at_unix_nano,json=modifiedAtUnixNano,proto3" json:"modified_at_unix_nano,omitempty"`
@@ -1418,11 +1418,11 @@ var File_apipb_file_proto protoreflect.FileDescriptor
 
 const file_apipb_file_proto_rawDesc = "" +
 	"\n" +
-	"\x10apipb/file.proto\x12\ftermx.api.v1\x1a\x12apipb/common.proto\"\xe0\x01\n" +
+	"\x10apipb/file.proto\x12\rmuxvia.api.v1\x1a\x12apipb/common.proto\"\xe1\x01\n" +
 	"\tFileEntry\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12/\n" +
-	"\x04type\x18\x03 \x01(\x0e2\x1b.termx.api.v1.FileEntryTypeR\x04type\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x120\n" +
+	"\x04type\x18\x03 \x01(\x0e2\x1c.muxvia.api.v1.FileEntryTypeR\x04type\x12\x12\n" +
 	"\x04size\x18\x04 \x01(\x03R\x04size\x12\x12\n" +
 	"\x04mode\x18\x05 \x01(\rR\x04mode\x121\n" +
 	"\x15modified_at_unix_nano\x18\x06 \x01(\x03R\x12modifiedAtUnixNano\x12\x1f\n" +
@@ -1456,32 +1456,32 @@ const file_apipb_file_proto_rawDesc = "" +
 	"\x0fFileMoveCommand\x12\x14\n" +
 	"\x05paths\x18\x02 \x03(\tR\x05paths\x12)\n" +
 	"\x10target_directory\x18\x03 \x01(\tR\x0ftargetDirectory\x12\x1c\n" +
-	"\toverwrite\x18\x04 \x01(\bR\toverwriteJ\x04\b\x01\x10\x02\"\xf0\x01\n" +
+	"\toverwrite\x18\x04 \x01(\bR\toverwriteJ\x04\b\x01\x10\x02\"\xf1\x01\n" +
 	"\x17FileDownloadOpenCommand\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x16\n" +
 	"\x06offset\x18\x03 \x01(\x03R\x06offset\x12#\n" +
 	"\rexpected_size\x18\x04 \x01(\x03R\fexpectedSize\x12B\n" +
-	"\x1eexpected_modified_at_unix_nano\x18\x05 \x01(\x03R\x1aexpectedModifiedAtUnixNano\x12:\n" +
-	"\toperation\x18\x06 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"\xdd\x01\n" +
+	"\x1eexpected_modified_at_unix_nano\x18\x05 \x01(\x03R\x1aexpectedModifiedAtUnixNano\x12;\n" +
+	"\toperation\x18\x06 \x01(\v2\x1d.muxvia.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"\xdf\x01\n" +
 	"\x15FileUploadOpenCommand\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x12\n" +
 	"\x04size\x18\x03 \x01(\x03R\x04size\x12\x1c\n" +
-	"\toverwrite\x18\x04 \x01(\bR\toverwrite\x12<\n" +
-	"\x06resume\x18\x05 \x01(\v2$.termx.api.v1.FileUploadResumeHandleR\x06resume\x12:\n" +
-	"\toperation\x18\x06 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"\xe2\x01\n" +
-	"\x19FileTransferCancelCommand\x128\n" +
-	"\btransfer\x18\x02 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\btransfer\x12:\n" +
-	"\toperation\x18\x03 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\x12I\n" +
-	"\rupload_resume\x18\x04 \x01(\v2$.termx.api.v1.FileUploadResumeHandleR\fuploadResumeJ\x04\b\x01\x10\x02\"x\n" +
+	"\toverwrite\x18\x04 \x01(\bR\toverwrite\x12=\n" +
+	"\x06resume\x18\x05 \x01(\v2%.muxvia.api.v1.FileUploadResumeHandleR\x06resume\x12;\n" +
+	"\toperation\x18\x06 \x01(\v2\x1d.muxvia.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"\xe5\x01\n" +
+	"\x19FileTransferCancelCommand\x129\n" +
+	"\btransfer\x18\x02 \x01(\v2\x1d.muxvia.api.v1.ResourceHandleR\btransfer\x12;\n" +
+	"\toperation\x18\x03 \x01(\v2\x1d.muxvia.api.v1.OperationStampR\toperation\x12J\n" +
+	"\rupload_resume\x18\x04 \x01(\v2%.muxvia.api.v1.FileUploadResumeHandleR\fuploadResumeJ\x04\b\x01\x10\x02\"y\n" +
 	"\x0eFileListResult\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path\x121\n" +
-	"\aentries\x18\x02 \x03(\v2\x17.termx.api.v1.FileEntryR\aentries\x12\x1f\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x122\n" +
+	"\aentries\x18\x02 \x03(\v2\x18.muxvia.api.v1.FileEntryR\aentries\x12\x1f\n" +
 	"\vnext_cursor\x18\x03 \x01(\tR\n" +
-	"nextCursor\"?\n" +
-	"\x0eFileStatResult\x12-\n" +
-	"\x05entry\x18\x01 \x01(\v2\x17.termx.api.v1.FileEntryR\x05entry\"\x97\x01\n" +
-	"\x11FilePreviewResult\x12-\n" +
-	"\x05entry\x18\x01 \x01(\v2\x17.termx.api.v1.FileEntryR\x05entry\x12\x1b\n" +
+	"nextCursor\"@\n" +
+	"\x0eFileStatResult\x12.\n" +
+	"\x05entry\x18\x01 \x01(\v2\x18.muxvia.api.v1.FileEntryR\x05entry\"\x98\x01\n" +
+	"\x11FilePreviewResult\x12.\n" +
+	"\x05entry\x18\x01 \x01(\v2\x18.muxvia.api.v1.FileEntryR\x05entry\x12\x1b\n" +
 	"\tmime_type\x18\x02 \x01(\tR\bmimeType\x12\x18\n" +
 	"\acontent\x18\x03 \x01(\fR\acontent\x12\x1c\n" +
 	"\ttruncated\x18\x04 \x01(\bR\ttruncated\"\xa8\x01\n" +
@@ -1492,26 +1492,26 @@ const file_apipb_file_proto_rawDesc = "" +
 	"\asuccess\x18\x03 \x01(\bR\asuccess\x12\x1d\n" +
 	"\n" +
 	"error_code\x18\x04 \x01(\tR\terrorCode\x12#\n" +
-	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"N\n" +
-	"\x0fFileBatchResult\x12;\n" +
-	"\aresults\x18\x01 \x03(\v2!.termx.api.v1.FileOperationResultR\aresults\"\xff\x02\n" +
-	"\x12FileTransferHandle\x128\n" +
-	"\bresource\x18\x01 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresource\x12\x12\n" +
+	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"O\n" +
+	"\x0fFileBatchResult\x12<\n" +
+	"\aresults\x18\x01 \x03(\v2\".muxvia.api.v1.FileOperationResultR\aresults\"\x82\x03\n" +
+	"\x12FileTransferHandle\x129\n" +
+	"\bresource\x18\x01 \x01(\v2\x1d.muxvia.api.v1.ResourceHandleR\bresource\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x16\n" +
 	"\x06offset\x18\x03 \x01(\x03R\x06offset\x12\x12\n" +
 	"\x04size\x18\x04 \x01(\x03R\x04size\x121\n" +
-	"\x15modified_at_unix_nano\x18\x05 \x01(\x03R\x12modifiedAtUnixNano\x12:\n" +
-	"\toperation\x18\x06 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\x12<\n" +
-	"\x06resume\x18\a \x01(\v2$.termx.api.v1.FileUploadResumeHandleR\x06resume\x12\x1f\n" +
+	"\x15modified_at_unix_nano\x18\x05 \x01(\x03R\x12modifiedAtUnixNano\x12;\n" +
+	"\toperation\x18\x06 \x01(\v2\x1d.muxvia.api.v1.OperationStampR\toperation\x12=\n" +
+	"\x06resume\x18\a \x01(\v2%.muxvia.api.v1.FileUploadResumeHandleR\x06resume\x12\x1f\n" +
 	"\vchunk_bytes\x18\b \x01(\rR\n" +
 	"chunkBytes\x12!\n" +
-	"\fwindow_bytes\x18\t \x01(\x03R\vwindowBytes\"V\n" +
-	"\x16FileTransferOpenResult\x12<\n" +
-	"\btransfer\x18\x01 \x01(\v2 .termx.api.v1.FileTransferHandleR\btransfer\"8\n" +
+	"\fwindow_bytes\x18\t \x01(\x03R\vwindowBytes\"W\n" +
+	"\x16FileTransferOpenResult\x12=\n" +
+	"\btransfer\x18\x01 \x01(\v2!.muxvia.api.v1.FileTransferHandleR\btransfer\"8\n" +
 	"\x18FileTransferCancelResult\x12\x1c\n" +
-	"\tcancelled\x18\x01 \x01(\bR\tcancelled\"\x86\x01\n" +
-	"\x1aFileTransferCompletedEvent\x12<\n" +
-	"\btransfer\x18\x01 \x01(\v2 .termx.api.v1.FileTransferHandleR\btransfer\x12\x12\n" +
+	"\tcancelled\x18\x01 \x01(\bR\tcancelled\"\x87\x01\n" +
+	"\x1aFileTransferCompletedEvent\x12=\n" +
+	"\btransfer\x18\x01 \x01(\v2!.muxvia.api.v1.FileTransferHandleR\btransfer\x12\x12\n" +
 	"\x04size\x18\x02 \x01(\x03R\x04size\x12\x16\n" +
 	"\x06sha256\x18\x03 \x01(\fR\x06sha256*\xa1\x01\n" +
 	"\rFileEntryType\x12\x1f\n" +
@@ -1519,7 +1519,7 @@ const file_apipb_file_proto_rawDesc = "" +
 	"\x14FILE_ENTRY_TYPE_FILE\x10\x01\x12\x1d\n" +
 	"\x19FILE_ENTRY_TYPE_DIRECTORY\x10\x02\x12\x1b\n" +
 	"\x17FILE_ENTRY_TYPE_SYMLINK\x10\x03\x12\x19\n" +
-	"\x15FILE_ENTRY_TYPE_OTHER\x10\x04B%Z#github.com/lozzow/termx/proto/apipbb\x06proto3"
+	"\x15FILE_ENTRY_TYPE_OTHER\x10\x04B&Z$github.com/muxvia/muxvia/proto/apipbb\x06proto3"
 
 var (
 	file_apipb_file_proto_rawDescOnce sync.Once
@@ -1536,49 +1536,49 @@ func file_apipb_file_proto_rawDescGZIP() []byte {
 var file_apipb_file_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_apipb_file_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_apipb_file_proto_goTypes = []any{
-	(FileEntryType)(0),                 // 0: termx.api.v1.FileEntryType
-	(*FileEntry)(nil),                  // 1: termx.api.v1.FileEntry
-	(*FileUploadResumeHandle)(nil),     // 2: termx.api.v1.FileUploadResumeHandle
-	(*FileListCommand)(nil),            // 3: termx.api.v1.FileListCommand
-	(*FileStatCommand)(nil),            // 4: termx.api.v1.FileStatCommand
-	(*FilePreviewCommand)(nil),         // 5: termx.api.v1.FilePreviewCommand
-	(*FileMkdirCommand)(nil),           // 6: termx.api.v1.FileMkdirCommand
-	(*FileRenameCommand)(nil),          // 7: termx.api.v1.FileRenameCommand
-	(*FileDeleteCommand)(nil),          // 8: termx.api.v1.FileDeleteCommand
-	(*FileCopyCommand)(nil),            // 9: termx.api.v1.FileCopyCommand
-	(*FileMoveCommand)(nil),            // 10: termx.api.v1.FileMoveCommand
-	(*FileDownloadOpenCommand)(nil),    // 11: termx.api.v1.FileDownloadOpenCommand
-	(*FileUploadOpenCommand)(nil),      // 12: termx.api.v1.FileUploadOpenCommand
-	(*FileTransferCancelCommand)(nil),  // 13: termx.api.v1.FileTransferCancelCommand
-	(*FileListResult)(nil),             // 14: termx.api.v1.FileListResult
-	(*FileStatResult)(nil),             // 15: termx.api.v1.FileStatResult
-	(*FilePreviewResult)(nil),          // 16: termx.api.v1.FilePreviewResult
-	(*FileOperationResult)(nil),        // 17: termx.api.v1.FileOperationResult
-	(*FileBatchResult)(nil),            // 18: termx.api.v1.FileBatchResult
-	(*FileTransferHandle)(nil),         // 19: termx.api.v1.FileTransferHandle
-	(*FileTransferOpenResult)(nil),     // 20: termx.api.v1.FileTransferOpenResult
-	(*FileTransferCancelResult)(nil),   // 21: termx.api.v1.FileTransferCancelResult
-	(*FileTransferCompletedEvent)(nil), // 22: termx.api.v1.FileTransferCompletedEvent
-	(*OperationStamp)(nil),             // 23: termx.api.v1.OperationStamp
-	(*ResourceHandle)(nil),             // 24: termx.api.v1.ResourceHandle
+	(FileEntryType)(0),                 // 0: muxvia.api.v1.FileEntryType
+	(*FileEntry)(nil),                  // 1: muxvia.api.v1.FileEntry
+	(*FileUploadResumeHandle)(nil),     // 2: muxvia.api.v1.FileUploadResumeHandle
+	(*FileListCommand)(nil),            // 3: muxvia.api.v1.FileListCommand
+	(*FileStatCommand)(nil),            // 4: muxvia.api.v1.FileStatCommand
+	(*FilePreviewCommand)(nil),         // 5: muxvia.api.v1.FilePreviewCommand
+	(*FileMkdirCommand)(nil),           // 6: muxvia.api.v1.FileMkdirCommand
+	(*FileRenameCommand)(nil),          // 7: muxvia.api.v1.FileRenameCommand
+	(*FileDeleteCommand)(nil),          // 8: muxvia.api.v1.FileDeleteCommand
+	(*FileCopyCommand)(nil),            // 9: muxvia.api.v1.FileCopyCommand
+	(*FileMoveCommand)(nil),            // 10: muxvia.api.v1.FileMoveCommand
+	(*FileDownloadOpenCommand)(nil),    // 11: muxvia.api.v1.FileDownloadOpenCommand
+	(*FileUploadOpenCommand)(nil),      // 12: muxvia.api.v1.FileUploadOpenCommand
+	(*FileTransferCancelCommand)(nil),  // 13: muxvia.api.v1.FileTransferCancelCommand
+	(*FileListResult)(nil),             // 14: muxvia.api.v1.FileListResult
+	(*FileStatResult)(nil),             // 15: muxvia.api.v1.FileStatResult
+	(*FilePreviewResult)(nil),          // 16: muxvia.api.v1.FilePreviewResult
+	(*FileOperationResult)(nil),        // 17: muxvia.api.v1.FileOperationResult
+	(*FileBatchResult)(nil),            // 18: muxvia.api.v1.FileBatchResult
+	(*FileTransferHandle)(nil),         // 19: muxvia.api.v1.FileTransferHandle
+	(*FileTransferOpenResult)(nil),     // 20: muxvia.api.v1.FileTransferOpenResult
+	(*FileTransferCancelResult)(nil),   // 21: muxvia.api.v1.FileTransferCancelResult
+	(*FileTransferCompletedEvent)(nil), // 22: muxvia.api.v1.FileTransferCompletedEvent
+	(*OperationStamp)(nil),             // 23: muxvia.api.v1.OperationStamp
+	(*ResourceHandle)(nil),             // 24: muxvia.api.v1.ResourceHandle
 }
 var file_apipb_file_proto_depIdxs = []int32{
-	0,  // 0: termx.api.v1.FileEntry.type:type_name -> termx.api.v1.FileEntryType
-	23, // 1: termx.api.v1.FileDownloadOpenCommand.operation:type_name -> termx.api.v1.OperationStamp
-	2,  // 2: termx.api.v1.FileUploadOpenCommand.resume:type_name -> termx.api.v1.FileUploadResumeHandle
-	23, // 3: termx.api.v1.FileUploadOpenCommand.operation:type_name -> termx.api.v1.OperationStamp
-	24, // 4: termx.api.v1.FileTransferCancelCommand.transfer:type_name -> termx.api.v1.ResourceHandle
-	23, // 5: termx.api.v1.FileTransferCancelCommand.operation:type_name -> termx.api.v1.OperationStamp
-	2,  // 6: termx.api.v1.FileTransferCancelCommand.upload_resume:type_name -> termx.api.v1.FileUploadResumeHandle
-	1,  // 7: termx.api.v1.FileListResult.entries:type_name -> termx.api.v1.FileEntry
-	1,  // 8: termx.api.v1.FileStatResult.entry:type_name -> termx.api.v1.FileEntry
-	1,  // 9: termx.api.v1.FilePreviewResult.entry:type_name -> termx.api.v1.FileEntry
-	17, // 10: termx.api.v1.FileBatchResult.results:type_name -> termx.api.v1.FileOperationResult
-	24, // 11: termx.api.v1.FileTransferHandle.resource:type_name -> termx.api.v1.ResourceHandle
-	23, // 12: termx.api.v1.FileTransferHandle.operation:type_name -> termx.api.v1.OperationStamp
-	2,  // 13: termx.api.v1.FileTransferHandle.resume:type_name -> termx.api.v1.FileUploadResumeHandle
-	19, // 14: termx.api.v1.FileTransferOpenResult.transfer:type_name -> termx.api.v1.FileTransferHandle
-	19, // 15: termx.api.v1.FileTransferCompletedEvent.transfer:type_name -> termx.api.v1.FileTransferHandle
+	0,  // 0: muxvia.api.v1.FileEntry.type:type_name -> muxvia.api.v1.FileEntryType
+	23, // 1: muxvia.api.v1.FileDownloadOpenCommand.operation:type_name -> muxvia.api.v1.OperationStamp
+	2,  // 2: muxvia.api.v1.FileUploadOpenCommand.resume:type_name -> muxvia.api.v1.FileUploadResumeHandle
+	23, // 3: muxvia.api.v1.FileUploadOpenCommand.operation:type_name -> muxvia.api.v1.OperationStamp
+	24, // 4: muxvia.api.v1.FileTransferCancelCommand.transfer:type_name -> muxvia.api.v1.ResourceHandle
+	23, // 5: muxvia.api.v1.FileTransferCancelCommand.operation:type_name -> muxvia.api.v1.OperationStamp
+	2,  // 6: muxvia.api.v1.FileTransferCancelCommand.upload_resume:type_name -> muxvia.api.v1.FileUploadResumeHandle
+	1,  // 7: muxvia.api.v1.FileListResult.entries:type_name -> muxvia.api.v1.FileEntry
+	1,  // 8: muxvia.api.v1.FileStatResult.entry:type_name -> muxvia.api.v1.FileEntry
+	1,  // 9: muxvia.api.v1.FilePreviewResult.entry:type_name -> muxvia.api.v1.FileEntry
+	17, // 10: muxvia.api.v1.FileBatchResult.results:type_name -> muxvia.api.v1.FileOperationResult
+	24, // 11: muxvia.api.v1.FileTransferHandle.resource:type_name -> muxvia.api.v1.ResourceHandle
+	23, // 12: muxvia.api.v1.FileTransferHandle.operation:type_name -> muxvia.api.v1.OperationStamp
+	2,  // 13: muxvia.api.v1.FileTransferHandle.resume:type_name -> muxvia.api.v1.FileUploadResumeHandle
+	19, // 14: muxvia.api.v1.FileTransferOpenResult.transfer:type_name -> muxvia.api.v1.FileTransferHandle
+	19, // 15: muxvia.api.v1.FileTransferCompletedEvent.transfer:type_name -> muxvia.api.v1.FileTransferHandle
 	16, // [16:16] is the sub-list for method output_type
 	16, // [16:16] is the sub-list for method input_type
 	16, // [16:16] is the sub-list for extension type_name

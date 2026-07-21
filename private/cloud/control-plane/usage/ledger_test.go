@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
-	"github.com/lozzow/termx/private/cloud/control-plane/usage"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/usage"
 )
 
 func TestLedgerIsIdempotentAndDoesNotDoubleBillMeshHops(t *testing.T) {

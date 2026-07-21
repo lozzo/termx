@@ -6,9 +6,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/transport"
-	"github.com/lozzow/termx/shared/transport/datachannel"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/transport"
+	"github.com/muxvia/muxvia/shared/transport/datachannel"
 	pion "github.com/pion/webrtc/v4"
 )
 

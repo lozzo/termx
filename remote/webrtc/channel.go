@@ -4,7 +4,7 @@ package webrtc
 import (
 	"sync"
 
-	"github.com/lozzow/termx/shared/transport/datachannel"
+	"github.com/muxvia/muxvia/shared/transport/datachannel"
 	"github.com/pion/webrtc/v4"
 )
 

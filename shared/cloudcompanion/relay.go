@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 const maxSingleRelayLeaseTTL = 10 * time.Minute

@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lozzow/termx/client/adapter/direct"
-	"github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/client/port"
-	clientruntime "github.com/lozzow/termx/client/runtime"
+	"github.com/muxvia/muxvia/client/adapter/direct"
+	"github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/client/port"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
 )
 
 type credentialAvailability map[string]bool

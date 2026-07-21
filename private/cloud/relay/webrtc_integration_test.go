@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/relay"
+	"github.com/muxvia/muxvia/private/cloud/relay"
 	"github.com/pion/webrtc/v4"
 )
 

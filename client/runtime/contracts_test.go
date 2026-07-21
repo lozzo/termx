@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/lozzow/termx/client/endpoint"
+	"github.com/muxvia/muxvia/client/endpoint"
 )
 
 func TestWasAttemptedDefaultsToNoReplayForUnknownErrors(t *testing.T) {

@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/proto/apipb"
+	protocoladapter "github.com/muxvia/muxvia/client/adapter/protocol"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/internal/protocol"
+	"github.com/muxvia/muxvia/proto/apipb"
 	"github.com/spf13/cobra"
 )
 

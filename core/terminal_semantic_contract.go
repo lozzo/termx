@@ -1,6 +1,6 @@
 package core
 
-import vterm "github.com/lozzow/termx/vterm/vterm"
+import vterm "github.com/muxvia/muxvia/vterm/vterm"
 
 type TerminalSemanticSource = vterm.TerminalSemanticSource
 type TerminalSemanticSize = vterm.TerminalSemanticSize

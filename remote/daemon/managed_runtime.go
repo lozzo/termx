@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/remoteauth"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/remoteauth"
 )
 
 // ManagedRuntime 是 daemon process 对 Cloud managed session registry 与当前控制 Presence 的 owner。

@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
-	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
-	"github.com/lozzow/termx/client/endpoint"
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	internalprotocol "github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/proto/wire"
-	unixtransport "github.com/lozzow/termx/shared/transport/unix"
+	protocoladapter "github.com/muxvia/muxvia/client/adapter/protocol"
+	"github.com/muxvia/muxvia/client/endpoint"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	internalprotocol "github.com/muxvia/muxvia/internal/protocol"
+	"github.com/muxvia/muxvia/proto/wire"
+	unixtransport "github.com/muxvia/muxvia/shared/transport/unix"
 )
 
 // Starter 是 local Unix route 首次拨号失败后的 daemon 启动 primitive。

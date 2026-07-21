@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/commandoutbox"
-	"github.com/lozzow/termx/private/cloud/control-plane/commerce"
-	cloudtopology "github.com/lozzow/termx/private/cloud/control-plane/topology"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
+	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )

@@ -6,11 +6,11 @@ import (
 	"sync/atomic"
 	"testing"
 
-	peeradapter "github.com/lozzow/termx/client/adapter/peer"
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/cloudcompanion"
-	"github.com/lozzow/termx/shared/transport"
+	peeradapter "github.com/muxvia/muxvia/client/adapter/peer"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
+	"github.com/muxvia/muxvia/shared/transport"
 )
 
 func TestLazyDialerOwnsCloudLifecycle(t *testing.T) {

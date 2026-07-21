@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/entitlement"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/entitlement"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
 )
 

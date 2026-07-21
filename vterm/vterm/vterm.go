@@ -13,8 +13,8 @@ import (
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/shared/gridtrace"
-	charmvt "github.com/lozzow/termx/vterm/internal/vt"
+	"github.com/muxvia/muxvia/shared/gridtrace"
+	charmvt "github.com/muxvia/muxvia/vterm/internal/vt"
 	"golang.org/x/text/unicode/norm"
 )
 

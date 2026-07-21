@@ -7,9 +7,9 @@ import (
 	"io"
 	"sync"
 
-	"github.com/lozzow/termx/private/cloud/companion/session"
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/muxvia/muxvia/private/cloud/companion/session"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
 	"google.golang.org/protobuf/proto"
 )
 

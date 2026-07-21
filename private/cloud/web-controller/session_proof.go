@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 type proofRecord struct {

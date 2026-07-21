@@ -3,8 +3,8 @@ package apilayer
 import (
 	"context"
 
-	apimapping "github.com/lozzow/termx/api_mapping"
-	"github.com/lozzow/termx/proto/apipb"
+	apimapping "github.com/muxvia/muxvia/api_mapping"
+	"github.com/muxvia/muxvia/proto/apipb"
 )
 
 // PlatformController 是 API Layer 到非 terminal core-native adapter 的 Proto 边界。

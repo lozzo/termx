@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lozzow/termx/client/endpoint"
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	"github.com/lozzow/termx/tui/port"
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/client/endpoint"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/tui/port"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 // EndpointEventSource 把共享 ClientRuntime 的 endpoint mailbox 投影为 TUI application event source。

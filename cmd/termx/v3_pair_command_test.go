@@ -13,12 +13,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	corev2 "github.com/lozzow/termx/core"
-	"github.com/lozzow/termx/proto/remoteauthpb"
-	"github.com/lozzow/termx/shared/filelock"
-	"github.com/lozzow/termx/shared/remoteauth"
-	unixtransport "github.com/lozzow/termx/shared/transport/unix"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
+	corev2 "github.com/muxvia/muxvia/core"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/muxvia/muxvia/shared/filelock"
+	"github.com/muxvia/muxvia/shared/remoteauth"
+	unixtransport "github.com/muxvia/muxvia/shared/transport/unix"
 )
 
 func TestPairCreateAndImportUsesTicketThenClientBoundCredential(t *testing.T) {

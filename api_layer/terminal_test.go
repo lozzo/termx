@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/lozzow/termx/proto/apipb"
+	"github.com/muxvia/muxvia/proto/apipb"
 )
 
 type fakeTerminalController struct {

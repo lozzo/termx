@@ -5,9 +5,9 @@ import (
 	"os"
 	"strings"
 
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/proto/wire"
-	tuiconfig "github.com/lozzow/termx/tui/config"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/proto/wire"
+	tuiconfig "github.com/muxvia/muxvia/tui/config"
 )
 
 func resolveV3Socket(path string) string {

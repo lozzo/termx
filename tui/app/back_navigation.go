@@ -1,8 +1,8 @@
 package app
 
 import (
-	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/tui/input"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 // NewBackNavigationReducer 是 TUI 全局返回语义的唯一 owner。

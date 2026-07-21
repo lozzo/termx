@@ -10,7 +10,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/lozzow/termx/client/endpoint"
+	"github.com/muxvia/muxvia/client/endpoint"
 )
 
 // SessionGeneration 标识某个 Endpoint 当前连接世代。

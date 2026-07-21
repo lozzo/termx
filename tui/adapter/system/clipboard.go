@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/lozzow/termx/tui/port"
+	"github.com/muxvia/muxvia/tui/port"
 )
 
 // ClipboardService 通过宿主系统命令实现剪贴板读写。

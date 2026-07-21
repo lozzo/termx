@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	"github.com/lozzow/termx/proto/apipb"
-	"github.com/lozzow/termx/proto/bindingpb"
-	"github.com/lozzow/termx/proto/wirepb"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/muxvia/muxvia/proto/bindingpb"
+	"github.com/muxvia/muxvia/proto/wirepb"
 	"google.golang.org/protobuf/proto"
 )
 

@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/lozzow/termx/shared/transport"
+	"github.com/muxvia/muxvia/shared/transport"
 )
 
 func TestListenerDialRoundTrip(t *testing.T) {

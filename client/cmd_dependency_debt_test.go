@@ -40,28 +40,28 @@ func TestSharedRuntimeLegacyRouteOwnersAreRemoved(t *testing.T) {
 
 func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
 	expectedImports := map[string]struct{}{
-		"file_command.go|github.com/lozzow/termx/internal/protocol":                               {},
-		"terminal_command.go|github.com/lozzow/termx/internal/protocol":                           {},
-		"v3_client_access.go|github.com/lozzow/termx/shared/remoteauth":                           {},
-		"v3_client_access.go|github.com/lozzow/termx/shared/transport":                            {},
-		"v3_client_access.go|github.com/lozzow/termx/shared/transport/unix":                       {},
-		"v3_cloud_command.go|github.com/lozzow/termx/shared/cloudcompanion":                       {},
-		"v3_cloud_command.go|github.com/lozzow/termx/shared/cloudcompanion/installer":             {},
-		"v3_cloud_command.go|github.com/lozzow/termx/shared/cloudcompanion/ipc":                   {},
-		"v3_cloud_command.go|github.com/lozzow/termx/shared/remoteauth":                           {},
-		"v3_cloud_development_source.go|github.com/lozzow/termx/shared/cloudcompanion":            {},
-		"v3_cloud_development_source.go|github.com/lozzow/termx/shared/cloudcompanion/activation": {},
-		"v3_cloud_development_source.go|github.com/lozzow/termx/shared/cloudcompanion/installer":  {},
-		"v3_cloud_runtime.go|github.com/lozzow/termx/shared/cloudcompanion":                       {},
-		"v3_cloud_runtime.go|github.com/lozzow/termx/shared/cloudcompanion/activation":            {},
-		"v3_cloud_runtime.go|github.com/lozzow/termx/shared/cloudcompanion/installer":             {},
-		"v3_cloud_runtime.go|github.com/lozzow/termx/shared/cloudcompanion/ipc":                   {},
-		"v3_direct_daemon.go|github.com/lozzow/termx/remote/webrtc":                               {},
-		"v3_managed_daemon.go|github.com/lozzow/termx/remote/webrtc":                              {},
-		"v3_managed_daemon.go|github.com/lozzow/termx/shared/cloudcompanion":                      {},
-		"v3_managed_daemon.go|github.com/lozzow/termx/shared/transport":                           {},
-		"v3_pair_command.go|github.com/lozzow/termx/shared/remoteauth":                            {},
-		"v3_pair_command.go|github.com/lozzow/termx/shared/transport/unix":                        {},
+		"file_command.go|github.com/muxvia/muxvia/internal/protocol":                               {},
+		"terminal_command.go|github.com/muxvia/muxvia/internal/protocol":                           {},
+		"v3_client_access.go|github.com/muxvia/muxvia/shared/remoteauth":                           {},
+		"v3_client_access.go|github.com/muxvia/muxvia/shared/transport":                            {},
+		"v3_client_access.go|github.com/muxvia/muxvia/shared/transport/unix":                       {},
+		"v3_cloud_command.go|github.com/muxvia/muxvia/shared/cloudcompanion":                       {},
+		"v3_cloud_command.go|github.com/muxvia/muxvia/shared/cloudcompanion/installer":             {},
+		"v3_cloud_command.go|github.com/muxvia/muxvia/shared/cloudcompanion/ipc":                   {},
+		"v3_cloud_command.go|github.com/muxvia/muxvia/shared/remoteauth":                           {},
+		"v3_cloud_development_source.go|github.com/muxvia/muxvia/shared/cloudcompanion":            {},
+		"v3_cloud_development_source.go|github.com/muxvia/muxvia/shared/cloudcompanion/activation": {},
+		"v3_cloud_development_source.go|github.com/muxvia/muxvia/shared/cloudcompanion/installer":  {},
+		"v3_cloud_runtime.go|github.com/muxvia/muxvia/shared/cloudcompanion":                       {},
+		"v3_cloud_runtime.go|github.com/muxvia/muxvia/shared/cloudcompanion/activation":            {},
+		"v3_cloud_runtime.go|github.com/muxvia/muxvia/shared/cloudcompanion/installer":             {},
+		"v3_cloud_runtime.go|github.com/muxvia/muxvia/shared/cloudcompanion/ipc":                   {},
+		"v3_direct_daemon.go|github.com/muxvia/muxvia/remote/webrtc":                               {},
+		"v3_managed_daemon.go|github.com/muxvia/muxvia/remote/webrtc":                              {},
+		"v3_managed_daemon.go|github.com/muxvia/muxvia/shared/cloudcompanion":                      {},
+		"v3_managed_daemon.go|github.com/muxvia/muxvia/shared/transport":                           {},
+		"v3_pair_command.go|github.com/muxvia/muxvia/shared/remoteauth":                            {},
+		"v3_pair_command.go|github.com/muxvia/muxvia/shared/transport/unix":                        {},
 	}
 	expectedHelpers := map[string]struct{}{
 		"v3_attach_runtime.go|openEndpointProtocolClient":   {},
@@ -84,15 +84,15 @@ func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
 	seenImports := map[string]struct{}{}
 	seenHelpers := map[string]struct{}{}
 	allowedCompositionImports := map[string]struct{}{
-		"v3_client_runtime.go|github.com/lozzow/termx/shared/remoteauth": {},
+		"v3_client_runtime.go|github.com/muxvia/muxvia/shared/remoteauth": {},
 	}
 	concretePrefixes := []string{
-		"github.com/lozzow/termx/internal/protocol",
-		"github.com/lozzow/termx/shared/transport",
-		"github.com/lozzow/termx/shared/cloudcompanion",
-		"github.com/lozzow/termx/shared/remoteauth",
-		"github.com/lozzow/termx/remote/client",
-		"github.com/lozzow/termx/remote/webrtc",
+		"github.com/muxvia/muxvia/internal/protocol",
+		"github.com/muxvia/muxvia/shared/transport",
+		"github.com/muxvia/muxvia/shared/cloudcompanion",
+		"github.com/muxvia/muxvia/shared/remoteauth",
+		"github.com/muxvia/muxvia/remote/client",
+		"github.com/muxvia/muxvia/remote/webrtc",
 	}
 	helperNames := map[string]struct{}{
 		"v3DialClient": {}, "probeEndpointProtocolClient": {}, "openEndpointProtocolClient": {},

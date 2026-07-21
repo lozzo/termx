@@ -16,13 +16,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
-	"github.com/lozzow/termx/private/cloud/control-plane/relaylease"
-	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
-	cloudhub "github.com/lozzow/termx/private/cloud/hub"
-	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/remoteauth"
+	"github.com/muxvia/muxvia/private/cloud/companion/cloudservice/httpapi"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/relaylease"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
+	cloudhub "github.com/muxvia/muxvia/private/cloud/hub"
+	cloudrelay "github.com/muxvia/muxvia/private/cloud/relay"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/remoteauth"
 	"google.golang.org/protobuf/proto"
 )
 

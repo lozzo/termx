@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/tui/app"
-	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/tui/app"
+	"github.com/muxvia/muxvia/tui/input"
+	"github.com/muxvia/muxvia/tui/render"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 type fakeTerminalOps struct {

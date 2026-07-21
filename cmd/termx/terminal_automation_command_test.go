@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/proto/apipb"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/proto/apipb"
 )
 
 func TestTerminalAutomationLocalDataPlane(t *testing.T) {

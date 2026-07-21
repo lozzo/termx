@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lozzow/termx/client/endpoint"
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/client/endpoint"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 func TestProjectEndpointEventOwnsTUIProjection(t *testing.T) {

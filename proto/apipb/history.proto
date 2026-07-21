@@ -1,10 +1,10 @@
 syntax = "proto3";
 
-package termx.api.v1;
+package muxvia.api.v1;
 
 import "apipb/terminal.proto";
 
-option go_package = "github.com/lozzow/termx/proto/apipb";
+option go_package = "github.com/muxvia/muxvia/proto/apipb";
 
 enum HistoryWindowMode {
   HISTORY_WINDOW_MODE_UNSPECIFIED = 0;

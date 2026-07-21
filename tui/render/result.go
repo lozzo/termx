@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	actiondomain "github.com/lozzow/termx/tui/action"
+	actiondomain "github.com/muxvia/muxvia/tui/action"
 )
 
 // ANSIReset 是 FrameSink 写完 styled frame 后必须输出的 SGR reset。

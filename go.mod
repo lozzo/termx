@@ -1,4 +1,4 @@
-module github.com/lozzow/termx
+module github.com/muxvia/muxvia
 
 go 1.26.0
 

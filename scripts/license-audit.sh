@@ -78,7 +78,7 @@ GO_LICENSES_BIN="${GO_LICENSES_BIN:-}" scripts/generate-go-notices.sh "${go_noti
 node scripts/generate-npm-notices.mjs --check
 scripts/generate-android-notices.sh --check
 
-private_dependencies="$(GOWORK=off go list -deps -test ./... | grep '^github.com/lozzow/termx/private/' || true)"
+private_dependencies="$(GOWORK=off go list -deps -test ./... | grep '^github.com/muxvia/muxvia/private/' || true)"
 if [[ -n "$private_dependencies" ]]; then
   echo "public root Go module imports private code:" >&2
   echo "$private_dependencies" >&2

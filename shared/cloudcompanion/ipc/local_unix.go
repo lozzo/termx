@@ -14,8 +14,8 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
 )
 
 // DefaultEndpoint 返回当前用户固定的 Cloud Companion Unix socket 路径。

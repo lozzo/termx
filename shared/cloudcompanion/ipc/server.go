@@ -8,8 +8,8 @@ import (
 	"net"
 	"sync"
 
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
 )
 
 // ClientFactory 为每条通过 OS peer 验证的连接创建独立 Companion domain client。

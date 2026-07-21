@@ -14,7 +14,7 @@ import (
 	"time"
 
 	creackpty "github.com/creack/pty"
-	"github.com/lozzow/termx/shared/perftrace"
+	"github.com/muxvia/muxvia/shared/perftrace"
 )
 
 type ProcessFactory interface {

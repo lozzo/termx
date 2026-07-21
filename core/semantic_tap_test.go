@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	vterm "github.com/lozzow/termx/vterm/vterm"
+	vterm "github.com/muxvia/muxvia/vterm/vterm"
 )
 
 func TestR372SemanticTapOwnsSingleVTermForLiveAndHistory(t *testing.T) {

@@ -10,15 +10,15 @@ import (
 	"strings"
 	"time"
 
-	apilayer "github.com/lozzow/termx/api_layer"
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	corev2 "github.com/lozzow/termx/core"
-	"github.com/lozzow/termx/proto/apipb"
-	"github.com/lozzow/termx/tui/app"
-	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/state"
+	apilayer "github.com/muxvia/muxvia/api_layer"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	corev2 "github.com/muxvia/muxvia/core"
+	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/muxvia/muxvia/tui/app"
+	"github.com/muxvia/muxvia/tui/input"
+	"github.com/muxvia/muxvia/tui/render"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 type v3E2ESmokeResult struct {

@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	peeradapter "github.com/lozzow/termx/client/adapter/peer"
-	"github.com/lozzow/termx/client/endpoint"
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	"github.com/lozzow/termx/shared/remoteauth"
+	peeradapter "github.com/muxvia/muxvia/client/adapter/peer"
+	"github.com/muxvia/muxvia/client/endpoint"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/shared/remoteauth"
 )
 
 func TestCapabilityAuthorizerAcceptsPublicCredentialWithPlatformSigner(t *testing.T) {

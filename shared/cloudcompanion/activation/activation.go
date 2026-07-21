@@ -17,10 +17,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/cloudcompanion"
-	"github.com/lozzow/termx/shared/cloudcompanion/installer"
-	"github.com/lozzow/termx/shared/cloudcompanion/ipc"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
+	"github.com/muxvia/muxvia/shared/cloudcompanion/installer"
+	"github.com/muxvia/muxvia/shared/cloudcompanion/ipc"
 )
 
 // InstallationSource 只返回 installer 已复验的 active binary。

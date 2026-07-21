@@ -1,6 +1,6 @@
 package history
 
-import vterm "github.com/lozzow/termx/vterm/vterm"
+import vterm "github.com/muxvia/muxvia/vterm/vterm"
 
 // TerminalSemanticSource 是 history 唯一允许消费的 terminal semantics source。
 // domain owner 是 vterm：vterm 解码 PTY bytes 和 resize events，history 只接收

@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/core/history"
-	"github.com/lozzow/termx/core/history/linehist"
-	"github.com/lozzow/termx/core/live"
-	vterm "github.com/lozzow/termx/vterm/vterm"
+	"github.com/muxvia/muxvia/core/history"
+	"github.com/muxvia/muxvia/core/history/linehist"
+	"github.com/muxvia/muxvia/core/live"
+	vterm "github.com/muxvia/muxvia/vterm/vterm"
 )
 
 func TestTerminalLifecycleAndLiveSurface(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	clientendpoint "github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/proto/apipb"
+	clientendpoint "github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/proto/apipb"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )

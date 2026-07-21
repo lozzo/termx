@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/shared/perftrace"
-	"github.com/lozzow/termx/tui/render"
+	"github.com/muxvia/muxvia/shared/perftrace"
+	"github.com/muxvia/muxvia/tui/render"
 )
 
 // LatestFrameSink 把真实 TTY 写帧变成 latest-only 背压边界。

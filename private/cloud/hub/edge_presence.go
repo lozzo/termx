@@ -9,8 +9,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
 )
 
 // EdgePresenceChallenge 是 Hub 为已离线验证 daemon 创建的一次性 DeviceIdentity challenge。

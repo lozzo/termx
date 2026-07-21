@@ -14,9 +14,9 @@ import (
 	"time"
 
 	xterm "github.com/charmbracelet/x/term"
-	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/render"
 	"github.com/muesli/cancelreader"
+	"github.com/muxvia/muxvia/tui/input"
+	"github.com/muxvia/muxvia/tui/render"
 )
 
 const (

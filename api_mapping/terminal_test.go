@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	corev2 "github.com/lozzow/termx/core"
-	"github.com/lozzow/termx/proto/apipb"
+	corev2 "github.com/muxvia/muxvia/core"
+	"github.com/muxvia/muxvia/proto/apipb"
 	"google.golang.org/protobuf/proto"
 )
 

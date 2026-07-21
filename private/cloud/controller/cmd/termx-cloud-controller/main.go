@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/controller"
+	"github.com/muxvia/muxvia/private/cloud/controller"
 )
 
 func main() {

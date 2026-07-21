@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	endpointdomain "github.com/lozzow/termx/client/endpoint"
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
 )
 
 const (

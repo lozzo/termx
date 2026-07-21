@@ -191,7 +191,7 @@ func (x *EndpointProbeResult) GetRouteSelectionReason() string {
 type EndpointRuntimeEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	EndpointId    string                 `protobuf:"bytes,1,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
-	Phase         EndpointRuntimePhase   `protobuf:"varint,2,opt,name=phase,proto3,enum=termx.api.v1.EndpointRuntimePhase" json:"phase,omitempty"`
+	Phase         EndpointRuntimePhase   `protobuf:"varint,2,opt,name=phase,proto3,enum=muxvia.api.v1.EndpointRuntimePhase" json:"phase,omitempty"`
 	Session       *EndpointSessionStamp  `protobuf:"bytes,3,opt,name=session,proto3" json:"session,omitempty"`
 	Error         *ApiError              `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -260,27 +260,27 @@ var File_apipb_runtime_proto protoreflect.FileDescriptor
 
 const file_apipb_runtime_proto_rawDesc = "" +
 	"\n" +
-	"\x13apipb/runtime.proto\x12\ftermx.api.v1\x1a\x12apipb/common.proto\"^\n" +
+	"\x13apipb/runtime.proto\x12\rmuxvia.api.v1\x1a\x12apipb/common.proto\"^\n" +
 	"\x14EndpointProbeRequest\x12\x1f\n" +
 	"\vendpoint_id\x18\x01 \x01(\tR\n" +
 	"endpointId\x12%\n" +
-	"\x0eroute_override\x18\x02 \x01(\tR\rrouteOverride\"\xae\x01\n" +
-	"\x13EndpointProbeResult\x12<\n" +
-	"\asession\x18\x01 \x01(\v2\".termx.api.v1.EndpointSessionStampR\asession\x12#\n" +
+	"\x0eroute_override\x18\x02 \x01(\tR\rrouteOverride\"\xaf\x01\n" +
+	"\x13EndpointProbeResult\x12=\n" +
+	"\asession\x18\x01 \x01(\v2#.muxvia.api.v1.EndpointSessionStampR\asession\x12#\n" +
 	"\robserved_path\x18\x02 \x01(\tR\fobservedPath\x124\n" +
-	"\x16route_selection_reason\x18\x03 \x01(\tR\x14routeSelectionReason\"\xdd\x01\n" +
+	"\x16route_selection_reason\x18\x03 \x01(\tR\x14routeSelectionReason\"\xe0\x01\n" +
 	"\x14EndpointRuntimeEvent\x12\x1f\n" +
 	"\vendpoint_id\x18\x01 \x01(\tR\n" +
-	"endpointId\x128\n" +
-	"\x05phase\x18\x02 \x01(\x0e2\".termx.api.v1.EndpointRuntimePhaseR\x05phase\x12<\n" +
-	"\asession\x18\x03 \x01(\v2\".termx.api.v1.EndpointSessionStampR\asession\x12,\n" +
-	"\x05error\x18\x04 \x01(\v2\x16.termx.api.v1.ApiErrorR\x05error*\xcd\x01\n" +
+	"endpointId\x129\n" +
+	"\x05phase\x18\x02 \x01(\x0e2#.muxvia.api.v1.EndpointRuntimePhaseR\x05phase\x12=\n" +
+	"\asession\x18\x03 \x01(\v2#.muxvia.api.v1.EndpointSessionStampR\asession\x12-\n" +
+	"\x05error\x18\x04 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error*\xcd\x01\n" +
 	"\x14EndpointRuntimePhase\x12&\n" +
 	"\"ENDPOINT_RUNTIME_PHASE_UNSPECIFIED\x10\x00\x12%\n" +
 	"!ENDPOINT_RUNTIME_PHASE_CONNECTING\x10\x01\x12 \n" +
 	"\x1cENDPOINT_RUNTIME_PHASE_READY\x10\x02\x12!\n" +
 	"\x1dENDPOINT_RUNTIME_PHASE_FAILED\x10\x03\x12!\n" +
-	"\x1dENDPOINT_RUNTIME_PHASE_CLOSED\x10\x04B%Z#github.com/lozzow/termx/proto/apipbb\x06proto3"
+	"\x1dENDPOINT_RUNTIME_PHASE_CLOSED\x10\x04B&Z$github.com/muxvia/muxvia/proto/apipbb\x06proto3"
 
 var (
 	file_apipb_runtime_proto_rawDescOnce sync.Once
@@ -297,18 +297,18 @@ func file_apipb_runtime_proto_rawDescGZIP() []byte {
 var file_apipb_runtime_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_apipb_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_apipb_runtime_proto_goTypes = []any{
-	(EndpointRuntimePhase)(0),    // 0: termx.api.v1.EndpointRuntimePhase
-	(*EndpointProbeRequest)(nil), // 1: termx.api.v1.EndpointProbeRequest
-	(*EndpointProbeResult)(nil),  // 2: termx.api.v1.EndpointProbeResult
-	(*EndpointRuntimeEvent)(nil), // 3: termx.api.v1.EndpointRuntimeEvent
-	(*EndpointSessionStamp)(nil), // 4: termx.api.v1.EndpointSessionStamp
-	(*ApiError)(nil),             // 5: termx.api.v1.ApiError
+	(EndpointRuntimePhase)(0),    // 0: muxvia.api.v1.EndpointRuntimePhase
+	(*EndpointProbeRequest)(nil), // 1: muxvia.api.v1.EndpointProbeRequest
+	(*EndpointProbeResult)(nil),  // 2: muxvia.api.v1.EndpointProbeResult
+	(*EndpointRuntimeEvent)(nil), // 3: muxvia.api.v1.EndpointRuntimeEvent
+	(*EndpointSessionStamp)(nil), // 4: muxvia.api.v1.EndpointSessionStamp
+	(*ApiError)(nil),             // 5: muxvia.api.v1.ApiError
 }
 var file_apipb_runtime_proto_depIdxs = []int32{
-	4, // 0: termx.api.v1.EndpointProbeResult.session:type_name -> termx.api.v1.EndpointSessionStamp
-	0, // 1: termx.api.v1.EndpointRuntimeEvent.phase:type_name -> termx.api.v1.EndpointRuntimePhase
-	4, // 2: termx.api.v1.EndpointRuntimeEvent.session:type_name -> termx.api.v1.EndpointSessionStamp
-	5, // 3: termx.api.v1.EndpointRuntimeEvent.error:type_name -> termx.api.v1.ApiError
+	4, // 0: muxvia.api.v1.EndpointProbeResult.session:type_name -> muxvia.api.v1.EndpointSessionStamp
+	0, // 1: muxvia.api.v1.EndpointRuntimeEvent.phase:type_name -> muxvia.api.v1.EndpointRuntimePhase
+	4, // 2: muxvia.api.v1.EndpointRuntimeEvent.session:type_name -> muxvia.api.v1.EndpointSessionStamp
+	5, // 3: muxvia.api.v1.EndpointRuntimeEvent.error:type_name -> muxvia.api.v1.ApiError
 	4, // [4:4] is the sub-list for method output_type
 	4, // [4:4] is the sub-list for method input_type
 	4, // [4:4] is the sub-list for extension type_name

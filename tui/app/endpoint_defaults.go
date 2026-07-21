@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lozzow/termx/tui/port"
-	"github.com/lozzow/termx/tui/state"
+	"github.com/muxvia/muxvia/tui/port"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 const endpointDefaultsTokenPrefix = "endpoint.defaults:"

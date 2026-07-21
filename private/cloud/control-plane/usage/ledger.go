@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 // InternalReportPath 是 Edge durable usage outbox 向 Controller 上报 Proto batch 的内部路径。

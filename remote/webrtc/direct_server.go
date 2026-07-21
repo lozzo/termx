@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/internal/protocol/directsignal"
-	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/proto/remoteauthpb"
-	"github.com/lozzow/termx/shared/remoteauth"
+	"github.com/muxvia/muxvia/internal/protocol/directsignal"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/muxvia/muxvia/shared/remoteauth"
 	ice "github.com/pion/ice/v4"
 	pion "github.com/pion/webrtc/v4"
 )

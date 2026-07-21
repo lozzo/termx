@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/route-planner"
-	"github.com/lozzow/termx/private/cloud/route-planner/quality"
-	"github.com/lozzow/termx/private/cloud/route-planner/smartroute"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/route-planner"
+	"github.com/muxvia/muxvia/private/cloud/route-planner/quality"
+	"github.com/muxvia/muxvia/private/cloud/route-planner/smartroute"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 type requestSource struct {

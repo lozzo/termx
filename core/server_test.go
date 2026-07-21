@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/core/history"
-	"github.com/lozzow/termx/shared/transport"
+	"github.com/muxvia/muxvia/core/history"
+	"github.com/muxvia/muxvia/shared/transport"
 )
 
 func TestServerOptions(t *testing.T) {
@@ -447,8 +447,8 @@ func TestCoreV2DoesNotImportLegacyRuntime(t *testing.T) {
 
 func isLegacyRuntimeImport(importPath string) bool {
 	for _, legacy := range []string{
-		"github.com/lozzow/termx/termx-core",
-		"github.com/lozzow/termx/tuiv2",
+		"github.com/muxvia/muxvia/termx-core",
+		"github.com/muxvia/muxvia/tuiv2",
 	} {
 		if importPath == legacy || strings.HasPrefix(importPath, legacy+"/") {
 			return true

@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/lozzow/termx/core/history"
-	vterm "github.com/lozzow/termx/vterm/vterm"
+	"github.com/muxvia/muxvia/core/history"
+	vterm "github.com/muxvia/muxvia/vterm/vterm"
 )
 
 // R433 准入 harness：真实 vterm SemanticSource + Store，写入走

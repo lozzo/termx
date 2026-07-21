@@ -468,9 +468,9 @@ type PresenceProjection struct {
 	ControlOwnerHubId       string                 `protobuf:"bytes,2,opt,name=control_owner_hub_id,json=controlOwnerHubId,proto3" json:"control_owner_hub_id,omitempty"`
 	AssignmentEpoch         uint64                 `protobuf:"varint,3,opt,name=assignment_epoch,json=assignmentEpoch,proto3" json:"assignment_epoch,omitempty"`
 	PresenceSessionId       string                 `protobuf:"bytes,4,opt,name=presence_session_id,json=presenceSessionId,proto3" json:"presence_session_id,omitempty"`
-	Availability            Availability           `protobuf:"varint,5,opt,name=availability,proto3,enum=termx.cloud.v1.Availability" json:"availability,omitempty"`
-	Freshness               Freshness              `protobuf:"varint,6,opt,name=freshness,proto3,enum=termx.cloud.v1.Freshness" json:"freshness,omitempty"`
-	ObservationSource       ObservationSource      `protobuf:"varint,7,opt,name=observation_source,json=observationSource,proto3,enum=termx.cloud.v1.ObservationSource" json:"observation_source,omitempty"`
+	Availability            Availability           `protobuf:"varint,5,opt,name=availability,proto3,enum=muxvia.cloud.v1.Availability" json:"availability,omitempty"`
+	Freshness               Freshness              `protobuf:"varint,6,opt,name=freshness,proto3,enum=muxvia.cloud.v1.Freshness" json:"freshness,omitempty"`
+	ObservationSource       ObservationSource      `protobuf:"varint,7,opt,name=observation_source,json=observationSource,proto3,enum=muxvia.cloud.v1.ObservationSource" json:"observation_source,omitempty"`
 	ObservedAtUnixMillis    int64                  `protobuf:"varint,8,opt,name=observed_at_unix_millis,json=observedAtUnixMillis,proto3" json:"observed_at_unix_millis,omitempty"`
 	FreshUntilUnixMillis    int64                  `protobuf:"varint,9,opt,name=fresh_until_unix_millis,json=freshUntilUnixMillis,proto3" json:"fresh_until_unix_millis,omitempty"`
 	DaemonRuntimeGeneration string                 `protobuf:"bytes,10,opt,name=daemon_runtime_generation,json=daemonRuntimeGeneration,proto3" json:"daemon_runtime_generation,omitempty"`
@@ -680,9 +680,9 @@ type ManagedPeerSessionProjection struct {
 	AuthenticatedClientFingerprint string                    `protobuf:"bytes,4,opt,name=authenticated_client_fingerprint,json=authenticatedClientFingerprint,proto3" json:"authenticated_client_fingerprint,omitempty"`
 	OpaqueAccessReference          string                    `protobuf:"bytes,5,opt,name=opaque_access_reference,json=opaqueAccessReference,proto3" json:"opaque_access_reference,omitempty"`
 	ControlOwnerHubId              string                    `protobuf:"bytes,6,opt,name=control_owner_hub_id,json=controlOwnerHubId,proto3" json:"control_owner_hub_id,omitempty"`
-	ObservedDataPath               ObservedPath              `protobuf:"varint,7,opt,name=observed_data_path,json=observedDataPath,proto3,enum=termx.cloud.v1.ObservedPath" json:"observed_data_path,omitempty"`
-	State                          ManagedPeerSessionState   `protobuf:"varint,8,opt,name=state,proto3,enum=termx.cloud.v1.ManagedPeerSessionState" json:"state,omitempty"`
-	Freshness                      Freshness                 `protobuf:"varint,9,opt,name=freshness,proto3,enum=termx.cloud.v1.Freshness" json:"freshness,omitempty"`
+	ObservedDataPath               ObservedPath              `protobuf:"varint,7,opt,name=observed_data_path,json=observedDataPath,proto3,enum=muxvia.cloud.v1.ObservedPath" json:"observed_data_path,omitempty"`
+	State                          ManagedPeerSessionState   `protobuf:"varint,8,opt,name=state,proto3,enum=muxvia.cloud.v1.ManagedPeerSessionState" json:"state,omitempty"`
+	Freshness                      Freshness                 `protobuf:"varint,9,opt,name=freshness,proto3,enum=muxvia.cloud.v1.Freshness" json:"freshness,omitempty"`
 	ConnectedAtUnixMillis          int64                     `protobuf:"varint,10,opt,name=connected_at_unix_millis,json=connectedAtUnixMillis,proto3" json:"connected_at_unix_millis,omitempty"`
 	ObservedAtUnixMillis           int64                     `protobuf:"varint,11,opt,name=observed_at_unix_millis,json=observedAtUnixMillis,proto3" json:"observed_at_unix_millis,omitempty"`
 	FreshUntilUnixMillis           int64                     `protobuf:"varint,12,opt,name=fresh_until_unix_millis,json=freshUntilUnixMillis,proto3" json:"fresh_until_unix_millis,omitempty"`
@@ -1045,7 +1045,7 @@ type TerminalAccessProjection struct {
 	OpaqueAccessReference     string                 `protobuf:"bytes,2,opt,name=opaque_access_reference,json=opaqueAccessReference,proto3" json:"opaque_access_reference,omitempty"`
 	ClientLabel               string                 `protobuf:"bytes,3,opt,name=client_label,json=clientLabel,proto3" json:"client_label,omitempty"`
 	SubjectFingerprintSummary string                 `protobuf:"bytes,4,opt,name=subject_fingerprint_summary,json=subjectFingerprintSummary,proto3" json:"subject_fingerprint_summary,omitempty"`
-	State                     TerminalAccessState    `protobuf:"varint,5,opt,name=state,proto3,enum=termx.cloud.v1.TerminalAccessState" json:"state,omitempty"`
+	State                     TerminalAccessState    `protobuf:"varint,5,opt,name=state,proto3,enum=muxvia.cloud.v1.TerminalAccessState" json:"state,omitempty"`
 	IssuedAtUnixMillis        int64                  `protobuf:"varint,6,opt,name=issued_at_unix_millis,json=issuedAtUnixMillis,proto3" json:"issued_at_unix_millis,omitempty"`
 	ExpiresAtUnixMillis       int64                  `protobuf:"varint,7,opt,name=expires_at_unix_millis,json=expiresAtUnixMillis,proto3" json:"expires_at_unix_millis,omitempty"`
 	AccessProjectionRevision  uint64                 `protobuf:"varint,8,opt,name=access_projection_revision,json=accessProjectionRevision,proto3" json:"access_projection_revision,omitempty"`
@@ -1531,7 +1531,7 @@ func (x *ReportDaemonRuntimeResponse) GetAcceptedAccessProjectionRevision() uint
 type ExactSessionCloseResult struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
 	Target           *ManagedPeerSessionTarget    `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
-	Disposition      ExactSessionCloseDisposition `protobuf:"varint,2,opt,name=disposition,proto3,enum=termx.cloud.v1.ExactSessionCloseDisposition" json:"disposition,omitempty"`
+	Disposition      ExactSessionCloseDisposition `protobuf:"varint,2,opt,name=disposition,proto3,enum=muxvia.cloud.v1.ExactSessionCloseDisposition" json:"disposition,omitempty"`
 	RegistryRevision uint64                       `protobuf:"varint,3,opt,name=registry_revision,json=registryRevision,proto3" json:"registry_revision,omitempty"`
 	ReasonCode       string                       `protobuf:"bytes,4,opt,name=reason_code,json=reasonCode,proto3" json:"reason_code,omitempty"`
 	unknownFields    protoimpl.UnknownFields
@@ -1600,15 +1600,15 @@ var File_cloudpb_cloud_topology_proto protoreflect.FileDescriptor
 
 const file_cloudpb_cloud_topology_proto_rawDesc = "" +
 	"\n" +
-	"\x1ccloudpb/cloud_topology.proto\x12\x0etermx.cloud.v1\"\xee\x04\n" +
+	"\x1ccloudpb/cloud_topology.proto\x12\x0fmuxvia.cloud.v1\"\xf1\x04\n" +
 	"\x12PresenceProjection\x12(\n" +
 	"\x10daemon_device_id\x18\x01 \x01(\tR\x0edaemonDeviceId\x12/\n" +
 	"\x14control_owner_hub_id\x18\x02 \x01(\tR\x11controlOwnerHubId\x12)\n" +
 	"\x10assignment_epoch\x18\x03 \x01(\x04R\x0fassignmentEpoch\x12.\n" +
-	"\x13presence_session_id\x18\x04 \x01(\tR\x11presenceSessionId\x12@\n" +
-	"\favailability\x18\x05 \x01(\x0e2\x1c.termx.cloud.v1.AvailabilityR\favailability\x127\n" +
-	"\tfreshness\x18\x06 \x01(\x0e2\x19.termx.cloud.v1.FreshnessR\tfreshness\x12P\n" +
-	"\x12observation_source\x18\a \x01(\x0e2!.termx.cloud.v1.ObservationSourceR\x11observationSource\x125\n" +
+	"\x13presence_session_id\x18\x04 \x01(\tR\x11presenceSessionId\x12A\n" +
+	"\favailability\x18\x05 \x01(\x0e2\x1d.muxvia.cloud.v1.AvailabilityR\favailability\x128\n" +
+	"\tfreshness\x18\x06 \x01(\x0e2\x1a.muxvia.cloud.v1.FreshnessR\tfreshness\x12Q\n" +
+	"\x12observation_source\x18\a \x01(\x0e2\".muxvia.cloud.v1.ObservationSourceR\x11observationSource\x125\n" +
 	"\x17observed_at_unix_millis\x18\b \x01(\x03R\x14observedAtUnixMillis\x125\n" +
 	"\x17fresh_until_unix_millis\x18\t \x01(\x03R\x14freshUntilUnixMillis\x12:\n" +
 	"\x19daemon_runtime_generation\x18\n" +
@@ -1620,23 +1620,23 @@ const file_cloudpb_cloud_topology_proto_rawDesc = "" +
 	"\x13session_incarnation\x18\x03 \x01(\x04R\x12sessionIncarnation\x12)\n" +
 	"\x10assignment_epoch\x18\x04 \x01(\x04R\x0fassignmentEpoch\x12=\n" +
 	"\x1bcontrol_presence_session_id\x18\x05 \x01(\tR\x18controlPresenceSessionId\x12:\n" +
-	"\x19daemon_runtime_generation\x18\x06 \x01(\tR\x17daemonRuntimeGeneration\"\xc1\x06\n" +
-	"\x1cManagedPeerSessionProjection\x12@\n" +
-	"\x06target\x18\x01 \x01(\v2(.termx.cloud.v1.ManagedPeerSessionTargetR\x06target\x12(\n" +
+	"\x19daemon_runtime_generation\x18\x06 \x01(\tR\x17daemonRuntimeGeneration\"\xc5\x06\n" +
+	"\x1cManagedPeerSessionProjection\x12A\n" +
+	"\x06target\x18\x01 \x01(\v2).muxvia.cloud.v1.ManagedPeerSessionTargetR\x06target\x12(\n" +
 	"\x10client_device_id\x18\x02 \x01(\tR\x0eclientDeviceId\x12E\n" +
 	"\x1festablished_presence_session_id\x18\x03 \x01(\tR\x1cestablishedPresenceSessionId\x12H\n" +
 	" authenticated_client_fingerprint\x18\x04 \x01(\tR\x1eauthenticatedClientFingerprint\x126\n" +
 	"\x17opaque_access_reference\x18\x05 \x01(\tR\x15opaqueAccessReference\x12/\n" +
-	"\x14control_owner_hub_id\x18\x06 \x01(\tR\x11controlOwnerHubId\x12J\n" +
-	"\x12observed_data_path\x18\a \x01(\x0e2\x1c.termx.cloud.v1.ObservedPathR\x10observedDataPath\x12=\n" +
-	"\x05state\x18\b \x01(\x0e2'.termx.cloud.v1.ManagedPeerSessionStateR\x05state\x127\n" +
-	"\tfreshness\x18\t \x01(\x0e2\x19.termx.cloud.v1.FreshnessR\tfreshness\x127\n" +
+	"\x14control_owner_hub_id\x18\x06 \x01(\tR\x11controlOwnerHubId\x12K\n" +
+	"\x12observed_data_path\x18\a \x01(\x0e2\x1d.muxvia.cloud.v1.ObservedPathR\x10observedDataPath\x12>\n" +
+	"\x05state\x18\b \x01(\x0e2(.muxvia.cloud.v1.ManagedPeerSessionStateR\x05state\x128\n" +
+	"\tfreshness\x18\t \x01(\x0e2\x1a.muxvia.cloud.v1.FreshnessR\tfreshness\x127\n" +
 	"\x18connected_at_unix_millis\x18\n" +
 	" \x01(\x03R\x15connectedAtUnixMillis\x125\n" +
 	"\x17observed_at_unix_millis\x18\v \x01(\x03R\x14observedAtUnixMillis\x125\n" +
 	"\x17fresh_until_unix_millis\x18\f \x01(\x03R\x14freshUntilUnixMillis\x12*\n" +
 	"\x11close_reason_code\x18\r \x01(\tR\x0fcloseReasonCode\x12$\n" +
-	"\x0erelay_lease_id\x18\x0e \x01(\tR\frelayLeaseId\"\xea\x03\n" +
+	"\x0erelay_lease_id\x18\x0e \x01(\tR\frelayLeaseId\"\xeb\x03\n" +
 	"\x1cPeerSessionInventorySnapshot\x12\x1b\n" +
 	"\treport_id\x18\x01 \x01(\tR\breportId\x12(\n" +
 	"\x10daemon_device_id\x18\x02 \x01(\tR\x0edaemonDeviceId\x12/\n" +
@@ -1644,9 +1644,9 @@ const file_cloudpb_cloud_topology_proto_rawDesc = "" +
 	"\x10assignment_epoch\x18\x04 \x01(\x04R\x0fassignmentEpoch\x12=\n" +
 	"\x1bcontrol_presence_session_id\x18\x05 \x01(\tR\x18controlPresenceSessionId\x12:\n" +
 	"\x19daemon_runtime_generation\x18\x06 \x01(\tR\x17daemonRuntimeGeneration\x12+\n" +
-	"\x11registry_revision\x18\a \x01(\x04R\x10registryRevision\x12H\n" +
-	"\bsessions\x18\b \x03(\v2,.termx.cloud.v1.ManagedPeerSessionProjectionR\bsessions\x125\n" +
-	"\x17observed_at_unix_millis\x18\t \x01(\x03R\x14observedAtUnixMillis\"\xe3\x03\n" +
+	"\x11registry_revision\x18\a \x01(\x04R\x10registryRevision\x12I\n" +
+	"\bsessions\x18\b \x03(\v2-.muxvia.cloud.v1.ManagedPeerSessionProjectionR\bsessions\x125\n" +
+	"\x17observed_at_unix_millis\x18\t \x01(\x03R\x14observedAtUnixMillis\"\xe4\x03\n" +
 	"\x19PeerSessionLifecycleEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12(\n" +
 	"\x10daemon_device_id\x18\x02 \x01(\tR\x0edaemonDeviceId\x12/\n" +
@@ -1654,18 +1654,18 @@ const file_cloudpb_cloud_topology_proto_rawDesc = "" +
 	"\x10assignment_epoch\x18\x04 \x01(\x04R\x0fassignmentEpoch\x12=\n" +
 	"\x1bcontrol_presence_session_id\x18\x05 \x01(\tR\x18controlPresenceSessionId\x12:\n" +
 	"\x19daemon_runtime_generation\x18\x06 \x01(\tR\x17daemonRuntimeGeneration\x12+\n" +
-	"\x11registry_revision\x18\a \x01(\x04R\x10registryRevision\x12F\n" +
-	"\asession\x18\b \x01(\v2,.termx.cloud.v1.ManagedPeerSessionProjectionR\asession\x125\n" +
-	"\x17observed_at_unix_millis\x18\t \x01(\x03R\x14observedAtUnixMillis\"\xc0\x03\n" +
+	"\x11registry_revision\x18\a \x01(\x04R\x10registryRevision\x12G\n" +
+	"\asession\x18\b \x01(\v2-.muxvia.cloud.v1.ManagedPeerSessionProjectionR\asession\x125\n" +
+	"\x17observed_at_unix_millis\x18\t \x01(\x03R\x14observedAtUnixMillis\"\xc1\x03\n" +
 	"\x18TerminalAccessProjection\x12(\n" +
 	"\x10daemon_device_id\x18\x01 \x01(\tR\x0edaemonDeviceId\x126\n" +
 	"\x17opaque_access_reference\x18\x02 \x01(\tR\x15opaqueAccessReference\x12!\n" +
 	"\fclient_label\x18\x03 \x01(\tR\vclientLabel\x12>\n" +
-	"\x1bsubject_fingerprint_summary\x18\x04 \x01(\tR\x19subjectFingerprintSummary\x129\n" +
-	"\x05state\x18\x05 \x01(\x0e2#.termx.cloud.v1.TerminalAccessStateR\x05state\x121\n" +
+	"\x1bsubject_fingerprint_summary\x18\x04 \x01(\tR\x19subjectFingerprintSummary\x12:\n" +
+	"\x05state\x18\x05 \x01(\x0e2$.muxvia.cloud.v1.TerminalAccessStateR\x05state\x121\n" +
 	"\x15issued_at_unix_millis\x18\x06 \x01(\x03R\x12issuedAtUnixMillis\x123\n" +
 	"\x16expires_at_unix_millis\x18\a \x01(\x03R\x13expiresAtUnixMillis\x12<\n" +
-	"\x1aaccess_projection_revision\x18\b \x01(\x04R\x18accessProjectionRevision\"\xa7\x04\n" +
+	"\x1aaccess_projection_revision\x18\b \x01(\x04R\x18accessProjectionRevision\"\xa8\x04\n" +
 	"\x1fTerminalAccessInventorySnapshot\x12\x1b\n" +
 	"\treport_id\x18\x01 \x01(\tR\breportId\x12(\n" +
 	"\x10daemon_device_id\x18\x02 \x01(\tR\x0edaemonDeviceId\x12/\n" +
@@ -1674,36 +1674,36 @@ const file_cloudpb_cloud_topology_proto_rawDesc = "" +
 	"\x1bcontrol_presence_session_id\x18\x05 \x01(\tR\x18controlPresenceSessionId\x12:\n" +
 	"\x19daemon_runtime_generation\x18\x06 \x01(\tR\x17daemonRuntimeGeneration\x12+\n" +
 	"\x11registry_revision\x18\a \x01(\x04R\x10registryRevision\x12<\n" +
-	"\x1aaccess_projection_revision\x18\b \x01(\x04R\x18accessProjectionRevision\x12D\n" +
-	"\baccesses\x18\t \x03(\v2(.termx.cloud.v1.TerminalAccessProjectionR\baccesses\x125\n" +
+	"\x1aaccess_projection_revision\x18\b \x01(\x04R\x18accessProjectionRevision\x12E\n" +
+	"\baccesses\x18\t \x03(\v2).muxvia.cloud.v1.TerminalAccessProjectionR\baccesses\x125\n" +
 	"\x17observed_at_unix_millis\x18\n" +
-	" \x01(\x03R\x14observedAtUnixMillis\"\xee\x03\n" +
+	" \x01(\x03R\x14observedAtUnixMillis\"\xf1\x03\n" +
 	"\x13HubTopologySnapshot\x12\x15\n" +
 	"\x06hub_id\x18\x01 \x01(\tR\x05hubId\x12-\n" +
 	"\x12control_generation\x18\x02 \x01(\x04R\x11controlGeneration\x12+\n" +
 	"\x11topology_revision\x18\x03 \x01(\x04R\x10topologyRevision\x12'\n" +
 	"\x0ftopology_digest\x18\x04 \x01(\fR\x0etopologyDigest\x125\n" +
-	"\x17observed_at_unix_millis\x18\x05 \x01(\x03R\x14observedAtUnixMillis\x12@\n" +
-	"\tpresences\x18\x06 \x03(\v2\".termx.cloud.v1.PresenceProjectionR\tpresences\x12Q\n" +
-	"\rpeer_sessions\x18\a \x03(\v2,.termx.cloud.v1.ManagedPeerSessionProjectionR\fpeerSessions\x12o\n" +
-	"\x1bterminal_access_inventories\x18\b \x03(\v2/.termx.cloud.v1.TerminalAccessInventorySnapshotR\x19terminalAccessInventories\"\xc5\x03\n" +
+	"\x17observed_at_unix_millis\x18\x05 \x01(\x03R\x14observedAtUnixMillis\x12A\n" +
+	"\tpresences\x18\x06 \x03(\v2#.muxvia.cloud.v1.PresenceProjectionR\tpresences\x12R\n" +
+	"\rpeer_sessions\x18\a \x03(\v2-.muxvia.cloud.v1.ManagedPeerSessionProjectionR\fpeerSessions\x12p\n" +
+	"\x1bterminal_access_inventories\x18\b \x03(\v20.muxvia.cloud.v1.TerminalAccessInventorySnapshotR\x19terminalAccessInventories\"\xc7\x03\n" +
 	"\x1aReportDaemonRuntimeRequest\x12\x1b\n" +
 	"\treport_id\x18\x01 \x01(\tR\breportId\x12\x15\n" +
 	"\x06hub_id\x18\x02 \x01(\tR\x05hubId\x12)\n" +
 	"\x10assignment_epoch\x18\x03 \x01(\x04R\x0fassignmentEpoch\x12.\n" +
 	"\x13presence_session_id\x18\x04 \x01(\tR\x11presenceSessionId\x12:\n" +
 	"\x19daemon_runtime_generation\x18\x05 \x01(\tR\x17daemonRuntimeGeneration\x12+\n" +
-	"\x11registry_revision\x18\x06 \x01(\x04R\x10registryRevision\x12Q\n" +
-	"\rpeer_sessions\x18\a \x01(\v2,.termx.cloud.v1.PeerSessionInventorySnapshotR\fpeerSessions\x12\\\n" +
-	"\x11terminal_accesses\x18\b \x01(\v2/.termx.cloud.v1.TerminalAccessInventorySnapshotR\x10terminalAccesses\"\x83\x02\n" +
+	"\x11registry_revision\x18\x06 \x01(\x04R\x10registryRevision\x12R\n" +
+	"\rpeer_sessions\x18\a \x01(\v2-.muxvia.cloud.v1.PeerSessionInventorySnapshotR\fpeerSessions\x12]\n" +
+	"\x11terminal_accesses\x18\b \x01(\v20.muxvia.cloud.v1.TerminalAccessInventorySnapshotR\x10terminalAccesses\"\x83\x02\n" +
 	"\x1bReportDaemonRuntimeResponse\x12\x1b\n" +
 	"\treport_id\x18\x01 \x01(\tR\breportId\x12:\n" +
 	"\x19daemon_runtime_generation\x18\x02 \x01(\tR\x17daemonRuntimeGeneration\x12<\n" +
 	"\x1aaccepted_registry_revision\x18\x03 \x01(\x04R\x18acceptedRegistryRevision\x12M\n" +
-	"#accepted_access_projection_revision\x18\x04 \x01(\x04R acceptedAccessProjectionRevision\"\xf9\x01\n" +
-	"\x17ExactSessionCloseResult\x12@\n" +
-	"\x06target\x18\x01 \x01(\v2(.termx.cloud.v1.ManagedPeerSessionTargetR\x06target\x12N\n" +
-	"\vdisposition\x18\x02 \x01(\x0e2,.termx.cloud.v1.ExactSessionCloseDispositionR\vdisposition\x12+\n" +
+	"#accepted_access_projection_revision\x18\x04 \x01(\x04R acceptedAccessProjectionRevision\"\xfb\x01\n" +
+	"\x17ExactSessionCloseResult\x12A\n" +
+	"\x06target\x18\x01 \x01(\v2).muxvia.cloud.v1.ManagedPeerSessionTargetR\x06target\x12O\n" +
+	"\vdisposition\x18\x02 \x01(\x0e2-.muxvia.cloud.v1.ExactSessionCloseDispositionR\vdisposition\x12+\n" +
 	"\x11registry_revision\x18\x03 \x01(\x04R\x10registryRevision\x12\x1f\n" +
 	"\vreason_code\x18\x04 \x01(\tR\n" +
 	"reasonCode*\x85\x01\n" +
@@ -1751,7 +1751,7 @@ const file_cloudpb_cloud_topology_proto_rawDesc = "" +
 	")EXACT_SESSION_CLOSE_DISPOSITION_REQUESTED\x10\x01\x122\n" +
 	".EXACT_SESSION_CLOSE_DISPOSITION_ALREADY_CLOSED\x10\x02\x120\n" +
 	",EXACT_SESSION_CLOSE_DISPOSITION_STALE_TARGET\x10\x03\x12-\n" +
-	")EXACT_SESSION_CLOSE_DISPOSITION_NOT_FOUND\x10\x04B'Z%github.com/lozzow/termx/proto/cloudpbb\x06proto3"
+	")EXACT_SESSION_CLOSE_DISPOSITION_NOT_FOUND\x10\x04B(Z&github.com/muxvia/muxvia/proto/cloudpbb\x06proto3"
 
 var (
 	file_cloudpb_cloud_topology_proto_rawDescOnce sync.Once
@@ -1768,45 +1768,45 @@ func file_cloudpb_cloud_topology_proto_rawDescGZIP() []byte {
 var file_cloudpb_cloud_topology_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
 var file_cloudpb_cloud_topology_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_cloudpb_cloud_topology_proto_goTypes = []any{
-	(ObservedPath)(0),                       // 0: termx.cloud.v1.ObservedPath
-	(Availability)(0),                       // 1: termx.cloud.v1.Availability
-	(Freshness)(0),                          // 2: termx.cloud.v1.Freshness
-	(ObservationSource)(0),                  // 3: termx.cloud.v1.ObservationSource
-	(ManagedDeviceKind)(0),                  // 4: termx.cloud.v1.ManagedDeviceKind
-	(ManagedPeerSessionState)(0),            // 5: termx.cloud.v1.ManagedPeerSessionState
-	(TerminalAccessState)(0),                // 6: termx.cloud.v1.TerminalAccessState
-	(ExactSessionCloseDisposition)(0),       // 7: termx.cloud.v1.ExactSessionCloseDisposition
-	(*PresenceProjection)(nil),              // 8: termx.cloud.v1.PresenceProjection
-	(*ManagedPeerSessionTarget)(nil),        // 9: termx.cloud.v1.ManagedPeerSessionTarget
-	(*ManagedPeerSessionProjection)(nil),    // 10: termx.cloud.v1.ManagedPeerSessionProjection
-	(*PeerSessionInventorySnapshot)(nil),    // 11: termx.cloud.v1.PeerSessionInventorySnapshot
-	(*PeerSessionLifecycleEvent)(nil),       // 12: termx.cloud.v1.PeerSessionLifecycleEvent
-	(*TerminalAccessProjection)(nil),        // 13: termx.cloud.v1.TerminalAccessProjection
-	(*TerminalAccessInventorySnapshot)(nil), // 14: termx.cloud.v1.TerminalAccessInventorySnapshot
-	(*HubTopologySnapshot)(nil),             // 15: termx.cloud.v1.HubTopologySnapshot
-	(*ReportDaemonRuntimeRequest)(nil),      // 16: termx.cloud.v1.ReportDaemonRuntimeRequest
-	(*ReportDaemonRuntimeResponse)(nil),     // 17: termx.cloud.v1.ReportDaemonRuntimeResponse
-	(*ExactSessionCloseResult)(nil),         // 18: termx.cloud.v1.ExactSessionCloseResult
+	(ObservedPath)(0),                       // 0: muxvia.cloud.v1.ObservedPath
+	(Availability)(0),                       // 1: muxvia.cloud.v1.Availability
+	(Freshness)(0),                          // 2: muxvia.cloud.v1.Freshness
+	(ObservationSource)(0),                  // 3: muxvia.cloud.v1.ObservationSource
+	(ManagedDeviceKind)(0),                  // 4: muxvia.cloud.v1.ManagedDeviceKind
+	(ManagedPeerSessionState)(0),            // 5: muxvia.cloud.v1.ManagedPeerSessionState
+	(TerminalAccessState)(0),                // 6: muxvia.cloud.v1.TerminalAccessState
+	(ExactSessionCloseDisposition)(0),       // 7: muxvia.cloud.v1.ExactSessionCloseDisposition
+	(*PresenceProjection)(nil),              // 8: muxvia.cloud.v1.PresenceProjection
+	(*ManagedPeerSessionTarget)(nil),        // 9: muxvia.cloud.v1.ManagedPeerSessionTarget
+	(*ManagedPeerSessionProjection)(nil),    // 10: muxvia.cloud.v1.ManagedPeerSessionProjection
+	(*PeerSessionInventorySnapshot)(nil),    // 11: muxvia.cloud.v1.PeerSessionInventorySnapshot
+	(*PeerSessionLifecycleEvent)(nil),       // 12: muxvia.cloud.v1.PeerSessionLifecycleEvent
+	(*TerminalAccessProjection)(nil),        // 13: muxvia.cloud.v1.TerminalAccessProjection
+	(*TerminalAccessInventorySnapshot)(nil), // 14: muxvia.cloud.v1.TerminalAccessInventorySnapshot
+	(*HubTopologySnapshot)(nil),             // 15: muxvia.cloud.v1.HubTopologySnapshot
+	(*ReportDaemonRuntimeRequest)(nil),      // 16: muxvia.cloud.v1.ReportDaemonRuntimeRequest
+	(*ReportDaemonRuntimeResponse)(nil),     // 17: muxvia.cloud.v1.ReportDaemonRuntimeResponse
+	(*ExactSessionCloseResult)(nil),         // 18: muxvia.cloud.v1.ExactSessionCloseResult
 }
 var file_cloudpb_cloud_topology_proto_depIdxs = []int32{
-	1,  // 0: termx.cloud.v1.PresenceProjection.availability:type_name -> termx.cloud.v1.Availability
-	2,  // 1: termx.cloud.v1.PresenceProjection.freshness:type_name -> termx.cloud.v1.Freshness
-	3,  // 2: termx.cloud.v1.PresenceProjection.observation_source:type_name -> termx.cloud.v1.ObservationSource
-	9,  // 3: termx.cloud.v1.ManagedPeerSessionProjection.target:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
-	0,  // 4: termx.cloud.v1.ManagedPeerSessionProjection.observed_data_path:type_name -> termx.cloud.v1.ObservedPath
-	5,  // 5: termx.cloud.v1.ManagedPeerSessionProjection.state:type_name -> termx.cloud.v1.ManagedPeerSessionState
-	2,  // 6: termx.cloud.v1.ManagedPeerSessionProjection.freshness:type_name -> termx.cloud.v1.Freshness
-	10, // 7: termx.cloud.v1.PeerSessionInventorySnapshot.sessions:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
-	10, // 8: termx.cloud.v1.PeerSessionLifecycleEvent.session:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
-	6,  // 9: termx.cloud.v1.TerminalAccessProjection.state:type_name -> termx.cloud.v1.TerminalAccessState
-	13, // 10: termx.cloud.v1.TerminalAccessInventorySnapshot.accesses:type_name -> termx.cloud.v1.TerminalAccessProjection
-	8,  // 11: termx.cloud.v1.HubTopologySnapshot.presences:type_name -> termx.cloud.v1.PresenceProjection
-	10, // 12: termx.cloud.v1.HubTopologySnapshot.peer_sessions:type_name -> termx.cloud.v1.ManagedPeerSessionProjection
-	14, // 13: termx.cloud.v1.HubTopologySnapshot.terminal_access_inventories:type_name -> termx.cloud.v1.TerminalAccessInventorySnapshot
-	11, // 14: termx.cloud.v1.ReportDaemonRuntimeRequest.peer_sessions:type_name -> termx.cloud.v1.PeerSessionInventorySnapshot
-	14, // 15: termx.cloud.v1.ReportDaemonRuntimeRequest.terminal_accesses:type_name -> termx.cloud.v1.TerminalAccessInventorySnapshot
-	9,  // 16: termx.cloud.v1.ExactSessionCloseResult.target:type_name -> termx.cloud.v1.ManagedPeerSessionTarget
-	7,  // 17: termx.cloud.v1.ExactSessionCloseResult.disposition:type_name -> termx.cloud.v1.ExactSessionCloseDisposition
+	1,  // 0: muxvia.cloud.v1.PresenceProjection.availability:type_name -> muxvia.cloud.v1.Availability
+	2,  // 1: muxvia.cloud.v1.PresenceProjection.freshness:type_name -> muxvia.cloud.v1.Freshness
+	3,  // 2: muxvia.cloud.v1.PresenceProjection.observation_source:type_name -> muxvia.cloud.v1.ObservationSource
+	9,  // 3: muxvia.cloud.v1.ManagedPeerSessionProjection.target:type_name -> muxvia.cloud.v1.ManagedPeerSessionTarget
+	0,  // 4: muxvia.cloud.v1.ManagedPeerSessionProjection.observed_data_path:type_name -> muxvia.cloud.v1.ObservedPath
+	5,  // 5: muxvia.cloud.v1.ManagedPeerSessionProjection.state:type_name -> muxvia.cloud.v1.ManagedPeerSessionState
+	2,  // 6: muxvia.cloud.v1.ManagedPeerSessionProjection.freshness:type_name -> muxvia.cloud.v1.Freshness
+	10, // 7: muxvia.cloud.v1.PeerSessionInventorySnapshot.sessions:type_name -> muxvia.cloud.v1.ManagedPeerSessionProjection
+	10, // 8: muxvia.cloud.v1.PeerSessionLifecycleEvent.session:type_name -> muxvia.cloud.v1.ManagedPeerSessionProjection
+	6,  // 9: muxvia.cloud.v1.TerminalAccessProjection.state:type_name -> muxvia.cloud.v1.TerminalAccessState
+	13, // 10: muxvia.cloud.v1.TerminalAccessInventorySnapshot.accesses:type_name -> muxvia.cloud.v1.TerminalAccessProjection
+	8,  // 11: muxvia.cloud.v1.HubTopologySnapshot.presences:type_name -> muxvia.cloud.v1.PresenceProjection
+	10, // 12: muxvia.cloud.v1.HubTopologySnapshot.peer_sessions:type_name -> muxvia.cloud.v1.ManagedPeerSessionProjection
+	14, // 13: muxvia.cloud.v1.HubTopologySnapshot.terminal_access_inventories:type_name -> muxvia.cloud.v1.TerminalAccessInventorySnapshot
+	11, // 14: muxvia.cloud.v1.ReportDaemonRuntimeRequest.peer_sessions:type_name -> muxvia.cloud.v1.PeerSessionInventorySnapshot
+	14, // 15: muxvia.cloud.v1.ReportDaemonRuntimeRequest.terminal_accesses:type_name -> muxvia.cloud.v1.TerminalAccessInventorySnapshot
+	9,  // 16: muxvia.cloud.v1.ExactSessionCloseResult.target:type_name -> muxvia.cloud.v1.ManagedPeerSessionTarget
+	7,  // 17: muxvia.cloud.v1.ExactSessionCloseResult.disposition:type_name -> muxvia.cloud.v1.ExactSessionCloseDisposition
 	18, // [18:18] is the sub-list for method output_type
 	18, // [18:18] is the sub-list for method input_type
 	18, // [18:18] is the sub-list for extension type_name

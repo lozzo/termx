@@ -20,13 +20,13 @@ import (
 	"testing"
 	"time"
 
-	apilayer "github.com/lozzow/termx/api_layer"
-	core "github.com/lozzow/termx/core"
-	"github.com/lozzow/termx/proto/bindingpb"
-	"github.com/lozzow/termx/proto/cloudpb"
-	remotev2daemon "github.com/lozzow/termx/remote/daemon"
-	remotev2webrtc "github.com/lozzow/termx/remote/webrtc"
-	"github.com/lozzow/termx/shared/remoteauth"
+	apilayer "github.com/muxvia/muxvia/api_layer"
+	core "github.com/muxvia/muxvia/core"
+	"github.com/muxvia/muxvia/proto/bindingpb"
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	remotev2daemon "github.com/muxvia/muxvia/remote/daemon"
+	remotev2webrtc "github.com/muxvia/muxvia/remote/webrtc"
+	"github.com/muxvia/muxvia/shared/remoteauth"
 	"google.golang.org/protobuf/proto"
 )
 

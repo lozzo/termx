@@ -3,7 +3,7 @@ package core
 import (
 	"time"
 
-	vterm "github.com/lozzow/termx/vterm/vterm"
+	vterm "github.com/muxvia/muxvia/vterm/vterm"
 )
 
 // LiveRevision 是 core-v2 为单个 terminal native screen 维护的单调版本。

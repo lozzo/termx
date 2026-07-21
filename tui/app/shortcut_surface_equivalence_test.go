@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	actiondomain "github.com/lozzow/termx/tui/action"
-	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/state"
+	actiondomain "github.com/muxvia/muxvia/tui/action"
+	"github.com/muxvia/muxvia/tui/input"
+	"github.com/muxvia/muxvia/tui/state"
 )
 
 func TestKeyboardAndClickCanonicalActionUseSameReducerPath(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/usage"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/usage"
 )
 
 // UsageOutbox 是 Relay 签名用量事件的 durable at-least-once 队列。

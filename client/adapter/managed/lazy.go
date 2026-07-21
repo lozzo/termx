@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	peeradapter "github.com/lozzow/termx/client/adapter/peer"
-	"github.com/lozzow/termx/client/port"
-	clientruntime "github.com/lozzow/termx/client/runtime"
-	"github.com/lozzow/termx/proto/apipb"
+	peeradapter "github.com/muxvia/muxvia/client/adapter/peer"
+	"github.com/muxvia/muxvia/client/port"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/proto/apipb"
 )
 
 // CloudSessionOpener 为单次 managed attempt 延迟打开 Cloud client 及其生命周期 owner。

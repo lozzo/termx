@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	vterm "github.com/lozzow/termx/vterm/vterm"
+	vterm "github.com/muxvia/muxvia/vterm/vterm"
 )
 
 func TestSurfaceSizeValid(t *testing.T) {

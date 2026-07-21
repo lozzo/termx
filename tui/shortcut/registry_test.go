@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	actiondomain "github.com/lozzow/termx/tui/action"
+	actiondomain "github.com/muxvia/muxvia/tui/action"
 )
 
 func TestBindingPoliciesOwnSceneAndVisibility(t *testing.T) {

@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/commerce"
-	"github.com/lozzow/termx/private/cloud/control-plane/policy"
-	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/policy"
+	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 func TestHubAccountPolicyUsesPersistedAuthRevisionAndEntitlement(t *testing.T) {

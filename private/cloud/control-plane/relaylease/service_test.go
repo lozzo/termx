@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/control-plane/domain"
-	"github.com/lozzow/termx/private/cloud/control-plane/entitlement"
-	"github.com/lozzow/termx/private/cloud/control-plane/relaylease"
-	"github.com/lozzow/termx/private/cloud/control-plane/relayquota"
-	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
-	cloudsqlite "github.com/lozzow/termx/private/cloud/control-plane/sqlite"
-	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/domain"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/entitlement"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/relaylease"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/relayquota"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
+	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 type sessionSource struct {

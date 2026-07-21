@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package termx.api.v1;
+package muxvia.api.v1;
 
-option go_package = "github.com/lozzow/termx/proto/apipb";
+option go_package = "github.com/muxvia/muxvia/proto/apipb";
 
 enum ApiCapability {
   API_CAPABILITY_UNSPECIFIED = 0;

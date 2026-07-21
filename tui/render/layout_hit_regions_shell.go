@@ -1,6 +1,6 @@
 package render
 
-import actiondomain "github.com/lozzow/termx/tui/action"
+import actiondomain "github.com/muxvia/muxvia/tui/action"
 
 func appendHeaderHitRegions(out []HitRegion, header HeaderVM, rect Rect, viewport Rect) []HitRegion {
 	if rect.W <= 0 || rect.H <= 0 || !header.Visible {

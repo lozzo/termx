@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	localadapter "github.com/lozzow/termx/client/adapter/local"
-	protocoladapter "github.com/lozzow/termx/client/adapter/protocol"
-	clientendpoint "github.com/lozzow/termx/client/endpoint"
-	clientruntime "github.com/lozzow/termx/client/runtime"
+	localadapter "github.com/muxvia/muxvia/client/adapter/local"
+	protocoladapter "github.com/muxvia/muxvia/client/adapter/protocol"
+	clientendpoint "github.com/muxvia/muxvia/client/endpoint"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
 )
 
 var (

@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lozzow/termx/client/endpoint"
-	"github.com/lozzow/termx/proto/apipb"
+	"github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/proto/apipb"
 	"google.golang.org/protobuf/proto"
 )
 

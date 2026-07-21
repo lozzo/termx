@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	actiondomain "github.com/lozzow/termx/tui/action"
+	actiondomain "github.com/muxvia/muxvia/tui/action"
 )
 
 const HeaderTabCreateText = "  󰐕 "

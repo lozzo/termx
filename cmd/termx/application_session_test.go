@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 
-	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/proto/apipb"
+	"github.com/muxvia/muxvia/internal/protocol"
+	"github.com/muxvia/muxvia/proto/apipb"
 )
 
 // createCLIProtoTerminal 让 CLI 集成测试通过正式 Proto application API 建立测试终端。

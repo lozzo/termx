@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/shared/transport"
+	"github.com/muxvia/muxvia/shared/transport"
 )
 
 func TestListenerDialAcceptRoundTrip(t *testing.T) {
