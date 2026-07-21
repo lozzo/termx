@@ -804,6 +804,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     }).then((session) => {
       window.clearTimeout(progressTimer)
       if (cancelled || machineSessionConnectSeqRef.current !== connectSeq) return
+      setError(null)
       setConnectedSession(session)
       setConnectedTerminalId(activeTerminalId)
       setConnectingTerminalId(null)
@@ -856,6 +857,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         p2pProbeRef.current = false
         setP2PFallbackPromptOpen(false)
       }
+      setError(null)
       setConnectedSession(session)
       if (page === 'terminal' && activeTerminalId) {
         reattachActiveTerminals(session)
@@ -892,6 +894,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       }
 
       setConnectedSession(session)
+      setError(null)
       reattachActiveTerminals(session)
     }
     document.addEventListener('termx:resume', handleResume)

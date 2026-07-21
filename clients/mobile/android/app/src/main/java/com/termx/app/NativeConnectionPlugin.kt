@@ -93,7 +93,8 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
 
     override fun onStart(owner: LifecycleOwner) {
         if (!lifecycleReady) return
-        resumeGoBridgeServer()
+        // WebView 的 appStateChange 会调用 handleForegroundResume，并在新 bridge 就绪后原子替换 JS generation。
+        // 这里不得抢先启动临时 bridge，否则旧 JS 请求可能连入随后立即被关闭的 generation。
     }
 
     override fun onStop(owner: LifecycleOwner) {
@@ -345,12 +346,6 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
         goBridgeServer?.close()
         goBridgeServer = null
         goClientEngine = null
-    }
-
-    @Synchronized
-    private fun resumeGoBridgeServer() {
-        if (goBridgeServer != null && bridgePort > 0) return
-        startGoBridgeServer()
     }
 
     private fun accountToJSObject(account: ManagedCloudAccount): JSObject = JSObject().apply {

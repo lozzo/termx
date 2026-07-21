@@ -39,6 +39,7 @@ import type {
 import { NativeConnection } from './plugins/nativeConnection'
 import { NativeFileTransferStore } from './NativeFileTransferStore'
 import { GoBindingClient, GoBindingConnector } from './GoBindingClient'
+import { settleBindingGeneration } from './BindingGeneration'
 import NativeFilePicker from './plugins/nativeFilePicker'
 import { useNativeStatusBarSync } from './nativeStatusBar'
 
@@ -72,18 +73,25 @@ export function TermxApp() {
   const endpointRegistry = useMemo(() => new NativeEndpointRegistryProjection(), [])
   const [registryReady, setRegistryReady] = useState(false)
   const [registryError, setRegistryError] = useState<string | null>(null)
-  const refreshRegistry = useCallback(async () => {
+  const refreshRegistry = useCallback(async (client: GoBindingClient = goBindingClient) => {
     try {
-      await endpointRegistry.reload()
+      const loaded = await settleBindingGeneration(
+        client,
+        () => goBindingClient,
+        () => client.getEndpointRegistry(),
+      )
+      if (!loaded.current) return
+      endpointRegistry.replace(loaded.value)
       if (networkRuntime.storage) syncRegistryMachineProjection(networkRuntime.storage, endpointRegistry.snapshot())
       setRegistryError(null)
       setRegistryReady(true)
     } catch (error) {
       setRegistryError(error instanceof Error ? error.message : String(error))
       setRegistryReady(false)
+      throw error
     }
   }, [endpointRegistry, networkRuntime])
-  useEffect(() => { void refreshRegistry() }, [refreshRegistry])
+  useEffect(() => { void refreshRegistry().catch(() => undefined) }, [refreshRegistry])
   useAppResumeSync(refreshRegistry)
   const nativeAppRuntime = useMemo(() => createNativeAppRuntime(endpointRegistry), [endpointRegistry])
   const externalPairingAdapter = useMemo(
@@ -222,8 +230,6 @@ class NativeEndpointRegistryProjection {
   private readonly expiries = new Map<string, string>()
   private versionValue = 0
 
-  async reload(): Promise<void> { this.replace(await goBindingClient.getEndpointRegistry()) }
-
   replace(registry: TermxRemoteAuth.EndpointRegistryV1): void {
     this.registry = create(TermxRemoteAuth.EndpointRegistryV1Schema, registry)
     this.versionValue += 1
@@ -313,12 +319,13 @@ async function waitForNativeForeground(): Promise<void> {
 
 let nativeGenerationReplacement: Promise<void> = Promise.resolve()
 
-function replaceNativeGeneration(refreshRegistry: () => Promise<void>): Promise<void> {
+function replaceNativeGeneration(refreshRegistry: (client?: GoBindingClient) => Promise<void>): Promise<void> {
   const replacement = nativeGenerationReplacement.catch(() => undefined).then(async () => {
     const staleClient = goBindingClient
-    goBindingClient = new GoBindingClient()
+    const currentClient = new GoBindingClient()
+    goBindingClient = currentClient
     await staleClient.close()
-    await refreshRegistry()
+    await refreshRegistry(currentClient)
     document.dispatchEvent(new Event('termx:resume'))
   })
   nativeGenerationReplacement = replacement
@@ -326,7 +333,7 @@ function replaceNativeGeneration(refreshRegistry: () => Promise<void>): Promise<
 }
 
 /** When the app resumes from background, trigger a sync request on all active sessions. */
-function useAppResumeSync(refreshRegistry: () => Promise<void>): void {
+function useAppResumeSync(refreshRegistry: (client?: GoBindingClient) => Promise<void>): void {
   useEffect(() => {
     const promise = CapApp.addListener('appStateChange', (state) => {
       if (!state.isActive) {
