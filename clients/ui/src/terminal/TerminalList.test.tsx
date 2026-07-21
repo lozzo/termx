@@ -85,7 +85,7 @@ describe('TerminalList', () => {
     expect(screen.getByText('Running')).toBeTruthy()
     expect(screen.getByText('stopped worker')).toBeTruthy()
     expect(screen.getByText('Exited')).toBeTruthy()
-    expect(screen.getByTestId('termx-terminal-list').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
+    expect(screen.getByTestId('muxvia-terminal-list').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
   })
 
   it('shows an empty state without mentioning sessions, windows, panes, tabs, or workspaces', () => {
@@ -99,7 +99,7 @@ describe('TerminalList', () => {
     )
 
     expect(screen.getByText('No active terminals')).toBeTruthy()
-    expect(screen.getByTestId('termx-terminal-list').textContent).not.toMatch(/session|window|pane|workspace|tab/i)
+    expect(screen.getByTestId('muxvia-terminal-list').textContent).not.toMatch(/session|window|pane|workspace|tab/i)
   })
 
   it('renders duplicate terminal ids without duplicate React keys', () => {

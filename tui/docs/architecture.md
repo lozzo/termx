@@ -91,7 +91,7 @@
 TUI-v3 的状态分三类，不能互相替代：
 
 - core terminal 实体状态：terminal id/name/title、command/cwd/tags、process lifecycle、exit code/exited at、PTY size、resize ownership、attachment/channel 校验、live surface/cursor/modes 和 authoritative logical-line history。它不属于某一个 TUI client；restart、重进 TUI、多个 TUI 共享时都以 core 当前 terminal 属性为准。
-- core 托管的 TUI shared state：通过 `termx.tui.v3.workbench` opaque storage 保存 workspace/tab/pane/floating 布局、panel presentation、active ids 和 pane/floating 到 terminal 的连接意图。core 只负责存储、版本和广播，不解释这些字段；这里不得保存当前 terminal lifecycle、runtime channel、live cursor、copy selection 或当前进程内输入路由状态。
+- core 托管的 TUI shared state：通过 `muxvia.tui.v3.workbench` opaque storage 保存 workspace/tab/pane/floating 布局、panel presentation、active ids 和 pane/floating 到 terminal 的连接意图。core 只负责存储、版本和广播，不解释这些字段；这里不得保存当前 terminal lifecycle、runtime channel、live cursor、copy selection 或当前进程内输入路由状态。
 - 当前 TUI 内存状态：active pane/floating focus、interaction mode、overlay/toast/CTA、TerminalView runtime binding channel、TerminalPool 查询结果投影、TerminalSurface/Session render cache、copy mode cursor/selection/frozen window、host size/theme 和 pending effect。它们只服务当前 TUI 进程；terminal running/exited、退出码、退出时间、命令和 restart 判断不能作为 TUI truth 缓存，必须来自当次 core 查询或 core lifecycle event/surface 消息。
 
 pane/floating 的状态边界必须保持很窄：pane 只有“空槽位”或“连接到 TerminalView”两类当前模型。`exited` 不是 pane 状态，`copy-history` 也不是 pane 状态；退出态由该 view 绑定的 terminal lifecycle 投影，copy/history 由 `CopyModeStore`/`HistoryStore` 投影。workbench storage 只能保存布局和连接意图，旧 snapshot 里的 `"exited"` / `"copy-history"` pane kind 只能在 restore 边界迁移成 `terminal-live` 连接意图。
@@ -148,7 +148,7 @@ render/
   hitregions        frame hit region metadata
 
 bridge/
-  protocol          termx protocol mapping
+  protocol          muxvia protocol mapping
   fake              harness fake source/client
 ```
 
@@ -204,7 +204,7 @@ TUI-v3 使用自有 `AppRuntime`，不使用 Bubble Tea `Program` 作为主运�
 
 - 宿主 TTY 输入是用户按键、鼠标、粘贴、终端能力回报，归 `TerminalHost`。
 - terminal input 是写给 core/terminal 进程的输入字节或控制请求，归 terminal service。
-- 宿主 theme/palette 只推导 TermX chrome theme；PTY live 内容中的 `ansi:N`、`idx:N` 和 truecolor 仍作为 terminal 内容 SGR 语义直通，不重新映射为 semantic token。
+- 宿主 theme/palette 只推导 Muxvia chrome theme；PTY live 内容中的 `ansi:N`、`idx:N` 和 truecolor 仍作为 terminal 内容 SGR 语义直通，不重新映射为 semantic token。
 
 ## 6. UI 组件与第三方库边界
 

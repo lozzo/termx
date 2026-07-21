@@ -32,10 +32,10 @@ export function MachineList({
 
   return (
     <section
-      className={`termx-app-page flex min-h-0 flex-1 flex-col ${className ?? ''}`}
-      data-testid="termx-machine-list"
+      className={`muxvia-app-page flex min-h-0 flex-1 flex-col ${className ?? ''}`}
+      data-testid="muxvia-machine-list"
     >
-      <header className="termx-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
+      <header className="muxvia-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold leading-6 text-zinc-950">Machines</h1>
           <p className="truncate text-xs font-medium text-zinc-500">
@@ -45,7 +45,7 @@ export function MachineList({
         <div className="flex shrink-0 items-center gap-2">
           <button
             aria-label="Scan pairing QR"
-            className="termx-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
+            className="muxvia-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
             type="button"
             onClick={() => { hapticImpact(); onScanMachine() }}
           >
@@ -53,7 +53,7 @@ export function MachineList({
           </button>
           <button
             aria-label="Add machine"
-            className="termx-app-primary-button min-w-11 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
+            className="muxvia-app-primary-button min-w-11 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
             type="button"
             onClick={() => { hapticImpact(); onAddMachine() }}
           >
@@ -65,19 +65,19 @@ export function MachineList({
       {machines.length === 0 ? (
         <div className="flex flex-1 items-start justify-center pt-16 md:items-center md:py-8 md:pt-8">
           <div
-            className="termx-app-panel flex w-full max-w-md flex-col items-start gap-5 border-x-0 px-6 py-8 text-left sm:border-x"
-            data-testid="termx-machine-empty-state"
+            className="muxvia-app-panel flex w-full max-w-md flex-col items-start gap-5 border-x-0 px-6 py-8 text-left sm:border-x"
+            data-testid="muxvia-machine-empty-state"
           >
-            <div className="flex h-12 w-12 items-center justify-center border border-[var(--termx-app-line)] bg-[var(--termx-app-soft)] text-[var(--termx-app-accent)]">
+            <div className="flex h-12 w-12 items-center justify-center border border-[var(--muxvia-app-line)] bg-[var(--muxvia-app-soft)] text-[var(--muxvia-app-accent)]">
               <Server className="h-6 w-6" />
             </div>
             <div className="space-y-1.5">
               <h2 className="text-base font-semibold text-zinc-950">No machines yet</h2>
-              <p className="text-sm leading-5 text-zinc-500">Add or scan a TermX QR to keep a machine here.</p>
+              <p className="text-sm leading-5 text-zinc-500">Add or scan a Muxvia QR to keep a machine here.</p>
             </div>
             <div className="grid w-full grid-cols-2 gap-2">
               <button
-                className="termx-app-secondary-button gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
+                className="muxvia-app-secondary-button gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
                 type="button"
                 onClick={() => { hapticImpact(); onScanMachine() }}
               >
@@ -85,7 +85,7 @@ export function MachineList({
                 Scan
               </button>
               <button
-                className="termx-app-primary-button gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
+                className="muxvia-app-primary-button gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
                 type="button"
                 onClick={() => { hapticImpact(); onAddMachine() }}
               >
@@ -95,7 +95,7 @@ export function MachineList({
             </div>
             {authState === 'anonymous' ? (
               <button
-                className="inline-flex min-h-11 items-center justify-center gap-2 border-b border-blue-700 px-3 text-sm font-semibold text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
+                className="inline-flex min-h-11 items-center justify-center gap-2 border-b border-blue-700 px-3 text-sm font-semibold text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
                 type="button"
                 onClick={() => { hapticSelection(); onSignIn?.() }}
               >
@@ -143,10 +143,10 @@ function MachineSection({
 }) {
   return (
     <section className="mb-5 last:mb-0">
-      <div className="mb-2 px-4 text-[10px] font-semibold uppercase text-[var(--termx-app-muted)]">{title}</div>
-      <ul aria-label={title} className="termx-app-panel overflow-hidden border-x-0 sm:border-x">
+      <div className="mb-2 px-4 text-[10px] font-semibold uppercase text-[var(--muxvia-app-muted)]">{title}</div>
+      <ul aria-label={title} className="muxvia-app-panel overflow-hidden border-x-0 sm:border-x">
         {machines.map((machine, index) => (
-          <li key={machine.machineId} className={index > 0 ? 'border-t border-[var(--termx-app-line)]' : ''}>
+          <li key={machine.machineId} className={index > 0 ? 'border-t border-[var(--muxvia-app-line)]' : ''}>
             <MachineRow
               machine={machine}
               onSelectMachine={onSelectMachine}
@@ -193,7 +193,7 @@ function MachineRow({
   return (
     <button
       aria-label={`Connect to ${machine.name}`}
-      className="grid min-h-[108px] w-full grid-cols-[auto_minmax(0,1fr)] gap-3 px-4 py-3.5 text-left transition-colors duration-200 hover:bg-zinc-50 active:bg-[var(--termx-app-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--termx-app-accent)]"
+      className="grid min-h-[108px] w-full grid-cols-[auto_minmax(0,1fr)] gap-3 px-4 py-3.5 text-left transition-colors duration-200 hover:bg-zinc-50 active:bg-[var(--muxvia-app-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--muxvia-app-accent)]"
       type="button"
       onClick={() => {
         if (longPressTriggeredRef.current) {
@@ -223,7 +223,7 @@ function MachineRow({
       onPointerLeave={clearLongPress}
       onPointerCancel={clearLongPress}
     >
-      <div className="relative flex h-11 w-11 items-center justify-center border border-[var(--termx-app-line)] bg-[var(--termx-app-soft)] text-zinc-700">
+      <div className="relative flex h-11 w-11 items-center justify-center border border-[var(--muxvia-app-line)] bg-[var(--muxvia-app-soft)] text-zinc-700">
         <DeviceIcon className="h-5 w-5" />
         <span className={`absolute bottom-0.5 right-0.5 h-2.5 w-2.5 border-2 border-white ${
           machine.state === 'online'
@@ -271,9 +271,9 @@ function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; o
   ] as const
 
   return (
-    <div className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-sm md:items-center md:justify-center" data-testid="termx-machine-detail-sheet" onClick={() => { hapticSelection(); onClose() }}>
+    <div className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-sm md:items-center md:justify-center" data-testid="muxvia-machine-detail-sheet" onClick={() => { hapticSelection(); onClose() }}>
       <section
-        className="w-full max-h-[85vh] overflow-hidden border-t border-[var(--termx-app-line)] bg-white md:max-w-md md:border"
+        className="w-full max-h-[85vh] overflow-hidden border-t border-[var(--muxvia-app-line)] bg-white md:max-w-md md:border"
         onClick={(event) => event.stopPropagation()}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
@@ -285,16 +285,16 @@ function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; o
           <button
             type="button"
             aria-label="Close machine details"
-            className="termx-app-icon-button border-transparent bg-transparent"
+            className="muxvia-app-icon-button border-transparent bg-transparent"
             onClick={() => { hapticSelection(); onClose() }}
           >
             <X className="h-5 w-5" />
           </button>
         </header>
         <div className="max-h-[calc(85vh-4rem)] overflow-y-auto p-4">
-          <dl className="border border-[var(--termx-app-line)]">
+          <dl className="border border-[var(--muxvia-app-line)]">
             {fields.map(([label, value]) => (
-              <div key={label} className="border-b border-[var(--termx-app-line)] bg-zinc-50 px-3 py-2.5 last:border-b-0">
+              <div key={label} className="border-b border-[var(--muxvia-app-line)] bg-zinc-50 px-3 py-2.5 last:border-b-0">
                 <dt className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{label}</dt>
                 <dd className="mt-1 break-all font-mono text-[13px] font-medium text-zinc-900">{value}</dd>
               </div>
@@ -323,7 +323,7 @@ function StateBadge({ state }: { state: AppMachineRecord['state'] }) {
 
 function InfoPill({ children }: { children: string }) {
   return (
-    <span className="inline-flex h-6 items-center border border-[var(--termx-app-line)] bg-zinc-100 px-2 text-[11px] font-semibold leading-none text-zinc-600">
+    <span className="inline-flex h-6 items-center border border-[var(--muxvia-app-line)] bg-zinc-100 px-2 text-[11px] font-semibold leading-none text-zinc-600">
       {children}
     </span>
   )

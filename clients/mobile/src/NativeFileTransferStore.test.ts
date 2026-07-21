@@ -1,10 +1,10 @@
 import { create, toBinary } from '@bufbuild/protobuf'
 import type { ProtoClientSession, ProtoResourceStream } from '../../ui/src/core/protoClientSession'
 import { decodeFileTransferDataPayload, encodeFileTransferAckPayload } from '../../ui/src/files/fileStreamProtocol'
-import * as TermxApiApplication from '../../ui/src/generated/apipb/application_pb'
-import * as TermxApiCommon from '../../ui/src/generated/apipb/common_pb'
-import * as TermxApiFile from '../../ui/src/generated/apipb/file_pb'
-import * as TermxClientBinding from '../../ui/src/generated/bindingpb/client_binding_pb'
+import * as MuxviaApiApplication from '../../ui/src/generated/apipb/application_pb'
+import * as MuxviaApiCommon from '../../ui/src/generated/apipb/common_pb'
+import * as MuxviaApiFile from '../../ui/src/generated/apipb/file_pb'
+import * as MuxviaClientBinding from '../../ui/src/generated/bindingpb/client_binding_pb'
 import { ErrorEnvelopeSchema, FileTransferResultSchema, ProtocolErrorSchema } from '../../ui/src/generated/wirepb/terminal_pb'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -279,7 +279,7 @@ describe('NativeFileTransferStore', () => {
     await store.resumeTransfer(transfer.id)
     expect(resolverCalls).toBe(2)
     lateSession.resolve({
-      stamp: create(TermxApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'cloud', generation: 1n }),
+      stamp: create(MuxviaApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'cloud', generation: 1n }),
       isAlive: () => true,
       close: async () => { lateSessionCloses += 1 },
       subscribeEvents: () => ({ close() {} }),
@@ -297,18 +297,18 @@ describe('NativeFileTransferStore', () => {
     const stream: ProtoResourceStream = {
       handle: 1n,
       send: async (type, payload) => {
-        if (type === TermxClientBinding.ResourceStreamFrameType.FILE_DATA) {
+        if (type === MuxviaClientBinding.ResourceStreamFrameType.FILE_DATA) {
           const data = decodeFileTransferDataPayload(payload)
           sentChunks.push({ offset: data.offset, size: data.data.byteLength })
           return
         }
-        if (type === TermxClientBinding.ResourceStreamFrameType.FILE_FINISH) {
+        if (type === MuxviaClientBinding.ResourceStreamFrameType.FILE_FINISH) {
           for (const chunk of sentChunks) {
             const ack = encodeFileTransferAckPayload({ offset: chunk.offset + chunk.size, windowBytes: chunk.size })
-            for (const subscriber of subscribers) subscriber(TermxClientBinding.ResourceStreamFrameType.FILE_ACK, ack)
+            for (const subscriber of subscribers) subscriber(MuxviaClientBinding.ResourceStreamFrameType.FILE_ACK, ack)
           }
           const result = toBinary(FileTransferResultSchema, create(FileTransferResultSchema, { size: 8n }))
-          for (const subscriber of subscribers) subscriber(TermxClientBinding.ResourceStreamFrameType.FILE_RESULT, result)
+          for (const subscriber of subscribers) subscriber(MuxviaClientBinding.ResourceStreamFrameType.FILE_RESULT, result)
         }
       },
       subscribe: (listener) => {
@@ -337,13 +337,13 @@ describe('NativeFileTransferStore', () => {
     const stream: ProtoResourceStream = {
       handle: 1n,
       send: async (type, payload) => {
-        if (type !== TermxClientBinding.ResourceStreamFrameType.FILE_DATA) return
+        if (type !== MuxviaClientBinding.ResourceStreamFrameType.FILE_DATA) return
         const data = decodeFileTransferDataPayload(payload)
         sentOffsets.push(data.offset)
         const error = toBinary(ErrorEnvelopeSchema, create(ErrorEnvelopeSchema, {
           error: create(ProtocolErrorSchema, { code: 500, message: 'daemon write failed' }),
         }))
-        for (const subscriber of subscribers) subscriber(TermxClientBinding.ResourceStreamFrameType.ERROR, error)
+        for (const subscriber of subscribers) subscriber(MuxviaClientBinding.ResourceStreamFrameType.ERROR, error)
       },
       subscribe: (listener) => {
         subscribers.push(listener)
@@ -406,9 +406,9 @@ describe('NativeFileTransferStore', () => {
     let sessionCloses = 0
     let releaseCommands = 0
     let activeResources = 1
-    const stamp = create(TermxApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'direct', generation: 1n })
-    const resource = create(TermxApiCommon.ResourceHandleSchema, {
-      kind: TermxApiCommon.ResourceKind.FILE_TRANSFER,
+    const stamp = create(MuxviaApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'direct', generation: 1n })
+    const resource = create(MuxviaApiCommon.ResourceHandleSchema, {
+      kind: MuxviaApiCommon.ResourceKind.FILE_TRANSFER,
       opaqueToken: new Uint8Array([4]),
       session: stamp,
     })
@@ -426,11 +426,11 @@ describe('NativeFileTransferStore', () => {
       }),
       execute: async (envelope) => {
         if (envelope.command.case === 'fileDownloadOpen') {
-          return create(TermxApiApplication.ResultEnvelopeSchema, {
+          return create(MuxviaApiApplication.ResultEnvelopeSchema, {
             result: {
               case: 'fileTransferOpen',
-              value: create(TermxApiFile.FileTransferOpenResultSchema, {
-                transfer: create(TermxApiFile.FileTransferHandleSchema, { resource, size: 1024n, chunkBytes: 4, windowBytes: 8n }),
+              value: create(MuxviaApiFile.FileTransferOpenResultSchema, {
+                transfer: create(MuxviaApiFile.FileTransferHandleSchema, { resource, size: 1024n, chunkBytes: 4, windowBytes: 8n }),
               }),
             },
           })
@@ -443,7 +443,7 @@ describe('NativeFileTransferStore', () => {
             throw new Error('late release failure')
           }
           activeResources = 0
-          return create(TermxApiApplication.ResultEnvelopeSchema)
+          return create(MuxviaApiApplication.ResultEnvelopeSchema)
         }
         if (envelope.command.case === 'fileTransferCancel') {
           throw new Error('cancel response unavailable')
@@ -468,7 +468,7 @@ describe('NativeFileTransferStore', () => {
 })
 
 function uploadSession(stream: ProtoResourceStream, size: number, chunkBytes: number, windowBytes: number): ProtoClientSession {
-  const stamp = create(TermxApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'cloud', generation: 1n })
+  const stamp = create(MuxviaApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'cloud', generation: 1n })
   return {
     stamp,
     isAlive: () => true,
@@ -477,26 +477,26 @@ function uploadSession(stream: ProtoResourceStream, size: number, chunkBytes: nu
     openResourceStream: async () => stream,
     execute: async (envelope) => {
       if (envelope.command.case === 'fileUploadOpen') {
-        return create(TermxApiApplication.ResultEnvelopeSchema, {
+        return create(MuxviaApiApplication.ResultEnvelopeSchema, {
           result: {
             case: 'fileTransferOpen',
-            value: create(TermxApiFile.FileTransferOpenResultSchema, {
-              transfer: create(TermxApiFile.FileTransferHandleSchema, {
-                resource: create(TermxApiCommon.ResourceHandleSchema, {
-                  kind: TermxApiCommon.ResourceKind.FILE_TRANSFER,
+            value: create(MuxviaApiFile.FileTransferOpenResultSchema, {
+              transfer: create(MuxviaApiFile.FileTransferHandleSchema, {
+                resource: create(MuxviaApiCommon.ResourceHandleSchema, {
+                  kind: MuxviaApiCommon.ResourceKind.FILE_TRANSFER,
                   opaqueToken: new Uint8Array([1]),
                   session: stamp,
                 }),
                 size: BigInt(size),
                 chunkBytes,
                 windowBytes: BigInt(windowBytes),
-                resume: create(TermxApiFile.FileUploadResumeHandleSchema, { opaqueToken: new Uint8Array([2]) }),
+                resume: create(MuxviaApiFile.FileUploadResumeHandleSchema, { opaqueToken: new Uint8Array([2]) }),
               }),
             }),
           },
         })
       }
-      if (envelope.command.case === 'releaseResource') return create(TermxApiApplication.ResultEnvelopeSchema)
+      if (envelope.command.case === 'releaseResource') return create(MuxviaApiApplication.ResultEnvelopeSchema)
       throw new Error(`unexpected command ${envelope.command.case}`)
     },
   }
@@ -506,9 +506,9 @@ function downloadSession(
   counters: { cancelCommands: number, releaseCommands: number, sessionCloses: number, streamCloses: number, activeResources: number },
   releaseFails = false,
 ): ProtoClientSession {
-  const stamp = create(TermxApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'direct', generation: 1n })
-  const resource = create(TermxApiCommon.ResourceHandleSchema, {
-    kind: TermxApiCommon.ResourceKind.FILE_TRANSFER,
+  const stamp = create(MuxviaApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'direct', generation: 1n })
+  const resource = create(MuxviaApiCommon.ResourceHandleSchema, {
+    kind: MuxviaApiCommon.ResourceKind.FILE_TRANSFER,
     opaqueToken: new Uint8Array([3]),
     session: stamp,
   })
@@ -526,11 +526,11 @@ function downloadSession(
     }),
     execute: async (envelope) => {
       if (envelope.command.case === 'fileDownloadOpen') {
-        return create(TermxApiApplication.ResultEnvelopeSchema, {
+        return create(MuxviaApiApplication.ResultEnvelopeSchema, {
           result: {
             case: 'fileTransferOpen',
-            value: create(TermxApiFile.FileTransferOpenResultSchema, {
-              transfer: create(TermxApiFile.FileTransferHandleSchema, {
+            value: create(MuxviaApiFile.FileTransferOpenResultSchema, {
+              transfer: create(MuxviaApiFile.FileTransferHandleSchema, {
                 resource,
                 size: 1024n,
                 chunkBytes: 4,
@@ -548,7 +548,7 @@ function downloadSession(
         counters.releaseCommands += 1
         if (releaseFails) throw new Error('release response unavailable')
         counters.activeResources = 0
-        return create(TermxApiApplication.ResultEnvelopeSchema)
+        return create(MuxviaApiApplication.ResultEnvelopeSchema)
       }
       throw new Error(`unexpected command ${envelope.command.case}`)
     },
@@ -574,10 +574,10 @@ async function createUploadHarness(options: {
   vi.stubGlobal('self', globalThis)
   const { NativeFileTransferStore } = await import('./NativeFileTransferStore')
   const resumeToken = new Uint8Array([7, 8, 9])
-  const resource = create(TermxApiCommon.ResourceHandleSchema, {
-    kind: TermxApiCommon.ResourceKind.FILE_TRANSFER,
+  const resource = create(MuxviaApiCommon.ResourceHandleSchema, {
+    kind: MuxviaApiCommon.ResourceKind.FILE_TRANSFER,
     opaqueToken: new Uint8Array([1, 2, 3]),
-	session: create(TermxApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'cloud', generation: 1n }),
+	session: create(MuxviaApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'cloud', generation: 1n }),
   })
   const counters = { openStreamCalls: 0, releaseCommands: 0, cancelCommands: 0, streamCloses: 0, sessionCloses: 0, bindingCancelledOpenCleanups: 0 }
   const stream: ProtoResourceStream = {
@@ -587,13 +587,13 @@ async function createUploadHarness(options: {
     subscribeClosed: () => ({ close() {} }),
     close: async () => { counters.streamCloses += 1 },
   }
-  const openCommands: TermxApiFile.FileUploadOpenCommand[] = []
+  const openCommands: MuxviaApiFile.FileUploadOpenCommand[] = []
 	const cancelCredentials: string[] = []
 	let resolverCalls = 0
   const makeSession = (): ProtoClientSession => {
     let alive = true
     return {
-      stamp: create(TermxApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'cloud', generation: BigInt(counters.sessionCloses + 1) }),
+      stamp: create(MuxviaApiCommon.EndpointSessionStampSchema, { endpointId: 'studio', routeId: 'cloud', generation: BigInt(counters.sessionCloses + 1) }),
       isAlive: () => alive,
       close: async () => {
         if (!alive) return
@@ -616,17 +616,17 @@ async function createUploadHarness(options: {
           counters.bindingCancelledOpenCleanups += 1
           throw new DOMException('Aborted', 'AbortError')
         }
-        return create(TermxApiApplication.ResultEnvelopeSchema, {
+        return create(MuxviaApiApplication.ResultEnvelopeSchema, {
           result: {
             case: 'fileTransferOpen',
-            value: create(TermxApiFile.FileTransferOpenResultSchema, {
-              transfer: create(TermxApiFile.FileTransferHandleSchema, {
+            value: create(MuxviaApiFile.FileTransferOpenResultSchema, {
+              transfer: create(MuxviaApiFile.FileTransferHandleSchema, {
                 resource,
                 size: 8n,
                 offset: 4n,
                 chunkBytes: 4,
                 windowBytes: 4n,
-                resume: create(TermxApiFile.FileUploadResumeHandleSchema, { opaqueToken: resumeToken }),
+                resume: create(MuxviaApiFile.FileUploadResumeHandleSchema, { opaqueToken: resumeToken }),
               }),
             }),
           },
@@ -635,17 +635,17 @@ async function createUploadHarness(options: {
       if (envelope.command.case === 'releaseResource') {
         counters.releaseCommands += 1
         await options.releaseResource()
-        return create(TermxApiApplication.ResultEnvelopeSchema)
+        return create(MuxviaApiApplication.ResultEnvelopeSchema)
       }
       if (envelope.command.case === 'fileTransferCancel') {
         counters.cancelCommands += 1
 		cancelCredentials.push(envelope.command.value.transfer ? 'transfer' : envelope.command.value.uploadResume ? 'upload_resume' : 'missing')
         if (options.cancelBehavior === 'throw') throw new Error('cancel transport failed')
 		const cancelled = options.cancelBehavior === 'false_then_success' ? counters.cancelCommands > 1 : options.cancelBehavior !== 'false'
-        return create(TermxApiApplication.ResultEnvelopeSchema, {
+        return create(MuxviaApiApplication.ResultEnvelopeSchema, {
           result: {
             case: 'fileTransferCancel',
-			value: create(TermxApiFile.FileTransferCancelResultSchema, { cancelled }),
+			value: create(MuxviaApiFile.FileTransferCancelResultSchema, { cancelled }),
           },
         })
       }

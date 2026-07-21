@@ -10,7 +10,7 @@
 - local Unix、Direct WebRTC TCP、SSH WebRTC TCP 和 managed WebRTC 是到达同一 Endpoint 的 Route。
 - Endpoint identity 只能由经过验证的 DeviceIdentity/fingerprint 归并；IP、域名、SSH host、Cloud DeviceID 和 label 都不是身份真值。
 - Direct 与 SSH 不依赖账号、订阅、Hub 或 Relay。
-- TermX Cloud 是同一个 App 内的可选 managed Route，不是独立 App 版本。
+- Muxvia Cloud 是同一个 App 内的可选 managed Route，不是独立 App 版本。
 - 所有远程 Route 最终进入可靠有序 WebRTC DataChannel，并复用同一 remote auth、Hello、Proto command/event 和 resource lifecycle。
 
 ## 2. Proto 真值
@@ -88,7 +88,7 @@ SSHWebRTCTCPRouteConfig
 - Go Client Engine 负责 SSH host-key 校验、credential resolution 和 `direct-tcpip` tunnel。
 - Pion ICE-TCP 通过 SSH-backed dialer 访问 daemon loopback listener。
 - `credential_descriptor` 只描述目标平台所需凭据类别，不携带 password、private key、Cloud token 或源平台 credential ref。
-- 旧 OpenSSH 子进程与 `termx daemon stdio-proxy` 已删除，不是该 Route 的实现或 fallback。
+- 旧 OpenSSH 子进程与 `muxvia daemon stdio-proxy` 已删除，不是该 Route 的实现或 fallback。
 
 ### 2.4 Managed WebRTC
 
@@ -154,7 +154,7 @@ Go 内部可以使用便于 validation/planning 的领域投影，但跨 JNI/C A
 - bootstrap 允许 daemon 提供签名 Route hint 和一次性 PairingTicket。
 - share 只在一次性 TLS share session 内传输用户确认后的 portable config。
 - share offer 只携带 listener locator、临时证书 pin、一次性 secret、transfer ID 和有效期；接收端使用临时 Ed25519 key 完成 nonce challenge receiver proof 后，发送端才单次释放 bundle。
-- CLI/TUI 通过同一 `endpoints.yaml` 使用 `termx endpoint share ID`；Android 通过同一 Go binding 先接收 preview token、展示 Route/policy diff，再原子 commit。
+- CLI/TUI 通过同一 `endpoints.yaml` 使用 `muxvia endpoint share ID`；Android 通过同一 Go binding 先接收 preview token、展示 Route/policy diff，再原子 commit。
 - 当前 bundle 固定为 config-only，导入结果不能被解释为已持有 CapabilityGrant 或目标平台 credential。
 - local Unix、源 credential ref、Cloud token、runtime winner、session、grant body 和 UI state 都不能进入 bundle。
 - deterministic protobuf、unknown-field rejection、大小限制、签名和过期检查必须在导入前完成。

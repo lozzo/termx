@@ -10,11 +10,11 @@ if (muxviaDevCloudEnabled && muxviaPublicHTTPStagingEnabled) {
 }
 
 android {
-    namespace = "com.termx.app"
+    namespace = "com.muxvia.app"
     compileSdk = rootProject.ext.compileSdkVersion
     ndkVersion "27.2.12479018"
     defaultConfig {
-        applicationId "com.termx.app"
+        applicationId "com.muxvia.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

@@ -7,7 +7,7 @@ describe('public snapshot boundary', () => {
     expect(packageSource).toContain('../../proto/apipb/*.proto')
     expect(packageSource).toContain('../../proto/bindingpb/client_binding.proto')
     expect(packageSource).not.toContain('runtimepb')
-    expect(packageSource).not.toContain('../termx-remote/')
+    expect(packageSource).not.toContain('../muxvia-remote/')
   })
 
   it('does not publish the archived localweb build path', () => {

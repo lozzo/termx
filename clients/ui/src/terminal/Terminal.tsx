@@ -1912,7 +1912,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }
 
     const removeNativeKeyboardListener = addNativeKeyboardListener(clearViewportOffsetForKeyboard)
-    document.addEventListener('termx:resume', clearViewportOffsetForKeyboard)
+    document.addEventListener('muxvia:resume', clearViewportOffsetForKeyboard)
     let expectedProbeAt = terminalNow() + eventLoopProbeIntervalMs
     const eventLoopProbe = window.setInterval(() => {
       const now = terminalNow()
@@ -1946,7 +1946,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         window.visualViewport.removeEventListener('scroll', clearViewportOffsetForKeyboard)
       }
       removeNativeKeyboardListener()
-      document.removeEventListener('termx:resume', clearViewportOffsetForKeyboard)
+      document.removeEventListener('muxvia:resume', clearViewportOffsetForKeyboard)
       window.clearInterval(eventLoopProbe)
       if (fitFrameRef.current !== null) {
         window.cancelAnimationFrame(fitFrameRef.current)
@@ -2129,7 +2129,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       data-machine-id={machineId}
       data-terminal-id={terminalId}
       data-phase={terminalSession.snapshot.phase}
-      data-testid="termx-terminal"
+      data-testid="muxvia-terminal"
     >
       <div
         ref={containerRef}
@@ -2144,9 +2144,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         tabIndex={0}
       />
       {showConnectingOverlay ? (
-        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-[var(--termx-bg)]/80 backdrop-blur-sm text-sm font-medium text-[var(--termx-muted)]">
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-[var(--muxvia-bg)]/80 backdrop-blur-sm text-sm font-medium text-[var(--muxvia-muted)]">
           <div className="flex items-center gap-2">
-            <span className="termx-square-spinner text-[var(--termx-text)]" aria-hidden="true" />
+            <span className="muxvia-square-spinner text-[var(--muxvia-text)]" aria-hidden="true" />
             Connecting terminal...
           </div>
         </div>
@@ -2155,14 +2155,14 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         <div
           aria-label="Loading terminal history"
           aria-live="polite"
-          className="pointer-events-none absolute left-1/2 top-3 z-[60] -translate-x-1/2 border border-[var(--termx-border-subtle)] bg-[var(--termx-surface)]/60 px-3 py-1.5 backdrop-blur-md"
-          data-testid="termx-history-loading"
+          className="pointer-events-none absolute left-1/2 top-3 z-[60] -translate-x-1/2 border border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-surface)]/60 px-3 py-1.5 backdrop-blur-md"
+          data-testid="muxvia-history-loading"
           role="status"
         >
           <div className="flex h-4 items-center gap-1.5">
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--termx-text)]/60" />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--termx-text)]/60 [animation-delay:150ms]" />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--termx-text)]/60 [animation-delay:300ms]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--muxvia-text)]/60" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--muxvia-text)]/60 [animation-delay:150ms]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--muxvia-text)]/60 [animation-delay:300ms]" />
           </div>
         </div>
       ) : null}

@@ -8,7 +8,7 @@ import OperatorPage from "./OperatorPage";
 import "./styles.css";
 
 document.documentElement.dataset.wxTheme =
-  localStorage.getItem("termx-wx-theme") === "neutral-dark"
+  localStorage.getItem("muxvia-wx-theme") === "neutral-dark"
     ? "neutral-dark"
     : "light-gray";
 const path = window.location.pathname.replace(/\/$/, "") || "/";

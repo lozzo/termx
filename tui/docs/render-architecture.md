@@ -987,7 +987,7 @@ render framework 是 `tui` 内部架构，不是独立产品。
 - 真实 `FrameSink` 优先写 ANSI styled frame，每行使用绝对定位输出，避免满宽行依赖换行推进导致宿主自动换行破坏竖向边框。
 - renderer canvas 已升级为 cell matrix / compositor，cell 记录 text、width、style、owner、layer、continuation 和 safe flag，并处理 wide-cell footprint。
 - theme token 已覆盖 host fg/bg、chrome fg/bg、accent、muted、success/warning/danger/info、active/inactive pane、toast/overlay 和 status bar。
-- host-aware theme 已从静态 fallback 推进到 reducer-owned capability：`StateRoot.HostTheme` 保存 OSC 10/11/4 probe 得到的 default fg/bg 与 16 色 palette，`RenderVMBuilder` 把它推导为 `RenderVM.Theme`，renderer 优先使用 VM theme 输出 TermX chrome；该路径只影响 chrome semantic token，terminal live cell 的 ANSI palette / 256 色 / truecolor 继续直通宿主。
+- host-aware theme 已从静态 fallback 推进到 reducer-owned capability：`StateRoot.HostTheme` 保存 OSC 10/11/4 probe 得到的 default fg/bg 与 16 色 palette，`RenderVMBuilder` 把它推导为 `RenderVM.Theme`，renderer 优先使用 VM theme 输出 Muxvia chrome；该路径只影响 chrome semantic token，terminal live cell 的 ANSI palette / 256 色 / truecolor 继续直通宿主。
 - `RenderVMBuilder` 已输出 header/footer、layout/panel、content、overlay、toast 和 cursor 子 VM。
 - `state.Root` 已拥有 reducer-owned shell、workspace/tab/pane 最小树、panel presentation、header/footer visibility、toast/message、interaction mode 和 Terminal Picker overlay 状态。
 - `state.Root` 已拥有 reducer-owned 外部 viewport state；真实 `TerminalHost` 查询初始尺寸并监听宿主 resize，fake host 可 deterministic 注入 resize。
@@ -1036,10 +1036,10 @@ render framework 是 `tui` 内部架构，不是独立产品。
 - overlay/page/copy 内容层已按切片 86 完成第一轮产品化 polish：Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 的 content renderer 统一输出 search affordance、selected row marker、detail / preview / context / input label、action row、copy match 和 scrollbar/status；这些内容仍只在 framework 分配的 content rect 内绘制。
 - Tab / Workspace 产品入口一期已落地：`Ctrl-t` / `Ctrl-w` 已作为 reducer-owned interaction mode 接入，tab create/switch/rename/close、workspace create/switch/rename、Prompt rename 回投、header tab strip、footer mode hints、smoke case 和 no terminal input leak 已接入。
 - TUI 产品壳总验收已落地：`TestInteractiveRuntimeTUIProductShellAcceptanceFlow` 串联 pane split/focus/resize/presentation、floating create/move/resize/close、Terminal Pool 搜索/attach、Workbench Tree open/focus、Prompt/Help、Tab/Workspace rename、toast/header/footer 操作，并统一验证 no terminal input leak、viewport 行宽恒等和 layout 操作触发 content rect resize。
-- `termx v3 smoke` 已输出 12 个固定视觉 case，覆盖 workbench shell、card/split、header/footer hide、toast、Terminal Picker、Terminal Pool Page、Workbench Tree Page、Prompt/Help、copy empty、copy history、live surface content、Unicode 线框和宽字符宽度安全。
-- `termx v3 smoke` 已覆盖 `pane-command-flow`，验证 pane command feedback、styled active pane ANSI、无默认 ASCII chrome 和行宽恒等。
-- `termx v3 smoke` 已覆盖 `visual-audit-current` 的 `120x40` visual review baseline，验证 split line、active/inactive pane、toast、floating、header/footer、emoji/CJK 宽度安全，并明确当前仍需 screenshot polish。
-- `termx v3 e2e-smoke` 已覆盖 core-v2 daemon、默认 attach 装配、fake host 初始 viewport、host resize 重绘、content rect terminal resize、copy mode authoritative history、resized copy cols、split/resize/zoom/unzoom/close pane command，以及最终 panes/active/zoom 状态。
+- `muxvia v3 smoke` 已输出 12 个固定视觉 case，覆盖 workbench shell、card/split、header/footer hide、toast、Terminal Picker、Terminal Pool Page、Workbench Tree Page、Prompt/Help、copy empty、copy history、live surface content、Unicode 线框和宽字符宽度安全。
+- `muxvia v3 smoke` 已覆盖 `pane-command-flow`，验证 pane command feedback、styled active pane ANSI、无默认 ASCII chrome 和行宽恒等。
+- `muxvia v3 smoke` 已覆盖 `visual-audit-current` 的 `120x40` visual review baseline，验证 split line、active/inactive pane、toast、floating、header/footer、emoji/CJK 宽度安全，并明确当前仍需 screenshot polish。
+- `muxvia v3 e2e-smoke` 已覆盖 core-v2 daemon、默认 attach 装配、fake host 初始 viewport、host resize 重绘、content rect terminal resize、copy mode authoritative history、resized copy cols、split/resize/zoom/unzoom/close pane command，以及最终 panes/active/zoom 状态。
 - `make test-repository` 已纳入当前默认入口、v3 smoke、e2e smoke 和默认依赖守卫回归。
 
 当前仍是阶段性实现，不应误读为完整最终产品态：

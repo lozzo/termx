@@ -1,4 +1,4 @@
-# TermX Remote Platform 架构规范
+# Muxvia Remote Platform 架构规范
 
 状态：RP006 统一公开客户端实现基线
 
@@ -8,9 +8,9 @@
 
 ## 1. 架构目标
 
-本规范将 TermX 远程连接拆成可独立演进的四个平面：
+本规范将 Muxvia 远程连接拆成可独立演进的四个平面：
 
-1. 公开 terminal data plane：core-v2、termx protocol 和客户端 endpoint session。
+1. 公开 terminal data plane：core-v2、muxvia protocol 和客户端 endpoint session。
 2. 公开 end-to-end authorization plane：设备证明和 capability handshake。
 3. 私有 managed control plane：账号、设备目录、entitlement、Hub admission 和 Relay lease。
 4. 私有 connectivity data plane：Hub signaling 与 Relay/TURN 转发。
@@ -46,7 +46,7 @@
 |  TUI / CLI / App -> Go Client Engine -> Route connectors        |
 |         |            local / Direct / SSH / Cloud                |
 +---------|---------------------------------------------------------+
-          | termx protocol after E2E capability handshake
+          | muxvia protocol after E2E capability handshake
           v
 +------------------------------------------------------------------+
 | public daemon                                                    |
@@ -55,7 +55,7 @@
 +------------------------------------------------------------------+
 ```
 
-Hub 只传递 signaling metadata。Relay 只转发已经由 WebRTC DTLS 加密的字节。两者均不能读取 termx protocol frame 或 capability grant。
+Hub 只传递 signaling metadata。Relay 只转发已经由 WebRTC DTLS 加密的字节。两者均不能读取 muxvia protocol frame 或 capability grant。
 
 ## 3. 领域与真值归属
 
@@ -88,7 +88,7 @@ TerminalRef = EndpointID + daemon-local TerminalID
 - `local-unix`：本地 Unix socket。
 - `direct-webrtc-tcp`：daemon embedded signaling + ICE-TCP。
 - `ssh-webrtc-tcp`：Go SSH `direct-tcpip` tunnel + daemon loopback ICE-TCP。
-- `managed-webrtc`：TermX Cloud signaling + ICE-UDP 或 TURN。
+- `managed-webrtc`：Muxvia Cloud signaling + ICE-UDP 或 TURN。
 
 除 local Unix 外，三种远程 Route 最终都建立可靠有序 WebRTC DataChannel。`direct` 和 `single_relay` 只是 managed WebRTC 的 `ObservedPath`，不能代替外层 Route 类型。因此以下状态保持不变：
 
@@ -170,7 +170,7 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 - 创建平台特定 WebRTC primitive。
 - pin 并验证 daemon DeviceIdentity。
 - 在 DataChannel 内完成 capability handshake。
-- 建立标准 termx protocol client bundle。
+- 建立标准 muxvia protocol client bundle。
 - 向 UI 投影 connecting/probing/direct/single-relay/relay-mesh/offline/auth-expired 等状态。
 - 在显式 SmartRoute 下只执行 Companion 返回的短期 ICE plan，并在授权前核对实际 candidate path。
 
@@ -178,11 +178,11 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 
 - 解释套餐数据库或自行伪造 Relay entitlement。
 - 从 Hub terminal list 建立 terminal pool。
-- 在 capability handshake 前发送 termx protocol 请求。
+- 在 capability handshake 前发送 muxvia protocol 请求。
 
 ### 5.3 Private Cloud Companion
 
-桌面/headless 官方 cloud 使用可选闭源 `termx-cloud` sidecar；移动端官方构建使用实现同一 contract 的私有模块。详细分发和 IPC 见 `distribution-and-cloud-companion-spec.md`。
+桌面/headless 官方 cloud 使用可选闭源 `muxvia-cloud` sidecar；移动端官方构建使用实现同一 contract 的私有模块。详细分发和 IPC 见 `distribution-and-cloud-companion-spec.md`。
 
 负责：
 
@@ -234,7 +234,7 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 - 验证 terminal scope、terminal ID、grant expiry 或 revoke。
 - 持久化 terminal inventory。
 - 直接查询套餐数据库；Control Plane 同步只允许后台 snapshot/delta 流，不能成为连接请求 fallback。
-- 代理 termx protocol frame。
+- 代理 muxvia protocol frame。
 
 ### 5.6 Private Relay/TURN
 
@@ -248,7 +248,7 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 
 不负责：
 
-- 终止 DataChannel DTLS 或读取 termx frame。
+- 终止 DataChannel DTLS 或读取 muxvia frame。
 - 读取 capability grant。
 - 扩大或缩小 daemon scope。
 
@@ -359,7 +359,7 @@ Client/Daemon -> Control Plane: short Hub admissions
 Client/Daemon -> Hub: presence + SDP/ICE signaling
 Client <--------------------------> Daemon: WebRTC direct DTLS
 Client <--------------------------> Daemon: device/capability handshake
-Client <--------------------------> Daemon: termx protocol
+Client <--------------------------> Daemon: muxvia protocol
 ```
 
 Control Plane 不转发 SDP，Hub 不看到 capability。基础策略下 direct 达到质量门槛后不申请 Relay lease；启用 SmartRoute 时，direct 即使可达也必须与允许的 Relay candidate 比较稳定性和成本，不能把“打洞成功”直接当成最佳路径。
@@ -442,7 +442,7 @@ TUI 和 App 必须共享：
 ### 10.1 Control Plane 可保存
 
 - account、organization 和 billing metadata。
-- account/device cloud session 由 companion/platform secret store 持有；普通 `termx` 配置不保存 token。
+- account/device cloud session 由 companion/platform secret store 持有；普通 `muxvia` 配置不保存 token。
 - device ID、public key/fingerprint、owner、label 和最后在线时间。
 - Hub/region assignment、ManagedSession metadata 和 outcome。
 - entitlement、RelayLease metadata 和聚合 usage。
@@ -452,7 +452,7 @@ TUI 和 App 必须共享：
 
 - 原始 CapabilityGrant。
 - terminal inventory、TerminalID、命令、cwd、history、screen 或输入。
-- DataChannel 明文或 termx protocol frame。
+- DataChannel 明文或 muxvia protocol frame。
 - daemon device private key。
 - 可长期复用的 TURN shared secret。
 
@@ -473,7 +473,7 @@ TUI 和 App 必须共享：
 - public build 不依赖 private companion；fake companion 可以驱动完整 cloud contract harness，缺失 companion 不影响 local/SSH。
 - fake Control Plane + fake Hub 可以驱动完整 client contract harness。
 - 真实 direct 和 Relay harness 都在 DataChannel 建立后运行同一 E2E handshake 和 protocol 测试。
-- 启用全球加速后，direct、single-relay 和 relay-mesh harness 使用同一 endpoint、grant、DataChannel auth 和 termx protocol fixture；只允许 `ObservedPath`、route diagnostics 和 usage 不同。
+- 启用全球加速后，direct、single-relay 和 relay-mesh harness 使用同一 endpoint、grant、DataChannel auth 和 muxvia protocol fixture；只允许 `ObservedPath`、route diagnostics 和 usage 不同。
 - Hub 请求 schema 不含 grant、terminal 或 scope 字段。
 - daemon 不向 Hub 注册 terminal inventory。
 - Control Plane 的 subscription/entitlement 代码无法 import core-v2 scope package。

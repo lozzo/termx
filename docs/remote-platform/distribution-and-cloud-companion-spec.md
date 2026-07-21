@@ -1,4 +1,4 @@
-# TermX 发布、安装与 Cloud Companion 规范
+# Muxvia 发布、安装与 Cloud Companion 规范
 
 状态：RP006A 安装、进程激活与 Android 官方私有模块构建基线完成；生产发布根与 OAuth/TLS adapter 仍由正式发布环境注入
 
@@ -6,29 +6,29 @@
 
 ## 1. 决策结论
 
-TermX 桌面/headless 不发布一个同时包含公开 core 和闭源 cloud 代码的混合主程序，也不在当前分支恢复通用插件系统。移动端因平台分发模型采用官方私有模块构建，但继续受同一公开 contract 和安全边界约束。目标分发模型是：
+Muxvia 桌面/headless 不发布一个同时包含公开 core 和闭源 cloud 代码的混合主程序，也不在当前分支恢复通用插件系统。移动端因平台分发模型采用官方私有模块构建，但继续受同一公开 contract 和安全边界约束。目标分发模型是：
 
-1. `termx`：公开、可独立构建和使用的主程序。
-2. `termx-cloud`：桌面/服务器用户可选安装的闭源官方 Cloud Companion sidecar。
+1. `muxvia`：公开、可独立构建和使用的主程序。
+2. `muxvia-cloud`：桌面/服务器用户可选安装的闭源官方 Cloud Companion sidecar。
 3. Official App cloud module：移动端官方构建使用的闭源模块，实现与 companion 相同的公开 contract。
-4. Control Plane、Web Controller、Hub、Relay、Route Planner：只部署在 TermX 托管环境的闭源服务端。
+4. Control Plane、Web Controller、Hub、Relay、Route Planner：只部署在 Muxvia 托管环境的闭源服务端。
 5. Enterprise cloud bundle：按商业协议交付的私有容器、配置和运维资产。
 
-普通用户只需要安装 `termx`。只有使用官方 managed cloud、Relay、SmartRoute、云同步或团队能力时，桌面端才安装 `termx-cloud`。
+普通用户只需要安装 `muxvia`。只有使用官方 managed cloud、Relay、SmartRoute、云同步或团队能力时，桌面端才安装 `muxvia-cloud`。
 
 ## 2. 为什么使用 Companion 而不是进程内插件
 
 ### 2.1 安全边界清晰
 
-公开 `termx` 进程继续拥有：
+公开 `muxvia` 进程继续拥有：
 
 - DeviceIdentity private key。
 - 原始 CapabilityGrant 和 `grant_ref` 解析。
 - WebRTC PeerConnection、DTLS peer certificate 验证和 DataChannel。
 - DeviceHello/CapabilityOpen 端到端授权状态机。
-- termx protocol、terminal payload 和 core-v2 scoped session。
+- muxvia protocol、terminal payload 和 core-v2 scoped session。
 
-闭源 `termx-cloud` 只拥有：
+闭源 `muxvia-cloud` 只拥有：
 
 - AccountAccessToken、登录 session 和设备 enrollment session。
 - 官方 Control Plane/Hub TLS client。
@@ -37,7 +37,7 @@ TermX 桌面/headless 不发布一个同时包含公开 core 和闭源 cloud 代
 - 网络质量 summary、route candidate 和 SmartRoute selection result。
 - managed cloud 配置同步与 entitlement 错误。
 
-Companion 不接收 CapabilityGrant、DeviceIdentity private key、DataChannel frame、termx protocol frame、terminal ID/list/content、history 或输入。
+Companion 不接收 CapabilityGrant、DeviceIdentity private key、DataChannel frame、muxvia protocol frame、terminal ID/list/content、history 或输入。
 
 ### 2.2 发布边界清晰
 
@@ -61,14 +61,14 @@ Cloud Companion 是一个固定用途、固定 publisher、固定 RPC surface �
 
 | Artifact | 源码 | 安装位置 | 用户 | 包含内容 | 不包含 |
 | --- | --- | --- | --- | --- | --- |
-| `termx` | 公开 | 用户设备 | 所有人 | core/TUI/CLI/daemon/local/SSH/WebRTC/E2E auth/public contract | 私有 cloud 实现和 server |
-| `termx-cloud` | 私有 | 桌面或 headless daemon 设备 | managed cloud 用户 | account/cloud/signaling/lease/route adapter | grant/DataChannel/terminal payload |
+| `muxvia` | 公开 | 用户设备 | 所有人 | core/TUI/CLI/daemon/local/SSH/WebRTC/E2E auth/public contract | 私有 cloud 实现和 server |
+| `muxvia-cloud` | 私有 | 桌面或 headless daemon 设备 | managed cloud 用户 | account/cloud/signaling/lease/route adapter | grant/DataChannel/terminal payload |
 | Official App | 公开 app + 私有 cloud module | Android/iOS 官方包 | 移动 cloud 用户 | UI、platform WebRTC、同一 cloud contract adapter | cloud server |
 | Community App | 公开 | 可复现社区包 | 开源用户 | 公开 App 能力和 fake/disabled cloud adapter | 私有 cloud module |
-| `termx-cloud-server` bundles | 私有 | TermX regions | 官方运维 | Control Plane/Hub/Relay/Route Planner | 用户 terminal truth |
+| `muxvia-cloud-server` bundles | 私有 | Muxvia regions | 官方运维 | Control Plane/Hub/Relay/Route Planner | 用户 terminal truth |
 | Enterprise bundle | 私有商业交付 | 客户基础设施 | 企业 | 许可范围内的 server containers/ops assets | 公开主程序私有 fork |
 
-官方可以提供同时安装 `termx` 与 `termx-cloud` 的 convenience/meta package，但两个 artifact、进程、签名和许可证边界保持独立。
+官方可以提供同时安装 `muxvia` 与 `muxvia-cloud` 的 convenience/meta package，但两个 artifact、进程、签名和许可证边界保持独立。
 
 源码共同保存在当前私有 authoritative monorepo；artifact 拆分不要求源码拆成两个仓库。所有闭源实现统一位于 `private/`。开发阶段只在当前 Git 仓库正常提交；正式开源时把审核后的公开目录复制到全新的空 Git 仓库并从零建立公开历史。
 
@@ -77,23 +77,23 @@ Cloud Companion 是一个固定用途、固定 publisher、固定 RPC surface �
 ```mermaid
 flowchart LR
     subgraph ClientDevice["客户端设备"]
-        subgraph PublicClient["公开 termx client 进程"]
+        subgraph PublicClient["公开 muxvia client 进程"]
         UI["TUI / CLI"]
         EM["client/runtime"]
         RTC["WebRTC + DTLS + E2E Auth"]
         UI --> EM --> RTC
         end
-        CC1["termx-cloud Companion<br/>client role"]
+        CC1["muxvia-cloud Companion<br/>client role"]
         EM <-->|"versioned local IPC<br/>无 grant / terminal payload"| CC1
     end
 
     subgraph DaemonDevice["daemon 设备"]
-        DAEMON["公开 termx daemon<br/>DeviceIdentity / Grant owner"]
-        CC2["termx-cloud Companion<br/>daemon role"]
+        DAEMON["公开 muxvia daemon<br/>DeviceIdentity / Grant owner"]
+        CC2["muxvia-cloud Companion<br/>daemon role"]
         DAEMON <-->|"versioned local IPC<br/>signed device proof / signaling"| CC2
     end
 
-    subgraph PrivateCloud["TermX 私有托管服务"]
+    subgraph PrivateCloud["Muxvia 私有托管服务"]
         CP["Control Plane"]
         H["Hub"]
         R["Relay / TURN"]
@@ -112,7 +112,7 @@ flowchart LR
     RTC -.->|"WebRTC direct"| DAEMON
     RTC ==>|"WebRTC DTLS ciphertext"| R
     R ==>|"opaque ciphertext"| DAEMON
-    RTC -.->|"DeviceHello / CapabilityOpen / termx protocol"| DAEMON
+    RTC -.->|"DeviceHello / CapabilityOpen / muxvia protocol"| DAEMON
 
     classDef openNode fill:#ecfdf5,stroke:#15803d,color:#052e16;
     classDef privateNode fill:#fff7ed,stroke:#c2410c,color:#431407;
@@ -147,7 +147,7 @@ public namespace 定义 domain interface、versioned IPC message、error taxonom
 CompanionHelloRequest {
     protocol_min
     protocol_max
-    termx_version
+    muxvia_version
     caller_role       # tui | cli | daemon
     requested_capabilities
     request_nonce
@@ -215,7 +215,7 @@ GA001 引入的质量窗口使用 Companion IPC v2：公开进程只提交 RTT P
 
 ## 6. 数据和凭据边界
 
-| 数据 | `termx` | Companion | Cloud services |
+| 数据 | `muxvia` | Companion | Cloud services |
 | --- | --- | --- | --- |
 | DeviceIdentity private key | 持有 | 禁止 | 禁止 |
 | Device public key/signed proof | 持有 | 可以转发 | 可以验证/保存 public metadata |
@@ -224,7 +224,7 @@ GA001 引入的质量窗口使用 Companion IPC v2：公开进程只提交 RTT P
 | HubAdmissionTicket | 可只持 reference/短期值 | 持有/使用 | 签发/验证 |
 | RelayLease/TURN credential | 建连时短期使用 | 获取并按 caller 返回 | 签发/验证 |
 | SDP/ICE | 生成/消费 | 可以转发 | Hub 可以转发 |
-| DataChannel/termx frame | 持有 | 禁止 | 禁止 |
+| DataChannel/muxvia frame | 持有 | 禁止 | 禁止 |
 | Terminal inventory/content | daemon/client protocol 内 | 禁止 | 禁止 |
 | Quality summary | 生成最小 summary | 可以转发 | 可以聚合 |
 
@@ -232,17 +232,17 @@ IPC schema 和 logger 必须有 secret field metadata。默认 diagnostics 只�
 
 ## 7. CLI 安装和管理体验
 
-公开 `termx` CLI 提供固定 cloud command group：
+公开 `muxvia` CLI 提供固定 cloud command group：
 
 ```text
-termx cloud install [--channel stable|beta] [--version VERSION]
-termx cloud login
-termx cloud enroll [ONE_TIME_CODE]
-termx cloud status [--json]
-termx cloud doctor [--json]
-termx cloud update [--channel stable|beta]
-termx cloud logout
-termx cloud uninstall [--purge]
+muxvia cloud install [--channel stable|beta] [--version VERSION]
+muxvia cloud login
+muxvia cloud enroll [ONE_TIME_CODE]
+muxvia cloud status [--json]
+muxvia cloud doctor [--json]
+muxvia cloud update [--channel stable|beta]
+muxvia cloud logout
+muxvia cloud uninstall [--purge]
 ```
 
 ### 7.1 推荐用户流程
@@ -250,17 +250,17 @@ termx cloud uninstall [--purge]
 客户端设备：
 
 ```bash
-termx cloud install
-termx cloud login
-termx cloud status
+muxvia cloud install
+muxvia cloud login
+muxvia cloud status
 ```
 
 daemon 设备：
 
 ```bash
-termx cloud install
-termx cloud enroll <one-time-device-code>
-termx daemon
+muxvia cloud install
+muxvia cloud enroll <one-time-device-code>
+muxvia daemon
 ```
 
 `enroll` 支持交互输入，避免 one-time code 默认进入 shell history。命令行位置参数只作为显式便捷入口，并在文档中标注风险。
@@ -271,7 +271,7 @@ termx daemon
 
 - 返回稳定 `cloud_companion_missing`。
 - TUI 只把 owning endpoint 标记 unavailable。
-- CLI 可以展示 `termx cloud install` 操作，但不能自动执行下载。
+- CLI 可以展示 `muxvia cloud install` 操作，但不能自动执行下载。
 - local、SSH 和其他 endpoint 不受影响。
 
 ## 8. 签名安装与升级
@@ -338,23 +338,23 @@ CloudCompanionRelease {
 - active installation 每次使用前重新验证固定路径、owner/权限或 Windows owner SID、symlink、binary hash；stable 默认拒绝 downgrade，签名 manifest 可显式授权回滚。
 - `shared/cloudcompanion/ipc` 使用 4 MiB 上限的 deterministic framed protobuf；Unix 双向校验 peer UID，Windows Named Pipe 使用 current-user ACL 并双向校验 peer process SID。
 - `shared/cloudcompanion/activation` 只启动 active record 指向的固定 binary 和固定 `serve --socket` 参数；发现旧版本进程时先请求 Shutdown、等待 endpoint 释放，再进行一次受限启动。
-- `termx cloud install|update|login|enroll|status|doctor|logout|uninstall` 已接入公开 lifecycle contract。enroll 默认从 TTY 隐式输入 one-time code，并由公开 daemon DeviceIdentity 在本地签名 challenge。
-- 私有 `termx-cloud` artifact 只通过 OS credential manager 保存 account/device cloud session；release tool 只从仓库外读取 Ed25519 PKCS#8 PEM，仓库和 artifact metadata 不保存 release private key。
+- `muxvia cloud install|update|login|enroll|status|doctor|logout|uninstall` 已接入公开 lifecycle contract。enroll 默认从 TTY 隐式输入 one-time code，并由公开 daemon DeviceIdentity 在本地签名 challenge。
+- 私有 `muxvia-cloud` artifact 只通过 OS credential manager 保存 account/device cloud session；release tool 只从仓库外读取 Ed25519 PKCS#8 PEM，仓库和 artifact metadata 不保存 release private key。
 
 ## 9. 桌面、移动端和服务端交付
 
 ### 9.1 Desktop/headless
 
-- `termx` 与 `termx-cloud` 是两个 executable/package。
+- `muxvia` 与 `muxvia-cloud` 是两个 executable/package。
 - 官方 package manager 可以分别发布，也可以提供依赖二者的 meta package。
-- 从复制出的 public namespace 构建 `termx` 不需要访问 `private/`。
+- 从复制出的 public namespace 构建 `muxvia` 不需要访问 `private/`。
 - headless daemon 使用同一个 companion binary 和 daemon-role enrollment。
 
 ### 9.2 Android/iOS
 
 移动端不采用运行时下载 executable 的桌面 sidecar 模式：
 
-- TermX 只发布一个 App；Direct、SSH 与可选 Cloud Route 共用同一个 Go Client Engine。
+- Muxvia 只发布一个 App；Direct、SSH 与可选 Cloud Route 共用同一个 Go Client Engine。
 - 当前 private monorepo 将 first-party Cloud module 作为标准 Android source set 编译，默认无 development Cloud origin并保持 managed Route fail closed。
 - 私有模块只能实现公开 platform primitive contract；WebRTC、DTLS peer verification、grant、Proto API 和 DataChannel 仍由 Go Client Engine 或可审计的平台 adapter 拥有。
 - 登录、订阅或 Cloud 故障只过滤 managed Route，不得阻断 Direct/SSH。
@@ -364,10 +364,10 @@ CloudCompanionRelease {
 ```bash
 cd clients/mobile/android
 ./gradlew testDebugUnitTest assembleDebug
-./gradlew -PtermxDevCloud=true testDebugUnitTest assembleDebug
+./gradlew -PmuxviaDevCloud=true testDebugUnitTest assembleDebug
 ```
 
-两个 APK 都包含固定 `com.termx.cloud.OfficialManagedCloudFactory`；区别仅是 devcloud build flag 是否启用 loopback测试 origin，不是产品 flavor。未来建立 iOS target 时必须先补同一 C ABI contract 的 Swift wrapper 和平台 primitive，不把 Android 完成状态外推为 iOS 已实现。
+两个 APK 都包含固定 `com.muxvia.cloud.OfficialManagedCloudFactory`；区别仅是 devcloud build flag 是否启用 loopback测试 origin，不是产品 flavor。未来建立 iOS target 时必须先补同一 C ABI contract 的 Swift wrapper 和平台 primitive，不把 Android 完成状态外推为 iOS 已实现。
 
 GA001A 后，Android 公开层还拥有 selected candidate pair stats 采样、质量窗口聚合和 `ManagedPathQualitySummary` 隐私校验；Official 私有模块只实现 `reportPathQuality` 转发，不能接收原始 stats、候选地址、grant、terminal 数据或成本输入。Go 与 Android 从 `shared/cloudcompanion/testdata/path_quality_contract.json` 读取同一 v2 fixture；Community/Official 都必须通过相同窗口测试和 APK class 边界检查。质量上报错误只丢 telemetry，不参与连接成功、transport close、重连或 route selection。
 
@@ -375,13 +375,13 @@ GA002 后，Android 在显式 `smart_route` 下通过 Official 私有模块请�
 
 ### 9.3 托管服务端
 
-Control Plane、Web Controller、Hub、Relay 和 Route Planner 不随 `termx cloud install` 下发。它们由 TermX 运维部署。
+Control Plane、Web Controller、Hub、Relay 和 Route Planner 不随 `muxvia cloud install` 下发。它们由 Muxvia 运维部署。
 
 ### 9.4 Enterprise self-host
 
 - 使用独立私有 registry、container image、Helm/部署模板和商业 license。
 - 客户端仍使用公开 contract；只替换 control plane locator、trust root 和 organization policy。
-- enterprise bundle 不通过普通个人 `termx cloud install` 安装。
+- enterprise bundle 不通过普通个人 `muxvia cloud install` 安装。
 
 ## 10. 稳定错误语义
 
@@ -389,7 +389,7 @@ Control Plane、Web Controller、Hub、Relay 和 Route Planner 不随 `termx clo
 | --- | --- | --- |
 | `cloud_companion_missing` | 未安装或找不到固定 companion | 提示显式安装；仅 owning endpoint unavailable |
 | `cloud_companion_not_running` | 已安装但进程不可用 | 受限启动/重试；不 fallback |
-| `cloud_companion_incompatible` | 无共同 IPC version | 要求更新 termx 或 companion |
+| `cloud_companion_incompatible` | 无共同 IPC version | 要求更新 muxvia 或 companion |
 | `cloud_companion_untrusted` | 路径、owner、签名或 hash 不可信 | 拒绝执行/连接 |
 | `cloud_login_required` | 无有效 account session | 引导 login，不影响 local/SSH |
 | `cloud_device_enrollment_required` | daemon 未 enrollment | 引导 enroll，不生成临时全权 token |
@@ -401,7 +401,7 @@ Control Plane、Web Controller、Hub、Relay 和 Route Planner 不随 `termx clo
 
 ## 11. 版本与发布策略
 
-- `termx`、Companion 和 server 独立版本，但共享 versioned public contract。
+- `muxvia`、Companion 和 server 独立版本，但共享 versioned public contract。
 - protocol major breaking，minor 只能新增 optional capability。
 - server 至少支持当前和上一个稳定 public contract 窗口。
 - public client 不保留旧安全模型 fallback；兼容只发生在同一安全边界内。
@@ -410,14 +410,14 @@ Control Plane、Web Controller、Hub、Relay 和 Route Planner 不随 `termx clo
 
 ## 12. 许可证与源码边界
 
-当前仓库是 private authoritative monorepo，根 `LICENSE` 对 TermX 自有材料保留全部权利。计划未来公开的目录在本仓库内不会因为“public namespace”名称自动获得开源许可。
+当前仓库是 private authoritative monorepo，根 `LICENSE` 对 Muxvia 自有材料保留全部权利。计划未来公开的目录在本仓库内不会因为“public namespace”名称自动获得开源许可。
 
 未来 public snapshot 选择 Apache-2.0，使用 `docs/legal/public-snapshot/` 中的 LICENSE、NOTICE、DCO、CONTRIBUTING 和 third-party notice 模板；只有复制到全新公开仓库并附带这些文件后，所选公开材料才按该许可证发布。初始贡献治理使用 DCO 1.1，不默认收集 CLA。
 
 当前 artifact notice 门禁：
 
-- `termx licenses` 输出 public CLI/daemon 三平台依赖的内嵌完整文本。
-- `termx-cloud licenses` 输出 private Companion 三平台依赖的内嵌完整文本。
+- `muxvia licenses` 输出 public CLI/daemon 三平台依赖的内嵌完整文本。
+- `muxvia-cloud licenses` 输出 private Companion 三平台依赖的内嵌完整文本。
 - Community/Official App 静态 assets 包含 npm、Gradle、WebRTC native 和字体 notice；APK 必须验证这些文件实际进入 `assets/public/`。
 - `scripts/license-audit.sh` 校验 pinned hash、generated bundle 和 public -> private Go import 禁止方向。
 - Companion、Official App、managed service 与 Enterprise bundle 分别使用 `docs/legal/private-artifact-distribution-gates.md` 定义的专有条款和审批；Apache-2.0 不授权 private module/server。
@@ -490,7 +490,7 @@ out-of-process IPC 是清晰的工程边界，但不自动构成法律结论。�
 - CLI 完成 install/login/enroll/status/doctor/update/uninstall。
 - 完成 signed manifest、atomic update 和 package integration。
 
-实现结果：桌面公开 installer、owner-scoped IPC、activation manager 和完整 CLI lifecycle 已落地；私有 `termx-cloud` binary、系统 keyring adapter 与外部签名 release artifact tool 已落地。Android 通过固定 factory class 形成 Community disabled adapter 与 Official private source set 两种构建，两者共用公开 `ManagedCloudAdapter` contract；Community/Official unit test 与 `assembleDebug` 均通过。正式 CLI build 必须通过 linker 注入 release key ID/public key，正式 Companion build 必须注入与 manifest 一致的 version/channel；源码构建缺少 release root 时 managed cloud 稳定 fail closed。
+实现结果：桌面公开 installer、owner-scoped IPC、activation manager 和完整 CLI lifecycle 已落地；私有 `muxvia-cloud` binary、系统 keyring adapter 与外部签名 release artifact tool 已落地。Android 通过固定 factory class 形成 Community disabled adapter 与 Official private source set 两种构建，两者共用公开 `ManagedCloudAdapter` contract；Community/Official unit test 与 `assembleDebug` 均通过。正式 CLI build 必须通过 linker 注入 release key ID/public key，正式 Companion build 必须注入与 manifest 一致的 version/channel；源码构建缺少 release root 时 managed cloud 稳定 fail closed。
 
 不伪装为已完成的生产外部项：桌面 `NewUnconfiguredAdapter` 与 Android development gateway 在未注入正式 OAuth/TLS SDK 时返回稳定 cloud unavailable/login required；正式 release origin、key custody 和发布审批进入 LIC001/发布流水线。daemon `OpenPresence` 仍缺独立 presence-proof challenge contract，当前不得复用 enrollment challenge 或猜测 daemon online，后续协议切片补齐后才能接真实 presence。
 
@@ -515,7 +515,7 @@ out-of-process IPC 是清晰的工程边界，但不自动构成法律结论。�
 
 ## 15. 非目标
 
-- 不在 `termx` 主 binary 中静态链接 private cloud code。
+- 不在 `muxvia` 主 binary 中静态链接 private cloud code。
 - 不动态加载 private library。
 - 不允许第三方 generic plugin 复用 companion IPC。
 - 不把 Hub/Relay/Web Controller server 下发给普通用户。
@@ -527,4 +527,4 @@ out-of-process IPC 是清晰的工程边界，但不自动构成法律结论。�
 
 完成本规范后，RP002 已具备开始条件：产品边界、源码边界、安全 contract、网络拓扑、全球加速阶段和发布安装模型均已冻结。
 
-RP002 只实现公开 contract、fake companion 和依赖守卫，不需要等待私有 `termx-cloud` 仓库完成。若实现过程中发现必须先决定许可证文本、私有 artifact origin 或真实签名 key，相关内容分别延后到 LIC001 或 RP006A，不得阻塞 public contract 模型。
+RP002 只实现公开 contract、fake companion 和依赖守卫，不需要等待私有 `muxvia-cloud` 仓库完成。若实现过程中发现必须先决定许可证文本、私有 artifact origin 或真实签名 key，相关内容分别延后到 LIC001 或 RP006A，不得阻塞 public contract 模型。

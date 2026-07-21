@@ -14,8 +14,8 @@ interface ActivePreviewRangeSource {
   streamPreview(path: string, mimeType: string, options?: FilePreviewStreamOptions): Promise<FilePreviewStreamResult>
 }
 
-const previewPathPrefix = '/__termx_file_preview__/'
-const swPath = '/termx-file-preview-sw.js'
+const previewPathPrefix = '/__muxvia_file_preview__/'
+const swPath = '/muxvia-file-preview-sw.js'
 const activeSources = new Map<string, ActivePreviewRangeSource>()
 let registrationPromise: Promise<ServiceWorkerRegistration | null> | null = null
 let messageListenerAttached = false
@@ -45,7 +45,7 @@ export async function createFilePreviewRangeUrl(request: FilePreviewRangeUrlRequ
     url: `${previewPathPrefix}${encodeURIComponent(token)}?${query.toString()}`,
     configure(metadata: { duration?: number | undefined }) {
       postPreviewWorkerControl({
-        type: 'termx-preview-configure',
+        type: 'muxvia-preview-configure',
         token,
         size: Math.max(0, Math.floor(request.size)),
         mimeType: request.mimeType.trim() || 'application/octet-stream',
@@ -55,7 +55,7 @@ export async function createFilePreviewRangeUrl(request: FilePreviewRangeUrlRequ
     revoke() {
       activeSources.delete(token)
       postPreviewWorkerControl({
-        type: 'termx-preview-release',
+        type: 'muxvia-preview-release',
         token,
       })
     },
@@ -125,7 +125,7 @@ function postRangeResponse(
   metadata: { offset: number; length: number; totalSize: number; mimeType: string },
 ): void {
   postToPreviewWorker(event, {
-    type: 'termx-preview-response',
+    type: 'muxvia-preview-response',
     requestId,
     blob,
     offset: metadata.offset,
@@ -137,7 +137,7 @@ function postRangeResponse(
 
 function postRangeError(event: MessageEvent, requestId: string, message: string): void {
   postToPreviewWorker(event, {
-    type: 'termx-preview-error',
+    type: 'muxvia-preview-error',
     requestId,
     message,
   })
@@ -157,7 +157,7 @@ function postPreviewWorkerControl(message: unknown): void {
 }
 
 function isRangeRequest(value: unknown): value is {
-  type: 'termx-preview-range-request'
+  type: 'muxvia-preview-range-request'
   requestId: string
   token: string
   offset: number
@@ -165,7 +165,7 @@ function isRangeRequest(value: unknown): value is {
 } {
   if (typeof value !== 'object' || value === null) return false
   const data = value as Record<string, unknown>
-  return data.type === 'termx-preview-range-request'
+  return data.type === 'muxvia-preview-range-request'
     && typeof data.requestId === 'string'
     && typeof data.token === 'string'
     && typeof data.offset === 'number'

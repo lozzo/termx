@@ -58,13 +58,13 @@ export async function protoPost<
   requestSchema: Req,
   request: MessageShape<Req>,
   responseSchema: Res,
-  csrfCookie = "termx_cloud_csrf",
+  csrfCookie = "muxvia_cloud_csrf",
 ): Promise<MessageShape<Res>> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
   const proof = cookie(csrfCookie);
-  if (proof) headers["X-TermX-CSRF"] = proof;
+  if (proof) headers["X-Muxvia-CSRF"] = proof;
   const response = await fetch(path, {
     method: "POST",
     credentials: "same-origin",

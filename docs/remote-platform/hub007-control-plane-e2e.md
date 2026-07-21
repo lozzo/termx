@@ -30,7 +30,7 @@ supervisor manifest 记录 PID、listener、Hub/Relay identity、SQLite、usage 
 
 ## 管理入口与命令
 
-`npm run test:e2e:hub007 --workspace @termx/web-controller` 使用 Playwright 启动真实 supervisor，通过 Operator UI 完成：
+`npm run test:e2e:hub007 --workspace @muxvia/web-controller` 使用 Playwright 启动真实 supervisor，通过 Operator UI 完成：
 
 1. 输入 development operator token 登录；
 2. 查看两个 Hub/Relay fleet 项；

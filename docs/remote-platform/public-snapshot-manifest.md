@@ -1,4 +1,4 @@
-# TermX Public Snapshot Manifest
+# Muxvia Public Snapshot Manifest
 
 Status: RP007 release procedure
 
@@ -63,7 +63,7 @@ scripts/public-snapshot-guard.sh
 scripts/public-snapshot-guard.test.sh
 scripts/repository-layout-guard.sh
 scripts/verify-android-apk-boundary.sh
-scripts/with-clean-termx-env.sh
+scripts/with-clean-muxvia-env.sh
 ```
 
 Do not copy root `LICENSE`, root `THIRD_PARTY_NOTICES.md`, `go.work`, `go.work.sum`, `workflow.md`, any `AGENTS.md`, `private/`, legacy top-level remote directories, ignored build outputs, local configuration, or the source repository history. The reviewed public templates replace the root legal and workspace files. `go work sync` may create a new public-only `go.work.sum`; its absence is valid when the root module sum already closes the public dependency graph.
@@ -75,9 +75,9 @@ Run this procedure from a shell with Git, Go, Node.js, npm, Android/Java tooling
 ```bash
 set -euo pipefail
 
-SOURCE_REPO=/absolute/path/to/private/termx
+SOURCE_REPO=/absolute/path/to/private/muxvia
 SOURCE_COMMIT=$(git -C "$SOURCE_REPO" rev-parse --verify '<release-commit>^{commit}')
-DEST=/absolute/path/to/new-public-termx
+DEST=/absolute/path/to/new-public-muxvia
 : "${ANDROID_HOME:?set ANDROID_HOME to the Android SDK root}"
 test -d "$ANDROID_HOME"
 
@@ -121,7 +121,7 @@ PUBLIC_PATHS=(
   scripts/public-snapshot-guard.test.sh
   scripts/repository-layout-guard.sh
   scripts/verify-android-apk-boundary.sh
-  scripts/with-clean-termx-env.sh
+  scripts/with-clean-muxvia-env.sh
 )
 
 git -C "$SOURCE_REPO" archive "$SOURCE_COMMIT" -- "${PUBLIC_PATHS[@]}" \
@@ -177,7 +177,7 @@ Only after all gates pass:
 cd "$DEST"
 git init --initial-branch=main
 git add --all
-git commit -s -m 'Initial public TermX snapshot'
+git commit -s -m 'Initial public Muxvia snapshot'
 ```
 
 Review the first commit tree and generated SBOM before adding a public remote. Never add the private repository as a remote and never graft, filter, or merge its history into the public repository.

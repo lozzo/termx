@@ -47,7 +47,7 @@ describe('MachineList', () => {
       />,
     )
 
-    expect(screen.getByTestId('termx-machine-list')).toBeTruthy()
+    expect(screen.getByTestId('muxvia-machine-list')).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Machines' })).toBeTruthy()
     expect(screen.getByRole('button', { name: /add machine/i })).toBeTruthy()
     expect(screen.getByRole('button', { name: /scan pairing qr/i })).toBeTruthy()
@@ -59,7 +59,7 @@ describe('MachineList', () => {
     expect(screen.getByText('Build Runner')).toBeTruthy()
     expect(screen.getByText('Stale')).toBeTruthy()
     expect(screen.getByText(/Last online/i)).toBeTruthy()
-    expect(screen.getByTestId('termx-machine-list').textContent).not.toMatch(/workspace|tab|window|pane|tmux|session/i)
+    expect(screen.getByTestId('muxvia-machine-list').textContent).not.toMatch(/workspace|tab|window|pane|tmux|session/i)
 
     await userEvent.click(screen.getByRole('button', { name: /scan pairing qr/i }))
     await userEvent.click(screen.getByRole('button', { name: /add machine/i }))
@@ -103,7 +103,7 @@ describe('MachineList', () => {
 
     screen.getByRole('button', { name: /connect to macbook pro/i }).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
 
-    expect(await screen.findByTestId('termx-machine-detail-sheet')).toBeTruthy()
+    expect(await screen.findByTestId('muxvia-machine-detail-sheet')).toBeTruthy()
     expect(screen.getByText('Machine details')).toBeTruthy()
     expect(screen.getByText('machine-local')).toBeTruthy()
     expect(onSelectMachine).not.toHaveBeenCalled()
@@ -120,13 +120,13 @@ describe('MachineList', () => {
       />,
     )
 
-    expect(screen.getByTestId('termx-machine-empty-state')).toBeTruthy()
+    expect(screen.getByTestId('muxvia-machine-empty-state')).toBeTruthy()
     expect(screen.getByText('No machines yet')).toBeTruthy()
-    expect(screen.getByText(/add or scan a termx qr/i)).toBeTruthy()
+    expect(screen.getByText(/add or scan a muxvia qr/i)).toBeTruthy()
     expect(screen.getByRole('button', { name: /scan pairing qr/i })).toBeTruthy()
     expect(screen.getByRole('button', { name: /add machine/i })).toBeTruthy()
     expect(screen.getByRole('button', { name: /sign in/i })).toBeTruthy()
-    expect(screen.getByTestId('termx-machine-list').textContent).not.toMatch(/terminal page|workspace|tab|window|pane|tmux|session/i)
+    expect(screen.getByTestId('muxvia-machine-list').textContent).not.toMatch(/terminal page|workspace|tab|window|pane|tmux|session/i)
   })
 
   it('keeps public props machine-focused and implementation free of old path taxonomy', () => {
@@ -139,7 +139,7 @@ describe('MachineList', () => {
 
     render(<MachineList {...props} />)
 
-    expect(screen.getByTestId('termx-machine-list')).toBeTruthy()
+    expect(screen.getByTestId('muxvia-machine-list')).toBeTruthy()
     expect(`${appMachineSource}\n${machineListSource}`).not.toMatch(/anonymous_p2p|managed_p2p|paid_relay|\brelayPath\b|\bpaidRelay\b|\bsessions\b|\bpanes\b|\bworkspace\b|\btmux\b/)
   })
 })

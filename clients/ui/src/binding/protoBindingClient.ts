@@ -1,9 +1,9 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf'
-import * as TermxApiApplication from '../generated/apipb/application_pb'
-import * as TermxApiCommon from '../generated/apipb/common_pb'
-import * as TermxApiFile from '../generated/apipb/file_pb'
-import * as TermxClientBinding from '../generated/bindingpb/client_binding_pb'
-import * as TermxRemoteAuth from '../generated/remoteauthpb/remote_auth_pb'
+import * as MuxviaApiApplication from '../generated/apipb/application_pb'
+import * as MuxviaApiCommon from '../generated/apipb/common_pb'
+import * as MuxviaApiFile from '../generated/apipb/file_pb'
+import * as MuxviaClientBinding from '../generated/bindingpb/client_binding_pb'
+import * as MuxviaRemoteAuth from '../generated/remoteauthpb/remote_auth_pb'
 import type { ProtoClientSession, ProtoClientSubscription, ProtoResourceStream } from '../core/protoClientSession'
 
 export const BindingOperation = {
@@ -39,20 +39,20 @@ const CANCELLED_CLEANUP_TIMEOUT_MS = 5_000
 /** ProtoBindingClient is the shared Android-JNI and Web-WASM session/resource contract owner. */
 export class ProtoBindingClient {
   private readonly openOperations = new Map<bigint, PendingOperation<ProtoBindingSession>>()
-  private readonly executeOperations = new Map<bigint, PendingOperation<TermxApiApplication.ResultEnvelope>>()
-  private readonly importOperations = new Map<bigint, PendingOperation<TermxClientBinding.ImportPairingResult>>()
+  private readonly executeOperations = new Map<bigint, PendingOperation<MuxviaApiApplication.ResultEnvelope>>()
+  private readonly importOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.ImportPairingResult>>()
   private readonly deleteOperations = new Map<bigint, PendingOperation<void>>()
-  private readonly registryGetOperations = new Map<bigint, PendingOperation<TermxRemoteAuth.EndpointRegistryV1>>()
-  private readonly endpointUpsertOperations = new Map<bigint, PendingOperation<TermxClientBinding.EndpointUpsertResult>>()
-  private readonly endpointDeleteOperations = new Map<bigint, PendingOperation<TermxClientBinding.EndpointDeleteResult>>()
-  private readonly endpointShareReceiveOperations = new Map<bigint, PendingOperation<TermxClientBinding.EndpointShareReceiveResult>>()
-  private readonly endpointShareCommitOperations = new Map<bigint, PendingOperation<TermxClientBinding.EndpointShareCommitResult>>()
-  private readonly sshCredentialProvisionOperations = new Map<bigint, PendingOperation<TermxClientBinding.SSHCredentialProvisionResult>>()
+  private readonly registryGetOperations = new Map<bigint, PendingOperation<MuxviaRemoteAuth.EndpointRegistryV1>>()
+  private readonly endpointUpsertOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.EndpointUpsertResult>>()
+  private readonly endpointDeleteOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.EndpointDeleteResult>>()
+  private readonly endpointShareReceiveOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.EndpointShareReceiveResult>>()
+  private readonly endpointShareCommitOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.EndpointShareCommitResult>>()
+  private readonly sshCredentialProvisionOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.SSHCredentialProvisionResult>>()
   private readonly sessions = new Map<bigint, ProtoBindingSession>()
   private readonly streams = new Map<bigint, ProtoBindingResourceStream>()
-  private readonly earlyOperationEvents = new Map<bigint, TermxClientBinding.EventEnvelope>()
+  private readonly earlyOperationEvents = new Map<bigint, MuxviaClientBinding.EventEnvelope>()
   private readonly cancelledOperations = new Set<bigint>()
-  private readonly earlyStreamEvents = new Map<bigint, TermxClientBinding.EventEnvelope[]>()
+  private readonly earlyStreamEvents = new Map<bigint, MuxviaClientBinding.EventEnvelope[]>()
   private readonly abandonedStreamHandles = new Set<bigint>()
   private readonly retiredSessionHandles = new Set<bigint>()
   private readonly releasedSessionHandles = new Set<bigint>()
@@ -63,62 +63,62 @@ export class ProtoBindingClient {
   private intentionalClose = false
 
   constructor(private readonly backend: ProtoBindingBackend) {
-    backend.start((payload) => this.onEvent(fromBinary(TermxClientBinding.EventEnvelopeSchema, payload)), (error) => this.onClosed(error))
+    backend.start((payload) => this.onEvent(fromBinary(MuxviaClientBinding.EventEnvelopeSchema, payload)), (error) => this.onClosed(error))
   }
 
-  async openSession(request: TermxClientBinding.OpenSessionRequest, signal?: AbortSignal): Promise<ProtoClientSession> {
-    const operation = await this.backend.request(BindingOperation.OPEN_SESSION, toBinary(TermxClientBinding.OpenSessionRequestSchema, request), undefined, signal)
+  async openSession(request: MuxviaClientBinding.OpenSessionRequest, signal?: AbortSignal): Promise<ProtoClientSession> {
+    const operation = await this.backend.request(BindingOperation.OPEN_SESSION, toBinary(MuxviaClientBinding.OpenSessionRequestSchema, request), undefined, signal)
     return await this.waitOperation(this.openOperations, operation, signal)
   }
 
-  async importPairing(request: TermxClientBinding.ImportPairingRequest, signal?: AbortSignal): Promise<TermxClientBinding.ImportPairingResult> {
-    const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'importPairing', value: request } }), signal)
+  async importPairing(request: MuxviaClientBinding.ImportPairingRequest, signal?: AbortSignal): Promise<MuxviaClientBinding.ImportPairingResult> {
+    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'importPairing', value: request } }), signal)
     return await this.waitOperation(this.importOperations, operation, signal)
   }
 
-  async deleteCredential(request: TermxClientBinding.DeleteCredentialRequest, signal?: AbortSignal): Promise<void> {
-    const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'deleteCredential', value: request } }), signal)
+  async deleteCredential(request: MuxviaClientBinding.DeleteCredentialRequest, signal?: AbortSignal): Promise<void> {
+    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'deleteCredential', value: request } }), signal)
     await this.waitOperation(this.deleteOperations, operation, signal)
   }
 
-  async getEndpointRegistry(signal?: AbortSignal): Promise<TermxRemoteAuth.EndpointRegistryV1> {
-    const request = create(TermxClientBinding.EndpointRegistryGetRequestSchema, { requestId: crypto.randomUUID() })
-    const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'endpointRegistryGet', value: request } }), signal)
+  async getEndpointRegistry(signal?: AbortSignal): Promise<MuxviaRemoteAuth.EndpointRegistryV1> {
+    const request = create(MuxviaClientBinding.EndpointRegistryGetRequestSchema, { requestId: crypto.randomUUID() })
+    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'endpointRegistryGet', value: request } }), signal)
     return await this.waitOperation(this.registryGetOperations, operation, signal)
   }
 
-  async upsertEndpoint(endpoint: TermxRemoteAuth.EndpointConfigV1, makeDefault = false, signal?: AbortSignal): Promise<TermxClientBinding.EndpointUpsertResult> {
-    const request = create(TermxClientBinding.EndpointUpsertRequestSchema, { requestId: crypto.randomUUID(), endpoint, makeDefault })
-    const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'endpointUpsert', value: request } }), signal)
+  async upsertEndpoint(endpoint: MuxviaRemoteAuth.EndpointConfigV1, makeDefault = false, signal?: AbortSignal): Promise<MuxviaClientBinding.EndpointUpsertResult> {
+    const request = create(MuxviaClientBinding.EndpointUpsertRequestSchema, { requestId: crypto.randomUUID(), endpoint, makeDefault })
+    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'endpointUpsert', value: request } }), signal)
     return await this.waitOperation(this.endpointUpsertOperations, operation, signal)
   }
 
-  async deleteEndpoint(endpointId: string, signal?: AbortSignal): Promise<TermxClientBinding.EndpointDeleteResult> {
-    const request = create(TermxClientBinding.EndpointDeleteRequestSchema, { requestId: crypto.randomUUID(), endpointId })
-    const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'endpointDelete', value: request } }), signal)
+  async deleteEndpoint(endpointId: string, signal?: AbortSignal): Promise<MuxviaClientBinding.EndpointDeleteResult> {
+    const request = create(MuxviaClientBinding.EndpointDeleteRequestSchema, { requestId: crypto.randomUUID(), endpointId })
+    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'endpointDelete', value: request } }), signal)
     return await this.waitOperation(this.endpointDeleteOperations, operation, signal)
   }
 
-  async receiveEndpointShare(portableOffer: string, signal?: AbortSignal): Promise<TermxClientBinding.EndpointShareReceiveResult> {
-    const request = create(TermxClientBinding.EndpointShareReceiveRequestSchema, { requestId: crypto.randomUUID(), portableOffer })
-    const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'endpointShareReceive', value: request } }), signal)
+  async receiveEndpointShare(portableOffer: string, signal?: AbortSignal): Promise<MuxviaClientBinding.EndpointShareReceiveResult> {
+    const request = create(MuxviaClientBinding.EndpointShareReceiveRequestSchema, { requestId: crypto.randomUUID(), portableOffer })
+    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'endpointShareReceive', value: request } }), signal)
     return await this.waitOperation(this.endpointShareReceiveOperations, operation, signal)
   }
 
-  async commitEndpointShare(importToken: string, signal?: AbortSignal): Promise<TermxClientBinding.EndpointShareCommitResult> {
-    const request = create(TermxClientBinding.EndpointShareCommitRequestSchema, { requestId: crypto.randomUUID(), importToken })
-    const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'endpointShareCommit', value: request } }), signal)
+  async commitEndpointShare(importToken: string, signal?: AbortSignal): Promise<MuxviaClientBinding.EndpointShareCommitResult> {
+    const request = create(MuxviaClientBinding.EndpointShareCommitRequestSchema, { requestId: crypto.randomUUID(), importToken })
+    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'endpointShareCommit', value: request } }), signal)
     return await this.waitOperation(this.endpointShareCommitOperations, operation, signal)
   }
 
-  async provisionSSHCredential(endpointId: string, routeId: string, signal?: AbortSignal): Promise<TermxClientBinding.SSHCredentialProvisionResult> {
-    const request = create(TermxClientBinding.SSHCredentialProvisionRequestSchema, { requestId: crypto.randomUUID(), endpointId, routeId })
-    const operation = await this.engineCommand(create(TermxClientBinding.EngineCommandSchema, { command: { case: 'sshCredentialProvision', value: request } }), signal)
+  async provisionSSHCredential(endpointId: string, routeId: string, signal?: AbortSignal): Promise<MuxviaClientBinding.SSHCredentialProvisionResult> {
+    const request = create(MuxviaClientBinding.SSHCredentialProvisionRequestSchema, { requestId: crypto.randomUUID(), endpointId, routeId })
+    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'sshCredentialProvision', value: request } }), signal)
     return await this.waitOperation(this.sshCredentialProvisionOperations, operation, signal)
   }
 
-  private async engineCommand(command: TermxClientBinding.EngineCommand, signal?: AbortSignal): Promise<bigint> {
-    return await this.backend.request(BindingOperation.ENGINE_COMMAND, toBinary(TermxClientBinding.EngineCommandSchema, command), undefined, signal)
+  private async engineCommand(command: MuxviaClientBinding.EngineCommand, signal?: AbortSignal): Promise<bigint> {
+    return await this.backend.request(BindingOperation.ENGINE_COMMAND, toBinary(MuxviaClientBinding.EngineCommandSchema, command), undefined, signal)
   }
 
   async close(): Promise<void> {
@@ -134,15 +134,15 @@ export class ProtoBindingClient {
     this.streams.clear()
   }
 
-  async execute(session: bigint, command: TermxApiApplication.CommandEnvelope, signal?: AbortSignal): Promise<TermxApiApplication.ResultEnvelope> {
-    const operation = await this.backend.request(BindingOperation.EXECUTE, toBinary(TermxApiApplication.CommandEnvelopeSchema, command), session, signal)
+  async execute(session: bigint, command: MuxviaApiApplication.CommandEnvelope, signal?: AbortSignal): Promise<MuxviaApiApplication.ResultEnvelope> {
+    const operation = await this.backend.request(BindingOperation.EXECUTE, toBinary(MuxviaApiApplication.CommandEnvelopeSchema, command), session, signal)
     return await this.waitOperation(this.executeOperations, operation, signal)
   }
 
-  async openResourceStream(session: bigint, resource: NonNullable<TermxClientBinding.OpenResourceStreamRequest['resource']>, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoBindingResourceStream> {
-    const request = create(TermxClientBinding.OpenResourceStreamRequestSchema, { resource, initialUploadOffset: options?.initialUploadOffset ?? 0n })
+  async openResourceStream(session: bigint, resource: NonNullable<MuxviaClientBinding.OpenResourceStreamRequest['resource']>, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoBindingResourceStream> {
+    const request = create(MuxviaClientBinding.OpenResourceStreamRequestSchema, { resource, initialUploadOffset: options?.initialUploadOffset ?? 0n })
     const handle = await awaitAbortableHandle(
-      this.backend.request(BindingOperation.OPEN_RESOURCE_STREAM, toBinary(TermxClientBinding.OpenResourceStreamRequestSchema, request), session, options?.signal),
+      this.backend.request(BindingOperation.OPEN_RESOURCE_STREAM, toBinary(MuxviaClientBinding.OpenResourceStreamRequestSchema, request), session, options?.signal),
       options?.signal,
       (late) => this.abandonResourceStream(late),
     )
@@ -156,9 +156,9 @@ export class ProtoBindingClient {
     return stream
   }
 
-  async sendResourceStreamFrame(handle: bigint, type: TermxClientBinding.ResourceStreamFrameType, payload: Uint8Array): Promise<void> {
-    const frame = create(TermxClientBinding.ResourceStreamFrameSchema, { streamHandle: handle, type, payload })
-    await this.backend.request(BindingOperation.SEND_RESOURCE_STREAM_FRAME, toBinary(TermxClientBinding.ResourceStreamFrameSchema, frame), handle)
+  async sendResourceStreamFrame(handle: bigint, type: MuxviaClientBinding.ResourceStreamFrameType, payload: Uint8Array): Promise<void> {
+    const frame = create(MuxviaClientBinding.ResourceStreamFrameSchema, { streamHandle: handle, type, payload })
+    await this.backend.request(BindingOperation.SEND_RESOURCE_STREAM_FRAME, toBinary(MuxviaClientBinding.ResourceStreamFrameSchema, frame), handle)
   }
 
   async closeResourceStream(handle: bigint): Promise<void> {
@@ -220,7 +220,7 @@ export class ProtoBindingClient {
     void this.cancel(operation)
   }
 
-  private onEvent(envelope: TermxClientBinding.EventEnvelope): void {
+  private onEvent(envelope: MuxviaClientBinding.EventEnvelope): void {
     const event = envelope.event
     const operationHandle = bindingOperationHandle(envelope)
     if (operationHandle !== undefined && this.cancelledOperations.delete(operationHandle)) {
@@ -376,7 +376,7 @@ export class ProtoBindingClient {
     }
   }
 
-  private hasPendingOperation(eventCase: TermxClientBinding.EventEnvelope['event']['case'], handle: bigint): boolean {
+  private hasPendingOperation(eventCase: MuxviaClientBinding.EventEnvelope['event']['case'], handle: bigint): boolean {
     switch (eventCase) {
       case 'openSession': return this.openOperations.has(handle)
       case 'execute': return this.executeOperations.has(handle)
@@ -401,7 +401,7 @@ export class ProtoBindingClient {
     this.streams.forEach((stream) => stream.markClosed(error))
     this.sessions.clear()
     this.streams.clear()
-    if (!this.intentionalClose) document.dispatchEvent(new CustomEvent('termx:binding-closed', { detail: error.message }))
+    if (!this.intentionalClose) document.dispatchEvent(new CustomEvent('muxvia:binding-closed', { detail: error.message }))
   }
 
   private rejectAll(error: Error): void {
@@ -420,7 +420,7 @@ export class ProtoBindingClient {
 	this.releasedStreamOrder.length = 0
   }
 
-  private queueEarlyStreamEvent(handle: bigint, envelope: TermxClientBinding.EventEnvelope): void {
+  private queueEarlyStreamEvent(handle: bigint, envelope: MuxviaClientBinding.EventEnvelope): void {
     if (this.abandonedStreamHandles.has(handle)) return
     const pending = this.earlyStreamEvents.get(handle) ?? []
     if (pending.length >= MAX_EARLY_STREAM_EVENTS) {
@@ -448,16 +448,16 @@ export class ProtoBindingClient {
       .catch((error) => this.onClosed(new Error(`abandoned resource stream cleanup failed: ${errorMessage(error)}`)))
   }
 
-  private async cleanupCancelledExecute(result: TermxClientBinding.ExecuteResult): Promise<void> {
-    if (result.error && result.error.code !== TermxApiCommon.ApiErrorCode.CANCELLED) {
+  private async cleanupCancelledExecute(result: MuxviaClientBinding.ExecuteResult): Promise<void> {
+    if (result.error && result.error.code !== MuxviaApiCommon.ApiErrorCode.CANCELLED) {
       throw apiError(result.error, 'cancelled operation cleanup failed')
     }
     const session = this.sessions.get(result.sessionHandle)
     const transfer = result.result?.result.case === 'fileTransferOpen' ? result.result.result.value.transfer : undefined
     if (!session || !transfer?.resource) return
     const cleanup = transfer.resume
-      ? create(TermxApiApplication.CommandEnvelopeSchema, { command: { case: 'fileTransferCancel', value: create(TermxApiFile.FileTransferCancelCommandSchema, { uploadResume: transfer.resume }) } })
-      : create(TermxApiApplication.CommandEnvelopeSchema, { command: { case: 'releaseResource', value: create(TermxApiApplication.ReleaseResourceCommandSchema, { resource: transfer.resource }) } })
+      ? create(MuxviaApiApplication.CommandEnvelopeSchema, { command: { case: 'fileTransferCancel', value: create(MuxviaApiFile.FileTransferCancelCommandSchema, { uploadResume: transfer.resume }) } })
+      : create(MuxviaApiApplication.CommandEnvelopeSchema, { command: { case: 'releaseResource', value: create(MuxviaApiApplication.ReleaseResourceCommandSchema, { resource: transfer.resource }) } })
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(new DOMException('cancelled operation cleanup timed out', 'TimeoutError')), CANCELLED_CLEANUP_TIMEOUT_MS)
     try {
@@ -470,7 +470,7 @@ export class ProtoBindingClient {
     }
   }
 
-  private retireCancelledOperation(operationHandle: bigint, envelope: TermxClientBinding.EventEnvelope): void {
+  private retireCancelledOperation(operationHandle: bigint, envelope: MuxviaClientBinding.EventEnvelope): void {
     const event = envelope.event
     if (event.case === 'execute') {
       void this.cleanupCancelledExecute(event.value).catch((error) => this.onClosed(new Error(`cancelled operation cleanup failed: ${errorMessage(error)}`)))
@@ -505,9 +505,9 @@ export class ProtoBindingConnector {
 		throw new Error('force relay requires a Go-owned route policy update')
 	}
     try {
-      const session = await this.client().openSession(create(TermxClientBinding.OpenSessionRequestSchema, {
+      const session = await this.client().openSession(create(MuxviaClientBinding.OpenSessionRequestSchema, {
 		requestId: crypto.randomUUID(), endpointId, routeOverride: this.input.routeId ?? '',
-		intent: TermxClientBinding.ConnectIntent.INTERACTIVE,
+		intent: MuxviaClientBinding.ConnectIntent.INTERACTIVE,
       }), options?.signal)
       options?.onStatus?.('Connected')
       options?.onConnectionState?.({ machineId: input.machineId, phase: 'connected', statusText: 'Connected', relayInUse: options?.forceRelay === true })
@@ -521,21 +521,21 @@ export class ProtoBindingConnector {
 
 class ProtoBindingSession implements ProtoClientSession {
   private alive = true
-  private readonly eventHandlers = new Set<(event: TermxApiApplication.EventEnvelope) => void>()
+  private readonly eventHandlers = new Set<(event: MuxviaApiApplication.EventEnvelope) => void>()
 
-  constructor(private readonly client: ProtoBindingClient, readonly handle: bigint, readonly stamp: NonNullable<TermxClientBinding.OpenSessionResult['session']>) {}
+  constructor(private readonly client: ProtoBindingClient, readonly handle: bigint, readonly stamp: NonNullable<MuxviaClientBinding.OpenSessionResult['session']>) {}
 
-  execute(command: TermxApiApplication.CommandEnvelope, options?: { signal?: AbortSignal }): Promise<TermxApiApplication.ResultEnvelope> {
+  execute(command: MuxviaApiApplication.CommandEnvelope, options?: { signal?: AbortSignal }): Promise<MuxviaApiApplication.ResultEnvelope> {
     if (!this.alive) return Promise.reject(new Error('Proto session is closed'))
     return this.client.execute(this.handle, command, options?.signal)
   }
 
-  subscribeEvents(handler: (event: TermxApiApplication.EventEnvelope) => void): ProtoClientSubscription {
+  subscribeEvents(handler: (event: MuxviaApiApplication.EventEnvelope) => void): ProtoClientSubscription {
     this.eventHandlers.add(handler)
     return { close: () => this.eventHandlers.delete(handler) }
   }
 
-  openResourceStream(resource: NonNullable<TermxClientBinding.OpenResourceStreamRequest['resource']>, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoResourceStream> {
+  openResourceStream(resource: NonNullable<MuxviaClientBinding.OpenResourceStreamRequest['resource']>, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoResourceStream> {
     if (!this.alive) return Promise.reject(new Error('Proto session is closed'))
     return this.client.openResourceStream(this.handle, resource, options)
   }
@@ -549,7 +549,7 @@ class ProtoBindingSession implements ProtoClientSession {
     await this.client.closeSession(this.handle)
   }
 
-  publish(event: TermxApiApplication.EventEnvelope | undefined): void {
+  publish(event: MuxviaApiApplication.EventEnvelope | undefined): void {
     if (!event || !this.alive) return
     this.eventHandlers.forEach((handler) => handler(event))
   }
@@ -562,17 +562,17 @@ class ProtoBindingSession implements ProtoClientSession {
 
 class ProtoBindingResourceStream implements ProtoResourceStream {
   private closed = false
-  private readonly handlers = new Set<(type: TermxClientBinding.ResourceStreamFrameType, payload: Uint8Array) => void>()
+  private readonly handlers = new Set<(type: MuxviaClientBinding.ResourceStreamFrameType, payload: Uint8Array) => void>()
   private readonly closeHandlers = new Set<(error: Error) => void>()
 
   constructor(private readonly client: ProtoBindingClient, readonly handle: bigint) {}
 
-  send(type: TermxClientBinding.ResourceStreamFrameType, payload: Uint8Array): Promise<void> {
+  send(type: MuxviaClientBinding.ResourceStreamFrameType, payload: Uint8Array): Promise<void> {
     if (this.closed) return Promise.reject(new Error('Proto resource stream is closed'))
     return this.client.sendResourceStreamFrame(this.handle, type, payload)
   }
 
-  subscribe(handler: (type: TermxClientBinding.ResourceStreamFrameType, payload: Uint8Array) => void): ProtoClientSubscription {
+  subscribe(handler: (type: MuxviaClientBinding.ResourceStreamFrameType, payload: Uint8Array) => void): ProtoClientSubscription {
     this.handlers.add(handler)
     return { close: () => this.handlers.delete(handler) }
   }
@@ -588,7 +588,7 @@ class ProtoBindingResourceStream implements ProtoResourceStream {
     await this.client.closeResourceStream(this.handle)
   }
 
-  publish(type: TermxClientBinding.ResourceStreamFrameType, payload: Uint8Array): void {
+  publish(type: MuxviaClientBinding.ResourceStreamFrameType, payload: Uint8Array): void {
     if (this.closed) return
     this.handlers.forEach((handler) => handler(type, payload.slice()))
   }
@@ -606,7 +606,7 @@ function apiError(error: { message?: string } | undefined, fallback: string): Er
   return new Error(error?.message || fallback)
 }
 
-function bindingOperationHandle(envelope: TermxClientBinding.EventEnvelope): bigint | undefined {
+function bindingOperationHandle(envelope: MuxviaClientBinding.EventEnvelope): bigint | undefined {
   switch (envelope.event.case) {
     case 'openSession':
     case 'execute':

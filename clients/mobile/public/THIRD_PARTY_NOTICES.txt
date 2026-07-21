@@ -1,8 +1,8 @@
-TermX App License And Third-Party Notice Index
+Muxvia App License And Third-Party Notice Index
 
 APACHE-2.0.txt
-  License text for public TermX Community components. Its presence does not
-  license a proprietary Official App module or other private TermX material.
+  License text for public Muxvia Community components. Its presence does not
+  license a proprietary Official App module or other private Muxvia material.
 
 third-party/NPM_NOTICES.txt
   Production npm lockfile dependency versions, attributions, and full texts.

@@ -80,7 +80,7 @@
       "eyebrow": "Govern shared access",
       "description": "Organization controls and auditable endpoint access without moving terminal truth to the cloud.",
       "price": { "mode": "contact", "label": "Contact" },
-      "cta": { "label": "Talk to us", "href": "mailto:hello@termx.dev?subject=TermX%20Team" },
+      "cta": { "label": "Talk to us", "href": "mailto:hello@muxvia.dev?subject=Muxvia%20Team" },
       "featured": false,
       "features": [
         "Members, roles and endpoint ownership",

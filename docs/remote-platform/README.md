@@ -1,4 +1,4 @@
-# TermX Remote Platform 文档基线
+# Muxvia Remote Platform 文档基线
 
 状态：统一 WebRTC DataChannel 产品/架构背景；活动实现真值只看仓库根 `workflow.md`
 
@@ -6,13 +6,13 @@
 
 ## 1. 文档目的
 
-本目录保存 TermX 远程平台的产品、架构、安全和历史迁移背景。统一 Route 与 Cloud 的当前结论以 `product-prd.md`、`cloud-product-spec.md`、`multi-hub-control-topology-spec.md`、`unified-endpoint-route-refactor-plan.md`、`architecture-spec.md`、`security-protocol-spec.md` 和根 `workflow.md` 为准。
+本目录保存 Muxvia 远程平台的产品、架构、安全和历史迁移背景。统一 Route 与 Cloud 的当前结论以 `product-prd.md`、`cloud-product-spec.md`、`multi-hub-control-topology-spec.md`、`unified-endpoint-route-refactor-plan.md`、`architecture-spec.md`、`security-protocol-spec.md` 和根 `workflow.md` 为准。
 
 仓库目录 ownership 与依赖方向统一见 [`../development/repository-layout.md`](../development/repository-layout.md)。
 
 `cloud-staging-roadmap.md`、`hub-edge-control-plan.md`、旧 Android 手测、public staging、distribution、global acceleration、source boundary 和 snapshot 文档只记录历史阶段或延后能力，不再驱动当前任务。文档中的旧切片“完成”、旧持久 Hub snapshot/WAL、旧 App flavor 或旧 transport 行为不能替代当前设计和 `workflow.md`。
 
-`remote/` 是公开 managed WebRTC/E2E auth runtime，`clients/ui/` 与 `clients/mobile/` 消费同一公开 endpoint contract。旧 `termx-hub/`、`termx-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已收口到 `private/archive/termx-platform-legacy/`；archive 不得以兼容、fallback 或“先继续沿用”的方式反向约束新模型。
+`remote/` 是公开 managed WebRTC/E2E auth runtime，`clients/ui/` 与 `clients/mobile/` 消费同一公开 endpoint contract。旧 `muxvia-hub/`、`muxvia-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已收口到 `private/archive/muxvia-platform-legacy/`；archive 不得以兼容、fallback 或“先继续沿用”的方式反向约束新模型。
 
 ## 2. 文档顺序
 
@@ -35,7 +35,7 @@
 
 ## 3. 已冻结决策
 
-- TermX 只有一个面向用户的 App；Direct 与 SSH 免费且不依赖登录，Cloud 是同一 App 内的可选托管 Route。
+- Muxvia 只有一个面向用户的 App；Direct 与 SSH 免费且不依赖登录，Cloud 是同一 App 内的可选托管 Route。
 - 所有官方客户端连接对象由 Go Client Engine 持有；Android 通过 C ABI + JNI，未来 native wrapper 通过 C ABI，未来浏览器通过 Go/WASM。
 - Web Controller、托管 Hub、托管 Relay、计费、entitlement、风控和云运维服务不进入公开源码发布。
 - 所有远程 Route 最终使用同一种 WebRTC DataChannel；Direct、SSH 和 Cloud 不是三套 terminal protocol。

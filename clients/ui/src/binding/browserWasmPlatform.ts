@@ -37,7 +37,7 @@ import { ObservedPath } from '../generated/cloudpb/cloud_topology_pb'
 import { splitOutAnswerCandidates } from '../webrtc/rtcSdpUtils'
 import type { WasmPlatformDispatcher } from './wasmRuntime'
 
-const DATABASE_NAME = 'termx-web-client'
+const DATABASE_NAME = 'muxvia-web-client'
 const DATABASE_VERSION = 2
 const CREDENTIAL_STORE = 'credentials'
 const ENDPOINT_REGISTRY_STORE = 'endpoint-registry'

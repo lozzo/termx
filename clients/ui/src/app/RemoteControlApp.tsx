@@ -25,11 +25,11 @@ import type { TerminalRenderer } from '../terminal/Terminal'
 import type { MachineAccessClass } from '../state/appMachine'
 
 const storageKeys = {
-  accessToken: 'termx.remote.accessToken',
+  accessToken: 'muxvia.remote.accessToken',
 } as const
 
 const defaultWebControlUrl = ''
-const appName = 'TermX Remote App'
+const appName = 'Muxvia Remote App'
 
 function noopSubscribe(_listener: () => void): () => void { return () => {} }
 
@@ -581,7 +581,7 @@ export function RemoteControlApp({
   }, [openMachinePairSheet, authorizedMachineIds])
 
   const storeImportedMachine = useCallback((external: ExternalPairingImportResult) => {
-    if (!storage) throw new Error('Local storage is required before importing a TermX QR')
+    if (!storage) throw new Error('Local storage is required before importing a Muxvia QR')
     if (selectedMachine && selectedMachine.id !== external.machine.id) {
       throw new Error(`This code belongs to ${external.machine.name}, not ${selectedMachine.name}`)
     }
@@ -623,7 +623,7 @@ export function RemoteControlApp({
   }, [dropMachineRuntime, externalPairingAdapter, machines, selectedMachine, storage, user?.id])
 
   const pairScannedValue = useCallback(async (rawValue: string) => {
-    if (rawValue.trim().startsWith('termx-cloud-activate:v1:') && cloudAccountAdapter) {
+    if (rawValue.trim().startsWith('muxvia-cloud-activate:v1:') && cloudAccountAdapter) {
       setPairing(true)
       setScanFlowState('pairing')
       setError(null)
@@ -647,7 +647,7 @@ export function RemoteControlApp({
       return
     }
     if (!storage) {
-      setError('Local storage is required before importing a TermX QR')
+      setError('Local storage is required before importing a Muxvia QR')
       return
     }
     setPairing(true)
@@ -670,7 +670,7 @@ export function RemoteControlApp({
       throw new Error('Proto binding pairing adapter is required')
     } catch (err) {
       hapticError()
-      console.warn('[termx:pairing] pair claim failed', err instanceof Error ? err.message : String(err))
+      console.warn('[muxvia:pairing] pair claim failed', err instanceof Error ? err.message : String(err))
       setError(err instanceof Error ? err.message : String(err))
       setManualEntryOpen(true)
     } finally {
@@ -787,8 +787,8 @@ export function RemoteControlApp({
 
   return (
     <main
-      className="termx-app-page flex h-full min-h-0 flex-col"
-      data-testid="termx-web-control-remote"
+      className="muxvia-app-page flex h-full min-h-0 flex-col"
+      data-testid="muxvia-web-control-remote"
       style={appThemeStyle}
     >
       {view === 'settings' ? (
@@ -951,7 +951,7 @@ function MachineTerminalListView({
     )
   }
   return (
-    <section className="termx-app-page flex min-h-0 flex-1 flex-col animate-in fade-in slide-in-from-right-4 duration-200" data-testid="termx-machine-terminal-list">
+    <section className="muxvia-app-page flex min-h-0 flex-1 flex-col animate-in fade-in slide-in-from-right-4 duration-200" data-testid="muxvia-machine-terminal-list">
       <MachineWorkspace
         api={runtime.api}
         connector={runtime.connector}
@@ -976,10 +976,10 @@ function MachineTerminalListView({
 
 function MachineRuntimeHeader({ machine, onBack }: { machine: DisplayMachine; onBack: () => void }) {
   return (
-    <header className="termx-app-header flex min-h-14 shrink-0 items-center gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+    <header className="muxvia-app-header flex min-h-14 shrink-0 items-center gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
       <button
         aria-label="Back to machines"
-        className="termx-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
+        className="muxvia-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
         type="button"
         onClick={() => { hapticSelection(); onBack() }}
       >
@@ -1007,7 +1007,7 @@ function MachineRuntimeErrorShell({
   onBack: () => void
 }) {
   return (
-    <section className="termx-app-page flex min-h-0 flex-1 flex-col animate-in fade-in slide-in-from-right-4 duration-200" data-testid="termx-machine-terminal-list">
+    <section className="muxvia-app-page flex min-h-0 flex-1 flex-col animate-in fade-in slide-in-from-right-4 duration-200" data-testid="muxvia-machine-terminal-list">
       <MachineRuntimeHeader machine={machine} onBack={onBack} />
     </section>
   )
@@ -1051,11 +1051,11 @@ function HomeView({
   onSignIn: () => void
 }) {
   return (
-    <section className="termx-app-page flex min-h-0 flex-1 flex-col" data-testid="termx-app-home">
-      <header className="termx-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] lg:h-16 lg:px-6 lg:py-0">
+    <section className="muxvia-app-page flex min-h-0 flex-1 flex-col" data-testid="muxvia-app-home">
+      <header className="muxvia-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] lg:h-16 lg:px-6 lg:py-0">
         <div className="flex min-w-0 items-center gap-3 lg:gap-5">
-          <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center bg-[var(--termx-app-text)] font-mono text-[10px] font-semibold text-white lg:hidden">TX</span>
-          <span aria-hidden="true" className="hidden text-base font-bold text-zinc-950 lg:inline">TermX</span>
+          <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center bg-[var(--muxvia-app-text)] font-mono text-[10px] font-semibold text-white lg:hidden">TX</span>
+          <span aria-hidden="true" className="hidden text-base font-bold text-zinc-950 lg:inline">Muxvia</span>
           <div className="hidden h-5 w-px bg-zinc-200 lg:block" />
           <div className="min-w-0 lg:flex lg:items-center lg:gap-3">
             <h1 className="text-lg font-semibold leading-6 lg:text-sm">Machines</h1>
@@ -1068,7 +1068,7 @@ function HomeView({
           {signedIn ? (
             <button
               aria-label="Refresh machines"
-              className="termx-app-icon-button gap-2 px-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
+              className="muxvia-app-icon-button gap-2 px-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
               type="button"
               onClick={onRefresh}
               disabled={loading}
@@ -1079,7 +1079,7 @@ function HomeView({
           ) : null}
           <button
             aria-label="Scan new machine"
-            className="termx-app-primary-button min-w-11 gap-2 px-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)] lg:px-3"
+            className="muxvia-app-primary-button min-w-11 gap-2 px-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)] lg:px-3"
             type="button"
             onClick={onAddLocalDevice}
           >
@@ -1089,7 +1089,7 @@ function HomeView({
           {fileTransfer ? (
             <button
               aria-label="Open data transfer center"
-              className="termx-app-icon-button relative focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
+              className="muxvia-app-icon-button relative focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
               type="button"
               onClick={onOpenTransferCenter}
             >
@@ -1099,7 +1099,7 @@ function HomeView({
           ) : null}
           <button
             aria-label="Open settings"
-            className="termx-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
+            className="muxvia-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
             type="button"
             onClick={onOpenSettings}
           >
@@ -1118,7 +1118,7 @@ function HomeView({
         />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto py-4 lg:px-8 lg:py-7">
-          <div className="termx-app-panel mx-auto w-full max-w-7xl border-x-0 lg:overflow-visible lg:border-x">
+          <div className="muxvia-app-panel mx-auto w-full max-w-7xl border-x-0 lg:overflow-visible lg:border-x">
             <div className="hidden grid-cols-[40px_minmax(180px,1.3fr)_minmax(160px,.8fr)_minmax(180px,1fr)_32px] items-center gap-4 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 text-[11px] font-semibold uppercase text-zinc-500 lg:grid">
               <span aria-hidden="true" />
               <span>Machine</span>
@@ -1126,7 +1126,7 @@ function HomeView({
               <span>Connection</span>
               <span aria-hidden="true" />
             </div>
-            <ul aria-label="Machines" className="divide-y divide-[var(--termx-app-line)]">
+            <ul aria-label="Machines" className="divide-y divide-[var(--muxvia-app-line)]">
           {machines.map((machine) => (
             <li key={machine.id}>
               <MachineRow
@@ -1205,11 +1205,11 @@ function SettingsView({
   }), [])
 
   return (
-    <section className="termx-app-page flex min-h-0 flex-1 flex-col animate-in fade-in slide-in-from-bottom-4 duration-200" data-testid="termx-app-settings">
-      <header className="termx-app-header flex min-h-14 shrink-0 items-center gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+    <section className="muxvia-app-page flex min-h-0 flex-1 flex-col animate-in fade-in slide-in-from-bottom-4 duration-200" data-testid="muxvia-app-settings">
+      <header className="muxvia-app-header flex min-h-14 shrink-0 items-center gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <button
           aria-label="Back to machines"
-          className="termx-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
+          className="muxvia-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
           type="button"
           onClick={onBack}
         >
@@ -1217,12 +1217,12 @@ function SettingsView({
         </button>
         <div className="min-w-0 flex-1">
           <h1 className="text-lg font-semibold leading-6 text-zinc-900">Settings</h1>
-          <p className="truncate text-xs font-medium text-zinc-500">{signedIn ? user?.email ?? 'Signed in' : nativeCloudLogin ? 'TermX Cloud sign in' : 'Web Control sign in'}</p>
+          <p className="truncate text-xs font-medium text-zinc-500">{signedIn ? user?.email ?? 'Signed in' : nativeCloudLogin ? 'Muxvia Cloud sign in' : 'Web Control sign in'}</p>
         </div>
         {signedIn ? (
           <button
-            aria-label="Sign out of TermX Cloud"
-            className="termx-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
+            aria-label="Sign out of Muxvia Cloud"
+            className="muxvia-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
             title="Sign out"
             type="button"
             onClick={onSignOut}
@@ -1249,7 +1249,7 @@ function SettingsView({
             <SettingsSection title="Diagnostics">
               <div className="px-4 py-3">
                 <button
-                  className="termx-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                  className="muxvia-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                   type="button"
                   onClick={() => {
                     hapticImpact()
@@ -1265,7 +1265,7 @@ function SettingsView({
 
           <SettingsSection title="Terminal">
             <SettingsRow label="Font size">
-              <div className="inline-flex h-11 items-center overflow-hidden border border-[var(--termx-app-line)] bg-white">
+              <div className="inline-flex h-11 items-center overflow-hidden border border-[var(--muxvia-app-line)] bg-white">
                 <button
                   aria-label="Decrease terminal font size"
                   className="h-11 w-11 text-lg font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
@@ -1276,7 +1276,7 @@ function SettingsView({
                 </button>
                 <input
                   aria-label="Terminal font size"
-                  className="h-11 w-12 border-x border-[var(--termx-app-line)] bg-zinc-50 px-1 text-center text-sm font-semibold text-zinc-900 outline-none focus:ring-2 focus:ring-blue-500/25"
+                  className="h-11 w-12 border-x border-[var(--muxvia-app-line)] bg-zinc-50 px-1 text-center text-sm font-semibold text-zinc-900 outline-none focus:ring-2 focus:ring-blue-500/25"
                   inputMode="numeric"
                   max={32}
                   min={8}
@@ -1333,7 +1333,7 @@ function SettingsView({
             <SettingsRow label="Scrollback">
               <input
                 aria-label="Terminal scrollback"
-                className="h-11 w-28 border border-[var(--termx-app-line)] bg-white px-3 text-right text-sm font-semibold text-zinc-900 outline-none focus:border-[var(--termx-app-accent)] focus:ring-2 focus:ring-blue-500/25"
+                className="h-11 w-28 border border-[var(--muxvia-app-line)] bg-white px-3 text-right text-sm font-semibold text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
                 inputMode="numeric"
                 max={50000}
                 min={500}
@@ -1346,7 +1346,7 @@ function SettingsView({
             <SettingsRow label="Prefetch threshold">
               <input
                 aria-label="Terminal scrollback prefetch threshold"
-                className="h-11 w-28 border border-[var(--termx-app-line)] bg-white px-3 text-right text-sm font-semibold text-zinc-900 outline-none focus:border-[var(--termx-app-accent)] focus:ring-2 focus:ring-blue-500/25"
+                className="h-11 w-28 border border-[var(--muxvia-app-line)] bg-white px-3 text-right text-sm font-semibold text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
                 inputMode="numeric"
                 max={1000}
                 min={0}
@@ -1371,7 +1371,7 @@ function SettingsView({
                 <SettingsRow label="Signed in" value={user?.email ?? 'Account'} />
                 <div className="px-4 py-3">
                   <button
-                    className="termx-app-secondary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                    className="muxvia-app-secondary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                     type="button"
                     onClick={onRefresh}
                     disabled={loading}
@@ -1387,7 +1387,7 @@ function SettingsView({
                   <label className="block text-sm font-medium text-zinc-500">
                     Email or username
                     <input
-                      className="mt-2 h-11 w-full border border-[var(--termx-app-line)] bg-white px-3 text-sm text-zinc-900 outline-none focus:border-[var(--termx-app-accent)] focus:ring-2 focus:ring-blue-500/25"
+                      className="mt-2 h-11 w-full border border-[var(--muxvia-app-line)] bg-white px-3 text-sm text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
                       value={login}
                       onChange={(event) => onLoginChange(event.target.value)}
                       autoComplete="username"
@@ -1398,7 +1398,7 @@ function SettingsView({
                   <label className="block text-sm font-medium text-zinc-500">
                     Password
                     <input
-                      className="mt-2 h-11 w-full border border-[var(--termx-app-line)] bg-white px-3 text-sm text-zinc-900 outline-none focus:border-[var(--termx-app-accent)] focus:ring-2 focus:ring-blue-500/25"
+                      className="mt-2 h-11 w-full border border-[var(--muxvia-app-line)] bg-white px-3 text-sm text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
                       value={password}
                       onChange={(event) => onPasswordChange(event.target.value)}
                       type="password"
@@ -1417,7 +1417,7 @@ function SettingsView({
                 ) : (
                   <div className="border-t border-zinc-200 px-4 py-3">
                     <button
-                      className="termx-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                      className="muxvia-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                       type="button"
                       onClick={onSignIn}
                       disabled={loading}
@@ -1461,13 +1461,13 @@ function CloudActivationPanel({
   if (activation) {
     return (
       <div className="border-t border-zinc-200 px-4 py-4">
-        <div aria-live="polite" className="border border-[var(--termx-app-line)] bg-white px-4 py-5 text-center">
-          <p className="text-xs font-medium text-zinc-500">Enter this code in TermX Cloud on your computer</p>
+        <div aria-live="polite" className="border border-[var(--muxvia-app-line)] bg-white px-4 py-5 text-center">
+          <p className="text-xs font-medium text-zinc-500">Enter this code in Muxvia Cloud on your computer</p>
           <strong className="mt-3 block font-mono text-2xl font-medium text-zinc-950">{activation.userCode}</strong>
           <p className="mt-3 font-mono text-xs text-zinc-500">Waiting for approval · {remaining}</p>
         </div>
         <button
-          className="termx-app-secondary-button mt-3 h-12 w-full gap-2 px-3 text-sm font-semibold"
+          className="muxvia-app-secondary-button mt-3 h-12 w-full gap-2 px-3 text-sm font-semibold"
           type="button"
           onClick={onCancel}
         >
@@ -1480,10 +1480,10 @@ function CloudActivationPanel({
 
   return (
     <div className="border-t border-zinc-200 px-4 py-4">
-      <p className="mb-4 text-sm leading-6 text-zinc-500">Sign in to TermX Cloud on the web, create a phone activation QR code, then scan it here.</p>
+      <p className="mb-4 text-sm leading-6 text-zinc-500">Sign in to Muxvia Cloud on the web, create a phone activation QR code, then scan it here.</p>
       {canScan ? (
         <button
-          className="termx-app-primary-button h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+          className="muxvia-app-primary-button h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
           type="button"
           onClick={onScan}
           disabled={loading}
@@ -1499,8 +1499,8 @@ function CloudActivationPanel({
 function SettingsSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase text-[var(--termx-app-muted)]">{title}</h2>
-      <div className="termx-app-panel overflow-hidden">
+      <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase text-[var(--muxvia-app-muted)]">{title}</h2>
+      <div className="muxvia-app-panel overflow-hidden">
         {children}
       </div>
     </section>
@@ -1520,7 +1520,7 @@ function SettingsRow({
 }) {
   if (stacked) {
     return (
-      <div className="flex min-h-12 flex-col items-stretch gap-3 border-b border-[var(--termx-app-line)] px-4 py-3 last:border-b-0">
+      <div className="flex min-h-12 flex-col items-stretch gap-3 border-b border-[var(--muxvia-app-line)] px-4 py-3 last:border-b-0">
         <div className="min-w-0 text-sm font-medium text-zinc-900">{label}</div>
         {children ? (
           <div className="min-w-0 w-full">{children}</div>
@@ -1532,7 +1532,7 @@ function SettingsRow({
   }
 
   return (
-    <div className="flex min-h-12 items-center justify-between gap-4 border-b border-[var(--termx-app-line)] px-4 py-2 last:border-b-0">
+    <div className="flex min-h-12 items-center justify-between gap-4 border-b border-[var(--muxvia-app-line)] px-4 py-2 last:border-b-0">
       <div className="min-w-0 text-sm font-medium text-zinc-900">{label}</div>
       {children ? (
         <div className="shrink-0">{children}</div>
@@ -1557,7 +1557,7 @@ function SettingsSelect({
   return (
     <select
       aria-label={ariaLabel}
-      className="h-11 max-w-[54vw] border border-[var(--termx-app-line)] bg-white px-3 text-right text-sm font-semibold text-zinc-900 outline-none focus:border-[var(--termx-app-accent)] focus:ring-2 focus:ring-blue-500/25 sm:max-w-xs"
+      className="h-11 max-w-[54vw] border border-[var(--muxvia-app-line)] bg-white px-3 text-right text-sm font-semibold text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25 sm:max-w-xs"
       value={value}
       onChange={(event) => {
         hapticSelection()
@@ -1624,7 +1624,7 @@ function FontPreviewButton({
       aria-checked={selected}
       className={`min-w-0 border p-3 text-left transition-colors duration-200 ${
         selected
-          ? 'border-[var(--termx-app-accent)] bg-blue-50'
+          ? 'border-[var(--muxvia-app-accent)] bg-blue-50'
           : 'border-zinc-200 bg-white hover:bg-zinc-50 active:bg-zinc-50'
       }`}
       role="radio"
@@ -1637,10 +1637,10 @@ function FontPreviewButton({
     >
       <div className="flex min-w-0 items-center gap-2">
         <span className="truncate text-sm font-semibold leading-5 text-zinc-950">{option.label}</span>
-        <span className={`ml-auto h-2 w-2 shrink-0 ${selected ? 'bg-[var(--termx-app-accent)]' : 'bg-zinc-200'}`} />
+        <span className={`ml-auto h-2 w-2 shrink-0 ${selected ? 'bg-[var(--muxvia-app-accent)]' : 'bg-zinc-200'}`} />
       </div>
       <div className="mt-2 bg-zinc-950 px-2 py-2 text-[12px] leading-5 text-zinc-100">
-        <div className="truncate">$ termx --font</div>
+        <div className="truncate">$ muxvia --font</div>
         <div className="truncate text-zinc-300">AaBb 012345 &lt;&gt; ~/</div>
       </div>
     </button>
@@ -1762,7 +1762,7 @@ function Switch({
     <button
       aria-label={ariaLabel}
       aria-pressed={checked}
-      className={`relative h-8 w-12 rounded-full transition-colors ${checked ? 'bg-[var(--termx-accent)]' : 'bg-[var(--termx-border)]'}`}
+      className={`relative h-8 w-12 rounded-full transition-colors ${checked ? 'bg-[var(--muxvia-accent)]' : 'bg-[var(--muxvia-border)]'}`}
       type="button"
       onClick={() => {
         hapticSelection()
@@ -1819,19 +1819,19 @@ function PairSheet({
   const statusMessage = scanFlowState === 'pairing'
     ? 'QR code scanned. Pairing this phone with the machine...'
     : scanFlowState === 'scanning'
-      ? 'Camera is scanning for a TermX QR code...'
+      ? 'Camera is scanning for a Muxvia QR code...'
       : null
   return (
-    <div className="termx-app-page fixed inset-0 z-50" role="dialog" aria-modal="true">
-      <section className="flex h-full min-h-0 flex-col bg-white" data-testid="termx-pair-sheet">
-        <header className="termx-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+    <div className="muxvia-app-page fixed inset-0 z-50" role="dialog" aria-modal="true">
+      <section className="flex h-full min-h-0 flex-col bg-white" data-testid="muxvia-pair-sheet">
+        <header className="muxvia-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
           <div className="flex min-w-0 items-center gap-2">
-            <QrCode className="h-5 w-5 shrink-0 text-[var(--termx-accent)]" />
+            <QrCode className="h-5 w-5 shrink-0 text-[var(--muxvia-accent)]" />
             <h2 className="truncate text-base font-semibold">{title}</h2>
           </div>
           <button
             aria-label="Close pairing"
-            className="termx-app-icon-button border-transparent bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
+            className="muxvia-app-icon-button border-transparent bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
             type="button"
             onClick={onClose}
           >
@@ -1842,7 +1842,7 @@ function PairSheet({
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">
           <div className="mx-auto w-full max-w-md">
             {sshCredentialNotice ? (
-              <div className="termx-app-panel bg-[var(--termx-app-soft)] px-3 py-3">
+              <div className="muxvia-app-panel bg-[var(--muxvia-app-soft)] px-3 py-3">
                 {sshCredentialNotice.map((credential) => (
                   <div className="mb-4 last:mb-0" key={credential.routeId}>
                     <div className="flex items-center justify-between gap-3">
@@ -1851,12 +1851,12 @@ function PairSheet({
                     </div>
                     <textarea
                       aria-label={`SSH authorized key for ${credential.routeId}`}
-                      className="mt-3 h-32 w-full resize-none border border-[var(--termx-app-line)] bg-white p-2 font-mono text-xs leading-5 text-zinc-950 outline-none"
+                      className="mt-3 h-32 w-full resize-none border border-[var(--muxvia-app-line)] bg-white p-2 font-mono text-xs leading-5 text-zinc-950 outline-none"
                       value={credential.authorizedKey}
                       readOnly
                     />
                     <button
-                      className="termx-app-secondary-button mt-3 h-11 w-full gap-2 px-3 text-sm font-semibold"
+                      className="muxvia-app-secondary-button mt-3 h-11 w-full gap-2 px-3 text-sm font-semibold"
                       type="button"
                       onClick={() => { void navigator.clipboard.writeText(credential.authorizedKey); hapticSuccess() }}
                     >
@@ -1867,14 +1867,14 @@ function PairSheet({
                 ))}
               </div>
             ) : sharePreview ? (
-              <div className="termx-app-panel bg-[var(--termx-app-soft)] px-3 py-3">
+              <div className="muxvia-app-panel bg-[var(--muxvia-app-soft)] px-3 py-3">
                 <div className="text-sm font-semibold text-zinc-950">{sharePreview.label || sharePreview.endpointId}</div>
                 <div className="mt-1 break-all font-mono text-xs text-zinc-500">{sharePreview.deviceFingerprint}</div>
                 <div className="mt-3 space-y-1">
                   {sharePreview.routes.map((route) => (
                     <div className="flex items-center justify-between gap-3 text-xs" key={route.id}>
                       <span className="truncate font-medium text-zinc-700">{route.id} · {route.kind}</span>
-                      <span className="shrink-0 font-semibold uppercase text-[var(--termx-app-accent)]">{route.action}</span>
+                      <span className="shrink-0 font-semibold uppercase text-[var(--muxvia-app-accent)]">{route.action}</span>
                     </div>
                   ))}
                 </div>
@@ -1884,12 +1884,12 @@ function PairSheet({
                   Credentials and terminal authorization are not transferred.
                 </div>
                 <button
-                  className="termx-app-primary-button mt-4 h-11 w-full gap-2 px-3 text-sm font-semibold disabled:opacity-50"
+                  className="muxvia-app-primary-button mt-4 h-11 w-full gap-2 px-3 text-sm font-semibold disabled:opacity-50"
                   type="button"
                   onClick={onCommitShare}
                   disabled={pairing}
                 >
-                  {pairing ? <span className="termx-square-spinner" aria-hidden="true" /> : <Download className="h-4 w-4" />}
+                  {pairing ? <span className="muxvia-square-spinner" aria-hidden="true" /> : <Download className="h-4 w-4" />}
                   Import Config
                 </button>
               </div>
@@ -1897,7 +1897,7 @@ function PairSheet({
 
             {!sharePreview && !sshCredentialNotice ? <>
             {selectedMachine ? (
-              <div className="termx-app-panel bg-[var(--termx-app-soft)] px-3 py-2">
+              <div className="muxvia-app-panel bg-[var(--muxvia-app-soft)] px-3 py-2">
                 <div className="truncate text-sm font-semibold text-zinc-950">{selectedMachine.name}</div>
                 <div className="mt-0.5 truncate text-xs font-medium text-zinc-500">{selectedMachine.hostname || selectedMachine.id}</div>
               </div>
@@ -1905,19 +1905,19 @@ function PairSheet({
 
             {canScanWithCamera && !showManualEntry ? (
               <button
-                className="termx-app-primary-button mt-4 h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                className="muxvia-app-primary-button mt-4 h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                 type="button"
                 onClick={onScanWithCamera}
                 disabled={pairing || cameraScanning}
               >
-                {cameraScanning || pairing ? <span className="termx-square-spinner" aria-hidden="true" /> : <Camera className="h-4 w-4" />}
+                {cameraScanning || pairing ? <span className="muxvia-square-spinner" aria-hidden="true" /> : <Camera className="h-4 w-4" />}
                 {pairing ? 'Pairing device...' : cameraScanning ? 'Scanning QR...' : 'Scan QR with camera'}
               </button>
             ) : null}
 
             {!showManualEntry ? (
               <button
-                className="termx-app-secondary-button mt-3 w-full gap-2 px-3 text-sm font-semibold"
+                className="muxvia-app-secondary-button mt-3 w-full gap-2 px-3 text-sm font-semibold"
                 type="button"
                 onClick={onManualEntryOpen}
               >
@@ -1925,11 +1925,11 @@ function PairSheet({
                 Enter content manually
               </button>
             ) : (
-              <div className="termx-app-panel mt-4 bg-[var(--termx-app-soft)] px-3 py-2">
+              <div className="muxvia-app-panel mt-4 bg-[var(--muxvia-app-soft)] px-3 py-2">
                 <label className="block text-xs font-semibold text-zinc-500">
-                  TermX QR content
+                  Muxvia QR content
                   <textarea
-                    className="mt-1 h-44 w-full resize-none border border-[var(--termx-app-line)] bg-white p-2 font-mono text-xs leading-5 text-zinc-950 placeholder:text-zinc-400 outline-none focus:border-[var(--termx-app-accent)] focus:ring-2 focus:ring-blue-500/25"
+                    className="mt-1 h-44 w-full resize-none border border-[var(--muxvia-app-line)] bg-white p-2 font-mono text-xs leading-5 text-zinc-950 placeholder:text-zinc-400 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
                     value={manualScanValue}
                     onChange={(event) => onManualScanValueChange(event.target.value)}
                     placeholder="muxvia://pair?payload=..."
@@ -1941,12 +1941,12 @@ function PairSheet({
 
             {showManualEntry ? (
               <button
-                className="termx-app-secondary-button mt-3 h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                className="muxvia-app-secondary-button mt-3 h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                 type="button"
                 onClick={onImport}
                 disabled={pairing || cameraScanning || manualScanValue.trim() === ''}
               >
-                {pairing ? <span className="termx-square-spinner" aria-hidden="true" /> : <ShieldCheck className="h-4 w-4" />}
+                {pairing ? <span className="muxvia-square-spinner" aria-hidden="true" /> : <ShieldCheck className="h-4 w-4" />}
                 {primaryLabel}
               </button>
             ) : null}
@@ -2001,11 +2001,11 @@ function MachineRow({
     <div className="relative bg-white">
       <button
         aria-label={`${actionLabel} ${machine.name}`}
-        className="relative grid min-h-[108px] min-w-0 w-full grid-cols-[40px_minmax(0,1fr)_20px] grid-rows-[auto_auto_auto] gap-x-3 gap-y-1 px-4 py-3 text-left transition-colors duration-200 hover:bg-zinc-50 active:bg-[var(--termx-app-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--termx-app-accent)] lg:min-h-[72px] lg:grid-cols-[40px_minmax(180px,1.3fr)_minmax(160px,.8fr)_minmax(180px,1fr)_32px] lg:grid-rows-1 lg:items-center lg:gap-4 lg:px-4 lg:py-2.5"
+        className="relative grid min-h-[108px] min-w-0 w-full grid-cols-[40px_minmax(0,1fr)_20px] grid-rows-[auto_auto_auto] gap-x-3 gap-y-1 px-4 py-3 text-left transition-colors duration-200 hover:bg-zinc-50 active:bg-[var(--muxvia-app-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--muxvia-app-accent)] lg:min-h-[72px] lg:grid-cols-[40px_minmax(180px,1.3fr)_minmax(160px,.8fr)_minmax(180px,1fr)_32px] lg:grid-rows-1 lg:items-center lg:gap-4 lg:px-4 lg:py-2.5"
         type="button"
         onClick={() => onSelectMachine(machine)}
       >
-        <div className="relative col-start-1 row-start-1 flex h-10 w-10 items-center justify-center border border-[var(--termx-app-line)] bg-[var(--termx-app-soft)] text-zinc-700 lg:col-start-1">
+        <div className="relative col-start-1 row-start-1 flex h-10 w-10 items-center justify-center border border-[var(--muxvia-app-line)] bg-[var(--muxvia-app-soft)] text-zinc-700 lg:col-start-1">
           <DeviceIcon className="h-5 w-5" />
           <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 border-2 border-white ${
             card.tone === 'online' ? 'bg-emerald-500' : card.tone === 'active' ? 'bg-blue-500' : card.tone === 'warning' ? 'bg-amber-500' : 'bg-zinc-400'
@@ -2031,14 +2031,14 @@ function MachineRow({
         <div className="absolute right-9 top-2.5 z-10 lg:right-3 lg:top-1/2 lg:-translate-y-1/2">
           <button
             aria-label={`More actions for ${machine.name}`}
-            className="inline-flex h-11 w-11 items-center justify-center text-zinc-500 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)] lg:h-10 lg:w-10"
+            className="inline-flex h-11 w-11 items-center justify-center text-zinc-500 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)] lg:h-10 lg:w-10"
             type="button"
             onClick={() => setMenuOpen((open) => !open)}
           >
             <MoreHorizontal className="h-4 w-4" />
           </button>
           {menuOpen ? (
-            <div className="absolute right-0 top-11 min-w-44 border border-[var(--termx-app-line)] bg-white p-1 shadow-lg">
+            <div className="absolute right-0 top-11 min-w-44 border border-[var(--muxvia-app-line)] bg-white p-1 shadow-lg">
               <button
                 aria-label={`Remove authorization for ${machine.name}`}
                 className="flex h-11 w-full items-center gap-2 px-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50"
@@ -2055,7 +2055,7 @@ function MachineRow({
       {authorizationState !== 'ready' ? (
         <button
           aria-label={`Scan to pair ${machine.name}`}
-          className="termx-app-primary-button absolute bottom-2.5 right-3.5 h-11 gap-1.5 px-2.5 text-[11px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
+          className="muxvia-app-primary-button absolute bottom-2.5 right-3.5 h-11 gap-1.5 px-2.5 text-[11px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
           type="button"
           onClick={() => onPairMachine(machine)}
         >
@@ -2241,8 +2241,8 @@ function EmptyState({
 }) {
   return (
     <div className="flex flex-1 items-start justify-center pt-16 lg:items-center lg:py-8 lg:pt-8">
-      <div className="termx-app-panel flex w-full max-w-md flex-col items-start gap-5 border-x-0 px-6 py-8 text-left sm:border-x" data-testid="termx-machine-empty-state">
-        <div className="flex h-12 w-12 items-center justify-center border border-[var(--termx-app-line)] bg-[var(--termx-app-soft)] text-[var(--termx-app-accent)]">
+      <div className="muxvia-app-panel flex w-full max-w-md flex-col items-start gap-5 border-x-0 px-6 py-8 text-left sm:border-x" data-testid="muxvia-machine-empty-state">
+        <div className="flex h-12 w-12 items-center justify-center border border-[var(--muxvia-app-line)] bg-[var(--muxvia-app-soft)] text-[var(--muxvia-app-accent)]">
           {icon === 'login' ? <Server className="h-6 w-6" /> : <QrCode className="h-6 w-6" />}
         </div>
         <div className="space-y-1.5">
@@ -2250,7 +2250,7 @@ function EmptyState({
           <p className="text-sm leading-5 text-zinc-500">{message}</p>
         </div>
         <button
-          className="termx-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
+          className="muxvia-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
           type="button"
           onClick={() => { hapticImpact(); onAction() }}
         >

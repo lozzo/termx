@@ -1,8 +1,8 @@
-TermX Private Monorepo License Notice
+Muxvia Private Monorepo License Notice
 
-Copyright (c) 2026 TermX authors. All rights reserved.
+Copyright (c) 2026 Muxvia authors. All rights reserved.
 
-This repository is the private authoritative development monorepo for TermX.
+This repository is the private authoritative development monorepo for Muxvia.
 Except for third-party material identified by its own license notice, no
 permission is granted to use, copy, modify, publish, distribute, sublicense,
 or sell any source code, binary, documentation, build output, service asset,
@@ -10,7 +10,7 @@ credential, configuration, or other material contained in this repository.
 
 Some directories are intended to be copied into a separate public repository
 in the future. That intent does not license those files while they remain in
-this private monorepo. A public TermX snapshot is licensed only when it is
+this private monorepo. A public Muxvia snapshot is licensed only when it is
 published in a separate repository or distribution that contains its own
 applicable open-source LICENSE file.
 
@@ -19,6 +19,6 @@ remain subject to the notices and license terms supplied by their respective
 copyright holders. See THIRD_PARTY_NOTICES.md and the license files located
 next to those materials.
 
-Commercial distribution of TermX Cloud Companion, managed cloud services,
+Commercial distribution of Muxvia Cloud Companion, managed cloud services,
 enterprise bundles, or other private artifacts requires a separate written
 agreement from the applicable rights holder.

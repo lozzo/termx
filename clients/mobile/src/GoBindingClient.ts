@@ -4,7 +4,7 @@ import {
   type BindingOperationCode,
   type EndpointInput,
   type ProtoBindingBackend,
-} from '@termx/ui'
+} from '@muxvia/ui'
 import { NativeConnection } from './plugins/nativeConnection'
 
 const OP_AUTH = 0x01

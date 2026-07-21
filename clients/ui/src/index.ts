@@ -5,13 +5,13 @@ export {
   addNativeBackHandler,
   dispatchNativeBack,
 } from './platform/nativeBack'
-export type { TermxNativeBackHandler } from './platform/nativeBack'
+export type { MuxviaNativeBackHandler } from './platform/nativeBack'
 export {
   MUXVIA_NATIVE_KEYBOARD_EVENT,
   addNativeKeyboardListener,
   dispatchNativeKeyboardEvent,
 } from './platform/nativeKeyboard'
-export type { TermxNativeKeyboardEventDetail, TermxNativeKeyboardHandler } from './platform/nativeKeyboard'
+export type { MuxviaNativeKeyboardEventDetail, MuxviaNativeKeyboardHandler } from './platform/nativeKeyboard'
 export {
   assertRemoteModelShape,
   normalizeMachine,
@@ -226,17 +226,17 @@ export type {
 export { useFileManager } from './files/useFileManager'
 export type { FileManagerVisibleError, UseFileManagerOptions, UseFileManagerResult } from './files/useFileManager'
 export * from './terminal/useTerminalSession'
-export * as TermxApiAccessRemote from './generated/apipb/access_remote_pb'
-export * as TermxApiApplication from './generated/apipb/application_pb'
-export * as TermxApiCommon from './generated/apipb/common_pb'
-export * as TermxApiEvents from './generated/apipb/events_pb'
-export * as TermxApiFile from './generated/apipb/file_pb'
-export * as TermxApiHistory from './generated/apipb/history_pb'
-export * as TermxApiRuntime from './generated/apipb/runtime_pb'
-export * as TermxApiStorage from './generated/apipb/storage_pb'
-export * as TermxApiTerminal from './generated/apipb/terminal_pb'
-export * as TermxApiWorkbench from './generated/apipb/workbench_pb'
-export * as TermxClientBinding from './generated/bindingpb/client_binding_pb'
+export * as MuxviaApiAccessRemote from './generated/apipb/access_remote_pb'
+export * as MuxviaApiApplication from './generated/apipb/application_pb'
+export * as MuxviaApiCommon from './generated/apipb/common_pb'
+export * as MuxviaApiEvents from './generated/apipb/events_pb'
+export * as MuxviaApiFile from './generated/apipb/file_pb'
+export * as MuxviaApiHistory from './generated/apipb/history_pb'
+export * as MuxviaApiRuntime from './generated/apipb/runtime_pb'
+export * as MuxviaApiStorage from './generated/apipb/storage_pb'
+export * as MuxviaApiTerminal from './generated/apipb/terminal_pb'
+export * as MuxviaApiWorkbench from './generated/apipb/workbench_pb'
+export * as MuxviaClientBinding from './generated/bindingpb/client_binding_pb'
 export type {
   ProtoClientSession,
   ProtoClientSubscription,
@@ -254,5 +254,5 @@ export { WasmBindingBackend } from './binding/wasmBindingBackend'
 export { BrowserBindingRuntime } from './binding/browserBindingRuntime'
 export { BrowserCloudHttpPlatform } from './binding/browserCloudHttpPlatform'
 export type { BrowserCloudEndpoint } from './binding/browserCloudHttpPlatform'
-export * as TermxCloud from './generated/cloudpb/cloud_companion_pb'
-export * as TermxRemoteAuth from './generated/remoteauthpb/remote_auth_pb'
+export * as MuxviaCloud from './generated/cloudpb/cloud_companion_pb'
+export * as MuxviaRemoteAuth from './generated/remoteauthpb/remote_auth_pb'

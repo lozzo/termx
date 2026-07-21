@@ -13,31 +13,31 @@ describe('machine store', () => {
     const store = createMachineStore({ storage })
     expect(store.saveMachine(machine())).toEqual(machine())
     expect(store.getMachine('machine-1')).toEqual(machine())
-    expect(storage.getItem('termx.app.machines.v2')).not.toMatch(/pairing|sessionToken|secret/)
+    expect(storage.getItem('muxvia.app.machines.v2')).not.toMatch(/pairing|sessionToken|secret/)
   })
 
   it('drops obsolete pairing fields while reading the current store', () => {
     const storage = new MemoryStorage()
-    storage.setItem('termx.app.machines.v2', JSON.stringify([{ ...machine(), pairing: { sessionId: 'old', secret: 'old-secret' } }]))
+    storage.setItem('muxvia.app.machines.v2', JSON.stringify([{ ...machine(), pairing: { sessionId: 'old', secret: 'old-secret' } }]))
     expect(createMachineStore({ storage }).listMachines()[0]).not.toHaveProperty('pairing')
   })
 
   it('does not read the previous development store version', () => {
     const storage = new MemoryStorage()
-    storage.setItem('termx.app.machines.v1', JSON.stringify([machine()]))
+    storage.setItem('muxvia.app.machines.v1', JSON.stringify([machine()]))
     expect(createMachineStore({ storage }).listMachines()).toEqual([])
   })
 
   it('rejects records that omit the explicit access class', () => {
     const storage = new MemoryStorage()
     const { accessClass: _accessClass, ...legacy } = machine()
-    storage.setItem('termx.app.machines.v2', JSON.stringify([legacy]))
+    storage.setItem('muxvia.app.machines.v2', JSON.stringify([legacy]))
     expect(() => createMachineStore({ storage }).listMachines()).toThrow('invalid machine access class')
   })
 
   it('rejects removed connection path names', () => {
     const storage = new MemoryStorage()
-    storage.setItem('termx.app.machines.v2', JSON.stringify([{ ...machine(), lastConnectionPath: 'managed' }]))
+    storage.setItem('muxvia.app.machines.v2', JSON.stringify([{ ...machine(), lastConnectionPath: 'managed' }]))
     expect(() => createMachineStore({ storage }).listMachines()).toThrow(/invalid connection path managed/i)
   })
 
@@ -45,7 +45,7 @@ describe('machine store', () => {
     const storage = new MemoryStorage()
     const store = createMachineStore({ storage })
     expect(() => store.saveMachine({ ...machine(), appPrivateKey: 'not-allowed' } as never)).toThrow(/private key/i)
-    storage.setItem('termx.app.machines.v2', JSON.stringify([{ ...machine(), private_key: 'not-allowed' }]))
+    storage.setItem('muxvia.app.machines.v2', JSON.stringify([{ ...machine(), private_key: 'not-allowed' }]))
     expect(() => store.listMachines()).toThrow(/private key/i)
   })
 })

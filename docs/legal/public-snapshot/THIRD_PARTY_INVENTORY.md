@@ -10,13 +10,13 @@ This inventory describes the public source snapshot and its Community artifacts.
 
 `scripts/generate-go-notices.sh --public-only` uses pinned `google/go-licenses v2.0.1` against the real `cmd/muxvia` binary graph for `darwin/arm64`, `linux/amd64`, and `windows/amd64`.
 
-The reviewed LIC001 graph contains 54 external or vendored license mappings under MIT, BSD-3-Clause, or Apache-2.0. The generated notice is committed at `cmd/muxvia/THIRD_PARTY_NOTICES.txt` and is printed by `termx licenses`.
+The reviewed LIC001 graph contains 54 external or vendored license mappings under MIT, BSD-3-Clause, or Apache-2.0. The generated notice is committed at `cmd/muxvia/THIRD_PARTY_NOTICES.txt` and is printed by `muxvia licenses`.
 
 `vterm/internal/vt` is vendored MIT material whose upstream license remains adjacent to the source. Assembly, native, and WebAssembly files still require provenance review even when their Go module has an approved license.
 
 ## npm And Web Bundles
 
-`scripts/generate-npm-notices.mjs` scans production entries in the root npm workspace `package-lock.json`, excluding first-party `@termx/*` packages. The LIC001 baseline contains 116 exact package/version entries and 72 deduplicated license texts.
+`scripts/generate-npm-notices.mjs` scans production entries in the root npm workspace `package-lock.json`, excluding first-party `@muxvia/*` packages. The LIC001 baseline contains 116 exact package/version entries and 72 deduplicated license texts.
 
 Reviewed expressions are MIT, ISC, BlueOak-1.0.0, Apache-2.0, 0BSD, BSD-3-Clause, Unlicense, and the combined Apache-2.0/BSD-3-Clause expression used by `@bufbuild/protobuf`. Pinned upstream overrides are stored under `docs/legal/third-party/npm/`.
 

@@ -13,11 +13,11 @@ TUI 配置只表达用户对当前 TUI 客户端的偏好，例如主题、主�
 
 ## 2. 文件和加载优先级
 
-v3 使用独立配置文件，避免旧 `termx.yaml` 被 tuiv2 的简化 parser 误读：
+v3 使用独立配置文件，避免旧 `muxvia.yaml` 被 tuiv2 的简化 parser 误读：
 
 ```text
-$XDG_CONFIG_HOME/termx/tui-v3.yaml
-~/.config/termx/tui-v3.yaml
+$XDG_CONFIG_HOME/muxvia/tui-v3.yaml
+~/.config/muxvia/tui-v3.yaml
 ```
 
 标准模板见 `tui/docs/tui-v3.example.yaml`。模板包含全部第一阶段配置项，并用中文注释说明用途、默认行为和示例值。
@@ -27,7 +27,7 @@ $XDG_CONFIG_HOME/termx/tui-v3.yaml
 1. 代码内置默认值。
 2. 宿主终端 theme/palette probe，生成 host-aware 默认主题。
 3. 用户配置文件 `tui-v3.yaml`。
-4. 环境变量覆盖，例如 `TERMX_TUI_THEME_PRIMARY`。
+4. 环境变量覆盖，例如 `MUXVIA_TUI_THEME_PRIMARY`。
 5. CLI 会话级覆盖，例如后续的 `--tui-theme-primary`。
 
 解析失败规则：

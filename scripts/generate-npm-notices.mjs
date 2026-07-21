@@ -75,7 +75,7 @@ for (const [packagePath, metadata] of Object.entries(lock.packages)) {
     continue
   }
   const name = packageName(packagePath)
-  if (name.startsWith('@termx/')) {
+  if (name.startsWith('@muxvia/')) {
     continue
   }
   if (!metadata.version || !metadata.license) {

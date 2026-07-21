@@ -2,7 +2,7 @@
 
 状态：历史 Cloud 验收已完成；当前命令按 RTC009 单一 App 装配更新。
 
-本清单验证同一个 TermX App 的显式 `dev-local` Cloud profile。标准 APK 仍包含 first-party Cloud module，但没有 development origin时 managed Route fail closed；Direct/SSH 始终独立可用。生产 OAuth/TLS 不由本清单替代。
+本清单验证同一个 Muxvia App 的显式 `dev-local` Cloud profile。标准 APK 仍包含 first-party Cloud module，但没有 development origin时 managed Route fail closed；Direct/SSH 始终独立可用。生产 OAuth/TLS 不由本清单替代。
 
 ## 1. 前置条件
 
@@ -25,7 +25,7 @@ make test-android
 ```bash
 npm run cap:build
 cd clients/mobile/android
-./gradlew -PtermxDevCloud=true testDebugUnitTest assembleDebug
+./gradlew -PmuxviaDevCloud=true testDebugUnitTest assembleDebug
 cd ../../..
 cp clients/mobile/android/app/build/outputs/apk/debug/app-debug.apk \
   .artifacts/android/app-devcloud-debug.apk
@@ -47,7 +47,7 @@ make cloud-dev
 
 ```bash
 go run ./private/cloud/companion/cmd/muxvia-cloud serve \
-  --socket /tmp/termx-cloud-daemon.sock \
+  --socket /tmp/muxvia-cloud-daemon.sock \
   --profile daemon-dev \
   --dev-manifest .artifacts/cloud-dev/runtime.json
 ```
@@ -55,34 +55,34 @@ go run ./private/cloud/companion/cmd/muxvia-cloud serve \
 在终端 C 初始化 daemon 身份、签发 pairing bundle，再启动 managed daemon：
 
 ```bash
-export DAEMON_STATE=/tmp/termx-managed-android-daemon-state
-export DAEMON_SOCKET=/tmp/termx-managed-android-daemon.sock
+export DAEMON_STATE=/tmp/muxvia-managed-android-daemon-state
+export DAEMON_SOCKET=/tmp/muxvia-managed-android-daemon.sock
 export ENROLLMENT_CODE="$(jq -r '.enrollment_code' .artifacts/cloud-dev/runtime.json)"
 
-TERMX_CLOUD_COMPANION_SOCKET=/tmp/termx-cloud-daemon.sock \
+MUXVIA_CLOUD_COMPANION_SOCKET=/tmp/muxvia-cloud-daemon.sock \
   XDG_STATE_HOME="$DAEMON_STATE" \
-  .artifacts/bin/termx cloud enroll "$ENROLLMENT_CODE"
+  .artifacts/bin/muxvia cloud enroll "$ENROLLMENT_CODE"
 
 XDG_STATE_HOME="$DAEMON_STATE" \
-  .artifacts/bin/termx pair create \
+  .artifacts/bin/muxvia pair create \
   --label "Android dev daemon" \
   --ttl 24h \
-  --out /tmp/termx-android-pairing.json
+  --out /tmp/muxvia-android-pairing.json
 
-TERMX_CLOUD_COMPANION_SOCKET=/tmp/termx-cloud-daemon.sock \
+MUXVIA_CLOUD_COMPANION_SOCKET=/tmp/muxvia-cloud-daemon.sock \
   XDG_STATE_HOME="$DAEMON_STATE" \
-  .artifacts/bin/termx --socket "$DAEMON_SOCKET" daemon --cloud
+  .artifacts/bin/muxvia --socket "$DAEMON_SOCKET" daemon --cloud
 ```
 
 在终端 D 创建一个真实 terminal，并确认 daemon inventory：
 
 ```bash
 XDG_STATE_HOME="$DAEMON_STATE" \
-  .artifacts/bin/termx --socket "$DAEMON_SOCKET" new \
+  .artifacts/bin/muxvia --socket "$DAEMON_SOCKET" new \
   --name android-e2e -- /bin/zsh -l
 
 XDG_STATE_HOME="$DAEMON_STATE" \
-  .artifacts/bin/termx --socket "$DAEMON_SOCKET" ls
+  .artifacts/bin/muxvia --socket "$DAEMON_SOCKET" ls
 ```
 
 ## 4. ADB Reverse 与安装
@@ -96,8 +96,8 @@ export HUB_PORT="$(jq -r '.hub_url | capture(":(?<port>[0-9]+)$").port' .artifac
 adb reverse tcp:41001 "tcp:$CONTROL_PORT"
 adb reverse tcp:41002 "tcp:$HUB_PORT"
 adb install -r .artifacts/android/app-devcloud-debug.apk
-adb shell am force-stop com.termx.app
-adb shell monkey -p com.termx.app -c android.intent.category.LAUNCHER 1
+adb shell am force-stop com.muxvia.app
+adb shell monkey -p com.muxvia.app -c android.intent.category.LAUNCHER 1
 ```
 
 同时打开脱敏日志观察连接阶段：
@@ -105,19 +105,19 @@ adb shell monkey -p com.termx.app -c android.intent.category.LAUNCHER 1
 ```bash
 adb logcat -c
 adb logcat -s \
-  TermxNativePlugin TermxConnStore TermxWebRTC TermxChannelMgr \
-  TermxHeartbeat TermxBridgeServer TermxBridgeRouter
+  MuxviaNativePlugin MuxviaConnStore MuxviaWebRTC MuxviaChannelMgr \
+  MuxviaHeartbeat MuxviaBridgeServer MuxviaBridgeRouter
 ```
 
-日志中不得出现 `termx-grant-v1`、pairing JSON、账号 access token、Hub ticket 或 terminal 输入内容。
+日志中不得出现 `muxvia-grant-v1`、pairing JSON、账号 access token、Hub ticket 或 terminal 输入内容。
 
 ## 5. 配对与 Terminal
 
-在 App 首页选择扫描新机器，再选择手工输入，把 `/tmp/termx-android-pairing.json` 的完整 JSON 粘贴进去。可选二维码方式：
+在 App 首页选择扫描新机器，再选择手工输入，把 `/tmp/muxvia-android-pairing.json` 的完整 JSON 粘贴进去。可选二维码方式：
 
 ```bash
-qrencode -o /tmp/termx-android-pairing.png < /tmp/termx-android-pairing.json
-open /tmp/termx-android-pairing.png
+qrencode -o /tmp/muxvia-android-pairing.png < /tmp/muxvia-android-pairing.json
+open /tmp/muxvia-android-pairing.png
 ```
 
 成功标准：
@@ -135,7 +135,7 @@ open /tmp/termx-android-pairing.png
 ```bash
 adb shell input keyevent KEYCODE_HOME
 sleep 2
-adb shell monkey -p com.termx.app -c android.intent.category.LAUNCHER 1
+adb shell monkey -p com.muxvia.app -c android.intent.category.LAUNCHER 1
 ```
 
 较长后台恢复：
@@ -143,7 +143,7 @@ adb shell monkey -p com.termx.app -c android.intent.category.LAUNCHER 1
 ```bash
 adb shell input keyevent KEYCODE_HOME
 sleep 10
-adb shell monkey -p com.termx.app -c android.intent.category.LAUNCHER 1
+adb shell monkey -p com.muxvia.app -c android.intent.category.LAUNCHER 1
 ```
 
 成功标准：App 可以短暂显示 verifying/reconnecting，随后回到 connected；machine identity 不重复，terminal 可重新 attach 并继续输入。若旧 PeerConnection 不可恢复，只重建该 managed endpoint。
@@ -154,8 +154,8 @@ adb shell monkey -p com.termx.app -c android.intent.category.LAUNCHER 1
 
 ```bash
 adb reverse --remove tcp:41002
-adb shell am force-stop com.termx.app
-adb shell monkey -p com.termx.app -c android.intent.category.LAUNCHER 1
+adb shell am force-stop com.muxvia.app
+adb shell monkey -p com.muxvia.app -c android.intent.category.LAUNCHER 1
 ```
 
 当前 managed Route 必须显示稳定失败/可重试状态，不能改走旧 Hub 或 Web Controller。其它已配置 Direct/SSH Endpoint 必须仍可连接。恢复映射后重试：
@@ -168,8 +168,8 @@ adb reverse tcp:41002 "tcp:$HUB_PORT"
 
 ```bash
 adb install -r .artifacts/android/app-debug.apk
-adb shell am force-stop com.termx.app
-adb shell monkey -p com.termx.app -c android.intent.category.LAUNCHER 1
+adb shell am force-stop com.muxvia.app
+adb shell monkey -p com.muxvia.app -c android.intent.category.LAUNCHER 1
 ```
 
 标准 APK 对 managed Route 必须返回稳定的 Cloud 未配置/未登录错误，不能建立隐藏 cloud 连接；Direct/SSH 不受影响。完成后重新安装 `app-devcloud-debug.apk`。
@@ -197,7 +197,7 @@ adb shell monkey -p com.termx.app -c android.intent.category.LAUNCHER 1
 - presence：daemon 从 06:39 持续到 07:15 后仍可被新 App 进程 resolve，跨越多个两分钟 admission TTL；期间没有新的 `managed cloud presence stopped`，证明每轮使用 fresh proof 续约。
 - 恢复：2 秒和 10 秒后台后都经过 verifying 回到 connected，machine identity 未变化，并分别继续输入 `resume-2s-ok`、`resume-10s-ok`。
 - Hub 局部失败：移除 `tcp:41002` 后新连接停在 signaling 并进入 failed，没有 WebRTC connected，也没有 local、SSH、旧 Hub 或 Web Controller fallback；恢复 reverse 后同一 endpoint 重新连接成功。
-- 日志：对完整 logcat 扫描未发现测试输入、`termx-grant-v1`、账号 token、Hub ticket 或 CapabilityGrant；terminal diagnostics 只记录长度、revision 和帧统计。
+- 日志：对完整 logcat 扫描未发现测试输入、`muxvia-grant-v1`、账号 token、Hub ticket 或 CapabilityGrant；terminal diagnostics 只记录长度、revision 和帧统计。
 - 准入：当时的 `remote` 全量测试、clean-env `cmd/muxvia` 测试、客户端测试和 Android 构建均通过；当前准入以 `workflow.md` 为准。
 
 ## 9. CLOUD011 Control Plane 中断验收
@@ -217,7 +217,7 @@ adb shell monkey -p com.termx.app -c android.intent.category.LAUNCHER 1
 
 ### 2026-07-12 公网 HTTP staging 真机实测
 
-- 使用当时的公网 HTTP staging profile 构建并覆盖安装旧 Official debug APK；当前等价属性为 `-PtermxPublicHTTPStaging=true`。手机全程走 5G，`adb reverse --list` 为空。
+- 使用当时的公网 HTTP staging profile 构建并覆盖安装旧 Official debug APK；当前等价属性为 `-PmuxviaPublicHTTPStaging=true`。手机全程走 5G，`adb reverse --list` 为空。
 - 从安全渠道导入短期 pairing 后，`Public staging daemon` 完成 List/Attach/Input/Output；`echo android-mobile-input-ok` 在同一远端 shell 得到回显。
 - Connection Info 显示 `P2P direct`、`prflx / host`、手机公网映射到 daemon 公网 UDP 候选，实测 RTT 约 51-64 ms。
 - 后台 8 秒再启动 App 后恢复到同一 terminal，core-v2 屏幕和输入回显仍在，没有创建第二份 terminal lifecycle truth。

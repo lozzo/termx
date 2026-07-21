@@ -8,14 +8,14 @@
 
 | Artifact | 交付模型 | 自有代码授权 | 必须附带 |
 | --- | --- | --- | --- |
-| `termx-cloud` Companion | 单独签名 executable/package；可由 meta package 依赖 | 终端用户专有软件条款 | 第三方 notices、版本、hash、签名、SBOM、隐私说明 |
+| `muxvia-cloud` Companion | 单独签名 executable/package；可由 meta package 依赖 | 终端用户专有软件条款 | 第三方 notices、版本、hash、签名、SBOM、隐私说明 |
 | Official App private module | 只进入官方签名移动包 | Official App 用户条款；不得覆盖 public component 权利 | public Apache 文本、全部 npm/Android/native/font notice、商店披露与隐私政策 |
 | managed cloud service | 官方托管，不下发服务端源码 | 服务条款/订阅条款 | 隐私政策、计费与退款披露、数据处理说明、适用 SLA |
 | Enterprise bundle | 私有 registry/image/Helm/ops assets | 双方签署商业协议 | OSS notices、SBOM、镜像摘要、许可计量、支持/SLA、安全和数据附件 |
 
 ## 2. Sidecar IPC 结论
 
-`termx` 与 `termx-cloud` 是独立 executable、独立升级和独立签名，public process 不 import、link、embed 或动态加载 private module。这个边界减少源码和发布耦合，也让 Community 用户无需安装付费组件。
+`muxvia` 与 `muxvia-cloud` 是独立 executable、独立升级和独立签名，public process 不 import、link、embed 或动态加载 private module。这个边界减少源码和发布耦合，也让 Community 用户无需安装付费组件。
 
 它不是“只要进程外就自动可以闭源”的法律规则。当前 future public snapshot 选择 permissive Apache-2.0，因此 private Companion 不依赖 copyleft linking 例外；如果公开许可证、IPC 形态或 Official App 组合分发发生变化，必须重新审查。
 
@@ -23,7 +23,7 @@
 
 ## 3. Consumer Release Gate
 
-`termx-cloud` 或 Official App 首次对外分发前，release approver 必须记录：
+`muxvia-cloud` 或 Official App 首次对外分发前，release approver 必须记录：
 
 1. 经确认的法定发布主体、版权名称、联系渠道和目标国家/商店。
 2. 经专业审核的 EULA/用户条款、隐私政策、订阅/退款披露和第三方 notice bundle。
@@ -35,7 +35,7 @@
 
 ## 4. Enterprise Contract Gate
 
-Enterprise bundle 不通过个人 `termx cloud install` 下发，不以 README、invoice 或口头承诺代替商业授权。至少需要书面确定：
+Enterprise bundle 不通过个人 `muxvia cloud install` 下发，不以 README、invoice 或口头承诺代替商业授权。至少需要书面确定：
 
 - 被许可主体、关联方、部署环境、region、节点/并发/流量等计量口径和期限。
 - self-host server image、升级、备份、灾备、漏洞修复、支持时间和 SLA/SLO。

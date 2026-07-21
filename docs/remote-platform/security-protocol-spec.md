@@ -1,4 +1,4 @@
-# TermX Remote Platform 安全与协议规范
+# Muxvia Remote Platform 安全与协议规范
 
 状态：CONN002 client-bound authorization v2 基线
 
@@ -8,7 +8,7 @@
 
 ## 1. 安全目标
 
-TermX 远程平台必须同时满足两个独立授权问题：
+Muxvia 远程平台必须同时满足两个独立授权问题：
 
 1. 云服务准入：某个账号或设备是否可以使用官方 Hub/Relay。
 2. terminal 授权：某个客户端是否可以访问某个 daemon 及其哪些 terminal 能力。
@@ -243,7 +243,7 @@ ChannelBinding {
 
 ```text
 AuthEnvelope {
-    protocol: "termx-remote-auth"
+    protocol: "muxvia-remote-auth"
     version: 2
     auth_session_id
     exactly_one_payload
@@ -294,7 +294,7 @@ CapabilityOpen {
 
 ```text
 ClientProofInput {
-    protocol = "termx-remote-auth"
+    protocol = "muxvia-remote-auth"
     version = 2
     auth_session_id
     server_nonce
@@ -347,10 +347,10 @@ daemon 必须按以下顺序 fail closed：
 `CapabilityAccepted` 是协议切换点：
 
 ```text
-remote auth frames -> CapabilityAccepted -> termx protocol frames
+remote auth frames -> CapabilityAccepted -> muxvia protocol frames
 ```
 
-- 切换前出现 termx protocol frame：拒绝并关闭。
+- 切换前出现 muxvia protocol frame：拒绝并关闭。
 - 切换后出现 remote auth frame：拒绝并关闭。
 - 每个 transport 只对应一个 capability scope；scope 变化必须建立新 session。
 - reconnect 必须重新执行 DeviceHello 和 client proof，不复用 accepted 状态。
@@ -361,19 +361,19 @@ remote auth frames -> CapabilityAccepted -> termx protocol frames
 
 ### 6.1 默认 PairingTicket 流程
 
-daemon owner 通过认证后的 `remote.access.ticket.create` 管理 RPC 创建 ticket。静态 QR 使用 `termx://bootstrap?payload=<base64url deterministic protobuf>`，owner-only 文件保存同一 protobuf bytes；两者只允许包含：
+daemon owner 通过认证后的 `remote.access.ticket.create` 管理 RPC 创建 ticket。静态 QR 使用 `muxvia://bootstrap?payload=<base64url deterministic protobuf>`，owner-only 文件保存同一 protobuf bytes；两者只允许包含：
 
 - bundle version、显示 label；
 - DeviceID 与 DeviceFingerprint；
 - 短期一次性 PairingTicket。
 
-不得包含长期 grant、ClientAccessIdentity private key、SSH 密码/私钥、Cloud token、Hub/Relay secret 或 route credential。二维码解析必须在客户端本地完成，不得上传第三方或 TermX 云端。
+不得包含长期 grant、ClientAccessIdentity private key、SSH 密码/私钥、Cloud token、Hub/Relay secret 或 route credential。二维码解析必须在客户端本地完成，不得上传第三方或 Muxvia 云端。
 
 桌面导入顺序固定为：严格解析并验签 bundle，先要求 bundle 带有可移植 route 或本地已有同 identity endpoint，在跨进程 registry read-modify-write 锁内组装增量 candidate；随后在同一 credential ref 锁内持久化 ClientAccessIdentity、比较现有 grant 与 ticket scope ceiling，并且只在 scope 未扩大或用户显式确认后执行 PairingExchange；返回 grant 按响应接收时间通过 issuer/subject/scope/expiry 验证后与 canonical bundle digest 一起原子绑定，最后保存普通 registry。导入器不得因 bundle 无 route 凭空创建 managed Cloud route；registry 保存失败时保留可恢复的 secure credential，不删除已消费 ticket 对应的唯一 key。重试相同 bundle 时，若本地 digest 对应的 grant 仍有效，可直接完成 registry 恢复而不受 daemon delivery grace 限制；不同 bundle 仍必须重新兑换。并发 pair import 与 endpoint mutation 必须由同一 registry transaction lock 串行化，不能整文件覆盖丢失另一 Endpoint。registry 与 credential 锁等待、锁内 PairingExchange 和网络收发都必须传播根命令 context；`--timeout` 到期后释放锁并退出，不能无限阻塞后续客户端操作。新 grant 若扩大同一 credential ref 的现有 scope，CLI/App 必须在任何 daemon 兑换前取得显式用户确认，静默重试和二维码 metadata 不能自行提权。
 
 ### 6.2 离线与故障隔离
 
-PairingTicket、DeviceIdentity、ClientAccessIdentity、AccessStore 和 capability handshake 都不依赖 TermX Cloud、账号订阅或 Control Plane 数据库。Direct、SSH 和 Android 的完整兑换入口按 `workflow.md` 推进，但必须复用同一 contract 和 daemon AccessStore，不能创建第二份授权真值。
+PairingTicket、DeviceIdentity、ClientAccessIdentity、AccessStore 和 capability handshake 都不依赖 Muxvia Cloud、账号订阅或 Control Plane 数据库。Direct、SSH 和 Android 的完整兑换入口按 `workflow.md` 推进，但必须复用同一 contract 和 daemon AccessStore，不能创建第二份授权真值。
 
 Cloud/Companion/Hub/Relay 故障只能影响 managed route。已有 local/SSH/direct route 与未过期、未撤销的 bound grant 应继续工作；普通连接不因 Cloud 离线产生数据库写入或 fallback。
 

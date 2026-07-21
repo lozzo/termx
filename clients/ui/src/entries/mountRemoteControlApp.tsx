@@ -30,8 +30,8 @@ function BrowserRemoteApp({ bindingRuntime, networkRuntime }: { bindingRuntime: 
   useEffect(() => () => { void bindingRuntime.dispose() }, [bindingRuntime])
   return (
     <section
-      className="flex h-[100dvh] w-screen flex-col overflow-hidden bg-[var(--termx-bg)] text-[var(--termx-text)] antialiased"
-      data-testid="termx-remote-app-entry"
+      className="flex h-[100dvh] w-screen flex-col overflow-hidden bg-[var(--muxvia-bg)] text-[var(--muxvia-text)] antialiased"
+      data-testid="muxvia-remote-app-entry"
       style={terminalThemeCssVariables(undefined)}
     >
       <RemoteControlApp

@@ -1,4 +1,4 @@
--keep class com.termx.cloud.OfficialManagedCloudFactory {
+-keep class com.muxvia.cloud.OfficialManagedCloudFactory {
     public <init>();
     public *;
 }

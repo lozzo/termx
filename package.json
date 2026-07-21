@@ -1,5 +1,5 @@
 {
-  "name": "termx-monorepo",
+  "name": "muxvia-monorepo",
   "version": "0.0.0",
   "private": true,
   "workspaces": [
@@ -25,11 +25,11 @@
     "undici-types": "7.19.2"
   },
   "scripts": {
-    "proto": "npm run proto --workspace @termx/ui && npm run proto --workspace @termx/web-controller",
-    "test": "npm test --workspace @termx/ui && npm test --workspace @termx/mobile",
-    "typecheck": "npm run typecheck --workspace @termx/ui",
-    "build": "npm run build --workspace @termx/ui && npm run build --workspace @termx/mobile",
-    "cap:sync": "npm run cap:sync --workspace @termx/mobile",
-    "cap:build": "npm run cap:build --workspace @termx/mobile"
+    "proto": "npm run proto --workspace @muxvia/ui && npm run proto --workspace @muxvia/web-controller",
+    "test": "npm test --workspace @muxvia/ui && npm test --workspace @muxvia/mobile",
+    "typecheck": "npm run typecheck --workspace @muxvia/ui",
+    "build": "npm run build --workspace @muxvia/ui && npm run build --workspace @muxvia/mobile",
+    "cap:sync": "npm run cap:sync --workspace @muxvia/mobile",
+    "cap:build": "npm run cap:build --workspace @muxvia/mobile"
   }
 }

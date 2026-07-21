@@ -54,7 +54,7 @@ export default function LoginPage() {
           <b className="grid size-9 place-items-center bg-primary font-mono text-xs">
             TX
           </b>
-          <span>TermX Cloud</span>
+          <span>Muxvia Cloud</span>
         </a>
         <div className="max-w-2xl">
           <p className="font-mono text-xs text-success">
@@ -76,7 +76,7 @@ export default function LoginPage() {
       <section className="flex items-center px-6 py-12 sm:px-12">
         <div className="mx-auto w-full max-w-sm">
           <p className="font-mono text-[10px] text-primary">
-            TERMX CLOUD CONTROLLER
+            MUXVIA CLOUD CONTROLLER
           </p>
           <h2 className="mt-4 text-4xl font-light">
             {mode === "login" ? "Sign in" : "Create account"}

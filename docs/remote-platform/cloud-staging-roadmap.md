@@ -1,4 +1,4 @@
-# TermX Cloud 单区域 Staging 纵向路线图
+# Muxvia Cloud 单区域 Staging 纵向路线图
 
 状态：CLOUD001-CLOUD005 历史实施记录；当前执行顺序与产品决策只以根 `workflow.md` 为准
 
@@ -24,7 +24,7 @@
 3. TUI 通过本机 Companion resolve 目标并完成 direct WebRTC。
 4. 同一链路可以显式强制经过一个 lease-bound TURN Relay。
 5. Android App 通过同一 cloud contract 连接同一个 daemon。
-6. direct、Relay 和 Android 最终都在 DTLS DataChannel 内执行同一套 DeviceIdentity 和 CapabilityGrant 授权，再运行同一种 termx protocol。
+6. direct、Relay 和 Android 最终都在 DTLS DataChannel 内执行同一套 DeviceIdentity 和 CapabilityGrant 授权，再运行同一种 muxvia protocol。
 
 当前明确不做：生产 OAuth、生产 TLS 和域名、持久化数据库、Kubernetes、多区域、Relay Mesh、transit、复杂 billing、团队治理、通用插件、public snapshot 和正式发布流水线。
 
@@ -32,7 +32,7 @@
 
 | 组件 | 已存在的真实能力 | 当前阻塞 |
 | --- | --- | --- |
-| `core/` | terminal lifecycle、scoped transport、live/history 真值；desktop 与 Android 共用授权后的 termx protocol | 当前单区域纵向链路无 core 阻塞 |
+| `core/` | terminal lifecycle、scoped transport、live/history 真值；desktop 与 Android 共用授权后的 muxvia protocol | 当前单区域纵向链路无 core 阻塞 |
 | `tui/` | 多 endpoint UI 投影、局部失败、连接 phase、实际 direct/single_relay path 与远程 terminal 展示 | 旧 session owner 已删除，等待共享 client runtime 接线；不承担 Android 装配 |
 | `remote/client` | Pion offer、relay-only ICE、caller-specific RelayLease、DTLS fingerprint、capability handshake 和 protocol transport | 自动 SmartRoute 继续延后，不影响显式 single Relay |
 | `remote/daemon` 与 `remote/webrtc` | fresh-proof presence 续约、principal-specific TURN material、relay-only answerer、DataChannel auth 和 core scoped transport | 自动 SmartRoute 继续延后 |
@@ -105,7 +105,7 @@ flowchart LR
 | CloudCredentialSession | Companion/Official module + Control Plane | account 或 device 的云 API authorization；不表示在线或 terminal 权限 |
 | PresenceSession | daemon Companion + Hub | 一个已证明 DeviceID 的短期在线注册；先于任何 client resolve 存在，可承接多个 ManagedSession |
 | ManagedSession | Control Plane | 一次 client DeviceID 到 target DeviceID 的托管连接意图；绑定 signaling、route、Relay lease 和质量摘要 |
-| ProtocolSession | public client/daemon + core-v2 | DTLS DataChannel 内 capability 通过后形成的 termx protocol session |
+| ProtocolSession | public client/daemon + core-v2 | DTLS DataChannel 内 capability 通过后形成的 muxvia protocol session |
 
 CLOUD002 已修正旧 session 混用：presence 使用独立 `PresenceSessionID` 和 fresh one-time challenge，offer 保留自己的 `ManagedSessionID`，enrollment challenge 不会复用为 presence proof。
 
@@ -118,7 +118,7 @@ public client/daemon
   -> serialized Control Plane or Hub network API
 ```
 
-公开进程不直接调用私有 Control Plane/Hub package，也不根据 endpoint 配置绕过 Companion 直连某个 Hub。Companion 不建立 PeerConnection，不接收 grant，不代理 termx protocol。
+公开进程不直接调用私有 Control Plane/Hub package，也不根据 endpoint 配置绕过 Companion 直连某个 Hub。Companion 不建立 PeerConnection，不接收 grant，不代理 muxvia protocol。
 
 ### 5.3 direct 数据面链路
 
@@ -169,7 +169,7 @@ sequenceDiagram
     C->>D: CapabilityOpen(raw grant, only inside DTLS)
     D->>D: verify signature / expiry / revoke / scope
     D->>Core: ServeScopedTransport(scope)
-    C->>Core: termx Hello / List / Attach / Input / History
+    C->>Core: muxvia Hello / List / Attach / Input / History
 ```
 
 ### 5.4 single Relay 数据面链路
@@ -181,7 +181,7 @@ Companion -> Control Plane: request route/RelayLease
 Control Plane -> Companion: caller-bound short TURN material
 client + daemon -> one Pion TURN server: allocate with distinct credentials
 client <-> Relay <-> daemon: opaque DTLS/DataChannel bytes
-client <-> daemon inside DTLS: unchanged DeviceHello/CapabilityOpen/termx protocol
+client <-> daemon inside DTLS: unchanged DeviceHello/CapabilityOpen/muxvia protocol
 Relay -> Control Plane: signed idempotent usage
 ```
 
@@ -206,7 +206,7 @@ first-party Cloud module 不能接收原始 grant。当前单一 App 的标准�
 
 | 数据或凭据 | Owner / truth source | 允许经过 | 禁止经过 |
 | --- | --- | --- | --- |
-| terminal lifecycle/history | owning `core-v2` daemon | authorized termx protocol | Control Plane、Companion、Hub、Relay |
+| terminal lifecycle/history | owning `core-v2` daemon | authorized muxvia protocol | Control Plane、Companion、Hub、Relay |
 | DeviceIdentity private key | public daemon process/local secure state | daemon-local signing | Companion、Control Plane、Hub、Relay |
 | Device fingerprint/public proof | public daemon identity | client、Companion、Control Plane、Hub admission metadata | 不得替代 account token 或 grant |
 | CapabilityGrant | daemon 签发；client secure store 持有 | out-of-band pairing、DTLS DataChannel | Companion、Control Plane、Hub、Relay、SDP、日志 |
@@ -266,14 +266,14 @@ CLOUD002 建立名为 `dev-local` 的显式 staging 剖面：
 - 让 desktop Companion 使用 CLOUD002 的真实 dev adapter，支持 daemon presence 与 client signaling 并存。
 - 补最小 public pairing UX：daemon 签发 grant；client 导入 bundle 后把 raw grant 写入 credential store，只把 `grant_ref` 写入 endpoint registry。
 - 修正 managed endpoint 输入：Hub assignment 由 Companion/Control Plane 决定，当前被要求但被 dialer 忽略的 `hub_url` 不再作为有效 dial identity。target DeviceID、fingerprint、grant ref 和 relay policy 保持彼此独立。
-- 复用共享 client runtime 与 termx protocol，不增加 managed terminal inventory API。
+- 复用共享 client runtime 与 muxvia protocol，不增加 managed terminal inventory API。
 
 用户可观察完成条件：
 
-1. 用户启动 dev cloud、两个 Companion profile 和一个真实 `termx daemon`。
+1. 用户启动 dev cloud、两个 Companion profile 和一个真实 `muxvia daemon`。
 2. 用户完成 dev login/enroll，并通过 public pairing create/import 得到 managed endpoint。
 3. TUI picker 显示远程 endpoint；连接状态经过 resolving/signaling/authorizing 后显示 direct。
-4. TUI 从远程 daemon 的 termx protocol 列出 terminal，能够 attach、输入、resize、读取 live/history，并与本地 endpoint 同时存在。
+4. TUI 从远程 daemon 的 muxvia protocol 列出 terminal，能够 attach、输入、resize、读取 live/history，并与本地 endpoint 同时存在。
 5. 关闭 Companion、Hub 或远程 daemon 时只影响该 managed endpoint；local/SSH 和其他 endpoint 不被清空，也不发生 fallback。
 6. managed direct E2E harness 使用真实 loopback network、真实 Pion DataChannel、真实 capability handshake 和真实 core-v2 protocol，不允许 fake Companion 或 memory transport 作为最终证据。
 

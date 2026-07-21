@@ -4,7 +4,7 @@
 
 - 仓库根目录 `workflow.md` 是当前分支唯一有效的活动驱动文件。
 - 本仓库内所有工作必须先读取 `workflow.md`，并以它作为范围、任务顺序、测试准入和提交规则的唯一基准。
-- 当前活动主线只由 `workflow.md` 最早未完成切片决定；当前最早切片是 `BRAND004`，必须完成 Muxvia Android、npm/UI、Cloud 与活动文档身份迁移，再执行全仓发布候选验收并恢复 `CLOUDP007`。浏览器 Web/WASM terminal 产品当前冻结。
+- 当前活动主线只由 `workflow.md` 最早未完成切片决定；当前最早切片是 `BRAND005`，必须完成 Muxvia 全仓残留、发布候选和真实 ARM64 APK 验收，再恢复 `CLOUDP007`。浏览器 Web/WASM terminal 产品当前冻结。
 - 插件系统已经拆到独立分支，本分支不新增插件系统代码、协议或文档。
 - `docs/remote-platform/` 是远程平台产品、架构、安全和迁移背景文档；统一 WebRTC Route 的当前决策以 `workflow.md` 为准，并由对应活动切片同步更新该目录，旧文档不得覆盖活动工作流。
 - `docs/remote-platform/multi-hub-technical-plan.md` 是当前多 Hub/Cloud 主线的实现级规划，规定 Proto 文件、Go package owner、控制链路、持久化事务、迁移删除项与测试矩阵；它必须服从 `workflow.md` 的切片顺序，不得被当作跨切片一次性实现清单。
@@ -22,9 +22,9 @@
 
 - 产品正式名称是 `Muxvia`，托管能力名称是 `Muxvia Cloud`，主域名是 `muxvia.com`，GitHub module 是 `github.com/muxvia/muxvia`。
 - 首发发布身份固定为：CLI `muxvia`、Android applicationId/package `com.muxvia.app`、URI scheme `muxvia://`、npm scope `@muxvia`、Proto namespace `muxvia.*`、C ABI prefix `muxvia_*`、环境变量 prefix `MUXVIA_*`、Cloud 二进制 `muxvia-cloud-controller`、`muxvia-cloud-edge` 与 `muxvia-cloud`。
-- 当前尚未公开发布，品牌迁移不得保留 `termx` CLI、URI、applicationId、package、配置目录、socket、环境变量、C ABI、Proto namespace、npm scope、Go module/import 或运行时 fallback；开发数据可以直接重置。
+- 当前尚未公开发布，品牌迁移不得保留旧品牌 CLI、URI、applicationId、package、配置目录、socket、环境变量、C ABI、Proto namespace、npm scope、Go module/import 或运行时 fallback；开发数据可以直接重置。
 - 品牌迁移只改变名称和发布身份，不改变 Proto 字段号、枚举值、领域 owner、truth source、消息链路、安全边界或业务能力。禁止借品牌迁移进行架构重构或提前优化。
-- `private/archive/`、`docs/history/` 与 Git 历史保留 `TermX/termx` 作为历史事实且保持只读；其它活动源码、配置、测试、生成代码、法律文本、发布资产和产品文档必须迁移到 Muxvia。
+- `private/archive/`、`docs/history/` 与 Git 历史保留历史品牌标识作为事实且保持只读；其它活动源码、配置、测试、生成代码、法律文本、发布资产和产品文档必须迁移到 Muxvia。
 
 ## 当前私有开发阶段原则
 
@@ -71,13 +71,13 @@
 
 - 允许主动工作目录只能来自 `workflow.md` 的“当前主线允许主动修改”和“受限联动范围”。
 - 不允许因为“看起来有关”自行扩散到其他目录。
-- 旧 `termx-core/` 与 `tuiv2/` 已退出本分支，不再作为只读参考、legacy fallback 或默认依赖存在。
-- 当前默认本地 CLI 入口必须走 `core/` 与 `tui/`；不得重新引入 `termx legacy ...`、旧 daemon、旧 TUI 或 remote legacy/fallback。
+- 旧 `muxvia-core/` 与 `tuiv2/` 已退出本分支，不再作为只读参考、legacy fallback 或默认依赖存在。
+- 当前默认本地 CLI 入口必须走 `core/` 与 `tui/`；不得重新引入 `muxvia legacy ...`、旧 daemon、旧 TUI 或 remote legacy/fallback。
 - `cmd/muxvia/legacy_*.go` 不得重新出现；旧本地入口已经删除。
-- `cmd/muxvia/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
+- `cmd/muxvia/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `muxvia-core` 或 `tuiv2`。
 - `remote/`、`clients/mobile/` 与 `clients/ui/` 是活动远程客户端资产；只能按 `workflow.md` 对应纵向切片演进，不得恢复旧 fallback。
 - `client/binding/` 是 Android、未来 iOS/Desktop 的 C ABI 与预留 WebAssembly 外部边界；只能暴露序列化 Proto、opaque handle、异步事件和显式释放，不得暴露 Go pointer、core domain struct 或平台 UI 类型。WASM 当前只维持不回归，不主动开发 Web 产品入口。
-- 旧 `termx-hub/`、`termx-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已迁入 `private/archive/termx-platform-legacy/`，只能作为只读历史资产；archive 不进入 workspace、构建脚本或 runtime。
+- 旧 `muxvia-hub/`、`muxvia-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已迁入 `private/archive/muxvia-platform-legacy/`，只能作为只读历史资产；archive 不进入 workspace、构建脚本或 runtime。
 - Hub/Relay 服务端实现位于 `private/cloud/hub/` 与 `private/cloud/relay/`；`private/cloud/edge/` 是二者唯一允许的组合部署层。Hub/Relay 可以同二进制、同进程、同配置部署，但不得共享业务 map、identity、control generation、command state 或 lifecycle owner。
 - `vterm/` 是受限联动目录，只能在 terminal semantic transaction 接口、事件或 harness 需要时最小化触及。
 - `internal/protocol/` 与 `proto/` 是受限联动目录，只能在 endpoint routing、history window/copy 或 semantic history contract 需要跨进程时最小化触及。
@@ -98,7 +98,7 @@
 - `vterm/`：终端语义解释来源；负责把 PTY bytes 解释成 terminal 语义事件或 transaction，不负责持有无限历史 truth。
 - `tui/`：TUI 产品目录，负责 UI state、reducer/effect、AppRuntime、TerminalHost、FrameSink、workbench/layout、copy/history 投影、输入和 render；只通过 `tui/port` 与 `tui/adapter` 消费 client/core projection，不拥有 endpoint route/session、committed history 或 daemon terminal lifecycle。
 - `tui/docs/architecture.md`：tui-v3 技术设计基准。
-- `termx-core/`：已删除旧 core 目录；不得作为 fallback 恢复。
+- `muxvia-core/`：已删除旧 core 目录；不得作为 fallback 恢复。
 - `tuiv2/`：已删除旧 TUI 目录；不得作为 fallback 恢复。
 - `proto/`：所有跨 core API Layer、插件、第三方客户端、官方客户端、进程和语言边界 API 的唯一 schema truth；生成代码不得手改。
 - `internal/protocol/`：连接 framing、握手、channel、request correlation 和 proto payload 传输实现；不得重新定义 proto 已表达的业务 request/result/event DTO。
@@ -116,11 +116,11 @@
 - **Proto API 强约定**：所有对插件、第三方客户端、官方客户端、CLI/TUI client runtime、跨进程服务或跨语言 binding 暴露的 API，都必须先定义在 `proto/`；任何 Go interface、dispatcher、adapter 或 binding 只能消费生成类型，不得先写 Go struct 再补 proto。
 - 唯一允许的完整运行链路是 `插件/客户端 -> Go Client Engine -> transport/platform binding -> protocol framing -> generated proto -> api_layer -> api_mapping -> core`，返回方向相反。Unix Socket、WebRTC DataChannel、JNI、Swift 和预留 WASM binding 都属于 transport 或平台接入，不属于 API Mapping；任何入口不得绕过 API Layer 直接消费 core domain struct。
 - 所有官方客户端和仓库提供的外部客户端接入必须复用同一套 Go Client Engine：Endpoint/Route 配置、route planning、embedded signaling、SSH tunnel、remote auth、session generation、protocol Hello、`api.execute`、Proto command/result/event、resource lifecycle、取消和重连策略属于 Go truth。Go/native 客户端直接调用，Android 通过 C ABI + JNI，未来 iOS/Desktop 通过 C ABI wrapper，未来浏览器通过 Go/WASM；平台层只能提供 secure signer/store、host lifecycle、系统权限和浏览器未来必需的 WebRTC/WebCrypto primitive。
-- 所有远程业务连接最终必须进入可靠有序 WebRTC DataChannel。Direct Route 使用 daemon embedded signaling + ICE-TCP；SSH Route 使用 Go SSH client/direct-tcpip tunnel + daemon loopback ICE-TCP；Cloud Route 使用 TermX Cloud signaling + ICE-UDP 或 TURN Relay。三种 Route 成功后必须返回同一 Go-owned ReadyPeerSession，不得维护三套 application session。
+- 所有远程业务连接最终必须进入可靠有序 WebRTC DataChannel。Direct Route 使用 daemon embedded signaling + ICE-TCP；SSH Route 使用 Go SSH client/direct-tcpip tunnel + daemon loopback ICE-TCP；Cloud Route 使用 Muxvia Cloud signaling + ICE-UDP 或 TURN Relay。三种 Route 成功后必须返回同一 Go-owned ReadyPeerSession，不得维护三套 application session。
 - WebRTC Cloud 是唯一允许的 managed WebRTC 服务；不得建设用户自建 Hub/Relay/signaling provider。Direct embedded signaling 是 daemon 自带的近端连接能力，不是可替换的 Cloud provider。
 - 用户未登录、未订阅或 Cloud 不可用时，Android/iOS/Desktop 的 Direct 与 SSH 必须继续可用；Cloud 只决定 managed Route eligibility，不得隐藏、删除或阻断本地 Endpoint。
 - Android 默认不得继续维护原生 Kotlin/Java 网络连接管理器；Go 代码通过稳定 C ABI 编译为 Android native library，再由薄 JNI/Capacitor bridge 调用。除平台 API 必需适配外，不得在 Kotlin/Java 重写 Go 连接状态机。
-- 浏览器 Web 当前不是默认产品入口，不得为 Web 页面、WASM consumer、浏览器 Direct/SSH 或 Web UI 可用性扩展当前切片。未来恢复 Web 时仍必须使用 Go/WASM Client Engine；纯浏览器只支持 TermX Cloud managed WebRTC，不支持 Direct ICE-TCP 或 SSH。
+- 浏览器 Web 当前不是默认产品入口，不得为 Web 页面、WASM consumer、浏览器 Direct/SSH 或 Web UI 可用性扩展当前切片。未来恢复 Web 时仍必须使用 Go/WASM Client Engine；纯浏览器只支持 Muxvia Cloud managed WebRTC，不支持 Direct ICE-TCP 或 SSH。
 - Android JNI 与未来 WASM 必须保持同一窄 binding contract：共享 UI 只消费 `ProtoClientSession`、`ProtoResourceStream`、generated `apipb`、cancel/close/release、错误和 generation 失效语义。UI 不得按 JNI/WASM 或 Direct/SSH/Cloud 分叉业务 session 接口，也不得直接持有 peer/channel。
 - 跨 JNI/WASM 边界的业务 payload 只能是 versioned protobuf bytes；平台可以从同一份 schema 生成语言类型，但不得手写镜像 DTO。外部资源只能以数值 opaque handle 标识，禁止跨边界传递 Go pointer、channel、interface 或内部 struct。
 - binding 调用必须是可取消的异步模型。Android process/activity 重建和网络切换后必须由 Go runtime 建立新的 session generation；不得复用 stale DataChannel、SSH tunnel、resource handle 或旧授权状态。未来浏览器恢复时沿用同一规则。

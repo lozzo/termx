@@ -1,4 +1,4 @@
-# TermX 多 Hub 控制面与 Cloud 产品技术实施规划
+# Muxvia 多 Hub 控制面与 Cloud 产品技术实施规划
 
 ## 1. 文档定位
 
@@ -535,7 +535,7 @@ reporter 生命周期绑定单个 Presence context。Presence replacement 时先
 daemon 从 `AccessStore.ListClientAccess` 生成最小 projection，不上报 CapabilityGrant 原文。opaque reference 计算为：
 
 ```text
-base64url(SHA-256("termx-access-ref-v1" || daemon_device_id || grant_id))
+base64url(SHA-256("muxvia-access-ref-v1" || daemon_device_id || grant_id))
 ```
 
 它不可逆且稳定；daemon 执行 revoke 时扫描本地 access records 重算并匹配。projection 只包含 client label、subject fingerprint 摘要、状态和 issued/expires 时间，不包含 grant body、scope、client public key、terminal ID、私钥、grant token 或文件路径。
@@ -797,8 +797,8 @@ go test ./remote/... ./core/... -count=1
 (cd private/cloud/devcloud && go test ./... -count=1)
 (cd private/cloud/web-controller && go test ./... -count=1)
 npm run proto
-npm run typecheck --workspace @termx/web-controller
-npm run build --workspace @termx/web-controller
+npm run typecheck --workspace @muxvia/web-controller
+npm run build --workspace @muxvia/web-controller
 ```
 
 涉及 registry、stream、assignment、command dispatcher、allocation 的切片必须对受影响 package 运行 `go test -race`。

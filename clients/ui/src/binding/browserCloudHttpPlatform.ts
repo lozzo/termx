@@ -16,7 +16,7 @@ import type { RemoteRuntimeFetch, RemoteRuntimeStorage } from '../core/transport
 import type { BrowserCloudPlatform } from './browserWasmPlatform'
 
 const PROTOBUF_MEDIA_TYPE = 'application/x-protobuf'
-const STREAM_MEDIA_TYPE = 'application/x-termx-cloud-stream'
+const STREAM_MEDIA_TYPE = 'application/x-muxvia-cloud-stream'
 const MAX_FRAME_BYTES = 4 << 20
 
 export interface BrowserCloudEndpoint {
@@ -103,11 +103,11 @@ export class BrowserCloudHttpPlatform implements BrowserCloudPlatform {
 }
 
 function browserEdgeIdentity(storage: RemoteRuntimeStorage): { token: string; accountId: string; deviceId: string } {
-  const token = storage.getItem('termx.remote.accessToken')?.trim() ?? ''
+  const token = storage.getItem('muxvia.remote.accessToken')?.trim() ?? ''
   if (!token) throw new Error('browser Cloud login is required')
   const claims = jwtClaims(token)
-  const accountId = storage.getItem('termx.cloud.accountId')?.trim() || stringClaim(claims, 'account_id', 'accountId', 'sub')
-  const deviceId = storage.getItem('termx.cloud.deviceId')?.trim() || stringClaim(claims, 'device_id', 'deviceId')
+  const accountId = storage.getItem('muxvia.cloud.accountId')?.trim() || stringClaim(claims, 'account_id', 'accountId', 'sub')
+  const deviceId = storage.getItem('muxvia.cloud.deviceId')?.trim() || stringClaim(claims, 'device_id', 'deviceId')
   if (!accountId || !deviceId) throw new Error('browser Cloud session is missing account/device identity')
   return { token, accountId, deviceId }
 }

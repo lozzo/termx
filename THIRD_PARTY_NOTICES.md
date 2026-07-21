@@ -1,13 +1,13 @@
-# TermX Third-Party Notices
+# Muxvia Third-Party Notices
 
-本文件是当前 private monorepo 的第三方材料索引。根 `LICENSE` 对 TermX 自有材料保留全部权利，但不改变任何第三方材料的原始许可。
+本文件是当前 private monorepo 的第三方材料索引。根 `LICENSE` 对 Muxvia 自有材料保留全部权利，但不改变任何第三方材料的原始许可。
 
 ## Artifact Notice Bundles
 
 | Artifact | 随包 notice | 用户入口 |
 | --- | --- | --- |
-| public `termx` CLI/daemon | `cmd/muxvia/THIRD_PARTY_NOTICES.txt` | `termx licenses` |
-| private `termx-cloud` Companion | `private/cloud/companion/cmd/muxvia-cloud/THIRD_PARTY_NOTICES.txt` | `termx-cloud licenses` |
+| public `muxvia` CLI/daemon | `cmd/muxvia/THIRD_PARTY_NOTICES.txt` | `muxvia licenses` |
+| private `muxvia-cloud` Companion | `private/cloud/companion/cmd/muxvia-cloud/THIRD_PARTY_NOTICES.txt` | `muxvia-cloud licenses` |
 | Community/Official Android App | `clients/mobile/public/THIRD_PARTY_NOTICES.txt` 与 `clients/mobile/public/third-party/` | App web assets 与 APK `assets/public/` |
 | future public source snapshot | `docs/legal/public-snapshot/THIRD_PARTY_NOTICES.md` | 新公开仓库根目录 |
 

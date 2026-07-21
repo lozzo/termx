@@ -17,7 +17,7 @@
 | 连接集合 | `TerminalRuntime.BoundPaneIDs` / `PaneBinding.Connected` | 同一个 terminal 可以被多个 pane/floating 连接；这是展示/输入连接，不等于每个连接都有 resize 权。 |
 | owner 冻结 | `RequiresExplicitOwner` | owner 释放或外部 owner 介入后，不再自动 resize，直到显式 takeover。 |
 | takeover 后强制 resize | `PendingOwnerResize` | owner handoff 后即使 cached geometry 一样，也要强制下一次 resize，避免新 owner 卡在旧尺寸。 |
-| terminal size lock | metadata tag `termx.size_lock` | terminal 级锁；锁住后 owner 仍可存在，但不能驱动 PTY resize。 |
+| terminal size lock | metadata tag `muxvia.size_lock` | terminal 级锁；锁住后 owner 仍可存在，但不能驱动 PTY resize。 |
 | pane 本地投影 | `PaneBinding.ContentOffset` | 只影响当前 pane 的内容对齐/平移，不改变 terminal process、history truth 或 PTY size。 |
 | role 展示 | `syncBindingRolesForTerminal` | 默认所有 bound pane 是 follower，只有 `ControlPaneID` 对应 binding 是 owner。 |
 
@@ -70,7 +70,7 @@ tuiv2 的 `paneContentOffsetRange(viewportSize, contentSize)` 用 `min(0, viewpo
 | --- | --- | --- |
 | owner restore | storage restore 已按保存的 `ResizeRole` attach，owner 优先 attach；layout resize 会按可 resize owner view 的 content rect 重申 PTY size。 | 还需真实端到端 smoke 继续覆盖不同 viewport 重进。 |
 | resize role | `TerminalViewBinding.ResizeRole/CanResize/OwnerViewID` 已接收 core resize control；`HasResizeOwner` 表达 owner 身份，`HasAuthoritativeResizeOwner` 表达可 resize owner。 | size locked owner 会继续显示 `◆ owner`，但 `CanResize=false` 不发 resize。 |
-| terminal size lock | `TerminalViewBinding.SizeLocked` 保存 core 返回的 terminal lock，并驱动 chrome lock 图标；`s LOCK` 通过 terminal service effect 写 `termx.size_lock` tag。 | 切换时保留 terminal 原有 tags，只写 tags 不改 terminal title；成功后同步投影到所有连接该 terminal 的 view。 |
+| terminal size lock | `TerminalViewBinding.SizeLocked` 保存 core 返回的 terminal lock，并驱动 chrome lock 图标；`s LOCK` 通过 terminal service effect 写 `muxvia.size_lock` tag。 | 切换时保留 terminal 原有 tags，只写 tags 不改 terminal title；成功后同步投影到所有连接该 terminal 的 view。 |
 | view-local layout | `TerminalViewLayout.Mode/Pan/Align` 会投影到 renderer。 | view-local layout 只服务当前 pane/floating 的内容投影，不再绑定 `s LOCK`，也不能冒充 terminal 级 size lock。 |
 | dot rendering | `RenderContentViewport` 已只对 live terminal known extent 画 `·`，cursor 也走同一 extent 变换并越界隐藏。 | owner 未 size lock 且 resize 稳定后，content extent 应收敛到 owner content rect；显式 center/pan/layout projection 仍可产生 extent hint。 |
 | replacement owner | `promoteReplacementOwnerLocked` 会在 owner view 删除后自动提升另一个绑定为 owner。 | 旧文档曾指出这偏离 shared terminal 产品语义；需确认 owner 关闭后是冻结等待显式接管，还是自动接任。 |

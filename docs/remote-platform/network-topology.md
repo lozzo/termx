@@ -1,4 +1,4 @@
-# TermX Remote Platform 网络图解
+# Muxvia Remote Platform 网络图解
 
 状态：目标架构图；当前真实实现与差异见 `cloud-end-to-end-swimlanes.md`
 
@@ -8,10 +8,10 @@
 
 这些图描述目标架构，不描述当前 ME012 原型实现。核心结论：
 
-- local 和 SSH 完全绕过 TermX 托管云。
+- local 和 SSH 完全绕过 Muxvia 托管云。
 - Direct 使用 daemon embedded signaling，SSH 使用 tunnel 内 signaling，只有 managed WebRTC 使用 Hub signaling；任何 signaling 服务都不承载 terminal protocol。
 - 基础 WebRTC 策略优先 direct；失败且存在有效 `RelayLease` 时才走 Relay。启用 SmartRoute 后，direct 可达但质量较差时也可以主动选择 Relay。
-- direct、single Relay 和 Relay Mesh 最终都建立同一种 DTLS DataChannel，运行同一种端到端 capability handshake 和 termx protocol。
+- direct、single Relay 和 Relay Mesh 最终都建立同一种 DTLS DataChannel，运行同一种端到端 capability handshake 和 muxvia protocol。
 - Control Plane、Hub 和 Relay 都不能看到原始 `CapabilityGrant`。
 
 ## 2. 全部连接方式
@@ -26,22 +26,22 @@ flowchart LR
         APP --> CR
     end
 
-    subgraph FreePaths["免费路径：不依赖 TermX 云"]
+    subgraph FreePaths["免费路径：不依赖 Muxvia 云"]
         LOCAL["local unix socket"]
         DIRECT["daemon embedded signaling<br/>ICE-TCP"]
         SSH["Go SSH direct-tcpip<br/>loopback ICE-TCP"]
     end
 
-    subgraph ManagedCloud["TermX 托管云（私有源码）"]
+    subgraph ManagedCloud["Muxvia 托管云（私有源码）"]
         CP["Control Plane<br/>账号 / 设备目录 / Entitlement"]
         HUB["Regional Hub<br/>Presence / SDP / ICE"]
         RELAY["Managed Relay / TURN<br/>租约校验 / 加密字节转发 / 计量"]
     end
 
     subgraph Daemons["目标设备（公开源码）"]
-        D1["本机 termx daemon<br/>独立 core-v2"]
-        D2["SSH 可达 termx daemon<br/>独立 core-v2"]
-        D3["WebRTC 可达 termx daemon<br/>DeviceIdentity / Capability owner<br/>独立 core-v2"]
+        D1["本机 muxvia daemon<br/>独立 core-v2"]
+        D2["SSH 可达 muxvia daemon<br/>独立 core-v2"]
+        D3["WebRTC 可达 muxvia daemon<br/>DeviceIdentity / Capability owner<br/>独立 core-v2"]
     end
 
     CR -->|"local transport"| LOCAL --> D1
@@ -62,7 +62,7 @@ flowchart LR
     RELAY ==>|"仅转发端到端加密字节"| D3
     RELAY -->|"签名 UsageEvent"| CP
 
-    CR -.->|"逻辑 E2E：DeviceHello / CapabilityOpen / termx protocol"| D3
+    CR -.->|"逻辑 E2E：DeviceHello / CapabilityOpen / muxvia protocol"| D3
 
     classDef openNode fill:#ecfdf5,stroke:#15803d,color:#052e16;
     classDef privateNode fill:#fff7ed,stroke:#c2410c,color:#431407;
@@ -84,14 +84,14 @@ flowchart LR
         CS --> C
     end
 
-    subgraph PrivateCloud["TermX 托管网络"]
+    subgraph PrivateCloud["Muxvia 托管网络"]
         CP["Control Plane"]
         H["Hub"]
         R["Relay / TURN"]
     end
 
     subgraph DaemonNet["目标网络 / NAT B"]
-        D["termx daemon<br/>DeviceIdentity + Grant verifier"]
+        D["muxvia daemon<br/>DeviceIdentity + Grant verifier"]
         V["core-v2<br/>ServeScopedTransport"]
         D --> V
     end
@@ -124,7 +124,7 @@ flowchart LR
 | 组件 | 可以看到 | 绝不能看到或决定 |
 | --- | --- | --- |
 | Control Plane | 账号、设备目录、entitlement、ManagedSession、Relay 用量 | 原始 grant、terminal list/content、terminal scope |
-| Hub | admission、DeviceID、presence、SDP/ICE、signaling session | 原始 grant、terminal inventory、termx protocol frame |
+| Hub | admission、DeviceID、presence、SDP/ICE、signaling session | 原始 grant、terminal inventory、muxvia protocol frame |
 | Relay | RelayLease、连接 metadata、加密字节数和时长 | DataChannel 明文、grant、terminal scope |
 | Client | endpoint pin、原始 grant、daemon 返回的 protocol 数据 | daemon 私钥 |
 | Daemon | DeviceIdentity 私钥、grant 签发/撤销、terminal truth | 用户计费数据库 |
@@ -136,7 +136,7 @@ sequenceDiagram
     autonumber
     participant C as TUI / App
     participant S as daemon embedded signaling
-    participant D as termx daemon
+    participant D as muxvia daemon
     participant Core as core-v2
 
     C->>C: load Endpoint pin + Direct Route + endpoint-bound credential
@@ -154,7 +154,7 @@ sequenceDiagram
     D->>D: verify signature / expiry / revoke / proof / scope
     D-->>C: CapabilityAccepted
     D->>Core: ServeScopedTransport(scope, DataChannel)
-    C->>D: termx protocol Hello / List / Attach
+    C->>D: muxvia protocol Hello / List / Attach
     D->>Core: dispatch requests inside accepted scope
     C->>D: versioned SessionClose
     D->>D: release protocol resources, DataChannel, peer and TCPMux ufrag
@@ -172,7 +172,7 @@ sequenceDiagram
     participant CP as Control Plane
     participant H as Hub
     participant R as Relay / TURN
-    participant D as termx daemon
+    participant D as muxvia daemon
 
     C->>H: exchange offer / answer / ICE
     C-xD: direct ICE candidates fail within policy window
@@ -188,7 +188,7 @@ sequenceDiagram
         D-->>C: DeviceHello
         C->>D: CapabilityOpen
         D-->>C: CapabilityAccepted
-        C->>D: termx protocol over encrypted DataChannel
+        C->>D: muxvia protocol over encrypted DataChannel
         R->>CP: signed idempotent UsageEvent
     else no entitlement, expired lease, or quota exhausted
         CP-->>C: stable Relay entitlement error

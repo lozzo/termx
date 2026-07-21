@@ -23,9 +23,9 @@ export const consoleConnectionLogger: ConnectionLogger = {
     const method = level === 'error' ? 'error' : level === 'warn' ? 'warn' : level === 'info' ? 'info' : 'debug'
     const message = event.message ? ` ${event.message}` : ''
     const metadata = compactLogMetadata(event)
-    console[method](`[termx:${event.scope}] ${event.event}${message}`, metadata)
+    console[method](`[muxvia:${event.scope}] ${event.event}${message}`, metadata)
     if (event.event.endsWith('_timeout') && event.details) {
-      console[method](`[termx:${event.scope}] ${event.event}_json ${JSON.stringify(metadata)}`)
+      console[method](`[muxvia:${event.scope}] ${event.event}_json ${JSON.stringify(metadata)}`)
     }
   },
 }

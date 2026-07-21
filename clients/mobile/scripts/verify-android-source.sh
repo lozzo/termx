@@ -4,7 +4,7 @@ set -euo pipefail
 
 mobile_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 android_root="$mobile_root/android"
-source_root="$android_root/app/src/main/java/com/termx/app"
+source_root="$android_root/app/src/main/java/com/muxvia/app"
 manifest="$android_root/app/src/main/AndroidManifest.xml"
 build_gradle="$android_root/app/build.gradle"
 
@@ -19,8 +19,8 @@ required_sources=(
   NativeConnectionPlugin.kt
   NativeFilePickerPlugin.kt
   NativeHapticPlugin.java
-  TermxDebugLog.kt
-  TermxWebChromeClient.java
+  MuxviaDebugLog.kt
+  MuxviaWebChromeClient.java
   goclient/AndroidClientPlatform.kt
   goclient/GoClientBridgeServer.kt
   goclient/GoClientNative.kt

@@ -46,7 +46,7 @@ raw host bytes
 - `tui/render/shortcut_invocation_test.go` 与 `tui/app/shortcut_surface_equivalence_test.go`：键盘/点击 invocation 同源、target fail closed、空 catalog、窄屏和 capability 条件。
 - `tui/app/shortcut_legacy_guard_test.go`：禁止旧 dispatcher、render action bridge 和 footer action identity 返回。
 - `tui/config/config_test.go` 与 `tui/config/shortcut_docs_test.go`：配置示例真实加载、替换语义、文档 contract、运行统计及本文不得恢复手写键表。
-- `scripts/termx_shortcut_smoke.sh`：隔离 daemon、配置、日志和 tmux socket，验证普通快捷键与 CSI-u 的真实 TUI 链路。
+- `scripts/muxvia_shortcut_smoke.sh`：隔离 daemon、配置、日志和 tmux socket，验证普通快捷键与 CSI-u 的真实 TUI 链路。
 
 ## 迁移结论
 

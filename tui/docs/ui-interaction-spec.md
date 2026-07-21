@@ -27,7 +27,7 @@
 
 ## 2. 产品定位
 
-`termx` 是一个面向长期工作现场的现代终端复用器。
+`muxvia` 是一个面向长期工作现场的现代终端复用器。
 
 它对用户表现得像：
 
@@ -1315,7 +1315,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 
 ## 20. 第一阶段验收标准
 
-第一阶段不要求所有高级功能都完成。当前最小 render framework 阶段已经落地，默认 `termx` 进入 TUI 后必须满足：
+第一阶段不要求所有高级功能都完成。当前最小 render framework 阶段已经落地，默认 `muxvia` 进入 TUI 后必须满足：
 
 - 有顶栏。
 - 有底栏。
@@ -1334,7 +1334,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 
 当前第一阶段 resize/UI 验收状态：
 
-- 默认界面、`termx attach` 装配路径和非交互 smoke 均以 core-v2/tui-v3 为主路径。
+- 默认界面、`muxvia attach` 装配路径和非交互 smoke 均以 core-v2/tui-v3 为主路径。
 - 默认界面不再以裸 `live surface pending` 文本作为可用 UI，而是显示 shell、header/footer、pane chrome、content slot、toast 或 overlay。
 - 外部 terminal emulator 初始尺寸和 resize 后尺寸必须反映到整屏 frame；frame 行数等于 viewport rows，每行 display width 等于 viewport cols。
 - terminal live 内容只显示在 pane content slot 内；content slot 尺寸变化后，terminal resize 使用 content rect，而不是外部 viewport 总尺寸。
@@ -1353,12 +1353,12 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - shell/pane 已在切片 88 完成二轮视觉重绘；toast/floating/overlay title 使用 `·` 分层。切片 166 后 header/footer 按 `tuiv2` 实际 tab/status bar 纠偏为单行 bar，不再绘制整屏 shell 外框、双行 header/footer 或 `┬/┴` 连接点；bottom bar key 使用 `[Ctrl] • [P] pane` 这类分段状态栏语义。tiled pane 顶边继续显示真实接通的 split-down、split-right、close action，按钮文本与 hit region 同源，pane action 优先于 shared divider resize；仍不提前画状态 Nerd Font、`⇄2`、`◆ owner`、`1/31`、zoom 或 owner/follower token。
 - toast、Terminal Picker、Terminal Pool、Workbench Tree、Prompt/Help 和 floating 已在切片 82 完成第一轮实体 card 视觉对齐：toast 具备 severity accent 竖条、右上角留白、close action 和 title/body 合并裁切；overlay/floating 具备 title/state/action 槽位、content padding、active/focus token、ANSI reset 和宽字符安全。
 - Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 已在切片 86 完成第一轮内容层产品化 polish：搜索行、selected row、detail/preview/context/input、action row、copy search/match/scrollbar/status 已统一为更接近目标截图的产品语言。
-- 切片 87 已完成真实视觉复核未通过归档：`termx v3 smoke` 固定 case 覆盖 Terminal Pool Page、Workbench Tree Page、copy-history 和 `120x40` visual review baseline，`termx v3 e2e-smoke` 覆盖默认 attach 装配、viewport、resize、content rect terminal resize、copy rebind 和 pane command。
+- 切片 87 已完成真实视觉复核未通过归档：`muxvia v3 smoke` 固定 case 覆盖 Terminal Pool Page、Workbench Tree Page、copy-history 和 `120x40` visual review baseline，`muxvia v3 e2e-smoke` 覆盖默认 attach 装配、viewport、resize、content rect terminal resize、copy rebind 和 pane command。
 - 切片 88 已完成二轮视觉重绘和自动准入，但当前 TUI 仍不能宣称达到目标截图；切片 89 必须在真实默认入口中复核。
 - pane split、close、focus、zoom、resize、set size、balance、presentation 已有统一 semantic command 基础，快捷键、鼠标、测试和 CLI mini command 只能作为 adapter。
 - floating pane 已使用独立 styled bordered chrome，具备 reducer-owned state、z-order、active 状态、keyboard create/move/resize/center/collapse/close、mouse raise/close、标题栏连续拖动移动、resize handle 连续拖动 resize 和 content rect 裁切。
 - `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode 已作为第一版键盘产品入口落地，footer 能显示当前 mode。
-- `termx v3 smoke` 和 `termx v3 e2e-smoke` 已覆盖 styled frame、pane command feedback、行宽恒等、content rect terminal resize 和 copy rebind。
+- `muxvia v3 smoke` 和 `muxvia v3 e2e-smoke` 已覆盖 styled frame、pane command feedback、行宽恒等、content rect terminal resize 和 copy rebind。
 - terminal-live 内容 renderer 一期必须在当前 styled chrome 基线上工作：真实 live 行只进入 pane content slot，基础 ANSI SGR 映射为 semantic style token，live cursor 表达为 content-local cursor，pending、empty、exited 状态显示在所属 pane 内，emoji/CJK/combining mark 裁切不得破坏 pane 边框。
 - copy-history 内容 renderer 已从一期推进到深化阶段，必须继续只消费 core-v2 authoritative `HistoryWindow`：历史行显示 logical-line、continuation 和 clipped marker，selection 与 active match 使用 styled cell 表达，copy cursor 是 content-local cursor，顶部 search row、底部 scrollbar/status、滚动、match navigation、content-local mouse selection 和 position token 都在 content rect 内工作；resize 或 content cols 变化后仍重新绑定 authoritative window，不显示旧 cols rows。
 - empty/exited/Terminal Picker 内容 renderer 一期已把旧 placeholder 推进为可操作内容：empty pane 显示 attach/create/manager/close CTA，exited pane 显示 last state 与 restart/reconnect/close CTA，Terminal Picker overlay 显示 search、当前 workspace terminal list、selected row、new terminal row 和 action hit region。
@@ -1691,7 +1691,7 @@ Prompt / Help overlay 一期的目标是补齐全局短输入和帮助入口，�
 - Help 打开期间普通输入不得漏发到底层 terminal；Enter、Esc 或 mouse close 可以关闭。
 - Prompt / Help 都必须使用 styled overlay chrome，内容和 cursor 必须按 terminal cell width 裁切，emoji、CJK、combining mark 和 ANSI styled text 不得破坏边框或整行宽度。
 - footer 在 Prompt / Help 打开时必须显示 mode-specific hint，用户能看到 submit/cancel 或 close 行为。
-- `termx v3 smoke` 必须覆盖 Prompt / Help overlay，避免后续退回为只存在状态但默认渲染不可见。
+- `muxvia v3 smoke` 必须覆盖 Prompt / Help overlay，避免后续退回为只存在状态但默认渲染不可见。
 
 本阶段不要求：
 
@@ -1729,7 +1729,7 @@ Tab / Workspace 产品入口一期的目标是让 `Ctrl-t` 和 `Ctrl-w` 从声�
 - workspace switch 必须保留原 workspace 的 tab/pane 状态，切回后能恢复原 active tab 和 tab title。
 - workspace rename 必须走同一个 Prompt overlay 提交流程，提交后通过 workbench command 更新 workspace name。
 - tab/workspace mode 下普通结构按键、Prompt 输入、Enter 和 Esc 不得漏发到底层 terminal。
-- `termx v3 smoke` 必须覆盖 tab/workspace case，证明默认 render 路径可见。
+- `muxvia v3 smoke` 必须覆盖 tab/workspace case，证明默认 render 路径可见。
 
 本阶段不要求：
 

@@ -1,4 +1,4 @@
-# TermX 许可证与闭源分发审查
+# Muxvia 许可证与闭源分发审查
 
 状态：LIC001 工程审查基线
 
@@ -19,7 +19,7 @@
 
 - 公开仓库根许可证选择 Apache License 2.0，模板位于 `docs/legal/public-snapshot/LICENSE`。
 - 选择理由是允许商业使用与再分发、包含明确专利授权，并且不会把与公开 contract 互操作的独立私有服务强制置于同一 copyleft 条款下。
-- Apache-2.0 不授予 TermX 名称、标识或服务商标权利；品牌政策在正式公开前单独确认。
+- Apache-2.0 不授予 Muxvia 名称、标识或服务商标权利；品牌政策在正式公开前单独确认。
 - public snapshot 必须同时复制 `NOTICE`、`public-snapshot/THIRD_PARTY_NOTICES.md`、`DCO` 与 `CONTRIBUTING.md`，并从空 Git 仓库建立新历史。
 
 ### 1.3 Contributions
@@ -33,10 +33,10 @@
 | Artifact | 自有代码许可 | 必须随附 | 禁止项 |
 | --- | --- | --- | --- |
 | public source snapshot | Apache-2.0 | LICENSE、NOTICE、DCO、CONTRIBUTING、third-party inventory 与保留的上游 license | `private/`、内部历史、secret、不可再分发资产 |
-| public `termx` binary/package | Apache-2.0 | Apache LICENSE、NOTICE、精确构建版本的第三方 license bundle、SBOM/provenance | 只给下载链接而不提供许可文本；未审计依赖 |
+| public `muxvia` binary/package | Apache-2.0 | Apache LICENSE、NOTICE、精确构建版本的第三方 license bundle、SBOM/provenance | 只给下载链接而不提供许可文本；未审计依赖 |
 | Community App | Apache-2.0 public App | Web/npm/Android/native/font/WebRTC notice assets、商店或包内可访问入口 | private cloud module、遗漏 WebRTC 原生第三方清单 |
 | Official App | public Apache-2.0 组件 + proprietary official module | public Apache LICENSE/NOTICE、全部第三方 notice、适用的用户条款和隐私政策 | 把整个 APK 描述为纯 Apache；把 public grant/DeviceIdentity 逻辑改成私有授权 |
-| `termx-cloud` Companion | proprietary | proprietary distribution terms、内嵌或同包第三方 notices、版本/SBOM/provenance、签名 | 暗示 Apache-2.0 授权 private binary；无 notice 的单 binary 分发 |
+| `muxvia-cloud` Companion | proprietary | proprietary distribution terms、内嵌或同包第三方 notices、版本/SBOM/provenance、签名 | 暗示 Apache-2.0 授权 private binary；无 notice 的单 binary 分发 |
 | managed Control Plane/Hub/Relay | proprietary hosted service | 内部 SBOM、部署镜像 notices、供应链记录；对用户提供适用服务条款/隐私政策 | 把 terminal grant 或用户内容纳入云服务所有权 |
 | Enterprise bundle | proprietary commercial delivery | 双方书面协议、许可计量范围、支持/SLA、OSS notices、SBOM、镜像摘要、出口/隐私/安全附件（按需） | 仅靠 README 形成商业许可；混入未授权第三方 source/binary |
 
@@ -82,7 +82,7 @@ Cloud Companion 使用独立 executable、独立签名和 versioned local protob
 首次公开或商业发布前必须由权利人确认：
 
 - 对外使用的法定个人或实体名称、版权年份和签约主体。
-- TermX 名称/标识的商标策略。
+- Muxvia 名称/标识的商标策略。
 - Companion/Official App/Enterprise 的 EULA、服务条款、隐私政策、DPA、SLA 与出口合规需求。
 - Apache-2.0 public snapshot、DCO 模式和当前第三方 notice bundle 在目标法域内可接受。
 

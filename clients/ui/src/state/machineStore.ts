@@ -32,7 +32,7 @@ export interface MachineStoreOptions {
   now?: (() => Date) | undefined
 }
 
-const storeKey = 'termx.app.machines.v2'
+const storeKey = 'muxvia.app.machines.v2'
 
 export function createMachineStore(options: MachineStoreOptions): MachineStore {
   const now = () => (options.now?.() ?? new Date()).toISOString()

@@ -11,7 +11,7 @@ export function PasteConfirmDialog({ text, onCancel, onConfirm }: PasteConfirmDi
   const preview = text.length > 600 ? `${text.slice(0, 600)}...` : text
 
   return (
-    <div className="absolute inset-0 z-50 flex items-end bg-black/60 backdrop-blur-sm md:items-center md:justify-center" data-testid="termx-paste-confirm" onClick={() => { hapticSelection(); onCancel() }}>
+    <div className="absolute inset-0 z-50 flex items-end bg-black/60 backdrop-blur-sm md:items-center md:justify-center" data-testid="muxvia-paste-confirm" onClick={() => { hapticSelection(); onCancel() }}>
       <section
         className="w-full overflow-hidden border-y border-zinc-700 bg-zinc-950 text-zinc-100 md:max-w-md md:border"
         onClick={(event) => event.stopPropagation()}

@@ -28,10 +28,10 @@ if (lock.lockfileVersion !== 3 || typeof lock.packages !== 'object') {
 
 const uiPackage = readJSON('clients/ui/package.json')
 const mobilePackage = readJSON('clients/mobile/package.json')
-if (uiPackage.name !== '@termx/ui' || mobilePackage.name !== '@termx/mobile') {
-  fail('client package names must be @termx/ui and @termx/mobile')
+if (uiPackage.name !== '@muxvia/ui' || mobilePackage.name !== '@muxvia/mobile') {
+  fail('client package names must be @muxvia/ui and @muxvia/mobile')
 }
-if (mobilePackage.dependencies?.['@termx/ui'] !== uiPackage.version) {
+if (mobilePackage.dependencies?.['@muxvia/ui'] !== uiPackage.version) {
   fail('mobile must depend on the exact local UI workspace version')
 }
 for (const [name, command] of Object.entries(uiPackage.scripts ?? {})) {
@@ -41,8 +41,8 @@ for (const [name, command] of Object.entries(uiPackage.scripts ?? {})) {
 }
 
 for (const [packageName, workspace] of [
-  ['@termx/ui', 'clients/ui'],
-  ['@termx/mobile', 'clients/mobile'],
+  ['@muxvia/ui', 'clients/ui'],
+  ['@muxvia/mobile', 'clients/mobile'],
 ]) {
   const link = lock.packages[`node_modules/${packageName}`]
   if (!link?.link || link.resolved !== workspace) {

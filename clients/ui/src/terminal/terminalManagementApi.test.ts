@@ -43,9 +43,9 @@ describe('terminal management generated Proto API', () => {
       'terminalCreate', 'terminalSetMetadata', 'terminalRestart', 'terminalRemove', 'terminalGet',
     ])
     expect(session.commands[0]?.command.value).toMatchObject({
-      terminal: { command: ['/bin/zsh', '-l'], cwd: '/srv/app', env: ['prod'], tags: { 'termx.size_lock': 'lock', cwd: '/srv/app', environment: 'prod' } },
+      terminal: { command: ['/bin/zsh', '-l'], cwd: '/srv/app', env: ['prod'], tags: { 'muxvia.size_lock': 'lock', cwd: '/srv/app', environment: 'prod' } },
     })
-    expect(session.commands[1]?.command.value).toMatchObject({ tags: { 'termx.size_lock': 'off' } })
+    expect(session.commands[1]?.command.value).toMatchObject({ tags: { 'muxvia.size_lock': 'off' } })
   })
 
   it('rejects endpoint mismatches before dispatch', () => {

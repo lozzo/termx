@@ -18,7 +18,7 @@ describe('mobile terminal input helpers', () => {
     })
   })
 
-  it('leaves TermX public language free of tgent pane concepts', () => {
+  it('leaves Muxvia public language free of tgent pane concepts', () => {
     const publicKeys = Object.keys({ ctrl: 'once', alt: 'off', data: '\t' })
     expect(publicKeys).not.toEqual(expect.arrayContaining(['paneId', 'sessionId', 'workspaceId', 'tabId']))
   })

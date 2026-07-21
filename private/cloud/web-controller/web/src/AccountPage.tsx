@@ -211,7 +211,7 @@ export default function AccountPage() {
           <b className="grid size-8 place-items-center bg-primary font-mono text-xs text-primary-foreground">
             TX
           </b>
-          <span className="font-medium">TermX Cloud</span>
+          <span className="font-medium">Muxvia Cloud</span>
         </a>
         <nav className="mt-8 grid grid-cols-5 border border-line md:grid-cols-1 md:border-0">
           {tabs.map(([id, Icon]) => (
@@ -677,21 +677,21 @@ function MobileActivationPanel({ onActivated }: { onActivated: () => Promise<voi
         <div className="flex flex-wrap items-center justify-between gap-4 p-5">
           <div className="flex max-w-2xl items-start gap-3">
             <Smartphone className="mt-0.5 size-4 shrink-0 text-primary" />
-            <p className="m-0 text-xs leading-6 text-muted-foreground">Create a short-lived QR code, scan it in the TermX App, then review and approve the phone here.</p>
+            <p className="m-0 text-xs leading-6 text-muted-foreground">Create a short-lived QR code, scan it in the Muxvia App, then review and approve the phone here.</p>
           </div>
           <Button disabled={busy} onClick={() => void createActivation()}><QrCode />{busy ? "Creating..." : "Create QR code"}</Button>
         </div>
       ) : (
         <div className="grid md:grid-cols-[288px_1fr]">
           <div className="grid min-h-72 place-items-center border-b border-line bg-white p-4 md:border-b-0 md:border-r">
-            {qrDataURL ? <img className="aspect-square size-64 object-contain" width="256" height="256" alt="One-time QR code for activating the TermX mobile app" src={qrDataURL} /> : <span className="text-xs text-muted-foreground">Rendering QR code...</span>}
+            {qrDataURL ? <img className="aspect-square size-64 object-contain" width="256" height="256" alt="One-time QR code for activating the Muxvia mobile app" src={qrDataURL} /> : <span className="text-xs text-muted-foreground">Rendering QR code...</span>}
           </div>
           <div className="flex flex-col justify-center p-6">
             <span className="font-mono text-[10px] text-primary">{MobileActivationState[activation.state]}</span>
             <strong className="mt-3 font-mono text-2xl font-normal">{activation.userCode}</strong>
             {activation.clientMetadata ? (
-              <div className="mt-5 border-y border-line py-4 text-xs"><b className="block font-medium">{activation.clientMetadata.displayName}</b><span className="text-muted-foreground">{activation.clientMetadata.platform} · {activation.clientMetadata.termxVersion}</span></div>
-            ) : <p className="mt-4 text-xs leading-6 text-muted-foreground">In the TermX App, open Settings and choose Scan QR from web.</p>}
+              <div className="mt-5 border-y border-line py-4 text-xs"><b className="block font-medium">{activation.clientMetadata.displayName}</b><span className="text-muted-foreground">{activation.clientMetadata.platform} · {activation.clientMetadata.muxviaVersion}</span></div>
+            ) : <p className="mt-4 text-xs leading-6 text-muted-foreground">In the Muxvia App, open Settings and choose Scan QR from web.</p>}
             {activation.state === MobileActivationState.WAITING_FOR_APPROVAL && <Button className="mt-5 self-start" disabled={busy} onClick={() => void approve()}><ShieldCheck />{busy ? "Approving..." : "Approve phone"}</Button>}
             {activation.state === MobileActivationState.APPROVED && <p className="mt-5 text-xs text-success">Approved. The App is finishing activation and this code cannot be reused.</p>}
             <Button className="mt-3 self-start" variant="ghost" onClick={() => { setActivation(undefined); setError(""); }}>{activation.state === MobileActivationState.APPROVED ? "Done" : "Cancel"}</Button>

@@ -40,7 +40,7 @@ describe('WebControlApi', () => {
           online: true,
           source: 'hub',
           control_url: 'http://114.66.58.243:12306',
-          hub_id: 'termx-hub-1',
+          hub_id: 'muxvia-hub-1',
           current_hub_url: 'http://114.66.58.243:8447',
           hub_urls: ['http://114.66.58.243:8447'],
           hub_status: 'online',
@@ -75,7 +75,7 @@ describe('WebControlApi', () => {
       online: true,
       source: 'hub',
       controlUrl: 'http://114.66.58.243:12306',
-      hubId: 'termx-hub-1',
+      hubId: 'muxvia-hub-1',
       currentHubUrl: 'http://114.66.58.243:8447',
       hubUrls: ['http://114.66.58.243:8447'],
       hubStatus: 'online',
@@ -91,13 +91,13 @@ describe('WebControlApi', () => {
   it('requires an access token before authenticated Web Control requests', async () => {
     const fetch = new RecordingFetch([])
     expect(() => createWebControlApi({
-      baseUrl: 'https://control.termx.test',
+      baseUrl: 'https://control.muxvia.test',
       accessToken: '   ',
       fetch: fetch.fetch,
     })).toThrow(/access token.*non-empty/i)
 
     const api = createWebControlApi({
-      baseUrl: 'https://control.termx.test',
+      baseUrl: 'https://control.muxvia.test',
       fetch: fetch.fetch,
     })
     await expect(api.me()).rejects.toThrow(/access token.*required/i)
@@ -115,7 +115,7 @@ describe('WebControlApi', () => {
       }),
     ])
     const api = createWebControlApi({
-      baseUrl: 'https://control.termx.test',
+      baseUrl: 'https://control.muxvia.test',
       accessToken: 'access-token-1',
       fetch: fetch.fetch,
     })
@@ -128,12 +128,12 @@ describe('WebControlApi', () => {
       throw new TypeError('Failed to fetch')
     }
     const api = createWebControlApi({
-      baseUrl: 'https://control.termx.test',
+      baseUrl: 'https://control.muxvia.test',
       accessToken: 'access-token-1',
       fetch,
     })
 
-    await expect(api.listMachines()).rejects.toThrow(/Cannot reach Web Control at https:\/\/control\.termx\.test.*CORS/i)
+    await expect(api.listMachines()).rejects.toThrow(/Cannot reach Web Control at https:\/\/control\.muxvia\.test.*CORS/i)
     await expect(api.listMachines()).rejects.not.toThrow(/^Failed to fetch$/)
   })
 
@@ -156,7 +156,7 @@ describe('WebControlApi', () => {
     }
     vi.stubGlobal('fetch', boundFetch)
     const runtime = createBrowserRemoteNetworkRuntime()
-    const api = createWebControlApi({ baseUrl: 'https://control.termx.test', fetch: runtime.fetch })
+    const api = createWebControlApi({ baseUrl: 'https://control.muxvia.test', fetch: runtime.fetch })
 
     await expect(api.login({ login: 'lozzow@example.test', password: 'secret' })).resolves.toMatchObject({
       accessToken: 'access-token-1',
@@ -164,7 +164,7 @@ describe('WebControlApi', () => {
 
     expect(calls).toEqual([{
       thisValue: globalThis,
-      input: 'https://control.termx.test/api/v1/auth/login',
+      input: 'https://control.muxvia.test/api/v1/auth/login',
     }])
   })
 

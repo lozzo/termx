@@ -31,14 +31,14 @@ static jbyte *borrow_payload(JNIEnv *env, jbyteArray payload, jsize *length) {
 }
 
 JNIEXPORT jint JNICALL
-Java_com_termx_app_goclient_GoClientNative_abiVersion(JNIEnv *env, jobject self) {
+Java_com_muxvia_app_goclient_GoClientNative_abiVersion(JNIEnv *env, jobject self) {
   (void)env;
   (void)self;
   return (jint)muxvia_client_abi_version();
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_termx_app_goclient_GoClientNative_create(JNIEnv *env, jobject self) {
+Java_com_muxvia_app_goclient_GoClientNative_create(JNIEnv *env, jobject self) {
   (void)self;
   muxvia_handle_t engine = 0;
   if (throw_status(env, muxvia_engine_create(&engine)) != 0) {
@@ -48,7 +48,7 @@ Java_com_termx_app_goclient_GoClientNative_create(JNIEnv *env, jobject self) {
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_termx_app_goclient_GoClientNative_createSpike(JNIEnv *env, jobject self, jstring runtime_dir) {
+Java_com_muxvia_app_goclient_GoClientNative_createSpike(JNIEnv *env, jobject self, jstring runtime_dir) {
   (void)self;
   if (runtime_dir == NULL) {
     throw_status(env, MUXVIA_STATUS_INVALID_ARGUMENT);
@@ -71,7 +71,7 @@ Java_com_termx_app_goclient_GoClientNative_createSpike(JNIEnv *env, jobject self
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_termx_app_goclient_GoClientNative_openSession(JNIEnv *env, jobject self, jlong engine, jbyteArray payload) {
+Java_com_muxvia_app_goclient_GoClientNative_openSession(JNIEnv *env, jobject self, jlong engine, jbyteArray payload) {
   (void)self;
   jsize length = 0;
   jbyte *bytes = borrow_payload(env, payload, &length);
@@ -86,7 +86,7 @@ Java_com_termx_app_goclient_GoClientNative_openSession(JNIEnv *env, jobject self
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_termx_app_goclient_GoClientNative_execute(JNIEnv *env, jobject self, jlong engine, jlong session, jbyteArray payload) {
+Java_com_muxvia_app_goclient_GoClientNative_execute(JNIEnv *env, jobject self, jlong engine, jlong session, jbyteArray payload) {
   (void)self;
   jsize length = 0;
   jbyte *bytes = borrow_payload(env, payload, &length);
@@ -102,7 +102,7 @@ Java_com_termx_app_goclient_GoClientNative_execute(JNIEnv *env, jobject self, jl
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_termx_app_goclient_GoClientNative_openResourceStream(JNIEnv *env, jobject self, jlong engine, jlong session, jbyteArray payload) {
+Java_com_muxvia_app_goclient_GoClientNative_openResourceStream(JNIEnv *env, jobject self, jlong engine, jlong session, jbyteArray payload) {
   (void)self;
   jsize length = 0;
   jbyte *bytes = borrow_payload(env, payload, &length);
@@ -118,7 +118,7 @@ Java_com_termx_app_goclient_GoClientNative_openResourceStream(JNIEnv *env, jobje
 }
 
 JNIEXPORT void JNICALL
-Java_com_termx_app_goclient_GoClientNative_sendResourceStreamFrame(JNIEnv *env, jobject self, jlong engine, jlong stream, jbyteArray payload) {
+Java_com_muxvia_app_goclient_GoClientNative_sendResourceStreamFrame(JNIEnv *env, jobject self, jlong engine, jlong stream, jbyteArray payload) {
   (void)self;
   jsize length = 0;
   jbyte *bytes = borrow_payload(env, payload, &length);
@@ -133,13 +133,13 @@ Java_com_termx_app_goclient_GoClientNative_sendResourceStreamFrame(JNIEnv *env, 
 }
 
 JNIEXPORT void JNICALL
-Java_com_termx_app_goclient_GoClientNative_closeResourceStream(JNIEnv *env, jobject self, jlong engine, jlong stream) {
+Java_com_muxvia_app_goclient_GoClientNative_closeResourceStream(JNIEnv *env, jobject self, jlong engine, jlong stream) {
   (void)self;
   throw_status(env, muxvia_engine_close_resource_stream((muxvia_handle_t)engine, (muxvia_handle_t)stream));
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_termx_app_goclient_GoClientNative_engineCommand(JNIEnv *env, jobject self, jlong engine, jbyteArray payload) {
+Java_com_muxvia_app_goclient_GoClientNative_engineCommand(JNIEnv *env, jobject self, jlong engine, jbyteArray payload) {
   (void)self;
   jsize length = 0;
   jbyte *bytes = borrow_payload(env, payload, &length);
@@ -154,7 +154,7 @@ Java_com_termx_app_goclient_GoClientNative_engineCommand(JNIEnv *env, jobject se
 }
 
 JNIEXPORT jbyteArray JNICALL
-Java_com_termx_app_goclient_GoClientNative_nextEvent(JNIEnv *env, jobject self, jlong engine, jint timeout_millis) {
+Java_com_muxvia_app_goclient_GoClientNative_nextEvent(JNIEnv *env, jobject self, jlong engine, jint timeout_millis) {
   (void)self;
   muxvia_buffer_v1 event = {0};
   if (throw_status(env, muxvia_engine_next_event((muxvia_handle_t)engine, (uint32_t)timeout_millis, &event)) != 0) {
@@ -172,7 +172,7 @@ Java_com_termx_app_goclient_GoClientNative_nextEvent(JNIEnv *env, jobject self, 
 }
 
 JNIEXPORT jbyteArray JNICALL
-Java_com_termx_app_goclient_GoClientNative_nextPlatformRequest(JNIEnv *env, jobject self, jlong engine, jint timeout_millis) {
+Java_com_muxvia_app_goclient_GoClientNative_nextPlatformRequest(JNIEnv *env, jobject self, jlong engine, jint timeout_millis) {
   (void)self;
   muxvia_buffer_v1 request = {0};
   if (throw_status(env, muxvia_platform_next_request((muxvia_handle_t)engine, (uint32_t)timeout_millis, &request)) != 0) {
@@ -190,7 +190,7 @@ Java_com_termx_app_goclient_GoClientNative_nextPlatformRequest(JNIEnv *env, jobj
 }
 
 JNIEXPORT void JNICALL
-Java_com_termx_app_goclient_GoClientNative_completePlatformRequest(JNIEnv *env, jobject self, jlong engine, jbyteArray payload) {
+Java_com_muxvia_app_goclient_GoClientNative_completePlatformRequest(JNIEnv *env, jobject self, jlong engine, jbyteArray payload) {
   (void)self;
   jsize length = 0;
   jbyte *bytes = borrow_payload(env, payload, &length);
@@ -204,25 +204,25 @@ Java_com_termx_app_goclient_GoClientNative_completePlatformRequest(JNIEnv *env, 
 }
 
 JNIEXPORT void JNICALL
-Java_com_termx_app_goclient_GoClientNative_cancel(JNIEnv *env, jobject self, jlong engine, jlong operation) {
+Java_com_muxvia_app_goclient_GoClientNative_cancel(JNIEnv *env, jobject self, jlong engine, jlong operation) {
   (void)self;
   throw_status(env, muxvia_engine_cancel((muxvia_handle_t)engine, (muxvia_handle_t)operation));
 }
 
 JNIEXPORT void JNICALL
-Java_com_termx_app_goclient_GoClientNative_closeSession(JNIEnv *env, jobject self, jlong engine, jlong session) {
+Java_com_muxvia_app_goclient_GoClientNative_closeSession(JNIEnv *env, jobject self, jlong engine, jlong session) {
   (void)self;
   throw_status(env, muxvia_engine_close_session((muxvia_handle_t)engine, (muxvia_handle_t)session));
 }
 
 JNIEXPORT void JNICALL
-Java_com_termx_app_goclient_GoClientNative_release(JNIEnv *env, jobject self, jlong engine, jlong handle) {
+Java_com_muxvia_app_goclient_GoClientNative_release(JNIEnv *env, jobject self, jlong engine, jlong handle) {
   (void)self;
   throw_status(env, muxvia_engine_release((muxvia_handle_t)engine, (muxvia_handle_t)handle));
 }
 
 JNIEXPORT void JNICALL
-Java_com_termx_app_goclient_GoClientNative_close(JNIEnv *env, jobject self, jlong engine) {
+Java_com_muxvia_app_goclient_GoClientNative_close(JNIEnv *env, jobject self, jlong engine) {
   (void)self;
   throw_status(env, muxvia_engine_close((muxvia_handle_t)engine));
 }

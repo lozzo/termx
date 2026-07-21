@@ -13,8 +13,8 @@ export default defineConfig({
 })
 
 function copySharedUiPreviewWorker() {
-  const source = createRequire(import.meta.url).resolve('@termx/ui/preview-worker')
-  const target = fileURLToPath(new URL('./dist/termx-file-preview-sw.js', import.meta.url))
+  const source = createRequire(import.meta.url).resolve('@muxvia/ui/preview-worker')
+  const target = fileURLToPath(new URL('./dist/muxvia-file-preview-sw.js', import.meta.url))
   return {
     name: 'copy-shared-ui-preview-worker',
     apply: 'build' as const,

@@ -1,4 +1,4 @@
-# TermX Cloud Development Supervisor
+# Muxvia Cloud Development Supervisor
 
 `muxvia-cloud-dev` 是 development-only 多进程 supervisor。
 

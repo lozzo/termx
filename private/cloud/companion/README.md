@@ -1,6 +1,6 @@
 # Private Cloud Companion
 
-`termx-cloud` 是桌面/headless managed cloud 的固定闭源 sidecar，不是通用插件。公开 `termx` 进程继续拥有 DeviceIdentity private key、CapabilityGrant、WebRTC/DTLS、DataChannel 和 terminal protocol。
+`muxvia-cloud` 是桌面/headless managed cloud 的固定闭源 sidecar，不是通用插件。公开 `muxvia` 进程继续拥有 DeviceIdentity private key、CapabilityGrant、WebRTC/DTLS、DataChannel 和 terminal protocol。
 
 ## Build
 
@@ -10,15 +10,15 @@ Companion 自报版本和渠道必须与签名 manifest 完全一致：
 cd private/cloud/companion
 go build \
   -ldflags '-X main.companionVersion=v1.2.3 -X main.buildChannel=stable' \
-  -o ./dist/termx-cloud ./cmd/muxvia-cloud
+  -o ./dist/muxvia-cloud ./cmd/muxvia-cloud
 ```
 
-正式 `termx` CLI 只嵌入 release public key，不嵌入 private key：
+正式 `muxvia` CLI 只嵌入 release public key，不嵌入 private key：
 
 ```bash
 (cd ../../.. && go build \
-  -ldflags '-X main.termxBuildVersion=v1.2.3 -X main.cloudReleaseRootKeyID=release-2026 -X main.cloudReleaseRootPublicKey=BASE64_ED25519_PUBLIC_KEY' \
-  -o ./dist/termx ./cmd/muxvia)
+  -ldflags '-X main.muxviaBuildVersion=v1.2.3 -X main.cloudReleaseRootKeyID=release-2026 -X main.cloudReleaseRootPublicKey=BASE64_ED25519_PUBLIC_KEY' \
+  -o ./dist/muxvia ./cmd/muxvia)
 ```
 
 ## Release Artifact
@@ -28,14 +28,14 @@ release private key 必须是仓库外的 Ed25519 PKCS#8 PEM：
 ```bash
 cd private/cloud/companion
 go run ./cmd/muxvia-cloud-release \
-  --binary ./dist/termx-cloud \
+  --binary ./dist/muxvia-cloud \
   --signing-key /secure/release-ed25519.pk8.pem \
   --key-id release-2026 \
   --channel stable \
   --version v1.2.3 \
   --os darwin \
   --arch arm64 \
-  --download-url https://releases.termx.dev/cloud-companion/artifacts/termx-cloud_1.2.3_darwin_arm64.tar.gz \
+  --download-url https://releases.muxvia.dev/cloud-companion/artifacts/muxvia-cloud_1.2.3_darwin_arm64.tar.gz \
   --out ./dist/release
 ```
 

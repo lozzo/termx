@@ -30,7 +30,7 @@ R318 说明：本文早于 `docs/history/core/history-logical-renderer-design.md
 
 ### 1.1 为什么必须是 logical line
 
-termx 的目标不是只维护一个随当前 terminal size 变化的内存 grid，而是支持可落盘、可分页、可长期保留的历史记录。历史规模可能远大于当前屏幕，也不应该受进程内存中的固定行缓冲限制。
+muxvia 的目标不是只维护一个随当前 terminal size 变化的内存 grid，而是支持可落盘、可分页、可长期保留的历史记录。历史规模可能远大于当前屏幕，也不应该受进程内存中的固定行缓冲限制。
 
 如果把当前宽度下的 visual grid 当作历史 truth，会遇到几个不可接受的问题：
 
@@ -179,7 +179,7 @@ protocol adapter 负责把 core-v2 domain model 映射到外部协议。
 - `ServeTransport` 是完整 daemon protocol session 入口；`ServeScopedTransport` 只给 remote datachannel 这类受限 transport 使用。
 - `TransportScope` 只能在 protocol session 边界过滤 method、terminal id、事件类型和 stream channel，不能保存 terminal lifecycle、attachment、history 或 storage truth。
 - terminal scope 会把空事件订阅收窄到目标 terminal；machine-events-only scope 只允许 terminal lifecycle/metadata 事件，不能访问 terminal method、storage 或 workbench。
-- `RemoteService` 是 core-v2 对后续受限 transport/control runtime 的 typed hook，只接受 `internal/protocol` 的 `Remote*` domain 类型；真实 runtime 的类型转换属于 daemon adapter，不属于 protocol dispatch，且不得恢复旧 `termx-remote/` fallback。
+- `RemoteService` 是 core-v2 对后续受限 transport/control runtime 的 typed hook，只接受 `internal/protocol` 的 `Remote*` domain 类型；真实 runtime 的类型转换属于 daemon adapter，不属于 protocol dispatch，且不得恢复旧 `muxvia-remote/` fallback。
 
 attachment 相关 protocol 适配必须满足：
 
@@ -403,7 +403,7 @@ copy mode frozen snapshot 要落地，不能只停在 `MutableFrontier` 这个�
 
 - 进入 alt-screen 前，primary `HistoryTrack` 必须先执行 page-break：把 core 已持有的 primary frontier 封口提交，再清空 primary screen ownership。
 - 进入 alt-screen 后，primary committed history 冻结；alt-screen 内部的清屏、光标移动和绘制不会进入 committed primary history。
-- running/exit alt-screen 的当前可见 frame 可以作为 transient latest/frozen frame 暴露给 history/copy，`Committed=false`，不增加 `CommittedHistoryIndex` depth，后续 primary 输出会替换它。live surface 是否把退出最后一帧 replay 到 primary 实时显示仍由 `TERMX_PRESERVE_ALT_SCREEN_ON_EXIT` 控制；默认只恢复 primary live screen，但 history/copy 仍能看到 transient 当前帧。
+- running/exit alt-screen 的当前可见 frame 可以作为 transient latest/frozen frame 暴露给 history/copy，`Committed=false`，不增加 `CommittedHistoryIndex` depth，后续 primary 输出会替换它。live surface 是否把退出最后一帧 replay 到 primary 实时显示仍由 `MUXVIA_PRESERVE_ALT_SCREEN_ON_EXIT` 控制；默认只恢复 primary live screen，但 history/copy 仍能看到 transient 当前帧。
 
 ### 6.6 frozen snapshot / pagination contract
 
@@ -505,7 +505,7 @@ TUI-v3 stale guard 只能使用 core-v2 返回的 token、generation、cursor �
 - Bubble Tea app 接入
 - 旧 CLI 默认入口迁移
 - 最终持久化文件格式
-- 旧 `termx-core/` 原地修补
+- 旧 `muxvia-core/` 原地修补
 - 旧 `tuiv2/` 原地修补
 
 ## 10. 主要风险与应对

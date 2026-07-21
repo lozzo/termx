@@ -1,18 +1,18 @@
-# termx
+# muxvia
 
-`termx` 是一个以 daemon 为核心的 terminal workspace 系统。
+`muxvia` 是一个以 daemon 为核心的 terminal workspace 系统。
 
 > 开发状态：当前分支正在执行客户端目录与连接 runtime 的破坏性重构。旧 CLI/TUI 连接 owner 已删除，`client/runtime` 尚未接回前 `cmd/muxvia` 预期无法完整编译；精确状态见 [`workflow.md`](workflow.md)。
 
 核心理念很简单：**terminal 是长期存在的工作实体，TUI、GUI、mobile app、workspace、pane 和 floating window 只是观察和操作它的入口。**
 
-传统 terminal multiplexer 通常把工作内容绑定到 tab、pane 或 session 里。`termx` 反过来把 terminal 放进独立的 terminal pool，由 core daemon 管理 terminal lifecycle、history、live surface 和输入路由；当前 UI 只负责把这些 terminal 组织成某个工作视图。
+传统 terminal multiplexer 通常把工作内容绑定到 tab、pane 或 session 里。`muxvia` 反过来把 terminal 放进独立的 terminal pool，由 core daemon 管理 terminal lifecycle、history、live surface 和输入路由；当前 UI 只负责把这些 terminal 组织成某个工作视图。
 
 这意味着你不需要频繁在很多 tab/session 之间切换，也不需要因为当前 workspace 布局变化就丢掉实际运行中的 terminal。一个 terminal 可以长期存在、可以异常退出后保留现场、可以从 picker 重新绑定到新的 pane，也可以通过不同 endpoint 从本机或远端接回来。
 
 ## 为什么它不只是另一个 tmux
 
-`termx` 不是把 tmux/Zellij/WezTerm 的界面重新写一遍。它的主要差异在模型层：
+`muxvia` 不是把 tmux/Zellij/WezTerm 的界面重新写一遍。它的主要差异在模型层：
 
 - **Terminal pool 是事实，workspace 是视图**：terminal 不属于某个固定 pane；pane 只是当前 UI 对 terminal 的连接意图。
 - **Terminal picker 是主入口**：在一个入口里查看、搜索、创建、连接本机和远端 endpoint 上的 terminal，不靠层层 tab/session 导航找工作现场。
@@ -27,14 +27,14 @@
 - TUI v3 自有 runtime，不以 Bubble Tea 作为主运行时。
 - Terminal picker / Terminal Manager 可按 endpoint 聚合展示 terminal。
 - 本地 unix socket endpoint 已作为标准 transport 接入。
-- SSH transport 已用于连接远端 `termx` daemon，不 fallback 成原始 SSH shell。
+- SSH transport 已用于连接远端 `muxvia` daemon，不 fallback 成原始 SSH shell。
 - `connections.yaml` 是 CLI/TUI 共享的 endpoint registry，独立于 TUI 偏好配置。
 - Workbench/layout storage 持久化 endpoint-aware terminal binding。
 - live/input/resize/owner/copy/history 按 `TerminalRef` 路由隔离。
 - first-party create 优先使用用户可见 terminal name 作为 daemon-local key，并在单 endpoint 内拒绝重名。
 - managed WebRTC endpoint 已通过公开 Cloud Companion contract 接入 TUI；Companion 缺失时只让对应 endpoint unavailable，不影响 local/SSH。
 - Android App 已删除旧 Hub/session-token Connector，使用同一 endpoint/relay/error fixture；Community build 对官方 cloud 明确 fail closed，Official build 已通过固定私有 source set 装配同一公开 contract。
-- `termx cloud` 已提供 signed install/update、login/enroll、status/doctor、logout 和 uninstall；源码构建不含官方 release root 时 managed cloud 明确不可用，不影响 local/SSH。
+- `muxvia cloud` 已提供 signed install/update、login/enroll、status/doctor、logout 和 uninstall；源码构建不含官方 release root 时 managed cloud 明确不可用，不影响 local/SSH。
 - TUI 与 Android App 共用 endpoint、配对、credential reference 和稳定错误语义；平台层只实现各自的 WebRTC primitive。
 
 ## 快速开始与日常命令
@@ -47,24 +47,24 @@
 make build
 ```
 
-产物位于 `.artifacts/bin/termx`。下面的示例假设已经把它加入 `PATH`：
+产物位于 `.artifacts/bin/muxvia`。下面的示例假设已经把它加入 `PATH`：
 
 ```bash
 export PATH="$PWD/.artifacts/bin:$PATH"
-termx --help
+muxvia --help
 ```
 
-也可以不修改 `PATH`，把下文的 `termx` 替换为 `./.artifacts/bin/termx`。
+也可以不修改 `PATH`，把下文的 `muxvia` 替换为 `./.artifacts/bin/muxvia`。
 
 ### 启动 TUI
 
 日常使用只需要运行：
 
 ```bash
-termx
+muxvia
 ```
 
-`termx` 会连接本机 core-v2 daemon；daemon 尚未运行时会自动在后台启动。首次没有 terminal 时，TUI 会直接打开 Terminal Picker，让用户选择或创建 terminal。退出 TUI 后，后台 daemon 和其中仍在运行的 terminal 不会因为界面关闭而被主动终止。
+`muxvia` 会连接本机 core-v2 daemon；daemon 尚未运行时会自动在后台启动。首次没有 terminal 时，TUI 会直接打开 Terminal Picker，让用户选择或创建 terminal。退出 TUI 后，后台 daemon 和其中仍在运行的 terminal 不会因为界面关闭而被主动终止。
 
 常用 TUI 操作：
 
@@ -84,97 +84,97 @@ CLI 和 TUI 操作的是同一个 daemon terminal pool：
 
 ```bash
 # 创建默认 shell；--name 同时作为该 daemon 内的 terminal ID
-termx new --name dev-shell
+muxvia new --name dev-shell
 
 # 创建并运行指定命令
-termx new --name api -- bash -lc 'npm run dev'
+muxvia new --name api -- bash -lc 'npm run dev'
 
 # 查看 terminal ID、命令、状态和尺寸
-termx ls
+muxvia ls
 
 # 进入指定 terminal 的 TUI
-termx attach dev-shell
+muxvia attach dev-shell
 
 # 终止 terminal 中的进程；记录和历史仍保留为 exited 状态
-termx kill dev-shell
+muxvia kill dev-shell
 
 # 从 daemon inventory 删除 terminal 记录
-termx rm dev-shell
+muxvia rm dev-shell
 ```
 
-需要彻底删除一个正在运行的 terminal 时，先执行 `kill`，确认 `termx ls` 显示其已经退出，再执行 `rm`。关闭 pane、从 pane detach 或退出 TUI 都不会代替 `kill`。
+需要彻底删除一个正在运行的 terminal 时，先执行 `kill`，确认 `muxvia ls` 显示其已经退出，再执行 `rm`。关闭 pane、从 pane detach 或退出 TUI 都不会代替 `kill`。
 
 ### 手动运行或停止 daemon
 
-通常不需要单独启动 daemon；`termx`、`termx new`、`termx ls` 等命令会在连接失败时自动启动它。排查日志或由进程管理器托管时，可以前台运行：
+通常不需要单独启动 daemon；`muxvia`、`muxvia new`、`muxvia ls` 等命令会在连接失败时自动启动它。排查日志或由进程管理器托管时，可以前台运行：
 
 ```bash
-termx daemon
+muxvia daemon
 ```
 
-按 `Ctrl+C` 或向该进程发送 `SIGTERM` 会优雅停止前台 daemon。当前 CLI 没有 `termx daemon start|stop|status` 子命令；自动启动的后台 daemon 可先定位 PID，再显式停止：
+按 `Ctrl+C` 或向该进程发送 `SIGTERM` 会优雅停止前台 daemon。当前 CLI 没有 `muxvia daemon start|stop|status` 子命令；自动启动的后台 daemon 可先定位 PID，再显式停止：
 
 ```bash
-pgrep -fl 'termx.*daemon'
+pgrep -fl 'muxvia.*daemon'
 kill -TERM <PID>
 ```
 
 停止 daemon 会断开该 endpoint 的全部客户端，并结束 daemon-owned runtime；如果目的只是离开当前界面，应退出 TUI，不要停止 daemon。使用自定义 socket 时，daemon 和所有客户端命令必须传入同一个路径：
 
 ```bash
-termx --socket /tmp/my-termx.sock daemon
-termx --socket /tmp/my-termx.sock ls
+muxvia --socket /tmp/my-muxvia.sock daemon
+muxvia --socket /tmp/my-muxvia.sock ls
 ```
 
-### 使用 TermX Cloud
+### 使用 Muxvia Cloud
 
-Cloud 是可选能力，local 与 SSH 不依赖账号或订阅。Cloud Companion 默认不随 `termx` 二进制一起安装；使用官方发行版时先执行 `termx cloud install`，再进行登录。直接从源码构建的 `termx` 不包含官方 release root，不能验证或安装官方 Companion，需要先换用官方 `termx` 发行版。
+Cloud 是可选能力，local 与 SSH 不依赖账号或订阅。Cloud Companion 默认不随 `muxvia` 二进制一起安装；使用官方发行版时先执行 `muxvia cloud install`，再进行登录。直接从源码构建的 `muxvia` 不包含官方 release root，不能验证或安装官方 Companion，需要先换用官方 `muxvia` 发行版。
 
 安装完成后的客户端登录顺序为：
 
 ```bash
 # 打开设备码登录流程，在浏览器中登录并批准
-termx cloud login --device-code
+muxvia cloud login --device-code
 
 # 查看账号、Companion 和本机设备状态
-termx cloud status
-termx cloud doctor
+muxvia cloud status
+muxvia cloud doctor
 
 # 启动 TUI；登录后的 managed endpoint 会出现在 Terminal Picker
-termx
+muxvia
 ```
 
 要让当前机器作为账号名下的云节点，先在 Web 用户中心生成一次性 enrollment code，然后在 daemon 所在机器执行：
 
 ```bash
-termx cloud enroll <ONE_TIME_CODE>
-termx daemon --cloud
+muxvia cloud enroll <ONE_TIME_CODE>
+muxvia daemon --cloud
 ```
 
-`termx daemon --cloud` 是前台运行方式；生产或 staging 服务器应由对应的进程管理器托管。退出本机 Cloud 账号只删除本地账号 Session，不会删除 daemon terminal：
+`muxvia daemon --cloud` 是前台运行方式；生产或 staging 服务器应由对应的进程管理器托管。退出本机 Cloud 账号只删除本地账号 Session，不会删除 daemon terminal：
 
 ```bash
-termx cloud logout
+muxvia cloud logout
 ```
 
 公网 staging 的服务端启动、更新和 systemd 顺序见 [`docs/remote-platform/public-staging-runbook.md`](docs/remote-platform/public-staging-runbook.md)。
 
 ### 配置、日志与帮助
 
-- TUI 配置：`$XDG_CONFIG_HOME/termx/tui-v3.yaml`，默认是 `~/.config/termx/tui-v3.yaml`。
-- endpoint registry：`$XDG_CONFIG_HOME/termx/connections.yaml`，默认是 `~/.config/termx/connections.yaml`。
-- 自定义日志：`TERMX_LOG_FILE=/tmp/termx.log termx` 或 `termx --log-file /tmp/termx.log`。
-- 查看所有命令：`termx --help`；查看单个命令：`termx <command> --help`。
+- TUI 配置：`$XDG_CONFIG_HOME/muxvia/tui-v3.yaml`，默认是 `~/.config/muxvia/tui-v3.yaml`。
+- endpoint registry：`$XDG_CONFIG_HOME/muxvia/connections.yaml`，默认是 `~/.config/muxvia/connections.yaml`。
+- 自定义日志：`MUXVIA_LOG_FILE=/tmp/muxvia.log muxvia` 或 `muxvia --log-file /tmp/muxvia.log`。
+- 查看所有命令：`muxvia --help`；查看单个命令：`muxvia <command> --help`。
 
 ## 快捷键配置与 Ctrl+数字
 
 TUI 快捷键配置文件优先使用：
 
 ```text
-$XDG_CONFIG_HOME/termx/tui-v3.yaml
+$XDG_CONFIG_HOME/muxvia/tui-v3.yaml
 ```
 
-未设置 `XDG_CONFIG_HOME` 时，默认路径是 `~/.config/termx/tui-v3.yaml`。
+未设置 `XDG_CONFIG_HOME` 时，默认路径是 `~/.config/muxvia/tui-v3.yaml`。
 
 `tui.shortcuts` 是按键执行、footer 提示和 Help 展示的共同来源。同一个 action 可以绑定多个按键；每个 binding 可以通过 `show` 单独控制是否进入 footer。
 
@@ -251,22 +251,22 @@ Ctrl+T，再按 1-9   -> 进入 Tab 场景后切换到对应 Tab
 Ctrl+T，然后按 1-9
 ```
 
-修改增强键盘相关配置或 iTerm2 Profile 设置后，需要彻底退出并重新启动 `termx`，因为协议启用和 capability 查询发生在 TerminalHost 启动阶段。
+修改增强键盘相关配置或 iTerm2 Profile 设置后，需要彻底退出并重新启动 `muxvia`，因为协议启用和 capability 查询发生在 TerminalHost 启动阶段。
 
 如果 `Ctrl+数字` 没有反应，可用输入诊断启动：
 
 ```bash
-TERMX_TUI_DIAG=1 \
-TERMX_TUI_INPUT_TRACE=1 \
-TERMX_LOG_FILE=/tmp/termx.log \
-termx
+MUXVIA_TUI_DIAG=1 \
+MUXVIA_TUI_INPUT_TRACE=1 \
+MUXVIA_LOG_FILE=/tmp/muxvia.log \
+muxvia
 ```
 
 更完整的 action、scene、范围表达式和展示规则见 [`tui/docs/shortcut-system-plan.md`](tui/docs/shortcut-system-plan.md)。
 
 ## 适合的使用场景
 
-`termx` 主要面向高强度 terminal 用户：
+`muxvia` 主要面向高强度 terminal 用户：
 
 - 同时维护多个项目、服务、测试环境或 long-running jobs。
 - 经常在本机和多台远端机器之间切换。
@@ -274,7 +274,7 @@ termx
 - 需要在程序异常退出后保留 panel、历史输出和重启上下文。
 - 希望从 TUI 或 mobile app 接回同一个 terminal pool。
 
-如果你的工作流只有一两个短生命周期 shell，传统 terminal emulator 或 tmux 已经足够。`termx` 的优势主要在 terminal 数量变多、生命周期变长、入口变多之后显现。
+如果你的工作流只有一两个短生命周期 shell，传统 terminal emulator 或 tmux 已经足够。`muxvia` 的优势主要在 terminal 数量变多、生命周期变长、入口变多之后显现。
 
 ## 架构边界
 
@@ -312,12 +312,12 @@ tui / clients/mobile / other public clients
 - workbench storage 只保存布局和连接意图，不保存 terminal running/exited truth。
 - `TerminalID` 只在单个 daemon/endpoint 内唯一；跨 endpoint 必须使用 `TerminalRef`。
 - endpoint label、transport address、SSH host key、hub device fingerprint 和 grant ref 不能互相替代。
-- SSH transport 只连接远端 `termx` daemon，不隐式退化成普通 shell。
+- SSH transport 只连接远端 `muxvia` daemon，不隐式退化成普通 shell。
 
 ## 仓库结构
 
 - 目录 ownership 和依赖方向以 [`docs/development/repository-layout.md`](docs/development/repository-layout.md) 为准；下面只列主要入口。
-- `cmd/muxvia/`：`termx` 命令行与 composition root，不实现连接 runtime。
+- `cmd/muxvia/`：`muxvia` 命令行与 composition root，不实现连接 runtime。
 - `client/endpoint/`：Endpoint/Route registry、assembler、planner 与 portable contract。
 - `client/runtime/`：跨端 route race、ReadySession、generation 与 session owner。
 - `client/port/`、`client/adapter/`：平台能力接口和 local/SSH/managed/protocol adapter。
@@ -347,7 +347,7 @@ tui / clients/mobile / other public clients
 - live/input/resize/owner/copy/history endpoint 隔离。
 - endpoint-aware workbench binding。
 - local unix socket 标准 transport。
-- SSH transport 连接远端 `termx` daemon。
+- SSH transport 连接远端 `muxvia` daemon。
 - terminal name identity 第一阶段。
 - managed WebRTC identity、capability、signaling 和 Relay contract。
 - TUI/CLI hub endpoint dialer 与 Android App managed endpoint adapter。

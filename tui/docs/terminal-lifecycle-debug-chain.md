@@ -463,7 +463,7 @@ runtime 会合并普通 live 帧，避免高频输出把队列撑爆。这个合
 建议现场复现时打开：
 
 ```bash
-TERMX_TUI_INPUT_TRACE=1 go run ./cmd/muxvia
+MUXVIA_TUI_INPUT_TRACE=1 go run ./cmd/muxvia
 ```
 
 重点 grep：

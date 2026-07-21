@@ -47,7 +47,7 @@
 
 ## 4. 固定 viewport smoke 基线
 
-切片 79 新增 `termx v3 smoke` case：
+切片 79 新增 `muxvia v3 smoke` case：
 
 - case 名称：`visual-audit-current`
 - 固定 viewport：`120x40`
@@ -80,7 +80,7 @@
 
 - 切片 80 已修复 mode、快捷键、active target、右侧 summary 缺少稳定槽位的问题。
 - 切片 84 已把 bottom bar 推进到 `MODE • [KEY] ACTION` 快捷键 taxonomy，并在窄屏退化时保留尾部关键动作。
-- 切片 88 已把 bottom bar 继续收敛到 `[Ctrl] · [P] PANE` 类快捷键 taxonomy，并把 ready token 简化为 `termx`。
+- 切片 88 已把 bottom bar 继续收敛到 `[Ctrl] · [P] PANE` 类快捷键 taxonomy，并把 ready token 简化为 `muxvia`。
 - 切片 166 已按用户要求重新对照 `tuiv2` 实际 tab/status bar：header/footer 回到单行 bar，不再把 Unicode 线稿里的整屏 shell 外框、双行 header/footer 或 `┬/┴` 连接点当当前合同；footer key 使用 `[Ctrl] • [P] pane` 这类分段状态栏语义；pane、floating 和 overlay 等对象 chrome 继续保留边框和 active/inactive 样式。
 - 切片 90 已确认该 bottom bar 仍未达到目标截图级别；切片 91 必须按整体构图重新处理。
 
@@ -135,7 +135,7 @@
 
 - 切片 82 已把 Terminal Picker、Terminal Pool、Workbench Tree、Prompt/Help 的 framework chrome 推进为带 padding 的实体 card：title/state/action 槽位、content padding、ANSI reset 和 cursor/hit region 语义已同步。
 - 切片 86 已完成 overlay 内部 content 第一轮产品化 polish：Terminal Picker 使用统一搜索行、选中 marker、preview 和 new action；Terminal Pool / Workbench Tree 使用页面标题、搜索行、selected row、detail / preview / action 槽位；Prompt / Help 使用标题、context/input 或分类 topic 行。
-- 切片 87 已把 Terminal Pool Page 和 Workbench Tree Page 加入 `termx v3 smoke` 固定快照，但这只是回归证据，不是截图级视觉完成证据。
+- 切片 87 已把 Terminal Pool Page 和 Workbench Tree Page 加入 `muxvia v3 smoke` 固定快照，但这只是回归证据，不是截图级视觉完成证据。
 
 目标要求：
 
@@ -237,9 +237,9 @@
 切片 87 负责：
 
 - 已完成默认入口截图级视觉复核未通过归档。
-- 已把 `termx v3 smoke` 扩展到 12 个 case，覆盖 workbench live、split hidden toast、Terminal Picker、Terminal Pool Page、Workbench Tree Page、copy empty、copy history、Prompt、Help、Tab/Workspace、pane command flow 和 `120x40` visual review baseline。
+- 已把 `muxvia v3 smoke` 扩展到 12 个 case，覆盖 workbench live、split hidden toast、Terminal Picker、Terminal Pool Page、Workbench Tree Page、copy empty、copy history、Prompt、Help、Tab/Workspace、pane command flow 和 `120x40` visual review baseline。
 - 已在 `cmd/muxvia` 测试中固化 CLI smoke 输出必须包含 Terminal Pool / Workbench Tree / visual review / copy-history status marker，并禁止出现 `visual acceptance` 完成声明。
-- 已保留 `termx v3 e2e-smoke` 对默认 attach 装配、host viewport、resize、content rect terminal resize、copy rebind 和 pane command 的证明。
+- 已保留 `muxvia v3 e2e-smoke` 对默认 attach 装配、host viewport、resize、content rect terminal resize、copy rebind 和 pane command 的证明。
 - 默认 root 在非交互环境拒绝启动；其可验证证据是默认 root 路由到 v3 root runner，v3 smoke/e2e 证明同一 TUI render/frame path。
 - 切片 87 不能作为视觉完成证据；切片 88 必须继续 shell/pane 视觉重绘，切片 89 再做真实默认入口截图级验收。
 

@@ -137,8 +137,8 @@ function VideoPreviewPlayer({
             src={src}
           />
         ) : (
-          <div className="flex flex-col items-center justify-center gap-3 text-zinc-300" data-testid="termx-video-stream-status">
-            <span className="termx-square-spinner h-7 w-7 text-zinc-500" aria-hidden="true" />
+          <div className="flex flex-col items-center justify-center gap-3 text-zinc-300" data-testid="muxvia-video-stream-status">
+            <span className="muxvia-square-spinner h-7 w-7 text-zinc-500" aria-hidden="true" />
           </div>
         )}
       </div>

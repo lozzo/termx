@@ -1,8 +1,8 @@
-# TermX Third-Party Notices
+# Muxvia Third-Party Notices
 
-TermX incorporates third-party software and font assets under their respective licenses.
+Muxvia incorporates third-party software and font assets under their respective licenses.
 
-- The `termx` binary embeds its exact Go dependency notices. Run `termx licenses` to print them.
+- The `muxvia` binary embeds its exact Go dependency notices. Run `muxvia licenses` to print them.
 - App distributions include `THIRD_PARTY_NOTICES.txt` and the complete files under `third-party/` in their static assets.
 - Vendored source keeps upstream license files next to the corresponding material, including `vterm/internal/vt/LICENSE`; App font terms are distributed in `clients/mobile/public/third-party/FONTS.txt`.
 

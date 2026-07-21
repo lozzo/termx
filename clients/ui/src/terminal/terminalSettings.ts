@@ -40,7 +40,7 @@ export interface TerminalSettings {
   cursorBlink: boolean
 }
 
-export const TERMINAL_SETTINGS_STORAGE_KEY = 'termx.terminal.settings.v1'
+export const TERMINAL_SETTINGS_STORAGE_KEY = 'muxvia.terminal.settings.v1'
 
 export const MUXVIA_DARK_TERMINAL_THEME: ITheme = {
   background: '#0c0c0c',
@@ -86,8 +86,8 @@ interface TerminalThemeUiPreset {
 
 export const TERMINAL_THEME_OPTIONS = [
   {
-    id: 'termx-dark',
-    label: 'TermX Dark',
+    id: 'muxvia-dark',
+    label: 'Muxvia Dark',
     group: 'dark',
     theme: MUXVIA_DARK_TERMINAL_THEME,
   },
@@ -529,7 +529,7 @@ export type TerminalThemeOption = (typeof TERMINAL_THEME_OPTIONS)[number]
 export type TerminalThemeId = TerminalThemeOption['id']
 
 const TERMINAL_THEME_UI_PRESETS: Record<TerminalThemeId, TerminalThemeUiPreset> = {
-  'termx-dark': {
+  'muxvia-dark': {
     page: '#030712',
     surface: '#0c0c0c',
     surfaceRaised: '#18181b',
@@ -731,7 +731,7 @@ export const TERMINAL_FONT_OPTIONS: TerminalFontOption[] = [
 export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   fontSize: 14,
   fontFamily: TERMINAL_FONT_OPTIONS[0]!.value,
-  themeId: 'termx-dark',
+  themeId: 'muxvia-dark',
   renderer: 'auto',
   keyboardMode: 'auto',
   scrollback: 10000,
@@ -804,22 +804,22 @@ export function resolveTerminalThemeUi(themeId: TerminalThemeId | string | undef
 export function terminalThemeCssVariables(themeId: TerminalThemeId | string | undefined): Record<string, string> {
   const ui = resolveTerminalThemeUi(themeId)
   return {
-    '--termx-bg': ui.page,
-    '--termx-surface': ui.surface,
-    '--termx-surface-raised': ui.surfaceRaised,
-    '--termx-border': ui.border,
-    '--termx-border-subtle': ui.borderSubtle,
-    '--termx-text': ui.text,
-    '--termx-muted': ui.muted,
-    '--termx-faint': ui.faint,
-    '--termx-accent': ui.accent,
-    '--termx-accent-text': ui.accentText,
-    '--termx-terminal-bg': ui.terminalBackground,
-    '--termx-terminal-fg': ui.terminalForeground,
-    '--termx-terminal-cursor': ui.terminalCursor,
-    '--termx-overlay': ui.overlay,
-    '--termx-scrollbar': ui.scrollbar,
-    '--termx-scrollbar-active': ui.scrollbarActive,
+    '--muxvia-bg': ui.page,
+    '--muxvia-surface': ui.surface,
+    '--muxvia-surface-raised': ui.surfaceRaised,
+    '--muxvia-border': ui.border,
+    '--muxvia-border-subtle': ui.borderSubtle,
+    '--muxvia-text': ui.text,
+    '--muxvia-muted': ui.muted,
+    '--muxvia-faint': ui.faint,
+    '--muxvia-accent': ui.accent,
+    '--muxvia-accent-text': ui.accentText,
+    '--muxvia-terminal-bg': ui.terminalBackground,
+    '--muxvia-terminal-fg': ui.terminalForeground,
+    '--muxvia-terminal-cursor': ui.terminalCursor,
+    '--muxvia-overlay': ui.overlay,
+    '--muxvia-scrollbar': ui.scrollbar,
+    '--muxvia-scrollbar-active': ui.scrollbarActive,
   }
 }
 
@@ -845,9 +845,9 @@ export function normalizeTerminalSettings(input: Partial<TerminalSettings> | Rec
 
 function migrateLegacyTerminalSettings(storage: Pick<Storage, 'getItem'> | RemoteRuntimeStorage | undefined): TerminalSettings {
   const base = { ...DEFAULT_TERMINAL_SETTINGS }
-  const legacyRenderer = readStorageValue(storage, 'termx.renderer')
+  const legacyRenderer = readStorageValue(storage, 'muxvia.renderer')
   if (isTerminalRenderer(legacyRenderer)) base.renderer = legacyRenderer
-  const legacyFontSizeValue = readStorageValue(storage, 'termx.fontSize')
+  const legacyFontSizeValue = readStorageValue(storage, 'muxvia.fontSize')
   const legacyFontSize = legacyFontSizeValue === null ? Number.NaN : Number(legacyFontSizeValue)
   if (Number.isFinite(legacyFontSize)) base.fontSize = legacyFontSize
   return normalizeTerminalSettings(base)

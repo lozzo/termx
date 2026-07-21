@@ -18,7 +18,7 @@ client/
     ssh/             Go SSH direct-tcpip + ICE-TCP attempt adapter
     managed/         portable Cloud signaling、remote auth、Hello、Proto session attempt adapter
       pion/          native/Android Pion RTCPeerConnection primitive
-    protocol/        ready transport 到 termx protocol service 的映射
+    protocol/        ready transport 到 muxvia protocol service 的映射
   binding/           Proto bytes、opaque handle、异步事件、cancel/close/release 的稳定 C/JNI/WASM 核心
 
 core/                daemon terminal lifecycle、history、live、storage truth

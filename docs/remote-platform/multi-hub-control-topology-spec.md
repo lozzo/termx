@@ -1,4 +1,4 @@
-# TermX 多 Hub 控制面、实时拓扑与远程管理设计
+# Muxvia 多 Hub 控制面、实时拓扑与远程管理设计
 
 状态：多 Hub 控制面稳定设计基准
 
@@ -6,7 +6,7 @@
 
 ## 1. 目标与边界
 
-TermX Cloud 需要支持：
+Muxvia Cloud 需要支持：
 
 - 一个逻辑 Cloud Controller：同一二进制/进程组合 Control Plane authority、Controller API、Web Controller API 和 Web 静态页面。
 - 多个独立部署、可横向扩容的 Cloud Edge：同一二进制/进程组合 Hub 与 Relay。
@@ -457,7 +457,7 @@ completed_at
 
 ### 12.4 RevokeTerminalGrant
 
-daemon enrollment 明确表示 daemon owner 信任 TermX Cloud account owner 发起 deny-only administration；unenroll 后不再接受新 Cloud command。
+daemon enrollment 明确表示 daemon owner 信任 Muxvia Cloud account owner 发起 deny-only administration；unenroll 后不再接受新 Cloud command。
 
 - 只有账号 owner 可以从 Web 发起自己 daemon 的 terminal grant revoke。
 - 平台运营角色默认不能创建、扩大或撤销 terminal grant。
@@ -497,7 +497,7 @@ Hub 只能转发 daemon-authoritative command，不能伪造。Control Plane 使
 签名输入至少包含：
 
 ```text
-domain_separator = TERMX_DAEMON_CONTROL_V1
+domain_separator = MUXVIA_DAEMON_CONTROL_V1
 command_id
 command_kind
 account_id

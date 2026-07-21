@@ -1,12 +1,12 @@
-# Contributing to TermX
+# Contributing to Muxvia
 
-This file applies to the separate public TermX repository created from an approved public snapshot. The private authoritative monorepo does not accept public contributions.
+This file applies to the separate public Muxvia repository created from an approved public snapshot. The private authoritative monorepo does not accept public contributions.
 
 ## License
 
 The public project is licensed under Apache-2.0. Unless a contribution is explicitly marked `Not a Contribution`, material intentionally submitted for inclusion is provided under Apache-2.0 without additional terms.
 
-No contributor may submit private TermX service code, credentials, customer data, proprietary SDK code, generated secrets, or material they do not have the right to redistribute.
+No contributor may submit private Muxvia service code, credentials, customer data, proprietary SDK code, generated secrets, or material they do not have the right to redistribute.
 
 ## DCO
 

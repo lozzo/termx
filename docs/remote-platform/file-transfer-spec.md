@@ -1,4 +1,4 @@
-# TermX 统一文件能力规范
+# Muxvia 统一文件能力规范
 
 状态：FILE001 活动基线
 
@@ -6,7 +6,7 @@
 
 ## 1. 目标
 
-TermX 文件能力允许客户端浏览和操作 endpoint 所属 daemon 机器上的文件，并在 local、SSH、WebRTC direct、single Relay 和未来 Relay Mesh 上复用同一公开协议。文件管理是免费公开客户端与 daemon 能力；托管 Relay 可以按实际转发的加密流量计费，但不能改变文件语义或权限。
+Muxvia 文件能力允许客户端浏览和操作 endpoint 所属 daemon 机器上的文件，并在 local、SSH、WebRTC direct、single Relay 和未来 Relay Mesh 上复用同一公开协议。文件管理是免费公开客户端与 daemon 能力；托管 Relay 可以按实际转发的加密流量计费，但不能改变文件语义或权限。
 
 本规范替代共享 UI 中旧 `/files/*` runtime API 和独立 file DataChannel 的架构假设。现有 UI、DTO 和测试只能作为交互需求输入，不能作为 daemon contract 或兼容门禁。
 
@@ -15,7 +15,7 @@ TermX 文件能力允许客户端浏览和操作 endpoint 所属 daemon 机器�
 - daemon 所在机器的文件系统是路径、目录项、metadata 和文件内容的唯一真值。
 - core protocol service 负责请求校验、授权、文件系统调用、transfer 生命周期和协议错误映射，但不复制持久化文件内容。
 - client endpoint runtime 负责把文件请求路由到 owning endpoint，并持有列表、预览、选择和 transfer 进度 projection。
-- Transport 只负责承载同一 termx protocol。local、SSH、direct、Relay 不产生不同文件 API。
+- Transport 只负责承载同一 muxvia protocol。local、SSH、direct、Relay 不产生不同文件 API。
 - Hub、Relay、Control Plane、Companion 和 Route Planner 不拥有文件状态，也不能看到路径、metadata、内容、摘要或 resume offset。
 
 文件能力是 daemon-level capability，不从 `TerminalID` 推导。terminal-scoped grant 默认不得访问文件；只有显式授予文件 scope 的 daemon capability 才能调用文件方法。云订阅、RelayLease 或 HubAdmissionTicket 不能扩大文件 scope。
@@ -50,7 +50,7 @@ FILE002 使用公开 wire method，不保留 HTTP path：
 
 ### 4.2 Transfer 方法与 stream
 
-FILE003 在现有单一 termx protocol DataChannel 上增加复用文件 stream，不创建 `api`、`file-*` 或旧 runtime DataChannel：
+FILE003 在现有单一 muxvia protocol DataChannel 上增加复用文件 stream，不创建 `api`、`file-*` 或旧 runtime DataChannel：
 
 | Method/frame | 语义 |
 | --- | --- |
@@ -89,7 +89,7 @@ CapabilityGrant 增加独立文件权限集合，至少区分：
 
 ## 7. 客户端迁移
 
-- `clients/ui` 的 `FileApi` 从 HTTP-like method/path DTO 改为 typed termx file client。
+- `clients/ui` 的 `FileApi` 从 HTTP-like method/path DTO 改为 typed muxvia file client。
 - `RtcSession.openApi()` 不再承载文件方法；terminal management 后续可独立收敛，但不属于 FILE 主线扩展范围。
 - `RtcSession.openFileTransfer()` 和 Android 旧 file channel manager 在 FILE004 删除，不做双路径兼容。
 - Android native 与 TypeScript 共享同一 wire schema；native 负责 OS picker、content URI、后台生命周期和本地落盘，不能定义第二套 daemon 文件协议。

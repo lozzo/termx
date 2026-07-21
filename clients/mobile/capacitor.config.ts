@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
-  appId: 'com.termx.app',
-  appName: 'termx',
+  appId: 'com.muxvia.app',
+  appName: 'muxvia',
   webDir: 'dist',
   plugins: {
     Keyboard: {

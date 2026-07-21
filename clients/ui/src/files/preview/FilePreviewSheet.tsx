@@ -36,19 +36,19 @@ export function FilePreviewSheet({ path, preview, loading, error, streamPreview,
   const dialog = (
     <div
       className="fixed inset-0 z-[80] flex h-[100dvh] flex-col bg-white"
-      data-testid="termx-file-preview"
+      data-testid="muxvia-file-preview"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="termx-file-preview-title"
+      aria-labelledby="muxvia-file-preview-title"
     >
-      <header className="termx-app-header flex shrink-0 items-center gap-3 border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
+      <header className="muxvia-app-header flex shrink-0 items-center gap-3 border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
         <div className="min-w-0 flex-1">
-          <h2 id="termx-file-preview-title" className="truncate text-[17px] font-bold tracking-tight text-zinc-950">{title}</h2>
+          <h2 id="muxvia-file-preview-title" className="truncate text-[17px] font-bold tracking-tight text-zinc-950">{title}</h2>
           <p className="mt-0.5 truncate text-[12px] font-medium text-zinc-500">{subtitle}</p>
         </div>
         <button
           type="button"
-          className="termx-app-icon-button shrink-0 border-transparent bg-transparent"
+          className="muxvia-app-icon-button shrink-0 border-transparent bg-transparent"
           aria-label="Close preview"
           onClick={() => { hapticSelection(); onClose() }}
         >
@@ -58,7 +58,7 @@ export function FilePreviewSheet({ path, preview, loading, error, streamPreview,
       <div className={`min-h-0 flex-1 pb-[env(safe-area-inset-bottom)] ${isMediaPreview ? 'overflow-hidden bg-black' : 'overflow-auto bg-zinc-50'}`}>
         {loading ? (
           <div className="flex h-56 flex-col items-center justify-center gap-3 text-[14px] font-medium text-zinc-500">
-            <span className="termx-square-spinner h-6 w-6 text-zinc-500" aria-hidden="true" />
+            <span className="muxvia-square-spinner h-6 w-6 text-zinc-500" aria-hidden="true" />
             Loading preview...
           </div>
         ) : error ? (

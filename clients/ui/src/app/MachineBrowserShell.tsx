@@ -78,8 +78,8 @@ export function MachineBrowserShell({
 
   return (
     <main
-      className={`termx-app-page flex h-full min-h-0 flex-col ${className ?? ''}`}
-      data-testid="termx-remote-app-shell"
+      className={`muxvia-app-page flex h-full min-h-0 flex-col ${className ?? ''}`}
+      data-testid="muxvia-remote-app-shell"
     >
       {selectedMachine && connection ? (
         <ConnectionFlowView
@@ -117,11 +117,11 @@ function ConnectionFlowView({
 }) {
   const active = connection.stage.startsWith('trying_')
   return (
-    <section className="termx-app-page flex min-h-0 flex-1 flex-col animate-in fade-in slide-in-from-right-4 duration-200" data-testid="termx-connection-flow">
-      <header className="termx-app-header flex min-h-14 shrink-0 items-center gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+    <section className="muxvia-app-page flex min-h-0 flex-1 flex-col animate-in fade-in slide-in-from-right-4 duration-200" data-testid="muxvia-connection-flow">
+      <header className="muxvia-app-header flex min-h-14 shrink-0 items-center gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <button
           aria-label="Back to machines"
-          className="termx-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
+          className="muxvia-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
           type="button"
           onClick={() => { hapticSelection(); onBack() }}
         >
@@ -133,10 +133,10 @@ function ConnectionFlowView({
         </div>
       </header>
       <div className="flex flex-1 items-center justify-center px-4 py-8">
-        <div className="termx-app-panel w-full max-w-sm p-5">
+        <div className="muxvia-app-panel w-full max-w-sm p-5">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center border border-blue-200 bg-blue-50 text-blue-700">
-              {active ? <span className="termx-square-spinner h-5 w-5" aria-hidden="true" /> : null}
+              {active ? <span className="muxvia-square-spinner h-5 w-5" aria-hidden="true" /> : null}
             </div>
             <div className="min-w-0">
               <h2 className="text-base font-semibold text-zinc-950">{formatConnectionStage(connection.stage)}</h2>
@@ -145,7 +145,7 @@ function ConnectionFlowView({
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             {connection.path ? (
-              <span className="border border-[var(--termx-app-line)] bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-600">
+              <span className="border border-[var(--muxvia-app-line)] bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-600">
                 {connection.path === 'hub' ? 'Hub' : 'Local'}
               </span>
             ) : null}

@@ -53,7 +53,7 @@ func TestAndroidManagedRuntimeDoesNotRestoreLegacyHubProtocol(t *testing.T) {
 	if _, err := os.Stat(mirrorRoot); !os.IsNotExist(err) {
 		t.Fatalf("Android source mirror must stay deleted: %s", mirrorRoot)
 	}
-	root := filepath.Join("..", "clients", "mobile", "android", "app", "src", "main", "java", "com", "termx", "app")
+	root := filepath.Join("..", "clients", "mobile", "android", "app", "src", "main", "java", "com", "muxvia", "app")
 	forbidden := []string{"sessionToken", "session_token", "/api/v1/sessions", "Authorization\" to \"Bearer", "connectHub("}
 	legacyFiles := []string{
 		filepath.Join(root, "connectors", "HubConnector.kt"),

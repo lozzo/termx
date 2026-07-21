@@ -181,7 +181,7 @@ export function ZoomableMediaCanvas({
       <div
         ref={viewportRef}
         className="relative h-full min-h-[calc(100dvh-7.5rem)] touch-none overflow-hidden bg-zinc-950"
-        data-testid="termx-media-zoom-canvas"
+        data-testid="muxvia-media-zoom-canvas"
         onDoubleClick={onDoubleClick}
         onPointerCancel={onPointerEnd}
         onPointerDown={onPointerDown}
@@ -233,7 +233,7 @@ export function ZoomableMediaCanvas({
         <div className="flex h-full min-h-[calc(100dvh-7.5rem)] items-center justify-center p-2">
           <div
             className="will-change-transform"
-            data-testid="termx-media-transform"
+            data-testid="muxvia-media-transform"
             style={{
               transform: `translate3d(${transform.x}px, ${transform.y}px, 0) rotate(${transform.rotation}deg) scale(${transform.scale})`,
               transformOrigin: 'center',

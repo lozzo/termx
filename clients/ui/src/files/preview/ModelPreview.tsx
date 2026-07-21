@@ -82,8 +82,8 @@ export function ModelPreview({
     return (
       <MediaPreviewShell>
         <div className="flex h-full min-h-[calc(100dvh-7.5rem)] flex-col items-center justify-center gap-3 bg-zinc-950 px-6 text-center text-zinc-200">
-          <span className="termx-square-spinner h-7 w-7 text-zinc-500" aria-hidden="true" />
-          <div className="text-[13px] font-semibold tabular-nums text-zinc-300" data-testid="termx-model-loading">
+          <span className="muxvia-square-spinner h-7 w-7 text-zinc-500" aria-hidden="true" />
+          <div className="text-[13px] font-semibold tabular-nums text-zinc-300" data-testid="muxvia-model-loading">
             {progress > 0 ? `${progress}%` : 'Loading model'}
           </div>
           <div className="h-1.5 w-full max-w-xs overflow-hidden bg-white/10">

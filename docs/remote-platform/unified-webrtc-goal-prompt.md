@@ -3,11 +3,11 @@
 把下面内容作为 `/goal` 的任务说明。活动范围、任务顺序和完成条件始终以仓库根目录 `workflow.md` 为准；本 Prompt 只固定执行目标和不可偏离的门禁。
 
 ```text
-持续执行 TermX 当前统一 WebRTC Route 主线，直到 workflow.md 中最早未完成切片及其后续活动切片全部完成，或者出现 workflow.md 定义的真实阻塞。
+持续执行 Muxvia 当前统一 WebRTC Route 主线，直到 workflow.md 中最早未完成切片及其后续活动切片全部完成，或者出现 workflow.md 定义的真实阻塞。
 
 每轮必须先读取 AGENTS.md 和 workflow.md，再检查 git status --short --branch。只执行任务队列中最早的进行中或待开始切片，不跳过阻塞，不抢做 WEB001、iOS/Desktop、插件、开源发布、多区域 Cloud、KCP/QUIC 或其它未排期能力。发现未识别的用户或其他 Agent 未提交改动时停止说明，不得混入当前切片。
 
-架构强约定：所有远程业务连接最终进入 Go-owned reliable ordered WebRTC DataChannel ReadyPeerSession。Direct 使用 daemon embedded signaling + ICE-TCP；SSH 使用 Go SSH client/direct-tcpip tunnel + daemon loopback ICE-TCP；Cloud 使用 TermX Cloud signaling + ICE-UDP 或 TURN Relay。Endpoint/Route、pairing、credential reference、planner、session generation、remote auth、Hello、Proto command/event、resource、取消和重连真值属于 Go Client Engine。Android 只能通过稳定 C ABI + 薄 JNI/Capacitor bridge 使用 Go；Kotlin/TypeScript 不得复制网络或 session 状态机。Web/WASM 当前冻结，只维持现有 contract 不回归。
+架构强约定：所有远程业务连接最终进入 Go-owned reliable ordered WebRTC DataChannel ReadyPeerSession。Direct 使用 daemon embedded signaling + ICE-TCP；SSH 使用 Go SSH client/direct-tcpip tunnel + daemon loopback ICE-TCP；Cloud 使用 Muxvia Cloud signaling + ICE-UDP 或 TURN Relay。Endpoint/Route、pairing、credential reference、planner、session generation、remote auth、Hello、Proto command/event、resource、取消和重连真值属于 Go Client Engine。Android 只能通过稳定 C ABI + 薄 JNI/Capacitor bridge 使用 Go；Kotlin/TypeScript 不得复制网络或 session 状态机。Web/WASM 当前冻结，只维持现有 contract 不回归。
 
 API 强约定：跨边界 API 必须按 proto schema -> generated code -> compatibility harness -> API Layer/API Mapping/runtime/adapter -> binding/platform consumer 的顺序实现。跨 JNI 的业务 payload 只能是 versioned protobuf bytes 和 opaque handle，不得暴露 Go pointer、core struct 或平台 DTO。
 

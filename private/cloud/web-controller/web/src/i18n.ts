@@ -20,7 +20,7 @@ function normalizeLanguage(value?: string | null): AppLanguage {
   return "en";
 }
 
-const initialLanguage = normalizeLanguage(localStorage.getItem("termx-language") ?? navigator.language);
+const initialLanguage = normalizeLanguage(localStorage.getItem("muxvia-language") ?? navigator.language);
 
 void i18n.use(initReactI18next).init({
   resources: { en: { translation: en }, "zh-CN": { translation: zhCN }, ru: { translation: ru } },
@@ -33,7 +33,7 @@ void i18n.use(initReactI18next).init({
 document.documentElement.lang = initialLanguage;
 i18n.on("languageChanged", (language) => {
   const normalized = normalizeLanguage(language);
-  localStorage.setItem("termx-language", normalized);
+  localStorage.setItem("muxvia-language", normalized);
   document.documentElement.lang = normalized;
 });
 

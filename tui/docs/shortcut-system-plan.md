@@ -376,7 +376,7 @@ KS015 实际执行契约：
 
 - 更新默认快捷键统计、完整可加载 `tui-v3.yaml` 示例、支持键位/修饰键、替换语义、冲突错误、增强键盘前置条件和诊断方法。
 - README、Help、示例和 inventory 必须与运行 catalog 由测试校验；不得手工维护另一份默认键表。
-- 新增 `scripts/termx_shortcut_smoke.sh`，用隔离 socket/config/log 在 tmux 内执行默认 root/sticky/overlay/copy/退出链路，并注入 CSI-u 样本；脚本失败必须保留脱敏 artifact。
+- 新增 `scripts/muxvia_shortcut_smoke.sh`，用隔离 socket/config/log 在 tmux 内执行默认 root/sticky/overlay/copy/退出链路，并注入 CSI-u 样本；脚本失败必须保留脱敏 artifact。
 - 运行全量 TUI、clean-env CLI、`go test -race ./tui/...`、shortcut/CSI-u 定向 `-count=20` 和上述 tmux 黑盒，覆盖普通终端与支持 CSI-u 的路径。
 - 删除本项目发现且已被新架构取代的旧 shortcut/action/render 代码、无效兼容测试和过期文档；最终 `rg` 守卫不得再出现已禁止的第二真值或 placeholder action。
 

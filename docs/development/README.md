@@ -1,4 +1,4 @@
-# TermX 开发与维护
+# Muxvia 开发与维护
 
 本文是仓库日常维护入口。产品与远程平台约束见 `docs/remote-platform/`，领域细节见 `core/docs/`、`tui/docs/`，已完成计划和一次性审计见 `docs/history/`。
 
@@ -44,8 +44,8 @@ make clean
 ```
 
 - `make doctor` 是开始开发前的只读环境检查，验证 Go/Node/Java/Android/protobuf 工具、module/workspace 布局、生成代码和 Android 单一源码。
-- `make build` 只把公开 `termx` 写入 `.artifacts/bin/termx`。
-- `make test` 清理调用终端继承的全部 `TERMX_*`，并使用 `GOWORK=off` 测试根公开 module，保证结果不受当前远程会话污染且 public snapshot 不依赖私有 workspace。
+- `make build` 只把公开 `muxvia` 写入 `.artifacts/bin/muxvia`。
+- `make test` 清理调用终端继承的全部 `MUXVIA_*`，并使用 `GOWORK=off` 测试根公开 module，保证结果不受当前远程会话污染且 public snapshot 不依赖私有 workspace。
 - `make test-private` 逐个测试六个私有 Go module；public snapshot 没有 `private/cloud` 时明确跳过。
 - `make test-clients` 依次生成 protobuf、运行共享 UI 测试与类型检查，并构建 UI/Mobile Web。
 - `make test-android` 先同步 Capacitor，再分别 clean 构建标准 APK 与显式 devcloud APK，并验证两者都使用同一 App/Cloud factory 装配。可交付 APK 副本写入 `.artifacts/android/`。
@@ -67,7 +67,7 @@ Go 生成物需要当前 `protoc` 与 `protoc-gen-go`；TypeScript 生成器由�
 
 Android 自定义源码唯一真值是 `clients/mobile/android/app/src/main/`。`clients/mobile/native/android` 不得恢复；`cap sync` 后 `clients/mobile/scripts/verify-android-source.sh` 会检查源码、manifest、network config 和 Gradle 关键配置。
 
-TermX 只构建一个 Android App。`private/cloud/mobile/android` 作为标准 first-party source set 编入 APK；默认没有 development Cloud origin并保持 managed Route fail closed，`-PtermxDevCloud=true` 和 `-PtermxPublicHTTPStaging=true` 只启用互斥的测试 profile。`scripts/verify-android-apk-boundary.sh` 验证标准与 devcloud APK 都包含固定 `OfficialManagedCloudFactory`，且 Cloud module 不拥有 WebRTC、grant 或 terminal payload。
+Muxvia 只构建一个 Android App。`private/cloud/mobile/android` 作为标准 first-party source set 编入 APK；默认没有 development Cloud origin并保持 managed Route fail closed，`-PmuxviaDevCloud=true` 和 `-PmuxviaPublicHTTPStaging=true` 只启用互斥的测试 profile。`scripts/verify-android-apk-boundary.sh` 验证标准与 devcloud APK 都包含固定 `OfficialManagedCloudFactory`，且 Cloud module 不拥有 WebRTC、grant 或 terminal payload。
 
 ## 产物与发布
 

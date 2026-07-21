@@ -1,4 +1,4 @@
-# TermX Cloud 全链路泳道与 Control Plane 降载审计
+# Muxvia Cloud 全链路泳道与 Control Plane 降载审计
 
 状态：CLOUD018 已实现基线
 
@@ -6,7 +6,7 @@
 
 ## 1. 结论
 
-TermX Cloud 的连接热路径已经基本从 Web Controller 和 Control Plane 移到 Hub：客户端登录后，设备目录、endpoint resolve、direct signaling 和 single Relay lease 都只访问 Hub；WebRTC 建立后，direct 数据完全绕过云，Relay 也只转发 DTLS 密文。
+Muxvia Cloud 的连接热路径已经基本从 Web Controller 和 Control Plane 移到 Hub：客户端登录后，设备目录、endpoint resolve、direct signaling 和 single Relay lease 都只访问 Hub；WebRTC 建立后，direct 数据完全绕过云，Relay 也只转发 DTLS 密文。
 
 三个 P0 缺口已经收口：
 
@@ -125,7 +125,7 @@ sequenceDiagram
     U->>W: 生成一次性 enrollment code
     W->>CP: CreateEnrollment(account)
     CP-->>W: 十分钟单次、分组 Base32 短码
-    U->>DC: termx cloud enroll CODE
+    U->>DC: muxvia cloud enroll CODE
     DC->>CP: BeginEnrollment(code, public key, metadata)
     CP-->>DC: fresh challenge + flow ID
     DC-->>D: challenge
@@ -185,7 +185,7 @@ sequenceDiagram
     participant CP as Control Plane
     participant H as Hub
 
-    O->>D: termx pair create(scope, TTL)
+    O->>D: muxvia pair create(scope, TTL)
     D->>D: 用 DeviceIdentity 签 CapabilityGrant
     D-->>O: QR 或 owner-only bundle
     O->>C: 本地扫描 / SSH 管道 / 可信文件传递

@@ -12,8 +12,8 @@
 
 | Artifact | 入口 | 审计结果 | Bundle |
 | --- | --- | --- | --- |
-| public `termx` | `cmd/muxvia` | 54 条外部或 vendored license mapping；仅 MIT、BSD-3-Clause、Apache-2.0 | `cmd/muxvia/THIRD_PARTY_NOTICES.txt` |
-| private `termx-cloud` | `private/cloud/companion/cmd/muxvia-cloud` | 8 条外部 mapping；MIT、BSD-2-Clause、BSD-3-Clause | `private/cloud/companion/cmd/muxvia-cloud/THIRD_PARTY_NOTICES.txt` |
+| public `muxvia` | `cmd/muxvia` | 54 条外部或 vendored license mapping；仅 MIT、BSD-3-Clause、Apache-2.0 | `cmd/muxvia/THIRD_PARTY_NOTICES.txt` |
+| private `muxvia-cloud` | `private/cloud/companion/cmd/muxvia-cloud` | 8 条外部 mapping；MIT、BSD-2-Clause、BSD-3-Clause | `private/cloud/companion/cmd/muxvia-cloud/THIRD_PARTY_NOTICES.txt` |
 
 Windows graph 额外包含 `go-winio`/`wincred`，Linux Companion graph 额外包含 `godbus/dbus`。`vterm/internal/vt` 是仓库内 vendored MIT material，生成器保留其原始 license。当前 monorepo 的 first-party package 因根许可证不是公开 Apache-2.0 而被 `go-licenses` 标为 unknown；生成器只允许这个已知 first-party 状态，任何外部 unknown 或未批准 license 均失败。
 
@@ -21,7 +21,7 @@ Windows graph 额外包含 `go-winio`/`wincred`，Linux Companion graph 额外�
 
 ## 2. npm/Web Bundle
 
-`scripts/generate-npm-notices.mjs` 扫描根 npm workspace `package-lock.json` 的非 dev 条目，排除 first-party `@termx/*`，当前得到 116 个精确 package/version 和 72 份去重后的完整文本。
+`scripts/generate-npm-notices.mjs` 扫描根 npm workspace `package-lock.json` 的非 dev 条目，排除 first-party `@muxvia/*`，当前得到 116 个精确 package/version 和 72 份去重后的完整文本。
 
 | License expression | Package count |
 | --- | ---: |

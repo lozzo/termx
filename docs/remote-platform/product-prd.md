@@ -1,15 +1,15 @@
-# TermX 远程连接产品要求
+# Muxvia 远程连接产品要求
 
 状态：统一 WebRTC DataChannel 产品基线
 
 活动切片、顺序和完成证据只记录在仓库根目录 `workflow.md`。本文定义稳定产品要求，不维护研发状态表。
 
-Cloud 账号、套餐、交易、Subscription、Entitlement、managed P2P/Relay 准入、限额、用量和管理面的产品真值见 `cloud-product-spec.md`。本文只定义 TermX 整体产品形态和连接边界。
+Cloud 账号、套餐、交易、Subscription、Entitlement、managed P2P/Relay 准入、限额、用量和管理面的产品真值见 `cloud-product-spec.md`。本文只定义 Muxvia 整体产品形态和连接边界。
 
 ## 1. 产品形态
 
-- TermX 只有一个面向用户的 App。
-- App 原生支持 Direct、SSH 和 TermX Cloud managed Route。
+- Muxvia 只有一个面向用户的 App。
+- App 原生支持 Direct、SSH 和 Muxvia Cloud managed Route。
 - Direct 与 SSH 不要求登录或订阅。
 - Cloud 是同一个 App 内的可选托管能力，不是独立 App flavor。
 - 用户未登录、订阅失效或 Cloud 故障时，已保存的 Direct/SSH Endpoint 必须继续显示和工作。
@@ -49,7 +49,7 @@ Endpoint
 - App/CLI/TUI 通过 Go Client Engine 建立 WebRTC DataChannel。
 - 支持 LAN 自动地址和用户显式覆盖公网 IP、域名、端口及 server name。
 - 地址覆盖用于 FRP 或其它 TCP 映射，只改变 locator，不改变 daemon identity 和授权。
-- 不依赖 TermX Cloud。
+- 不依赖 Muxvia Cloud。
 
 ### 3.3 SSH WebRTC TCP
 
@@ -57,12 +57,12 @@ Endpoint
 - SSH `direct-tcpip` tunnel 转发 daemon loopback signaling 与 ICE-TCP。
 - tunnel 内继续建立与 Direct/Cloud 相同的 WebRTC DataChannel、remote auth、Hello 和 Proto API session。
 - 用户可以使用 SSH agent、private key、password 和 ProxyJump；secret 只进入平台 secure store。
-- 不依赖 TermX Cloud，也不使用旧远端 stdio proxy。
+- 不依赖 Muxvia Cloud，也不使用旧远端 stdio proxy。
 
-### 3.4 TermX Cloud
+### 3.4 Muxvia Cloud
 
 - Cloud 提供账号目录、托管 signaling、ICE-UDP、TURN Relay 和跨网络可达性。
-- TermX Cloud 是唯一 managed WebRTC provider，不提供用户自建 Hub/Relay/signaling provider contract。
+- Muxvia Cloud 是唯一 managed WebRTC provider，不提供用户自建 Hub/Relay/signaling provider contract。
 - Cloud 账号和订阅只控制 managed Route eligibility。
 - Control Plane、Hub 和 Relay 不能读取 terminal payload、CapabilityGrant body 或判断 terminal scope。
 - Cloud 退出登录或服务失败只影响 managed Route。
@@ -89,7 +89,7 @@ Route connector
 
 ## 5. 配对
 
-`termx pair create` 用于把当前 daemon 添加并授权到 App：
+`muxvia pair create` 用于把当前 daemon 添加并授权到 App：
 
 - QR 包含签名 daemon identity、短期一次性 PairingTicket 和可达 Route hint。
 - daemon 默认监听所有 IPv4 interface，并把当前活动 RFC1918 IPv4 地址投影为可预览的 LAN signaling/ICE-TCP locator；没有可用 LAN 地址时必须由用户显式指定，不能发布 wildcard 地址。
@@ -100,7 +100,7 @@ Route connector
 
 ## 6. Endpoint 分享
 
-`termx endpoint share <endpoint>` 用于在客户端之间迁移已配置 Route 和 selection policy：
+`muxvia endpoint share <endpoint>` 用于在客户端之间迁移已配置 Route 和 selection policy：
 
 - 发送方通过一次性、短期、带 receiver proof 的 share session 发送 portable config。
 - 接收方导入前展示 Route/policy diff。
@@ -146,7 +146,7 @@ Android 用户可用性必须由 ARM64 模拟器上的真实 APK UI 证明，不
 ## 10. 非当前目标
 
 - 默认 Web 访问界面。
-- 用户自建 TermX managed Cloud provider。
+- 用户自建 Muxvia managed Cloud provider。
 - KCP、QUIC 或替代 WebRTC 传输框架。
 - Relay Mesh、全球多区域高可用和无中断动态换路。
 - 多区域计费平台、通用插件和未来发布工程。

@@ -1,4 +1,4 @@
-# TermX Legal Release Baseline
+# Muxvia Legal Release Baseline
 
 本目录保存 LIC001 的工程许可基线，不替代适用法域内的专业法律意见。
 

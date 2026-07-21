@@ -17,7 +17,7 @@ export interface PathBookmarkApi {
   remove(id: string): Promise<void>
 }
 
-const pathBookmarkStorageAppId = 'termx.paths'
+const pathBookmarkStorageAppId = 'muxvia.paths'
 const pathBookmarkPrefix = 'bookmarks/'
 const pathBookmarkRecordVersion = 1
 

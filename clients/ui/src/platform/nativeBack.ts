@@ -1,17 +1,17 @@
-export const MUXVIA_NATIVE_BACK_EVENT = 'termx:native-back'
+export const MUXVIA_NATIVE_BACK_EVENT = 'muxvia:native-back'
 
-export type TermxNativeBackHandler = () => boolean
+export type MuxviaNativeBackHandler = () => boolean
 
 interface NativeBackHandlerEntry {
   id: number
   priority: number
-  handler: TermxNativeBackHandler
+  handler: MuxviaNativeBackHandler
 }
 
 let nextNativeBackHandlerId = 1
 const nativeBackHandlers: NativeBackHandlerEntry[] = []
 
-export function addNativeBackHandler(handler: TermxNativeBackHandler, priority = 0): () => void {
+export function addNativeBackHandler(handler: MuxviaNativeBackHandler, priority = 0): () => void {
   const entry = {
     id: nextNativeBackHandlerId++,
     priority,

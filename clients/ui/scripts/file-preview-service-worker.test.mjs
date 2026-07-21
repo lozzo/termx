@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { Script, createContext } from 'node:vm'
 import { describe, expect, it } from 'vitest'
 
-describe('termx file preview service worker', () => {
+describe('muxvia file preview service worker', () => {
   it('read-aheads through bounded WebRTC range chunks and reuses cached bytes', async () => {
     const runtime = createPreviewWorkerRuntime()
     const requests = []
@@ -83,7 +83,7 @@ function createPreviewWorkerRuntime() {
     setTimeout,
     clearTimeout,
     self: {
-      location: { origin: 'https://termx.test' },
+      location: { origin: 'https://muxvia.test' },
       skipWaiting() {},
       clients: {
         claim: () => Promise.resolve(),
@@ -97,7 +97,7 @@ function createPreviewWorkerRuntime() {
       },
     },
   })
-  new Script(readFileSync(resolve('public/termx-file-preview-sw.js'), 'utf8')).runInContext(context)
+  new Script(readFileSync(resolve('public/muxvia-file-preview-sw.js'), 'utf8')).runInContext(context)
   const fetchListener = listeners.get('fetch')?.[0]
   const messageListener = listeners.get('message')?.[0]
   if (!fetchListener || !messageListener) throw new Error('preview worker did not register expected listeners')
@@ -105,7 +105,7 @@ function createPreviewWorkerRuntime() {
   const respond = (requestId, offset, length) => {
     messageListener({
       data: {
-        type: 'termx-preview-response',
+        type: 'muxvia-preview-response',
         requestId,
         offset,
         length,
@@ -118,7 +118,7 @@ function createPreviewWorkerRuntime() {
 
   messageListener({
     data: {
-      type: 'termx-preview-configure',
+      type: 'muxvia-preview-configure',
       token: 'preview-test',
       size: 100 * 1024 * 1024,
       mimeType: 'video/mp4',
@@ -148,7 +148,7 @@ function createPreviewWorkerRuntime() {
         clientId: 'client-1',
         request: {
           method: 'GET',
-          url: 'https://termx.test/__termx_file_preview__/preview-test?size=104857600&mime=video%2Fmp4',
+          url: 'https://muxvia.test/__muxvia_file_preview__/preview-test?size=104857600&mime=video%2Fmp4',
           headers: new Headers({ range }),
         },
         respondWith(promise) {

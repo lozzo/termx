@@ -1,4 +1,4 @@
-# TermX SmartRoute 与全球网络加速规范
+# Muxvia SmartRoute 与全球网络加速规范
 
 状态：RP001B 活动基线
 
@@ -99,7 +99,7 @@ flowchart LR
         C["TUI / App"]
     end
 
-    subgraph ManagedBackbone["TermX Relay Mesh（私有）"]
+    subgraph ManagedBackbone["Muxvia Relay Mesh（私有）"]
         UK["Client Edge Relay<br/>Europe Edge / 就近接入"]
         US["North America Transit<br/>可选"]
         HK["Daemon Edge Relay<br/>East Asia Edge / 就近接入"]
@@ -119,13 +119,13 @@ flowchart LR
     end
 
     subgraph DaemonRegion["daemon 所在区域，例如中国大陆"]
-        D["termx daemon"]
+        D["muxvia daemon"]
     end
 
     C ==>|"WebRTC / DTLS ciphertext"| UK
     HK ==>|"WebRTC / DTLS ciphertext"| D
 
-    C -.->|"端到端 DeviceHello / CapabilityOpen / termx protocol"| D
+    C -.->|"端到端 DeviceHello / CapabilityOpen / muxvia protocol"| D
 
     classDef endpointNode fill:#ecfdf5,stroke:#15803d,color:#052e16;
     classDef relayNode fill:#fff7ed,stroke:#c2410c,color:#431407;
@@ -166,7 +166,7 @@ Probe 和 route telemetry 只能包含网络质量、匿名化 endpoint network 
 
 ### 6.4 GA001 被动观测基线
 
-GA001 已冻结为 measurement-only 链路：公开 `termx` 从当前 selected ICE candidate pair 与 SCTP stats 读取累计计数，默认每 5 秒采样、每 60 秒形成一个窗口；session 结束时尝试提交最后一个至少包含两个样本的窗口。窗口只包含：
+GA001 已冻结为 measurement-only 链路：公开 `muxvia` 从当前 selected ICE candidate pair 与 SCTP stats 读取累计计数，默认每 5 秒采样、每 60 秒形成一个窗口；session 结束时尝试提交最后一个至少包含两个样本的窗口。窗口只包含：
 
 - RTT P50/P95，以及相邻 RTT 样本绝对变化的平均值作为 transport jitter。
 - candidate pair 密文字节增量计算的双向有效吞吐。

@@ -46,7 +46,7 @@ build-cloud-test:
 build-web-controller:
 	rm -rf "$(ARTIFACT_DIR)/web-controller"
 	mkdir -p "$(ARTIFACT_DIR)/web-controller/dist" "$(ARTIFACT_DIR)/web-controller/config"
-	npm run build --workspace @termx/web-controller
+	npm run build --workspace @muxvia/web-controller
 	cp -R private/cloud/web-controller/web/dist/. "$(ARTIFACT_DIR)/web-controller/dist/"
 	cp private/cloud/web-controller/config/plans.json "$(ARTIFACT_DIR)/web-controller/config/plans.json"
 

@@ -11,8 +11,8 @@ let dropped = 0
 export function installNativeDebugLogCapture(): void {
   if (!Capacitor.isNativePlatform()) return
   ;(globalThis as {
-    __termxWriteNativeDebugLog?: (level: NativeLogLevel, tag: string, message: string) => void
-  }).__termxWriteNativeDebugLog = writeNativeDebugLog
+    __muxviaWriteNativeDebugLog?: (level: NativeLogLevel, tag: string, message: string) => void
+  }).__muxviaWriteNativeDebugLog = writeNativeDebugLog
   const originalConsole = {
     debug: console.debug.bind(console),
     info: console.info.bind(console),

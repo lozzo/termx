@@ -3,43 +3,43 @@
 @tailwind utilities;
 
 :root {
-  --termx-app-bg: #f1f3f6;
-  --termx-app-surface: #ffffff;
-  --termx-app-soft: #e8edf3;
-  --termx-app-line: #cfd6df;
-  --termx-app-line-strong: #aeb8c5;
-  --termx-app-text: #111418;
-  --termx-app-muted: #626d7a;
-  --termx-app-accent: #246bed;
-  --termx-app-accent-text: #ffffff;
-  --termx-app-success: #087a45;
-  --termx-app-danger: #c52b32;
-  --termx-app-inverse: #12161b;
+  --muxvia-app-bg: #f1f3f6;
+  --muxvia-app-surface: #ffffff;
+  --muxvia-app-soft: #e8edf3;
+  --muxvia-app-line: #cfd6df;
+  --muxvia-app-line-strong: #aeb8c5;
+  --muxvia-app-text: #111418;
+  --muxvia-app-muted: #626d7a;
+  --muxvia-app-accent: #246bed;
+  --muxvia-app-accent-text: #ffffff;
+  --muxvia-app-success: #087a45;
+  --muxvia-app-danger: #c52b32;
+  --muxvia-app-inverse: #12161b;
 }
 
-.termx-app-page {
-  background: var(--termx-app-bg);
-  color: var(--termx-app-text);
+.muxvia-app-page {
+  background: var(--muxvia-app-bg);
+  color: var(--muxvia-app-text);
 }
 
-.termx-app-header {
-  background: var(--termx-app-bg);
-  border-color: var(--termx-app-line);
+.muxvia-app-header {
+  background: var(--muxvia-app-bg);
+  border-color: var(--muxvia-app-line);
 }
 
-.termx-app-panel {
-  background: var(--termx-app-surface);
-  border: 1px solid var(--termx-app-line);
+.muxvia-app-panel {
+  background: var(--muxvia-app-surface);
+  border: 1px solid var(--muxvia-app-line);
   border-radius: 0;
   box-shadow: none;
 }
 
-.termx-app-icon-button {
+.muxvia-app-icon-button {
   align-items: center;
-  background: var(--termx-app-surface);
-  border: 1px solid var(--termx-app-line);
+  background: var(--muxvia-app-surface);
+  border: 1px solid var(--muxvia-app-line);
   border-radius: 0;
-  color: var(--termx-app-muted);
+  color: var(--muxvia-app-muted);
   display: inline-flex;
   height: 44px;
   justify-content: center;
@@ -48,17 +48,17 @@
   transition: background-color 180ms ease-out, border-color 180ms ease-out, color 180ms ease-out;
 }
 
-.termx-app-icon-button:active {
-  background: var(--termx-app-soft);
-  color: var(--termx-app-text);
+.muxvia-app-icon-button:active {
+  background: var(--muxvia-app-soft);
+  color: var(--muxvia-app-text);
 }
 
-.termx-app-primary-button {
+.muxvia-app-primary-button {
   align-items: center;
-  background: var(--termx-app-accent);
-  border: 1px solid var(--termx-app-accent);
+  background: var(--muxvia-app-accent);
+  border: 1px solid var(--muxvia-app-accent);
   border-radius: 0;
-  color: var(--termx-app-accent-text);
+  color: var(--muxvia-app-accent-text);
   display: inline-flex;
   justify-content: center;
   min-height: 44px;
@@ -66,16 +66,16 @@
   transition: background-color 180ms ease-out, opacity 180ms ease-out;
 }
 
-.termx-app-primary-button:active {
+.muxvia-app-primary-button:active {
   opacity: 0.82;
 }
 
-.termx-app-secondary-button {
+.muxvia-app-secondary-button {
   align-items: center;
-  background: var(--termx-app-surface);
-  border: 1px solid var(--termx-app-line);
+  background: var(--muxvia-app-surface);
+  border: 1px solid var(--muxvia-app-line);
   border-radius: 0;
-  color: var(--termx-app-text);
+  color: var(--muxvia-app-text);
   display: inline-flex;
   justify-content: center;
   min-height: 44px;
@@ -83,12 +83,12 @@
   transition: background-color 180ms ease-out, border-color 180ms ease-out;
 }
 
-.termx-app-secondary-button:active {
-  background: var(--termx-app-soft);
+.muxvia-app-secondary-button:active {
+  background: var(--muxvia-app-soft);
 }
 
-.termx-square-spinner {
-  animation: termx-square-spin 850ms linear infinite;
+.muxvia-square-spinner {
+  animation: muxvia-square-spin 850ms linear infinite;
   border: 2px solid currentColor;
   border-right-color: transparent;
   display: inline-block;
@@ -97,7 +97,7 @@
   width: 16px;
 }
 
-@keyframes termx-square-spin {
+@keyframes muxvia-square-spin {
   to {
     transform: rotate(360deg);
   }
@@ -106,10 +106,10 @@
 @media (prefers-reduced-motion: reduce) {
   .animate-in,
   .animate-slide-up,
-  .termx-app-icon-button,
-  .termx-app-primary-button,
-  .termx-app-secondary-button,
-  .termx-square-spinner {
+  .muxvia-app-icon-button,
+  .muxvia-app-primary-button,
+  .muxvia-app-secondary-button,
+  .muxvia-square-spinner {
     animation: none !important;
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
@@ -285,7 +285,7 @@
 }
 
 .term-scrollbar-thumb {
-  background: var(--termx-scrollbar, rgba(255, 255, 255, 0.35));
+  background: var(--muxvia-scrollbar, rgba(255, 255, 255, 0.35));
   border-radius: 999px;
   min-height: 24px;
   position: absolute;
@@ -298,7 +298,7 @@
 
 .term-scrollbar-track.active .term-scrollbar-thumb,
 .term-scrollbar-track:hover .term-scrollbar-thumb {
-  background: var(--termx-scrollbar-active, rgba(255, 255, 255, 0.55));
+  background: var(--muxvia-scrollbar-active, rgba(255, 255, 255, 0.55));
   width: 10px;
 }
 

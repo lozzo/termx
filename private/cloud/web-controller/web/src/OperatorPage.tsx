@@ -63,14 +63,14 @@ export default function OperatorPage() {
           ListOperatorAccountsRequestSchema,
           create(ListOperatorAccountsRequestSchema, { query: search, page }),
           ListOperatorAccountsResponseSchema,
-          "termx_cloud_operator_csrf",
+          "muxvia_cloud_operator_csrf",
         ),
         protoPost(
           "/api/v1/operator/fleet/list",
           ListHubFleetRequestSchema,
           create(ListHubFleetRequestSchema, { page }),
           ListHubFleetResponseSchema,
-          "termx_cloud_operator_csrf",
+          "muxvia_cloud_operator_csrf",
         ),
       ]);
       setAccounts(nextAccounts);
@@ -98,7 +98,7 @@ export default function OperatorPage() {
         OperatorLoginRequestSchema,
         create(OperatorLoginRequestSchema, { accessToken: decodeToken(token) }),
         OperatorLoginResponseSchema,
-        "termx_cloud_operator_csrf",
+        "muxvia_cloud_operator_csrf",
       );
       setToken("");
       await load("");
@@ -117,7 +117,7 @@ export default function OperatorPage() {
           GetOperatorAccountRequestSchema,
           create(GetOperatorAccountRequestSchema, { accountId }),
           GetOperatorAccountResponseSchema,
-          "termx_cloud_operator_csrf",
+          "muxvia_cloud_operator_csrf",
         ),
       );
     } catch (cause) {
@@ -139,7 +139,7 @@ export default function OperatorPage() {
           transition: kind,
         }),
         OperatorTransitionSubscriptionResponseSchema,
-        "termx_cloud_operator_csrf",
+        "muxvia_cloud_operator_csrf",
       );
       await select(accountId);
       await load();
@@ -172,7 +172,7 @@ export default function OperatorPage() {
           }),
         }),
         CreateManagementCommandResponseSchema,
-        "termx_cloud_operator_csrf",
+        "muxvia_cloud_operator_csrf",
       );
       if (detail?.commerce?.account?.accountId)
         await select(detail.commerce.account.accountId);
@@ -203,7 +203,7 @@ export default function OperatorPage() {
           }),
         }),
         CreateManagementCommandResponseSchema,
-        "termx_cloud_operator_csrf",
+        "muxvia_cloud_operator_csrf",
       );
       await select(accountId);
       await load();
@@ -220,7 +220,7 @@ export default function OperatorPage() {
       OperatorLogoutRequestSchema,
       create(OperatorLogoutRequestSchema),
       OperatorLogoutResponseSchema,
-      "termx_cloud_operator_csrf",
+      "muxvia_cloud_operator_csrf",
     );
     setAuthenticated(false);
     setAccounts(undefined);
@@ -266,7 +266,7 @@ export default function OperatorPage() {
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-5">
         <div>
           <p className="font-mono text-[10px] text-primary">
-            TERMX CLOUD / OPERATOR
+            MUXVIA CLOUD / OPERATOR
           </p>
           <h1 className="mt-2 text-3xl font-light">Control plane</h1>
         </div>

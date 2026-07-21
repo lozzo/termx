@@ -43,11 +43,11 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
       data-testid="action-sheet-backdrop"
     >
       <div
-        className="w-full max-w-xl animate-slide-up border-t border-[var(--termx-app-line)] bg-[var(--termx-app-surface)] pb-[env(safe-area-inset-bottom,20px)] md:border md:pb-4"
+        className="w-full max-w-xl animate-slide-up border-t border-[var(--muxvia-app-line)] bg-[var(--muxvia-app-surface)] pb-[env(safe-area-inset-bottom,20px)] md:border md:pb-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex flex-col">
-          <div className="mx-auto mt-3 h-1 w-12 bg-[var(--termx-app-line-strong)] md:hidden" />
+          <div className="mx-auto mt-3 h-1 w-12 bg-[var(--muxvia-app-line-strong)] md:hidden" />
 
           <div className="flex items-center justify-between px-5 pt-4 pb-2">
             <div className="flex flex-col">
@@ -57,7 +57,7 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
             <button
               type="button"
               aria-label="Close"
-              className="termx-app-icon-button border-transparent bg-transparent"
+              className="muxvia-app-icon-button border-transparent bg-transparent"
               onClick={closeWithHaptic}
             >
               <X className="h-4 w-4" />
@@ -91,7 +91,7 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
                       className={`my-auto flex h-11 w-11 shrink-0 items-center justify-center border transition-colors ${
                         action.secondaryAction.danger
                           ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 active:bg-red-100'
-                          : 'border-[var(--termx-app-line)] bg-zinc-50 text-zinc-500 hover:bg-zinc-100 active:bg-zinc-100'
+                          : 'border-[var(--muxvia-app-line)] bg-zinc-50 text-zinc-500 hover:bg-zinc-100 active:bg-zinc-100'
                       }`}
                       onClick={(event) => {
                         event.stopPropagation()
@@ -109,7 +109,7 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
                   type="button"
                   aria-label={action.ariaLabel ?? action.label}
                   data-testid="action-sheet-item"
-                  className={`flex min-h-14 w-full items-center gap-4 px-5 py-3 text-left transition-colors hover:bg-zinc-50 active:bg-[var(--termx-app-soft)] ${
+                  className={`flex min-h-14 w-full items-center gap-4 px-5 py-3 text-left transition-colors hover:bg-zinc-50 active:bg-[var(--muxvia-app-soft)] ${
                     action.danger ? 'text-red-600' : 'text-zinc-700'
                   }`}
                   onClick={() => runSheetAction(action, onClose)}
@@ -143,7 +143,7 @@ function runSheetAction(
 function ActionIcon({ children, danger }: { children: ReactNode; danger?: boolean | undefined }) {
   return (
     <div className={`flex h-10 w-10 shrink-0 items-center justify-center border ${
-      danger ? 'border-red-200 bg-red-50' : 'border-[var(--termx-app-line)] bg-zinc-50'
+      danger ? 'border-red-200 bg-red-50' : 'border-[var(--muxvia-app-line)] bg-zinc-50'
     }`}>
       <span className={danger ? 'text-red-600' : 'text-zinc-500'}>
         {children}

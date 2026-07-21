@@ -21,6 +21,6 @@ make cloud-dev
 
 Hub 不持久化 policy、assignment、Presence、signaling、topology 或 command dedupe。Edge 只允许 Relay usage outbox 落盘，重启后必须重新取得 full projection。
 
-公网 staging、HTTPS、正式 identity 配置、稳定域名、systemd unit、Nginx 和真实 provider 属于 `CLOUDP008` Production Cloud 装配范围。在该切片开始前，不得恢复旧 `termx-staging-cloud.service`、旧单进程参数或 `hub-policy.snapshot`。
+公网 staging、HTTPS、正式 identity 配置、稳定域名、systemd unit、Nginx 和真实 provider 属于 `CLOUDP008` Production Cloud 装配范围。在该切片开始前，不得恢复旧 `muxvia-staging-cloud.service`、旧单进程参数或 `hub-policy.snapshot`。
 
 历史部署细节仍可从 Git 历史查阅，但不能覆盖 `workflow.md`、`cloud-product-spec.md`、`multi-hub-control-topology-spec.md` 和 `multi-hub-technical-plan.md` 的当前结论。

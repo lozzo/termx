@@ -4,23 +4,23 @@ import { resolveTerminalTheme, terminalThemeCssVariables } from './terminalSetti
 describe('terminal theme UI variables', () => {
   it('keeps terminal chrome colors coordinated with the selected theme', () => {
     expect(terminalThemeCssVariables('tokyo-night')).toMatchObject({
-      '--termx-bg': '#030712',
-      '--termx-surface': '#1f2937',
-      '--termx-surface-raised': '#111827',
-      '--termx-border': '#374151',
-      '--termx-border-subtle': 'rgba(255, 255, 255, 0.06)',
-      '--termx-terminal-bg': '#1a1b26',
-      '--termx-terminal-fg': '#a9b1d6',
+      '--muxvia-bg': '#030712',
+      '--muxvia-surface': '#1f2937',
+      '--muxvia-surface-raised': '#111827',
+      '--muxvia-border': '#374151',
+      '--muxvia-border-subtle': 'rgba(255, 255, 255, 0.06)',
+      '--muxvia-terminal-bg': '#1a1b26',
+      '--muxvia-terminal-fg': '#a9b1d6',
     })
 
     expect(terminalThemeCssVariables('github-light')).toMatchObject({
-      '--termx-bg': '#f6f8fa',
-      '--termx-surface': '#ffffff',
-      '--termx-surface-raised': '#f6f8fa',
-      '--termx-border': '#d0d7de',
-      '--termx-border-subtle': 'rgba(0, 0, 0, 0.08)',
-      '--termx-terminal-bg': '#ffffff',
-      '--termx-terminal-fg': '#24292f',
+      '--muxvia-bg': '#f6f8fa',
+      '--muxvia-surface': '#ffffff',
+      '--muxvia-surface-raised': '#f6f8fa',
+      '--muxvia-border': '#d0d7de',
+      '--muxvia-border-subtle': 'rgba(0, 0, 0, 0.08)',
+      '--muxvia-terminal-bg': '#ffffff',
+      '--muxvia-terminal-fg': '#24292f',
     })
   })
 

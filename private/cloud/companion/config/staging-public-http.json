@@ -6,7 +6,7 @@
   "relay_url": "turn:114.66.58.243:41003?transport=udp",
   "hub_id": "hub-dev-local",
   "region": "local-1",
-  "account_label": "TermX Dev Account",
+  "account_label": "Muxvia Dev Account",
   "enrollment_code": "public-client-enrollment-disabled",
   "started_at": "2026-07-14T00:00:00Z"
 }

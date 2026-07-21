@@ -114,7 +114,7 @@ export function TextPreview({ text, name, mimeType }: { text: string; name: stri
                 {index + 1}
               </span>
               <code
-                data-testid={`termx-file-preview-line-${index + 1}`}
+                data-testid={`muxvia-file-preview-line-${index + 1}`}
                 className={`hljs block bg-transparent px-3 text-[12px] leading-5 ${softWrap ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'}`}
                 {...(isCode
                   ? { dangerouslySetInnerHTML: { __html: highlightedLines[index] ?? '' } }

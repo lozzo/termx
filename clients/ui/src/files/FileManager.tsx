@@ -244,7 +244,7 @@ export function FileManager({
       className={`relative flex min-h-0 flex-col bg-white ${className || ''}`}
       data-machine-id={machineId}
       data-terminal-id={terminalId}
-      data-testid="termx-file-manager"
+      data-testid="muxvia-file-manager"
     >
       {manager.selectionMode ? (
         <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200/70 bg-white px-4">
@@ -273,8 +273,8 @@ export function FileManager({
           <div className="flex h-11 min-w-0 items-center px-3">
             <div
               ref={pathBarRef}
-              data-testid="termx-file-pathbar"
-              className="flex h-11 min-w-0 flex-1 items-center gap-1 overflow-x-auto border border-[var(--termx-app-line)] bg-zinc-50 px-2 text-[14px] font-medium text-zinc-600 no-scrollbar"
+              data-testid="muxvia-file-pathbar"
+              className="flex h-11 min-w-0 flex-1 items-center gap-1 overflow-x-auto border border-[var(--muxvia-app-line)] bg-zinc-50 px-2 text-[14px] font-medium text-zinc-600 no-scrollbar"
             >
               <HardDrive className="h-4 w-4 shrink-0 text-zinc-400" />
               {pathSegments.length === 0 ? (
@@ -337,7 +337,7 @@ export function FileManager({
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-white">
         {newDirOpen ? (
-          <div className="mx-3 my-2 flex items-center gap-2 border border-[var(--termx-app-line)] bg-zinc-50 p-2">
+          <div className="mx-3 my-2 flex items-center gap-2 border border-[var(--muxvia-app-line)] bg-zinc-50 p-2">
             <Folder className="h-5 w-5 shrink-0 text-blue-500" />
             <input
               aria-label="Directory name"
@@ -357,7 +357,7 @@ export function FileManager({
             <button
               type="button"
               aria-label="Create directory"
-              className="termx-app-primary-button disabled:bg-zinc-200 disabled:text-zinc-400"
+              className="muxvia-app-primary-button disabled:bg-zinc-200 disabled:text-zinc-400"
               disabled={!manager.newDirName.trim() || manager.creatingDirectory}
               onClick={() => { hapticImpact(); void manager.createDirectory().then(() => setNewDirOpen(false)) }}
             >
@@ -366,7 +366,7 @@ export function FileManager({
             <button
               type="button"
               aria-label="Cancel new directory"
-              className="termx-app-secondary-button bg-zinc-200 text-zinc-600"
+              className="muxvia-app-secondary-button bg-zinc-200 text-zinc-600"
               onClick={() => {
                 manager.setNewDirName('')
                 setNewDirOpen(false)
@@ -407,7 +407,7 @@ export function FileManager({
 
         {manager.loading && manager.entries.length === 0 && !manager.error ? (
           <div className="flex h-40 flex-col items-center justify-center gap-3 text-[14px] font-medium text-zinc-500">
-            <span className="termx-square-spinner h-6 w-6 text-zinc-500" aria-hidden="true" />
+            <span className="muxvia-square-spinner h-6 w-6 text-zinc-500" aria-hidden="true" />
             Loading directory...
           </div>
         ) : (
@@ -451,7 +451,7 @@ export function FileManager({
                         </div>
                       </div>
                     ) : null}
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center border border-[var(--termx-app-line)] transition-colors ${isDirectory ? 'bg-blue-50 group-hover:bg-blue-50/80 group-active:bg-blue-100' : 'bg-zinc-50'}`}>
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center border border-[var(--muxvia-app-line)] transition-colors ${isDirectory ? 'bg-blue-50 group-hover:bg-blue-50/80 group-active:bg-blue-100' : 'bg-zinc-50'}`}>
                       <Icon className={`h-5 w-5 ${isDirectory ? 'fill-blue-50 text-blue-500' : 'text-zinc-400'}`} />
                     </div>
                     <button
@@ -496,7 +496,7 @@ export function FileManager({
                     {!manager.selectionMode ? (
                       <>
                         <div
-                          data-testid="termx-file-row-actions"
+                          data-testid="muxvia-file-row-actions"
                           className="ml-auto flex w-16 shrink-0 items-center justify-end gap-1"
                         >
                           <button
@@ -523,12 +523,12 @@ export function FileManager({
         )}
       </div>
       {deletePath ? (
-        <div className="absolute inset-0 z-50 flex items-end bg-black/40 p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-sm md:items-center md:justify-center" data-testid="termx-file-delete-confirm" onClick={() => { hapticSelection(); setDeletePath(null) }}>
-          <section className="termx-app-panel w-full p-4 md:max-w-sm" onClick={(event) => event.stopPropagation()}>
+        <div className="absolute inset-0 z-50 flex items-end bg-black/40 p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-sm md:items-center md:justify-center" data-testid="muxvia-file-delete-confirm" onClick={() => { hapticSelection(); setDeletePath(null) }}>
+          <section className="muxvia-app-panel w-full p-4 md:max-w-sm" onClick={(event) => event.stopPropagation()}>
             <h2 className="text-[17px] font-bold text-zinc-950">Delete entry?</h2>
             <p className="mt-2 break-all text-sm text-zinc-500">{deletePath}</p>
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <button type="button" className="termx-app-secondary-button h-11 text-sm font-semibold" onClick={() => { hapticSelection(); setDeletePath(null) }}>
+              <button type="button" className="muxvia-app-secondary-button h-11 text-sm font-semibold" onClick={() => { hapticSelection(); setDeletePath(null) }}>
                 Cancel
               </button>
               <button
@@ -562,7 +562,7 @@ export function FileManager({
       {!manager.selectionMode && (!manager.clipboard || manager.clipboard.paths.length === 0) ? (
         <div
           className="absolute bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-xl border-t border-zinc-200 pb-[env(safe-area-inset-bottom)]"
-          data-testid="termx-file-toolbar"
+          data-testid="muxvia-file-toolbar"
         >
           <div className="flex h-[60px] items-center justify-around px-2">
             <button
@@ -761,10 +761,10 @@ export function FileManager({
       {bookmarksOpen && editingBookmark ? (
         <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/40 backdrop-blur-[2px] md:items-center" onClick={closeBookmarkEditor}>
           <section
-            className="w-full max-w-xl animate-slide-up border-t border-[var(--termx-app-line)] bg-white pb-[calc(env(safe-area-inset-bottom)+1rem)] md:border"
+            className="w-full max-w-xl animate-slide-up border-t border-[var(--muxvia-app-line)] bg-white pb-[calc(env(safe-area-inset-bottom)+1rem)] md:border"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="mx-auto mt-3 h-1 w-12 bg-[var(--termx-app-line-strong)] md:hidden" />
+            <div className="mx-auto mt-3 h-1 w-12 bg-[var(--muxvia-app-line-strong)] md:hidden" />
             <div className="px-5 pb-2 pt-4">
               <h3 className="text-[17px] font-bold text-zinc-900">Edit bookmark</h3>
               <p className="mt-1 break-all text-[13px] font-medium text-zinc-500">{editingBookmark.path}</p>
@@ -774,7 +774,7 @@ export function FileManager({
                 Alias
                 <input
                   aria-label="Bookmark alias"
-                  className="h-12 border border-[var(--termx-app-line)] bg-zinc-50 px-3 text-[16px] font-semibold text-zinc-900 outline-none focus:border-[var(--termx-app-accent)] focus:ring-2 focus:ring-blue-500/20"
+                  className="h-12 border border-[var(--muxvia-app-line)] bg-zinc-50 px-3 text-[16px] font-semibold text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/20"
                   value={bookmarkAlias}
                   onChange={(event) => setBookmarkAlias(event.currentTarget.value)}
                   onKeyDown={(event) => {
@@ -787,14 +787,14 @@ export function FileManager({
               <div className="mt-4 grid grid-cols-2 gap-3">
                 <button
                   type="button"
-                  className="termx-app-secondary-button h-11 text-sm font-semibold"
+                  className="muxvia-app-secondary-button h-11 text-sm font-semibold"
                   onClick={() => { hapticSelection(); closeBookmarkEditor() }}
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  className="termx-app-primary-button h-11 text-sm font-semibold"
+                  className="muxvia-app-primary-button h-11 text-sm font-semibold"
                   onClick={saveBookmarkAlias}
                 >
                   Save

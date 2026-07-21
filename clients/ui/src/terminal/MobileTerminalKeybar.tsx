@@ -89,12 +89,12 @@ function KeyPopup({ label }: { label: string }) {
       className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-0.5 -translate-x-1/2"
       style={{ overflow: 'visible' }}
     >
-      <div className="min-w-[2.5rem] border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] px-4 py-2 text-center font-mono text-base font-bold text-[var(--termx-text)] whitespace-nowrap">
+      <div className="min-w-[2.5rem] border border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-surface-raised)] px-4 py-2 text-center font-mono text-base font-bold text-[var(--muxvia-text)] whitespace-nowrap">
         {label}
       </div>
       <div
         className="mx-auto h-0 w-0 border-l-[7px] border-r-[7px] border-t-[7px] border-l-transparent border-r-transparent"
-        style={{ borderTopColor: 'var(--termx-surface-raised)' }}
+        style={{ borderTopColor: 'var(--muxvia-surface-raised)' }}
       />
     </div>
   )
@@ -186,8 +186,8 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
   const keyboardButtonClass = keyboardLocked
     ? 'bg-red-600 text-white'
     : keyboardVisible
-      ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]'
-      : 'bg-transparent text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'
+      ? 'bg-[var(--muxvia-accent)] text-[var(--muxvia-accent-text)]'
+      : 'bg-transparent text-[var(--muxvia-muted)] active:bg-[var(--muxvia-surface-raised)]'
 
   const btn = (label: string, data: string, ariaLabel?: string) => {
     const id = label + ':' + data
@@ -197,7 +197,7 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
         data-key-id={id}
         type="button"
         aria-label={ariaLabel}
-        className={`${cls} bg-[var(--termx-surface-raised)] text-[var(--termx-text)] active:opacity-70`}
+        className={`${cls} bg-[var(--muxvia-surface-raised)] text-[var(--muxvia-text)] active:opacity-70`}
         onPointerDown={(e) => { e.preventDefault(); showPress(id); }}
         onClick={() => send(data)}
       >
@@ -211,8 +211,8 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
     const stateClass = state === 'locked'
       ? 'bg-amber-500 text-white'
       : state === 'once'
-        ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]'
-        : 'bg-[var(--termx-surface-raised)] text-[var(--termx-text)] active:opacity-70'
+        ? 'bg-[var(--muxvia-accent)] text-[var(--muxvia-accent-text)]'
+        : 'bg-[var(--muxvia-surface-raised)] text-[var(--muxvia-text)] active:opacity-70'
     return (
       <button
         key={label}
@@ -237,8 +237,8 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
   return (
     <div
       ref={setBarRef}
-      className={`min-w-0 shrink-0 overflow-x-hidden border-t border-[var(--termx-border-subtle)] bg-[var(--termx-surface)] text-[var(--termx-text)] md:hidden ${className || ''}`}
-      data-testid="termx-mobile-keybar"
+      className={`min-w-0 shrink-0 overflow-x-hidden border-t border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-surface)] text-[var(--muxvia-text)] md:hidden ${className || ''}`}
+      data-testid="muxvia-mobile-keybar"
       style={{ paddingBottom: 'calc(0.375rem + env(safe-area-inset-bottom))', overflow: 'visible' }}
     >
       <div className="flex min-w-0 gap-1 px-1.5 pt-1.5" style={{ overflow: 'visible' }}>
@@ -314,7 +314,7 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
           type="button"
           aria-label="Toggle Fn shortcuts"
           aria-pressed={fnOpen}
-          className={`${cls} ${fnOpen ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'bg-transparent text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
+          className={`${cls} ${fnOpen ? 'bg-[var(--muxvia-accent)] text-[var(--muxvia-accent-text)]' : 'bg-transparent text-[var(--muxvia-muted)] active:bg-[var(--muxvia-surface-raised)]'}`}
           onPointerDown={(e) => { e.preventDefault(); showPress('Fn') }}
           onClick={() => onToggleFn?.()}
         >

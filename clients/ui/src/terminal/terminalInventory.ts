@@ -125,7 +125,7 @@ function terminalInventoryDetailScore(terminal: Terminal): number {
 
 function logTerminalInventory(event: string, details: Record<string, unknown>): void {
   try {
-    console.info(`[termx:terminal-inventory] ${event} ${JSON.stringify(details)}`)
+    console.info(`[muxvia:terminal-inventory] ${event} ${JSON.stringify(details)}`)
   } catch {
     // Diagnostics must not affect inventory loading.
   }

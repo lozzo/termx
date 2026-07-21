@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 
 const webRoot = process.cwd();
 const repoRoot = resolve(webRoot, "../../../..");
-const artifactDir = await mkdtemp(join(tmpdir(), "termx-hub007-"));
+const artifactDir = await mkdtemp(join(tmpdir(), "muxvia-hub007-"));
 const manifestPath = join(artifactDir, "runtime.json");
 const supervisor = spawn(
   "go",

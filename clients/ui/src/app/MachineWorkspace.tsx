@@ -897,11 +897,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       setError(null)
       reattachActiveTerminals(session)
     }
-    document.addEventListener('termx:resume', handleResume)
-    document.addEventListener('termx:binding-closed', handleResume)
+    document.addEventListener('muxvia:resume', handleResume)
+    document.addEventListener('muxvia:binding-closed', handleResume)
     return () => {
-      document.removeEventListener('termx:resume', handleResume)
-      document.removeEventListener('termx:binding-closed', handleResume)
+      document.removeEventListener('muxvia:resume', handleResume)
+      document.removeEventListener('muxvia:binding-closed', handleResume)
     }
   }, [activeTerminalId, connectedSession, page, reattachActiveTerminals, resetKeyboardLayout, splitTerminalId])
 
@@ -1609,14 +1609,14 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       .filter(isDirectoryEntry)
       .sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }))
     return (
-      <MobileSheetPanel title="Choose directory" testId="termx-terminal-path-picker-sheet" onClose={() => setMobileSheet(terminalPathReturnSheet)}>
+      <MobileSheetPanel title="Choose directory" testId="muxvia-terminal-path-picker-sheet" onClose={() => setMobileSheet(terminalPathReturnSheet)}>
         <div className="flex flex-col gap-3">
-          <div className="termx-app-panel p-3">
+          <div className="muxvia-app-panel p-3">
             <div className="break-all font-mono text-[12px] font-semibold text-zinc-800">{normalizedPath}</div>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <button
                 type="button"
-                className="termx-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold disabled:text-zinc-300"
+                className="muxvia-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold disabled:text-zinc-300"
                 disabled={normalizedPath === '/'}
                 onClick={() => { hapticImpact(); void loadTerminalPathPicker(parentPath(normalizedPath)) }}
               >
@@ -1625,7 +1625,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               </button>
               <button
                 type="button"
-                className="termx-app-primary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
+                className="muxvia-app-primary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
                 onClick={() => { hapticImpact(); selectTerminalWorkingDirectory(normalizedPath) }}
               >
                 <FolderOpen className="h-4 w-4" />
@@ -1641,12 +1641,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           ) : null}
 
           <div
-            className="termx-app-panel flex h-80 max-h-[45vh] min-h-0 flex-col overflow-hidden"
-            data-testid="termx-terminal-path-picker-list"
+            className="muxvia-app-panel flex h-80 max-h-[45vh] min-h-0 flex-col overflow-hidden"
+            data-testid="muxvia-terminal-path-picker-list"
           >
             {terminalPathPickerLoading ? (
               <div className="flex h-full items-center justify-center gap-2 text-[13px] font-medium text-zinc-500">
-                <span className="termx-square-spinner" aria-hidden="true" />
+                <span className="muxvia-square-spinner" aria-hidden="true" />
                 Loading...
               </div>
             ) : directories.length === 0 ? (
@@ -1680,12 +1680,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const renderTerminalPathBookmarksSheet = () => {
     if (mobileSheet !== 'terminal-path-bookmarks') return null
     return (
-      <MobileSheetPanel title="Path bookmarks" testId="termx-terminal-path-bookmarks-sheet" onClose={() => setMobileSheet(terminalPathReturnSheet)}>
+      <MobileSheetPanel title="Path bookmarks" testId="muxvia-terminal-path-bookmarks-sheet" onClose={() => setMobileSheet(terminalPathReturnSheet)}>
         <div className="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              className="termx-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
+              className="muxvia-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
               onClick={() => { hapticImpact(); void addTerminalPathBookmark() }}
             >
               <BookmarkPlus className="h-4 w-4" />
@@ -1693,7 +1693,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </button>
             <button
               type="button"
-              className="termx-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
+              className="muxvia-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
               onClick={() => { hapticImpact(); void loadTerminalPathBookmarks() }}
             >
               <RefreshCw className="h-4 w-4" />
@@ -1707,10 +1707,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </div>
           ) : null}
 
-          <div className="termx-app-panel overflow-hidden">
+          <div className="muxvia-app-panel overflow-hidden">
             {terminalPathBookmarksLoading ? (
               <div className="flex min-h-20 items-center justify-center gap-2 text-[13px] font-medium text-zinc-500">
-                <span className="termx-square-spinner" aria-hidden="true" />
+                <span className="muxvia-square-spinner" aria-hidden="true" />
                 Loading...
               </div>
             ) : terminalPathBookmarks.length === 0 ? (
@@ -1748,19 +1748,19 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const renderClipboardHistorySheet = () => {
     if (mobileSheet !== 'clipboard-history') return null
     return (
-      <MobileSheetPanel title="Clipboard" testId="termx-clipboard-history-sheet" onClose={() => setMobileSheet(null)}>
+      <MobileSheetPanel title="Clipboard" testId="muxvia-clipboard-history-sheet" onClose={() => setMobileSheet(null)}>
         <div className="flex flex-col gap-3">
-          <div className="termx-app-panel p-3">
+          <div className="muxvia-app-panel p-3">
             <textarea
               aria-label="Clipboard text"
-              className="min-h-24 w-full resize-none border border-[var(--termx-app-line)] bg-zinc-50 px-3 py-2 text-[13px] font-medium text-zinc-900 outline-none"
+              className="min-h-24 w-full resize-none border border-[var(--muxvia-app-line)] bg-zinc-50 px-3 py-2 text-[13px] font-medium text-zinc-900 outline-none"
               value={clipboardDraft}
               onChange={(event) => setClipboardDraft(event.currentTarget.value)}
             />
             <div className="mt-2 grid grid-cols-3 gap-2">
               <button
                 type="button"
-                className="termx-app-secondary-button min-h-11 gap-1.5 px-2 text-[12px] font-semibold"
+                className="muxvia-app-secondary-button min-h-11 gap-1.5 px-2 text-[12px] font-semibold"
                 onClick={() => { hapticImpact(); void loadBrowserClipboardDraft() }}
               >
                 <ClipboardList className="h-4 w-4" />
@@ -1768,7 +1768,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               </button>
               <button
                 type="button"
-                className="termx-app-secondary-button min-h-11 gap-1.5 px-2 text-[12px] font-semibold"
+                className="muxvia-app-secondary-button min-h-11 gap-1.5 px-2 text-[12px] font-semibold"
                 onClick={() => { hapticImpact(); void refreshClipboardEntries() }}
               >
                 <RefreshCw className="h-4 w-4" />
@@ -1776,7 +1776,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               </button>
               <button
                 type="button"
-                className="termx-app-primary-button min-h-11 px-2 text-[12px] font-semibold disabled:bg-zinc-300 disabled:text-zinc-500"
+                className="muxvia-app-primary-button min-h-11 px-2 text-[12px] font-semibold disabled:bg-zinc-300 disabled:text-zinc-500"
                 disabled={!clipboardDraft || clipboardLoading}
                 onClick={() => { hapticImpact(); void saveClipboardDraft() }}
               >
@@ -1791,10 +1791,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </div>
           ) : null}
 
-          <div className="termx-app-panel overflow-hidden">
+          <div className="muxvia-app-panel overflow-hidden">
             {clipboardLoading && clipboardEntries.length === 0 ? (
               <div className="flex min-h-20 items-center justify-center gap-2 text-[13px] font-medium text-zinc-500">
-                <span className="termx-square-spinner" aria-hidden="true" />
+                <span className="muxvia-square-spinner" aria-hidden="true" />
                 Loading...
               </div>
             ) : clipboardEntries.length === 0 ? (
@@ -1815,7 +1815,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   <div className="mt-2 flex items-center justify-end gap-2">
                     <button
                       type="button"
-                      className="termx-app-secondary-button min-h-11 gap-1.5 px-2 text-[12px] font-semibold"
+                      className="muxvia-app-secondary-button min-h-11 gap-1.5 px-2 text-[12px] font-semibold"
                       onClick={() => { hapticImpact(); setEditingClipboardId(entry.id); setClipboardDraft(entry.text) }}
                     >
                       <SquarePen className="h-3.5 w-3.5" />
@@ -1895,16 +1895,16 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
     return (
       <aside
-        className={`termx-app-page relative min-h-0 flex-1 flex-col md:flex md:w-72 md:flex-none md:border-r md:border-[var(--termx-app-line)] ${page === 'terminal' ? 'hidden' : 'flex'}`}
-        data-testid={page === 'terminal' ? undefined : 'termx-terminal-list-page'}
+        className={`muxvia-app-page relative min-h-0 flex-1 flex-col md:flex md:w-72 md:flex-none md:border-r md:border-[var(--muxvia-app-line)] ${page === 'terminal' ? 'hidden' : 'flex'}`}
+        data-testid={page === 'terminal' ? undefined : 'muxvia-terminal-list-page'}
       >
-        <header className="termx-app-header flex min-h-14 shrink-0 items-center justify-between border-b px-3 pt-[env(safe-area-inset-top)] md:pt-0">
+        <header className="muxvia-app-header flex min-h-14 shrink-0 items-center justify-between border-b px-3 pt-[env(safe-area-inset-top)] md:pt-0">
           <div className="flex min-w-0 items-center gap-2">
             {onBack ? (
               <button
                 type="button"
                 aria-label="Back to machines"
-                className="termx-app-icon-button mr-1 border-transparent bg-transparent"
+                className="muxvia-app-icon-button mr-1 border-transparent bg-transparent"
                 onClick={() => { hapticSelection(); onBack() }}
               >
                 <ChevronLeft className="h-5 w-5" />
@@ -1921,7 +1921,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               type="button"
               aria-hidden={page === 'terminal' ? 'true' : undefined}
               aria-label="Connection info"
-              className="termx-app-icon-button border-transparent bg-transparent"
+              className="muxvia-app-icon-button border-transparent bg-transparent"
               tabIndex={page === 'terminal' ? -1 : undefined}
               onClick={() => { hapticSelection(); openConnectionInfo() }}
             >
@@ -1931,7 +1931,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               type="button"
               aria-hidden={page === 'terminal' ? 'true' : undefined}
               aria-label="Open files"
-              className="termx-app-icon-button border-transparent bg-transparent"
+              className="muxvia-app-icon-button border-transparent bg-transparent"
               tabIndex={page === 'terminal' ? -1 : undefined}
               onClick={() => { hapticSelection(); openFiles() }}
             >
@@ -1941,7 +1941,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <button
                 type="button"
                 aria-label="Create terminal"
-                className="termx-app-icon-button border-transparent bg-transparent"
+                className="muxvia-app-icon-button border-transparent bg-transparent"
                 onClick={() => { hapticImpact(); openCreateTerminal() }}
               >
                 <Plus className="h-5 w-5" />
@@ -1951,7 +1951,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         </header>
         {showDelayedMachineNetworkOverlay ? (
           <div className="flex animate-in fade-in slide-in-from-top-1 duration-200 items-center justify-center gap-2 border-b border-zinc-200 bg-blue-50/50 px-3 py-1.5">
-            <span className="termx-square-spinner h-3.5 w-3.5 text-blue-600" aria-hidden="true" />
+            <span className="muxvia-square-spinner h-3.5 w-3.5 text-blue-600" aria-hidden="true" />
             <span className="text-[11px] font-medium text-blue-700">
               {connectionStatus || 'Connecting...'}
             </span>
@@ -1963,9 +1963,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           </div>
         ) : null}
         {requireVerification ? (
-          <section className="termx-app-panel mx-3 mt-3 p-5" data-testid="termx-verification-gate">
+          <section className="muxvia-app-panel mx-3 mt-3 p-5" data-testid="muxvia-verification-gate">
             <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center border border-[var(--termx-app-line)] bg-[var(--termx-app-soft)] text-zinc-600">
+              <div className="flex h-11 w-11 items-center justify-center border border-[var(--muxvia-app-line)] bg-[var(--muxvia-app-soft)] text-zinc-600">
                 <KeyRound className="h-5 w-5" />
               </div>
               <div>
@@ -1975,7 +1975,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </div>
             <button
               type="button"
-              className="termx-app-primary-button min-h-12 w-full gap-2 px-4 text-[15px] font-semibold"
+              className="muxvia-app-primary-button min-h-12 w-full gap-2 px-4 text-[15px] font-semibold"
               onClick={() => { hapticImpact(); handleConnectionAuthFailure(machine.machineId) }}
             >
               <KeyRound className="h-4 w-4" />
@@ -1985,7 +1985,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         ) : null}
         <div
           className="min-h-0 flex-1 overflow-y-auto p-3"
-          data-testid="termx-terminal-list-scroll"
+          data-testid="muxvia-terminal-list-scroll"
         >
           <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Terminals</h2>
           <TerminalList
@@ -1999,12 +1999,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         </div>
 
         {mobileSheet === 'manage-terminal' && selectedTerminal ? (
-          <MobileSheetPanel title={selectedTerminal.title || 'Terminal'} testId="termx-terminal-actions-sheet" onClose={() => setMobileSheet(null)}>
+          <MobileSheetPanel title={selectedTerminal.title || 'Terminal'} testId="muxvia-terminal-actions-sheet" onClose={() => setMobileSheet(null)}>
             <div className="flex flex-col gap-3">
               {selectedTerminal.state === 'exited' ? (
                 <button
                   type="button"
-                  className="termx-app-secondary-button min-h-12 w-full justify-between px-4 text-left text-[15px] font-medium"
+                  className="muxvia-app-secondary-button min-h-12 w-full justify-between px-4 text-left text-[15px] font-medium"
                   onClick={() => { hapticImpact(); void restartManagedTerminal() }}
                 >
                   <span>Restart terminal</span>
@@ -2013,7 +2013,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               ) : null}
               <button
                 type="button"
-                className="termx-app-secondary-button min-h-12 w-full justify-between px-4 text-left text-[15px] font-medium"
+                className="muxvia-app-secondary-button min-h-12 w-full justify-between px-4 text-left text-[15px] font-medium"
                 onClick={() => { hapticImpact(); openEditTerminal() }}
               >
                 <span>Edit terminal</span>
@@ -2034,7 +2034,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         {(mobileSheet === 'create-terminal' || mobileSheet === 'edit-terminal') ? (
           <MobileSheetPanel
             title={mobileSheet === 'create-terminal' ? 'New terminal' : 'Edit terminal'}
-            testId="termx-terminal-editor-sheet"
+            testId="muxvia-terminal-editor-sheet"
             onClose={() => setMobileSheet(null)}
           >
             <div className="flex flex-col gap-4">
@@ -2046,7 +2046,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
                 Name
                 <input
-                  className="min-h-12 border border-[var(--termx-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                  className="min-h-12 border border-[var(--muxvia-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                   value={terminalForm.name}
                   onChange={(event) => {
                     const value = event.currentTarget.value
@@ -2058,7 +2058,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
                   Command
                   <input
-                    className="min-h-12 border border-[var(--termx-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                    className="min-h-12 border border-[var(--muxvia-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                     value={terminalForm.command}
                     onChange={(event) => {
                       const value = event.currentTarget.value
@@ -2070,7 +2070,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
                 Working directory
                 <input
-                  className="min-h-12 border border-[var(--termx-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                  className="min-h-12 border border-[var(--muxvia-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                   value={terminalForm.cwd}
                   onChange={(event) => {
                     const value = event.currentTarget.value
@@ -2080,7 +2080,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    className="termx-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
+                    className="muxvia-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
                     onClick={() => {
                       hapticImpact()
                       openTerminalPathPicker()
@@ -2091,7 +2091,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   </button>
                   <button
                     type="button"
-                    className="termx-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
+                    className="muxvia-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
                     onClick={() => {
                       hapticImpact()
                       openTerminalPathBookmarks()
@@ -2105,7 +2105,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
                 Environment
                 <input
-                  className="min-h-12 border border-[var(--termx-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                  className="min-h-12 border border-[var(--muxvia-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                   value={terminalForm.environment}
                   onChange={(event) => {
                     const value = event.currentTarget.value
@@ -2116,7 +2116,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
                 Size lock
                 <select
-                  className="min-h-12 border border-[var(--termx-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                  className="min-h-12 border border-[var(--muxvia-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                   value={terminalForm.sizeLockMode}
                   onChange={(event) => {
                     const value = event.currentTarget.value as 'off' | 'warn' | 'lock'
@@ -2130,7 +2130,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               </label>
               <button
                 type="button"
-                className="termx-app-primary-button mt-2 min-h-12 w-full gap-2 px-4 text-[15px] font-semibold"
+                className="muxvia-app-primary-button mt-2 min-h-12 w-full gap-2 px-4 text-[15px] font-semibold"
                 disabled={terminalSubmitting}
                 onClick={() => {
                   hapticImpact()
@@ -2164,7 +2164,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   if (error && !machine) {
     return (
       <div className={`flex h-full min-h-0 items-center justify-center bg-zinc-50 p-4 ${className || ''}`}>
-        <div className="termx-app-panel w-full max-w-md border-red-200 p-4 text-sm text-red-700" role="alert">
+        <div className="muxvia-app-panel w-full max-w-md border-red-200 p-4 text-sm text-red-700" role="alert">
           <h2 className="mb-2 font-semibold text-red-900">Connection Error</h2>
           <p>{error}</p>
         </div>
@@ -2176,8 +2176,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     return (
       <div className={`flex h-full min-h-0 items-center justify-center bg-zinc-50 ${className || ''}`}>
         <div className="flex items-center gap-2 text-sm text-zinc-500">
-          <span className="termx-square-spinner text-zinc-600" aria-hidden="true" />
-          Connecting to TermX...
+          <span className="muxvia-square-spinner text-zinc-600" aria-hidden="true" />
+          Connecting to Muxvia...
         </div>
       </div>
     )
@@ -2186,15 +2186,15 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   return (
     <div
       ref={outerContainerRef}
-      className={`relative flex h-full min-h-0 w-full max-w-full flex-col overflow-hidden bg-[var(--termx-bg)] font-sans text-[var(--termx-text)] md:flex-row ${className || ''}`}
+      className={`relative flex h-full min-h-0 w-full max-w-full flex-col overflow-hidden bg-[var(--muxvia-bg)] font-sans text-[var(--muxvia-text)] md:flex-row ${className || ''}`}
       data-machine-id={machine.machineId}
       style={terminalThemeStyle}
     >
       {renderTerminalListPage()}
 
       <main
-        className={`relative min-h-0 min-w-0 max-w-full flex-1 overflow-hidden bg-[var(--termx-terminal-bg)] ${page === 'terminal-list' ? 'hidden md:flex md:items-center md:justify-center md:bg-zinc-50/50' : 'grid grid-rows-[auto_minmax(0,1fr)_auto] md:grid-rows-[minmax(0,1fr)]'}`}
-        data-testid="termx-terminal-page"
+        className={`relative min-h-0 min-w-0 max-w-full flex-1 overflow-hidden bg-[var(--muxvia-terminal-bg)] ${page === 'terminal-list' ? 'hidden md:flex md:items-center md:justify-center md:bg-zinc-50/50' : 'grid grid-rows-[auto_minmax(0,1fr)_auto] md:grid-rows-[minmax(0,1fr)]'}`}
+        data-testid="muxvia-terminal-page"
       >
         {page === 'terminal-list' ? (
           <div className="flex flex-col items-center gap-3 text-zinc-400">
@@ -2204,14 +2204,14 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         ) : (
           <>
         <header
-          className="relative z-30 row-start-1 flex min-h-12 min-w-0 max-w-full shrink-0 items-center justify-between gap-1 overflow-hidden border-b border-[var(--termx-border-subtle)] bg-[var(--termx-surface)] px-1.5 pt-[env(safe-area-inset-top)] md:hidden"
-          data-testid="termx-terminal-header"
+          className="relative z-30 row-start-1 flex min-h-12 min-w-0 max-w-full shrink-0 items-center justify-between gap-1 overflow-hidden border-b border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-surface)] px-1.5 pt-[env(safe-area-inset-top)] md:hidden"
+          data-testid="muxvia-terminal-header"
         >
           <div className="flex min-w-0 flex-1 items-center gap-1">
             <button
               type="button"
               aria-label="Back to terminal list / Show terminal list"
-              className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--termx-muted)] transition-colors active:bg-[var(--termx-surface-raised)]"
+              className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--muxvia-muted)] transition-colors active:bg-[var(--muxvia-surface-raised)]"
               onClick={() => { hapticSelection(); showTerminalListPage() }}
             >
               <ChevronLeft className="h-5 w-5" />
@@ -2219,13 +2219,13 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             <button
               type="button"
               aria-label="Switch terminal"
-              className="flex min-h-11 min-w-0 flex-1 flex-col items-start justify-center px-1.5 py-0.5 text-left transition-colors active:bg-[var(--termx-surface-raised)]"
+              className="flex min-h-11 min-w-0 flex-1 flex-col items-start justify-center px-1.5 py-0.5 text-left transition-colors active:bg-[var(--muxvia-surface-raised)]"
               onClick={() => { hapticSelection(); setMobileSheet('terminals') }}
             >
-              <span className="max-w-full truncate text-[9px] font-bold uppercase tracking-wider text-[var(--termx-muted)]">{machine.name}</span>
-              <span className="max-w-full truncate text-[12px] font-semibold leading-tight text-[var(--termx-text)]" data-testid="termx-terminal-title">{terminalHeaderTitle}</span>
+              <span className="max-w-full truncate text-[9px] font-bold uppercase tracking-wider text-[var(--muxvia-muted)]">{machine.name}</span>
+              <span className="max-w-full truncate text-[12px] font-semibold leading-tight text-[var(--muxvia-text)]" data-testid="muxvia-terminal-title">{terminalHeaderTitle}</span>
               {terminalHeaderDirectory ? (
-                <span className="max-w-full truncate text-[10px] font-medium leading-tight text-[var(--termx-muted)]">{terminalHeaderDirectory}</span>
+                <span className="max-w-full truncate text-[10px] font-medium leading-tight text-[var(--muxvia-muted)]">{terminalHeaderDirectory}</span>
               ) : null}
             </button>
           </div>
@@ -2233,7 +2233,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           <button
             type="button"
             aria-label="Open terminal menu"
-            className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--termx-muted)] transition-colors active:bg-[var(--termx-surface-raised)]"
+            className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--muxvia-muted)] transition-colors active:bg-[var(--muxvia-surface-raised)]"
             onClick={() => { hapticSelection(); setMobileSheet('terminal-menu') }}
           >
             <MoreHorizontal className="h-5 w-5" />
@@ -2242,8 +2242,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
         <div
           ref={terminalAreaRef}
-          className="relative row-start-2 h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--termx-terminal-bg)] md:row-start-1"
-          data-testid="termx-terminal-body"
+          className="relative row-start-2 h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--muxvia-terminal-bg)] md:row-start-1"
+          data-testid="muxvia-terminal-body"
         >
           {terminalToolbarOpen ? (
             <TerminalActionToolbar
@@ -2302,11 +2302,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </div>
           ) : null}
 
-          <div ref={terminalWrapperRef} className={`absolute inset-0 flex flex-col bg-[var(--termx-terminal-bg)] ${splitTerminalId ? 'gap-px' : ''}`}>
+          <div ref={terminalWrapperRef} className={`absolute inset-0 flex flex-col bg-[var(--muxvia-terminal-bg)] ${splitTerminalId ? 'gap-px' : ''}`}>
             <div
-              className={`relative min-h-0 flex-1 overflow-hidden bg-[var(--termx-terminal-bg)] ${splitTerminalId ? `border-b border-[var(--termx-border-subtle)] ${activeTerminalSlot === 0 ? 'ring-1 ring-inset ring-[var(--termx-accent)]' : ''}` : ''}`}
+              className={`relative min-h-0 flex-1 overflow-hidden bg-[var(--muxvia-terminal-bg)] ${splitTerminalId ? `border-b border-[var(--muxvia-border-subtle)] ${activeTerminalSlot === 0 ? 'ring-1 ring-inset ring-[var(--muxvia-accent)]' : ''}` : ''}`}
               data-active-slot={activeTerminalSlot === 0 ? 'true' : 'false'}
-              data-testid="termx-terminal-panel"
+              data-testid="muxvia-terminal-panel"
               onPointerDown={() => {
                 if (activeTerminalSlot !== 0) hapticSelection()
                 setActiveTerminalSlot(0)
@@ -2332,7 +2332,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   suppressConnectingOverlay={showMachineNetworkOverlay}
                 />
               ) : (
-                <div className="flex h-full items-center justify-center text-sm text-[var(--termx-muted)]">
+                <div className="flex h-full items-center justify-center text-sm text-[var(--muxvia-muted)]">
                   {showMachineNetworkOverlay ? null : activeTerminalId && connectingTerminalId === activeTerminalId ? (connectionStatus ?? 'Connecting terminal...') : 'No active terminal'}
                 </div>
               )}
@@ -2340,7 +2340,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 <button
                   type="button"
                   aria-label="Unlock terminal resize"
-                  className={`absolute right-2 z-20 flex min-h-8 items-center gap-1.5 border border-[var(--termx-border-subtle)] bg-[var(--termx-overlay)] px-2 text-[11px] font-semibold text-[var(--termx-text)] backdrop-blur active:opacity-85 disabled:opacity-60 ${splitTerminalId ? 'top-16' : 'top-2'}`}
+                  className={`absolute right-2 z-20 flex min-h-8 items-center gap-1.5 border border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-overlay)] px-2 text-[11px] font-semibold text-[var(--muxvia-text)] backdrop-blur active:opacity-85 disabled:opacity-60 ${splitTerminalId ? 'top-16' : 'top-2'}`}
                   disabled={unlockingResize}
                   onClick={() => { hapticImpact(); void unlockTerminalResize() }}
                 >
@@ -2352,9 +2352,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
             {splitTerminalId ? (
               <div
-                className={`relative min-h-0 flex-1 overflow-hidden bg-[var(--termx-terminal-bg)] ${activeTerminalSlot === 1 ? 'ring-1 ring-inset ring-[var(--termx-accent)]' : ''}`}
+                className={`relative min-h-0 flex-1 overflow-hidden bg-[var(--muxvia-terminal-bg)] ${activeTerminalSlot === 1 ? 'ring-1 ring-inset ring-[var(--muxvia-accent)]' : ''}`}
                 data-active-slot={activeTerminalSlot === 1 ? 'true' : 'false'}
-                data-testid="termx-split-terminal-panel"
+                data-testid="muxvia-split-terminal-panel"
                 onPointerDown={() => {
                   if (activeTerminalSlot !== 1) hapticSelection()
                   setActiveTerminalSlot(1)
@@ -2379,7 +2379,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                     suppressConnectingOverlay={showMachineNetworkOverlay}
                   />
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center text-sm text-[var(--termx-muted)]">
+                  <div className="absolute inset-0 flex items-center justify-center text-sm text-[var(--muxvia-muted)]">
                     {showMachineNetworkOverlay ? null : connectionStatus ?? 'Connecting terminal...'}
                   </div>
                 )}
@@ -2420,7 +2420,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         ) : null}
 
         {mobileSheet === 'terminals' ? (
-          <MobileSheetPanel title="Terminals" testId="termx-terminal-switcher-sheet" onClose={() => setMobileSheet(null)}>
+          <MobileSheetPanel title="Terminals" testId="muxvia-terminal-switcher-sheet" onClose={() => setMobileSheet(null)}>
             <TerminalList
               machineId={machine.machineId}
               terminals={terminals}
@@ -2431,38 +2431,38 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         ) : null}
 
         {mobileSheet === 'terminal-menu' ? (
-          <MobileSheetPanel title="Terminal tools" testId="termx-terminal-menu-sheet" onClose={() => setMobileSheet(null)}>
-            <div className="grid grid-cols-2 border-l border-t border-[var(--termx-app-line)]">
-              <button type="button" className="termx-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); openSplitTerminalSheet() }}>
-                <Rows2 className="h-4 w-4 text-[var(--termx-app-accent)]" />
+          <MobileSheetPanel title="Terminal tools" testId="muxvia-terminal-menu-sheet" onClose={() => setMobileSheet(null)}>
+            <div className="grid grid-cols-2 border-l border-t border-[var(--muxvia-app-line)]">
+              <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); openSplitTerminalSheet() }}>
+                <Rows2 className="h-4 w-4 text-[var(--muxvia-app-accent)]" />
                 {splitTerminalId ? 'Change split' : 'Split terminal'}
               </button>
-              <button type="button" className="termx-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); setMobileSheet(null); void (activeTerminalOwnsResize ? releaseActiveResizeOwner() : acquireActiveResizeOwner()) }}>
-                <span className="w-4 font-mono text-[11px] font-extrabold text-[var(--termx-app-accent)]">{resizeControlBadgeText(terminalResizeControl)}</span>
+              <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); setMobileSheet(null); void (activeTerminalOwnsResize ? releaseActiveResizeOwner() : acquireActiveResizeOwner()) }}>
+                <span className="w-4 font-mono text-[11px] font-extrabold text-[var(--muxvia-app-accent)]">{resizeControlBadgeText(terminalResizeControl)}</span>
                 {activeTerminalOwnsResize ? 'Release resize' : 'Control resize'}
               </button>
               {splitTerminalId ? (
                 <>
-                  <button type="button" className="termx-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); setSyncSplitInput((current) => !current); setMobileSheet(null) }}>
-                    {syncSplitInput ? <Link2 className="h-4 w-4 text-[var(--termx-app-accent)]" /> : <Link2Off className="h-4 w-4 text-[var(--termx-app-muted)]" />}
+                  <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); setSyncSplitInput((current) => !current); setMobileSheet(null) }}>
+                    {syncSplitInput ? <Link2 className="h-4 w-4 text-[var(--muxvia-app-accent)]" /> : <Link2Off className="h-4 w-4 text-[var(--muxvia-app-muted)]" />}
                     Sync input
                   </button>
-                  <button type="button" className="termx-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); closeSplitTerminal(); setMobileSheet(null) }}>
-                    <PanelBottomClose className="h-4 w-4 text-[var(--termx-app-danger)]" />
+                  <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); closeSplitTerminal(); setMobileSheet(null) }}>
+                    <PanelBottomClose className="h-4 w-4 text-[var(--muxvia-app-danger)]" />
                     Close split
                   </button>
                 </>
               ) : null}
-              <button type="button" className="termx-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticSelection(); setMobileSheet(null); setTerminalToolbarOpen((current) => { const next = !current; if (next) setTerminalFnOpen(false); if (!next) setTerminalToolbarModeAndReset('default'); return next }) }}>
-                <SlidersHorizontal className="h-4 w-4 text-[var(--termx-app-accent)]" />
+              <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticSelection(); setMobileSheet(null); setTerminalToolbarOpen((current) => { const next = !current; if (next) setTerminalFnOpen(false); if (!next) setTerminalToolbarModeAndReset('default'); return next }) }}>
+                <SlidersHorizontal className="h-4 w-4 text-[var(--muxvia-app-accent)]" />
                 Terminal tools
               </button>
-              <button type="button" className="termx-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticSelection(); setMobileSheet(null); openConnectionInfo() }}>
-                <Info className="h-4 w-4 text-[var(--termx-app-accent)]" />
+              <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticSelection(); setMobileSheet(null); openConnectionInfo() }}>
+                <Info className="h-4 w-4 text-[var(--muxvia-app-accent)]" />
                 Connection
               </button>
-              <button type="button" className="termx-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticSelection(); setMobileSheet(null); openFiles() }}>
-                <Folder className="h-4 w-4 text-[var(--termx-app-accent)]" />
+              <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticSelection(); setMobileSheet(null); openFiles() }}>
+                <Folder className="h-4 w-4 text-[var(--muxvia-app-accent)]" />
                 Files
               </button>
             </div>
@@ -2470,7 +2470,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         ) : null}
 
         {mobileSheet === 'split-terminal' ? (
-          <MobileSheetPanel title="Split Terminal" testId="termx-split-terminal-sheet" onClose={() => setMobileSheet(null)}>
+          <MobileSheetPanel title="Split Terminal" testId="muxvia-split-terminal-sheet" onClose={() => setMobileSheet(null)}>
             {terminals.filter((terminal) => terminal.terminalId !== activeTerminalId).length > 0 ? (
               <TerminalList
                 machineId={machine.machineId}
@@ -2492,10 +2492,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       </main>
 
       <div
-        className={`absolute inset-0 z-30 flex flex-col bg-white transition-transform duration-200 md:left-auto md:right-0 md:w-[450px] md:border-l md:border-[var(--termx-app-line)] ${filesOpen ? 'translate-y-0 md:translate-x-0 visible' : 'translate-y-full md:translate-y-0 md:translate-x-full invisible'}`}
-        data-testid="termx-machine-files-overlay"
+        className={`absolute inset-0 z-30 flex flex-col bg-white transition-transform duration-200 md:left-auto md:right-0 md:w-[450px] md:border-l md:border-[var(--muxvia-app-line)] ${filesOpen ? 'translate-y-0 md:translate-x-0 visible' : 'translate-y-full md:translate-y-0 md:translate-x-full invisible'}`}
+        data-testid="muxvia-machine-files-overlay"
       >
-        <div className="termx-app-header flex shrink-0 items-center justify-between border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
+        <div className="muxvia-app-header flex shrink-0 items-center justify-between border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
           <div className="flex items-center gap-2">
             <Folder className="h-5 w-5 text-zinc-500" />
             <span className="text-[17px] font-bold tracking-tight text-zinc-900">Files</span>
@@ -2503,7 +2503,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           <button
             type="button"
             aria-label="Close files"
-            className="termx-app-icon-button border-transparent bg-transparent"
+            className="muxvia-app-icon-button border-transparent bg-transparent"
             onClick={() => { hapticSelection(); openTerminalPanel() }}
           >
             <X className="h-5 w-5" />
@@ -2525,7 +2525,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           <div className="flex h-full items-center justify-center text-sm text-zinc-500">
             {showMachineNetworkOverlay ? null : filesOpen ? (
               <div className="flex items-center gap-2">
-                <span className="termx-square-spinner" aria-hidden="true" />
+                <span className="muxvia-square-spinner" aria-hidden="true" />
                 <span>Connecting...</span>
               </div>
             ) : 'File access is not ready'}
@@ -2596,17 +2596,17 @@ function MobileSheetPanel({
   return (
     <div className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-sm transition-opacity md:items-center md:justify-center" data-testid={testId} onClick={() => { hapticSelection(); onClose() }}>
       <section
-        className="termx-app-page relative max-h-[85vh] w-full overflow-hidden border-t border-[var(--termx-app-line)] md:max-w-md md:border"
+        className="muxvia-app-page relative max-h-[85vh] w-full overflow-hidden border-t border-[var(--muxvia-app-line)] md:max-w-md md:border"
         onClick={(e) => e.stopPropagation()}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <div className="absolute left-1/2 top-3 h-1 w-12 -translate-x-1/2 bg-[var(--termx-app-line-strong)] md:hidden" />
-        <header className="flex h-16 items-center justify-between border-b border-[var(--termx-app-line)] px-5 pt-3">
+        <div className="absolute left-1/2 top-3 h-1 w-12 -translate-x-1/2 bg-[var(--muxvia-app-line-strong)] md:hidden" />
+        <header className="flex h-16 items-center justify-between border-b border-[var(--muxvia-app-line)] px-5 pt-3">
           <h2 className="text-[17px] font-bold tracking-tight text-zinc-900">{title}</h2>
           <button
             type="button"
             aria-label={`Close ${title}`}
-            className="termx-app-icon-button border-transparent bg-transparent"
+            className="muxvia-app-icon-button border-transparent bg-transparent"
             onClick={() => { hapticSelection(); onClose() }}
           >
             <X className="h-5 w-5" />
@@ -2644,13 +2644,13 @@ export function ConnectionInfoDialog({
   const modeActionLabel = forceRelayActive ? 'Try P2P' : 'Use relay'
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" onClick={() => { hapticSelection(); onClose() }}>
-      <section className="termx-app-panel w-full max-w-md overflow-hidden" onClick={(event) => event.stopPropagation()}>
+      <section className="muxvia-app-panel w-full max-w-md overflow-hidden" onClick={(event) => event.stopPropagation()}>
         <header className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
           <div className="min-w-0">
             <h2 className="text-[15px] font-semibold text-zinc-950">Connection Info</h2>
             <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{connectionTypeLabel(type)}</p>
           </div>
-          <button type="button" aria-label="Close connection info" className="termx-app-icon-button border-transparent bg-transparent" onClick={() => { hapticSelection(); onClose() }}>
+          <button type="button" aria-label="Close connection info" className="muxvia-app-icon-button border-transparent bg-transparent" onClick={() => { hapticSelection(); onClose() }}>
             <X className="h-5 w-5" />
           </button>
         </header>
@@ -2673,15 +2673,15 @@ export function ConnectionInfoDialog({
         </div>
 
         <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 px-4 py-3">
-          <button type="button" className="termx-app-secondary-button px-3 text-[13px] font-semibold" onClick={() => { hapticImpact(); onRefresh() }}>
+          <button type="button" className="muxvia-app-secondary-button px-3 text-[13px] font-semibold" onClick={() => { hapticImpact(); onRefresh() }}>
             Refresh
           </button>
-          <button type="button" className="termx-app-secondary-button px-3 text-[13px] font-semibold" onClick={() => { hapticImpact(); onReconnect() }}>
+          <button type="button" className="muxvia-app-secondary-button px-3 text-[13px] font-semibold" onClick={() => { hapticImpact(); onReconnect() }}>
             Reconnect
           </button>
           <button
             type="button"
-            className="termx-app-primary-button px-3 text-[13px] font-semibold disabled:bg-zinc-300 disabled:text-zinc-500"
+            className="muxvia-app-primary-button px-3 text-[13px] font-semibold disabled:bg-zinc-300 disabled:text-zinc-500"
             disabled={loading}
             onClick={() => { hapticImpact(); onToggleMode() }}
           >
@@ -2695,7 +2695,7 @@ export function ConnectionInfoDialog({
 
 function ConnectionInfoRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean | undefined }) {
   return (
-    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-3 border-b border-[var(--termx-app-line)] bg-zinc-50 px-3 py-2 last:border-b-0">
+    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-3 border-b border-[var(--muxvia-app-line)] bg-zinc-50 px-3 py-2 last:border-b-0">
       <dt className="text-[12px] font-semibold text-zinc-500">{label}</dt>
       <dd className={`min-w-0 break-words text-[12px] ${strong ? 'font-semibold text-zinc-950' : 'font-medium text-zinc-700'}`}>{value}</dd>
     </div>
@@ -2705,17 +2705,17 @@ function ConnectionInfoRow({ label, value, strong = false }: { label: string; va
 /** P2PFallbackDialog 只处理一次 direct probe 的失败决策，不修改 managed endpoint 的持久 auto 策略。 */
 function P2PFallbackDialog({ onCancel, onUseRelay }: { onCancel: () => void; onUseRelay: () => void }) {
   return (
-    <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="termx-p2p-fallback-title">
-      <section className="termx-app-panel w-full max-w-sm overflow-hidden">
-        <div className="border-b border-[var(--termx-app-line)] px-4 py-4">
-          <h2 id="termx-p2p-fallback-title" className="text-[16px] font-semibold text-zinc-950">P2P unavailable</h2>
+    <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="muxvia-p2p-fallback-title">
+      <section className="muxvia-app-panel w-full max-w-sm overflow-hidden">
+        <div className="border-b border-[var(--muxvia-app-line)] px-4 py-4">
+          <h2 id="muxvia-p2p-fallback-title" className="text-[16px] font-semibold text-zinc-950">P2P unavailable</h2>
           <p className="mt-2 text-[13px] leading-5 text-zinc-600">A direct connection could not be established on the current network. Switch this connection to Relay?</p>
         </div>
         <div className="flex items-center justify-end gap-2 px-4 py-3">
-          <button type="button" className="termx-app-secondary-button px-3 text-[13px] font-semibold" onClick={() => { hapticSelection(); onCancel() }}>
+          <button type="button" className="muxvia-app-secondary-button px-3 text-[13px] font-semibold" onClick={() => { hapticSelection(); onCancel() }}>
             Not now
           </button>
-          <button type="button" className="termx-app-primary-button px-3 text-[13px] font-semibold" onClick={() => { hapticImpact(); onUseRelay() }}>
+          <button type="button" className="muxvia-app-primary-button px-3 text-[13px] font-semibold" onClick={() => { hapticImpact(); onUseRelay() }}>
             Use relay
           </button>
         </div>

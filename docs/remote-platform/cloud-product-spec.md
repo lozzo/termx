@@ -1,4 +1,4 @@
-# TermX Cloud 产品与服务能力规格
+# Muxvia Cloud 产品与服务能力规格
 
 状态：Cloud 产品能力主线唯一稳定产品基准
 
@@ -8,7 +8,7 @@
 
 ## 1. 产品目标
 
-TermX Cloud 是同一个 TermX App 内的可选托管连接能力，负责账号目录、managed WebRTC signaling、ICE-UDP、TURN Relay、套餐准入、用量统计和账号管理。
+Muxvia Cloud 是同一个 Muxvia App 内的可选托管连接能力，负责账号目录、managed WebRTC signaling、ICE-UDP、TURN Relay、套餐准入、用量统计和账号管理。
 
 开发模式必须提供完整产品链路：
 
@@ -30,7 +30,7 @@ TermX Cloud 是同一个 TermX App 内的可选托管连接能力，负责账号
 ## 2. 免费能力与收费边界
 
 - Local Unix、Direct WebRTC TCP、SSH WebRTC TCP、Endpoint、pairing、terminal protocol、history 和 file API 不依赖 Cloud 账号或订阅。
-- TermX Cloud managed P2P 和 TermX Cloud Relay 是可由套餐控制的托管服务能力。
+- Muxvia Cloud managed P2P 和 Muxvia Cloud Relay 是可由套餐控制的托管服务能力。
 - Cloud 订阅失效只拒绝新的 managed service admission 或 lease，不删除 Endpoint、不撤销 daemon `CapabilityGrant`，也不阻断 Direct/SSH。
 - 已建立的端到端 DataChannel 不经过 Control Plane。套餐变化默认在下一次连接、重连或 Relay lease refresh 时生效；不得伪造服务端可立即切断任意端到端会话的能力。
 - Relay 只统计转发的加密 packet bytes，不能读取 terminal payload。managed P2P 的 DataChannel bytes 不经过云数据面，因此不能被伪装成精确流量统计。
@@ -161,7 +161,7 @@ expired
 
 ## 5. Managed P2P 准入
 
-managed P2P 指 TermX Cloud 提供目录和 signaling，最终 selected path 为 peer-to-peer ICE-UDP 的连接。
+managed P2P 指 Muxvia Cloud 提供目录和 signaling，最终 selected path 为 peer-to-peer ICE-UDP 的连接。
 
 - Hub 使用本地已验签 edge policy 判断账号、client device、target daemon、revoke、auth epoch 和 `managed_p2p_enabled`。
 - Hub 请求热路径不得同步查询 Control Plane 或数据库。
@@ -301,6 +301,6 @@ Android 用户动作必须从 ARM64 模拟器中的真实 APK UI 发起；Web �
 - iOS/Desktop GUI。
 - 复杂优惠、推荐奖励扩张、税务、发票和通用财务平台。
 - Kubernetes、数据库集群、数据仓库和实时风控平台。
-- 用户自建 TermX managed Cloud provider。
+- 用户自建 Muxvia managed Cloud provider。
 
 这些事项不得阻塞单区域 development 产品闭环，也不得作为 reviewer `FAIL` 的理由。

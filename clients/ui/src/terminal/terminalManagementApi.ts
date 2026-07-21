@@ -97,7 +97,7 @@ function terminalTags(input: {
 }): Record<string, string> {
   const tags: Record<string, string> = {}
   if (input.sizeLockMode) {
-    tags['termx.size_lock'] = input.sizeLockMode
+    tags['muxvia.size_lock'] = input.sizeLockMode
   }
   if (input.cwd) {
     tags.cwd = input.cwd

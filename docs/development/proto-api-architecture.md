@@ -2,7 +2,7 @@
 
 ## 强约定
 
-termx 的所有插件、第三方客户端、官方客户端、跨进程服务和跨语言 binding API，必须先定义在 `proto/`。Proto schema 是字段、枚举、command/event、错误 detail、capability、版本和兼容语义的唯一真值。
+muxvia 的所有插件、第三方客户端、官方客户端、跨进程服务和跨语言 binding API，必须先定义在 `proto/`。Proto schema 是字段、枚举、command/event、错误 detail、capability、版本和兼容语义的唯一真值。
 
 禁止先定义 Go request/result/event struct，再把它映射成 proto。禁止把 core domain struct、TUI state 或 protocol package DTO 当作外部 API。
 
@@ -98,7 +98,7 @@ core
 - transport framing：Hello、request correlation、channel frame、payload envelope。
 - private Cloud API：Control Plane、Companion、Hub/Relay 管理面；不得混入 terminal payload 或 CapabilityGrant 判断。
 
-PA003 已建立 `proto/apipb/`，package 为 `termx.api.v1`，它是新的公共 application API 唯一落点。后续 terminal/history/file 等领域 command/result/event 必须进入该 package 或其同版本子 schema。
+PA003 已建立 `proto/apipb/`，package 为 `muxvia.api.v1`，它是新的公共 application API 唯一落点。后续 terminal/history/file 等领域 command/result/event 必须进入该 package 或其同版本子 schema。
 
 `runtimepb` 迁移期 Web/mobile application schema 已删除。`wirepb` 只保留 Hello、request/response correlation、错误 envelope 与 file resource stream payload；它不再包含 terminal/history/storage 等 application message。
 

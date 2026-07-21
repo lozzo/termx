@@ -1,20 +1,20 @@
-export const MUXVIA_NATIVE_KEYBOARD_EVENT = 'termx:native-keyboard'
+export const MUXVIA_NATIVE_KEYBOARD_EVENT = 'muxvia:native-keyboard'
 
-export interface TermxNativeKeyboardEventDetail {
+export interface MuxviaNativeKeyboardEventDetail {
   visible: boolean
   keyboardHeight?: number | undefined
 }
 
-export type TermxNativeKeyboardHandler = (detail: TermxNativeKeyboardEventDetail) => void
+export type MuxviaNativeKeyboardHandler = (detail: MuxviaNativeKeyboardEventDetail) => void
 
-export function dispatchNativeKeyboardEvent(detail: TermxNativeKeyboardEventDetail): void {
+export function dispatchNativeKeyboardEvent(detail: MuxviaNativeKeyboardEventDetail): void {
   if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return
-  window.dispatchEvent(new CustomEvent<TermxNativeKeyboardEventDetail>(MUXVIA_NATIVE_KEYBOARD_EVENT, {
+  window.dispatchEvent(new CustomEvent<MuxviaNativeKeyboardEventDetail>(MUXVIA_NATIVE_KEYBOARD_EVENT, {
     detail: normalizeNativeKeyboardDetail(detail),
   }))
 }
 
-export function addNativeKeyboardListener(handler: TermxNativeKeyboardHandler): () => void {
+export function addNativeKeyboardListener(handler: MuxviaNativeKeyboardHandler): () => void {
   if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return () => {}
   const listener = (event: Event) => {
     const detail = nativeKeyboardDetailFromEvent(event)
@@ -25,7 +25,7 @@ export function addNativeKeyboardListener(handler: TermxNativeKeyboardHandler): 
   return () => window.removeEventListener(MUXVIA_NATIVE_KEYBOARD_EVENT, listener)
 }
 
-function nativeKeyboardDetailFromEvent(event: Event): TermxNativeKeyboardEventDetail | null {
+function nativeKeyboardDetailFromEvent(event: Event): MuxviaNativeKeyboardEventDetail | null {
   const detail = (event as Event & { detail?: unknown }).detail
   if (!detail || typeof detail !== 'object') return null
   const record = detail as Record<string, unknown>
@@ -36,7 +36,7 @@ function nativeKeyboardDetailFromEvent(event: Event): TermxNativeKeyboardEventDe
   })
 }
 
-function normalizeNativeKeyboardDetail(detail: TermxNativeKeyboardEventDetail): TermxNativeKeyboardEventDetail {
+function normalizeNativeKeyboardDetail(detail: MuxviaNativeKeyboardEventDetail): MuxviaNativeKeyboardEventDetail {
   const keyboardHeight = typeof detail.keyboardHeight === 'number' && Number.isFinite(detail.keyboardHeight)
     ? Math.max(0, detail.keyboardHeight)
     : undefined

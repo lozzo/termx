@@ -1,5 +1,5 @@
 import { registerPlugin } from '@capacitor/core'
-import type { HapticPattern } from '@termx/ui'
+import type { HapticPattern } from '@muxvia/ui'
 
 interface NativeHapticPlugin {
   impact(options?: { pattern?: HapticPattern }): Promise<void>

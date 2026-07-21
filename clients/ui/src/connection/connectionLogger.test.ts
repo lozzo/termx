@@ -29,7 +29,7 @@ describe('consoleConnectionLogger', () => {
 
     expect(error).toHaveBeenCalledTimes(2)
     expect(error.mock.calls[0]).toEqual([
-      '[termx:browser_webrtc] data_channel_open_timeout timed out opening data channel api',
+      '[muxvia:browser_webrtc] data_channel_open_timeout timed out opening data channel api',
       expect.objectContaining({
         machineId: 'machine-1',
         path: 'hub',
@@ -38,7 +38,7 @@ describe('consoleConnectionLogger', () => {
       }),
     ])
     expect(error.mock.calls[1]?.[0]).toBe([
-      '[termx:browser_webrtc] data_channel_open_timeout_json',
+      '[muxvia:browser_webrtc] data_channel_open_timeout_json',
       '{"machineId":"machine-1","path":"hub","sessionId":"rtc-1","label":"api","channelReadyState":"connecting","selectedCandidatePair":{"state":"succeeded","local":{"candidateType":"host"}}}',
     ].join(' '))
   })

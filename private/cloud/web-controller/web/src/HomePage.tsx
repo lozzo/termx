@@ -36,7 +36,7 @@ export default function HomePage() {
   const { t, i18n } = useTranslation();
   const [catalog, setCatalog] = useState<GetPlanCatalogResponse | null>(null);
   const [theme, setTheme] = useState<Theme>(() =>
-    localStorage.getItem("termx-wx-theme") === "neutral-dark"
+    localStorage.getItem("muxvia-wx-theme") === "neutral-dark"
       ? "neutral-dark"
       : "light-gray",
   );
@@ -50,7 +50,7 @@ export default function HomePage() {
   function selectTheme(next: Theme) {
     setTheme(next);
     document.documentElement.dataset.wxTheme = next;
-    localStorage.setItem("termx-wx-theme", next);
+    localStorage.setItem("muxvia-wx-theme", next);
   }
 
   const coreFeatures = [Terminal, History, Network, Folder].map(
@@ -64,7 +64,7 @@ export default function HomePage() {
     {
       id: "core",
       icon: Terminal,
-      action: { href: "https://github.com/lozzo/termx", external: true },
+      action: { href: "https://github.com/lozzo/muxvia", external: true },
     },
     { id: "app", icon: Smartphone },
     { id: "cloud", icon: Cloud, action: { href: "#plans", external: false } },
@@ -99,7 +99,7 @@ export default function HomePage() {
             <a href="#plans">{t("home.nav.plans")}</a>
             <a
               className="flex items-center gap-1"
-              href="https://github.com/lozzo/termx"
+              href="https://github.com/lozzo/muxvia"
               target="_blank"
               rel="noreferrer"
             >
@@ -155,7 +155,7 @@ export default function HomePage() {
           <div>
             <Kicker>{t("home.hero.kicker")}</Kicker>
             <h1 className="m-0 text-[74px] font-light leading-[.9] max-md:text-[52px]">
-              TermX
+              Muxvia
             </h1>
             <p className="mt-7 text-[46px] font-light leading-[1.08] max-md:mt-5 max-md:text-[34px]">
               {t("home.hero.thesis1")}
@@ -173,7 +173,7 @@ export default function HomePage() {
               </a>
               <a
                 className={buttonVariants({ variant: "outline" })}
-                href="https://github.com/lozzo/termx"
+                href="https://github.com/lozzo/muxvia"
                 target="_blank"
                 rel="noreferrer"
               >
@@ -530,7 +530,7 @@ export default function HomePage() {
                 buttonVariants({ variant: "outline" }),
                 "border-white/30 bg-transparent text-white",
               )}
-              href="https://github.com/lozzo/termx"
+              href="https://github.com/lozzo/muxvia"
               target="_blank"
               rel="noreferrer"
             >
@@ -547,14 +547,14 @@ export default function HomePage() {
           <Brand href="#top" inverse />
           <a
             className="flex items-center gap-2 text-[8px] opacity-50 hover:opacity-100 max-md:hidden"
-            href="https://github.com/lozzo/termx"
+            href="https://github.com/lozzo/muxvia"
             target="_blank"
             rel="noreferrer"
           >
             <GitFork className="size-3" /> {t("common.openSourceCore")}
           </a>
           <span className="justify-self-end text-right text-[8px] opacity-50">
-            {t("common.termxCloudOfficial")}
+            {t("common.muxviaCloudOfficial")}
           </span>
         </div>
       </footer>
@@ -581,7 +581,7 @@ function Brand({ href, inverse = false }: { href: string; inverse?: boolean }) {
         TX
       </b>
       <span className="grid text-[13px] font-semibold leading-tight">
-        TERMX
+        MUXVIA
         <small className="max-w-28 text-[7px] font-normal leading-tight text-muted-foreground">
           {t("home.brandSubtitle")}
         </small>
