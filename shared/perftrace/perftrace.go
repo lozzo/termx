@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	envPath         = "TERMX_PERF_TRACE"
-	envIntervalMs   = "TERMX_PERF_TRACE_INTERVAL_MS"
-	envBucketMs     = "TERMX_PERF_TRACE_BUCKET_MS"
+	envPath         = "MUXVIA_PERF_TRACE"
+	envIntervalMs   = "MUXVIA_PERF_TRACE_INTERVAL_MS"
+	envBucketMs     = "MUXVIA_PERF_TRACE_BUCKET_MS"
 	defaultBucketMs = 100
 	maxBuckets      = 6000
 )
@@ -46,7 +46,7 @@ type Snapshot struct {
 	Buckets     []BucketSnapshot `json:"buckets,omitempty"`
 }
 
-// TraceRecord 是 TERMX_PERF_TRACE=.jsonl 统一日志中的单条进程快照。
+// TraceRecord 是 MUXVIA_PERF_TRACE=.jsonl 统一日志中的单条进程快照。
 // 它携带进程角色和 PID，允许 daemon 与 TUI 继承同一路径并追加写入，
 // 诊断工具再按 process/pid/sequence 还原各自的耗时链路。
 type TraceRecord struct {
@@ -69,7 +69,7 @@ type EventSnapshot struct {
 }
 
 // BucketSnapshot 是 perftrace 的短时间桶视图，用来定位高压输出下的瞬时卡顿。
-// 它只在显式开启 TERMX_PERF_TRACE 时产生，不参与业务状态或历史 truth。
+// 它只在显式开启 MUXVIA_PERF_TRACE 时产生，不参与业务状态或历史 truth。
 type BucketSnapshot struct {
 	Index   int64           `json:"index"`
 	StartMs float64         `json:"start_ms"`
@@ -79,7 +79,7 @@ type BucketSnapshot struct {
 
 var active atomic.Pointer[Recorder]
 
-const traceRecordFormat = "termx.perftrace.snapshot.v1"
+const traceRecordFormat = "muxvia.perftrace.snapshot.v1"
 
 func NewRecorder() *Recorder {
 	return &Recorder{
@@ -96,14 +96,14 @@ func Enable() *Recorder {
 	return recorder
 }
 
-// EnableFromEnv 按 TERMX_PERF_TRACE 打开进程内聚合性能采样。
+// EnableFromEnv 按 MUXVIA_PERF_TRACE 打开进程内聚合性能采样。
 // 返回的 stop 必须在进程退出前调用；未设置环境变量时保持默认空操作。
 // 路径以 .jsonl 结尾时追加写多进程统一日志；其他路径保持旧的 JSON 快照覆盖写。
 func EnableFromEnv(ctx context.Context) (func(), string, bool) {
 	return EnableFromEnvWithProcess(ctx, defaultProcessName())
 }
 
-// EnableFromEnvWithProcess 按 TERMX_PERF_TRACE 打开带进程角色的性能采样。
+// EnableFromEnvWithProcess 按 MUXVIA_PERF_TRACE 打开带进程角色的性能采样。
 // process 是统一日志里的消息链路归属，例如 core-v2-daemon 或 tui-v3；
 // 当 daemon/TUI 共享同一个 .jsonl 路径时，写入边界由追加记录表达，不互相覆盖。
 func EnableFromEnvWithProcess(ctx context.Context, process string) (func(), string, bool) {
@@ -276,7 +276,7 @@ func defaultProcessName() string {
 			return name
 		}
 	}
-	return "termx"
+	return "muxvia"
 }
 
 func intervalFromEnv() time.Duration {

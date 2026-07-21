@@ -64,7 +64,7 @@ client/runtime/        cross-platform route/session owner
 client/port/           host capability interfaces
 client/adapter/        local/SSH/managed/protocol adapters
 tui/                   TUI state/update/view/input/host/port/adapter
-cmd/termx/                  daemon/CLI assembly
+cmd/muxvia/                  daemon/CLI assembly
 clients/mobile/                  mobile client UI and platform adapters
 clients/ui/                  shared public App/browser UI and runtime interfaces
 shared/               transitional transport/remote auth/cloud companion primitives only

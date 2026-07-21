@@ -40,23 +40,23 @@ type wasmHost struct {
 
 func main() {
 	exports := map[string]any{
-		"termxClientAbiVersion":              syncExport(func([]js.Value) (js.Value, error) { return js.ValueOf(binding.ABIVersion), nil }),
-		"termxEngineCreate":                  syncExport(engineCreate),
-		"termxEngineOpenSession":             syncExport(payloadOperation(wasmLibrary.registry.OpenSession)),
-		"termxEngineExecute":                 syncExport(sessionPayloadOperation(wasmLibrary.registry.Execute)),
-		"termxEngineOpenResourceStream":      syncExport(sessionPayloadOperation(wasmLibrary.registry.OpenResourceStream)),
-		"termxEngineSendResourceStreamFrame": asyncExport(sendResourceStreamFrame),
-		"termxEngineCloseResourceStream":     asyncExport(handleOperation(wasmLibrary.registry.CloseResourceStream)),
-		"termxEngineCommand":                 syncExport(payloadOperation(wasmLibrary.registry.EngineCommand)),
-		"termxEngineNextEvent":               asyncExport(nextEvent),
-		"termxPlatformNextRequest":           asyncExport(nextPlatformRequest),
-		"termxPlatformComplete":              syncExport(completePlatformRequest),
-		"termxPlatformEvent":                 asyncExport(handlePlatformEvent),
-		"termxEngineCancel":                  syncExport(handleOperation(wasmLibrary.registry.Cancel)),
-		"termxEngineCloseSession":            asyncExport(handleOperation(wasmLibrary.registry.CloseSession)),
-		"termxEngineRelease":                 syncExport(handleOperation(wasmLibrary.registry.Release)),
-		"termxEngineClose":                   asyncExport(engineClose),
-		"termxBufferFree":                    syncExport(func([]js.Value) (js.Value, error) { return resultObject(statusOK, 0, nil, ""), nil }),
+		"muxviaClientAbiVersion":              syncExport(func([]js.Value) (js.Value, error) { return js.ValueOf(binding.ABIVersion), nil }),
+		"muxviaEngineCreate":                  syncExport(engineCreate),
+		"muxviaEngineOpenSession":             syncExport(payloadOperation(wasmLibrary.registry.OpenSession)),
+		"muxviaEngineExecute":                 syncExport(sessionPayloadOperation(wasmLibrary.registry.Execute)),
+		"muxviaEngineOpenResourceStream":      syncExport(sessionPayloadOperation(wasmLibrary.registry.OpenResourceStream)),
+		"muxviaEngineSendResourceStreamFrame": asyncExport(sendResourceStreamFrame),
+		"muxviaEngineCloseResourceStream":     asyncExport(handleOperation(wasmLibrary.registry.CloseResourceStream)),
+		"muxviaEngineCommand":                 syncExport(payloadOperation(wasmLibrary.registry.EngineCommand)),
+		"muxviaEngineNextEvent":               asyncExport(nextEvent),
+		"muxviaPlatformNextRequest":           asyncExport(nextPlatformRequest),
+		"muxviaPlatformComplete":              syncExport(completePlatformRequest),
+		"muxviaPlatformEvent":                 asyncExport(handlePlatformEvent),
+		"muxviaEngineCancel":                  syncExport(handleOperation(wasmLibrary.registry.Cancel)),
+		"muxviaEngineCloseSession":            asyncExport(handleOperation(wasmLibrary.registry.CloseSession)),
+		"muxviaEngineRelease":                 syncExport(handleOperation(wasmLibrary.registry.Release)),
+		"muxviaEngineClose":                   asyncExport(engineClose),
+		"muxviaBufferFree":                    syncExport(func([]js.Value) (js.Value, error) { return resultObject(statusOK, 0, nil, ""), nil }),
 	}
 	for name, value := range exports {
 		js.Global().Set(name, value)
@@ -71,7 +71,7 @@ func engineCreate(_ []js.Value) (js.Value, error) {
 		return js.Undefined(), err
 	}
 	host, err := enginehost.New(enginehost.Options{
-		Broker: broker, ManagedPeers: peers, ClientName: "termx-web", CredentialPrefix: "web-access-",
+		Broker: broker, ManagedPeers: peers, ClientName: "muxvia-web", CredentialPrefix: "web-access-",
 		SessionAuthority: wasmSessionAuthority,
 	})
 	if err != nil {

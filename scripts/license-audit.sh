@@ -85,4 +85,4 @@ if [[ -n "$private_dependencies" ]]; then
   exit 1
 fi
 
-echo "TermX $audit_scope license audit passed"
+echo "Muxvia $audit_scope license audit passed"

@@ -13,7 +13,7 @@ import (
 const (
 	// DeviceIdentityChallengeBytes 固定 fresh proof challenge 的长度，避免空 challenge 或可控超大 payload 进入签名边界。
 	DeviceIdentityChallengeBytes = 32
-	deviceIdentityProofDomain    = "termx.device-identity-proof.v1"
+	deviceIdentityProofDomain    = "muxvia.device-identity-proof.v1"
 )
 
 // SignDeviceIdentityProof 使用 daemon-local DeviceIdentity 私钥签署本次 application session 的随机 challenge。

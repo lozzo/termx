@@ -102,7 +102,7 @@ func TestEdgeRestartRequiresFullSyncAndKeepsOnlyUsageOutbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	issuer, err := servicecredential.NewEdgeAccessIssuer("termx-cloud-controller", signer)
+	issuer, err := servicecredential.NewEdgeAccessIssuer("muxvia-cloud-controller", signer)
 	if err != nil {
 		t.Fatal(err)
 	}

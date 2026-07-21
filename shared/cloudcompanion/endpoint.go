@@ -19,7 +19,7 @@ const (
 	EndpointPhaseConnecting EndpointPhase = "connecting"
 	// EndpointPhaseAuthorizing 表示 DataChannel 已建立，公开客户端正在执行设备证明和 capability handshake。
 	EndpointPhaseAuthorizing EndpointPhase = "authorizing"
-	// EndpointPhaseConnected 表示端到端授权已经完成，termx protocol 可以开始工作。
+	// EndpointPhaseConnected 表示端到端授权已经完成，muxvia protocol 可以开始工作。
 	EndpointPhaseConnected EndpointPhase = "connected"
 	// EndpointPhaseFailed 表示当前 endpoint 局部失败；该状态不得触发其他 transport 或旧协议 fallback。
 	EndpointPhaseFailed EndpointPhase = "failed"

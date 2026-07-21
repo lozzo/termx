@@ -60,7 +60,7 @@ type unsignedManifest struct {
 }
 
 // Verification 固定 installer 期望的平台、channel、protocol window、时钟和 trusted release roots。
-// TrustedKeys 由官方 termx build 注入；空 key set 必须 fail closed，不能从 manifest 或网络补充。
+// TrustedKeys 由官方 muxvia build 注入；空 key set 必须 fail closed，不能从 manifest 或网络补充。
 type Verification struct {
 	Channel     string
 	OS          string

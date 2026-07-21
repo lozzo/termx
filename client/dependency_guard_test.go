@@ -12,7 +12,7 @@ import (
 func TestClientPackagesRespectDependencyDirection(t *testing.T) {
 	commonForbidden := []string{
 		"github.com/muxvia/muxvia/tui",
-		"github.com/muxvia/muxvia/cmd/termx",
+		"github.com/muxvia/muxvia/cmd/muxvia",
 		"github.com/muxvia/muxvia/private",
 	}
 	assertClientImportsExclude(t, "endpoint", append(commonForbidden,

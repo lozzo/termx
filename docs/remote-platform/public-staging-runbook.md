@@ -14,8 +14,8 @@ make cloud-dev
 
 它启动：
 
-- 一个 `termx-cloud-controller`；
-- 至少两个 `termx-cloud-edge`；
+- 一个 `muxvia-cloud-controller`；
+- 至少两个 `muxvia-cloud-edge`；
 - 每个 Edge 内组合纯内存 Hub 与 Relay；
 - Controller 与 Edge 通过真实 Proto HTTP control stream 通信。
 

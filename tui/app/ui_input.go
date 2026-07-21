@@ -1284,7 +1284,7 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 }
 
 func actionCommandPrompt() state.PromptState {
-	return state.PromptState{Title: "Command Prompt", Context: "Run a canonical TermX action.", Purpose: "action.command", Placeholder: "command"}
+	return state.PromptState{Title: "Command Prompt", Context: "Run a canonical Muxvia action.", Purpose: "action.command", Placeholder: "command"}
 }
 
 func floatingSummonIndex(value string) (int, bool) {

@@ -23,7 +23,7 @@ type ProtocolTerminalClient interface {
 	ApplicationAttachment(uint16) (*apipb.ResourceHandle, bool)
 }
 
-// ProtocolTerminalServiceAdapter 把 TUI-v3 terminal service 契约映射到 termx protocol。
+// ProtocolTerminalServiceAdapter 把 TUI-v3 terminal service 契约映射到 muxvia protocol。
 type ProtocolTerminalServiceAdapter struct {
 	Client      ProtocolTerminalClient
 	Application *clientruntime.ApplicationSession

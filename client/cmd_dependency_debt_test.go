@@ -16,7 +16,7 @@ func TestSharedRuntimeLegacyRouteOwnersAreRemoved(t *testing.T) {
 		t.Fatalf("legacy single-route selector must be deleted, stat error=%v", err)
 	}
 	forbidden := []string{"adoptCLIProtocolClient", "connectV3LocalApplication", "NewOwnedApplicationClient"}
-	for _, root := range []string{"../cmd/termx", "adapter/local", "adapter/protocol", "runtime"} {
+	for _, root := range []string{"../cmd/muxvia", "adapter/local", "adapter/protocol", "runtime"} {
 		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 			if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 				return err
@@ -98,7 +98,7 @@ func TestCommandConcreteDependencyDebtDoesNotGrow(t *testing.T) {
 		"v3DialClient": {}, "probeEndpointProtocolClient": {}, "openEndpointProtocolClient": {},
 		"dialOrStartV3Client": {}, "dialOrStartV3ClientContext": {},
 	}
-	err := filepath.WalkDir("../cmd/termx", func(path string, entry fs.DirEntry, err error) error {
+	err := filepath.WalkDir("../cmd/muxvia", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return err
 		}

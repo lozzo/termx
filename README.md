@@ -2,7 +2,7 @@
 
 `termx` 是一个以 daemon 为核心的 terminal workspace 系统。
 
-> 开发状态：当前分支正在执行客户端目录与连接 runtime 的破坏性重构。旧 CLI/TUI 连接 owner 已删除，`client/runtime` 尚未接回前 `cmd/termx` 预期无法完整编译；精确状态见 [`workflow.md`](workflow.md)。
+> 开发状态：当前分支正在执行客户端目录与连接 runtime 的破坏性重构。旧 CLI/TUI 连接 owner 已删除，`client/runtime` 尚未接回前 `cmd/muxvia` 预期无法完整编译；精确状态见 [`workflow.md`](workflow.md)。
 
 核心理念很简单：**terminal 是长期存在的工作实体，TUI、GUI、mobile app、workspace、pane 和 floating window 只是观察和操作它的入口。**
 
@@ -317,7 +317,7 @@ tui / clients/mobile / other public clients
 ## 仓库结构
 
 - 目录 ownership 和依赖方向以 [`docs/development/repository-layout.md`](docs/development/repository-layout.md) 为准；下面只列主要入口。
-- `cmd/termx/`：`termx` 命令行与 composition root，不实现连接 runtime。
+- `cmd/muxvia/`：`termx` 命令行与 composition root，不实现连接 runtime。
 - `client/endpoint/`：Endpoint/Route registry、assembler、planner 与 portable contract。
 - `client/runtime/`：跨端 route race、ReadySession、generation 与 session owner。
 - `client/port/`、`client/adapter/`：平台能力接口和 local/SSH/managed/protocol adapter。

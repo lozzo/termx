@@ -162,7 +162,7 @@ func TestRenderVMBuilderKeepsCopyHistoryOnBoundPaneWhenInactive(t *testing.T) {
 }
 
 func TestRenderVMBuilderUsesBoundPaneViewIDForCopyHistory(t *testing.T) {
-	viewID := "cmd/termx-v3-main"
+	viewID := "cmd/muxvia-v3-main"
 	root := state.Root{
 		Shell: state.DefaultShell(),
 		Surface: state.TerminalSurfaceStore{
@@ -202,7 +202,7 @@ func TestRenderVMBuilderUsesBoundPaneViewIDForCopyHistory(t *testing.T) {
 }
 
 func TestRenderVMBuilderUsesBoundFloatingViewIDForCopyHistory(t *testing.T) {
-	viewID := "termx-floating-view-main"
+	viewID := "muxvia-floating-view-main"
 	shell := state.DefaultShell()
 	var result state.FloatingCommandResult
 	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
@@ -274,7 +274,7 @@ func TestRenderVMBuilderUsesBoundFloatingViewIDForCopyHistory(t *testing.T) {
 }
 
 func TestRenderVMBuilderDoesNotProjectFloatingCopyHistoryIntoLastActiveTiledPane(t *testing.T) {
-	floatingView := "termx-floating-view-main"
+	floatingView := "muxvia-floating-view-main"
 	shell := state.DefaultShell()
 	var result state.FloatingCommandResult
 	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
@@ -1817,7 +1817,7 @@ func TestRenderVMBuilderBuildsProductHeaderFooterSummaries(t *testing.T) {
 		Shell: shell,
 		Surface: state.TerminalSurfaceStore{
 			TerminalID: "term-live",
-			Title:      "termx",
+			Title:      "muxvia",
 			Lines:      []string{"live"},
 		},
 		Session: state.TerminalSessionStore{
@@ -3258,7 +3258,7 @@ func TestRenderVMBuilderProjectsDisconnectedPaneActions(t *testing.T) {
 	if content.Kind != ContentTerminalLive || content.Status != "connection interrupted: reconnect or detach" || !contentHasAction(content, ActionDisconnectedReconnect.String()) || !contentHasAction(content, ActionDisconnectedDisconnect.String()) {
 		t.Fatalf("disconnected pane should show local reconnect/disconnect choices, got %#v", content)
 	}
-	if !strings.Contains(content.Lines[0].PlainString(), "last remote output") || !contentPlainContains(content, "● Connection interrupted") || !contentPlainContains(content, "last terminal frame is preserved") || !contentPlainContains(content, "West Lab (west)") || !contentPlainContains(content, "transport ssh") || !contentPlainContains(content, "Remote termx daemon unavailable") || !contentPlainContains(content, "remote termx daemon is running") || !strings.Contains(content.Error, "remote-daemon") {
+	if !strings.Contains(content.Lines[0].PlainString(), "last remote output") || !contentPlainContains(content, "● Connection interrupted") || !contentPlainContains(content, "last terminal frame is preserved") || !contentPlainContains(content, "West Lab (west)") || !contentPlainContains(content, "transport ssh") || !contentPlainContains(content, "Remote muxvia daemon unavailable") || !contentPlainContains(content, "remote muxvia daemon is running") || !strings.Contains(content.Error, "remote-daemon") {
 		t.Fatalf("disconnected pane should preserve content and reason, lines=%#v error=%q", content.Lines, content.Error)
 	}
 }
@@ -3283,7 +3283,7 @@ func TestEndpointRecoveryHintUsesErrorCategory(t *testing.T) {
 	cases := map[state.EndpointErrorKind]string{
 		state.EndpointErrorAuth:         "credentials",
 		state.EndpointErrorHostKey:      "host identity",
-		state.EndpointErrorRemoteDaemon: "termx daemon",
+		state.EndpointErrorRemoteDaemon: "muxvia daemon",
 		state.EndpointErrorProtocol:     "protocol session",
 		state.EndpointErrorConfig:       "endpoint configuration",
 	}
@@ -3298,7 +3298,7 @@ func TestEndpointIssueLabelUsesReadableCategory(t *testing.T) {
 	cases := map[state.EndpointErrorKind]string{
 		state.EndpointErrorAuth:            "Authentication failed",
 		state.EndpointErrorHostKey:         "Remote host identity changed",
-		state.EndpointErrorRemoteDaemon:    "Remote termx daemon unavailable",
+		state.EndpointErrorRemoteDaemon:    "Remote muxvia daemon unavailable",
 		state.EndpointErrorTransportClosed: "Transport connection closed",
 		state.EndpointErrorProtocol:        "Protocol session ended",
 	}

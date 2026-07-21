@@ -10,7 +10,7 @@ const (
 	ClipboardStorageAppID       = WorkbenchStorageAppID
 	ClipboardStorageScopePublic = WorkbenchStorageScopePublic
 	ClipboardStorageKeyRoot     = "clipboard/history"
-	ClipboardStorageSchema      = "termx.tui.v3.clipboard-history"
+	ClipboardStorageSchema      = "muxvia.tui.v3.clipboard-history"
 	ClipboardStorageSchemaV1    = 1
 )
 

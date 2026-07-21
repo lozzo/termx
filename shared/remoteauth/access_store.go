@@ -25,8 +25,8 @@ const (
 	accessStoreFile             = "remote_client_access.json"
 	accessStoreLockFile         = "remote_client_access.lock"
 	accessStoreVersion          = 3
-	accessStateSignatureDomain  = "termx.remoteauth.access-state.v2"
-	pairingReceiptDomain        = "termx.remoteauth.pairing-receipt.v1"
+	accessStateSignatureDomain  = "muxvia.remoteauth.access-state.v2"
+	pairingReceiptDomain        = "muxvia.remoteauth.pairing-receipt.v1"
 	defaultDeliveryGrace        = 24 * time.Hour
 	expiredTicketRetention      = 24 * time.Hour
 	expiredGrantRecordRetention = 30 * 24 * time.Hour
@@ -642,7 +642,7 @@ func (store *AccessStore) compactLocked(now time.Time) bool {
 func pairingDeliveryReceipt(privateKey ed25519.PrivateKey, ticketID, subjectFingerprint, grantID string) string {
 	digest := sha256.Sum256([]byte(pairingReceiptDomain + "\x00" + ticketID + "\x00" + subjectFingerprint + "\x00" + grantID))
 	signature := ed25519.Sign(privateKey, digest[:])
-	return "termx-pairing-receipt-v1." + base64.RawURLEncoding.EncodeToString(signature)
+	return "muxvia-pairing-receipt-v1." + base64.RawURLEncoding.EncodeToString(signature)
 }
 
 func payloadDigest(payload []byte) string {

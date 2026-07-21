@@ -375,7 +375,7 @@ func (EndpointConnectMode) EnumDescriptor() ([]byte, []int) {
 	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{5}
 }
 
-// ManagedWebRTCRelayMode 只描述 TermX Cloud managed route 内部允许的 ICE/Relay 策略。
+// ManagedWebRTCRelayMode 只描述 Muxvia Cloud managed route 内部允许的 ICE/Relay 策略。
 type ManagedWebRTCRelayMode int32
 
 const (
@@ -1647,7 +1647,7 @@ func (x *ClientAccessListResult) GetRecords() []*ClientAccessRecord {
 	return nil
 }
 
-// CapabilityAccepted 是 remote auth 到 termx protocol 的单向切换点。
+// CapabilityAccepted 是 remote auth 到 Muxvia protocol 的单向切换点。
 type CapabilityAccepted struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
 	GrantId               string                 `protobuf:"bytes,1,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`
@@ -2736,7 +2736,7 @@ func (x *LocalUnixRouteConfig) GetSocket() string {
 	return ""
 }
 
-// DirectWebRTCTCPRouteConfig 描述不依赖 TermX Cloud 的 daemon embedded signaling 与 ICE-TCP locator。
+// DirectWebRTCTCPRouteConfig 描述不依赖 Muxvia Cloud 的 daemon embedded signaling 与 ICE-TCP locator。
 // advertised_addresses 允许 pair create 为 LAN、FRP 或其它 TCP 映射显式覆盖对外地址，但不改变 Endpoint identity。
 type DirectWebRTCTCPRouteConfig struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
@@ -2916,7 +2916,7 @@ func (x *SSHWebRTCTCPRouteConfig) GetSshCredentialRef() string {
 	return ""
 }
 
-// ManagedWebRTCRouteConfig 描述同一个 App 内由 TermX Cloud 提供的可选 managed Route。
+// ManagedWebRTCRouteConfig 描述同一个 App 内由 Muxvia Cloud 提供的可选 managed Route。
 type ManagedWebRTCRouteConfig struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	TargetDeviceId    string                 `protobuf:"bytes,1,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`

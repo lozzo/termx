@@ -31,7 +31,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const bootstrapPrefix = "termx://bootstrap?payload="
+const bootstrapPrefix = "muxvia://bootstrap?payload="
 
 // Options 定义单个平台 generation 的 primitive 依赖。
 // Broker 与 peer factory 必须只属于当前 engine；关闭后不得复用到下一代。

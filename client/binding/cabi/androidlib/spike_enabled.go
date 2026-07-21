@@ -1,4 +1,4 @@
-//go:build termx_android_spike
+//go:build muxvia_android_spike
 
 package main
 
@@ -45,7 +45,7 @@ func newAndroidSpikeHost(runtimeDir string) (androidHost, error) {
 	if runtimeDir == "" {
 		return nil, fmt.Errorf("android runtime directory is required")
 	}
-	stateDir := filepath.Join(runtimeDir, fmt.Sprintf("termx-go-client-%d", time.Now().UnixNano()))
+	stateDir := filepath.Join(runtimeDir, fmt.Sprintf("muxvia-go-client-%d", time.Now().UnixNano()))
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create android client state directory: %w", err)
 	}

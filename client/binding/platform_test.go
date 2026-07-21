@@ -88,7 +88,7 @@ func TestEnginePairingAndCredentialOperationsUseGenericEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer engine.Close()
-	importPayload, _ := proto.Marshal(&bindingpb.EngineCommand{Command: &bindingpb.EngineCommand_ImportPairing{ImportPairing: &bindingpb.ImportPairingRequest{RequestId: "pair-1", PortablePayload: "termx://bootstrap?payload=proof"}}})
+	importPayload, _ := proto.Marshal(&bindingpb.EngineCommand{Command: &bindingpb.EngineCommand_ImportPairing{ImportPairing: &bindingpb.ImportPairingRequest{RequestId: "pair-1", PortablePayload: "muxvia://bootstrap?payload=proof"}}})
 	importOperation, err := engine.EngineCommand(importPayload)
 	if err != nil {
 		t.Fatal(err)

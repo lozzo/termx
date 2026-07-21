@@ -22,12 +22,12 @@ const (
 
 func DefaultPath() string {
 	if configHome := os.Getenv("XDG_CONFIG_HOME"); configHome != "" {
-		return filepath.Join(configHome, "termx", DefaultFileName)
+		return filepath.Join(configHome, "muxvia", DefaultFileName)
 	}
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".config", "termx", DefaultFileName)
+		return filepath.Join(home, ".config", "muxvia", DefaultFileName)
 	}
-	return filepath.Join(os.TempDir(), "termx-config", DefaultFileName)
+	return filepath.Join(os.TempDir(), "muxvia-config", DefaultFileName)
 }
 
 func Default() state.TUIConfigStore {
@@ -786,29 +786,29 @@ func applyEnv(cfg *state.TUIConfigStore, lookup func(string) string) error {
 }
 
 var envScalarPaths = map[string]string{
-	"TERMX_TUI_THEME_MODE":                       "tui.theme.mode",
-	"TERMX_TUI_THEME_PALETTE":                    "tui.theme.palette",
-	"TERMX_TUI_THEME_PRIMARY":                    "tui.theme.primary",
-	"TERMX_TUI_THEME_SECONDARY":                  "tui.theme.secondary",
-	"TERMX_TUI_THEME_FOREGROUND":                 "tui.theme.foreground",
-	"TERMX_TUI_THEME_BACKGROUND":                 "tui.theme.background",
-	"TERMX_TUI_THEME_MUTED":                      "tui.theme.muted",
-	"TERMX_TUI_THEME_SUCCESS":                    "tui.theme.success",
-	"TERMX_TUI_THEME_WARNING":                    "tui.theme.warning",
-	"TERMX_TUI_THEME_DANGER":                     "tui.theme.danger",
-	"TERMX_TUI_THEME_INFO":                       "tui.theme.info",
-	"TERMX_TUI_CHROME_HEADER":                    "tui.chrome.header",
-	"TERMX_TUI_CHROME_FOOTER":                    "tui.chrome.footer",
-	"TERMX_TUI_CHROME_PANEL_PRESENTATION":        "tui.chrome.panel_presentation",
-	"TERMX_TUI_CHROME_TAB_CREATE_TEMPLATE":       "tui.chrome.tab_create_template",
-	"TERMX_TUI_CHROME_PANE_TITLE_TEMPLATE":       "tui.chrome.pane_title_template",
-	"TERMX_TUI_INTERACTION_MOUSE":                "tui.interaction.mouse",
-	"TERMX_TUI_STICKY_PREFIX_TIMEOUT_MS":         "tui.interaction.sticky_prefix_timeout_ms",
-	"TERMX_TUI_SHORTCUT_PASSTHROUGH_INTERVAL_MS": "tui.interaction.shortcut_passthrough_interval_ms",
-	"TERMX_TUI_CONFIRM_DESTRUCTIVE":              "tui.interaction.confirm_destructive",
-	"TERMX_TUI_CLIPBOARD_HISTORY_MAX_ITEMS":      "tui.interaction.clipboard_history.max_items",
-	"TERMX_TUI_CLIPBOARD_HISTORY_NAME_WIDTH":     "tui.interaction.clipboard_history.name_width",
-	"TERMX_TUI_CLIPBOARD_HISTORY_PREVIEW_RATIO":  "tui.interaction.clipboard_history.preview_width_ratio",
+	"MUXVIA_TUI_THEME_MODE":                       "tui.theme.mode",
+	"MUXVIA_TUI_THEME_PALETTE":                    "tui.theme.palette",
+	"MUXVIA_TUI_THEME_PRIMARY":                    "tui.theme.primary",
+	"MUXVIA_TUI_THEME_SECONDARY":                  "tui.theme.secondary",
+	"MUXVIA_TUI_THEME_FOREGROUND":                 "tui.theme.foreground",
+	"MUXVIA_TUI_THEME_BACKGROUND":                 "tui.theme.background",
+	"MUXVIA_TUI_THEME_MUTED":                      "tui.theme.muted",
+	"MUXVIA_TUI_THEME_SUCCESS":                    "tui.theme.success",
+	"MUXVIA_TUI_THEME_WARNING":                    "tui.theme.warning",
+	"MUXVIA_TUI_THEME_DANGER":                     "tui.theme.danger",
+	"MUXVIA_TUI_THEME_INFO":                       "tui.theme.info",
+	"MUXVIA_TUI_CHROME_HEADER":                    "tui.chrome.header",
+	"MUXVIA_TUI_CHROME_FOOTER":                    "tui.chrome.footer",
+	"MUXVIA_TUI_CHROME_PANEL_PRESENTATION":        "tui.chrome.panel_presentation",
+	"MUXVIA_TUI_CHROME_TAB_CREATE_TEMPLATE":       "tui.chrome.tab_create_template",
+	"MUXVIA_TUI_CHROME_PANE_TITLE_TEMPLATE":       "tui.chrome.pane_title_template",
+	"MUXVIA_TUI_INTERACTION_MOUSE":                "tui.interaction.mouse",
+	"MUXVIA_TUI_STICKY_PREFIX_TIMEOUT_MS":         "tui.interaction.sticky_prefix_timeout_ms",
+	"MUXVIA_TUI_SHORTCUT_PASSTHROUGH_INTERVAL_MS": "tui.interaction.shortcut_passthrough_interval_ms",
+	"MUXVIA_TUI_CONFIRM_DESTRUCTIVE":              "tui.interaction.confirm_destructive",
+	"MUXVIA_TUI_CLIPBOARD_HISTORY_MAX_ITEMS":      "tui.interaction.clipboard_history.max_items",
+	"MUXVIA_TUI_CLIPBOARD_HISTORY_NAME_WIDTH":     "tui.interaction.clipboard_history.name_width",
+	"MUXVIA_TUI_CLIPBOARD_HISTORY_PREVIEW_RATIO":  "tui.interaction.clipboard_history.preview_width_ratio",
 }
 
 func Validate(cfg state.TUIConfigStore) error {

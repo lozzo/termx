@@ -64,7 +64,7 @@ type relayLeaseHTTPHandler struct {
 }
 
 func newRelayLeaseHTTPHandler(store *cloudsqlite.Store, topology *cloudtopology.Service, registry *hubregistry.Registry, signer servicecredential.Signer, deployments []DeploymentConfig) (*relayLeaseHTTPHandler, error) {
-	issuer, err := servicecredential.NewRelayLeaseIssuer("termx-cloud-controller-relay", signer)
+	issuer, err := servicecredential.NewRelayLeaseIssuer("muxvia-cloud-controller-relay", signer)
 	if err != nil {
 		return nil, err
 	}
@@ -110,9 +110,9 @@ func (handler *relayLeaseHTTPHandler) ServeHTTP(writer http.ResponseWriter, requ
 	}
 	now := handler.now().UTC()
 	metadata := handler.deployments[payload.GetHubId()]
-	claims, verifyErr := servicecredential.VerifyEdgeAccess(handler.keyRing, token, servicecredential.EdgeAccessExpectation{Issuer: "termx-cloud-controller", AudienceHubID: payload.GetHubId(), AccountID: payload.GetAccountId(), ClientDeviceID: payload.GetClientDeviceId(), PrincipalKind: servicecredential.EdgePrincipalClient}, now)
+	claims, verifyErr := servicecredential.VerifyEdgeAccess(handler.keyRing, token, servicecredential.EdgeAccessExpectation{Issuer: "muxvia-cloud-controller", AudienceHubID: payload.GetHubId(), AccountID: payload.GetAccountId(), ClientDeviceID: payload.GetClientDeviceId(), PrincipalKind: servicecredential.EdgePrincipalClient}, now)
 	if verifyErr != nil {
-		claims, verifyErr = servicecredential.VerifyEdgeAccess(handler.keyRing, token, servicecredential.EdgeAccessExpectation{Issuer: "termx-cloud-controller", AudienceHubID: payload.GetHubId(), AccountID: payload.GetAccountId(), ClientDeviceID: payload.GetTargetDeviceId(), PrincipalKind: servicecredential.EdgePrincipalDaemon}, now)
+		claims, verifyErr = servicecredential.VerifyEdgeAccess(handler.keyRing, token, servicecredential.EdgeAccessExpectation{Issuer: "muxvia-cloud-controller", AudienceHubID: payload.GetHubId(), AccountID: payload.GetAccountId(), ClientDeviceID: payload.GetTargetDeviceId(), PrincipalKind: servicecredential.EdgePrincipalDaemon}, now)
 	}
 	if verifyErr != nil || metadata == nil || metadata.GetRelayId() != payload.GetRelayId() || metadata.GetRegion() != payload.GetRegion() {
 		writeRelayLeaseError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Relay reservation authorization was rejected", false)

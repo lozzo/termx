@@ -347,7 +347,7 @@ git diff --check
 触碰 render、layout、hit region、chrome、projection 或 CLI visual snapshot 时，还必须运行：
 
 ```sh
-go test ./cmd/termx -run 'TestV3VisualSnapshot|TestV3SmokeCommandIncludesVisualReviewCases|TestV3TmuxVisualCompareCapturesTargetAndDiffArtifacts' -count=1
+go test ./cmd/muxvia -run 'TestV3VisualSnapshot|TestV3SmokeCommandIncludesVisualReviewCases|TestV3TmuxVisualCompareCapturesTargetAndDiffArtifacts' -count=1
 make test-cli-v3-tmux-visual-compare
 ```
 

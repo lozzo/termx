@@ -1,5 +1,5 @@
 import { BindingOperation, type BindingOperationCode, type ProtoBindingBackend } from './protoBindingClient'
-import type { TermxWasmRuntime } from './wasmRuntime'
+import type { MuxviaWasmRuntime } from './wasmRuntime'
 
 /** WasmBindingBackend maps the stable binding operation set onto one Go/WASM engine generation. */
 export class WasmBindingBackend implements ProtoBindingBackend {
@@ -8,7 +8,7 @@ export class WasmBindingBackend implements ProtoBindingBackend {
   private onEvent: ((payload: Uint8Array) => void) | null = null
   private onClosed: ((error: Error) => void) | null = null
 
-  constructor(private readonly runtime: TermxWasmRuntime) {}
+  constructor(private readonly runtime: MuxviaWasmRuntime) {}
 
   start(onEvent: (payload: Uint8Array) => void, onClosed: (error: Error) => void): void {
     if (this.active) throw new Error('WASM binding backend is already started')

@@ -37,7 +37,7 @@ func (connection *Connection) Hello(ctx context.Context, request *cloudpb.Compan
 	if err := ensureContext(ctx); err != nil {
 		return nil, temporaryError("companion hello was canceled")
 	}
-	if request == nil || request.GetProtocolMin() == 0 || request.GetProtocolMax() < request.GetProtocolMin() || request.GetTermxVersion() == "" || len(request.GetRequestNonce()) < 16 || len(request.GetRequestNonce()) > 64 {
+	if request == nil || request.GetProtocolMin() == 0 || request.GetProtocolMax() < request.GetProtocolMin() || request.GetMuxviaVersion() == "" || len(request.GetRequestNonce()) < 16 || len(request.GetRequestNonce()) > 64 {
 		return nil, protocolError("invalid companion hello request")
 	}
 	if request.GetProtocolMin() > cloudcompanion.ProtocolVersionMax || request.GetProtocolMax() < cloudcompanion.ProtocolVersionMin {

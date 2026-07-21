@@ -14,16 +14,16 @@ import (
 // HelloOptions 固定一条公开进程到本机 Companion IPC connection 的 caller role 与能力请求。
 // Endpoint 由平台配置或显式 dev profile 决定；该结构不能携带账号 token、DeviceIdentity private key、CapabilityGrant 或 terminal 数据。
 type HelloOptions struct {
-	TermxVersion string
-	CallerRole   cloudpb.CallerRole
-	Capabilities []cloudpb.CompanionCapability
-	Random       io.Reader
+	MuxviaVersion string
+	CallerRole    cloudpb.CallerRole
+	Capabilities  []cloudpb.CompanionCapability
+	Random        io.Reader
 }
 
 // DialAndHello 验证本机 IPC peer，建立 Client，并完成该 connection 唯一一次 Hello 协商。
 // 协商失败会关闭连接；返回的能力只能是请求集合的子集，后续缺失能力由对应 operation fail closed，不能回退旧 Hub API。
 func DialAndHello(ctx context.Context, endpoint string, options HelloOptions) (*Client, *cloudpb.CompanionHelloResponse, error) {
-	if options.TermxVersion == "" || options.CallerRole == cloudpb.CallerRole_CALLER_ROLE_UNSPECIFIED {
+	if options.MuxviaVersion == "" || options.CallerRole == cloudpb.CallerRole_CALLER_ROLE_UNSPECIFIED {
 		return nil, nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "invalid Companion Hello configuration")
 	}
 	requested := make(map[cloudpb.CompanionCapability]struct{}, len(options.Capabilities))
@@ -50,7 +50,7 @@ func DialAndHello(ctx context.Context, endpoint string, options HelloOptions) (*
 	}
 	response, err := client.Hello(ctx, &cloudpb.CompanionHelloRequest{
 		ProtocolMin: cloudcompanion.ProtocolVersionMin, ProtocolMax: cloudcompanion.ProtocolVersionMax,
-		TermxVersion: options.TermxVersion, CallerRole: options.CallerRole,
+		MuxviaVersion: options.MuxviaVersion, CallerRole: options.CallerRole,
 		RequestedCapabilities: append([]cloudpb.CompanionCapability(nil), options.Capabilities...), RequestNonce: nonce,
 	})
 	if err != nil {

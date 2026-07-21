@@ -10,7 +10,7 @@
 
 | 路径 | 责任 |
 | --- | --- |
-| `cmd/termx/` | 公开 CLI、daemon 与 TUI 装配入口 |
+| `cmd/muxvia/` | 公开 CLI、daemon 与 TUI 装配入口 |
 | `client/endpoint/` | Endpoint/Route registry、assembler、planner 与 portable contract |
 | `client/runtime/` | 跨端 route race、ReadyPeerSession、generation 与 session owner |
 | `client/port/`、`client/adapter/` | host capability 接口和 local/SSH/managed/protocol adapter |

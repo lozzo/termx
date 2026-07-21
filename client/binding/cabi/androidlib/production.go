@@ -20,7 +20,7 @@ func newAndroidProductionHost() *androidProductionHost {
 	broker := binding.NewPlatformBroker()
 	peers := pionadapter.Factory{}
 	host, err := enginehost.New(enginehost.Options{
-		Broker: broker, DirectPeers: peers, ManagedPeers: peers, ClientName: "termx-android", CredentialPrefix: "android-access-",
+		Broker: broker, DirectPeers: peers, ManagedPeers: peers, ClientName: "muxvia-android", CredentialPrefix: "android-access-",
 		SessionAuthority: androidSessionAuthority,
 	})
 	if err != nil {

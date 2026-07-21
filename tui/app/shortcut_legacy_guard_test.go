@@ -20,7 +20,7 @@ func TestShortcutLegacyExecutionSymbolsDoNotReturn(t *testing.T) {
 		"reduceShellContentAction":    true,
 		"reduceOverlayKeyboardAction": true,
 	}
-	for _, root := range []string{"tui", filepath.Join("cmd", "termx")} {
+	for _, root := range []string{"tui", filepath.Join("cmd", "muxvia")} {
 		err := filepath.WalkDir(filepath.Join(repoRoot, root), func(path string, entry os.DirEntry, err error) error {
 			if err != nil {
 				return err

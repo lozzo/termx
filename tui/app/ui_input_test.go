@@ -1954,7 +1954,7 @@ func TestTerminalSizeLockToggleWritesTerminalTagsAndProjectsViews(t *testing.T) 
 	if !ok || result.TerminalID != "term-1" || !result.Locked {
 		t.Fatalf("expected size lock result, got %#v", result)
 	}
-	if len(terminal.TagEdits) != 1 || terminal.TagEdits[0].Tags["role"] != "shell" || terminal.TagEdits[0].Tags["termx.size_lock"] != "lock" {
+	if len(terminal.TagEdits) != 1 || terminal.TagEdits[0].Tags["role"] != "shell" || terminal.TagEdits[0].Tags["muxvia.size_lock"] != "lock" {
 		t.Fatalf("size lock must preserve existing tags and set lock tag, edits=%#v", terminal.TagEdits)
 	}
 	next, _ = reducer(next, result)
@@ -1966,7 +1966,7 @@ func TestTerminalSizeLockToggleWritesTerminalTagsAndProjectsViews(t *testing.T) 
 	if !follower.SizeLocked || follower.CanResize || follower.ControlReason != "size_locked" {
 		t.Fatalf("follower view should project terminal lock, got %#v", follower)
 	}
-	if next.TerminalPool.Items[0].Tags["termx.size_lock"] != "lock" {
+	if next.TerminalPool.Items[0].Tags["muxvia.size_lock"] != "lock" {
 		t.Fatalf("terminal pool tags should update after lock result, pool=%#v", next.TerminalPool)
 	}
 
@@ -1975,7 +1975,7 @@ func TestTerminalSizeLockToggleWritesTerminalTagsAndProjectsViews(t *testing.T) 
 	if result.Locked {
 		t.Fatalf("unlock should report unlocked result, got %#v", result)
 	}
-	if _, ok := result.Tags["termx.size_lock"]; ok {
+	if _, ok := result.Tags["muxvia.size_lock"]; ok {
 		t.Fatalf("unlock should remove size lock tag, got %#v", result)
 	}
 	next, _ = reducer(next, result)
@@ -2001,7 +2001,7 @@ func TestTerminalSizeLockToggleLoadsTerminalPoolTagsBeforeWriting(t *testing.T) 
 	if !ok || result.TerminalID != "term-1" || !result.Locked {
 		t.Fatalf("missing pool tags should list then write size lock, got %#v", result)
 	}
-	if len(terminal.Lists) != 1 || len(terminal.TagEdits) != 1 || terminal.TagEdits[0].Tags["role"] != "shell" || terminal.TagEdits[0].Tags["termx.size_lock"] != "lock" {
+	if len(terminal.Lists) != 1 || len(terminal.TagEdits) != 1 || terminal.TagEdits[0].Tags["role"] != "shell" || terminal.TagEdits[0].Tags["muxvia.size_lock"] != "lock" {
 		t.Fatalf("size lock must preserve listed tags when cache is empty, lists=%#v edits=%#v", terminal.Lists, terminal.TagEdits)
 	}
 	next, _ = reducer(next, result)

@@ -1,4 +1,4 @@
-// Package direct 实现不依赖 TermX Cloud 的 daemon embedded signaling + ICE-TCP connector。
+// Package direct 实现不依赖 Muxvia Cloud 的 daemon embedded signaling + ICE-TCP connector。
 // Endpoint/Route 选择与 generation 属于 client/runtime；本包只执行当前 Direct attempt 的 signaling、DTLS auth、Hello 和资源清理。
 package direct
 
@@ -33,7 +33,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const defaultClientName = "termx-go-direct"
+const defaultClientName = "muxvia-go-direct"
 
 // PeerFactory 创建只启用 ICE-TCP 的 WebRTC peer primitive。
 // factory 不解析 Endpoint、不访问 credential，也不执行 signaling 或 remote auth。

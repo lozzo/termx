@@ -19,7 +19,7 @@ CLI 命令树使用 Endpoint/Route registry、`TerminalRef` 和统一 `ClientRun
 CLI 只保留以下职责：
 
 - 解析 Cobra 参数、`EndpointID:TerminalID` target 和可选 `--route` override。
-- 调用 `client/runtime` planner/session owner，不在 `cmd/termx` 内复制 route 选择或 session 状态。
+- 调用 `client/runtime` planner/session owner，不在 `cmd/muxvia` 内复制 route 选择或 session 状态。
 - 输出稳定的人类/JSON 结果和 typed error 对应的退出码。
 - 保持 route 切换不改变 EndpointID 或 TerminalRef。
 
@@ -27,7 +27,7 @@ CLI 只保留以下职责：
 
 ## 2. 现状核对
 
-本文不手工维护“当前有哪些命令”的快照。当前产品命令、别名、参数和 help 以 `termx --help`、各子命令 `--help` 及 `cmd/termx` 黑盒测试为准；活动切片完成状态只看 `workflow.md`。
+本文不手工维护“当前有哪些命令”的快照。当前产品命令、别名、参数和 help 以 `termx --help`、各子命令 `--help` 及 `cmd/muxvia` 黑盒测试为准；活动切片完成状态只看 `workflow.md`。
 
 设计文档只保留稳定约束：命令按领域对象组织，target 使用 TerminalRef，machine output 和退出码可脚本化，开发 harness 不进入产品树，尚无真实 domain/protocol contract 的能力不得只靠 Cobra command 伪造。
 

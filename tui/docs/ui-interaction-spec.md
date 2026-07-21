@@ -1404,8 +1404,8 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 
 基本手工测试入口：
 
-- `go run ./cmd/termx v3 smoke`：查看静态 smoke 中 styled chrome、header/footer、card/split、toast、overlay 和 pane command case。
-- `go run ./cmd/termx v3 e2e-smoke`：查看端到端 smoke 中 split、resize、zoom、close、content rect resize 和 copy rebind。
+- `go run ./cmd/muxvia v3 smoke`：查看静态 smoke 中 styled chrome、header/footer、card/split、toast、overlay 和 pane command case。
+- `go run ./cmd/muxvia v3 e2e-smoke`：查看端到端 smoke 中 split、resize、zoom、close、content rect resize 和 copy rebind。
 - 真实 TUI 中 `Ctrl-p` 进入 pane mode，执行 split、close、focus、zoom、balance、card/split。
 - 真实 TUI 中 `Ctrl-r` 进入 resize mode，使用方向键调整 pane size。
 - 真实 TUI 中 `Ctrl-g` 进入 global mode，确认 footer 展示 header/footer、Help、Terminal Pool、Workbench Tree、quit 等核心入口；toast 维护快捷键不进入主 footer / Help 路径。
@@ -1413,7 +1413,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 
 推荐真实 TUI 验收步骤：
 
-- 启动：`go run ./cmd/termx`。
+- 启动：`go run ./cmd/muxvia`。
 - 分屏：点击 pane 顶部的 split right / split down action token，或通过测试、smoke harness、后续 CLI mini command / command palette 发起同一 semantic command。新 pane 应立即成为 active pane，边框变为 accent，footer active target 同步更新。横向分屏后，下方 pane 顶边 action token 必须仍可点击分屏，不能被 divider resize 命中抢占。`Ctrl-p v`、`Ctrl-p s`、`Ctrl-p %`、`Ctrl-p "` 不作为分屏键盘入口。
 - 焦点：在 pane mode 中按 `n` / `N` 切换焦点，或鼠标点击另一个 pane 的内容区 / chrome；active pane 边框、标题和 footer 必须同步变化；普通 focus 成功不应额外弹出 toast。
 - 关闭：先聚焦目标 pane，在 pane mode 中按 `x` 关闭 pane，或点击 pane 顶部 action slot；关闭后 active pane 必须稳定落到仍存在的 pane，不得留下已删除 pane 的高亮或 footer target。
@@ -1596,7 +1596,7 @@ Terminal Pool 管理页一期的目标是实现独立 Terminal Pool page/content
 
 本阶段完成后的基本手工测试入口：
 
-- `go run ./cmd/termx` 进入默认 TUI。
+- `go run ./cmd/muxvia` 进入默认 TUI。
 - 按 `Ctrl-g` 进入 global mode，再按 Terminal Pool 对应入口键打开 Terminal Pool Page。
 - 或在 empty pane 中点击 manager action 打开 Terminal Pool Page。
 - 在页面中输入搜索词，确认 terminal 不收到这些字符。
@@ -1633,7 +1633,7 @@ Workbench Tree overlay 一期的目标是实现 workspace / tab / pane / floatin
 
 本阶段完成后的基本手工测试入口：
 
-- `go run ./cmd/termx` 进入默认 TUI。
+- `go run ./cmd/muxvia` 进入默认 TUI。
 - 按 `Ctrl-g` 进入 global mode，再按 Workbench Tree 对应入口键打开结构导航。
 - 在页面中输入中文或 emoji 搜索词，确认 terminal 不收到这些字符。
 - 使用上下方向键移动 selected row，按 `Enter` 聚焦 pane 或 tab。
@@ -1667,7 +1667,7 @@ Floating Pane 一期的目标是让 floating pane 成为可操作的 workbench �
 
 本阶段完成后的基本手工测试入口：
 
-- `go run ./cmd/termx` 进入默认 TUI。
+- `go run ./cmd/muxvia` 进入默认 TUI。
 - 按 `Ctrl-o` 进入 floating mode，再按 `n` 创建 floating pane；页面应出现独立带边框 floating，footer mode 显示 floating。
 - 在 floating mode 中按方向键移动，按 `H/J/K/L` resize，按 `c` 居中，按 `z` collapse / restore，按 `x` close。
 - 用鼠标点击 floating title 或内容区域，floating 必须成为 active 并提升到最前。
@@ -1703,7 +1703,7 @@ Prompt / Help overlay 一期的目标是补齐全局短输入和帮助入口，�
 
 本阶段完成后的基本手工测试入口：
 
-- `go run ./cmd/termx` 进入默认 TUI。
+- `go run ./cmd/muxvia` 进入默认 TUI。
 - 按 `Ctrl-g` 进入 global mode，再按 `:` 打开 Prompt；输入中文或 emoji，确认 terminal 不收到这些字符。
 - 在 Prompt 中按 Backspace 和 Enter，确认 input 编辑、提交反馈和 overlay 关闭正常。
 - 打开 destructive Prompt 的测试入口或 harness，输入非确认文本时应保持打开并显示 warning feedback。
@@ -1741,7 +1741,7 @@ Tab / Workspace 产品入口一期的目标是让 `Ctrl-t` 和 `Ctrl-w` 从声�
 
 本阶段完成后的基本手工测试入口：
 
-- `go run ./cmd/termx` 进入默认 TUI。
+- `go run ./cmd/muxvia` 进入默认 TUI。
 - 按 `Ctrl-t` 进入 tab mode，再按 `n` 创建 tab；header tab strip 应显示新 active tab。
 - 在 tab mode 中按 `h` / `l` 或 `[` / `]` 切换 tab；active pane、header 和 footer 必须同步变化。
 - 在 tab mode 中按 `r` 打开 Prompt，输入中文或 emoji 后提交；tab title 必须更新且 terminal 不收到这些字符。
@@ -1792,7 +1792,7 @@ TUI 产品壳总验收的目标是确认当前 goal 完成后，除 terminal-liv
 
 当前 goal 完成后的基本手工测试入口：
 
-- 启动：`go run ./cmd/termx`。
+- 启动：`go run ./cmd/muxvia`。
 - 分屏与 pane：分屏通过 pane 顶部 split right / split down action token 或 semantic command 入口触发；按 `Ctrl-p` 后用 `n` / `N` 切焦点，`z` zoom，`x` 关闭，`c` / `p` 切 card/split。
 - resize：按 `Ctrl-r`，再用方向键或 `h/j/k/l` 调整 active pane；边框、footer、terminal content rect resize 必须同步。
 - floating：按 `Ctrl-o`，再用 `n` 创建，方向键移动，`H/J/K/L` resize，`c` 居中，`z` collapse/restore，`x` 关闭；也可用鼠标拖动 floating title/resize handle，或点击 close。
@@ -1802,7 +1802,7 @@ TUI 产品壳总验收的目标是确认当前 goal 完成后，除 terminal-liv
 - Tab/Workspace：按 `Ctrl-t` 后用 `n/h/l/r/x` 操作 tab；按 `Ctrl-w` 后用 `n/h/l/r/t` 操作 workspace 和 Workbench Tree。
 - Toast/Header/Footer：按 `Ctrl-g h` / `Ctrl-g f` 隐藏或恢复 header/footer；toast close/clear 保留为维护快捷键，不作为 global footer 主路径。
 - Copy History：按 `Ctrl-v` 进入 copy mode，输入搜索词，使用 `Enter` 或上下方向键在匹配间移动，使用 `PageDown` 或鼠标滚轮滚动，点击历史行时 cursor/selection 应移动且 terminal 不应收到鼠标事件。
-- 非交互回归：`go run ./cmd/termx v3 smoke` 和 `go run ./cmd/termx v3 e2e-smoke`。
+- 非交互回归：`go run ./cmd/muxvia v3 smoke` 和 `go run ./cmd/muxvia v3 e2e-smoke`。
 
 render 兼容投影清理与性能基线已经完成：旧 `RenderVM{Lines, Status}` 兼容输入语义已删除，large terminal output benchmark 已建立。后续如果要把项目往前推，应新增切片，并在不破坏上述产品壳、terminal live 前推、copy-history 深化和 `RenderResult` 单一路径的前提下，继续 terminal-live rich attributes、copy-history 最终 polish 或 render performance 优化。
 

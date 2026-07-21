@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	defaultClientName     = "termx-go-ssh"
+	defaultClientName     = "muxvia-go-ssh"
 	defaultConnectTimeout = 10 * time.Second
 	defaultSSHPort        = 22
 )
@@ -191,7 +191,7 @@ func dialSSHClient(ctx context.Context, route endpoint.AccessRoute, auth []golan
 	callback := pinnedHostKeyCallback(route.HostKeyFingerprints)
 	config := &golangssh.ClientConfig{
 		User: user, Auth: append([]golangssh.AuthMethod(nil), auth...), HostKeyCallback: callback,
-		ClientVersion: "SSH-2.0-TermX", Timeout: timeout,
+		ClientVersion: "SSH-2.0-Muxvia", Timeout: timeout,
 	}
 	dialer := networkDialer
 	if dialer == nil {

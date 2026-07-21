@@ -17,7 +17,7 @@ import { ProtoBindingClient, ProtoBindingConnector } from './protoBindingClient'
 import { BrowserWasmLifecycle } from './browserWasmLifecycle'
 import { BrowserWasmPlatform } from './browserWasmPlatform'
 import { WasmBindingBackend } from './wasmBindingBackend'
-import { TermxWasmRuntime, loadTermxWasmExports } from './wasmRuntime'
+import { MuxviaWasmRuntime, loadMuxviaWasmExports } from './wasmRuntime'
 
 type BrowserBindingGeneration = {
   client: ProtoBindingClient
@@ -40,7 +40,7 @@ export class BrowserBindingRuntime {
     this.lifecycle = new BrowserWasmLifecycle(async () => await this.createGeneration(), (generation) => {
       if (!generation) return
       this.generationCount += 1
-      if (this.generationCount > 1) document.dispatchEvent(new Event('termx:resume'))
+      if (this.generationCount > 1) document.dispatchEvent(new Event('muxvia:resume'))
     })
     this.lifecycle.attach()
     this.machineRuntimeFactory = ({ machine }) => this.createMachineRuntime(machine)
@@ -74,13 +74,13 @@ export class BrowserBindingRuntime {
   }
 
   private async createGeneration(): Promise<BrowserBindingGeneration> {
-    const exports = await loadTermxWasmExports({ wasmUrl: '/termx-wasm/termx-client.wasm', wasmExecUrl: '/termx-wasm/wasm_exec.js' })
-    let runtime: TermxWasmRuntime | null = null
+    const exports = await loadMuxviaWasmExports({ wasmUrl: '/muxvia-wasm/muxvia-client.wasm', wasmExecUrl: '/muxvia-wasm/wasm_exec.js' })
+    let runtime: MuxviaWasmRuntime | null = null
     const platform = new BrowserWasmPlatform(this.cloud, async (payload) => {
       if (!runtime) throw new Error('browser WASM generation is unavailable')
       await runtime.platformEvent(payload)
     })
-    runtime = await TermxWasmRuntime.create(exports, platform)
+    runtime = await MuxviaWasmRuntime.create(exports, platform)
     const client = new ProtoBindingClient(new WasmBindingBackend(runtime))
     this.replaceRegistry(await client.getEndpointRegistry())
     return { client, close: () => client.close() }

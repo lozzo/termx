@@ -22,6 +22,6 @@ func smokeEndpoint() (string, error) {
 	if _, err := rand.Read(random); err != nil {
 		return "", err
 	}
-	runtimeDir := filepath.Join(os.TempDir(), "termx-"+strconv.Itoa(os.Getuid()))
+	runtimeDir := filepath.Join(os.TempDir(), "muxvia-"+strconv.Itoa(os.Getuid()))
 	return filepath.Join(runtimeDir, fmt.Sprintf("cloud-smoke-%s.sock", hex.EncodeToString(random))), nil
 }

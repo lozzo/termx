@@ -17,9 +17,9 @@ import (
 )
 
 const (
-	productAccessCookie  = "termx_cloud_access"
-	productRefreshCookie = "termx_cloud_refresh"
-	productCSRFCookie    = "termx_cloud_csrf"
+	productAccessCookie  = "muxvia_cloud_access"
+	productRefreshCookie = "muxvia_cloud_refresh"
+	productCSRFCookie    = "muxvia_cloud_csrf"
 )
 
 // ProductAPIConfig 配置 Controller 账号与交易 Proto JSON surface。
@@ -191,7 +191,7 @@ func authorizeProductMutation(r *http.Request, service *commerce.Service) (*clou
 
 func productMutationAllowed(r *http.Request) bool {
 	cookie, err := r.Cookie(productCSRFCookie)
-	return err == nil && sameOrigin(r) && cookie.Value != "" && cookie.Value == r.Header.Get("X-TermX-CSRF")
+	return err == nil && sameOrigin(r) && cookie.Value != "" && cookie.Value == r.Header.Get("X-Muxvia-CSRF")
 }
 
 func sameOrigin(r *http.Request) bool {

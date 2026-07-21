@@ -1264,7 +1264,7 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 			return msg
 		}
 		// 中文说明：前台程序启用 mouse tracking 后，raw 鼠标事件归子进程所有；
-		// 只有未被 terminal 接管的滚轮才作为 TermX infinite history 入口。
+		// 只有未被 terminal 接管的滚轮才作为 Muxvia infinite history 入口。
 		if inputMsg.Event.RawSeq != "" {
 			if passthroughMsg, ok := runtime.mousePassthroughInputMsg(inputMsg, resolution); ok {
 				return passthroughMsg
@@ -1745,7 +1745,7 @@ func encodeMouseEventForTerminal(event input.InputEvent, rect render.Rect, modes
 	if modes.MouseSGR {
 		if raw, ok := rewriteSGRMouseRawSeq(event.RawSeq, localCol, localRow); ok {
 			// 中文说明：子进程 mouse tracking 的 truth source 是它自己的 PTY 网格，
-			// TermX chrome/header/footer 只属于外层 TUI，透传前必须改成内容区 local 坐标。
+			// Muxvia chrome/header/footer 只属于外层 TUI，透传前必须改成内容区 local 坐标。
 			event.RawSeq = raw
 			event.Col = localCol
 			event.Row = localRow

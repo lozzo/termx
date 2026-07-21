@@ -105,7 +105,7 @@ func (client *relayControlClient) runOnce(ctx context.Context) error {
 		return err
 	}
 	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK || response.Header.Get("Content-Type") != "application/x-termx-cloud-stream" {
+	if response.StatusCode != http.StatusOK || response.Header.Get("Content-Type") != "application/x-muxvia-cloud-stream" {
 		return fmt.Errorf("Relay control open failed with status %d", response.StatusCode)
 	}
 	var generation, controllerSequence uint64

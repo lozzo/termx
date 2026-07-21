@@ -45,7 +45,7 @@ func TestControllerEnrollmentBindsControlKeyAndPersistsDaemonAuthority(t *testin
 	}
 	defer runtime.Close(context.Background())
 	devicePublic, devicePrivate, _ := ed25519.GenerateKey(rand.Reader)
-	begin := &cloudpb.BeginDeviceEnrollmentRequest{OneTimeCode: "one-time-code", DevicePublicKey: devicePublic, Metadata: &cloudpb.DeviceMetadata{DisplayName: "Test daemon", Platform: "test/arm64", TermxVersion: "test"}}
+	begin := &cloudpb.BeginDeviceEnrollmentRequest{OneTimeCode: "one-time-code", DevicePublicKey: devicePublic, Metadata: &cloudpb.DeviceMetadata{DisplayName: "Test daemon", Platform: "test/arm64", MuxviaVersion: "test"}}
 	challenge := &cloudpb.DeviceEnrollmentChallenge{}
 	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/begin", begin, challenge, http.StatusOK)
 	signedAt := time.Now().UTC()
@@ -60,7 +60,7 @@ func TestControllerEnrollmentBindsControlKeyAndPersistsDaemonAuthority(t *testin
 		t.Fatalf("enrollment result = %v", result)
 	}
 	keyRing, _ := servicecredential.NewKeyRing(servicecredential.VerificationKey{ID: "controller-key", PublicKey: projectionPublic, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(24 * time.Hour)})
-	if _, err := servicecredential.VerifyEdgeAccess(keyRing, result.GetAccessToken(), servicecredential.EdgeAccessExpectation{Issuer: "termx-cloud-controller", AudienceHubID: "hub-1", AccountID: account.GetAccountId(), ClientDeviceID: "daemon-enrolled", PrincipalKind: servicecredential.EdgePrincipalDaemon}, time.Now().UTC()); err != nil {
+	if _, err := servicecredential.VerifyEdgeAccess(keyRing, result.GetAccessToken(), servicecredential.EdgeAccessExpectation{Issuer: "muxvia-cloud-controller", AudienceHubID: "hub-1", AccountID: account.GetAccountId(), ClientDeviceID: "daemon-enrolled", PrincipalKind: servicecredential.EdgePrincipalDaemon}, time.Now().UTC()); err != nil {
 		t.Fatalf("verify daemon edge credential: %v", err)
 	}
 	owner, err := runtime.topology.Device(context.Background(), "daemon-enrolled")
@@ -214,7 +214,7 @@ func TestControllerKeepsListenersSeparateAndProjectionRevisionPersistent(t *test
 	cookies := seedLoginResponse.Cookies()
 	csrf := ""
 	for _, cookie := range cookies {
-		if cookie.Name == "termx_cloud_csrf" {
+		if cookie.Name == "muxvia_cloud_csrf" {
 			csrf = cookie.Value
 		}
 	}
@@ -299,7 +299,7 @@ func productMutation(t *testing.T, endpoint, origin, csrf string, cookies []*htt
 	t.Helper()
 	request, _ := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
 	request.Header.Set("Origin", origin)
-	request.Header.Set("X-TermX-CSRF", csrf)
+	request.Header.Set("X-Muxvia-CSRF", csrf)
 	for _, cookie := range cookies {
 		request.AddCookie(cookie)
 	}

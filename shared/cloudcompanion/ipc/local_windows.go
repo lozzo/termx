@@ -20,10 +20,10 @@ import (
 func DefaultEndpoint() string {
 	sid, err := currentUserSID()
 	if err != nil {
-		return `\\.\pipe\termx-cloud-current-user`
+		return `\\.\pipe\muxvia-cloud-current-user`
 	}
 	digest := sha256.Sum256([]byte(sid))
-	return fmt.Sprintf(`\\.\pipe\termx-cloud-%x`, digest[:8])
+	return fmt.Sprintf(`\\.\pipe\muxvia-cloud-%x`, digest[:8])
 }
 
 // Listen 创建只允许当前 Windows user SID 访问的 byte-mode Named Pipe。
@@ -113,7 +113,7 @@ func verifyNamedPipeProcessOwner(conn net.Conn, server bool) error {
 }
 
 func trustedPipeNamespace(endpoint string) bool {
-	return strings.HasPrefix(strings.ToLower(endpoint), `\\.\pipe\termx-cloud-`)
+	return strings.HasPrefix(strings.ToLower(endpoint), `\\.\pipe\muxvia-cloud-`)
 }
 
 func currentUserSID() (string, error) {

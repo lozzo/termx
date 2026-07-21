@@ -32,10 +32,10 @@ func TestManagerStartsVerifiedInstallationOnceAndNegotiatesRequestedCapabilities
 		},
 	}
 	manager, err := New(Config{
-		Installations: staticInstallationSource{installation: installer.Installation{Version: "v1.2.3", Channel: "stable", BinaryPath: "/verified/termx-cloud", BinarySHA256: digest}},
-		Endpoint:      "test-endpoint", TermxVersion: "v3-test", RetryInterval: time.Millisecond, ReadyTimeout: time.Second,
+		Installations: staticInstallationSource{installation: installer.Installation{Version: "v1.2.3", Channel: "stable", BinaryPath: "/verified/muxvia-cloud", BinarySHA256: digest}},
+		Endpoint:      "test-endpoint", MuxviaVersion: "v3-test", RetryInterval: time.Millisecond, ReadyTimeout: time.Second,
 		Start: func(binaryPath, endpoint string, smoke bool) error {
-			if binaryPath != "/verified/termx-cloud" || endpoint != "test-endpoint" || smoke {
+			if binaryPath != "/verified/muxvia-cloud" || endpoint != "test-endpoint" || smoke {
 				t.Fatalf("Start(%q, %q, %v)", binaryPath, endpoint, smoke)
 			}
 			mu.Lock()
@@ -94,8 +94,8 @@ func TestManagerStopsSameVersionDifferentArtifactBeforeStartingActiveInstallatio
 		},
 	}
 	manager, err := New(Config{
-		Installations: staticInstallationSource{installation: installer.Installation{Version: "v1.2.3", Channel: "stable", BinaryPath: "/verified/termx-cloud", BinarySHA256: digest}},
-		Endpoint:      "test-endpoint", TermxVersion: "test", RetryInterval: time.Millisecond, ReadyTimeout: time.Second,
+		Installations: staticInstallationSource{installation: installer.Installation{Version: "v1.2.3", Channel: "stable", BinaryPath: "/verified/muxvia-cloud", BinarySHA256: digest}},
+		Endpoint:      "test-endpoint", MuxviaVersion: "test", RetryInterval: time.Millisecond, ReadyTimeout: time.Second,
 		Dial: func(context.Context, string) (*ipc.Client, error) {
 			mu.Lock()
 			ready := running
@@ -106,7 +106,7 @@ func TestManagerStopsSameVersionDifferentArtifactBeforeStartingActiveInstallatio
 			return pipeClient(t, fake), nil
 		},
 		Start: func(binaryPath, endpoint string, smoke bool) error {
-			if binaryPath != "/verified/termx-cloud" || endpoint != "test-endpoint" || smoke {
+			if binaryPath != "/verified/muxvia-cloud" || endpoint != "test-endpoint" || smoke {
 				t.Fatalf("Start(%q, %q, %v)", binaryPath, endpoint, smoke)
 			}
 			mu.Lock()
@@ -136,7 +136,7 @@ func TestManagerDoesNotStartUntrustedOrCapabilityExpandingCompanion(t *testing.T
 	started := false
 	manager, err := New(Config{
 		Installations: staticInstallationSource{err: cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED, "bad hash")},
-		TermxVersion:  "test", Start: func(string, string, bool) error { started = true; return nil },
+		MuxviaVersion: "test", Start: func(string, string, bool) error { started = true; return nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -149,7 +149,7 @@ func TestManagerDoesNotStartUntrustedOrCapabilityExpandingCompanion(t *testing.T
 		return &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "test", BuildChannel: "test", ResponseNonce: bytes.Repeat([]byte{3}, 32), ExecutableSha256: bytes.Repeat([]byte{0x11}, 32), SupportedCapabilities: []cloudpb.CompanionCapability{cloudpb.CompanionCapability_COMPANION_CAPABILITY_RELAY_LEASE}}, nil
 	}}
 	manager, err = New(Config{
-		Installations: staticInstallationSource{installation: installer.Installation{Version: "test", Channel: "test", BinaryPath: "/verified/termx-cloud", BinarySHA256: strings.Repeat("11", 32)}}, TermxVersion: "test",
+		Installations: staticInstallationSource{installation: installer.Installation{Version: "test", Channel: "test", BinaryPath: "/verified/muxvia-cloud", BinarySHA256: strings.Repeat("11", 32)}}, MuxviaVersion: "test",
 		Dial: func(context.Context, string) (*ipc.Client, error) { return pipeClient(t, fake), nil },
 	})
 	if err != nil {

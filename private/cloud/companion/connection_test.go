@@ -445,7 +445,7 @@ func TestLifecycleStoresOnlyPrivateSessionAndReturnsSummary(t *testing.T) {
 	}
 
 	challenge, err := connection.BeginDeviceEnrollment(context.Background(), &cloudpb.BeginDeviceEnrollmentRequest{
-		OneTimeCode: "one-time-code", DevicePublicKey: bytes.Repeat([]byte{1}, 32), Metadata: &cloudpb.DeviceMetadata{Platform: "darwin", TermxVersion: "test"},
+		OneTimeCode: "one-time-code", DevicePublicKey: bytes.Repeat([]byte{1}, 32), Metadata: &cloudpb.DeviceMetadata{Platform: "darwin", MuxviaVersion: "test"},
 	})
 	if err != nil || challenge.GetChallengeId() != "challenge-1" {
 		t.Fatalf("BeginDeviceEnrollment = (%v, %v)", challenge, err)
@@ -674,11 +674,11 @@ func testService(t *testing.T) (time.Time, *companion.Service, *fakeControlPlane
 }
 
 func helloRequest(role cloudpb.CallerRole, capabilities ...cloudpb.CompanionCapability) *cloudpb.CompanionHelloRequest {
-	return &cloudpb.CompanionHelloRequest{ProtocolMin: cloudcompanion.ProtocolVersionMin, ProtocolMax: cloudcompanion.ProtocolVersionMax, TermxVersion: "test", CallerRole: role, RequestedCapabilities: capabilities, RequestNonce: bytes.Repeat([]byte{0x11}, 32)}
+	return &cloudpb.CompanionHelloRequest{ProtocolMin: cloudcompanion.ProtocolVersionMin, ProtocolMax: cloudcompanion.ProtocolVersionMax, MuxviaVersion: "test", CallerRole: role, RequestedCapabilities: capabilities, RequestNonce: bytes.Repeat([]byte{0x11}, 32)}
 }
 
 func validPresenceRequest() *cloudpb.OpenPresenceRequest {
-	return &cloudpb.OpenPresenceRequest{PresenceSessionId: "presence-1", Proof: &cloudpb.DeviceProof{DeviceId: "daemon-1", DevicePublicKey: bytes.Repeat([]byte{0x21}, 32), ChallengeId: "challenge", Signature: bytes.Repeat([]byte{0x22}, 64), SignedAtUnixNano: 1}, Metadata: &cloudpb.DeviceMetadata{Platform: "darwin", TermxVersion: "test"}}
+	return &cloudpb.OpenPresenceRequest{PresenceSessionId: "presence-1", Proof: &cloudpb.DeviceProof{DeviceId: "daemon-1", DevicePublicKey: bytes.Repeat([]byte{0x21}, 32), ChallengeId: "challenge", Signature: bytes.Repeat([]byte{0x22}, 64), SignedAtUnixNano: 1}, Metadata: &cloudpb.DeviceMetadata{Platform: "darwin", MuxviaVersion: "test"}}
 }
 
 func validAnswerEvent(sessionID string) *cloudpb.SignalingEvent {

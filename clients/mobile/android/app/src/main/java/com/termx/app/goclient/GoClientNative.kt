@@ -3,7 +3,7 @@ package com.termx.app.goclient
 /** GoClientNative 是 Android 到稳定 C ABI 的薄 JNI 门面，不持有网络、认证、协议或重连状态。 */
 object GoClientNative {
     init {
-        System.loadLibrary("termx_client_jni")
+        System.loadLibrary("muxvia_client_jni")
     }
 
     external fun abiVersion(): Int

@@ -32,7 +32,7 @@ TermX Cloud 需要支持：
                            Browser
                               |
                               v
-             termx-cloud-controller
+             muxvia-cloud-controller
      Web + API + Control Plane + persistent store
  Account / Device / Subscription / Entitlement / HubDirectory
  HubAssignment / CommandOutbox / Audit / TopologyProjection
@@ -40,7 +40,7 @@ TermX Cloud 需要支持：
               authenticated logical control streams
              +----------------+----------------+
              |                |                |
-      termx-cloud-edge A  termx-cloud-edge B  termx-cloud-edge C
+      muxvia-cloud-edge A  muxvia-cloud-edge B  muxvia-cloud-edge C
       +----------------+  +----------------+  +----------------+
       | Hub: memory    |  | Hub: memory    |  | Hub: memory    |
       | Relay: data    |  | Relay: data    |  | Relay: data    |
@@ -674,7 +674,7 @@ temporary
 - `private/cloud/hub.Service` 使用内存 map 持有 Presence、signaling、challenge 和有界队列。
 - daemon 使用 Hub fresh challenge/DeviceProof 打开下行 Presence stream。
 - Hub 离线验证 edge token、ownership、revoke、auth epoch 和 managed direct/Relay policy。
-- `termx-cloud-controller` 与 `termx-cloud-edge` 已成为独立 composition；development supervisor 会启动一个 Controller 与两个 Edge 真实进程。
+- `muxvia-cloud-controller` 与 `muxvia-cloud-edge` 已成为独立 composition；development supervisor 会启动一个 Controller 与两个 Edge 真实进程。
 - Hub control 已通过 Proto challenge/open/report 网络边界完成唯一 generation、full/delta projection 和 reconciliation sequence。
 - Edge Hub public listener 已恢复真实 Proto presence、device directory、resolve 和 signaling socket；它只消费 Hub/authorizer/projection，不访问 Controller store。
 - daemon Presence challenge、Presence 和 signaling session 都绑定当前 assignment epoch；remove、replace、expiry 只关闭精确旧 epoch，迟到 fence 不影响新 epoch。
@@ -712,7 +712,7 @@ temporary
 
 必须证明：
 
-1. 一个 `termx-cloud-controller` 与至少两个独立 `termx-cloud-edge` 进程运行；每个 Edge 的 Hub 从同一 Control Plane 建立唯一 Hub control identity，Relay 建立独立 Relay control identity。
+1. 一个 `muxvia-cloud-controller` 与至少两个独立 `muxvia-cloud-edge` 进程运行；每个 Edge 的 Hub 从同一 Control Plane 建立唯一 Hub control identity，Relay 建立独立 Relay control identity。
 2. daemon 只在有效 assignment lease 的 owning Hub 建立 active Presence。
 3. 旧 Hub 未 fence 时 Control Plane 不签发重叠 assignment；旧 epoch event 不能覆盖新 projection。
 4. Control Plane 停止后，运行中 Hub 在有效 projection/assignment 窗口内仍可完成新 managed P2P。
@@ -740,6 +740,6 @@ temporary
 
 初审指出的 assignment 双活、per-Hub revision、command replay、inventory 线性化、控制/数据路径混淆、freshness、daemon command 签名、跨账号 topology、P2P/Relay 虚报、跨 Hub client revoke 和 opaque access reference 等问题均已写入本文和 `workflow.md`。四个 reviewer 复审结论均为 `PASS`，没有当前设计阻塞 finding。
 
-后续 `DBASE001` 根据用户确认把部署单元收敛为 `termx-cloud-controller` 与 `termx-cloud-edge`。该调整只合并 composition root、进程和部署，不改变上述已审核的 Control Plane、Hub、Relay、Web owner、安全身份、generation、command 或数据路径语义。
+后续 `DBASE001` 根据用户确认把部署单元收敛为 `muxvia-cloud-controller` 与 `muxvia-cloud-edge`。该调整只合并 composition root、进程和部署，不改变上述已审核的 Control Plane、Hub、Relay、Web owner、安全身份、generation、command 或数据路径语义。
 
 不阻塞的 deferred observation 只包括：实现时使用 timer 主动收敛 assignment expiry、后续评估 Presence 真双向 transport、生产数据保留期和复杂 fleet scheduling；这些不得扩大 `HUB001-HUB007` 当前范围。

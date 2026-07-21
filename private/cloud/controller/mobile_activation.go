@@ -279,7 +279,7 @@ func mobileProjection(flow mobileActivationFlow) *cloudpb.MobileActivationProjec
 	if flow.approved {
 		state = cloudpb.MobileActivationState_MOBILE_ACTIVATION_STATE_APPROVED
 	}
-	projection := &cloudpb.MobileActivationProjection{UserCode: flow.userCode, QrPayload: "termx-cloud-activate:v1:" + flow.userCode, ExpiresAtUnix: uint64(flow.expiresAt.Unix()), State: state}
+	projection := &cloudpb.MobileActivationProjection{UserCode: flow.userCode, QrPayload: "muxvia-cloud-activate:v1:" + flow.userCode, ExpiresAtUnix: uint64(flow.expiresAt.Unix()), State: state}
 	if flow.clientMetadata != nil {
 		projection.ClientMetadata = proto.Clone(flow.clientMetadata).(*cloudpb.DeviceMetadata)
 	}
@@ -329,7 +329,7 @@ func (service *mobileActivationService) randomID(prefix string) (string, error) 
 }
 
 func validMobileMetadata(value *cloudpb.DeviceMetadata) bool {
-	return value != nil && strings.TrimSpace(value.GetDisplayName()) != "" && len(value.GetDisplayName()) <= 128 && strings.TrimSpace(value.GetPlatform()) != "" && len(value.GetPlatform()) <= 64 && strings.TrimSpace(value.GetTermxVersion()) != "" && len(value.GetTermxVersion()) <= 64
+	return value != nil && strings.TrimSpace(value.GetDisplayName()) != "" && len(value.GetDisplayName()) <= 128 && strings.TrimSpace(value.GetPlatform()) != "" && len(value.GetPlatform()) <= 64 && strings.TrimSpace(value.GetMuxviaVersion()) != "" && len(value.GetMuxviaVersion()) <= 64
 }
 
 func readMobileProto(w http.ResponseWriter, r *http.Request, target proto.Message) bool {

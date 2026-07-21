@@ -409,12 +409,12 @@ type DialIdentity struct {
 // 该路径归 CLI/TUI 共享 Endpoint registry 所有，不属于 TUI-only 配置。
 func DefaultPath() string {
 	if configHome := os.Getenv("XDG_CONFIG_HOME"); configHome != "" {
-		return filepath.Join(configHome, "termx", DefaultFileName)
+		return filepath.Join(configHome, "muxvia", DefaultFileName)
 	}
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".config", "termx", DefaultFileName)
+		return filepath.Join(home, ".config", "muxvia", DefaultFileName)
 	}
-	return filepath.Join(os.TempDir(), "termx-config", DefaultFileName)
+	return filepath.Join(os.TempDir(), "muxvia-config", DefaultFileName)
 }
 
 // DefaultRegistry 返回缺少配置时的单 Endpoint/单 local-unix route registry。

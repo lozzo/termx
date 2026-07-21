@@ -43,15 +43,15 @@ func TestVTermTitleBELPreservesFollowingPromptText(t *testing.T) {
 		capturedTitle = title
 	})
 
-	if _, err := vt.Write([]byte("\x1b]2;termx-prompt\x07termx$ ")); err != nil {
+	if _, err := vt.Write([]byte("\x1b]2;muxvia-prompt\x07muxvia$ ")); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	if capturedTitle != "termx-prompt" {
-		t.Fatalf("expected title termx-prompt, got %q", capturedTitle)
+	if capturedTitle != "muxvia-prompt" {
+		t.Fatalf("expected title muxvia-prompt, got %q", capturedTitle)
 	}
 	rendered := strings.Join(vt.RenderLines(), "\n")
-	if !strings.Contains(rendered, "termx$") {
+	if !strings.Contains(rendered, "muxvia$") {
 		t.Fatalf("expected prompt text to remain visible, got %q", rendered)
 	}
 }
@@ -88,11 +88,11 @@ func TestVTermWriteWithDamageOSCTitleAndWorkingDirectoryKeepSemanticText(t *test
 		capturedCWD = path
 	})
 
-	_, err, damage := vt.WriteWithDamage([]byte("\x1b]2;termx-title\x07\x1b]7;file://host/srv/app\x1b\\prompt$ "))
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b]2;muxvia-title\x07\x1b]7;file://host/srv/app\x1b\\prompt$ "))
 	if err != nil {
 		t.Fatalf("write with damage: %v", err)
 	}
-	if capturedTitle != "termx-title" {
+	if capturedTitle != "muxvia-title" {
 		t.Fatalf("expected title callback, got %q", capturedTitle)
 	}
 	if capturedCWD != "file://host/srv/app" {
@@ -127,7 +127,7 @@ func TestVTermWorkingDirectoryCallback(t *testing.T) {
 func TestVTermOSC8HyperlinkDoesNotLeakControlBytes(t *testing.T) {
 	vt := New(80, 24, 1000, nil)
 
-	if _, err := vt.Write([]byte("\x1b]8;id=termx;https://example.test\x1b\\linked\x1b]8;;\x1b\\ tail")); err != nil {
+	if _, err := vt.Write([]byte("\x1b]8;id=muxvia;https://example.test\x1b\\linked\x1b]8;;\x1b\\ tail")); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
@@ -136,7 +136,7 @@ func TestVTermOSC8HyperlinkDoesNotLeakControlBytes(t *testing.T) {
 		t.Fatalf("expected hyperlink text to remain visible, got %q", got)
 	}
 	for i := 0; i < len("linked"); i++ {
-		if row[i].LinkURL != "https://example.test" || row[i].LinkParams != "id=termx" {
+		if row[i].LinkURL != "https://example.test" || row[i].LinkParams != "id=muxvia" {
 			t.Fatalf("expected linked cell %d to keep hyperlink, got %#v", i, row[i])
 		}
 	}

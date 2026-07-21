@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const tuiMemoryLimitMBEnv = "TERMX_TUI_MEMORY_LIMIT_MB"
+const tuiMemoryLimitMBEnv = "MUXVIA_TUI_MEMORY_LIMIT_MB"
 
 func applyRuntimeTuning(logger *slog.Logger) {
 	limitMBText := strings.TrimSpace(os.Getenv(tuiMemoryLimitMBEnv))

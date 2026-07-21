@@ -48,7 +48,7 @@ func TestEndpointDisconnectHarnessKeepsPaneReasonAfterEmptyInventory(t *testing.
 	}
 	frame := lastFrame(t, host.Frames())
 	if !frameContains(frame, "last remote output") ||
-		!frameContains(frame, "Remote termx daemon unavailable") ||
+		!frameContains(frame, "Remote muxvia daemon unavailable") ||
 		!frameContains(frame, "detail") ||
 		!frameContains(frame, "next step") ||
 		!frameContains(frame, "Reconnect this pane") ||

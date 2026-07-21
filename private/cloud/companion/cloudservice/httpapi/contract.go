@@ -40,7 +40,7 @@ const (
 	// JSONMediaType 是只承载 private session/edge envelope 的固定媒体类型。
 	JSONMediaType = "application/json"
 	// StreamMediaType 是 Hub length-prefixed protobuf response stream 的固定媒体类型。
-	StreamMediaType = "application/x-termx-cloud-stream"
+	StreamMediaType = "application/x-muxvia-cloud-stream"
 
 	maxBodyBytes = 4 << 20
 

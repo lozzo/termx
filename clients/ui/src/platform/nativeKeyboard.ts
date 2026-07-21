@@ -1,4 +1,4 @@
-export const TERMX_NATIVE_KEYBOARD_EVENT = 'termx:native-keyboard'
+export const MUXVIA_NATIVE_KEYBOARD_EVENT = 'termx:native-keyboard'
 
 export interface TermxNativeKeyboardEventDetail {
   visible: boolean
@@ -9,7 +9,7 @@ export type TermxNativeKeyboardHandler = (detail: TermxNativeKeyboardEventDetail
 
 export function dispatchNativeKeyboardEvent(detail: TermxNativeKeyboardEventDetail): void {
   if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return
-  window.dispatchEvent(new CustomEvent<TermxNativeKeyboardEventDetail>(TERMX_NATIVE_KEYBOARD_EVENT, {
+  window.dispatchEvent(new CustomEvent<TermxNativeKeyboardEventDetail>(MUXVIA_NATIVE_KEYBOARD_EVENT, {
     detail: normalizeNativeKeyboardDetail(detail),
   }))
 }
@@ -21,8 +21,8 @@ export function addNativeKeyboardListener(handler: TermxNativeKeyboardHandler): 
     if (!detail) return
     handler(detail)
   }
-  window.addEventListener(TERMX_NATIVE_KEYBOARD_EVENT, listener)
-  return () => window.removeEventListener(TERMX_NATIVE_KEYBOARD_EVENT, listener)
+  window.addEventListener(MUXVIA_NATIVE_KEYBOARD_EVENT, listener)
+  return () => window.removeEventListener(MUXVIA_NATIVE_KEYBOARD_EVENT, listener)
 }
 
 function nativeKeyboardDetailFromEvent(event: Event): TermxNativeKeyboardEventDetail | null {

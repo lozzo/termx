@@ -1,4 +1,4 @@
-// Package datachannel 提供面向可靠有序 DataChannel 的 termx protocol transport。
+// Package datachannel 提供面向可靠有序 DataChannel 的 muxvia protocol transport。
 package datachannel
 
 import (
@@ -29,7 +29,7 @@ type Channel interface {
 }
 
 // Transport 把一个已经协商的可靠有序 DataChannel 投影为 message transport。
-// 同一实例可以先承载 remote auth envelope，再在 CapabilityAccepted 后承载 termx frame；调用方在授权成功前不得交给 protocol client 或 core-v2。
+// 同一实例可以先承载 remote auth envelope，再在 CapabilityAccepted 后承载 muxvia frame；调用方在授权成功前不得交给 protocol client 或 core-v2。
 type Transport struct {
 	channel          Channel
 	recvCh           chan []byte
@@ -74,7 +74,7 @@ func New(channel Channel) *Transport {
 	return transport
 }
 
-// Send 发送一个完整 termx protocol frame。
+// Send 发送一个完整 muxvia protocol frame。
 // 当 DataChannel 缓冲超过高水位时等待低水位通知；超时或关闭会失败，不允许丢帧或切换到其他 transport。
 func (transport *Transport) Send(frame []byte) error {
 	if transport == nil || transport.channel == nil {
@@ -136,7 +136,7 @@ func (transport *Transport) Drain(ctx context.Context) error {
 	}
 }
 
-// Recv 接收一个完整 termx protocol frame。
+// Recv 接收一个完整 muxvia protocol frame。
 // DataChannel 关闭时返回 io.EOF；接收内容是独立副本，不能被底层实现后续复用或修改。
 func (transport *Transport) Recv() ([]byte, error) {
 	if transport == nil {

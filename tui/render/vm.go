@@ -1316,7 +1316,7 @@ func endpointIssueLabel(kind state.EndpointErrorKind) string {
 	case state.EndpointErrorHostKey:
 		return "Remote host identity changed"
 	case state.EndpointErrorRemoteDaemon:
-		return "Remote termx daemon unavailable"
+		return "Remote muxvia daemon unavailable"
 	case state.EndpointErrorTransportClosed:
 		return "Transport connection closed"
 	case state.EndpointErrorTransportDial:
@@ -1337,7 +1337,7 @@ func endpointRecoveryHint(kind state.EndpointErrorKind) string {
 	case state.EndpointErrorHostKey:
 		return "Review the remote host identity before reconnecting."
 	case state.EndpointErrorRemoteDaemon:
-		return "Check that the remote termx daemon is running, then reconnect."
+		return "Check that the remote muxvia daemon is running, then reconnect."
 	case state.EndpointErrorTransportClosed, state.EndpointErrorTransportDial:
 		return "Check the network or remote host, then reconnect."
 	case state.EndpointErrorProtocol:

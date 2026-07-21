@@ -42,7 +42,7 @@ export interface TerminalSettings {
 
 export const TERMINAL_SETTINGS_STORAGE_KEY = 'termx.terminal.settings.v1'
 
-export const TERMX_DARK_TERMINAL_THEME: ITheme = {
+export const MUXVIA_DARK_TERMINAL_THEME: ITheme = {
   background: '#0c0c0c',
   foreground: '#f4f4f5',
   cursor: '#d4d4d8',
@@ -89,7 +89,7 @@ export const TERMINAL_THEME_OPTIONS = [
     id: 'termx-dark',
     label: 'TermX Dark',
     group: 'dark',
-    theme: TERMX_DARK_TERMINAL_THEME,
+    theme: MUXVIA_DARK_TERMINAL_THEME,
   },
   {
     id: 'tokyo-night',
@@ -765,7 +765,7 @@ export function writeTerminalSettings(
 }
 
 export function resolveTerminalTheme(themeId: TerminalThemeId | string | undefined): ITheme {
-  return TERMINAL_THEME_OPTIONS.find((option) => option.id === themeId)?.theme ?? TERMX_DARK_TERMINAL_THEME
+  return TERMINAL_THEME_OPTIONS.find((option) => option.id === themeId)?.theme ?? MUXVIA_DARK_TERMINAL_THEME
 }
 
 export function resolveTerminalThemeOption(themeId: TerminalThemeId | string | undefined): TerminalThemeOption {
@@ -776,8 +776,8 @@ export function resolveTerminalThemeUi(themeId: TerminalThemeId | string | undef
   const option = resolveTerminalThemeOption(themeId)
   const theme = option.theme
   const preset = TERMINAL_THEME_UI_PRESETS[option.id]
-  const background = colorValue(theme.background, TERMX_DARK_TERMINAL_THEME.background!)
-  const foreground = colorValue(theme.foreground, TERMX_DARK_TERMINAL_THEME.foreground!)
+  const background = colorValue(theme.background, MUXVIA_DARK_TERMINAL_THEME.background!)
+  const foreground = colorValue(theme.foreground, MUXVIA_DARK_TERMINAL_THEME.foreground!)
   const cursor = colorValue(theme.cursor, foreground)
   const accent = colorValue(theme.blue ?? theme.cyan ?? theme.brightBlue, cursor)
 

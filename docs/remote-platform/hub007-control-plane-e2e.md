@@ -6,10 +6,10 @@
 
 ## 独立进程拓扑
 
-`TestHUB007EdgeRestartAssignmentMigrationAndControllerOutage` 通过 `termx-cloud-dev --fault-harness` 构建并启动：
+`TestHUB007EdgeRestartAssignmentMigrationAndControllerOutage` 通过 `muxvia-cloud-dev --fault-harness` 构建并启动：
 
-- 一个独立 `termx-cloud-controller` 进程；
-- 两个独立 `termx-cloud-edge` 进程，分别拥有 `hub-edge-a/relay-hub-edge-a` 与 `hub-edge-b/relay-hub-edge-b`；
+- 一个独立 `muxvia-cloud-controller` 进程；
+- 两个独立 `muxvia-cloud-edge` 进程，分别拥有 `hub-edge-a/relay-hub-edge-a` 与 `hub-edge-b/relay-hub-edge-b`；
 - 两个真实 daemon Presence：`daemon-edge-a`、`daemon-edge-b`；
 - 两个真实 client principal：`client-dev-local`、`client-dev-secondary`。
 
@@ -63,7 +63,7 @@ supervisor manifest 记录 PID、listener、Hub/Relay identity、SQLite、usage 
 ./scripts/check-generated-code.sh
 go test ./proto/cloudpb -count=1
 (cd private/cloud && go test ./... -count=1)
-(cd private/cloud && go test -race ./control-plane/commandoutbox ./control-plane/sqlite ./controller ./hub ./devcloud/cmd/termx-cloud-dev -count=1)
+(cd private/cloud && go test -race ./control-plane/commandoutbox ./control-plane/sqlite ./controller ./hub ./devcloud/cmd/muxvia-cloud-dev -count=1)
 (cd private/cloud/web-controller/web && npm run typecheck && npm run build && npm run test:e2e:hub007)
 git diff --check
 ```

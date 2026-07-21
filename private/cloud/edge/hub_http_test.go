@@ -31,7 +31,7 @@ func TestHubPublicAdapterRunsPresenceResolveAndSignalingOverHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	authorizer, err := cloudhub.NewEdgeAuthorizer(cloudhub.EdgeAuthorizerConfig{HubID: "hub-1", Issuer: "termx-cloud-controller", KeyRing: ring, MaxStaleness: time.Hour})
+	authorizer, err := cloudhub.NewEdgeAuthorizer(cloudhub.EdgeAuthorizerConfig{HubID: "hub-1", Issuer: "muxvia-cloud-controller", KeyRing: ring, MaxStaleness: time.Hour})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestHubPublicAdapterRunsPresenceResolveAndSignalingOverHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	issuer, err := servicecredential.NewEdgeAccessIssuer("termx-cloud-controller", signer)
+	issuer, err := servicecredential.NewEdgeAccessIssuer("muxvia-cloud-controller", signer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestHubPublicAdapterRunsPresenceResolveAndSignalingOverHTTP(t *testing.T) {
 	}
 	presenceContext, cancelPresence := context.WithCancel(context.Background())
 	defer cancelPresence()
-	presence, err := adapter.OpenPresence(presenceContext, daemonSession.Authorization(), &cloudpb.OpenPresenceRequest{PresenceSessionId: challenge.GetPresenceSessionId(), Proof: &cloudpb.DeviceProof{DeviceId: "daemon-1", DevicePublicKey: daemonPublic, ChallengeId: challenge.GetChallengeId(), Signature: ed25519.Sign(daemonPrivate, signingBytes), SignedAtUnixNano: signedAt.UnixNano()}, Metadata: &cloudpb.DeviceMetadata{Platform: "test", TermxVersion: "test"}})
+	presence, err := adapter.OpenPresence(presenceContext, daemonSession.Authorization(), &cloudpb.OpenPresenceRequest{PresenceSessionId: challenge.GetPresenceSessionId(), Proof: &cloudpb.DeviceProof{DeviceId: "daemon-1", DevicePublicKey: daemonPublic, ChallengeId: challenge.GetChallengeId(), Signature: ed25519.Sign(daemonPrivate, signingBytes), SignedAtUnixNano: signedAt.UnixNano()}, Metadata: &cloudpb.DeviceMetadata{Platform: "test", MuxviaVersion: "test"}})
 	if err != nil {
 		t.Fatal(err)
 	}

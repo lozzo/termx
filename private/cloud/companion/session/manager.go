@@ -1,7 +1,7 @@
 // Package session 管理 Cloud Companion 的账号与 daemon device 云会话。
 //
 // 持久化只能通过平台 OS credential store adapter；本包不提供明文文件、环境变量
-// 或内存 fallback。公开 termx 配置只保存 profile reference，不保存 AccountAccessToken。
+// 或内存 fallback。公开 muxvia 配置只保存 profile reference，不保存 AccountAccessToken。
 package session
 
 import (

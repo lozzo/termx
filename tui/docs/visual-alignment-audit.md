@@ -32,9 +32,9 @@
 - 切片 80 后，header/footer 已从拼接文本条改为分段产品栏：workspace/tab/mode/action/active/summary 使用稳定 token，active token 使用 accent，次级 summary 使用 muted，notice/error/exited 使用 warning，行内使用 Unicode `│` 分隔。
 - 切片 81 后，pane chrome 已从基础线框推进到 `tuiv2` 风格的 shared chrome：card panel 与 split line 都使用 square 细线、顶边 title/state/action 槽位、active accent、inactive muted、连续外框和宽字符安全 content rect。
 - 切片 86 后，Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 内容层已从工程表格/占位推进到第一轮产品视觉：统一 search affordance、selected row marker、detail/preview/context/input label、action row 和 copy search/match/scrollbar/status。
-- 切片 87 后，`go run ./cmd/termx v3 smoke` 输出 12 个非交互视觉 case，包含 `terminal-pool-page`、`workbench-tree-page` 和 `visual-audit-current` review baseline。
+- 切片 87 后，`go run ./cmd/muxvia v3 smoke` 输出 12 个非交互视觉 case，包含 `terminal-pool-page`、`workbench-tree-page` 和 `visual-audit-current` review baseline。
 - 切片 88 后，shell/pane 视觉完成二轮重绘：theme accent 改为紫色系，status bar 改为深色背景，top bar 使用 `×`、`[＋]` 和 compact summary，bottom bar 使用 `[Ctrl] · [P]` 类快捷键 taxonomy，pane top chrome 使用 `· ↔2`、`· ◆ owner`、`· 1/31` 与 action cluster。
-- 切片 89 后，默认 `go run ./cmd/termx` 已在隔离 `120x40` 真实 PTY 中证明可进入 alternate screen 并输出二轮 styled ANSI frame。
+- 切片 89 后，默认 `go run ./cmd/muxvia` 已在隔离 `120x40` 真实 PTY 中证明可进入 alternate screen 并输出二轮 styled ANSI frame。
 - 切片 90 后，用户确认当前真实 TUI 样子仍与目标不一致，当前视觉 goal 不能完成。
 - 切片 92-96 后，用户指出的可操作性问题已完成当前轮收敛：默认可见 action 只保留真实接通按钮，toast 使用深色直角实体矩形、左右紫色竖线、居中文案和真实 auto-dismiss 生命周期，pane 分隔线/边框支持 SGR 鼠标连续拖动 resize，pane chrome 恢复真实可用的 split-down/split-right/close 入口，floating 标题栏和右下 resize handle 支持连续拖动。
 - 切片 98-100 后，同内容 toast 会去重并刷新生命周期，鼠标拖动 resize/move 和 focus 成功不再显示低价值 toast；pane action hit region 优先于 split divider resize，横向 split 下方 pane 顶边分屏图标不再被 resize 抢占；真实 FrameSink 默认隐藏 host cursor，并在有全局 cursor rect 时把隐藏 cursor 停在输入位置，避免中文输入法预编辑跑到底部。
@@ -238,7 +238,7 @@
 
 - 已完成默认入口截图级视觉复核未通过归档。
 - 已把 `termx v3 smoke` 扩展到 12 个 case，覆盖 workbench live、split hidden toast、Terminal Picker、Terminal Pool Page、Workbench Tree Page、copy empty、copy history、Prompt、Help、Tab/Workspace、pane command flow 和 `120x40` visual review baseline。
-- 已在 `cmd/termx` 测试中固化 CLI smoke 输出必须包含 Terminal Pool / Workbench Tree / visual review / copy-history status marker，并禁止出现 `visual acceptance` 完成声明。
+- 已在 `cmd/muxvia` 测试中固化 CLI smoke 输出必须包含 Terminal Pool / Workbench Tree / visual review / copy-history status marker，并禁止出现 `visual acceptance` 完成声明。
 - 已保留 `termx v3 e2e-smoke` 对默认 attach 装配、host viewport、resize、content rect terminal resize、copy rebind 和 pane command 的证明。
 - 默认 root 在非交互环境拒绝启动；其可验证证据是默认 root 路由到 v3 root runner，v3 smoke/e2e 证明同一 TUI render/frame path。
 - 切片 87 不能作为视觉完成证据；切片 88 必须继续 shell/pane 视觉重绘，切片 89 再做真实默认入口截图级验收。
@@ -253,7 +253,7 @@
 
 切片 89 负责：
 
-- 已在隔离 socket/log 和真实 PTY 中运行默认 `go run ./cmd/termx`。
+- 已在隔离 socket/log 和真实 PTY 中运行默认 `go run ./cmd/muxvia`。
 - 已确认默认入口进入 alternate screen，并输出 styled ANSI header、pane、footer、紫色 active border 和二轮 chrome token。
 - 已确认隔离进程清理完成。
 - 发现默认 TUI 没有全局 quit 快捷键，`Ctrl-C` 会进入底层 shell；这是后续交互 polish 项。
@@ -290,14 +290,14 @@
 自动验收：
 
 - `go test ./tui/... -count=1`
-- `go test ./cmd/termx -count=1`
-- `go run ./cmd/termx v3 smoke`
-- `go run ./cmd/termx v3 e2e-smoke`
+- `go test ./cmd/muxvia -count=1`
+- `go run ./cmd/muxvia v3 smoke`
+- `go run ./cmd/muxvia v3 e2e-smoke`
 - `git diff --check`
 
 人工验收：
 
-- 在真实 terminal 中运行 `go run ./cmd/termx`。
+- 在真实 terminal 中运行 `go run ./cmd/muxvia`。
 - 使用常见尺寸检查，例如 `80x24`、`100x32`、`120x40`。
 - 对照用户给出的 `tuiv2` 截图检查 top bar、bottom bar、pane chrome、toast、overlay 和 floating。
 - 不允许只凭 smoke 文本、PTY ANSI 捕获或 Unicode 线框就判定完成。

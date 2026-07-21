@@ -1993,7 +1993,7 @@ func TestInteractiveRuntimeTerminalSizeLockChromeButtonTogglesTags(t *testing.T)
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("click drain: %v", err)
 	}
-	if len(terminal.TagEdits) != 1 || terminal.TagEdits[0].TerminalID != "term-1" || terminal.TagEdits[0].Tags["role"] != "shell" || terminal.TagEdits[0].Tags["termx.size_lock"] != "lock" {
+	if len(terminal.TagEdits) != 1 || terminal.TagEdits[0].TerminalID != "term-1" || terminal.TagEdits[0].Tags["role"] != "shell" || terminal.TagEdits[0].Tags["muxvia.size_lock"] != "lock" {
 		t.Fatalf("chrome size lock click should preserve tags and set lock tag, edits=%#v", terminal.TagEdits)
 	}
 	binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID)
@@ -2015,7 +2015,7 @@ func TestInteractiveRuntimeTerminalSizeLockChromeButtonTogglesTags(t *testing.T)
 	if len(terminal.TagEdits) != 2 || terminal.TagEdits[1].TerminalID != "term-1" {
 		t.Fatalf("chrome locked owner should stay clickable for unlock, edits=%#v", terminal.TagEdits)
 	}
-	if _, ok := terminal.TagEdits[1].Tags["termx.size_lock"]; ok || terminal.TagEdits[1].Tags["role"] != "shell" {
+	if _, ok := terminal.TagEdits[1].Tags["muxvia.size_lock"]; ok || terminal.TagEdits[1].Tags["role"] != "shell" {
 		t.Fatalf("chrome unlock should remove only size lock tag, edits=%#v", terminal.TagEdits)
 	}
 	binding, ok = runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID)
@@ -2062,7 +2062,7 @@ func TestInteractiveRuntimeTerminalSizeLockChromeButtonLoadsMissingTags(t *testi
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("click drain: %v", err)
 	}
-	if len(terminal.Lists) != 1 || len(terminal.TagEdits) != 1 || terminal.TagEdits[0].Tags["role"] != "shell" || terminal.TagEdits[0].Tags["termx.size_lock"] != "lock" {
+	if len(terminal.Lists) != 1 || len(terminal.TagEdits) != 1 || terminal.TagEdits[0].Tags["role"] != "shell" || terminal.TagEdits[0].Tags["muxvia.size_lock"] != "lock" {
 		t.Fatalf("chrome lock should load tags before edit, lists=%#v edits=%#v", terminal.Lists, terminal.TagEdits)
 	}
 	if binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); !ok || !binding.SizeLocked || binding.CanResize {
@@ -2122,7 +2122,7 @@ func TestInteractiveRuntimeFloatingSizeLockChromeButtonTargetsFloatingTerminal(t
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("floating click drain: %v", err)
 	}
-	if len(terminal.TagEdits) != 1 || terminal.TagEdits[0].TerminalID != "term-float" || terminal.TagEdits[0].Tags["role"] != "float" || terminal.TagEdits[0].Tags["termx.size_lock"] != "lock" {
+	if len(terminal.TagEdits) != 1 || terminal.TagEdits[0].TerminalID != "term-float" || terminal.TagEdits[0].Tags["role"] != "float" || terminal.TagEdits[0].Tags["muxvia.size_lock"] != "lock" {
 		t.Fatalf("floating chrome size lock should target floating terminal, edits=%#v", terminal.TagEdits)
 	}
 	if runtime.State().Shell.ActiveFloatingID() != "floating-1" {

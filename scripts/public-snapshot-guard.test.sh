@@ -3,7 +3,7 @@
 set -euo pipefail
 
 source_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-tmp_root="$(mktemp -d "${TMPDIR:-/tmp}/termx-public-guard-test.XXXXXX")"
+tmp_root="$(mktemp -d "${TMPDIR:-/tmp}/muxvia-public-guard-test.XXXXXX")"
 trap 'rm -rf "$tmp_root"' EXIT
 snapshot="$tmp_root/snapshot"
 
@@ -18,7 +18,7 @@ mkdir -p \
   "$snapshot/clients/ui" \
   "$snapshot/clients/mobile" \
   "$snapshot/scripts" \
-  "$snapshot/cmd/termx" \
+  "$snapshot/cmd/muxvia" \
   "$snapshot/core" \
   "$snapshot/proto" \
   "$snapshot/remote" \
@@ -60,7 +60,7 @@ for script in \
   public-snapshot-guard.test.sh \
   repository-layout-guard.sh \
   verify-android-apk-boundary.sh \
-  with-clean-termx-env.sh; do
+  with-clean-muxvia-env.sh; do
   printf '%s\n' "fixture" >"$snapshot/scripts/$script"
 done
 chmod +x "$snapshot/scripts/public-snapshot-guard.sh"
@@ -91,9 +91,9 @@ mkdir "$snapshot/private"
 expect_rejected "unexpected top-level entry: private"
 rmdir "$snapshot/private"
 
-printf '%s\n' "fixture" >"$snapshot/cmd/termx/AGENTS.md"
+printf '%s\n' "fixture" >"$snapshot/cmd/muxvia/AGENTS.md"
 expect_rejected "agent instructions are present"
-rm "$snapshot/cmd/termx/AGENTS.md"
+rm "$snapshot/cmd/muxvia/AGENTS.md"
 
 printf '%s\n' "TOKEN=secret" >"$snapshot/clients/ui/.env"
 expect_rejected "secret-like file"
@@ -126,7 +126,7 @@ printf '%s%s\n' 'g' 'hp_abcdefghijklmnopqrstuvwxyz1234567890' \
   >"$snapshot/clients/ui/node_modules/example/generated.js"
 "$guard" >/dev/null
 
-printf '%s\n' 'TERMX_LOCAL_WEB_ORIGIN=http://127.0.0.1:18888' \
+printf '%s\n' 'MUXVIA_LOCAL_WEB_ORIGIN=http://127.0.0.1:18888' \
   >"$snapshot/clients/ui/.env.example"
 expect_rejected "archived localweb path"
 printf '%s\n' 'VITE_CONTROL_URL=https://control.example.test' \

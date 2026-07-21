@@ -534,7 +534,7 @@ export const ClientAccessListResultSchema: GenMessage<ClientAccessListResult> = 
   messageDesc(file_remoteauthpb_remote_auth, 13);
 
 /**
- * CapabilityAccepted 是 remote auth 到 termx protocol 的单向切换点。
+ * CapabilityAccepted 是 remote auth 到 Muxvia protocol 的单向切换点。
  *
  * @generated from message muxvia.remote.auth.v1.CapabilityAccepted
  */
@@ -1069,7 +1069,7 @@ export const LocalUnixRouteConfigSchema: GenMessage<LocalUnixRouteConfig> = /*@_
   messageDesc(file_remoteauthpb_remote_auth, 28);
 
 /**
- * DirectWebRTCTCPRouteConfig 描述不依赖 TermX Cloud 的 daemon embedded signaling 与 ICE-TCP locator。
+ * DirectWebRTCTCPRouteConfig 描述不依赖 Muxvia Cloud 的 daemon embedded signaling 与 ICE-TCP locator。
  * advertised_addresses 允许 pair create 为 LAN、FRP 或其它 TCP 映射显式覆盖对外地址，但不改变 Endpoint identity。
  *
  * @generated from message muxvia.remote.auth.v1.DirectWebRTCTCPRouteConfig
@@ -1164,7 +1164,7 @@ export const SSHWebRTCTCPRouteConfigSchema: GenMessage<SSHWebRTCTCPRouteConfig> 
   messageDesc(file_remoteauthpb_remote_auth, 30);
 
 /**
- * ManagedWebRTCRouteConfig 描述同一个 App 内由 TermX Cloud 提供的可选 managed Route。
+ * ManagedWebRTCRouteConfig 描述同一个 App 内由 Muxvia Cloud 提供的可选 managed Route。
  *
  * @generated from message muxvia.remote.auth.v1.ManagedWebRTCRouteConfig
  */
@@ -2201,7 +2201,7 @@ export const EndpointConnectModeSchema: GenEnum<EndpointConnectMode> = /*@__PURE
   enumDesc(file_remoteauthpb_remote_auth, 5);
 
 /**
- * ManagedWebRTCRelayMode 只描述 TermX Cloud managed route 内部允许的 ICE/Relay 策略。
+ * ManagedWebRTCRelayMode 只描述 Muxvia Cloud managed route 内部允许的 ICE/Relay 策略。
  *
  * @generated from enum muxvia.remote.auth.v1.ManagedWebRTCRelayMode
  */

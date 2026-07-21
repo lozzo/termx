@@ -11,7 +11,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const projectionSignatureDomain = "termx-hub-projection-v1\x00"
+const projectionSignatureDomain = "muxvia-hub-projection-v1\x00"
 
 // FullProjectionInput 是 Controller 持久真值生成单个 Hub 完整 projection 的输入。
 type FullProjectionInput struct {

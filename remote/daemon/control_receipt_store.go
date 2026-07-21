@@ -25,7 +25,7 @@ const (
 	controlReceiptVersion   = 1
 	controlReceiptFile      = "remote_cloud_control.json"
 	controlReceiptLockFile  = "remote_cloud_control.lock"
-	controlReceiptSignature = "termx.remote-daemon-control-state.v1\x00"
+	controlReceiptSignature = "muxvia.remote-daemon-control-state.v1\x00"
 )
 
 var (

@@ -28,9 +28,9 @@ const (
 	// ReportPath 是 Hub 到 Controller 的有界 Proto batch。
 	ReportPath        = "/v1/hub/control/report"
 	protobufMediaType = "application/x-protobuf"
-	streamMediaType   = "application/x-termx-cloud-stream"
+	streamMediaType   = "application/x-muxvia-cloud-stream"
 	maxProtoBytes     = 4 << 20
-	challengeDomain   = "termx-hub-control-challenge-v1\x00"
+	challengeDomain   = "muxvia-hub-control-challenge-v1\x00"
 )
 
 // CursorStore 持久化 Hub 上行 sender sequence；不同 sender role 使用不同 key。

@@ -10,7 +10,7 @@ Companion 自报版本和渠道必须与签名 manifest 完全一致：
 cd private/cloud/companion
 go build \
   -ldflags '-X main.companionVersion=v1.2.3 -X main.buildChannel=stable' \
-  -o ./dist/termx-cloud ./cmd/termx-cloud
+  -o ./dist/termx-cloud ./cmd/muxvia-cloud
 ```
 
 正式 `termx` CLI 只嵌入 release public key，不嵌入 private key：
@@ -18,7 +18,7 @@ go build \
 ```bash
 (cd ../../.. && go build \
   -ldflags '-X main.termxBuildVersion=v1.2.3 -X main.cloudReleaseRootKeyID=release-2026 -X main.cloudReleaseRootPublicKey=BASE64_ED25519_PUBLIC_KEY' \
-  -o ./dist/termx ./cmd/termx)
+  -o ./dist/termx ./cmd/muxvia)
 ```
 
 ## Release Artifact
@@ -27,7 +27,7 @@ release private key 必须是仓库外的 Ed25519 PKCS#8 PEM：
 
 ```bash
 cd private/cloud/companion
-go run ./cmd/termx-cloud-release \
+go run ./cmd/muxvia-cloud-release \
   --binary ./dist/termx-cloud \
   --signing-key /secure/release-ed25519.pk8.pem \
   --key-id release-2026 \
@@ -48,7 +48,7 @@ go run ./cmd/termx-cloud-release \
 仓库根目录执行 `make cloud-dev` 会启动两个独立 loopback listener，并写入 `.artifacts/cloud-dev/runtime.json`。development build 只有收到显式 manifest 才启用该 adapter：
 
 ```bash
-go run ./private/cloud/companion/cmd/termx-cloud serve \
+go run ./private/cloud/companion/cmd/muxvia-cloud serve \
   --profile client-dev \
   --dev-manifest .artifacts/cloud-dev/runtime.json
 ```

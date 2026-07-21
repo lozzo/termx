@@ -21,7 +21,7 @@ import (
 // ScopedTransportServer 是 remote-v2 允许调用的 core-v2 transport 边界。
 // 实现方只能按已经验证的 capability scope 建立 protocol session，不能把远程 DataChannel 当作本地无限权限 listener。
 type ScopedTransportServer interface {
-	// ServeScopedTransport 按 daemon 已验证的 scope 服务同一条 DataChannel 上的 termx protocol。
+	// ServeScopedTransport 按 daemon 已验证的 scope 服务同一条 DataChannel 上的 muxvia protocol。
 	ServeScopedTransport(context.Context, transport.Transport, core.TransportScope) error
 }
 
@@ -212,7 +212,7 @@ func (observer *managedHelloObserver) HelloAccepted() {
 // OpaqueAccessReference 返回 Cloud 管理投影使用的不可逆 grant reference。
 // 它不包含 grant body、terminal ID、scope 或 client public key。
 func OpaqueAccessReference(daemonDeviceID, grantID string) string {
-	digest := sha256.Sum256([]byte("termx-access-ref-v1\x00" + daemonDeviceID + "\x00" + grantID))
+	digest := sha256.Sum256([]byte("muxvia-access-ref-v1\x00" + daemonDeviceID + "\x00" + grantID))
 	return base64.RawURLEncoding.EncodeToString(digest[:])
 }
 

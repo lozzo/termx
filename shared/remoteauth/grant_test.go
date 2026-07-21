@@ -51,7 +51,7 @@ func TestGrantV2RejectsMissingSubjectV1ExpiryAndRevocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Verify("termx-grant-v1.legacy.key.signature", Fingerprint(daemonPublic), now, nil); !errors.Is(err, ErrGrantMalformed) {
+	if _, err := Verify("muxvia-grant-v1.legacy.key.signature", Fingerprint(daemonPublic), now, nil); !errors.Is(err, ErrGrantMalformed) {
 		t.Fatalf("v1 grant error = %v", err)
 	}
 	if _, err := Verify(grant, Fingerprint(daemonPublic), now.Add(2*time.Minute), nil); !errors.Is(err, ErrGrantExpired) {

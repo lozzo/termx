@@ -277,8 +277,8 @@ func ptyProcessEnv(id string, extra []string) []string {
 	env := os.Environ()
 	env = append(env,
 		"TERM=xterm-256color",
-		"TERMX=1",
-		"TERMX_TERMINAL_ID="+id,
+		"MUXVIA=1",
+		"MUXVIA_TERMINAL_ID="+id,
 	)
 	return append(env, extra...)
 }

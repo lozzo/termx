@@ -81,7 +81,7 @@ func TestBrowserWASMCompletesDTLSBoundAuthHelloAPIAndGeneration(t *testing.T) {
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir(assets))))
 	mux.HandleFunc("GET /", func(response http.ResponseWriter, _ *http.Request) {
 		response.Header().Set("content-type", "text/html; charset=utf-8")
-		fmt.Fprintf(response, `<!doctype html><html><head><meta charset="utf-8"><script>globalThis.termxDeviceFingerprint=%s</script><script type="module" src="/assets/spike.js"></script></head><body>running</body></html>`, mustJSON(identity.Fingerprint))
+		fmt.Fprintf(response, `<!doctype html><html><head><meta charset="utf-8"><script>globalThis.muxviaDeviceFingerprint=%s</script><script type="module" src="/assets/spike.js"></script></head><body>running</body></html>`, mustJSON(identity.Fingerprint))
 	})
 	mux.HandleFunc("POST /grant", func(response http.ResponseWriter, request *http.Request) {
 		record := &bindingpb.CredentialRecord{}
@@ -93,7 +93,7 @@ func TestBrowserWASMCompletesDTLSBoundAuthHelloAPIAndGeneration(t *testing.T) {
 			http.Error(response, "browser credential fingerprint mismatch", http.StatusBadRequest)
 			return
 		}
-		exchanged, err := accessStore.RedeemPairingBundle(pairingPayload, publicKey, "termx-web-spike", now)
+		exchanged, err := accessStore.RedeemPairingBundle(pairingPayload, publicKey, "muxvia-web-spike", now)
 		if err != nil {
 			http.Error(response, err.Error(), http.StatusBadRequest)
 			return
@@ -206,7 +206,7 @@ func repositoryRoot(t *testing.T) string {
 func chromeExecutable(t *testing.T) string {
 	t.Helper()
 	for _, candidate := range []string{
-		os.Getenv("TERMX_CHROME"),
+		os.Getenv("MUXVIA_CHROME"),
 		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 		"google-chrome", "chromium", "chromium-browser",
 	} {

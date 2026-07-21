@@ -17,7 +17,7 @@ import (
 	"unicode/utf8"
 )
 
-const grantPrefix = "termx-grant-v2"
+const grantPrefix = "muxvia-grant-v2"
 
 var (
 	// ErrGrantMalformed 表示 capability envelope、claims 或必填字段不符合当前版本。

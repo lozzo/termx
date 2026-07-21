@@ -1,4 +1,4 @@
-// Package controller 装配单个 termx-cloud-controller 进程。
+// Package controller 装配单个 muxvia-cloud-controller 进程。
 //
 // composition root 只拥有 listener、配置和依赖生命周期；Hub registry、projection publisher、
 // Web catalog 与 SQLite 各自保持独立 owner，不在本包复制业务状态机。
@@ -150,7 +150,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	edgeIssuer, err := servicecredential.NewEdgeAccessIssuer("termx-cloud-controller", credentialSigner)
+	edgeIssuer, err := servicecredential.NewEdgeAccessIssuer("muxvia-cloud-controller", credentialSigner)
 	if err != nil {
 		return nil, err
 	}

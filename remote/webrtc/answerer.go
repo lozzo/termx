@@ -93,7 +93,7 @@ type Answerer struct {
 	OnPeerClosed func()
 }
 
-// Answer 创建 WebRTC answer，并把唯一可靠有序的 termx DataChannel 交给端到端授权 handler。
+// Answer 创建 WebRTC answer，并把唯一可靠有序的 muxvia DataChannel 交给端到端授权 handler。
 // Handler 缺失时在创建 PeerConnection 前 fail closed；RP003 接入真实握手前不能启动 managed remote runtime。
 func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOffer, iceServers []*cloudpb.IceServer) (*cloudpb.SignalingAnswer, error) {
 	if answerer.Handler == nil {

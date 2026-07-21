@@ -169,7 +169,7 @@ message ClientAccessListResult {
   repeated ClientAccessRecord records = 1;
 }
 
-// CapabilityAccepted 是 remote auth 到 termx protocol 的单向切换点。
+// CapabilityAccepted 是 remote auth 到 Muxvia protocol 的单向切换点。
 message CapabilityAccepted {
   string grant_id = 1;
   ScopeSummary scope = 2;
@@ -294,7 +294,7 @@ enum EndpointConnectMode {
   ENDPOINT_CONNECT_MODE_MANUAL = 3;
 }
 
-// ManagedWebRTCRelayMode 只描述 TermX Cloud managed route 内部允许的 ICE/Relay 策略。
+// ManagedWebRTCRelayMode 只描述 Muxvia Cloud managed route 内部允许的 ICE/Relay 策略。
 enum ManagedWebRTCRelayMode {
   MANAGED_WEBRTC_RELAY_MODE_UNSPECIFIED = 0;
   MANAGED_WEBRTC_RELAY_MODE_AUTO = 1;
@@ -351,7 +351,7 @@ message LocalUnixRouteConfig {
   string socket = 1;
 }
 
-// DirectWebRTCTCPRouteConfig 描述不依赖 TermX Cloud 的 daemon embedded signaling 与 ICE-TCP locator。
+// DirectWebRTCTCPRouteConfig 描述不依赖 Muxvia Cloud 的 daemon embedded signaling 与 ICE-TCP locator。
 // advertised_addresses 允许 pair create 为 LAN、FRP 或其它 TCP 映射显式覆盖对外地址，但不改变 Endpoint identity。
 message DirectWebRTCTCPRouteConfig {
   repeated string signaling_addresses = 1;
@@ -374,7 +374,7 @@ message SSHWebRTCTCPRouteConfig {
   string ssh_credential_ref = 9;
 }
 
-// ManagedWebRTCRouteConfig 描述同一个 App 内由 TermX Cloud 提供的可选 managed Route。
+// ManagedWebRTCRouteConfig 描述同一个 App 内由 Muxvia Cloud 提供的可选 managed Route。
 message ManagedWebRTCRouteConfig {
   string target_device_id = 1;
   string account_profile_ref = 2;

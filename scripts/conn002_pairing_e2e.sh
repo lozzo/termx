@@ -3,17 +3,17 @@
 set -euo pipefail
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/termx-conn002.XXXXXX")"
+TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/muxvia-conn002.XXXXXX")"
 BIN_DIR="$TMP_ROOT/bin"
 SECRET_DIR="$TMP_ROOT/secrets"
 REPORT_DIR="$TMP_ROOT/reports"
 DAEMON_RUNTIME="$TMP_ROOT/daemon/runtime"
 DAEMON_STATE="$TMP_ROOT/daemon/state"
 DAEMON_CONFIG="$TMP_ROOT/daemon/config"
-DAEMON_SOCKET="$DAEMON_RUNTIME/termx.sock"
+DAEMON_SOCKET="$DAEMON_RUNTIME/muxvia.sock"
 PAIRING_SOCKET="$DAEMON_SOCKET.pair"
 DAEMON_LOG="$REPORT_DIR/daemon.log"
-TERMX_BIN="$BIN_DIR/termx"
+MUXVIA_BIN="$BIN_DIR/muxvia"
 HARNESS_BIN="$BIN_DIR/conn002client"
 daemon_pid=""
 
@@ -43,30 +43,30 @@ trap cleanup EXIT INT TERM
 
 mkdir -p "$BIN_DIR" "$SECRET_DIR" "$REPORT_DIR" "$DAEMON_RUNTIME" "$DAEMON_STATE" "$DAEMON_CONFIG"
 
-env GOWORK=off go build -o "$TERMX_BIN" ./cmd/termx
+env GOWORK=off go build -o "$MUXVIA_BIN" ./cmd/muxvia
 env GOWORK=off go build -o "$HARNESS_BIN" ./testkit/conn002client
 
-clean_termx_env() {
-  "$ROOT/scripts/with-clean-termx-env.sh" "$@"
+clean_muxvia_env() {
+  "$ROOT/scripts/with-clean-muxvia-env.sh" "$@"
 }
 
 daemon_cli() {
-  clean_termx_env env \
+  clean_muxvia_env env \
     XDG_RUNTIME_DIR="$DAEMON_RUNTIME" \
     XDG_STATE_HOME="$DAEMON_STATE" \
     XDG_CONFIG_HOME="$DAEMON_CONFIG" \
-    "$TERMX_BIN" --socket "$DAEMON_SOCKET" --log-file "$DAEMON_LOG" "$@"
+    "$MUXVIA_BIN" --socket "$DAEMON_SOCKET" --log-file "$DAEMON_LOG" "$@"
 }
 
 client_cli() {
   local client_root="$1"
   shift
   mkdir -p "$client_root/runtime" "$client_root/state" "$client_root/config"
-  clean_termx_env env \
+  clean_muxvia_env env \
     XDG_RUNTIME_DIR="$client_root/runtime" \
     XDG_STATE_HOME="$client_root/state" \
     XDG_CONFIG_HOME="$client_root/config" \
-    "$TERMX_BIN" --socket "$client_root/runtime/unused.sock" --log-file "$client_root/client.log" "$@"
+    "$MUXVIA_BIN" --socket "$client_root/runtime/unused.sock" --log-file "$client_root/client.log" "$@"
 }
 
 prepare_client_endpoint() {
@@ -80,12 +80,12 @@ prepare_client_endpoint() {
 }
 
 start_daemon() {
-  clean_termx_env env \
+  clean_muxvia_env env \
     XDG_RUNTIME_DIR="$DAEMON_RUNTIME" \
     XDG_STATE_HOME="$DAEMON_STATE" \
     XDG_CONFIG_HOME="$DAEMON_CONFIG" \
-    TERMX_HISTORY_DISABLE=1 \
-    "$TERMX_BIN" --socket "$DAEMON_SOCKET" --log-file "$DAEMON_LOG" daemon run \
+    MUXVIA_HISTORY_DISABLE=1 \
+    "$MUXVIA_BIN" --socket "$DAEMON_SOCKET" --log-file "$DAEMON_LOG" daemon run \
     >>"$REPORT_DIR/daemon.stdout" 2>>"$REPORT_DIR/daemon.stderr" &
   daemon_pid=$!
 
@@ -126,11 +126,11 @@ wait_for_access_label() {
 start_daemon
 daemon_cli access identity --json >"$REPORT_DIR/identity.before.json"
 
-SECOND_SOCKET="$DAEMON_RUNTIME/termx-second.sock"
+SECOND_SOCKET="$DAEMON_RUNTIME/muxvia-second.sock"
 set +e
-clean_termx_env env \
-  XDG_RUNTIME_DIR="$DAEMON_RUNTIME" XDG_STATE_HOME="$DAEMON_STATE" XDG_CONFIG_HOME="$DAEMON_CONFIG" TERMX_HISTORY_DISABLE=1 \
-  "$TERMX_BIN" --socket "$SECOND_SOCKET" --log-file "$REPORT_DIR/daemon-second.log" daemon run \
+clean_muxvia_env env \
+  XDG_RUNTIME_DIR="$DAEMON_RUNTIME" XDG_STATE_HOME="$DAEMON_STATE" XDG_CONFIG_HOME="$DAEMON_CONFIG" MUXVIA_HISTORY_DISABLE=1 \
+  "$MUXVIA_BIN" --socket "$SECOND_SOCKET" --log-file "$REPORT_DIR/daemon-second.log" daemon run \
   >"$REPORT_DIR/daemon-second.stdout" 2>"$REPORT_DIR/daemon-second.stderr" &
 second_pid=$!
 for _ in $(seq 1 100); do
@@ -206,9 +206,9 @@ if (records.length !== 1 || !["race-a", "race-b"].includes(records[0].client_lab
 NODE
 
 "$HARNESS_BIN" --mode verify \
-  --daemon-identity-dir "$DAEMON_STATE/termx/remote-v2/identity" \
-  --daemon-access-dir "$DAEMON_STATE/termx/remote-v2/access" \
-  --credential-dir "$WINNER_ROOT/state/termx/remote-v2/credentials" \
+  --daemon-identity-dir "$DAEMON_STATE/muxvia/remote-v2/identity" \
+  --daemon-access-dir "$DAEMON_STATE/muxvia/remote-v2/access" \
+  --credential-dir "$WINNER_ROOT/state/muxvia/remote-v2/credentials" \
   --endpoint-id endpoint-race --expect active >"$REPORT_DIR/race-winner-active.json"
 
 SHARED_BUNDLE="$SECRET_DIR/shared-key-race.pb"
@@ -241,18 +241,18 @@ node -e '
   if (value.item?.id !== "sidecar" || value.item.routes.length !== 1 || value.item.routes[0].kind !== "ssh-webrtc-tcp") process.exit(1);
 ' "$REPORT_DIR/shared-sidecar.json" || fail "concurrent endpoint mutation was lost"
 "$HARNESS_BIN" --mode verify \
-  --daemon-identity-dir "$DAEMON_STATE/termx/remote-v2/identity" \
-  --daemon-access-dir "$DAEMON_STATE/termx/remote-v2/access" \
-  --credential-dir "$SHARED_CLIENT/state/termx/remote-v2/credentials" \
+  --daemon-identity-dir "$DAEMON_STATE/muxvia/remote-v2/identity" \
+  --daemon-access-dir "$DAEMON_STATE/muxvia/remote-v2/access" \
+  --credential-dir "$SHARED_CLIENT/state/muxvia/remote-v2/credentials" \
   --endpoint-id endpoint-shared --expect active >"$REPORT_DIR/shared-key-active.json"
 
 LOST_BUNDLE="$SECRET_DIR/lost-response.pb"
 LOST_CLIENT="$TMP_ROOT/client-lost"
-mkdir -p "$LOST_CLIENT/state/termx/remote-v2/credentials"
+mkdir -p "$LOST_CLIENT/state/muxvia/remote-v2/credentials"
 daemon_cli pair create --out "$LOST_BUNDLE" --ttl 2s --grant-ttl 1h --label conn002-lost >"$REPORT_DIR/lost-create.out"
 prepare_client_endpoint "$LOST_CLIENT" endpoint-lost "$RACE_DEVICE_ID" "$RACE_FINGERPRINT"
 "$HARNESS_BIN" --mode drop-response --bundle "$LOST_BUNDLE" --pair-socket "$PAIRING_SOCKET" \
-  --credential-dir "$LOST_CLIENT/state/termx/remote-v2/credentials" --endpoint-id endpoint-lost \
+  --credential-dir "$LOST_CLIENT/state/muxvia/remote-v2/credentials" --endpoint-id endpoint-lost \
   --client-label lost-response >"$REPORT_DIR/lost-drop.json"
 wait_for_access_label lost-response "$REPORT_DIR/access-after-drop.json"
 sleep 3
@@ -260,9 +260,9 @@ client_cli "$LOST_CLIENT" pair import "$LOST_BUNDLE" --id endpoint-lost --pair-s
   --registry "$LOST_CLIENT/connections.yaml" --client-label lost-response >"$REPORT_DIR/lost-retry.out" 2>"$REPORT_DIR/lost-retry.err"
 
 "$HARNESS_BIN" --mode verify \
-  --daemon-identity-dir "$DAEMON_STATE/termx/remote-v2/identity" \
-  --daemon-access-dir "$DAEMON_STATE/termx/remote-v2/access" \
-  --credential-dir "$LOST_CLIENT/state/termx/remote-v2/credentials" \
+  --daemon-identity-dir "$DAEMON_STATE/muxvia/remote-v2/identity" \
+  --daemon-access-dir "$DAEMON_STATE/muxvia/remote-v2/access" \
+  --credential-dir "$LOST_CLIENT/state/muxvia/remote-v2/credentials" \
   --endpoint-id endpoint-lost --expect active >"$REPORT_DIR/lost-active.json"
 
 daemon_cli access list --json >"$REPORT_DIR/access-before-revoke.json"
@@ -277,9 +277,9 @@ LOST_GRANT_ID="$(node -e '
 daemon_cli access revoke "$LOST_GRANT_ID" --json >"$REPORT_DIR/revoke.json"
 
 "$HARNESS_BIN" --mode verify \
-  --daemon-identity-dir "$DAEMON_STATE/termx/remote-v2/identity" \
-  --daemon-access-dir "$DAEMON_STATE/termx/remote-v2/access" \
-  --credential-dir "$LOST_CLIENT/state/termx/remote-v2/credentials" \
+  --daemon-identity-dir "$DAEMON_STATE/muxvia/remote-v2/identity" \
+  --daemon-access-dir "$DAEMON_STATE/muxvia/remote-v2/access" \
+  --credential-dir "$LOST_CLIENT/state/muxvia/remote-v2/credentials" \
   --endpoint-id endpoint-lost --expect revoked >"$REPORT_DIR/lost-revoked.json"
 
 stop_daemon
@@ -297,12 +297,12 @@ if (!record || !record.revoked_at || record.revoked_at.startsWith("0001-")) {
 NODE
 
 "$HARNESS_BIN" --mode verify \
-  --daemon-identity-dir "$DAEMON_STATE/termx/remote-v2/identity" \
-  --daemon-access-dir "$DAEMON_STATE/termx/remote-v2/access" \
-  --credential-dir "$LOST_CLIENT/state/termx/remote-v2/credentials" \
+  --daemon-identity-dir "$DAEMON_STATE/muxvia/remote-v2/identity" \
+  --daemon-access-dir "$DAEMON_STATE/muxvia/remote-v2/access" \
+  --credential-dir "$LOST_CLIENT/state/muxvia/remote-v2/credentials" \
   --endpoint-id endpoint-lost --expect revoked >"$REPORT_DIR/lost-revoked-after-restart.json"
 
-if rg -n 'termx-grant-v2|termx-pairing-ticket-v1|"pairing_ticket"|"capability_grant"' "$REPORT_DIR"; then
+if rg -n 'muxvia-grant-v2|muxvia-pairing-ticket-v1|"pairing_ticket"|"capability_grant"' "$REPORT_DIR"; then
   fail "non-secret logs or command output leaked ticket/grant material"
 fi
 

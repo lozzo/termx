@@ -4,7 +4,7 @@
 
 - 仓库根目录 `workflow.md` 是当前分支唯一有效的活动驱动文件。
 - 本仓库内所有工作必须先读取 `workflow.md`，并以它作为范围、任务顺序、测试准入和提交规则的唯一基准。
-- 当前活动主线只由 `workflow.md` 最早未完成切片决定；当前最早切片是 `BRAND003`，必须先完成 Muxvia CLI、C ABI 与 runtime identity 迁移，再继续 Android/npm/UI/Cloud 身份迁移并恢复 `CLOUDP007`。浏览器 Web/WASM terminal 产品当前冻结。
+- 当前活动主线只由 `workflow.md` 最早未完成切片决定；当前最早切片是 `BRAND004`，必须完成 Muxvia Android、npm/UI、Cloud 与活动文档身份迁移，再执行全仓发布候选验收并恢复 `CLOUDP007`。浏览器 Web/WASM terminal 产品当前冻结。
 - 插件系统已经拆到独立分支，本分支不新增插件系统代码、协议或文档。
 - `docs/remote-platform/` 是远程平台产品、架构、安全和迁移背景文档；统一 WebRTC Route 的当前决策以 `workflow.md` 为准，并由对应活动切片同步更新该目录，旧文档不得覆盖活动工作流。
 - `docs/remote-platform/multi-hub-technical-plan.md` 是当前多 Hub/Cloud 主线的实现级规划，规定 Proto 文件、Go package owner、控制链路、持久化事务、迁移删除项与测试矩阵；它必须服从 `workflow.md` 的切片顺序，不得被当作跨切片一次性实现清单。
@@ -73,8 +73,8 @@
 - 不允许因为“看起来有关”自行扩散到其他目录。
 - 旧 `termx-core/` 与 `tuiv2/` 已退出本分支，不再作为只读参考、legacy fallback 或默认依赖存在。
 - 当前默认本地 CLI 入口必须走 `core/` 与 `tui/`；不得重新引入 `termx legacy ...`、旧 daemon、旧 TUI 或 remote legacy/fallback。
-- `cmd/termx/legacy_*.go` 不得重新出现；旧本地入口已经删除。
-- `cmd/termx/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
+- `cmd/muxvia/legacy_*.go` 不得重新出现；旧本地入口已经删除。
+- `cmd/muxvia/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
 - `remote/`、`clients/mobile/` 与 `clients/ui/` 是活动远程客户端资产；只能按 `workflow.md` 对应纵向切片演进，不得恢复旧 fallback。
 - `client/binding/` 是 Android、未来 iOS/Desktop 的 C ABI 与预留 WebAssembly 外部边界；只能暴露序列化 Proto、opaque handle、异步事件和显式释放，不得暴露 Go pointer、core domain struct 或平台 UI 类型。WASM 当前只维持不回归，不主动开发 Web 产品入口。
 - 旧 `termx-hub/`、`termx-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已迁入 `private/archive/termx-platform-legacy/`，只能作为只读历史资产；archive 不进入 workspace、构建脚本或 runtime。
@@ -105,9 +105,9 @@
 - `remote/`：公开 daemon WebRTC endpoint、ICE-TCP/ICE-UDP primitive、DataChannel E2E auth 与 session 接线；不承载 Cloud 账号、订阅、Hub/Relay server 或计费业务。
 - `clients/ui/` 与 `clients/mobile/`：共享 UI 和移动平台壳；消费 Go Client Engine 投影，不拥有 daemon terminal truth、Endpoint/Route/session/credential 真值。Android/Kotlin 只保留 lifecycle、Keystore、安全存储、权限和薄 JNI/Capacitor adapter；TypeScript 只保留 UI，不得复制认证、重连、Proto codec、resource/session、SSH 或 WebRTC 状态机。
 - `private/cloud/`：闭源 Control Plane、Companion、Hub、Relay、Web Controller 与 Cloud 移动装配；它是同一个 App 的可选 managed Route 能力，不是第二个面向用户的 App 版本。可以依赖 public contract，public namespace 不得反向依赖。
-- `private/cloud/controller/`：`termx-cloud-controller` composition root，只组合 Control Plane、Controller/User/Operator API、Web Controller 静态资源、持久 store 和独立 listener/middleware；不得把 Web view state 写成第二份 Control Plane truth。
-- `private/cloud/edge/`：`termx-cloud-edge` composition root，只组合 Hub、Relay、listener、健康检查和进程生命周期。Hub 部分必须纯内存；Relay 只允许持久化未确认 usage outbox，不得恢复旧 allocation/connection。
-- `cmd/termx/`：Cobra、参数/target 解析、composition root、输出和退出码；不得实现网络连接、credential resolution、Hello、授权、session cache 或 cleanup。
+- `private/cloud/controller/`：`muxvia-cloud-controller` composition root，只组合 Control Plane、Controller/User/Operator API、Web Controller 静态资源、持久 store 和独立 listener/middleware；不得把 Web view state 写成第二份 Control Plane truth。
+- `private/cloud/edge/`：`muxvia-cloud-edge` composition root，只组合 Hub、Relay、listener、健康检查和进程生命周期。Hub 部分必须纯内存；Relay 只允许持久化未确认 usage outbox，不得恢复旧 allocation/connection。
+- `cmd/muxvia/`：Cobra、参数/target 解析、composition root、输出和退出码；不得实现网络连接、credential resolution、Hello、授权、session cache 或 cleanup。
 - `shared/`：迁移期遗留 primitive/contract 容器，不得新增领域 owner；目标去向和当前允许迁移范围以 repository layout 文档和 `workflow.md` 为准。
 - `testkit/`、`scripts/`、`Makefile`、`go.work`、`go.work.sum`、必要顶层说明文档：受限联动范围，只在当前切片需要时最小化触及。
 

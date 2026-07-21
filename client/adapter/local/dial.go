@@ -43,7 +43,7 @@ type Dialer struct {
 // NewDialer 创建 local Unix route dialer。
 func NewDialer(options Options) *Dialer {
 	if strings.TrimSpace(options.ClientName) == "" {
-		options.ClientName = "termx-client"
+		options.ClientName = "muxvia-client"
 	}
 	if options.ReadyTimeout <= 0 {
 		options.ReadyTimeout = 5 * time.Second

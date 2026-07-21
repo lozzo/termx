@@ -80,7 +80,7 @@ func (handler *relayUsageHTTPHandler) ServeHTTP(writer http.ResponseWriter, requ
 	now := handler.now().UTC()
 	response := &cloudpb.ReportRelayUsageResponse{}
 	for _, record := range payload.GetRecords() {
-		claims, verifyErr := servicecredential.VerifyRelayLeaseForService(handler.leaseKeys, record.GetSignedLease(), "termx-cloud-controller-relay", "pool-"+deployment.metadata.GetRegion(), relayUsageReportGrace, now)
+		claims, verifyErr := servicecredential.VerifyRelayLeaseForService(handler.leaseKeys, record.GetSignedLease(), "muxvia-cloud-controller-relay", "pool-"+deployment.metadata.GetRegion(), relayUsageReportGrace, now)
 		if verifyErr != nil || claims.Region != deployment.metadata.GetRegion() || claims.CredentialBindingID != "binding-"+payload.GetRelayId() {
 			writeRelayLeaseError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Relay usage lease was rejected", false)
 			return

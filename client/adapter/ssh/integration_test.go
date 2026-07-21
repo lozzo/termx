@@ -100,7 +100,7 @@ func TestDialSSHClientSupportsPasswordCredential(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	route := endpoint.AccessRoute{
-		Host: "127.0.0.1", Port: uint16(server.port), User: "termx",
+		Host: "127.0.0.1", Port: uint16(server.port), User: "muxvia",
 		HostKeyFingerprints: []string{server.hostFingerprint},
 	}
 	client, err := dialSSHClient(ctx, route, []golangssh.AuthMethod{golangssh.Password("correct-password")}, time.Second, nil)
@@ -133,7 +133,7 @@ func TestDialSSHClientCancellationClosesBlockedHandshake(t *testing.T) {
 	address := listener.Addr().(*net.TCPAddr)
 	go func() {
 		_, dialErr := dialSSHClient(ctx, endpoint.AccessRoute{
-			Host: "127.0.0.1", Port: uint16(address.Port), User: "termx", HostKeyFingerprints: []string{"SHA256:unused"},
+			Host: "127.0.0.1", Port: uint16(address.Port), User: "muxvia", HostKeyFingerprints: []string{"SHA256:unused"},
 		}, []golangssh.AuthMethod{golangssh.Password("unused")}, time.Second, nil)
 		done <- dialErr
 	}()
@@ -379,7 +379,7 @@ func startPasswordSSHServer(t *testing.T, password string) *passwordSSHServer {
 		hostFingerprint: golangssh.FingerprintSHA256(signer.PublicKey()), done: make(chan struct{}),
 	}
 	config := &golangssh.ServerConfig{PasswordCallback: func(metadata golangssh.ConnMetadata, candidate []byte) (*golangssh.Permissions, error) {
-		if metadata.User() != "termx" || string(candidate) != password {
+		if metadata.User() != "muxvia" || string(candidate) != password {
 			return nil, fmt.Errorf("invalid password")
 		}
 		return nil, nil

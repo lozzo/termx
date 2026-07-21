@@ -17,14 +17,14 @@ import (
 )
 
 const (
-	tuiDiagnosticsEnv        = "TERMX_TUI_DIAG"
-	tuiInputTraceEnv         = "TERMX_TUI_INPUT_TRACE"
-	tuiDiagnosticsInterval   = "TERMX_TUI_DIAG_INTERVAL_MS"
-	tuiHeapProfileDirEnv     = "TERMX_TUI_HEAP_PROFILE_DIR"
-	tuiHeapProfileEveryEnv   = "TERMX_TUI_HEAP_PROFILE_EVERY_MB"
-	tuiMemstatsDirEnv        = "TERMX_TUI_MEMSTATS_DIR"
-	tuiMemstatsStageEnv      = "TERMX_DIAG_STAGE"
-	tuiMemstatsStageFileEnv  = "TERMX_DIAG_STAGE_FILE"
+	tuiDiagnosticsEnv        = "MUXVIA_TUI_DIAG"
+	tuiInputTraceEnv         = "MUXVIA_TUI_INPUT_TRACE"
+	tuiDiagnosticsInterval   = "MUXVIA_TUI_DIAG_INTERVAL_MS"
+	tuiHeapProfileDirEnv     = "MUXVIA_TUI_HEAP_PROFILE_DIR"
+	tuiHeapProfileEveryEnv   = "MUXVIA_TUI_HEAP_PROFILE_EVERY_MB"
+	tuiMemstatsDirEnv        = "MUXVIA_TUI_MEMSTATS_DIR"
+	tuiMemstatsStageEnv      = "MUXVIA_DIAG_STAGE"
+	tuiMemstatsStageFileEnv  = "MUXVIA_DIAG_STAGE_FILE"
 	tuiHeapProfileDefaultMB  = uint64(128)
 	tuiHeapProfileMinDeltaMB = uint64(8)
 )

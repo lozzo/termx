@@ -722,7 +722,7 @@ type CompanionHelloRequest struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
 	ProtocolMin           uint32                 `protobuf:"varint,1,opt,name=protocol_min,json=protocolMin,proto3" json:"protocol_min,omitempty"`
 	ProtocolMax           uint32                 `protobuf:"varint,2,opt,name=protocol_max,json=protocolMax,proto3" json:"protocol_max,omitempty"`
-	TermxVersion          string                 `protobuf:"bytes,3,opt,name=termx_version,json=termxVersion,proto3" json:"termx_version,omitempty"`
+	MuxviaVersion         string                 `protobuf:"bytes,3,opt,name=muxvia_version,json=muxviaVersion,proto3" json:"muxvia_version,omitempty"`
 	CallerRole            CallerRole             `protobuf:"varint,4,opt,name=caller_role,json=callerRole,proto3,enum=muxvia.cloud.v1.CallerRole" json:"caller_role,omitempty"`
 	RequestedCapabilities []CompanionCapability  `protobuf:"varint,5,rep,packed,name=requested_capabilities,json=requestedCapabilities,proto3,enum=muxvia.cloud.v1.CompanionCapability" json:"requested_capabilities,omitempty"`
 	RequestNonce          []byte                 `protobuf:"bytes,6,opt,name=request_nonce,json=requestNonce,proto3" json:"request_nonce,omitempty"`
@@ -774,9 +774,9 @@ func (x *CompanionHelloRequest) GetProtocolMax() uint32 {
 	return 0
 }
 
-func (x *CompanionHelloRequest) GetTermxVersion() string {
+func (x *CompanionHelloRequest) GetMuxviaVersion() string {
 	if x != nil {
-		return x.TermxVersion
+		return x.MuxviaVersion
 	}
 	return ""
 }
@@ -2800,7 +2800,7 @@ type DeviceMetadata struct {
 	DisplayName       string                 `protobuf:"bytes,1,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	Hostname          string                 `protobuf:"bytes,2,opt,name=hostname,proto3" json:"hostname,omitempty"`
 	Platform          string                 `protobuf:"bytes,3,opt,name=platform,proto3" json:"platform,omitempty"`
-	TermxVersion      string                 `protobuf:"bytes,4,opt,name=termx_version,json=termxVersion,proto3" json:"termx_version,omitempty"`
+	MuxviaVersion     string                 `protobuf:"bytes,4,opt,name=muxvia_version,json=muxviaVersion,proto3" json:"muxvia_version,omitempty"`
 	SignalingVersions []uint32               `protobuf:"varint,5,rep,packed,name=signaling_versions,json=signalingVersions,proto3" json:"signaling_versions,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
@@ -2857,9 +2857,9 @@ func (x *DeviceMetadata) GetPlatform() string {
 	return ""
 }
 
-func (x *DeviceMetadata) GetTermxVersion() string {
+func (x *DeviceMetadata) GetMuxviaVersion() string {
 	if x != nil {
-		return x.TermxVersion
+		return x.MuxviaVersion
 	}
 	return ""
 }
@@ -6227,11 +6227,11 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +
 	"\tretryable\x18\x03 \x01(\bR\tretryable\x12,\n" +
 	"\x12retry_after_millis\x18\x04 \x01(\x04R\x10retryAfterMillis\x12%\n" +
-	"\x0ecorrelation_id\x18\x05 \x01(\tR\rcorrelationId\"\xc2\x02\n" +
+	"\x0ecorrelation_id\x18\x05 \x01(\tR\rcorrelationId\"\xc4\x02\n" +
 	"\x15CompanionHelloRequest\x12!\n" +
 	"\fprotocol_min\x18\x01 \x01(\rR\vprotocolMin\x12!\n" +
-	"\fprotocol_max\x18\x02 \x01(\rR\vprotocolMax\x12#\n" +
-	"\rtermx_version\x18\x03 \x01(\tR\ftermxVersion\x12<\n" +
+	"\fprotocol_max\x18\x02 \x01(\rR\vprotocolMax\x12%\n" +
+	"\x0emuxvia_version\x18\x03 \x01(\tR\rmuxviaVersion\x12<\n" +
 	"\vcaller_role\x18\x04 \x01(\x0e2\x1b.muxvia.cloud.v1.CallerRoleR\n" +
 	"callerRole\x12[\n" +
 	"\x16requested_capabilities\x18\x05 \x03(\x0e2$.muxvia.cloud.v1.CompanionCapabilityR\x15requestedCapabilities\x12#\n" +
@@ -6370,12 +6370,12 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\tchallenge\x18\x03 \x01(\fR\tchallenge\x12\x1b\n" +
 	"\tdevice_id\x18\x04 \x01(\tR\bdeviceId\x12*\n" +
 	"\x11device_public_key\x18\x05 \x01(\fR\x0fdevicePublicKey\x12-\n" +
-	"\x13signed_at_unix_nano\x18\x06 \x01(\x03R\x10signedAtUnixNano\"\xbf\x01\n" +
+	"\x13signed_at_unix_nano\x18\x06 \x01(\x03R\x10signedAtUnixNano\"\xc1\x01\n" +
 	"\x0eDeviceMetadata\x12!\n" +
 	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\x12\x1a\n" +
 	"\bhostname\x18\x02 \x01(\tR\bhostname\x12\x1a\n" +
-	"\bplatform\x18\x03 \x01(\tR\bplatform\x12#\n" +
-	"\rtermx_version\x18\x04 \x01(\tR\ftermxVersion\x12-\n" +
+	"\bplatform\x18\x03 \x01(\tR\bplatform\x12%\n" +
+	"\x0emuxvia_version\x18\x04 \x01(\tR\rmuxviaVersion\x12-\n" +
 	"\x12signaling_versions\x18\x05 \x03(\rR\x11signalingVersions\"c\n" +
 	"\x16ResolveEndpointRequest\x12\x1f\n" +
 	"\vendpoint_id\x18\x01 \x01(\tR\n" +

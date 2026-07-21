@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	endpointShareURIPrefix   = "termx://share?payload="
+	endpointShareURIPrefix   = "muxvia://share?payload="
 	maxPendingEndpointShares = 16
 )
 

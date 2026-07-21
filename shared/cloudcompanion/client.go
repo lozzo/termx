@@ -1,4 +1,4 @@
-// Package cloudcompanion 定义公开 termx 进程与官方 Cloud Companion 之间的领域边界。
+// Package cloudcompanion 定义公开 muxvia 进程与官方 Cloud Companion 之间的领域边界。
 //
 // 该包只描述账号状态、设备 presence、WebRTC signaling、RelayLease 和网络质量摘要。
 // DeviceIdentity 私钥、CapabilityGrant、DataChannel 与 terminal protocol payload 必须留在公开进程内。
@@ -22,7 +22,7 @@ const (
 // Client 是公开进程访问本机 Cloud Companion 的最小领域接口。
 //
 // 实现属于官方闭源 companion 或测试 fake；调用方仍拥有 WebRTC、DTLS、设备信任、terminal capability
-// 与 termx protocol。任一方法失败只能影响当前 managed cloud endpoint，不能触发 local/SSH fallback。
+// 与 muxvia protocol。任一方法失败只能影响当前 managed cloud endpoint，不能触发 local/SSH fallback。
 type Client interface {
 	// Hello 协商本地 IPC protocol version 与能力交集；每条新连接必须首先调用。
 	Hello(context.Context, *cloudpb.CompanionHelloRequest) (*cloudpb.CompanionHelloResponse, error)

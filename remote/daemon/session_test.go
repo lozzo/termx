@@ -194,7 +194,7 @@ func TestSessionAcceptorPairingModeNeverStartsCoreProtocol(t *testing.T) {
 
 func TestPairingAcceptorRejectsCapabilityMode(t *testing.T) {
 	identity, credential, store, now := sessionFixture(t, remoteauth.FullDaemonScope())
-	binding, err := remoteauth.LocalUnixChannelBinding("/tmp/termx-session-pairing.sock")
+	binding, err := remoteauth.LocalUnixChannelBinding("/tmp/muxvia-session-pairing.sock")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestPairingAcceptorRejectsCapabilityMode(t *testing.T) {
 
 func TestSessionAcceptorRejectsLocalUnixBindingBeforeCore(t *testing.T) {
 	identity, _, store, now := sessionFixture(t, remoteauth.FullDaemonScope())
-	binding, err := remoteauth.LocalUnixChannelBinding("/tmp/termx-generic-session.sock")
+	binding, err := remoteauth.LocalUnixChannelBinding("/tmp/muxvia-generic-session.sock")
 	if err != nil {
 		t.Fatal(err)
 	}

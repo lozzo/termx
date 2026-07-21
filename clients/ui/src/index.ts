@@ -1,13 +1,13 @@
 export * from './connection/connectionMessageReducer'
 export * from './connection/eventQueue'
 export {
-  TERMX_NATIVE_BACK_EVENT,
+  MUXVIA_NATIVE_BACK_EVENT,
   addNativeBackHandler,
   dispatchNativeBack,
 } from './platform/nativeBack'
 export type { TermxNativeBackHandler } from './platform/nativeBack'
 export {
-  TERMX_NATIVE_KEYBOARD_EVENT,
+  MUXVIA_NATIVE_KEYBOARD_EVENT,
   addNativeKeyboardListener,
   dispatchNativeKeyboardEvent,
 } from './platform/nativeKeyboard'
@@ -180,7 +180,7 @@ export {
   TERMINAL_FONT_OPTIONS,
   TERMINAL_SETTINGS_STORAGE_KEY,
   TERMINAL_THEME_OPTIONS,
-  TERMX_DARK_TERMINAL_THEME,
+  MUXVIA_DARK_TERMINAL_THEME,
   normalizeTerminalSettings,
   readTerminalSettings,
   resolveTerminalThemeOption,
@@ -246,8 +246,8 @@ export { BrowserWasmLifecycle } from './binding/browserWasmLifecycle'
 export type { BrowserWasmGeneration, BrowserWasmGenerationFactory, BrowserWasmGenerationListener } from './binding/browserWasmLifecycle'
 export { BrowserWasmPlatform, verifyRemoteDTLSCertificate } from './binding/browserWasmPlatform'
 export type { BrowserCloudPlatform, BrowserPlatformDiagnostic, BrowserPlatformEventSink } from './binding/browserWasmPlatform'
-export { TermxWasmRuntime, loadTermxWasmExports } from './binding/wasmRuntime'
-export type { LoadTermxWasmOptions, TermxWasmResult, WasmPlatformDispatcher } from './binding/wasmRuntime'
+export { MuxviaWasmRuntime, loadMuxviaWasmExports } from './binding/wasmRuntime'
+export type { LoadMuxviaWasmOptions, MuxviaWasmResult, WasmPlatformDispatcher } from './binding/wasmRuntime'
 export { BindingOperation, ProtoBindingClient, ProtoBindingConnector } from './binding/protoBindingClient'
 export type { BindingOperationCode, EndpointInput, ProtoBindingBackend } from './binding/protoBindingClient'
 export { WasmBindingBackend } from './binding/wasmBindingBackend'

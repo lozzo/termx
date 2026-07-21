@@ -13,6 +13,6 @@ describe('public snapshot boundary', () => {
   it('does not publish the archived localweb build path', () => {
     expect(packageSource).not.toContain('build:localweb')
     expect(viteConfigSource).not.toContain('localweb')
-    expect(viteConfigSource).not.toContain('TERMX_LOCAL_WEB_ORIGIN')
+    expect(viteConfigSource).not.toContain('MUXVIA_LOCAL_WEB_ORIGIN')
   })
 })

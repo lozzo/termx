@@ -6,7 +6,7 @@ bad=$(
 	git ls-files -s \
 		.gitignore AGENTS.md Makefile README.md go.work go.work.sum package.json package-lock.json workflow.md \
 		clients \
-		cmd/termx \
+		cmd/muxvia \
 		core \
 		docs \
 		fixtures \

@@ -107,7 +107,7 @@ describe('ProtoBindingClient engine command boundary', () => {
 	  return 0n
 	}
 	const client = new ProtoBindingClient(backend)
-	const received = await client.receiveEndpointShare('termx://share?payload=test')
+	const received = await client.receiveEndpointShare('muxvia://share?payload=test')
 	expect(received.preview?.importToken).toBe('preview-token')
 	const committed = await client.commitEndpointShare(received.preview?.importToken ?? '')
 	expect(committed.authorizationRequired).toBe(true)

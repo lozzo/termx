@@ -189,11 +189,11 @@ func newPipeHarness(t *testing.T, fake cloudcompanion.FullClient) (*Client, func
 
 func testHello() *cloudpb.CompanionHelloRequest {
 	return &cloudpb.CompanionHelloRequest{
-		ProtocolMin:  cloudcompanion.ProtocolVersionMin,
-		ProtocolMax:  cloudcompanion.ProtocolVersionMax,
-		TermxVersion: "test",
-		CallerRole:   cloudpb.CallerRole_CALLER_ROLE_CLI,
-		RequestNonce: bytes.Repeat([]byte{1}, 32),
+		ProtocolMin:   cloudcompanion.ProtocolVersionMin,
+		ProtocolMax:   cloudcompanion.ProtocolVersionMax,
+		MuxviaVersion: "test",
+		CallerRole:    cloudpb.CallerRole_CALLER_ROLE_CLI,
+		RequestNonce:  bytes.Repeat([]byte{1}, 32),
 	}
 }
 

@@ -94,14 +94,14 @@ func smokeLiveRoot() state.Root {
 	root := state.Root{
 		Shell: state.DefaultShell(),
 		Surface: state.TerminalSurfaceStore{
-			TerminalID: "termx-live",
+			TerminalID: "muxvia-live",
 			Cols:       80,
 			Rows:       24,
-			Lines:      []string{"termx live 🚀", "你好 output"},
+			Lines:      []string{"muxvia live 🚀", "你好 output"},
 		},
 	}
-	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "termx-live", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
-	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "termx-live")
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "muxvia-live", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "muxvia-live")
 	return root
 }
 
@@ -115,7 +115,7 @@ func smokeSplitHiddenToastRoot() state.Root {
 	return state.Root{
 		Shell: shell,
 		Surface: state.TerminalSurfaceStore{
-			TerminalID: "termx-split",
+			TerminalID: "muxvia-split",
 			Cols:       80,
 			Rows:       24,
 			Lines:      []string{"split live"},
@@ -129,15 +129,15 @@ func smokeTerminalPickerRoot() state.Root {
 		TerminalPool: state.TerminalPoolStore{
 			Status: state.TerminalPoolReady,
 			Items: []state.TerminalPoolItem{{
-				TerminalID: "termx-picker",
-				Title:      "termx-picker shell",
+				TerminalID: "muxvia-picker",
+				Title:      "muxvia-picker shell",
 				State:      "running",
 				Cols:       80,
 				Rows:       24,
 			}},
 		},
 		Surface: state.TerminalSurfaceStore{
-			TerminalID: "termx-picker",
+			TerminalID: "muxvia-picker",
 			Cols:       80,
 			Rows:       24,
 			Lines:      []string{"picker base"},
@@ -156,7 +156,7 @@ func smokeTerminalPoolRoot() state.Root {
 				TerminalID: "term-logs",
 				Title:      "日志🚀",
 				State:      "running",
-				CWD:        "/Users/termx/project/日志",
+				CWD:        "/Users/muxvia/project/日志",
 				Cols:       120,
 				Rows:       36,
 				Attached:   true,
@@ -209,13 +209,13 @@ func smokeWorkbenchTreeRoot() state.Root {
 func smokeCopyEmptyRoot() state.Root {
 	return state.Root{
 		History: state.HistoryStore{
-			TerminalID: "termx-copy-empty",
+			TerminalID: "muxvia-copy-empty",
 			Token:      "empty-token",
 			Cols:       80,
 		},
 		CopyMode: state.CopyModeStore{
 			Active:     true,
-			TerminalID: "termx-copy-empty",
+			TerminalID: "muxvia-copy-empty",
 			BoundToken: "empty-token",
 			BoundCols:  80,
 		},
@@ -225,14 +225,14 @@ func smokeCopyEmptyRoot() state.Root {
 func smokeCopyHistoryRoot() state.Root {
 	return state.Root{
 		History: state.HistoryStore{
-			TerminalID: "termx-smoke",
+			TerminalID: "muxvia-smoke",
 			Token:      "smoke-token",
 			Cols:       80,
 			Rows:       []state.HistoryRow{{Text: "tui", LineID: 1}},
 		},
 		CopyMode: state.CopyModeStore{
 			Active:     true,
-			TerminalID: "termx-smoke",
+			TerminalID: "muxvia-smoke",
 			BoundToken: "smoke-token",
 			BoundCols:  80,
 		},
@@ -261,15 +261,15 @@ func smokeTabWorkspaceRoot() state.Root {
 	root := state.Root{
 		Shell: shell,
 		Surface: state.TerminalSurfaceStore{
-			TerminalID: "termx-workspace",
+			TerminalID: "muxvia-workspace",
 			Cols:       80,
 			Rows:       24,
 			Lines:      []string{"workspace live"},
 		},
 	}
 	paneID := root.Shell.EnsureDefaults().ActivePaneID
-	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(paneID, "termx-workspace", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(paneID), true))
-	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: paneID}, "termx-workspace")
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(paneID, "muxvia-workspace", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(paneID), true))
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: paneID}, "muxvia-workspace")
 	return root
 }
 
@@ -279,14 +279,14 @@ func smokePaneCommandFrame(ctx context.Context, builder render.RenderVMBuilder, 
 	root := state.Root{
 		Shell: state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine),
 		Surface: state.TerminalSurfaceStore{
-			TerminalID: "termx-pane-command",
+			TerminalID: "muxvia-pane-command",
 			Cols:       64,
 			Rows:       16,
 			Lines:      []string{"pane command live"},
 		},
 	}
-	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "termx-pane-command", 7, 64, 16, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
-	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "termx-pane-command")
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "muxvia-pane-command", 7, 64, 16, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "muxvia-pane-command")
 	runtime := app.NewAppRuntime(root, app.NewShellReducer(), func(root state.Root) render.Frame {
 		return renderer.Render(builder.Build(root))
 	}, host, app.NewSyncEffectRunner())
@@ -420,7 +420,7 @@ func visualAuditSurfaceStore() state.TerminalSurfaceStore {
 		Cols:       82,
 		Rows:       34,
 		Lines: []string{
-			"termx git:core-tui-v3-migration  go v1.26.0",
+			"muxvia git:core-tui-v3-migration  go v1.26.0",
 			"> make test",
 			"ok   tui/render",
 			">",

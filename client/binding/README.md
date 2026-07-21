@@ -17,7 +17,7 @@ ABI v3 removed pairing and credential-specific exports. The ABI must not add com
 ## Ownership
 
 - Input bytes are borrowed for the synchronous call and copied before asynchronous work starts.
-- C output buffers must be allocated outside Go-managed memory and released exactly once with `termx_buffer_free`.
+- C output buffers must be allocated outside Go-managed memory and released exactly once with `muxvia_buffer_free`.
 - WASM wrappers return copied `Uint8Array` content in `{status, handle?, payload?, error?}` results; operations that can wait on platform or transport work return `Promise`.
 - Completed operation handles and closed session handles remain registered until explicit `Release`.
 - Daemon resources use `apipb.ReleaseResourceCommand`; binding `Release` never releases daemon-owned resources.
@@ -41,4 +41,4 @@ ABI v3 removed pairing and credential-specific exports. The ABI must not add com
 - Browser channel binding is accepted only after the actual certificate from `RTCDtlsTransport.getRemoteCertificates()` hashes to the SHA-256 fingerprint declared by the applied remote SDP.
 - Android background/screen-off and browser hidden/pagehide/freeze destroy the current engine generation. Resume creates a new engine before publishing a usable binding to UI code.
 
-The C declarations in `cabi/termx_client.h` and names in `wasm_exports.txt` are stable ABI baselines. `cabi/androidlib` and `wasmlib` are the real platform wrappers; neither may add business-specific exports.
+The C declarations in `cabi/muxvia_client.h` and names in `wasm_exports.txt` are stable ABI baselines. `cabi/androidlib` and `wasmlib` are the real platform wrappers; neither may add business-specific exports.

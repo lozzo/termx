@@ -187,8 +187,8 @@ func TestServerRegisterTerminalCarriesCreateOptionsToProcessSpec(t *testing.T) {
 		Command: []string{"sh"},
 		Size:    Size{Cols: 90, Rows: 30},
 		Options: TerminalCreateOptions{
-			Dir:                "/tmp/termx-peer",
-			Env:                []string{"TERMX_PEER=1", "TERMX_REGION=local"},
+			Dir:                "/tmp/muxvia-peer",
+			Env:                []string{"MUXVIA_PEER=1", "MUXVIA_REGION=local"},
 			ScrollbackSize:     123,
 			ScrollbackMaxBytes: 4567,
 			ScrollbackMaxAge:   2 * time.Hour,
@@ -197,7 +197,7 @@ func TestServerRegisterTerminalCarriesCreateOptionsToProcessSpec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register terminal: %v", err)
 	}
-	if info.CWD != "/tmp/termx-peer" || info.LiveCWD != "/tmp/termx-peer" {
+	if info.CWD != "/tmp/muxvia-peer" || info.LiveCWD != "/tmp/muxvia-peer" {
 		t.Fatalf("create cwd must enter terminal info, got %#v", info)
 	}
 	specs := factory.spawnedSpecs("term-peer")
@@ -205,10 +205,10 @@ func TestServerRegisterTerminalCarriesCreateOptionsToProcessSpec(t *testing.T) {
 		t.Fatalf("expected one process spawn, got %#v", specs)
 	}
 	spec := specs[0]
-	if spec.Dir != "/tmp/termx-peer" || spec.Size != (Size{Cols: 90, Rows: 30}) {
+	if spec.Dir != "/tmp/muxvia-peer" || spec.Size != (Size{Cols: 90, Rows: 30}) {
 		t.Fatalf("process spec lost dir/size: %#v", spec)
 	}
-	if got := strings.Join(spec.Env, "\x00"); !strings.Contains(got, "TERMX_PEER=1") || !strings.Contains(got, "TERMX_REGION=local") {
+	if got := strings.Join(spec.Env, "\x00"); !strings.Contains(got, "MUXVIA_PEER=1") || !strings.Contains(got, "MUXVIA_REGION=local") {
 		t.Fatalf("process spec lost env: %#v", spec.Env)
 	}
 	if spec.ScrollbackSize != 123 || spec.ScrollbackMaxBytes != 4567 || spec.ScrollbackMaxAge != 2*time.Hour {

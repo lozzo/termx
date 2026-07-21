@@ -37,12 +37,12 @@ type DialFunc func(context.Context, string) (*ipc.Client, error)
 // smoke 为 true 时进程只能服务兼容性握手；实现不得添加 shell、hook 或 caller-provided argument。
 type StartFunc func(binaryPath, endpoint string, smoke bool) error
 
-// Config 固定 activation 的 active source、IPC endpoint、公开 termx 版本和受限重启策略。
+// Config 固定 activation 的 active source、IPC endpoint、公开 muxvia 版本和受限重启策略。
 // RetryWindow 内最多启动一次；并发 endpoint open 共享同一个 Manager 锁和启动时间。
 type Config struct {
 	Installations InstallationSource
 	Endpoint      string
-	TermxVersion  string
+	MuxviaVersion string
 	Dial          DialFunc
 	Start         StartFunc
 	Now           func() time.Time
@@ -56,7 +56,7 @@ type Config struct {
 type Manager struct {
 	installations InstallationSource
 	endpoint      string
-	termxVersion  string
+	muxviaVersion string
 	dial          DialFunc
 	start         StartFunc
 	now           func() time.Time
@@ -69,10 +69,10 @@ type Manager struct {
 }
 
 // New 创建固定路径 Companion activation manager。
-// Installations、TermxVersion 必须存在；空 endpoint 使用平台默认 user-scoped socket/Named Pipe。
+// Installations、MuxviaVersion 必须存在；空 endpoint 使用平台默认 user-scoped socket/Named Pipe。
 func New(config Config) (*Manager, error) {
-	if config.Installations == nil || config.TermxVersion == "" {
-		return nil, fmt.Errorf("Cloud Companion installation source and termx version are required")
+	if config.Installations == nil || config.MuxviaVersion == "" {
+		return nil, fmt.Errorf("Cloud Companion installation source and muxvia version are required")
 	}
 	if config.Endpoint == "" {
 		config.Endpoint = ipc.DefaultEndpoint()
@@ -96,7 +96,7 @@ func New(config Config) (*Manager, error) {
 		config.RetryWindow = 10 * time.Second
 	}
 	return &Manager{
-		installations: config.Installations, endpoint: config.Endpoint, termxVersion: config.TermxVersion,
+		installations: config.Installations, endpoint: config.Endpoint, muxviaVersion: config.MuxviaVersion,
 		dial: config.Dial, start: config.Start, now: config.Now,
 		readyTimeout: config.ReadyTimeout, retryInterval: config.RetryInterval, retryWindow: config.RetryWindow,
 	}, nil
@@ -164,7 +164,7 @@ func (manager *Manager) Open(ctx context.Context, role cloudpb.CallerRole, reque
 
 // SmokeFunc 返回 installer 使用的 staging binary handshake smoke。
 // 它启动固定 `serve --smoke --socket` 模式、协商 CLI role 后请求有序 Shutdown，不激活该版本。
-func SmokeFunc(termxVersion string) installer.SmokeFunc {
+func SmokeFunc(muxviaVersion string) installer.SmokeFunc {
 	return func(ctx context.Context, binaryPath string, manifest installer.Manifest) error {
 		executableSHA256, err := executableDigest(binaryPath)
 		if err != nil {
@@ -195,7 +195,7 @@ func SmokeFunc(termxVersion string) installer.SmokeFunc {
 			}
 		}
 		defer client.Close()
-		response, err := negotiate(deadline, client, termxVersion, cloudpb.CallerRole_CALLER_ROLE_CLI, nil)
+		response, err := negotiate(deadline, client, muxviaVersion, cloudpb.CallerRole_CALLER_ROLE_CLI, nil)
 		if err != nil {
 			return err
 		}
@@ -213,7 +213,7 @@ func (manager *Manager) dialAndHello(ctx context.Context, installation installer
 	if err != nil {
 		return nil, false, err
 	}
-	response, err := negotiate(ctx, client, manager.termxVersion, role, requested)
+	response, err := negotiate(ctx, client, manager.muxviaVersion, role, requested)
 	if err != nil {
 		_ = client.Close()
 		return nil, false, err
@@ -228,8 +228,8 @@ func (manager *Manager) dialAndHello(ctx context.Context, installation installer
 	return client, false, nil
 }
 
-func negotiate(ctx context.Context, client *ipc.Client, termxVersion string, role cloudpb.CallerRole, requested []cloudpb.CompanionCapability) (*cloudpb.CompanionHelloResponse, error) {
-	if client == nil || termxVersion == "" || role == cloudpb.CallerRole_CALLER_ROLE_UNSPECIFIED {
+func negotiate(ctx context.Context, client *ipc.Client, muxviaVersion string, role cloudpb.CallerRole, requested []cloudpb.CompanionCapability) (*cloudpb.CompanionHelloResponse, error) {
+	if client == nil || muxviaVersion == "" || role == cloudpb.CallerRole_CALLER_ROLE_UNSPECIFIED {
 		return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "invalid Companion Hello configuration")
 	}
 	requestedSet := make(map[cloudpb.CompanionCapability]struct{}, len(requested))
@@ -248,7 +248,7 @@ func negotiate(ctx context.Context, client *ipc.Client, termxVersion string, rol
 	}
 	response, err := client.Hello(ctx, &cloudpb.CompanionHelloRequest{
 		ProtocolMin: cloudcompanion.ProtocolVersionMin, ProtocolMax: cloudcompanion.ProtocolVersionMax,
-		TermxVersion: termxVersion, CallerRole: role, RequestedCapabilities: append([]cloudpb.CompanionCapability(nil), requested...), RequestNonce: nonce,
+		MuxviaVersion: muxviaVersion, CallerRole: role, RequestedCapabilities: append([]cloudpb.CompanionCapability(nil), requested...), RequestNonce: nonce,
 	})
 	if err != nil {
 		return nil, err

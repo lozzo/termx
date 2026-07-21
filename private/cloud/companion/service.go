@@ -2,7 +2,7 @@
 //
 // 本包只编排 OS credential session、Control Plane/Hub TLS adapters、presence/signaling、
 // Relay lease 和质量摘要。WebRTC、DTLS、DeviceIdentity 私钥、CapabilityGrant、DataChannel
-// 与 terminal protocol 始终属于公开 termx 进程。
+// 与 terminal protocol 始终属于公开 muxvia 进程。
 package companion
 
 import (

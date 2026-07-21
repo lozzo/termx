@@ -21,7 +21,7 @@ var (
 	ErrProjectionConflict = errors.New("Hub control projection conflict")
 )
 
-const projectionSignatureDomain = "termx-hub-projection-v1\x00"
+const projectionSignatureDomain = "muxvia-hub-projection-v1\x00"
 
 // AssignmentFence 是 assignment expiry timer 对 Hub runtime 的唯一关闭边界。
 // 实现必须只关闭精确 daemon+epoch，不得按裸 device ID 误伤后续 assignment。

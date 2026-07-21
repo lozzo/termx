@@ -71,7 +71,7 @@ func ManagementAPIHandler(config ManagementAPIConfig) (http.Handler, error) {
 			token, record, issueErr := config.RecentProofs.issue(account.GetAccountId(), cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_ACCOUNT_OWNER, 5*time.Minute)
 			err = issueErr
 			if issueErr == nil {
-				http.SetCookie(w, &http.Cookie{Name: "termx_cloud_recent", Value: token, Path: "/api/v1/management", MaxAge: 300, HttpOnly: true, Secure: config.SecureCookie, SameSite: http.SameSiteStrictMode})
+				http.SetCookie(w, &http.Cookie{Name: "muxvia_cloud_recent", Value: token, Path: "/api/v1/management", MaxAge: 300, HttpOnly: true, Secure: config.SecureCookie, SameSite: http.SameSiteStrictMode})
 				response = &cloudpb.RecentAuthenticationResponse{ExpiresAtUnixMillis: record.expiresAt.UnixMilli()}
 			}
 		}
@@ -201,7 +201,7 @@ func ManagementAPIHandler(config ManagementAPIConfig) (http.Handler, error) {
 }
 
 func requireRecentAccountProof(r *http.Request, proofs *proofStore, accountID string) error {
-	cookie, err := r.Cookie("termx_cloud_recent")
+	cookie, err := r.Cookie("muxvia_cloud_recent")
 	if err != nil {
 		return errRecentAuthenticationRequired
 	}

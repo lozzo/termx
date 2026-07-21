@@ -10,7 +10,7 @@ import (
 
 func TestKeyringStoreRoundTripAndNoFallback(t *testing.T) {
 	backend := &fakeKeyring{values: make(map[string]string)}
-	store := &KeyringStore{service: "io.termx.cloud", backend: backend}
+	store := &KeyringStore{service: "io.muxvia.cloud", backend: backend}
 	secret := []byte("opaque-session")
 	if err := store.StoreSecret(context.Background(), "profile/account/v1", secret); err != nil {
 		t.Fatal(err)

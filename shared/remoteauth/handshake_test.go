@@ -241,9 +241,9 @@ func TestCapturedCapabilityOpenFailsAgainstNewChallenge(t *testing.T) {
 	}
 }
 
-func TestAuthEnvelopeRejectsV1TermxFrameAndUnknownFields(t *testing.T) {
+func TestAuthEnvelopeRejectsV1MuxviaFrameAndUnknownFields(t *testing.T) {
 	if _, err := UnmarshalAuthEnvelope([]byte{0, 0, 0, 0, 0, 0, 0}); HandshakeCodeOf(err) != remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_PROTOCOL {
-		t.Fatalf("termx frame error = %v", err)
+		t.Fatalf("muxvia frame error = %v", err)
 	}
 	envelope := &remoteauthpb.AuthEnvelope{
 		Protocol: AuthProtocol, Version: 1, AuthSessionId: "fixture-auth-session-01",

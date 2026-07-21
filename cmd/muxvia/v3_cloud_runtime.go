@@ -1,0 +1,169 @@
+package main
+
+import (
+	"context"
+	"crypto/ed25519"
+	"encoding/base64"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"sync"
+
+	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
+	"github.com/muxvia/muxvia/shared/cloudcompanion/activation"
+	"github.com/muxvia/muxvia/shared/cloudcompanion/installer"
+	"github.com/muxvia/muxvia/shared/cloudcompanion/ipc"
+)
+
+const v3CloudCompanionSocketEnv = "MUXVIA_CLOUD_COMPANION_SOCKET"
+const v3DevelopmentBuildVersion = "v0.0.0-dev"
+const v3CloudReleaseRootMissingMessage = "Muxvia Cloud is optional and Cloud Companion is not bundled with muxvia. This source build does not contain the official release verification key, so it cannot safely install or use Cloud Companion. Use an official muxvia release, then run `muxvia cloud install`; local and SSH features remain available."
+
+var (
+	muxviaBuildVersion               = "v0.0.0-dev"
+	cloudReleaseOrigin               = "https://releases.muxvia.dev/cloud-companion"
+	cloudReleaseRootKeyID            = ""
+	cloudReleaseRootPublicKey        = ""
+	cloudDevelopmentCompanionName    = ""
+	cloudDevelopmentCompanionSHA256  = ""
+	cloudDevelopmentCompanionVersion = ""
+	cloudDevelopmentCompanionChannel = ""
+	cloudRuntimeOnce                 sync.Once
+	cloudRuntimeManager              *activation.Manager
+	cloudRuntimeErr                  error
+	newV3CloudInstallerForCommand    func() (v3CloudInstaller, error) = func() (v3CloudInstaller, error) { return newV3CloudInstaller() }
+	openV3CloudLifecycleClient                                        = defaultOpenV3CloudLifecycleClient
+	openV3CloudCompanion                                              = defaultOpenV3CloudCompanion
+)
+
+type v3CloudClient interface {
+	cloudcompanion.FullClient
+	io.Closer
+}
+
+type v3CloudInstaller interface {
+	InstallRelease(context.Context, installer.Request) (installer.Installation, error)
+	Status() (installer.Installation, error)
+	Uninstall() error
+}
+
+func newV3CloudInstaller() (*installer.Installer, error) {
+	trustedKeys, err := v3CloudReleaseRoots()
+	if err != nil {
+		return nil, err
+	}
+	return installer.New(installer.Config{
+		Origin: cloudReleaseOrigin, TrustedKeys: trustedKeys,
+		Smoke: activation.SmokeFunc(muxviaBuildVersion),
+	})
+}
+
+func defaultV3CloudManager() (*activation.Manager, error) {
+	cloudRuntimeOnce.Do(func() {
+		installationSource, bundled, err := v3BundledDevelopmentCompanionSource()
+		if err != nil {
+			cloudRuntimeErr = err
+			return
+		}
+		if !bundled {
+			installationSource, err = newV3CloudInstaller()
+			if err != nil {
+				cloudRuntimeErr = err
+				return
+			}
+		}
+		cloudRuntimeManager, cloudRuntimeErr = activation.New(activation.Config{Installations: installationSource, MuxviaVersion: muxviaBuildVersion})
+	})
+	return cloudRuntimeManager, cloudRuntimeErr
+}
+
+func defaultOpenV3CloudLifecycleClient(ctx context.Context, role cloudpb.CallerRole, capabilities ...cloudpb.CompanionCapability) (v3CloudClient, error) {
+	if endpoint := strings.TrimSpace(os.Getenv(v3CloudCompanionSocketEnv)); endpoint != "" {
+		if muxviaBuildVersion != v3DevelopmentBuildVersion {
+			return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED, "explicit Cloud Companion socket is disabled outside development builds")
+		}
+		client, _, err := ipc.DialAndHello(ctx, endpoint, ipc.HelloOptions{
+			MuxviaVersion: muxviaBuildVersion, CallerRole: role, Capabilities: capabilities,
+		})
+		return client, err
+	}
+	if _, bundled, err := v3BundledDevelopmentCompanionSource(); err != nil {
+		return nil, err
+	} else if bundled {
+		manager, managerErr := defaultV3CloudManager()
+		if managerErr != nil {
+			return nil, managerErr
+		}
+		return manager.Open(ctx, role, capabilities...)
+	}
+	if strings.TrimSpace(cloudReleaseRootKeyID) == "" || strings.TrimSpace(cloudReleaseRootPublicKey) == "" {
+		// release root 缺失属于当前 muxvia build 的信任能力缺失，不能伪装成安装后即可恢复的 Companion missing。
+		return nil, v3CloudReleaseRootMissingError()
+	}
+	manager, err := defaultV3CloudManager()
+	if err != nil {
+		return nil, err
+	}
+	return manager.Open(ctx, role, capabilities...)
+}
+
+func defaultV3CloudInstallationStatus() (installer.Installation, error) {
+	source, bundled, err := v3BundledDevelopmentCompanionSource()
+	if err != nil {
+		return installer.Installation{}, err
+	}
+	if bundled {
+		return source.Status()
+	}
+	cloudInstaller, err := newV3CloudInstallerForCommand()
+	if err != nil {
+		return installer.Installation{}, err
+	}
+	return cloudInstaller.Status()
+}
+
+func defaultOpenV3CloudDaemonCompanion(ctx context.Context) (v3CloudClient, error) {
+	return openV3CloudLifecycleClient(ctx, cloudpb.CallerRole_CALLER_ROLE_DAEMON,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_PRESENCE,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_RELAY_LEASE,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_DAEMON_RUNTIME,
+	)
+}
+
+func defaultOpenV3CloudCompanion(ctx context.Context) (cloudcompanion.Client, error) {
+	return openV3CloudLifecycleClient(ctx, cloudpb.CallerRole_CALLER_ROLE_TUI,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_RELAY_LEASE,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_PATH_QUALITY,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_SMART_ROUTE,
+	)
+}
+
+func v3CloudReleaseRoots() (map[string]ed25519.PublicKey, error) {
+	keyID := strings.TrimSpace(cloudReleaseRootKeyID)
+	encoded := strings.TrimSpace(cloudReleaseRootPublicKey)
+	if keyID == "" || encoded == "" {
+		return nil, v3CloudReleaseRootMissingError()
+	}
+	publicKey, err := decodeCloudReleasePublicKey(encoded)
+	if err != nil || len(publicKey) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("invalid embedded Cloud Companion release root")
+	}
+	return map[string]ed25519.PublicKey{keyID: ed25519.PublicKey(publicKey)}, nil
+}
+
+func v3CloudReleaseRootMissingError() error {
+	return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED, v3CloudReleaseRootMissingMessage)
+}
+
+func decodeCloudReleasePublicKey(encoded string) ([]byte, error) {
+	for _, encoding := range []*base64.Encoding{base64.RawStdEncoding, base64.StdEncoding, base64.RawURLEncoding, base64.URLEncoding} {
+		if decoded, err := encoding.DecodeString(encoded); err == nil {
+			return decoded, nil
+		}
+	}
+	return nil, fmt.Errorf("invalid base64 public key")
+}

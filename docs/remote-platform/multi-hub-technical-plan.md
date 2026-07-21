@@ -35,16 +35,16 @@
 development 最终只维护两类 Cloud 服务二进制：
 
 ```text
-termx-cloud-controller
+muxvia-cloud-controller
 ├── Control Plane
 ├── Controller/User/Operator API
 ├── Web Controller static assets
 └── SQLite persistent store
           |
-          +---- HubControl ---- termx-cloud-edge A/B/...
-          +---- RelayControl -- termx-cloud-edge A/B/...
+          +---- HubControl ---- muxvia-cloud-edge A/B/...
+          +---- RelayControl -- muxvia-cloud-edge A/B/...
 
-termx-cloud-edge
+muxvia-cloud-edge
 ├── Hub runtime: memory only
 └── Relay runtime: allocation + durable usage outbox
 
@@ -174,10 +174,10 @@ private/cloud/control-plane/
   sqlite/            上述领域 store port 的 development 持久化 adapter
 
 private/cloud/controller/
-  cmd/termx-cloud-controller/  Control Plane + Web Controller composition root
+  cmd/muxvia-cloud-controller/  Control Plane + Web Controller composition root
 
 private/cloud/edge/
-  cmd/termx-cloud-edge/        Hub + Relay composition root
+  cmd/muxvia-cloud-edge/        Hub + Relay composition root
 ```
 
 已有 `directory`、`entitlement`、`usage` 等 package 保持各自领域。`sqlite` 只实现存储 port，不拥有业务状态机。`controller` 与 `edge` 只负责配置、listener、依赖装配、进程生命周期和健康检查，不得定义第二份业务模型。
@@ -595,7 +595,7 @@ parent command 只聚合 children，不作为额外网络消息。client device 
 
 ## 10. Relay remote revoke
 
-Relay 与 Hub 由同一个 `termx-cloud-edge` 进程装配，但 Relay 增加独立 service identity/logical control stream，不能借用 Hub control generation。`private/cloud/relay` 在内存中维护：
+Relay 与 Hub 由同一个 `muxvia-cloud-edge` 进程装配，但 Relay 增加独立 service identity/logical control stream，不能借用 Hub control generation。`private/cloud/relay` 在内存中维护：
 
 ```text
 lease_id -> allocation IDs
@@ -655,9 +655,9 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 
 - 实现 Control Plane `hubregistry/hubcontrol/sqlite`。
 - 实现 Hub 双向逻辑 control transport、full/delta/reconciliation 和 expiry timer。
-- 增加两个 composition root：`private/cloud/controller/cmd/termx-cloud-controller` 组合 Control Plane + Web Controller；`private/cloud/edge/cmd/termx-cloud-edge` 组合 Hub + Relay。参数只包含各自 listener、Controller URL、SQLite/usage-outbox 路径、Hub/Relay identity credential 和显式 dev fixture 路径。
+- 增加两个 composition root：`private/cloud/controller/cmd/muxvia-cloud-controller` 组合 Control Plane + Web Controller；`private/cloud/edge/cmd/muxvia-cloud-edge` 组合 Hub + Relay。参数只包含各自 listener、Controller URL、SQLite/usage-outbox 路径、Hub/Relay identity credential 和显式 dev fixture 路径。
 - Controller 同一进程使用 public、internal-control、operator 三个独立 listener/middleware；Edge 同一进程使用 Hub public/signaling、Relay data、health 三类 listener，不允许 public handler 访问 Controller store。
-- `private/cloud/devcloud/cmd/termx-cloud-dev` 降为 development supervisor：启动一个 Controller 和至少两个 Edge 子进程，写入包含 PID、监听地址、Hub/Relay identity、数据库、usage outbox、配置和日志路径的 manifest。`HUB007` 在该稳定进程 harness 上增加精确 stop/restart/migration 故障控制，不得回退单进程装配或 fake ack。
+- `private/cloud/devcloud/cmd/muxvia-cloud-dev` 降为 development supervisor：启动一个 Controller 和至少两个 Edge 子进程，写入包含 PID、监听地址、Hub/Relay identity、数据库、usage outbox、配置和日志路径的 manifest。`HUB007` 在该稳定进程 harness 上增加精确 stop/restart/migration 故障控制，不得回退单进程装配或 fake ack。
 - Control Plane 不再通过 `state.hub` pointer 发布 policy，Hub module 不通过 Go pointer 直接控制 Relay allocation。
 - 删除 `EdgeSnapshotPath`、runtime snapshot restore 和 active `FileEdgeSnapshotStore`。
 
@@ -742,7 +742,7 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 
 ### CLOUDP006：用户与运营管理面
 
-- Controller public/operator listener 从同一个可选 `web_static_dir` 提供生产 Web build；账号 API、operator API、Control Plane service 与静态资源仍在同一 `termx-cloud-controller` composition 内，internal control listener 不提供页面。
+- Controller public/operator listener 从同一个可选 `web_static_dir` 提供生产 Web build；账号 API、operator API、Control Plane service 与静态资源仍在同一 `muxvia-cloud-controller` composition 内，internal control listener 不提供页面。
 - `cloud_management.proto` 已定义近期认证、operator session/角色、账号列表/详情和 suspend/restore；`cloud_product.proto` 的账号交易查询同时返回 normalized payment event journal。Go 与 TypeScript consumer 都从同一 schema 生成。
 - 用户账号中心直接消费 generated Proto JSON，展示账号、Subscription/Entitlement、Relay quota、设备、Presence、managed PeerSession data path、CommandOutbox、订单、payment event 与审计；signaling control Hub 和 `DIRECT`/`SINGLE_RELAY` data path 分开显示，stale 不投影成 offline。
 - 账号 destructive command 必须先使用当前密码换取五分钟 HttpOnly recent proof，并同时通过账号 Cookie、same-origin 和 CSRF；请求中的 `account_id` 被当前账号覆盖，不能跨账号查询或控制。

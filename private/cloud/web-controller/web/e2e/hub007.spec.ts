@@ -13,8 +13,8 @@ type DevelopmentCredentials = {
 test("operator UI observes two Edges and issues a real management command", async ({
   page,
 }) => {
-  const manifestPath = process.env.TERMX_CLOUD_DEV_MANIFEST;
-  if (!manifestPath) throw new Error("TERMX_CLOUD_DEV_MANIFEST is required");
+  const manifestPath = process.env.MUXVIA_CLOUD_DEV_MANIFEST;
+  if (!manifestPath) throw new Error("MUXVIA_CLOUD_DEV_MANIFEST is required");
   const manifest = JSON.parse(
     await readFile(manifestPath, "utf8"),
   ) as SupervisorManifest;

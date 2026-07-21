@@ -43,7 +43,7 @@ func TestPTYProcessFactoryUsesCreateDirAndEnv(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("pty integration requires a Unix-like PTY")
 	}
-	dir, err := os.MkdirTemp("/tmp", "termx-pty-env-")
+	dir, err := os.MkdirTemp("/tmp", "muxvia-pty-env-")
 	if err != nil {
 		t.Fatalf("create pty cwd: %v", err)
 	}
@@ -51,11 +51,11 @@ func TestPTYProcessFactoryUsesCreateDirAndEnv(t *testing.T) {
 	server := NewServer()
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-pty-env",
-		Command: []string{"/bin/sh", "-c", "printf 'cwd:%s env:%s\\n' \"$PWD\" \"$TERMX_REMOTE_TEST\""},
+		Command: []string{"/bin/sh", "-c", "printf 'cwd:%s env:%s\\n' \"$PWD\" \"$MUXVIA_REMOTE_TEST\""},
 		Size:    Size{Cols: 120, Rows: 4},
 		Options: TerminalCreateOptions{
 			Dir: dir,
-			Env: []string{"TERMX_REMOTE_TEST=ok"},
+			Env: []string{"MUXVIA_REMOTE_TEST=ok"},
 		},
 	}); err != nil {
 		t.Fatalf("register pty terminal: %v", err)

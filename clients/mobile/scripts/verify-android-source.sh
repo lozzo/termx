@@ -78,20 +78,20 @@ required_manifest_fragments=(
 )
 for fragment in "${required_manifest_fragments[@]}"; do
   if ! rg -Fq "$fragment" "$manifest"; then
-    echo "Android manifest lost required TermX configuration: $fragment" >&2
+    echo "Android manifest lost required Muxvia configuration: $fragment" >&2
     exit 1
   fi
 done
 
 required_gradle_fragments=(
   "apply plugin: 'kotlin-android'"
-  '// termx NativeConnection dependencies'
+  '// muxvia NativeConnection dependencies'
   'shrinkResources true'
   "test.resources.srcDir '../../../../shared/cloudcompanion/testdata'"
 )
 for fragment in "${required_gradle_fragments[@]}"; do
   if ! rg -Fq "$fragment" "$build_gradle"; then
-    echo "Android Gradle configuration lost required TermX setting: $fragment" >&2
+    echo "Android Gradle configuration lost required Muxvia setting: $fragment" >&2
     exit 1
   fi
 done

@@ -124,7 +124,7 @@ func New(config Config) (*Service, error) {
 	if config.Random == nil {
 		config.Random = rand.Reader
 	}
-	dummyPasswordHash, err := bcrypt.GenerateFromPassword([]byte("termx-invalid-password"), bcrypt.DefaultCost)
+	dummyPasswordHash, err := bcrypt.GenerateFromPassword([]byte("muxvia-invalid-password"), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
 	}
@@ -425,7 +425,7 @@ func (service *Service) ConfirmTestPayment(ctx context.Context, accountID string
 	now := service.now().UTC()
 	var attempt *cloudpb.PaymentAttemptProjection
 	if request.GetEventType() == cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED || request.GetEventType() == cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_FAILED {
-		attemptResponse, attemptErr := service.CreatePaymentAttempt(ctx, accountID, accountID, &cloudpb.CreatePaymentAttemptRequest{OrderId: order.GetOrderId(), Provider: "termx-test-provider"})
+		attemptResponse, attemptErr := service.CreatePaymentAttempt(ctx, accountID, accountID, &cloudpb.CreatePaymentAttemptRequest{OrderId: order.GetOrderId(), Provider: "muxvia-test-provider"})
 		if attemptErr != nil {
 			return nil, attemptErr
 		}
@@ -436,7 +436,7 @@ func (service *Service) ConfirmTestPayment(ctx context.Context, accountID string
 			return nil, attemptErr
 		}
 		for _, candidate := range attempts {
-			if candidate.GetOrderId() == order.GetOrderId() && candidate.GetProvider() == "termx-test-provider" && candidate.GetStatus() == cloudpb.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_SUCCEEDED {
+			if candidate.GetOrderId() == order.GetOrderId() && candidate.GetProvider() == "muxvia-test-provider" && candidate.GetStatus() == cloudpb.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_SUCCEEDED {
 				if attempt != nil {
 					return nil, ErrConflict
 				}
@@ -451,7 +451,7 @@ func (service *Service) ConfirmTestPayment(ctx context.Context, accountID string
 	if err != nil {
 		return nil, err
 	}
-	result, err := service.ApplyPaymentEvent(ctx, &cloudpb.ApplyPaymentEventRequest{Event: &cloudpb.NormalizedPaymentEvent{ProviderEventId: eventID, Provider: "termx-test-provider", EventType: request.GetEventType(), OrderId: order.GetOrderId(), AccountId: order.GetAccountId(), PlanId: order.GetPlanId(), PlanVersion: order.GetPlanVersion(), ProviderReference: "test-" + order.GetOrderId(), OccurredAtUnixMillis: now.UnixMilli(), PaymentAttemptId: attempt.GetPaymentAttemptId()}})
+	result, err := service.ApplyPaymentEvent(ctx, &cloudpb.ApplyPaymentEventRequest{Event: &cloudpb.NormalizedPaymentEvent{ProviderEventId: eventID, Provider: "muxvia-test-provider", EventType: request.GetEventType(), OrderId: order.GetOrderId(), AccountId: order.GetAccountId(), PlanId: order.GetPlanId(), PlanVersion: order.GetPlanVersion(), ProviderReference: "test-" + order.GetOrderId(), OccurredAtUnixMillis: now.UnixMilli(), PaymentAttemptId: attempt.GetPaymentAttemptId()}})
 	if err != nil {
 		return nil, err
 	}
@@ -841,7 +841,7 @@ func validEmail(value string) bool {
 func emailDisplayName(email string) string {
 	name, _, _ := strings.Cut(email, "@")
 	if name == "" {
-		return "TermX User"
+		return "Muxvia User"
 	}
 	return name
 }

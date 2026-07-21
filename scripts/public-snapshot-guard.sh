@@ -102,7 +102,7 @@ required_scripts=(
   public-snapshot-guard.test.sh
   repository-layout-guard.sh
   verify-android-apk-boundary.sh
-  with-clean-termx-env.sh
+  with-clean-muxvia-env.sh
 )
 for script in "${required_scripts[@]}"; do
   [[ -s "scripts/$script" ]] || fail "required public release script is missing: scripts/$script"
@@ -110,7 +110,7 @@ done
 while IFS= read -r path; do
   name="${path#scripts/}"
   case "$name" in
-    android-resolved-dependencies.init.gradle|check-generated-code.sh|client-workspace-guard.mjs|doctor.sh|fetch-pinned-third-party-notices.sh|generate-android-notices.sh|generate-go-notices.sh|generate-npm-notices.mjs|license-audit.sh|public-snapshot-guard.sh|public-snapshot-guard.test.sh|repository-layout-guard.sh|verify-android-apk-boundary.sh|with-clean-termx-env.sh)
+    android-resolved-dependencies.init.gradle|check-generated-code.sh|client-workspace-guard.mjs|doctor.sh|fetch-pinned-third-party-notices.sh|generate-android-notices.sh|generate-go-notices.sh|generate-npm-notices.mjs|license-audit.sh|public-snapshot-guard.sh|public-snapshot-guard.test.sh|repository-layout-guard.sh|verify-android-apk-boundary.sh|with-clean-muxvia-env.sh)
       ;;
     *)
       fail "unexpected public release script: scripts/$name"
@@ -189,8 +189,8 @@ if rg -n --hidden "${rg_excludes[@]}" --glob 'package.json' --glob 'package-lock
   fail "App or shared UI build metadata references private source"
 fi
 [[ -s clients/ui/.env.example ]] || fail "shared UI public environment template is missing"
-if rg -n '(TERMX_LOCAL_WEB_ORIGIN|localweb)' clients/ui/.env.example >/dev/null; then
+if rg -n '(MUXVIA_LOCAL_WEB_ORIGIN|localweb)' clients/ui/.env.example >/dev/null; then
   fail "shared UI environment template references the archived localweb path"
 fi
 
-echo "TermX public snapshot structure passed"
+echo "Muxvia public snapshot structure passed"

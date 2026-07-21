@@ -30,7 +30,7 @@ const (
 	protocolErrorInternal    = 500
 )
 
-const daemonBoundaryReclaimMinHeapMBEnv = "TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB"
+const daemonBoundaryReclaimMinHeapMBEnv = "MUXVIA_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB"
 const daemonBoundaryReclaimDefaultMinHeapBytes = 0
 
 var errProtocolAttachmentMismatch = errors.New("protocol attachment mismatch")

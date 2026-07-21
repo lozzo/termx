@@ -3,7 +3,7 @@
 .toolchain/
 .worktrees/
 *.tsbuildinfo
-/clients/ui/public/termx-wasm/
+/clients/ui/public/muxvia-wasm/
 /node_modules/
 /private/archive/**/.build/
 Screenshot_*.jpg

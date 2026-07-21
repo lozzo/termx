@@ -7,7 +7,7 @@ import (
 	vterm "github.com/muxvia/muxvia/vterm/vterm"
 )
 
-const preserveAltScreenOnExitEnv = "TERMX_PRESERVE_ALT_SCREEN_ON_EXIT"
+const preserveAltScreenOnExitEnv = "MUXVIA_PRESERVE_ALT_SCREEN_ON_EXIT"
 
 // SurfaceSize describes the current host projection size.
 type SurfaceSize struct {

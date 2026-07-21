@@ -2,11 +2,11 @@
 
 ## 文档职责
 
-本文记录 `cmd/termx` 在架构清理阶段的 concrete dependency 债务、目标 application contract 和迁移顺序。活动状态与准入只看根目录 `workflow.md`。
+本文记录 `cmd/muxvia` 在架构清理阶段的 concrete dependency 债务、目标 application contract 和迁移顺序。活动状态与准入只看根目录 `workflow.md`。
 
 ## 当前问题
 
-`cmd/termx` 目前同时承担了四类职责：
+`cmd/muxvia` 目前同时承担了四类职责：
 
 1. Cobra 参数、target 解析、输出和退出码。
 2. terminal/file/workspace/access 等 client application workflow。
@@ -18,13 +18,13 @@
 ## 目标结构
 
 ```text
-cmd/termx command
+cmd/muxvia command
     -> client/runtime application interface
         -> client runtime owner
             -> client/adapter/{local,ssh,managed,protocol}
                 -> protocol / transport / remoteauth / cloud primitive
 
-cmd/termx daemon command
+cmd/muxvia daemon command
     -> daemon host application interface
         -> daemon host composition
             -> core / listener / managed ingress primitive

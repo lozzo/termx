@@ -22,7 +22,7 @@ import (
 	"github.com/muxvia/muxvia/shared/transport/datachannel"
 )
 
-const defaultProtocolClientName = "termx-go-client"
+const defaultProtocolClientName = "muxvia-go-client"
 
 // CloudClient 是 managed attempt 实际需要的 Cloud signaling/route 子集。
 // CapabilityGrant、ClientAccessIdentity 和 DataChannel payload 永远不能进入该接口。

@@ -195,7 +195,7 @@ func (session *protocolSession) openFileUpload(params FileUploadOpenRequest) (Fi
 			session.server.fileTransferMu.Unlock()
 			return FileTransfer{}, idErr
 		}
-		temp, tempErr := os.CreateTemp(filepath.Dir(target), ".termx-upload-*.part")
+		temp, tempErr := os.CreateTemp(filepath.Dir(target), ".muxvia-upload-*.part")
 		if tempErr != nil {
 			session.server.fileTransferMu.Unlock()
 			return FileTransfer{}, tempErr

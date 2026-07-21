@@ -1,4 +1,4 @@
-// Package ipc 实现公开 termx 进程与本机 Cloud Companion 之间的 framed protobuf transport。
+// Package ipc 实现公开 muxvia 进程与本机 Cloud Companion 之间的 framed protobuf transport。
 //
 // 每条 OS connection 对应一个 cloudcompanion connection domain；首帧必须是 Hello，
 // caller role、request、cancel 和 stream id 都不能跨 socket 或 Named Pipe 复用。

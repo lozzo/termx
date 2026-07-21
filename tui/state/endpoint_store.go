@@ -75,7 +75,7 @@ const (
 	EndpointErrorAuth EndpointErrorKind = "auth"
 	// EndpointErrorHostKey 表示 host key 校验失败，必须作为高风险 endpoint 状态展示。
 	EndpointErrorHostKey EndpointErrorKind = "host-key"
-	// EndpointErrorRemoteDaemon 表示远端 termx daemon、stdio-proxy 或 socket 不可用。
+	// EndpointErrorRemoteDaemon 表示远端 muxvia daemon、stdio-proxy 或 socket 不可用。
 	EndpointErrorRemoteDaemon EndpointErrorKind = "remote-daemon"
 	// EndpointErrorProtocol 表示 transport 已连通但 protocol 层返回错误或断开。
 	EndpointErrorProtocol EndpointErrorKind = "protocol"

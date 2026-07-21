@@ -33,7 +33,7 @@ func (clock *fakeClock) Advance(duration time.Duration) {
 
 func TestAuthorityRequiresSignedLeaseAndEnforcesConcurrencyQuota(t *testing.T) {
 	fixture := newRelayFixture(t, 2, 5_000, 8)
-	if _, ok := fixture.authority.AuthenticateTURN("unknown", "termx-relay", "source-0"); ok {
+	if _, ok := fixture.authority.AuthenticateTURN("unknown", "muxvia-relay", "source-0"); ok {
 		t.Fatal("TURN auth succeeded without active lease")
 	}
 	activation, err := fixture.authority.ActivateLease(fixture.activationRequest)
@@ -49,22 +49,22 @@ func TestAuthorityRequiresSignedLeaseAndEnforcesConcurrencyQuota(t *testing.T) {
 	if _, ok := fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "wrong-realm", "source-client"); ok {
 		t.Fatal("TURN auth accepted wrong realm")
 	}
-	if key, ok := fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "termx-relay", "source-client"); !ok || len(key) == 0 {
+	if key, ok := fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "muxvia-relay", "source-client"); !ok || len(key) == 0 {
 		t.Fatal("client TURN auth failed")
 	}
 	if err := fixture.authority.ConfirmAllocation("source-client", "allocation-client", activation.ClientCredential.Username); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := fixture.authority.AuthenticateTURN(activation.DaemonCredential.Username, "termx-relay", "source-daemon"); !ok {
+	if _, ok := fixture.authority.AuthenticateTURN(activation.DaemonCredential.Username, "muxvia-relay", "source-daemon"); !ok {
 		t.Fatal("daemon TURN auth failed")
 	}
 	if err := fixture.authority.ConfirmAllocation("source-daemon", "allocation-daemon", activation.DaemonCredential.Username); err != nil {
 		t.Fatal(err)
 	}
-	if key, ok := fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "termx-relay", "source-client"); !ok || len(key) == 0 {
+	if key, ok := fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "muxvia-relay", "source-client"); !ok || len(key) == 0 {
 		t.Fatal("existing allocation reauthentication consumed concurrency")
 	}
-	if _, ok := fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "termx-relay", "source-third"); ok {
+	if _, ok := fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "muxvia-relay", "source-third"); ok {
 		t.Fatal("TURN auth exceeded lease concurrency")
 	}
 	if err := fixture.authority.RecordTraffic("allocation-client", 400, 500); err != nil {
@@ -81,7 +81,7 @@ func TestAuthorityRequiresSignedLeaseAndEnforcesConcurrencyQuota(t *testing.T) {
 		t.Fatalf("missing allocation error = %v", err)
 	}
 	fixture.authority.ReleaseAllocation("allocation-client")
-	if _, ok := fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "termx-relay", "source-third"); !ok {
+	if _, ok := fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "muxvia-relay", "source-third"); !ok {
 		t.Fatal("released allocation did not free concurrency")
 	}
 }
@@ -92,7 +92,7 @@ func TestAuthoritySignsUsageThatControlPlaneSettlesOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _ = fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "termx-relay", "source")
+	_, _ = fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "muxvia-relay", "source")
 	if err := fixture.authority.ConfirmAllocation("source", "allocation", activation.ClientCredential.Username); err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestAuthorityRejectsExpiredLeaseAndCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixture.clock.Advance(5*time.Minute + time.Second)
-	if _, ok := fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "termx-relay", "source-expired"); ok {
+	if _, ok := fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "muxvia-relay", "source-expired"); ok {
 		t.Fatal("TURN auth accepted an expired lease credential")
 	}
 	if _, err := fixture.authority.ActivateLease(fixture.activationRequest); !errors.Is(err, relay.ErrLeaseRejected) {
@@ -183,7 +183,7 @@ func newRelayFixture(t *testing.T, maxConcurrency uint32, maxBytes uint64, maxBi
 	keyRing, _ := servicecredential.NewKeyRing(cpSigner.PublicKey())
 	clock := &fakeClock{now: now}
 	authority, err := relay.NewAuthority(relay.Config{
-		RelayID: "relay-eu-1", RelayPool: "pool-eu", Region: "eu-west", LeaseIssuer: "control-plane.test", Realm: "termx-relay",
+		RelayID: "relay-eu-1", RelayPool: "pool-eu", Region: "eu-west", LeaseIssuer: "control-plane.test", Realm: "muxvia-relay",
 		KeyRing: keyRing, Bindings: relay.StaticBindings{"binding-1": {"relay-eu-1": {}}}, CredentialSecret: bytes.Repeat([]byte{0x22}, 32),
 		UsageSigner: usageSigner, Clock: clock, CredentialTTL: 3 * time.Minute, PendingAuthTTL: 5 * time.Second,
 		NonceReader: bytes.NewReader(bytes.Repeat([]byte{0x33}, 1024)),

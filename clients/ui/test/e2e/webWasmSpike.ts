@@ -32,7 +32,7 @@ import {
 } from '../../src/generated/cloudpb/cloud_companion_pb'
 import { BrowserWasmPlatform, type BrowserCloudPlatform } from '../../src/binding/browserWasmPlatform'
 import { BrowserWasmLifecycle } from '../../src/binding/browserWasmLifecycle'
-import { TermxWasmRuntime, loadTermxWasmExports } from '../../src/binding/wasmRuntime'
+import { MuxviaWasmRuntime, loadMuxviaWasmExports } from '../../src/binding/wasmRuntime'
 import { ProtoBindingClient } from '../../src/binding/protoBindingClient'
 import { WasmBindingBackend } from '../../src/binding/wasmBindingBackend'
 
@@ -43,10 +43,10 @@ void run().catch((error) => finish({ ok: false, error: error instanceof Error ? 
 
 async function run(): Promise<void> {
   await stage('module-loaded')
-  const exports = await loadTermxWasmExports({ wasmUrl: '/assets/termx-client.wasm', wasmExecUrl: '/assets/wasm_exec.js' })
+  const exports = await loadMuxviaWasmExports({ wasmUrl: '/assets/muxvia-client.wasm', wasmExecUrl: '/assets/wasm_exec.js' })
   await stage('wasm-loaded')
   const cloud = new SpikeCloudPlatform()
-  let activeRuntime: TermxWasmRuntime | null = null
+  let activeRuntime: MuxviaWasmRuntime | null = null
   const eventSink = async (payload: Uint8Array) => {
     if (!activeRuntime) throw new Error('browser WASM generation is suspended')
     await activeRuntime.platformEvent(payload)
@@ -62,7 +62,7 @@ async function run(): Promise<void> {
   const lifecycle = new BrowserWasmLifecycle(async () => {
     const nextPlatform = platform ?? new BrowserWasmPlatform(cloud, eventSink, (value) => { void stage(value) })
     platform = null
-    const runtime = await TermxWasmRuntime.create(exports, nextPlatform)
+    const runtime = await MuxviaWasmRuntime.create(exports, nextPlatform)
     activeRuntime = runtime
     const client = new ProtoBindingClient(new WasmBindingBackend(runtime))
     return { client, close: () => client.close() }
@@ -141,7 +141,7 @@ async function openAndProve(client: ProtoBindingClient, proveEvent = true): Prom
   await session.close()
   return {
     generation,
-    fingerprint: (globalThis as typeof globalThis & { termxDeviceFingerprint: string }).termxDeviceFingerprint,
+    fingerprint: (globalThis as typeof globalThis & { muxviaDeviceFingerprint: string }).muxviaDeviceFingerprint,
     observedEvent,
   }
 }
@@ -154,7 +154,7 @@ function managedEndpointConfig() {
     labelSource: EndpointSource.USER,
     identity: create(EndpointDaemonIdentitySchema, {
       deviceId: 'device-web-spike',
-      deviceFingerprint: (globalThis as typeof globalThis & { termxDeviceFingerprint: string }).termxDeviceFingerprint,
+      deviceFingerprint: (globalThis as typeof globalThis & { muxviaDeviceFingerprint: string }).muxviaDeviceFingerprint,
     }),
     connectMode: EndpointConnectMode.ON_DEMAND,
     enabled: true,

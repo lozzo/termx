@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ARTIFACT_DIR="${ARTIFACT_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/termx-bg-eol.XXXXXX")}"
-SESSION="termx-bg-eol-$$"
+ARTIFACT_DIR="${ARTIFACT_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/muxvia-bg-eol.XXXXXX")}"
+SESSION="muxvia-bg-eol-$$"
 
 cleanup() {
   tmux kill-session -t "$SESSION" >/dev/null 2>&1 || true

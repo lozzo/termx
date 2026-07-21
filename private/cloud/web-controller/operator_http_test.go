@@ -67,7 +67,7 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 
 	transitionContract := &cloudpb.OperatorTransitionSubscriptionRequest{AccountId: accountID, Transition: cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_SUSPEND}
 	withoutCSRF := operatorRequest(t, http.MethodPost, "/api/v1/operator/subscription/transition", transitionContract, adminCookies)
-	withoutCSRF.Header.Del("X-TermX-CSRF")
+	withoutCSRF.Header.Del("X-Muxvia-CSRF")
 	withoutCSRFResponse := httptest.NewRecorder()
 	admin.ServeHTTP(withoutCSRFResponse, withoutCSRF)
 	if withoutCSRFResponse.Code != http.StatusUnauthorized {
@@ -144,8 +144,8 @@ func operatorRequest(t *testing.T, method, path string, body proto.Message, cook
 	for _, cookie := range cookies {
 		request.AddCookie(cookie)
 	}
-	if csrf := cookies["termx_cloud_operator_csrf"]; csrf != nil {
-		request.Header.Set("X-TermX-CSRF", csrf.Value)
+	if csrf := cookies["muxvia_cloud_operator_csrf"]; csrf != nil {
+		request.Header.Set("X-Muxvia-CSRF", csrf.Value)
 	}
 	return request
 }

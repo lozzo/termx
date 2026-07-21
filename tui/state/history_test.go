@@ -787,7 +787,7 @@ func TestCopyModeAcceptLatestKeepsPseudoTUILeadInContext(t *testing.T) {
 		{Text: "https://github.com/openai/codex/releases/latest", LineID: 8},
 		{Text: "OpenAI Codex", LineID: 9, LiveTail: true},
 		{Text: "model: gpt-5.5 xhigh", LineID: 10, LiveTail: true},
-		{Text: "directory: ~/Documents/workdir/termx", LineID: 11, LiveTail: true},
+		{Text: "directory: ~/Documents/workdir/muxvia", LineID: 11, LiveTail: true},
 		{Text: "permissions: YOLO mode", LineID: 12, LiveTail: true},
 		{Text: "Tip: Use /compact when the conversation gets long.", LineID: 13, LiveTail: true},
 		{Text: "> Improve documentation in @filename", LineID: 14, LiveTail: true},
@@ -1682,11 +1682,11 @@ func TestHistoryStoreReflowSplitsLongCellsAndKeepsLsSpacing(t *testing.T) {
 	lines := []HistoryLogicalLine{{
 		LineID: 10,
 		Cells: []HistoryCell{
-			{Text: "AGENTS.md   go.work.sum   termx-tui", Width: 35},
+			{Text: "AGENTS.md   go.work.sum   muxvia-tui", Width: 35},
 		},
 	}}
 	rows, spans := ReflowHistoryLogicalLines(lines, 12)
-	if got := rowTexts(rows); !reflect.DeepEqual(got, []string{"AGENTS.md   ", "go.work.sum ", "  termx-tui"}) {
+	if got := rowTexts(rows); !reflect.DeepEqual(got, []string{"AGENTS.md   ", "go.work.sum ", "  muxvia-tui"}) {
 		t.Fatalf("reflow should split long cells by display cols without losing ls spacing, got %q", got)
 	}
 	if got := spanRows(spans); !reflect.DeepEqual(got, []spanRow{{id: 10, start: 0, end: 2}}) {

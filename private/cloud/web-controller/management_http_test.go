@@ -124,7 +124,7 @@ func TestManagementAPIUsesAccountCSRFAndDurableCommandProjection(t *testing.T) {
 		t.Fatalf("account relay quota = %d: %s", quotaResponse.Code, quotaResponse.Body.String())
 	}
 	withoutCSRF := productRequest(http.MethodPost, "/api/v1/management/commands", string(body), cookies)
-	withoutCSRF.Header.Del("X-TermX-CSRF")
+	withoutCSRF.Header.Del("X-Muxvia-CSRF")
 	withoutCSRFResponse := httptest.NewRecorder()
 	managementHandler.ServeHTTP(withoutCSRFResponse, withoutCSRF)
 	if withoutCSRFResponse.Code != http.StatusUnauthorized {

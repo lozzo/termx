@@ -10,7 +10,7 @@ const (
 	WorkbenchStorageAppID       = "tui"
 	WorkbenchStorageScopePublic = "public"
 	WorkbenchStorageKeyRoot     = "workbench/root"
-	WorkbenchStorageSchema      = "termx.tui.v3.workbench"
+	WorkbenchStorageSchema      = "muxvia.tui.v3.workbench"
 	WorkbenchStorageSchemaV1    = 1
 	WorkbenchStorageSchemaV2    = 2
 

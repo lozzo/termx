@@ -96,7 +96,7 @@ func newEnrollmentService(config enrollmentServiceConfig) (*enrollmentService, e
 }
 
 func (service *enrollmentService) begin(request *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error) {
-	if request == nil || request.GetOneTimeCode() == "" || len(request.GetDevicePublicKey()) != ed25519.PublicKeySize || request.GetMetadata() == nil || request.GetMetadata().GetDisplayName() == "" || request.GetMetadata().GetPlatform() == "" || request.GetMetadata().GetTermxVersion() == "" {
+	if request == nil || request.GetOneTimeCode() == "" || len(request.GetDevicePublicKey()) != ed25519.PublicKeySize || request.GetMetadata() == nil || request.GetMetadata().GetDisplayName() == "" || request.GetMetadata().GetPlatform() == "" || request.GetMetadata().GetMuxviaVersion() == "" {
 		return nil, errEnrollmentDenied
 	}
 	flowID, err := randomEnrollmentID("enroll", 18)

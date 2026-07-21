@@ -654,7 +654,7 @@ export function RemoteControlApp({
     setScanFlowState('pairing')
     setError(null)
     try {
-	  if (rawValue.trim().startsWith('termx://share?payload=')) {
+	  if (rawValue.trim().startsWith('muxvia://share?payload=')) {
 		if (!externalPairingAdapter?.inspectShare) throw new Error('Endpoint share is unavailable in this client')
 		const preview = await externalPairingAdapter.inspectShare(rawValue)
 		setSharePreview(preview)
@@ -1932,7 +1932,7 @@ function PairSheet({
                     className="mt-1 h-44 w-full resize-none border border-[var(--termx-app-line)] bg-white p-2 font-mono text-xs leading-5 text-zinc-950 placeholder:text-zinc-400 outline-none focus:border-[var(--termx-app-accent)] focus:ring-2 focus:ring-blue-500/25"
                     value={manualScanValue}
                     onChange={(event) => onManualScanValueChange(event.target.value)}
-                    placeholder="termx://pair?payload=..."
+                    placeholder="muxvia://pair?payload=..."
                     spellCheck={false}
                   />
                 </label>

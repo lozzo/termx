@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	operatorSessionCookie = "termx_cloud_operator"
-	operatorCSRFCookie    = "termx_cloud_operator_csrf"
+	operatorSessionCookie = "muxvia_cloud_operator"
+	operatorCSRFCookie    = "muxvia_cloud_operator_csrf"
 )
 
 // OperatorFleetQuery 返回不伪造在线状态的 Hub/Relay attachment 投影。
@@ -217,7 +217,7 @@ func authenticateOperator(r *http.Request, sessions *proofStore, operatorID stri
 
 func operatorMutationAllowed(r *http.Request) bool {
 	cookie, err := r.Cookie(operatorCSRFCookie)
-	return err == nil && sameOrigin(r) && cookie.Value != "" && cookie.Value == r.Header.Get("X-TermX-CSRF")
+	return err == nil && sameOrigin(r) && cookie.Value != "" && cookie.Value == r.Header.Get("X-Muxvia-CSRF")
 }
 
 func requireOperatorMutation(r *http.Request, record proofRecord, now time.Time) error {

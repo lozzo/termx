@@ -333,7 +333,7 @@ func (server *Server) historyStoreDir() (string, error) {
 	server.historyFallbackDirMu.Lock()
 	defer server.historyFallbackDirMu.Unlock()
 	if server.historyFallbackDir == "" {
-		dir, err := os.MkdirTemp("", "termx-linehist-")
+		dir, err := os.MkdirTemp("", "muxvia-linehist-")
 		if err != nil {
 			return "", err
 		}
@@ -963,9 +963,9 @@ func unixListenerFactory(socketPath string) (transport.Listener, error) {
 }
 
 func defaultSocketPath() string {
-	name := fmt.Sprintf("termx-v2-wire%d.sock", wire.Version)
+	name := fmt.Sprintf("muxvia-v2-wire%d.sock", wire.Version)
 	if runtimeDir := os.Getenv("XDG_RUNTIME_DIR"); runtimeDir != "" {
 		return runtimeDir + "/" + name
 	}
-	return fmt.Sprintf("%s/termx-v2-wire%d-%d.sock", os.TempDir(), wire.Version, os.Getuid())
+	return fmt.Sprintf("%s/muxvia-v2-wire%d-%d.sock", os.TempDir(), wire.Version, os.Getuid())
 }

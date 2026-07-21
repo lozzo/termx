@@ -53,7 +53,7 @@ func TestAnswererHandsReliableChannelToAuthorizedHandler(t *testing.T) {
 	select {
 	case <-opened:
 	case <-time.After(10 * time.Second):
-		t.Fatal("termx protocol data channel did not open")
+		t.Fatal("muxvia protocol data channel did not open")
 	}
 	select {
 	case <-handler.called:

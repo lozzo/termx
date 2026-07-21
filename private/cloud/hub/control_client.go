@@ -26,7 +26,7 @@ const (
 	hubControlReportPath    = "/v1/hub/control/report"
 	hubControlProtoMedia    = "application/x-protobuf"
 	hubControlMaxFrame      = 4 << 20
-	hubChallengeDomain      = "termx-hub-control-challenge-v1\x00"
+	hubChallengeDomain      = "muxvia-hub-control-challenge-v1\x00"
 )
 
 // ControlClientConfig 固定 Edge Hub control identity、Controller internal origin 与纯内存 projection owner。
@@ -157,7 +157,7 @@ func (client *ControlClient) runConnection(ctx context.Context) error {
 		return err
 	}
 	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK || response.Header.Get("Content-Type") != "application/x-termx-cloud-stream" {
+	if response.StatusCode != http.StatusOK || response.Header.Get("Content-Type") != "application/x-muxvia-cloud-stream" {
 		return fmt.Errorf("Hub control open failed with status %d", response.StatusCode)
 	}
 	var generation, controllerSequence uint64

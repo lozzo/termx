@@ -415,6 +415,6 @@ func cloneDeviceMetadata(metadata *cloudpb.DeviceMetadata) *cloudpb.DeviceMetada
 	}
 	return &cloudpb.DeviceMetadata{
 		DisplayName: metadata.GetDisplayName(), Hostname: metadata.GetHostname(), Platform: metadata.GetPlatform(),
-		TermxVersion: metadata.GetTermxVersion(), SignalingVersions: append([]uint32(nil), metadata.GetSignalingVersions()...),
+		MuxviaVersion: metadata.GetMuxviaVersion(), SignalingVersions: append([]uint32(nil), metadata.GetSignalingVersions()...),
 	}
 }

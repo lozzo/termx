@@ -1,9 +1,9 @@
 gradle.projectsEvaluated {
     def appProject = gradle.rootProject.findProject(':app')
     if (appProject == null) {
-        throw new GradleException('TermX Android app project was not found')
+        throw new GradleException('Muxvia Android app project was not found')
     }
-    appProject.tasks.register('termxResolvedRuntimeDependencies') {
+    appProject.tasks.register('muxviaResolvedRuntimeDependencies') {
         doLast {
             def configuration = appProject.configurations.getByName('releaseRuntimeClasspath')
             def coordinates = configuration.incoming.resolutionResult.allComponents
@@ -13,7 +13,7 @@ gradle.projectsEvaluated {
                 .toSet()
                 .toList()
                 .sort()
-            coordinates.each { println "TERMX_DEPENDENCY ${it}" }
+            coordinates.each { println "MUXVIA_DEPENDENCY ${it}" }
         }
     }
 }

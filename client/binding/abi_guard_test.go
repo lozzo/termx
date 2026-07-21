@@ -13,31 +13,31 @@ import (
 )
 
 var expectedCSymbols = []string{
-	"termx_client_abi_version", "termx_engine_create", "termx_engine_open_session", "termx_engine_execute",
-	"termx_engine_open_resource_stream", "termx_engine_send_resource_stream_frame", "termx_engine_close_resource_stream",
-	"termx_engine_command", "termx_engine_next_event",
-	"termx_platform_next_request", "termx_platform_complete", "termx_engine_cancel", "termx_engine_close_session", "termx_engine_release",
-	"termx_engine_close", "termx_buffer_free",
+	"muxvia_client_abi_version", "muxvia_engine_create", "muxvia_engine_open_session", "muxvia_engine_execute",
+	"muxvia_engine_open_resource_stream", "muxvia_engine_send_resource_stream_frame", "muxvia_engine_close_resource_stream",
+	"muxvia_engine_command", "muxvia_engine_next_event",
+	"muxvia_platform_next_request", "muxvia_platform_complete", "muxvia_engine_cancel", "muxvia_engine_close_session", "muxvia_engine_release",
+	"muxvia_engine_close", "muxvia_buffer_free",
 }
 
 var expectedWASMExports = []string{
-	"termxClientAbiVersion", "termxEngineCreate", "termxEngineOpenSession", "termxEngineExecute",
-	"termxEngineOpenResourceStream", "termxEngineSendResourceStreamFrame", "termxEngineCloseResourceStream",
-	"termxEngineCommand", "termxEngineNextEvent",
-	"termxPlatformNextRequest", "termxPlatformComplete", "termxPlatformEvent", "termxEngineCancel", "termxEngineCloseSession", "termxEngineRelease",
-	"termxEngineClose", "termxBufferFree",
+	"muxviaClientAbiVersion", "muxviaEngineCreate", "muxviaEngineOpenSession", "muxviaEngineExecute",
+	"muxviaEngineOpenResourceStream", "muxviaEngineSendResourceStreamFrame", "muxviaEngineCloseResourceStream",
+	"muxviaEngineCommand", "muxviaEngineNextEvent",
+	"muxviaPlatformNextRequest", "muxviaPlatformComplete", "muxviaPlatformEvent", "muxviaEngineCancel", "muxviaEngineCloseSession", "muxviaEngineRelease",
+	"muxviaEngineClose", "muxviaBufferFree",
 }
 
 func TestBindingABIBaselinesStayGeneric(t *testing.T) {
-	header, err := os.ReadFile("cabi/termx_client.h")
+	header, err := os.ReadFile("cabi/muxvia_client.h")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(header), "TERMX_CLIENT_ABI_VERSION 3u") || ABIVersion != 3 {
+	if !strings.Contains(string(header), "MUXVIA_CLIENT_ABI_VERSION 3u") || ABIVersion != 3 {
 		t.Fatalf("ABI version mismatch header=%q go=%d", header, ABIVersion)
 	}
-	re := regexp.MustCompile(`(?m)^termx_status_v1 (termx_[a-z0-9_]+)\(`)
-	symbols := []string{"termx_client_abi_version"}
+	re := regexp.MustCompile(`(?m)^muxvia_status_v1 (muxvia_[a-z0-9_]+)\(`)
+	symbols := []string{"muxvia_client_abi_version"}
 	for _, match := range re.FindAllStringSubmatch(string(header), -1) {
 		symbols = append(symbols, match[1])
 	}
@@ -71,7 +71,7 @@ func TestBindingABIBaselinesStayGeneric(t *testing.T) {
 func TestBindingCoreDoesNotImportPlatformOrDomainOwners(t *testing.T) {
 	forbidden := []string{
 		"C", "unsafe", "syscall/js", "encoding/json", "encoding/base64",
-		"github.com/muxvia/muxvia/core", "github.com/muxvia/muxvia/tui", "github.com/muxvia/muxvia/cmd/termx",
+		"github.com/muxvia/muxvia/core", "github.com/muxvia/muxvia/tui", "github.com/muxvia/muxvia/cmd/muxvia",
 		"github.com/muxvia/muxvia/private", "github.com/muxvia/muxvia/internal/protocol",
 		"github.com/muxvia/muxvia/remote", "github.com/pion/webrtc",
 	}

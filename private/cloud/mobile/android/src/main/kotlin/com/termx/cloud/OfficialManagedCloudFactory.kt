@@ -43,11 +43,11 @@ internal class OfficialManagedCloudAdapter(private val gateway: OfficialCloudGat
  * 只有显式 loopback 或 public HTTP development profile 启用 dev contract；其他 Official 构建继续 fail closed。
  */
 internal class OfficialCloudGateway(context: Context) {
-    private val development = if (BuildConfig.TERMX_DEV_CLOUD_ENABLED) {
+    private val development = if (BuildConfig.MUXVIA_DEV_CLOUD_ENABLED) {
         DevCloudMobileGateway(
-            BuildConfig.TERMX_DEV_CONTROL_URL,
-            BuildConfig.TERMX_DEV_HUB_URL,
-            allowPublicHTTP = BuildConfig.TERMX_PUBLIC_HTTP_STAGING_ENABLED,
+            BuildConfig.MUXVIA_DEV_CONTROL_URL,
+            BuildConfig.MUXVIA_DEV_HUB_URL,
+            allowPublicHTTP = BuildConfig.MUXVIA_PUBLIC_HTTP_STAGING_ENABLED,
             sessionStore = AndroidCloudSessionStore(context),
         )
     } else {

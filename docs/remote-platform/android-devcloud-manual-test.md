@@ -46,7 +46,7 @@ make cloud-dev
 在终端 B 启动 daemon Companion：
 
 ```bash
-go run ./private/cloud/companion/cmd/termx-cloud serve \
+go run ./private/cloud/companion/cmd/muxvia-cloud serve \
   --socket /tmp/termx-cloud-daemon.sock \
   --profile daemon-dev \
   --dev-manifest .artifacts/cloud-dev/runtime.json
@@ -198,7 +198,7 @@ adb shell monkey -p com.termx.app -c android.intent.category.LAUNCHER 1
 - 恢复：2 秒和 10 秒后台后都经过 verifying 回到 connected，machine identity 未变化，并分别继续输入 `resume-2s-ok`、`resume-10s-ok`。
 - Hub 局部失败：移除 `tcp:41002` 后新连接停在 signaling 并进入 failed，没有 WebRTC connected，也没有 local、SSH、旧 Hub 或 Web Controller fallback；恢复 reverse 后同一 endpoint 重新连接成功。
 - 日志：对完整 logcat 扫描未发现测试输入、`termx-grant-v1`、账号 token、Hub ticket 或 CapabilityGrant；terminal diagnostics 只记录长度、revision 和帧统计。
-- 准入：当时的 `remote` 全量测试、clean-env `cmd/termx` 测试、客户端测试和 Android 构建均通过；当前准入以 `workflow.md` 为准。
+- 准入：当时的 `remote` 全量测试、clean-env `cmd/muxvia` 测试、客户端测试和 Android 构建均通过；当前准入以 `workflow.md` 为准。
 
 ## 9. CLOUD011 Control Plane 中断验收
 

@@ -42,7 +42,7 @@ func TestProductAPIUsesProtoCookieCSRFAndPersistentCommerce(t *testing.T) {
 		t.Fatalf("register = %d: %s", registerResponse.Code, registerResponse.Body.String())
 	}
 	cookies := cookieMap(registerResponse.Result().Cookies())
-	if cookies["termx_cloud_access"] == nil || cookies["termx_cloud_refresh"] == nil || cookies["termx_cloud_csrf"] == nil {
+	if cookies["muxvia_cloud_access"] == nil || cookies["muxvia_cloud_refresh"] == nil || cookies["muxvia_cloud_csrf"] == nil {
 		t.Fatalf("register cookies = %#v", cookies)
 	}
 	duplicate := productRequest(http.MethodPost, "/api/v1/account/register", `{"email":"owner@example.com","password":"secure-password"}`, nil)
@@ -60,7 +60,7 @@ func TestProductAPIUsesProtoCookieCSRFAndPersistentCommerce(t *testing.T) {
 	}
 
 	withoutCSRF := productRequest(http.MethodPost, "/api/v1/checkout", `{"plan_id":"pro","requested_transition":"SUBSCRIPTION_TRANSITION_KIND_UPGRADE"}`, cookies)
-	withoutCSRF.Header.Del("X-TermX-CSRF")
+	withoutCSRF.Header.Del("X-Muxvia-CSRF")
 	withoutCSRFResponse := httptest.NewRecorder()
 	handler.ServeHTTP(withoutCSRFResponse, withoutCSRF)
 	if withoutCSRFResponse.Code != http.StatusUnauthorized {
@@ -104,10 +104,10 @@ func TestProductAPIUsesProtoCookieCSRFAndPersistentCommerce(t *testing.T) {
 		t.Fatalf("refresh = %d: %s", refreshResponse.Code, refreshResponse.Body.String())
 	}
 	nextCookies := cookieMap(refreshResponse.Result().Cookies())
-	if nextCookies["termx_cloud_access"] == nil || nextCookies["termx_cloud_refresh"] == nil {
+	if nextCookies["muxvia_cloud_access"] == nil || nextCookies["muxvia_cloud_refresh"] == nil {
 		t.Fatalf("rotated cookies = %#v", nextCookies)
 	}
-	nextCookies["termx_cloud_csrf"] = cookies["termx_cloud_csrf"]
+	nextCookies["muxvia_cloud_csrf"] = cookies["muxvia_cloud_csrf"]
 	logout := productRequest(http.MethodPost, "/api/v1/account/logout", "", nextCookies)
 	logoutResponse := httptest.NewRecorder()
 	handler.ServeHTTP(logoutResponse, logout)
@@ -149,8 +149,8 @@ func productRequest(method, path, body string, cookies map[string]*http.Cookie) 
 	for _, cookie := range cookies {
 		request.AddCookie(cookie)
 	}
-	if csrf := cookies["termx_cloud_csrf"]; csrf != nil {
-		request.Header.Set("X-TermX-CSRF", csrf.Value)
+	if csrf := cookies["muxvia_cloud_csrf"]; csrf != nil {
+		request.Header.Set("X-Muxvia-CSRF", csrf.Value)
 	}
 	return request
 }

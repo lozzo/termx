@@ -23,7 +23,7 @@ import (
 
 func TestMobileActivationRequiresWebApprovalAndIsSingleUse(t *testing.T) {
 	service, commerce, topology, now := newMobileActivationTestService(t)
-	registered, err := commerce.Register(context.Background(), &cloudpb.RegisterAccountRequest{Email: "mobile@termx.invalid", Password: "password-123"})
+	registered, err := commerce.Register(context.Background(), &cloudpb.RegisterAccountRequest{Email: "mobile@muxvia.invalid", Password: "password-123"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestMobileActivationRequiresWebApprovalAndIsSingleUse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if activation.GetState() != cloudpb.MobileActivationState_MOBILE_ACTIVATION_STATE_WAITING_FOR_DEVICE || activation.GetQrPayload() != "termx-cloud-activate:v1:"+activation.GetUserCode() {
+	if activation.GetState() != cloudpb.MobileActivationState_MOBILE_ACTIVATION_STATE_WAITING_FOR_DEVICE || activation.GetQrPayload() != "muxvia-cloud-activate:v1:"+activation.GetUserCode() {
 		t.Fatalf("unexpected activation: %+v", activation)
 	}
 	if len(activation.GetUserCode()) != 11 || activation.GetUserCode()[5] != '-' {
@@ -46,7 +46,7 @@ func TestMobileActivationRequiresWebApprovalAndIsSingleUse(t *testing.T) {
 	if _, err := service.ApproveMobileActivation(context.Background(), account.GetAccountId(), activation.GetUserCode()); !errors.Is(err, cloudcommerce.ErrNotFound) {
 		t.Fatalf("approve before claim = %v", err)
 	}
-	flow, err := service.claim(&cloudpb.ClaimMobileActivationRequest{UserCode: activation.GetUserCode(), ClientMetadata: &cloudpb.DeviceMetadata{DisplayName: "Android phone", Platform: "android/arm64", TermxVersion: "test"}})
+	flow, err := service.claim(&cloudpb.ClaimMobileActivationRequest{UserCode: activation.GetUserCode(), ClientMetadata: &cloudpb.DeviceMetadata{DisplayName: "Android phone", Platform: "android/arm64", MuxviaVersion: "test"}})
 	if err != nil {
 		t.Fatal(err)
 	}

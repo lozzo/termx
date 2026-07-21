@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 ARTIFACT_DIR := $(CURDIR)/.artifacts
-TERMX_BIN := $(ARTIFACT_DIR)/bin/termx
+MUXVIA_BIN := $(ARTIFACT_DIR)/bin/muxvia
 ANDROID_DIR := $(CURDIR)/clients/mobile/android
 ANDROID_ARTIFACT_DIR := $(ARTIFACT_DIR)/android
 PRIVATE_MODULES := \
@@ -22,8 +22,8 @@ PRIVATE_MODULES := \
 help:
 	@printf '%s\n' \
 		'Targets:' \
-		'  make build         Build termx into .artifacts/bin/' \
-		'  make build-cloud-test  Build self-contained termx + staging Companion test suite' \
+		'  make build         Build muxvia into .artifacts/bin/' \
+		'  make build-cloud-test  Build self-contained muxvia + staging Companion test suite' \
 		'  make build-web-controller  Build the React static Web Controller' \
 		'  make build-web-controller-linux  Alias for the platform-independent static Web Controller build' \
 		'  make cloud-dev     Start the explicit single-region dev cloud' \
@@ -31,14 +31,14 @@ help:
 		'  make test-private  Test each private cloud Go module when present' \
 		'  make test-cloud-controller-edge  Test one Controller plus two Edge processes' \
 		'  make test-clients  Generate, test, typecheck, and build both clients' \
-		'  make test-android  Build/test the standard and dev-cloud TermX APK' \
+		'  make test-android  Build/test the standard and dev-cloud Muxvia APK' \
 		'  make test-all      Run all repository test gates sequentially' \
 		'  make doctor        Check toolchain, generated code, and repository layout' \
 		'  make clean         Remove known generated build outputs'
 
 build:
-	mkdir -p "$(dir $(TERMX_BIN))"
-	GOWORK=off go build -o "$(TERMX_BIN)" ./cmd/termx
+	mkdir -p "$(dir $(MUXVIA_BIN))"
+	GOWORK=off go build -o "$(MUXVIA_BIN)" ./cmd/muxvia
 
 build-cloud-test:
 	scripts/build_cloud_test.sh
@@ -55,10 +55,10 @@ build-web-controller-linux:
 
 cloud-dev:
 	mkdir -p "$(ARTIFACT_DIR)/cloud-dev"
-	go run ./private/cloud/devcloud/cmd/termx-cloud-dev --manifest "$(ARTIFACT_DIR)/cloud-dev/runtime.json"
+	go run ./private/cloud/devcloud/cmd/muxvia-cloud-dev --manifest "$(ARTIFACT_DIR)/cloud-dev/runtime.json"
 
 test:
-	scripts/with-clean-termx-env.sh env GOWORK=off go test ./... -count=1
+	scripts/with-clean-muxvia-env.sh env GOWORK=off go test ./... -count=1
 
 test-private:
 	@if [[ ! -d "$(CURDIR)/private/cloud" ]]; then \
@@ -67,12 +67,12 @@ test-private:
 		set -e; \
 		for module in $(PRIVATE_MODULES); do \
 			printf '%s\n' "==> $$module"; \
-			(cd "$$module" && "$(CURDIR)/scripts/with-clean-termx-env.sh" env GOWORK=off go test ./... -count=1); \
+			(cd "$$module" && "$(CURDIR)/scripts/with-clean-muxvia-env.sh" env GOWORK=off go test ./... -count=1); \
 		done; \
 	fi
 
 test-cloud-controller-edge:
-	cd private/cloud/devcloud && "$(CURDIR)/scripts/with-clean-termx-env.sh" env GOWORK=off go test ./cmd/termx-cloud-dev -run TestSupervisorStartsControllerAndTwoIndependentEdges -count=1
+	cd private/cloud/devcloud && "$(CURDIR)/scripts/with-clean-muxvia-env.sh" env GOWORK=off go test ./cmd/muxvia-cloud-dev -run TestSupervisorStartsControllerAndTwoIndependentEdges -count=1
 
 test-clients:
 	node scripts/client-workspace-guard.mjs
@@ -86,7 +86,7 @@ test-android:
 	mkdir -p "$(ANDROID_ARTIFACT_DIR)"
 	cd "$(ANDROID_DIR)" && ./gradlew clean testDebugUnitTest assembleDebug
 	cp "$(ANDROID_DIR)/app/build/outputs/apk/debug/app-debug.apk" "$(ANDROID_ARTIFACT_DIR)/app-debug.apk"
-	cd "$(ANDROID_DIR)" && ./gradlew -PtermxDevCloud=true clean testDebugUnitTest assembleDebug
+	cd "$(ANDROID_DIR)" && ./gradlew -PmuxviaDevCloud=true clean testDebugUnitTest assembleDebug
 	cp "$(ANDROID_DIR)/app/build/outputs/apk/debug/app-debug.apk" "$(ANDROID_ARTIFACT_DIR)/app-devcloud-debug.apk"
 	scripts/verify-android-apk-boundary.sh "$(ANDROID_ARTIFACT_DIR)/app-debug.apk" "$(ANDROID_ARTIFACT_DIR)/app-devcloud-debug.apk"
 

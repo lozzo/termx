@@ -28,7 +28,7 @@ type Daemon struct {
 func StartDaemon(t testing.TB, ctx context.Context, socketName string) *Daemon {
 	t.Helper()
 	if socketName == "" {
-		socketName = "termx.sock"
+		socketName = "muxvia.sock"
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	socketPath := filepath.Join(t.TempDir(), socketName)

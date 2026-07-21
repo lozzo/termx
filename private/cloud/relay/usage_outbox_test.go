@@ -44,7 +44,7 @@ func TestFlushUsageOutboxPersistsSameSecondTrafficBeforeClearingCounters(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "termx-relay", "source"); !ok {
+	if _, ok := fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "muxvia-relay", "source"); !ok {
 		t.Fatal("TURN auth failed")
 	}
 	if err := fixture.authority.ConfirmAllocation("source", "allocation", activation.ClientCredential.Username); err != nil {

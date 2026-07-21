@@ -1,4 +1,4 @@
-export interface TermxWasmResult {
+export interface MuxviaWasmResult {
   status: number
   handle?: number | undefined
   payload?: Uint8Array | undefined
@@ -14,23 +14,23 @@ interface GoConstructor {
   new(): GoRuntime
 }
 
-interface TermxWasmExports {
-  termxClientAbiVersion(): number
-  termxEngineCreate(): TermxWasmResult
-  termxEngineOpenSession(engine: number, payload: Uint8Array): TermxWasmResult
-  termxEngineExecute(engine: number, session: number, payload: Uint8Array): TermxWasmResult
-  termxEngineOpenResourceStream(engine: number, session: number, payload: Uint8Array): TermxWasmResult
-  termxEngineSendResourceStreamFrame(engine: number, stream: number, payload: Uint8Array): Promise<TermxWasmResult>
-  termxEngineCloseResourceStream(engine: number, stream: number): Promise<TermxWasmResult>
-  termxEngineCommand(engine: number, payload: Uint8Array): TermxWasmResult
-  termxEngineNextEvent(engine: number): Promise<TermxWasmResult>
-  termxPlatformNextRequest(engine: number): Promise<TermxWasmResult>
-  termxPlatformComplete(engine: number, payload: Uint8Array): TermxWasmResult
-  termxPlatformEvent(engine: number, payload: Uint8Array): Promise<TermxWasmResult>
-  termxEngineCancel(engine: number, operation: number): TermxWasmResult
-  termxEngineCloseSession(engine: number, session: number): Promise<TermxWasmResult>
-  termxEngineRelease(engine: number, handle: number): TermxWasmResult
-  termxEngineClose(engine: number): Promise<TermxWasmResult>
+interface MuxviaWasmExports {
+  muxviaClientAbiVersion(): number
+  muxviaEngineCreate(): MuxviaWasmResult
+  muxviaEngineOpenSession(engine: number, payload: Uint8Array): MuxviaWasmResult
+  muxviaEngineExecute(engine: number, session: number, payload: Uint8Array): MuxviaWasmResult
+  muxviaEngineOpenResourceStream(engine: number, session: number, payload: Uint8Array): MuxviaWasmResult
+  muxviaEngineSendResourceStreamFrame(engine: number, stream: number, payload: Uint8Array): Promise<MuxviaWasmResult>
+  muxviaEngineCloseResourceStream(engine: number, stream: number): Promise<MuxviaWasmResult>
+  muxviaEngineCommand(engine: number, payload: Uint8Array): MuxviaWasmResult
+  muxviaEngineNextEvent(engine: number): Promise<MuxviaWasmResult>
+  muxviaPlatformNextRequest(engine: number): Promise<MuxviaWasmResult>
+  muxviaPlatformComplete(engine: number, payload: Uint8Array): MuxviaWasmResult
+  muxviaPlatformEvent(engine: number, payload: Uint8Array): Promise<MuxviaWasmResult>
+  muxviaEngineCancel(engine: number, operation: number): MuxviaWasmResult
+  muxviaEngineCloseSession(engine: number, session: number): Promise<MuxviaWasmResult>
+  muxviaEngineRelease(engine: number, handle: number): MuxviaWasmResult
+  muxviaEngineClose(engine: number): Promise<MuxviaWasmResult>
 }
 
 export interface WasmPlatformDispatcher {
@@ -38,111 +38,111 @@ export interface WasmPlatformDispatcher {
   close(): Promise<void>
 }
 
-export interface LoadTermxWasmOptions {
+export interface LoadMuxviaWasmOptions {
   wasmUrl: string
   wasmExecUrl: string
 }
 
-/** TermxWasmRuntime owns one WASM engine generation and its serialized platform pump. */
-export class TermxWasmRuntime {
+/** MuxviaWasmRuntime owns one WASM engine generation and its serialized platform pump. */
+export class MuxviaWasmRuntime {
   private closed = false
   private platformPump: Promise<void> | null = null
 
   private constructor(
-    private readonly exports: TermxWasmExports,
+    private readonly exports: MuxviaWasmExports,
     readonly engineHandle: number,
     private readonly platform: WasmPlatformDispatcher,
   ) {}
 
-  static async create(exports: TermxWasmExports, platform: WasmPlatformDispatcher): Promise<TermxWasmRuntime> {
-    if (exports.termxClientAbiVersion() !== 3) throw new Error('unsupported TermX WASM binding ABI')
-    const created = requireWasmResult(exports.termxEngineCreate())
+  static async create(exports: MuxviaWasmExports, platform: WasmPlatformDispatcher): Promise<MuxviaWasmRuntime> {
+    if (exports.muxviaClientAbiVersion() !== 3) throw new Error('unsupported Muxvia WASM binding ABI')
+    const created = requireWasmResult(exports.muxviaEngineCreate())
     const engine = requireHandle(created)
-    const runtime = new TermxWasmRuntime(exports, engine, platform)
+    const runtime = new MuxviaWasmRuntime(exports, engine, platform)
     runtime.platformPump = runtime.runPlatformPump()
     return runtime
   }
 
   openSession(payload: Uint8Array): number {
-    return requireHandle(requireWasmResult(this.exports.termxEngineOpenSession(this.engineHandle, payload)))
+    return requireHandle(requireWasmResult(this.exports.muxviaEngineOpenSession(this.engineHandle, payload)))
   }
 
   execute(session: number, payload: Uint8Array): number {
-    return requireHandle(requireWasmResult(this.exports.termxEngineExecute(this.engineHandle, session, payload)))
+    return requireHandle(requireWasmResult(this.exports.muxviaEngineExecute(this.engineHandle, session, payload)))
   }
 
   openResourceStream(session: number, payload: Uint8Array): number {
-    return requireHandle(requireWasmResult(this.exports.termxEngineOpenResourceStream(this.engineHandle, session, payload)))
+    return requireHandle(requireWasmResult(this.exports.muxviaEngineOpenResourceStream(this.engineHandle, session, payload)))
   }
 
   async sendResourceStreamFrame(stream: number, payload: Uint8Array): Promise<void> {
-    requireWasmResult(await this.exports.termxEngineSendResourceStreamFrame(this.engineHandle, stream, payload))
+    requireWasmResult(await this.exports.muxviaEngineSendResourceStreamFrame(this.engineHandle, stream, payload))
   }
 
   async closeResourceStream(stream: number): Promise<void> {
-    requireWasmResult(await this.exports.termxEngineCloseResourceStream(this.engineHandle, stream))
+    requireWasmResult(await this.exports.muxviaEngineCloseResourceStream(this.engineHandle, stream))
   }
 
   engineCommand(payload: Uint8Array): number {
-    return requireHandle(requireWasmResult(this.exports.termxEngineCommand(this.engineHandle, payload)))
+    return requireHandle(requireWasmResult(this.exports.muxviaEngineCommand(this.engineHandle, payload)))
   }
 
   async nextEvent(): Promise<Uint8Array> {
-    return requirePayload(requireWasmResult(await this.exports.termxEngineNextEvent(this.engineHandle)))
+    return requirePayload(requireWasmResult(await this.exports.muxviaEngineNextEvent(this.engineHandle)))
   }
 
   async platformEvent(payload: Uint8Array): Promise<void> {
-    requireWasmResult(await this.exports.termxPlatformEvent(this.engineHandle, payload))
+    requireWasmResult(await this.exports.muxviaPlatformEvent(this.engineHandle, payload))
   }
 
   cancel(operation: number): void {
-    requireWasmResult(this.exports.termxEngineCancel(this.engineHandle, operation))
+    requireWasmResult(this.exports.muxviaEngineCancel(this.engineHandle, operation))
   }
 
   async closeSession(session: number): Promise<void> {
-    requireWasmResult(await this.exports.termxEngineCloseSession(this.engineHandle, session))
+    requireWasmResult(await this.exports.muxviaEngineCloseSession(this.engineHandle, session))
   }
 
   release(handle: number): void {
-    requireWasmResult(this.exports.termxEngineRelease(this.engineHandle, handle))
+    requireWasmResult(this.exports.muxviaEngineRelease(this.engineHandle, handle))
   }
 
   async close(): Promise<void> {
     if (this.closed) return
     this.closed = true
-    await this.exports.termxEngineClose(this.engineHandle).then(requireWasmResult)
+    await this.exports.muxviaEngineClose(this.engineHandle).then(requireWasmResult)
     await this.platform.close()
     await this.platformPump?.catch(() => undefined)
   }
 
   private async runPlatformPump(): Promise<void> {
     while (!this.closed) {
-      const next = await this.exports.termxPlatformNextRequest(this.engineHandle)
+      const next = await this.exports.muxviaPlatformNextRequest(this.engineHandle)
       if (next.status !== 0) {
         if (this.closed || next.status === 2 || next.status === 3) return
-        throw new Error(next.error || `TermX WASM platform request failed with status ${next.status}`)
+        throw new Error(next.error || `Muxvia WASM platform request failed with status ${next.status}`)
       }
       const response = await this.platform.handlePlatformRequest(requirePayload(next))
-      requireWasmResult(this.exports.termxPlatformComplete(this.engineHandle, response))
+      requireWasmResult(this.exports.muxviaPlatformComplete(this.engineHandle, response))
     }
   }
 }
 
 let wasmExecPromise: Promise<void> | null = null
 
-/** loadTermxWasmExports loads Go's wasm_exec runtime and waits for the stable TermX exports. */
-export async function loadTermxWasmExports(options: LoadTermxWasmOptions): Promise<TermxWasmExports> {
+/** loadMuxviaWasmExports loads Go's wasm_exec runtime and waits for the stable Muxvia exports. */
+export async function loadMuxviaWasmExports(options: LoadMuxviaWasmOptions): Promise<MuxviaWasmExports> {
   await loadWasmExec(options.wasmExecUrl)
   const Go = (globalThis as typeof globalThis & { Go?: GoConstructor }).Go
   if (!Go) throw new Error('Go WASM runtime did not register global Go')
   const runtime = new Go()
   const response = await fetch(options.wasmUrl)
-  if (!response.ok) throw new Error(`TermX WASM fetch failed: ${response.status}`)
+  if (!response.ok) throw new Error(`Muxvia WASM fetch failed: ${response.status}`)
   const bytes = await response.arrayBuffer()
   const instantiated = await WebAssembly.instantiate(bytes, runtime.importObject)
   void runtime.run(instantiated.instance)
   await waitForExports()
-  return globalThis as typeof globalThis & TermxWasmExports
+  return globalThis as typeof globalThis & MuxviaWasmExports
 }
 
 async function loadWasmExec(url: string): Promise<void> {
@@ -160,24 +160,24 @@ async function loadWasmExec(url: string): Promise<void> {
 
 async function waitForExports(): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (typeof (globalThis as Partial<TermxWasmExports>).termxEngineCreate === 'function') return
+    if (typeof (globalThis as Partial<MuxviaWasmExports>).muxviaEngineCreate === 'function') return
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
-  throw new Error('TermX WASM exports did not initialize')
+  throw new Error('Muxvia WASM exports did not initialize')
 }
 
-function requireWasmResult(result: TermxWasmResult): TermxWasmResult {
-  if (result.status !== 0) throw new Error(result.error || `TermX WASM binding failed with status ${result.status}`)
+function requireWasmResult(result: MuxviaWasmResult): MuxviaWasmResult {
+  if (result.status !== 0) throw new Error(result.error || `Muxvia WASM binding failed with status ${result.status}`)
   return result
 }
 
-function requireHandle(result: TermxWasmResult): number {
+function requireHandle(result: MuxviaWasmResult): number {
   const handle = result.handle
-  if (!Number.isSafeInteger(handle) || (handle ?? 0) <= 0) throw new Error('TermX WASM binding returned an invalid handle')
+  if (!Number.isSafeInteger(handle) || (handle ?? 0) <= 0) throw new Error('Muxvia WASM binding returned an invalid handle')
   return handle as number
 }
 
-function requirePayload(result: TermxWasmResult): Uint8Array {
-  if (!(result.payload instanceof Uint8Array)) throw new Error('TermX WASM binding returned no binary payload')
+function requirePayload(result: MuxviaWasmResult): Uint8Array {
+  if (!(result.payload instanceof Uint8Array)) throw new Error('Muxvia WASM binding returned no binary payload')
   return result.payload.slice()
 }

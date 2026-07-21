@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	headerTabTemplateEscapedLeftBracket  = "\x00termx-header-tab-left-bracket\x00"
-	headerTabTemplateEscapedRightBracket = "\x00termx-header-tab-right-bracket\x00"
+	headerTabTemplateEscapedLeftBracket  = "\x00muxvia-header-tab-left-bracket\x00"
+	headerTabTemplateEscapedRightBracket = "\x00muxvia-header-tab-right-bracket\x00"
 )
 
 type headerTabTemplateContext struct {
@@ -129,7 +129,7 @@ func headerTabTemplateSegments(format string, ctx headerTabTemplateContext) []ba
 func headerWorkspaceTemplateSegments(format string, workspace string) []barSegment {
 	workspace = strings.TrimSpace(workspace)
 	if workspace == "" {
-		workspace = "termx"
+		workspace = "muxvia"
 	}
 	return headerTabTemplateSegments(format, headerTabTemplateContext{
 		Title:        workspace,

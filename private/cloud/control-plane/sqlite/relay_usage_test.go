@@ -28,7 +28,7 @@ func TestRelayUsageJournalSettlesReservationIdempotentlyAcrossRestart(t *testing
 		t.Fatal(err)
 	}
 	leaseSigner, _ := servicecredential.NewSigner("lease-key", ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x11}, ed25519.SeedSize)), now.Add(-time.Hour), now.Add(time.Hour))
-	leaseIssuer, _ := servicecredential.NewRelayLeaseIssuer("termx-cloud-controller-relay", leaseSigner)
+	leaseIssuer, _ := servicecredential.NewRelayLeaseIssuer("muxvia-cloud-controller-relay", leaseSigner)
 	lease, claims, err := leaseIssuer.Issue(servicecredential.RelayLeaseRequest{LeaseID: "lease-1", AudienceRelayPool: "pool-local-1", AccountID: "account-1", ManagedSessionID: "managed-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1", Region: "local-1", PathKind: servicecredential.RelayPathSingle, TTL: 5 * time.Minute, MaxBytes: 600, MaxBitrateKbps: 1_000, MaxConcurrency: 2, CredentialBindingID: "binding-relay-1"}, now)
 	if err != nil {
 		t.Fatal(err)

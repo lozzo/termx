@@ -22,13 +22,13 @@ import (
 // 路径只由受信任的本地平台规则决定，不能来自 Hub、endpoint 配置或下载 manifest。
 func DefaultEndpoint() string {
 	if runtimeDir := strings.TrimSpace(os.Getenv("XDG_RUNTIME_DIR")); runtimeDir != "" && filepath.IsAbs(runtimeDir) {
-		return filepath.Join(runtimeDir, "termx", "cloud-companion.sock")
+		return filepath.Join(runtimeDir, "muxvia", "cloud-companion.sock")
 	}
 	cacheDir, err := os.UserCacheDir()
 	if err == nil && filepath.IsAbs(cacheDir) {
-		return filepath.Join(cacheDir, "termx", "run", "cloud-companion.sock")
+		return filepath.Join(cacheDir, "muxvia", "run", "cloud-companion.sock")
 	}
-	return filepath.Join(os.TempDir(), "termx-"+strconv.Itoa(os.Getuid()), "cloud-companion.sock")
+	return filepath.Join(os.TempDir(), "muxvia-"+strconv.Itoa(os.Getuid()), "cloud-companion.sock")
 }
 
 // Listen 创建 owner-only 的固定 Cloud Companion Unix socket listener。

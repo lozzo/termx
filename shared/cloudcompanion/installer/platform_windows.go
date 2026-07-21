@@ -12,14 +12,14 @@ import (
 // DefaultRootDir 返回当前 Windows user-scoped LocalAppData 下的 Companion version root。
 func DefaultRootDir() string {
 	if localAppData := os.Getenv("LOCALAPPDATA"); filepath.IsAbs(localAppData) {
-		return filepath.Join(localAppData, "TermX", "CloudCompanion")
+		return filepath.Join(localAppData, "Muxvia", "CloudCompanion")
 	}
 	directory, _ := os.UserCacheDir()
-	return filepath.Join(directory, "TermX", "CloudCompanion")
+	return filepath.Join(directory, "Muxvia", "CloudCompanion")
 }
 
 // ExecutableName 返回 Windows archive 中唯一允许的 Companion executable 名称。
-func ExecutableName() string { return "termx-cloud.exe" }
+func ExecutableName() string { return "muxvia-cloud.exe" }
 
 func trustedFileOwner(path string, _ os.FileInfo) bool {
 	descriptor, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)

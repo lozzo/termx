@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit controlled terminal output for TermX live -> copy/history smoke tests."""
+"""Emit controlled terminal output for Muxvia live -> copy/history smoke tests."""
 
 from __future__ import annotations
 

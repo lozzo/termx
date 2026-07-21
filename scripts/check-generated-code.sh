@@ -14,7 +14,7 @@ if ! command -v protoc-gen-go >/dev/null 2>&1; then
   exit 1
 fi
 
-tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/termx-generated-check.XXXXXX")"
+tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/muxvia-generated-check.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
 mkdir -p "$tmp_dir/go" "$tmp_dir/api" "$tmp_dir/web" "$tmp_dir/runtime" "$tmp_dir/wire" "$tmp_dir/descriptor"
 

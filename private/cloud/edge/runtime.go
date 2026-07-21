@@ -1,4 +1,4 @@
-// Package edge 装配单个 termx-cloud-edge 进程中的纯内存 Hub 与 Relay runtime。
+// Package edge 装配单个 muxvia-cloud-edge 进程中的纯内存 Hub 与 Relay runtime。
 //
 // Hub policy/assignment 不落盘；Relay 只保留未确认 usage outbox。进程重启后新的 Hub
 // 必须重新从 Controller 获取 full projection，新的 Relay Authority 不恢复 allocation。
@@ -113,7 +113,7 @@ func Start(config Config) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	authorizer, err := cloudhub.NewEdgeAuthorizer(cloudhub.EdgeAuthorizerConfig{HubID: config.Metadata.GetHubId(), Issuer: "termx-cloud-controller", KeyRing: keyRing, MaxStaleness: 30 * time.Minute})
+	authorizer, err := cloudhub.NewEdgeAuthorizer(cloudhub.EdgeAuthorizerConfig{HubID: config.Metadata.GetHubId(), Issuer: "muxvia-cloud-controller", KeyRing: keyRing, MaxStaleness: 30 * time.Minute})
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +298,7 @@ func startRelay(config Config, controllerKey servicecredential.VerificationKey, 
 		return nil, err
 	}
 	bindingID := "binding-" + config.Metadata.GetRelayId()
-	authority, err := cloudrelay.NewAuthority(cloudrelay.Config{RelayID: config.Metadata.GetRelayId(), RelayPool: "pool-" + config.Metadata.GetRegion(), Region: config.Metadata.GetRegion(), LeaseIssuer: "termx-cloud-controller-relay", Realm: "termx-edge-relay", KeyRing: keyRing, Bindings: cloudrelay.StaticBindings{bindingID: {config.Metadata.GetRelayId(): {}}}, CredentialSecret: secret, UsageSigner: usageSigner, CredentialTTL: 5 * time.Minute, PendingAuthTTL: 10 * time.Second})
+	authority, err := cloudrelay.NewAuthority(cloudrelay.Config{RelayID: config.Metadata.GetRelayId(), RelayPool: "pool-" + config.Metadata.GetRegion(), Region: config.Metadata.GetRegion(), LeaseIssuer: "muxvia-cloud-controller-relay", Realm: "muxvia-edge-relay", KeyRing: keyRing, Bindings: cloudrelay.StaticBindings{bindingID: {config.Metadata.GetRelayId(): {}}}, CredentialSecret: secret, UsageSigner: usageSigner, CredentialTTL: 5 * time.Minute, PendingAuthTTL: 10 * time.Second})
 	clear(secret)
 	if err != nil {
 		return nil, err

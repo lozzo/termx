@@ -26,9 +26,9 @@ const (
 	// MaxPortableContractBytes 限制二维码、近端文件和实时 share contract，防止不受信输入耗尽内存。
 	MaxPortableContractBytes = 256 << 10
 	// EndpointBootstrapSignatureProtocol 是 bootstrap 签名输入的跨语言 domain separator。
-	EndpointBootstrapSignatureProtocol = "termx.endpoint-bootstrap.signature"
+	EndpointBootstrapSignatureProtocol = "muxvia.endpoint-bootstrap.signature"
 	// PairingTicketSignatureProtocol 是 pairing ticket 签名输入的跨语言 domain separator。
-	PairingTicketSignatureProtocol = "termx.pairing-ticket.signature"
+	PairingTicketSignatureProtocol = "muxvia.pairing-ticket.signature"
 	// PortableSignatureVersion 是 bootstrap 与 pairing ticket canonical 签名输入的当前版本。
 	PortableSignatureVersion uint32 = 1
 	portableClockSkew               = 5 * time.Minute

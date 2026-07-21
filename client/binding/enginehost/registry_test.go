@@ -164,7 +164,7 @@ func TestPairingBindsGrantToExistingShareRoutesAfterAssembly(t *testing.T) {
 		ConnectMode: endpoint.ConnectOnDemand, Enabled: true,
 		Routes: map[endpoint.RouteID]endpoint.AccessRoute{
 			"direct": {ID: "direct", Kind: endpoint.RouteDirectWebRTCTCP, Enabled: true, Source: endpoint.SourceShare, PolicySource: endpoint.SourceShare, SignalingAddresses: []string{"127.0.0.1:41120"}, ICETCPAddresses: []string{"127.0.0.1:41121"}},
-			"ssh":    {ID: "ssh", Kind: endpoint.RouteSSHWebRTCTCP, Enabled: true, Source: endpoint.SourceShare, PolicySource: endpoint.SourceShare, Host: "127.0.0.1", User: "termx", HostKeyFingerprints: []string{"SHA256:test"}, CredentialDescriptor: &endpoint.CredentialDescriptor{DescriptorID: "ssh-key", Kind: endpoint.CredentialSSHPrivateKey}, SSHCredentialRef: "ssh-platform-existing", RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121"},
+			"ssh":    {ID: "ssh", Kind: endpoint.RouteSSHWebRTCTCP, Enabled: true, Source: endpoint.SourceShare, PolicySource: endpoint.SourceShare, Host: "127.0.0.1", User: "muxvia", HostKeyFingerprints: []string{"SHA256:test"}, CredentialDescriptor: &endpoint.CredentialDescriptor{DescriptorID: "ssh-key", Kind: endpoint.CredentialSSHPrivateKey}, SSHCredentialRef: "ssh-platform-existing", RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121"},
 			"cloud":  {ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true, Source: endpoint.SourceShare, PolicySource: endpoint.SourceShare, TargetDeviceID: identity.DeviceID, RelayMode: endpoint.RelayAuto},
 		},
 	}
@@ -336,7 +336,7 @@ func testSSHEndpointProto(t *testing.T, id string) *remoteauthpb.EndpointConfigV
 		Routes: map[endpoint.RouteID]endpoint.AccessRoute{
 			"ssh": {
 				ID: "ssh", Kind: endpoint.RouteSSHWebRTCTCP, Enabled: true, Source: endpoint.SourceShare, PolicySource: endpoint.SourceShare,
-				Host: "127.0.0.1", User: "termx", HostKeyFingerprints: []string{"SHA256:test"},
+				Host: "127.0.0.1", User: "muxvia", HostKeyFingerprints: []string{"SHA256:test"},
 				CredentialDescriptor:   &endpoint.CredentialDescriptor{DescriptorID: "ssh-key", Kind: endpoint.CredentialSSHPrivateKey},
 				RemoteSignalingAddress: "127.0.0.1:41120", RemoteICETCPAddress: "127.0.0.1:41121",
 			},

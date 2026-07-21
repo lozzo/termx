@@ -11,7 +11,7 @@ const supervisor = spawn(
   "go",
   [
     "run",
-    "./private/cloud/devcloud/cmd/termx-cloud-dev",
+    "./private/cloud/devcloud/cmd/muxvia-cloud-dev",
     "--manifest",
     manifestPath,
     "--repo-root",
@@ -44,7 +44,7 @@ try {
     {
       cwd: webRoot,
       stdio: "inherit",
-      env: { ...process.env, TERMX_CLOUD_DEV_MANIFEST: manifestPath },
+      env: { ...process.env, MUXVIA_CLOUD_DEV_MANIFEST: manifestPath },
     },
   );
   const exitCode = await new Promise((resolveExit) =>

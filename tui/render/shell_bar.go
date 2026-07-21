@@ -35,7 +35,7 @@ func headerLeftSegments(header HeaderVM) []barSegment {
 		workspace = header.Title
 	}
 	if workspace == "" {
-		workspace = "termx"
+		workspace = "muxvia"
 	}
 	left := headerWorkspaceSegments(header, workspace)
 	left = append(left, headerTabSegmentsForHeader(header, header.Tab)...)

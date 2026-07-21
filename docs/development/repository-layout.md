@@ -39,7 +39,7 @@ tui/                 纯 TUI 产品与平台适配
     protocol/        protocol projection 到 TUI DTO；迁移期保留直接 adapter
     system/          clipboard 等系统能力
 
-cmd/termx/           Cobra、参数/target 解析、composition root、输出与退出码
+cmd/muxvia/           Cobra、参数/target 解析、composition root、输出与退出码
 internal/protocol/   framing、Hello、channel、correlation 与 proto payload transport
 proto/               所有插件/客户端/跨进程/跨语言 API 的唯一 schema truth 与生成代码
 remote/              daemon WebRTC answerer、双方复用的 Pion/DataChannel primitive 与 remote auth 服务端接线
@@ -91,7 +91,7 @@ Proto 在图中表示 schema/message boundary，不表示网络 transport 或独
 - `tui/port` 按 history、terminal、live、path、endpoint event、clipboard 和 storage contract 分文件；不得重新合并为无 ownership 的总类型文件。
 - TUI-owned endpoint phase/error/path projection 使用 `tui/state` 类型；`shared/cloudcompanion`、`cloudpb` 和 client runtime concrete event 只能由 `tui/adapter/clientruntime` 映射。
 - `tui/adapter/*` 实现 port，并通过 message/effect 回投；不得直接修改 reducer-owned state。
-- `cmd/termx` 不实现 Dial、Hello、authorization、credential resolution、route race、session cache 或 transport cleanup。
+- `cmd/muxvia` 不实现 Dial、Hello、authorization、credential resolution、route race、session cache 或 transport cleanup。
 - `core/`、`remote/`、`private/` 不反向 import TUI 或 CLI。
 - `proto/` 是所有跨边界 API 的唯一 schema truth；禁止在 `core/api`、client runtime、protocol 或 TUI port 复制业务 DTO。
 - `api_layer/` 公开边界只使用 proto 生成类型，禁止依赖 UI、CLI、具体 transport、插件和 private Cloud implementation。

@@ -333,7 +333,7 @@ func TestWorkbenchStorageRestoreScrubsLegacyTransientPaneKinds(t *testing.T) {
 }
 
 func TestWorkbenchStorageSnapshotRejectsLegacyV1(t *testing.T) {
-	_, err := DecodeWorkbenchStorageSnapshot([]byte(`{"schema":"termx.tui.v3.workbench","schemaVersion":1,"workspace":{"ID":"workspace-main"},"workspaces":[{"ID":"workspace-main"}],"panelPresentation":"card"}`))
+	_, err := DecodeWorkbenchStorageSnapshot([]byte(`{"schema":"muxvia.tui.v3.workbench","schemaVersion":1,"workspace":{"ID":"workspace-main"},"workspaces":[{"ID":"workspace-main"}],"panelPresentation":"card"}`))
 	if !errors.Is(err, ErrInvalidWorkbenchSnapshot) {
 		t.Fatalf("expected legacy v1 rejection, got %v", err)
 	}

@@ -193,7 +193,7 @@ func (sink *LatestFrameSink) observeQueueLocked(patch bool) {
 }
 
 func latestFrameSinkDiagnosticsEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("TERMX_TUI_DIAG"))) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("MUXVIA_TUI_DIAG"))) {
 	case "1", "true", "on", "yes", "debug":
 		return true
 	default:
@@ -202,7 +202,7 @@ func latestFrameSinkDiagnosticsEnabled() bool {
 }
 
 func latestFrameSinkDiagnosticsInterval() time.Duration {
-	raw := strings.TrimSpace(os.Getenv("TERMX_TUI_DIAG_INTERVAL_MS"))
+	raw := strings.TrimSpace(os.Getenv("MUXVIA_TUI_DIAG_INTERVAL_MS"))
 	if raw == "" {
 		return time.Second
 	}

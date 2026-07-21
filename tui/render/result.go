@@ -45,7 +45,7 @@ type Cell struct {
 	Safe            bool
 }
 
-// ANSICellStyle 保留真实 terminal 内容的 SGR 语义；不要映射到 TermX chrome theme token。
+// ANSICellStyle 保留真实 terminal 内容的 SGR 语义；不要映射到 Muxvia chrome theme token。
 type ANSICellStyle struct {
 	FG            string
 	BG            string

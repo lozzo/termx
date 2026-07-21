@@ -25,9 +25,9 @@ const (
 	OpenPath      = "/v1/relay/control/open"
 	ReportPath    = "/v1/relay/control/report"
 	protoMedia    = "application/x-protobuf"
-	streamMedia   = "application/x-termx-cloud-stream"
+	streamMedia   = "application/x-muxvia-cloud-stream"
 	maxFrame      = 4 << 20
-	proofDomain   = "termx-relay-control-challenge-v1\x00"
+	proofDomain   = "muxvia-relay-control-challenge-v1\x00"
 )
 
 // CursorStore 持久保存 Relay runtime sender sequence。

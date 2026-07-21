@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const daemonControlSignatureDomain = "TERMX_DAEMON_CONTROL_V1\x00"
+const daemonControlSignatureDomain = "MUXVIA_DAEMON_CONTROL_V1\x00"
 
 var (
 	// ErrInvalidDaemonControlCommand 表示命令缺少 deny-only 类型、精确目标或时效字段。

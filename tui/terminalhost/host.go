@@ -155,7 +155,7 @@ func WithThemeProbe(enabled bool) Option {
 	}
 }
 
-// WithLogger 打开 host/frame-sink 诊断日志；实际采样仍由 TERMX_TUI_DIAG 控制。
+// WithLogger 打开 host/frame-sink 诊断日志；实际采样仍由 MUXVIA_TUI_DIAG 控制。
 func WithLogger(logger *slog.Logger) Option {
 	return func(host *Host) {
 		host.logger = logger

@@ -432,7 +432,7 @@ func TestAccessStoreConcurrentRedeemIdempotencyRevokeAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	if bytes.Contains(storedPayload, []byte(winner.result.Grant)) || bytes.Contains(storedPayload, []byte(winner.result.DeliveryReceipt)) ||
-		bytes.Contains(storedPayload, []byte("termx-grant-v2")) || bytes.Contains(storedPayload, bundlePayload) {
+		bytes.Contains(storedPayload, []byte("muxvia-grant-v2")) || bytes.Contains(storedPayload, bundlePayload) {
 		t.Fatal("AccessStore persisted raw pairing bundle, grant, or delivery receipt")
 	}
 	unknownGrant, err := Issue(identity.PrivateKey, Claims{

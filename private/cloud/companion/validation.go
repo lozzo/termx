@@ -30,7 +30,7 @@ func validateLoginFlow(flow *cloudpb.LoginFlow, now time.Time, allowPublicHTTP b
 
 func validateBeginEnrollmentRequest(request *cloudpb.BeginDeviceEnrollmentRequest) error {
 	metadata := request.GetMetadata()
-	if request == nil || strings.TrimSpace(request.GetOneTimeCode()) == "" || len(request.GetDevicePublicKey()) != ed25519.PublicKeySize || metadata == nil || metadata.GetPlatform() == "" || metadata.GetTermxVersion() == "" {
+	if request == nil || strings.TrimSpace(request.GetOneTimeCode()) == "" || len(request.GetDevicePublicKey()) != ed25519.PublicKeySize || metadata == nil || metadata.GetPlatform() == "" || metadata.GetMuxviaVersion() == "" {
 		return protocolError("invalid device enrollment request")
 	}
 	return nil
@@ -163,7 +163,7 @@ func validateManagedDevices(response *cloudpb.ListManagedDevicesResponse) error 
 func validatePresenceRequest(request *cloudpb.OpenPresenceRequest) error {
 	proof := request.GetProof()
 	metadata := request.GetMetadata()
-	if request == nil || request.GetPresenceSessionId() == "" || proof == nil || metadata == nil || proof.GetDeviceId() == "" || len(proof.GetDevicePublicKey()) != ed25519.PublicKeySize || proof.GetChallengeId() == "" || len(proof.GetSignature()) != ed25519.SignatureSize || proof.GetSignedAtUnixNano() == 0 || metadata.GetPlatform() == "" || metadata.GetTermxVersion() == "" {
+	if request == nil || request.GetPresenceSessionId() == "" || proof == nil || metadata == nil || proof.GetDeviceId() == "" || len(proof.GetDevicePublicKey()) != ed25519.PublicKeySize || proof.GetChallengeId() == "" || len(proof.GetSignature()) != ed25519.SignatureSize || proof.GetSignedAtUnixNano() == 0 || metadata.GetPlatform() == "" || metadata.GetMuxviaVersion() == "" {
 		return protocolError("invalid daemon presence request")
 	}
 	return nil
