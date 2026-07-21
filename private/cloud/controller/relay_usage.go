@@ -10,7 +10,6 @@ import (
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/usage"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
@@ -22,14 +21,14 @@ type relayUsageDeployment struct {
 }
 
 type relayUsageHTTPHandler struct {
-	store       *cloudsqlite.Store
+	store       usage.Store
 	leaseKeys   *servicecredential.KeyRing
 	usageKeys   *servicecredential.KeyRing
 	deployments map[string]relayUsageDeployment
 	now         func() time.Time
 }
 
-func newRelayUsageHTTPHandler(store *cloudsqlite.Store, leaseSigner servicecredential.Signer, deployments []DeploymentConfig, now time.Time) (*relayUsageHTTPHandler, error) {
+func newRelayUsageHTTPHandler(store usage.Store, leaseSigner servicecredential.Signer, deployments []DeploymentConfig, now time.Time) (*relayUsageHTTPHandler, error) {
 	if store == nil {
 		return nil, errors.New("Relay usage store is required")
 	}

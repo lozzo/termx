@@ -1,7 +1,7 @@
 // Package controller 装配单个 muxvia-cloud-controller 进程。
 //
 // composition root 只拥有 listener、配置和依赖生命周期；Hub registry、projection publisher、
-// Web catalog 与 SQLite 各自保持独立 owner，不在本包复制业务状态机。
+// Web catalog 与 persistent store 各自保持独立 owner，不在本包复制业务状态机。
 package controller
 
 import (
@@ -23,6 +23,7 @@ import (
 	cloudcommerce "github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubcontrol"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/persistence"
 	cloudpolicy "github.com/muxvia/muxvia/private/cloud/control-plane/policy"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/relaycontrol"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/relaylease"
@@ -85,9 +86,9 @@ type Manifest struct {
 	HubIDs             []string `json:"hub_ids"`
 }
 
-// Runtime 持有 Controller listener、SQLite 与 control publisher 生命周期。
+// Runtime 持有 Controller listener、persistent store 与 control publisher 生命周期。
 type Runtime struct {
-	store          *cloudsqlite.Store
+	store          persistence.Store
 	publisher      *hubcontrol.Publisher
 	relayPublisher *relaycontrol.Publisher
 	registry       *hubregistry.Registry
@@ -481,7 +482,7 @@ func (runtime *Runtime) WriteManifest(path string) error {
 // Wait 等待任一 listener 异常退出。
 func (runtime *Runtime) Wait() error { return <-runtime.errors }
 
-// Close 关闭全部 listener 与 SQLite。
+// Close 关闭全部 listener 与 persistent store。
 func (runtime *Runtime) Close(ctx context.Context) error {
 	var result error
 	runtime.closeOnce.Do(func() {

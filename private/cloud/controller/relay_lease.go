@@ -15,7 +15,6 @@ import (
 	"github.com/muxvia/muxvia/private/cloud/control-plane/relaylease"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/relayquota"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
 	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
@@ -24,7 +23,12 @@ import (
 const relayUsageReportGrace = 2 * time.Minute
 const relayProtoMediaType = "application/x-protobuf"
 
-type relayEntitlementSource struct{ store *cloudsqlite.Store }
+type relayLeaseStore interface {
+	relayquota.Store
+	Entitlement(context.Context, string) (*cloudpb.EntitlementProjection, error)
+}
+
+type relayEntitlementSource struct{ store relayLeaseStore }
 
 func (source relayEntitlementSource) Entitlement(ctx context.Context, accountID string) (entitlement.Entitlement, error) {
 	projection, err := source.store.Entitlement(ctx, accountID)
@@ -63,7 +67,7 @@ type relayLeaseHTTPHandler struct {
 	now         func() time.Time
 }
 
-func newRelayLeaseHTTPHandler(store *cloudsqlite.Store, topology *cloudtopology.Service, registry *hubregistry.Registry, signer servicecredential.Signer, deployments []DeploymentConfig) (*relayLeaseHTTPHandler, error) {
+func newRelayLeaseHTTPHandler(store relayLeaseStore, topology *cloudtopology.Service, registry *hubregistry.Registry, signer servicecredential.Signer, deployments []DeploymentConfig) (*relayLeaseHTTPHandler, error) {
 	issuer, err := servicecredential.NewRelayLeaseIssuer("muxvia-cloud-controller-relay", signer)
 	if err != nil {
 		return nil, err

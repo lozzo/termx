@@ -5,6 +5,7 @@
 package usage
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -36,6 +37,12 @@ var (
 	// ErrJournalConflict 表示 durable usage event、sequence 或 reservation settlement 冲突。
 	ErrJournalConflict = errors.New("relay usage journal conflict")
 )
+
+// Store 是 Controller 对 signed Relay usage 执行 journal、sequence 和 quota settlement 的事务边界。
+// 实现只有在 event journal、reservation、period 与 aggregate 全部提交后才能返回 ACK。
+type Store interface {
+	ApplyRelayUsage(context.Context, *cloudpb.RelayUsageRecord, servicecredential.RelayLeaseClaims, Event, [sha256.Size]byte, time.Time) (*cloudpb.RelayUsageAck, *cloudpb.RelayQuotaPeriod, *cloudpb.RelayUsageAggregate, error)
+}
 
 // Event 是 Relay 对单个 lease、hop 和时间窗口的签名计量记录。
 // Event 只含流量 metadata，不含 grant、terminal、DataChannel payload 或屏幕内容。

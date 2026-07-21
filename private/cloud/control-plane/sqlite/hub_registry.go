@@ -11,12 +11,15 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/persistence"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	_ "modernc.org/sqlite"
 )
 
 // Store 是 development Controller 的单节点 SQLite 持久 adapter。
 type Store struct{ db *sql.DB }
+
+var _ persistence.Store = (*Store)(nil)
 
 // Open 打开数据库并创建 HUB002 所需最小 schema。
 func Open(path string) (*Store, error) {
