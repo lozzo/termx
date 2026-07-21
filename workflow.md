@@ -4,9 +4,10 @@
 
 - 产品正式名称为 `Muxvia`，主域名为 `muxvia.com`，GitHub 组织为 `github.com/muxvia`。首发前必须完成无兼容层的全量发布身份迁移：`Muxvia`、`Muxvia Cloud`、`github.com/muxvia/muxvia`、CLI `muxvia`、Android `com.muxvia.app`、URI `muxvia://`、npm scope `@muxvia`、Proto namespace `muxvia.*`、C ABI `muxvia_*`、环境变量 `MUXVIA_*`。
 - `BRAND001-BRAND005` 已完成 Muxvia 全量发布身份迁移、活动残留收口、standard/devcloud APK、真实 ARM64 Direct terminal UI smoke 和双 Agent 审查；证据见 `docs/development/muxvia-brand005-e2e.md`。品牌迁移未改变 Proto/API/Core、Endpoint/Route/session、安全或目录 ownership。
-- 用户已明确要求在继续 `CLOUDP007` 前完成 Controller 持久化迁移。`PG001-PG003` 已完成领域 Store 契约、PostgreSQL schema/pgx adapter、Controller/devcloud/test 全量切换和 SQLite 删除；`make test-private` 与独立双 Edge 进程门禁通过。当前最早未完成切片是 `PG004`：Supabase staging、异地备份和恢复验收，完成后再恢复 `CLOUDP007`。
+- 用户已明确要求在继续 `CLOUDP007` 前完成 Controller 持久化迁移。`PG001-PG003` 已完成领域 Store 契约、PostgreSQL schema/pgx adapter、Controller/devcloud/test 全量切换和 SQLite 删除；`make test-private` 与独立双 Edge 进程门禁通过。`PG004` 已完成远程 TLS DSN 门禁、age 加密备份/恢复脚本、本地 PostgreSQL 恢复演练和 Supabase/R2 runbook，当前只阻塞于仓库外尚未提供的 Supabase staging DSN 与 R2 bucket/access credential；不得用本地 PostgreSQL 冒充真实云端验收。
 - Controller 正式持久化契约固定为标准 PostgreSQL；首个生产托管实例使用 Supabase PostgreSQL，但代码、schema、migration、连接和事务不得依赖 Supabase Auth、Realtime、PostgREST、Edge Functions 或其它专有业务能力。Supabase 只是 PostgreSQL 托管商，不是账号、session、Subscription、Hub assignment、CommandOutbox、Relay quota 或 UsageLedger 的领域 owner。
 - PostgreSQL/Supabase 迁移的事务矩阵、伪代码、删除项和 staging 验收见 `docs/remote-platform/postgresql-supabase-migration.md`。
+- Supabase 连接方式、secret、双 Edge staging、R2 备份和恢复步骤见 `docs/remote-platform/supabase-staging-runbook.md`。
 - `RTC001-RTC010` 已完成统一 WebRTC Route、Android JNI、Direct/SSH/Cloud、Endpoint、文件、生命周期、弱网和最终 APK E2E；证据见 `docs/remote-platform/rtc010-android-final-e2e.md`。
 - Cloud 产品真值见 `docs/remote-platform/cloud-product-spec.md`；多 Hub assignment、纯内存 Hub、daemon topology、CommandOutbox 和 Web 管理真值见 `docs/remote-platform/multi-hub-control-topology-spec.md`；具体 Proto、package、存储、伪代码、迁移删除项和测试矩阵见 `docs/remote-platform/multi-hub-technical-plan.md`。
 - 多 Hub 的 assignment、topology、安全和 runtime 核心规划此前已经过四维度 reviewer 复审；最新部署决策进一步收敛为两个二进制：`muxvia-cloud-controller` 组合 Control Plane + Web Controller，`muxvia-cloud-edge` 组合 Hub + Relay，但四个领域 owner、身份、generation、状态机和存储边界不合并。
@@ -91,7 +92,7 @@ muxvia-cloud-edge × N
 | PG001 | 已完成 | PostgreSQL Store 契约与 schema 基线 | 已复用并补齐按领域划分的 Store/transaction port，Controller runtime/Relay handler 不再依赖 concrete PostgreSQL；建立 versioned PostgreSQL initial migration、静态 schema 门禁和事务/迁移设计文档；Control Plane 与 Controller 全模块测试通过 |
 | PG002 | 已完成 | PostgreSQL/pgx 持久化实现 | `pgx v5` adapter、advisory-lock versioned migration、PostgreSQL placeholder/error/transaction 实现完成；真实 PostgreSQL 17 上通过 CommandOutbox、assignment、commerce rollback/restart、Relay quota/usage restart、并发 generation 与十轮并发 reservation contract harness |
 | PG003 | 已完成 | Controller 全量切换与 SQLite 删除 | Controller 使用 secret `postgres_dsn` 打开 pgx Store，manifest 只公开 `database_engine=postgresql`；devcloud 为 artifact 创建隔离 schema；全部 Cloud 测试改用 PostgreSQL fixture；SQLite package/driver/config/fallback 已删除，`make test-private` 与双 Edge 门禁通过 |
-| PG004 | 进行中 | Supabase staging 与备份恢复验收 | Controller 通过 TLS 直连 Supabase PostgreSQL；IPv4 环境只允许 Supavisor session mode；完成 schema migration、真实 Controller/双 Edge E2E、故障恢复、`pg_dump` 加密备份到 R2/等价异地对象存储及恢复演练文档；生产使用 Pro，Free 只用于 staging 验证 |
+| PG004 | 阻塞 | Supabase staging 与备份恢复验收 | 已完成远程 TLS DSN 校验、credential 防泄漏测试、age 加密 `pg_dump`/`pg_restore`、`make test-postgres-backup` 和完整 runbook；等待 Supabase staging PostgreSQL URL/password 以及 R2 endpoint/bucket/access key 后执行真实 Controller/双 Edge、上传和独立恢复项目验收 |
 | CLOUDP007 | 待开始 | Development 全产品 E2E | PostgreSQL 迁移后从现有进度恢复；Web UI 注册/交易/管理 + Android ARM64 真实 APK P2P/Relay terminal/file、quota、suspend、topology、命令、重启恢复、Direct/SSH 回归；双 Agent 审查 |
 | CLOUDP008 | 延后 | Production Cloud 装配与发布 | 仅 PG004/CLOUDP007 完成后启动；HTTPS、Companion 签名、Android production origin、真实 provider；正式存储已由 PG001-PG004 完成，不重复建设第二套数据库路径 |
 | WEB001 | 延后 | Web/WASM terminal 产品 | 仅用户明确恢复后启动 |

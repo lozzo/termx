@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -31,8 +33,8 @@ var _ persistence.Store = (*Store)(nil)
 // Open 建立 PostgreSQL 连接并在数据库 advisory lock 内应用 versioned migration。
 // DSN 必须由部署 secret 提供；连接、Ping 或 migration 失败时不返回可用 Store。
 func Open(ctx context.Context, dsn string) (*Store, error) {
-	if strings.TrimSpace(dsn) == "" {
-		return nil, fmt.Errorf("Control Plane PostgreSQL DSN is required")
+	if err := ValidateDSN(dsn); err != nil {
+		return nil, err
 	}
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -51,6 +53,36 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	return store, nil
+}
+
+// ValidateDSN 强制 Controller 使用 PostgreSQL URL，并要求所有非 loopback 连接显式启用 TLS。
+// 函数不返回或包装原始 DSN，避免数据库密码进入日志和错误链。
+func ValidateDSN(dsn string) error {
+	if strings.TrimSpace(dsn) == "" {
+		return fmt.Errorf("Control Plane PostgreSQL DSN is required")
+	}
+	parsed, err := url.Parse(dsn)
+	if err != nil || parsed.Scheme != "postgres" && parsed.Scheme != "postgresql" || parsed.Hostname() == "" {
+		return fmt.Errorf("Control Plane PostgreSQL DSN must be a PostgreSQL URL")
+	}
+	host := parsed.Hostname()
+	loopback := strings.EqualFold(host, "localhost")
+	if address := net.ParseIP(host); address != nil && address.IsLoopback() {
+		loopback = true
+	}
+	sslMode := strings.ToLower(parsed.Query().Get("sslmode"))
+	if loopback {
+		if sslMode == "" || sslMode == "disable" || sslMode == "require" || sslMode == "verify-ca" || sslMode == "verify-full" {
+			return nil
+		}
+		return fmt.Errorf("Control Plane PostgreSQL sslmode is invalid")
+	}
+	switch sslMode {
+	case "require", "verify-ca", "verify-full":
+		return nil
+	default:
+		return fmt.Errorf("remote Control Plane PostgreSQL requires TLS")
+	}
 }
 
 // Close 关闭 PostgreSQL 连接池。

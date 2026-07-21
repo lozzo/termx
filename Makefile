@@ -17,7 +17,7 @@ PRIVATE_MODULES := \
 	private/cloud/route-planner \
 	private/cloud/web-controller
 
-.PHONY: help build build-cloud-test build-web-controller build-web-controller-linux cloud-dev test test-private test-cloud-controller-edge test-clients test-android test-all doctor clean
+.PHONY: help build build-cloud-test build-web-controller build-web-controller-linux cloud-dev test test-private test-cloud-controller-edge test-postgres-backup test-clients test-android test-all doctor clean
 
 help:
 	@printf '%s\n' \
@@ -30,6 +30,7 @@ help:
 		'  make test          Test the public Go module' \
 		'  make test-private  Test each private cloud Go module when present' \
 		'  make test-cloud-controller-edge  Test one Controller plus two Edge processes' \
+		'  make test-postgres-backup  Verify encrypted PostgreSQL backup and restore' \
 		'  make test-clients  Generate, test, typecheck, and build both clients' \
 		'  make test-android  Build/test the standard and dev-cloud Muxvia APK' \
 		'  make test-all      Run all repository test gates sequentially' \
@@ -73,6 +74,9 @@ test-private:
 
 test-cloud-controller-edge:
 	cd private/cloud/devcloud && "$(CURDIR)/scripts/with-clean-muxvia-env.sh" env GOWORK=off "$(CURDIR)/scripts/with-test-postgres.sh" go test ./cmd/muxvia-cloud-dev -run TestSupervisorStartsControllerAndTwoIndependentEdges -count=1
+
+test-postgres-backup:
+	scripts/with-clean-muxvia-env.sh scripts/with-test-postgres.sh scripts/test-controller-postgres-backup.sh
 
 test-clients:
 	node scripts/client-workspace-guard.mjs

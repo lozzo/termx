@@ -62,6 +62,8 @@ return ACK
 3. CI 使用临时 PostgreSQL；本地开发使用独立 development database。
 4. 删除 SQLite adapter、driver、bootstrap 和数据库路径 manifest 字段。
 
+当前状态：已完成。Controller、devcloud、Web 和全部 private Cloud 测试统一使用 PostgreSQL；SQLite package 与依赖已删除。
+
 ### PG004：Supabase staging
 
 1. 在与 Controller 相同或邻近区域创建 Supabase PostgreSQL project。
@@ -69,6 +71,8 @@ return ACK
 3. Free project 只用于 staging；生产使用 Pro，避免空闲暂停并启用每日备份。
 4. 使用真实 Controller、两个 Edge 验证 commerce、assignment、command、quota、usage 和重启恢复。
 5. 定期执行 `pg_dump`，加密后写入独立 R2/对象存储，并从备份恢复到空数据库完成校验。
+
+当前状态：远程 TLS DSN 门禁、加密备份/恢复脚本和本地恢复演练已完成；真实 Supabase/R2 验收等待项目凭据。具体操作见 `supabase-staging-runbook.md`。
 
 ## 禁止项
 

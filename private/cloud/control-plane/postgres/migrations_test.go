@@ -39,3 +39,33 @@ func TestPostgreSQLPlaceholderRebinding(t *testing.T) {
 		t.Fatalf("rebind = %q", got)
 	}
 }
+
+func TestValidateDSNRequiresRemoteTLS(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		dsn     string
+		wantErr bool
+	}{
+		{name: "local development", dsn: "postgres://127.0.0.1:55432/postgres?sslmode=disable"},
+		{name: "Supabase direct TLS", dsn: "postgresql://postgres:secret@db.example.supabase.co:5432/postgres?sslmode=require"},
+		{name: "Supavisor session TLS", dsn: "postgres://postgres.project:secret@region.pooler.supabase.com:5432/postgres?sslmode=verify-full"},
+		{name: "remote TLS missing", dsn: "postgres://db.example.com/postgres", wantErr: true},
+		{name: "remote TLS disabled", dsn: "postgres://db.example.com/postgres?sslmode=disable", wantErr: true},
+		{name: "keyword DSN", dsn: "host=db.example.com dbname=postgres sslmode=require", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := ValidateDSN(test.dsn)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("ValidateDSN() error = %v, wantErr %v", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateDSNDoesNotLeakCredential(t *testing.T) {
+	const secret = "do-not-log-this-password"
+	err := ValidateDSN("postgres://postgres:" + secret + "@db.example.com/postgres?sslmode=disable")
+	if err == nil || strings.Contains(err.Error(), secret) {
+		t.Fatalf("ValidateDSN credential handling error = %v", err)
+	}
+}
