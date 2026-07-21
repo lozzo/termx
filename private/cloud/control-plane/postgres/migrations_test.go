@@ -1,4 +1,4 @@
-package postgres_test
+package postgres
 
 import (
 	"os"
@@ -30,5 +30,12 @@ func TestInitialMigrationDeclaresControllerTruth(t *testing.T) {
 		if strings.Contains(sql, sqliteOnly) {
 			t.Fatalf("initial PostgreSQL migration contains SQLite-only token %q", sqliteOnly)
 		}
+	}
+}
+
+func TestPostgreSQLPlaceholderRebinding(t *testing.T) {
+	// Placeholder conversion is adapter-local，业务 query 不得自行拼接 PostgreSQL 参数编号。
+	if got := rebind("SELECT * FROM value WHERE a=? AND b=?"); got != "SELECT * FROM value WHERE a=$1 AND b=$2" {
+		t.Fatalf("rebind = %q", got)
 	}
 }

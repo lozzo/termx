@@ -8,10 +8,10 @@ CREATE TABLE hub_deployments (
   public_label TEXT NOT NULL,
   relay_id TEXT NOT NULL UNIQUE,
   relay_credential_fingerprint TEXT NOT NULL,
-  enabled BOOLEAN NOT NULL,
+  enabled INTEGER NOT NULL,
   last_control_generation BIGINT NOT NULL CHECK (last_control_generation >= 0),
   last_relay_control_generation BIGINT NOT NULL CHECK (last_relay_control_generation >= 0),
-  updated_at TIMESTAMPTZ NOT NULL
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE hub_assignments (
@@ -21,18 +21,18 @@ CREATE TABLE hub_assignments (
   assignment_epoch BIGINT NOT NULL CHECK (assignment_epoch > 0),
   not_before_unix_millis BIGINT NOT NULL,
   expires_at_unix_millis BIGINT NOT NULL,
-  fence_satisfied BOOLEAN NOT NULL,
+  fence_satisfied INTEGER NOT NULL,
   previous_hub_id TEXT NOT NULL,
   previous_epoch BIGINT NOT NULL CHECK (previous_epoch >= 0),
-  updated_at TIMESTAMPTZ NOT NULL
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE hub_projection_heads (
   hub_id TEXT PRIMARY KEY,
   projection_revision BIGINT NOT NULL CHECK (projection_revision >= 0),
   digest BYTEA NOT NULL,
-  published_at TIMESTAMPTZ NOT NULL,
-  acknowledged_at TIMESTAMPTZ
+  published_at TEXT NOT NULL,
+  acknowledged_at TEXT
 );
 
 CREATE TABLE control_receive_cursors (
@@ -41,7 +41,7 @@ CREATE TABLE control_receive_cursors (
   sender_role INTEGER NOT NULL,
   accepted_sequence BIGINT NOT NULL CHECK (accepted_sequence >= 0),
   accepted_digest BYTEA NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL,
+  updated_at TEXT NOT NULL,
   PRIMARY KEY (hub_id, control_generation, sender_role)
 );
 
@@ -50,9 +50,9 @@ CREATE TABLE cloud_device_ownership (
   account_id TEXT NOT NULL,
   device_kind INTEGER NOT NULL,
   auth_epoch BIGINT NOT NULL CHECK (auth_epoch > 0),
-  revoked BOOLEAN NOT NULL,
+  revoked INTEGER NOT NULL,
   public_key BYTEA NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE hub_topology_heads (
@@ -60,7 +60,7 @@ CREATE TABLE hub_topology_heads (
   control_generation BIGINT NOT NULL CHECK (control_generation > 0),
   topology_revision BIGINT NOT NULL CHECK (topology_revision > 0),
   topology_digest BYTEA NOT NULL,
-  observed_at TIMESTAMPTZ NOT NULL
+  observed_at TEXT NOT NULL
 );
 
 CREATE TABLE presence_topology (
@@ -69,7 +69,7 @@ CREATE TABLE presence_topology (
   hub_id TEXT NOT NULL,
   control_generation BIGINT NOT NULL CHECK (control_generation > 0),
   projection BYTEA NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE managed_peer_topology (
@@ -80,7 +80,7 @@ CREATE TABLE managed_peer_topology (
   hub_id TEXT NOT NULL,
   control_generation BIGINT NOT NULL CHECK (control_generation > 0),
   projection BYTEA NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL,
+  updated_at TEXT NOT NULL,
   PRIMARY KEY (daemon_device_id, managed_session_id, session_incarnation)
 );
 
@@ -92,7 +92,7 @@ CREATE TABLE terminal_access_topology (
   access_projection_revision BIGINT NOT NULL CHECK (access_projection_revision > 0),
   freshness INTEGER NOT NULL,
   inventory BYTEA NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE commerce_accounts (
@@ -111,7 +111,7 @@ CREATE TABLE commerce_sessions (
   access_expires_at BIGINT NOT NULL,
   refresh_expires_at BIGINT NOT NULL,
   revision BIGINT NOT NULL CHECK (revision > 0),
-  revoked BOOLEAN NOT NULL,
+  revoked INTEGER NOT NULL,
   client_device_id TEXT NOT NULL
 );
 CREATE INDEX commerce_sessions_account ON commerce_sessions (account_id);
