@@ -16,7 +16,7 @@ import (
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubcontrol"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
+	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
@@ -26,7 +26,7 @@ func TestHubControlUsesRealStreamGenerationAndPersistentReportCursor(t *testing.
 	now := time.Now().UTC()
 	publicKey, privateKey, _ := ed25519.GenerateKey(rand.Reader)
 	relayPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}

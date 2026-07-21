@@ -12,7 +12,7 @@ import (
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
+	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	webcontroller "github.com/muxvia/muxvia/private/cloud/web-controller"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -21,7 +21,7 @@ import (
 
 func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *testing.T) {
 	now := time.Date(2026, 7, 21, 10, 0, 0, 0, time.UTC)
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}

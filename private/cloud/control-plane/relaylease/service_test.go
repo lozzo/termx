@@ -10,10 +10,10 @@ import (
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/domain"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/entitlement"
+	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/relaylease"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/relayquota"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
@@ -48,7 +48,7 @@ func TestServiceIssuesEntitlementClampedLease(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	quotaStore, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "quota.db"))
+	quotaStore, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "quota-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}

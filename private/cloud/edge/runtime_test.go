@@ -16,9 +16,9 @@ import (
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubcontrol"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
+	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/relaycontrol"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
 	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/usage"
 	cloudhub "github.com/muxvia/muxvia/private/cloud/hub"
@@ -32,7 +32,7 @@ func TestEdgeRestartRequiresFullSyncAndKeepsOnlyUsageOutbox(t *testing.T) {
 	hubPublic, hubPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	relayPublic, relayPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	controllerPublic, controllerPrivate, _ := ed25519.GenerateKey(rand.Reader)
-	store, _ := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, _ := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	defer store.Close()
 	registry, _ := hubregistry.New(store)
 	topologyService, _ := cloudtopology.New(registry, store)

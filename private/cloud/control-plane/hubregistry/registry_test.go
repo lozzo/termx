@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
+	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
 func TestRegistryFencesGenerationAndCrossHubAssignment(t *testing.T) {
 	now := time.Date(2026, 7, 20, 20, 0, 0, 0, time.UTC)
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,14 +70,14 @@ func TestRegistryFencesGenerationAndCrossHubAssignment(t *testing.T) {
 
 func TestRegistryAllowsMigrationAfterLeaseExpiryAndPersists(t *testing.T) {
 	now := time.Date(2026, 7, 20, 21, 0, 0, 0, time.UTC)
-	path := filepath.Join(t.TempDir(), "controller.db")
-	store, _ := cloudsqlite.Open(path)
+	path := filepath.Join(t.TempDir(), "controller-postgres")
+	store, _ := postgrestest.Open(t, path)
 	registry, _ := hubregistry.New(store)
 	if _, err := registry.Assign(context.Background(), assignment("hub-a", 1, now.Add(-time.Minute), now.Add(time.Second)), now); err != nil {
 		t.Fatal(err)
 	}
 	_ = store.Close()
-	reopened, _ := cloudsqlite.Open(path)
+	reopened, _ := postgrestest.Open(t, path)
 	defer reopened.Close()
 	registry, _ = hubregistry.New(reopened)
 	moved, err := registry.Assign(context.Background(), assignment("hub-b", 2, now.Add(2*time.Second), now.Add(time.Minute)), now.Add(2*time.Second))

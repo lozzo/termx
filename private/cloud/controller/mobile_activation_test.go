@@ -14,8 +14,8 @@ import (
 	"github.com/muxvia/muxvia/private/cloud/companion/session"
 	cloudcommerce "github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
+	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
 	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
 	webcontroller "github.com/muxvia/muxvia/private/cloud/web-controller"
 	"github.com/muxvia/muxvia/proto/cloudpb"
@@ -93,7 +93,7 @@ func TestMobileActivationRequiresWebApprovalAndIsSingleUse(t *testing.T) {
 
 func newMobileActivationTestService(t *testing.T) (*mobileActivationService, *cloudcommerce.Service, *cloudtopology.Service, *time.Time) {
 	t.Helper()
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}

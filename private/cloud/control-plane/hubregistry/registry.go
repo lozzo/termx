@@ -68,7 +68,7 @@ type Store interface {
 	AssignmentsForHub(context.Context, string, time.Time) ([]Assignment, error)
 }
 
-// Registry 执行 deployment identity 与 assignment 业务约束；SQLite 只实现 Store 事务。
+// Registry 执行 deployment identity 与 assignment 业务约束；PostgreSQL 只实现 Store 事务。
 type Registry struct{ store Store }
 
 // New 创建 Hub registry application service。

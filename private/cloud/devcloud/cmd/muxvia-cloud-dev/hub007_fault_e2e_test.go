@@ -20,8 +20,8 @@ import (
 	"github.com/muxvia/muxvia/private/cloud/companion/cloudservice/httpapi"
 	"github.com/muxvia/muxvia/private/cloud/companion/session"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
+	cloudpostgres "github.com/muxvia/muxvia/private/cloud/control-plane/postgres"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
 	"github.com/muxvia/muxvia/private/cloud/controller"
 	"github.com/muxvia/muxvia/private/cloud/edge"
 	"github.com/muxvia/muxvia/proto/cloudpb"
@@ -42,6 +42,7 @@ func TestHUB007EdgeRestartAssignmentMigrationAndControllerOutage(t *testing.T) {
 		cancel()
 		t.Fatal(err)
 	}
+	postgresDSN := controllerPostgresDSN(t, manifest)
 	var restarted []*childProcess
 	defer func() {
 		stopChildren(restarted)
@@ -126,7 +127,7 @@ func TestHUB007EdgeRestartAssignmentMigrationAndControllerOutage(t *testing.T) {
 		t.Fatal("stale runtime inventory revision was accepted")
 	}
 	controlProxy.SetBlocked(false)
-	waitControlGenerations(t, manifest.Controller.DatabasePath, map[string]uint64{"hub-edge-b": 3})
+	waitControlGenerations(t, postgresDSN, map[string]uint64{"hub-edge-b": 3})
 	waitOperatorManagedSession(t, operatorClient, manifest.Controller.OperatorURL, accountID, managedTarget.GetManagedSessionId(), false)
 	presenceA := openDevelopmentPresence(t, manifest, accountID, authEpoch, "daemon-edge-a", "hub-edge-a", 1)
 	defer presenceA.Close()
@@ -136,7 +137,7 @@ func TestHUB007EdgeRestartAssignmentMigrationAndControllerOutage(t *testing.T) {
 	if created.GetCommand().GetCommandId() == "" {
 		t.Fatalf("migration response = %v", created)
 	}
-	waitMigrationApplied(t, manifest.Controller.DatabasePath, accountID, created.GetCommand().GetCommandId())
+	waitMigrationApplied(t, postgresDSN, accountID, created.GetCommand().GetCommandId())
 	closedContext, cancelClosed := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancelClosed()
 	if event, receiveErr := presenceA.presence.Receive(closedContext); receiveErr == nil {
@@ -179,8 +180,8 @@ func TestHUB007EdgeRestartAssignmentMigrationAndControllerOutage(t *testing.T) {
 	if err := waitHealth(ctx, controllerRuntime.OperatorURL+"/healthz", true); err != nil {
 		t.Fatal(err)
 	}
-	waitControlGenerations(t, controllerRuntime.DatabasePath, map[string]uint64{"hub-edge-a": 2, "hub-edge-b": 4})
-	store, err := cloudsqlite.Open(controllerRuntime.DatabasePath)
+	waitControlGenerations(t, postgresDSN, map[string]uint64{"hub-edge-a": 2, "hub-edge-b": 4})
+	store, err := cloudpostgres.Open(context.Background(), postgresDSN)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,14 +431,14 @@ func operatorPost(t *testing.T, client *http.Client, origin, path string, reques
 	}
 }
 
-func waitMigrationApplied(t *testing.T, databasePath, accountID, commandID string) {
+func waitMigrationApplied(t *testing.T, postgresDSN, accountID, commandID string) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	var lastCommand *cloudpb.ManagementCommandProjection
 	var lastAssignment string
 	var lastError error
 	for time.Now().Before(deadline) {
-		store, err := cloudsqlite.Open(databasePath)
+		store, err := cloudpostgres.Open(context.Background(), postgresDSN)
 		if err == nil {
 			service, _ := commandoutbox.New(store)
 			command, commandErr := service.Get(context.Background(), accountID, commandID)
@@ -481,11 +482,11 @@ func waitOperatorManagedSession(t *testing.T, client *http.Client, origin, accou
 	t.Fatalf("operator managed session %q present=%v did not converge", managedSessionID, present)
 }
 
-func waitControlGenerations(t *testing.T, databasePath string, expected map[string]uint64) {
+func waitControlGenerations(t *testing.T, postgresDSN string, expected map[string]uint64) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		store, err := cloudsqlite.Open(databasePath)
+		store, err := cloudpostgres.Open(context.Background(), postgresDSN)
 		if err == nil {
 			matched := true
 			for hubID, generation := range expected {

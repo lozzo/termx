@@ -5,6 +5,7 @@ go 1.26.0
 toolchain go1.26.1
 
 require (
+	github.com/jackc/pgx/v5 v5.10.0
 	github.com/muxvia/muxvia v0.0.0
 	github.com/muxvia/muxvia/private/cloud/companion v0.0.0
 	github.com/muxvia/muxvia/private/cloud/control-plane v0.0.0
@@ -15,18 +16,10 @@ require (
 )
 
 require (
-	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/muxvia/muxvia/private/cloud/hub v0.0.0 // indirect
 	github.com/muxvia/muxvia/private/cloud/relay v0.0.0
-	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	modernc.org/libc v1.74.1 // indirect
-	modernc.org/mathutil v1.7.1 // indirect
-	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.53.0 // indirect
 )
 
 require (
@@ -43,6 +36,9 @@ require (
 	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect

@@ -6,24 +6,29 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/muxvia/muxvia/private/cloud/companion/cloudservice/httpapi"
 	cloudcommerce "github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
+	cloudpostgres "github.com/muxvia/muxvia/private/cloud/control-plane/postgres"
 	"github.com/muxvia/muxvia/private/cloud/controller"
 	"github.com/muxvia/muxvia/private/cloud/edge"
 	webcontroller "github.com/muxvia/muxvia/private/cloud/web-controller"
@@ -72,8 +77,8 @@ type childProcess struct {
 	exited chan struct{}
 }
 
-func seedDevelopmentAccount(databasePath, catalogPath string, now time.Time) (*developmentAccount, error) {
-	store, err := cloudsqlite.Open(databasePath)
+func seedDevelopmentAccount(postgresDSN, catalogPath string, now time.Time) (*developmentAccount, error) {
+	store, err := cloudpostgres.Open(context.Background(), postgresDSN)
 	if err != nil {
 		return nil, err
 	}
@@ -109,16 +114,27 @@ func main() {
 	}
 }
 
+func developmentPostgresDSN() string {
+	if value := os.Getenv("MUXVIA_DEV_POSTGRES_DSN"); value != "" {
+		return value
+	}
+	return os.Getenv("MUXVIA_TEST_POSTGRES_DSN")
+}
+
 func run(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("muxvia-cloud-dev", flag.ContinueOnError)
 	manifestPath := flags.String("manifest", ".artifacts/cloud-dev/runtime.json", "supervisor runtime manifest path")
 	repoRoot := flags.String("repo-root", "", "repository root; defaults to current directory")
 	faultHarness := flags.Bool("fault-harness", false, "use stable listeners and keep surviving child processes running after an injected exit")
+	postgresDSN := flags.String("postgres-dsn", developmentPostgresDSN(), "development PostgreSQL URL; defaults to MUXVIA_DEV_POSTGRES_DSN")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected muxvia-cloud-dev arguments")
+	}
+	if *postgresDSN == "" {
+		return fmt.Errorf("--postgres-dsn or MUXVIA_DEV_POSTGRES_DSN is required")
 	}
 	root, err := resolveRepoRoot(*repoRoot)
 	if err != nil {
@@ -149,10 +165,12 @@ func run(ctx context.Context, args []string) error {
 	projectionKeyID := "development-controller-projection"
 	_, daemonControlPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	daemonControlKeyID := "development-daemon-control"
-	controllerDatabase := filepath.Join(artifactDir, "controller.db")
-	_ = os.Remove(controllerDatabase)
+	controllerPostgresDSN, err := prepareDevelopmentPostgres(ctx, *postgresDSN, artifactDir)
+	if err != nil {
+		return err
+	}
 	catalogPath := filepath.Join(root, "private/cloud/web-controller/config/plans.json")
-	development, err := seedDevelopmentAccount(controllerDatabase, catalogPath, now)
+	development, err := seedDevelopmentAccount(controllerPostgresDSN, catalogPath, now)
 	if err != nil {
 		return err
 	}
@@ -190,7 +208,7 @@ func run(ctx context.Context, args []string) error {
 		edgeKeys[hubID] = hubPrivate
 		relayKeys[hubID] = relayPrivate
 	}
-	controllerConfig := controller.Config{DatabasePath: controllerDatabase, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Devices: devices, Assignments: assignments, DevelopmentEnrollmentCode: enrollmentCode, DevelopmentEnrollmentAccountID: account.GetAccountId(), DevelopmentEnrollmentHubID: "hub-edge-a", DevelopmentMobileHubID: "hub-edge-a", DevelopmentMobileHubURL: "http://127.0.0.1:41002", DevelopmentMobileHubRegion: "local-1", OperatorID: "development-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes), WebStaticDir: webStaticDir}
+	controllerConfig := controller.Config{PostgresDSN: controllerPostgresDSN, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Devices: devices, Assignments: assignments, DevelopmentEnrollmentCode: enrollmentCode, DevelopmentEnrollmentAccountID: account.GetAccountId(), DevelopmentEnrollmentHubID: "hub-edge-a", DevelopmentMobileHubID: "hub-edge-a", DevelopmentMobileHubURL: "http://127.0.0.1:41002", DevelopmentMobileHubRegion: "local-1", OperatorID: "development-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes), WebStaticDir: webStaticDir}
 	if *faultHarness {
 		controllerConfig.PublicListen, err = reserveTCPAddress()
 		if err != nil {
@@ -468,6 +486,35 @@ func waitHealth(ctx context.Context, endpoint string, requireSuccess bool) error
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
+}
+
+// prepareDevelopmentPostgres 为当前 artifact 目录重建独立 schema。
+// 该函数只接受显式 development DSN，且只删除 muxvia_dev_ 前缀 schema。
+func prepareDevelopmentPostgres(ctx context.Context, baseDSN, artifactDir string) (string, error) {
+	parsed, err := url.Parse(baseDSN)
+	if err != nil || parsed.Scheme == "" || !strings.HasPrefix(parsed.Scheme, "postgres") {
+		return "", fmt.Errorf("development PostgreSQL DSN must be a PostgreSQL URL")
+	}
+	admin, err := sql.Open("pgx", baseDSN)
+	if err != nil {
+		return "", err
+	}
+	defer admin.Close()
+	if err := admin.PingContext(ctx); err != nil {
+		return "", fmt.Errorf("connect development PostgreSQL: %w", err)
+	}
+	digest := sha256.Sum256([]byte(artifactDir))
+	schema := "muxvia_dev_" + hex.EncodeToString(digest[:8])
+	if _, err := admin.ExecContext(ctx, "DROP SCHEMA IF EXISTS "+schema+" CASCADE"); err != nil {
+		return "", err
+	}
+	if _, err := admin.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		return "", err
+	}
+	query := parsed.Query()
+	query.Set("search_path", schema)
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
 }
 
 func writeJSONFile(path string, value any) error {

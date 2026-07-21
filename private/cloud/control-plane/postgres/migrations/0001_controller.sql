@@ -58,7 +58,7 @@ CREATE TABLE cloud_device_ownership (
 CREATE TABLE hub_topology_heads (
   hub_id TEXT PRIMARY KEY,
   control_generation BIGINT NOT NULL CHECK (control_generation > 0),
-  topology_revision BIGINT NOT NULL CHECK (topology_revision > 0),
+  topology_revision BIGINT NOT NULL CHECK (topology_revision >= 0),
   topology_digest BYTEA NOT NULL,
   observed_at TEXT NOT NULL
 );

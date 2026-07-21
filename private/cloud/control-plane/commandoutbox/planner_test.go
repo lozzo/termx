@@ -10,15 +10,15 @@ import (
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
+	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/relayquota"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
 	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
 )
 
 func TestPlannerClientRevokeCommitsAuthorityAndFansOutAcrossHubs(t *testing.T) {
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestPlannerClientRevokeCommitsAuthorityAndFansOutAcrossHubs(t *testing.T) {
 }
 
 func TestPlannerDaemonRevokeUsesExactPresenceAndHubReceiptCompletesEnforcement(t *testing.T) {
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestPlannerDaemonRevokeUsesExactPresenceAndHubReceiptCompletesEnforcement(t
 }
 
 func TestPlannerTerminalRevokeUsesOpaqueProjectionAndExactInventoryFence(t *testing.T) {
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestPlannerTerminalRevokeUsesOpaqueProjectionAndExactInventoryFence(t *test
 }
 
 func TestPlannerRelayCloseUsesPersistentReservationBinding(t *testing.T) {
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestPlannerRelayCloseUsesPersistentReservationBinding(t *testing.T) {
 }
 
 func TestPlannerCanonicalizesAssignmentMigrationAndReplaysUserTarget(t *testing.T) {
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}

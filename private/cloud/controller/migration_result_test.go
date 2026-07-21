@@ -8,14 +8,14 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
+	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
 )
 
 func TestMigrationResultReplayRetriesProjectionRefresh(t *testing.T) {
 	now := time.Date(2026, 7, 21, 19, 0, 0, 0, time.UTC)
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}

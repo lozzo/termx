@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
+	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	webcontroller "github.com/muxvia/muxvia/private/cloud/web-controller"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -17,7 +17,7 @@ import (
 
 func TestProductAPIUsesProtoCookieCSRFAndPersistentCommerce(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestProductAPIUsesProtoCookieCSRFAndPersistentCommerce(t *testing.T) {
 
 func TestProductAPIDoesNotExposeTestProviderUnlessExplicitlyEnabled(t *testing.T) {
 	now := time.Now().UTC()
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}

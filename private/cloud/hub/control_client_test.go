@@ -13,7 +13,7 @@ import (
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubcontrol"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
+	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
@@ -24,7 +24,7 @@ func TestControlClientBootstrapsMemoryProjectionAndReportsReconciliation(t *test
 	hubPublicKey, hubPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
 	relayPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
 	controllerPublicKey, controllerPrivateKey, _ := ed25519.GenerateKey(rand.Reader)
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,9 @@ func waitProjectionRevision(t *testing.T, projection *Projection, revision uint6
 	t.Fatalf("projection revision = %d, want %d", projection.Snapshot().Revision, revision)
 }
 
-func waitCursor(t *testing.T, store *cloudsqlite.Store, sequence uint64) {
+func waitCursor(t *testing.T, store interface {
+	ControlCursor(context.Context, string, uint64, cloudpb.ControlSenderRole) (uint64, []byte, error)
+}, sequence uint64) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {

@@ -103,6 +103,23 @@ func TestHubGenerationIsSerializedAcrossConcurrentAttach(t *testing.T) {
 	}
 }
 
+func TestControlCursorPersists(t *testing.T) {
+	ctx := context.Background()
+	store, err := cloudpostgres.Open(ctx, testPostgresDSN(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Date(2026, 7, 21, 21, 30, 0, 0, time.UTC)
+	if err := store.PutControlCursor(ctx, "hub-1", 1, cloudpb.ControlSenderRole_CONTROL_SENDER_ROLE_HUB, 2, []byte("digest"), now); err != nil {
+		t.Fatal(err)
+	}
+	sequence, digest, err := store.ControlCursor(ctx, "hub-1", 1, cloudpb.ControlSenderRole_CONTROL_SENDER_ROLE_HUB)
+	if err != nil || sequence != 2 || string(digest) != "digest" {
+		t.Fatalf("control cursor = (%d, %q, %v)", sequence, digest, err)
+	}
+}
+
 func commerceFixture(accountID, email string, marker byte, now time.Time) (commerce.AccountRecord, commerce.SessionRecord, *cloudpb.SubscriptionProjection, *cloudpb.EntitlementProjection, *cloudpb.CommerceAuditProjection) {
 	account := &cloudpb.AccountProjection{AccountId: accountID, UserId: "user-" + accountID, Email: email, AuthRevision: 1, CreatedAtUnixMillis: now.UnixMilli()}
 	accessHash := sha256.Sum256([]byte{marker, 0x01})

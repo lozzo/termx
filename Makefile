@@ -55,7 +55,7 @@ build-web-controller-linux:
 
 cloud-dev:
 	mkdir -p "$(ARTIFACT_DIR)/cloud-dev"
-	go run ./private/cloud/devcloud/cmd/muxvia-cloud-dev --manifest "$(ARTIFACT_DIR)/cloud-dev/runtime.json"
+	scripts/with-test-postgres.sh go run ./private/cloud/devcloud/cmd/muxvia-cloud-dev --manifest "$(ARTIFACT_DIR)/cloud-dev/runtime.json"
 
 test:
 	scripts/with-clean-muxvia-env.sh env GOWORK=off go test ./... -count=1
@@ -67,12 +67,12 @@ test-private:
 		set -e; \
 		for module in $(PRIVATE_MODULES); do \
 			printf '%s\n' "==> $$module"; \
-			(cd "$$module" && "$(CURDIR)/scripts/with-clean-muxvia-env.sh" env GOWORK=off go test ./... -count=1); \
+			(cd "$$module" && "$(CURDIR)/scripts/with-clean-muxvia-env.sh" env GOWORK=off "$(CURDIR)/scripts/with-test-postgres.sh" go test ./... -count=1); \
 		done; \
 	fi
 
 test-cloud-controller-edge:
-	cd private/cloud/devcloud && "$(CURDIR)/scripts/with-clean-muxvia-env.sh" env GOWORK=off go test ./cmd/muxvia-cloud-dev -run TestSupervisorStartsControllerAndTwoIndependentEdges -count=1
+	cd private/cloud/devcloud && "$(CURDIR)/scripts/with-clean-muxvia-env.sh" env GOWORK=off "$(CURDIR)/scripts/with-test-postgres.sh" go test ./cmd/muxvia-cloud-dev -run TestSupervisorStartsControllerAndTwoIndependentEdges -count=1
 
 test-clients:
 	node scripts/client-workspace-guard.mjs

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
+	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
@@ -20,7 +20,7 @@ func TestDispatcherRetriesIdenticalSignedDaemonCommandUntilExecutionReceipt(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestDispatcherRetriesIdenticalSignedDaemonCommandUntilExecutionReceipt(t *t
 
 func TestDispatcherSignsTerminalRevokeAndPersistsDaemonResult(t *testing.T) {
 	publicKey, privateKey, _ := ed25519.GenerateKey(rand.Reader)
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestDispatcherSignsTerminalRevokeAndPersistsDaemonResult(t *testing.T) {
 
 func TestDispatcherUsesIndependentRelayPublisher(t *testing.T) {
 	_, privateKey, _ := ed25519.GenerateKey(rand.Reader)
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestDispatcherUsesIndependentRelayPublisher(t *testing.T) {
 
 func TestDispatcherPublishesExactAssignmentFenceToSourceHub(t *testing.T) {
 	_, privateKey, _ := ed25519.GenerateKey(rand.Reader)
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}

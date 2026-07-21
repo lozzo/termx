@@ -25,10 +25,10 @@ import (
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/persistence"
 	cloudpolicy "github.com/muxvia/muxvia/private/cloud/control-plane/policy"
+	cloudpostgres "github.com/muxvia/muxvia/private/cloud/control-plane/postgres"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/relaycontrol"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/relaylease"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
 	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/usage"
 	webcontroller "github.com/muxvia/muxvia/private/cloud/web-controller"
@@ -50,7 +50,7 @@ type DeploymentConfig struct {
 
 // Config 是 Controller development composition 的显式配置。
 type Config struct {
-	DatabasePath                   string                       `json:"database_path"`
+	PostgresDSN                    string                       `json:"postgres_dsn"`
 	PublicListen                   string                       `json:"public_listen"`
 	InternalControlListen          string                       `json:"internal_control_listen"`
 	OperatorListen                 string                       `json:"operator_listen"`
@@ -82,7 +82,7 @@ type Manifest struct {
 	PublicURL          string   `json:"public_url"`
 	InternalControlURL string   `json:"internal_control_url"`
 	OperatorURL        string   `json:"operator_url"`
-	DatabasePath       string   `json:"database_path"`
+	DatabaseEngine     string   `json:"database_engine"`
 	HubIDs             []string `json:"hub_ids"`
 }
 
@@ -128,7 +128,7 @@ func Start(config Config) (*Runtime, error) {
 }
 
 func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
-	if config.DatabasePath == "" || config.CatalogPath == "" || config.ProjectionKeyID == "" || config.DaemonControlKeyID == "" || len(config.Deployments) < 1 {
+	if config.PostgresDSN == "" || config.CatalogPath == "" || config.ProjectionKeyID == "" || config.DaemonControlKeyID == "" || len(config.Deployments) < 1 {
 		return nil, fmt.Errorf("Controller database, catalog, projection key, daemon control key and deployments are required")
 	}
 	if refreshInterval <= 0 || refreshInterval >= projectionTTL {
@@ -160,7 +160,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		return nil, fmt.Errorf("invalid Controller daemon control private key")
 	}
 	daemonControlKey := ed25519.PrivateKey(daemonControlKeyBytes)
-	store, err := cloudsqlite.Open(config.DatabasePath)
+	store, err := cloudpostgres.Open(context.Background(), config.PostgresDSN)
 	if err != nil {
 		return nil, err
 	}
@@ -455,7 +455,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	go runtime.runPolicyPublisher(config, policyService, privateKey, refreshInterval)
 	runtime.dispatcherWG.Add(1)
 	go runtime.runCommandDispatcher()
-	manifest := Manifest{PID: os.Getpid(), PublicURL: origin(publicListener), InternalControlURL: origin(internalListener), OperatorURL: origin(operatorListener), DatabasePath: config.DatabasePath}
+	manifest := Manifest{PID: os.Getpid(), PublicURL: origin(publicListener), InternalControlURL: origin(internalListener), OperatorURL: origin(operatorListener), DatabaseEngine: "postgresql"}
 	for _, deployment := range config.Deployments {
 		manifest.HubIDs = append(manifest.HubIDs, deployment.Metadata.GetHubId())
 	}

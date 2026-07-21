@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
+	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
@@ -20,7 +20,7 @@ import (
 func TestTopologyDerivesAccountAndDegradesLostControlToUnknownStale(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "topology.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "topology-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}

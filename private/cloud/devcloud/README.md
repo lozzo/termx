@@ -14,7 +14,8 @@ Controller、Edge 配置和 runtime manifest 都写入指定 artifact 目录。H
 进程装配门禁：
 
 ```bash
+export MUXVIA_DEV_POSTGRES_DSN='postgres://127.0.0.1:5432/postgres?sslmode=disable'
 make test-cloud-controller-edge
 ```
 
-测试 manifest 包含三个独立 PID、Controller/Edge listener、每个子进程的 binary/config/manifest/log 路径、Controller SQLite 和 Edge usage outbox。精确故障注入与 assignment migration 在 `HUB007` 基于该 manifest 扩展。
+测试 manifest 包含三个独立 PID、Controller/Edge listener、每个子进程的 binary/config/manifest/log 路径、Controller 数据库引擎和 Edge usage outbox。PostgreSQL DSN 只写入 0600 Controller config，不进入 manifest。精确故障注入与 assignment migration 在 `HUB007` 基于该 manifest 扩展。

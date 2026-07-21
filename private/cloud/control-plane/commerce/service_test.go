@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
+	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
 )
@@ -17,8 +17,8 @@ func TestCommercePersistsSessionPaymentReplayAndSubscriptionTransitions(t *testi
 	ctx := context.Background()
 	now := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
 	clock := func() time.Time { return now }
-	path := filepath.Join(t.TempDir(), "controller.db")
-	store, err := cloudsqlite.Open(path)
+	path := filepath.Join(t.TempDir(), "controller-postgres")
+	store, err := postgrestest.Open(t, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestCommercePersistsSessionPaymentReplayAndSubscriptionTransitions(t *testi
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := cloudsqlite.Open(path)
+	reopened, err := postgrestest.Open(t, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestCommercePersistsSessionPaymentReplayAndSubscriptionTransitions(t *testi
 func TestPaymentEventRejectsOrderCreatedFromStaleSubscriptionRevision(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 7, 20, 15, 0, 0, 0, time.UTC)
-	store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestPaidOrderSupportsRefundRevokeAndChargebackTransitions(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			ctx := context.Background()
 			now := time.Date(2026, 7, 20, 16, 0, 0, 0, time.UTC)
-			store, err := cloudsqlite.Open(filepath.Join(t.TempDir(), "controller.db"))
+			store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
 			if err != nil {
 				t.Fatal(err)
 			}

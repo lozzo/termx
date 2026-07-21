@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/muxvia/muxvia/private/cloud/controller"
 )
 
 func TestSupervisorStartsControllerAndTwoIndependentEdges(t *testing.T) {
@@ -86,6 +88,19 @@ func findRepoRoot(t *testing.T) string {
 		}
 		directory = parent
 	}
+}
+
+func controllerPostgresDSN(t *testing.T, manifest supervisorManifest) string {
+	t.Helper()
+	record := processByName(t, manifest.Processes, "controller")
+	config, err := controller.LoadConfig(record.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.PostgresDSN == "" {
+		t.Fatal("Controller test config does not contain PostgreSQL DSN")
+	}
+	return config.PostgresDSN
 }
 
 func waitUnavailable(endpoint string, timeout time.Duration) bool {

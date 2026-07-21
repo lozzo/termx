@@ -9,7 +9,7 @@ import (
 )
 
 // migrationResultSink 在 Hub receipt 持久提交后刷新迁移涉及的两个 Hub projection。
-// assignment 真值仍只在 SQLite CommandOutbox 事务中切换；这里不缓存 owner 或 epoch。
+// assignment 真值仍只在 PostgreSQL CommandOutbox 事务中切换；这里不缓存 owner 或 epoch。
 type migrationResultSink struct {
 	outbox  *commandoutbox.Service
 	refresh func(*cloudpb.ManagementCommandProjection, time.Time) error

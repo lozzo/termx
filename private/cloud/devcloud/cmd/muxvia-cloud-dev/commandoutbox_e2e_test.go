@@ -17,8 +17,8 @@ import (
 	"github.com/muxvia/muxvia/private/cloud/companion/session"
 	cloudcommerce "github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
+	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
-	cloudsqlite "github.com/muxvia/muxvia/private/cloud/control-plane/sqlite"
 	"github.com/muxvia/muxvia/private/cloud/controller"
 	cloudedge "github.com/muxvia/muxvia/private/cloud/edge"
 	cloudrelay "github.com/muxvia/muxvia/private/cloud/relay"
@@ -39,10 +39,10 @@ func TestSignedCloseCommandCrossesControllerEdgeAndDaemonHTTPBoundaries(t *testi
 	daemonControlPublic, daemonControlPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	daemonPublic, daemonPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local-1", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublic), RelayId: "relay-1", RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(relayPublic)}
-	databasePath := filepath.Join(t.TempDir(), "controller.db")
+	databaseKey := filepath.Join(t.TempDir(), "controller-postgres")
 	catalogPath := filepath.Join(findRepoRoot(t), "private/cloud/web-controller/config/plans.json")
-	account := seedCommandAccount(t, databasePath, catalogPath, now)
-	controllerRuntime, err := controller.Start(controller.Config{DatabasePath: databasePath, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: "projection-1", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-1", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), Deployments: []controller.DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic)}}, Devices: []*cloudpb.CloudDevicePolicy{{AccountId: account.GetAccountId(), DeviceId: "client-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: account.GetAuthRevision()}, {AccountId: account.GetAccountId(), DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision(), PublicKey: daemonPublic}}, Assignments: []*cloudpb.HubAssignment{{DaemonDeviceId: "daemon-1", AccountId: account.GetAccountId(), HubId: "hub-1", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}}})
+	account := seedCommandAccount(t, databaseKey, catalogPath, now)
+	controllerRuntime, err := controller.Start(controller.Config{PostgresDSN: postgrestest.DSN(t, databaseKey), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: "projection-1", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-1", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), Deployments: []controller.DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic)}}, Devices: []*cloudpb.CloudDevicePolicy{{AccountId: account.GetAccountId(), DeviceId: "client-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: account.GetAuthRevision()}, {AccountId: account.GetAccountId(), DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision(), PublicKey: daemonPublic}}, Assignments: []*cloudpb.HubAssignment{{DaemonDeviceId: "daemon-1", AccountId: account.GetAccountId(), HubId: "hub-1", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,11 +121,11 @@ func TestSignedCloseCommandCrossesControllerEdgeAndDaemonHTTPBoundaries(t *testi
 	}
 	closeRelayPeers, sendRelayProbe, relayMessages := exchangeRelayData(t, clientLease.GetIceServers()[0], daemonLease.GetIceServers()[0], "cloudp005-usage-marker")
 	defer closeRelayPeers()
-	waitRelayUsageSettled(t, databasePath, usageOutboxPath, account.GetAccountId())
+	waitRelayUsageSettled(t, databaseKey, usageOutboxPath, account.GetAccountId())
 	cookies := loginCommandAccount(t, controllerRuntime.Manifest().PublicURL)
 	relayCommand := createRelayCloseCommand(t, controllerRuntime.Manifest().PublicURL, cookies, account.GetAccountId(), metadata.GetRelayId(), clientLease.GetLeaseId())
 	waitCommandApplied(t, controllerRuntime.Manifest().PublicURL, cookies, relayCommand.GetCommandId())
-	waitRelayReservationReleased(t, databasePath, usageOutboxPath, clientLease.GetLeaseId())
+	waitRelayReservationReleased(t, databaseKey, usageOutboxPath, clientLease.GetLeaseId())
 	_ = sendRelayProbe("after-remote-close")
 	select {
 	case message := <-relayMessages:
@@ -254,9 +254,9 @@ func (closer *accessSessionCloser) RequestClose() {
 
 func (closer *accessSessionCloser) Done() <-chan struct{} { return closer.done }
 
-func seedCommandAccount(t *testing.T, databasePath, catalogPath string, now time.Time) *cloudpb.AccountProjection {
+func seedCommandAccount(t *testing.T, databaseKey, catalogPath string, now time.Time) *cloudpb.AccountProjection {
 	t.Helper()
-	store, _ := cloudsqlite.Open(databasePath)
+	store, _ := postgrestest.Open(t, databaseKey)
 	defer store.Close()
 	catalog, _ := webcontroller.LoadCatalog(catalogPath)
 	service, _ := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalog.Contract(), Now: func() time.Time { return now }})
@@ -355,9 +355,9 @@ func waitCloudSignal(t *testing.T, signal <-chan struct{}, operation string) {
 	}
 }
 
-func waitRelayUsageSettled(t *testing.T, databasePath, outboxPath, accountID string) {
+func waitRelayUsageSettled(t *testing.T, databaseKey, outboxPath, accountID string) {
 	t.Helper()
-	store, err := cloudsqlite.Open(databasePath)
+	store, err := postgrestest.Open(t, databaseKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,9 +382,9 @@ func waitRelayUsageSettled(t *testing.T, databasePath, outboxPath, accountID str
 	t.Fatal("Relay usage did not settle and clear durable outbox")
 }
 
-func waitRelayReservationReleased(t *testing.T, databasePath, outboxPath, leaseID string) {
+func waitRelayReservationReleased(t *testing.T, databaseKey, outboxPath, leaseID string) {
 	t.Helper()
-	store, err := cloudsqlite.Open(databasePath)
+	store, err := postgrestest.Open(t, databaseKey)
 	if err != nil {
 		t.Fatal(err)
 	}

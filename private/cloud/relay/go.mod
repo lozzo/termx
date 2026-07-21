@@ -5,6 +5,7 @@ go 1.26.0
 toolchain go1.26.1
 
 require (
+	github.com/muxvia/muxvia v0.0.0
 	github.com/muxvia/muxvia/private/cloud/control-plane v0.0.0
 	github.com/pion/turn/v4 v4.1.4
 	github.com/pion/webrtc/v4 v4.2.9
@@ -12,7 +13,6 @@ require (
 
 require (
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/muxvia/muxvia v0.0.0 // indirect
 	github.com/pion/datachannel v1.6.0 // indirect
 	github.com/pion/dtls/v3 v3.1.2 // indirect
 	github.com/pion/ice/v4 v4.2.1 // indirect
