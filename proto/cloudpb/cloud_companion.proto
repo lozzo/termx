@@ -180,6 +180,39 @@ message ClaimMobileActivationRequest {
   DeviceMetadata client_metadata = 2;
 }
 
+enum MobileActivationState {
+  MOBILE_ACTIVATION_STATE_UNSPECIFIED = 0;
+  MOBILE_ACTIVATION_STATE_WAITING_FOR_DEVICE = 1;
+  MOBILE_ACTIVATION_STATE_WAITING_FOR_APPROVAL = 2;
+  MOBILE_ACTIVATION_STATE_APPROVED = 3;
+}
+
+// MobileActivationCreateRequest 由已登录 Web 账号创建短期扫码登录 locator。
+message MobileActivationCreateRequest {}
+
+// MobileActivationInspectRequest 只使用短码查询同一账号拥有的扫码登录状态。
+message MobileActivationInspectRequest {
+  string user_code = 1;
+}
+
+// MobileActivationApproveRequest 由已登录 Web 账号明确批准已扫码的手机设备。
+message MobileActivationApproveRequest {
+  string user_code = 1;
+}
+
+// MobileActivationProjection 是 Web 可见的非秘密扫码登录投影；不得包含 flow_id 或 edge token。
+message MobileActivationProjection {
+  string user_code = 1;
+  string qr_payload = 2;
+  uint64 expires_at_unix = 3;
+  MobileActivationState state = 4;
+  DeviceMetadata client_metadata = 5;
+}
+
+message MobileActivationApproveResponse {
+  bool approved = 1;
+}
+
 // CloudSessionSummary 是可以进入 CLI/App 状态展示的非秘密会话摘要。
 message CloudSessionSummary {
   string account_label = 1;

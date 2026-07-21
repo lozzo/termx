@@ -17,6 +17,7 @@
 - `CLOUDP006` 已完成 Controller 同 composition Web build、generated Proto JSON 用户账号中心与 operator 工作台、账号隔离、角色/CSRF/近期认证、套餐/usage/device/topology/command/fleet 页面、development 凭据和旧 Web DTO/API 删除。
 - `HUB007` 已完成双 Edge 控制面 E2E：assignment migration、Edge restart、Controller outage、HubControl network outage、inventory full replacement、stale/replay fencing、命令链路、Playwright Operator UI 和隐私扫描均通过；证据见 `docs/remote-platform/hub007-control-plane-e2e.md`，架构与代码 reviewer 均 PASS。
 - 当前最早未完成切片是 `CLOUDP007`：Development 全产品 E2E。
+- `CLOUDP007` 已恢复 Web 已登录账号创建短时二维码、Android App 扫码认领、Web 展示手机元数据并明确批准、App 单次兑换/轮换 Cloud session 的真实 UI 闭环；移动端 refresh 复用 commerce + SQLite 持久 session owner，Controller 重启后可继续轮换，HubID/URL/region 由显式 development directory 原子绑定。ARM64/API 35 模拟器已看到同账号 Cloud daemon 列表，本子范围架构与代码 reviewer 均 PASS。完整 managed terminal/Relay、后台恢复回归与最终切片双审查仍未完成，因此切片继续保持进行中。
 - 多 Hub 基础和产品能力存在交叉依赖，必须按本文件交错推进，不能先写完所有 Hub 再补套餐，也不能继续在单进程 devcloud 上堆硬编码。
 - development 必须走完整账号、交易、Subscription、Entitlement、managed P2P/Relay、周期 quota、usage、topology 和管理链路；外部 provider 可以使用显式测试实现。
 - Web/WASM terminal 产品、iOS/Desktop GUI、多区域数据库、Relay Mesh、真实支付 provider 和复杂计费平台继续延后。

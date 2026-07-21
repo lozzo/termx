@@ -479,21 +479,6 @@ export function RemoteControlApp({
     }
   }, [cloudAccountAdapter])
 
-  const beginCloudActivation = useCallback(async () => {
-    if (!cloudAccountAdapter) return
-    setLoading(true)
-    setError(null)
-    try {
-      const activation = await cloudAccountAdapter.beginActivation()
-      setCloudActivation(activation)
-      void completeCloudActivation(activation.userCode)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setLoading(false)
-    }
-  }, [cloudAccountAdapter, completeCloudActivation])
-
   const scanCloudActivation = useCallback(async () => {
     if (!cloudAccountAdapter || !scanPairingCode) return
     setLoading(true)
@@ -821,7 +806,7 @@ export function RemoteControlApp({
           onLoginChange={setLogin}
           onPasswordChange={setPassword}
           onRefresh={() => { hapticImpact(); void refreshMachines() }}
-          onSignIn={() => { hapticImpact(); void (cloudAccountAdapter ? beginCloudActivation() : submitLogin()) }}
+          onSignIn={() => { hapticImpact(); void submitLogin() }}
           onScanCloudActivation={() => { hapticImpact(); void scanCloudActivation() }}
           onCancelCloudActivation={() => { hapticSelection(); void cancelCloudActivation() }}
           onSignOut={() => { hapticImpact(); void signOut() }}
@@ -1426,7 +1411,6 @@ function SettingsView({
                     activation={cloudActivation}
                     canScan={canScanCloudActivation}
                     loading={loading}
-                    onBegin={onSignIn}
                     onCancel={onCancelCloudActivation}
                     onScan={onScanCloudActivation}
                   />
@@ -1456,14 +1440,12 @@ function CloudActivationPanel({
   activation,
   canScan,
   loading,
-  onBegin,
   onCancel,
   onScan,
 }: {
   activation: { userCode: string; expiresAtUnix: number } | null
   canScan: boolean
   loading: boolean
-  onBegin: () => void
   onCancel: () => void
   onScan: () => void
 }) {
@@ -1498,19 +1480,10 @@ function CloudActivationPanel({
 
   return (
     <div className="border-t border-zinc-200 px-4 py-4">
-      <p className="mb-4 text-sm leading-6 text-zinc-500">Sign in on the TermX Cloud website, then authorize this phone with a short code or QR code.</p>
-      <button
-        className="termx-app-primary-button h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-        type="button"
-        onClick={onBegin}
-        disabled={loading}
-      >
-        <ShieldCheck className="h-4 w-4" />
-        {loading ? 'Creating code...' : 'Activate with web'}
-      </button>
+      <p className="mb-4 text-sm leading-6 text-zinc-500">Sign in to TermX Cloud on the web, create a phone activation QR code, then scan it here.</p>
       {canScan ? (
         <button
-          className="termx-app-secondary-button mt-3 h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+          className="termx-app-primary-button h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
           type="button"
           onClick={onScan}
           disabled={loading}
@@ -1518,7 +1491,7 @@ function CloudActivationPanel({
           <QrCode className="h-4 w-4" />
           Scan QR from web
         </button>
-      ) : null}
+      ) : <p className="text-sm text-zinc-500">QR scanning is unavailable on this platform.</p>}
     </div>
   )
 }

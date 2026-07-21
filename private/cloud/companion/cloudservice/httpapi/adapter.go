@@ -23,7 +23,9 @@ import (
 // 默认必须是 loopback；AllowPublicHTTP 只能来自已验证的 staging-public-http manifest。
 type Config struct {
 	ControlPlaneURL string
+	HubID           string
 	HubURL          string
+	HubRegion       string
 	AllowPublicHTTP bool
 	HTTPClient      *http.Client
 	Now             func() time.Time
@@ -33,7 +35,9 @@ type Config struct {
 // 它通过真实 HTTP socket 交换 cloud contract，不 import 或调用 Control Plane/Hub 进程内 Service。
 type Adapter struct {
 	controlURL string
+	hubID      string
 	hubURL     string
+	hubRegion  string
 	client     *http.Client
 	now        func() time.Time
 }
@@ -58,7 +62,14 @@ func New(config Config) (*Adapter, error) {
 	if config.Now == nil {
 		config.Now = func() time.Time { return time.Now().UTC() }
 	}
-	return &Adapter{controlURL: strings.TrimSuffix(control.String(), "/"), hubURL: strings.TrimSuffix(hub.String(), "/"), client: &client, now: config.Now}, nil
+	return &Adapter{
+		controlURL: strings.TrimSuffix(control.String(), "/"),
+		hubID:      strings.TrimSpace(config.HubID),
+		hubURL:     strings.TrimSuffix(hub.String(), "/"),
+		hubRegion:  strings.TrimSpace(config.HubRegion),
+		client:     &client,
+		now:        config.Now,
+	}, nil
 }
 
 // BeginLogin 启动显式 dev account flow；返回值不包含 access token。
@@ -74,6 +85,9 @@ func (adapter *Adapter) BeginLogin(ctx context.Context, request *cloudpb.BeginLo
 func (adapter *Adapter) CompleteLogin(ctx context.Context, request *cloudpb.CompleteLoginRequest) (session.Session, error) {
 	wire, err := adapter.postSession(ctx, ControlCompleteLoginPath, request)
 	if err != nil {
+		return session.Session{}, err
+	}
+	if err := adapter.completeHubDirectory(&wire); err != nil {
 		return session.Session{}, err
 	}
 	return sessionFromWire(wire, adapter.now())
@@ -93,6 +107,22 @@ func (adapter *Adapter) CompleteDeviceEnrollment(ctx context.Context, request *c
 	wire := &cloudpb.DeviceEnrollmentServiceSession{}
 	if err := adapter.postProto(ctx, adapter.controlURL+ControlCompleteEnrollmentPath, session.Authorization{}, request, wire); err != nil {
 		return cloudservice.DeviceEnrollmentResult{}, err
+	}
+	// Controller 只签发 Hub identity 与 assignment；当前 adapter manifest 才拥有该
+	// deployment 的可达 URL/region。两者必须在写入 OS credential store 前合成同一目录快照。
+	if wire.GetHubId() != "" {
+		if adapter.hubID != "" && wire.GetHubId() != adapter.hubID {
+			return cloudservice.DeviceEnrollmentResult{}, protocolNetworkError("Control Plane returned a mismatched enrollment Hub")
+		}
+		if wire.GetHubUrl() != "" && wire.GetHubUrl() != adapter.hubURL || wire.GetHubRegion() != "" && wire.GetHubRegion() != adapter.hubRegion {
+			return cloudservice.DeviceEnrollmentResult{}, protocolNetworkError("Control Plane returned a mismatched enrollment Hub directory")
+		}
+		if wire.GetHubUrl() == "" {
+			wire.HubUrl = adapter.hubURL
+		}
+		if wire.GetHubRegion() == "" {
+			wire.HubRegion = adapter.hubRegion
+		}
 	}
 	stored, err := deviceSessionFromProto(wire, adapter.now())
 	if err != nil {
@@ -122,7 +152,29 @@ func (adapter *Adapter) RefreshSession(ctx context.Context, authorization sessio
 	if decodeJSON(response.Body, &wire) != nil {
 		return session.Session{}, protocolNetworkError("Control Plane returned an invalid refreshed session")
 	}
+	if err := adapter.completeHubDirectory(&wire); err != nil {
+		return session.Session{}, err
+	}
 	return sessionFromWire(wire, adapter.now())
+}
+
+func (adapter *Adapter) completeHubDirectory(wire *SessionWire) error {
+	if wire == nil || wire.HubID == "" {
+		return protocolNetworkError("Control Plane returned an incomplete Hub directory")
+	}
+	if adapter.hubID != "" && wire.HubID != adapter.hubID {
+		return protocolNetworkError("Control Plane returned a mismatched Hub directory")
+	}
+	if wire.HubURL != "" && wire.HubURL != adapter.hubURL || wire.HubRegion != "" && wire.HubRegion != adapter.hubRegion {
+		return protocolNetworkError("Control Plane returned a mismatched Hub directory")
+	}
+	if wire.HubURL == "" {
+		wire.HubURL = adapter.hubURL
+	}
+	if wire.HubRegion == "" {
+		wire.HubRegion = adapter.hubRegion
+	}
+	return nil
 }
 
 // ResolveEndpoint 使用启动阶段 edge credential 和缓存 HubDirectory 向 Hub 解析 target。

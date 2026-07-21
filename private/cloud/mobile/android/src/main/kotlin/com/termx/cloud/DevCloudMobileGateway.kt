@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import org.bouncycastle.util.encoders.Base64
 import org.json.JSONObject
 import termx.cloud.v1.CloudCompanion
+import termx.cloud.v1.CloudTopology
 import termx.client.binding.v1.ClientBinding
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
@@ -109,10 +110,11 @@ internal class DevCloudMobileGateway(
             .setTermxVersion(termxVersion)
             .build()
 
-    /** currentAccount 只返回仍有效的账号摘要。 */
-    suspend fun currentAccount(): ManagedCloudAccount? = sessionLock.withLock {
-        accountSession?.takeIf { now().isBefore(it.expiresAt) }?.accountSummary()
-            ?: sessionStore.load(now())?.also { accountSession = it }?.accountSummary()
+    /** currentAccount 通过统一 session owner 恢复或轮换持久 credential，再返回仍有效的账号摘要。 */
+    suspend fun currentAccount(): ManagedCloudAccount? = try {
+        accountSession().accountSummary()
+    } catch (failure: ManagedEndpointFailure) {
+        if (failure.code == "login_required" || failure.code == "unauthenticated") null else throw failure
     }
 
     /** listDevices 从 Hub edge snapshot 读取同账号设备，不访问 Control Plane 或 terminal 数据。 */
@@ -126,8 +128,8 @@ internal class DevCloudMobileGateway(
         )
         response.devicesList.map { device ->
             val kind = when (device.kind) {
-                CloudCompanion.ManagedDeviceKind.MANAGED_DEVICE_KIND_CLIENT -> "client"
-                CloudCompanion.ManagedDeviceKind.MANAGED_DEVICE_KIND_DAEMON -> "daemon"
+                CloudTopology.ManagedDeviceKind.MANAGED_DEVICE_KIND_CLIENT -> "client"
+                CloudTopology.ManagedDeviceKind.MANAGED_DEVICE_KIND_DAEMON -> "daemon"
                 else -> fail("protocol", "Hub returned an invalid managed device kind")
             }
             if (device.deviceId.isBlank() || device.displayName.isBlank() || device.presence == CloudCompanion.PresenceState.PRESENCE_STATE_UNSPECIFIED || kind == "daemon" && device.deviceFingerprint.isBlank()) {
@@ -178,7 +180,7 @@ internal class DevCloudMobileGateway(
             CloudCompanion.RelayLease.parser(),
             accountSession(),
         )
-        if (lease.pathKind != CloudCompanion.ObservedPath.OBSERVED_PATH_SINGLE_RELAY || lease.expiresAtUnix <= now().epochSecond || lease.iceServersCount != 1) {
+        if (lease.pathKind != CloudTopology.ObservedPath.OBSERVED_PATH_SINGLE_RELAY || lease.expiresAtUnix <= now().epochSecond || lease.iceServersCount != 1) {
             fail("protocol", "Hub returned invalid Relay material")
         }
         lease

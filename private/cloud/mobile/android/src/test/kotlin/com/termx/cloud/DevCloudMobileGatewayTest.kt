@@ -11,6 +11,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import termx.cloud.v1.CloudCompanion
+import termx.cloud.v1.CloudTopology
 import termx.client.binding.v1.ClientBinding
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
@@ -79,7 +80,7 @@ class DevCloudMobileGatewayTest {
                     assertFalse(envelope.toString().contains("capability", ignoreCase = true))
                     streamResponse(CloudCompanion.SignalingEvent.newBuilder().setCandidate(CloudCompanion.IceCandidate.newBuilder().setCandidate("candidate:streamed")).build(), CloudCompanion.SignalingEvent.newBuilder().setAnswer(CloudCompanion.SignalingAnswer.newBuilder().setSignalingSessionId("signal-1").setSdp("answer-sdp").addCandidates(CloudCompanion.IceCandidate.newBuilder().setCandidate("candidate:answer"))).build())
                 }
-                "/v1/relay/leases/acquire" -> protoResponse(CloudCompanion.RelayLease.newBuilder().setLeaseId("lease-1").setSignedLease(com.google.protobuf.ByteString.copyFromUtf8("signed-lease")).setExpiresAtUnix(now.plusSeconds(300).epochSecond).setPathKind(CloudCompanion.ObservedPath.OBSERVED_PATH_SINGLE_RELAY).addIceServers(CloudCompanion.IceServer.newBuilder().addUrls("turn:127.0.0.1:41003?transport=udp").setUsername("relay-user").setCredential("relay-password")).build().toByteArray())
+                "/v1/relay/leases/acquire" -> protoResponse(CloudCompanion.RelayLease.newBuilder().setLeaseId("lease-1").setSignedLease(com.google.protobuf.ByteString.copyFromUtf8("signed-lease")).setExpiresAtUnix(now.plusSeconds(300).epochSecond).setPathKind(CloudTopology.ObservedPath.OBSERVED_PATH_SINGLE_RELAY).addIceServers(CloudCompanion.IceServer.newBuilder().addUrls("turn:127.0.0.1:41003?transport=udp").setUsername("relay-user").setCredential("relay-password")).build().toByteArray())
                 else -> throw AssertionError("unexpected Hub path ${request.path}")
             }
         }
@@ -232,7 +233,7 @@ class DevCloudMobileGatewayTest {
 					.setDeviceFingerprint("ed25519-sha256:studio")
 					.setDisplayName("Studio")
 					.setPlatform("linux")
-					.setKind(CloudCompanion.ManagedDeviceKind.MANAGED_DEVICE_KIND_DAEMON)
+					.setKind(CloudTopology.ManagedDeviceKind.MANAGED_DEVICE_KIND_DAEMON)
 					.setPresence(CloudCompanion.PresenceState.PRESENCE_STATE_ONLINE))
 				.build().toByteArray())
 		}
@@ -258,6 +259,33 @@ class DevCloudMobileGatewayTest {
 		} finally {
 			control.close()
 			hub.close()
+		}
+	}
+
+	@Test
+	fun coldStartRefreshesExpiredAccessBeforeProjectingAccountOrRouteEligibility() = runBlocking {
+		val store = MemoryCloudSessionStore()
+		val expiredAccess = ByteArray(32) { 0x71 }
+		val refreshToken = ByteArray(32) { 0x72 }
+		val nextAccess = ByteArray(32) { 0x73 }
+		val nextRefresh = ByteArray(32) { 0x74 }
+		store.save(AccountSession(expiredAccess, now.minusSeconds(1), refreshToken, now.plusSeconds(86400), "account-refresh", "Refresh owner", "android-refresh", "hub-refresh", "http://127.0.0.1:41002", "local-1", 1))
+		var refreshCount = 0
+		val control = TestHttpServer { request ->
+			assertEquals("/v1/sessions/refresh", request.path)
+			refreshCount++
+			val input = JSONObject(String(request.body, Charsets.UTF_8))
+			assertArrayEquals(refreshToken, Base64.getDecoder().decode(input.getString("refresh_token")))
+			jsonResponse(sessionJSON(nextAccess, nextRefresh, now.plusSeconds(3600), now.plusSeconds(172800), "http://127.0.0.1:41002"))
+		}
+		try {
+			val restarted = DevCloudMobileGateway(control.origin, "http://127.0.0.1:41002", now = { now }, sessionStore = store)
+			assertEquals("account-refresh", restarted.currentAccount()?.accountId)
+			val eligibility = restarted.routeEligibilityProto(ClientBinding.CloudRouteEligibilityRequest.getDefaultInstance())
+			assertTrue(eligibility.accountSessionAvailable)
+			assertEquals(1, refreshCount)
+		} finally {
+			control.close()
 		}
 	}
 

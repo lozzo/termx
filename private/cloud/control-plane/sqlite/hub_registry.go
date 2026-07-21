@@ -97,7 +97,8 @@ CREATE TABLE IF NOT EXISTS commerce_accounts(
 CREATE TABLE IF NOT EXISTS commerce_sessions(
   session_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, access_hash BLOB NOT NULL UNIQUE,
   refresh_hash BLOB NOT NULL UNIQUE, access_expires_at INTEGER NOT NULL,
-  refresh_expires_at INTEGER NOT NULL, revision INTEGER NOT NULL, revoked INTEGER NOT NULL
+  refresh_expires_at INTEGER NOT NULL, revision INTEGER NOT NULL, revoked INTEGER NOT NULL,
+  client_device_id TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS commerce_sessions_account ON commerce_sessions(account_id);
 CREATE TABLE IF NOT EXISTS commerce_orders(
@@ -183,6 +184,9 @@ CREATE TABLE IF NOT EXISTS management_command_results(
 		return err
 	}
 	if err := store.ensureColumn("commerce_payment_events", "account_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := store.ensureColumn("commerce_sessions", "client_device_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	return store.ensureColumn("cloud_device_ownership", "public_key", "BLOB NOT NULL DEFAULT X''")

@@ -41,12 +41,20 @@ type AccountRecord struct {
 type SessionRecord struct {
 	SessionID        string
 	AccountID        string
+	ClientDeviceID   string
 	AccessTokenHash  [sha256.Size]byte
 	RefreshTokenHash [sha256.Size]byte
 	AccessExpiresAt  time.Time
 	RefreshExpiresAt time.Time
 	Revision         uint64
 	Revoked          bool
+}
+
+// DeviceSessionCredential 是 Controller 扫码登录使用的持久账号 refresh session。
+// Credential 仍是 generated Proto；ClientDeviceID 只用于 Controller 在轮换后重新签发绑定同一设备的 edge token。
+type DeviceSessionCredential struct {
+	Credential     *cloudpb.AccountSessionCredential
+	ClientDeviceID string
 }
 
 // PaymentEventRecord 是 durable provider journal 的当前处理状态。
@@ -241,7 +249,7 @@ func (service *Service) Refresh(ctx context.Context, request *cloudpb.RefreshAcc
 		return nil, ErrUnauthorized
 	}
 	old, err := service.store.SessionByRefreshHash(ctx, sha256.Sum256(request.GetRefreshToken()))
-	if err != nil || old.Revoked || !service.now().UTC().Before(old.RefreshExpiresAt) {
+	if err != nil || old.Revoked || old.ClientDeviceID != "" || !service.now().UTC().Before(old.RefreshExpiresAt) {
 		return nil, ErrUnauthorized
 	}
 	account, err := service.store.Account(ctx, old.AccountID)
@@ -257,6 +265,53 @@ func (service *Service) Refresh(ctx context.Context, request *cloudpb.RefreshAcc
 		return nil, err
 	}
 	return &cloudpb.RefreshAccountSessionResponse{Session: credential}, nil
+}
+
+// IssueDeviceSession 为已由 Web 明确批准的 client device 创建持久、可单次轮换的 refresh session。
+// 调用方必须先完成账号认证和设备授权；该方法不签发 Hub edge token。
+func (service *Service) IssueDeviceSession(ctx context.Context, accountID, clientDeviceID string) (*cloudpb.AccountSessionCredential, error) {
+	if accountID == "" || clientDeviceID == "" {
+		return nil, ErrUnauthorized
+	}
+	account, err := service.store.Account(ctx, accountID)
+	if err != nil {
+		return nil, ErrUnauthorized
+	}
+	now := service.now().UTC()
+	credential, record, err := service.newSession(account.Projection, 1, now)
+	if err != nil {
+		return nil, err
+	}
+	record.ClientDeviceID = clientDeviceID
+	if err := service.store.PutSession(ctx, record, service.audit(accountID, account.Projection.GetUserId(), "session.device.issue", clientDeviceID, now)); err != nil {
+		return nil, err
+	}
+	return credential, nil
+}
+
+// RefreshDeviceSession 单次轮换扫码登录设备的持久 refresh token，并保留原 client device 绑定。
+func (service *Service) RefreshDeviceSession(ctx context.Context, refreshToken []byte) (*DeviceSessionCredential, error) {
+	if len(refreshToken) == 0 {
+		return nil, ErrUnauthorized
+	}
+	old, err := service.store.SessionByRefreshHash(ctx, sha256.Sum256(refreshToken))
+	if err != nil || old.Revoked || old.ClientDeviceID == "" || !service.now().UTC().Before(old.RefreshExpiresAt) {
+		return nil, ErrUnauthorized
+	}
+	account, err := service.store.Account(ctx, old.AccountID)
+	if err != nil {
+		return nil, ErrUnauthorized
+	}
+	now := service.now().UTC()
+	credential, next, err := service.newSession(account.Projection, old.Revision+1, now)
+	if err != nil {
+		return nil, err
+	}
+	next.ClientDeviceID = old.ClientDeviceID
+	if err := service.store.RotateSession(ctx, old.SessionID, next, service.audit(old.AccountID, account.Projection.GetUserId(), "session.device.refresh", old.ClientDeviceID, now)); err != nil {
+		return nil, err
+	}
+	return &DeviceSessionCredential{Credential: credential, ClientDeviceID: old.ClientDeviceID}, nil
 }
 
 // Logout 撤销精确 session 或当前账号的全部 session。

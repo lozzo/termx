@@ -65,6 +65,9 @@ type Config struct {
 	DevelopmentEnrollmentCode      string                       `json:"development_enrollment_code"`
 	DevelopmentEnrollmentAccountID string                       `json:"development_enrollment_account_id"`
 	DevelopmentEnrollmentHubID     string                       `json:"development_enrollment_hub_id"`
+	DevelopmentMobileHubID         string                       `json:"development_mobile_hub_id"`
+	DevelopmentMobileHubURL        string                       `json:"development_mobile_hub_url"`
+	DevelopmentMobileHubRegion     string                       `json:"development_mobile_hub_region"`
 	OperatorID                     string                       `json:"operator_id"`
 	OperatorRole                   string                       `json:"operator_role"`
 	OperatorAccessTokenBase64      string                       `json:"operator_access_token_base64"`
@@ -132,6 +135,10 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	}
 	if (config.DevelopmentEnrollmentCode == "") != (config.DevelopmentEnrollmentAccountID == "") {
 		return nil, fmt.Errorf("development enrollment code and account must be configured together")
+	}
+	mobileDirectoryConfigured := config.DevelopmentMobileHubID != "" || config.DevelopmentMobileHubURL != "" || config.DevelopmentMobileHubRegion != ""
+	if mobileDirectoryConfigured && (config.DevelopmentMobileHubID == "" || config.DevelopmentMobileHubURL == "" || config.DevelopmentMobileHubRegion == "") {
+		return nil, fmt.Errorf("development mobile Hub ID, URL and region must be configured together")
 	}
 	now := time.Now().UTC()
 	privateKeyBytes, err := base64.RawStdEncoding.DecodeString(config.ProjectionPrivateKeyBase64)
@@ -217,6 +224,13 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		if err := registry.RegisterDeployment(context.Background(), hubregistry.Deployment{Metadata: deployment.Metadata, ControlPublicKey: ed25519.PublicKey(publicKey), RelayControlPublicKey: ed25519.PublicKey(relayPublicKey), Enabled: true, UpdatedAt: now}); err != nil {
 			_ = store.Close()
 			return nil, err
+		}
+	}
+	if mobileDirectoryConfigured {
+		deployment, err := registry.Deployment(context.Background(), config.DevelopmentMobileHubID)
+		if err != nil || deployment.Metadata.GetRegion() != config.DevelopmentMobileHubRegion {
+			_ = store.Close()
+			return nil, fmt.Errorf("development mobile Hub directory does not match a registered deployment")
 		}
 	}
 	for _, assignment := range config.Assignments {
@@ -337,8 +351,23 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	mobileHubID := config.DevelopmentMobileHubID
+	if mobileHubID == "" {
+		mobileHubID = config.Deployments[0].Metadata.GetHubId()
+	}
+	mobileActivation, err := newMobileActivationService(commerceService, topologyService, edgeIssuer, mobileHubID, config.DevelopmentMobileHubURL, config.DevelopmentMobileHubRegion, time.Now, notifyPolicyChange)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	mobileActivationHandler, err := webcontroller.MobileActivationAPIHandler(webcontroller.MobileActivationAPIConfig{Commerce: commerceService, Service: mobileActivation})
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	publicMux := http.NewServeMux()
 	publicMux.HandleFunc("/healthz", healthHandler)
+	mobileActivation.registerHTTP(publicMux)
 	if enrollment != nil {
 		enrollment.registerHTTP(publicMux)
 	}
@@ -352,6 +381,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_, _ = writer.Write(body)
 	})
 	publicMux.Handle("/api/v1/management/", managementHandler)
+	publicMux.Handle("/api/v1/mobile-activations/", mobileActivationHandler)
 	publicMux.Handle("/api/v1/", productHandler)
 	operatorMux := http.NewServeMux()
 	operatorMux.HandleFunc("/healthz", healthHandler)

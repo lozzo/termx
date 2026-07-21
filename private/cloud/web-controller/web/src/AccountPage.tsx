@@ -7,11 +7,14 @@ import {
   KeyRound,
   Laptop,
   LogOut,
+  QrCode,
   RefreshCw,
   ShieldAlert,
+  ShieldCheck,
   Smartphone,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -34,6 +37,15 @@ import {
   type ListManagementCommandsResponse,
 } from "@/generated/cloudpb/cloud_management_pb";
 import { KickPresenceTargetSchema } from "@/generated/cloudpb/cloud_hub_control_pb";
+import {
+  MobileActivationApproveRequestSchema,
+  MobileActivationApproveResponseSchema,
+  MobileActivationCreateRequestSchema,
+  MobileActivationInspectRequestSchema,
+  MobileActivationProjectionSchema,
+  MobileActivationState,
+  type MobileActivationProjection,
+} from "@/generated/cloudpb/cloud_companion_pb";
 import {
   ConfirmTestPaymentRequestSchema,
   ConfirmTestPaymentResponseSchema,
@@ -333,8 +345,10 @@ export default function AccountPage() {
           </div>
         )}
         {tab === "devices" && (
-          <Panel title="Registered devices" className="mt-6">
-            {devices.devices.map((device) => (
+          <div className="mt-6 grid gap-5">
+            <MobileActivationPanel onActivated={load} />
+            <Panel title="Registered devices">
+              {devices.devices.map((device) => (
               <div
                 className="grid gap-3 border-b border-line p-4 lg:grid-cols-[1fr_160px_160px_auto] lg:items-center"
                 key={device.deviceId}
@@ -379,8 +393,9 @@ export default function AccountPage() {
                   Revoke
                 </Button>
               </div>
-            ))}
-          </Panel>
+              ))}
+            </Panel>
+          </div>
         )}
         {tab === "topology" && (
           <div className="mt-6 grid gap-5">
@@ -589,6 +604,102 @@ export default function AccountPage() {
         )}
       </main>
     </div>
+  );
+}
+
+function MobileActivationPanel({ onActivated }: { onActivated: () => Promise<void> }) {
+  const [activation, setActivation] = useState<MobileActivationProjection>();
+  const [qrDataURL, setQRDataURL] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!activation?.qrPayload) { setQRDataURL(""); return; }
+    void QRCode.toDataURL(activation.qrPayload, { width: 256, margin: 2, errorCorrectionLevel: "M", color: { dark: "#111111", light: "#ffffff" } })
+      .then(setQRDataURL)
+      .catch(() => setError("Could not render activation QR code"));
+  }, [activation?.qrPayload]);
+
+  useEffect(() => {
+    if (!activation || activation.state !== MobileActivationState.WAITING_FOR_DEVICE) return;
+    let stopped = false;
+    const inspect = async () => {
+      try {
+        const next = await protoPost(
+          "/api/v1/mobile-activations/inspect",
+          MobileActivationInspectRequestSchema,
+          create(MobileActivationInspectRequestSchema, { userCode: activation.userCode }),
+          MobileActivationProjectionSchema,
+        );
+        if (!stopped) setActivation(next);
+      } catch (cause) {
+        if (!stopped) setError(cause instanceof Error ? cause.message : "Activation inspection failed");
+      }
+    };
+    const timer = window.setInterval(() => void inspect(), 1500);
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, [activation]);
+
+  async function createActivation() {
+    setBusy(true); setError("");
+    try {
+      setActivation(await protoPost(
+        "/api/v1/mobile-activations/create",
+        MobileActivationCreateRequestSchema,
+        create(MobileActivationCreateRequestSchema),
+        MobileActivationProjectionSchema,
+      ));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not create activation");
+    } finally { setBusy(false); }
+  }
+
+  async function approve() {
+    if (!activation) return;
+    setBusy(true); setError("");
+    try {
+      await protoPost(
+        "/api/v1/mobile-activations/approve",
+        MobileActivationApproveRequestSchema,
+        create(MobileActivationApproveRequestSchema, { userCode: activation.userCode }),
+        MobileActivationApproveResponseSchema,
+      );
+      setActivation({ ...activation, state: MobileActivationState.APPROVED });
+      await onActivated();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not approve phone");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <Panel title="Activate the mobile app">
+      {!activation ? (
+        <div className="flex flex-wrap items-center justify-between gap-4 p-5">
+          <div className="flex max-w-2xl items-start gap-3">
+            <Smartphone className="mt-0.5 size-4 shrink-0 text-primary" />
+            <p className="m-0 text-xs leading-6 text-muted-foreground">Create a short-lived QR code, scan it in the TermX App, then review and approve the phone here.</p>
+          </div>
+          <Button disabled={busy} onClick={() => void createActivation()}><QrCode />{busy ? "Creating..." : "Create QR code"}</Button>
+        </div>
+      ) : (
+        <div className="grid md:grid-cols-[288px_1fr]">
+          <div className="grid min-h-72 place-items-center border-b border-line bg-white p-4 md:border-b-0 md:border-r">
+            {qrDataURL ? <img className="aspect-square size-64 object-contain" width="256" height="256" alt="One-time QR code for activating the TermX mobile app" src={qrDataURL} /> : <span className="text-xs text-muted-foreground">Rendering QR code...</span>}
+          </div>
+          <div className="flex flex-col justify-center p-6">
+            <span className="font-mono text-[10px] text-primary">{MobileActivationState[activation.state]}</span>
+            <strong className="mt-3 font-mono text-2xl font-normal">{activation.userCode}</strong>
+            {activation.clientMetadata ? (
+              <div className="mt-5 border-y border-line py-4 text-xs"><b className="block font-medium">{activation.clientMetadata.displayName}</b><span className="text-muted-foreground">{activation.clientMetadata.platform} · {activation.clientMetadata.termxVersion}</span></div>
+            ) : <p className="mt-4 text-xs leading-6 text-muted-foreground">In the TermX App, open Settings and choose Scan QR from web.</p>}
+            {activation.state === MobileActivationState.WAITING_FOR_APPROVAL && <Button className="mt-5 self-start" disabled={busy} onClick={() => void approve()}><ShieldCheck />{busy ? "Approving..." : "Approve phone"}</Button>}
+            {activation.state === MobileActivationState.APPROVED && <p className="mt-5 text-xs text-success">Approved. The App is finishing activation and this code cannot be reused.</p>}
+            <Button className="mt-3 self-start" variant="ghost" onClick={() => { setActivation(undefined); setError(""); }}>{activation.state === MobileActivationState.APPROVED ? "Done" : "Cancel"}</Button>
+          </div>
+        </div>
+      )}
+      {error && <p className="m-5 border border-destructive p-3 text-xs text-destructive" role="alert">{error}</p>}
+    </Panel>
   );
 }
 

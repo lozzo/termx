@@ -160,6 +160,13 @@ func TestCommercePersistsSessionPaymentReplayAndSubscriptionTransitions(t *testi
 	if expired.GetSubscription().GetStatus() != cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_EXPIRED || expired.GetEntitlement().GetStatus() != cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_EXPIRED {
 		t.Fatalf("expired state = %v / %v", expired.GetSubscription(), expired.GetEntitlement())
 	}
+	deviceCredential, err := service.IssueDeviceSession(ctx, account.GetAccountId(), "android-client-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Refresh(ctx, &cloudpb.RefreshAccountSessionRequest{RefreshToken: deviceCredential.GetRefreshToken()}); !errors.Is(err, commerce.ErrUnauthorized) {
+		t.Fatalf("device refresh token crossed into browser session refresh: %v", err)
+	}
 
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
@@ -179,6 +186,13 @@ func TestCommercePersistsSessionPaymentReplayAndSubscriptionTransitions(t *testi
 	}
 	if next, err := restarted.Refresh(ctx, &cloudpb.RefreshAccountSessionRequest{RefreshToken: changed.GetSession().GetRefreshToken()}); err != nil || next.GetSession().GetSessionRevision() != 2 {
 		t.Fatalf("password-change session was not restored: response=%v error=%v", next, err)
+	}
+	deviceNext, err := restarted.RefreshDeviceSession(ctx, deviceCredential.GetRefreshToken())
+	if err != nil || deviceNext.ClientDeviceID != "android-client-1" || deviceNext.Credential.GetSessionRevision() != 2 {
+		t.Fatalf("device session was not restored: response=%v error=%v", deviceNext, err)
+	}
+	if _, err := restarted.RefreshDeviceSession(ctx, deviceCredential.GetRefreshToken()); !errors.Is(err, commerce.ErrUnauthorized) {
+		t.Fatalf("device refresh token replay = %v", err)
 	}
 }
 

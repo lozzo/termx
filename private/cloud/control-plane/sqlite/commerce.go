@@ -103,12 +103,12 @@ func (store *Store) PutSession(ctx context.Context, session commerce.SessionReco
 
 // SessionByAccessHash 读取短期 access token 对应的 session。
 func (store *Store) SessionByAccessHash(ctx context.Context, hash [sha256.Size]byte) (commerce.SessionRecord, error) {
-	return scanSession(store.db.QueryRowContext(ctx, `SELECT session_id,account_id,access_hash,refresh_hash,access_expires_at,refresh_expires_at,revision,revoked FROM commerce_sessions WHERE access_hash=?`, hash[:]))
+	return scanSession(store.db.QueryRowContext(ctx, `SELECT session_id,account_id,client_device_id,access_hash,refresh_hash,access_expires_at,refresh_expires_at,revision,revoked FROM commerce_sessions WHERE access_hash=?`, hash[:]))
 }
 
 // SessionByRefreshHash 读取 refresh token 对应的 session。
 func (store *Store) SessionByRefreshHash(ctx context.Context, hash [sha256.Size]byte) (commerce.SessionRecord, error) {
-	return scanSession(store.db.QueryRowContext(ctx, `SELECT session_id,account_id,access_hash,refresh_hash,access_expires_at,refresh_expires_at,revision,revoked FROM commerce_sessions WHERE refresh_hash=?`, hash[:]))
+	return scanSession(store.db.QueryRowContext(ctx, `SELECT session_id,account_id,client_device_id,access_hash,refresh_hash,access_expires_at,refresh_expires_at,revision,revoked FROM commerce_sessions WHERE refresh_hash=?`, hash[:]))
 }
 
 // RotateSession 原子撤销旧 refresh session 并创建下一 revision。
@@ -551,7 +551,7 @@ func (store *Store) scanProjection(ctx context.Context, query, id string, value 
 }
 
 func insertSession(ctx context.Context, tx *sql.Tx, session commerce.SessionRecord) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO commerce_sessions(session_id,account_id,access_hash,refresh_hash,access_expires_at,refresh_expires_at,revision,revoked) VALUES(?,?,?,?,?,?,?,?)`, session.SessionID, session.AccountID, session.AccessTokenHash[:], session.RefreshTokenHash[:], session.AccessExpiresAt.UnixMilli(), session.RefreshExpiresAt.UnixMilli(), session.Revision, boolInt(session.Revoked))
+	_, err := tx.ExecContext(ctx, `INSERT INTO commerce_sessions(session_id,account_id,client_device_id,access_hash,refresh_hash,access_expires_at,refresh_expires_at,revision,revoked) VALUES(?,?,?,?,?,?,?,?,?)`, session.SessionID, session.AccountID, session.ClientDeviceID, session.AccessTokenHash[:], session.RefreshTokenHash[:], session.AccessExpiresAt.UnixMilli(), session.RefreshExpiresAt.UnixMilli(), session.Revision, boolInt(session.Revoked))
 	return err
 }
 
@@ -584,7 +584,7 @@ func scanSession(row rowScanner) (commerce.SessionRecord, error) {
 	var accessHash, refreshHash []byte
 	var accessExpiry, refreshExpiry int64
 	var revoked int
-	if err := row.Scan(&record.SessionID, &record.AccountID, &accessHash, &refreshHash, &accessExpiry, &refreshExpiry, &record.Revision, &revoked); err != nil {
+	if err := row.Scan(&record.SessionID, &record.AccountID, &record.ClientDeviceID, &accessHash, &refreshHash, &accessExpiry, &refreshExpiry, &record.Revision, &revoked); err != nil {
 		return commerce.SessionRecord{}, notFound(err)
 	}
 	if len(accessHash) != sha256.Size || len(refreshHash) != sha256.Size {
