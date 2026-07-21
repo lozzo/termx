@@ -4,7 +4,8 @@
 
 - 产品正式名称为 `Muxvia`，主域名为 `muxvia.com`，GitHub 组织为 `github.com/muxvia`。首发前必须完成无兼容层的全量发布身份迁移：`Muxvia`、`Muxvia Cloud`、`github.com/muxvia/muxvia`、CLI `muxvia`、Android `com.muxvia.app`、URI `muxvia://`、npm scope `@muxvia`、Proto namespace `muxvia.*`、C ABI `muxvia_*`、环境变量 `MUXVIA_*`。
 - `BRAND001-BRAND005` 已完成 Muxvia 全量发布身份迁移、活动残留收口、standard/devcloud APK、真实 ARM64 Direct terminal UI smoke 和双 Agent 审查；证据见 `docs/development/muxvia-brand005-e2e.md`。品牌迁移未改变 Proto/API/Core、Endpoint/Route/session、安全或目录 ownership。
-- 当前最早未完成切片恢复为 `CLOUDP007`：Development 全产品 E2E。下一步只继续 managed P2P/Relay terminal/file、quota、suspend、topology/management command、真实锁屏恢复与最终双审查，不重新打开品牌迁移或 Web/WASM terminal 产品范围。
+- 用户已明确要求在继续 `CLOUDP007` 前完成 Controller 持久化迁移。当前最早未完成切片改为 `PG001`：先提取领域 Store 契约和 PostgreSQL schema/事务基线；随后连续完成 `PG002-PG004`，再恢复 `CLOUDP007` 的 managed P2P/Relay terminal/file、quota、suspend、topology/management command、真实锁屏恢复与最终双审查。
+- Controller 正式持久化契约固定为标准 PostgreSQL；首个生产托管实例使用 Supabase PostgreSQL，但代码、schema、migration、连接和事务不得依赖 Supabase Auth、Realtime、PostgREST、Edge Functions 或其它专有业务能力。Supabase 只是 PostgreSQL 托管商，不是账号、session、Subscription、Hub assignment、CommandOutbox、Relay quota 或 UsageLedger 的领域 owner。
 - `RTC001-RTC010` 已完成统一 WebRTC Route、Android JNI、Direct/SSH/Cloud、Endpoint、文件、生命周期、弱网和最终 APK E2E；证据见 `docs/remote-platform/rtc010-android-final-e2e.md`。
 - Cloud 产品真值见 `docs/remote-platform/cloud-product-spec.md`；多 Hub assignment、纯内存 Hub、daemon topology、CommandOutbox 和 Web 管理真值见 `docs/remote-platform/multi-hub-control-topology-spec.md`；具体 Proto、package、存储、伪代码、迁移删除项和测试矩阵见 `docs/remote-platform/multi-hub-technical-plan.md`。
 - 多 Hub 的 assignment、topology、安全和 runtime 核心规划此前已经过四维度 reviewer 复审；最新部署决策进一步收敛为两个二进制：`muxvia-cloud-controller` 组合 Control Plane + Web Controller，`muxvia-cloud-edge` 组合 Hub + Relay，但四个领域 owner、身份、generation、状态机和存储边界不合并。
@@ -22,7 +23,7 @@
 - `CLOUDP007` 已恢复 Web 已登录账号创建短时二维码、Android App 扫码认领、Web 展示手机元数据并明确批准、App 单次兑换/轮换 Cloud session 的真实 UI 闭环；移动端 refresh 复用 commerce + SQLite 持久 session owner，Controller 重启后可继续轮换，HubID/URL/region 由显式 development directory 原子绑定。ARM64/API 35 模拟器已看到同账号 Cloud daemon 列表，并完成 Direct terminal 的 HOME 后台恢复与飞行模式网络切换回归：旧 binding generation 的迟到结果不再覆盖新 registry，一次前台恢复只创建一个 bridge，新 session 成功后不残留旧 `Go binding backend is closed` 错误，恢复后终端输入输出继续成功；该生命周期子范围架构与代码 reviewer 均 PASS。完整 managed P2P/Relay terminal/file、quota、suspend、topology/management command、真实锁屏恢复与最终切片双审查仍未完成，因此切片继续保持进行中。
 - 多 Hub 基础和产品能力存在交叉依赖，必须按本文件交错推进，不能先写完所有 Hub 再补套餐，也不能继续在单进程 devcloud 上堆硬编码。
 - development 必须走完整账号、交易、Subscription、Entitlement、managed P2P/Relay、周期 quota、usage、topology 和管理链路；外部 provider 可以使用显式测试实现。
-- Web/WASM terminal 产品、iOS/Desktop GUI、多区域数据库、Relay Mesh、真实支付 provider 和复杂计费平台继续延后。
+- Web/WASM terminal 产品、iOS/Desktop GUI、多区域数据库、Relay Mesh、真实支付 provider 和复杂计费平台继续延后。当前 PostgreSQL 迁移只覆盖单区域单写 Controller，不建设多区域复制、分布式锁、读写分离或数据库抽象平台。
 
 ## 架构链路
 
@@ -86,8 +87,12 @@ muxvia-cloud-edge × N
 | HUB006 | 已完成 | Edge 内 Relay allocation remote revoke | generated Relay challenge/report/settlement contract；Controller 与 Edge 使用独立 Relay identity、generation、sender sequence 和 result cursor；reservation 持久绑定 account/Hub/Relay/route，planner/dispatcher 不经过 Hub command；Relay 按 lease/session 精确关闭真实 socket，零字节或有流量都只生成一次 final usage，Edge 串行等待 Controller ack/SQLite release 后回传 RelayCommandResult；单 child PARTIAL、真实 Pion remote close、public/private/race/client/双 Edge/doctor 门禁通过 |
 | CLOUDP006 | 已完成 | Controller 用户账号中心与运营管理面 | Web/API 与 Control Plane 同一 Controller composition；generated Proto JSON 用户/运营页面覆盖套餐、usage、device、topology、command、订单、审计和 fleet；账号隔离、readonly/admin、CSRF、五分钟近期认证、0600 development 凭据、旧 DTO/API 删除；public/private/race/client/双 Edge/doctor/Web build 门禁通过 |
 | HUB007 | 已完成 | 双 Edge 控制面 E2E | 一个 Controller + 两个 Edge 独立进程、assignment migration、Controller outage、Edge restart、inventory recovery、四类 command、P2P/Relay close 和隐私扫描；双 Agent 审查 |
-| CLOUDP007 | 进行中 | Development 全产品 E2E | 从现有进度恢复；Web UI 注册/交易/管理 + Android ARM64 真实 APK P2P/Relay terminal/file、quota、suspend、topology、命令、重启恢复、Direct/SSH 回归；双 Agent 审查 |
-| CLOUDP008 | 延后 | Production Cloud 装配与发布 | 仅 HUB007/CLOUDP007 完成后启动；HTTPS、正式存储、Companion 签名、Android production origin、真实 provider |
+| PG001 | 进行中 | PostgreSQL Store 契约与 schema 基线 | 从 concrete SQLite owner 提取按领域划分的 Store/transaction port；建立 versioned PostgreSQL migrations；账号/commerce、directory/assignment、CommandOutbox、topology、Relay quota、UsageLedger 的原子性、CAS、幂等和 ack-after-commit contract harness 明确；不改变 Proto 或产品语义 |
+| PG002 | 待开始 | PostgreSQL/pgx 持久化实现 | 使用 `pgx` 实现标准 PostgreSQL adapter；所有 PG001 contract harness 在临时 PostgreSQL 上通过；连接失败、事务回滚、唯一约束、revision fencing、sequence 冲突和重启恢复 fail closed；不引入 Supabase SDK 或专有 API |
+| PG003 | 待开始 | Controller 全量切换与 SQLite 删除 | `muxvia-cloud-controller`、devcloud、Web Controller、测试装配统一消费 Store port/PostgreSQL；开发与 CI 使用 PostgreSQL；删除 SQLite runtime adapter、schema、driver 和生产配置；禁止双写、fallback 和 SQLite/PostgreSQL 双真值 |
+| PG004 | 待开始 | Supabase staging 与备份恢复验收 | Controller 通过 TLS 直连 Supabase PostgreSQL；IPv4 环境只允许 Supavisor session mode；完成 schema migration、真实 Controller/双 Edge E2E、故障恢复、`pg_dump` 加密备份到 R2/等价异地对象存储及恢复演练文档；生产使用 Pro，Free 只用于 staging 验证 |
+| CLOUDP007 | 待开始 | Development 全产品 E2E | PostgreSQL 迁移后从现有进度恢复；Web UI 注册/交易/管理 + Android ARM64 真实 APK P2P/Relay terminal/file、quota、suspend、topology、命令、重启恢复、Direct/SSH 回归；双 Agent 审查 |
+| CLOUDP008 | 延后 | Production Cloud 装配与发布 | 仅 PG004/CLOUDP007 完成后启动；HTTPS、Companion 签名、Android production origin、真实 provider；正式存储已由 PG001-PG004 完成，不重复建设第二套数据库路径 |
 | WEB001 | 延后 | Web/WASM terminal 产品 | 仅用户明确恢复后启动 |
 
 ## 关键准入
@@ -169,10 +174,22 @@ muxvia-cloud-edge × N
 - 覆盖 Controller outage、Edge restart、assignment migration、stale event、command replay、P2P/Relay close、grant revoke、quota、usage、Direct/SSH 回归、crash/secret scan。
 - 架构 reviewer 与代码 reviewer 均 PASS。
 
+### PG001-PG004
+
+- PostgreSQL 是唯一正式数据库契约；Supabase 只提供托管 PostgreSQL，不接管产品身份、授权、交易、订阅、拓扑、命令、quota 或 usage 领域。
+- `controller`、Web handler、领域 service 和 runtime 不得依赖 concrete PostgreSQL/SQLite type；SQL、row mapping、transaction implementation 和 migration 只能位于持久化 adapter。
+- 按领域定义最小 Store/transaction port，不建立通用 repository、ORM、query builder 或未来多数据库框架。
+- 保持已有原子语义：payment event journal + transition、assignment fencing、CommandOutbox parent/child/result、Relay reservation、usage event sequence/aggregate/settlement 和 control ACK 必须在对应事务提交后生效。
+- PostgreSQL adapter 使用标准 SQL 与 `pgx`；Supabase SDK、Auth、Realtime、PostgREST、浏览器直连数据库和 Edge Function 数据库代理禁止进入运行链路。
+- 长驻 Controller 优先 TLS direct connection；仅在部署网络无 IPv6 时使用 Supavisor session mode，不使用 transaction mode。
+- PG003 切换后删除 SQLite runtime、driver、schema、配置和 fallback。测试不得通过双写或 SQLite oracle 证明 PostgreSQL 正确性。
+- PG004 至少使用一个真实 Controller、两个独立 Edge 和 PostgreSQL staging 实例，覆盖 Controller/Edge/数据库重启、assignment、command、commerce、quota、usage settlement 与备份恢复；`pg_dump` 备份必须异地保存并完成可验证恢复。
+- 不在本轮实现多区域数据库、读副本路由、分布式锁、自动故障转移、零停机 schema 平台或供应商切换框架。
+
 ## 执行规则
 
 1. 每轮先读取 `AGENTS.md`、`cloud-product-spec.md`、`multi-hub-control-topology-spec.md`、`multi-hub-technical-plan.md` 和本文件，再检查 `git status --short --branch`。
-2. 只执行最早的 `进行中` 或 `待开始` 切片；`延后` 不属于活动队列。
+2. 只执行最早的 `进行中` 或 `待开始` 切片；当前固定依次完成 `PG001-PG004` 后再恢复 `CLOUDP007`，`延后` 不属于活动队列。
 3. 待开始切片先标记 `进行中`，不得跨切片实现后续能力。
 4. 新跨边界字段固定执行 `proto -> generated -> compatibility harness -> domain/runtime -> adapter -> UI/client`。
 5. 先写最小真实 harness；不能用固定账号、直接写 store、手工改 projection 或 fake ack 冒充产品链路。
