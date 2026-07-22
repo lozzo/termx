@@ -37,6 +37,7 @@ type ClientPairingRequest struct {
 	ExpectedDeviceID          string
 	ExpectedDeviceFingerprint string
 	PairingBundle             []byte
+	PairingClaimOffer         []byte
 	Identity                  ClientAccessIdentity
 	Signer                    ClientAccessSigner
 	ClientLabel               string
@@ -142,14 +143,34 @@ func (handshake ClientPairingHandshake) Redeem(ctx context.Context, connection t
 	if err := request.ChannelBinding.Validate(); err != nil {
 		return PairingExchangeResult{}, err
 	}
-	// 客户端只校验 ticket 来源与静态 claims；首次兑换时效和同 key 丢响应恢复由 owning daemon 的 AccessStore 单点裁决。
-	bundle, ticketClaims, err := ParsePairingBundleForExchange(request.PairingBundle)
-	if err != nil {
-		return PairingExchangeResult{}, mapPairingError(err)
+	credential := request.PairingBundle
+	var expectedTicketClaims *PairingTicketClaims
+	if len(request.PairingClaimOffer) > 0 {
+		if len(request.PairingBundle) > 0 {
+			return PairingExchangeResult{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_PROTOCOL, "pairing request contains multiple credentials", nil)
+		}
+		offer, err := ParsePairingClaimOfferForExchange(request.PairingClaimOffer)
+		if err != nil {
+			return PairingExchangeResult{}, mapPairingError(err)
+		}
+		fingerprint := Fingerprint(ed25519.PublicKey(offer.GetDevicePublicKey()))
+		if subtle.ConstantTimeCompare([]byte(fingerprint), []byte(strings.TrimSpace(request.ExpectedDeviceFingerprint))) != 1 || offer.GetDeviceId() != strings.TrimSpace(request.ExpectedDeviceID) {
+			return PairingExchangeResult{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_DEVICE_IDENTITY_MISMATCH, "pairing claim issuer does not match endpoint", nil)
+		}
+		credential = request.PairingClaimOffer
+	} else {
+		// owner-only 兼容入口仍校验完整 ticket；官方二维码和 binding 不再携带 bundle。
+		bundle, ticketClaims, err := ParsePairingBundleForExchange(request.PairingBundle)
+		if err != nil {
+			return PairingExchangeResult{}, mapPairingError(err)
+		}
+		if subtle.ConstantTimeCompare([]byte(bundle.GetIdentity().GetDeviceFingerprint()), []byte(strings.TrimSpace(request.ExpectedDeviceFingerprint))) != 1 || ticketClaims.IssuerDeviceID != strings.TrimSpace(request.ExpectedDeviceID) {
+			return PairingExchangeResult{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_DEVICE_IDENTITY_MISMATCH, "pairing ticket issuer does not match endpoint", nil)
+		}
+		expectedTicketClaims = &ticketClaims
 	}
-	if subtle.ConstantTimeCompare([]byte(bundle.GetIdentity().GetDeviceFingerprint()), []byte(strings.TrimSpace(request.ExpectedDeviceFingerprint))) != 1 ||
-		ticketClaims.IssuerDeviceID != strings.TrimSpace(request.ExpectedDeviceID) {
-		return PairingExchangeResult{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_DEVICE_IDENTITY_MISMATCH, "pairing ticket issuer does not match endpoint", nil)
+	if len(credential) == 0 {
+		return PairingExchangeResult{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_PROTOCOL, "pairing credential is empty", nil)
 	}
 	helloEnvelope, err := receiveAuthEnvelope(ctx, connection)
 	if err != nil {
@@ -167,7 +188,7 @@ func (handshake ClientPairingHandshake) Redeem(ctx context.Context, connection t
 		return PairingExchangeResult{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_INTERNAL, "generate pairing nonce", err)
 	}
 	proof, err := signClientProof(ctx, request.Identity, request.Signer, remoteauthpb.AuthOpenKind_AUTH_OPEN_KIND_PAIRING,
-		request.PairingBundle, helloEnvelope.GetAuthSessionId(), hello.GetServerNonce(), clientNonce, request.ChannelBinding)
+		credential, helloEnvelope.GetAuthSessionId(), hello.GetServerNonce(), clientNonce, request.ChannelBinding)
 	if err != nil {
 		return PairingExchangeResult{}, err
 	}
@@ -175,7 +196,7 @@ func (handshake ClientPairingHandshake) Redeem(ctx context.Context, connection t
 		Protocol: AuthProtocol, Version: AuthVersion, AuthSessionId: helloEnvelope.GetAuthSessionId(),
 		Payload: &remoteauthpb.AuthEnvelope_PairingOpen{PairingOpen: &remoteauthpb.PairingOpen{
 			PairingBundle: append([]byte(nil), request.PairingBundle...), ClientPublicKey: append([]byte(nil), request.Identity.PublicKey...),
-			ClientLabel: strings.TrimSpace(request.ClientLabel), ClientNonce: clientNonce, Proof: proof,
+			PairingClaimOffer: append([]byte(nil), request.PairingClaimOffer...), ClientLabel: strings.TrimSpace(request.ClientLabel), ClientNonce: clientNonce, Proof: proof,
 		}},
 	}); err != nil {
 		return PairingExchangeResult{}, err
@@ -196,6 +217,10 @@ func (handshake ClientPairingHandshake) Redeem(ctx context.Context, connection t
 	}
 	// 新签发 grant 必须按 PairingAccepted 实际接收时间验证；DeviceHello 时刻不能让已过期结果进入 secure store。
 	responseNow := handshake.now()
+	responseBundle, ticketClaims, err := ParsePairingBundleForExchange(accepted.GetPairingBundle())
+	if err != nil || responseBundle.GetIdentity().GetDeviceId() != request.ExpectedDeviceID || responseBundle.GetIdentity().GetDeviceFingerprint() != request.ExpectedDeviceFingerprint {
+		return PairingExchangeResult{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_PAIRING_TICKET_INVALID, "daemon returned an invalid pairing bundle", err)
+	}
 	claims, err := Verify(accepted.GetGrant(), request.ExpectedDeviceFingerprint, responseNow, nil)
 	if err != nil {
 		return PairingExchangeResult{}, mapGrantError(err)
@@ -204,10 +229,13 @@ func (handshake ClientPairingHandshake) Redeem(ctx context.Context, connection t
 		accepted.GetSubjectKeyFingerprint() != request.Identity.Fingerprint || !scopeSummaryMatches(accepted.GetScope(), claims.Scope) || claims.Scope != ticketClaims.ScopeCeiling {
 		return PairingExchangeResult{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_SUBJECT_KEY_MISMATCH, "pairing response grant subject or scope is invalid", nil)
 	}
+	if expectedTicketClaims != nil && (expectedTicketClaims.TicketID != ticketClaims.TicketID || expectedTicketClaims.ScopeCeiling != ticketClaims.ScopeCeiling) {
+		return PairingExchangeResult{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_PAIRING_TICKET_INVALID, "daemon returned a different pairing ticket", nil)
+	}
 	return PairingExchangeResult{
 		TicketID: ticketClaims.TicketID, Grant: strings.TrimSpace(accepted.GetGrant()), GrantID: claims.GrantID,
 		DeliveryReceipt: strings.TrimSpace(accepted.GetDeliveryReceipt()), SubjectKeyFingerprint: claims.SubjectKeyFingerprint,
-		Scope: claims.Scope, ExpiresAt: claims.ExpiresAt,
+		Scope: claims.Scope, ExpiresAt: claims.ExpiresAt, Bundle: append([]byte(nil), accepted.GetPairingBundle()...),
 	}, nil
 }
 
@@ -370,22 +398,37 @@ func (handshake ServerHandshake) acceptCapability(ctx context.Context, connectio
 }
 
 func (handshake ServerHandshake) acceptPairing(ctx context.Context, connection transport.Transport, authSessionID string, serverNonce []byte, binding ChannelBinding, now time.Time, open *remoteauthpb.PairingOpen) (ServerHandshakeResult, error) {
-	if open == nil || len(open.GetPairingBundle()) == 0 || len(open.GetClientPublicKey()) != ed25519.PublicKeySize || len(open.GetClientNonce()) != authNonceBytes || len(open.GetProof()) != ed25519.SignatureSize {
+	if open == nil || (len(open.GetPairingBundle()) == 0) == (len(open.GetPairingClaimOffer()) == 0) || len(open.GetClientPublicKey()) != ed25519.PublicKeySize || len(open.GetClientNonce()) != authNonceBytes || len(open.GetProof()) != ed25519.SignatureSize {
 		return ServerHandshakeResult{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_PROTOCOL, "client did not send a valid PairingOpen", nil)
 	}
-	bundle, ticketClaims, err := ParsePairingBundleForExchange(open.GetPairingBundle())
+	clientPublicKey := ed25519.PublicKey(open.GetClientPublicKey())
+	credential := open.GetPairingBundle()
+	bundlePayload := open.GetPairingBundle()
+	if len(open.GetPairingClaimOffer()) > 0 {
+		credential = open.GetPairingClaimOffer()
+		var err error
+		bundlePayload, err = handshake.AccessStore.ResolvePairingClaimForExchange(credential, clientPublicKey, now)
+		if err != nil {
+			return ServerHandshakeResult{}, mapPairingError(err)
+		}
+	}
+	bundle, ticketClaims, err := ParsePairingBundleForExchange(bundlePayload)
 	if err != nil {
 		return ServerHandshakeResult{}, mapPairingError(err)
 	}
 	if subtle.ConstantTimeCompare([]byte(bundle.GetIdentity().GetDeviceFingerprint()), []byte(handshake.Identity.Fingerprint)) != 1 || ticketClaims.IssuerDeviceID != handshake.Identity.DeviceID {
 		return ServerHandshakeResult{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_PAIRING_TICKET_INVALID, "pairing ticket issuer does not match daemon", nil)
 	}
-	clientPublicKey := ed25519.PublicKey(open.GetClientPublicKey())
-	canonical, err := ClientProofSigningBytes(remoteauthpb.AuthOpenKind_AUTH_OPEN_KIND_PAIRING, open.GetPairingBundle(), clientPublicKey, authSessionID, serverNonce, open.GetClientNonce(), binding)
+	canonical, err := ClientProofSigningBytes(remoteauthpb.AuthOpenKind_AUTH_OPEN_KIND_PAIRING, credential, clientPublicKey, authSessionID, serverNonce, open.GetClientNonce(), binding)
 	if err != nil || !ed25519.Verify(clientPublicKey, canonical, open.GetProof()) {
 		return ServerHandshakeResult{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_CAPABILITY_PROOF_INVALID, "ClientAccessIdentity pairing proof does not match current challenge", err)
 	}
-	result, err := handshake.AccessStore.RedeemPairingBundle(open.GetPairingBundle(), clientPublicKey, open.GetClientLabel(), now)
+	var result PairingExchangeResult
+	if len(open.GetPairingClaimOffer()) > 0 {
+		result, bundlePayload, err = handshake.AccessStore.RedeemPairingClaim(open.GetPairingClaimOffer(), clientPublicKey, open.GetClientLabel(), now)
+	} else {
+		result, err = handshake.AccessStore.RedeemPairingBundle(bundlePayload, clientPublicKey, open.GetClientLabel(), now)
+	}
 	if err != nil {
 		return ServerHandshakeResult{}, mapPairingError(err)
 	}
@@ -397,7 +440,7 @@ func (handshake ServerHandshake) acceptPairing(ctx context.Context, connection t
 		Protocol: AuthProtocol, Version: AuthVersion, AuthSessionId: authSessionID,
 		Payload: &remoteauthpb.AuthEnvelope_PairingAccepted{PairingAccepted: &remoteauthpb.PairingAccepted{
 			Grant: result.Grant, DeliveryReceipt: result.DeliveryReceipt,
-			SubjectKeyFingerprint: result.SubjectKeyFingerprint, Scope: summary,
+			SubjectKeyFingerprint: result.SubjectKeyFingerprint, Scope: summary, PairingBundle: append([]byte(nil), bundlePayload...),
 		}},
 	}); err != nil {
 		return ServerHandshakeResult{}, err

@@ -947,14 +947,15 @@ func (x *CapabilityOpen) GetProof() []byte {
 // PairingOpen 只能兑换一次性 PairingTicket，不能访问 terminal、history、file 或普通 protocol method。
 // client_public_key/proof 先证明目标 ClientAccessIdentity possession，daemon 才允许原子消费 ticket。
 type PairingOpen struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	PairingBundle   []byte                 `protobuf:"bytes,1,opt,name=pairing_bundle,json=pairingBundle,proto3" json:"pairing_bundle,omitempty"`
-	ClientPublicKey []byte                 `protobuf:"bytes,2,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
-	ClientLabel     string                 `protobuf:"bytes,3,opt,name=client_label,json=clientLabel,proto3" json:"client_label,omitempty"`
-	ClientNonce     []byte                 `protobuf:"bytes,4,opt,name=client_nonce,json=clientNonce,proto3" json:"client_nonce,omitempty"`
-	Proof           []byte                 `protobuf:"bytes,5,opt,name=proof,proto3" json:"proof,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	PairingBundle     []byte                 `protobuf:"bytes,1,opt,name=pairing_bundle,json=pairingBundle,proto3" json:"pairing_bundle,omitempty"`
+	ClientPublicKey   []byte                 `protobuf:"bytes,2,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
+	ClientLabel       string                 `protobuf:"bytes,3,opt,name=client_label,json=clientLabel,proto3" json:"client_label,omitempty"`
+	ClientNonce       []byte                 `protobuf:"bytes,4,opt,name=client_nonce,json=clientNonce,proto3" json:"client_nonce,omitempty"`
+	Proof             []byte                 `protobuf:"bytes,5,opt,name=proof,proto3" json:"proof,omitempty"`
+	PairingClaimOffer []byte                 `protobuf:"bytes,6,opt,name=pairing_claim_offer,json=pairingClaimOffer,proto3" json:"pairing_claim_offer,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *PairingOpen) Reset() {
@@ -1018,6 +1019,13 @@ func (x *PairingOpen) GetClientNonce() []byte {
 func (x *PairingOpen) GetProof() []byte {
 	if x != nil {
 		return x.Proof
+	}
+	return nil
+}
+
+func (x *PairingOpen) GetPairingClaimOffer() []byte {
+	if x != nil {
+		return x.PairingClaimOffer
 	}
 	return nil
 }
@@ -1400,10 +1408,13 @@ func (x *ClientAccessTicketCreateRequest) GetRoutes() []*EndpointRouteConfigV1 {
 }
 
 type ClientAccessTicketCreateResult struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	Bundle            []byte                 `protobuf:"bytes,1,opt,name=bundle,proto3" json:"bundle,omitempty"`
-	TicketId          string                 `protobuf:"bytes,2,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
-	ExpiresAtUnixNano int64                  `protobuf:"varint,3,opt,name=expires_at_unix_nano,json=expiresAtUnixNano,proto3" json:"expires_at_unix_nano,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// bundle 仅保留给 owner-only 兼容工具；官方二维码、文本导入和平台 binding 必须使用 claim_offer。
+	Bundle            []byte `protobuf:"bytes,1,opt,name=bundle,proto3" json:"bundle,omitempty"`
+	TicketId          string `protobuf:"bytes,2,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
+	ExpiresAtUnixNano int64  `protobuf:"varint,3,opt,name=expires_at_unix_nano,json=expiresAtUnixNano,proto3" json:"expires_at_unix_nano,omitempty"`
+	ClaimOffer        []byte `protobuf:"bytes,4,opt,name=claim_offer,json=claimOffer,proto3" json:"claim_offer,omitempty"`
+	ClaimCode         string `protobuf:"bytes,5,opt,name=claim_code,json=claimCode,proto3" json:"claim_code,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1457,6 +1468,20 @@ func (x *ClientAccessTicketCreateResult) GetExpiresAtUnixNano() int64 {
 		return x.ExpiresAtUnixNano
 	}
 	return 0
+}
+
+func (x *ClientAccessTicketCreateResult) GetClaimOffer() []byte {
+	if x != nil {
+		return x.ClaimOffer
+	}
+	return nil
+}
+
+func (x *ClientAccessTicketCreateResult) GetClaimCode() string {
+	if x != nil {
+		return x.ClaimCode
+	}
+	return ""
 }
 
 type ClientAccessRevokeRequest struct {
@@ -1716,6 +1741,7 @@ type PairingAccepted struct {
 	DeliveryReceipt       string                 `protobuf:"bytes,2,opt,name=delivery_receipt,json=deliveryReceipt,proto3" json:"delivery_receipt,omitempty"`
 	SubjectKeyFingerprint string                 `protobuf:"bytes,3,opt,name=subject_key_fingerprint,json=subjectKeyFingerprint,proto3" json:"subject_key_fingerprint,omitempty"`
 	Scope                 *ScopeSummary          `protobuf:"bytes,4,opt,name=scope,proto3" json:"scope,omitempty"`
+	PairingBundle         []byte                 `protobuf:"bytes,5,opt,name=pairing_bundle,json=pairingBundle,proto3" json:"pairing_bundle,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -1774,6 +1800,13 @@ func (x *PairingAccepted) GetSubjectKeyFingerprint() string {
 func (x *PairingAccepted) GetScope() *ScopeSummary {
 	if x != nil {
 		return x.Scope
+	}
+	return nil
+}
+
+func (x *PairingAccepted) GetPairingBundle() []byte {
+	if x != nil {
+		return x.PairingBundle
 	}
 	return nil
 }
@@ -3157,6 +3190,282 @@ func (*EndpointRouteConfigV1_SshWebrtcTcp) isEndpointRouteConfigV1_Route() {}
 
 func (*EndpointRouteConfigV1_ManagedWebrtc) isEndpointRouteConfigV1_Route() {}
 
+// PairingDirectRouteSeed 只携带建立首个 Direct pairing DataChannel 必需的单个公开 locator。
+// 完整 Route 配置在 claim 兑换后由 owning daemon 的签名 bundle 提供。
+type PairingDirectRouteSeed struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	SignalingAddress string                 `protobuf:"bytes,1,opt,name=signaling_address,json=signalingAddress,proto3" json:"signaling_address,omitempty"`
+	IceTcpAddress    string                 `protobuf:"bytes,2,opt,name=ice_tcp_address,json=iceTcpAddress,proto3" json:"ice_tcp_address,omitempty"`
+	ServerName       string                 `protobuf:"bytes,3,opt,name=server_name,json=serverName,proto3" json:"server_name,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *PairingDirectRouteSeed) Reset() {
+	*x = PairingDirectRouteSeed{}
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PairingDirectRouteSeed) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PairingDirectRouteSeed) ProtoMessage() {}
+
+func (x *PairingDirectRouteSeed) ProtoReflect() protoreflect.Message {
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PairingDirectRouteSeed.ProtoReflect.Descriptor instead.
+func (*PairingDirectRouteSeed) Descriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *PairingDirectRouteSeed) GetSignalingAddress() string {
+	if x != nil {
+		return x.SignalingAddress
+	}
+	return ""
+}
+
+func (x *PairingDirectRouteSeed) GetIceTcpAddress() string {
+	if x != nil {
+		return x.IceTcpAddress
+	}
+	return ""
+}
+
+func (x *PairingDirectRouteSeed) GetServerName() string {
+	if x != nil {
+		return x.ServerName
+	}
+	return ""
+}
+
+// PairingManagedRouteSeed 只标识 Cloud signaling 中的 owning daemon；账号和 token 仍来自客户端本地 Cloud session。
+type PairingManagedRouteSeed struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	TargetDeviceId string                 `protobuf:"bytes,1,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *PairingManagedRouteSeed) Reset() {
+	*x = PairingManagedRouteSeed{}
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PairingManagedRouteSeed) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PairingManagedRouteSeed) ProtoMessage() {}
+
+func (x *PairingManagedRouteSeed) ProtoReflect() protoreflect.Message {
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PairingManagedRouteSeed.ProtoReflect.Descriptor instead.
+func (*PairingManagedRouteSeed) Descriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *PairingManagedRouteSeed) GetTargetDeviceId() string {
+	if x != nil {
+		return x.TargetDeviceId
+	}
+	return ""
+}
+
+// PairingRouteSeed 是短码中建立一次 pairing peer 所需的最小 Route 投影。
+type PairingRouteSeed struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Route:
+	//
+	//	*PairingRouteSeed_DirectWebrtcTcp
+	//	*PairingRouteSeed_ManagedWebrtc
+	Route         isPairingRouteSeed_Route `protobuf_oneof:"route"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PairingRouteSeed) Reset() {
+	*x = PairingRouteSeed{}
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PairingRouteSeed) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PairingRouteSeed) ProtoMessage() {}
+
+func (x *PairingRouteSeed) ProtoReflect() protoreflect.Message {
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PairingRouteSeed.ProtoReflect.Descriptor instead.
+func (*PairingRouteSeed) Descriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *PairingRouteSeed) GetRoute() isPairingRouteSeed_Route {
+	if x != nil {
+		return x.Route
+	}
+	return nil
+}
+
+func (x *PairingRouteSeed) GetDirectWebrtcTcp() *PairingDirectRouteSeed {
+	if x != nil {
+		if x, ok := x.Route.(*PairingRouteSeed_DirectWebrtcTcp); ok {
+			return x.DirectWebrtcTcp
+		}
+	}
+	return nil
+}
+
+func (x *PairingRouteSeed) GetManagedWebrtc() *PairingManagedRouteSeed {
+	if x != nil {
+		if x, ok := x.Route.(*PairingRouteSeed_ManagedWebrtc); ok {
+			return x.ManagedWebrtc
+		}
+	}
+	return nil
+}
+
+type isPairingRouteSeed_Route interface {
+	isPairingRouteSeed_Route()
+}
+
+type PairingRouteSeed_DirectWebrtcTcp struct {
+	DirectWebrtcTcp *PairingDirectRouteSeed `protobuf:"bytes,1,opt,name=direct_webrtc_tcp,json=directWebrtcTcp,proto3,oneof"`
+}
+
+type PairingRouteSeed_ManagedWebrtc struct {
+	ManagedWebrtc *PairingManagedRouteSeed `protobuf:"bytes,2,opt,name=managed_webrtc,json=managedWebrtc,proto3,oneof"`
+}
+
+func (*PairingRouteSeed_DirectWebrtcTcp) isPairingRouteSeed_Route() {}
+
+func (*PairingRouteSeed_ManagedWebrtc) isPairingRouteSeed_Route() {}
+
+// PairingClaimOfferV1 是二维码和无摄像头输入使用的紧凑一次性 claim。
+// claim 固定 128-bit，只由 owning daemon 内存持有；消息不包含 PairingTicket、CapabilityGrant、scope 或 terminal 信息。
+type PairingClaimOfferV1 struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	SchemaVersion     uint32                 `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	Claim             []byte                 `protobuf:"bytes,2,opt,name=claim,proto3" json:"claim,omitempty"`
+	DeviceId          string                 `protobuf:"bytes,3,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	DevicePublicKey   []byte                 `protobuf:"bytes,4,opt,name=device_public_key,json=devicePublicKey,proto3" json:"device_public_key,omitempty"`
+	ExpiresAtUnixNano int64                  `protobuf:"varint,5,opt,name=expires_at_unix_nano,json=expiresAtUnixNano,proto3" json:"expires_at_unix_nano,omitempty"`
+	Route             *PairingRouteSeed      `protobuf:"bytes,6,opt,name=route,proto3" json:"route,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *PairingClaimOfferV1) Reset() {
+	*x = PairingClaimOfferV1{}
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PairingClaimOfferV1) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PairingClaimOfferV1) ProtoMessage() {}
+
+func (x *PairingClaimOfferV1) ProtoReflect() protoreflect.Message {
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PairingClaimOfferV1.ProtoReflect.Descriptor instead.
+func (*PairingClaimOfferV1) Descriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *PairingClaimOfferV1) GetSchemaVersion() uint32 {
+	if x != nil {
+		return x.SchemaVersion
+	}
+	return 0
+}
+
+func (x *PairingClaimOfferV1) GetClaim() []byte {
+	if x != nil {
+		return x.Claim
+	}
+	return nil
+}
+
+func (x *PairingClaimOfferV1) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *PairingClaimOfferV1) GetDevicePublicKey() []byte {
+	if x != nil {
+		return x.DevicePublicKey
+	}
+	return nil
+}
+
+func (x *PairingClaimOfferV1) GetExpiresAtUnixNano() int64 {
+	if x != nil {
+		return x.ExpiresAtUnixNano
+	}
+	return 0
+}
+
+func (x *PairingClaimOfferV1) GetRoute() *PairingRouteSeed {
+	if x != nil {
+		return x.Route
+	}
+	return nil
+}
+
 // EndpointConfigV1 是 Go Client Engine 持久化和跨 binding 投影的 Endpoint 配置。
 type EndpointConfigV1 struct {
 	state           protoimpl.MessageState   `protogen:"open.v1"`
@@ -3175,7 +3484,7 @@ type EndpointConfigV1 struct {
 
 func (x *EndpointConfigV1) Reset() {
 	*x = EndpointConfigV1{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[33]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3187,7 +3496,7 @@ func (x *EndpointConfigV1) String() string {
 func (*EndpointConfigV1) ProtoMessage() {}
 
 func (x *EndpointConfigV1) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[33]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3200,7 +3509,7 @@ func (x *EndpointConfigV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointConfigV1.ProtoReflect.Descriptor instead.
 func (*EndpointConfigV1) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{33}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *EndpointConfigV1) GetSchemaVersion() uint32 {
@@ -3278,7 +3587,7 @@ type EndpointRegistryV1 struct {
 
 func (x *EndpointRegistryV1) Reset() {
 	*x = EndpointRegistryV1{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[34]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3290,7 +3599,7 @@ func (x *EndpointRegistryV1) String() string {
 func (*EndpointRegistryV1) ProtoMessage() {}
 
 func (x *EndpointRegistryV1) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[34]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3303,7 +3612,7 @@ func (x *EndpointRegistryV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointRegistryV1.ProtoReflect.Descriptor instead.
 func (*EndpointRegistryV1) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{34}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *EndpointRegistryV1) GetSchemaVersion() uint32 {
@@ -3344,7 +3653,7 @@ type PairingTicketDescriptor struct {
 
 func (x *PairingTicketDescriptor) Reset() {
 	*x = PairingTicketDescriptor{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[35]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3356,7 +3665,7 @@ func (x *PairingTicketDescriptor) String() string {
 func (*PairingTicketDescriptor) ProtoMessage() {}
 
 func (x *PairingTicketDescriptor) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[35]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3369,7 +3678,7 @@ func (x *PairingTicketDescriptor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PairingTicketDescriptor.ProtoReflect.Descriptor instead.
 func (*PairingTicketDescriptor) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{35}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *PairingTicketDescriptor) GetTicketId() string {
@@ -3442,7 +3751,7 @@ type EndpointAuthorizationBootstrap struct {
 
 func (x *EndpointAuthorizationBootstrap) Reset() {
 	*x = EndpointAuthorizationBootstrap{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[36]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3454,7 +3763,7 @@ func (x *EndpointAuthorizationBootstrap) String() string {
 func (*EndpointAuthorizationBootstrap) ProtoMessage() {}
 
 func (x *EndpointAuthorizationBootstrap) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[36]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3467,7 +3776,7 @@ func (x *EndpointAuthorizationBootstrap) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointAuthorizationBootstrap.ProtoReflect.Descriptor instead.
 func (*EndpointAuthorizationBootstrap) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{36}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *EndpointAuthorizationBootstrap) GetPayload() isEndpointAuthorizationBootstrap_Payload {
@@ -3530,7 +3839,7 @@ type EndpointBootstrapBundleV2 struct {
 
 func (x *EndpointBootstrapBundleV2) Reset() {
 	*x = EndpointBootstrapBundleV2{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[37]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3542,7 +3851,7 @@ func (x *EndpointBootstrapBundleV2) String() string {
 func (*EndpointBootstrapBundleV2) ProtoMessage() {}
 
 func (x *EndpointBootstrapBundleV2) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[37]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3555,7 +3864,7 @@ func (x *EndpointBootstrapBundleV2) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointBootstrapBundleV2.ProtoReflect.Descriptor instead.
 func (*EndpointBootstrapBundleV2) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{37}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *EndpointBootstrapBundleV2) GetSchemaVersion() uint32 {
@@ -3636,7 +3945,7 @@ type PairingTicketSignatureInput struct {
 
 func (x *PairingTicketSignatureInput) Reset() {
 	*x = PairingTicketSignatureInput{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[38]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3648,7 +3957,7 @@ func (x *PairingTicketSignatureInput) String() string {
 func (*PairingTicketSignatureInput) ProtoMessage() {}
 
 func (x *PairingTicketSignatureInput) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[38]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3661,7 +3970,7 @@ func (x *PairingTicketSignatureInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PairingTicketSignatureInput.ProtoReflect.Descriptor instead.
 func (*PairingTicketSignatureInput) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{38}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *PairingTicketSignatureInput) GetProtocol() string {
@@ -3712,7 +4021,7 @@ type EndpointBootstrapSignatureInput struct {
 
 func (x *EndpointBootstrapSignatureInput) Reset() {
 	*x = EndpointBootstrapSignatureInput{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[39]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3724,7 +4033,7 @@ func (x *EndpointBootstrapSignatureInput) String() string {
 func (*EndpointBootstrapSignatureInput) ProtoMessage() {}
 
 func (x *EndpointBootstrapSignatureInput) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[39]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3737,7 +4046,7 @@ func (x *EndpointBootstrapSignatureInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointBootstrapSignatureInput.ProtoReflect.Descriptor instead.
 func (*EndpointBootstrapSignatureInput) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{39}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *EndpointBootstrapSignatureInput) GetProtocol() string {
@@ -3783,7 +4092,7 @@ type ClientEndpointShareBundleV1 struct {
 
 func (x *ClientEndpointShareBundleV1) Reset() {
 	*x = ClientEndpointShareBundleV1{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[40]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3795,7 +4104,7 @@ func (x *ClientEndpointShareBundleV1) String() string {
 func (*ClientEndpointShareBundleV1) ProtoMessage() {}
 
 func (x *ClientEndpointShareBundleV1) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[40]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3808,7 +4117,7 @@ func (x *ClientEndpointShareBundleV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientEndpointShareBundleV1.ProtoReflect.Descriptor instead.
 func (*ClientEndpointShareBundleV1) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{40}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *ClientEndpointShareBundleV1) GetSchemaVersion() uint32 {
@@ -3904,7 +4213,7 @@ type ShareSessionOffer struct {
 
 func (x *ShareSessionOffer) Reset() {
 	*x = ShareSessionOffer{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[41]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3916,7 +4225,7 @@ func (x *ShareSessionOffer) String() string {
 func (*ShareSessionOffer) ProtoMessage() {}
 
 func (x *ShareSessionOffer) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[41]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3929,7 +4238,7 @@ func (x *ShareSessionOffer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShareSessionOffer.ProtoReflect.Descriptor instead.
 func (*ShareSessionOffer) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{41}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *ShareSessionOffer) GetSchemaVersion() uint32 {
@@ -3988,7 +4297,7 @@ type ShareReceiverHello struct {
 
 func (x *ShareReceiverHello) Reset() {
 	*x = ShareReceiverHello{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[42]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4000,7 +4309,7 @@ func (x *ShareReceiverHello) String() string {
 func (*ShareReceiverHello) ProtoMessage() {}
 
 func (x *ShareReceiverHello) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[42]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4013,7 +4322,7 @@ func (x *ShareReceiverHello) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShareReceiverHello.ProtoReflect.Descriptor instead.
 func (*ShareReceiverHello) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{42}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *ShareReceiverHello) GetSchemaVersion() uint32 {
@@ -4065,7 +4374,7 @@ type ShareSenderChallenge struct {
 
 func (x *ShareSenderChallenge) Reset() {
 	*x = ShareSenderChallenge{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[43]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4077,7 +4386,7 @@ func (x *ShareSenderChallenge) String() string {
 func (*ShareSenderChallenge) ProtoMessage() {}
 
 func (x *ShareSenderChallenge) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[43]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4090,7 +4399,7 @@ func (x *ShareSenderChallenge) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShareSenderChallenge.ProtoReflect.Descriptor instead.
 func (*ShareSenderChallenge) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{43}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *ShareSenderChallenge) GetSchemaVersion() uint32 {
@@ -4144,7 +4453,7 @@ type ShareReceiverProofInput struct {
 
 func (x *ShareReceiverProofInput) Reset() {
 	*x = ShareReceiverProofInput{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[44]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4156,7 +4465,7 @@ func (x *ShareReceiverProofInput) String() string {
 func (*ShareReceiverProofInput) ProtoMessage() {}
 
 func (x *ShareReceiverProofInput) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[44]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4169,7 +4478,7 @@ func (x *ShareReceiverProofInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShareReceiverProofInput.ProtoReflect.Descriptor instead.
 func (*ShareReceiverProofInput) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{44}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *ShareReceiverProofInput) GetProtocol() string {
@@ -4233,7 +4542,7 @@ type ShareReceiverProof struct {
 
 func (x *ShareReceiverProof) Reset() {
 	*x = ShareReceiverProof{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[45]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4245,7 +4554,7 @@ func (x *ShareReceiverProof) String() string {
 func (*ShareReceiverProof) ProtoMessage() {}
 
 func (x *ShareReceiverProof) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[45]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4258,7 +4567,7 @@ func (x *ShareReceiverProof) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShareReceiverProof.ProtoReflect.Descriptor instead.
 func (*ShareReceiverProof) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{45}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *ShareReceiverProof) GetSchemaVersion() uint32 {
@@ -4296,7 +4605,7 @@ type ShareSessionClientEnvelope struct {
 
 func (x *ShareSessionClientEnvelope) Reset() {
 	*x = ShareSessionClientEnvelope{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[46]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4308,7 +4617,7 @@ func (x *ShareSessionClientEnvelope) String() string {
 func (*ShareSessionClientEnvelope) ProtoMessage() {}
 
 func (x *ShareSessionClientEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[46]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4321,7 +4630,7 @@ func (x *ShareSessionClientEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShareSessionClientEnvelope.ProtoReflect.Descriptor instead.
 func (*ShareSessionClientEnvelope) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{46}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ShareSessionClientEnvelope) GetMessage() isShareSessionClientEnvelope_Message {
@@ -4376,7 +4685,7 @@ type ShareSessionError struct {
 
 func (x *ShareSessionError) Reset() {
 	*x = ShareSessionError{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[47]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4388,7 +4697,7 @@ func (x *ShareSessionError) String() string {
 func (*ShareSessionError) ProtoMessage() {}
 
 func (x *ShareSessionError) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[47]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4401,7 +4710,7 @@ func (x *ShareSessionError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShareSessionError.ProtoReflect.Descriptor instead.
 func (*ShareSessionError) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{47}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *ShareSessionError) GetCode() string {
@@ -4433,7 +4742,7 @@ type ShareSessionServerEnvelope struct {
 
 func (x *ShareSessionServerEnvelope) Reset() {
 	*x = ShareSessionServerEnvelope{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[48]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4445,7 +4754,7 @@ func (x *ShareSessionServerEnvelope) String() string {
 func (*ShareSessionServerEnvelope) ProtoMessage() {}
 
 func (x *ShareSessionServerEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[48]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4458,7 +4767,7 @@ func (x *ShareSessionServerEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShareSessionServerEnvelope.ProtoReflect.Descriptor instead.
 func (*ShareSessionServerEnvelope) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{48}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ShareSessionServerEnvelope) GetMessage() isShareSessionServerEnvelope_Message {
@@ -4548,13 +4857,14 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x05grant\x18\x01 \x01(\tR\x05grant\x12*\n" +
 	"\x11client_public_key\x18\x02 \x01(\fR\x0fclientPublicKey\x12!\n" +
 	"\fclient_nonce\x18\x03 \x01(\fR\vclientNonce\x12\x14\n" +
-	"\x05proof\x18\x04 \x01(\fR\x05proof\"\xbc\x01\n" +
+	"\x05proof\x18\x04 \x01(\fR\x05proof\"\xec\x01\n" +
 	"\vPairingOpen\x12%\n" +
 	"\x0epairing_bundle\x18\x01 \x01(\fR\rpairingBundle\x12*\n" +
 	"\x11client_public_key\x18\x02 \x01(\fR\x0fclientPublicKey\x12!\n" +
 	"\fclient_label\x18\x03 \x01(\tR\vclientLabel\x12!\n" +
 	"\fclient_nonce\x18\x04 \x01(\fR\vclientNonce\x12\x14\n" +
-	"\x05proof\x18\x05 \x01(\fR\x05proof\"\x97\x01\n" +
+	"\x05proof\x18\x05 \x01(\fR\x05proof\x12.\n" +
+	"\x13pairing_claim_offer\x18\x06 \x01(\fR\x11pairingClaimOffer\"\x97\x01\n" +
 	"\fScopeSummary\x124\n" +
 	"\x04kind\x18\x01 \x01(\x0e2 .muxvia.remote.auth.v1.ScopeKindR\x04kind\x12\x1f\n" +
 	"\vterminal_id\x18\x02 \x01(\tR\n" +
@@ -4586,11 +4896,15 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x05scope\x18\x02 \x01(\v2(.muxvia.remote.auth.v1.ClientAccessScopeR\x05scope\x12,\n" +
 	"\x12ticket_ttl_seconds\x18\x03 \x01(\x03R\x10ticketTtlSeconds\x124\n" +
 	"\x16grant_lifetime_seconds\x18\x04 \x01(\x03R\x14grantLifetimeSeconds\x12D\n" +
-	"\x06routes\x18\x05 \x03(\v2,.muxvia.remote.auth.v1.EndpointRouteConfigV1R\x06routes\"\x86\x01\n" +
+	"\x06routes\x18\x05 \x03(\v2,.muxvia.remote.auth.v1.EndpointRouteConfigV1R\x06routes\"\xc6\x01\n" +
 	"\x1eClientAccessTicketCreateResult\x12\x16\n" +
 	"\x06bundle\x18\x01 \x01(\fR\x06bundle\x12\x1b\n" +
 	"\tticket_id\x18\x02 \x01(\tR\bticketId\x12/\n" +
-	"\x14expires_at_unix_nano\x18\x03 \x01(\x03R\x11expiresAtUnixNano\"6\n" +
+	"\x14expires_at_unix_nano\x18\x03 \x01(\x03R\x11expiresAtUnixNano\x12\x1f\n" +
+	"\vclaim_offer\x18\x04 \x01(\fR\n" +
+	"claimOffer\x12\x1d\n" +
+	"\n" +
+	"claim_code\x18\x05 \x01(\tR\tclaimCode\"6\n" +
 	"\x19ClientAccessRevokeRequest\x12\x19\n" +
 	"\bgrant_id\x18\x01 \x01(\tR\agrantId\"\x80\x03\n" +
 	"\x12ClientAccessRecord\x12\x19\n" +
@@ -4607,12 +4921,13 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x12CapabilityAccepted\x12\x19\n" +
 	"\bgrant_id\x18\x01 \x01(\tR\agrantId\x129\n" +
 	"\x05scope\x18\x02 \x01(\v2#.muxvia.remote.auth.v1.ScopeSummaryR\x05scope\x126\n" +
-	"\x17subject_key_fingerprint\x18\x03 \x01(\tR\x15subjectKeyFingerprint\"\xc5\x01\n" +
+	"\x17subject_key_fingerprint\x18\x03 \x01(\tR\x15subjectKeyFingerprint\"\xec\x01\n" +
 	"\x0fPairingAccepted\x12\x14\n" +
 	"\x05grant\x18\x01 \x01(\tR\x05grant\x12)\n" +
 	"\x10delivery_receipt\x18\x02 \x01(\tR\x0fdeliveryReceipt\x126\n" +
 	"\x17subject_key_fingerprint\x18\x03 \x01(\tR\x15subjectKeyFingerprint\x129\n" +
-	"\x05scope\x18\x04 \x01(\v2#.muxvia.remote.auth.v1.ScopeSummaryR\x05scope\"h\n" +
+	"\x05scope\x18\x04 \x01(\v2#.muxvia.remote.auth.v1.ScopeSummaryR\x05scope\x12%\n" +
+	"\x0epairing_bundle\x18\x05 \x01(\fR\rpairingBundle\"h\n" +
 	"\x12CapabilityRejected\x128\n" +
 	"\x04code\x18\x01 \x01(\x0e2$.muxvia.remote.auth.v1.AuthErrorCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"\x93\x03\n" +
@@ -4727,7 +5042,25 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x0essh_webrtc_tcp\x18\x16 \x01(\v2..muxvia.remote.auth.v1.SSHWebRTCTCPRouteConfigH\x00R\fsshWebrtcTcp\x12X\n" +
 	"\x0emanaged_webrtc\x18\x17 \x01(\v2/.muxvia.remote.auth.v1.ManagedWebRTCRouteConfigH\x00R\rmanagedWebrtcB\a\n" +
 	"\x05routeB\v\n" +
-	"\t_priority\"\x8f\x04\n" +
+	"\t_priority\"\x8e\x01\n" +
+	"\x16PairingDirectRouteSeed\x12+\n" +
+	"\x11signaling_address\x18\x01 \x01(\tR\x10signalingAddress\x12&\n" +
+	"\x0fice_tcp_address\x18\x02 \x01(\tR\riceTcpAddress\x12\x1f\n" +
+	"\vserver_name\x18\x03 \x01(\tR\n" +
+	"serverName\"C\n" +
+	"\x17PairingManagedRouteSeed\x12(\n" +
+	"\x10target_device_id\x18\x01 \x01(\tR\x0etargetDeviceId\"\xd1\x01\n" +
+	"\x10PairingRouteSeed\x12[\n" +
+	"\x11direct_webrtc_tcp\x18\x01 \x01(\v2-.muxvia.remote.auth.v1.PairingDirectRouteSeedH\x00R\x0fdirectWebrtcTcp\x12W\n" +
+	"\x0emanaged_webrtc\x18\x02 \x01(\v2..muxvia.remote.auth.v1.PairingManagedRouteSeedH\x00R\rmanagedWebrtcB\a\n" +
+	"\x05route\"\x8b\x02\n" +
+	"\x13PairingClaimOfferV1\x12%\n" +
+	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x14\n" +
+	"\x05claim\x18\x02 \x01(\fR\x05claim\x12\x1b\n" +
+	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x12*\n" +
+	"\x11device_public_key\x18\x04 \x01(\fR\x0fdevicePublicKey\x12/\n" +
+	"\x14expires_at_unix_nano\x18\x05 \x01(\x03R\x11expiresAtUnixNano\x12=\n" +
+	"\x05route\x18\x06 \x01(\v2'.muxvia.remote.auth.v1.PairingRouteSeedR\x05route\"\x8f\x04\n" +
 	"\x10EndpointConfigV1\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x1f\n" +
 	"\vendpoint_id\x18\x02 \x01(\tR\n" +
@@ -4918,7 +5251,7 @@ func file_remoteauthpb_remote_auth_proto_rawDescGZIP() []byte {
 }
 
 var file_remoteauthpb_remote_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
-var file_remoteauthpb_remote_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
+var file_remoteauthpb_remote_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
 var file_remoteauthpb_remote_auth_proto_goTypes = []any{
 	(AuthErrorCode)(0),                          // 0: muxvia.remote.auth.v1.AuthErrorCode
 	(ScopeKind)(0),                              // 1: muxvia.remote.auth.v1.ScopeKind
@@ -4962,22 +5295,26 @@ var file_remoteauthpb_remote_auth_proto_goTypes = []any{
 	(*SSHWebRTCTCPRouteConfig)(nil),             // 39: muxvia.remote.auth.v1.SSHWebRTCTCPRouteConfig
 	(*ManagedWebRTCRouteConfig)(nil),            // 40: muxvia.remote.auth.v1.ManagedWebRTCRouteConfig
 	(*EndpointRouteConfigV1)(nil),               // 41: muxvia.remote.auth.v1.EndpointRouteConfigV1
-	(*EndpointConfigV1)(nil),                    // 42: muxvia.remote.auth.v1.EndpointConfigV1
-	(*EndpointRegistryV1)(nil),                  // 43: muxvia.remote.auth.v1.EndpointRegistryV1
-	(*PairingTicketDescriptor)(nil),             // 44: muxvia.remote.auth.v1.PairingTicketDescriptor
-	(*EndpointAuthorizationBootstrap)(nil),      // 45: muxvia.remote.auth.v1.EndpointAuthorizationBootstrap
-	(*EndpointBootstrapBundleV2)(nil),           // 46: muxvia.remote.auth.v1.EndpointBootstrapBundleV2
-	(*PairingTicketSignatureInput)(nil),         // 47: muxvia.remote.auth.v1.PairingTicketSignatureInput
-	(*EndpointBootstrapSignatureInput)(nil),     // 48: muxvia.remote.auth.v1.EndpointBootstrapSignatureInput
-	(*ClientEndpointShareBundleV1)(nil),         // 49: muxvia.remote.auth.v1.ClientEndpointShareBundleV1
-	(*ShareSessionOffer)(nil),                   // 50: muxvia.remote.auth.v1.ShareSessionOffer
-	(*ShareReceiverHello)(nil),                  // 51: muxvia.remote.auth.v1.ShareReceiverHello
-	(*ShareSenderChallenge)(nil),                // 52: muxvia.remote.auth.v1.ShareSenderChallenge
-	(*ShareReceiverProofInput)(nil),             // 53: muxvia.remote.auth.v1.ShareReceiverProofInput
-	(*ShareReceiverProof)(nil),                  // 54: muxvia.remote.auth.v1.ShareReceiverProof
-	(*ShareSessionClientEnvelope)(nil),          // 55: muxvia.remote.auth.v1.ShareSessionClientEnvelope
-	(*ShareSessionError)(nil),                   // 56: muxvia.remote.auth.v1.ShareSessionError
-	(*ShareSessionServerEnvelope)(nil),          // 57: muxvia.remote.auth.v1.ShareSessionServerEnvelope
+	(*PairingDirectRouteSeed)(nil),              // 42: muxvia.remote.auth.v1.PairingDirectRouteSeed
+	(*PairingManagedRouteSeed)(nil),             // 43: muxvia.remote.auth.v1.PairingManagedRouteSeed
+	(*PairingRouteSeed)(nil),                    // 44: muxvia.remote.auth.v1.PairingRouteSeed
+	(*PairingClaimOfferV1)(nil),                 // 45: muxvia.remote.auth.v1.PairingClaimOfferV1
+	(*EndpointConfigV1)(nil),                    // 46: muxvia.remote.auth.v1.EndpointConfigV1
+	(*EndpointRegistryV1)(nil),                  // 47: muxvia.remote.auth.v1.EndpointRegistryV1
+	(*PairingTicketDescriptor)(nil),             // 48: muxvia.remote.auth.v1.PairingTicketDescriptor
+	(*EndpointAuthorizationBootstrap)(nil),      // 49: muxvia.remote.auth.v1.EndpointAuthorizationBootstrap
+	(*EndpointBootstrapBundleV2)(nil),           // 50: muxvia.remote.auth.v1.EndpointBootstrapBundleV2
+	(*PairingTicketSignatureInput)(nil),         // 51: muxvia.remote.auth.v1.PairingTicketSignatureInput
+	(*EndpointBootstrapSignatureInput)(nil),     // 52: muxvia.remote.auth.v1.EndpointBootstrapSignatureInput
+	(*ClientEndpointShareBundleV1)(nil),         // 53: muxvia.remote.auth.v1.ClientEndpointShareBundleV1
+	(*ShareSessionOffer)(nil),                   // 54: muxvia.remote.auth.v1.ShareSessionOffer
+	(*ShareReceiverHello)(nil),                  // 55: muxvia.remote.auth.v1.ShareReceiverHello
+	(*ShareSenderChallenge)(nil),                // 56: muxvia.remote.auth.v1.ShareSenderChallenge
+	(*ShareReceiverProofInput)(nil),             // 57: muxvia.remote.auth.v1.ShareReceiverProofInput
+	(*ShareReceiverProof)(nil),                  // 58: muxvia.remote.auth.v1.ShareReceiverProof
+	(*ShareSessionClientEnvelope)(nil),          // 59: muxvia.remote.auth.v1.ShareSessionClientEnvelope
+	(*ShareSessionError)(nil),                   // 60: muxvia.remote.auth.v1.ShareSessionError
+	(*ShareSessionServerEnvelope)(nil),          // 61: muxvia.remote.auth.v1.ShareSessionServerEnvelope
 }
 var file_remoteauthpb_remote_auth_proto_depIdxs = []int32{
 	2,  // 0: muxvia.remote.auth.v1.ChannelBinding.kind:type_name -> muxvia.remote.auth.v1.ChannelBindingKind
@@ -5014,33 +5351,36 @@ var file_remoteauthpb_remote_auth_proto_depIdxs = []int32{
 	38, // 31: muxvia.remote.auth.v1.EndpointRouteConfigV1.direct_webrtc_tcp:type_name -> muxvia.remote.auth.v1.DirectWebRTCTCPRouteConfig
 	39, // 32: muxvia.remote.auth.v1.EndpointRouteConfigV1.ssh_webrtc_tcp:type_name -> muxvia.remote.auth.v1.SSHWebRTCTCPRouteConfig
 	40, // 33: muxvia.remote.auth.v1.EndpointRouteConfigV1.managed_webrtc:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRouteConfig
-	7,  // 34: muxvia.remote.auth.v1.EndpointConfigV1.label_source:type_name -> muxvia.remote.auth.v1.EndpointSource
-	34, // 35: muxvia.remote.auth.v1.EndpointConfigV1.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
-	5,  // 36: muxvia.remote.auth.v1.EndpointConfigV1.connect_mode:type_name -> muxvia.remote.auth.v1.EndpointConnectMode
-	35, // 37: muxvia.remote.auth.v1.EndpointConfigV1.selection_policy:type_name -> muxvia.remote.auth.v1.EndpointSelectionPolicy
-	41, // 38: muxvia.remote.auth.v1.EndpointConfigV1.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
-	42, // 39: muxvia.remote.auth.v1.EndpointRegistryV1.endpoints:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	44, // 40: muxvia.remote.auth.v1.EndpointAuthorizationBootstrap.pairing_ticket:type_name -> muxvia.remote.auth.v1.PairingTicketDescriptor
-	34, // 41: muxvia.remote.auth.v1.EndpointBootstrapBundleV2.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
-	41, // 42: muxvia.remote.auth.v1.EndpointBootstrapBundleV2.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
-	45, // 43: muxvia.remote.auth.v1.EndpointBootstrapBundleV2.authorization:type_name -> muxvia.remote.auth.v1.EndpointAuthorizationBootstrap
-	44, // 44: muxvia.remote.auth.v1.PairingTicketSignatureInput.ticket:type_name -> muxvia.remote.auth.v1.PairingTicketDescriptor
-	46, // 45: muxvia.remote.auth.v1.EndpointBootstrapSignatureInput.bundle:type_name -> muxvia.remote.auth.v1.EndpointBootstrapBundleV2
-	34, // 46: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
-	41, // 47: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
-	5,  // 48: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.connect_mode:type_name -> muxvia.remote.auth.v1.EndpointConnectMode
-	35, // 49: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.selection_policy:type_name -> muxvia.remote.auth.v1.EndpointSelectionPolicy
-	36, // 50: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.credential_descriptors:type_name -> muxvia.remote.auth.v1.EndpointCredentialDescriptor
-	51, // 51: muxvia.remote.auth.v1.ShareSessionClientEnvelope.hello:type_name -> muxvia.remote.auth.v1.ShareReceiverHello
-	54, // 52: muxvia.remote.auth.v1.ShareSessionClientEnvelope.proof:type_name -> muxvia.remote.auth.v1.ShareReceiverProof
-	52, // 53: muxvia.remote.auth.v1.ShareSessionServerEnvelope.challenge:type_name -> muxvia.remote.auth.v1.ShareSenderChallenge
-	49, // 54: muxvia.remote.auth.v1.ShareSessionServerEnvelope.bundle:type_name -> muxvia.remote.auth.v1.ClientEndpointShareBundleV1
-	56, // 55: muxvia.remote.auth.v1.ShareSessionServerEnvelope.error:type_name -> muxvia.remote.auth.v1.ShareSessionError
-	56, // [56:56] is the sub-list for method output_type
-	56, // [56:56] is the sub-list for method input_type
-	56, // [56:56] is the sub-list for extension type_name
-	56, // [56:56] is the sub-list for extension extendee
-	0,  // [0:56] is the sub-list for field type_name
+	42, // 34: muxvia.remote.auth.v1.PairingRouteSeed.direct_webrtc_tcp:type_name -> muxvia.remote.auth.v1.PairingDirectRouteSeed
+	43, // 35: muxvia.remote.auth.v1.PairingRouteSeed.managed_webrtc:type_name -> muxvia.remote.auth.v1.PairingManagedRouteSeed
+	44, // 36: muxvia.remote.auth.v1.PairingClaimOfferV1.route:type_name -> muxvia.remote.auth.v1.PairingRouteSeed
+	7,  // 37: muxvia.remote.auth.v1.EndpointConfigV1.label_source:type_name -> muxvia.remote.auth.v1.EndpointSource
+	34, // 38: muxvia.remote.auth.v1.EndpointConfigV1.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
+	5,  // 39: muxvia.remote.auth.v1.EndpointConfigV1.connect_mode:type_name -> muxvia.remote.auth.v1.EndpointConnectMode
+	35, // 40: muxvia.remote.auth.v1.EndpointConfigV1.selection_policy:type_name -> muxvia.remote.auth.v1.EndpointSelectionPolicy
+	41, // 41: muxvia.remote.auth.v1.EndpointConfigV1.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
+	46, // 42: muxvia.remote.auth.v1.EndpointRegistryV1.endpoints:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	48, // 43: muxvia.remote.auth.v1.EndpointAuthorizationBootstrap.pairing_ticket:type_name -> muxvia.remote.auth.v1.PairingTicketDescriptor
+	34, // 44: muxvia.remote.auth.v1.EndpointBootstrapBundleV2.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
+	41, // 45: muxvia.remote.auth.v1.EndpointBootstrapBundleV2.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
+	49, // 46: muxvia.remote.auth.v1.EndpointBootstrapBundleV2.authorization:type_name -> muxvia.remote.auth.v1.EndpointAuthorizationBootstrap
+	48, // 47: muxvia.remote.auth.v1.PairingTicketSignatureInput.ticket:type_name -> muxvia.remote.auth.v1.PairingTicketDescriptor
+	50, // 48: muxvia.remote.auth.v1.EndpointBootstrapSignatureInput.bundle:type_name -> muxvia.remote.auth.v1.EndpointBootstrapBundleV2
+	34, // 49: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
+	41, // 50: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
+	5,  // 51: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.connect_mode:type_name -> muxvia.remote.auth.v1.EndpointConnectMode
+	35, // 52: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.selection_policy:type_name -> muxvia.remote.auth.v1.EndpointSelectionPolicy
+	36, // 53: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.credential_descriptors:type_name -> muxvia.remote.auth.v1.EndpointCredentialDescriptor
+	55, // 54: muxvia.remote.auth.v1.ShareSessionClientEnvelope.hello:type_name -> muxvia.remote.auth.v1.ShareReceiverHello
+	58, // 55: muxvia.remote.auth.v1.ShareSessionClientEnvelope.proof:type_name -> muxvia.remote.auth.v1.ShareReceiverProof
+	56, // 56: muxvia.remote.auth.v1.ShareSessionServerEnvelope.challenge:type_name -> muxvia.remote.auth.v1.ShareSenderChallenge
+	53, // 57: muxvia.remote.auth.v1.ShareSessionServerEnvelope.bundle:type_name -> muxvia.remote.auth.v1.ClientEndpointShareBundleV1
+	60, // 58: muxvia.remote.auth.v1.ShareSessionServerEnvelope.error:type_name -> muxvia.remote.auth.v1.ShareSessionError
+	59, // [59:59] is the sub-list for method output_type
+	59, // [59:59] is the sub-list for method input_type
+	59, // [59:59] is the sub-list for extension type_name
+	59, // [59:59] is the sub-list for extension extendee
+	0,  // [0:59] is the sub-list for field type_name
 }
 
 func init() { file_remoteauthpb_remote_auth_proto_init() }
@@ -5066,15 +5406,19 @@ func file_remoteauthpb_remote_auth_proto_init() {
 		(*EndpointRouteConfigV1_SshWebrtcTcp)(nil),
 		(*EndpointRouteConfigV1_ManagedWebrtc)(nil),
 	}
-	file_remoteauthpb_remote_auth_proto_msgTypes[36].OneofWrappers = []any{
+	file_remoteauthpb_remote_auth_proto_msgTypes[35].OneofWrappers = []any{
+		(*PairingRouteSeed_DirectWebrtcTcp)(nil),
+		(*PairingRouteSeed_ManagedWebrtc)(nil),
+	}
+	file_remoteauthpb_remote_auth_proto_msgTypes[40].OneofWrappers = []any{
 		(*EndpointAuthorizationBootstrap_PairingTicket)(nil),
 		(*EndpointAuthorizationBootstrap_BoundGrant)(nil),
 	}
-	file_remoteauthpb_remote_auth_proto_msgTypes[46].OneofWrappers = []any{
+	file_remoteauthpb_remote_auth_proto_msgTypes[50].OneofWrappers = []any{
 		(*ShareSessionClientEnvelope_Hello)(nil),
 		(*ShareSessionClientEnvelope_Proof)(nil),
 	}
-	file_remoteauthpb_remote_auth_proto_msgTypes[48].OneofWrappers = []any{
+	file_remoteauthpb_remote_auth_proto_msgTypes[52].OneofWrappers = []any{
 		(*ShareSessionServerEnvelope_Challenge)(nil),
 		(*ShareSessionServerEnvelope_Bundle)(nil),
 		(*ShareSessionServerEnvelope_Error)(nil),
@@ -5085,7 +5429,7 @@ func file_remoteauthpb_remote_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_remoteauthpb_remote_auth_proto_rawDesc), len(file_remoteauthpb_remote_auth_proto_rawDesc)),
 			NumEnums:      9,
-			NumMessages:   49,
+			NumMessages:   53,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

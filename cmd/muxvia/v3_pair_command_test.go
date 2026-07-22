@@ -20,6 +20,7 @@ import (
 	"github.com/muxvia/muxvia/shared/filelock"
 	"github.com/muxvia/muxvia/shared/remoteauth"
 	unixtransport "github.com/muxvia/muxvia/shared/transport/unix"
+	qrcode "github.com/skip2/go-qrcode"
 )
 
 func TestPairCreateAndImportUsesTicketThenClientBoundCredential(t *testing.T) {
@@ -134,15 +135,19 @@ func TestPairCreateTextAndPNGOutputsArePortableAndOwnerOnly(t *testing.T) {
 	socket := filepath.Join(runtimeDir, "daemon.sock")
 	textOutput := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--text")
 	portableURI := strings.TrimSpace(string(textOutput))
-	if !strings.HasPrefix(portableURI, pairingBootstrapURIPrefix) {
+	if !strings.HasPrefix(portableURI, remoteauth.PairingClaimCodePrefix) {
 		t.Fatalf("pair text output = %q", portableURI)
 	}
 	payload, err := readV3PairingBundle(context.Background(), strings.NewReader(portableURI), "-")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := remoteauth.ParsePairingBundle(payload, time.Now().UTC()); err != nil {
+	if _, err := remoteauth.ParsePairingClaimOffer(payload, time.Now().UTC()); err != nil {
 		t.Fatalf("portable pairing URI is invalid: %v", err)
+	}
+	code, err := qrcode.New(portableURI, qrcode.Medium)
+	if err != nil || code.VersionNumber > 10 {
+		t.Fatalf("pairing claim QR version = %v err=%v", code.VersionNumber, err)
 	}
 
 	path := filepath.Join(t.TempDir(), "pairing", "muxvia-pair.png")

@@ -149,15 +149,20 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 		return nil, err
 	}
 	now := host.options.Now().UTC()
-	bundle, claims, err := remoteauth.ParsePairingBundle(payload, now)
+	offer, err := remoteauth.ParsePairingClaimOffer(payload, now)
+	if err != nil {
+		return nil, err
+	}
+	pairingCandidate, err := remoteauth.PairingClaimEndpointCandidate(offer)
 	if err != nil {
 		return nil, err
 	}
 	endpointID := strings.TrimSpace(request.GetExpectedEndpointId())
 	if endpointID == "" {
-		endpointID = bundle.GetIdentity().GetDeviceId()
+		endpointID = offer.GetDeviceId()
 	}
-	credentialRef := credentialRef(host.options.CredentialPrefix, bundle.GetIdentity().GetDeviceId(), bundle.GetIdentity().GetDeviceFingerprint())
+	deviceFingerprint := remoteauth.Fingerprint(ed25519.PublicKey(offer.GetDevicePublicKey()))
+	credentialRef := credentialRef(host.options.CredentialPrefix, offer.GetDeviceId(), deviceFingerprint)
 	response, err := host.options.Broker.Exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CredentialPrepare{
 		CredentialPrepare: &bindingpb.CredentialPrepareRequest{EndpointId: endpointID, CredentialRef: credentialRef},
 	}})
@@ -168,15 +173,11 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 	if err != nil {
 		return nil, err
 	}
-	candidate, err := endpoint.EndpointCandidateFromBootstrapBundle(bundle)
+	pairingRoute, err := pairingClaimRoute(pairingCandidate)
 	if err != nil {
 		return nil, err
 	}
-	pairingRoute, err := directPairingRoute(candidate)
-	if err != nil {
-		return nil, err
-	}
-	target := pairingTarget(endpointID, candidate.Identity, pairingRoute, credentialRef)
+	target := pairingTarget(endpointID, pairingCandidate.Identity, pairingRoute, credentialRef)
 	attempt, err := host.owner.BeginRouteAttempt(target, pairingRoute.ID, clientruntime.ConnectIntentInteractive)
 	if err != nil {
 		return nil, err
@@ -189,13 +190,32 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 	}
 	signer := platformSigner{broker: host.options.Broker, credentialRef: credentialRef, identity: identity}
 	pairingRequest := remoteauth.ClientPairingRequest{
-		ExpectedDeviceID: bundle.GetIdentity().GetDeviceId(), ExpectedDeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint(),
-		PairingBundle: payload, Identity: identity, Signer: signer, ClientLabel: host.options.ClientName,
+		ExpectedDeviceID: offer.GetDeviceId(), ExpectedDeviceFingerprint: deviceFingerprint,
+		PairingClaimOffer: payload, Identity: identity, Signer: signer, ClientLabel: host.options.ClientName,
 	}
-	if host.options.DirectPeers == nil {
-		return nil, fmt.Errorf("Direct pairing peer factory is unavailable")
+	var paired remoteauth.PairingExchangeResult
+	switch pairingRoute.Kind {
+	case endpoint.RouteDirectWebRTCTCP:
+		if host.options.DirectPeers == nil {
+			return nil, fmt.Errorf("Direct pairing peer factory is unavailable")
+		}
+		paired, err = (&direct.PairingConnector{Peers: host.options.DirectPeers, Now: host.options.Now}).Redeem(ctx, attempt, pairingRequest)
+	case endpoint.RouteManagedWebRTC:
+		if host.options.ManagedPeers == nil {
+			return nil, fmt.Errorf("Cloud pairing peer factory is unavailable")
+		}
+		paired, err = (&managed.PairingConnector{Cloud: platformCloud{broker: host.options.Broker}, Peers: host.options.ManagedPeers, Now: host.options.Now}).Redeem(ctx, attempt, pairingRequest)
+	default:
+		return nil, fmt.Errorf("pairing Route %q is unsupported", pairingRoute.Kind)
 	}
-	paired, err := (&direct.PairingConnector{Peers: host.options.DirectPeers, Now: host.options.Now}).Redeem(ctx, attempt, pairingRequest)
+	if err != nil {
+		return nil, err
+	}
+	bundle, claims, err := remoteauth.ParsePairingBundle(paired.Bundle, now)
+	if err != nil {
+		return nil, err
+	}
+	candidate, err := endpoint.EndpointCandidateFromBootstrapBundle(bundle)
 	if err != nil {
 		return nil, err
 	}
@@ -228,15 +248,14 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 	}, nil
 }
 
-// directPairingRoute 固定使用 daemon embedded signaling 兑换一次性 grant。
-// Cloud Route 只作为同一 Endpoint 的后续连接方式，不能建立第二套 managed-only 配对协议。
-func directPairingRoute(candidate endpoint.EndpointCandidate) (endpoint.AccessRoute, error) {
+// pairingClaimRoute 返回短 claim 明确携带的唯一首连 Route；完整 Route 列表只能来自兑换后的签名 bundle。
+func pairingClaimRoute(candidate endpoint.EndpointCandidate) (endpoint.AccessRoute, error) {
 	for _, route := range candidate.Routes {
-		if route.Enabled && route.Kind == endpoint.RouteDirectWebRTCTCP {
+		if route.Enabled && (route.Kind == endpoint.RouteDirectWebRTCTCP || route.Kind == endpoint.RouteManagedWebRTC) {
 			return route, nil
 		}
 	}
-	return endpoint.AccessRoute{}, fmt.Errorf("pairing bundle requires an enabled Direct WebRTC TCP route")
+	return endpoint.AccessRoute{}, fmt.Errorf("pairing claim requires an enabled Direct or Cloud WebRTC route")
 }
 
 // DeleteCredential 删除当前平台 secure store 中的 credential record。
@@ -606,6 +625,9 @@ func connectIntent(value bindingpb.ConnectIntent) (clientruntime.ConnectIntent, 
 
 func decodeBootstrap(value string) ([]byte, error) {
 	encoded := strings.TrimSpace(value)
+	if strings.HasPrefix(encoded, remoteauth.PairingClaimCodePrefix) {
+		return remoteauth.DecodePairingClaimCode(encoded)
+	}
 	if strings.HasPrefix(encoded, bootstrapPrefix) {
 		encoded = strings.TrimPrefix(encoded, bootstrapPrefix)
 	}

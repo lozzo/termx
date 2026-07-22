@@ -71,9 +71,9 @@ func ClientAccessIdentityToProto(identity corev2.ClientAccessIdentity) *remoteau
 	return &remoteauthpb.ClientAccessIdentityResult{DeviceId: identity.DeviceID, DeviceFingerprint: identity.DeviceFingerprint, DevicePublicKey: cloneBytes(identity.DevicePublicKey)}
 }
 
-// ClientAccessTicketToProto 转为一次性 pairing bundle result。
+// ClientAccessTicketToProto 转为一次性 pairing claim result；官方 consumer 只能展示 claim_offer/claim_code。
 func ClientAccessTicketToProto(ticket corev2.ClientAccessTicket) *remoteauthpb.ClientAccessTicketCreateResult {
-	return &remoteauthpb.ClientAccessTicketCreateResult{Bundle: cloneBytes(ticket.Bundle), TicketId: ticket.TicketID, ExpiresAtUnixNano: unixNanoOrZero(ticket.ExpiresAt)}
+	return &remoteauthpb.ClientAccessTicketCreateResult{Bundle: cloneBytes(ticket.Bundle), TicketId: ticket.TicketID, ExpiresAtUnixNano: unixNanoOrZero(ticket.ExpiresAt), ClaimOffer: cloneBytes(ticket.ClaimOffer), ClaimCode: ticket.ClaimCode}
 }
 
 // ClientAccessRecordToProto 转为不包含 grant body/public key 的脱敏记录。

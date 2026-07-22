@@ -145,7 +145,7 @@ func (service v3ClientAccessService) Identity(_ context.Context, challenge []byt
 	}, nil
 }
 
-// CreateTicket 把已通过 transport scope 校验的 owner 请求交给唯一 AccessStore 原子签发并登记。
+// CreateTicket 把已通过 transport scope 校验的 owner 请求交给唯一 AccessStore，原子签发 ticket 并登记内存 claim。
 func (service v3ClientAccessService) CreateTicket(_ context.Context, request corev2.ClientAccessTicketRequest) (corev2.ClientAccessTicket, error) {
 	if service.store == nil {
 		return corev2.ClientAccessTicket{}, fmt.Errorf("client access store is unavailable")
@@ -162,18 +162,17 @@ func (service v3ClientAccessService) CreateTicket(_ context.Context, request cor
 		}
 		routes = append(routes, route)
 	}
-	bundle, claims, err := service.store.IssuePairingBundle(remoteauth.PairingIssueOptions{
+	issued, err := service.store.IssuePairingClaim(remoteauth.PairingIssueOptions{
 		Label: request.Label, Scope: remoteAuthScopeFromCore(request.Scope), TicketTTL: request.TicketTTL, GrantLifetime: request.GrantLifetime,
 		Routes: routes,
 	})
 	if err != nil {
 		return corev2.ClientAccessTicket{}, err
 	}
-	payload, err := remoteauth.EncodePairingBundle(bundle)
-	if err != nil {
-		return corev2.ClientAccessTicket{}, err
-	}
-	return corev2.ClientAccessTicket{Bundle: payload, TicketID: claims.TicketID, ExpiresAt: claims.ExpiresAt}, nil
+	return corev2.ClientAccessTicket{
+		Bundle: issued.BundlePayload, ClaimOffer: issued.OfferPayload, ClaimCode: issued.ClaimCode,
+		TicketID: issued.Claims.TicketID, ExpiresAt: issued.Claims.ExpiresAt,
+	}, nil
 }
 
 // List 返回 AccessStore 的脱敏授权记录；该调用不刷新时间戳或写入本地状态。

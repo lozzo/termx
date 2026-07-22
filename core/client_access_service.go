@@ -33,11 +33,13 @@ type ClientAccessTicketRequest struct {
 	Routes                   []*remoteauthpb.EndpointRouteConfigV1
 }
 
-// ClientAccessTicket 是一次性 pairing bundle 的 core-native 结果。
+// ClientAccessTicket 是 daemon 创建一次性配对 claim 后返回给 API Layer 的 core-native 结果。
+// ClaimOffer 可以跨进程进入二维码；Bundle 只供 owner-only 兼容工具使用，不能成为官方客户端载荷。
 type ClientAccessTicket struct {
-	Bundle    []byte
-	TicketID  string
-	ExpiresAt time.Time
+	Bundle, ClaimOffer []byte
+	ClaimCode          string
+	TicketID           string
+	ExpiresAt          time.Time
 }
 
 // ClientAccessRecord 是 daemon 持久化 grant 的脱敏投影。
@@ -52,7 +54,7 @@ type ClientAccessRecord struct {
 type ClientAccessService interface {
 	// Identity 返回 daemon DeviceIdentity 的公开投影和当前 challenge 的签名证明；实现不得返回或记录私钥。
 	Identity(ctx context.Context, challenge []byte) (ClientAccessIdentity, error)
-	// CreateTicket 由 owning daemon 原子登记并签发一次性 PairingTicket bundle。
+	// CreateTicket 由 owning daemon 原子登记 PairingTicket，并创建仅在当前 daemon 内存可解析的一次性 claim。
 	CreateTicket(ctx context.Context, request ClientAccessTicketRequest) (ClientAccessTicket, error)
 	// List 返回不含 ticket、grant body 或 client public key bytes 的脱敏授权投影。
 	List(ctx context.Context) ([]ClientAccessRecord, error)

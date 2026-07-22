@@ -1,6 +1,7 @@
 package direct_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -60,6 +61,37 @@ func TestDirectICETCPCompletesSignedSignalingAuthHelloAndProtoAPI(t *testing.T) 
 	pair := selectedPair(t, clientPeer)
 	if pair.Local.Protocol != pionwebrtc.ICEProtocolTCP || pair.Remote.Protocol != pionwebrtc.ICEProtocolTCP {
 		t.Fatalf("Direct selected candidate pair is not TCP: %s", pair)
+	}
+}
+
+func TestDirectICETCPRedeemsShortClaimAndReturnsSignedBundle(t *testing.T) {
+	fixture := newDirectFixture(t)
+	issued, err := fixture.store.IssuePairingClaim(remoteauth.PairingIssueOptions{
+		Scope: remoteauth.Scope{AllowDaemon: true}, TicketTTL: 10 * time.Minute, GrantLifetime: time.Hour, Now: fixture.now,
+		Routes: []*remoteauthpb.EndpointRouteConfigV1{{SchemaVersion: 1, RouteId: "direct", Enabled: true, Route: &remoteauthpb.EndpointRouteConfigV1_DirectWebrtcTcp{DirectWebrtcTcp: &remoteauthpb.DirectWebRTCTCPRouteConfig{SignalingAddresses: []string{fixture.signalingAddress}, IceTcpAddresses: []string{fixture.iceAddress}}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientIdentity, err := remoteauth.GenerateClientAccessIdentity("direct", rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := remoteauth.NewPrivateClientAccessSigner(clientIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	result, err := (&direct.PairingConnector{Peers: pionadapter.Factory{PeerConnections: directClientAPI().NewPeerConnection}, Now: func() time.Time { return fixture.now }}).Redeem(ctx, fixture.attempt(t, 201), remoteauth.ClientPairingRequest{
+		ExpectedDeviceID: fixture.identity.DeviceID, ExpectedDeviceFingerprint: fixture.identity.Fingerprint,
+		PairingClaimOffer: issued.OfferPayload, Identity: clientIdentity, Signer: signer, ClientLabel: "direct-claim-e2e",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TicketID != issued.Claims.TicketID || !bytes.Equal(result.Bundle, issued.BundlePayload) {
+		t.Fatalf("Direct claim result=%#v", result)
 	}
 }
 
@@ -257,6 +289,7 @@ func TestVerifiedTCPAnswerProjectionPublishesOneCandidatePerLocator(t *testing.T
 type directFixture struct {
 	identity         remoteauth.Identity
 	credential       remoteauth.ClientAccessCredential
+	store            *remoteauth.AccessStore
 	now              time.Time
 	signalingAddress string
 	iceAddress       string
@@ -326,7 +359,7 @@ func newDirectFixture(t *testing.T) *directFixture {
 		identity: identity, credential: remoteauth.ClientAccessCredential{
 			Version: 1, EndpointID: "direct", Identity: clientIdentity, CapabilityGrant: exchanged.Grant, UpdatedAt: now,
 		},
-		now: now, signalingAddress: signalingListener.Addr().String(), iceAddress: iceListener.Addr().String(), server: directServer, cancel: cancel, done: done,
+		store: store, now: now, signalingAddress: signalingListener.Addr().String(), iceAddress: iceListener.Addr().String(), server: directServer, cancel: cancel, done: done,
 	}
 	fixture.closedSessions = closedSessions
 	t.Cleanup(func() { fixture.stop(t) })

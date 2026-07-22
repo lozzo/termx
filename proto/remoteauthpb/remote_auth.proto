@@ -98,6 +98,7 @@ message PairingOpen {
   string client_label = 3;
   bytes client_nonce = 4;
   bytes proof = 5;
+  bytes pairing_claim_offer = 6;
 }
 
 // ScopeSummary 是 daemon 已接受 capability 的最小无歧义投影。
@@ -145,9 +146,12 @@ message ClientAccessTicketCreateRequest {
 }
 
 message ClientAccessTicketCreateResult {
+  // bundle 仅保留给 owner-only 兼容工具；官方二维码、文本导入和平台 binding 必须使用 claim_offer。
   bytes bundle = 1;
   string ticket_id = 2;
   int64 expires_at_unix_nano = 3;
+  bytes claim_offer = 4;
+  string claim_code = 5;
 }
 
 message ClientAccessRevokeRequest {
@@ -183,6 +187,7 @@ message PairingAccepted {
   string delivery_receipt = 2;
   string subject_key_fingerprint = 3;
   ScopeSummary scope = 4;
+  bytes pairing_bundle = 5;
 }
 
 // CapabilityRejected 返回稳定错误类别和固定脱敏消息，随后 channel 必须关闭。
@@ -399,6 +404,38 @@ message EndpointRouteConfigV1 {
     SSHWebRTCTCPRouteConfig ssh_webrtc_tcp = 22;
     ManagedWebRTCRouteConfig managed_webrtc = 23;
   }
+}
+
+// PairingDirectRouteSeed 只携带建立首个 Direct pairing DataChannel 必需的单个公开 locator。
+// 完整 Route 配置在 claim 兑换后由 owning daemon 的签名 bundle 提供。
+message PairingDirectRouteSeed {
+  string signaling_address = 1;
+  string ice_tcp_address = 2;
+  string server_name = 3;
+}
+
+// PairingManagedRouteSeed 只标识 Cloud signaling 中的 owning daemon；账号和 token 仍来自客户端本地 Cloud session。
+message PairingManagedRouteSeed {
+  string target_device_id = 1;
+}
+
+// PairingRouteSeed 是短码中建立一次 pairing peer 所需的最小 Route 投影。
+message PairingRouteSeed {
+  oneof route {
+    PairingDirectRouteSeed direct_webrtc_tcp = 1;
+    PairingManagedRouteSeed managed_webrtc = 2;
+  }
+}
+
+// PairingClaimOfferV1 是二维码和无摄像头输入使用的紧凑一次性 claim。
+// claim 固定 128-bit，只由 owning daemon 内存持有；消息不包含 PairingTicket、CapabilityGrant、scope 或 terminal 信息。
+message PairingClaimOfferV1 {
+  uint32 schema_version = 1;
+  bytes claim = 2;
+  string device_id = 3;
+  bytes device_public_key = 4;
+  int64 expires_at_unix_nano = 5;
+  PairingRouteSeed route = 6;
 }
 
 // EndpointConfigV1 是 Go Client Engine 持久化和跨 binding 投影的 Endpoint 配置。

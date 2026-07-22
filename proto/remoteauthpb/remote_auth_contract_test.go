@@ -43,6 +43,32 @@ func TestAuthEnvelopeHasSinglePayloadOneof(t *testing.T) {
 	}
 }
 
+func TestPairingClaimContractIsCompactAndSeparatedFromAuthorization(t *testing.T) {
+	offer := (&PairingClaimOfferV1{}).ProtoReflect().Descriptor()
+	want := map[protoreflect.Name]protoreflect.FieldNumber{
+		"schema_version": 1, "claim": 2, "device_id": 3, "device_public_key": 4, "expires_at_unix_nano": 5, "route": 6,
+	}
+	for name, number := range want {
+		field := offer.Fields().ByName(name)
+		if field == nil || field.Number() != number {
+			t.Fatalf("PairingClaimOfferV1.%s field = %v, want number %d", name, field, number)
+		}
+	}
+	for _, forbidden := range []protoreflect.Name{"pairing_ticket", "grant", "scope", "terminal_id", "client_public_key"} {
+		if offer.Fields().ByName(forbidden) != nil {
+			t.Fatalf("PairingClaimOfferV1 leaked authorization field %s", forbidden)
+		}
+	}
+	open := (&PairingOpen{}).ProtoReflect().Descriptor()
+	if field := open.Fields().ByName("pairing_claim_offer"); field == nil || field.Number() != 6 {
+		t.Fatal("PairingOpen.pairing_claim_offer must remain field 6")
+	}
+	accepted := (&PairingAccepted{}).ProtoReflect().Descriptor()
+	if field := accepted.Fields().ByName("pairing_bundle"); field == nil || field.Number() != 5 {
+		t.Fatal("PairingAccepted.pairing_bundle must remain field 5")
+	}
+}
+
 func TestEndpointRouteConfigV1OwnsVersionedRouteOneof(t *testing.T) {
 	descriptor := (&EndpointRouteConfigV1{}).ProtoReflect().Descriptor()
 	if field := descriptor.Fields().ByName("schema_version"); field == nil || field.Number() != 1 {

@@ -1,6 +1,7 @@
 package enginehost
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -8,7 +9,40 @@ import (
 	"github.com/muxvia/muxvia/client/endpoint"
 	"github.com/muxvia/muxvia/client/port"
 	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/muxvia/muxvia/shared/remoteauth"
 )
+
+func TestDecodeBootstrapAcceptsManualPairingClaimCode(t *testing.T) {
+	payload := []byte{0x01, 0x02, 0x03, 0x04}
+	decoded, err := decodeBootstrap(remoteauth.EncodePairingClaimCode(payload))
+	if err != nil || !bytes.Equal(decoded, payload) {
+		t.Fatalf("manual pairing code decoded=%x err=%v", decoded, err)
+	}
+}
+
+func TestPairingClaimCandidatesProduceValidDirectAndCloudAttempts(t *testing.T) {
+	publicKey := bytes.Repeat([]byte{0x21}, 32)
+	for name, route := range map[string]*remoteauthpb.PairingRouteSeed{
+		"direct": {Route: &remoteauthpb.PairingRouteSeed_DirectWebrtcTcp{DirectWebrtcTcp: &remoteauthpb.PairingDirectRouteSeed{SignalingAddress: "127.0.0.1:41001", IceTcpAddress: "127.0.0.1:41002"}}},
+		"cloud":  {Route: &remoteauthpb.PairingRouteSeed_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.PairingManagedRouteSeed{TargetDeviceId: "device-1"}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate, err := remoteauth.PairingClaimEndpointCandidate(&remoteauthpb.PairingClaimOfferV1{SchemaVersion: remoteauth.PairingClaimOfferVersion, Claim: bytes.Repeat([]byte{0x31}, 16), DeviceId: "device-1", DevicePublicKey: publicKey, ExpiresAtUnixNano: 1, Route: route})
+			if err != nil {
+				t.Fatal(err)
+			}
+			selected, err := pairingClaimRoute(candidate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			target := pairingTarget("device-1", candidate.Identity, selected, "credential:device-1")
+			if _, err := clientruntime.NewAttemptRequest(target, selected.ID, 1, clientruntime.ConnectIntentInteractive); err != nil {
+				t.Fatalf("claim attempt is invalid: %#v err=%v", target, err)
+			}
+		})
+	}
+}
 
 type credentialAvailability map[string]bool
 
@@ -44,16 +78,16 @@ func TestPairingTargetKeepsManagedFieldsOutOfDirectRoute(t *testing.T) {
 	}
 }
 
-func TestDirectPairingRouteRejectsManagedOnlyBundle(t *testing.T) {
+func TestPairingClaimRouteUsesTheSingleAdvertisedRoute(t *testing.T) {
 	direct := endpoint.AccessRoute{ID: "direct", Kind: endpoint.RouteDirectWebRTCTCP, Enabled: true}
 	cloud := endpoint.AccessRoute{ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true}
-	target := endpoint.EndpointCandidate{Routes: []endpoint.AccessRoute{cloud, direct}}
-	route, err := directPairingRoute(target)
-	if err != nil || route.ID != direct.ID {
-		t.Fatalf("Direct + Cloud pairing route = %#v err=%v", route, err)
+	target := endpoint.EndpointCandidate{Routes: []endpoint.AccessRoute{cloud}}
+	route, err := pairingClaimRoute(target)
+	if err != nil || route.ID != cloud.ID {
+		t.Fatalf("Cloud pairing route = %#v err=%v", route, err)
 	}
-	if _, err := directPairingRoute(endpoint.EndpointCandidate{Routes: []endpoint.AccessRoute{cloud}}); err == nil {
-		t.Fatal("managed-only pairing bundle was accepted")
+	if _, err := pairingClaimRoute(endpoint.EndpointCandidate{Routes: []endpoint.AccessRoute{{ID: direct.ID, Kind: direct.Kind}}}); err == nil {
+		t.Fatal("disabled pairing route was accepted")
 	}
 }
 

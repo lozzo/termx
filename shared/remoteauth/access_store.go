@@ -36,6 +36,7 @@ const (
 // Grant 与 DeliveryReceipt 在相同 ticket/ClientAccessIdentity 的 delivery grace 重试中必须逐字节稳定；只有 Grant 会进入后续 capability handshake。
 type PairingExchangeResult struct {
 	TicketID              string
+	Bundle                []byte
 	Grant                 string
 	GrantID               string
 	DeliveryReceipt       string
@@ -68,10 +69,12 @@ type AccessStoreOptions struct {
 // 一个 state 目录只允许一个进程 owner；普通 capability 验证只读内存且不写磁盘，低频 mutation 才批量 compact 并原子替换签名 state。
 type AccessStore struct {
 	mu                       sync.RWMutex
+	pairingClaimsMu          sync.Mutex
 	path                     string
 	identity                 Identity
 	tickets                  map[string]storedPairingTicket
 	grants                   map[string]storedAccessGrant
+	pairingClaims            map[[sha256.Size]byte]storedPairingClaim
 	now                      func() time.Time
 	random                   io.Reader
 	owner                    *filelock.Lock
@@ -137,7 +140,7 @@ func LoadAccessStore(dir string, identity Identity, options AccessStoreOptions) 
 	}
 	store := &AccessStore{
 		path: filepath.Join(dir, accessStoreFile), identity: identity, owner: owner,
-		tickets: map[string]storedPairingTicket{}, grants: map[string]storedAccessGrant{}, changes: make(chan struct{}, 1),
+		tickets: map[string]storedPairingTicket{}, grants: map[string]storedAccessGrant{}, pairingClaims: map[[sha256.Size]byte]storedPairingClaim{}, changes: make(chan struct{}, 1),
 		now: options.Now, random: options.Random, writeFile: writePrivateFile,
 	}
 	if store.now == nil {
@@ -224,6 +227,9 @@ func (store *AccessStore) Close() error {
 		return nil
 	}
 	store.closed = true
+	store.pairingClaimsMu.Lock()
+	clear(store.pairingClaims)
+	store.pairingClaimsMu.Unlock()
 	owner := store.owner
 	store.owner = nil
 	store.mu.Unlock()

@@ -68,13 +68,13 @@ func (service PairingService) Redeem(ctx context.Context, request AttemptRequest
 	return result, nil
 }
 
-// ValidatePairingAttempt 在任何 signaling 或网络副作用前校验 PairingTicket 兑换所需的 attempt、signer、bundle 和 Endpoint pin。
+// ValidatePairingAttempt 在任何 signaling 或网络副作用前校验 claim/bundle 兑换所需的 attempt、signer 和 Endpoint pin。
 // Direct、SSH 和 Cloud connector 必须调用本函数，不能复制或放宽 pairing admission 规则。
 func ValidatePairingAttempt(request AttemptRequest, pairing remoteauth.ClientPairingRequest) error {
 	if err := request.Validate(); err != nil {
 		return err
 	}
-	if pairing.Signer == nil || len(pairing.PairingBundle) == 0 {
+	if pairing.Signer == nil || (len(pairing.PairingBundle) == 0) == (len(pairing.PairingClaimOffer) == 0) {
 		return runtimeError(ErrorInvalidRequest, "pairing identity transaction is incomplete", nil)
 	}
 	identity := request.DaemonIdentity()

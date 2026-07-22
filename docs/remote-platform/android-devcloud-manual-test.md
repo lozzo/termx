@@ -64,10 +64,11 @@ MUXVIA_CLOUD_COMPANION_SOCKET=/tmp/muxvia-cloud-daemon.sock \
   .artifacts/bin/muxvia cloud enroll "$ENROLLMENT_CODE"
 
 XDG_STATE_HOME="$DAEMON_STATE" \
-  .artifacts/bin/muxvia pair create \
+  .artifacts/bin/muxvia --socket "$DAEMON_SOCKET" pair create \
   --label "Android dev daemon" \
-  --ttl 24h \
-  --out /tmp/muxvia-android-pairing.json
+  --ttl 10m \
+  --cloud \
+  --text > /tmp/muxvia-android-pairing.txt
 
 MUXVIA_CLOUD_COMPANION_SOCKET=/tmp/muxvia-cloud-daemon.sock \
   XDG_STATE_HOME="$DAEMON_STATE" \
@@ -113,10 +114,10 @@ adb logcat -s \
 
 ## 5. 配对与 Terminal
 
-在 App 首页选择扫描新机器，再选择手工输入，把 `/tmp/muxvia-android-pairing.json` 的完整 JSON 粘贴进去。可选二维码方式：
+在 App 首页选择扫描新机器，再选择手工输入，把 `/tmp/muxvia-android-pairing.txt` 中的 `MXP1-...` claim code 粘贴进去。可选二维码方式：
 
 ```bash
-qrencode -o /tmp/muxvia-android-pairing.png < /tmp/muxvia-android-pairing.json
+qrencode -o /tmp/muxvia-android-pairing.png < /tmp/muxvia-android-pairing.txt
 open /tmp/muxvia-android-pairing.png
 ```
 

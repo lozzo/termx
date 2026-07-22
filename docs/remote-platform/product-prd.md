@@ -91,13 +91,13 @@ Route connector
 
 `muxvia pair create` 用于把当前 daemon 添加并授权到 App：
 
-- QR 包含签名 daemon identity、短期一次性 PairingTicket 和可达 Route hint。
+- QR/手工码只包含 128-bit 一次性 claim、DeviceIdentity public key、有效期和建立首个 pairing DataChannel 必需的一个 Route seed；不包含 PairingTicket、scope 或 grant。
 - daemon 默认监听所有 IPv4 interface，并把当前活动 RFC1918 IPv4 地址投影为可预览的 LAN signaling/ICE-TCP locator；没有可用 LAN 地址时必须由用户显式指定，不能发布 wildcard 地址。
 - 用户可以同时覆盖 Direct signaling/ICE-TCP 的对外地址和端口，并可设置 server name；显式覆盖完全替代自动 LAN seed，用于 FRP 或其它 TCP 映射。
-- App 必须先验证 bundle 和 identity，再通过任一可达 Route 向 owning daemon 兑换 client-bound grant。
+- App 从短码建立 Direct 或 Cloud managed pairing DataChannel，验证 DeviceHello 后提交 ClientAccessIdentity proof；owning daemon 才在端到端响应中返回完整签名 bundle 和 client-bound grant。
 - PairingTicket 不能直接访问 terminal、history 或 file。
 - QR 不包含长期 bearer grant、private key、Cloud token 或本地 credential ref。
-- 当前完整 bundle 仍可能生成较大的二维码。CLI 默认只在交互终端尺寸足够时渲染；空间不足必须在写入前失败，并提示使用 `muxvia pair create --text` 复制 portable URI，或使用 `muxvia pair create --qr-file FILE` 生成 owner-only 正方形 PNG。不得输出被裁切的二维码。
+- `muxvia pair create --text` 输出 `MXP1-...` portable claim code，默认二维码不高于 QR Version 10；`--qr-file FILE` 仍生成 owner-only 正方形 PNG。`--raw`/`--out` 只保留为本机 owner 脚本的完整 bundle 兼容入口，不得进入 App 扫码或 Web/Cloud。
 
 ## 6. Endpoint 分享
 

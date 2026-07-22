@@ -108,9 +108,21 @@ func (store *CredentialStore) PairAndBind(
 	if err := store.validate(ref); err != nil {
 		return ClientAccessCredential{}, err
 	}
-	bundle, ticketClaims, err := ParsePairingBundleForExchange(pairingBundle)
-	if err != nil {
-		return ClientAccessCredential{}, err
+	bundle, ticketClaims, bundleErr := ParsePairingBundleForExchange(pairingBundle)
+	expectedDeviceID := ""
+	expectedFingerprint := ""
+	claimCredential := false
+	if bundleErr == nil {
+		expectedDeviceID = bundle.GetIdentity().GetDeviceId()
+		expectedFingerprint = bundle.GetIdentity().GetDeviceFingerprint()
+	} else {
+		offer, claimErr := ParsePairingClaimOfferForExchange(pairingBundle)
+		if claimErr != nil {
+			return ClientAccessCredential{}, bundleErr
+		}
+		expectedDeviceID = offer.GetDeviceId()
+		expectedFingerprint = Fingerprint(ed25519.PublicKey(offer.GetDevicePublicKey()))
+		claimCredential = true
 	}
 	if exchange == nil {
 		return ClientAccessCredential{}, fmt.Errorf("client access pairing requires exchange callback")
@@ -125,7 +137,6 @@ func (store *CredentialStore) PairAndBind(
 	if now == nil {
 		now = time.Now
 	}
-	expectedFingerprint := bundle.GetIdentity().GetDeviceFingerprint()
 	bundleDigest := payloadDigest(pairingBundle)
 	store.mu.Lock()
 	defer store.mu.Unlock()
@@ -149,10 +160,10 @@ func (store *CredentialStore) PairAndBind(
 		if currentClaims.SubjectKeyFingerprint != credential.Identity.Fingerprint {
 			return ClientAccessCredential{}, ErrGrantSubjectMismatch
 		}
-		if !scopeContains(currentClaims.Scope, ticketClaims.ScopeCeiling) && !options.AllowScopeExpansion {
+		if !claimCredential && !scopeContains(currentClaims.Scope, ticketClaims.ScopeCeiling) && !options.AllowScopeExpansion {
 			return ClientAccessCredential{}, ErrGrantScopeExpansion
 		}
-		if credential.LastPairingBundleDigest == bundleDigest {
+		if !claimCredential && credential.LastPairingBundleDigest == bundleDigest {
 			if _, verifyErr := Verify(credential.CapabilityGrant, expectedFingerprint, now().UTC(), nil); verifyErr != nil {
 				return ClientAccessCredential{}, verifyErr
 			}
@@ -164,11 +175,23 @@ func (store *CredentialStore) PairAndBind(
 		return ClientAccessCredential{}, err
 	}
 	responseNow := now().UTC()
+	responseBundlePayload := result.Bundle
+	if !claimCredential && len(responseBundlePayload) == 0 {
+		responseBundlePayload = pairingBundle
+	}
+	responseBundle, responseTicketClaims, err := ParsePairingBundleForExchange(responseBundlePayload)
+	if err != nil || responseBundle.GetIdentity().GetDeviceId() != expectedDeviceID || responseBundle.GetIdentity().GetDeviceFingerprint() != expectedFingerprint {
+		return ClientAccessCredential{}, fmt.Errorf("pairing exchange returned an invalid bundle: %w", err)
+	}
+	if !claimCredential && (responseTicketClaims.TicketID != ticketClaims.TicketID || responseTicketClaims.ScopeCeiling != ticketClaims.ScopeCeiling) {
+		return ClientAccessCredential{}, ErrPairingTicketMalformed
+	}
+	ticketClaims = responseTicketClaims
 	claims, err := Verify(result.Grant, expectedFingerprint, responseNow, nil)
 	if err != nil {
 		return ClientAccessCredential{}, err
 	}
-	if claims.IssuerDeviceID != bundle.GetIdentity().GetDeviceId() {
+	if claims.IssuerDeviceID != expectedDeviceID {
 		return ClientAccessCredential{}, ErrGrantFingerprintMismatch
 	}
 	if claims.SubjectKeyFingerprint != credential.Identity.Fingerprint || result.SubjectKeyFingerprint != credential.Identity.Fingerprint {

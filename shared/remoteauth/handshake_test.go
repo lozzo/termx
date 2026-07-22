@@ -415,6 +415,43 @@ func TestClientPairingRejectsGrantExpiredBeforeResponseValidation(t *testing.T) 
 	}
 }
 
+func TestPairingHandshakeRedeemsClaimAndReturnsSignedBundle(t *testing.T) {
+	identity, _, store, now := handshakeFixture(t, Scope{AllowDaemon: true})
+	issued, err := store.IssuePairingClaim(PairingIssueOptions{
+		Scope: Scope{TerminalID: "terminal-claim"}, TicketTTL: 10 * time.Minute, GrantLifetime: time.Hour, Now: now,
+		Routes: []*remoteauthpb.EndpointRouteConfigV1{{SchemaVersion: 1, RouteId: "direct", Enabled: true, Route: &remoteauthpb.EndpointRouteConfigV1_DirectWebrtcTcp{DirectWebrtcTcp: &remoteauthpb.DirectWebRTCTCPRouteConfig{SignalingAddresses: []string{"127.0.0.1:4040"}, IceTcpAddresses: []string{"127.0.0.1:4041"}}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := GenerateClientAccessIdentity("endpoint-claim", bytes.NewReader(bytes.Repeat([]byte{0x71}, 64)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := fixtureDTLSBinding(t, 0x29)
+	clientConn, serverConn := memory.NewPair()
+	defer clientConn.Close()
+	defer serverConn.Close()
+	serverDone := make(chan error, 1)
+	go func() {
+		_, acceptErr := (ServerHandshake{Identity: identity, AccessStore: store, Now: fixedNow(now)}).Accept(context.Background(), serverConn, binding)
+		serverDone <- acceptErr
+	}()
+	result, err := (ClientPairingHandshake{Now: fixedNow(now)}).Redeem(context.Background(), clientConn, ClientPairingRequest{
+		ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.Fingerprint,
+		PairingClaimOffer: issued.OfferPayload, Identity: client, ClientLabel: "Phone", ChannelBinding: binding,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+	if result.TicketID != issued.Claims.TicketID || result.Scope.TerminalID != "terminal-claim" || !bytes.Equal(result.Bundle, issued.BundlePayload) {
+		t.Fatalf("claim exchange result = %#v", result)
+	}
+}
+
 func TestGrantFingerprintMismatchMapsToDeviceIdentityError(t *testing.T) {
 	if code := HandshakeCodeOf(mapGrantError(ErrGrantFingerprintMismatch)); code != remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_DEVICE_IDENTITY_MISMATCH {
 		t.Fatalf("fingerprint mismatch code = %s", code)

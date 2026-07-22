@@ -213,7 +213,8 @@ RefreshSecret        -> local credential store custody, Control Plane refresh en
 RelayLease          -> Relay/TURN only
 DeviceIdentity proof <-> Client and daemon E2E only
 ClientAccessIdentity private key -> Client secure store and E2E proof only
-PairingTicket        -> Owner-controlled QR/file and daemon PairingExchange only
+PairingClaim         -> Owner-controlled QR/manual input and daemon memory only
+PairingTicket        -> Daemon AccessStore and E2E PairingExchange only
 CapabilityGrant       -> Client secure store and daemon E2E only
 ```
 
@@ -223,7 +224,7 @@ CapabilityGrant       -> Client secure store and daemon E2E only
 
 当前 wire contract 把 channel binding 抽象为 `kind + SHA-256 hash`，由 Direct/SSH/managed WebRTC 的 DTLS DataChannel 和 owner-only local Unix PairingExchange 共用同一 DeviceIdentity/client proof 状态机。真实 connector 与用户链路完成度只看 `workflow.md`，不能因为 helper 已存在就宣称 Route 已交付。
 
-共同不变量：CapabilityGrant 和携带 PairingTicket 的 EndpointBootstrapBundle 只提交给 owning daemon；Control Plane、Companion、Hub、Relay 和 signaling 永远不得接收正文。
+共同不变量：CapabilityGrant 和携带 PairingTicket 的 EndpointBootstrapBundle 只在 client 与 owning daemon 的端到端 DataChannel 中传递；Control Plane、Companion、Hub、Relay 和 signaling 永远不得接收正文。静态 QR/手工输入只携带 `PairingClaimOfferV1`。
 
 ### 5.1 ChannelBinding
 
@@ -359,17 +360,17 @@ remote auth frames -> CapabilityAccepted -> muxvia protocol frames
 
 ## 6. 配对与 grant 交付
 
-### 6.1 默认 PairingTicket 流程
+### 6.1 默认 PairingClaim 流程
 
-daemon owner 通过认证后的 `remote.access.ticket.create` 管理 RPC 创建 ticket。静态 QR 使用 `muxvia://bootstrap?payload=<base64url deterministic protobuf>`，owner-only 文件保存同一 protobuf bytes；两者只允许包含：
+daemon owner 通过认证后的 `remote.access.ticket.create` 管理 RPC 原子创建持久 PairingTicket，并在当前 daemon 进程内登记十分钟、128-bit、单次 claim。静态 QR 和无摄像头输入使用 `MXP1-<base64url deterministic PairingClaimOfferV1>`，只允许包含：
 
-- bundle version、显示 label；
-- DeviceID 与 DeviceFingerprint；
-- 短期一次性 PairingTicket。
+- claim schema version、128-bit claim 和有效期；
+- DeviceID 与 DeviceIdentity public key；
+- 建立首个 Direct 或 Cloud managed pairing DataChannel 必需的一个公开 Route seed。
 
-不得包含长期 grant、ClientAccessIdentity private key、SSH 密码/私钥、Cloud token、Hub/Relay secret 或 route credential。二维码解析必须在客户端本地完成，不得上传第三方或 Muxvia 云端。
+不得包含 PairingTicket、scope、terminal ID、长期 grant、ClientAccessIdentity private key、SSH 密码/私钥、Cloud token、Hub/Relay secret 或 route credential。二维码解析必须在客户端本地完成，不得上传第三方或 Muxvia 云端；daemon 重启使未兑换 claim 失效，持久 AccessStore 不恢复 claim。
 
-桌面导入顺序固定为：严格解析并验签 bundle，先要求 bundle 带有可移植 route 或本地已有同 identity endpoint，在跨进程 registry read-modify-write 锁内组装增量 candidate；随后在同一 credential ref 锁内持久化 ClientAccessIdentity、比较现有 grant 与 ticket scope ceiling，并且只在 scope 未扩大或用户显式确认后执行 PairingExchange；返回 grant 按响应接收时间通过 issuer/subject/scope/expiry 验证后与 canonical bundle digest 一起原子绑定，最后保存普通 registry。导入器不得因 bundle 无 route 凭空创建 managed Cloud route；registry 保存失败时保留可恢复的 secure credential，不删除已消费 ticket 对应的唯一 key。重试相同 bundle 时，若本地 digest 对应的 grant 仍有效，可直接完成 registry 恢复而不受 daemon delivery grace 限制；不同 bundle 仍必须重新兑换。并发 pair import 与 endpoint mutation 必须由同一 registry transaction lock 串行化，不能整文件覆盖丢失另一 Endpoint。registry 与 credential 锁等待、锁内 PairingExchange 和网络收发都必须传播根命令 context；`--timeout` 到期后释放锁并退出，不能无限阻塞后续客户端操作。新 grant 若扩大同一 credential ref 的现有 scope，CLI/App 必须在任何 daemon 兑换前取得显式用户确认，静默重试和二维码 metadata 不能自行提权。
+导入顺序固定为：严格解析 claim offer，按 DeviceID/public key 建立临时 Endpoint pin，并只使用 offer 中的一个 Route seed 建立 pairing peer；客户端先持久化或准备不可导出的 ClientAccessIdentity，再把 claim 与当前 channel-bound proof 发给 daemon。daemon 从内存 claim 解析完整 bundle，复用 AccessStore 的 ticket digest、scope ceiling、单次 key binding、grant 和 delivery receipt 原子事务，并在 `PairingAccepted` 中端到端返回完整签名 bundle。客户端验证 bundle issuer、grant subject/scope/expiry 后绑定 secure credential，再用完整 bundle 组装并提交 registry。不同 client key 重复 claim、错误 daemon、过期未消费 claim和 daemon 重启后的 claim 必须拒绝；同 key 只可在 delivery grace 内恢复已提交结果。
 
 ### 6.2 离线与故障隔离
 

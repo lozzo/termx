@@ -2011,7 +2011,7 @@ function PairSheet({
                     className="mt-1 h-44 w-full resize-none border border-[var(--muxvia-app-line)] bg-white p-2 font-mono text-xs leading-5 text-zinc-950 placeholder:text-zinc-400 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
                     value={manualScanValue}
                     onChange={(event) => onManualScanValueChange(event.target.value)}
-                    placeholder="muxvia://pair?payload=..."
+                    placeholder="MXP1-..."
                     spellCheck={false}
                   />
                 </label>

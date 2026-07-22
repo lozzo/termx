@@ -2,11 +2,12 @@
 
 ## 当前结论
 
-- 用户已暂停 PG004 剩余部署验收，当前活动主线切换为产品体验整改。顺序固定为：`UX001` 中英文与文案基线 -> `QR001` 现有二维码输出可用性 -> `APPFIX001` 正式 App 测试信息与 loading 修正 -> `APPFIX002` 扫码登录 Session 稳定性 -> `CLOUDAUTH001` Hub 离线认证与本地授权解耦 -> `QR002` Proto-first 短码配对 -> `WEBUX001` Web Controller 账号/设备流程 -> `APPUX001` Android 信息架构与首次使用 -> `UXE2E001` 双端真实验收。完成后再恢复 PG004 的 R2、refresh、Presence、网络恢复和文件校验。
+- 用户要求连续完成剩余六个切片，当前唯一执行顺序为：`QR002` 协议能力 -> `WEBUX001` Web 使用入口 -> `APPUX001` Android 使用入口 -> `UXE2E001` 产品体验总验收 -> `PG004` 公网可靠性与数据恢复 -> `CLOUDP007` Development 全产品业务验收。不得在前四个体验切片中提前实现 PG004 故障恢复，也不得在 PG004/CLOUDP007 中重新设计已经验收的 UI 或 pairing 协议。
 - 首期正式 UI 语言只承诺英文与简体中文。Web Controller 现有俄文资源保留为历史输入但从可选语言中暂时移除，直到键集合、关键流程和布局验收达到与英文/中文相同的完成条件；不得以 fallback 英文冒充俄文支持。
 - `UX001` 已完成英文/简体中文基础设施与首批关键流程迁移：Web Controller 登录/账号/设备/激活和 Android 首页/设备/配对/设置均使用 locale key，语言默认跟随系统并可持久切换；App 143 个、Web 365 个 locale key 对称，稳定 native error code 不再把底层英文 message 直接投影到 UI；ARM64 模拟器已验证中文设备页和设置页。terminal/file 剩余文案按计划留给 `APPUX001`，不在本切片提前扩大。
 - 二维码整改必须区分两类载荷：Web 手机 activation 只携带短期 `MXA` code，当前约 60 字符；daemon pairing 当前把约 599-byte signed bundle 编码成约 826 字符 URI，达到 QR Version 23 / 109x109 modules，是显示不全的根因。`QR001` 只提供终端尺寸检查、文本和图片 fallback；`QR002` 才通过 daemon-owned 内存 claim 缩短真实配对二维码。
-- `QR001` 已完成现有载荷的可用输出：`muxvia pair create --text` 输出 portable URI，`--qr-file FILE` 原子写入 `0600` 的 `1024x1024` 正方形 PNG；默认终端渲染会在输出前计算完整 preview、二维码和提示所需行列，空间不足时零输出并提示替代命令。Web 手机 activation 继续使用短码、2-module quiet zone、响应式正方形图片和同级手工码。CLI 全包、App/Mobile/Web 客户端门禁和实际 PNG 检查通过；二维码密度本身留给 `QR002` 解决。
+- `QR001` 已完成二维码输出可用性基线：`--qr-file FILE` 原子写入 `0600` 的 `1024x1024` 正方形 PNG；默认终端渲染会在输出前计算完整 preview、二维码和提示所需行列，空间不足时零输出并提示文本或图片替代。该切片当时未改变完整 bundle 载荷，密度问题现已由 `QR002` 的 claim code 取代。
+- `QR002` 已完成 Proto-first daemon 短码配对：默认 QR/`--text` 使用 `MXP1-...` deterministic claim code，只携带 128-bit claim、DeviceIdentity public key、十分钟有效期和一个 Direct/Cloud 首连 Route seed；完整 PairingTicket bundle 仅由 owning daemon 内存 claim 持有，并在 DeviceHello、DTLS channel binding 和 ClientAccessIdentity proof 通过后由 `PairingAccepted` 端到端返回。AccessStore 继续原子拥有 ticket/scope/key binding/grant/receipt/revoke；过期、错误 daemon、不同 client 重复兑换和 daemon 重启均 fail closed，同 key 只在 delivery grace 内恢复。真实 Pion Direct、Cloud managed connector、CLI QR Version <= 10、手工码 JNI 输入、全量 Go/Client/generated 和 standard/devcloud APK 门禁通过；证据见 `docs/remote-platform/qr002-pairing-claim.md`。
 - `APPFIX002` 已修复扫码登录后状态丢失：Hub 设备目录同步不再拥有账号 Session 真值，也不会因新 Session 的 policy 投影尚未同步而清除 Android Keystore。线上 Web Controller 批准真实 `MXA` activation 后，ARM64 模拟器 App 展示账号与设备投影；强制停止并重启 App 后仍恢复同一登录态，重启期间 Cloud Route 短暂不可达也未触发 logout，且未发现 Java/native crash。
 - `CLOUDAUTH001` 已完成 Hub 离线认证与本地授权解耦：Controller 私钥签发的 EdgeAccess token 由 Hub 公钥独立验证签名、有效期、Hub audience、账号、设备和 role；新 client 尚未进入 policy projection 时设备目录和 managed P2P 不再返回 unauthenticated。projection 只判断账号 revoke/auth epoch、套餐、target ownership、并发与 Relay 额度；无效 token、policy lag、明确撤销、entitlement 和 quota 已使用不同 Proto 错误。相同 Linux Edge 二进制已滚动部署到 US/CN，ARM64 公网 HTTPS APK 完成全新 `MXA` 登录、批准后首次目录同步、进程重启恢复和 crash scan。
 - `APPFIX001` 已删除正式 App 的 `114.66.58.243:12306` fallback，原生 Cloud 设置页不再展示 Web Control/Hub 技术地址；显式 legacy HTTP staging 参数和测试 fixture 仍可用于受控测试，但不会进入默认产品 UI。统一 loading 改为固定方形外框与内部旋转指示器，reduced-motion 下停止内部动画；Playwright 两帧像素检查证明外框变化 `0`、内部变化 `227`。ARM64 模拟器设置页、客户端总门禁、APK 构建和安装通过。
@@ -31,7 +32,7 @@
 - `HUB006` 已完成独立 Relay control identity/generation/stream、lease/session allocation remote close、final usage drain、Controller settlement 与 CommandOutbox PARTIAL/APPLIED 收口。
 - `CLOUDP006` 已完成 Controller 同 composition Web build、generated Proto JSON 用户账号中心与 operator 工作台、账号隔离、角色/CSRF/近期认证、套餐/usage/device/topology/command/fleet 页面、development 凭据和旧 Web DTO/API 删除。
 - `HUB007` 已完成双 Edge 控制面 E2E：assignment migration、Edge restart、Controller outage、HubControl network outage、inventory full replacement、stale/replay fencing、命令链路、Playwright Operator UI 和隐私扫描均通过；证据见 `docs/remote-platform/hub007-control-plane-e2e.md`，架构与代码 reviewer 均 PASS。
-- `CLOUDP007` 已恢复 Web 已登录账号创建短时二维码、Android App 扫码认领、Web 展示手机元数据并明确批准、App 单次兑换/轮换 Cloud session 的真实 UI 闭环；移动端 refresh 复用 commerce + PostgreSQL 持久 session owner，Controller 重启后可继续轮换，HubID/URL/region 由显式 development directory 原子绑定。ARM64/API 35 模拟器已看到同账号 Cloud daemon 列表，并完成 Direct terminal 的 HOME 后台恢复与飞行模式网络切换回归：旧 binding generation 的迟到结果不再覆盖新 registry，一次前台恢复只创建一个 bridge，新 session 成功后不残留旧 `Go binding backend is closed` 错误，恢复后终端输入输出继续成功；该生命周期子范围架构与代码 reviewer 均 PASS。完整 managed P2P/Relay terminal/file、quota、suspend、topology/management command、真实锁屏恢复与最终切片双审查仍未完成，因此切片继续保持进行中。
+- `CLOUDP007` 已有的手机 activation、Cloud session、设备目录和部分生命周期结果作为后续验收资产保留，但该切片当前不抢占六切片顺序。它只在 PG004 完成后启动，用现有产品入口验证 managed P2P/Relay、terminal/file、quota、suspend、topology/management command、Direct/SSH 回归和双 Agent 审查，不再建设新的登录、配对或 UI 架构。
 - `PG004` 公网 bootstrap staging 已部署：155 使用 systemd 运行 Controller + US West Edge，114 使用 systemd 运行 China East Edge，真实 Supabase `muxvia_staging` schema、Cloudflare DNS、Let's Encrypt、Web 登录/二维码、operator 双 fleet 和三进程重启恢复均通过。Android ARM64/API 35 公网 HTTPS profile 已完成 Web 扫码批准、Go-owned managed P2P、Relay 双端租约、Relay terminal attach/input 和远端文件浏览；daemon enrollment session 已补 refresh token 轮换。多用户 enrollment 子任务已完成并部署：bootstrap 启动配置、credentials 和 Companion manifest 不再包含静态 daemon code；任意已登录账号可在 Web Devices 页创建 Controller 内存持有、十分钟、128-bit、单次、账号与 Hub 绑定 flow，daemon 提交公开 metadata、device ID 与 DeviceIdentity public key 后必须等待 Web 核对批准，再以 DeviceIdentity proof 单次完成。手机二维码与手工输入的 `MXA-...` 登录码指向同一 activation flow并保持 Web 批准。两类短期 flow 均使用 TTL 到期队列和百万容量上限，不进入 PostgreSQL；Controller 重启使 pending flow 失效，已完成后的账号、设备归属、assignment 和 session 继续由 PostgreSQL 持久化。R2 独立恢复、文件上传/下载内容校验、网络切换后 workspace 自动重建、Android account session 自动续期和 Edge 重启后的 daemon Presence 自动恢复仍未通过，因此 PG004 继续保持进行中；证据见 `docs/remote-platform/pg004-public-bootstrap-deployment.md`。
 - 多 Hub 基础和产品能力存在交叉依赖，必须按本文件交错推进，不能先写完所有 Hub 再补套餐，也不能继续在单进程 devcloud 上堆硬编码。
 - development 必须走完整账号、交易、Subscription、Entitlement、managed P2P/Relay、周期 quota、usage、topology 和管理链路；外部 provider 可以使用显式测试实现。
@@ -64,6 +65,19 @@ muxvia-cloud-edge × N
 - daemon Go runtime 是 authenticated managed PeerSession 的 owner。
 - Cloud command 只能减少服务或权限，不能扩大 daemon CapabilityGrant。
 - Local、Direct、SSH、terminal 和 file 不依赖 Cloud 套餐或 Hub。
+
+## 六切片收口路线
+
+| 顺序 | 切片 | 输入真值 | 本切片唯一产物 | 明确不做 | 完成证据 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | QR002 | 现有 PairingTicket、CapabilityGrant、Direct/SSH/Cloud ReadyPeerSession | daemon-owned 十分钟单次 pairing claim；短 URI/短码；客户端从 owning daemon 端到端取得完整 bundle | 不把 bundle/grant 交给 Controller、Hub、Relay 或 Web；不改账号登录 | Proto/descriptor、安全 harness、CLI/App 无摄像头输入、Direct 与 Cloud pairing E2E、QR Version 不高于 10 |
+| 2 | WEBUX001 | 已完成的手机 activation、daemon enrollment、QR002 配对能力 | Web 普通用户账号/设备信息架构和统一添加设备向导 | 不重写 Cloud API、topology、operator 控制面或 pairing 协议 | 360/768/1280/1440，中英文、150% 缩放、键盘导航，真实创建/等待/核对/批准/完成 |
+| 3 | APPUX001 | QR002、Cloud activation、Go Client Engine 和共享 UI contract | Android 首次使用、设备列表/详情、扫码与短码、terminal/file 剩余文案 | 不在 Kotlin/TypeScript 复制网络、认证、重连或 Proto 状态机 | ARM64 模拟器中英文、大字体、竖横屏、无摄像头、Direct/SSH/Cloud 主入口 smoke |
+| 4 | UXE2E001 | 前三切片最终 UI 和当前 staging | 用户体验总验收与当前切片内可复现 UI 缺陷修复 | 不做 R2、Controller/Edge 故障恢复、quota/suspend 商业矩阵 | Web 多视口 + Android UI 发起登录、添加、配对、terminal 输入输出、文件操作、crash scan；双 Agent PASS |
+| 5 | PG004 | 已部署 Supabase、Controller、双 Edge、UXE2E001 APK | 公网 staging 的备份恢复和运行可靠性闭环 | 不改已验收 UI，不新增商业套餐能力 | R2 加密备份/独立恢复、account refresh、Edge Presence 恢复、网络切换 workspace 重建、文件上传下载校验 |
+| 6 | CLOUDP007 | PG004 稳定公网基线和最终产品入口 | Development 全产品业务能力矩阵与发布前回归结论 | 不建设 production provider、多区域、Web terminal 或新架构 | 注册/交易/管理、P2P/Relay、terminal/file、quota、suspend、topology/command、重启、Direct/SSH；双 Agent PASS |
+
+执行时只允许修复当前行完成证据直接证明的问题。后续行发现的问题登记到对应切片，不得为了提前“顺手完成”跨行扩张。
 
 ## 当前允许范围
 
@@ -107,7 +121,7 @@ muxvia-cloud-edge × N
 | APPFIX001 | 已完成 | 正式 App 测试信息与 loading 修正 | 已删除移动 App 的 `114.66.58.243` fallback，native Cloud 设置页不再展示 Web Control/Hub 地址；loading 外框固定、内部指示器旋转并遵守 reduced-motion；外框/内部两帧像素变化为 `0/227`，ARM64 设置页、UI 138 项、Mobile 28 项、构建和 APK 安装通过 |
 | APPFIX002 | 已完成 | 扫码登录 Session 稳定性 | Hub 设备目录同步失败不再清除 Android Keystore 账号 Session；账号登录真值仅由 native session owner、显式 logout 和 Controller refresh 失效决定；线上扫码批准后账号/设备 UI、同步竞态、强制停止与进程重启恢复、ARM64 APK 和 crash scan 通过 |
 | CLOUDAUTH001 | 已完成 | Hub 离线认证与本地授权解耦 | Controller 签发的 EdgeAccess token 由 Hub 公钥离线完成身份认证；新 client 尚未进入 policy projection 时设备目录和 managed P2P 均可继续；projection 只判断账号 revoke/auth epoch、套餐、target ownership、并发和 Relay 额度；无效 token、policy lag、明确撤销、entitlement、quota 错误分类稳定；Hub 不为普通登录回查 Controller；Go/Private/Client/Android、双 Edge 和线上 ARM64 登录/重启门禁通过 |
-| QR002 | 待开始 | Proto-first daemon 短码配对 | proto 定义 daemon-owned pairing claim create/claim；128-bit、十分钟、单次、内存持有并绑定 DeviceIdentity/scope；QR 不再承载完整 bundle，目标不高于 QR Version 10；无摄像头可输入短码；Cloud 不接触 bundle/grant；Direct 与 Cloud managed pairing E2E 通过 |
+| QR002 | 已完成 | Proto-first daemon 短码配对 | proto 定义 daemon-owned pairing claim create/claim；128-bit、十分钟、单次、内存持有并绑定 DeviceIdentity/scope；QR 不再承载完整 bundle，目标不高于 QR Version 10；无摄像头可输入短码；Cloud 不接触 bundle/grant；Direct 与 Cloud managed pairing E2E 通过 |
 | WEBUX001 | 待开始 | Web Controller 账号与设备添加重构 | 普通导航收敛为概览/设备/套餐/账号，高级 topology/command 降级；单一“添加设备”向导覆盖手机与 daemon 的创建、等待、核对、批准和完成；危险操作按具体动作近期认证；友好名称优先、技术身份进入详情；桌面/移动响应式验收通过 |
 | APPUX001 | 待开始 | Android 首次使用与设备信息架构 | 未登录首屏优先登录/添加本地设备；扫码与短码同级；Machines 页收敛主操作与状态层级，友好名称优先、技术 ID 进入详情；完成 terminal/file 剩余用户文案迁移；中英文、大字体、竖横屏、无摄像头流程通过真实 ARM64 模拟器验收 |
 | UXE2E001 | 待开始 | Web/App 产品体验 E2E | Web 360/768/1280/1440 与 Android ARM64 覆盖中英文、150% 字体/缩放、注册登录、手机 activation、daemon enrollment、短码/扫码 pairing、terminal 输入输出和文件操作；无裁切、重叠、不可达操作或 raw internal state；双 Agent 审查 |
@@ -220,7 +234,7 @@ muxvia-cloud-edge × N
 ## 执行规则
 
 1. 每轮先读取 `AGENTS.md`、`cloud-product-spec.md`、`multi-hub-control-topology-spec.md`、`multi-hub-technical-plan.md` 和本文件，再检查 `git status --short --branch`。
-2. 只执行最早的 `进行中` 或 `待开始` 切片；当前固定依次完成 `UX001`、`QR001`、`APPFIX001`、`APPFIX002`、`CLOUDAUTH001`、`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`，再恢复 `PG004` 与 `CLOUDP007`；`待继续` 和 `延后` 不属于当前活动队列。
+2. 只执行“六切片收口路线”的当前行；顺序固定为 `QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`PG004`、`CLOUDP007`。`待继续` 仅在排到对应行时恢复，`延后` 不属于当前目标。
 3. 待开始切片先标记 `进行中`，不得跨切片实现后续能力。
 4. 新跨边界字段固定执行 `proto -> generated -> compatibility harness -> domain/runtime -> adapter -> UI/client`。
 5. 先写最小真实 harness；不能用固定账号、直接写 store、手工改 projection 或 fake ack 冒充产品链路。
