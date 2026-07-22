@@ -233,11 +233,13 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
                 }
                 call.resolve(JSObject().put("devices", devices))
             } catch (failure: ManagedEndpointFailure) {
+                // Hub 设备目录只负责同步投影，不拥有账号 Session 真值。新 Session 刚签发而 Hub
+                // policy 尚未同步时也可能短暂返回 unauthenticated，绝不能因此清空 Keystore。
                 if (failure.code == "unauthenticated") {
-                    // Hub 的设备投影是客户端 Cloud 准入真值；被 Web 移除后必须清除本机账号会话。
-                    runCatching { cloudAdapter.logout() }
+                    call.reject("Muxvia Cloud device sync is not ready yet", "temporary")
+                } else {
+                    call.reject(failure.message ?: failure.code, failure.code)
                 }
-                call.reject(failure.message ?: failure.code, failure.code)
             } catch (failure: Exception) {
                 MuxviaDebugLog.e(TAG, "Cloud device directory failed", failure)
                 call.reject("Muxvia Cloud device directory is unavailable", "temporary")

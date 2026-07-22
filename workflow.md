@@ -2,11 +2,12 @@
 
 ## 当前结论
 
-- 用户已暂停 PG004 剩余部署验收，当前活动主线切换为产品体验整改。顺序固定为：`UX001` 中英文与文案基线 -> `QR001` 现有二维码输出可用性 -> `APPFIX001` 正式 App 测试信息与 loading 修正 -> `QR002` Proto-first 短码配对 -> `WEBUX001` Web Controller 账号/设备流程 -> `APPUX001` Android 信息架构与首次使用 -> `UXE2E001` 双端真实验收。完成后再恢复 PG004 的 R2、refresh、Presence、网络恢复和文件校验。
+- 用户已暂停 PG004 剩余部署验收，当前活动主线切换为产品体验整改。顺序固定为：`UX001` 中英文与文案基线 -> `QR001` 现有二维码输出可用性 -> `APPFIX001` 正式 App 测试信息与 loading 修正 -> `APPFIX002` 扫码登录 Session 稳定性 -> `QR002` Proto-first 短码配对 -> `WEBUX001` Web Controller 账号/设备流程 -> `APPUX001` Android 信息架构与首次使用 -> `UXE2E001` 双端真实验收。完成后再恢复 PG004 的 R2、refresh、Presence、网络恢复和文件校验。
 - 首期正式 UI 语言只承诺英文与简体中文。Web Controller 现有俄文资源保留为历史输入但从可选语言中暂时移除，直到键集合、关键流程和布局验收达到与英文/中文相同的完成条件；不得以 fallback 英文冒充俄文支持。
 - `UX001` 已完成英文/简体中文基础设施与首批关键流程迁移：Web Controller 登录/账号/设备/激活和 Android 首页/设备/配对/设置均使用 locale key，语言默认跟随系统并可持久切换；App 143 个、Web 365 个 locale key 对称，稳定 native error code 不再把底层英文 message 直接投影到 UI；ARM64 模拟器已验证中文设备页和设置页。terminal/file 剩余文案按计划留给 `APPUX001`，不在本切片提前扩大。
 - 二维码整改必须区分两类载荷：Web 手机 activation 只携带短期 `MXA` code，当前约 60 字符；daemon pairing 当前把约 599-byte signed bundle 编码成约 826 字符 URI，达到 QR Version 23 / 109x109 modules，是显示不全的根因。`QR001` 只提供终端尺寸检查、文本和图片 fallback；`QR002` 才通过 daemon-owned 内存 claim 缩短真实配对二维码。
 - `QR001` 已完成现有载荷的可用输出：`muxvia pair create --text` 输出 portable URI，`--qr-file FILE` 原子写入 `0600` 的 `1024x1024` 正方形 PNG；默认终端渲染会在输出前计算完整 preview、二维码和提示所需行列，空间不足时零输出并提示替代命令。Web 手机 activation 继续使用短码、2-module quiet zone、响应式正方形图片和同级手工码。CLI 全包、App/Mobile/Web 客户端门禁和实际 PNG 检查通过；二维码密度本身留给 `QR002` 解决。
+- `APPFIX002` 已修复扫码登录后状态丢失：Hub 设备目录同步不再拥有账号 Session 真值，也不会因新 Session 的 policy 投影尚未同步而清除 Android Keystore。线上 Web Controller 批准真实 `MXA` activation 后，ARM64 模拟器 App 展示账号与设备投影；强制停止并重启 App 后仍恢复同一登录态，重启期间 Cloud Route 短暂不可达也未触发 logout，且未发现 Java/native crash。
 - `APPFIX001` 已删除正式 App 的 `114.66.58.243:12306` fallback，原生 Cloud 设置页不再展示 Web Control/Hub 技术地址；显式 legacy HTTP staging 参数和测试 fixture 仍可用于受控测试，但不会进入默认产品 UI。统一 loading 改为固定方形外框与内部旋转指示器，reduced-motion 下停止内部动画；Playwright 两帧像素检查证明外框变化 `0`、内部变化 `227`。ARM64 模拟器设置页、客户端总门禁、APK 构建和安装通过。
 - 短码配对不得把 CapabilityGrant、PairingTicket bundle、DeviceIdentity private key 或 terminal 信息交给 Controller、Hub、Relay 或 Web。新增跨边界消息仍必须 proto-first；Cloud 只允许转发 signaling，完整签名 bundle 只能在 App/客户端与 owning daemon 的端到端配对链路中取得。
 - 产品正式名称为 `Muxvia`，主域名为 `muxvia.com`，GitHub 组织为 `github.com/muxvia`。首发前必须完成无兼容层的全量发布身份迁移：`Muxvia`、`Muxvia Cloud`、`github.com/muxvia/muxvia`、CLI `muxvia`、Android `com.muxvia.app`、URI `muxvia://`、npm scope `@muxvia`、Proto namespace `muxvia.*`、C ABI `muxvia_*`、环境变量 `MUXVIA_*`。
@@ -103,6 +104,7 @@ muxvia-cloud-edge × N
 | UX001 | 已完成 | 英文/简体中文与产品文案基线 | Web Controller 登录/账号/设备/激活流程与 Android 首页/设备/配对/设置主流程进入统一 locale；默认跟随系统语言并允许持久切换；稳定错误码、日期、数字和状态使用本地化 projection；App 143 个、Web 365 个英文/中文键一致，UI/Mobile/Web 测试与构建、Android ARM64 中文 smoke 通过；terminal/file 剩余文案在 APPUX001 收口 |
 | QR001 | 已完成 | 现有二维码输出可用性 | CLI 已增加 `--text` 与 owner-only `--qr-file`，默认渲染前检查完整终端行列且空间不足零输出；Web activation QR 保持正方形、2-module quiet zone、响应式尺寸和同级手工码；CLI 全包、App 138 项、Mobile 27 项、Web typecheck/build 与实际 1024x1024 PNG 检查通过 |
 | APPFIX001 | 已完成 | 正式 App 测试信息与 loading 修正 | 已删除移动 App 的 `114.66.58.243` fallback，native Cloud 设置页不再展示 Web Control/Hub 地址；loading 外框固定、内部指示器旋转并遵守 reduced-motion；外框/内部两帧像素变化为 `0/227`，ARM64 设置页、UI 138 项、Mobile 28 项、构建和 APK 安装通过 |
+| APPFIX002 | 已完成 | 扫码登录 Session 稳定性 | Hub 设备目录同步失败不再清除 Android Keystore 账号 Session；账号登录真值仅由 native session owner、显式 logout 和 Controller refresh 失效决定；线上扫码批准后账号/设备 UI、同步竞态、强制停止与进程重启恢复、ARM64 APK 和 crash scan 通过 |
 | QR002 | 待开始 | Proto-first daemon 短码配对 | proto 定义 daemon-owned pairing claim create/claim；128-bit、十分钟、单次、内存持有并绑定 DeviceIdentity/scope；QR 不再承载完整 bundle，目标不高于 QR Version 10；无摄像头可输入短码；Cloud 不接触 bundle/grant；Direct 与 Cloud managed pairing E2E 通过 |
 | WEBUX001 | 待开始 | Web Controller 账号与设备添加重构 | 普通导航收敛为概览/设备/套餐/账号，高级 topology/command 降级；单一“添加设备”向导覆盖手机与 daemon 的创建、等待、核对、批准和完成；危险操作按具体动作近期认证；友好名称优先、技术身份进入详情；桌面/移动响应式验收通过 |
 | APPUX001 | 待开始 | Android 首次使用与设备信息架构 | 未登录首屏优先登录/添加本地设备；扫码与短码同级；Machines 页收敛主操作与状态层级，友好名称优先、技术 ID 进入详情；完成 terminal/file 剩余用户文案迁移；中英文、大字体、竖横屏、无摄像头流程通过真实 ARM64 模拟器验收 |
@@ -216,7 +218,7 @@ muxvia-cloud-edge × N
 ## 执行规则
 
 1. 每轮先读取 `AGENTS.md`、`cloud-product-spec.md`、`multi-hub-control-topology-spec.md`、`multi-hub-technical-plan.md` 和本文件，再检查 `git status --short --branch`。
-2. 只执行最早的 `进行中` 或 `待开始` 切片；当前固定依次完成 `UX001`、`QR001`、`APPFIX001`、`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`，再恢复 `PG004` 与 `CLOUDP007`；`待继续` 和 `延后` 不属于当前活动队列。
+2. 只执行最早的 `进行中` 或 `待开始` 切片；当前固定依次完成 `UX001`、`QR001`、`APPFIX001`、`APPFIX002`、`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`，再恢复 `PG004` 与 `CLOUDP007`；`待继续` 和 `延后` 不属于当前活动队列。
 3. 待开始切片先标记 `进行中`，不得跨切片实现后续能力。
 4. 新跨边界字段固定执行 `proto -> generated -> compatibility harness -> domain/runtime -> adapter -> UI/client`。
 5. 先写最小真实 harness；不能用固定账号、直接写 store、手工改 projection 或 fake ack 冒充产品链路。
