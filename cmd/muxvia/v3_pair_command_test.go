@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
@@ -114,13 +115,87 @@ func TestPairInspectAndTerminalQRNeverPrintLongLivedGrant(t *testing.T) {
 		t.Fatalf("inspect projection = %s", inspect)
 	}
 	previousTerminal := v3PairOutputIsTerminal
+	previousSize := v3PairTerminalSize
 	v3PairOutputIsTerminal = func(io.Writer) bool { return true }
-	defer func() { v3PairOutputIsTerminal = previousTerminal }()
+	v3PairTerminalSize = func(io.Writer) (int, int, bool) { return 240, 120, true }
+	defer func() {
+		v3PairOutputIsTerminal = previousTerminal
+		v3PairTerminalSize = previousSize
+	}()
 	qr := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--ttl", "5m")
 	if !strings.Contains(string(qr), "Scan with the Muxvia App") || !strings.Contains(string(qr), "\x1b[40m") || strings.Contains(string(qr), `"pairing_ticket"`) {
 		t.Fatalf("terminal QR output = %q", qr)
 	}
 	assertTerminalQRUsesSquareCells(t, qr)
+}
+
+func TestPairCreateTextAndPNGOutputsArePortableAndOwnerOnly(t *testing.T) {
+	runtimeDir, _, _ := configurePairCommandTest(t)
+	socket := filepath.Join(runtimeDir, "daemon.sock")
+	textOutput := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--text")
+	portableURI := strings.TrimSpace(string(textOutput))
+	if !strings.HasPrefix(portableURI, pairingBootstrapURIPrefix) {
+		t.Fatalf("pair text output = %q", portableURI)
+	}
+	payload, err := readV3PairingBundle(context.Background(), strings.NewReader(portableURI), "-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := remoteauth.ParsePairingBundle(payload, time.Now().UTC()); err != nil {
+		t.Fatalf("portable pairing URI is invalid: %v", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "pairing", "muxvia-pair.png")
+	output := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--qr-file", path)
+	if !strings.Contains(string(output), "Pairing QR PNG written to") {
+		t.Fatalf("pair PNG output = %q", output)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("pairing PNG mode = %v err=%v", info, err)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	configuration, err := png.DecodeConfig(file)
+	if err != nil || configuration.Width != configuration.Height || configuration.Width < 512 {
+		t.Fatalf("pairing PNG configuration = %#v err=%v", configuration, err)
+	}
+}
+
+func TestPairCreateRejectsSmallTerminalBeforeWritingPartialQR(t *testing.T) {
+	runtimeDir, _, _ := configurePairCommandTest(t)
+	previousTerminal := v3PairOutputIsTerminal
+	previousSize := v3PairTerminalSize
+	v3PairOutputIsTerminal = func(io.Writer) bool { return true }
+	v3PairTerminalSize = func(io.Writer) (int, int, bool) { return 80, 24, true }
+	defer func() {
+		v3PairOutputIsTerminal = previousTerminal
+		v3PairTerminalSize = previousSize
+	}()
+
+	var output bytes.Buffer
+	command := newRootCmd()
+	command.SetOut(&output)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"--socket", filepath.Join(runtimeDir, "daemon.sock"), "pair", "create"})
+	err := command.Execute()
+	if cliExitCode(err) != 2 || !strings.Contains(err.Error(), "--qr-file") {
+		t.Fatalf("small terminal error = %v code=%d", err, cliExitCode(err))
+	}
+	if output.Len() != 0 {
+		t.Fatalf("small terminal wrote partial output: %q", output.Bytes())
+	}
+}
+
+func TestPairCreateRejectsConflictingOutputModes(t *testing.T) {
+	runtimeDir, _, _ := configurePairCommandTest(t)
+	err := executePairCommandError(nil, "--socket", filepath.Join(runtimeDir, "daemon.sock"), "pair", "create", "--text", "--qr-file", filepath.Join(t.TempDir(), "pair.png"))
+	if cliExitCode(err) != 2 {
+		t.Fatalf("conflicting output mode error = %v code=%d", err, cliExitCode(err))
+	}
 }
 
 func TestPairCreatePublishesExplicitTCPMappingWithoutChangingIdentity(t *testing.T) {
@@ -437,7 +512,7 @@ func TestPairCreateRejectsPipeWithoutExplicitOutputAndRemoteTerminalScope(t *tes
 	command.SetOut(io.Discard)
 	command.SetErr(io.Discard)
 	command.SetArgs([]string{"--socket", filepath.Join(runtimeDir, "daemon.sock"), "pair", "create"})
-	if err := command.Execute(); cliExitCode(err) != 2 || !strings.Contains(err.Error(), "use --raw") {
+	if err := command.Execute(); cliExitCode(err) != 2 || !strings.Contains(err.Error(), "use --text") {
 		t.Fatalf("non-terminal create error = %v", err)
 	}
 }

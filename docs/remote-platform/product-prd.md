@@ -97,6 +97,7 @@ Route connector
 - App 必须先验证 bundle 和 identity，再通过任一可达 Route 向 owning daemon 兑换 client-bound grant。
 - PairingTicket 不能直接访问 terminal、history 或 file。
 - QR 不包含长期 bearer grant、private key、Cloud token 或本地 credential ref。
+- 当前完整 bundle 仍可能生成较大的二维码。CLI 默认只在交互终端尺寸足够时渲染；空间不足必须在写入前失败，并提示使用 `muxvia pair create --text` 复制 portable URI，或使用 `muxvia pair create --qr-file FILE` 生成 owner-only 正方形 PNG。不得输出被裁切的二维码。
 
 ## 6. Endpoint 分享
 

@@ -33,6 +33,14 @@ var (
 		file, ok := output.(*os.File)
 		return ok && term.IsTerminal(int(file.Fd()))
 	}
+	v3PairTerminalSize = func(output io.Writer) (columns int, rows int, ok bool) {
+		file, ok := output.(*os.File)
+		if !ok {
+			return 0, 0, false
+		}
+		columns, rows, err := term.GetSize(int(file.Fd()))
+		return columns, rows, err == nil
+	}
 )
 
 func v3PairCommand(socket *string, logFile *string) *cobra.Command {
@@ -104,7 +112,9 @@ func v3PairInspectCommand() *cobra.Command {
 
 func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 	var outputPath string
+	var qrOutputPath string
 	var rawOutput bool
+	var textOutput bool
 	var label string
 	var terminalID string
 	var ticketTTL time.Duration
@@ -118,8 +128,14 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 		Short: "Issue a short-lived one-time pairing ticket from the local daemon",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if rawOutput && strings.TrimSpace(outputPath) != "" {
-				return usageCLIError("pair create --raw and --out cannot be used together")
+			selectedOutputs := 0
+			for _, selected := range []bool{rawOutput, textOutput, strings.TrimSpace(outputPath) != "", strings.TrimSpace(qrOutputPath) != ""} {
+				if selected {
+					selectedOutputs++
+				}
+			}
+			if selectedOutputs > 1 {
+				return usageCLIError("pair create --raw, --text, --out, and --qr-file are mutually exclusive")
 			}
 			client, err := dialOrStartV3ClientContext(cmd.Context(), resolveV3Socket(*socket), resolveV3LogFilePath(*logFile), nil)
 			if err != nil {
@@ -170,9 +186,28 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 				_, err = cmd.OutOrStdout().Write(payload)
 				return err
 			}
+			portablePayload := v3PairingBootstrapURI(payload)
+			if textOutput {
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), portablePayload)
+				return err
+			}
+			if strings.TrimSpace(qrOutputPath) != "" {
+				png, pngErr := renderV3PairingPNG(portablePayload)
+				if pngErr != nil {
+					return pngErr
+				}
+				if err := renderV3PairingPreview(cmd.OutOrStdout(), payload, time.Unix(0, result.GetExpiresAtUnixNano()).UTC()); err != nil {
+					return err
+				}
+				if err := writeV3PrivateFile(qrOutputPath, png); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Pairing QR PNG written to %s\n", qrOutputPath)
+				return nil
+			}
 			if strings.TrimSpace(outputPath) == "" {
 				if !v3PairOutputIsTerminal(cmd.OutOrStdout()) {
-					return usageCLIError("pair create requires an interactive terminal; use --raw for stdout or --out FILE")
+					return usageCLIError("pair create requires an interactive terminal; use --text, --qr-file FILE, --raw, or --out FILE")
 				}
 				return renderV3PairingQR(cmd.OutOrStdout(), payload, time.Unix(0, result.GetExpiresAtUnixNano()).UTC())
 			}
@@ -187,7 +222,9 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&outputPath, "out", "", "write the one-time pairing bundle to an owner-only file")
+	command.Flags().StringVar(&qrOutputPath, "qr-file", "", "write a square pairing QR PNG to an owner-only file")
 	command.Flags().BoolVar(&rawOutput, "raw", false, "write the one-time pairing bundle to stdout for explicit scripting")
+	command.Flags().BoolVar(&textOutput, "text", false, "write the portable pairing URI to stdout for copying")
 	command.Flags().StringVar(&label, "label", "", "daemon display label (defaults to this host name)")
 	command.Flags().StringVar(&terminalID, "terminal", "", "limit the capability to one terminal instead of daemon-wide access")
 	command.Flags().DurationVar(&ticketTTL, "ttl", 10*time.Minute, "one-time ticket lifetime")
@@ -215,7 +252,7 @@ func clientAccessScopeToProto(scope remoteauth.Scope) *remoteauthpb.ClientAccess
 // renderV3PairingQR 把短期一次性 PairingTicket bundle 编码进高对比度终端二维码。
 // 二维码不包含长期 grant，但仍允许在有效期内发起一次 key-bound 兑换；调用方应在扫描后清屏。
 func renderV3PairingQR(output io.Writer, payload []byte, expiresAt time.Time) error {
-	portablePayload := pairingBootstrapURIPrefix + base64.RawURLEncoding.EncodeToString(payload)
+	portablePayload := v3PairingBootstrapURI(payload)
 	code, err := qrcode.New(portablePayload, qrcode.Medium)
 	if err != nil {
 		return fmt.Errorf("encode pairing QR: %w", err)
@@ -224,7 +261,32 @@ func renderV3PairingQR(output io.Writer, payload []byte, expiresAt time.Time) er
 	if len(bitmap) == 0 {
 		return fmt.Errorf("encode pairing QR: empty bitmap")
 	}
-	if err := renderV3PairingPreview(output, payload, expiresAt); err != nil {
+	var preview strings.Builder
+	if err := renderV3PairingPreview(&preview, payload, expiresAt); err != nil {
+		return err
+	}
+	requiredColumns := len(bitmap)
+	for _, line := range strings.Split(preview.String(), "\n") {
+		if len(line) > requiredColumns {
+			requiredColumns = len(line)
+		}
+	}
+	for _, line := range []string{
+		"Scan with the Muxvia App",
+		"This QR contains a one-time pairing ticket. Clear the terminal after scanning.",
+	} {
+		if len(line) > requiredColumns {
+			requiredColumns = len(line)
+		}
+	}
+	requiredRows := strings.Count(preview.String(), "\n") + 1 + (len(bitmap)+1)/2 + 1
+	if columns, rows, ok := v3PairTerminalSize(output); ok && (columns < requiredColumns || rows < requiredRows) {
+		return usageCLIError(fmt.Sprintf(
+			"pairing QR requires at least %dx%d terminal cells (current %dx%d); enlarge the terminal or use --text or --qr-file FILE",
+			requiredColumns, requiredRows, columns, rows,
+		))
+	}
+	if _, err := io.WriteString(output, preview.String()); err != nil {
 		return err
 	}
 	if _, err = io.WriteString(output, "Scan with the Muxvia App\n"); err != nil {
@@ -257,6 +319,23 @@ func renderV3PairingQR(output io.Writer, payload []byte, expiresAt time.Time) er
 	}
 	_, err = io.WriteString(output, "\x1b[0mThis QR contains a one-time pairing ticket. Clear the terminal after scanning.\n")
 	return err
+}
+
+func v3PairingBootstrapURI(payload []byte) string {
+	return pairingBootstrapURIPrefix + base64.RawURLEncoding.EncodeToString(payload)
+}
+
+// renderV3PairingPNG 生成带 quiet zone 的正方形位图，供无法完整显示终端二维码时离线展示。
+func renderV3PairingPNG(portablePayload string) ([]byte, error) {
+	code, err := qrcode.New(portablePayload, qrcode.Medium)
+	if err != nil {
+		return nil, fmt.Errorf("encode pairing QR: %w", err)
+	}
+	png, err := code.PNG(1024)
+	if err != nil {
+		return nil, fmt.Errorf("encode pairing QR PNG: %w", err)
+	}
+	return png, nil
 }
 
 func renderV3PairingPreview(output io.Writer, payload []byte, expiresAt time.Time) error {

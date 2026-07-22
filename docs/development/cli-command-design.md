@@ -197,7 +197,7 @@ ENDPOINT 用于选择 owning daemon，当前 protocol session 仍必须持有显
 ### 5.6 pair
 
 ```text
-muxvia pair create [--terminal TARGET] [--ttl DURATION] [--out FILE]
+muxvia pair create [--terminal TARGET] [--ttl DURATION] [--text | --qr-file FILE | --raw | --out FILE]
 muxvia pair import FILE [--id ENDPOINT] [--relay MODE]
 muxvia pair inspect FILE
 ```
