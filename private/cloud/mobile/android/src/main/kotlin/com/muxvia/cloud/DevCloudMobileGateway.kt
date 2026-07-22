@@ -401,6 +401,7 @@ internal class DevCloudMobileGateway(
             CloudCompanion.CloudErrorCode.CLOUD_ERROR_CODE_LOGIN_REQUIRED -> "login_required"
             CloudCompanion.CloudErrorCode.CLOUD_ERROR_CODE_DEVICE_NOT_FOUND -> "device_not_found"
             CloudCompanion.CloudErrorCode.CLOUD_ERROR_CODE_UNAUTHENTICATED -> "unauthenticated"
+            CloudCompanion.CloudErrorCode.CLOUD_ERROR_CODE_AUTHORIZATION_REVOKED -> "authorization_revoked"
             CloudCompanion.CloudErrorCode.CLOUD_ERROR_CODE_ENTITLEMENT_DENIED -> "entitlement_denied"
             CloudCompanion.CloudErrorCode.CLOUD_ERROR_CODE_QUOTA_EXHAUSTED -> "quota_exhausted"
             CloudCompanion.CloudErrorCode.CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE,

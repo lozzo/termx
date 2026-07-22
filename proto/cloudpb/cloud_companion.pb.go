@@ -227,6 +227,7 @@ const (
 	CloudErrorCode_CLOUD_ERROR_CODE_BACKPRESSURE               CloudErrorCode = 13
 	CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL                   CloudErrorCode = 14
 	CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY                  CloudErrorCode = 15
+	CloudErrorCode_CLOUD_ERROR_CODE_AUTHORIZATION_REVOKED      CloudErrorCode = 16
 )
 
 // Enum value maps for CloudErrorCode.
@@ -248,6 +249,7 @@ var (
 		13: "CLOUD_ERROR_CODE_BACKPRESSURE",
 		14: "CLOUD_ERROR_CODE_PROTOCOL",
 		15: "CLOUD_ERROR_CODE_TEMPORARY",
+		16: "CLOUD_ERROR_CODE_AUTHORIZATION_REVOKED",
 	}
 	CloudErrorCode_value = map[string]int32{
 		"CLOUD_ERROR_CODE_UNSPECIFIED":                0,
@@ -266,6 +268,7 @@ var (
 		"CLOUD_ERROR_CODE_BACKPRESSURE":               13,
 		"CLOUD_ERROR_CODE_PROTOCOL":                   14,
 		"CLOUD_ERROR_CODE_TEMPORARY":                  15,
+		"CLOUD_ERROR_CODE_AUTHORIZATION_REVOKED":      16,
 	}
 )
 
@@ -6986,7 +6989,7 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\x1eCOMPANION_STATE_LOGIN_REQUIRED\x10\x02\x12.\n" +
 	"*COMPANION_STATE_DEVICE_ENROLLMENT_REQUIRED\x10\x03\x12 \n" +
 	"\x1cCOMPANION_STATE_INCOMPATIBLE\x10\x04\x12\x1f\n" +
-	"\x1bCOMPANION_STATE_UNAVAILABLE\x10\x05*\x82\x05\n" +
+	"\x1bCOMPANION_STATE_UNAVAILABLE\x10\x05*\xae\x05\n" +
 	"\x0eCloudErrorCode\x12 \n" +
 	"\x1cCLOUD_ERROR_CODE_UNSPECIFIED\x10\x00\x12&\n" +
 	"\"CLOUD_ERROR_CODE_COMPANION_MISSING\x10\x01\x12*\n" +
@@ -7004,7 +7007,8 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\"CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE\x10\f\x12!\n" +
 	"\x1dCLOUD_ERROR_CODE_BACKPRESSURE\x10\r\x12\x1d\n" +
 	"\x19CLOUD_ERROR_CODE_PROTOCOL\x10\x0e\x12\x1e\n" +
-	"\x1aCLOUD_ERROR_CODE_TEMPORARY\x10\x0f*f\n" +
+	"\x1aCLOUD_ERROR_CODE_TEMPORARY\x10\x0f\x12*\n" +
+	"&CLOUD_ERROR_CODE_AUTHORIZATION_REVOKED\x10\x10*f\n" +
 	"\rPresenceState\x12\x1e\n" +
 	"\x1aPRESENCE_STATE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16PRESENCE_STATE_OFFLINE\x10\x01\x12\x19\n" +

@@ -58,6 +58,7 @@ enum CloudErrorCode {
   CLOUD_ERROR_CODE_BACKPRESSURE = 13;
   CLOUD_ERROR_CODE_PROTOCOL = 14;
   CLOUD_ERROR_CODE_TEMPORARY = 15;
+  CLOUD_ERROR_CODE_AUTHORIZATION_REVOKED = 16;
 }
 
 // PresenceState 是 Control Plane/Hub 提供的最小设备在线投影。

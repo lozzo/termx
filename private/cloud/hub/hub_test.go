@@ -138,7 +138,7 @@ func TestHubManagedP2PReservationUsesPolicyLimitAndExactLifecycleRelease(t *test
 	}
 	relayRequest.SignalingSessionID = "signal-relay-invalid"
 	relayRequest.EdgeToken = []byte("invalid")
-	if _, err := fixture.service.CreateEdgeSession(context.Background(), relayRequest); !errors.Is(err, hub.ErrEdgeAuthorization) {
+	if _, err := fixture.service.CreateEdgeSession(context.Background(), relayRequest); !errors.Is(err, hub.ErrEdgeAuthentication) {
 		t.Fatalf("Relay-only signaling skipped client authorization: %v", err)
 	}
 	if err := first.Close(); err != nil {
@@ -248,7 +248,7 @@ func TestHubManagedP2PReservationRejectsRevokedEpochAndSuspendedPolicy(t *testin
 	if err := fixture.edgeAuthorizer.ApplySnapshot(hub.AuthorizationSnapshot{Revision: 2, GeneratedAt: fixture.clock.Now(), Accounts: []hub.AccountAuthorization{activeHubP2PAccount("account-1", 2, fixture.clock.Now())}, Devices: []hub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon", PublicKey: fixture.daemonPublicKey}}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.service.CreateEdgeSession(context.Background(), request); !errors.Is(err, hub.ErrEdgeAuthorization) {
+	if _, err := fixture.service.CreateEdgeSession(context.Background(), request); !errors.Is(err, hub.ErrPrincipalRevoked) {
 		t.Fatalf("old auth epoch = %v", err)
 	}
 	newToken, _ := edgeIssuer.IssueEdgeAccess("new-token", "hub-eu", "account-1", "client-1", 2, time.Hour, fixture.clock.Now())
@@ -274,7 +274,7 @@ func TestHubManagedP2PReservationRejectsRevokedEpochAndSuspendedPolicy(t *testin
 		t.Fatal(err)
 	}
 	request.SignalingSessionID = "revoked-client"
-	if _, err := fixture.service.CreateEdgeSession(context.Background(), request); !errors.Is(err, hub.ErrEdgeAuthorization) {
+	if _, err := fixture.service.CreateEdgeSession(context.Background(), request); !errors.Is(err, hub.ErrPrincipalRevoked) {
 		t.Fatalf("revoked client = %v", err)
 	}
 	active.Revoked = true
@@ -282,7 +282,7 @@ func TestHubManagedP2PReservationRejectsRevokedEpochAndSuspendedPolicy(t *testin
 		t.Fatal(err)
 	}
 	request.SignalingSessionID = "revoked-account"
-	if _, err := fixture.service.CreateEdgeSession(context.Background(), request); !errors.Is(err, hub.ErrEdgeAuthorization) {
+	if _, err := fixture.service.CreateEdgeSession(context.Background(), request); !errors.Is(err, hub.ErrPrincipalRevoked) {
 		t.Fatalf("revoked account = %v", err)
 	}
 }

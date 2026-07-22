@@ -66,6 +66,7 @@ Controller 与 Edge 使用独立进程、配置、identity、state 目录和 res
 - Relay session 内远端文件面板成功列出 daemon 主机 `/` 与 `/tmp`；上传/下载内容校验未完成，不计为 file E2E PASS。
 - Android `minSdk 24` 的 Cloud module 使用 `java.time`，APK 已启用 core library desugaring；Android 7.0/7.1 不再因 factory 加载期缺少 `java.time.Instant` 被误报为 managed cloud module 未安装。初始化失败会保留原始异常到 `ManagedCloudAssembly` logcat。
 - 最终复测 APK 为 ARM64 debug staging artifact，SHA-256 `2905b6ace56b77934f09085ff1bcd5c35eaa692c711defd6c780fdf5b846ec72`；APK 已确认包含 Official factory、HTTPS staging BuildConfig、`j$.time` 和最新 mobile UI assets，覆盖安装后完成手工登录码流程并正常进入 Machines 页面。本轮 logcat 未发现 `FATAL EXCEPTION`、ANR、`SIGSEGV` 或 native fatal signal。
+- `CLOUDAUTH001` 后，Hub 使用 Controller 公钥离线验证 EdgeAccess token，client 设备尚未进入 policy projection 时也能立即读取同账号设备目录；projection lag 返回可重试错误，明确撤销返回 `AUTHORIZATION_REVOKED`，不再冒充登录失效。Linux Edge SHA-256 `a7f83ca5c5a1445e4955687b4da40da45bb8ad65650ed6e997bee69fa1fc38d9` 已滚动部署到 US/CN，两端 health 恢复 `204`。ARM64 公网 HTTPS APK SHA-256 `5adedd4bf0480687d3d0e89d49dc5898c2270857fb5a271b7cf7737c728cf170` 完成全新 `MXA` 手工登录、Web 批准后首次目录同步、强制停止与重启恢复；logcat 未出现 `unauthenticated`、Java 或 native crash。
 
 浏览器截图保存在本地 ignored artifact：
 

@@ -423,7 +423,8 @@ func validCloudErrorCode(code cloudpb.CloudErrorCode, allowUnspecified bool) boo
 		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE,
 		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_BACKPRESSURE,
 		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL,
-		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY:
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_AUTHORIZATION_REVOKED:
 		return true
 	default:
 		return false

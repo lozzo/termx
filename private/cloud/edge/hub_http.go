@@ -534,12 +534,14 @@ func writeHubError(writer http.ResponseWriter, status int, code cloudpb.CloudErr
 
 func mapHubError(writer http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, cloudhub.ErrAdmission), errors.Is(err, cloudhub.ErrEdgeAuthorization):
+	case errors.Is(err, cloudhub.ErrAdmission), errors.Is(err, cloudhub.ErrEdgeAuthentication), errors.Is(err, cloudhub.ErrEdgeAuthorization):
 		writeHubError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub authorization was rejected", false)
 	case errors.Is(err, cloudhub.ErrPolicySnapshot):
 		writeHubError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub authorization projection is unavailable", true)
-	case errors.Is(err, cloudhub.ErrP2PNotEntitled):
-		writeHubError(writer, http.StatusForbidden, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENTITLEMENT_DENIED, "managed P2P is not enabled for this account", false)
+	case errors.Is(err, cloudhub.ErrPrincipalRevoked):
+		writeHubError(writer, http.StatusForbidden, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_AUTHORIZATION_REVOKED, "Hub principal authorization was revoked", false)
+	case errors.Is(err, cloudhub.ErrP2PNotEntitled), errors.Is(err, cloudhub.ErrRelayNotEntitled):
+		writeHubError(writer, http.StatusForbidden, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENTITLEMENT_DENIED, "managed Cloud capability is not enabled for this account", false)
 	case errors.Is(err, cloudhub.ErrP2PConcurrency):
 		writeHubError(writer, http.StatusTooManyRequests, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_QUOTA_EXHAUSTED, "managed P2P concurrency is exhausted", true)
 	case errors.Is(err, cloudhub.ErrTargetUnavailable):

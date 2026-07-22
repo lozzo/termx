@@ -15,7 +15,11 @@ import (
 var (
 	// ErrPolicySnapshot 表示授权投影缺失、回滚、断档或超过最大陈旧窗口。
 	ErrPolicySnapshot = errors.New("Hub authorization snapshot unavailable")
-	// ErrEdgeAuthorization 表示 edge token、账号 epoch、target ownership 或 revoke 状态拒绝连接。
+	// ErrEdgeAuthentication 表示 edge token 的签名、有效期或主体绑定无效。
+	ErrEdgeAuthentication = errors.New("Hub edge authentication rejected")
+	// ErrPrincipalRevoked 表示已认证主体被当前账号或设备授权投影明确撤销。
+	ErrPrincipalRevoked = errors.New("Hub principal authorization revoked")
+	// ErrEdgeAuthorization 表示内部 admission、runtime inventory 或 control command 不满足当前授权约束。
 	ErrEdgeAuthorization = errors.New("Hub edge authorization rejected")
 	// ErrTargetUnavailable 表示已认证 client 请求的 daemon 已移除、类型错误或不属于当前账号。
 	// 所有 target 失败统一使用该错误，避免跨账号探测设备是否存在。
@@ -24,6 +28,8 @@ var (
 	ErrP2PConcurrency = errors.New("Hub managed P2P concurrency exhausted")
 	// ErrP2PNotEntitled 表示账号身份有效，但当前 Entitlement 不允许新的 managed P2P。
 	ErrP2PNotEntitled = errors.New("Hub managed P2P entitlement denied")
+	// ErrRelayNotEntitled 表示账号身份有效，但当前 Entitlement 不允许新的 managed Relay。
+	ErrRelayNotEntitled = errors.New("Hub managed Relay entitlement denied")
 )
 
 // DeviceAuthorization 是 Control Plane 同步给 Hub 的最小 daemon 授权投影。
@@ -134,12 +140,18 @@ func (authorizer *EdgeAuthorizer) RelayBudget(accountID string) (RelayBudget, er
 	authorizer.mu.RLock()
 	defer authorizer.mu.RUnlock()
 	account, ok := authorizer.accounts[accountID]
-	if authorizer.revision == 0 || now.Sub(authorizer.generatedAt) > authorizer.maxStaleness || !ok || !account.activeAt(now) || account.Capability == nil || !account.Capability.GetStandardRelayEnabled() {
-		return RelayBudget{}, ErrEdgeAuthorization
+	if authorizer.revision == 0 || now.Sub(authorizer.generatedAt) > authorizer.maxStaleness || !ok {
+		return RelayBudget{}, ErrPolicySnapshot
+	}
+	if account.Revoked {
+		return RelayBudget{}, ErrPrincipalRevoked
+	}
+	if account.EntitlementStatus != cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE || now.Unix() >= account.EntitlementEffectiveUntilUnix || account.Capability == nil || !account.Capability.GetStandardRelayEnabled() {
+		return RelayBudget{}, ErrRelayNotEntitled
 	}
 	relay := account.Capability.GetRelay()
 	if relay == nil || relay.GetMaxLeaseSeconds() == 0 || relay.GetMaxBytesPerLease() == 0 || relay.GetMaxBitrateKbps() == 0 || relay.GetMaxConcurrency() == 0 {
-		return RelayBudget{}, ErrEdgeAuthorization
+		return RelayBudget{}, ErrRelayNotEntitled
 	}
 	return RelayBudget{MaxLeaseDuration: time.Duration(relay.GetMaxLeaseSeconds()) * time.Second, MaxBytes: relay.GetMaxBytesPerLease(), MaxBitrateKbps: relay.GetMaxBitrateKbps(), MaxConcurrency: relay.GetMaxConcurrency()}, nil
 }
@@ -187,7 +199,7 @@ func (authorizer *EdgeAuthorizer) ApplySnapshot(snapshot AuthorizationSnapshot) 
 // 返回 claims 只供 Hub 创建短期 EdgeManagedSession；任何缺失、撤销、epoch 不匹配或陈旧快照都 fail closed。
 func (authorizer *EdgeAuthorizer) AuthorizeDirect(token []byte, accountID, clientDeviceID, targetDeviceID string) (servicecredential.EdgeAccessClaims, error) {
 	now := authorizer.clock.Now().UTC()
-	claims, err := authorizer.verifyClientClaims(token, accountID, clientDeviceID, now)
+	claims, err := authorizer.AuthenticateClient(token, accountID, clientDeviceID)
 	if err != nil {
 		return servicecredential.EdgeAccessClaims{}, err
 	}
@@ -206,7 +218,7 @@ func (authorizer *EdgeAuthorizer) ReserveManagedP2P(token []byte, accountID, cli
 		return servicecredential.EdgeAccessClaims{}, ErrEdgeAuthorization
 	}
 	now := authorizer.clock.Now().UTC()
-	claims, err := authorizer.verifyClientClaims(token, accountID, clientDeviceID, now)
+	claims, err := authorizer.AuthenticateClient(token, accountID, clientDeviceID)
 	if err != nil {
 		return servicecredential.EdgeAccessClaims{}, err
 	}
@@ -233,10 +245,14 @@ func (authorizer *EdgeAuthorizer) ReserveManagedP2P(token []byte, accountID, cli
 	return claims, nil
 }
 
-func (authorizer *EdgeAuthorizer) verifyClientClaims(token []byte, accountID, clientDeviceID string, now time.Time) (servicecredential.EdgeAccessClaims, error) {
+// AuthenticateClient 仅使用 Controller 公钥离线验证 client edge token。
+// 成功只建立固定 Hub、账号、设备和 client role 的身份主体；它不读取 policy projection，
+// 因此普通登录不依赖 Controller 将新 client 设备同步给 Hub。
+func (authorizer *EdgeAuthorizer) AuthenticateClient(token []byte, accountID, clientDeviceID string) (servicecredential.EdgeAccessClaims, error) {
+	now := authorizer.clock.Now().UTC()
 	claims, err := servicecredential.VerifyEdgeAccess(authorizer.keyRing, token, servicecredential.EdgeAccessExpectation{Issuer: authorizer.issuer, AudienceHubID: authorizer.hubID, AccountID: accountID, ClientDeviceID: clientDeviceID, PrincipalKind: servicecredential.EdgePrincipalClient}, now)
 	if err != nil {
-		return servicecredential.EdgeAccessClaims{}, fmt.Errorf("%w: %v", ErrEdgeAuthorization, err)
+		return servicecredential.EdgeAccessClaims{}, fmt.Errorf("%w: %v", ErrEdgeAuthentication, err)
 	}
 	return claims, nil
 }
@@ -246,14 +262,16 @@ func (authorizer *EdgeAuthorizer) authorizeManagedP2PLocked(claims servicecreden
 		return AccountAuthorization{}, ErrPolicySnapshot
 	}
 	account, accountOK := authorizer.accounts[accountID]
-	client, clientOK := authorizer.devices[clientDeviceID]
-	target, targetOK := authorizer.devices[targetDeviceID]
-	if !accountOK || !clientOK || account.Revoked || account.AuthEpoch != claims.AuthEpoch || client.Revoked || client.AccountID != accountID || client.Kind != "client" {
-		return AccountAuthorization{}, ErrEdgeAuthorization
+	if !accountOK {
+		return AccountAuthorization{}, ErrPolicySnapshot
+	}
+	if err := authorizer.authorizeClientPolicyLocked(claims, account, accountID, clientDeviceID); err != nil {
+		return AccountAuthorization{}, err
 	}
 	if account.EntitlementStatus != cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE || now.Unix() >= account.EntitlementEffectiveUntilUnix || account.Capability == nil || !account.Capability.GetManagedP2PEnabled() {
 		return AccountAuthorization{}, ErrP2PNotEntitled
 	}
+	target, targetOK := authorizer.devices[targetDeviceID]
 	if !targetOK || target.Revoked || target.AccountID != accountID || target.Kind != "daemon" {
 		return AccountAuthorization{}, ErrTargetUnavailable
 	}
@@ -382,10 +400,6 @@ func managedP2PRuntimeKey(target *cloudpb.ManagedPeerSessionTarget) string {
 	return fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s", target.GetDaemonDeviceId(), target.GetManagedSessionId(), target.GetSessionIncarnation(), target.GetAssignmentEpoch(), target.GetDaemonRuntimeGeneration())
 }
 
-func (account AccountAuthorization) activeAt(now time.Time) bool {
-	return !account.Revoked && account.EntitlementStatus == cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE && now.Unix() < account.EntitlementEffectiveUntilUnix
-}
-
 func cloneHubPlanCapability(capability *cloudpb.PlanCapability) *cloudpb.PlanCapability {
 	if capability == nil {
 		return nil
@@ -393,22 +407,37 @@ func cloneHubPlanCapability(capability *cloudpb.PlanCapability) *cloudpb.PlanCap
 	return proto.Clone(capability).(*cloudpb.PlanCapability)
 }
 
-// AuthorizeClient 验证当前连接发起端自身仍存在于 Hub 签名内存投影且未撤销。
-// 目录、resolve、signaling 和 Relay 都应先经过该边界，不能只验证账号或目标 daemon。
+// AuthorizeClient 先离线认证 client token，再应用 Hub 当前账号撤销和 epoch fence。
+// 新签发 client 尚未进入设备投影时仍可通过；只有投影明确记录该设备且已撤销或绑定冲突时才拒绝。
 func (authorizer *EdgeAuthorizer) AuthorizeClient(token []byte, accountID, clientDeviceID string) (servicecredential.EdgeAccessClaims, error) {
-	now := authorizer.clock.Now().UTC()
-	claims, err := servicecredential.VerifyEdgeAccess(authorizer.keyRing, token, servicecredential.EdgeAccessExpectation{Issuer: authorizer.issuer, AudienceHubID: authorizer.hubID, AccountID: accountID, ClientDeviceID: clientDeviceID, PrincipalKind: servicecredential.EdgePrincipalClient}, now)
+	claims, err := authorizer.AuthenticateClient(token, accountID, clientDeviceID)
 	if err != nil {
-		return servicecredential.EdgeAccessClaims{}, fmt.Errorf("%w: %v", ErrEdgeAuthorization, err)
+		return servicecredential.EdgeAccessClaims{}, err
 	}
+	now := authorizer.clock.Now().UTC()
 	authorizer.mu.RLock()
 	defer authorizer.mu.RUnlock()
 	account, accountOK := authorizer.accounts[accountID]
-	client, clientOK := authorizer.devices[clientDeviceID]
-	if authorizer.revision == 0 || now.Sub(authorizer.generatedAt) > authorizer.maxStaleness || !accountOK || !clientOK || account.Revoked || account.AuthEpoch != claims.AuthEpoch || client.Revoked || client.AccountID != accountID || client.Kind != "client" {
-		return servicecredential.EdgeAccessClaims{}, ErrEdgeAuthorization
+	if authorizer.revision == 0 || now.Sub(authorizer.generatedAt) > authorizer.maxStaleness || !accountOK {
+		return servicecredential.EdgeAccessClaims{}, ErrPolicySnapshot
+	}
+	if err := authorizer.authorizeClientPolicyLocked(claims, account, accountID, clientDeviceID); err != nil {
+		return servicecredential.EdgeAccessClaims{}, err
 	}
 	return claims, nil
+}
+
+func (authorizer *EdgeAuthorizer) authorizeClientPolicyLocked(claims servicecredential.EdgeAccessClaims, account AccountAuthorization, accountID, clientDeviceID string) error {
+	if account.Revoked || claims.AuthEpoch < account.AuthEpoch {
+		return ErrPrincipalRevoked
+	}
+	if claims.AuthEpoch > account.AuthEpoch {
+		return ErrPolicySnapshot
+	}
+	if client, ok := authorizer.devices[clientDeviceID]; ok && (client.Revoked || client.AccountID != accountID || client.Kind != "client") {
+		return ErrPrincipalRevoked
+	}
+	return nil
 }
 
 // AccountDevices 返回账号设备投影的深拷贝；调用前必须已经通过 AuthorizeClient。
@@ -440,7 +469,7 @@ func (authorizer *EdgeAuthorizer) AuthorizeDaemonDevice(token []byte, accountID,
 	now := authorizer.clock.Now().UTC()
 	claims, err := servicecredential.VerifyEdgeAccess(authorizer.keyRing, token, servicecredential.EdgeAccessExpectation{Issuer: authorizer.issuer, AudienceHubID: authorizer.hubID, AccountID: accountID, ClientDeviceID: deviceID, PrincipalKind: servicecredential.EdgePrincipalDaemon}, now)
 	if err != nil {
-		return servicecredential.EdgeAccessClaims{}, DeviceAuthorization{}, fmt.Errorf("%w: %v", ErrEdgeAuthorization, err)
+		return servicecredential.EdgeAccessClaims{}, DeviceAuthorization{}, fmt.Errorf("%w: %v", ErrEdgeAuthentication, err)
 	}
 	authorizer.mu.RLock()
 	defer authorizer.mu.RUnlock()
@@ -449,8 +478,11 @@ func (authorizer *EdgeAuthorizer) AuthorizeDaemonDevice(token []byte, accountID,
 	}
 	account, accountOK := authorizer.accounts[accountID]
 	device, deviceOK := authorizer.devices[deviceID]
-	if !accountOK || !deviceOK || account.Revoked || account.AuthEpoch != claims.AuthEpoch || device.Revoked || device.AccountID != accountID || device.Kind != "daemon" {
-		return servicecredential.EdgeAccessClaims{}, DeviceAuthorization{}, ErrEdgeAuthorization
+	if !accountOK || !deviceOK || claims.AuthEpoch > account.AuthEpoch {
+		return servicecredential.EdgeAccessClaims{}, DeviceAuthorization{}, ErrPolicySnapshot
+	}
+	if account.Revoked || claims.AuthEpoch < account.AuthEpoch || device.Revoked || device.AccountID != accountID || device.Kind != "daemon" {
+		return servicecredential.EdgeAccessClaims{}, DeviceAuthorization{}, ErrPrincipalRevoked
 	}
 	device.PublicKey = append([]byte(nil), device.PublicKey...)
 	return claims, device, nil

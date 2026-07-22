@@ -233,8 +233,8 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
                 }
                 call.resolve(JSObject().put("devices", devices))
             } catch (failure: ManagedEndpointFailure) {
-                // Hub 设备目录只负责同步投影，不拥有账号 Session 真值。新 Session 刚签发而 Hub
-                // policy 尚未同步时也可能短暂返回 unauthenticated，绝不能因此清空 Keystore。
+                // Hub 设备目录不拥有账号 Session 真值。即使 edge token 被 Hub 拒绝，也必须由
+                // Controller refresh 判断账号 Session 是否失效，目录调用不得直接清空 Keystore。
                 if (failure.code == "unauthenticated") {
                     call.reject("Muxvia Cloud device sync is not ready yet", "temporary")
                 } else {

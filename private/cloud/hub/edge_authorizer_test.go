@@ -54,14 +54,14 @@ func TestEdgeAuthorizerUsesOnlyVersionedLocalProjection(t *testing.T) {
 	if _, err := authorizer.AuthorizeDirect(token, "account-1", "client-1", "daemon-1"); err != nil {
 		t.Fatalf("AuthorizeDirect = %v", err)
 	}
-	if _, err := authorizer.AuthorizeDaemon(token, "account-1", "client-1"); !errors.Is(err, hub.ErrEdgeAuthorization) {
+	if _, err := authorizer.AuthorizeDaemon(token, "account-1", "client-1"); !errors.Is(err, hub.ErrEdgeAuthentication) {
 		t.Fatalf("client token used as daemon error = %v", err)
 	}
 	daemonToken, err := issuer.IssueEdgeAccessForPrincipal("daemon-token", "hub-1", "account-1", "daemon-1", servicecredential.EdgePrincipalDaemon, 7, time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := authorizer.AuthorizeDirect(daemonToken, "account-1", "daemon-1", "daemon-1"); !errors.Is(err, hub.ErrEdgeAuthorization) {
+	if _, err := authorizer.AuthorizeDirect(daemonToken, "account-1", "daemon-1", "daemon-1"); !errors.Is(err, hub.ErrEdgeAuthentication) {
 		t.Fatalf("daemon token used as client error = %v", err)
 	}
 	if _, err := authorizer.AuthorizeDirect(token, "account-1", "client-1", "daemon-other"); !errors.Is(err, hub.ErrTargetUnavailable) {
@@ -94,8 +94,76 @@ func TestEdgeAuthorizerUsesOnlyVersionedLocalProjection(t *testing.T) {
 	if err := authorizer.ApplySnapshot(snapshot); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := authorizer.AuthorizeDirect(token, "account-1", "client-1", "daemon-1"); !errors.Is(err, hub.ErrEdgeAuthorization) {
+	if _, err := authorizer.AuthorizeDirect(token, "account-1", "client-1", "daemon-1"); !errors.Is(err, hub.ErrPrincipalRevoked) {
 		t.Fatalf("revoked epoch error = %v", err)
+	}
+}
+
+func TestEdgeAuthorizerSeparatesSignedClientIdentityFromPolicyProjection(t *testing.T) {
+	now := time.Date(2026, 7, 22, 14, 0, 0, 0, time.UTC)
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := servicecredential.NewSigner("edge-key-1", privateKey, now.Add(-time.Hour), now.Add(48*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ring, err := servicecredential.NewKeyRing(signer.PublicKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	issuer, err := servicecredential.NewEdgeAccessIssuer("control-plane.edge", signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorizer, err := hub.NewEdgeAuthorizer(hub.EdgeAuthorizerConfig{HubID: "hub-1", Issuer: "control-plane.edge", KeyRing: ring, Clock: &edgeClock{now: now}, MaxStaleness: 5 * time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := issuer.IssueEdgeAccess("token-new-client", "hub-1", "account-1", "client-new", 7, time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := authorizer.AuthenticateClient(token, "account-1", "client-new"); err != nil {
+		t.Fatalf("offline client authentication = %v", err)
+	}
+	if _, err := authorizer.AuthorizeClient(token, "account-1", "client-new"); !errors.Is(err, hub.ErrPolicySnapshot) {
+		t.Fatalf("missing policy classification = %v", err)
+	}
+	snapshot := hub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []hub.AccountAuthorization{activeP2PAccount("account-1", 7, now)}, Devices: []hub.DeviceAuthorization{{DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon"}}}
+	if err := authorizer.ApplySnapshot(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := authorizer.AuthorizeClient(token, "account-1", "client-new"); err != nil {
+		t.Fatalf("new client absent from projection = %v", err)
+	}
+	if _, err := authorizer.AuthorizeDirect(token, "account-1", "client-new", "daemon-1"); err != nil {
+		t.Fatalf("new client managed P2P authorization = %v", err)
+	}
+	newerToken, err := issuer.IssueEdgeAccess("token-newer-policy", "hub-1", "account-1", "client-newer", 8, time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := authorizer.AuthorizeClient(newerToken, "account-1", "client-newer"); !errors.Is(err, hub.ErrPolicySnapshot) {
+		t.Fatalf("newer signed token against older policy = %v", err)
+	}
+
+	snapshot.Revision = 2
+	snapshot.Devices = append(snapshot.Devices, hub.DeviceAuthorization{DeviceID: "client-new", AccountID: "account-1", Kind: "client", DisplayName: "Client", Revoked: true})
+	if err := authorizer.ApplySnapshot(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := authorizer.AuthorizeClient(token, "account-1", "client-new"); !errors.Is(err, hub.ErrPrincipalRevoked) {
+		t.Fatalf("explicit client revoke classification = %v", err)
+	}
+
+	wrongHubToken, err := issuer.IssueEdgeAccess("token-wrong-hub", "hub-other", "account-1", "client-new", 7, time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := authorizer.AuthenticateClient(wrongHubToken, "account-1", "client-new"); !errors.Is(err, hub.ErrEdgeAuthentication) {
+		t.Fatalf("invalid token classification = %v", err)
 	}
 }
 

@@ -35,7 +35,9 @@ func TestHubPublicAdapterRunsPresenceResolveAndSignalingOverHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := authorizer.ApplySnapshot(cloudhub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []cloudhub.AccountAuthorization{{AccountID: "account-1", AuthEpoch: 1, EntitlementStatus: cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE, EntitlementEffectiveUntilUnix: now.Add(time.Hour).Unix(), Capability: &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 1, CloudDeviceLimit: 2}}}, Devices: []cloudhub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client", AuthEpoch: 1}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon", PublicKey: daemonPublic, AuthEpoch: 1}}}); err != nil {
+	accountPolicy := cloudhub.AccountAuthorization{AccountID: "account-1", AuthEpoch: 1, EntitlementStatus: cloudpb.EntitlementStatus_ENTITLEMENT_STATUS_ACTIVE, EntitlementEffectiveUntilUnix: now.Add(time.Hour).Unix(), Capability: &cloudpb.PlanCapability{ManagedP2PEnabled: true, ManagedP2PMaxConcurrency: 1, CloudDeviceLimit: 2}}
+	daemonPolicy := cloudhub.DeviceAuthorization{DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon", PublicKey: daemonPublic, AuthEpoch: 1}
+	if err := authorizer.ApplySnapshot(cloudhub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []cloudhub.AccountAuthorization{accountPolicy}, Devices: []cloudhub.DeviceAuthorization{daemonPolicy}}); err != nil {
 		t.Fatal(err)
 	}
 	hubService, err := cloudhub.New(cloudhub.Config{HubID: "hub-1", MaxPresenceTTL: time.Minute, MaxSignalingTTL: time.Minute, PresenceChallengeTTL: time.Minute, MaxPresenceChallenges: 8, PresenceQueueSize: 8, ClientQueueSize: 8, MaxSDPBytes: 4096, MaxCandidates: 8, MaxPresences: 8, MaxSessions: 8, MaxSessionsPerClient: 4, EdgeAuthorizer: authorizer, AssignmentSource: staticAssignmentSource{deviceID: "daemon-1", epoch: 1}})
@@ -67,6 +69,14 @@ func TestHubPublicAdapterRunsPresenceResolveAndSignalingOverHTTP(t *testing.T) {
 	}
 	daemonSession, err := session.New(session.Metadata{Kind: session.KindDevice, AccountID: "account-1", DeviceID: "daemon-1", ExpiresAt: now.Add(time.Hour)}, daemonToken, now)
 	if err != nil {
+		t.Fatal(err)
+	}
+	directory, err := adapter.ListManagedDevices(context.Background(), clientSession.Authorization(), &cloudpb.ListManagedDevicesRequest{SchemaVersion: 1})
+	if err != nil || len(directory.GetDevices()) != 1 || directory.GetDevices()[0].GetDeviceId() != "daemon-1" {
+		t.Fatalf("new client directory before projection sync = (%#v, %v)", directory, err)
+	}
+	clientPolicy := cloudhub.DeviceAuthorization{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client", AuthEpoch: 1}
+	if err := authorizer.ApplySnapshot(cloudhub.AuthorizationSnapshot{Revision: 2, GeneratedAt: now, Accounts: []cloudhub.AccountAuthorization{accountPolicy}, Devices: []cloudhub.DeviceAuthorization{clientPolicy, daemonPolicy}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -160,6 +170,9 @@ func TestHubP2PAdmissionErrorsRemainDistinct(t *testing.T) {
 		status int
 		code   cloudpb.CloudErrorCode
 	}{
+		{err: cloudhub.ErrEdgeAuthentication, status: http.StatusUnauthorized, code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED},
+		{err: cloudhub.ErrPolicySnapshot, status: http.StatusServiceUnavailable, code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY},
+		{err: cloudhub.ErrPrincipalRevoked, status: http.StatusForbidden, code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_AUTHORIZATION_REVOKED},
 		{err: cloudhub.ErrP2PNotEntitled, status: http.StatusForbidden, code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENTITLEMENT_DENIED},
 		{err: cloudhub.ErrP2PConcurrency, status: http.StatusTooManyRequests, code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_QUOTA_EXHAUSTED},
 	} {

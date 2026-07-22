@@ -18,3 +18,9 @@ func TestPublicHTTPLoginURLRequiresExplicitStagingProfile(t *testing.T) {
 		t.Fatalf("explicit staging public HTTP login URL = %v", err)
 	}
 }
+
+func TestAuthorizationRevokedIsAStableCloudErrorCode(t *testing.T) {
+	if !validCloudErrorCode(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_AUTHORIZATION_REVOKED, false) {
+		t.Fatal("authorization revoked cloud error was rejected")
+	}
+}
