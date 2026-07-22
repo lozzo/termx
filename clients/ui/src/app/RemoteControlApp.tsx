@@ -1275,12 +1275,14 @@ function SettingsView({
             <p className="border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
           ) : null}
 
-          <SettingsSection title={t('settings.connection')}>
-            <SettingsRow
-              label={t('settings.webControl')}
-              value={controlUrl || t('settings.builtInEndpoint')}
-            />
-          </SettingsSection>
+          {!nativeCloudLogin ? (
+            <SettingsSection title={t('settings.connection')}>
+              <SettingsRow
+                label={t('settings.webControl')}
+                value={controlUrl || t('settings.builtInEndpoint')}
+              />
+            </SettingsSection>
+          ) : null}
 
           <SettingsSection title={t('common.language')}>
             <SettingsRow label={t('settings.languageHint')}>

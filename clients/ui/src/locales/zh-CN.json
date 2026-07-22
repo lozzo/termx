@@ -7,6 +7,7 @@
     "temporary": "服务暂时不可用，请稍后重试。"
   },
   "common": {
+    "loading": "正在加载",
     "language": "语言",
     "cancel": "取消",
     "refresh": "刷新",

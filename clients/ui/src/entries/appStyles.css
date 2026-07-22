@@ -88,18 +88,35 @@
 }
 
 .muxvia-square-spinner {
-  animation: muxvia-square-spin 850ms linear infinite;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
+  border: 1.5px solid color-mix(in srgb, currentColor 32%, transparent);
   display: inline-block;
   flex: none;
   height: 16px;
+  position: relative;
   width: 16px;
 }
 
+.muxvia-square-spinner::after {
+  animation: muxvia-square-spin 760ms linear infinite;
+  border: 1.5px solid currentColor;
+  border-bottom-color: transparent;
+  border-left-color: transparent;
+  box-sizing: border-box;
+  content: '';
+  height: 46%;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  width: 46%;
+}
+
 @keyframes muxvia-square-spin {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+
   to {
-    transform: rotate(360deg);
+    transform: translate(-50%, -50%) rotate(360deg);
   }
 }
 
@@ -109,7 +126,7 @@
   .muxvia-app-icon-button,
   .muxvia-app-primary-button,
   .muxvia-app-secondary-button,
-  .muxvia-square-spinner {
+  .muxvia-square-spinner::after {
     animation: none !important;
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;

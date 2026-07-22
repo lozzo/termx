@@ -44,7 +44,7 @@ import { settleBindingGeneration } from './BindingGeneration'
 import NativeFilePicker from './plugins/nativeFilePicker'
 import { useNativeStatusBarSync } from './nativeStatusBar'
 
-const defaultControlUrl = import.meta.env.VITE_CONTROL_URL || 'http://114.66.58.243:12306'
+const defaultControlUrl = import.meta.env.VITE_CONTROL_URL || ''
 const qrScannerRootId = 'muxvia-camera-qr-scanner'
 const qrScannerReaderId = 'muxvia-camera-qr-reader'
 const nativeHttpConnectTimeoutMs = 8_000
@@ -138,7 +138,18 @@ export function MuxviaApp() {
   )
 
   if (!registryReady) {
-    return <section className="muxvia-app-page flex h-[100dvh] w-screen items-center justify-center bg-[var(--muxvia-app-bg)] text-sm text-red-600">{registryError ?? ''}</section>
+    return (
+      <section
+        aria-live="polite"
+        className="muxvia-app-page flex h-[100dvh] w-screen items-center justify-center bg-[var(--muxvia-app-bg)]"
+      >
+        {registryError ? (
+          <span className="px-6 text-center text-sm font-medium text-red-600">{muxviaI18n.t('errors.generic')}</span>
+        ) : (
+          <span aria-label={muxviaI18n.t('common.loading')} className="muxvia-square-spinner h-6 w-6 text-[var(--muxvia-app-accent)]" role="status" />
+        )}
+      </section>
+    )
   }
 
   return (

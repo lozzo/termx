@@ -7,6 +7,7 @@
     "temporary": "The service is temporarily unavailable. Please try again."
   },
   "common": {
+    "loading": "Loading",
     "language": "Language",
     "cancel": "Cancel",
     "refresh": "Refresh",
