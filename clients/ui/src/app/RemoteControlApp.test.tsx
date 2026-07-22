@@ -22,6 +22,17 @@ describe('RemoteControlApp first-use experience', () => {
     expect(screen.getByRole('button', { name: 'Add local device' })).toBeTruthy()
   })
 
+  it('places Cloud activation before terminal appearance settings', async () => {
+    renderApp({ cloudAccount: null, scanPairingCode: vi.fn(async () => null) })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in to Muxvia Cloud' }))
+
+    const accountHeading = screen.getByRole('heading', { name: 'Account' })
+    const terminalHeading = screen.getByRole('heading', { name: 'Terminal' })
+    expect(accountHeading.compareDocumentPosition(terminalHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByLabelText('Login code')).toBeTruthy()
+  })
+
   it('keeps camera scan and manual pairing code on the same screen', async () => {
     renderApp({ cloudAccount: null, scanPairingCode: vi.fn(async () => null) })
 
@@ -68,6 +79,37 @@ describe('RemoteControlApp first-use experience', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Device details' }))
     expect(screen.getByText('daemon-technical-id')).toBeTruthy()
     expect(screen.getByText('darwin/arm64')).toBeTruthy()
+  })
+
+  it('does not use a daemon device id as its visible name', async () => {
+    renderApp({
+      cloudAccount: { accountId: 'account-1', accountLabel: 'ada@example.com' },
+      machines: [{
+        id: 'device-technical-id',
+        name: 'device-technical-id',
+        online: true,
+        source: 'hub',
+        hubUrls: [],
+      }],
+    })
+
+    expect((await screen.findAllByText('Muxvia daemon')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('device-technical-id')).toBeNull()
+  })
+
+  it('keeps a user-provided name that starts with device', async () => {
+    renderApp({
+      cloudAccount: { accountId: 'account-1', accountLabel: 'ada@example.com' },
+      machines: [{
+        id: 'daemon-1',
+        name: 'device-lab',
+        online: true,
+        source: 'hub',
+        hubUrls: [],
+      }],
+    })
+
+    expect(await screen.findByText('device-lab')).toBeTruthy()
   })
 })
 

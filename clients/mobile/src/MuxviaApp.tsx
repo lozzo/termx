@@ -41,6 +41,7 @@ import { NativeConnection } from './plugins/nativeConnection'
 import { NativeFileTransferStore } from './NativeFileTransferStore'
 import { GoBindingClient, GoBindingConnector } from './GoBindingClient'
 import { settleBindingGeneration } from './BindingGeneration'
+import { NativeSessionManager, type NativeSessionConnector } from './NativeSessionManager'
 import NativeFilePicker from './plugins/nativeFilePicker'
 import { useNativeStatusBarSync } from './nativeStatusBar'
 
@@ -53,14 +54,9 @@ let goBindingClient = new GoBindingClient()
 
 type MachineRuntimeFactory = NonNullable<RemoteControlAppProps['machineRuntimeFactory']>
 type MachineRuntime = ReturnType<MachineRuntimeFactory>
-type NativeSessionManager = ReturnType<typeof createNativeSessionManager>
-type NativeConnector = {
-  connect(input: { machineId: string }, options?: RtcConnectOptions): Promise<ProtoClientSession>
-  release?(machineId: string): Promise<void>
-}
 type NativeSessionEntry = {
   endpointIdentity: string
-  connector: NativeConnector
+  connector: NativeSessionConnector
   manager: NativeSessionManager
 }
 type NativeSessionLease = ProtoClientSession
@@ -643,7 +639,7 @@ function createNativeMachineRuntime(
     entry = {
       endpointIdentity,
       connector,
-      manager: createNativeSessionManager(machine.id, connector),
+      manager: new NativeSessionManager(machine.id, connector),
     }
     shared.sessionManagers.set(machine.id, entry)
   }
@@ -762,7 +758,7 @@ function createFileTransferContext(machineId: string | undefined, store: NativeF
 function createNativeConnector(
   machine: WebControlMachine,
   endpointRegistry: NativeEndpointRegistryProjection,
-): NativeConnector {
+): NativeSessionConnector {
 	if (!endpointRegistry.has(machine.id)) {
     return {
       async connect() {
@@ -779,18 +775,9 @@ function createNativeConnector(
   }
 }
 
-function createNativeSessionManager(machineId: string, connector: NativeConnector) {
-  return {
-    get: (options?: RtcConnectOptions) => connector.connect({ machineId }, options),
-    lease: (options?: RtcConnectOptions): Promise<NativeSessionLease> => connector.connect({ machineId }, options),
-    reset: async () => {},
-    resetClientOnly: async (_options?: { forceRelay?: boolean }) => {},
-  }
-}
-
 function createNativeInventoryEvents(
   machineId: string,
-  sessionManager: ReturnType<typeof createNativeSessionManager>,
+  sessionManager: NativeSessionManager,
 ): TerminalInventoryEvents {
   return {
     subscribe(targetMachineId, handler) {

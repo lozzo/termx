@@ -343,7 +343,7 @@ export function RemoteControlApp({
       const localOnline = localMachineOnline(local, reachability)
       map.set(local.machineId, {
         id: local.machineId,
-        name: local.name,
+        name: userFacingMachineName(local.machineId, local.name, local.hostname, t),
         hostname: local.hostname,
         online: localOnline,
         source: local.source === 'hub' ? 'hub' : 'local',
@@ -365,6 +365,7 @@ export function RemoteControlApp({
       const localOnline = local ? localMachineOnline(local, reachability) : false
       map.set(hub.id, {
         ...hub,
+        name: userFacingMachineName(hub.id, hub.name, hub.hostname, t),
         online: hub.online || localOnline,
         ...(local ? {
           localHubUrls: localHubUrlsFromStoredMachine(local),
@@ -384,7 +385,7 @@ export function RemoteControlApp({
       })
     }
     return Array.from(map.values())
-  }, [localHubReachability, localMachines, machines])
+  }, [localHubReachability, localMachines, machines, t])
 
   const selectedMachine = displayMachines.find((machine) => machine.id === selectedMachineId) ?? null
   const emptyTransferSnapshot = useMemo(() => ({ transfers: [], hasActiveTransfers: false }), [])
@@ -1289,6 +1290,73 @@ function SettingsView({
             <p className="border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
           ) : null}
 
+          <SettingsSection title={t('common.account')}>
+            {signedIn ? (
+              <>
+                <SettingsRow label={t('common.signedIn')} value={user?.email ?? t('common.account')} />
+                <div className="px-4 py-3">
+                  <button
+                    className="muxvia-app-secondary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                    type="button"
+                    onClick={onRefresh}
+                    disabled={loading}
+                  >
+                    <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                    {t('common.refresh')}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {!nativeCloudLogin && <div className="px-4 py-3">
+                  <label className="block text-sm font-medium text-zinc-500">
+                    {t('settings.emailOrUsername')}
+                    <input
+                      className="mt-2 h-11 w-full border border-[var(--muxvia-app-line)] bg-white px-3 text-sm text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
+                      value={login}
+                      onChange={(event) => onLoginChange(event.target.value)}
+                      autoComplete="username"
+                    />
+                  </label>
+                </div>}
+                {!nativeCloudLogin && <div className="border-t border-zinc-200 px-4 py-3">
+                  <label className="block text-sm font-medium text-zinc-500">
+                    {t('settings.password')}
+                    <input
+                      className="mt-2 h-11 w-full border border-[var(--muxvia-app-line)] bg-white px-3 text-sm text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
+                      value={password}
+                      onChange={(event) => onPasswordChange(event.target.value)}
+                      type="password"
+                      autoComplete="current-password"
+                    />
+                  </label>
+                </div>}
+                {nativeCloudLogin ? (
+                  <CloudActivationPanel
+                    activation={cloudActivation}
+                    canScan={canScanCloudActivation}
+                    loading={loading}
+                    onCancel={onCancelCloudActivation}
+                    onScan={onScanCloudActivation}
+                    onSubmitCode={onSubmitCloudActivationCode}
+                  />
+                ) : (
+                  <div className="border-t border-zinc-200 px-4 py-3">
+                    <button
+                      className="muxvia-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                      type="button"
+                      onClick={onSignIn}
+                      disabled={loading}
+                    >
+                      <LogIn className="h-4 w-4" />
+                      {t('common.signIn')}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </SettingsSection>
+
           {!nativeCloudLogin ? (
             <SettingsSection title={t('settings.connection')}>
               <SettingsRow
@@ -1430,72 +1498,6 @@ function SettingsView({
             </SettingsRow>
           </SettingsSection>
 
-          <SettingsSection title={t('common.account')}>
-            {signedIn ? (
-              <>
-                <SettingsRow label={t('common.signedIn')} value={user?.email ?? t('common.account')} />
-                <div className="px-4 py-3">
-                  <button
-                    className="muxvia-app-secondary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-                    type="button"
-                    onClick={onRefresh}
-                    disabled={loading}
-                  >
-                    <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                    {t('common.refresh')}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                {!nativeCloudLogin && <div className="px-4 py-3">
-                  <label className="block text-sm font-medium text-zinc-500">
-                    {t('settings.emailOrUsername')}
-                    <input
-                      className="mt-2 h-11 w-full border border-[var(--muxvia-app-line)] bg-white px-3 text-sm text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
-                      value={login}
-                      onChange={(event) => onLoginChange(event.target.value)}
-                      autoComplete="username"
-                    />
-                  </label>
-                </div>}
-                {!nativeCloudLogin && <div className="border-t border-zinc-200 px-4 py-3">
-                  <label className="block text-sm font-medium text-zinc-500">
-                    {t('settings.password')}
-                    <input
-                      className="mt-2 h-11 w-full border border-[var(--muxvia-app-line)] bg-white px-3 text-sm text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
-                      value={password}
-                      onChange={(event) => onPasswordChange(event.target.value)}
-                      type="password"
-                      autoComplete="current-password"
-                    />
-                  </label>
-                </div>}
-                {nativeCloudLogin ? (
-                  <CloudActivationPanel
-                    activation={cloudActivation}
-                    canScan={canScanCloudActivation}
-                    loading={loading}
-                    onCancel={onCancelCloudActivation}
-                    onScan={onScanCloudActivation}
-                    onSubmitCode={onSubmitCloudActivationCode}
-                  />
-                ) : (
-                  <div className="border-t border-zinc-200 px-4 py-3">
-                    <button
-                      className="muxvia-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-                      type="button"
-                      onClick={onSignIn}
-                      disabled={loading}
-                    >
-                      <LogIn className="h-4 w-4" />
-                      {t('common.signIn')}
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-          </SettingsSection>
         </div>
       </div>
     </section>
@@ -2288,6 +2290,13 @@ function availablePathLabel(machine: DisplayMachine, t: TFunction): string {
   }
   if (machine.accessClass === 'cloud') return t('machines.path.cloudAvailable')
   return t('machines.path.localAvailable')
+}
+
+function userFacingMachineName(machineId: string, name: string, hostname: string | undefined, t: TFunction): string {
+  const candidate = name.trim()
+  if (candidate !== '' && candidate !== machineId) return candidate
+  const host = hostname?.trim()
+  return host || t('machines.daemonHost')
 }
 
 function terminalCountLabel(count: number | undefined, t: TFunction): string {
