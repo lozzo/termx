@@ -180,12 +180,6 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	operatorToken := base64.RawURLEncoding.EncodeToString(operatorTokenBytes)
-	enrollmentBytes := make([]byte, 24)
-	if _, err := rand.Read(enrollmentBytes); err != nil {
-		return err
-	}
-	enrollmentCode := base64.RawURLEncoding.EncodeToString(enrollmentBytes)
-	clear(enrollmentBytes)
 	devices := []*cloudpb.CloudDevicePolicy{
 		{AccountId: account.GetAccountId(), DeviceId: "client-dev-local", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: account.GetAuthRevision()},
 		{AccountId: account.GetAccountId(), DeviceId: "client-dev-secondary", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: account.GetAuthRevision()},
@@ -208,7 +202,7 @@ func run(ctx context.Context, args []string) error {
 		edgeKeys[hubID] = hubPrivate
 		relayKeys[hubID] = relayPrivate
 	}
-	controllerConfig := controller.Config{PostgresDSN: controllerPostgresDSN, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Devices: devices, Assignments: assignments, DevelopmentEnrollmentCode: enrollmentCode, DevelopmentEnrollmentAccountID: account.GetAccountId(), DevelopmentEnrollmentHubID: "hub-edge-a", DevelopmentMobileHubID: "hub-edge-a", DevelopmentMobileHubURL: "http://127.0.0.1:41002", DevelopmentMobileHubRegion: "local-1", OperatorID: "development-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes), WebStaticDir: webStaticDir}
+	controllerConfig := controller.Config{PostgresDSN: controllerPostgresDSN, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Devices: devices, Assignments: assignments, DevelopmentMobileHubID: "hub-edge-a", DevelopmentMobileHubURL: "http://127.0.0.1:41002", DevelopmentMobileHubRegion: "local-1", OperatorID: "development-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes), WebStaticDir: webStaticDir}
 	if *faultHarness {
 		controllerConfig.PublicListen, err = reserveTCPAddress()
 		if err != nil {
@@ -309,7 +303,7 @@ func run(ctx context.Context, args []string) error {
 	if primaryEdge.HubID == "" {
 		return fmt.Errorf("development primary Edge did not start")
 	}
-	if err := writeJSONFile(companionManifestPath, httpapi.Manifest{Version: httpapi.ManifestVersion, Profile: httpapi.ProfileDevLocal, ControlPlaneURL: controllerRuntime.PublicURL, HubURL: primaryEdge.HubURL, RelayURL: primaryEdge.RelayURL, HubID: primaryEdge.HubID, Region: "local-1", AccountLabel: account.GetDisplayName(), EnrollmentCode: enrollmentCode, StartedAtRFC3339: now.Format(time.RFC3339)}); err != nil {
+	if err := writeJSONFile(companionManifestPath, httpapi.Manifest{Version: httpapi.ManifestVersion, Profile: httpapi.ProfileDevLocal, ControlPlaneURL: controllerRuntime.PublicURL, HubURL: primaryEdge.HubURL, RelayURL: primaryEdge.RelayURL, HubID: primaryEdge.HubID, Region: "local-1", AccountLabel: account.GetDisplayName(), StartedAtRFC3339: now.Format(time.RFC3339)}); err != nil {
 		return err
 	}
 	manifest := supervisorManifest{Version: 1, StartedAt: now.Format(time.RFC3339Nano), Controller: controllerRuntime, Edges: edgeManifests, CompanionManifestPath: companionManifestPath, CredentialsPath: credentialsPath}

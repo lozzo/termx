@@ -43,7 +43,6 @@ type deploymentCredentials struct {
 	OperatorAccessToken      string `json:"operator_access_token"`
 	BootstrapAccountEmail    string `json:"bootstrap_account_email"`
 	BootstrapAccountPassword string `json:"bootstrap_account_password"`
-	DaemonEnrollmentCode     string `json:"daemon_enrollment_code"`
 	PrimaryHubURL            string `json:"primary_hub_url"`
 	SecondaryHubURL          string `json:"secondary_hub_url"`
 	CredentialNotAfter       string `json:"credential_not_after"`
@@ -160,10 +159,6 @@ func generate(ctx context.Context, value options, deploymentDSN string) error {
 	if err != nil {
 		return err
 	}
-	enrollmentCode, err := randomValue("enroll", 24)
-	if err != nil {
-		return err
-	}
 	accountPassword, err := randomValue("", 24)
 	if err != nil {
 		return err
@@ -190,7 +185,6 @@ func generate(ctx context.Context, value options, deploymentDSN string) error {
 	if err != nil || registered.GetSession().GetAccount().GetAccountId() == "" {
 		return fmt.Errorf("seed bootstrap account: %w", err)
 	}
-	accountID := registered.GetSession().GetAccount().GetAccountId()
 
 	type edgeMaterial struct {
 		config     edge.Config
@@ -236,7 +230,6 @@ func generate(ctx context.Context, value options, deploymentDSN string) error {
 		CredentialNotBeforeUnixMillis: notBefore.UnixMilli(), CredentialNotAfterUnixMillis: notAfter.UnixMilli(),
 		DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate),
 		Deployments: []controller.DeploymentConfig{primary.deployment, secondary.deployment}, EnableTestPaymentProvider: true,
-		DevelopmentEnrollmentCode: enrollmentCode, DevelopmentEnrollmentAccountID: accountID, DevelopmentEnrollmentHubID: primary.deployment.Metadata.GetHubId(),
 		DevelopmentMobileHubID: primary.deployment.Metadata.GetHubId(), DevelopmentMobileHubURL: value.primaryHubURL, DevelopmentMobileHubRegion: primary.deployment.Metadata.GetRegion(),
 		OperatorID: "bootstrap-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes),
 		SecureCookie: true, WebStaticDir: "/opt/muxvia/web",
@@ -248,7 +241,7 @@ func generate(ctx context.Context, value options, deploymentDSN string) error {
 		"edge-secondary-config.json": secondary.config,
 		"credentials.json": deploymentCredentials{
 			PublicURL: value.publicURL, OperatorURL: value.operatorURL, OperatorID: "bootstrap-admin", OperatorAccessToken: operatorToken,
-			BootstrapAccountEmail: value.bootstrapEmail, BootstrapAccountPassword: accountPassword, DaemonEnrollmentCode: enrollmentCode,
+			BootstrapAccountEmail: value.bootstrapEmail, BootstrapAccountPassword: accountPassword,
 			PrimaryHubURL: value.primaryHubURL, SecondaryHubURL: value.secondaryHubURL, CredentialNotAfter: notAfter.Format(time.RFC3339),
 		},
 		"companion-manifest.json": httpapi.Manifest{
@@ -256,7 +249,7 @@ func generate(ctx context.Context, value options, deploymentDSN string) error {
 			ControlPlaneURL: value.publicURL, HubURL: value.primaryHubURL,
 			RelayURL: "turn:" + value.primaryPublicIP + ":41003?transport=udp",
 			HubID:    primary.deployment.Metadata.GetHubId(), Region: primary.deployment.Metadata.GetRegion(),
-			AccountLabel: value.bootstrapEmail, EnrollmentCode: enrollmentCode, StartedAtRFC3339: now.Format(time.RFC3339),
+			AccountLabel: value.bootstrapEmail, StartedAtRFC3339: now.Format(time.RFC3339),
 		},
 	}
 	for name, asset := range assets {

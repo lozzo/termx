@@ -623,7 +623,9 @@ export function RemoteControlApp({
   }, [dropMachineRuntime, externalPairingAdapter, machines, selectedMachine, storage, user?.id])
 
   const pairScannedValue = useCallback(async (rawValue: string) => {
-    if (rawValue.trim().startsWith('muxvia-cloud-activate:v1:') && cloudAccountAdapter) {
+    const trimmedValue = rawValue.trim()
+    const isCloudActivation = trimmedValue.startsWith('muxvia-cloud-activate:v1:') || /^MXA(?:-[0-9A-HJKMNP-TV-Z]{4}){5}-[0-9A-HJKMNP-TV-Z]{6}$/i.test(trimmedValue)
+    if (isCloudActivation && cloudAccountAdapter) {
       setPairing(true)
       setScanFlowState('pairing')
       setError(null)
@@ -808,6 +810,7 @@ export function RemoteControlApp({
           onRefresh={() => { hapticImpact(); void refreshMachines() }}
           onSignIn={() => { hapticImpact(); void submitLogin() }}
           onScanCloudActivation={() => { hapticImpact(); void scanCloudActivation() }}
+          onSubmitCloudActivationCode={(code) => { hapticImpact(); void pairScannedValue(code) }}
           onCancelCloudActivation={() => { hapticSelection(); void cancelCloudActivation() }}
           onSignOut={() => { hapticImpact(); void signOut() }}
           nativeCloudLogin={Boolean(cloudAccountAdapter)}
@@ -1165,6 +1168,7 @@ function SettingsView({
   onPasswordChange,
   onRefresh,
   onScanCloudActivation,
+  onSubmitCloudActivationCode,
   onSignIn,
   onSignOut,
   onTerminalSettingsChange,
@@ -1187,6 +1191,7 @@ function SettingsView({
   onPasswordChange: (value: string) => void
   onRefresh: () => void
   onScanCloudActivation: () => void
+  onSubmitCloudActivationCode: (code: string) => void
   onSignIn: () => void
   onSignOut: () => void
   onTerminalSettingsChange: (patch: Partial<TerminalSettings>) => void
@@ -1413,6 +1418,7 @@ function SettingsView({
                     loading={loading}
                     onCancel={onCancelCloudActivation}
                     onScan={onScanCloudActivation}
+                    onSubmitCode={onSubmitCloudActivationCode}
                   />
                 ) : (
                   <div className="border-t border-zinc-200 px-4 py-3">
@@ -1442,14 +1448,17 @@ function CloudActivationPanel({
   loading,
   onCancel,
   onScan,
+  onSubmitCode,
 }: {
   activation: { userCode: string; expiresAtUnix: number } | null
   canScan: boolean
   loading: boolean
   onCancel: () => void
   onScan: () => void
+  onSubmitCode: (code: string) => void
 }) {
   const [now, setNow] = useState(() => Date.now())
+  const [code, setCode] = useState('')
   useEffect(() => {
     if (!activation) return
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
@@ -1480,7 +1489,7 @@ function CloudActivationPanel({
 
   return (
     <div className="border-t border-zinc-200 px-4 py-4">
-      <p className="mb-4 text-sm leading-6 text-zinc-500">Sign in to Muxvia Cloud on the web, create a phone activation QR code, then scan it here.</p>
+      <p className="mb-4 text-sm leading-6 text-zinc-500">Create a phone login code on the Muxvia web account page, then scan the QR code or enter the same code below.</p>
       {canScan ? (
         <button
           className="muxvia-app-primary-button h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
@@ -1492,6 +1501,27 @@ function CloudActivationPanel({
           Scan QR from web
         </button>
       ) : <p className="text-sm text-zinc-500">QR scanning is unavailable on this platform.</p>}
+      <label className="mt-4 block text-xs font-semibold text-zinc-500">
+        Login code
+        <input
+          className="mt-2 h-11 w-full border border-[var(--muxvia-app-line)] bg-white px-3 font-mono text-sm uppercase text-zinc-950 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
+          value={code}
+          onChange={(event) => setCode(event.target.value.toUpperCase())}
+          placeholder="MXA-XXXX-XXXX-XXXX-XXXX-XXXX-XXXXXX"
+          autoCapitalize="characters"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+      </label>
+      <button
+        className="muxvia-app-secondary-button mt-3 h-11 w-full gap-2 px-3 text-sm font-semibold disabled:opacity-50"
+        type="button"
+        onClick={() => onSubmitCode(code.trim())}
+        disabled={loading || code.trim() === ''}
+      >
+        <Keyboard className="h-4 w-4" />
+        Use login code
+      </button>
     </div>
   )
 }

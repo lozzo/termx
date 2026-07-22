@@ -224,7 +224,7 @@ CLOUD002 建立名为 `dev-local` 的显式 staging 剖面：
 - `make cloud-dev` 是唯一启动入口，前台运行并响应 SIGINT/SIGTERM。
 - 默认只绑定 loopback；Control Plane 和 Hub 使用不同 HTTP listener，Relay 使用独立 UDP TURN listener、短期凭据和计量边界。
 - 一个 dev supervisor 可以在同一进程托管多个 listener；当前不为了生产部署提前引入容器编排或多进程 supervisor。
-- 每次启动生成短期 admission/lease signing key、固定 dev account、一次性 enrollment code 和运行 manifest。
+- 每次启动生成短期 admission/lease signing key和运行 manifest；daemon enrollment code 只能由已登录 Web 账号实时创建，不进入启动配置或 manifest。
 - 运行 manifest 写入 `.artifacts/cloud-dev/`，包含地址、公开 key 和 dev profile，不包含 CapabilityGrant、DeviceIdentity private key 或长期生产 secret。
 - Companion 只有收到显式 dev config 才连接该服务；默认 release/无配置路径继续装配 fail-closed adapter。
 - dev account、内存 store、固定 entitlement 和 loopback 明文仅允许出现在显式 dev profile。任何 production channel 发现 dev flag、固定账号或测试 key 必须拒绝启动。

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"container/list"
 	"context"
 	"crypto/rand"
 	"encoding/base32"
@@ -24,9 +25,9 @@ import (
 )
 
 const (
-	mobileActivationTTL = 10 * time.Minute
-	mobileAccessTTL     = 30 * time.Minute
-	mobileCodeAlphabet  = "23456789ABCDEFGHJKMNPQRSTVWXYZ"
+	mobileActivationTTL  = 10 * time.Minute
+	mobileAccessTTL      = 30 * time.Minute
+	maxMobileActivations = 1_000_000
 )
 
 var (
@@ -43,14 +44,16 @@ type mobileActivationFlow struct {
 	claimed        bool
 	approved       bool
 	expiresAt      time.Time
+	order          *list.Element
 }
 
 // mobileActivationService 是 Controller 内 Web 扫码登录的短时真值。
 // Web 只持有 user code，App 认领后才得到 flow ID；批准、设备授权和 edge credential 签发均在这里完成。
 type mobileActivationService struct {
 	mu                 sync.Mutex
-	flows              map[string]mobileActivationFlow
+	flows              map[string]*mobileActivationFlow
 	codes              map[string]string
+	expiry             *list.List
 	commerce           *cloudcommerce.Service
 	topology           *cloudtopology.Service
 	registry           *hubregistry.Registry
@@ -72,7 +75,7 @@ func newMobileActivationService(commerce *cloudcommerce.Service, topology *cloud
 		return nil, errMobileActivationUnavailable
 	}
 	return &mobileActivationService{
-		flows: make(map[string]mobileActivationFlow), codes: make(map[string]string),
+		flows: make(map[string]*mobileActivationFlow), codes: make(map[string]string), expiry: list.New(),
 		commerce: commerce, topology: topology, registry: registry, edgeIssuer: issuer, hubID: hubID, hubURL: hubURL, hubRegion: hubRegion,
 		daemonNotAfter: daemonNotAfter.UTC(), now: now, random: rand.Reader, notifyPolicyChange: notify,
 	}, nil
@@ -95,11 +98,15 @@ func (service *mobileActivationService) CreateMobileActivation(ctx context.Conte
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	service.cleanupLocked(now)
+	if len(service.flows) >= maxMobileActivations {
+		return nil, errMobileActivationUnavailable
+	}
 	code, err := service.newCodeLocked()
 	if err != nil {
 		return nil, err
 	}
-	flow := mobileActivationFlow{flowID: flowID, userCode: code, ownerAccountID: accountID, expiresAt: now.Add(mobileActivationTTL)}
+	flow := &mobileActivationFlow{flowID: flowID, userCode: code, ownerAccountID: accountID, expiresAt: now.Add(mobileActivationTTL)}
+	flow.order = service.expiry.PushBack(flow)
 	service.flows[flowID], service.codes[code] = flow, flowID
 	return mobileProjection(flow), nil
 }
@@ -126,7 +133,6 @@ func (service *mobileActivationService) ApproveMobileActivation(_ context.Contex
 		return nil, cloudcommerce.ErrNotFound
 	}
 	flow.approved = true
-	service.flows[flow.flowID] = flow
 	return &cloudpb.MobileActivationApproveResponse{Approved: true}, nil
 }
 
@@ -149,7 +155,6 @@ func (service *mobileActivationService) claim(request *cloudpb.ClaimMobileActiva
 	flow.claimed = true
 	flow.clientDeviceID = deviceID
 	flow.clientMetadata = proto.Clone(request.GetClientMetadata()).(*cloudpb.DeviceMetadata)
-	service.flows[flow.flowID] = flow
 	return &cloudpb.LoginFlow{FlowId: flow.flowID, UserCode: flow.userCode, ExpiresAtUnix: uint64(flow.expiresAt.Unix()), PollIntervalMillis: 1000}, nil
 }
 
@@ -162,10 +167,11 @@ func (service *mobileActivationService) complete(ctx context.Context, request *c
 	flow, ok := service.flows[request.GetFlowId()]
 	if ok && flow.claimed && flow.approved {
 		// flow ID 是 App 兑换 session 的单次 secret；先消费再执行外部写入，禁止并发重复签发。
-		delete(service.flows, flow.flowID)
-		delete(service.codes, flow.userCode)
+		service.removeMobileFlowLocked(flow)
 	}
+	flowCopy := cloneMobileActivationFlow(flow)
 	service.mu.Unlock()
+	flow = flowCopy
 	if ok && flow.claimed && !flow.approved {
 		return httpapi.SessionWire{}, errMobileActivationPending
 	}
@@ -327,7 +333,7 @@ func (service *mobileActivationService) registerHTTP(mux *http.ServeMux) {
 	})
 }
 
-func mobileProjection(flow mobileActivationFlow) *cloudpb.MobileActivationProjection {
+func mobileProjection(flow *mobileActivationFlow) *cloudpb.MobileActivationProjection {
 	state := cloudpb.MobileActivationState_MOBILE_ACTIVATION_STATE_WAITING_FOR_DEVICE
 	if flow.claimed {
 		state = cloudpb.MobileActivationState_MOBILE_ACTIVATION_STATE_WAITING_FOR_APPROVAL
@@ -342,33 +348,53 @@ func mobileProjection(flow mobileActivationFlow) *cloudpb.MobileActivationProjec
 	return projection
 }
 
-func (service *mobileActivationService) flowByCodeLocked(raw string) (mobileActivationFlow, bool) {
-	flowID, ok := service.codes[strings.ToUpper(strings.TrimSpace(raw))]
+func (service *mobileActivationService) flowByCodeLocked(raw string) (*mobileActivationFlow, bool) {
+	code, err := normalizeOneTimeCode(raw, "MXA")
+	if err != nil {
+		return nil, false
+	}
+	flowID, ok := service.codes[code]
 	flow, exists := service.flows[flowID]
 	return flow, ok && exists
 }
 
 func (service *mobileActivationService) cleanupLocked(now time.Time) {
-	for id, flow := range service.flows {
-		if !now.Before(flow.expiresAt) {
-			delete(service.flows, id)
-			delete(service.codes, flow.userCode)
+	for service.expiry.Len() > 0 {
+		flow := service.expiry.Front().Value.(*mobileActivationFlow)
+		if now.Before(flow.expiresAt) {
+			return
 		}
+		service.removeMobileFlowLocked(flow)
 	}
+}
+
+func (service *mobileActivationService) removeMobileFlowLocked(flow *mobileActivationFlow) {
+	delete(service.flows, flow.flowID)
+	delete(service.codes, flow.userCode)
+	if flow.order != nil {
+		service.expiry.Remove(flow.order)
+		flow.order = nil
+	}
+}
+
+func cloneMobileActivationFlow(flow *mobileActivationFlow) *mobileActivationFlow {
+	if flow == nil {
+		return nil
+	}
+	clone := *flow
+	clone.order = nil
+	if flow.clientMetadata != nil {
+		clone.clientMetadata = proto.Clone(flow.clientMetadata).(*cloudpb.DeviceMetadata)
+	}
+	return &clone
 }
 
 func (service *mobileActivationService) newCodeLocked() (string, error) {
 	for range 16 {
-		data := make([]byte, 10)
-		if _, err := io.ReadFull(service.random, data); err != nil {
+		candidate, err := newOneTimeCode(service.random, "MXA")
+		if err != nil {
 			return "", err
 		}
-		codeBytes := make([]byte, len(data))
-		for index, value := range data {
-			codeBytes[index] = mobileCodeAlphabet[int(value)%len(mobileCodeAlphabet)]
-		}
-		code := string(codeBytes)
-		candidate := code[:5] + "-" + code[5:]
 		if _, exists := service.codes[candidate]; !exists {
 			return candidate, nil
 		}

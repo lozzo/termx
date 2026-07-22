@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -37,15 +38,28 @@ func TestControllerEnrollmentBindsControlKeyAndPersistsDaemonAuthority(t *testin
 	runtime, err := Start(Config{
 		PostgresDSN: postgrestest.DSN(t, databaseKey), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath,
 		ProjectionKeyID: "controller-key", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-key", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate),
-		Deployments:               []DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic)}},
-		DevelopmentEnrollmentCode: "one-time-code", DevelopmentEnrollmentAccountID: account.GetAccountId(), DevelopmentEnrollmentHubID: "hub-1",
+		Deployments: []DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic)}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer runtime.Close(context.Background())
+	activation, err := runtime.enrollment.CreateDaemonEnrollment(context.Background(), account.GetAccountId(), account.GetUserId())
+	if err != nil {
+		t.Fatal(err)
+	}
 	devicePublic, devicePrivate, _ := ed25519.GenerateKey(rand.Reader)
-	begin := &cloudpb.BeginDeviceEnrollmentRequest{OneTimeCode: "one-time-code", DevicePublicKey: devicePublic, Metadata: &cloudpb.DeviceMetadata{DisplayName: "Test daemon", Platform: "test/arm64", MuxviaVersion: "test"}}
+	begin := &cloudpb.BeginDeviceEnrollmentRequest{OneTimeCode: activation.GetUserCode(), DeviceId: "daemon-enrolled", DevicePublicKey: devicePublic, Metadata: &cloudpb.DeviceMetadata{DisplayName: "Test daemon", Platform: "test/arm64", MuxviaVersion: "test"}}
+	restarted, err := newEnrollmentService(enrollmentServiceConfig{
+		DefaultHubID: "hub-1", Commerce: runtime.enrollment.commerce, Topology: runtime.topology, Registry: runtime.registry, EdgeIssuer: runtime.enrollment.edgeIssuer,
+		ControlKeyID: "daemon-control-key", ControlPublicKey: daemonControlPublic, ControlNotBefore: runtime.enrollment.controlNotBefore, ControlNotAfter: runtime.enrollment.controlNotAfter, Now: time.Now, NotifyPolicyChange: func(string) {},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := restarted.begin(begin); !errors.Is(err, errEnrollmentDenied) {
+		t.Fatalf("Controller restart retained pending enrollment flow: %v", err)
+	}
 	challenge := &cloudpb.DeviceEnrollmentChallenge{}
 	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/begin", begin, challenge, http.StatusOK)
 	signedAt := time.Now().UTC()
@@ -54,6 +68,10 @@ func TestControllerEnrollmentBindsControlKeyAndPersistsDaemonAuthority(t *testin
 		t.Fatal(err)
 	}
 	complete := &cloudpb.CompleteDeviceEnrollmentRequest{FlowId: challenge.GetFlowId(), Proof: &cloudpb.DeviceProof{DeviceId: "daemon-enrolled", DevicePublicKey: devicePublic, ChallengeId: challenge.GetChallengeId(), Signature: ed25519.Sign(devicePrivate, signingBytes), SignedAtUnixNano: signedAt.UnixNano()}}
+	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/complete", complete, &cloudpb.CloudError{}, http.StatusConflict)
+	if _, err := runtime.enrollment.ApproveDaemonEnrollment(context.Background(), account.GetAccountId(), activation.GetUserCode()); err != nil {
+		t.Fatal(err)
+	}
 	result := &cloudpb.DeviceEnrollmentServiceSession{}
 	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/complete", complete, result, http.StatusOK)
 	if result.GetSession().GetAccountId() != account.GetAccountId() || result.GetSession().GetDeviceId() != "daemon-enrolled" || len(result.GetRefreshToken()) < 32 || result.GetRefreshExpiresAtUnixMillis() <= time.Now().UnixMilli() || !bytes.Equal(result.GetControlEnrollment().GetVerificationKeys()[0].GetPublicKey(), daemonControlPublic) {

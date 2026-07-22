@@ -96,7 +96,6 @@ type Manifest struct {
 	HubID            string `json:"hub_id"`
 	Region           string `json:"region"`
 	AccountLabel     string `json:"account_label"`
-	EnrollmentCode   string `json:"enrollment_code"`
 	StartedAtRFC3339 string `json:"started_at"`
 }
 
@@ -122,7 +121,7 @@ func ParseManifest(data []byte) (Manifest, error) {
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return Manifest{}, fmt.Errorf("dev cloud manifest has trailing data")
 	}
-	if manifest.Version != ManifestVersion || manifest.Profile != ProfileDevLocal && manifest.Profile != ProfileStagingSSH && manifest.Profile != ProfileStagingPublicHTTP && manifest.Profile != ProfileStagingPublicHTTPS || manifest.HubID == "" || manifest.Region == "" || manifest.AccountLabel == "" || manifest.EnrollmentCode == "" {
+	if manifest.Version != ManifestVersion || manifest.Profile != ProfileDevLocal && manifest.Profile != ProfileStagingSSH && manifest.Profile != ProfileStagingPublicHTTP && manifest.Profile != ProfileStagingPublicHTTPS || manifest.HubID == "" || manifest.Region == "" || manifest.AccountLabel == "" {
 		return Manifest{}, fmt.Errorf("invalid dev cloud manifest metadata")
 	}
 	allowPublicHTTP := manifest.Profile == ProfileStagingPublicHTTP

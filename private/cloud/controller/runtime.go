@@ -59,25 +59,22 @@ type Config struct {
 	ProjectionPrivateKeyBase64 string `json:"projection_private_key_base64"`
 	// CredentialNotBeforeUnixMillis 和 CredentialNotAfterUnixMillis 是部署密钥的绝对验证窗口，
 	// Controller 与全部 Edge 必须使用相同值，避免各进程按启动时间建立第二份 key validity 真值。
-	CredentialNotBeforeUnixMillis  int64                        `json:"credential_not_before_unix_millis"`
-	CredentialNotAfterUnixMillis   int64                        `json:"credential_not_after_unix_millis"`
-	DaemonControlKeyID             string                       `json:"daemon_control_key_id"`
-	DaemonControlPrivateKeyBase64  string                       `json:"daemon_control_private_key_base64"`
-	Deployments                    []DeploymentConfig           `json:"deployments"`
-	Devices                        []*cloudpb.CloudDevicePolicy `json:"devices"`
-	Assignments                    []*cloudpb.HubAssignment     `json:"assignments"`
-	EnableTestPaymentProvider      bool                         `json:"enable_test_payment_provider"`
-	DevelopmentEnrollmentCode      string                       `json:"development_enrollment_code"`
-	DevelopmentEnrollmentAccountID string                       `json:"development_enrollment_account_id"`
-	DevelopmentEnrollmentHubID     string                       `json:"development_enrollment_hub_id"`
-	DevelopmentMobileHubID         string                       `json:"development_mobile_hub_id"`
-	DevelopmentMobileHubURL        string                       `json:"development_mobile_hub_url"`
-	DevelopmentMobileHubRegion     string                       `json:"development_mobile_hub_region"`
-	OperatorID                     string                       `json:"operator_id"`
-	OperatorRole                   string                       `json:"operator_role"`
-	OperatorAccessTokenBase64      string                       `json:"operator_access_token_base64"`
-	SecureCookie                   bool                         `json:"secure_cookie"`
-	WebStaticDir                   string                       `json:"web_static_dir"`
+	CredentialNotBeforeUnixMillis int64                        `json:"credential_not_before_unix_millis"`
+	CredentialNotAfterUnixMillis  int64                        `json:"credential_not_after_unix_millis"`
+	DaemonControlKeyID            string                       `json:"daemon_control_key_id"`
+	DaemonControlPrivateKeyBase64 string                       `json:"daemon_control_private_key_base64"`
+	Deployments                   []DeploymentConfig           `json:"deployments"`
+	Devices                       []*cloudpb.CloudDevicePolicy `json:"devices"`
+	Assignments                   []*cloudpb.HubAssignment     `json:"assignments"`
+	EnableTestPaymentProvider     bool                         `json:"enable_test_payment_provider"`
+	DevelopmentMobileHubID        string                       `json:"development_mobile_hub_id"`
+	DevelopmentMobileHubURL       string                       `json:"development_mobile_hub_url"`
+	DevelopmentMobileHubRegion    string                       `json:"development_mobile_hub_region"`
+	OperatorID                    string                       `json:"operator_id"`
+	OperatorRole                  string                       `json:"operator_role"`
+	OperatorAccessTokenBase64     string                       `json:"operator_access_token_base64"`
+	SecureCookie                  bool                         `json:"secure_cookie"`
+	WebStaticDir                  string                       `json:"web_static_dir"`
 }
 
 // Manifest 是 supervisor 和 E2E harness 使用的非秘密 Controller 进程描述。
@@ -100,6 +97,7 @@ type Runtime struct {
 	outbox         *commandoutbox.Service
 	planner        *commandoutbox.Planner
 	dispatcher     *commandoutbox.Dispatcher
+	enrollment     *enrollmentService
 	manifest       Manifest
 	listeners      []net.Listener
 	servers        []*http.Server
@@ -137,9 +135,6 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	}
 	if refreshInterval <= 0 || refreshInterval >= projectionTTL {
 		return nil, fmt.Errorf("Controller projection refresh interval is invalid")
-	}
-	if (config.DevelopmentEnrollmentCode == "") != (config.DevelopmentEnrollmentAccountID == "") {
-		return nil, fmt.Errorf("development enrollment code and account must be configured together")
 	}
 	mobileDirectoryConfigured := config.DevelopmentMobileHubID != "" || config.DevelopmentMobileHubURL != "" || config.DevelopmentMobileHubRegion != ""
 	if mobileDirectoryConfigured && (config.DevelopmentMobileHubID == "" || config.DevelopmentMobileHubURL == "" || config.DevelopmentMobileHubRegion == "") {
@@ -268,26 +263,14 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	var enrollment *enrollmentService
-	if config.DevelopmentEnrollmentCode != "" {
-		hubID := config.DevelopmentEnrollmentHubID
-		if hubID == "" {
-			hubID = config.Deployments[0].Metadata.GetHubId()
-		}
-		if _, err := registry.Deployment(context.Background(), hubID); err != nil {
-			_ = store.Close()
-			return nil, fmt.Errorf("development enrollment Hub is invalid: %w", err)
-		}
-		enrollment, err = newEnrollmentService(enrollmentServiceConfig{
-			Code: config.DevelopmentEnrollmentCode, AccountID: config.DevelopmentEnrollmentAccountID, HubID: hubID,
-			Commerce: commerceService, Topology: topologyService, Registry: registry, EdgeIssuer: edgeIssuer,
-			ControlKeyID: config.DaemonControlKeyID, ControlPublicKey: daemonControlKey.Public().(ed25519.PublicKey),
-			ControlNotBefore: credentialNotBefore, ControlNotAfter: credentialNotAfter, Now: time.Now, NotifyPolicyChange: notifyPolicyChange,
-		})
-		if err != nil {
-			_ = store.Close()
-			return nil, err
-		}
+	enrollment, err := newEnrollmentService(enrollmentServiceConfig{
+		DefaultHubID: config.Deployments[0].Metadata.GetHubId(), Commerce: commerceService, Topology: topologyService, Registry: registry, EdgeIssuer: edgeIssuer,
+		ControlKeyID: config.DaemonControlKeyID, ControlPublicKey: daemonControlKey.Public().(ed25519.PublicKey),
+		ControlNotBefore: credentialNotBefore, ControlNotAfter: credentialNotAfter, Now: time.Now, NotifyPolicyChange: notifyPolicyChange,
+	})
+	if err != nil {
+		_ = store.Close()
+		return nil, err
 	}
 	dispatcher, err := commandoutbox.NewDispatcher(outboxService, publisher, relayPublisher, topologyService, config.DaemonControlKeyID, daemonControlKey)
 	if err != nil {
@@ -374,12 +357,15 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	daemonEnrollmentHandler, err := webcontroller.DaemonEnrollmentAPIHandler(webcontroller.DaemonEnrollmentAPIConfig{Commerce: commerceService, Service: enrollment})
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	publicMux := http.NewServeMux()
 	publicMux.HandleFunc("/healthz", healthHandler)
 	mobileActivation.registerHTTP(publicMux)
-	if enrollment != nil {
-		enrollment.registerHTTP(publicMux)
-	}
+	enrollment.registerHTTP(publicMux)
 	publicMux.HandleFunc("/api/v1/catalog", func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet {
 			http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
@@ -391,6 +377,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	})
 	publicMux.Handle("/api/v1/management/", managementHandler)
 	publicMux.Handle("/api/v1/mobile-activations/", mobileActivationHandler)
+	publicMux.Handle("/api/v1/daemon-enrollments/", daemonEnrollmentHandler)
 	publicMux.Handle("/api/v1/", productHandler)
 	operatorMux := http.NewServeMux()
 	operatorMux.HandleFunc("/healthz", healthHandler)
@@ -449,7 +436,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	runtime = &Runtime{store: store, publisher: publisher, relayPublisher: relayPublisher, registry: registry, topology: topologyService, outbox: outboxService, planner: planner, dispatcher: dispatcher, listeners: []net.Listener{publicListener, internalListener, operatorListener}, errors: make(chan error, 3), policyChanges: policyChanges, policyDone: policyDone}
+	runtime = &Runtime{store: store, publisher: publisher, relayPublisher: relayPublisher, registry: registry, topology: topologyService, outbox: outboxService, planner: planner, dispatcher: dispatcher, enrollment: enrollment, listeners: []net.Listener{publicListener, internalListener, operatorListener}, errors: make(chan error, 3), policyChanges: policyChanges, policyDone: policyDone}
 	runtime.servers = []*http.Server{{Handler: publicMux, ReadHeaderTimeout: 5 * time.Second}, {Handler: internalMux, ReadHeaderTimeout: 5 * time.Second}, {Handler: operatorMux, ReadHeaderTimeout: 5 * time.Second}}
 	for index := range runtime.servers {
 		server, listener := runtime.servers[index], runtime.listeners[index]

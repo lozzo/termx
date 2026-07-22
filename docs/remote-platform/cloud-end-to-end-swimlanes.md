@@ -124,10 +124,13 @@ sequenceDiagram
 
     U->>W: 生成一次性 enrollment code
     W->>CP: CreateEnrollment(account)
-    CP-->>W: 十分钟单次、分组 Base32 短码
-    U->>DC: muxvia cloud enroll CODE
-    DC->>CP: BeginEnrollment(code, public key, metadata)
+    CP-->>W: 十分钟单次、128-bit 分组 Base32 登录码
+    U->>DC: muxvia cloud node enroll CODE
+    DC->>CP: BeginEnrollment(code, device ID, public key, metadata)
     CP-->>DC: fresh challenge + flow ID
+    CP-->>W: 待确认 daemon metadata 与 device ID
+    U->>W: 核对并批准 daemon
+    W->>CP: ApproveEnrollment(code)
     DC-->>D: challenge
     D->>D: DeviceIdentity private key 签名
     D-->>DC: DeviceProof
@@ -139,7 +142,7 @@ sequenceDiagram
     CP-->>H: 后台设备授权投影
 ```
 
-同一账号重新生成注册码会删除尚未使用的旧 claim。已 revoked 的 daemon 仍可用原 DeviceIdentity 私钥证明重新 enrollment；目录以 public key 连续性为真值，先撤销旧 session/Presence，再恢复或迁移账号 ownership，不要求删除本地身份文件。
+短期 enrollment flow 只存在于单个 Controller 进程内，以 TTL 和容量上限约束；重启后 pending flow 全部失效，用户必须重新生成。已 revoked 的 daemon 仍可用原 DeviceIdentity 私钥证明重新 enrollment；目录以 public key 连续性为真值，先撤销旧 session/Presence，再恢复或迁移账号 ownership，不要求删除本地身份文件。
 
 enrollment 是低频 Control Plane 操作，保留在 Control Plane。注册完成后，Presence 重连只访问 Hub；device session 仅在低频 refresh 时访问 Control Plane。
 

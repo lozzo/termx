@@ -35,11 +35,11 @@ func TestMobileActivationRequiresWebApprovalAndIsSingleUse(t *testing.T) {
 	if activation.GetState() != cloudpb.MobileActivationState_MOBILE_ACTIVATION_STATE_WAITING_FOR_DEVICE || activation.GetQrPayload() != "muxvia-cloud-activate:v1:"+activation.GetUserCode() {
 		t.Fatalf("unexpected activation: %+v", activation)
 	}
-	if len(activation.GetUserCode()) != 11 || activation.GetUserCode()[5] != '-' {
-		t.Fatalf("activation code does not match the App 5-5 contract: %q", activation.GetUserCode())
+	if len(strings.ReplaceAll(activation.GetUserCode(), "-", "")) != 29 || !strings.HasPrefix(activation.GetUserCode(), "MXA-") {
+		t.Fatalf("activation code does not contain a 128-bit App locator: %q", activation.GetUserCode())
 	}
-	for _, value := range strings.ReplaceAll(activation.GetUserCode(), "-", "") {
-		if !strings.ContainsRune(mobileCodeAlphabet, value) {
+	for _, value := range strings.TrimPrefix(strings.ReplaceAll(activation.GetUserCode(), "-", ""), "MXA") {
+		if !strings.ContainsRune(oneTimeCodeAlphabet, value) {
 			t.Fatalf("activation code contains an ambiguous App-rejected character: %q", activation.GetUserCode())
 		}
 	}

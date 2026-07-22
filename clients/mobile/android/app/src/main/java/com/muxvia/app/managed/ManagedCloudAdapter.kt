@@ -56,7 +56,7 @@ interface ManagedCloudProtoAdapter {
 interface ManagedCloudAdapter : ManagedCloudProtoAdapter {
     /** beginLogin 创建由 Web 批准的短码 Flow；调用方不得自动打开浏览器。 */
     suspend fun beginLogin(metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow
-    /** claimLogin 用 Web 二维码中的短期 locator 认领 Flow，高熵 flow ID 只返回原生层。 */
+	/** claimLogin 用 Web 二维码或手工输入的登录码认领 Flow，高熵 flow ID 只返回原生层。 */
     suspend fun claimLogin(userCode: String, metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow
     /** completeLogin 仅在浏览器批准后持久化 edge session；pending 必须返回 retryable temporary。 */
     suspend fun completeLogin(flowId: String): ManagedCloudAccount

@@ -273,7 +273,7 @@ func seedCommandAccount(t *testing.T, databaseKey, catalogPath string, now time.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.ApplyPaymentEvent(context.Background(), &cloudpb.ApplyPaymentEventRequest{Event: &cloudpb.NormalizedPaymentEvent{ProviderEventId: "event-pro-upgrade", Provider: "test-provider", EventType: cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED, OrderId: checkout.GetOrder().GetOrderId(), AccountId: account.GetAccountId(), PlanId: "pro", PlanVersion: 1, ProviderReference: "provider-pro", OccurredAtUnixMillis: now.Add(time.Second).UnixMilli(), PaymentAttemptId: attempt.GetPaymentAttempt().GetPaymentAttemptId()}}); err != nil {
+	if _, err := service.ApplyPaymentEvent(context.Background(), &cloudpb.ApplyPaymentEventRequest{Event: &cloudpb.NormalizedPaymentEvent{ProviderEventId: "event-pro-upgrade", Provider: "test-provider", EventType: cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED, OrderId: checkout.GetOrder().GetOrderId(), AccountId: account.GetAccountId(), PlanId: checkout.GetOrder().GetPlanId(), PlanVersion: checkout.GetOrder().GetPlanVersion(), ProviderReference: "provider-pro", OccurredAtUnixMillis: now.Add(time.Second).UnixMilli(), PaymentAttemptId: attempt.GetPaymentAttempt().GetPaymentAttemptId()}}); err != nil {
 		t.Fatal(err)
 	}
 	return account

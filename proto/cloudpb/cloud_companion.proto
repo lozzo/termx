@@ -226,12 +226,49 @@ message CompleteLoginResponse {
   CloudSessionSummary session = 1;
 }
 
+enum DaemonEnrollmentState {
+  DAEMON_ENROLLMENT_STATE_UNSPECIFIED = 0;
+  DAEMON_ENROLLMENT_STATE_WAITING_FOR_DEVICE = 1;
+  DAEMON_ENROLLMENT_STATE_WAITING_FOR_APPROVAL = 2;
+  DAEMON_ENROLLMENT_STATE_APPROVED = 3;
+}
+
+// CreateDaemonEnrollmentRequest 由已登录 Web 账号创建短期 daemon enrollment flow。
+// 账号、actor 与目标 Hub 必须由 Controller 认证上下文决定，客户端不得提交这些 authority 字段。
+message CreateDaemonEnrollmentRequest {}
+
+// InspectDaemonEnrollmentRequest 只使用登录码查询同一账号拥有的 daemon enrollment 状态。
+message InspectDaemonEnrollmentRequest {
+  string user_code = 1;
+}
+
+// ApproveDaemonEnrollmentRequest 由已登录 Web 账号明确批准已提交身份的 daemon。
+message ApproveDaemonEnrollmentRequest {
+  string user_code = 1;
+}
+
+// DaemonEnrollmentProjection 是 Web 可见的非秘密 enrollment 投影。
+// Controller 只能持久化 user_code 摘要；projection 不得包含 flow_id、challenge、session 或 private key。
+message DaemonEnrollmentProjection {
+  string user_code = 1;
+  uint64 expires_at_unix = 2;
+  string hub_id = 3;
+  DaemonEnrollmentState state = 4;
+  DeviceMetadata daemon_metadata = 5;
+  string daemon_device_id = 6;
+}
+
+message ApproveDaemonEnrollmentResponse {
+  bool approved = 1;
+}
+
 // BeginDeviceEnrollmentRequest 提交一次性 enrollment code 与公开设备信息。
 // DeviceIdentity 私钥和 capability grant 不得进入该消息。
 message BeginDeviceEnrollmentRequest {
   string one_time_code = 1;
   bytes device_public_key = 2;
   DeviceMetadata metadata = 3;
+  string device_id = 4;
 }
 
 // DeviceEnrollmentChallenge 是公开 daemon 必须使用 DeviceIdentity 签名的短期挑战。

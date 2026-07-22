@@ -311,6 +311,7 @@ func v3CloudEnrollCommand() *cobra.Command {
 			hostname, _ := os.Hostname()
 			challenge, err := client.BeginDeviceEnrollment(cmd.Context(), &cloudpb.BeginDeviceEnrollmentRequest{
 				OneTimeCode: string(code), DevicePublicKey: append([]byte(nil), identity.PublicKey...),
+				DeviceId: identity.DeviceID,
 				Metadata: &cloudpb.DeviceMetadata{DisplayName: hostname, Hostname: hostname, Platform: runtime.GOOS + "/" + runtime.GOARCH, MuxviaVersion: muxviaBuildVersion, SignalingVersions: []uint32{cloudcompanion.ProtocolVersionMax}},
 			})
 			if err != nil {
@@ -325,11 +326,12 @@ func v3CloudEnrollCommand() *cobra.Command {
 				return err
 			}
 			signature := ed25519.Sign(identity.PrivateKey, signingBytes)
-			response, err := client.CompleteDeviceEnrollment(cmd.Context(), &cloudpb.CompleteDeviceEnrollmentRequest{
+			completeRequest := &cloudpb.CompleteDeviceEnrollmentRequest{
 				FlowId: challenge.GetFlowId(), Proof: &cloudpb.DeviceProof{
 					DeviceId: identity.DeviceID, DevicePublicKey: append([]byte(nil), identity.PublicKey...), ChallengeId: challenge.GetChallengeId(), Signature: signature, SignedAtUnixNano: signedAt.UnixNano(),
 				},
-			})
+			}
+			response, err := completeV3CloudEnrollment(cmd.Context(), client, challenge, completeRequest)
 			clear(signature)
 			if err != nil {
 				return actionableCloudEnrollmentError(err)
@@ -345,6 +347,34 @@ func v3CloudEnrollCommand() *cobra.Command {
 			fmt.Fprintln(cmd.OutOrStdout(), "Verify with `muxvia cloud node status`.")
 			return nil
 		},
+	}
+}
+
+func completeV3CloudEnrollment(ctx context.Context, client v3CloudClient, challenge *cloudpb.DeviceEnrollmentChallenge, request *cloudpb.CompleteDeviceEnrollmentRequest) (*cloudpb.CompleteDeviceEnrollmentResponse, error) {
+	expiresAt := time.Unix(int64(challenge.GetExpiresAtUnix()), 0)
+	if challenge.GetExpiresAtUnix() == 0 {
+		expiresAt = v3CloudNow().Add(10 * time.Minute)
+	}
+	const interval = time.Second
+	for {
+		response, err := client.CompleteDeviceEnrollment(ctx, request)
+		if err == nil {
+			return response, nil
+		}
+		var cloudErr *cloudcompanion.Error
+		if !errors.As(err, &cloudErr) || !cloudErr.Retryable || cloudErr.Code != cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY {
+			return nil, err
+		}
+		if !v3CloudNow().Add(interval).Before(expiresAt) {
+			return nil, fmt.Errorf("daemon enrollment approval expired")
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
 	}
 }
 

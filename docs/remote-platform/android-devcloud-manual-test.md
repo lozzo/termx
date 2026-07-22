@@ -227,14 +227,14 @@ adb shell monkey -p com.muxvia.app -c android.intent.category.LAUNCHER 1
 
 ## 10. CLOUD012 统一账号与节点归属验收
 
-使用公网 HTTP staging Official APK，从 App 设置页发起设备码登录。系统浏览器必须显示与 App 相同的 user code；注册或登录 Web 账号并批准后，App 只能取得该账号的 edge session，不得接收密码或浏览器 Cookie。随后使用同一账号签发的一次性 daemon enrollment code 注册 daemon，并从 App 导入该账号名下 pairing。
+使用公网 staging Official APK，在已登录 Web 账号页创建手机 activation。App 扫描二维码或直接输入网页显示的同一个 `MXA-...` 登录码；Web 显示手机 metadata 并批准后，App 只能取得该账号的 edge session，不得接收密码或浏览器 Cookie。随后在同一 Web 账号页创建 `MXD-...` daemon enrollment code，daemon 提交 DeviceIdentity public key、device ID 与 metadata，Web 核对批准后 CLI 才能完成 proof 和 session 签发，再从 App 导入该账号名下 pairing。
 
 成功标准：App 显示 Web 账号身份和该账号名下节点；terminal inventory 请求通过端到端 DataChannel 到达 daemon；direct 与显式 single Relay 分别显示真实 ICE candidate pair。只阻断手机到 Control Plane `41101/tcp` 后，两种模式的新连接仍由 Hub 完成；强停 App 后 Keystore Session 和 pairing 可恢复。有效缓存或委派预算耗尽时必须 fail closed，不得伪造成功或回退 local、SSH、旧 Hub。
 
 ### 2026-07-13 CLOUD012 实测
 
 - 设备 `24129PN74C`（Android 16）安装当前 Official public HTTP staging APK；App 打开系统浏览器，浏览器展示的 user code 与 App 一致，新注册 Web 账号批准后 App 显示同一账号身份。
-- 使用该账号的一次性 enrollment code 注册已有 DeviceIdentity；Web 用户中心、Hub device projection 和 daemon 的 DeviceID 一致，节点在线且未撤销。enrollment code 使用后立即失效。
+- 使用该账号的一次性 enrollment code 注册已有 DeviceIdentity；该条是旧公网实现的历史证据。当前实现还要求 Web 在 daemon 提交身份后明确批准；Web 用户中心、Hub device projection 和 daemon 的 DeviceID 必须一致，完成后 code 立即失效。
 - 导入账号名下 pairing 后打开节点，terminal inventory 返回 `No active terminals`。该结果来自真实 daemon List 响应，证明 Hub admission、DTLS、CapabilityGrant 验证和 DataChannel protocol 链路成立；文件管理同时成功读取 daemon 根目录。
 - direct 显示 `Mode=P2P direct`、`Path=direct`、`Candidates=prflx / host`，手机公网候选连接 daemon 公网 UDP 候选，实测 RTT 约 109-157 ms。
 - 显式 `Use relay` 显示 `Mode=Relay`、`Path=single_relay`、`Candidates=relay / host`，实测 RTT 约 92-114 ms，没有复用旧 direct store 或伪装 Relay。

@@ -129,12 +129,12 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
         }
     }
 
-    /** cloudClaimActivation 认领 Web 二维码 locator；二维码不包含 flow ID 或账号 Session。 */
+	/** cloudClaimActivation 让二维码 payload 与手工登录码认领同一个 Web activation flow。 */
     @PluginMethod
     fun cloudClaimActivation(call: PluginCall) {
         val rawPayload = call.getString("payload")?.trim().orEmpty()
         val userCode = rawPayload.removePrefix("muxvia-cloud-activate:v1:").trim().uppercase()
-        if (userCode.isBlank() || !userCode.matches(Regex("[23456789ABCDEFGHJKMNPQRSTVWXYZ]{5}-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{5}"))) {
+		if (userCode.isBlank() || !userCode.matches(Regex("MXA(?:-[0-9A-HJKMNP-TV-Z]{4}){5}-[0-9A-HJKMNP-TV-Z]{6}"))) {
             call.reject("This is not a Muxvia Cloud activation code", "protocol")
             return
         }

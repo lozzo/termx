@@ -38,13 +38,20 @@ import {
 } from "@/generated/cloudpb/cloud_management_pb";
 import { KickPresenceTargetSchema } from "@/generated/cloudpb/cloud_hub_control_pb";
 import {
-  MobileActivationApproveRequestSchema,
+	ApproveDaemonEnrollmentRequestSchema,
+	ApproveDaemonEnrollmentResponseSchema,
+	CreateDaemonEnrollmentRequestSchema,
+	DaemonEnrollmentProjectionSchema,
+	DaemonEnrollmentState,
+	InspectDaemonEnrollmentRequestSchema,
+	MobileActivationApproveRequestSchema,
   MobileActivationApproveResponseSchema,
   MobileActivationCreateRequestSchema,
   MobileActivationInspectRequestSchema,
   MobileActivationProjectionSchema,
   MobileActivationState,
   type MobileActivationProjection,
+	type DaemonEnrollmentProjection,
 } from "@/generated/cloudpb/cloud_companion_pb";
 import {
   ConfirmTestPaymentRequestSchema,
@@ -346,6 +353,7 @@ export default function AccountPage() {
         )}
         {tab === "devices" && (
           <div className="mt-6 grid gap-5">
+			<DaemonEnrollmentPanel onEnrolled={load} />
             <MobileActivationPanel onActivated={load} />
             <Panel title="Registered devices">
               {devices.devices.map((device) => (
@@ -605,6 +613,93 @@ export default function AccountPage() {
       </main>
     </div>
   );
+}
+
+function DaemonEnrollmentPanel({ onEnrolled }: { onEnrolled: () => Promise<void> }) {
+	const [enrollment, setEnrollment] = useState<DaemonEnrollmentProjection>();
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState("");
+
+	useEffect(() => {
+		if (!enrollment || enrollment.state === DaemonEnrollmentState.APPROVED) return;
+		let stopped = false;
+		const inspect = async () => {
+			try {
+				const next = await protoPost(
+					"/api/v1/daemon-enrollments/inspect",
+					InspectDaemonEnrollmentRequestSchema,
+					create(InspectDaemonEnrollmentRequestSchema, { userCode: enrollment.userCode }),
+					DaemonEnrollmentProjectionSchema,
+				);
+				if (!stopped) setEnrollment(next);
+			} catch (cause) {
+				if (!stopped) setError(cause instanceof Error ? cause.message : "Enrollment inspection failed");
+			}
+		};
+		const timer = window.setInterval(() => void inspect(), 1500);
+		return () => { stopped = true; window.clearInterval(timer); };
+	}, [enrollment]);
+
+	async function createEnrollment() {
+		setBusy(true); setError("");
+		try {
+			setEnrollment(await protoPost(
+				"/api/v1/daemon-enrollments/create",
+				CreateDaemonEnrollmentRequestSchema,
+				create(CreateDaemonEnrollmentRequestSchema),
+				DaemonEnrollmentProjectionSchema,
+			));
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : "Could not create daemon login code");
+		} finally { setBusy(false); }
+	}
+
+	async function approve() {
+		if (!enrollment) return;
+		setBusy(true); setError("");
+		try {
+			await protoPost(
+				"/api/v1/daemon-enrollments/approve",
+				ApproveDaemonEnrollmentRequestSchema,
+				create(ApproveDaemonEnrollmentRequestSchema, { userCode: enrollment.userCode }),
+				ApproveDaemonEnrollmentResponseSchema,
+			);
+			setEnrollment({ ...enrollment, state: DaemonEnrollmentState.APPROVED });
+			await onEnrolled();
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : "Could not approve daemon");
+		} finally { setBusy(false); }
+	}
+
+	return (
+		<Panel title="Enroll a daemon server">
+			{!enrollment ? (
+				<div className="flex flex-wrap items-center justify-between gap-4 p-5">
+					<div className="flex max-w-2xl items-start gap-3">
+						<Laptop className="mt-0.5 size-4 shrink-0 text-primary" />
+						<p className="m-0 text-xs leading-6 text-muted-foreground">Create a ten-minute login code, run it on the daemon host, then review and approve the submitted device identity here.</p>
+					</div>
+					<Button disabled={busy} onClick={() => void createEnrollment()}><KeyRound />{busy ? "Creating..." : "Create login code"}</Button>
+				</div>
+			) : (
+				<div className="p-5">
+					<span className="font-mono text-[10px] text-primary">{DaemonEnrollmentState[enrollment.state]}</span>
+					<strong className="mt-3 block break-all font-mono text-xl font-normal">{enrollment.userCode}</strong>
+					<code className="mt-4 block overflow-x-auto border border-line bg-white p-3 text-xs">muxvia cloud node enroll {enrollment.userCode}</code>
+					{enrollment.daemonMetadata ? (
+						<div className="mt-5 border-y border-line py-4 text-xs">
+							<b className="block font-medium">{enrollment.daemonMetadata.displayName}</b>
+							<span className="text-muted-foreground">{enrollment.daemonMetadata.hostname || enrollment.daemonDeviceId} · {enrollment.daemonMetadata.platform} · {enrollment.daemonMetadata.muxviaVersion}</span>
+						</div>
+					) : <p className="mt-4 text-xs leading-6 text-muted-foreground">Waiting for the daemon to submit its public identity.</p>}
+					{enrollment.state === DaemonEnrollmentState.WAITING_FOR_APPROVAL && <Button className="mt-5" disabled={busy} onClick={() => void approve()}><ShieldCheck />{busy ? "Approving..." : "Approve daemon"}</Button>}
+					{enrollment.state === DaemonEnrollmentState.APPROVED && <p className="mt-5 text-xs text-success">Approved. The daemon is completing DeviceIdentity proof and this code cannot enroll another device.</p>}
+					<Button className="mt-3" variant="ghost" onClick={() => { setEnrollment(undefined); setError(""); }}>{enrollment.state === DaemonEnrollmentState.APPROVED ? "Done" : "Cancel"}</Button>
+				</div>
+			)}
+			{error && <p className="m-5 border border-destructive p-3 text-xs text-destructive" role="alert">{error}</p>}
+		</Panel>
+	);
 }
 
 function MobileActivationPanel({ onActivated }: { onActivated: () => Promise<void> }) {

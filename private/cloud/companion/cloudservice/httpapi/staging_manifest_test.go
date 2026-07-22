@@ -13,7 +13,7 @@ func TestLoadManifestAllowsPublicTURNOnlyForStagingSSH(t *testing.T) {
 		Version: ManifestVersion, Profile: ProfileStagingSSH,
 		ControlPlaneURL: "http://127.0.0.1:42001", HubURL: "http://127.0.0.1:42002",
 		RelayURL: "turn:114.66.58.243:41003?transport=udp", HubID: "hub", Region: "region",
-		AccountLabel: "staging", EnrollmentCode: "one-time", StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
+		AccountLabel: "staging", StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
 	}
 	path := filepath.Join(t.TempDir(), "runtime.json")
 	payload, err := json.Marshal(manifest)
@@ -41,7 +41,7 @@ func TestLoadManifestAllowsPublicHTTPOnlyForExplicitStagingProfile(t *testing.T)
 		Version: ManifestVersion, Profile: ProfileStagingPublicHTTP,
 		ControlPlaneURL: "http://114.66.58.243:41101", HubURL: "http://114.66.58.243:41102",
 		RelayURL: "turn:114.66.58.243:41003?transport=udp", HubID: "hub", Region: "region",
-		AccountLabel: "public-http-test-only", EnrollmentCode: "already-claimed", StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
+		AccountLabel: "public-http-test-only", StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
 	}
 	path := filepath.Join(t.TempDir(), "runtime.json")
 	payload, _ := json.Marshal(manifest)
@@ -66,7 +66,7 @@ func TestLoadManifestAllowsPublicHTTPSOnlyForExplicitStagingProfile(t *testing.T
 		Version: ManifestVersion, Profile: ProfileStagingPublicHTTPS,
 		ControlPlaneURL: "https://muxvia.com", HubURL: "https://cn1.edge.muxvia.com:41102",
 		RelayURL: "turn:114.66.58.243:41003?transport=udp", HubID: "hub", Region: "region",
-		AccountLabel: "public-https-test-only", EnrollmentCode: "one-time", StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
+		AccountLabel: "public-https-test-only", StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
 	}
 	payload, _ := json.Marshal(manifest)
 	if _, err := ParseManifest(payload); err != nil {
