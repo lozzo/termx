@@ -27,6 +27,7 @@
   "scripts": {
     "proto": "npm run proto --workspace @muxvia/ui && npm run proto --workspace @muxvia/web-controller",
     "test": "npm test --workspace @muxvia/ui && npm test --workspace @muxvia/mobile",
+    "test:i18n": "node scripts/check-i18n.mjs",
     "typecheck": "npm run typecheck --workspace @muxvia/ui",
     "build": "npm run build --workspace @muxvia/ui && npm run build --workspace @muxvia/mobile",
     "cap:sync": "npm run cap:sync --workspace @muxvia/mobile",

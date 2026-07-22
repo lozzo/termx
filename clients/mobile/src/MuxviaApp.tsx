@@ -16,6 +16,7 @@ import {
   MuxviaApiEvents,
   MuxviaApiTerminal,
 	MuxviaRemoteAuth,
+  muxviaI18n,
 } from '@muxvia/ui'
 import type {
   FileTransferContext,
@@ -429,24 +430,24 @@ async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?
   header.className = 'flex items-center justify-between gap-3 min-h-[44px]'
 
   const title = document.createElement('div')
-  title.textContent = 'Scan Muxvia QR'
+  title.textContent = muxviaI18n.t('scanner.title')
   title.className = 'text-[17px] font-bold tracking-tight text-zinc-900'
 
   const cancelButton = document.createElement('button')
   cancelButton.type = 'button'
-  cancelButton.textContent = 'Cancel'
+  cancelButton.textContent = muxviaI18n.t('common.cancel')
   cancelButton.className = 'muxvia-app-secondary-button px-4 text-[14px] font-semibold'
 
   const manualContainer = document.createElement('div')
   manualContainer.className = 'mt-auto flex flex-col gap-3'
 
   const manualInput = document.createElement('textarea')
-  manualInput.placeholder = 'Or enter Muxvia QR content manually...'
+  manualInput.placeholder = muxviaI18n.t('scanner.manualPlaceholder')
   manualInput.className = 'h-[90px] w-full resize-none border border-[var(--muxvia-app-line)] bg-white p-3 font-mono text-[13px] text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-1 focus:ring-[var(--muxvia-app-accent)]'
 
   const manualSubmit = document.createElement('button')
   manualSubmit.type = 'button'
-  manualSubmit.textContent = 'Add Device'
+  manualSubmit.textContent = muxviaI18n.t('pairing.add')
   manualSubmit.className = 'muxvia-app-primary-button min-h-12 w-full px-4 text-[15px] font-semibold disabled:opacity-50'
   manualSubmit.disabled = true
 
@@ -468,7 +469,7 @@ async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?
   reader.style.maxHeight = `${scannerSize}px`
 
   const hint = document.createElement('div')
-  hint.textContent = 'Point the camera at the QR code shown on the Muxvia device.'
+  hint.textContent = muxviaI18n.t('scanner.hint')
   hint.className = 'mt-4 px-4 text-center text-[13px] font-medium leading-[20px] text-zinc-500'
 
   header.append(title, cancelButton)

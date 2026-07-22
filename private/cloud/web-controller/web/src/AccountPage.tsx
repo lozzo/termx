@@ -14,6 +14,7 @@ import {
   Smartphone,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,6 +79,7 @@ import {
   ObservedPath,
 } from "@/generated/cloudpb/cloud_topology_pb";
 import { ProtoHTTPError, protoGet, protoPost } from "@/protoApi";
+import { intlLocale } from "@/i18n";
 
 type Tab = "overview" | "devices" | "topology" | "commands" | "billing";
 type AccountState = {
@@ -96,6 +98,7 @@ const tabs: [Tab, typeof Gauge][] = [
 ];
 
 export default function AccountPage() {
+  const { t, i18n } = useTranslation();
   const [tab, setTab] = useState<Tab>("overview");
   const [state, setState] = useState<AccountState>();
   const [error, setError] = useState("");
@@ -142,7 +145,7 @@ export default function AccountPage() {
         location.href = "/login";
       else
         setError(
-          cause instanceof Error ? cause.message : "Could not load account",
+          cause instanceof Error ? cause.message : t("account.requestFailed"),
         );
     }
   }
@@ -158,7 +161,7 @@ export default function AccountPage() {
       await action();
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Request failed");
+      setError(cause instanceof Error ? cause.message : t("account.requestFailed"));
     }
     setBusy("");
   }
@@ -207,7 +210,7 @@ export default function AccountPage() {
   if (!state)
     return (
       <main className="grid min-h-dvh place-items-center bg-background text-muted-foreground">
-        Loading account...
+        {t("account.loading")}
       </main>
     );
   const { commerce, quota, devices, topology, commands } = state;
@@ -228,7 +231,7 @@ export default function AccountPage() {
               onClick={() => setTab(id)}
             >
               <Icon className="size-4" />
-              <span>{id}</span>
+              <span>{t(`account.tabs.${id}`)}</span>
             </button>
           ))}
         </nav>
@@ -243,7 +246,7 @@ export default function AccountPage() {
             onClick={logout}
           >
             <LogOut />
-            Sign out
+            {t("account.signOut")}
           </Button>
         </div>
       </aside>
@@ -251,14 +254,15 @@ export default function AccountPage() {
         <header className="flex flex-wrap items-start justify-between gap-4 border-b border-line pb-6">
           <div>
             <p className="font-mono text-[10px] text-primary">
-              ACCOUNT CONTROL PLANE
+              {t("account.cloudControl")}
             </p>
-            <h1 className="mt-2 text-3xl font-light capitalize">{tab}</h1>
+            <h1 className="mt-2 text-3xl font-light">{t(`account.tabs.${tab}`)}</h1>
           </div>
           <Button
             variant="outline"
             size="icon"
-            title="Refresh"
+            title={t("account.actions.refresh")}
+            aria-label={t("account.actions.refresh")}
             onClick={() => void load()}
           >
             <RefreshCw />
@@ -275,7 +279,7 @@ export default function AccountPage() {
         <section className="mt-6 border border-line bg-panel p-4">
           <div className="flex flex-wrap items-end gap-3">
             <label className="grid min-w-56 flex-1 gap-2 font-mono text-[9px] text-muted-foreground">
-              CURRENT PASSWORD
+              {t("account.controls.currentPassword")}
               <Input
                 data-testid="recent-password"
                 type="password"
@@ -289,62 +293,63 @@ export default function AccountPage() {
               onClick={() => void unlock()}
             >
               <KeyRound />
-              {controlsUnlocked ? "Refresh authorization" : "Unlock controls"}
+              {controlsUnlocked ? t("account.controls.refresh") : t("account.controls.unlock")}
             </Button>
             <span
               className={`text-xs ${controlsUnlocked ? "text-success" : "text-muted-foreground"}`}
             >
               {controlsUnlocked
-                ? "Destructive controls unlocked for 5 minutes"
-                : "Required for revoke and disconnect"}
+                ? t("account.controls.unlocked")
+                : t("account.controls.required")}
             </span>
           </div>
         </section>
         {tab === "overview" && (
           <div className="mt-6 grid gap-4 lg:grid-cols-3">
-            <Metric label="Plan" value={commerce.subscription?.planId ?? "-"} />
+            <Metric label={t("account.overview.plan")} value={commerce.subscription?.planId ?? "-"} />
             <Metric
-              label="Subscription"
+              label={t("account.overview.subscription")}
               value={SubscriptionStatus[commerce.subscription?.status ?? 0]}
             />
             <Metric
-              label="Relay remaining"
-              value={bytes(quota.period?.remainingBytes ?? 0n)}
+              label={t("account.overview.relayRemaining")}
+              value={bytes(quota.period?.remainingBytes ?? 0n, intlLocale(i18n.language))}
             />
-            <Panel title="Account">
+            <Panel title={t("account.overview.account")}>
               <Row
-                label="Account ID"
+                label={t("account.overview.accountId")}
                 value={commerce.account?.accountId ?? "-"}
               />
               <Row
-                label="Auth revision"
+                label={t("account.overview.authRevision")}
                 value={String(commerce.account?.authRevision ?? 0n)}
               />
             </Panel>
-            <Panel title="Capability">
+            <Panel title={t("account.overview.capability")}>
               <Row
-                label="P2P sessions"
+                label={t("account.overview.p2pSessions")}
                 value={String(
                   commerce.entitlement?.capability?.managedP2pMaxConcurrency ??
                     0,
                 )}
               />
               <Row
-                label="Relay period"
+                label={t("account.overview.relayPeriod")}
                 value={bytes(
                   commerce.entitlement?.capability?.relay?.maxBytesPerPeriod ??
                     0n,
+                  intlLocale(i18n.language),
                 )}
               />
             </Panel>
-            <Panel title="Recent audit">
+            <Panel title={t("account.overview.audit")}>
               {commerce.audit
                 .slice(-5)
                 .reverse()
                 .map((item) => (
                   <Row
                     key={item.auditId}
-                    label={when(item.occurredAtUnixMillis)}
+                    label={when(item.occurredAtUnixMillis, intlLocale(i18n.language))}
                     value={item.action}
                   />
                 ))}
@@ -355,7 +360,7 @@ export default function AccountPage() {
           <div className="mt-6 grid gap-5">
 			<DaemonEnrollmentPanel onEnrolled={load} />
             <MobileActivationPanel onActivated={load} />
-            <Panel title="Registered devices">
+            <Panel title={t("account.nodes.registered")}>
               {devices.devices.map((device) => (
               <div
                 className="grid gap-3 border-b border-line p-4 lg:grid-cols-[1fr_160px_160px_auto] lg:items-center"
@@ -375,7 +380,7 @@ export default function AccountPage() {
                 <span className="text-xs">
                   {device.presence
                     ? `${Availability[device.presence.availability]} / ${Freshness[device.presence.freshness]}`
-                    : "UNKNOWN / STALE"}
+                    : t("account.nodes.unknown")}
                 </span>
                 <Button
                   variant="outline"
@@ -398,7 +403,7 @@ export default function AccountPage() {
                   }
                 >
                   <ShieldAlert />
-                  Revoke
+                  {t("account.nodes.revoke")}
                 </Button>
               </div>
               ))}
@@ -407,7 +412,7 @@ export default function AccountPage() {
         )}
         {tab === "topology" && (
           <div className="mt-6 grid gap-5">
-            <Panel title="Signaling control relations">
+            <Panel title={t("account.topology.controlRelations")}>
               {topology.presences.map((presence) => (
                 <div
                   className="grid gap-3 border-b border-line p-4 lg:grid-cols-[1fr_1fr_160px_auto] lg:items-center"
@@ -417,7 +422,7 @@ export default function AccountPage() {
                     {presence.daemonDeviceId}
                   </span>
                   <span className="text-xs">
-                    Control Hub: {presence.controlOwnerHubId}
+                    {t("account.topology.controlHub", { hub: presence.controlOwnerHubId })}
                   </span>
                   <span className="text-xs">
                     {Availability[presence.availability]} /{" "}
@@ -442,25 +447,25 @@ export default function AccountPage() {
                       )
                     }
                   >
-                    Disconnect
+                    {t("account.topology.disconnect")}
                   </Button>
                 </div>
               ))}
             </Panel>
-            <Panel title="Observed data paths">
+            <Panel title={t("account.topology.dataPaths")}>
               {topology.peerSessions.map((session) => (
                 <div
                   className="grid gap-3 border-b border-line p-4 lg:grid-cols-[1fr_1fr_160px_auto] lg:items-center"
                   key={`${session.target?.managedSessionId}-${session.target?.sessionIncarnation}`}
                 >
                   <span className="font-mono text-xs">
-                    {session.clientDeviceId} to {session.target?.daemonDeviceId}
+                    {t("account.topology.peer", { client: session.clientDeviceId, daemon: session.target?.daemonDeviceId })}
                   </span>
                   <span className="text-xs">
-                    Data path: {ObservedPath[session.observedDataPath]}
+                    {t("account.topology.dataPath", { path: ObservedPath[session.observedDataPath] })}
                   </span>
                   <span className="text-xs">
-                    Control Hub: {session.controlOwnerHubId}
+                    {t("account.topology.controlHub", { hub: session.controlOwnerHubId })}
                   </span>
                   <Button
                     variant="outline"
@@ -480,7 +485,7 @@ export default function AccountPage() {
                       )
                     }
                   >
-                    Close session
+                    {t("account.topology.closeSession")}
                   </Button>
                 </div>
               ))}
@@ -488,7 +493,7 @@ export default function AccountPage() {
           </div>
         )}
         {tab === "commands" && (
-          <Panel title="Command outbox" className="mt-6">
+          <Panel title={t("account.commands.title")} className="mt-6">
             {commands.commands.length === 0 ? (
               <Empty />
             ) : (
@@ -506,7 +511,7 @@ export default function AccountPage() {
                     </p>
                   </div>
                   <span className="text-xs">
-                    {item.children.length} child operations
+                    {t("account.commands.children", { count: item.children.length })}
                   </span>
                   <span className="text-xs">{item.executionState}</span>
                 </div>
@@ -516,10 +521,10 @@ export default function AccountPage() {
         )}
         {tab === "billing" && (
           <div className="mt-6 grid gap-5 lg:grid-cols-2">
-            <Panel title="Subscription">
-              <Row label="Plan" value={commerce.subscription?.planId ?? "-"} />
+            <Panel title={t("account.billing.subscription")}>
+              <Row label={t("account.billing.current")} value={commerce.subscription?.planId ?? "-"} />
               <Row
-                label="Status"
+                label={t("account.billing.statusLabel")}
                 value={SubscriptionStatus[commerce.subscription?.status ?? 0]}
               />
               <div className="flex flex-wrap gap-2 p-4">
@@ -553,7 +558,7 @@ export default function AccountPage() {
                     })
                   }
                 >
-                  Activate Pro with test provider
+                  {t("account.billing.activateTestPro")}
                 </Button>
                 <Button
                   variant="outline"
@@ -571,7 +576,7 @@ export default function AccountPage() {
                     )
                   }
                 >
-                  Cancel renewal
+                  {t("account.billing.cancelRenewal")}
                 </Button>
                 <Button
                   variant="outline"
@@ -588,11 +593,11 @@ export default function AccountPage() {
                     )
                   }
                 >
-                  Resume renewal
+                  {t("account.billing.resumeRenewal")}
                 </Button>
               </div>
             </Panel>
-            <Panel title="Orders and provider events">
+            <Panel title={t("account.billing.ordersAndEvents")}>
               {commerce.orders.map((order) => (
                 <Row
                   key={order.orderId}
@@ -603,7 +608,7 @@ export default function AccountPage() {
               {commerce.paymentEvents.map((event) => (
                 <Row
                   key={event.event?.providerEventId}
-                  label={event.event?.provider ?? "provider"}
+                  label={event.event?.provider ?? t("account.billing.provider")}
                   value={`${event.state} / ${event.event?.eventType}`}
                 />
               ))}
@@ -616,6 +621,7 @@ export default function AccountPage() {
 }
 
 function DaemonEnrollmentPanel({ onEnrolled }: { onEnrolled: () => Promise<void> }) {
+	const { t } = useTranslation();
 	const [enrollment, setEnrollment] = useState<DaemonEnrollmentProjection>();
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState("");
@@ -633,7 +639,7 @@ function DaemonEnrollmentPanel({ onEnrolled }: { onEnrolled: () => Promise<void>
 				);
 				if (!stopped) setEnrollment(next);
 			} catch (cause) {
-				if (!stopped) setError(cause instanceof Error ? cause.message : "Enrollment inspection failed");
+				if (!stopped) setError(cause instanceof Error ? cause.message : t("account.daemonFlow.inspectError"));
 			}
 		};
 		const timer = window.setInterval(() => void inspect(), 1500);
@@ -650,7 +656,7 @@ function DaemonEnrollmentPanel({ onEnrolled }: { onEnrolled: () => Promise<void>
 				DaemonEnrollmentProjectionSchema,
 			));
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : "Could not create daemon login code");
+			setError(cause instanceof Error ? cause.message : t("account.daemonFlow.createError"));
 		} finally { setBusy(false); }
 	}
 
@@ -667,23 +673,23 @@ function DaemonEnrollmentPanel({ onEnrolled }: { onEnrolled: () => Promise<void>
 			setEnrollment({ ...enrollment, state: DaemonEnrollmentState.APPROVED });
 			await onEnrolled();
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : "Could not approve daemon");
+			setError(cause instanceof Error ? cause.message : t("account.daemonFlow.approveError"));
 		} finally { setBusy(false); }
 	}
 
 	return (
-		<Panel title="Enroll a daemon server">
+		<Panel title={t("account.daemonFlow.title")}>
 			{!enrollment ? (
 				<div className="flex flex-wrap items-center justify-between gap-4 p-5">
 					<div className="flex max-w-2xl items-start gap-3">
 						<Laptop className="mt-0.5 size-4 shrink-0 text-primary" />
-						<p className="m-0 text-xs leading-6 text-muted-foreground">Create a ten-minute login code, run it on the daemon host, then review and approve the submitted device identity here.</p>
+						<p className="m-0 text-sm leading-6 text-muted-foreground">{t("account.daemonFlow.intro")}</p>
 					</div>
-					<Button disabled={busy} onClick={() => void createEnrollment()}><KeyRound />{busy ? "Creating..." : "Create login code"}</Button>
+					<Button disabled={busy} onClick={() => void createEnrollment()}><KeyRound />{busy ? t("account.daemonFlow.creating") : t("account.daemonFlow.create")}</Button>
 				</div>
 			) : (
 				<div className="p-5">
-					<span className="font-mono text-[10px] text-primary">{DaemonEnrollmentState[enrollment.state]}</span>
+					<span className="text-xs font-medium text-primary">{t(`account.daemonFlow.state.${DaemonEnrollmentState[enrollment.state]}`)}</span>
 					<strong className="mt-3 block break-all font-mono text-xl font-normal">{enrollment.userCode}</strong>
 					<code className="mt-4 block overflow-x-auto border border-line bg-white p-3 text-xs">muxvia cloud node enroll {enrollment.userCode}</code>
 					{enrollment.daemonMetadata ? (
@@ -691,10 +697,10 @@ function DaemonEnrollmentPanel({ onEnrolled }: { onEnrolled: () => Promise<void>
 							<b className="block font-medium">{enrollment.daemonMetadata.displayName}</b>
 							<span className="text-muted-foreground">{enrollment.daemonMetadata.hostname || enrollment.daemonDeviceId} · {enrollment.daemonMetadata.platform} · {enrollment.daemonMetadata.muxviaVersion}</span>
 						</div>
-					) : <p className="mt-4 text-xs leading-6 text-muted-foreground">Waiting for the daemon to submit its public identity.</p>}
-					{enrollment.state === DaemonEnrollmentState.WAITING_FOR_APPROVAL && <Button className="mt-5" disabled={busy} onClick={() => void approve()}><ShieldCheck />{busy ? "Approving..." : "Approve daemon"}</Button>}
-					{enrollment.state === DaemonEnrollmentState.APPROVED && <p className="mt-5 text-xs text-success">Approved. The daemon is completing DeviceIdentity proof and this code cannot enroll another device.</p>}
-					<Button className="mt-3" variant="ghost" onClick={() => { setEnrollment(undefined); setError(""); }}>{enrollment.state === DaemonEnrollmentState.APPROVED ? "Done" : "Cancel"}</Button>
+					) : <p className="mt-4 text-sm leading-6 text-muted-foreground">{t("account.daemonFlow.waiting")}</p>}
+					{enrollment.state === DaemonEnrollmentState.WAITING_FOR_APPROVAL && <Button className="mt-5" disabled={busy} onClick={() => void approve()}><ShieldCheck />{busy ? t("account.daemonFlow.approving") : t("account.daemonFlow.approve")}</Button>}
+					{enrollment.state === DaemonEnrollmentState.APPROVED && <p className="mt-5 text-sm text-success">{t("account.daemonFlow.approved")}</p>}
+					<Button className="mt-3" variant="ghost" onClick={() => { setEnrollment(undefined); setError(""); }}>{enrollment.state === DaemonEnrollmentState.APPROVED ? t("account.nodes.done") : t("account.nodes.cancel")}</Button>
 				</div>
 			)}
 			{error && <p className="m-5 border border-destructive p-3 text-xs text-destructive" role="alert">{error}</p>}
@@ -703,6 +709,7 @@ function DaemonEnrollmentPanel({ onEnrolled }: { onEnrolled: () => Promise<void>
 }
 
 function MobileActivationPanel({ onActivated }: { onActivated: () => Promise<void> }) {
+  const { t } = useTranslation();
   const [activation, setActivation] = useState<MobileActivationProjection>();
   const [qrDataURL, setQRDataURL] = useState("");
   const [busy, setBusy] = useState(false);
@@ -712,7 +719,7 @@ function MobileActivationPanel({ onActivated }: { onActivated: () => Promise<voi
     if (!activation?.qrPayload) { setQRDataURL(""); return; }
     void QRCode.toDataURL(activation.qrPayload, { width: 256, margin: 2, errorCorrectionLevel: "M", color: { dark: "#111111", light: "#ffffff" } })
       .then(setQRDataURL)
-      .catch(() => setError("Could not render activation QR code"));
+      .catch(() => setError(t("account.mobileFlow.renderError")));
   }, [activation?.qrPayload]);
 
   useEffect(() => {
@@ -728,7 +735,7 @@ function MobileActivationPanel({ onActivated }: { onActivated: () => Promise<voi
         );
         if (!stopped) setActivation(next);
       } catch (cause) {
-        if (!stopped) setError(cause instanceof Error ? cause.message : "Activation inspection failed");
+        if (!stopped) setError(cause instanceof Error ? cause.message : t("account.mobileFlow.inspectError"));
       }
     };
     const timer = window.setInterval(() => void inspect(), 1500);
@@ -745,7 +752,7 @@ function MobileActivationPanel({ onActivated }: { onActivated: () => Promise<voi
         MobileActivationProjectionSchema,
       ));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not create activation");
+      setError(cause instanceof Error ? cause.message : t("account.mobileFlow.createError"));
     } finally { setBusy(false); }
   }
 
@@ -762,34 +769,34 @@ function MobileActivationPanel({ onActivated }: { onActivated: () => Promise<voi
       setActivation({ ...activation, state: MobileActivationState.APPROVED });
       await onActivated();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not approve phone");
+      setError(cause instanceof Error ? cause.message : t("account.mobileFlow.approveError"));
     } finally { setBusy(false); }
   }
 
   return (
-    <Panel title="Activate the mobile app">
+    <Panel title={t("account.nodes.mobileTitle")}>
       {!activation ? (
         <div className="flex flex-wrap items-center justify-between gap-4 p-5">
           <div className="flex max-w-2xl items-start gap-3">
             <Smartphone className="mt-0.5 size-4 shrink-0 text-primary" />
-            <p className="m-0 text-xs leading-6 text-muted-foreground">Create a short-lived QR code, scan it in the Muxvia App, then review and approve the phone here.</p>
+            <p className="m-0 text-sm leading-6 text-muted-foreground">{t("account.nodes.mobileCopy")}</p>
           </div>
-          <Button disabled={busy} onClick={() => void createActivation()}><QrCode />{busy ? "Creating..." : "Create QR code"}</Button>
+          <Button disabled={busy} onClick={() => void createActivation()}><QrCode />{busy ? t("account.nodes.creating") : t("account.nodes.createQR")}</Button>
         </div>
       ) : (
         <div className="grid md:grid-cols-[288px_1fr]">
           <div className="grid min-h-72 place-items-center border-b border-line bg-white p-4 md:border-b-0 md:border-r">
-            {qrDataURL ? <img className="aspect-square size-64 object-contain" width="256" height="256" alt="One-time QR code for activating the Muxvia mobile app" src={qrDataURL} /> : <span className="text-xs text-muted-foreground">Rendering QR code...</span>}
+            {qrDataURL ? <img className="aspect-square size-full max-h-64 max-w-64 object-contain" width="256" height="256" alt={t("account.nodes.qrAlt")} src={qrDataURL} /> : <span className="text-sm text-muted-foreground">{t("account.mobileFlow.rendering")}</span>}
           </div>
           <div className="flex flex-col justify-center p-6">
-            <span className="font-mono text-[10px] text-primary">{MobileActivationState[activation.state]}</span>
+            <span className="text-xs font-medium text-primary">{t(`account.mobileFlow.state.${MobileActivationState[activation.state]}`)}</span>
             <strong className="mt-3 font-mono text-2xl font-normal">{activation.userCode}</strong>
             {activation.clientMetadata ? (
               <div className="mt-5 border-y border-line py-4 text-xs"><b className="block font-medium">{activation.clientMetadata.displayName}</b><span className="text-muted-foreground">{activation.clientMetadata.platform} · {activation.clientMetadata.muxviaVersion}</span></div>
-            ) : <p className="mt-4 text-xs leading-6 text-muted-foreground">In the Muxvia App, open Settings and choose Scan QR from web.</p>}
-            {activation.state === MobileActivationState.WAITING_FOR_APPROVAL && <Button className="mt-5 self-start" disabled={busy} onClick={() => void approve()}><ShieldCheck />{busy ? "Approving..." : "Approve phone"}</Button>}
-            {activation.state === MobileActivationState.APPROVED && <p className="mt-5 text-xs text-success">Approved. The App is finishing activation and this code cannot be reused.</p>}
-            <Button className="mt-3 self-start" variant="ghost" onClick={() => { setActivation(undefined); setError(""); }}>{activation.state === MobileActivationState.APPROVED ? "Done" : "Cancel"}</Button>
+            ) : <p className="mt-4 text-sm leading-6 text-muted-foreground">{t("account.nodes.scanCopy")}</p>}
+            {activation.state === MobileActivationState.WAITING_FOR_APPROVAL && <Button className="mt-5 self-start" disabled={busy} onClick={() => void approve()}><ShieldCheck />{busy ? t("account.mobileFlow.approving") : t("account.mobileFlow.approve")}</Button>}
+            {activation.state === MobileActivationState.APPROVED && <p className="mt-5 text-sm text-success">{t("account.nodes.approvedCopy")}</p>}
+            <Button className="mt-3 self-start" variant="ghost" onClick={() => { setActivation(undefined); setError(""); }}>{activation.state === MobileActivationState.APPROVED ? t("account.nodes.done") : t("account.nodes.cancel")}</Button>
           </div>
         </div>
       )}
@@ -835,13 +842,14 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 function Empty() {
-  return <p className="p-5 text-sm text-muted-foreground">No records.</p>;
+  const { t } = useTranslation();
+  return <p className="p-5 text-sm text-muted-foreground">{t("account.noRecords")}</p>;
 }
-function bytes(value: bigint) {
+function bytes(value: bigint, locale: string) {
   return value === 0n
     ? "0 B"
-    : `${(Number(value) / 1024 / 1024).toFixed(1)} MiB`;
+    : `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(Number(value) / 1024 / 1024)} MiB`;
 }
-function when(value: bigint) {
-  return value ? new Date(Number(value)).toLocaleString() : "-";
+function when(value: bigint, locale: string) {
+  return value ? new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(Number(value))) : "-";
 }

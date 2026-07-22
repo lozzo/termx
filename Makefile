@@ -81,6 +81,7 @@ test-postgres-backup:
 test-clients:
 	node scripts/client-workspace-guard.mjs
 	npm run proto
+	npm run test:i18n
 	npm test
 	npm run typecheck
 	npm run build

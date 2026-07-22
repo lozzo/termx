@@ -1,8 +1,10 @@
 import { create } from "@bufbuild/protobuf";
 import { ArrowRight, ShieldCheck } from "lucide-react";
 import { FormEvent, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import {
   PasswordLoginRequestSchema,
   PasswordLoginResponseSchema,
@@ -12,6 +14,7 @@ import {
 import { protoPost } from "@/protoApi";
 
 export default function LoginPage() {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -41,7 +44,7 @@ export default function LoginPage() {
       location.href = "/account";
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Authentication failed",
+        cause instanceof Error ? cause.message : t("login.authError"),
       );
       setBusy(false);
     }
@@ -58,46 +61,45 @@ export default function LoginPage() {
         </a>
         <div className="max-w-2xl">
           <p className="font-mono text-xs text-success">
-            ACCOUNT / CONNECTION CONTROL
+            {t("login.kicker")}
           </p>
           <h1 className="mt-5 text-5xl font-light leading-tight">
-            Manage connectivity without moving terminal trust into the cloud.
+            {t("login.controlTitle")}
           </h1>
           <p className="mt-6 max-w-xl text-sm leading-7 text-[#b8bec7]">
-            The Controller stores account, subscription, quota and topology
-            metadata. Terminal grants and payload remain end to end between your
-            devices.
+            {t("login.controlCopy")}
           </p>
         </div>
         <p className="font-mono text-[10px] text-[#929aa6]">
-          HttpOnly Cookie / SameSite Strict / CSRF
+          {t("login.session")}
         </p>
       </section>
       <section className="flex items-center px-6 py-12 sm:px-12">
         <div className="mx-auto w-full max-w-sm">
-          <p className="font-mono text-[10px] text-primary">
-            MUXVIA CLOUD CONTROLLER
-          </p>
+          <div className="flex items-center justify-between gap-4">
+            <p className="font-mono text-xs text-primary">{t("login.controller")}</p>
+            <LanguageSwitcher compact />
+          </div>
           <h2 className="mt-4 text-4xl font-light">
-            {mode === "login" ? "Sign in" : "Create account"}
+            {mode === "login" ? t("login.signInTab") : t("login.createAccount")}
           </h2>
           <div className="mt-8 grid grid-cols-2 border border-line">
             <button
               className={`h-11 border-b-2 text-xs ${mode === "login" ? "border-primary bg-panel" : "border-transparent text-muted-foreground"}`}
               onClick={() => setMode("login")}
             >
-              Sign in
+              {t("login.signInTab")}
             </button>
             <button
               className={`h-11 border-b-2 text-xs ${mode === "register" ? "border-primary bg-panel" : "border-transparent text-muted-foreground"}`}
               onClick={() => setMode("register")}
             >
-              Register
+              {t("login.registerTab")}
             </button>
           </div>
           <form className="mt-6 grid gap-4" onSubmit={submit}>
-            <label className="grid gap-2 font-mono text-[10px] text-muted-foreground">
-              EMAIL
+            <label className="grid gap-2 text-sm font-medium text-muted-foreground">
+              {t("login.email")}
               <Input
                 data-testid="account-email"
                 required
@@ -107,8 +109,8 @@ export default function LoginPage() {
                 onChange={(event) => setEmail(event.target.value)}
               />
             </label>
-            <label className="grid gap-2 font-mono text-[10px] text-muted-foreground">
-              PASSWORD
+            <label className="grid gap-2 text-sm font-medium text-muted-foreground">
+              {t("login.password")}
               <Input
                 data-testid="account-password"
                 required
@@ -127,10 +129,10 @@ export default function LoginPage() {
               disabled={busy}
             >
               {busy
-                ? "Please wait"
+                ? t("login.wait")
                 : mode === "login"
-                  ? "Sign in"
-                  : "Create account"}
+                  ? t("login.signInTab")
+                  : t("login.createAccount")}
               <ArrowRight />
             </Button>
           </form>
@@ -144,7 +146,7 @@ export default function LoginPage() {
           )}
           <div className="mt-8 flex items-center gap-3 border-t border-line pt-5 text-xs text-muted-foreground">
             <ShieldCheck className="size-4" />
-            Credentials are never returned to page JavaScript.
+            {t("login.credentials")}
           </div>
         </div>
       </section>

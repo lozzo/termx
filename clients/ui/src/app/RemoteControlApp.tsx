@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { ArrowLeft, Camera, ChevronRight, Cloud, Copy, Download, Keyboard, LaptopMinimal, LogIn, LogOut, Monitor, MoreHorizontal, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Wifi, X } from 'lucide-react'
 import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorkspaceConnector } from './MachineWorkspace'
 import { createMachineStore, type StoredMachineRecord } from '../state/machineStore'
@@ -23,6 +25,7 @@ import {
 } from '../terminal/terminalSettings'
 import type { TerminalRenderer } from '../terminal/Terminal'
 import type { MachineAccessClass } from '../state/appMachine'
+import { muxviaIntlLocale, muxviaLanguages, normalizeMuxviaLanguage } from '../i18n'
 
 const storageKeys = {
   accessToken: 'muxvia.remote.accessToken',
@@ -32,6 +35,33 @@ const defaultWebControlUrl = ''
 const appName = 'Muxvia Remote App'
 
 function noopSubscribe(_listener: () => void): () => void { return () => {} }
+
+function appErrorCode(error: unknown): string {
+  if (!error || typeof error !== 'object' || !('code' in error)) return ''
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'string' ? code.trim().toLowerCase() : ''
+}
+
+function localizedAppError(error: unknown, t: TFunction): string {
+  switch (appErrorCode(error)) {
+    case 'login_required':
+    case 'unauthenticated':
+      return t('errors.loginRequired')
+    case 'capability_invalid':
+    case 'capability_expired':
+      return t('errors.pairAgain')
+    case 'temporary':
+    case 'unavailable':
+      return t('errors.temporary')
+    default:
+      return t('errors.generic')
+  }
+}
+
+function isCancelledAppError(error: unknown): boolean {
+  const code = appErrorCode(error)
+  return code === 'cancelled' || code === 'canceled'
+}
 
 type AppView = 'home' | 'settings' | 'machine'
 type PairIntent = 'add-local' | 'authorize-machine'
@@ -162,6 +192,7 @@ export function RemoteControlApp({
   exportDebugLogs,
   cloudAccountAdapter,
 }: RemoteControlAppProps) {
+  const { t } = useTranslation()
   const networkRuntime = networkRuntimeProp ?? unavailableNetworkRuntime
   const storage = storageProp ?? networkRuntime.storage
   const [view, setView] = useState<AppView>('home')
@@ -368,7 +399,7 @@ export function RemoteControlApp({
         setMachines(await cloudAccountAdapter.listMachines())
         setError(null)
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
+        setError(localizedAppError(err, t))
         const account = await cloudAccountAdapter.current().catch(() => null)
         if (!account) {
           setCloudAccount(null)
@@ -411,11 +442,11 @@ export function RemoteControlApp({
       })
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(localizedAppError(err, t))
     } finally {
       setLoading(false)
     }
-  }, [accessToken, api, cloudAccount?.accountId, cloudAccountAdapter, externalPairingAdapter, storage])
+  }, [accessToken, api, cloudAccount?.accountId, cloudAccountAdapter, externalPairingAdapter, storage, t])
 
   const prepareTransferMachineRuntime = useCallback((transferId?: string) => {
     if (!globalFileTransfer || !transferId) return
@@ -456,8 +487,8 @@ export function RemoteControlApp({
     void cloudAccountAdapter.current().then((account) => {
       setCloudAccount(account)
       setUser(account ? { id: account.accountId, username: account.accountLabel, email: account.accountLabel } : null)
-    }).catch((failure) => setError(failure instanceof Error ? failure.message : String(failure)))
-  }, [cloudAccountAdapter])
+    }).catch((failure) => setError(localizedAppError(failure, t)))
+  }, [cloudAccountAdapter, t])
 
   useEffect(() => {
     setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id, externalPairingAdapter))
@@ -473,11 +504,10 @@ export function RemoteControlApp({
       setUser({ id: account.accountId, username: account.accountLabel, email: account.accountLabel })
       setView('home')
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      if (!message.toLowerCase().includes('cancel')) setError(message)
+      if (!isCancelledAppError(err)) setError(localizedAppError(err, t))
       setCloudActivation((current) => current?.userCode === expectedUserCode ? null : current)
     }
-  }, [cloudAccountAdapter])
+  }, [cloudAccountAdapter, t])
 
   const scanCloudActivation = useCallback(async () => {
     if (!cloudAccountAdapter || !scanPairingCode) return
@@ -490,11 +520,11 @@ export function RemoteControlApp({
       setCloudActivation(activation)
       void completeCloudActivation(activation.userCode)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(localizedAppError(err, t))
     } finally {
       setLoading(false)
     }
-  }, [cloudAccountAdapter, completeCloudActivation, scanPairingCode])
+  }, [cloudAccountAdapter, completeCloudActivation, scanPairingCode, t])
 
   const cancelCloudActivation = useCallback(async () => {
     if (!cloudAccountAdapter) return
@@ -514,11 +544,11 @@ export function RemoteControlApp({
       setPassword('')
       setView('home')
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(localizedAppError(err, t))
     } finally {
       setLoading(false)
     }
-  }, [api, login, password, storage])
+  }, [api, login, password, storage, t])
 
   const signOut = useCallback(async () => {
     if (cloudAccountAdapter) await cloudAccountAdapter.logout()
@@ -639,7 +669,7 @@ export function RemoteControlApp({
         void completeCloudActivation(activation.userCode)
       } catch (err) {
         hapticError()
-        setError(err instanceof Error ? err.message : String(err))
+        setError(localizedAppError(err, t))
         setScanOpen(false)
         setView('settings')
       } finally {
@@ -649,7 +679,7 @@ export function RemoteControlApp({
       return
     }
     if (!storage) {
-      setError('Local storage is required before importing a Muxvia QR')
+      setError(t('errors.storageRequired'))
       return
     }
     setPairing(true)
@@ -673,13 +703,13 @@ export function RemoteControlApp({
     } catch (err) {
       hapticError()
       console.warn('[muxvia:pairing] pair claim failed', err instanceof Error ? err.message : String(err))
-      setError(err instanceof Error ? err.message : String(err))
+      setError(localizedAppError(err, t))
       setManualEntryOpen(true)
     } finally {
       setPairing(false)
       setScanFlowState('idle')
     }
-  }, [cloudAccountAdapter, completeCloudActivation, externalPairingAdapter, selectedMachine?.id, storage, storeImportedMachine])
+  }, [cloudAccountAdapter, completeCloudActivation, externalPairingAdapter, selectedMachine?.id, storage, storeImportedMachine, t])
 
   const commitEndpointShare = useCallback(async () => {
 	if (!sharePreview || !externalPairingAdapter?.commitShare) return
@@ -690,11 +720,11 @@ export function RemoteControlApp({
 	  storeImportedMachine(imported)
 	} catch (err) {
 	  hapticError()
-	  setError(err instanceof Error ? err.message : String(err))
+	  setError(localizedAppError(err, t))
 	} finally {
 	  setPairing(false)
 	}
-  }, [externalPairingAdapter, sharePreview, storeImportedMachine])
+  }, [externalPairingAdapter, sharePreview, storeImportedMachine, t])
 
   const importManualScan = useCallback(async () => {
     hapticImpact()
@@ -720,13 +750,13 @@ export function RemoteControlApp({
       setManualScanValue(value)
       await pairScannedValue(value)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(localizedAppError(err, t))
     } finally {
       cameraScanInFlightRef.current = false
       setCameraScanning(false)
       setScanFlowState((current) => current === 'scanning' ? 'idle' : current)
     }
-  }, [pairScannedValue, scanPairingCode])
+  }, [pairScannedValue, scanPairingCode, t])
 
   useEffect(() => {
     if (!scanOpen || !scanPairingCode || manualEntryOpen || cameraScanning || scanAutoStartToken === 0) return
@@ -746,10 +776,10 @@ export function RemoteControlApp({
     setPairIntent('authorize-machine')
     setManualScanValue('')
     setManualEntryOpen(false)
-    setError('This phone needs a fresh machine authorization. Scan the machine QR again.')
+    setError(t('errors.pairAgain'))
     setScanOpen(true)
     setScanAutoStartToken((current) => current + 1)
-  }, [dropMachineRuntime, externalPairingAdapter, storage, user?.id])
+  }, [dropMachineRuntime, externalPairingAdapter, storage, t, user?.id])
 
   const forgetMachineAuthorization = useCallback((machine: WebControlMachine) => {
     if (!storage) return
@@ -1053,6 +1083,7 @@ function HomeView({
   onSelectMachine: (machine: DisplayMachine) => void
   onSignIn: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <section className="muxvia-app-page flex min-h-0 flex-1 flex-col" data-testid="muxvia-app-home">
       <header className="muxvia-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] lg:h-16 lg:px-6 lg:py-0">
@@ -1061,37 +1092,37 @@ function HomeView({
           <span aria-hidden="true" className="hidden text-base font-bold text-zinc-950 lg:inline">Muxvia</span>
           <div className="hidden h-5 w-px bg-zinc-200 lg:block" />
           <div className="min-w-0 lg:flex lg:items-center lg:gap-3">
-            <h1 className="text-lg font-semibold leading-6 lg:text-sm">Machines</h1>
+            <h1 className="text-lg font-semibold leading-6 lg:text-sm">{t('machines.title')}</h1>
             <p className="truncate text-xs font-medium text-zinc-500 lg:border-l lg:border-zinc-200 lg:pl-3">
-            {signedIn ? `${machines.length} available${user?.email ? ` / ${user.email}` : ''}` : 'Sign in to sync devices'}
+            {signedIn ? (user?.email ? t('machines.availableFor', { count: machines.length, account: user.email }) : t('machines.availableCount', { count: machines.length })) : t('machines.signInToSync')}
             </p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {signedIn ? (
             <button
-              aria-label="Refresh machines"
+              aria-label={t('machines.refresh')}
               className="muxvia-app-icon-button gap-2 px-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
               type="button"
               onClick={onRefresh}
               disabled={loading}
             >
               <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
-              <span className="hidden text-xs font-semibold xl:inline">Refresh</span>
+              <span className="hidden text-xs font-semibold xl:inline">{t('common.refresh')}</span>
             </button>
           ) : null}
           <button
-            aria-label="Scan new machine"
+            aria-label={t('machines.add')}
             className="muxvia-app-primary-button min-w-11 gap-2 px-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)] lg:px-3"
             type="button"
             onClick={onAddLocalDevice}
           >
             <QrCode className="h-5 w-5" />
-            <span className="hidden text-xs font-semibold lg:inline">Add machine</span>
+            <span className="hidden text-xs font-semibold lg:inline">{t('machines.add')}</span>
           </button>
           {fileTransfer ? (
             <button
-              aria-label="Open data transfer center"
+              aria-label={t('machines.transfers')}
               className="muxvia-app-icon-button relative focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
               type="button"
               onClick={onOpenTransferCenter}
@@ -1101,7 +1132,7 @@ function HomeView({
             </button>
           ) : null}
           <button
-            aria-label="Open settings"
+            aria-label={t('machines.openSettings')}
             className="muxvia-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
             type="button"
             onClick={onOpenSettings}
@@ -1113,23 +1144,23 @@ function HomeView({
 
       {machines.length === 0 ? (
         <EmptyState
-          actionLabel="Scan QR"
+          actionLabel={t('machines.scan')}
           icon="scan"
-          message="No devices found. Add a local device, or sign in to sync your Hub devices."
+          message={t('machines.emptyCopy')}
           onAction={onAddLocalDevice}
-          title="No machines yet"
+          title={t('machines.emptyTitle')}
         />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto py-4 lg:px-8 lg:py-7">
           <div className="muxvia-app-panel mx-auto w-full max-w-7xl border-x-0 lg:overflow-visible lg:border-x">
             <div className="hidden grid-cols-[40px_minmax(180px,1.3fr)_minmax(160px,.8fr)_minmax(180px,1fr)_32px] items-center gap-4 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 text-[11px] font-semibold uppercase text-zinc-500 lg:grid">
               <span aria-hidden="true" />
-              <span>Machine</span>
-              <span>Access</span>
-              <span>Connection</span>
+              <span>{t('machines.columns.machine')}</span>
+              <span>{t('machines.columns.access')}</span>
+              <span>{t('machines.columns.connection')}</span>
               <span aria-hidden="true" />
             </div>
-            <ul aria-label="Machines" className="divide-y divide-[var(--muxvia-app-line)]">
+            <ul aria-label={t('machines.title')} className="divide-y divide-[var(--muxvia-app-line)]">
           {machines.map((machine) => (
             <li key={machine.id}>
               <MachineRow
@@ -1198,6 +1229,7 @@ function SettingsView({
   onExportDebugLogs?: (() => Promise<void>) | undefined
   nativeCloudLogin: boolean
 }) {
+  const { t, i18n } = useTranslation()
   const handleNumberSetting = (key: 'fontSize' | 'scrollback' | 'scrollbackPrefetchThresholdRows', min: number, max: number) =>
     (event: ChangeEvent<HTMLInputElement>) => {
       const value = Number(event.currentTarget.value)
@@ -1213,7 +1245,7 @@ function SettingsView({
     <section className="muxvia-app-page flex min-h-0 flex-1 flex-col animate-in fade-in slide-in-from-bottom-4 duration-200" data-testid="muxvia-app-settings">
       <header className="muxvia-app-header flex min-h-14 shrink-0 items-center gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <button
-          aria-label="Back to machines"
+          aria-label={t('common.backToMachines')}
           className="muxvia-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
           type="button"
           onClick={onBack}
@@ -1221,14 +1253,14 @@ function SettingsView({
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div className="min-w-0 flex-1">
-          <h1 className="text-lg font-semibold leading-6 text-zinc-900">Settings</h1>
-          <p className="truncate text-xs font-medium text-zinc-500">{signedIn ? user?.email ?? 'Signed in' : nativeCloudLogin ? 'Muxvia Cloud sign in' : 'Web Control sign in'}</p>
+          <h1 className="text-lg font-semibold leading-6 text-zinc-900">{t('common.settings')}</h1>
+          <p className="truncate text-xs font-medium text-zinc-500">{signedIn ? user?.email ?? t('common.signedIn') : nativeCloudLogin ? t('settings.cloudSignIn') : t('settings.webSignIn')}</p>
         </div>
         {signedIn ? (
           <button
-            aria-label="Sign out of Muxvia Cloud"
+            aria-label={t('common.signOut')}
             className="muxvia-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
-            title="Sign out"
+            title={t('common.signOut')}
             type="button"
             onClick={onSignOut}
           >
@@ -1243,15 +1275,27 @@ function SettingsView({
             <p className="border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
           ) : null}
 
-          <SettingsSection title="Connection">
+          <SettingsSection title={t('settings.connection')}>
             <SettingsRow
-              label="Web Control"
-              value={controlUrl || 'Built-in endpoint'}
+              label={t('settings.webControl')}
+              value={controlUrl || t('settings.builtInEndpoint')}
             />
           </SettingsSection>
 
+          <SettingsSection title={t('common.language')}>
+            <SettingsRow label={t('settings.languageHint')}>
+              <SettingsSelect
+                ariaLabel={t('common.language')}
+                value={normalizeMuxviaLanguage(i18n.resolvedLanguage)}
+                onChange={(value) => { hapticSelection(); void i18n.changeLanguage(value) }}
+              >
+                {muxviaLanguages.map((language) => <option key={language.id} value={language.id}>{language.label}</option>)}
+              </SettingsSelect>
+            </SettingsRow>
+          </SettingsSection>
+
           {onExportDebugLogs ? (
-            <SettingsSection title="Diagnostics">
+            <SettingsSection title={t('settings.diagnostics')}>
               <div className="px-4 py-3">
                 <button
                   className="muxvia-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
@@ -1262,17 +1306,17 @@ function SettingsView({
                   }}
                 >
                   <Download className="h-4 w-4" />
-                  Export logs
+                  {t('settings.exportLogs')}
                 </button>
               </div>
             </SettingsSection>
           ) : null}
 
-          <SettingsSection title="Terminal">
-            <SettingsRow label="Font size">
+          <SettingsSection title={t('settings.terminal')}>
+            <SettingsRow label={t('settings.fontSize')}>
               <div className="inline-flex h-11 items-center overflow-hidden border border-[var(--muxvia-app-line)] bg-white">
                 <button
-                  aria-label="Decrease terminal font size"
+                  aria-label={t('settings.decreaseFont')}
                   className="h-11 w-11 text-lg font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
                   type="button"
                   onClick={() => { hapticSelection(); onTerminalSettingsChange({ fontSize: Math.max(8, terminalSettings.fontSize - 1) }) }}
@@ -1280,7 +1324,7 @@ function SettingsView({
                   -
                 </button>
                 <input
-                  aria-label="Terminal font size"
+                  aria-label={t('settings.fontSize')}
                   className="h-11 w-12 border-x border-[var(--muxvia-app-line)] bg-zinc-50 px-1 text-center text-sm font-semibold text-zinc-900 outline-none focus:ring-2 focus:ring-blue-500/25"
                   inputMode="numeric"
                   max={32}
@@ -1290,7 +1334,7 @@ function SettingsView({
                   onChange={handleNumberSetting('fontSize', 8, 32)}
                 />
                 <button
-                  aria-label="Increase terminal font size"
+                  aria-label={t('settings.increaseFont')}
                   className="h-11 w-11 text-lg font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
                   type="button"
                   onClick={() => { hapticSelection(); onTerminalSettingsChange({ fontSize: Math.min(32, terminalSettings.fontSize + 1) }) }}
@@ -1299,45 +1343,45 @@ function SettingsView({
                 </button>
               </div>
             </SettingsRow>
-            <SettingsRow label="Font" stacked>
+            <SettingsRow label={t('settings.font')} stacked>
               <FontPicker
                 value={terminalSettings.fontFamily}
                 onChange={(value) => onTerminalSettingsChange({ fontFamily: value })}
               />
             </SettingsRow>
-            <SettingsRow label="Theme" stacked>
+            <SettingsRow label={t('settings.theme')} stacked>
               <ThemePicker
                 groups={themeGroups}
                 value={terminalSettings.themeId}
                 onChange={(value) => onTerminalSettingsChange({ themeId: value })}
               />
             </SettingsRow>
-            <SettingsRow label="Renderer">
+            <SettingsRow label={t('settings.renderer')}>
               <SettingsSelect
-                ariaLabel="Terminal renderer"
+                ariaLabel={t('settings.renderer')}
                 value={terminalSettings.renderer}
                 onChange={(value) => { hapticSelection(); onTerminalSettingsChange({ renderer: value as TerminalRenderer }) }}
               >
-                <option value="auto">Auto</option>
+                <option value="auto">{t('settings.auto')}</option>
                 <option value="webgl">WebGL</option>
                 <option value="canvas">Canvas</option>
                 <option value="dom">DOM</option>
               </SettingsSelect>
             </SettingsRow>
-            <SettingsRow label="Keyboard">
+            <SettingsRow label={t('settings.keyboard')}>
               <SettingsSelect
-                ariaLabel="Terminal keyboard mode"
+                ariaLabel={t('settings.keyboard')}
                 value={terminalSettings.keyboardMode}
                 onChange={(value) => { hapticSelection(); onTerminalSettingsChange({ keyboardMode: value as TerminalKeyboardMode }) }}
               >
-                <option value="auto">Auto</option>
-                <option value="resize">Resize</option>
-                <option value="shift">Shift up</option>
+                <option value="auto">{t('settings.auto')}</option>
+                <option value="resize">{t('settings.resize')}</option>
+                <option value="shift">{t('settings.shiftUp')}</option>
               </SettingsSelect>
             </SettingsRow>
-            <SettingsRow label="Scrollback">
+            <SettingsRow label={t('settings.scrollback')}>
               <input
-                aria-label="Terminal scrollback"
+                aria-label={t('settings.scrollback')}
                 className="h-11 w-28 border border-[var(--muxvia-app-line)] bg-white px-3 text-right text-sm font-semibold text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
                 inputMode="numeric"
                 max={50000}
@@ -1348,9 +1392,9 @@ function SettingsView({
                 onChange={handleNumberSetting('scrollback', 500, 50000)}
               />
             </SettingsRow>
-            <SettingsRow label="Prefetch threshold">
+            <SettingsRow label={t('settings.prefetch')}>
               <input
-                aria-label="Terminal scrollback prefetch threshold"
+                aria-label={t('settings.prefetch')}
                 className="h-11 w-28 border border-[var(--muxvia-app-line)] bg-white px-3 text-right text-sm font-semibold text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
                 inputMode="numeric"
                 max={1000}
@@ -1361,19 +1405,19 @@ function SettingsView({
                 onChange={handleNumberSetting('scrollbackPrefetchThresholdRows', 0, 1000)}
               />
             </SettingsRow>
-            <SettingsRow label="Cursor blink">
+            <SettingsRow label={t('settings.cursorBlink')}>
               <Switch
-                ariaLabel="Terminal cursor blink"
+                ariaLabel={t('settings.cursorBlink')}
                 checked={terminalSettings.cursorBlink}
                 onChange={(checked) => onTerminalSettingsChange({ cursorBlink: checked })}
               />
             </SettingsRow>
           </SettingsSection>
 
-          <SettingsSection title="Account">
+          <SettingsSection title={t('common.account')}>
             {signedIn ? (
               <>
-                <SettingsRow label="Signed in" value={user?.email ?? 'Account'} />
+                <SettingsRow label={t('common.signedIn')} value={user?.email ?? t('common.account')} />
                 <div className="px-4 py-3">
                   <button
                     className="muxvia-app-secondary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
@@ -1382,7 +1426,7 @@ function SettingsView({
                     disabled={loading}
                   >
                     <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                    Refresh
+                    {t('common.refresh')}
                   </button>
                 </div>
               </>
@@ -1390,7 +1434,7 @@ function SettingsView({
               <>
                 {!nativeCloudLogin && <div className="px-4 py-3">
                   <label className="block text-sm font-medium text-zinc-500">
-                    Email or username
+                    {t('settings.emailOrUsername')}
                     <input
                       className="mt-2 h-11 w-full border border-[var(--muxvia-app-line)] bg-white px-3 text-sm text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
                       value={login}
@@ -1401,7 +1445,7 @@ function SettingsView({
                 </div>}
                 {!nativeCloudLogin && <div className="border-t border-zinc-200 px-4 py-3">
                   <label className="block text-sm font-medium text-zinc-500">
-                    Password
+                    {t('settings.password')}
                     <input
                       className="mt-2 h-11 w-full border border-[var(--muxvia-app-line)] bg-white px-3 text-sm text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
                       value={password}
@@ -1429,7 +1473,7 @@ function SettingsView({
                       disabled={loading}
                     >
                       <LogIn className="h-4 w-4" />
-                      Sign in
+                      {t('common.signIn')}
                     </button>
                   </div>
                 )}
@@ -1457,6 +1501,7 @@ function CloudActivationPanel({
   onScan: () => void
   onSubmitCode: (code: string) => void
 }) {
+  const { t } = useTranslation()
   const [now, setNow] = useState(() => Date.now())
   const [code, setCode] = useState('')
   useEffect(() => {
@@ -1471,9 +1516,9 @@ function CloudActivationPanel({
     return (
       <div className="border-t border-zinc-200 px-4 py-4">
         <div aria-live="polite" className="border border-[var(--muxvia-app-line)] bg-white px-4 py-5 text-center">
-          <p className="text-xs font-medium text-zinc-500">Enter this code in Muxvia Cloud on your computer</p>
+          <p className="text-sm font-medium text-zinc-500">{t('activation.enterOnComputer')}</p>
           <strong className="mt-3 block font-mono text-2xl font-medium text-zinc-950">{activation.userCode}</strong>
-          <p className="mt-3 font-mono text-xs text-zinc-500">Waiting for approval · {remaining}</p>
+          <p className="mt-3 font-mono text-sm text-zinc-500">{t('activation.waiting', { remaining })}</p>
         </div>
         <button
           className="muxvia-app-secondary-button mt-3 h-12 w-full gap-2 px-3 text-sm font-semibold"
@@ -1481,7 +1526,7 @@ function CloudActivationPanel({
           onClick={onCancel}
         >
           <X className="h-4 w-4" />
-          Cancel activation
+          {t('activation.cancel')}
         </button>
       </div>
     )
@@ -1489,7 +1534,7 @@ function CloudActivationPanel({
 
   return (
     <div className="border-t border-zinc-200 px-4 py-4">
-      <p className="mb-4 text-sm leading-6 text-zinc-500">Create a phone login code on the Muxvia web account page, then scan the QR code or enter the same code below.</p>
+      <p className="mb-4 text-sm leading-6 text-zinc-500">{t('activation.intro')}</p>
       {canScan ? (
         <button
           className="muxvia-app-primary-button h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
@@ -1498,11 +1543,11 @@ function CloudActivationPanel({
           disabled={loading}
         >
           <QrCode className="h-4 w-4" />
-          Scan QR from web
+          {t('activation.scanWeb')}
         </button>
-      ) : <p className="text-sm text-zinc-500">QR scanning is unavailable on this platform.</p>}
+      ) : <p className="text-sm text-zinc-500">{t('activation.scanUnavailable')}</p>}
       <label className="mt-4 block text-xs font-semibold text-zinc-500">
-        Login code
+        {t('activation.loginCode')}
         <input
           className="mt-2 h-11 w-full border border-[var(--muxvia-app-line)] bg-white px-3 font-mono text-sm uppercase text-zinc-950 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
           value={code}
@@ -1520,7 +1565,7 @@ function CloudActivationPanel({
         disabled={loading || code.trim() === ''}
       >
         <Keyboard className="h-4 w-4" />
-        Use login code
+        {t('activation.useCode')}
       </button>
     </div>
   )
@@ -1843,13 +1888,14 @@ function PairSheet({
   onManualScanValueChange: (value: string) => void
   onScanWithCamera: () => void
 }) {
-  const title = sshCredentialNotice ? 'SSH Key Ready' : sharePreview ? 'Import Endpoint Config' : pairIntent === 'add-local' ? 'Add Local Device' : 'Authorize Device'
-  const primaryLabel = pairIntent === 'add-local' ? 'Add Device' : 'Pair Device'
+  const { t } = useTranslation()
+  const title = sshCredentialNotice ? t('pairing.sshReady') : sharePreview ? t('pairing.importConfig') : pairIntent === 'add-local' ? t('pairing.addLocal') : t('pairing.authorize')
+  const primaryLabel = pairIntent === 'add-local' ? t('pairing.add') : t('pairing.pair')
   const showManualEntry = manualEntryOpen || !canScanWithCamera
   const statusMessage = scanFlowState === 'pairing'
-    ? 'QR code scanned. Pairing this phone with the machine...'
+    ? t('pairing.scanned')
     : scanFlowState === 'scanning'
-      ? 'Camera is scanning for a Muxvia QR code...'
+      ? t('pairing.scanning')
       : null
   return (
     <div className="muxvia-app-page fixed inset-0 z-50" role="dialog" aria-modal="true">
@@ -1860,7 +1906,7 @@ function PairSheet({
             <h2 className="truncate text-base font-semibold">{title}</h2>
           </div>
           <button
-            aria-label="Close pairing"
+            aria-label={t('pairing.close')}
             className="muxvia-app-icon-button border-transparent bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
             type="button"
             onClick={onClose}
@@ -1891,7 +1937,7 @@ function PairSheet({
                       onClick={() => { void navigator.clipboard.writeText(credential.authorizedKey); hapticSuccess() }}
                     >
                       <Copy className="h-4 w-4" />
-                      Copy public key
+                      {t('pairing.copyKey')}
                     </button>
                   </div>
                 ))}
@@ -1911,7 +1957,7 @@ function PairSheet({
                 <div className="mt-3 text-xs leading-5 text-zinc-500">
                   {sharePreview.connectModeChanged ? 'Connect mode changes. ' : ''}
                   {sharePreview.selectionPolicyChanged ? 'Route policy changes. ' : ''}
-                  Credentials and terminal authorization are not transferred.
+                  {t('pairing.credentialsStayLocal')}
                 </div>
                 <button
                   className="muxvia-app-primary-button mt-4 h-11 w-full gap-2 px-3 text-sm font-semibold disabled:opacity-50"
@@ -1941,7 +1987,7 @@ function PairSheet({
                 disabled={pairing || cameraScanning}
               >
                 {cameraScanning || pairing ? <span className="muxvia-square-spinner" aria-hidden="true" /> : <Camera className="h-4 w-4" />}
-                {pairing ? 'Pairing device...' : cameraScanning ? 'Scanning QR...' : 'Scan QR with camera'}
+                {pairing ? t('pairing.pairing') : cameraScanning ? t('pairing.scanProgress') : t('pairing.scanCamera')}
               </button>
             ) : null}
 
@@ -1952,12 +1998,12 @@ function PairSheet({
                 onClick={onManualEntryOpen}
               >
                 <Keyboard className="h-4 w-4" />
-                Enter content manually
+                {t('pairing.manual')}
               </button>
             ) : (
               <div className="muxvia-app-panel mt-4 bg-[var(--muxvia-app-soft)] px-3 py-2">
                 <label className="block text-xs font-semibold text-zinc-500">
-                  Muxvia QR content
+                  {t('pairing.content')}
                   <textarea
                     className="mt-1 h-44 w-full resize-none border border-[var(--muxvia-app-line)] bg-white p-2 font-mono text-xs leading-5 text-zinc-950 placeholder:text-zinc-400 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
                     value={manualScanValue}
@@ -2016,15 +2062,16 @@ function MachineRow({
   onPairMachine: (machine: DisplayMachine) => void
   onSelectMachine: (machine: DisplayMachine) => void
 }) {
+  const { t } = useTranslation()
   const [menuOpen, setMenuOpen] = useState(false)
   const connection = useSyncExternalStore(
     connectionStateSource?.subscribe ?? noopSubscribe,
     connectionStateSource?.getSnapshot ?? getEmptyMachineConnectionSnapshot,
     connectionStateSource?.getSnapshot ?? getEmptyMachineConnectionSnapshot,
   )
-  const actionLabel = authorizationState === 'ready' ? 'Open' : 'Pair'
+  const actionLabel = authorizationState === 'ready' ? t('machines.open') : t('machines.pair')
   const subtitle = machine.hostname || shortenMachineId(machine.id)
-  const card = machineCardProjection(machine, authorizationState, authorizationExpiresAt, connection)
+  const card = machineCardProjection(machine, authorizationState, authorizationExpiresAt, connection, t)
   const DeviceIcon = machine.accessClass === 'cloud' ? Cloud : LaptopMinimal
   const canForget = Boolean(authorizationExpiresAt || authorizationState === 'ready')
   return (
@@ -2060,7 +2107,7 @@ function MachineRow({
       {canForget ? (
         <div className="absolute right-9 top-2.5 z-10 lg:right-3 lg:top-1/2 lg:-translate-y-1/2">
           <button
-            aria-label={`More actions for ${machine.name}`}
+            aria-label={t('machines.more', { name: machine.name })}
             className="inline-flex h-11 w-11 items-center justify-center text-zinc-500 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)] lg:h-10 lg:w-10"
             type="button"
             onClick={() => setMenuOpen((open) => !open)}
@@ -2070,13 +2117,13 @@ function MachineRow({
           {menuOpen ? (
             <div className="absolute right-0 top-11 min-w-44 border border-[var(--muxvia-app-line)] bg-white p-1 shadow-lg">
               <button
-                aria-label={`Remove authorization for ${machine.name}`}
+                aria-label={t('machines.removeAuthorization')}
                 className="flex h-11 w-full items-center gap-2 px-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50"
                 type="button"
                 onClick={() => onForgetMachineAuthorization(machine)}
               >
                 <Trash2 className="h-4 w-4" />
-                Remove authorization
+                {t('machines.removeAuthorization')}
               </button>
             </div>
           ) : null}
@@ -2084,13 +2131,13 @@ function MachineRow({
       ) : null}
       {authorizationState !== 'ready' ? (
         <button
-          aria-label={`Scan to pair ${machine.name}`}
+          aria-label={`${t('machines.pair')} ${machine.name}`}
           className="muxvia-app-primary-button absolute bottom-2.5 right-3.5 h-11 gap-1.5 px-2.5 text-[11px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
           type="button"
           onClick={() => onPairMachine(machine)}
         >
           <QrCode className="h-3.5 w-3.5" />
-          Pair again
+          {t('machines.pairAgain')}
         </button>
       ) : null}
     </div>
@@ -2101,14 +2148,15 @@ function authorizationAvailabilityText(
   machine: DisplayMachine,
   authorizationState: MachineAuthorizationState,
   expiresAt: string | undefined,
+  t: TFunction,
 ): string {
   if (authorizationState === 'ready') {
-    return expiresAt ? `Authorized until ${formatAuthorizationExpiry(expiresAt)}` : machine.online ? 'Tap to connect' : 'Authorized'
+    return expiresAt ? t('machines.authorizedUntil', { time: formatAuthorizationExpiry(expiresAt) }) : machine.online ? t('machines.tapToConnect') : t('machines.authorized')
   }
   if (authorizationState === 'expired') {
-    return expiresAt ? `Authorization expired ${formatAuthorizationExpiry(expiresAt)}` : 'Authorization expired'
+    return expiresAt ? t('machines.authorizationExpiredAt', { time: formatAuthorizationExpiry(expiresAt) }) : t('machines.authorizationExpired')
   }
-  return 'Pair this phone to open it'
+  return t('machines.pairToOpen')
 }
 
 interface MachineCardProjection {
@@ -2123,35 +2171,36 @@ function machineCardProjection(
   authorizationState: MachineAuthorizationState,
   expiresAt: string | undefined,
   connection: MachineConnectionSnapshot,
+  t: TFunction,
 ): MachineCardProjection {
   if (authorizationState !== 'ready') {
     return {
-      status: authorizationState === 'expired' ? 'Authorization expired' : 'Action required',
+      status: authorizationState === 'expired' ? t('machines.authorizationExpired') : t('machines.actionRequired'),
       statusClass: 'text-amber-700',
       tone: 'warning',
-      detail: authorizationAvailabilityText(machine, authorizationState, expiresAt),
+      detail: authorizationAvailabilityText(machine, authorizationState, expiresAt, t),
     }
   }
   if (connection.phase === 'connected') {
-    const path = connectionPathDetail(connection)
+    const path = connectionPathDetail(connection, t)
     return {
-      status: 'Connected',
+      status: t('machines.connected'),
       statusClass: 'text-emerald-700',
       tone: 'online',
-      detail: joinCardDetail(terminalCountLabel(machine.terminalCount), path),
+      detail: joinCardDetail(terminalCountLabel(machine.terminalCount, t), path),
     }
   }
   if (connection.phase === 'failed') {
     return {
-      status: 'Failed',
+      status: t('machines.failed'),
       statusClass: 'text-red-600',
       tone: 'warning',
-      detail: connection.error || connection.statusText || 'Connection failed',
+      detail: connection.error || connection.statusText || t('machines.connectionFailed'),
     }
   }
   if (connection.phase !== 'idle') {
     return {
-      status: connectionPhaseShortLabel(connection.phase),
+      status: connectionPhaseShortLabel(connection.phase, t),
       statusClass: 'text-blue-700',
       tone: 'active',
       detail: connection.statusText,
@@ -2159,80 +2208,82 @@ function machineCardProjection(
   }
   if (machine.online) {
     return {
-      status: 'Available',
+      status: t('machines.available'),
       statusClass: 'text-emerald-700',
       tone: 'online',
-      detail: joinCardDetail(terminalCountLabel(machine.terminalCount), availablePathLabel(machine)),
+      detail: joinCardDetail(terminalCountLabel(machine.terminalCount, t), availablePathLabel(machine, t)),
     }
   }
   return {
-    status: 'Offline',
+    status: t('machines.offline'),
     statusClass: 'text-zinc-500',
     tone: 'offline',
-    detail: machine.lastSeen ? `Last online ${formatAuthorizationExpiry(machine.lastSeen)}` : 'Not currently reachable',
+    detail: machine.lastSeen ? t('machines.lastOnline', { time: formatAuthorizationExpiry(machine.lastSeen) }) : t('machines.notReachable'),
   }
 }
 
 function AccessClassLabel({ accessClass }: { accessClass: MachineAccessClass }) {
+  const { t } = useTranslation()
   if (accessClass === 'local_cloud') {
-    return <span className="inline-flex items-center gap-1.5"><Wifi className="h-3.5 w-3.5" />Local + Cloud</span>
+    return <span className="inline-flex items-center gap-1.5"><Wifi className="h-3.5 w-3.5" />{t('machines.source.localCloud')}</span>
   }
   if (accessClass === 'cloud') {
-    return <span className="inline-flex items-center gap-1.5"><Cloud className="h-3.5 w-3.5" />Cloud</span>
+    return <span className="inline-flex items-center gap-1.5"><Cloud className="h-3.5 w-3.5" />{t('machines.source.hub')}</span>
   }
-  return <span className="inline-flex items-center gap-1.5"><Wifi className="h-3.5 w-3.5" />Local</span>
+  return <span className="inline-flex items-center gap-1.5"><Wifi className="h-3.5 w-3.5" />{t('machines.source.local')}</span>
 }
 
 function ReachabilityLabel({ reachability }: { reachability?: MachineReachabilityView | undefined }) {
-  const local = reachability?.localChecked ? (reachability.localOnline ? 'Local online' : 'Local offline') : 'Local checking'
-  const cloud = reachability?.hubOnline ? 'Cloud online' : 'Cloud offline'
+  const { t } = useTranslation()
+  const local = reachability?.localChecked ? (reachability.localOnline ? t('machines.reachability.localOnline') : t('machines.reachability.localOffline')) : t('machines.reachability.localChecking')
+  const cloud = reachability?.hubOnline ? t('machines.reachability.cloudOnline') : t('machines.reachability.cloudOffline')
   return <span className="truncate font-medium text-zinc-400">{local} · {cloud}</span>
 }
 
-function connectionPathDetail(connection: MachineConnectionSnapshot): string {
+function connectionPathDetail(connection: MachineConnectionSnapshot, t: TFunction): string {
   const info = connection.connectionInfo
   const rtt = info?.rtt !== undefined ? `${Math.round(info.rtt)} ms` : ''
-  let path = 'Connected'
-  if (info?.path === 'local') path = 'Local'
-  else if (info?.observedPath === 'single_relay' || info?.relayInUse) path = 'Single relay'
-  else if (info?.observedPath === 'direct') path = 'P2P direct'
-  else if (info?.path === 'hub') path = 'Cloud'
+  let path = t('machines.connected')
+  if (info?.path === 'local') path = t('machines.path.local')
+  else if (info?.observedPath === 'single_relay' || info?.relayInUse) path = t('machines.path.relay')
+  else if (info?.observedPath === 'direct') path = t('machines.path.direct')
+  else if (info?.path === 'hub') path = t('machines.path.cloud')
   return joinCardDetail(path, rtt)
 }
 
-function availablePathLabel(machine: DisplayMachine): string {
+function availablePathLabel(machine: DisplayMachine, t: TFunction): string {
   if (machine.accessClass === 'local_cloud') {
-    if (machine.reachability?.localOnline) return 'Local available'
-    if (machine.reachability?.hubOnline) return 'Cloud available'
+    if (machine.reachability?.localOnline) return t('machines.path.localAvailable')
+    if (machine.reachability?.hubOnline) return t('machines.path.cloudAvailable')
   }
-  if (machine.accessClass === 'cloud') return 'Cloud available'
-  return 'Local available'
+  if (machine.accessClass === 'cloud') return t('machines.path.cloudAvailable')
+  return t('machines.path.localAvailable')
 }
 
-function terminalCountLabel(count: number | undefined): string {
+function terminalCountLabel(count: number | undefined, t: TFunction): string {
   if (count === undefined) return ''
-  return `${count} ${count === 1 ? 'terminal' : 'terminals'}`
+  return t('machines.terminals', { count })
 }
 
 function joinCardDetail(...parts: string[]): string {
   return parts.filter(Boolean).join(' · ')
 }
 
-function connectionPhaseShortLabel(phase: MachineConnectionSnapshot['phase']): string {
-  if (phase === 'resolving') return 'Resolving'
-  if (phase === 'signaling') return 'Signaling'
-  if (phase === 'authorizing') return 'Authorizing'
-  if (phase === 'verifying') return 'Verifying'
-  if (phase === 'reconnecting') return 'Reconnecting'
-  if (phase === 'waiting_network') return 'Waiting'
-  return 'Connecting'
+function connectionPhaseShortLabel(phase: MachineConnectionSnapshot['phase'], t: TFunction): string {
+  if (phase === 'resolving') return t('machines.phase.resolving')
+  if (phase === 'signaling') return t('machines.phase.signaling')
+  if (phase === 'authorizing') return t('machines.phase.authorizing')
+  if (phase === 'verifying') return t('machines.phase.verifying')
+  if (phase === 'reconnecting') return t('machines.phase.reconnecting')
+  if (phase === 'waiting_network') return t('machines.phase.waiting_network')
+  return t('machines.phase.connecting')
 }
 
 function formatAuthorizationExpiry(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   if (date.getFullYear() >= 2099) return value
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString(muxviaIntlLocale(), {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',

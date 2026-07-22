@@ -21,7 +21,7 @@ describe('MachineBrowserShell', () => {
 
     expect(screen.getByTestId('muxvia-remote-app-shell')).toBeTruthy()
     expect(screen.getByTestId('muxvia-machine-list')).toBeTruthy()
-    expect(screen.getByRole('heading', { name: 'Machines' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Devices' })).toBeTruthy()
     expect(screen.queryByTestId('muxvia-terminal')).toBeNull()
     expect(screen.queryByTestId('muxvia-terminal-list')).toBeNull()
     expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane|tmux|session/i)

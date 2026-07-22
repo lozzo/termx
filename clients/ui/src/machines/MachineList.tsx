@@ -1,11 +1,9 @@
 import { useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ChevronRight, LaptopMinimal, LogIn, Plus, QrCode, Server, X } from 'lucide-react'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
 import type { AppMachineRecord } from '../state/appMachine'
-import {
-  formatLastSeen,
-  formatMachineState,
-} from '../state/appMachine'
+import { muxviaIntlLocale } from '../i18n'
 
 export interface MachineListProps {
   machines: AppMachineRecord[]
@@ -26,6 +24,7 @@ export function MachineList({
   onSignIn,
   className,
 }: MachineListProps) {
+  const { t } = useTranslation()
   const [detailMachine, setDetailMachine] = useState<AppMachineRecord | null>(null)
   const onlineMachines = machines.filter((machine) => machine.state === 'online' || machine.state === 'connecting')
   const otherMachines = machines.filter((machine) => machine.state !== 'online' && machine.state !== 'connecting')
@@ -37,14 +36,14 @@ export function MachineList({
     >
       <header className="muxvia-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold leading-6 text-zinc-950">Machines</h1>
+          <h1 className="text-lg font-semibold leading-6 text-zinc-950">{t('machines.title')}</h1>
           <p className="truncate text-xs font-medium text-zinc-500">
-            {authState === 'anonymous' ? 'Local and LAN records' : `${machines.length} available`}
+            {authState === 'anonymous' ? t('machines.localRecords') : t('machines.availableCount', { count: machines.length })}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button
-            aria-label="Scan pairing QR"
+            aria-label={t('machines.scanPairing')}
             className="muxvia-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
             type="button"
             onClick={() => { hapticImpact(); onScanMachine() }}
@@ -52,7 +51,7 @@ export function MachineList({
             <QrCode className="h-5 w-5" />
           </button>
           <button
-            aria-label="Add machine"
+            aria-label={t('machines.add')}
             className="muxvia-app-primary-button min-w-11 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
             type="button"
             onClick={() => { hapticImpact(); onAddMachine() }}
@@ -72,8 +71,8 @@ export function MachineList({
               <Server className="h-6 w-6" />
             </div>
             <div className="space-y-1.5">
-              <h2 className="text-base font-semibold text-zinc-950">No machines yet</h2>
-              <p className="text-sm leading-5 text-zinc-500">Add or scan a Muxvia QR to keep a machine here.</p>
+              <h2 className="text-base font-semibold text-zinc-950">{t('machines.emptyTitle')}</h2>
+              <p className="text-sm leading-5 text-zinc-500">{t('machines.emptyCopy')}</p>
             </div>
             <div className="grid w-full grid-cols-2 gap-2">
               <button
@@ -82,7 +81,7 @@ export function MachineList({
                 onClick={() => { hapticImpact(); onScanMachine() }}
               >
                 <QrCode className="h-4 w-4" />
-                Scan
+                {t('machines.scan')}
               </button>
               <button
                 className="muxvia-app-primary-button gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
@@ -90,7 +89,7 @@ export function MachineList({
                 onClick={() => { hapticImpact(); onAddMachine() }}
               >
                 <Plus className="h-4 w-4" />
-                Add
+                {t('machines.add')}
               </button>
             </div>
             {authState === 'anonymous' ? (
@@ -100,7 +99,7 @@ export function MachineList({
                 onClick={() => { hapticSelection(); onSignIn?.() }}
               >
                 <LogIn className="h-4 w-4" />
-                Sign in
+                {t('common.signIn')}
               </button>
             ) : null}
           </div>
@@ -109,7 +108,7 @@ export function MachineList({
         <div className="min-h-0 flex-1 overflow-y-auto py-4">
           {onlineMachines.length > 0 ? (
             <MachineSection
-              title="Available"
+              title={t('machines.available')}
               machines={onlineMachines}
               onSelectMachine={onSelectMachine}
               onShowDetails={setDetailMachine}
@@ -117,7 +116,7 @@ export function MachineList({
           ) : null}
           {otherMachines.length > 0 ? (
             <MachineSection
-              title={onlineMachines.length > 0 ? 'Offline' : 'Machines'}
+              title={onlineMachines.length > 0 ? t('machines.offline') : t('machines.list')}
               machines={otherMachines}
               onSelectMachine={onSelectMachine}
               onShowDetails={setDetailMachine}
@@ -168,19 +167,20 @@ function MachineRow({
   onSelectMachine: (machine: AppMachineRecord) => void
   onShowDetails?: ((machine: AppMachineRecord) => void) | undefined
 }) {
+  const { t } = useTranslation()
   const longPressTimerRef = useRef<number | null>(null)
   const longPressTriggeredRef = useRef(false)
   const subtitle = machine.hostname ?? shortenMachineId(machine.machineId)
   const availability = machine.state === 'online'
-    ? 'Tap to connect'
+    ? t('machines.tapToConnect')
     : machine.state === 'connecting'
-      ? 'Connecting...'
-      : `Last online ${formatLastSeen(machine.lastSeenAt)}`
+      ? t('machines.connecting')
+      : t('machines.lastOnline', { time: formatMachineTime(machine.lastSeenAt) })
   const sourceLabel = machine.source === 'hub'
-    ? 'Hub'
+    ? t('machines.source.hub')
     : machine.source === 'manual'
-      ? 'Manual'
-      : 'Local'
+      ? t('machines.source.manual')
+      : t('machines.source.local')
   const DeviceIcon = machine.source === 'hub' ? Server : LaptopMinimal
 
   const clearLongPress = () => {
@@ -192,7 +192,7 @@ function MachineRow({
 
   return (
     <button
-      aria-label={`Connect to ${machine.name}`}
+      aria-label={t('machines.connectTo', { name: machine.name })}
       className="grid min-h-[108px] w-full grid-cols-[auto_minmax(0,1fr)] gap-3 px-4 py-3.5 text-left transition-colors duration-200 hover:bg-zinc-50 active:bg-[var(--muxvia-app-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--muxvia-app-accent)]"
       type="button"
       onClick={() => {
@@ -258,16 +258,17 @@ function MachineRow({
 }
 
 function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; onClose: () => void }) {
+  const { t } = useTranslation()
   const fields = [
-    ['Name', machine.name],
-    ['Machine ID', machine.machineId],
-    ['Hostname', machine.hostname ?? '-'],
-    ['State', formatMachineState(machine.state)],
-    ['Source', machine.source === 'hub' ? 'Hub' : machine.source === 'manual' ? 'Manual' : 'Local'],
-    ['Terminal count', String(machine.terminalCount)],
-    ['Recent path', machine.lastConnectionPath ?? machine.preferredPath ?? '-'],
-    ['Relay', machine.relayInUse ? 'In use' : 'No'],
-    ['Last online', formatLastSeen(machine.lastSeenAt)],
+    [t('machines.fields.name'), machine.name],
+    [t('machines.fields.id'), machine.machineId],
+    [t('machines.fields.hostname'), machine.hostname ?? '-'],
+    [t('machines.fields.state'), t(`machines.state.${machine.state}`)],
+    [t('machines.fields.source'), machine.source === 'hub' ? t('machines.source.hub') : machine.source === 'manual' ? t('machines.source.manual') : t('machines.source.local')],
+    [t('machines.fields.terminals'), String(machine.terminalCount)],
+    [t('machines.fields.path'), machine.lastConnectionPath ?? machine.preferredPath ?? '-'],
+    [t('machines.fields.relay'), machine.relayInUse ? t('machines.relayInUse') : t('machines.relayNo')],
+    [t('machines.fields.lastOnline'), formatMachineTime(machine.lastSeenAt)],
   ] as const
 
   return (
@@ -280,11 +281,11 @@ function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; o
         <header className="flex h-16 items-center justify-between border-b border-zinc-200 px-4">
           <div className="min-w-0">
             <h2 className="truncate text-[17px] font-bold text-zinc-950">{machine.name}</h2>
-            <p className="truncate text-xs font-medium text-zinc-500">Machine details</p>
+            <p className="truncate text-xs font-medium text-zinc-500">{t('machines.details')}</p>
           </div>
           <button
             type="button"
-            aria-label="Close machine details"
+            aria-label={t('machines.closeDetails')}
             className="muxvia-app-icon-button border-transparent bg-transparent"
             onClick={() => { hapticSelection(); onClose() }}
           >
@@ -307,6 +308,7 @@ function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; o
 }
 
 function StateBadge({ state }: { state: AppMachineRecord['state'] }) {
+  const { t } = useTranslation()
   const tone = state === 'online'
     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
     : state === 'offline'
@@ -316,7 +318,7 @@ function StateBadge({ state }: { state: AppMachineRecord['state'] }) {
         : 'border-blue-200 bg-blue-50 text-blue-700'
   return (
     <span className={`shrink-0 border px-2 py-0.5 text-[11px] font-semibold leading-4 ${tone}`}>
-      {formatMachineState(state)}
+      {t(`machines.state.${state}`)}
     </span>
   )
 }
@@ -332,4 +334,11 @@ function InfoPill({ children }: { children: string }) {
 function shortenMachineId(machineId: string): string {
   if (machineId.length <= 18) return machineId
   return `${machineId.slice(0, 8)}...${machineId.slice(-6)}`
+}
+
+function formatMachineTime(value?: string): string {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat(muxviaIntlLocale(), { dateStyle: 'medium', timeStyle: 'short' }).format(date)
 }

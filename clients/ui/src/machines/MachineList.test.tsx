@@ -48,8 +48,8 @@ describe('MachineList', () => {
     )
 
     expect(screen.getByTestId('muxvia-machine-list')).toBeTruthy()
-    expect(screen.getByRole('heading', { name: 'Machines' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /add machine/i })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Devices' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /add device/i })).toBeTruthy()
     expect(screen.getByRole('button', { name: /scan pairing qr/i })).toBeTruthy()
     expect(screen.getByText('MacBook Pro')).toBeTruthy()
     expect(screen.getByText('mbp.local')).toBeTruthy()
@@ -57,12 +57,12 @@ describe('MachineList', () => {
     expect(screen.getByText('Tap to connect')).toBeTruthy()
     expect(screen.getByText('Local')).toBeTruthy()
     expect(screen.getByText('Build Runner')).toBeTruthy()
-    expect(screen.getByText('Stale')).toBeTruthy()
+    expect(screen.getByText('Needs attention')).toBeTruthy()
     expect(screen.getByText(/Last online/i)).toBeTruthy()
     expect(screen.getByTestId('muxvia-machine-list').textContent).not.toMatch(/workspace|tab|window|pane|tmux|session/i)
 
     await userEvent.click(screen.getByRole('button', { name: /scan pairing qr/i }))
-    await userEvent.click(screen.getByRole('button', { name: /add machine/i }))
+    await userEvent.click(screen.getByRole('button', { name: /add device/i }))
     await userEvent.click(screen.getByRole('button', { name: /connect to macbook pro/i }))
 
     expect(onScanMachine).toHaveBeenCalledTimes(1)
@@ -104,7 +104,7 @@ describe('MachineList', () => {
     screen.getByRole('button', { name: /connect to macbook pro/i }).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
 
     expect(await screen.findByTestId('muxvia-machine-detail-sheet')).toBeTruthy()
-    expect(screen.getByText('Machine details')).toBeTruthy()
+    expect(screen.getByText('Device details')).toBeTruthy()
     expect(screen.getByText('machine-local')).toBeTruthy()
     expect(onSelectMachine).not.toHaveBeenCalled()
   })
@@ -121,10 +121,10 @@ describe('MachineList', () => {
     )
 
     expect(screen.getByTestId('muxvia-machine-empty-state')).toBeTruthy()
-    expect(screen.getByText('No machines yet')).toBeTruthy()
-    expect(screen.getByText(/add or scan a muxvia qr/i)).toBeTruthy()
+    expect(screen.getByText('No devices yet')).toBeTruthy()
+    expect(screen.getByText(/add a local device, or sign in/i)).toBeTruthy()
     expect(screen.getByRole('button', { name: /scan pairing qr/i })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /add machine/i })).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: /add device/i })).toHaveLength(2)
     expect(screen.getByRole('button', { name: /sign in/i })).toBeTruthy()
     expect(screen.getByTestId('muxvia-machine-list').textContent).not.toMatch(/terminal page|workspace|tab|window|pane|tmux|session/i)
   })

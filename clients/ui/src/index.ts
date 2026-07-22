@@ -1,4 +1,6 @@
 export * from './connection/connectionMessageReducer'
+export { muxviaI18n, muxviaIntlLocale, muxviaLanguages, normalizeMuxviaLanguage } from './i18n'
+export type { MuxviaLanguage } from './i18n'
 export * from './connection/eventQueue'
 export {
   MUXVIA_NATIVE_BACK_EVENT,
