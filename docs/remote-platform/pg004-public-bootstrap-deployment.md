@@ -6,7 +6,7 @@
 
 该环境已经支持 Web 注册/登录、账号中心、移动端扫码批准、daemon enrollment、managed P2P、单节点 TURN Relay 和 Android Go/JNI 连接。Android 公网 HTTPS staging profile 已真实安装到 ARM64/API 35 模拟器；它不是 production profile，也没有改变正式构建的 fail-closed 默认值。
 
-该环境仍不是正式商业生产：支付仍为测试 provider，R2 备份恢复、账号长期续期和完整 Android file/lifecycle E2E 尚未通过。
+该环境仍不是正式商业生产：支付仍为测试 provider，R2 备份恢复和完整 Android file E2E 尚未通过。Android account refresh、Edge 重启后的 daemon Presence 恢复和活跃 session 网络切换已经完成真实公网验收。
 
 当前公网 Controller 已把 daemon enrollment 收敛为内存持有的十分钟 128-bit 单次 flow：任意已登录账号创建 code，daemon 提交公开 metadata、DeviceIdentity public key 和 device ID，Web 核对后批准，CLI 再以 DeviceIdentity proof 完成。pending flow 不进入 PostgreSQL，Controller 重启后统一失效；完成后的设备归属、Hub assignment 和 session 继续持久化。手机 activation 使用相同的 Web 核对批准语义，二维码与手工输入的 `MXA-...` 登录码指向同一 flow。
 
@@ -67,6 +67,10 @@ Controller 与 Edge 使用独立进程、配置、identity、state 目录和 res
 - Android `minSdk 24` 的 Cloud module 使用 `java.time`，APK 已启用 core library desugaring；Android 7.0/7.1 不再因 factory 加载期缺少 `java.time.Instant` 被误报为 managed cloud module 未安装。初始化失败会保留原始异常到 `ManagedCloudAssembly` logcat。
 - 最终复测 APK 为 ARM64 debug staging artifact，SHA-256 `2905b6ace56b77934f09085ff1bcd5c35eaa692c711defd6c780fdf5b846ec72`；APK 已确认包含 Official factory、HTTPS staging BuildConfig、`j$.time` 和最新 mobile UI assets，覆盖安装后完成手工登录码流程并正常进入 Machines 页面。本轮 logcat 未发现 `FATAL EXCEPTION`、ANR、`SIGSEGV` 或 native fatal signal。
 - `CLOUDAUTH001` 后，Hub 使用 Controller 公钥离线验证 EdgeAccess token，client 设备尚未进入 policy projection 时也能立即读取同账号设备目录；projection lag 返回可重试错误，明确撤销返回 `AUTHORIZATION_REVOKED`，不再冒充登录失效。Linux Edge SHA-256 `a7f83ca5c5a1445e4955687b4da40da45bb8ad65650ed6e997bee69fa1fc38d9` 已滚动部署到 US/CN，两端 health 恢复 `204`。ARM64 公网 HTTPS APK SHA-256 `5adedd4bf0480687d3d0e89d49dc5898c2270857fb5a271b7cf7737c728cf170` 完成全新 `MXA` 手工登录、Web 批准后首次目录同步、强制停止与重启恢复；logcat 未出现 `unauthenticated`、Java 或 native crash。
+- Android account access session 在 refresh window 内真实请求 `https://muxvia.com/v1/sessions/refresh`，refresh token 轮换后继续完成 Hub 设备目录、endpoint resolve 和 signaling；账号状态没有因 Hub 临时错误被清空。
+- Edge Presence cold-start 错误不再折叠成永久 admission failure；daemon 按 `PresenceReady.heartbeat_seconds` 的两周期 deadline 识别反向代理保留的半开 stream。US Edge 重启后，同一 daemon/Companion 进程重新建立到新 Edge PID 的 Presence upstream。相同 Linux Edge 二进制 SHA-256 `49b10d6c5c3d2bce2cba42f6add988bd778e7fcbbe4c91d775b8f7083a3e27e0` 已部署到 US/CN，两端 health 为 `204`。
+- Android native generation 会在默认网络变化时关闭旧 Go engine、session/resource/event pump，并重建 Go binding。Hub 明确返回、且证明没有创建 signaling session 的 retryable P2P quota conflict 由 Go managed Dialer 在 75 秒窗口内有界重试；网络超时、认证、协议和其他结果不确定失败不自动重放。ARM64/API 35 模拟器从活跃 Wi-Fi session 切到 cellular 后约 32 秒恢复同一 terminal inventory，cellular 切回 Wi-Fi 约 2 秒恢复；旧 generation 遮罩被新 inventory 成功提交清除，logcat 无 Java/native crash。
+- 当前网络恢复 APK SHA-256 为 `b3f42aaa69129bc79ebfc502c5ba67eafdebd18a76abdb2ba19f1dbbbcb0a2fa`。
 
 浏览器截图保存在本地 ignored artifact：
 
@@ -76,18 +80,18 @@ Controller 与 Edge 使用独立进程、配置、identity、state 目录和 res
 .artifacts/cloud-deploy/e2e/android-managed-terminal.png
 .artifacts/cloud-deploy/e2e/android-managed-after-lock.png
 .artifacts/cloud-deploy/e2e/android-relay-terminal.png
+.artifacts/pg004/android-active-wifi-to-cellular-retry.png
+.artifacts/pg004/android-active-cellular-to-wifi-retry.png
 ```
 
 ## 当前限制
 
-1. Android account access session 到期时曾退出登录，没有观察到成功的 `/v1/sessions/refresh`；daemon refresh contract 已通过，但 Android account 自动续期仍需单独修复和真实长时验证。
-2. Edge 重启后 daemon Presence 收到的通用 `UNAUTHENTICATED` 不能区分 cold-start transient 与真实 revoke。当前 daemon 不会盲目重试所有鉴权错误，因此 Edge 重启后的自动 Presence 恢复仍未通过。
-3. 模拟器发生 Wi-Fi -> cellular -> Wi-Fi 真实网络切换时，native generation 正确失效，旧 Relay session 没有复活；但 workspace 停在 `client session is unavailable`，没有自动创建新 session。该项不计为 lifecycle PASS。
-4. Relay terminal attach/input 与远端文件浏览通过；上传、下载、取消和内容摘要校验尚未完成。
-5. 当前部署 credential window 到 `2026-08-20T15:41:28Z`。到期前必须完成正式 key 配置/轮换或重新生成 staging 资产。
-6. Let's Encrypt 证书到期日为 2026-10-19；当前已删除临时 Cloudflare credential，自动续期尚未配置。
-7. R2 age 加密上传和独立恢复仍是 PG004 的未完成门禁。
-8. 真实支付、邮件验证和密码找回未接入；bootstrap staging 不得作为商业生产发布。
+1. Relay terminal attach/input 与远端文件浏览通过；上传、下载、取消和内容摘要校验尚未完成。最近一次复测没有产生 `/v1/relay/leases/acquire`，因此不能把该次 UI 切换记作新的 Relay PASS。
+2. 长时间空闲的 managed P2P 可能形成半开 application session：既有 terminal inventory 已经成功，但后续 file list 和 terminal attach 没有响应。该问题属于后续弱网/保活可靠性，不得用 UI 定时刷新或盲目重放非幂等 command 掩盖；文件 E2E 必须使用可确认 Ready 的新 session 继续验收。
+3. 当前部署 credential window 到 `2026-08-20T15:41:28Z`。到期前必须完成正式 key 配置/轮换或重新生成 staging 资产。
+4. Let's Encrypt 证书到期日为 2026-10-19；当前已删除临时 Cloudflare credential，自动续期尚未配置。
+5. R2 age 加密上传和独立恢复仍是 PG004 的未完成门禁；现有 Cloudflare token 只有 DNS 权限，k8s、开发机和 155 服务器均未发现 R2/S3 access key。
+6. 真实支付、邮件验证和密码找回未接入；bootstrap staging 不得作为商业生产发布。
 
 ## 仓库门禁
 

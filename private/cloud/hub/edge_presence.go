@@ -51,12 +51,17 @@ func (service *Service) BeginEdgePresence(ctx context.Context, edgeToken []byte,
 		return EdgePresenceChallenge{}, err
 	}
 	_, device, err := service.edgeAuthorizer.AuthorizeDaemonDevice(edgeToken, accountID, deviceID)
-	if err != nil || len(device.PublicKey) != ed25519.PublicKeySize {
+	if err != nil {
+		// Edge 冷启动时授权投影尚未 full sync，必须保留 ErrPolicySnapshot 的可重试语义；
+		// 明确撤销和坏 token 也由 authorizer 原样分类，不能统一伪装成 UNAUTHENTICATED。
+		return EdgePresenceChallenge{}, err
+	}
+	if len(device.PublicKey) != ed25519.PublicKeySize {
 		return EdgePresenceChallenge{}, ErrAdmission
 	}
 	assignmentEpoch, assigned := service.assignmentSource.ActiveAssignment(deviceID)
 	if !assigned {
-		return EdgePresenceChallenge{}, ErrAdmission
+		return EdgePresenceChallenge{}, ErrPolicySnapshot
 	}
 	now := service.clock.Now().UTC()
 	service.mu.Lock()
@@ -94,7 +99,7 @@ func (service *Service) OpenEdgePresence(ctx context.Context, edgeToken []byte, 
 	}
 	_, device, err := service.edgeAuthorizer.AuthorizeDaemonDevice(edgeToken, accountID, proof.DeviceID)
 	if err != nil {
-		return nil, ErrAdmission
+		return nil, err
 	}
 	now := service.clock.Now().UTC()
 	service.mu.Lock()
@@ -108,7 +113,7 @@ func (service *Service) OpenEdgePresence(ctx context.Context, edgeToken []byte, 
 		return nil, ErrAdmission
 	}
 	if currentEpoch, assigned := service.assignmentSource.ActiveAssignment(proof.DeviceID); !assigned || currentEpoch != state.assignmentEpoch {
-		return nil, ErrAdmission
+		return nil, ErrPolicySnapshot
 	}
 	defer clear(state.challenge.Value)
 	defer clear(state.publicKey)

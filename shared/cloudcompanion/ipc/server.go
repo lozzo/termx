@@ -349,6 +349,15 @@ func (connection *serverConnection) pumpSignaling(streamID uint64, stream cloudc
 }
 
 func (connection *serverConnection) finishStream(streamID uint64, err error) {
+	connection.mu.Lock()
+	_, owned := connection.streams[streamID]
+	connection.mu.Unlock()
+	if !owned {
+		// 显式 CloseStream 已经移除 ownership 并向 caller 返回 acknowledgement；底层 HTTP body
+		// 被关闭后 pump 收到的迟到 EOF 不能再发送第二个 terminal frame，否则客户端会把它
+		// 识别为未知 stream 并错误关闭整条 Companion IPC connection。
+		return
+	}
 	if errors.Is(err, io.EOF) {
 		_ = connection.write(&cloudpb.IPCResponse{StreamId: streamID, Result: &cloudpb.IPCResponse_StreamClosed{StreamClosed: &cloudpb.IPCStreamClosed{}}})
 		return

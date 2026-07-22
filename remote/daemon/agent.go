@@ -87,8 +87,9 @@ func (agent Agent) Run(ctx context.Context) error {
 	var controlOwnerHubID string
 	var assignmentEpoch uint64
 	var iceServers []*cloudpb.IceServer
+	var receiveTimeout time.Duration
 	for {
-		event, receiveErr := stream.Receive()
+		event, receiveErr := receivePresenceEvent(stream, receiveTimeout)
 		if receiveErr != nil {
 			return receiveErr
 		}
@@ -106,9 +107,13 @@ func (agent Agent) Run(ctx context.Context) error {
 			}
 			controlOwnerHubID = strings.TrimSpace(payload.Ready.GetHubId())
 			assignmentEpoch = payload.Ready.GetAssignmentEpoch()
-			if controlOwnerHubID == "" || assignmentEpoch == 0 {
+			heartbeatSeconds := payload.Ready.GetHeartbeatSeconds()
+			if controlOwnerHubID == "" || assignmentEpoch == 0 || heartbeatSeconds == 0 || heartbeatSeconds > 300 {
 				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an incomplete Presence assignment")
 			}
+			// 反向代理可能在 Edge 重启后保留客户端 HTTPS 连接；没有下行 deadline 时 daemon 会永远
+			// 阻塞在已失去 Hub owner 的旧 stream。任意合法下行事件都会重新开始该 deadline。
+			receiveTimeout = 2 * time.Duration(heartbeatSeconds) * time.Second
 			observedAt := time.Now().UTC()
 			if agent.Now != nil {
 				observedAt = agent.Now().UTC()
@@ -182,6 +187,33 @@ func (agent Agent) Run(ctx context.Context) error {
 		default:
 			return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an unknown presence event")
 		}
+	}
+}
+
+func receivePresenceEvent(stream cloudcompanion.PresenceStream, timeout time.Duration) (*cloudpb.PresenceEvent, error) {
+	if timeout <= 0 {
+		return stream.Receive()
+	}
+	type result struct {
+		event *cloudpb.PresenceEvent
+		err   error
+	}
+	received := make(chan result, 1)
+	go func() {
+		event, err := stream.Receive()
+		received <- result{event: event, err: err}
+	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case value := <-received:
+		return value.event, value.err
+	case <-timer.C:
+		_ = stream.Close()
+		<-received
+		err := cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "managed cloud presence heartbeat timed out")
+		err.Retryable = true
+		return nil, err
 	}
 }
 

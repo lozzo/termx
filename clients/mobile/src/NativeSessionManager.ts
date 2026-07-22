@@ -25,6 +25,9 @@ export class NativeSessionManager {
     private readonly connector: NativeSessionConnector,
   ) {}
 
+  /** machineID 仅供 generation owner 释放同一 Endpoint 的 connector 资源。 */
+  machineID(): string { return this.machineId }
+
   /** get 为 inventory 和文件传输取得当前 Endpoint 的独立 UI lease。 */
   get(options?: RtcConnectOptions): Promise<ProtoClientSession> {
     return this.acquire(options)
@@ -42,9 +45,12 @@ export class NativeSessionManager {
     const pending = this.pending
     this.session = null
     this.pending = null
-    await session?.close().catch(() => undefined)
+    // native generation owner 已经关闭旧 engine；close 只做幂等清理，不能等待已经失联的 bridge。
+    void session?.close().catch(() => undefined)
     if (pending) {
-      await pending.then((late) => late.close(), () => undefined).catch(() => undefined)
+      // generation replacement 不能等待旧网络上的 connect 结束；epoch fence 会让迟到 session
+      // 在 acquire 链路中自行关闭，这里只补充幂等清理，避免阻塞新 bridge 发布。
+      void pending.then((late) => late.close(), () => undefined).catch(() => undefined)
     }
   }
 
@@ -91,7 +97,8 @@ class NativeSessionLease implements ProtoClientSession {
   get stamp(): EndpointSessionStamp { return this.session.stamp }
 
   execute(command: CommandEnvelope, options?: { signal?: AbortSignal }): Promise<ResultEnvelope> {
-    return this.requireAlive().execute(command, options)
+    if (!this.isAlive()) return Promise.reject(new Error('Proto session lease is closed'))
+    return this.session.execute(command, options)
   }
 
   subscribeEvents(handler: (event: EventEnvelope) => void): ProtoClientSubscription {
@@ -107,7 +114,8 @@ class NativeSessionLease implements ProtoClientSession {
   }
 
   openResourceStream(resource: ResourceHandle, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoResourceStream> {
-    return this.requireAlive().openResourceStream(resource, options)
+    if (!this.isAlive()) return Promise.reject(new Error('Proto session lease is closed'))
+    return this.session.openResourceStream(resource, options)
   }
 
   isAlive(): boolean { return this.alive && this.session.isAlive() }

@@ -66,6 +66,17 @@ func TestIPCConnectionPreservesHelloUnaryAndStreamOwnership(t *testing.T) {
 	if err := stream.Close(); err != nil {
 		t.Fatal(err)
 	}
+	status, err = client.Status(context.Background(), &cloudpb.StatusRequest{})
+	if err != nil || status.GetAccountId() != "account-1" {
+		t.Fatalf("Status after explicit stream close = (%v, %v)", status, err)
+	}
+	next, err := client.OpenPresence(context.Background(), &cloudpb.OpenPresenceRequest{})
+	if err != nil {
+		t.Fatalf("second presence after explicit close: %v", err)
+	}
+	if err := next.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestIPCRejectsOperationBeforeHello(t *testing.T) {

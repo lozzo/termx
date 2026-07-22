@@ -4,6 +4,7 @@ package managed
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -22,7 +23,11 @@ import (
 	"github.com/muxvia/muxvia/shared/transport/datachannel"
 )
 
-const defaultProtocolClientName = "muxvia-go-client"
+const (
+	defaultProtocolClientName        = "muxvia-go-client"
+	defaultSignalingQuotaRetryDelay  = time.Second
+	defaultSignalingQuotaRetryWindow = 75 * time.Second
+)
 
 // CloudClient 是 managed attempt 实际需要的 Cloud signaling/route 子集。
 // CapabilityGrant、ClientAccessIdentity 和 DataChannel payload 永远不能进入该接口。
@@ -118,7 +123,7 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 		return nil, fmt.Errorf("create managed endpoint offer: %w", err)
 	}
 	dialer.reportPhase(clientruntime.EndpointPhaseSignaling)
-	signaling, err := dialer.Cloud.CreateSignalingSession(ctx, &cloudpb.CreateSignalingSessionRequest{
+	signaling, err := createSignalingSession(ctx, dialer.Cloud, &cloudpb.CreateSignalingSessionRequest{
 		EndpointId: string(request.EndpointID()), ManagedSessionId: resolved.GetManagedSessionId(),
 		TargetDeviceId: request.DaemonIdentity().DeviceID, OfferSdp: offer,
 		RoutePreference: selected.preference, RelayOnly: selected.relayOnly,
@@ -198,6 +203,39 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	session.startLifecycle(reporter)
 	dialer.reportPhase(clientruntime.EndpointPhaseReady)
 	return session, nil
+}
+
+// createSignalingSession 只重试 Hub 明确返回的 retryable P2P quota 冲突。
+// 该响应证明服务端没有创建 signaling session；网络超时等结果不确定的失败禁止自动重放。
+func createSignalingSession(ctx context.Context, cloud CloudClient, request *cloudpb.CreateSignalingSessionRequest) (cloudcompanion.SignalingStream, error) {
+	startedAt := time.Now()
+	for {
+		stream, err := cloud.CreateSignalingSession(ctx, request)
+		if err == nil {
+			return stream, nil
+		}
+		var cloudErr *cloudcompanion.Error
+		if !errors.As(err, &cloudErr) || cloudErr.Code != cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_QUOTA_EXHAUSTED || !cloudErr.Retryable {
+			return nil, err
+		}
+		delay := cloudErr.RetryAfter
+		if delay <= 0 {
+			delay = defaultSignalingQuotaRetryDelay
+		}
+		remaining := defaultSignalingQuotaRetryWindow - time.Since(startedAt)
+		if remaining <= 0 || delay > remaining {
+			return nil, err
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func (dialer *Dialer) now() time.Time {

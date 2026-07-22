@@ -347,7 +347,7 @@ func TestHubPresenceRequiresAssignmentAndFencesExactEpoch(t *testing.T) {
 	fixture := newFixture(t, 4, 4)
 	token := fixture.issueDaemonEdgeToken(t)
 	fixture.assignmentSource.Set(0)
-	if _, err := fixture.service.BeginEdgePresence(context.Background(), token, "account-1", "daemon-1"); !errors.Is(err, hub.ErrAdmission) {
+	if _, err := fixture.service.BeginEdgePresence(context.Background(), token, "account-1", "daemon-1"); !errors.Is(err, hub.ErrPolicySnapshot) {
 		t.Fatalf("unassigned presence error = %v", err)
 	}
 
@@ -400,14 +400,28 @@ func TestHubEdgePresenceRejectsWrongKeyRevocationAndStalePolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	revokedProof := fixture.signEdgePresence(t, revokedChallenge, fixture.daemonPublicKey, fixture.daemonPrivateKey, "daemon-1")
-	if _, err := fixture.service.OpenEdgePresence(context.Background(), token, "account-1", revokedProof); !errors.Is(err, hub.ErrAdmission) {
+	if _, err := fixture.service.OpenEdgePresence(context.Background(), token, "account-1", revokedProof); !errors.Is(err, hub.ErrPrincipalRevoked) {
 		t.Fatalf("revoked Hub presence proof error = %v", err)
 	}
 
 	fresh := newFixture(t, 4, 4)
 	fresh.clock.Advance(11 * time.Minute)
-	if _, err := fresh.service.BeginEdgePresence(context.Background(), fresh.issueDaemonEdgeToken(t), "account-1", "daemon-1"); !errors.Is(err, hub.ErrAdmission) {
+	if _, err := fresh.service.BeginEdgePresence(context.Background(), fresh.issueDaemonEdgeToken(t), "account-1", "daemon-1"); !errors.Is(err, hub.ErrPolicySnapshot) {
 		t.Fatalf("stale-policy Hub presence begin error = %v", err)
+	}
+}
+
+func TestHubEdgePresencePreservesRevocationClassification(t *testing.T) {
+	fixture := newFixture(t, 4, 4)
+	if err := fixture.edgeAuthorizer.ApplySnapshot(hub.AuthorizationSnapshot{
+		Revision: 2, GeneratedAt: fixture.clock.Now(),
+		Accounts: []hub.AccountAuthorization{activeHubP2PAccount("account-1", 1, fixture.clock.Now())},
+		Devices:  []hub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon", PublicKey: fixture.daemonPublicKey, Revoked: true}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.service.BeginEdgePresence(context.Background(), fixture.issueDaemonEdgeToken(t), "account-1", "daemon-1"); !errors.Is(err, hub.ErrPrincipalRevoked) {
+		t.Fatalf("revoked presence error = %v", err)
 	}
 }
 

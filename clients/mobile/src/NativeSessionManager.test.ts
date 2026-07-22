@@ -2,7 +2,7 @@ import { create } from '@bufbuild/protobuf'
 import { describe, expect, it, vi } from 'vitest'
 import type { ProtoClientSession, ProtoClientSubscription, ProtoResourceStream } from '@muxvia/ui'
 import { EndpointSessionStampSchema, type ResourceHandle } from '../../ui/src/generated/apipb/common_pb'
-import type { CommandEnvelope, EventEnvelope, ResultEnvelope } from '../../ui/src/generated/apipb/application_pb'
+import { CommandEnvelopeSchema, type CommandEnvelope, type EventEnvelope, type ResultEnvelope } from '../../ui/src/generated/apipb/application_pb'
 import { NativeSessionManager } from './NativeSessionManager'
 
 describe('NativeSessionManager', () => {
@@ -57,6 +57,32 @@ describe('NativeSessionManager', () => {
     await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' })
     await expect(workspace).resolves.toMatchObject({ stamp: { endpointId: 'daemon-a' } })
     expect(connect).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not block generation reset on an old pending connect', async () => {
+    const connect = vi.fn(() => new Promise<ProtoClientSession>(() => {}))
+    const manager = new NativeSessionManager('daemon-a', { connect })
+    void manager.get()
+
+    await expect(manager.reset()).resolves.toBeUndefined()
+  })
+
+  it('does not block generation reset on an unresponsive old session close', async () => {
+    const session = fakeSession()
+    session.close = vi.fn(() => new Promise<void>(() => {}))
+    const manager = new NativeSessionManager('daemon-a', { connect: vi.fn(async () => session) })
+    await manager.get()
+
+    await expect(manager.reset()).resolves.toBeUndefined()
+    expect(session.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a closed lease through rejected async operations', async () => {
+    const manager = new NativeSessionManager('daemon-a', { connect: vi.fn(async () => fakeSession()) })
+    const lease = await manager.get()
+    await manager.reset()
+
+    await expect(lease.execute(create(CommandEnvelopeSchema))).rejects.toThrow('Proto session lease is closed')
   })
 })
 

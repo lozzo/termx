@@ -68,6 +68,7 @@ export function MuxviaApp() {
 
   const networkRuntime = useMemo(() => createNativeNetworkRuntime(), [])
   const endpointRegistry = useMemo(() => new NativeEndpointRegistryProjection(), [])
+  const nativeAppRuntime = useMemo(() => createNativeAppRuntime(endpointRegistry), [endpointRegistry])
   const [registryReady, setRegistryReady] = useState(false)
   const [registryError, setRegistryError] = useState<string | null>(null)
   const refreshRegistry = useCallback(async (client: GoBindingClient = goBindingClient) => {
@@ -89,8 +90,7 @@ export function MuxviaApp() {
     }
   }, [endpointRegistry, networkRuntime])
   useEffect(() => { void refreshRegistry().catch(() => undefined) }, [refreshRegistry])
-  useAppResumeSync(refreshRegistry)
-  const nativeAppRuntime = useMemo(() => createNativeAppRuntime(endpointRegistry), [endpointRegistry])
+  useAppResumeSync(refreshRegistry, nativeAppRuntime.resetGeneration)
   const externalPairingAdapter = useMemo(
     () => createNativeExternalPairingAdapter(endpointRegistry),
     [endpointRegistry],
@@ -320,6 +320,12 @@ function finishNativeForeground(failure?: unknown): void {
   resolve?.(failure instanceof Error ? failure : failure ? new Error(String(failure)) : undefined)
 }
 
+function reportNativeGenerationFailure(failure: unknown): void {
+  const message = failure instanceof Error ? failure.message : String(failure)
+  console.error('[muxvia:native-generation]', message)
+  void NativeConnection.writeDebugLog({ level: 'error', tag: 'NativeGeneration', message }).catch(() => undefined)
+}
+
 async function waitForNativeForeground(): Promise<void> {
   const failure = await nativeForegroundReady
   if (failure) throw failure
@@ -327,13 +333,22 @@ async function waitForNativeForeground(): Promise<void> {
 
 let nativeGenerationReplacement: Promise<void> = Promise.resolve()
 
-function replaceNativeGeneration(refreshRegistry: (client?: GoBindingClient) => Promise<void>): Promise<void> {
+function replaceNativeGeneration(
+  refreshRegistry: (client?: GoBindingClient) => Promise<void>,
+  resetRuntime: () => Promise<void>,
+  reloadRegistry: boolean,
+): Promise<void> {
   const replacement = nativeGenerationReplacement.catch(() => undefined).then(async () => {
     const staleClient = goBindingClient
     const currentClient = new GoBindingClient()
     goBindingClient = currentClient
+    // Endpoint runtime 仍被 React workspace 缓存；必须先清除其旧 binding session，下一次操作才会
+    // 通过动态 connector 进入 currentClient，而不是继续返回已失效的 generation。
+    await resetRuntime()
     await staleClient.close()
-    await refreshRegistry(currentClient)
+    // 网络切换不会修改 Endpoint registry；此时重读 registry 会让恢复依赖刚启动 engine 的
+    // 额外 operation。只有 WebView 前后台恢复才重新读取 Go-owned 持久投影。
+    if (reloadRegistry) await refreshRegistry(currentClient)
     document.dispatchEvent(new Event('muxvia:resume'))
   })
   nativeGenerationReplacement = replacement
@@ -341,7 +356,10 @@ function replaceNativeGeneration(refreshRegistry: (client?: GoBindingClient) => 
 }
 
 /** When the app resumes from background, trigger a sync request on all active sessions. */
-function useAppResumeSync(refreshRegistry: (client?: GoBindingClient) => Promise<void>): void {
+function useAppResumeSync(
+  refreshRegistry: (client?: GoBindingClient) => Promise<void>,
+  resetRuntime: () => Promise<void>,
+): void {
   useEffect(() => {
     const promise = CapApp.addListener('appStateChange', (state) => {
       if (!state.isActive) {
@@ -350,18 +368,30 @@ function useAppResumeSync(refreshRegistry: (client?: GoBindingClient) => Promise
       }
 	  void NativeConnection.handleForegroundResume().then(async () => {
 		// Native 已创建新 generation 后再通知 UI；冻结前的 session/resource handle 不得继续使用。
-		await replaceNativeGeneration(refreshRegistry)
-	  }).then(() => finishNativeForeground(), finishNativeForeground)
+		await replaceNativeGeneration(refreshRegistry, resetRuntime, true)
+	  }).then(
+		() => finishNativeForeground(),
+		(failure) => {
+		  reportNativeGenerationFailure(failure)
+		  finishNativeForeground(failure)
+		},
+	  )
     })
     const generationPromise = NativeConnection.addListener('generationChanged', () => {
       markNativeBackground()
-      void replaceNativeGeneration(refreshRegistry).then(() => finishNativeForeground(), finishNativeForeground)
+      void replaceNativeGeneration(refreshRegistry, resetRuntime, false).then(
+        () => finishNativeForeground(),
+        (failure) => {
+          reportNativeGenerationFailure(failure)
+          finishNativeForeground(failure)
+        },
+      )
     })
     return () => {
       void promise.then((sub) => sub.remove())
       void generationPromise.then((sub) => sub.remove())
     }
-  }, [refreshRegistry])
+  }, [refreshRegistry, resetRuntime])
 }
 
 function useAndroidBackButton(): void {
@@ -598,6 +628,7 @@ function browserStorage(): RemoteRuntimeStorage | undefined {
 function createNativeAppRuntime(endpointRegistry: NativeEndpointRegistryProjection): {
   createMachineRuntime: MachineRuntimeFactory
   fileTransfer: FileTransferContext
+  resetGeneration: () => Promise<void>
 } {
   const transferStore = new NativeFileTransferStore()
   const sessionManagers = new Map<string, NativeSessionEntry>()
@@ -607,6 +638,12 @@ function createNativeAppRuntime(endpointRegistry: NativeEndpointRegistryProjecti
 
   return {
     fileTransfer: createFileTransferContext(undefined, transferStore),
+    async resetGeneration() {
+      await Promise.all([...sessionManagers.values()].map(async (entry) => {
+        await entry.manager.reset()
+        await entry.connector.release?.(entry.manager.machineID())
+      }))
+    },
     createMachineRuntime(input) {
       return createNativeMachineRuntime(input.machine, input.storage, endpointRegistry, {
         sessionManagers,

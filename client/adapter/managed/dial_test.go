@@ -126,6 +126,57 @@ func TestDialRejectsAuthorizationBeforeCloudResolution(t *testing.T) {
 	}
 }
 
+func TestDialRetriesOnlyConfirmedSignalingQuotaConflict(t *testing.T) {
+	attempt := managedAttempt(t)
+	channel := newScriptedProtocolChannel(t)
+	peer := &fakeManagedPeer{channel: channel, observedPath: endpoint.PathDirect, fingerprint: "sha-256:aa:bb"}
+	stream := cloudcompanion.NewFakeSignalingStream(1)
+	if err := stream.Push(&cloudpb.SignalingEvent{Payload: &cloudpb.SignalingEvent_Answer{Answer: &cloudpb.SignalingAnswer{Sdp: "answer-sdp"}}}); err != nil {
+		t.Fatal(err)
+	}
+	signalingCalls := 0
+	cloud := &cloudcompanion.FakeClient{
+		ResolveEndpointFunc: func(context.Context, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
+			return &cloudpb.ResolvedEndpoint{EndpointId: "studio", TargetDeviceId: "device-1", ManagedSessionId: "managed-1"}, nil
+		},
+		CreateSignalingSessionFunc: func(context.Context, *cloudpb.CreateSignalingSessionRequest) (cloudcompanion.SignalingStream, error) {
+			signalingCalls++
+			if signalingCalls == 1 {
+				return nil, &cloudcompanion.Error{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_QUOTA_EXHAUSTED, Retryable: true, RetryAfter: time.Millisecond}
+			}
+			return stream, nil
+		},
+	}
+	dialer := &Dialer{
+		Cloud: cloud, Peers: fakePeerFactory{peer: peer},
+		Authorization: &fakeAuthorizer{prepare: func(clientruntime.AttemptRequest) (peeradapter.PreparedAuthorization, error) {
+			return &fakePreparedAuthorization{authenticate: func(transport.Transport, string) error { return nil }}, nil
+		}},
+	}
+	ready, err := dialer.Connect(context.Background(), attempt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ready.Close()
+	if signalingCalls != 2 {
+		t.Fatalf("signaling calls = %d, want 2", signalingCalls)
+	}
+}
+
+func TestCreateSignalingSessionDoesNotRetryUncertainTemporaryFailure(t *testing.T) {
+	calls := 0
+	cloud := &cloudcompanion.FakeClient{CreateSignalingSessionFunc: func(context.Context, *cloudpb.CreateSignalingSessionRequest) (cloudcompanion.SignalingStream, error) {
+		calls++
+		return nil, &cloudcompanion.Error{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, Retryable: true}
+	}}
+	if _, err := createSignalingSession(context.Background(), cloud, &cloudpb.CreateSignalingSessionRequest{EndpointId: "studio"}); err == nil {
+		t.Fatal("temporary signaling failure unexpectedly succeeded")
+	}
+	if calls != 1 {
+		t.Fatalf("temporary signaling calls = %d, want 1", calls)
+	}
+}
+
 func managedAttempt(t *testing.T) clientruntime.AttemptRequest {
 	t.Helper()
 	identity := endpoint.DaemonIdentity{DeviceID: "device-1", DeviceFingerprint: "device-fingerprint"}

@@ -218,6 +218,29 @@ func TestPresenceRenewableAcceptsTruncatedHTTPStream(t *testing.T) {
 	}
 }
 
+func TestPresenceRenewableSeparatesColdStartFromRevocation(t *testing.T) {
+	coldStart := cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub projection is unavailable")
+	coldStart.Retryable = true
+	if !presenceRenewable(coldStart) {
+		t.Fatal("cold-start projection failure must renew presence")
+	}
+	revoked := cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_AUTHORIZATION_REVOKED, "daemon revoked")
+	if presenceRenewable(revoked) {
+		t.Fatal("explicit daemon revocation must stop presence renewal")
+	}
+}
+
+func TestReceivePresenceEventClosesHalfOpenStreamAfterHeartbeatDeadline(t *testing.T) {
+	stream := cloudcompanion.NewFakePresenceStream(1)
+	_, err := receivePresenceEvent(stream, time.Millisecond)
+	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY) || !presenceRenewable(err) {
+		t.Fatalf("heartbeat deadline error = %v, want retryable temporary", err)
+	}
+	if closeErr := stream.Close(); closeErr != nil {
+		t.Fatalf("heartbeat stream close is not idempotent: %v", closeErr)
+	}
+}
+
 func TestAgentRunContinuouslyDoesNotRenewExplicitPresenceClose(t *testing.T) {
 	stream := cloudcompanion.NewFakePresenceStream(1)
 	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: "device revoked"}}})
@@ -329,7 +352,7 @@ func mustPushPresence(t *testing.T, stream *cloudcompanion.FakePresenceStream, e
 }
 
 func managedReady(presenceSessionID string) *cloudpb.PresenceReady {
-	return &cloudpb.PresenceReady{PresenceSessionId: presenceSessionID, HubId: "hub-1", AssignmentEpoch: 7}
+	return &cloudpb.PresenceReady{PresenceSessionId: presenceSessionID, HeartbeatSeconds: 30, HubId: "hub-1", AssignmentEpoch: 7}
 }
 
 func managedOffer(deviceID, presenceSessionID, signalingSessionID, managedSessionID string, incarnation uint64) *cloudpb.SignalingOffer {

@@ -1441,6 +1441,8 @@ export const OpenPresenceRequestSchema: GenMessage<OpenPresenceRequest> = /*@__P
 /**
  * PresenceReady 表示 daemon device-scoped presence 已生效。
  * 下行 offer 继续携带各自 ManagedSessionID，不能要求它等于 PresenceSessionID。
+ * daemon 在连续两个 heartbeat_seconds 周期没有收到任何下行事件时必须关闭旧流并重新建立 fresh Presence；
+ * 该 deadline 用于发现 Edge 重启后被反向代理保留但已失去 Hub owner 的半开 HTTP stream。
  *
  * @generated from message muxvia.cloud.v1.PresenceReady
  */

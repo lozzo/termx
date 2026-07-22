@@ -3,15 +3,30 @@ package enginehost
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/muxvia/muxvia/client/adapter/direct"
 	"github.com/muxvia/muxvia/client/endpoint"
 	"github.com/muxvia/muxvia/client/port"
 	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/proto/apipb"
+	"github.com/muxvia/muxvia/proto/bindingpb"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
 	"github.com/muxvia/muxvia/shared/remoteauth"
 )
+
+func TestPlatformCloudResponsePreservesRetryableQuotaConflict(t *testing.T) {
+	err := platformCloudResponseError(&bindingpb.PlatformResponse{Error: &apipb.ApiError{
+		Code: apipb.ApiErrorCode_API_ERROR_CODE_CONFLICT, Message: "managed P2P concurrency is exhausted", Retryable: true, Attempted: true,
+	}})
+	var cloudErr *cloudcompanion.Error
+	if !errors.As(err, &cloudErr) || cloudErr.Code != cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_QUOTA_EXHAUSTED || !cloudErr.Retryable {
+		t.Fatalf("platform cloud error = %#v", err)
+	}
+}
 
 func TestDecodeBootstrapAcceptsManualPairingClaimCode(t *testing.T) {
 	payload := []byte{0x01, 0x02, 0x03, 0x04}

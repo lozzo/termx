@@ -538,6 +538,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       setTerminals(terminalList)
       setHasLoadedTerminals(true)
       setError(null)
+      // generation 恢复可能先收到旧 binding 的失败，再由新 session 成功提交 inventory。
+      // 新 inventory 是当前 workspace 的成功真值，必须同时清除旧 generation 留下的网络遮罩。
+      clearConnectionStatus()
     } catch (err) {
       if (terminalRefreshSeqRef.current === seq) {
         const message = connectionErrorDisplayMessage(err)
@@ -550,7 +553,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         setLoadingTerminals(false)
       }
     }
-  }, [api, forceRelayConnection, handleConnectionAuthFailure, initialMachine?.machineId, setMachineNetworkMachineId, updateConnectionStatus])
+  }, [api, clearConnectionStatus, forceRelayConnection, handleConnectionAuthFailure, initialMachine?.machineId, setMachineNetworkMachineId, updateConnectionStatus])
 
   const applyRuntimeTerminalEvent = useCallback((event: RtcEvent | { payload?: unknown }): boolean => {
     const payload = event.payload
@@ -887,8 +890,14 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
   useEffect(() => {
     const handleResume = () => {
-      if (page !== 'terminal') return
       resetKeyboardLayout()
+      if (page === 'terminal-list') {
+        // 网络 generation 更换时 terminal list 也必须重新取得 Go-owned session；没有已打开 terminal
+        // 不代表 workspace 可以继续展示旧 inventory projection。
+        void refreshTerminals()
+        return
+      }
+      if (page !== 'terminal') return
       const session = machineSessionRef.current?.session ?? connectedSession
       if (!activeTerminalId && !splitTerminalId) return
       if (!session || !isProtoSessionAlive(session)) {
@@ -906,7 +915,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       document.removeEventListener('muxvia:resume', handleResume)
       document.removeEventListener('muxvia:binding-closed', handleResume)
     }
-  }, [activeTerminalId, connectedSession, page, reattachActiveTerminals, resetKeyboardLayout, splitTerminalId])
+  }, [activeTerminalId, connectedSession, page, reattachActiveTerminals, refreshTerminals, resetKeyboardLayout, splitTerminalId])
 
   const openTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (requireVerification) {

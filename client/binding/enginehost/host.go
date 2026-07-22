@@ -7,6 +7,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -23,6 +24,7 @@ import (
 	"github.com/muxvia/muxvia/client/endpoint"
 	"github.com/muxvia/muxvia/client/port"
 	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/proto/apipb"
 	"github.com/muxvia/muxvia/proto/bindingpb"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"github.com/muxvia/muxvia/proto/remoteauthpb"
@@ -555,7 +557,7 @@ func (cloud platformCloud) exchange(ctx context.Context, request *bindingpb.Plat
 	if err != nil {
 		return nil, err
 	}
-	if err := platformResponseError(response); err != nil {
+	if err := platformCloudResponseError(response); err != nil {
 		return nil, err
 	}
 	if response.GetResponse() == nil {
@@ -605,9 +607,49 @@ func platformResponseError(response *bindingpb.PlatformResponse) error {
 		return fmt.Errorf("platform response is empty")
 	}
 	if value := response.GetError(); value != nil {
-		return fmt.Errorf("platform request failed: %s", value.GetMessage())
+		return &platformAPIError{value: proto.Clone(value).(*apipb.ApiError)}
 	}
 	return nil
+}
+
+// platformAPIError 保留 generated ApiError 的稳定 code/retryable 语义。
+// 平台消息只用于诊断，Go route 控制流不得通过英文错误文本推断是否可重试。
+type platformAPIError struct {
+	value *apipb.ApiError
+}
+
+func (err *platformAPIError) Error() string {
+	if err == nil || err.value == nil {
+		return "platform request failed"
+	}
+	return fmt.Sprintf("platform request failed: %s", err.value.GetMessage())
+}
+
+func platformCloudResponseError(response *bindingpb.PlatformResponse) error {
+	err := platformResponseError(response)
+	if err == nil {
+		return nil
+	}
+	var apiErr *platformAPIError
+	if !errors.As(err, &apiErr) || apiErr.value == nil {
+		return err
+	}
+	value := apiErr.value
+	switch value.GetCode() {
+	case apipb.ApiErrorCode_API_ERROR_CODE_CONFLICT:
+		if value.GetRetryable() {
+			return &cloudcompanion.Error{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_QUOTA_EXHAUSTED, Message: value.GetMessage(), Retryable: true}
+		}
+	case apipb.ApiErrorCode_API_ERROR_CODE_UNAUTHORIZED:
+		return &cloudcompanion.Error{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, Message: value.GetMessage()}
+	case apipb.ApiErrorCode_API_ERROR_CODE_CANCELLED:
+		return context.Canceled
+	case apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE:
+		return &cloudcompanion.Error{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, Message: value.GetMessage(), Retryable: value.GetRetryable()}
+	case apipb.ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST:
+		return &cloudcompanion.Error{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, Message: value.GetMessage()}
+	}
+	return err
 }
 
 func connectIntent(value bindingpb.ConnectIntent) (clientruntime.ConnectIntent, error) {

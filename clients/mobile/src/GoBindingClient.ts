@@ -89,8 +89,24 @@ export class AndroidBindingBackend implements ProtoBindingBackend {
     socket.binaryType = 'arraybuffer'
     this.socket = socket
     await new Promise<void>((resolve, reject) => {
-      socket.onerror = () => reject(new Error('Go binding bridge connection failed'))
-      socket.onclose = () => reject(new Error('Go binding bridge closed during authentication'))
+      let settled = false
+      const finish = (failure?: unknown) => {
+        if (settled) return
+        settled = true
+        globalThis.clearTimeout(timeout)
+        if (failure) {
+          socket.onclose = null
+          socket.close()
+          reject(failure)
+          return
+        }
+        resolve()
+      }
+      // 网络切换期间 WebView 可能拿到刚创建但无法完成认证的 loopback socket；没有 deadline
+      // 会永久阻塞整个 native generation replacement 队列。
+      const timeout = globalThis.setTimeout(() => finish(new Error('Go binding bridge authentication timed out')), 5_000)
+      socket.onerror = () => finish(new Error('Go binding bridge connection failed'))
+      socket.onclose = () => finish(new Error('Go binding bridge closed during authentication'))
       socket.onopen = () => {
         const token = new TextEncoder().encode(endpoint.token)
         const auth = new Uint8Array(1 + token.byteLength)
@@ -99,7 +115,7 @@ export class AndroidBindingBackend implements ProtoBindingBackend {
         try {
           socket.send(auth)
         } catch (error) {
-          reject(error)
+          finish(error)
         }
       }
       socket.onmessage = (event: MessageEvent<ArrayBuffer>) => {
@@ -107,17 +123,16 @@ export class AndroidBindingBackend implements ProtoBindingBackend {
         try {
           frame = decodeBridgeFrame(new Uint8Array(event.data))
         } catch (error) {
-          socket.close()
-          reject(error)
+          finish(error)
           return
         }
         if (frame.operation !== OP_ACK) {
-          reject(new Error('Go binding bridge authentication failed'))
+          finish(new Error('Go binding bridge authentication failed'))
           return
         }
         socket.onmessage = (message) => this.handleMessage(socket, new Uint8Array(message.data as ArrayBuffer))
         socket.onclose = () => this.handleClosed(new Error('Go binding bridge disconnected'))
-        resolve()
+        finish()
       }
     })
   }
