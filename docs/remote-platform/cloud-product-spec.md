@@ -153,6 +153,14 @@ expired
 - enrollment 只让账号目录和 Hub 识别 daemon，不授予 terminal capability。
 - 移除或撤销 daemon 后拒绝新的 managed connection；Direct/SSH 和 daemon 本地 identity 不被删除。
 
+### 4.2.1 Web 账号与设备入口
+
+- 普通用户导航固定围绕概览、设备、套餐和账号；topology、command outbox 等诊断能力只能作为设备页的高级详情，不得与主要任务争夺一级入口。
+- Web 只提供一个“添加设备”入口，再由用户选择手机/平板 activation 或 daemon enrollment；两条流程都必须展示创建、等待设备提交、核对公开 metadata、批准和完成状态。
+- 设备列表优先展示用户可识别的名称和在线/撤销状态；device ID、Hub、assignment、generation 等技术身份只进入可展开详情。
+- 撤销设备、断开连接和其它危险管理动作必须按具体动作展示近期认证确认，不得依赖一个全局解锁面板掩盖动作对象。
+- 该信息架构只消费既有 Proto API，不改变 activation、enrollment、topology、command 或账号安全真值。
+
 ### 4.3 terminal pairing
 
 - Cloud 登录和 daemon enrollment 不能替代 `CapabilityGrant`。

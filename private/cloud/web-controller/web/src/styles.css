@@ -41,7 +41,7 @@ html[data-wx-theme="neutral-dark"] {
 
 * { box-sizing: border-box; border-radius: 0; letter-spacing: 0; }
 html { scroll-behavior: smooth; background: var(--background); }
-body { margin: 0; min-width: 320px; background: var(--background); color: var(--foreground); font-family: var(--font-sans); }
+body { margin: 0; min-width: 240px; background: var(--background); color: var(--foreground); font-family: var(--font-sans); }
 a { color: inherit; text-decoration: none; }
 button, input, select { font: inherit; }
 ::selection { background: color-mix(in srgb, var(--primary) 25%, transparent); }

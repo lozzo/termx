@@ -2,22 +2,27 @@ import { create } from "@bufbuild/protobuf";
 import {
   Activity,
   Cable,
+  ChevronDown,
   CreditCard,
   Gauge,
   KeyRound,
   Laptop,
   LogOut,
+  Plus,
   QrCode,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
   Smartphone,
+  UserRound,
+  X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import {
   CreateManagementCommandRequestSchema,
   CreateManagementCommandResponseSchema,
@@ -81,7 +86,8 @@ import {
 import { ProtoHTTPError, protoGet, protoPost } from "@/protoApi";
 import { intlLocale } from "@/i18n";
 
-type Tab = "overview" | "devices" | "topology" | "commands" | "billing";
+type Tab = "overview" | "devices" | "plans" | "account";
+type AddDeviceKind = "phone" | "daemon";
 type AccountState = {
   commerce: GetAccountCommerceResponse;
   quota: GetAccountRelayQuotaResponse;
@@ -92,10 +98,14 @@ type AccountState = {
 const tabs: [Tab, typeof Gauge][] = [
   ["overview", Gauge],
   ["devices", Laptop],
-  ["topology", Cable],
-  ["commands", Activity],
-  ["billing", CreditCard],
+  ["plans", CreditCard],
+  ["account", UserRound],
 ];
+
+type ProtectedAction = {
+  label: string;
+  execute: () => Promise<unknown>;
+};
 
 export default function AccountPage() {
   const { t, i18n } = useTranslation();
@@ -104,7 +114,9 @@ export default function AccountPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [password, setPassword] = useState("");
-  const [controlsUnlocked, setControlsUnlocked] = useState(false);
+  const [protectedAction, setProtectedAction] = useState<ProtectedAction>();
+  const [addDeviceOpen, setAddDeviceOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   async function load() {
     try {
@@ -166,35 +178,33 @@ export default function AccountPage() {
     setBusy("");
   }
 
-  async function unlock() {
-    await run("reauth", async () => {
+  async function confirmProtectedAction() {
+    if (!protectedAction) return;
+    setBusy("reauth");
+    setError("");
+    try {
       await protoPost(
         "/api/v1/management/reauth",
         RecentAuthenticationRequestSchema,
         create(RecentAuthenticationRequestSchema, { password }),
         RecentAuthenticationResponseSchema,
       );
+      const action = protectedAction;
       setPassword("");
-      setControlsUnlocked(true);
-    });
+      setProtectedAction(undefined);
+      setBusy("command");
+      await action.execute();
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("account.requestFailed"));
+    } finally {
+      setBusy("");
+    }
   }
 
-  async function command(
-    kind: ManagementCommandKind,
-    target: ReturnType<typeof create<typeof ManagementCommandTargetSchema>>,
-  ) {
-    await run("command", () =>
-      protoPost(
-        "/api/v1/management/commands",
-        CreateManagementCommandRequestSchema,
-        create(CreateManagementCommandRequestSchema, {
-          commandKind: kind,
-          target,
-          idempotencyKey: crypto.randomUUID(),
-        }),
-        CreateManagementCommandResponseSchema,
-      ),
-    );
+  function protect(label: string, execute: () => Promise<unknown>) {
+    setPassword("");
+    setProtectedAction({ label, execute });
   }
 
   async function logout() {
@@ -214,24 +224,37 @@ export default function AccountPage() {
       </main>
     );
   const { commerce, quota, devices, topology, commands } = state;
+  const activeDevices = devices.devices.filter((device) => !device.revoked);
+  const onlineDaemons = activeDevices.filter(
+    (device) =>
+      device.deviceKind === ManagedDeviceKind.DAEMON &&
+      device.presence?.availability === Availability.ONLINE,
+  ).length;
   return (
-    <div className="min-h-dvh bg-background text-foreground md:grid md:grid-cols-[220px_minmax(0,1fr)]">
-      <aside className="border-r border-line bg-panel p-5 md:min-h-dvh">
-        <a className="flex h-12 items-center gap-3" href="/">
+    <div className="min-h-dvh bg-background text-foreground md:grid md:grid-cols-[232px_minmax(0,1fr)]">
+      <a className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:bg-primary focus:px-4 focus:py-3 focus:text-primary-foreground" href="#account-content">
+        {t("account.skip")}
+      </a>
+      <aside className="border-b border-line bg-panel px-4 py-3 md:min-h-dvh md:border-b-0 md:border-r md:p-5">
+        <div className="flex items-center justify-between gap-3 md:block">
+        <a className="flex h-12 items-center gap-3" href="/" aria-label={t("common.home")}>
           <b className="grid size-8 place-items-center bg-primary font-mono text-xs text-primary-foreground">
             MV
           </b>
           <span className="font-medium">Muxvia Cloud</span>
         </a>
-        <nav className="mt-8 grid grid-cols-5 border border-line md:grid-cols-1 md:border-0">
+        <LanguageSwitcher compact />
+        </div>
+        <nav className="mt-3 grid grid-cols-4 border border-line md:mt-8 md:grid-cols-1 md:border-0" aria-label={t("common.primaryNavigation")}>
           {tabs.map(([id, Icon]) => (
             <button
               key={id}
-              className={`flex min-h-11 items-center justify-center gap-2 border-b border-line px-2 text-xs capitalize md:justify-start ${tab === id ? "bg-soft text-primary" : "text-muted-foreground"}`}
+              className={`flex min-h-12 cursor-pointer items-center justify-center gap-2 border-r border-line px-2 text-xs last:border-r-0 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary md:justify-start md:border-b md:border-r-0 ${tab === id ? "bg-soft font-semibold text-primary" : "text-muted-foreground hover:bg-soft/70 hover:text-foreground"}`}
               onClick={() => setTab(id)}
+              aria-current={tab === id ? "page" : undefined}
             >
               <Icon className="size-4" />
-              <span>{t(`account.tabs.${id}`)}</span>
+              <span className="max-md:sr-only">{t(`account.tabs.${id}`)}</span>
             </button>
           ))}
         </nav>
@@ -250,13 +273,13 @@ export default function AccountPage() {
           </Button>
         </div>
       </aside>
-      <main className="min-w-0 p-5 md:p-10">
+      <main className="min-w-0 p-4 sm:p-6 md:p-10" id="account-content">
         <header className="flex flex-wrap items-start justify-between gap-4 border-b border-line pb-6">
           <div>
             <p className="font-mono text-[10px] text-primary">
               {t("account.cloudControl")}
             </p>
-            <h1 className="mt-2 text-3xl font-light">{t(`account.tabs.${tab}`)}</h1>
+            <h1 className="mt-2 text-3xl font-semibold">{t(`account.tabs.${tab}`)}</h1>
           </div>
           <Button
             variant="outline"
@@ -276,74 +299,26 @@ export default function AccountPage() {
             {error}
           </p>
         )}
-        <section className="mt-6 border border-line bg-panel p-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="grid min-w-56 flex-1 gap-2 font-mono text-[9px] text-muted-foreground">
-              {t("account.controls.currentPassword")}
-              <Input
-                data-testid="recent-password"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-              />
-            </label>
-            <Button
-              data-testid="unlock-controls"
-              disabled={!password || busy === "reauth"}
-              onClick={() => void unlock()}
-            >
-              <KeyRound />
-              {controlsUnlocked ? t("account.controls.refresh") : t("account.controls.unlock")}
-            </Button>
-            <span
-              className={`text-xs ${controlsUnlocked ? "text-success" : "text-muted-foreground"}`}
-            >
-              {controlsUnlocked
-                ? t("account.controls.unlocked")
-                : t("account.controls.required")}
-            </span>
-          </div>
-        </section>
         {tab === "overview" && (
           <div className="mt-6 grid gap-4 lg:grid-cols-3">
+            <Metric label={t("account.overview.nodes")} value={t("account.overview.nodesValue", { active: onlineDaemons, total: activeDevices.length })} />
             <Metric label={t("account.overview.plan")} value={commerce.subscription?.planId ?? "-"} />
-            <Metric
-              label={t("account.overview.subscription")}
-              value={SubscriptionStatus[commerce.subscription?.status ?? 0]}
-            />
             <Metric
               label={t("account.overview.relayRemaining")}
               value={bytes(quota.period?.remainingBytes ?? 0n, intlLocale(i18n.language))}
             />
-            <Panel title={t("account.overview.account")}>
-              <Row
-                label={t("account.overview.accountId")}
-                value={commerce.account?.accountId ?? "-"}
-              />
-              <Row
-                label={t("account.overview.authRevision")}
-                value={String(commerce.account?.authRevision ?? 0n)}
-              />
+            <Panel title={t("account.overview.system")} className="lg:col-span-2">
+              <div className="grid gap-4 p-5 sm:grid-cols-2">
+                <StatusLine icon={<ShieldCheck />} label={t("account.overview.system")} value={t("account.overview.operational")} tone="success" />
+                <StatusLine icon={<Cable />} label={t("account.overview.route")} value={t("account.overview.routeValue")} />
+              </div>
             </Panel>
-            <Panel title={t("account.overview.capability")}>
-              <Row
-                label={t("account.overview.p2pSessions")}
-                value={String(
-                  commerce.entitlement?.capability?.managedP2pMaxConcurrency ??
-                    0,
-                )}
-              />
-              <Row
-                label={t("account.overview.relayPeriod")}
-                value={bytes(
-                  commerce.entitlement?.capability?.relay?.maxBytesPerPeriod ??
-                    0n,
-                  intlLocale(i18n.language),
-                )}
-              />
+            <Panel title={t("account.overview.subscription")}>
+              <Row label={t("account.billing.statusLabel")} value={subscriptionStatusLabel(commerce.subscription?.status ?? 0, t)} />
+              <Row label={t("account.overview.p2pSessions")} value={String(commerce.entitlement?.capability?.managedP2pMaxConcurrency ?? 0)} />
             </Panel>
-            <Panel title={t("account.overview.audit")}>
-              {commerce.audit
+            <Panel title={t("account.overview.activity")} className="lg:col-span-3">
+              {commerce.audit.length === 0 ? <Empty /> : commerce.audit
                 .slice(-5)
                 .reverse()
                 .map((item) => (
@@ -354,41 +329,40 @@ export default function AccountPage() {
                   />
                 ))}
             </Panel>
+            <p className="lg:col-span-3 m-0 border-l-2 border-primary bg-panel px-4 py-3 text-sm leading-6 text-muted-foreground">{t("account.overview.proof")}</p>
           </div>
         )}
         {tab === "devices" && (
           <div className="mt-6 grid gap-5">
-			<DaemonEnrollmentPanel onEnrolled={load} />
-            <MobileActivationPanel onActivated={load} />
+            <section className="flex flex-col gap-4 border border-line bg-panel p-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="m-0 text-lg font-semibold">{t("account.devices.title")}</h2>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">{t("account.devices.copy")}</p>
+              </div>
+              <Button className="shrink-0" onClick={() => setAddDeviceOpen(true)}><Plus />{t("account.devices.add")}</Button>
+            </section>
             <Panel title={t("account.nodes.registered")}>
-              {devices.devices.map((device) => (
+              {devices.devices.length === 0 ? <Empty /> : devices.devices.map((device) => (
               <div
-                className="grid gap-3 border-b border-line p-4 lg:grid-cols-[1fr_160px_160px_auto] lg:items-center"
+                className="grid gap-3 border-b border-line p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                 key={device.deviceId}
+                data-testid={`account-device-${device.deviceId}`}
               >
-                <div>
-                  <strong className="text-sm">
+                <div className="min-w-0">
+                  <strong className="block truncate text-sm">
                     {device.displayName || device.deviceId}
                   </strong>
-                  <p className="font-mono text-[10px] text-muted-foreground">
-                    {device.deviceId}
-                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">{t(`account.nodes.kind.${device.deviceKind === ManagedDeviceKind.DAEMON ? "daemon" : "client"}`)} · {deviceStatus(device, t)}</p>
+                  <details className="mt-2 text-xs text-muted-foreground">
+                    <summary className="cursor-pointer select-none text-primary">{t("account.devices.details")}</summary>
+                    <p className="mt-2 break-all font-mono text-[10px]">{device.deviceId}</p>
+                  </details>
                 </div>
-                <span className="text-xs">
-                  {ManagedDeviceKind[device.deviceKind]}
-                </span>
-                <span className="text-xs">
-                  {device.presence
-                    ? `${Availability[device.presence.availability]} / ${Freshness[device.presence.freshness]}`
-                    : t("account.nodes.unknown")}
-                </span>
                 <Button
                   variant="outline"
-                  disabled={
-                    !controlsUnlocked || device.revoked || busy === "command"
-                  }
-                  onClick={() =>
-                    void command(
+                  disabled={device.revoked || busy === "command"}
+                  onClick={() => protect(t(device.deviceKind === ManagedDeviceKind.DAEMON ? "account.nodes.revoke" : "account.nodes.removeAccess"), () =>
+                    createManagementCommand(
                       ManagementCommandKind.REVOKE_CLOUD_DEVICE,
                       create(ManagementCommandTargetSchema, {
                         target: {
@@ -399,133 +373,28 @@ export default function AccountPage() {
                           }),
                         },
                       }),
-                    )
-                  }
+                    ))}
                 >
                   <ShieldAlert />
-                  {t("account.nodes.revoke")}
+                  {t(device.deviceKind === ManagedDeviceKind.DAEMON ? "account.nodes.revoke" : "account.nodes.removeAccess")}
                 </Button>
               </div>
               ))}
             </Panel>
+            <button className="flex min-h-12 cursor-pointer items-center justify-between border border-line bg-panel px-4 text-left text-sm font-semibold focus-visible:outline-2 focus-visible:outline-primary" onClick={() => setAdvancedOpen((value) => !value)} aria-expanded={advancedOpen}>
+              <span className="flex items-center gap-2"><Activity className="size-4 text-muted-foreground" />{t("account.devices.advanced")}</span>
+              <ChevronDown className={`size-4 transition-transform ${advancedOpen ? "rotate-180" : ""}`} />
+            </button>
+            {advancedOpen && <AdvancedControls topology={topology} commands={commands} busy={busy} protect={protect} />}
           </div>
         )}
-        {tab === "topology" && (
-          <div className="mt-6 grid gap-5">
-            <Panel title={t("account.topology.controlRelations")}>
-              {topology.presences.map((presence) => (
-                <div
-                  className="grid gap-3 border-b border-line p-4 lg:grid-cols-[1fr_1fr_160px_auto] lg:items-center"
-                  key={presence.presenceSessionId}
-                >
-                  <span className="font-mono text-xs">
-                    {presence.daemonDeviceId}
-                  </span>
-                  <span className="text-xs">
-                    {t("account.topology.controlHub", { hub: presence.controlOwnerHubId })}
-                  </span>
-                  <span className="text-xs">
-                    {Availability[presence.availability]} /{" "}
-                    {Freshness[presence.freshness]}
-                  </span>
-                  <Button
-                    variant="outline"
-                    disabled={!controlsUnlocked || busy === "command"}
-                    onClick={() =>
-                      void command(
-                        ManagementCommandKind.KICK_PRESENCE,
-                        create(ManagementCommandTargetSchema, {
-                          target: {
-                            case: "presence",
-                            value: create(KickPresenceTargetSchema, {
-                              daemonDeviceId: presence.daemonDeviceId,
-                              assignmentEpoch: presence.assignmentEpoch,
-                              presenceSessionId: presence.presenceSessionId,
-                            }),
-                          },
-                        }),
-                      )
-                    }
-                  >
-                    {t("account.topology.disconnect")}
-                  </Button>
-                </div>
-              ))}
-            </Panel>
-            <Panel title={t("account.topology.dataPaths")}>
-              {topology.peerSessions.map((session) => (
-                <div
-                  className="grid gap-3 border-b border-line p-4 lg:grid-cols-[1fr_1fr_160px_auto] lg:items-center"
-                  key={`${session.target?.managedSessionId}-${session.target?.sessionIncarnation}`}
-                >
-                  <span className="font-mono text-xs">
-                    {t("account.topology.peer", { client: session.clientDeviceId, daemon: session.target?.daemonDeviceId })}
-                  </span>
-                  <span className="text-xs">
-                    {t("account.topology.dataPath", { path: ObservedPath[session.observedDataPath] })}
-                  </span>
-                  <span className="text-xs">
-                    {t("account.topology.controlHub", { hub: session.controlOwnerHubId })}
-                  </span>
-                  <Button
-                    variant="outline"
-                    disabled={
-                      !controlsUnlocked || !session.target || busy === "command"
-                    }
-                    onClick={() =>
-                      session.target &&
-                      void command(
-                        ManagementCommandKind.CLOSE_MANAGED_PEER_SESSION,
-                        create(ManagementCommandTargetSchema, {
-                          target: {
-                            case: "peerSession",
-                            value: session.target,
-                          },
-                        }),
-                      )
-                    }
-                  >
-                    {t("account.topology.closeSession")}
-                  </Button>
-                </div>
-              ))}
-            </Panel>
-          </div>
-        )}
-        {tab === "commands" && (
-          <Panel title={t("account.commands.title")} className="mt-6">
-            {commands.commands.length === 0 ? (
-              <Empty />
-            ) : (
-              commands.commands.map((item) => (
-                <div
-                  className="grid gap-2 border-b border-line p-4 lg:grid-cols-[1fr_160px_160px]"
-                  key={item.commandId}
-                >
-                  <div>
-                    <strong className="text-xs">
-                      {ManagementCommandKind[item.commandKind]}
-                    </strong>
-                    <p className="font-mono text-[9px] text-muted-foreground">
-                      {item.commandId}
-                    </p>
-                  </div>
-                  <span className="text-xs">
-                    {t("account.commands.children", { count: item.children.length })}
-                  </span>
-                  <span className="text-xs">{item.executionState}</span>
-                </div>
-              ))
-            )}
-          </Panel>
-        )}
-        {tab === "billing" && (
+        {tab === "plans" && (
           <div className="mt-6 grid gap-5 lg:grid-cols-2">
             <Panel title={t("account.billing.subscription")}>
               <Row label={t("account.billing.current")} value={commerce.subscription?.planId ?? "-"} />
               <Row
                 label={t("account.billing.statusLabel")}
-                value={SubscriptionStatus[commerce.subscription?.status ?? 0]}
+                value={subscriptionStatusLabel(commerce.subscription?.status ?? 0, t)}
               />
               <div className="flex flex-wrap gap-2 p-4">
                 <Button
@@ -615,12 +484,191 @@ export default function AccountPage() {
             </Panel>
           </div>
         )}
+        {tab === "account" && (
+          <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <Panel title={t("account.profile.title")}>
+              <Row label={t("account.profile.displayName")} value={commerce.account?.displayName ?? "-"} />
+              <Row label={t("account.profile.email")} value={commerce.account?.email ?? "-"} />
+              <details className="border-t border-line p-4 text-xs text-muted-foreground">
+                <summary className="cursor-pointer text-primary">{t("account.devices.details")}</summary>
+                <p className="mt-3 break-all font-mono text-[10px]">{commerce.account?.accountId}</p>
+              </details>
+            </Panel>
+            <section className="border border-line bg-panel p-5">
+              <UserRound className="size-5 text-primary" />
+              <strong className="mt-4 block text-sm">{commerce.account?.displayName}</strong>
+              <p className="mt-1 break-all text-xs text-muted-foreground">{commerce.account?.email}</p>
+              <Button className="mt-5 w-full justify-start" variant="outline" onClick={logout}><LogOut />{t("account.signOut")}</Button>
+            </section>
+          </div>
+        )}
       </main>
+      {addDeviceOpen && <AddDeviceWizard onClose={() => setAddDeviceOpen(false)} onChanged={load} />}
+      {protectedAction && (
+        <ReauthDialog
+          actionLabel={protectedAction.label}
+          password={password}
+          busy={busy === "reauth"}
+          onPasswordChange={setPassword}
+          onCancel={() => { setProtectedAction(undefined); setPassword(""); }}
+          onConfirm={() => void confirmProtectedAction()}
+        />
+      )}
+    </div>
+  );
+
+}
+
+function AddDeviceWizard({ onClose, onChanged }: { onClose: () => void; onChanged: () => Promise<void> }) {
+  const { t } = useTranslation();
+  const [kind, setKind] = useState<AddDeviceKind>();
+  return (
+    <div className="fixed inset-0 z-50 grid bg-black/45 p-3 sm:place-items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="add-device-title">
+      <section className="flex max-h-[calc(100dvh-24px)] w-full max-w-3xl flex-col self-end overflow-hidden border border-line-strong bg-background shadow-2xl sm:self-auto">
+        <header className="flex min-h-14 items-center justify-between gap-4 border-b border-line bg-panel px-4">
+          <div>
+            <h2 className="m-0 text-base font-semibold" id="add-device-title">{t("account.devices.addTitle")}</h2>
+            {kind && <p className="m-0 mt-0.5 text-xs text-muted-foreground">{t(`account.devices.${kind}Title`)}</p>}
+          </div>
+          <Button size="icon" variant="ghost" onClick={onClose} aria-label={t("account.devices.close")}><X /></Button>
+        </header>
+        <div className="min-h-0 overflow-y-auto p-4 sm:p-6">
+          {!kind ? (
+            <div>
+              <p className="m-0 max-w-2xl text-sm leading-6 text-muted-foreground">{t("account.devices.addCopy")}</p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <button className="group min-h-36 cursor-pointer border border-line bg-panel p-5 text-left hover:border-primary focus-visible:outline-2 focus-visible:outline-primary" onClick={() => setKind("phone")}>
+                  <Smartphone className="size-6 text-primary" />
+                  <strong className="mt-5 block text-base">{t("account.devices.phoneTitle")}</strong>
+                  <span className="mt-2 block text-sm leading-6 text-muted-foreground">{t("account.devices.phoneCopy")}</span>
+                </button>
+                <button className="group min-h-36 cursor-pointer border border-line bg-panel p-5 text-left hover:border-primary focus-visible:outline-2 focus-visible:outline-primary" onClick={() => setKind("daemon")}>
+                  <Laptop className="size-6 text-primary" />
+                  <strong className="mt-5 block text-base">{t("account.devices.daemonTitle")}</strong>
+                  <span className="mt-2 block text-sm leading-6 text-muted-foreground">{t("account.devices.daemonCopy")}</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <Button className="mb-4" variant="ghost" onClick={() => setKind(undefined)}>{t("account.devices.back")}</Button>
+              {kind === "phone" ? <MobileActivationPanel onActivated={onChanged} onDone={onClose} /> : <DaemonEnrollmentPanel onEnrolled={onChanged} onDone={onClose} />}
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
 
-function DaemonEnrollmentPanel({ onEnrolled }: { onEnrolled: () => Promise<void> }) {
+function ReauthDialog({
+  actionLabel,
+  password,
+  busy,
+  onPasswordChange,
+  onCancel,
+  onConfirm,
+}: {
+  actionLabel: string;
+  password: string;
+  busy: boolean;
+  onPasswordChange: (value: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="reauth-title">
+      <section className="w-full max-w-md border border-line-strong bg-panel p-5 shadow-2xl">
+        <KeyRound className="size-5 text-primary" />
+        <h2 className="mt-4 text-lg font-semibold" id="reauth-title">{t("account.controls.confirmTitle")}</h2>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{t("account.controls.confirmCopy", { action: actionLabel })}</p>
+        <label className="mt-5 grid gap-2 text-sm font-medium">
+          {t("account.controls.currentPassword")}
+          <Input autoFocus data-testid="recent-password" type="password" value={password} onChange={(event) => onPasswordChange(event.target.value)} />
+        </label>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="ghost" onClick={onCancel}>{t("account.nodes.cancel")}</Button>
+          <Button data-testid="unlock-controls" disabled={!password || busy} onClick={onConfirm}><ShieldCheck />{busy ? t("account.controls.confirming") : t("account.controls.confirm")}</Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AdvancedControls({
+  topology,
+  commands,
+  busy,
+  protect,
+}: {
+  topology: ListAccountTopologyResponse;
+  commands: ListManagementCommandsResponse;
+  busy: string;
+  protect: (label: string, execute: () => Promise<unknown>) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="grid gap-5">
+      <Panel title={t("account.topology.controlRelations")}>
+        {topology.presences.length === 0 ? <Empty /> : topology.presences.map((presence) => (
+          <div className="grid gap-3 border-b border-line p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-center" key={presence.presenceSessionId}>
+            <div className="min-w-0"><strong className="block truncate text-sm">{presence.daemonDeviceId}</strong><span className="text-xs text-muted-foreground">{Availability[presence.availability]} / {Freshness[presence.freshness]}</span></div>
+            <span className="break-all text-xs text-muted-foreground">{t("account.topology.controlHub", { hub: presence.controlOwnerHubId })}</span>
+            <Button variant="outline" disabled={busy === "command"} onClick={() => protect(t("account.topology.disconnect"), () => createManagementCommand(ManagementCommandKind.KICK_PRESENCE, create(ManagementCommandTargetSchema, { target: { case: "presence", value: create(KickPresenceTargetSchema, { daemonDeviceId: presence.daemonDeviceId, assignmentEpoch: presence.assignmentEpoch, presenceSessionId: presence.presenceSessionId }) } })))}>{t("account.topology.disconnect")}</Button>
+          </div>
+        ))}
+      </Panel>
+      <Panel title={t("account.topology.dataPaths")}>
+        {topology.peerSessions.length === 0 ? <Empty /> : topology.peerSessions.map((session) => (
+          <div className="grid gap-3 border-b border-line p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-center" key={`${session.target?.managedSessionId}-${session.target?.sessionIncarnation}`}>
+            <div className="min-w-0"><strong className="block break-all text-xs">{t("account.topology.peer", { client: session.clientDeviceId, daemon: session.target?.daemonDeviceId })}</strong><span className="text-xs text-muted-foreground">{t("account.topology.dataPath", { path: ObservedPath[session.observedDataPath] })}</span></div>
+            <span className="break-all text-xs text-muted-foreground">{t("account.topology.controlHub", { hub: session.controlOwnerHubId })}</span>
+            <Button variant="outline" disabled={!session.target || busy === "command"} onClick={() => session.target && protect(t("account.topology.closeSession"), () => createManagementCommand(ManagementCommandKind.CLOSE_MANAGED_PEER_SESSION, create(ManagementCommandTargetSchema, { target: { case: "peerSession", value: session.target! } })))}>{t("account.topology.closeSession")}</Button>
+          </div>
+        ))}
+      </Panel>
+      <Panel title={t("account.commands.title")}>
+        {commands.commands.length === 0 ? <Empty /> : commands.commands.map((item) => (
+          <div className="grid gap-2 border-b border-line p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto]" key={item.commandId}>
+            <div className="min-w-0"><strong className="text-xs">{ManagementCommandKind[item.commandKind]}</strong><p className="truncate font-mono text-[9px] text-muted-foreground">{item.commandId}</p></div>
+            <span className="text-xs">{t("account.commands.children", { count: item.children.length })}</span>
+            <span className="text-xs text-muted-foreground">{item.executionState}</span>
+          </div>
+        ))}
+      </Panel>
+    </div>
+  );
+}
+
+function createManagementCommand(
+  kind: ManagementCommandKind,
+  target: ReturnType<typeof create<typeof ManagementCommandTargetSchema>>,
+) {
+  return protoPost(
+    "/api/v1/management/commands",
+    CreateManagementCommandRequestSchema,
+    create(CreateManagementCommandRequestSchema, { commandKind: kind, target, idempotencyKey: crypto.randomUUID() }),
+    CreateManagementCommandResponseSchema,
+  );
+}
+
+function deviceStatus(device: ListAccountDevicesResponse["devices"][number], t: (key: string) => string) {
+  if (device.revoked) return t("account.nodes.revoked");
+  if (!device.presence) return t("account.nodes.offlineStatus");
+  return device.presence.availability === Availability.ONLINE ? t("account.nodes.onlineStatus") : t("account.nodes.offlineStatus");
+}
+
+function subscriptionStatusLabel(status: SubscriptionStatus, t: (key: string) => string) {
+  const key = SubscriptionStatus[status]?.toLowerCase() ?? "unspecified";
+  return t(`account.billing.subscriptionStatus.${key}`);
+}
+
+function StatusLine({ icon, label, value, tone }: { icon: ReactNode; label: string; value: string; tone?: "success" }) {
+  return <div className="flex items-center gap-3"><span className={tone === "success" ? "text-success" : "text-primary"}>{icon}</span><div><span className="block text-xs text-muted-foreground">{label}</span><strong className="mt-0.5 block text-sm">{value}</strong></div></div>;
+}
+
+function DaemonEnrollmentPanel({ onEnrolled, onDone }: { onEnrolled: () => Promise<void>; onDone: () => void }) {
 	const { t } = useTranslation();
 	const [enrollment, setEnrollment] = useState<DaemonEnrollmentProjection>();
 	const [busy, setBusy] = useState(false);
@@ -700,7 +748,7 @@ function DaemonEnrollmentPanel({ onEnrolled }: { onEnrolled: () => Promise<void>
 					) : <p className="mt-4 text-sm leading-6 text-muted-foreground">{t("account.daemonFlow.waiting")}</p>}
 					{enrollment.state === DaemonEnrollmentState.WAITING_FOR_APPROVAL && <Button className="mt-5" disabled={busy} onClick={() => void approve()}><ShieldCheck />{busy ? t("account.daemonFlow.approving") : t("account.daemonFlow.approve")}</Button>}
 					{enrollment.state === DaemonEnrollmentState.APPROVED && <p className="mt-5 text-sm text-success">{t("account.daemonFlow.approved")}</p>}
-					<Button className="mt-3" variant="ghost" onClick={() => { setEnrollment(undefined); setError(""); }}>{enrollment.state === DaemonEnrollmentState.APPROVED ? t("account.nodes.done") : t("account.nodes.cancel")}</Button>
+					<Button className="mt-3" variant="ghost" onClick={() => { if (enrollment.state === DaemonEnrollmentState.APPROVED) onDone(); else { setEnrollment(undefined); setError(""); } }}>{enrollment.state === DaemonEnrollmentState.APPROVED ? t("account.nodes.done") : t("account.nodes.cancel")}</Button>
 				</div>
 			)}
 			{error && <p className="m-5 border border-destructive p-3 text-xs text-destructive" role="alert">{error}</p>}
@@ -708,7 +756,7 @@ function DaemonEnrollmentPanel({ onEnrolled }: { onEnrolled: () => Promise<void>
 	);
 }
 
-function MobileActivationPanel({ onActivated }: { onActivated: () => Promise<void> }) {
+function MobileActivationPanel({ onActivated, onDone }: { onActivated: () => Promise<void>; onDone: () => void }) {
   const { t } = useTranslation();
   const [activation, setActivation] = useState<MobileActivationProjection>();
   const [qrDataURL, setQRDataURL] = useState("");
@@ -796,7 +844,7 @@ function MobileActivationPanel({ onActivated }: { onActivated: () => Promise<voi
             ) : <p className="mt-4 text-sm leading-6 text-muted-foreground">{t("account.nodes.scanCopy")}</p>}
             {activation.state === MobileActivationState.WAITING_FOR_APPROVAL && <Button className="mt-5 self-start" disabled={busy} onClick={() => void approve()}><ShieldCheck />{busy ? t("account.mobileFlow.approving") : t("account.mobileFlow.approve")}</Button>}
             {activation.state === MobileActivationState.APPROVED && <p className="mt-5 text-sm text-success">{t("account.nodes.approvedCopy")}</p>}
-            <Button className="mt-3 self-start" variant="ghost" onClick={() => { setActivation(undefined); setError(""); }}>{activation.state === MobileActivationState.APPROVED ? t("account.nodes.done") : t("account.nodes.cancel")}</Button>
+            <Button className="mt-3 self-start" variant="ghost" onClick={() => { if (activation.state === MobileActivationState.APPROVED) onDone(); else { setActivation(undefined); setError(""); } }}>{activation.state === MobileActivationState.APPROVED ? t("account.nodes.done") : t("account.nodes.cancel")}</Button>
           </div>
         </div>
       )}
@@ -835,9 +883,9 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid min-h-12 grid-cols-[130px_1fr] items-center gap-3 border-b border-line px-4 text-xs last:border-0">
+    <div className="grid min-h-12 grid-cols-1 items-center gap-1 border-b border-line px-4 py-3 text-xs last:border-0 sm:grid-cols-[100px_minmax(0,1fr)] sm:gap-3 sm:py-0">
       <span className="text-muted-foreground">{label}</span>
-      <span className="min-w-0 break-all">{value}</span>
+      <span className="min-w-0 break-words">{value}</span>
     </div>
   );
 }
