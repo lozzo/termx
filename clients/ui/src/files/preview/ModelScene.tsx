@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import { AlertCircle, Box, Crosshair, ZoomIn, ZoomOut } from 'lucide-react'
 import { hapticSelection } from '../../platform/haptics'
+import { useTranslation } from 'react-i18next'
+import '../../i18n'
 import { clamp } from '../fileUtils'
 import { MediaPreviewShell } from './MediaPreviewShell'
 import type { ModelObject3D, ModelQuaternionState, ModelViewState, ModelWebGLRenderer, ThreeModule } from './modelPreviewTypes'
@@ -11,6 +13,7 @@ const DEFAULT_MODEL_VIEW: ModelViewState = {
 }
 
 export function ModelScene({ object, name, label, three }: { object: ModelObject3D; name: string; label: string; three: ThreeModule }) {
+  const { t } = useTranslation()
   const mountRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<ModelSceneHandle | null>(null)
   const pointersRef = useRef(new Map<number, ModelPointerPoint>())
@@ -165,8 +168,8 @@ export function ModelScene({ object, name, label, three }: { object: ModelObject
           <div className="flex items-center overflow-hidden border border-white/10 bg-white/5">
             <button
               type="button"
-              aria-label={`Zoom out ${name}`}
-              title="Zoom out"
+              aria-label={t('files.preview.zoomOutNamed', { name })}
+              title={t('files.preview.zoomOut')}
               className="flex h-8 w-8 items-center justify-center text-zinc-200 transition-colors active:scale-95 hover:bg-white/5 active:bg-white/10"
               onClick={() => {
                 hapticSelection()
@@ -177,8 +180,8 @@ export function ModelScene({ object, name, label, three }: { object: ModelObject
             </button>
             <button
               type="button"
-              aria-label={`Zoom in ${name}`}
-              title="Zoom in"
+              aria-label={t('files.preview.zoomInNamed', { name })}
+              title={t('files.preview.zoomIn')}
               className="flex h-8 w-8 items-center justify-center border-l border-white/10 text-zinc-200 transition-colors active:scale-95 hover:bg-white/5 active:bg-white/10"
               onClick={() => {
                 hapticSelection()
@@ -189,8 +192,8 @@ export function ModelScene({ object, name, label, three }: { object: ModelObject
             </button>
             <button
               type="button"
-              aria-label={`Reset model view ${name}`}
-              title="Reset view"
+              aria-label={t('files.preview.resetViewNamed', { name })}
+              title={t('files.preview.resetView')}
               className="flex h-8 w-8 items-center justify-center border-l border-white/10 text-zinc-200 transition-colors active:scale-95 hover:bg-white/5 active:bg-white/10"
               onClick={resetView}
             >
@@ -213,7 +216,7 @@ export function ModelScene({ object, name, label, three }: { object: ModelObject
           <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/95 px-6 text-center">
             <div>
               <AlertCircle className="mx-auto h-7 w-7 text-zinc-500" />
-              <h3 className="mt-3 text-[16px] font-bold text-zinc-100">3D Preview Unavailable</h3>
+              <h3 className="mt-3 text-[16px] font-bold text-zinc-100">{t('files.preview.modelUnavailable')}</h3>
               <p className="mt-2 max-w-sm text-[14px] leading-6 text-zinc-400">{renderError}</p>
             </div>
           </div>

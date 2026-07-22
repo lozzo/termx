@@ -5,6 +5,8 @@ import {
   type TerminalModifierState,
 } from './mobileTerminalInput'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
+import { useTranslation } from 'react-i18next'
+import '../i18n'
 
 export interface MobileTerminalKeybarProps {
   onInput: (data: string) => void
@@ -113,6 +115,7 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
   keyboardLocked = false,
   className,
 }: MobileTerminalKeybarProps, forwardedRef: Ref<HTMLDivElement>) {
+  const { t } = useTranslation()
   const [internalModifierState, setInternalModifierState] = useState<TerminalModifierState>({ ctrl: 'off', alt: 'off' })
   const activeModifierState = modifierState ?? internalModifierState
   const setModifierState = onModifierStateChange ?? setInternalModifierState
@@ -253,7 +256,7 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
         <button
           data-key-id="⌨"
           type="button"
-          aria-label={keyboardLocked ? 'Unlock system keyboard' : 'Toggle system keyboard'}
+          aria-label={t(keyboardLocked ? 'terminal.tools.unlockKeyboard' : 'terminal.tools.toggleKeyboard')}
           aria-pressed={keyboardLocked || keyboardVisible}
           className={`${cls} ${keyboardButtonClass}`}
           onMouseDown={(e) => e.preventDefault()}
@@ -301,7 +304,7 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
         </button>
       </div>
       <div className="flex min-w-0 gap-1 px-1.5 pb-1.5 pt-1" style={{ overflow: 'visible' }}>
-        {btn('⇥', '\t', 'Tab key')}
+        {btn('⇥', '\t', t('terminal.tools.tabKey'))}
         {modBtn('Ctrl', activeModifierState.ctrl, ctrlToggle)}
         {modBtn('Alt', activeModifierState.alt, altToggle)}
         {btn('\\', '\\')}
@@ -312,7 +315,7 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
         <button
           data-key-id="Fn"
           type="button"
-          aria-label="Toggle Fn shortcuts"
+          aria-label={t('terminal.tools.toggleFn')}
           aria-pressed={fnOpen}
           className={`${cls} ${fnOpen ? 'bg-[var(--muxvia-accent)] text-[var(--muxvia-accent-text)]' : 'bg-transparent text-[var(--muxvia-muted)] active:bg-[var(--muxvia-surface-raised)]'}`}
           onPointerDown={(e) => { e.preventDefault(); showPress('Fn') }}

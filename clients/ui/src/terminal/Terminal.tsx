@@ -13,6 +13,8 @@ import { appendTerminalText } from './terminalTextWindow'
 import { useTerminalSession } from './useTerminalSession'
 import type { ProtoClientSession } from '../core/protoClientSession'
 import { DEFAULT_TERMINAL_SETTINGS, resolveTerminalTheme, type TerminalSettings } from './terminalSettings'
+import { useTranslation } from 'react-i18next'
+import '../i18n'
 
 const historyScrollbackPageRows = 250
 const historyLoadedRowsSoftLimit = 10000
@@ -139,6 +141,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   },
   ref,
 ) {
+  const { t } = useTranslation()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const xtermRef = useRef<XTerm | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -2133,7 +2136,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     >
       <div
         ref={containerRef}
-        aria-label="Terminal output"
+        aria-label={t('terminal.tools.output')}
         className="absolute inset-0 min-h-0 overflow-hidden xterm-wrapper outline-none"
         style={{
           opacity: showConnectingOverlay ? 0 : 1,
@@ -2153,7 +2156,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       ) : null}
       {historyLoadingVisible && !showConnectingOverlay ? (
         <div
-          aria-label="Loading terminal history"
+          aria-label={t('terminal.tools.loadingHistory')}
           aria-live="polite"
           className="pointer-events-none absolute left-1/2 top-3 z-[60] -translate-x-1/2 border border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-surface)]/60 px-3 py-1.5 backdrop-blur-md"
           data-testid="muxvia-history-loading"

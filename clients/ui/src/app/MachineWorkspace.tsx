@@ -28,6 +28,8 @@ import { openProtoEventSubscription } from '../core/protoEventSubscription'
 import { ApplicationEventType, EventSubscribeCommandSchema } from '../generated/apipb/events_pb'
 import type { ConnectionInfo, LocalAgentApi, LocalCreateTerminalInput, LocalUpdateTerminalInput, MachineConnectionStateEvents, RtcConnectOptions, RtcConnectionStateSnapshot, RtcEvent, RtcSubscription, TerminalInventoryEvents } from '../core/transport'
 import { useTerminalKeyboard } from '../terminal/useTerminalKeyboard'
+import { useTranslation } from 'react-i18next'
+import '../i18n'
 
 export interface MachineWorkspaceInventoryApi extends Pick<LocalAgentApi, 'getStatus'> {
   listTerminals(options?: Pick<RtcConnectOptions, 'forceRelay' | 'onStatus' | 'onConnectionState'>): Promise<RemoteTerminal[]>
@@ -87,6 +89,7 @@ function inventoryCacheForConnector(connector: MachineWorkspaceConnector): Map<s
 }
 
 export function MachineWorkspace({ api, connector, className, initialMachine, inventoryEvents, connectionStateEvents, subscribeRuntimeInventoryEvents = false, onBack, fileTransfer, terminalSettings: terminalSettingsProp, onNeedsReauthorization, onTerminalSettingsChange }: MachineWorkspaceProps) {
+  const { t } = useTranslation()
   const initialInventory = initialMachine ? inventoryCacheForConnector(connector).get(initialMachine.machineId) : undefined
   const [machine, setMachine] = useState<Machine | null>(() => initialInventory?.machine ?? initialMachine ?? null)
   const [terminals, setTerminals] = useState<RemoteTerminal[]>(() => initialInventory?.terminals ?? [])
@@ -205,8 +208,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const splitTerminal = terminals.find((terminal) => terminal.terminalId === splitTerminalId)
   const activeToolTerminal = activeTerminalSlot === 1 && splitTerminal ? splitTerminal : activeTerminal
   const selectedTerminal = terminals.find((terminal) => terminal.terminalId === selectedTerminalId)
-  const activeTerminalTitle = activeTerminal?.title || activeTerminal?.command || activeTerminalId || 'Terminal'
-  const splitTerminalTitle = splitTerminal?.title || splitTerminal?.command || splitTerminalId || 'Terminal'
+  const activeTerminalTitle = activeTerminal?.title || activeTerminal?.command || activeTerminalId || t('terminal.defaultTitle')
+  const splitTerminalTitle = splitTerminal?.title || splitTerminal?.command || splitTerminalId || t('terminal.defaultTitle')
   const terminalHeaderTitle = splitTerminalId ? `${activeTerminalTitle} / ${splitTerminalTitle}` : activeTerminalTitle
   const terminalHeaderDirectory = activeToolTerminal?.cwd || activeTerminal?.cwd || splitTerminal?.cwd || ''
   const activeTerminalResizeLocked = terminalResizeControl.sizeLocked === true || terminalResizeControl.reason === 'size_locked'
@@ -930,12 +933,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       return
     }
     if (!activeTerminalId) {
-      setError('Open a terminal before starting split view')
+      setError(t('workspace.openBeforeSplit'))
       return
     }
     const availableTerminals = terminals.filter((terminal) => terminal.terminalId !== activeTerminalId)
     if (availableTerminals.length === 0) {
-      setPairStatus('No other terminal to split')
+      setPairStatus(t('workspace.noOtherTerminal'))
       return
     }
     setTerminalToolbarOpen(false)
@@ -949,7 +952,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       return
     }
     if (intent.terminalId === activeTerminalId) {
-      setPairStatus('Choose a different terminal')
+      setPairStatus(t('workspace.chooseDifferentTerminal'))
       return
     }
     setSplitTerminalId(intent.terminalId)
@@ -1325,7 +1328,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         terminalRef.current?.fit()
         terminalRef.current?.focus()
       }, 0)
-      setPairStatus('Resize unlocked')
+      setPairStatus(t('workspace.resize.unlocked'))
     } catch (err) {
       const message = connectionErrorDisplayMessage(err)
       if (isAuthConnectionError(err)) handleConnectionAuthFailure(machine?.machineId)
@@ -1339,14 +1342,14 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     try {
       const control = await activeTerminalHandle()?.requestResizeOwner()
       if (control?.canResize) {
-        setPairStatus('Resize control acquired')
+        setPairStatus(t('workspace.resize.acquired'))
         window.setTimeout(() => {
           activeTerminalHandle()?.fit()
         }, 0)
       } else if (control?.sizeLocked || control?.reason === 'size_locked') {
-        setPairStatus('Resize is locked')
+        setPairStatus(t('workspace.resize.locked'))
       } else {
-        setPairStatus('Resize control unavailable')
+        setPairStatus(t('workspace.resize.unavailable'))
       }
     } catch (err) {
       const message = connectionErrorDisplayMessage(err)
@@ -1358,7 +1361,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const releaseActiveResizeOwner = useCallback(async () => {
     try {
       await activeTerminalHandle()?.releaseResizeOwner()
-      setPairStatus('Resize control released')
+      setPairStatus(t('workspace.resize.released'))
     } catch (err) {
       const message = connectionErrorDisplayMessage(err)
       if (isAuthConnectionError(err)) handleConnectionAuthFailure(machine?.machineId)
@@ -1433,7 +1436,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const openConnectionInfo = useCallback(() => {
     const existingSession = connectedSession ?? machineSessionRef.current?.session ?? null
     if (!existingSession && !machine) {
-      setConnectionInfoError('No machine connection is available')
+      setConnectionInfoError(t('workspace.connection.unavailable'))
       setConnectionInfo(null)
       setConnectionInfoOpen(true)
       return
@@ -1489,7 +1492,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
   const pasteTerminalTextWithConfirm = useCallback((text: string): boolean => {
     if (!text) {
-      setPairStatus('Clipboard is empty')
+      setPairStatus(t('workspace.clipboardEmpty'))
       return false
     }
     const needsConfirm = text.length > 200 || text.includes('\n') || text.includes('\r')
@@ -1529,7 +1532,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const saveClipboardDraft = useCallback(async () => {
     const text = clipboardDraft
     if (!text) {
-      setClipboardError('Clipboard text is empty')
+      setClipboardError(t('workspace.clipboardTextEmpty'))
       return
     }
     setClipboardLoading(true)
@@ -1545,7 +1548,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       setClipboardDraft('')
       setEditingClipboardId(null)
       setClipboardEntries(await api.list())
-      setPairStatus(editingClipboardId ? 'Clipboard entry updated' : 'Clipboard entry saved')
+      setPairStatus(t(editingClipboardId ? 'workspace.clipboardUpdated' : 'workspace.clipboardSaved'))
     } catch (err) {
       setClipboardError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -1579,7 +1582,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       setClipboardDraft(text)
       setEditingClipboardId(null)
     } catch (err) {
-      setClipboardError(err instanceof Error ? err.message : 'Unable to read browser clipboard')
+      setClipboardError(err instanceof Error ? err.message : t('workspace.browserClipboardError'))
     }
   }, [])
 
@@ -1597,7 +1600,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       const text = await navigator.clipboard.readText()
       pasteTerminalTextWithConfirm(text)
     } catch (err) {
-      const fallbackMessage = err instanceof Error ? err.message : 'Unable to read clipboard'
+      const fallbackMessage = err instanceof Error ? err.message : t('workspace.clipboardReadError')
       setError(remoteClipboardError instanceof Error ? remoteClipboardError.message : fallbackMessage)
     }
   }, [pasteTerminalTextWithConfirm, withMachineSession])
@@ -1609,7 +1612,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       .filter(isDirectoryEntry)
       .sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }))
     return (
-      <MobileSheetPanel title="Choose directory" testId="muxvia-terminal-path-picker-sheet" onClose={() => setMobileSheet(terminalPathReturnSheet)}>
+      <MobileSheetPanel title={t('workspace.chooseDirectory')} testId="muxvia-terminal-path-picker-sheet" onClose={() => setMobileSheet(terminalPathReturnSheet)}>
         <div className="flex flex-col gap-3">
           <div className="muxvia-app-panel p-3">
             <div className="break-all font-mono text-[12px] font-semibold text-zinc-800">{normalizedPath}</div>
@@ -1680,7 +1683,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const renderTerminalPathBookmarksSheet = () => {
     if (mobileSheet !== 'terminal-path-bookmarks') return null
     return (
-      <MobileSheetPanel title="Path bookmarks" testId="muxvia-terminal-path-bookmarks-sheet" onClose={() => setMobileSheet(terminalPathReturnSheet)}>
+      <MobileSheetPanel title={t('files.bookmarks.title')} testId="muxvia-terminal-path-bookmarks-sheet" onClose={() => setMobileSheet(terminalPathReturnSheet)}>
         <div className="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-2">
             <button
@@ -1748,11 +1751,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const renderClipboardHistorySheet = () => {
     if (mobileSheet !== 'clipboard-history') return null
     return (
-      <MobileSheetPanel title="Clipboard" testId="muxvia-clipboard-history-sheet" onClose={() => setMobileSheet(null)}>
+      <MobileSheetPanel title={t('workspace.clipboard')} testId="muxvia-clipboard-history-sheet" onClose={() => setMobileSheet(null)}>
         <div className="flex flex-col gap-3">
           <div className="muxvia-app-panel p-3">
             <textarea
-              aria-label="Clipboard text"
+              aria-label={t('workspace.clipboardText')}
               className="min-h-24 w-full resize-none border border-[var(--muxvia-app-line)] bg-zinc-50 px-3 py-2 text-[13px] font-medium text-zinc-900 outline-none"
               value={clipboardDraft}
               onChange={(event) => setClipboardDraft(event.currentTarget.value)}
@@ -1764,7 +1767,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 onClick={() => { hapticImpact(); void loadBrowserClipboardDraft() }}
               >
                 <ClipboardList className="h-4 w-4" />
-                Browser
+                {t('workspace.browserClipboard')}
               </button>
               <button
                 type="button"
@@ -1772,7 +1775,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 onClick={() => { hapticImpact(); void refreshClipboardEntries() }}
               >
                 <RefreshCw className="h-4 w-4" />
-                Refresh
+                {t('common.refresh')}
               </button>
               <button
                 type="button"
@@ -1780,7 +1783,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 disabled={!clipboardDraft || clipboardLoading}
                 onClick={() => { hapticImpact(); void saveClipboardDraft() }}
               >
-                {editingClipboardId ? 'Update' : 'Save'}
+                {t(editingClipboardId ? 'workspace.update' : 'files.actions.save')}
               </button>
             </div>
           </div>
@@ -1795,11 +1798,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             {clipboardLoading && clipboardEntries.length === 0 ? (
               <div className="flex min-h-20 items-center justify-center gap-2 text-[13px] font-medium text-zinc-500">
                 <span className="muxvia-square-spinner" aria-hidden="true" />
-                Loading...
+                {t('common.loading')}
               </div>
             ) : clipboardEntries.length === 0 ? (
               <div className="flex min-h-20 items-center justify-center px-3 text-center text-[13px] font-medium text-zinc-500">
-                No clipboard history
+                {t('workspace.noClipboardHistory')}
               </div>
             ) : (
               clipboardEntries.map((entry) => (
@@ -1903,7 +1906,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             {onBack ? (
               <button
                 type="button"
-                aria-label="Back to machines"
+                aria-label={t('common.backToMachines')}
                 className="muxvia-app-icon-button mr-1 border-transparent bg-transparent"
                 onClick={() => { hapticSelection(); onBack() }}
               >
@@ -1920,7 +1923,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             <button
               type="button"
               aria-hidden={page === 'terminal' ? 'true' : undefined}
-              aria-label="Connection info"
+              aria-label={t('workspace.connectionInfo')}
               className="muxvia-app-icon-button border-transparent bg-transparent"
               tabIndex={page === 'terminal' ? -1 : undefined}
               onClick={() => { hapticSelection(); openConnectionInfo() }}
@@ -1930,7 +1933,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             <button
               type="button"
               aria-hidden={page === 'terminal' ? 'true' : undefined}
-              aria-label="Open files"
+              aria-label={t('workspace.openFiles')}
               className="muxvia-app-icon-button border-transparent bg-transparent"
               tabIndex={page === 'terminal' ? -1 : undefined}
               onClick={() => { hapticSelection(); openFiles() }}
@@ -1940,7 +1943,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             {canManageTerminals ? (
               <button
                 type="button"
-                aria-label="Create terminal"
+                aria-label={t('workspace.createTerminal')}
                 className="muxvia-app-icon-button border-transparent bg-transparent"
                 onClick={() => { hapticImpact(); openCreateTerminal() }}
               >
@@ -1953,7 +1956,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           <div className="flex animate-in fade-in slide-in-from-top-1 duration-200 items-center justify-center gap-2 border-b border-zinc-200 bg-blue-50/50 px-3 py-1.5">
             <span className="muxvia-square-spinner h-3.5 w-3.5 text-blue-600" aria-hidden="true" />
             <span className="text-[11px] font-medium text-blue-700">
-              {connectionStatus || 'Connecting...'}
+              {connectionStatus || t('workspace.connecting')}
             </span>
           </div>
         ) : null}
@@ -1969,8 +1972,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 <KeyRound className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="text-[17px] font-bold tracking-tight text-zinc-900">Verify This Device</h2>
-                <p className="text-[13px] font-medium text-zinc-500">Pair first before opening or managing local terminals.</p>
+                <h2 className="text-[17px] font-bold tracking-tight text-zinc-900">{t('workspace.verifyDevice')}</h2>
+                <p className="text-[13px] font-medium text-zinc-500">{t('workspace.verifyDeviceCopy')}</p>
               </div>
             </div>
             <button
@@ -1987,7 +1990,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           className="min-h-0 flex-1 overflow-y-auto p-3"
           data-testid="muxvia-terminal-list-scroll"
         >
-          <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Terminals</h2>
+          <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">{t('terminal.list')}</h2>
           <TerminalList
             machineId={machine.machineId}
             terminals={terminals}
@@ -1999,7 +2002,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         </div>
 
         {mobileSheet === 'manage-terminal' && selectedTerminal ? (
-          <MobileSheetPanel title={selectedTerminal.title || 'Terminal'} testId="muxvia-terminal-actions-sheet" onClose={() => setMobileSheet(null)}>
+          <MobileSheetPanel title={selectedTerminal.title || t('terminal.defaultTitle')} testId="muxvia-terminal-actions-sheet" onClose={() => setMobileSheet(null)}>
             <div className="flex flex-col gap-3">
               {selectedTerminal.state === 'exited' ? (
                 <button
@@ -2007,7 +2010,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   className="muxvia-app-secondary-button min-h-12 w-full justify-between px-4 text-left text-[15px] font-medium"
                   onClick={() => { hapticImpact(); void restartManagedTerminal() }}
                 >
-                  <span>Restart terminal</span>
+                  <span>{t('workspace.restartTerminal')}</span>
                   <RefreshCw className="h-4 w-4 text-zinc-500" />
                 </button>
               ) : null}
@@ -2016,7 +2019,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 className="muxvia-app-secondary-button min-h-12 w-full justify-between px-4 text-left text-[15px] font-medium"
                 onClick={() => { hapticImpact(); openEditTerminal() }}
               >
-                <span>Edit terminal</span>
+                <span>{t('workspace.editTerminal')}</span>
                 <SquarePen className="h-4 w-4 text-zinc-500" />
               </button>
               <button
@@ -2024,7 +2027,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 className="flex min-h-12 w-full items-center justify-between border border-red-200 bg-red-50 px-4 text-left text-[15px] font-medium text-red-700"
                 onClick={() => { hapticImpact(); void deleteManagedTerminal() }}
               >
-                <span>Delete terminal</span>
+                <span>{t('workspace.deleteTerminal')}</span>
                 <Trash2 className="h-4 w-4 text-red-500" />
               </button>
             </div>
@@ -2033,7 +2036,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
         {(mobileSheet === 'create-terminal' || mobileSheet === 'edit-terminal') ? (
           <MobileSheetPanel
-            title={mobileSheet === 'create-terminal' ? 'New terminal' : 'Edit terminal'}
+            title={t(mobileSheet === 'create-terminal' ? 'workspace.newTerminal' : 'workspace.editTerminal')}
             testId="muxvia-terminal-editor-sheet"
             onClose={() => setMobileSheet(null)}
           >
@@ -2044,7 +2047,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 </div>
               ) : null}
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
-                Name
+                {t('workspace.terminalForm.name')}
                 <input
                   className="min-h-12 border border-[var(--muxvia-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                   value={terminalForm.name}
@@ -2056,7 +2059,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               </label>
               {mobileSheet === 'create-terminal' ? (
                 <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
-                  Command
+                  {t('workspace.terminalForm.command')}
                   <input
                     className="min-h-12 border border-[var(--muxvia-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                     value={terminalForm.command}
@@ -2068,7 +2071,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 </label>
               ) : null}
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
-                Working directory
+                {t('workspace.terminalForm.cwd')}
                 <input
                   className="min-h-12 border border-[var(--muxvia-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                   value={terminalForm.cwd}
@@ -2087,7 +2090,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                     }}
                   >
                     <FolderOpen className="h-4 w-4" />
-                    Browse
+                    {t('workspace.browse')}
                   </button>
                   <button
                     type="button"
@@ -2098,12 +2101,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                     }}
                   >
                     <Bookmark className="h-4 w-4" />
-                    Bookmarks
+                    {t('files.bookmarks.title')}
                   </button>
                 </div>
               </label>
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
-                Environment
+                {t('workspace.terminalForm.environment')}
                 <input
                   className="min-h-12 border border-[var(--muxvia-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                   value={terminalForm.environment}
@@ -2114,7 +2117,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 />
               </label>
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
-                Size lock
+                {t('workspace.terminalForm.sizeLock')}
                 <select
                   className="min-h-12 border border-[var(--muxvia-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                   value={terminalForm.sizeLockMode}
@@ -2123,9 +2126,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                     setTerminalForm((current) => ({ ...current, sizeLockMode: value }))
                   }}
                 >
-                  <option value="off">Resizable</option>
-                  <option value="warn">Warn only</option>
-                  <option value="lock">Locked</option>
+                  <option value="off">{t('workspace.resizeMode.resizable')}</option>
+                  <option value="warn">{t('workspace.resizeMode.warn')}</option>
+                  <option value="lock">{t('workspace.resizeMode.locked')}</option>
                 </select>
               </label>
               <button
@@ -2141,7 +2144,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   void submitUpdateTerminal()
                 }}
               >
-                {terminalSubmitting ? 'Saving...' : mobileSheet === 'create-terminal' ? 'Create terminal' : 'Save changes'}
+                {terminalSubmitting ? t('workspace.saving') : t(mobileSheet === 'create-terminal' ? 'workspace.createTerminal' : 'workspace.saveChanges')}
               </button>
             </div>
           </MobileSheetPanel>
@@ -2165,7 +2168,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     return (
       <div className={`flex h-full min-h-0 items-center justify-center bg-zinc-50 p-4 ${className || ''}`}>
         <div className="muxvia-app-panel w-full max-w-md border-red-200 p-4 text-sm text-red-700" role="alert">
-          <h2 className="mb-2 font-semibold text-red-900">Connection Error</h2>
+          <h2 className="mb-2 font-semibold text-red-900">{t('workspace.connectionError')}</h2>
           <p>{error}</p>
         </div>
       </div>
@@ -2199,7 +2202,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         {page === 'terminal-list' ? (
           <div className="flex flex-col items-center gap-3 text-zinc-400">
             <Monitor className="h-12 w-12 opacity-20" />
-            <p className="text-sm font-medium">Select a terminal to start</p>
+            <p className="text-sm font-medium">{t('workspace.selectTerminal')}</p>
           </div>
         ) : (
           <>
@@ -2210,7 +2213,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           <div className="flex min-w-0 flex-1 items-center gap-1">
             <button
               type="button"
-              aria-label="Back to terminal list / Show terminal list"
+              aria-label={t('workspace.showTerminalList')}
               className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--muxvia-muted)] transition-colors active:bg-[var(--muxvia-surface-raised)]"
               onClick={() => { hapticSelection(); showTerminalListPage() }}
             >
@@ -2218,7 +2221,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </button>
             <button
               type="button"
-              aria-label="Switch terminal"
+              aria-label={t('workspace.switchTerminal')}
               className="flex min-h-11 min-w-0 flex-1 flex-col items-start justify-center px-1.5 py-0.5 text-left transition-colors active:bg-[var(--muxvia-surface-raised)]"
               onClick={() => { hapticSelection(); setMobileSheet('terminals') }}
             >
@@ -2232,7 +2235,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
           <button
             type="button"
-            aria-label="Open terminal menu"
+            aria-label={t('workspace.openTerminalMenu')}
             className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--muxvia-muted)] transition-colors active:bg-[var(--muxvia-surface-raised)]"
             onClick={() => { hapticSelection(); setMobileSheet('terminal-menu') }}
           >
@@ -2266,11 +2269,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 const selected = activeTerminalHandle()?.getSelection() ?? ''
                 if (!selected) return
                 void navigator.clipboard.writeText(selected).then(() => {
-                  setPairStatus('Copied')
+                  setPairStatus(t('workspace.copied'))
                   setTerminalToolbarOpen(false)
                   setTerminalToolbarModeAndReset('default')
                 }).catch((err: unknown) => {
-                  setError(err instanceof Error ? err.message : 'Copy failed')
+                  setError(err instanceof Error ? err.message : t('workspace.copyFailed'))
                 })
               }}
               onPaste={() => { void handleTerminalPaste() }}
@@ -2333,19 +2336,19 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 />
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-[var(--muxvia-muted)]">
-                  {showMachineNetworkOverlay ? null : activeTerminalId && connectingTerminalId === activeTerminalId ? (connectionStatus ?? 'Connecting terminal...') : 'No active terminal'}
+                  {showMachineNetworkOverlay ? null : activeTerminalId && connectingTerminalId === activeTerminalId ? (connectionStatus ?? t('workspace.connectingTerminal')) : t('terminal.noActive')}
                 </div>
               )}
               {activeTerminalId && connectedSession && connectedTerminalId === activeTerminalId && activeTerminalResizeLocked ? (
                 <button
                   type="button"
-                  aria-label="Unlock terminal resize"
+                  aria-label={t('workspace.unlockResize')}
                   className={`absolute right-2 z-20 flex min-h-8 items-center gap-1.5 border border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-overlay)] px-2 text-[11px] font-semibold text-[var(--muxvia-text)] backdrop-blur active:opacity-85 disabled:opacity-60 ${splitTerminalId ? 'top-16' : 'top-2'}`}
                   disabled={unlockingResize}
                   onClick={() => { hapticImpact(); void unlockTerminalResize() }}
                 >
                   <Unlock className="h-3.5 w-3.5" />
-                  {unlockingResize ? 'Unlocking...' : 'Unlock resize'}
+                  {unlockingResize ? t('workspace.unlocking') : t('workspace.unlockResize')}
                 </button>
               ) : null}
             </div>
@@ -2380,7 +2383,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center text-sm text-[var(--muxvia-muted)]">
-                    {showMachineNetworkOverlay ? null : connectionStatus ?? 'Connecting terminal...'}
+                    {showMachineNetworkOverlay ? null : connectionStatus ?? t('workspace.connectingTerminal')}
                   </div>
                 )}
               </div>
@@ -2420,7 +2423,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         ) : null}
 
         {mobileSheet === 'terminals' ? (
-          <MobileSheetPanel title="Terminals" testId="muxvia-terminal-switcher-sheet" onClose={() => setMobileSheet(null)}>
+          <MobileSheetPanel title={t('terminal.list')} testId="muxvia-terminal-switcher-sheet" onClose={() => setMobileSheet(null)}>
             <TerminalList
               machineId={machine.machineId}
               terminals={terminals}
@@ -2431,46 +2434,46 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         ) : null}
 
         {mobileSheet === 'terminal-menu' ? (
-          <MobileSheetPanel title="Terminal tools" testId="muxvia-terminal-menu-sheet" onClose={() => setMobileSheet(null)}>
+          <MobileSheetPanel title={t('workspace.terminalTools')} testId="muxvia-terminal-menu-sheet" onClose={() => setMobileSheet(null)}>
             <div className="grid grid-cols-2 border-l border-t border-[var(--muxvia-app-line)]">
               <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); openSplitTerminalSheet() }}>
                 <Rows2 className="h-4 w-4 text-[var(--muxvia-app-accent)]" />
-                {splitTerminalId ? 'Change split' : 'Split terminal'}
+                {splitTerminalId ? t('workspace.changeSplit') : t('workspace.splitTerminal')}
               </button>
               <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); setMobileSheet(null); void (activeTerminalOwnsResize ? releaseActiveResizeOwner() : acquireActiveResizeOwner()) }}>
                 <span className="w-4 font-mono text-[11px] font-extrabold text-[var(--muxvia-app-accent)]">{resizeControlBadgeText(terminalResizeControl)}</span>
-                {activeTerminalOwnsResize ? 'Release resize' : 'Control resize'}
+                {activeTerminalOwnsResize ? t('workspace.releaseResize') : t('workspace.controlResize')}
               </button>
               {splitTerminalId ? (
                 <>
                   <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); setSyncSplitInput((current) => !current); setMobileSheet(null) }}>
                     {syncSplitInput ? <Link2 className="h-4 w-4 text-[var(--muxvia-app-accent)]" /> : <Link2Off className="h-4 w-4 text-[var(--muxvia-app-muted)]" />}
-                    Sync input
+                    {t('workspace.syncInput')}
                   </button>
                   <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); closeSplitTerminal(); setMobileSheet(null) }}>
                     <PanelBottomClose className="h-4 w-4 text-[var(--muxvia-app-danger)]" />
-                    Close split
+                    {t('workspace.closeSplit')}
                   </button>
                 </>
               ) : null}
               <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticSelection(); setMobileSheet(null); setTerminalToolbarOpen((current) => { const next = !current; if (next) setTerminalFnOpen(false); if (!next) setTerminalToolbarModeAndReset('default'); return next }) }}>
                 <SlidersHorizontal className="h-4 w-4 text-[var(--muxvia-app-accent)]" />
-                Terminal tools
+                {t('workspace.terminalTools')}
               </button>
               <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticSelection(); setMobileSheet(null); openConnectionInfo() }}>
                 <Info className="h-4 w-4 text-[var(--muxvia-app-accent)]" />
-                Connection
+                {t('workspace.connection.label')}
               </button>
               <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticSelection(); setMobileSheet(null); openFiles() }}>
                 <Folder className="h-4 w-4 text-[var(--muxvia-app-accent)]" />
-                Files
+                {t('files.list')}
               </button>
             </div>
           </MobileSheetPanel>
         ) : null}
 
         {mobileSheet === 'split-terminal' ? (
-          <MobileSheetPanel title="Split Terminal" testId="muxvia-split-terminal-sheet" onClose={() => setMobileSheet(null)}>
+          <MobileSheetPanel title={t('workspace.splitTerminal')} testId="muxvia-split-terminal-sheet" onClose={() => setMobileSheet(null)}>
             {terminals.filter((terminal) => terminal.terminalId !== activeTerminalId).length > 0 ? (
               <TerminalList
                 machineId={machine.machineId}
@@ -2480,7 +2483,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               />
             ) : (
               <div className="flex min-h-24 items-center justify-center border border-dashed border-zinc-300 bg-white text-sm font-medium text-zinc-500">
-                No other terminal available
+                {t('workspace.noOtherTerminal')}
               </div>
             )}
           </MobileSheetPanel>
@@ -2498,11 +2501,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         <div className="muxvia-app-header flex shrink-0 items-center justify-between border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
           <div className="flex items-center gap-2">
             <Folder className="h-5 w-5 text-zinc-500" />
-            <span className="text-[17px] font-bold tracking-tight text-zinc-900">Files</span>
+            <span className="text-[17px] font-bold tracking-tight text-zinc-900">{t('files.list')}</span>
           </div>
           <button
             type="button"
-            aria-label="Close files"
+            aria-label={t('workspace.closeFiles')}
             className="muxvia-app-icon-button border-transparent bg-transparent"
             onClick={() => { hapticSelection(); openTerminalPanel() }}
           >
@@ -2526,9 +2529,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             {showMachineNetworkOverlay ? null : filesOpen ? (
               <div className="flex items-center gap-2">
                 <span className="muxvia-square-spinner" aria-hidden="true" />
-                <span>Connecting...</span>
+                <span>{t('workspace.connecting')}</span>
               </div>
-            ) : 'File access is not ready'}
+            ) : t('workspace.fileAccessNotReady')}
           </div>
         )}
       </div>
@@ -2640,17 +2643,18 @@ export function ConnectionInfoDialog({
   onReconnect: () => void
   onToggleMode: () => void
 }) {
+  const { t } = useTranslation()
   const type = info?.type ?? (info?.relayInUse ? 'relay' : 'unknown')
-  const modeActionLabel = forceRelayActive ? 'Try P2P' : 'Use relay'
+  const modeActionLabel = forceRelayActive ? t('workspace.connection.tryP2P') : t('workspace.connection.useRelay')
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" onClick={() => { hapticSelection(); onClose() }}>
       <section className="muxvia-app-panel w-full max-w-md overflow-hidden" onClick={(event) => event.stopPropagation()}>
         <header className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
           <div className="min-w-0">
-            <h2 className="text-[15px] font-semibold text-zinc-950">Connection Info</h2>
-            <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{connectionTypeLabel(type)}</p>
+            <h2 className="text-[15px] font-semibold text-zinc-950">{t('workspace.connectionInfo')}</h2>
+            <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{connectionTypeLabel(type, t)}</p>
           </div>
-          <button type="button" aria-label="Close connection info" className="muxvia-app-icon-button border-transparent bg-transparent" onClick={() => { hapticSelection(); onClose() }}>
+          <button type="button" aria-label={t('workspace.connection.closeInfo')} className="muxvia-app-icon-button border-transparent bg-transparent" onClick={() => { hapticSelection(); onClose() }}>
             <X className="h-5 w-5" />
           </button>
         </header>
@@ -2660,24 +2664,24 @@ export function ConnectionInfoDialog({
             <div className="border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-800">{error}</div>
           ) : null}
           <div className="grid grid-cols-1 gap-2">
-            <ConnectionInfoRow label="Mode" value={loading ? 'Reading stats...' : connectionTypeLabel(type)} strong />
-            <ConnectionInfoRow label="Transport" value={info?.path ?? '-'} />
-            <ConnectionInfoRow label="Path" value={info?.observedPath ?? '-'} />
-            <ConnectionInfoRow label="SmartRoute" value={info?.routeSelectionReason ?? '-'} />
-            <ConnectionInfoRow label="Local" value={info?.localAddr ?? '-'} />
-            <ConnectionInfoRow label="Remote" value={info?.remoteAddr ?? '-'} />
-            <ConnectionInfoRow label="Candidates" value={candidateTypeText(info)} />
-            <ConnectionInfoRow label="RTT" value={info?.rtt !== undefined ? `${Math.round(info.rtt)} ms` : '-'} />
-            <ConnectionInfoRow label="Connection" value={info?.connectionId ?? '-'} />
+            <ConnectionInfoRow label={t('workspace.connection.mode')} value={loading ? t('workspace.connection.reading') : connectionTypeLabel(type, t)} strong />
+            <ConnectionInfoRow label={t('workspace.connection.transport')} value={info?.path ?? '-'} />
+            <ConnectionInfoRow label={t('workspace.connection.path')} value={info?.observedPath ?? '-'} />
+            <ConnectionInfoRow label={t('workspace.connection.smartRoute')} value={info?.routeSelectionReason ?? '-'} />
+            <ConnectionInfoRow label={t('workspace.connection.local')} value={info?.localAddr ?? '-'} />
+            <ConnectionInfoRow label={t('workspace.connection.remote')} value={info?.remoteAddr ?? '-'} />
+            <ConnectionInfoRow label={t('workspace.connection.candidates')} value={candidateTypeText(info)} />
+            <ConnectionInfoRow label={t('workspace.connection.rtt')} value={info?.rtt !== undefined ? `${Math.round(info.rtt)} ms` : '-'} />
+            <ConnectionInfoRow label={t('workspace.connection.connectionId')} value={info?.connectionId ?? '-'} />
           </div>
         </div>
 
         <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 px-4 py-3">
           <button type="button" className="muxvia-app-secondary-button px-3 text-[13px] font-semibold" onClick={() => { hapticImpact(); onRefresh() }}>
-            Refresh
+            {t('common.refresh')}
           </button>
           <button type="button" className="muxvia-app-secondary-button px-3 text-[13px] font-semibold" onClick={() => { hapticImpact(); onReconnect() }}>
-            Reconnect
+            {t('workspace.connection.reconnect')}
           </button>
           <button
             type="button"
@@ -2704,19 +2708,20 @@ function ConnectionInfoRow({ label, value, strong = false }: { label: string; va
 
 /** P2PFallbackDialog 只处理一次 direct probe 的失败决策，不修改 managed endpoint 的持久 auto 策略。 */
 function P2PFallbackDialog({ onCancel, onUseRelay }: { onCancel: () => void; onUseRelay: () => void }) {
+  const { t } = useTranslation()
   return (
     <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="muxvia-p2p-fallback-title">
       <section className="muxvia-app-panel w-full max-w-sm overflow-hidden">
         <div className="border-b border-[var(--muxvia-app-line)] px-4 py-4">
-          <h2 id="muxvia-p2p-fallback-title" className="text-[16px] font-semibold text-zinc-950">P2P unavailable</h2>
-          <p className="mt-2 text-[13px] leading-5 text-zinc-600">A direct connection could not be established on the current network. Switch this connection to Relay?</p>
+          <h2 id="muxvia-p2p-fallback-title" className="text-[16px] font-semibold text-zinc-950">{t('workspace.p2pUnavailable')}</h2>
+          <p className="mt-2 text-[13px] leading-5 text-zinc-600">{t('workspace.p2pUnavailableCopy')}</p>
         </div>
         <div className="flex items-center justify-end gap-2 px-4 py-3">
           <button type="button" className="muxvia-app-secondary-button px-3 text-[13px] font-semibold" onClick={() => { hapticSelection(); onCancel() }}>
-            Not now
+            {t('workspace.notNow')}
           </button>
           <button type="button" className="muxvia-app-primary-button px-3 text-[13px] font-semibold" onClick={() => { hapticImpact(); onUseRelay() }}>
-            Use relay
+            {t('workspace.connection.useRelay')}
           </button>
         </div>
       </section>
@@ -2724,10 +2729,10 @@ function P2PFallbackDialog({ onCancel, onUseRelay }: { onCancel: () => void; onU
   )
 }
 
-function connectionTypeLabel(type: ConnectionInfo['type']): string {
-  if (type === 'p2p') return 'P2P direct'
-  if (type === 'relay') return 'Relay'
-  return 'Unknown'
+function connectionTypeLabel(type: ConnectionInfo['type'], t: ReturnType<typeof useTranslation>['t']): string {
+  if (type === 'p2p') return t('machines.path.direct')
+  if (type === 'relay') return t('machines.path.relay')
+  return t('terminal.state.unknown')
 }
 
 function candidateTypeText(info: ConnectionInfo | null): string {

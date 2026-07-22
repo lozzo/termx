@@ -11,6 +11,9 @@ import { addNativeBackHandler } from '../platform/nativeBack'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
 import { ActionSheet, type ActionSheetItem } from '../ui/ActionSheet'
 import { AlertCircle, ArrowDownAZ, ArrowDownToLine, ArrowUpAZ, ArrowUpFromLine, Bookmark, BookmarkMinus, BookmarkPlus, Box, Check, ChevronRight, ClipboardCopy, Clock, Code2, Eye, EyeOff, File, FileText, FileType, Folder, FolderBookmark, HardDrive, Image, ListChecks, ListFilter, MoreVertical, PlaySquare, RefreshCw, SquarePen, Trash2, X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
+import '../i18n'
 
 export interface FileManagerProps {
   machineId: string
@@ -33,6 +36,7 @@ export function FileManager({
   fileTransfer,
   onOpenTransferCenter,
 }: FileManagerProps) {
+  const { t } = useTranslation()
   const manager = useFileManager({ machineId, terminalId, session, initialPath })
   const [newDirOpen, setNewDirOpen] = useState(false)
   const [entryMenuPath, setEntryMenuPath] = useState<string | null>(null)
@@ -49,7 +53,7 @@ export function FileManager({
 
   const pathSegments = manager.currentPath ? manager.currentPath.split('/').filter(Boolean) : []
   const entryKeyCounts = new Map<string, number>()
-  const sortLabel = fileSortLabel(manager.sortState)
+  const sortLabel = fileSortLabel(manager.sortState, t)
 
   const menuEntry = useMemo(() => {
     if (!entryMenuPath) return null
@@ -63,7 +67,7 @@ export function FileManager({
 
     if (!isDirectory) {
       actions.push({
-        label: 'Preview',
+        label: t('files.actions.preview'),
         icon: <Eye className="h-5 w-5" />,
         onClick: () => void manager.openPreview(entryMenuPath),
       })
@@ -71,7 +75,7 @@ export function FileManager({
 
     if (!isDirectory && fileTransfer) {
       actions.push({
-        label: 'Download',
+        label: t('files.actions.download'),
         icon: <ArrowDownToLine className="h-5 w-5" />,
         onClick: async () => {
           setTransferError(null)
@@ -99,25 +103,25 @@ export function FileManager({
     }
 
     actions.push({
-      label: 'Copy Path',
+      label: t('files.actions.copyPath'),
       icon: <ClipboardCopy className="h-5 w-5" />,
       onClick: () => { hapticImpact(); void manager.copyFilePaths([entryMenuPath]) },
     })
 
     actions.push({
-      label: 'Copy',
+      label: t('files.actions.copy'),
       icon: <File className="h-5 w-5" />,
       onClick: () => { hapticImpact(); manager.copy([entryMenuPath]) },
     })
 
     actions.push({
-      label: 'Cut',
+      label: t('files.actions.cut'),
       icon: <Folder className="h-5 w-5" />,
       onClick: () => { hapticImpact(); manager.cut([entryMenuPath]) },
     })
 
     actions.push({
-      label: 'Rename',
+      label: t('files.actions.rename'),
       icon: <SquarePen className="h-5 w-5" />,
       onClick: () => {
         setRenamePath(entryMenuPath)
@@ -126,23 +130,23 @@ export function FileManager({
     })
 
     actions.push({
-      label: 'Delete',
+      label: t('files.actions.delete'),
       icon: <Trash2 className="h-5 w-5" />,
       onClick: () => setDeletePath(entryMenuPath),
       danger: true,
     })
 
     return actions
-  }, [menuEntry, entryMenuPath, manager, fileTransfer, machineId])
+  }, [menuEntry, entryMenuPath, manager, fileTransfer, machineId, onOpenTransferCenter, t])
 
   const sortActions: ActionSheetItem[] = useMemo(() => fileSortOptions.map((option) => {
     const active = option.field === manager.sortState.field && option.direction === manager.sortState.direction
     return {
-      label: `${active ? 'Selected: ' : ''}${option.label}`,
+      label: `${active ? `${t('files.sort.selected')}: ` : ''}${t(option.labelKey)}`,
       icon: active ? <Check className="h-5 w-5" /> : option.icon,
       onClick: () => manager.setSort({ field: option.field, direction: option.direction }),
     }
-  }), [manager])
+  }), [manager, t])
 
   useEffect(() => {
     if (!active) return undefined
@@ -252,10 +256,10 @@ export function FileManager({
             className="text-[15px] font-medium text-zinc-500 hover:text-zinc-700 active:text-zinc-800"
             onClick={() => { hapticSelection(); manager.setSelectionMode(false) }}
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <div className="text-[16px] font-semibold text-zinc-900">
-            {manager.selectedPaths.size} selected
+            {t('files.selected', { count: manager.selectedPaths.size })}
           </div>
           <button
             className="text-[15px] font-medium text-blue-600 hover:text-blue-700 active:text-blue-800"
@@ -265,7 +269,7 @@ export function FileManager({
               else manager.selectAll()
             }}
           >
-            {manager.selectedPaths.size === manager.visibleEntries.length ? 'Deselect All' : 'Select All'}
+            {t(manager.selectedPaths.size === manager.visibleEntries.length ? 'files.deselectAll' : 'files.selectAll')}
           </button>
         </header>
       ) : (
@@ -311,8 +315,8 @@ export function FileManager({
             </div>
             <button
               type="button"
-              aria-label="Path bookmarks"
-              title="Path bookmarks"
+              aria-label={t('files.bookmarks.title')}
+              title={t('files.bookmarks.title')}
               className="ml-2 flex h-11 w-11 shrink-0 items-center justify-center text-zinc-500 transition-colors hover:bg-zinc-50 active:bg-zinc-100"
               onClick={() => {
                 hapticSelection()
@@ -324,8 +328,8 @@ export function FileManager({
             </button>
             <button
               type="button"
-              aria-label="Copy current directory path"
-              title="Copy current directory path"
+              aria-label={t('files.copyCurrentPath')}
+              title={t('files.copyCurrentPath')}
               className="ml-1 flex h-11 w-11 shrink-0 items-center justify-center text-zinc-500 transition-colors hover:bg-zinc-50 active:bg-zinc-100"
               onClick={() => { hapticImpact(); void manager.copyFilePaths([manager.currentPath || '/']) }}
             >
@@ -340,9 +344,9 @@ export function FileManager({
           <div className="mx-3 my-2 flex items-center gap-2 border border-[var(--muxvia-app-line)] bg-zinc-50 p-2">
             <Folder className="h-5 w-5 shrink-0 text-blue-500" />
             <input
-              aria-label="Directory name"
+              aria-label={t('files.directoryName')}
               className="min-h-10 flex-1 bg-transparent px-2 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-400"
-              placeholder="Directory name"
+              placeholder={t('files.directoryName')}
               value={manager.newDirName}
               onChange={(event) => manager.setNewDirName(event.currentTarget.value)}
               onKeyDown={(event) => {
@@ -356,7 +360,7 @@ export function FileManager({
             />
             <button
               type="button"
-              aria-label="Create directory"
+              aria-label={t('files.createDirectory')}
               className="muxvia-app-primary-button disabled:bg-zinc-200 disabled:text-zinc-400"
               disabled={!manager.newDirName.trim() || manager.creatingDirectory}
               onClick={() => { hapticImpact(); void manager.createDirectory().then(() => setNewDirOpen(false)) }}
@@ -365,7 +369,7 @@ export function FileManager({
             </button>
             <button
               type="button"
-              aria-label="Cancel new directory"
+              aria-label={t('files.cancelNewDirectory')}
               className="muxvia-app-secondary-button bg-zinc-200 text-zinc-600"
               onClick={() => {
                 manager.setNewDirName('')
@@ -387,7 +391,7 @@ export function FileManager({
           <div className="m-2 flex items-start gap-3 border border-red-200 bg-red-50 p-4 text-[14px] text-red-800" role="alert">
             <AlertCircle className="h-6 w-6 shrink-0 text-red-500" />
             <div>
-               <h3 className="font-bold text-red-900">Directory Error</h3>
+               <h3 className="font-bold text-red-900">{t('files.directoryError')}</h3>
                <p className="mt-1">{manager.error.message}</p>
             </div>
           </div>
@@ -408,14 +412,14 @@ export function FileManager({
         {manager.loading && manager.entries.length === 0 && !manager.error ? (
           <div className="flex h-40 flex-col items-center justify-center gap-3 text-[14px] font-medium text-zinc-500">
             <span className="muxvia-square-spinner h-6 w-6 text-zinc-500" aria-hidden="true" />
-            Loading directory...
+            {t('files.loadingDirectory')}
           </div>
         ) : (
-          <ul aria-label="Files" className="divide-y divide-zinc-100 pb-[120px]">
+          <ul aria-label={t('files.list')} className="divide-y divide-zinc-100 pb-[120px]">
             {manager.entries.length === 0 && !manager.loading && !manager.error ? (
               <li className="flex h-32 flex-col items-center justify-center gap-3 border-y border-dashed border-zinc-300 bg-zinc-50/50 text-[14px] font-medium text-zinc-500">
                 <Folder className="h-8 w-8 text-zinc-300" />
-                Directory is empty
+                {t('files.emptyDirectory')}
               </li>
             ) : null}
             {manager.visibleEntries.map((entry) => {
@@ -456,13 +460,13 @@ export function FileManager({
                     </div>
                     <button
                       type="button"
-                      aria-label={`${manager.selectionMode ? (isSelected ? 'Deselect' : 'Select') : isDirectory ? 'Open' : 'Preview'} ${entry.name}`}
+                      aria-label={t(manager.selectionMode ? (isSelected ? 'files.deselectEntry' : 'files.selectEntry') : isDirectory ? 'files.openEntry' : 'files.previewEntry', { name: entry.name })}
                       className="flex min-w-0 flex-1 flex-col justify-center overflow-hidden text-left"
                       onClick={handleItemClick}
                     >
                       {isRenaming ? (
                         <input
-                          aria-label="Rename entry"
+                          aria-label={t('files.renameEntry')}
                           className="min-h-11 border border-blue-200 bg-white px-2 text-[15px] font-medium text-zinc-900 outline-none"
                           value={renameName}
                           onClick={(event) => event.stopPropagation()}
@@ -501,7 +505,7 @@ export function FileManager({
                         >
                           <button
                             type="button"
-                            aria-label={`More actions for ${entry.name}`}
+                            aria-label={t('files.moreActions', { name: entry.name })}
                             className="flex h-11 w-11 items-center justify-center text-zinc-400 hover:bg-zinc-50 active:bg-zinc-100"
                             onClick={(event) => {
                               event.stopPropagation()
@@ -525,11 +529,11 @@ export function FileManager({
       {deletePath ? (
         <div className="absolute inset-0 z-50 flex items-end bg-black/40 p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-sm md:items-center md:justify-center" data-testid="muxvia-file-delete-confirm" onClick={() => { hapticSelection(); setDeletePath(null) }}>
           <section className="muxvia-app-panel w-full p-4 md:max-w-sm" onClick={(event) => event.stopPropagation()}>
-            <h2 className="text-[17px] font-bold text-zinc-950">Delete entry?</h2>
+            <h2 className="text-[17px] font-bold text-zinc-950">{t('files.deleteConfirm')}</h2>
             <p className="mt-2 break-all text-sm text-zinc-500">{deletePath}</p>
             <div className="mt-4 grid grid-cols-2 gap-3">
               <button type="button" className="muxvia-app-secondary-button h-11 text-sm font-semibold" onClick={() => { hapticSelection(); setDeletePath(null) }}>
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 type="button"
@@ -541,7 +545,7 @@ export function FileManager({
                   void manager.deleteEntry(target)
                 }}
               >
-                Delete
+                {t('files.actions.delete')}
               </button>
             </div>
           </section>
@@ -569,45 +573,45 @@ export function FileManager({
               className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
               type="button"
               onClick={() => { hapticImpact(); manager.setSelectionMode(true) }}
-              aria-label="Select files"
+              aria-label={t('files.selectFiles')}
             >
               <ListChecks className="h-5 w-5" />
-              <span className="text-[11px] font-medium">Select</span>
+              <span className="text-[11px] font-medium">{t('files.actions.select')}</span>
             </button>
             <button
               className={`flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 ${manager.showHidden ? 'bg-blue-50 text-blue-600' : 'text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100'}`}
               type="button"
               onClick={() => { hapticSelection(); manager.toggleShowHidden() }}
-              aria-label={manager.showHidden ? 'Hide hidden files' : 'Show hidden files'}
+              aria-label={t(manager.showHidden ? 'files.hideHidden' : 'files.showHidden')}
             >
               {manager.showHidden ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
-              <span className="text-[11px] font-medium">Hidden</span>
+              <span className="text-[11px] font-medium">{t('files.hidden')}</span>
             </button>
             <button
               className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
               type="button"
               onClick={() => { hapticSelection(); setSortMenuOpen(true) }}
-              aria-label={`Sort files: ${sortLabel}`}
-              title={`Sort files: ${sortLabel}`}
+              aria-label={t('files.sort.current', { sort: sortLabel })}
+              title={t('files.sort.current', { sort: sortLabel })}
             >
               <ListFilter className="h-5 w-5" />
-              <span className="text-[11px] font-medium">Sort</span>
+              <span className="text-[11px] font-medium">{t('files.sort.title')}</span>
             </button>
             <button
               className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
               type="button"
               onClick={() => { hapticSelection(); setNewDirOpen((current) => !current) }}
-              aria-label="New directory"
+              aria-label={t('files.newDirectory')}
             >
               <Folder className="h-5 w-5" />
-              <span className="text-[11px] font-medium">New</span>
+              <span className="text-[11px] font-medium">{t('files.actions.new')}</span>
             </button>
             {fileTransfer ? (
               <>
                 <button
                   className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
                   type="button"
-                  aria-label="Upload files"
+                  aria-label={t('files.uploadFiles')}
                   onClick={() => {
                     hapticImpact()
                     if (fileTransfer.isNative) {
@@ -619,7 +623,7 @@ export function FileManager({
                   }}
                 >
                   <ArrowUpFromLine className="h-5 w-5" />
-                  <span className="text-[11px] font-medium">Upload</span>
+                  <span className="text-[11px] font-medium">{t('files.actions.upload')}</span>
                 </button>
                 {!fileTransfer.isNative ? (
                   <input
@@ -648,10 +652,10 @@ export function FileManager({
               type="button"
               onClick={() => { hapticImpact(); void manager.refresh() }}
               disabled={manager.loading}
-              aria-label="Refresh files"
+              aria-label={t('files.refreshFiles')}
             >
               <RefreshCw className={`h-5 w-5 ${manager.loading ? 'animate-spin' : ''}`} />
-              <span className="text-[11px] font-medium">Refresh</span>
+              <span className="text-[11px] font-medium">{t('common.refresh')}</span>
             </button>
           </div>
         </div>
@@ -670,7 +674,7 @@ export function FileManager({
               className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
             >
               <File className="h-5 w-5" />
-              <span className="text-[11px] font-medium">Copy</span>
+              <span className="text-[11px] font-medium">{t('files.actions.copy')}</span>
             </button>
             <button
               onClick={() => {
@@ -680,7 +684,7 @@ export function FileManager({
               className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
             >
               <ClipboardCopy className="h-5 w-5" />
-              <span className="text-[11px] font-medium">Path</span>
+              <span className="text-[11px] font-medium">{t('files.actions.path')}</span>
             </button>
             <button
               onClick={() => {
@@ -691,14 +695,14 @@ export function FileManager({
               className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
             >
               <Folder className="h-5 w-5" />
-              <span className="text-[11px] font-medium">Cut</span>
+              <span className="text-[11px] font-medium">{t('files.actions.cut')}</span>
             </button>
             <button
               onClick={() => { hapticImpact(); void manager.batchDelete(Array.from(manager.selectedPaths)) }}
               className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 text-red-500 hover:bg-red-50/80 hover:text-red-700 active:bg-red-50"
             >
               <Trash2 className="h-5 w-5" />
-              <span className="text-[11px] font-medium">Delete</span>
+              <span className="text-[11px] font-medium">{t('files.actions.delete')}</span>
             </button>
           </div>
         </div>
@@ -709,20 +713,20 @@ export function FileManager({
         <div className="absolute bottom-0 left-0 right-0 z-40 bg-zinc-900/95 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]">
           <div className="flex h-14 items-center justify-between px-4">
             <span className="text-sm font-medium text-zinc-300">
-              {manager.clipboard.paths.length} {manager.clipboard.paths.length === 1 ? 'item' : 'items'} to {manager.clipboard.mode}
+              {t('files.clipboardSummary', { count: manager.clipboard.paths.length, mode: t(`files.clipboardMode.${manager.clipboard.mode}`) })}
             </span>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => { hapticSelection(); manager.setClipboard(null) }}
                 className="min-h-11 border border-zinc-700 px-3 py-1.5 text-sm font-semibold text-zinc-300 hover:bg-zinc-800"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 onClick={() => { hapticImpact(); void manager.paste() }}
                 className="min-h-11 bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
               >
-                Paste
+                {t('files.actions.paste')}
               </button>
             </div>
           </div>
@@ -739,8 +743,8 @@ export function FileManager({
       <ActionSheet
         isOpen={sortMenuOpen}
         onClose={() => setSortMenuOpen(false)}
-        title="Sort files"
-        subtitle={`${sortLabel} · Folders first`}
+        title={t('files.sort.title')}
+        subtitle={`${sortLabel} · ${t('files.sort.foldersFirst')}`}
         actions={sortActions}
       />
       <ActionSheet
@@ -749,10 +753,11 @@ export function FileManager({
           setBookmarksOpen(false)
           closeBookmarkEditor()
         }}
-        title="Path bookmarks"
-        subtitle={manager.pathBookmarksLoading ? 'Loading...' : `${manager.pathBookmarks.length} saved`}
+        title={t('files.bookmarks.title')}
+        subtitle={manager.pathBookmarksLoading ? t('common.loading') : t('files.bookmarks.saved', { count: manager.pathBookmarks.length })}
         actions={bookmarkActions({
           bookmarks: manager.pathBookmarks,
+          t,
           onAddCurrent: () => { hapticImpact(); void manager.addCurrentPathBookmark() },
           onEdit: openBookmarkEditor,
           onOpen: (bookmark) => { hapticSelection(); void manager.navigate(bookmark.path) },
@@ -766,14 +771,14 @@ export function FileManager({
           >
             <div className="mx-auto mt-3 h-1 w-12 bg-[var(--muxvia-app-line-strong)] md:hidden" />
             <div className="px-5 pb-2 pt-4">
-              <h3 className="text-[17px] font-bold text-zinc-900">Edit bookmark</h3>
+              <h3 className="text-[17px] font-bold text-zinc-900">{t('files.bookmarks.edit')}</h3>
               <p className="mt-1 break-all text-[13px] font-medium text-zinc-500">{editingBookmark.path}</p>
             </div>
             <div className="px-5 py-3">
               <label className="flex flex-col gap-2 text-[13px] font-semibold text-zinc-600">
-                Alias
+                {t('files.bookmarks.alias')}
                 <input
-                  aria-label="Bookmark alias"
+                  aria-label={t('files.bookmarks.alias')}
                   className="h-12 border border-[var(--muxvia-app-line)] bg-zinc-50 px-3 text-[16px] font-semibold text-zinc-900 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/20"
                   value={bookmarkAlias}
                   onChange={(event) => setBookmarkAlias(event.currentTarget.value)}
@@ -790,14 +795,14 @@ export function FileManager({
                   className="muxvia-app-secondary-button h-11 text-sm font-semibold"
                   onClick={() => { hapticSelection(); closeBookmarkEditor() }}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="button"
                   className="muxvia-app-primary-button h-11 text-sm font-semibold"
                   onClick={saveBookmarkAlias}
                 >
-                  Save
+                  {t('files.actions.save')}
                 </button>
               </div>
               <button
@@ -810,7 +815,7 @@ export function FileManager({
                   void manager.removePathBookmark(id)
                 }}
               >
-                Remove Bookmark
+                {t('files.bookmarks.remove')}
               </button>
             </div>
           </section>
@@ -822,30 +827,32 @@ export function FileManager({
 
 function bookmarkActions({
   bookmarks,
+  t,
   onAddCurrent,
   onEdit,
   onOpen,
 }: {
   bookmarks: PathBookmark[]
+  t: TFunction
   onAddCurrent: () => void
   onEdit: (bookmark: PathBookmark) => void
   onOpen: (bookmark: PathBookmark) => void
 }): ActionSheetItem[] {
   return [
     {
-      label: 'Save current directory',
+      label: t('files.bookmarks.saveCurrent'),
       icon: <BookmarkPlus className="h-5 w-5" />,
       onClick: onAddCurrent,
       closeOnClick: false,
     },
     ...bookmarks.map((bookmark) => ({
       label: bookmark.label,
-      ariaLabel: `Open bookmark ${bookmark.label}`,
+      ariaLabel: t('files.bookmarks.open', { name: bookmark.label }),
       subtitle: bookmark.path,
       icon: <Bookmark className="h-5 w-5" />,
       onClick: () => onOpen(bookmark),
       secondaryAction: {
-        label: `Edit bookmark ${bookmark.label}`,
+        label: t('files.bookmarks.editNamed', { name: bookmark.label }),
         icon: <SquarePen className="h-5 w-5" />,
         onClick: () => onEdit(bookmark),
         closeOnClick: false,
@@ -855,26 +862,26 @@ function bookmarkActions({
 }
 
 interface FileSortOption extends FileSortState {
-  label: string
+  labelKey: string
   icon: ReactNode
 }
 
 const fileSortOptions: FileSortOption[] = [
-  { field: 'name', direction: 'asc', label: 'Name A to Z', icon: <ArrowUpAZ className="h-5 w-5" /> },
-  { field: 'name', direction: 'desc', label: 'Name Z to A', icon: <ArrowDownAZ className="h-5 w-5" /> },
-  { field: 'modified', direction: 'desc', label: 'Newest first', icon: <Clock className="h-5 w-5" /> },
-  { field: 'modified', direction: 'asc', label: 'Oldest first', icon: <Clock className="h-5 w-5" /> },
-  { field: 'size', direction: 'desc', label: 'Largest first', icon: <File className="h-5 w-5" /> },
-  { field: 'size', direction: 'asc', label: 'Smallest first', icon: <File className="h-5 w-5" /> },
-  { field: 'type', direction: 'asc', label: 'Type A to Z', icon: <FileType className="h-5 w-5" /> },
-  { field: 'type', direction: 'desc', label: 'Type Z to A', icon: <FileType className="h-5 w-5" /> },
+  { field: 'name', direction: 'asc', labelKey: 'files.sort.nameAsc', icon: <ArrowUpAZ className="h-5 w-5" /> },
+  { field: 'name', direction: 'desc', labelKey: 'files.sort.nameDesc', icon: <ArrowDownAZ className="h-5 w-5" /> },
+  { field: 'modified', direction: 'desc', labelKey: 'files.sort.newest', icon: <Clock className="h-5 w-5" /> },
+  { field: 'modified', direction: 'asc', labelKey: 'files.sort.oldest', icon: <Clock className="h-5 w-5" /> },
+  { field: 'size', direction: 'desc', labelKey: 'files.sort.largest', icon: <File className="h-5 w-5" /> },
+  { field: 'size', direction: 'asc', labelKey: 'files.sort.smallest', icon: <File className="h-5 w-5" /> },
+  { field: 'type', direction: 'asc', labelKey: 'files.sort.typeAsc', icon: <FileType className="h-5 w-5" /> },
+  { field: 'type', direction: 'desc', labelKey: 'files.sort.typeDesc', icon: <FileType className="h-5 w-5" /> },
 ]
 
-function fileSortLabel(sort: FileSortState): string {
+function fileSortLabel(sort: FileSortState, t: TFunction): string {
   const option = fileSortOptions.find((candidate) => (
     candidate.field === sort.field && candidate.direction === sort.direction
   ))
-  return option?.label ?? 'Name A to Z'
+  return t(option?.labelKey ?? 'files.sort.nameAsc')
 }
 
 function iconForFile(name: string) {

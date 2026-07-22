@@ -7,6 +7,8 @@ import { ModelScene } from './ModelScene'
 import { disposeModelObject, loadModelPreviewObject, normalizeModelObject } from './modelPreviewLoaders'
 import type { ModelObject3D, ThreeModule } from './modelPreviewTypes'
 import { PreviewNotice } from './PreviewNotice'
+import { useTranslation } from 'react-i18next'
+import '../../i18n'
 
 type ModelPreviewState =
   | { status: 'loading'; receivedSize: number; totalSize: number }
@@ -24,6 +26,7 @@ export function ModelPreview({
   preview: FilePreviewResponse
   streamPreview(path: string, mimeType: string, options?: FilePreviewStreamOptions): Promise<FilePreviewStreamResult>
 }) {
+  const { t } = useTranslation()
   const objectRef = useRef<ModelObject3D | null>(null)
   const [state, setState] = useState<ModelPreviewState>({
     status: 'loading',
@@ -74,7 +77,7 @@ export function ModelPreview({
   }, [preview.mimeType, preview.name, preview.path, preview.size, streamPreview])
 
   if (state.status === 'error') {
-    return <PreviewNotice title="Preview Error" message={state.message || '3D model preview failed.'} />
+    return <PreviewNotice title={t('files.preview.error')} message={state.message || t('files.preview.modelFailed')} />
   }
 
   if (state.status === 'loading') {
@@ -84,7 +87,7 @@ export function ModelPreview({
         <div className="flex h-full min-h-[calc(100dvh-7.5rem)] flex-col items-center justify-center gap-3 bg-zinc-950 px-6 text-center text-zinc-200">
           <span className="muxvia-square-spinner h-7 w-7 text-zinc-500" aria-hidden="true" />
           <div className="text-[13px] font-semibold tabular-nums text-zinc-300" data-testid="muxvia-model-loading">
-            {progress > 0 ? `${progress}%` : 'Loading model'}
+            {progress > 0 ? `${progress}%` : t('files.preview.loadingModel')}
           </div>
           <div className="h-1.5 w-full max-w-xs overflow-hidden bg-white/10">
             <div

@@ -31,6 +31,10 @@
     "openSettings": "打开设置",
     "emptyTitle": "还没有设备",
     "emptyCopy": "添加本地设备，或登录账号同步云端设备。",
+    "emptySignedInCopy": "添加本地设备，或在 Muxvia 网页账号中注册守护进程。",
+    "signInCloud": "登录 Muxvia Cloud",
+    "addLocal": "添加本地设备",
+    "daemonHost": "Muxvia 守护进程",
     "scan": "扫描二维码",
     "available": "可用",
     "offline": "离线",
@@ -96,8 +100,10 @@
       "name": "名称",
       "id": "设备 ID",
       "hostname": "主机名",
+      "platform": "平台",
       "state": "状态",
       "source": "来源",
+      "hub": "云端 Hub",
       "terminals": "终端数量",
       "path": "最近连接路径",
       "relay": "中转",
@@ -148,6 +154,43 @@
     "loginCode": "登录码",
     "useCode": "使用登录码"
   },
+  "terminal": {
+    "defaultTitle": "终端",
+    "list": "终端列表",
+    "noActive": "没有活动终端",
+    "open": "打开 {{name}}",
+    "manage": "管理 {{name}}",
+    "state": { "running": "运行中", "exited": "已退出", "unknown": "未知" },
+    "paste": { "title": "确认粘贴", "summary": "{{lines}} 行，{{characters}} 个字符", "confirm": "粘贴" },
+    "tools": { "selectAll": "全选", "visible": "可见区域", "cancelSelection": "取消选择", "resizeControl": "尺寸控制", "releaseResize": "释放尺寸控制", "acquireResize": "取得尺寸控制", "owner": "控制方", "follower": "跟随方", "snippets": "快捷短语", "toggleFn": "切换 Fn 快捷键", "toggleKeyboard": "切换系统键盘", "unlockKeyboard": "解锁系统键盘", "tabKey": "Tab 键", "output": "终端输出", "loadingHistory": "正在加载终端历史" }
+  },
+  "files": {
+    "previewEmptyFile": "文件为空",
+    "copiedPaths_one": "已复制路径", "copiedPaths_other": "已复制 {{count}} 个路径", "clipboardUnavailable": "剪贴板不可用", "clipboardCopyFailed": "复制到剪贴板失败",
+    "selected_one": "已选择 {{count}} 个", "selected_other": "已选择 {{count}} 个", "selectAll": "全选", "deselectAll": "取消全选",
+    "list": "文件", "directoryName": "目录名称", "createDirectory": "创建目录", "cancelNewDirectory": "取消新建目录", "directoryError": "目录错误", "loadingDirectory": "正在加载目录...", "emptyDirectory": "目录为空", "copyCurrentPath": "复制当前目录路径", "newDirectory": "新建目录", "uploadFiles": "上传文件", "refreshFiles": "刷新文件", "selectFiles": "选择文件", "hidden": "隐藏文件", "showHidden": "显示隐藏文件", "hideHidden": "隐藏隐藏文件", "deleteConfirm": "删除此项目？", "renameEntry": "重命名项目", "moreActions": "{{name}} 的更多操作", "selectEntry": "选择 {{name}}", "deselectEntry": "取消选择 {{name}}", "openEntry": "打开 {{name}}", "previewEntry": "预览 {{name}}", "clipboardSummary_one": "{{count}} 个项目将{{mode}}", "clipboardSummary_other": "{{count}} 个项目将{{mode}}", "clipboardMode": { "copy": "复制", "cut": "移动" },
+    "actions": { "preview": "预览", "download": "下载", "copyPath": "复制路径", "copy": "复制", "cut": "剪切", "rename": "重命名", "delete": "删除", "select": "选择", "new": "新建", "upload": "上传", "path": "路径", "paste": "粘贴", "save": "保存" },
+    "sort": { "title": "文件排序", "selected": "已选择", "current": "文件排序：{{sort}}", "foldersFirst": "目录优先", "nameAsc": "名称 A 到 Z", "nameDesc": "名称 Z 到 A", "newest": "最新优先", "oldest": "最早优先", "largest": "最大优先", "smallest": "最小优先", "typeAsc": "类型 A 到 Z", "typeDesc": "类型 Z 到 A" },
+    "bookmarks": { "title": "路径书签", "saved_one": "已保存 {{count}} 个", "saved_other": "已保存 {{count}} 个", "edit": "编辑书签", "alias": "别名", "remove": "移除书签", "updated": "书签已更新", "removed": "书签已移除", "saveCurrent": "保存当前目录", "open": "打开书签 {{name}}", "editNamed": "编辑书签 {{name}}" },
+    "preview": { "close": "关闭预览", "loading": "正在加载预览...", "error": "预览错误", "none": "无法预览", "unavailable": "预览不可用", "unsupported": "此文件类型不支持应用内预览。", "tooLarge": "文件过大，无法预览。", "tooLargeLimit": "文件超过 {{limit}} 的预览限制。", "invalidImage": "图片预览数据无效。", "invalidVideo": "视频预览数据无效。", "videoUnavailable": "此设备无法在不缓冲完整文件的情况下提供可拖动的视频预览。", "modelFailed": "3D 模型预览失败。", "loadingModel": "正在加载模型", "modelUnavailable": "3D 预览不可用", "plainText": "纯文本", "enableWrap": "开启自动换行", "disableWrap": "关闭自动换行", "fullscreen": "全屏", "fullscreenNamed": "全屏显示 {{name}}", "zoomOut": "缩小", "zoomOutNamed": "缩小 {{name}}", "zoomIn": "放大", "zoomInNamed": "放大 {{name}}", "resetView": "重置视图", "resetViewNamed": "重置模型视图 {{name}}", "resetZoom": "重置缩放", "resetZoomNamed": "重置 {{name}} 的缩放", "rotate": "旋转", "rotateNamed": "旋转 {{name}}" },
+    "transfer": {
+      "title": "文件传输", "center": "文件传输中心", "openSummary": "打开文件传输中心，{{summary}}", "closeCenter": "关闭文件传输中心", "empty": "还没有文件传输任务。", "unknownDevice": "未知设备",
+      "summary": { "active_one": "{{count}} 个进行中", "active_other": "{{count}} 个进行中", "paused_one": "{{count}} 个已暂停", "paused_other": "{{count}} 个已暂停", "failed_one": "{{count}} 个失败", "failed_other": "{{count}} 个失败", "done_one": "{{count}} 个完成", "done_other": "{{count}} 个完成", "total_one": "{{count}} 个传输", "total_other": "{{count}} 个传输", "none": "没有传输任务" },
+      "selected_one": "已选择 {{count}} 个", "selected_other": "已选择 {{count}} 个", "clearSelection": "清除传输选择", "selectAll": "全选", "deselectAll": "取消全选", "resumeAll": "全部继续",
+      "selectItem": "选择 {{name}}", "deselectItem": "取消选择 {{name}}", "fromDevice": "来自 {{device}}", "toDevice": "发送到 {{device}}", "savedDownloads": "已保存到下载目录",
+      "status": { "paused": "已暂停", "missing": "文件不存在", "failed": "传输失败" },
+      "pauseItem": "暂停 {{name}}", "retryItem": "重试 {{name}}", "resumeItem": "继续 {{name}}", "cancelItem": "取消 {{name}}", "clearItem": "清除 {{name}}",
+      "pauseSelected": "暂停所选传输", "startSelected": "开始所选传输", "selectTransfers": "选择传输任务", "clearCompleted": "清除已完成传输", "clearFailed": "清除失败传输",
+      "pause": "暂停", "start": "开始", "select": "选择", "done": "已完成", "failed": "失败"
+    }
+  },
+  "workspace": {
+    "chooseDirectory": "选择目录", "clipboard": "剪贴板", "clipboardText": "剪贴板文本", "clipboardEmpty": "剪贴板为空", "clipboardTextEmpty": "剪贴板文本为空", "clipboardUpdated": "剪贴板条目已更新", "clipboardSaved": "剪贴板条目已保存", "browserClipboardError": "无法读取浏览器剪贴板", "clipboardReadError": "无法读取剪贴板", "browserClipboard": "浏览器", "noClipboardHistory": "没有剪贴板记录", "update": "更新", "connectionInfo": "连接信息", "openFiles": "打开文件", "closeFiles": "关闭文件", "createTerminal": "创建终端", "newTerminal": "新建终端", "saveChanges": "保存修改", "saving": "正在保存...", "browse": "浏览", "connecting": "正在连接...", "connectingTerminal": "正在连接终端...", "verifyDevice": "验证此设备", "verifyDeviceCopy": "请先配对，再打开或管理本地终端。", "restartTerminal": "重启终端", "editTerminal": "编辑终端", "deleteTerminal": "删除终端", "connectionError": "连接错误", "selectTerminal": "选择一个终端开始使用", "showTerminalList": "返回终端列表", "switchTerminal": "切换终端", "openTerminalMenu": "打开终端菜单", "unlockResize": "解锁终端尺寸", "unlocking": "正在解锁...", "terminalTools": "终端工具", "changeSplit": "更换分屏", "splitTerminal": "终端分屏", "releaseResize": "释放尺寸控制", "controlResize": "控制终端尺寸", "syncInput": "同步输入", "closeSplit": "关闭分屏", "openBeforeSplit": "请先打开终端再启用分屏", "chooseDifferentTerminal": "请选择其他终端", "noOtherTerminal": "没有其他可用终端", "fileAccessNotReady": "文件访问尚未就绪", "p2pUnavailable": "P2P 不可用", "p2pUnavailableCopy": "当前网络无法建立直连，是否将本次连接切换到 Relay？", "notNow": "暂不", "copied": "已复制", "copyFailed": "复制失败",
+    "resizeMode": { "resizable": "可调整", "warn": "仅提示", "locked": "已锁定" },
+    "resize": { "unlocked": "终端尺寸已解锁", "acquired": "已取得尺寸控制", "locked": "终端尺寸已锁定", "unavailable": "尺寸控制不可用", "released": "已释放尺寸控制" },
+    "terminalForm": { "name": "名称", "command": "命令", "cwd": "工作目录", "environment": "环境", "sizeLock": "尺寸锁定" },
+    "connection": { "label": "连接", "tryP2P": "尝试 P2P", "useRelay": "使用 Relay", "closeInfo": "关闭连接信息", "mode": "模式", "reading": "正在读取状态...", "transport": "传输", "path": "路径", "smartRoute": "智能路由", "local": "本地", "remote": "远端", "candidates": "候选地址", "rtt": "往返延迟", "connectionId": "连接标识", "reconnect": "重新连接", "unavailable": "当前没有可用的设备连接" }
+  },
   "pairing": {
     "sshReady": "SSH 密钥已生成",
     "importConfig": "导入连接配置",
@@ -164,7 +207,12 @@
     "scanProgress": "正在扫描...",
     "scanCamera": "使用摄像头扫描",
     "manual": "手工输入",
-    "content": "Muxvia 二维码内容"
+    "content": "配对码或分享链接",
+    "manualPlaceholder": "输入 MXP1 配对码或粘贴 Muxvia 分享链接",
+    "cameraUnavailable": "此设备无法扫描二维码，请在下方输入同一个配对码。",
+    "importConfig": "导入配置",
+    "connectModeChanged": "连接模式将发生变化。",
+    "selectionPolicyChanged": "路由选择策略将发生变化。"
   },
   "scanner": {
     "title": "扫描 Muxvia 二维码",

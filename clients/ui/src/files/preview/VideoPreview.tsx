@@ -6,11 +6,14 @@ import { hapticSelection } from '../../platform/haptics'
 import { MediaPreviewShell } from './MediaPreviewShell'
 import { PreviewNotice } from './PreviewNotice'
 import { useBinaryPreviewUrl } from './useBinaryPreviewUrl'
+import { useTranslation } from 'react-i18next'
+import '../../i18n'
 
 export function BinaryVideoPreview({ preview }: { preview: FilePreviewResponse }) {
+  const { t } = useTranslation()
   const src = useBinaryPreviewUrl(preview.contentBase64, preview.mimeType)
   if (src === undefined) return null
-  if (!src) return <PreviewNotice title="Preview Error" message="Video preview data is invalid." />
+  if (!src) return <PreviewNotice title={t('files.preview.error')} message={t('files.preview.invalidVideo')} />
   return <VideoPreviewPlayer preview={preview} src={src} />
 }
 
@@ -21,6 +24,7 @@ export function StreamedVideoPreview({
   preview: FilePreviewResponse
   streamPreview(path: string, mimeType: string, options?: FilePreviewStreamOptions): Promise<FilePreviewStreamResult>
 }) {
+  const { t } = useTranslation()
   const [rangeUrl, setRangeUrl] = useState<string | null | undefined>(undefined)
   const rangeSourceRef = useRef<FilePreviewRangeUrl | null>(null)
 
@@ -69,7 +73,7 @@ export function StreamedVideoPreview({
     )
   }
 
-  return <PreviewNotice title="Preview Unavailable" message="This browser context cannot provide seekable video preview without full-file buffering." />
+  return <PreviewNotice title={t('files.preview.unavailable')} message={t('files.preview.videoUnavailable')} />
 }
 
 interface FullscreenVideoElement extends HTMLVideoElement {
@@ -85,6 +89,7 @@ function VideoPreviewPlayer({
   src?: string | undefined
   onLoadedMetadata?: ((duration: number) => void) | undefined
 }) {
+  const { t } = useTranslation()
   const videoRef = useRef<HTMLVideoElement>(null)
   const [fullscreenSupported, setFullscreenSupported] = useState(false)
 
@@ -113,8 +118,8 @@ function VideoPreviewPlayer({
           <button
             type="button"
             className="flex h-8 w-8 shrink-0 items-center justify-center border border-white/10 text-zinc-200 transition-colors hover:bg-white/5 active:bg-white/10"
-            aria-label={`Fullscreen ${preview.name}`}
-            title="Fullscreen"
+            aria-label={t('files.preview.fullscreenNamed', { name: preview.name })}
+            title={t('files.preview.fullscreen')}
             onClick={requestFullscreen}
           >
             <Maximize2 className="h-4 w-4" />

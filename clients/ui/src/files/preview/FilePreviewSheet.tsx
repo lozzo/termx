@@ -9,6 +9,8 @@ import { ImagePreview } from './ImagePreview'
 import { MarkdownPreview, TextPreview } from './TextPreview'
 import { ModelPreview, canPreviewModelFile } from './ModelPreview'
 import { PreviewNotice } from './PreviewNotice'
+import { useTranslation } from 'react-i18next'
+import '../../i18n'
 
 interface FilePreviewSheetProps {
   path: string
@@ -20,6 +22,7 @@ interface FilePreviewSheetProps {
 }
 
 export function FilePreviewSheet({ path, preview, loading, error, streamPreview, onClose }: FilePreviewSheetProps) {
+  const { t } = useTranslation()
   const title = preview?.name ?? basename(path)
   const subtitle = preview ? `${formatBytes(preview.size)} · ${preview.mimeType}` : path
   const isMediaPreview = preview?.category === 'image' || preview?.category === 'video' || preview?.category === 'model'
@@ -49,7 +52,7 @@ export function FilePreviewSheet({ path, preview, loading, error, streamPreview,
         <button
           type="button"
           className="muxvia-app-icon-button shrink-0 border-transparent bg-transparent"
-          aria-label="Close preview"
+          aria-label={t('files.preview.close')}
           onClick={() => { hapticSelection(); onClose() }}
         >
           <X className="h-5 w-5" />
@@ -59,10 +62,10 @@ export function FilePreviewSheet({ path, preview, loading, error, streamPreview,
         {loading ? (
           <div className="flex h-56 flex-col items-center justify-center gap-3 text-[14px] font-medium text-zinc-500">
             <span className="muxvia-square-spinner h-6 w-6 text-zinc-500" aria-hidden="true" />
-            Loading preview...
+            {t('files.preview.loading')}
           </div>
         ) : error ? (
-          <PreviewNotice title="Preview Error" message={error} />
+          <PreviewNotice title={t('files.preview.error')} message={error} />
         ) : preview ? (
           <PreviewContent preview={preview} streamPreview={streamPreview} />
         ) : null}
@@ -81,6 +84,7 @@ function PreviewContent({
   preview: FilePreviewResponse
   streamPreview(path: string, mimeType: string, options?: FilePreviewStreamOptions): Promise<FilePreviewStreamResult>
 }) {
+  const { t } = useTranslation()
   if (preview.category === 'image' && preview.contentBase64) {
     return <ImagePreview preview={preview} />
   }
@@ -101,7 +105,7 @@ function PreviewContent({
   }
   const limit = preview.previewLimit && preview.previewLimit > 0 ? formatBytes(preview.previewLimit) : ''
   const message = preview.category === 'unsupported'
-    ? 'This file type is not available for inline preview.'
-    : `This file is too large to preview${limit ? ` within the ${limit} limit` : ''}.`
-  return <PreviewNotice title="No Preview" message={message} />
+    ? t('files.preview.unsupported')
+    : t(limit ? 'files.preview.tooLargeLimit' : 'files.preview.tooLarge', { limit })
+  return <PreviewNotice title={t('files.preview.none')} message={message} />
 }

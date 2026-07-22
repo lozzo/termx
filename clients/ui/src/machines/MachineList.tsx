@@ -170,7 +170,7 @@ function MachineRow({
   const { t } = useTranslation()
   const longPressTimerRef = useRef<number | null>(null)
   const longPressTriggeredRef = useRef(false)
-  const subtitle = machine.hostname ?? shortenMachineId(machine.machineId)
+  const subtitle = machine.hostname ?? t('machines.daemonHost')
   const availability = machine.state === 'online'
     ? t('machines.tapToConnect')
     : machine.state === 'connecting'
@@ -329,11 +329,6 @@ function InfoPill({ children }: { children: string }) {
       {children}
     </span>
   )
-}
-
-function shortenMachineId(machineId: string): string {
-  if (machineId.length <= 18) return machineId
-  return `${machineId.slice(0, 8)}...${machineId.slice(-6)}`
 }
 
 function formatMachineTime(value?: string): string {

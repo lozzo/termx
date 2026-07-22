@@ -1,6 +1,8 @@
 import { useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from 'react'
 import { RotateCcw, RotateCw, ZoomIn, ZoomOut } from 'lucide-react'
 import { hapticSelection } from '../../platform/haptics'
+import { useTranslation } from 'react-i18next'
+import '../../i18n'
 import { clamp } from '../fileUtils'
 import { MediaPreviewShell } from './MediaPreviewShell'
 
@@ -29,6 +31,7 @@ export function ZoomableMediaCanvas({
   zoomLabel: string
   children: ReactNode
 }) {
+  const { t } = useTranslation()
   const viewportRef = useRef<HTMLDivElement>(null)
   const pointersRef = useRef(new Map<number, ZoomPoint>())
   const transformRef = useRef<ZoomTransform>(defaultZoomTransform)
@@ -192,8 +195,8 @@ export function ZoomableMediaCanvas({
         <div className="absolute right-3 top-3 z-20 flex items-center overflow-hidden border border-white/10 bg-black/70 text-white backdrop-blur">
           <button
             type="button"
-            aria-label={`Zoom out ${zoomLabel}`}
-            title="Zoom out"
+            aria-label={t('files.preview.zoomOutNamed', { name: zoomLabel })}
+            title={t('files.preview.zoomOut')}
             className="flex h-9 w-9 items-center justify-center text-zinc-200 transition-colors active:scale-95 hover:bg-white/5 active:bg-white/10"
             onClick={() => zoomBy(0.8)}
           >
@@ -204,8 +207,8 @@ export function ZoomableMediaCanvas({
           </span>
           <button
             type="button"
-            aria-label={`Zoom in ${zoomLabel}`}
-            title="Zoom in"
+            aria-label={t('files.preview.zoomInNamed', { name: zoomLabel })}
+            title={t('files.preview.zoomIn')}
             className="flex h-9 w-9 items-center justify-center text-zinc-200 transition-colors active:scale-95 hover:bg-white/5 active:bg-white/10"
             onClick={() => zoomBy(1.25)}
           >
@@ -213,8 +216,8 @@ export function ZoomableMediaCanvas({
           </button>
           <button
             type="button"
-            aria-label={`Reset zoom ${zoomLabel}`}
-            title="Reset zoom"
+            aria-label={t('files.preview.resetZoomNamed', { name: zoomLabel })}
+            title={t('files.preview.resetZoom')}
             className="flex h-9 w-9 items-center justify-center border-l border-white/10 text-zinc-200 transition-colors active:scale-95 hover:bg-white/5 active:bg-white/10"
             onClick={resetZoom}
           >
@@ -222,8 +225,8 @@ export function ZoomableMediaCanvas({
           </button>
           <button
             type="button"
-            aria-label={`Rotate ${zoomLabel}`}
-            title="Rotate"
+            aria-label={t('files.preview.rotateNamed', { name: zoomLabel })}
+            title={t('files.preview.rotate')}
             className="flex h-9 w-9 items-center justify-center border-l border-white/10 text-zinc-200 transition-colors active:scale-95 hover:bg-white/5 active:bg-white/10"
             onClick={() => rotateBy(90)}
           >

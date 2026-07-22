@@ -15,6 +15,8 @@ import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
 import { Code2, FileText, WrapText } from 'lucide-react'
 import { hapticSelection } from '../../platform/haptics'
+import { useTranslation } from 'react-i18next'
+import '../../i18n'
 import { extension } from '../fileUtils'
 
 hljs.registerLanguage('bash', bash)
@@ -68,6 +70,7 @@ const codeLanguageByExtension: Record<string, CodeLanguage> = {
 }
 
 export function TextPreview({ text, name, mimeType }: { text: string; name: string; mimeType: string }) {
+  const { t } = useTranslation()
   const language = detectCodeLanguage(name, mimeType)
   const languageId = language?.id
   const isCode = !!languageId
@@ -82,7 +85,7 @@ export function TextPreview({ text, name, mimeType }: { text: string; name: stri
     setSoftWrap(!isCode)
   }, [isCode, name, mimeType])
 
-  const wrapLabel = softWrap ? 'Disable line wrap' : 'Enable line wrap'
+  const wrapLabel = t(softWrap ? 'files.preview.disableWrap' : 'files.preview.enableWrap')
 
   return (
     <div className="flex min-h-full flex-col bg-white">
@@ -90,7 +93,7 @@ export function TextPreview({ text, name, mimeType }: { text: string; name: stri
         <div className="flex min-w-0 items-center gap-2">
           {isCode ? <Code2 className="h-4 w-4 shrink-0 text-zinc-500" /> : <FileText className="h-4 w-4 shrink-0 text-zinc-500" />}
           <span className="truncate text-[12px] font-semibold uppercase tracking-wide text-zinc-500">
-            {language?.label ?? 'Plain text'}
+            {language?.label ?? t('files.preview.plainText')}
           </span>
         </div>
         <button
@@ -129,9 +132,10 @@ export function TextPreview({ text, name, mimeType }: { text: string; name: stri
 }
 
 export function MarkdownPreview({ text }: { text: string }) {
+  const { t } = useTranslation()
   return (
     <article className="min-h-full bg-white px-4 py-5 text-[15px] leading-7 text-zinc-800">
-      {renderMarkdownBlocks(text)}
+      {renderMarkdownBlocks(text, t('files.previewEmptyFile'))}
     </article>
   )
 }
@@ -161,7 +165,7 @@ function highlightCodeLine(line: string, language: string): string {
   }).value
 }
 
-function renderMarkdownBlocks(text: string) {
+function renderMarkdownBlocks(text: string, emptyLabel: string) {
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
   const blocks: ReactNode[] = []
   let index = 0
@@ -255,7 +259,7 @@ function renderMarkdownBlocks(text: string) {
     )
   }
 
-  return blocks.length > 0 ? blocks : [<p key="empty" className="text-zinc-500">Empty file</p>]
+  return blocks.length > 0 ? blocks : [<p key="empty" className="text-zinc-500">{emptyLabel}</p>]
 }
 
 function renderInlineMarkdown(text: string, keyPrefix: string) {

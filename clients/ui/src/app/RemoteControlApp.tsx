@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { ArrowLeft, Camera, ChevronRight, Cloud, Copy, Download, Keyboard, LaptopMinimal, LogIn, LogOut, Monitor, MoreHorizontal, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Wifi, X } from 'lucide-react'
+import { ArrowLeft, Camera, ChevronRight, Cloud, Copy, Download, Info, Keyboard, LaptopMinimal, LogIn, LogOut, Monitor, MoreHorizontal, Plus, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Wifi, X } from 'lucide-react'
 import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorkspaceConnector } from './MachineWorkspace'
 import { createMachineStore, type StoredMachineRecord } from '../state/machineStore'
 import type { MachineConnectionSnapshot } from '../connection/machineConnectionSnapshot'
@@ -57,6 +57,11 @@ function localizedAppError(error: unknown, t: TFunction): string {
     default:
       return t('errors.generic')
   }
+}
+
+function isCameraUnavailableError(error: unknown): boolean {
+  const detail = error instanceof Error ? `${error.name} ${error.message}` : String(error ?? '')
+  return /NotAllowedError|Permission denied|PermissionDenied|NotFoundError|DevicesNotFoundError/i.test(detail)
 }
 
 function isCancelledAppError(error: unknown): boolean {
@@ -215,7 +220,6 @@ export function RemoteControlApp({
   const [pairIntent, setPairIntent] = useState<PairIntent>('add-local')
   const [transferCenterOpen, setTransferCenterOpen] = useState(false)
   const [manualScanValue, setManualScanValue] = useState('')
-  const [manualEntryOpen, setManualEntryOpen] = useState(false)
   const [authorizedMachineIds, setAuthorizedMachineIds] = useState(() => readAuthorizedMachineIds(storage, undefined, externalPairingAdapter))
   const [authorizationExpiries, setAuthorizationExpiries] = useState(() => readAuthorizationExpiries(storage, externalPairingAdapter))
   const [pairVersion, setPairVersion] = useState(0)
@@ -226,10 +230,8 @@ export function RemoteControlApp({
   const [sshCredentialNotice, setSSHCredentialNotice] = useState<NonNullable<ExternalPairingImportResult['sshCredentials']> | null>(null)
   const [cameraScanning, setCameraScanning] = useState(false)
   const [scanFlowState, setScanFlowState] = useState<ScanFlowState>('idle')
-  const [scanAutoStartToken, setScanAutoStartToken] = useState(0)
   const signedIn = cloudAccountAdapter ? cloudAccount !== null : accessToken.trim() !== ''
   const appThemeStyle = useMemo(() => terminalThemeCssVariables(terminalSettings.themeId) as CSSProperties, [terminalSettings.themeId])
-  const autoStartedScanTokenRef = useRef(0)
   const cameraScanInFlightRef = useRef(false)
   const runtimeCacheRef = useRef<{
     api: WebControlApi
@@ -578,10 +580,8 @@ export function RemoteControlApp({
     setPairIntent('add-local')
     setManualScanValue('')
 	setSharePreview(null)
-    setManualEntryOpen(false)
     setError(null)
     setScanOpen(true)
-    setScanAutoStartToken((current) => current + 1)
   }, [])
 
   const openPairSheet = useCallback((machineId: string) => {
@@ -590,10 +590,8 @@ export function RemoteControlApp({
     setPairIntent('authorize-machine')
     setManualScanValue('')
 	setSharePreview(null)
-    setManualEntryOpen(false)
     setError(null)
     setScanOpen(true)
-    setScanAutoStartToken((current) => current + 1)
   }, [])
 
   const openMachinePairSheet = useCallback((machine: DisplayMachine) => {
@@ -691,7 +689,6 @@ export function RemoteControlApp({
 		if (!externalPairingAdapter?.inspectShare) throw new Error('Endpoint share is unavailable in this client')
 		const preview = await externalPairingAdapter.inspectShare(rawValue)
 		setSharePreview(preview)
-		setManualEntryOpen(false)
 		setScanFlowState('idle')
 		return
 	  }
@@ -705,7 +702,6 @@ export function RemoteControlApp({
       hapticError()
       console.warn('[muxvia:pairing] pair claim failed', err instanceof Error ? err.message : String(err))
       setError(localizedAppError(err, t))
-      setManualEntryOpen(true)
     } finally {
       setPairing(false)
       setScanFlowState('idle')
@@ -736,35 +732,25 @@ export function RemoteControlApp({
     if (!scanPairingCode) return
     if (cameraScanInFlightRef.current) return
     cameraScanInFlightRef.current = true
-    setScanAutoStartToken(0)
     hapticImpact()
-    setManualEntryOpen(false)
     setCameraScanning(true)
     setScanFlowState('scanning')
     setError(null)
     try {
       const value = await scanPairingCode({
         onCancel: () => setScanOpen(false),
-        onManualEntry: () => setManualEntryOpen(true),
       })
       if (!value) return
       setManualScanValue(value)
       await pairScannedValue(value)
     } catch (err) {
-      setError(localizedAppError(err, t))
+      setError(isCameraUnavailableError(err) ? t('pairing.cameraUnavailable') : localizedAppError(err, t))
     } finally {
       cameraScanInFlightRef.current = false
       setCameraScanning(false)
       setScanFlowState((current) => current === 'scanning' ? 'idle' : current)
     }
   }, [pairScannedValue, scanPairingCode, t])
-
-  useEffect(() => {
-    if (!scanOpen || !scanPairingCode || manualEntryOpen || cameraScanning || scanAutoStartToken === 0) return
-    if (autoStartedScanTokenRef.current === scanAutoStartToken) return
-    autoStartedScanTokenRef.current = scanAutoStartToken
-    void scanWithCamera()
-  }, [cameraScanning, manualEntryOpen, scanAutoStartToken, scanOpen, scanPairingCode, scanWithCamera])
 
   const handleMachineNeedsReauthorization = useCallback((machineId: string) => {
     if (!storage) return
@@ -776,10 +762,8 @@ export function RemoteControlApp({
     setSelectedMachineId(machineId)
     setPairIntent('authorize-machine')
     setManualScanValue('')
-    setManualEntryOpen(false)
     setError(t('errors.pairAgain'))
     setScanOpen(true)
-    setScanAutoStartToken((current) => current + 1)
   }, [dropMachineRuntime, externalPairingAdapter, storage, t, user?.id])
 
   const forgetMachineAuthorization = useCallback((machine: WebControlMachine) => {
@@ -878,7 +862,6 @@ export function RemoteControlApp({
           onOpenSettings={() => { hapticSelection(); setView('settings') }}
           onOpenTransferCenter={() => { hapticSelection(); setTransferCenterOpen(true) }}
           onForgetMachineAuthorization={forgetMachineAuthorization}
-          onPairMachine={openMachinePairSheet}
           onRefresh={() => { hapticImpact(); void refreshMachines() }}
           onSelectMachine={selectMachine}
           onSignIn={() => { hapticSelection(); setView('settings') }}
@@ -887,7 +870,6 @@ export function RemoteControlApp({
 
       {scanOpen ? (
         <PairSheet
-          manualEntryOpen={manualEntryOpen}
           manualScanValue={manualScanValue}
           pairError={error}
           scanFlowState={scanFlowState}
@@ -897,12 +879,10 @@ export function RemoteControlApp({
           cameraScanning={cameraScanning}
           pairIntent={pairIntent}
           selectedMachine={selectedMachine}
-          signedIn={signedIn}
           canScanWithCamera={Boolean(scanPairingCode)}
 		  onCommitShare={() => void commitEndpointShare()}
           onClose={() => { hapticSelection(); setSharePreview(null); setSSHCredentialNotice(null); setScanOpen(false) }}
           onImport={() => void importManualScan()}
-          onManualEntryOpen={() => { hapticSelection(); setManualEntryOpen(true) }}
           onManualScanValueChange={setManualScanValue}
           onScanWithCamera={() => void scanWithCamera()}
         />
@@ -1061,7 +1041,6 @@ function HomeView({
   onForgetMachineAuthorization,
   onOpenSettings,
   onOpenTransferCenter,
-  onPairMachine,
   onRefresh,
   onSelectMachine,
   onSignIn,
@@ -1079,12 +1058,12 @@ function HomeView({
   onForgetMachineAuthorization: (machine: DisplayMachine) => void
   onOpenSettings: () => void
   onOpenTransferCenter: () => void
-  onPairMachine: (machine: DisplayMachine) => void
   onRefresh: () => void
   onSelectMachine: (machine: DisplayMachine) => void
   onSignIn: () => void
 }) {
   const { t } = useTranslation()
+  const [detailMachine, setDetailMachine] = useState<DisplayMachine | null>(null)
   return (
     <section className="muxvia-app-page flex min-h-0 flex-1 flex-col" data-testid="muxvia-app-home">
       <header className="muxvia-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] lg:h-16 lg:px-6 lg:py-0">
@@ -1118,7 +1097,7 @@ function HomeView({
             type="button"
             onClick={onAddLocalDevice}
           >
-            <QrCode className="h-5 w-5" />
+            <Plus className="h-5 w-5" />
             <span className="hidden text-xs font-semibold lg:inline">{t('machines.add')}</span>
           </button>
           {fileTransfer ? (
@@ -1144,12 +1123,10 @@ function HomeView({
       </header>
 
       {machines.length === 0 ? (
-        <EmptyState
-          actionLabel={t('machines.scan')}
-          icon="scan"
-          message={t('machines.emptyCopy')}
-          onAction={onAddLocalDevice}
-          title={t('machines.emptyTitle')}
+        <FirstUseState
+          signedIn={signedIn}
+          onAddLocalDevice={onAddLocalDevice}
+          onSignIn={onSignIn}
         />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto py-4 lg:px-8 lg:py-7">
@@ -1170,8 +1147,8 @@ function HomeView({
                 machine={machine}
                 connectionStateSource={getConnectionStateSource(machine)}
                 onForgetMachineAuthorization={onForgetMachineAuthorization}
-                onPairMachine={onPairMachine}
                 onSelectMachine={onSelectMachine}
+                onShowDetails={setDetailMachine}
               />
             </li>
           ))}
@@ -1179,7 +1156,43 @@ function HomeView({
           </div>
         </div>
       )}
+      {detailMachine ? <DisplayMachineDetailSheet machine={detailMachine} onClose={() => setDetailMachine(null)} /> : null}
     </section>
+  )
+}
+
+function FirstUseState({
+  signedIn,
+  onAddLocalDevice,
+  onSignIn,
+}: {
+  signedIn: boolean
+  onAddLocalDevice: () => void
+  onSignIn: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto px-4 py-10 md:items-center">
+      <section className="muxvia-app-panel w-full max-w-md p-6" data-testid="muxvia-first-use">
+        <div className="flex h-12 w-12 items-center justify-center border border-[var(--muxvia-app-line)] bg-[var(--muxvia-app-soft)] text-[var(--muxvia-app-accent)]">
+          <Server className="h-6 w-6" />
+        </div>
+        <h2 className="mt-5 text-lg font-semibold text-zinc-950">{t('machines.emptyTitle')}</h2>
+        <p className="mt-2 text-sm leading-6 text-zinc-600">{t(signedIn ? 'machines.emptySignedInCopy' : 'machines.emptyCopy')}</p>
+        <div className="mt-6 grid gap-3">
+          {!signedIn ? (
+            <button className="muxvia-app-primary-button h-12 gap-2 px-4 text-sm font-semibold" type="button" onClick={onSignIn}>
+              <LogIn className="h-4 w-4" />
+              {t('machines.signInCloud')}
+            </button>
+          ) : null}
+          <button className={`${signedIn ? 'muxvia-app-primary-button' : 'muxvia-app-secondary-button'} h-12 gap-2 px-4 text-sm font-semibold`} type="button" onClick={onAddLocalDevice}>
+            <Plus className="h-4 w-4" />
+            {t('machines.addLocal')}
+          </button>
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -1855,7 +1868,6 @@ function Switch({
 function PairSheet({
   cameraScanning,
   canScanWithCamera,
-  manualEntryOpen,
   manualScanValue,
   pairError,
   scanFlowState,
@@ -1864,17 +1876,14 @@ function PairSheet({
   sharePreview,
   sshCredentialNotice,
   selectedMachine,
-  signedIn,
   onClose,
   onCommitShare,
   onImport,
-  onManualEntryOpen,
   onManualScanValueChange,
   onScanWithCamera,
 }: {
   cameraScanning: boolean
   canScanWithCamera: boolean
-  manualEntryOpen: boolean
   manualScanValue: string
   pairError: string | null
   scanFlowState: ScanFlowState
@@ -1883,18 +1892,15 @@ function PairSheet({
   sharePreview: EndpointSharePreviewView | null
   sshCredentialNotice: NonNullable<ExternalPairingImportResult['sshCredentials']> | null
   selectedMachine: WebControlMachine | null
-  signedIn: boolean
   onClose: () => void
   onCommitShare: () => void
   onImport: () => void
-  onManualEntryOpen: () => void
   onManualScanValueChange: (value: string) => void
   onScanWithCamera: () => void
 }) {
   const { t } = useTranslation()
   const title = sshCredentialNotice ? t('pairing.sshReady') : sharePreview ? t('pairing.importConfig') : pairIntent === 'add-local' ? t('pairing.addLocal') : t('pairing.authorize')
   const primaryLabel = pairIntent === 'add-local' ? t('pairing.add') : t('pairing.pair')
-  const showManualEntry = manualEntryOpen || !canScanWithCamera
   const statusMessage = scanFlowState === 'pairing'
     ? t('pairing.scanned')
     : scanFlowState === 'scanning'
@@ -1958,8 +1964,8 @@ function PairSheet({
                   ))}
                 </div>
                 <div className="mt-3 text-xs leading-5 text-zinc-500">
-                  {sharePreview.connectModeChanged ? 'Connect mode changes. ' : ''}
-                  {sharePreview.selectionPolicyChanged ? 'Route policy changes. ' : ''}
+                  {sharePreview.connectModeChanged ? `${t('pairing.connectModeChanged')} ` : ''}
+                  {sharePreview.selectionPolicyChanged ? `${t('pairing.selectionPolicyChanged')} ` : ''}
                   {t('pairing.credentialsStayLocal')}
                 </div>
                 <button
@@ -1969,7 +1975,7 @@ function PairSheet({
                   disabled={pairing}
                 >
                   {pairing ? <span className="muxvia-square-spinner" aria-hidden="true" /> : <Download className="h-4 w-4" />}
-                  Import Config
+                  {t('pairing.importConfig')}
                 </button>
               </div>
             ) : null}
@@ -1982,7 +1988,7 @@ function PairSheet({
               </div>
             ) : null}
 
-            {canScanWithCamera && !showManualEntry ? (
+            {canScanWithCamera ? (
               <button
                 className="muxvia-app-primary-button mt-4 h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                 type="button"
@@ -1992,33 +1998,23 @@ function PairSheet({
                 {cameraScanning || pairing ? <span className="muxvia-square-spinner" aria-hidden="true" /> : <Camera className="h-4 w-4" />}
                 {pairing ? t('pairing.pairing') : cameraScanning ? t('pairing.scanProgress') : t('pairing.scanCamera')}
               </button>
-            ) : null}
-
-            {!showManualEntry ? (
-              <button
-                className="muxvia-app-secondary-button mt-3 w-full gap-2 px-3 text-sm font-semibold"
-                type="button"
-                onClick={onManualEntryOpen}
-              >
-                <Keyboard className="h-4 w-4" />
-                {t('pairing.manual')}
-              </button>
             ) : (
-              <div className="muxvia-app-panel mt-4 bg-[var(--muxvia-app-soft)] px-3 py-2">
-                <label className="block text-xs font-semibold text-zinc-500">
-                  {t('pairing.content')}
-                  <textarea
-                    className="mt-1 h-44 w-full resize-none border border-[var(--muxvia-app-line)] bg-white p-2 font-mono text-xs leading-5 text-zinc-950 placeholder:text-zinc-400 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
-                    value={manualScanValue}
-                    onChange={(event) => onManualScanValueChange(event.target.value)}
-                    placeholder="MXP1-..."
-                    spellCheck={false}
-                  />
-                </label>
-              </div>
+              <p className="mt-4 border border-[var(--muxvia-app-line)] bg-[var(--muxvia-app-soft)] px-3 py-2 text-sm text-zinc-600">{t('pairing.cameraUnavailable')}</p>
             )}
 
-            {showManualEntry ? (
+            <div className="muxvia-app-panel mt-4 bg-[var(--muxvia-app-soft)] px-3 py-3">
+              <label className="block text-xs font-semibold text-zinc-500">
+                {t('pairing.content')}
+                <textarea
+                  className="mt-2 h-28 w-full resize-none border border-[var(--muxvia-app-line)] bg-white p-3 font-mono text-sm leading-5 text-zinc-950 placeholder:text-zinc-400 outline-none focus:border-[var(--muxvia-app-accent)] focus:ring-2 focus:ring-blue-500/25"
+                  value={manualScanValue}
+                  onChange={(event) => onManualScanValueChange(event.target.value)}
+                  placeholder={t('pairing.manualPlaceholder')}
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+              </label>
               <button
                 className="muxvia-app-secondary-button mt-3 h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                 type="button"
@@ -2028,7 +2024,7 @@ function PairSheet({
                 {pairing ? <span className="muxvia-square-spinner" aria-hidden="true" /> : <ShieldCheck className="h-4 w-4" />}
                 {primaryLabel}
               </button>
-            ) : null}
+            </div>
 
             {statusMessage ? (
               <p className="mt-3 border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-sm font-medium text-blue-700">{statusMessage}</p>
@@ -2054,16 +2050,16 @@ function MachineRow({
   machine,
   connectionStateSource,
   onForgetMachineAuthorization,
-  onPairMachine,
   onSelectMachine,
+  onShowDetails,
 }: {
   authorizationExpiresAt?: string | undefined
   authorizationState: MachineAuthorizationState
   machine: DisplayMachine
   connectionStateSource?: MachineRuntime['listConnectionState']
   onForgetMachineAuthorization: (machine: DisplayMachine) => void
-  onPairMachine: (machine: DisplayMachine) => void
   onSelectMachine: (machine: DisplayMachine) => void
+  onShowDetails: (machine: DisplayMachine) => void
 }) {
   const { t } = useTranslation()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -2073,7 +2069,7 @@ function MachineRow({
     connectionStateSource?.getSnapshot ?? getEmptyMachineConnectionSnapshot,
   )
   const actionLabel = authorizationState === 'ready' ? t('machines.open') : t('machines.pair')
-  const subtitle = machine.hostname || shortenMachineId(machine.id)
+  const subtitle = machine.hostname || t('machines.daemonHost')
   const card = machineCardProjection(machine, authorizationState, authorizationExpiresAt, connection, t)
   const DeviceIcon = machine.accessClass === 'cloud' ? Cloud : LaptopMinimal
   const canForget = Boolean(authorizationExpiresAt || authorizationState === 'ready')
@@ -2093,7 +2089,7 @@ function MachineRow({
         </div>
         <div className="col-start-2 row-start-1 min-w-0 self-start pr-24 lg:col-start-2 lg:self-center lg:pr-0">
           <div className="truncate text-[15px] font-semibold leading-5 text-zinc-950">{machine.name}</div>
-          <div className="mt-0.5 truncate text-xs font-medium text-zinc-500">{subtitle} · {shortenMachineId(machine.id)}</div>
+          <div className="mt-0.5 truncate text-xs font-medium text-zinc-500">{subtitle}</div>
         </div>
           <div className="col-start-2 row-start-2 flex min-w-0 items-center gap-2 text-[11px] font-semibold text-zinc-600 lg:col-start-3 lg:row-start-1">
             <AccessClassLabel accessClass={machine.accessClass} />
@@ -2107,8 +2103,7 @@ function MachineRow({
           </div>
         <ChevronRight className="col-start-3 row-span-3 row-start-1 h-4 w-4 shrink-0 self-center text-zinc-400 lg:hidden" />
       </button>
-      {canForget ? (
-        <div className="absolute right-9 top-2.5 z-10 lg:right-3 lg:top-1/2 lg:-translate-y-1/2">
+      <div className="absolute right-9 top-2.5 z-10 lg:right-3 lg:top-1/2 lg:-translate-y-1/2">
           <button
             aria-label={t('machines.more', { name: machine.name })}
             className="inline-flex h-11 w-11 items-center justify-center text-zinc-500 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)] lg:h-10 lg:w-10"
@@ -2119,30 +2114,62 @@ function MachineRow({
           </button>
           {menuOpen ? (
             <div className="absolute right-0 top-11 min-w-44 border border-[var(--muxvia-app-line)] bg-white p-1 shadow-lg">
-              <button
-                aria-label={t('machines.removeAuthorization')}
-                className="flex h-11 w-full items-center gap-2 px-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50"
-                type="button"
-                onClick={() => onForgetMachineAuthorization(machine)}
-              >
-                <Trash2 className="h-4 w-4" />
-                {t('machines.removeAuthorization')}
+              <button className="flex h-11 w-full items-center gap-2 px-2.5 text-left text-xs font-semibold text-zinc-700 hover:bg-zinc-50" type="button" onClick={() => { setMenuOpen(false); onShowDetails(machine) }}>
+                <Info className="h-4 w-4" />
+                {t('machines.details')}
               </button>
+              {canForget ? (
+                <button
+                  aria-label={t('machines.removeAuthorization')}
+                  className="flex h-11 w-full items-center gap-2 px-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50"
+                  type="button"
+                  onClick={() => onForgetMachineAuthorization(machine)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {t('machines.removeAuthorization')}
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>
-      ) : null}
-      {authorizationState !== 'ready' ? (
-        <button
-          aria-label={`${t('machines.pair')} ${machine.name}`}
-          className="muxvia-app-primary-button absolute bottom-2.5 right-3.5 h-11 gap-1.5 px-2.5 text-[11px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
-          type="button"
-          onClick={() => onPairMachine(machine)}
-        >
-          <QrCode className="h-3.5 w-3.5" />
-          {t('machines.pairAgain')}
-        </button>
-      ) : null}
+    </div>
+  )
+}
+
+function DisplayMachineDetailSheet({ machine, onClose }: { machine: DisplayMachine; onClose: () => void }) {
+  const { t } = useTranslation()
+  const source = machine.accessClass === 'cloud'
+    ? t('machines.source.hub')
+    : machine.accessClass === 'local_cloud'
+      ? t('machines.source.localCloud')
+      : t('machines.source.local')
+  const fields = [
+    [t('machines.fields.id'), machine.id],
+    [t('machines.fields.hostname'), machine.hostname || '-'],
+    [t('machines.fields.platform'), machine.osInfo || '-'],
+    [t('machines.fields.source'), source],
+    [t('machines.fields.hub'), machine.hubId || '-'],
+    [t('machines.fields.lastOnline'), machine.lastSeen ? formatAuthorizationExpiry(machine.lastSeen) : '-'],
+  ] as const
+  return (
+    <div className="fixed inset-0 z-40 flex items-end bg-black/40 md:items-center md:justify-center" role="dialog" aria-modal="true" aria-labelledby="muxvia-device-details-title" onClick={onClose}>
+      <section className="max-h-[85dvh] w-full overflow-hidden border-t border-[var(--muxvia-app-line)] bg-white md:max-w-md md:border" onClick={(event) => event.stopPropagation()}>
+        <header className="flex min-h-16 items-center justify-between gap-3 border-b border-[var(--muxvia-app-line)] px-4">
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold text-zinc-950" id="muxvia-device-details-title">{machine.name}</h2>
+            <p className="mt-0.5 text-xs text-zinc-500">{t('machines.details')}</p>
+          </div>
+          <button aria-label={t('machines.closeDetails')} className="muxvia-app-icon-button border-transparent bg-transparent" type="button" onClick={onClose}><X className="h-5 w-5" /></button>
+        </header>
+        <dl className="max-h-[calc(85dvh-4rem)] overflow-y-auto p-4">
+          {fields.map(([label, value]) => (
+            <div className="border-b border-[var(--muxvia-app-line)] py-3 last:border-b-0" key={label}>
+              <dt className="text-xs font-semibold text-zinc-500">{label}</dt>
+              <dd className="mt-1 break-all font-mono text-sm text-zinc-950">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
     </div>
   )
 }
@@ -2672,20 +2699,15 @@ function formatLastSeen(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   const diffMs = Date.now() - date.getTime()
-  if (diffMs < 60_000) return 'just now'
-  const diffMinutes = Math.floor(diffMs / 60_000)
-  if (diffMinutes < 60) return `${diffMinutes} min ago`
-  const diffHours = Math.floor(diffMinutes / 60)
-  if (diffHours < 24) return `${diffHours} hr ago`
-  const diffDays = Math.floor(diffHours / 24)
-  if (diffDays < 7) return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`
-  return date.toLocaleDateString(undefined, {
+  const relative = new Intl.RelativeTimeFormat(muxviaIntlLocale(), { numeric: 'auto' })
+  const diffMinutes = Math.round(diffMs / 60_000)
+  if (Math.abs(diffMinutes) < 60) return relative.format(-diffMinutes, 'minute')
+  const diffHours = Math.round(diffMs / 3_600_000)
+  if (Math.abs(diffHours) < 24) return relative.format(-diffHours, 'hour')
+  const diffDays = Math.round(diffMs / 86_400_000)
+  if (Math.abs(diffDays) < 7) return relative.format(-diffDays, 'day')
+  return date.toLocaleDateString(muxviaIntlLocale(), {
     month: 'short',
     day: 'numeric',
   })
-}
-
-function shortenMachineId(value: string): string {
-  if (value.length <= 18) return value
-  return `${value.slice(0, 8)}...${value.slice(-6)}`
 }

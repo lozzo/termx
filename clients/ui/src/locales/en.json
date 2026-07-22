@@ -31,6 +31,10 @@
     "openSettings": "Open settings",
     "emptyTitle": "No devices yet",
     "emptyCopy": "Add a local device, or sign in to sync your cloud devices.",
+    "emptySignedInCopy": "Add a local device or enroll a daemon from your Muxvia web account.",
+    "signInCloud": "Sign in to Muxvia Cloud",
+    "addLocal": "Add local device",
+    "daemonHost": "Muxvia daemon",
     "scan": "Scan QR",
     "available": "Available",
     "offline": "Offline",
@@ -96,8 +100,10 @@
       "name": "Name",
       "id": "Device ID",
       "hostname": "Hostname",
+      "platform": "Platform",
       "state": "State",
       "source": "Source",
+      "hub": "Cloud Hub",
       "terminals": "Terminal count",
       "path": "Recent path",
       "relay": "Relay",
@@ -148,6 +154,43 @@
     "loginCode": "Login code",
     "useCode": "Use login code"
   },
+  "terminal": {
+    "defaultTitle": "Terminal",
+    "list": "Terminals",
+    "noActive": "No active terminals",
+    "open": "Open {{name}}",
+    "manage": "Manage {{name}}",
+    "state": { "running": "Running", "exited": "Exited", "unknown": "Unknown" },
+    "paste": { "title": "Confirm paste", "summary": "{{lines}} lines, {{characters}} characters", "confirm": "Paste" },
+    "tools": { "selectAll": "Select all", "visible": "Visible area", "cancelSelection": "Cancel selection", "resizeControl": "Resize control", "releaseResize": "Release resize control", "acquireResize": "Acquire resize control", "owner": "Owner", "follower": "Follower", "snippets": "Snippets", "toggleFn": "Toggle Fn shortcuts", "toggleKeyboard": "Toggle system keyboard", "unlockKeyboard": "Unlock system keyboard", "tabKey": "Tab key", "output": "Terminal output", "loadingHistory": "Loading terminal history" }
+  },
+  "files": {
+    "previewEmptyFile": "Empty file",
+    "copiedPaths_one": "Copied path", "copiedPaths_other": "Copied {{count}} paths", "clipboardUnavailable": "Clipboard is unavailable", "clipboardCopyFailed": "Clipboard copy failed",
+    "selected_one": "{{count}} selected", "selected_other": "{{count}} selected", "selectAll": "Select all", "deselectAll": "Deselect all",
+    "list": "Files", "directoryName": "Directory name", "createDirectory": "Create directory", "cancelNewDirectory": "Cancel new directory", "directoryError": "Directory error", "loadingDirectory": "Loading directory...", "emptyDirectory": "This directory is empty", "copyCurrentPath": "Copy current directory path", "newDirectory": "New directory", "uploadFiles": "Upload files", "refreshFiles": "Refresh files", "selectFiles": "Select files", "hidden": "Hidden", "showHidden": "Show hidden files", "hideHidden": "Hide hidden files", "deleteConfirm": "Delete this entry?", "renameEntry": "Rename entry", "moreActions": "More actions for {{name}}", "selectEntry": "Select {{name}}", "deselectEntry": "Deselect {{name}}", "openEntry": "Open {{name}}", "previewEntry": "Preview {{name}}", "clipboardSummary_one": "{{count}} item to {{mode}}", "clipboardSummary_other": "{{count}} items to {{mode}}", "clipboardMode": { "copy": "copy", "cut": "move" },
+    "actions": { "preview": "Preview", "download": "Download", "copyPath": "Copy path", "copy": "Copy", "cut": "Cut", "rename": "Rename", "delete": "Delete", "select": "Select", "new": "New", "upload": "Upload", "path": "Path", "paste": "Paste", "save": "Save" },
+    "sort": { "title": "Sort files", "selected": "Selected", "current": "Sort files: {{sort}}", "foldersFirst": "Folders first", "nameAsc": "Name A to Z", "nameDesc": "Name Z to A", "newest": "Newest first", "oldest": "Oldest first", "largest": "Largest first", "smallest": "Smallest first", "typeAsc": "Type A to Z", "typeDesc": "Type Z to A" },
+    "bookmarks": { "title": "Path bookmarks", "saved_one": "{{count}} saved", "saved_other": "{{count}} saved", "edit": "Edit bookmark", "alias": "Alias", "remove": "Remove bookmark", "updated": "Bookmark updated", "removed": "Bookmark removed", "saveCurrent": "Save current directory", "open": "Open bookmark {{name}}", "editNamed": "Edit bookmark {{name}}" },
+    "preview": { "close": "Close preview", "loading": "Loading preview...", "error": "Preview error", "none": "No preview", "unavailable": "Preview unavailable", "unsupported": "This file type is not available for inline preview.", "tooLarge": "This file is too large to preview.", "tooLargeLimit": "This file is too large to preview within the {{limit}} limit.", "invalidImage": "Image preview data is invalid.", "invalidVideo": "Video preview data is invalid.", "videoUnavailable": "This device cannot provide seekable video preview without buffering the complete file.", "modelFailed": "3D model preview failed.", "loadingModel": "Loading model", "modelUnavailable": "3D preview unavailable", "plainText": "Plain text", "enableWrap": "Enable line wrap", "disableWrap": "Disable line wrap", "fullscreen": "Fullscreen", "fullscreenNamed": "Fullscreen {{name}}", "zoomOut": "Zoom out", "zoomOutNamed": "Zoom out {{name}}", "zoomIn": "Zoom in", "zoomInNamed": "Zoom in {{name}}", "resetView": "Reset view", "resetViewNamed": "Reset model view {{name}}", "resetZoom": "Reset zoom", "resetZoomNamed": "Reset zoom {{name}}", "rotate": "Rotate", "rotateNamed": "Rotate {{name}}" },
+    "transfer": {
+      "title": "Data Transfers", "center": "Data Transfer Center", "openSummary": "Open transfer center, {{summary}}", "closeCenter": "Close data transfer center", "empty": "No transfer tasks.", "unknownDevice": "Unknown device",
+      "summary": { "active_one": "{{count}} active", "active_other": "{{count}} active", "paused_one": "{{count}} paused", "paused_other": "{{count}} paused", "failed_one": "{{count}} failed", "failed_other": "{{count}} failed", "done_one": "{{count}} done", "done_other": "{{count}} done", "total_one": "{{count}} transfer", "total_other": "{{count}} transfers", "none": "No transfers" },
+      "selected_one": "{{count}} selected", "selected_other": "{{count}} selected", "clearSelection": "Clear transfer selection", "selectAll": "Select all transfers", "deselectAll": "Deselect all transfers", "resumeAll": "Resume all",
+      "selectItem": "Select {{name}}", "deselectItem": "Deselect {{name}}", "fromDevice": "From {{device}}", "toDevice": "To {{device}}", "savedDownloads": "Saved to Downloads",
+      "status": { "paused": "Paused", "missing": "File missing", "failed": "Transfer failed" },
+      "pauseItem": "Pause {{name}}", "retryItem": "Retry {{name}}", "resumeItem": "Resume {{name}}", "cancelItem": "Cancel {{name}}", "clearItem": "Clear {{name}}",
+      "pauseSelected": "Pause selected transfers", "startSelected": "Start selected transfers", "selectTransfers": "Select transfers", "clearCompleted": "Delete all completed transfers", "clearFailed": "Delete all failed transfers",
+      "pause": "Pause", "start": "Start", "select": "Select", "done": "Done", "failed": "Failed"
+    }
+  },
+  "workspace": {
+    "chooseDirectory": "Choose directory", "clipboard": "Clipboard", "clipboardText": "Clipboard text", "clipboardEmpty": "Clipboard is empty", "clipboardTextEmpty": "Clipboard text is empty", "clipboardUpdated": "Clipboard entry updated", "clipboardSaved": "Clipboard entry saved", "browserClipboardError": "Unable to read browser clipboard", "clipboardReadError": "Unable to read clipboard", "browserClipboard": "Browser", "noClipboardHistory": "No clipboard history", "update": "Update", "connectionInfo": "Connection info", "openFiles": "Open files", "closeFiles": "Close files", "createTerminal": "Create terminal", "newTerminal": "New terminal", "saveChanges": "Save changes", "saving": "Saving...", "browse": "Browse", "connecting": "Connecting...", "connectingTerminal": "Connecting terminal...", "verifyDevice": "Verify this device", "verifyDeviceCopy": "Pair first before opening or managing local terminals.", "restartTerminal": "Restart terminal", "editTerminal": "Edit terminal", "deleteTerminal": "Delete terminal", "connectionError": "Connection error", "selectTerminal": "Select a terminal to start", "showTerminalList": "Back to terminal list", "switchTerminal": "Switch terminal", "openTerminalMenu": "Open terminal menu", "unlockResize": "Unlock resize", "unlocking": "Unlocking...", "terminalTools": "Terminal tools", "changeSplit": "Change split", "splitTerminal": "Split terminal", "releaseResize": "Release resize", "controlResize": "Control resize", "syncInput": "Sync input", "closeSplit": "Close split", "openBeforeSplit": "Open a terminal before starting split view", "chooseDifferentTerminal": "Choose a different terminal", "noOtherTerminal": "No other terminal is available", "fileAccessNotReady": "File access is not ready", "p2pUnavailable": "P2P unavailable", "p2pUnavailableCopy": "A direct connection could not be established on the current network. Switch this connection to Relay?", "notNow": "Not now", "copied": "Copied", "copyFailed": "Copy failed",
+    "resizeMode": { "resizable": "Resizable", "warn": "Warn only", "locked": "Locked" },
+    "resize": { "unlocked": "Resize unlocked", "acquired": "Resize control acquired", "locked": "Resize is locked", "unavailable": "Resize control unavailable", "released": "Resize control released" },
+    "terminalForm": { "name": "Name", "command": "Command", "cwd": "Working directory", "environment": "Environment", "sizeLock": "Size lock" },
+    "connection": { "label": "Connection", "tryP2P": "Try P2P", "useRelay": "Use relay", "closeInfo": "Close connection info", "mode": "Mode", "reading": "Reading stats...", "transport": "Transport", "path": "Path", "smartRoute": "SmartRoute", "local": "Local", "remote": "Remote", "candidates": "Candidates", "rtt": "RTT", "connectionId": "Connection", "reconnect": "Reconnect", "unavailable": "No machine connection is available" }
+  },
   "pairing": {
     "sshReady": "SSH key ready",
     "importConfig": "Import endpoint config",
@@ -164,7 +207,12 @@
     "scanProgress": "Scanning QR...",
     "scanCamera": "Scan QR with camera",
     "manual": "Enter content manually",
-    "content": "Muxvia QR content"
+    "content": "Pairing code or share link",
+    "manualPlaceholder": "Enter MXP1 code or paste a Muxvia share link",
+    "cameraUnavailable": "This device cannot scan a QR code. Enter the same pairing code below.",
+    "importConfig": "Import configuration",
+    "connectModeChanged": "Connection mode changes.",
+    "selectionPolicyChanged": "Route selection changes."
   },
   "scanner": {
     "title": "Scan Muxvia QR",

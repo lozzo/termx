@@ -3,6 +3,8 @@ import { Clipboard, ClipboardList, Copy, Cpu, MousePointer2, PanelTopOpen, X, Mi
 import { hapticImpact, hapticSelection } from '../platform/haptics'
 import type { TerminalRenderer } from './Terminal'
 import type { TerminalResizeControl } from './terminalClient'
+import { useTranslation } from 'react-i18next'
+import '../i18n'
 
 export type TerminalToolbarMode = 'default' | 'selection'
 
@@ -53,6 +55,7 @@ export function TerminalActionToolbar({
   onReleaseResizeOwner,
   onClose,
 }: TerminalActionToolbarProps) {
+  const { t } = useTranslation()
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -74,18 +77,18 @@ export function TerminalActionToolbar({
       <div className="absolute inset-x-0 bottom-2 z-40 border-y border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-surface)] px-2 py-1.5 text-[var(--muxvia-text)] shadow-[0_-4px_18px_rgba(0,0,0,0.22)] md:hidden">
         <div className="flex items-center justify-between gap-1.5 overflow-x-auto">
           <div className="flex items-center gap-1.5">
-            <ToolbarButton label="全选" onClick={onSelectAll} />
-            <ToolbarButton label="可见区域" onClick={onSelectVisible} />
+            <ToolbarButton label={t('terminal.tools.selectAll')} onClick={onSelectAll} />
+            <ToolbarButton label={t('terminal.tools.visible')} onClick={onSelectVisible} />
             <div className="mx-1 h-5 w-px shrink-0 bg-[var(--muxvia-border-subtle)]" />
             <ToolbarButton
-              label="复制"
+              label={t('files.actions.copy')}
               icon={<Copy className="h-3 w-3" />}
               onClick={onCopy}
               disabled={!hasSelection}
               primary={hasSelection}
             />
           </div>
-          <ToolbarIconButton label="取消选择" onClick={() => onModeChange('default')}>
+          <ToolbarIconButton label={t('terminal.tools.cancelSelection')} onClick={() => onModeChange('default')}>
             <X className="h-3.5 w-3.5" />
           </ToolbarIconButton>
         </div>
@@ -101,7 +104,7 @@ export function TerminalActionToolbar({
       <div className="flex flex-col gap-3">
         {/* Settings Row: Font Size */}
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-[var(--muxvia-muted)]">字体大小</span>
+          <span className="text-xs font-medium text-[var(--muxvia-muted)]">{t('settings.fontSize')}</span>
           <div className="flex items-center gap-2">
             <button
               onPointerDown={(e) => { e.preventDefault(); hapticSelection(); onFontSizeChange?.(Math.max(6, fontSize - 1)) }}
@@ -121,7 +124,7 @@ export function TerminalActionToolbar({
 
         {/* Settings Row: Renderer */}
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-[var(--muxvia-muted)]">渲染模式</span>
+          <span className="text-xs font-medium text-[var(--muxvia-muted)]">{t('settings.renderer')}</span>
           <button
             onPointerDown={(e) => { e.preventDefault(); hapticSelection(); onRendererChange?.(nextRenderer) }}
             className="flex h-7 items-center justify-center gap-1.5 border border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-surface-raised)] px-3 text-xs font-semibold text-[var(--muxvia-text)] active:opacity-75"
@@ -134,10 +137,10 @@ export function TerminalActionToolbar({
         <div className="my-1 h-px w-full bg-[var(--muxvia-border-subtle)]" />
 
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-[var(--muxvia-muted)]">尺寸控制</span>
+          <span className="text-xs font-medium text-[var(--muxvia-muted)]">{t('terminal.tools.resizeControl')}</span>
           <button
             type="button"
-            aria-label={ownsResize ? 'Release resize control' : 'Acquire resize control'}
+            aria-label={t(ownsResize ? 'terminal.tools.releaseResize' : 'terminal.tools.acquireResize')}
             onPointerDown={(e) => {
               e.preventDefault()
               e.stopPropagation()
@@ -151,20 +154,20 @@ export function TerminalActionToolbar({
             className="flex h-7 items-center justify-center gap-1.5 border border-[var(--muxvia-border-subtle)] bg-[var(--muxvia-surface-raised)] px-3 text-xs font-semibold text-[var(--muxvia-text)] active:opacity-75"
           >
             <span className="font-mono text-[11px] font-extrabold leading-none tracking-[-0.04em]">{ownsResize ? 'OW' : 'FL'}</span>
-            {ownsResize ? 'Owner' : 'Follower'}
+            {t(ownsResize ? 'terminal.tools.owner' : 'terminal.tools.follower')}
           </button>
         </div>
 
         {/* Tools Row */}
         <div className="grid grid-cols-4 gap-2">
           <ToolbarButton
-            label="选择"
+            label={t('files.actions.select')}
             icon={<MousePointer2 className="h-3 w-3" />}
             onClick={() => onModeChange('selection')}
           />
-          <ToolbarButton label="粘贴" icon={<Clipboard className="h-3 w-3" />} onClick={onPaste} />
-          <ToolbarButton label="剪贴板" icon={<ClipboardList className="h-3 w-3" />} onClick={() => onOpenClipboardHistory?.()} />
-          <ToolbarButton label="快捷短语" icon={<PanelTopOpen className="h-3 w-3" />} onClick={onOpenSnippets} />
+          <ToolbarButton label={t('terminal.paste.confirm')} icon={<Clipboard className="h-3 w-3" />} onClick={onPaste} />
+          <ToolbarButton label={t('workspace.clipboard')} icon={<ClipboardList className="h-3 w-3" />} onClick={() => onOpenClipboardHistory?.()} />
+          <ToolbarButton label={t('terminal.tools.snippets')} icon={<PanelTopOpen className="h-3 w-3" />} onClick={onOpenSnippets} />
         </div>
       </div>
     </div>

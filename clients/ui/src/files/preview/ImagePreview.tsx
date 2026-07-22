@@ -2,11 +2,14 @@ import type { FilePreviewResponse } from '../fileApi'
 import { PreviewNotice } from './PreviewNotice'
 import { useBinaryPreviewUrl } from './useBinaryPreviewUrl'
 import { ZoomableMediaCanvas } from './ZoomableMediaCanvas'
+import { useTranslation } from 'react-i18next'
+import '../../i18n'
 
 export function ImagePreview({ preview }: { preview: FilePreviewResponse }) {
+  const { t } = useTranslation()
   const src = useBinaryPreviewUrl(preview.contentBase64, preview.mimeType)
   if (src === undefined) return null
-  if (!src) return <PreviewNotice title="Preview Error" message="Image preview data is invalid." />
+  if (!src) return <PreviewNotice title={t('files.preview.error')} message={t('files.preview.invalidImage')} />
   return (
     <ZoomableMediaCanvas zoomLabel={preview.name}>
       <img

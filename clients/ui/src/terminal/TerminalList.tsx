@@ -2,6 +2,8 @@ import type { Terminal } from '../core/model'
 import type { ReactNode } from 'react'
 import { CircleDot, Lock, MoreVertical, Terminal as TerminalIcon, Unlock, ChevronRight } from 'lucide-react'
 import { hapticImpact } from '../platform/haptics'
+import { useTranslation } from 'react-i18next'
+import '../i18n'
 
 export interface OpenTerminalIntent {
   machineId: string
@@ -27,6 +29,7 @@ export function TerminalList({
   className,
   loading,
 }: TerminalListProps) {
+  const { t } = useTranslation()
   const terminalKeyCounts = new Map<string, number>()
 
   return (
@@ -55,11 +58,11 @@ export function TerminalList({
         ) : (
           <div className="flex h-32 flex-col items-center justify-center gap-3 border border-dashed border-[var(--muxvia-app-line-strong)] bg-[var(--muxvia-app-surface-soft)] text-sm text-[var(--muxvia-app-muted)] animate-in fade-in duration-300">
             <TerminalIcon className="h-8 w-8 text-zinc-300" />
-            <p>No active terminals</p>
+            <p>{t('terminal.noActive')}</p>
           </div>
         )
       ) : (
-        <ul aria-label="Terminals" className="border-x border-t border-[var(--muxvia-app-line)] bg-[var(--muxvia-app-surface)]">
+        <ul aria-label={t('terminal.list')} className="border-x border-t border-[var(--muxvia-app-line)] bg-[var(--muxvia-app-surface)]">
           {terminals.map((terminal) => {
             const isActive = activeTerminalId === terminal.terminalId
             const itemKey = uniqueTerminalListKey(terminalKeyCounts, machineId, terminal)
@@ -97,7 +100,7 @@ export function TerminalList({
                   <button
                     className="flex min-w-0 flex-1 items-center gap-3 text-left active:scale-[0.98] focus:outline-none"
                     type="button"
-                    aria-label={`Open ${terminal.title}`}
+                    aria-label={t('terminal.open', { name: terminal.title || terminal.command || t('terminal.defaultTitle') })}
                     aria-current={isActive ? 'true' : 'false'}
                     onClick={() => {
                       hapticImpact()
@@ -111,7 +114,7 @@ export function TerminalList({
                     <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
                       <div className="flex min-w-0 items-center justify-between gap-2">
                         <span className={`truncate text-[14px] font-semibold tracking-tight leading-none ${isActive ? 'text-zinc-100' : 'text-zinc-900'}`}>
-                          {terminal.title || terminal.command || 'Terminal'}
+                          {terminal.title || terminal.command || t('terminal.defaultTitle')}
                         </span>
                         {terminal.environment ? (
                           <span className={`shrink-0 px-1.5 py-0.5 text-[9px] font-bold tracking-wider uppercase leading-none ${isActive ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-500'}`}>
@@ -128,7 +131,7 @@ export function TerminalList({
                       <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
                         <MetadataPill active={isActive}>
                           <CircleDot className={`h-2.5 w-2.5 ${terminal.state === 'running' ? 'fill-emerald-500 text-emerald-500' : 'text-zinc-400'}`} />
-                          {formatTerminalState(terminal.state)}
+                          {t(`terminal.state.${terminal.state === 'running' ? 'running' : terminal.state === 'exited' ? 'exited' : 'unknown'}`)}
                         </MetadataPill>
                         {terminal.cols && terminal.rows ? (
                           <MetadataPill active={isActive}>{terminal.cols} × {terminal.rows}</MetadataPill>
@@ -149,7 +152,7 @@ export function TerminalList({
                     <button
                       type="button"
                       className={`flex h-11 w-11 shrink-0 items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)] ${isActive ? 'text-zinc-300 hover:bg-zinc-800' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700'}`}
-                      aria-label={`Manage ${terminal.title}`}
+                      aria-label={t('terminal.manage', { name: terminal.title || terminal.command || t('terminal.defaultTitle') })}
                       onClick={() => {
                         hapticImpact()
                         onManageTerminal({ machineId, terminalId: terminal.terminalId })
@@ -187,12 +190,6 @@ function MetadataPill({
       {children}
     </span>
   )
-}
-
-function formatTerminalState(state: Terminal['state']): string {
-  if (state === 'running') return 'Running'
-  if (state === 'exited') return 'Exited'
-  return 'Unknown'
 }
 
 function formatLifecycleTime(value: string): string {
