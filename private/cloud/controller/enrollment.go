@@ -199,6 +199,14 @@ func (service *enrollmentService) complete(ctx context.Context, request *cloudpb
 	if err != nil {
 		return nil, err
 	}
+	refreshCredential, err := service.commerce.IssueDeviceSession(ctx, service.accountID, proof.GetDeviceId())
+	if err != nil {
+		return nil, err
+	}
+	refreshToken := append([]byte(nil), refreshCredential.GetRefreshToken()...)
+	refreshExpiresAt := refreshCredential.GetRefreshExpiresAtUnixMillis()
+	clear(refreshCredential.AccessToken)
+	clear(refreshCredential.RefreshToken)
 	if service.notifyPolicyChange != nil {
 		service.notifyPolicyChange(service.accountID)
 	}
@@ -208,7 +216,8 @@ func (service *enrollmentService) complete(ctx context.Context, request *cloudpb
 	}
 	return &cloudpb.DeviceEnrollmentServiceSession{
 		Session:     &cloudpb.CloudSessionSummary{AccountLabel: account.GetDisplayName(), AccountId: service.accountID, DeviceId: proof.GetDeviceId(), ExpiresAtUnix: uint64(sessionExpiresAt.Unix())},
-		AccessToken: accessToken, HubId: service.hubID, HubDirectoryVersion: 1, ControlEnrollment: enrollment,
+		AccessToken: accessToken, RefreshToken: refreshToken, RefreshExpiresAtUnixMillis: refreshExpiresAt,
+		HubId: service.hubID, HubDirectoryVersion: 1, ControlEnrollment: enrollment,
 	}, nil
 }
 

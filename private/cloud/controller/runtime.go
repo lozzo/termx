@@ -364,7 +364,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	if mobileHubID == "" {
 		mobileHubID = config.Deployments[0].Metadata.GetHubId()
 	}
-	mobileActivation, err := newMobileActivationService(commerceService, topologyService, edgeIssuer, mobileHubID, config.DevelopmentMobileHubURL, config.DevelopmentMobileHubRegion, time.Now, notifyPolicyChange)
+	mobileActivation, err := newMobileActivationService(commerceService, topologyService, registry, edgeIssuer, mobileHubID, config.DevelopmentMobileHubURL, config.DevelopmentMobileHubRegion, credentialNotAfter, time.Now, notifyPolicyChange)
 	if err != nil {
 		_ = store.Close()
 		return nil, err

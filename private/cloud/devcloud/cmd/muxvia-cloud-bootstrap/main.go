@@ -22,6 +22,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/muxvia/muxvia/private/cloud/companion/cloudservice/httpapi"
 	cloudcommerce "github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
 	cloudpostgres "github.com/muxvia/muxvia/private/cloud/control-plane/postgres"
@@ -235,8 +236,8 @@ func generate(ctx context.Context, value options, deploymentDSN string) error {
 		CredentialNotBeforeUnixMillis: notBefore.UnixMilli(), CredentialNotAfterUnixMillis: notAfter.UnixMilli(),
 		DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate),
 		Deployments: []controller.DeploymentConfig{primary.deployment, secondary.deployment}, EnableTestPaymentProvider: true,
-		DevelopmentEnrollmentCode: enrollmentCode, DevelopmentEnrollmentAccountID: accountID, DevelopmentEnrollmentHubID: secondary.deployment.Metadata.GetHubId(),
-		DevelopmentMobileHubID: secondary.deployment.Metadata.GetHubId(), DevelopmentMobileHubURL: value.secondaryHubURL, DevelopmentMobileHubRegion: secondary.deployment.Metadata.GetRegion(),
+		DevelopmentEnrollmentCode: enrollmentCode, DevelopmentEnrollmentAccountID: accountID, DevelopmentEnrollmentHubID: primary.deployment.Metadata.GetHubId(),
+		DevelopmentMobileHubID: primary.deployment.Metadata.GetHubId(), DevelopmentMobileHubURL: value.primaryHubURL, DevelopmentMobileHubRegion: primary.deployment.Metadata.GetRegion(),
 		OperatorID: "bootstrap-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes),
 		SecureCookie: true, WebStaticDir: "/opt/muxvia/web",
 	}
@@ -249,6 +250,13 @@ func generate(ctx context.Context, value options, deploymentDSN string) error {
 			PublicURL: value.publicURL, OperatorURL: value.operatorURL, OperatorID: "bootstrap-admin", OperatorAccessToken: operatorToken,
 			BootstrapAccountEmail: value.bootstrapEmail, BootstrapAccountPassword: accountPassword, DaemonEnrollmentCode: enrollmentCode,
 			PrimaryHubURL: value.primaryHubURL, SecondaryHubURL: value.secondaryHubURL, CredentialNotAfter: notAfter.Format(time.RFC3339),
+		},
+		"companion-manifest.json": httpapi.Manifest{
+			Version: httpapi.ManifestVersion, Profile: httpapi.ProfileStagingPublicHTTPS,
+			ControlPlaneURL: value.publicURL, HubURL: value.primaryHubURL,
+			RelayURL: "turn:" + value.primaryPublicIP + ":41003?transport=udp",
+			HubID:    primary.deployment.Metadata.GetHubId(), Region: primary.deployment.Metadata.GetRegion(),
+			AccountLabel: value.bootstrapEmail, EnrollmentCode: enrollmentCode, StartedAtRFC3339: now.Format(time.RFC3339),
 		},
 	}
 	for name, asset := range assets {

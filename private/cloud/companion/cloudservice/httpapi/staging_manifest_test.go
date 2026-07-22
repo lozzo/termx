@@ -60,3 +60,21 @@ func TestLoadManifestAllowsPublicHTTPOnlyForExplicitStagingProfile(t *testing.T)
 		t.Fatal("staging-ssh manifest accepted public HTTP origins")
 	}
 }
+
+func TestLoadManifestAllowsPublicHTTPSOnlyForExplicitStagingProfile(t *testing.T) {
+	manifest := Manifest{
+		Version: ManifestVersion, Profile: ProfileStagingPublicHTTPS,
+		ControlPlaneURL: "https://muxvia.com", HubURL: "https://cn1.edge.muxvia.com:41102",
+		RelayURL: "turn:114.66.58.243:41003?transport=udp", HubID: "hub", Region: "region",
+		AccountLabel: "public-https-test-only", EnrollmentCode: "one-time", StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
+	}
+	payload, _ := json.Marshal(manifest)
+	if _, err := ParseManifest(payload); err != nil {
+		t.Fatal(err)
+	}
+	manifest.Profile = ProfileStagingSSH
+	payload, _ = json.Marshal(manifest)
+	if _, err := ParseManifest(payload); err == nil {
+		t.Fatal("staging-ssh manifest accepted public HTTPS origins")
+	}
+}

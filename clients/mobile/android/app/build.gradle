@@ -5,9 +5,12 @@ apply plugin: 'com.google.protobuf'
 def muxviaCloudModuleRoot = new File(rootProject.rootDir, '../../../private/cloud/mobile/android').canonicalFile
 def muxviaDevCloudEnabled = project.hasProperty('muxviaDevCloud') && project.property('muxviaDevCloud') == 'true'
 def muxviaPublicHTTPStagingEnabled = project.hasProperty('muxviaPublicHTTPStaging') && project.property('muxviaPublicHTTPStaging') == 'true'
-if (muxviaDevCloudEnabled && muxviaPublicHTTPStagingEnabled) {
-    throw new GradleException('Loopback and public HTTP staging profiles are mutually exclusive')
+def muxviaPublicHTTPSStagingEnabled = project.hasProperty('muxviaPublicHTTPSStaging') && project.property('muxviaPublicHTTPSStaging') == 'true'
+if ([muxviaDevCloudEnabled, muxviaPublicHTTPStagingEnabled, muxviaPublicHTTPSStagingEnabled].count { it } > 1) {
+    throw new GradleException('Loopback, public HTTP and public HTTPS staging profiles are mutually exclusive')
 }
+def muxviaDevControlURL = muxviaPublicHTTPSStagingEnabled ? '"https://muxvia.com"' : (muxviaPublicHTTPStagingEnabled ? '"http://114.66.58.243:41101"' : '"http://127.0.0.1:41001"')
+def muxviaDevHubURL = muxviaPublicHTTPSStagingEnabled ? '"https://us1.edge.muxvia.com"' : (muxviaPublicHTTPStagingEnabled ? '"http://114.66.58.243:41102"' : '"http://127.0.0.1:41002"')
 
 android {
     namespace = "com.muxvia.app"
@@ -20,10 +23,11 @@ android {
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField 'boolean', 'MUXVIA_DEV_CLOUD_ENABLED', (muxviaDevCloudEnabled || muxviaPublicHTTPStagingEnabled).toString()
+        buildConfigField 'boolean', 'MUXVIA_DEV_CLOUD_ENABLED', (muxviaDevCloudEnabled || muxviaPublicHTTPStagingEnabled || muxviaPublicHTTPSStagingEnabled).toString()
         buildConfigField 'boolean', 'MUXVIA_PUBLIC_HTTP_STAGING_ENABLED', muxviaPublicHTTPStagingEnabled.toString()
-        buildConfigField 'String', 'MUXVIA_DEV_CONTROL_URL', muxviaPublicHTTPStagingEnabled ? '"http://114.66.58.243:41101"' : '"http://127.0.0.1:41001"'
-        buildConfigField 'String', 'MUXVIA_DEV_HUB_URL', muxviaPublicHTTPStagingEnabled ? '"http://114.66.58.243:41102"' : '"http://127.0.0.1:41002"'
+        buildConfigField 'boolean', 'MUXVIA_PUBLIC_HTTPS_STAGING_ENABLED', muxviaPublicHTTPSStagingEnabled.toString()
+        buildConfigField 'String', 'MUXVIA_DEV_CONTROL_URL', muxviaDevControlURL
+        buildConfigField 'String', 'MUXVIA_DEV_HUB_URL', muxviaDevHubURL
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61

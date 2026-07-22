@@ -19,19 +19,20 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Config 固定显式 development staging Control Plane/Hub origin 与 HTTP transport。
-// 默认必须是 loopback；AllowPublicHTTP 只能来自已验证的 staging-public-http manifest。
+// Config 固定显式 development staging Control Plane/Hub origin 与 HTTP transport client。
+// 默认必须是 loopback；公网 HTTP/HTTPS 开关只能来自对应且已验证的 staging manifest。
 type Config struct {
-	ControlPlaneURL string
-	HubID           string
-	HubURL          string
-	HubRegion       string
-	AllowPublicHTTP bool
-	HTTPClient      *http.Client
-	Now             func() time.Time
+	ControlPlaneURL  string
+	HubID            string
+	HubURL           string
+	HubRegion        string
+	AllowPublicHTTP  bool
+	AllowPublicHTTPS bool
+	HTTPClient       *http.Client
+	Now              func() time.Time
 }
 
-// Adapter 是 Cloud Companion 的显式 dev-local 网络 adapter。
+// Adapter 是 Cloud Companion 的显式 development staging 网络 adapter。
 // 它通过真实 HTTP socket 交换 cloud contract，不 import 或调用 Control Plane/Hub 进程内 Service。
 type Adapter struct {
 	controlURL string
@@ -42,14 +43,14 @@ type Adapter struct {
 	now        func() time.Time
 }
 
-// New 创建默认只允许 loopback 的 development adapter。
-// 非 http、带 userinfo/query/path或缺失 origin 均 fail closed；公网明文必须由调用方显式授权。
+// New 创建默认只允许 loopback HTTP 的 development adapter。
+// 非 canonical origin、带 userinfo/query/path 或缺失 host 均 fail closed；公网 HTTP/HTTPS 必须由调用方显式授权。
 func New(config Config) (*Adapter, error) {
-	control, err := validateServiceURL(config.ControlPlaneURL, config.AllowPublicHTTP)
+	control, err := validateServiceURL(config.ControlPlaneURL, config.AllowPublicHTTP, config.AllowPublicHTTPS)
 	if err != nil {
 		return nil, fmt.Errorf("invalid dev Control Plane adapter: %w", err)
 	}
-	hub, err := validateServiceURL(config.HubURL, config.AllowPublicHTTP)
+	hub, err := validateServiceURL(config.HubURL, config.AllowPublicHTTP, config.AllowPublicHTTPS)
 	if err != nil {
 		return nil, fmt.Errorf("invalid dev Hub adapter: %w", err)
 	}

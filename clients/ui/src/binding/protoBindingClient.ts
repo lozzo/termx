@@ -501,10 +501,8 @@ export class ProtoBindingConnector {
     if (!endpointId || input.machineId !== endpointId) throw new Error('endpoint identity mismatch')
     options?.onStatus?.('Connecting...')
     options?.onConnectionState?.({ machineId: input.machineId, phase: 'connecting', statusText: 'Connecting...', relayInUse: options.forceRelay === true })
-	if (options?.forceRelay) {
-		throw new Error('force relay requires a Go-owned route policy update')
-	}
     try {
+	  await this.applyManagedRelayPolicy(options?.forceRelay, options?.signal)
       const session = await this.client().openSession(create(MuxviaClientBinding.OpenSessionRequestSchema, {
 		requestId: crypto.randomUUID(), endpointId, routeOverride: this.input.routeId ?? '',
 		intent: MuxviaClientBinding.ConnectIntent.INTERACTIVE,
@@ -516,6 +514,32 @@ export class ProtoBindingConnector {
       options?.onConnectionState?.({ machineId: input.machineId, phase: 'failed', statusText: error instanceof Error ? error.message : 'Connection failed', relayInUse: options?.forceRelay === true })
       throw error
     }
+  }
+
+  private async applyManagedRelayPolicy(forceRelay: boolean | undefined, signal?: AbortSignal): Promise<void> {
+	if (forceRelay === undefined) return
+	const client = this.client()
+	const registry = await client.getEndpointRegistry(signal)
+	const endpoint = registry.endpoints.find((candidate) => candidate.endpointId === this.input.endpointId)
+	if (!endpoint) throw new Error(`endpoint ${this.input.endpointId} is unavailable`)
+	const relayMode = forceRelay
+	  ? MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY
+	  : MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_AUTO
+	let changed = false
+	const routes = endpoint.routes.map((route) => {
+	  const selected = !this.input.routeId || route.routeId === this.input.routeId
+	  if (!selected || route.route.case !== 'managedWebrtc' || route.route.value.relayMode === relayMode) return route
+	  changed = true
+	  return create(MuxviaRemoteAuth.EndpointRouteConfigV1Schema, {
+		...route,
+		route: {
+		  case: 'managedWebrtc',
+		  value: create(MuxviaRemoteAuth.ManagedWebRTCRouteConfigSchema, { ...route.route.value, relayMode }),
+		},
+	  })
+	})
+	if (!changed) return
+	await client.upsertEndpoint(create(MuxviaRemoteAuth.EndpointConfigV1Schema, { ...endpoint, routes }), false, signal)
   }
 }
 

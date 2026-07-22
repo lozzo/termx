@@ -91,6 +91,39 @@ func TestMobileActivationRequiresWebApprovalAndIsSingleUse(t *testing.T) {
 	}
 }
 
+func TestDaemonSessionRefreshRevalidatesOwnershipAndAssignment(t *testing.T) {
+	service, commerce, topology, now := newMobileActivationTestService(t)
+	registered, err := commerce.Register(context.Background(), &cloudpb.RegisterAccountRequest{Email: "daemon-refresh@muxvia.invalid", Password: "password-123"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := registered.GetSession().GetAccount()
+	const deviceID = "daemon-refresh-1"
+	if err := topology.PutDeviceOwnership(context.Background(), &cloudpb.CloudDevicePolicy{
+		AccountId: account.GetAccountId(), DeviceId: deviceID, DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision(), PublicKey: make([]byte, ed25519.PublicKeySize),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.registry.Assign(context.Background(), &cloudpb.HubAssignment{
+		DaemonDeviceId: deviceID, AccountId: account.GetAccountId(), HubId: "hub-1", AssignmentEpoch: 1,
+		NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(24 * time.Hour).UnixMilli(),
+	}, *now); err != nil {
+		t.Fatal(err)
+	}
+	credential, err := commerce.IssueDeviceSession(context.Background(), account.GetAccountId(), deviceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalRefresh := append([]byte(nil), credential.GetRefreshToken()...)
+	refreshed, err := service.refreshSession(context.Background(), httpapi.RefreshSessionWire{Kind: session.KindDevice, RefreshToken: originalRefresh})
+	if err != nil || refreshed.Kind != session.KindDevice || refreshed.DeviceID != deviceID || refreshed.HubID != "hub-1" || len(refreshed.AccessToken) == 0 || len(refreshed.RefreshToken) < 32 {
+		t.Fatalf("daemon refresh = %+v, %v", refreshed, err)
+	}
+	if _, err := service.refreshSession(context.Background(), httpapi.RefreshSessionWire{Kind: session.KindDevice, RefreshToken: originalRefresh}); err == nil {
+		t.Fatal("daemon refresh token was replayed")
+	}
+}
+
 func newMobileActivationTestService(t *testing.T) (*mobileActivationService, *cloudcommerce.Service, *cloudtopology.Service, *time.Time) {
 	t.Helper()
 	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
@@ -127,7 +160,7 @@ func newMobileActivationTestService(t *testing.T) (*mobileActivationService, *cl
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := newMobileActivationService(commerce, topology, issuer, "hub-1", "http://127.0.0.1:41002", "local-1", func() time.Time { return now }, func(string) {})
+	service, err := newMobileActivationService(commerce, topology, registry, issuer, "hub-1", "http://127.0.0.1:41002", "local-1", now.Add(48*time.Hour), func() time.Time { return now }, func(string) {})
 	if err != nil {
 		t.Fatal(err)
 	}

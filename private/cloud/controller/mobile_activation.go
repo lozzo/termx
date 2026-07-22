@@ -15,6 +15,7 @@ import (
 	"github.com/muxvia/muxvia/private/cloud/companion/cloudservice/httpapi"
 	"github.com/muxvia/muxvia/private/cloud/companion/session"
 	cloudcommerce "github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
 	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
 	webcontroller "github.com/muxvia/muxvia/private/cloud/web-controller"
@@ -52,22 +53,28 @@ type mobileActivationService struct {
 	codes              map[string]string
 	commerce           *cloudcommerce.Service
 	topology           *cloudtopology.Service
+	registry           *hubregistry.Registry
 	edgeIssuer         servicecredential.EdgeAccessIssuer
 	hubID              string
 	hubURL             string
 	hubRegion          string
+	daemonNotAfter     time.Time
 	now                func() time.Time
 	random             io.Reader
 	notifyPolicyChange func(string)
 }
 
-func newMobileActivationService(commerce *cloudcommerce.Service, topology *cloudtopology.Service, issuer servicecredential.EdgeAccessIssuer, hubID, hubURL, hubRegion string, now func() time.Time, notify func(string)) (*mobileActivationService, error) {
-	if commerce == nil || topology == nil || hubID == "" || now == nil || notify == nil {
+func newMobileActivationService(commerce *cloudcommerce.Service, topology *cloudtopology.Service, registry *hubregistry.Registry, issuer servicecredential.EdgeAccessIssuer, hubID, hubURL, hubRegion string, daemonNotAfter time.Time, now func() time.Time, notify func(string)) (*mobileActivationService, error) {
+	if commerce == nil || topology == nil || registry == nil || hubID == "" || now == nil || notify == nil {
+		return nil, errMobileActivationUnavailable
+	}
+	if !daemonNotAfter.After(now().UTC()) {
 		return nil, errMobileActivationUnavailable
 	}
 	return &mobileActivationService{
 		flows: make(map[string]mobileActivationFlow), codes: make(map[string]string),
-		commerce: commerce, topology: topology, edgeIssuer: issuer, hubID: hubID, hubURL: hubURL, hubRegion: hubRegion, now: now, random: rand.Reader, notifyPolicyChange: notify,
+		commerce: commerce, topology: topology, registry: registry, edgeIssuer: issuer, hubID: hubID, hubURL: hubURL, hubRegion: hubRegion,
+		daemonNotAfter: daemonNotAfter.UTC(), now: now, random: rand.Reader, notifyPolicyChange: notify,
 	}, nil
 }
 
@@ -193,7 +200,7 @@ func (service *mobileActivationService) complete(ctx context.Context, request *c
 }
 
 func (service *mobileActivationService) refreshSession(ctx context.Context, input httpapi.RefreshSessionWire) (httpapi.SessionWire, error) {
-	if input.Kind != session.KindAccount || len(input.RefreshToken) < 32 {
+	if input.Kind != session.KindAccount && input.Kind != session.KindDevice || len(input.RefreshToken) < 32 {
 		return httpapi.SessionWire{}, errMobileActivationUnavailable
 	}
 	rotated, err := service.commerce.RefreshDeviceSession(ctx, input.RefreshToken)
@@ -209,7 +216,56 @@ func (service *mobileActivationService) refreshSession(ctx context.Context, inpu
 	if err != nil || view.GetAccount().GetAuthRevision() != device.AuthEpoch {
 		return httpapi.SessionWire{}, errMobileActivationUnavailable
 	}
-	return service.issueSession(view.GetAccount(), rotated.ClientDeviceID, credential)
+	if input.Kind == session.KindAccount {
+		if device.Kind != cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT {
+			return httpapi.SessionWire{}, errMobileActivationUnavailable
+		}
+		return service.issueSession(view.GetAccount(), rotated.ClientDeviceID, credential)
+	}
+	if device.Kind != cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON {
+		return httpapi.SessionWire{}, errMobileActivationUnavailable
+	}
+	assignment, err := service.registry.Assignment(ctx, rotated.ClientDeviceID)
+	if err != nil || assignment.Value.GetAccountId() != device.AccountID || assignment.Value.GetHubId() != service.hubID {
+		return httpapi.SessionWire{}, errMobileActivationUnavailable
+	}
+	return service.issueDaemonSession(view.GetAccount(), rotated.ClientDeviceID, assignment.Value, credential)
+}
+
+// issueDaemonSession 在 refresh 单次轮换后重新验证 assignment，并签发同一 Hub 的 daemon edge credential。
+// 它不修改 DeviceIdentity、control enrollment 或 terminal grant；这些真值仍由 daemon 本地状态持有。
+func (service *mobileActivationService) issueDaemonSession(account *cloudpb.AccountProjection, deviceID string, assignment *cloudpb.HubAssignment, credential *cloudpb.AccountSessionCredential) (httpapi.SessionWire, error) {
+	if account == nil || assignment == nil || credential == nil || len(credential.GetRefreshToken()) < 32 {
+		return httpapi.SessionWire{}, errMobileActivationUnavailable
+	}
+	now := service.now().UTC()
+	expiresAt := now.Add(enrollmentSessionTTL)
+	assignmentExpiresAt := time.UnixMilli(assignment.GetExpiresAtUnixMillis()).UTC()
+	if assignmentExpiresAt.Before(expiresAt) {
+		expiresAt = assignmentExpiresAt
+	}
+	if service.daemonNotAfter.Before(expiresAt) {
+		expiresAt = service.daemonNotAfter
+	}
+	if expiresAt.Sub(now) < time.Minute {
+		return httpapi.SessionWire{}, errMobileActivationUnavailable
+	}
+	tokenID, err := service.randomID("edge")
+	if err != nil {
+		return httpapi.SessionWire{}, err
+	}
+	access, err := service.edgeIssuer.IssueEdgeAccessForPrincipal(tokenID, service.hubID, account.GetAccountId(), deviceID, servicecredential.EdgePrincipalDaemon, account.GetAuthRevision(), expiresAt.Sub(now), now)
+	if err != nil {
+		return httpapi.SessionWire{}, err
+	}
+	refreshToken := append([]byte(nil), credential.GetRefreshToken()...)
+	clear(credential.AccessToken)
+	clear(credential.RefreshToken)
+	return httpapi.SessionWire{
+		Kind: session.KindDevice, AccountID: account.GetAccountId(), AccountLabel: account.GetDisplayName(), DeviceID: deviceID,
+		ExpiresAt: expiresAt.Unix(), AccessToken: access, RefreshToken: refreshToken, RefreshExpiresAt: credential.GetRefreshExpiresAtUnixMillis() / 1000,
+		HubID: service.hubID, HubURL: service.hubURL, HubRegion: service.hubRegion, HubDirectoryVersion: 1,
+	}, nil
 }
 
 func (service *mobileActivationService) issueSession(account *cloudpb.AccountProjection, deviceID string, credential *cloudpb.AccountSessionCredential) (httpapi.SessionWire, error) {

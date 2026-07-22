@@ -212,6 +212,12 @@ func TestAgentRunContinuouslyRenewsFreshPresenceAfterStreamEOF(t *testing.T) {
 	}
 }
 
+func TestPresenceRenewableAcceptsTruncatedHTTPStream(t *testing.T) {
+	if !presenceRenewable(io.ErrUnexpectedEOF) {
+		t.Fatal("truncated HTTP presence stream must renew with a fresh challenge")
+	}
+}
+
 func TestAgentRunContinuouslyDoesNotRenewExplicitPresenceClose(t *testing.T) {
 	stream := cloudcompanion.NewFakePresenceStream(1)
 	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: "device revoked"}}})

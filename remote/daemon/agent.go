@@ -307,7 +307,7 @@ func (agent Agent) RunContinuously(ctx context.Context, retryDelay time.Duration
 }
 
 func presenceRenewable(err error) bool {
-	if errors.Is(err, io.EOF) {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return true
 	}
 	var cloudErr *cloudcompanion.Error

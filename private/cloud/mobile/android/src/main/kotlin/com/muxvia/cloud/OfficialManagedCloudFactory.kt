@@ -40,7 +40,7 @@ internal class OfficialManagedCloudAdapter(private val gateway: OfficialCloudGat
 
 /**
  * OfficialCloudGateway 是移动端账号 session、Control Plane 与 Hub SDK 的私有装配点。
- * 只有显式 loopback 或 public HTTP development profile 启用 dev contract；其他 Official 构建继续 fail closed。
+ * 只有显式 loopback、public HTTP 或 public HTTPS development profile 启用 dev contract；其他 Official 构建继续 fail closed。
  */
 internal class OfficialCloudGateway(context: Context) {
     private val development = if (BuildConfig.MUXVIA_DEV_CLOUD_ENABLED) {
@@ -48,6 +48,7 @@ internal class OfficialCloudGateway(context: Context) {
             BuildConfig.MUXVIA_DEV_CONTROL_URL,
             BuildConfig.MUXVIA_DEV_HUB_URL,
             allowPublicHTTP = BuildConfig.MUXVIA_PUBLIC_HTTP_STAGING_ENABLED,
+            allowPublicHTTPS = BuildConfig.MUXVIA_PUBLIC_HTTPS_STAGING_ENABLED,
             sessionStore = AndroidCloudSessionStore(context),
         )
     } else {

@@ -27,7 +27,7 @@
     },
     {
       "id": "pro",
-      "version": 1,
+      "version": 2,
       "billing_period_days": 30,
       "capabilities": {
         "managed_p2p_enabled": true,
@@ -35,7 +35,7 @@
         "standard_relay_enabled": true,
         "cloud_device_limit": 10,
         "relay": {
-          "allowed_regions": ["local-1"],
+          "allowed_regions": ["local-1", "us-west-1", "cn-east-1"],
           "allow_relay_mesh": false,
           "max_lease_seconds": 300,
           "max_bytes_per_lease": 268435456,
@@ -59,7 +59,7 @@
     },
     {
       "id": "team",
-      "version": 1,
+      "version": 2,
       "billing_period_days": 30,
       "capabilities": {
         "managed_p2p_enabled": true,
@@ -67,7 +67,7 @@
         "standard_relay_enabled": true,
         "cloud_device_limit": 50,
         "relay": {
-          "allowed_regions": ["local-1"],
+          "allowed_regions": ["local-1", "us-west-1", "cn-east-1"],
           "allow_relay_mesh": false,
           "max_lease_seconds": 300,
           "max_bytes_per_lease": 1073741824,

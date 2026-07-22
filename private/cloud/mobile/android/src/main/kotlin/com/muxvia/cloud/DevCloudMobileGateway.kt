@@ -34,11 +34,12 @@ internal class DevCloudMobileGateway(
     controlPlaneURL: String,
     hubURL: String,
     private val allowPublicHTTP: Boolean = false,
+    private val allowPublicHTTPS: Boolean = false,
     private val now: () -> Instant = { Instant.now() },
     private val sessionStore: CloudSessionStore = MemoryCloudSessionStore(),
 ) {
-    private val controlOrigin = validateOrigin(controlPlaneURL, allowPublicHTTP)
-    private val hubOrigin = validateOrigin(hubURL, allowPublicHTTP)
+    private val controlOrigin = validateOrigin(controlPlaneURL, allowPublicHTTP, allowPublicHTTPS)
+    private val hubOrigin = validateOrigin(hubURL, allowPublicHTTP, allowPublicHTTPS)
     private val sessionLock = Mutex()
     @Volatile private var accountSession: AccountSession? = null
 
@@ -121,7 +122,7 @@ internal class DevCloudMobileGateway(
     suspend fun listDevices(): List<ManagedCloudDevice> = withContext(Dispatchers.IO) {
         val session = accountSession()
         val response = postEdgeProto(
-            "$hubOrigin/v1/devices/list",
+            "${session.hubURL}/v1/devices/list",
             CloudCompanion.ListManagedDevicesRequest.newBuilder().setSchemaVersion(1).build(),
             CloudCompanion.ListManagedDevicesResponse.parser(),
             session,
@@ -149,11 +150,12 @@ internal class DevCloudMobileGateway(
 
     /** resolveProto 直接转发 Go Client Engine 的 cloudpb request，不建立 Kotlin endpoint/session 真值。 */
     suspend fun resolveProto(request: CloudCompanion.ResolveEndpointRequest): CloudCompanion.ResolvedEndpoint = withContext(Dispatchers.IO) {
+        val session = accountSession()
         val response = postEdgeProto(
-            "$hubOrigin/v1/endpoints/resolve",
+            "${session.hubURL}/v1/endpoints/resolve",
             request,
             CloudCompanion.ResolvedEndpoint.parser(),
-            accountSession(),
+            session,
         )
         if (response.endpointId != request.endpointId || response.targetDeviceId != request.targetDeviceId || response.managedSessionId.isBlank()) {
             fail("protocol", "Hub resolved a different managed endpoint")
@@ -163,7 +165,8 @@ internal class DevCloudMobileGateway(
 
     /** createSignalingProto 返回完整 signaling Proto event 序列，candidate/order 真值由 Go managed adapter 消费。 */
     suspend fun createSignalingProto(request: CloudCompanion.CreateSignalingSessionRequest): List<CloudCompanion.SignalingEvent> = withContext(Dispatchers.IO) {
-        val signaling = postHubStream("$hubOrigin/v1/signaling/create", accountSession(), request)
+        val session = accountSession()
+        val signaling = postHubStream("${session.hubURL}/v1/signaling/create", session, request)
         val candidates = signaling.candidates.map { candidate ->
             CloudCompanion.SignalingEvent.newBuilder()
                 .setCandidate(CloudCompanion.IceCandidate.newBuilder().setCandidate(candidate))
@@ -174,11 +177,12 @@ internal class DevCloudMobileGateway(
 
     /** acquireRelayProto 保留 Hub 签发的完整 lease；Kotlin 不提取或缓存 TURN material。 */
     suspend fun acquireRelayProto(request: CloudCompanion.AcquireRelayLeaseRequest): CloudCompanion.RelayLease = withContext(Dispatchers.IO) {
+        val session = accountSession()
         val lease = postEdgeProto(
-            "$hubOrigin/v1/relay/leases/acquire",
+            "${session.hubURL}/v1/relay/leases/acquire",
             request,
             CloudCompanion.RelayLease.parser(),
-            accountSession(),
+            session,
         )
         if (lease.pathKind != CloudTopology.ObservedPath.OBSERVED_PATH_SINGLE_RELAY || lease.expiresAtUnix <= now().epochSecond || lease.iceServersCount != 1) {
             fail("protocol", "Hub returned invalid Relay material")
@@ -252,7 +256,8 @@ internal class DevCloudMobileGateway(
 		val expiresAt = Instant.ofEpochSecond(json.requiredLong("expires_at_unix"))
 		val refreshExpiresAt = Instant.ofEpochSecond(json.requiredLong("refresh_expires_at_unix"))
 		val hubId = json.requiredString("hub_id")
-		val signedHubURL = json.requiredString("hub_url")
+		// Controller 签发的 session Hub 是当前 edge 路由真值；bootstrap Hub 只用于登录前装配。
+		val signedHubURL = validateOrigin(json.requiredString("hub_url"), allowPublicHTTP, allowPublicHTTPS)
 		val region = json.requiredString("hub_region")
 		val directoryVersion = json.requiredLong("hub_directory_version")
 		if (token.size < 16 || refreshToken.size < 32 || !now().isBefore(expiresAt) || !refreshExpiresAt.isAfter(expiresAt) || hubId.isBlank() || signedHubURL.isBlank() || region.isBlank() || directoryVersion <= 0) fail("login_required", "Control Plane account session is expired")
@@ -417,11 +422,13 @@ internal class DevCloudMobileGateway(
         const val MAX_SIGNAL_CANDIDATES = 256
 		const val REFRESH_WINDOW_SECONDS = 15 * 60L
 
-        fun validateOrigin(value: String, allowPublicHTTP: Boolean): String {
+        fun validateOrigin(value: String, allowPublicHTTP: Boolean, allowPublicHTTPS: Boolean): String {
             val uri = try { URI(value.trim()) } catch (_: Exception) { fail("protocol", "dev cloud origin is invalid") }
             val loopback = uri.host in setOf("127.0.0.1", "localhost", "::1")
-            if (uri.scheme != "http" || uri.userInfo != null || uri.path !in listOf("", null) || uri.query != null || uri.fragment != null ||
-                (!loopback && !allowPublicHTTP) || uri.host.isNullOrBlank() || uri.port !in 1..65535) {
+            val allowedScheme = uri.scheme == "http" && (loopback || allowPublicHTTP) || uri.scheme == "https" && allowPublicHTTPS
+            val validPort = uri.port == -1 || uri.port in 1..65535
+            if (!allowedScheme || uri.userInfo != null || uri.path !in listOf("", null) || uri.query != null || uri.fragment != null ||
+                uri.host.isNullOrBlank() || !validPort) {
                 fail("protocol", "dev cloud origin is not allowed by the selected staging profile")
             }
             return value.trim().trimEnd('/')

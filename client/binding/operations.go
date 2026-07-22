@@ -3,6 +3,7 @@ package binding
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/muxvia/muxvia/proto/bindingpb"
 	"google.golang.org/protobuf/proto"
@@ -233,6 +234,8 @@ func (engine *Engine) runImportPairing(handle uint64, ctx context.Context, host 
 	result.RequestId = request.GetRequestId()
 	result.OperationHandle = handle
 	if err != nil {
+		// 只记录错误链，不记录一次性 pairing payload、grant 或平台 credential。
+		log.Printf("muxvia binding pairing failed: %v", err)
 		result.Error = apiError(err)
 	}
 	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_ImportPairing{ImportPairing: result}})

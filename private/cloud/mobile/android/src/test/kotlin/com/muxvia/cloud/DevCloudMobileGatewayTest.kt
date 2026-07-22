@@ -125,7 +125,7 @@ class DevCloudMobileGatewayTest {
 
         try {
             val sessionStore = MemoryCloudSessionStore()
-            val gateway = DevCloudMobileGateway(control.origin, hub.origin, now = { now }, sessionStore = sessionStore)
+            val gateway = DevCloudMobileGateway(control.origin, "http://127.0.0.1:1", now = { now }, sessionStore = sessionStore)
             val loginFlow = gateway.beginLogin(ManagedCloudClientMetadata("Huawei test phone", "android", "test"))
             assertEquals("TERM-X", loginFlow.userCode)
             assertEquals("account-1", gateway.completeLogin(loginFlow.flowId).accountId)
@@ -135,7 +135,7 @@ class DevCloudMobileGatewayTest {
                 .build())
             assertEquals("managed-session-1", resolution.managedSessionId)
             control.close()
-            val restartedGateway = DevCloudMobileGateway(control.origin, hub.origin, now = { now }, sessionStore = sessionStore)
+            val restartedGateway = DevCloudMobileGateway(control.origin, "http://127.0.0.1:1", now = { now }, sessionStore = sessionStore)
             val offlineResolution = restartedGateway.resolveProto(CloudCompanion.ResolveEndpointRequest.newBuilder()
                 .setEndpointId("endpoint-control-down")
                 .setTargetDeviceId("daemon-1")
@@ -307,6 +307,20 @@ class DevCloudMobileGatewayTest {
         )
         val failure = assertThrows(ManagedEndpointFailure::class.java) {
             DevCloudMobileGateway("http://114.66.58.243:41101", "http://114.66.58.243:41102", now = { now })
+        }
+        assertEquals("protocol", failure.code)
+    }
+
+    @Test
+    fun acceptsPublicHTTPSOnlyWhenExplicitlyEnabled() {
+        DevCloudMobileGateway(
+            "https://muxvia.com",
+            "https://us1.edge.muxvia.com",
+            allowPublicHTTPS = true,
+            now = { now },
+        )
+        val failure = assertThrows(ManagedEndpointFailure::class.java) {
+            DevCloudMobileGateway("https://muxvia.com", "https://us1.edge.muxvia.com", now = { now })
         }
         assertEquals("protocol", failure.code)
     }

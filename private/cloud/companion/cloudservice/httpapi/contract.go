@@ -1,6 +1,7 @@
-// Package httpapi 实现显式 dev-local Companion 到 Control Plane/Hub 的私有 HTTP contract。
+// Package httpapi 实现显式 development Companion 到 Control Plane/Hub 的私有 HTTP contract。
 //
-// 该包只允许 loopback staging 地址，不是生产 TLS client。Payload 只包含 cloud protobuf、
+// 该包默认只允许 loopback staging 地址；公网 HTTP/HTTPS 必须由 manifest profile 显式授权。
+// 它仍是 development 装配，不是 production release channel。Payload 只包含 cloud protobuf、
 // account/device cloud authorization；CapabilityGrant、DeviceIdentity private key、
 // DataChannel 和 terminal payload 不属于任何 wire type。
 package httpapi
@@ -35,6 +36,9 @@ const (
 	// ProfileStagingPublicHTTP 是用户明确授权的无隧道公网明文 development staging。
 	// 它只能承载固定测试账号和短期内存 session；stable/production build 仍必须拒绝该 manifest。
 	ProfileStagingPublicHTTP = "staging-public-http"
+	// ProfileStagingPublicHTTPS 是用户明确选择的公网 TLS development staging。
+	// 它允许 Companion 连接受系统信任链校验的 HTTPS Controller/Hub，但不改变 build channel 门禁。
+	ProfileStagingPublicHTTPS = "staging-public-https"
 	// ProtobufMediaType 是 dev-local unary protobuf 与 CloudError response 的固定媒体类型。
 	ProtobufMediaType = "application/x-protobuf"
 	// JSONMediaType 是只承载 private session/edge envelope 的固定媒体类型。
@@ -118,17 +122,18 @@ func ParseManifest(data []byte) (Manifest, error) {
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return Manifest{}, fmt.Errorf("dev cloud manifest has trailing data")
 	}
-	if manifest.Version != ManifestVersion || manifest.Profile != ProfileDevLocal && manifest.Profile != ProfileStagingSSH && manifest.Profile != ProfileStagingPublicHTTP || manifest.HubID == "" || manifest.Region == "" || manifest.AccountLabel == "" || manifest.EnrollmentCode == "" {
+	if manifest.Version != ManifestVersion || manifest.Profile != ProfileDevLocal && manifest.Profile != ProfileStagingSSH && manifest.Profile != ProfileStagingPublicHTTP && manifest.Profile != ProfileStagingPublicHTTPS || manifest.HubID == "" || manifest.Region == "" || manifest.AccountLabel == "" || manifest.EnrollmentCode == "" {
 		return Manifest{}, fmt.Errorf("invalid dev cloud manifest metadata")
 	}
 	allowPublicHTTP := manifest.Profile == ProfileStagingPublicHTTP
-	if _, err := validateServiceURL(manifest.ControlPlaneURL, allowPublicHTTP); err != nil {
+	allowPublicHTTPS := manifest.Profile == ProfileStagingPublicHTTPS
+	if _, err := validateServiceURL(manifest.ControlPlaneURL, allowPublicHTTP, allowPublicHTTPS); err != nil {
 		return Manifest{}, fmt.Errorf("invalid dev Control Plane URL: %w", err)
 	}
-	if _, err := validateServiceURL(manifest.HubURL, allowPublicHTTP); err != nil {
+	if _, err := validateServiceURL(manifest.HubURL, allowPublicHTTP, allowPublicHTTPS); err != nil {
 		return Manifest{}, fmt.Errorf("invalid dev Hub URL: %w", err)
 	}
-	if err := validateTURNURL(manifest.RelayURL, manifest.Profile == ProfileStagingSSH || allowPublicHTTP); err != nil {
+	if err := validateTURNURL(manifest.RelayURL, manifest.Profile == ProfileStagingSSH || allowPublicHTTP || allowPublicHTTPS); err != nil {
 		return Manifest{}, fmt.Errorf("invalid dev Relay URL: %w", err)
 	}
 	if _, err := time.Parse(time.RFC3339, manifest.StartedAtRFC3339); err != nil {
@@ -189,23 +194,33 @@ type EdgeHubRequest struct {
 	Payload   []byte `json:"payload"`
 }
 
-func validateServiceURL(raw string, allowPublicHTTP bool) (*url.URL, error) {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || parsed.Scheme != "http" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "" {
-		return nil, fmt.Errorf("URL must be a canonical http origin")
+func validateServiceURL(raw string, allowPublicHTTP, allowPublicHTTPS bool) (*url.URL, error) {
+	trimmed := strings.TrimSpace(raw)
+	parsed, err := url.Parse(trimmed)
+	if err != nil || raw != trimmed || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "" {
+		return nil, fmt.Errorf("URL must be a canonical service origin")
 	}
 	host := parsed.Hostname()
-	if host == "localhost" {
-		return parsed, nil
+	if host == "" {
+		return nil, fmt.Errorf("URL host is required")
 	}
 	ip := net.ParseIP(host)
-	if ip != nil && ip.IsLoopback() {
-		return parsed, nil
+	loopback := host == "localhost" || ip != nil && ip.IsLoopback()
+	if port := parsed.Port(); port != "" {
+		portNumber, portErr := strconv.Atoi(port)
+		if portErr != nil || portNumber < 1 || portNumber > 65535 {
+			return nil, fmt.Errorf("URL port is invalid")
+		}
 	}
-	if !allowPublicHTTP || host == "" || ip != nil && (ip.IsUnspecified() || ip.IsMulticast()) {
+	if parsed.Scheme == "http" && (loopback || allowPublicHTTP) || parsed.Scheme == "https" && allowPublicHTTPS {
+		if ip == nil || !ip.IsUnspecified() && !ip.IsMulticast() {
+			return parsed, nil
+		}
+	}
+	if ip != nil && (ip.IsUnspecified() || ip.IsMulticast()) {
 		return nil, fmt.Errorf("URL host is not allowed by the staging profile")
 	}
-	return parsed, nil
+	return nil, fmt.Errorf("URL scheme or host is not allowed by the staging profile")
 }
 
 // WriteFrame 把一个 cloud protobuf 写成四字节大端长度前缀帧。

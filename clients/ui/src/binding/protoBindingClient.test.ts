@@ -5,8 +5,8 @@ import { ApiErrorCode, ApiErrorSchema, EndpointSessionStampSchema, ResourceHandl
 import { FileTransferCancelResultSchema, FileTransferHandleSchema, FileTransferOpenResultSchema, FileUploadOpenCommandSchema, FileUploadResumeHandleSchema } from '../generated/apipb/file_pb'
 import { TerminalListCommandSchema } from '../generated/apipb/terminal_pb'
 import { EndpointRegistryGetResultSchema, EndpointShareCommitResultSchema, EndpointSharePreviewSchema, EndpointShareReceiveResultSchema, EngineCommandSchema, EventEnvelopeSchema, ExecuteResultSchema, OpenSessionRequestSchema, OpenSessionResultSchema, ResourceStreamClosedEventSchema, ResourceStreamFrameSchema, ResourceStreamFrameType, SessionClosedEventSchema, SSHCredentialProvisionResultSchema } from '../generated/bindingpb/client_binding_pb'
-import { EndpointConfigV1Schema, EndpointRegistryV1Schema } from '../generated/remoteauthpb/remote_auth_pb'
-import { BindingOperation, ProtoBindingClient, type BindingOperationCode, type ProtoBindingBackend } from './protoBindingClient'
+import { EndpointConfigV1Schema, EndpointRegistryV1Schema, EndpointRouteConfigV1Schema, ManagedWebRTCRelayMode, ManagedWebRTCRouteConfigSchema } from '../generated/remoteauthpb/remote_auth_pb'
+import { BindingOperation, ProtoBindingClient, ProtoBindingConnector, type BindingOperationCode, type ProtoBindingBackend } from './protoBindingClient'
 
 class CancellationBackend implements ProtoBindingBackend {
   readonly released: bigint[] = []
@@ -144,6 +144,75 @@ describe('ProtoBindingClient engine command boundary', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(backend.released).toEqual([1n])
     await client.close()
+  })
+})
+
+describe('ProtoBindingConnector managed relay policy', () => {
+  it('persists relay-only before opening and restores auto for the next P2P attempt', async () => {
+	let relayMode = ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_AUTO
+	const openedModes: ManagedWebRTCRelayMode[] = []
+	const endpoint = () => create(EndpointConfigV1Schema, {
+	  schemaVersion: 1,
+	  endpointId: 'studio',
+	  routes: [create(EndpointRouteConfigV1Schema, {
+		schemaVersion: 1,
+		routeId: 'cloud',
+		enabled: true,
+		route: { case: 'managedWebrtc', value: create(ManagedWebRTCRouteConfigSchema, { targetDeviceId: 'device-1', relayMode }) },
+	  })],
+	})
+	const client = {
+	  getEndpointRegistry: vi.fn(async () => create(EndpointRegistryV1Schema, { schemaVersion: 1, endpoints: [endpoint()] })),
+	  upsertEndpoint: vi.fn(async (updated: ReturnType<typeof endpoint>) => {
+		relayMode = updated.routes[0]?.route.case === 'managedWebrtc' ? updated.routes[0].route.value.relayMode : ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_UNSPECIFIED
+		return { endpoint: updated }
+	  }),
+	  openSession: vi.fn(async () => {
+		openedModes.push(relayMode)
+		return { close: vi.fn() }
+	  }),
+	} as unknown as ProtoBindingClient
+	const connector = new ProtoBindingConnector(() => client, { endpointId: 'studio', routeId: 'cloud' })
+
+	await connector.connect({ machineId: 'studio' }, { forceRelay: true })
+	await connector.connect({ machineId: 'studio' }, { forceRelay: false })
+
+	expect(openedModes).toEqual([
+	  ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY,
+	  ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_AUTO,
+	])
+	expect(client.upsertEndpoint).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the current Go-owned relay policy when the caller does not select a mode', async () => {
+	const endpoint = create(EndpointConfigV1Schema, {
+	  schemaVersion: 1,
+	  endpointId: 'studio',
+	  routes: [create(EndpointRouteConfigV1Schema, {
+		schemaVersion: 1,
+		routeId: 'cloud',
+		enabled: true,
+		route: {
+		  case: 'managedWebrtc',
+		  value: create(ManagedWebRTCRouteConfigSchema, {
+			targetDeviceId: 'device-1',
+			relayMode: ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY,
+		  }),
+		},
+	  })],
+	})
+	const client = {
+	  getEndpointRegistry: vi.fn(async () => create(EndpointRegistryV1Schema, { schemaVersion: 1, endpoints: [endpoint] })),
+	  upsertEndpoint: vi.fn(),
+	  openSession: vi.fn(async () => ({ close: vi.fn() })),
+	} as unknown as ProtoBindingClient
+	const connector = new ProtoBindingConnector(() => client, { endpointId: 'studio', routeId: 'cloud' })
+
+	await connector.connect({ machineId: 'studio' })
+
+	expect(client.getEndpointRegistry).not.toHaveBeenCalled()
+	expect(client.upsertEndpoint).not.toHaveBeenCalled()
+	expect(client.openSession).toHaveBeenCalledTimes(1)
   })
 })
 
