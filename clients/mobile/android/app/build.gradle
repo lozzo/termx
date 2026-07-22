@@ -16,6 +16,10 @@ android {
     namespace = "com.muxvia.app"
     compileSdk = rootProject.ext.compileSdkVersion
     ndkVersion "27.2.12479018"
+    compileOptions {
+        // Cloud session 使用 java.time；minSdk 24/25 必须由 D8 提供兼容实现，不能在 factory 加载时 fail closed。
+        coreLibraryDesugaringEnabled true
+    }
     defaultConfig {
         applicationId "com.muxvia.app"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -97,6 +101,7 @@ repositories {
 
 dependencies {
     // muxvia NativeConnection dependencies
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
     implementation 'org.java-websocket:Java-WebSocket:1.5.6'
     implementation 'com.google.protobuf:protobuf-java:3.25.5'

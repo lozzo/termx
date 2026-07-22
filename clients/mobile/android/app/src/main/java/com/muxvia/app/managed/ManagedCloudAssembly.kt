@@ -1,6 +1,7 @@
 package com.muxvia.app.managed
 
 import android.content.Context
+import android.util.Log
 import muxvia.cloud.v1.CloudCompanion
 import muxvia.client.binding.v1.ClientBinding
 
@@ -26,10 +27,14 @@ object ManagedCloudAssembly {
             val factory = factoryClass.getDeclaredConstructor().newInstance() as? ManagedCloudModuleFactory
                 ?: return BrokenOfficialCloudAdapter("Official managed cloud factory has the wrong contract")
             factory.create(context.applicationContext)
-        } catch (_: Throwable) {
+        } catch (failure: Throwable) {
+            // factory 反射边界必须保留原始异常分类，避免物理设备兼容问题被误报成模块缺失。
+            Log.e(TAG, "Official managed cloud module initialization failed", failure)
             BrokenOfficialCloudAdapter("Official managed cloud module could not be loaded")
         }
     }
+
+    private const val TAG = "ManagedCloudAssembly"
 }
 
 private class BrokenOfficialCloudAdapter(private val detail: String) : ManagedCloudAdapter {

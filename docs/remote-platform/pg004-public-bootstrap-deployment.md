@@ -58,7 +58,8 @@ Controller 与 Edge 使用独立进程、配置、identity、state 目录和 res
 - Android 选择 `Use relay` 后，client 与 daemon 分别成功取得 `/v1/relay/leases/acquire`，随后完成 signaling；真实 TURN Relay session 保持超过 40 秒后仍可打开 `android-relay-success` terminal，terminal channel attach 和逐字符 input 均成功。
 - Relay workspace 的后台 inventory subscription 不再把“未指定 route policy”误当成 `AUTO`。只有用户明确选择 Relay/P2P 才更新 Go-owned Endpoint registry，避免后台订阅提升 generation 并使当前 Relay session stale。
 - Relay session 内远端文件面板成功列出 daemon 主机 `/` 与 `/tmp`；上传/下载内容校验未完成，不计为 file E2E PASS。
-- 最终复测 APK 为 ARM64 debug staging artifact，SHA-256 `8bf7be9e289b62e4c5ef04eae44d4d995b19f10e3da5ec55b9777456493ad286`；本轮 logcat 未发现 `FATAL EXCEPTION`、ANR、`SIGSEGV` 或 native fatal signal。
+- Android `minSdk 24` 的 Cloud module 使用 `java.time`，APK 已启用 core library desugaring；Android 7.0/7.1 不再因 factory 加载期缺少 `java.time.Instant` 被误报为 managed cloud module 未安装。初始化失败会保留原始异常到 `ManagedCloudAssembly` logcat。
+- 最终复测 APK 为 ARM64 debug staging artifact，SHA-256 `05c592693be9320629ae8dc5dff37c3333cceeb4f6de84969aea77c1347ddc4b`；APK 已确认包含 Official factory、HTTPS staging BuildConfig 与 `j$.time`，覆盖安装后正常进入 Machines 页面。本轮 logcat 未发现 `FATAL EXCEPTION`、ANR、`SIGSEGV` 或 native fatal signal。
 
 浏览器截图保存在本地 ignored artifact：
 
