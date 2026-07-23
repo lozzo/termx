@@ -12,13 +12,13 @@ import (
 
 func TestPeerConfigurationEnforcesCandidatePolicy(t *testing.T) {
 	servers := []*cloudpb.IceServer{{
-		Urls: []string{"stun:stun.example.com", "turn:turn.example.com"}, Username: "client", Credential: "secret",
+		Urls: []string{"stun:stun.example.com", "turn:turn.example.com?transport=udp", "turn:turn.example.com?transport=tcp"}, Username: "client", Credential: "secret",
 	}}
 	relay, err := peerConfiguration(servers, cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if relay.ICETransportPolicy != pionwebrtc.ICETransportPolicyRelay || len(relay.ICEServers) != 1 || len(relay.ICEServers[0].URLs) != 2 {
+	if relay.ICETransportPolicy != pionwebrtc.ICETransportPolicyRelay || len(relay.ICEServers) != 1 || len(relay.ICEServers[0].URLs) != 3 || relay.ICEServers[0].URLs[1] != "turn:turn.example.com?transport=udp" || relay.ICEServers[0].URLs[2] != "turn:turn.example.com?transport=tcp" {
 		t.Fatalf("relay configuration = %#v", relay)
 	}
 	direct, err := peerConfiguration(servers, cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY, false)

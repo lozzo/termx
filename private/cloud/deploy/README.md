@@ -6,8 +6,8 @@
 
 ## 部署单元
 
-- `155.94.155.192`：Controller、Web Controller、Edge primary、UDP Relay primary。
-- `114.66.58.243`：Edge secondary、UDP Relay secondary。
+- `155.94.155.192`：Controller、Web Controller、Edge primary、TURN Relay primary。
+- `114.66.58.243`：Edge secondary、TURN Relay secondary。
 - Supabase：`muxvia_staging` 独立 schema。
 
 `build-bundle.sh` 交叉编译 Linux/amd64 二进制并打包 Web 与 catalog。Controller 和 Edge 使用独立 systemd unit；两台服务器都使用专用 `muxvia` 用户，配置保持 `0600`，运行状态只写 `/var/lib/muxvia/`。
@@ -16,7 +16,7 @@
 
 - Controller public/operator/control：仅 host loopback `42001-42003/tcp`。
 - Edge Hub/health：仅 host loopback `42101-42102/tcp`。
-- 两台 Relay：`41003/udp`。
+- 两台 Relay：同端口 `41003/udp` 与 `41003/tcp`；lease 按 UDP、TCP 顺序下发，Pion 优先 UDP，并在代理或受限网络下回退 TCP。
 - 155 HTTPS：`443/tcp`，按 hostname 分发。
 - 114 secondary Hub HTTPS：`41102/tcp`，避免占用现有 FRP `443/tcp`。
 

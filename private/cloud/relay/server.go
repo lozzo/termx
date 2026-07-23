@@ -11,7 +11,7 @@ import (
 	pionturn "github.com/pion/turn/v4"
 )
 
-// ServerConfig 配置单节点 UDP TURN Relay。
+// ServerConfig 配置单节点 TURN Relay。
 // Authority 是唯一 credential/limit owner；Server 不接受静态 username/password 或 24h shared credential。
 type ServerConfig struct {
 	Authority  *Authority
@@ -24,6 +24,7 @@ type ServerConfig struct {
 type Server struct {
 	authority *Authority
 	packet    net.PacketConn
+	listener  net.Listener
 	turn      *pionturn.Server
 	generator *meteredRelayGenerator
 	publicIP  string
@@ -31,7 +32,7 @@ type Server struct {
 	closeErr  error
 }
 
-// NewServer 在 ListenAddr 启动 UDP TURN server，并把 AuthHandler 与 traffic meter 绑定到 Authority。
+// NewServer 在 ListenAddr 的同一端口启动 UDP/TCP TURN server，并把 AuthHandler 与 traffic meter 绑定到 Authority。
 // 监听失败、无 Authority 或 unspecified bind 缺 PublicIP 时返回错误，不回退共享 TURN secret。
 func NewServer(config ServerConfig) (*Server, error) {
 	if config.Authority == nil {
@@ -53,9 +54,15 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listen Relay UDP: %w", err)
 	}
+	// UDP 先取得动态端口，TCP 必须绑定同一地址，保证一个 Relay lease 可以发布有序的双 transport URL。
+	listener, err := net.Listen("tcp4", packet.LocalAddr().String())
+	if err != nil {
+		_ = packet.Close()
+		return nil, fmt.Errorf("listen Relay TCP: %w", err)
+	}
 	base := relayAddressGenerator(packet.LocalAddr(), publicIP)
 	generator := newMeteredRelayGenerator(base, config.Authority)
-	server := &Server{authority: config.Authority, packet: packet, generator: generator, publicIP: publicIP}
+	server := &Server{authority: config.Authority, packet: packet, listener: listener, generator: generator, publicIP: publicIP}
 	turnServer, err := pionturn.NewServer(pionturn.ServerConfig{
 		Realm:       config.Authority.realm,
 		AuthHandler: server.authHandler,
@@ -64,28 +71,42 @@ func NewServer(config ServerConfig) (*Server, error) {
 			OnAllocationDeleted: server.onAllocationDeleted,
 		},
 		PacketConnConfigs: []pionturn.PacketConnConfig{{PacketConn: packet, RelayAddressGenerator: generator}},
+		ListenerConfigs:   []pionturn.ListenerConfig{{Listener: listener, RelayAddressGenerator: generator}},
 	})
 	if err != nil {
 		_ = packet.Close()
+		_ = listener.Close()
 		return nil, fmt.Errorf("start Relay TURN server: %w", err)
 	}
 	server.turn = turnServer
 	return server, nil
 }
 
-// URL 返回 endpoint ICE config 使用的 UDP TURN URL。
+// URL 返回 manifest 和兼容调用方使用的主 UDP TURN URL。
+// 真实 Relay lease 必须使用 URLs 同时下发 UDP/TCP；该方法不代表唯一可用 transport。
 func (server *Server) URL() string {
-	if server == nil || server.packet == nil {
+	urls := server.URLs()
+	if len(urls) == 0 {
 		return ""
+	}
+	return urls[0]
+}
+
+// URLs 返回 Relay lease 使用的有序 TURN URL。
+// UDP 保持首选以降低交互延迟，TCP 作为 VPN、代理和受限网络下的 fallback；二者共享 caller-specific credential。
+func (server *Server) URLs() []string {
+	if server == nil || server.packet == nil || server.listener == nil {
+		return nil
 	}
 	host, port, err := net.SplitHostPort(server.packet.LocalAddr().String())
 	if err != nil {
-		return ""
+		return nil
 	}
 	if server.publicIP != "" {
 		host = server.publicIP
 	}
-	return "turn:" + net.JoinHostPort(host, port) + "?transport=udp"
+	base := "turn:" + net.JoinHostPort(host, port)
+	return []string{base + "?transport=udp", base + "?transport=tcp"}
 }
 
 // Addr 返回 TURN listener 的实际本地地址，供部署 health check 和 integration harness 使用。
@@ -163,8 +184,15 @@ func (server *Server) Close() error {
 	server.closeOnce.Do(func() {
 		if server.turn != nil {
 			server.closeErr = server.turn.Close()
-		} else if server.packet != nil {
-			server.closeErr = server.packet.Close()
+		} else {
+			var closeErrors []error
+			if server.packet != nil {
+				closeErrors = append(closeErrors, server.packet.Close())
+			}
+			if server.listener != nil {
+				closeErrors = append(closeErrors, server.listener.Close())
+			}
+			server.closeErr = errors.Join(closeErrors...)
 		}
 	})
 	return server.closeErr

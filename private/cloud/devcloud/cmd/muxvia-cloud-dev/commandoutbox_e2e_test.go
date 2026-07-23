@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -119,6 +120,8 @@ func TestSignedCloseCommandCrossesControllerEdgeAndDaemonHTTPBoundaries(t *testi
 	if clientLease.GetLeaseId() != daemonLease.GetLeaseId() || !bytes.Equal(clientLease.GetSignedLease(), daemonLease.GetSignedLease()) || len(clientLease.GetIceServers()) != 1 || len(daemonLease.GetIceServers()) != 1 || clientLease.GetIceServers()[0].GetUsername() == daemonLease.GetIceServers()[0].GetUsername() || clientLease.GetIceServers()[0].GetCredential() == daemonLease.GetIceServers()[0].GetCredential() {
 		t.Fatalf("caller-specific Relay lease mismatch: client=%v daemon=%v", clientLease, daemonLease)
 	}
+	assertRelayTransportURLs(t, clientLease.GetIceServers()[0].GetUrls())
+	assertRelayTransportURLs(t, daemonLease.GetIceServers()[0].GetUrls())
 	closeRelayPeers, sendRelayProbe, relayMessages := exchangeRelayData(t, clientLease.GetIceServers()[0], daemonLease.GetIceServers()[0], "cloudp005-usage-marker")
 	defer closeRelayPeers()
 	waitRelayUsageSettled(t, databaseKey, usageOutboxPath, account.GetAccountId())
@@ -234,6 +237,13 @@ func TestSignedCloseCommandCrossesControllerEdgeAndDaemonHTTPBoundaries(t *testi
 	waitCommandApplied(t, controllerRuntime.Manifest().PublicURL, cookies, accessCommand.GetCommandId())
 	if !accessStore.Revoked(accessRecord.RevocationID) {
 		t.Fatal("terminal grant remained active after applied Cloud revoke")
+	}
+}
+
+func assertRelayTransportURLs(t *testing.T, urls []string) {
+	t.Helper()
+	if len(urls) != 2 || !strings.HasSuffix(urls[0], "?transport=udp") || !strings.HasSuffix(urls[1], "?transport=tcp") {
+		t.Fatalf("Relay transport URLs = %v, want ordered UDP/TCP fallback", urls)
 	}
 }
 

@@ -3,6 +3,8 @@ package relay_test
 import (
 	"context"
 	"fmt"
+	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,6 +45,49 @@ func TestDirectAndLeaseBoundTURNCarryOpaqueDataChannel(t *testing.T) {
 	if len(events) != 1 || events[0].BytesUp+events[0].BytesDown == 0 {
 		t.Fatalf("TURN usage events = %#v", events)
 	}
+}
+
+func TestLeaseBoundTURNTCPCarriesOpaqueDataChannel(t *testing.T) {
+	fixture := newRelayFixture(t, 8, 10_000_000, 1_000_000)
+	activation, err := fixture.authority.ActivateLease(fixture.activationRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := relay.NewServer(relay.ServerConfig{Authority: fixture.authority, ListenAddr: "127.0.0.1:0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	urls := server.URLs()
+	if len(urls) != 2 || urls[0] != server.URL() || !strings.HasSuffix(urls[0], "?transport=udp") || !strings.HasSuffix(urls[1], "?transport=tcp") {
+		t.Fatalf("Relay transport URLs = %v", urls)
+	}
+	clientConfig := relayWebRTCConfig(urls[1], activation.ClientCredential)
+	daemonConfig := relayWebRTCConfig(urls[1], activation.DaemonCredential)
+	relayPair := exchangeDataChannel(t, clientConfig, daemonConfig, "relay-tcp-e2e-secret-marker")
+	defer relayPair.close()
+	if relayPair.candidateType != webrtc.ICECandidateTypeRelay {
+		t.Fatalf("managed TCP candidate type = %s, want relay", relayPair.candidateType)
+	}
+}
+
+func TestRelayStartupRequiresUDPAndTCPOnTheSamePort(t *testing.T) {
+	fixture := newRelayFixture(t, 2, 10_000_000, 1_000_000)
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	defer listener.Close()
+	if server, startErr := relay.NewServer(relay.ServerConfig{Authority: fixture.authority, ListenAddr: address}); startErr == nil {
+		_ = server.Close()
+		t.Fatal("Relay started without its required TCP fallback listener")
+	}
+	packet, err := net.ListenPacket("udp4", address)
+	if err != nil {
+		t.Fatalf("failed Relay startup leaked UDP listener: %v", err)
+	}
+	_ = packet.Close()
 }
 
 type peerPair struct {

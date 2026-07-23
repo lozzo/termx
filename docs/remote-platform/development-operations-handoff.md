@@ -58,8 +58,8 @@ muxvia-cloud-edge
 
 | 主机 | 当前角色 | 公网入口 |
 | --- | --- | --- |
-| `155.94.155.192` | Controller、Web、Operator、US West Edge、US Relay | `muxvia.com`、`operator.muxvia.com`、`control.muxvia.com`、`us1.edge.muxvia.com`、`155.94.155.192:41003/udp` |
-| `114.66.58.243` | China East Edge、China Relay | `cn1.edge.muxvia.com:41102`、`114.66.58.243:41003/udp` |
+| `155.94.155.192` | Controller、Web、Operator、US West Edge、US Relay | `muxvia.com`、`operator.muxvia.com`、`control.muxvia.com`、`us1.edge.muxvia.com`、`155.94.155.192:41003/udp+tcp` |
+| `114.66.58.243` | China East Edge、China Relay | `cn1.edge.muxvia.com:41102`、`114.66.58.243:41003/udp+tcp` |
 | Supabase Singapore | Controller PostgreSQL | project ref `avdjhfkmswaozpoysqrz`，IPv4 Session pooler `aws-0-ap-southeast-1.pooler.supabase.com:5432` |
 
 Controller 使用独立 schema：
@@ -113,6 +113,8 @@ hub_url: https://us1.edge.muxvia.com
 relay_url: turn:155.94.155.192:41003?transport=udp
 ```
 
+`relay_url` 是非秘密 manifest 的 UDP 主地址；真实 caller-specific Relay lease 在同一个 `IceServer.urls` 中按顺序下发 `transport=udp` 与 `transport=tcp`，二者共享短期 principal credential。
+
 2026-07-23 只读快照中，US Edge 的 Hub control generation 为 `342`、Relay generation 为 `46`、projection revision 为 `207`。这些数字会随重连和 projection 更新继续递增，只用于证明当时链路活跃，不能作为新服务器必须复现的固定值。
 
 ### 4.3 114 主机
@@ -164,7 +166,7 @@ relay_url: turn:114.66.58.243:41003?transport=udp
 | `us1.edge.muxvia.com` | `155.94.155.192` | DNS-only |
 | `cn1.edge.muxvia.com` | `114.66.58.243` | DNS-only |
 
-Hub、Controller control stream 和 TURN 不应经过 Cloudflare HTTP Proxy。Relay 是 UDP 直连。
+Hub、Controller control stream 和 TURN 不应经过 Cloudflare HTTP Proxy。Relay 同端口接受 UDP/TCP；Pion 以 UDP 为低延迟首选，并在 VPN、代理或受限网络阻断 UDP 时回退 TURN/TCP。
 
 证书：
 
@@ -188,25 +190,27 @@ notAfter: 2026-10-19 14:40:38 UTC
 127.0.0.1:42003/tcp  Operator API/Web
 127.0.0.1:42101/tcp  US Hub HTTP
 127.0.0.1:42102/tcp  US Edge health
-0.0.0.0:41003/udp    US TURN Relay
+0.0.0.0:41003/udp    US TURN Relay UDP
+0.0.0.0:41003/tcp    US TURN Relay TCP fallback
 0.0.0.0:80/tcp       shared Nginx container
 0.0.0.0:443/tcp      shared Nginx container
 ```
 
-主机当前没有 UFW，iptables INPUT 默认 ACCEPT。云厂商安全组仍需确认开放 `80/tcp`、`443/tcp` 和 `41003/udp`。
+主机当前没有 UFW，iptables INPUT 默认 ACCEPT。云厂商安全组仍需确认开放 `80/tcp`、`443/tcp`、`41003/udp` 和 `41003/tcp`。
 
 ### 6.2 114
 
 ```text
 127.0.0.1:42101/tcp  China Hub HTTP
 127.0.0.1:42102/tcp  China Edge health
-0.0.0.0:41003/udp    China TURN Relay
+0.0.0.0:41003/udp    China TURN Relay UDP
+0.0.0.0:41003/tcp    China TURN Relay TCP fallback
 0.0.0.0:41102/tcp    China Edge HTTPS Nginx
 0.0.0.0:80/tcp       existing FRP
 0.0.0.0:443/tcp      existing FRP
 ```
 
-UFW 当前 inactive，iptables INPUT 默认 ACCEPT。云安全组需要开放 `41102/tcp` 和 `41003/udp`。
+UFW 当前 inactive，iptables INPUT 默认 ACCEPT。云安全组需要开放 `41102/tcp`、`41003/udp` 和 `41003/tcp`。
 
 ## 7. 安装目录和 systemd
 

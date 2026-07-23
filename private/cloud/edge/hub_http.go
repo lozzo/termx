@@ -379,7 +379,8 @@ func (handler *hubHTTPHandler) handleAcquireRelayLease(writer http.ResponseWrite
 		return
 	}
 	response := proto.Clone(signed).(*cloudpb.RelayLease)
-	response.IceServers = []*cloudpb.IceServer{{Urls: []string{handler.relay.URL()}, Username: credential.Username, Credential: credential.Password}}
+	// Edge Relay 是 transport truth：同一 caller-specific credential 同时下发 UDP 首选和 TCP fallback。
+	response.IceServers = []*cloudpb.IceServer{{Urls: handler.relay.URLs(), Username: credential.Username, Credential: credential.Password}}
 	writeHubProto(writer, http.StatusOK, response)
 }
 

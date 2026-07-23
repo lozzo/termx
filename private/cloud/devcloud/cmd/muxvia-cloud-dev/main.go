@@ -271,7 +271,7 @@ func run(ctx context.Context, args []string) error {
 			if err != nil {
 				return err
 			}
-			config.RelayListen, err = reserveUDPAddress()
+			config.RelayListen, err = reserveRelayAddress()
 			if err != nil {
 				return err
 			}
@@ -345,13 +345,21 @@ func reserveTCPAddress() (string, error) {
 	return address, listener.Close()
 }
 
-func reserveUDPAddress() (string, error) {
-	listener, err := net.ListenPacket("udp", "127.0.0.1:0")
+// reserveRelayAddress 只为跨进程 fault harness 选择一个同时可绑定 UDP/TCP 的本地端口。
+func reserveRelayAddress() (string, error) {
+	packet, err := net.ListenPacket("udp4", "127.0.0.1:0")
 	if err != nil {
 		return "", err
 	}
-	address := listener.LocalAddr().String()
-	return address, listener.Close()
+	address := packet.LocalAddr().String()
+	listener, err := net.Listen("tcp4", address)
+	if err != nil {
+		_ = packet.Close()
+		return "", err
+	}
+	packetErr := packet.Close()
+	listenerErr := listener.Close()
+	return address, errors.Join(packetErr, listenerErr)
 }
 
 func developmentDevicePrivateKey(deviceID string) ed25519.PrivateKey {
