@@ -11,7 +11,7 @@ import (
 	"github.com/muxvia/muxvia/shared/cloudcompanion"
 )
 
-func TestResolveDialRouteAcquiresLeaseOnlyForExplicitRelay(t *testing.T) {
+func TestResolveDialRouteRelayOnlyUsesOnlyRelayLease(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0).UTC()
 	attempt := managedAttemptWithRelayMode(t, endpoint.RelayOnly)
 	cloud := &cloudcompanion.FakeClient{AcquireRelayLeaseFunc: func(_ context.Context, request *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
@@ -31,6 +31,59 @@ func TestResolveDialRouteAcquiresLeaseOnlyForExplicitRelay(t *testing.T) {
 	}
 	if !route.relayOnly || route.expectedPath != endpoint.PathSingleRelay || len(route.iceServers) != 1 || len(cloud.Requests().AcquireRelayLease) != 1 {
 		t.Fatalf("relay route = %#v requests=%+v", route, cloud.Requests())
+	}
+}
+
+func TestResolveDialRouteAutoAddsRelayWithoutForcingRelay(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0).UTC()
+	attempt := managedAttemptWithRelayMode(t, endpoint.RelayAuto)
+	cloud := &cloudcompanion.FakeClient{AcquireRelayLeaseFunc: func(_ context.Context, request *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
+		return &cloudpb.RelayLease{
+			LeaseId: "lease-auto", SignedLease: []byte("signed"), ExpiresAtUnix: uint64(now.Add(time.Minute).Unix()),
+			PathKind:   cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY,
+			IceServers: []*cloudpb.IceServer{{Urls: []string{"turn:relay.example.com"}, Username: "short", Credential: "secret"}},
+		}, nil
+	}}
+	policy, err := cloudcompanion.DialPolicyForRelayMode(endpoint.RelayAuto)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved := &cloudpb.ResolvedEndpoint{
+		ManagedSessionId: "managed-1",
+		IceServers:       []*cloudpb.IceServer{{Urls: []string{"stun:stun.example.com"}}},
+	}
+	route, err := resolveDialRoute(context.Background(), cloud, attempt, resolved, policy, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if route.relayOnly || route.expectedPath != "" || route.preference != cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY || len(route.iceServers) != 2 || len(cloud.Requests().AcquireRelayLease) != 1 {
+		t.Fatalf("auto route = %#v requests=%+v", route, cloud.Requests())
+	}
+}
+
+func TestResolveDialRouteAutoKeepsP2PWhenRelayCapabilityIsUnavailable(t *testing.T) {
+	for _, code := range []cloudpb.CloudErrorCode{
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENTITLEMENT_DENIED,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_QUOTA_EXHAUSTED,
+	} {
+		t.Run(code.String(), func(t *testing.T) {
+			attempt := managedAttemptWithRelayMode(t, endpoint.RelayAuto)
+			cloud := &cloudcompanion.FakeClient{AcquireRelayLeaseFunc: func(context.Context, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
+				return nil, &cloudcompanion.Error{Code: code}
+			}}
+			policy, err := cloudcompanion.DialPolicyForRelayMode(endpoint.RelayAuto)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resolved := &cloudpb.ResolvedEndpoint{ManagedSessionId: "managed-1", IceServers: []*cloudpb.IceServer{{Urls: []string{"stun:stun.example.com"}}}}
+			route, err := resolveDialRoute(context.Background(), cloud, attempt, resolved, policy, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if route.relayOnly || len(route.iceServers) != 1 || route.iceServers[0].GetUrls()[0] != "stun:stun.example.com" {
+				t.Fatalf("auto P2P fallback = %#v", route)
+			}
+		})
 	}
 }
 

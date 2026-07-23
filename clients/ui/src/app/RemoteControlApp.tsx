@@ -51,8 +51,10 @@ function localizedAppError(error: unknown, t: TFunction): string {
     case 'capability_expired':
     case 'authorization_revoked':
       return t('errors.pairAgain')
-    case 'temporary':
     case 'unavailable':
+    case 'route_unavailable':
+      return t('errors.connectionFailed')
+    case 'temporary':
       return t('errors.temporary')
     default:
       return t('errors.generic')

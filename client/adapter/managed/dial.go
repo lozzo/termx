@@ -36,7 +36,7 @@ type CloudClient interface {
 	ResolveEndpoint(context.Context, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error)
 	// CreateSignalingSession 提交 offer 并返回当前 session 的 answer/candidate stream。
 	CreateSignalingSession(context.Context, *cloudpb.CreateSignalingSessionRequest) (cloudcompanion.SignalingStream, error)
-	// AcquireRelayLease 仅为显式 relay-only policy 获取 principal-specific TURN material。
+	// AcquireRelayLease 为允许 STANDARD_RELAY 的 AUTO 或 relay-only policy 获取 principal-specific TURN material。
 	AcquireRelayLease(context.Context, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
 	// PlanManagedRoute 获取短期 SmartRoute 计划；客户端仍必须重新校验全部 material。
 	PlanManagedRoute(context.Context, *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error)

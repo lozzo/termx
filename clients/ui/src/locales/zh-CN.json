@@ -4,6 +4,7 @@
     "loginRequired": "请先登录 Muxvia Cloud。",
     "pairAgain": "此设备需要重新授权，请再次配对。",
     "storageRequired": "导入 Muxvia 连接码前需要启用本地存储。",
+    "connectionFailed": "无法连接到此设备，请检查手机和目标设备的网络后重试。",
     "temporary": "服务暂时不可用，请稍后重试。"
   },
   "common": {

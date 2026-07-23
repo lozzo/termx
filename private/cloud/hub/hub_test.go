@@ -65,6 +65,50 @@ func TestHubCreatesEdgeSessionAndAcceptsAnswerFromOwningPresence(t *testing.T) {
 	}
 }
 
+func TestHubAutoRelayOfferPreservesResolvedRelayCorrelationWithoutForcingRelay(t *testing.T) {
+	fixture := newFixture(t, 4, 4)
+	presence, _ := fixture.openEdgePresence(t)
+	defer presence.Close()
+	edgeIssuer, err := servicecredential.NewEdgeAccessIssuer("control-plane.test", fixture.signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientToken, err := edgeIssuer.IssueEdgeAccess("edge-token", "hub-eu", "account-1", "client-1", 1, time.Hour, fixture.clock.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.service.CreateRelayIntent("managed-auto", "account-1", "client-1", "daemon-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	client, err := fixture.service.CreateEdgeSession(context.Background(), hub.CreateEdgeSessionRequest{
+		EdgeToken:          clientToken,
+		AccountID:          "account-1",
+		ClientDeviceID:     "client-1",
+		ClientConnectionID: "connection-1",
+		TargetDeviceID:     "daemon-1",
+		RelayCorrelationID: "managed-auto",
+		SignalingSessionID: "signal-auto",
+		SDP:                "offer",
+		RoutePreference:    hub.RoutePreferenceStandardRelay,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	offerEvent, err := presence.Receive(context.Background())
+	if err != nil || offerEvent.Offer == nil {
+		t.Fatalf("AUTO offer = (%#v, %v)", offerEvent, err)
+	}
+	offer := offerEvent.Offer
+	if offer.ManagedSessionID != "managed-auto" || offer.RoutePreference != hub.RoutePreferenceStandardRelay || offer.RelayOnly {
+		t.Fatalf("AUTO offer correlation = %#v", offer)
+	}
+	if _, err := fixture.service.RelayIntent(offer.ManagedSessionID, "daemon-1"); err != nil {
+		t.Fatalf("daemon Relay intent lookup = %v", err)
+	}
+}
+
 func TestRelayIntentSharesLeaseAndRotatesNearExpiry(t *testing.T) {
 	fixture := newFixture(t, 4, 4)
 	if err := fixture.service.CreateRelayIntent("managed-1", "account-1", "client-1", "daemon-1"); err != nil {

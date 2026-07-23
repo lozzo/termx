@@ -1,7 +1,10 @@
 package pion
 
 import (
+	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	pionwebrtc "github.com/pion/webrtc/v4"
@@ -27,5 +30,27 @@ func TestPeerConfigurationEnforcesCandidatePolicy(t *testing.T) {
 	}
 	if _, err := peerConfiguration(servers, cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY, true); err == nil {
 		t.Fatal("direct-only route accepted relay-only policy")
+	}
+}
+
+func TestWaitReadyReturnsWhenChannelClosesBeforeOpen(t *testing.T) {
+	peer := &managedPeer{ready: make(chan struct{}), channelClosed: make(chan struct{}), readyTimeout: time.Second}
+	close(peer.channelClosed)
+	if err := peer.WaitReady(context.Background()); err == nil {
+		t.Fatal("closed DataChannel was reported ready")
+	}
+}
+
+func TestWaitReadyReturnsPeerFailureAndTimeout(t *testing.T) {
+	connectionFailed := make(chan error, 1)
+	connectionFailed <- errors.New("ICE failed")
+	peer := &managedPeer{ready: make(chan struct{}), channelClosed: make(chan struct{}), connectionFailed: connectionFailed, readyTimeout: time.Second}
+	if err := peer.WaitReady(context.Background()); err == nil || err.Error() != "ICE failed" {
+		t.Fatalf("peer failure = %v", err)
+	}
+
+	peer = &managedPeer{ready: make(chan struct{}), channelClosed: make(chan struct{}), connectionFailed: make(chan error), readyTimeout: time.Millisecond}
+	if err := peer.WaitReady(context.Background()); err == nil {
+		t.Fatal("WebRTC ready timeout unexpectedly succeeded")
 	}
 }

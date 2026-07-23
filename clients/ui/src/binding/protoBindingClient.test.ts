@@ -217,6 +217,29 @@ describe('ProtoBindingConnector managed relay policy', () => {
 })
 
 describe('ProtoBindingClient failed open ownership', () => {
+  it('preserves the stable Proto error code for localized user feedback', async () => {
+    const backend = new CancellationBackend()
+    backend.request = async (operation, _payload, handle) => {
+      if (operation === BindingOperation.OPEN_SESSION) {
+        queueMicrotask(() => backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+          event: { case: 'openSession', value: create(OpenSessionResultSchema, {
+            operationHandle: 1n,
+            error: create(ApiErrorSchema, { code: ApiErrorCode.UNAVAILABLE, message: 'sanitized connection failure', retryable: true }),
+          }) },
+        }))))
+        return 1n
+      }
+      if (operation === BindingOperation.RELEASE && handle) backend.released.push(handle)
+      return 0n
+    }
+    const client = new ProtoBindingClient(backend)
+    await expect(client.openSession(create(OpenSessionRequestSchema, { endpointId: 'studio' }))).rejects.toMatchObject({
+      code: 'unavailable',
+      retryable: true,
+    })
+    await client.close()
+  })
+
   it('releases failed open operations beyond the engine handle capacity', async () => {
     const backend = new CancellationBackend()
     let next = 0n

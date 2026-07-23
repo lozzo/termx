@@ -18,7 +18,10 @@ import (
 	pionwebrtc "github.com/pion/webrtc/v4"
 )
 
-const protocolChannelLabel = "protocol"
+const (
+	protocolChannelLabel    = "protocol"
+	managedPeerReadyTimeout = 15 * time.Second
+)
 
 // Factory 创建当前 native 进程使用的 Pion PeerConnection。
 // 它不持有 endpoint、credential、Cloud client 或 route winner，因此可被桌面与 Android Go library 共同复用。
@@ -66,22 +69,41 @@ func openPeer(peerFactory remotewebrtc.PeerConnectionFactory, configuration pion
 	}
 	ready := make(chan struct{})
 	closed := make(chan struct{})
+	connectionFailed := make(chan error, 1)
 	channelAdapter := remotewebrtc.NewChannel(channel)
-	value := &managedPeer{peer: peer, channel: channelAdapter, ready: ready, channelClosed: closed}
+	value := &managedPeer{
+		peer: peer, channel: channelAdapter, ready: ready, channelClosed: closed,
+		connectionFailed: connectionFailed, readyTimeout: managedPeerReadyTimeout,
+	}
 	channel.OnOpen(func() { value.readyOnce.Do(func() { close(ready) }) })
 	channelAdapter.SetCloseHandler(func() { value.channelCloseOnce.Do(func() { close(closed) }) })
+	peer.OnConnectionStateChange(func(state pionwebrtc.PeerConnectionState) {
+		var failure error
+		switch state {
+		case pionwebrtc.PeerConnectionStateFailed:
+			failure = fmt.Errorf("managed endpoint WebRTC peer failed before protocol channel became ready")
+		case pionwebrtc.PeerConnectionStateClosed:
+			failure = fmt.Errorf("managed endpoint WebRTC peer closed before protocol channel became ready")
+		default:
+			return
+		}
+		value.connectionFailureOnce.Do(func() { connectionFailed <- failure })
+	})
 	return value, nil
 }
 
 type managedPeer struct {
-	peer             *pionwebrtc.PeerConnection
-	channel          *remotewebrtc.Channel
-	ready            chan struct{}
-	readyOnce        sync.Once
-	channelClosed    chan struct{}
-	channelCloseOnce sync.Once
-	closeOnce        sync.Once
-	closeErr         error
+	peer                  *pionwebrtc.PeerConnection
+	channel               *remotewebrtc.Channel
+	ready                 chan struct{}
+	readyOnce             sync.Once
+	channelClosed         chan struct{}
+	channelCloseOnce      sync.Once
+	connectionFailed      chan error
+	connectionFailureOnce sync.Once
+	readyTimeout          time.Duration
+	closeOnce             sync.Once
+	closeErr              error
 }
 
 func (peer *managedPeer) Channel() port.ManagedMessageChannel { return peer.channel }
@@ -129,10 +151,27 @@ func (peer *managedPeer) ApplyAnswer(ctx context.Context, answer string, candida
 
 func (peer *managedPeer) WaitReady(ctx context.Context) error {
 	select {
+	case <-peer.ready:
+		return nil
+	default:
+	}
+	timeout := peer.readyTimeout
+	if timeout <= 0 {
+		timeout = managedPeerReadyTimeout
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-peer.ready:
 		return nil
+	case <-peer.channelClosed:
+		return fmt.Errorf("managed endpoint protocol DataChannel closed before becoming ready")
+	case err := <-peer.connectionFailed:
+		return err
+	case <-timer.C:
+		return fmt.Errorf("managed endpoint protocol DataChannel was not ready within %s", timeout)
 	}
 }
 

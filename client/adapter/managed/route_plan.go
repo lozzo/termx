@@ -22,8 +22,8 @@ type dialRoute struct {
 	selectionReason cloudcompanion.RouteSelectionReason
 }
 
-// resolveDialRoute 在显式 relay_only 下通过 Companion 获取 principal-specific RelayLease，在 smart_route 下请求私有 Planner 的短期计划。
-// 公开进程只执行受信 material，不自行签发 lease、选择未授权 TURN URL 或猜测候选评分。
+// resolveDialRoute 在 STANDARD_RELAY 下通过 Companion 获取 principal-specific RelayLease，在 smart_route 下请求私有 Planner 的短期计划。
+// AUTO 同时保留 P2P 与 TURN 候选，仅在产品契约明确拒绝 Relay 能力时继续 P2P；公开进程不自行签发或猜测 material。
 func resolveDialRoute(
 	ctx context.Context,
 	cloud CloudClient,
@@ -33,24 +33,37 @@ func resolveDialRoute(
 	now time.Time,
 ) (dialRoute, error) {
 	targetDeviceID := attempt.DaemonIdentity().DeviceID
-	if policy.RelayOnly {
-		if policy.RoutePreference != cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY {
-			return dialRoute{}, routePlanProtocolError("relay-only policy requires standard Relay service intent")
-		}
+	if policy.RelayOnly && policy.RoutePreference != cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY {
+		return dialRoute{}, routePlanProtocolError("relay-only policy requires standard Relay service intent")
+	}
+	if policy.RoutePreference == cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY {
 		request := &cloudpb.AcquireRelayLeaseRequest{
 			ManagedSessionId: resolved.GetManagedSessionId(), TargetDeviceId: targetDeviceID,
 			RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY,
 		}
 		lease, err := cloud.AcquireRelayLease(ctx, request)
 		if err != nil {
+			if !policy.RelayOnly && cloudcompanion.RelayLeaseUnavailableForAuto(err) {
+				return dialRoute{
+					iceServers: cloneRouteIceServers(resolved.GetIceServers()), preference: policy.RoutePreference,
+				}, nil
+			}
 			return dialRoute{}, err
 		}
 		if err := cloudcompanion.ValidateSingleRelayLease(request, lease, now); err != nil {
 			return dialRoute{}, err
 		}
+		iceServers := cloneRouteIceServers(lease.GetIceServers())
+		if !policy.RelayOnly {
+			iceServers = append(cloneRouteIceServers(resolved.GetIceServers()), iceServers...)
+		}
+		expectedPath := endpoint.Path("")
+		if policy.RelayOnly {
+			expectedPath = endpoint.PathSingleRelay
+		}
 		return dialRoute{
-			iceServers: lease.GetIceServers(), preference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY,
-			relayOnly: true, expectedPath: endpoint.PathSingleRelay,
+			iceServers: iceServers, preference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY,
+			relayOnly: policy.RelayOnly, expectedPath: expectedPath,
 		}, nil
 	}
 	if policy.RoutePreference != cloudpb.RoutePreference_ROUTE_PREFERENCE_SMART_ROUTE {
@@ -67,6 +80,19 @@ func resolveDialRoute(
 		return dialRoute{}, err
 	}
 	return validateManagedRoutePlan(request, plan, now)
+}
+
+func cloneRouteIceServers(servers []*cloudpb.IceServer) []*cloudpb.IceServer {
+	cloned := make([]*cloudpb.IceServer, 0, len(servers))
+	for _, server := range servers {
+		if server == nil {
+			continue
+		}
+		cloned = append(cloned, &cloudpb.IceServer{
+			Urls: append([]string(nil), server.GetUrls()...), Username: server.GetUsername(), Credential: server.GetCredential(),
+		})
+	}
+	return cloned
 }
 
 // validateManagedRoutePlan 在公开进程再次校验 Companion 输出。

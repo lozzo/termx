@@ -4,6 +4,7 @@
     "loginRequired": "Sign in to Muxvia Cloud to continue.",
     "pairAgain": "This device needs fresh authorization. Pair it again.",
     "storageRequired": "Local storage is required before importing a Muxvia code.",
+    "connectionFailed": "Could not connect to this device. Check both devices' networks and try again.",
     "temporary": "The service is temporarily unavailable. Please try again."
   },
   "common": {

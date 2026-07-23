@@ -79,6 +79,8 @@ Controller 与 Edge 使用独立进程、配置、identity、state 目录和 res
 - Edge Presence cold-start 错误不再折叠成永久 admission failure；daemon 按 `PresenceReady.heartbeat_seconds` 的两周期 deadline 识别反向代理保留的半开 stream。US Edge 重启后，同一 daemon/Companion 进程重新建立到新 Edge PID 的 Presence upstream。相同 Linux Edge 二进制 SHA-256 `49b10d6c5c3d2bce2cba42f6add988bd778e7fcbbe4c91d775b8f7083a3e27e0` 已部署到 US/CN，两端 health 为 `204`。
 - Android native generation 会在默认网络变化时关闭旧 Go engine、session/resource/event pump，并重建 Go binding。Hub 明确返回、且证明没有创建 signaling session 的 retryable P2P quota conflict 由 Go managed Dialer 在 75 秒窗口内有界重试；网络超时、认证、协议和其他结果不确定失败不自动重放。ARM64/API 35 模拟器从活跃 Wi-Fi session 切到 cellular 后约 32 秒恢复同一 terminal inventory，cellular 切回 Wi-Fi 约 2 秒恢复；旧 generation 遮罩被新 inventory 成功提交清除，logcat 无 Java/native crash。
 - 网络恢复验收 APK SHA-256 为 `b3f42aaa69129bc79ebfc502c5ba67eafdebd18a76abdb2ba19f1dbbbcb0a2fa`。
+- AUTO 跨 NAT 修复由 Go Client Engine 在 `STANDARD_RELAY` 下主动取得 client caller-specific TURN，并把 STUN/P2P 与 TURN material 同时交给 Pion；daemon 从 offer 为自己的 principal 取得同一 RelayIntent 下的 TURN。Hub 现在让 AUTO signaling 沿用 resolve 返回的 `managed_session_id`，同时保持 `relay_only=false` 和 managed P2P reservation，避免 daemon 因 correlation 改写而取得 `401`。`managedPeer.WaitReady` 在 PeerConnection failed/closed、DataChannel close 或 15 秒 deadline 时显式返回；generated `UNAVAILABLE` 保留到 UI 并显示“检查两端网络后重试”。
+- 修复前实体 Android 16/API 36 手机在移动网络上复现 client Relay lease `200`、daemon Relay lease `401` 与持续等待；修复后的 Go client/daemon/Hub regression、`make test-private`、双 Edge 进程门禁、Client/UI/Android 门禁均通过。公网 US/CN Edge 已滚动更新为 SHA-256 `e7e5c31fd2665602f682f58a5a23095e859060fbe7a9ac4417a723ba4e6c8b9d`，服务端本机与公网 health 均为 `204`，旧版本保存在 `/opt/muxvia/rollback/pre-pg004-auto-turn-20260723/`。本轮 ARM64 APK 与实体设备 `base.apk` SHA-256 均为 `17ff87eebf654aa93cff260b89455f61d6b482a96ce66392e0d980879b6e83ac`，实体 App 已确认失败后停止 loading 并显示上述本地化提示；按用户要求，修复后的主回归直接在 Go 层完成，未把一次新的完整 5G terminal UI 流程计为 PASS。
 
 浏览器截图保存在本地 ignored artifact：
 
@@ -94,13 +96,12 @@ Controller 与 Edge 使用独立进程、配置、identity、state 目录和 res
 
 ## 当前限制
 
-1. 本轮实体手机使用移动网络执行默认 AUTO pairing 时，Hub resolve 与双端 signaling 已完成，但客户端没有申请 TURN，ICE host candidate 跨 NAT 无法建立 DataChannel；`managedPeer.WaitReady` 也没有在 ICE failure/channel close 后结束，App 因而持续显示“正在配对”。这不影响 `PG004-HUBSEL` 的 Controller assignment 结论，但属于后续 managed P2P/Relay 弱网可靠性缺陷，不能记作本轮 terminal E2E PASS。
-2. Relay terminal attach/input 与远端文件浏览通过；上传、下载、取消和内容摘要校验尚未完成。最近一次复测没有产生 `/v1/relay/leases/acquire`，因此不能把该次 UI 切换记作新的 Relay PASS。
-3. 长时间空闲的 managed P2P 可能形成半开 application session：既有 terminal inventory 已经成功，但后续 file list 和 terminal attach 没有响应。该问题属于后续弱网/保活可靠性，不得用 UI 定时刷新或盲目重放非幂等 command 掩盖；文件 E2E 必须使用可确认 Ready 的新 session 继续验收。
-4. 当前部署 credential window 到 `2026-08-20T15:41:28Z`。到期前必须完成正式 key 配置/轮换或重新生成 staging 资产。
-5. Let's Encrypt 证书到期日为 2026-10-19；当前已删除临时 Cloudflare credential，自动续期尚未配置。
-6. R2 age 加密上传和独立恢复仍是 PG004 的未完成门禁；现有 Cloudflare token 只有 DNS 权限，k8s、开发机和 155 服务器均未发现 R2/S3 access key。
-7. 真实支付、邮件验证和密码找回未接入；bootstrap staging 不得作为商业生产发布。
+1. Relay terminal attach/input 与远端文件浏览通过；上传、下载、取消和内容摘要校验尚未完成，不能记为完整 file E2E PASS。
+2. 长时间空闲的 managed P2P 可能形成半开 application session：既有 terminal inventory 已经成功，但后续 file list 和 terminal attach 没有响应。该问题属于后续弱网/保活可靠性，不得用 UI 定时刷新或盲目重放非幂等 command 掩盖；文件 E2E 必须使用可确认 Ready 的新 session 继续验收。
+3. 当前部署 credential window 到 `2026-08-20T15:41:28Z`。到期前必须完成正式 key 配置/轮换或重新生成 staging 资产。
+4. Let's Encrypt 证书到期日为 2026-10-19；当前已删除临时 Cloudflare credential，自动续期尚未配置。
+5. R2 age 加密上传和独立恢复仍是 PG004 的未完成门禁；现有 Cloudflare token 只有 DNS 权限，k8s、开发机和 155 服务器均未发现 R2/S3 access key。
+6. 真实支付、邮件验证和密码找回未接入；bootstrap staging 不得作为商业生产发布。
 
 ## 仓库门禁
 

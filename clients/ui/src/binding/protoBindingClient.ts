@@ -626,8 +626,29 @@ class ProtoBindingResourceStream implements ProtoResourceStream {
   }
 }
 
-function apiError(error: { message?: string } | undefined, fallback: string): Error {
-  return new Error(error?.message || fallback)
+function apiError(error: { code?: MuxviaApiCommon.ApiErrorCode, message?: string, retryable?: boolean } | undefined, fallback: string): Error {
+  const result = new Error(error?.message || fallback) as Error & { code?: string, retryable?: boolean }
+  const code = error ? apiErrorCode(error.code) : ''
+  if (code) result.code = code
+  if (typeof error?.retryable === 'boolean') result.retryable = error.retryable
+  return result
+}
+
+function apiErrorCode(code: MuxviaApiCommon.ApiErrorCode | undefined): string {
+  switch (code) {
+    case MuxviaApiCommon.ApiErrorCode.INVALID_REQUEST: return 'invalid_request'
+    case MuxviaApiCommon.ApiErrorCode.UNSUPPORTED_VERSION: return 'unsupported_version'
+    case MuxviaApiCommon.ApiErrorCode.UNSUPPORTED_CAPABILITY: return 'unsupported_capability'
+    case MuxviaApiCommon.ApiErrorCode.UNAUTHORIZED: return 'unauthenticated'
+    case MuxviaApiCommon.ApiErrorCode.FORBIDDEN: return 'forbidden'
+    case MuxviaApiCommon.ApiErrorCode.NOT_FOUND: return 'not_found'
+    case MuxviaApiCommon.ApiErrorCode.CONFLICT: return 'conflict'
+    case MuxviaApiCommon.ApiErrorCode.STALE_SESSION: return 'stale_session'
+    case MuxviaApiCommon.ApiErrorCode.CANCELLED: return 'cancelled'
+    case MuxviaApiCommon.ApiErrorCode.UNAVAILABLE: return 'unavailable'
+    case MuxviaApiCommon.ApiErrorCode.INTERNAL: return 'internal'
+    default: return ''
+  }
 }
 
 function bindingOperationHandle(envelope: MuxviaClientBinding.EventEnvelope): bigint | undefined {

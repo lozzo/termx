@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { muxviaI18n } from '../i18n'
@@ -56,6 +56,19 @@ describe('RemoteControlApp first-use experience', () => {
 
     expect(await screen.findByText('This device cannot scan a QR code. Enter the same pairing code below.')).toBeTruthy()
     expect(screen.getByLabelText('Pairing code or share link')).toBeTruthy()
+  })
+
+  it('ends pairing and shows an actionable message when the connection is unavailable', async () => {
+    const failure = Object.assign(new Error('sanitized connection failure'), { code: 'unavailable' })
+    renderApp({ cloudAccount: null, pairingImport: async () => { throw failure } })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Add local device' }))
+    const sheet = screen.getByTestId('muxvia-pair-sheet')
+    await userEvent.type(within(sheet).getByLabelText('Pairing code or share link'), 'MXP1-TEST')
+    await userEvent.click(within(sheet).getByRole('button', { name: 'Add device' }))
+
+    expect(await screen.findByText('Could not connect to this device. Check both devices\' networks and try again.')).toBeTruthy()
+    expect((within(sheet).getByRole('button', { name: 'Add device' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('keeps technical device identity in details instead of the main row', async () => {
@@ -116,10 +129,12 @@ describe('RemoteControlApp first-use experience', () => {
 function renderApp({
   cloudAccount,
   machines = [],
+  pairingImport,
   scanPairingCode,
 }: {
   cloudAccount: { accountId: string; accountLabel: string } | null
   machines?: Awaited<ReturnType<CloudAccountAdapter['listMachines']>>
+  pairingImport?: ExternalPairingAdapter['import'] | undefined
   scanPairingCode?: (() => Promise<string | null>) | undefined
 }) {
   const storage = new MemoryStorage()
@@ -138,7 +153,7 @@ function renderApp({
     logout: async () => {},
   }
   const externalPairingAdapter: ExternalPairingAdapter = {
-    import: async () => null,
+    import: pairingImport ?? (async () => null),
     isAuthorized: () => true,
     forget: () => {},
   }

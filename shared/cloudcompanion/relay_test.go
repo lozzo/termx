@@ -1,6 +1,7 @@
 package cloudcompanion
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -8,6 +9,27 @@ import (
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestRelayLeaseUnavailableForAutoOnlyAcceptsProductDenial(t *testing.T) {
+	for _, code := range []cloudpb.CloudErrorCode{
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENTITLEMENT_DENIED,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_QUOTA_EXHAUSTED,
+	} {
+		if !RelayLeaseUnavailableForAuto(&Error{Code: code}) {
+			t.Fatalf("AUTO did not accept product denial %s", code)
+		}
+	}
+	for _, err := range []error{
+		errors.New("network failure"),
+		&Error{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY},
+		&Error{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED},
+		&Error{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL},
+	} {
+		if RelayLeaseUnavailableForAuto(err) {
+			t.Fatalf("AUTO accepted unsafe Relay fallback for %v", err)
+		}
+	}
+}
 
 func TestValidateSingleRelayLeaseRejectsUnsafeMaterial(t *testing.T) {
 	now := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)

@@ -4,15 +4,17 @@ import (
 	"context"
 )
 
-// CreateEdgeSessionRequest 描述 client 使用启动阶段 edge token 发起的 managed direct offer。
-// ClientConnectionID 来自 Hub 已认证连接，不能由不可信 payload 覆盖；ManagedSessionID 由 Hub 生成。
+// CreateEdgeSessionRequest 描述 client 使用启动阶段 edge token 发起的 managed offer。
+// ClientConnectionID 来自 Hub 已认证连接，不能由不可信 payload 覆盖；STANDARD_RELAY
+// 使用 resolve 阶段的 RelayCorrelationID 关联 client 与 daemon 共享的短期 RelayIntent。
 type CreateEdgeSessionRequest struct {
 	EdgeToken          []byte
 	AccountID          string
 	ClientDeviceID     string
 	ClientConnectionID string
 	TargetDeviceID     string
-	// RelayCorrelationID 只供 CLOUD010 前尚未迁移的 relay_only lease 关联；direct 路径忽略该值。
+	// RelayCorrelationID 是 resolve 阶段创建 RelayIntent 时返回的 managed session ID。
+	// STANDARD_RELAY 的 AUTO 与 relay-only signaling 必须原样转发该值，其他 route 忽略。
 	RelayCorrelationID string
 	SignalingSessionID string
 	SDP                string
@@ -32,10 +34,12 @@ func (service *Service) CreateEdgeSession(_ context.Context, request CreateEdgeS
 		return nil, ErrAdmission
 	}
 	managedSessionID := "edge-" + request.SignalingSessionID
-	if request.RelayOnly {
+	if request.RelayOnly || request.RoutePreference == RoutePreferenceStandardRelay {
 		if request.RelayCorrelationID == "" {
 			return nil, ErrInvalidSignal
 		}
+		// AUTO 仍保留 P2P reservation 与 relayOnly=false；这里只固定 client/daemon
+		// 两端申请 TURN 时共同使用的 RelayIntent correlation truth。
 		managedSessionID = request.RelayCorrelationID
 	}
 	if err := service.validateOffer(request.AccountID, request.ClientDeviceID, request.TargetDeviceID, managedSessionID, request.SignalingSessionID, request.SDP, request.Candidates, request.RoutePreference, request.RelayOnly); err != nil {

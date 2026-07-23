@@ -141,6 +141,39 @@ func TestAgentAcquiresDaemonCredentialForRelayOnlyOffer(t *testing.T) {
 	}
 }
 
+func TestAgentAddsDaemonRelayCredentialForAutoOffer(t *testing.T) {
+	stream := cloudcompanion.NewFakePresenceStream(3)
+	ready := managedReady("presence-auto")
+	ready.IceServers = []*cloudpb.IceServer{{Urls: []string{"stun:stun.example.com"}}}
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: ready}})
+	autoOffer := managedOffer("device-auto", "presence-auto", "signal-auto", "managed-auto", 1)
+	autoOffer.RoutePreference = cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: autoOffer}})
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: "done"}}})
+
+	identity := testAgentIdentity(t, "device-auto")
+	now := time.Date(2026, 7, 24, 1, 0, 0, 0, time.UTC)
+	companion := agentCompanion(t, identity, now, stream)
+	companion.AcquireRelayLeaseFunc = func(context.Context, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
+		return &cloudpb.RelayLease{
+			LeaseId: "lease-auto", SignedLease: []byte("signed-lease"), ExpiresAtUnix: uint64(now.Add(time.Minute).Unix()),
+			PathKind:   cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY,
+			IceServers: []*cloudpb.IceServer{{Urls: []string{"turn:127.0.0.1:3478?transport=udp"}, Username: "daemon-short", Credential: "daemon-secret"}},
+		}, nil
+	}
+	companion.CompleteSignalingOfferFunc = func(context.Context, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error) {
+		return &cloudpb.CompleteSignalingOfferResponse{}, nil
+	}
+	answerer := &fakeOfferAnswerer{answer: &cloudpb.SignalingAnswer{Sdp: "answer-sdp"}}
+	if err := (Agent{Companion: companion, Identity: identity, Answerer: answerer, Runtime: newTestManagedRuntime(t, identity.DeviceID), Now: func() time.Time { return now }}).Run(context.Background()); !errors.Is(err, ErrPresenceClosed) {
+		t.Fatalf("Run error = %v", err)
+	}
+	requests := companion.Requests().AcquireRelayLease
+	if len(requests) != 1 || len(answerer.iceServers) != 2 || answerer.iceServers[1].GetUsername() != "daemon-short" {
+		t.Fatalf("auto daemon Relay requests=%#v ICE=%#v", requests, answerer.iceServers)
+	}
+}
+
 func TestAgentSignsFreshPresenceChallengeInsideDaemon(t *testing.T) {
 	stream := cloudcompanion.NewFakePresenceStream(1)
 	if err := stream.Fail(io.EOF); err != nil {
