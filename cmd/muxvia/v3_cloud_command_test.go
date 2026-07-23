@@ -209,14 +209,22 @@ func TestCloudEnrollSignsChallengeWithDaemonIdentity(t *testing.T) {
 	defer func() { v3CloudNow = previousNow }()
 	challengeBytes := bytes.Repeat([]byte{0x44}, 32)
 	var beginRequest *cloudpb.BeginDeviceEnrollmentRequest
+	previousProbe := probeV3CloudEnrollmentHubCandidates
+	probeV3CloudEnrollmentHubCandidates = func(_ context.Context, candidates []*cloudpb.HubEnrollmentCandidate) ([]*cloudpb.HubReachabilityObservation, error) {
+		if len(candidates) != 1 || candidates[0].GetHubId() != "hub-1" {
+			t.Fatalf("enrollment candidates = %v", candidates)
+		}
+		return []*cloudpb.HubReachabilityObservation{{HubId: "hub-1", Reachable: true, LatencyMillis: 12}}, nil
+	}
+	defer func() { probeV3CloudEnrollmentHubCandidates = previousProbe }()
 	fake := &closableCloudFake{FakeClient: &cloudcompanion.FakeClient{
 		BeginDeviceEnrollmentFunc: func(_ context.Context, request *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error) {
 			beginRequest = request
-			return &cloudpb.DeviceEnrollmentChallenge{FlowId: "enroll-1", ChallengeId: "challenge-1", Challenge: challengeBytes, ExpiresAtUnix: uint64(now.Add(time.Minute).Unix())}, nil
+			return &cloudpb.DeviceEnrollmentChallenge{FlowId: "enroll-1", ChallengeId: "challenge-1", Challenge: challengeBytes, ExpiresAtUnix: uint64(now.Add(time.Minute).Unix()), HubCandidates: []*cloudpb.HubEnrollmentCandidate{{HubId: "hub-1", HubUrl: "https://hub.example.test", HealthUrl: "https://hub.example.test/healthz", Region: "local-1"}}}, nil
 		},
 		CompleteDeviceEnrollmentFunc: func(_ context.Context, request *cloudpb.CompleteDeviceEnrollmentRequest) (*cloudpb.CompleteDeviceEnrollmentResponse, error) {
 			proof := request.GetProof()
-			if beginRequest == nil || beginRequest.GetOneTimeCode() != "ONE-TIME-CODE" || !bytes.Equal(beginRequest.GetDevicePublicKey(), proof.GetDevicePublicKey()) {
+			if beginRequest == nil || beginRequest.GetOneTimeCode() != "ONE-TIME-CODE" || !bytes.Equal(beginRequest.GetDevicePublicKey(), proof.GetDevicePublicKey()) || len(request.GetHubObservations()) != 1 || request.GetHubObservations()[0].GetLatencyMillis() != 12 {
 				t.Fatalf("enrollment request/proof mismatch: begin=%v proof=%v", beginRequest, proof)
 			}
 			signingBytes, err := cloudcompanion.EnrollmentProofSigningBytes(&cloudpb.DeviceEnrollmentProofInput{

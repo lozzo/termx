@@ -319,6 +319,28 @@ AssignDaemon(device, targetHub, now):
 
 旧 Hub fence ack 与绝对 lease expiry 是仅有的迁移放行条件。fence ack 必须匹配 `migration_id + fence_command_id + source_hub_id + source_assignment_epoch + fence_control_generation`。不能因为 control stream 断开、健康检查失败或用户再次点击就跳过 fencing。`HUB002` 先冻结 assignment 事务与精确 epoch fence 状态；`HUB004` 使用统一 CommandOutbox 持久投递 `FenceAssignment` 和接收独立结果，不再建立第二套 migration-only outbox。
 
+#### 5.2.1 PG004-HUBSEL 首次 enrollment 选址
+
+跨边界 schema 位于 `proto/cloudpb/cloud_companion.proto`：
+
+```text
+DeviceEnrollmentChallenge.hub_candidates[] -> HubEnrollmentCandidate
+CompleteDeviceEnrollmentRequest.hub_observations[] -> HubReachabilityObservation
+```
+
+实现 owner 与链路：
+
+1. `private/cloud/controller.DeploymentConfig` 为每个已注册 deployment 配置公开 `hub_url`、`health_url` 和 `max_assignments`；正式 URL 使用 HTTPS，loopback HTTP 只允许 development harness。
+2. Controller 只从 enabled registry、当前 active Hub control attachment 和未满容量构造候选，按 Hub ID 稳定排序并截断到 100。
+3. enrollment challenge 只发送 Hub ID、公开 Hub URL、health URL 和 region；精确 assignment 数与容量仅留在 Controller 内部，不能作为跨租户 fleet 摘要暴露给 daemon。
+4. `client/adapter/managed` 使用最多 16 个 worker、每候选独立 timeout、禁止 redirect 的 HTTP client 探测 health URL；`cmd/muxvia` 只编排调用和提交 generated Proto，不拥有网络选择算法。
+5. enrollment flow 内存保存 Controller 实际签发的候选集合。complete 阶段重新生成当前候选，拒绝伪造/重复 observation，只在“当时签发且现在仍有效”的交集中选择。
+6. Controller 排序固定为：可达优先 -> 延迟低优先 -> 当前 assignment 少优先 -> `device_id + hub_id` 稳定 hash；全部不可达或无观测时从 assignment 数开始确定性降级。
+7. 新 daemon 通过现有 PostgreSQL `MoveAssignment` 单事务写 epoch 1；已有 assignment 不能借 enrollment 迁移。EdgeAccess token audience、返回 `hub_id/hub_url/region` 和持久 assignment 必须一致。
+8. Companion 对 account/mobile session 继续严格校验启动 manifest；daemon enrollment 和 daemon refresh 则接受 Controller 返回并完成 URL 安全校验的动态 assignment Hub directory。
+
+手机连接目标 daemon 不执行上述候选探测。它继续按 target-owner resolve 得到目标 daemon 当前 assignment 的唯一 Hub；本切片不增加 Hub-to-Hub forwarding、自动 migration 或手机侧 Hub 选择。
+
 ### 5.3 topology ingest 事务
 
 daemon runtime 与 Hub reconciliation 是两个不同替换范围。Control Plane 都先从持久 directory/assignment 推导 account 和 owner，不信任 Hub payload 自带的 account：

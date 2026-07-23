@@ -205,7 +205,7 @@ func generate(ctx context.Context, value options, deploymentDSN string) error {
 			RelayId:                       relayID, RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(relayPublic),
 		}
 		return edgeMaterial{
-			deployment: controller.DeploymentConfig{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic)},
+			deployment: controller.DeploymentConfig{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic), PublicHubURL: publicHubURL, HealthURL: strings.TrimSuffix(publicHubURL, "/") + "/healthz", MaxAssignments: 10_000},
 			config: edge.Config{
 				ControllerURL: value.controllerURL, PublicHubURL: publicHubURL,
 				HubListen: "127.0.0.1:42101", HealthListen: "127.0.0.1:42102", RelayListen: "0.0.0.0:41003", RelayPublicIP: publicIP,

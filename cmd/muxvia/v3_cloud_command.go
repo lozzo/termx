@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	managedadapter "github.com/muxvia/muxvia/client/adapter/managed"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	remotev2daemon "github.com/muxvia/muxvia/remote/daemon"
 	"github.com/muxvia/muxvia/shared/cloudcompanion"
@@ -25,8 +26,9 @@ import (
 )
 
 var (
-	v3CloudNow                = func() time.Time { return time.Now().UTC() }
-	readV3CloudEnrollmentCode = defaultReadV3CloudEnrollmentCode
+	v3CloudNow                          = func() time.Time { return time.Now().UTC() }
+	readV3CloudEnrollmentCode           = defaultReadV3CloudEnrollmentCode
+	probeV3CloudEnrollmentHubCandidates = managedadapter.ProbeEnrollmentCandidates
 )
 
 func v3CloudCommand() *cobra.Command {
@@ -317,6 +319,10 @@ func v3CloudEnrollCommand() *cobra.Command {
 			if err != nil {
 				return actionableCloudEnrollmentError(err)
 			}
+			observations, err := probeV3CloudEnrollmentHubCandidates(cmd.Context(), challenge.GetHubCandidates())
+			if err != nil {
+				return fmt.Errorf("probe managed Cloud Hub candidates: %w", err)
+			}
 			signedAt := v3CloudNow()
 			signingBytes, err := cloudcompanion.EnrollmentProofSigningBytes(&cloudpb.DeviceEnrollmentProofInput{
 				FlowId: challenge.GetFlowId(), ChallengeId: challenge.GetChallengeId(), Challenge: append([]byte(nil), challenge.GetChallenge()...),
@@ -329,7 +335,7 @@ func v3CloudEnrollCommand() *cobra.Command {
 			completeRequest := &cloudpb.CompleteDeviceEnrollmentRequest{
 				FlowId: challenge.GetFlowId(), Proof: &cloudpb.DeviceProof{
 					DeviceId: identity.DeviceID, DevicePublicKey: append([]byte(nil), identity.PublicKey...), ChallengeId: challenge.GetChallengeId(), Signature: signature, SignedAtUnixNano: signedAt.UnixNano(),
-				},
+				}, HubObservations: observations,
 			}
 			response, err := completeV3CloudEnrollment(cmd.Context(), client, challenge, completeRequest)
 			clear(signature)

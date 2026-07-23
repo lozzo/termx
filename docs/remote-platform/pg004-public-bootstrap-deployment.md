@@ -8,6 +8,8 @@
 
 该环境仍不是正式商业生产：支付仍为测试 provider，R2 备份恢复和完整 Android file E2E 尚未通过。Android account refresh、Edge 重启后的 daemon Presence 恢复和活跃 session 网络切换已经完成真实公网验收。
 
+`PG004-HUBSEL` 的仓库实现已接通 Proto 候选/观测、Controller active/capacity 筛选与最终 assignment、Go Client Engine 16-worker health 探测、Companion daemon 动态 Hub directory 和 daemon refresh。现有 devcloud supervisor 已新增一个 Controller + 两个独立 Edge 的真实 enrollment 测试，验证两个 health 端点、Controller 最终 assignment、返回目录和 EdgeAccess token audience。当前工作机未配置 `MUXVIA_DEV_POSTGRES_DSN`，因此该进程测试只完成编译，尚未形成公网 staging PASS；本节不得据此把 `PG004-HUBSEL` 或 `PG004` 标记完成。
+
 当前公网 Controller 已把 daemon enrollment 收敛为内存持有的十分钟 128-bit 单次 flow：任意已登录账号创建 code，daemon 提交公开 metadata、DeviceIdentity public key 和 device ID，Web 核对后批准，CLI 再以 DeviceIdentity proof 完成。pending flow 不进入 PostgreSQL，Controller 重启后统一失效；完成后的设备归属、Hub assignment 和 session 继续持久化。手机 activation 使用相同的 Web 核对批准语义，二维码与手工输入的 `MXA-...` 登录码指向同一 flow。
 
 ## 部署拓扑
@@ -86,12 +88,13 @@ Controller 与 Edge 使用独立进程、配置、identity、state 目录和 res
 
 ## 当前限制
 
-1. Relay terminal attach/input 与远端文件浏览通过；上传、下载、取消和内容摘要校验尚未完成。最近一次复测没有产生 `/v1/relay/leases/acquire`，因此不能把该次 UI 切换记作新的 Relay PASS。
-2. 长时间空闲的 managed P2P 可能形成半开 application session：既有 terminal inventory 已经成功，但后续 file list 和 terminal attach 没有响应。该问题属于后续弱网/保活可靠性，不得用 UI 定时刷新或盲目重放非幂等 command 掩盖；文件 E2E 必须使用可确认 Ready 的新 session 继续验收。
-3. 当前部署 credential window 到 `2026-08-20T15:41:28Z`。到期前必须完成正式 key 配置/轮换或重新生成 staging 资产。
-4. Let's Encrypt 证书到期日为 2026-10-19；当前已删除临时 Cloudflare credential，自动续期尚未配置。
-5. R2 age 加密上传和独立恢复仍是 PG004 的未完成门禁；现有 Cloudflare token 只有 DNS 权限，k8s、开发机和 155 服务器均未发现 R2/S3 access key。
-6. 真实支付、邮件验证和密码找回未接入；bootstrap staging 不得作为商业生产发布。
+1. `PG004-HUBSEL` 尚未使用真实 PostgreSQL 运行双 Edge enrollment 进程测试，也尚未部署到公网 Controller/Edge；线上 enrollment 仍以部署版本行为为准。
+2. Relay terminal attach/input 与远端文件浏览通过；上传、下载、取消和内容摘要校验尚未完成。最近一次复测没有产生 `/v1/relay/leases/acquire`，因此不能把该次 UI 切换记作新的 Relay PASS。
+3. 长时间空闲的 managed P2P 可能形成半开 application session：既有 terminal inventory 已经成功，但后续 file list 和 terminal attach 没有响应。该问题属于后续弱网/保活可靠性，不得用 UI 定时刷新或盲目重放非幂等 command 掩盖；文件 E2E 必须使用可确认 Ready 的新 session 继续验收。
+4. 当前部署 credential window 到 `2026-08-20T15:41:28Z`。到期前必须完成正式 key 配置/轮换或重新生成 staging 资产。
+5. Let's Encrypt 证书到期日为 2026-10-19；当前已删除临时 Cloudflare credential，自动续期尚未配置。
+6. R2 age 加密上传和独立恢复仍是 PG004 的未完成门禁；现有 Cloudflare token 只有 DNS 权限，k8s、开发机和 155 服务器均未发现 R2/S3 access key。
+7. 真实支付、邮件验证和密码找回未接入；bootstrap staging 不得作为商业生产发布。
 
 ## 仓库门禁
 

@@ -193,16 +193,23 @@ func run(ctx context.Context, args []string) error {
 	deploymentConfigs := make([]controller.DeploymentConfig, 0, 2)
 	edgeKeys := map[string]ed25519.PrivateKey{}
 	relayKeys := map[string]ed25519.PrivateKey{}
+	hubListens := map[string]string{}
 	for _, hubID := range []string{"hub-edge-a", "hub-edge-b"} {
 		hubPublic, hubPrivate, _ := ed25519.GenerateKey(rand.Reader)
 		relayPublic, relayPrivate, _ := ed25519.GenerateKey(rand.Reader)
 		edgeID := "edge-" + hubID
+		hubListen, listenErr := reserveTCPAddress()
+		if listenErr != nil {
+			return listenErr
+		}
+		hubURL := "http://" + hubListen
 		metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: edgeID, Region: "local-1", PublicLabel: hubID, HubId: hubID, HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublic), RelayId: "relay-" + hubID, RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(relayPublic)}
-		deploymentConfigs = append(deploymentConfigs, controller.DeploymentConfig{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic)})
+		deploymentConfigs = append(deploymentConfigs, controller.DeploymentConfig{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic), PublicHubURL: hubURL, HealthURL: hubURL + "/healthz", MaxAssignments: 1_000})
 		edgeKeys[hubID] = hubPrivate
 		relayKeys[hubID] = relayPrivate
+		hubListens[hubID] = hubListen
 	}
-	controllerConfig := controller.Config{PostgresDSN: controllerPostgresDSN, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Devices: devices, Assignments: assignments, DevelopmentMobileHubID: "hub-edge-a", DevelopmentMobileHubURL: "http://127.0.0.1:41002", DevelopmentMobileHubRegion: "local-1", OperatorID: "development-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes), WebStaticDir: webStaticDir}
+	controllerConfig := controller.Config{PostgresDSN: controllerPostgresDSN, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Devices: devices, Assignments: assignments, DevelopmentMobileHubID: "hub-edge-a", DevelopmentMobileHubURL: deploymentConfigs[0].PublicHubURL, DevelopmentMobileHubRegion: "local-1", OperatorID: "development-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes), WebStaticDir: webStaticDir}
 	if *faultHarness {
 		controllerConfig.PublicListen, err = reserveTCPAddress()
 		if err != nil {
@@ -250,7 +257,7 @@ func run(ctx context.Context, args []string) error {
 	}()
 	for _, deployment := range deploymentConfigs {
 		hubID := deployment.Metadata.GetHubId()
-		config := edge.Config{ControllerURL: controllerRuntime.InternalControlURL, HubListen: "127.0.0.1:0", HealthListen: "127.0.0.1:0", RelayListen: "127.0.0.1:0", UsageOutboxPath: filepath.Join(artifactDir, hubID+"-usage.outbox"), Metadata: deployment.Metadata, HubControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(edgeKeys[hubID]), RelayControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(relayKeys[hubID]), ControllerProjectionKeyID: projectionKeyID, ControllerProjectionPublicKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPublic)}
+		config := edge.Config{ControllerURL: controllerRuntime.InternalControlURL, HubListen: hubListens[hubID], HealthListen: "127.0.0.1:0", RelayListen: "127.0.0.1:0", UsageOutboxPath: filepath.Join(artifactDir, hubID+"-usage.outbox"), Metadata: deployment.Metadata, HubControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(edgeKeys[hubID]), RelayControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(relayKeys[hubID]), ControllerProjectionKeyID: projectionKeyID, ControllerProjectionPublicKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPublic)}
 		if *faultHarness {
 			proxy, proxyErr := newControlFaultProxy(controllerRuntime.InternalControlURL[len("http://"):])
 			if proxyErr != nil {
@@ -260,10 +267,6 @@ func run(ctx context.Context, args []string) error {
 			hub007FaultProxies.Store(hubID, proxy)
 			defer hub007FaultProxies.Delete(hubID)
 			config.ControllerURL = proxy.URL()
-			config.HubListen, err = reserveTCPAddress()
-			if err != nil {
-				return err
-			}
 			config.HealthListen, err = reserveTCPAddress()
 			if err != nil {
 				return err

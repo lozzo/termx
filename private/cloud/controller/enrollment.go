@@ -6,12 +6,14 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
@@ -43,26 +45,34 @@ type enrollmentFlow struct {
 	userCode        string
 	codeDigest      string
 	accountID       string
-	hubID           string
 	state           cloudpb.DaemonEnrollmentState
 	challengeID     string
 	challenge       []byte
 	deviceID        string
 	devicePublicKey ed25519.PublicKey
 	metadata        *cloudpb.DeviceMetadata
+	hubCandidates   []*cloudpb.HubEnrollmentCandidate
 	expiresAt       time.Time
 	order           *list.Element
 	completing      bool
+}
+
+// enrollmentHubCandidate 把客户端可探测的公开目录与 Controller 私有容量真值绑定。
+// assignment 数和容量不得进入 enrollment Proto；它们只参与 complete 阶段的最终选择。
+type enrollmentHubCandidate struct {
+	value           *cloudpb.HubEnrollmentCandidate
+	assignmentCount uint64
+	maxAssignments  uint64
 }
 
 // enrollmentService 是 Controller 对 daemon enrollment 短期 flow 的内存真值。
 // 重启会使全部 pending flow 失效；完成后的设备归属、assignment 和 session 仍由持久领域持有。
 type enrollmentService struct {
 	mu                 sync.Mutex
-	defaultHubID       string
 	commerce           *cloudcommerce.Service
 	topology           *cloudtopology.Service
 	registry           *hubregistry.Registry
+	candidateProvider  func(context.Context, time.Time) ([]enrollmentHubCandidate, error)
 	edgeIssuer         servicecredential.EdgeAccessIssuer
 	controlKeyID       string
 	controlPublicKey   ed25519.PublicKey
@@ -77,10 +87,10 @@ type enrollmentService struct {
 }
 
 type enrollmentServiceConfig struct {
-	DefaultHubID       string
 	Commerce           *cloudcommerce.Service
 	Topology           *cloudtopology.Service
 	Registry           *hubregistry.Registry
+	CandidateProvider  func(context.Context, time.Time) ([]enrollmentHubCandidate, error)
 	EdgeIssuer         servicecredential.EdgeAccessIssuer
 	ControlKeyID       string
 	ControlPublicKey   ed25519.PublicKey
@@ -91,16 +101,16 @@ type enrollmentServiceConfig struct {
 }
 
 func newEnrollmentService(config enrollmentServiceConfig) (*enrollmentService, error) {
-	if config.DefaultHubID == "" || config.Commerce == nil || config.Topology == nil || config.Registry == nil || config.ControlKeyID == "" || len(config.ControlPublicKey) != ed25519.PublicKeySize || !config.ControlNotAfter.After(config.ControlNotBefore) {
+	if config.Commerce == nil || config.Topology == nil || config.Registry == nil || config.CandidateProvider == nil || config.ControlKeyID == "" || len(config.ControlPublicKey) != ed25519.PublicKeySize || !config.ControlNotAfter.After(config.ControlNotBefore) {
 		return nil, fmt.Errorf("invalid daemon enrollment configuration")
 	}
 	if config.Now == nil {
 		config.Now = time.Now
 	}
 	return &enrollmentService{
-		defaultHubID: config.DefaultHubID,
-		commerce:     config.Commerce, topology: config.Topology, registry: config.Registry, edgeIssuer: config.EdgeIssuer,
-		controlKeyID: config.ControlKeyID, controlPublicKey: append(ed25519.PublicKey(nil), config.ControlPublicKey...),
+		commerce: config.Commerce, topology: config.Topology, registry: config.Registry, edgeIssuer: config.EdgeIssuer,
+		candidateProvider: config.CandidateProvider,
+		controlKeyID:      config.ControlKeyID, controlPublicKey: append(ed25519.PublicKey(nil), config.ControlPublicKey...),
 		controlNotBefore: config.ControlNotBefore.UTC(), controlNotAfter: config.ControlNotAfter.UTC(),
 		now: config.Now, random: rand.Reader, notifyPolicyChange: config.NotifyPolicyChange,
 		flows: make(map[string]*enrollmentFlow), codes: make(map[string]string), expiry: list.New(),
@@ -143,7 +153,7 @@ func (service *enrollmentService) CreateDaemonEnrollment(ctx context.Context, ac
 	if code == "" {
 		return nil, errEnrollmentBusy
 	}
-	flow := &enrollmentFlow{flowID: flowID, userCode: code, codeDigest: digest, accountID: accountID, hubID: service.defaultHubID, state: cloudpb.DaemonEnrollmentState_DAEMON_ENROLLMENT_STATE_WAITING_FOR_DEVICE, expiresAt: now.Add(enrollmentFlowTTL)}
+	flow := &enrollmentFlow{flowID: flowID, userCode: code, codeDigest: digest, accountID: accountID, state: cloudpb.DaemonEnrollmentState_DAEMON_ENROLLMENT_STATE_WAITING_FOR_DEVICE, expiresAt: now.Add(enrollmentFlowTTL)}
 	flow.order = service.expiry.PushBack(flow)
 	service.flows[flowID], service.codes[digest] = flow, flowID
 	return daemonEnrollmentProjection(flow), nil
@@ -176,7 +186,7 @@ func (service *enrollmentService) ApproveDaemonEnrollment(_ context.Context, acc
 	return &cloudpb.ApproveDaemonEnrollmentResponse{Approved: true}, nil
 }
 
-func (service *enrollmentService) begin(request *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error) {
+func (service *enrollmentService) begin(ctx context.Context, request *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error) {
 	if request == nil || request.GetDeviceId() == "" || len(request.GetDevicePublicKey()) != ed25519.PublicKeySize || request.GetMetadata() == nil || request.GetMetadata().GetDisplayName() == "" || request.GetMetadata().GetPlatform() == "" || request.GetMetadata().GetMuxviaVersion() == "" {
 		return nil, errEnrollmentDenied
 	}
@@ -193,6 +203,10 @@ func (service *enrollmentService) begin(request *cloudpb.BeginDeviceEnrollmentRe
 		return nil, err
 	}
 	now := service.now().UTC()
+	candidates, err := service.candidateProvider(ctx, now)
+	if err != nil || len(candidates) == 0 || len(candidates) > 100 {
+		return nil, errEnrollmentDenied
+	}
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	service.cleanupLocked(now)
@@ -206,7 +220,9 @@ func (service *enrollmentService) begin(request *cloudpb.BeginDeviceEnrollmentRe
 	flow.deviceID = request.GetDeviceId()
 	flow.devicePublicKey = append(ed25519.PublicKey(nil), request.GetDevicePublicKey()...)
 	flow.metadata = proto.Clone(request.GetMetadata()).(*cloudpb.DeviceMetadata)
-	return &cloudpb.DeviceEnrollmentChallenge{FlowId: flow.flowID, ChallengeId: challengeID, Challenge: challenge, ExpiresAtUnix: uint64(flow.expiresAt.Unix())}, nil
+	publicCandidates := publicEnrollmentCandidates(candidates)
+	flow.hubCandidates = cloneEnrollmentCandidates(publicCandidates)
+	return &cloudpb.DeviceEnrollmentChallenge{FlowId: flow.flowID, ChallengeId: challengeID, Challenge: challenge, ExpiresAtUnix: uint64(flow.expiresAt.Unix()), HubCandidates: cloneEnrollmentCandidates(publicCandidates)}, nil
 }
 
 func (service *enrollmentService) complete(ctx context.Context, request *cloudpb.CompleteDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentServiceSession, error) {
@@ -258,13 +274,25 @@ func (service *enrollmentService) complete(ctx context.Context, request *cloudpb
 	} else if !errors.Is(loadErr, cloudtopology.ErrOwnershipNotFound) {
 		return nil, loadErr
 	}
+	currentCandidates, err := service.candidateProvider(ctx, now)
+	if err != nil || len(currentCandidates) == 0 {
+		return nil, errEnrollmentDenied
+	}
 	needsAssignment := false
 	assignment, assignmentErr := service.registry.Assignment(ctx, proof.GetDeviceId())
 	if errors.Is(assignmentErr, hubregistry.ErrAssignmentConflict) {
 		needsAssignment = true
 		assignmentErr = nil
 	}
-	if assignmentErr != nil || (!needsAssignment && (assignment.Value.GetAccountId() != flowCopy.accountID || assignment.Value.GetHubId() != flowCopy.hubID || assignment.Value.GetExpiresAtUnixMillis() <= now.UnixMilli())) {
+	if assignmentErr != nil || (!needsAssignment && (assignment.Value.GetAccountId() != flowCopy.accountID || assignment.Value.GetExpiresAtUnixMillis() <= now.UnixMilli())) {
+		return nil, errEnrollmentDenied
+	}
+	existingHubID := ""
+	if !needsAssignment {
+		existingHubID = assignment.Value.GetHubId()
+	}
+	selected, err := selectEnrollmentHub(proof.GetDeviceId(), flowCopy.hubCandidates, currentCandidates, request.GetHubObservations(), existingHubID)
+	if err != nil {
 		return nil, errEnrollmentDenied
 	}
 	policy := &cloudpb.CloudDevicePolicy{AccountId: flowCopy.accountID, DeviceId: proof.GetDeviceId(), DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision(), PublicKey: append([]byte(nil), flowCopy.devicePublicKey...)}
@@ -272,7 +300,7 @@ func (service *enrollmentService) complete(ctx context.Context, request *cloudpb
 		return nil, err
 	}
 	if needsAssignment {
-		assignment, assignmentErr = service.registry.Assign(ctx, &cloudpb.HubAssignment{DaemonDeviceId: proof.GetDeviceId(), AccountId: flowCopy.accountID, HubId: flowCopy.hubID, AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(24 * time.Hour).UnixMilli()}, now)
+		assignment, assignmentErr = service.registry.Assign(ctx, &cloudpb.HubAssignment{DaemonDeviceId: proof.GetDeviceId(), AccountId: flowCopy.accountID, HubId: selected.GetHubId(), AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(24 * time.Hour).UnixMilli()}, now)
 		if assignmentErr != nil {
 			return nil, assignmentErr
 		}
@@ -292,7 +320,7 @@ func (service *enrollmentService) complete(ctx context.Context, request *cloudpb
 	if sessionExpiresAt.Sub(now) < time.Minute {
 		return nil, errEnrollmentDenied
 	}
-	accessToken, err := service.edgeIssuer.IssueEdgeAccessForPrincipal(tokenID, flowCopy.hubID, flowCopy.accountID, proof.GetDeviceId(), servicecredential.EdgePrincipalDaemon, account.GetAuthRevision(), sessionExpiresAt.Sub(now), now)
+	accessToken, err := service.edgeIssuer.IssueEdgeAccessForPrincipal(tokenID, selected.GetHubId(), flowCopy.accountID, proof.GetDeviceId(), servicecredential.EdgePrincipalDaemon, account.GetAuthRevision(), sessionExpiresAt.Sub(now), now)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +342,7 @@ func (service *enrollmentService) complete(ctx context.Context, request *cloudpb
 	result := &cloudpb.DeviceEnrollmentServiceSession{
 		Session:     &cloudpb.CloudSessionSummary{AccountLabel: account.GetDisplayName(), AccountId: flowCopy.accountID, DeviceId: proof.GetDeviceId(), ExpiresAtUnix: uint64(sessionExpiresAt.Unix())},
 		AccessToken: accessToken, RefreshToken: refreshToken, RefreshExpiresAtUnixMillis: refreshExpiresAt,
-		HubId: flowCopy.hubID, HubDirectoryVersion: 1, ControlEnrollment: enrollment,
+		HubId: selected.GetHubId(), HubUrl: selected.GetHubUrl(), HubRegion: selected.GetRegion(), HubDirectoryVersion: 1, ControlEnrollment: enrollment,
 	}
 	service.consume(flowCopy.flowID)
 	completed = true
@@ -380,16 +408,95 @@ func cloneEnrollmentFlow(flow *enrollmentFlow) *enrollmentFlow {
 	if flow.metadata != nil {
 		clone.metadata = proto.Clone(flow.metadata).(*cloudpb.DeviceMetadata)
 	}
+	clone.hubCandidates = cloneEnrollmentCandidates(flow.hubCandidates)
 	clone.order = nil
 	return &clone
 }
 
 func daemonEnrollmentProjection(flow *enrollmentFlow) *cloudpb.DaemonEnrollmentProjection {
-	projection := &cloudpb.DaemonEnrollmentProjection{UserCode: flow.userCode, ExpiresAtUnix: uint64(flow.expiresAt.Unix()), HubId: flow.hubID, State: flow.state, DaemonDeviceId: flow.deviceID}
+	projection := &cloudpb.DaemonEnrollmentProjection{UserCode: flow.userCode, ExpiresAtUnix: uint64(flow.expiresAt.Unix()), State: flow.state, DaemonDeviceId: flow.deviceID}
 	if flow.metadata != nil {
 		projection.DaemonMetadata = proto.Clone(flow.metadata).(*cloudpb.DeviceMetadata)
 	}
 	return projection
+}
+
+func cloneEnrollmentCandidates(source []*cloudpb.HubEnrollmentCandidate) []*cloudpb.HubEnrollmentCandidate {
+	result := make([]*cloudpb.HubEnrollmentCandidate, 0, len(source))
+	for _, candidate := range source {
+		if candidate != nil {
+			result = append(result, proto.Clone(candidate).(*cloudpb.HubEnrollmentCandidate))
+		}
+	}
+	return result
+}
+
+func publicEnrollmentCandidates(source []enrollmentHubCandidate) []*cloudpb.HubEnrollmentCandidate {
+	result := make([]*cloudpb.HubEnrollmentCandidate, 0, len(source))
+	for _, candidate := range source {
+		if candidate.value != nil {
+			result = append(result, proto.Clone(candidate.value).(*cloudpb.HubEnrollmentCandidate))
+		}
+	}
+	return result
+}
+
+func selectEnrollmentHub(deviceID string, offered []*cloudpb.HubEnrollmentCandidate, current []enrollmentHubCandidate, observations []*cloudpb.HubReachabilityObservation, existingHubID string) (*cloudpb.HubEnrollmentCandidate, error) {
+	if deviceID == "" || len(offered) == 0 || len(current) == 0 {
+		return nil, errEnrollmentDenied
+	}
+	offeredIDs := make(map[string]bool, len(offered))
+	for _, candidate := range offered {
+		if candidate == nil || candidate.GetHubId() == "" || offeredIDs[candidate.GetHubId()] {
+			return nil, errEnrollmentDenied
+		}
+		offeredIDs[candidate.GetHubId()] = true
+	}
+	observed := make(map[string]*cloudpb.HubReachabilityObservation, len(observations))
+	for _, observation := range observations {
+		if observation == nil || !offeredIDs[observation.GetHubId()] || observed[observation.GetHubId()] != nil || observation.GetReachable() != (observation.GetLatencyMillis() > 0) {
+			return nil, errEnrollmentDenied
+		}
+		observed[observation.GetHubId()] = observation
+	}
+	eligible := make([]enrollmentHubCandidate, 0, len(current))
+	for _, candidate := range current {
+		if candidate.value != nil && offeredIDs[candidate.value.GetHubId()] && candidate.value.GetHubUrl() != "" && candidate.value.GetHealthUrl() != "" && candidate.value.GetRegion() != "" && candidate.maxAssignments > 0 && candidate.assignmentCount < candidate.maxAssignments {
+			candidate.value = proto.Clone(candidate.value).(*cloudpb.HubEnrollmentCandidate)
+			eligible = append(eligible, candidate)
+		}
+	}
+	if existingHubID != "" {
+		for _, candidate := range eligible {
+			if candidate.value.GetHubId() == existingHubID {
+				return candidate.value, nil
+			}
+		}
+		return nil, errEnrollmentDenied
+	}
+	if len(eligible) == 0 {
+		return nil, errEnrollmentDenied
+	}
+	sort.Slice(eligible, func(left, right int) bool {
+		leftObservation, rightObservation := observed[eligible[left].value.GetHubId()], observed[eligible[right].value.GetHubId()]
+		leftReachable, rightReachable := leftObservation != nil && leftObservation.GetReachable(), rightObservation != nil && rightObservation.GetReachable()
+		if leftReachable != rightReachable {
+			return leftReachable
+		}
+		if leftReachable && leftObservation.GetLatencyMillis() != rightObservation.GetLatencyMillis() {
+			return leftObservation.GetLatencyMillis() < rightObservation.GetLatencyMillis()
+		}
+		if eligible[left].assignmentCount != eligible[right].assignmentCount {
+			return eligible[left].assignmentCount < eligible[right].assignmentCount
+		}
+		leftHash := sha256.Sum256([]byte(deviceID + "\x00" + eligible[left].value.GetHubId()))
+		rightHash := sha256.Sum256([]byte(deviceID + "\x00" + eligible[right].value.GetHubId()))
+		if comparison := bytes.Compare(leftHash[:], rightHash[:]); comparison != 0 {
+			return comparison < 0
+		}
+		return eligible[left].value.GetHubId() < eligible[right].value.GetHubId()
+	})
+	return eligible[0].value, nil
 }
 
 func randomEnrollmentID(prefix string, size int) (string, error) {
@@ -407,7 +514,7 @@ func (service *enrollmentService) registerHTTP(mux *http.ServeMux) {
 			writeEnrollmentError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "device enrollment request is invalid", false)
 			return
 		}
-		response, err := service.begin(input)
+		response, err := service.begin(request.Context(), input)
 		if err != nil {
 			writeEnrollmentError(writer, http.StatusForbidden, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED, "daemon enrollment was not accepted", false)
 			return

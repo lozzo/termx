@@ -307,6 +307,45 @@ func TestDaemonControlEnrollmentAndTerminalRevokeResultRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDaemonEnrollmentHubSelectionIsProtoFirstAndControllerAuthoritative(t *testing.T) {
+	challengeFields := descriptorFieldNames((&DeviceEnrollmentChallenge{}).ProtoReflect().Descriptor())
+	completeFields := descriptorFieldNames((&CompleteDeviceEnrollmentRequest{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"flow_id", "challenge_id", "challenge", "expires_at_unix", "hub_candidates"} {
+		if !challengeFields[required] {
+			t.Fatalf("DeviceEnrollmentChallenge missing %q: %v", required, challengeFields)
+		}
+	}
+	if !completeFields["hub_observations"] {
+		t.Fatalf("CompleteDeviceEnrollmentRequest missing Hub observations: %v", completeFields)
+	}
+	candidateFields := descriptorFieldNames((&HubEnrollmentCandidate{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"hub_id", "hub_url", "health_url", "region"} {
+		if !candidateFields[required] {
+			t.Fatalf("HubEnrollmentCandidate missing %q: %v", required, candidateFields)
+		}
+	}
+	for _, forbidden := range []string{"assignment", "capacity", "maximum", "score", "weight"} {
+		for field := range candidateFields {
+			if strings.Contains(field, forbidden) {
+				t.Fatalf("Hub candidate leaked Controller fleet field %q", field)
+			}
+		}
+	}
+	observationFields := descriptorFieldNames((&HubReachabilityObservation{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"hub_id", "reachable", "latency_millis"} {
+		if !observationFields[required] {
+			t.Fatalf("HubReachabilityObservation missing %q: %v", required, observationFields)
+		}
+	}
+	for _, forbidden := range []string{"assignment", "epoch", "token", "audience", "selected", "score", "weight"} {
+		for field := range observationFields {
+			if strings.Contains(field, forbidden) {
+				t.Fatalf("client Hub observation owns forbidden field %q", field)
+			}
+		}
+	}
+}
+
 func TestCloudPlatformDescriptorBaseline(t *testing.T) {
 	payload, err := os.ReadFile("testdata/cloud-platform-v1.pb")
 	if err != nil {

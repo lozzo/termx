@@ -14,7 +14,8 @@ import (
 
 func TestAdapterConsumesProtoDeviceEnrollmentSession(t *testing.T) {
 	now := time.Date(2026, 7, 20, 16, 0, 0, 0, time.UTC)
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != ControlCompleteEnrollmentPath || request.Header.Get("Content-Type") != ProtobufMediaType {
 			http.Error(writer, "unexpected request", http.StatusBadRequest)
 			return
@@ -23,6 +24,8 @@ func TestAdapterConsumesProtoDeviceEnrollmentSession(t *testing.T) {
 			Session:             &cloudpb.CloudSessionSummary{AccountId: "account-1", AccountLabel: "Alice", DeviceId: "daemon-1", ExpiresAtUnix: uint64(now.Add(time.Hour).Unix())},
 			AccessToken:         []byte("private-device-access-token"),
 			HubId:               "hub-1",
+			HubUrl:              server.URL,
+			HubRegion:           "local-1",
 			HubDirectoryVersion: 1,
 			ControlEnrollment:   &cloudpb.DaemonControlEnrollment{AccountId: "account-1", DaemonDeviceId: "daemon-1", AuthEpoch: 3, EnrolledAtUnixMillis: now.UnixMilli(), VerificationKeys: []*cloudpb.DaemonControlVerificationKey{{KeyId: "control-1", PublicKey: make([]byte, 32), NotBeforeUnixMillis: now.Add(-time.Hour).UnixMilli(), NotAfterUnixMillis: now.Add(time.Hour).UnixMilli()}}},
 		}
@@ -50,12 +53,13 @@ func TestAdapterConsumesProtoDeviceEnrollmentSession(t *testing.T) {
 	}
 }
 
-func TestAdapterRejectsEnrollmentHubDirectoryThatDiffersFromManifest(t *testing.T) {
+func TestAdapterAcceptsControllerSelectedEnrollmentHubDirectory(t *testing.T) {
 	now := time.Date(2026, 7, 20, 16, 0, 0, 0, time.UTC)
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		payload, _ := proto.Marshal(&cloudpb.DeviceEnrollmentServiceSession{
 			Session:     &cloudpb.CloudSessionSummary{AccountId: "account-1", AccountLabel: "Alice", DeviceId: "daemon-1", ExpiresAtUnix: uint64(now.Add(time.Hour).Unix())},
-			AccessToken: []byte("private-device-access-token"), HubId: "hub-1", HubUrl: "http://127.0.0.1:1", HubRegion: "other-region", HubDirectoryVersion: 1,
+			AccessToken: []byte("private-device-access-token"), HubId: "hub-2", HubUrl: server.URL, HubRegion: "other-region", HubDirectoryVersion: 1,
 			ControlEnrollment: &cloudpb.DaemonControlEnrollment{AccountId: "account-1", DaemonDeviceId: "daemon-1", AuthEpoch: 3},
 		})
 		writer.Header().Set("Content-Type", ProtobufMediaType)
@@ -66,7 +70,12 @@ func TestAdapterRejectsEnrollmentHubDirectoryThatDiffersFromManifest(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := adapter.CompleteDeviceEnrollment(context.Background(), &cloudpb.CompleteDeviceEnrollmentRequest{FlowId: "flow-1", Proof: &cloudpb.DeviceProof{DeviceId: "daemon-1"}}); err == nil {
-		t.Fatal("mismatched enrollment Hub was accepted")
+	result, err := adapter.CompleteDeviceEnrollment(context.Background(), &cloudpb.CompleteDeviceEnrollmentRequest{FlowId: "flow-1", Proof: &cloudpb.DeviceProof{DeviceId: "daemon-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Destroy()
+	if result.Session.Metadata().HubID != "hub-2" || result.Session.Metadata().HubURL != server.URL || result.Session.Metadata().HubRegion != "other-region" {
+		t.Fatalf("dynamic enrollment directory = %v", result.Session.Metadata())
 	}
 }

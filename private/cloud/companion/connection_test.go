@@ -71,7 +71,7 @@ func (controlPlane *fakeControlPlane) CompleteLogin(_ context.Context, _ *cloudp
 }
 
 func (controlPlane *fakeControlPlane) BeginDeviceEnrollment(_ context.Context, _ *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error) {
-	return &cloudpb.DeviceEnrollmentChallenge{FlowId: "enroll-1", ChallengeId: "challenge-1", Challenge: bytes.Repeat([]byte{0x33}, 32), ExpiresAtUnix: uint64(controlPlane.now.Add(5 * time.Minute).Unix())}, nil
+	return &cloudpb.DeviceEnrollmentChallenge{FlowId: "enroll-1", ChallengeId: "challenge-1", Challenge: bytes.Repeat([]byte{0x33}, 32), ExpiresAtUnix: uint64(controlPlane.now.Add(5 * time.Minute).Unix()), HubCandidates: []*cloudpb.HubEnrollmentCandidate{{HubId: "hub-1", HubUrl: "https://hub.example.test", HealthUrl: "https://hub.example.test/healthz", Region: "local"}}}, nil
 }
 
 func (controlPlane *fakeControlPlane) CompleteDeviceEnrollment(_ context.Context, _ *cloudpb.CompleteDeviceEnrollmentRequest) (cloudservice.DeviceEnrollmentResult, error) {

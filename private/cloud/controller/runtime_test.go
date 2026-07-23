@@ -38,12 +38,15 @@ func TestControllerEnrollmentBindsControlKeyAndPersistsDaemonAuthority(t *testin
 	runtime, err := Start(Config{
 		PostgresDSN: postgrestest.DSN(t, databaseKey), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath,
 		ProjectionKeyID: "controller-key", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-key", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate),
-		Deployments: []DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic)}},
+		Deployments: []DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic), PublicHubURL: "http://127.0.0.1:41002", HealthURL: "http://127.0.0.1:41002/healthz", MaxAssignments: 100}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer runtime.Close(context.Background())
+	runtime.enrollment.candidateProvider = func(context.Context, time.Time) ([]enrollmentHubCandidate, error) {
+		return []enrollmentHubCandidate{{value: &cloudpb.HubEnrollmentCandidate{HubId: "hub-1", HubUrl: "http://127.0.0.1:41002", HealthUrl: "http://127.0.0.1:41002/healthz", Region: "local-1"}, maxAssignments: 100}}, nil
+	}
 	activation, err := runtime.enrollment.CreateDaemonEnrollment(context.Background(), account.GetAccountId(), account.GetUserId())
 	if err != nil {
 		t.Fatal(err)
@@ -51,13 +54,14 @@ func TestControllerEnrollmentBindsControlKeyAndPersistsDaemonAuthority(t *testin
 	devicePublic, devicePrivate, _ := ed25519.GenerateKey(rand.Reader)
 	begin := &cloudpb.BeginDeviceEnrollmentRequest{OneTimeCode: activation.GetUserCode(), DeviceId: "daemon-enrolled", DevicePublicKey: devicePublic, Metadata: &cloudpb.DeviceMetadata{DisplayName: "Test daemon", Platform: "test/arm64", MuxviaVersion: "test"}}
 	restarted, err := newEnrollmentService(enrollmentServiceConfig{
-		DefaultHubID: "hub-1", Commerce: runtime.enrollment.commerce, Topology: runtime.topology, Registry: runtime.registry, EdgeIssuer: runtime.enrollment.edgeIssuer,
-		ControlKeyID: "daemon-control-key", ControlPublicKey: daemonControlPublic, ControlNotBefore: runtime.enrollment.controlNotBefore, ControlNotAfter: runtime.enrollment.controlNotAfter, Now: time.Now, NotifyPolicyChange: func(string) {},
+		Commerce: runtime.enrollment.commerce, Topology: runtime.topology, Registry: runtime.registry, EdgeIssuer: runtime.enrollment.edgeIssuer,
+		CandidateProvider: func(context.Context, time.Time) ([]enrollmentHubCandidate, error) { return nil, nil },
+		ControlKeyID:      "daemon-control-key", ControlPublicKey: daemonControlPublic, ControlNotBefore: runtime.enrollment.controlNotBefore, ControlNotAfter: runtime.enrollment.controlNotAfter, Now: time.Now, NotifyPolicyChange: func(string) {},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := restarted.begin(begin); !errors.Is(err, errEnrollmentDenied) {
+	if _, err := restarted.begin(context.Background(), begin); !errors.Is(err, errEnrollmentDenied) {
 		t.Fatalf("Controller restart retained pending enrollment flow: %v", err)
 	}
 	challenge := &cloudpb.DeviceEnrollmentChallenge{}
@@ -67,14 +71,14 @@ func TestControllerEnrollmentBindsControlKeyAndPersistsDaemonAuthority(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	complete := &cloudpb.CompleteDeviceEnrollmentRequest{FlowId: challenge.GetFlowId(), Proof: &cloudpb.DeviceProof{DeviceId: "daemon-enrolled", DevicePublicKey: devicePublic, ChallengeId: challenge.GetChallengeId(), Signature: ed25519.Sign(devicePrivate, signingBytes), SignedAtUnixNano: signedAt.UnixNano()}}
+	complete := &cloudpb.CompleteDeviceEnrollmentRequest{FlowId: challenge.GetFlowId(), Proof: &cloudpb.DeviceProof{DeviceId: "daemon-enrolled", DevicePublicKey: devicePublic, ChallengeId: challenge.GetChallengeId(), Signature: ed25519.Sign(devicePrivate, signingBytes), SignedAtUnixNano: signedAt.UnixNano()}, HubObservations: []*cloudpb.HubReachabilityObservation{{HubId: "hub-1", Reachable: true, LatencyMillis: 5}}}
 	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/complete", complete, &cloudpb.CloudError{}, http.StatusConflict)
 	if _, err := runtime.enrollment.ApproveDaemonEnrollment(context.Background(), account.GetAccountId(), activation.GetUserCode()); err != nil {
 		t.Fatal(err)
 	}
 	result := &cloudpb.DeviceEnrollmentServiceSession{}
 	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/complete", complete, result, http.StatusOK)
-	if result.GetSession().GetAccountId() != account.GetAccountId() || result.GetSession().GetDeviceId() != "daemon-enrolled" || len(result.GetRefreshToken()) < 32 || result.GetRefreshExpiresAtUnixMillis() <= time.Now().UnixMilli() || !bytes.Equal(result.GetControlEnrollment().GetVerificationKeys()[0].GetPublicKey(), daemonControlPublic) {
+	if result.GetSession().GetAccountId() != account.GetAccountId() || result.GetSession().GetDeviceId() != "daemon-enrolled" || result.GetHubUrl() != "http://127.0.0.1:41002" || len(result.GetRefreshToken()) < 32 || result.GetRefreshExpiresAtUnixMillis() <= time.Now().UnixMilli() || !bytes.Equal(result.GetControlEnrollment().GetVerificationKeys()[0].GetPublicKey(), daemonControlPublic) {
 		t.Fatalf("enrollment result = %v", result)
 	}
 	keyRing, _ := servicecredential.NewKeyRing(servicecredential.VerificationKey{ID: "controller-key", PublicKey: projectionPublic, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(24 * time.Hour)})
@@ -153,7 +157,7 @@ func TestControllerPeriodicallyRefreshesSignedProjection(t *testing.T) {
 	_, projectionPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	_, daemonControlPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local-1", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublic), RelayId: "relay-1", RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(relayPublic)}
-	config := Config{PostgresDSN: postgrestest.DSN(t, filepath.Join(t.TempDir(), "controller-postgres")), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: "../web-controller/config/plans.json", ProjectionKeyID: "controller-key", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-key", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), Deployments: []DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic)}}}
+	config := Config{PostgresDSN: postgrestest.DSN(t, filepath.Join(t.TempDir(), "controller-postgres")), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: "../web-controller/config/plans.json", ProjectionKeyID: "controller-key", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-key", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), Deployments: []DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic), PublicHubURL: "http://127.0.0.1:41002", HealthURL: "http://127.0.0.1:41002/healthz", MaxAssignments: 100}}}
 	runtime, err := start(config, 20*time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
@@ -187,7 +191,7 @@ func TestControllerKeepsListenersSeparateAndProjectionRevisionPersistent(t *test
 	databaseKey := filepath.Join(t.TempDir(), "controller-postgres")
 	catalogPath := "../web-controller/config/plans.json"
 	account := seedControllerAccount(t, databaseKey, catalogPath, now)
-	config := Config{PostgresDSN: postgrestest.DSN(t, databaseKey), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: "controller-key", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-key", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: []DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic)}}, Devices: []*cloudpb.CloudDevicePolicy{{AccountId: account.GetAccountId(), DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision()}}, Assignments: []*cloudpb.HubAssignment{{DaemonDeviceId: "daemon-1", AccountId: account.GetAccountId(), HubId: "hub-1", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}}}
+	config := Config{PostgresDSN: postgrestest.DSN(t, databaseKey), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: "controller-key", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-key", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: []DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic), PublicHubURL: "http://127.0.0.1:41002", HealthURL: "http://127.0.0.1:41002/healthz", MaxAssignments: 100}}, Devices: []*cloudpb.CloudDevicePolicy{{AccountId: account.GetAccountId(), DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision()}}, Assignments: []*cloudpb.HubAssignment{{DaemonDeviceId: "daemon-1", AccountId: account.GetAccountId(), HubId: "hub-1", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}}}
 	first, err := Start(config)
 	if err != nil {
 		t.Fatal(err)

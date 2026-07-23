@@ -46,3 +46,40 @@ func TestAdapterRejectsLoginAndRefreshHubDirectoryMismatch(t *testing.T) {
 		t.Fatal("refresh accepted a mismatched Hub URL/region")
 	}
 }
+
+func TestAdapterAcceptsControllerSelectedDaemonRefreshDirectory(t *testing.T) {
+	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", JSONMediaType)
+		_ = json.NewEncoder(writer).Encode(SessionWire{
+			Kind: session.KindDevice, AccountID: "account-1", AccountLabel: "Alice", DeviceID: "daemon-1",
+			ExpiresAt: now.Add(time.Hour).Unix(), AccessToken: []byte("new-daemon-access-token"),
+			RefreshToken: bytes.Repeat([]byte{0x41}, 32), RefreshExpiresAt: now.Add(24 * time.Hour).Unix(),
+			HubID: "hub-2", HubURL: server.URL, HubRegion: "remote-1", HubDirectoryVersion: 2,
+		})
+	}))
+	defer server.Close()
+	adapter, err := New(Config{ControlPlaneURL: server.URL, HubID: "hub-1", HubURL: server.URL, HubRegion: "local-1", Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, err := session.NewRefreshable(session.Metadata{Kind: session.KindDevice, AccountID: "account-1", AccountLabel: "Alice", DeviceID: "daemon-1", ExpiresAt: now.Add(time.Hour), HubID: "hub-1", HubURL: server.URL, HubRegion: "local-1", HubDirectoryVersion: 1}, []byte("current-daemon-access-token"), bytes.Repeat([]byte{0x51}, 32), now.Add(24*time.Hour), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer local.Destroy()
+	authorization, err := local.RefreshAuthorization(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer authorization.Destroy()
+	refreshed, err := adapter.RefreshSession(context.Background(), authorization)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer refreshed.Destroy()
+	if refreshed.Metadata().HubID != "hub-2" || refreshed.Metadata().HubURL != server.URL || refreshed.Metadata().HubRegion != "remote-1" {
+		t.Fatalf("refreshed daemon directory = %v", refreshed.Metadata())
+	}
+}

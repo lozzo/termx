@@ -171,6 +171,29 @@ Control Plane 只有满足以下任一条件才能签发更高 epoch 的新 assi
 3. edge token audience、target assignment 和 Hub ID 必须一致。
 4. assignment 变化后旧 Hub 拒绝新 signaling；客户端刷新目录后连接新 Hub。
 
+### 5.4 首次 daemon enrollment 的混合选址
+
+首次 enrollment 不能把 Controller 的机房视角或 daemon 的网络视角单独当成 assignment 真值，固定链路为：
+
+```text
+Controller 过滤 disabled、无 active Hub control attachment、已满或产品策略不允许的 Hub
+  -> 返回有界 HubEnrollmentCandidate
+  -> daemon Go Client Engine 有界并发探测候选 health URL
+  -> CompleteDeviceEnrollment 上报 HubReachabilityObservation
+  -> Controller 拒绝非候选/重复/非法观测
+  -> Controller 按可达性、延迟、当前 assignment 数和稳定打散最终选择
+  -> PostgreSQL 原子写 HubAssignment epoch 1
+  -> 签发所选 Hub audience 的 daemon EdgeAccess token 与完整 Hub directory
+```
+
+- daemon 只提供真实网络可达性和延迟观测，不能提交最终 Hub、assignment epoch、容量、token audience 或选择分数。
+- Controller 在 complete 时重新读取 active attachment、容量和 assignment 数；这些集群统计不进入 challenge，客户端观测不能覆盖当前真值。
+- 没有有效可达观测时，Controller 可以按当前 assignment 数和稳定 device/Hub hash 确定性降级；不能回退到配置中的第一个 Hub。
+- 已有 assignment 的 daemon 重新 enrollment 只能继续使用当前 owning Hub；换 Hub 必须走 5.2 的 migration 与旧 epoch fencing。
+- 候选 fan-out 必须有界。当前 development contract 最多返回 100 个候选，Go Client Engine 最多使用 16 个 worker；不建设全 fleet 周期测速或自动再平衡。
+
+手机连接 daemon 属于 5.3 的 target-owner routing，不属于本节选址：手机不能按自己的延迟为目标 daemon 选择另一个 Hub，Controller 必须返回目标 daemon 当前 assignment 的唯一 Hub 和短期凭据。
+
 ## 6. Hub policy 同步
 
 ### 6.1 每 Hub 独立 projection revision

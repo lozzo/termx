@@ -105,7 +105,7 @@ func TestDaemonSessionRefreshRevalidatesOwnershipAndAssignment(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := service.registry.Assign(context.Background(), &cloudpb.HubAssignment{
-		DaemonDeviceId: deviceID, AccountId: account.GetAccountId(), HubId: "hub-1", AssignmentEpoch: 1,
+		DaemonDeviceId: deviceID, AccountId: account.GetAccountId(), HubId: "hub-2", AssignmentEpoch: 1,
 		NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(24 * time.Hour).UnixMilli(),
 	}, *now); err != nil {
 		t.Fatal(err)
@@ -116,7 +116,7 @@ func TestDaemonSessionRefreshRevalidatesOwnershipAndAssignment(t *testing.T) {
 	}
 	originalRefresh := append([]byte(nil), credential.GetRefreshToken()...)
 	refreshed, err := service.refreshSession(context.Background(), httpapi.RefreshSessionWire{Kind: session.KindDevice, RefreshToken: originalRefresh})
-	if err != nil || refreshed.Kind != session.KindDevice || refreshed.DeviceID != deviceID || refreshed.HubID != "hub-1" || len(refreshed.AccessToken) == 0 || len(refreshed.RefreshToken) < 32 {
+	if err != nil || refreshed.Kind != session.KindDevice || refreshed.DeviceID != deviceID || refreshed.HubID != "hub-2" || refreshed.HubURL != "http://127.0.0.1:42002" || refreshed.HubRegion != "remote-1" || len(refreshed.AccessToken) == 0 || len(refreshed.RefreshToken) < 32 {
 		t.Fatalf("daemon refresh = %+v, %v", refreshed, err)
 	}
 	if _, err := service.refreshSession(context.Background(), httpapi.RefreshSessionWire{Kind: session.KindDevice, RefreshToken: originalRefresh}); err == nil {
@@ -160,7 +160,16 @@ func newMobileActivationTestService(t *testing.T) (*mobileActivationService, *cl
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := newMobileActivationService(commerce, topology, registry, issuer, "hub-1", "http://127.0.0.1:41002", "local-1", now.Add(48*time.Hour), func() time.Time { return now }, func(string) {})
+	service, err := newMobileActivationService(commerce, topology, registry, issuer, "hub-1", "http://127.0.0.1:41002", "local-1", func(hubID string) (string, string, bool) {
+		switch hubID {
+		case "hub-1":
+			return "http://127.0.0.1:41002", "local-1", true
+		case "hub-2":
+			return "http://127.0.0.1:42002", "remote-1", true
+		default:
+			return "", "", false
+		}
+	}, now.Add(48*time.Hour), func() time.Time { return now }, func(string) {})
 	if err != nil {
 		t.Fatal(err)
 	}

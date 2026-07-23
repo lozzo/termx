@@ -272,12 +272,30 @@ message BeginDeviceEnrollmentRequest {
   string device_id = 4;
 }
 
+// HubEnrollmentCandidate 是 Controller 为一次 daemon enrollment 筛选的有界可探测 Hub。
+// 候选只提供公开探测目录；Controller 私有容量真值不得暴露给客户端。
+message HubEnrollmentCandidate {
+  string hub_id = 1;
+  string hub_url = 2;
+  string health_url = 3;
+  string region = 4;
+}
+
+// HubReachabilityObservation 是 daemon 对 Controller 候选执行 HTTPS health 探测后的观测。
+// Controller 必须拒绝非候选 Hub，并以自己的健康、容量和 assignment 真值完成最终选择。
+message HubReachabilityObservation {
+  string hub_id = 1;
+  bool reachable = 2;
+  uint64 latency_millis = 3;
+}
+
 // DeviceEnrollmentChallenge 是公开 daemon 必须使用 DeviceIdentity 签名的短期挑战。
 message DeviceEnrollmentChallenge {
   string flow_id = 1;
   string challenge_id = 2;
   bytes challenge = 3;
   uint64 expires_at_unix = 4;
+  repeated HubEnrollmentCandidate hub_candidates = 5;
 }
 
 // DeviceEnrollmentProofInput 是公开 daemon 生成 DeviceProof signature 的 deterministic 输入。
@@ -295,6 +313,7 @@ message DeviceEnrollmentProofInput {
 message CompleteDeviceEnrollmentRequest {
   string flow_id = 1;
   DeviceProof proof = 2;
+  repeated HubReachabilityObservation hub_observations = 3;
 }
 
 // DaemonControlVerificationKey 是 enrollment 固定给公开 daemon 的 deny-only command 公钥。

@@ -37,8 +37,17 @@ func validateBeginEnrollmentRequest(request *cloudpb.BeginDeviceEnrollmentReques
 }
 
 func validateEnrollmentChallenge(challenge *cloudpb.DeviceEnrollmentChallenge, now time.Time) error {
-	if challenge == nil || challenge.GetFlowId() == "" || challenge.GetChallengeId() == "" || len(challenge.GetChallenge()) < 32 || len(challenge.GetChallenge()) > 256 || challenge.GetExpiresAtUnix() <= uint64(now.Unix()) {
+	if challenge == nil || challenge.GetFlowId() == "" || challenge.GetChallengeId() == "" || len(challenge.GetChallenge()) < 32 || len(challenge.GetChallenge()) > 256 || challenge.GetExpiresAtUnix() <= uint64(now.Unix()) || len(challenge.GetHubCandidates()) == 0 || len(challenge.GetHubCandidates()) > 100 {
 		return protocolError("Control Plane returned an invalid enrollment challenge")
+	}
+	seen := make(map[string]bool, len(challenge.GetHubCandidates()))
+	for _, candidate := range challenge.GetHubCandidates() {
+		hubURL, hubErr := url.Parse(candidate.GetHubUrl())
+		healthURL, healthErr := url.Parse(candidate.GetHealthUrl())
+		if candidate == nil || candidate.GetHubId() == "" || candidate.GetRegion() == "" || seen[candidate.GetHubId()] || hubErr != nil || healthErr != nil || hubURL.Host == "" || healthURL.Host == "" || hubURL.User != nil || healthURL.User != nil {
+			return protocolError("Control Plane returned an invalid enrollment Hub candidate")
+		}
+		seen[candidate.GetHubId()] = true
 	}
 	return nil
 }
@@ -47,6 +56,13 @@ func validateCompleteEnrollmentRequest(request *cloudpb.CompleteDeviceEnrollment
 	proof := request.GetProof()
 	if request == nil || request.GetFlowId() == "" || proof == nil || proof.GetDeviceId() == "" || len(proof.GetDevicePublicKey()) != ed25519.PublicKeySize || proof.GetChallengeId() == "" || len(proof.GetSignature()) != ed25519.SignatureSize || proof.GetSignedAtUnixNano() == 0 {
 		return protocolError("invalid device enrollment proof")
+	}
+	seen := make(map[string]bool, len(request.GetHubObservations()))
+	for _, observation := range request.GetHubObservations() {
+		if observation == nil || observation.GetHubId() == "" || seen[observation.GetHubId()] || observation.GetReachable() != (observation.GetLatencyMillis() > 0) {
+			return protocolError("invalid Hub reachability observation")
+		}
+		seen[observation.GetHubId()] = true
 	}
 	return nil
 }
