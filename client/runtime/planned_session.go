@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"sync"
 	"time"
 
 	"github.com/muxvia/muxvia/client/endpoint"
@@ -50,7 +49,7 @@ func (registry PeerConnectorMap) Connector(kind endpoint.RouteKind) (PeerConnect
 }
 
 // ConnectPlanned 为一个 Endpoint generation 执行 C3B attempt groups，并只发布首个完整 ReadyPeerSession。
-// winner 选定后会取消并等待全部 loser；任何迟到成功都在返回前关闭，cleanup 未完成时本方法不会提前发布 lease。
+// winner 选定后立即返回；loser 的取消和迟到 session 关闭由后台 drain 完成，不能阻塞已鉴权 winner 的发布。
 func (owner *SessionOwner) ConnectPlanned(
 	ctx context.Context,
 	target endpoint.Endpoint,
@@ -294,29 +293,36 @@ func (owner *SessionOwner) runRoutePlan(ctx context.Context, target endpoint.End
 		}
 	}
 	results := make(chan routeAttemptResult, len(scheduled))
-	var wait sync.WaitGroup
 	for index := range scheduled {
 		item := &scheduled[index]
 		attemptCtx, cancel := context.WithCancel(ctx)
 		item.cancel = cancel
-		wait.Add(1)
 		go func(index int, item scheduledAttempt, attemptCtx context.Context) {
-			defer wait.Done()
 			results <- owner.executeScheduledAttempt(attemptCtx, index, item.request, item.delay, clock, dialers)
 		}(index, *item, attemptCtx)
 	}
-	var winner *routeAttemptResult
 	errorsByIndex := make([]error, len(scheduled))
-	for range scheduled {
+	for received := 0; received < len(scheduled); received++ {
 		result := <-results
-		if result.err == nil && winner == nil {
-			winner = &result
+		if result.err == nil {
 			for index := range scheduled {
-				if index != result.index {
-					scheduled[index].cancel()
-				}
+				scheduled[index].cancel()
 			}
-			continue
+			remaining := len(scheduled) - received - 1
+			if remaining > 0 {
+				// 迟到结果只能被关闭，不能再次参与 winner 或 generation 判定。
+				go closeLateRouteAttempts(results, remaining)
+			}
+			if ctx.Err() != nil {
+				_ = result.ready.Close()
+				return SessionLease{}, &Error{Code: ErrorCanceled, Message: "route race was canceled before winner publication", Cause: ctx.Err(), Attempted: true}
+			}
+			lease, err := owner.adoptReadyPeerSession(result.request, result.ready, selectionReason)
+			if err != nil {
+				return SessionLease{}, err
+			}
+			owner.publishEndpointEvent(EndpointEvent{EndpointID: target.ID, Stamp: lease.Stamp, Phase: EndpointPhaseReady, ObservedPath: result.ready.ObservedPath(), RouteSelectionReason: selectionReason})
+			return lease, nil
 		}
 		if result.ready != nil {
 			_ = result.ready.Close()
@@ -326,27 +332,23 @@ func (owner *SessionOwner) runRoutePlan(ctx context.Context, target endpoint.End
 	for index := range scheduled {
 		scheduled[index].cancel()
 	}
-	wait.Wait()
-	if winner == nil {
-		attempted := false
-		for _, err := range errorsByIndex {
-			attempted = attempted || WasAttempted(err)
-			if err != nil && CodeOf(err) != ErrorCanceled {
-				return SessionLease{}, err
-			}
+	attempted := false
+	for _, err := range errorsByIndex {
+		attempted = attempted || WasAttempted(err)
+		if err != nil && CodeOf(err) != ErrorCanceled {
+			return SessionLease{}, err
 		}
-		return SessionLease{}, &Error{Code: ErrorCanceled, Message: "route race was canceled", Cause: ctx.Err(), Attempted: attempted}
 	}
-	if ctx.Err() != nil {
-		_ = winner.ready.Close()
-		return SessionLease{}, &Error{Code: ErrorCanceled, Message: "route race was canceled before winner publication", Cause: ctx.Err(), Attempted: true}
+	return SessionLease{}, &Error{Code: ErrorCanceled, Message: "route race was canceled", Cause: ctx.Err(), Attempted: attempted}
+}
+
+func closeLateRouteAttempts(results <-chan routeAttemptResult, remaining int) {
+	for ; remaining > 0; remaining-- {
+		result := <-results
+		if result.ready != nil {
+			_ = result.ready.Close()
+		}
 	}
-	lease, err := owner.adoptReadyPeerSession(winner.request, winner.ready, selectionReason)
-	if err != nil {
-		return SessionLease{}, err
-	}
-	owner.publishEndpointEvent(EndpointEvent{EndpointID: target.ID, Stamp: lease.Stamp, Phase: EndpointPhaseReady, ObservedPath: winner.ready.ObservedPath(), RouteSelectionReason: selectionReason})
-	return lease, nil
 }
 
 func (owner *SessionOwner) executeScheduledAttempt(ctx context.Context, index int, request AttemptRequest, delay time.Duration, clock port.Clock, dialers PeerConnectorResolver) routeAttemptResult {

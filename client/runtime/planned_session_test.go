@@ -12,14 +12,14 @@ import (
 	"github.com/muxvia/muxvia/client/port"
 )
 
-func TestSessionOwnerFullRaceChoosesFirstReadyAndWaitsLoserCleanup(t *testing.T) {
+func TestSessionOwnerFullRaceReturnsFirstReadyBeforeIgnoredCancelLoserCleanup(t *testing.T) {
 	owner := NewSessionOwner()
 	defer owner.Close()
 	target := plannedEndpoint(false)
 	localRelease := make(chan struct{})
 	sshRelease := make(chan struct{})
 	dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{
-		"local": {release: localRelease, succeedAfterCancel: true},
+		"local": {release: localRelease, ignoreCancel: true},
 		"ssh":   {release: sshRelease},
 	})
 	resolver, err := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{
@@ -42,7 +42,12 @@ func TestSessionOwnerFullRaceChoosesFirstReadyAndWaitsLoserCleanup(t *testing.T)
 	}()
 	waitPlannedStarts(t, dialer.started, "local", "ssh")
 	close(sshRelease)
-	connected := <-result
+	var connected plannedResult
+	select {
+	case connected = <-result:
+	case <-time.After(time.Second):
+		t.Fatal("first authenticated ReadyPeerSession waited for a loser that ignored cancellation")
+	}
 	if connected.err != nil {
 		t.Fatal(connected.err)
 	}
@@ -57,10 +62,12 @@ func TestSessionOwnerFullRaceChoosesFirstReadyAndWaitsLoserCleanup(t *testing.T)
 	if !valid || snapshot.SelectionReason != "first_ready" {
 		t.Fatalf("connection snapshot = %#v valid=%v", snapshot, valid)
 	}
-	local := dialer.session("local", 0)
 	ssh := dialer.session("ssh", 0)
-	if local == nil || local.closeCalls.Load() != 1 || ssh == nil || ssh.closeCalls.Load() != 0 {
-		t.Fatalf("loser=%#v loserClose=%d winner=%#v winnerClose=%d", local, closeCalls(local), ssh, closeCalls(ssh))
+	if local := dialer.session("local", 0); local != nil {
+		t.Fatalf("ignored-cancel loser completed before explicit release: %#v", local)
+	}
+	if ssh == nil || ssh.closeCalls.Load() != 0 {
+		t.Fatalf("winner=%#v winnerClose=%d", ssh, closeCalls(ssh))
 	}
 	phases := collectPhasesThrough(t, events, EndpointPhaseReady)
 	if len(phases) > 0 && phases[0] == EndpointPhaseIdle {
@@ -68,6 +75,15 @@ func TestSessionOwnerFullRaceChoosesFirstReadyAndWaitsLoserCleanup(t *testing.T)
 	}
 	if len(phases) < 4 || phases[0] != EndpointPhasePlanning || phases[len(phases)-1] != EndpointPhaseReady {
 		t.Fatalf("lifecycle phases = %#v", phases)
+	}
+	close(localRelease)
+	local := waitPlannedSessionClosed(t, dialer, "local", 0)
+	if local.closeCalls.Load() != 1 {
+		t.Fatalf("late loser close calls = %d", local.closeCalls.Load())
+	}
+	current, err := owner.ApplicationSession(connected.lease)
+	if err != nil || current.Stamp().RouteID != "ssh" {
+		t.Fatalf("late loser changed current winner: session=%#v err=%v", current, err)
 	}
 	if err := ssh.Close(); err != nil {
 		t.Fatal(err)
@@ -131,8 +147,8 @@ func TestDirectSSHAndCloudConnectorsReturnOneReadyPeerSessionContract(t *testing
 	if connected.err != nil || connected.lease.Stamp.RouteID != "cloud" {
 		t.Fatalf("connected=%#v err=%v", connected.lease, connected.err)
 	}
-	direct := connector.session("direct", 0)
-	ssh := connector.session("ssh", 0)
+	direct := waitPlannedSessionClosed(t, connector, "direct", 0)
+	ssh := waitPlannedSessionClosed(t, connector, "ssh", 0)
 	cloud := connector.session("cloud", 0)
 	if closeCalls(direct) != 1 || closeCalls(ssh) != 1 || closeCalls(cloud) != 0 {
 		t.Fatalf("close calls direct=%d ssh=%d cloud=%d", closeCalls(direct), closeCalls(ssh), closeCalls(cloud))
@@ -437,6 +453,7 @@ type plannedBehavior struct {
 	release            chan struct{}
 	err                error
 	succeedAfterCancel bool
+	ignoreCancel       bool
 }
 
 type plannedDialer struct {
@@ -462,11 +479,15 @@ func (dialer *plannedDialer) Connect(ctx context.Context, request AttemptRequest
 		return nil, errors.New("missing planned behavior")
 	}
 	if behavior.release != nil {
-		select {
-		case <-behavior.release:
-		case <-ctx.Done():
-			if !behavior.succeedAfterCancel {
-				return nil, ctx.Err()
+		if behavior.ignoreCancel {
+			<-behavior.release
+		} else {
+			select {
+			case <-behavior.release:
+			case <-ctx.Done():
+				if !behavior.succeedAfterCancel {
+					return nil, ctx.Err()
+				}
 			}
 		}
 	}
@@ -494,6 +515,19 @@ func (dialer *plannedDialer) calls(routeID endpoint.RouteID) int {
 	dialer.mu.Lock()
 	defer dialer.mu.Unlock()
 	return dialer.counts[routeID]
+}
+
+func waitPlannedSessionClosed(t *testing.T, dialer *plannedDialer, routeID endpoint.RouteID, index int) *ownerSession {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if session := dialer.session(routeID, index); session != nil && session.closeCalls.Load() > 0 {
+			return session
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("route %q late session was not closed", routeID)
+	return nil
 }
 
 func plannedEndpoint(priority bool) endpoint.Endpoint {
