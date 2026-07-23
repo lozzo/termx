@@ -445,7 +445,8 @@ func stopChildren(children []*childProcess) {
 }
 
 func waitManifest(ctx context.Context, path string, target any, done <-chan error) error {
-	deadline := time.NewTimer(15 * time.Second)
+	// 真实托管 PostgreSQL 首次建隔离 schema、迁移并启动三进程可能超过本地 15 秒基线。
+	deadline := time.NewTimer(45 * time.Second)
 	defer deadline.Stop()
 	for {
 		body, err := os.ReadFile(path)
