@@ -16,15 +16,16 @@
 
 ## 2. 文档顺序
 
-1. `product-prd.md`：单一 App、免费 Direct/SSH、可选 Cloud 和 Android 用户验收。
-2. `cloud-product-spec.md`：账号、套餐、交易、Subscription、Entitlement、managed P2P/Relay、quota、usage 和管理面。
-3. `multi-hub-control-topology-spec.md`：多 Hub assignment、纯内存同步、Presence、PeerSession topology、CommandOutbox 和 Web 管理。
-4. `unified-endpoint-route-refactor-plan.md`：versioned Proto Endpoint/Route contract、Go owner 和失败语义。
-5. `architecture-spec.md`：Go Client Engine、daemon、Control Plane、Hub 和 Relay 的状态边界。
-6. `security-protocol-spec.md`：设备身份、channel binding、terminal capability 和云服务准入隔离。
-7. `network-topology.md`：Local、Direct WebRTC TCP、SSH WebRTC TCP 和 managed WebRTC 拓扑。
-8. `file-transfer-spec.md`：同一 Proto session 上的文件 owner、授权、流控和失败语义。
-9. 其余文件：历史验收、旧阶段决策或延后能力，仅在 `workflow.md` 明确引用时读取。
+1. `development-operations-handoff.md`：当前开发机、公网双服务器、Supabase、DNS/TLS、systemd/Nginx、Android、测试门禁与换机顺序的运维交接。
+2. `product-prd.md`：单一 App、免费 Direct/SSH、可选 Cloud 和 Android 用户验收。
+3. `cloud-product-spec.md`：账号、套餐、交易、Subscription、Entitlement、managed P2P/Relay、quota、usage 和管理面。
+4. `multi-hub-control-topology-spec.md`：多 Hub assignment、纯内存同步、Presence、PeerSession topology、CommandOutbox 和 Web 管理。
+5. `unified-endpoint-route-refactor-plan.md`：versioned Proto Endpoint/Route contract、Go owner 和失败语义。
+6. `architecture-spec.md`：Go Client Engine、daemon、Control Plane、Hub 和 Relay 的状态边界。
+7. `security-protocol-spec.md`：设备身份、channel binding、terminal capability 和云服务准入隔离。
+8. `network-topology.md`：Local、Direct WebRTC TCP、SSH WebRTC TCP 和 managed WebRTC 拓扑。
+9. `file-transfer-spec.md`：同一 Proto session 上的文件 owner、授权、流控和失败语义。
+10. 其余文件：历史验收、旧阶段决策或延后能力，仅在 `workflow.md` 明确引用时读取。
 
 若这些文档发生冲突，按以下顺序处理：
 
