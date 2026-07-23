@@ -2,6 +2,7 @@ package managed
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 	"unicode"
@@ -30,6 +31,7 @@ func resolveDialRoute(
 	attempt clientruntime.AttemptRequest,
 	resolved *cloudpb.ResolvedEndpoint,
 	policy cloudcompanion.DialPolicy,
+	transport cloudpb.RelayTransport,
 	now time.Time,
 ) (dialRoute, error) {
 	targetDeviceID := attempt.DaemonIdentity().DeviceID
@@ -44,9 +46,9 @@ func resolveDialRoute(
 		lease, err := cloud.AcquireRelayLease(ctx, request)
 		if err != nil {
 			if !policy.RelayOnly && cloudcompanion.RelayLeaseUnavailableForAuto(err) {
-				return dialRoute{
+				return constrainDialRouteTransport(dialRoute{
 					iceServers: cloneRouteIceServers(resolved.GetIceServers()), preference: policy.RoutePreference,
-				}, nil
+				}, transport)
 			}
 			return dialRoute{}, err
 		}
@@ -61,15 +63,15 @@ func resolveDialRoute(
 		if policy.RelayOnly {
 			expectedPath = endpoint.PathSingleRelay
 		}
-		return dialRoute{
+		return constrainDialRouteTransport(dialRoute{
 			iceServers: iceServers, preference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY,
 			relayOnly: policy.RelayOnly, expectedPath: expectedPath,
-		}, nil
+		}, transport)
 	}
 	if policy.RoutePreference != cloudpb.RoutePreference_ROUTE_PREFERENCE_SMART_ROUTE {
-		return dialRoute{
+		return constrainDialRouteTransport(dialRoute{
 			iceServers: resolved.GetIceServers(), preference: policy.RoutePreference, relayOnly: policy.RelayOnly,
-		}, nil
+		}, transport)
 	}
 	request := &cloudpb.PlanManagedRouteRequest{
 		EndpointId: string(attempt.EndpointID()), ManagedSessionId: resolved.GetManagedSessionId(), TargetDeviceId: targetDeviceID,
@@ -79,7 +81,36 @@ func resolveDialRoute(
 	if err != nil {
 		return dialRoute{}, err
 	}
-	return validateManagedRoutePlan(request, plan, now)
+	validated, err := validateManagedRoutePlan(request, plan, now)
+	if err != nil {
+		return dialRoute{}, err
+	}
+	return constrainDialRouteTransport(validated, transport)
+}
+
+func constrainDialRouteTransport(route dialRoute, transport cloudpb.RelayTransport) (dialRoute, error) {
+	filtered, hasTURN, err := cloudcompanion.FilterRelayTransport(route.iceServers, transport)
+	if err != nil {
+		return dialRoute{}, err
+	}
+	if route.relayOnly && !hasTURN {
+		return dialRoute{}, routePlanProtocolError("forced Relay transport is unavailable in the current lease")
+	}
+	route.iceServers = filtered
+	return route, nil
+}
+
+func wireRelayTransport(value endpoint.RelayTransport) (cloudpb.RelayTransport, error) {
+	switch value {
+	case "", endpoint.RelayTransportAuto:
+		return cloudpb.RelayTransport_RELAY_TRANSPORT_AUTO, nil
+	case endpoint.RelayTransportUDP:
+		return cloudpb.RelayTransport_RELAY_TRANSPORT_UDP, nil
+	case endpoint.RelayTransportTCP:
+		return cloudpb.RelayTransport_RELAY_TRANSPORT_TCP, nil
+	default:
+		return 0, routePlanProtocolError(fmt.Sprintf("unknown managed Relay transport %q", value))
+	}
 }
 
 func cloneRouteIceServers(servers []*cloudpb.IceServer) []*cloudpb.IceServer {

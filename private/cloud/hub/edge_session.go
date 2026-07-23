@@ -21,6 +21,7 @@ type CreateEdgeSessionRequest struct {
 	Candidates         []Candidate
 	RoutePreference    RoutePreference
 	RelayOnly          bool
+	RelayTransport     RelayTransport
 }
 
 // CreateEdgeSession 只读取 Hub 本地授权投影并创建 Hub-owned EdgeManagedSession。
@@ -42,7 +43,7 @@ func (service *Service) CreateEdgeSession(_ context.Context, request CreateEdgeS
 		// 两端申请 TURN 时共同使用的 RelayIntent correlation truth。
 		managedSessionID = request.RelayCorrelationID
 	}
-	if err := service.validateOffer(request.AccountID, request.ClientDeviceID, request.TargetDeviceID, managedSessionID, request.SignalingSessionID, request.SDP, request.Candidates, request.RoutePreference, request.RelayOnly); err != nil {
+	if err := service.validateOffer(request.AccountID, request.ClientDeviceID, request.TargetDeviceID, managedSessionID, request.SignalingSessionID, request.SDP, request.Candidates, request.RoutePreference, request.RelayOnly, request.RelayTransport); err != nil {
 		return nil, err
 	}
 	now := service.clock.Now().UTC()
@@ -82,7 +83,7 @@ func (service *Service) CreateEdgeSession(_ context.Context, request CreateEdgeS
 	}
 	service.nextIncarnation++
 	state.sessionIncarnation = service.nextIncarnation
-	offer := Offer{SignalingSessionID: state.id, ManagedSessionID: state.managedSessionID, SessionIncarnation: state.sessionIncarnation, PresenceSessionID: presence.sessionID, AssignmentEpoch: presence.assignmentEpoch, SourceDeviceID: state.clientDeviceID, TargetDeviceID: state.targetDeviceID, SDP: request.SDP, Candidates: cloneCandidates(request.Candidates), RoutePreference: request.RoutePreference, RelayOnly: request.RelayOnly}
+	offer := Offer{SignalingSessionID: state.id, ManagedSessionID: state.managedSessionID, SessionIncarnation: state.sessionIncarnation, PresenceSessionID: presence.sessionID, AssignmentEpoch: presence.assignmentEpoch, SourceDeviceID: state.clientDeviceID, TargetDeviceID: state.targetDeviceID, SDP: request.SDP, Candidates: cloneCandidates(request.Candidates), RoutePreference: request.RoutePreference, RelayOnly: request.RelayOnly, RelayTransport: request.RelayTransport}
 	select {
 	case presence.events <- PresenceEvent{Offer: &offer}:
 		service.sessions[state.id] = state

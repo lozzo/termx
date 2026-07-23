@@ -49,6 +49,14 @@ func TestSessionOwnerFullRaceChoosesFirstReadyAndWaitsLoserCleanup(t *testing.T)
 	if connected.lease.Stamp.RouteID != "ssh" {
 		t.Fatalf("winner = %#v", connected.lease.Stamp)
 	}
+	application, err := owner.ApplicationSession(connected.lease)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, valid := application.(ConnectionSnapshotProvider).ConnectionSnapshot(time.Now())
+	if !valid || snapshot.SelectionReason != "first_ready" {
+		t.Fatalf("connection snapshot = %#v valid=%v", snapshot, valid)
+	}
 	local := dialer.session("local", 0)
 	ssh := dialer.session("ssh", 0)
 	if local == nil || local.closeCalls.Load() != 1 || ssh == nil || ssh.closeCalls.Load() != 0 {

@@ -10,9 +10,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/muxvia/muxvia/client/endpoint"
 	clientruntime "github.com/muxvia/muxvia/client/runtime"
 	"github.com/muxvia/muxvia/proto/apipb"
 	"github.com/muxvia/muxvia/proto/bindingpb"
+	"github.com/muxvia/muxvia/proto/cloudpb"
 	"github.com/muxvia/muxvia/proto/wirepb"
 	"google.golang.org/protobuf/proto"
 )
@@ -25,6 +27,7 @@ const (
 	MaxPayloadBytes      = 4 << 20
 	defaultEventCapacity = 256
 	maxLiveHandles       = 4096
+	defaultOpenTimeout   = 20 * time.Second
 )
 
 var (
@@ -52,13 +55,14 @@ type Engine struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 
-	mu         sync.Mutex
-	closed     bool
-	nextHandle uint64
-	operations map[uint64]*operation
-	sessions   map[uint64]*sessionRecord
-	streams    map[uint64]*streamRecord
-	cleanupTTL time.Duration
+	mu          sync.Mutex
+	closed      bool
+	nextHandle  uint64
+	operations  map[uint64]*operation
+	sessions    map[uint64]*sessionRecord
+	streams     map[uint64]*streamRecord
+	cleanupTTL  time.Duration
+	openTimeout time.Duration
 
 	emitMu    sync.Mutex
 	sequence  uint64
@@ -109,7 +113,7 @@ func NewEngineWithEventCapacity(host Host, capacity int) (*Engine, error) {
 	return &Engine{
 		host: host, ctx: ctx, cancel: cancel, done: make(chan struct{}),
 		operations: make(map[uint64]*operation), sessions: make(map[uint64]*sessionRecord), streams: make(map[uint64]*streamRecord), events: make(chan []byte, capacity),
-		cleanupTTL: 5 * time.Second,
+		cleanupTTL: 5 * time.Second, openTimeout: defaultOpenTimeout,
 	}, nil
 }
 
@@ -525,7 +529,11 @@ func (engine *Engine) forwardResourceStream(handle uint64, stream clientruntime.
 }
 
 func (engine *Engine) runOpen(handle uint64, ctx context.Context, request *bindingpb.OpenSessionRequest) {
-	session, err := engine.host.OpenSession(ctx, request)
+	// OpenSession 的完成条件是 transport、端到端鉴权和 Protocol Hello 全部 ready；
+	// 任一阶段失去回调都必须由 Go binding operation 统一取消，不能让平台 UI 永久等待。
+	openCtx, cancel := context.WithTimeout(ctx, engine.openTimeout)
+	defer cancel()
+	session, err := engine.host.OpenSession(openCtx, request)
 	if err == nil {
 		if session == nil || session.Done() == nil || session.Stamp().Validate() != nil {
 			if session != nil {
@@ -539,7 +547,7 @@ func (engine *Engine) runOpen(handle uint64, ctx context.Context, request *bindi
 	if err == nil {
 		engine.mu.Lock()
 		operation := engine.operations[handle]
-		if engine.closed || operation == nil || ctx.Err() != nil {
+		if engine.closed || operation == nil || openCtx.Err() != nil {
 			engine.mu.Unlock()
 			_ = session.Close()
 			err = context.Canceled
@@ -564,12 +572,82 @@ func (engine *Engine) runOpen(handle uint64, ctx context.Context, request *bindi
 	}}}
 	if session != nil {
 		event.GetOpenSession().Session = runtimeStampToProto(session.Stamp())
+		if provider, ok := session.(clientruntime.ConnectionSnapshotProvider); ok {
+			if snapshot, valid := provider.ConnectionSnapshot(time.Now().UTC()); valid {
+				event.GetOpenSession().Connection = connectionSnapshotToProto(snapshot)
+			}
+		}
 	} else {
 		event.GetOpenSession().Error = apiError(err)
 	}
 	engine.emit(event)
 	if session != nil {
 		go engine.forwardSession(sessionHandle, session)
+	}
+}
+
+func connectionSnapshotToProto(snapshot clientruntime.ConnectionSnapshot) *bindingpb.ConnectionSnapshot {
+	return &bindingpb.ConnectionSnapshot{
+		RouteId: string(snapshot.RouteID), RouteKind: bindingRouteKind(snapshot.RouteKind),
+		ObservedPath: cloudObservedPath(snapshot.ObservedPath), SelectionReason: snapshot.SelectionReason,
+		SampledAtUnixNano: snapshot.SampledAt.UTC().UnixNano(), RoundTripNanos: int64(snapshot.RoundTrip),
+		LocalCandidateType: bindingCandidateType(snapshot.LocalCandidateType), RemoteCandidateType: bindingCandidateType(snapshot.RemoteCandidateType),
+		LocalProtocol: bindingConnectionTransport(snapshot.LocalProtocol), RemoteProtocol: bindingConnectionTransport(snapshot.RemoteProtocol),
+		RelayTransport: bindingConnectionTransport(snapshot.RelayTransport), NetworkClass: snapshot.NetworkClass,
+		BytesSent: snapshot.BytesSent, BytesReceived: snapshot.BytesReceived, PacketsSent: snapshot.PacketsSent,
+		LossEvents: snapshot.LossEvents, Connected: snapshot.Connected,
+	}
+}
+
+func bindingRouteKind(kind endpoint.RouteKind) bindingpb.ConnectionRouteKind {
+	switch kind {
+	case endpoint.RouteLocalUnix:
+		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_LOCAL
+	case endpoint.RouteDirectWebRTCTCP:
+		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_DIRECT
+	case endpoint.RouteSSHWebRTCTCP:
+		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_SSH
+	case endpoint.RouteManagedWebRTC:
+		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_MANAGED_CLOUD
+	default:
+		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_UNSPECIFIED
+	}
+}
+
+func cloudObservedPath(path string) cloudpb.ObservedPath {
+	switch endpoint.Path(path) {
+	case endpoint.PathDirect:
+		return cloudpb.ObservedPath_OBSERVED_PATH_DIRECT
+	case endpoint.PathSingleRelay:
+		return cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY
+	default:
+		return cloudpb.ObservedPath_OBSERVED_PATH_UNSPECIFIED
+	}
+}
+
+func bindingCandidateType(value string) bindingpb.ConnectionCandidateType {
+	switch value {
+	case "host":
+		return bindingpb.ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_HOST
+	case "srflx":
+		return bindingpb.ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_SERVER_REFLEXIVE
+	case "prflx":
+		return bindingpb.ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_PEER_REFLEXIVE
+	case "relay":
+		return bindingpb.ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_RELAY
+	default:
+		return bindingpb.ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_UNSPECIFIED
+	}
+}
+
+func bindingConnectionTransport(value string) bindingpb.ConnectionTransport {
+	switch value {
+	case "udp":
+		return bindingpb.ConnectionTransport_CONNECTION_TRANSPORT_UDP
+	case "tcp", "tls":
+		return bindingpb.ConnectionTransport_CONNECTION_TRANSPORT_TCP
+	default:
+		return bindingpb.ConnectionTransport_CONNECTION_TRANSPORT_UNSPECIFIED
 	}
 }
 
@@ -895,7 +973,9 @@ func apiError(err error) *apipb.ApiError {
 	retryable := false
 	attempted := true
 	switch {
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+	case errors.Is(err, context.DeadlineExceeded):
+		code, message, retryable = apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE, "client session timed out", true
+	case errors.Is(err, context.Canceled):
 		code, message = apipb.ApiErrorCode_API_ERROR_CODE_CANCELLED, "binding operation was cancelled"
 	case errors.Is(err, ErrInvalidHandle):
 		code, message, attempted = apipb.ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST, "binding handle is invalid", false

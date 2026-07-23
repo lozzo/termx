@@ -1,6 +1,8 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf'
 import { ApiErrorCode, ApiErrorSchema } from '../generated/apipb/common_pb'
 import {
+  ConnectionCandidateType,
+  ConnectionTransport,
   CloudRouteEligibilitySchema,
   CredentialRecordSchema,
   CredentialSignResponseSchema,
@@ -373,6 +375,11 @@ class BrowserPeerStore {
       packetsSent: BigInt(numberStat(selected.pair, 'packetsSent')),
       lossEvents: BigInt(numberStat(selected.pair, 'retransmissionsSent') + numberStat(selected.pair, 'packetsDiscardedOnSend')),
       connected: record.peer.connectionState === 'connected',
+      localCandidateType: connectionCandidateType(stringStat(selected.local, 'candidateType')),
+      remoteCandidateType: connectionCandidateType(stringStat(selected.remote, 'candidateType')),
+      localProtocol: connectionTransport(stringStat(selected.local, 'protocol')),
+      remoteProtocol: connectionTransport(stringStat(selected.remote, 'protocol')),
+      relayTransport: connectionTransport(stringStat(selected.local, 'relayProtocol')),
     })
   }
 
@@ -566,6 +573,25 @@ function candidatePath(local: RTCStats, remote: RTCStats): ObservedPath {
   return stringStat(local, 'candidateType') === 'relay' || stringStat(remote, 'candidateType') === 'relay'
     ? ObservedPath.SINGLE_RELAY
     : ObservedPath.DIRECT
+}
+
+function connectionCandidateType(value: string): ConnectionCandidateType {
+  switch (value.toLowerCase()) {
+    case 'host': return ConnectionCandidateType.HOST
+    case 'srflx': return ConnectionCandidateType.SERVER_REFLEXIVE
+    case 'prflx': return ConnectionCandidateType.PEER_REFLEXIVE
+    case 'relay': return ConnectionCandidateType.RELAY
+    default: return ConnectionCandidateType.UNSPECIFIED
+  }
+}
+
+function connectionTransport(value: string): ConnectionTransport {
+  switch (value.toLowerCase()) {
+    case 'udp': return ConnectionTransport.UDP
+    case 'tcp':
+    case 'tls': return ConnectionTransport.TCP
+    default: return ConnectionTransport.UNSPECIFIED
+  }
 }
 
 function stringStat(value: RTCStats, key: string): string {

@@ -36,6 +36,15 @@ type EndpointRegistryHost interface {
 	DeleteEndpoint(context.Context, *bindingpb.EndpointDeleteRequest) (*bindingpb.EndpointDeleteResult, error)
 }
 
+// ConnectionPolicyHost 是 binding 对 Endpoint 网络选择策略的窄业务入口。
+// 实现必须复用 Go planner 的平台、凭据和 Cloud eligibility 真值；UI 不得直接改写 registry 字段。
+type ConnectionPolicyHost interface {
+	// GetConnectionPolicy 返回持久策略及当前 generation 可证明的 Route kind 可用性。
+	GetConnectionPolicy(context.Context, *bindingpb.ConnectionPolicyGetRequest) (*bindingpb.ConnectionPolicyGetResult, error)
+	// ApplyConnectionPolicy 原子持久化用户策略，并返回提交后的 planner 可用性投影。
+	ApplyConnectionPolicy(context.Context, *bindingpb.ConnectionPolicyApplyRequest) (*bindingpb.ConnectionPolicyApplyResult, error)
+}
+
 // EndpointShareHost 是 binding 对一次性 Endpoint share 的两阶段入口。
 // Receive 只返回 Go 计算的 diff 并持有 generation-local token；Commit 才能原子更新 registry。
 type EndpointShareHost interface {

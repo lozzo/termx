@@ -39,6 +39,46 @@ func TestEndpointRegistryPersistsAcrossEngineRecreation(t *testing.T) {
 	}
 }
 
+func TestConnectionPolicyUsesGoRegistryTransactionAndAvailability(t *testing.T) {
+	platform := newRegistryPlatform(t)
+	host := platform.host()
+	if _, err := host.UpsertEndpoint(context.Background(), &bindingpb.EndpointUpsertRequest{Endpoint: testEndpointProto(t, "studio", "daemon-studio", "grant-studio")}); err != nil {
+		t.Fatal(err)
+	}
+	initial, err := host.GetConnectionPolicy(context.Background(), &bindingpb.ConnectionPolicyGetRequest{EndpointId: "studio"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if initial.GetState().GetPolicy().GetRoutePreference() != remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_AUTO {
+		t.Fatalf("initial policy = %#v", initial.GetState())
+	}
+	availability := initial.GetState().GetRoutes()
+	if len(availability) != 3 || availability[0].GetRouteKind() != bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_DIRECT || availability[0].GetReason() != bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_PLATFORM_UNSUPPORTED {
+		t.Fatalf("route availability = %#v", availability)
+	}
+	applied, err := host.ApplyConnectionPolicy(context.Background(), &bindingpb.ConnectionPolicyApplyRequest{
+		EndpointId: "studio",
+		Policy: &bindingpb.ConnectionPolicy{
+			RoutePreference: remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_DIRECT,
+			CloudRelayMode:  remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY,
+			RelayTransport:  remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_TCP,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied.GetState().GetPolicy().GetRoutePreference() != remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_DIRECT {
+		t.Fatalf("applied state = %#v", applied.GetState())
+	}
+	registry, err := host.GetEndpointRegistry(context.Background(), &bindingpb.EndpointRegistryGetRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := registry.GetRegistry().GetEndpoints()[0].GetSelectionPolicy().GetRoutePreference(); got != remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_DIRECT {
+		t.Fatalf("persisted route preference = %v", got)
+	}
+}
+
 func TestEndpointRegistryRejectsIdentityReplacementWithoutPublishing(t *testing.T) {
 	platform := newRegistryPlatform(t)
 	host := platform.host()

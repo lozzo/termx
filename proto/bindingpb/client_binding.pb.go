@@ -137,6 +137,957 @@ func (ResourceStreamFrameType) EnumDescriptor() ([]byte, []int) {
 	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{1}
 }
 
+// ConnectionRouteKind 是 ReadySession 实际获胜的持久 Route kind 投影。
+type ConnectionRouteKind int32
+
+const (
+	ConnectionRouteKind_CONNECTION_ROUTE_KIND_UNSPECIFIED   ConnectionRouteKind = 0
+	ConnectionRouteKind_CONNECTION_ROUTE_KIND_LOCAL         ConnectionRouteKind = 1
+	ConnectionRouteKind_CONNECTION_ROUTE_KIND_DIRECT        ConnectionRouteKind = 2
+	ConnectionRouteKind_CONNECTION_ROUTE_KIND_SSH           ConnectionRouteKind = 3
+	ConnectionRouteKind_CONNECTION_ROUTE_KIND_MANAGED_CLOUD ConnectionRouteKind = 4
+)
+
+// Enum value maps for ConnectionRouteKind.
+var (
+	ConnectionRouteKind_name = map[int32]string{
+		0: "CONNECTION_ROUTE_KIND_UNSPECIFIED",
+		1: "CONNECTION_ROUTE_KIND_LOCAL",
+		2: "CONNECTION_ROUTE_KIND_DIRECT",
+		3: "CONNECTION_ROUTE_KIND_SSH",
+		4: "CONNECTION_ROUTE_KIND_MANAGED_CLOUD",
+	}
+	ConnectionRouteKind_value = map[string]int32{
+		"CONNECTION_ROUTE_KIND_UNSPECIFIED":   0,
+		"CONNECTION_ROUTE_KIND_LOCAL":         1,
+		"CONNECTION_ROUTE_KIND_DIRECT":        2,
+		"CONNECTION_ROUTE_KIND_SSH":           3,
+		"CONNECTION_ROUTE_KIND_MANAGED_CLOUD": 4,
+	}
+)
+
+func (x ConnectionRouteKind) Enum() *ConnectionRouteKind {
+	p := new(ConnectionRouteKind)
+	*p = x
+	return p
+}
+
+func (x ConnectionRouteKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ConnectionRouteKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_bindingpb_client_binding_proto_enumTypes[2].Descriptor()
+}
+
+func (ConnectionRouteKind) Type() protoreflect.EnumType {
+	return &file_bindingpb_client_binding_proto_enumTypes[2]
+}
+
+func (x ConnectionRouteKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ConnectionRouteKind.Descriptor instead.
+func (ConnectionRouteKind) EnumDescriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{2}
+}
+
+// ConnectionCandidateType 是 selected ICE candidate pair 的脱敏候选类型。
+type ConnectionCandidateType int32
+
+const (
+	ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_UNSPECIFIED      ConnectionCandidateType = 0
+	ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_HOST             ConnectionCandidateType = 1
+	ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_SERVER_REFLEXIVE ConnectionCandidateType = 2
+	ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_PEER_REFLEXIVE   ConnectionCandidateType = 3
+	ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_RELAY            ConnectionCandidateType = 4
+)
+
+// Enum value maps for ConnectionCandidateType.
+var (
+	ConnectionCandidateType_name = map[int32]string{
+		0: "CONNECTION_CANDIDATE_TYPE_UNSPECIFIED",
+		1: "CONNECTION_CANDIDATE_TYPE_HOST",
+		2: "CONNECTION_CANDIDATE_TYPE_SERVER_REFLEXIVE",
+		3: "CONNECTION_CANDIDATE_TYPE_PEER_REFLEXIVE",
+		4: "CONNECTION_CANDIDATE_TYPE_RELAY",
+	}
+	ConnectionCandidateType_value = map[string]int32{
+		"CONNECTION_CANDIDATE_TYPE_UNSPECIFIED":      0,
+		"CONNECTION_CANDIDATE_TYPE_HOST":             1,
+		"CONNECTION_CANDIDATE_TYPE_SERVER_REFLEXIVE": 2,
+		"CONNECTION_CANDIDATE_TYPE_PEER_REFLEXIVE":   3,
+		"CONNECTION_CANDIDATE_TYPE_RELAY":            4,
+	}
+)
+
+func (x ConnectionCandidateType) Enum() *ConnectionCandidateType {
+	p := new(ConnectionCandidateType)
+	*p = x
+	return p
+}
+
+func (x ConnectionCandidateType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ConnectionCandidateType) Descriptor() protoreflect.EnumDescriptor {
+	return file_bindingpb_client_binding_proto_enumTypes[3].Descriptor()
+}
+
+func (ConnectionCandidateType) Type() protoreflect.EnumType {
+	return &file_bindingpb_client_binding_proto_enumTypes[3]
+}
+
+func (x ConnectionCandidateType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ConnectionCandidateType.Descriptor instead.
+func (ConnectionCandidateType) EnumDescriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{3}
+}
+
+// ConnectionTransport 是 selected candidate 或 TURN allocation 可证明的传输协议。
+type ConnectionTransport int32
+
+const (
+	ConnectionTransport_CONNECTION_TRANSPORT_UNSPECIFIED ConnectionTransport = 0
+	ConnectionTransport_CONNECTION_TRANSPORT_UDP         ConnectionTransport = 1
+	ConnectionTransport_CONNECTION_TRANSPORT_TCP         ConnectionTransport = 2
+)
+
+// Enum value maps for ConnectionTransport.
+var (
+	ConnectionTransport_name = map[int32]string{
+		0: "CONNECTION_TRANSPORT_UNSPECIFIED",
+		1: "CONNECTION_TRANSPORT_UDP",
+		2: "CONNECTION_TRANSPORT_TCP",
+	}
+	ConnectionTransport_value = map[string]int32{
+		"CONNECTION_TRANSPORT_UNSPECIFIED": 0,
+		"CONNECTION_TRANSPORT_UDP":         1,
+		"CONNECTION_TRANSPORT_TCP":         2,
+	}
+)
+
+func (x ConnectionTransport) Enum() *ConnectionTransport {
+	p := new(ConnectionTransport)
+	*p = x
+	return p
+}
+
+func (x ConnectionTransport) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ConnectionTransport) Descriptor() protoreflect.EnumDescriptor {
+	return file_bindingpb_client_binding_proto_enumTypes[4].Descriptor()
+}
+
+func (ConnectionTransport) Type() protoreflect.EnumType {
+	return &file_bindingpb_client_binding_proto_enumTypes[4]
+}
+
+func (x ConnectionTransport) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ConnectionTransport.Descriptor instead.
+func (ConnectionTransport) EnumDescriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{4}
+}
+
+// ConnectionPolicyAvailabilityReason 是 Go planner 对指定 Route kind 不可选原因的稳定投影。
+// UI 只负责展示；不得依据 Route 字段、平台类型或登录状态自行推断可用性。
+type ConnectionPolicyAvailabilityReason int32
+
+const (
+	ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_UNSPECIFIED            ConnectionPolicyAvailabilityReason = 0
+	ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_AVAILABLE              ConnectionPolicyAvailabilityReason = 1
+	ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_NOT_CONFIGURED   ConnectionPolicyAvailabilityReason = 2
+	ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_DISABLED         ConnectionPolicyAvailabilityReason = 3
+	ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_PLATFORM_UNSUPPORTED   ConnectionPolicyAvailabilityReason = 4
+	ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_CREDENTIAL_UNAVAILABLE ConnectionPolicyAvailabilityReason = 5
+	ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_CLOUD_UNAVAILABLE      ConnectionPolicyAvailabilityReason = 6
+)
+
+// Enum value maps for ConnectionPolicyAvailabilityReason.
+var (
+	ConnectionPolicyAvailabilityReason_name = map[int32]string{
+		0: "CONNECTION_POLICY_AVAILABILITY_REASON_UNSPECIFIED",
+		1: "CONNECTION_POLICY_AVAILABILITY_REASON_AVAILABLE",
+		2: "CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_NOT_CONFIGURED",
+		3: "CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_DISABLED",
+		4: "CONNECTION_POLICY_AVAILABILITY_REASON_PLATFORM_UNSUPPORTED",
+		5: "CONNECTION_POLICY_AVAILABILITY_REASON_CREDENTIAL_UNAVAILABLE",
+		6: "CONNECTION_POLICY_AVAILABILITY_REASON_CLOUD_UNAVAILABLE",
+	}
+	ConnectionPolicyAvailabilityReason_value = map[string]int32{
+		"CONNECTION_POLICY_AVAILABILITY_REASON_UNSPECIFIED":            0,
+		"CONNECTION_POLICY_AVAILABILITY_REASON_AVAILABLE":              1,
+		"CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_NOT_CONFIGURED":   2,
+		"CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_DISABLED":         3,
+		"CONNECTION_POLICY_AVAILABILITY_REASON_PLATFORM_UNSUPPORTED":   4,
+		"CONNECTION_POLICY_AVAILABILITY_REASON_CREDENTIAL_UNAVAILABLE": 5,
+		"CONNECTION_POLICY_AVAILABILITY_REASON_CLOUD_UNAVAILABLE":      6,
+	}
+)
+
+func (x ConnectionPolicyAvailabilityReason) Enum() *ConnectionPolicyAvailabilityReason {
+	p := new(ConnectionPolicyAvailabilityReason)
+	*p = x
+	return p
+}
+
+func (x ConnectionPolicyAvailabilityReason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ConnectionPolicyAvailabilityReason) Descriptor() protoreflect.EnumDescriptor {
+	return file_bindingpb_client_binding_proto_enumTypes[5].Descriptor()
+}
+
+func (ConnectionPolicyAvailabilityReason) Type() protoreflect.EnumType {
+	return &file_bindingpb_client_binding_proto_enumTypes[5]
+}
+
+func (x ConnectionPolicyAvailabilityReason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ConnectionPolicyAvailabilityReason.Descriptor instead.
+func (ConnectionPolicyAvailabilityReason) EnumDescriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{5}
+}
+
+// ConnectionSnapshot 是同一个 Go-owned ReadySession 的只读诊断投影。
+// 它禁止携带 IP、hostname、SDP、credential、账号或 terminal 数据。
+type ConnectionSnapshot struct {
+	state               protoimpl.MessageState  `protogen:"open.v1"`
+	RouteId             string                  `protobuf:"bytes,1,opt,name=route_id,json=routeId,proto3" json:"route_id,omitempty"`
+	RouteKind           ConnectionRouteKind     `protobuf:"varint,2,opt,name=route_kind,json=routeKind,proto3,enum=muxvia.client.binding.v1.ConnectionRouteKind" json:"route_kind,omitempty"`
+	ObservedPath        cloudpb.ObservedPath    `protobuf:"varint,3,opt,name=observed_path,json=observedPath,proto3,enum=muxvia.cloud.v1.ObservedPath" json:"observed_path,omitempty"`
+	SelectionReason     string                  `protobuf:"bytes,4,opt,name=selection_reason,json=selectionReason,proto3" json:"selection_reason,omitempty"`
+	SampledAtUnixNano   int64                   `protobuf:"varint,5,opt,name=sampled_at_unix_nano,json=sampledAtUnixNano,proto3" json:"sampled_at_unix_nano,omitempty"`
+	RoundTripNanos      int64                   `protobuf:"varint,6,opt,name=round_trip_nanos,json=roundTripNanos,proto3" json:"round_trip_nanos,omitempty"`
+	LocalCandidateType  ConnectionCandidateType `protobuf:"varint,7,opt,name=local_candidate_type,json=localCandidateType,proto3,enum=muxvia.client.binding.v1.ConnectionCandidateType" json:"local_candidate_type,omitempty"`
+	RemoteCandidateType ConnectionCandidateType `protobuf:"varint,8,opt,name=remote_candidate_type,json=remoteCandidateType,proto3,enum=muxvia.client.binding.v1.ConnectionCandidateType" json:"remote_candidate_type,omitempty"`
+	LocalProtocol       ConnectionTransport     `protobuf:"varint,9,opt,name=local_protocol,json=localProtocol,proto3,enum=muxvia.client.binding.v1.ConnectionTransport" json:"local_protocol,omitempty"`
+	RemoteProtocol      ConnectionTransport     `protobuf:"varint,10,opt,name=remote_protocol,json=remoteProtocol,proto3,enum=muxvia.client.binding.v1.ConnectionTransport" json:"remote_protocol,omitempty"`
+	RelayTransport      ConnectionTransport     `protobuf:"varint,11,opt,name=relay_transport,json=relayTransport,proto3,enum=muxvia.client.binding.v1.ConnectionTransport" json:"relay_transport,omitempty"`
+	NetworkClass        string                  `protobuf:"bytes,12,opt,name=network_class,json=networkClass,proto3" json:"network_class,omitempty"`
+	BytesSent           uint64                  `protobuf:"varint,13,opt,name=bytes_sent,json=bytesSent,proto3" json:"bytes_sent,omitempty"`
+	BytesReceived       uint64                  `protobuf:"varint,14,opt,name=bytes_received,json=bytesReceived,proto3" json:"bytes_received,omitempty"`
+	PacketsSent         uint64                  `protobuf:"varint,15,opt,name=packets_sent,json=packetsSent,proto3" json:"packets_sent,omitempty"`
+	LossEvents          uint64                  `protobuf:"varint,16,opt,name=loss_events,json=lossEvents,proto3" json:"loss_events,omitempty"`
+	Connected           bool                    `protobuf:"varint,17,opt,name=connected,proto3" json:"connected,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *ConnectionSnapshot) Reset() {
+	*x = ConnectionSnapshot{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectionSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectionSnapshot) ProtoMessage() {}
+
+func (x *ConnectionSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectionSnapshot.ProtoReflect.Descriptor instead.
+func (*ConnectionSnapshot) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ConnectionSnapshot) GetRouteId() string {
+	if x != nil {
+		return x.RouteId
+	}
+	return ""
+}
+
+func (x *ConnectionSnapshot) GetRouteKind() ConnectionRouteKind {
+	if x != nil {
+		return x.RouteKind
+	}
+	return ConnectionRouteKind_CONNECTION_ROUTE_KIND_UNSPECIFIED
+}
+
+func (x *ConnectionSnapshot) GetObservedPath() cloudpb.ObservedPath {
+	if x != nil {
+		return x.ObservedPath
+	}
+	return cloudpb.ObservedPath(0)
+}
+
+func (x *ConnectionSnapshot) GetSelectionReason() string {
+	if x != nil {
+		return x.SelectionReason
+	}
+	return ""
+}
+
+func (x *ConnectionSnapshot) GetSampledAtUnixNano() int64 {
+	if x != nil {
+		return x.SampledAtUnixNano
+	}
+	return 0
+}
+
+func (x *ConnectionSnapshot) GetRoundTripNanos() int64 {
+	if x != nil {
+		return x.RoundTripNanos
+	}
+	return 0
+}
+
+func (x *ConnectionSnapshot) GetLocalCandidateType() ConnectionCandidateType {
+	if x != nil {
+		return x.LocalCandidateType
+	}
+	return ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_UNSPECIFIED
+}
+
+func (x *ConnectionSnapshot) GetRemoteCandidateType() ConnectionCandidateType {
+	if x != nil {
+		return x.RemoteCandidateType
+	}
+	return ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_UNSPECIFIED
+}
+
+func (x *ConnectionSnapshot) GetLocalProtocol() ConnectionTransport {
+	if x != nil {
+		return x.LocalProtocol
+	}
+	return ConnectionTransport_CONNECTION_TRANSPORT_UNSPECIFIED
+}
+
+func (x *ConnectionSnapshot) GetRemoteProtocol() ConnectionTransport {
+	if x != nil {
+		return x.RemoteProtocol
+	}
+	return ConnectionTransport_CONNECTION_TRANSPORT_UNSPECIFIED
+}
+
+func (x *ConnectionSnapshot) GetRelayTransport() ConnectionTransport {
+	if x != nil {
+		return x.RelayTransport
+	}
+	return ConnectionTransport_CONNECTION_TRANSPORT_UNSPECIFIED
+}
+
+func (x *ConnectionSnapshot) GetNetworkClass() string {
+	if x != nil {
+		return x.NetworkClass
+	}
+	return ""
+}
+
+func (x *ConnectionSnapshot) GetBytesSent() uint64 {
+	if x != nil {
+		return x.BytesSent
+	}
+	return 0
+}
+
+func (x *ConnectionSnapshot) GetBytesReceived() uint64 {
+	if x != nil {
+		return x.BytesReceived
+	}
+	return 0
+}
+
+func (x *ConnectionSnapshot) GetPacketsSent() uint64 {
+	if x != nil {
+		return x.PacketsSent
+	}
+	return 0
+}
+
+func (x *ConnectionSnapshot) GetLossEvents() uint64 {
+	if x != nil {
+		return x.LossEvents
+	}
+	return 0
+}
+
+func (x *ConnectionSnapshot) GetConnected() bool {
+	if x != nil {
+		return x.Connected
+	}
+	return false
+}
+
+// ConnectionPolicy 是 Endpoint selection policy 中允许用户调整的稳定子集。
+// 持久化和 planner validation 都由 Go Client Engine 持有，平台 UI 只能提交用户意图。
+type ConnectionPolicy struct {
+	state           protoimpl.MessageState                   `protogen:"open.v1"`
+	RoutePreference remoteauthpb.EndpointRoutePreference     `protobuf:"varint,1,opt,name=route_preference,json=routePreference,proto3,enum=muxvia.remote.auth.v1.EndpointRoutePreference" json:"route_preference,omitempty"`
+	CloudRelayMode  remoteauthpb.ManagedWebRTCRelayMode      `protobuf:"varint,2,opt,name=cloud_relay_mode,json=cloudRelayMode,proto3,enum=muxvia.remote.auth.v1.ManagedWebRTCRelayMode" json:"cloud_relay_mode,omitempty"`
+	RelayTransport  remoteauthpb.ManagedWebRTCRelayTransport `protobuf:"varint,3,opt,name=relay_transport,json=relayTransport,proto3,enum=muxvia.remote.auth.v1.ManagedWebRTCRelayTransport" json:"relay_transport,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ConnectionPolicy) Reset() {
+	*x = ConnectionPolicy{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectionPolicy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectionPolicy) ProtoMessage() {}
+
+func (x *ConnectionPolicy) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectionPolicy.ProtoReflect.Descriptor instead.
+func (*ConnectionPolicy) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ConnectionPolicy) GetRoutePreference() remoteauthpb.EndpointRoutePreference {
+	if x != nil {
+		return x.RoutePreference
+	}
+	return remoteauthpb.EndpointRoutePreference(0)
+}
+
+func (x *ConnectionPolicy) GetCloudRelayMode() remoteauthpb.ManagedWebRTCRelayMode {
+	if x != nil {
+		return x.CloudRelayMode
+	}
+	return remoteauthpb.ManagedWebRTCRelayMode(0)
+}
+
+func (x *ConnectionPolicy) GetRelayTransport() remoteauthpb.ManagedWebRTCRelayTransport {
+	if x != nil {
+		return x.RelayTransport
+	}
+	return remoteauthpb.ManagedWebRTCRelayTransport(0)
+}
+
+type ConnectionPolicyRouteAvailability struct {
+	state         protoimpl.MessageState             `protogen:"open.v1"`
+	RouteKind     ConnectionRouteKind                `protobuf:"varint,1,opt,name=route_kind,json=routeKind,proto3,enum=muxvia.client.binding.v1.ConnectionRouteKind" json:"route_kind,omitempty"`
+	Available     bool                               `protobuf:"varint,2,opt,name=available,proto3" json:"available,omitempty"`
+	Reason        ConnectionPolicyAvailabilityReason `protobuf:"varint,3,opt,name=reason,proto3,enum=muxvia.client.binding.v1.ConnectionPolicyAvailabilityReason" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConnectionPolicyRouteAvailability) Reset() {
+	*x = ConnectionPolicyRouteAvailability{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectionPolicyRouteAvailability) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectionPolicyRouteAvailability) ProtoMessage() {}
+
+func (x *ConnectionPolicyRouteAvailability) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectionPolicyRouteAvailability.ProtoReflect.Descriptor instead.
+func (*ConnectionPolicyRouteAvailability) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ConnectionPolicyRouteAvailability) GetRouteKind() ConnectionRouteKind {
+	if x != nil {
+		return x.RouteKind
+	}
+	return ConnectionRouteKind_CONNECTION_ROUTE_KIND_UNSPECIFIED
+}
+
+func (x *ConnectionPolicyRouteAvailability) GetAvailable() bool {
+	if x != nil {
+		return x.Available
+	}
+	return false
+}
+
+func (x *ConnectionPolicyRouteAvailability) GetReason() ConnectionPolicyAvailabilityReason {
+	if x != nil {
+		return x.Reason
+	}
+	return ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_UNSPECIFIED
+}
+
+type ConnectionPolicyState struct {
+	state         protoimpl.MessageState               `protogen:"open.v1"`
+	Policy        *ConnectionPolicy                    `protobuf:"bytes,1,opt,name=policy,proto3" json:"policy,omitempty"`
+	Routes        []*ConnectionPolicyRouteAvailability `protobuf:"bytes,2,rep,name=routes,proto3" json:"routes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConnectionPolicyState) Reset() {
+	*x = ConnectionPolicyState{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectionPolicyState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectionPolicyState) ProtoMessage() {}
+
+func (x *ConnectionPolicyState) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectionPolicyState.ProtoReflect.Descriptor instead.
+func (*ConnectionPolicyState) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ConnectionPolicyState) GetPolicy() *ConnectionPolicy {
+	if x != nil {
+		return x.Policy
+	}
+	return nil
+}
+
+func (x *ConnectionPolicyState) GetRoutes() []*ConnectionPolicyRouteAvailability {
+	if x != nil {
+		return x.Routes
+	}
+	return nil
+}
+
+type ConnectionPolicyGetRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	EndpointId    string                 `protobuf:"bytes,2,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConnectionPolicyGetRequest) Reset() {
+	*x = ConnectionPolicyGetRequest{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectionPolicyGetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectionPolicyGetRequest) ProtoMessage() {}
+
+func (x *ConnectionPolicyGetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectionPolicyGetRequest.ProtoReflect.Descriptor instead.
+func (*ConnectionPolicyGetRequest) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ConnectionPolicyGetRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ConnectionPolicyGetRequest) GetEndpointId() string {
+	if x != nil {
+		return x.EndpointId
+	}
+	return ""
+}
+
+type ConnectionPolicyGetResult struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	RequestId       string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	OperationHandle uint64                 `protobuf:"varint,2,opt,name=operation_handle,json=operationHandle,proto3" json:"operation_handle,omitempty"`
+	State           *ConnectionPolicyState `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
+	Error           *apipb.ApiError        `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ConnectionPolicyGetResult) Reset() {
+	*x = ConnectionPolicyGetResult{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectionPolicyGetResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectionPolicyGetResult) ProtoMessage() {}
+
+func (x *ConnectionPolicyGetResult) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectionPolicyGetResult.ProtoReflect.Descriptor instead.
+func (*ConnectionPolicyGetResult) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ConnectionPolicyGetResult) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ConnectionPolicyGetResult) GetOperationHandle() uint64 {
+	if x != nil {
+		return x.OperationHandle
+	}
+	return 0
+}
+
+func (x *ConnectionPolicyGetResult) GetState() *ConnectionPolicyState {
+	if x != nil {
+		return x.State
+	}
+	return nil
+}
+
+func (x *ConnectionPolicyGetResult) GetError() *apipb.ApiError {
+	if x != nil {
+		return x.Error
+	}
+	return nil
+}
+
+type ConnectionPolicyApplyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	EndpointId    string                 `protobuf:"bytes,2,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
+	Policy        *ConnectionPolicy      `protobuf:"bytes,3,opt,name=policy,proto3" json:"policy,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConnectionPolicyApplyRequest) Reset() {
+	*x = ConnectionPolicyApplyRequest{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectionPolicyApplyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectionPolicyApplyRequest) ProtoMessage() {}
+
+func (x *ConnectionPolicyApplyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectionPolicyApplyRequest.ProtoReflect.Descriptor instead.
+func (*ConnectionPolicyApplyRequest) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ConnectionPolicyApplyRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ConnectionPolicyApplyRequest) GetEndpointId() string {
+	if x != nil {
+		return x.EndpointId
+	}
+	return ""
+}
+
+func (x *ConnectionPolicyApplyRequest) GetPolicy() *ConnectionPolicy {
+	if x != nil {
+		return x.Policy
+	}
+	return nil
+}
+
+type ConnectionPolicyApplyResult struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	RequestId       string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	OperationHandle uint64                 `protobuf:"varint,2,opt,name=operation_handle,json=operationHandle,proto3" json:"operation_handle,omitempty"`
+	State           *ConnectionPolicyState `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
+	Error           *apipb.ApiError        `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ConnectionPolicyApplyResult) Reset() {
+	*x = ConnectionPolicyApplyResult{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectionPolicyApplyResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectionPolicyApplyResult) ProtoMessage() {}
+
+func (x *ConnectionPolicyApplyResult) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectionPolicyApplyResult.ProtoReflect.Descriptor instead.
+func (*ConnectionPolicyApplyResult) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ConnectionPolicyApplyResult) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ConnectionPolicyApplyResult) GetOperationHandle() uint64 {
+	if x != nil {
+		return x.OperationHandle
+	}
+	return 0
+}
+
+func (x *ConnectionPolicyApplyResult) GetState() *ConnectionPolicyState {
+	if x != nil {
+		return x.State
+	}
+	return nil
+}
+
+func (x *ConnectionPolicyApplyResult) GetError() *apipb.ApiError {
+	if x != nil {
+		return x.Error
+	}
+	return nil
+}
+
+// ConnectionSnapshotGetRequest 重新采样当前 session handle 的实际 transport 状态。
+// session_handle 属于同一 Engine generation；stale 或 closing handle 必须显式失败。
+type ConnectionSnapshotGetRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SessionHandle uint64                 `protobuf:"varint,2,opt,name=session_handle,json=sessionHandle,proto3" json:"session_handle,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConnectionSnapshotGetRequest) Reset() {
+	*x = ConnectionSnapshotGetRequest{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectionSnapshotGetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectionSnapshotGetRequest) ProtoMessage() {}
+
+func (x *ConnectionSnapshotGetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectionSnapshotGetRequest.ProtoReflect.Descriptor instead.
+func (*ConnectionSnapshotGetRequest) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ConnectionSnapshotGetRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ConnectionSnapshotGetRequest) GetSessionHandle() uint64 {
+	if x != nil {
+		return x.SessionHandle
+	}
+	return 0
+}
+
+type ConnectionSnapshotGetResult struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	RequestId       string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	OperationHandle uint64                 `protobuf:"varint,2,opt,name=operation_handle,json=operationHandle,proto3" json:"operation_handle,omitempty"`
+	SessionHandle   uint64                 `protobuf:"varint,3,opt,name=session_handle,json=sessionHandle,proto3" json:"session_handle,omitempty"`
+	Connection      *ConnectionSnapshot    `protobuf:"bytes,4,opt,name=connection,proto3" json:"connection,omitempty"`
+	Error           *apipb.ApiError        `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ConnectionSnapshotGetResult) Reset() {
+	*x = ConnectionSnapshotGetResult{}
+	mi := &file_bindingpb_client_binding_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectionSnapshotGetResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectionSnapshotGetResult) ProtoMessage() {}
+
+func (x *ConnectionSnapshotGetResult) ProtoReflect() protoreflect.Message {
+	mi := &file_bindingpb_client_binding_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectionSnapshotGetResult.ProtoReflect.Descriptor instead.
+func (*ConnectionSnapshotGetResult) Descriptor() ([]byte, []int) {
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ConnectionSnapshotGetResult) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ConnectionSnapshotGetResult) GetOperationHandle() uint64 {
+	if x != nil {
+		return x.OperationHandle
+	}
+	return 0
+}
+
+func (x *ConnectionSnapshotGetResult) GetSessionHandle() uint64 {
+	if x != nil {
+		return x.SessionHandle
+	}
+	return 0
+}
+
+func (x *ConnectionSnapshotGetResult) GetConnection() *ConnectionSnapshot {
+	if x != nil {
+		return x.Connection
+	}
+	return nil
+}
+
+func (x *ConnectionSnapshotGetResult) GetError() *apipb.ApiError {
+	if x != nil {
+		return x.Error
+	}
+	return nil
+}
+
 type OpenSessionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -149,7 +1100,7 @@ type OpenSessionRequest struct {
 
 func (x *OpenSessionRequest) Reset() {
 	*x = OpenSessionRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[0]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -161,7 +1112,7 @@ func (x *OpenSessionRequest) String() string {
 func (*OpenSessionRequest) ProtoMessage() {}
 
 func (x *OpenSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[0]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -174,7 +1125,7 @@ func (x *OpenSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenSessionRequest.ProtoReflect.Descriptor instead.
 func (*OpenSessionRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{0}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *OpenSessionRequest) GetRequestId() string {
@@ -216,7 +1167,7 @@ type ImportPairingRequest struct {
 
 func (x *ImportPairingRequest) Reset() {
 	*x = ImportPairingRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[1]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -228,7 +1179,7 @@ func (x *ImportPairingRequest) String() string {
 func (*ImportPairingRequest) ProtoMessage() {}
 
 func (x *ImportPairingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[1]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -241,7 +1192,7 @@ func (x *ImportPairingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImportPairingRequest.ProtoReflect.Descriptor instead.
 func (*ImportPairingRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{1}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ImportPairingRequest) GetRequestId() string {
@@ -282,7 +1233,7 @@ type ImportPairingResult struct {
 
 func (x *ImportPairingResult) Reset() {
 	*x = ImportPairingResult{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[2]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -294,7 +1245,7 @@ func (x *ImportPairingResult) String() string {
 func (*ImportPairingResult) ProtoMessage() {}
 
 func (x *ImportPairingResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[2]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -307,7 +1258,7 @@ func (x *ImportPairingResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImportPairingResult.ProtoReflect.Descriptor instead.
 func (*ImportPairingResult) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{2}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ImportPairingResult) GetRequestId() string {
@@ -383,7 +1334,7 @@ type DeleteCredentialRequest struct {
 
 func (x *DeleteCredentialRequest) Reset() {
 	*x = DeleteCredentialRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[3]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -395,7 +1346,7 @@ func (x *DeleteCredentialRequest) String() string {
 func (*DeleteCredentialRequest) ProtoMessage() {}
 
 func (x *DeleteCredentialRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[3]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -408,7 +1359,7 @@ func (x *DeleteCredentialRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteCredentialRequest.ProtoReflect.Descriptor instead.
 func (*DeleteCredentialRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{3}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *DeleteCredentialRequest) GetRequestId() string {
@@ -436,7 +1387,7 @@ type DeleteCredentialResult struct {
 
 func (x *DeleteCredentialResult) Reset() {
 	*x = DeleteCredentialResult{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[4]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -448,7 +1399,7 @@ func (x *DeleteCredentialResult) String() string {
 func (*DeleteCredentialResult) ProtoMessage() {}
 
 func (x *DeleteCredentialResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[4]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -461,7 +1412,7 @@ func (x *DeleteCredentialResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteCredentialResult.ProtoReflect.Descriptor instead.
 func (*DeleteCredentialResult) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{4}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *DeleteCredentialResult) GetRequestId() string {
@@ -494,7 +1445,7 @@ type EndpointRegistryGetRequest struct {
 
 func (x *EndpointRegistryGetRequest) Reset() {
 	*x = EndpointRegistryGetRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[5]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -506,7 +1457,7 @@ func (x *EndpointRegistryGetRequest) String() string {
 func (*EndpointRegistryGetRequest) ProtoMessage() {}
 
 func (x *EndpointRegistryGetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[5]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -519,7 +1470,7 @@ func (x *EndpointRegistryGetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointRegistryGetRequest.ProtoReflect.Descriptor instead.
 func (*EndpointRegistryGetRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{5}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *EndpointRegistryGetRequest) GetRequestId() string {
@@ -541,7 +1492,7 @@ type EndpointRegistryGetResult struct {
 
 func (x *EndpointRegistryGetResult) Reset() {
 	*x = EndpointRegistryGetResult{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[6]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -553,7 +1504,7 @@ func (x *EndpointRegistryGetResult) String() string {
 func (*EndpointRegistryGetResult) ProtoMessage() {}
 
 func (x *EndpointRegistryGetResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[6]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -566,7 +1517,7 @@ func (x *EndpointRegistryGetResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointRegistryGetResult.ProtoReflect.Descriptor instead.
 func (*EndpointRegistryGetResult) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{6}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *EndpointRegistryGetResult) GetRequestId() string {
@@ -608,7 +1559,7 @@ type EndpointUpsertRequest struct {
 
 func (x *EndpointUpsertRequest) Reset() {
 	*x = EndpointUpsertRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[7]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -620,7 +1571,7 @@ func (x *EndpointUpsertRequest) String() string {
 func (*EndpointUpsertRequest) ProtoMessage() {}
 
 func (x *EndpointUpsertRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[7]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -633,7 +1584,7 @@ func (x *EndpointUpsertRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointUpsertRequest.ProtoReflect.Descriptor instead.
 func (*EndpointUpsertRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{7}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *EndpointUpsertRequest) GetRequestId() string {
@@ -670,7 +1621,7 @@ type EndpointUpsertResult struct {
 
 func (x *EndpointUpsertResult) Reset() {
 	*x = EndpointUpsertResult{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[8]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -682,7 +1633,7 @@ func (x *EndpointUpsertResult) String() string {
 func (*EndpointUpsertResult) ProtoMessage() {}
 
 func (x *EndpointUpsertResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[8]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -695,7 +1646,7 @@ func (x *EndpointUpsertResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointUpsertResult.ProtoReflect.Descriptor instead.
 func (*EndpointUpsertResult) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{8}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *EndpointUpsertResult) GetRequestId() string {
@@ -743,7 +1694,7 @@ type EndpointDeleteRequest struct {
 
 func (x *EndpointDeleteRequest) Reset() {
 	*x = EndpointDeleteRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[9]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -755,7 +1706,7 @@ func (x *EndpointDeleteRequest) String() string {
 func (*EndpointDeleteRequest) ProtoMessage() {}
 
 func (x *EndpointDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[9]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -768,7 +1719,7 @@ func (x *EndpointDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointDeleteRequest.ProtoReflect.Descriptor instead.
 func (*EndpointDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{9}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *EndpointDeleteRequest) GetRequestId() string {
@@ -798,7 +1749,7 @@ type EndpointDeleteResult struct {
 
 func (x *EndpointDeleteResult) Reset() {
 	*x = EndpointDeleteResult{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[10]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -810,7 +1761,7 @@ func (x *EndpointDeleteResult) String() string {
 func (*EndpointDeleteResult) ProtoMessage() {}
 
 func (x *EndpointDeleteResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[10]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -823,7 +1774,7 @@ func (x *EndpointDeleteResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointDeleteResult.ProtoReflect.Descriptor instead.
 func (*EndpointDeleteResult) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{10}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *EndpointDeleteResult) GetRequestId() string {
@@ -872,7 +1823,7 @@ type EndpointShareReceiveRequest struct {
 
 func (x *EndpointShareReceiveRequest) Reset() {
 	*x = EndpointShareReceiveRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[11]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -884,7 +1835,7 @@ func (x *EndpointShareReceiveRequest) String() string {
 func (*EndpointShareReceiveRequest) ProtoMessage() {}
 
 func (x *EndpointShareReceiveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[11]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -897,7 +1848,7 @@ func (x *EndpointShareReceiveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointShareReceiveRequest.ProtoReflect.Descriptor instead.
 func (*EndpointShareReceiveRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{11}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *EndpointShareReceiveRequest) GetRequestId() string {
@@ -925,7 +1876,7 @@ type EndpointShareRouteDiff struct {
 
 func (x *EndpointShareRouteDiff) Reset() {
 	*x = EndpointShareRouteDiff{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[12]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -937,7 +1888,7 @@ func (x *EndpointShareRouteDiff) String() string {
 func (*EndpointShareRouteDiff) ProtoMessage() {}
 
 func (x *EndpointShareRouteDiff) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[12]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -950,7 +1901,7 @@ func (x *EndpointShareRouteDiff) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointShareRouteDiff.ProtoReflect.Descriptor instead.
 func (*EndpointShareRouteDiff) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{12}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *EndpointShareRouteDiff) GetRouteId() string {
@@ -992,7 +1943,7 @@ type EndpointSharePreview struct {
 
 func (x *EndpointSharePreview) Reset() {
 	*x = EndpointSharePreview{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[13]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1004,7 +1955,7 @@ func (x *EndpointSharePreview) String() string {
 func (*EndpointSharePreview) ProtoMessage() {}
 
 func (x *EndpointSharePreview) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[13]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1017,7 +1968,7 @@ func (x *EndpointSharePreview) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointSharePreview.ProtoReflect.Descriptor instead.
 func (*EndpointSharePreview) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{13}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *EndpointSharePreview) GetImportToken() string {
@@ -1095,7 +2046,7 @@ type EndpointShareReceiveResult struct {
 
 func (x *EndpointShareReceiveResult) Reset() {
 	*x = EndpointShareReceiveResult{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[14]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1107,7 +2058,7 @@ func (x *EndpointShareReceiveResult) String() string {
 func (*EndpointShareReceiveResult) ProtoMessage() {}
 
 func (x *EndpointShareReceiveResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[14]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1120,7 +2071,7 @@ func (x *EndpointShareReceiveResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointShareReceiveResult.ProtoReflect.Descriptor instead.
 func (*EndpointShareReceiveResult) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{14}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *EndpointShareReceiveResult) GetRequestId() string {
@@ -1162,7 +2113,7 @@ type EndpointShareCommitRequest struct {
 
 func (x *EndpointShareCommitRequest) Reset() {
 	*x = EndpointShareCommitRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[15]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1174,7 +2125,7 @@ func (x *EndpointShareCommitRequest) String() string {
 func (*EndpointShareCommitRequest) ProtoMessage() {}
 
 func (x *EndpointShareCommitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[15]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1187,7 +2138,7 @@ func (x *EndpointShareCommitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointShareCommitRequest.ProtoReflect.Descriptor instead.
 func (*EndpointShareCommitRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{15}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *EndpointShareCommitRequest) GetRequestId() string {
@@ -1218,7 +2169,7 @@ type EndpointShareCommitResult struct {
 
 func (x *EndpointShareCommitResult) Reset() {
 	*x = EndpointShareCommitResult{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[16]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1230,7 +2181,7 @@ func (x *EndpointShareCommitResult) String() string {
 func (*EndpointShareCommitResult) ProtoMessage() {}
 
 func (x *EndpointShareCommitResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[16]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1243,7 +2194,7 @@ func (x *EndpointShareCommitResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointShareCommitResult.ProtoReflect.Descriptor instead.
 func (*EndpointShareCommitResult) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{16}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *EndpointShareCommitResult) GetRequestId() string {
@@ -1301,7 +2252,7 @@ type SSHCredentialProvisionRequest struct {
 
 func (x *SSHCredentialProvisionRequest) Reset() {
 	*x = SSHCredentialProvisionRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[17]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1313,7 +2264,7 @@ func (x *SSHCredentialProvisionRequest) String() string {
 func (*SSHCredentialProvisionRequest) ProtoMessage() {}
 
 func (x *SSHCredentialProvisionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[17]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1326,7 +2277,7 @@ func (x *SSHCredentialProvisionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSHCredentialProvisionRequest.ProtoReflect.Descriptor instead.
 func (*SSHCredentialProvisionRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{17}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *SSHCredentialProvisionRequest) GetRequestId() string {
@@ -1368,7 +2319,7 @@ type SSHCredentialProvisionResult struct {
 
 func (x *SSHCredentialProvisionResult) Reset() {
 	*x = SSHCredentialProvisionResult{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[18]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1380,7 +2331,7 @@ func (x *SSHCredentialProvisionResult) String() string {
 func (*SSHCredentialProvisionResult) ProtoMessage() {}
 
 func (x *SSHCredentialProvisionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[18]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1393,7 +2344,7 @@ func (x *SSHCredentialProvisionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSHCredentialProvisionResult.ProtoReflect.Descriptor instead.
 func (*SSHCredentialProvisionResult) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{18}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *SSHCredentialProvisionResult) GetRequestId() string {
@@ -1464,6 +2415,9 @@ type EngineCommand struct {
 	//	*EngineCommand_EndpointShareReceive
 	//	*EngineCommand_EndpointShareCommit
 	//	*EngineCommand_SshCredentialProvision
+	//	*EngineCommand_ConnectionPolicyGet
+	//	*EngineCommand_ConnectionPolicyApply
+	//	*EngineCommand_ConnectionSnapshotGet
 	Command       isEngineCommand_Command `protobuf_oneof:"command"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1471,7 +2425,7 @@ type EngineCommand struct {
 
 func (x *EngineCommand) Reset() {
 	*x = EngineCommand{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[19]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1483,7 +2437,7 @@ func (x *EngineCommand) String() string {
 func (*EngineCommand) ProtoMessage() {}
 
 func (x *EngineCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[19]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1496,7 +2450,7 @@ func (x *EngineCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EngineCommand.ProtoReflect.Descriptor instead.
 func (*EngineCommand) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{19}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *EngineCommand) GetCommand() isEngineCommand_Command {
@@ -1578,6 +2532,33 @@ func (x *EngineCommand) GetSshCredentialProvision() *SSHCredentialProvisionReque
 	return nil
 }
 
+func (x *EngineCommand) GetConnectionPolicyGet() *ConnectionPolicyGetRequest {
+	if x != nil {
+		if x, ok := x.Command.(*EngineCommand_ConnectionPolicyGet); ok {
+			return x.ConnectionPolicyGet
+		}
+	}
+	return nil
+}
+
+func (x *EngineCommand) GetConnectionPolicyApply() *ConnectionPolicyApplyRequest {
+	if x != nil {
+		if x, ok := x.Command.(*EngineCommand_ConnectionPolicyApply); ok {
+			return x.ConnectionPolicyApply
+		}
+	}
+	return nil
+}
+
+func (x *EngineCommand) GetConnectionSnapshotGet() *ConnectionSnapshotGetRequest {
+	if x != nil {
+		if x, ok := x.Command.(*EngineCommand_ConnectionSnapshotGet); ok {
+			return x.ConnectionSnapshotGet
+		}
+	}
+	return nil
+}
+
 type isEngineCommand_Command interface {
 	isEngineCommand_Command()
 }
@@ -1614,6 +2595,18 @@ type EngineCommand_SshCredentialProvision struct {
 	SshCredentialProvision *SSHCredentialProvisionRequest `protobuf:"bytes,8,opt,name=ssh_credential_provision,json=sshCredentialProvision,proto3,oneof"`
 }
 
+type EngineCommand_ConnectionPolicyGet struct {
+	ConnectionPolicyGet *ConnectionPolicyGetRequest `protobuf:"bytes,9,opt,name=connection_policy_get,json=connectionPolicyGet,proto3,oneof"`
+}
+
+type EngineCommand_ConnectionPolicyApply struct {
+	ConnectionPolicyApply *ConnectionPolicyApplyRequest `protobuf:"bytes,10,opt,name=connection_policy_apply,json=connectionPolicyApply,proto3,oneof"`
+}
+
+type EngineCommand_ConnectionSnapshotGet struct {
+	ConnectionSnapshotGet *ConnectionSnapshotGetRequest `protobuf:"bytes,11,opt,name=connection_snapshot_get,json=connectionSnapshotGet,proto3,oneof"`
+}
+
 func (*EngineCommand_ImportPairing) isEngineCommand_Command() {}
 
 func (*EngineCommand_DeleteCredential) isEngineCommand_Command() {}
@@ -1630,6 +2623,12 @@ func (*EngineCommand_EndpointShareCommit) isEngineCommand_Command() {}
 
 func (*EngineCommand_SshCredentialProvision) isEngineCommand_Command() {}
 
+func (*EngineCommand_ConnectionPolicyGet) isEngineCommand_Command() {}
+
+func (*EngineCommand_ConnectionPolicyApply) isEngineCommand_Command() {}
+
+func (*EngineCommand_ConnectionSnapshotGet) isEngineCommand_Command() {}
+
 type OpenSessionResult struct {
 	state           protoimpl.MessageState      `protogen:"open.v1"`
 	RequestId       string                      `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -1637,13 +2636,14 @@ type OpenSessionResult struct {
 	SessionHandle   uint64                      `protobuf:"varint,3,opt,name=session_handle,json=sessionHandle,proto3" json:"session_handle,omitempty"`
 	Session         *apipb.EndpointSessionStamp `protobuf:"bytes,4,opt,name=session,proto3" json:"session,omitempty"`
 	Error           *apipb.ApiError             `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
+	Connection      *ConnectionSnapshot         `protobuf:"bytes,6,opt,name=connection,proto3" json:"connection,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *OpenSessionResult) Reset() {
 	*x = OpenSessionResult{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[20]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1655,7 +2655,7 @@ func (x *OpenSessionResult) String() string {
 func (*OpenSessionResult) ProtoMessage() {}
 
 func (x *OpenSessionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[20]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1668,7 +2668,7 @@ func (x *OpenSessionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenSessionResult.ProtoReflect.Descriptor instead.
 func (*OpenSessionResult) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{20}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *OpenSessionResult) GetRequestId() string {
@@ -1706,6 +2706,13 @@ func (x *OpenSessionResult) GetError() *apipb.ApiError {
 	return nil
 }
 
+func (x *OpenSessionResult) GetConnection() *ConnectionSnapshot {
+	if x != nil {
+		return x.Connection
+	}
+	return nil
+}
+
 type ExecuteResult struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	OperationHandle uint64                 `protobuf:"varint,1,opt,name=operation_handle,json=operationHandle,proto3" json:"operation_handle,omitempty"`
@@ -1718,7 +2725,7 @@ type ExecuteResult struct {
 
 func (x *ExecuteResult) Reset() {
 	*x = ExecuteResult{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[21]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1730,7 +2737,7 @@ func (x *ExecuteResult) String() string {
 func (*ExecuteResult) ProtoMessage() {}
 
 func (x *ExecuteResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[21]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1743,7 +2750,7 @@ func (x *ExecuteResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteResult.ProtoReflect.Descriptor instead.
 func (*ExecuteResult) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{21}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ExecuteResult) GetOperationHandle() uint64 {
@@ -1784,7 +2791,7 @@ type ApplicationEvent struct {
 
 func (x *ApplicationEvent) Reset() {
 	*x = ApplicationEvent{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[22]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1796,7 +2803,7 @@ func (x *ApplicationEvent) String() string {
 func (*ApplicationEvent) ProtoMessage() {}
 
 func (x *ApplicationEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[22]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1809,7 +2816,7 @@ func (x *ApplicationEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplicationEvent.ProtoReflect.Descriptor instead.
 func (*ApplicationEvent) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{22}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ApplicationEvent) GetSessionHandle() uint64 {
@@ -1836,7 +2843,7 @@ type OpenResourceStreamRequest struct {
 
 func (x *OpenResourceStreamRequest) Reset() {
 	*x = OpenResourceStreamRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[23]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1848,7 +2855,7 @@ func (x *OpenResourceStreamRequest) String() string {
 func (*OpenResourceStreamRequest) ProtoMessage() {}
 
 func (x *OpenResourceStreamRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[23]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1861,7 +2868,7 @@ func (x *OpenResourceStreamRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenResourceStreamRequest.ProtoReflect.Descriptor instead.
 func (*OpenResourceStreamRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{23}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *OpenResourceStreamRequest) GetResource() *apipb.ResourceHandle {
@@ -1889,7 +2896,7 @@ type ResourceStreamFrame struct {
 
 func (x *ResourceStreamFrame) Reset() {
 	*x = ResourceStreamFrame{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[24]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1901,7 +2908,7 @@ func (x *ResourceStreamFrame) String() string {
 func (*ResourceStreamFrame) ProtoMessage() {}
 
 func (x *ResourceStreamFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[24]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1914,7 +2921,7 @@ func (x *ResourceStreamFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceStreamFrame.ProtoReflect.Descriptor instead.
 func (*ResourceStreamFrame) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{24}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ResourceStreamFrame) GetStreamHandle() uint64 {
@@ -1948,7 +2955,7 @@ type ResourceStreamClosedEvent struct {
 
 func (x *ResourceStreamClosedEvent) Reset() {
 	*x = ResourceStreamClosedEvent{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[25]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1960,7 +2967,7 @@ func (x *ResourceStreamClosedEvent) String() string {
 func (*ResourceStreamClosedEvent) ProtoMessage() {}
 
 func (x *ResourceStreamClosedEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[25]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1973,7 +2980,7 @@ func (x *ResourceStreamClosedEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceStreamClosedEvent.ProtoReflect.Descriptor instead.
 func (*ResourceStreamClosedEvent) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{25}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ResourceStreamClosedEvent) GetStreamHandle() uint64 {
@@ -2001,7 +3008,7 @@ type SessionClosedEvent struct {
 
 func (x *SessionClosedEvent) Reset() {
 	*x = SessionClosedEvent{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[26]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2013,7 +3020,7 @@ func (x *SessionClosedEvent) String() string {
 func (*SessionClosedEvent) ProtoMessage() {}
 
 func (x *SessionClosedEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[26]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2026,7 +3033,7 @@ func (x *SessionClosedEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionClosedEvent.ProtoReflect.Descriptor instead.
 func (*SessionClosedEvent) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{26}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *SessionClosedEvent) GetSessionHandle() uint64 {
@@ -2070,6 +3077,9 @@ type EventEnvelope struct {
 	//	*EventEnvelope_EndpointShareReceive
 	//	*EventEnvelope_EndpointShareCommit
 	//	*EventEnvelope_SshCredentialProvision
+	//	*EventEnvelope_ConnectionPolicyGet
+	//	*EventEnvelope_ConnectionPolicyApply
+	//	*EventEnvelope_ConnectionSnapshotGet
 	Event         isEventEnvelope_Event `protobuf_oneof:"event"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2077,7 +3087,7 @@ type EventEnvelope struct {
 
 func (x *EventEnvelope) Reset() {
 	*x = EventEnvelope{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[27]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2089,7 +3099,7 @@ func (x *EventEnvelope) String() string {
 func (*EventEnvelope) ProtoMessage() {}
 
 func (x *EventEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[27]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2102,7 +3112,7 @@ func (x *EventEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventEnvelope.ProtoReflect.Descriptor instead.
 func (*EventEnvelope) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{27}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *EventEnvelope) GetAbiVersion() uint32 {
@@ -2252,6 +3262,33 @@ func (x *EventEnvelope) GetSshCredentialProvision() *SSHCredentialProvisionResul
 	return nil
 }
 
+func (x *EventEnvelope) GetConnectionPolicyGet() *ConnectionPolicyGetResult {
+	if x != nil {
+		if x, ok := x.Event.(*EventEnvelope_ConnectionPolicyGet); ok {
+			return x.ConnectionPolicyGet
+		}
+	}
+	return nil
+}
+
+func (x *EventEnvelope) GetConnectionPolicyApply() *ConnectionPolicyApplyResult {
+	if x != nil {
+		if x, ok := x.Event.(*EventEnvelope_ConnectionPolicyApply); ok {
+			return x.ConnectionPolicyApply
+		}
+	}
+	return nil
+}
+
+func (x *EventEnvelope) GetConnectionSnapshotGet() *ConnectionSnapshotGetResult {
+	if x != nil {
+		if x, ok := x.Event.(*EventEnvelope_ConnectionSnapshotGet); ok {
+			return x.ConnectionSnapshotGet
+		}
+	}
+	return nil
+}
+
 type isEventEnvelope_Event interface {
 	isEventEnvelope_Event()
 }
@@ -2312,6 +3349,18 @@ type EventEnvelope_SshCredentialProvision struct {
 	SshCredentialProvision *SSHCredentialProvisionResult `protobuf:"bytes,23,opt,name=ssh_credential_provision,json=sshCredentialProvision,proto3,oneof"`
 }
 
+type EventEnvelope_ConnectionPolicyGet struct {
+	ConnectionPolicyGet *ConnectionPolicyGetResult `protobuf:"bytes,24,opt,name=connection_policy_get,json=connectionPolicyGet,proto3,oneof"`
+}
+
+type EventEnvelope_ConnectionPolicyApply struct {
+	ConnectionPolicyApply *ConnectionPolicyApplyResult `protobuf:"bytes,25,opt,name=connection_policy_apply,json=connectionPolicyApply,proto3,oneof"`
+}
+
+type EventEnvelope_ConnectionSnapshotGet struct {
+	ConnectionSnapshotGet *ConnectionSnapshotGetResult `protobuf:"bytes,26,opt,name=connection_snapshot_get,json=connectionSnapshotGet,proto3,oneof"`
+}
+
 func (*EventEnvelope_OpenSession) isEventEnvelope_Event() {}
 
 func (*EventEnvelope_Execute) isEventEnvelope_Event() {}
@@ -2340,6 +3389,12 @@ func (*EventEnvelope_EndpointShareCommit) isEventEnvelope_Event() {}
 
 func (*EventEnvelope_SshCredentialProvision) isEventEnvelope_Event() {}
 
+func (*EventEnvelope_ConnectionPolicyGet) isEventEnvelope_Event() {}
+
+func (*EventEnvelope_ConnectionPolicyApply) isEventEnvelope_Event() {}
+
+func (*EventEnvelope_ConnectionSnapshotGet) isEventEnvelope_Event() {}
+
 type CredentialResolveRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	EndpointId    string                 `protobuf:"bytes,1,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
@@ -2350,7 +3405,7 @@ type CredentialResolveRequest struct {
 
 func (x *CredentialResolveRequest) Reset() {
 	*x = CredentialResolveRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[28]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2362,7 +3417,7 @@ func (x *CredentialResolveRequest) String() string {
 func (*CredentialResolveRequest) ProtoMessage() {}
 
 func (x *CredentialResolveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[28]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2375,7 +3430,7 @@ func (x *CredentialResolveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CredentialResolveRequest.ProtoReflect.Descriptor instead.
 func (*CredentialResolveRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{28}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *CredentialResolveRequest) GetEndpointId() string {
@@ -2402,7 +3457,7 @@ type CredentialPrepareRequest struct {
 
 func (x *CredentialPrepareRequest) Reset() {
 	*x = CredentialPrepareRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[29]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2414,7 +3469,7 @@ func (x *CredentialPrepareRequest) String() string {
 func (*CredentialPrepareRequest) ProtoMessage() {}
 
 func (x *CredentialPrepareRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[29]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2427,7 +3482,7 @@ func (x *CredentialPrepareRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CredentialPrepareRequest.ProtoReflect.Descriptor instead.
 func (*CredentialPrepareRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{29}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *CredentialPrepareRequest) GetEndpointId() string {
@@ -2453,7 +3508,7 @@ type CredentialDeleteRequest struct {
 
 func (x *CredentialDeleteRequest) Reset() {
 	*x = CredentialDeleteRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[30]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2465,7 +3520,7 @@ func (x *CredentialDeleteRequest) String() string {
 func (*CredentialDeleteRequest) ProtoMessage() {}
 
 func (x *CredentialDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[30]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2478,7 +3533,7 @@ func (x *CredentialDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CredentialDeleteRequest.ProtoReflect.Descriptor instead.
 func (*CredentialDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{30}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *CredentialDeleteRequest) GetCredentialRef() string {
@@ -2499,7 +3554,7 @@ type CredentialBindRequest struct {
 
 func (x *CredentialBindRequest) Reset() {
 	*x = CredentialBindRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[31]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2511,7 +3566,7 @@ func (x *CredentialBindRequest) String() string {
 func (*CredentialBindRequest) ProtoMessage() {}
 
 func (x *CredentialBindRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[31]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2524,7 +3579,7 @@ func (x *CredentialBindRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CredentialBindRequest.ProtoReflect.Descriptor instead.
 func (*CredentialBindRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{31}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *CredentialBindRequest) GetEndpointId() string {
@@ -2562,7 +3617,7 @@ type CredentialRecord struct {
 
 func (x *CredentialRecord) Reset() {
 	*x = CredentialRecord{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[32]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2574,7 +3629,7 @@ func (x *CredentialRecord) String() string {
 func (*CredentialRecord) ProtoMessage() {}
 
 func (x *CredentialRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[32]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2587,7 +3642,7 @@ func (x *CredentialRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CredentialRecord.ProtoReflect.Descriptor instead.
 func (*CredentialRecord) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{32}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *CredentialRecord) GetEndpointId() string {
@@ -2642,7 +3697,7 @@ type CredentialSignRequest struct {
 
 func (x *CredentialSignRequest) Reset() {
 	*x = CredentialSignRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[33]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2654,7 +3709,7 @@ func (x *CredentialSignRequest) String() string {
 func (*CredentialSignRequest) ProtoMessage() {}
 
 func (x *CredentialSignRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[33]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2667,7 +3722,7 @@ func (x *CredentialSignRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CredentialSignRequest.ProtoReflect.Descriptor instead.
 func (*CredentialSignRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{33}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *CredentialSignRequest) GetCredentialRef() string {
@@ -2693,7 +3748,7 @@ type CredentialSignResponse struct {
 
 func (x *CredentialSignResponse) Reset() {
 	*x = CredentialSignResponse{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[34]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2705,7 +3760,7 @@ func (x *CredentialSignResponse) String() string {
 func (*CredentialSignResponse) ProtoMessage() {}
 
 func (x *CredentialSignResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[34]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2718,7 +3773,7 @@ func (x *CredentialSignResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CredentialSignResponse.ProtoReflect.Descriptor instead.
 func (*CredentialSignResponse) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{34}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *CredentialSignResponse) GetSignature() []byte {
@@ -2740,7 +3795,7 @@ type SSHCredentialLookupRequest struct {
 
 func (x *SSHCredentialLookupRequest) Reset() {
 	*x = SSHCredentialLookupRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[35]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2752,7 +3807,7 @@ func (x *SSHCredentialLookupRequest) String() string {
 func (*SSHCredentialLookupRequest) ProtoMessage() {}
 
 func (x *SSHCredentialLookupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[35]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2765,7 +3820,7 @@ func (x *SSHCredentialLookupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSHCredentialLookupRequest.ProtoReflect.Descriptor instead.
 func (*SSHCredentialLookupRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{35}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *SSHCredentialLookupRequest) GetCredentialRef() string {
@@ -2791,7 +3846,7 @@ type SSHCredentialDeleteRequest struct {
 
 func (x *SSHCredentialDeleteRequest) Reset() {
 	*x = SSHCredentialDeleteRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[36]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2803,7 +3858,7 @@ func (x *SSHCredentialDeleteRequest) String() string {
 func (*SSHCredentialDeleteRequest) ProtoMessage() {}
 
 func (x *SSHCredentialDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[36]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2816,7 +3871,7 @@ func (x *SSHCredentialDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSHCredentialDeleteRequest.ProtoReflect.Descriptor instead.
 func (*SSHCredentialDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{36}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *SSHCredentialDeleteRequest) GetCredentialRef() string {
@@ -2838,7 +3893,7 @@ type SSHCredentialRecord struct {
 
 func (x *SSHCredentialRecord) Reset() {
 	*x = SSHCredentialRecord{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[37]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2850,7 +3905,7 @@ func (x *SSHCredentialRecord) String() string {
 func (*SSHCredentialRecord) ProtoMessage() {}
 
 func (x *SSHCredentialRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[37]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2863,7 +3918,7 @@ func (x *SSHCredentialRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSHCredentialRecord.ProtoReflect.Descriptor instead.
 func (*SSHCredentialRecord) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{37}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *SSHCredentialRecord) GetCredentialRef() string {
@@ -2900,7 +3955,7 @@ type SSHCredentialSignRequest struct {
 
 func (x *SSHCredentialSignRequest) Reset() {
 	*x = SSHCredentialSignRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[38]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2912,7 +3967,7 @@ func (x *SSHCredentialSignRequest) String() string {
 func (*SSHCredentialSignRequest) ProtoMessage() {}
 
 func (x *SSHCredentialSignRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[38]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2925,7 +3980,7 @@ func (x *SSHCredentialSignRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSHCredentialSignRequest.ProtoReflect.Descriptor instead.
 func (*SSHCredentialSignRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{38}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *SSHCredentialSignRequest) GetCredentialRef() string {
@@ -2958,7 +4013,7 @@ type SSHCredentialSignResponse struct {
 
 func (x *SSHCredentialSignResponse) Reset() {
 	*x = SSHCredentialSignResponse{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[39]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2970,7 +4025,7 @@ func (x *SSHCredentialSignResponse) String() string {
 func (*SSHCredentialSignResponse) ProtoMessage() {}
 
 func (x *SSHCredentialSignResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[39]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2983,7 +4038,7 @@ func (x *SSHCredentialSignResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSHCredentialSignResponse.ProtoReflect.Descriptor instead.
 func (*SSHCredentialSignResponse) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{39}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *SSHCredentialSignResponse) GetSignature() []byte {
@@ -3002,7 +4057,7 @@ type EndpointRegistryLoadRequest struct {
 
 func (x *EndpointRegistryLoadRequest) Reset() {
 	*x = EndpointRegistryLoadRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[40]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3014,7 +4069,7 @@ func (x *EndpointRegistryLoadRequest) String() string {
 func (*EndpointRegistryLoadRequest) ProtoMessage() {}
 
 func (x *EndpointRegistryLoadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[40]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3027,7 +4082,7 @@ func (x *EndpointRegistryLoadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointRegistryLoadRequest.ProtoReflect.Descriptor instead.
 func (*EndpointRegistryLoadRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{40}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{50}
 }
 
 type EndpointRegistryStoreRequest struct {
@@ -3040,7 +4095,7 @@ type EndpointRegistryStoreRequest struct {
 
 func (x *EndpointRegistryStoreRequest) Reset() {
 	*x = EndpointRegistryStoreRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[41]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3052,7 +4107,7 @@ func (x *EndpointRegistryStoreRequest) String() string {
 func (*EndpointRegistryStoreRequest) ProtoMessage() {}
 
 func (x *EndpointRegistryStoreRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[41]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3065,7 +4120,7 @@ func (x *EndpointRegistryStoreRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointRegistryStoreRequest.ProtoReflect.Descriptor instead.
 func (*EndpointRegistryStoreRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{41}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *EndpointRegistryStoreRequest) GetRegistryProto() []byte {
@@ -3091,7 +4146,7 @@ type EndpointRegistryLoaded struct {
 
 func (x *EndpointRegistryLoaded) Reset() {
 	*x = EndpointRegistryLoaded{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[42]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3103,7 +4158,7 @@ func (x *EndpointRegistryLoaded) String() string {
 func (*EndpointRegistryLoaded) ProtoMessage() {}
 
 func (x *EndpointRegistryLoaded) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[42]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3116,7 +4171,7 @@ func (x *EndpointRegistryLoaded) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointRegistryLoaded.ProtoReflect.Descriptor instead.
 func (*EndpointRegistryLoaded) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{42}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *EndpointRegistryLoaded) GetRegistryProto() []byte {
@@ -3135,7 +4190,7 @@ type SignalingEvents struct {
 
 func (x *SignalingEvents) Reset() {
 	*x = SignalingEvents{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[43]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3147,7 +4202,7 @@ func (x *SignalingEvents) String() string {
 func (*SignalingEvents) ProtoMessage() {}
 
 func (x *SignalingEvents) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[43]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3160,7 +4215,7 @@ func (x *SignalingEvents) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignalingEvents.ProtoReflect.Descriptor instead.
 func (*SignalingEvents) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{43}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *SignalingEvents) GetEvents() []*cloudpb.SignalingEvent {
@@ -3182,7 +4237,7 @@ type CloudRouteEligibilityRequest struct {
 
 func (x *CloudRouteEligibilityRequest) Reset() {
 	*x = CloudRouteEligibilityRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[44]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3194,7 +4249,7 @@ func (x *CloudRouteEligibilityRequest) String() string {
 func (*CloudRouteEligibilityRequest) ProtoMessage() {}
 
 func (x *CloudRouteEligibilityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[44]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3207,7 +4262,7 @@ func (x *CloudRouteEligibilityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloudRouteEligibilityRequest.ProtoReflect.Descriptor instead.
 func (*CloudRouteEligibilityRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{44}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *CloudRouteEligibilityRequest) GetAccountProfileRef() string {
@@ -3235,7 +4290,7 @@ type CloudRouteEligibility struct {
 
 func (x *CloudRouteEligibility) Reset() {
 	*x = CloudRouteEligibility{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[45]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3247,7 +4302,7 @@ func (x *CloudRouteEligibility) String() string {
 func (*CloudRouteEligibility) ProtoMessage() {}
 
 func (x *CloudRouteEligibility) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[45]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3260,7 +4315,7 @@ func (x *CloudRouteEligibility) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloudRouteEligibility.ProtoReflect.Descriptor instead.
 func (*CloudRouteEligibility) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{45}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *CloudRouteEligibility) GetAccountSessionAvailable() bool {
@@ -3297,7 +4352,7 @@ type WebRTCOpenPeerRequest struct {
 
 func (x *WebRTCOpenPeerRequest) Reset() {
 	*x = WebRTCOpenPeerRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[46]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3309,7 +4364,7 @@ func (x *WebRTCOpenPeerRequest) String() string {
 func (*WebRTCOpenPeerRequest) ProtoMessage() {}
 
 func (x *WebRTCOpenPeerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[46]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3322,7 +4377,7 @@ func (x *WebRTCOpenPeerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebRTCOpenPeerRequest.ProtoReflect.Descriptor instead.
 func (*WebRTCOpenPeerRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{46}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *WebRTCOpenPeerRequest) GetIceServers() []*cloudpb.IceServer {
@@ -3356,7 +4411,7 @@ type WebRTCPeerOpened struct {
 
 func (x *WebRTCPeerOpened) Reset() {
 	*x = WebRTCPeerOpened{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[47]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3368,7 +4423,7 @@ func (x *WebRTCPeerOpened) String() string {
 func (*WebRTCPeerOpened) ProtoMessage() {}
 
 func (x *WebRTCPeerOpened) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[47]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3381,7 +4436,7 @@ func (x *WebRTCPeerOpened) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebRTCPeerOpened.ProtoReflect.Descriptor instead.
 func (*WebRTCPeerOpened) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{47}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *WebRTCPeerOpened) GetPeerHandle() uint64 {
@@ -3407,7 +4462,7 @@ type WebRTCPeerRequest struct {
 
 func (x *WebRTCPeerRequest) Reset() {
 	*x = WebRTCPeerRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[48]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3419,7 +4474,7 @@ func (x *WebRTCPeerRequest) String() string {
 func (*WebRTCPeerRequest) ProtoMessage() {}
 
 func (x *WebRTCPeerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[48]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3432,7 +4487,7 @@ func (x *WebRTCPeerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebRTCPeerRequest.ProtoReflect.Descriptor instead.
 func (*WebRTCPeerRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{48}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *WebRTCPeerRequest) GetPeerHandle() uint64 {
@@ -3451,7 +4506,7 @@ type WebRTCCreateOfferResult struct {
 
 func (x *WebRTCCreateOfferResult) Reset() {
 	*x = WebRTCCreateOfferResult{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[49]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3463,7 +4518,7 @@ func (x *WebRTCCreateOfferResult) String() string {
 func (*WebRTCCreateOfferResult) ProtoMessage() {}
 
 func (x *WebRTCCreateOfferResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[49]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3476,7 +4531,7 @@ func (x *WebRTCCreateOfferResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebRTCCreateOfferResult.ProtoReflect.Descriptor instead.
 func (*WebRTCCreateOfferResult) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{49}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *WebRTCCreateOfferResult) GetOfferSdp() string {
@@ -3497,7 +4552,7 @@ type WebRTCApplyAnswerRequest struct {
 
 func (x *WebRTCApplyAnswerRequest) Reset() {
 	*x = WebRTCApplyAnswerRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[50]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3509,7 +4564,7 @@ func (x *WebRTCApplyAnswerRequest) String() string {
 func (*WebRTCApplyAnswerRequest) ProtoMessage() {}
 
 func (x *WebRTCApplyAnswerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[50]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3522,7 +4577,7 @@ func (x *WebRTCApplyAnswerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebRTCApplyAnswerRequest.ProtoReflect.Descriptor instead.
 func (*WebRTCApplyAnswerRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{50}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *WebRTCApplyAnswerRequest) GetPeerHandle() uint64 {
@@ -3556,7 +4611,7 @@ type WebRTCPeerReady struct {
 
 func (x *WebRTCPeerReady) Reset() {
 	*x = WebRTCPeerReady{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[51]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3568,7 +4623,7 @@ func (x *WebRTCPeerReady) String() string {
 func (*WebRTCPeerReady) ProtoMessage() {}
 
 func (x *WebRTCPeerReady) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[51]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3581,7 +4636,7 @@ func (x *WebRTCPeerReady) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebRTCPeerReady.ProtoReflect.Descriptor instead.
 func (*WebRTCPeerReady) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{51}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *WebRTCPeerReady) GetRemoteCertificateFingerprint() string {
@@ -3608,7 +4663,7 @@ type WebRTCChannelSendRequest struct {
 
 func (x *WebRTCChannelSendRequest) Reset() {
 	*x = WebRTCChannelSendRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[52]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3620,7 +4675,7 @@ func (x *WebRTCChannelSendRequest) String() string {
 func (*WebRTCChannelSendRequest) ProtoMessage() {}
 
 func (x *WebRTCChannelSendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[52]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3633,7 +4688,7 @@ func (x *WebRTCChannelSendRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebRTCChannelSendRequest.ProtoReflect.Descriptor instead.
 func (*WebRTCChannelSendRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{52}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *WebRTCChannelSendRequest) GetChannelHandle() uint64 {
@@ -3659,7 +4714,7 @@ type WebRTCChannelSendResult struct {
 
 func (x *WebRTCChannelSendResult) Reset() {
 	*x = WebRTCChannelSendResult{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[53]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3671,7 +4726,7 @@ func (x *WebRTCChannelSendResult) String() string {
 func (*WebRTCChannelSendResult) ProtoMessage() {}
 
 func (x *WebRTCChannelSendResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[53]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3684,7 +4739,7 @@ func (x *WebRTCChannelSendResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebRTCChannelSendResult.ProtoReflect.Descriptor instead.
 func (*WebRTCChannelSendResult) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{53}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *WebRTCChannelSendResult) GetBufferedAmount() uint64 {
@@ -3704,7 +4759,7 @@ type WebRTCChannelThresholdRequest struct {
 
 func (x *WebRTCChannelThresholdRequest) Reset() {
 	*x = WebRTCChannelThresholdRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[54]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3716,7 +4771,7 @@ func (x *WebRTCChannelThresholdRequest) String() string {
 func (*WebRTCChannelThresholdRequest) ProtoMessage() {}
 
 func (x *WebRTCChannelThresholdRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[54]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3729,7 +4784,7 @@ func (x *WebRTCChannelThresholdRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebRTCChannelThresholdRequest.ProtoReflect.Descriptor instead.
 func (*WebRTCChannelThresholdRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{54}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *WebRTCChannelThresholdRequest) GetChannelHandle() uint64 {
@@ -3756,7 +4811,7 @@ type WebRTCPeerSnapshotRequest struct {
 
 func (x *WebRTCPeerSnapshotRequest) Reset() {
 	*x = WebRTCPeerSnapshotRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[55]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3768,7 +4823,7 @@ func (x *WebRTCPeerSnapshotRequest) String() string {
 func (*WebRTCPeerSnapshotRequest) ProtoMessage() {}
 
 func (x *WebRTCPeerSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[55]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3781,7 +4836,7 @@ func (x *WebRTCPeerSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebRTCPeerSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*WebRTCPeerSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{55}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *WebRTCPeerSnapshotRequest) GetPeerHandle() uint64 {
@@ -3799,25 +4854,30 @@ func (x *WebRTCPeerSnapshotRequest) GetSampledAtUnixNano() int64 {
 }
 
 type WebRTCPeerSnapshot struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	Valid             bool                   `protobuf:"varint,1,opt,name=valid,proto3" json:"valid,omitempty"`
-	PairId            string                 `protobuf:"bytes,2,opt,name=pair_id,json=pairId,proto3" json:"pair_id,omitempty"`
-	Path              cloudpb.ObservedPath   `protobuf:"varint,3,opt,name=path,proto3,enum=muxvia.cloud.v1.ObservedPath" json:"path,omitempty"`
-	NetworkClass      string                 `protobuf:"bytes,4,opt,name=network_class,json=networkClass,proto3" json:"network_class,omitempty"`
-	SampledAtUnixNano int64                  `protobuf:"varint,5,opt,name=sampled_at_unix_nano,json=sampledAtUnixNano,proto3" json:"sampled_at_unix_nano,omitempty"`
-	RoundTripNanos    int64                  `protobuf:"varint,6,opt,name=round_trip_nanos,json=roundTripNanos,proto3" json:"round_trip_nanos,omitempty"`
-	BytesSent         uint64                 `protobuf:"varint,7,opt,name=bytes_sent,json=bytesSent,proto3" json:"bytes_sent,omitempty"`
-	BytesReceived     uint64                 `protobuf:"varint,8,opt,name=bytes_received,json=bytesReceived,proto3" json:"bytes_received,omitempty"`
-	PacketsSent       uint64                 `protobuf:"varint,9,opt,name=packets_sent,json=packetsSent,proto3" json:"packets_sent,omitempty"`
-	LossEvents        uint64                 `protobuf:"varint,10,opt,name=loss_events,json=lossEvents,proto3" json:"loss_events,omitempty"`
-	Connected         bool                   `protobuf:"varint,11,opt,name=connected,proto3" json:"connected,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state               protoimpl.MessageState  `protogen:"open.v1"`
+	Valid               bool                    `protobuf:"varint,1,opt,name=valid,proto3" json:"valid,omitempty"`
+	PairId              string                  `protobuf:"bytes,2,opt,name=pair_id,json=pairId,proto3" json:"pair_id,omitempty"`
+	Path                cloudpb.ObservedPath    `protobuf:"varint,3,opt,name=path,proto3,enum=muxvia.cloud.v1.ObservedPath" json:"path,omitempty"`
+	NetworkClass        string                  `protobuf:"bytes,4,opt,name=network_class,json=networkClass,proto3" json:"network_class,omitempty"`
+	SampledAtUnixNano   int64                   `protobuf:"varint,5,opt,name=sampled_at_unix_nano,json=sampledAtUnixNano,proto3" json:"sampled_at_unix_nano,omitempty"`
+	RoundTripNanos      int64                   `protobuf:"varint,6,opt,name=round_trip_nanos,json=roundTripNanos,proto3" json:"round_trip_nanos,omitempty"`
+	BytesSent           uint64                  `protobuf:"varint,7,opt,name=bytes_sent,json=bytesSent,proto3" json:"bytes_sent,omitempty"`
+	BytesReceived       uint64                  `protobuf:"varint,8,opt,name=bytes_received,json=bytesReceived,proto3" json:"bytes_received,omitempty"`
+	PacketsSent         uint64                  `protobuf:"varint,9,opt,name=packets_sent,json=packetsSent,proto3" json:"packets_sent,omitempty"`
+	LossEvents          uint64                  `protobuf:"varint,10,opt,name=loss_events,json=lossEvents,proto3" json:"loss_events,omitempty"`
+	Connected           bool                    `protobuf:"varint,11,opt,name=connected,proto3" json:"connected,omitempty"`
+	LocalCandidateType  ConnectionCandidateType `protobuf:"varint,12,opt,name=local_candidate_type,json=localCandidateType,proto3,enum=muxvia.client.binding.v1.ConnectionCandidateType" json:"local_candidate_type,omitempty"`
+	RemoteCandidateType ConnectionCandidateType `protobuf:"varint,13,opt,name=remote_candidate_type,json=remoteCandidateType,proto3,enum=muxvia.client.binding.v1.ConnectionCandidateType" json:"remote_candidate_type,omitempty"`
+	LocalProtocol       ConnectionTransport     `protobuf:"varint,14,opt,name=local_protocol,json=localProtocol,proto3,enum=muxvia.client.binding.v1.ConnectionTransport" json:"local_protocol,omitempty"`
+	RemoteProtocol      ConnectionTransport     `protobuf:"varint,15,opt,name=remote_protocol,json=remoteProtocol,proto3,enum=muxvia.client.binding.v1.ConnectionTransport" json:"remote_protocol,omitempty"`
+	RelayTransport      ConnectionTransport     `protobuf:"varint,16,opt,name=relay_transport,json=relayTransport,proto3,enum=muxvia.client.binding.v1.ConnectionTransport" json:"relay_transport,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *WebRTCPeerSnapshot) Reset() {
 	*x = WebRTCPeerSnapshot{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[56]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3829,7 +4889,7 @@ func (x *WebRTCPeerSnapshot) String() string {
 func (*WebRTCPeerSnapshot) ProtoMessage() {}
 
 func (x *WebRTCPeerSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[56]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3842,7 +4902,7 @@ func (x *WebRTCPeerSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebRTCPeerSnapshot.ProtoReflect.Descriptor instead.
 func (*WebRTCPeerSnapshot) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{56}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *WebRTCPeerSnapshot) GetValid() bool {
@@ -3922,6 +4982,41 @@ func (x *WebRTCPeerSnapshot) GetConnected() bool {
 	return false
 }
 
+func (x *WebRTCPeerSnapshot) GetLocalCandidateType() ConnectionCandidateType {
+	if x != nil {
+		return x.LocalCandidateType
+	}
+	return ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_UNSPECIFIED
+}
+
+func (x *WebRTCPeerSnapshot) GetRemoteCandidateType() ConnectionCandidateType {
+	if x != nil {
+		return x.RemoteCandidateType
+	}
+	return ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_UNSPECIFIED
+}
+
+func (x *WebRTCPeerSnapshot) GetLocalProtocol() ConnectionTransport {
+	if x != nil {
+		return x.LocalProtocol
+	}
+	return ConnectionTransport_CONNECTION_TRANSPORT_UNSPECIFIED
+}
+
+func (x *WebRTCPeerSnapshot) GetRemoteProtocol() ConnectionTransport {
+	if x != nil {
+		return x.RemoteProtocol
+	}
+	return ConnectionTransport_CONNECTION_TRANSPORT_UNSPECIFIED
+}
+
+func (x *WebRTCPeerSnapshot) GetRelayTransport() ConnectionTransport {
+	if x != nil {
+		return x.RelayTransport
+	}
+	return ConnectionTransport_CONNECTION_TRANSPORT_UNSPECIFIED
+}
+
 type WebRTCCloseRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Handle        uint64                 `protobuf:"varint,1,opt,name=handle,proto3" json:"handle,omitempty"`
@@ -3931,7 +5026,7 @@ type WebRTCCloseRequest struct {
 
 func (x *WebRTCCloseRequest) Reset() {
 	*x = WebRTCCloseRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[57]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3943,7 +5038,7 @@ func (x *WebRTCCloseRequest) String() string {
 func (*WebRTCCloseRequest) ProtoMessage() {}
 
 func (x *WebRTCCloseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[57]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3956,7 +5051,7 @@ func (x *WebRTCCloseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebRTCCloseRequest.ProtoReflect.Descriptor instead.
 func (*WebRTCCloseRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{57}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *WebRTCCloseRequest) GetHandle() uint64 {
@@ -3976,7 +5071,7 @@ type WebRTCChannelMessageEvent struct {
 
 func (x *WebRTCChannelMessageEvent) Reset() {
 	*x = WebRTCChannelMessageEvent{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[58]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3988,7 +5083,7 @@ func (x *WebRTCChannelMessageEvent) String() string {
 func (*WebRTCChannelMessageEvent) ProtoMessage() {}
 
 func (x *WebRTCChannelMessageEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[58]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4001,7 +5096,7 @@ func (x *WebRTCChannelMessageEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebRTCChannelMessageEvent.ProtoReflect.Descriptor instead.
 func (*WebRTCChannelMessageEvent) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{58}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *WebRTCChannelMessageEvent) GetChannelHandle() uint64 {
@@ -4027,7 +5122,7 @@ type WebRTCChannelClosedEvent struct {
 
 func (x *WebRTCChannelClosedEvent) Reset() {
 	*x = WebRTCChannelClosedEvent{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[59]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4039,7 +5134,7 @@ func (x *WebRTCChannelClosedEvent) String() string {
 func (*WebRTCChannelClosedEvent) ProtoMessage() {}
 
 func (x *WebRTCChannelClosedEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[59]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4052,7 +5147,7 @@ func (x *WebRTCChannelClosedEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebRTCChannelClosedEvent.ProtoReflect.Descriptor instead.
 func (*WebRTCChannelClosedEvent) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{59}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *WebRTCChannelClosedEvent) GetChannelHandle() uint64 {
@@ -4072,7 +5167,7 @@ type WebRTCBufferedAmountLowEvent struct {
 
 func (x *WebRTCBufferedAmountLowEvent) Reset() {
 	*x = WebRTCBufferedAmountLowEvent{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[60]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4084,7 +5179,7 @@ func (x *WebRTCBufferedAmountLowEvent) String() string {
 func (*WebRTCBufferedAmountLowEvent) ProtoMessage() {}
 
 func (x *WebRTCBufferedAmountLowEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[60]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4097,7 +5192,7 @@ func (x *WebRTCBufferedAmountLowEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebRTCBufferedAmountLowEvent.ProtoReflect.Descriptor instead.
 func (*WebRTCBufferedAmountLowEvent) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{60}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *WebRTCBufferedAmountLowEvent) GetChannelHandle() uint64 {
@@ -4130,7 +5225,7 @@ type PlatformEvent struct {
 
 func (x *PlatformEvent) Reset() {
 	*x = PlatformEvent{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[61]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4142,7 +5237,7 @@ func (x *PlatformEvent) String() string {
 func (*PlatformEvent) ProtoMessage() {}
 
 func (x *PlatformEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[61]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4155,7 +5250,7 @@ func (x *PlatformEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlatformEvent.ProtoReflect.Descriptor instead.
 func (*PlatformEvent) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{61}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *PlatformEvent) GetEvent() isPlatformEvent_Event {
@@ -4252,7 +5347,7 @@ type PlatformRequest struct {
 
 func (x *PlatformRequest) Reset() {
 	*x = PlatformRequest{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[62]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4264,7 +5359,7 @@ func (x *PlatformRequest) String() string {
 func (*PlatformRequest) ProtoMessage() {}
 
 func (x *PlatformRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[62]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4277,7 +5372,7 @@ func (x *PlatformRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlatformRequest.ProtoReflect.Descriptor instead.
 func (*PlatformRequest) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{62}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *PlatformRequest) GetRequestId() uint64 {
@@ -4718,7 +5813,7 @@ type PlatformResponse struct {
 
 func (x *PlatformResponse) Reset() {
 	*x = PlatformResponse{}
-	mi := &file_bindingpb_client_binding_proto_msgTypes[63]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4730,7 +5825,7 @@ func (x *PlatformResponse) String() string {
 func (*PlatformResponse) ProtoMessage() {}
 
 func (x *PlatformResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bindingpb_client_binding_proto_msgTypes[63]
+	mi := &file_bindingpb_client_binding_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4743,7 +5838,7 @@ func (x *PlatformResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlatformResponse.ProtoReflect.Descriptor instead.
 func (*PlatformResponse) Descriptor() ([]byte, []int) {
-	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{63}
+	return file_bindingpb_client_binding_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *PlatformResponse) GetRequestId() uint64 {
@@ -5030,7 +6125,77 @@ var File_bindingpb_client_binding_proto protoreflect.FileDescriptor
 
 const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\n" +
-	"\x1ebindingpb/client_binding.proto\x12\x18muxvia.client.binding.v1\x1a\x17apipb/application.proto\x1a\x12apipb/common.proto\x1a\x1dcloudpb/cloud_companion.proto\x1a\x1ccloudpb/cloud_topology.proto\x1a\x1eremoteauthpb/remote_auth.proto\"\xc2\x01\n" +
+	"\x1ebindingpb/client_binding.proto\x12\x18muxvia.client.binding.v1\x1a\x17apipb/application.proto\x1a\x12apipb/common.proto\x1a\x1dcloudpb/cloud_companion.proto\x1a\x1ccloudpb/cloud_topology.proto\x1a\x1eremoteauthpb/remote_auth.proto\"\xe6\a\n" +
+	"\x12ConnectionSnapshot\x12\x19\n" +
+	"\broute_id\x18\x01 \x01(\tR\arouteId\x12L\n" +
+	"\n" +
+	"route_kind\x18\x02 \x01(\x0e2-.muxvia.client.binding.v1.ConnectionRouteKindR\trouteKind\x12B\n" +
+	"\robserved_path\x18\x03 \x01(\x0e2\x1d.muxvia.cloud.v1.ObservedPathR\fobservedPath\x12)\n" +
+	"\x10selection_reason\x18\x04 \x01(\tR\x0fselectionReason\x12/\n" +
+	"\x14sampled_at_unix_nano\x18\x05 \x01(\x03R\x11sampledAtUnixNano\x12(\n" +
+	"\x10round_trip_nanos\x18\x06 \x01(\x03R\x0eroundTripNanos\x12c\n" +
+	"\x14local_candidate_type\x18\a \x01(\x0e21.muxvia.client.binding.v1.ConnectionCandidateTypeR\x12localCandidateType\x12e\n" +
+	"\x15remote_candidate_type\x18\b \x01(\x0e21.muxvia.client.binding.v1.ConnectionCandidateTypeR\x13remoteCandidateType\x12T\n" +
+	"\x0elocal_protocol\x18\t \x01(\x0e2-.muxvia.client.binding.v1.ConnectionTransportR\rlocalProtocol\x12V\n" +
+	"\x0fremote_protocol\x18\n" +
+	" \x01(\x0e2-.muxvia.client.binding.v1.ConnectionTransportR\x0eremoteProtocol\x12V\n" +
+	"\x0frelay_transport\x18\v \x01(\x0e2-.muxvia.client.binding.v1.ConnectionTransportR\x0erelayTransport\x12#\n" +
+	"\rnetwork_class\x18\f \x01(\tR\fnetworkClass\x12\x1d\n" +
+	"\n" +
+	"bytes_sent\x18\r \x01(\x04R\tbytesSent\x12%\n" +
+	"\x0ebytes_received\x18\x0e \x01(\x04R\rbytesReceived\x12!\n" +
+	"\fpackets_sent\x18\x0f \x01(\x04R\vpacketsSent\x12\x1f\n" +
+	"\vloss_events\x18\x10 \x01(\x04R\n" +
+	"lossEvents\x12\x1c\n" +
+	"\tconnected\x18\x11 \x01(\bR\tconnected\"\xa3\x02\n" +
+	"\x10ConnectionPolicy\x12Y\n" +
+	"\x10route_preference\x18\x01 \x01(\x0e2..muxvia.remote.auth.v1.EndpointRoutePreferenceR\x0froutePreference\x12W\n" +
+	"\x10cloud_relay_mode\x18\x02 \x01(\x0e2-.muxvia.remote.auth.v1.ManagedWebRTCRelayModeR\x0ecloudRelayMode\x12[\n" +
+	"\x0frelay_transport\x18\x03 \x01(\x0e22.muxvia.remote.auth.v1.ManagedWebRTCRelayTransportR\x0erelayTransport\"\xe5\x01\n" +
+	"!ConnectionPolicyRouteAvailability\x12L\n" +
+	"\n" +
+	"route_kind\x18\x01 \x01(\x0e2-.muxvia.client.binding.v1.ConnectionRouteKindR\trouteKind\x12\x1c\n" +
+	"\tavailable\x18\x02 \x01(\bR\tavailable\x12T\n" +
+	"\x06reason\x18\x03 \x01(\x0e2<.muxvia.client.binding.v1.ConnectionPolicyAvailabilityReasonR\x06reason\"\xb0\x01\n" +
+	"\x15ConnectionPolicyState\x12B\n" +
+	"\x06policy\x18\x01 \x01(\v2*.muxvia.client.binding.v1.ConnectionPolicyR\x06policy\x12S\n" +
+	"\x06routes\x18\x02 \x03(\v2;.muxvia.client.binding.v1.ConnectionPolicyRouteAvailabilityR\x06routes\"\\\n" +
+	"\x1aConnectionPolicyGetRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
+	"\vendpoint_id\x18\x02 \x01(\tR\n" +
+	"endpointId\"\xdb\x01\n" +
+	"\x19ConnectionPolicyGetResult\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
+	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12E\n" +
+	"\x05state\x18\x03 \x01(\v2/.muxvia.client.binding.v1.ConnectionPolicyStateR\x05state\x12-\n" +
+	"\x05error\x18\x04 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\xa2\x01\n" +
+	"\x1cConnectionPolicyApplyRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
+	"\vendpoint_id\x18\x02 \x01(\tR\n" +
+	"endpointId\x12B\n" +
+	"\x06policy\x18\x03 \x01(\v2*.muxvia.client.binding.v1.ConnectionPolicyR\x06policy\"\xdd\x01\n" +
+	"\x1bConnectionPolicyApplyResult\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
+	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12E\n" +
+	"\x05state\x18\x03 \x01(\v2/.muxvia.client.binding.v1.ConnectionPolicyStateR\x05state\x12-\n" +
+	"\x05error\x18\x04 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"d\n" +
+	"\x1cConnectionSnapshotGetRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
+	"\x0esession_handle\x18\x02 \x01(\x04R\rsessionHandle\"\x8b\x02\n" +
+	"\x1bConnectionSnapshotGetResult\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
+	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12%\n" +
+	"\x0esession_handle\x18\x03 \x01(\x04R\rsessionHandle\x12L\n" +
+	"\n" +
+	"connection\x18\x04 \x01(\v2,.muxvia.client.binding.v1.ConnectionSnapshotR\n" +
+	"connection\x12-\n" +
+	"\x05error\x18\x05 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\xc2\x01\n" +
 	"\x12OpenSessionRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
@@ -5151,7 +6316,7 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\x0ecredential_ref\x18\x05 \x01(\tR\rcredentialRef\x12%\n" +
 	"\x0eauthorized_key\x18\x06 \x01(\tR\rauthorizedKey\x12'\n" +
 	"\x0fkey_fingerprint\x18\a \x01(\tR\x0ekeyFingerprint\x12-\n" +
-	"\x05error\x18\b \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\xc9\x06\n" +
+	"\x05error\x18\b \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\x99\t\n" +
 	"\rEngineCommand\x12W\n" +
 	"\x0eimport_pairing\x18\x01 \x01(\v2..muxvia.client.binding.v1.ImportPairingRequestH\x00R\rimportPairing\x12`\n" +
 	"\x11delete_credential\x18\x02 \x01(\v21.muxvia.client.binding.v1.DeleteCredentialRequestH\x00R\x10deleteCredential\x12j\n" +
@@ -5160,15 +6325,22 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\x0fendpoint_delete\x18\x05 \x01(\v2/.muxvia.client.binding.v1.EndpointDeleteRequestH\x00R\x0eendpointDelete\x12m\n" +
 	"\x16endpoint_share_receive\x18\x06 \x01(\v25.muxvia.client.binding.v1.EndpointShareReceiveRequestH\x00R\x14endpointShareReceive\x12j\n" +
 	"\x15endpoint_share_commit\x18\a \x01(\v24.muxvia.client.binding.v1.EndpointShareCommitRequestH\x00R\x13endpointShareCommit\x12s\n" +
-	"\x18ssh_credential_provision\x18\b \x01(\v27.muxvia.client.binding.v1.SSHCredentialProvisionRequestH\x00R\x16sshCredentialProvisionB\t\n" +
-	"\acommand\"\xf2\x01\n" +
+	"\x18ssh_credential_provision\x18\b \x01(\v27.muxvia.client.binding.v1.SSHCredentialProvisionRequestH\x00R\x16sshCredentialProvision\x12j\n" +
+	"\x15connection_policy_get\x18\t \x01(\v24.muxvia.client.binding.v1.ConnectionPolicyGetRequestH\x00R\x13connectionPolicyGet\x12p\n" +
+	"\x17connection_policy_apply\x18\n" +
+	" \x01(\v26.muxvia.client.binding.v1.ConnectionPolicyApplyRequestH\x00R\x15connectionPolicyApply\x12p\n" +
+	"\x17connection_snapshot_get\x18\v \x01(\v26.muxvia.client.binding.v1.ConnectionSnapshotGetRequestH\x00R\x15connectionSnapshotGetB\t\n" +
+	"\acommand\"\xc0\x02\n" +
 	"\x11OpenSessionResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12)\n" +
 	"\x10operation_handle\x18\x02 \x01(\x04R\x0foperationHandle\x12%\n" +
 	"\x0esession_handle\x18\x03 \x01(\x04R\rsessionHandle\x12=\n" +
 	"\asession\x18\x04 \x01(\v2#.muxvia.api.v1.EndpointSessionStampR\asession\x12-\n" +
-	"\x05error\x18\x05 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\xc7\x01\n" +
+	"\x05error\x18\x05 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\x12L\n" +
+	"\n" +
+	"connection\x18\x06 \x01(\v2,.muxvia.client.binding.v1.ConnectionSnapshotR\n" +
+	"connection\"\xc7\x01\n" +
 	"\rExecuteResult\x12)\n" +
 	"\x10operation_handle\x18\x01 \x01(\x04R\x0foperationHandle\x12%\n" +
 	"\x0esession_handle\x18\x02 \x01(\x04R\rsessionHandle\x125\n" +
@@ -5190,7 +6362,7 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\x12SessionClosedEvent\x12%\n" +
 	"\x0esession_handle\x18\x01 \x01(\x04R\rsessionHandle\x12=\n" +
 	"\asession\x18\x02 \x01(\v2#.muxvia.api.v1.EndpointSessionStampR\asession\x12-\n" +
-	"\x05error\x18\x03 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\x8c\v\n" +
+	"\x05error\x18\x03 \x01(\v2\x17.muxvia.api.v1.ApiErrorR\x05error\"\xd9\r\n" +
 	"\rEventEnvelope\x12\x1f\n" +
 	"\vabi_version\x18\x01 \x01(\rR\n" +
 	"abiVersion\x12\x1a\n" +
@@ -5209,7 +6381,10 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\x0fendpoint_delete\x18\x14 \x01(\v2..muxvia.client.binding.v1.EndpointDeleteResultH\x00R\x0eendpointDelete\x12l\n" +
 	"\x16endpoint_share_receive\x18\x15 \x01(\v24.muxvia.client.binding.v1.EndpointShareReceiveResultH\x00R\x14endpointShareReceive\x12i\n" +
 	"\x15endpoint_share_commit\x18\x16 \x01(\v23.muxvia.client.binding.v1.EndpointShareCommitResultH\x00R\x13endpointShareCommit\x12r\n" +
-	"\x18ssh_credential_provision\x18\x17 \x01(\v26.muxvia.client.binding.v1.SSHCredentialProvisionResultH\x00R\x16sshCredentialProvisionB\a\n" +
+	"\x18ssh_credential_provision\x18\x17 \x01(\v26.muxvia.client.binding.v1.SSHCredentialProvisionResultH\x00R\x16sshCredentialProvision\x12i\n" +
+	"\x15connection_policy_get\x18\x18 \x01(\v23.muxvia.client.binding.v1.ConnectionPolicyGetResultH\x00R\x13connectionPolicyGet\x12o\n" +
+	"\x17connection_policy_apply\x18\x19 \x01(\v25.muxvia.client.binding.v1.ConnectionPolicyApplyResultH\x00R\x15connectionPolicyApply\x12o\n" +
+	"\x17connection_snapshot_get\x18\x1a \x01(\v25.muxvia.client.binding.v1.ConnectionSnapshotGetResultH\x00R\x15connectionSnapshotGetB\a\n" +
 	"\x05event\"b\n" +
 	"\x18CredentialResolveRequest\x12\x1f\n" +
 	"\vendpoint_id\x18\x01 \x01(\tR\n" +
@@ -5308,7 +6483,7 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\x19WebRTCPeerSnapshotRequest\x12\x1f\n" +
 	"\vpeer_handle\x18\x01 \x01(\x04R\n" +
 	"peerHandle\x12/\n" +
-	"\x14sampled_at_unix_nano\x18\x02 \x01(\x03R\x11sampledAtUnixNano\"\x9e\x03\n" +
+	"\x14sampled_at_unix_nano\x18\x02 \x01(\x03R\x11sampledAtUnixNano\"\xf0\x06\n" +
 	"\x12WebRTCPeerSnapshot\x12\x14\n" +
 	"\x05valid\x18\x01 \x01(\bR\x05valid\x12\x17\n" +
 	"\apair_id\x18\x02 \x01(\tR\x06pairId\x121\n" +
@@ -5323,7 +6498,12 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"\vloss_events\x18\n" +
 	" \x01(\x04R\n" +
 	"lossEvents\x12\x1c\n" +
-	"\tconnected\x18\v \x01(\bR\tconnected\",\n" +
+	"\tconnected\x18\v \x01(\bR\tconnected\x12c\n" +
+	"\x14local_candidate_type\x18\f \x01(\x0e21.muxvia.client.binding.v1.ConnectionCandidateTypeR\x12localCandidateType\x12e\n" +
+	"\x15remote_candidate_type\x18\r \x01(\x0e21.muxvia.client.binding.v1.ConnectionCandidateTypeR\x13remoteCandidateType\x12T\n" +
+	"\x0elocal_protocol\x18\x0e \x01(\x0e2-.muxvia.client.binding.v1.ConnectionTransportR\rlocalProtocol\x12V\n" +
+	"\x0fremote_protocol\x18\x0f \x01(\x0e2-.muxvia.client.binding.v1.ConnectionTransportR\x0eremoteProtocol\x12V\n" +
+	"\x0frelay_transport\x18\x10 \x01(\x0e2-.muxvia.client.binding.v1.ConnectionTransportR\x0erelayTransport\",\n" +
 	"\x12WebRTCCloseRequest\x12\x16\n" +
 	"\x06handle\x18\x01 \x01(\x04R\x06handle\"\\\n" +
 	"\x19WebRTCChannelMessageEvent\x12%\n" +
@@ -5409,7 +6589,31 @@ const file_bindingpb_client_binding_proto_rawDesc = "" +
 	"&RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH\x10\x03\x12*\n" +
 	"&RESOURCE_STREAM_FRAME_TYPE_FILE_RESULT\x10\x04\x12$\n" +
 	" RESOURCE_STREAM_FRAME_TYPE_ERROR\x10\x05\x12/\n" +
-	"+RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO\x10\x06B*Z(github.com/muxvia/muxvia/proto/bindingpbb\x06proto3"
+	"+RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO\x10\x06*\xc7\x01\n" +
+	"\x13ConnectionRouteKind\x12%\n" +
+	"!CONNECTION_ROUTE_KIND_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bCONNECTION_ROUTE_KIND_LOCAL\x10\x01\x12 \n" +
+	"\x1cCONNECTION_ROUTE_KIND_DIRECT\x10\x02\x12\x1d\n" +
+	"\x19CONNECTION_ROUTE_KIND_SSH\x10\x03\x12'\n" +
+	"#CONNECTION_ROUTE_KIND_MANAGED_CLOUD\x10\x04*\xeb\x01\n" +
+	"\x17ConnectionCandidateType\x12)\n" +
+	"%CONNECTION_CANDIDATE_TYPE_UNSPECIFIED\x10\x00\x12\"\n" +
+	"\x1eCONNECTION_CANDIDATE_TYPE_HOST\x10\x01\x12.\n" +
+	"*CONNECTION_CANDIDATE_TYPE_SERVER_REFLEXIVE\x10\x02\x12,\n" +
+	"(CONNECTION_CANDIDATE_TYPE_PEER_REFLEXIVE\x10\x03\x12#\n" +
+	"\x1fCONNECTION_CANDIDATE_TYPE_RELAY\x10\x04*w\n" +
+	"\x13ConnectionTransport\x12$\n" +
+	" CONNECTION_TRANSPORT_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18CONNECTION_TRANSPORT_UDP\x10\x01\x12\x1c\n" +
+	"\x18CONNECTION_TRANSPORT_TCP\x10\x02*\xc9\x03\n" +
+	"\"ConnectionPolicyAvailabilityReason\x125\n" +
+	"1CONNECTION_POLICY_AVAILABILITY_REASON_UNSPECIFIED\x10\x00\x123\n" +
+	"/CONNECTION_POLICY_AVAILABILITY_REASON_AVAILABLE\x10\x01\x12>\n" +
+	":CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_NOT_CONFIGURED\x10\x02\x128\n" +
+	"4CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_DISABLED\x10\x03\x12>\n" +
+	":CONNECTION_POLICY_AVAILABILITY_REASON_PLATFORM_UNSUPPORTED\x10\x04\x12@\n" +
+	"<CONNECTION_POLICY_AVAILABILITY_REASON_CREDENTIAL_UNAVAILABLE\x10\x05\x12;\n" +
+	"7CONNECTION_POLICY_AVAILABILITY_REASON_CLOUD_UNAVAILABLE\x10\x06B*Z(github.com/muxvia/muxvia/proto/bindingpbb\x06proto3"
 
 var (
 	file_bindingpb_client_binding_proto_rawDescOnce sync.Once
@@ -5423,218 +6627,267 @@ func file_bindingpb_client_binding_proto_rawDescGZIP() []byte {
 	return file_bindingpb_client_binding_proto_rawDescData
 }
 
-var file_bindingpb_client_binding_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_bindingpb_client_binding_proto_msgTypes = make([]protoimpl.MessageInfo, 64)
+var file_bindingpb_client_binding_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
+var file_bindingpb_client_binding_proto_msgTypes = make([]protoimpl.MessageInfo, 74)
 var file_bindingpb_client_binding_proto_goTypes = []any{
 	(ConnectIntent)(0),                                // 0: muxvia.client.binding.v1.ConnectIntent
 	(ResourceStreamFrameType)(0),                      // 1: muxvia.client.binding.v1.ResourceStreamFrameType
-	(*OpenSessionRequest)(nil),                        // 2: muxvia.client.binding.v1.OpenSessionRequest
-	(*ImportPairingRequest)(nil),                      // 3: muxvia.client.binding.v1.ImportPairingRequest
-	(*ImportPairingResult)(nil),                       // 4: muxvia.client.binding.v1.ImportPairingResult
-	(*DeleteCredentialRequest)(nil),                   // 5: muxvia.client.binding.v1.DeleteCredentialRequest
-	(*DeleteCredentialResult)(nil),                    // 6: muxvia.client.binding.v1.DeleteCredentialResult
-	(*EndpointRegistryGetRequest)(nil),                // 7: muxvia.client.binding.v1.EndpointRegistryGetRequest
-	(*EndpointRegistryGetResult)(nil),                 // 8: muxvia.client.binding.v1.EndpointRegistryGetResult
-	(*EndpointUpsertRequest)(nil),                     // 9: muxvia.client.binding.v1.EndpointUpsertRequest
-	(*EndpointUpsertResult)(nil),                      // 10: muxvia.client.binding.v1.EndpointUpsertResult
-	(*EndpointDeleteRequest)(nil),                     // 11: muxvia.client.binding.v1.EndpointDeleteRequest
-	(*EndpointDeleteResult)(nil),                      // 12: muxvia.client.binding.v1.EndpointDeleteResult
-	(*EndpointShareReceiveRequest)(nil),               // 13: muxvia.client.binding.v1.EndpointShareReceiveRequest
-	(*EndpointShareRouteDiff)(nil),                    // 14: muxvia.client.binding.v1.EndpointShareRouteDiff
-	(*EndpointSharePreview)(nil),                      // 15: muxvia.client.binding.v1.EndpointSharePreview
-	(*EndpointShareReceiveResult)(nil),                // 16: muxvia.client.binding.v1.EndpointShareReceiveResult
-	(*EndpointShareCommitRequest)(nil),                // 17: muxvia.client.binding.v1.EndpointShareCommitRequest
-	(*EndpointShareCommitResult)(nil),                 // 18: muxvia.client.binding.v1.EndpointShareCommitResult
-	(*SSHCredentialProvisionRequest)(nil),             // 19: muxvia.client.binding.v1.SSHCredentialProvisionRequest
-	(*SSHCredentialProvisionResult)(nil),              // 20: muxvia.client.binding.v1.SSHCredentialProvisionResult
-	(*EngineCommand)(nil),                             // 21: muxvia.client.binding.v1.EngineCommand
-	(*OpenSessionResult)(nil),                         // 22: muxvia.client.binding.v1.OpenSessionResult
-	(*ExecuteResult)(nil),                             // 23: muxvia.client.binding.v1.ExecuteResult
-	(*ApplicationEvent)(nil),                          // 24: muxvia.client.binding.v1.ApplicationEvent
-	(*OpenResourceStreamRequest)(nil),                 // 25: muxvia.client.binding.v1.OpenResourceStreamRequest
-	(*ResourceStreamFrame)(nil),                       // 26: muxvia.client.binding.v1.ResourceStreamFrame
-	(*ResourceStreamClosedEvent)(nil),                 // 27: muxvia.client.binding.v1.ResourceStreamClosedEvent
-	(*SessionClosedEvent)(nil),                        // 28: muxvia.client.binding.v1.SessionClosedEvent
-	(*EventEnvelope)(nil),                             // 29: muxvia.client.binding.v1.EventEnvelope
-	(*CredentialResolveRequest)(nil),                  // 30: muxvia.client.binding.v1.CredentialResolveRequest
-	(*CredentialPrepareRequest)(nil),                  // 31: muxvia.client.binding.v1.CredentialPrepareRequest
-	(*CredentialDeleteRequest)(nil),                   // 32: muxvia.client.binding.v1.CredentialDeleteRequest
-	(*CredentialBindRequest)(nil),                     // 33: muxvia.client.binding.v1.CredentialBindRequest
-	(*CredentialRecord)(nil),                          // 34: muxvia.client.binding.v1.CredentialRecord
-	(*CredentialSignRequest)(nil),                     // 35: muxvia.client.binding.v1.CredentialSignRequest
-	(*CredentialSignResponse)(nil),                    // 36: muxvia.client.binding.v1.CredentialSignResponse
-	(*SSHCredentialLookupRequest)(nil),                // 37: muxvia.client.binding.v1.SSHCredentialLookupRequest
-	(*SSHCredentialDeleteRequest)(nil),                // 38: muxvia.client.binding.v1.SSHCredentialDeleteRequest
-	(*SSHCredentialRecord)(nil),                       // 39: muxvia.client.binding.v1.SSHCredentialRecord
-	(*SSHCredentialSignRequest)(nil),                  // 40: muxvia.client.binding.v1.SSHCredentialSignRequest
-	(*SSHCredentialSignResponse)(nil),                 // 41: muxvia.client.binding.v1.SSHCredentialSignResponse
-	(*EndpointRegistryLoadRequest)(nil),               // 42: muxvia.client.binding.v1.EndpointRegistryLoadRequest
-	(*EndpointRegistryStoreRequest)(nil),              // 43: muxvia.client.binding.v1.EndpointRegistryStoreRequest
-	(*EndpointRegistryLoaded)(nil),                    // 44: muxvia.client.binding.v1.EndpointRegistryLoaded
-	(*SignalingEvents)(nil),                           // 45: muxvia.client.binding.v1.SignalingEvents
-	(*CloudRouteEligibilityRequest)(nil),              // 46: muxvia.client.binding.v1.CloudRouteEligibilityRequest
-	(*CloudRouteEligibility)(nil),                     // 47: muxvia.client.binding.v1.CloudRouteEligibility
-	(*WebRTCOpenPeerRequest)(nil),                     // 48: muxvia.client.binding.v1.WebRTCOpenPeerRequest
-	(*WebRTCPeerOpened)(nil),                          // 49: muxvia.client.binding.v1.WebRTCPeerOpened
-	(*WebRTCPeerRequest)(nil),                         // 50: muxvia.client.binding.v1.WebRTCPeerRequest
-	(*WebRTCCreateOfferResult)(nil),                   // 51: muxvia.client.binding.v1.WebRTCCreateOfferResult
-	(*WebRTCApplyAnswerRequest)(nil),                  // 52: muxvia.client.binding.v1.WebRTCApplyAnswerRequest
-	(*WebRTCPeerReady)(nil),                           // 53: muxvia.client.binding.v1.WebRTCPeerReady
-	(*WebRTCChannelSendRequest)(nil),                  // 54: muxvia.client.binding.v1.WebRTCChannelSendRequest
-	(*WebRTCChannelSendResult)(nil),                   // 55: muxvia.client.binding.v1.WebRTCChannelSendResult
-	(*WebRTCChannelThresholdRequest)(nil),             // 56: muxvia.client.binding.v1.WebRTCChannelThresholdRequest
-	(*WebRTCPeerSnapshotRequest)(nil),                 // 57: muxvia.client.binding.v1.WebRTCPeerSnapshotRequest
-	(*WebRTCPeerSnapshot)(nil),                        // 58: muxvia.client.binding.v1.WebRTCPeerSnapshot
-	(*WebRTCCloseRequest)(nil),                        // 59: muxvia.client.binding.v1.WebRTCCloseRequest
-	(*WebRTCChannelMessageEvent)(nil),                 // 60: muxvia.client.binding.v1.WebRTCChannelMessageEvent
-	(*WebRTCChannelClosedEvent)(nil),                  // 61: muxvia.client.binding.v1.WebRTCChannelClosedEvent
-	(*WebRTCBufferedAmountLowEvent)(nil),              // 62: muxvia.client.binding.v1.WebRTCBufferedAmountLowEvent
-	(*PlatformEvent)(nil),                             // 63: muxvia.client.binding.v1.PlatformEvent
-	(*PlatformRequest)(nil),                           // 64: muxvia.client.binding.v1.PlatformRequest
-	(*PlatformResponse)(nil),                          // 65: muxvia.client.binding.v1.PlatformResponse
-	(*remoteauthpb.EndpointConfigV1)(nil),             // 66: muxvia.remote.auth.v1.EndpointConfigV1
-	(*apipb.ApiError)(nil),                            // 67: muxvia.api.v1.ApiError
-	(*remoteauthpb.EndpointRegistryV1)(nil),           // 68: muxvia.remote.auth.v1.EndpointRegistryV1
-	(*remoteauthpb.EndpointDaemonIdentity)(nil),       // 69: muxvia.remote.auth.v1.EndpointDaemonIdentity
-	(*remoteauthpb.EndpointCredentialDescriptor)(nil), // 70: muxvia.remote.auth.v1.EndpointCredentialDescriptor
-	(*apipb.EndpointSessionStamp)(nil),                // 71: muxvia.api.v1.EndpointSessionStamp
-	(*apipb.ResultEnvelope)(nil),                      // 72: muxvia.api.v1.ResultEnvelope
-	(*apipb.EventEnvelope)(nil),                       // 73: muxvia.api.v1.EventEnvelope
-	(*apipb.ResourceHandle)(nil),                      // 74: muxvia.api.v1.ResourceHandle
-	(*cloudpb.SignalingEvent)(nil),                    // 75: muxvia.cloud.v1.SignalingEvent
-	(remoteauthpb.ManagedWebRTCRelayMode)(0),          // 76: muxvia.remote.auth.v1.ManagedWebRTCRelayMode
-	(*cloudpb.IceServer)(nil),                         // 77: muxvia.cloud.v1.IceServer
-	(cloudpb.RoutePreference)(0),                      // 78: muxvia.cloud.v1.RoutePreference
-	(*cloudpb.IceCandidate)(nil),                      // 79: muxvia.cloud.v1.IceCandidate
+	(ConnectionRouteKind)(0),                          // 2: muxvia.client.binding.v1.ConnectionRouteKind
+	(ConnectionCandidateType)(0),                      // 3: muxvia.client.binding.v1.ConnectionCandidateType
+	(ConnectionTransport)(0),                          // 4: muxvia.client.binding.v1.ConnectionTransport
+	(ConnectionPolicyAvailabilityReason)(0),           // 5: muxvia.client.binding.v1.ConnectionPolicyAvailabilityReason
+	(*ConnectionSnapshot)(nil),                        // 6: muxvia.client.binding.v1.ConnectionSnapshot
+	(*ConnectionPolicy)(nil),                          // 7: muxvia.client.binding.v1.ConnectionPolicy
+	(*ConnectionPolicyRouteAvailability)(nil),         // 8: muxvia.client.binding.v1.ConnectionPolicyRouteAvailability
+	(*ConnectionPolicyState)(nil),                     // 9: muxvia.client.binding.v1.ConnectionPolicyState
+	(*ConnectionPolicyGetRequest)(nil),                // 10: muxvia.client.binding.v1.ConnectionPolicyGetRequest
+	(*ConnectionPolicyGetResult)(nil),                 // 11: muxvia.client.binding.v1.ConnectionPolicyGetResult
+	(*ConnectionPolicyApplyRequest)(nil),              // 12: muxvia.client.binding.v1.ConnectionPolicyApplyRequest
+	(*ConnectionPolicyApplyResult)(nil),               // 13: muxvia.client.binding.v1.ConnectionPolicyApplyResult
+	(*ConnectionSnapshotGetRequest)(nil),              // 14: muxvia.client.binding.v1.ConnectionSnapshotGetRequest
+	(*ConnectionSnapshotGetResult)(nil),               // 15: muxvia.client.binding.v1.ConnectionSnapshotGetResult
+	(*OpenSessionRequest)(nil),                        // 16: muxvia.client.binding.v1.OpenSessionRequest
+	(*ImportPairingRequest)(nil),                      // 17: muxvia.client.binding.v1.ImportPairingRequest
+	(*ImportPairingResult)(nil),                       // 18: muxvia.client.binding.v1.ImportPairingResult
+	(*DeleteCredentialRequest)(nil),                   // 19: muxvia.client.binding.v1.DeleteCredentialRequest
+	(*DeleteCredentialResult)(nil),                    // 20: muxvia.client.binding.v1.DeleteCredentialResult
+	(*EndpointRegistryGetRequest)(nil),                // 21: muxvia.client.binding.v1.EndpointRegistryGetRequest
+	(*EndpointRegistryGetResult)(nil),                 // 22: muxvia.client.binding.v1.EndpointRegistryGetResult
+	(*EndpointUpsertRequest)(nil),                     // 23: muxvia.client.binding.v1.EndpointUpsertRequest
+	(*EndpointUpsertResult)(nil),                      // 24: muxvia.client.binding.v1.EndpointUpsertResult
+	(*EndpointDeleteRequest)(nil),                     // 25: muxvia.client.binding.v1.EndpointDeleteRequest
+	(*EndpointDeleteResult)(nil),                      // 26: muxvia.client.binding.v1.EndpointDeleteResult
+	(*EndpointShareReceiveRequest)(nil),               // 27: muxvia.client.binding.v1.EndpointShareReceiveRequest
+	(*EndpointShareRouteDiff)(nil),                    // 28: muxvia.client.binding.v1.EndpointShareRouteDiff
+	(*EndpointSharePreview)(nil),                      // 29: muxvia.client.binding.v1.EndpointSharePreview
+	(*EndpointShareReceiveResult)(nil),                // 30: muxvia.client.binding.v1.EndpointShareReceiveResult
+	(*EndpointShareCommitRequest)(nil),                // 31: muxvia.client.binding.v1.EndpointShareCommitRequest
+	(*EndpointShareCommitResult)(nil),                 // 32: muxvia.client.binding.v1.EndpointShareCommitResult
+	(*SSHCredentialProvisionRequest)(nil),             // 33: muxvia.client.binding.v1.SSHCredentialProvisionRequest
+	(*SSHCredentialProvisionResult)(nil),              // 34: muxvia.client.binding.v1.SSHCredentialProvisionResult
+	(*EngineCommand)(nil),                             // 35: muxvia.client.binding.v1.EngineCommand
+	(*OpenSessionResult)(nil),                         // 36: muxvia.client.binding.v1.OpenSessionResult
+	(*ExecuteResult)(nil),                             // 37: muxvia.client.binding.v1.ExecuteResult
+	(*ApplicationEvent)(nil),                          // 38: muxvia.client.binding.v1.ApplicationEvent
+	(*OpenResourceStreamRequest)(nil),                 // 39: muxvia.client.binding.v1.OpenResourceStreamRequest
+	(*ResourceStreamFrame)(nil),                       // 40: muxvia.client.binding.v1.ResourceStreamFrame
+	(*ResourceStreamClosedEvent)(nil),                 // 41: muxvia.client.binding.v1.ResourceStreamClosedEvent
+	(*SessionClosedEvent)(nil),                        // 42: muxvia.client.binding.v1.SessionClosedEvent
+	(*EventEnvelope)(nil),                             // 43: muxvia.client.binding.v1.EventEnvelope
+	(*CredentialResolveRequest)(nil),                  // 44: muxvia.client.binding.v1.CredentialResolveRequest
+	(*CredentialPrepareRequest)(nil),                  // 45: muxvia.client.binding.v1.CredentialPrepareRequest
+	(*CredentialDeleteRequest)(nil),                   // 46: muxvia.client.binding.v1.CredentialDeleteRequest
+	(*CredentialBindRequest)(nil),                     // 47: muxvia.client.binding.v1.CredentialBindRequest
+	(*CredentialRecord)(nil),                          // 48: muxvia.client.binding.v1.CredentialRecord
+	(*CredentialSignRequest)(nil),                     // 49: muxvia.client.binding.v1.CredentialSignRequest
+	(*CredentialSignResponse)(nil),                    // 50: muxvia.client.binding.v1.CredentialSignResponse
+	(*SSHCredentialLookupRequest)(nil),                // 51: muxvia.client.binding.v1.SSHCredentialLookupRequest
+	(*SSHCredentialDeleteRequest)(nil),                // 52: muxvia.client.binding.v1.SSHCredentialDeleteRequest
+	(*SSHCredentialRecord)(nil),                       // 53: muxvia.client.binding.v1.SSHCredentialRecord
+	(*SSHCredentialSignRequest)(nil),                  // 54: muxvia.client.binding.v1.SSHCredentialSignRequest
+	(*SSHCredentialSignResponse)(nil),                 // 55: muxvia.client.binding.v1.SSHCredentialSignResponse
+	(*EndpointRegistryLoadRequest)(nil),               // 56: muxvia.client.binding.v1.EndpointRegistryLoadRequest
+	(*EndpointRegistryStoreRequest)(nil),              // 57: muxvia.client.binding.v1.EndpointRegistryStoreRequest
+	(*EndpointRegistryLoaded)(nil),                    // 58: muxvia.client.binding.v1.EndpointRegistryLoaded
+	(*SignalingEvents)(nil),                           // 59: muxvia.client.binding.v1.SignalingEvents
+	(*CloudRouteEligibilityRequest)(nil),              // 60: muxvia.client.binding.v1.CloudRouteEligibilityRequest
+	(*CloudRouteEligibility)(nil),                     // 61: muxvia.client.binding.v1.CloudRouteEligibility
+	(*WebRTCOpenPeerRequest)(nil),                     // 62: muxvia.client.binding.v1.WebRTCOpenPeerRequest
+	(*WebRTCPeerOpened)(nil),                          // 63: muxvia.client.binding.v1.WebRTCPeerOpened
+	(*WebRTCPeerRequest)(nil),                         // 64: muxvia.client.binding.v1.WebRTCPeerRequest
+	(*WebRTCCreateOfferResult)(nil),                   // 65: muxvia.client.binding.v1.WebRTCCreateOfferResult
+	(*WebRTCApplyAnswerRequest)(nil),                  // 66: muxvia.client.binding.v1.WebRTCApplyAnswerRequest
+	(*WebRTCPeerReady)(nil),                           // 67: muxvia.client.binding.v1.WebRTCPeerReady
+	(*WebRTCChannelSendRequest)(nil),                  // 68: muxvia.client.binding.v1.WebRTCChannelSendRequest
+	(*WebRTCChannelSendResult)(nil),                   // 69: muxvia.client.binding.v1.WebRTCChannelSendResult
+	(*WebRTCChannelThresholdRequest)(nil),             // 70: muxvia.client.binding.v1.WebRTCChannelThresholdRequest
+	(*WebRTCPeerSnapshotRequest)(nil),                 // 71: muxvia.client.binding.v1.WebRTCPeerSnapshotRequest
+	(*WebRTCPeerSnapshot)(nil),                        // 72: muxvia.client.binding.v1.WebRTCPeerSnapshot
+	(*WebRTCCloseRequest)(nil),                        // 73: muxvia.client.binding.v1.WebRTCCloseRequest
+	(*WebRTCChannelMessageEvent)(nil),                 // 74: muxvia.client.binding.v1.WebRTCChannelMessageEvent
+	(*WebRTCChannelClosedEvent)(nil),                  // 75: muxvia.client.binding.v1.WebRTCChannelClosedEvent
+	(*WebRTCBufferedAmountLowEvent)(nil),              // 76: muxvia.client.binding.v1.WebRTCBufferedAmountLowEvent
+	(*PlatformEvent)(nil),                             // 77: muxvia.client.binding.v1.PlatformEvent
+	(*PlatformRequest)(nil),                           // 78: muxvia.client.binding.v1.PlatformRequest
+	(*PlatformResponse)(nil),                          // 79: muxvia.client.binding.v1.PlatformResponse
 	(cloudpb.ObservedPath)(0),                         // 80: muxvia.cloud.v1.ObservedPath
-	(*cloudpb.ResolveEndpointRequest)(nil),            // 81: muxvia.cloud.v1.ResolveEndpointRequest
-	(*cloudpb.CreateSignalingSessionRequest)(nil),     // 82: muxvia.cloud.v1.CreateSignalingSessionRequest
-	(*cloudpb.AcquireRelayLeaseRequest)(nil),          // 83: muxvia.cloud.v1.AcquireRelayLeaseRequest
-	(*cloudpb.PlanManagedRouteRequest)(nil),           // 84: muxvia.cloud.v1.PlanManagedRouteRequest
-	(*cloudpb.ReportPathQualityRequest)(nil),          // 85: muxvia.cloud.v1.ReportPathQualityRequest
-	(*cloudpb.ReportConnectionOutcomeRequest)(nil),    // 86: muxvia.cloud.v1.ReportConnectionOutcomeRequest
-	(*cloudpb.ResolvedEndpoint)(nil),                  // 87: muxvia.cloud.v1.ResolvedEndpoint
-	(*cloudpb.RelayLease)(nil),                        // 88: muxvia.cloud.v1.RelayLease
-	(*cloudpb.ManagedRoutePlan)(nil),                  // 89: muxvia.cloud.v1.ManagedRoutePlan
-	(*cloudpb.ReportPathQualityResponse)(nil),         // 90: muxvia.cloud.v1.ReportPathQualityResponse
-	(*cloudpb.ReportConnectionOutcomeResponse)(nil),   // 91: muxvia.cloud.v1.ReportConnectionOutcomeResponse
+	(remoteauthpb.EndpointRoutePreference)(0),         // 81: muxvia.remote.auth.v1.EndpointRoutePreference
+	(remoteauthpb.ManagedWebRTCRelayMode)(0),          // 82: muxvia.remote.auth.v1.ManagedWebRTCRelayMode
+	(remoteauthpb.ManagedWebRTCRelayTransport)(0),     // 83: muxvia.remote.auth.v1.ManagedWebRTCRelayTransport
+	(*apipb.ApiError)(nil),                            // 84: muxvia.api.v1.ApiError
+	(*remoteauthpb.EndpointConfigV1)(nil),             // 85: muxvia.remote.auth.v1.EndpointConfigV1
+	(*remoteauthpb.EndpointRegistryV1)(nil),           // 86: muxvia.remote.auth.v1.EndpointRegistryV1
+	(*remoteauthpb.EndpointDaemonIdentity)(nil),       // 87: muxvia.remote.auth.v1.EndpointDaemonIdentity
+	(*remoteauthpb.EndpointCredentialDescriptor)(nil), // 88: muxvia.remote.auth.v1.EndpointCredentialDescriptor
+	(*apipb.EndpointSessionStamp)(nil),                // 89: muxvia.api.v1.EndpointSessionStamp
+	(*apipb.ResultEnvelope)(nil),                      // 90: muxvia.api.v1.ResultEnvelope
+	(*apipb.EventEnvelope)(nil),                       // 91: muxvia.api.v1.EventEnvelope
+	(*apipb.ResourceHandle)(nil),                      // 92: muxvia.api.v1.ResourceHandle
+	(*cloudpb.SignalingEvent)(nil),                    // 93: muxvia.cloud.v1.SignalingEvent
+	(*cloudpb.IceServer)(nil),                         // 94: muxvia.cloud.v1.IceServer
+	(cloudpb.RoutePreference)(0),                      // 95: muxvia.cloud.v1.RoutePreference
+	(*cloudpb.IceCandidate)(nil),                      // 96: muxvia.cloud.v1.IceCandidate
+	(*cloudpb.ResolveEndpointRequest)(nil),            // 97: muxvia.cloud.v1.ResolveEndpointRequest
+	(*cloudpb.CreateSignalingSessionRequest)(nil),     // 98: muxvia.cloud.v1.CreateSignalingSessionRequest
+	(*cloudpb.AcquireRelayLeaseRequest)(nil),          // 99: muxvia.cloud.v1.AcquireRelayLeaseRequest
+	(*cloudpb.PlanManagedRouteRequest)(nil),           // 100: muxvia.cloud.v1.PlanManagedRouteRequest
+	(*cloudpb.ReportPathQualityRequest)(nil),          // 101: muxvia.cloud.v1.ReportPathQualityRequest
+	(*cloudpb.ReportConnectionOutcomeRequest)(nil),    // 102: muxvia.cloud.v1.ReportConnectionOutcomeRequest
+	(*cloudpb.ResolvedEndpoint)(nil),                  // 103: muxvia.cloud.v1.ResolvedEndpoint
+	(*cloudpb.RelayLease)(nil),                        // 104: muxvia.cloud.v1.RelayLease
+	(*cloudpb.ManagedRoutePlan)(nil),                  // 105: muxvia.cloud.v1.ManagedRoutePlan
+	(*cloudpb.ReportPathQualityResponse)(nil),         // 106: muxvia.cloud.v1.ReportPathQualityResponse
+	(*cloudpb.ReportConnectionOutcomeResponse)(nil),   // 107: muxvia.cloud.v1.ReportConnectionOutcomeResponse
 }
 var file_bindingpb_client_binding_proto_depIdxs = []int32{
-	0,   // 0: muxvia.client.binding.v1.OpenSessionRequest.intent:type_name -> muxvia.client.binding.v1.ConnectIntent
-	66,  // 1: muxvia.client.binding.v1.ImportPairingResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	67,  // 2: muxvia.client.binding.v1.ImportPairingResult.error:type_name -> muxvia.api.v1.ApiError
-	68,  // 3: muxvia.client.binding.v1.ImportPairingResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	67,  // 4: muxvia.client.binding.v1.DeleteCredentialResult.error:type_name -> muxvia.api.v1.ApiError
-	68,  // 5: muxvia.client.binding.v1.EndpointRegistryGetResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	67,  // 6: muxvia.client.binding.v1.EndpointRegistryGetResult.error:type_name -> muxvia.api.v1.ApiError
-	66,  // 7: muxvia.client.binding.v1.EndpointUpsertRequest.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	66,  // 8: muxvia.client.binding.v1.EndpointUpsertResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	68,  // 9: muxvia.client.binding.v1.EndpointUpsertResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	67,  // 10: muxvia.client.binding.v1.EndpointUpsertResult.error:type_name -> muxvia.api.v1.ApiError
-	68,  // 11: muxvia.client.binding.v1.EndpointDeleteResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	67,  // 12: muxvia.client.binding.v1.EndpointDeleteResult.error:type_name -> muxvia.api.v1.ApiError
-	69,  // 13: muxvia.client.binding.v1.EndpointSharePreview.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
-	14,  // 14: muxvia.client.binding.v1.EndpointSharePreview.route_diffs:type_name -> muxvia.client.binding.v1.EndpointShareRouteDiff
-	70,  // 15: muxvia.client.binding.v1.EndpointSharePreview.credential_descriptors:type_name -> muxvia.remote.auth.v1.EndpointCredentialDescriptor
-	15,  // 16: muxvia.client.binding.v1.EndpointShareReceiveResult.preview:type_name -> muxvia.client.binding.v1.EndpointSharePreview
-	67,  // 17: muxvia.client.binding.v1.EndpointShareReceiveResult.error:type_name -> muxvia.api.v1.ApiError
-	66,  // 18: muxvia.client.binding.v1.EndpointShareCommitResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	68,  // 19: muxvia.client.binding.v1.EndpointShareCommitResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	67,  // 20: muxvia.client.binding.v1.EndpointShareCommitResult.error:type_name -> muxvia.api.v1.ApiError
-	66,  // 21: muxvia.client.binding.v1.SSHCredentialProvisionResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	68,  // 22: muxvia.client.binding.v1.SSHCredentialProvisionResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
-	67,  // 23: muxvia.client.binding.v1.SSHCredentialProvisionResult.error:type_name -> muxvia.api.v1.ApiError
-	3,   // 24: muxvia.client.binding.v1.EngineCommand.import_pairing:type_name -> muxvia.client.binding.v1.ImportPairingRequest
-	5,   // 25: muxvia.client.binding.v1.EngineCommand.delete_credential:type_name -> muxvia.client.binding.v1.DeleteCredentialRequest
-	7,   // 26: muxvia.client.binding.v1.EngineCommand.endpoint_registry_get:type_name -> muxvia.client.binding.v1.EndpointRegistryGetRequest
-	9,   // 27: muxvia.client.binding.v1.EngineCommand.endpoint_upsert:type_name -> muxvia.client.binding.v1.EndpointUpsertRequest
-	11,  // 28: muxvia.client.binding.v1.EngineCommand.endpoint_delete:type_name -> muxvia.client.binding.v1.EndpointDeleteRequest
-	13,  // 29: muxvia.client.binding.v1.EngineCommand.endpoint_share_receive:type_name -> muxvia.client.binding.v1.EndpointShareReceiveRequest
-	17,  // 30: muxvia.client.binding.v1.EngineCommand.endpoint_share_commit:type_name -> muxvia.client.binding.v1.EndpointShareCommitRequest
-	19,  // 31: muxvia.client.binding.v1.EngineCommand.ssh_credential_provision:type_name -> muxvia.client.binding.v1.SSHCredentialProvisionRequest
-	71,  // 32: muxvia.client.binding.v1.OpenSessionResult.session:type_name -> muxvia.api.v1.EndpointSessionStamp
-	67,  // 33: muxvia.client.binding.v1.OpenSessionResult.error:type_name -> muxvia.api.v1.ApiError
-	72,  // 34: muxvia.client.binding.v1.ExecuteResult.result:type_name -> muxvia.api.v1.ResultEnvelope
-	67,  // 35: muxvia.client.binding.v1.ExecuteResult.error:type_name -> muxvia.api.v1.ApiError
-	73,  // 36: muxvia.client.binding.v1.ApplicationEvent.event:type_name -> muxvia.api.v1.EventEnvelope
-	74,  // 37: muxvia.client.binding.v1.OpenResourceStreamRequest.resource:type_name -> muxvia.api.v1.ResourceHandle
-	1,   // 38: muxvia.client.binding.v1.ResourceStreamFrame.type:type_name -> muxvia.client.binding.v1.ResourceStreamFrameType
-	67,  // 39: muxvia.client.binding.v1.ResourceStreamClosedEvent.error:type_name -> muxvia.api.v1.ApiError
-	71,  // 40: muxvia.client.binding.v1.SessionClosedEvent.session:type_name -> muxvia.api.v1.EndpointSessionStamp
-	67,  // 41: muxvia.client.binding.v1.SessionClosedEvent.error:type_name -> muxvia.api.v1.ApiError
-	22,  // 42: muxvia.client.binding.v1.EventEnvelope.open_session:type_name -> muxvia.client.binding.v1.OpenSessionResult
-	23,  // 43: muxvia.client.binding.v1.EventEnvelope.execute:type_name -> muxvia.client.binding.v1.ExecuteResult
-	24,  // 44: muxvia.client.binding.v1.EventEnvelope.application:type_name -> muxvia.client.binding.v1.ApplicationEvent
-	28,  // 45: muxvia.client.binding.v1.EventEnvelope.session_closed:type_name -> muxvia.client.binding.v1.SessionClosedEvent
-	4,   // 46: muxvia.client.binding.v1.EventEnvelope.import_pairing:type_name -> muxvia.client.binding.v1.ImportPairingResult
-	6,   // 47: muxvia.client.binding.v1.EventEnvelope.delete_credential:type_name -> muxvia.client.binding.v1.DeleteCredentialResult
-	26,  // 48: muxvia.client.binding.v1.EventEnvelope.resource_stream_frame:type_name -> muxvia.client.binding.v1.ResourceStreamFrame
-	27,  // 49: muxvia.client.binding.v1.EventEnvelope.resource_stream_closed:type_name -> muxvia.client.binding.v1.ResourceStreamClosedEvent
-	8,   // 50: muxvia.client.binding.v1.EventEnvelope.endpoint_registry_get:type_name -> muxvia.client.binding.v1.EndpointRegistryGetResult
-	10,  // 51: muxvia.client.binding.v1.EventEnvelope.endpoint_upsert:type_name -> muxvia.client.binding.v1.EndpointUpsertResult
-	12,  // 52: muxvia.client.binding.v1.EventEnvelope.endpoint_delete:type_name -> muxvia.client.binding.v1.EndpointDeleteResult
-	16,  // 53: muxvia.client.binding.v1.EventEnvelope.endpoint_share_receive:type_name -> muxvia.client.binding.v1.EndpointShareReceiveResult
-	18,  // 54: muxvia.client.binding.v1.EventEnvelope.endpoint_share_commit:type_name -> muxvia.client.binding.v1.EndpointShareCommitResult
-	20,  // 55: muxvia.client.binding.v1.EventEnvelope.ssh_credential_provision:type_name -> muxvia.client.binding.v1.SSHCredentialProvisionResult
-	75,  // 56: muxvia.client.binding.v1.SignalingEvents.events:type_name -> muxvia.cloud.v1.SignalingEvent
-	76,  // 57: muxvia.client.binding.v1.CloudRouteEligibilityRequest.relay_mode:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRelayMode
-	77,  // 58: muxvia.client.binding.v1.WebRTCOpenPeerRequest.ice_servers:type_name -> muxvia.cloud.v1.IceServer
-	78,  // 59: muxvia.client.binding.v1.WebRTCOpenPeerRequest.route_preference:type_name -> muxvia.cloud.v1.RoutePreference
-	79,  // 60: muxvia.client.binding.v1.WebRTCApplyAnswerRequest.candidates:type_name -> muxvia.cloud.v1.IceCandidate
-	80,  // 61: muxvia.client.binding.v1.WebRTCPeerReady.observed_path:type_name -> muxvia.cloud.v1.ObservedPath
-	80,  // 62: muxvia.client.binding.v1.WebRTCPeerSnapshot.path:type_name -> muxvia.cloud.v1.ObservedPath
-	60,  // 63: muxvia.client.binding.v1.PlatformEvent.webrtc_channel_message:type_name -> muxvia.client.binding.v1.WebRTCChannelMessageEvent
-	61,  // 64: muxvia.client.binding.v1.PlatformEvent.webrtc_channel_closed:type_name -> muxvia.client.binding.v1.WebRTCChannelClosedEvent
-	62,  // 65: muxvia.client.binding.v1.PlatformEvent.webrtc_buffered_amount_low:type_name -> muxvia.client.binding.v1.WebRTCBufferedAmountLowEvent
-	30,  // 66: muxvia.client.binding.v1.PlatformRequest.credential_resolve:type_name -> muxvia.client.binding.v1.CredentialResolveRequest
-	31,  // 67: muxvia.client.binding.v1.PlatformRequest.credential_prepare:type_name -> muxvia.client.binding.v1.CredentialPrepareRequest
-	32,  // 68: muxvia.client.binding.v1.PlatformRequest.credential_delete:type_name -> muxvia.client.binding.v1.CredentialDeleteRequest
-	35,  // 69: muxvia.client.binding.v1.PlatformRequest.credential_sign:type_name -> muxvia.client.binding.v1.CredentialSignRequest
-	33,  // 70: muxvia.client.binding.v1.PlatformRequest.credential_bind:type_name -> muxvia.client.binding.v1.CredentialBindRequest
-	42,  // 71: muxvia.client.binding.v1.PlatformRequest.endpoint_registry_load:type_name -> muxvia.client.binding.v1.EndpointRegistryLoadRequest
-	43,  // 72: muxvia.client.binding.v1.PlatformRequest.endpoint_registry_store:type_name -> muxvia.client.binding.v1.EndpointRegistryStoreRequest
-	37,  // 73: muxvia.client.binding.v1.PlatformRequest.ssh_credential_lookup:type_name -> muxvia.client.binding.v1.SSHCredentialLookupRequest
-	40,  // 74: muxvia.client.binding.v1.PlatformRequest.ssh_credential_sign:type_name -> muxvia.client.binding.v1.SSHCredentialSignRequest
-	38,  // 75: muxvia.client.binding.v1.PlatformRequest.ssh_credential_delete:type_name -> muxvia.client.binding.v1.SSHCredentialDeleteRequest
-	81,  // 76: muxvia.client.binding.v1.PlatformRequest.cloud_resolve_endpoint:type_name -> muxvia.cloud.v1.ResolveEndpointRequest
-	82,  // 77: muxvia.client.binding.v1.PlatformRequest.cloud_create_signaling:type_name -> muxvia.cloud.v1.CreateSignalingSessionRequest
-	83,  // 78: muxvia.client.binding.v1.PlatformRequest.cloud_acquire_relay:type_name -> muxvia.cloud.v1.AcquireRelayLeaseRequest
-	84,  // 79: muxvia.client.binding.v1.PlatformRequest.cloud_plan_route:type_name -> muxvia.cloud.v1.PlanManagedRouteRequest
-	85,  // 80: muxvia.client.binding.v1.PlatformRequest.cloud_report_quality:type_name -> muxvia.cloud.v1.ReportPathQualityRequest
-	86,  // 81: muxvia.client.binding.v1.PlatformRequest.cloud_report_outcome:type_name -> muxvia.cloud.v1.ReportConnectionOutcomeRequest
-	46,  // 82: muxvia.client.binding.v1.PlatformRequest.cloud_route_eligibility:type_name -> muxvia.client.binding.v1.CloudRouteEligibilityRequest
-	48,  // 83: muxvia.client.binding.v1.PlatformRequest.webrtc_open_peer:type_name -> muxvia.client.binding.v1.WebRTCOpenPeerRequest
-	50,  // 84: muxvia.client.binding.v1.PlatformRequest.webrtc_create_offer:type_name -> muxvia.client.binding.v1.WebRTCPeerRequest
-	52,  // 85: muxvia.client.binding.v1.PlatformRequest.webrtc_apply_answer:type_name -> muxvia.client.binding.v1.WebRTCApplyAnswerRequest
-	50,  // 86: muxvia.client.binding.v1.PlatformRequest.webrtc_wait_ready:type_name -> muxvia.client.binding.v1.WebRTCPeerRequest
-	54,  // 87: muxvia.client.binding.v1.PlatformRequest.webrtc_channel_send:type_name -> muxvia.client.binding.v1.WebRTCChannelSendRequest
-	56,  // 88: muxvia.client.binding.v1.PlatformRequest.webrtc_channel_threshold:type_name -> muxvia.client.binding.v1.WebRTCChannelThresholdRequest
-	57,  // 89: muxvia.client.binding.v1.PlatformRequest.webrtc_peer_snapshot:type_name -> muxvia.client.binding.v1.WebRTCPeerSnapshotRequest
-	59,  // 90: muxvia.client.binding.v1.PlatformRequest.webrtc_close_peer:type_name -> muxvia.client.binding.v1.WebRTCCloseRequest
-	59,  // 91: muxvia.client.binding.v1.PlatformRequest.webrtc_close_channel:type_name -> muxvia.client.binding.v1.WebRTCCloseRequest
-	67,  // 92: muxvia.client.binding.v1.PlatformResponse.error:type_name -> muxvia.api.v1.ApiError
-	34,  // 93: muxvia.client.binding.v1.PlatformResponse.credential:type_name -> muxvia.client.binding.v1.CredentialRecord
-	36,  // 94: muxvia.client.binding.v1.PlatformResponse.credential_sign:type_name -> muxvia.client.binding.v1.CredentialSignResponse
-	44,  // 95: muxvia.client.binding.v1.PlatformResponse.endpoint_registry:type_name -> muxvia.client.binding.v1.EndpointRegistryLoaded
-	39,  // 96: muxvia.client.binding.v1.PlatformResponse.ssh_credential:type_name -> muxvia.client.binding.v1.SSHCredentialRecord
-	41,  // 97: muxvia.client.binding.v1.PlatformResponse.ssh_credential_sign:type_name -> muxvia.client.binding.v1.SSHCredentialSignResponse
-	87,  // 98: muxvia.client.binding.v1.PlatformResponse.cloud_resolved_endpoint:type_name -> muxvia.cloud.v1.ResolvedEndpoint
-	45,  // 99: muxvia.client.binding.v1.PlatformResponse.cloud_signaling:type_name -> muxvia.client.binding.v1.SignalingEvents
-	88,  // 100: muxvia.client.binding.v1.PlatformResponse.cloud_relay_lease:type_name -> muxvia.cloud.v1.RelayLease
-	89,  // 101: muxvia.client.binding.v1.PlatformResponse.cloud_route_plan:type_name -> muxvia.cloud.v1.ManagedRoutePlan
-	90,  // 102: muxvia.client.binding.v1.PlatformResponse.cloud_quality_reported:type_name -> muxvia.cloud.v1.ReportPathQualityResponse
-	91,  // 103: muxvia.client.binding.v1.PlatformResponse.cloud_outcome_reported:type_name -> muxvia.cloud.v1.ReportConnectionOutcomeResponse
-	47,  // 104: muxvia.client.binding.v1.PlatformResponse.cloud_route_eligibility:type_name -> muxvia.client.binding.v1.CloudRouteEligibility
-	49,  // 105: muxvia.client.binding.v1.PlatformResponse.webrtc_peer_opened:type_name -> muxvia.client.binding.v1.WebRTCPeerOpened
-	51,  // 106: muxvia.client.binding.v1.PlatformResponse.webrtc_offer:type_name -> muxvia.client.binding.v1.WebRTCCreateOfferResult
-	53,  // 107: muxvia.client.binding.v1.PlatformResponse.webrtc_peer_ready:type_name -> muxvia.client.binding.v1.WebRTCPeerReady
-	55,  // 108: muxvia.client.binding.v1.PlatformResponse.webrtc_channel_sent:type_name -> muxvia.client.binding.v1.WebRTCChannelSendResult
-	58,  // 109: muxvia.client.binding.v1.PlatformResponse.webrtc_peer_snapshot:type_name -> muxvia.client.binding.v1.WebRTCPeerSnapshot
-	110, // [110:110] is the sub-list for method output_type
-	110, // [110:110] is the sub-list for method input_type
-	110, // [110:110] is the sub-list for extension type_name
-	110, // [110:110] is the sub-list for extension extendee
-	0,   // [0:110] is the sub-list for field type_name
+	2,   // 0: muxvia.client.binding.v1.ConnectionSnapshot.route_kind:type_name -> muxvia.client.binding.v1.ConnectionRouteKind
+	80,  // 1: muxvia.client.binding.v1.ConnectionSnapshot.observed_path:type_name -> muxvia.cloud.v1.ObservedPath
+	3,   // 2: muxvia.client.binding.v1.ConnectionSnapshot.local_candidate_type:type_name -> muxvia.client.binding.v1.ConnectionCandidateType
+	3,   // 3: muxvia.client.binding.v1.ConnectionSnapshot.remote_candidate_type:type_name -> muxvia.client.binding.v1.ConnectionCandidateType
+	4,   // 4: muxvia.client.binding.v1.ConnectionSnapshot.local_protocol:type_name -> muxvia.client.binding.v1.ConnectionTransport
+	4,   // 5: muxvia.client.binding.v1.ConnectionSnapshot.remote_protocol:type_name -> muxvia.client.binding.v1.ConnectionTransport
+	4,   // 6: muxvia.client.binding.v1.ConnectionSnapshot.relay_transport:type_name -> muxvia.client.binding.v1.ConnectionTransport
+	81,  // 7: muxvia.client.binding.v1.ConnectionPolicy.route_preference:type_name -> muxvia.remote.auth.v1.EndpointRoutePreference
+	82,  // 8: muxvia.client.binding.v1.ConnectionPolicy.cloud_relay_mode:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRelayMode
+	83,  // 9: muxvia.client.binding.v1.ConnectionPolicy.relay_transport:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRelayTransport
+	2,   // 10: muxvia.client.binding.v1.ConnectionPolicyRouteAvailability.route_kind:type_name -> muxvia.client.binding.v1.ConnectionRouteKind
+	5,   // 11: muxvia.client.binding.v1.ConnectionPolicyRouteAvailability.reason:type_name -> muxvia.client.binding.v1.ConnectionPolicyAvailabilityReason
+	7,   // 12: muxvia.client.binding.v1.ConnectionPolicyState.policy:type_name -> muxvia.client.binding.v1.ConnectionPolicy
+	8,   // 13: muxvia.client.binding.v1.ConnectionPolicyState.routes:type_name -> muxvia.client.binding.v1.ConnectionPolicyRouteAvailability
+	9,   // 14: muxvia.client.binding.v1.ConnectionPolicyGetResult.state:type_name -> muxvia.client.binding.v1.ConnectionPolicyState
+	84,  // 15: muxvia.client.binding.v1.ConnectionPolicyGetResult.error:type_name -> muxvia.api.v1.ApiError
+	7,   // 16: muxvia.client.binding.v1.ConnectionPolicyApplyRequest.policy:type_name -> muxvia.client.binding.v1.ConnectionPolicy
+	9,   // 17: muxvia.client.binding.v1.ConnectionPolicyApplyResult.state:type_name -> muxvia.client.binding.v1.ConnectionPolicyState
+	84,  // 18: muxvia.client.binding.v1.ConnectionPolicyApplyResult.error:type_name -> muxvia.api.v1.ApiError
+	6,   // 19: muxvia.client.binding.v1.ConnectionSnapshotGetResult.connection:type_name -> muxvia.client.binding.v1.ConnectionSnapshot
+	84,  // 20: muxvia.client.binding.v1.ConnectionSnapshotGetResult.error:type_name -> muxvia.api.v1.ApiError
+	0,   // 21: muxvia.client.binding.v1.OpenSessionRequest.intent:type_name -> muxvia.client.binding.v1.ConnectIntent
+	85,  // 22: muxvia.client.binding.v1.ImportPairingResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	84,  // 23: muxvia.client.binding.v1.ImportPairingResult.error:type_name -> muxvia.api.v1.ApiError
+	86,  // 24: muxvia.client.binding.v1.ImportPairingResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	84,  // 25: muxvia.client.binding.v1.DeleteCredentialResult.error:type_name -> muxvia.api.v1.ApiError
+	86,  // 26: muxvia.client.binding.v1.EndpointRegistryGetResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	84,  // 27: muxvia.client.binding.v1.EndpointRegistryGetResult.error:type_name -> muxvia.api.v1.ApiError
+	85,  // 28: muxvia.client.binding.v1.EndpointUpsertRequest.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	85,  // 29: muxvia.client.binding.v1.EndpointUpsertResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	86,  // 30: muxvia.client.binding.v1.EndpointUpsertResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	84,  // 31: muxvia.client.binding.v1.EndpointUpsertResult.error:type_name -> muxvia.api.v1.ApiError
+	86,  // 32: muxvia.client.binding.v1.EndpointDeleteResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	84,  // 33: muxvia.client.binding.v1.EndpointDeleteResult.error:type_name -> muxvia.api.v1.ApiError
+	87,  // 34: muxvia.client.binding.v1.EndpointSharePreview.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
+	28,  // 35: muxvia.client.binding.v1.EndpointSharePreview.route_diffs:type_name -> muxvia.client.binding.v1.EndpointShareRouteDiff
+	88,  // 36: muxvia.client.binding.v1.EndpointSharePreview.credential_descriptors:type_name -> muxvia.remote.auth.v1.EndpointCredentialDescriptor
+	29,  // 37: muxvia.client.binding.v1.EndpointShareReceiveResult.preview:type_name -> muxvia.client.binding.v1.EndpointSharePreview
+	84,  // 38: muxvia.client.binding.v1.EndpointShareReceiveResult.error:type_name -> muxvia.api.v1.ApiError
+	85,  // 39: muxvia.client.binding.v1.EndpointShareCommitResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	86,  // 40: muxvia.client.binding.v1.EndpointShareCommitResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	84,  // 41: muxvia.client.binding.v1.EndpointShareCommitResult.error:type_name -> muxvia.api.v1.ApiError
+	85,  // 42: muxvia.client.binding.v1.SSHCredentialProvisionResult.endpoint:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	86,  // 43: muxvia.client.binding.v1.SSHCredentialProvisionResult.registry:type_name -> muxvia.remote.auth.v1.EndpointRegistryV1
+	84,  // 44: muxvia.client.binding.v1.SSHCredentialProvisionResult.error:type_name -> muxvia.api.v1.ApiError
+	17,  // 45: muxvia.client.binding.v1.EngineCommand.import_pairing:type_name -> muxvia.client.binding.v1.ImportPairingRequest
+	19,  // 46: muxvia.client.binding.v1.EngineCommand.delete_credential:type_name -> muxvia.client.binding.v1.DeleteCredentialRequest
+	21,  // 47: muxvia.client.binding.v1.EngineCommand.endpoint_registry_get:type_name -> muxvia.client.binding.v1.EndpointRegistryGetRequest
+	23,  // 48: muxvia.client.binding.v1.EngineCommand.endpoint_upsert:type_name -> muxvia.client.binding.v1.EndpointUpsertRequest
+	25,  // 49: muxvia.client.binding.v1.EngineCommand.endpoint_delete:type_name -> muxvia.client.binding.v1.EndpointDeleteRequest
+	27,  // 50: muxvia.client.binding.v1.EngineCommand.endpoint_share_receive:type_name -> muxvia.client.binding.v1.EndpointShareReceiveRequest
+	31,  // 51: muxvia.client.binding.v1.EngineCommand.endpoint_share_commit:type_name -> muxvia.client.binding.v1.EndpointShareCommitRequest
+	33,  // 52: muxvia.client.binding.v1.EngineCommand.ssh_credential_provision:type_name -> muxvia.client.binding.v1.SSHCredentialProvisionRequest
+	10,  // 53: muxvia.client.binding.v1.EngineCommand.connection_policy_get:type_name -> muxvia.client.binding.v1.ConnectionPolicyGetRequest
+	12,  // 54: muxvia.client.binding.v1.EngineCommand.connection_policy_apply:type_name -> muxvia.client.binding.v1.ConnectionPolicyApplyRequest
+	14,  // 55: muxvia.client.binding.v1.EngineCommand.connection_snapshot_get:type_name -> muxvia.client.binding.v1.ConnectionSnapshotGetRequest
+	89,  // 56: muxvia.client.binding.v1.OpenSessionResult.session:type_name -> muxvia.api.v1.EndpointSessionStamp
+	84,  // 57: muxvia.client.binding.v1.OpenSessionResult.error:type_name -> muxvia.api.v1.ApiError
+	6,   // 58: muxvia.client.binding.v1.OpenSessionResult.connection:type_name -> muxvia.client.binding.v1.ConnectionSnapshot
+	90,  // 59: muxvia.client.binding.v1.ExecuteResult.result:type_name -> muxvia.api.v1.ResultEnvelope
+	84,  // 60: muxvia.client.binding.v1.ExecuteResult.error:type_name -> muxvia.api.v1.ApiError
+	91,  // 61: muxvia.client.binding.v1.ApplicationEvent.event:type_name -> muxvia.api.v1.EventEnvelope
+	92,  // 62: muxvia.client.binding.v1.OpenResourceStreamRequest.resource:type_name -> muxvia.api.v1.ResourceHandle
+	1,   // 63: muxvia.client.binding.v1.ResourceStreamFrame.type:type_name -> muxvia.client.binding.v1.ResourceStreamFrameType
+	84,  // 64: muxvia.client.binding.v1.ResourceStreamClosedEvent.error:type_name -> muxvia.api.v1.ApiError
+	89,  // 65: muxvia.client.binding.v1.SessionClosedEvent.session:type_name -> muxvia.api.v1.EndpointSessionStamp
+	84,  // 66: muxvia.client.binding.v1.SessionClosedEvent.error:type_name -> muxvia.api.v1.ApiError
+	36,  // 67: muxvia.client.binding.v1.EventEnvelope.open_session:type_name -> muxvia.client.binding.v1.OpenSessionResult
+	37,  // 68: muxvia.client.binding.v1.EventEnvelope.execute:type_name -> muxvia.client.binding.v1.ExecuteResult
+	38,  // 69: muxvia.client.binding.v1.EventEnvelope.application:type_name -> muxvia.client.binding.v1.ApplicationEvent
+	42,  // 70: muxvia.client.binding.v1.EventEnvelope.session_closed:type_name -> muxvia.client.binding.v1.SessionClosedEvent
+	18,  // 71: muxvia.client.binding.v1.EventEnvelope.import_pairing:type_name -> muxvia.client.binding.v1.ImportPairingResult
+	20,  // 72: muxvia.client.binding.v1.EventEnvelope.delete_credential:type_name -> muxvia.client.binding.v1.DeleteCredentialResult
+	40,  // 73: muxvia.client.binding.v1.EventEnvelope.resource_stream_frame:type_name -> muxvia.client.binding.v1.ResourceStreamFrame
+	41,  // 74: muxvia.client.binding.v1.EventEnvelope.resource_stream_closed:type_name -> muxvia.client.binding.v1.ResourceStreamClosedEvent
+	22,  // 75: muxvia.client.binding.v1.EventEnvelope.endpoint_registry_get:type_name -> muxvia.client.binding.v1.EndpointRegistryGetResult
+	24,  // 76: muxvia.client.binding.v1.EventEnvelope.endpoint_upsert:type_name -> muxvia.client.binding.v1.EndpointUpsertResult
+	26,  // 77: muxvia.client.binding.v1.EventEnvelope.endpoint_delete:type_name -> muxvia.client.binding.v1.EndpointDeleteResult
+	30,  // 78: muxvia.client.binding.v1.EventEnvelope.endpoint_share_receive:type_name -> muxvia.client.binding.v1.EndpointShareReceiveResult
+	32,  // 79: muxvia.client.binding.v1.EventEnvelope.endpoint_share_commit:type_name -> muxvia.client.binding.v1.EndpointShareCommitResult
+	34,  // 80: muxvia.client.binding.v1.EventEnvelope.ssh_credential_provision:type_name -> muxvia.client.binding.v1.SSHCredentialProvisionResult
+	11,  // 81: muxvia.client.binding.v1.EventEnvelope.connection_policy_get:type_name -> muxvia.client.binding.v1.ConnectionPolicyGetResult
+	13,  // 82: muxvia.client.binding.v1.EventEnvelope.connection_policy_apply:type_name -> muxvia.client.binding.v1.ConnectionPolicyApplyResult
+	15,  // 83: muxvia.client.binding.v1.EventEnvelope.connection_snapshot_get:type_name -> muxvia.client.binding.v1.ConnectionSnapshotGetResult
+	93,  // 84: muxvia.client.binding.v1.SignalingEvents.events:type_name -> muxvia.cloud.v1.SignalingEvent
+	82,  // 85: muxvia.client.binding.v1.CloudRouteEligibilityRequest.relay_mode:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRelayMode
+	94,  // 86: muxvia.client.binding.v1.WebRTCOpenPeerRequest.ice_servers:type_name -> muxvia.cloud.v1.IceServer
+	95,  // 87: muxvia.client.binding.v1.WebRTCOpenPeerRequest.route_preference:type_name -> muxvia.cloud.v1.RoutePreference
+	96,  // 88: muxvia.client.binding.v1.WebRTCApplyAnswerRequest.candidates:type_name -> muxvia.cloud.v1.IceCandidate
+	80,  // 89: muxvia.client.binding.v1.WebRTCPeerReady.observed_path:type_name -> muxvia.cloud.v1.ObservedPath
+	80,  // 90: muxvia.client.binding.v1.WebRTCPeerSnapshot.path:type_name -> muxvia.cloud.v1.ObservedPath
+	3,   // 91: muxvia.client.binding.v1.WebRTCPeerSnapshot.local_candidate_type:type_name -> muxvia.client.binding.v1.ConnectionCandidateType
+	3,   // 92: muxvia.client.binding.v1.WebRTCPeerSnapshot.remote_candidate_type:type_name -> muxvia.client.binding.v1.ConnectionCandidateType
+	4,   // 93: muxvia.client.binding.v1.WebRTCPeerSnapshot.local_protocol:type_name -> muxvia.client.binding.v1.ConnectionTransport
+	4,   // 94: muxvia.client.binding.v1.WebRTCPeerSnapshot.remote_protocol:type_name -> muxvia.client.binding.v1.ConnectionTransport
+	4,   // 95: muxvia.client.binding.v1.WebRTCPeerSnapshot.relay_transport:type_name -> muxvia.client.binding.v1.ConnectionTransport
+	74,  // 96: muxvia.client.binding.v1.PlatformEvent.webrtc_channel_message:type_name -> muxvia.client.binding.v1.WebRTCChannelMessageEvent
+	75,  // 97: muxvia.client.binding.v1.PlatformEvent.webrtc_channel_closed:type_name -> muxvia.client.binding.v1.WebRTCChannelClosedEvent
+	76,  // 98: muxvia.client.binding.v1.PlatformEvent.webrtc_buffered_amount_low:type_name -> muxvia.client.binding.v1.WebRTCBufferedAmountLowEvent
+	44,  // 99: muxvia.client.binding.v1.PlatformRequest.credential_resolve:type_name -> muxvia.client.binding.v1.CredentialResolveRequest
+	45,  // 100: muxvia.client.binding.v1.PlatformRequest.credential_prepare:type_name -> muxvia.client.binding.v1.CredentialPrepareRequest
+	46,  // 101: muxvia.client.binding.v1.PlatformRequest.credential_delete:type_name -> muxvia.client.binding.v1.CredentialDeleteRequest
+	49,  // 102: muxvia.client.binding.v1.PlatformRequest.credential_sign:type_name -> muxvia.client.binding.v1.CredentialSignRequest
+	47,  // 103: muxvia.client.binding.v1.PlatformRequest.credential_bind:type_name -> muxvia.client.binding.v1.CredentialBindRequest
+	56,  // 104: muxvia.client.binding.v1.PlatformRequest.endpoint_registry_load:type_name -> muxvia.client.binding.v1.EndpointRegistryLoadRequest
+	57,  // 105: muxvia.client.binding.v1.PlatformRequest.endpoint_registry_store:type_name -> muxvia.client.binding.v1.EndpointRegistryStoreRequest
+	51,  // 106: muxvia.client.binding.v1.PlatformRequest.ssh_credential_lookup:type_name -> muxvia.client.binding.v1.SSHCredentialLookupRequest
+	54,  // 107: muxvia.client.binding.v1.PlatformRequest.ssh_credential_sign:type_name -> muxvia.client.binding.v1.SSHCredentialSignRequest
+	52,  // 108: muxvia.client.binding.v1.PlatformRequest.ssh_credential_delete:type_name -> muxvia.client.binding.v1.SSHCredentialDeleteRequest
+	97,  // 109: muxvia.client.binding.v1.PlatformRequest.cloud_resolve_endpoint:type_name -> muxvia.cloud.v1.ResolveEndpointRequest
+	98,  // 110: muxvia.client.binding.v1.PlatformRequest.cloud_create_signaling:type_name -> muxvia.cloud.v1.CreateSignalingSessionRequest
+	99,  // 111: muxvia.client.binding.v1.PlatformRequest.cloud_acquire_relay:type_name -> muxvia.cloud.v1.AcquireRelayLeaseRequest
+	100, // 112: muxvia.client.binding.v1.PlatformRequest.cloud_plan_route:type_name -> muxvia.cloud.v1.PlanManagedRouteRequest
+	101, // 113: muxvia.client.binding.v1.PlatformRequest.cloud_report_quality:type_name -> muxvia.cloud.v1.ReportPathQualityRequest
+	102, // 114: muxvia.client.binding.v1.PlatformRequest.cloud_report_outcome:type_name -> muxvia.cloud.v1.ReportConnectionOutcomeRequest
+	60,  // 115: muxvia.client.binding.v1.PlatformRequest.cloud_route_eligibility:type_name -> muxvia.client.binding.v1.CloudRouteEligibilityRequest
+	62,  // 116: muxvia.client.binding.v1.PlatformRequest.webrtc_open_peer:type_name -> muxvia.client.binding.v1.WebRTCOpenPeerRequest
+	64,  // 117: muxvia.client.binding.v1.PlatformRequest.webrtc_create_offer:type_name -> muxvia.client.binding.v1.WebRTCPeerRequest
+	66,  // 118: muxvia.client.binding.v1.PlatformRequest.webrtc_apply_answer:type_name -> muxvia.client.binding.v1.WebRTCApplyAnswerRequest
+	64,  // 119: muxvia.client.binding.v1.PlatformRequest.webrtc_wait_ready:type_name -> muxvia.client.binding.v1.WebRTCPeerRequest
+	68,  // 120: muxvia.client.binding.v1.PlatformRequest.webrtc_channel_send:type_name -> muxvia.client.binding.v1.WebRTCChannelSendRequest
+	70,  // 121: muxvia.client.binding.v1.PlatformRequest.webrtc_channel_threshold:type_name -> muxvia.client.binding.v1.WebRTCChannelThresholdRequest
+	71,  // 122: muxvia.client.binding.v1.PlatformRequest.webrtc_peer_snapshot:type_name -> muxvia.client.binding.v1.WebRTCPeerSnapshotRequest
+	73,  // 123: muxvia.client.binding.v1.PlatformRequest.webrtc_close_peer:type_name -> muxvia.client.binding.v1.WebRTCCloseRequest
+	73,  // 124: muxvia.client.binding.v1.PlatformRequest.webrtc_close_channel:type_name -> muxvia.client.binding.v1.WebRTCCloseRequest
+	84,  // 125: muxvia.client.binding.v1.PlatformResponse.error:type_name -> muxvia.api.v1.ApiError
+	48,  // 126: muxvia.client.binding.v1.PlatformResponse.credential:type_name -> muxvia.client.binding.v1.CredentialRecord
+	50,  // 127: muxvia.client.binding.v1.PlatformResponse.credential_sign:type_name -> muxvia.client.binding.v1.CredentialSignResponse
+	58,  // 128: muxvia.client.binding.v1.PlatformResponse.endpoint_registry:type_name -> muxvia.client.binding.v1.EndpointRegistryLoaded
+	53,  // 129: muxvia.client.binding.v1.PlatformResponse.ssh_credential:type_name -> muxvia.client.binding.v1.SSHCredentialRecord
+	55,  // 130: muxvia.client.binding.v1.PlatformResponse.ssh_credential_sign:type_name -> muxvia.client.binding.v1.SSHCredentialSignResponse
+	103, // 131: muxvia.client.binding.v1.PlatformResponse.cloud_resolved_endpoint:type_name -> muxvia.cloud.v1.ResolvedEndpoint
+	59,  // 132: muxvia.client.binding.v1.PlatformResponse.cloud_signaling:type_name -> muxvia.client.binding.v1.SignalingEvents
+	104, // 133: muxvia.client.binding.v1.PlatformResponse.cloud_relay_lease:type_name -> muxvia.cloud.v1.RelayLease
+	105, // 134: muxvia.client.binding.v1.PlatformResponse.cloud_route_plan:type_name -> muxvia.cloud.v1.ManagedRoutePlan
+	106, // 135: muxvia.client.binding.v1.PlatformResponse.cloud_quality_reported:type_name -> muxvia.cloud.v1.ReportPathQualityResponse
+	107, // 136: muxvia.client.binding.v1.PlatformResponse.cloud_outcome_reported:type_name -> muxvia.cloud.v1.ReportConnectionOutcomeResponse
+	61,  // 137: muxvia.client.binding.v1.PlatformResponse.cloud_route_eligibility:type_name -> muxvia.client.binding.v1.CloudRouteEligibility
+	63,  // 138: muxvia.client.binding.v1.PlatformResponse.webrtc_peer_opened:type_name -> muxvia.client.binding.v1.WebRTCPeerOpened
+	65,  // 139: muxvia.client.binding.v1.PlatformResponse.webrtc_offer:type_name -> muxvia.client.binding.v1.WebRTCCreateOfferResult
+	67,  // 140: muxvia.client.binding.v1.PlatformResponse.webrtc_peer_ready:type_name -> muxvia.client.binding.v1.WebRTCPeerReady
+	69,  // 141: muxvia.client.binding.v1.PlatformResponse.webrtc_channel_sent:type_name -> muxvia.client.binding.v1.WebRTCChannelSendResult
+	72,  // 142: muxvia.client.binding.v1.PlatformResponse.webrtc_peer_snapshot:type_name -> muxvia.client.binding.v1.WebRTCPeerSnapshot
+	143, // [143:143] is the sub-list for method output_type
+	143, // [143:143] is the sub-list for method input_type
+	143, // [143:143] is the sub-list for extension type_name
+	143, // [143:143] is the sub-list for extension extendee
+	0,   // [0:143] is the sub-list for field type_name
 }
 
 func init() { file_bindingpb_client_binding_proto_init() }
@@ -5642,7 +6895,7 @@ func file_bindingpb_client_binding_proto_init() {
 	if File_bindingpb_client_binding_proto != nil {
 		return
 	}
-	file_bindingpb_client_binding_proto_msgTypes[19].OneofWrappers = []any{
+	file_bindingpb_client_binding_proto_msgTypes[29].OneofWrappers = []any{
 		(*EngineCommand_ImportPairing)(nil),
 		(*EngineCommand_DeleteCredential)(nil),
 		(*EngineCommand_EndpointRegistryGet)(nil),
@@ -5651,8 +6904,11 @@ func file_bindingpb_client_binding_proto_init() {
 		(*EngineCommand_EndpointShareReceive)(nil),
 		(*EngineCommand_EndpointShareCommit)(nil),
 		(*EngineCommand_SshCredentialProvision)(nil),
+		(*EngineCommand_ConnectionPolicyGet)(nil),
+		(*EngineCommand_ConnectionPolicyApply)(nil),
+		(*EngineCommand_ConnectionSnapshotGet)(nil),
 	}
-	file_bindingpb_client_binding_proto_msgTypes[27].OneofWrappers = []any{
+	file_bindingpb_client_binding_proto_msgTypes[37].OneofWrappers = []any{
 		(*EventEnvelope_OpenSession)(nil),
 		(*EventEnvelope_Execute)(nil),
 		(*EventEnvelope_Application)(nil),
@@ -5667,13 +6923,16 @@ func file_bindingpb_client_binding_proto_init() {
 		(*EventEnvelope_EndpointShareReceive)(nil),
 		(*EventEnvelope_EndpointShareCommit)(nil),
 		(*EventEnvelope_SshCredentialProvision)(nil),
+		(*EventEnvelope_ConnectionPolicyGet)(nil),
+		(*EventEnvelope_ConnectionPolicyApply)(nil),
+		(*EventEnvelope_ConnectionSnapshotGet)(nil),
 	}
-	file_bindingpb_client_binding_proto_msgTypes[61].OneofWrappers = []any{
+	file_bindingpb_client_binding_proto_msgTypes[71].OneofWrappers = []any{
 		(*PlatformEvent_WebrtcChannelMessage)(nil),
 		(*PlatformEvent_WebrtcChannelClosed)(nil),
 		(*PlatformEvent_WebrtcBufferedAmountLow)(nil),
 	}
-	file_bindingpb_client_binding_proto_msgTypes[62].OneofWrappers = []any{
+	file_bindingpb_client_binding_proto_msgTypes[72].OneofWrappers = []any{
 		(*PlatformRequest_CredentialResolve)(nil),
 		(*PlatformRequest_CredentialPrepare)(nil),
 		(*PlatformRequest_CredentialDelete)(nil),
@@ -5701,7 +6960,7 @@ func file_bindingpb_client_binding_proto_init() {
 		(*PlatformRequest_WebrtcClosePeer)(nil),
 		(*PlatformRequest_WebrtcCloseChannel)(nil),
 	}
-	file_bindingpb_client_binding_proto_msgTypes[63].OneofWrappers = []any{
+	file_bindingpb_client_binding_proto_msgTypes[73].OneofWrappers = []any{
 		(*PlatformResponse_Credential)(nil),
 		(*PlatformResponse_CredentialSign)(nil),
 		(*PlatformResponse_EndpointRegistry)(nil),
@@ -5725,8 +6984,8 @@ func file_bindingpb_client_binding_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_bindingpb_client_binding_proto_rawDesc), len(file_bindingpb_client_binding_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   64,
+			NumEnums:      6,
+			NumMessages:   74,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

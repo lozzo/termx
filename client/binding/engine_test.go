@@ -96,6 +96,61 @@ func TestEngineUsesProtoBytesOpaqueHandlesAndOrderedEvents(t *testing.T) {
 	}
 }
 
+func TestEngineOpenSessionReturnsReadyConnectionSnapshot(t *testing.T) {
+	session := newBindingSession()
+	session.connection = &clientruntime.ConnectionSnapshot{
+		RouteID: "cloud", RouteKind: endpoint.RouteManagedWebRTC, ObservedPath: string(endpoint.PathSingleRelay),
+		SampledAt: time.Unix(1_800_000_000, 0).UTC(), RoundTrip: 42 * time.Millisecond,
+		LocalCandidateType: "relay", RemoteCandidateType: "relay", LocalProtocol: "udp", RemoteProtocol: "udp", RelayTransport: "tcp", Connected: true,
+	}
+	engine, err := NewEngine(&bindingHost{session: session})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	payload, _ := proto.Marshal(&bindingpb.OpenSessionRequest{RequestId: "snapshot", EndpointId: "studio", Intent: bindingpb.ConnectIntent_CONNECT_INTENT_INTERACTIVE})
+	if _, err := engine.OpenSession(payload); err != nil {
+		t.Fatal(err)
+	}
+	event := nextBindingEvent(t, engine)
+	snapshot := event.GetOpenSession().GetConnection()
+	if snapshot.GetRouteKind() != bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_MANAGED_CLOUD || snapshot.GetObservedPath() != 2 ||
+		snapshot.GetRelayTransport() != bindingpb.ConnectionTransport_CONNECTION_TRANSPORT_TCP || snapshot.GetRoundTripNanos() != int64(42*time.Millisecond) {
+		t.Fatalf("connection snapshot = %#v", snapshot)
+	}
+}
+
+func TestEngineConnectionSnapshotCommandResamplesCurrentSession(t *testing.T) {
+	session := newBindingSession()
+	session.connection = &clientruntime.ConnectionSnapshot{RouteID: "direct", RouteKind: endpoint.RouteDirectWebRTCTCP, SampledAt: time.Unix(1_800_000_000, 0).UTC(), BytesReceived: 10, Connected: true}
+	engine, err := NewEngine(&bindingHost{session: session})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	payload, _ := proto.Marshal(&bindingpb.OpenSessionRequest{RequestId: "open-resample", EndpointId: "studio", Intent: bindingpb.ConnectIntent_CONNECT_INTENT_INTERACTIVE})
+	openOperation, err := engine.OpenSession(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened := nextBindingEvent(t, engine).GetOpenSession()
+	if err := engine.Release(openOperation); err != nil {
+		t.Fatal(err)
+	}
+	session.connection = &clientruntime.ConnectionSnapshot{RouteID: "direct", RouteKind: endpoint.RouteDirectWebRTCTCP, SampledAt: time.Unix(1_800_000_005, 0).UTC(), BytesReceived: 99, Connected: true}
+	command, _ := proto.Marshal(&bindingpb.EngineCommand{Command: &bindingpb.EngineCommand_ConnectionSnapshotGet{ConnectionSnapshotGet: &bindingpb.ConnectionSnapshotGetRequest{
+		RequestId: "resample", SessionHandle: opened.GetSessionHandle(),
+	}}})
+	operation, err := engine.EngineCommand(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := nextBindingEvent(t, engine).GetConnectionSnapshotGet()
+	if result.GetOperationHandle() != operation || result.GetConnection().GetBytesReceived() != 99 || result.GetConnection().GetSampledAtUnixNano() != time.Unix(1_800_000_005, 0).UnixNano() {
+		t.Fatalf("resampled connection = %#v", result)
+	}
+}
+
 func TestEngineCancellationProducesTypedResult(t *testing.T) {
 	session := newBindingSession()
 	started := make(chan struct{})
@@ -845,6 +900,33 @@ func openBindingSession(t *testing.T, engine *Engine) uint64 {
 	return event.GetOpenSession().GetSessionHandle()
 }
 
+func TestEngineOpenSessionDeadlineEndsPlatformWait(t *testing.T) {
+	host := &bindingHost{open: func(ctx context.Context, _ *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadyPeerSession, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+	engine, err := NewEngine(host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	engine.openTimeout = 5 * time.Millisecond
+	payload, err := proto.Marshal(&bindingpb.OpenSessionRequest{
+		RequestId: "deadline", EndpointId: "studio", Intent: bindingpb.ConnectIntent_CONNECT_INTENT_INTERACTIVE,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.OpenSession(payload); err != nil {
+		t.Fatal(err)
+	}
+	event := nextBindingEvent(t, engine)
+	result := event.GetOpenSession()
+	if result.GetError().GetCode() != apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE || !result.GetError().GetRetryable() {
+		t.Fatalf("deadline error = %#v", result.GetError())
+	}
+}
+
 func nextBindingEvent(t *testing.T, engine *Engine) *bindingpb.EventEnvelope {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -863,6 +945,7 @@ func nextBindingEvent(t *testing.T, engine *Engine) *bindingpb.EventEnvelope {
 type bindingHost struct {
 	session clientruntime.ApplicationReadyPeerSession
 	request *bindingpb.OpenSessionRequest
+	open    func(context.Context, *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadyPeerSession, error)
 }
 
 type protocolBindingSession struct {
@@ -967,8 +1050,11 @@ func bindingSendFrame(transport *memory.Transport, channel uint16, typ uint8, pa
 	return transport.Send(frame)
 }
 
-func (host *bindingHost) OpenSession(_ context.Context, request *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadyPeerSession, error) {
+func (host *bindingHost) OpenSession(ctx context.Context, request *bindingpb.OpenSessionRequest) (clientruntime.ApplicationReadyPeerSession, error) {
 	host.request = proto.Clone(request).(*bindingpb.OpenSessionRequest)
+	if host.open != nil {
+		return host.open(ctx, request)
+	}
 	return host.session, nil
 }
 
@@ -984,6 +1070,14 @@ type bindingSession struct {
 	resourceStream clientruntime.ResourceStream
 	resourceOpen   func(*apipb.ResourceHandle) (clientruntime.ResourceStream, error)
 	closeFunc      func() error
+	connection     *clientruntime.ConnectionSnapshot
+}
+
+func (session *bindingSession) ConnectionSnapshot(_ time.Time) (clientruntime.ConnectionSnapshot, bool) {
+	if session.connection == nil {
+		return clientruntime.ConnectionSnapshot{}, false
+	}
+	return *session.connection, true
 }
 
 func (session *bindingSession) OpenResourceStream(resource *apipb.ResourceHandle) (clientruntime.ResourceStream, error) {

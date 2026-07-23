@@ -139,9 +139,17 @@ type RouteKind string
 // 它只影响未来连接，不改变已建立 session、terminal lifecycle 或 history truth。
 type ConnectMode string
 
+// RoutePreference 描述用户对 Endpoint planner 的顶层 Route 约束。
+// 它只影响新 generation 的计划，不修改 route 本身，也不允许强制模式回退到其它 kind。
+type RoutePreference string
+
 // RelayMode 描述 managed WebRTC route 内部允许的 ICE/Relay 策略。
 // 外层 Endpoint route 竞速不由该值决定。
 type RelayMode string
+
+// RelayTransport 描述 managed WebRTC Route 允许使用的 TURN transport。
+// 它不代表当前系统网络；实际 transport 只能由 selected ICE candidate pair 证明。
+type RelayTransport string
 
 // Path 只描述 managed WebRTC transport 内部实际经过的网络路径。
 // local Unix、Direct/SSH WebRTC TCP route 不得伪装成 managed PathDirect。
@@ -176,6 +184,26 @@ const (
 	SessionClosing SessionLifecycle = "closing"
 	// SessionClosed 表示当前 generation 已关闭，任何迟到回包都必须拒绝。
 	SessionClosed SessionLifecycle = "closed"
+)
+
+const (
+	// RoutePreferenceAuto 允许所有合格 Route 按 priority/full race 参与计划。
+	RoutePreferenceAuto RoutePreference = "auto"
+	// RoutePreferenceDirect 只允许 daemon embedded signaling + ICE-TCP Route。
+	RoutePreferenceDirect RoutePreference = "direct"
+	// RoutePreferenceSSH 只允许 SSH tunnel Route。
+	RoutePreferenceSSH RoutePreference = "ssh"
+	// RoutePreferenceManagedCloud 只允许 Muxvia Cloud managed Route。
+	RoutePreferenceManagedCloud RoutePreference = "managed_cloud"
+)
+
+const (
+	// RelayTransportAuto 保留 Relay lease 明确提供的 UDP/TCP transport。
+	RelayTransportAuto RelayTransport = "auto"
+	// RelayTransportUDP 只允许 TURN/UDP。
+	RelayTransportUDP RelayTransport = "udp"
+	// RelayTransportTCP 只允许 TURN/TCP。
+	RelayTransportTCP RelayTransport = "tcp"
 )
 
 // Error 是统一连接领域的稳定失败。
@@ -239,8 +267,9 @@ func (identity DaemonIdentity) Validate(required bool) error {
 // SelectionPolicy 是客户端本地 route 选择策略。
 // 未配置 priority 时 HedgeDelay 不改变 full-race；存在 priority 时 CONN003 planner 使用它启动下一分组。
 type SelectionPolicy struct {
-	HedgeDelay           time.Duration `json:"hedge_delay_ns"`
-	HedgeDelayConfigured bool          `json:"hedge_delay_configured"`
+	HedgeDelay           time.Duration   `json:"hedge_delay_ns"`
+	HedgeDelayConfigured bool            `json:"hedge_delay_configured"`
+	RoutePreference      RoutePreference `json:"route_preference"`
 }
 
 // CredentialDescriptor 是可迁移但不包含 secret 的目标端凭据说明。
@@ -281,9 +310,10 @@ type AccessRoute struct {
 	AdvertisedAddresses []string `json:"advertised_addresses,omitempty"`
 	ServerName          string   `json:"server_name,omitempty"`
 
-	TargetDeviceID    string    `json:"target_device_id,omitempty"`
-	AccountProfileRef string    `json:"account_profile_ref,omitempty"`
-	RelayMode         RelayMode `json:"relay_mode,omitempty"`
+	TargetDeviceID    string         `json:"target_device_id,omitempty"`
+	AccountProfileRef string         `json:"account_profile_ref,omitempty"`
+	RelayMode         RelayMode      `json:"relay_mode,omitempty"`
+	RelayTransport    RelayTransport `json:"relay_transport,omitempty"`
 }
 
 // Endpoint 表示当前客户端要访问的一个逻辑 daemon。
@@ -596,6 +626,11 @@ func (endpoint Endpoint) Validate() error {
 	if endpoint.SelectionPolicy.HedgeDelayConfigured && (endpoint.SelectionPolicy.HedgeDelay < 0 || endpoint.SelectionPolicy.HedgeDelay > 30*time.Second || endpoint.SelectionPolicy.HedgeDelay%time.Millisecond != 0) {
 		return connectionError(ErrorConfig, "endpoint %q hedge_delay must be a whole millisecond between 0 and 30s", endpoint.ID)
 	}
+	switch endpoint.SelectionPolicy.RoutePreference {
+	case "", RoutePreferenceAuto, RoutePreferenceDirect, RoutePreferenceSSH, RoutePreferenceManagedCloud:
+	default:
+		return connectionError(ErrorConfig, "endpoint %q has unknown route_preference %q", endpoint.ID, endpoint.SelectionPolicy.RoutePreference)
+	}
 	if !validSource(endpoint.LabelSource) {
 		return connectionError(ErrorConfig, "endpoint %q has unknown label source %q", endpoint.ID, endpoint.LabelSource)
 	}
@@ -721,6 +756,11 @@ func (route AccessRoute) Validate(identity DaemonIdentity) error {
 		case RelayAuto, RelayDirect, RelayOnly, RelaySmart:
 		default:
 			return connectionError(ErrorConfig, "managed-webrtc route %q has unknown relay_mode %q", route.ID, route.RelayMode)
+		}
+		switch route.RelayTransport {
+		case "", RelayTransportAuto, RelayTransportUDP, RelayTransportTCP:
+		default:
+			return connectionError(ErrorConfig, "managed-webrtc route %q has unknown relay_transport %q", route.ID, route.RelayTransport)
 		}
 		if route.Socket != "" || route.hasSSHFields() || route.hasDirectFields() {
 			return connectionError(ErrorConfig, "managed-webrtc route %q contains fields owned by another route kind", route.ID)
@@ -874,6 +914,9 @@ func (route AccessRoute) withDefaults() AccessRoute {
 	case RouteManagedWebRTC:
 		if route.RelayMode == "" {
 			route.RelayMode = RelayAuto
+		}
+		if route.RelayTransport == "" {
+			route.RelayTransport = RelayTransportAuto
 		}
 	}
 	route.HostKeyFingerprints = normalizeStrings(route.HostKeyFingerprints)

@@ -50,7 +50,7 @@ func (connector *PairingConnector) Redeem(ctx context.Context, request clientrun
 	if err != nil {
 		return remoteauth.PairingExchangeResult{}, err
 	}
-	selected, err := resolveDialRoute(ctx, connector.Cloud, request, resolved, policy, connector.now())
+	selected, err := resolveDialRoute(ctx, connector.Cloud, request, resolved, policy, cloudpb.RelayTransport_RELAY_TRANSPORT_AUTO, connector.now())
 	if err != nil {
 		return remoteauth.PairingExchangeResult{}, err
 	}

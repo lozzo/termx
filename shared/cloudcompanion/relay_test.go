@@ -31,6 +31,29 @@ func TestRelayLeaseUnavailableForAutoOnlyAcceptsProductDenial(t *testing.T) {
 	}
 }
 
+func TestFilterRelayTransportKeepsP2PAndOnlyRequestedTURN(t *testing.T) {
+	servers := []*cloudpb.IceServer{{
+		Urls:     []string{"stun:stun.example.test", "turn:relay.example.test:3478?transport=udp", "turn:relay.example.test:3478?transport=tcp"},
+		Username: "user", Credential: "secret",
+	}}
+	filtered, hasTURN, err := FilterRelayTransport(servers, cloudpb.RelayTransport_RELAY_TRANSPORT_TCP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasTURN || len(filtered) != 1 || len(filtered[0].GetUrls()) != 2 || filtered[0].GetUrls()[1] != "turn:relay.example.test:3478?transport=tcp" {
+		t.Fatalf("TCP filtered ICE servers = %#v", filtered)
+	}
+	filtered[0].Urls[0] = "changed"
+	if servers[0].GetUrls()[0] != "stun:stun.example.test" {
+		t.Fatal("filter mutated source ICE material")
+	}
+
+	filtered, hasTURN, err = FilterRelayTransport(servers, cloudpb.RelayTransport_RELAY_TRANSPORT_UDP)
+	if err != nil || !hasTURN || len(filtered[0].GetUrls()) != 2 || filtered[0].GetUrls()[1] != "turn:relay.example.test:3478?transport=udp" {
+		t.Fatalf("UDP filtered ICE servers = %#v hasTURN=%v err=%v", filtered, hasTURN, err)
+	}
+}
+
 func TestValidateSingleRelayLeaseRejectsUnsafeMaterial(t *testing.T) {
 	now := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
 	request := &cloudpb.AcquireRelayLeaseRequest{

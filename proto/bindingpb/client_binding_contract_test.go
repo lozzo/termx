@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
@@ -39,6 +40,19 @@ func TestClientBindingRoundTripPreservesUnknownFields(t *testing.T) {
 	}
 	if !bytes.Contains(reencoded, unknown) {
 		t.Fatalf("binding event lost unknown field: %x", reencoded)
+	}
+}
+
+func TestOpenSessionCarriesOnlyRedactedConnectionSnapshot(t *testing.T) {
+	open := (&OpenSessionResult{}).ProtoReflect().Descriptor()
+	if field := open.Fields().ByName("connection"); field == nil || field.Number() != 6 {
+		t.Fatal("OpenSessionResult.connection must remain field 6")
+	}
+	snapshot := (&ConnectionSnapshot{}).ProtoReflect().Descriptor()
+	for _, forbidden := range []string{"ip", "address", "hostname", "sdp", "credential", "terminal"} {
+		if snapshot.Fields().ByName(protoreflect.Name(forbidden)) != nil {
+			t.Fatalf("ConnectionSnapshot must not expose %s", forbidden)
+		}
 	}
 }
 

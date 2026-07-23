@@ -52,6 +52,8 @@ const (
 	RoutePlanPlatformUnsupported RoutePlanDiagnosticReason = "platform_unsupported"
 	// RoutePlanCredentialUnavailable 表示 route 引用的 credential 当前不可用。
 	RoutePlanCredentialUnavailable RoutePlanDiagnosticReason = "credential_unavailable"
+	// RoutePlanPreferenceMismatch 表示 route 不符合用户当前强制 Route 偏好。
+	RoutePlanPreferenceMismatch RoutePlanDiagnosticReason = "route_preference_mismatch"
 )
 
 // EndpointID 返回本计划唯一对应的 Endpoint。
@@ -145,6 +147,10 @@ func (RouteSelectionPlanner) Plan(request RouteSelectionRequest) (RouteSelection
 			diagnostics = append(diagnostics, routePlanDiagnostic(route, ErrorRouteUnavailable, RoutePlanManualOnly))
 			continue
 		}
+		if !routeMatchesPreference(route.Kind, target.SelectionPolicy.RoutePreference) {
+			diagnostics = append(diagnostics, routePlanDiagnostic(route, ErrorRouteUnavailable, RoutePlanPreferenceMismatch))
+			continue
+		}
 		if _, ok := supported[route.Kind]; !ok {
 			diagnostics = append(diagnostics, routePlanDiagnostic(route, ErrorRouteUnavailable, RoutePlanPlatformUnsupported))
 			continue
@@ -172,6 +178,21 @@ func (RouteSelectionPlanner) Plan(request RouteSelectionRequest) (RouteSelection
 	groups := groupAutomaticRoutes(automatic)
 	sort.Slice(diagnostics, func(i, j int) bool { return diagnostics[i].RouteID < diagnostics[j].RouteID })
 	return newRouteSelectionPlan(target, request.Intent, request.Generation, groups, target.SelectionPolicy.HedgeDelay, diagnostics), nil
+}
+
+func routeMatchesPreference(kind RouteKind, preference RoutePreference) bool {
+	switch preference {
+	case "", RoutePreferenceAuto:
+		return true
+	case RoutePreferenceDirect:
+		return kind == RouteDirectWebRTCTCP
+	case RoutePreferenceSSH:
+		return kind == RouteSSHWebRTCTCP
+	case RoutePreferenceManagedCloud:
+		return kind == RouteManagedWebRTC
+	default:
+		return false
+	}
 }
 
 type routeGroup struct {

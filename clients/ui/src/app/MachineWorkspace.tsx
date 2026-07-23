@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { create } from '@bufbuild/protobuf'
 import { Bookmark, BookmarkMinus, BookmarkPlus, ChevronLeft, ClipboardList, Folder, FolderOpen, Info, KeyRound, Link2, Link2Off, Monitor, MoreHorizontal, PanelBottomClose, Plus, RefreshCw, Rows2, SlidersHorizontal, SquarePen, Trash2, Unlock, X } from 'lucide-react'
 import { connectionPhaseLabel, connectionSnapshotFromStatus } from '../connection/connectionState'
@@ -26,7 +26,9 @@ import type { Machine, Terminal as RemoteTerminal } from '../core/model'
 import type { ProtoClientSession } from '../core/protoClientSession'
 import { openProtoEventSubscription } from '../core/protoEventSubscription'
 import { ApplicationEventType, EventSubscribeCommandSchema } from '../generated/apipb/events_pb'
-import type { ConnectionInfo, LocalAgentApi, LocalCreateTerminalInput, LocalUpdateTerminalInput, MachineConnectionStateEvents, RtcConnectOptions, RtcConnectionStateSnapshot, RtcEvent, RtcSubscription, TerminalInventoryEvents } from '../core/transport'
+import type { ConnectionInfo, ConnectionPolicy, ConnectionPolicyState, LocalAgentApi, LocalCreateTerminalInput, LocalUpdateTerminalInput, MachineConnectionStateEvents, RtcConnectOptions, RtcConnectionStateSnapshot, RtcEvent, RtcSubscription, TerminalInventoryEvents } from '../core/transport'
+import { ConnectionCandidateType, ConnectionRouteKind, ConnectionTransport } from '../generated/bindingpb/client_binding_pb'
+import { ObservedPath as CloudObservedPath } from '../generated/cloudpb/cloud_topology_pb'
 import { useTerminalKeyboard } from '../terminal/useTerminalKeyboard'
 import { useTranslation } from 'react-i18next'
 import '../i18n'
@@ -43,7 +45,9 @@ export type MachineWorkspaceClientSession = ProtoClientSession
 
 export type MachineWorkspaceConnector = {
   connect(input: MachineWorkspaceSessionInput, options?: RtcConnectOptions): Promise<MachineWorkspaceClientSession>
-  reconnect?: ((options?: { forceRelay?: boolean | undefined }) => void) | undefined
+  reconnect?: ((options?: { forceRelay?: boolean | undefined }) => void | Promise<void>) | undefined
+  getConnectionPolicy?: ((signal?: AbortSignal) => Promise<ConnectionPolicyState>) | undefined
+  applyConnectionPolicy?: ((policy: ConnectionPolicy, signal?: AbortSignal) => Promise<void>) | undefined
 }
 
 export interface MachineWorkspaceProps {
@@ -106,11 +110,15 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const [fileInitialPath, setFileInitialPath] = useState('/')
   const [fileContextKey, setFileContextKey] = useState('machine:/')
   const [connectionRetryToken, setConnectionRetryToken] = useState(0)
-  const [forceRelayConnection, setForceRelayConnection] = useState(false)
+  const [forceRelayConnection, setForceRelayConnection] = useState<boolean | undefined>(undefined)
   const [connectionInfoOpen, setConnectionInfoOpen] = useState(false)
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null)
   const [connectionInfoLoading, setConnectionInfoLoading] = useState(false)
   const [connectionInfoError, setConnectionInfoError] = useState<string | null>(null)
+  const [connectionPolicyState, setConnectionPolicyState] = useState<ConnectionPolicyState | null>(null)
+  const [connectionPolicyApplying, setConnectionPolicyApplying] = useState(false)
+  const connectionPolicyReconnectPendingRef = useRef(false)
+  const connectionPolicyFailureRef = useRef<{ stage: 'refresh' | 'apply' | 'reconnect'; policy?: ConnectionPolicy } | null>(null)
   const [p2pFallbackPromptOpen, setP2PFallbackPromptOpen] = useState(false)
   const [manualReconnectNonce, setManualReconnectNonce] = useState(0)
   const [terminalResizeControl, setTerminalResizeControl] = useState<TerminalResizeControl>(defaultTerminalResizeControl)
@@ -177,13 +185,13 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     machineId: string
     retryToken: number
     session: MachineWorkspaceClientSession
-    forceRelay: boolean
+    forceRelay: boolean | undefined
   } | null>(null)
   const machineSessionPromiseRef = useRef<{
     connector: MachineWorkspaceConnector
     machineId: string
     retryToken: number
-    forceRelay: boolean
+    forceRelay: boolean | undefined
     promise: Promise<MachineWorkspaceClientSession>
   } | null>(null)
   const machineSessionConnectSeqRef = useRef(0)
@@ -378,6 +386,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       }
       updateConnectionStatus(snapshot.statusText || 'Connected', 'connected')
       clearConnectionStatusSoon()
+    connectionPolicyFailureRef.current = null
+    if (connectionPolicyReconnectPendingRef.current) {
+    connectionPolicyReconnectPendingRef.current = false
+    setConnectionPolicyApplying(false)
+    setConnectionInfoOpen(false)
+    }
       return
     }
     if (snapshot.phase === 'idle') {
@@ -393,6 +407,15 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       }
       if (isAuthConnectionError(snapshot.failReason || snapshot.statusText)) handleConnectionAuthFailure(snapshot.machineId)
       setError(message)
+    if (connectionPolicyReconnectPendingRef.current) {
+    connectionPolicyReconnectPendingRef.current = false
+    setConnectionPolicyApplying(false)
+    setConnectionInfoError(message)
+    connectionPolicyFailureRef.current = { stage: 'reconnect' }
+    setConnectionInfoOpen(true)
+    clearConnectionStatus()
+    return
+    }
       updateConnectionStatus(message, 'failed')
       return
     }
@@ -473,7 +496,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       connector: MachineWorkspaceConnector
       machineId: string
       retryToken: number
-      forceRelay: boolean
+      forceRelay: boolean | undefined
       promise: Promise<MachineWorkspaceClientSession>
     } = {
       connector,
@@ -868,8 +891,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       if (page === 'terminal' && activeTerminalId) {
         reattachActiveTerminals(session)
       }
-      updateConnectionStatus('Connected', 'connected')
-      clearConnectionStatusSoon()
+      updateFromConnectionState({
+        machineId,
+        phase: 'connected',
+        statusText: 'Connected',
+        relayInUse: forceRelayConnection === true,
+      }, session)
     }).catch((err: unknown) => {
       if (cancelled) return
       const message = connectionErrorDisplayMessage(err)
@@ -881,12 +908,18 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       setConnectedSession(null)
       setConnectedTerminalId(null)
       setConnectingTerminalId(null)
-      updateConnectionStatus(message, 'failed')
+      updateFromConnectionState({
+        machineId,
+        phase: 'failed',
+        statusText: message,
+        relayInUse: forceRelayConnection === true,
+        failReason: message,
+      })
     })
     return () => {
       cancelled = true
     }
-  }, [activeTerminalId, clearConnectionStatusSoon, ensureMachineSession, forceRelayConnection, handleConnectionAuthFailure, machine?.machineId, manualReconnectNonce, page, reattachActiveTerminals, requireVerification, updateConnectionStatus, updateFromConnectionState])
+  }, [activeTerminalId, ensureMachineSession, forceRelayConnection, handleConnectionAuthFailure, machine?.machineId, manualReconnectNonce, page, reattachActiveTerminals, requireVerification, updateConnectionStatus, updateFromConnectionState])
 
   useEffect(() => {
     const handleResume = () => {
@@ -1045,8 +1078,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     void refreshTerminals()
   }, [refreshTerminals])
 
-  const retryConnection = useCallback((options: { forceRelay?: boolean; closeDialog?: boolean; p2pProbe?: boolean } = {}) => {
-    const targetForceRelay = options.forceRelay ?? forceRelayConnection
+  const retryConnection = useCallback(async (options: { forceRelay?: boolean; closeDialog?: boolean; p2pProbe?: boolean; preservePolicy?: boolean } = {}) => {
+  const targetForceRelay = options.preservePolicy ? undefined : (options.forceRelay ?? forceRelayConnection)
     p2pProbeRef.current = options.p2pProbe === true
     setP2PFallbackPromptOpen(false)
     setForceRelayConnection(targetForceRelay)
@@ -1056,7 +1089,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     updateConnectionStatus(targetForceRelay ? 'Reconnecting through relay...' : 'Reconnecting...', 'reconnecting')
     if (connector.reconnect) {
       const current = machineSessionRef.current
-      connector.reconnect({ forceRelay: targetForceRelay })
+    await connector.reconnect({ forceRelay: targetForceRelay })
       machineSessionConnectSeqRef.current += 1
       connectionStateSubscriptionRef.current?.close()
       connectionStateSubscriptionRef.current = null
@@ -1453,21 +1486,72 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     setConnectionInfoOpen(true)
     setConnectionInfoLoading(true)
     setConnectionInfoError(null)
+    connectionPolicyFailureRef.current = null
     const sessionPromise = existingSession
       ? Promise.resolve(existingSession)
       : ensureMachineSession(machine!.machineId, { forceRelay: forceRelayConnection })
-    sessionPromise.then(machineWorkspaceConnectionInfo).then((info) => {
-      setConnectionInfo(info)
-    }).catch((err: unknown) => {
+  Promise.all([
+    sessionPromise.then(machineWorkspaceConnectionInfo),
+    connector.getConnectionPolicy ? connector.getConnectionPolicy() : Promise.resolve(null),
+  ]).then(([info, policy]) => {
+    setConnectionInfo(info)
+    setConnectionPolicyState(policy)
+  }).catch((err: unknown) => {
+      connectionPolicyFailureRef.current = { stage: 'refresh' }
       setConnectionInfoError(err instanceof Error ? err.message : String(err))
     }).finally(() => {
       setConnectionInfoLoading(false)
     })
-  }, [connectedSession, ensureMachineSession, forceRelayConnection, machine])
+  }, [connectedSession, connector, ensureMachineSession, forceRelayConnection, machine])
 
-  const toggleConnectionMode = useCallback(() => {
-    retryConnection({ forceRelay: !forceRelayConnection, p2pProbe: forceRelayConnection })
-  }, [forceRelayConnection, retryConnection])
+  const applyConnectionPolicy = useCallback(async (policy: ConnectionPolicy) => {
+  if (!connector.applyConnectionPolicy) {
+    setConnectionInfoError(t('workspace.connection.policyUnavailable'))
+    return
+  }
+  if (activeTerminalId && !window.confirm(t('workspace.connection.reconnectConfirm'))) return
+  setConnectionPolicyApplying(true)
+  setConnectionInfoError(null)
+  connectionPolicyFailureRef.current = null
+  try {
+    await connector.applyConnectionPolicy(policy)
+  } catch (err) {
+    connectionPolicyFailureRef.current = { stage: 'apply', policy }
+    setConnectionInfoError(err instanceof Error ? err.message : String(err))
+    setConnectionPolicyApplying(false)
+    return
+  }
+  setConnectionPolicyState((current) => current ? { ...current, policy } : current)
+  connectionPolicyReconnectPendingRef.current = true
+  connectionPolicyFailureRef.current = { stage: 'reconnect' }
+  try {
+    await retryConnection({ preservePolicy: true, closeDialog: false })
+  } catch (err) {
+    connectionPolicyReconnectPendingRef.current = false
+    setConnectionInfoError(err instanceof Error ? err.message : String(err))
+    setConnectionPolicyApplying(false)
+  }
+  }, [activeTerminalId, connector, retryConnection, t])
+
+  const retryConnectionPolicy = useCallback(() => {
+  connectionPolicyReconnectPendingRef.current = true
+  setConnectionPolicyApplying(true)
+  setConnectionInfoError(null)
+  void retryConnection({ preservePolicy: true, closeDialog: false })
+  }, [retryConnection])
+
+  const retryConnectionPolicyFailure = useCallback(() => {
+    const failure = connectionPolicyFailureRef.current
+    if (failure?.stage === 'refresh') {
+      openConnectionInfo()
+      return
+    }
+    if (failure?.stage === 'apply' && failure.policy) {
+      void applyConnectionPolicy(failure.policy)
+      return
+    }
+    retryConnectionPolicy()
+  }, [applyConnectionPolicy, openConnectionInfo, retryConnectionPolicy])
 
   const lockKeyboard = useCallback(() => {
     setKeyboardLocked((prev) => {
@@ -2555,11 +2639,13 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           info={connectionInfo}
           loading={connectionInfoLoading}
           error={connectionInfoError}
-          forceRelayActive={forceRelayConnection}
+      policyState={connectionPolicyState}
+      applying={connectionPolicyApplying}
           onClose={() => setConnectionInfoOpen(false)}
           onRefresh={openConnectionInfo}
-          onReconnect={() => retryConnection()}
-          onToggleMode={toggleConnectionMode}
+      onRetry={retryConnectionPolicyFailure}
+      onApply={applyConnectionPolicy}
+      onRestoreAuto={() => applyConnectionPolicy({ route: 'auto', cloud: 'auto', relayTransport: 'auto' })}
         />
       ) : null}
       {p2pFallbackPromptOpen ? (
@@ -2632,77 +2718,182 @@ function MobileSheetPanel({
   )
 }
 
-/** ConnectionInfoDialog 只投影连接状态和显式路由意图；未知或失败路径仍允许用户强制选择 Relay。 */
+/** ConnectionInfoDialog 分离持久连接偏好、当前 ReadySession 和脱敏诊断，不在 UI 推断网络路径。 */
 export function ConnectionInfoDialog({
   info,
   loading,
   error,
-  forceRelayActive,
+  policyState,
+  applying,
   onClose,
   onRefresh,
-  onReconnect,
-  onToggleMode,
+  onRetry,
+  onApply,
+  onRestoreAuto,
 }: {
   info: ConnectionInfo | null
   loading: boolean
   error: string | null
-  forceRelayActive: boolean
+  policyState: ConnectionPolicyState | null
+  applying: boolean
   onClose: () => void
   onRefresh: () => void
-  onReconnect: () => void
-  onToggleMode: () => void
+  onRetry: () => void
+  onApply: (policy: ConnectionPolicy) => void
+  onRestoreAuto: () => void
 }) {
   const { t } = useTranslation()
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const [draft, setDraft] = useState<ConnectionPolicy>({ route: 'auto', cloud: 'auto', relayTransport: 'auto' })
+  useEffect(() => {
+    if (policyState) setDraft(policyState.policy)
+  }, [policyState])
+  useEffect(() => {
+    const overlay = overlayRef.current
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    if (!overlay) return
+    const siblings = Array.from(overlay.parentElement?.children ?? []).filter((element): element is HTMLElement => element instanceof HTMLElement && element !== overlay)
+    const previous = siblings.map((element) => ({
+      element,
+      ariaHidden: element.getAttribute('aria-hidden'),
+      inert: element.hasAttribute('inert'),
+    }))
+    for (const element of siblings) {
+      element.setAttribute('aria-hidden', 'true')
+      element.setAttribute('inert', '')
+    }
+    closeRef.current?.focus()
+    return () => {
+      for (const item of previous) {
+        if (item.ariaHidden === null) item.element.removeAttribute('aria-hidden')
+        else item.element.setAttribute('aria-hidden', item.ariaHidden)
+        if (!item.inert) item.element.removeAttribute('inert')
+      }
+      previousFocus?.focus()
+    }
+  }, [])
   const type = info?.type ?? (info?.relayInUse ? 'relay' : 'unknown')
-  const modeActionLabel = forceRelayActive ? t('workspace.connection.tryP2P') : t('workspace.connection.useRelay')
+  const policyChanged = Boolean(policyState) && (
+    draft.route !== policyState?.policy.route || draft.cloud !== policyState?.policy.cloud || draft.relayTransport !== policyState?.policy.relayTransport
+  )
+  const routeOptions: Array<{ value: ConnectionPolicy['route']; label: string; available: boolean; reason: string | undefined }> = [
+    { value: 'auto', label: t('workspace.connection.routeAuto'), available: true, reason: undefined },
+    { value: 'direct', label: t('workspace.connection.routeDirect'), available: policyState?.available.direct ?? false, reason: connectionPolicyUnavailableLabel(policyState?.unavailableReasons.direct, t) },
+    { value: 'ssh', label: t('workspace.connection.routeSSH'), available: policyState?.available.ssh ?? false, reason: connectionPolicyUnavailableLabel(policyState?.unavailableReasons.ssh, t) },
+    { value: 'cloud', label: t('workspace.connection.routeCloud'), available: policyState?.available.cloud ?? false, reason: connectionPolicyUnavailableLabel(policyState?.unavailableReasons.cloud, t) },
+  ]
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" onClick={() => { hapticSelection(); onClose() }}>
-      <section className="muxvia-app-panel w-full max-w-md overflow-hidden" onClick={(event) => event.stopPropagation()}>
+    <div ref={overlayRef} className="absolute inset-0 z-50 flex items-end justify-center bg-black/45 backdrop-blur-sm md:items-center md:p-4" onClick={() => { hapticSelection(); onClose() }} onKeyDown={(event) => trapConnectionDialogFocus(event, overlayRef.current, onClose)}>
+      <section className="muxvia-app-page flex max-h-[96dvh] w-full max-w-xl flex-col overflow-hidden border-t border-[var(--muxvia-app-line)] md:max-h-[90vh] md:border" role="dialog" aria-modal="true" aria-labelledby="muxvia-connection-title" onClick={(event) => event.stopPropagation()}>
         <header className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
           <div className="min-w-0">
-            <h2 className="text-[15px] font-semibold text-zinc-950">{t('workspace.connectionInfo')}</h2>
+            <h2 id="muxvia-connection-title" className="text-[17px] font-semibold text-zinc-950">{t('workspace.connection.title')}</h2>
             <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{connectionTypeLabel(type, t)}</p>
           </div>
-          <button type="button" aria-label={t('workspace.connection.closeInfo')} className="muxvia-app-icon-button border-transparent bg-transparent" onClick={() => { hapticSelection(); onClose() }}>
+          <button ref={closeRef} type="button" aria-label={t('workspace.connection.closeInfo')} className="muxvia-app-icon-button border-transparent bg-transparent" onClick={() => { hapticSelection(); onClose() }}>
             <X className="h-5 w-5" />
           </button>
         </header>
 
-        <div className="space-y-3 px-4 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {error ? (
-            <div className="border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-800">{error}</div>
+            <div className="border-b border-red-200 bg-red-50 px-4 py-3 text-[13px] font-medium text-red-800" role="alert">
+              <p>{error}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" className="muxvia-app-secondary-button min-h-12 px-3 text-[13px] font-semibold" onClick={onRetry}>{t('workspace.connection.retry')}</button>
+                <button type="button" className="muxvia-app-secondary-button min-h-12 px-3 text-[13px] font-semibold" onClick={onRestoreAuto}>{t('workspace.connection.restoreAuto')}</button>
+              </div>
+            </div>
           ) : null}
-          <div className="grid grid-cols-1 gap-2">
-            <ConnectionInfoRow label={t('workspace.connection.mode')} value={loading ? t('workspace.connection.reading') : connectionTypeLabel(type, t)} strong />
-            <ConnectionInfoRow label={t('workspace.connection.transport')} value={info?.path ?? '-'} />
-            <ConnectionInfoRow label={t('workspace.connection.path')} value={info?.observedPath ?? '-'} />
-            <ConnectionInfoRow label={t('workspace.connection.smartRoute')} value={info?.routeSelectionReason ?? '-'} />
-            <ConnectionInfoRow label={t('workspace.connection.local')} value={info?.localAddr ?? '-'} />
-            <ConnectionInfoRow label={t('workspace.connection.remote')} value={info?.remoteAddr ?? '-'} />
-            <ConnectionInfoRow label={t('workspace.connection.candidates')} value={candidateTypeText(info)} />
-            <ConnectionInfoRow label={t('workspace.connection.rtt')} value={info?.rtt !== undefined ? `${Math.round(info.rtt)} ms` : '-'} />
-            <ConnectionInfoRow label={t('workspace.connection.connectionId')} value={info?.connectionId ?? '-'} />
-          </div>
+          <section className="border-b border-[var(--muxvia-app-line)] px-4 py-4">
+            <h3 className="text-[13px] font-semibold text-zinc-950">{t('workspace.connection.current')}</h3>
+            <dl className="mt-2 overflow-hidden border border-[var(--muxvia-app-line)]">
+              <ConnectionInfoRow label={t('workspace.connection.route')} value={loading ? t('workspace.connection.reading') : connectionRouteLabel(info?.routeKind, t)} strong />
+              <ConnectionInfoRow label={t('workspace.connection.path')} value={observedPathLabel(info?.observedPath, t)} />
+              <ConnectionInfoRow label={t('workspace.connection.relayTransport')} value={displayDiagnostic(info?.relayTransport, t)} />
+              <ConnectionInfoRow label={t('workspace.connection.rtt')} value={info?.rtt !== undefined ? `${Math.round(info.rtt)} ms` : t('workspace.connection.notProvided')} />
+            </dl>
+          </section>
+
+          <fieldset className="border-b border-[var(--muxvia-app-line)] px-4 py-4" disabled={loading || applying || !policyState}>
+            <legend className="text-[13px] font-semibold text-zinc-950">{t('workspace.connection.preference')}</legend>
+            <div className="mt-2 divide-y divide-[var(--muxvia-app-line)] border-y border-[var(--muxvia-app-line)]">
+              {routeOptions.map((option) => (
+                <label key={option.value} className={`flex min-h-12 items-center gap-3 py-2 text-[14px] ${option.available ? 'text-zinc-900' : 'text-zinc-400'}`}>
+                  <input aria-label={option.label} aria-describedby={!option.available ? `connection-route-${option.value}-reason` : undefined} type="radio" name="connection-route" value={option.value} checked={draft.route === option.value} disabled={!option.available} onChange={() => setDraft((current) => ({ ...current, route: option.value }))} className="h-5 w-5 shrink-0 accent-zinc-900" />
+                  <span className="min-w-0 flex-1 font-medium">{option.label}</span>
+                  {!option.available ? <span id={`connection-route-${option.value}-reason`} className="max-w-[55%] text-right text-[11px] leading-4">{option.reason ?? t('workspace.connection.unavailableShort')}</span> : null}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <details className="border-b border-[var(--muxvia-app-line)] px-4 py-3" open={draft.route === 'cloud'}>
+            <summary className="flex min-h-12 cursor-pointer items-center text-[13px] font-semibold text-zinc-950">{t('workspace.connection.cloudAdvanced')}</summary>
+            <div className="space-y-5 pb-2">
+              <ConnectionRadioGroup label={t('workspace.connection.cloudPath')} name="cloud-path" value={draft.cloud} options={[
+                ['auto', t('workspace.connection.cloudAuto')], ['p2p', t('workspace.connection.cloudP2P')], ['relay', t('workspace.connection.cloudRelay')],
+              ]} disabled={!policyState?.available.cloud || (draft.route !== 'auto' && draft.route !== 'cloud')} onChange={(cloud) => setDraft((current) => ({ ...current, cloud }))} />
+              <ConnectionRadioGroup label={t('workspace.connection.relayTransport')} name="relay-transport" value={draft.relayTransport} options={[
+                ['auto', t('workspace.connection.transportAuto')], ['udp', t('workspace.connection.transportUDP')], ['tcp', t('workspace.connection.transportTCP')],
+              ]} disabled={!policyState?.available.cloud || (draft.route !== 'auto' && draft.route !== 'cloud') || draft.cloud === 'p2p'} onChange={(relayTransport) => setDraft((current) => ({ ...current, relayTransport }))} />
+            </div>
+          </details>
+
+          <details className="px-4 py-3">
+            <summary className="flex min-h-12 cursor-pointer items-center text-[13px] font-semibold text-zinc-950">{t('workspace.connection.diagnostics')}</summary>
+            <dl className="mb-2 overflow-hidden border border-[var(--muxvia-app-line)]">
+              <ConnectionInfoRow label={t('workspace.connection.routeId')} value={displayDiagnostic(info?.routeId, t)} />
+              <ConnectionInfoRow label={t('workspace.connection.generation')} value={info?.generation?.toString() ?? t('workspace.connection.notProvided')} />
+              <ConnectionInfoRow label={t('workspace.connection.reason')} value={displayDiagnostic(info?.routeSelectionReason, t)} />
+              <ConnectionInfoRow label={t('workspace.connection.candidates')} value={candidateTypeText(info, t)} />
+              <ConnectionInfoRow label={t('workspace.connection.protocols')} value={`${displayDiagnostic(info?.localProtocol, t)} / ${displayDiagnostic(info?.remoteProtocol, t)}`} />
+              <ConnectionInfoRow label={t('workspace.connection.networkClass')} value={displayDiagnostic(info?.networkClass, t)} />
+              <ConnectionInfoRow label={t('workspace.connection.sampledAt')} value={info?.sampledAt ? new Date(info.sampledAt).toLocaleString() : t('workspace.connection.notProvided')} />
+              <ConnectionInfoRow label={t('workspace.connection.traffic')} value={info?.bytesSent !== undefined && info?.bytesReceived !== undefined ? `${info.bytesSent.toString()} / ${info.bytesReceived.toString()} B` : t('workspace.connection.notProvided')} />
+            </dl>
+          </details>
         </div>
 
         <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 px-4 py-3">
-          <button type="button" className="muxvia-app-secondary-button px-3 text-[13px] font-semibold" onClick={() => { hapticImpact(); onRefresh() }}>
+          <button type="button" className="muxvia-app-secondary-button min-h-12 px-3 text-[13px] font-semibold" disabled={applying} onClick={() => { hapticImpact(); onRefresh() }}>
             {t('common.refresh')}
-          </button>
-          <button type="button" className="muxvia-app-secondary-button px-3 text-[13px] font-semibold" onClick={() => { hapticImpact(); onReconnect() }}>
-            {t('workspace.connection.reconnect')}
           </button>
           <button
             type="button"
-            className="muxvia-app-primary-button px-3 text-[13px] font-semibold disabled:bg-zinc-300 disabled:text-zinc-500"
-            disabled={loading}
-            onClick={() => { hapticImpact(); onToggleMode() }}
+            className="muxvia-app-primary-button min-h-12 px-4 text-[13px] font-semibold disabled:bg-zinc-300 disabled:text-zinc-500"
+            disabled={loading || applying || !policyState || !policyChanged}
+            onClick={() => { hapticImpact(); onApply(draft) }}
           >
-            {modeActionLabel}
+      {applying ? t('workspace.connection.applying') : t('workspace.connection.applyReconnect')}
           </button>
         </footer>
       </section>
     </div>
+  )
+}
+
+function ConnectionRadioGroup<T extends string>({ label, name, value, options, disabled, onChange }: {
+  label: string
+  name: string
+  value: T
+  options: Array<readonly [T, string]>
+  disabled: boolean
+  onChange: (value: T) => void
+}) {
+  return (
+    <fieldset disabled={disabled}>
+      <legend className="text-[12px] font-semibold text-zinc-600">{label}</legend>
+      <div className="mt-1 grid grid-cols-3 gap-1 border border-[var(--muxvia-app-line)] p-1">
+        {options.map(([option, text]) => (
+          <label key={option} className={`flex min-h-12 items-center justify-center px-2 text-center text-[12px] font-semibold ${value === option ? 'bg-zinc-900 text-white' : 'bg-zinc-50 text-zinc-700'} disabled:text-zinc-400`}>
+            <input className="sr-only" type="radio" name={name} value={option} checked={value === option} onChange={() => onChange(option)} />
+            <span>{text}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
   )
 }
 
@@ -2744,10 +2935,33 @@ function connectionTypeLabel(type: ConnectionInfo['type'], t: ReturnType<typeof 
   return t('terminal.state.unknown')
 }
 
-function candidateTypeText(info: ConnectionInfo | null): string {
-  const local = info?.candidateType ?? '-'
-  const remote = info?.remoteCandidateType ?? '-'
+function candidateTypeText(info: ConnectionInfo | null, t: ReturnType<typeof useTranslation>['t']): string {
+  const local = displayDiagnostic(info?.candidateType, t)
+  const remote = displayDiagnostic(info?.remoteCandidateType, t)
   return `${local} / ${remote}`
+}
+
+function displayDiagnostic(value: string | undefined, t: ReturnType<typeof useTranslation>['t']): string {
+  return value?.trim() || t('workspace.connection.notProvided')
+}
+
+function connectionRouteLabel(kind: ConnectionInfo['routeKind'], t: ReturnType<typeof useTranslation>['t']): string {
+  switch (kind) {
+    case 'local': return t('workspace.connection.routeLocal')
+    case 'direct': return t('workspace.connection.routeDirect')
+    case 'ssh': return t('workspace.connection.routeSSH')
+    case 'cloud': return t('workspace.connection.routeCloud')
+    default: return t('workspace.connection.notProvided')
+  }
+}
+
+function observedPathLabel(path: ConnectionInfo['observedPath'], t: ReturnType<typeof useTranslation>['t']): string {
+  switch (path) {
+    case 'direct': return t('workspace.connection.pathDirect')
+    case 'single_relay': return t('workspace.connection.pathRelay')
+    case 'relay_mesh': return t('workspace.connection.pathRelayMesh')
+    default: return t('workspace.connection.notProvided')
+  }
 }
 
 function isProtoSessionAlive(session: MachineWorkspaceClientSession): boolean { return session.isAlive() }
@@ -2761,13 +2975,98 @@ function closeMachineWorkspaceSession(session: MachineWorkspaceClientSession): P
   return session.close()
 }
 
-function machineWorkspaceConnectionInfo(session: MachineWorkspaceClientSession): Promise<ConnectionInfo> {
-  return Promise.resolve({
-    path: 'hub',
+async function machineWorkspaceConnectionInfo(session: MachineWorkspaceClientSession): Promise<ConnectionInfo> {
+  const snapshot = await session.getConnectionSnapshot?.() ?? session.connection
+  const routeKind = connectionRouteKindFromProto(snapshot?.routeKind)
+  const observedPath = observedPathFromProto(snapshot?.observedPath)
+  const relayInUse = observedPath === 'single_relay' || snapshot?.localCandidateType === ConnectionCandidateType.RELAY || snapshot?.remoteCandidateType === ConnectionCandidateType.RELAY
+  return {
+  path: routeKind === 'cloud' ? 'hub' : 'local',
+  routeId: snapshot?.routeId || session.stamp.routeId,
+  routeKind,
+  observedPath,
+  routeSelectionReason: snapshot?.selectionReason as ConnectionInfo['routeSelectionReason'],
     connectionId: `${session.stamp.endpointId}:${session.stamp.generation}`,
     machineId: session.stamp.endpointId,
-    relayInUse: false,
-  })
+  relayInUse,
+  type: relayInUse ? 'relay' : observedPath === 'direct' ? 'p2p' : 'unknown',
+  candidateType: candidateTypeFromProto(snapshot?.localCandidateType),
+  remoteCandidateType: candidateTypeFromProto(snapshot?.remoteCandidateType),
+  localProtocol: transportFromProto(snapshot?.localProtocol),
+  remoteProtocol: transportFromProto(snapshot?.remoteProtocol),
+  relayTransport: transportFromProto(snapshot?.relayTransport),
+  networkClass: snapshot?.networkClass || undefined,
+  rtt: snapshot?.roundTripNanos ? Number(snapshot.roundTripNanos / 1_000_000n) : undefined,
+  sampledAt: snapshot?.sampledAtUnixNano ? Number(snapshot.sampledAtUnixNano / 1_000_000n) : undefined,
+  bytesSent: snapshot?.bytesSent,
+  bytesReceived: snapshot?.bytesReceived,
+  packetsSent: snapshot?.packetsSent,
+  lossEvents: snapshot?.lossEvents,
+  generation: session.stamp.generation,
+  }
+}
+
+function trapConnectionDialogFocus(event: ReactKeyboardEvent<HTMLDivElement>, overlay: HTMLDivElement | null, onClose: () => void): void {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    onClose()
+    return
+  }
+  if (event.key !== 'Tab' || !overlay) return
+  const focusable = Array.from(overlay.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), summary, [href], [tabindex]:not([tabindex="-1"])'))
+    .filter((element) => !element.hasAttribute('hidden'))
+  if (focusable.length === 0) return
+  const first = focusable[0]!
+  const last = focusable[focusable.length - 1]!
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+function connectionPolicyUnavailableLabel(reason: ConnectionPolicyState['unavailableReasons']['direct'] | undefined, t: (key: string) => string): string | undefined {
+  if (!reason) return undefined
+  return t(`workspace.connection.unavailableReason.${reason}`)
+}
+
+function connectionRouteKindFromProto(value: ConnectionRouteKind | undefined): ConnectionInfo['routeKind'] {
+  switch (value) {
+    case ConnectionRouteKind.LOCAL: return 'local'
+    case ConnectionRouteKind.DIRECT: return 'direct'
+    case ConnectionRouteKind.SSH: return 'ssh'
+    case ConnectionRouteKind.MANAGED_CLOUD: return 'cloud'
+    default: return undefined
+  }
+}
+
+function observedPathFromProto(value: CloudObservedPath | undefined): ConnectionInfo['observedPath'] {
+  switch (value) {
+    case CloudObservedPath.DIRECT: return 'direct'
+    case CloudObservedPath.SINGLE_RELAY: return 'single_relay'
+    case CloudObservedPath.RELAY_MESH: return 'relay_mesh'
+    default: return undefined
+  }
+}
+
+function candidateTypeFromProto(value: ConnectionCandidateType | undefined): string | undefined {
+  switch (value) {
+    case ConnectionCandidateType.HOST: return 'host'
+    case ConnectionCandidateType.SERVER_REFLEXIVE: return 'srflx'
+    case ConnectionCandidateType.PEER_REFLEXIVE: return 'prflx'
+    case ConnectionCandidateType.RELAY: return 'relay'
+    default: return undefined
+  }
+}
+
+function transportFromProto(value: ConnectionTransport | undefined): string | undefined {
+  switch (value) {
+    case ConnectionTransport.UDP: return 'UDP'
+    case ConnectionTransport.TCP: return 'TCP'
+    default: return undefined
+  }
 }
 
 function subscribeMachineWorkspaceEvents(session: MachineWorkspaceClientSession, handler: (event: RtcEvent) => void): RtcSubscription {

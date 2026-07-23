@@ -4,6 +4,7 @@ import type {
   ConnectionCapabilities,
   ConnectionInfo,
   ConnectionPath,
+  ConnectionPolicy,
   LocalAgentApi,
   ManagedRtcConnector,
   ManagedRtcSession,
@@ -13,6 +14,7 @@ import type {
   RtcConnector,
   RtcJsonRpcChannel,
   RtcSession,
+  RelayTransportPreference,
   TerminalInventoryEvents,
 } from './transport'
 import transportSource from './transport.ts?raw'
@@ -54,6 +56,8 @@ describe('RtcSession public interfaces', () => {
     }>()
     expectTypeOf<keyof ConnectionInfo>().toEqualTypeOf<
       | 'path'
+      | 'routeId'
+      | 'routeKind'
       | 'observedPath'
       | 'routeSelectionReason'
       | 'connectionId'
@@ -66,6 +70,16 @@ describe('RtcSession public interfaces', () => {
       | 'candidateType'
       | 'remoteCandidateType'
       | 'rtt'
+      | 'localProtocol'
+      | 'remoteProtocol'
+      | 'relayTransport'
+      | 'networkClass'
+      | 'sampledAt'
+      | 'bytesSent'
+      | 'bytesReceived'
+      | 'packetsSent'
+      | 'lossEvents'
+      | 'generation'
     >()
     expectTypeOf<keyof ConnectionCapabilities>().toEqualTypeOf<
       | 'terminalAllowed'
@@ -99,7 +113,16 @@ describe('RtcSession public interfaces', () => {
 
   it('does not expose old transport boundaries or browser/native implementation details', () => {
     expect(transportSource).not.toMatch(/\bRemoteTransport\b|\bPeerTransport\b|\bTerminalTransport\b/)
-    expect(transportSource).not.toMatch(/RTCPeerConnection|RTCDataChannel|nativePlugin|turnCredential|relayTransport/i)
+    expect(transportSource).not.toMatch(/RTCPeerConnection|RTCDataChannel|nativePlugin|turnCredential|iceServer/i)
+  })
+
+  it('exposes only bounded user policy for relay transport selection', () => {
+    expectTypeOf<RelayTransportPreference>().toEqualTypeOf<'auto' | 'udp' | 'tcp'>()
+    expectTypeOf<ConnectionPolicy>().toEqualTypeOf<{
+      route: 'auto' | 'direct' | 'ssh' | 'cloud'
+      cloud: 'auto' | 'p2p' | 'relay'
+      relayTransport: RelayTransportPreference
+    }>()
   })
 
   it('keeps local status api and inventory events outside runtime transport taxonomy', () => {

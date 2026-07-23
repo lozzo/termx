@@ -108,6 +108,17 @@ func TestEndpointConfigAndRegistryAreVersionedProtoContracts(t *testing.T) {
 	}
 }
 
+func TestEndpointNetworkPolicyFieldsRemainAdditive(t *testing.T) {
+	policy := (&EndpointSelectionPolicy{}).ProtoReflect().Descriptor()
+	if field := policy.Fields().ByName("route_preference"); field == nil || field.Number() != 3 {
+		t.Fatal("EndpointSelectionPolicy.route_preference must remain field 3")
+	}
+	managed := (&ManagedWebRTCRouteConfig{}).ProtoReflect().Descriptor()
+	if field := managed.Fields().ByName("relay_transport"); field == nil || field.Number() != 4 {
+		t.Fatal("ManagedWebRTCRouteConfig.relay_transport must remain field 4")
+	}
+}
+
 func TestDirectSignalingUsesVersionedProtoAndSignedAnswer(t *testing.T) {
 	request := (&DirectSignalingRequestV1{}).ProtoReflect().Descriptor()
 	answer := (&DirectSignalingAnswerV1{}).ProtoReflect().Descriptor()

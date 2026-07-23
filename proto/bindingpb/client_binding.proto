@@ -27,6 +27,124 @@ enum ResourceStreamFrameType {
   RESOURCE_STREAM_FRAME_TYPE_FILE_FINISH_AUTO = 6;
 }
 
+// ConnectionRouteKind 是 ReadySession 实际获胜的持久 Route kind 投影。
+enum ConnectionRouteKind {
+  CONNECTION_ROUTE_KIND_UNSPECIFIED = 0;
+  CONNECTION_ROUTE_KIND_LOCAL = 1;
+  CONNECTION_ROUTE_KIND_DIRECT = 2;
+  CONNECTION_ROUTE_KIND_SSH = 3;
+  CONNECTION_ROUTE_KIND_MANAGED_CLOUD = 4;
+}
+
+// ConnectionCandidateType 是 selected ICE candidate pair 的脱敏候选类型。
+enum ConnectionCandidateType {
+  CONNECTION_CANDIDATE_TYPE_UNSPECIFIED = 0;
+  CONNECTION_CANDIDATE_TYPE_HOST = 1;
+  CONNECTION_CANDIDATE_TYPE_SERVER_REFLEXIVE = 2;
+  CONNECTION_CANDIDATE_TYPE_PEER_REFLEXIVE = 3;
+  CONNECTION_CANDIDATE_TYPE_RELAY = 4;
+}
+
+// ConnectionTransport 是 selected candidate 或 TURN allocation 可证明的传输协议。
+enum ConnectionTransport {
+  CONNECTION_TRANSPORT_UNSPECIFIED = 0;
+  CONNECTION_TRANSPORT_UDP = 1;
+  CONNECTION_TRANSPORT_TCP = 2;
+}
+
+// ConnectionPolicyAvailabilityReason 是 Go planner 对指定 Route kind 不可选原因的稳定投影。
+// UI 只负责展示；不得依据 Route 字段、平台类型或登录状态自行推断可用性。
+enum ConnectionPolicyAvailabilityReason {
+  CONNECTION_POLICY_AVAILABILITY_REASON_UNSPECIFIED = 0;
+  CONNECTION_POLICY_AVAILABILITY_REASON_AVAILABLE = 1;
+  CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_NOT_CONFIGURED = 2;
+  CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_DISABLED = 3;
+  CONNECTION_POLICY_AVAILABILITY_REASON_PLATFORM_UNSUPPORTED = 4;
+  CONNECTION_POLICY_AVAILABILITY_REASON_CREDENTIAL_UNAVAILABLE = 5;
+  CONNECTION_POLICY_AVAILABILITY_REASON_CLOUD_UNAVAILABLE = 6;
+}
+
+// ConnectionSnapshot 是同一个 Go-owned ReadySession 的只读诊断投影。
+// 它禁止携带 IP、hostname、SDP、credential、账号或 terminal 数据。
+message ConnectionSnapshot {
+  string route_id = 1;
+  ConnectionRouteKind route_kind = 2;
+  muxvia.cloud.v1.ObservedPath observed_path = 3;
+  string selection_reason = 4;
+  int64 sampled_at_unix_nano = 5;
+  int64 round_trip_nanos = 6;
+  ConnectionCandidateType local_candidate_type = 7;
+  ConnectionCandidateType remote_candidate_type = 8;
+  ConnectionTransport local_protocol = 9;
+  ConnectionTransport remote_protocol = 10;
+  ConnectionTransport relay_transport = 11;
+  string network_class = 12;
+  uint64 bytes_sent = 13;
+  uint64 bytes_received = 14;
+  uint64 packets_sent = 15;
+  uint64 loss_events = 16;
+  bool connected = 17;
+}
+
+// ConnectionPolicy 是 Endpoint selection policy 中允许用户调整的稳定子集。
+// 持久化和 planner validation 都由 Go Client Engine 持有，平台 UI 只能提交用户意图。
+message ConnectionPolicy {
+  muxvia.remote.auth.v1.EndpointRoutePreference route_preference = 1;
+  muxvia.remote.auth.v1.ManagedWebRTCRelayMode cloud_relay_mode = 2;
+  muxvia.remote.auth.v1.ManagedWebRTCRelayTransport relay_transport = 3;
+}
+
+message ConnectionPolicyRouteAvailability {
+  ConnectionRouteKind route_kind = 1;
+  bool available = 2;
+  ConnectionPolicyAvailabilityReason reason = 3;
+}
+
+message ConnectionPolicyState {
+  ConnectionPolicy policy = 1;
+  repeated ConnectionPolicyRouteAvailability routes = 2;
+}
+
+message ConnectionPolicyGetRequest {
+  string request_id = 1;
+  string endpoint_id = 2;
+}
+
+message ConnectionPolicyGetResult {
+  string request_id = 1;
+  uint64 operation_handle = 2;
+  ConnectionPolicyState state = 3;
+  muxvia.api.v1.ApiError error = 4;
+}
+
+message ConnectionPolicyApplyRequest {
+  string request_id = 1;
+  string endpoint_id = 2;
+  ConnectionPolicy policy = 3;
+}
+
+message ConnectionPolicyApplyResult {
+  string request_id = 1;
+  uint64 operation_handle = 2;
+  ConnectionPolicyState state = 3;
+  muxvia.api.v1.ApiError error = 4;
+}
+
+// ConnectionSnapshotGetRequest 重新采样当前 session handle 的实际 transport 状态。
+// session_handle 属于同一 Engine generation；stale 或 closing handle 必须显式失败。
+message ConnectionSnapshotGetRequest {
+  string request_id = 1;
+  uint64 session_handle = 2;
+}
+
+message ConnectionSnapshotGetResult {
+  string request_id = 1;
+  uint64 operation_handle = 2;
+  uint64 session_handle = 3;
+  ConnectionSnapshot connection = 4;
+  muxvia.api.v1.ApiError error = 5;
+}
+
 message OpenSessionRequest {
   string request_id = 1;
   string endpoint_id = 2;
@@ -178,6 +296,9 @@ message EngineCommand {
     EndpointShareReceiveRequest endpoint_share_receive = 6;
     EndpointShareCommitRequest endpoint_share_commit = 7;
     SSHCredentialProvisionRequest ssh_credential_provision = 8;
+    ConnectionPolicyGetRequest connection_policy_get = 9;
+    ConnectionPolicyApplyRequest connection_policy_apply = 10;
+    ConnectionSnapshotGetRequest connection_snapshot_get = 11;
   }
 }
 
@@ -187,6 +308,7 @@ message OpenSessionResult {
   uint64 session_handle = 3;
   muxvia.api.v1.EndpointSessionStamp session = 4;
   muxvia.api.v1.ApiError error = 5;
+  ConnectionSnapshot connection = 6;
 }
 
 message ExecuteResult {
@@ -241,6 +363,9 @@ message EventEnvelope {
     EndpointShareReceiveResult endpoint_share_receive = 21;
     EndpointShareCommitResult endpoint_share_commit = 22;
     SSHCredentialProvisionResult ssh_credential_provision = 23;
+    ConnectionPolicyGetResult connection_policy_get = 24;
+    ConnectionPolicyApplyResult connection_policy_apply = 25;
+    ConnectionSnapshotGetResult connection_snapshot_get = 26;
   }
 }
 
@@ -384,6 +509,11 @@ message WebRTCPeerSnapshot {
   uint64 packets_sent = 9;
   uint64 loss_events = 10;
   bool connected = 11;
+  ConnectionCandidateType local_candidate_type = 12;
+  ConnectionCandidateType remote_candidate_type = 13;
+  ConnectionTransport local_protocol = 14;
+  ConnectionTransport remote_protocol = 15;
+  ConnectionTransport relay_transport = 16;
 }
 
 message WebRTCCloseRequest { uint64 handle = 1; }

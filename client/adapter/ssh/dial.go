@@ -152,6 +152,18 @@ func (session *Session) Close() error {
 	return session.closeErr
 }
 
+// ConnectionSnapshot 复用同一 WebRTC selected pair，并把获胜 Route kind 修正为 SSH tunnel。
+func (session *Session) ConnectionSnapshot(at time.Time) (clientruntime.ConnectionSnapshot, bool) {
+	if session == nil || session.Session == nil {
+		return clientruntime.ConnectionSnapshot{}, false
+	}
+	snapshot, ok := session.Session.ConnectionSnapshot(at)
+	if ok {
+		snapshot.RouteKind = endpoint.RouteSSHWebRTCTCP
+	}
+	return snapshot, ok
+}
+
 func (session *Session) closeTunnel() error {
 	session.tunnelOnce.Do(func() {
 		var errs []error

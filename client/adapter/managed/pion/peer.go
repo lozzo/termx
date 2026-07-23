@@ -218,8 +218,11 @@ func (peer *managedPeer) Snapshot(at time.Time) (port.ManagedPeerSnapshot, bool)
 	return port.ManagedPeerSnapshot{
 		PairID: pair.ID, Path: candidatePath(local, remote), NetworkClass: strings.ToLower(strings.TrimSpace(local.NetworkType)), At: at.UTC(),
 		RoundTrip: rtt, BytesSent: pair.BytesSent, BytesRecv: pair.BytesReceived, PacketsSent: uint64(pair.PacketsSent),
-		LossEvents: saturatingAdd(pair.RetransmissionsSent, uint64(pair.PacketsDiscardedOnSend)),
-		Connected:  peer.peer.ConnectionState() == pionwebrtc.PeerConnectionStateConnected,
+		LossEvents:         saturatingAdd(pair.RetransmissionsSent, uint64(pair.PacketsDiscardedOnSend)),
+		Connected:          peer.peer.ConnectionState() == pionwebrtc.PeerConnectionStateConnected,
+		LocalCandidateType: strings.ToLower(local.CandidateType.String()), RemoteCandidateType: strings.ToLower(remote.CandidateType.String()),
+		LocalProtocol: strings.ToLower(strings.TrimSpace(local.Protocol)), RemoteProtocol: strings.ToLower(strings.TrimSpace(remote.Protocol)),
+		RelayProtocol: strings.ToLower(strings.TrimSpace(local.RelayProtocol)),
 	}, true
 }
 

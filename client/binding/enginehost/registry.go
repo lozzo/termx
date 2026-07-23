@@ -9,6 +9,7 @@ import (
 
 	"github.com/muxvia/muxvia/client/binding"
 	"github.com/muxvia/muxvia/client/endpoint"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
 	"github.com/muxvia/muxvia/proto/bindingpb"
 	"github.com/muxvia/muxvia/proto/remoteauthpb"
 	"google.golang.org/protobuf/proto"
@@ -33,6 +34,242 @@ func (host *Host) GetEndpointRegistry(ctx context.Context, _ *bindingpb.Endpoint
 		return nil, err
 	}
 	return &bindingpb.EndpointRegistryGetResult{Registry: wire}, nil
+}
+
+// GetConnectionPolicy 返回 Endpoint 持久策略和 Go planner 当前可证明的 Route kind 可用性。
+// secure credential 与 Cloud eligibility 在每次查询时重新读取，不能由 UI 缓存或按字段存在性推断。
+func (host *Host) GetConnectionPolicy(ctx context.Context, request *bindingpb.ConnectionPolicyGetRequest) (*bindingpb.ConnectionPolicyGetResult, error) {
+	target, err := host.registryEndpoint(ctx, endpoint.EndpointID(strings.TrimSpace(request.GetEndpointId())))
+	if err != nil {
+		return nil, err
+	}
+	state, err := host.connectionPolicyState(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	return &bindingpb.ConnectionPolicyGetResult{State: state}, nil
+}
+
+// ApplyConnectionPolicy 在 Go-owned registry 事务内更新 route preference 和 managed Relay 约束。
+// 该操作只影响下一代 session；当前 ReadySession 的关闭和重连仍由调用方显式编排。
+func (host *Host) ApplyConnectionPolicy(ctx context.Context, request *bindingpb.ConnectionPolicyApplyRequest) (*bindingpb.ConnectionPolicyApplyResult, error) {
+	preference, relayMode, relayTransport, err := connectionPolicyFromProto(request.GetPolicy())
+	if err != nil {
+		return nil, err
+	}
+	id := endpoint.EndpointID(strings.TrimSpace(request.GetEndpointId()))
+	host.registryMu.Lock()
+	current, err := host.loadRegistryLocked(ctx)
+	if err != nil {
+		host.registryMu.Unlock()
+		return nil, err
+	}
+	target, ok := current.Endpoints[id]
+	if !ok {
+		host.registryMu.Unlock()
+		return nil, fmt.Errorf("endpoint %q does not exist", id)
+	}
+	next, err := cloneRegistry(current)
+	if err != nil {
+		host.registryMu.Unlock()
+		return nil, err
+	}
+	target = next.Endpoints[id]
+	target.SelectionPolicy.RoutePreference = preference
+	for routeID, route := range target.Routes {
+		if route.Kind == endpoint.RouteManagedWebRTC {
+			route.RelayMode = relayMode
+			route.RelayTransport = relayTransport
+			target.Routes[routeID] = route
+		}
+	}
+	next.Endpoints[id] = target
+	next, err = next.Normalize()
+	if err == nil {
+		_, err = host.storeRegistryLocked(ctx, next, nil)
+	}
+	host.registryMu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	state, err := host.connectionPolicyState(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	return &bindingpb.ConnectionPolicyApplyResult{State: state}, nil
+}
+
+func (host *Host) connectionPolicyState(ctx context.Context, target endpoint.Endpoint) (*bindingpb.ConnectionPolicyState, error) {
+	planningTarget, environment, err := routePlanEnvironment(
+		ctx,
+		target,
+		host.options,
+		platformCredentials{broker: host.options.Broker},
+		platformManagedEligibility{broker: host.options.Broker},
+	)
+	if err != nil {
+		return nil, err
+	}
+	state := &bindingpb.ConnectionPolicyState{Policy: connectionPolicyToProto(target)}
+	for _, kind := range []endpoint.RouteKind{endpoint.RouteDirectWebRTCTCP, endpoint.RouteSSHWebRTCTCP, endpoint.RouteManagedWebRTC} {
+		available, reason := connectionRouteAvailability(target, planningTarget, environment, kind, host.options)
+		state.Routes = append(state.Routes, &bindingpb.ConnectionPolicyRouteAvailability{
+			RouteKind: bindingPolicyRouteKind(kind), Available: available, Reason: reason,
+		})
+	}
+	return state, nil
+}
+
+func connectionRouteAvailability(target, planningTarget endpoint.Endpoint, environment clientruntime.RoutePlanEnvironment, kind endpoint.RouteKind, options Options) (bool, bindingpb.ConnectionPolicyAvailabilityReason) {
+	supported := false
+	for _, candidate := range environment.SupportedRouteKinds {
+		if candidate == kind {
+			supported = true
+			break
+		}
+	}
+	credentials := make(map[string]struct{}, len(environment.AvailableCredentialRefs))
+	for _, reference := range environment.AvailableCredentialRefs {
+		credentials[reference] = struct{}{}
+	}
+	configured, enabled := false, false
+	bestReason := bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_DISABLED
+	for _, route := range target.RouteList() {
+		if route.Kind != kind {
+			continue
+		}
+		configured = true
+		if !route.Enabled {
+			continue
+		}
+		enabled = true
+		if kind == endpoint.RouteManagedWebRTC && options.ManagedPeers != nil {
+			if planned, ok := planningTarget.Routes[route.ID]; ok && !planned.Enabled {
+				bestReason = bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_CLOUD_UNAVAILABLE
+				continue
+			}
+		}
+		if !supported {
+			bestReason = bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_PLATFORM_UNSUPPORTED
+			continue
+		}
+		credentialMissing := false
+		for _, reference := range []string{route.CredentialRef, route.SSHCredentialRef} {
+			if reference == "" {
+				continue
+			}
+			if _, ok := credentials[reference]; !ok {
+				credentialMissing = true
+				break
+			}
+		}
+		if credentialMissing {
+			bestReason = bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_CREDENTIAL_UNAVAILABLE
+			continue
+		}
+		return true, bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_AVAILABLE
+	}
+	if !configured {
+		return false, bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_NOT_CONFIGURED
+	}
+	if !enabled {
+		return false, bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_DISABLED
+	}
+	return false, bestReason
+}
+
+func connectionPolicyFromProto(policy *bindingpb.ConnectionPolicy) (endpoint.RoutePreference, endpoint.RelayMode, endpoint.RelayTransport, error) {
+	if policy == nil {
+		return "", "", "", fmt.Errorf("connection policy is required")
+	}
+	var preference endpoint.RoutePreference
+	switch policy.GetRoutePreference() {
+	case remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_AUTO:
+		preference = endpoint.RoutePreferenceAuto
+	case remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_DIRECT:
+		preference = endpoint.RoutePreferenceDirect
+	case remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_SSH:
+		preference = endpoint.RoutePreferenceSSH
+	case remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_MANAGED_CLOUD:
+		preference = endpoint.RoutePreferenceManagedCloud
+	default:
+		return "", "", "", fmt.Errorf("connection route preference is unsupported")
+	}
+	var relayMode endpoint.RelayMode
+	switch policy.GetCloudRelayMode() {
+	case remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_AUTO:
+		relayMode = endpoint.RelayAuto
+	case remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_DIRECT:
+		relayMode = endpoint.RelayDirect
+	case remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY:
+		relayMode = endpoint.RelayOnly
+	case remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_SMART_ROUTE:
+		relayMode = endpoint.RelaySmart
+	default:
+		return "", "", "", fmt.Errorf("connection Cloud relay mode is unsupported")
+	}
+	var relayTransport endpoint.RelayTransport
+	switch policy.GetRelayTransport() {
+	case remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO:
+		relayTransport = endpoint.RelayTransportAuto
+	case remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_UDP:
+		relayTransport = endpoint.RelayTransportUDP
+	case remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_TCP:
+		relayTransport = endpoint.RelayTransportTCP
+	default:
+		return "", "", "", fmt.Errorf("connection Relay transport is unsupported")
+	}
+	return preference, relayMode, relayTransport, nil
+}
+
+func connectionPolicyToProto(target endpoint.Endpoint) *bindingpb.ConnectionPolicy {
+	policy := &bindingpb.ConnectionPolicy{
+		RoutePreference: remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_AUTO,
+		CloudRelayMode:  remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_AUTO,
+		RelayTransport:  remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO,
+	}
+	switch target.SelectionPolicy.RoutePreference {
+	case endpoint.RoutePreferenceDirect:
+		policy.RoutePreference = remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_DIRECT
+	case endpoint.RoutePreferenceSSH:
+		policy.RoutePreference = remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_SSH
+	case endpoint.RoutePreferenceManagedCloud:
+		policy.RoutePreference = remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_MANAGED_CLOUD
+	}
+	for _, route := range target.RouteList() {
+		if route.Kind != endpoint.RouteManagedWebRTC {
+			continue
+		}
+		switch route.RelayMode {
+		case endpoint.RelayDirect:
+			policy.CloudRelayMode = remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_DIRECT
+		case endpoint.RelayOnly:
+			policy.CloudRelayMode = remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY
+		case endpoint.RelaySmart:
+			policy.CloudRelayMode = remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_SMART_ROUTE
+		}
+		switch route.RelayTransport {
+		case endpoint.RelayTransportUDP:
+			policy.RelayTransport = remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_UDP
+		case endpoint.RelayTransportTCP:
+			policy.RelayTransport = remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_TCP
+		}
+		break
+	}
+	return policy
+}
+
+func bindingPolicyRouteKind(kind endpoint.RouteKind) bindingpb.ConnectionRouteKind {
+	switch kind {
+	case endpoint.RouteDirectWebRTCTCP:
+		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_DIRECT
+	case endpoint.RouteSSHWebRTCTCP:
+		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_SSH
+	case endpoint.RouteManagedWebRTC:
+		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_MANAGED_CLOUD
+	default:
+		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_UNSPECIFIED
+	}
 }
 
 // UpsertEndpoint 用 generated EndpointConfigV1 替换同 ID 配置，但禁止更换已有 daemon identity pin。

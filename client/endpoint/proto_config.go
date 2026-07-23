@@ -30,7 +30,13 @@ func EndpointFromProto(config *remoteauthpb.EndpointConfigV1) (Endpoint, error) 
 		if policy.GetHedgeDelayMillis() > 30_000 || (!policy.GetHedgeDelayConfigured() && policy.GetHedgeDelayMillis() != 0) {
 			return Endpoint{}, connectionError(ErrorConfig, "endpoint proto selection policy is invalid")
 		}
-		selection = SelectionPolicy{HedgeDelayConfigured: policy.GetHedgeDelayConfigured(), HedgeDelay: time.Duration(policy.GetHedgeDelayMillis()) * time.Millisecond}
+		selection = SelectionPolicy{
+			HedgeDelayConfigured: policy.GetHedgeDelayConfigured(), HedgeDelay: time.Duration(policy.GetHedgeDelayMillis()) * time.Millisecond,
+			RoutePreference: mapWireRoutePreference(policy.GetRoutePreference()),
+		}
+		if selection.RoutePreference == "" {
+			return Endpoint{}, connectionError(ErrorConfig, "endpoint proto route_preference is invalid")
+		}
 	}
 	model := Endpoint{
 		ID: EndpointID(config.GetEndpointId()), Label: config.GetLabel(), LabelSource: mapWireSource(config.GetLabelSource()),
@@ -73,6 +79,7 @@ func EndpointToProto(endpoint Endpoint) (*remoteauthpb.EndpointConfigV1, error) 
 		SelectionPolicy: &remoteauthpb.EndpointSelectionPolicy{
 			HedgeDelayConfigured: normalized.SelectionPolicy.HedgeDelayConfigured,
 			HedgeDelayMillis:     uint64(normalized.SelectionPolicy.HedgeDelay / time.Millisecond),
+			RoutePreference:      wireRoutePreference(normalized.SelectionPolicy.RoutePreference),
 		},
 	}
 	if !normalized.DaemonIdentity.Empty() {
@@ -173,6 +180,7 @@ func routeToProto(route AccessRoute) (*remoteauthpb.EndpointRouteConfigV1, error
 	case RouteManagedWebRTC:
 		config.Route = &remoteauthpb.EndpointRouteConfigV1_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.ManagedWebRTCRouteConfig{
 			TargetDeviceId: route.TargetDeviceID, AccountProfileRef: route.AccountProfileRef, RelayMode: wireRelayMode(route.RelayMode),
+			RelayTransport: wireRelayTransport(route.RelayTransport),
 		}}
 	default:
 		return nil, connectionError(ErrorConfig, "route %q has unknown kind %q", route.ID, route.Kind)
@@ -239,6 +247,64 @@ func wireRelayMode(mode RelayMode) remoteauthpb.ManagedWebRTCRelayMode {
 		return remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_SMART_ROUTE
 	default:
 		return remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_UNSPECIFIED
+	}
+}
+
+func mapWireRoutePreference(value remoteauthpb.EndpointRoutePreference) RoutePreference {
+	switch value {
+	case remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_UNSPECIFIED,
+		remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_AUTO:
+		return RoutePreferenceAuto
+	case remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_DIRECT:
+		return RoutePreferenceDirect
+	case remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_SSH:
+		return RoutePreferenceSSH
+	case remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_MANAGED_CLOUD:
+		return RoutePreferenceManagedCloud
+	default:
+		return ""
+	}
+}
+
+func wireRoutePreference(value RoutePreference) remoteauthpb.EndpointRoutePreference {
+	switch value {
+	case RoutePreferenceAuto:
+		return remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_AUTO
+	case RoutePreferenceDirect:
+		return remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_DIRECT
+	case RoutePreferenceSSH:
+		return remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_SSH
+	case RoutePreferenceManagedCloud:
+		return remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_MANAGED_CLOUD
+	default:
+		return remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_UNSPECIFIED
+	}
+}
+
+func mapWireRelayTransport(value remoteauthpb.ManagedWebRTCRelayTransport) RelayTransport {
+	switch value {
+	case remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_UNSPECIFIED,
+		remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO:
+		return RelayTransportAuto
+	case remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_UDP:
+		return RelayTransportUDP
+	case remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_TCP:
+		return RelayTransportTCP
+	default:
+		return ""
+	}
+}
+
+func wireRelayTransport(value RelayTransport) remoteauthpb.ManagedWebRTCRelayTransport {
+	switch value {
+	case RelayTransportAuto:
+		return remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO
+	case RelayTransportUDP:
+		return remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_UDP
+	case RelayTransportTCP:
+		return remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_TCP
+	default:
+		return remoteauthpb.ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_UNSPECIFIED
 	}
 }
 

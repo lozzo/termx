@@ -547,6 +547,7 @@ func accessRouteFromWire(route *remoteauthpb.EndpointRouteConfigV1, enabled bool
 		model.TargetDeviceID = config.GetTargetDeviceId()
 		model.AccountProfileRef = config.GetAccountProfileRef()
 		model.RelayMode = mapWireRelayMode(config.GetRelayMode())
+		model.RelayTransport = mapWireRelayTransport(config.GetRelayTransport())
 	default:
 		return AccessRoute{}, connectionError(ErrorConfig, "portable route has unknown kind")
 	}

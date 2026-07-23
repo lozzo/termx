@@ -24,7 +24,7 @@ export function createConnectionStatePublisher(): ConnectionStatePublisher {
 }
 
 export function connectionStatusIsSettled(phase: RtcConnectionPhase | null | undefined): boolean {
-  return phase === 'connected' || phase === 'idle'
+  return phase === 'connected' || phase === 'idle' || phase === 'failed'
 }
 
 export function connectionPhaseLabel(phase: RtcConnectionPhase | null | undefined): string {

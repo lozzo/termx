@@ -97,7 +97,11 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	if err != nil {
 		return nil, err
 	}
-	selected, err := resolveDialRoute(ctx, dialer.Cloud, request, resolved, policy, dialer.now())
+	relayTransport, err := wireRelayTransport(route.RelayTransport)
+	if err != nil {
+		return nil, err
+	}
+	selected, err := resolveDialRoute(ctx, dialer.Cloud, request, resolved, policy, relayTransport, dialer.now())
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +130,7 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	signaling, err := createSignalingSession(ctx, dialer.Cloud, &cloudpb.CreateSignalingSessionRequest{
 		EndpointId: string(request.EndpointID()), ManagedSessionId: resolved.GetManagedSessionId(),
 		TargetDeviceId: request.DaemonIdentity().DeviceID, OfferSdp: offer,
-		RoutePreference: selected.preference, RelayOnly: selected.relayOnly,
+		RoutePreference: selected.preference, RelayOnly: selected.relayOnly, RelayTransport: relayTransport,
 	})
 	if err != nil {
 		closeAttempt()
@@ -329,6 +333,35 @@ func (session *Session) Done() <-chan struct{} { return session.protocol.Done() 
 
 // Err 返回 protocol/transport 最终错误；session 尚未关闭或正常关闭时返回 nil。
 func (session *Session) Err() error { return session.protocol.Err() }
+
+// ConnectionSnapshot 从当前 Pion/platform selected candidate pair 读取即时统计。
+// snapshot 不含地址；无法取得稳定 pair 时仍返回 route/path 基础信息，但不伪造 candidate 或 RTT。
+func (session *Session) ConnectionSnapshot(at time.Time) (clientruntime.ConnectionSnapshot, bool) {
+	if session == nil || session.peer == nil {
+		return clientruntime.ConnectionSnapshot{}, false
+	}
+	result := clientruntime.ConnectionSnapshot{
+		RouteID: session.stamp.RouteID, RouteKind: endpoint.RouteManagedWebRTC,
+		ObservedPath: session.observedPath, SelectionReason: session.selectionReason, SampledAt: at.UTC(), Connected: true,
+	}
+	if snapshot, ok := session.peer.Snapshot(at); ok {
+		result.ObservedPath = string(snapshot.Path)
+		result.SampledAt = snapshot.At
+		result.RoundTrip = snapshot.RoundTrip
+		result.LocalCandidateType = snapshot.LocalCandidateType
+		result.RemoteCandidateType = snapshot.RemoteCandidateType
+		result.LocalProtocol = snapshot.LocalProtocol
+		result.RemoteProtocol = snapshot.RemoteProtocol
+		result.RelayTransport = snapshot.RelayProtocol
+		result.NetworkClass = snapshot.NetworkClass
+		result.BytesSent = snapshot.BytesSent
+		result.BytesReceived = snapshot.BytesRecv
+		result.PacketsSent = snapshot.PacketsSent
+		result.LossEvents = snapshot.LossEvents
+		result.Connected = snapshot.Connected
+	}
+	return result, true
+}
 
 // Close 幂等结束 protocol、质量观测、DataChannel 与 peer 生命周期。
 func (session *Session) Close() error {

@@ -47,6 +47,24 @@ export interface RtcConnectOptions {
   onConnectionState?: ((snapshot: RtcConnectionStateSnapshot) => void) | undefined
 }
 
+export type ConnectionRoutePreference = 'auto' | 'direct' | 'ssh' | 'cloud'
+export type CloudConnectionPreference = 'auto' | 'p2p' | 'relay'
+export type RelayTransportPreference = 'auto' | 'udp' | 'tcp'
+
+export interface ConnectionPolicy {
+  route: ConnectionRoutePreference
+  cloud: CloudConnectionPreference
+  relayTransport: RelayTransportPreference
+}
+
+export interface ConnectionPolicyState {
+  policy: ConnectionPolicy
+  available: Record<Exclude<ConnectionRoutePreference, 'auto'>, boolean>
+  unavailableReasons: Partial<Record<Exclude<ConnectionRoutePreference, 'auto'>, ConnectionPolicyUnavailableReason>>
+}
+
+export type ConnectionPolicyUnavailableReason = 'route_not_configured' | 'route_disabled' | 'platform_unsupported' | 'credential_unavailable' | 'cloud_unavailable'
+
 export interface RtcSubscription {
   close(): void
 }
@@ -71,6 +89,8 @@ export interface RtcEvent {
 
 export interface ConnectionInfo {
   path: ConnectionPath
+  routeId?: string | undefined
+  routeKind?: ConnectionRoutePreference | 'local' | undefined
   observedPath?: ObservedPath | undefined
   routeSelectionReason?: RouteSelectionReason | undefined
   connectionId: string
@@ -83,6 +103,16 @@ export interface ConnectionInfo {
   candidateType?: string | undefined
   remoteCandidateType?: string | undefined
   rtt?: number | undefined
+  localProtocol?: string | undefined
+  remoteProtocol?: string | undefined
+  relayTransport?: string | undefined
+  networkClass?: string | undefined
+  sampledAt?: number | undefined
+  bytesSent?: bigint | undefined
+  bytesReceived?: bigint | undefined
+  packetsSent?: bigint | undefined
+  lossEvents?: bigint | undefined
+  generation?: bigint | undefined
 }
 
 export interface MachineConnectionStateEvents {

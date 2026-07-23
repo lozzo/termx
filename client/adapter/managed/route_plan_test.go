@@ -25,7 +25,7 @@ func TestResolveDialRouteRelayOnlyUsesOnlyRelayLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	route, err := resolveDialRoute(context.Background(), cloud, attempt, &cloudpb.ResolvedEndpoint{ManagedSessionId: "managed-1"}, policy, now)
+	route, err := resolveDialRoute(context.Background(), cloud, attempt, &cloudpb.ResolvedEndpoint{ManagedSessionId: "managed-1"}, policy, cloudpb.RelayTransport_RELAY_TRANSPORT_AUTO, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,12 +52,38 @@ func TestResolveDialRouteAutoAddsRelayWithoutForcingRelay(t *testing.T) {
 		ManagedSessionId: "managed-1",
 		IceServers:       []*cloudpb.IceServer{{Urls: []string{"stun:stun.example.com"}}},
 	}
-	route, err := resolveDialRoute(context.Background(), cloud, attempt, resolved, policy, now)
+	route, err := resolveDialRoute(context.Background(), cloud, attempt, resolved, policy, cloudpb.RelayTransport_RELAY_TRANSPORT_AUTO, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if route.relayOnly || route.expectedPath != "" || route.preference != cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY || len(route.iceServers) != 2 || len(cloud.Requests().AcquireRelayLease) != 1 {
 		t.Fatalf("auto route = %#v requests=%+v", route, cloud.Requests())
+	}
+}
+
+func TestResolveDialRouteRelayOnlyFiltersRequestedTCPAndFailsWithoutIt(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0).UTC()
+	attempt := managedAttemptWithRelayMode(t, endpoint.RelayOnly)
+	urls := []string{"turn:relay.example.com:3478?transport=udp", "turn:relay.example.com:3478?transport=tcp"}
+	cloud := &cloudcompanion.FakeClient{AcquireRelayLeaseFunc: func(_ context.Context, _ *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
+		return &cloudpb.RelayLease{
+			LeaseId: "lease-tcp", SignedLease: []byte("signed"), ExpiresAtUnix: uint64(now.Add(time.Minute).Unix()),
+			PathKind:   cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY,
+			IceServers: []*cloudpb.IceServer{{Urls: append([]string(nil), urls...), Username: "short", Credential: "secret"}},
+		}, nil
+	}}
+	policy, _ := cloudcompanion.DialPolicyForRelayMode(endpoint.RelayOnly)
+	route, err := resolveDialRoute(context.Background(), cloud, attempt, &cloudpb.ResolvedEndpoint{ManagedSessionId: "managed-1"}, policy, cloudpb.RelayTransport_RELAY_TRANSPORT_TCP, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := route.iceServers[0].GetUrls(); len(got) != 1 || got[0] != urls[1] {
+		t.Fatalf("forced TCP URLs = %v", got)
+	}
+
+	urls = urls[:1]
+	if _, err := resolveDialRoute(context.Background(), cloud, attempt, &cloudpb.ResolvedEndpoint{ManagedSessionId: "managed-1"}, policy, cloudpb.RelayTransport_RELAY_TRANSPORT_TCP, now); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL) {
+		t.Fatalf("missing forced TCP error = %v", err)
 	}
 }
 
@@ -76,7 +102,7 @@ func TestResolveDialRouteAutoKeepsP2PWhenRelayCapabilityIsUnavailable(t *testing
 				t.Fatal(err)
 			}
 			resolved := &cloudpb.ResolvedEndpoint{ManagedSessionId: "managed-1", IceServers: []*cloudpb.IceServer{{Urls: []string{"stun:stun.example.com"}}}}
-			route, err := resolveDialRoute(context.Background(), cloud, attempt, resolved, policy, time.Now())
+			route, err := resolveDialRoute(context.Background(), cloud, attempt, resolved, policy, cloudpb.RelayTransport_RELAY_TRANSPORT_AUTO, time.Now())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -101,7 +127,7 @@ func TestResolveDialRouteRejectsUnsafeSmartPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = resolveDialRoute(context.Background(), cloud, attempt, &cloudpb.ResolvedEndpoint{ManagedSessionId: "managed-1"}, policy, now)
+	_, err = resolveDialRoute(context.Background(), cloud, attempt, &cloudpb.ResolvedEndpoint{ManagedSessionId: "managed-1"}, policy, cloudpb.RelayTransport_RELAY_TRANSPORT_AUTO, now)
 	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL) {
 		t.Fatalf("unsafe smart plan error = %v", err)
 	}

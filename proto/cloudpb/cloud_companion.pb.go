@@ -405,6 +405,60 @@ func (RoutePreference) EnumDescriptor() ([]byte, []int) {
 	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{5}
 }
 
+// RelayTransport 是 signaling 双端必须共同执行的 TURN transport 约束。
+// 它来自客户端 Endpoint policy 的确定性映射，不表达系统网络或 VPN 状态。
+type RelayTransport int32
+
+const (
+	RelayTransport_RELAY_TRANSPORT_UNSPECIFIED RelayTransport = 0
+	RelayTransport_RELAY_TRANSPORT_AUTO        RelayTransport = 1
+	RelayTransport_RELAY_TRANSPORT_UDP         RelayTransport = 2
+	RelayTransport_RELAY_TRANSPORT_TCP         RelayTransport = 3
+)
+
+// Enum value maps for RelayTransport.
+var (
+	RelayTransport_name = map[int32]string{
+		0: "RELAY_TRANSPORT_UNSPECIFIED",
+		1: "RELAY_TRANSPORT_AUTO",
+		2: "RELAY_TRANSPORT_UDP",
+		3: "RELAY_TRANSPORT_TCP",
+	}
+	RelayTransport_value = map[string]int32{
+		"RELAY_TRANSPORT_UNSPECIFIED": 0,
+		"RELAY_TRANSPORT_AUTO":        1,
+		"RELAY_TRANSPORT_UDP":         2,
+		"RELAY_TRANSPORT_TCP":         3,
+	}
+)
+
+func (x RelayTransport) Enum() *RelayTransport {
+	p := new(RelayTransport)
+	*p = x
+	return p
+}
+
+func (x RelayTransport) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RelayTransport) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloudpb_cloud_companion_proto_enumTypes[6].Descriptor()
+}
+
+func (RelayTransport) Type() protoreflect.EnumType {
+	return &file_cloudpb_cloud_companion_proto_enumTypes[6]
+}
+
+func (x RelayTransport) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RelayTransport.Descriptor instead.
+func (RelayTransport) EnumDescriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{6}
+}
+
 // RouteSelectionReason 是公开诊断可见的稳定选路原因，不暴露私有评分权重或商业成本。
 type RouteSelectionReason int32
 
@@ -472,11 +526,11 @@ func (x RouteSelectionReason) String() string {
 }
 
 func (RouteSelectionReason) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_companion_proto_enumTypes[6].Descriptor()
+	return file_cloudpb_cloud_companion_proto_enumTypes[7].Descriptor()
 }
 
 func (RouteSelectionReason) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_companion_proto_enumTypes[6]
+	return &file_cloudpb_cloud_companion_proto_enumTypes[7]
 }
 
 func (x RouteSelectionReason) Number() protoreflect.EnumNumber {
@@ -485,7 +539,7 @@ func (x RouteSelectionReason) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use RouteSelectionReason.Descriptor instead.
 func (RouteSelectionReason) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{6}
+	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{7}
 }
 
 // LoginMethod 是 Companion 支持的官方账号登录交互方式。
@@ -522,11 +576,11 @@ func (x LoginMethod) String() string {
 }
 
 func (LoginMethod) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_companion_proto_enumTypes[7].Descriptor()
+	return file_cloudpb_cloud_companion_proto_enumTypes[8].Descriptor()
 }
 
 func (LoginMethod) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_companion_proto_enumTypes[7]
+	return &file_cloudpb_cloud_companion_proto_enumTypes[8]
 }
 
 func (x LoginMethod) Number() protoreflect.EnumNumber {
@@ -535,7 +589,7 @@ func (x LoginMethod) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LoginMethod.Descriptor instead.
 func (LoginMethod) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{7}
+	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{8}
 }
 
 // DiagnosticSeverity 是 doctor 返回的脱敏诊断级别。
@@ -575,11 +629,11 @@ func (x DiagnosticSeverity) String() string {
 }
 
 func (DiagnosticSeverity) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_companion_proto_enumTypes[8].Descriptor()
+	return file_cloudpb_cloud_companion_proto_enumTypes[9].Descriptor()
 }
 
 func (DiagnosticSeverity) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_companion_proto_enumTypes[8]
+	return &file_cloudpb_cloud_companion_proto_enumTypes[9]
 }
 
 func (x DiagnosticSeverity) Number() protoreflect.EnumNumber {
@@ -588,7 +642,7 @@ func (x DiagnosticSeverity) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DiagnosticSeverity.Descriptor instead.
 func (DiagnosticSeverity) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{8}
+	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{9}
 }
 
 type MobileActivationState int32
@@ -627,11 +681,11 @@ func (x MobileActivationState) String() string {
 }
 
 func (MobileActivationState) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_companion_proto_enumTypes[9].Descriptor()
+	return file_cloudpb_cloud_companion_proto_enumTypes[10].Descriptor()
 }
 
 func (MobileActivationState) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_companion_proto_enumTypes[9]
+	return &file_cloudpb_cloud_companion_proto_enumTypes[10]
 }
 
 func (x MobileActivationState) Number() protoreflect.EnumNumber {
@@ -640,7 +694,7 @@ func (x MobileActivationState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MobileActivationState.Descriptor instead.
 func (MobileActivationState) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{9}
+	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{10}
 }
 
 type DaemonEnrollmentState int32
@@ -679,11 +733,11 @@ func (x DaemonEnrollmentState) String() string {
 }
 
 func (DaemonEnrollmentState) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_companion_proto_enumTypes[10].Descriptor()
+	return file_cloudpb_cloud_companion_proto_enumTypes[11].Descriptor()
 }
 
 func (DaemonEnrollmentState) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_companion_proto_enumTypes[10]
+	return &file_cloudpb_cloud_companion_proto_enumTypes[11]
 }
 
 func (x DaemonEnrollmentState) Number() protoreflect.EnumNumber {
@@ -692,7 +746,7 @@ func (x DaemonEnrollmentState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DaemonEnrollmentState.Descriptor instead.
 func (DaemonEnrollmentState) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{10}
+	return file_cloudpb_cloud_companion_proto_rawDescGZIP(), []int{11}
 }
 
 // CloudError 包含稳定错误码和可脱敏展示的最小诊断信息。
@@ -3895,8 +3949,10 @@ type SignalingOffer struct {
 	SessionIncarnation uint64          `protobuf:"varint,9,opt,name=session_incarnation,json=sessionIncarnation,proto3" json:"session_incarnation,omitempty"`
 	PresenceSessionId  string          `protobuf:"bytes,10,opt,name=presence_session_id,json=presenceSessionId,proto3" json:"presence_session_id,omitempty"`
 	AssignmentEpoch    uint64          `protobuf:"varint,11,opt,name=assignment_epoch,json=assignmentEpoch,proto3" json:"assignment_epoch,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// relay_transport 是 caller 的显式 TURN transport 约束；daemon 必须应用同一约束。
+	RelayTransport RelayTransport `protobuf:"varint,12,opt,name=relay_transport,json=relayTransport,proto3,enum=muxvia.cloud.v1.RelayTransport" json:"relay_transport,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SignalingOffer) Reset() {
@@ -4004,6 +4060,13 @@ func (x *SignalingOffer) GetAssignmentEpoch() uint64 {
 		return x.AssignmentEpoch
 	}
 	return 0
+}
+
+func (x *SignalingOffer) GetRelayTransport() RelayTransport {
+	if x != nil {
+		return x.RelayTransport
+	}
+	return RelayTransport_RELAY_TRANSPORT_UNSPECIFIED
 }
 
 // SignalingAnswer 是 daemon 返回的 WebRTC answer。
@@ -4429,9 +4492,10 @@ type CreateSignalingSessionRequest struct {
 	Candidates       []*IceCandidate        `protobuf:"bytes,5,rep,name=candidates,proto3" json:"candidates,omitempty"`
 	RoutePreference  RoutePreference        `protobuf:"varint,6,opt,name=route_preference,json=routePreference,proto3,enum=muxvia.cloud.v1.RoutePreference" json:"route_preference,omitempty"`
 	// relay_only 是本次执行约束，不得从 STANDARD_RELAY 自动推断。
-	RelayOnly     bool `protobuf:"varint,7,opt,name=relay_only,json=relayOnly,proto3" json:"relay_only,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	RelayOnly      bool           `protobuf:"varint,7,opt,name=relay_only,json=relayOnly,proto3" json:"relay_only,omitempty"`
+	RelayTransport RelayTransport `protobuf:"varint,8,opt,name=relay_transport,json=relayTransport,proto3,enum=muxvia.cloud.v1.RelayTransport" json:"relay_transport,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *CreateSignalingSessionRequest) Reset() {
@@ -4511,6 +4575,13 @@ func (x *CreateSignalingSessionRequest) GetRelayOnly() bool {
 		return x.RelayOnly
 	}
 	return false
+}
+
+func (x *CreateSignalingSessionRequest) GetRelayTransport() RelayTransport {
+	if x != nil {
+		return x.RelayTransport
+	}
+	return RelayTransport_RELAY_TRANSPORT_UNSPECIFIED
 }
 
 // SignalingClosed 表示 Hub 已关闭一条 signaling session。
@@ -6918,7 +6989,7 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\vice_servers\x18\x03 \x03(\v2\x1a.muxvia.cloud.v1.IceServerR\n" +
 	"iceServers\x12\x15\n" +
 	"\x06hub_id\x18\x04 \x01(\tR\x05hubId\x12)\n" +
-	"\x10assignment_epoch\x18\x05 \x01(\x04R\x0fassignmentEpoch\"\x8d\x04\n" +
+	"\x10assignment_epoch\x18\x05 \x01(\x04R\x0fassignmentEpoch\"\xd7\x04\n" +
 	"\x0eSignalingOffer\x120\n" +
 	"\x14signaling_session_id\x18\x01 \x01(\tR\x12signalingSessionId\x12,\n" +
 	"\x12managed_session_id\x18\x02 \x01(\tR\x10managedSessionId\x12(\n" +
@@ -6934,7 +7005,8 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\x13session_incarnation\x18\t \x01(\x04R\x12sessionIncarnation\x12.\n" +
 	"\x13presence_session_id\x18\n" +
 	" \x01(\tR\x11presenceSessionId\x12)\n" +
-	"\x10assignment_epoch\x18\v \x01(\x04R\x0fassignmentEpoch\"\x94\x01\n" +
+	"\x10assignment_epoch\x18\v \x01(\x04R\x0fassignmentEpoch\x12H\n" +
+	"\x0frelay_transport\x18\f \x01(\x0e2\x1f.muxvia.cloud.v1.RelayTransportR\x0erelayTransport\"\x94\x01\n" +
 	"\x0fSignalingAnswer\x120\n" +
 	"\x14signaling_session_id\x18\x01 \x01(\tR\x12signalingSessionId\x12\x10\n" +
 	"\x03sdp\x18\x02 \x01(\tR\x03sdp\x12=\n" +
@@ -6959,7 +7031,7 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	" ReportDaemonCommandResultRequest\x12<\n" +
 	"\x06result\x18\x01 \x01(\v2$.muxvia.cloud.v1.DaemonCommandResultR\x06result\"S\n" +
 	"!ReportDaemonCommandResultResponse\x12.\n" +
-	"\x13accepted_command_id\x18\x01 \x01(\tR\x11acceptedCommandId\"\xe0\x02\n" +
+	"\x13accepted_command_id\x18\x01 \x01(\tR\x11acceptedCommandId\"\xaa\x03\n" +
 	"\x1dCreateSignalingSessionRequest\x12\x1f\n" +
 	"\vendpoint_id\x18\x01 \x01(\tR\n" +
 	"endpointId\x12,\n" +
@@ -6971,7 +7043,8 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"candidates\x12K\n" +
 	"\x10route_preference\x18\x06 \x01(\x0e2 .muxvia.cloud.v1.RoutePreferenceR\x0froutePreference\x12\x1d\n" +
 	"\n" +
-	"relay_only\x18\a \x01(\bR\trelayOnly\")\n" +
+	"relay_only\x18\a \x01(\bR\trelayOnly\x12H\n" +
+	"\x0frelay_transport\x18\b \x01(\x0e2\x1f.muxvia.cloud.v1.RelayTransportR\x0erelayTransport\")\n" +
 	"\x0fSignalingClosed\x12\x16\n" +
 	"\x06reason\x18\x01 \x01(\tR\x06reason\"\x87\x02\n" +
 	"\x0eSignalingEvent\x12:\n" +
@@ -7180,7 +7253,12 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\x1cROUTE_PREFERENCE_DIRECT_ONLY\x10\x01\x12#\n" +
 	"\x1fROUTE_PREFERENCE_STANDARD_RELAY\x10\x02\x12 \n" +
 	"\x1cROUTE_PREFERENCE_SMART_ROUTE\x10\x03\x12'\n" +
-	"#ROUTE_PREFERENCE_GLOBAL_ACCELERATOR\x10\x04*\xe3\x04\n" +
+	"#ROUTE_PREFERENCE_GLOBAL_ACCELERATOR\x10\x04*}\n" +
+	"\x0eRelayTransport\x12\x1f\n" +
+	"\x1bRELAY_TRANSPORT_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14RELAY_TRANSPORT_AUTO\x10\x01\x12\x17\n" +
+	"\x13RELAY_TRANSPORT_UDP\x10\x02\x12\x17\n" +
+	"\x13RELAY_TRANSPORT_TCP\x10\x03*\xe3\x04\n" +
 	"\x14RouteSelectionReason\x12&\n" +
 	"\"ROUTE_SELECTION_REASON_UNSPECIFIED\x10\x00\x12'\n" +
 	"#ROUTE_SELECTION_REASON_INITIAL_BEST\x10\x01\x12&\n" +
@@ -7229,7 +7307,7 @@ func file_cloudpb_cloud_companion_proto_rawDescGZIP() []byte {
 	return file_cloudpb_cloud_companion_proto_rawDescData
 }
 
-var file_cloudpb_cloud_companion_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
+var file_cloudpb_cloud_companion_proto_enumTypes = make([]protoimpl.EnumInfo, 12)
 var file_cloudpb_cloud_companion_proto_msgTypes = make([]protoimpl.MessageInfo, 80)
 var file_cloudpb_cloud_companion_proto_goTypes = []any{
 	(CallerRole)(0),                           // 0: muxvia.cloud.v1.CallerRole
@@ -7238,97 +7316,98 @@ var file_cloudpb_cloud_companion_proto_goTypes = []any{
 	(CloudErrorCode)(0),                       // 3: muxvia.cloud.v1.CloudErrorCode
 	(PresenceState)(0),                        // 4: muxvia.cloud.v1.PresenceState
 	(RoutePreference)(0),                      // 5: muxvia.cloud.v1.RoutePreference
-	(RouteSelectionReason)(0),                 // 6: muxvia.cloud.v1.RouteSelectionReason
-	(LoginMethod)(0),                          // 7: muxvia.cloud.v1.LoginMethod
-	(DiagnosticSeverity)(0),                   // 8: muxvia.cloud.v1.DiagnosticSeverity
-	(MobileActivationState)(0),                // 9: muxvia.cloud.v1.MobileActivationState
-	(DaemonEnrollmentState)(0),                // 10: muxvia.cloud.v1.DaemonEnrollmentState
-	(*CloudError)(nil),                        // 11: muxvia.cloud.v1.CloudError
-	(*CompanionHelloRequest)(nil),             // 12: muxvia.cloud.v1.CompanionHelloRequest
-	(*CompanionHelloResponse)(nil),            // 13: muxvia.cloud.v1.CompanionHelloResponse
-	(*StatusRequest)(nil),                     // 14: muxvia.cloud.v1.StatusRequest
-	(*StatusResponse)(nil),                    // 15: muxvia.cloud.v1.StatusResponse
-	(*BeginLoginRequest)(nil),                 // 16: muxvia.cloud.v1.BeginLoginRequest
-	(*LoginFlow)(nil),                         // 17: muxvia.cloud.v1.LoginFlow
-	(*CompleteLoginRequest)(nil),              // 18: muxvia.cloud.v1.CompleteLoginRequest
-	(*ClaimMobileActivationRequest)(nil),      // 19: muxvia.cloud.v1.ClaimMobileActivationRequest
-	(*MobileActivationCreateRequest)(nil),     // 20: muxvia.cloud.v1.MobileActivationCreateRequest
-	(*MobileActivationInspectRequest)(nil),    // 21: muxvia.cloud.v1.MobileActivationInspectRequest
-	(*MobileActivationApproveRequest)(nil),    // 22: muxvia.cloud.v1.MobileActivationApproveRequest
-	(*MobileActivationProjection)(nil),        // 23: muxvia.cloud.v1.MobileActivationProjection
-	(*MobileActivationApproveResponse)(nil),   // 24: muxvia.cloud.v1.MobileActivationApproveResponse
-	(*CloudSessionSummary)(nil),               // 25: muxvia.cloud.v1.CloudSessionSummary
-	(*CompleteLoginResponse)(nil),             // 26: muxvia.cloud.v1.CompleteLoginResponse
-	(*CreateDaemonEnrollmentRequest)(nil),     // 27: muxvia.cloud.v1.CreateDaemonEnrollmentRequest
-	(*InspectDaemonEnrollmentRequest)(nil),    // 28: muxvia.cloud.v1.InspectDaemonEnrollmentRequest
-	(*ApproveDaemonEnrollmentRequest)(nil),    // 29: muxvia.cloud.v1.ApproveDaemonEnrollmentRequest
-	(*DaemonEnrollmentProjection)(nil),        // 30: muxvia.cloud.v1.DaemonEnrollmentProjection
-	(*ApproveDaemonEnrollmentResponse)(nil),   // 31: muxvia.cloud.v1.ApproveDaemonEnrollmentResponse
-	(*BeginDeviceEnrollmentRequest)(nil),      // 32: muxvia.cloud.v1.BeginDeviceEnrollmentRequest
-	(*HubEnrollmentCandidate)(nil),            // 33: muxvia.cloud.v1.HubEnrollmentCandidate
-	(*HubReachabilityObservation)(nil),        // 34: muxvia.cloud.v1.HubReachabilityObservation
-	(*DeviceEnrollmentChallenge)(nil),         // 35: muxvia.cloud.v1.DeviceEnrollmentChallenge
-	(*DeviceEnrollmentProofInput)(nil),        // 36: muxvia.cloud.v1.DeviceEnrollmentProofInput
-	(*CompleteDeviceEnrollmentRequest)(nil),   // 37: muxvia.cloud.v1.CompleteDeviceEnrollmentRequest
-	(*DaemonControlVerificationKey)(nil),      // 38: muxvia.cloud.v1.DaemonControlVerificationKey
-	(*DaemonControlEnrollment)(nil),           // 39: muxvia.cloud.v1.DaemonControlEnrollment
-	(*CompleteDeviceEnrollmentResponse)(nil),  // 40: muxvia.cloud.v1.CompleteDeviceEnrollmentResponse
-	(*DeviceEnrollmentServiceSession)(nil),    // 41: muxvia.cloud.v1.DeviceEnrollmentServiceSession
-	(*LogoutRequest)(nil),                     // 42: muxvia.cloud.v1.LogoutRequest
-	(*LogoutResponse)(nil),                    // 43: muxvia.cloud.v1.LogoutResponse
-	(*DoctorRequest)(nil),                     // 44: muxvia.cloud.v1.DoctorRequest
-	(*DiagnosticItem)(nil),                    // 45: muxvia.cloud.v1.DiagnosticItem
-	(*DoctorResponse)(nil),                    // 46: muxvia.cloud.v1.DoctorResponse
-	(*ShutdownRequest)(nil),                   // 47: muxvia.cloud.v1.ShutdownRequest
-	(*ShutdownResponse)(nil),                  // 48: muxvia.cloud.v1.ShutdownResponse
-	(*DeviceProof)(nil),                       // 49: muxvia.cloud.v1.DeviceProof
-	(*BeginPresenceRequest)(nil),              // 50: muxvia.cloud.v1.BeginPresenceRequest
-	(*PresenceChallenge)(nil),                 // 51: muxvia.cloud.v1.PresenceChallenge
-	(*PresenceProofInput)(nil),                // 52: muxvia.cloud.v1.PresenceProofInput
-	(*DeviceMetadata)(nil),                    // 53: muxvia.cloud.v1.DeviceMetadata
-	(*ResolveEndpointRequest)(nil),            // 54: muxvia.cloud.v1.ResolveEndpointRequest
-	(*ListManagedDevicesRequest)(nil),         // 55: muxvia.cloud.v1.ListManagedDevicesRequest
-	(*ManagedDevice)(nil),                     // 56: muxvia.cloud.v1.ManagedDevice
-	(*ListManagedDevicesResponse)(nil),        // 57: muxvia.cloud.v1.ListManagedDevicesResponse
-	(*IceServer)(nil),                         // 58: muxvia.cloud.v1.IceServer
-	(*ResolvedEndpoint)(nil),                  // 59: muxvia.cloud.v1.ResolvedEndpoint
-	(*OpenPresenceRequest)(nil),               // 60: muxvia.cloud.v1.OpenPresenceRequest
-	(*PresenceReady)(nil),                     // 61: muxvia.cloud.v1.PresenceReady
-	(*SignalingOffer)(nil),                    // 62: muxvia.cloud.v1.SignalingOffer
-	(*SignalingAnswer)(nil),                   // 63: muxvia.cloud.v1.SignalingAnswer
-	(*IceCandidate)(nil),                      // 64: muxvia.cloud.v1.IceCandidate
-	(*PresenceClosed)(nil),                    // 65: muxvia.cloud.v1.PresenceClosed
-	(*PresenceEvent)(nil),                     // 66: muxvia.cloud.v1.PresenceEvent
-	(*ReportDaemonCommandResultRequest)(nil),  // 67: muxvia.cloud.v1.ReportDaemonCommandResultRequest
-	(*ReportDaemonCommandResultResponse)(nil), // 68: muxvia.cloud.v1.ReportDaemonCommandResultResponse
-	(*CreateSignalingSessionRequest)(nil),     // 69: muxvia.cloud.v1.CreateSignalingSessionRequest
-	(*SignalingClosed)(nil),                   // 70: muxvia.cloud.v1.SignalingClosed
-	(*SignalingEvent)(nil),                    // 71: muxvia.cloud.v1.SignalingEvent
-	(*CompleteSignalingOfferRequest)(nil),     // 72: muxvia.cloud.v1.CompleteSignalingOfferRequest
-	(*CompleteSignalingOfferResponse)(nil),    // 73: muxvia.cloud.v1.CompleteSignalingOfferResponse
-	(*AcquireRelayLeaseRequest)(nil),          // 74: muxvia.cloud.v1.AcquireRelayLeaseRequest
-	(*RelayLease)(nil),                        // 75: muxvia.cloud.v1.RelayLease
-	(*PlanManagedRouteRequest)(nil),           // 76: muxvia.cloud.v1.PlanManagedRouteRequest
-	(*ManagedRoutePlan)(nil),                  // 77: muxvia.cloud.v1.ManagedRoutePlan
-	(*PathQualitySummary)(nil),                // 78: muxvia.cloud.v1.PathQualitySummary
-	(*ReportPathQualityRequest)(nil),          // 79: muxvia.cloud.v1.ReportPathQualityRequest
-	(*ReportPathQualityResponse)(nil),         // 80: muxvia.cloud.v1.ReportPathQualityResponse
-	(*ConnectionOutcome)(nil),                 // 81: muxvia.cloud.v1.ConnectionOutcome
-	(*ReportConnectionOutcomeRequest)(nil),    // 82: muxvia.cloud.v1.ReportConnectionOutcomeRequest
-	(*ReportConnectionOutcomeResponse)(nil),   // 83: muxvia.cloud.v1.ReportConnectionOutcomeResponse
-	(*IPCStreamOpened)(nil),                   // 84: muxvia.cloud.v1.IPCStreamOpened
-	(*IPCCloseStreamRequest)(nil),             // 85: muxvia.cloud.v1.IPCCloseStreamRequest
-	(*IPCCancelRequest)(nil),                  // 86: muxvia.cloud.v1.IPCCancelRequest
-	(*IPCAcknowledgement)(nil),                // 87: muxvia.cloud.v1.IPCAcknowledgement
-	(*IPCStreamClosed)(nil),                   // 88: muxvia.cloud.v1.IPCStreamClosed
-	(*IPCRequest)(nil),                        // 89: muxvia.cloud.v1.IPCRequest
-	(*IPCResponse)(nil),                       // 90: muxvia.cloud.v1.IPCResponse
-	(ManagedDeviceKind)(0),                    // 91: muxvia.cloud.v1.ManagedDeviceKind
-	(*DaemonControlCommand)(nil),              // 92: muxvia.cloud.v1.DaemonControlCommand
-	(*DaemonCommandResult)(nil),               // 93: muxvia.cloud.v1.DaemonCommandResult
-	(ObservedPath)(0),                         // 94: muxvia.cloud.v1.ObservedPath
-	(*ReportDaemonRuntimeRequest)(nil),        // 95: muxvia.cloud.v1.ReportDaemonRuntimeRequest
-	(*ReportDaemonRuntimeResponse)(nil),       // 96: muxvia.cloud.v1.ReportDaemonRuntimeResponse
+	(RelayTransport)(0),                       // 6: muxvia.cloud.v1.RelayTransport
+	(RouteSelectionReason)(0),                 // 7: muxvia.cloud.v1.RouteSelectionReason
+	(LoginMethod)(0),                          // 8: muxvia.cloud.v1.LoginMethod
+	(DiagnosticSeverity)(0),                   // 9: muxvia.cloud.v1.DiagnosticSeverity
+	(MobileActivationState)(0),                // 10: muxvia.cloud.v1.MobileActivationState
+	(DaemonEnrollmentState)(0),                // 11: muxvia.cloud.v1.DaemonEnrollmentState
+	(*CloudError)(nil),                        // 12: muxvia.cloud.v1.CloudError
+	(*CompanionHelloRequest)(nil),             // 13: muxvia.cloud.v1.CompanionHelloRequest
+	(*CompanionHelloResponse)(nil),            // 14: muxvia.cloud.v1.CompanionHelloResponse
+	(*StatusRequest)(nil),                     // 15: muxvia.cloud.v1.StatusRequest
+	(*StatusResponse)(nil),                    // 16: muxvia.cloud.v1.StatusResponse
+	(*BeginLoginRequest)(nil),                 // 17: muxvia.cloud.v1.BeginLoginRequest
+	(*LoginFlow)(nil),                         // 18: muxvia.cloud.v1.LoginFlow
+	(*CompleteLoginRequest)(nil),              // 19: muxvia.cloud.v1.CompleteLoginRequest
+	(*ClaimMobileActivationRequest)(nil),      // 20: muxvia.cloud.v1.ClaimMobileActivationRequest
+	(*MobileActivationCreateRequest)(nil),     // 21: muxvia.cloud.v1.MobileActivationCreateRequest
+	(*MobileActivationInspectRequest)(nil),    // 22: muxvia.cloud.v1.MobileActivationInspectRequest
+	(*MobileActivationApproveRequest)(nil),    // 23: muxvia.cloud.v1.MobileActivationApproveRequest
+	(*MobileActivationProjection)(nil),        // 24: muxvia.cloud.v1.MobileActivationProjection
+	(*MobileActivationApproveResponse)(nil),   // 25: muxvia.cloud.v1.MobileActivationApproveResponse
+	(*CloudSessionSummary)(nil),               // 26: muxvia.cloud.v1.CloudSessionSummary
+	(*CompleteLoginResponse)(nil),             // 27: muxvia.cloud.v1.CompleteLoginResponse
+	(*CreateDaemonEnrollmentRequest)(nil),     // 28: muxvia.cloud.v1.CreateDaemonEnrollmentRequest
+	(*InspectDaemonEnrollmentRequest)(nil),    // 29: muxvia.cloud.v1.InspectDaemonEnrollmentRequest
+	(*ApproveDaemonEnrollmentRequest)(nil),    // 30: muxvia.cloud.v1.ApproveDaemonEnrollmentRequest
+	(*DaemonEnrollmentProjection)(nil),        // 31: muxvia.cloud.v1.DaemonEnrollmentProjection
+	(*ApproveDaemonEnrollmentResponse)(nil),   // 32: muxvia.cloud.v1.ApproveDaemonEnrollmentResponse
+	(*BeginDeviceEnrollmentRequest)(nil),      // 33: muxvia.cloud.v1.BeginDeviceEnrollmentRequest
+	(*HubEnrollmentCandidate)(nil),            // 34: muxvia.cloud.v1.HubEnrollmentCandidate
+	(*HubReachabilityObservation)(nil),        // 35: muxvia.cloud.v1.HubReachabilityObservation
+	(*DeviceEnrollmentChallenge)(nil),         // 36: muxvia.cloud.v1.DeviceEnrollmentChallenge
+	(*DeviceEnrollmentProofInput)(nil),        // 37: muxvia.cloud.v1.DeviceEnrollmentProofInput
+	(*CompleteDeviceEnrollmentRequest)(nil),   // 38: muxvia.cloud.v1.CompleteDeviceEnrollmentRequest
+	(*DaemonControlVerificationKey)(nil),      // 39: muxvia.cloud.v1.DaemonControlVerificationKey
+	(*DaemonControlEnrollment)(nil),           // 40: muxvia.cloud.v1.DaemonControlEnrollment
+	(*CompleteDeviceEnrollmentResponse)(nil),  // 41: muxvia.cloud.v1.CompleteDeviceEnrollmentResponse
+	(*DeviceEnrollmentServiceSession)(nil),    // 42: muxvia.cloud.v1.DeviceEnrollmentServiceSession
+	(*LogoutRequest)(nil),                     // 43: muxvia.cloud.v1.LogoutRequest
+	(*LogoutResponse)(nil),                    // 44: muxvia.cloud.v1.LogoutResponse
+	(*DoctorRequest)(nil),                     // 45: muxvia.cloud.v1.DoctorRequest
+	(*DiagnosticItem)(nil),                    // 46: muxvia.cloud.v1.DiagnosticItem
+	(*DoctorResponse)(nil),                    // 47: muxvia.cloud.v1.DoctorResponse
+	(*ShutdownRequest)(nil),                   // 48: muxvia.cloud.v1.ShutdownRequest
+	(*ShutdownResponse)(nil),                  // 49: muxvia.cloud.v1.ShutdownResponse
+	(*DeviceProof)(nil),                       // 50: muxvia.cloud.v1.DeviceProof
+	(*BeginPresenceRequest)(nil),              // 51: muxvia.cloud.v1.BeginPresenceRequest
+	(*PresenceChallenge)(nil),                 // 52: muxvia.cloud.v1.PresenceChallenge
+	(*PresenceProofInput)(nil),                // 53: muxvia.cloud.v1.PresenceProofInput
+	(*DeviceMetadata)(nil),                    // 54: muxvia.cloud.v1.DeviceMetadata
+	(*ResolveEndpointRequest)(nil),            // 55: muxvia.cloud.v1.ResolveEndpointRequest
+	(*ListManagedDevicesRequest)(nil),         // 56: muxvia.cloud.v1.ListManagedDevicesRequest
+	(*ManagedDevice)(nil),                     // 57: muxvia.cloud.v1.ManagedDevice
+	(*ListManagedDevicesResponse)(nil),        // 58: muxvia.cloud.v1.ListManagedDevicesResponse
+	(*IceServer)(nil),                         // 59: muxvia.cloud.v1.IceServer
+	(*ResolvedEndpoint)(nil),                  // 60: muxvia.cloud.v1.ResolvedEndpoint
+	(*OpenPresenceRequest)(nil),               // 61: muxvia.cloud.v1.OpenPresenceRequest
+	(*PresenceReady)(nil),                     // 62: muxvia.cloud.v1.PresenceReady
+	(*SignalingOffer)(nil),                    // 63: muxvia.cloud.v1.SignalingOffer
+	(*SignalingAnswer)(nil),                   // 64: muxvia.cloud.v1.SignalingAnswer
+	(*IceCandidate)(nil),                      // 65: muxvia.cloud.v1.IceCandidate
+	(*PresenceClosed)(nil),                    // 66: muxvia.cloud.v1.PresenceClosed
+	(*PresenceEvent)(nil),                     // 67: muxvia.cloud.v1.PresenceEvent
+	(*ReportDaemonCommandResultRequest)(nil),  // 68: muxvia.cloud.v1.ReportDaemonCommandResultRequest
+	(*ReportDaemonCommandResultResponse)(nil), // 69: muxvia.cloud.v1.ReportDaemonCommandResultResponse
+	(*CreateSignalingSessionRequest)(nil),     // 70: muxvia.cloud.v1.CreateSignalingSessionRequest
+	(*SignalingClosed)(nil),                   // 71: muxvia.cloud.v1.SignalingClosed
+	(*SignalingEvent)(nil),                    // 72: muxvia.cloud.v1.SignalingEvent
+	(*CompleteSignalingOfferRequest)(nil),     // 73: muxvia.cloud.v1.CompleteSignalingOfferRequest
+	(*CompleteSignalingOfferResponse)(nil),    // 74: muxvia.cloud.v1.CompleteSignalingOfferResponse
+	(*AcquireRelayLeaseRequest)(nil),          // 75: muxvia.cloud.v1.AcquireRelayLeaseRequest
+	(*RelayLease)(nil),                        // 76: muxvia.cloud.v1.RelayLease
+	(*PlanManagedRouteRequest)(nil),           // 77: muxvia.cloud.v1.PlanManagedRouteRequest
+	(*ManagedRoutePlan)(nil),                  // 78: muxvia.cloud.v1.ManagedRoutePlan
+	(*PathQualitySummary)(nil),                // 79: muxvia.cloud.v1.PathQualitySummary
+	(*ReportPathQualityRequest)(nil),          // 80: muxvia.cloud.v1.ReportPathQualityRequest
+	(*ReportPathQualityResponse)(nil),         // 81: muxvia.cloud.v1.ReportPathQualityResponse
+	(*ConnectionOutcome)(nil),                 // 82: muxvia.cloud.v1.ConnectionOutcome
+	(*ReportConnectionOutcomeRequest)(nil),    // 83: muxvia.cloud.v1.ReportConnectionOutcomeRequest
+	(*ReportConnectionOutcomeResponse)(nil),   // 84: muxvia.cloud.v1.ReportConnectionOutcomeResponse
+	(*IPCStreamOpened)(nil),                   // 85: muxvia.cloud.v1.IPCStreamOpened
+	(*IPCCloseStreamRequest)(nil),             // 86: muxvia.cloud.v1.IPCCloseStreamRequest
+	(*IPCCancelRequest)(nil),                  // 87: muxvia.cloud.v1.IPCCancelRequest
+	(*IPCAcknowledgement)(nil),                // 88: muxvia.cloud.v1.IPCAcknowledgement
+	(*IPCStreamClosed)(nil),                   // 89: muxvia.cloud.v1.IPCStreamClosed
+	(*IPCRequest)(nil),                        // 90: muxvia.cloud.v1.IPCRequest
+	(*IPCResponse)(nil),                       // 91: muxvia.cloud.v1.IPCResponse
+	(ManagedDeviceKind)(0),                    // 92: muxvia.cloud.v1.ManagedDeviceKind
+	(*DaemonControlCommand)(nil),              // 93: muxvia.cloud.v1.DaemonControlCommand
+	(*DaemonCommandResult)(nil),               // 94: muxvia.cloud.v1.DaemonCommandResult
+	(ObservedPath)(0),                         // 95: muxvia.cloud.v1.ObservedPath
+	(*ReportDaemonRuntimeRequest)(nil),        // 96: muxvia.cloud.v1.ReportDaemonRuntimeRequest
+	(*ReportDaemonRuntimeResponse)(nil),       // 97: muxvia.cloud.v1.ReportDaemonRuntimeResponse
 }
 var file_cloudpb_cloud_companion_proto_depIdxs = []int32{
 	3,   // 0: muxvia.cloud.v1.CloudError.code:type_name -> muxvia.cloud.v1.CloudErrorCode
@@ -7337,117 +7416,119 @@ var file_cloudpb_cloud_companion_proto_depIdxs = []int32{
 	1,   // 3: muxvia.cloud.v1.CompanionHelloResponse.supported_capabilities:type_name -> muxvia.cloud.v1.CompanionCapability
 	2,   // 4: muxvia.cloud.v1.StatusResponse.state:type_name -> muxvia.cloud.v1.CompanionState
 	1,   // 5: muxvia.cloud.v1.StatusResponse.capabilities:type_name -> muxvia.cloud.v1.CompanionCapability
-	7,   // 6: muxvia.cloud.v1.BeginLoginRequest.method:type_name -> muxvia.cloud.v1.LoginMethod
-	53,  // 7: muxvia.cloud.v1.BeginLoginRequest.client_metadata:type_name -> muxvia.cloud.v1.DeviceMetadata
-	53,  // 8: muxvia.cloud.v1.ClaimMobileActivationRequest.client_metadata:type_name -> muxvia.cloud.v1.DeviceMetadata
-	9,   // 9: muxvia.cloud.v1.MobileActivationProjection.state:type_name -> muxvia.cloud.v1.MobileActivationState
-	53,  // 10: muxvia.cloud.v1.MobileActivationProjection.client_metadata:type_name -> muxvia.cloud.v1.DeviceMetadata
-	25,  // 11: muxvia.cloud.v1.CompleteLoginResponse.session:type_name -> muxvia.cloud.v1.CloudSessionSummary
-	10,  // 12: muxvia.cloud.v1.DaemonEnrollmentProjection.state:type_name -> muxvia.cloud.v1.DaemonEnrollmentState
-	53,  // 13: muxvia.cloud.v1.DaemonEnrollmentProjection.daemon_metadata:type_name -> muxvia.cloud.v1.DeviceMetadata
-	53,  // 14: muxvia.cloud.v1.BeginDeviceEnrollmentRequest.metadata:type_name -> muxvia.cloud.v1.DeviceMetadata
-	33,  // 15: muxvia.cloud.v1.DeviceEnrollmentChallenge.hub_candidates:type_name -> muxvia.cloud.v1.HubEnrollmentCandidate
-	49,  // 16: muxvia.cloud.v1.CompleteDeviceEnrollmentRequest.proof:type_name -> muxvia.cloud.v1.DeviceProof
-	34,  // 17: muxvia.cloud.v1.CompleteDeviceEnrollmentRequest.hub_observations:type_name -> muxvia.cloud.v1.HubReachabilityObservation
-	38,  // 18: muxvia.cloud.v1.DaemonControlEnrollment.verification_keys:type_name -> muxvia.cloud.v1.DaemonControlVerificationKey
-	25,  // 19: muxvia.cloud.v1.CompleteDeviceEnrollmentResponse.session:type_name -> muxvia.cloud.v1.CloudSessionSummary
-	39,  // 20: muxvia.cloud.v1.CompleteDeviceEnrollmentResponse.control_enrollment:type_name -> muxvia.cloud.v1.DaemonControlEnrollment
-	25,  // 21: muxvia.cloud.v1.DeviceEnrollmentServiceSession.session:type_name -> muxvia.cloud.v1.CloudSessionSummary
-	39,  // 22: muxvia.cloud.v1.DeviceEnrollmentServiceSession.control_enrollment:type_name -> muxvia.cloud.v1.DaemonControlEnrollment
-	8,   // 23: muxvia.cloud.v1.DiagnosticItem.severity:type_name -> muxvia.cloud.v1.DiagnosticSeverity
-	15,  // 24: muxvia.cloud.v1.DoctorResponse.status:type_name -> muxvia.cloud.v1.StatusResponse
-	45,  // 25: muxvia.cloud.v1.DoctorResponse.items:type_name -> muxvia.cloud.v1.DiagnosticItem
-	91,  // 26: muxvia.cloud.v1.ManagedDevice.kind:type_name -> muxvia.cloud.v1.ManagedDeviceKind
+	8,   // 6: muxvia.cloud.v1.BeginLoginRequest.method:type_name -> muxvia.cloud.v1.LoginMethod
+	54,  // 7: muxvia.cloud.v1.BeginLoginRequest.client_metadata:type_name -> muxvia.cloud.v1.DeviceMetadata
+	54,  // 8: muxvia.cloud.v1.ClaimMobileActivationRequest.client_metadata:type_name -> muxvia.cloud.v1.DeviceMetadata
+	10,  // 9: muxvia.cloud.v1.MobileActivationProjection.state:type_name -> muxvia.cloud.v1.MobileActivationState
+	54,  // 10: muxvia.cloud.v1.MobileActivationProjection.client_metadata:type_name -> muxvia.cloud.v1.DeviceMetadata
+	26,  // 11: muxvia.cloud.v1.CompleteLoginResponse.session:type_name -> muxvia.cloud.v1.CloudSessionSummary
+	11,  // 12: muxvia.cloud.v1.DaemonEnrollmentProjection.state:type_name -> muxvia.cloud.v1.DaemonEnrollmentState
+	54,  // 13: muxvia.cloud.v1.DaemonEnrollmentProjection.daemon_metadata:type_name -> muxvia.cloud.v1.DeviceMetadata
+	54,  // 14: muxvia.cloud.v1.BeginDeviceEnrollmentRequest.metadata:type_name -> muxvia.cloud.v1.DeviceMetadata
+	34,  // 15: muxvia.cloud.v1.DeviceEnrollmentChallenge.hub_candidates:type_name -> muxvia.cloud.v1.HubEnrollmentCandidate
+	50,  // 16: muxvia.cloud.v1.CompleteDeviceEnrollmentRequest.proof:type_name -> muxvia.cloud.v1.DeviceProof
+	35,  // 17: muxvia.cloud.v1.CompleteDeviceEnrollmentRequest.hub_observations:type_name -> muxvia.cloud.v1.HubReachabilityObservation
+	39,  // 18: muxvia.cloud.v1.DaemonControlEnrollment.verification_keys:type_name -> muxvia.cloud.v1.DaemonControlVerificationKey
+	26,  // 19: muxvia.cloud.v1.CompleteDeviceEnrollmentResponse.session:type_name -> muxvia.cloud.v1.CloudSessionSummary
+	40,  // 20: muxvia.cloud.v1.CompleteDeviceEnrollmentResponse.control_enrollment:type_name -> muxvia.cloud.v1.DaemonControlEnrollment
+	26,  // 21: muxvia.cloud.v1.DeviceEnrollmentServiceSession.session:type_name -> muxvia.cloud.v1.CloudSessionSummary
+	40,  // 22: muxvia.cloud.v1.DeviceEnrollmentServiceSession.control_enrollment:type_name -> muxvia.cloud.v1.DaemonControlEnrollment
+	9,   // 23: muxvia.cloud.v1.DiagnosticItem.severity:type_name -> muxvia.cloud.v1.DiagnosticSeverity
+	16,  // 24: muxvia.cloud.v1.DoctorResponse.status:type_name -> muxvia.cloud.v1.StatusResponse
+	46,  // 25: muxvia.cloud.v1.DoctorResponse.items:type_name -> muxvia.cloud.v1.DiagnosticItem
+	92,  // 26: muxvia.cloud.v1.ManagedDevice.kind:type_name -> muxvia.cloud.v1.ManagedDeviceKind
 	4,   // 27: muxvia.cloud.v1.ManagedDevice.presence:type_name -> muxvia.cloud.v1.PresenceState
-	56,  // 28: muxvia.cloud.v1.ListManagedDevicesResponse.devices:type_name -> muxvia.cloud.v1.ManagedDevice
+	57,  // 28: muxvia.cloud.v1.ListManagedDevicesResponse.devices:type_name -> muxvia.cloud.v1.ManagedDevice
 	4,   // 29: muxvia.cloud.v1.ResolvedEndpoint.presence:type_name -> muxvia.cloud.v1.PresenceState
-	58,  // 30: muxvia.cloud.v1.ResolvedEndpoint.ice_servers:type_name -> muxvia.cloud.v1.IceServer
-	49,  // 31: muxvia.cloud.v1.OpenPresenceRequest.proof:type_name -> muxvia.cloud.v1.DeviceProof
-	53,  // 32: muxvia.cloud.v1.OpenPresenceRequest.metadata:type_name -> muxvia.cloud.v1.DeviceMetadata
-	58,  // 33: muxvia.cloud.v1.PresenceReady.ice_servers:type_name -> muxvia.cloud.v1.IceServer
-	64,  // 34: muxvia.cloud.v1.SignalingOffer.candidates:type_name -> muxvia.cloud.v1.IceCandidate
+	59,  // 30: muxvia.cloud.v1.ResolvedEndpoint.ice_servers:type_name -> muxvia.cloud.v1.IceServer
+	50,  // 31: muxvia.cloud.v1.OpenPresenceRequest.proof:type_name -> muxvia.cloud.v1.DeviceProof
+	54,  // 32: muxvia.cloud.v1.OpenPresenceRequest.metadata:type_name -> muxvia.cloud.v1.DeviceMetadata
+	59,  // 33: muxvia.cloud.v1.PresenceReady.ice_servers:type_name -> muxvia.cloud.v1.IceServer
+	65,  // 34: muxvia.cloud.v1.SignalingOffer.candidates:type_name -> muxvia.cloud.v1.IceCandidate
 	5,   // 35: muxvia.cloud.v1.SignalingOffer.route_preference:type_name -> muxvia.cloud.v1.RoutePreference
-	64,  // 36: muxvia.cloud.v1.SignalingAnswer.candidates:type_name -> muxvia.cloud.v1.IceCandidate
-	61,  // 37: muxvia.cloud.v1.PresenceEvent.ready:type_name -> muxvia.cloud.v1.PresenceReady
-	62,  // 38: muxvia.cloud.v1.PresenceEvent.offer:type_name -> muxvia.cloud.v1.SignalingOffer
-	64,  // 39: muxvia.cloud.v1.PresenceEvent.candidate:type_name -> muxvia.cloud.v1.IceCandidate
-	11,  // 40: muxvia.cloud.v1.PresenceEvent.error:type_name -> muxvia.cloud.v1.CloudError
-	65,  // 41: muxvia.cloud.v1.PresenceEvent.closed:type_name -> muxvia.cloud.v1.PresenceClosed
-	92,  // 42: muxvia.cloud.v1.PresenceEvent.daemon_command:type_name -> muxvia.cloud.v1.DaemonControlCommand
-	93,  // 43: muxvia.cloud.v1.ReportDaemonCommandResultRequest.result:type_name -> muxvia.cloud.v1.DaemonCommandResult
-	64,  // 44: muxvia.cloud.v1.CreateSignalingSessionRequest.candidates:type_name -> muxvia.cloud.v1.IceCandidate
-	5,   // 45: muxvia.cloud.v1.CreateSignalingSessionRequest.route_preference:type_name -> muxvia.cloud.v1.RoutePreference
-	63,  // 46: muxvia.cloud.v1.SignalingEvent.answer:type_name -> muxvia.cloud.v1.SignalingAnswer
-	64,  // 47: muxvia.cloud.v1.SignalingEvent.candidate:type_name -> muxvia.cloud.v1.IceCandidate
-	11,  // 48: muxvia.cloud.v1.SignalingEvent.error:type_name -> muxvia.cloud.v1.CloudError
-	70,  // 49: muxvia.cloud.v1.SignalingEvent.closed:type_name -> muxvia.cloud.v1.SignalingClosed
-	63,  // 50: muxvia.cloud.v1.CompleteSignalingOfferRequest.answer:type_name -> muxvia.cloud.v1.SignalingAnswer
-	11,  // 51: muxvia.cloud.v1.CompleteSignalingOfferRequest.error:type_name -> muxvia.cloud.v1.CloudError
-	5,   // 52: muxvia.cloud.v1.AcquireRelayLeaseRequest.route_preference:type_name -> muxvia.cloud.v1.RoutePreference
-	94,  // 53: muxvia.cloud.v1.RelayLease.path_kind:type_name -> muxvia.cloud.v1.ObservedPath
-	58,  // 54: muxvia.cloud.v1.RelayLease.ice_servers:type_name -> muxvia.cloud.v1.IceServer
-	5,   // 55: muxvia.cloud.v1.PlanManagedRouteRequest.route_preference:type_name -> muxvia.cloud.v1.RoutePreference
-	94,  // 56: muxvia.cloud.v1.ManagedRoutePlan.selected_path:type_name -> muxvia.cloud.v1.ObservedPath
-	6,   // 57: muxvia.cloud.v1.ManagedRoutePlan.selection_reason:type_name -> muxvia.cloud.v1.RouteSelectionReason
-	58,  // 58: muxvia.cloud.v1.ManagedRoutePlan.ice_servers:type_name -> muxvia.cloud.v1.IceServer
-	94,  // 59: muxvia.cloud.v1.PathQualitySummary.observed_path:type_name -> muxvia.cloud.v1.ObservedPath
-	78,  // 60: muxvia.cloud.v1.ReportPathQualityRequest.summary:type_name -> muxvia.cloud.v1.PathQualitySummary
-	94,  // 61: muxvia.cloud.v1.ConnectionOutcome.observed_path:type_name -> muxvia.cloud.v1.ObservedPath
-	3,   // 62: muxvia.cloud.v1.ConnectionOutcome.error_code:type_name -> muxvia.cloud.v1.CloudErrorCode
-	81,  // 63: muxvia.cloud.v1.ReportConnectionOutcomeRequest.outcome:type_name -> muxvia.cloud.v1.ConnectionOutcome
-	12,  // 64: muxvia.cloud.v1.IPCRequest.hello:type_name -> muxvia.cloud.v1.CompanionHelloRequest
-	14,  // 65: muxvia.cloud.v1.IPCRequest.status:type_name -> muxvia.cloud.v1.StatusRequest
-	16,  // 66: muxvia.cloud.v1.IPCRequest.begin_login:type_name -> muxvia.cloud.v1.BeginLoginRequest
-	18,  // 67: muxvia.cloud.v1.IPCRequest.complete_login:type_name -> muxvia.cloud.v1.CompleteLoginRequest
-	32,  // 68: muxvia.cloud.v1.IPCRequest.begin_device_enrollment:type_name -> muxvia.cloud.v1.BeginDeviceEnrollmentRequest
-	37,  // 69: muxvia.cloud.v1.IPCRequest.complete_device_enrollment:type_name -> muxvia.cloud.v1.CompleteDeviceEnrollmentRequest
-	42,  // 70: muxvia.cloud.v1.IPCRequest.logout:type_name -> muxvia.cloud.v1.LogoutRequest
-	44,  // 71: muxvia.cloud.v1.IPCRequest.doctor:type_name -> muxvia.cloud.v1.DoctorRequest
-	47,  // 72: muxvia.cloud.v1.IPCRequest.shutdown:type_name -> muxvia.cloud.v1.ShutdownRequest
-	54,  // 73: muxvia.cloud.v1.IPCRequest.resolve_endpoint:type_name -> muxvia.cloud.v1.ResolveEndpointRequest
-	60,  // 74: muxvia.cloud.v1.IPCRequest.open_presence:type_name -> muxvia.cloud.v1.OpenPresenceRequest
-	69,  // 75: muxvia.cloud.v1.IPCRequest.create_signaling_session:type_name -> muxvia.cloud.v1.CreateSignalingSessionRequest
-	72,  // 76: muxvia.cloud.v1.IPCRequest.complete_signaling_offer:type_name -> muxvia.cloud.v1.CompleteSignalingOfferRequest
-	74,  // 77: muxvia.cloud.v1.IPCRequest.acquire_relay_lease:type_name -> muxvia.cloud.v1.AcquireRelayLeaseRequest
-	79,  // 78: muxvia.cloud.v1.IPCRequest.report_path_quality:type_name -> muxvia.cloud.v1.ReportPathQualityRequest
-	82,  // 79: muxvia.cloud.v1.IPCRequest.report_connection_outcome:type_name -> muxvia.cloud.v1.ReportConnectionOutcomeRequest
-	85,  // 80: muxvia.cloud.v1.IPCRequest.close_stream:type_name -> muxvia.cloud.v1.IPCCloseStreamRequest
-	86,  // 81: muxvia.cloud.v1.IPCRequest.cancel:type_name -> muxvia.cloud.v1.IPCCancelRequest
-	76,  // 82: muxvia.cloud.v1.IPCRequest.plan_managed_route:type_name -> muxvia.cloud.v1.PlanManagedRouteRequest
-	50,  // 83: muxvia.cloud.v1.IPCRequest.begin_presence:type_name -> muxvia.cloud.v1.BeginPresenceRequest
-	55,  // 84: muxvia.cloud.v1.IPCRequest.list_managed_devices:type_name -> muxvia.cloud.v1.ListManagedDevicesRequest
-	95,  // 85: muxvia.cloud.v1.IPCRequest.report_daemon_runtime:type_name -> muxvia.cloud.v1.ReportDaemonRuntimeRequest
-	67,  // 86: muxvia.cloud.v1.IPCRequest.report_daemon_command_result:type_name -> muxvia.cloud.v1.ReportDaemonCommandResultRequest
-	13,  // 87: muxvia.cloud.v1.IPCResponse.hello:type_name -> muxvia.cloud.v1.CompanionHelloResponse
-	15,  // 88: muxvia.cloud.v1.IPCResponse.status:type_name -> muxvia.cloud.v1.StatusResponse
-	17,  // 89: muxvia.cloud.v1.IPCResponse.login_flow:type_name -> muxvia.cloud.v1.LoginFlow
-	26,  // 90: muxvia.cloud.v1.IPCResponse.complete_login:type_name -> muxvia.cloud.v1.CompleteLoginResponse
-	35,  // 91: muxvia.cloud.v1.IPCResponse.enrollment_challenge:type_name -> muxvia.cloud.v1.DeviceEnrollmentChallenge
-	40,  // 92: muxvia.cloud.v1.IPCResponse.complete_enrollment:type_name -> muxvia.cloud.v1.CompleteDeviceEnrollmentResponse
-	43,  // 93: muxvia.cloud.v1.IPCResponse.logout:type_name -> muxvia.cloud.v1.LogoutResponse
-	46,  // 94: muxvia.cloud.v1.IPCResponse.doctor:type_name -> muxvia.cloud.v1.DoctorResponse
-	48,  // 95: muxvia.cloud.v1.IPCResponse.shutdown:type_name -> muxvia.cloud.v1.ShutdownResponse
-	59,  // 96: muxvia.cloud.v1.IPCResponse.resolved_endpoint:type_name -> muxvia.cloud.v1.ResolvedEndpoint
-	84,  // 97: muxvia.cloud.v1.IPCResponse.stream_opened:type_name -> muxvia.cloud.v1.IPCStreamOpened
-	73,  // 98: muxvia.cloud.v1.IPCResponse.complete_signaling_offer:type_name -> muxvia.cloud.v1.CompleteSignalingOfferResponse
-	75,  // 99: muxvia.cloud.v1.IPCResponse.relay_lease:type_name -> muxvia.cloud.v1.RelayLease
-	80,  // 100: muxvia.cloud.v1.IPCResponse.report_path_quality:type_name -> muxvia.cloud.v1.ReportPathQualityResponse
-	83,  // 101: muxvia.cloud.v1.IPCResponse.report_connection_outcome:type_name -> muxvia.cloud.v1.ReportConnectionOutcomeResponse
-	66,  // 102: muxvia.cloud.v1.IPCResponse.presence_event:type_name -> muxvia.cloud.v1.PresenceEvent
-	71,  // 103: muxvia.cloud.v1.IPCResponse.signaling_event:type_name -> muxvia.cloud.v1.SignalingEvent
-	87,  // 104: muxvia.cloud.v1.IPCResponse.acknowledgement:type_name -> muxvia.cloud.v1.IPCAcknowledgement
-	88,  // 105: muxvia.cloud.v1.IPCResponse.stream_closed:type_name -> muxvia.cloud.v1.IPCStreamClosed
-	11,  // 106: muxvia.cloud.v1.IPCResponse.error:type_name -> muxvia.cloud.v1.CloudError
-	77,  // 107: muxvia.cloud.v1.IPCResponse.managed_route_plan:type_name -> muxvia.cloud.v1.ManagedRoutePlan
-	51,  // 108: muxvia.cloud.v1.IPCResponse.presence_challenge:type_name -> muxvia.cloud.v1.PresenceChallenge
-	57,  // 109: muxvia.cloud.v1.IPCResponse.managed_devices:type_name -> muxvia.cloud.v1.ListManagedDevicesResponse
-	96,  // 110: muxvia.cloud.v1.IPCResponse.report_daemon_runtime:type_name -> muxvia.cloud.v1.ReportDaemonRuntimeResponse
-	68,  // 111: muxvia.cloud.v1.IPCResponse.report_daemon_command_result:type_name -> muxvia.cloud.v1.ReportDaemonCommandResultResponse
-	112, // [112:112] is the sub-list for method output_type
-	112, // [112:112] is the sub-list for method input_type
-	112, // [112:112] is the sub-list for extension type_name
-	112, // [112:112] is the sub-list for extension extendee
-	0,   // [0:112] is the sub-list for field type_name
+	6,   // 36: muxvia.cloud.v1.SignalingOffer.relay_transport:type_name -> muxvia.cloud.v1.RelayTransport
+	65,  // 37: muxvia.cloud.v1.SignalingAnswer.candidates:type_name -> muxvia.cloud.v1.IceCandidate
+	62,  // 38: muxvia.cloud.v1.PresenceEvent.ready:type_name -> muxvia.cloud.v1.PresenceReady
+	63,  // 39: muxvia.cloud.v1.PresenceEvent.offer:type_name -> muxvia.cloud.v1.SignalingOffer
+	65,  // 40: muxvia.cloud.v1.PresenceEvent.candidate:type_name -> muxvia.cloud.v1.IceCandidate
+	12,  // 41: muxvia.cloud.v1.PresenceEvent.error:type_name -> muxvia.cloud.v1.CloudError
+	66,  // 42: muxvia.cloud.v1.PresenceEvent.closed:type_name -> muxvia.cloud.v1.PresenceClosed
+	93,  // 43: muxvia.cloud.v1.PresenceEvent.daemon_command:type_name -> muxvia.cloud.v1.DaemonControlCommand
+	94,  // 44: muxvia.cloud.v1.ReportDaemonCommandResultRequest.result:type_name -> muxvia.cloud.v1.DaemonCommandResult
+	65,  // 45: muxvia.cloud.v1.CreateSignalingSessionRequest.candidates:type_name -> muxvia.cloud.v1.IceCandidate
+	5,   // 46: muxvia.cloud.v1.CreateSignalingSessionRequest.route_preference:type_name -> muxvia.cloud.v1.RoutePreference
+	6,   // 47: muxvia.cloud.v1.CreateSignalingSessionRequest.relay_transport:type_name -> muxvia.cloud.v1.RelayTransport
+	64,  // 48: muxvia.cloud.v1.SignalingEvent.answer:type_name -> muxvia.cloud.v1.SignalingAnswer
+	65,  // 49: muxvia.cloud.v1.SignalingEvent.candidate:type_name -> muxvia.cloud.v1.IceCandidate
+	12,  // 50: muxvia.cloud.v1.SignalingEvent.error:type_name -> muxvia.cloud.v1.CloudError
+	71,  // 51: muxvia.cloud.v1.SignalingEvent.closed:type_name -> muxvia.cloud.v1.SignalingClosed
+	64,  // 52: muxvia.cloud.v1.CompleteSignalingOfferRequest.answer:type_name -> muxvia.cloud.v1.SignalingAnswer
+	12,  // 53: muxvia.cloud.v1.CompleteSignalingOfferRequest.error:type_name -> muxvia.cloud.v1.CloudError
+	5,   // 54: muxvia.cloud.v1.AcquireRelayLeaseRequest.route_preference:type_name -> muxvia.cloud.v1.RoutePreference
+	95,  // 55: muxvia.cloud.v1.RelayLease.path_kind:type_name -> muxvia.cloud.v1.ObservedPath
+	59,  // 56: muxvia.cloud.v1.RelayLease.ice_servers:type_name -> muxvia.cloud.v1.IceServer
+	5,   // 57: muxvia.cloud.v1.PlanManagedRouteRequest.route_preference:type_name -> muxvia.cloud.v1.RoutePreference
+	95,  // 58: muxvia.cloud.v1.ManagedRoutePlan.selected_path:type_name -> muxvia.cloud.v1.ObservedPath
+	7,   // 59: muxvia.cloud.v1.ManagedRoutePlan.selection_reason:type_name -> muxvia.cloud.v1.RouteSelectionReason
+	59,  // 60: muxvia.cloud.v1.ManagedRoutePlan.ice_servers:type_name -> muxvia.cloud.v1.IceServer
+	95,  // 61: muxvia.cloud.v1.PathQualitySummary.observed_path:type_name -> muxvia.cloud.v1.ObservedPath
+	79,  // 62: muxvia.cloud.v1.ReportPathQualityRequest.summary:type_name -> muxvia.cloud.v1.PathQualitySummary
+	95,  // 63: muxvia.cloud.v1.ConnectionOutcome.observed_path:type_name -> muxvia.cloud.v1.ObservedPath
+	3,   // 64: muxvia.cloud.v1.ConnectionOutcome.error_code:type_name -> muxvia.cloud.v1.CloudErrorCode
+	82,  // 65: muxvia.cloud.v1.ReportConnectionOutcomeRequest.outcome:type_name -> muxvia.cloud.v1.ConnectionOutcome
+	13,  // 66: muxvia.cloud.v1.IPCRequest.hello:type_name -> muxvia.cloud.v1.CompanionHelloRequest
+	15,  // 67: muxvia.cloud.v1.IPCRequest.status:type_name -> muxvia.cloud.v1.StatusRequest
+	17,  // 68: muxvia.cloud.v1.IPCRequest.begin_login:type_name -> muxvia.cloud.v1.BeginLoginRequest
+	19,  // 69: muxvia.cloud.v1.IPCRequest.complete_login:type_name -> muxvia.cloud.v1.CompleteLoginRequest
+	33,  // 70: muxvia.cloud.v1.IPCRequest.begin_device_enrollment:type_name -> muxvia.cloud.v1.BeginDeviceEnrollmentRequest
+	38,  // 71: muxvia.cloud.v1.IPCRequest.complete_device_enrollment:type_name -> muxvia.cloud.v1.CompleteDeviceEnrollmentRequest
+	43,  // 72: muxvia.cloud.v1.IPCRequest.logout:type_name -> muxvia.cloud.v1.LogoutRequest
+	45,  // 73: muxvia.cloud.v1.IPCRequest.doctor:type_name -> muxvia.cloud.v1.DoctorRequest
+	48,  // 74: muxvia.cloud.v1.IPCRequest.shutdown:type_name -> muxvia.cloud.v1.ShutdownRequest
+	55,  // 75: muxvia.cloud.v1.IPCRequest.resolve_endpoint:type_name -> muxvia.cloud.v1.ResolveEndpointRequest
+	61,  // 76: muxvia.cloud.v1.IPCRequest.open_presence:type_name -> muxvia.cloud.v1.OpenPresenceRequest
+	70,  // 77: muxvia.cloud.v1.IPCRequest.create_signaling_session:type_name -> muxvia.cloud.v1.CreateSignalingSessionRequest
+	73,  // 78: muxvia.cloud.v1.IPCRequest.complete_signaling_offer:type_name -> muxvia.cloud.v1.CompleteSignalingOfferRequest
+	75,  // 79: muxvia.cloud.v1.IPCRequest.acquire_relay_lease:type_name -> muxvia.cloud.v1.AcquireRelayLeaseRequest
+	80,  // 80: muxvia.cloud.v1.IPCRequest.report_path_quality:type_name -> muxvia.cloud.v1.ReportPathQualityRequest
+	83,  // 81: muxvia.cloud.v1.IPCRequest.report_connection_outcome:type_name -> muxvia.cloud.v1.ReportConnectionOutcomeRequest
+	86,  // 82: muxvia.cloud.v1.IPCRequest.close_stream:type_name -> muxvia.cloud.v1.IPCCloseStreamRequest
+	87,  // 83: muxvia.cloud.v1.IPCRequest.cancel:type_name -> muxvia.cloud.v1.IPCCancelRequest
+	77,  // 84: muxvia.cloud.v1.IPCRequest.plan_managed_route:type_name -> muxvia.cloud.v1.PlanManagedRouteRequest
+	51,  // 85: muxvia.cloud.v1.IPCRequest.begin_presence:type_name -> muxvia.cloud.v1.BeginPresenceRequest
+	56,  // 86: muxvia.cloud.v1.IPCRequest.list_managed_devices:type_name -> muxvia.cloud.v1.ListManagedDevicesRequest
+	96,  // 87: muxvia.cloud.v1.IPCRequest.report_daemon_runtime:type_name -> muxvia.cloud.v1.ReportDaemonRuntimeRequest
+	68,  // 88: muxvia.cloud.v1.IPCRequest.report_daemon_command_result:type_name -> muxvia.cloud.v1.ReportDaemonCommandResultRequest
+	14,  // 89: muxvia.cloud.v1.IPCResponse.hello:type_name -> muxvia.cloud.v1.CompanionHelloResponse
+	16,  // 90: muxvia.cloud.v1.IPCResponse.status:type_name -> muxvia.cloud.v1.StatusResponse
+	18,  // 91: muxvia.cloud.v1.IPCResponse.login_flow:type_name -> muxvia.cloud.v1.LoginFlow
+	27,  // 92: muxvia.cloud.v1.IPCResponse.complete_login:type_name -> muxvia.cloud.v1.CompleteLoginResponse
+	36,  // 93: muxvia.cloud.v1.IPCResponse.enrollment_challenge:type_name -> muxvia.cloud.v1.DeviceEnrollmentChallenge
+	41,  // 94: muxvia.cloud.v1.IPCResponse.complete_enrollment:type_name -> muxvia.cloud.v1.CompleteDeviceEnrollmentResponse
+	44,  // 95: muxvia.cloud.v1.IPCResponse.logout:type_name -> muxvia.cloud.v1.LogoutResponse
+	47,  // 96: muxvia.cloud.v1.IPCResponse.doctor:type_name -> muxvia.cloud.v1.DoctorResponse
+	49,  // 97: muxvia.cloud.v1.IPCResponse.shutdown:type_name -> muxvia.cloud.v1.ShutdownResponse
+	60,  // 98: muxvia.cloud.v1.IPCResponse.resolved_endpoint:type_name -> muxvia.cloud.v1.ResolvedEndpoint
+	85,  // 99: muxvia.cloud.v1.IPCResponse.stream_opened:type_name -> muxvia.cloud.v1.IPCStreamOpened
+	74,  // 100: muxvia.cloud.v1.IPCResponse.complete_signaling_offer:type_name -> muxvia.cloud.v1.CompleteSignalingOfferResponse
+	76,  // 101: muxvia.cloud.v1.IPCResponse.relay_lease:type_name -> muxvia.cloud.v1.RelayLease
+	81,  // 102: muxvia.cloud.v1.IPCResponse.report_path_quality:type_name -> muxvia.cloud.v1.ReportPathQualityResponse
+	84,  // 103: muxvia.cloud.v1.IPCResponse.report_connection_outcome:type_name -> muxvia.cloud.v1.ReportConnectionOutcomeResponse
+	67,  // 104: muxvia.cloud.v1.IPCResponse.presence_event:type_name -> muxvia.cloud.v1.PresenceEvent
+	72,  // 105: muxvia.cloud.v1.IPCResponse.signaling_event:type_name -> muxvia.cloud.v1.SignalingEvent
+	88,  // 106: muxvia.cloud.v1.IPCResponse.acknowledgement:type_name -> muxvia.cloud.v1.IPCAcknowledgement
+	89,  // 107: muxvia.cloud.v1.IPCResponse.stream_closed:type_name -> muxvia.cloud.v1.IPCStreamClosed
+	12,  // 108: muxvia.cloud.v1.IPCResponse.error:type_name -> muxvia.cloud.v1.CloudError
+	78,  // 109: muxvia.cloud.v1.IPCResponse.managed_route_plan:type_name -> muxvia.cloud.v1.ManagedRoutePlan
+	52,  // 110: muxvia.cloud.v1.IPCResponse.presence_challenge:type_name -> muxvia.cloud.v1.PresenceChallenge
+	58,  // 111: muxvia.cloud.v1.IPCResponse.managed_devices:type_name -> muxvia.cloud.v1.ListManagedDevicesResponse
+	97,  // 112: muxvia.cloud.v1.IPCResponse.report_daemon_runtime:type_name -> muxvia.cloud.v1.ReportDaemonRuntimeResponse
+	69,  // 113: muxvia.cloud.v1.IPCResponse.report_daemon_command_result:type_name -> muxvia.cloud.v1.ReportDaemonCommandResultResponse
+	114, // [114:114] is the sub-list for method output_type
+	114, // [114:114] is the sub-list for method input_type
+	114, // [114:114] is the sub-list for extension type_name
+	114, // [114:114] is the sub-list for extension extendee
+	0,   // [0:114] is the sub-list for field type_name
 }
 
 func init() { file_cloudpb_cloud_companion_proto_init() }
@@ -7532,7 +7613,7 @@ func file_cloudpb_cloud_companion_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloudpb_cloud_companion_proto_rawDesc), len(file_cloudpb_cloud_companion_proto_rawDesc)),
-			NumEnums:      11,
+			NumEnums:      12,
 			NumMessages:   80,
 			NumExtensions: 0,
 			NumServices:   0,

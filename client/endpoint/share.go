@@ -49,9 +49,13 @@ func NewClientEndpointShareBundle(target Endpoint, transferID string, now time.T
 		Identity: &remoteauthpb.EndpointDaemonIdentity{
 			DeviceId: normalized.DaemonIdentity.DeviceID, DeviceFingerprint: normalized.DaemonIdentity.DeviceFingerprint,
 		},
-		SuggestedLabel:    normalized.Label,
-		ConnectMode:       wireConnectMode(normalized.ConnectMode),
-		SelectionPolicy:   &remoteauthpb.EndpointSelectionPolicy{HedgeDelayConfigured: normalized.SelectionPolicy.HedgeDelayConfigured, HedgeDelayMillis: uint64(normalized.SelectionPolicy.HedgeDelay / time.Millisecond)},
+		SuggestedLabel: normalized.Label,
+		ConnectMode:    wireConnectMode(normalized.ConnectMode),
+		SelectionPolicy: &remoteauthpb.EndpointSelectionPolicy{
+			HedgeDelayConfigured: normalized.SelectionPolicy.HedgeDelayConfigured,
+			HedgeDelayMillis:     uint64(normalized.SelectionPolicy.HedgeDelay / time.Millisecond),
+			RoutePreference:      wireRoutePreference(normalized.SelectionPolicy.RoutePreference),
+		},
 		IssuedAtUnixNano:  now.UnixNano(),
 		ExpiresAtUnixNano: now.Add(ttl).UnixNano(),
 	}

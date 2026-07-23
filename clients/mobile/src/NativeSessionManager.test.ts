@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ProtoClientSession, ProtoClientSubscription, ProtoResourceStream } from '@muxvia/ui'
 import { EndpointSessionStampSchema, type ResourceHandle } from '../../ui/src/generated/apipb/common_pb'
 import { CommandEnvelopeSchema, type CommandEnvelope, type EventEnvelope, type ResultEnvelope } from '../../ui/src/generated/apipb/application_pb'
+import { ConnectionSnapshotSchema } from '../../ui/src/generated/bindingpb/client_binding_pb'
 import { NativeSessionManager } from './NativeSessionManager'
 
 describe('NativeSessionManager', () => {
@@ -42,8 +43,9 @@ describe('NativeSessionManager', () => {
 
   it('lets one lease cancel its wait without cancelling the shared connect', async () => {
     let resolveConnect!: (session: ProtoClientSession) => void
+    let managerSignal: AbortSignal | undefined
     const connect = vi.fn((_input, options) => {
-      expect(options?.signal).toBeUndefined()
+      managerSignal = options?.signal
       return new Promise<ProtoClientSession>((resolve) => { resolveConnect = resolve })
     })
     const manager = new NativeSessionManager('daemon-a', { connect })
@@ -57,14 +59,20 @@ describe('NativeSessionManager', () => {
     await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' })
     await expect(workspace).resolves.toMatchObject({ stamp: { endpointId: 'daemon-a' } })
     expect(connect).toHaveBeenCalledTimes(1)
+    expect(managerSignal?.aborted).toBe(false)
   })
 
   it('does not block generation reset on an old pending connect', async () => {
-    const connect = vi.fn(() => new Promise<ProtoClientSession>(() => {}))
+    let managerSignal: AbortSignal | undefined
+    const connect = vi.fn((_input, options) => {
+      managerSignal = options?.signal
+      return new Promise<ProtoClientSession>(() => {})
+    })
     const manager = new NativeSessionManager('daemon-a', { connect })
     void manager.get()
 
     await expect(manager.reset()).resolves.toBeUndefined()
+    expect(managerSignal?.aborted).toBe(true)
   })
 
   it('does not block generation reset on an unresponsive old session close', async () => {
@@ -83,6 +91,19 @@ describe('NativeSessionManager', () => {
     await manager.reset()
 
     await expect(lease.execute(create(CommandEnvelopeSchema))).rejects.toThrow('Proto session lease is closed')
+  })
+
+  it('forwards live connection snapshot sampling through the UI lease', async () => {
+    const session = fakeSession()
+    session.getConnectionSnapshot = vi.fn()
+      .mockResolvedValueOnce(create(ConnectionSnapshotSchema, { sampledAtUnixNano: 10n, bytesSent: 20n }))
+      .mockResolvedValueOnce(create(ConnectionSnapshotSchema, { sampledAtUnixNano: 30n, bytesSent: 40n }))
+    const manager = new NativeSessionManager('daemon-a', { connect: vi.fn(async () => session) })
+    const lease = await manager.get()
+
+    await expect(lease.getConnectionSnapshot?.()).resolves.toMatchObject({ sampledAtUnixNano: 10n, bytesSent: 20n })
+    await expect(lease.getConnectionSnapshot?.()).resolves.toMatchObject({ sampledAtUnixNano: 30n, bytesSent: 40n })
+    expect(session.getConnectionSnapshot).toHaveBeenCalledTimes(2)
   })
 })
 

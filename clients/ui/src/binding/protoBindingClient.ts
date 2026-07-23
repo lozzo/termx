@@ -5,6 +5,7 @@ import * as MuxviaApiFile from '../generated/apipb/file_pb'
 import * as MuxviaClientBinding from '../generated/bindingpb/client_binding_pb'
 import * as MuxviaRemoteAuth from '../generated/remoteauthpb/remote_auth_pb'
 import type { ProtoClientSession, ProtoClientSubscription, ProtoResourceStream } from '../core/protoClientSession'
+import type { ConnectionPolicy, ConnectionPolicyState } from '../core/transport'
 
 export const BindingOperation = {
   OPEN_SESSION: 0x10,
@@ -48,6 +49,9 @@ export class ProtoBindingClient {
   private readonly endpointShareReceiveOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.EndpointShareReceiveResult>>()
   private readonly endpointShareCommitOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.EndpointShareCommitResult>>()
   private readonly sshCredentialProvisionOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.SSHCredentialProvisionResult>>()
+  private readonly connectionPolicyGetOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.ConnectionPolicyState>>()
+  private readonly connectionPolicyApplyOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.ConnectionPolicyState>>()
+  private readonly connectionSnapshotGetOperations = new Map<bigint, PendingOperation<MuxviaClientBinding.ConnectionSnapshot>>()
   private readonly sessions = new Map<bigint, ProtoBindingSession>()
   private readonly streams = new Map<bigint, ProtoBindingResourceStream>()
   private readonly earlyOperationEvents = new Map<bigint, MuxviaClientBinding.EventEnvelope>()
@@ -115,6 +119,24 @@ export class ProtoBindingClient {
     const request = create(MuxviaClientBinding.SSHCredentialProvisionRequestSchema, { requestId: crypto.randomUUID(), endpointId, routeId })
     const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'sshCredentialProvision', value: request } }), signal)
     return await this.waitOperation(this.sshCredentialProvisionOperations, operation, signal)
+  }
+
+  async getConnectionPolicy(endpointId: string, signal?: AbortSignal): Promise<MuxviaClientBinding.ConnectionPolicyState> {
+    const request = create(MuxviaClientBinding.ConnectionPolicyGetRequestSchema, { requestId: crypto.randomUUID(), endpointId })
+    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'connectionPolicyGet', value: request } }), signal)
+    return await this.waitOperation(this.connectionPolicyGetOperations, operation, signal)
+  }
+
+  async applyConnectionPolicy(endpointId: string, policy: MuxviaClientBinding.ConnectionPolicy, signal?: AbortSignal): Promise<MuxviaClientBinding.ConnectionPolicyState> {
+    const request = create(MuxviaClientBinding.ConnectionPolicyApplyRequestSchema, { requestId: crypto.randomUUID(), endpointId, policy })
+    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'connectionPolicyApply', value: request } }), signal)
+    return await this.waitOperation(this.connectionPolicyApplyOperations, operation, signal)
+  }
+
+  async getConnectionSnapshot(sessionHandle: bigint, signal?: AbortSignal): Promise<MuxviaClientBinding.ConnectionSnapshot> {
+    const request = create(MuxviaClientBinding.ConnectionSnapshotGetRequestSchema, { requestId: crypto.randomUUID(), sessionHandle })
+    const operation = await this.engineCommand(create(MuxviaClientBinding.EngineCommandSchema, { command: { case: 'connectionSnapshotGet', value: request } }), signal)
+    return await this.waitOperation(this.connectionSnapshotGetOperations, operation, signal)
   }
 
   private async engineCommand(command: MuxviaClientBinding.EngineCommand, signal?: AbortSignal): Promise<bigint> {
@@ -245,7 +267,7 @@ export class ProtoBindingClient {
           void this.release(event.value.operationHandle)
           return
         }
-        const session = new ProtoBindingSession(this, event.value.sessionHandle, event.value.session)
+        const session = new ProtoBindingSession(this, event.value.sessionHandle, event.value.session, event.value.connection)
         this.sessions.set(event.value.sessionHandle, session)
         pending.resolve(session)
         void this.release(event.value.operationHandle)
@@ -335,17 +357,44 @@ export class ProtoBindingClient {
         void this.release(event.value.operationHandle)
         return
       }
+      case 'connectionPolicyGet': {
+        const pending = this.connectionPolicyGetOperations.get(event.value.operationHandle)
+        if (!pending) return
+        this.connectionPolicyGetOperations.delete(event.value.operationHandle)
+        if (event.value.error || !event.value.state) pending.reject(apiError(event.value.error, 'connection policy get failed'))
+        else pending.resolve(event.value.state)
+        void this.release(event.value.operationHandle)
+        return
+      }
+      case 'connectionPolicyApply': {
+        const pending = this.connectionPolicyApplyOperations.get(event.value.operationHandle)
+        if (!pending) return
+        this.connectionPolicyApplyOperations.delete(event.value.operationHandle)
+        if (event.value.error || !event.value.state) pending.reject(apiError(event.value.error, 'connection policy apply failed'))
+        else pending.resolve(event.value.state)
+        void this.release(event.value.operationHandle)
+        return
+      }
+      case 'connectionSnapshotGet': {
+        const pending = this.connectionSnapshotGetOperations.get(event.value.operationHandle)
+        if (!pending) return
+        this.connectionSnapshotGetOperations.delete(event.value.operationHandle)
+        if (event.value.error || !event.value.connection) pending.reject(apiError(event.value.error, 'connection snapshot get failed'))
+        else pending.resolve(event.value.connection)
+        void this.release(event.value.operationHandle)
+        return
+      }
       case 'application':
         this.sessions.get(event.value.sessionHandle)?.publish(event.value.event)
         return
       case 'sessionClosed':
-		if (this.releasedSessionHandles.has(event.value.sessionHandle)) return
-		rememberHandle(this.releasedSessionHandles, this.releasedSessionOrder, event.value.sessionHandle)
-		if (!this.retiredSessionHandles.delete(event.value.sessionHandle)) {
-		  this.sessions.get(event.value.sessionHandle)?.markClosed(apiError(event.value.error, 'session closed'))
-		  this.sessions.delete(event.value.sessionHandle)
-		}
-		void this.release(event.value.sessionHandle).catch((error) => this.onClosed(new Error(`closed session release failed: ${errorMessage(error)}`)))
+    if (this.releasedSessionHandles.has(event.value.sessionHandle)) return
+    rememberHandle(this.releasedSessionHandles, this.releasedSessionOrder, event.value.sessionHandle)
+    if (!this.retiredSessionHandles.delete(event.value.sessionHandle)) {
+      this.sessions.get(event.value.sessionHandle)?.markClosed(apiError(event.value.error, 'session closed'))
+      this.sessions.delete(event.value.sessionHandle)
+    }
+    void this.release(event.value.sessionHandle).catch((error) => this.onClosed(new Error(`closed session release failed: ${errorMessage(error)}`)))
         return
       case 'resourceStreamFrame': {
         if (this.abandonedStreamHandles.has(event.value.streamHandle)) return
@@ -357,8 +406,8 @@ export class ProtoBindingClient {
       case 'resourceStreamClosed': {
         if (this.abandonedStreamHandles.delete(event.value.streamHandle)) {
           this.earlyStreamEvents.delete(event.value.streamHandle)
-			if (this.releasedStreamHandles.has(event.value.streamHandle)) return
-			rememberHandle(this.releasedStreamHandles, this.releasedStreamOrder, event.value.streamHandle)
+      if (this.releasedStreamHandles.has(event.value.streamHandle)) return
+      rememberHandle(this.releasedStreamHandles, this.releasedStreamOrder, event.value.streamHandle)
           return
         }
         const stream = this.streams.get(event.value.streamHandle)
@@ -366,8 +415,8 @@ export class ProtoBindingClient {
           this.queueEarlyStreamEvent(event.value.streamHandle, envelope)
           return
         }
-		if (this.releasedStreamHandles.has(event.value.streamHandle)) return
-		rememberHandle(this.releasedStreamHandles, this.releasedStreamOrder, event.value.streamHandle)
+    if (this.releasedStreamHandles.has(event.value.streamHandle)) return
+    rememberHandle(this.releasedStreamHandles, this.releasedStreamOrder, event.value.streamHandle)
         stream.markClosed(apiError(event.value.error, 'resource stream closed'))
         this.streams.delete(event.value.streamHandle)
         void this.release(event.value.streamHandle).catch((error) => this.onClosed(new Error(`closed resource stream release failed: ${errorMessage(error)}`)))
@@ -388,6 +437,9 @@ export class ProtoBindingClient {
       case 'endpointShareReceive': return this.endpointShareReceiveOperations.has(handle)
       case 'endpointShareCommit': return this.endpointShareCommitOperations.has(handle)
       case 'sshCredentialProvision': return this.sshCredentialProvisionOperations.has(handle)
+      case 'connectionPolicyGet': return this.connectionPolicyGetOperations.has(handle)
+      case 'connectionPolicyApply': return this.connectionPolicyApplyOperations.has(handle)
+      case 'connectionSnapshotGet': return this.connectionSnapshotGetOperations.has(handle)
       default: return true
     }
   }
@@ -405,7 +457,7 @@ export class ProtoBindingClient {
   }
 
   private rejectAll(error: Error): void {
-    for (const registry of [this.openOperations, this.executeOperations, this.importOperations, this.deleteOperations, this.registryGetOperations, this.endpointUpsertOperations, this.endpointDeleteOperations, this.endpointShareReceiveOperations, this.endpointShareCommitOperations, this.sshCredentialProvisionOperations]) {
+    for (const registry of [this.openOperations, this.executeOperations, this.importOperations, this.deleteOperations, this.registryGetOperations, this.endpointUpsertOperations, this.endpointDeleteOperations, this.endpointShareReceiveOperations, this.endpointShareCommitOperations, this.sshCredentialProvisionOperations, this.connectionPolicyGetOperations, this.connectionPolicyApplyOperations, this.connectionSnapshotGetOperations]) {
       for (const pending of registry.values()) pending.reject(error)
       registry.clear()
     }
@@ -414,10 +466,10 @@ export class ProtoBindingClient {
     this.earlyStreamEvents.clear()
     this.abandonedStreamHandles.clear()
     this.retiredSessionHandles.clear()
-	this.releasedSessionHandles.clear()
-	this.releasedSessionOrder.length = 0
-	this.releasedStreamHandles.clear()
-	this.releasedStreamOrder.length = 0
+  this.releasedSessionHandles.clear()
+  this.releasedSessionOrder.length = 0
+  this.releasedStreamHandles.clear()
+  this.releasedStreamOrder.length = 0
   }
 
   private queueEarlyStreamEvent(handle: bigint, envelope: MuxviaClientBinding.EventEnvelope): void {
@@ -435,7 +487,7 @@ export class ProtoBindingClient {
     const early = this.earlyStreamEvents.get(handle)
     const terminalClosed = early?.some((event) => event.event.case === 'resourceStreamClosed') === true
     this.earlyStreamEvents.delete(handle)
-	if (terminalClosed) rememberHandle(this.releasedStreamHandles, this.releasedStreamOrder, handle)
+  if (terminalClosed) rememberHandle(this.releasedStreamHandles, this.releasedStreamOrder, handle)
     if (!terminalClosed) {
       if (this.abandonedStreamHandles.size >= MAX_ABANDONED_STREAM_HANDLES) {
         this.onClosed(new Error('Proto binding abandoned stream handle capacity is exhausted'))
@@ -475,11 +527,11 @@ export class ProtoBindingClient {
     if (event.case === 'execute') {
       void this.cleanupCancelledExecute(event.value).catch((error) => this.onClosed(new Error(`cancelled operation cleanup failed: ${errorMessage(error)}`)))
     } else if (event.case === 'openSession' && event.value.sessionHandle !== 0n) {
-	  if (this.retiredSessionHandles.size >= MAX_ABANDONED_STREAM_HANDLES) {
-		this.onClosed(new Error('Proto binding retired session handle capacity is exhausted'))
-		return
-	  }
-	  this.retiredSessionHandles.add(event.value.sessionHandle)
+    if (this.retiredSessionHandles.size >= MAX_ABANDONED_STREAM_HANDLES) {
+    this.onClosed(new Error('Proto binding retired session handle capacity is exhausted'))
+    return
+    }
+    this.retiredSessionHandles.add(event.value.sessionHandle)
       void this.closeSession(event.value.sessionHandle)
         .catch((error) => this.onClosed(new Error(`cancelled session cleanup failed: ${errorMessage(error)}`)))
     }
@@ -488,8 +540,8 @@ export class ProtoBindingClient {
 }
 
 export interface EndpointInput {
-	endpointId: string
-	routeId?: string
+  endpointId: string
+  routeId?: string
 }
 
 /** ProtoBindingConnector builds only OpenSessionRequest; route/auth/reconnect ownership remains in Go. */
@@ -497,18 +549,23 @@ export class ProtoBindingConnector {
   constructor(private readonly client: () => ProtoBindingClient, private readonly input: EndpointInput) {}
 
   async connect(input: { machineId: string }, options?: { signal?: AbortSignal; forceRelay?: boolean; onStatus?: (status: string) => void; onConnectionState?: (snapshot: { machineId: string; phase: 'connecting' | 'connected' | 'failed'; statusText: string; relayInUse: boolean }) => void }): Promise<ProtoClientSession> {
-	const endpointId = this.input.endpointId.trim()
+  const endpointId = this.input.endpointId.trim()
     if (!endpointId || input.machineId !== endpointId) throw new Error('endpoint identity mismatch')
     options?.onStatus?.('Connecting...')
     options?.onConnectionState?.({ machineId: input.machineId, phase: 'connecting', statusText: 'Connecting...', relayInUse: options.forceRelay === true })
     try {
-	  await this.applyManagedRelayPolicy(options?.forceRelay, options?.signal)
+    await this.applyManagedRelayPolicy(options?.forceRelay, options?.signal)
       const session = await this.client().openSession(create(MuxviaClientBinding.OpenSessionRequestSchema, {
-		requestId: crypto.randomUUID(), endpointId, routeOverride: this.input.routeId ?? '',
-		intent: MuxviaClientBinding.ConnectIntent.INTERACTIVE,
+    requestId: crypto.randomUUID(), endpointId, routeOverride: this.input.routeId ?? '',
+    intent: MuxviaClientBinding.ConnectIntent.INTERACTIVE,
       }), options?.signal)
       options?.onStatus?.('Connected')
-      options?.onConnectionState?.({ machineId: input.machineId, phase: 'connected', statusText: 'Connected', relayInUse: options?.forceRelay === true })
+      options?.onConnectionState?.({
+    machineId: input.machineId,
+    phase: 'connected',
+    statusText: 'Connected',
+    relayInUse: session.connection?.localCandidateType === MuxviaClientBinding.ConnectionCandidateType.RELAY,
+    })
       return session
     } catch (error) {
       options?.onConnectionState?.({ machineId: input.machineId, phase: 'failed', statusText: error instanceof Error ? error.message : 'Connection failed', relayInUse: options?.forceRelay === true })
@@ -516,30 +573,24 @@ export class ProtoBindingConnector {
     }
   }
 
+  async getConnectionPolicy(signal?: AbortSignal): Promise<ConnectionPolicyState> {
+    return connectionPolicyStateFromProto(await this.client().getConnectionPolicy(this.input.endpointId, signal))
+  }
+
+  async applyConnectionPolicy(policy: ConnectionPolicy, signal?: AbortSignal): Promise<void> {
+    await this.client().applyConnectionPolicy(this.input.endpointId, create(MuxviaClientBinding.ConnectionPolicySchema, {
+      routePreference: routePreferenceToProto(policy.route),
+      cloudRelayMode: cloudPreferenceToProto(policy.cloud),
+      relayTransport: relayTransportToProto(policy.relayTransport),
+    }), signal)
+  }
+
   private async applyManagedRelayPolicy(forceRelay: boolean | undefined, signal?: AbortSignal): Promise<void> {
-	if (forceRelay === undefined) return
-	const client = this.client()
-	const registry = await client.getEndpointRegistry(signal)
-	const endpoint = registry.endpoints.find((candidate) => candidate.endpointId === this.input.endpointId)
-	if (!endpoint) throw new Error(`endpoint ${this.input.endpointId} is unavailable`)
-	const relayMode = forceRelay
-	  ? MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY
-	  : MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_AUTO
-	let changed = false
-	const routes = endpoint.routes.map((route) => {
-	  const selected = !this.input.routeId || route.routeId === this.input.routeId
-	  if (!selected || route.route.case !== 'managedWebrtc' || route.route.value.relayMode === relayMode) return route
-	  changed = true
-	  return create(MuxviaRemoteAuth.EndpointRouteConfigV1Schema, {
-		...route,
-		route: {
-		  case: 'managedWebrtc',
-		  value: create(MuxviaRemoteAuth.ManagedWebRTCRouteConfigSchema, { ...route.route.value, relayMode }),
-		},
-	  })
-	})
-	if (!changed) return
-	await client.upsertEndpoint(create(MuxviaRemoteAuth.EndpointConfigV1Schema, { ...endpoint, routes }), false, signal)
+    if (forceRelay === undefined) return
+    const current = await this.getConnectionPolicy(signal)
+    const cloud = forceRelay ? 'relay' : 'auto'
+    if (current.policy.cloud === cloud) return
+    await this.applyConnectionPolicy({ ...current.policy, cloud }, signal)
   }
 }
 
@@ -547,7 +598,12 @@ class ProtoBindingSession implements ProtoClientSession {
   private alive = true
   private readonly eventHandlers = new Set<(event: MuxviaApiApplication.EventEnvelope) => void>()
 
-  constructor(private readonly client: ProtoBindingClient, readonly handle: bigint, readonly stamp: NonNullable<MuxviaClientBinding.OpenSessionResult['session']>) {}
+  constructor(
+  private readonly client: ProtoBindingClient,
+  readonly handle: bigint,
+  readonly stamp: NonNullable<MuxviaClientBinding.OpenSessionResult['session']>,
+  public connection?: MuxviaClientBinding.ConnectionSnapshot,
+  ) {}
 
   execute(command: MuxviaApiApplication.CommandEnvelope, options?: { signal?: AbortSignal }): Promise<MuxviaApiApplication.ResultEnvelope> {
     if (!this.alive) return Promise.reject(new Error('Proto session is closed'))
@@ -565,6 +621,12 @@ class ProtoBindingSession implements ProtoClientSession {
   }
 
   isAlive(): boolean { return this.alive }
+
+  async getConnectionSnapshot(): Promise<MuxviaClientBinding.ConnectionSnapshot | undefined> {
+    if (!this.alive) throw new Error('Proto session is closed')
+    this.connection = await this.client.getConnectionSnapshot(this.handle)
+    return this.connection
+  }
 
   async close(): Promise<void> {
     if (!this.alive) return
@@ -634,6 +696,90 @@ function apiError(error: { code?: MuxviaApiCommon.ApiErrorCode, message?: string
   return result
 }
 
+function routePreferenceFromProto(value: MuxviaRemoteAuth.EndpointRoutePreference | undefined): ConnectionPolicy['route'] {
+  switch (value) {
+    case MuxviaRemoteAuth.EndpointRoutePreference.DIRECT: return 'direct'
+    case MuxviaRemoteAuth.EndpointRoutePreference.SSH: return 'ssh'
+    case MuxviaRemoteAuth.EndpointRoutePreference.MANAGED_CLOUD: return 'cloud'
+    default: return 'auto'
+  }
+}
+
+function routePreferenceToProto(value: ConnectionPolicy['route']): MuxviaRemoteAuth.EndpointRoutePreference {
+  switch (value) {
+    case 'direct': return MuxviaRemoteAuth.EndpointRoutePreference.DIRECT
+    case 'ssh': return MuxviaRemoteAuth.EndpointRoutePreference.SSH
+    case 'cloud': return MuxviaRemoteAuth.EndpointRoutePreference.MANAGED_CLOUD
+    default: return MuxviaRemoteAuth.EndpointRoutePreference.AUTO
+  }
+}
+
+function cloudPreferenceFromProto(value: MuxviaRemoteAuth.ManagedWebRTCRelayMode): ConnectionPolicy['cloud'] {
+  switch (value) {
+    case MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_DIRECT: return 'p2p'
+    case MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY: return 'relay'
+    default: return 'auto'
+  }
+}
+
+function cloudPreferenceToProto(value: ConnectionPolicy['cloud']): MuxviaRemoteAuth.ManagedWebRTCRelayMode {
+  switch (value) {
+    case 'p2p': return MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_DIRECT
+    case 'relay': return MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY
+    default: return MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_AUTO
+  }
+}
+
+function relayTransportFromProto(value: MuxviaRemoteAuth.ManagedWebRTCRelayTransport): ConnectionPolicy['relayTransport'] {
+  switch (value) {
+    case MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_UDP: return 'udp'
+    case MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_TCP: return 'tcp'
+    default: return 'auto'
+  }
+}
+
+function relayTransportToProto(value: ConnectionPolicy['relayTransport']): MuxviaRemoteAuth.ManagedWebRTCRelayTransport {
+  switch (value) {
+    case 'udp': return MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_UDP
+    case 'tcp': return MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_TCP
+    default: return MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO
+  }
+}
+
+function connectionPolicyStateFromProto(state: MuxviaClientBinding.ConnectionPolicyState): ConnectionPolicyState {
+  const policy = state.policy
+  const result: ConnectionPolicyState = {
+    policy: {
+      route: routePreferenceFromProto(policy?.routePreference),
+      cloud: cloudPreferenceFromProto(policy?.cloudRelayMode ?? MuxviaRemoteAuth.ManagedWebRTCRelayMode.MANAGED_WEBRTC_RELAY_MODE_AUTO),
+      relayTransport: relayTransportFromProto(policy?.relayTransport ?? MuxviaRemoteAuth.ManagedWebRTCRelayTransport.MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO),
+    },
+    available: { direct: false, ssh: false, cloud: false },
+    unavailableReasons: {},
+  }
+  for (const route of state.routes) {
+    const key = route.routeKind === MuxviaClientBinding.ConnectionRouteKind.DIRECT
+      ? 'direct'
+      : route.routeKind === MuxviaClientBinding.ConnectionRouteKind.SSH
+        ? 'ssh'
+        : route.routeKind === MuxviaClientBinding.ConnectionRouteKind.MANAGED_CLOUD ? 'cloud' : undefined
+    if (!key) continue
+    result.available[key] = route.available
+    if (!route.available) result.unavailableReasons[key] = connectionPolicyReasonFromProto(route.reason)
+  }
+  return result
+}
+
+function connectionPolicyReasonFromProto(reason: MuxviaClientBinding.ConnectionPolicyAvailabilityReason): NonNullable<ConnectionPolicyState['unavailableReasons']['direct']> {
+  switch (reason) {
+    case MuxviaClientBinding.ConnectionPolicyAvailabilityReason.ROUTE_DISABLED: return 'route_disabled'
+    case MuxviaClientBinding.ConnectionPolicyAvailabilityReason.PLATFORM_UNSUPPORTED: return 'platform_unsupported'
+    case MuxviaClientBinding.ConnectionPolicyAvailabilityReason.CREDENTIAL_UNAVAILABLE: return 'credential_unavailable'
+    case MuxviaClientBinding.ConnectionPolicyAvailabilityReason.CLOUD_UNAVAILABLE: return 'cloud_unavailable'
+    default: return 'route_not_configured'
+  }
+}
+
 function apiErrorCode(code: MuxviaApiCommon.ApiErrorCode | undefined): string {
   switch (code) {
     case MuxviaApiCommon.ApiErrorCode.INVALID_REQUEST: return 'invalid_request'
@@ -663,6 +809,9 @@ function bindingOperationHandle(envelope: MuxviaClientBinding.EventEnvelope): bi
     case 'endpointShareReceive':
     case 'endpointShareCommit':
     case 'sshCredentialProvision':
+    case 'connectionPolicyGet':
+    case 'connectionPolicyApply':
+    case 'connectionSnapshotGet':
       return envelope.event.value.operationHandle
     default:
       return undefined

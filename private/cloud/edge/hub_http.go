@@ -265,7 +265,7 @@ func (handler *hubHTTPHandler) handleCreateSignaling(writer http.ResponseWriter,
 		writeHubError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub signaling session could not be created", true)
 		return
 	}
-	session, err := handler.hub.CreateEdgeSession(request.Context(), cloudhub.CreateEdgeSessionRequest{EdgeToken: token, AccountID: claims.AccountID, ClientDeviceID: claims.ClientDeviceID, ClientConnectionID: claims.TokenID, TargetDeviceID: payload.GetTargetDeviceId(), SignalingSessionID: signalingSessionID, RelayCorrelationID: payload.GetManagedSessionId(), SDP: payload.GetOfferSdp(), Candidates: candidatesFromWire(payload.GetCandidates()), RoutePreference: cloudhub.RoutePreference(payload.GetRoutePreference()), RelayOnly: payload.GetRelayOnly()})
+	session, err := handler.hub.CreateEdgeSession(request.Context(), cloudhub.CreateEdgeSessionRequest{EdgeToken: token, AccountID: claims.AccountID, ClientDeviceID: claims.ClientDeviceID, ClientConnectionID: claims.TokenID, TargetDeviceID: payload.GetTargetDeviceId(), SignalingSessionID: signalingSessionID, RelayCorrelationID: payload.GetManagedSessionId(), SDP: payload.GetOfferSdp(), Candidates: candidatesFromWire(payload.GetCandidates()), RoutePreference: cloudhub.RoutePreference(payload.GetRoutePreference()), RelayOnly: payload.GetRelayOnly(), RelayTransport: cloudhub.RelayTransport(payload.GetRelayTransport())})
 	if err != nil {
 		mapHubError(writer, err)
 		return
@@ -571,7 +571,7 @@ func randomHubID(prefix string) (string, error) {
 func presenceEventToWire(event cloudhub.PresenceEvent) (*cloudpb.PresenceEvent, bool) {
 	switch {
 	case event.Offer != nil:
-		return &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{SignalingSessionId: event.Offer.SignalingSessionID, ManagedSessionId: event.Offer.ManagedSessionID, SourceDeviceId: event.Offer.SourceDeviceID, TargetDeviceId: event.Offer.TargetDeviceID, Sdp: event.Offer.SDP, Candidates: candidatesToWire(event.Offer.Candidates), RoutePreference: cloudpb.RoutePreference(event.Offer.RoutePreference), RelayOnly: event.Offer.RelayOnly, SessionIncarnation: event.Offer.SessionIncarnation, PresenceSessionId: event.Offer.PresenceSessionID, AssignmentEpoch: event.Offer.AssignmentEpoch}}}, true
+		return &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{SignalingSessionId: event.Offer.SignalingSessionID, ManagedSessionId: event.Offer.ManagedSessionID, SourceDeviceId: event.Offer.SourceDeviceID, TargetDeviceId: event.Offer.TargetDeviceID, Sdp: event.Offer.SDP, Candidates: candidatesToWire(event.Offer.Candidates), RoutePreference: cloudpb.RoutePreference(event.Offer.RoutePreference), RelayOnly: event.Offer.RelayOnly, SessionIncarnation: event.Offer.SessionIncarnation, PresenceSessionId: event.Offer.PresenceSessionID, AssignmentEpoch: event.Offer.AssignmentEpoch, RelayTransport: cloudpb.RelayTransport(event.Offer.RelayTransport)}}}, true
 	case event.DaemonCommand != nil:
 		return &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_DaemonCommand{DaemonCommand: proto.Clone(event.DaemonCommand).(*cloudpb.DaemonControlCommand)}}, true
 	case event.Closed != nil:

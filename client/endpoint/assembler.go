@@ -360,6 +360,11 @@ func validateCandidateClientPolicy(candidate EndpointCandidate) error {
 		if candidate.SelectionPolicy.HedgeDelayConfigured && (candidate.SelectionPolicy.HedgeDelay < 0 || candidate.SelectionPolicy.HedgeDelay > 30*time.Second || candidate.SelectionPolicy.HedgeDelay%time.Millisecond != 0) {
 			return connectionError(ErrorConfig, "candidate hedge_delay must be a whole millisecond between 0 and 30s")
 		}
+		switch candidate.SelectionPolicy.RoutePreference {
+		case "", RoutePreferenceAuto, RoutePreferenceDirect, RoutePreferenceSSH, RoutePreferenceManagedCloud:
+		default:
+			return connectionError(ErrorConfig, "candidate has unknown route_preference %q", candidate.SelectionPolicy.RoutePreference)
+		}
 	}
 	for _, route := range candidate.Routes {
 		if ownsPolicy {

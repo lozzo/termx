@@ -341,7 +341,7 @@ func (owner *SessionOwner) runRoutePlan(ctx context.Context, target endpoint.End
 		_ = winner.ready.Close()
 		return SessionLease{}, &Error{Code: ErrorCanceled, Message: "route race was canceled before winner publication", Cause: ctx.Err(), Attempted: true}
 	}
-	lease, err := owner.AdoptReadyPeerSession(winner.request, winner.ready)
+	lease, err := owner.adoptReadyPeerSession(winner.request, winner.ready, selectionReason)
 	if err != nil {
 		return SessionLease{}, err
 	}

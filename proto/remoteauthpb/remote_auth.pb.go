@@ -431,6 +431,117 @@ func (ManagedWebRTCRelayMode) EnumDescriptor() ([]byte, []int) {
 	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{6}
 }
 
+// EndpointRoutePreference 是用户对 Endpoint planner 的顶层 Route 约束。
+// 未指定和 AUTO 都允许 planner 按当前 route/priority 竞速；强制模式不可静默回退到其它 kind。
+type EndpointRoutePreference int32
+
+const (
+	EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_UNSPECIFIED   EndpointRoutePreference = 0
+	EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_AUTO          EndpointRoutePreference = 1
+	EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_DIRECT        EndpointRoutePreference = 2
+	EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_SSH           EndpointRoutePreference = 3
+	EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_MANAGED_CLOUD EndpointRoutePreference = 4
+)
+
+// Enum value maps for EndpointRoutePreference.
+var (
+	EndpointRoutePreference_name = map[int32]string{
+		0: "ENDPOINT_ROUTE_PREFERENCE_UNSPECIFIED",
+		1: "ENDPOINT_ROUTE_PREFERENCE_AUTO",
+		2: "ENDPOINT_ROUTE_PREFERENCE_DIRECT",
+		3: "ENDPOINT_ROUTE_PREFERENCE_SSH",
+		4: "ENDPOINT_ROUTE_PREFERENCE_MANAGED_CLOUD",
+	}
+	EndpointRoutePreference_value = map[string]int32{
+		"ENDPOINT_ROUTE_PREFERENCE_UNSPECIFIED":   0,
+		"ENDPOINT_ROUTE_PREFERENCE_AUTO":          1,
+		"ENDPOINT_ROUTE_PREFERENCE_DIRECT":        2,
+		"ENDPOINT_ROUTE_PREFERENCE_SSH":           3,
+		"ENDPOINT_ROUTE_PREFERENCE_MANAGED_CLOUD": 4,
+	}
+)
+
+func (x EndpointRoutePreference) Enum() *EndpointRoutePreference {
+	p := new(EndpointRoutePreference)
+	*p = x
+	return p
+}
+
+func (x EndpointRoutePreference) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (EndpointRoutePreference) Descriptor() protoreflect.EnumDescriptor {
+	return file_remoteauthpb_remote_auth_proto_enumTypes[7].Descriptor()
+}
+
+func (EndpointRoutePreference) Type() protoreflect.EnumType {
+	return &file_remoteauthpb_remote_auth_proto_enumTypes[7]
+}
+
+func (x EndpointRoutePreference) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use EndpointRoutePreference.Descriptor instead.
+func (EndpointRoutePreference) EnumDescriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{7}
+}
+
+// ManagedWebRTCRelayTransport 约束 managed Route 可使用的 TURN transport。
+// 它不表达系统 Wi-Fi、移动网络或 VPN，也不推断实际选中的 candidate pair。
+type ManagedWebRTCRelayTransport int32
+
+const (
+	ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_UNSPECIFIED ManagedWebRTCRelayTransport = 0
+	ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO        ManagedWebRTCRelayTransport = 1
+	ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_UDP         ManagedWebRTCRelayTransport = 2
+	ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_TCP         ManagedWebRTCRelayTransport = 3
+)
+
+// Enum value maps for ManagedWebRTCRelayTransport.
+var (
+	ManagedWebRTCRelayTransport_name = map[int32]string{
+		0: "MANAGED_WEBRTC_RELAY_TRANSPORT_UNSPECIFIED",
+		1: "MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO",
+		2: "MANAGED_WEBRTC_RELAY_TRANSPORT_UDP",
+		3: "MANAGED_WEBRTC_RELAY_TRANSPORT_TCP",
+	}
+	ManagedWebRTCRelayTransport_value = map[string]int32{
+		"MANAGED_WEBRTC_RELAY_TRANSPORT_UNSPECIFIED": 0,
+		"MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO":        1,
+		"MANAGED_WEBRTC_RELAY_TRANSPORT_UDP":         2,
+		"MANAGED_WEBRTC_RELAY_TRANSPORT_TCP":         3,
+	}
+)
+
+func (x ManagedWebRTCRelayTransport) Enum() *ManagedWebRTCRelayTransport {
+	p := new(ManagedWebRTCRelayTransport)
+	*p = x
+	return p
+}
+
+func (x ManagedWebRTCRelayTransport) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ManagedWebRTCRelayTransport) Descriptor() protoreflect.EnumDescriptor {
+	return file_remoteauthpb_remote_auth_proto_enumTypes[8].Descriptor()
+}
+
+func (ManagedWebRTCRelayTransport) Type() protoreflect.EnumType {
+	return &file_remoteauthpb_remote_auth_proto_enumTypes[8]
+}
+
+func (x ManagedWebRTCRelayTransport) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ManagedWebRTCRelayTransport.Descriptor instead.
+func (ManagedWebRTCRelayTransport) EnumDescriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{8}
+}
+
 // EndpointSource 记录 route 或用户策略的来源，供确定性 assembler 保留更高权重的已确认信息。
 type EndpointSource int32
 
@@ -480,11 +591,11 @@ func (x EndpointSource) String() string {
 }
 
 func (EndpointSource) Descriptor() protoreflect.EnumDescriptor {
-	return file_remoteauthpb_remote_auth_proto_enumTypes[7].Descriptor()
+	return file_remoteauthpb_remote_auth_proto_enumTypes[9].Descriptor()
 }
 
 func (EndpointSource) Type() protoreflect.EnumType {
-	return &file_remoteauthpb_remote_auth_proto_enumTypes[7]
+	return &file_remoteauthpb_remote_auth_proto_enumTypes[9]
 }
 
 func (x EndpointSource) Number() protoreflect.EnumNumber {
@@ -493,7 +604,7 @@ func (x EndpointSource) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EndpointSource.Descriptor instead.
 func (EndpointSource) EnumDescriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{7}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{9}
 }
 
 // EndpointCredentialKind 只描述目标平台 secure store 中凭据的类别；wire contract 永远不携带凭据 body。
@@ -539,11 +650,11 @@ func (x EndpointCredentialKind) String() string {
 }
 
 func (EndpointCredentialKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_remoteauthpb_remote_auth_proto_enumTypes[8].Descriptor()
+	return file_remoteauthpb_remote_auth_proto_enumTypes[10].Descriptor()
 }
 
 func (EndpointCredentialKind) Type() protoreflect.EnumType {
-	return &file_remoteauthpb_remote_auth_proto_enumTypes[8]
+	return &file_remoteauthpb_remote_auth_proto_enumTypes[10]
 }
 
 func (x EndpointCredentialKind) Number() protoreflect.EnumNumber {
@@ -552,7 +663,7 @@ func (x EndpointCredentialKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EndpointCredentialKind.Descriptor instead.
 func (EndpointCredentialKind) EnumDescriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{8}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{10}
 }
 
 // ChannelBinding 是 transport adapter 从实际 TLS/DTLS/local Unix channel 取得的 SHA-256 binding。
@@ -2612,9 +2723,10 @@ func (x *EndpointDaemonIdentity) GetDeviceFingerprint() string {
 
 // EndpointSelectionPolicy 是客户端本地竞速策略；未配置 route priority 时仍表示 full race。
 type EndpointSelectionPolicy struct {
-	state                protoimpl.MessageState `protogen:"open.v1"`
-	HedgeDelayConfigured bool                   `protobuf:"varint,1,opt,name=hedge_delay_configured,json=hedgeDelayConfigured,proto3" json:"hedge_delay_configured,omitempty"`
-	HedgeDelayMillis     uint64                 `protobuf:"varint,2,opt,name=hedge_delay_millis,json=hedgeDelayMillis,proto3" json:"hedge_delay_millis,omitempty"`
+	state                protoimpl.MessageState  `protogen:"open.v1"`
+	HedgeDelayConfigured bool                    `protobuf:"varint,1,opt,name=hedge_delay_configured,json=hedgeDelayConfigured,proto3" json:"hedge_delay_configured,omitempty"`
+	HedgeDelayMillis     uint64                  `protobuf:"varint,2,opt,name=hedge_delay_millis,json=hedgeDelayMillis,proto3" json:"hedge_delay_millis,omitempty"`
+	RoutePreference      EndpointRoutePreference `protobuf:"varint,3,opt,name=route_preference,json=routePreference,proto3,enum=muxvia.remote.auth.v1.EndpointRoutePreference" json:"route_preference,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -2661,6 +2773,13 @@ func (x *EndpointSelectionPolicy) GetHedgeDelayMillis() uint64 {
 		return x.HedgeDelayMillis
 	}
 	return 0
+}
+
+func (x *EndpointSelectionPolicy) GetRoutePreference() EndpointRoutePreference {
+	if x != nil {
+		return x.RoutePreference
+	}
+	return EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_UNSPECIFIED
 }
 
 // EndpointCredentialDescriptor 描述 share 后目标端需要解析或重新创建的凭据，不携带源平台 credential ref 或 secret body。
@@ -2951,10 +3070,11 @@ func (x *SSHWebRTCTCPRouteConfig) GetSshCredentialRef() string {
 
 // ManagedWebRTCRouteConfig 描述同一个 App 内由 Muxvia Cloud 提供的可选 managed Route。
 type ManagedWebRTCRouteConfig struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	TargetDeviceId    string                 `protobuf:"bytes,1,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
-	AccountProfileRef string                 `protobuf:"bytes,2,opt,name=account_profile_ref,json=accountProfileRef,proto3" json:"account_profile_ref,omitempty"`
-	RelayMode         ManagedWebRTCRelayMode `protobuf:"varint,3,opt,name=relay_mode,json=relayMode,proto3,enum=muxvia.remote.auth.v1.ManagedWebRTCRelayMode" json:"relay_mode,omitempty"`
+	state             protoimpl.MessageState      `protogen:"open.v1"`
+	TargetDeviceId    string                      `protobuf:"bytes,1,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
+	AccountProfileRef string                      `protobuf:"bytes,2,opt,name=account_profile_ref,json=accountProfileRef,proto3" json:"account_profile_ref,omitempty"`
+	RelayMode         ManagedWebRTCRelayMode      `protobuf:"varint,3,opt,name=relay_mode,json=relayMode,proto3,enum=muxvia.remote.auth.v1.ManagedWebRTCRelayMode" json:"relay_mode,omitempty"`
+	RelayTransport    ManagedWebRTCRelayTransport `protobuf:"varint,4,opt,name=relay_transport,json=relayTransport,proto3,enum=muxvia.remote.auth.v1.ManagedWebRTCRelayTransport" json:"relay_transport,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -3008,6 +3128,13 @@ func (x *ManagedWebRTCRouteConfig) GetRelayMode() ManagedWebRTCRelayMode {
 		return x.RelayMode
 	}
 	return ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_UNSPECIFIED
+}
+
+func (x *ManagedWebRTCRouteConfig) GetRelayTransport() ManagedWebRTCRelayTransport {
+	if x != nil {
+		return x.RelayTransport
+	}
+	return ManagedWebRTCRelayTransport_MANAGED_WEBRTC_RELAY_TRANSPORT_UNSPECIFIED
 }
 
 // EndpointRouteConfigV1 是跨 Go、JNI、未来 C ABI/WASM 的唯一持久 Route schema。
@@ -4992,10 +5119,11 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x16EndpointDaemonIdentity\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12*\n" +
 	"\x11device_public_key\x18\x02 \x01(\fR\x0fdevicePublicKey\x12-\n" +
-	"\x12device_fingerprint\x18\x03 \x01(\tR\x11deviceFingerprint\"}\n" +
+	"\x12device_fingerprint\x18\x03 \x01(\tR\x11deviceFingerprint\"\xd8\x01\n" +
 	"\x17EndpointSelectionPolicy\x124\n" +
 	"\x16hedge_delay_configured\x18\x01 \x01(\bR\x14hedgeDelayConfigured\x12,\n" +
-	"\x12hedge_delay_millis\x18\x02 \x01(\x04R\x10hedgeDelayMillis\"\xa6\x01\n" +
+	"\x12hedge_delay_millis\x18\x02 \x01(\x04R\x10hedgeDelayMillis\x12Y\n" +
+	"\x10route_preference\x18\x03 \x01(\x0e2..muxvia.remote.auth.v1.EndpointRoutePreferenceR\x0froutePreference\"\xa6\x01\n" +
 	"\x1cEndpointCredentialDescriptor\x12#\n" +
 	"\rdescriptor_id\x18\x01 \x01(\tR\fdescriptorId\x12A\n" +
 	"\x04kind\x18\x02 \x01(\x0e2-.muxvia.remote.auth.v1.EndpointCredentialKindR\x04kind\x12\x1e\n" +
@@ -5020,12 +5148,13 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x15credential_descriptor\x18\x06 \x01(\v23.muxvia.remote.auth.v1.EndpointCredentialDescriptorR\x14credentialDescriptor\x128\n" +
 	"\x18remote_signaling_address\x18\a \x01(\tR\x16remoteSignalingAddress\x123\n" +
 	"\x16remote_ice_tcp_address\x18\b \x01(\tR\x13remoteIceTcpAddress\x12,\n" +
-	"\x12ssh_credential_ref\x18\t \x01(\tR\x10sshCredentialRef\"\xc2\x01\n" +
+	"\x12ssh_credential_ref\x18\t \x01(\tR\x10sshCredentialRef\"\x9f\x02\n" +
 	"\x18ManagedWebRTCRouteConfig\x12(\n" +
 	"\x10target_device_id\x18\x01 \x01(\tR\x0etargetDeviceId\x12.\n" +
 	"\x13account_profile_ref\x18\x02 \x01(\tR\x11accountProfileRef\x12L\n" +
 	"\n" +
-	"relay_mode\x18\x03 \x01(\x0e2-.muxvia.remote.auth.v1.ManagedWebRTCRelayModeR\trelayMode\"\xde\x05\n" +
+	"relay_mode\x18\x03 \x01(\x0e2-.muxvia.remote.auth.v1.ManagedWebRTCRelayModeR\trelayMode\x12[\n" +
+	"\x0frelay_transport\x18\x04 \x01(\x0e22.muxvia.remote.auth.v1.ManagedWebRTCRelayTransportR\x0erelayTransport\"\xde\x05\n" +
 	"\x15EndpointRouteConfigV1\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x19\n" +
 	"\broute_id\x18\x02 \x01(\tR\arouteId\x12\x18\n" +
@@ -5220,7 +5349,18 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x1eMANAGED_WEBRTC_RELAY_MODE_AUTO\x10\x01\x12$\n" +
 	" MANAGED_WEBRTC_RELAY_MODE_DIRECT\x10\x02\x12(\n" +
 	"$MANAGED_WEBRTC_RELAY_MODE_RELAY_ONLY\x10\x03\x12)\n" +
-	"%MANAGED_WEBRTC_RELAY_MODE_SMART_ROUTE\x10\x04*\xf0\x01\n" +
+	"%MANAGED_WEBRTC_RELAY_MODE_SMART_ROUTE\x10\x04*\xde\x01\n" +
+	"\x17EndpointRoutePreference\x12)\n" +
+	"%ENDPOINT_ROUTE_PREFERENCE_UNSPECIFIED\x10\x00\x12\"\n" +
+	"\x1eENDPOINT_ROUTE_PREFERENCE_AUTO\x10\x01\x12$\n" +
+	" ENDPOINT_ROUTE_PREFERENCE_DIRECT\x10\x02\x12!\n" +
+	"\x1dENDPOINT_ROUTE_PREFERENCE_SSH\x10\x03\x12+\n" +
+	"'ENDPOINT_ROUTE_PREFERENCE_MANAGED_CLOUD\x10\x04*\xc6\x01\n" +
+	"\x1bManagedWebRTCRelayTransport\x12.\n" +
+	"*MANAGED_WEBRTC_RELAY_TRANSPORT_UNSPECIFIED\x10\x00\x12'\n" +
+	"#MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO\x10\x01\x12&\n" +
+	"\"MANAGED_WEBRTC_RELAY_TRANSPORT_UDP\x10\x02\x12&\n" +
+	"\"MANAGED_WEBRTC_RELAY_TRANSPORT_TCP\x10\x03*\xf0\x01\n" +
 	"\x0eEndpointSource\x12\x1f\n" +
 	"\x1bENDPOINT_SOURCE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ENDPOINT_SOURCE_LAN\x10\x01\x12\x19\n" +
@@ -5250,7 +5390,7 @@ func file_remoteauthpb_remote_auth_proto_rawDescGZIP() []byte {
 	return file_remoteauthpb_remote_auth_proto_rawDescData
 }
 
-var file_remoteauthpb_remote_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
+var file_remoteauthpb_remote_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
 var file_remoteauthpb_remote_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
 var file_remoteauthpb_remote_auth_proto_goTypes = []any{
 	(AuthErrorCode)(0),                          // 0: muxvia.remote.auth.v1.AuthErrorCode
@@ -5260,127 +5400,131 @@ var file_remoteauthpb_remote_auth_proto_goTypes = []any{
 	(DirectSignalingErrorCode)(0),               // 4: muxvia.remote.auth.v1.DirectSignalingErrorCode
 	(EndpointConnectMode)(0),                    // 5: muxvia.remote.auth.v1.EndpointConnectMode
 	(ManagedWebRTCRelayMode)(0),                 // 6: muxvia.remote.auth.v1.ManagedWebRTCRelayMode
-	(EndpointSource)(0),                         // 7: muxvia.remote.auth.v1.EndpointSource
-	(EndpointCredentialKind)(0),                 // 8: muxvia.remote.auth.v1.EndpointCredentialKind
-	(*ChannelBinding)(nil),                      // 9: muxvia.remote.auth.v1.ChannelBinding
-	(*AuthEnvelope)(nil),                        // 10: muxvia.remote.auth.v1.AuthEnvelope
-	(*DeviceHello)(nil),                         // 11: muxvia.remote.auth.v1.DeviceHello
-	(*CapabilityOpen)(nil),                      // 12: muxvia.remote.auth.v1.CapabilityOpen
-	(*PairingOpen)(nil),                         // 13: muxvia.remote.auth.v1.PairingOpen
-	(*ScopeSummary)(nil),                        // 14: muxvia.remote.auth.v1.ScopeSummary
-	(*ClientAccessScope)(nil),                   // 15: muxvia.remote.auth.v1.ClientAccessScope
-	(*ClientAccessIdentityResult)(nil),          // 16: muxvia.remote.auth.v1.ClientAccessIdentityResult
-	(*DeviceIdentityProofInput)(nil),            // 17: muxvia.remote.auth.v1.DeviceIdentityProofInput
-	(*ClientAccessTicketCreateRequest)(nil),     // 18: muxvia.remote.auth.v1.ClientAccessTicketCreateRequest
-	(*ClientAccessTicketCreateResult)(nil),      // 19: muxvia.remote.auth.v1.ClientAccessTicketCreateResult
-	(*ClientAccessRevokeRequest)(nil),           // 20: muxvia.remote.auth.v1.ClientAccessRevokeRequest
-	(*ClientAccessRecord)(nil),                  // 21: muxvia.remote.auth.v1.ClientAccessRecord
-	(*ClientAccessListResult)(nil),              // 22: muxvia.remote.auth.v1.ClientAccessListResult
-	(*CapabilityAccepted)(nil),                  // 23: muxvia.remote.auth.v1.CapabilityAccepted
-	(*PairingAccepted)(nil),                     // 24: muxvia.remote.auth.v1.PairingAccepted
-	(*CapabilityRejected)(nil),                  // 25: muxvia.remote.auth.v1.CapabilityRejected
-	(*DeviceHelloSignatureInput)(nil),           // 26: muxvia.remote.auth.v1.DeviceHelloSignatureInput
-	(*ClientProofInput)(nil),                    // 27: muxvia.remote.auth.v1.ClientProofInput
-	(*DirectIceCandidate)(nil),                  // 28: muxvia.remote.auth.v1.DirectIceCandidate
-	(*DirectSignalingRequestV1)(nil),            // 29: muxvia.remote.auth.v1.DirectSignalingRequestV1
-	(*DirectSignalingAnswerV1)(nil),             // 30: muxvia.remote.auth.v1.DirectSignalingAnswerV1
-	(*DirectSignalingAnswerSignatureInput)(nil), // 31: muxvia.remote.auth.v1.DirectSignalingAnswerSignatureInput
-	(*DirectSignalingErrorV1)(nil),              // 32: muxvia.remote.auth.v1.DirectSignalingErrorV1
-	(*DirectSignalingResponseV1)(nil),           // 33: muxvia.remote.auth.v1.DirectSignalingResponseV1
-	(*EndpointDaemonIdentity)(nil),              // 34: muxvia.remote.auth.v1.EndpointDaemonIdentity
-	(*EndpointSelectionPolicy)(nil),             // 35: muxvia.remote.auth.v1.EndpointSelectionPolicy
-	(*EndpointCredentialDescriptor)(nil),        // 36: muxvia.remote.auth.v1.EndpointCredentialDescriptor
-	(*LocalUnixRouteConfig)(nil),                // 37: muxvia.remote.auth.v1.LocalUnixRouteConfig
-	(*DirectWebRTCTCPRouteConfig)(nil),          // 38: muxvia.remote.auth.v1.DirectWebRTCTCPRouteConfig
-	(*SSHWebRTCTCPRouteConfig)(nil),             // 39: muxvia.remote.auth.v1.SSHWebRTCTCPRouteConfig
-	(*ManagedWebRTCRouteConfig)(nil),            // 40: muxvia.remote.auth.v1.ManagedWebRTCRouteConfig
-	(*EndpointRouteConfigV1)(nil),               // 41: muxvia.remote.auth.v1.EndpointRouteConfigV1
-	(*PairingDirectRouteSeed)(nil),              // 42: muxvia.remote.auth.v1.PairingDirectRouteSeed
-	(*PairingManagedRouteSeed)(nil),             // 43: muxvia.remote.auth.v1.PairingManagedRouteSeed
-	(*PairingRouteSeed)(nil),                    // 44: muxvia.remote.auth.v1.PairingRouteSeed
-	(*PairingClaimOfferV1)(nil),                 // 45: muxvia.remote.auth.v1.PairingClaimOfferV1
-	(*EndpointConfigV1)(nil),                    // 46: muxvia.remote.auth.v1.EndpointConfigV1
-	(*EndpointRegistryV1)(nil),                  // 47: muxvia.remote.auth.v1.EndpointRegistryV1
-	(*PairingTicketDescriptor)(nil),             // 48: muxvia.remote.auth.v1.PairingTicketDescriptor
-	(*EndpointAuthorizationBootstrap)(nil),      // 49: muxvia.remote.auth.v1.EndpointAuthorizationBootstrap
-	(*EndpointBootstrapBundleV2)(nil),           // 50: muxvia.remote.auth.v1.EndpointBootstrapBundleV2
-	(*PairingTicketSignatureInput)(nil),         // 51: muxvia.remote.auth.v1.PairingTicketSignatureInput
-	(*EndpointBootstrapSignatureInput)(nil),     // 52: muxvia.remote.auth.v1.EndpointBootstrapSignatureInput
-	(*ClientEndpointShareBundleV1)(nil),         // 53: muxvia.remote.auth.v1.ClientEndpointShareBundleV1
-	(*ShareSessionOffer)(nil),                   // 54: muxvia.remote.auth.v1.ShareSessionOffer
-	(*ShareReceiverHello)(nil),                  // 55: muxvia.remote.auth.v1.ShareReceiverHello
-	(*ShareSenderChallenge)(nil),                // 56: muxvia.remote.auth.v1.ShareSenderChallenge
-	(*ShareReceiverProofInput)(nil),             // 57: muxvia.remote.auth.v1.ShareReceiverProofInput
-	(*ShareReceiverProof)(nil),                  // 58: muxvia.remote.auth.v1.ShareReceiverProof
-	(*ShareSessionClientEnvelope)(nil),          // 59: muxvia.remote.auth.v1.ShareSessionClientEnvelope
-	(*ShareSessionError)(nil),                   // 60: muxvia.remote.auth.v1.ShareSessionError
-	(*ShareSessionServerEnvelope)(nil),          // 61: muxvia.remote.auth.v1.ShareSessionServerEnvelope
+	(EndpointRoutePreference)(0),                // 7: muxvia.remote.auth.v1.EndpointRoutePreference
+	(ManagedWebRTCRelayTransport)(0),            // 8: muxvia.remote.auth.v1.ManagedWebRTCRelayTransport
+	(EndpointSource)(0),                         // 9: muxvia.remote.auth.v1.EndpointSource
+	(EndpointCredentialKind)(0),                 // 10: muxvia.remote.auth.v1.EndpointCredentialKind
+	(*ChannelBinding)(nil),                      // 11: muxvia.remote.auth.v1.ChannelBinding
+	(*AuthEnvelope)(nil),                        // 12: muxvia.remote.auth.v1.AuthEnvelope
+	(*DeviceHello)(nil),                         // 13: muxvia.remote.auth.v1.DeviceHello
+	(*CapabilityOpen)(nil),                      // 14: muxvia.remote.auth.v1.CapabilityOpen
+	(*PairingOpen)(nil),                         // 15: muxvia.remote.auth.v1.PairingOpen
+	(*ScopeSummary)(nil),                        // 16: muxvia.remote.auth.v1.ScopeSummary
+	(*ClientAccessScope)(nil),                   // 17: muxvia.remote.auth.v1.ClientAccessScope
+	(*ClientAccessIdentityResult)(nil),          // 18: muxvia.remote.auth.v1.ClientAccessIdentityResult
+	(*DeviceIdentityProofInput)(nil),            // 19: muxvia.remote.auth.v1.DeviceIdentityProofInput
+	(*ClientAccessTicketCreateRequest)(nil),     // 20: muxvia.remote.auth.v1.ClientAccessTicketCreateRequest
+	(*ClientAccessTicketCreateResult)(nil),      // 21: muxvia.remote.auth.v1.ClientAccessTicketCreateResult
+	(*ClientAccessRevokeRequest)(nil),           // 22: muxvia.remote.auth.v1.ClientAccessRevokeRequest
+	(*ClientAccessRecord)(nil),                  // 23: muxvia.remote.auth.v1.ClientAccessRecord
+	(*ClientAccessListResult)(nil),              // 24: muxvia.remote.auth.v1.ClientAccessListResult
+	(*CapabilityAccepted)(nil),                  // 25: muxvia.remote.auth.v1.CapabilityAccepted
+	(*PairingAccepted)(nil),                     // 26: muxvia.remote.auth.v1.PairingAccepted
+	(*CapabilityRejected)(nil),                  // 27: muxvia.remote.auth.v1.CapabilityRejected
+	(*DeviceHelloSignatureInput)(nil),           // 28: muxvia.remote.auth.v1.DeviceHelloSignatureInput
+	(*ClientProofInput)(nil),                    // 29: muxvia.remote.auth.v1.ClientProofInput
+	(*DirectIceCandidate)(nil),                  // 30: muxvia.remote.auth.v1.DirectIceCandidate
+	(*DirectSignalingRequestV1)(nil),            // 31: muxvia.remote.auth.v1.DirectSignalingRequestV1
+	(*DirectSignalingAnswerV1)(nil),             // 32: muxvia.remote.auth.v1.DirectSignalingAnswerV1
+	(*DirectSignalingAnswerSignatureInput)(nil), // 33: muxvia.remote.auth.v1.DirectSignalingAnswerSignatureInput
+	(*DirectSignalingErrorV1)(nil),              // 34: muxvia.remote.auth.v1.DirectSignalingErrorV1
+	(*DirectSignalingResponseV1)(nil),           // 35: muxvia.remote.auth.v1.DirectSignalingResponseV1
+	(*EndpointDaemonIdentity)(nil),              // 36: muxvia.remote.auth.v1.EndpointDaemonIdentity
+	(*EndpointSelectionPolicy)(nil),             // 37: muxvia.remote.auth.v1.EndpointSelectionPolicy
+	(*EndpointCredentialDescriptor)(nil),        // 38: muxvia.remote.auth.v1.EndpointCredentialDescriptor
+	(*LocalUnixRouteConfig)(nil),                // 39: muxvia.remote.auth.v1.LocalUnixRouteConfig
+	(*DirectWebRTCTCPRouteConfig)(nil),          // 40: muxvia.remote.auth.v1.DirectWebRTCTCPRouteConfig
+	(*SSHWebRTCTCPRouteConfig)(nil),             // 41: muxvia.remote.auth.v1.SSHWebRTCTCPRouteConfig
+	(*ManagedWebRTCRouteConfig)(nil),            // 42: muxvia.remote.auth.v1.ManagedWebRTCRouteConfig
+	(*EndpointRouteConfigV1)(nil),               // 43: muxvia.remote.auth.v1.EndpointRouteConfigV1
+	(*PairingDirectRouteSeed)(nil),              // 44: muxvia.remote.auth.v1.PairingDirectRouteSeed
+	(*PairingManagedRouteSeed)(nil),             // 45: muxvia.remote.auth.v1.PairingManagedRouteSeed
+	(*PairingRouteSeed)(nil),                    // 46: muxvia.remote.auth.v1.PairingRouteSeed
+	(*PairingClaimOfferV1)(nil),                 // 47: muxvia.remote.auth.v1.PairingClaimOfferV1
+	(*EndpointConfigV1)(nil),                    // 48: muxvia.remote.auth.v1.EndpointConfigV1
+	(*EndpointRegistryV1)(nil),                  // 49: muxvia.remote.auth.v1.EndpointRegistryV1
+	(*PairingTicketDescriptor)(nil),             // 50: muxvia.remote.auth.v1.PairingTicketDescriptor
+	(*EndpointAuthorizationBootstrap)(nil),      // 51: muxvia.remote.auth.v1.EndpointAuthorizationBootstrap
+	(*EndpointBootstrapBundleV2)(nil),           // 52: muxvia.remote.auth.v1.EndpointBootstrapBundleV2
+	(*PairingTicketSignatureInput)(nil),         // 53: muxvia.remote.auth.v1.PairingTicketSignatureInput
+	(*EndpointBootstrapSignatureInput)(nil),     // 54: muxvia.remote.auth.v1.EndpointBootstrapSignatureInput
+	(*ClientEndpointShareBundleV1)(nil),         // 55: muxvia.remote.auth.v1.ClientEndpointShareBundleV1
+	(*ShareSessionOffer)(nil),                   // 56: muxvia.remote.auth.v1.ShareSessionOffer
+	(*ShareReceiverHello)(nil),                  // 57: muxvia.remote.auth.v1.ShareReceiverHello
+	(*ShareSenderChallenge)(nil),                // 58: muxvia.remote.auth.v1.ShareSenderChallenge
+	(*ShareReceiverProofInput)(nil),             // 59: muxvia.remote.auth.v1.ShareReceiverProofInput
+	(*ShareReceiverProof)(nil),                  // 60: muxvia.remote.auth.v1.ShareReceiverProof
+	(*ShareSessionClientEnvelope)(nil),          // 61: muxvia.remote.auth.v1.ShareSessionClientEnvelope
+	(*ShareSessionError)(nil),                   // 62: muxvia.remote.auth.v1.ShareSessionError
+	(*ShareSessionServerEnvelope)(nil),          // 63: muxvia.remote.auth.v1.ShareSessionServerEnvelope
 }
 var file_remoteauthpb_remote_auth_proto_depIdxs = []int32{
 	2,  // 0: muxvia.remote.auth.v1.ChannelBinding.kind:type_name -> muxvia.remote.auth.v1.ChannelBindingKind
-	11, // 1: muxvia.remote.auth.v1.AuthEnvelope.device_hello:type_name -> muxvia.remote.auth.v1.DeviceHello
-	12, // 2: muxvia.remote.auth.v1.AuthEnvelope.capability_open:type_name -> muxvia.remote.auth.v1.CapabilityOpen
-	23, // 3: muxvia.remote.auth.v1.AuthEnvelope.capability_accepted:type_name -> muxvia.remote.auth.v1.CapabilityAccepted
-	25, // 4: muxvia.remote.auth.v1.AuthEnvelope.capability_rejected:type_name -> muxvia.remote.auth.v1.CapabilityRejected
-	13, // 5: muxvia.remote.auth.v1.AuthEnvelope.pairing_open:type_name -> muxvia.remote.auth.v1.PairingOpen
-	24, // 6: muxvia.remote.auth.v1.AuthEnvelope.pairing_accepted:type_name -> muxvia.remote.auth.v1.PairingAccepted
-	9,  // 7: muxvia.remote.auth.v1.DeviceHello.channel_binding:type_name -> muxvia.remote.auth.v1.ChannelBinding
+	13, // 1: muxvia.remote.auth.v1.AuthEnvelope.device_hello:type_name -> muxvia.remote.auth.v1.DeviceHello
+	14, // 2: muxvia.remote.auth.v1.AuthEnvelope.capability_open:type_name -> muxvia.remote.auth.v1.CapabilityOpen
+	25, // 3: muxvia.remote.auth.v1.AuthEnvelope.capability_accepted:type_name -> muxvia.remote.auth.v1.CapabilityAccepted
+	27, // 4: muxvia.remote.auth.v1.AuthEnvelope.capability_rejected:type_name -> muxvia.remote.auth.v1.CapabilityRejected
+	15, // 5: muxvia.remote.auth.v1.AuthEnvelope.pairing_open:type_name -> muxvia.remote.auth.v1.PairingOpen
+	26, // 6: muxvia.remote.auth.v1.AuthEnvelope.pairing_accepted:type_name -> muxvia.remote.auth.v1.PairingAccepted
+	11, // 7: muxvia.remote.auth.v1.DeviceHello.channel_binding:type_name -> muxvia.remote.auth.v1.ChannelBinding
 	1,  // 8: muxvia.remote.auth.v1.ScopeSummary.kind:type_name -> muxvia.remote.auth.v1.ScopeKind
-	15, // 9: muxvia.remote.auth.v1.ClientAccessTicketCreateRequest.scope:type_name -> muxvia.remote.auth.v1.ClientAccessScope
-	41, // 10: muxvia.remote.auth.v1.ClientAccessTicketCreateRequest.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
-	15, // 11: muxvia.remote.auth.v1.ClientAccessRecord.scope:type_name -> muxvia.remote.auth.v1.ClientAccessScope
-	21, // 12: muxvia.remote.auth.v1.ClientAccessListResult.records:type_name -> muxvia.remote.auth.v1.ClientAccessRecord
-	14, // 13: muxvia.remote.auth.v1.CapabilityAccepted.scope:type_name -> muxvia.remote.auth.v1.ScopeSummary
-	14, // 14: muxvia.remote.auth.v1.PairingAccepted.scope:type_name -> muxvia.remote.auth.v1.ScopeSummary
+	17, // 9: muxvia.remote.auth.v1.ClientAccessTicketCreateRequest.scope:type_name -> muxvia.remote.auth.v1.ClientAccessScope
+	43, // 10: muxvia.remote.auth.v1.ClientAccessTicketCreateRequest.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
+	17, // 11: muxvia.remote.auth.v1.ClientAccessRecord.scope:type_name -> muxvia.remote.auth.v1.ClientAccessScope
+	23, // 12: muxvia.remote.auth.v1.ClientAccessListResult.records:type_name -> muxvia.remote.auth.v1.ClientAccessRecord
+	16, // 13: muxvia.remote.auth.v1.CapabilityAccepted.scope:type_name -> muxvia.remote.auth.v1.ScopeSummary
+	16, // 14: muxvia.remote.auth.v1.PairingAccepted.scope:type_name -> muxvia.remote.auth.v1.ScopeSummary
 	0,  // 15: muxvia.remote.auth.v1.CapabilityRejected.code:type_name -> muxvia.remote.auth.v1.AuthErrorCode
-	9,  // 16: muxvia.remote.auth.v1.DeviceHelloSignatureInput.channel_binding:type_name -> muxvia.remote.auth.v1.ChannelBinding
-	9,  // 17: muxvia.remote.auth.v1.ClientProofInput.channel_binding:type_name -> muxvia.remote.auth.v1.ChannelBinding
+	11, // 16: muxvia.remote.auth.v1.DeviceHelloSignatureInput.channel_binding:type_name -> muxvia.remote.auth.v1.ChannelBinding
+	11, // 17: muxvia.remote.auth.v1.ClientProofInput.channel_binding:type_name -> muxvia.remote.auth.v1.ChannelBinding
 	3,  // 18: muxvia.remote.auth.v1.ClientProofInput.open_kind:type_name -> muxvia.remote.auth.v1.AuthOpenKind
-	34, // 19: muxvia.remote.auth.v1.DirectSignalingAnswerV1.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
-	28, // 20: muxvia.remote.auth.v1.DirectSignalingAnswerV1.candidates:type_name -> muxvia.remote.auth.v1.DirectIceCandidate
-	30, // 21: muxvia.remote.auth.v1.DirectSignalingAnswerSignatureInput.answer:type_name -> muxvia.remote.auth.v1.DirectSignalingAnswerV1
+	36, // 19: muxvia.remote.auth.v1.DirectSignalingAnswerV1.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
+	30, // 20: muxvia.remote.auth.v1.DirectSignalingAnswerV1.candidates:type_name -> muxvia.remote.auth.v1.DirectIceCandidate
+	32, // 21: muxvia.remote.auth.v1.DirectSignalingAnswerSignatureInput.answer:type_name -> muxvia.remote.auth.v1.DirectSignalingAnswerV1
 	4,  // 22: muxvia.remote.auth.v1.DirectSignalingErrorV1.code:type_name -> muxvia.remote.auth.v1.DirectSignalingErrorCode
-	30, // 23: muxvia.remote.auth.v1.DirectSignalingResponseV1.answer:type_name -> muxvia.remote.auth.v1.DirectSignalingAnswerV1
-	32, // 24: muxvia.remote.auth.v1.DirectSignalingResponseV1.error:type_name -> muxvia.remote.auth.v1.DirectSignalingErrorV1
-	8,  // 25: muxvia.remote.auth.v1.EndpointCredentialDescriptor.kind:type_name -> muxvia.remote.auth.v1.EndpointCredentialKind
-	36, // 26: muxvia.remote.auth.v1.SSHWebRTCTCPRouteConfig.credential_descriptor:type_name -> muxvia.remote.auth.v1.EndpointCredentialDescriptor
-	6,  // 27: muxvia.remote.auth.v1.ManagedWebRTCRouteConfig.relay_mode:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRelayMode
-	7,  // 28: muxvia.remote.auth.v1.EndpointRouteConfigV1.source:type_name -> muxvia.remote.auth.v1.EndpointSource
-	7,  // 29: muxvia.remote.auth.v1.EndpointRouteConfigV1.policy_source:type_name -> muxvia.remote.auth.v1.EndpointSource
-	37, // 30: muxvia.remote.auth.v1.EndpointRouteConfigV1.local_unix:type_name -> muxvia.remote.auth.v1.LocalUnixRouteConfig
-	38, // 31: muxvia.remote.auth.v1.EndpointRouteConfigV1.direct_webrtc_tcp:type_name -> muxvia.remote.auth.v1.DirectWebRTCTCPRouteConfig
-	39, // 32: muxvia.remote.auth.v1.EndpointRouteConfigV1.ssh_webrtc_tcp:type_name -> muxvia.remote.auth.v1.SSHWebRTCTCPRouteConfig
-	40, // 33: muxvia.remote.auth.v1.EndpointRouteConfigV1.managed_webrtc:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRouteConfig
-	42, // 34: muxvia.remote.auth.v1.PairingRouteSeed.direct_webrtc_tcp:type_name -> muxvia.remote.auth.v1.PairingDirectRouteSeed
-	43, // 35: muxvia.remote.auth.v1.PairingRouteSeed.managed_webrtc:type_name -> muxvia.remote.auth.v1.PairingManagedRouteSeed
-	44, // 36: muxvia.remote.auth.v1.PairingClaimOfferV1.route:type_name -> muxvia.remote.auth.v1.PairingRouteSeed
-	7,  // 37: muxvia.remote.auth.v1.EndpointConfigV1.label_source:type_name -> muxvia.remote.auth.v1.EndpointSource
-	34, // 38: muxvia.remote.auth.v1.EndpointConfigV1.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
-	5,  // 39: muxvia.remote.auth.v1.EndpointConfigV1.connect_mode:type_name -> muxvia.remote.auth.v1.EndpointConnectMode
-	35, // 40: muxvia.remote.auth.v1.EndpointConfigV1.selection_policy:type_name -> muxvia.remote.auth.v1.EndpointSelectionPolicy
-	41, // 41: muxvia.remote.auth.v1.EndpointConfigV1.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
-	46, // 42: muxvia.remote.auth.v1.EndpointRegistryV1.endpoints:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
-	48, // 43: muxvia.remote.auth.v1.EndpointAuthorizationBootstrap.pairing_ticket:type_name -> muxvia.remote.auth.v1.PairingTicketDescriptor
-	34, // 44: muxvia.remote.auth.v1.EndpointBootstrapBundleV2.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
-	41, // 45: muxvia.remote.auth.v1.EndpointBootstrapBundleV2.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
-	49, // 46: muxvia.remote.auth.v1.EndpointBootstrapBundleV2.authorization:type_name -> muxvia.remote.auth.v1.EndpointAuthorizationBootstrap
-	48, // 47: muxvia.remote.auth.v1.PairingTicketSignatureInput.ticket:type_name -> muxvia.remote.auth.v1.PairingTicketDescriptor
-	50, // 48: muxvia.remote.auth.v1.EndpointBootstrapSignatureInput.bundle:type_name -> muxvia.remote.auth.v1.EndpointBootstrapBundleV2
-	34, // 49: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
-	41, // 50: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
-	5,  // 51: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.connect_mode:type_name -> muxvia.remote.auth.v1.EndpointConnectMode
-	35, // 52: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.selection_policy:type_name -> muxvia.remote.auth.v1.EndpointSelectionPolicy
-	36, // 53: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.credential_descriptors:type_name -> muxvia.remote.auth.v1.EndpointCredentialDescriptor
-	55, // 54: muxvia.remote.auth.v1.ShareSessionClientEnvelope.hello:type_name -> muxvia.remote.auth.v1.ShareReceiverHello
-	58, // 55: muxvia.remote.auth.v1.ShareSessionClientEnvelope.proof:type_name -> muxvia.remote.auth.v1.ShareReceiverProof
-	56, // 56: muxvia.remote.auth.v1.ShareSessionServerEnvelope.challenge:type_name -> muxvia.remote.auth.v1.ShareSenderChallenge
-	53, // 57: muxvia.remote.auth.v1.ShareSessionServerEnvelope.bundle:type_name -> muxvia.remote.auth.v1.ClientEndpointShareBundleV1
-	60, // 58: muxvia.remote.auth.v1.ShareSessionServerEnvelope.error:type_name -> muxvia.remote.auth.v1.ShareSessionError
-	59, // [59:59] is the sub-list for method output_type
-	59, // [59:59] is the sub-list for method input_type
-	59, // [59:59] is the sub-list for extension type_name
-	59, // [59:59] is the sub-list for extension extendee
-	0,  // [0:59] is the sub-list for field type_name
+	32, // 23: muxvia.remote.auth.v1.DirectSignalingResponseV1.answer:type_name -> muxvia.remote.auth.v1.DirectSignalingAnswerV1
+	34, // 24: muxvia.remote.auth.v1.DirectSignalingResponseV1.error:type_name -> muxvia.remote.auth.v1.DirectSignalingErrorV1
+	7,  // 25: muxvia.remote.auth.v1.EndpointSelectionPolicy.route_preference:type_name -> muxvia.remote.auth.v1.EndpointRoutePreference
+	10, // 26: muxvia.remote.auth.v1.EndpointCredentialDescriptor.kind:type_name -> muxvia.remote.auth.v1.EndpointCredentialKind
+	38, // 27: muxvia.remote.auth.v1.SSHWebRTCTCPRouteConfig.credential_descriptor:type_name -> muxvia.remote.auth.v1.EndpointCredentialDescriptor
+	6,  // 28: muxvia.remote.auth.v1.ManagedWebRTCRouteConfig.relay_mode:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRelayMode
+	8,  // 29: muxvia.remote.auth.v1.ManagedWebRTCRouteConfig.relay_transport:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRelayTransport
+	9,  // 30: muxvia.remote.auth.v1.EndpointRouteConfigV1.source:type_name -> muxvia.remote.auth.v1.EndpointSource
+	9,  // 31: muxvia.remote.auth.v1.EndpointRouteConfigV1.policy_source:type_name -> muxvia.remote.auth.v1.EndpointSource
+	39, // 32: muxvia.remote.auth.v1.EndpointRouteConfigV1.local_unix:type_name -> muxvia.remote.auth.v1.LocalUnixRouteConfig
+	40, // 33: muxvia.remote.auth.v1.EndpointRouteConfigV1.direct_webrtc_tcp:type_name -> muxvia.remote.auth.v1.DirectWebRTCTCPRouteConfig
+	41, // 34: muxvia.remote.auth.v1.EndpointRouteConfigV1.ssh_webrtc_tcp:type_name -> muxvia.remote.auth.v1.SSHWebRTCTCPRouteConfig
+	42, // 35: muxvia.remote.auth.v1.EndpointRouteConfigV1.managed_webrtc:type_name -> muxvia.remote.auth.v1.ManagedWebRTCRouteConfig
+	44, // 36: muxvia.remote.auth.v1.PairingRouteSeed.direct_webrtc_tcp:type_name -> muxvia.remote.auth.v1.PairingDirectRouteSeed
+	45, // 37: muxvia.remote.auth.v1.PairingRouteSeed.managed_webrtc:type_name -> muxvia.remote.auth.v1.PairingManagedRouteSeed
+	46, // 38: muxvia.remote.auth.v1.PairingClaimOfferV1.route:type_name -> muxvia.remote.auth.v1.PairingRouteSeed
+	9,  // 39: muxvia.remote.auth.v1.EndpointConfigV1.label_source:type_name -> muxvia.remote.auth.v1.EndpointSource
+	36, // 40: muxvia.remote.auth.v1.EndpointConfigV1.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
+	5,  // 41: muxvia.remote.auth.v1.EndpointConfigV1.connect_mode:type_name -> muxvia.remote.auth.v1.EndpointConnectMode
+	37, // 42: muxvia.remote.auth.v1.EndpointConfigV1.selection_policy:type_name -> muxvia.remote.auth.v1.EndpointSelectionPolicy
+	43, // 43: muxvia.remote.auth.v1.EndpointConfigV1.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
+	48, // 44: muxvia.remote.auth.v1.EndpointRegistryV1.endpoints:type_name -> muxvia.remote.auth.v1.EndpointConfigV1
+	50, // 45: muxvia.remote.auth.v1.EndpointAuthorizationBootstrap.pairing_ticket:type_name -> muxvia.remote.auth.v1.PairingTicketDescriptor
+	36, // 46: muxvia.remote.auth.v1.EndpointBootstrapBundleV2.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
+	43, // 47: muxvia.remote.auth.v1.EndpointBootstrapBundleV2.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
+	51, // 48: muxvia.remote.auth.v1.EndpointBootstrapBundleV2.authorization:type_name -> muxvia.remote.auth.v1.EndpointAuthorizationBootstrap
+	50, // 49: muxvia.remote.auth.v1.PairingTicketSignatureInput.ticket:type_name -> muxvia.remote.auth.v1.PairingTicketDescriptor
+	52, // 50: muxvia.remote.auth.v1.EndpointBootstrapSignatureInput.bundle:type_name -> muxvia.remote.auth.v1.EndpointBootstrapBundleV2
+	36, // 51: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.identity:type_name -> muxvia.remote.auth.v1.EndpointDaemonIdentity
+	43, // 52: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.routes:type_name -> muxvia.remote.auth.v1.EndpointRouteConfigV1
+	5,  // 53: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.connect_mode:type_name -> muxvia.remote.auth.v1.EndpointConnectMode
+	37, // 54: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.selection_policy:type_name -> muxvia.remote.auth.v1.EndpointSelectionPolicy
+	38, // 55: muxvia.remote.auth.v1.ClientEndpointShareBundleV1.credential_descriptors:type_name -> muxvia.remote.auth.v1.EndpointCredentialDescriptor
+	57, // 56: muxvia.remote.auth.v1.ShareSessionClientEnvelope.hello:type_name -> muxvia.remote.auth.v1.ShareReceiverHello
+	60, // 57: muxvia.remote.auth.v1.ShareSessionClientEnvelope.proof:type_name -> muxvia.remote.auth.v1.ShareReceiverProof
+	58, // 58: muxvia.remote.auth.v1.ShareSessionServerEnvelope.challenge:type_name -> muxvia.remote.auth.v1.ShareSenderChallenge
+	55, // 59: muxvia.remote.auth.v1.ShareSessionServerEnvelope.bundle:type_name -> muxvia.remote.auth.v1.ClientEndpointShareBundleV1
+	62, // 60: muxvia.remote.auth.v1.ShareSessionServerEnvelope.error:type_name -> muxvia.remote.auth.v1.ShareSessionError
+	61, // [61:61] is the sub-list for method output_type
+	61, // [61:61] is the sub-list for method input_type
+	61, // [61:61] is the sub-list for extension type_name
+	61, // [61:61] is the sub-list for extension extendee
+	0,  // [0:61] is the sub-list for field type_name
 }
 
 func init() { file_remoteauthpb_remote_auth_proto_init() }
@@ -5428,7 +5572,7 @@ func file_remoteauthpb_remote_auth_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_remoteauthpb_remote_auth_proto_rawDesc), len(file_remoteauthpb_remote_auth_proto_rawDesc)),
-			NumEnums:      9,
+			NumEnums:      11,
 			NumMessages:   53,
 			NumExtensions: 0,
 			NumServices:   0,

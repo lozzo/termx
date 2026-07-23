@@ -15,7 +15,7 @@ import {
   MuxviaApiApplication,
   MuxviaApiEvents,
   MuxviaApiTerminal,
-	MuxviaRemoteAuth,
+  MuxviaRemoteAuth,
   muxviaI18n,
 } from '@muxvia/ui'
 import type {
@@ -167,67 +167,67 @@ export function MuxviaApp() {
 function createNativeExternalPairingAdapter(registry: NativeEndpointRegistryProjection): ExternalPairingAdapter {
   return {
     async import(rawValue, expectedMachineId) {
-	  const imported = await goBindingClient.importPairing(create(MuxviaClientBinding.ImportPairingRequestSchema, {
-		requestId: crypto.randomUUID(),
-		portablePayload: rawValue,
-		expectedEndpointId: expectedMachineId ?? '',
-	  }))
-	  const endpoint = imported.endpoint
-	  if (!endpoint?.endpointId || !endpoint.identity || endpoint.routes.length === 0) return null
-	  const expiresAt = new Date(Number(imported.expiresAtUnixNano / 1_000_000n)).toISOString()
-	  registry.replace(imported.registry ?? await goBindingClient.getEndpointRegistry())
-	  registry.setAuthorizationExpiry(endpoint.endpointId, expiresAt)
+    const imported = await goBindingClient.importPairing(create(MuxviaClientBinding.ImportPairingRequestSchema, {
+    requestId: crypto.randomUUID(),
+    portablePayload: rawValue,
+    expectedEndpointId: expectedMachineId ?? '',
+    }))
+    const endpoint = imported.endpoint
+    if (!endpoint?.endpointId || !endpoint.identity || endpoint.routes.length === 0) return null
+    const expiresAt = new Date(Number(imported.expiresAtUnixNano / 1_000_000n)).toISOString()
+    registry.replace(imported.registry ?? await goBindingClient.getEndpointRegistry())
+    registry.setAuthorizationExpiry(endpoint.endpointId, expiresAt)
       return {
-		machine: { id: endpoint.endpointId, name: endpoint.label || endpoint.endpointId, accessClass: 'local' },
-		expiresAt,
+    machine: { id: endpoint.endpointId, name: endpoint.label || endpoint.endpointId, accessClass: 'local' },
+    expiresAt,
       }
     },
-	async inspectShare(rawValue) {
-	  const received = await goBindingClient.receiveEndpointShare(rawValue)
-	  const preview = received.preview
-	  if (!preview?.importToken || !preview.identity) throw new Error('Endpoint share preview is incomplete')
-	  return {
-		importToken: preview.importToken,
-		endpointId: preview.endpointId,
-		label: preview.label || preview.endpointId,
-		deviceId: preview.identity.deviceId,
-		deviceFingerprint: preview.identity.deviceFingerprint,
-		routes: preview.routeDiffs.map((route) => ({ id: route.routeId, kind: route.routeKind, action: route.action })),
-		connectModeChanged: preview.connectModeChanged,
-		selectionPolicyChanged: preview.selectionPolicyChanged,
-		credentialKinds: preview.credentialDescriptors.map((descriptor) => String(descriptor.kind)),
-	  }
-	},
-		async commitShare(importToken) {
-		  const committed = await goBindingClient.commitEndpointShare(importToken)
-		  let endpoint = committed.endpoint
-		  if (!endpoint?.endpointId || !endpoint.identity || !committed.registry) throw new Error('Endpoint share commit is incomplete')
-		  registry.replace(committed.registry)
-		  const sshCredentials: NonNullable<import('@muxvia/ui').ExternalPairingImportResult['sshCredentials']> = []
-		  for (const route of endpoint.routes) {
-			if (route.route.case !== 'sshWebrtcTcp' || route.route.value.credentialDescriptor?.kind !== MuxviaRemoteAuth.EndpointCredentialKind.SSH_PRIVATE_KEY) continue
-			const provisioned = await goBindingClient.provisionSSHCredential(endpoint.endpointId, route.routeId)
-			if (!provisioned.endpoint || !provisioned.registry) throw new Error('SSH credential provision result is incomplete')
-			registry.replace(provisioned.registry)
-			endpoint = provisioned.endpoint
-			sshCredentials.push({ routeId: route.routeId, authorizedKey: provisioned.authorizedKey, fingerprint: provisioned.keyFingerprint })
-		  }
-		  return {
-			machine: { id: endpoint.endpointId, name: endpoint.label || endpoint.endpointId, accessClass: 'local' },
-			authorizationRequired: !registry.isAuthorized(endpoint.endpointId),
-			...(sshCredentials.length > 0 ? { sshCredentials } : {}),
-		  }
-	},
+  async inspectShare(rawValue) {
+    const received = await goBindingClient.receiveEndpointShare(rawValue)
+    const preview = received.preview
+    if (!preview?.importToken || !preview.identity) throw new Error('Endpoint share preview is incomplete')
+    return {
+    importToken: preview.importToken,
+    endpointId: preview.endpointId,
+    label: preview.label || preview.endpointId,
+    deviceId: preview.identity.deviceId,
+    deviceFingerprint: preview.identity.deviceFingerprint,
+    routes: preview.routeDiffs.map((route) => ({ id: route.routeId, kind: route.routeKind, action: route.action })),
+    connectModeChanged: preview.connectModeChanged,
+    selectionPolicyChanged: preview.selectionPolicyChanged,
+    credentialKinds: preview.credentialDescriptors.map((descriptor) => String(descriptor.kind)),
+    }
+  },
+    async commitShare(importToken) {
+      const committed = await goBindingClient.commitEndpointShare(importToken)
+      let endpoint = committed.endpoint
+      if (!endpoint?.endpointId || !endpoint.identity || !committed.registry) throw new Error('Endpoint share commit is incomplete')
+      registry.replace(committed.registry)
+      const sshCredentials: NonNullable<import('@muxvia/ui').ExternalPairingImportResult['sshCredentials']> = []
+      for (const route of endpoint.routes) {
+      if (route.route.case !== 'sshWebrtcTcp' || route.route.value.credentialDescriptor?.kind !== MuxviaRemoteAuth.EndpointCredentialKind.SSH_PRIVATE_KEY) continue
+      const provisioned = await goBindingClient.provisionSSHCredential(endpoint.endpointId, route.routeId)
+      if (!provisioned.endpoint || !provisioned.registry) throw new Error('SSH credential provision result is incomplete')
+      registry.replace(provisioned.registry)
+      endpoint = provisioned.endpoint
+      sshCredentials.push({ routeId: route.routeId, authorizedKey: provisioned.authorizedKey, fingerprint: provisioned.keyFingerprint })
+      }
+      return {
+      machine: { id: endpoint.endpointId, name: endpoint.label || endpoint.endpointId, accessClass: 'local' },
+      authorizationRequired: !registry.isAuthorized(endpoint.endpointId),
+      ...(sshCredentials.length > 0 ? { sshCredentials } : {}),
+      }
+  },
     isAuthorized(machineId) {
-	  return registry.isAuthorized(machineId)
+    return registry.isAuthorized(machineId)
     },
     authorizationExpiresAt(machineId) {
-	  return registry.authorizationExpiry(machineId)
+    return registry.authorizationExpiry(machineId)
     },
     async forget(machineId) {
-	  const deleted = await goBindingClient.deleteEndpoint(machineId)
-	  if (deleted.registry) registry.replace(deleted.registry)
-	  registry.setAuthorizationExpiry(machineId, undefined)
+    const deleted = await goBindingClient.deleteEndpoint(machineId)
+    if (deleted.registry) registry.replace(deleted.registry)
+    registry.setAuthorizationExpiry(machineId, undefined)
     },
   }
 }
@@ -246,8 +246,8 @@ class NativeEndpointRegistryProjection {
   snapshot(): MuxviaRemoteAuth.EndpointRegistryV1 { return create(MuxviaRemoteAuth.EndpointRegistryV1Schema, this.registry) }
   has(endpointId: string): boolean { return this.registry.endpoints.some((endpoint) => endpoint.endpointId === endpointId) }
   isAuthorized(endpointId: string): boolean {
-	const endpoint = this.registry.endpoints.find((candidate) => candidate.endpointId === endpointId)
-	return endpoint?.routes.some((route) => route.credentialRef.trim() !== '') ?? false
+  const endpoint = this.registry.endpoints.find((candidate) => candidate.endpointId === endpointId)
+  return endpoint?.routes.some((route) => route.credentialRef.trim() !== '') ?? false
   }
   version(): number { return this.versionValue }
   authorizationExpiry(endpointId: string): string | undefined { return this.expiries.get(endpointId) }
@@ -366,16 +366,16 @@ function useAppResumeSync(
         markNativeBackground()
         return
       }
-	  void NativeConnection.handleForegroundResume().then(async () => {
-		// Native 已创建新 generation 后再通知 UI；冻结前的 session/resource handle 不得继续使用。
-		await replaceNativeGeneration(refreshRegistry, resetRuntime, true)
-	  }).then(
-		() => finishNativeForeground(),
-		(failure) => {
-		  reportNativeGenerationFailure(failure)
-		  finishNativeForeground(failure)
-		},
-	  )
+    void NativeConnection.handleForegroundResume().then(async () => {
+    // Native 已创建新 generation 后再通知 UI；冻结前的 session/resource handle 不得继续使用。
+    await replaceNativeGeneration(refreshRegistry, resetRuntime, true)
+    }).then(
+    () => finishNativeForeground(),
+    (failure) => {
+      reportNativeGenerationFailure(failure)
+      finishNativeForeground(failure)
+    },
+    )
     })
     const generationPromise = NativeConnection.addListener('generationChanged', () => {
       markNativeBackground()
@@ -666,7 +666,7 @@ function createNativeMachineRuntime(
   const storedMachine = machineStore.getMachine(machine.id)
   const endpointIdentity = [
     machine.id,
-	endpointRegistry.version(),
+  endpointRegistry.version(),
   ].join('|')
   let entry = shared.sessionManagers.get(machine.id)
   if (!entry || entry.endpointIdentity !== endpointIdentity) {
@@ -708,13 +708,14 @@ function createNativeMachineRuntime(
         onStatus: options?.onStatus,
         onConnectionState: options?.onConnectionState,
       })
-      emitNativeRuntimeConnectionState(options, machine.id, 'connecting', 'Fetching terminals...')
+    const relayInUse = session.connection?.localCandidateType === MuxviaClientBinding.ConnectionCandidateType.RELAY
+      emitNativeRuntimeConnectionState(options, machine.id, 'connecting', 'Fetching terminals...', relayInUse)
       try {
         const response = await session.execute(create(MuxviaApiApplication.CommandEnvelopeSchema, {
           command: { case: 'terminalList', value: create(MuxviaApiTerminal.TerminalListCommandSchema) },
         }))
         if (response.result.case !== 'terminalList') throw new Error('terminal list returned no result')
-        emitNativeRuntimeConnectionState(options, machine.id, 'connected', 'Connected')
+        emitNativeRuntimeConnectionState(options, machine.id, 'connected', 'Connected', relayInUse)
         return normalizeTerminalInventory({
           machine_id: machine.id,
           terminals: response.result.value.terminals.map((terminal) => ({
@@ -745,8 +746,10 @@ function createNativeMachineRuntime(
         return sessionPromise
       },
       reconnect(options) {
-        void sessionManager.resetClientOnly(options)
+    return sessionManager.resetClientOnly(options)
       },
+      getConnectionPolicy: (signal) => connector.getConnectionPolicy?.(signal) ?? Promise.reject(new Error('Connection policy is unavailable')),
+      applyConnectionPolicy: (policy, signal) => connector.applyConnectionPolicy?.(policy, signal) ?? Promise.reject(new Error('Connection policy is unavailable')),
     },
     inventoryEvents: createNativeInventoryEvents(machine.id, sessionManager),
     fileTransfer: createFileTransferContext(machine.id, transferStore),
@@ -796,19 +799,21 @@ function createNativeConnector(
   machine: WebControlMachine,
   endpointRegistry: NativeEndpointRegistryProjection,
 ): NativeSessionConnector {
-	if (!endpointRegistry.has(machine.id)) {
+  if (!endpointRegistry.has(machine.id)) {
     return {
       async connect() {
-		throw new Error('Endpoint requires a valid Proto configuration from the pairing flow')
+    throw new Error('Endpoint requires a valid Proto configuration from the pairing flow')
       },
     }
   }
 
   const connector = new GoBindingConnector(() => goBindingClient, {
-	endpointId: machine.id,
+  endpointId: machine.id,
   })
   return {
     connect: (target, options) => connector.connect(target, options),
+    getConnectionPolicy: (signal) => connector.getConnectionPolicy(signal),
+    applyConnectionPolicy: (policy, signal) => connector.applyConnectionPolicy(policy, signal),
   }
 }
 
@@ -856,13 +861,14 @@ function emitNativeRuntimeConnectionState(
   machineId: string,
   phase: RtcConnectionStateSnapshot['phase'],
   statusText: string,
+  relayInUse = false,
 ): void {
   options?.onStatus?.(statusText)
   options?.onConnectionState?.({
     machineId,
     phase,
     statusText,
-    relayInUse: false,
+  relayInUse,
   })
 }
 

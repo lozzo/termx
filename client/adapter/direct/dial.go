@@ -556,6 +556,33 @@ func (session *Session) ExecuteApplicationTerminal(ctx context.Context, command 
 	return session.ApplicationSession.ExecuteTerminal(ctx, command)
 }
 
+// ConnectionSnapshot 投影 Direct ReadySession 的实际 selected ICE-TCP pair，不暴露候选地址。
+func (session *Session) ConnectionSnapshot(at time.Time) (clientruntime.ConnectionSnapshot, bool) {
+	if session == nil || session.ApplicationClient == nil {
+		return clientruntime.ConnectionSnapshot{}, false
+	}
+	result := clientruntime.ConnectionSnapshot{
+		RouteID: session.Stamp().RouteID, RouteKind: endpoint.RouteDirectWebRTCTCP,
+		ObservedPath: session.ObservedPath(), SampledAt: at.UTC(), Connected: true,
+	}
+	if snapshot, ok := session.peer.Snapshot(at); ok {
+		result.SampledAt = snapshot.At
+		result.RoundTrip = snapshot.RoundTrip
+		result.LocalCandidateType = snapshot.LocalCandidateType
+		result.RemoteCandidateType = snapshot.RemoteCandidateType
+		result.LocalProtocol = snapshot.LocalProtocol
+		result.RemoteProtocol = snapshot.RemoteProtocol
+		result.RelayTransport = snapshot.RelayProtocol
+		result.NetworkClass = snapshot.NetworkClass
+		result.BytesSent = snapshot.BytesSent
+		result.BytesReceived = snapshot.BytesRecv
+		result.PacketsSent = snapshot.PacketsSent
+		result.LossEvents = snapshot.LossEvents
+		result.Connected = snapshot.Connected
+	}
+	return result, true
+}
+
 // Close 幂等关闭 protocol/DataChannel 与 Pion peer，并等待两侧资源释放请求完成。
 func (session *Session) Close() error {
 	if session == nil {

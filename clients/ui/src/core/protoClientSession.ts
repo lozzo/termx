@@ -1,6 +1,7 @@
 import type { CommandEnvelope, EventEnvelope, ResultEnvelope } from '../generated/apipb/application_pb'
 import type { EndpointSessionStamp, ResourceHandle } from '../generated/apipb/common_pb'
 import type { ResourceStreamFrameType } from '../generated/bindingpb/client_binding_pb'
+import type { ConnectionSnapshot } from '../generated/bindingpb/client_binding_pb'
 
 export interface ProtoClientSubscription {
   close(): void
@@ -20,6 +21,8 @@ export interface ProtoResourceStream {
  */
 export interface ProtoClientSession {
   readonly stamp: EndpointSessionStamp
+  readonly connection?: ConnectionSnapshot | undefined
+  getConnectionSnapshot?(): Promise<ConnectionSnapshot | undefined>
   execute(command: CommandEnvelope, options?: { signal?: AbortSignal }): Promise<ResultEnvelope>
   subscribeEvents(handler: (event: EventEnvelope) => void): ProtoClientSubscription
   openResourceStream(resource: ResourceHandle, options?: { initialUploadOffset?: bigint; signal?: AbortSignal }): Promise<ProtoResourceStream>

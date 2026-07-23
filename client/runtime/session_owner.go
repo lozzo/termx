@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/muxvia/muxvia/client/endpoint"
 	"github.com/muxvia/muxvia/proto/apipb"
@@ -18,10 +19,16 @@ type SessionOwner struct {
 	current      map[endpoint.EndpointID]ApplicationReadyPeerSession
 	configs      map[endpoint.EndpointID]string
 	stickyRoutes map[endpoint.EndpointID]endpoint.RouteID
+	selections   map[endpoint.EndpointID]routeSelection
 	acquireLocks map[endpoint.EndpointID]*sync.Mutex
 	sharedLeases map[endpoint.EndpointID]map[*sharedApplicationLease]struct{}
 	watchers     map[endpoint.EndpointID]map[chan EndpointEvent]struct{}
 	closed       bool
+}
+
+type routeSelection struct {
+	generation SessionGeneration
+	reason     string
 }
 
 // SessionGenerationAuthority 是 Go Client Engine 进程级的 endpoint generation 真值。
@@ -54,6 +61,7 @@ func NewSessionOwnerWithAuthority(authority *SessionGenerationAuthority) *Sessio
 		current:      make(map[endpoint.EndpointID]ApplicationReadyPeerSession),
 		configs:      make(map[endpoint.EndpointID]string),
 		stickyRoutes: make(map[endpoint.EndpointID]endpoint.RouteID),
+		selections:   make(map[endpoint.EndpointID]routeSelection),
 		acquireLocks: make(map[endpoint.EndpointID]*sync.Mutex),
 		sharedLeases: make(map[endpoint.EndpointID]map[*sharedApplicationLease]struct{}),
 		watchers:     make(map[endpoint.EndpointID]map[chan EndpointEvent]struct{}),
@@ -136,12 +144,16 @@ func (owner *SessionOwner) ConnectRoute(
 	if err != nil {
 		return SessionLease{}, err
 	}
-	return owner.AdoptReadyPeerSession(attempt, ready)
+	return owner.adoptReadyPeerSession(attempt, ready, "route_override")
 }
 
 // AdoptReadyPeerSession 把指定 attempt 已完成 Hello/auth 的 ready session 发布为当前 winner。
 // 该入口只供 composition 迁移已经建立的 transport；attempt generation 必须先由 BeginRouteAttempt 分配，调用方不能伪造 stamp。
 func (owner *SessionOwner) AdoptReadyPeerSession(attempt AttemptRequest, ready ReadyPeerSession) (SessionLease, error) {
+	return owner.adoptReadyPeerSession(attempt, ready, "route_override")
+}
+
+func (owner *SessionOwner) adoptReadyPeerSession(attempt AttemptRequest, ready ReadyPeerSession, selectionReason string) (SessionLease, error) {
 	if owner == nil {
 		if ready != nil {
 			_ = ready.Close()
@@ -172,6 +184,7 @@ func (owner *SessionOwner) AdoptReadyPeerSession(attempt AttemptRequest, ready R
 	owner.authority.current[endpointID] = application
 	owner.authority.mu.Unlock()
 	owner.current[endpointID] = application
+	owner.selections[endpointID] = routeSelection{generation: generation, reason: selectionReason}
 	owner.mu.Unlock()
 	go owner.removeWhenDone(endpointID, generation, application)
 	return SessionLease{Stamp: attempt.Stamp()}, nil
@@ -216,6 +229,7 @@ func (owner *SessionOwner) beginEndpointGeneration(endpointID endpoint.EndpointI
 	previous := owner.current[endpointID]
 	delete(owner.current, endpointID)
 	delete(owner.configs, endpointID)
+	delete(owner.selections, endpointID)
 	shared := owner.takeSharedLeasesLocked(endpointID)
 	owner.mu.Unlock()
 	for _, lease := range shared {
@@ -278,6 +292,7 @@ func (owner *SessionOwner) Disconnect(_ context.Context, request DisconnectReque
 		return runtimeError(ErrorStaleSession, "disconnect session stamp is not current", nil)
 	}
 	delete(owner.current, request.Stamp.EndpointID)
+	delete(owner.selections, request.Stamp.EndpointID)
 	owner.authority.removeCurrent(request.Stamp.EndpointID, session)
 	owner.mu.Unlock()
 	return session.Close()
@@ -300,6 +315,7 @@ func (owner *SessionOwner) invalidateApplicationSession(stamp EndpointSessionSta
 	}
 	delete(owner.current, stamp.EndpointID)
 	delete(owner.configs, stamp.EndpointID)
+	delete(owner.selections, stamp.EndpointID)
 	shared := owner.takeSharedLeasesForSessionLocked(stamp.EndpointID, session)
 	owner.authority.removeCurrent(stamp.EndpointID, session)
 	owner.mu.Unlock()
@@ -327,6 +343,7 @@ func (owner *SessionOwner) Close() error {
 		owner.authority.removeCurrent(endpointID, session)
 		delete(owner.current, endpointID)
 		delete(owner.configs, endpointID)
+		delete(owner.selections, endpointID)
 	}
 	shared := make([]*sharedApplicationLease, 0)
 	for endpointID := range owner.sharedLeases {
@@ -378,6 +395,7 @@ func (owner *SessionOwner) removeWhenDone(endpointID endpoint.EndpointID, genera
 	if current := owner.current[endpointID]; current == session {
 		delete(owner.current, endpointID)
 		delete(owner.configs, endpointID)
+		delete(owner.selections, endpointID)
 	}
 	// 旧 session 的 Done 可能晚于新 generation 发布；这里只能回收精确绑定
 	// 当前 ready session 的 consumer lease，不能触碰后来 generation。
@@ -488,6 +506,34 @@ func (session *ownedApplicationSession) Readiness() ReadyPeerSessionEvidence {
 func (session *ownedApplicationSession) Done() <-chan struct{} { return session.done }
 func (session *ownedApplicationSession) Err() error            { return session.terminal.Err() }
 
+// ConnectionSnapshot 转发当前 owner winner 的即时诊断；stale wrapper 不返回旧 transport 数据。
+func (session *ownedApplicationSession) ConnectionSnapshot(at time.Time) (ConnectionSnapshot, bool) {
+	current, err := session.owner.session(session.stamp)
+	if err != nil {
+		return ConnectionSnapshot{}, false
+	}
+	provider, ok := current.(ConnectionSnapshotProvider)
+	if !ok {
+		return ConnectionSnapshot{}, false
+	}
+	snapshot, valid := provider.ConnectionSnapshot(at)
+	if !valid {
+		return ConnectionSnapshot{}, false
+	}
+	snapshot.SelectionReason = session.owner.selectionReason(session.stamp)
+	return snapshot, true
+}
+
+func (owner *SessionOwner) selectionReason(stamp EndpointSessionStamp) string {
+	owner.mu.Lock()
+	defer owner.mu.Unlock()
+	selection := owner.selections[stamp.EndpointID]
+	if selection.generation != stamp.Generation {
+		return ""
+	}
+	return selection.reason
+}
+
 func (session *ownedApplicationSession) Close() error {
 	return session.owner.Disconnect(context.Background(), DisconnectRequest{Stamp: session.stamp})
 }
@@ -589,6 +635,23 @@ func (lease *sharedApplicationLease) Err() error {
 	lease.errMu.Lock()
 	defer lease.errMu.Unlock()
 	return lease.err
+}
+
+// ConnectionSnapshot 只在 consumer lease 仍有效时转发底层 ReadySession 的即时诊断。
+func (lease *sharedApplicationLease) ConnectionSnapshot(at time.Time) (ConnectionSnapshot, bool) {
+	if lease.active() != nil {
+		return ConnectionSnapshot{}, false
+	}
+	provider, ok := lease.ready.(ConnectionSnapshotProvider)
+	if !ok {
+		return ConnectionSnapshot{}, false
+	}
+	snapshot, valid := provider.ConnectionSnapshot(at)
+	if !valid {
+		return ConnectionSnapshot{}, false
+	}
+	snapshot.SelectionReason = lease.owner.selectionReason(lease.ready.Stamp())
+	return snapshot, true
 }
 func (lease *sharedApplicationLease) Close() error {
 	lease.closeOnce.Do(func() {

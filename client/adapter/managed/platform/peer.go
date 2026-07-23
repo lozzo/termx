@@ -255,7 +255,36 @@ func (peer *peer) Snapshot(at time.Time) (port.ManagedPeerSnapshot, bool) {
 		At: time.Unix(0, value.GetSampledAtUnixNano()).UTC(), RoundTrip: time.Duration(value.GetRoundTripNanos()),
 		BytesSent: value.GetBytesSent(), BytesRecv: value.GetBytesReceived(), PacketsSent: value.GetPacketsSent(),
 		LossEvents: value.GetLossEvents(), Connected: value.GetConnected(),
+		LocalCandidateType: bindingCandidateType(value.GetLocalCandidateType()), RemoteCandidateType: bindingCandidateType(value.GetRemoteCandidateType()),
+		LocalProtocol: bindingTransport(value.GetLocalProtocol()), RemoteProtocol: bindingTransport(value.GetRemoteProtocol()),
+		RelayProtocol: bindingTransport(value.GetRelayTransport()),
 	}, true
+}
+
+func bindingCandidateType(value bindingpb.ConnectionCandidateType) string {
+	switch value {
+	case bindingpb.ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_HOST:
+		return "host"
+	case bindingpb.ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_SERVER_REFLEXIVE:
+		return "srflx"
+	case bindingpb.ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_PEER_REFLEXIVE:
+		return "prflx"
+	case bindingpb.ConnectionCandidateType_CONNECTION_CANDIDATE_TYPE_RELAY:
+		return "relay"
+	default:
+		return ""
+	}
+}
+
+func bindingTransport(value bindingpb.ConnectionTransport) string {
+	switch value {
+	case bindingpb.ConnectionTransport_CONNECTION_TRANSPORT_UDP:
+		return "udp"
+	case bindingpb.ConnectionTransport_CONNECTION_TRANSPORT_TCP:
+		return "tcp"
+	default:
+		return ""
+	}
 }
 
 func (peer *peer) Close() error {

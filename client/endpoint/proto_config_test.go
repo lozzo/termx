@@ -16,7 +16,7 @@ func TestEndpointRegistryProtoRoundTripCoversAllRouteKinds(t *testing.T) {
 		Endpoints: map[EndpointID]Endpoint{"studio": {
 			ID: "studio", Label: "Studio", LabelSource: SourceUser, DaemonIdentity: identity,
 			ConnectMode: ConnectOnDemand, Enabled: true,
-			SelectionPolicy: SelectionPolicy{},
+			SelectionPolicy: SelectionPolicy{RoutePreference: RoutePreferenceManagedCloud},
 			Routes: map[RouteID]AccessRoute{
 				"local": {
 					ID: "local", Kind: RouteLocalUnix, Enabled: true, Priority: priority(10), Source: SourceLocal, PolicySource: SourceUser, Socket: "auto",
@@ -34,7 +34,7 @@ func TestEndpointRegistryProtoRoundTripCoversAllRouteKinds(t *testing.T) {
 				},
 				"cloud": {
 					ID: "cloud", Kind: RouteManagedWebRTC, Enabled: true, Priority: priority(40), CredentialRef: "grant:studio",
-					Source: SourceCloud, PolicySource: SourceUser, TargetDeviceID: identity.DeviceID, AccountProfileRef: "default", RelayMode: RelayAuto,
+					Source: SourceCloud, PolicySource: SourceUser, TargetDeviceID: identity.DeviceID, AccountProfileRef: "default", RelayMode: RelayOnly, RelayTransport: RelayTransportTCP,
 				},
 			},
 		}},

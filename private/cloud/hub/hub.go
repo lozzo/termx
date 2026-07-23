@@ -239,11 +239,20 @@ func (service *Service) fenceAssignmentLocked(deviceID string, assignmentEpoch u
 	return changed
 }
 
-func (service *Service) validateOffer(accountID, clientDeviceID, targetDeviceID, managedSessionID, signalingSessionID, sdp string, candidates []Candidate, routePreference RoutePreference, relayOnly bool) error {
-	if accountID == "" || clientDeviceID == "" || targetDeviceID == "" || clientDeviceID == targetDeviceID || managedSessionID == "" || signalingSessionID == "" || sdp == "" || len(sdp) > service.maxSDPBytes || len(candidates) > service.maxCandidates || !validCandidates(candidates) || !validRoutePreference(routePreference) || relayOnly && routePreference == RoutePreferenceDirectOnly {
+func (service *Service) validateOffer(accountID, clientDeviceID, targetDeviceID, managedSessionID, signalingSessionID, sdp string, candidates []Candidate, routePreference RoutePreference, relayOnly bool, relayTransport RelayTransport) error {
+	if accountID == "" || clientDeviceID == "" || targetDeviceID == "" || clientDeviceID == targetDeviceID || managedSessionID == "" || signalingSessionID == "" || sdp == "" || len(sdp) > service.maxSDPBytes || len(candidates) > service.maxCandidates || !validCandidates(candidates) || !validRoutePreference(routePreference) || relayOnly && routePreference == RoutePreferenceDirectOnly || !validRelayTransport(relayTransport) {
 		return ErrInvalidSignal
 	}
 	return nil
+}
+
+func validRelayTransport(transport RelayTransport) bool {
+	switch transport {
+	case 0, RelayTransportAuto, RelayTransportUDP, RelayTransportTCP:
+		return true
+	default:
+		return false
+	}
 }
 
 func validRoutePreference(preference RoutePreference) bool {

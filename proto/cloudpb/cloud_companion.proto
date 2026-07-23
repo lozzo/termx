@@ -77,6 +77,15 @@ enum RoutePreference {
   ROUTE_PREFERENCE_GLOBAL_ACCELERATOR = 4;
 }
 
+// RelayTransport 是 signaling 双端必须共同执行的 TURN transport 约束。
+// 它来自客户端 Endpoint policy 的确定性映射，不表达系统网络或 VPN 状态。
+enum RelayTransport {
+  RELAY_TRANSPORT_UNSPECIFIED = 0;
+  RELAY_TRANSPORT_AUTO = 1;
+  RELAY_TRANSPORT_UDP = 2;
+  RELAY_TRANSPORT_TCP = 3;
+}
+
 // RouteSelectionReason 是公开诊断可见的稳定选路原因，不暴露私有评分权重或商业成本。
 enum RouteSelectionReason {
   ROUTE_SELECTION_REASON_UNSPECIFIED = 0;
@@ -514,6 +523,8 @@ message SignalingOffer {
   uint64 session_incarnation = 9;
   string presence_session_id = 10;
   uint64 assignment_epoch = 11;
+  // relay_transport 是 caller 的显式 TURN transport 约束；daemon 必须应用同一约束。
+  RelayTransport relay_transport = 12;
 }
 
 // SignalingAnswer 是 daemon 返回的 WebRTC answer。
@@ -569,6 +580,7 @@ message CreateSignalingSessionRequest {
   RoutePreference route_preference = 6;
   // relay_only 是本次执行约束，不得从 STANDARD_RELAY 自动推断。
   bool relay_only = 7;
+  RelayTransport relay_transport = 8;
 }
 
 // SignalingClosed 表示 Hub 已关闭一条 signaling session。

@@ -147,6 +147,32 @@ func TestRouteSelectionPlannerKeepsSingleManagedRouteOutOfCommonRace(t *testing.
 	}
 }
 
+func TestRouteSelectionPlannerEnforcesRoutePreferenceWithoutFallback(t *testing.T) {
+	target := plannerEndpoint()
+	target.SelectionPolicy.RoutePreference = RoutePreferenceSSH
+	plan, err := (RouteSelectionPlanner{}).Plan(RouteSelectionRequest{
+		Endpoint: target, Intent: ConnectIntent{Kind: "interactive"}, Generation: 5,
+		SupportedRouteKinds:     []RouteKind{RouteDirectWebRTCTCP, RouteSSHWebRTCTCP, RouteManagedWebRTC},
+		AvailableCredentialRefs: []string{"credential:ssh-studio", "ssh:studio", "credential:studio"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempts := plan.Groups()[0].Attempts()
+	if len(attempts) != 1 || attempts[0].Route.Kind != RouteSSHWebRTCTCP {
+		t.Fatalf("forced SSH attempts = %#v", attempts)
+	}
+
+	target.SelectionPolicy.RoutePreference = RoutePreferenceDirect
+	if _, err := (RouteSelectionPlanner{}).Plan(RouteSelectionRequest{
+		Endpoint: target, Intent: ConnectIntent{Kind: "interactive"}, Generation: 6,
+		SupportedRouteKinds:     []RouteKind{RouteSSHWebRTCTCP, RouteManagedWebRTC},
+		AvailableCredentialRefs: []string{"credential:ssh-studio", "ssh:studio", "credential:studio"},
+	}); !IsCode(err, ErrorRouteUnavailable) {
+		t.Fatalf("unavailable forced Direct error = %v", err)
+	}
+}
+
 func plannerEndpoint() Endpoint {
 	identity := DaemonIdentity{DeviceID: "device-studio", DeviceFingerprint: "SHA256:studio"}
 	return Endpoint{

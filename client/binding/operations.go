@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
 	"github.com/muxvia/muxvia/proto/bindingpb"
 	"google.golang.org/protobuf/proto"
 )
@@ -44,9 +46,67 @@ func (engine *Engine) EngineCommand(payload []byte) (uint64, error) {
 		return engine.startEndpointShareCommit(value.EndpointShareCommit)
 	case *bindingpb.EngineCommand_SshCredentialProvision:
 		return engine.startSSHCredentialProvision(value.SshCredentialProvision)
+	case *bindingpb.EngineCommand_ConnectionPolicyGet:
+		return engine.startConnectionPolicyGet(value.ConnectionPolicyGet)
+	case *bindingpb.EngineCommand_ConnectionPolicyApply:
+		return engine.startConnectionPolicyApply(value.ConnectionPolicyApply)
+	case *bindingpb.EngineCommand_ConnectionSnapshotGet:
+		return engine.startConnectionSnapshotGet(value.ConnectionSnapshotGet)
 	default:
 		return 0, fmt.Errorf("engine command is required")
 	}
+}
+
+func (engine *Engine) connectionPolicyHost() (ConnectionPolicyHost, error) {
+	host, ok := engine.host.(ConnectionPolicyHost)
+	if !ok {
+		return nil, fmt.Errorf("binding host does not support connection policy operations")
+	}
+	return host, nil
+}
+
+func (engine *Engine) startConnectionPolicyGet(request *bindingpb.ConnectionPolicyGetRequest) (uint64, error) {
+	if request == nil || request.GetRequestId() == "" || request.GetEndpointId() == "" {
+		return 0, fmt.Errorf("connection policy get request is incomplete")
+	}
+	host, err := engine.connectionPolicyHost()
+	if err != nil {
+		return 0, err
+	}
+	handle, operationContext, err := engine.startOperation()
+	if err != nil {
+		return 0, err
+	}
+	go engine.runConnectionPolicyGet(handle, operationContext, host, proto.Clone(request).(*bindingpb.ConnectionPolicyGetRequest))
+	return handle, nil
+}
+
+func (engine *Engine) startConnectionPolicyApply(request *bindingpb.ConnectionPolicyApplyRequest) (uint64, error) {
+	if request == nil || request.GetRequestId() == "" || request.GetEndpointId() == "" || request.GetPolicy() == nil {
+		return 0, fmt.Errorf("connection policy apply request is incomplete")
+	}
+	host, err := engine.connectionPolicyHost()
+	if err != nil {
+		return 0, err
+	}
+	handle, operationContext, err := engine.startOperation()
+	if err != nil {
+		return 0, err
+	}
+	go engine.runConnectionPolicyApply(handle, operationContext, host, proto.Clone(request).(*bindingpb.ConnectionPolicyApplyRequest))
+	return handle, nil
+}
+
+func (engine *Engine) startConnectionSnapshotGet(request *bindingpb.ConnectionSnapshotGetRequest) (uint64, error) {
+	if request == nil || request.GetRequestId() == "" || request.GetSessionHandle() == 0 {
+		return 0, fmt.Errorf("connection snapshot get request is incomplete")
+	}
+	handle, operationContext, session, err := engine.startSessionOperation(request.GetSessionHandle())
+	if err != nil {
+		return 0, err
+	}
+	go engine.runConnectionSnapshotGet(handle, operationContext, session, proto.Clone(request).(*bindingpb.ConnectionSnapshotGetRequest))
+	return handle, nil
 }
 
 func (engine *Engine) sshCredentialHost() (SSHCredentialHost, error) {
@@ -360,4 +420,63 @@ func (engine *Engine) runSSHCredentialProvision(handle uint64, ctx context.Conte
 		result.Error = apiError(err)
 	}
 	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_SshCredentialProvision{SshCredentialProvision: result}})
+}
+
+func (engine *Engine) runConnectionPolicyGet(handle uint64, ctx context.Context, host ConnectionPolicyHost, request *bindingpb.ConnectionPolicyGetRequest) {
+	result, err := host.GetConnectionPolicy(ctx, request)
+	if ctx.Err() != nil {
+		result, err = nil, ctx.Err()
+	}
+	engine.markOperationDone(handle)
+	if result == nil {
+		result = &bindingpb.ConnectionPolicyGetResult{}
+	} else {
+		result = proto.Clone(result).(*bindingpb.ConnectionPolicyGetResult)
+	}
+	result.RequestId, result.OperationHandle = request.GetRequestId(), handle
+	if err != nil {
+		result.Error = apiError(err)
+	}
+	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_ConnectionPolicyGet{ConnectionPolicyGet: result}})
+}
+
+func (engine *Engine) runConnectionPolicyApply(handle uint64, ctx context.Context, host ConnectionPolicyHost, request *bindingpb.ConnectionPolicyApplyRequest) {
+	result, err := host.ApplyConnectionPolicy(ctx, request)
+	if ctx.Err() != nil {
+		result, err = nil, ctx.Err()
+	}
+	engine.markOperationDone(handle)
+	if result == nil {
+		result = &bindingpb.ConnectionPolicyApplyResult{}
+	} else {
+		result = proto.Clone(result).(*bindingpb.ConnectionPolicyApplyResult)
+	}
+	result.RequestId, result.OperationHandle = request.GetRequestId(), handle
+	if err != nil {
+		result.Error = apiError(err)
+	}
+	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_ConnectionPolicyApply{ConnectionPolicyApply: result}})
+}
+
+func (engine *Engine) runConnectionSnapshotGet(handle uint64, ctx context.Context, session clientruntime.ApplicationReadyPeerSession, request *bindingpb.ConnectionSnapshotGetRequest) {
+	var snapshot *bindingpb.ConnectionSnapshot
+	var err error
+	if provider, ok := session.(clientruntime.ConnectionSnapshotProvider); !ok {
+		err = fmt.Errorf("application session does not expose a connection snapshot")
+	} else if value, valid := provider.ConnectionSnapshot(time.Now().UTC()); !valid {
+		err = fmt.Errorf("application session connection snapshot is unavailable")
+	} else {
+		snapshot = connectionSnapshotToProto(value)
+	}
+	if ctx.Err() != nil {
+		snapshot, err = nil, ctx.Err()
+	}
+	engine.markOperationDone(handle)
+	result := &bindingpb.ConnectionSnapshotGetResult{
+		RequestId: request.GetRequestId(), OperationHandle: handle, SessionHandle: request.GetSessionHandle(), Connection: snapshot,
+	}
+	if err != nil {
+		result.Error = apiError(err)
+	}
+	engine.emit(&bindingpb.EventEnvelope{Event: &bindingpb.EventEnvelope_ConnectionSnapshotGet{ConnectionSnapshotGet: result}})
 }

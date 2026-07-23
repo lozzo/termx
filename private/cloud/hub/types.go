@@ -23,6 +23,10 @@ type Candidate struct {
 // Hub 只验证它属于冻结枚举；是否签发 RelayLease 仍由 Control Plane 决定，terminal capability 不进入该字段。
 type RoutePreference int32
 
+// RelayTransport 是 Hub 透明转发给目标 daemon 的 TURN transport 约束。
+// Hub 不解释系统网络，也不自行修改 caller 选择。
+type RelayTransport int32
+
 const (
 	// RoutePreferenceDirectOnly 表示本次 signaling 不允许付费 Relay。
 	RoutePreferenceDirectOnly RoutePreference = 1
@@ -32,6 +36,12 @@ const (
 	RoutePreferenceSmartRoute RoutePreference = 3
 	// RoutePreferenceGlobalAccelerator 是延后的受控全球加速 intent；CLOUD004 不执行该路径。
 	RoutePreferenceGlobalAccelerator RoutePreference = 4
+)
+
+const (
+	RelayTransportAuto RelayTransport = 1
+	RelayTransportUDP  RelayTransport = 2
+	RelayTransportTCP  RelayTransport = 3
 )
 
 // Offer 是 client edge authorization 验证后投递给固定 target Presence 的 WebRTC offer。
@@ -47,6 +57,7 @@ type Offer struct {
 	Candidates         []Candidate
 	RoutePreference    RoutePreference
 	RelayOnly          bool
+	RelayTransport     RelayTransport
 }
 
 // Answer 是 daemon edge identity 与 Presence ownership 验证后投递给 owning client 的 WebRTC answer。

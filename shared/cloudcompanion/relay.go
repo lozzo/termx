@@ -1,11 +1,100 @@
 package cloudcompanion
 
 import (
+	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/muxvia/muxvia/proto/cloudpb"
 )
+
+// FilterRelayTransport 对 client 与 daemon 的同一组 ICE material 应用相同的显式 TURN transport 约束。
+// STUN/P2P material 始终保留；返回值是深拷贝，调用方不能借过滤修改 Companion/lease truth。
+func FilterRelayTransport(servers []*cloudpb.IceServer, transport cloudpb.RelayTransport) ([]*cloudpb.IceServer, bool, error) {
+	switch transport {
+	case cloudpb.RelayTransport_RELAY_TRANSPORT_UNSPECIFIED, cloudpb.RelayTransport_RELAY_TRANSPORT_AUTO:
+		return cloneICEServers(servers), hasTURNURLs(servers), nil
+	case cloudpb.RelayTransport_RELAY_TRANSPORT_UDP, cloudpb.RelayTransport_RELAY_TRANSPORT_TCP:
+	default:
+		return nil, false, relayProtocolError("managed route requested an unknown Relay transport")
+	}
+
+	filtered := make([]*cloudpb.IceServer, 0, len(servers))
+	hasTURN := false
+	for _, server := range servers {
+		if server == nil {
+			continue
+		}
+		urls := make([]string, 0, len(server.GetUrls()))
+		for _, raw := range server.GetUrls() {
+			actual, isTURN, err := relayURLTransport(raw)
+			if err != nil {
+				return nil, false, err
+			}
+			if !isTURN {
+				urls = append(urls, raw)
+				continue
+			}
+			if actual == transport {
+				urls = append(urls, raw)
+				hasTURN = true
+			}
+		}
+		if len(urls) != 0 {
+			filtered = append(filtered, &cloudpb.IceServer{Urls: urls, Username: server.GetUsername(), Credential: server.GetCredential()})
+		}
+	}
+	return filtered, hasTURN, nil
+}
+
+func relayURLTransport(raw string) (cloudpb.RelayTransport, bool, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return 0, false, relayProtocolError("managed route contains an invalid ICE URL")
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "turn" && scheme != "turns" {
+		return 0, false, nil
+	}
+	value := strings.ToLower(parsed.Query().Get("transport"))
+	if value == "" {
+		if scheme == "turns" {
+			return cloudpb.RelayTransport_RELAY_TRANSPORT_TCP, true, nil
+		}
+		return cloudpb.RelayTransport_RELAY_TRANSPORT_UDP, true, nil
+	}
+	switch value {
+	case "udp":
+		return cloudpb.RelayTransport_RELAY_TRANSPORT_UDP, true, nil
+	case "tcp":
+		return cloudpb.RelayTransport_RELAY_TRANSPORT_TCP, true, nil
+	default:
+		return 0, true, relayProtocolError(fmt.Sprintf("managed route contains unsupported TURN transport %q", value))
+	}
+}
+
+func cloneICEServers(servers []*cloudpb.IceServer) []*cloudpb.IceServer {
+	cloned := make([]*cloudpb.IceServer, 0, len(servers))
+	for _, server := range servers {
+		if server != nil {
+			cloned = append(cloned, &cloudpb.IceServer{Urls: append([]string(nil), server.GetUrls()...), Username: server.GetUsername(), Credential: server.GetCredential()})
+		}
+	}
+	return cloned
+}
+
+func hasTURNURLs(servers []*cloudpb.IceServer) bool {
+	for _, server := range servers {
+		for _, raw := range server.GetUrls() {
+			scheme := strings.ToLower(strings.SplitN(raw, ":", 2)[0])
+			if scheme == "turn" || scheme == "turns" {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 const maxSingleRelayLeaseTTL = 10 * time.Minute
 const maxSignedRelayLeaseBytes = 1 << 20

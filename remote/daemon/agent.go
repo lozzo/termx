@@ -438,7 +438,14 @@ func (agent Agent) iceServersForOffer(ctx context.Context, offer *cloudpb.Signal
 	if !offer.GetRelayOnly() {
 		iceServers = append(cloneIceServers(presenceServers), iceServers...)
 	}
-	return iceServers, nil
+	filtered, hasTURN, err := cloudcompanion.FilterRelayTransport(iceServers, offer.GetRelayTransport())
+	if err != nil {
+		return nil, err
+	}
+	if offer.GetRelayOnly() && !hasTURN {
+		return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE, "forced Relay transport is unavailable in the current lease")
+	}
+	return filtered, nil
 }
 
 func cloneIceServers(servers []*cloudpb.IceServer) []*cloudpb.IceServer {

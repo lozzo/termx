@@ -699,6 +699,7 @@ var _ binding.Host = (*Host)(nil)
 var _ binding.PairingHost = (*Host)(nil)
 var _ binding.CredentialHost = (*Host)(nil)
 var _ binding.EndpointRegistryHost = (*Host)(nil)
+var _ binding.ConnectionPolicyHost = (*Host)(nil)
 var _ binding.EndpointShareHost = (*Host)(nil)
 var _ peeradapter.CredentialSource = platformCredentials{}
 var _ peeradapter.SignerSource = platformCredentials{}

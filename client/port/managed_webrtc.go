@@ -58,14 +58,19 @@ type ManagedPeer interface {
 // ManagedPeerSnapshot 是质量上报读取的平台网络计数快照。
 // 它不包含 IP、hostname、SDP、credential、endpoint label 或 terminal identity；计数回退表示底层 candidate pair 已换代。
 type ManagedPeerSnapshot struct {
-	PairID       string
-	Path         endpoint.Path
-	NetworkClass string
-	At           time.Time
-	RoundTrip    time.Duration
-	BytesSent    uint64
-	BytesRecv    uint64
-	PacketsSent  uint64
-	LossEvents   uint64
-	Connected    bool
+	PairID              string
+	Path                endpoint.Path
+	NetworkClass        string
+	At                  time.Time
+	RoundTrip           time.Duration
+	BytesSent           uint64
+	BytesRecv           uint64
+	PacketsSent         uint64
+	LossEvents          uint64
+	Connected           bool
+	LocalCandidateType  string
+	RemoteCandidateType string
+	LocalProtocol       string
+	RemoteProtocol      string
+	RelayProtocol       string
 }

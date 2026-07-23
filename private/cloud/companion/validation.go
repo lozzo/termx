@@ -201,10 +201,20 @@ func validatePresenceChallenge(challenge *cloudpb.PresenceChallenge, now time.Ti
 
 func validateSignalingRequest(request *cloudpb.CreateSignalingSessionRequest) error {
 	if request == nil || request.GetEndpointId() == "" || request.GetManagedSessionId() == "" || request.GetTargetDeviceId() == "" || request.GetOfferSdp() == "" || !validRoutePreference(request.GetRoutePreference()) ||
-		request.GetRelayOnly() && request.GetRoutePreference() == cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY {
+		request.GetRelayOnly() && request.GetRoutePreference() == cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY || !validRelayTransport(request.GetRelayTransport()) {
 		return protocolError("invalid signaling session request")
 	}
 	return validateCandidates(request.GetCandidates())
+}
+
+func validRelayTransport(transport cloudpb.RelayTransport) bool {
+	switch transport {
+	case cloudpb.RelayTransport_RELAY_TRANSPORT_UNSPECIFIED, cloudpb.RelayTransport_RELAY_TRANSPORT_AUTO,
+		cloudpb.RelayTransport_RELAY_TRANSPORT_UDP, cloudpb.RelayTransport_RELAY_TRANSPORT_TCP:
+		return true
+	default:
+		return false
+	}
 }
 
 func validateCompleteOfferRequest(request *cloudpb.CompleteSignalingOfferRequest) error {

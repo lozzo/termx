@@ -401,6 +401,9 @@ func (session *ownerSession) Stamp() EndpointSessionStamp         { return sessi
 func (session *ownerSession) ObservedPath() string                { return "direct" }
 func (session *ownerSession) Readiness() ReadyPeerSessionEvidence { return session.evidence }
 func (session *ownerSession) Done() <-chan struct{}               { return session.done }
+func (session *ownerSession) ConnectionSnapshot(at time.Time) (ConnectionSnapshot, bool) {
+	return ConnectionSnapshot{RouteID: session.stamp.RouteID, SampledAt: at, Connected: true}, true
+}
 func (session *ownerSession) Err() error {
 	if session.closed {
 		return io.EOF

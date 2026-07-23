@@ -308,6 +308,25 @@ enum ManagedWebRTCRelayMode {
   MANAGED_WEBRTC_RELAY_MODE_SMART_ROUTE = 4;
 }
 
+// EndpointRoutePreference 是用户对 Endpoint planner 的顶层 Route 约束。
+// 未指定和 AUTO 都允许 planner 按当前 route/priority 竞速；强制模式不可静默回退到其它 kind。
+enum EndpointRoutePreference {
+  ENDPOINT_ROUTE_PREFERENCE_UNSPECIFIED = 0;
+  ENDPOINT_ROUTE_PREFERENCE_AUTO = 1;
+  ENDPOINT_ROUTE_PREFERENCE_DIRECT = 2;
+  ENDPOINT_ROUTE_PREFERENCE_SSH = 3;
+  ENDPOINT_ROUTE_PREFERENCE_MANAGED_CLOUD = 4;
+}
+
+// ManagedWebRTCRelayTransport 约束 managed Route 可使用的 TURN transport。
+// 它不表达系统 Wi-Fi、移动网络或 VPN，也不推断实际选中的 candidate pair。
+enum ManagedWebRTCRelayTransport {
+  MANAGED_WEBRTC_RELAY_TRANSPORT_UNSPECIFIED = 0;
+  MANAGED_WEBRTC_RELAY_TRANSPORT_AUTO = 1;
+  MANAGED_WEBRTC_RELAY_TRANSPORT_UDP = 2;
+  MANAGED_WEBRTC_RELAY_TRANSPORT_TCP = 3;
+}
+
 // EndpointSource 记录 route 或用户策略的来源，供确定性 assembler 保留更高权重的已确认信息。
 enum EndpointSource {
   ENDPOINT_SOURCE_UNSPECIFIED = 0;
@@ -342,6 +361,7 @@ message EndpointDaemonIdentity {
 message EndpointSelectionPolicy {
   bool hedge_delay_configured = 1;
   uint64 hedge_delay_millis = 2;
+  EndpointRoutePreference route_preference = 3;
 }
 
 // EndpointCredentialDescriptor 描述 share 后目标端需要解析或重新创建的凭据，不携带源平台 credential ref 或 secret body。
@@ -384,6 +404,7 @@ message ManagedWebRTCRouteConfig {
   string target_device_id = 1;
   string account_profile_ref = 2;
   ManagedWebRTCRelayMode relay_mode = 3;
+  ManagedWebRTCRelayTransport relay_transport = 4;
 }
 
 // EndpointRouteConfigV1 是跨 Go、JNI、未来 C ABI/WASM 的唯一持久 Route schema。

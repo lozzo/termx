@@ -5,10 +5,40 @@ import (
 	"context"
 	"fmt"
 	"sync/atomic"
+	"time"
 
+	"github.com/muxvia/muxvia/client/endpoint"
 	"github.com/muxvia/muxvia/proto/apipb"
 	"google.golang.org/protobuf/proto"
 )
+
+// ConnectionSnapshot 是同一 ReadyPeerSession 的脱敏即时网络投影。
+// Route/generation 来自 runtime；candidate/RTT 来自实际 peer stats，未知字段必须保持空值而不是推断。
+type ConnectionSnapshot struct {
+	RouteID             endpoint.RouteID
+	RouteKind           endpoint.RouteKind
+	ObservedPath        string
+	SelectionReason     string
+	SampledAt           time.Time
+	RoundTrip           time.Duration
+	LocalCandidateType  string
+	RemoteCandidateType string
+	LocalProtocol       string
+	RemoteProtocol      string
+	RelayTransport      string
+	NetworkClass        string
+	BytesSent           uint64
+	BytesReceived       uint64
+	PacketsSent         uint64
+	LossEvents          uint64
+	Connected           bool
+}
+
+// ConnectionSnapshotProvider 由持有实际 transport 的 ReadySession 实现。
+// 调用方只能采样当前 session，不能用快照驱动路由、鉴权或 generation 状态机。
+type ConnectionSnapshotProvider interface {
+	ConnectionSnapshot(time.Time) (ConnectionSnapshot, bool)
+}
 
 // ProtoApplicationExecutor 是 client runtime 到 protocol/platform binding 的唯一公共 API 执行边界。
 // 实现只运输完整 CommandEnvelope/ResultEnvelope，不解释 terminal 字段，也不选择 route 或 generation。

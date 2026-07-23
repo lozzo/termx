@@ -1,10 +1,14 @@
-import type { ProtoClientSession, ProtoClientSubscription, ProtoResourceStream, RtcConnectOptions } from '@muxvia/ui'
+import type { ConnectionPolicy, ConnectionPolicyState, ProtoClientSession, ProtoClientSubscription, ProtoResourceStream, RtcConnectOptions } from '@muxvia/ui'
 import type { CommandEnvelope, EventEnvelope, ResultEnvelope } from '../../ui/src/generated/apipb/application_pb'
 import type { EndpointSessionStamp, ResourceHandle } from '../../ui/src/generated/apipb/common_pb'
+
+const NATIVE_SESSION_READY_TIMEOUT_MS = 25_000
 
 /** NativeSessionConnector 是 Android UI 到 Go binding session 的窄连接入口，不拥有 route 或 generation 真值。 */
 export type NativeSessionConnector = {
   connect(input: { machineId: string }, options?: RtcConnectOptions): Promise<ProtoClientSession>
+  getConnectionPolicy?(signal?: AbortSignal): Promise<ConnectionPolicyState>
+  applyConnectionPolicy?(policy: ConnectionPolicy, signal?: AbortSignal): Promise<void>
   release?(machineId: string): Promise<void>
 }
 
@@ -18,6 +22,7 @@ export type NativeSessionConnector = {
 export class NativeSessionManager {
   private session: ProtoClientSession | null = null
   private pending: Promise<ProtoClientSession> | null = null
+  private pendingController: AbortController | null = null
   private epoch = 0
 
   constructor(
@@ -43,8 +48,11 @@ export class NativeSessionManager {
     this.epoch += 1
     const session = this.session
     const pending = this.pending
+    const pendingController = this.pendingController
     this.session = null
     this.pending = null
+    this.pendingController = null
+    pendingController?.abort(new Error('native session generation changed while connecting'))
     // native generation owner 已经关闭旧 engine；close 只做幂等清理，不能等待已经失联的 bridge。
     void session?.close().catch(() => undefined)
     if (pending) {
@@ -67,8 +75,12 @@ export class NativeSessionManager {
     }
     if (!this.pending) {
       const epoch = this.epoch
-      // 底层 connect 属于 manager，而不是任一 UI lease；单个调用者只能取消自己的等待。
-      const connectOptions = options ? { ...options, signal: undefined } : undefined
+      // 底层 connect 属于 manager，而不是任一 UI lease；单个 consumer 只能取消自己的等待。
+      // manager-owned signal 同时约束完整 binding operation，并在 generation reset 时主动释放旧 Go attempt。
+      const controller = new AbortController()
+      this.pendingController = controller
+      const timeout = globalThis.setTimeout(() => controller.abort(new Error('client session timed out')), NATIVE_SESSION_READY_TIMEOUT_MS)
+      const connectOptions = { ...options, signal: controller.signal }
       const pending = this.connector.connect({ machineId: this.machineId }, connectOptions).then(async (opened) => {
         if (epoch !== this.epoch) {
           await opened.close().catch(() => undefined)
@@ -79,6 +91,8 @@ export class NativeSessionManager {
       })
       this.pending = pending
       void pending.finally(() => {
+        globalThis.clearTimeout(timeout)
+        if (this.pendingController === controller) this.pendingController = null
         if (this.pending === pending) this.pending = null
       }).catch(() => undefined)
     }
@@ -95,6 +109,7 @@ class NativeSessionLease implements ProtoClientSession {
   constructor(private readonly session: ProtoClientSession) {}
 
   get stamp(): EndpointSessionStamp { return this.session.stamp }
+  get connection() { return this.session.connection }
 
   execute(command: CommandEnvelope, options?: { signal?: AbortSignal }): Promise<ResultEnvelope> {
     if (!this.isAlive()) return Promise.reject(new Error('Proto session lease is closed'))
@@ -119,6 +134,11 @@ class NativeSessionLease implements ProtoClientSession {
   }
 
   isAlive(): boolean { return this.alive && this.session.isAlive() }
+
+  getConnectionSnapshot() {
+    if (!this.isAlive()) return Promise.reject(new Error('Proto session lease is closed'))
+    return this.session.getConnectionSnapshot?.() ?? Promise.resolve(this.session.connection)
+  }
 
   async close(): Promise<void> {
     if (!this.alive) return
