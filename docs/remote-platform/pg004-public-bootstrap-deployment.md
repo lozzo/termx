@@ -4,7 +4,7 @@
 
 2026-07-21 至 2026-07-22 已完成一个真实 Supabase、一个 Controller 和两个独立 Edge 的公网 bootstrap staging。服务使用专用 `muxvia` 用户和 systemd 运行，没有 Muxvia Docker runtime。
 
-该环境已经支持 Web 注册/登录、账号中心、移动端扫码批准、daemon enrollment、managed P2P、单节点 TURN Relay 和 Android Go/JNI 连接。Android 公网 HTTPS staging profile 已真实安装到 ARM64/API 35 模拟器；它不是 production profile，也没有改变正式构建的 fail-closed 默认值。
+该环境已经支持 Web 注册/登录、账号中心、移动端扫码批准、daemon enrollment、managed P2P、单节点 TURN Relay 和 Android Go/JNI 连接。Android 公网 HTTPS staging profile 已真实安装到 ARM64/API 35 模拟器，并在 ARM64/Android 16 实体手机完成 AUTO 跨 NAT terminal UI 验收；它不是 production profile，也没有改变正式构建的 fail-closed 默认值。
 
 该环境仍不是正式商业生产：支付仍为测试 provider，R2 备份恢复和完整 Android file E2E 尚未通过。Android account refresh、Edge 重启后的 daemon Presence 恢复和活跃 session 网络切换已经完成真实公网验收。
 
@@ -80,9 +80,11 @@ Controller 与 Edge 使用独立进程、配置、identity、state 目录和 res
 - Android native generation 会在默认网络变化时关闭旧 Go engine、session/resource/event pump，并重建 Go binding。Hub 明确返回、且证明没有创建 signaling session 的 retryable P2P quota conflict 由 Go managed Dialer 在 75 秒窗口内有界重试；网络超时、认证、协议和其他结果不确定失败不自动重放。ARM64/API 35 模拟器从活跃 Wi-Fi session 切到 cellular 后约 32 秒恢复同一 terminal inventory，cellular 切回 Wi-Fi 约 2 秒恢复；旧 generation 遮罩被新 inventory 成功提交清除，logcat 无 Java/native crash。
 - 网络恢复验收 APK SHA-256 为 `b3f42aaa69129bc79ebfc502c5ba67eafdebd18a76abdb2ba19f1dbbbcb0a2fa`。
 - AUTO 跨 NAT 修复由 Go Client Engine 在 `STANDARD_RELAY` 下主动取得 client caller-specific TURN，并把 STUN/P2P 与 TURN material 同时交给 Pion；daemon 从 offer 为自己的 principal 取得同一 RelayIntent 下的 TURN。Hub 现在让 AUTO signaling 沿用 resolve 返回的 `managed_session_id`，同时保持 `relay_only=false` 和 managed P2P reservation，避免 daemon 因 correlation 改写而取得 `401`。`managedPeer.WaitReady` 在 PeerConnection failed/closed、DataChannel close 或 15 秒 deadline 时显式返回；generated `UNAVAILABLE` 保留到 UI 并显示“检查两端网络后重试”。
-- 修复前实体 Android 16/API 36 手机在移动网络上复现 client Relay lease `200`、daemon Relay lease `401` 与持续等待；修复后的 Go client/daemon/Hub regression、`make test-private`、双 Edge 进程门禁、Client/UI/Android 门禁均通过。公网 US/CN Edge 已滚动更新为 SHA-256 `e7e5c31fd2665602f682f58a5a23095e859060fbe7a9ac4417a723ba4e6c8b9d`，服务端本机与公网 health 均为 `204`，旧版本保存在 `/opt/muxvia/rollback/pre-pg004-auto-turn-20260723/`。本轮 ARM64 APK 与实体设备 `base.apk` SHA-256 均为 `17ff87eebf654aa93cff260b89455f61d6b482a96ce66392e0d980879b6e83ac`，实体 App 已确认失败后停止 loading 并显示上述本地化提示；按用户要求，修复后的主回归直接在 Go 层完成，未把一次新的完整 5G terminal UI 流程计为 PASS。
+- 修复前实体 Android 16/API 36 手机在移动网络上复现 client Relay lease `200`、daemon Relay lease `401` 与持续等待；修复后的 Go client/daemon/Hub regression、`make test-private`、双 Edge 进程门禁、Client/UI/Android 门禁均通过。公网 US/CN Edge 已滚动更新为 SHA-256 `e7e5c31fd2665602f682f58a5a23095e859060fbe7a9ac4417a723ba4e6c8b9d`，服务端本机与公网 health 均为 `204`，旧版本保存在 `/opt/muxvia/rollback/pre-pg004-auto-turn-20260723/`。本轮 ARM64 APK 与实体设备 `base.apk` SHA-256 均为 `17ff87eebf654aa93cff260b89455f61d6b482a96ce66392e0d980879b6e83ac`，实体 App 已确认失败后停止 loading 并显示上述本地化提示。
+- 2026-07-23 实体 AUTO 复测使用 `Xiaomi 24129PN74C`、ARM64、Android 16/API 36；手机关闭 Wi-Fi，默认网络为 `MOBILE[NR] ctnet`，并关闭手机 VPN。目标 Mac 的 Clash 暂时切到 `direct`，用于排除测试机 VPN 对 UDP 回程的影响。真实 App UI 提交 `MXP1` 后依次完成 endpoint resolve、client/daemon caller-specific Relay lease、双端 signaling、DataChannel 配对、terminal list 和 terminal open。脱敏 TURN 摘要证明 client 与 daemon 都完成 `401 -> authenticated Allocate -> CreatePermission/ChannelBind`，并出现双向 ChannelData；AUTO 保持 `relay_only=false`，实际数据路径由单个 US Relay 承载。
+- 同一次实体 App UI 在 `phone-auto-pure5g-20260723` 终端输入 `printf 'MUXVIA_AUTO_5G_OK_20260723\n'`，App 屏幕与 daemon authoritative live capture 都得到 `MUXVIA_AUTO_5G_OK_20260723`。全局 logcat 扫描未发现 `FATAL EXCEPTION`、ANR、`SIGSEGV` 或 native fatal signal。此前保留 Clash `rule` 的失败对照中，两端都只重传匿名 Allocate；Relay 返回的 `401` 含完整 Realm/Nonce 且事务 ID 匹配，但 VPN UDP 路径未把响应交回 Pion。该对照只用于证明测试网络干扰，不计入产品 AUTO 失败。
 
-浏览器截图保存在本地 ignored artifact：
+本地 ignored 证据产物：
 
 ```text
 .artifacts/cloud-deploy/e2e/account.png
@@ -92,6 +94,8 @@ Controller 与 Edge 使用独立进程、配置、identity、state 目录和 res
 .artifacts/cloud-deploy/e2e/android-relay-terminal.png
 .artifacts/pg004/android-active-wifi-to-cellular-retry.png
 .artifacts/pg004/android-active-cellular-to-wifi-retry.png
+.artifacts/pg004-auto/physical-auto-5g-terminal.png
+.artifacts/pg004-auto/muxvia-pg004-turn-17.pcap
 ```
 
 ## 当前限制
