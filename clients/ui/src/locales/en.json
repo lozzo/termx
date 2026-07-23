@@ -87,13 +87,14 @@
     "terminals_one": "{{count}} terminal",
     "terminals_other": "{{count}} terminals",
     "phase": {
-      "resolving": "Resolving",
-      "signaling": "Signaling",
-      "authorizing": "Authorizing",
-      "verifying": "Verifying",
+      "probing": "Checking connection paths",
+      "resolving": "Preparing connection path",
+      "signaling": "P2P signaling",
+      "authorizing": "Verifying device access",
+      "verifying": "Verifying device access",
       "reconnecting": "Reconnecting",
       "waiting_network": "Waiting for network",
-      "connecting": "Connecting"
+      "connecting": "ICE negotiation"
     },
     "details": "Device details",
     "closeDetails": "Close device details",
@@ -190,7 +191,7 @@
     "resizeMode": { "resizable": "Resizable", "warn": "Warn only", "locked": "Locked" },
     "resize": { "unlocked": "Resize unlocked", "acquired": "Resize control acquired", "locked": "Resize is locked", "unavailable": "Resize control unavailable", "released": "Resize control released" },
     "terminalForm": { "name": "Name", "command": "Command", "cwd": "Working directory", "environment": "Environment", "sizeLock": "Size lock" },
-    "connection": { "label": "Connection", "title": "Connection & network", "closeInfo": "Close connection and network", "current": "Current connection", "preference": "Connection preference", "route": "Route", "routeId": "Route ID", "routeAuto": "Auto", "routeLocal": "Local", "routeDirect": "Direct", "routeSSH": "SSH tunnel", "routeCloud": "Muxvia Cloud", "cloudAdvanced": "Cloud advanced settings", "cloudPath": "Cloud path", "cloudAuto": "Auto", "cloudP2P": "P2P only", "cloudRelay": "Relay only", "relayTransport": "Relay transport", "transportAuto": "Auto", "transportUDP": "UDP only", "transportTCP": "TCP only", "path": "Actual path", "pathDirect": "Direct", "pathRelay": "Single relay", "pathRelayMesh": "Relay mesh", "reason": "Selection reason", "candidates": "Candidates", "protocols": "Protocols", "networkClass": "Network class", "rtt": "RTT", "sampledAt": "Sampled", "traffic": "Sent / received", "generation": "Generation", "diagnostics": "Diagnostics", "reading": "Reading status...", "notProvided": "Not provided", "unavailableShort": "Unavailable", "unavailableReason": { "route_not_configured": "Not configured", "route_disabled": "Disabled", "platform_unsupported": "Not supported on this device", "credential_unavailable": "Credential unavailable", "cloud_unavailable": "Cloud unavailable" }, "unavailable": "No machine connection is available", "policyUnavailable": "Connection policy is unavailable on this client", "reconnectConfirm": "Applying this setting will interrupt the active terminal and reconnect. Continue?", "applyReconnect": "Apply & reconnect", "applying": "Applying...", "retry": "Retry", "restoreAuto": "Restore Auto", "reconnect": "Reconnect", "tryP2P": "Try P2P", "useRelay": "Use relay", "mode": "Mode", "transport": "Transport", "smartRoute": "SmartRoute", "local": "Local", "remote": "Remote", "connectionId": "Connection" }
+    "connection": { "label": "Connection", "title": "Connection & network", "closeInfo": "Close connection and network", "progressTitle": "Connecting to device", "current": "Current connection", "preference": "Connection preference", "route": "Route", "routeId": "Connection route ID", "routeAuto": "Auto", "routeLocal": "Local", "routeDirect": "Direct", "routeSSH": "SSH tunnel", "routeCloud": "Muxvia Cloud", "cloudAdvanced": "Cloud advanced settings", "cloudPath": "Cloud P2P / Relay", "cloudAuto": "Auto", "cloudP2P": "P2P only", "cloudRelay": "Relay only", "relayTransport": "Relay transport", "transportAuto": "Auto", "transportUDP": "UDP only", "transportTCP": "TCP only", "path": "Actual path", "pathDirect": "P2P direct", "pathRelay": "Relay", "pathRelayMesh": "Relay mesh", "reason": "Selection reason", "candidates": "ICE candidates", "protocols": "ICE transport", "networkClass": "Network class", "rtt": "RTT", "sampledAt": "Sampled", "traffic": "Sent / received", "generation": "Connection attempt", "diagnostics": "Advanced network details", "phase": { "ready": "Ready", "probing": "Checking Direct, SSH, P2P, and Relay paths...", "resolving": "Preparing the selected connection path...", "signaling": "Starting P2P signaling...", "connecting": "Negotiating the ICE connection...", "authorizing": "Verifying device access...", "connected": "Connected", "verifying": "Verifying device access...", "reconnecting": "Reconnecting...", "waiting_network": "Waiting for network...", "failed": "Connection failed" }, "reading": "Reading status...", "notProvided": "Not provided", "unavailableShort": "Unavailable", "unavailableReason": { "route_not_configured": "Not configured", "route_disabled": "Disabled", "platform_unsupported": "Not supported on this device", "credential_unavailable": "Credential unavailable", "cloud_unavailable": "Cloud unavailable" }, "unavailable": "No machine connection is available", "policyUnavailable": "Connection policy is unavailable on this client", "reconnectConfirm": "Applying this setting will interrupt the active terminal and reconnect. Continue?", "applyReconnect": "Apply & reconnect", "applying": "Applying...", "retry": "Retry", "restoreAuto": "Restore Auto", "reconnect": "Reconnect", "tryP2P": "Try P2P", "useRelay": "Use Relay", "mode": "Mode", "transport": "Transport", "smartRoute": "SmartRoute", "local": "Local", "remote": "Remote", "connectionId": "Connection" }
   },
   "pairing": {
     "sshReady": "SSH key ready",

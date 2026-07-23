@@ -27,21 +27,54 @@ export function connectionStatusIsSettled(phase: RtcConnectionPhase | null | und
   return phase === 'connected' || phase === 'idle' || phase === 'failed'
 }
 
-export function connectionPhaseLabel(phase: RtcConnectionPhase | null | undefined): string {
-  if (phase === 'probing') return 'Probing connection paths...'
-  if (phase === 'connecting') return 'Connecting...'
-  if (phase === 'connected') return 'Connected'
-  if (phase === 'verifying') return 'Verifying connection...'
-  if (phase === 'reconnecting') return 'Reconnecting...'
-  if (phase === 'waiting_network') return 'Waiting for network...'
-  if (phase === 'failed') return 'Connection failed'
-  return 'Ready'
+const connectionPhaseKeys: Record<RtcConnectionPhase, string> = {
+  idle: 'workspace.connection.phase.ready',
+  probing: 'workspace.connection.phase.probing',
+  resolving: 'workspace.connection.phase.resolving',
+  signaling: 'workspace.connection.phase.signaling',
+  connecting: 'workspace.connection.phase.connecting',
+  authorizing: 'workspace.connection.phase.authorizing',
+  connected: 'workspace.connection.phase.connected',
+  verifying: 'workspace.connection.phase.verifying',
+  reconnecting: 'workspace.connection.phase.reconnecting',
+  waiting_network: 'workspace.connection.phase.waiting_network',
+  failed: 'workspace.connection.phase.failed',
 }
 
+const englishConnectionPhaseLabels: Record<RtcConnectionPhase, string> = {
+  idle: 'Ready',
+  probing: 'Checking Direct, SSH, P2P, and Relay paths...',
+  resolving: 'Preparing the selected connection path...',
+  signaling: 'Starting P2P signaling...',
+  connecting: 'Negotiating the ICE connection...',
+  authorizing: 'Verifying device access...',
+  connected: 'Connected',
+  verifying: 'Verifying device access...',
+  reconnecting: 'Reconnecting...',
+  waiting_network: 'Waiting for network...',
+  failed: 'Connection failed',
+}
+
+/**
+ * connectionPhaseLabel 把 Go Client Engine 的稳定阶段投影为用户文案。
+ * phase 是连接过程真值；底层自由文本只用于诊断，不能越过这里暴露 JNI、handle 或 runtime 实现细节。
+ */
+export function connectionPhaseLabel(
+  phase: RtcConnectionPhase | null | undefined,
+  translate?: ((key: string) => string) | undefined,
+): string {
+  const normalized = phase ?? 'idle'
+  return translate?.(connectionPhaseKeys[normalized]) ?? englishConnectionPhaseLabels[normalized]
+}
+
+/**
+ * connectionPathLabel 为旧的 local/hub transport projection 提供用户概念标签。
+ * 它不改变 path 真值，也不会把内部 Hub 或 runtime owner 名称投影到产品界面。
+ */
 export function connectionPathLabel(path: ConnectionPath | undefined): string {
-  if (path === 'hub') return 'Hub'
+  if (path === 'hub') return 'Muxvia Cloud'
   if (path === 'local') return 'Local'
-  return 'Runtime'
+  return 'Connection'
 }
 
 export function connectionSnapshotFromStatus(input: {

@@ -2311,6 +2311,7 @@ function joinCardDetail(...parts: string[]): string {
 }
 
 function connectionPhaseShortLabel(phase: MachineConnectionSnapshot['phase'], t: TFunction): string {
+  if (phase === 'probing') return t('machines.phase.probing')
   if (phase === 'resolving') return t('machines.phase.resolving')
   if (phase === 'signaling') return t('machines.phase.signaling')
   if (phase === 'authorizing') return t('machines.phase.authorizing')

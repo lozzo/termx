@@ -92,6 +92,10 @@ function inventoryCacheForConnector(connector: MachineWorkspaceConnector): Map<s
   return created
 }
 
+/**
+ * MachineWorkspace 编排单个设备的 terminal/file 用户界面并消费 Go-owned session 投影。
+ * 它不拥有 Endpoint、Route、credential 或 generation 真值，连接阶段仅用于本地化展示和交互反馈。
+ */
 export function MachineWorkspace({ api, connector, className, initialMachine, inventoryEvents, connectionStateEvents, subscribeRuntimeInventoryEvents = false, onBack, fileTransfer, terminalSettings: terminalSettingsProp, onNeedsReauthorization, onTerminalSettingsChange }: MachineWorkspaceProps) {
   const { t } = useTranslation()
   const initialInventory = initialMachine ? inventoryCacheForConnector(connector).get(initialMachine.machineId) : undefined
@@ -239,6 +243,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     clearConnectionStatus,
     clearConnectionStatusSoon,
   } = useMachineNetworkStatus()
+  const displayedConnectionStatus = connectionPhase
+    ? connectionPhaseLabel(connectionPhase, t)
+    : connectionStatus
   const effectiveTerminalSettings = terminalSettingsProp ?? terminalSettings
   const activeResizeSurfaceId = activeTerminalId && machine?.machineId
     ? appTerminalSurfaceId(machine.machineId, activeTerminalId)
@@ -2049,7 +2056,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           <div className="flex animate-in fade-in slide-in-from-top-1 duration-200 items-center justify-center gap-2 border-b border-zinc-200 bg-blue-50/50 px-3 py-1.5">
             <span className="muxvia-square-spinner h-3.5 w-3.5 text-blue-600" aria-hidden="true" />
             <span className="text-[11px] font-medium text-blue-700">
-              {connectionStatus || t('workspace.connecting')}
+              {displayedConnectionStatus || t('workspace.connecting')}
             </span>
           </div>
         ) : null}
@@ -2429,7 +2436,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 />
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-[var(--muxvia-muted)]">
-                  {showMachineNetworkOverlay ? null : activeTerminalId && connectingTerminalId === activeTerminalId ? (connectionStatus ?? t('workspace.connectingTerminal')) : t('terminal.noActive')}
+                  {showMachineNetworkOverlay ? null : activeTerminalId && connectingTerminalId === activeTerminalId ? (displayedConnectionStatus ?? t('workspace.connectingTerminal')) : t('terminal.noActive')}
                 </div>
               )}
               {activeTerminalId && connectedSession && connectedTerminalId === activeTerminalId && activeTerminalResizeLocked ? (
@@ -2476,7 +2483,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center text-sm text-[var(--muxvia-muted)]">
-                    {showMachineNetworkOverlay ? null : connectionStatus ?? t('workspace.connectingTerminal')}
+                    {showMachineNetworkOverlay ? null : displayedConnectionStatus ?? t('workspace.connectingTerminal')}
                   </div>
                 )}
               </div>
