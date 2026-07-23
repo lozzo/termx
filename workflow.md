@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- 用户原要求连续完成六个收口切片；在 `PG004` 实机 TURN/TCP 验收后又明确插入连接体验收口。当前顺序调整为：已完成 `QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`、`CONNCOPY001` -> `LOADUX001` 方形沿边加载动画 -> 恢复 `PG004` 公网可靠性与数据恢复 -> `CLOUDP007` Development 全产品业务验收。每个新增切片独立测试、提交并推送，不得借此重写 pairing、权限或 Cloud 商业能力。
+- 用户原要求连续完成六个收口切片；在 `PG004` 实机 TURN/TCP 验收后又明确插入连接体验收口。`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`、`CONNCOPY001` 和 `LOADUX001` 已完成，当前恢复 `PG004` 公网可靠性与数据恢复，随后进入 `CLOUDP007` Development 全产品业务验收。每个新增切片独立测试、提交并推送，不得借此重写 pairing、权限或 Cloud 商业能力。
 - 首期正式 UI 语言只承诺英文与简体中文。Web Controller 现有俄文资源保留为历史输入但从可选语言中暂时移除，直到键集合、关键流程和布局验收达到与英文/中文相同的完成条件；不得以 fallback 英文冒充俄文支持。
 - `UX001` 已完成英文/简体中文基础设施与首批关键流程迁移：Web Controller 登录/账号/设备/激活和 Android 首页/设备/配对/设置均使用 locale key，语言默认跟随系统并可持久切换；App 143 个、Web 365 个 locale key 对称，稳定 native error code 不再把底层英文 message 直接投影到 UI；ARM64 模拟器已验证中文设备页和设置页。terminal/file 剩余文案按计划留给 `APPUX001`，不在本切片提前扩大。
 - 二维码整改必须区分两类载荷：Web 手机 activation 只携带短期 `MXA` code，当前约 60 字符；daemon pairing 当前把约 599-byte signed bundle 编码成约 826 字符 URI，达到 QR Version 23 / 109x109 modules，是显示不全的根因。`QR001` 只提供终端尺寸检查、文本和图片 fallback；`QR002` 才通过 daemon-owned 内存 claim 缩短真实配对二维码。
@@ -40,6 +40,7 @@
 - `NETUX001` 已完成：Proto-first 连接策略和可用性由 Go Endpoint registry/planner 持有；App 分开连接偏好、当前连接和诊断详情，实时重采样 ReadyPeerSession 的 route/path/candidate/transport/RTT/traffic；强制切换提升 generation，失败提供精确重试与恢复 Auto。最终 ARM64/API 35 APK SHA-256 与安装包均为 `e18f86d6b2deec436b23f80252dc9f179711c43328a104d32fa7bd46f3fe8aac`，200% 字体竖横屏、可访问语义、失败恢复和 crash scan 通过；证据见 `docs/remote-platform/netux001-connection-network-e2e.md`。
 - `CONNFAST001` 已完成：route race 收到首个完整 ReadyPeerSession 后立即取消其它 attempt、发布 winner 并返回；后台 drain 只关闭迟到 session，不参与 winner/generation。忽略取消的慢 loser harness 证明返回不等待 cleanup，迟到成功被精确关闭且当前 winner 不变；`client/runtime` 20 次、race 和 `client/...` 回归通过。
 - `CONNCOPY001` 已完成：App 连接过程统一由稳定 phase 投影为 Direct、SSH、P2P、ICE、Relay 和设备访问验证等中英文用户文案，已知 phase 不再被底层自由文本覆盖；连接详情使用 Connection attempt/连接轮次、ICE candidates/ICE 候选和 ICE transport/ICE 传输。英文/简体中文各 461 个 locale scalar key 对称，UI 158 条、Mobile 36 条、Android ARM64/API 35 公网 HTTPS APK 构建与真实 Direct 配对/连接/详情/中文切换/crash scan 通过，UX reviewer PASS；证据见 `docs/remote-platform/conncopy001-connection-copy-e2e.md`。
+- `LOADUX001` 已完成：统一 loading primitive 使用固定方形周长和单一活动段，只有注册 angle 变量推进，不旋转或移动外框；14/16/20/24/28px 两帧边界稳定，运动变化只在周长带内，reduced-motion 两帧零变化。最终 APK 与模拟器 `base.apk` SHA-256 均为 `c596185387904908fec7f3ed0f6f48f836b63f49422e25c1d33cf88e0503e0f2`；ARM64/API 35 真实 App 冷启动捕获到固定 63x63 物理像素外框上的活动段，crash scan 为 0，UX reviewer PASS；证据见 `docs/remote-platform/loadux001-loading-animation-e2e.md`。
 - 多 Hub 基础和产品能力存在交叉依赖，必须按本文件交错推进，不能先写完所有 Hub 再补套餐，也不能继续在单进程 devcloud 上堆硬编码。
 - development 必须走完整账号、交易、Subscription、Entitlement、managed P2P/Relay、周期 quota、usage、topology 和管理链路；外部 provider 可以使用显式测试实现。
 - Web/WASM terminal 产品、iOS/Desktop GUI、多区域数据库、Relay Mesh、真实支付 provider 和复杂计费平台继续延后。当前 PostgreSQL 迁移只覆盖单区域单写 Controller，不建设多区域复制、分布式锁、读写分离或数据库抽象平台。
@@ -141,7 +142,7 @@ muxvia-cloud-edge × N
 | CONNFAST001 | 已完成 | 首个 Ready 立即返回 | route race 在第一个已认证 ReadyPeerSession 到达时立即发布；并发 loser 的取消、迟到关闭和资源清理异步完成，不阻塞调用方；忽略取消 harness、迟到关闭、generation fencing、race 与全 client 回归通过 |
 | TUIUX001 | 已完成 | TUI 连接观察、策略与优先级 | 独立 Connections 页消费共享 Go Endpoint registry/planner/runtime 投影，分区展示当前 route/path/generation 与下一次连接策略；完整 route priority 集合经 Go 事务原子保存，小值优先、同值并发、全空 Full race；56/80 列、generation fence、race、全 client/TUI/cmd、真实 tmux terminal smoke 和 UX reviewer 均 PASS |
 | CONNCOPY001 | 已完成 | App 用户连接文案 | 稳定 phase 统一投影 Direct、SSH、P2P、ICE、Relay 和设备访问验证等中英文用户文案；已知 phase 不显示底层自由文本；连接详情使用 Connection attempt/连接轮次和 ICE 诊断术语；locale 461/461 对称，UI/Mobile/Android ARM64 真实 Direct UI smoke、APK hash、crash scan 与 UX reviewer 均 PASS |
-| LOADUX001 | 待开始 | 方形沿边加载动画 | 固定方形外框不旋转，单段沿四边周长运动；尺寸稳定且 reduced-motion 下停止动画 |
+| LOADUX001 | 已完成 | 方形沿边加载动画 | 固定方形外框不旋转，单段沿四边周长运动；14/16/20/24/28px 布局与周长像素门禁、reduced-motion、ARM64/API 35 真实 App 冷启动 UI smoke、APK hash、crash scan 和 UX reviewer 均 PASS |
 | PG004 | 待继续 | Supabase staging、公网 bootstrap 装配与备份恢复验收 | `PG004-HUBSEL` 已通过真实 Supabase、一个 Controller、两个独立公网 Edge、daemon enrollment 与实体 Android App 验收：Controller 返回双候选，Go 端最多 16 worker 探测，Controller 唯一选择 US Hub，assignment epoch `1`、token audience、动态目录和手机 endpoint resolve/signaling 一致；提交 `dc970580` 已推送并部署。AUTO 跨 NAT 已修复双端 TURN、RelayIntent correlation、有界 ICE 失败和本地化提示；US/CN Relay 同端口提供 UDP/TCP，lease 保持 UDP 优先、TCP fallback。Android 16/API 36 实体手机已在纯 5G NR，以及手机/电脑 Clash `rule` + 手机纯 5G NR 下，从 App UI 完成 pairing、单 Relay terminal input/output 与 crash scan；后一次数据链路包含真实 TURN/TCP leg。NETUX001 完成后继续 R2 加密上传/独立恢复以及文件上传/下载/取消/摘要校验；长时间空闲 managed P2P 半开 session 仍作为弱网可靠性 finding 定位。测试支付必须明确标记 staging，不得宣称正式商业生产 |
 | CLOUDP007 | 待开始 | Development 全产品 E2E | PostgreSQL 迁移后从现有进度恢复；Web UI 注册/交易/管理 + Android ARM64 真实 APK P2P/Relay terminal/file、quota、suspend、topology、命令、重启恢复、Direct/SSH 回归；双 Agent 审查 |
 | CLOUDP008 | 延后 | Production Cloud 装配与发布 | 仅 PG004/CLOUDP007 完成后启动；HTTPS、Companion 签名、Android production origin、真实 provider；正式存储已由 PG001-PG004 完成，不重复建设第二套数据库路径 |
@@ -263,7 +264,7 @@ muxvia-cloud-edge × N
 ## 执行规则
 
 1. 每轮先读取 `AGENTS.md`、`cloud-product-spec.md`、`multi-hub-control-topology-spec.md`、`multi-hub-technical-plan.md` 和本文件，再检查 `git status --short --branch`。
-2. 只执行“当前收口路线”的当前行；顺序固定为已完成 `QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`、`CONNCOPY001`，当前最早未完成切片是 `LOADUX001`，随后依次为 `PG004` 和 `CLOUDP007`。`待继续` 仅在排到对应行时恢复，`延后` 不属于当前目标。
+2. 只执行“当前收口路线”的当前行；`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`、`CONNCOPY001` 和 `LOADUX001` 已完成，当前最早未完成切片是 `PG004`，随后为 `CLOUDP007`。`待继续` 仅在排到对应行时恢复，`延后` 不属于当前目标。
 3. 待开始切片先标记 `进行中`，不得跨切片实现后续能力。
 4. 新跨边界字段固定执行 `proto -> generated -> compatibility harness -> domain/runtime -> adapter -> UI/client`。
 5. 先写最小真实 harness；不能用固定账号、直接写 store、手工改 projection 或 fake ack 冒充产品链路。

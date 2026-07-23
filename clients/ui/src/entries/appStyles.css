@@ -87,8 +87,14 @@
   background: var(--muxvia-app-soft);
 }
 
+@property --muxvia-square-progress-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
 .muxvia-square-spinner {
-  border: 1.5px solid color-mix(in srgb, currentColor 32%, transparent);
+  box-sizing: border-box;
   display: inline-block;
   flex: none;
   height: 16px;
@@ -96,27 +102,36 @@
   width: 16px;
 }
 
+.muxvia-square-spinner::before,
 .muxvia-square-spinner::after {
-  animation: muxvia-square-spin 760ms linear infinite;
-  border: 1.5px solid currentColor;
-  border-bottom-color: transparent;
-  border-left-color: transparent;
   box-sizing: border-box;
   content: '';
-  height: 46%;
-  left: 50%;
+  inset: 0;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  padding: 1.5px;
+  pointer-events: none;
   position: absolute;
-  top: 50%;
-  width: 46%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
 }
 
-@keyframes muxvia-square-spin {
-  from {
-    transform: translate(-50%, -50%) rotate(0deg);
-  }
+.muxvia-square-spinner::before {
+  background: color-mix(in srgb, currentColor 32%, transparent);
+}
 
+.muxvia-square-spinner::after {
+  animation: muxvia-square-progress 840ms linear infinite;
+  background: conic-gradient(
+    from var(--muxvia-square-progress-angle),
+    currentColor 0deg 54deg,
+    transparent 54deg 360deg
+  );
+}
+
+@keyframes muxvia-square-progress {
   to {
-    transform: translate(-50%, -50%) rotate(360deg);
+    --muxvia-square-progress-angle: 360deg;
   }
 }
 
