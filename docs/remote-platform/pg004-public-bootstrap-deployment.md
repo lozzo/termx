@@ -19,14 +19,14 @@
 | 位置 | 服务 | 公网入口 |
 | --- | --- | --- |
 | `155.94.155.192` | `muxvia-cloud-controller` | `https://muxvia.com`、`https://operator.muxvia.com`、`https://control.muxvia.com` |
-| `155.94.155.192` | `muxvia-cloud-edge` / US West | `https://us1.edge.muxvia.com`、`turn:155.94.155.192:41003?transport=udp` |
-| `114.66.58.243` | `muxvia-cloud-edge` / China East | `https://cn1.edge.muxvia.com:41102`、`turn:114.66.58.243:41003?transport=udp` |
+| `155.94.155.192` | `muxvia-cloud-edge` / US West | `https://us1.edge.muxvia.com`、`turn:155.94.155.192:41003?transport=udp`、`turn:155.94.155.192:41003?transport=tcp` |
+| `114.66.58.243` | `muxvia-cloud-edge` / China East | `https://cn1.edge.muxvia.com:41102`、`turn:114.66.58.243:41003?transport=udp`、`turn:114.66.58.243:41003?transport=tcp` |
 | Supabase Singapore | Controller PostgreSQL | IPv4 Session pooler `:5432`、TLS、独立 `muxvia_staging` schema |
 
 - `muxvia.com`、`www.muxvia.com`、`operator.muxvia.com` 使用 Cloudflare Proxy。
 - `control.muxvia.com`、`us1.edge.muxvia.com`、`cn1.edge.muxvia.com` 使用 DNS-only。
 - Controller public/internal/operator 和 Edge Hub/health listener 只监听 host loopback；Nginx 负责 TLS 和 SNI。
-- 两个 Relay 都直接监听 `41003/udp`，不经过 Cloudflare。
+- 两个 Relay 都在同一个公开端口直接监听 `41003/udp` 与 `41003/tcp`，不经过 Cloudflare。deployment manifest 的 `relay_url` 仍是 UDP primary；caller-specific lease 返回同一 credential 下按 UDP、TCP 排序的两个 URL。
 
 ## systemd
 
@@ -83,6 +83,10 @@ Controller 与 Edge 使用独立进程、配置、identity、state 目录和 res
 - 修复前实体 Android 16/API 36 手机在移动网络上复现 client Relay lease `200`、daemon Relay lease `401` 与持续等待；修复后的 Go client/daemon/Hub regression、`make test-private`、双 Edge 进程门禁、Client/UI/Android 门禁均通过。公网 US/CN Edge 已滚动更新为 SHA-256 `e7e5c31fd2665602f682f58a5a23095e859060fbe7a9ac4417a723ba4e6c8b9d`，服务端本机与公网 health 均为 `204`，旧版本保存在 `/opt/muxvia/rollback/pre-pg004-auto-turn-20260723/`。本轮 ARM64 APK 与实体设备 `base.apk` SHA-256 均为 `17ff87eebf654aa93cff260b89455f61d6b482a96ce66392e0d980879b6e83ac`，实体 App 已确认失败后停止 loading 并显示上述本地化提示。
 - 2026-07-23 实体 AUTO 复测使用 `Xiaomi 24129PN74C`、ARM64、Android 16/API 36；手机关闭 Wi-Fi，默认网络为 `MOBILE[NR] ctnet`，并关闭手机 VPN。目标 Mac 的 Clash 暂时切到 `direct`，用于排除测试机 VPN 对 UDP 回程的影响。真实 App UI 提交 `MXP1` 后依次完成 endpoint resolve、client/daemon caller-specific Relay lease、双端 signaling、DataChannel 配对、terminal list 和 terminal open。脱敏 TURN 摘要证明 client 与 daemon 都完成 `401 -> authenticated Allocate -> CreatePermission/ChannelBind`，并出现双向 ChannelData；AUTO 保持 `relay_only=false`，实际数据路径由单个 US Relay 承载。
 - 同一次实体 App UI 在 `phone-auto-pure5g-20260723` 终端输入 `printf 'MUXVIA_AUTO_5G_OK_20260723\n'`，App 屏幕与 daemon authoritative live capture 都得到 `MUXVIA_AUTO_5G_OK_20260723`。全局 logcat 扫描未发现 `FATAL EXCEPTION`、ANR、`SIGSEGV` 或 native fatal signal。此前保留 Clash `rule` 的失败对照中，两端都只重传匿名 Allocate；Relay 返回的 `401` 含完整 Realm/Nonce 且事务 ID 匹配，但代理 UDP 路径当时未把响应交回 Pion。与 `../tgent` 对照后确认这不是可以忽略的测试环境问题：`tgent` 同端口提供 TURN/UDP 与 TURN/TCP，当时 Muxvia 只提供 UDP，因此缺少代理和受限网络所需的 transport fallback。
+- 提交 `65f34123275478a84baff3a0c31bb39d1d9c7365` 为 Relay 增加同端口 TURN/TCP：Relay startup 只有在 UDP 与 TCP 都成功绑定后才提交，二者共享同一 authority、caller credential、allocation/usage owner 和 relay generator；lease 返回 `transport=udp` 后跟 `transport=tcp`。测试覆盖 TCP-only Pion DataChannel、TCP bind 失败时 UDP 回滚、client/daemon caller lease URL 顺序、真实 Relay data/usage/close 和 Pion 配置透传。`make test-private`、`make test`、Relay/Edge race test 均通过。
+- Linux/amd64 Edge artifact SHA-256 为 `62e61181735d93e530cd5e802977f729e027d1962fbf6edca9e91f758ab8266f`，已滚动部署到 US/CN；两端 `systemd` active，`ss` 同时显示 `0.0.0.0:41003/udp` 与 `0.0.0.0:41003/tcp`。回滚二进制位于两台服务器的 `/opt/muxvia/rollback/pre-pg004-turn-tcp-65f34123/`。
+- 2026-07-23 TURN/TCP 实体验收使用同一台 `Xiaomi 24129PN74C`、ARM64、Android 16/API 36，以及 SHA-256 为 `17ff87eebf654aa93cff260b89455f61d6b482a96ce66392e0d980879b6e83ac` 的已安装 APK。电脑和手机 Clash 均保持 `rule`；手机关闭 Wi-Fi，Android 默认网络为 `MOBILE[NR] ctnet`，Clash `tun0` 的 underlying network 为该 cellular network。App UI 提交新 `MXP1` 后完成 AUTO pairing、terminal list、打开 `phone-auto-clash-rule-pure5g-tcp-20260723`，并输入 `printf 'MUXVIA_TURN_TCP_PURE5G_DATA_OK_20260723\n'`；屏幕得到同名输出。
+- 上述稳定 DataChannel 抓包在 45 秒内记录 `1153` 个 TURN/TCP packet 和 `867` 个 TURN/UDP packet；TCP leg payload `562140` bytes，UDP leg payload `560188` bytes，流量在 Relay 两条 leg 之间成对转发。它证明 TCP URL 不只是候选或认证 smoke，而是进入了真实 terminal application data 链路；另一端继续使用 UDP，符合 ICE 独立选择每端可达 transport、UDP 优先且 TCP fallback 的设计。抓包 SHA-256 为 `f384757aeda1cf14d2a6e80a63ab00bb3d839c52f53db1119a20854219ab6eec`。全局 logcat 未发现 `FATAL EXCEPTION`、ANR、`SIGSEGV`、`SIGABRT` 或 native fatal signal；测试后已恢复手机 Wi-Fi、关闭移动数据并保留用户开启的 Clash VPN。
 
 本地 ignored 证据产物：
 
@@ -96,6 +100,10 @@ Controller 与 Edge 使用独立进程、配置、identity、state 目录和 res
 .artifacts/pg004/android-active-cellular-to-wifi-retry.png
 .artifacts/pg004-auto/physical-auto-5g-terminal.png
 .artifacts/pg004-auto/muxvia-pg004-turn-17.pcap
+.artifacts/pg004-turn-tcp/phone-pure5g-pairing-45s.png
+.artifacts/pg004-turn-tcp/phone-pure5g-terminal-command-final.png
+.artifacts/pg004-turn-tcp/muxvia-pg004-turn-tcp-pure5g.pcap
+.artifacts/pg004-turn-tcp/muxvia-pg004-turn-tcp-pure5g-data.pcap
 ```
 
 ## 当前限制
