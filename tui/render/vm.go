@@ -1650,6 +1650,12 @@ func (projector ShellProjector) buildOverlayVM(root state.Root, shell state.Shel
 			Opaque:  true,
 			Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentTerminalPool}),
 		}
+	case state.OverlayConnections:
+		overlay = OverlayVM{
+			Kind:    OverlayConnections,
+			Opaque:  true,
+			Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentConnections}),
+		}
 	case state.OverlayWorkbenchTree:
 		overlay = OverlayVM{
 			Kind:    OverlayWorkbenchTree,

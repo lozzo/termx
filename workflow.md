@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- 用户原要求连续完成六个收口切片；在 `PG004` 实机 TURN/TCP 验收后又明确插入连接体验收口。当前顺序调整为：已完成 `QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001` -> `TUIUX001` 共享连接策略与优先级 -> `CONNCOPY001` 用户连接文案 -> `LOADUX001` 方形沿边加载动画 -> 恢复 `PG004` 公网可靠性与数据恢复 -> `CLOUDP007` Development 全产品业务验收。每个新增切片独立测试、提交并推送，不得借此重写 pairing、权限或 Cloud 商业能力。
+- 用户原要求连续完成六个收口切片；在 `PG004` 实机 TURN/TCP 验收后又明确插入连接体验收口。当前顺序调整为：已完成 `QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001` -> `CONNCOPY001` 用户连接文案 -> `LOADUX001` 方形沿边加载动画 -> 恢复 `PG004` 公网可靠性与数据恢复 -> `CLOUDP007` Development 全产品业务验收。每个新增切片独立测试、提交并推送，不得借此重写 pairing、权限或 Cloud 商业能力。
 - 首期正式 UI 语言只承诺英文与简体中文。Web Controller 现有俄文资源保留为历史输入但从可选语言中暂时移除，直到键集合、关键流程和布局验收达到与英文/中文相同的完成条件；不得以 fallback 英文冒充俄文支持。
 - `UX001` 已完成英文/简体中文基础设施与首批关键流程迁移：Web Controller 登录/账号/设备/激活和 Android 首页/设备/配对/设置均使用 locale key，语言默认跟随系统并可持久切换；App 143 个、Web 365 个 locale key 对称，稳定 native error code 不再把底层英文 message 直接投影到 UI；ARM64 模拟器已验证中文设备页和设置页。terminal/file 剩余文案按计划留给 `APPUX001`，不在本切片提前扩大。
 - 二维码整改必须区分两类载荷：Web 手机 activation 只携带短期 `MXA` code，当前约 60 字符；daemon pairing 当前把约 599-byte signed bundle 编码成约 826 字符 URI，达到 QR Version 23 / 109x109 modules，是显示不全的根因。`QR001` 只提供终端尺寸检查、文本和图片 fallback；`QR002` 才通过 daemon-owned 内存 claim 缩短真实配对二维码。
@@ -138,7 +138,7 @@ muxvia-cloud-edge × N
 | UXE2E001 | 已完成 | Web/App 产品体验 E2E | Web 四档视口与 Android ARM64 覆盖中英文、150% 字体/缩放、注册登录、手机 activation、daemon enrollment、短码 pairing、terminal 输入输出、上传、下载和取消；共享 Go binding session lease 修复、精确最终 APK、crash scan 与双 Agent 审查均 PASS |
 | NETUX001 | 已完成 | Android 连接观察与策略切换 | Proto-first 表达顶层 Route 偏好、Cloud P2P/Relay 约束和 Relay UDP/TCP 约束；Go planner/Pion 执行并返回真实选中 Route、observed path、candidate/transport、RTT 和 generation；App 分层展示当前连接、连接方式与高级诊断，从 UI 应用后显式重连；ARM64 模拟器覆盖策略、禁用原因、失败恢复、大字体、横屏和 crash scan |
 | CONNFAST001 | 已完成 | 首个 Ready 立即返回 | route race 在第一个已认证 ReadyPeerSession 到达时立即发布；并发 loser 的取消、迟到关闭和资源清理异步完成，不阻塞调用方；忽略取消 harness、迟到关闭、generation fencing、race 与全 client 回归通过 |
-| TUIUX001 | 待开始 | TUI 连接观察、策略与优先级 | TUI 和 App 共用 Go Endpoint registry/planner policy/status；TUI 可查看实际 route/path/generation，并通过 Go-owned contract 编辑 route priority |
+| TUIUX001 | 已完成 | TUI 连接观察、策略与优先级 | 独立 Connections 页消费共享 Go Endpoint registry/planner/runtime 投影，分区展示当前 route/path/generation 与下一次连接策略；完整 route priority 集合经 Go 事务原子保存，小值优先、同值并发、全空 Full race；56/80 列、generation fence、race、全 client/TUI/cmd、真实 tmux terminal smoke 和 UX reviewer 均 PASS |
 | CONNCOPY001 | 待开始 | App 用户连接文案 | 连接状态只使用 Direct、SSH、P2P、ICE 协商和 Relay 等用户概念；删除 native runtime/JNI/handle 等实现术语 |
 | LOADUX001 | 待开始 | 方形沿边加载动画 | 固定方形外框不旋转，单段沿四边周长运动；尺寸稳定且 reduced-motion 下停止动画 |
 | PG004 | 待继续 | Supabase staging、公网 bootstrap 装配与备份恢复验收 | `PG004-HUBSEL` 已通过真实 Supabase、一个 Controller、两个独立公网 Edge、daemon enrollment 与实体 Android App 验收：Controller 返回双候选，Go 端最多 16 worker 探测，Controller 唯一选择 US Hub，assignment epoch `1`、token audience、动态目录和手机 endpoint resolve/signaling 一致；提交 `dc970580` 已推送并部署。AUTO 跨 NAT 已修复双端 TURN、RelayIntent correlation、有界 ICE 失败和本地化提示；US/CN Relay 同端口提供 UDP/TCP，lease 保持 UDP 优先、TCP fallback。Android 16/API 36 实体手机已在纯 5G NR，以及手机/电脑 Clash `rule` + 手机纯 5G NR 下，从 App UI 完成 pairing、单 Relay terminal input/output 与 crash scan；后一次数据链路包含真实 TURN/TCP leg。NETUX001 完成后继续 R2 加密上传/独立恢复以及文件上传/下载/取消/摘要校验；长时间空闲 managed P2P 半开 session 仍作为弱网可靠性 finding 定位。测试支付必须明确标记 staging，不得宣称正式商业生产 |
@@ -262,7 +262,7 @@ muxvia-cloud-edge × N
 ## 执行规则
 
 1. 每轮先读取 `AGENTS.md`、`cloud-product-spec.md`、`multi-hub-control-topology-spec.md`、`multi-hub-technical-plan.md` 和本文件，再检查 `git status --short --branch`。
-2. 只执行“当前收口路线”的当前行；顺序固定为已完成 `QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`，当前最早未完成切片是 `TUIUX001`，随后依次为 `CONNCOPY001`、`LOADUX001`、`PG004` 和 `CLOUDP007`。`待继续` 仅在排到对应行时恢复，`延后` 不属于当前目标。
+2. 只执行“当前收口路线”的当前行；顺序固定为已完成 `QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`，当前最早未完成切片是 `CONNCOPY001`，随后依次为 `LOADUX001`、`PG004` 和 `CLOUDP007`。`待继续` 仅在排到对应行时恢复，`延后` 不属于当前目标。
 3. 待开始切片先标记 `进行中`，不得跨切片实现后续能力。
 4. 新跨边界字段固定执行 `proto -> generated -> compatibility harness -> domain/runtime -> adapter -> UI/client`。
 5. 先写最小真实 harness；不能用固定账号、直接写 store、手工改 projection 或 fake ack 冒充产品链路。

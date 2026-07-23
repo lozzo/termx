@@ -59,9 +59,21 @@ func TestDefaultShortcutActionsReachObservableOwnerBoundary(t *testing.T) {
 			assertDefaultActionServiceOwner(t, invocation, execution)
 		})
 	}
-	if len(seen) != 146 {
-		t.Fatalf("default shortcut execution matrix changed without KS015 classification: got=%d want=146", len(seen))
+	if len(seen) != 149 {
+		t.Fatalf("default shortcut execution matrix changed without KS015 classification: got=%d want=149", len(seen))
 	}
+}
+
+type defaultActionEndpointConnections struct {
+	store state.EndpointStore
+}
+
+func (service defaultActionEndpointConnections) LoadConnections(context.Context) (state.EndpointStore, error) {
+	return service.store, nil
+}
+
+func (service defaultActionEndpointConnections) ApplyRoutePriorities(context.Context, state.EndpointID, map[string]*int) (state.EndpointStore, error) {
+	return service.store, nil
 }
 
 type defaultActionExecution struct {
@@ -95,9 +107,15 @@ func runDefaultActionToOwnerBoundary(t *testing.T, root state.Root, invocation a
 	workbenchStorage := &testkit.FakeWorkbenchStorageService{}
 	clipboardStorage := &testkit.FakeClipboardStorageService{}
 	copyDeps := CopyModeDeps{Core: core, Clipboard: clipboard, Terminal: terminal, Rows: 3}
-	liveDeps := LiveDeps{Terminal: terminal}
+	connectionProjection := root.Endpoints
+	if item, ok := connectionProjection.Endpoint("west"); ok {
+		item.Label = "West refreshed"
+		connectionProjection = connectionProjection.Upsert(item)
+	}
+	liveDeps := LiveDeps{Terminal: terminal, EndpointConnections: defaultActionEndpointConnections{store: connectionProjection}}
 	reducer := ComposeReducers(
 		NewBackNavigationReducer(copyDeps), NewShellReducer(), NewUIInputReducer(),
+		NewEndpointConnectionsReducer(liveDeps),
 		NewEndpointStatusReducer(liveDeps), NewEndpointDefaultsReducer(liveDeps), NewPromptPathCompletionReducer(liveDeps),
 		newTerminalPoolReducerPrepared(liveDeps),
 		NewWorkbenchStorageReducer(WorkbenchDeps{Storage: workbenchStorage, SkipInitialLoad: true}),
@@ -555,6 +573,10 @@ func defaultActionExecutionRoot(t *testing.T, id actiondomain.ID) state.Root {
 			SurfaceID: "surface-1", ViewID: state.TerminalPaneViewID(state.DefaultPaneID), State: state.TerminalLiveAttached,
 		},
 	}
+	root.Endpoints = root.Endpoints.Upsert(state.EndpointItem{
+		ID: "west", Label: "West", Enabled: true, Status: state.EndpointStatusConnected,
+		Routes: []state.EndpointRouteItem{{ID: "local", Kind: state.EndpointTransportLocal, Enabled: true}},
+	})
 	root.TerminalViews = root.TerminalViews.
 		BindPane(state.NewEndpointPaneTerminalView("west", state.DefaultPaneID, "term-1", 7, 98, 26, state.TerminalResizeRoleOwner, "surface-1", state.TerminalPaneViewID(state.DefaultPaneID), true)).
 		BindPane(state.NewEndpointPaneTerminalView("west", "pane-2", "term-2", 8, 98, 26, state.TerminalResizeRoleFollower, "surface-2", state.TerminalPaneViewID("pane-2"), true))
@@ -589,6 +611,8 @@ func defaultActionExecutionRoot(t *testing.T, id actiondomain.ID) state.Root {
 		}
 	case strings.HasPrefix(string(id), "terminal_pool."):
 		root.Shell = root.Shell.OpenTerminalPool()
+	case strings.HasPrefix(string(id), "connections."):
+		root.Shell = root.Shell.OpenConnections()
 	case strings.HasPrefix(string(id), "workbench_tree."):
 		root.Shell = root.Shell.OpenWorkbenchTree()
 		items := state.WorkbenchTreeItems(root)

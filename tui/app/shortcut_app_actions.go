@@ -39,7 +39,7 @@ func reduceAppShortcutAction(root state.Root, invocation actiondomain.Invocation
 				return TerminalPoolRemoveRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID}
 			}
 		}}}
-	case "terminal_picker.close", "terminal_pool.close", "workbench_tree.close", "clipboard_history.close", "floating_overview.close", "help.close":
+	case "terminal_picker.close", "terminal_pool.close", "connections.close", "workbench_tree.close", "clipboard_history.close", "floating_overview.close", "help.close":
 		root.Shell = root.Shell.CloseOverlay()
 		return root.Advance(), []Effect{handledEffect{}}
 	case "terminal_pool.attach":
@@ -49,6 +49,10 @@ func reduceAppShortcutAction(root state.Root, invocation actiondomain.Invocation
 			items = state.TerminalPoolPageItems(root)
 		}
 		return reduceTerminalPoolPageAttach(root, items)
+	case "connections.edit":
+		return reduceConnectionsEdit(root, row)
+	case "connections.refresh":
+		return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg { return ConnectionsLoadRequestMsg{} }}}
 	case "terminal_pool.attach_tab", "terminal_pool.attach_float", "terminal_pool.restart", "terminal_pool.edit", "terminal_pool.kill", "terminal_pool.delete":
 		selected, ok := terminalPoolPageItemForAction(root, row)
 		if !ok {

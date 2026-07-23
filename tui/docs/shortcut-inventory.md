@@ -4,7 +4,7 @@
 
 机器可读契约基线位于 `shortcut-contract-debt.json`。默认 scene+key catalog 经统一输入路由进入 `tui/action` canonical registry，覆盖 keyboard、mouse-only、drag 与内容 CTA；旧 footer、chrome 和 content 名称不再冒充 action identity。render 只保留有真实视觉或几何消费者的本地 `ProjectionID`，每个可执行投影都单向引用 canonical action。
 
-当前运行基线：`default_entries=203; routed_bindings=166; action_specs=159; render_projections=34; scenes=15`。
+当前运行基线：`default_entries=206; routed_bindings=167; action_specs=163; render_projections=34; scenes=16`。
 
 这行统计由 `tui/config/shortcut_docs_test.go` 直接根据运行 catalog 校验。本文不保存逐键默认表；默认 binding 的唯一来源是 `tui/shortcut`，用户可见目录由运行时 Help 投影，避免文档成为第二份快捷键真值。
 

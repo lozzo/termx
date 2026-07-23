@@ -2,8 +2,10 @@ package render
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
+	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
 	actiondomain "github.com/muxvia/muxvia/tui/action"
 	"github.com/muxvia/muxvia/tui/input"
 	"github.com/muxvia/muxvia/tui/state"
@@ -306,6 +308,155 @@ func buildTerminalPoolContent(root state.Root, shell state.ShellStore) ContentVM
 		Empty:      root.TerminalPool.Status == state.TerminalPoolReady && len(rows) == 0,
 		Error:      root.TerminalPool.LastError,
 	}
+}
+
+// Connections Page 只渲染 reducer 已持有的 Endpoint registry/planner/runtime 投影。
+// 当前 Route、Path 和 generation 缺失时显示空值，不按 priority 或 transport kind 猜测连接事实。
+func buildConnectionsContent(root state.Root, shell state.ShellStore) ContentVM {
+	shell = shell.ReadonlyDefaults()
+	items := root.Endpoints.Normalize().Items
+	selectedIndex := shell.Overlay.SelectedIndex
+	if selectedIndex < 0 || selectedIndex >= len(items) {
+		selectedIndex = 0
+	}
+	layout := terminalManagerLayoutForViewport(chromeSafeViewportForShell(root.Viewport, shell))
+	rightHeader := "CONNECTION DETAILS"
+	if layout.DetailWidth < 30 {
+		rightHeader = "DETAILS"
+	}
+	lines := []Line{
+		terminalManagerFullLine(NewLine(fmt.Sprintf("%d endpoints", len(items))), layout),
+		terminalManagerDividerLine(layout),
+		terminalManagerBodyLine(terminalManagerHeaderLine("ENDPOINTS"), terminalManagerHeaderLine(rightHeader), layout),
+	}
+	var selected state.EndpointItem
+	selectedOK := len(items) > 0
+	if selectedOK {
+		selected = items[selectedIndex]
+	}
+	details := connectionsDetailLines(selected, selectedOK, layout.DetailWidth)
+	for row := 0; row < layout.BodyRows; row++ {
+		left := Line{}
+		if row < len(items) {
+			left = connectionsEndpointLine(items[row], row == selectedIndex)
+		}
+		right := Line{}
+		if row < len(details) {
+			right = details[row]
+		}
+		lines = append(lines, terminalManagerBodyLine(left, right, layout))
+	}
+	return ContentVM{
+		Kind: ContentConnections, Lines: lines, Meta: ContentMetaVM{SplitPageLeftWidth: layout.ListWidth},
+		Status: fmt.Sprintf("connections: %d endpoints", len(items)), Empty: len(items) == 0, Cursor: Cursor{Visible: false},
+	}
+}
+
+func connectionsEndpointLine(item state.EndpointItem, selected bool) Line {
+	marker, markerStyle, labelStyle := "  ", StyleMuted, StyleForeground
+	if selected {
+		marker, markerStyle, labelStyle = "▸ ", StyleAccent, StyleAccent
+	}
+	status := string(item.DisplayStatus())
+	if status == "" {
+		status = "unknown"
+	}
+	return Line{Cells: []Cell{
+		styledCell(marker, markerStyle), styledCell(item.DisplayLabel(), labelStyle), NewCell(" "), tokenCell(status, endpointStatusStyle(item.DisplayStatus())),
+	}}
+}
+
+func connectionsDetailLines(item state.EndpointItem, ok bool, width int) []Line {
+	if !ok {
+		return []Line{NewLine("No endpoint configured")}
+	}
+	value := func(label, text string) Line {
+		if strings.TrimSpace(text) == "" {
+			text = "-"
+		}
+		return Line{Cells: []Cell{styledCell(label+": ", StyleMuted), NewCell(text)}}
+	}
+	generation := "-"
+	if item.ConnectionGeneration > 0 {
+		generation = fmt.Sprintf("%d", item.ConnectionGeneration)
+	}
+	preference := string(item.RoutePreference)
+	if preference == "" {
+		preference = "auto"
+	}
+	routeHeader := "ROUTE PRIORITY / AVAILABILITY"
+	if width < 30 {
+		routeHeader = "ROUTES"
+	}
+	lines := []Line{
+		terminalManagerHeaderLine("CURRENT CONNECTION"),
+		value("Status", string(item.DisplayStatus())),
+		value("Route", string(item.ActiveRouteID)),
+		value("Path", item.ObservedPath),
+		value("Generation", generation),
+		value("Reason", item.RouteSelectionReason),
+		{},
+		terminalManagerHeaderLine("NEXT CONNECTION POLICY"),
+		value("Preference", preference),
+		terminalManagerHeaderLine(routeHeader),
+	}
+	for _, route := range item.Routes {
+		lines = append(lines, connectionsRouteLines(route, width)...)
+	}
+	return lines
+}
+
+func connectionsRouteLines(route state.EndpointRouteItem, width int) []Line {
+	priority := "Full race"
+	if route.Priority != nil {
+		priority = strconv.Itoa(*route.Priority)
+	}
+	availability := "unknown"
+	style := StyleMuted
+	if !route.Enabled {
+		availability = "disabled"
+	} else if route.ManualOnly {
+		availability = "manual"
+	} else if route.AvailabilityKnown && route.Available {
+		availability, style = "available", StyleSuccess
+	} else if route.AvailabilityKnown {
+		availability = strings.ReplaceAll(string(route.AvailabilityReason), "_", " ")
+		if route.AvailabilityReason == endpointdomain.RouteAvailabilityCredentialUnavailable {
+			availability = "credential missing"
+		}
+		style = StyleWarning
+	}
+	relay := ""
+	if route.Kind == state.EndpointTransportHubP2P {
+		relay = strings.Trim(strings.Join([]string{string(route.RelayMode), string(route.RelayTransport)}, "/"), "/")
+	}
+	if width < 34 {
+		availabilityText := availability
+		if relay != "" {
+			availabilityText += " " + relay
+		}
+		return []Line{
+			{Cells: []Cell{NewCell(fmt.Sprintf("%s %s", route.ID, route.Kind))}},
+			{Cells: []Cell{styledCell("priority ", StyleMuted), NewCell(priority)}},
+			{Cells: []Cell{tokenCell(availabilityText, style)}},
+		}
+	}
+	if width < 56 {
+		summary := fmt.Sprintf("%s  %s  priority %s", route.ID, route.Kind, priority)
+		availabilityText := availability
+		if relay != "" {
+			availabilityText += "  " + relay
+		}
+		return []Line{
+			{Cells: []Cell{NewCell(summary)}},
+			{Cells: []Cell{tokenCell(availabilityText, style)}},
+		}
+	}
+	text := fmt.Sprintf("%s  %s  priority %s", route.ID, route.Kind, priority)
+	if relay != "" {
+		text += "  " + relay
+	}
+	return []Line{{Cells: []Cell{NewCell(text), NewCell(" "), tokenCell(availability, style)}}}
 }
 
 // Workbench Navigator 展示 reducer-owned workspace/tab/pane 树；右侧 snapshot 只消费当前 TUI 已持有的 live 投影。
@@ -864,6 +1015,8 @@ type helpActionGroup struct {
 }
 
 func helpActionGroups(root state.Root) []helpActionGroup {
+	connectionActions := helpActionCatalogFromShortcuts(string(state.OverlayConnections), root)
+	connectionActions = append(helpActionCatalogForIDs("global", root, "menu.connections"), connectionActions...)
 	return []helpActionGroup{
 		// Help 是产品导航页；toast 清理这类维护动作不放到主说明里。
 		{Label: "Most used", Items: helpActionCatalogFromShortcuts("live", root)},
@@ -874,10 +1027,26 @@ func helpActionGroups(root state.Root) []helpActionGroup {
 		{Label: "Floating", Items: helpActionCatalogFromShortcuts("floating", root)},
 		{Label: "Terminal Picker", Items: helpActionCatalogFromShortcuts(string(state.OverlayTerminalPicker), root), Details: []string{"search"}},
 		{Label: "Terminal Manager", Items: helpActionCatalogFromShortcuts(string(state.OverlayTerminalPool), root), Details: []string{"search"}},
+		{Label: "Connections", Items: connectionActions},
 		{Label: "Workbench Tree", Items: helpActionCatalogFromShortcuts(string(state.OverlayWorkbenchTree), root), Details: []string{"search"}},
 		{Label: "Prompt / Help", Items: append(helpActionCatalogFromShortcuts(string(state.OverlayPrompt), root), helpActionCatalogFromShortcuts(string(state.OverlayHelp), root)...)},
 		{Label: "Display / Copy", Items: append(helpActionCatalogFromShortcuts("copy", root), helpActionCatalogFromShortcuts(string(state.OverlayClipboardHistory), root)...), Details: []string{"authoritative HistoryWindow"}},
 	}
+}
+
+func helpActionCatalogForIDs(scene string, root state.Root, actionIDs ...string) []FooterActionVM {
+	wanted := make(map[string]struct{}, len(actionIDs))
+	for _, actionID := range actionIDs {
+		wanted[actionID] = struct{}{}
+	}
+	items := helpActionCatalogFromShortcuts(scene, root)
+	filtered := make([]FooterActionVM, 0, len(items))
+	for _, item := range items {
+		if _, ok := wanted[item.ActionID]; ok {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 func helpActionGroupLine(group helpActionGroup) (Line, bool) {

@@ -29,6 +29,48 @@ func TestCLIRoutePlanEnvironmentRequiresCapabilityAndSSHCredentials(t *testing.T
 	}
 }
 
+func TestCLIEndpointPlanSourceReloadsPersistedRoutePriorities(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	registry := clientendpoint.DefaultRegistry()
+	target := registry.Endpoints[clientendpoint.DefaultEndpointID]
+	target.Routes["backup"] = clientendpoint.AccessRoute{
+		ID: "backup", Kind: clientendpoint.RouteLocalUnix, Enabled: true,
+		Source: clientendpoint.SourceLocal, PolicySource: clientendpoint.SourceUser, Socket: "/tmp/muxvia-backup.sock",
+	}
+	registry.Endpoints[target.ID] = target
+	if err := clientendpoint.Save("", registry); err != nil {
+		t.Fatal(err)
+	}
+
+	source := cliEndpointPlanSource{initialTarget: target}
+	before, err := source.Snapshot(context.Background(), target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zero, ten := 0, 10
+	if _, err := clientendpoint.Update("", false, func(current clientendpoint.Registry) (clientendpoint.Registry, error) {
+		return clientendpoint.SetAutomaticRoutePriorities(current, target.ID, map[clientendpoint.RouteID]*int{
+			clientendpoint.DefaultLocalRouteID: &zero,
+			"backup":                           &ten,
+		})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := source.Snapshot(context.Background(), target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.ConfigKey == before.ConfigKey {
+		t.Fatal("persisted priority update did not invalidate the next connection plan")
+	}
+	if priority := after.Endpoint.Routes[clientendpoint.DefaultLocalRouteID].Priority; priority == nil || *priority != 0 {
+		t.Fatalf("reloaded local priority = %#v", priority)
+	}
+	if priority := after.Endpoint.Routes["backup"].Priority; priority == nil || *priority != 10 {
+		t.Fatalf("reloaded backup priority = %#v", priority)
+	}
+}
+
 type fakeCLICapabilityAvailability map[string]bool
 
 func (values fakeCLICapabilityAvailability) Available(_ context.Context, _ string, reference string) bool {

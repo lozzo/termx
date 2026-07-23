@@ -41,6 +41,7 @@ const (
 	SceneCopy             SceneID = "copy"
 	SceneTerminalPicker   SceneID = "terminal_picker"
 	SceneTerminalPool     SceneID = "terminal_pool"
+	SceneConnections      SceneID = "connections"
 	SceneWorkbenchTree    SceneID = "workbench_tree"
 	SceneClipboardHistory SceneID = "clipboard_history"
 	SceneFloatingOverview SceneID = "floating_overview"
@@ -67,6 +68,7 @@ var sceneSpecs = []SceneSpec{
 	{ID: SceneCopy, MenuAction: "menu.copy", Routable: true},
 	{ID: SceneTerminalPicker, MenuAction: "menu.terminal_picker"},
 	{ID: SceneTerminalPool, MenuAction: "menu.terminal_pool"},
+	{ID: SceneConnections, MenuAction: "menu.connections"},
 	{ID: SceneWorkbenchTree, MenuAction: "menu.workbench_tree"},
 	{ID: SceneClipboardHistory, MenuAction: "menu.clipboard_history"},
 	{ID: SceneFloatingOverview, MenuAction: "menu.floating_overview"},
@@ -141,6 +143,7 @@ func buildPolicies() map[actiondomain.ID]BindingPolicy {
 	visible([]SceneID{SceneWorkspace}, true, "workspace.create", "workspace.next", "workspace.previous", "workspace.rename", "workspace.delete")
 	visible([]SceneID{SceneTerminalPicker}, false, "terminal_picker.attach", "terminal_picker.split", "terminal_picker.edit", "terminal_picker.kill", "terminal_picker.delete", "terminal_picker.close")
 	visible([]SceneID{SceneTerminalPool}, false, "terminal_pool.attach", "terminal_pool.attach_tab", "terminal_pool.attach_float", "terminal_pool.restart", "terminal_pool.edit", "terminal_pool.kill", "terminal_pool.delete", "terminal_pool.close")
+	visible([]SceneID{SceneConnections}, false, "connections.edit", "connections.refresh", "connections.close")
 	visible([]SceneID{SceneWorkbenchTree}, false, "workbench_tree.open", "workbench_tree.new", "workbench_tree.rename", "workbench_tree.delete", "workbench_tree.detach", "workbench_tree.zoom", "workbench_tree.close")
 	visible([]SceneID{SceneClipboardHistory}, false, "clipboard_history.paste", "clipboard_history.new", "clipboard_history.edit", "clipboard_history.delete", "clipboard_history.close")
 	visible([]SceneID{SceneFloatingOverview}, false, "floating_overview.open", "floating_overview.show_all", "floating_overview.collapse_all", "floating_overview.close")

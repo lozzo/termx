@@ -383,8 +383,8 @@ func TestInputDoesNotOwnDefaultShortcutBindings(t *testing.T) {
 	if len(owners) != 0 {
 		t.Fatalf("input must not own default shortcut bindings, got %#v", owners)
 	}
-	if got := len(shortcut.DefaultBindings()); got != 203 {
-		t.Fatalf("shortcut owner returned %d default bindings, want 203", got)
+	if got := len(shortcut.DefaultBindings()); got != 206 {
+		t.Fatalf("shortcut owner returned %d default bindings, want 206", got)
 	}
 }
 

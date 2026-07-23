@@ -80,6 +80,18 @@ func (runtime *ClientRuntime) WatchEndpoint(ctx context.Context, endpointID endp
 	return runtime.owner.WatchEndpoint(ctx, endpointID)
 }
 
+// PlanSnapshot 返回 EndpointPlanSource 当前可证明的 registry/planner 环境快照，供原生 Go 客户端展示策略与可用性。
+// 该读取不分配 generation、不建立连接、不暴露 credential body；TUI/App 不得把快照缓存成第二份连接真值。
+func (runtime *ClientRuntime) PlanSnapshot(ctx context.Context, endpointID endpoint.EndpointID) (EndpointPlanSnapshot, error) {
+	if runtime == nil || runtime.source == nil {
+		return EndpointPlanSnapshot{}, runtimeError(ErrorUnavailable, "client runtime plan source is unavailable", nil)
+	}
+	if ctx == nil {
+		return EndpointPlanSnapshot{}, runtimeError(ErrorInvalidRequest, "endpoint plan snapshot context is required", nil)
+	}
+	return runtime.source.Snapshot(ctx, endpointID)
+}
+
 // Close 关闭唯一 SessionOwner 及其全部 winner、consumer lease 与 lifecycle watcher。
 func (runtime *ClientRuntime) Close() error {
 	if runtime == nil {

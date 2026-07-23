@@ -2,9 +2,9 @@
   "schema_version": 1,
   "stage": "KS016",
   "inventory": {
-    "default_entries": 203,
-    "routed_bindings": 166,
-    "shortcut_specs": 159,
+    "default_entries": 206,
+    "routed_bindings": 167,
+    "shortcut_specs": 163,
     "render_projections": 34
   },
   "artifacts": {

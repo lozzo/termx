@@ -3809,6 +3809,7 @@ func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
 		!strings.Contains(helpPlain, "Shell") ||
 		!strings.Contains(helpPlain, "Tab / Workspace") ||
 		!strings.Contains(helpPlain, "Terminal Manager") ||
+		!strings.Contains(helpPlain, "Connections") ||
 		!strings.Contains(helpPlain, "Display / Copy") ||
 		!contentHasAction(content, "help.close") {
 		t.Fatalf("expected help content, got %#v", content)

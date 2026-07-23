@@ -69,6 +69,9 @@ func NewUIInputReducer() Reducer {
 		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayTerminalPool {
 			return reduceTerminalPoolPageInput(root, inputMsg.Event)
 		}
+		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayConnections {
+			return reduceConnectionsInput(root, inputMsg.Event)
+		}
 		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayWorkbenchTree {
 			return reduceWorkbenchTreeInput(root, inputMsg.Event)
 		}
@@ -395,6 +398,8 @@ func reduceOverlayMouseSelect(root state.Root, msg ShellOverlayMouseSelectMsg) (
 	case state.OverlayTerminalPool:
 		root.Shell = shell.MoveTerminalPoolSelection(msg.Delta, len(state.TerminalPoolPageItems(root)))
 		effects = append(effects, terminalPoolPreviewRefreshEffect())
+	case state.OverlayConnections:
+		root.Shell = shell.MoveConnectionsSelection(msg.Delta, len(root.Endpoints.Items))
 	case state.OverlayWorkbenchTree:
 		root.Shell = shell.MoveWorkbenchTreeSelection(msg.Delta, len(state.WorkbenchTreeItems(root)))
 	case state.OverlayClipboardHistory:
@@ -1262,6 +1267,8 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 		msg = ShellFloatingCommandMsg{Command: state.FloatingCommand{Action: state.FloatingCommandSummon, Index: index, Source: state.PaneCommandSourceKeyboard}}
 	case input.ShellActionOpenPool:
 		msg = ShellOpenTerminalPoolMsg{}
+	case input.ShellActionOpenConnections:
+		msg = ShellOpenConnectionsMsg{}
 	case input.ShellActionOpenTree:
 		msg = ShellOpenWorkbenchTreeMsg{}
 	case input.ShellActionOpenPicker:

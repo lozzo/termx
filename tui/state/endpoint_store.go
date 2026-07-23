@@ -105,12 +105,17 @@ type EndpointErrorKind string
 // EndpointRouteItem 是 reducer-owned 的脱敏 route 配置投影。
 // DialIdentity 只用于判断 registry reload 是否要求 reconnect，不包含 credential body 或 runtime Transport。
 type EndpointRouteItem struct {
-	ID           endpointdomain.RouteID
-	Kind         EndpointTransportKind
-	Enabled      bool
-	ManualOnly   bool
-	Priority     *int
-	DialIdentity endpointdomain.DialIdentity
+	ID                 endpointdomain.RouteID
+	Kind               EndpointTransportKind
+	Enabled            bool
+	ManualOnly         bool
+	Priority           *int
+	RelayMode          endpointdomain.RelayMode
+	RelayTransport     endpointdomain.RelayTransport
+	AvailabilityKnown  bool
+	Available          bool
+	AvailabilityReason endpointdomain.RouteAvailabilityReason
+	DialIdentity       endpointdomain.DialIdentity
 }
 
 // EndpointItem 是 reducer-owned endpoint 展示投影。
@@ -127,6 +132,11 @@ type EndpointItem struct {
 	Transport   EndpointTransportKind
 	ConnectMode EndpointConnectMode
 	Enabled     bool
+	// RoutePreference 来自共享 Endpoint registry；TUI 只展示该策略，NETUX001 App 与 Go planner 消费同一真值。
+	RoutePreference endpointdomain.RoutePreference
+	// ActiveRouteID/ConnectionGeneration 来自 SessionOwner event stamp，不能由 route priority 或当前列表位置推断。
+	ActiveRouteID        endpointdomain.RouteID
+	ConnectionGeneration uint64
 	// ConnectionPhase 是 managed WebRTC 当前连接阶段；local/SSH 保持空值。
 	// 它来自 endpoint runtime event，只服务 picker/manager 展示，不参与 endpoint identity 或 capability 判断。
 	ConnectionPhase EndpointConnectionPhase
@@ -153,6 +163,35 @@ type EndpointStore struct {
 	Items []EndpointItem
 }
 
+// ApplyConnectionProjection 合并 adapter 返回的最新 registry/planner policy，同时保留 SessionOwner runtime 状态。
+// projection 不得覆盖 active route、generation、phase、path 或 endpoint-scoped error；这些字段只能由 runtime event 更新。
+func (store EndpointStore) ApplyConnectionProjection(projection EndpointStore) EndpointStore {
+	next := projection.Normalize()
+	for index := range next.Items {
+		previous, ok := store.Endpoint(next.Items[index].ID)
+		if !ok {
+			continue
+		}
+		item := next.Items[index]
+		item.Status = previous.Status
+		item.LastError = previous.LastError
+		item.LastErrorKind = previous.LastErrorKind
+		item.TerminalCount = previous.TerminalCount
+		item.ReconnectRequired = previous.ReconnectRequired || previous.RequiresReconnect(item)
+		item.ConnectionPhase = previous.ConnectionPhase
+		item.ActiveRouteID = previous.ActiveRouteID
+		item.ConnectionGeneration = previous.ConnectionGeneration
+		item.ObservedPath = previous.ObservedPath
+		item.RouteSelectionReason = previous.RouteSelectionReason
+		item.DefaultCommand = append([]string(nil), previous.DefaultCommand...)
+		item.DefaultCWD = previous.DefaultCWD
+		item.DefaultsLoaded = previous.DefaultsLoaded
+		item.DefaultsError = previous.DefaultsError
+		next.Items[index] = item
+	}
+	return next.Normalize()
+}
+
 // EndpointItemFromEndpoint 把共享 Endpoint registry 配置转换成 TUI 脱敏投影。
 // 该转换不做网络 IO，也不验证凭据；失败和 host key 只能由后续 transport 连接消息回投。
 func EndpointItemFromEndpoint(endpoint endpointdomain.Endpoint) EndpointItem {
@@ -164,11 +203,12 @@ func EndpointItemFromEndpoint(endpoint endpointdomain.Endpoint) EndpointItem {
 		ID: NormalizeEndpointID(endpointID), Label: strings.TrimSpace(endpoint.Label),
 		DeviceID: strings.TrimSpace(endpoint.DaemonIdentity.DeviceID), DeviceFingerprint: strings.TrimSpace(endpoint.DaemonIdentity.DeviceFingerprint),
 		ConnectMode: EndpointConnectMode(strings.TrimSpace(string(endpoint.ConnectMode))), Enabled: endpoint.Enabled,
+		RoutePreference: endpoint.SelectionPolicy.RoutePreference,
 	}
 	for _, route := range endpoint.RouteList() {
 		item.Routes = append(item.Routes, EndpointRouteItem{
 			ID: route.ID, Kind: EndpointTransportKind(route.Kind), Enabled: route.Enabled, ManualOnly: route.ManualOnly,
-			Priority: cloneEndpointPriority(route.Priority), DialIdentity: route.DialIdentity(),
+			Priority: cloneEndpointPriority(route.Priority), RelayMode: route.RelayMode, RelayTransport: route.RelayTransport, DialIdentity: route.DialIdentity(),
 		})
 	}
 	return item.withDefaults()
@@ -190,6 +230,8 @@ func (store EndpointStore) ApplyConnectionRegistry(registry endpointdomain.Regis
 			item.ObservedPath = previous.ObservedPath
 			item.RouteSelectionReason = previous.RouteSelectionReason
 			item.ConnectionPhase = previous.ConnectionPhase
+			item.ActiveRouteID = previous.ActiveRouteID
+			item.ConnectionGeneration = previous.ConnectionGeneration
 			item.DefaultCommand = append([]string(nil), previous.DefaultCommand...)
 			item.DefaultCWD = previous.DefaultCWD
 			item.DefaultsLoaded = previous.DefaultsLoaded
@@ -349,6 +391,70 @@ func (store EndpointStore) MarkManagedRoute(endpointID EndpointID, observedPath,
 	return store.Upsert(item)
 }
 
+// MarkRuntimeConnection 原子更新 SessionOwner 发布的 winner route、generation 与实际 managed path。
+// generation 小于当前值时保持原状态；新 generation 在 Ready 前清空旧 winner，Offline 只清理当前 generation 的连接详情。
+func (store EndpointStore) MarkRuntimeConnection(endpointID EndpointID, routeID string, generation uint64, status EndpointStatusKind, observedPath, selectionReason string) EndpointStore {
+	endpointID = NormalizeEndpointID(endpointID)
+	item, ok := store.DisplayEndpoint(endpointID)
+	if !ok || (item.ConnectionGeneration > 0 && generation == 0) || (generation > 0 && generation < item.ConnectionGeneration) {
+		return store
+	}
+	if generation > item.ConnectionGeneration {
+		item.ConnectionGeneration = generation
+		item.ActiveRouteID = ""
+		item.ObservedPath = ""
+		item.RouteSelectionReason = ""
+	}
+	switch status {
+	case EndpointStatusConnected:
+		if generation > 0 {
+			item.ConnectionGeneration = generation
+		}
+		item.ActiveRouteID = endpointdomain.RouteID(strings.TrimSpace(routeID))
+		switch observedPath = strings.TrimSpace(observedPath); observedPath {
+		case "", "direct", "single_relay", "relay_mesh":
+			item.ObservedPath = observedPath
+		default:
+			item.ObservedPath = ""
+		}
+		selectionReason = strings.TrimSpace(selectionReason)
+		if selectionReason == "" || isKnownRouteSelectionReason(selectionReason) {
+			item.RouteSelectionReason = selectionReason
+		} else {
+			item.RouteSelectionReason = ""
+		}
+	case EndpointStatusOffline:
+		item.ActiveRouteID = ""
+		item.ObservedPath = ""
+		item.RouteSelectionReason = ""
+	}
+	return store.Upsert(item)
+}
+
+// ApplyRouteAvailability 合并 Go planner policy 对单条 Route 的可用性投影。
+// 未返回的 Route 保持 unknown；reducer/renderer 不得按 kind、credential ref 或错误文本补推断。
+func (store EndpointStore) ApplyRouteAvailability(endpointID EndpointID, availability []endpointdomain.RouteAvailability) EndpointStore {
+	item, ok := store.DisplayEndpoint(endpointID)
+	if !ok {
+		return store
+	}
+	byID := make(map[endpointdomain.RouteID]endpointdomain.RouteAvailability, len(availability))
+	for _, value := range availability {
+		byID[value.RouteID] = value
+	}
+	for index := range item.Routes {
+		value, ok := byID[item.Routes[index].ID]
+		item.Routes[index].AvailabilityKnown = ok
+		item.Routes[index].Available = ok && value.Available
+		if ok {
+			item.Routes[index].AvailabilityReason = value.Reason
+		} else {
+			item.Routes[index].AvailabilityReason = ""
+		}
+	}
+	return store.Upsert(item)
+}
+
 // MarkConnectionPhase 更新单个 managed endpoint 的公开连接阶段。
 // 未知阶段被忽略；connected/failed 只描述最近一次 dial 结果，Status 仍由 endpoint runtime 消息独立维护。
 func (store EndpointStore) MarkConnectionPhase(endpointID EndpointID, phase EndpointConnectionPhase) EndpointStore {
@@ -369,7 +475,7 @@ func (store EndpointStore) MarkConnectionPhase(endpointID EndpointID, phase Endp
 
 func isKnownRouteSelectionReason(reason string) bool {
 	switch reason {
-	case "initial_best", "only_viable", "lower_loss", "direct_unstable", "lower_latency", "lower_score",
+	case "first_ready", "route_override", "current_winner", "initial_best", "only_viable", "lower_loss", "direct_unstable", "lower_latency", "lower_score",
 		"cost_guard", "minimum_hold", "cooldown", "hysteresis_hold", "insufficient_improvement",
 		"current_unavailable", "current_best":
 		return true

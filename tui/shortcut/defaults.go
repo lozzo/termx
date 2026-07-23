@@ -88,6 +88,7 @@ var defaultBindings = []DefaultBinding{
 	{Scene: "system", Key: "m", Action: "system.open_terminal_pool"},
 	{Scene: "system", Key: "t", Action: "system.open_terminal_pool"},
 	{Scene: "system", Key: "w", Action: "system.open_workbench_tree"},
+	{Scene: "system", Key: "e", Action: "system.open_connections"},
 	{Scene: "system", Key: "l", Action: "system.toggle_shortcut_lock"},
 	{Scene: "system", Key: ":", Action: "system.open_prompt"},
 	{Scene: "system", Key: "?", Action: "system.open_help"},
@@ -196,6 +197,9 @@ var defaultBindings = []DefaultBinding{
 	{Scene: "terminal_pool", Key: "ctrl-e", Action: "terminal_pool.edit"},
 	{Scene: "terminal_pool", Key: "ctrl-k", Action: "terminal_pool.kill"},
 	{Scene: "terminal_pool", Key: "ctrl-x", Action: "terminal_pool.delete"},
+
+	{Scene: "connections", Key: "enter", Action: "connections.edit"},
+	{Scene: "connections", Key: "r", Action: "connections.refresh"},
 
 	{Scene: "workbench_tree", Key: "enter", Action: "workbench_tree.open"},
 	{Scene: "workbench_tree", Key: "ctrl-n", Action: "workbench_tree.new"},

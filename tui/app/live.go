@@ -29,10 +29,11 @@ type LiveConfig struct {
 }
 
 type LiveDeps struct {
-	Terminal       port.TerminalService
-	Path           port.PathService
-	EndpointEvents port.EndpointEventSource
-	Logger         *slog.Logger
+	Terminal            port.TerminalService
+	Path                port.PathService
+	EndpointEvents      port.EndpointEventSource
+	EndpointConnections port.EndpointConnectionService
+	Logger              *slog.Logger
 }
 
 const liveInvalidationTokenPrefix = "terminal.live.invalidation:"
@@ -53,7 +54,7 @@ func NewLiveRuntime(initial state.Root, host TerminalHost, runner EffectRunner, 
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
 	deps = liveDepsWithEndpointEvents(deps)
-	runtime := NewAppRuntime(initial, ComposeReducers(NewBackNavigationReducer(CopyModeDeps{}), NewShellReducer(), NewUIInputReducer(), NewEndpointStatusReducer(deps), NewEndpointDefaultsReducer(deps), NewPromptPathCompletionReducer(deps), NewTerminalPoolReducer(deps), NewTerminalInputRouterReducer(deps), NewLiveReducer(deps), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
+	runtime := NewAppRuntime(initial, ComposeReducers(NewBackNavigationReducer(CopyModeDeps{}), NewShellReducer(), NewUIInputReducer(), NewEndpointConnectionsReducer(deps), NewEndpointStatusReducer(deps), NewEndpointDefaultsReducer(deps), NewPromptPathCompletionReducer(deps), NewTerminalPoolReducer(deps), NewTerminalInputRouterReducer(deps), NewLiveReducer(deps), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
 	runtime.SetLogger(deps.Logger)
 	if deps.EndpointEvents != nil && shouldAutoStartEndpointWatch(runner) {
 		runtime.enqueue(EndpointWatchRequestMsg{})
@@ -99,7 +100,7 @@ func NewInteractiveRuntimeWithStorage(
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
 	live = liveDepsWithEndpointEvents(live)
-	runtime := NewAppRuntime(initial, ComposeReducers(NewBackNavigationReducer(copyMode), NewShellReducer(), NewUIInputReducer(), NewEndpointStatusReducer(live), NewEndpointDefaultsReducer(live), NewPromptPathCompletionReducer(live), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewClipboardStorageReducer(clipboard), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewTerminalInputRouterReducer(live), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
+	runtime := NewAppRuntime(initial, ComposeReducers(NewBackNavigationReducer(copyMode), NewShellReducer(), NewUIInputReducer(), NewEndpointConnectionsReducer(live), NewEndpointStatusReducer(live), NewEndpointDefaultsReducer(live), NewPromptPathCompletionReducer(live), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewClipboardStorageReducer(clipboard), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewTerminalInputRouterReducer(live), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
 	runtime.SetLogger(live.Logger)
 	if live.EndpointEvents != nil && shouldAutoStartEndpointWatch(runner) {
 		runtime.enqueue(EndpointWatchRequestMsg{})

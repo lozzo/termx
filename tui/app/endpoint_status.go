@@ -87,6 +87,16 @@ func reduceEndpointRuntimeStatus(root state.Root, msg EndpointRuntimeStatusMsg) 
 	if event.EndpointID == "" {
 		return root, nil
 	}
+	if current, ok := root.Endpoints.Endpoint(event.EndpointID); ok {
+		if current.ConnectionGeneration > 0 && event.Generation == 0 {
+			// Snapshot resolution 尚未分配 generation；已有 Ready session 时，这类尝试不能覆盖当前连接事实。
+			return root, nil
+		}
+		if event.Generation > 0 && event.Generation < current.ConnectionGeneration {
+			// SessionOwner generation 是 stale event 的唯一 fence；旧 Offline/Ready 不得污染新 winner。
+			return root, nil
+		}
+	}
 	message := endpointRuntimeEventMessage(event)
 	errorKind := state.NormalizeEndpointErrorKind(event.ErrorKind)
 	if errorKind == state.EndpointErrorUnknown && event.Err != nil {
@@ -105,17 +115,13 @@ func reduceEndpointRuntimeStatus(root state.Root, msg EndpointRuntimeStatusMsg) 
 	}
 	count := endpointTerminalCount(root, event.EndpointID)
 	root.Endpoints = root.Endpoints.MarkRuntimeStatus(event.EndpointID, status, errorKind, count, message)
+	root.Endpoints = root.Endpoints.MarkRuntimeConnection(event.EndpointID, event.RouteID, event.Generation, status, event.ObservedPath, event.RouteSelectionReason)
 	if event.Phase != "" {
 		root.Endpoints = root.Endpoints.MarkConnectionPhase(event.EndpointID, event.Phase)
 	} else if status == state.EndpointStatusConnected {
 		root.Endpoints = root.Endpoints.MarkConnectionPhase(event.EndpointID, state.EndpointConnectionConnected)
 	} else if status == state.EndpointStatusOffline {
 		root.Endpoints = root.Endpoints.MarkConnectionPhase(event.EndpointID, state.EndpointConnectionFailed)
-	}
-	if status == state.EndpointStatusConnected {
-		root.Endpoints = root.Endpoints.MarkManagedRoute(event.EndpointID, event.ObservedPath, event.RouteSelectionReason)
-	} else if status == state.EndpointStatusOffline {
-		root.Endpoints = root.Endpoints.MarkManagedRoute(event.EndpointID, "", "")
 	}
 	if status == state.EndpointStatusOffline {
 		root = markEndpointOfflineInTerminalViews(root, event.EndpointID, endpointRuntimeDisplayMessage(errorKind, message))

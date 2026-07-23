@@ -249,8 +249,8 @@ func compactShortcutFooterActions(scene string, actions []FooterActionVM) []Foot
 	if scene == "global" || scene == "system" {
 		actions = compactFooterActionGroup(actions, "menu.terminal_pool")
 		actions = orderShortcutFooterActions(actions, []actiondomain.ID{
-			"system.toggle_header", "system.toggle_footer", "menu.help", "menu.prompt", "menu.terminal_pool",
-			"menu.workbench_tree", "system.toggle_shortcut_lock", "system.clear_toasts", "system.close_toast", "system.quit",
+			"menu.connections", "system.toggle_header", "system.toggle_footer", "menu.terminal_pool", "menu.help",
+			"menu.prompt", "menu.workbench_tree", "system.toggle_shortcut_lock", "system.clear_toasts", "system.close_toast", "system.quit",
 		})
 	}
 	if scene == "panel" {

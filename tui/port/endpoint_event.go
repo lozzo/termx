@@ -11,6 +11,10 @@ import (
 // TUI reducer 应把它投影到对应 pane/manager/picker，而不是升级成全局 toast。
 type EndpointRuntimeEvent struct {
 	EndpointID state.EndpointID
+	// RouteID 与 Generation 原样来自 Go SessionOwner stamp；两者只用于展示和拒绝迟到旧事件。
+	// TUI 不得用 registry 当前值补造 winner route，也不得分配 generation。
+	RouteID    string
+	Generation uint64
 	Status     state.EndpointStatusKind
 	ErrorKind  state.EndpointErrorKind
 	// Phase 是 managed WebRTC 当前 resolving/signaling/connecting/authorizing/connected/failed 阶段。

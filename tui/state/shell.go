@@ -34,6 +34,7 @@ const (
 	OverlayNone             OverlayKind = ""
 	OverlayTerminalPicker   OverlayKind = "terminal-picker"
 	OverlayTerminalPool     OverlayKind = "terminal-pool"
+	OverlayConnections      OverlayKind = "connections"
 	OverlayWorkbenchTree    OverlayKind = "workbench-tree"
 	OverlayClipboardHistory OverlayKind = "clipboard-history"
 	OverlayFloatingOverview OverlayKind = "floating-overview"

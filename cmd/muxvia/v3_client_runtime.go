@@ -24,15 +24,34 @@ import (
 )
 
 type cliEndpointPlanSource struct {
-	snapshot clientruntime.EndpointPlanSnapshot
+	localOptions   localadapter.Options
+	credentials    cliCredentialSource
+	sshCredentials sshadapter.AgentCredentialSource
+	initialTarget  clientendpoint.Endpoint
 }
 
-// Snapshot 返回当前 CLI invocation 冻结的单 Endpoint planner 输入；请求其他 Endpoint 必须 fail closed。
-func (source cliEndpointPlanSource) Snapshot(_ context.Context, endpointID clientendpoint.EndpointID) (clientruntime.EndpointPlanSnapshot, error) {
-	if source.snapshot.Endpoint.ID != endpointID {
-		return clientruntime.EndpointPlanSnapshot{}, &clientruntime.Error{Code: clientruntime.ErrorNotFound, Message: fmt.Sprintf("endpoint %q is not configured", endpointID)}
+// Snapshot 每次从共享 Endpoint registry 读取当前配置，再生成本机平台与 credential 索引。
+// 当前 Ready session 仍由 SessionOwner 持有；registry priority 变更只会在下一次 EnsureSession 时生效。
+func (source cliEndpointPlanSource) Snapshot(ctx context.Context, endpointID clientendpoint.EndpointID) (clientruntime.EndpointPlanSnapshot, error) {
+	registry, err := loadV3ConnectionRegistry()
+	if err != nil {
+		return clientruntime.EndpointPlanSnapshot{}, err
 	}
-	return source.snapshot, nil
+	target, ok := registry.Endpoints[endpointID]
+	if !ok {
+		// pairing import 在 registry 事务提交前必须先对候选 Endpoint 完成 daemon-authenticated handshake。
+		// 该显式 invocation 输入只覆盖“同 ID 尚不存在”；已持久化 Endpoint 永远以 registry 最新值为准。
+		if source.initialTarget.ID != endpointID {
+			return clientruntime.EndpointPlanSnapshot{}, &clientruntime.Error{Code: clientruntime.ErrorNotFound, Message: fmt.Sprintf("endpoint %q is not configured", endpointID)}
+		}
+		target = source.initialTarget
+	}
+	environment := cliRoutePlanEnvironment(ctx, target, source.credentials, source.sshCredentials)
+	configKey, err := cliEndpointConfigKey(target, source.localOptions, environment)
+	if err != nil {
+		return clientruntime.EndpointPlanSnapshot{}, err
+	}
+	return clientruntime.EndpointPlanSnapshot{Endpoint: target, Environment: environment, ConfigKey: configKey}, nil
 }
 
 type cliCredentialSource struct {
@@ -93,6 +112,9 @@ func newCLIEndpointRuntime(ctx context.Context, owner *clientruntime.SessionOwne
 	if ctx == nil || owner == nil {
 		return nil, fmt.Errorf("CLI endpoint runtime requires context and a session owner")
 	}
+	if err := target.Validate(); err != nil {
+		return nil, err
+	}
 	credentials := cliCredentialSource{store: remoteauth.NewCredentialStore(v3RemoteCredentialDir())}
 	sshCredentials := sshadapter.AgentCredentialSource{}
 	localDialer := localadapter.NewDialer(localOptions)
@@ -119,14 +141,9 @@ func newCLIEndpointRuntime(ctx context.Context, owner *clientruntime.SessionOwne
 	if err != nil {
 		return nil, err
 	}
-	environment := cliRoutePlanEnvironment(ctx, target, credentials, sshCredentials)
-	configKey, err := cliEndpointConfigKey(target, localOptions, environment)
-	if err != nil {
-		return nil, err
-	}
-	runtime, err := clientruntime.NewClientRuntime(owner, cliEndpointPlanSource{snapshot: clientruntime.EndpointPlanSnapshot{
-		Endpoint: target, Environment: environment, ConfigKey: configKey,
-	}}, systemadapter.Clock{}, dialers)
+	runtime, err := clientruntime.NewClientRuntime(owner, cliEndpointPlanSource{
+		localOptions: localOptions, credentials: credentials, sshCredentials: sshCredentials, initialTarget: target,
+	}, systemadapter.Clock{}, dialers)
 	if err != nil {
 		return nil, err
 	}

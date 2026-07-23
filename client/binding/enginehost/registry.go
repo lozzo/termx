@@ -112,7 +112,10 @@ func (host *Host) connectionPolicyState(ctx context.Context, target endpoint.End
 	}
 	state := &bindingpb.ConnectionPolicyState{Policy: connectionPolicyToProto(target)}
 	for _, kind := range []endpoint.RouteKind{endpoint.RouteDirectWebRTCTCP, endpoint.RouteSSHWebRTCTCP, endpoint.RouteManagedWebRTC} {
-		available, reason := connectionRouteAvailability(target, planningTarget, environment, kind, host.options)
+		available, reason, err := connectionRouteAvailability(target, planningTarget, environment, kind)
+		if err != nil {
+			return nil, err
+		}
 		state.Routes = append(state.Routes, &bindingpb.ConnectionPolicyRouteAvailability{
 			RouteKind: bindingPolicyRouteKind(kind), Available: available, Reason: reason,
 		})
@@ -120,62 +123,65 @@ func (host *Host) connectionPolicyState(ctx context.Context, target endpoint.End
 	return state, nil
 }
 
-func connectionRouteAvailability(target, planningTarget endpoint.Endpoint, environment clientruntime.RoutePlanEnvironment, kind endpoint.RouteKind, options Options) (bool, bindingpb.ConnectionPolicyAvailabilityReason) {
-	supported := false
-	for _, candidate := range environment.SupportedRouteKinds {
-		if candidate == kind {
-			supported = true
-			break
-		}
+func connectionRouteAvailability(target, planningTarget endpoint.Endpoint, environment clientruntime.RoutePlanEnvironment, kind endpoint.RouteKind) (bool, bindingpb.ConnectionPolicyAvailabilityReason, error) {
+	items, err := endpoint.EvaluateRouteAvailability(endpoint.RouteAvailabilityRequest{
+		Endpoint: target, PlanningEndpoint: planningTarget,
+		SupportedRouteKinds: environment.SupportedRouteKinds, AvailableCredentialRefs: environment.AvailableCredentialRefs,
+	})
+	if err != nil {
+		return false, bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_UNSPECIFIED, err
 	}
-	credentials := make(map[string]struct{}, len(environment.AvailableCredentialRefs))
-	for _, reference := range environment.AvailableCredentialRefs {
-		credentials[reference] = struct{}{}
-	}
-	configured, enabled := false, false
-	bestReason := bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_DISABLED
-	for _, route := range target.RouteList() {
-		if route.Kind != kind {
+	configured := false
+	bestReason := endpoint.RouteAvailabilityDisabled
+	bestRank := 0
+	for _, item := range items {
+		if item.Kind != kind {
 			continue
 		}
 		configured = true
-		if !route.Enabled {
-			continue
+		if item.Available {
+			return true, bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_AVAILABLE, nil
 		}
-		enabled = true
-		if kind == endpoint.RouteManagedWebRTC && options.ManagedPeers != nil {
-			if planned, ok := planningTarget.Routes[route.ID]; ok && !planned.Enabled {
-				bestReason = bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_CLOUD_UNAVAILABLE
-				continue
-			}
+		if rank := routeAvailabilityReasonRank(item.Reason); rank > bestRank {
+			bestReason, bestRank = item.Reason, rank
 		}
-		if !supported {
-			bestReason = bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_PLATFORM_UNSUPPORTED
-			continue
-		}
-		credentialMissing := false
-		for _, reference := range []string{route.CredentialRef, route.SSHCredentialRef} {
-			if reference == "" {
-				continue
-			}
-			if _, ok := credentials[reference]; !ok {
-				credentialMissing = true
-				break
-			}
-		}
-		if credentialMissing {
-			bestReason = bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_CREDENTIAL_UNAVAILABLE
-			continue
-		}
-		return true, bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_AVAILABLE
 	}
 	if !configured {
-		return false, bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_NOT_CONFIGURED
+		return false, bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_NOT_CONFIGURED, nil
 	}
-	if !enabled {
-		return false, bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_DISABLED
+	return false, bindingAvailabilityReason(bestReason), nil
+}
+
+func routeAvailabilityReasonRank(reason endpoint.RouteAvailabilityReason) int {
+	switch reason {
+	case endpoint.RouteAvailabilityCredentialUnavailable:
+		return 4
+	case endpoint.RouteAvailabilityCloudUnavailable:
+		return 3
+	case endpoint.RouteAvailabilityPlatformUnsupported:
+		return 2
+	case endpoint.RouteAvailabilityDisabled:
+		return 1
+	default:
+		return 0
 	}
-	return false, bestReason
+}
+
+func bindingAvailabilityReason(reason endpoint.RouteAvailabilityReason) bindingpb.ConnectionPolicyAvailabilityReason {
+	switch reason {
+	case endpoint.RouteAvailabilityAvailable:
+		return bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_AVAILABLE
+	case endpoint.RouteAvailabilityDisabled:
+		return bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_DISABLED
+	case endpoint.RouteAvailabilityPlatformUnsupported:
+		return bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_PLATFORM_UNSUPPORTED
+	case endpoint.RouteAvailabilityCredentialUnavailable:
+		return bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_CREDENTIAL_UNAVAILABLE
+	case endpoint.RouteAvailabilityCloudUnavailable:
+		return bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_CLOUD_UNAVAILABLE
+	default:
+		return bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_UNSPECIFIED
+	}
 }
 
 func connectionPolicyFromProto(policy *bindingpb.ConnectionPolicy) (endpoint.RoutePreference, endpoint.RelayMode, endpoint.RelayTransport, error) {

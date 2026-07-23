@@ -86,18 +86,30 @@ func TestEndpointRuntimeStatusStoresAndClearsManagedRouteProjection(t *testing.T
 	reducer := NewEndpointStatusReducer(LiveDeps{})
 	connected, _ := reducer(root, EndpointRuntimeStatusMsg{Event: port.EndpointRuntimeEvent{
 		EndpointID: "studio", Status: state.EndpointStatusConnected, ObservedPath: "single_relay",
-		RouteSelectionReason: "lower_loss",
+		RouteID: "cloud", Generation: 7, RouteSelectionReason: "first_ready",
 	}})
 	studio, ok := connected.Endpoints.Endpoint("studio")
-	if !ok || studio.ObservedPath != "single_relay" || studio.RouteSelectionReason != "lower_loss" || studio.ConnectionPhase != "connected" || studio.DisplayStatus() != state.EndpointStatusConnected {
+	if !ok || studio.ActiveRouteID != "cloud" || studio.ConnectionGeneration != 7 || studio.ObservedPath != "single_relay" || studio.RouteSelectionReason != "first_ready" || studio.ConnectionPhase != "connected" || studio.DisplayStatus() != state.EndpointStatusConnected {
 		t.Fatalf("connected managed path not stored: %#v ok=%v", studio, ok)
 	}
 	offline, _ := reducer(connected, EndpointRuntimeStatusMsg{Event: port.EndpointRuntimeEvent{
-		EndpointID: "studio", Status: state.EndpointStatusOffline, Err: errors.New("route closed"),
+		EndpointID: "studio", RouteID: "cloud", Generation: 7, Status: state.EndpointStatusOffline, Err: errors.New("route closed"),
 	}})
 	studio, ok = offline.Endpoints.Endpoint("studio")
-	if !ok || studio.ObservedPath != "" || studio.RouteSelectionReason != "" || studio.ConnectionPhase != "failed" || studio.DisplayStatus() != state.EndpointStatusOffline {
+	if !ok || studio.ActiveRouteID != "" || studio.ConnectionGeneration != 7 || studio.ObservedPath != "" || studio.RouteSelectionReason != "" || studio.ConnectionPhase != "failed" || studio.DisplayStatus() != state.EndpointStatusOffline {
 		t.Fatalf("offline managed path not cleared: %#v ok=%v", studio, ok)
+	}
+	stale, _ := reducer(offline, EndpointRuntimeStatusMsg{Event: port.EndpointRuntimeEvent{
+		EndpointID: "studio", RouteID: "cloud", Generation: 6, Status: state.EndpointStatusConnected, ObservedPath: "direct", RouteSelectionReason: "current_winner",
+	}})
+	if got, _ := stale.Endpoints.Endpoint("studio"); got.DisplayStatus() != state.EndpointStatusOffline || got.ActiveRouteID != "" || got.ConnectionGeneration != 7 {
+		t.Fatalf("stale generation revived endpoint: %#v", got)
+	}
+	zeroGeneration, _ := reducer(connected, EndpointRuntimeStatusMsg{Event: port.EndpointRuntimeEvent{
+		EndpointID: "studio", Generation: 0, Status: state.EndpointStatusOffline, Err: errors.New("registry unavailable"),
+	}})
+	if got, _ := zeroGeneration.Endpoints.Endpoint("studio"); got.DisplayStatus() != state.EndpointStatusConnected || got.ActiveRouteID != "cloud" || got.ConnectionGeneration != 7 {
+		t.Fatalf("unbound resolution failure replaced current winner: %#v", got)
 	}
 }
 

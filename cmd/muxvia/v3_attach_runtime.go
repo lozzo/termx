@@ -73,8 +73,12 @@ func newV3InteractiveRuntimeFromClientRuntime(terminalID string, cols, rows int,
 	coreAdapter := tuiprotocol.ProtocolCoreClientAdapter{Application: application}
 	pathAdapter, _ := tuiprotocol.NewProtocolPathServiceAdapter(application)
 	var endpointEvents tuiport.EndpointEventSource
+	var endpointConnections tuiport.EndpointConnectionService
 	if client != nil && client.ConnectionRuntime() != nil {
 		endpointEvents = clientruntimeadapter.EndpointEventSource{Runtime: client.ConnectionRuntime(), EndpointID: endpointID}
+		if planRuntime, ok := client.ConnectionRuntime().(clientruntimeadapter.EndpointPlanSnapshotSource); ok {
+			endpointConnections = clientruntimeadapter.EndpointConnectionControl{Runtime: planRuntime}
+		}
 	}
 
 	initial := state.Root{
@@ -106,7 +110,7 @@ func newV3InteractiveRuntimeFromClientRuntime(terminalID string, cols, rows int,
 	}
 	return app.NewInteractiveRuntimeWithStorage(
 		initial, host, app.NewAsyncEffectRunner(),
-		app.LiveDeps{Terminal: terminalAdapter, Path: pathAdapter, EndpointEvents: endpointEvents, Logger: logger},
+		app.LiveDeps{Terminal: terminalAdapter, Path: pathAdapter, EndpointEvents: endpointEvents, EndpointConnections: endpointConnections, Logger: logger},
 		app.CopyModeDeps{Core: coreAdapter, Clipboard: &systemadapter.ClipboardService{}, Terminal: terminalAdapter, Logger: logger, Rows: rows},
 		workbench, clipboard,
 	)

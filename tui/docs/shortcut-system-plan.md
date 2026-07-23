@@ -326,7 +326,7 @@ KS013 实际收口边界：
 
 - `tui/action` 的 `ID`、`Spec`、`Invocation`、`ParamSpec`、默认语义 label 和 mouse/drag/CTA canonical ID 是唯一 identity 真值；该包只能依赖标准库，视觉 projection 名称不得注册为 action。
 - `tui/shortcut` 持有 `DefaultBinding`、`BindingPolicy`、唯一内置 scene registry、footer/help binding visibility；`tui/input`、`tui/config` 和 `tui/render` 只能通过 scene API 编译或投影 catalog。
-- app 的 `actionHandlerRegistry` 覆盖全部 203 个默认 keyboard binding，只按 canonical `action.ID` 选择 handler；overlay 同样直接进入该 registry，alias、scene、source string 和 render projection 均不参与执行。
+- app 的 `actionHandlerRegistry` 覆盖全部 206 个默认 keyboard binding，只按 canonical `action.ID` 选择 handler；overlay 同样直接进入该 registry，alias、scene、source string 和 render projection 均不参与执行。
 - render 使用本地 `ProjectionID`，`ProjectionSpec.CanonicalActionID` 单向引用 canonical action，并已删除 dispatch、固定 footer/help 元数据和 `ShortcutActionRenderID`。所有可执行 footer 与 HitRegion 直接携带 canonical invocation。
 - pane/header/content/drag 中仍未携带 invocation 的 producer 继续由 debt manifest 锁定到 KS016；不得在 KS013 用 legacy projection ID fallback 冒充 canonical invocation。
 
@@ -357,7 +357,7 @@ Kitty 编码、modifier/event-type 与 PUA functional key 范围以官方 [keybo
 
 KS015 实际执行契约：
 
-- 203 条默认 binding canonicalize 为 146 个唯一 invocation；测试从 `shortcut.DefaultBindings()` 动态生成闭集，在具备 terminal、9 个 tab、多个 workspace、floating、pool metadata、clipboard 与 frozen history 的可用 fixture 上，经正式 reducer 组合执行同步 effect/message 链直到静止。每个 invocation 必须产生排除 `Generation` 和新增 toast 后的真实状态变化，或抵达明确的 terminal/core/clipboard/workbench storage service owner；endpoint mutation 以 attach/detach/restart/reconnect/kill/remove/edit/tag/input/resize 的完整期望向量和精确 `TerminalRef` 列表验收，重复调用、同 endpoint 错 terminal、额外 mutation 或 fallback 均失败，不能把未执行 effect 或提示当作成功。
+- 206 条默认 binding canonicalize 为 149 个唯一 invocation；测试从 `shortcut.DefaultBindings()` 动态生成闭集，在具备 terminal、9 个 tab、多个 workspace、floating、pool metadata、clipboard 与 frozen history 的可用 fixture 上，经正式 reducer 组合执行同步 effect/message 链直到静止。每个 invocation 必须产生排除 `Generation` 和新增 toast 后的真实状态变化，或抵达明确的 terminal/core/clipboard/workbench storage service owner；endpoint mutation 以 attach/detach/restart/reconnect/kill/remove/edit/tag/input/resize 的完整期望向量和精确 `TerminalRef` 列表验收，重复调用、同 endpoint 错 terminal、额外 mutation 或 fallback 均失败，不能把未执行 effect 或提示当作成功。
 - `system.open_prompt` 打开 `action.command` prompt；提交值必须经 `tui/action.ParseInvocation` 校验并回到统一 `ShellShortcutActionMsg` dispatcher。未知 action 或没有 executable handler 的 surface identity 保持 prompt 打开并明确失败，不再以 toast 回显输入冒充执行。
 - terminal picker edit 只按选中项的 `TerminalRef` 查找 pool metadata，打开与 terminal manager 共用的 rename prompt，并在提交时保留原 tags；metadata 缺失时 fail closed，禁止用原标题或人工标签伪造 edit。
 - `panel.reconnect` 直接为 active pane 的 owning `TerminalRef` 生成 `TerminalPoolReconnectRequestMsg{LocalError:true}`，失败回投目标 view；`panel.restart` 无条件生成 endpoint-aware restart request。只有 exited CTA 保留 restart-if-exited 语义。

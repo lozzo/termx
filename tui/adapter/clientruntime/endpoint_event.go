@@ -7,7 +7,7 @@ import (
 )
 
 // ProjectEndpointEvent 把共享 runtime lifecycle event 映射为 TUI-owned endpoint 投影。
-// 映射只转换稳定枚举和展示字段，不读取 registry，不创建连接，也不把 runtime stamp 写入 reducer state。
+// 映射只转换稳定枚举和展示字段，不读取 registry、不创建连接；stamp 原样投影用于 reducer generation fence。
 func ProjectEndpointEvent(event clientruntime.EndpointEvent) port.EndpointRuntimeEvent {
 	phase := projectConnectionPhase(event.Phase)
 	status := state.EndpointStatusConnecting
@@ -19,6 +19,8 @@ func ProjectEndpointEvent(event clientruntime.EndpointEvent) port.EndpointRuntim
 	}
 	return port.EndpointRuntimeEvent{
 		EndpointID:           state.EndpointID(event.EndpointID),
+		RouteID:              string(event.Stamp.RouteID),
+		Generation:           uint64(event.Stamp.Generation),
 		Status:               status,
 		ErrorKind:            projectErrorKind(event.ErrorCode),
 		Phase:                phase,

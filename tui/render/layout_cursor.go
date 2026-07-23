@@ -68,7 +68,7 @@ func cursorWasClipped(source Cursor, projected Cursor) bool {
 }
 
 func overlayOwnsCursor(overlay OverlayVM) bool {
-	return overlay.Kind != OverlayNone && overlay.Content.Kind != "" && (overlay.Opaque || overlay.Content.Kind == ContentPrompt || overlay.Content.Kind == ContentTerminalPicker || overlay.Content.Kind == ContentTerminalPool || overlay.Content.Kind == ContentWorkbenchTree || overlay.Content.Kind == ContentClipboardHistory || overlay.Content.Kind == ContentHelp)
+	return overlay.Kind != OverlayNone && overlay.Content.Kind != "" && (overlay.Opaque || overlay.Content.Kind == ContentPrompt || overlay.Content.Kind == ContentTerminalPicker || overlay.Content.Kind == ContentTerminalPool || overlay.Content.Kind == ContentConnections || overlay.Content.Kind == ContentWorkbenchTree || overlay.Content.Kind == ContentClipboardHistory || overlay.Content.Kind == ContentHelp)
 }
 
 func cursorWithRect(cursor Cursor, origin Rect) (Cursor, Rect) {
