@@ -13,15 +13,29 @@ var _ datachannel.Channel = (*Channel)(nil)
 // Channel 把 Pion DataChannel 适配为共享 datachannel.Channel。
 // 它不创建 peer connection、不验证 grant，也不决定 core-v2 scope；端到端授权属于 daemon DataChannel handler。
 type Channel struct {
-	channel       *webrtc.DataChannel
+	channel       pionDataChannel
 	mu            sync.Mutex
 	closed        bool
 	closeHandlers []func()
 }
 
+type pionDataChannel interface {
+	OnClose(func())
+	OnMessage(func(webrtc.DataChannelMessage))
+	OnBufferedAmountLow(func())
+	BufferedAmount() uint64
+	SetBufferedAmountLowThreshold(uint64)
+	Send([]byte) error
+	Close() error
+}
+
 // NewChannel 创建 Pion DataChannel adapter。
 // 调用方必须确保 DataChannel 使用可靠有序模式，并在 OnOpen 后才交给 protocol session。
 func NewChannel(channel *webrtc.DataChannel) *Channel {
+	return newChannel(channel)
+}
+
+func newChannel(channel pionDataChannel) *Channel {
 	adapter := &Channel{channel: channel}
 	channel.OnClose(adapter.notifyClosed)
 	return adapter
@@ -66,7 +80,13 @@ func (channel *Channel) SetBufferedAmountLowHandler(handler func()) {
 
 // Send 发送一个完整 DataChannel message；内容由当前 remote-auth/protocol 状态机解释。
 func (channel *Channel) Send(payload []byte) error {
-	return channel.channel.Send(payload)
+	err := channel.channel.Send(payload)
+	if err != nil {
+		// 可靠有序 DataChannel 的单帧发送失败后不能继续承载 protocol correlation；
+		// 立即发布 transport 终止，让 binding 淘汰精确 session generation。
+		channel.notifyClosed()
+	}
+	return err
 }
 
 // Close 关闭当前 Pion DataChannel。

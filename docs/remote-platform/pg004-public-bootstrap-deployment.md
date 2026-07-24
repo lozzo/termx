@@ -6,13 +6,17 @@
 
 该环境已经支持 Web 注册/登录、账号中心、移动端扫码批准、daemon enrollment、managed P2P、单节点 TURN Relay 和 Android Go/JNI 连接。Android 公网 HTTPS staging profile 已真实安装到 ARM64/API 35 模拟器，并在 ARM64/Android 16 实体手机完成 AUTO 跨 NAT terminal UI 验收；它不是 production profile，也没有改变正式构建的 fail-closed 默认值。
 
-该环境仍不是正式商业生产：支付仍为测试 provider，R2 备份恢复和完整 Android file E2E 尚未通过。Android account refresh、Edge 重启后的 daemon Presence 恢复和活跃 session 网络切换已经完成真实公网验收。
+该环境仍不是正式商业生产：支付仍为测试 provider，R2 备份恢复尚未通过。Android account refresh、Edge 重启后的 daemon Presence 恢复、活跃 session 网络切换和完整 Android file E2E 已经完成真实公网验收。
 
 `PG004-HUBSEL` 已于 2026-07-23 完成真实验收。仓库实现接通 Proto 候选/观测、Controller active/capacity 筛选与最终 assignment、Go Client Engine 16-worker health 探测、Companion daemon 动态 Hub directory 和 daemon refresh；提交 `dc9705802bc4987db4f17d5ef1f8284483f9fa22` 已推送到 `origin/master`，并部署到公网 Controller 与 US/CN 两台 Edge。真实 daemon enrollment 从两个独立 Edge 取得 health observation，最终由 Controller 唯一选择 US Hub；Supabase assignment epoch、返回目录和 EdgeAccess token audience 一致。实体 ARM64 Android App 又独立完成账号 activation、设备目录恢复、US Hub endpoint resolve 和双端 signaling，证明客户端消费的是 Controller assignment，而不是自行选择 Hub。
 
-该结果只完成 `PG004-HUBSEL`，不把整个 `PG004` 标记完成。R2 独立恢复和完整 Android file E2E 仍是当前切片门禁。
+该结果只完成 `PG004-HUBSEL`，不把整个 `PG004` 标记完成。2026-07-24 已补齐最终 Android file E2E，R2 独立恢复仍是当前切片门禁。
 
 当前公网 Controller 已把 daemon enrollment 收敛为内存持有的十分钟 128-bit 单次 flow：任意已登录账号创建 code，daemon 提交公开 metadata、DeviceIdentity public key 和 device ID，Web 核对后批准，CLI 再以 DeviceIdentity proof 完成。pending flow 不进入 PostgreSQL，Controller 重启后统一失效；完成后的设备归属、Hub assignment 和 session 继续持久化。手机 activation 使用相同的 Web 核对批准语义，二维码与手工输入的 `MXA-...` 登录码指向同一 flow。
+
+2026-07-24 又把 daemon enrollment 的最终持久化收敛为单个 PostgreSQL 事务：事务内锁定并校验账号 auth revision，以旧 ownership/assignment 为 CAS 条件，同时提交新 ownership、唯一 assignment、旧设备 session 撤销、跨账号旧 topology 清理、新 refresh session 与审计；任一步失败全部回滚。Web 批准、DeviceIdentity proof、Hub 候选探测、EdgeAccess 与 refresh 明文生成仍只存在于内存，policy 只在事务提交后发布。完成响应在原 flow 有效期内按完整请求 digest 提供 delivery grace，HTTP 响应丢失不会再次轮换 session。Controller 单元/竞态测试、PostgreSQL 最后一步故障回滚、`make test-private` 和全仓 Go 回归通过；公网 Controller SHA-256 为 `736b33ede2d80a083537f9be0f4b6d2e22eb2ecaf9a167543fd8a966be1bccf4`，回滚资产位于 `/opt/muxvia/rollback/pre-atomic-enrollment-20260724-1350/`。
+
+同日真实旧 daemon 迁移复测又发现：ownership 已撤销，但 24 小时旧 assignment 已过期时，Controller 会在进入上述事务前统一拒绝。修复后只有“已撤销、DeviceID/public key 连续、旧 ownership/assignment CAS 匹配”的跨账号迁移可以续签原 Hub；活跃 owner 和其它过期 assignment 仍 fail closed。新增 harness 明确把旧 assignment 设为过期并验证迁移后同 Hub、epoch 递增、lease 恢复；Controller 与 PostgreSQL 目标测试及 Controller race 通过。公网 Controller SHA-256 更新为 `c8d87ec06e30fb8fd3174ebeaa6f034c9b06e2788ffa327aa677603cdfbebd77`，回滚资产位于 `/opt/muxvia/rollback/pre-expired-assignment-enrollment-20260724-1425/`。本轮 `make test-private` 的领域包与 Controller 通过，但三个 devcloud E2E 因本机 `127.0.0.1:55432` PostgreSQL 密码认证环境故障未启动子进程；该环境失败未通过修改业务代码规避。
 
 ## 部署拓扑
 
@@ -71,7 +75,7 @@ Controller 与 Edge 使用独立进程、配置、identity、state 目录和 res
 - Pro/Team catalog 升级到 version `2`，Relay region 显式允许 `local-1`、`us-west-1` 和 `cn-east-1`；现有 bootstrap staging entitlement 已一次性迁移到同版本 projection。
 - Android 选择 `Use relay` 后，client 与 daemon 分别成功取得 `/v1/relay/leases/acquire`，随后完成 signaling；真实 TURN Relay session 保持超过 40 秒后仍可打开 `android-relay-success` terminal，terminal channel attach 和逐字符 input 均成功。
 - Relay workspace 的后台 inventory subscription 不再把“未指定 route policy”误当成 `AUTO`。只有用户明确选择 Relay/P2P 才更新 Go-owned Endpoint registry，避免后台订阅提升 generation 并使当前 Relay session stale。
-- Relay session 内远端文件面板成功列出 daemon 主机 `/` 与 `/tmp`；上传/下载内容校验未完成，不计为 file E2E PASS。
+- Relay session 内远端文件面板成功列出 daemon 主机 `/` 与 `/tmp`；2026-07-24 的最终 APK 已进一步完成上传、下载、取消和内容摘要校验，详见下方最终候选证据。
 - Android `minSdk 24` 的 Cloud module 使用 `java.time`，APK 已启用 core library desugaring；Android 7.0/7.1 不再因 factory 加载期缺少 `java.time.Instant` 被误报为 managed cloud module 未安装。初始化失败会保留原始异常到 `ManagedCloudAssembly` logcat。
 - 该轮复测 APK 为 ARM64 debug staging artifact，SHA-256 `2905b6ace56b77934f09085ff1bcd5c35eaa692c711defd6c780fdf5b846ec72`；APK 已确认包含 Official factory、HTTPS staging BuildConfig、`j$.time` 和最新 mobile UI assets，覆盖安装后完成手工登录码流程并正常进入 Machines 页面。本轮 logcat 未发现 `FATAL EXCEPTION`、ANR、`SIGSEGV` 或 native fatal signal。
 - `CLOUDAUTH001` 后，Hub 使用 Controller 公钥离线验证 EdgeAccess token，client 设备尚未进入 policy projection 时也能立即读取同账号设备目录；projection lag 返回可重试错误，明确撤销返回 `AUTHORIZATION_REVOKED`，不再冒充登录失效。Linux Edge SHA-256 `a7f83ca5c5a1445e4955687b4da40da45bb8ad65650ed6e997bee69fa1fc38d9` 已滚动部署到 US/CN，两端 health 恢复 `204`。ARM64 公网 HTTPS APK SHA-256 `5adedd4bf0480687d3d0e89d49dc5898c2270857fb5a271b7cf7737c728cf170` 完成全新 `MXA` 手工登录、Web 批准后首次目录同步、强制停止与重启恢复；logcat 未出现 `unauthenticated`、Java 或 native crash。
@@ -87,6 +91,12 @@ Controller 与 Edge 使用独立进程、配置、identity、state 目录和 res
 - Linux/amd64 Edge artifact SHA-256 为 `62e61181735d93e530cd5e802977f729e027d1962fbf6edca9e91f758ab8266f`，已滚动部署到 US/CN；两端 `systemd` active，`ss` 同时显示 `0.0.0.0:41003/udp` 与 `0.0.0.0:41003/tcp`。回滚二进制位于两台服务器的 `/opt/muxvia/rollback/pre-pg004-turn-tcp-65f34123/`。
 - 2026-07-23 TURN/TCP 实体验收使用同一台 `Xiaomi 24129PN74C`、ARM64、Android 16/API 36，以及 SHA-256 为 `17ff87eebf654aa93cff260b89455f61d6b482a96ce66392e0d980879b6e83ac` 的已安装 APK。电脑和手机 Clash 均保持 `rule`；手机关闭 Wi-Fi，Android 默认网络为 `MOBILE[NR] ctnet`，Clash `tun0` 的 underlying network 为该 cellular network。App UI 提交新 `MXP1` 后完成 AUTO pairing、terminal list、打开 `phone-auto-clash-rule-pure5g-tcp-20260723`，并输入 `printf 'MUXVIA_TURN_TCP_PURE5G_DATA_OK_20260723\n'`；屏幕得到同名输出。
 - 上述稳定 DataChannel 抓包在 45 秒内记录 `1153` 个 TURN/TCP packet 和 `867` 个 TURN/UDP packet；TCP leg payload `562140` bytes，UDP leg payload `560188` bytes，流量在 Relay 两条 leg 之间成对转发。它证明 TCP URL 不只是候选或认证 smoke，而是进入了真实 terminal application data 链路；另一端继续使用 UDP，符合 ICE 独立选择每端可达 transport、UDP 优先且 TCP fallback 的设计。抓包 SHA-256 为 `f384757aeda1cf14d2a6e80a63ab00bb3d839c52f53db1119a20854219ab6eec`。全局 logcat 未发现 `FATAL EXCEPTION`、ANR、`SIGSEGV`、`SIGABRT` 或 native fatal signal；测试后已恢复手机 Wi-Fi、关闭移动数据并保留用户开启的 Clash VPN。
+- 2026-07-24 最终可靠性候选使用仓库指定 ARM64 模拟器 `termx-pa005n1`、API 35、`arm64-v8a`。APK 路径为 `clients/mobile/android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk`，构建产物与设备 `base.apk` SHA-256 均为 `293e97a7e1ddbfb1a2b4b260941bab267bdeb72d0abc2c98a35af85147490bc2`。宿主机保留 Clash；模拟器对 Muxvia 域名使用真实公网地址，避免 Clash fake-IP 未经本机代理映射直接进入 Android DNS 结果。连接策略由 App UI 保持 `Muxvia Cloud / 仅 Relay / 仅 TCP`，当前连接投影两次分别得到 `Relay 中转 / TCP / 435 ms` 和 `Relay 中转 / TCP / 825 ms`。
+- 公网 control resolve、双端 lease 与 signaling 在实测中可先消耗约 15 秒，原 binding 20 秒总 deadline 会在 TURN/ICE 仍正常推进时取消连接。最终候选把 Go binding 完整 open window 调整为 40 秒，Android 外层窗口为 45 秒，Pion ICE/DataChannel ready deadline 仍保持 15 秒；PeerConnection final failure/close 和可靠有序 DataChannel send failure 都会关闭精确 protocol channel，使 binding session generation 失效，不再留下持续等待的半开 application session。
+- 最终 APK 从真实 App UI 打开 daemon 和 `pg004-relay-tcp-e2e`，通过真实 terminal input 发送 `echo PG004_RELAY_TCP_OK`；daemon authoritative live capture 得到同名输出。返回设备列表再进入后 terminal inventory 成功恢复，旧 bridge/session 错误被当前 refresh sequence 清除。
+- 文件 E2E 全部由 App UI 发起：上传手机 `muxvia-pg004-upload.txt` 到 `/tmp/muxvia-pg004-file-e2e/` 后，两端 SHA-256 均为 `0a762dfab6650aea63118e3fea08ae76dbf2664c7f10679138133457718a1e36`；下载 `download-source.txt` 到 `Downloads/Muxvia/` 后，两端 SHA-256 均为 `a61813ffaf8c010dba65287b16b308a814f8855f80742d5cbf75af4101df2838`。64 MiB `muxvia-pg004-upload-cancel.bin` 在 UI 显示已传输 9.1 MiB 后点击取消，任务显示 `cancelled`，daemon 目标目录无最终文件或临时残留。
+- Android SAF 会按安全规则冻结 Activity 并关闭旧 Go engine。最终候选在打开 picker 前显式建立 foreground generation barrier，picker 返回结果只有在 `handleForegroundResume -> 新 bridge -> runtime reset` 完成后才交给 transfer store；实机流程证明上传使用新 session 完成，而不是复用 `Go binding backend is closed` 的旧 handle。一次 managed connect 返回 `client session is unavailable` 时传输中心结束等待并提供“全部继续”，下一次有界建连成功后完成传输。
+- 最终门禁通过：`go test -race ./client/adapter/managed/pion ./remote/webrtc ./client/binding`、`go test ./cmd/muxvia`、Mobile 39 项、UI 163 项、UI typecheck、Mobile production build、Android `testDebugUnitTest assembleDebug` 和 `git diff --check`。测试结束时 App PID 仍存活，按该 PID 扫描 logcat 未发现 `FATAL EXCEPTION`、ANR、`SIGSEGV`、`SIGABRT` 或 native fatal signal。
 
 本地 ignored 证据产物：
 
@@ -104,16 +114,15 @@ Controller 与 Edge 使用独立进程、配置、identity、state 目录和 res
 .artifacts/pg004-turn-tcp/phone-pure5g-terminal-command-final.png
 .artifacts/pg004-turn-tcp/muxvia-pg004-turn-tcp-pure5g.pcap
 .artifacts/pg004-turn-tcp/muxvia-pg004-turn-tcp-pure5g-data.pcap
+.artifacts/pg004/final/final-relay-tcp-connection-info.png
 ```
 
 ## 当前限制
 
-1. Relay terminal attach/input 与远端文件浏览通过；上传、下载、取消和内容摘要校验尚未完成，不能记为完整 file E2E PASS。
-2. 长时间空闲的 managed P2P 可能形成半开 application session：既有 terminal inventory 已经成功，但后续 file list 和 terminal attach 没有响应。该问题属于后续弱网/保活可靠性，不得用 UI 定时刷新或盲目重放非幂等 command 掩盖；文件 E2E 必须使用可确认 Ready 的新 session 继续验收。
-3. 当前部署 credential window 到 `2026-08-20T15:41:28Z`。到期前必须完成正式 key 配置/轮换或重新生成 staging 资产。
-4. Let's Encrypt 证书到期日为 2026-10-19；当前已删除临时 Cloudflare credential，自动续期尚未配置。
-5. R2 age 加密上传和独立恢复仍是 PG004 的未完成门禁；现有 Cloudflare token 只有 DNS 权限，k8s、开发机和 155 服务器均未发现 R2/S3 access key。
-6. 真实支付、邮件验证和密码找回未接入；bootstrap staging 不得作为商业生产发布。
+1. 当前部署 credential window 到 `2026-08-20T15:41:28Z`。到期前必须完成正式 key 配置/轮换或重新生成 staging 资产。
+2. Let's Encrypt 证书到期日为 2026-10-19；当前已删除临时 Cloudflare credential，自动续期尚未配置。
+3. R2 age 加密上传和独立恢复仍是 PG004 的未完成门禁；现有 Cloudflare token 只有 DNS 权限，k8s、开发机和 155 服务器均未发现 R2/S3 access key。
+4. 真实支付、邮件验证和密码找回未接入；bootstrap staging 不得作为商业生产发布。
 
 ## 仓库门禁
 

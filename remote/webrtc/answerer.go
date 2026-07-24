@@ -91,6 +91,9 @@ type Answerer struct {
 	// OnPeerClosed 在 Pion peer 真正进入 closed 后调用一次，供 daemon listener 释放有界 admission token。
 	// callback 不能拥有 session truth，也不能启动替代 Route。
 	OnPeerClosed func()
+	// OnSessionError 接收 DataChannel 端到端认证或 application handler 的失败。
+	// callback 只用于 composition 日志/观测，不得改变 peer lifecycle、重试或授权结果。
+	OnSessionError func(error)
 }
 
 // Answer 创建 WebRTC answer，并把唯一可靠有序的 muxvia DataChannel 交给端到端授权 handler。
@@ -198,6 +201,9 @@ func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOff
 					}
 				} else {
 					_ = protocolTransport.Close()
+				}
+				if err != nil && sessionCtx.Err() == nil && answerer.OnSessionError != nil {
+					answerer.OnSessionError(err)
 				}
 				owner.RequestClose()
 			}()

@@ -44,6 +44,7 @@ import { settleBindingGeneration } from './BindingGeneration'
 import { NativeSessionManager, type NativeSessionConnector } from './NativeSessionManager'
 import NativeFilePicker from './plugins/nativeFilePicker'
 import { useNativeStatusBarSync } from './nativeStatusBar'
+import { NativeForegroundBarrier, runAcrossNativePicker } from './NativeForegroundBarrier'
 
 const defaultControlUrl = import.meta.env.VITE_CONTROL_URL || ''
 const qrScannerRootId = 'muxvia-camera-qr-scanner'
@@ -306,29 +307,20 @@ function useNativeKeyboardEvents(): void {
   }, [])
 }
 
-let nativeForegroundReady: Promise<Error | undefined> = Promise.resolve(undefined)
-let resolveNativeForeground: ((failure?: Error) => void) | null = null
+const nativeForegroundBarrier = new NativeForegroundBarrier()
 
 function markNativeBackground(): void {
-  if (resolveNativeForeground) return
-  nativeForegroundReady = new Promise<Error | undefined>((resolve) => { resolveNativeForeground = resolve })
+  nativeForegroundBarrier.markBackground()
 }
 
 function finishNativeForeground(failure?: unknown): void {
-  const resolve = resolveNativeForeground
-  resolveNativeForeground = null
-  resolve?.(failure instanceof Error ? failure : failure ? new Error(String(failure)) : undefined)
+  nativeForegroundBarrier.finishForeground(failure)
 }
 
 function reportNativeGenerationFailure(failure: unknown): void {
   const message = failure instanceof Error ? failure.message : String(failure)
   console.error('[muxvia:native-generation]', message)
   void NativeConnection.writeDebugLog({ level: 'error', tag: 'NativeGeneration', message }).catch(() => undefined)
-}
-
-async function waitForNativeForeground(): Promise<void> {
-  const failure = await nativeForegroundReady
-  if (failure) throw failure
 }
 
 let nativeGenerationReplacement: Promise<void> = Promise.resolve()
@@ -779,9 +771,8 @@ function createFileTransferContext(machineId: string | undefined, store: NativeF
       }
     },
     pickAndUpload(mid, targetDir) {
-      NativeFilePicker.pickFiles({ multiple: true }).then(async (result) => {
-        // SAF picker 会冻结 Activity 并关闭旧 Go generation；只有 foreground barrier 完成后才能创建 upload session。
-        await waitForNativeForeground()
+      runAcrossNativePicker(nativeForegroundBarrier, () => NativeFilePicker.pickFiles({ multiple: true })).then((result) => {
+        // SAF 返回后只保存平台 URI；upload session 必须在新 foreground generation 上重新取得。
         for (const f of result.files) {
           store.startUpload(mid, f.uri, f.name, f.size, targetDir)
         }

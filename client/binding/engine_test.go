@@ -927,6 +927,18 @@ func TestEngineOpenSessionDeadlineEndsPlatformWait(t *testing.T) {
 	}
 }
 
+func TestDefaultOpenTimeoutCoversCloudControlAndManagedPeerWindows(t *testing.T) {
+	const (
+		cloudControlWindow = 15 * time.Second
+		managedPeerWindow  = 15 * time.Second
+		readyAuthMargin    = 5 * time.Second
+	)
+	minimum := cloudControlWindow + managedPeerWindow + readyAuthMargin
+	if defaultOpenTimeout < minimum {
+		t.Fatalf("default open timeout = %s, want at least %s", defaultOpenTimeout, minimum)
+	}
+}
+
 func nextBindingEvent(t *testing.T, engine *Engine) *bindingpb.EventEnvelope {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

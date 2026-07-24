@@ -76,34 +76,52 @@ func openPeer(peerFactory remotewebrtc.PeerConnectionFactory, configuration pion
 		connectionFailed: connectionFailed, readyTimeout: managedPeerReadyTimeout,
 	}
 	channel.OnOpen(func() { value.readyOnce.Do(func() { close(ready) }) })
-	channelAdapter.SetCloseHandler(func() { value.channelCloseOnce.Do(func() { close(closed) }) })
+	channelAdapter.SetCloseHandler(func() { value.channelClosedOnce.Do(func() { close(closed) }) })
 	peer.OnConnectionStateChange(func(state pionwebrtc.PeerConnectionState) {
-		var failure error
-		switch state {
-		case pionwebrtc.PeerConnectionStateFailed:
-			failure = fmt.Errorf("managed endpoint WebRTC peer failed before protocol channel became ready")
-		case pionwebrtc.PeerConnectionStateClosed:
-			failure = fmt.Errorf("managed endpoint WebRTC peer closed before protocol channel became ready")
-		default:
-			return
-		}
-		value.connectionFailureOnce.Do(func() { connectionFailed <- failure })
+		value.handleConnectionState(state)
 	})
 	return value, nil
 }
 
 type managedPeer struct {
 	peer                  *pionwebrtc.PeerConnection
-	channel               *remotewebrtc.Channel
+	channel               port.ManagedMessageChannel
 	ready                 chan struct{}
 	readyOnce             sync.Once
 	channelClosed         chan struct{}
+	channelClosedOnce     sync.Once
 	channelCloseOnce      sync.Once
+	channelCloseErr       error
 	connectionFailed      chan error
 	connectionFailureOnce sync.Once
 	readyTimeout          time.Duration
 	closeOnce             sync.Once
 	closeErr              error
+}
+
+// handleConnectionState 把 Pion 的最终失败接回 protocol/DataChannel lifecycle。
+// Ready 之前 connectionFailed 结束建连等待；Ready 之后关闭同一 channel，使 protocol Done 和 SessionOwner generation 失效，禁止留下半开 application session。
+func (peer *managedPeer) handleConnectionState(state pionwebrtc.PeerConnectionState) {
+	var failure error
+	switch state {
+	case pionwebrtc.PeerConnectionStateFailed:
+		failure = fmt.Errorf("managed endpoint WebRTC peer failed")
+	case pionwebrtc.PeerConnectionStateClosed:
+		failure = fmt.Errorf("managed endpoint WebRTC peer closed")
+	default:
+		return
+	}
+	peer.connectionFailureOnce.Do(func() { peer.connectionFailed <- failure })
+	// Pion 的状态回调不能同步等待 PeerConnection teardown；channel close 会让现有 protocol read loop 自行完成。
+	go peer.closeProtocolChannel()
+}
+
+func (peer *managedPeer) closeProtocolChannel() {
+	peer.channelCloseOnce.Do(func() {
+		if peer.channel != nil {
+			peer.channelCloseErr = peer.channel.Close()
+		}
+	})
 }
 
 func (peer *managedPeer) Channel() port.ManagedMessageChannel { return peer.channel }
@@ -231,9 +249,8 @@ func (peer *managedPeer) Close() error {
 		return nil
 	}
 	peer.closeOnce.Do(func() {
-		if peer.channel != nil {
-			peer.closeErr = peer.channel.Close()
-		}
+		peer.closeProtocolChannel()
+		peer.closeErr = peer.channelCloseErr
 		if peer.channelClosed != nil {
 			timer := time.NewTimer(250 * time.Millisecond)
 			select {

@@ -328,8 +328,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   }, [machine?.machineId, setMachineNetworkMachineId])
 
   useEffect(() => {
-    // managed endpoint 的持久策略固定为 auto；forceRelay 只属于当前 workspace 的一次连接尝试。
-    setForceRelayConnection(false)
+    // Endpoint 切换后不提供一次性 override；下一代 session 必须直接消费 Go registry 中的持久策略。
+    setForceRelayConnection(undefined)
     p2pProbeRef.current = false
     setP2PFallbackPromptOpen(false)
   }, [machine?.machineId])
@@ -627,7 +627,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           setLoadingTerminals(false)
         }
         const terminalList = await api.listTerminals({
-          forceRelay: false,
           onStatus: (status) => {
             if (!cancelled && terminalRefreshSeqRef.current === seq) updateConnectionStatus(status)
           },
@@ -635,6 +634,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         if (cancelled || terminalRefreshSeqRef.current !== seq) return
         setTerminals(terminalList)
         setHasLoadedTerminals(true)
+        // 当前 refresh sequence 已由新 generation 成功提交，旧 bridge 的迟到错误不再代表当前连接。
+        setError(null)
       } catch (err) {
         if (!cancelled && terminalRefreshSeqRef.current === seq) {
           failed = true
@@ -1497,15 +1498,16 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     const sessionPromise = existingSession
       ? Promise.resolve(existingSession)
       : ensureMachineSession(machine!.machineId, { forceRelay: forceRelayConnection })
-  Promise.all([
-    sessionPromise.then(machineWorkspaceConnectionInfo),
-    connector.getConnectionPolicy ? connector.getConnectionPolicy() : Promise.resolve(null),
-  ]).then(([info, policy]) => {
-    setConnectionInfo(info)
-    setConnectionPolicyState(policy)
-  }).catch((err: unknown) => {
-      connectionPolicyFailureRef.current = { stage: 'refresh' }
-      setConnectionInfoError(err instanceof Error ? err.message : String(err))
+    void loadConnectionPanelState(
+      sessionPromise.then(machineWorkspaceConnectionInfo),
+      connector.getConnectionPolicy ? connector.getConnectionPolicy() : Promise.resolve(null),
+    ).then((result) => {
+      setConnectionInfo(result.info)
+      setConnectionPolicyState(result.policy)
+      if (result.error) {
+        connectionPolicyFailureRef.current = { stage: 'refresh' }
+        setConnectionInfoError(result.error instanceof Error ? result.error.message : String(result.error))
+      }
     }).finally(() => {
       setConnectionInfoLoading(false)
     })
@@ -1549,16 +1551,13 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
   const retryConnectionPolicyFailure = useCallback(() => {
     const failure = connectionPolicyFailureRef.current
-    if (failure?.stage === 'refresh') {
-      openConnectionInfo()
-      return
-    }
     if (failure?.stage === 'apply' && failure.policy) {
       void applyConnectionPolicy(failure.policy)
       return
     }
+    // 诊断读取失败通常表示旧 generation 的 session lease 已失效；重试必须新建 session，不能重复读取旧 lease。
     retryConnectionPolicy()
-  }, [applyConnectionPolicy, openConnectionInfo, retryConnectionPolicy])
+  }, [applyConnectionPolicy, retryConnectionPolicy])
 
   const lockKeyboard = useCallback(() => {
     setKeyboardLocked((prev) => {
@@ -2902,6 +2901,21 @@ function ConnectionRadioGroup<T extends string>({ label, name, value, options, d
       </div>
     </fieldset>
   )
+}
+
+/** loadConnectionPanelState 独立读取 ReadySession 诊断和 Go-owned 持久策略。
+ * Session 失败时仍返回可编辑策略，让用户能够从失败页切换 Route 或 Relay transport。
+ */
+export async function loadConnectionPanelState(
+  infoPromise: Promise<ConnectionInfo>,
+  policyPromise: Promise<ConnectionPolicyState | null>,
+): Promise<{ info: ConnectionInfo | null; policy: ConnectionPolicyState | null; error: unknown | null }> {
+  const [info, policy] = await Promise.allSettled([infoPromise, policyPromise])
+  return {
+    info: info.status === 'fulfilled' ? info.value : null,
+    policy: policy.status === 'fulfilled' ? policy.value : null,
+    error: info.status === 'rejected' ? info.reason : policy.status === 'rejected' ? policy.reason : null,
+  }
 }
 
 function ConnectionInfoRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean | undefined }) {

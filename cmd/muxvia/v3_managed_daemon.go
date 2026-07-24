@@ -66,9 +66,15 @@ func startV3ManagedDaemon(ctx context.Context, core v3ManagedDaemonCore, clientA
 			DisplayName: hostname, Hostname: hostname, Platform: runtime.GOOS + "/" + runtime.GOARCH,
 			MuxviaVersion: muxviaBuildVersion, SignalingVersions: []uint32{cloudcompanion.ProtocolVersionMax},
 		},
-		Answerer: remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
-			Core: core, Identity: identity, AccessStore: clientAccess.Store, ManagedRuntime: managedRuntime,
-		}},
+		Answerer: remotev2webrtc.Answerer{
+			Handler: remotev2daemon.SessionAcceptor{
+				Core: core, Identity: identity, AccessStore: clientAccess.Store, ManagedRuntime: managedRuntime,
+			},
+			OnSessionError: func(sessionErr error) {
+				// DataChannel handler 已完成凭证脱敏；composition 只记录失败链，不接管 session 或重试。
+				logger.Warn("managed data channel session stopped", "error", sessionErr)
+			},
+		},
 		Runtime:         managedRuntime,
 		AccessStore:     clientAccess.Store,
 		ControlReceipts: controlReceipts,

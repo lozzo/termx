@@ -1,10 +1,73 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { ConnectionInfoDialog } from './MachineWorkspace'
+import { ConnectionInfoDialog, loadConnectionPanelState, MachineWorkspace } from './MachineWorkspace'
 import '../i18n'
 
+describe('MachineWorkspace connection policy ownership', () => {
+  it('does not override the Go-owned persistent policy during initial inventory loading', async () => {
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const listTerminals = vi.fn(async () => [])
+
+    render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({
+          machine,
+          localWeb: { httpUrl: '', rtcOfferUrl: '' },
+        })),
+        listTerminals,
+      }}
+      connector={{ connect: vi.fn() }}
+      initialMachine={machine}
+    />)
+
+    await waitFor(() => expect(listTerminals).toHaveBeenCalledOnce())
+    expect(listTerminals.mock.calls[0]?.[0]?.forceRelay).toBeUndefined()
+  })
+
+  it('clears a stale bridge error after the current generation loads inventory', async () => {
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const connector = { connect: vi.fn() }
+    const getStatus = vi.fn(async () => ({
+      machine,
+      localWeb: { httpUrl: '', rtcOfferUrl: '' },
+    }))
+    const failedApi = {
+      getStatus,
+      listTerminals: vi.fn(async () => { throw new Error('Go binding bridge disconnected') }),
+    }
+    const recoveredApi = {
+      getStatus,
+      listTerminals: vi.fn(async () => []),
+    }
+
+    const view = render(<MachineWorkspace api={failedApi} connector={connector} initialMachine={machine} />)
+    await waitFor(() => expect(screen.getByText('Go binding bridge disconnected')).toBeTruthy())
+
+    view.rerender(<MachineWorkspace api={recoveredApi} connector={connector} initialMachine={machine} />)
+    await waitFor(() => expect(recoveredApi.listTerminals).toHaveBeenCalledOnce())
+    await waitFor(() => expect(screen.queryByText('Go binding bridge disconnected')).toBeNull())
+  })
+})
+
 describe('ConnectionInfoDialog', () => {
+  it('keeps the Go-owned policy editable when the current session is unavailable', async () => {
+    const policyState = {
+      policy: { route: 'auto', cloud: 'auto', relayTransport: 'auto' } as const,
+      available: { direct: false, ssh: false, cloud: true },
+      unavailableReasons: { direct: 'route_not_configured', ssh: 'credential_unavailable' },
+    }
+
+    const result = await loadConnectionPanelState(
+      Promise.reject(new Error('client session is unavailable')),
+      Promise.resolve(policyState),
+    )
+
+    expect(result.info).toBeNull()
+    expect(result.policy).toEqual(policyState)
+    expect(result.error).toMatchObject({ message: 'client session is unavailable' })
+  })
+
   it('applies an explicit Cloud relay TCP policy and keeps unavailable routes disabled', async () => {
     const user = userEvent.setup()
     const onApply = vi.fn()

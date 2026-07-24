@@ -27,7 +27,10 @@ const (
 	MaxPayloadBytes      = 4 << 20
 	defaultEventCapacity = 256
 	maxLiveHandles       = 4096
-	defaultOpenTimeout   = 20 * time.Second
+	// defaultOpenTimeout 覆盖 Cloud resolve、双端 Relay lease、signaling/answer、
+	// ICE/DataChannel、端到端鉴权和 Hello。公网控制链路可能先消耗约 15 秒，
+	// 总预算必须继续给 managed peer 的 15 秒 ready deadline 留出完整窗口。
+	defaultOpenTimeout = 40 * time.Second
 )
 
 var (

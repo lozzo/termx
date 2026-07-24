@@ -75,6 +75,30 @@ describe('NativeSessionManager', () => {
     expect(managerSignal?.aborted).toBe(true)
   })
 
+  it('keeps the full managed connection window bounded without truncating the Go ICE deadline', async () => {
+    vi.useFakeTimers()
+    let managerSignal: AbortSignal | undefined
+    const connect = vi.fn((_input, options) => {
+      managerSignal = options?.signal
+      return new Promise<ProtoClientSession>((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true })
+      })
+    })
+    const manager = new NativeSessionManager('daemon-a', { connect })
+    const pending = manager.get()
+    const settled = pending.then(() => null, (error: unknown) => error)
+
+    try {
+      await vi.advanceTimersByTimeAsync(44_999)
+      expect(managerSignal?.aborted).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(await settled).toMatchObject({ message: 'client session timed out' })
+      expect(managerSignal?.aborted).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('does not block generation reset on an unresponsive old session close', async () => {
     const session = fakeSession()
     session.close = vi.fn(() => new Promise<void>(() => {}))

@@ -2,6 +2,7 @@ package webrtc
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -12,8 +13,9 @@ import (
 )
 
 func TestAnswererHandsReliableChannelToAuthorizedHandler(t *testing.T) {
-	handler := &recordingAuthorizedHandler{called: make(chan struct{})}
-	answerer := Answerer{Handler: handler}
+	handler := &recordingAuthorizedHandler{called: make(chan struct{}), result: make(chan error)}
+	sessionErrors := make(chan error, 1)
+	answerer := Answerer{Handler: handler, OnSessionError: func(err error) { sessionErrors <- err }}
 	clientPeer, err := pion.NewPeerConnection(pion.Configuration{})
 	if err != nil {
 		t.Fatalf("create client peer: %v", err)
@@ -66,6 +68,16 @@ func TestAnswererHandsReliableChannelToAuthorizedHandler(t *testing.T) {
 	}
 	if handler.daemonDTLSFingerprint == "" || handler.daemonDTLSFingerprint != clientFingerprint {
 		t.Fatalf("daemon fingerprint = %q, client observed %q", handler.daemonDTLSFingerprint, clientFingerprint)
+	}
+	sessionErr := errors.New("authorized session failed")
+	handler.result <- sessionErr
+	select {
+	case got := <-sessionErrors:
+		if !errors.Is(got, sessionErr) {
+			t.Fatalf("session error = %v, want %v", got, sessionErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("authorized handler failure was not reported")
 	}
 }
 
@@ -167,6 +179,7 @@ func createGatheredOffer(t *testing.T, peer *pion.PeerConnection) pion.SessionDe
 
 type recordingAuthorizedHandler struct {
 	called                chan struct{}
+	result                chan error
 	daemonDTLSFingerprint string
 }
 
@@ -193,6 +206,14 @@ func (handler *recordingManagedHandler) ServeManagedDataChannel(ctx context.Cont
 func (handler *recordingAuthorizedHandler) ServeDataChannel(ctx context.Context, _ transport.Transport, daemonDTLSFingerprint string) error {
 	handler.daemonDTLSFingerprint = daemonDTLSFingerprint
 	close(handler.called)
-	<-ctx.Done()
-	return ctx.Err()
+	if handler.result == nil {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	select {
+	case err := <-handler.result:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
