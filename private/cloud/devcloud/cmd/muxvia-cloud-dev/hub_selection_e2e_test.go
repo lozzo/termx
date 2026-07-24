@@ -86,6 +86,14 @@ func TestDaemonEnrollmentSelectsOneOfTwoIndependentEdges(t *testing.T) {
 			t.Fatalf("real Edge health observation = %v", observation)
 		}
 	}
+	preferredHubID, err := managedadapter.PreferredEnrollmentHub(observations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observationsDigest, err := cloudcompanion.EnrollmentObservationsDigest(observations)
+	if err != nil {
+		t.Fatal(err)
+	}
 	approveBody, _ := protojson.Marshal(&cloudpb.ApproveDaemonEnrollmentRequest{UserCode: projection.GetUserCode()})
 	approveRequest := authenticatedCommandRequest(http.MethodPost, manifest.Controller.PublicURL+"/api/v1/daemon-enrollments/approve", approveBody, manifest.Controller.PublicURL, cookies, true)
 	approveResponse, err := http.DefaultClient.Do(approveRequest)
@@ -97,11 +105,11 @@ func TestDaemonEnrollmentSelectsOneOfTwoIndependentEdges(t *testing.T) {
 	}
 	approveResponse.Body.Close()
 	signedAt := time.Now().UTC()
-	signingBytes, err := cloudcompanion.EnrollmentProofSigningBytes(&cloudpb.DeviceEnrollmentProofInput{FlowId: challenge.GetFlowId(), ChallengeId: challenge.GetChallengeId(), Challenge: challenge.GetChallenge(), DeviceId: begin.GetDeviceId(), DevicePublicKey: devicePublic, SignedAtUnixNano: signedAt.UnixNano()})
+	signingBytes, err := cloudcompanion.EnrollmentProofSigningBytes(&cloudpb.DeviceEnrollmentProofInput{FlowId: challenge.GetFlowId(), ChallengeId: challenge.GetChallengeId(), Challenge: challenge.GetChallenge(), DeviceId: begin.GetDeviceId(), DevicePublicKey: devicePublic, SignedAtUnixNano: signedAt.UnixNano(), CandidateSetDigest: challenge.GetCandidateSetDigest(), PreferredHubId: preferredHubID, HubObservationsDigest: observationsDigest, FlowRevision: challenge.GetFlowRevision()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	complete := &cloudpb.CompleteDeviceEnrollmentRequest{FlowId: challenge.GetFlowId(), Proof: &cloudpb.DeviceProof{DeviceId: begin.GetDeviceId(), DevicePublicKey: devicePublic, ChallengeId: challenge.GetChallengeId(), Signature: ed25519.Sign(devicePrivate, signingBytes), SignedAtUnixNano: signedAt.UnixNano()}, HubObservations: observations}
+	complete := &cloudpb.CompleteDeviceEnrollmentRequest{FlowId: challenge.GetFlowId(), Proof: &cloudpb.DeviceProof{DeviceId: begin.GetDeviceId(), DevicePublicKey: devicePublic, ChallengeId: challenge.GetChallengeId(), Signature: ed25519.Sign(devicePrivate, signingBytes), SignedAtUnixNano: signedAt.UnixNano()}, HubObservations: observations, PreferredHubId: preferredHubID, CandidateSetDigest: challenge.GetCandidateSetDigest(), FlowRevision: challenge.GetFlowRevision()}
 	result := &cloudpb.DeviceEnrollmentServiceSession{}
 	postEnrollmentProto(t, manifest.Controller.PublicURL+"/v1/enrollment/complete", complete, result, http.StatusOK)
 	selectedCandidate := enrollmentCandidateByID(challenge.GetHubCandidates(), result.GetHubId())

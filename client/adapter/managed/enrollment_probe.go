@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,14 +22,55 @@ const (
 
 // ProbeEnrollmentCandidates 对 Controller 返回的有界 Hub 候选执行并发 health 延迟探测。
 //
-// 本函数只产生可达性观测，不选择 assignment，也不缓存 Hub 目录。Controller 仍拥有容量、
-// 健康、套餐、assignment epoch 和 token audience 真值。公网候选必须使用 HTTPS；loopback
+// 本函数只产生可达性观测，不缓存 Hub 目录。调用方通过 PreferredEnrollmentHub 做本地提议，
+// Controller 仍拥有容量、健康、套餐、assignment epoch 和 token audience 真值。公网候选必须使用 HTTPS；loopback
 // HTTP 只用于仓库内 development harness。
 func ProbeEnrollmentCandidates(ctx context.Context, candidates []*cloudpb.HubEnrollmentCandidate) ([]*cloudpb.HubReachabilityObservation, error) {
 	client := &http.Client{
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	return probeEnrollmentCandidates(ctx, client, candidates, maxEnrollmentProbeWorkers, enrollmentProbeTimeout)
+}
+
+// PreferredEnrollmentHub 从本机实测结果选择最低延迟的可达 Hub。
+// 返回值只是 daemon 提议，Controller 仍必须校验候选摘要、容量和已有 assignment。
+func PreferredEnrollmentHub(observations []*cloudpb.HubReachabilityObservation) (string, error) {
+	ranked, err := RankedEnrollmentHubs(observations)
+	if err != nil {
+		return "", err
+	}
+	return ranked[0], nil
+}
+
+// RankedEnrollmentHubs 按可达性、RTT 和稳定 Hub ID 返回 daemon 的本地候选顺序。
+// 该顺序只用于同一已批准 flow 的首选提议和 stale 重试，不创建 assignment 真值。
+func RankedEnrollmentHubs(observations []*cloudpb.HubReachabilityObservation) ([]string, error) {
+	reachable := make([]*cloudpb.HubReachabilityObservation, 0, len(observations))
+	seen := make(map[string]bool, len(observations))
+	for _, observation := range observations {
+		if observation == nil || observation.GetHubId() == "" || seen[observation.GetHubId()] || observation.GetReachable() != (observation.GetLatencyMillis() > 0) {
+			return nil, fmt.Errorf("invalid Hub enrollment observation")
+		}
+		seen[observation.GetHubId()] = true
+		if !observation.GetReachable() {
+			continue
+		}
+		reachable = append(reachable, observation)
+	}
+	if len(reachable) == 0 {
+		return nil, fmt.Errorf("no reachable Hub enrollment candidate")
+	}
+	sort.Slice(reachable, func(left, right int) bool {
+		if reachable[left].GetLatencyMillis() != reachable[right].GetLatencyMillis() {
+			return reachable[left].GetLatencyMillis() < reachable[right].GetLatencyMillis()
+		}
+		return reachable[left].GetHubId() < reachable[right].GetHubId()
+	})
+	result := make([]string, len(reachable))
+	for index, observation := range reachable {
+		result[index] = observation.GetHubId()
+	}
+	return result, nil
 }
 
 func probeEnrollmentCandidates(ctx context.Context, client *http.Client, candidates []*cloudpb.HubEnrollmentCandidate, workers int, timeout time.Duration) ([]*cloudpb.HubReachabilityObservation, error) {

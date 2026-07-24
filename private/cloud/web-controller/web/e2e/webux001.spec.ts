@@ -65,6 +65,20 @@ test("single add-device wizard completes daemon enrollment and protects removal"
   await expect(page.getByText("Build Mac")).toHaveCount(0);
 });
 
+test("daemon enrollment explains an explicit revoked-account transfer", async ({ page }) => {
+  await page.route("**/api/v1/daemon-enrollments/inspect", (route) => json(route, {
+    ...daemonEnrollment("DAEMON_ENROLLMENT_STATE_WAITING_FOR_APPROVAL", { displayName: "Build Mac", hostname: "build.local", platform: "darwin", muxviaVersion: "0.1.0" }),
+    action: "DAEMON_ENROLLMENT_ACTION_CONFIRM_TRANSFER",
+  }));
+  await page.goto(`${baseURL}/account`);
+  await page.getByRole("button", { name: "Devices" }).click();
+  await page.getByRole("button", { name: "Add device" }).click();
+  await page.getByRole("button", { name: /Daemon host/ }).click();
+  await page.getByRole("button", { name: "Create login code" }).click();
+  await expect(page.getByText(/old account's cloud links/i)).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByRole("button", { name: "Transfer to this account" })).toBeVisible();
+});
+
 test("advanced topology stays outside primary navigation and keyboard reachable", async ({ page }) => {
   await page.goto(`${baseURL}/account`);
   await page.getByRole("button", { name: "Devices" }).focus();
@@ -152,7 +166,7 @@ function phoneActivation(state: string, clientMetadata?: Record<string, string>)
 }
 
 function daemonEnrollment(state: string, daemonMetadata?: Record<string, string>) {
-  return { userCode: "MXD-ABCD-EFGH-JKMP-QRST-VWXY-234567", state, expiresAtUnix: "1784765400", daemonDeviceId: "daemon-1", daemonMetadata };
+  return { userCode: "MXD-ABCD-EFGH-JKMP-QRST-VWXY-234567", state, expiresAtUnix: "1784765400", daemonDeviceId: "daemon-1", daemonMetadata, action: daemonMetadata ? "DAEMON_ENROLLMENT_ACTION_APPROVE" : "DAEMON_ENROLLMENT_ACTION_UNSPECIFIED" };
 }
 
 function json(route: Route, body: unknown) {

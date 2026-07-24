@@ -13,9 +13,67 @@ import (
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/persistence"
 	cloudpostgres "github.com/muxvia/muxvia/private/cloud/control-plane/postgres"
+	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 )
+
+func TestDaemonEnrollmentCommitRollsBackEveryDurableWrite(t *testing.T) {
+	ctx := context.Background()
+	store, err := cloudpostgres.Open(ctx, testPostgresDSN(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Date(2026, 7, 24, 13, 0, 0, 0, time.UTC)
+	account, accountSession, subscription, entitlement, existingAudit := commerceFixture("account-enrollment", "enrollment@example.com", 0x31, now)
+	if err := store.CreateAccount(ctx, account, accountSession, subscription, entitlement, existingAudit); err != nil {
+		t.Fatal(err)
+	}
+	publicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	accessHash := sha256.Sum256([]byte("daemon-access"))
+	refreshHash := sha256.Sum256([]byte("daemon-refresh"))
+	session := commerce.SessionRecord{
+		SessionID: "session-daemon-enrollment", AccountID: account.Projection.GetAccountId(), ClientDeviceID: "daemon-atomic",
+		AccessTokenHash: accessHash, RefreshTokenHash: refreshHash, AccessExpiresAt: now.Add(time.Hour), RefreshExpiresAt: now.Add(24 * time.Hour), Revision: 1,
+	}
+	input := persistence.DaemonEnrollmentCommit{
+		NextOwnership:  cloudtopology.DeviceOwnership{DeviceID: "daemon-atomic", AccountID: account.Projection.GetAccountId(), Kind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: 1, PublicKey: publicKey},
+		NextAssignment: &cloudpb.HubAssignment{DaemonDeviceId: "daemon-atomic", AccountId: account.Projection.GetAccountId(), HubId: "hub-atomic", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(24 * time.Hour).UnixMilli()},
+		Session:        session,
+		// 重复 audit_id 故意让事务最后一步失败，以证明此前 ownership、assignment 与 session 均未泄漏。
+		Audit: &cloudpb.CommerceAuditProjection{AuditId: existingAudit.GetAuditId(), AccountId: account.Projection.GetAccountId(), ActorId: account.Projection.GetUserId(), Action: "session.device.issue", ResourceId: "daemon-atomic", OccurredAtUnixMillis: now.UnixMilli()},
+	}
+	input.NextOwnership.AuthEpoch = 2
+	if _, err := store.CommitDaemonEnrollment(ctx, input, now); !errors.Is(err, cloudtopology.ErrTopologyRejected) {
+		t.Fatalf("commit with stale account auth revision = %v", err)
+	}
+	input.NextOwnership.AuthEpoch = 1
+	if _, err := store.CommitDaemonEnrollment(ctx, input, now); !errors.Is(err, commerce.ErrConflict) {
+		t.Fatalf("commit with duplicate audit = %v", err)
+	}
+	if _, err := store.DeviceOwnership(ctx, "daemon-atomic"); !errors.Is(err, cloudtopology.ErrOwnershipNotFound) {
+		t.Fatalf("failed enrollment leaked ownership: %v", err)
+	}
+	if _, err := store.Assignment(ctx, "daemon-atomic"); !errors.Is(err, hubregistry.ErrAssignmentConflict) {
+		t.Fatalf("failed enrollment leaked assignment: %v", err)
+	}
+	if _, err := store.SessionByRefreshHash(ctx, refreshHash); !errors.Is(err, commerce.ErrNotFound) {
+		t.Fatalf("failed enrollment leaked session: %v", err)
+	}
+
+	input.Audit.AuditId = "audit-daemon-enrollment"
+	assignment, err := store.CommitDaemonEnrollment(ctx, input, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, ownerErr := store.DeviceOwnership(ctx, "daemon-atomic")
+	storedSession, sessionErr := store.SessionByRefreshHash(ctx, refreshHash)
+	if ownerErr != nil || owner.AccountID != account.Projection.GetAccountId() || assignment.Value.GetHubId() != "hub-atomic" || sessionErr != nil || storedSession.SessionID != session.SessionID {
+		t.Fatalf("committed enrollment = owner(%v,%v) assignment(%v) session(%v,%v)", owner, ownerErr, assignment, storedSession, sessionErr)
+	}
+}
 
 func TestCommerceTransactionRollbackAndRestart(t *testing.T) {
 	ctx := context.Background()

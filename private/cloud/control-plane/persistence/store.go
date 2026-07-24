@@ -33,6 +33,25 @@ type RelayQueryStore interface {
 	RelayReservationsForSession(context.Context, string) ([]*cloudpb.RelayLeaseReservation, error)
 }
 
+// DaemonEnrollmentCommit 描述 proof、Hub 选择和 credential 生成完成后的唯一持久化提交。
+// ExpectedOwnership 与 ExpectedAssignment 是事务 CAS 真值；nil 表示数据库中必须尚不存在对应记录。
+// NextOwnership、NextAssignment、Session 与 Audit 必须在同一事务中全部生效或全部回滚。
+type DaemonEnrollmentCommit struct {
+	ExpectedOwnership  *cloudtopology.DeviceOwnership
+	ExpectedAssignment *cloudpb.HubAssignment
+	NextOwnership      cloudtopology.DeviceOwnership
+	NextAssignment     *cloudpb.HubAssignment
+	Session            commerce.SessionRecord
+	Audit              *cloudpb.CommerceAuditProjection
+}
+
+// DaemonEnrollmentStore 提供 daemon enrollment 的最终单事务提交。
+// Web 批准、DeviceIdentity proof、Hub 探测和明文 credential 都只存在于内存；实现必须在一个事务中
+// CAS ownership/assignment、撤销该设备旧 session、清理跨账号旧 topology 并写入新 session 与审计。
+type DaemonEnrollmentStore interface {
+	CommitDaemonEnrollment(context.Context, DaemonEnrollmentCommit, time.Time) (hubregistry.Assignment, error)
+}
+
 // Store 是 Controller composition root 的完整持久化依赖。
 //
 // 生产实现必须保证各领域接口注释声明的事务、CAS、幂等和 ack-after-commit 语义。
@@ -46,6 +65,7 @@ type Store interface {
 	hubcontrol.CursorStore
 	ProjectionStore
 	RelayQueryStore
+	DaemonEnrollmentStore
 	usage.Store
 	Close() error
 }

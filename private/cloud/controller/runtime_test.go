@@ -47,6 +47,7 @@ func TestControllerEnrollmentBindsControlKeyAndPersistsDaemonAuthority(t *testin
 	runtime.enrollment.candidateProvider = func(context.Context, time.Time) ([]enrollmentHubCandidate, error) {
 		return []enrollmentHubCandidate{{value: &cloudpb.HubEnrollmentCandidate{HubId: "hub-1", HubUrl: "http://127.0.0.1:41002", HealthUrl: "http://127.0.0.1:41002/healthz", Region: "local-1"}, maxAssignments: 100}}, nil
 	}
+	readyCandidates := runtime.enrollment.candidateProvider
 	activation, err := runtime.enrollment.CreateDaemonEnrollment(context.Background(), account.GetAccountId(), account.GetUserId())
 	if err != nil {
 		t.Fatal(err)
@@ -54,30 +55,57 @@ func TestControllerEnrollmentBindsControlKeyAndPersistsDaemonAuthority(t *testin
 	devicePublic, devicePrivate, _ := ed25519.GenerateKey(rand.Reader)
 	begin := &cloudpb.BeginDeviceEnrollmentRequest{OneTimeCode: activation.GetUserCode(), DeviceId: "daemon-enrolled", DevicePublicKey: devicePublic, Metadata: &cloudpb.DeviceMetadata{DisplayName: "Test daemon", Platform: "test/arm64", MuxviaVersion: "test"}}
 	restarted, err := newEnrollmentService(enrollmentServiceConfig{
-		Commerce: runtime.enrollment.commerce, Topology: runtime.topology, Registry: runtime.registry, EdgeIssuer: runtime.enrollment.edgeIssuer,
-		CandidateProvider: func(context.Context, time.Time) ([]enrollmentHubCandidate, error) { return nil, nil },
+		Commerce: runtime.enrollment.commerce, Topology: runtime.topology, Registry: runtime.registry, EnrollmentStore: runtime.store, EdgeIssuer: runtime.enrollment.edgeIssuer,
+		CandidateProvider: readyCandidates,
 		ControlKeyID:      "daemon-control-key", ControlPublicKey: daemonControlPublic, ControlNotBefore: runtime.enrollment.controlNotBefore, ControlNotAfter: runtime.enrollment.controlNotAfter, Now: time.Now, NotifyPolicyChange: func(string) {},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := restarted.begin(context.Background(), begin); !errors.Is(err, errEnrollmentDenied) {
+	if _, err := restarted.begin(context.Background(), begin); !errors.Is(err, errEnrollmentExpired) {
 		t.Fatalf("Controller restart retained pending enrollment flow: %v", err)
 	}
+	runtime.enrollment.candidateProvider = func(context.Context, time.Time) ([]enrollmentHubCandidate, error) { return nil, nil }
+	temporary := &cloudpb.CloudError{}
+	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/begin", begin, temporary, http.StatusServiceUnavailable)
+	if temporary.GetCode() != cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY || !temporary.GetRetryable() {
+		t.Fatalf("candidate outage error = %v", temporary)
+	}
+	// 候选故障不得消费十分钟 MXD flow；恢复 Hub attachment 后同一请求继续进入等待批准。
+	runtime.enrollment.candidateProvider = readyCandidates
 	challenge := &cloudpb.DeviceEnrollmentChallenge{}
 	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/begin", begin, challenge, http.StatusOK)
+	resumedChallenge := &cloudpb.DeviceEnrollmentChallenge{}
+	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/begin", begin, resumedChallenge, http.StatusOK)
+	if !proto.Equal(challenge, resumedChallenge) {
+		t.Fatalf("repeated enrollment begin changed challenge: first=%v resumed=%v", challenge, resumedChallenge)
+	}
 	signedAt := time.Now().UTC()
-	signingBytes, err := cloudcompanion.EnrollmentProofSigningBytes(&cloudpb.DeviceEnrollmentProofInput{FlowId: challenge.GetFlowId(), ChallengeId: challenge.GetChallengeId(), Challenge: challenge.GetChallenge(), DeviceId: "daemon-enrolled", DevicePublicKey: devicePublic, SignedAtUnixNano: signedAt.UnixNano()})
+	observations := []*cloudpb.HubReachabilityObservation{{HubId: "hub-1", Reachable: true, LatencyMillis: 5}}
+	observationsDigest, err := cloudcompanion.EnrollmentObservationsDigest(observations)
 	if err != nil {
 		t.Fatal(err)
 	}
-	complete := &cloudpb.CompleteDeviceEnrollmentRequest{FlowId: challenge.GetFlowId(), Proof: &cloudpb.DeviceProof{DeviceId: "daemon-enrolled", DevicePublicKey: devicePublic, ChallengeId: challenge.GetChallengeId(), Signature: ed25519.Sign(devicePrivate, signingBytes), SignedAtUnixNano: signedAt.UnixNano()}, HubObservations: []*cloudpb.HubReachabilityObservation{{HubId: "hub-1", Reachable: true, LatencyMillis: 5}}}
-	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/complete", complete, &cloudpb.CloudError{}, http.StatusConflict)
+	signingBytes, err := cloudcompanion.EnrollmentProofSigningBytes(&cloudpb.DeviceEnrollmentProofInput{FlowId: challenge.GetFlowId(), ChallengeId: challenge.GetChallengeId(), Challenge: challenge.GetChallenge(), DeviceId: "daemon-enrolled", DevicePublicKey: devicePublic, SignedAtUnixNano: signedAt.UnixNano(), CandidateSetDigest: challenge.GetCandidateSetDigest(), PreferredHubId: "hub-1", HubObservationsDigest: observationsDigest, FlowRevision: challenge.GetFlowRevision()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	complete := &cloudpb.CompleteDeviceEnrollmentRequest{FlowId: challenge.GetFlowId(), Proof: &cloudpb.DeviceProof{DeviceId: "daemon-enrolled", DevicePublicKey: devicePublic, ChallengeId: challenge.GetChallengeId(), Signature: ed25519.Sign(devicePrivate, signingBytes), SignedAtUnixNano: signedAt.UnixNano()}, HubObservations: observations, PreferredHubId: "hub-1", CandidateSetDigest: challenge.GetCandidateSetDigest(), FlowRevision: challenge.GetFlowRevision()}
+	result := &cloudpb.DeviceEnrollmentServiceSession{}
+	completed := make(chan struct{})
+	go func() {
+		defer close(completed)
+		postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/complete", complete, result, http.StatusOK)
+	}()
+	time.Sleep(20 * time.Millisecond)
 	if _, err := runtime.enrollment.ApproveDaemonEnrollment(context.Background(), account.GetAccountId(), activation.GetUserCode()); err != nil {
 		t.Fatal(err)
 	}
-	result := &cloudpb.DeviceEnrollmentServiceSession{}
-	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/complete", complete, result, http.StatusOK)
+	select {
+	case <-completed:
+	case <-time.After(time.Second):
+		t.Fatal("enrollment completion did not wake after Web approval")
+	}
 	if result.GetSession().GetAccountId() != account.GetAccountId() || result.GetSession().GetDeviceId() != "daemon-enrolled" || result.GetHubUrl() != "http://127.0.0.1:41002" || len(result.GetRefreshToken()) < 32 || result.GetRefreshExpiresAtUnixMillis() <= time.Now().UnixMilli() || !bytes.Equal(result.GetControlEnrollment().GetVerificationKeys()[0].GetPublicKey(), daemonControlPublic) {
 		t.Fatalf("enrollment result = %v", result)
 	}
@@ -93,7 +121,78 @@ func TestControllerEnrollmentBindsControlKeyAndPersistsDaemonAuthority(t *testin
 	if err != nil || assignment.Value.GetHubId() != "hub-1" {
 		t.Fatalf("persisted assignment = (%v, %v)", assignment, err)
 	}
-	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/begin", begin, &cloudpb.CloudError{}, http.StatusForbidden)
+	// 最终事务已提交但 HTTP 响应丢失时，同一 daemon 可以恢复 challenge 并领取完全相同的 credential，
+	// 不能再次写 session 或轮换刚签发的 refresh token。
+	retryChallenge := &cloudpb.DeviceEnrollmentChallenge{}
+	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/begin", begin, retryChallenge, http.StatusOK)
+	if !proto.Equal(challenge, retryChallenge) {
+		t.Fatalf("completed enrollment challenge changed: first=%v retry=%v", challenge, retryChallenge)
+	}
+	retriedResult := &cloudpb.DeviceEnrollmentServiceSession{}
+	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/complete", complete, retriedResult, http.StatusOK)
+	if !proto.Equal(result, retriedResult) {
+		t.Fatalf("completed enrollment response changed: first=%v retry=%v", result, retriedResult)
+	}
+
+	registered, err := runtime.enrollment.commerce.Register(context.Background(), &cloudpb.RegisterAccountRequest{Email: "controller-migration@example.com", Password: "secure-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextAccount := registered.GetSession().GetAccount()
+	migrationFlow, err := runtime.enrollment.CreateDaemonEnrollment(context.Background(), nextAccount.GetAccountId(), nextAccount.GetUserId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrationBegin := proto.Clone(begin).(*cloudpb.BeginDeviceEnrollmentRequest)
+	migrationBegin.OneTimeCode = migrationFlow.GetUserCode()
+	migrationChallenge := &cloudpb.DeviceEnrollmentChallenge{}
+	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/begin", migrationBegin, migrationChallenge, http.StatusOK)
+	migrationSignedAt := time.Now().UTC()
+	migrationObservations := []*cloudpb.HubReachabilityObservation{{HubId: "hub-1", Reachable: true, LatencyMillis: 5}}
+	migrationObservationsDigest, err := cloudcompanion.EnrollmentObservationsDigest(migrationObservations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrationSigningBytes, err := cloudcompanion.EnrollmentProofSigningBytes(&cloudpb.DeviceEnrollmentProofInput{FlowId: migrationChallenge.GetFlowId(), ChallengeId: migrationChallenge.GetChallengeId(), Challenge: migrationChallenge.GetChallenge(), DeviceId: "daemon-enrolled", DevicePublicKey: devicePublic, SignedAtUnixNano: migrationSignedAt.UnixNano(), CandidateSetDigest: migrationChallenge.GetCandidateSetDigest(), PreferredHubId: "hub-1", HubObservationsDigest: migrationObservationsDigest, FlowRevision: migrationChallenge.GetFlowRevision()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrationComplete := &cloudpb.CompleteDeviceEnrollmentRequest{FlowId: migrationChallenge.GetFlowId(), Proof: &cloudpb.DeviceProof{DeviceId: "daemon-enrolled", DevicePublicKey: devicePublic, ChallengeId: migrationChallenge.GetChallengeId(), Signature: ed25519.Sign(devicePrivate, migrationSigningBytes), SignedAtUnixNano: migrationSignedAt.UnixNano()}, HubObservations: migrationObservations, PreferredHubId: "hub-1", CandidateSetDigest: migrationChallenge.GetCandidateSetDigest(), FlowRevision: migrationChallenge.GetFlowRevision()}
+	if _, err := runtime.enrollment.ApproveDaemonEnrollment(context.Background(), nextAccount.GetAccountId(), migrationFlow.GetUserCode()); err != nil {
+		t.Fatal(err)
+	}
+	// 活跃 daemon 不能仅凭另一个账号生成的 MXD 被抢占，即使请求持有本机 DeviceIdentity private key。
+	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/complete", migrationComplete, &cloudpb.CloudError{}, http.StatusConflict)
+	currentOwner, err := runtime.topology.Device(context.Background(), "daemon-enrolled")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 被撤销设备可能在用户决定迁移前已经超过 24 小时 assignment lease；迁移应续签同一 Hub，
+	// 不能要求用户删除本地 DeviceIdentity，也不能让过期 lease 变成永久锁定。
+	expiredAt := time.Now().UTC().Add(-time.Minute)
+	expiredAssignment, err := runtime.registry.Assign(context.Background(), &cloudpb.HubAssignment{
+		DaemonDeviceId: "daemon-enrolled", AccountId: account.GetAccountId(), HubId: assignment.Value.GetHubId(), AssignmentEpoch: assignment.Value.GetAssignmentEpoch() + 1,
+		NotBeforeUnixMillis: expiredAt.Add(-time.Hour).UnixMilli(), ExpiresAtUnixMillis: expiredAt.UnixMilli(),
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.topology.PutDeviceOwnership(context.Background(), &cloudpb.CloudDevicePolicy{AccountId: currentOwner.AccountID, DeviceId: currentOwner.DeviceID, DeviceKind: currentOwner.Kind, AuthEpoch: currentOwner.AuthEpoch + 1, Revoked: true, PublicKey: append([]byte(nil), currentOwner.PublicKey...)}); err != nil {
+		t.Fatal(err)
+	}
+	migrated := &cloudpb.DeviceEnrollmentServiceSession{}
+	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/complete", migrationComplete, migrated, http.StatusOK)
+	migratedOwner, err := runtime.topology.Device(context.Background(), "daemon-enrolled")
+	if err != nil || migratedOwner.AccountID != nextAccount.GetAccountId() || migratedOwner.Revoked || !bytes.Equal(migratedOwner.PublicKey, devicePublic) {
+		t.Fatalf("migrated daemon ownership = (%v, %v)", migratedOwner, err)
+	}
+	migratedAssignment, err := runtime.registry.Assignment(context.Background(), "daemon-enrolled")
+	if err != nil || migratedAssignment.Value.GetAccountId() != nextAccount.GetAccountId() || migratedAssignment.Value.GetHubId() != "hub-1" || migratedAssignment.Value.GetAssignmentEpoch() != expiredAssignment.Value.GetAssignmentEpoch()+1 || migratedAssignment.Value.GetExpiresAtUnixMillis() <= time.Now().UnixMilli() {
+		t.Fatalf("migrated daemon assignment = (%v, %v)", migratedAssignment, err)
+	}
+	if _, err := runtime.enrollment.commerce.RefreshDeviceSession(context.Background(), result.GetRefreshToken()); !errors.Is(err, cloudcommerce.ErrUnauthorized) {
+		t.Fatalf("old account daemon refresh survived ownership migration: %v", err)
+	}
 }
 
 func postControllerProto(t *testing.T, endpoint string, request, response proto.Message, expectedStatus int) {

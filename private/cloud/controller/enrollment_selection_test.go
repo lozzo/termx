@@ -7,58 +7,43 @@ import (
 	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
-func TestEnrollmentSelectionPrefersReachabilityLatencyThenCurrentLoad(t *testing.T) {
-	offered := []*cloudpb.HubEnrollmentCandidate{
-		enrollmentCandidate("hub-a"),
-		enrollmentCandidate("hub-b"),
-		enrollmentCandidate("hub-c"),
-	}
-	current := enrollmentCandidatesWithLoad(offered, []uint64{8, 2, 1}, 100)
-	selected, err := selectEnrollmentHub("daemon-1", offered, current, []*cloudpb.HubReachabilityObservation{
+func TestEnrollmentProposalAcceptsDaemonPreferredReachableHub(t *testing.T) {
+	offered := []*cloudpb.HubEnrollmentCandidate{enrollmentCandidate("hub-a"), enrollmentCandidate("hub-b")}
+	current := enrollmentCandidatesWithLoad(offered, []uint64{8, 2}, 100)
+	selected, err := validateEnrollmentHubProposal(offered, current, []*cloudpb.HubReachabilityObservation{
 		{HubId: "hub-a", Reachable: true, LatencyMillis: 8},
 		{HubId: "hub-b", Reachable: true, LatencyMillis: 20},
-		{HubId: "hub-c"},
-	}, "")
-	if err != nil || selected.GetHubId() != "hub-a" {
-		t.Fatalf("latency selection = (%v, %v)", selected, err)
-	}
-	selected, err = selectEnrollmentHub("daemon-1", offered, current, []*cloudpb.HubReachabilityObservation{
-		{HubId: "hub-a", Reachable: true, LatencyMillis: 10},
-		{HubId: "hub-b", Reachable: true, LatencyMillis: 10},
-	}, "")
+	}, "hub-b", "")
 	if err != nil || selected.GetHubId() != "hub-b" {
-		t.Fatalf("load tie-break = (%v, %v)", selected, err)
+		t.Fatalf("daemon proposal = (%v, %v)", selected, err)
 	}
 }
 
-func TestEnrollmentSelectionRejectsForgedObservationAndFullHub(t *testing.T) {
+func TestEnrollmentProposalRejectsForgedUnreachableAndStaleHub(t *testing.T) {
 	offered := []*cloudpb.HubEnrollmentCandidate{enrollmentCandidate("hub-a")}
 	current := enrollmentCandidatesWithLoad(offered, []uint64{0}, 100)
-	if _, err := selectEnrollmentHub("daemon-1", offered, current, []*cloudpb.HubReachabilityObservation{{HubId: "hub-forged", Reachable: true, LatencyMillis: 1}}, ""); !errors.Is(err, errEnrollmentDenied) {
+	if _, err := validateEnrollmentHubProposal(offered, current, []*cloudpb.HubReachabilityObservation{{HubId: "hub-forged", Reachable: true, LatencyMillis: 1}}, "hub-forged", ""); !errors.Is(err, errEnrollmentDenied) {
 		t.Fatalf("forged observation error = %v", err)
 	}
+	if _, err := validateEnrollmentHubProposal(offered, current, []*cloudpb.HubReachabilityObservation{{HubId: "hub-a"}}, "hub-a", ""); !errors.Is(err, errEnrollmentNoReachableHub) {
+		t.Fatalf("unreachable Hub error = %v", err)
+	}
 	full := enrollmentCandidatesWithLoad(offered, []uint64{100}, 100)
-	if _, err := selectEnrollmentHub("daemon-1", offered, full, nil, ""); !errors.Is(err, errEnrollmentDenied) {
+	if _, err := validateEnrollmentHubProposal(offered, full, []*cloudpb.HubReachabilityObservation{{HubId: "hub-a", Reachable: true, LatencyMillis: 5}}, "hub-a", ""); !errors.Is(err, errEnrollmentCandidateStale) {
 		t.Fatalf("full Hub error = %v", err)
 	}
 }
 
-func TestEnrollmentSelectionHasDeterministicFallbackAndDoesNotMigrateExistingAssignment(t *testing.T) {
+func TestEnrollmentProposalKeepsExistingAssignment(t *testing.T) {
 	candidates := []*cloudpb.HubEnrollmentCandidate{enrollmentCandidate("hub-a"), enrollmentCandidate("hub-b")}
 	current := enrollmentCandidatesWithLoad(candidates, []uint64{4, 4}, 100)
-	first, err := selectEnrollmentHub("daemon-stable", candidates, current, nil, "")
-	if err != nil {
-		t.Fatal(err)
+	observations := []*cloudpb.HubReachabilityObservation{{HubId: "hub-a", Reachable: true, LatencyMillis: 1}, {HubId: "hub-b", Reachable: true, LatencyMillis: 2}}
+	if _, err := validateEnrollmentHubProposal(candidates, current, observations, "hub-a", "hub-b"); !errors.Is(err, errEnrollmentCandidateStale) {
+		t.Fatalf("existing assignment migration error = %v", err)
 	}
-	for range 10 {
-		next, err := selectEnrollmentHub("daemon-stable", candidates, current, nil, "")
-		if err != nil || next.GetHubId() != first.GetHubId() {
-			t.Fatalf("fallback changed = (%v, %v), want %s", next, err, first.GetHubId())
-		}
-	}
-	selected, err := selectEnrollmentHub("daemon-stable", candidates, current, []*cloudpb.HubReachabilityObservation{{HubId: "hub-a", Reachable: true, LatencyMillis: 1}}, "hub-b")
+	selected, err := validateEnrollmentHubProposal(candidates, current, observations, "hub-b", "hub-b")
 	if err != nil || selected.GetHubId() != "hub-b" {
-		t.Fatalf("existing assignment selection = (%v, %v)", selected, err)
+		t.Fatalf("existing assignment proposal = (%v, %v)", selected, err)
 	}
 }
 

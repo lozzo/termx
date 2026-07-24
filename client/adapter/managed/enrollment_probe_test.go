@@ -74,6 +74,20 @@ func TestEnrollmentProbeRejectsUntrustedOrDuplicateCandidates(t *testing.T) {
 	}
 }
 
+func TestPreferredEnrollmentHubUsesReachabilityLatencyAndStableID(t *testing.T) {
+	preferred, err := PreferredEnrollmentHub([]*cloudpb.HubReachabilityObservation{
+		{HubId: "hub-c"},
+		{HubId: "hub-b", Reachable: true, LatencyMillis: 12},
+		{HubId: "hub-a", Reachable: true, LatencyMillis: 12},
+	})
+	if err != nil || preferred != "hub-a" {
+		t.Fatalf("preferred Hub = (%q, %v)", preferred, err)
+	}
+	if _, err := PreferredEnrollmentHub([]*cloudpb.HubReachabilityObservation{{HubId: "hub-a"}}); err == nil {
+		t.Fatal("all-unreachable observations must fail")
+	}
+}
+
 func enrollmentProbeCandidate(id, origin string) *cloudpb.HubEnrollmentCandidate {
 	return &cloudpb.HubEnrollmentCandidate{HubId: "hub-" + id, HubUrl: origin, HealthUrl: origin + "/healthz", Region: "local-1"}
 }

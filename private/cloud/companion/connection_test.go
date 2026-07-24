@@ -71,7 +71,9 @@ func (controlPlane *fakeControlPlane) CompleteLogin(_ context.Context, _ *cloudp
 }
 
 func (controlPlane *fakeControlPlane) BeginDeviceEnrollment(_ context.Context, _ *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error) {
-	return &cloudpb.DeviceEnrollmentChallenge{FlowId: "enroll-1", ChallengeId: "challenge-1", Challenge: bytes.Repeat([]byte{0x33}, 32), ExpiresAtUnix: uint64(controlPlane.now.Add(5 * time.Minute).Unix()), HubCandidates: []*cloudpb.HubEnrollmentCandidate{{HubId: "hub-1", HubUrl: "https://hub.example.test", HealthUrl: "https://hub.example.test/healthz", Region: "local"}}}, nil
+	candidates := []*cloudpb.HubEnrollmentCandidate{{HubId: "hub-1", HubUrl: "https://hub.example.test", HealthUrl: "https://hub.example.test/healthz", Region: "local"}}
+	digest, _ := cloudcompanion.EnrollmentCandidateSetDigest(candidates)
+	return &cloudpb.DeviceEnrollmentChallenge{FlowId: "enroll-1", ChallengeId: "challenge-1", Challenge: bytes.Repeat([]byte{0x33}, 32), ExpiresAtUnix: uint64(controlPlane.now.Add(5 * time.Minute).Unix()), HubCandidates: candidates, CandidateSetDigest: digest, FlowRevision: 2}, nil
 }
 
 func (controlPlane *fakeControlPlane) CompleteDeviceEnrollment(_ context.Context, _ *cloudpb.CompleteDeviceEnrollmentRequest) (cloudservice.DeviceEnrollmentResult, error) {
@@ -452,6 +454,7 @@ func TestLifecycleStoresOnlyPrivateSessionAndReturnsSummary(t *testing.T) {
 	}
 	enrolled, err := connection.CompleteDeviceEnrollment(context.Background(), &cloudpb.CompleteDeviceEnrollmentRequest{
 		FlowId: challenge.GetFlowId(), Proof: &cloudpb.DeviceProof{DeviceId: "daemon-enrolled", DevicePublicKey: bytes.Repeat([]byte{1}, 32), ChallengeId: challenge.GetChallengeId(), Signature: bytes.Repeat([]byte{2}, 64), SignedAtUnixNano: now.UnixNano()},
+		HubObservations: []*cloudpb.HubReachabilityObservation{{HubId: "hub-1", Reachable: true, LatencyMillis: 1}}, PreferredHubId: "hub-1", CandidateSetDigest: challenge.GetCandidateSetDigest(), FlowRevision: challenge.GetFlowRevision(),
 	})
 	if err != nil || enrolled.GetSession().GetDeviceId() != "daemon-enrolled" || strings.Contains(enrolled.String(), "new-device-token") {
 		t.Fatalf("CompleteDeviceEnrollment = (%v, %v)", enrolled, err)

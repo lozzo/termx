@@ -321,7 +321,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		return nil, err
 	}
 	enrollment, err := newEnrollmentService(enrollmentServiceConfig{
-		Commerce: commerceService, Topology: topologyService, Registry: registry, EdgeIssuer: edgeIssuer,
+		Commerce: commerceService, Topology: topologyService, Registry: registry, EnrollmentStore: store, EdgeIssuer: edgeIssuer,
 		CandidateProvider: enrollmentCandidateProvider(registry, controlServer, config.Deployments),
 		ControlKeyID:      config.DaemonControlKeyID, ControlPublicKey: daemonControlKey.Public().(ed25519.PublicKey),
 		ControlNotBefore: credentialNotBefore, ControlNotAfter: credentialNotAfter, Now: time.Now, NotifyPolicyChange: notifyPolicyChange,

@@ -209,30 +209,60 @@ func TestCloudEnrollSignsChallengeWithDaemonIdentity(t *testing.T) {
 	defer func() { v3CloudNow = previousNow }()
 	challengeBytes := bytes.Repeat([]byte{0x44}, 32)
 	var beginRequest *cloudpb.BeginDeviceEnrollmentRequest
+	completeAttempts := 0
 	previousProbe := probeV3CloudEnrollmentHubCandidates
 	probeV3CloudEnrollmentHubCandidates = func(_ context.Context, candidates []*cloudpb.HubEnrollmentCandidate) ([]*cloudpb.HubReachabilityObservation, error) {
-		if len(candidates) != 1 || candidates[0].GetHubId() != "hub-1" {
+		if len(candidates) != 2 || candidates[0].GetHubId() != "hub-1" || candidates[1].GetHubId() != "hub-2" {
 			t.Fatalf("enrollment candidates = %v", candidates)
 		}
-		return []*cloudpb.HubReachabilityObservation{{HubId: "hub-1", Reachable: true, LatencyMillis: 12}}, nil
+		return []*cloudpb.HubReachabilityObservation{{HubId: "hub-1", Reachable: true, LatencyMillis: 12}, {HubId: "hub-2", Reachable: true, LatencyMillis: 20}}, nil
 	}
 	defer func() { probeV3CloudEnrollmentHubCandidates = previousProbe }()
 	fake := &closableCloudFake{FakeClient: &cloudcompanion.FakeClient{
 		BeginDeviceEnrollmentFunc: func(_ context.Context, request *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error) {
 			beginRequest = request
-			return &cloudpb.DeviceEnrollmentChallenge{FlowId: "enroll-1", ChallengeId: "challenge-1", Challenge: challengeBytes, ExpiresAtUnix: uint64(now.Add(time.Minute).Unix()), HubCandidates: []*cloudpb.HubEnrollmentCandidate{{HubId: "hub-1", HubUrl: "https://hub.example.test", HealthUrl: "https://hub.example.test/healthz", Region: "local-1"}}}, nil
+			candidates := []*cloudpb.HubEnrollmentCandidate{
+				{HubId: "hub-1", HubUrl: "https://hub-1.example.test", HealthUrl: "https://hub-1.example.test/healthz", Region: "local-1"},
+				{HubId: "hub-2", HubUrl: "https://hub-2.example.test", HealthUrl: "https://hub-2.example.test/healthz", Region: "local-2"},
+			}
+			digest, err := cloudcompanion.EnrollmentCandidateSetDigest(candidates)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return &cloudpb.DeviceEnrollmentChallenge{FlowId: "enroll-1", ChallengeId: "challenge-1", Challenge: challengeBytes, ExpiresAtUnix: uint64(now.Add(time.Minute).Unix()), HubCandidates: candidates, CandidateSetDigest: digest, FlowRevision: 2}, nil
 		},
 		CompleteDeviceEnrollmentFunc: func(_ context.Context, request *cloudpb.CompleteDeviceEnrollmentRequest) (*cloudpb.CompleteDeviceEnrollmentResponse, error) {
+			completeAttempts++
 			proof := request.GetProof()
-			if beginRequest == nil || beginRequest.GetOneTimeCode() != "ONE-TIME-CODE" || !bytes.Equal(beginRequest.GetDevicePublicKey(), proof.GetDevicePublicKey()) || len(request.GetHubObservations()) != 1 || request.GetHubObservations()[0].GetLatencyMillis() != 12 {
+			if beginRequest == nil || beginRequest.GetOneTimeCode() != "ONE-TIME-CODE" || !bytes.Equal(beginRequest.GetDevicePublicKey(), proof.GetDevicePublicKey()) || len(request.GetHubObservations()) != 2 || request.GetHubObservations()[0].GetLatencyMillis() != 12 {
 				t.Fatalf("enrollment request/proof mismatch: begin=%v proof=%v", beginRequest, proof)
+			}
+			wantHub := "hub-1"
+			if completeAttempts == 3 {
+				wantHub = "hub-2"
+			}
+			if request.GetPreferredHubId() != wantHub {
+				t.Fatalf("attempt %d preferred Hub = %q, want %q", completeAttempts, request.GetPreferredHubId(), wantHub)
+			}
+			observationsDigest, err := cloudcompanion.EnrollmentObservationsDigest(request.GetHubObservations())
+			if err != nil {
+				t.Fatal(err)
 			}
 			signingBytes, err := cloudcompanion.EnrollmentProofSigningBytes(&cloudpb.DeviceEnrollmentProofInput{
 				FlowId: request.GetFlowId(), ChallengeId: proof.GetChallengeId(), Challenge: challengeBytes,
 				DeviceId: proof.GetDeviceId(), DevicePublicKey: proof.GetDevicePublicKey(), SignedAtUnixNano: proof.GetSignedAtUnixNano(),
+				CandidateSetDigest: request.GetCandidateSetDigest(), PreferredHubId: request.GetPreferredHubId(), HubObservationsDigest: observationsDigest, FlowRevision: request.GetFlowRevision(),
 			})
 			if err != nil || !ed25519.Verify(ed25519.PublicKey(proof.GetDevicePublicKey()), signingBytes, proof.GetSignature()) {
 				t.Fatalf("enrollment signature verification failed: %v", err)
+			}
+			if completeAttempts == 1 {
+				err := cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENROLLMENT_APPROVAL_PENDING, "waiting for browser approval")
+				err.Retryable = true
+				return nil, err
+			}
+			if completeAttempts == 2 {
+				return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_HUB_CANDIDATE_STALE, "first Hub became full")
 			}
 			return &cloudpb.CompleteDeviceEnrollmentResponse{
 				Session:           &cloudpb.CloudSessionSummary{AccountId: "account-1", DeviceId: proof.GetDeviceId()},
@@ -254,7 +284,7 @@ func TestCloudEnrollSignsChallengeWithDaemonIdentity(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(output.String(), "ONE-TIME-CODE") || !strings.Contains(output.String(), "device-") {
+	if completeAttempts != 3 || strings.Contains(output.String(), "ONE-TIME-CODE") || !strings.Contains(output.String(), "device-") || !strings.Contains(output.String(), "waiting for approval") {
 		t.Fatalf("enroll output = %q", output.String())
 	}
 }
@@ -280,7 +310,7 @@ func TestCloudEnrollExplainsRejectedOneTimeCode(t *testing.T) {
 	if err == nil || !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED) {
 		t.Fatalf("enroll rejection = %v", err)
 	}
-	if message := err.Error(); !strings.Contains(message, "retry within ten minutes") || !strings.Contains(message, "revoked daemon can be enrolled again") || strings.Contains(message, "sanitized upstream rejection") {
+	if message := err.Error(); !strings.Contains(message, "within ten minutes") || !strings.Contains(message, "belongs to another account") || !strings.Contains(message, "revoked daemon can be enrolled again") || strings.Contains(message, "sanitized upstream rejection") {
 		t.Fatalf("enroll rejection message = %q", message)
 	}
 }

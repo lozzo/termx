@@ -1,12 +1,14 @@
 package companion
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/muxvia/muxvia/proto/cloudpb"
+	"github.com/muxvia/muxvia/shared/cloudcompanion"
 	"github.com/muxvia/muxvia/shared/cloudcompanion/pathquality"
 )
 
@@ -37,7 +39,7 @@ func validateBeginEnrollmentRequest(request *cloudpb.BeginDeviceEnrollmentReques
 }
 
 func validateEnrollmentChallenge(challenge *cloudpb.DeviceEnrollmentChallenge, now time.Time) error {
-	if challenge == nil || challenge.GetFlowId() == "" || challenge.GetChallengeId() == "" || len(challenge.GetChallenge()) < 32 || len(challenge.GetChallenge()) > 256 || challenge.GetExpiresAtUnix() <= uint64(now.Unix()) || len(challenge.GetHubCandidates()) == 0 || len(challenge.GetHubCandidates()) > 100 {
+	if challenge == nil || challenge.GetFlowId() == "" || challenge.GetChallengeId() == "" || len(challenge.GetChallenge()) < 32 || len(challenge.GetChallenge()) > 256 || challenge.GetExpiresAtUnix() <= uint64(now.Unix()) || len(challenge.GetHubCandidates()) == 0 || len(challenge.GetHubCandidates()) > 8 || len(challenge.GetCandidateSetDigest()) != 32 || challenge.GetFlowRevision() == 0 {
 		return protocolError("Control Plane returned an invalid enrollment challenge")
 	}
 	seen := make(map[string]bool, len(challenge.GetHubCandidates()))
@@ -49,12 +51,16 @@ func validateEnrollmentChallenge(challenge *cloudpb.DeviceEnrollmentChallenge, n
 		}
 		seen[candidate.GetHubId()] = true
 	}
+	digest, err := cloudcompanion.EnrollmentCandidateSetDigest(challenge.GetHubCandidates())
+	if err != nil || !bytes.Equal(digest, challenge.GetCandidateSetDigest()) {
+		return protocolError("Control Plane returned an invalid enrollment candidate digest")
+	}
 	return nil
 }
 
 func validateCompleteEnrollmentRequest(request *cloudpb.CompleteDeviceEnrollmentRequest) error {
 	proof := request.GetProof()
-	if request == nil || request.GetFlowId() == "" || proof == nil || proof.GetDeviceId() == "" || len(proof.GetDevicePublicKey()) != ed25519.PublicKeySize || proof.GetChallengeId() == "" || len(proof.GetSignature()) != ed25519.SignatureSize || proof.GetSignedAtUnixNano() == 0 {
+	if request == nil || request.GetFlowId() == "" || proof == nil || proof.GetDeviceId() == "" || len(proof.GetDevicePublicKey()) != ed25519.PublicKeySize || proof.GetChallengeId() == "" || len(proof.GetSignature()) != ed25519.SignatureSize || proof.GetSignedAtUnixNano() == 0 || request.GetPreferredHubId() == "" || len(request.GetCandidateSetDigest()) != 32 || request.GetFlowRevision() == 0 {
 		return protocolError("invalid device enrollment proof")
 	}
 	seen := make(map[string]bool, len(request.GetHubObservations()))
@@ -450,7 +456,16 @@ func validCloudErrorCode(code cloudpb.CloudErrorCode, allowUnspecified bool) boo
 		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_BACKPRESSURE,
 		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL,
 		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY,
-		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_AUTHORIZATION_REVOKED:
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_AUTHORIZATION_REVOKED,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENROLLMENT_CODE_EXPIRED,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENROLLMENT_APPROVAL_PENDING,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ACTIVE_IN_ANOTHER_ACCOUNT,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_TRANSFER_CONFIRMATION_REQUIRED,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_IDENTITY_MISMATCH,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_NO_REACHABLE_HUB,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_HUB_CANDIDATE_STALE,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENROLLMENT_COMMIT_CONFLICT,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_REVOKED:
 		return true
 	default:
 		return false

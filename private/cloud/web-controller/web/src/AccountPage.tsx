@@ -47,6 +47,7 @@ import {
 	ApproveDaemonEnrollmentRequestSchema,
 	ApproveDaemonEnrollmentResponseSchema,
 	CreateDaemonEnrollmentRequestSchema,
+	DaemonEnrollmentAction,
 	DaemonEnrollmentProjectionSchema,
 	DaemonEnrollmentState,
 	InspectDaemonEnrollmentRequestSchema,
@@ -673,9 +674,15 @@ function DaemonEnrollmentPanel({ onEnrolled, onDone }: { onEnrolled: () => Promi
 	const [enrollment, setEnrollment] = useState<DaemonEnrollmentProjection>();
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState("");
+	const canApprove = enrollment?.state === DaemonEnrollmentState.WAITING_FOR_APPROVAL && (
+		enrollment.action === DaemonEnrollmentAction.APPROVE ||
+		enrollment.action === DaemonEnrollmentAction.ALREADY_ENROLLED ||
+		enrollment.action === DaemonEnrollmentAction.CONFIRM_TRANSFER
+	);
+	const actionKey = enrollment ? DaemonEnrollmentAction[enrollment.action] : "UNSPECIFIED";
 
 	useEffect(() => {
-		if (!enrollment || enrollment.state === DaemonEnrollmentState.APPROVED) return;
+		if (!enrollment || enrollment.state === DaemonEnrollmentState.APPROVED || enrollment.state === DaemonEnrollmentState.COMPLETED || enrollment.state === DaemonEnrollmentState.REJECTED || enrollment.state === DaemonEnrollmentState.EXPIRED) return;
 		let stopped = false;
 		const inspect = async () => {
 			try {
@@ -709,7 +716,7 @@ function DaemonEnrollmentPanel({ onEnrolled, onDone }: { onEnrolled: () => Promi
 	}
 
 	async function approve() {
-		if (!enrollment) return;
+		if (!enrollment || !canApprove) return;
 		setBusy(true); setError("");
 		try {
 			await protoPost(
@@ -746,7 +753,8 @@ function DaemonEnrollmentPanel({ onEnrolled, onDone }: { onEnrolled: () => Promi
 							<span className="text-muted-foreground">{enrollment.daemonMetadata.hostname || enrollment.daemonDeviceId} · {enrollment.daemonMetadata.platform} · {enrollment.daemonMetadata.muxviaVersion}</span>
 						</div>
 					) : <p className="mt-4 text-sm leading-6 text-muted-foreground">{t("account.daemonFlow.waiting")}</p>}
-					{enrollment.state === DaemonEnrollmentState.WAITING_FOR_APPROVAL && <Button className="mt-5" disabled={busy} onClick={() => void approve()}><ShieldCheck />{busy ? t("account.daemonFlow.approving") : t("account.daemonFlow.approve")}</Button>}
+					{enrollment.daemonMetadata && enrollment.action !== DaemonEnrollmentAction.APPROVE && enrollment.action !== DaemonEnrollmentAction.UNSPECIFIED && <p className="mt-4 border border-line p-3 text-sm leading-6 text-muted-foreground">{t(`account.daemonFlow.action.${actionKey}`)}</p>}
+					{canApprove && <Button className="mt-5" disabled={busy} onClick={() => void approve()}><ShieldCheck />{busy ? t("account.daemonFlow.approving") : t(enrollment.action === DaemonEnrollmentAction.CONFIRM_TRANSFER ? "account.daemonFlow.confirmTransfer" : enrollment.action === DaemonEnrollmentAction.ALREADY_ENROLLED ? "account.daemonFlow.replaceSession" : "account.daemonFlow.approve")}</Button>}
 					{enrollment.state === DaemonEnrollmentState.APPROVED && <p className="mt-5 text-sm text-success">{t("account.daemonFlow.approved")}</p>}
 					<Button className="mt-3" variant="ghost" onClick={() => { if (enrollment.state === DaemonEnrollmentState.APPROVED) onDone(); else { setEnrollment(undefined); setError(""); } }}>{enrollment.state === DaemonEnrollmentState.APPROVED ? t("account.nodes.done") : t("account.nodes.cancel")}</Button>
 				</div>

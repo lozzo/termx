@@ -1,11 +1,14 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"time"
 
+	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/persistence"
 	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
@@ -18,6 +21,120 @@ func (store *Store) PutDeviceOwnership(ctx context.Context, ownership cloudtopol
 	_, err := execContext(ctx, store.db, `INSERT INTO cloud_device_ownership(device_id,account_id,device_kind,auth_epoch,revoked,public_key,updated_at) VALUES(?,?,?,?,?,?,?)
 ON CONFLICT(device_id) DO UPDATE SET account_id=excluded.account_id,device_kind=excluded.device_kind,auth_epoch=excluded.auth_epoch,revoked=excluded.revoked,public_key=excluded.public_key,updated_at=excluded.updated_at`, ownership.DeviceID, ownership.AccountID, int32(ownership.Kind), ownership.AuthEpoch, boolInt(ownership.Revoked), publicKey, time.Now().UTC().Format(time.RFC3339Nano))
 	return err
+}
+
+// CommitDaemonEnrollment 在一个 PostgreSQL 事务中提交 daemon enrollment 的全部持久真值。
+// DeviceID/public key、旧 ownership 与旧 assignment 是 CAS 条件；任何一步失败都会连同新 session、
+// ownership 和 assignment 一起回滚，事务提交前不会发布 policy 或交付明文 credential。
+func (store *Store) CommitDaemonEnrollment(ctx context.Context, input persistence.DaemonEnrollmentCommit, now time.Time) (hubregistry.Assignment, error) {
+	previous, expectedAssignment := input.ExpectedOwnership, input.ExpectedAssignment
+	next, nextAssignment := input.NextOwnership, input.NextAssignment
+	if next.DeviceID == "" || next.AccountID == "" || next.Kind != cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON || next.Revoked || next.AuthEpoch == 0 || len(next.PublicKey) == 0 ||
+		nextAssignment == nil || nextAssignment.GetDaemonDeviceId() != next.DeviceID || nextAssignment.GetAccountId() != next.AccountID || nextAssignment.GetHubId() == "" || nextAssignment.GetAssignmentEpoch() == 0 ||
+		nextAssignment.GetExpiresAtUnixMillis() <= nextAssignment.GetNotBeforeUnixMillis() || input.Session.SessionID == "" || input.Session.AccountID != next.AccountID || input.Session.ClientDeviceID != next.DeviceID || input.Session.Revoked ||
+		input.Audit == nil || input.Audit.GetAuditId() == "" || input.Audit.GetAccountId() != next.AccountID || now.IsZero() || (previous == nil) != (expectedAssignment == nil) {
+		return hubregistry.Assignment{}, cloudtopology.ErrTopologyRejected
+	}
+	if previous == nil {
+		if nextAssignment.GetAssignmentEpoch() != 1 {
+			return hubregistry.Assignment{}, hubregistry.ErrAssignmentConflict
+		}
+	} else {
+		if previous.DeviceID != next.DeviceID || previous.AccountID == "" || previous.Kind != cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON || previous.AuthEpoch == 0 || !bytes.Equal(previous.PublicKey, next.PublicKey) ||
+			expectedAssignment.GetDaemonDeviceId() != previous.DeviceID || expectedAssignment.GetAccountId() != previous.AccountID || expectedAssignment.GetHubId() == "" || expectedAssignment.GetAssignmentEpoch() == 0 {
+			return hubregistry.Assignment{}, cloudtopology.ErrTopologyRejected
+		}
+		if previous.AccountID == next.AccountID {
+			if !proto.Equal(expectedAssignment, nextAssignment) {
+				return hubregistry.Assignment{}, hubregistry.ErrAssignmentConflict
+			}
+		} else if !previous.Revoked || nextAssignment.GetHubId() != expectedAssignment.GetHubId() || nextAssignment.GetAssignmentEpoch() != expectedAssignment.GetAssignmentEpoch()+1 {
+			return hubregistry.Assignment{}, cloudtopology.ErrTopologyRejected
+		}
+	}
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return hubregistry.Assignment{}, err
+	}
+	defer tx.Rollback()
+	// 账号 auth revision 与 password/session revoke 共用同一持久真值；锁住账号行可阻止旧 revision
+	// 在并发密码变更之后重新插入一个有效 daemon session。
+	var accountAuthRevision uint64
+	if err = queryRowContext(ctx, tx, `SELECT auth_revision FROM commerce_accounts WHERE account_id=? FOR UPDATE`, next.AccountID).Scan(&accountAuthRevision); errors.Is(err, sql.ErrNoRows) || err == nil && accountAuthRevision != next.AuthEpoch {
+		return hubregistry.Assignment{}, cloudtopology.ErrTopologyRejected
+	} else if err != nil {
+		return hubregistry.Assignment{}, err
+	}
+	stored := cloudtopology.DeviceOwnership{DeviceID: next.DeviceID}
+	var storedKind int32
+	var storedRevoked int
+	err = queryRowContext(ctx, tx, `SELECT account_id,device_kind,auth_epoch,revoked,public_key FROM cloud_device_ownership WHERE device_id=? FOR UPDATE`, next.DeviceID).
+		Scan(&stored.AccountID, &storedKind, &stored.AuthEpoch, &storedRevoked, &stored.PublicKey)
+	ownershipFound := err == nil
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return hubregistry.Assignment{}, err
+	}
+	if ownershipFound {
+		stored.Kind, stored.Revoked = cloudpb.ManagedDeviceKind(storedKind), storedRevoked != 0
+	}
+	if (previous == nil) != !ownershipFound || previous != nil && !sameDeviceOwnership(stored, *previous) {
+		return hubregistry.Assignment{}, cloudtopology.ErrTopologyRejected
+	}
+	currentAssignment, assignmentFound, err := assignmentTx(ctx, tx, next.DeviceID)
+	if err != nil {
+		return hubregistry.Assignment{}, err
+	}
+	if (expectedAssignment == nil) != !assignmentFound || expectedAssignment != nil && !proto.Equal(currentAssignment.Value, expectedAssignment) {
+		return hubregistry.Assignment{}, hubregistry.ErrAssignmentConflict
+	}
+	updatedAt := now.UTC().Format(time.RFC3339Nano)
+	if _, err = execContext(ctx, tx, `INSERT INTO cloud_device_ownership(device_id,account_id,device_kind,auth_epoch,revoked,public_key,updated_at) VALUES(?,?,?,?,?,?,?)
+ON CONFLICT(device_id) DO UPDATE SET account_id=excluded.account_id,device_kind=excluded.device_kind,auth_epoch=excluded.auth_epoch,revoked=excluded.revoked,public_key=excluded.public_key,updated_at=excluded.updated_at`, next.DeviceID, next.AccountID, int32(next.Kind), next.AuthEpoch, 0, append([]byte(nil), next.PublicKey...), updatedAt); err != nil {
+		return hubregistry.Assignment{}, err
+	}
+	previousHubID, previousEpoch := "", uint64(0)
+	if expectedAssignment != nil && previous.AccountID != next.AccountID {
+		previousHubID, previousEpoch = expectedAssignment.GetHubId(), expectedAssignment.GetAssignmentEpoch()
+	}
+	if _, err = execContext(ctx, tx, `INSERT INTO hub_assignments(daemon_device_id,account_id,hub_id,assignment_epoch,not_before_unix_millis,expires_at_unix_millis,fence_satisfied,previous_hub_id,previous_epoch,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(daemon_device_id) DO UPDATE SET account_id=excluded.account_id,hub_id=excluded.hub_id,assignment_epoch=excluded.assignment_epoch,not_before_unix_millis=excluded.not_before_unix_millis,expires_at_unix_millis=excluded.expires_at_unix_millis,fence_satisfied=excluded.fence_satisfied,previous_hub_id=excluded.previous_hub_id,previous_epoch=excluded.previous_epoch,updated_at=excluded.updated_at`, next.DeviceID, next.AccountID, nextAssignment.GetHubId(), nextAssignment.GetAssignmentEpoch(), nextAssignment.GetNotBeforeUnixMillis(), nextAssignment.GetExpiresAtUnixMillis(), 0, previousHubID, previousEpoch, updatedAt); err != nil {
+		return hubregistry.Assignment{}, err
+	}
+	// 同一 DeviceIdentity 每次成功 enrollment 都轮换唯一 refresh session；响应丢失时由内存 delivery grace 返回同一明文。
+	if _, err = execContext(ctx, tx, `UPDATE commerce_sessions SET revoked=1 WHERE client_device_id=? AND revoked=0`, next.DeviceID); err != nil {
+		return hubregistry.Assignment{}, err
+	}
+	if previous != nil && previous.AccountID != next.AccountID {
+		for _, statement := range []string{
+			`DELETE FROM presence_topology WHERE daemon_device_id=?`,
+			`DELETE FROM managed_peer_topology WHERE daemon_device_id=?`,
+			`DELETE FROM terminal_access_topology WHERE daemon_device_id=?`,
+		} {
+			if _, err = execContext(ctx, tx, statement, next.DeviceID); err != nil {
+				return hubregistry.Assignment{}, err
+			}
+		}
+	}
+	if err = insertSession(ctx, tx, input.Session); err != nil {
+		return hubregistry.Assignment{}, conflict(err)
+	}
+	if err = insertCommerceAudit(ctx, tx, input.Audit); err != nil {
+		return hubregistry.Assignment{}, conflict(err)
+	}
+	if err = tx.Commit(); err != nil {
+		return hubregistry.Assignment{}, err
+	}
+	return hubregistry.Assignment{
+		Value:          proto.Clone(nextAssignment).(*cloudpb.HubAssignment),
+		FenceSatisfied: false,
+		PreviousHubID:  previousHubID,
+		PreviousEpoch:  previousEpoch,
+		UpdatedAt:      now.UTC(),
+	}, nil
+}
+
+func sameDeviceOwnership(left, right cloudtopology.DeviceOwnership) bool {
+	return left.DeviceID == right.DeviceID && left.AccountID == right.AccountID && left.Kind == right.Kind && left.AuthEpoch == right.AuthEpoch && left.Revoked == right.Revoked && bytes.Equal(left.PublicKey, right.PublicKey)
 }
 
 // DeviceOwnership 返回 topology 校验使用的持久账号归属。

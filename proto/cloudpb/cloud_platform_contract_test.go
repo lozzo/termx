@@ -307,16 +307,24 @@ func TestDaemonControlEnrollmentAndTerminalRevokeResultRoundTrip(t *testing.T) {
 	}
 }
 
-func TestDaemonEnrollmentHubSelectionIsProtoFirstAndControllerAuthoritative(t *testing.T) {
+func TestDaemonEnrollmentHubProposalIsProtoFirstAndControllerValidated(t *testing.T) {
 	challengeFields := descriptorFieldNames((&DeviceEnrollmentChallenge{}).ProtoReflect().Descriptor())
 	completeFields := descriptorFieldNames((&CompleteDeviceEnrollmentRequest{}).ProtoReflect().Descriptor())
-	for _, required := range []string{"flow_id", "challenge_id", "challenge", "expires_at_unix", "hub_candidates"} {
+	for _, required := range []string{"flow_id", "challenge_id", "challenge", "expires_at_unix", "hub_candidates", "candidate_set_digest", "flow_revision"} {
 		if !challengeFields[required] {
 			t.Fatalf("DeviceEnrollmentChallenge missing %q: %v", required, challengeFields)
 		}
 	}
-	if !completeFields["hub_observations"] {
-		t.Fatalf("CompleteDeviceEnrollmentRequest missing Hub observations: %v", completeFields)
+	for _, required := range []string{"hub_observations", "preferred_hub_id", "candidate_set_digest", "flow_revision"} {
+		if !completeFields[required] {
+			t.Fatalf("CompleteDeviceEnrollmentRequest missing %q: %v", required, completeFields)
+		}
+	}
+	proofFields := descriptorFieldNames((&DeviceEnrollmentProofInput{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"candidate_set_digest", "preferred_hub_id", "hub_observations_digest", "flow_revision"} {
+		if !proofFields[required] {
+			t.Fatalf("DeviceEnrollmentProofInput missing %q: %v", required, proofFields)
+		}
 	}
 	candidateFields := descriptorFieldNames((&HubEnrollmentCandidate{}).ProtoReflect().Descriptor())
 	for _, required := range []string{"hub_id", "hub_url", "health_url", "region"} {

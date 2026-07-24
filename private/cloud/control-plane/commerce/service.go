@@ -57,6 +57,15 @@ type DeviceSessionCredential struct {
 	ClientDeviceID string
 }
 
+// PreparedDeviceSession 是尚未持久化的设备 refresh session。
+// Credential 含只应交付一次的明文 token；Record 与 Audit 供上层组合事务写入，准备失败或事务回滚时
+// 调用方必须丢弃 Credential，不能把它返回给客户端。
+type PreparedDeviceSession struct {
+	Credential *cloudpb.AccountSessionCredential
+	Record     SessionRecord
+	Audit      *cloudpb.CommerceAuditProjection
+}
+
 // PaymentEventRecord 是 durable provider journal 的当前处理状态。
 type PaymentEventRecord struct {
 	Event  *cloudpb.NormalizedPaymentEvent
@@ -277,16 +286,32 @@ func (service *Service) IssueDeviceSession(ctx context.Context, accountID, clien
 	if err != nil {
 		return nil, ErrUnauthorized
 	}
-	now := service.now().UTC()
-	credential, record, err := service.newSession(account.Projection, 1, now)
+	prepared, err := service.PrepareDeviceSession(account.Projection, clientDeviceID, service.now().UTC())
 	if err != nil {
 		return nil, err
 	}
-	record.ClientDeviceID = clientDeviceID
-	if err := service.store.PutSession(ctx, record, service.audit(accountID, account.Projection.GetUserId(), "session.device.issue", clientDeviceID, now)); err != nil {
+	if err := service.store.PutSession(ctx, prepared.Record, prepared.Audit); err != nil {
 		return nil, err
 	}
-	return credential, nil
+	return prepared.Credential, nil
+}
+
+// PrepareDeviceSession 只在内存中生成设备 session 的明文 credential、持久 hash 与审计 projection。
+// 它不访问 Store；调用方必须把 Record 和 Audit 放入自己的最终事务，提交成功后才能交付 Credential。
+func (service *Service) PrepareDeviceSession(account *cloudpb.AccountProjection, clientDeviceID string, now time.Time) (PreparedDeviceSession, error) {
+	if account == nil || account.GetAccountId() == "" || account.GetUserId() == "" || account.GetAuthRevision() == 0 || clientDeviceID == "" || now.IsZero() {
+		return PreparedDeviceSession{}, ErrUnauthorized
+	}
+	credential, record, err := service.newSession(account, 1, now.UTC())
+	if err != nil {
+		return PreparedDeviceSession{}, err
+	}
+	record.ClientDeviceID = clientDeviceID
+	return PreparedDeviceSession{
+		Credential: credential,
+		Record:     record,
+		Audit:      service.audit(account.GetAccountId(), account.GetUserId(), "session.device.issue", clientDeviceID, now.UTC()),
+	}, nil
 }
 
 // RefreshDeviceSession 单次轮换扫码登录设备的持久 refresh token，并保留原 client device 绑定。

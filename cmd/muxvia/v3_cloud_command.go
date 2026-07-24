@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
@@ -319,28 +320,48 @@ func v3CloudEnrollCommand() *cobra.Command {
 			if err != nil {
 				return actionableCloudEnrollmentError(err)
 			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Daemon identity submitted. Review its details and approve this enrollment in Web Controller; waiting for approval...")
 			observations, err := probeV3CloudEnrollmentHubCandidates(cmd.Context(), challenge.GetHubCandidates())
 			if err != nil {
 				return fmt.Errorf("probe managed Cloud Hub candidates: %w", err)
 			}
-			signedAt := v3CloudNow()
-			signingBytes, err := cloudcompanion.EnrollmentProofSigningBytes(&cloudpb.DeviceEnrollmentProofInput{
-				FlowId: challenge.GetFlowId(), ChallengeId: challenge.GetChallengeId(), Challenge: append([]byte(nil), challenge.GetChallenge()...),
-				DeviceId: identity.DeviceID, DevicePublicKey: append([]byte(nil), identity.PublicKey...), SignedAtUnixNano: signedAt.UnixNano(),
-			})
+			candidateDigest, err := cloudcompanion.EnrollmentCandidateSetDigest(challenge.GetHubCandidates())
+			if err != nil || !bytes.Equal(candidateDigest, challenge.GetCandidateSetDigest()) {
+				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Cloud enrollment candidate directory is invalid")
+			}
+			preferredHubIDs, err := managedadapter.RankedEnrollmentHubs(observations)
+			if err != nil {
+				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_NO_REACHABLE_HUB, "no reachable Muxvia Cloud region was found")
+			}
+			observationsDigest, err := cloudcompanion.EnrollmentObservationsDigest(observations)
 			if err != nil {
 				return err
 			}
-			signature := ed25519.Sign(identity.PrivateKey, signingBytes)
-			completeRequest := &cloudpb.CompleteDeviceEnrollmentRequest{
-				FlowId: challenge.GetFlowId(), Proof: &cloudpb.DeviceProof{
-					DeviceId: identity.DeviceID, DevicePublicKey: append([]byte(nil), identity.PublicKey...), ChallengeId: challenge.GetChallengeId(), Signature: signature, SignedAtUnixNano: signedAt.UnixNano(),
-				}, HubObservations: observations,
-			}
-			response, err := completeV3CloudEnrollment(cmd.Context(), client, challenge, completeRequest)
-			clear(signature)
-			if err != nil {
-				return actionableCloudEnrollmentError(err)
+			var response *cloudpb.CompleteDeviceEnrollmentResponse
+			for index, preferredHubID := range preferredHubIDs {
+				signedAt := v3CloudNow()
+				signingBytes, signingErr := cloudcompanion.EnrollmentProofSigningBytes(&cloudpb.DeviceEnrollmentProofInput{
+					FlowId: challenge.GetFlowId(), ChallengeId: challenge.GetChallengeId(), Challenge: append([]byte(nil), challenge.GetChallenge()...),
+					DeviceId: identity.DeviceID, DevicePublicKey: append([]byte(nil), identity.PublicKey...), SignedAtUnixNano: signedAt.UnixNano(),
+					CandidateSetDigest: candidateDigest, PreferredHubId: preferredHubID, HubObservationsDigest: observationsDigest, FlowRevision: challenge.GetFlowRevision(),
+				})
+				if signingErr != nil {
+					return signingErr
+				}
+				signature := ed25519.Sign(identity.PrivateKey, signingBytes)
+				completeRequest := &cloudpb.CompleteDeviceEnrollmentRequest{
+					FlowId: challenge.GetFlowId(), Proof: &cloudpb.DeviceProof{
+						DeviceId: identity.DeviceID, DevicePublicKey: append([]byte(nil), identity.PublicKey...), ChallengeId: challenge.GetChallengeId(), Signature: signature, SignedAtUnixNano: signedAt.UnixNano(),
+					}, HubObservations: observations, PreferredHubId: preferredHubID, CandidateSetDigest: candidateDigest, FlowRevision: challenge.GetFlowRevision(),
+				}
+				response, err = completeV3CloudEnrollment(cmd.Context(), client, challenge, completeRequest)
+				clear(signature)
+				if err == nil {
+					break
+				}
+				if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_HUB_CANDIDATE_STALE) || index == len(preferredHubIDs)-1 {
+					return actionableCloudEnrollmentError(err)
+				}
 			}
 			if err := receipts.InstallEnrollment(response.GetControlEnrollment()); err != nil {
 				return fmt.Errorf("persist daemon control enrollment: %w", err)
@@ -368,7 +389,9 @@ func completeV3CloudEnrollment(ctx context.Context, client v3CloudClient, challe
 			return response, nil
 		}
 		var cloudErr *cloudcompanion.Error
-		if !errors.As(err, &cloudErr) || !cloudErr.Retryable || cloudErr.Code != cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY {
+		if !errors.As(err, &cloudErr) || !cloudErr.Retryable ||
+			(cloudErr.Code != cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY &&
+				cloudErr.Code != cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENROLLMENT_APPROVAL_PENDING) {
 			return nil, err
 		}
 		if !v3CloudNow().Add(interval).Before(expiresAt) {
@@ -411,16 +434,30 @@ func v3CloudNodeStatusCommand() *cobra.Command {
 	return command
 }
 
-// actionableCloudEnrollmentError 保留 enrollment 拒绝的统一错误码，但给出不泄漏注册码存在性的恢复动作。
-// Control Plane 故意不区分输错、过期和已使用；用户必须从已登录 Web 重新生成一次性码。
+// actionableCloudEnrollmentError 把稳定 enrollment 错误映射为不泄漏账号 PII 的恢复动作。
+// 账号冲突只说明需要回到原账号处理，不返回原账号标识、邮箱或其它归属信息。
 func actionableCloudEnrollmentError(err error) error {
-	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED) {
+	switch cloudcompanion.CodeOf(err) {
+	case cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENROLLMENT_CODE_EXPIRED:
+		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENROLLMENT_CODE_EXPIRED, "the enrollment code expired; generate a fresh code in Web Controller")
+	case cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ACTIVE_IN_ANOTHER_ACCOUNT:
+		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ACTIVE_IN_ANOTHER_ACCOUNT, "this daemon is active in another account; remove it there before confirming an account transfer")
+	case cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_IDENTITY_MISMATCH:
+		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_IDENTITY_MISMATCH, "the stored daemon identity does not match the registered public key; do not delete the local identity")
+	case cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_NO_REACHABLE_HUB:
+		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_NO_REACHABLE_HUB, "no Muxvia Cloud region is reachable from this network; check the proxy or firewall and retry the same enrollment")
+	case cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_HUB_CANDIDATE_STALE:
+		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_HUB_CANDIDATE_STALE, "all reachable Cloud candidates changed before enrollment completed; retry with a fresh Web Controller code")
+	case cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENROLLMENT_COMMIT_CONFLICT:
+		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENROLLMENT_COMMIT_CONFLICT, "the daemon enrollment changed concurrently; inspect the device in Web Controller before retrying")
+	case cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED:
+		return cloudcompanion.NewError(
+			cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED,
+			"daemon enrollment was not accepted; use a fresh Web Controller code and approve it within ten minutes. If this daemon identity belongs to another account, revoke it there before retrying; a revoked daemon can be enrolled again without deleting its local identity",
+		)
+	default:
 		return err
 	}
-	return cloudcompanion.NewError(
-		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED,
-		"daemon enrollment was not accepted; generate a new code in Web Controller and retry within ten minutes. A revoked daemon can be enrolled again without deleting its local identity",
-	)
 }
 
 func v3CloudStatusCommand() *cobra.Command {

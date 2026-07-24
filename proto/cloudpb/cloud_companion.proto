@@ -59,6 +59,15 @@ enum CloudErrorCode {
   CLOUD_ERROR_CODE_PROTOCOL = 14;
   CLOUD_ERROR_CODE_TEMPORARY = 15;
   CLOUD_ERROR_CODE_AUTHORIZATION_REVOKED = 16;
+  CLOUD_ERROR_CODE_ENROLLMENT_CODE_EXPIRED = 17;
+  CLOUD_ERROR_CODE_ENROLLMENT_APPROVAL_PENDING = 18;
+  CLOUD_ERROR_CODE_DEVICE_ACTIVE_IN_ANOTHER_ACCOUNT = 19;
+  CLOUD_ERROR_CODE_DEVICE_TRANSFER_CONFIRMATION_REQUIRED = 20;
+  CLOUD_ERROR_CODE_DEVICE_IDENTITY_MISMATCH = 21;
+  CLOUD_ERROR_CODE_NO_REACHABLE_HUB = 22;
+  CLOUD_ERROR_CODE_HUB_CANDIDATE_STALE = 23;
+  CLOUD_ERROR_CODE_ENROLLMENT_COMMIT_CONFLICT = 24;
+  CLOUD_ERROR_CODE_DEVICE_REVOKED = 25;
 }
 
 // PresenceState 是 Control Plane/Hub 提供的最小设备在线投影。
@@ -241,6 +250,21 @@ enum DaemonEnrollmentState {
   DAEMON_ENROLLMENT_STATE_WAITING_FOR_DEVICE = 1;
   DAEMON_ENROLLMENT_STATE_WAITING_FOR_APPROVAL = 2;
   DAEMON_ENROLLMENT_STATE_APPROVED = 3;
+  DAEMON_ENROLLMENT_STATE_COMPLETING = 4;
+  DAEMON_ENROLLMENT_STATE_COMPLETED = 5;
+  DAEMON_ENROLLMENT_STATE_REJECTED = 6;
+  DAEMON_ENROLLMENT_STATE_EXPIRED = 7;
+}
+
+// DaemonEnrollmentAction 是 Web 对当前 enrollment flow 可展示的下一步操作。
+// 它只能表达非秘密归属分类，不得包含另一账号的标识或个人信息。
+enum DaemonEnrollmentAction {
+  DAEMON_ENROLLMENT_ACTION_UNSPECIFIED = 0;
+  DAEMON_ENROLLMENT_ACTION_APPROVE = 1;
+  DAEMON_ENROLLMENT_ACTION_ALREADY_ENROLLED = 2;
+  DAEMON_ENROLLMENT_ACTION_REMOVE_FROM_CURRENT_ACCOUNT = 3;
+  DAEMON_ENROLLMENT_ACTION_CONFIRM_TRANSFER = 4;
+  DAEMON_ENROLLMENT_ACTION_IDENTITY_MISMATCH = 5;
 }
 
 // CreateDaemonEnrollmentRequest 由已登录 Web 账号创建短期 daemon enrollment flow。
@@ -266,6 +290,8 @@ message DaemonEnrollmentProjection {
   DaemonEnrollmentState state = 4;
   DeviceMetadata daemon_metadata = 5;
   string daemon_device_id = 6;
+  uint64 revision = 7;
+  DaemonEnrollmentAction action = 8;
 }
 
 message ApproveDaemonEnrollmentResponse {
@@ -291,7 +317,7 @@ message HubEnrollmentCandidate {
 }
 
 // HubReachabilityObservation 是 daemon 对 Controller 候选执行 HTTPS health 探测后的观测。
-// Controller 必须拒绝非候选 Hub，并以自己的健康、容量和 assignment 真值完成最终选择。
+// daemon 按实测 RTT 提议首选 Hub；Controller 只校验候选、容量和已有 assignment 真值。
 message HubReachabilityObservation {
   string hub_id = 1;
   bool reachable = 2;
@@ -305,6 +331,8 @@ message DeviceEnrollmentChallenge {
   bytes challenge = 3;
   uint64 expires_at_unix = 4;
   repeated HubEnrollmentCandidate hub_candidates = 5;
+  bytes candidate_set_digest = 6;
+  uint64 flow_revision = 7;
 }
 
 // DeviceEnrollmentProofInput 是公开 daemon 生成 DeviceProof signature 的 deterministic 输入。
@@ -316,6 +344,10 @@ message DeviceEnrollmentProofInput {
   string device_id = 4;
   bytes device_public_key = 5;
   int64 signed_at_unix_nano = 6;
+  bytes candidate_set_digest = 7;
+  string preferred_hub_id = 8;
+  bytes hub_observations_digest = 9;
+  uint64 flow_revision = 10;
 }
 
 // CompleteDeviceEnrollmentRequest 返回公开 daemon 生成的 DeviceProof。
@@ -323,6 +355,9 @@ message CompleteDeviceEnrollmentRequest {
   string flow_id = 1;
   DeviceProof proof = 2;
   repeated HubReachabilityObservation hub_observations = 3;
+  string preferred_hub_id = 4;
+  bytes candidate_set_digest = 5;
+  uint64 flow_revision = 6;
 }
 
 // DaemonControlVerificationKey 是 enrollment 固定给公开 daemon 的 deny-only command 公钥。
