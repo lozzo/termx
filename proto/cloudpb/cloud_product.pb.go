@@ -3817,8 +3817,10 @@ type GetAccountCommerceResponse struct {
 	Audit           []*CommerceAuditProjection  `protobuf:"bytes,5,rep,name=audit,proto3" json:"audit,omitempty"`
 	PaymentAttempts []*PaymentAttemptProjection `protobuf:"bytes,6,rep,name=payment_attempts,json=paymentAttempts,proto3" json:"payment_attempts,omitempty"`
 	PaymentEvents   []*PaymentEventProjection   `protobuf:"bytes,7,rep,name=payment_events,json=paymentEvents,proto3" json:"payment_events,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// plan 是当前 subscription.plan_id/version 对应的 catalog 快照，供官方界面展示正式名称。
+	Plan          *PlanDefinition `protobuf:"bytes,8,opt,name=plan,proto3" json:"plan,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetAccountCommerceResponse) Reset() {
@@ -3896,6 +3898,13 @@ func (x *GetAccountCommerceResponse) GetPaymentAttempts() []*PaymentAttemptProje
 func (x *GetAccountCommerceResponse) GetPaymentEvents() []*PaymentEventProjection {
 	if x != nil {
 		return x.PaymentEvents
+	}
+	return nil
+}
+
+func (x *GetAccountCommerceResponse) GetPlan() *PlanDefinition {
+	if x != nil {
+		return x.Plan
 	}
 	return nil
 }
@@ -4238,7 +4247,7 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x17occurred_at_unix_millis\x18\x06 \x01(\x03R\x14occurredAtUnixMillis\":\n" +
 	"\x19GetAccountCommerceRequest\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x01 \x01(\tR\taccountId\"\x91\x04\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\"\xc6\x04\n" +
 	"\x1aGetAccountCommerceResponse\x12<\n" +
 	"\aaccount\x18\x01 \x01(\v2\".muxvia.cloud.v1.AccountProjectionR\aaccount\x12K\n" +
 	"\fsubscription\x18\x02 \x01(\v2'.muxvia.cloud.v1.SubscriptionProjectionR\fsubscription\x12H\n" +
@@ -4246,7 +4255,8 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x06orders\x18\x04 \x03(\v2 .muxvia.cloud.v1.OrderProjectionR\x06orders\x12>\n" +
 	"\x05audit\x18\x05 \x03(\v2(.muxvia.cloud.v1.CommerceAuditProjectionR\x05audit\x12T\n" +
 	"\x10payment_attempts\x18\x06 \x03(\v2).muxvia.cloud.v1.PaymentAttemptProjectionR\x0fpaymentAttempts\x12N\n" +
-	"\x0epayment_events\x18\a \x03(\v2'.muxvia.cloud.v1.PaymentEventProjectionR\rpaymentEvents\"_\n" +
+	"\x0epayment_events\x18\a \x03(\v2'.muxvia.cloud.v1.PaymentEventProjectionR\rpaymentEvents\x123\n" +
+	"\x04plan\x18\b \x01(\v2\x1f.muxvia.cloud.v1.PlanDefinitionR\x04plan\"_\n" +
 	"\x11CloudProductError\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +
@@ -4439,11 +4449,12 @@ var file_cloudpb_cloud_product_proto_depIdxs = []int32{
 	54, // 44: muxvia.cloud.v1.GetAccountCommerceResponse.audit:type_name -> muxvia.cloud.v1.CommerceAuditProjection
 	41, // 45: muxvia.cloud.v1.GetAccountCommerceResponse.payment_attempts:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
 	42, // 46: muxvia.cloud.v1.GetAccountCommerceResponse.payment_events:type_name -> muxvia.cloud.v1.PaymentEventProjection
-	47, // [47:47] is the sub-list for method output_type
-	47, // [47:47] is the sub-list for method input_type
-	47, // [47:47] is the sub-list for extension type_name
-	47, // [47:47] is the sub-list for extension extendee
-	0,  // [0:47] is the sub-list for field type_name
+	11, // 47: muxvia.cloud.v1.GetAccountCommerceResponse.plan:type_name -> muxvia.cloud.v1.PlanDefinition
+	48, // [48:48] is the sub-list for method output_type
+	48, // [48:48] is the sub-list for method input_type
+	48, // [48:48] is the sub-list for extension type_name
+	48, // [48:48] is the sub-list for extension extendee
+	0,  // [0:48] is the sub-list for field type_name
 }
 
 func init() { file_cloudpb_cloud_product_proto_init() }

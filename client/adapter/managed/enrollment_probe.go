@@ -17,7 +17,8 @@ import (
 const (
 	maxEnrollmentProbeCandidates = 100
 	maxEnrollmentProbeWorkers    = 16
-	enrollmentProbeTimeout       = 3 * time.Second
+	// Clash/TUN 等代理可能在首次 fake-IP TLS 建连时消耗约四秒；候选并行探测，八秒仍是整个阶段的有界上限。
+	enrollmentProbeTimeout = 8 * time.Second
 )
 
 // ProbeEnrollmentCandidates 对 Controller 返回的有界 Hub 候选执行并发 health 延迟探测。

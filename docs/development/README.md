@@ -44,7 +44,8 @@ make clean
 ```
 
 - `make doctor` 是开始开发前的只读环境检查，验证 Go/Node/Java/Android/protobuf 工具、module/workspace 布局、生成代码和 Android 单一源码。
-- `make build` 只把公开 `muxvia` 写入 `.artifacts/bin/muxvia`。
+- `make` / `make build` 先构建并嵌入同版本 Cloud Companion，再把单文件产品 `muxvia` 写入 `.artifacts/bin/muxvia`。
+- `make build-public` 只用于公开源码边界验证，把不含 Cloud 的 `muxvia-public` 写入 `.artifacts/bin/muxvia-public`。
 - `make test` 清理调用终端继承的全部 `MUXVIA_*`，并使用 `GOWORK=off` 测试根公开 module，保证结果不受当前远程会话污染且 public snapshot 不依赖私有 workspace。
 - `make test-private` 逐个测试六个私有 Go module；public snapshot 没有 `private/cloud` 时明确跳过。
 - `make test-clients` 依次生成 protobuf、运行共享 UI 测试与类型检查，并构建 UI/Mobile Web。

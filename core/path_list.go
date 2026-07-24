@@ -68,19 +68,22 @@ func defaultPathCommand() []string {
 	if shell != "" {
 		return []string{shell}
 	}
-	// 中文说明：默认 shell 的 truth 在 daemon 进程所在机器；环境缺失时只退回
-	// 该机器上最小 POSIX shell，不读取 TUI/client 进程环境。
+	if shell = strings.TrimSpace(currentAccountShell()); shell != "" {
+		return []string{shell}
+	}
+	// 中文说明：默认 shell 的 truth 在 daemon 进程所在机器；账号信息也不可用时
+	// 才退回该机器上的最小 POSIX shell，不读取 TUI/client 进程环境。
 	return []string{"/bin/sh"}
 }
 
 func defaultPathCWD() string {
-	cwd, err := os.Getwd()
-	if err == nil && strings.TrimSpace(cwd) != "" {
-		return strings.TrimSpace(cwd)
-	}
 	home, err := os.UserHomeDir()
-	if err == nil {
+	if err == nil && strings.TrimSpace(home) != "" {
 		return strings.TrimSpace(home)
+	}
+	cwd, err := os.Getwd()
+	if err == nil {
+		return strings.TrimSpace(cwd)
 	}
 	return ""
 }

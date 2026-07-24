@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { create } from '@bufbuild/protobuf'
-import { Bookmark, BookmarkMinus, BookmarkPlus, ChevronLeft, ClipboardList, Folder, FolderOpen, Info, KeyRound, Link2, Link2Off, Monitor, MoreHorizontal, PanelBottomClose, Plus, RefreshCw, Rows2, SlidersHorizontal, SquarePen, Trash2, Unlock, X } from 'lucide-react'
+import { Bookmark, BookmarkMinus, BookmarkPlus, ChevronLeft, ClipboardList, Folder, FolderOpen, Info, KeyRound, Link2, Link2Off, Monitor, MoreHorizontal, PanelBottomClose, Plus, RefreshCw, Rows2, Scaling, SlidersHorizontal, SquarePen, Trash2, Unlock, X } from 'lucide-react'
 import { connectionPhaseLabel, connectionSnapshotFromStatus } from '../connection/connectionState'
+import { ConnectionRouteManager, type ConnectionRouteManagementAdapter } from '../connection/ConnectionRouteManager'
 import { FileTransferPanel } from '../files/FileTransferPanel'
 import { FileManager } from '../files/FileManager'
 import { createFileApi, type FileEntry } from '../files/fileApi'
@@ -16,11 +17,13 @@ import type { TerminalModifierState } from '../terminal/mobileTerminalInput'
 import { PasteConfirmDialog } from '../terminal/PasteConfirmDialog'
 import { Terminal, type TerminalHandle } from '../terminal/Terminal'
 import { TerminalActionToolbar, type TerminalToolbarMode } from '../terminal/TerminalActionToolbar'
+import { TerminalEnvironmentEditor } from '../terminal/TerminalEnvironmentEditor'
 import { TerminalFnPanel } from '../terminal/TerminalFnPanel'
 import { addNativeBackHandler } from '../platform/nativeBack'
 import { defaultTerminalResizeControl, type TerminalResizeControl } from '../terminal/terminalClient'
 import { TerminalList } from '../terminal/TerminalList'
 import { createTerminalManagementApi } from '../terminal/terminalManagementApi'
+import { formatCommandLine, parseCommandLine, validateEnvironmentVariables } from '../terminal/terminalCreateForm'
 import { readTerminalSettings, terminalThemeCssVariables, writeTerminalSettings, type TerminalSettings } from '../terminal/terminalSettings'
 import type { Machine, Terminal as RemoteTerminal } from '../core/model'
 import type { ProtoClientSession } from '../core/protoClientSession'
@@ -31,6 +34,7 @@ import { ConnectionCandidateType, ConnectionRouteKind, ConnectionTransport } fro
 import { ObservedPath as CloudObservedPath } from '../generated/cloudpb/cloud_topology_pb'
 import { useTerminalKeyboard } from '../terminal/useTerminalKeyboard'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import '../i18n'
 
 export interface MachineWorkspaceInventoryApi extends Pick<LocalAgentApi, 'getStatus'> {
@@ -48,6 +52,7 @@ export type MachineWorkspaceConnector = {
   reconnect?: ((options?: { forceRelay?: boolean | undefined }) => void | Promise<void>) | undefined
   getConnectionPolicy?: ((signal?: AbortSignal) => Promise<ConnectionPolicyState>) | undefined
   applyConnectionPolicy?: ((policy: ConnectionPolicy, signal?: AbortSignal) => Promise<void>) | undefined
+  routeManagement?: ConnectionRouteManagementAdapter | undefined
 }
 
 export interface MachineWorkspaceProps {
@@ -137,17 +142,19 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     name: string
     command: string
     cwd: string
-    environment: string
+    environment: string[]
     sizeLockMode: 'off' | 'warn' | 'lock'
   }>({
     name: '',
     command: '',
     cwd: '',
-    environment: '',
+    environment: [],
     sizeLockMode: 'off',
   })
   const [terminalSubmitError, setTerminalSubmitError] = useState<string | null>(null)
   const [terminalSubmitting, setTerminalSubmitting] = useState(false)
+  const [terminalDefaultsLoading, setTerminalDefaultsLoading] = useState(false)
+  const terminalDefaultsRequestRef = useRef(0)
   const [terminalPathReturnSheet, setTerminalPathReturnSheet] = useState<TerminalEditorSheet>('create-terminal')
   const [terminalPathPickerPath, setTerminalPathPickerPath] = useState('/')
   const [terminalPathPickerEntries, setTerminalPathPickerEntries] = useState<FileEntry[]>([])
@@ -407,7 +414,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     }
     if (snapshot.phase === 'reconnecting' || snapshot.phase === 'waiting_network') setError(null)
     if (snapshot.phase === 'failed') {
-      const message = connectionErrorDisplayMessage(snapshot.failReason || snapshot.statusText || 'Connection failed')
+      const message = connectionErrorDisplayMessage(snapshot.failReason || snapshot.statusText || 'Connection failed', t)
       if (p2pProbeRef.current && isP2PRouteUnavailable(snapshot.failReason || snapshot.statusText)) {
         p2pProbeRef.current = false
         setP2PFallbackPromptOpen(true)
@@ -573,7 +580,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       clearConnectionStatus()
     } catch (err) {
       if (terminalRefreshSeqRef.current === seq) {
-        const message = connectionErrorDisplayMessage(err)
+        const message = connectionErrorDisplayMessage(err, t)
         if (isAuthConnectionError(err)) handleConnectionAuthFailure(refreshMachineId)
         setError(message)
         updateConnectionStatus(message, 'failed')
@@ -639,7 +646,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       } catch (err) {
         if (!cancelled && terminalRefreshSeqRef.current === seq) {
           failed = true
-          const message = connectionErrorDisplayMessage(err)
+          const message = connectionErrorDisplayMessage(err, t)
           if (isAuthConnectionError(err)) handleConnectionAuthFailure(loadMachineId)
           setError(message)
           updateConnectionStatus(message, 'failed')
@@ -696,7 +703,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             updateFromPassiveConnectionState(snapshot, session)
           })
           .catch((err: unknown) => {
-            const message = connectionErrorDisplayMessage(err)
+            const message = connectionErrorDisplayMessage(err, t)
             if (isAuthConnectionError(err)) handleConnectionAuthFailure(machine.machineId)
             updateConnectionStatus(message, 'failed')
           })
@@ -854,7 +861,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     }).catch((err: unknown) => {
       window.clearTimeout(progressTimer)
       if (!cancelled && machineSessionConnectSeqRef.current === connectSeq) {
-        const message = connectionErrorDisplayMessage(err)
+        const message = connectionErrorDisplayMessage(err, t)
         const authFailure = isAuthConnectionError(err)
         if (authFailure) handleConnectionAuthFailure(machineId)
         if (p2pProbeRef.current && isP2PRouteUnavailable(err)) {
@@ -907,7 +914,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       }, session)
     }).catch((err: unknown) => {
       if (cancelled) return
-      const message = connectionErrorDisplayMessage(err)
+      const message = connectionErrorDisplayMessage(err, t)
       if (isAuthConnectionError(err)) handleConnectionAuthFailure(machineId)
       if (p2pProbeRef.current && isP2PRouteUnavailable(err)) {
         p2pProbeRef.current = false
@@ -1183,7 +1190,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         }
       })
       .catch((err: unknown) => {
-        const message = connectionErrorDisplayMessage(err)
+        const message = connectionErrorDisplayMessage(err, t)
         if (isAuthConnectionError(err)) handleConnectionAuthFailure(machine.machineId)
         updateConnectionStatus(message, 'failed')
         setFilesOpen(false)
@@ -1219,11 +1226,27 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       name: '',
       command: '',
       cwd: '',
-      environment: '',
+      environment: [],
       sizeLockMode: 'off',
     })
+    const request = terminalDefaultsRequestRef.current + 1
+    terminalDefaultsRequestRef.current = request
+    setTerminalDefaultsLoading(true)
     setMobileSheet('create-terminal')
-  }, [canManageTerminals, handleConnectionAuthFailure, machine?.machineId, requireVerification])
+    void withManagementApi().then(({ api: management }) => management.getDefaults()).then((defaults) => {
+      if (terminalDefaultsRequestRef.current !== request) return
+      setTerminalForm((current) => ({
+        ...current,
+        command: current.command || formatCommandLine(defaults.command),
+        cwd: current.cwd || defaults.cwd,
+      }))
+    }).catch((error: unknown) => {
+      if (terminalDefaultsRequestRef.current !== request) return
+      setTerminalSubmitError(error instanceof Error ? error.message : String(error))
+    }).finally(() => {
+      if (terminalDefaultsRequestRef.current === request) setTerminalDefaultsLoading(false)
+    })
+  }, [canManageTerminals, handleConnectionAuthFailure, machine?.machineId, requireVerification, withManagementApi])
 
   const openEditTerminal = useCallback(() => {
     if (!selectedTerminal) return
@@ -1232,7 +1255,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       name: selectedTerminal.title,
       command: selectedTerminal.command ?? '',
       cwd: selectedTerminal.cwd ?? '',
-      environment: selectedTerminal.environment ?? '',
+      environment: [],
       sizeLockMode: selectedTerminal.sizeLockMode ?? 'off',
     })
     setMobileSheet('edit-terminal')
@@ -1314,15 +1337,24 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   }, [loadTerminalPathBookmarks, withMachineSession])
 
   const submitCreateTerminal = useCallback(async () => {
-    if (!canManageTerminals || terminalSubmitting) return
+    if (!canManageTerminals || terminalSubmitting || terminalDefaultsLoading) return
     setTerminalSubmitError(null)
+    let command: string[]
+    let environment: string[]
+    try {
+      command = parseCommandLine(terminalForm.command)
+      if (command.length === 0) throw new Error(t('workspace.terminalForm.commandRequired'))
+      environment = validateEnvironmentVariables(terminalForm.environment)
+    } catch (error) {
+      setTerminalSubmitError(error instanceof Error ? error.message : String(error))
+      return
+    }
     setTerminalSubmitting(true)
-    const command = terminalForm.command.trim().split(/\s+/).filter(Boolean)
     const input: LocalCreateTerminalInput = {
       name: terminalForm.name.trim() || undefined,
-      ...(command.length > 0 ? { command } : {}),
+      command,
       cwd: terminalForm.cwd.trim() || undefined,
-      environment: terminalForm.environment.trim() || undefined,
+      environment,
       sizeLockMode: terminalForm.sizeLockMode,
     }
     try {
@@ -1336,7 +1368,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     } finally {
       setTerminalSubmitting(false)
     }
-  }, [canManageTerminals, refreshTerminals, terminalForm, terminalSubmitting, withManagementApi])
+  }, [canManageTerminals, refreshTerminals, t, terminalDefaultsLoading, terminalForm, terminalSubmitting, withManagementApi])
 
   const submitUpdateTerminal = useCallback(async () => {
     if (!canManageTerminals || !selectedTerminalId || terminalSubmitting) return
@@ -1346,7 +1378,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       terminalId: selectedTerminalId,
       name: terminalForm.name.trim() || undefined,
       cwd: terminalForm.cwd.trim() || undefined,
-      environment: terminalForm.environment.trim() || undefined,
       sizeLockMode: terminalForm.sizeLockMode,
     }
     try {
@@ -1380,7 +1411,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       }, 0)
       setPairStatus(t('workspace.resize.unlocked'))
     } catch (err) {
-      const message = connectionErrorDisplayMessage(err)
+      const message = connectionErrorDisplayMessage(err, t)
       if (isAuthConnectionError(err)) handleConnectionAuthFailure(machine?.machineId)
       updateConnectionStatus(message, 'failed')
     } finally {
@@ -1402,7 +1433,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         setPairStatus(t('workspace.resize.unavailable'))
       }
     } catch (err) {
-      const message = connectionErrorDisplayMessage(err)
+      const message = connectionErrorDisplayMessage(err, t)
       if (isAuthConnectionError(err)) handleConnectionAuthFailure(machine?.machineId)
       updateConnectionStatus(message, 'failed')
     }
@@ -1413,7 +1444,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       await activeTerminalHandle()?.releaseResizeOwner()
       setPairStatus(t('workspace.resize.released'))
     } catch (err) {
-      const message = connectionErrorDisplayMessage(err)
+      const message = connectionErrorDisplayMessage(err, t)
       if (isAuthConnectionError(err)) handleConnectionAuthFailure(machine?.machineId)
       updateConnectionStatus(message, 'failed')
     }
@@ -2204,17 +2235,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   </button>
                 </div>
               </label>
-              <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
-                {t('workspace.terminalForm.environment')}
-                <input
-                  className="min-h-12 border border-[var(--muxvia-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+              {mobileSheet === 'create-terminal' ? (
+                <TerminalEnvironmentEditor
                   value={terminalForm.environment}
-                  onChange={(event) => {
-                    const value = event.currentTarget.value
-                    setTerminalForm((current) => ({ ...current, environment: value }))
-                  }}
+                  onChange={(environment) => setTerminalForm((current) => ({ ...current, environment }))}
                 />
-              </label>
+              ) : null}
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
                 {t('workspace.terminalForm.sizeLock')}
                 <select
@@ -2233,7 +2259,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <button
                 type="button"
                 className="muxvia-app-primary-button mt-2 min-h-12 w-full gap-2 px-4 text-[15px] font-semibold"
-                disabled={terminalSubmitting}
+                disabled={terminalSubmitting || terminalDefaultsLoading}
                 onClick={() => {
                   hapticImpact()
                   if (mobileSheet === 'create-terminal') {
@@ -2243,7 +2269,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   void submitUpdateTerminal()
                 }}
               >
-                {terminalSubmitting ? t('workspace.saving') : t(mobileSheet === 'create-terminal' ? 'workspace.createTerminal' : 'workspace.saveChanges')}
+                {terminalSubmitting || terminalDefaultsLoading ? t('workspace.saving') : t(mobileSheet === 'create-terminal' ? 'workspace.createTerminal' : 'workspace.saveChanges')}
               </button>
             </div>
           </MobileSheetPanel>
@@ -2332,14 +2358,47 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </button>
           </div>
 
-          <button
-            type="button"
-            aria-label={t('workspace.openTerminalMenu')}
-            className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--muxvia-muted)] transition-colors active:bg-[var(--muxvia-surface-raised)]"
-            onClick={() => { hapticSelection(); setMobileSheet('terminal-menu') }}
-          >
-            <MoreHorizontal className="h-5 w-5" />
-          </button>
+          <div className="flex shrink-0 items-center">
+            <button
+              type="button"
+              aria-label={t('workspace.openFiles')}
+              title={t('workspace.openFiles')}
+              data-testid="muxvia-terminal-files-button"
+              className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--muxvia-muted)] transition-colors active:bg-[var(--muxvia-surface-raised)]"
+              onClick={() => { hapticSelection(); openFiles() }}
+            >
+              <Folder className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              aria-label={t(activeTerminalOwnsResize ? 'workspace.releaseResize' : 'workspace.controlResize')}
+              title={t(activeTerminalOwnsResize ? 'workspace.releaseResize' : 'workspace.controlResize')}
+              data-testid="muxvia-terminal-resize-button"
+              className={`flex h-11 w-11 shrink-0 items-center justify-center transition-colors active:bg-[var(--muxvia-surface-raised)] ${activeTerminalOwnsResize ? 'text-[var(--muxvia-accent)]' : 'text-[var(--muxvia-muted)]'}`}
+              onClick={() => { hapticSelection(); void (activeTerminalOwnsResize ? releaseActiveResizeOwner() : acquireActiveResizeOwner()) }}
+            >
+              <Scaling className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              aria-label={t('workspace.terminalTools')}
+              title={t('workspace.terminalTools')}
+              data-testid="muxvia-terminal-tools-button"
+              className={`hidden h-11 w-11 shrink-0 items-center justify-center transition-colors active:bg-[var(--muxvia-surface-raised)] min-[360px]:flex ${terminalToolbarOpen ? 'text-[var(--muxvia-accent)]' : 'text-[var(--muxvia-muted)]'}`}
+              onClick={() => { hapticSelection(); setTerminalToolbarOpen((current) => { const next = !current; if (next) setTerminalFnOpen(false); if (!next) setTerminalToolbarModeAndReset('default'); return next }) }}
+            >
+              <SlidersHorizontal className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              aria-label={t('workspace.openTerminalMenu')}
+              title={t('workspace.openTerminalMenu')}
+              className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--muxvia-muted)] transition-colors active:bg-[var(--muxvia-surface-raised)]"
+              onClick={() => { hapticSelection(); setMobileSheet('terminal-menu') }}
+            >
+              <MoreHorizontal className="h-5 w-5" />
+            </button>
+          </div>
         </header>
 
         <div
@@ -2539,10 +2598,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 <Rows2 className="h-4 w-4 text-[var(--muxvia-app-accent)]" />
                 {splitTerminalId ? t('workspace.changeSplit') : t('workspace.splitTerminal')}
               </button>
-              <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); setMobileSheet(null); void (activeTerminalOwnsResize ? releaseActiveResizeOwner() : acquireActiveResizeOwner()) }}>
-                <span className="w-4 font-mono text-[11px] font-extrabold text-[var(--muxvia-app-accent)]">{resizeControlBadgeText(terminalResizeControl)}</span>
-                {activeTerminalOwnsResize ? t('workspace.releaseResize') : t('workspace.controlResize')}
-              </button>
               {splitTerminalId ? (
                 <>
                   <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); setSyncSplitInput((current) => !current); setMobileSheet(null) }}>
@@ -2555,17 +2610,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   </button>
                 </>
               ) : null}
-              <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticSelection(); setMobileSheet(null); setTerminalToolbarOpen((current) => { const next = !current; if (next) setTerminalFnOpen(false); if (!next) setTerminalToolbarModeAndReset('default'); return next }) }}>
-                <SlidersHorizontal className="h-4 w-4 text-[var(--muxvia-app-accent)]" />
-                {t('workspace.terminalTools')}
-              </button>
               <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticSelection(); setMobileSheet(null); openConnectionInfo() }}>
                 <Info className="h-4 w-4 text-[var(--muxvia-app-accent)]" />
                 {t('workspace.connection.label')}
-              </button>
-              <button type="button" className="muxvia-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticSelection(); setMobileSheet(null); openFiles() }}>
-                <Folder className="h-4 w-4 text-[var(--muxvia-app-accent)]" />
-                {t('files.list')}
               </button>
             </div>
           </MobileSheetPanel>
@@ -2651,7 +2698,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           onRefresh={openConnectionInfo}
       onRetry={retryConnectionPolicyFailure}
       onApply={applyConnectionPolicy}
-      onRestoreAuto={() => applyConnectionPolicy({ route: 'auto', cloud: 'auto', relayTransport: 'auto' })}
+          onRestoreAuto={() => applyConnectionPolicy({ route: 'auto', cloud: 'auto', relayTransport: 'auto' })}
+          routeManagement={connector.routeManagement}
+          endpointId={machine.machineId}
         />
       ) : null}
       {p2pFallbackPromptOpen ? (
@@ -2736,6 +2785,8 @@ export function ConnectionInfoDialog({
   onRetry,
   onApply,
   onRestoreAuto,
+  routeManagement,
+  endpointId,
 }: {
   info: ConnectionInfo | null
   loading: boolean
@@ -2747,6 +2798,8 @@ export function ConnectionInfoDialog({
   onRetry: () => void
   onApply: (policy: ConnectionPolicy) => void
   onRestoreAuto: () => void
+  routeManagement?: ConnectionRouteManagementAdapter | undefined
+  endpointId: string
 }) {
   const { t } = useTranslation()
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -2846,6 +2899,13 @@ export function ConnectionInfoDialog({
               ]} disabled={!policyState?.available.cloud || (draft.route !== 'auto' && draft.route !== 'cloud') || draft.cloud === 'p2p'} onChange={(relayTransport) => setDraft((current) => ({ ...current, relayTransport }))} />
             </div>
           </details>
+
+          {routeManagement ? (
+            <details className="border-b border-[var(--muxvia-app-line)] px-4 py-3">
+              <summary className="flex min-h-12 cursor-pointer items-center text-[13px] font-semibold text-zinc-950">{t('workspace.routeManager.title')}</summary>
+              <ConnectionRouteManager adapter={routeManagement} endpointId={endpointId} />
+            </details>
+          ) : null}
 
           <details className="px-4 py-3">
             <summary className="flex min-h-12 cursor-pointer items-center text-[13px] font-semibold text-zinc-950">{t('workspace.connection.diagnostics')}</summary>
@@ -3123,10 +3183,18 @@ function isTransientConnectionPhase(phase: RtcConnectionStateSnapshot['phase']):
   return phase === 'probing' || phase === 'connecting'
 }
 
-function connectionErrorDisplayMessage(error: unknown): string {
+function connectionErrorDisplayMessage(error: unknown, t: TFunction): string {
+  if (connectionErrorCode(error) === 'entitlement_denied') return t('errors.relayEntitlementDenied')
   if (isAuthConnectionError(error)) return AUTH_CONNECTION_MESSAGE
   if (error instanceof Error) return error.message
   return String(error)
+}
+
+function connectionErrorCode(error: unknown): string {
+  if (typeof error === 'string') return error.trim().toLowerCase()
+  if (!error || typeof error !== 'object' || !('code' in error)) return ''
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'string' ? code.trim().toLowerCase() : ''
 }
 
 function isAuthConnectionError(error: unknown): boolean {
@@ -3264,12 +3332,4 @@ function resizeOwnershipString(record: Record<string, unknown>, key: 'owner_surf
 
 function appTerminalSurfaceId(machineId: string, terminalId: string): string {
   return `app:${machineId}:terminal:${terminalId}`
-}
-
-function resizeControlBadgeText(control: TerminalResizeControl): string {
-  if (control.sizeLocked || control.reason === 'size_locked') return 'LK'
-  if (control.canResize) return 'OW'
-  if (control.reason === 'follower') return 'FL'
-  if (control.reason === 'observer') return 'OB'
-  return 'FL'
 }

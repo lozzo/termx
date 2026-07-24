@@ -323,7 +323,16 @@ func (adapter *Adapter) doEdgeHub(ctx context.Context, path string, authorizatio
 		return nil, err
 	}
 	defer clear(envelope)
-	return adapter.do(ctx, adapter.hubURL+path, authorization, JSONMediaType, envelope)
+	hubURL := adapter.hubURL
+	if metadata.HubURL != "" {
+		// Controller 签发并写入私有 session 的 owning Hub 是多 Hub 路由真值；manifest 只提供旧会话的启动 fallback。
+		parsed, validateErr := validateServiceURL(metadata.HubURL, adapter.allowPublicHTTP, adapter.allowPublicHTTPS)
+		if validateErr != nil || strings.TrimSuffix(parsed.String(), "/") != strings.TrimSuffix(metadata.HubURL, "/") {
+			return nil, protocolNetworkError("cloud session contains an invalid dynamic Hub directory")
+		}
+		hubURL = strings.TrimSuffix(parsed.String(), "/")
+	}
+	return adapter.do(ctx, hubURL+path, authorization, JSONMediaType, envelope)
 }
 
 func (adapter *Adapter) postSession(ctx context.Context, path string, request proto.Message) (SessionWire, error) {
@@ -381,7 +390,7 @@ func (adapter *Adapter) do(ctx context.Context, endpoint string, authorization s
 	}
 	response, err := adapter.client.Do(request)
 	if err != nil {
-		return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE, "dev cloud service is unavailable")
+		return nil, retryableRouteUnavailable("dev cloud service is unavailable")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		defer response.Body.Close()
@@ -391,6 +400,12 @@ func (adapter *Adapter) do(ctx context.Context, endpoint string, authorization s
 		return nil, decodeCloudError(response.Body)
 	}
 	return response, nil
+}
+
+func retryableRouteUnavailable(message string) error {
+	err := cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE, message)
+	err.Retryable = true
+	return err
 }
 
 func sessionFromWire(wire SessionWire, now time.Time) (session.Session, error) {

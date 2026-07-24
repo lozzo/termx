@@ -18,6 +18,12 @@
 
 同日真实旧 daemon 迁移复测又发现：ownership 已撤销，但 24 小时旧 assignment 已过期时，Controller 会在进入上述事务前统一拒绝。修复后只有“已撤销、DeviceID/public key 连续、旧 ownership/assignment CAS 匹配”的跨账号迁移可以续签原 Hub；活跃 owner 和其它过期 assignment 仍 fail closed。新增 harness 明确把旧 assignment 设为过期并验证迁移后同 Hub、epoch 递增、lease 恢复；Controller 与 PostgreSQL 目标测试及 Controller race 通过。公网 Controller SHA-256 更新为 `c8d87ec06e30fb8fd3174ebeaa6f034c9b06e2788ffa327aa677603cdfbebd77`，回滚资产位于 `/opt/muxvia/rollback/pre-expired-assignment-enrollment-20260724-1425/`。本轮 `make test-private` 的领域包与 Controller 通过，但三个 devcloud E2E 因本机 `127.0.0.1:55432` PostgreSQL 密码认证环境故障未启动子进程；该环境失败未通过修改业务代码规避。
 
+同日清空本地 device session 后，同账号 daemon 重新 enrollment 真实触发 `HUB_CANDIDATE_STALE`：候选 provider 把已达到 `MaxAssignments` 的 US Hub 过滤掉，而该 daemon 正是已有 US assignment 的占用者；completion 又禁止 enrollment 静默迁移到 CN Hub，导致所有可提交候选均失败。修复后 provider 只为持有该 existing assignment 的 daemon 保留自己的满载 Hub，最终校验也不把同一 assignment 的续签重复计入容量；首次注册和其他设备仍不能选择满载 Hub。provider/selection/controller race 测试通过，公网 Controller SHA-256 更新为 `384073c04186c546c5f3c5bd80b2bf155e74e28c6bb8faebc49b182e6a7bf61a`，服务和 `muxvia.com`/US Edge health 均恢复，回滚资产位于 `/opt/muxvia/rollback/pre-enrollment-existing-capacity-20260724-1655/`。
+
+修复部署后，同一 Mac 在 Clash fake-IP/TUN 下继续真实触发 `NO_REACHABLE_HUB`：`us1.edge.muxvia.com` 最终返回 `204`，但首次 TLS/health 建连约 4.05 秒，超过 Go enrollment probe 原 3 秒预算；CN 的非标准 TLS 端口同时被当前 Clash 路径阻断，因而全部候选被误报不可达。候选继续最多 16 路并行，单 Hub/整个并行阶段预算调整为 8 秒；3.2 秒代理慢握手 harness 和 `client/adapter/managed` 回归通过，不改变 ICE、DataChannel 或普通连接 deadline。
+
+同日又修复设备目录把 activation 事务误当设备实体的问题：daemon 继续由固定 DeviceIdentity 的 `device_id` 归并；Official App 改为持久安装级 `client_device_id`，不同 MXA code 只原子撤销旧 device session 并签发同一设备的新 session。logout 只删除账号 session、不删除安装身份。当前尚未正式发布，因此实现不读取或迁移旧随机 client ID，也不保留旧请求格式兼容。Controller 两次 daemon enrollment、两次手机 activation、唯一账号设备投影、旧 refresh token 失效、Proto descriptor、Android gateway 和 ARM64 模拟器冷启动/crash scan 均通过。公网 Controller SHA-256 为 `4bd14ac1190890f945b373515a80d07aee36f1dceea9a0930c261f5fdde15374`，公网 HTTPS ARM64 APK SHA-256 为 `3c65aab0fd756d2fb04cb472d6a2f11b9f39fc65c5b8af0d3fbe3d18eefe56f2`；回滚资产位于 `/opt/muxvia/rollback/pre-stable-device-identity-20260724-1743/`。
+
 ## 部署拓扑
 
 | 位置 | 服务 | 公网入口 |

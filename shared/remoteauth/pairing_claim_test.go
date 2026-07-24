@@ -3,12 +3,33 @@ package remoteauth
 import (
 	"bytes"
 	"crypto/ed25519"
+	"encoding/base64"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/muxvia/muxvia/proto/remoteauthpb"
 )
+
+func TestPairingClaimCodeUsesCanonicalCompressionAndBoundedDecode(t *testing.T) {
+	compressible := bytes.Repeat([]byte("muxvia-pairing-route-"), 100)
+	code := EncodePairingClaimCode(compressible)
+	envelope, err := base64.RawURLEncoding.DecodeString(code[len(PairingClaimCodePrefix):])
+	if err != nil || len(envelope) == 0 || envelope[0] != pairingClaimEnvelopeDeflate {
+		t.Fatalf("compressed envelope marker=%v err=%v", envelope, err)
+	}
+	decoded, err := DecodePairingClaimCode(code)
+	if err != nil || !bytes.Equal(decoded, compressible) {
+		t.Fatalf("compressed round trip len=%d err=%v", len(decoded), err)
+	}
+	if _, err := DecodePairingClaimCode(EncodePairingClaimCode(bytes.Repeat([]byte("x"), maxPairingClaimOfferBytes+1))); !errors.Is(err, ErrPairingClaimMalformed) {
+		t.Fatalf("oversized decompression error = %v", err)
+	}
+	unknown := PairingClaimCodePrefix + base64.RawURLEncoding.EncodeToString([]byte{0x7f, 1, 2, 3})
+	if _, err := DecodePairingClaimCode(unknown); !errors.Is(err, ErrPairingClaimMalformed) {
+		t.Fatalf("unknown envelope error = %v", err)
+	}
+}
 
 func TestPairingClaimIsMemoryOnlySingleUseAndClientBound(t *testing.T) {
 	now := time.Date(2026, 7, 23, 10, 0, 0, 0, time.UTC)

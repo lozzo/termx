@@ -6,18 +6,23 @@ import (
 	"io"
 	"time"
 
+	"github.com/muxvia/muxvia/client/endpoint"
 	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
 	"github.com/muxvia/muxvia/shared/remoteauth"
 )
 
 // PairingConnector 通过 daemon embedded signaling 与 ICE-TCP 建立一次性 PairingExchange peer。
 // 它不执行 capability auth 或 Hello；PairingService 成功或失败后会精确关闭当前 DataChannel/peer。
 type PairingConnector struct {
-	Peers     PeerFactory
-	Signaling SignalingClient
-	Random    io.Reader
-	Now       func() time.Time
-	Phase     func(clientruntime.EndpointPhase)
+	Peers           PeerFactory
+	Signaling       SignalingClient
+	RouteKind       endpoint.RouteKind
+	Locators        []string
+	TransformAnswer func(*remoteauthpb.DirectSignalingAnswerV1) (*remoteauthpb.DirectSignalingAnswerV1, error)
+	Random          io.Reader
+	Now             func() time.Time
+	Phase           func(clientruntime.EndpointPhase)
 }
 
 // Redeem 使用当前 Direct attempt 的 Endpoint pin 与实际 DTLS certificate 兑换 PairingTicket。
@@ -29,8 +34,16 @@ func (connector *PairingConnector) Redeem(ctx context.Context, request clientrun
 	if connector == nil {
 		return remoteauth.PairingExchangeResult{}, fmt.Errorf("direct pairing connector is required")
 	}
+	expectedKind := connector.RouteKind
+	if expectedKind == "" {
+		expectedKind = endpoint.RouteDirectWebRTCTCP
+	}
+	if request.Route().Kind != expectedKind {
+		return remoteauth.PairingExchangeResult{}, fmt.Errorf("route %q kind %q does not match pairing connector kind %q", request.Route().ID, request.Route().Kind, expectedKind)
+	}
 	opened, err := openDirectPeer(ctx, request, directPeerOptions{
-		Peers: connector.Peers, Signaling: connector.Signaling, Random: connector.Random, Now: connector.Now, Phase: connector.Phase,
+		Peers: connector.Peers, Signaling: connector.Signaling, Locators: connector.Locators, TransformAnswer: connector.TransformAnswer,
+		Random: connector.Random, Now: connector.Now, Phase: connector.Phase,
 	})
 	if err != nil {
 		return remoteauth.PairingExchangeResult{}, err

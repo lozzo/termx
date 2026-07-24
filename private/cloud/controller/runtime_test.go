@@ -44,7 +44,7 @@ func TestControllerEnrollmentBindsControlKeyAndPersistsDaemonAuthority(t *testin
 		t.Fatal(err)
 	}
 	defer runtime.Close(context.Background())
-	runtime.enrollment.candidateProvider = func(context.Context, time.Time) ([]enrollmentHubCandidate, error) {
+	runtime.enrollment.candidateProvider = func(context.Context, time.Time, string) ([]enrollmentHubCandidate, error) {
 		return []enrollmentHubCandidate{{value: &cloudpb.HubEnrollmentCandidate{HubId: "hub-1", HubUrl: "http://127.0.0.1:41002", HealthUrl: "http://127.0.0.1:41002/healthz", Region: "local-1"}, maxAssignments: 100}}, nil
 	}
 	readyCandidates := runtime.enrollment.candidateProvider
@@ -65,7 +65,7 @@ func TestControllerEnrollmentBindsControlKeyAndPersistsDaemonAuthority(t *testin
 	if _, err := restarted.begin(context.Background(), begin); !errors.Is(err, errEnrollmentExpired) {
 		t.Fatalf("Controller restart retained pending enrollment flow: %v", err)
 	}
-	runtime.enrollment.candidateProvider = func(context.Context, time.Time) ([]enrollmentHubCandidate, error) { return nil, nil }
+	runtime.enrollment.candidateProvider = func(context.Context, time.Time, string) ([]enrollmentHubCandidate, error) { return nil, nil }
 	temporary := &cloudpb.CloudError{}
 	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/begin", begin, temporary, http.StatusServiceUnavailable)
 	if temporary.GetCode() != cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY || !temporary.GetRetryable() {
@@ -132,6 +132,38 @@ func TestControllerEnrollmentBindsControlKeyAndPersistsDaemonAuthority(t *testin
 	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/complete", complete, retriedResult, http.StatusOK)
 	if !proto.Equal(result, retriedResult) {
 		t.Fatalf("completed enrollment response changed: first=%v retry=%v", result, retriedResult)
+	}
+	// 使用新的 MXD code 再次 enrollment，验证注册码只描述授权事务，不会创建第二台 daemon。
+	replacementActivation, err := runtime.enrollment.CreateDaemonEnrollment(context.Background(), account.GetAccountId(), account.GetUserId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacementBegin := proto.Clone(begin).(*cloudpb.BeginDeviceEnrollmentRequest)
+	replacementBegin.OneTimeCode = replacementActivation.GetUserCode()
+	replacementChallenge := &cloudpb.DeviceEnrollmentChallenge{}
+	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/begin", replacementBegin, replacementChallenge, http.StatusOK)
+	replacementSignedAt := time.Now().UTC()
+	replacementObservationsDigest, err := cloudcompanion.EnrollmentObservationsDigest(observations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacementSigningBytes, err := cloudcompanion.EnrollmentProofSigningBytes(&cloudpb.DeviceEnrollmentProofInput{FlowId: replacementChallenge.GetFlowId(), ChallengeId: replacementChallenge.GetChallengeId(), Challenge: replacementChallenge.GetChallenge(), DeviceId: begin.GetDeviceId(), DevicePublicKey: devicePublic, SignedAtUnixNano: replacementSignedAt.UnixNano(), CandidateSetDigest: replacementChallenge.GetCandidateSetDigest(), PreferredHubId: "hub-1", HubObservationsDigest: replacementObservationsDigest, FlowRevision: replacementChallenge.GetFlowRevision()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacementComplete := &cloudpb.CompleteDeviceEnrollmentRequest{FlowId: replacementChallenge.GetFlowId(), Proof: &cloudpb.DeviceProof{DeviceId: begin.GetDeviceId(), DevicePublicKey: devicePublic, ChallengeId: replacementChallenge.GetChallengeId(), Signature: ed25519.Sign(devicePrivate, replacementSigningBytes), SignedAtUnixNano: replacementSignedAt.UnixNano()}, HubObservations: observations, PreferredHubId: "hub-1", CandidateSetDigest: replacementChallenge.GetCandidateSetDigest(), FlowRevision: replacementChallenge.GetFlowRevision()}
+	if _, err := runtime.enrollment.ApproveDaemonEnrollment(context.Background(), account.GetAccountId(), replacementActivation.GetUserCode()); err != nil {
+		t.Fatal(err)
+	}
+	replacementResult := &cloudpb.DeviceEnrollmentServiceSession{}
+	postControllerProto(t, runtime.Manifest().PublicURL+"/v1/enrollment/complete", replacementComplete, replacementResult, http.StatusOK)
+	if replacementResult.GetSession().GetDeviceId() != begin.GetDeviceId() {
+		t.Fatalf("replacement enrollment changed daemon identity: %v", replacementResult)
+	}
+	// Web/Hub 目录和后续管理命令始终以稳定 DeviceIdentity 的 device_id 为目标。
+	accountDevices, err := runtime.topology.ListAccountDevices(context.Background(), account.GetAccountId(), cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, true, 10)
+	if err != nil || len(accountDevices) != 1 || accountDevices[0].GetDeviceId() != begin.GetDeviceId() {
+		t.Fatalf("stable daemon device projection = (%v, %v)", accountDevices, err)
 	}
 
 	registered, err := runtime.enrollment.commerce.Register(context.Background(), &cloudpb.RegisterAccountRequest{Email: "controller-migration@example.com", Password: "secure-password"})

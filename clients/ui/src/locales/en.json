@@ -2,15 +2,18 @@
   "errors": {
     "generic": "Something went wrong. Please try again.",
     "loginRequired": "Sign in to Muxvia Cloud to continue.",
+    "alreadySignedIn": "You are already signed in as {{account}}. Sign out before signing in to another account.",
     "pairAgain": "This device needs fresh authorization. Pair it again.",
     "storageRequired": "Local storage is required before importing a Muxvia code.",
     "connectionFailed": "Could not connect to this device. Check both devices' networks and try again.",
-    "temporary": "The service is temporarily unavailable. Please try again."
+    "temporary": "The service is temporarily unavailable. Please try again.",
+    "relayEntitlementDenied": "P2P could not connect on this network, and Relay is not included in your current Muxvia Cloud plan. Upgrade your plan or try another network."
   },
   "common": {
     "loading": "Loading",
     "language": "Language",
     "cancel": "Cancel",
+    "close": "Close",
     "refresh": "Refresh",
     "signIn": "Sign in",
     "signedIn": "Signed in",
@@ -144,7 +147,18 @@
     "auto": "Auto",
     "resize": "Resize",
     "shiftUp": "Shift up",
-    "languageHint": "App language"
+    "languageHint": "App language",
+    "plan": "Current plan",
+    "subscriptionStatus": "Subscription status",
+    "subscriptionActive": "Active",
+    "subscriptionTrial": "Trial",
+    "subscriptionPastDue": "Payment required",
+    "subscriptionCanceling": "Active until period end",
+    "subscriptionCanceled": "Canceled",
+    "subscriptionSuspended": "Suspended",
+    "subscriptionExpired": "Expired",
+    "subscriptionGrace": "Grace period",
+    "subscriptionPending": "Pending"
   },
   "activation": {
     "enterOnComputer": "Enter this code in Muxvia Cloud on your computer",
@@ -190,7 +204,8 @@
     "chooseDirectory": "Choose directory", "clipboard": "Clipboard", "clipboardText": "Clipboard text", "clipboardEmpty": "Clipboard is empty", "clipboardTextEmpty": "Clipboard text is empty", "clipboardUpdated": "Clipboard entry updated", "clipboardSaved": "Clipboard entry saved", "browserClipboardError": "Unable to read browser clipboard", "clipboardReadError": "Unable to read clipboard", "browserClipboard": "Browser", "noClipboardHistory": "No clipboard history", "update": "Update", "connectionInfo": "Connection info", "openFiles": "Open files", "closeFiles": "Close files", "createTerminal": "Create terminal", "newTerminal": "New terminal", "saveChanges": "Save changes", "saving": "Saving...", "browse": "Browse", "connecting": "Connecting...", "connectingTerminal": "Connecting terminal...", "verifyDevice": "Verify this device", "verifyDeviceCopy": "Pair first before opening or managing local terminals.", "restartTerminal": "Restart terminal", "editTerminal": "Edit terminal", "deleteTerminal": "Delete terminal", "connectionError": "Connection error", "selectTerminal": "Select a terminal to start", "showTerminalList": "Back to terminal list", "switchTerminal": "Switch terminal", "openTerminalMenu": "Open terminal menu", "unlockResize": "Unlock resize", "unlocking": "Unlocking...", "terminalTools": "Terminal tools", "changeSplit": "Change split", "splitTerminal": "Split terminal", "releaseResize": "Release resize", "controlResize": "Control resize", "syncInput": "Sync input", "closeSplit": "Close split", "openBeforeSplit": "Open a terminal before starting split view", "chooseDifferentTerminal": "Choose a different terminal", "noOtherTerminal": "No other terminal is available", "fileAccessNotReady": "File access is not ready", "p2pUnavailable": "P2P unavailable", "p2pUnavailableCopy": "A direct connection could not be established on the current network. Switch this connection to Relay?", "notNow": "Not now", "copied": "Copied", "copyFailed": "Copy failed",
     "resizeMode": { "resizable": "Resizable", "warn": "Warn only", "locked": "Locked" },
     "resize": { "unlocked": "Resize unlocked", "acquired": "Resize control acquired", "locked": "Resize is locked", "unavailable": "Resize control unavailable", "released": "Resize control released" },
-    "terminalForm": { "name": "Name", "command": "Command", "cwd": "Working directory", "environment": "Environment", "sizeLock": "Size lock" },
+    "routeManager": { "title": "Routes", "description": "Choose, test, and order the ways this device can be reached.", "add": { "direct": "Add Direct", "ssh": "Add SSH", "cloud": "Add Cloud" }, "routeId": "Route ID", "displayName": "Display name", "signalingAddresses": "Signaling addresses", "iceAddresses": "ICE TCP addresses", "serverName": "TLS server name", "sshHost": "SSH host", "sshPort": "SSH port", "sshUser": "SSH user", "hostKeys": "Host key fingerprints", "remoteSignaling": "Remote signaling address", "remoteICE": "Remote ICE TCP address", "cloudManaged": "Cloud addresses and relay credentials are managed by Muxvia Cloud.", "moveUp": "Move route up", "moveDown": "Move route down", "test": "Test route", "testing": "Testing the complete connection...", "saving": "Saving...", "saved": "Saved", "testReady": "Connection test passed", "edit": "Edit", "delete": "Delete", "deleteConfirm": "Delete route {{name}}?", "prepareSSH": "Prepare SSH key", "sshReady": "SSH key is ready", "sshPublicKey": "SSH public key", "copyKey": "Copy public key", "closeKey": "Close public key", "save": "Save route", "validation": { "routeId": "Use letters, numbers, dots, underscores, or hyphens for the route ID.", "duplicate": "This route ID already exists.", "direct": "Direct requires at least one signaling address and one ICE TCP address.", "ssh": "SSH requires a host, user, valid port, and at least one host key fingerprint.", "cloud": "Cloud requires a target device identity." }, "errors": { "credential": "The credential for this route is unavailable. Update it and try again.", "authorization": "This device did not authorize the connection.", "entitlement": "Your current plan does not include this Cloud connection path.", "quota": "The Cloud relay quota for this period has been used.", "identity": "The device identity does not match this route.", "config": "This route configuration is incomplete or invalid.", "unavailable": "This route is currently unreachable. Check both networks and try again.", "cancelled": "The route test was cancelled.", "internal": "Muxvia could not test this route. Try again." } },
+    "terminalForm": { "name": "Name", "command": "Command", "commandRequired": "Command is required", "cwd": "Working directory", "environment": "Environment variables", "environmentKey": "Key", "environmentValue": "Value", "addEnvironment": "Add variable", "removeEnvironment": "Remove variable", "pasteEnvironment": "Paste variables", "environmentPasteContent": "Environment variables to paste", "applyEnvironment": "Apply variables", "sizeLock": "Size lock" },
     "connection": { "label": "Connection", "title": "Connection & network", "closeInfo": "Close connection and network", "progressTitle": "Connecting to device", "current": "Current connection", "preference": "Connection preference", "route": "Route", "routeId": "Connection route ID", "routeAuto": "Auto", "routeLocal": "Local", "routeDirect": "Direct", "routeSSH": "SSH tunnel", "routeCloud": "Muxvia Cloud", "cloudAdvanced": "Cloud advanced settings", "cloudPath": "Cloud P2P / Relay", "cloudAuto": "Auto", "cloudP2P": "P2P only", "cloudRelay": "Relay only", "relayTransport": "Relay transport", "transportAuto": "Auto", "transportUDP": "UDP only", "transportTCP": "TCP only", "path": "Actual path", "pathDirect": "P2P direct", "pathRelay": "Relay", "pathRelayMesh": "Relay mesh", "reason": "Selection reason", "candidates": "ICE candidates", "protocols": "ICE transport", "networkClass": "Network class", "rtt": "RTT", "sampledAt": "Sampled", "traffic": "Sent / received", "generation": "Connection attempt", "diagnostics": "Advanced network details", "phase": { "ready": "Ready", "probing": "Checking Direct, SSH, P2P, and Relay paths...", "resolving": "Preparing the selected connection path...", "signaling": "Starting P2P signaling...", "connecting": "Negotiating the ICE connection...", "authorizing": "Verifying device access...", "connected": "Connected", "verifying": "Verifying device access...", "reconnecting": "Reconnecting...", "waiting_network": "Waiting for network...", "failed": "Connection failed" }, "reading": "Reading status...", "notProvided": "Not provided", "unavailableShort": "Unavailable", "unavailableReason": { "route_not_configured": "Not configured", "route_disabled": "Disabled", "platform_unsupported": "Not supported on this device", "credential_unavailable": "Credential unavailable", "cloud_unavailable": "Cloud unavailable" }, "unavailable": "No machine connection is available", "policyUnavailable": "Connection policy is unavailable on this client", "reconnectConfirm": "Applying this setting will interrupt the active terminal and reconnect. Continue?", "applyReconnect": "Apply & reconnect", "applying": "Applying...", "retry": "Retry", "restoreAuto": "Restore Auto", "reconnect": "Reconnect", "tryP2P": "Try P2P", "useRelay": "Use Relay", "mode": "Mode", "transport": "Transport", "smartRoute": "SmartRoute", "local": "Local", "remote": "Remote", "connectionId": "Connection" }
   },
   "pairing": {

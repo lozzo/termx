@@ -63,6 +63,11 @@ test("single add-device wizard completes daemon enrollment and protects removal"
   await page.getByLabel("Current password").fill("correct horse battery staple");
   await page.getByRole("button", { name: "Confirm" }).click();
   await expect(page.getByText("Build Mac")).toHaveCount(0);
+  await expect(page.getByTestId("removed-devices-toggle")).toContainText("1");
+  await page.getByTestId("removed-devices-toggle").click();
+  await expect(page.getByTestId("removed-device-daemon-1")).toContainText("Build Mac");
+  await expect(page.getByTestId("removed-device-daemon-1").getByRole("button")).toHaveCount(0);
+  await page.screenshot({ path: "../../../../.artifacts/webux001/removed-devices.png", fullPage: true });
 });
 
 test("daemon enrollment explains an explicit revoked-account transfer", async ({ page }) => {
@@ -143,7 +148,7 @@ async function installAccountAPI(page: Page) {
       case "/api/v1/management/commands": {
         const body = route.request().postDataJSON() as { target?: { cloud_device?: { device_id?: string } } };
         const id = body.target?.cloud_device?.device_id;
-        if (id) devices = devices.filter((item) => item.deviceId !== id);
+        if (id) devices = devices.map((item) => item.deviceId === id ? { ...item, revoked: true, presence: undefined } : item);
         return json(route, {});
       }
       case "/api/v1/account/logout":

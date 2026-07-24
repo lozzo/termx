@@ -1,5 +1,7 @@
 # QR002 daemon 短码配对验收
 
+> 本文记录 QR002 完成时的单 Route seed 实现事实，不再作为当前多 Route 产品契约。当前决策和后续删除项以 `workflow.md` 与 `pairing-route-management-design.md` 为准。
+
 ## 结论
 
 `muxvia pair create` 的默认二维码与 `--text` 已切换为 `MXP1-...` portable claim code。静态载荷是 deterministic `PairingClaimOfferV1`，只包含 128-bit claim、DeviceID、DeviceIdentity public key、十分钟有效期和一个首连 Route seed；不包含 PairingTicket、scope、terminal ID、CapabilityGrant 或客户端 key。

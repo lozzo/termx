@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "profile": "staging-public-https",
+  "control_plane_url": "https://muxvia.com",
+  "hub_url": "https://muxvia-cn1.omscd.com:41102",
+  "relay_url": "turn:114.66.58.243:41003?transport=udp",
+  "hub_id": "hub-cn-nbo-1",
+  "region": "cn-east-1",
+  "account_label": "Muxvia Cloud Staging",
+  "started_at": "2026-07-24T00:00:00Z"
+}

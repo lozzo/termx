@@ -56,6 +56,8 @@ function localizedAppError(error: unknown, t: TFunction): string {
       return t('errors.connectionFailed')
     case 'temporary':
       return t('errors.temporary')
+    case 'entitlement_denied':
+      return t('errors.relayEntitlementDenied')
     default:
       return t('errors.generic')
   }
@@ -148,12 +150,22 @@ export interface ExternalPairingAdapter {
   forget(machineId: string): void | Promise<void>
 }
 
+export interface CloudAccountSummary {
+  accountId: string
+  accountLabel: string
+  planId: string
+  planName: string
+  subscriptionStatus: string
+  subscriptionRevision: number
+}
+
 /** CloudAccountAdapter 让 Official App 通过 native 私有模块登录；共享 UI 不接收 edge token。 */
 export interface CloudAccountAdapter {
-  current(): Promise<{ accountId: string; accountLabel: string } | null>
+  current(): Promise<CloudAccountSummary | null>
+  refresh?(): Promise<CloudAccountSummary | null>
   beginActivation(): Promise<{ userCode: string; expiresAtUnix: number }>
   claimActivation(payload: string): Promise<{ userCode: string; expiresAtUnix: number }>
-  awaitActivation(): Promise<{ accountId: string; accountLabel: string }>
+  awaitActivation(): Promise<CloudAccountSummary>
   cancelActivation(): Promise<void>
   /** listMachines 只返回同账号 daemon 发现投影；授权状态由 ExternalPairingAdapter 决定。 */
   listMachines(): Promise<WebControlMachine[]>
@@ -208,7 +220,7 @@ export function RemoteControlApp({
   const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [accessToken, setAccessToken] = useState(() => storage?.getItem(storageKeys.accessToken) ?? '')
-  const [cloudAccount, setCloudAccount] = useState<{ accountId: string; accountLabel: string } | null>(null)
+  const [cloudAccount, setCloudAccount] = useState<CloudAccountSummary | null>(null)
   const [cloudActivation, setCloudActivation] = useState<{ userCode: string; expiresAtUnix: number } | null>(null)
   const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => readTerminalSettings(storage))
   const [user, setUser] = useState<WebControlUser | null>(null)
@@ -396,12 +408,30 @@ export function RemoteControlApp({
     globalFileTransfer?.getSnapshot ?? (() => emptyTransferSnapshot),
   )
 
-  const refreshMachines = useCallback(async () => {
+  const refreshMachines = useCallback(async (refreshCloudAccount = false) => {
     if (cloudAccountAdapter) {
       const localMachineList = storage ? createMachineStore({ storage }).listMachines() : []
+      let resolvedAccountId: string | undefined
       setLocalMachines(localMachineList)
       setLoading(true)
       try {
+        // Cloud 账号是可选能力。账号摘要是目录查询的准入真值，未登录时不得用一次
+        // 必然失败的目录请求制造全局 login_required，也不得影响本地 Endpoint。
+        const account = refreshCloudAccount && cloudAccountAdapter.refresh
+          ? await cloudAccountAdapter.refresh()
+          : await cloudAccountAdapter.current()
+        if (!account) {
+          setCloudAccount(null)
+          setUser(null)
+          setMachines([])
+          setError(null)
+          setAuthorizedMachineIds(readAuthorizedMachineIds(storage, undefined, externalPairingAdapter))
+          setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
+          return
+        }
+        resolvedAccountId = account.accountId
+        setCloudAccount(account)
+        setUser({ id: account.accountId, username: account.accountLabel, email: account.accountLabel })
         setMachines(await cloudAccountAdapter.listMachines())
         setError(null)
       } catch (err) {
@@ -415,7 +445,7 @@ export function RemoteControlApp({
       } finally {
         setLoading(false)
       }
-      setAuthorizedMachineIds(readAuthorizedMachineIds(storage, cloudAccount?.accountId, externalPairingAdapter))
+      setAuthorizedMachineIds(readAuthorizedMachineIds(storage, resolvedAccountId, externalPairingAdapter))
       setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
       return
     }
@@ -452,7 +482,7 @@ export function RemoteControlApp({
     } finally {
       setLoading(false)
     }
-  }, [accessToken, api, cloudAccount?.accountId, cloudAccountAdapter, externalPairingAdapter, storage, t])
+  }, [accessToken, api, cloudAccountAdapter, externalPairingAdapter, storage, t])
 
   const prepareTransferMachineRuntime = useCallback((transferId?: string) => {
     if (!globalFileTransfer || !transferId) return
@@ -489,14 +519,6 @@ export function RemoteControlApp({
   }, [refreshMachines])
 
   useEffect(() => {
-    if (!cloudAccountAdapter) return
-    void cloudAccountAdapter.current().then((account) => {
-      setCloudAccount(account)
-      setUser(account ? { id: account.accountId, username: account.accountLabel, email: account.accountLabel } : null)
-    }).catch((failure) => setError(localizedAppError(failure, t)))
-  }, [cloudAccountAdapter, t])
-
-  useEffect(() => {
     setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id, externalPairingAdapter))
     setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
   }, [externalPairingAdapter, pairVersion, storage, user?.id])
@@ -517,6 +539,10 @@ export function RemoteControlApp({
 
   const scanCloudActivation = useCallback(async () => {
     if (!cloudAccountAdapter || !scanPairingCode) return
+    if (cloudAccount) {
+      setError(t('errors.alreadySignedIn', { account: cloudAccount.accountLabel }))
+      return
+    }
     setLoading(true)
     setError(null)
     try {
@@ -530,7 +556,7 @@ export function RemoteControlApp({
     } finally {
       setLoading(false)
     }
-  }, [cloudAccountAdapter, completeCloudActivation, scanPairingCode, t])
+  }, [cloudAccount, cloudAccountAdapter, completeCloudActivation, scanPairingCode, t])
 
   const cancelCloudActivation = useCallback(async () => {
     if (!cloudAccountAdapter) return
@@ -658,6 +684,15 @@ export function RemoteControlApp({
     const trimmedValue = rawValue.trim()
     const isCloudActivation = trimmedValue.startsWith('muxvia-cloud-activate:v1:') || /^MXA(?:-[0-9A-HJKMNP-TV-Z]{4}){5}-[0-9A-HJKMNP-TV-Z]{6}$/i.test(trimmedValue)
     if (isCloudActivation && cloudAccountAdapter) {
+      // 账号 Session 是独立持久真值；已登录时禁止把新的 MXA 事务与旧 Session 混在一起。
+      // 用户必须先显式退出，避免误以为未批准的新 flow 已经完成登录。
+      if (cloudAccount) {
+        hapticError()
+        setError(t('errors.alreadySignedIn', { account: cloudAccount.accountLabel }))
+        setScanOpen(false)
+        setView('settings')
+        return
+      }
       setPairing(true)
       setScanFlowState('pairing')
       setError(null)
@@ -709,7 +744,7 @@ export function RemoteControlApp({
       setPairing(false)
       setScanFlowState('idle')
     }
-  }, [cloudAccountAdapter, completeCloudActivation, externalPairingAdapter, selectedMachine?.id, storage, storeImportedMachine, t])
+  }, [cloudAccount, cloudAccountAdapter, completeCloudActivation, externalPairingAdapter, selectedMachine?.id, storage, storeImportedMachine, t])
 
   const commitEndpointShare = useCallback(async () => {
 	if (!sharePreview || !externalPairingAdapter?.commitShare) return
@@ -820,12 +855,13 @@ export function RemoteControlApp({
           login={login}
           password={password}
           signedIn={signedIn}
+          cloudAccount={cloudAccount}
           terminalSettings={terminalSettings}
           user={user}
           onBack={() => { hapticSelection(); setView('home') }}
           onLoginChange={setLogin}
           onPasswordChange={setPassword}
-          onRefresh={() => { hapticImpact(); void refreshMachines() }}
+          onRefresh={() => { hapticImpact(); void refreshMachines(true) }}
           onSignIn={() => { hapticImpact(); void submitLogin() }}
           onScanCloudActivation={() => { hapticImpact(); void scanCloudActivation() }}
           onSubmitCloudActivationCode={(code) => { hapticImpact(); void pairScannedValue(code) }}
@@ -1208,6 +1244,7 @@ function SettingsView({
   login,
   password,
   signedIn,
+  cloudAccount,
   terminalSettings,
   user,
   onBack,
@@ -1231,6 +1268,7 @@ function SettingsView({
   login: string
   password: string
   signedIn: boolean
+  cloudAccount: CloudAccountSummary | null
   terminalSettings: TerminalSettings
   user: WebControlUser | null
   onBack: () => void
@@ -1296,6 +1334,12 @@ function SettingsView({
             {signedIn ? (
               <>
                 <SettingsRow label={t('common.signedIn')} value={user?.email ?? t('common.account')} />
+                {cloudAccount ? (
+                  <>
+                    <SettingsRow label={t('settings.plan')} value={cloudAccount.planName} />
+                    <SettingsRow label={t('settings.subscriptionStatus')} value={subscriptionStatusLabel(cloudAccount.subscriptionStatus, t)} />
+                  </>
+                ) : null}
                 <div className="px-4 py-3">
                   <button
                     className="muxvia-app-secondary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
@@ -1504,6 +1548,20 @@ function SettingsView({
       </div>
     </section>
   )
+}
+
+function subscriptionStatusLabel(status: string, t: TFunction): string {
+  switch (status.trim().toUpperCase()) {
+    case 'SUBSCRIPTION_STATUS_ACTIVE': return t('settings.subscriptionActive')
+    case 'SUBSCRIPTION_STATUS_TRIALING': return t('settings.subscriptionTrial')
+    case 'SUBSCRIPTION_STATUS_PAST_DUE': return t('settings.subscriptionPastDue')
+    case 'SUBSCRIPTION_STATUS_CANCEL_AT_PERIOD_END': return t('settings.subscriptionCanceling')
+    case 'SUBSCRIPTION_STATUS_CANCELED': return t('settings.subscriptionCanceled')
+    case 'SUBSCRIPTION_STATUS_SUSPENDED': return t('settings.subscriptionSuspended')
+    case 'SUBSCRIPTION_STATUS_EXPIRED': return t('settings.subscriptionExpired')
+    case 'SUBSCRIPTION_STATUS_GRACE': return t('settings.subscriptionGrace')
+    default: return t('settings.subscriptionPending')
+  }
 }
 
 function CloudActivationPanel({

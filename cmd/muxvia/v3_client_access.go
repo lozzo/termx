@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -34,6 +35,23 @@ func (runtime v3ClientAccessRuntime) Close() error {
 		return nil
 	}
 	return runtime.Store.Close()
+}
+
+// v3CloudEnrollmentConfigured 只读取 daemon-owned control enrollment receipt。
+// enrollment 是默认启用 Cloud Presence 的持久真值；短期网络状态和 Companion 可达性不能改写它。
+func v3CloudEnrollmentConfigured(identity remoteauth.Identity) (bool, error) {
+	receipts, err := remotev2daemon.LoadControlReceiptStore(v3RemoteControlDir(), identity)
+	if err != nil {
+		return false, err
+	}
+	defer receipts.Close()
+	if _, err := receipts.Enrollment(); err != nil {
+		if errors.Is(err, remotev2daemon.ErrControlEnrollmentMissing) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func loadV3ClientAccessRuntime(socketPath string) (v3ClientAccessRuntime, error) {

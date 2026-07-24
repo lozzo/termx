@@ -118,6 +118,7 @@ export default function AccountPage() {
   const [protectedAction, setProtectedAction] = useState<ProtectedAction>();
   const [addDeviceOpen, setAddDeviceOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [removedDevicesOpen, setRemovedDevicesOpen] = useState(false);
 
   async function load() {
     try {
@@ -226,6 +227,7 @@ export default function AccountPage() {
     );
   const { commerce, quota, devices, topology, commands } = state;
   const activeDevices = devices.devices.filter((device) => !device.revoked);
+  const removedDevices = devices.devices.filter((device) => device.revoked);
   const onlineDaemons = activeDevices.filter(
     (device) =>
       device.deviceKind === ManagedDeviceKind.DAEMON &&
@@ -343,7 +345,7 @@ export default function AccountPage() {
               <Button className="shrink-0" onClick={() => setAddDeviceOpen(true)}><Plus />{t("account.devices.add")}</Button>
             </section>
             <Panel title={t("account.nodes.registered")}>
-              {devices.devices.length === 0 ? <Empty /> : devices.devices.map((device) => (
+              {activeDevices.length === 0 ? <Empty /> : activeDevices.map((device) => (
               <div
                 className="grid gap-3 border-b border-line p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                 key={device.deviceId}
@@ -361,7 +363,7 @@ export default function AccountPage() {
                 </div>
                 <Button
                   variant="outline"
-                  disabled={device.revoked || busy === "command"}
+                  disabled={busy === "command"}
                   onClick={() => protect(t(device.deviceKind === ManagedDeviceKind.DAEMON ? "account.nodes.revoke" : "account.nodes.removeAccess"), () =>
                     createManagementCommand(
                       ManagementCommandKind.REVOKE_CLOUD_DEVICE,
@@ -382,6 +384,31 @@ export default function AccountPage() {
               </div>
               ))}
             </Panel>
+            {removedDevices.length > 0 && (
+              <section className="border border-line bg-panel">
+                <button
+                  className="flex min-h-12 w-full cursor-pointer items-center justify-between px-4 text-left text-sm font-semibold focus-visible:outline-2 focus-visible:outline-primary"
+                  onClick={() => setRemovedDevicesOpen((value) => !value)}
+                  aria-expanded={removedDevicesOpen}
+                  data-testid="removed-devices-toggle"
+                >
+                  <span className="flex items-center gap-2 text-muted-foreground"><ShieldAlert className="size-4" />{t("account.devices.removed", { count: removedDevices.length })}</span>
+                  <ChevronDown className={`size-4 text-muted-foreground transition-transform ${removedDevicesOpen ? "rotate-180" : ""}`} />
+                </button>
+                {removedDevicesOpen && (
+                  <div className="border-t border-line" data-testid="removed-devices-list">
+                    <p className="m-0 border-b border-line px-4 py-3 text-xs leading-5 text-muted-foreground">{t("account.devices.removedCopy")}</p>
+                    {removedDevices.map((device) => (
+                      <div className="border-b border-line px-4 py-3 last:border-b-0" key={device.deviceId} data-testid={`removed-device-${device.deviceId}`}>
+                        <strong className="block truncate text-sm font-medium">{device.displayName || device.deviceId}</strong>
+                        <p className="mt-1 text-xs text-muted-foreground">{t(`account.nodes.kind.${device.deviceKind === ManagedDeviceKind.DAEMON ? "daemon" : "client"}`)} · {t("account.nodes.revoked")}</p>
+                        <p className="mt-2 break-all font-mono text-[10px] text-muted-foreground">{device.deviceId}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
             <button className="flex min-h-12 cursor-pointer items-center justify-between border border-line bg-panel px-4 text-left text-sm font-semibold focus-visible:outline-2 focus-visible:outline-primary" onClick={() => setAdvancedOpen((value) => !value)} aria-expanded={advancedOpen}>
               <span className="flex items-center gap-2"><Activity className="size-4 text-muted-foreground" />{t("account.devices.advanced")}</span>
               <ChevronDown className={`size-4 transition-transform ${advancedOpen ? "rotate-180" : ""}`} />

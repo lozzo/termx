@@ -8,6 +8,12 @@ import (
 	"time"
 )
 
+func TestRepositoryStagingPublicManifestMatchesStrictContract(t *testing.T) {
+	if _, err := LoadManifest(filepath.Join("..", "..", "config", "staging-public-https.json")); err != nil {
+		t.Fatalf("repository staging manifest: %v", err)
+	}
+}
+
 func TestLoadManifestAllowsPublicTURNOnlyForStagingSSH(t *testing.T) {
 	manifest := Manifest{
 		Version: ManifestVersion, Profile: ProfileStagingSSH,

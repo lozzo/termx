@@ -288,6 +288,7 @@ const (
 	ErrorUnavailable      ErrorCode = "unavailable"
 	ErrorCanceled         ErrorCode = "canceled"
 	ErrorStaleSession     ErrorCode = "stale_session"
+	ErrorEntitlement      ErrorCode = "entitlement_denied"
 )
 
 // Error 是 runtime 边界返回的稳定错误；Cause 只用于日志和 errors.Is/As，不作为 UI 文本协议。

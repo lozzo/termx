@@ -213,12 +213,25 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
         call.resolve()
     }
 
-    /** getCloudAccount 返回 Keystore 中仍有效的账号摘要。 */
+    /** getCloudAccount 返回 Keystore 中仍有效的账号摘要，不因 Controller 抖动阻断本地设备。 */
     @PluginMethod
     fun getCloudAccount(call: PluginCall) {
         cloudScope.launch {
             try {
                 val account = cloudAdapter.currentAccount()
+                call.resolve(account?.let(::accountToJSObject) ?: JSObject())
+            } catch (failure: Exception) {
+                call.reject(failure.message ?: "cloud account is unavailable")
+            }
+        }
+    }
+
+    /** refreshCloudAccount 由用户刷新动作触发，读取 Controller 最新持久 Subscription。 */
+    @PluginMethod
+    fun refreshCloudAccount(call: PluginCall) {
+        cloudScope.launch {
+            try {
+                val account = cloudAdapter.refreshAccount()
                 call.resolve(account?.let(::accountToJSObject) ?: JSObject())
             } catch (failure: Exception) {
                 call.reject(failure.message ?: "cloud account is unavailable")
@@ -365,6 +378,10 @@ class NativeConnectionPlugin : Plugin(), DefaultLifecycleObserver {
         put("accountId", account.accountId)
         put("accountLabel", account.accountLabel)
         put("expiresAtUnix", account.expiresAtUnix)
+        put("planId", account.planId)
+        put("planName", account.planName)
+        put("subscriptionStatus", account.subscriptionStatus)
+        put("subscriptionRevision", account.subscriptionRevision)
     }
 
     private fun flowToJSObject(flow: ManagedCloudLoginFlow): JSObject = JSObject().apply {

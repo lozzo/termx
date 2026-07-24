@@ -133,6 +133,61 @@ ON CONFLICT(daemon_device_id) DO UPDATE SET account_id=excluded.account_id,hub_i
 	}, nil
 }
 
+// CommitMobileActivation 在一个 PostgreSQL 事务中提交 Web 已批准的手机重新授权。
+// revoked ownership 只有在同账号、同 client device 下才能恢复；跨账号或 daemon/client
+// 类型冲突始终 fail closed。旧 refresh session 与新 session 的轮换和 ownership 更新原子生效。
+func (store *Store) CommitMobileActivation(ctx context.Context, input persistence.MobileActivationCommit, now time.Time) error {
+	previous, next := input.ExpectedOwnership, input.NextOwnership
+	if next.DeviceID == "" || next.AccountID == "" || next.Kind != cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT || next.AuthEpoch == 0 || next.Revoked || len(next.PublicKey) != 0 ||
+		input.Session.SessionID == "" || input.Session.AccountID != next.AccountID || input.Session.ClientDeviceID != next.DeviceID || input.Session.Revoked || input.Audit == nil || input.Audit.GetAccountId() != next.AccountID || now.IsZero() {
+		return cloudtopology.ErrTopologyRejected
+	}
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var accountAuthRevision uint64
+	if err = queryRowContext(ctx, tx, `SELECT auth_revision FROM commerce_accounts WHERE account_id=? FOR UPDATE`, next.AccountID).Scan(&accountAuthRevision); errors.Is(err, sql.ErrNoRows) || err == nil && accountAuthRevision != next.AuthEpoch {
+		return cloudtopology.ErrTopologyRejected
+	} else if err != nil {
+		return err
+	}
+	stored := cloudtopology.DeviceOwnership{DeviceID: next.DeviceID}
+	var storedKind int32
+	var storedRevoked int
+	err = queryRowContext(ctx, tx, `SELECT account_id,device_kind,auth_epoch,revoked,public_key FROM cloud_device_ownership WHERE device_id=? FOR UPDATE`, next.DeviceID).
+		Scan(&stored.AccountID, &storedKind, &stored.AuthEpoch, &storedRevoked, &stored.PublicKey)
+	found := err == nil
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if found {
+		stored.Kind, stored.Revoked = cloudpb.ManagedDeviceKind(storedKind), storedRevoked != 0
+	}
+	if (previous == nil) != !found || previous != nil && !sameDeviceOwnership(stored, *previous) {
+		return cloudtopology.ErrTopologyRejected
+	}
+	if previous != nil && (previous.AccountID != next.AccountID || previous.Kind != cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT || len(previous.PublicKey) != 0) {
+		return cloudtopology.ErrTopologyRejected
+	}
+	updatedAt := now.UTC().Format(time.RFC3339Nano)
+	if _, err = execContext(ctx, tx, `INSERT INTO cloud_device_ownership(device_id,account_id,device_kind,auth_epoch,revoked,public_key,updated_at) VALUES(?,?,?,?,?,?,?)
+ON CONFLICT(device_id) DO UPDATE SET account_id=excluded.account_id,device_kind=excluded.device_kind,auth_epoch=excluded.auth_epoch,revoked=excluded.revoked,public_key=excluded.public_key,updated_at=excluded.updated_at`, next.DeviceID, next.AccountID, int32(next.Kind), next.AuthEpoch, 0, []byte{}, updatedAt); err != nil {
+		return err
+	}
+	if _, err = execContext(ctx, tx, `UPDATE commerce_sessions SET revoked=1 WHERE client_device_id=? AND revoked=0`, next.DeviceID); err != nil {
+		return err
+	}
+	if err = insertSession(ctx, tx, input.Session); err != nil {
+		return conflict(err)
+	}
+	if err = insertCommerceAudit(ctx, tx, input.Audit); err != nil {
+		return conflict(err)
+	}
+	return tx.Commit()
+}
+
 func sameDeviceOwnership(left, right cloudtopology.DeviceOwnership) bool {
 	return left.DeviceID == right.DeviceID && left.AccountID == right.AccountID && left.Kind == right.Kind && left.AuthEpoch == right.AuthEpoch && left.Revoked == right.Revoked && bytes.Equal(left.PublicKey, right.PublicKey)
 }

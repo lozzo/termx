@@ -366,11 +366,13 @@ daemon owner 通过认证后的 `remote.access.ticket.create` 管理 RPC 原子�
 
 - claim schema version、128-bit claim 和有效期；
 - DeviceID 与 DeviceIdentity public key；
-- 建立首个 Direct 或 Cloud managed pairing DataChannel 必需的一个公开 Route seed。
+- 建立首个 Direct、SSH 或 Cloud managed pairing DataChannel 必需的有界公开 Route seeds；seed 数量、字段和编码大小必须通过 Proto 与二维码门禁。
 
 不得包含 PairingTicket、scope、terminal ID、长期 grant、ClientAccessIdentity private key、SSH 密码/私钥、Cloud token、Hub/Relay secret 或 route credential。二维码解析必须在客户端本地完成，不得上传第三方或 Muxvia 云端；daemon 重启使未兑换 claim 失效，持久 AccessStore 不恢复 claim。
 
-导入顺序固定为：严格解析 claim offer，按 DeviceID/public key 建立临时 Endpoint pin，并只使用 offer 中的一个 Route seed 建立 pairing peer；客户端先持久化或准备不可导出的 ClientAccessIdentity，再把 claim 与当前 channel-bound proof 发给 daemon。daemon 从内存 claim 解析完整 bundle，复用 AccessStore 的 ticket digest、scope ceiling、单次 key binding、grant 和 delivery receipt 原子事务，并在 `PairingAccepted` 中端到端返回完整签名 bundle。客户端验证 bundle issuer、grant subject/scope/expiry 后绑定 secure credential，再用完整 bundle 组装并提交 registry。不同 client key 重复 claim、错误 daemon、过期未消费 claim和 daemon 重启后的 claim 必须拒绝；同 key 只可在 delivery grace 内恢复已提交结果。
+导入顺序固定为：严格解析 claim offer，按 DeviceID/public key 建立临时 Endpoint pin，并只使用 offer 明确携带的 Route seeds 生成有界 pairing attempt plan；客户端先持久化或准备不可导出的 ClientAccessIdentity，再通过第一条完成身份验证的 DataChannel 把 claim 与当前 channel-bound proof 发给 daemon。单 Route 网络失败只结束该 attempt，身份、签名、DTLS binding 或 SSH host-key pin 冲突则 fail closed。daemon 从内存 claim 解析完整 bundle，复用 AccessStore 的 ticket digest、scope ceiling、单次 key binding、grant 和 delivery receipt 原子事务，并在 `PairingAccepted` 中端到端返回完整签名 bundle。客户端验证 bundle issuer、grant subject/scope/expiry 后绑定 secure credential，再按 DeviceIdentity 对现有 Endpoint 执行原子 Route diff/merge。不同 client key 重复 claim、错误 daemon、过期未消费 claim 和 daemon 重启后的 claim 必须拒绝；同 key只可在 delivery grace 内恢复已提交结果。同一已授权 ClientAccessIdentity 再次扫码不得产生并行活跃 grant 或静默扩大 scope。
+
+Route seed 的具体字段、CLI grammar、Cloud READY eligibility、增量合并和 App 交互见 `pairing-route-management-design.md`。
 
 ### 6.2 离线与故障隔离
 

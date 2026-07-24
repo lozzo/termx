@@ -6,28 +6,25 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"github.com/muxvia/muxvia/shared/cloudcompanion"
 )
 
-func TestBundledDevelopmentCompanionSourceVerifiesSiblingDigest(t *testing.T) {
+func TestBundledDevelopmentCompanionSourceMaterializesEmbeddedArtifact(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission validation is platform-specific")
 	}
-	dir := t.TempDir()
-	muxviaPath := filepath.Join(dir, "muxvia")
-	companionPath := filepath.Join(dir, "muxvia-cloud")
-	if err := os.WriteFile(muxviaPath, []byte("muxvia"), 0o700); err != nil {
+	root := t.TempDir()
+	if err := os.Chmod(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	payload := []byte("verified development companion")
-	if err := os.WriteFile(companionPath, payload, 0o700); err != nil {
-		t.Fatal(err)
-	}
 	hash := sha256.Sum256(payload)
-	restore := configureBundledDevelopmentSourceTest(t, muxviaPath, hex.EncodeToString(hash[:]))
+	digest := hex.EncodeToString(hash[:])
+	restore := configureBundledDevelopmentSourceTest(t, root, payload, digest)
 	defer restore()
 
 	source, configured, err := v3BundledDevelopmentCompanionSource()
@@ -38,16 +35,20 @@ func TestBundledDevelopmentCompanionSourceVerifiesSiblingDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	realMuxviaPath, err := filepath.EvalSymlinks(muxviaPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantCompanionPath := filepath.Join(filepath.Dir(realMuxviaPath), "muxvia-cloud")
+	wantCompanionPath := filepath.Join(root, "bundled", digest, "muxvia-cloud")
 	if installation.BinaryPath != wantCompanionPath || installation.Version != "v0.0.0-dev" || installation.Channel != "development" {
 		t.Fatalf("installation = %#v", installation)
 	}
+	materialized, err := os.ReadFile(wantCompanionPath)
+	if err != nil || string(materialized) != string(payload) {
+		t.Fatalf("materialized Companion = %q, %v", materialized, err)
+	}
+	info, err := os.Stat(wantCompanionPath)
+	if err != nil || info.Mode().Perm() != 0o700 {
+		t.Fatalf("materialized Companion mode = %v, %v", info, err)
+	}
 
-	if err := os.WriteFile(companionPath, []byte("tampered"), 0o700); err != nil {
+	if err := os.WriteFile(wantCompanionPath, []byte("tampered"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := source.Status(); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED) {
@@ -55,8 +56,81 @@ func TestBundledDevelopmentCompanionSourceVerifiesSiblingDigest(t *testing.T) {
 	}
 }
 
+func TestBundledDevelopmentCompanionSourceMaterializesConcurrently(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte("one embedded companion for every caller")
+	hash := sha256.Sum256(payload)
+	restore := configureBundledDevelopmentSourceTest(t, root, payload, hex.EncodeToString(hash[:]))
+	defer restore()
+	source, configured, err := v3BundledDevelopmentCompanionSource()
+	if err != nil || !configured {
+		t.Fatalf("source = (%v, %v, %v)", source, configured, err)
+	}
+	var group sync.WaitGroup
+	errorsByCaller := make(chan error, 8)
+	for range 8 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			_, statusErr := source.Status()
+			errorsByCaller <- statusErr
+		}()
+	}
+	group.Wait()
+	close(errorsByCaller)
+	for statusErr := range errorsByCaller {
+		if statusErr != nil {
+			t.Fatal(statusErr)
+		}
+	}
+}
+
+func TestBundledDevelopmentCompanionSourceRejectsEmbeddedDigestMismatch(t *testing.T) {
+	payload := []byte("embedded companion")
+	restore := configureBundledDevelopmentSourceTest(t, t.TempDir(), payload, string(make([]byte, 64)))
+	defer restore()
+	if _, configured, err := v3BundledDevelopmentCompanionSource(); configured || !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED) {
+		t.Fatalf("mismatched embedded source = configured %v, err %v", configured, err)
+	}
+}
+
+func TestBundledDevelopmentCompanionSourceRejectsSymlinkRootWithoutChangingTarget(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink ownership validation is platform-specific")
+	}
+	parent := t.TempDir()
+	target := filepath.Join(parent, "target")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(parent, "root-link")
+	if err := os.Symlink(target, root); err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte("embedded companion")
+	hash := sha256.Sum256(payload)
+	restore := configureBundledDevelopmentSourceTest(t, root, payload, hex.EncodeToString(hash[:]))
+	defer restore()
+	source, configured, err := v3BundledDevelopmentCompanionSource()
+	if err != nil || !configured {
+		t.Fatalf("source = (%v, %v, %v)", source, configured, err)
+	}
+	if _, err := source.Status(); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED) {
+		t.Fatalf("symlink root status error = %v", err)
+	}
+	info, err := os.Stat(target)
+	if err != nil || info.Mode().Perm() != 0o755 {
+		t.Fatalf("symlink target mode changed = %v, %v", info, err)
+	}
+}
+
 func TestBundledDevelopmentCompanionSourceRejectsStableBuild(t *testing.T) {
-	restore := configureBundledDevelopmentSourceTest(t, filepath.Join(t.TempDir(), "muxvia"), string(make([]byte, 64)))
+	payload := []byte("embedded companion")
+	hash := sha256.Sum256(payload)
+	restore := configureBundledDevelopmentSourceTest(t, t.TempDir(), payload, hex.EncodeToString(hash[:]))
 	defer restore()
 	muxviaBuildVersion = "v1.0.0"
 	if _, configured, err := v3BundledDevelopmentCompanionSource(); configured || !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED) {
@@ -64,24 +138,24 @@ func TestBundledDevelopmentCompanionSourceRejectsStableBuild(t *testing.T) {
 	}
 }
 
-func configureBundledDevelopmentSourceTest(t *testing.T, muxviaPath, digest string) func() {
+func configureBundledDevelopmentSourceTest(t *testing.T, root string, payload []byte, digest string) func() {
 	t.Helper()
-	previousExecutable := v3ExecutablePath
+	previousRoot := v3CloudCompanionRootDir
 	previousMuxviaVersion := muxviaBuildVersion
-	previousName := cloudDevelopmentCompanionName
+	previousEmbedded := cloudDevelopmentCompanionEmbedded
 	previousDigest := cloudDevelopmentCompanionSHA256
 	previousVersion := cloudDevelopmentCompanionVersion
 	previousChannel := cloudDevelopmentCompanionChannel
-	v3ExecutablePath = func() (string, error) { return muxviaPath, nil }
+	v3CloudCompanionRootDir = func() string { return root }
 	muxviaBuildVersion = v3DevelopmentBuildVersion
-	cloudDevelopmentCompanionName = "muxvia-cloud"
+	cloudDevelopmentCompanionEmbedded = append([]byte(nil), payload...)
 	cloudDevelopmentCompanionSHA256 = digest
 	cloudDevelopmentCompanionVersion = "v0.0.0-dev"
 	cloudDevelopmentCompanionChannel = "development"
 	return func() {
-		v3ExecutablePath = previousExecutable
+		v3CloudCompanionRootDir = previousRoot
 		muxviaBuildVersion = previousMuxviaVersion
-		cloudDevelopmentCompanionName = previousName
+		cloudDevelopmentCompanionEmbedded = previousEmbedded
 		cloudDevelopmentCompanionSHA256 = previousDigest
 		cloudDevelopmentCompanionVersion = previousVersion
 		cloudDevelopmentCompanionChannel = previousChannel

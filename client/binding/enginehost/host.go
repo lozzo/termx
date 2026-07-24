@@ -175,12 +175,16 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 	if err != nil {
 		return nil, err
 	}
-	pairingRoute, err := pairingClaimRoute(pairingCandidate)
+	pairingRoutes, err := pairingClaimRoutes(pairingCandidate, host.options)
 	if err != nil {
 		return nil, err
 	}
-	target := pairingTarget(endpointID, pairingCandidate.Identity, pairingRoute, credentialRef)
-	attempt, err := host.owner.BeginRouteAttempt(target, pairingRoute.ID, clientruntime.ConnectIntentInteractive)
+	target := pairingTarget(endpointID, pairingCandidate.Identity, pairingRoutes, credentialRef)
+	routeIDs := make([]endpoint.RouteID, 0, len(pairingRoutes))
+	for _, route := range pairingRoutes {
+		routeIDs = append(routeIDs, route.ID)
+	}
+	attempts, err := host.owner.BeginRouteAttempts(target, routeIDs, clientruntime.ConnectIntentInteractive)
 	if err != nil {
 		return nil, err
 	}
@@ -195,21 +199,7 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 		ExpectedDeviceID: offer.GetDeviceId(), ExpectedDeviceFingerprint: deviceFingerprint,
 		PairingClaimOffer: payload, Identity: identity, Signer: signer, ClientLabel: host.options.ClientName,
 	}
-	var paired remoteauth.PairingExchangeResult
-	switch pairingRoute.Kind {
-	case endpoint.RouteDirectWebRTCTCP:
-		if host.options.DirectPeers == nil {
-			return nil, fmt.Errorf("Direct pairing peer factory is unavailable")
-		}
-		paired, err = (&direct.PairingConnector{Peers: host.options.DirectPeers, Now: host.options.Now}).Redeem(ctx, attempt, pairingRequest)
-	case endpoint.RouteManagedWebRTC:
-		if host.options.ManagedPeers == nil {
-			return nil, fmt.Errorf("Cloud pairing peer factory is unavailable")
-		}
-		paired, err = (&managed.PairingConnector{Cloud: platformCloud{broker: host.options.Broker}, Peers: host.options.ManagedPeers, Now: host.options.Now}).Redeem(ctx, attempt, pairingRequest)
-	default:
-		return nil, fmt.Errorf("pairing Route %q is unsupported", pairingRoute.Kind)
-	}
+	paired, err := host.redeemPairingRace(ctx, attempts, pairingRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -250,14 +240,72 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 	}, nil
 }
 
-// pairingClaimRoute 返回短 claim 明确携带的唯一首连 Route；完整 Route 列表只能来自兑换后的签名 bundle。
-func pairingClaimRoute(candidate endpoint.EndpointCandidate) (endpoint.AccessRoute, error) {
+// pairingClaimRoutes 返回当前 Go Client Engine 可执行的 claim Route；平台 UI 不参与筛选或排序。
+func pairingClaimRoutes(candidate endpoint.EndpointCandidate, options Options) ([]endpoint.AccessRoute, error) {
+	routes := make([]endpoint.AccessRoute, 0, len(candidate.Routes))
 	for _, route := range candidate.Routes {
-		if route.Enabled && (route.Kind == endpoint.RouteDirectWebRTCTCP || route.Kind == endpoint.RouteManagedWebRTC) {
-			return route, nil
+		if !route.Enabled {
+			continue
+		}
+		switch route.Kind {
+		case endpoint.RouteDirectWebRTCTCP:
+			if options.DirectPeers != nil {
+				routes = append(routes, route)
+			}
+		case endpoint.RouteManagedWebRTC:
+			if options.ManagedPeers != nil {
+				routes = append(routes, route)
+			}
+		case endpoint.RouteSSHWebRTCTCP:
+			if options.DirectPeers != nil && options.SSHCredentials != nil {
+				routes = append(routes, route)
+			}
 		}
 	}
-	return endpoint.AccessRoute{}, fmt.Errorf("pairing claim requires an enabled Direct or Cloud WebRTC route")
+	if len(routes) == 0 {
+		return nil, fmt.Errorf("pairing claim has no Route supported by this client")
+	}
+	return routes, nil
+}
+
+type pairingRaceResult struct {
+	paired remoteauth.PairingExchangeResult
+	err    error
+}
+
+// redeemPairingRace 并发尝试同一 generation 的 Route，首个成功立即获胜；失败 Route 只贡献本次诊断，不写入 Endpoint 真值。
+func (host *Host) redeemPairingRace(ctx context.Context, attempts []clientruntime.AttemptRequest, request remoteauth.ClientPairingRequest) (remoteauth.PairingExchangeResult, error) {
+	raceContext, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make(chan pairingRaceResult, len(attempts))
+	for _, attempt := range attempts {
+		attempt := attempt
+		go func() {
+			var paired remoteauth.PairingExchangeResult
+			var err error
+			switch attempt.Route().Kind {
+			case endpoint.RouteDirectWebRTCTCP:
+				paired, err = (&direct.PairingConnector{Peers: host.options.DirectPeers, Now: host.options.Now}).Redeem(raceContext, attempt, request)
+			case endpoint.RouteManagedWebRTC:
+				paired, err = (&managed.PairingConnector{Cloud: platformCloud{broker: host.options.Broker}, Peers: host.options.ManagedPeers, Now: host.options.Now}).Redeem(raceContext, attempt, request)
+			case endpoint.RouteSSHWebRTCTCP:
+				paired, err = (&sshadapter.PairingConnector{Peers: host.options.DirectPeers, Credentials: host.options.SSHCredentials, Now: host.options.Now}).Redeem(raceContext, attempt, request)
+			default:
+				err = fmt.Errorf("pairing Route %q is unsupported", attempt.Route().Kind)
+			}
+			results <- pairingRaceResult{paired: paired, err: err}
+		}()
+	}
+	var failures []error
+	for range attempts {
+		result := <-results
+		if result.err == nil {
+			cancel()
+			return result.paired, nil
+		}
+		failures = append(failures, result.err)
+	}
+	return remoteauth.PairingExchangeResult{}, fmt.Errorf("all pairing Routes failed: %w", errors.Join(failures...))
 }
 
 // DeleteCredential 删除当前平台 secure store 中的 credential record。
@@ -397,14 +445,18 @@ func joinRouteKinds(kinds []endpoint.RouteKind) string {
 	return strings.Join(values, "\x00")
 }
 
-func pairingTarget(endpointID string, identity endpoint.DaemonIdentity, route endpoint.AccessRoute, credentialRef string) endpoint.Endpoint {
-	route.CredentialRef = credentialRef
-	if route.Kind == endpoint.RouteManagedWebRTC && route.TargetDeviceID == "" {
-		route.TargetDeviceID = identity.DeviceID
+func pairingTarget(endpointID string, identity endpoint.DaemonIdentity, routes []endpoint.AccessRoute, credentialRef string) endpoint.Endpoint {
+	targetRoutes := make(map[endpoint.RouteID]endpoint.AccessRoute, len(routes))
+	for _, route := range routes {
+		route.CredentialRef = credentialRef
+		if route.Kind == endpoint.RouteManagedWebRTC && route.TargetDeviceID == "" {
+			route.TargetDeviceID = identity.DeviceID
+		}
+		targetRoutes[route.ID] = route
 	}
 	return endpoint.Endpoint{
 		ID: endpoint.EndpointID(endpointID), DaemonIdentity: identity,
-		Routes: map[endpoint.RouteID]endpoint.AccessRoute{route.ID: route},
+		Routes: targetRoutes,
 	}
 }
 
@@ -648,6 +700,8 @@ func platformCloudResponseError(response *bindingpb.PlatformResponse) error {
 		return &cloudcompanion.Error{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, Message: value.GetMessage(), Retryable: value.GetRetryable()}
 	case apipb.ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST:
 		return &cloudcompanion.Error{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, Message: value.GetMessage()}
+	case apipb.ApiErrorCode_API_ERROR_CODE_ENTITLEMENT_DENIED:
+		return &cloudcompanion.Error{Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENTITLEMENT_DENIED, Message: value.GetMessage()}
 	}
 	return err
 }

@@ -157,6 +157,7 @@ class AndroidClientPlatform(
             // quota_exhausted 表示 Hub 明确拒绝且没有创建 signaling session。Go Client Engine
             // 只允许对这一类可证明未产生服务端副作用的冲突执行有界重试。
             "quota_exhausted" -> Common.ApiErrorCode.API_ERROR_CODE_CONFLICT
+            "entitlement_denied" -> Common.ApiErrorCode.API_ERROR_CODE_ENTITLEMENT_DENIED
             "cancelled" -> Common.ApiErrorCode.API_ERROR_CODE_CANCELLED
             "route_unavailable", "temporary", "companion_missing", "backpressure" -> Common.ApiErrorCode.API_ERROR_CODE_UNAVAILABLE
             else -> Common.ApiErrorCode.API_ERROR_CODE_INTERNAL

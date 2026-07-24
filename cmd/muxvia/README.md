@@ -14,5 +14,8 @@
 
 ```bash
 go test ./cmd/muxvia -count=1
-go build ./cmd/muxvia
+make build
 ```
+
+`make build` 生成内置 Cloud Companion 的单文件产品二进制。只有验证公开源码边界时才运行
+`make build-public`；直接 `go build ./cmd/muxvia` 等价于不嵌入私有 Cloud artifact 的源码构建，不能作为产品测试产物。

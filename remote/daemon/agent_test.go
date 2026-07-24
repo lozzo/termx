@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"testing"
 	"time"
 
@@ -242,6 +243,12 @@ func TestAgentRunContinuouslyRenewsFreshPresenceAfterStreamEOF(t *testing.T) {
 	if recorded.OpenPresence[0].GetPresenceSessionId() == recorded.OpenPresence[1].GetPresenceSessionId() ||
 		recorded.OpenPresence[0].GetProof().GetChallengeId() == recorded.OpenPresence[1].GetProof().GetChallengeId() {
 		t.Fatalf("presence renewal reused challenge: %#v", recorded.OpenPresence)
+	}
+}
+
+func TestPresenceRenewableAcceptsTransientNetworkFailure(t *testing.T) {
+	if !presenceRenewable(&net.DNSError{IsTimeout: true}) {
+		t.Fatal("transient network failure must keep enrolled daemon Presence reconnecting")
 	}
 }
 

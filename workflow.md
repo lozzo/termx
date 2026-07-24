@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- 用户原要求连续完成六个收口切片；在 `PG004` 实机 TURN/TCP 验收后又明确插入连接体验收口，并在 2026-07-24 要求立即实现参考 `tgent` 的 enrollment 升级。`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`、`CONNCOPY001` 和 `LOADUX001` 已完成；当前顺序改为 `ENROLLUX001-ENROLLUX005 -> PG004 -> CLOUDP007`。每个新增切片独立测试、提交并推送，不得借此重写 pairing、terminal 权限或 Cloud 商业能力。
+- 用户原要求连续完成六个收口切片；在 `PG004` 实机 TURN/TCP 验收后又明确插入连接体验收口，并在 2026-07-24 要求立即实现参考 `tgent` 的 enrollment 升级。`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`、`CONNCOPY001`、`LOADUX001`、`APPTERM001` 和 `PAIRROUTE001` 已完成。2026-07-24 清空 development Cloud 数据后，真实 Android 扫码证明单个 pairing Route seed 会让失效 Cloud 阻断同网可达的 Direct；`PAIRROUTE001` 已补齐可选择、可竞速、可增量合并的多 Route 配对和 App Route 管理，并保持 terminal 权限与 Cloud 商业能力不变。当前恢复 `ENROLLUX005` 最终 Web 移除后不可重连验收。
 - 首期正式 UI 语言只承诺英文与简体中文。Web Controller 现有俄文资源保留为历史输入但从可选语言中暂时移除，直到键集合、关键流程和布局验收达到与英文/中文相同的完成条件；不得以 fallback 英文冒充俄文支持。
 - `UX001` 已完成英文/简体中文基础设施与首批关键流程迁移：Web Controller 登录/账号/设备/激活和 Android 首页/设备/配对/设置均使用 locale key，语言默认跟随系统并可持久切换；App 143 个、Web 365 个 locale key 对称，稳定 native error code 不再把底层英文 message 直接投影到 UI；ARM64 模拟器已验证中文设备页和设置页。terminal/file 剩余文案按计划留给 `APPUX001`，不在本切片提前扩大。
 - 二维码整改必须区分两类载荷：Web 手机 activation 只携带短期 `MXA` code，当前约 60 字符；daemon pairing 当前把约 599-byte signed bundle 编码成约 826 字符 URI，达到 QR Version 23 / 109x109 modules，是显示不全的根因。`QR001` 只提供终端尺寸检查、文本和图片 fallback；`QR002` 才通过 daemon-owned 内存 claim 缩短真实配对二维码。
@@ -38,13 +38,14 @@
 - `CLOUDP007` 已有的手机 activation、Cloud session、设备目录和部分生命周期结果作为后续验收资产保留，但该切片当前不抢占六切片顺序。它只在 PG004 完成后启动，用现有产品入口验证 managed P2P/Relay、terminal/file、quota、suspend、topology/management command、Direct/SSH 回归和双 Agent 审查，不再建设新的登录、配对或 UI 架构。
 - `PG004` 公网 bootstrap staging 已部署：155 使用 systemd 运行 Controller + US West Edge，114 使用 systemd 运行 China East Edge，真实 Supabase `muxvia_staging` schema、Cloudflare DNS、Let's Encrypt、Web 登录/二维码、operator 双 fleet 和三进程重启恢复均通过。`PG004-HUBSEL` 已完成并以提交 `dc970580` 推送、部署到公网 Controller 与 US/CN 两台 Edge；真实 Supabase、双 Edge daemon enrollment、唯一 US assignment、epoch/token audience、动态目录和实体 Android endpoint resolve/signaling 一致。AUTO 跨 NAT 已完成双端 caller-specific TURN、RelayIntent correlation、有界 ICE 失败和用户提示；US/CN Relay 同端口提供 UDP/TCP。Android 16/API 36 实体手机已在纯 5G NR，以及手机/电脑 Clash `rule` + 手机纯 5G NR 下，从 App UI 完成 AUTO pairing、真实 TURN/TCP application data、terminal input/output 与 crash scan。2026-07-24 最终 ARM64/API 35 APK 又修复 Go binding 总 deadline、Pion/DataChannel 半开 lifecycle 和 SAF foreground generation 竞态；App UI 在强制 Cloud Relay/TCP 下完成 terminal 输入、上传/下载摘要一致、9.1 MiB 后取消且 daemon 无残留、返回/重进和 crash scan，APK 与设备 `base.apk` SHA-256 均为 `293e97a7e1ddbfb1a2b4b260941bab267bdeb72d0abc2c98a35af85147490bc2`。daemon enrollment 的最终 ownership、assignment、session、审计和跨账号清理现已合并为单个 PostgreSQL 事务；活跃旧账号仍禁止抢占，只有已撤销且 DeviceIdentity 连续的 daemon 才能迁移，公网 Controller 已部署，真实 Web 批准复测待用户生成新码。PG004 继续保持进行中，仅剩 R2 age 加密上传和独立恢复缺少可用 S3/R2 access key；证据见 `docs/remote-platform/pg004-public-bootstrap-deployment.md`。
 - 用户要求参考同级 `../tgent` 的顺滑注册体验立即升级 Muxvia；设计见 `docs/remote-platform/tgent-informed-enrollment-upgrade.md`。实现必须保留一次授权、daemon 本地测速、自动上线和 owning Hub 直接解析，同时不得引入私钥上传、Hub 同步查 Controller、在线状态数据库真值或删除身份重注册。该工作按 `ENROLLUX001-ENROLLUX005` 插入当前主线。
+- 用户要求参考 `../tgent` 的用户、订单、订阅、套餐、Hub、Agent、版本、优惠码和用户特权业务场景，并指定 Creem 为首个正式支付 provider；业务映射、不可照抄语义、Creem Webhook/轮询收口和切片计划见 `docs/remote-platform/tgent-informed-operator-business-plan.md`。当前已在 Creem 后台登记 `https://muxvia.com/pay/creem`，但线上该路径仍是 SPA fallback，只有 `CREEM001` 部署并通过 raw-body HMAC、真实 test event 和 journal 证据后才能标记可用。API key/webhook secret 只由部署 secret 注入。
 - `NETUX001` 已完成：Proto-first 连接策略和可用性由 Go Endpoint registry/planner 持有；App 分开连接偏好、当前连接和诊断详情，实时重采样 ReadyPeerSession 的 route/path/candidate/transport/RTT/traffic；强制切换提升 generation，失败提供精确重试与恢复 Auto。最终 ARM64/API 35 APK SHA-256 与安装包均为 `e18f86d6b2deec436b23f80252dc9f179711c43328a104d32fa7bd46f3fe8aac`，200% 字体竖横屏、可访问语义、失败恢复和 crash scan 通过；证据见 `docs/remote-platform/netux001-connection-network-e2e.md`。
 - `CONNFAST001` 已完成：route race 收到首个完整 ReadyPeerSession 后立即取消其它 attempt、发布 winner 并返回；后台 drain 只关闭迟到 session，不参与 winner/generation。忽略取消的慢 loser harness 证明返回不等待 cleanup，迟到成功被精确关闭且当前 winner 不变；`client/runtime` 20 次、race 和 `client/...` 回归通过。
 - `CONNCOPY001` 已完成：App 连接过程统一由稳定 phase 投影为 Direct、SSH、P2P、ICE、Relay 和设备访问验证等中英文用户文案，已知 phase 不再被底层自由文本覆盖；连接详情使用 Connection attempt/连接轮次、ICE candidates/ICE 候选和 ICE transport/ICE 传输。英文/简体中文各 461 个 locale scalar key 对称，UI 158 条、Mobile 36 条、Android ARM64/API 35 公网 HTTPS APK 构建与真实 Direct 配对/连接/详情/中文切换/crash scan 通过，UX reviewer PASS；证据见 `docs/remote-platform/conncopy001-connection-copy-e2e.md`。
 - `LOADUX001` 已完成：统一 loading primitive 使用固定方形周长和单一活动段，只有注册 angle 变量推进，不旋转或移动外框；14/16/20/24/28px 两帧边界稳定，运动变化只在周长带内，reduced-motion 两帧零变化。最终 APK 与模拟器 `base.apk` SHA-256 均为 `c596185387904908fec7f3ed0f6f48f836b63f49422e25c1d33cf88e0503e0f2`；ARM64/API 35 真实 App 冷启动捕获到固定 63x63 物理像素外框上的活动段，crash scan 为 0，UX reviewer PASS；证据见 `docs/remote-platform/loadux001-loading-animation-e2e.md`。
 - 多 Hub 基础和产品能力存在交叉依赖，必须按本文件交错推进，不能先写完所有 Hub 再补套餐，也不能继续在单进程 devcloud 上堆硬编码。
 - development 必须走完整账号、交易、Subscription、Entitlement、managed P2P/Relay、周期 quota、usage、topology 和管理链路；外部 provider 可以使用显式测试实现。
-- Web/WASM terminal 产品、iOS/Desktop GUI、多区域数据库、Relay Mesh、真实支付 provider 和复杂计费平台继续延后。当前 PostgreSQL 迁移只覆盖单区域单写 Controller，不建设多区域复制、分布式锁、读写分离或数据库抽象平台。
+- Web/WASM terminal 产品、iOS/Desktop GUI、多区域数据库、Relay Mesh、Creem production key/真实收费和复杂计费平台继续延后；`CREEM001` 只完成同一 Go adapter 的 sandbox checkout、Webhook 与轮询 reconciliation。当前 PostgreSQL 迁移只覆盖单区域单写 Controller，不建设多区域复制、分布式锁、读写分离或数据库抽象平台。
 
 ## 架构链路
 
@@ -87,14 +88,22 @@ muxvia-cloud-edge × N
 | 7 | TUIUX001 | Go Endpoint registry、planner 与 NETUX001 policy/status | TUI 与 App 消费同一 Go 连接策略和状态，并提供明确的 route priority 编辑 | 不复制 planner/状态机到 reducer，不新增 TUI 私有 route 真值 | Go/TUI reducer/render harness 与真实本地终端 smoke |
 | 8 | CONNCOPY001 | 现有 route/path/phase 投影和中英文 locale | App 以 Direct、SSH、P2P、ICE 协商和 Relay 等用户概念表达连接过程 | 不暴露 JNI、native runtime、内部 handle 或 Go 实现术语 | 中英文 locale 对称、状态映射测试和 Android UI smoke |
 | 9 | LOADUX001 | 现有统一 loading primitive | 固定方形外框上的单段沿周长运动动画，reduced-motion 静止 | 不改变业务加载时序或引入新动画框架 | 两帧像素/布局稳定检查、reduced-motion 和 Android UI smoke |
-| 10 | PG004 | 已部署 Supabase、Controller、双 Edge、UXE2E001 APK | 公网 staging 的备份恢复和运行可靠性闭环 | 除当前显式体验切片外不再改已验收 UI，不新增商业套餐能力 | R2 加密备份/独立恢复、account refresh、Edge Presence 恢复、网络切换 workspace 重建、文件上传下载校验 |
-| 11 | CLOUDP007 | PG004 稳定公网基线和最终产品入口 | Development 全产品业务能力矩阵与发布前回归结论 | 不建设 production provider、多区域、Web terminal 或新架构 | 注册/交易/管理、P2P/Relay、terminal/file、quota、suspend、topology/command、重启、Direct/SSH；双 Agent PASS |
+| 10 | APPTERM001 | 已有 `TerminalDefaults` Proto/API、Go Client Engine session 和 Android terminal workspace | daemon 默认 shell/home、可直接创建 terminal、环境变量 KV/批量粘贴和台前高频工具 | 不新增平行 DTO、Kotlin 网络状态机、terminal 权限或 Cloud 行为 | Go/UI harness；ARM64 模拟器从真实 App UI 创建 terminal、输入输出、Files/Resize/Tools、高字体/横屏和 crash scan |
+| 11 | PG004 | 已部署 Supabase、Controller、双 Edge、UXE2E001 APK | 公网 staging 的备份恢复和运行可靠性闭环 | 除当前显式体验切片外不再改已验收 UI，不新增商业套餐能力 | R2 加密备份/独立恢复、account refresh、Edge Presence 恢复、网络切换 workspace 重建、文件上传下载校验 |
+| 12 | OPSHUB001 | 现有 Hub registry、assignment、Fleet 与动态 enrollment directory | 数据库驱动的 Hub 创建、批准、编辑、drain、迁移和 disable | 不做自动再平衡、Hub 硬删除或数据库在线真值 | 运行中新增第三 Edge 无需重建客户端/Controller；新 assignment 可选中，已有 assignment 不漂移，drain/fence 后停用 |
+| 13 | OPSUSER001 | Account、Device、Presence topology、CommandOutbox | 用户管理和按机器聚合的 Agent 概览 | 不新增 Web DTO、DB online 或 pendingKick | 角色保护、账号隔离、freshness、Kick/Revoke/Migrate 和审计 E2E |
+| 14 | OPSCAT001 | Versioned PlanCatalog、Subscription、Entitlement | 数据库版本化套餐发布与类型化用户特权 | 不原地修改已售套餐，不允许自由 JSON policy | 新旧版本快照、override 生效/过期和 Hub policy revision E2E |
+| 15 | OPSCOM001 | Order、PaymentAttempt、PaymentEvent、Subscription | 订单/订阅运营工作流与有界优惠码 | 不直接改 paid，不用 fake order 赠送订阅，不建复杂营销平台 | 事件时间线、人工 adjustment、并发兑换、退款/撤销、幂等与审计 E2E |
+| 16 | CREEM001 | OPSCOM001 normalized event journal 与 Creem sandbox | Creem checkout、`/pay/creem` Webhook 和轮询 reconciliation | success redirect 不开通权限；Webhook/轮询不建立双真值 | sandbox checkout、paid、阻断 Webhook 后轮询补偿、取消/past due/refund、重复/乱序、重启恢复 |
+| 17 | OPSREL001 | 现有发布产物与客户端版本身份 | CLI/daemon/Android 签名版本目录、channel、兼容、灰度和回滚 | 不建设 CDN、自动商店发布或通用制品平台 | hash/signature、版本单调、稳定分桶、兼容/强制策略和回滚 E2E |
+| 18 | OPSE2E001 | 九模块最终 Web/Go 实现 | 运营后台全业务证据矩阵 | 不用直接写数据库、fake ack 或页面快照代替真实流程 | Web UI + PostgreSQL + Controller + 双 Edge；权限、CSRF、近期认证、审计和重启矩阵 |
+| 19 | CLOUDP007 | PG004 稳定公网基线和运营后台完整能力 | Development 全产品业务能力矩阵与发布前回归结论 | 不建设多区域、Web terminal 或新架构 | 注册/Creem 交易/九类管理、P2P/Relay、terminal/file、quota、topology/command、重启、Direct/SSH；双 Agent PASS |
 
 执行时只允许修复当前行完成证据直接证明的问题。后续行发现的问题登记到对应切片，不得为了提前“顺手完成”跨行扩张。
 
 ## 当前允许范围
 
-- 主动范围：`AGENTS.md`、`workflow.md`、`docs/remote-platform/`、`proto/remoteauthpb/`、`proto/bindingpb/`、`client/endpoint/`、`client/port/`、`client/adapter/managed/`、`client/runtime/`、`client/binding/`、`clients/ui/`、`clients/mobile/` 和当前切片测试。
+- 主动范围：`AGENTS.md`、`workflow.md`、`docs/remote-platform/`、`proto/apipb/`、`proto/remoteauthpb/`、`proto/bindingpb/`、`api_layer/`、`api_mapping/`、`core/`、`client/endpoint/`、`client/port/`、`client/adapter/managed/`、`client/runtime/`、`client/binding/`、`clients/ui/`、`clients/mobile/` 和当前切片测试。`APPTERM001` 只消费现有 `TerminalDefaults` 契约并修正默认值/创建链路，不新增 Proto 字段。
 - Client/Companion 联动：`proto/cloudpb/`、`private/cloud/companion/`、`shared/cloudcompanion/`、`remote/daemon/`、`remote/webrtc/`、`cmd/muxvia/`，只在 NETUX001 的策略传递、TURN URL 筛选或真实观测消息链路需要时修改。
 - Android/Web 管理联动：`clients/mobile/android/`、`clients/ui/`、`private/cloud/web-controller/`，只在对应登录、topology、management 或 E2E 切片修改。
 - TUI 受限联动：`tui/` 只在 `TUIUX001` 修改，并且只能消费 Go Client Engine 的 Endpoint/Route/session 投影，不建立第二份连接策略或状态真值。
@@ -148,8 +157,17 @@ muxvia-cloud-edge × N
 | ENROLLUX002 | 已完成 | Controller enrollment 选择与事务 | daemon 提议 Hub、Controller 只校验；同批准 flow 候选失效重试；现有 complete 有界等待批准；ownership/assignment/session/audit 单事务和 delivery grace 保持唯一持久提交 |
 | ENROLLUX003 | 已完成 | Go Client Engine 与 CLI enrollment | 候选 Hub 有界协议探测、本地排序、批准等待和阶段提示；commit 后 Presence 独立重连，失败不删除 DeviceIdentity 或回退为未注册 |
 | ENROLLUX004 | 已完成 | Web 替换与移除交互 | 批准前显示归属冲突和替换影响；活跃跨账号拒绝、已撤销同身份显式 transfer；持久 revoke 与 Hub 执行状态分离 |
-| ENROLLUX005 | 进行中 | enrollment 全产品 E2E | Go/Controller、Web 9/9、全量 public/private/client、standard/devcloud APK 和 ARM64/API 35 模拟器冷启动/crash scan 已通过；仍需同一 APK 从真实 App UI 完成 Cloud resolve/connect，并在 Web 移除后证明不可重连 |
+| APPTERM001 | 已完成 | App terminal 创建与工具体验 | 复用现有 `TerminalDefaults` Proto/API；daemon 按当前账号返回默认 shell 与 home；App 新建表单自动填充并提交完整 terminal ID/size；环境变量支持 KV 行与 `KEY=value`/`export KEY=value` 批量粘贴且不进入 metadata tag；Files、Resize 和 Tools 已进入主工具栏。ARM64/API 35 模拟器从真实 App UI 完成 Direct 配对、创建、环境变量输入输出、文件管理、尺寸控制、工具面板、150% 字体/横屏和 crash scan；验收 APK 为 `.artifacts/android/app-devcloud-debug.apk`，SHA-256 `d63e389aae69d81bd02896232a364a6f08ef8148b058b14de436e0f2269c74be` |
+| PAIRROUTE001 | 已完成 | 多 Route 配对与客户端 Route 管理 | Proto 多 seed、Route display name、Direct/SSH/Cloud pairing connector、同 generation race、默认 Direct+Cloud、普通参数与严格 URI、Low QR、raw-DEFLATE、同 DeviceIdentity 增量合并已接通；App Route 管理器完成 CRUD、启用、测试、优先级和 SSH Keystore credential，逐 Route 稳定错误不泄露底层文本。ARM64/API 35 真实 App UI 完成 Camera2 Low QR、marker 0/1、单 Endpoint 合并、中英文、150%/200% 字体、横屏、Accessibility tree 和 crash scan；最终 APK SHA-256 `bb0c9c7515bc206562ffd3aedf598ae546d82fea3c4b463f454fa99917b61974`。用户明确后续 Android 验收使用模拟器，实体机仅保留 PG004 既有补充证据；旧 pair `--no-cloud` 和隐式 override 已删除 |
+| ENROLLUX005 | 待继续 | enrollment 全产品 E2E | Go/Controller、Web 9/9、全量 public/private/client、standard/devcloud APK 和 ARM64/API 35 模拟器冷启动/crash scan 已通过；已补 enrollment-backed Cloud 默认启动、Presence/Companion 网络恢复、terminal 重进复用同一 DataChannel、单文件内嵌 Companion 原子释放、跨版本 CLI lifecycle 接管，以及 owner-only IPC 启动锁/活跃 socket 防覆盖 harness；真实单文件 daemon 连续两次 restart 时 Companion PID 保持唯一不变。另修复 Edge 请求错误使用 manifest 静态 Hub、忽略 enrollment session owning Hub 而触发 token audience `UNAUTHENTICATED`，同一 daemon 重新 enrollment 时把自身 existing assignment 误计为新增容量而返回 `HUB_CANDIDATE_STALE`，Clash fake-IP 首次 TLS 超过三秒导致 `NO_REACHABLE_HUB`，以及 Android 每次扫码随机生成 client device 导致同一手机重复展示；现在 daemon/Official App 均按稳定 `device_id` 聚合，重复注册码只原子轮换唯一设备 session。Web 默认设备列表只展示有效设备，revoke tombstone 进入独立默认收起的只读审计区。双 Hub/代理慢握手 harness、Controller race、线上 Controller 部署和真实 US assignment Presence 持续运行通过。PAIRROUTE001 完成后，仍需同一 APK 从真实 App UI 完成 Cloud resolve/connect，并在 Web 移除后证明不可重连 |
 | PG004 | 进行中 | Supabase staging、公网 bootstrap 装配与备份恢复验收 | `PG004-HUBSEL`、AUTO 双端 TURN、同端口 UDP/TCP、实体 5G + Clash TURN/TCP terminal application data 均已通过并部署；最终 ARM64/API 35 APK 又完成有界 Cloud open、半开 Pion/DataChannel lifecycle、SAF generation 恢复、Relay/TCP terminal 输入、文件上传/下载摘要、9.1 MiB 后取消无残留、返回重进和 crash scan。APK 与设备 `base.apk` SHA-256 均为 `293e97a7e1ddbfb1a2b4b260941bab267bdeb72d0abc2c98a35af85147490bc2`。当前仅剩 R2 age 加密上传/独立恢复缺少可用 S3/R2 access key；测试支付必须明确标记 staging，不得宣称正式商业生产 |
+| OPSHUB001 | 待开始 | Hub 管理与动态目录 | Proto/PostgreSQL/Operator 完成 create/approve/update/drain/disable；删除正式 `Config.Deployments` 目录 ownership；运行中新增 Edge 与 assignment/fence E2E |
+| OPSUSER001 | 待开始 | 用户管理与 Agent 概览 | 账号/机器列表详情、角色保护、session/device revoke、Presence freshness 和 CommandOutbox 操作形成 Web E2E |
+| OPSCAT001 | 待开始 | 套餐发布与用户特权 | 数据库版本化 catalog、历史快照、类型化 EntitlementOverride、到期重算与 signed policy E2E |
+| OPSCOM001 | 待开始 | 订单、订阅与优惠码 | normalized event 时间线、operator adjustment、refund/revoke、promo reservation/redemption 和并发/重放事务 E2E |
+| CREEM001 | 待开始 | Creem 正式支付 provider | Go adapter、sandbox/production secret、checkout、`POST /pay/creem` raw-body HMAC、Webhook + 有界轮询同 journal；真实 sandbox 与重启 E2E |
+| OPSREL001 | 待开始 | CLI/daemon/Android 版本管理 | 签名制品 metadata、channel activation、兼容/强制/灰度/回滚和 Operator UI E2E |
+| OPSE2E001 | 待开始 | 九模块运营后台 E2E | Web UI 发起九类流程，PostgreSQL、Controller、双 Edge、authorization/audit/restart 证据齐全 |
 | CLOUDP007 | 待开始 | Development 全产品 E2E | PostgreSQL 迁移后从现有进度恢复；Web UI 注册/交易/管理 + Android ARM64 真实 APK P2P/Relay terminal/file、quota、suspend、topology、命令、重启恢复、Direct/SSH 回归；双 Agent 审查 |
 | CLOUDP008 | 延后 | Production Cloud 装配与发布 | 仅 PG004/CLOUDP007 完成后启动；HTTPS、Companion 签名、Android production origin、真实 provider；正式存储已由 PG001-PG004 完成，不重复建设第二套数据库路径 |
 | WEB001 | 延后 | Web/WASM terminal 产品 | 仅用户明确恢复后启动 |
@@ -223,7 +241,7 @@ muxvia-cloud-edge × N
 
 - 每个切片按 `cloud-product-spec.md` 的状态机、quota 和 usage 规则补 contract/harness。
 - payment replay、Subscription transition、P2P concurrency、period reservation、signed usage、迟到/冲突/重启恢复必须分别证明。
-- 不为真实支付、多区域或分布式 quota 扩大范围。
+- 不为 Creem production 收费、其它支付 provider、多区域或分布式 quota 扩大范围。
 
 ### HUB004-HUB006
 
@@ -270,10 +288,10 @@ muxvia-cloud-edge × N
 ## 执行规则
 
 1. 每轮先读取 `AGENTS.md`、`cloud-product-spec.md`、`multi-hub-control-topology-spec.md`、`multi-hub-technical-plan.md` 和本文件，再检查 `git status --short --branch`。
-2. 只执行“当前收口路线”的当前行；`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`、`CONNCOPY001` 和 `LOADUX001` 已完成，当前最早未完成切片是 `PG004`，随后为 `CLOUDP007`。`待继续` 仅在排到对应行时恢复，`延后` 不属于当前目标。
+2. 只执行“当前收口路线”的当前行；`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`、`CONNCOPY001`、`LOADUX001`、`APPTERM001` 和 `PAIRROUTE001` 已完成，当前最早未完成切片恢复为 `ENROLLUX005`，随后为 `PG004`、`OPSHUB001`、`OPSUSER001`、`OPSCAT001`、`OPSCOM001`、`CREEM001`、`OPSREL001`、`OPSE2E001` 和 `CLOUDP007`。`待继续` 仅在排到对应行时恢复，`延后` 不属于当前目标。
 3. 待开始切片先标记 `进行中`，不得跨切片实现后续能力。
 4. 新跨边界字段固定执行 `proto -> generated -> compatibility harness -> domain/runtime -> adapter -> UI/client`。
 5. 先写最小真实 harness；不能用固定账号、直接写 store、手工改 projection 或 fake ack 冒充产品链路。
-6. 不建设 Hub-to-Hub forwarding、多区域、真实支付、复杂优惠、Web terminal 或通用分布式平台。
+6. 不建设 Hub-to-Hub forwarding、多区域、Creem 之外的真实支付 provider、复杂营销规则引擎、Web terminal 或通用分布式平台。
 7. 每个切片完成准入、更新状态并使用中文提交信息提交。
 8. `HUB007`、`UXE2E001` 和 `CLOUDP007` 默认双 Agent 审查；其它切片仅用户明确要求时审查。

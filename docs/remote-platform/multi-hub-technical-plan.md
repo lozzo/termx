@@ -189,7 +189,9 @@ private/cloud/edge/
 ```sql
 hub_deployments(
   hub_id PRIMARY KEY, deployment_id, credential_fingerprint,
-  region, enabled, last_control_generation, updated_at
+  label, region, public_hub_url, health_url,
+  max_assignments, enabled, draining, directory_revision,
+  last_control_generation, updated_at
 )
 
 hub_assignments(
@@ -330,7 +332,7 @@ CompleteDeviceEnrollmentRequest.hub_observations[] -> HubReachabilityObservation
 
 实现 owner 与链路：
 
-1. `private/cloud/controller.DeploymentConfig` 为每个已注册 deployment 配置公开 `hub_url`、`health_url` 和 `max_assignments`；正式 URL 使用 HTTPS，loopback HTTP 只允许 development harness。
+1. PostgreSQL `hub_deployments` 为每个已注册 deployment 持久化公开 `hub_url`、`health_url`、region、lifecycle revision 和 `max_assignments`；正式 URL 使用 HTTPS，loopback HTTP 只允许 development harness。`private/cloud/controller.DeploymentConfig` 只允许作为显式 development 首次 bootstrap 输入，不是运行时目录真值，也不得覆盖已有 row。
 2. Controller 只从 enabled registry、当前 active Hub control attachment 和未满容量构造候选，按 Hub ID 稳定排序并截断到 100。
 3. enrollment challenge 只发送 Hub ID、公开 Hub URL、health URL 和 region；精确 assignment 数与容量仅留在 Controller 内部，不能作为跨租户 fleet 摘要暴露给 daemon。
 4. `client/adapter/managed` 使用最多 16 个 worker、每候选独立 timeout、禁止 redirect 的 HTTP client 探测 health URL；`cmd/muxvia` 只编排调用和提交 generated Proto，不拥有网络选择算法。
@@ -778,6 +780,16 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 - 独立进程运行一个 Controller、两个 Edge 和多个 daemon/client；每个 Edge 内 Hub 无盘，Relay 只有 usage outbox 可持久化。
 - 验证 assignment migration、旧 epoch fencing、Controller outage、Edge restart、inventory recovery、四类 command、P2P/Relay close 和隐私扫描。
 
+### OPSHUB001：Hub 管理与动态目录
+
+- `cloud_management.proto` 先定义 deployment create/update、identity approve、drain/disable request/result 和带 revision 的 fleet projection；Web 只消费 generated Proto JSON。
+- `hubregistry` 持久拥有 label、region、public/health URL、Hub/Relay identity fingerprint、capacity、enabled/draining 和 directory revision；control attachment 与 freshness 仍是进程内观察，不写在线 bool。
+- Controller runtime 的 candidate provider、initial projection、Relay handler、mobile activation、policy publisher 和 target resolve 全部按 registry revision 读取同一目录，不再遍历 `Config.Deployments`。
+- 新 Edge 先以待批准 identity attachment 出现在 Operator UI；批准 fingerprint 且 enabled 后才能接受 assignment。URL/capacity 变更不改变 Hub identity 或 assignment epoch。
+- drain 原子禁止新 assignment，再复用已有 migration/CommandOutbox/epoch fence 逐台迁移；assignment 清零前拒绝 disable。deployment 只 archive，不 hard delete。
+- client/Companion manifest 删除 Hub URL 和 fleet snapshot，只保留 Controller origin/trust material；daemon enrollment/refresh 与手机 target resolve 始终消费 Controller 签名动态目录。
+- process E2E 在 Controller 不重启、CLI/APK 不重建的情况下新增第三 Edge，证明新 daemon 可选中、已有 daemon 不漂移、drain 后无新 assignment、fence 后旧 Hub 拒绝旧 epoch。
+
 ### CLOUDP007：Development 全产品 E2E
 
 - Web UI 完成注册、交易、套餐、设备、topology、command 和 usage。
@@ -796,6 +808,7 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 | HUB006 | 只按 lease metadata 撤销但不关闭 allocation 的路径 |
 | CLOUDP006 | Web hand-written Cloud management DTO 和 direct store mutation handler |
 | HUB002 | devcloud 单进程/单 Edge E2E 装配作为主验收入口 |
+| OPSHUB001 | 正式 `Config.Deployments` URL/capacity ownership、Controller 启动时覆盖 registry、client/Companion manifest 静态 Hub URL、Hub hard delete |
 
 `control-plane/directory` 中短期 `ManagedSession` 只保留到真实 daemon registry/topology 和 signaling correlation 接管完成。若届时无调用者，直接删除该 map/API，不把它改造成第二份 active session truth。
 

@@ -14,6 +14,7 @@ import (
 	"github.com/muxvia/muxvia/private/cloud/companion/session"
 	cloudcommerce "github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/persistence"
 	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
 	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
@@ -46,7 +47,8 @@ func TestMobileActivationRequiresWebApprovalAndIsSingleUse(t *testing.T) {
 	if _, err := service.ApproveMobileActivation(context.Background(), account.GetAccountId(), activation.GetUserCode()); !errors.Is(err, cloudcommerce.ErrNotFound) {
 		t.Fatalf("approve before claim = %v", err)
 	}
-	flow, err := service.claim(&cloudpb.ClaimMobileActivationRequest{UserCode: activation.GetUserCode(), ClientMetadata: &cloudpb.DeviceMetadata{DisplayName: "Android phone", Platform: "android/arm64", MuxviaVersion: "test"}})
+	const clientDeviceID = "client-12345678-1234-1234-1234-123456789abc"
+	flow, err := service.claim(&cloudpb.ClaimMobileActivationRequest{UserCode: activation.GetUserCode(), ClientDeviceId: clientDeviceID, ClientMetadata: &cloudpb.DeviceMetadata{DisplayName: "Android phone", Platform: "android/arm64", MuxviaVersion: "test"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,22 +66,61 @@ func TestMobileActivationRequiresWebApprovalAndIsSingleUse(t *testing.T) {
 	if err != nil || !approved.GetApproved() {
 		t.Fatalf("approve = %+v, %v", approved, err)
 	}
+	commitFailure := errors.New("temporary mobile activation commit failure")
+	service.activationStore = &failOnceMobileActivationStore{delegate: service.activationStore, failure: commitFailure}
+	if _, err := service.complete(context.Background(), &cloudpb.CompleteLoginRequest{FlowId: flow.GetFlowId()}); !errors.Is(err, commitFailure) {
+		t.Fatalf("complete commit failure = %v", err)
+	}
+	afterFailure, err := service.InspectMobileActivation(context.Background(), account.GetAccountId(), activation.GetUserCode())
+	if err != nil || afterFailure.GetState() != cloudpb.MobileActivationState_MOBILE_ACTIVATION_STATE_APPROVED {
+		t.Fatalf("activation was consumed before final commit: %+v, %v", afterFailure, err)
+	}
 	wire, err := service.complete(context.Background(), &cloudpb.CompleteLoginRequest{FlowId: flow.GetFlowId()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wire.AccountID != account.GetAccountId() || wire.DeviceID == "" || wire.HubID != "hub-1" || wire.HubURL != "http://127.0.0.1:41002" || wire.HubRegion != "local-1" || len(wire.AccessToken) == 0 || len(wire.RefreshToken) < 32 {
+	if wire.AccountID != account.GetAccountId() || wire.DeviceID != clientDeviceID || wire.HubID != "hub-1" || wire.HubURL != "http://127.0.0.1:41002" || wire.HubRegion != "local-1" || len(wire.AccessToken) == 0 || len(wire.RefreshToken) < 32 || wire.PlanID != "managed-free" || wire.PlanName != "Managed Free" || wire.SubscriptionStatus != cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE.String() || wire.SubscriptionRevision != 1 {
 		t.Fatalf("unexpected session: %+v", wire)
 	}
 	if _, err := topology.Device(context.Background(), wire.DeviceID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.complete(context.Background(), &cloudpb.CompleteLoginRequest{FlowId: flow.GetFlowId()}); err == nil {
-		t.Fatal("activation flow was replayed")
+	replayed, err := service.complete(context.Background(), &cloudpb.CompleteLoginRequest{FlowId: flow.GetFlowId()})
+	if err != nil || replayed.AccountID != wire.AccountID || string(replayed.RefreshToken) != string(wire.RefreshToken) {
+		t.Fatalf("activation delivery retry = %+v, %v", replayed, err)
 	}
 
-	refreshed, err := service.refreshSession(context.Background(), refreshWire(wire.RefreshToken))
-	if err != nil || refreshed.DeviceID != wire.DeviceID || len(refreshed.RefreshToken) < 32 {
+	// 注册码是一次性事务，不是设备实体。同一 Official App 安装再次扫码只轮换同一个
+	// client_device_id 的 session，账号设备投影仍必须只有一台手机。
+	secondActivation, err := service.CreateMobileActivation(context.Background(), account.GetAccountId(), account.GetUserId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondFlow, err := service.claim(&cloudpb.ClaimMobileActivationRequest{UserCode: secondActivation.GetUserCode(), ClientDeviceId: clientDeviceID, ClientMetadata: &cloudpb.DeviceMetadata{DisplayName: "Android phone renamed", Platform: "android/arm64", MuxviaVersion: "test-2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ApproveMobileActivation(context.Background(), account.GetAccountId(), secondActivation.GetUserCode()); err != nil {
+		t.Fatal(err)
+	}
+	if err := topology.PutDeviceOwnership(context.Background(), &cloudpb.CloudDevicePolicy{AccountId: account.GetAccountId(), DeviceId: clientDeviceID, DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: account.GetAuthRevision(), Revoked: true}); err != nil {
+		t.Fatal(err)
+	}
+	secondWire, err := service.complete(context.Background(), &cloudpb.CompleteLoginRequest{FlowId: secondFlow.GetFlowId()})
+	if err != nil || secondWire.DeviceID != clientDeviceID {
+		t.Fatalf("second activation = %+v, %v", secondWire, err)
+	}
+	devices, err := topology.ListAccountDevices(context.Background(), account.GetAccountId(), cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, false, 10)
+	if err != nil || len(devices) != 1 || devices[0].GetDeviceId() != clientDeviceID {
+		t.Fatalf("stable client device projection = %+v, %v", devices, err)
+	}
+	reactivated, err := topology.Device(context.Background(), clientDeviceID)
+	if err != nil || reactivated.Revoked || reactivated.AuthEpoch != account.GetAuthRevision() {
+		t.Fatalf("reactivated ownership = %+v, %v", reactivated, err)
+	}
+
+	refreshed, err := service.refreshSession(context.Background(), refreshWire(secondWire.RefreshToken))
+	if err != nil || refreshed.DeviceID != wire.DeviceID || len(refreshed.RefreshToken) < 32 || refreshed.PlanID != wire.PlanID || refreshed.SubscriptionStatus != wire.SubscriptionStatus || refreshed.SubscriptionRevision != wire.SubscriptionRevision {
 		t.Fatalf("refresh = %+v, %v", refreshed, err)
 	}
 	if _, err := service.refreshSession(context.Background(), refreshWire(wire.RefreshToken)); err == nil {
@@ -89,6 +130,20 @@ func TestMobileActivationRequiresWebApprovalAndIsSingleUse(t *testing.T) {
 	if _, err := service.refreshSession(context.Background(), refreshWire(refreshed.RefreshToken)); err == nil {
 		t.Fatal("expired refresh token succeeded")
 	}
+}
+
+type failOnceMobileActivationStore struct {
+	delegate persistence.MobileActivationStore
+	failure  error
+}
+
+func (store *failOnceMobileActivationStore) CommitMobileActivation(ctx context.Context, input persistence.MobileActivationCommit, now time.Time) error {
+	if store.failure != nil {
+		failure := store.failure
+		store.failure = nil
+		return failure
+	}
+	return store.delegate.CommitMobileActivation(ctx, input, now)
 }
 
 func TestDaemonSessionRefreshRevalidatesOwnershipAndAssignment(t *testing.T) {
@@ -160,7 +215,7 @@ func newMobileActivationTestService(t *testing.T) (*mobileActivationService, *cl
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := newMobileActivationService(commerce, topology, registry, issuer, "hub-1", "http://127.0.0.1:41002", "local-1", func(hubID string) (string, string, bool) {
+	service, err := newMobileActivationService(commerce, store, topology, registry, issuer, "hub-1", "http://127.0.0.1:41002", "local-1", func(hubID string) (string, string, bool) {
 		switch hubID {
 		case "hub-1":
 			return "http://127.0.0.1:41002", "local-1", true

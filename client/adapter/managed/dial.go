@@ -103,6 +103,9 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	}
 	selected, err := resolveDialRoute(ctx, dialer.Cloud, request, resolved, policy, relayTransport, dialer.now())
 	if err != nil {
+		if cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENTITLEMENT_DENIED) {
+			return nil, &clientruntime.Error{Code: clientruntime.ErrorEntitlement, Message: "managed Relay entitlement is unavailable", Cause: err}
+		}
 		return nil, err
 	}
 	peer, err := dialer.Peers.OpenManagedPeer(ctx, selected.iceServers, selected.preference, selected.relayOnly)
@@ -157,6 +160,13 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	dialer.reportPhase(clientruntime.EndpointPhaseConnecting)
 	if err := peer.WaitReady(ctx); err != nil {
 		closeAttempt()
+		if selected.relayEntitlementDenied {
+			return nil, &clientruntime.Error{
+				Code:    clientruntime.ErrorEntitlement,
+				Message: "P2P ICE failed and managed Relay is not included in the current plan",
+				Cause:   err,
+			}
+		}
 		return nil, err
 	}
 	if selected.expectedPath != "" && peer.ObservedPath() != selected.expectedPath {

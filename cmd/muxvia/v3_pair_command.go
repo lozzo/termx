@@ -120,15 +120,24 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 	var terminalID string
 	var ticketTTL time.Duration
 	var grantLifetime time.Duration
+	var routeSpecs []string
+	var directID string
+	var directName string
 	var signalingAddresses []string
 	var iceTCPAddresses []string
 	var serverName string
-	var includeCloud bool
+	var sshID string
+	var sshName string
+	var sshHost string
+	var sshPort uint16
+	var sshUser string
+	var sshHostKeys []string
 	command := &cobra.Command{
 		Use:   "create",
 		Short: "Issue a short-lived one-time pairing ticket from the local daemon",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			socketPath := resolveV3Socket(*socket)
 			selectedOutputs := 0
 			for _, selected := range []bool{rawOutput, textOutput, strings.TrimSpace(outputPath) != "", strings.TrimSpace(qrOutputPath) != ""} {
 				if selected {
@@ -138,7 +147,7 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 			if selectedOutputs > 1 {
 				return usageCLIError("pair create --raw, --text, --out, and --qr-file are mutually exclusive")
 			}
-			client, err := dialOrStartV3ClientContext(cmd.Context(), resolveV3Socket(*socket), resolveV3LogFilePath(*logFile), nil)
+			client, err := dialOrStartV3ClientContext(cmd.Context(), socketPath, resolveV3LogFilePath(*logFile), nil)
 			if err != nil {
 				return err
 			}
@@ -164,15 +173,13 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			directRoute, err := v3DirectPairingRoute(v3DirectPairingRouteOptions{
-				SignalingAddresses: signalingAddresses, ICETCPAddresses: iceTCPAddresses, ServerName: serverName,
+			routes, err := v3PairingRoutes(v3PairRouteFlags{
+				Routes: routeSpecs, DirectID: directID, DirectName: directName, SignalingAddresses: signalingAddresses,
+				ICETCPAddresses: iceTCPAddresses, ServerName: serverName, SSHID: sshID, SSHName: sshName,
+				SSHHost: sshHost, SSHPort: sshPort, SSHUser: sshUser, SSHHostKeys: sshHostKeys,
 			})
 			if err != nil {
 				return usageCLIError(err.Error())
-			}
-			routes := []*remoteauthpb.EndpointRouteConfigV1{directRoute}
-			if includeCloud {
-				routes = append([]*remoteauthpb.EndpointRouteConfigV1{v3ManagedPairingRoute()}, routes...)
 			}
 			response, err := application.ClientAccessTicketCreate(cmd.Context(), &apipb.ClientAccessTicketCreateCommand{Request: &remoteauthpb.ClientAccessTicketCreateRequest{
 				Label: label, Scope: clientAccessScopeToProto(scope), TicketTtlSeconds: int64(ticketTTL / time.Second), GrantLifetimeSeconds: int64(grantLifetime / time.Second),
@@ -233,10 +240,18 @@ func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 	command.Flags().StringVar(&terminalID, "terminal", "", "limit the capability to one terminal instead of daemon-wide access")
 	command.Flags().DurationVar(&ticketTTL, "ttl", 10*time.Minute, "one-time ticket lifetime")
 	command.Flags().DurationVar(&grantLifetime, "grant-ttl", 90*24*time.Hour, "bound capability lifetime")
+	command.Flags().StringArrayVar(&routeSpecs, "route", nil, "pairing Route: direct, cloud, ssh, or a strict Route URI (repeatable)")
+	command.Flags().StringVar(&directID, "direct-id", "", "stable ID suffix for the parameterized Direct Route")
+	command.Flags().StringVar(&directName, "direct-name", "", "display name for the parameterized Direct Route")
 	command.Flags().StringArrayVar(&signalingAddresses, "signaling-address", nil, "published Direct signaling HOST:PORT (repeatable; requires --ice-tcp-address)")
 	command.Flags().StringArrayVar(&iceTCPAddresses, "ice-tcp-address", nil, "published Direct ICE-TCP HOST:PORT (repeatable; requires --signaling-address)")
 	command.Flags().StringVar(&serverName, "server-name", "", "optional Direct server name bound into the signed Route hint")
-	command.Flags().BoolVar(&includeCloud, "cloud", false, "include a Muxvia Cloud managed Route for this daemon DeviceID (requires Cloud enrollment)")
+	command.Flags().StringVar(&sshID, "ssh-id", "", "stable ID suffix for the parameterized SSH Route")
+	command.Flags().StringVar(&sshName, "ssh-name", "", "display name for the parameterized SSH Route")
+	command.Flags().StringVar(&sshHost, "ssh-host", "", "SSH server host for the parameterized SSH Route")
+	command.Flags().Uint16Var(&sshPort, "ssh-port", 0, "SSH server port (defaults to 22)")
+	command.Flags().StringVar(&sshUser, "ssh-user", "", "SSH user for the parameterized SSH Route")
+	command.Flags().StringArrayVar(&sshHostKeys, "ssh-host-key", nil, "pinned SSH SHA256 host-key fingerprint (repeatable)")
 	return command
 }
 
@@ -257,7 +272,7 @@ func clientAccessScopeToProto(scope remoteauth.Scope) *remoteauthpb.ClientAccess
 // 二维码不包含 ticket、scope 或 grant；调用方仍应在扫描后清屏，避免 claim 在有效期内被旁观者使用。
 func renderV3PairingQR(output io.Writer, payload []byte, expiresAt time.Time) error {
 	portablePayload := v3PairingBootstrapURI(payload)
-	code, err := qrcode.New(portablePayload, qrcode.Medium)
+	code, err := qrcode.New(portablePayload, qrcode.Low)
 	if err != nil {
 		return fmt.Errorf("encode pairing QR: %w", err)
 	}
@@ -331,7 +346,7 @@ func v3PairingBootstrapURI(payload []byte) string {
 
 // renderV3PairingPNG 生成带 quiet zone 的正方形位图，供无法完整显示终端二维码时离线展示。
 func renderV3PairingPNG(portablePayload string) ([]byte, error) {
-	code, err := qrcode.New(portablePayload, qrcode.Medium)
+	code, err := qrcode.New(portablePayload, qrcode.Low)
 	if err != nil {
 		return nil, fmt.Errorf("encode pairing QR: %w", err)
 	}
@@ -351,12 +366,26 @@ func renderV3PairingPreview(output io.Writer, payload []byte, expiresAt time.Tim
 		offer.GetDeviceId(), remoteauth.Fingerprint(ed25519.PublicKey(offer.GetDevicePublicKey())), formatTerminalTime(expiresAt)); err != nil {
 		return err
 	}
-	if direct := offer.GetRoute().GetDirectWebrtcTcp(); direct != nil {
-		_, err = fmt.Fprintf(output, "Route direct: signaling=%s ice-tcp=%s\n", direct.GetSignalingAddress(), direct.GetIceTcpAddress())
-		return err
+	for _, route := range offer.GetRoutes() {
+		if direct := route.GetDirectWebrtcTcp(); direct != nil {
+			if _, err = fmt.Fprintf(output, "Route %s: direct signaling=%s ice-tcp=%s\n", route.GetRouteId(), direct.GetSignalingAddress(), direct.GetIceTcpAddress()); err != nil {
+				return err
+			}
+			continue
+		}
+		if managed := route.GetManagedWebrtc(); managed != nil {
+			if _, err = fmt.Fprintf(output, "Route %s: cloud target=%s\n", route.GetRouteId(), managed.GetTargetDeviceId()); err != nil {
+				return err
+			}
+			continue
+		}
+		if ssh := route.GetSshWebrtcTcp(); ssh != nil {
+			if _, err = fmt.Fprintf(output, "Route %s: ssh %s@%s:%d\n", route.GetRouteId(), ssh.GetUser(), ssh.GetHost(), ssh.GetPort()); err != nil {
+				return err
+			}
+		}
 	}
-	_, err = fmt.Fprintf(output, "Route cloud: target=%s\n", offer.GetRoute().GetManagedWebrtc().GetTargetDeviceId())
-	return err
+	return nil
 }
 
 func pairRouteViews(bundle *remoteauth.PairingBundle) []pairRouteView {

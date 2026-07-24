@@ -21,6 +21,9 @@ type dialRoute struct {
 	relayOnly       bool
 	expectedPath    endpoint.Path
 	selectionReason cloudcompanion.RouteSelectionReason
+	// relayEntitlementDenied 只记录 AUTO 在 Relay 准入被套餐拒绝后降级到 P2P 的事实。
+	// 只有后续 ICE 也失败时才能据此提示升级套餐；P2P 成功时不得展示套餐错误。
+	relayEntitlementDenied bool
 }
 
 // resolveDialRoute 在 STANDARD_RELAY 下通过 Companion 获取 principal-specific RelayLease，在 smart_route 下请求私有 Planner 的短期计划。
@@ -48,6 +51,7 @@ func resolveDialRoute(
 			if !policy.RelayOnly && cloudcompanion.RelayLeaseUnavailableForAuto(err) {
 				return constrainDialRouteTransport(dialRoute{
 					iceServers: cloneRouteIceServers(resolved.GetIceServers()), preference: policy.RoutePreference,
+					relayEntitlementDenied: cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENTITLEMENT_DENIED),
 				}, transport)
 			}
 			return dialRoute{}, err

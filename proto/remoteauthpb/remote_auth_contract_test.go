@@ -46,12 +46,24 @@ func TestAuthEnvelopeHasSinglePayloadOneof(t *testing.T) {
 func TestPairingClaimContractIsCompactAndSeparatedFromAuthorization(t *testing.T) {
 	offer := (&PairingClaimOfferV1{}).ProtoReflect().Descriptor()
 	want := map[protoreflect.Name]protoreflect.FieldNumber{
-		"schema_version": 1, "claim": 2, "device_id": 3, "device_public_key": 4, "expires_at_unix_nano": 5, "route": 6,
+		"schema_version": 1, "claim": 2, "device_id": 3, "device_public_key": 4, "expires_at_unix_nano": 5, "routes": 6,
 	}
 	for name, number := range want {
 		field := offer.Fields().ByName(name)
 		if field == nil || field.Number() != number {
 			t.Fatalf("PairingClaimOfferV1.%s field = %v, want number %d", name, field, number)
+		}
+	}
+	if routes := offer.Fields().ByName("routes"); routes.Cardinality() != protoreflect.Repeated {
+		t.Fatalf("PairingClaimOfferV1.routes cardinality = %v, want repeated", routes.Cardinality())
+	}
+	seed := (&PairingRouteSeed{}).ProtoReflect().Descriptor()
+	if route := seed.Oneofs().ByName("route"); route == nil || route.Fields().Len() != 3 || route.Fields().ByName("ssh_webrtc_tcp") == nil {
+		t.Fatalf("PairingRouteSeed.route variants = %v", route)
+	}
+	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{"route_id": 4, "display_name": 5, "priority": 6} {
+		if field := seed.Fields().ByName(name); field == nil || field.Number() != number {
+			t.Fatalf("PairingRouteSeed.%s field = %v, want number %d", name, field, number)
 		}
 	}
 	for _, forbidden := range []protoreflect.Name{"pairing_ticket", "grant", "scope", "terminal_id", "client_public_key"} {
@@ -73,6 +85,9 @@ func TestEndpointRouteConfigV1OwnsVersionedRouteOneof(t *testing.T) {
 	descriptor := (&EndpointRouteConfigV1{}).ProtoReflect().Descriptor()
 	if field := descriptor.Fields().ByName("schema_version"); field == nil || field.Number() != 1 {
 		t.Fatal("EndpointRouteConfigV1.schema_version must remain field 1")
+	}
+	if field := descriptor.Fields().ByName("display_name"); field == nil || field.Number() != 9 {
+		t.Fatal("EndpointRouteConfigV1.display_name must be field 9")
 	}
 	if descriptor.Oneofs().Len() != 2 {
 		// proto3 optional priority is represented as a synthetic oneof in reflection.

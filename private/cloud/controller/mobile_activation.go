@@ -17,6 +17,7 @@ import (
 	"github.com/muxvia/muxvia/private/cloud/companion/session"
 	cloudcommerce "github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/persistence"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
 	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
 	webcontroller "github.com/muxvia/muxvia/private/cloud/web-controller"
@@ -43,6 +44,8 @@ type mobileActivationFlow struct {
 	clientMetadata *cloudpb.DeviceMetadata
 	claimed        bool
 	approved       bool
+	completing     bool
+	completed      *httpapi.SessionWire
 	expiresAt      time.Time
 	order          *list.Element
 }
@@ -55,6 +58,7 @@ type mobileActivationService struct {
 	codes              map[string]string
 	expiry             *list.List
 	commerce           *cloudcommerce.Service
+	activationStore    persistence.MobileActivationStore
 	topology           *cloudtopology.Service
 	registry           *hubregistry.Registry
 	edgeIssuer         servicecredential.EdgeAccessIssuer
@@ -68,8 +72,8 @@ type mobileActivationService struct {
 	notifyPolicyChange func(string)
 }
 
-func newMobileActivationService(commerce *cloudcommerce.Service, topology *cloudtopology.Service, registry *hubregistry.Registry, issuer servicecredential.EdgeAccessIssuer, hubID, hubURL, hubRegion string, daemonHubDirectory func(string) (string, string, bool), daemonNotAfter time.Time, now func() time.Time, notify func(string)) (*mobileActivationService, error) {
-	if commerce == nil || topology == nil || registry == nil || hubID == "" || daemonHubDirectory == nil || now == nil || notify == nil {
+func newMobileActivationService(commerce *cloudcommerce.Service, activationStore persistence.MobileActivationStore, topology *cloudtopology.Service, registry *hubregistry.Registry, issuer servicecredential.EdgeAccessIssuer, hubID, hubURL, hubRegion string, daemonHubDirectory func(string) (string, string, bool), daemonNotAfter time.Time, now func() time.Time, notify func(string)) (*mobileActivationService, error) {
+	if commerce == nil || activationStore == nil || topology == nil || registry == nil || hubID == "" || daemonHubDirectory == nil || now == nil || notify == nil {
 		return nil, errMobileActivationUnavailable
 	}
 	if !daemonNotAfter.After(now().UTC()) {
@@ -77,7 +81,7 @@ func newMobileActivationService(commerce *cloudcommerce.Service, topology *cloud
 	}
 	return &mobileActivationService{
 		flows: make(map[string]*mobileActivationFlow), codes: make(map[string]string), expiry: list.New(),
-		commerce: commerce, topology: topology, registry: registry, edgeIssuer: issuer, hubID: hubID, hubURL: hubURL, hubRegion: hubRegion,
+		commerce: commerce, activationStore: activationStore, topology: topology, registry: registry, edgeIssuer: issuer, hubID: hubID, hubURL: hubURL, hubRegion: hubRegion,
 		daemonHubDirectory: daemonHubDirectory,
 		daemonNotAfter:     daemonNotAfter.UTC(), now: now, random: rand.Reader, notifyPolicyChange: notify,
 	}, nil
@@ -139,12 +143,8 @@ func (service *mobileActivationService) ApproveMobileActivation(_ context.Contex
 }
 
 func (service *mobileActivationService) claim(request *cloudpb.ClaimMobileActivationRequest) (*cloudpb.LoginFlow, error) {
-	if request == nil || !validMobileMetadata(request.GetClientMetadata()) {
+	if request == nil || !validMobileMetadata(request.GetClientMetadata()) || !validMobileClientDeviceID(request.GetClientDeviceId()) {
 		return nil, errMobileActivationUnavailable
-	}
-	deviceID, err := service.randomID("client")
-	if err != nil {
-		return nil, err
 	}
 	service.mu.Lock()
 	defer service.mu.Unlock()
@@ -155,7 +155,8 @@ func (service *mobileActivationService) claim(request *cloudpb.ClaimMobileActiva
 		return nil, errMobileActivationUnavailable
 	}
 	flow.claimed = true
-	flow.clientDeviceID = deviceID
+	// 注册码只授权一次登录事务；安装级 client_device_id 才是 Web、Hub 和 App 目录中的机器真值。
+	flow.clientDeviceID = request.GetClientDeviceId()
 	flow.clientMetadata = proto.Clone(request.GetClientMetadata()).(*cloudpb.DeviceMetadata)
 	return &cloudpb.LoginFlow{FlowId: flow.flowID, UserCode: flow.userCode, ExpiresAtUnix: uint64(flow.expiresAt.Unix()), PollIntervalMillis: 1000}, nil
 }
@@ -167,11 +168,19 @@ func (service *mobileActivationService) complete(ctx context.Context, request *c
 	service.mu.Lock()
 	service.cleanupLocked(service.now().UTC())
 	flow, ok := service.flows[request.GetFlowId()]
-	if ok && flow.claimed && flow.approved {
-		// flow ID 是 App 兑换 session 的单次 secret；先消费再执行外部写入，禁止并发重复签发。
-		service.removeMobileFlowLocked(flow)
+	if ok && flow.completed != nil {
+		wire := cloneSessionWire(*flow.completed)
+		service.mu.Unlock()
+		return wire, nil
+	}
+	if ok && flow.completing {
+		service.mu.Unlock()
+		return httpapi.SessionWire{}, errMobileActivationPending
 	}
 	flowCopy := cloneMobileActivationFlow(flow)
+	if ok && flow.claimed && flow.approved {
+		flow.completing = true
+	}
 	service.mu.Unlock()
 	flow = flowCopy
 	if ok && flow.claimed && !flow.approved {
@@ -182,29 +191,55 @@ func (service *mobileActivationService) complete(ctx context.Context, request *c
 	}
 	view, err := service.commerce.AccountCommerce(ctx, flow.ownerAccountID)
 	if err != nil || view.GetAccount() == nil {
-		return httpapi.SessionWire{}, errMobileActivationUnavailable
+		return service.failCompletion(flow.flowID, errMobileActivationUnavailable)
 	}
 	account := view.GetAccount()
-	policy := &cloudpb.CloudDevicePolicy{AccountId: account.GetAccountId(), DeviceId: flow.clientDeviceID, DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: account.GetAuthRevision()}
+	nextOwnership := cloudtopology.DeviceOwnership{AccountID: account.GetAccountId(), DeviceID: flow.clientDeviceID, Kind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: account.GetAuthRevision()}
+	var expectedOwnership *cloudtopology.DeviceOwnership
 	if current, loadErr := service.topology.Device(ctx, flow.clientDeviceID); loadErr == nil {
-		if current.AccountID != policy.GetAccountId() || current.Kind != policy.GetDeviceKind() || current.Revoked {
-			return httpapi.SessionWire{}, errMobileActivationUnavailable
+		if current.AccountID != nextOwnership.AccountID || current.Kind != nextOwnership.Kind || len(current.PublicKey) != 0 {
+			return service.failCompletion(flow.flowID, errMobileActivationUnavailable)
 		}
+		expectedOwnership = &current
 	} else if !errors.Is(loadErr, cloudtopology.ErrOwnershipNotFound) {
-		return httpapi.SessionWire{}, loadErr
-	} else if err := service.topology.PutDeviceOwnership(ctx, policy); err != nil {
-		return httpapi.SessionWire{}, err
+		return service.failCompletion(flow.flowID, loadErr)
+	}
+	prepared, err := service.commerce.PrepareDeviceSession(account, flow.clientDeviceID, service.now().UTC())
+	if err != nil {
+		return service.failCompletion(flow.flowID, err)
+	}
+	wire, err := service.issueSession(account, view.GetSubscription(), view.GetPlan(), flow.clientDeviceID, prepared.Credential)
+	if err != nil {
+		return service.failCompletion(flow.flowID, err)
+	}
+	if err := service.activationStore.CommitMobileActivation(ctx, persistence.MobileActivationCommit{ExpectedOwnership: expectedOwnership, NextOwnership: nextOwnership, Session: prepared.Record, Audit: prepared.Audit}, service.now().UTC()); err != nil {
+		return service.failCompletion(flow.flowID, err)
 	}
 	service.notifyPolicyChange(account.GetAccountId())
-	credential, err := service.commerce.IssueDeviceSession(ctx, account.GetAccountId(), flow.clientDeviceID)
-	if err != nil {
-		return httpapi.SessionWire{}, err
+	service.mu.Lock()
+	if current := service.flows[flow.flowID]; current != nil {
+		current.completing = false
+		stored := cloneSessionWire(wire)
+		current.completed = &stored
 	}
-	wire, err := service.issueSession(account, flow.clientDeviceID, credential)
-	if err != nil {
-		return httpapi.SessionWire{}, err
+	service.mu.Unlock()
+	return cloneSessionWire(wire), nil
+}
+
+func (service *mobileActivationService) failCompletion(flowID string, err error) (httpapi.SessionWire, error) {
+	service.mu.Lock()
+	if flow := service.flows[flowID]; flow != nil {
+		flow.completing = false
 	}
-	return wire, nil
+	service.mu.Unlock()
+	return httpapi.SessionWire{}, err
+}
+
+func cloneSessionWire(wire httpapi.SessionWire) httpapi.SessionWire {
+	clone := wire
+	clone.AccessToken = append([]byte(nil), wire.AccessToken...)
+	clone.RefreshToken = append([]byte(nil), wire.RefreshToken...)
+	return clone
 }
 
 func (service *mobileActivationService) refreshSession(ctx context.Context, input httpapi.RefreshSessionWire) (httpapi.SessionWire, error) {
@@ -228,7 +263,7 @@ func (service *mobileActivationService) refreshSession(ctx context.Context, inpu
 		if device.Kind != cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT {
 			return httpapi.SessionWire{}, errMobileActivationUnavailable
 		}
-		return service.issueSession(view.GetAccount(), rotated.ClientDeviceID, credential)
+		return service.issueSession(view.GetAccount(), view.GetSubscription(), view.GetPlan(), rotated.ClientDeviceID, credential)
 	}
 	if device.Kind != cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON {
 		return httpapi.SessionWire{}, errMobileActivationUnavailable
@@ -280,8 +315,8 @@ func (service *mobileActivationService) issueDaemonSession(account *cloudpb.Acco
 	}, nil
 }
 
-func (service *mobileActivationService) issueSession(account *cloudpb.AccountProjection, deviceID string, credential *cloudpb.AccountSessionCredential) (httpapi.SessionWire, error) {
-	if credential == nil || len(credential.GetRefreshToken()) < 32 {
+func (service *mobileActivationService) issueSession(account *cloudpb.AccountProjection, subscription *cloudpb.SubscriptionProjection, plan *cloudpb.PlanDefinition, deviceID string, credential *cloudpb.AccountSessionCredential) (httpapi.SessionWire, error) {
+	if account == nil || subscription == nil || plan == nil || subscription.GetAccountId() != account.GetAccountId() || subscription.GetPlanId() != plan.GetPlanId() || subscription.GetPlanVersion() != plan.GetPlanVersion() || plan.GetPresentation().GetName() == "" || subscription.GetRevision() == 0 || credential == nil || len(credential.GetRefreshToken()) < 32 {
 		return httpapi.SessionWire{}, errMobileActivationUnavailable
 	}
 	now := service.now().UTC()
@@ -296,7 +331,13 @@ func (service *mobileActivationService) issueSession(account *cloudpb.AccountPro
 	refreshToken := append([]byte(nil), credential.GetRefreshToken()...)
 	clear(credential.AccessToken)
 	clear(credential.RefreshToken)
-	return httpapi.SessionWire{Kind: session.KindAccount, AccountID: account.GetAccountId(), AccountLabel: account.GetDisplayName(), DeviceID: deviceID, ExpiresAt: now.Add(mobileAccessTTL).Unix(), AccessToken: access, RefreshToken: refreshToken, RefreshExpiresAt: credential.GetRefreshExpiresAtUnixMillis() / 1000, HubID: service.hubID, HubURL: service.hubURL, HubRegion: service.hubRegion, HubDirectoryVersion: 1}, nil
+	return httpapi.SessionWire{
+		Kind: session.KindAccount, AccountID: account.GetAccountId(), AccountLabel: account.GetDisplayName(), DeviceID: deviceID,
+		ExpiresAt: now.Add(mobileAccessTTL).Unix(), AccessToken: access, RefreshToken: refreshToken,
+		RefreshExpiresAt: credential.GetRefreshExpiresAtUnixMillis() / 1000, HubID: service.hubID, HubURL: service.hubURL,
+		HubRegion: service.hubRegion, HubDirectoryVersion: 1, PlanID: subscription.GetPlanId(), PlanName: plan.GetPresentation().GetName(),
+		SubscriptionStatus: subscription.GetStatus().String(), SubscriptionRevision: subscription.GetRevision(),
+	}, nil
 }
 
 func (service *mobileActivationService) registerHTTP(mux *http.ServeMux) {
@@ -389,6 +430,7 @@ func cloneMobileActivationFlow(flow *mobileActivationFlow) *mobileActivationFlow
 	}
 	clone := *flow
 	clone.order = nil
+	clone.completed = nil
 	if flow.clientMetadata != nil {
 		clone.clientMetadata = proto.Clone(flow.clientMetadata).(*cloudpb.DeviceMetadata)
 	}
@@ -418,6 +460,20 @@ func (service *mobileActivationService) randomID(prefix string) (string, error) 
 
 func validMobileMetadata(value *cloudpb.DeviceMetadata) bool {
 	return value != nil && strings.TrimSpace(value.GetDisplayName()) != "" && len(value.GetDisplayName()) <= 128 && strings.TrimSpace(value.GetPlatform()) != "" && len(value.GetPlatform()) <= 64 && strings.TrimSpace(value.GetMuxviaVersion()) != "" && len(value.GetMuxviaVersion()) <= 64
+}
+
+func validMobileClientDeviceID(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) < 16 || len(value) > 96 || !strings.HasPrefix(value, "client-") {
+		return false
+	}
+	for _, character := range value {
+		if character >= 'a' && character <= 'z' || character >= '0' && character <= '9' || character == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func readMobileProto(w http.ResponseWriter, r *http.Request, target proto.Message) bool {

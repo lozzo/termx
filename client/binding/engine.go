@@ -992,6 +992,8 @@ func apiError(err error) *apipb.ApiError {
 			code, message = apipb.ApiErrorCode_API_ERROR_CODE_CANCELLED, "client operation was cancelled"
 		case clientruntime.ErrorStaleSession:
 			code, message = apipb.ApiErrorCode_API_ERROR_CODE_STALE_SESSION, "client session is stale"
+		case clientruntime.ErrorEntitlement:
+			code, message = apipb.ApiErrorCode_API_ERROR_CODE_ENTITLEMENT_DENIED, "Relay is not included in the current Muxvia Cloud plan"
 		case clientruntime.ErrorUnavailable, clientruntime.ErrorUnsupportedRoute:
 			code, message, retryable = apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE, "client session is unavailable", true
 		}

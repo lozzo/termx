@@ -298,6 +298,7 @@ func (host *Host) UpsertEndpoint(ctx context.Context, request *bindingpb.Endpoin
 	if err != nil {
 		return nil, err
 	}
+	existing, replacing := next.Endpoints[incoming.ID]
 	next.Endpoints[incoming.ID] = incoming
 	if request.GetMakeDefault() || next.Default == "" {
 		next.Default = incoming.ID
@@ -306,7 +307,11 @@ func (host *Host) UpsertEndpoint(ctx context.Context, request *bindingpb.Endpoin
 	if err != nil {
 		return nil, err
 	}
-	wireRegistry, err := host.storeRegistryLocked(ctx, next, nil)
+	var deleteRefs []string
+	if replacing {
+		deleteRefs = unreferencedCredentials(existing, next)
+	}
+	wireRegistry, err := host.storeRegistryLocked(ctx, next, deleteRefs)
 	if err != nil {
 		return nil, err
 	}
@@ -637,26 +642,30 @@ func unreferencedCredentials(removed endpoint.Endpoint, remaining endpoint.Regis
 	used := make(map[string]struct{})
 	for _, item := range remaining.Endpoints {
 		for _, route := range item.Routes {
-			if ref := strings.TrimSpace(route.CredentialRef); ref != "" {
-				used[ref] = struct{}{}
+			for _, ref := range []string{route.CredentialRef, route.SSHCredentialRef} {
+				if ref = strings.TrimSpace(ref); ref != "" {
+					used[ref] = struct{}{}
+				}
 			}
 		}
 	}
 	seen := make(map[string]struct{})
 	var refs []string
 	for _, route := range removed.Routes {
-		ref := strings.TrimSpace(route.CredentialRef)
-		if ref == "" {
-			continue
+		for _, ref := range []string{route.CredentialRef, route.SSHCredentialRef} {
+			ref = strings.TrimSpace(ref)
+			if ref == "" {
+				continue
+			}
+			if _, stillUsed := used[ref]; stillUsed {
+				continue
+			}
+			if _, duplicate := seen[ref]; duplicate {
+				continue
+			}
+			seen[ref] = struct{}{}
+			refs = append(refs, ref)
 		}
-		if _, stillUsed := used[ref]; stillUsed {
-			continue
-		}
-		if _, duplicate := seen[ref]; duplicate {
-			continue
-		}
-		seen[ref] = struct{}{}
-		refs = append(refs, ref)
 	}
 	return refs
 }

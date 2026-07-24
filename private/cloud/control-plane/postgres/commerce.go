@@ -101,6 +101,29 @@ func (store *Store) PutSession(ctx context.Context, session commerce.SessionReco
 	return tx.Commit()
 }
 
+// ReplaceDeviceSession 原子撤销同一安装设备的旧 Cloud session，再写入新 session 与审计。
+// client_device_id 是设备维度真值；注册码和 session_id 只描述一次登录事务。
+func (store *Store) ReplaceDeviceSession(ctx context.Context, session commerce.SessionRecord, audit *cloudpb.CommerceAuditProjection) error {
+	if session.ClientDeviceID == "" || session.AccountID == "" {
+		return commerce.ErrConflict
+	}
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = execContext(ctx, tx, `UPDATE commerce_sessions SET revoked=1 WHERE client_device_id=? AND revoked=0`, session.ClientDeviceID); err != nil {
+		return err
+	}
+	if err = insertSession(ctx, tx, session); err != nil {
+		return conflict(err)
+	}
+	if err = insertCommerceAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // SessionByAccessHash 读取短期 access token 对应的 session。
 func (store *Store) SessionByAccessHash(ctx context.Context, hash [sha256.Size]byte) (commerce.SessionRecord, error) {
 	return scanSession(queryRowContext(ctx, store.db, `SELECT session_id,account_id,client_device_id,access_hash,refresh_hash,access_expires_at,refresh_expires_at,revision,revoked FROM commerce_sessions WHERE access_hash=?`, hash[:]))

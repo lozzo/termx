@@ -232,7 +232,22 @@ Refund/Revocation
 - development `TestPaymentProvider` 必须走与正式 provider 相同的 normalized event 入口，不能直接调用 `SetEntitlement`。
 - development test provider 必须由 Controller 显式配置启用；默认配置不得暴露测试付款入口。
 - checkout 必须记录创建时的 Subscription revision 与源套餐版本。迟到 payment event 不能覆盖后续套餐变化；拒绝结果必须进入 durable journal 和审计。
-- 第一阶段不要求接入真实支付 provider，但测试交易必须从 Web 用户操作开始，经过 checkout、provider event、subscription、entitlement 和 Hub policy 全链路。
+- development 第一阶段接入 Creem sandbox；切换 production API key 和真实收费仍属于发布装配。sandbox 交易必须从 Web 用户操作开始，经过 checkout、provider event、subscription、entitlement 和 Hub policy 全链路。
+
+### 7.1 Creem provider 与双通道收口
+
+Muxvia 首个正式支付 provider 是 Creem。Creem 只拥有外部 checkout、customer、order、transaction 和 subscription 资源；Muxvia `Order`、`PaymentAttempt`、`PaymentEvent`、`Subscription` 与 `Entitlement` 仍是产品真值。
+
+- Controller 服务端使用 deployment secret 调用 Creem sandbox/production API，Web 与客户端不能接触 API key。
+- checkout 使用 Muxvia order ID 作为稳定 request ID，并持久化 provider resource 映射和创建时的价格/套餐 revision。
+- 每个可售 Plan version 绑定已核对的 Creem product ID；影响实收金额的 promo 绑定 Creem discount code。Webhook/轮询回读的 product、currency、amount 和 discount 必须与订单快照一致，否则事件进入 rejected journal。
+- `POST /pay/creem` 使用独立 webhook secret 对原始 body 的 `creem-signature` 做 HMAC-SHA256 验证。未验签 payload、success redirect 和浏览器自报状态都不能改变 Subscription。
+- Webhook 与轮询 reconciliation 必须映射到同一个 normalized payment event journal。Webhook 提供低延迟；轮询只补偿未终结 attempt、丢失/延迟事件和近期 subscription 漂移，不能建立第二份订阅真值。
+- `subscription.paid` 或服务端核验的 paid transaction 才能开通新周期；`subscription.active` 只同步 provider 状态。cancel、scheduled cancel、past due、expired、paused、refund 和 dispute 映射为显式 transition。
+- provider event ID 或确定性 resource/status revision 作为幂等键；乱序、重复、Controller 重启和 Webhook/轮询并发都由 event journal 与 Subscription revision CAS 收口。
+- API timeout、429 和 5xx 只改变 PaymentAttempt/reconciliation 的可重试状态，不扩大或撤销 entitlement。
+
+人工赠送、补偿或延长订阅必须使用带 actor、reason 和 revision 的 operator adjustment，不能伪造 Creem 已支付订单。人工线下收款必须使用明确的 manual provider source，经同一个 normalized event 入口提交。
 
 ## 8. 用户账号中心
 
@@ -250,7 +265,7 @@ Refund/Revocation
 
 ## 9. 运营管理面
 
-第一阶段运营管理面只提供完成产品闭环所需的最小能力：
+第一阶段运营管理面提供完成产品闭环所需的能力：
 
 - 查询账号、Subscription、Entitlement 和 revision。
 - suspend/restore 账号服务能力。
@@ -258,8 +273,14 @@ Refund/Revocation
 - 查询订单、provider event 和审计事件。
 - 查询周期 usage、reservation 和 quota deny 原因。
 - 对开发测试账号执行可审计的套餐调整。
+- 发布不可变的套餐版本，并查看历史订单使用的价格/能力快照。
+- 创建带有效期和原因的类型化账号 Entitlement override；自由 JSON 不能进入 policy。
+- 管理 Hub directory、identity approval、capacity、drain 和 disable；Presence 在线状态仍来自 freshness。
+- 管理 Creem checkout/payment/subscription 对账状态，并可重试失败的 reconciliation，不能直接把订单改成已支付。
+- 管理有界 fixed/percent 优惠码及兑换记录；已兑换经济字段不可变。
+- 管理带签名/hash/兼容范围/channel 的 CLI、daemon 和 Android 发布记录。
 
-不提前建设通用 CRM、财务平台、工单系统、复杂优惠、发票、税务、多组织 RBAC 或数据仓库。
+不提前建设通用 CRM、财务平台、工单系统、复杂营销规则引擎、发票、税务、多组织 RBAC 或数据仓库。
 
 ## 10. 错误语义
 
@@ -303,7 +324,7 @@ Android 用户动作必须从 ARM64 模拟器中的真实 APK UI 发起；Web �
 
 ## 12. 明确延后
 
-- 真实支付 provider、正式 OAuth 和真实邮件/短信 provider。
+- Creem production key 与真实收费、正式 OAuth 和真实邮件/短信 provider；Creem sandbox adapter、Webhook 和轮询 reconciliation 不延后。
 - 多区域 Hub、Relay Mesh 和全球动态路由。
 - Web/WASM terminal 客户端。
 - iOS/Desktop GUI。

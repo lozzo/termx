@@ -47,6 +47,16 @@ func TestEnrollmentProposalKeepsExistingAssignment(t *testing.T) {
 	}
 }
 
+func TestEnrollmentProposalDoesNotDoubleCountExistingAssignmentCapacity(t *testing.T) {
+	candidates := []*cloudpb.HubEnrollmentCandidate{enrollmentCandidate("hub-full")}
+	current := enrollmentCandidatesWithLoad(candidates, []uint64{1}, 1)
+	observations := []*cloudpb.HubReachabilityObservation{{HubId: "hub-full", Reachable: true, LatencyMillis: 5}}
+	selected, err := validateEnrollmentHubProposal(candidates, current, observations, "hub-full", "hub-full")
+	if err != nil || selected.GetHubId() != "hub-full" {
+		t.Fatalf("existing assignment at capacity = (%v, %v)", selected, err)
+	}
+}
+
 func enrollmentCandidate(hubID string) *cloudpb.HubEnrollmentCandidate {
 	return &cloudpb.HubEnrollmentCandidate{HubId: hubID, HubUrl: "https://" + hubID + ".example.test", HealthUrl: "https://" + hubID + ".example.test/healthz", Region: "test-1"}
 }

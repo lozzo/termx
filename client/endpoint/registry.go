@@ -285,6 +285,7 @@ type CredentialDescriptor struct {
 // Kind-specific 字段由 Validate 严格互斥；Enabled/ManualOnly/Priority 属于客户端 selection policy，不能由 discovery 静默覆盖。
 type AccessRoute struct {
 	ID               RouteID        `json:"route_id"`
+	DisplayName      string         `json:"display_name,omitempty"`
 	Kind             RouteKind      `json:"kind"`
 	Enabled          bool           `json:"enabled"`
 	ManualOnly       bool           `json:"manual_only"`
@@ -670,6 +671,9 @@ func (endpoint Endpoint) Validate() error {
 func (route AccessRoute) Validate(identity DaemonIdentity) error {
 	if err := validateIdentifier("route", string(route.ID)); err != nil {
 		return err
+	}
+	if strings.TrimSpace(route.DisplayName) != route.DisplayName || len(route.DisplayName) > 128 {
+		return connectionError(ErrorConfig, "route %q display_name is invalid", route.ID)
 	}
 	if route.Priority != nil && (*route.Priority < 0 || int64(*route.Priority) > int64(1<<31-1)) {
 		return connectionError(ErrorConfig, "route %q priority must be between 0 and 2147483647", route.ID)

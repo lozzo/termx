@@ -63,7 +63,7 @@ func v3Command(socket *string, logFile *string, configPath *string) *cobra.Comma
 }
 
 func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra.Command {
-	cloudEnabled := false
+	cloudDisabled := false
 	var runDaemon func(*cobra.Command, []string) error
 	command := &cobra.Command{
 		Use:   "daemon",
@@ -77,11 +77,6 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 		defer closeLogger()
 
 		socketPath := resolveV3Socket(*socket)
-		releaseRecord, err := acquireDaemonRuntimeRecord(socketPath, logPath, *configPath, cloudEnabled)
-		if err != nil {
-			return err
-		}
-		defer releaseRecord()
 		applyDaemonRuntimeTuning(logger)
 		historyBackpressure := daemonHistoryBackpressureConfig(logger)
 		historyDir := resolveV3HistoryStorageDir()
@@ -90,6 +85,20 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 			return fmt.Errorf("load daemon identity and client access store: %w", err)
 		}
 		defer clientAccess.Close()
+		cloudEnabled := false
+		if !cloudDisabled {
+			cloudEnabled, err = v3CloudEnrollmentConfigured(clientAccess.Identity)
+			if err != nil {
+				// enrollment receipt 异常只关闭 managed Route；本地 terminal、Direct 和 SSH 继续可用。
+				logger.Warn("managed cloud enrollment unavailable", "error", err)
+				cloudEnabled = false
+			}
+		}
+		releaseRecord, err := acquireDaemonRuntimeRecord(socketPath, logPath, *configPath, cloudEnabled)
+		if err != nil {
+			return err
+		}
+		defer releaseRecord()
 		accessService := v3ClientAccessService{identity: clientAccess.Identity, store: clientAccess.Store}
 		opts := []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryStorageDir(historyDir), corev2.WithHistoryBackpressureConfig(historyBackpressure), corev2.WithClientAccessService(accessService)}
 		historyEnabled := !envBool("MUXVIA_HISTORY_DISABLE")
@@ -143,8 +152,8 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 	}
 	command.RunE = runDaemon
 	command.Args = cobra.NoArgs
-	command.PersistentFlags().BoolVar(&cloudEnabled, "cloud", false, "enable managed cloud presence for this daemon")
-	addDaemonLifecycleCommands(command, socket, logFile, configPath, &cloudEnabled, runDaemon)
+	command.PersistentFlags().BoolVar(&cloudDisabled, "no-cloud", false, "disable managed cloud presence even when this daemon is enrolled")
+	addDaemonLifecycleCommands(command, socket, logFile, configPath, &cloudDisabled, runDaemon)
 	return command
 }
 

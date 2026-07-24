@@ -28,6 +28,16 @@ func TestPlatformCloudResponsePreservesRetryableQuotaConflict(t *testing.T) {
 	}
 }
 
+func TestPlatformCloudResponsePreservesEntitlementDenied(t *testing.T) {
+	err := platformCloudResponseError(&bindingpb.PlatformResponse{Error: &apipb.ApiError{
+		Code: apipb.ApiErrorCode_API_ERROR_CODE_ENTITLEMENT_DENIED, Message: "managed Cloud capability is not enabled", Attempted: true,
+	}})
+	var cloudErr *cloudcompanion.Error
+	if !errors.As(err, &cloudErr) || cloudErr.Code != cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENTITLEMENT_DENIED || cloudErr.Retryable {
+		t.Fatalf("platform cloud entitlement error = %#v", err)
+	}
+}
+
 func TestDecodeBootstrapAcceptsManualPairingClaimCode(t *testing.T) {
 	payload := []byte{0x01, 0x02, 0x03, 0x04}
 	decoded, err := decodeBootstrap(remoteauth.EncodePairingClaimCode(payload))
@@ -43,16 +53,17 @@ func TestPairingClaimCandidatesProduceValidDirectAndCloudAttempts(t *testing.T) 
 		"cloud":  {Route: &remoteauthpb.PairingRouteSeed_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.PairingManagedRouteSeed{TargetDeviceId: "device-1"}}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			candidate, err := remoteauth.PairingClaimEndpointCandidate(&remoteauthpb.PairingClaimOfferV1{SchemaVersion: remoteauth.PairingClaimOfferVersion, Claim: bytes.Repeat([]byte{0x31}, 16), DeviceId: "device-1", DevicePublicKey: publicKey, ExpiresAtUnixNano: 1, Route: route})
+			route.RouteId = name
+			candidate, err := remoteauth.PairingClaimEndpointCandidate(&remoteauthpb.PairingClaimOfferV1{SchemaVersion: remoteauth.PairingClaimOfferVersion, Claim: bytes.Repeat([]byte{0x31}, 16), DeviceId: "device-1", DevicePublicKey: publicKey, ExpiresAtUnixNano: 1, Routes: []*remoteauthpb.PairingRouteSeed{route}})
 			if err != nil {
 				t.Fatal(err)
 			}
-			selected, err := pairingClaimRoute(candidate)
+			selected, err := pairingClaimRoutes(candidate, Options{DirectPeers: fakeDirectPeerFactory{}, ManagedPeers: fakeManagedPeerFactory{}})
 			if err != nil {
 				t.Fatal(err)
 			}
 			target := pairingTarget("device-1", candidate.Identity, selected, "credential:device-1")
-			if _, err := clientruntime.NewAttemptRequest(target, selected.ID, 1, clientruntime.ConnectIntentInteractive); err != nil {
+			if _, err := clientruntime.NewAttemptRequest(target, selected[0].ID, 1, clientruntime.ConnectIntentInteractive); err != nil {
 				t.Fatalf("claim attempt is invalid: %#v err=%v", target, err)
 			}
 		})
@@ -77,7 +88,7 @@ func TestPairingTargetKeepsManagedFieldsOutOfDirectRoute(t *testing.T) {
 		ID: "direct", Kind: endpoint.RouteDirectWebRTCTCP, Enabled: true, Source: endpoint.SourceBootstrap, PolicySource: endpoint.SourceBootstrap,
 		SignalingAddresses: []string{"127.0.0.1:41120"}, ICETCPAddresses: []string{"127.0.0.1:41121"},
 	}
-	target := pairingTarget("daemon-1", identity, route, "android-access-daemon-1")
+	target := pairingTarget("daemon-1", identity, []endpoint.AccessRoute{route}, "android-access-daemon-1")
 	direct, ok := target.Route("direct")
 	if !ok {
 		t.Fatal("Direct pairing target route is missing")
@@ -93,15 +104,15 @@ func TestPairingTargetKeepsManagedFieldsOutOfDirectRoute(t *testing.T) {
 	}
 }
 
-func TestPairingClaimRouteUsesTheSingleAdvertisedRoute(t *testing.T) {
+func TestPairingClaimRoutesKeepAllSupportedAdvertisedRoutes(t *testing.T) {
 	direct := endpoint.AccessRoute{ID: "direct", Kind: endpoint.RouteDirectWebRTCTCP, Enabled: true}
 	cloud := endpoint.AccessRoute{ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true}
-	target := endpoint.EndpointCandidate{Routes: []endpoint.AccessRoute{cloud}}
-	route, err := pairingClaimRoute(target)
-	if err != nil || route.ID != cloud.ID {
-		t.Fatalf("Cloud pairing route = %#v err=%v", route, err)
+	target := endpoint.EndpointCandidate{Routes: []endpoint.AccessRoute{direct, cloud}}
+	routes, err := pairingClaimRoutes(target, Options{DirectPeers: fakeDirectPeerFactory{}, ManagedPeers: fakeManagedPeerFactory{}})
+	if err != nil || len(routes) != 2 || routes[0].ID != direct.ID || routes[1].ID != cloud.ID {
+		t.Fatalf("pairing routes = %#v err=%v", routes, err)
 	}
-	if _, err := pairingClaimRoute(endpoint.EndpointCandidate{Routes: []endpoint.AccessRoute{{ID: direct.ID, Kind: direct.Kind}}}); err == nil {
+	if _, err := pairingClaimRoutes(endpoint.EndpointCandidate{Routes: []endpoint.AccessRoute{{ID: direct.ID, Kind: direct.Kind}}}, Options{DirectPeers: fakeDirectPeerFactory{}}); err == nil {
 		t.Fatal("disabled pairing route was accepted")
 	}
 }

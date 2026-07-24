@@ -219,13 +219,28 @@ func (manager *Manager) dialAndHello(ctx context.Context, installation installer
 		return nil, false, err
 	}
 	if response.GetCompanionVersion() != installation.Version || response.GetBuildChannel() != installation.Channel || !matchesInstallationDigest(response.GetExecutableSha256(), installation.BinarySHA256) {
-		shutdownContext, cancel := context.WithTimeout(ctx, time.Second)
-		_, _ = client.Shutdown(shutdownContext, &cloudpb.ShutdownRequest{Reason: "active_version_changed"})
-		cancel()
 		_ = client.Close()
+		// 业务 caller 可能是 daemon/mobile，不能使用它的 role 调用 CLI-only Shutdown。
+		// 版本接管必须重新建立最小 CLI lifecycle 连接，且不继承任何业务 capability。
+		shutdownContext, cancel := context.WithTimeout(ctx, time.Second)
+		_ = manager.shutdownStale(shutdownContext)
+		cancel()
 		return nil, true, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_NOT_RUNNING, "running Cloud Companion does not match the active signed installation")
 	}
 	return client, false, nil
+}
+
+func (manager *Manager) shutdownStale(ctx context.Context) error {
+	client, err := manager.dial(ctx, manager.endpoint)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	if _, err := negotiate(ctx, client, manager.muxviaVersion, cloudpb.CallerRole_CALLER_ROLE_CLI, nil); err != nil {
+		return err
+	}
+	_, err = client.Shutdown(ctx, &cloudpb.ShutdownRequest{Reason: "active_version_changed"})
+	return err
 }
 
 func negotiate(ctx context.Context, client *ipc.Client, muxviaVersion string, role cloudpb.CallerRole, requested []cloudpb.CompanionCapability) (*cloudpb.CompanionHelloResponse, error) {

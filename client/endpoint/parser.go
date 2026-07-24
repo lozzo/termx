@@ -34,6 +34,7 @@ type selectionPolicyDocument struct {
 
 type routeDocument struct {
 	Kind             string `yaml:"kind"`
+	DisplayName      string `yaml:"display_name,omitempty"`
 	Enabled          *bool  `yaml:"enabled,omitempty"`
 	ManualOnly       bool   `yaml:"manual_only,omitempty"`
 	Priority         *int   `yaml:"priority,omitempty"`
@@ -143,7 +144,7 @@ func parseRegistry(data []byte) (Registry, error) {
 				}
 			}
 			endpoint.Routes[routeID] = AccessRoute{
-				ID: routeID, Kind: RouteKind(routeValue.Kind), Enabled: routeEnabled, ManualOnly: routeValue.ManualOnly,
+				ID: routeID, DisplayName: routeValue.DisplayName, Kind: RouteKind(routeValue.Kind), Enabled: routeEnabled, ManualOnly: routeValue.ManualOnly,
 				Priority: clonePriority(routeValue.Priority), CredentialRef: routeValue.CredentialRef, SSHCredentialRef: routeValue.SSHCredentialRef,
 				Source: EndpointSource(routeValue.Source), PolicySource: EndpointSource(routeValue.PolicySource),
 				Socket: routeValue.Socket,

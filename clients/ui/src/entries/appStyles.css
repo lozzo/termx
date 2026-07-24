@@ -41,9 +41,9 @@
   border-radius: 0;
   color: var(--muxvia-app-muted);
   display: inline-flex;
-  height: 44px;
+  height: 48px;
   justify-content: center;
-  min-width: 44px;
+  min-width: 48px;
   touch-action: manipulation;
   transition: background-color 180ms ease-out, border-color 180ms ease-out, color 180ms ease-out;
 }

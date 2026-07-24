@@ -65,6 +65,10 @@ func TestStartV3ManagedDaemonBuildsPresenceWithoutStoppingCore(t *testing.T) {
 	if err := controlReceipts.Close(); err != nil {
 		t.Fatal(err)
 	}
+	configured, err := v3CloudEnrollmentConfigured(clientAccess.Identity)
+	if err != nil || !configured {
+		t.Fatalf("enrollment-backed Cloud default = %v, %v", configured, err)
+	}
 	if err := startV3ManagedDaemon(context.Background(), core, clientAccess, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
 		t.Fatal(err)
 	}
@@ -79,6 +83,61 @@ func TestStartV3ManagedDaemonBuildsPresenceWithoutStoppingCore(t *testing.T) {
 	}
 	if core.calls != 0 {
 		t.Fatalf("presence alone reached core scoped transport %d times", core.calls)
+	}
+}
+
+func TestStartV3ManagedDaemonRetriesCompanionOpenAfterNetworkRecovery(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	stream := cloudcompanion.NewFakePresenceStream(1)
+	if err := stream.Push(&cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: "test complete"}}}); err != nil {
+		t.Fatal(err)
+	}
+	fake := &managedDaemonCloudFake{FakeClient: &cloudcompanion.FakeClient{
+		BeginPresenceFunc: func(context.Context, *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error) {
+			return &cloudpb.PresenceChallenge{PresenceSessionId: "presence-recovered", ChallengeId: "challenge-recovered", Challenge: bytes.Repeat([]byte{0x62}, 32), ExpiresAtUnix: uint64(time.Now().Add(time.Minute).Unix())}, nil
+		},
+		OpenPresenceFunc: func(context.Context, *cloudpb.OpenPresenceRequest) (cloudcompanion.PresenceStream, error) {
+			return stream, nil
+		},
+	}, closed: make(chan struct{})}
+	openAttempts := 0
+	previousOpen := openV3CloudDaemonCompanion
+	openV3CloudDaemonCompanion = func(context.Context) (v3CloudClient, error) {
+		openAttempts++
+		if openAttempts == 1 {
+			return nil, fmt.Errorf("network unavailable")
+		}
+		return fake, nil
+	}
+	defer func() { openV3CloudDaemonCompanion = previousOpen }()
+	previousDelay := v3ManagedPresenceRetryDelay
+	v3ManagedPresenceRetryDelay = time.Millisecond
+	defer func() { v3ManagedPresenceRetryDelay = previousDelay }()
+	clientAccess, err := loadV3ClientAccessRuntime(resolveV3Socket(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipts, err := remotev2daemon.LoadControlReceiptStore(v3RemoteControlDir(), clientAccess.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := receipts.InstallEnrollment(&cloudpb.DaemonControlEnrollment{AccountId: "account-1", DaemonDeviceId: clientAccess.Identity.DeviceID, AuthEpoch: 1, EnrolledAtUnixMillis: now.UnixMilli(), VerificationKeys: []*cloudpb.DaemonControlVerificationKey{{KeyId: "control-1", PublicKey: bytes.Repeat([]byte{0x41}, 32), NotBeforeUnixMillis: now.Add(-time.Hour).UnixMilli(), NotAfterUnixMillis: now.Add(time.Hour).UnixMilli()}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := receipts.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := startV3ManagedDaemon(context.Background(), &managedDaemonCoreFake{}, clientAccess, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-fake.closed:
+	case <-time.After(time.Second):
+		t.Fatal("managed daemon did not recover after Companion open failure")
+	}
+	if openAttempts != 2 {
+		t.Fatalf("Companion open attempts = %d, want 2", openAttempts)
 	}
 }
 

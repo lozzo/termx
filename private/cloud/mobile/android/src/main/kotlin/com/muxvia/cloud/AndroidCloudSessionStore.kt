@@ -9,6 +9,7 @@ import org.json.JSONObject
 import java.net.URI
 import java.security.KeyStore
 import java.time.Instant
+import java.util.UUID
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -27,10 +28,16 @@ internal data class AccountSession(
     val hubURL: String,
     val region: String,
     val directoryVersion: Long,
+    val planId: String,
+    val planName: String,
+    val subscriptionStatus: String,
+    val subscriptionRevision: Long,
 )
 
 /** CloudSessionStore 只持久化 Control Plane 签发的短期 edge session，不接触 CapabilityGrant 或 terminal 数据。 */
 internal interface CloudSessionStore {
+    /** installationDeviceID 返回登出和 session 轮换都不会改变的 Official App 安装身份。 */
+    fun installationDeviceID(): String
     fun load(now: Instant): AccountSession?
     fun loadRefreshable(now: Instant): AccountSession?
     fun save(session: AccountSession)
@@ -40,6 +47,9 @@ internal interface CloudSessionStore {
 /** MemoryCloudSessionStore 是 JVM contract harness 的进程重建夹具；产品装配必须使用 AndroidCloudSessionStore。 */
 internal class MemoryCloudSessionStore : CloudSessionStore {
     private var session: AccountSession? = null
+    private val deviceID = newInstallationDeviceID()
+
+    override fun installationDeviceID(): String = deviceID
 
     override fun load(now: Instant): AccountSession? = session?.takeIf { now.isBefore(it.expiresAt) }
 
@@ -59,6 +69,18 @@ internal class MemoryCloudSessionStore : CloudSessionStore {
  */
 internal class AndroidCloudSessionStore(context: Context) : CloudSessionStore {
     private val preferences = context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+
+    override fun installationDeviceID(): String {
+        preferences.getString(INSTALLATION_DEVICE_ID_KEY, null)?.let { stored ->
+            if (validInstallationDeviceID(stored)) return stored
+            throw ManagedEndpointFailure("login_required", "cached cloud installation identity is invalid")
+        }
+        val created = newInstallationDeviceID()
+        if (!preferences.edit().putString(INSTALLATION_DEVICE_ID_KEY, created).commit()) {
+            throw ManagedEndpointFailure("temporary", "failed to persist cloud installation identity")
+        }
+        return created
+    }
 
     override fun load(now: Instant): AccountSession? {
 		return loadDecoded()?.takeIf { now.isBefore(it.expiresAt) }
@@ -125,12 +147,18 @@ internal class AndroidCloudSessionStore(context: Context) : CloudSessionStore {
         const val KEY_ALIAS = "muxvia.official.cloud.session.v1"
         const val PREFERENCES_NAME = "muxvia_official_cloud_session_v1"
         const val SESSION_KEY = "account"
+        const val INSTALLATION_DEVICE_ID_KEY = "installation_device_id"
         const val TRANSFORMATION = "AES/GCM/NoPadding"
     }
 }
 
+private fun newInstallationDeviceID(): String = "client-${UUID.randomUUID()}"
+
+private fun validInstallationDeviceID(value: String): Boolean =
+    value.length in 16..96 && value.startsWith("client-") && value.all { it in 'a'..'z' || it in '0'..'9' || it == '-' }
+
 private fun encode(session: AccountSession): ByteArray = JSONObject()
-    .put("version", 3)
+    .put("version", 4)
     .put("token", Base64.encodeToString(session.token, Base64.NO_WRAP))
     .put("expires_at_unix", session.expiresAt.epochSecond)
 	.put("refresh_token", Base64.encodeToString(session.refreshToken, Base64.NO_WRAP))
@@ -142,12 +170,16 @@ private fun encode(session: AccountSession): ByteArray = JSONObject()
     .put("hub_url", session.hubURL)
     .put("region", session.region)
     .put("directory_version", session.directoryVersion)
+    .put("plan_id", session.planId)
+    .put("plan_name", session.planName)
+    .put("subscription_status", session.subscriptionStatus)
+    .put("subscription_revision", session.subscriptionRevision)
     .toString().toByteArray(Charsets.UTF_8)
 
 private fun decode(value: ByteArray): AccountSession = try {
     val json = JSONObject(String(value, Charsets.UTF_8))
     value.fill(0)
-    require(json.getInt("version") == 3)
+    require(json.getInt("version") == 4)
     AccountSession(
         Base64.decode(json.getString("token"), Base64.NO_WRAP),
         Instant.ofEpochSecond(json.getLong("expires_at_unix")),
@@ -155,6 +187,7 @@ private fun decode(value: ByteArray): AccountSession = try {
 		Instant.ofEpochSecond(json.getLong("refresh_expires_at_unix")),
         json.getString("account_id"), json.getString("account_label"), json.getString("device_id"), json.getString("hub_id"),
         json.getString("hub_url"), json.getString("region"), json.getLong("directory_version"),
+        json.getString("plan_id"), json.getString("plan_name"), json.getString("subscription_status"), json.getLong("subscription_revision"),
     ).also(::validateSession)
 } catch (failure: Exception) {
     value.fill(0)
@@ -165,6 +198,7 @@ private fun validateSession(session: AccountSession) {
     val uri = URI(session.hubURL)
     require(session.token.size >= 16 && session.refreshToken.size >= 32 && session.refreshExpiresAt.isAfter(session.expiresAt) && session.accountId.isNotBlank() && session.accountLabel.isNotBlank() && session.deviceId.isNotBlank())
     require(session.hubId.isNotBlank() && session.region.isNotBlank() && session.directoryVersion > 0)
+    require(session.planId.isNotBlank() && session.planName.isNotBlank() && session.subscriptionStatus.isNotBlank() && session.subscriptionRevision > 0)
     require(uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank() && uri.userInfo == null && uri.query == null && uri.fragment == null)
 }
 

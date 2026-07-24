@@ -81,6 +81,7 @@ type Store interface {
 	Account(context.Context, string) (AccountRecord, error)
 	Accounts(context.Context, int) ([]AccountRecord, error)
 	PutSession(context.Context, SessionRecord, *cloudpb.CommerceAuditProjection) error
+	ReplaceDeviceSession(context.Context, SessionRecord, *cloudpb.CommerceAuditProjection) error
 	SessionByAccessHash(context.Context, [sha256.Size]byte) (SessionRecord, error)
 	SessionByRefreshHash(context.Context, [sha256.Size]byte) (SessionRecord, error)
 	RotateSession(context.Context, string, SessionRecord, *cloudpb.CommerceAuditProjection) error
@@ -290,7 +291,7 @@ func (service *Service) IssueDeviceSession(ctx context.Context, accountID, clien
 	if err != nil {
 		return nil, err
 	}
-	if err := service.store.PutSession(ctx, prepared.Record, prepared.Audit); err != nil {
+	if err := service.store.ReplaceDeviceSession(ctx, prepared.Record, prepared.Audit); err != nil {
 		return nil, err
 	}
 	return prepared.Credential, nil
@@ -660,6 +661,10 @@ func (service *Service) AccountCommerce(ctx context.Context, accountID string) (
 	if err != nil {
 		return nil, err
 	}
+	plan := planForSubscription(service.catalog, subscription)
+	if plan == nil {
+		return nil, ErrConflict
+	}
 	entitlementProjection, err := service.store.Entitlement(ctx, accountID)
 	if err != nil {
 		return nil, err
@@ -680,7 +685,7 @@ func (service *Service) AccountCommerce(ctx context.Context, accountID string) (
 	if err != nil {
 		return nil, err
 	}
-	return &cloudpb.GetAccountCommerceResponse{Account: proto.Clone(account.Projection).(*cloudpb.AccountProjection), Subscription: subscription, Entitlement: entitlementProjection, Orders: orders, Audit: audit, PaymentAttempts: attempts, PaymentEvents: events}, nil
+	return &cloudpb.GetAccountCommerceResponse{Account: proto.Clone(account.Projection).(*cloudpb.AccountProjection), Subscription: subscription, Entitlement: entitlementProjection, Orders: orders, Audit: audit, PaymentAttempts: attempts, PaymentEvents: events, Plan: proto.Clone(plan).(*cloudpb.PlanDefinition)}, nil
 }
 
 func (service *Service) newSession(account *cloudpb.AccountProjection, revision uint64, now time.Time) (*cloudpb.AccountSessionCredential, SessionRecord, error) {

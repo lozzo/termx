@@ -681,6 +681,17 @@ Android：
 make test-android
 ```
 
+本地产品二进制默认内嵌同版本 Cloud Companion；普通开发和实机 Cloud 测试统一使用：
+
+```bash
+make build
+.artifacts/bin/muxvia daemon restart
+.artifacts/bin/muxvia cloud status
+```
+
+只有明确验证开源边界时才使用 `make build-public`；它输出
+`.artifacts/bin/muxvia-public`，不得作为 Cloud/Pairing 产品测试二进制。
+
 公网 HTTPS ARM64 APK：
 
 ```bash

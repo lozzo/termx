@@ -194,18 +194,46 @@ func (owner *SessionOwner) adoptReadyPeerSession(attempt AttemptRequest, ready R
 // Pairing 等认证握手必须通过该入口取得 AttemptRequest，平台 binding 不得自行生成 generation；调用方若不发布 ready session，
 // 本次 generation 仍然有效地使旧 lease 失效，后续正式连接会再分配下一代。
 func (owner *SessionOwner) BeginRouteAttempt(target endpoint.Endpoint, routeID endpoint.RouteID, intent ConnectIntent) (AttemptRequest, error) {
-	if owner == nil {
-		return AttemptRequest{}, runtimeError(ErrorUnavailable, "session owner is unavailable", nil)
-	}
-	// 静态 route/identity/intent 必须在推进 generation 或关闭健康 session 前完成验证。
-	if _, err := NewAttemptRequest(target, routeID, 1, intent); err != nil {
-		return AttemptRequest{}, err
-	}
-	generation, err := owner.beginEndpointGeneration(target.ID)
+	attempts, err := owner.BeginRouteAttempts(target, []endpoint.RouteID{routeID}, intent)
 	if err != nil {
 		return AttemptRequest{}, err
 	}
-	return NewAttemptRequest(target, routeID, generation, intent)
+	return attempts[0], nil
+}
+
+// BeginRouteAttempts 为同一次 pairing/race 的多条 Route 分配同一个 endpoint generation。
+// 所有 Route 会在推进 generation 前完成静态校验；调用方只能把这些 attempt 用于同一逻辑事务，不能拆分缓存或跨重连复用。
+func (owner *SessionOwner) BeginRouteAttempts(target endpoint.Endpoint, routeIDs []endpoint.RouteID, intent ConnectIntent) ([]AttemptRequest, error) {
+	if owner == nil {
+		return nil, runtimeError(ErrorUnavailable, "session owner is unavailable", nil)
+	}
+	if len(routeIDs) == 0 {
+		return nil, runtimeError(ErrorInvalidRequest, "at least one route attempt is required", nil)
+	}
+	seen := make(map[endpoint.RouteID]struct{}, len(routeIDs))
+	for _, routeID := range routeIDs {
+		if _, exists := seen[routeID]; exists {
+			return nil, runtimeError(ErrorInvalidRequest, "route attempts must be unique", nil)
+		}
+		seen[routeID] = struct{}{}
+		// 静态 route/identity/intent 必须在推进 generation 或关闭健康 session 前完成验证。
+		if _, err := NewAttemptRequest(target, routeID, 1, intent); err != nil {
+			return nil, err
+		}
+	}
+	generation, err := owner.beginEndpointGeneration(target.ID)
+	if err != nil {
+		return nil, err
+	}
+	attempts := make([]AttemptRequest, 0, len(routeIDs))
+	for _, routeID := range routeIDs {
+		attempt, err := NewAttemptRequest(target, routeID, generation, intent)
+		if err != nil {
+			return nil, err
+		}
+		attempts = append(attempts, attempt)
+	}
+	return attempts, nil
 }
 
 func (owner *SessionOwner) beginEndpointGeneration(endpointID endpoint.EndpointID) (SessionGeneration, error) {

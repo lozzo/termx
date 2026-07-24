@@ -94,6 +94,23 @@ func TestSessionOwnerBeginRouteAttemptInvalidatesCurrentSession(t *testing.T) {
 	}
 }
 
+func TestSessionOwnerBeginRouteAttemptsShareOneGeneration(t *testing.T) {
+	owner := NewSessionOwner()
+	defer owner.Close()
+	target := ownerEndpoint()
+	target.Routes["direct"] = endpoint.AccessRoute{ID: "direct", Kind: endpoint.RouteDirectWebRTCTCP, Enabled: true, Source: endpoint.SourceBootstrap, PolicySource: endpoint.SourceUser, SignalingAddresses: []string{"127.0.0.1:41120"}, ICETCPAddresses: []string{"127.0.0.1:41121"}}
+	attempts, err := owner.BeginRouteAttempts(target, []endpoint.RouteID{"direct", "cloud"}, ConnectIntentInteractive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(attempts) != 2 || attempts[0].Stamp().Generation != attempts[1].Stamp().Generation || attempts[0].Route().ID != "direct" || attempts[1].Route().ID != "cloud" {
+		t.Fatalf("attempts = %#v", attempts)
+	}
+	if _, err := owner.BeginRouteAttempts(target, []endpoint.RouteID{"cloud", "cloud"}, ConnectIntentInteractive); CodeOf(err) != ErrorInvalidRequest {
+		t.Fatalf("duplicate Route error = %v", err)
+	}
+}
+
 func TestSessionOwnerInvalidAttemptDoesNotInvalidateCurrentSession(t *testing.T) {
 	owner := NewSessionOwner()
 	defer owner.Close()

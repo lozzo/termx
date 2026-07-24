@@ -25,7 +25,7 @@ import (
 
 func TestPairCreateAndImportUsesTicketThenClientBoundCredential(t *testing.T) {
 	runtimeDir, stateHome, configHome := configurePairCommandTest(t)
-	created := executePairCommand(t, nil, "--socket", filepath.Join(runtimeDir, "daemon.sock"), "pair", "create", "--raw", "--label", "Lab daemon", "--ttl", "1h", "--grant-ttl", "24h")
+	created := executePairCommand(t, nil, "--socket", filepath.Join(runtimeDir, "daemon.sock"), "pair", "create", "--raw", "--route", "direct", "--label", "Lab daemon", "--ttl", "1h", "--grant-ttl", "24h")
 	bundle, ticketClaims, err := remoteauth.ParsePairingBundle(created, time.Now().UTC())
 	if err != nil || !ticketClaims.ScopeCeiling.AllowDaemon || bundle.GetIdentity().GetDeviceId() == "" {
 		t.Fatalf("created pairing bundle = (%#v, %#v, %v)", bundle, ticketClaims, err)
@@ -73,7 +73,7 @@ func TestPairCreateAndImportUsesTicketThenClientBoundCredential(t *testing.T) {
 func TestPairImportAddsAdvertisedDirectRouteToExistingSSHEndpoint(t *testing.T) {
 	runtimeDir, _, configHome := configurePairCommandTest(t)
 	socket := filepath.Join(runtimeDir, "daemon.sock")
-	created := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw", "--label", "Daemon label")
+	created := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw", "--route", "direct", "--label", "Daemon label")
 	_, _, err := remoteauth.ParsePairingBundle(created, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
@@ -145,9 +145,16 @@ func TestPairCreateTextAndPNGOutputsArePortableAndOwnerOnly(t *testing.T) {
 	if _, err := remoteauth.ParsePairingClaimOffer(payload, time.Now().UTC()); err != nil {
 		t.Fatalf("portable pairing URI is invalid: %v", err)
 	}
-	code, err := qrcode.New(portableURI, qrcode.Medium)
+	code, err := qrcode.New(portableURI, qrcode.Low)
 	if err != nil || code.VersionNumber > 10 {
 		t.Fatalf("pairing claim QR version = %v err=%v", code.VersionNumber, err)
+	}
+	medium, err := qrcode.New(portableURI, qrcode.Medium)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code.VersionNumber >= medium.VersionNumber {
+		t.Fatalf("Low QR version=%d Medium version=%d", code.VersionNumber, medium.VersionNumber)
 	}
 
 	path := filepath.Join(t.TempDir(), "pairing", "muxvia-pair.png")
@@ -208,7 +215,7 @@ func TestPairCreatePublishesExplicitTCPMappingWithoutChangingIdentity(t *testing
 	socket := filepath.Join(runtimeDir, "daemon.sock")
 	base := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw")
 	mapped := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw",
-		"--signaling-address", "frp.example:51020", "--ice-tcp-address", "frp.example:51021", "--server-name", "frp.example")
+		"--route", "direct", "--signaling-address", "frp.example:51020", "--ice-tcp-address", "frp.example:51021", "--server-name", "frp.example")
 	baseBundle, _, err := remoteauth.ParsePairingBundle(base, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
@@ -237,9 +244,15 @@ func TestPairCreatePublishesExplicitTCPMappingWithoutChangingIdentity(t *testing
 	}
 }
 
-func TestPairCreateCanSignDirectAndCloudRoutesForSameDaemonIdentity(t *testing.T) {
+func TestPairCreateDefaultsToDirectAndCloudAndAllowsExplicitDirectOnly(t *testing.T) {
 	runtimeDir, _, _ := configurePairCommandTest(t)
-	created := executePairCommand(t, nil, "--socket", filepath.Join(runtimeDir, "daemon.sock"), "pair", "create", "--raw", "--cloud")
+	socket := filepath.Join(runtimeDir, "daemon.sock")
+	releaseRecord, err := acquireDaemonRuntimeRecord(socket, filepath.Join(runtimeDir, "daemon.log"), "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer releaseRecord()
+	created := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw")
 	bundle, _, err := remoteauth.ParsePairingBundle(created, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
@@ -258,15 +271,23 @@ func TestPairCreateCanSignDirectAndCloudRoutesForSameDaemonIdentity(t *testing.T
 	if !strings.Contains(string(inspect), `"kind":"managed-webrtc"`) || !strings.Contains(string(inspect), `"target_device_id":"`+bundle.GetIdentity().GetDeviceId()+`"`) {
 		t.Fatalf("managed pair inspect = %s", inspect)
 	}
+	directOnly := executePairCommand(t, nil, "--socket", socket, "pair", "create", "--raw", "--route", "direct")
+	directBundle, _, err := remoteauth.ParsePairingBundle(directOnly, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(directBundle.GetRoutes()) != 1 || directBundle.GetRoutes()[0].GetDirectWebrtcTcp() == nil {
+		t.Fatalf("explicit Direct-only pairing routes = %#v", directBundle.GetRoutes())
+	}
 }
 
 func TestPairCreateRejectsPartialOrUnreachableAddressOverride(t *testing.T) {
 	runtimeDir, _, _ := configurePairCommandTest(t)
 	socket := filepath.Join(runtimeDir, "daemon.sock")
 	for _, args := range [][]string{
-		{"--signaling-address", "frp.example:51020"},
-		{"--signaling-address", "0.0.0.0:51020", "--ice-tcp-address", "frp.example:51021"},
-		{"--signaling-address", "frp.example:bad", "--ice-tcp-address", "frp.example:51021"},
+		{"--route", "direct", "--signaling-address", "frp.example:51020"},
+		{"--route", "direct", "--signaling-address", "0.0.0.0:51020", "--ice-tcp-address", "frp.example:51021"},
+		{"--route", "direct", "--signaling-address", "frp.example:bad", "--ice-tcp-address", "frp.example:51021"},
 	} {
 		commandArgs := append([]string{"--socket", socket, "pair", "create", "--raw"}, args...)
 		if err := executePairCommandError(nil, commandArgs...); cliExitCode(err) != 2 {

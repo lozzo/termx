@@ -3,11 +3,14 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 artifact_dir="${MUXVIA_CLOUD_TEST_ARTIFACT_DIR:-${root}/.artifacts/bin}"
-companion_path="${artifact_dir}/muxvia-cloud"
 muxvia_path="${artifact_dir}/muxvia"
-manifest_path="${root}/private/cloud/companion/config/staging-public-http.json"
+manifest_path="${root}/private/cloud/companion/config/staging-public-https.json"
+bundle_stage="${root}/cmd/muxvia/cloud_bundle"
+companion_path="${bundle_stage}/muxvia-cloud"
 
 mkdir -p "${artifact_dir}"
+mkdir -p "${bundle_stage}"
+trap 'rm -rf "${bundle_stage}"' EXIT
 
 manifest_base64="$(base64 <"${manifest_path}" | tr -d '\r\n')"
 
@@ -27,9 +30,9 @@ fi
 
 (
 	cd "${root}"
-	GOWORK=off go build \
-		-ldflags "-X main.muxviaBuildVersion=v0.0.0-dev -X main.cloudDevelopmentCompanionName=muxvia-cloud -X main.cloudDevelopmentCompanionSHA256=${companion_sha256} -X main.cloudDevelopmentCompanionVersion=v0.0.0-dev -X main.cloudDevelopmentCompanionChannel=development" \
+	GOWORK=off go build -tags muxvia_cloud_bundled \
+		-ldflags "-X main.muxviaBuildVersion=v0.0.0-dev -X main.cloudDevelopmentCompanionSHA256=${companion_sha256} -X main.cloudDevelopmentCompanionVersion=v0.0.0-dev -X main.cloudDevelopmentCompanionChannel=development" \
 		-o "${muxvia_path}" ./cmd/muxvia
 )
 
-printf 'Built Cloud test suite:\n  %s\n  %s\n' "${muxvia_path}" "${companion_path}"
+printf 'Built default single-file Cloud-enabled muxvia:\n  %s\n' "${muxvia_path}"

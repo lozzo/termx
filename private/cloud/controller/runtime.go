@@ -359,7 +359,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	if mobileHubID == "" {
 		mobileHubID = config.Deployments[0].Metadata.GetHubId()
 	}
-	mobileActivation, err := newMobileActivationService(commerceService, topologyService, registry, edgeIssuer, mobileHubID, config.DevelopmentMobileHubURL, config.DevelopmentMobileHubRegion, daemonHubDirectory(config.Deployments), credentialNotAfter, time.Now, notifyPolicyChange)
+	mobileActivation, err := newMobileActivationService(commerceService, store, topologyService, registry, edgeIssuer, mobileHubID, config.DevelopmentMobileHubURL, config.DevelopmentMobileHubRegion, daemonHubDirectory(config.Deployments), credentialNotAfter, time.Now, notifyPolicyChange)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -566,12 +566,12 @@ type enrollmentAttachmentView interface {
 	AttachmentStatus(string) (uint64, time.Time, bool)
 }
 
-func enrollmentCandidateProvider(registry enrollmentRegistryView, control enrollmentAttachmentView, deployments []DeploymentConfig) func(context.Context, time.Time) ([]enrollmentHubCandidate, error) {
+func enrollmentCandidateProvider(registry enrollmentRegistryView, control enrollmentAttachmentView, deployments []DeploymentConfig) func(context.Context, time.Time, string) ([]enrollmentHubCandidate, error) {
 	directories := make(map[string]DeploymentConfig, len(deployments))
 	for _, deployment := range deployments {
 		directories[deployment.Metadata.GetHubId()] = deployment
 	}
-	return func(ctx context.Context, now time.Time) ([]enrollmentHubCandidate, error) {
+	return func(ctx context.Context, now time.Time, existingHubID string) ([]enrollmentHubCandidate, error) {
 		registered, err := registry.Deployments(ctx)
 		if err != nil {
 			return nil, err
@@ -590,7 +590,8 @@ func enrollmentCandidateProvider(registry enrollmentRegistryView, control enroll
 				return nil, err
 			}
 			count := uint64(len(assignments))
-			if directory.MaxAssignments == 0 || count >= directory.MaxAssignments {
+			// 满载只阻止新增 assignment；当前 daemon 复用自己的 owning Hub 不增加占用。
+			if directory.MaxAssignments == 0 || count >= directory.MaxAssignments && directory.Metadata.GetHubId() != existingHubID {
 				continue
 			}
 			candidates = append(candidates, enrollmentHubCandidate{

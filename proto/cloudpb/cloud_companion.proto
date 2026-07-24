@@ -6,6 +6,7 @@ option go_package = "github.com/muxvia/muxvia/proto/cloudpb";
 
 import "cloudpb/cloud_topology.proto";
 import "cloudpb/cloud_hub_control.proto";
+import "cloudpb/cloud_product.proto";
 
 // CallerRole 标识当前 IPC 连接代表的公开进程角色。
 enum CallerRole {
@@ -197,6 +198,8 @@ message CompleteLoginRequest {
 message ClaimMobileActivationRequest {
   string user_code = 1;
   DeviceMetadata client_metadata = 2;
+  // client_device_id 是 Official App 安装级稳定身份；注册码和账号 session 轮换不得改变它。
+  string client_device_id = 3;
 }
 
 enum MobileActivationState {
@@ -238,6 +241,12 @@ message CloudSessionSummary {
   string account_id = 2;
   string device_id = 3;
   uint64 expires_at_unix = 4;
+  // plan_id/status/revision 是 Controller 持久 Subscription 的非秘密摘要。
+  // 客户端只能展示，不得据此自行放行 Relay；Hub policy 仍是 managed capability 准入真值。
+  string plan_id = 5;
+  SubscriptionStatus subscription_status = 6;
+  uint64 subscription_revision = 7;
+  string plan_name = 8;
 }
 
 // CompleteLoginResponse 确认账号会话已写入 Companion 的 OS credential store。

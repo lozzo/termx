@@ -150,7 +150,7 @@ export interface LocalCreateTerminalInput {
   cols?: number | undefined
   rows?: number | undefined
   cwd?: string | undefined
-  environment?: string | undefined
+  environment?: string[] | undefined
   scrollbackSize?: number | undefined
   scrollbackMaxBytes?: number | undefined
   scrollbackMaxAgeSeconds?: number | undefined

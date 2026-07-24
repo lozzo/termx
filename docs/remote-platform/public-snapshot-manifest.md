@@ -162,7 +162,7 @@ Run the canonical repository doctor, build, all public tests, Community App buil
 
 ```bash
 (cd "$DEST" && make doctor)
-(cd "$DEST" && make build)
+(cd "$DEST" && make build-public)
 (cd "$DEST" && make test-all)
 (cd "$DEST" && scripts/license-audit.sh --public-snapshot)
 ```

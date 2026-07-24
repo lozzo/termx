@@ -19,7 +19,8 @@ export type NativeSessionConnector = {
  *
  * Go Client Engine 仍拥有 route、PeerSession 与 generation 真值；这里仅保证 workspace、inventory
  * 和文件传输复用同一个 binding session handle，避免 UI 消费者各自 openSession 后互相使 generation
- * 失效。reset 只在 Android generation 更换或 machine runtime 销毁时关闭底层 session。
+ * 失效。页面、terminal 和文件资源的 lease 关闭都不关闭底层 session；reset 只在 Android
+ * generation 更换、显式重连或 Endpoint 配置失效时关闭底层 session。
  */
 export class NativeSessionManager {
   private session: ProtoClientSession | null = null
@@ -45,7 +46,7 @@ export class NativeSessionManager {
     return this.acquire(options)
   }
 
-  /** reset 在 runtime 销毁或 native generation 更换时关闭唯一底层 binding session。 */
+  /** reset 在 native generation 更换、显式重连或 Endpoint 配置失效时关闭唯一底层 binding session。 */
   async reset(): Promise<void> {
     this.epoch += 1
     const session = this.session

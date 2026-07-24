@@ -97,17 +97,26 @@ Control Plane 保存：
 
 ```text
 hub_id
+label
 region
 public_url
+health_url
 control_identity_fingerprint
+relay_identity_fingerprint
 enabled
-capacity_class
+draining
+max_assignments
+revision
 last_control_seen_at
 ```
 
 - Hub 使用部署证书或等价非对称 identity 主动连接 Control Plane。
 - Control Plane 根据认证公钥/证书 fingerprint 查询唯一 `hub_id`；`HubHello` 自报的 Hub ID、region 和 URL不能覆盖 registry。
 - 同一个 `hub_id` 同时只允许一个 active `control_stream_generation`。新流建立后旧流被 fencing，旧流的 command result/runtime event 不再更新当前投影。
+- PostgreSQL registry 是 public URL、health URL、region、capacity 和 lifecycle 的唯一正式真值。Controller 进程配置不得在每次启动覆盖已提交记录；显式 development bootstrap 只允许首次插入。
+- operator 新建记录时默认为 disabled；只有核对 Hub/Relay identity fingerprint 后才能 enabled。`draining` 停止新 assignment，但不伪造已有 Presence 离线。
+- Hub 下线固定执行 `draining -> assignment migration/fence -> assignment count zero -> disabled`。保留 deployment 与审计记录，不提供有 assignment 的硬删除。
+- enrollment candidate、target-owner resolve、daemon refresh 和客户端动态目录都从同一 registry revision 生成。客户端 manifest 只携带 Controller origin/trust material，不携带作为运行真值的 Hub URL。
 
 ### 4.2 control stream handshake
 

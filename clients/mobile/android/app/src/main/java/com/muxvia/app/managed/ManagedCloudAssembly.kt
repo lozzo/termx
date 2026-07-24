@@ -43,6 +43,7 @@ private class BrokenOfficialCloudAdapter(private val detail: String) : ManagedCl
     override suspend fun claimLogin(userCode: String, metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow = unavailable()
     override suspend fun completeLogin(flowId: String): ManagedCloudAccount = unavailable()
     override suspend fun currentAccount(): ManagedCloudAccount? = unavailable()
+    override suspend fun refreshAccount(): ManagedCloudAccount? = unavailable()
     override suspend fun listDevices(): List<ManagedCloudDevice> = unavailable()
     override suspend fun logout() = unavailable()
     override suspend fun resolveProto(request: CloudCompanion.ResolveEndpointRequest): CloudCompanion.ResolvedEndpoint = unavailable()

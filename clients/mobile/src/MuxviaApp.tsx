@@ -37,7 +37,7 @@ import type {
   CloudAccountAdapter,
   ProtoClientSession,
 } from '@muxvia/ui'
-import { NativeConnection } from './plugins/nativeConnection'
+import { NativeConnection, type NativeCloudAccount } from './plugins/nativeConnection'
 import { NativeFileTransferStore } from './NativeFileTransferStore'
 import { GoBindingClient, GoBindingConnector } from './GoBindingClient'
 import { settleBindingGeneration } from './BindingGeneration'
@@ -52,6 +52,20 @@ const qrScannerReaderId = 'muxvia-camera-qr-reader'
 const nativeHttpConnectTimeoutMs = 8_000
 const nativeHttpReadTimeoutMs = 15_000
 let goBindingClient = new GoBindingClient()
+
+function validCloudAccount(account: NativeCloudAccount): account is NativeCloudAccount & {
+  accountId: string
+  accountLabel: string
+  planId: string
+  planName: string
+  subscriptionStatus: string
+  subscriptionRevision: number
+} {
+  return Boolean(
+    account.accountId && account.accountLabel && account.planId && account.planName && account.subscriptionStatus &&
+    typeof account.subscriptionRevision === 'number' && account.subscriptionRevision > 0,
+  )
+}
 
 type MachineRuntimeFactory = NonNullable<RemoteControlAppProps['machineRuntimeFactory']>
 type MachineRuntime = ReturnType<MachineRuntimeFactory>
@@ -99,14 +113,18 @@ export function MuxviaApp() {
   const cloudAccountAdapter = useMemo<CloudAccountAdapter>(() => ({
     async current() {
       const account = await NativeConnection.getCloudAccount()
-      return account.accountId && account.accountLabel ? { accountId: account.accountId, accountLabel: account.accountLabel } : null
+      return validCloudAccount(account) ? account : null
+    },
+    async refresh() {
+      const account = await NativeConnection.refreshCloudAccount()
+      return validCloudAccount(account) ? account : null
     },
     beginActivation: () => NativeConnection.cloudBeginActivation(),
     claimActivation: (payload) => NativeConnection.cloudClaimActivation({ payload }),
     async awaitActivation() {
       const account = await NativeConnection.cloudAwaitActivation()
-      if (!account.accountId || !account.accountLabel) throw new Error('Muxvia Cloud returned an invalid account')
-      return { accountId: account.accountId, accountLabel: account.accountLabel }
+      if (!validCloudAccount(account)) throw new Error('Muxvia Cloud returned an invalid account')
+      return account
     },
     cancelActivation: () => NativeConnection.cloudCancelActivation(),
     async listMachines() {
@@ -742,6 +760,33 @@ function createNativeMachineRuntime(
       },
       getConnectionPolicy: (signal) => connector.getConnectionPolicy?.(signal) ?? Promise.reject(new Error('Connection policy is unavailable')),
       applyConnectionPolicy: (policy, signal) => connector.applyConnectionPolicy?.(policy, signal) ?? Promise.reject(new Error('Connection policy is unavailable')),
+      routeManagement: {
+        async load(signal) {
+          const registry = await goBindingClient.getEndpointRegistry(signal)
+          const endpoint = registry.endpoints.find((candidate) => candidate.endpointId === machine.id)
+          if (!endpoint) throw new Error('Endpoint is not configured')
+          return create(MuxviaRemoteAuth.EndpointConfigV1Schema, endpoint)
+        },
+        async save(endpoint, signal) {
+          await sessionManager.reset()
+          const result = await goBindingClient.upsertEndpoint(endpoint, false, signal)
+          if (result.registry) endpointRegistry.replace(result.registry)
+          if (!result.endpoint) throw new Error('Endpoint update returned no endpoint')
+          return result.endpoint
+        },
+        async test(routeId, signal) {
+          await sessionManager.reset()
+          const routeConnector = new GoBindingConnector(() => goBindingClient, { endpointId: machine.id, routeId })
+          const session = await routeConnector.connect({ machineId: machine.id }, { signal })
+          await session.close()
+        },
+        async provisionSSH(routeId, signal) {
+          await sessionManager.reset()
+          const result = await goBindingClient.provisionSSHCredential(machine.id, routeId, signal)
+          if (result.registry) endpointRegistry.replace(result.registry)
+          return result
+        },
+      },
     },
     inventoryEvents: createNativeInventoryEvents(machine.id, sessionManager),
     fileTransfer: createFileTransferContext(machine.id, transferStore),

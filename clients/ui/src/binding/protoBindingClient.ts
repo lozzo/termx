@@ -793,6 +793,7 @@ function apiErrorCode(code: MuxviaApiCommon.ApiErrorCode | undefined): string {
     case MuxviaApiCommon.ApiErrorCode.CANCELLED: return 'cancelled'
     case MuxviaApiCommon.ApiErrorCode.UNAVAILABLE: return 'unavailable'
     case MuxviaApiCommon.ApiErrorCode.INTERNAL: return 'internal'
+    case MuxviaApiCommon.ApiErrorCode.ENTITLEMENT_DENIED: return 'entitlement_denied'
     default: return ''
   }
 }

@@ -121,6 +121,7 @@ const (
 	ApiErrorCode_API_ERROR_CODE_CANCELLED              ApiErrorCode = 9
 	ApiErrorCode_API_ERROR_CODE_UNAVAILABLE            ApiErrorCode = 10
 	ApiErrorCode_API_ERROR_CODE_INTERNAL               ApiErrorCode = 11
+	ApiErrorCode_API_ERROR_CODE_ENTITLEMENT_DENIED     ApiErrorCode = 12
 )
 
 // Enum value maps for ApiErrorCode.
@@ -138,6 +139,7 @@ var (
 		9:  "API_ERROR_CODE_CANCELLED",
 		10: "API_ERROR_CODE_UNAVAILABLE",
 		11: "API_ERROR_CODE_INTERNAL",
+		12: "API_ERROR_CODE_ENTITLEMENT_DENIED",
 	}
 	ApiErrorCode_value = map[string]int32{
 		"API_ERROR_CODE_UNSPECIFIED":            0,
@@ -152,6 +154,7 @@ var (
 		"API_ERROR_CODE_CANCELLED":              9,
 		"API_ERROR_CODE_UNAVAILABLE":            10,
 		"API_ERROR_CODE_INTERNAL":               11,
+		"API_ERROR_CODE_ENTITLEMENT_DENIED":     12,
 	}
 )
 
@@ -878,7 +881,7 @@ const file_apipb_common_proto_rawDesc = "" +
 	"\x16API_CAPABILITY_STORAGE\x10\v\x12%\n" +
 	"!API_CAPABILITY_EVENT_SUBSCRIPTION\x10\f\x12 \n" +
 	"\x1cAPI_CAPABILITY_CLIENT_ACCESS\x10\r\x12!\n" +
-	"\x1dAPI_CAPABILITY_REMOTE_CONTROL\x10\x0e*\x9c\x03\n" +
+	"\x1dAPI_CAPABILITY_REMOTE_CONTROL\x10\x0e*\xc3\x03\n" +
 	"\fApiErrorCode\x12\x1e\n" +
 	"\x1aAPI_ERROR_CODE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eAPI_ERROR_CODE_INVALID_REQUEST\x10\x01\x12&\n" +
@@ -892,7 +895,8 @@ const file_apipb_common_proto_rawDesc = "" +
 	"\x18API_ERROR_CODE_CANCELLED\x10\t\x12\x1e\n" +
 	"\x1aAPI_ERROR_CODE_UNAVAILABLE\x10\n" +
 	"\x12\x1b\n" +
-	"\x17API_ERROR_CODE_INTERNAL\x10\v*\xd4\x01\n" +
+	"\x17API_ERROR_CODE_INTERNAL\x10\v\x12%\n" +
+	"!API_ERROR_CODE_ENTITLEMENT_DENIED\x10\f*\xd4\x01\n" +
 	"\fResourceKind\x12\x1d\n" +
 	"\x19RESOURCE_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17RESOURCE_KIND_OPERATION\x10\x01\x12\x1e\n" +

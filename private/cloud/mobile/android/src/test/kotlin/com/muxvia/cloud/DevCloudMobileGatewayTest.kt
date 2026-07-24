@@ -42,7 +42,7 @@ class DevCloudMobileGatewayTest {
             .build()
 
         assertFalse(gateway.routeEligibilityProto(request).accountSessionAvailable)
-        store.save(AccountSession(ByteArray(32) { 1 }, now.plusSeconds(300), ByteArray(32) { 2 }, now.plusSeconds(3600), "account-1", "Account One", "client-1", "hub-1", "https://hub.example.test", "region-1", 2))
+        store.save(AccountSession(ByteArray(32) { 1 }, now.plusSeconds(300), ByteArray(32) { 2 }, now.plusSeconds(3600), "account-1", "Account One", "client-1", "hub-1", "https://hub.example.test", "region-1", 2, "managed-free", "Managed Free", "SUBSCRIPTION_STATUS_ACTIVE", 1))
 
         val loggedIn = gateway.routeEligibilityProto(request)
         assertTrue(loggedIn.accountSessionAvailable)
@@ -115,6 +115,10 @@ class DevCloudMobileGatewayTest {
                         .put("hub_url", hub.origin)
                         .put("hub_region", "local-1")
                         .put("hub_directory_version", 1)
+						.put("plan_id", "pro")
+						.put("plan_name", "Muxvia Pro")
+						.put("subscription_status", "SUBSCRIPTION_STATUS_ACTIVE")
+						.put("subscription_revision", 2)
 						.put("refresh_token", Base64.getEncoder().encodeToString(refreshToken))
 						.put("refresh_expires_at_unix", now.plusSeconds(86400).epochSecond)
                         .put("access_token", Base64.getEncoder().encodeToString(accessToken)))
@@ -180,6 +184,7 @@ class DevCloudMobileGatewayTest {
                     val claim = CloudCompanion.ClaimMobileActivationRequest.parseFrom(request.body)
                     assertEquals("ABCDE-FGHJK", claim.userCode)
                     assertEquals("Huawei JAD-AL00", claim.clientMetadata.displayName)
+                    assertTrue(claim.clientDeviceId.startsWith("client-"))
                     protoResponse(CloudCompanion.LoginFlow.newBuilder()
                         .setFlowId("private-native-flow")
                         .setVerificationUri("http://127.0.0.1/device?code=ABCDE-FGHJK")
@@ -200,6 +205,10 @@ class DevCloudMobileGatewayTest {
                         .put("hub_url", "http://127.0.0.1:41002")
                         .put("hub_region", "local-1")
                         .put("hub_directory_version", 1)
+						.put("plan_id", "managed-free")
+						.put("plan_name", "Managed Free")
+						.put("subscription_status", "SUBSCRIPTION_STATUS_ACTIVE")
+						.put("subscription_revision", 1)
 						.put("refresh_token", Base64.getEncoder().encodeToString(refreshToken))
 						.put("refresh_expires_at_unix", now.plusSeconds(86400).epochSecond)
                         .put("access_token", Base64.getEncoder().encodeToString(accessToken)))
@@ -208,10 +217,14 @@ class DevCloudMobileGatewayTest {
             }
         }
         try {
-            val gateway = DevCloudMobileGateway(control.origin, control.origin, now = { now })
+            val sessionStore = MemoryCloudSessionStore()
+            val installationDeviceID = sessionStore.installationDeviceID()
+            val gateway = DevCloudMobileGateway(control.origin, control.origin, now = { now }, sessionStore = sessionStore)
             val flow = gateway.claimLogin("abcde-fghjk", ManagedCloudClientMetadata("Huawei JAD-AL00", "android", "test"))
             assertEquals("ABCDE-FGHJK", flow.userCode)
             assertEquals("account-mobile", gateway.completeLogin(flow.flowId).accountId)
+            gateway.logout()
+            assertEquals(installationDeviceID, sessionStore.installationDeviceID())
             control.assertHealthy()
         } finally {
             control.close()
@@ -219,7 +232,7 @@ class DevCloudMobileGatewayTest {
     }
 
 	@Test
-	fun refreshesExpiringAccountSessionAndRotatesKeystoreSecret() = runBlocking {
+	fun userRefreshRotatesAccountSessionAndReturnsSubscriptionSummary() = runBlocking {
 		val firstAccess = ByteArray(32) { 0x51 }
 		val secondAccess = ByteArray(32) { 0x52 }
 		val firstRefresh = ByteArray(32) { 0x61 }
@@ -239,7 +252,7 @@ class DevCloudMobileGatewayTest {
 		}
 		val control = TestHttpServer { request ->
 			when (request.path) {
-				"/v1/login/complete" -> jsonResponse(sessionJSON(firstAccess, firstRefresh, now.plusSeconds(300), now.plusSeconds(86400), hub.origin))
+				"/v1/login/complete" -> jsonResponse(sessionJSON(firstAccess, firstRefresh, now.plusSeconds(3600), now.plusSeconds(86400), hub.origin))
 				"/v1/sessions/refresh" -> {
 					refreshCount++
 					val input = JSONObject(String(request.body, Charsets.UTF_8))
@@ -253,6 +266,10 @@ class DevCloudMobileGatewayTest {
 		try {
 			val gateway = DevCloudMobileGateway(control.origin, hub.origin, now = { now })
 			gateway.completeLogin("flow-refresh")
+			val refreshedAccount = gateway.refreshAccount()
+			assertEquals("pro", refreshedAccount?.planId)
+			assertEquals("SUBSCRIPTION_STATUS_ACTIVE", refreshedAccount?.subscriptionStatus)
+			assertEquals(2L, refreshedAccount?.subscriptionRevision)
 			val devices = gateway.listDevices()
 			assertEquals("ed25519-sha256:studio", devices.single().deviceFingerprint)
 			assertEquals(1, refreshCount)
@@ -269,7 +286,7 @@ class DevCloudMobileGatewayTest {
 		val refreshToken = ByteArray(32) { 0x72 }
 		val nextAccess = ByteArray(32) { 0x73 }
 		val nextRefresh = ByteArray(32) { 0x74 }
-		store.save(AccountSession(expiredAccess, now.minusSeconds(1), refreshToken, now.plusSeconds(86400), "account-refresh", "Refresh owner", "android-refresh", "hub-refresh", "http://127.0.0.1:41002", "local-1", 1))
+		store.save(AccountSession(expiredAccess, now.minusSeconds(1), refreshToken, now.plusSeconds(86400), "account-refresh", "Refresh owner", "android-refresh", "hub-refresh", "http://127.0.0.1:41002", "local-1", 1, "managed-free", "Managed Free", "SUBSCRIPTION_STATUS_ACTIVE", 1))
 		var refreshCount = 0
 		val control = TestHttpServer { request ->
 			assertEquals("/v1/sessions/refresh", request.path)
@@ -346,7 +363,7 @@ class DevCloudMobileGatewayTest {
     @Test
     fun cachedSessionRejectsHubChangeAndDirectoryRollback() {
         val store = MemoryCloudSessionStore()
-        val current = AccountSession(ByteArray(32) { 1 }, now.plusSeconds(300), ByteArray(32) { 2 }, now.plusSeconds(3600), "account-1", "Account One", "client-1", "hub-1", "https://hub.example.test", "region-1", 2)
+        val current = AccountSession(ByteArray(32) { 1 }, now.plusSeconds(300), ByteArray(32) { 2 }, now.plusSeconds(3600), "account-1", "Account One", "client-1", "hub-1", "https://hub.example.test", "region-1", 2, "managed-free", "Managed Free", "SUBSCRIPTION_STATUS_ACTIVE", 1)
         store.save(current)
 
         val rollback = assertThrows(ManagedEndpointFailure::class.java) {
@@ -377,6 +394,10 @@ class DevCloudMobileGatewayTest {
 		.put("hub_url", hubURL)
 		.put("hub_region", "local-1")
 		.put("hub_directory_version", 1)
+		.put("plan_id", "pro")
+		.put("plan_name", "Muxvia Pro")
+		.put("subscription_status", "SUBSCRIPTION_STATUS_ACTIVE")
+		.put("subscription_revision", 2)
 		.put("access_token", Base64.getEncoder().encodeToString(access))
 		.put("refresh_token", Base64.getEncoder().encodeToString(refresh))
 

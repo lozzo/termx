@@ -345,6 +345,33 @@ func TestSSHCredentialProvisionCommitsRouteAndRollsBackNewKeyOnStoreFailure(t *t
 	}
 }
 
+func TestEndpointUpsertRemovingRouteDeletesUnreferencedCredentials(t *testing.T) {
+	platform := newRegistryPlatform(t)
+	host := platform.host()
+	configured := testSSHEndpointProto(t, "studio")
+	configured.Routes[0].CredentialRef = "credential:studio"
+	configured.Routes[0].GetSshWebrtcTcp().SshCredentialRef = platformSSHCredentialRef("studio", "ssh")
+	platform.credentials["credential:studio"] = "grant"
+	platform.sshKeys[platformSSHCredentialRef("studio", "ssh")] = []byte("private-key")
+	if _, err := host.UpsertEndpoint(context.Background(), &bindingpb.EndpointUpsertRequest{Endpoint: configured}); err != nil {
+		t.Fatal(err)
+	}
+
+	replacement := testEndpointProto(t, "studio", configured.GetIdentity().GetDeviceId(), "credential:replacement")
+	replacement.Identity = proto.Clone(configured.GetIdentity()).(*remoteauthpb.EndpointDaemonIdentity)
+	if _, err := host.UpsertEndpoint(context.Background(), &bindingpb.EndpointUpsertRequest{Endpoint: replacement}); err != nil {
+		t.Fatal(err)
+	}
+	platform.mu.Lock()
+	defer platform.mu.Unlock()
+	if _, ok := platform.credentials["credential:studio"]; ok {
+		t.Fatal("removed Route capability credential survived registry transaction")
+	}
+	if _, ok := platform.sshKeys[platformSSHCredentialRef("studio", "ssh")]; ok {
+		t.Fatal("removed SSH Route credential survived registry transaction")
+	}
+}
+
 func testEndpointProto(t *testing.T, id, deviceID, credentialRef string) *remoteauthpb.EndpointConfigV1 {
 	t.Helper()
 	digest := sha256.Sum256([]byte(deviceID))
@@ -439,7 +466,11 @@ func (platform *registryPlatform) pump(broker *binding.PlatformBroker) {
 			}
 			platform.registry = append([]byte(nil), value.EndpointRegistryStore.GetRegistryProto()...)
 			for _, ref := range value.EndpointRegistryStore.GetDeleteCredentialRefs() {
-				delete(platform.credentials, ref)
+				if strings.HasPrefix(ref, platformSSHCredentialPrefix) {
+					delete(platform.sshKeys, ref)
+				} else {
+					delete(platform.credentials, ref)
+				}
 			}
 		case *bindingpb.PlatformRequest_CredentialDelete:
 			delete(platform.credentials, value.CredentialDelete.GetCredentialRef())

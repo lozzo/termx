@@ -153,16 +153,18 @@ muxvia endpoint test ID
 ### 5.3 daemon
 
 ```text
-muxvia daemon run [--cloud]              前台运行
-muxvia daemon start [--cloud]            启动当前用户 daemon service
+muxvia daemon run [--no-cloud]           前台运行
+muxvia daemon start [--no-cloud]         启动当前用户 daemon service
 muxvia daemon stop
-muxvia daemon restart
+muxvia daemon restart [--no-cloud]
 muxvia daemon status [--json]
 muxvia daemon logs [--follow]
 muxvia daemon doctor
 ```
 
-`muxvia daemon` 可以作为 `daemon run` 的简写。start/stop/status 必须由明确的跨平台 service manager 或 pid/socket ownership contract 实现，不能使用宽泛 `pkill muxvia`。系统级 daemon 与当前用户 daemon 必须显式区分；停止 daemon 的帮助文本必须说明它会影响该 endpoint 的所有客户端，退出 TUI 不应调用 daemon stop。
+`muxvia daemon` 可以作为 `daemon run` 的简写。已完成 daemon enrollment 时 Cloud Presence 默认启用，只有显式 `--no-cloud` 才关闭；未 enrollment 时 Direct/SSH 继续可用。start/stop/status 必须由明确的跨平台 service manager 或 pid/socket ownership contract 实现，不能使用宽泛 `pkill muxvia`。系统级 daemon 与当前用户 daemon 必须显式区分；停止 daemon 的帮助文本必须说明它会影响该 endpoint 的所有客户端，退出 TUI 不应调用 daemon stop。
+
+仓库的自有 Cloud 测试/分发构建输出单个 `muxvia`：构建脚本先生成 Companion，再把 artifact 作为固定资源链接进主二进制；运行时释放并复验后仍以独立进程启动。不得依赖 `muxvia` 同目录下未经主二进制绑定的 sibling 文件。当前用户固定 IPC endpoint 的活跃 listener 是唯一 Companion 进程真值；daemon 重启必须复用它，后启动进程不得删除活跃 socket 或产生第二个 listener，只有确认无法连接的 stale socket 才能在 owner-only 启动锁内回收。
 
 ### 5.4 workspace
 
@@ -197,10 +199,14 @@ ENDPOINT 用于选择 owning daemon，当前 protocol session 仍必须持有显
 ### 5.6 pair
 
 ```text
-muxvia pair create [--terminal TARGET] [--ttl DURATION] [--text | --qr-file FILE | --raw | --out FILE]
+muxvia pair create [--label NAME] [--terminal TARGET] [--ttl DURATION] [--route ROUTE]... [--text | --qr-file FILE | --raw | --out FILE]
 muxvia pair import FILE [--id ENDPOINT] [--relay MODE]
 muxvia pair inspect FILE
 ```
+
+零个 `--route` 表示 Auto，由 daemon runtime 只发布当前可证明可用于 pairing 的 Direct/Cloud seeds；`--route` 可重复，正式简写为 `direct`、`ssh`、`cloud`。日常手工输入使用作用域明确的 `--direct-*`、`--ssh-*`、`--signaling-address`、`--ice-tcp-address` 等普通 flags；脚本和同 kind 多实例可使用 `net/url` 严格解析的 `direct://...`、`ssh://...`。显式 Route 不可用时在二维码输出前失败，不能静默改写用户限定。完整 grammar、label 作用域、同 DeviceIdentity 增量合并和删除项见 [`pairing-route-management-design.md`](../remote-platform/pairing-route-management-design.md)。
+
+pair create 不再提供 `--no-cloud`；`--signaling-address`、`--ice-tcp-address` 和 `--server-name` 只作为显式 `--route direct` 的参数，不能再隐式创建或覆盖 Route。daemon lifecycle 的 `--no-cloud` 是运行策略，与本次 pairing Route 选择无关。
 
 create/import/inspect 已实现；inspect 只能显示非秘密 metadata。list/revoke 必须先建立 daemon-owned grant registry/revocation contract，当前不进入产品树。raw grant 永不进入普通 JSON、日志、`endpoints.yaml` 或 shell completion。
 

@@ -90,7 +90,7 @@ type enrollmentService struct {
 	topology           *cloudtopology.Service
 	registry           *hubregistry.Registry
 	enrollmentStore    persistence.DaemonEnrollmentStore
-	candidateProvider  func(context.Context, time.Time) ([]enrollmentHubCandidate, error)
+	candidateProvider  func(context.Context, time.Time, string) ([]enrollmentHubCandidate, error)
 	edgeIssuer         servicecredential.EdgeAccessIssuer
 	controlKeyID       string
 	controlPublicKey   ed25519.PublicKey
@@ -109,7 +109,7 @@ type enrollmentServiceConfig struct {
 	Topology           *cloudtopology.Service
 	Registry           *hubregistry.Registry
 	EnrollmentStore    persistence.DaemonEnrollmentStore
-	CandidateProvider  func(context.Context, time.Time) ([]enrollmentHubCandidate, error)
+	CandidateProvider  func(context.Context, time.Time, string) ([]enrollmentHubCandidate, error)
 	EdgeIssuer         servicecredential.EdgeAccessIssuer
 	ControlKeyID       string
 	ControlPublicKey   ed25519.PublicKey
@@ -241,7 +241,13 @@ func (service *enrollmentService) begin(ctx context.Context, request *cloudpb.Be
 	if _, err := rand.Read(challenge); err != nil {
 		return nil, fmt.Errorf("%w: create challenge: %v", errEnrollmentUnavailable, err)
 	}
-	candidates, err := service.candidateProvider(ctx, now)
+	existingHubID := ""
+	if assignment, assignmentErr := service.registry.Assignment(ctx, request.GetDeviceId()); assignmentErr == nil {
+		existingHubID = assignment.Value.GetHubId()
+	} else if !errors.Is(assignmentErr, hubregistry.ErrAssignmentConflict) {
+		return nil, fmt.Errorf("%w: inspect daemon assignment: %v", errEnrollmentUnavailable, assignmentErr)
+	}
+	candidates, err := service.candidateProvider(ctx, now, existingHubID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: load Hub candidates: %v", errEnrollmentUnavailable, err)
 	}
@@ -426,13 +432,6 @@ func (service *enrollmentService) complete(ctx context.Context, request *cloudpb
 	} else if !errors.Is(loadErr, cloudtopology.ErrOwnershipNotFound) {
 		return nil, fmt.Errorf("%w: load daemon ownership: %v", errEnrollmentUnavailable, loadErr)
 	}
-	currentCandidates, err := service.candidateProvider(ctx, now)
-	if err != nil {
-		return nil, fmt.Errorf("%w: reload Hub candidates: %v", errEnrollmentUnavailable, err)
-	}
-	if len(currentCandidates) == 0 {
-		return nil, fmt.Errorf("%w: no active Hub candidates during completion", errEnrollmentUnavailable)
-	}
 	needsAssignment := false
 	assignment, assignmentErr := service.registry.Assignment(ctx, proof.GetDeviceId())
 	if errors.Is(assignmentErr, hubregistry.ErrAssignmentConflict) {
@@ -461,6 +460,13 @@ func (service *enrollmentService) complete(ctx context.Context, request *cloudpb
 			return nil, errEnrollmentDenied
 		}
 		existingHubID = assignment.Value.GetHubId()
+	}
+	currentCandidates, err := service.candidateProvider(ctx, now, existingHubID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: reload Hub candidates: %v", errEnrollmentUnavailable, err)
+	}
+	if len(currentCandidates) == 0 {
+		return nil, fmt.Errorf("%w: no active Hub candidates during completion", errEnrollmentUnavailable)
 	}
 	selected, err := validateEnrollmentHubProposal(flowCopy.hubCandidates, currentCandidates, request.GetHubObservations(), request.GetPreferredHubId(), existingHubID)
 	if err != nil {
@@ -712,7 +718,7 @@ func validateEnrollmentHubProposal(offered []*cloudpb.HubEnrollmentCandidate, cu
 		if candidate.value == nil || candidate.value.GetHubId() != preferredHubID {
 			continue
 		}
-		if !offeredIDs[preferredHubID] || candidate.value.GetHubUrl() == "" || candidate.value.GetHealthUrl() == "" || candidate.value.GetRegion() == "" || candidate.maxAssignments == 0 || candidate.assignmentCount >= candidate.maxAssignments {
+		if !offeredIDs[preferredHubID] || candidate.value.GetHubUrl() == "" || candidate.value.GetHealthUrl() == "" || candidate.value.GetRegion() == "" || candidate.maxAssignments == 0 || existingHubID == "" && candidate.assignmentCount >= candidate.maxAssignments {
 			return nil, errEnrollmentCandidateStale
 		}
 		return proto.Clone(candidate.value).(*cloudpb.HubEnrollmentCandidate), nil

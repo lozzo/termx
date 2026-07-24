@@ -418,6 +418,7 @@ message EndpointRouteConfigV1 {
   string credential_ref = 6;
   EndpointSource source = 7;
   EndpointSource policy_source = 8;
+  string display_name = 9;
 
   oneof route {
     LocalUnixRouteConfig local_unix = 20;
@@ -440,12 +441,29 @@ message PairingManagedRouteSeed {
   string target_device_id = 1;
 }
 
+// PairingSSHRouteSeed 只携带建立首个 SSH tunnel pairing peer 所需的公开连接信息。
+// credential_kind 只声明接收平台需要准备的凭据类别；二维码不得携带 credential ref、密码或私钥。
+message PairingSSHRouteSeed {
+  string host = 1;
+  uint32 port = 2;
+  string user = 3;
+  repeated string host_key_fingerprints = 4;
+  string proxy_jump = 5;
+  string remote_signaling_address = 6;
+  string remote_ice_tcp_address = 7;
+  EndpointCredentialKind credential_kind = 8;
+}
+
 // PairingRouteSeed 是短码中建立一次 pairing peer 所需的最小 Route 投影。
 message PairingRouteSeed {
   oneof route {
     PairingDirectRouteSeed direct_webrtc_tcp = 1;
     PairingManagedRouteSeed managed_webrtc = 2;
+    PairingSSHRouteSeed ssh_webrtc_tcp = 3;
   }
+  string route_id = 4;
+  string display_name = 5;
+  optional int32 priority = 6;
 }
 
 // PairingClaimOfferV1 是二维码和无摄像头输入使用的紧凑一次性 claim。
@@ -456,7 +474,7 @@ message PairingClaimOfferV1 {
   string device_id = 3;
   bytes device_public_key = 4;
   int64 expires_at_unix_nano = 5;
-  PairingRouteSeed route = 6;
+  repeated PairingRouteSeed routes = 6;
 }
 
 // EndpointConfigV1 是 Go Client Engine 持久化和跨 binding 投影的 Endpoint 配置。

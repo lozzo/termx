@@ -83,3 +83,45 @@ func TestAdapterAcceptsControllerSelectedDaemonRefreshDirectory(t *testing.T) {
 		t.Fatalf("refreshed daemon directory = %v", refreshed.Metadata())
 	}
 }
+
+func TestAdapterRoutesEdgeRequestToControllerSelectedSessionHub(t *testing.T) {
+	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
+	staticRequests := 0
+	staticHub := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		staticRequests++
+	}))
+	defer staticHub.Close()
+	dynamicRequests := 0
+	dynamicHub := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		dynamicRequests++
+		if request.URL.Path != "/v1/presence/begin" {
+			t.Errorf("dynamic Hub path = %q", request.URL.Path)
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	defer dynamicHub.Close()
+
+	adapter, err := New(Config{ControlPlaneURL: staticHub.URL, HubID: "hub-static", HubURL: staticHub.URL, HubRegion: "static", Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := session.New(session.Metadata{
+		Kind: session.KindDevice, AccountID: "account-1", DeviceID: "daemon-1", ExpiresAt: now.Add(time.Hour),
+		HubID: "hub-dynamic", HubURL: dynamicHub.URL, HubRegion: "dynamic", HubDirectoryVersion: 2,
+	}, []byte("controller-selected-hub-token"), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stored.Destroy()
+	authorization := stored.Authorization()
+	defer authorization.Destroy()
+
+	response, err := adapter.doEdgeHub(context.Background(), "/v1/presence/begin", authorization, &cloudpb.BeginPresenceRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if dynamicRequests != 1 || staticRequests != 0 {
+		t.Fatalf("Hub request counts = dynamic %d, static %d", dynamicRequests, staticRequests)
+	}
+}

@@ -76,6 +76,7 @@ internal class DevCloudMobileGateway(
             CloudCompanion.ClaimMobileActivationRequest.newBuilder()
                 .setUserCode(userCode.trim().uppercase())
                 .setClientMetadata(metadata.toProto())
+                .setClientDeviceId(sessionStore.installationDeviceID())
                 .build(),
             CloudCompanion.LoginFlow.parser(),
             null,
@@ -114,6 +115,22 @@ internal class DevCloudMobileGateway(
     /** currentAccount 通过统一 session owner 恢复或轮换持久 credential，再返回仍有效的账号摘要。 */
     suspend fun currentAccount(): ManagedCloudAccount? = try {
         accountSession().accountSummary()
+    } catch (failure: ManagedEndpointFailure) {
+        if (failure.code == "login_required" || failure.code == "unauthenticated") null else throw failure
+    }
+
+    /** refreshAccount 强制轮换账号 session，使设置页读取支付事务提交后的最新 Subscription。 */
+    suspend fun refreshAccount(): ManagedCloudAccount? = try {
+        sessionLock.withLock {
+            val current = accountSession ?: sessionStore.loadRefreshable(now())
+                ?: fail("login_required", "Official mobile cloud account login is required")
+            val refreshed = refreshSession(current)
+            sessionStore.save(refreshed)
+            current.token.fill(0)
+            current.refreshToken.fill(0)
+            accountSession = refreshed
+            refreshed.accountSummary()
+        }
     } catch (failure: ManagedEndpointFailure) {
         if (failure.code == "login_required" || failure.code == "unauthenticated") null else throw failure
     }
@@ -246,7 +263,7 @@ internal class DevCloudMobileGateway(
 	}
 
 	private fun decodeAccountSession(json: JSONObject): AccountSession {
-		requireKeys(json, setOf("kind", "account_id", "account_label", "device_id", "expires_at_unix", "access_token", "refresh_token", "refresh_expires_at_unix", "hub_id", "hub_url", "hub_region", "hub_directory_version"), "cloud session")
+		requireKeys(json, setOf("kind", "account_id", "account_label", "device_id", "expires_at_unix", "access_token", "refresh_token", "refresh_expires_at_unix", "hub_id", "hub_url", "hub_region", "hub_directory_version", "plan_id", "plan_name", "subscription_status", "subscription_revision"), "cloud session")
 		if (json.requiredString("kind") != "account") fail("protocol", "Control Plane returned a non-account session")
 		if (json.requiredString("account_id").isBlank() || json.requiredString("account_label").isBlank() || json.requiredString("device_id").isBlank()) {
 			fail("protocol", "Control Plane returned incomplete account identity")
@@ -261,7 +278,12 @@ internal class DevCloudMobileGateway(
 		val region = json.requiredString("hub_region")
 		val directoryVersion = json.requiredLong("hub_directory_version")
 		if (token.size < 16 || refreshToken.size < 32 || !now().isBefore(expiresAt) || !refreshExpiresAt.isAfter(expiresAt) || hubId.isBlank() || signedHubURL.isBlank() || region.isBlank() || directoryVersion <= 0) fail("login_required", "Control Plane account session is expired")
-		return AccountSession(token, expiresAt, refreshToken, refreshExpiresAt, json.requiredString("account_id"), json.requiredString("account_label"), json.requiredString("device_id"), hubId, signedHubURL, region, directoryVersion)
+		val planId = json.requiredString("plan_id")
+		val planName = json.requiredString("plan_name")
+		val subscriptionStatus = json.requiredString("subscription_status")
+		val subscriptionRevision = json.requiredLong("subscription_revision")
+		if (planId.isBlank() || planName.isBlank() || subscriptionStatus.isBlank() || subscriptionRevision <= 0) fail("protocol", "Control Plane returned an invalid subscription summary")
+		return AccountSession(token, expiresAt, refreshToken, refreshExpiresAt, json.requiredString("account_id"), json.requiredString("account_label"), json.requiredString("device_id"), hubId, signedHubURL, region, directoryVersion, planId, planName, subscriptionStatus, subscriptionRevision)
 	}
 
     private fun postHubStream(endpoint: String, session: AccountSession, request: Message): HubSignalingResult {
@@ -483,4 +505,4 @@ internal class DevCloudMobileGateway(
 }
 
 private fun AccountSession.accountSummary(): ManagedCloudAccount =
-    ManagedCloudAccount(accountId, accountLabel, expiresAt.epochSecond)
+	ManagedCloudAccount(accountId, accountLabel, expiresAt.epochSecond, planId, planName, subscriptionStatus, subscriptionRevision)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -12,6 +13,14 @@ import (
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"github.com/muxvia/muxvia/shared/cloudcompanion"
 )
+
+func TestNetworkRouteUnavailableRemainsRetryable(t *testing.T) {
+	err := retryableRouteUnavailable("network unavailable")
+	var cloudErr *cloudcompanion.Error
+	if !errors.As(err, &cloudErr) || cloudErr.Code != cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE || !cloudErr.Retryable {
+		t.Fatalf("route unavailable error = %#v", err)
+	}
+}
 
 func TestAdapterRejectsNonLoopbackAndUnexpectedMediaType(t *testing.T) {
 	if _, err := New(Config{ControlPlaneURL: "http://cloud.example.test", HubURL: "http://127.0.0.1:1"}); err == nil {

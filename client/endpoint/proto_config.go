@@ -151,7 +151,7 @@ func (endpoint Endpoint) normalizedAndValidated() (Endpoint, error) {
 func routeToProto(route AccessRoute) (*remoteauthpb.EndpointRouteConfigV1, error) {
 	config := &remoteauthpb.EndpointRouteConfigV1{
 		SchemaVersion: RouteConfigVersion, RouteId: string(route.ID), Enabled: route.Enabled, ManualOnly: route.ManualOnly,
-		CredentialRef: route.CredentialRef, Source: wireSource(route.Source), PolicySource: wireSource(route.PolicySource),
+		CredentialRef: route.CredentialRef, Source: wireSource(route.Source), PolicySource: wireSource(route.PolicySource), DisplayName: route.DisplayName,
 	}
 	if route.Priority != nil {
 		priority := int32(*route.Priority)

@@ -473,6 +473,8 @@ message GetAccountCommerceResponse {
   repeated CommerceAuditProjection audit = 5;
   repeated PaymentAttemptProjection payment_attempts = 6;
   repeated PaymentEventProjection payment_events = 7;
+  // plan 是当前 subscription.plan_id/version 对应的 catalog 快照，供官方界面展示正式名称。
+  PlanDefinition plan = 8;
 }
 
 // CloudProductError 是账号与交易 HTTP/Companion adapter 返回的稳定失败投影。

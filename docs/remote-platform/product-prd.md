@@ -28,10 +28,12 @@ Endpoint
   Route[]
 ```
 
-- 同一 daemon 通过 DeviceIdentity/fingerprint 归并。
+- 同一 daemon 通过 DeviceIdentity/fingerprint 归并；同一 Official App 安装通过稳定 `client_device_id` 归并。注册码、enrollment/activation flow 和 Cloud session 都只是事务，不得成为设备列表实体或下线目标。
 - IP、域名、SSH host、Cloud DeviceID 和展示名称不能单独建立身份。
 - 同一 Endpoint 可以同时拥有 Direct、SSH 和 Cloud Route。
 - terminal 引用固定为 `EndpointID + daemon-local TerminalID`。
+- Cloud device name、客户端 Endpoint label 和 Route display name 属于三个独立作用域；Cloud 只拥有账号内设备名称，客户端 USER label 最高且不被目录同步、再次 enrollment 或再次扫码覆盖，Route 名称只在所属 Endpoint 内显示。
+- Route 使用 Endpoint 内稳定唯一的 `route_id` 参与选择、合并、优先级和诊断；修改名称、IP 或域名不能创建第二台机器或改变授权。
 
 ## 3. 连接方式
 
@@ -84,6 +86,8 @@ Route connector
 
 - Direct、SSH 和 Cloud 不能形成三套 application session。
 - terminal、history、input、resize、file 和 event 使用同一 Proto API。
+- 同一 Endpoint 已认证的 ReadyPeerSession/DataChannel 由 Go Client Engine 在当前客户端 generation 内持有；进入、退出或重新进入 terminal 只创建和释放 terminal resource/UI lease，不重新执行 signaling 或 ICE。
+- 只有用户显式重连/改策略、Endpoint 配置变化、网络 generation 变化、App 后台冻结、鉴权撤销或底层 PeerSession 失效时，客户端才关闭旧 DataChannel 并建立递增的新 generation。
 - UI 不感知 Pion、SSH tunnel、Cloud signaling 或 Relay 的内部对象。
 - session replacement 必须产生新 generation；旧 handle 和迟到 callback 失效。
 
@@ -91,13 +95,21 @@ Route connector
 
 `muxvia pair create` 用于把当前 daemon 添加并授权到 App：
 
-- QR/手工码只包含 128-bit 一次性 claim、DeviceIdentity public key、有效期和建立首个 pairing DataChannel 必需的一个 Route seed；不包含 PairingTicket、scope 或 grant。
+- QR/手工码只包含 128-bit 一次性 claim、DeviceIdentity public key、有效期和建立首个 pairing DataChannel 必需的有界 Route seeds；不包含 PairingTicket、scope、grant、SSH secret 或 Cloud token。
 - daemon 默认监听所有 IPv4 interface，并把当前活动 RFC1918 IPv4 地址投影为可预览的 LAN signaling/ICE-TCP locator；没有可用 LAN 地址时必须由用户显式指定，不能发布 wildcard 地址。
-- 用户可以同时覆盖 Direct signaling/ICE-TCP 的对外地址和端口，并可设置 server name；显式覆盖完全替代自动 LAN seed，用于 FRP 或其它 TCP 映射。
-- App 从短码建立 Direct 或 Cloud managed pairing DataChannel，验证 DeviceHello 后提交 ClientAccessIdentity proof；owning daemon 才在端到端响应中返回完整签名 bundle 和 client-bound grant。
+- 零参数创建使用 Auto：Direct runtime 能发布可达 locator 时加入 Direct；只有当前 enrollment、owning Hub assignment 和 Presence session 均 READY 时才加入 Cloud；两者都可用时由 Go Client Engine 竞速，任一路径成功即完成配对。
+- `pair create --route` 是唯一显式 Route 限定入口，可以重复指定 Direct LAN、Direct 显式映射、SSH 和 Cloud。常用 Direct/SSH 配置使用普通 flags，高级脚本和同 kind 多实例可使用严格 URI；FRP/公网 TCP 映射仍是 Direct Route，Cloud P2P/Relay 和 TURN UDP/TCP 仍是 managed Route 内部策略，不建立新的 Route kind。
+- Cloud enabled 不等于 Cloud pairing eligible。明确 revoked/unauthenticated、旧 enrollment 或没有当前 Presence 时不得发布 Cloud seed，也不得阻断 Direct/SSH；显式 Cloud 不可用时必须在输出二维码前失败。
+- 多 Hub 下 Controller 签发并保存在私有 device session 中的 `HubID/HubURL/HubRegion` 是该 enrollment 的 owning Hub 路由真值；Companion 的启动 manifest 只提供 bootstrap 目录，不能覆盖动态 assignment，否则 token audience 与请求 Hub 会不一致并被拒绝。
+- Muxvia 自有分发构建把固定版本和 SHA-256 的 Cloud Companion artifact 内嵌进单个 `muxvia` 文件；首次使用时原子释放到当前用户私有的 versioned `cloud-companion/bundled/<sha256>/` 目录并再次复验 owner、权限、类型和摘要。Companion 仍作为独立进程通过专用 IPC 运行，不进入 terminal/DataChannel 进程内真值。
+- App 从短码生成 Direct/SSH/Cloud pairing attempt plan，第一条完成 DeviceHello、DTLS channel binding 和 ClientAccessIdentity proof 的 DataChannel 获胜；单 Route 失败不能结束整体配对。owning daemon 只在端到端响应中返回完整签名 bundle 和 client-bound grant。
+- 已配对客户端再次扫描同 DeviceIdentity 的二维码时必须展示 Route diff 并原子合并到现有 Endpoint；新 Route 添加、相同 Route 幂等、冲突 Route 确认更新，未出现的旧 Route 默认保留。不同 DeviceIdentity 即使名称和地址相同也不得合并。
+- Route 更新不得扩大 CapabilityGrant scope；同一 ClientAccessIdentity 只能幂等复用或原子轮换授权，不能产生多个并行活跃 grant。
 - PairingTicket 不能直接访问 terminal、history 或 file。
 - QR 不包含长期 bearer grant、private key、Cloud token 或本地 credential ref。
 - `muxvia pair create --text` 输出 `MXP1-...` portable claim code，默认二维码不高于 QR Version 10；`--qr-file FILE` 仍生成 owner-only 正方形 PNG。`--raw`/`--out` 只保留为本机 owner 脚本的完整 bundle 兼容入口，不得进入 App 扫码或 Web/Cloud。
+- portable claim 使用有版本 marker，并仅在 raw-DEFLATE 确实缩短载荷时压缩；Go Client Engine 负责有界解压和 Proto 校验，平台 UI 不复制 codec。二维码使用 Low 纠错等级以降低 module 数，终端尺寸与 QR Version 门禁仍必须在输出前完成。
+- 参数、Proto、合并和 App Route 管理的实现级规则见 `pairing-route-management-design.md`。
 
 ## 6. Endpoint 分享
 

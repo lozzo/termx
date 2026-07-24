@@ -27,6 +27,7 @@ internal class OfficialManagedCloudAdapter(private val gateway: OfficialCloudGat
     override suspend fun claimLogin(userCode: String, metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow = gateway.claimLogin(userCode, metadata)
     override suspend fun completeLogin(flowId: String): ManagedCloudAccount = gateway.completeLogin(flowId)
     override suspend fun currentAccount(): ManagedCloudAccount? = gateway.currentAccount()
+    override suspend fun refreshAccount(): ManagedCloudAccount? = gateway.refreshAccount()
     override suspend fun listDevices(): List<ManagedCloudDevice> = gateway.listDevices()
     override suspend fun logout() = gateway.logout()
     override suspend fun resolveProto(request: CloudCompanion.ResolveEndpointRequest): CloudCompanion.ResolvedEndpoint = gateway.resolveProto(request)
@@ -72,6 +73,7 @@ internal class OfficialCloudGateway(context: Context) {
     suspend fun claimLogin(userCode: String, metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow = configured().claimLogin(userCode, metadata)
     suspend fun completeLogin(flowId: String): ManagedCloudAccount = configured().completeLogin(flowId)
     suspend fun currentAccount(): ManagedCloudAccount? = configured().currentAccount()
+    suspend fun refreshAccount(): ManagedCloudAccount? = configured().refreshAccount()
     suspend fun listDevices(): List<ManagedCloudDevice> = configured().listDevices()
     suspend fun logout() = configured().logout()
 

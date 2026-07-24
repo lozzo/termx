@@ -26,7 +26,6 @@ var (
 	cloudReleaseOrigin               = "https://releases.muxvia.dev/cloud-companion"
 	cloudReleaseRootKeyID            = ""
 	cloudReleaseRootPublicKey        = ""
-	cloudDevelopmentCompanionName    = ""
 	cloudDevelopmentCompanionSHA256  = ""
 	cloudDevelopmentCompanionVersion = ""
 	cloudDevelopmentCompanionChannel = ""

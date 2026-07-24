@@ -164,18 +164,22 @@ func validateTURNURL(raw string, allowPublicIP bool) error {
 // SessionWire 是 Control Plane 返回给 Companion 的 private cloud session。
 // AccessToken 只能传给 session.New 并写入 OS credential store，不得进入 public IPC response 或日志。
 type SessionWire struct {
-	Kind                session.Kind `json:"kind"`
-	AccountID           string       `json:"account_id"`
-	AccountLabel        string       `json:"account_label"`
-	DeviceID            string       `json:"device_id"`
-	ExpiresAt           int64        `json:"expires_at_unix"`
-	AccessToken         []byte       `json:"access_token"`
-	RefreshToken        []byte       `json:"refresh_token"`
-	RefreshExpiresAt    int64        `json:"refresh_expires_at_unix"`
-	HubID               string       `json:"hub_id"`
-	HubURL              string       `json:"hub_url"`
-	HubRegion           string       `json:"hub_region"`
-	HubDirectoryVersion uint64       `json:"hub_directory_version"`
+	Kind                 session.Kind `json:"kind"`
+	AccountID            string       `json:"account_id"`
+	AccountLabel         string       `json:"account_label"`
+	DeviceID             string       `json:"device_id"`
+	ExpiresAt            int64        `json:"expires_at_unix"`
+	AccessToken          []byte       `json:"access_token"`
+	RefreshToken         []byte       `json:"refresh_token"`
+	RefreshExpiresAt     int64        `json:"refresh_expires_at_unix"`
+	HubID                string       `json:"hub_id"`
+	HubURL               string       `json:"hub_url"`
+	HubRegion            string       `json:"hub_region"`
+	HubDirectoryVersion  uint64       `json:"hub_directory_version"`
+	PlanID               string       `json:"plan_id,omitempty"`
+	PlanName             string       `json:"plan_name,omitempty"`
+	SubscriptionStatus   string       `json:"subscription_status,omitempty"`
+	SubscriptionRevision uint64       `json:"subscription_revision,omitempty"`
 }
 
 // RefreshSessionWire 是只发往 Control Plane 的 refresh 请求。

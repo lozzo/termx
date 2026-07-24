@@ -63,6 +63,18 @@ func TestEnrollmentProbeTimeoutAndCancellation(t *testing.T) {
 	}
 }
 
+func TestEnrollmentProbeAllowsSlowProxyTLSSetupWithinDefaultBudget(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		time.Sleep(3200 * time.Millisecond)
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	observations, err := probeEnrollmentCandidates(context.Background(), server.Client(), []*cloudpb.HubEnrollmentCandidate{enrollmentProbeCandidate("proxied", server.URL)}, 1, enrollmentProbeTimeout)
+	if err != nil || len(observations) != 1 || !observations[0].GetReachable() {
+		t.Fatalf("slow proxied observation = (%v, %v)", observations, err)
+	}
+}
+
 func TestEnrollmentProbeRejectsUntrustedOrDuplicateCandidates(t *testing.T) {
 	client := &http.Client{}
 	if _, err := probeEnrollmentCandidates(context.Background(), client, []*cloudpb.HubEnrollmentCandidate{enrollmentProbeCandidate("public-http", "http://example.com")}, 1, time.Second); err == nil {

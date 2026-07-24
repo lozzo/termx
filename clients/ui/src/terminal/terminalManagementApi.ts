@@ -5,14 +5,18 @@ import { CommandEnvelopeSchema } from '../generated/apipb/application_pb'
 import {
   TerminalCreateCommandSchema,
   TerminalCreateSpecSchema,
+  TerminalDefaultsCommandSchema,
   TerminalGetCommandSchema,
   TerminalRefSchema,
   TerminalRemoveCommandSchema,
   TerminalRestartCommandSchema,
   TerminalSetMetadataCommandSchema,
+  TerminalSizeSchema,
 } from '../generated/apipb/terminal_pb'
 
 export interface TerminalManagementApi {
+  /** getDefaults 从 owning daemon 查询当前账号的 shell/home，不读取手机进程环境。 */
+  getDefaults(): Promise<{ command: string[]; cwd: string }>
   createTerminal(input: LocalCreateTerminalInput): Promise<{ terminalId: string }>
   updateTerminal(input: LocalUpdateTerminalInput): Promise<void>
   restartTerminal(terminalId: string): Promise<void>
@@ -35,12 +39,27 @@ function createProtoTerminalManagementApi(session: ProtoClientSession, machineId
   const execute = (caseName: Parameters<typeof protoCommand>[0], value: Parameters<typeof protoCommand>[1]) =>
     session.execute(protoCommand(caseName, value))
   return {
+    async getDefaults() {
+      const result = await execute('terminalDefaults', create(TerminalDefaultsCommandSchema))
+      if (result.result.case !== 'terminalDefaults' || !result.result.value.defaults) {
+        throw new Error('terminal defaults returned no defaults')
+      }
+      return {
+        command: [...result.result.value.defaults.defaultCommand],
+        cwd: result.result.value.defaults.defaultCwd,
+      }
+    },
     async createTerminal(input) {
       const terminal = create(TerminalCreateSpecSchema, {
+        terminalId: newTerminalId(),
         name: input.name ?? '',
         command: input.command ?? [],
+        size: create(TerminalSizeSchema, {
+          cols: finiteInt(input.cols) || 80,
+          rows: finiteInt(input.rows) || 24,
+        }),
         cwd: input.cwd ?? '',
-        env: input.environment ? [input.environment] : [],
+        env: input.environment ?? [],
         scrollbackRows: finiteInt(input.scrollbackSize),
         scrollbackMaxBytes: BigInt(finiteInt(input.scrollbackMaxBytes)),
         scrollbackMaxAgeSeconds: BigInt(finiteInt(input.scrollbackMaxAgeSeconds)),
@@ -90,9 +109,16 @@ function finiteInt(value: number | undefined): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0
 }
 
+function newTerminalId(): string {
+  const randomUUID = globalThis.crypto?.randomUUID?.bind(globalThis.crypto)
+  if (randomUUID) return `term-${randomUUID()}`
+  const bytes = new Uint8Array(16)
+  globalThis.crypto.getRandomValues(bytes)
+  return `term-${Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')}`
+}
+
 function terminalTags(input: {
   cwd?: string | undefined
-  environment?: string | undefined
   sizeLockMode?: LocalCreateTerminalInput['sizeLockMode'] | LocalUpdateTerminalInput['sizeLockMode']
 }): Record<string, string> {
   const tags: Record<string, string> = {}
@@ -101,9 +127,6 @@ function terminalTags(input: {
   }
   if (input.cwd) {
     tags.cwd = input.cwd
-  }
-  if (input.environment) {
-    tags.environment = input.environment
   }
   return tags
 }

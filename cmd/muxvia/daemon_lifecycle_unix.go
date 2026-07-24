@@ -38,7 +38,7 @@ func stopDaemonProcess(pid int) error {
 	return process.Signal(syscall.SIGTERM)
 }
 
-func startDetachedDaemon(socketPath, logPath, configPath string, cloudEnabled bool) error {
+func startDetachedDaemon(socketPath, logPath, configPath string, cloudDisabled bool) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -48,8 +48,8 @@ func startDetachedDaemon(socketPath, logPath, configPath string, cloudEnabled bo
 		args = append(args, "--config", configPath)
 	}
 	args = append(args, "daemon", "run")
-	if cloudEnabled {
-		args = append(args, "--cloud")
+	if cloudDisabled {
+		args = append(args, "--no-cloud")
 	}
 	command := exec.Command(executable, args...)
 	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)

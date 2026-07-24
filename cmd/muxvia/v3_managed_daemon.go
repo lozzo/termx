@@ -38,55 +38,74 @@ func startV3ManagedDaemon(ctx context.Context, core v3ManagedDaemonCore, clientA
 	if clientAccess.Store == nil {
 		return fmt.Errorf("managed cloud daemon requires client access store")
 	}
-	companion, err := openV3CloudDaemonCompanion(ctx)
-	if err != nil {
-		return err
-	}
 	controlReceipts, err := remotev2daemon.LoadControlReceiptStore(v3RemoteControlDir(), identity)
 	if err != nil {
-		_ = companion.Close()
 		return err
 	}
 	if _, err := controlReceipts.Enrollment(); err != nil {
 		_ = controlReceipts.Close()
-		_ = companion.Close()
 		return err
 	}
 	managedRuntime, err := remotev2daemon.NewManagedRuntime(identity.DeviceID, nil)
 	if err != nil {
 		_ = controlReceipts.Close()
-		_ = companion.Close()
 		return err
 	}
 	hostname, _ := os.Hostname()
-	agent := remotev2daemon.Agent{
-		Companion: companion,
-		Identity:  identity,
-		Metadata: &cloudpb.DeviceMetadata{
-			DisplayName: hostname, Hostname: hostname, Platform: runtime.GOOS + "/" + runtime.GOARCH,
-			MuxviaVersion: muxviaBuildVersion, SignalingVersions: []uint32{cloudcompanion.ProtocolVersionMax},
+	metadata := &cloudpb.DeviceMetadata{
+		DisplayName: hostname, Hostname: hostname, Platform: runtime.GOOS + "/" + runtime.GOARCH,
+		MuxviaVersion: muxviaBuildVersion, SignalingVersions: []uint32{cloudcompanion.ProtocolVersionMax},
+	}
+	answerer := remotev2webrtc.Answerer{
+		Handler: remotev2daemon.SessionAcceptor{
+			Core: core, Identity: identity, AccessStore: clientAccess.Store, ManagedRuntime: managedRuntime,
 		},
-		Answerer: remotev2webrtc.Answerer{
-			Handler: remotev2daemon.SessionAcceptor{
-				Core: core, Identity: identity, AccessStore: clientAccess.Store, ManagedRuntime: managedRuntime,
-			},
-			OnSessionError: func(sessionErr error) {
-				// DataChannel handler 已完成凭证脱敏；composition 只记录失败链，不接管 session 或重试。
-				logger.Warn("managed data channel session stopped", "error", sessionErr)
-			},
+		OnSessionError: func(sessionErr error) {
+			// DataChannel handler 已完成凭证脱敏；composition 只记录失败链，不接管 session 或重试。
+			logger.Warn("managed data channel session stopped", "error", sessionErr)
 		},
-		Runtime:         managedRuntime,
-		AccessStore:     clientAccess.Store,
-		ControlReceipts: controlReceipts,
 	}
 	go func() {
 		defer controlReceipts.Close()
-		defer companion.Close()
-		if runErr := agent.RunContinuously(ctx, v3ManagedPresenceRetryDelay); runErr != nil && ctx.Err() == nil {
-			// managed presence 是 endpoint transport；失败不能停止本地 listener 或 core terminal lifecycle。
-			logger.Warn("managed cloud presence stopped", "error", runErr)
+		for {
+			companion, openErr := openV3CloudDaemonCompanion(ctx)
+			if openErr != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				logger.Warn("managed cloud companion unavailable; retrying", "error", openErr)
+				if !waitV3ManagedPresenceRetry(ctx, v3ManagedPresenceRetryDelay) {
+					return
+				}
+				continue
+			}
+			agent := remotev2daemon.Agent{
+				Companion: companion, Identity: identity, Metadata: metadata, Answerer: answerer,
+				Runtime: managedRuntime, AccessStore: clientAccess.Store, ControlReceipts: controlReceipts,
+			}
+			runErr := agent.RunContinuously(ctx, v3ManagedPresenceRetryDelay)
+			_ = companion.Close()
+			if runErr != nil && ctx.Err() == nil {
+				// 明确 revoke 等非续约错误终止 Cloud；本地 listener 和 terminal lifecycle 继续运行。
+				logger.Warn("managed cloud presence stopped", "error", runErr)
+			}
+			return
 		}
 	}()
 	logger.Info("managed cloud presence starting", "device_id", identity.DeviceID, "device_fingerprint", identity.Fingerprint)
 	return nil
+}
+
+func waitV3ManagedPresenceRetry(ctx context.Context, delay time.Duration) bool {
+	if delay <= 0 {
+		delay = time.Second
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }

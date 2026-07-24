@@ -52,6 +52,23 @@ type DaemonEnrollmentStore interface {
 	CommitDaemonEnrollment(context.Context, DaemonEnrollmentCommit, time.Time) (hubregistry.Assignment, error)
 }
 
+// MobileActivationCommit 描述 Web 已明确批准后的手机授权最终事务。
+// ExpectedOwnership 是读取到的设备归属 CAS 真值；nil 表示设备必须尚不存在。NextOwnership
+// 只能是当前账号下未撤销的 client。Session 与 Audit 由 commerce 在内存准备，事务提交前
+// 不能把 Credential 交付给手机。
+type MobileActivationCommit struct {
+	ExpectedOwnership *cloudtopology.DeviceOwnership
+	NextOwnership     cloudtopology.DeviceOwnership
+	Session           commerce.SessionRecord
+	Audit             *cloudpb.CommerceAuditProjection
+}
+
+// MobileActivationStore 原子提交同一手机的重新授权和 refresh session 轮换。
+// 实现必须锁定账号与设备归属，拒绝跨账号或设备类型替换，并在任一步失败时完整回滚。
+type MobileActivationStore interface {
+	CommitMobileActivation(context.Context, MobileActivationCommit, time.Time) error
+}
+
 // Store 是 Controller composition root 的完整持久化依赖。
 //
 // 生产实现必须保证各领域接口注释声明的事务、CAS、幂等和 ack-after-commit 语义。
@@ -66,6 +83,7 @@ type Store interface {
 	ProjectionStore
 	RelayQueryStore
 	DaemonEnrollmentStore
+	MobileActivationStore
 	usage.Store
 	Close() error
 }

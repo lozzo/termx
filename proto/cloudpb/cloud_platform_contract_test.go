@@ -354,6 +354,24 @@ func TestDaemonEnrollmentHubProposalIsProtoFirstAndControllerValidated(t *testin
 	}
 }
 
+func TestMobileActivationCarriesStableClientDeviceIdentity(t *testing.T) {
+	fields := descriptorFieldNames((&ClaimMobileActivationRequest{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"user_code", "client_metadata", "client_device_id"} {
+		if !fields[required] {
+			t.Fatalf("ClaimMobileActivationRequest missing %q: %v", required, fields)
+		}
+	}
+	request := &ClaimMobileActivationRequest{UserCode: "MXA-TEST", ClientDeviceId: "client-12345678-1234-1234-1234-123456789abc", ClientMetadata: &DeviceMetadata{DisplayName: "Phone", Platform: "android", MuxviaVersion: "test"}}
+	payload, err := proto.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded := &ClaimMobileActivationRequest{}
+	if err := proto.Unmarshal(payload, decoded); err != nil || !proto.Equal(request, decoded) {
+		t.Fatalf("mobile activation identity round-trip = (%v, %v)", decoded, err)
+	}
+}
+
 func TestCloudPlatformDescriptorBaseline(t *testing.T) {
 	payload, err := os.ReadFile("testdata/cloud-platform-v1.pb")
 	if err != nil {

@@ -78,15 +78,23 @@ func TestManagerStopsSameVersionDifferentArtifactBeforeStartingActiveInstallatio
 	runningDigest := byte(0x22)
 	shutdownCount := 0
 	startCount := 0
+	roles := make([]cloudpb.CallerRole, 0, 3)
+	lastRole := cloudpb.CallerRole_CALLER_ROLE_UNSPECIFIED
 	fake := &cloudcompanion.FakeClient{
-		HelloFunc: func(context.Context, *cloudpb.CompanionHelloRequest) (*cloudpb.CompanionHelloResponse, error) {
+		HelloFunc: func(_ context.Context, request *cloudpb.CompanionHelloRequest) (*cloudpb.CompanionHelloResponse, error) {
 			mu.Lock()
 			digestByte := runningDigest
+			lastRole = request.GetCallerRole()
+			roles = append(roles, lastRole)
 			mu.Unlock()
-			return &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "v1.2.3", BuildChannel: "stable", ResponseNonce: bytes.Repeat([]byte{4}, 32), ExecutableSha256: bytes.Repeat([]byte{digestByte}, 32)}, nil
+			return &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "v1.2.3", BuildChannel: "stable", SupportedCapabilities: append([]cloudpb.CompanionCapability(nil), request.GetRequestedCapabilities()...), ResponseNonce: bytes.Repeat([]byte{4}, 32), ExecutableSha256: bytes.Repeat([]byte{digestByte}, 32)}, nil
 		},
 		ShutdownFunc: func(context.Context, *cloudpb.ShutdownRequest) (*cloudpb.ShutdownResponse, error) {
 			mu.Lock()
+			if lastRole != cloudpb.CallerRole_CALLER_ROLE_CLI {
+				mu.Unlock()
+				return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "shutdown requires CLI role")
+			}
 			running = false
 			shutdownCount++
 			mu.Unlock()
@@ -120,15 +128,15 @@ func TestManagerStopsSameVersionDifferentArtifactBeforeStartingActiveInstallatio
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := manager.Open(context.Background(), cloudpb.CallerRole_CALLER_ROLE_CLI)
+	client, err := manager.Open(context.Background(), cloudpb.CallerRole_CALLER_ROLE_DAEMON, cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_PRESENCE)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer client.Close()
 	mu.Lock()
 	defer mu.Unlock()
-	if shutdownCount != 1 || startCount != 1 || runningDigest != 0x11 {
-		t.Fatalf("replacement lifecycle = shutdown:%d start:%d digest:%x", shutdownCount, startCount, runningDigest)
+	if shutdownCount != 1 || startCount != 1 || runningDigest != 0x11 || len(roles) != 3 || roles[0] != cloudpb.CallerRole_CALLER_ROLE_DAEMON || roles[1] != cloudpb.CallerRole_CALLER_ROLE_CLI || roles[2] != cloudpb.CallerRole_CALLER_ROLE_DAEMON {
+		t.Fatalf("replacement lifecycle = shutdown:%d start:%d digest:%x roles:%v", shutdownCount, startCount, runningDigest, roles)
 	}
 }
 

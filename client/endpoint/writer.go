@@ -59,7 +59,7 @@ func Encode(registry Registry) ([]byte, error) {
 				}
 			}
 			value.Routes[string(route.ID)] = routeDocument{
-				Kind: string(route.Kind), Enabled: &routeEnabled, ManualOnly: route.ManualOnly, Priority: clonePriority(route.Priority),
+				Kind: string(route.Kind), DisplayName: route.DisplayName, Enabled: &routeEnabled, ManualOnly: route.ManualOnly, Priority: clonePriority(route.Priority),
 				CredentialRef: route.CredentialRef, Source: string(route.Source), PolicySource: string(route.PolicySource), Socket: route.Socket,
 				Host: route.Host, Port: route.Port, User: route.User, ProxyJump: route.ProxyJump,
 				HostKeyFingerprints: append([]string(nil), route.HostKeyFingerprints...), CredentialDescriptor: credentialDescriptor,

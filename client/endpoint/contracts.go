@@ -502,7 +502,7 @@ func endpointBootstrapSigningBytesUnchecked(bundle *remoteauthpb.EndpointBootstr
 
 func accessRouteFromWire(route *remoteauthpb.EndpointRouteConfigV1, enabled bool) (AccessRoute, error) {
 	model := AccessRoute{
-		ID: RouteID(strings.TrimSpace(route.GetRouteId())), Enabled: enabled, ManualOnly: route.GetManualOnly(),
+		ID: RouteID(strings.TrimSpace(route.GetRouteId())), DisplayName: route.GetDisplayName(), Enabled: enabled, ManualOnly: route.GetManualOnly(),
 		CredentialRef: route.GetCredentialRef(), Source: mapWireSource(route.GetSource()), PolicySource: mapWireSource(route.GetPolicySource()),
 	}
 	if model.Source == "" {

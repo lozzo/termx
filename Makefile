@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
-.DEFAULT_GOAL := help
+.DEFAULT_GOAL := build
 
 ARTIFACT_DIR := $(CURDIR)/.artifacts
 MUXVIA_BIN := $(ARTIFACT_DIR)/bin/muxvia
@@ -17,13 +17,14 @@ PRIVATE_MODULES := \
 	private/cloud/route-planner \
 	private/cloud/web-controller
 
-.PHONY: help build build-cloud-test build-web-controller build-web-controller-linux cloud-dev test test-private test-cloud-controller-edge test-postgres-backup test-clients test-android test-all doctor clean
+.PHONY: help build build-public build-cloud-test build-web-controller build-web-controller-linux cloud-dev test test-private test-cloud-controller-edge test-postgres-backup test-clients test-android test-all doctor clean
 
 help:
 	@printf '%s\n' \
 		'Targets:' \
-		'  make build         Build muxvia into .artifacts/bin/' \
-		'  make build-cloud-test  Build self-contained muxvia + staging Companion test suite' \
+		'  make / make build  Build single-file muxvia with Muxvia Cloud into .artifacts/bin/' \
+		'  make build-public  Explicitly build the open-source-only muxvia-public binary' \
+		'  make build-cloud-test  Alias for the default Cloud-enabled product build' \
 		'  make build-web-controller  Build the React static Web Controller' \
 		'  make build-web-controller-linux  Alias for the platform-independent static Web Controller build' \
 		'  make cloud-dev     Start the explicit single-region dev cloud' \
@@ -38,11 +39,13 @@ help:
 		'  make clean         Remove known generated build outputs'
 
 build:
-	mkdir -p "$(dir $(MUXVIA_BIN))"
-	GOWORK=off go build -o "$(MUXVIA_BIN)" ./cmd/muxvia
+	MUXVIA_CLOUD_TEST_ARTIFACT_DIR="$(ARTIFACT_DIR)/bin" scripts/build_cloud_test.sh
 
-build-cloud-test:
-	scripts/build_cloud_test.sh
+build-public:
+	mkdir -p "$(dir $(MUXVIA_BIN))"
+	GOWORK=off go build -o "$(ARTIFACT_DIR)/bin/muxvia-public" ./cmd/muxvia
+
+build-cloud-test: build
 
 build-web-controller:
 	rm -rf "$(ARTIFACT_DIR)/web-controller"

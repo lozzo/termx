@@ -25,6 +25,23 @@ describe('NativeSessionManager', () => {
     expect(session.close).toHaveBeenCalledTimes(1)
   })
 
+  it('reuses the device DataChannel after every terminal UI lease has closed', async () => {
+    const session = fakeSession()
+    const connect = vi.fn(async () => session)
+    const manager = new NativeSessionManager('daemon-a', { connect })
+
+    const inventory = await manager.get()
+    const firstTerminal = await manager.lease()
+    await inventory.close()
+    await firstTerminal.close()
+
+    const reopenedTerminal = await manager.lease()
+
+    expect(connect).toHaveBeenCalledTimes(1)
+    expect(reopenedTerminal.isAlive()).toBe(true)
+    expect(session.close).not.toHaveBeenCalled()
+  })
+
   it('opens a fresh Go session after the owned session becomes stale', async () => {
     const first = fakeSession()
     const second = fakeSession(2n)

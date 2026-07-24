@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { AcknowledgeResultSchema } from '../generated/apipb/application_pb'
 import {
   TerminalCreateResultSchema,
+  TerminalDefaultsResultSchema,
+  TerminalDefaultsSchema,
   TerminalGetResultSchema,
   TerminalInfoSchema,
   TerminalRefSchema,
@@ -13,6 +15,11 @@ import { createTerminalManagementApi } from './terminalManagementApi'
 describe('terminal management generated Proto API', () => {
   it('emits typed create, metadata, restart, remove, and get commands', async () => {
     const session = new MockProtoSession('machine-local', (command) => {
+      if (command.command.case === 'terminalDefaults') {
+        return protoResult('terminalDefaults', create(TerminalDefaultsResultSchema, {
+          defaults: create(TerminalDefaultsSchema, { defaultCommand: ['/bin/zsh'], defaultCwd: '/home/muxvia' }),
+        }))
+      }
       if (command.command.case === 'terminalCreate') {
         return protoResult('terminalCreate', create(TerminalCreateResultSchema, {
           terminal: create(TerminalInfoSchema, { ref: create(TerminalRefSchema, { endpointId: 'machine-local', terminalId: 'terminal-3' }) }),
@@ -31,8 +38,9 @@ describe('terminal management generated Proto API', () => {
     })
     const api = createTerminalManagementApi(session, 'machine-local')
 
+    await expect(api.getDefaults()).resolves.toEqual({ command: ['/bin/zsh'], cwd: '/home/muxvia' })
     await expect(api.createTerminal({
-      name: 'ops shell', command: ['/bin/zsh', '-l'], cwd: '/srv/app', environment: 'prod', sizeLockMode: 'lock',
+      name: 'ops shell', command: ['/bin/zsh', '-l'], cwd: '/srv/app', environment: ['MODE=prod', 'TOKEN=a=b'], sizeLockMode: 'lock',
     })).resolves.toEqual({ terminalId: 'terminal-3' })
     await api.updateTerminal({ terminalId: 'terminal-1', name: 'renamed', sizeLockMode: 'off' })
     await api.restartTerminal('terminal-1')
@@ -40,12 +48,13 @@ describe('terminal management generated Proto API', () => {
     await expect(api.getTerminalDirectory('terminal-1')).resolves.toEqual({ path: '/srv/live', source: 'live' })
 
     expect(session.commands.map((command) => command.command.case)).toEqual([
-      'terminalCreate', 'terminalSetMetadata', 'terminalRestart', 'terminalRemove', 'terminalGet',
+      'terminalDefaults', 'terminalCreate', 'terminalSetMetadata', 'terminalRestart', 'terminalRemove', 'terminalGet',
     ])
-    expect(session.commands[0]?.command.value).toMatchObject({
-      terminal: { command: ['/bin/zsh', '-l'], cwd: '/srv/app', env: ['prod'], tags: { 'muxvia.size_lock': 'lock', cwd: '/srv/app', environment: 'prod' } },
+    expect(session.commands[1]?.command.value).toMatchObject({
+      terminal: { command: ['/bin/zsh', '-l'], cwd: '/srv/app', env: ['MODE=prod', 'TOKEN=a=b'], size: { cols: 80, rows: 24 }, tags: { 'muxvia.size_lock': 'lock', cwd: '/srv/app' } },
     })
-    expect(session.commands[1]?.command.value).toMatchObject({ tags: { 'muxvia.size_lock': 'off' } })
+    expect((session.commands[1]?.command.value as { terminal?: { terminalId?: string } }).terminal?.terminalId).toMatch(/^term-/)
+    expect(session.commands[2]?.command.value).toMatchObject({ tags: { 'muxvia.size_lock': 'off' } })
   })
 
   it('rejects endpoint mismatches before dispatch', () => {

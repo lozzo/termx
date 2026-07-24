@@ -109,6 +109,9 @@ func TestResolveDialRouteAutoKeepsP2PWhenRelayCapabilityIsUnavailable(t *testing
 			if route.relayOnly || len(route.iceServers) != 1 || route.iceServers[0].GetUrls()[0] != "stun:stun.example.com" {
 				t.Fatalf("auto P2P fallback = %#v", route)
 			}
+			if route.relayEntitlementDenied != (code == cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENTITLEMENT_DENIED) {
+				t.Fatalf("auto P2P fallback entitlement marker = %v for %s", route.relayEntitlementDenied, code)
+			}
 		})
 	}
 }

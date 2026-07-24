@@ -22,6 +22,17 @@ describe('RemoteControlApp first-use experience', () => {
     expect(screen.getByRole('button', { name: 'Add local device' })).toBeTruthy()
   })
 
+  it('does not query the Cloud directory or show an error before sign-in', async () => {
+    const listMachines = vi.fn(async () => {
+      throw Object.assign(new Error('login required'), { code: 'login_required' })
+    })
+    renderApp({ cloudAccount: null, listMachines })
+
+    expect(await screen.findByTestId('muxvia-first-use')).toBeTruthy()
+    expect(listMachines).not.toHaveBeenCalled()
+    expect(screen.queryByText('Sign in to Muxvia Cloud before continuing.')).toBeNull()
+  })
+
   it('places Cloud activation before terminal appearance settings', async () => {
     renderApp({ cloudAccount: null, scanPairingCode: vi.fn(async () => null) })
 
@@ -31,6 +42,17 @@ describe('RemoteControlApp first-use experience', () => {
     const terminalHeading = screen.getByRole('heading', { name: 'Terminal' })
     expect(accountHeading.compareDocumentPosition(terminalHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByLabelText('Login code')).toBeTruthy()
+  })
+
+  it('shows the current Cloud subscription in settings', async () => {
+    renderApp({ cloudAccount: { accountId: 'account-1', accountLabel: 'ada@example.com' } })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open settings' }))
+
+    expect(screen.getByText('Current plan')).toBeTruthy()
+    expect(screen.getByText('Muxvia Pro')).toBeTruthy()
+    expect(screen.getByText('Subscription status')).toBeTruthy()
+    expect(screen.getByText('Active')).toBeTruthy()
   })
 
   it('keeps camera scan and manual pairing code on the same screen', async () => {
@@ -56,6 +78,21 @@ describe('RemoteControlApp first-use experience', () => {
 
     expect(await screen.findByText('This device cannot scan a QR code. Enter the same pairing code below.')).toBeTruthy()
     expect(screen.getByLabelText('Pairing code or share link')).toBeTruthy()
+  })
+
+  it('does not claim a new Cloud activation while an account session is already active', async () => {
+    const claimActivation = vi.fn(async () => ({ userCode: 'MXA-TEST', expiresAtUnix: Date.now() / 1000 + 600 }))
+    renderApp({
+      cloudAccount: { accountId: 'account-1', accountLabel: 'ada@example.com' },
+      claimActivation,
+      scanPairingCode: vi.fn(async () => 'muxvia-cloud-activate:v1:MXA-0000-0000-0000-0000-0000-000000'),
+    })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Add local device' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Scan QR with camera' }))
+
+    expect(await screen.findByText('You are already signed in as ada@example.com. Sign out before signing in to another account.')).toBeTruthy()
+    expect(claimActivation).not.toHaveBeenCalled()
   })
 
   it('ends pairing and shows an actionable message when the connection is unavailable', async () => {
@@ -129,27 +166,41 @@ describe('RemoteControlApp first-use experience', () => {
 function renderApp({
   cloudAccount,
   machines = [],
+  listMachines,
+  claimActivation,
   pairingImport,
   scanPairingCode,
 }: {
   cloudAccount: { accountId: string; accountLabel: string } | null
   machines?: Awaited<ReturnType<CloudAccountAdapter['listMachines']>>
+  listMachines?: CloudAccountAdapter['listMachines'] | undefined
+  claimActivation?: CloudAccountAdapter['claimActivation'] | undefined
   pairingImport?: ExternalPairingAdapter['import'] | undefined
   scanPairingCode?: (() => Promise<string | null>) | undefined
 }) {
   const storage = new MemoryStorage()
+  const account = cloudAccount ? {
+    ...cloudAccount,
+    planId: 'pro',
+    planName: 'Muxvia Pro',
+    subscriptionStatus: 'SUBSCRIPTION_STATUS_ACTIVE',
+    subscriptionRevision: 2,
+  } : null
   const networkRuntime: RemoteNetworkRuntime = {
     storage,
     queryParam: () => null,
     fetch: async () => new Response('{}', { status: 200 }),
   }
   const cloudAccountAdapter: CloudAccountAdapter = {
-    current: async () => cloudAccount,
+    current: async () => account,
     beginActivation: async () => ({ userCode: 'MXA-TEST', expiresAtUnix: Date.now() / 1000 + 600 }),
-    claimActivation: async () => ({ userCode: 'MXA-TEST', expiresAtUnix: Date.now() / 1000 + 600 }),
-    awaitActivation: async () => cloudAccount ?? { accountId: 'account-1', accountLabel: 'ada@example.com' },
+    claimActivation: claimActivation ?? (async () => ({ userCode: 'MXA-TEST', expiresAtUnix: Date.now() / 1000 + 600 })),
+    awaitActivation: async () => account ?? {
+      accountId: 'account-1', accountLabel: 'ada@example.com', planId: 'managed-free', planName: 'Managed Free',
+      subscriptionStatus: 'SUBSCRIPTION_STATUS_ACTIVE', subscriptionRevision: 1,
+    },
     cancelActivation: async () => {},
-    listMachines: async () => machines,
+    listMachines: listMachines ?? (async () => machines),
     logout: async () => {},
   }
   const externalPairingAdapter: ExternalPairingAdapter = {

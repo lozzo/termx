@@ -34,20 +34,21 @@
 - first-party create 优先使用用户可见 terminal name 作为 daemon-local key，并在单 endpoint 内拒绝重名。
 - managed WebRTC endpoint 已通过公开 Cloud Companion contract 接入 TUI；Companion 缺失时只让对应 endpoint unavailable，不影响 local/SSH。
 - Android App 已删除旧 Hub/session-token Connector，使用同一 endpoint/relay/error fixture；Community build 对官方 cloud 明确 fail closed，Official build 已通过固定私有 source set 装配同一公开 contract。
-- `muxvia cloud` 已提供 signed install/update、login/enroll、status/doctor、logout 和 uninstall；源码构建不含官方 release root 时 managed cloud 明确不可用，不影响 local/SSH。
+- `muxvia cloud` 已提供 signed install/update、login/enroll、status/doctor、logout 和 uninstall；完整 monorepo 的默认产品构建内嵌同版本 Cloud Companion，公开源码构建没有该私有 artifact 时 managed cloud 明确不可用，不影响 local/SSH。
 - TUI 与 Android App 共用 endpoint、配对、credential reference 和稳定错误语义；平台层只实现各自的 WebRTC primitive。
 
 ## 快速开始与日常命令
 
 ### 构建
 
-在仓库根目录构建当前公开 CLI：
+在完整 monorepo 根目录构建内置 Muxvia Cloud 的单文件产品 CLI：
 
 ```bash
 make build
 ```
 
-产物位于 `.artifacts/bin/muxvia`。下面的示例假设已经把它加入 `PATH`：
+产物位于 `.artifacts/bin/muxvia`。只有生成公开源码快照时才使用
+`make build-public` 构建不含 Cloud 的 `.artifacts/bin/muxvia-public`。下面的示例假设已经把产品产物加入 `PATH`：
 
 ```bash
 export PATH="$PWD/.artifacts/bin:$PATH"

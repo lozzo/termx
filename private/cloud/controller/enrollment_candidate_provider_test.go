@@ -44,12 +44,28 @@ func TestEnrollmentCandidateProviderFiltersInactiveDisabledAndFullHubs(t *testin
 		registry.deployments = append(registry.deployments, hubregistry.Deployment{Metadata: config.Metadata, Enabled: config.Metadata.GetHubId() != "hub-disabled"})
 	}
 	provider := enrollmentCandidateProvider(registry, fakeEnrollmentAttachments{"hub-active": true, "hub-disabled": true, "hub-full": true}, configs)
-	candidates, err := provider(context.Background(), time.Now())
+	candidates, err := provider(context.Background(), time.Now(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(candidates) != 1 || candidates[0].value.GetHubId() != "hub-active" || candidates[0].assignmentCount != 1 {
 		t.Fatalf("filtered enrollment candidates = %v", candidates)
+	}
+}
+
+func TestEnrollmentCandidateProviderKeepsFullExistingHubOnlyForOwner(t *testing.T) {
+	config := enrollmentDeploymentConfig("hub-full", 1)
+	registry := fakeEnrollmentRegistry{
+		deployments: []hubregistry.Deployment{{Metadata: config.Metadata, Enabled: true}},
+		assignments: map[string][]hubregistry.Assignment{"hub-full": {{Value: &cloudpb.HubAssignment{DaemonDeviceId: "daemon-owner"}}}},
+	}
+	provider := enrollmentCandidateProvider(registry, fakeEnrollmentAttachments{"hub-full": true}, []DeploymentConfig{config})
+	if candidates, err := provider(context.Background(), time.Now(), ""); err != nil || len(candidates) != 0 {
+		t.Fatalf("new daemon full Hub candidates = (%v, %v)", candidates, err)
+	}
+	candidates, err := provider(context.Background(), time.Now(), "hub-full")
+	if err != nil || len(candidates) != 1 || candidates[0].value.GetHubId() != "hub-full" || candidates[0].assignmentCount != 1 {
+		t.Fatalf("existing daemon full Hub candidates = (%v, %v)", candidates, err)
 	}
 }
 
@@ -64,7 +80,7 @@ func TestEnrollmentCandidateProviderCapsStableCandidateListAtOneHundred(t *testi
 		attachments[config.Metadata.GetHubId()] = true
 	}
 	provider := enrollmentCandidateProvider(registry, attachments, configs)
-	candidates, err := provider(context.Background(), time.Now())
+	candidates, err := provider(context.Background(), time.Now(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

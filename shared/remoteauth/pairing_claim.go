@@ -2,6 +2,7 @@ package remoteauth
 
 import (
 	"bytes"
+	"compress/flate"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
@@ -18,9 +19,12 @@ import (
 
 const (
 	// PairingClaimOfferVersion 是二维码和手工输入使用的紧凑 claim schema 版本。
-	PairingClaimOfferVersion  uint32 = 1
-	pairingClaimBytes                = 16
-	maxPairingClaimOfferBytes        = 512
+	PairingClaimOfferVersion    uint32 = 1
+	pairingClaimBytes                  = 16
+	maxPairingClaimOfferBytes          = 4 * 1024
+	maxPairingClaimRoutes              = 4
+	pairingClaimEnvelopeRaw     byte   = 0
+	pairingClaimEnvelopeDeflate byte   = 1
 	// PairingClaimCodePrefix 标识可以直接粘贴到无摄像头客户端的 portable claim code。
 	PairingClaimCodePrefix = "MXP1-"
 )
@@ -54,8 +58,8 @@ func (store *AccessStore) IssuePairingClaim(options PairingIssueOptions) (Pairin
 	if store == nil {
 		return PairingClaimIssueResult{}, fmt.Errorf("client access store is nil")
 	}
-	if pairingClaimRouteSeed(options.Routes) == nil {
-		return PairingClaimIssueResult{}, fmt.Errorf("%w: claim requires one Direct or Cloud pairing Route", ErrPairingClaimMalformed)
+	if len(options.Routes) == 0 {
+		return PairingClaimIssueResult{}, fmt.Errorf("%w: claim requires at least one Direct, SSH, or Cloud pairing Route", ErrPairingClaimMalformed)
 	}
 	randomSource := options.Random
 	if randomSource == nil {
@@ -83,13 +87,17 @@ func (store *AccessStore) IssuePairingClaim(options PairingIssueOptions) (Pairin
 	if err != nil {
 		return PairingClaimIssueResult{}, err
 	}
+	seeds := pairingClaimRouteSeeds(bundle.GetRoutes())
+	if len(seeds) == 0 {
+		return PairingClaimIssueResult{}, fmt.Errorf("%w: claim requires at least one Direct, SSH, or Cloud pairing Route", ErrPairingClaimMalformed)
+	}
 	offer := &remoteauthpb.PairingClaimOfferV1{
 		SchemaVersion:     PairingClaimOfferVersion,
 		Claim:             append([]byte(nil), claim...),
 		DeviceId:          store.identity.DeviceID,
 		DevicePublicKey:   append([]byte(nil), store.identity.PublicKey...),
 		ExpiresAtUnixNano: claims.ExpiresAt.UnixNano(),
-		Route:             pairingClaimRouteSeed(bundle.GetRoutes()),
+		Routes:            seeds,
 	}
 	offerPayload, err := EncodePairingClaimOffer(offer)
 	if err != nil {
@@ -252,20 +260,42 @@ func validatePairingClaimOffer(offer *remoteauthpb.PairingClaimOfferV1, now time
 	if offer == nil || offer.GetSchemaVersion() != PairingClaimOfferVersion || len(offer.GetClaim()) != pairingClaimBytes || strings.TrimSpace(offer.GetDeviceId()) == "" || len(offer.GetDevicePublicKey()) != ed25519.PublicKeySize || offer.GetExpiresAtUnixNano() <= 0 {
 		return ErrPairingClaimMalformed
 	}
-	if offer.GetRoute() == nil {
+	if len(offer.GetRoutes()) == 0 || len(offer.GetRoutes()) > maxPairingClaimRoutes {
 		return ErrPairingClaimMalformed
 	}
-	switch route := offer.GetRoute().GetRoute().(type) {
-	case *remoteauthpb.PairingRouteSeed_DirectWebrtcTcp:
-		if route.DirectWebrtcTcp == nil || strings.TrimSpace(route.DirectWebrtcTcp.GetSignalingAddress()) == "" || strings.TrimSpace(route.DirectWebrtcTcp.GetIceTcpAddress()) == "" {
+	seenRouteIDs := make(map[string]struct{}, len(offer.GetRoutes()))
+	for _, seed := range offer.GetRoutes() {
+		if seed == nil || strings.TrimSpace(seed.GetRouteId()) == "" || strings.TrimSpace(seed.GetRouteId()) != seed.GetRouteId() || len(seed.GetRouteId()) > 64 || strings.TrimSpace(seed.GetDisplayName()) != seed.GetDisplayName() || len(seed.GetDisplayName()) > 128 {
 			return ErrPairingClaimMalformed
 		}
-	case *remoteauthpb.PairingRouteSeed_ManagedWebrtc:
-		if route.ManagedWebrtc == nil || strings.TrimSpace(route.ManagedWebrtc.GetTargetDeviceId()) != strings.TrimSpace(offer.GetDeviceId()) {
+		if _, duplicate := seenRouteIDs[seed.GetRouteId()]; duplicate {
 			return ErrPairingClaimMalformed
 		}
-	default:
-		return ErrPairingClaimMalformed
+		seenRouteIDs[seed.GetRouteId()] = struct{}{}
+		switch route := seed.GetRoute().(type) {
+		case *remoteauthpb.PairingRouteSeed_DirectWebrtcTcp:
+			if route.DirectWebrtcTcp == nil || strings.TrimSpace(route.DirectWebrtcTcp.GetSignalingAddress()) == "" || strings.TrimSpace(route.DirectWebrtcTcp.GetIceTcpAddress()) == "" {
+				return ErrPairingClaimMalformed
+			}
+		case *remoteauthpb.PairingRouteSeed_ManagedWebrtc:
+			if route.ManagedWebrtc == nil || strings.TrimSpace(route.ManagedWebrtc.GetTargetDeviceId()) != strings.TrimSpace(offer.GetDeviceId()) {
+				return ErrPairingClaimMalformed
+			}
+		case *remoteauthpb.PairingRouteSeed_SshWebrtcTcp:
+			ssh := route.SshWebrtcTcp
+			if ssh == nil || strings.TrimSpace(ssh.GetHost()) == "" || ssh.GetPort() == 0 || ssh.GetPort() > 65535 || strings.TrimSpace(ssh.GetUser()) == "" || len(ssh.GetHostKeyFingerprints()) == 0 || strings.TrimSpace(ssh.GetRemoteSignalingAddress()) == "" || strings.TrimSpace(ssh.GetRemoteIceTcpAddress()) == "" {
+				return ErrPairingClaimMalformed
+			}
+			switch ssh.GetCredentialKind() {
+			case remoteauthpb.EndpointCredentialKind_ENDPOINT_CREDENTIAL_KIND_SSH_AGENT,
+				remoteauthpb.EndpointCredentialKind_ENDPOINT_CREDENTIAL_KIND_SSH_PRIVATE_KEY,
+				remoteauthpb.EndpointCredentialKind_ENDPOINT_CREDENTIAL_KIND_SSH_PASSWORD:
+			default:
+				return ErrPairingClaimMalformed
+			}
+		default:
+			return ErrPairingClaimMalformed
+		}
 	}
 	if requireFresh && now.After(time.Unix(0, offer.GetExpiresAtUnixNano()).UTC()) {
 		return ErrPairingTicketExpired
@@ -273,21 +303,39 @@ func validatePairingClaimOffer(offer *remoteauthpb.PairingClaimOfferV1, now time
 	return nil
 }
 
-func pairingClaimRouteSeed(routes []*remoteauthpb.EndpointRouteConfigV1) *remoteauthpb.PairingRouteSeed {
+func pairingClaimRouteSeeds(routes []*remoteauthpb.EndpointRouteConfigV1) []*remoteauthpb.PairingRouteSeed {
+	seeds := make([]*remoteauthpb.PairingRouteSeed, 0, min(len(routes), maxPairingClaimRoutes))
 	for _, route := range routes {
-		if route == nil || !route.GetEnabled() {
+		if route == nil || !route.GetEnabled() || len(seeds) == maxPairingClaimRoutes {
 			continue
 		}
+		priority := int32(len(seeds) * 10)
+		seed := &remoteauthpb.PairingRouteSeed{RouteId: route.GetRouteId(), DisplayName: route.GetDisplayName(), Priority: &priority}
 		if direct := route.GetDirectWebrtcTcp(); direct != nil && len(direct.GetSignalingAddresses()) > 0 && len(direct.GetIceTcpAddresses()) > 0 {
-			return &remoteauthpb.PairingRouteSeed{Route: &remoteauthpb.PairingRouteSeed_DirectWebrtcTcp{DirectWebrtcTcp: &remoteauthpb.PairingDirectRouteSeed{
+			seed.Route = &remoteauthpb.PairingRouteSeed_DirectWebrtcTcp{DirectWebrtcTcp: &remoteauthpb.PairingDirectRouteSeed{
 				SignalingAddress: direct.GetSignalingAddresses()[0], IceTcpAddress: direct.GetIceTcpAddresses()[0], ServerName: direct.GetServerName(),
-			}}}
+			}}
+			seeds = append(seeds, seed)
+			continue
 		}
 		if managed := route.GetManagedWebrtc(); managed != nil && strings.TrimSpace(managed.GetTargetDeviceId()) != "" {
-			return &remoteauthpb.PairingRouteSeed{Route: &remoteauthpb.PairingRouteSeed_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.PairingManagedRouteSeed{TargetDeviceId: managed.GetTargetDeviceId()}}}
+			seed.Route = &remoteauthpb.PairingRouteSeed_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.PairingManagedRouteSeed{TargetDeviceId: managed.GetTargetDeviceId()}}
+			seeds = append(seeds, seed)
+			continue
+		}
+		if ssh := route.GetSshWebrtcTcp(); ssh != nil && len(ssh.GetHostKeyFingerprints()) > 0 {
+			kind := remoteauthpb.EndpointCredentialKind_ENDPOINT_CREDENTIAL_KIND_SSH_PRIVATE_KEY
+			if descriptor := ssh.GetCredentialDescriptor(); descriptor != nil {
+				kind = descriptor.GetKind()
+			}
+			seed.Route = &remoteauthpb.PairingRouteSeed_SshWebrtcTcp{SshWebrtcTcp: &remoteauthpb.PairingSSHRouteSeed{
+				Host: ssh.GetHost(), Port: ssh.GetPort(), User: ssh.GetUser(), HostKeyFingerprints: append([]string(nil), ssh.GetHostKeyFingerprints()...),
+				ProxyJump: ssh.GetProxyJump(), RemoteSignalingAddress: ssh.GetRemoteSignalingAddress(), RemoteIceTcpAddress: ssh.GetRemoteIceTcpAddress(), CredentialKind: kind,
+			}}
+			seeds = append(seeds, seed)
 		}
 	}
-	return nil
+	return seeds
 }
 
 // PairingClaimEndpointCandidate 把紧凑 offer 投影为仅用于建立 pairing peer 的临时 Endpoint candidate。
@@ -297,21 +345,63 @@ func PairingClaimEndpointCandidate(offer *remoteauthpb.PairingClaimOfferV1) (end
 		return endpointdomain.EndpointCandidate{}, err
 	}
 	identity := endpointdomain.DaemonIdentity{DeviceID: offer.GetDeviceId(), DeviceFingerprint: Fingerprint(ed25519.PublicKey(offer.GetDevicePublicKey()))}
-	var route endpointdomain.AccessRoute
-	switch seed := offer.GetRoute().GetRoute().(type) {
-	case *remoteauthpb.PairingRouteSeed_DirectWebrtcTcp:
-		route = endpointdomain.AccessRoute{ID: "pairing-direct", Kind: endpointdomain.RouteDirectWebRTCTCP, Enabled: true, Source: endpointdomain.SourceBootstrap, PolicySource: endpointdomain.SourceUser, SignalingAddresses: []string{seed.DirectWebrtcTcp.GetSignalingAddress()}, ICETCPAddresses: []string{seed.DirectWebrtcTcp.GetIceTcpAddress()}, ServerName: seed.DirectWebrtcTcp.GetServerName()}
-	case *remoteauthpb.PairingRouteSeed_ManagedWebrtc:
-		route = endpointdomain.AccessRoute{ID: "pairing-cloud", Kind: endpointdomain.RouteManagedWebRTC, Enabled: true, Source: endpointdomain.SourceCloud, PolicySource: endpointdomain.SourceUser, TargetDeviceID: seed.ManagedWebrtc.GetTargetDeviceId(), AccountProfileRef: "default", RelayMode: endpointdomain.RelayAuto}
-	default:
-		return endpointdomain.EndpointCandidate{}, ErrPairingClaimMalformed
+	routes := make([]endpointdomain.AccessRoute, 0, len(offer.GetRoutes()))
+	for _, seed := range offer.GetRoutes() {
+		route := endpointdomain.AccessRoute{ID: endpointdomain.RouteID(seed.GetRouteId()), DisplayName: seed.GetDisplayName(), Enabled: true, Source: endpointdomain.SourceBootstrap, PolicySource: endpointdomain.SourceUser}
+		if seed.Priority != nil {
+			priority := int(seed.GetPriority())
+			route.Priority = &priority
+		}
+		switch value := seed.GetRoute().(type) {
+		case *remoteauthpb.PairingRouteSeed_DirectWebrtcTcp:
+			route.Kind = endpointdomain.RouteDirectWebRTCTCP
+			route.SignalingAddresses = []string{value.DirectWebrtcTcp.GetSignalingAddress()}
+			route.ICETCPAddresses = []string{value.DirectWebrtcTcp.GetIceTcpAddress()}
+			route.ServerName = value.DirectWebrtcTcp.GetServerName()
+		case *remoteauthpb.PairingRouteSeed_ManagedWebrtc:
+			route.Kind = endpointdomain.RouteManagedWebRTC
+			route.Source = endpointdomain.SourceCloud
+			route.TargetDeviceID = value.ManagedWebrtc.GetTargetDeviceId()
+			route.AccountProfileRef = "default"
+			route.RelayMode = endpointdomain.RelayAuto
+		case *remoteauthpb.PairingRouteSeed_SshWebrtcTcp:
+			ssh := value.SshWebrtcTcp
+			route.Kind = endpointdomain.RouteSSHWebRTCTCP
+			route.Host = ssh.GetHost()
+			route.Port = uint16(ssh.GetPort())
+			route.User = ssh.GetUser()
+			route.ProxyJump = ssh.GetProxyJump()
+			route.HostKeyFingerprints = append([]string(nil), ssh.GetHostKeyFingerprints()...)
+			route.RemoteSignalingAddress = ssh.GetRemoteSignalingAddress()
+			route.RemoteICETCPAddress = ssh.GetRemoteIceTcpAddress()
+			route.CredentialDescriptor = &endpointdomain.CredentialDescriptor{DescriptorID: "pairing-" + seed.GetRouteId(), Kind: pairingCredentialKind(ssh.GetCredentialKind())}
+		default:
+			return endpointdomain.EndpointCandidate{}, ErrPairingClaimMalformed
+		}
+		routes = append(routes, route)
 	}
-	return endpointdomain.EndpointCandidate{Source: endpointdomain.SourceBootstrap, Identity: identity, SuggestedLabel: offer.GetDeviceId(), Routes: []endpointdomain.AccessRoute{route}}, nil
+	return endpointdomain.EndpointCandidate{Source: endpointdomain.SourceBootstrap, Identity: identity, SuggestedLabel: offer.GetDeviceId(), Routes: routes}, nil
+}
+
+func pairingCredentialKind(value remoteauthpb.EndpointCredentialKind) endpointdomain.CredentialKind {
+	switch value {
+	case remoteauthpb.EndpointCredentialKind_ENDPOINT_CREDENTIAL_KIND_SSH_AGENT:
+		return endpointdomain.CredentialSSHAgent
+	case remoteauthpb.EndpointCredentialKind_ENDPOINT_CREDENTIAL_KIND_SSH_PASSWORD:
+		return endpointdomain.CredentialSSHPassword
+	default:
+		return endpointdomain.CredentialSSHPrivateKey
+	}
 }
 
 // EncodePairingClaimCode 把 canonical offer 编码为相机扫码和手工输入共用的紧凑文本。
+// raw-DEFLATE 只有在包含 marker 后仍更短时才使用，避免小 payload 因压缩头部反而膨胀。
 func EncodePairingClaimCode(payload []byte) string {
-	return PairingClaimCodePrefix + base64.RawURLEncoding.EncodeToString(payload)
+	envelope := append([]byte{pairingClaimEnvelopeRaw}, payload...)
+	if compressed, err := deflatePairingClaim(payload); err == nil && len(compressed) < len(payload) {
+		envelope = append([]byte{pairingClaimEnvelopeDeflate}, compressed...)
+	}
+	return PairingClaimCodePrefix + base64.RawURLEncoding.EncodeToString(envelope)
 }
 
 // DecodePairingClaimCode 解码 portable claim code；canonical protobuf 和有效期仍由 ParsePairingClaimOffer 校验。
@@ -320,9 +410,49 @@ func DecodePairingClaimCode(value string) ([]byte, error) {
 	if !strings.HasPrefix(value, PairingClaimCodePrefix) {
 		return nil, ErrPairingClaimMalformed
 	}
-	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(value, PairingClaimCodePrefix))
-	if err != nil || len(payload) == 0 {
+	envelope, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(value, PairingClaimCodePrefix))
+	if err != nil || len(envelope) < 2 {
 		return nil, ErrPairingClaimMalformed
 	}
-	return payload, nil
+	body := envelope[1:]
+	switch envelope[0] {
+	case pairingClaimEnvelopeRaw:
+		if len(body) > maxPairingClaimOfferBytes {
+			return nil, ErrPairingClaimMalformed
+		}
+		if compressed, compressErr := deflatePairingClaim(body); compressErr == nil && len(compressed) < len(body) {
+			return nil, ErrPairingClaimMalformed
+		}
+		return append([]byte(nil), body...), nil
+	case pairingClaimEnvelopeDeflate:
+		reader := flate.NewReader(bytes.NewReader(body))
+		decoded, readErr := io.ReadAll(io.LimitReader(reader, maxPairingClaimOfferBytes+1))
+		closeErr := reader.Close()
+		if readErr != nil || closeErr != nil || len(decoded) == 0 || len(decoded) > maxPairingClaimOfferBytes {
+			return nil, ErrPairingClaimMalformed
+		}
+		canonical, compressErr := deflatePairingClaim(decoded)
+		if compressErr != nil || len(canonical) >= len(decoded) || !bytes.Equal(canonical, body) {
+			return nil, ErrPairingClaimMalformed
+		}
+		return decoded, nil
+	default:
+		return nil, ErrPairingClaimMalformed
+	}
+}
+
+func deflatePairingClaim(payload []byte) ([]byte, error) {
+	var compressed bytes.Buffer
+	writer, err := flate.NewWriter(&compressed, flate.BestCompression)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = writer.Write(payload); err != nil {
+		_ = writer.Close()
+		return nil, err
+	}
+	if err = writer.Close(); err != nil {
+		return nil, err
+	}
+	return compressed.Bytes(), nil
 }

@@ -19,6 +19,10 @@ export interface NativeCloudAccount {
   accountId?: string
   accountLabel?: string
   expiresAtUnix?: number
+  planId?: string
+  planName?: string
+  subscriptionStatus?: string
+  subscriptionRevision?: number
 }
 
 /** NativeCloudActivation 只包含 WebView 可展示的短码与期限；高熵 flow ID 留在 Android 原生层。 */
@@ -44,6 +48,7 @@ export interface NativeConnectionPlugin extends Plugin {
   cloudAwaitActivation(): Promise<NativeCloudAccount>
   cloudCancelActivation(): Promise<void>
   getCloudAccount(): Promise<NativeCloudAccount>
+  refreshCloudAccount(): Promise<NativeCloudAccount>
   cloudListDevices(): Promise<{ devices: NativeCloudDevice[] }>
   cloudLogout(): Promise<void>
   handleForegroundResume(): Promise<void>

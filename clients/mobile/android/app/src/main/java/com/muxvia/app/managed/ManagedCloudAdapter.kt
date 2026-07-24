@@ -22,8 +22,16 @@ data class ManagedCloudClientMetadata(
     val muxviaVersion: String,
 )
 
-/** ManagedCloudAccount 是可安全投影给 WebView 的账号摘要，不包含 edge token 或浏览器 Session。 */
-data class ManagedCloudAccount(val accountId: String, val accountLabel: String, val expiresAtUnix: Long)
+/** ManagedCloudAccount 是可安全投影给 WebView 的账号与持久订阅摘要，不包含 edge token 或浏览器 Session。 */
+data class ManagedCloudAccount(
+    val accountId: String,
+    val accountLabel: String,
+    val expiresAtUnix: Long,
+    val planId: String,
+    val planName: String,
+    val subscriptionStatus: String,
+    val subscriptionRevision: Long,
+)
 
 /** ManagedCloudDevice 是 Hub 同账号内存目录的非秘密投影；它不代表已持有 daemon capability。 */
 data class ManagedCloudDevice(
@@ -62,6 +70,8 @@ interface ManagedCloudAdapter : ManagedCloudProtoAdapter {
     suspend fun completeLogin(flowId: String): ManagedCloudAccount
     /** currentAccount 只读取已验证的 Keystore Session 摘要。 */
     suspend fun currentAccount(): ManagedCloudAccount?
+    /** refreshAccount 原子轮换账号 session，并从 Controller 持久 Subscription 读取最新展示摘要。 */
+    suspend fun refreshAccount(): ManagedCloudAccount?
     /** listDevices 只做账号节点发现；调用方仍须从 native grant store 判断是否已配对。 */
     suspend fun listDevices(): List<ManagedCloudDevice>
     /** logout 删除账号 edge session，不删除 daemon capability grant。 */
