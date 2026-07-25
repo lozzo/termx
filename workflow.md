@@ -3,6 +3,8 @@
 ## 当前结论
 
 - 用户原要求连续完成六个收口切片；在 `PG004` 实机 TURN/TCP 验收后又明确插入连接体验收口，并在 2026-07-24 要求立即实现参考 `tgent` 的 enrollment 升级。`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`、`CONNCOPY001`、`LOADUX001`、`APPTERM001` 和 `PAIRROUTE001` 已完成。2026-07-25 用户把当前主线重新收敛为九模块运营后台，并明确要求真实支付最后处理。套餐/用户特权由 `OPSCAT001` 完成，订单/订阅/优惠码由 `OPSCOM001` 完成，Hub 管理与动态目录由 `OPSHUB001` 完成，用户管理与 Agent 概览由 `OPSUSER001` 完成，CLI/daemon/Android 版本管理由 `OPSREL001` 完成，九模块统一纵向验收由 `OPSE2E001` 完成并已部署到公网 Controller/Web 与 US/CN Edge。`OPSAUTH001` 已删除独立 Operator Token 登录，改为普通账号 Session、PostgreSQL 角色、后端逐请求授权和账号导航九模块，并已部署公网；证据见 `docs/remote-platform/opsauth001-unified-account-admin.md`。当前最早切片恢复为外部阻塞的 `CREEM001`。
+- `OPSZH001` 固定系统管理/运营工作台的首次语言为简体中文：`/operator` 使用独立浏览器语言偏好，首次进入默认 `zh-CN`，中文覆盖版本、订单、订阅、优惠码、套餐、用户、Agent、用户特权、会话、命令、审计与 Hub/Relay 集群；保留页头语言选择器和英文资源，不改变普通账号页面的语言偏好、管理权限或业务状态机。
+- 运营后台产品化重构已按 `OPSCONSOLE001-OPSCONSOLE007` 完成并部署；唯一设计基线为 `docs/remote-platform/operator-console-product-design.md`。九个真实子路由、稳定管理壳、模块级加载/缓存、详情与操作、响应式及真实纵向证据均已收口，未改变现有 Proto/API/Store 业务真值。
 - 首期正式 UI 语言只承诺英文与简体中文。Web Controller 现有俄文资源保留为历史输入但从可选语言中暂时移除，直到键集合、关键流程和布局验收达到与英文/中文相同的完成条件；不得以 fallback 英文冒充俄文支持。
 - `UX001` 已完成英文/简体中文基础设施与首批关键流程迁移：Web Controller 登录/账号/设备/激活和 Android 首页/设备/配对/设置均使用 locale key，语言默认跟随系统并可持久切换；App 143 个、Web 365 个 locale key 对称，稳定 native error code 不再把底层英文 message 直接投影到 UI；ARM64 模拟器已验证中文设备页和设置页。terminal/file 剩余文案按计划留给 `APPUX001`，不在本切片提前扩大。
 - 二维码整改必须区分两类载荷：Web 手机 activation 只携带短期 `MXA` code，当前约 60 字符；daemon pairing 当前把约 599-byte signed bundle 编码成约 826 字符 URI，达到 QR Version 23 / 109x109 modules，是显示不全的根因。`QR001` 只提供终端尺寸检查、文本和图片 fallback；`QR002` 才通过 daemon-owned 内存 claim 缩短真实配对二维码。
@@ -97,6 +99,14 @@ muxvia-cloud-edge × N
 | 15 | OPSREL001 | 现有发布产物与客户端版本身份 | CLI/daemon/Android 签名版本目录、channel、兼容、灰度和回滚 | 不建设 CDN、自动商店发布或通用制品平台 | hash/signature、版本单调、稳定分桶、兼容/强制策略和回滚 E2E |
 | 16 | OPSE2E001 | 九模块最终 Web/Go 实现 | 运营后台全业务证据矩阵 | 不用直接写数据库、fake ack 或页面快照代替真实流程 | Web UI + PostgreSQL + Controller + 双 Edge；九模块导航、权限、CSRF、近期认证、审计和重启矩阵 |
 | 17 | OPSAUTH001 | 九模块运营后台与普通账号 Session | 数据库账号角色、统一登录、后端逐请求授权与账号导航中的管理菜单 | 不向前端返回 `isAdmin`/`role`；不保留 Operator Token/config/cookie；隐藏菜单不作为权限判断 | Proto workspace module 投影、PostgreSQL 角色、普通用户 403、管理员九模块、CSRF/近期认证、升降级即时生效、重启与 390/1440 UI |
+| 19 | OPSZH001 | 已完成九模块运营工作台与 Web i18n | 系统管理界面首次默认简体中文，全部运营模块使用 locale key，保留独立语言切换 | 不改变普通账号语言偏好、Proto/API、角色授权或业务状态机 | Web typecheck/build、中文默认/密码解锁 Playwright、桌面截图与溢出检查 |
+| 20 | OPSCONSOLE001 | 现有九模块 API、账号 Session/Workspace 权限和中文资源 | 稳定管理壳、九个真实子路由、权限导航、移动 drawer 和单一账号入口 | 不改 Proto/API/Store、不在账号页复制九模块菜单、不加载非当前模块数据 | 路由直达/刷新/前进后退、权限模块过滤、桌面侧栏、移动 drawer、中文默认、Web typecheck/build/Playwright |
+| 21 | OPSCONSOLE002 | OPSCONSOLE001 管理壳和现有列表 API | 模块级 query cache、局部 loading/error、后台刷新和 mutation 精确失效 | 不引入第二份业务状态、不用全页 loading、不预取无权限模块 | 九路由请求隔离、缓存回访、失败隔离、刷新与 mutation invalidation Playwright |
+| 22 | OPSCONSOLE003 | 用户、Agent、Account detail、Presence 和 CommandOutbox API | 用户与 Agent 独立列表/详情/筛选和精确管理操作 | 不用数据库 online、不复制 pending command 状态 | 搜索/深链接、fresh/stale、Kick/Revoke/Migrate 四阶段与审计 E2E |
+| 23 | OPSCONSOLE004 | normalized order/payment journal 与 Subscription API | 订单与订阅独立列表/详情、支付时间线和调整流程 | 不直接改 paid、不让 UI 推导交易或订阅真值 | 订单/订阅筛选、详情、reconcile/refund/adjustment、近期认证和审计 E2E |
+| 24 | OPSCONSOLE005 | PlanCatalog、EntitlementOverride 和 Promotion API | 套餐、用户特权、优惠码独立列表/详情和结构化操作 | 不原地修改已售套餐、不自由编辑 policy JSON、不建立营销规则引擎 | 不可变 catalog diff、override 生效/到期/撤销、优惠 reservation/redemption E2E |
+| 25 | OPSCONSOLE006 | Hub fleet 与 signed release API | Hub、版本独立列表/详情、生命周期和发布操作 | 不用数据库在线真值、不暴露签名私钥、不建设自动发布平台 | Hub readiness/lifecycle、迁移/停用、channel pause/resume/rollback 与审计 E2E |
+| 26 | OPSCONSOLE007 | 前六切片最终 Web 实现 | 九模块真实纵向、响应式、请求隔离、重启恢复和旧单页删除 | 不用页面快照、直接写数据库或 fake ack 冒充业务闭环 | 390/768/1440、键盘/缩放、Web UI + PostgreSQL + Controller + 双 Edge 九模块证据矩阵 |
 | 18 | CREEM001 | 九模块运营闭环与 OPSCOM001 normalized journal | 最后部署 Creem checkout、`/pay/creem` Webhook 和轮询 reconciliation | success redirect 不开通权限；Webhook/轮询不建立双真值 | sandbox checkout、paid、阻断 Webhook 后轮询补偿、取消/past due/refund、重复/乱序、重启恢复 |
 | 18 | ENROLLUX005 | 已完成 enrollment 模型和当前 App/Cloud 资产 | enrollment 全产品 E2E | 不重写登录、配对或 Cloud Route 架构 | App Cloud resolve/connect、Web 移除后不可重连与恢复证据 |
 | 19 | PG004 | 已部署 Supabase、Controller、双 Edge、UXE2E001 APK | 公网 staging 的备份恢复和运行可靠性闭环 | 除当前显式体验切片外不再改已验收 UI，不新增商业套餐能力 | R2 加密备份/独立恢复、account refresh、Edge Presence 恢复、网络切换 workspace 重建、文件上传下载校验 |
@@ -169,6 +179,14 @@ muxvia-cloud-edge × N
 | OPSREL001 | 已完成 | CLI/daemon/Android 版本管理 | Ed25519 签名 metadata、官方 HTTPS origin、不可变 artifact、channel CAS、兼容/强制/稳定灰度、pause/resume/显式回滚和持久审计已完成；真实 PostgreSQL、public resolve、Operator 权限与桌面/移动 Web E2E 通过，证据见 `docs/remote-platform/opsrel001-e2e.md` |
 | OPSE2E001 | 已完成 | 九模块运营后台 E2E | Web UI 在同一真实 PostgreSQL、Controller、双 Edge 上完成九类 mutation；真实 Presence Kick APPLIED、admin/readonly/CSRF/近期认证、审计、Edge/PostgreSQL/Controller 重启和桌面/移动布局通过，证据见 `docs/remote-platform/opse2e001-nine-module-e2e.md` |
 | OPSAUTH001 | 已完成 | 统一账号管理员授权 | 普通账号 Session 是唯一 Web 登录；数据库保存 none/readonly/admin 角色但不进入账号 Proto；后端逐请求授权并只投影允许的管理模块；账号导航下展示管理菜单；删除 Operator Token/config/cookie/独立登录；公网部署与真实九模块重启 E2E 通过，证据见 `docs/remote-platform/opsauth001-unified-account-admin.md` |
+| OPSZH001 | 已完成 | 中文系统管理工作台 | `/operator` 首次固定简体中文并使用独立持久偏好；主要运营模块、操作、状态和空态接入中英文 locale，页头保留语言切换；Web typecheck/build、中文默认与密码解锁 Playwright、1440px 截图检查通过 |
+| OPSCONSOLE001 | 已完成 | 稳定管理壳与真实模块路由 | `/operator` 规范跳转到首个获准模块；九个真实子路由、Workspace 权限过滤、桌面固定侧栏、移动 drawer、单一账号入口、中文默认和浏览器历史恢复已通过 typecheck/build 与 5 条 Playwright 准入 |
+| OPSCONSOLE002 | 已完成 | 模块级数据生命周期 | 当前模块首次独立加载；已访问模块立即显示内存缓存并后台刷新；刷新、搜索和 mutation 只失效当前模块，非当前模块零请求；Playwright 请求序列与返回历史已通过 |
+| OPSCONSOLE003 | 已完成 | 用户与 Agent 产品化 | 用户/Agent 独立路由、搜索与 Proto 状态筛选、账号/daemon 深链接、Presence freshness、Kick/Revoke/Migrate、会话撤销和 CommandOutbox 四阶段通过浏览器回归 |
+| OPSCONSOLE004 | 已完成 | 订单与订阅产品化 | 订单账号/状态/provider 筛选、支付尝试与事件时间线、Creem reconciliation、退款/撤销；订阅状态筛选、独立详情、暂停/恢复和 adjustment 表单已接真实 API |
+| OPSCONSOLE005 | 已完成 | 套餐、特权与优惠码产品化 | 套餐默认结构化表单与高级 Proto JSON、不可变 catalog 深链接；类型化 override 创建/撤销；优惠详情、redemption 和停用已接现有 generated API |
+| OPSCONSOLE006 | 已完成 | Hub 与版本产品化 | Hub 创建/编辑/身份批准/drain/disable、readiness/lifecycle 深链接；signed release 发布、channel activate/pause/resume/rollback 深链接与审计通过浏览器回归 |
+| OPSCONSOLE007 | 已完成 | 九模块最终 E2E 与旧单页删除 | 390/768/1440、150% 缩放、键盘焦点、九路由请求隔离、权限与近期认证通过；提交 `0f19d846` 已推送并部署，Controller/Web 与 US/CN 双 Edge 滚动重启恢复，证据见 `docs/remote-platform/opsconsole007-operator-console-e2e.md` |
 | CREEM001 | 阻塞 | Creem 正式支付 provider | 当前最早切片；实现、本地 E2E 及公网 Controller/Web/双 Edge 基线已部署；缺少 Webhook signing secret、月付 Product ID 和年付 Product ID，不能安全挂载真实 `/pay/creem` 或完成 sandbox lifecycle，恢复条件见运行手册 |
 | ENROLLUX005 | 待继续 | enrollment 全产品 E2E | 九模块与 Creem 收口后恢复旧 App Cloud resolve/connect 与 Web 移除后不可重连验收 |
 | PG004 | 待继续 | Supabase staging、公网 bootstrap 装配与备份恢复验收 | 九模块与 Creem 收口后恢复 R2 age 加密上传和独立恢复；既有 Hub/Relay/5G/Clash/terminal/file 证据继续保留 |

@@ -1,8 +1,8 @@
 # Muxvia Cloud 运营管理后台产品设计
 
-状态：设计基线，待后续由 `workflow.md` 明确启动实施切片
+状态：已按 `OPSCONSOLE001-OPSCONSOLE007` 实施并部署；验收与部署证据见 `docs/remote-platform/opsconsole007-operator-console-e2e.md`
 
-本文定义 Muxvia Cloud 运营管理后台的信息架构、导航、路由、数据加载、交互规则和九个功能模块。本文不改变现有 Control Plane、Proto、PostgreSQL、Hub、Relay、CommandOutbox 或发布系统的领域真值，也不表示当前页面已经完成、提交、推送或部署。
+本文定义 Muxvia Cloud 运营管理后台的信息架构、导航、路由、数据加载、交互规则和九个功能模块。实现不改变现有 Control Plane、Proto、PostgreSQL、Hub、Relay、CommandOutbox 或发布系统的领域真值。
 
 业务语义必须服从：
 

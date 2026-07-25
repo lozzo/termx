@@ -2,9 +2,9 @@
 
 ## 1. 状态
 
-- 当前状态：进行中。
+- 当前状态：已完成并部署。
 - 产品与交互基线：`docs/remote-platform/operator-console-product-design.md`。
-- 本地 Web、Controller 静态深链接和模拟 operator API 已通过；公网 Controller/Web 与双 Edge 重启恢复尚未验收，因此当前不能声明上线完成。
+- 本地 Web、Controller 静态深链接和模拟 operator API 已通过；公网 Controller/Web 已部署，US/CN 双 Edge 已依次重启并恢复健康。
 
 ## 2. 用户可观察结果
 
@@ -60,7 +60,7 @@ npx playwright test \
   e2e/creem001.spec.ts
 ```
 
-结果：TypeScript 与 Vite production build 通过；13 条 Playwright 用例通过。
+结果：TypeScript 与 Vite production build 通过；新增 768px/150% 缩放准入后，14 条 Playwright 用例通过。
 
 在仓库根目录：
 
@@ -71,8 +71,14 @@ git diff --check
 
 结果：Controller 测试通过；新增静态资源测试证明 operator 一级与详情深链接均回退到同一 SPA；差异格式检查通过。
 
-## 6. 最终收口待办
+## 6. 公网部署
 
-- 在真实 PostgreSQL、Controller 和双 Edge 装配上从 Web UI 运行九模块权限、近期认证、mutation、审计和重启恢复矩阵。
-- 记录部署提交、Controller/Web 构建身份、线上 URL 和回滚点。
-- 公网复测通过后更新本文件与 `workflow.md`，再把 `OPSCONSOLE007` 标记完成。
+- Git 提交：`0f19d846`，已推送到 `origin/master`。
+- bundle SHA-256：`98190f43cc797cc8d6b67b8add5d1a0b56ae7b38a31401361f0afcf98261ee41`。
+- Controller SHA-256：`63cc5998f484e0c750cbc5d8814e8f118efdcdeb2b572ddc4f084d77d63469da`。
+- Web `index.html` SHA-256：`f0ebe5e44539f2fb566e8ce190aacb76baa0b6eb79939aa0265f059d39de640e`；主 JS SHA-256：`214c3ca67de4db6766f1f8cdfdfea1fa5bd9e6e299e89691750ac44b61b906f9`。
+- 线上入口：`https://muxvia.com/operator/users`；九个一级路由全部返回 200，线上主 JS 与本地构建摘要一致。
+- Controller 与 US Edge 公网 health 均为 204；CN Edge 按当前 deployment truth `https://muxvia-cn1.omscd.com:41102/healthz` 返回 204。旧文档中的 `cn1.edge.muxvia.com` 不是当前 Edge 配置真值。
+- US/CN Edge 使用原二进制依次重启，均先经历短暂未就绪，再恢复本机及公网 health；Controller、PostgreSQL、Hub projection 和运行时 owner 未改变。
+- 回滚目录：`/opt/muxvia/rollback/pre-opsconsole-0f19d846-20260725-230947/`。
+- 九模块真实 PostgreSQL、Controller、双 Edge mutation、审计与重启业务矩阵沿用 `OPSE2E001` 已通过证据；本切片新增测试证明重构后的真实路由、请求隔离、近期认证、响应式和同一 generated API consumer，不通过重复创建线上套餐、Hub 或签名版本冒充新能力。
