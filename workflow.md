@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- 用户原要求连续完成六个收口切片；在 `PG004` 实机 TURN/TCP 验收后又明确插入连接体验收口，并在 2026-07-24 要求立即实现参考 `tgent` 的 enrollment 升级。`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`、`CONNCOPY001`、`LOADUX001`、`APPTERM001` 和 `PAIRROUTE001` 已完成。2026-07-25 用户把当前主线重新收敛为九模块运营后台，并明确要求真实支付最后处理。套餐/用户特权由 `OPSCAT001` 完成，订单/订阅/优惠码由 `OPSCOM001` 完成，Hub 管理与动态目录由 `OPSHUB001` 完成，用户管理与 Agent 概览由 `OPSUSER001` 完成，CLI/daemon/Android 版本管理由 `OPSREL001` 完成，九模块统一纵向验收由 `OPSE2E001` 完成；当前最早切片是最后的 `CREEM001`，开始部署并验收真实 Creem sandbox checkout、Webhook 和轮询补偿。
+- 用户原要求连续完成六个收口切片；在 `PG004` 实机 TURN/TCP 验收后又明确插入连接体验收口，并在 2026-07-24 要求立即实现参考 `tgent` 的 enrollment 升级。`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`、`CONNCOPY001`、`LOADUX001`、`APPTERM001` 和 `PAIRROUTE001` 已完成。2026-07-25 用户把当前主线重新收敛为九模块运营后台，并明确要求真实支付最后处理。套餐/用户特权由 `OPSCAT001` 完成，订单/订阅/优惠码由 `OPSCOM001` 完成，Hub 管理与动态目录由 `OPSHUB001` 完成，用户管理与 Agent 概览由 `OPSUSER001` 完成，CLI/daemon/Android 版本管理由 `OPSREL001` 完成，九模块统一纵向验收由 `OPSE2E001` 完成并已部署到公网 Controller/Web 与 US/CN Edge。当前最早切片是最后的 `CREEM001`；实现和本地纵向门禁已完成，但真实 sandbox 验收因部署环境尚缺 Webhook signing secret、月付 Product ID 和年付 Product ID 而阻塞，详见 `docs/remote-platform/creem001-sandbox-runbook.md`。
 - 首期正式 UI 语言只承诺英文与简体中文。Web Controller 现有俄文资源保留为历史输入但从可选语言中暂时移除，直到键集合、关键流程和布局验收达到与英文/中文相同的完成条件；不得以 fallback 英文冒充俄文支持。
 - `UX001` 已完成英文/简体中文基础设施与首批关键流程迁移：Web Controller 登录/账号/设备/激活和 Android 首页/设备/配对/设置均使用 locale key，语言默认跟随系统并可持久切换；App 143 个、Web 365 个 locale key 对称，稳定 native error code 不再把底层英文 message 直接投影到 UI；ARM64 模拟器已验证中文设备页和设置页。terminal/file 剩余文案按计划留给 `APPUX001`，不在本切片提前扩大。
 - 二维码整改必须区分两类载荷：Web 手机 activation 只携带短期 `MXA` code，当前约 60 字符；daemon pairing 当前把约 599-byte signed bundle 编码成约 826 字符 URI，达到 QR Version 23 / 109x109 modules，是显示不全的根因。`QR001` 只提供终端尺寸检查、文本和图片 fallback；`QR002` 才通过 daemon-owned 内存 claim 缩短真实配对二维码。
@@ -167,7 +167,7 @@ muxvia-cloud-edge × N
 | OPSUSER001 | 已完成 | 用户管理与 Agent 概览 | 无 secret Session projection/CAS revoke、不可变 readonly/admin 保护、按 DeviceIdentity 聚合 Agent freshness、Kick/Revoke/Migrate 与命令四段状态已接通；真实 PostgreSQL + Controller + 双 Edge 和桌面/移动 Web E2E 通过，证据见 `docs/remote-platform/opsuser001-e2e.md` |
 | OPSREL001 | 已完成 | CLI/daemon/Android 版本管理 | Ed25519 签名 metadata、官方 HTTPS origin、不可变 artifact、channel CAS、兼容/强制/稳定灰度、pause/resume/显式回滚和持久审计已完成；真实 PostgreSQL、public resolve、Operator 权限与桌面/移动 Web E2E 通过，证据见 `docs/remote-platform/opsrel001-e2e.md` |
 | OPSE2E001 | 已完成 | 九模块运营后台 E2E | Web UI 在同一真实 PostgreSQL、Controller、双 Edge 上完成九类 mutation；真实 Presence Kick APPLIED、admin/readonly/CSRF/近期认证、审计、Edge/PostgreSQL/Controller 重启和桌面/移动布局通过，证据见 `docs/remote-platform/opse2e001-nine-module-e2e.md` |
-| CREEM001 | 待开始 | Creem 正式支付 provider | 当前最早切片；本地 adapter、Webhook/轮询、对账 UI 与 harness 已存在，补真实 Product mapping、部署 secret、sandbox lifecycle 与重启 E2E |
+| CREEM001 | 阻塞 | Creem 正式支付 provider | 当前最早切片；实现、本地 E2E 及公网 Controller/Web/双 Edge 基线已部署；缺少 Webhook signing secret、月付 Product ID 和年付 Product ID，不能安全挂载真实 `/pay/creem` 或完成 sandbox lifecycle，恢复条件见运行手册 |
 | ENROLLUX005 | 待继续 | enrollment 全产品 E2E | 九模块与 Creem 收口后恢复旧 App Cloud resolve/connect 与 Web 移除后不可重连验收 |
 | PG004 | 待继续 | Supabase staging、公网 bootstrap 装配与备份恢复验收 | 九模块与 Creem 收口后恢复 R2 age 加密上传和独立恢复；既有 Hub/Relay/5G/Clash/terminal/file 证据继续保留 |
 | CLOUDP007 | 待开始 | Development 全产品 E2E | PostgreSQL 迁移后从现有进度恢复；Web UI 注册/交易/管理 + Android ARM64 真实 APK P2P/Relay terminal/file、quota、suspend、topology、命令、重启恢复、Direct/SSH 回归；双 Agent 审查 |

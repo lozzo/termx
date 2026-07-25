@@ -69,12 +69,59 @@ MUXVIA_CREEM_WEBHOOK_SECRET
 
 ## 当前外部阻塞
 
-截至 2026-07-25，仓库内实现和本地 PostgreSQL/HTTP/Playwright harness 不受阻塞；以下证据必须依赖 Creem Test Mode 与线上部署状态，不能由本地 fake 冒充：
+截至 2026-07-25，仓库内实现和本地 PostgreSQL/HTTP/Playwright harness 不受阻塞。最新 Controller、Web 和双 Edge 已部署到 development 公网环境：
 
-- 尚未取得并核对月付、年付 recurring Product ID，因此不能发布真实 sandbox catalog mapping；
+- Controller SHA-256：`d82ed99b96d19b741aef252127849a3254619de540634421d4acbbef814c9606`；
+- US/CN Edge SHA-256：`f361b1064312656952054357df7ccf14b756511ad0a45179e8cf3feeba90bdb3`；
+- `https://muxvia.com/account` 与 `https://muxvia.com/operator` 返回 HTTP 200；
+- 动态 Hub 目录中的两台 Edge 均为 fresh，Hub 与 Relay 均 Ready；
+- 未配置 provider 时 `POST https://muxvia.com/pay/creem` 返回 HTTP 405，这是 fail-closed 的预期状态，不代表已完成 Webhook 部署。
+
+以下证据必须依赖 Creem Test Mode 与受保护的线上 secret，不能由本地 fake 冒充：
+
+- 尚未取得并核对月付、年付 recurring Product ID，因此不能发布真实 sandbox catalog mapping；这两个 ID 必须对应 Test Mode 中独立的 recurring Product；
 - Controller 运行环境尚未注入 `MUXVIA_CREEM_WEBHOOK_SECRET`，无法验证 Dashboard 发出的真实签名事件；
+- Test API key 曾由用户提供，但尚未通过服务器上的 `0600` secret 文件注入；不得把该值复制到仓库、JSON 配置、systemd unit 正文或运行手册；
 - `https://muxvia.com/pay/creem` 的线上 Controller route、Dashboard event subscription 和投递结果尚未共同验证；
 - 尚未执行真实 test checkout、退款、dispute、scheduled cancel、past due、pause，以及禁用 Webhook 后的轮询补偿；
 - 聊天中出现过的 test API key 不会写入仓库、命令记录、日志或文档。执行真实验收前，应由操作者通过受保护的进程环境或 secret manager 注入。
 
 这些阻塞只阻止 `CREEM001` 标记完成，不阻止继续完成本地 adapter、运营对账、权限、防误操作和回归门禁。
+
+## 恢复条件与部署步骤
+
+操作者先在 Creem Test Mode 确认月付 Product ID、年付 Product ID 和 Webhook signing secret。然后在 Controller 服务器交互式创建 `/etc/muxvia/creem.env`，权限固定为 `0600`，内容只包含：
+
+```text
+MUXVIA_CREEM_API_KEY=...
+MUXVIA_CREEM_WEBHOOK_SECRET=...
+```
+
+不得把值作为远程命令参数发送。为 systemd service 添加只包含文件路径的 drop-in：
+
+```ini
+[Service]
+EnvironmentFile=/etc/muxvia/creem.env
+```
+
+接着把 `/opt/muxvia/config/controller-config.json` 的非敏感配置设为：
+
+```json
+{
+  "creem_environment": "test",
+  "creem_success_url": "https://muxvia.com/account?payment=return"
+}
+```
+
+重启 Controller 后按以下顺序验收，不得跳过中间状态：
+
+1. `POST /pay/creem` 对缺少签名的请求返回鉴权失败而不再是 405，证明 route 已挂载且 fail closed；
+2. 使用 Operator 套餐管理发布带月付/年付 Product mapping 的 catalog；
+3. 从账号页创建真实 sandbox checkout，确认 redirect 前后订单保持 pending、Entitlement 不变；
+4. 完成 test payment 并核对签名 Webhook、normalized journal、Order、Subscription 和 Entitlement；
+5. 重放同一事件并验证 revision 不推进；
+6. 禁止一次 Webhook 投递后完成第二笔支付，重启 Controller，验证 polling 从 PostgreSQL pending attempt 补偿；
+7. 执行 cancel、past due、pause、refund 和 dispute，并核对 Operator timeline、服务权限与审计；
+8. 重启 Controller/PostgreSQL 后再次核对相同最终状态。
+
+上述三项外部值齐全且全部证据通过后，才把 `CREEM001` 从“阻塞”改为“已完成”；全局 `/goal` 在此之前不得进入 `ENROLLUX005`。
