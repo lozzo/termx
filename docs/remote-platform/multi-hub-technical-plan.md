@@ -811,6 +811,15 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 - public `POST /api/v1/releases/resolve` 使用 product/channel/os/arch/current version code/stable client ID，返回签名 artifact、channel revision、稳定 bucket 和 `current/paused/rollout/outside_rollout/forced` 决策。稳定 ID 不持久化；pause 停止分发，兼容下限或 force deadline 在非暂停 channel 上覆盖 rollout。
 - Operator UI 显示 signed artifact history、截断 SHA-256、active/paused head、revision audit，并提供 activate、pause/resume 和仅历史低版本可见的 rollback。浏览器 fixture 只证明页面交互；签名、origin、CAS、强制策略与 rollback 由真实 PostgreSQL service/API 测试证明。
 
+### OPSE2E001：九模块运营后台总验收
+
+- `muxvia-cloud-dev` 的专用 E2E 夹具启动真实 PostgreSQL schema、一个 Controller、两个独立 Edge 和两条真实 daemon Presence；页面负责九模块 mutation，Go 只负责进程/网络夹具、重启与最终 oracle。
+- development release fixture 使用临时 Ed25519 private key 签名，Controller 只配置 public key 与可信 origin；credentials 文件只携带 signed Proto JSON，不能携带 private key。
+- 页面流程依次覆盖 catalog、promotion、Subscription adjustment、typed override、test-provider order、Subscription suspend/restore、signed release activation、Hub directory create 和 Agent Kick。Kick 必须在页面显示 `EXECUTION APPLIED`，不得用 HTTP 202 冒充完成。
+- 重启矩阵固定为 Edge B restart -> PostgreSQL 进程 restart -> Controller restart；重启后通过 Operator Proto API 查询九模块持久状态、command id 与 audit，并等待双 Edge control generation 推进。
+- 权限矩阵由真实 admin 页面、同浏览器缺少 CSRF 的危险 mutation 和 readonly Operator API 共同证明；Playwright mock、直接写数据库或 fake ack 均不计入总验收。
+- 证据见 `docs/remote-platform/opse2e001-nine-module-e2e.md`。
+
 ### CLOUDP007：Development 全产品 E2E
 
 - Web UI 完成注册、交易、套餐、设备、topology、command 和 usage。

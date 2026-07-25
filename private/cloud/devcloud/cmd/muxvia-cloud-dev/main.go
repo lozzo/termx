@@ -30,10 +30,12 @@ import (
 	cloudcommerce "github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
 	cloudpostgres "github.com/muxvia/muxvia/private/cloud/control-plane/postgres"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/releasecatalog"
 	"github.com/muxvia/muxvia/private/cloud/controller"
 	"github.com/muxvia/muxvia/private/cloud/edge"
 	webcontroller "github.com/muxvia/muxvia/private/cloud/web-controller"
 	"github.com/muxvia/muxvia/proto/cloudpb"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type processRecord struct {
@@ -68,6 +70,7 @@ type developmentCredentials struct {
 	OperatorURL         string `json:"operator_url"`
 	OperatorID          string `json:"operator_id"`
 	OperatorAccessToken string `json:"operator_access_token"`
+	ReleaseArtifactJSON string `json:"release_artifact_json"`
 }
 
 type childProcess struct {
@@ -173,6 +176,20 @@ func run(ctx context.Context, args []string) error {
 	projectionKeyID := "development-controller-projection"
 	_, daemonControlPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	daemonControlKeyID := "development-daemon-control"
+	releasePublic, releasePrivate, _ := ed25519.GenerateKey(rand.Reader)
+	releaseKeyID := "development-release-signing"
+	releaseDigest := sha256.Sum256([]byte("OPSE2E001 Android artifact"))
+	releaseArtifact := &cloudpb.ReleaseArtifactProjection{ReleaseId: "android-opse2e001-v1", Product: cloudpb.ReleaseProduct_RELEASE_PRODUCT_ANDROID, Channel: cloudpb.ReleaseChannel_RELEASE_CHANNEL_STABLE, Version: "v1.0.0", VersionCode: 100, Os: "android", Arch: "arm64", DownloadUrl: "https://releases.muxvia.test/opse2e001/app.apk", ArtifactSize: uint64(len("OPSE2E001 Android artifact")), Sha256: releaseDigest[:], SigningKeyId: releaseKeyID, MinCompatibleVersionCode: 1, RolloutBasisPoints: 10000, Changelog: "OPSE2E001 signed release"}
+	releasePayload, err := releasecatalog.SigningPayload(releaseArtifact)
+	if err != nil {
+		return err
+	}
+	releaseArtifact.Signature = ed25519.Sign(releasePrivate, releasePayload)
+	clear(releasePrivate)
+	releaseArtifactJSON, err := protojson.Marshal(releaseArtifact)
+	if err != nil {
+		return err
+	}
 	controllerPostgresDSN, err := prepareDevelopmentPostgres(ctx, *postgresDSN, artifactDir)
 	if err != nil {
 		return err
@@ -231,7 +248,7 @@ func run(ctx context.Context, args []string) error {
 	if err := directoryStore.Close(); err != nil {
 		return err
 	}
-	controllerConfig := controller.Config{PostgresDSN: controllerPostgresDSN, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Devices: devices, Assignments: assignments, DevelopmentMobileHubID: "hub-edge-a", OperatorID: "development-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes), WebStaticDir: webStaticDir}
+	controllerConfig := controller.Config{PostgresDSN: controllerPostgresDSN, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Devices: devices, Assignments: assignments, DevelopmentMobileHubID: "hub-edge-a", OperatorID: "development-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes), WebStaticDir: webStaticDir, ReleaseSigningPublicKeysBase64: map[string]string{releaseKeyID: base64.RawStdEncoding.EncodeToString(releasePublic)}, ReleaseDownloadOrigins: []string{"https://releases.muxvia.test"}}
 	if os.Getenv("MUXVIA_CREEM_API_KEY") != "" {
 		controllerConfig.CreemEnvironment = "test"
 		controllerConfig.CreemSuccessURL = "https://muxvia.com/account?payment=return"
@@ -270,7 +287,7 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	credentialsPath := filepath.Join(artifactDir, "development-credentials.json")
-	if err := writeJSONFile(credentialsPath, developmentCredentials{PublicURL: controllerRuntime.PublicURL, AccountEmail: development.Email, AccountPassword: development.Password, OperatorURL: controllerRuntime.OperatorURL, OperatorID: "development-admin", OperatorAccessToken: operatorToken}); err != nil {
+	if err := writeJSONFile(credentialsPath, developmentCredentials{PublicURL: controllerRuntime.PublicURL, AccountEmail: development.Email, AccountPassword: development.Password, OperatorURL: controllerRuntime.OperatorURL, OperatorID: "development-admin", OperatorAccessToken: operatorToken, ReleaseArtifactJSON: string(releaseArtifactJSON)}); err != nil {
 		return err
 	}
 

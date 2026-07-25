@@ -42,4 +42,6 @@ trap cleanup EXIT INT TERM
 "$postgres_bin/initdb" -D "$data_dir" --auth=trust --no-locale --encoding=UTF8 >/dev/null
 "$postgres_bin/pg_ctl" -D "$data_dir" -o '-h 127.0.0.1 -p 55432' -l "$data_dir/server.log" start >/dev/null
 export MUXVIA_TEST_POSTGRES_DSN="$test_dsn"
+export MUXVIA_TEST_POSTGRES_DATA_DIR="$data_dir"
+export MUXVIA_TEST_POSTGRES_BIN="$postgres_bin"
 "$@"

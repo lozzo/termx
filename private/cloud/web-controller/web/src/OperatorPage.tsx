@@ -1045,7 +1045,7 @@ export default function OperatorPage() {
         </div>
       </section>
       <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(360px,0.8fr)_minmax(480px,1.2fr)]">
-        <section className="border border-line bg-panel">
+        <section className="min-w-0 border border-line bg-panel">
           <header className="grid gap-3 border-b border-line p-4">
             <div className="grid grid-cols-2 border border-line-strong p-1" aria-label="Directory view">
               <Button
@@ -1066,6 +1066,7 @@ export default function OperatorPage() {
             <div className="flex items-center gap-2">
               <Search className="size-4 shrink-0" />
               <Input
+                className="min-w-0 flex-1"
                 value={query}
                 placeholder={directoryView === "users" ? "Search account or email" : "Search Agent, account, or Hub"}
                 onChange={(event) => setQuery(event.target.value)}
@@ -1153,7 +1154,7 @@ export default function OperatorPage() {
             );
           })}
         </section>
-        <section className="border border-line bg-panel">
+        <section className="min-w-0 border border-line bg-panel">
           {detail ? (
             <>
               <header className="border-b border-line p-5">
@@ -1387,7 +1388,7 @@ export default function OperatorPage() {
                   .reverse()
                   .map((item) => (
                     <div
-                      className="grid grid-cols-[180px_1fr] border-t border-line px-4 py-3 text-xs"
+                      className="grid min-w-0 gap-1 border-t border-line px-4 py-3 text-xs sm:grid-cols-[180px_minmax(0,1fr)]"
                       key={item.auditId}
                     >
                       <span className="text-muted-foreground">
@@ -1395,7 +1396,7 @@ export default function OperatorPage() {
                           Number(item.occurredAtUnixMillis),
                         ).toLocaleString()}
                       </span>
-                      <span>{item.action}</span>
+                      <span className="min-w-0 break-words">{item.action}</span>
                     </div>
                   ))}
               </div>
