@@ -14,6 +14,7 @@ import (
 	webcontroller "github.com/muxvia/muxvia/private/cloud/web-controller"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestProductAPIUsesProtoCookieCSRFAndPersistentCommerce(t *testing.T) {
@@ -27,7 +28,14 @@ func TestProductAPIUsesProtoCookieCSRFAndPersistentCommerce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalogSource, _ := cloudcatalog.NewSnapshotSource(catalog.Contract())
+	contract := proto.Clone(catalog.Contract()).(*cloudpb.PlanCatalogContract)
+	for _, plan := range contract.GetPlans() {
+		if plan.GetPlanId() == "pro" {
+			plan.Price = &cloudpb.PlanPriceDefinition{Mode: cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_CONFIGURED, Currency: "USD", MonthlyMinor: 1000, YearlyMinor: 10000, Label: "$10"}
+			plan.Creem = &cloudpb.CreemProductMapping{ProductId: "prod_product_http_test"}
+		}
+	}
+	catalogSource, _ := cloudcatalog.NewSnapshotSource(contract)
 	service, err := commerce.New(commerce.Config{Store: store, Catalog: catalogSource, Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
@@ -61,7 +69,7 @@ func TestProductAPIUsesProtoCookieCSRFAndPersistentCommerce(t *testing.T) {
 		t.Fatalf("commerce = %d: %s", commerceResponse.Code, commerceResponse.Body.String())
 	}
 
-	withoutCSRF := productRequest(http.MethodPost, "/api/v1/checkout", `{"plan_id":"pro","requested_transition":"SUBSCRIPTION_TRANSITION_KIND_UPGRADE"}`, cookies)
+	withoutCSRF := productRequest(http.MethodPost, "/api/v1/checkout", `{"plan_id":"pro","requested_transition":"SUBSCRIPTION_TRANSITION_KIND_UPGRADE","billing_cadence":"BILLING_CADENCE_MONTHLY"}`, cookies)
 	withoutCSRF.Header.Del("X-Muxvia-CSRF")
 	withoutCSRFResponse := httptest.NewRecorder()
 	handler.ServeHTTP(withoutCSRFResponse, withoutCSRF)
@@ -69,7 +77,7 @@ func TestProductAPIUsesProtoCookieCSRFAndPersistentCommerce(t *testing.T) {
 		t.Fatalf("checkout without CSRF = %d: %s", withoutCSRFResponse.Code, withoutCSRFResponse.Body.String())
 	}
 
-	checkout := productRequest(http.MethodPost, "/api/v1/checkout", `{"plan_id":"pro","requested_transition":"SUBSCRIPTION_TRANSITION_KIND_UPGRADE"}`, cookies)
+	checkout := productRequest(http.MethodPost, "/api/v1/checkout", `{"plan_id":"pro","requested_transition":"SUBSCRIPTION_TRANSITION_KIND_UPGRADE","billing_cadence":"BILLING_CADENCE_MONTHLY"}`, cookies)
 	checkoutResponse := httptest.NewRecorder()
 	handler.ServeHTTP(checkoutResponse, checkout)
 	if checkoutResponse.Code != http.StatusCreated {

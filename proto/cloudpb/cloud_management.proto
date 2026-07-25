@@ -200,6 +200,103 @@ message OperatorTransitionSubscriptionResponse {
   TransitionSubscriptionResponse result = 1;
 }
 
+message ListOperatorOrdersRequest {
+  string account_id = 1;
+  OrderStatus status = 2;
+  string provider = 3;
+  PageRequest page = 4;
+}
+
+message OperatorOrderProjection {
+  OrderProjection order = 1;
+  repeated PaymentAttemptProjection payment_attempts = 2;
+  repeated PaymentEventProjection payment_events = 3;
+}
+
+message ListOperatorOrdersResponse {
+  repeated OperatorOrderProjection orders = 1;
+  PageResponse page = 2;
+}
+
+message ListOperatorSubscriptionsRequest {
+  SubscriptionStatus status = 1;
+  PageRequest page = 2;
+}
+
+message ListOperatorSubscriptionsResponse {
+  repeated SubscriptionProjection subscriptions = 1;
+  PageResponse page = 2;
+}
+
+message CreateSubscriptionAdjustmentRequest {
+  string account_id = 1;
+  SubscriptionAdjustmentKind adjustment_kind = 2;
+  string target_plan_id = 3;
+  uint64 target_plan_version = 4;
+  uint32 duration_days = 5;
+  uint64 expected_subscription_revision = 6;
+  string reason = 7;
+  string request_id = 8;
+}
+
+message CreateSubscriptionAdjustmentResponse {
+  SubscriptionAdjustmentProjection adjustment = 1;
+  SubscriptionProjection subscription = 2;
+  EntitlementProjection entitlement = 3;
+}
+
+message ApplyOperatorPaymentEventRequest {
+  string order_id = 1;
+  PaymentEventType event_type = 2;
+  string reason = 3;
+  string request_id = 4;
+}
+
+message ApplyOperatorPaymentEventResponse {
+  ApplyPaymentEventResponse result = 1;
+}
+
+message CreatePromotionRequest {
+  PromotionProjection promotion = 1;
+  string request_id = 2;
+}
+
+message CreatePromotionResponse {
+  PromotionProjection promotion = 1;
+}
+
+message DisablePromotionRequest {
+  string promotion_id = 1;
+  uint64 expected_revision = 2;
+  string reason = 3;
+  string request_id = 4;
+}
+
+message DisablePromotionResponse {
+  PromotionProjection promotion = 1;
+}
+
+message ListPromotionsRequest {
+  bool include_disabled = 1;
+  PageRequest page = 2;
+}
+
+message ListPromotionsResponse {
+  repeated PromotionProjection promotions = 1;
+  PageResponse page = 2;
+}
+
+message ListPromotionRedemptionsRequest {
+  string promotion_id = 1;
+  string account_id = 2;
+  PageRequest page = 3;
+}
+
+message ListPromotionRedemptionsResponse {
+  repeated PromotionRedemptionProjection redemptions = 1;
+  PageResponse page = 2;
+}
+
 // PublishPlanCatalogRequest 原子创建新的不可变目录版本并切换 active head。
 message PublishPlanCatalogRequest {
   PlanCatalogContract catalog = 1;

@@ -113,3 +113,28 @@ func TestRelayQuotaSerializesConcurrentReservations(t *testing.T) {
 		t.Fatalf("concurrent reservations succeeded = %d, want 1", succeeded)
 	}
 }
+
+func TestRelayQuotaSnapshotReconcilesSubscriptionPeriodWithoutActiveLease(t *testing.T) {
+	now := time.Date(2026, 7, 25, 2, 0, 0, 0, time.UTC)
+	store, err := cloudpostgres.Open(context.Background(), testPostgresDSN(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	start, originalEnd := now.Add(-time.Hour), now.Add(30*24*time.Hour)
+	if _, err := store.SnapshotForPeriod(context.Background(), "account-adjusted", start, originalEnd, 0, now); err != nil {
+		t.Fatal(err)
+	}
+	extendedEnd := originalEnd.Add(7 * 24 * time.Hour)
+	snapshot, err := store.SnapshotForPeriod(context.Background(), "account-adjusted", start, extendedEnd, 1_000, now)
+	if err != nil || snapshot.GetPeriod().GetPeriodEndUnixMillis() != extendedEnd.UnixMilli() || snapshot.GetPeriod().GetLimitBytes() != 1_000 || snapshot.GetPeriod().GetRevision() != 2 {
+		t.Fatalf("reconciled period = %v, %v", snapshot, err)
+	}
+	request := relayquota.ReserveRequest{LeaseID: "active-lease", AccountID: "account-adjusted", ManagedSessionID: "managed", ClientDeviceID: "client", TargetDeviceID: "daemon", Region: "local-1", HubID: "hub", RelayID: "relay", PeriodStart: start, PeriodEnd: extendedEnd, PeriodLimitBytes: 1_000, MaxBytesPerLease: 100, MaxConcurrency: 1, ExpiresAt: now.Add(time.Minute), ReleaseAfter: now.Add(2 * time.Minute)}
+	if _, _, _, err := store.Reserve(context.Background(), request, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SnapshotForPeriod(context.Background(), "account-adjusted", start, extendedEnd.Add(24*time.Hour), 2_000, now); !errors.Is(err, relayquota.ErrReservationConflict) {
+		t.Fatalf("active lease period mutation = %v", err)
+	}
+}

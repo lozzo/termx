@@ -233,6 +233,10 @@ func TestCloudManagementAPIMessagesAreProtoFirst(t *testing.T) {
 		"RecentAuthenticationRequest", "RecentAuthenticationResponse", "OperatorLoginRequest", "OperatorLoginResponse",
 		"ListOperatorAccountsRequest", "ListOperatorAccountsResponse", "GetOperatorAccountRequest", "GetOperatorAccountResponse",
 		"OperatorTransitionSubscriptionRequest", "OperatorTransitionSubscriptionResponse",
+		"ListOperatorOrdersRequest", "ListOperatorOrdersResponse", "OperatorOrderProjection",
+		"ListOperatorSubscriptionsRequest", "ListOperatorSubscriptionsResponse", "CreateSubscriptionAdjustmentRequest", "CreateSubscriptionAdjustmentResponse",
+		"ApplyOperatorPaymentEventRequest", "ApplyOperatorPaymentEventResponse", "CreatePromotionRequest", "CreatePromotionResponse", "DisablePromotionRequest", "DisablePromotionResponse",
+		"ListPromotionsRequest", "ListPromotionsResponse", "ListPromotionRedemptionsRequest", "ListPromotionRedemptionsResponse",
 	} {
 		if messages.ByName(name) == nil {
 			t.Fatalf("cloud management proto missing %s", name)
@@ -267,14 +271,14 @@ func TestCloudProductUsesOnePlanCapabilityAcrossCatalogEntitlementAndHubPolicy(t
 		"PlanPriceDefinition", "PlanPresentation", "CreateCheckoutRequest", "CreateCheckoutResponse", "PaymentAttemptProjection", "CreatePaymentAttemptRequest", "CreatePaymentAttemptResponse",
 		"ApplyPaymentEventRequest", "ApplyPaymentEventResponse", "ConfirmTestPaymentRequest", "ConfirmTestPaymentResponse",
 		"TransitionSubscriptionRequest", "TransitionSubscriptionResponse", "GetAccountCommerceRequest", "GetAccountCommerceResponse", "CloudProductError",
-		"PaymentEventProjection",
+		"PaymentEventProjection", "PromotionSnapshot", "PromotionProjection", "PromotionRedemptionProjection", "SubscriptionAdjustmentProjection",
 	} {
 		if File_cloudpb_cloud_product_proto.Messages().ByName(name) == nil {
 			t.Fatalf("cloud product proto missing %s", name)
 		}
 	}
 	orderFields := descriptorFieldNames((&OrderProjection{}).ProtoReflect().Descriptor())
-	for _, required := range []string{"requested_transition", "source_subscription_revision", "source_plan_id", "source_plan_version", "price"} {
+	for _, required := range []string{"requested_transition", "source_subscription_revision", "source_plan_id", "source_plan_version", "price", "billing_cadence", "subtotal_minor", "discount_minor", "total_minor", "promotion"} {
 		if !orderFields[required] {
 			t.Fatalf("OrderProjection missing %q: %v", required, orderFields)
 		}

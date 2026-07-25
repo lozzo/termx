@@ -15,6 +15,7 @@ import (
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	cloudentitlement "github.com/muxvia/muxvia/private/cloud/control-plane/entitlement"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/promotion"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
@@ -37,6 +38,7 @@ type OperatorAPIConfig struct {
 	Commerce     *commerce.Service
 	Catalog      *cloudcatalog.Service
 	Overrides    *cloudentitlement.OverrideService
+	Promotions   *promotion.Service
 	Topology     ManagementTopologyQuery
 	Quota        RelayQuotaQuery
 	Outbox       *commandoutbox.Service
@@ -48,7 +50,7 @@ type OperatorAPIConfig struct {
 
 // OperatorAPIHandler 使用 HttpOnly session、CSRF 与五分钟近期认证保护管理操作。
 func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
-	if len(config.AccessToken) < 32 || config.OperatorID == "" || config.ActorKind != cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_READONLY && config.ActorKind != cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN || config.Commerce == nil || config.Catalog == nil || config.Overrides == nil || config.Topology == nil || config.Quota == nil || config.Outbox == nil || config.Planner == nil || config.Fleet == nil {
+	if len(config.AccessToken) < 32 || config.OperatorID == "" || config.ActorKind != cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_READONLY && config.ActorKind != cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN || config.Commerce == nil || config.Catalog == nil || config.Overrides == nil || config.Promotions == nil || config.Topology == nil || config.Quota == nil || config.Outbox == nil || config.Planner == nil || config.Fleet == nil {
 		return nil, commandoutbox.ErrCommandConflict
 	}
 	if config.Now == nil {
@@ -157,6 +159,116 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		if err == nil {
 			result, transitionErr := config.Commerce.Transition(r.Context(), &cloudpb.TransitionSubscriptionRequest{AccountId: request.GetAccountId(), Transition: request.GetTransition(), ActorId: config.OperatorID})
 			err, response = transitionErr, &cloudpb.OperatorTransitionSubscriptionResponse{Result: result}
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/orders/list", func(w http.ResponseWriter, r *http.Request) {
+		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		request := &cloudpb.ListOperatorOrdersRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.ListOperatorOrdersResponse
+		if err == nil {
+			response, err = config.Commerce.OperatorOrders(r.Context(), request)
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/subscriptions/list", func(w http.ResponseWriter, r *http.Request) {
+		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		request := &cloudpb.ListOperatorSubscriptionsRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.ListOperatorSubscriptionsResponse
+		if err == nil {
+			response, err = config.Commerce.OperatorSubscriptions(r.Context(), request)
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/subscriptions/adjust", func(w http.ResponseWriter, r *http.Request) {
+		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		if err == nil {
+			err = requireOperatorMutation(r, record, config.Now().UTC())
+		}
+		request := &cloudpb.CreateSubscriptionAdjustmentRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.CreateSubscriptionAdjustmentResponse
+		if err == nil {
+			response, err = config.Commerce.AdjustSubscription(r.Context(), request, config.OperatorID)
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/orders/payment-event", func(w http.ResponseWriter, r *http.Request) {
+		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		if err == nil {
+			err = requireOperatorMutation(r, record, config.Now().UTC())
+		}
+		request := &cloudpb.ApplyOperatorPaymentEventRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.ApplyOperatorPaymentEventResponse
+		if err == nil {
+			response, err = config.Commerce.ApplyOperatorPaymentEvent(r.Context(), request, config.OperatorID)
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/promotions/list", func(w http.ResponseWriter, r *http.Request) {
+		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		request := &cloudpb.ListPromotionsRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.ListPromotionsResponse
+		if err == nil {
+			values, listErr := config.Promotions.List(r.Context(), request.GetIncludeDisabled(), boundedPageSize(request.GetPage(), 50))
+			err, response = listErr, &cloudpb.ListPromotionsResponse{Promotions: values, Page: &cloudpb.PageResponse{}}
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/promotions/redemptions", func(w http.ResponseWriter, r *http.Request) {
+		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		request := &cloudpb.ListPromotionRedemptionsRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.ListPromotionRedemptionsResponse
+		if err == nil {
+			values, listErr := config.Promotions.Redemptions(r.Context(), request.GetPromotionId(), request.GetAccountId(), boundedPageSize(request.GetPage(), 50))
+			err, response = listErr, &cloudpb.ListPromotionRedemptionsResponse{Redemptions: values, Page: &cloudpb.PageResponse{}}
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/promotions/create", func(w http.ResponseWriter, r *http.Request) {
+		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		if err == nil {
+			err = requireOperatorMutation(r, record, config.Now().UTC())
+		}
+		request := &cloudpb.CreatePromotionRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.CreatePromotionResponse
+		if err == nil {
+			response, err = config.Promotions.Create(r.Context(), request, config.OperatorID)
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/promotions/disable", func(w http.ResponseWriter, r *http.Request) {
+		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		if err == nil {
+			err = requireOperatorMutation(r, record, config.Now().UTC())
+		}
+		request := &cloudpb.DisablePromotionRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.DisablePromotionResponse
+		if err == nil {
+			response, err = config.Promotions.Disable(r.Context(), request, config.OperatorID)
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})

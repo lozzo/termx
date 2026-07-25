@@ -199,6 +199,9 @@ func (store *Store) SnapshotForPeriod(ctx context.Context, accountID string, per
 	if err := expireRelayReservations(ctx, tx, now.UTC()); err != nil {
 		return nil, err
 	}
+	if err := reconcileRelayPeriodForSnapshot(ctx, tx, accountID, periodStart, periodEnd, limit); err != nil {
+		return nil, err
+	}
 	period, err := relayQuotaPeriod(ctx, tx, accountID, periodStart, periodEnd, limit)
 	if err != nil {
 		return nil, err
@@ -228,6 +231,30 @@ func (store *Store) SnapshotForPeriod(ctx context.Context, accountID string, per
 		return nil, err
 	}
 	return response, nil
+}
+
+func reconcileRelayPeriodForSnapshot(ctx context.Context, tx *sql.Tx, accountID string, periodStart, periodEnd time.Time, requestedLimit uint64) error {
+	var storedEnd int64
+	var limit, used uint64
+	if err := queryRowContext(ctx, tx, `SELECT period_end_unix_millis,limit_bytes,used_bytes FROM relay_quota_periods WHERE account_id=? AND period_start_unix_millis=? FOR UPDATE`, accountID, periodStart.UnixMilli()).Scan(&storedEnd, &limit, &used); err != nil {
+		return err
+	}
+	if storedEnd == periodEnd.UnixMilli() && limit == requestedLimit {
+		return nil
+	}
+	var active uint32
+	if err := queryRowContext(ctx, tx, `SELECT COUNT(*) FROM relay_lease_reservations WHERE account_id=? AND period_start_unix_millis=? AND state=?`, accountID, periodStart.UnixMilli(), cloudpb.RelayReservationState_RELAY_RESERVATION_STATE_ACTIVE).Scan(&active); err != nil {
+		return err
+	}
+	if active != 0 {
+		return relayquota.ErrReservationConflict
+	}
+	// Subscription/Entitlement 是新准入真值；历史已结算用量不能因降额被抹掉。
+	if requestedLimit < used {
+		requestedLimit = used
+	}
+	_, err := execContext(ctx, tx, `UPDATE relay_quota_periods SET period_end_unix_millis=?,limit_bytes=?,revision=revision+1 WHERE account_id=? AND period_start_unix_millis=?`, periodEnd.UnixMilli(), requestedLimit, accountID, periodStart.UnixMilli())
+	return err
 }
 
 func ensureRelayPeriod(ctx context.Context, tx *sql.Tx, request relayquota.ReserveRequest) error {

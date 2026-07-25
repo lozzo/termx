@@ -205,6 +205,262 @@ func (CatalogPriceMode) EnumDescriptor() ([]byte, []int) {
 	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{2}
 }
 
+// BillingCadence 明确 checkout 使用月价或年价，订单不能从金额反推周期。
+type BillingCadence int32
+
+const (
+	BillingCadence_BILLING_CADENCE_UNSPECIFIED BillingCadence = 0
+	BillingCadence_BILLING_CADENCE_MONTHLY     BillingCadence = 1
+	BillingCadence_BILLING_CADENCE_YEARLY      BillingCadence = 2
+)
+
+// Enum value maps for BillingCadence.
+var (
+	BillingCadence_name = map[int32]string{
+		0: "BILLING_CADENCE_UNSPECIFIED",
+		1: "BILLING_CADENCE_MONTHLY",
+		2: "BILLING_CADENCE_YEARLY",
+	}
+	BillingCadence_value = map[string]int32{
+		"BILLING_CADENCE_UNSPECIFIED": 0,
+		"BILLING_CADENCE_MONTHLY":     1,
+		"BILLING_CADENCE_YEARLY":      2,
+	}
+)
+
+func (x BillingCadence) Enum() *BillingCadence {
+	p := new(BillingCadence)
+	*p = x
+	return p
+}
+
+func (x BillingCadence) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (BillingCadence) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloudpb_cloud_product_proto_enumTypes[3].Descriptor()
+}
+
+func (BillingCadence) Type() protoreflect.EnumType {
+	return &file_cloudpb_cloud_product_proto_enumTypes[3]
+}
+
+func (x BillingCadence) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use BillingCadence.Descriptor instead.
+func (BillingCadence) EnumDescriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{3}
+}
+
+// PromotionDiscountKind 是当前阶段允许的有界优惠类型。
+type PromotionDiscountKind int32
+
+const (
+	PromotionDiscountKind_PROMOTION_DISCOUNT_KIND_UNSPECIFIED PromotionDiscountKind = 0
+	PromotionDiscountKind_PROMOTION_DISCOUNT_KIND_FIXED       PromotionDiscountKind = 1
+	PromotionDiscountKind_PROMOTION_DISCOUNT_KIND_PERCENT     PromotionDiscountKind = 2
+)
+
+// Enum value maps for PromotionDiscountKind.
+var (
+	PromotionDiscountKind_name = map[int32]string{
+		0: "PROMOTION_DISCOUNT_KIND_UNSPECIFIED",
+		1: "PROMOTION_DISCOUNT_KIND_FIXED",
+		2: "PROMOTION_DISCOUNT_KIND_PERCENT",
+	}
+	PromotionDiscountKind_value = map[string]int32{
+		"PROMOTION_DISCOUNT_KIND_UNSPECIFIED": 0,
+		"PROMOTION_DISCOUNT_KIND_FIXED":       1,
+		"PROMOTION_DISCOUNT_KIND_PERCENT":     2,
+	}
+)
+
+func (x PromotionDiscountKind) Enum() *PromotionDiscountKind {
+	p := new(PromotionDiscountKind)
+	*p = x
+	return p
+}
+
+func (x PromotionDiscountKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PromotionDiscountKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloudpb_cloud_product_proto_enumTypes[4].Descriptor()
+}
+
+func (PromotionDiscountKind) Type() protoreflect.EnumType {
+	return &file_cloudpb_cloud_product_proto_enumTypes[4]
+}
+
+func (x PromotionDiscountKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PromotionDiscountKind.Descriptor instead.
+func (PromotionDiscountKind) EnumDescriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{4}
+}
+
+type PromotionState int32
+
+const (
+	PromotionState_PROMOTION_STATE_UNSPECIFIED PromotionState = 0
+	PromotionState_PROMOTION_STATE_ACTIVE      PromotionState = 1
+	PromotionState_PROMOTION_STATE_DISABLED    PromotionState = 2
+)
+
+// Enum value maps for PromotionState.
+var (
+	PromotionState_name = map[int32]string{
+		0: "PROMOTION_STATE_UNSPECIFIED",
+		1: "PROMOTION_STATE_ACTIVE",
+		2: "PROMOTION_STATE_DISABLED",
+	}
+	PromotionState_value = map[string]int32{
+		"PROMOTION_STATE_UNSPECIFIED": 0,
+		"PROMOTION_STATE_ACTIVE":      1,
+		"PROMOTION_STATE_DISABLED":    2,
+	}
+)
+
+func (x PromotionState) Enum() *PromotionState {
+	p := new(PromotionState)
+	*p = x
+	return p
+}
+
+func (x PromotionState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PromotionState) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloudpb_cloud_product_proto_enumTypes[5].Descriptor()
+}
+
+func (PromotionState) Type() protoreflect.EnumType {
+	return &file_cloudpb_cloud_product_proto_enumTypes[5]
+}
+
+func (x PromotionState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PromotionState.Descriptor instead.
+func (PromotionState) EnumDescriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{5}
+}
+
+type PromotionRedemptionState int32
+
+const (
+	PromotionRedemptionState_PROMOTION_REDEMPTION_STATE_UNSPECIFIED PromotionRedemptionState = 0
+	PromotionRedemptionState_PROMOTION_REDEMPTION_STATE_RESERVED    PromotionRedemptionState = 1
+	PromotionRedemptionState_PROMOTION_REDEMPTION_STATE_REDEEMED    PromotionRedemptionState = 2
+	PromotionRedemptionState_PROMOTION_REDEMPTION_STATE_RELEASED    PromotionRedemptionState = 3
+	PromotionRedemptionState_PROMOTION_REDEMPTION_STATE_EXPIRED     PromotionRedemptionState = 4
+)
+
+// Enum value maps for PromotionRedemptionState.
+var (
+	PromotionRedemptionState_name = map[int32]string{
+		0: "PROMOTION_REDEMPTION_STATE_UNSPECIFIED",
+		1: "PROMOTION_REDEMPTION_STATE_RESERVED",
+		2: "PROMOTION_REDEMPTION_STATE_REDEEMED",
+		3: "PROMOTION_REDEMPTION_STATE_RELEASED",
+		4: "PROMOTION_REDEMPTION_STATE_EXPIRED",
+	}
+	PromotionRedemptionState_value = map[string]int32{
+		"PROMOTION_REDEMPTION_STATE_UNSPECIFIED": 0,
+		"PROMOTION_REDEMPTION_STATE_RESERVED":    1,
+		"PROMOTION_REDEMPTION_STATE_REDEEMED":    2,
+		"PROMOTION_REDEMPTION_STATE_RELEASED":    3,
+		"PROMOTION_REDEMPTION_STATE_EXPIRED":     4,
+	}
+)
+
+func (x PromotionRedemptionState) Enum() *PromotionRedemptionState {
+	p := new(PromotionRedemptionState)
+	*p = x
+	return p
+}
+
+func (x PromotionRedemptionState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PromotionRedemptionState) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloudpb_cloud_product_proto_enumTypes[6].Descriptor()
+}
+
+func (PromotionRedemptionState) Type() protoreflect.EnumType {
+	return &file_cloudpb_cloud_product_proto_enumTypes[6]
+}
+
+func (x PromotionRedemptionState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PromotionRedemptionState.Descriptor instead.
+func (PromotionRedemptionState) EnumDescriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{6}
+}
+
+type SubscriptionAdjustmentKind int32
+
+const (
+	SubscriptionAdjustmentKind_SUBSCRIPTION_ADJUSTMENT_KIND_UNSPECIFIED SubscriptionAdjustmentKind = 0
+	SubscriptionAdjustmentKind_SUBSCRIPTION_ADJUSTMENT_KIND_GRANT       SubscriptionAdjustmentKind = 1
+	SubscriptionAdjustmentKind_SUBSCRIPTION_ADJUSTMENT_KIND_EXTEND      SubscriptionAdjustmentKind = 2
+	SubscriptionAdjustmentKind_SUBSCRIPTION_ADJUSTMENT_KIND_CHANGE_PLAN SubscriptionAdjustmentKind = 3
+)
+
+// Enum value maps for SubscriptionAdjustmentKind.
+var (
+	SubscriptionAdjustmentKind_name = map[int32]string{
+		0: "SUBSCRIPTION_ADJUSTMENT_KIND_UNSPECIFIED",
+		1: "SUBSCRIPTION_ADJUSTMENT_KIND_GRANT",
+		2: "SUBSCRIPTION_ADJUSTMENT_KIND_EXTEND",
+		3: "SUBSCRIPTION_ADJUSTMENT_KIND_CHANGE_PLAN",
+	}
+	SubscriptionAdjustmentKind_value = map[string]int32{
+		"SUBSCRIPTION_ADJUSTMENT_KIND_UNSPECIFIED": 0,
+		"SUBSCRIPTION_ADJUSTMENT_KIND_GRANT":       1,
+		"SUBSCRIPTION_ADJUSTMENT_KIND_EXTEND":      2,
+		"SUBSCRIPTION_ADJUSTMENT_KIND_CHANGE_PLAN": 3,
+	}
+)
+
+func (x SubscriptionAdjustmentKind) Enum() *SubscriptionAdjustmentKind {
+	p := new(SubscriptionAdjustmentKind)
+	*p = x
+	return p
+}
+
+func (x SubscriptionAdjustmentKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SubscriptionAdjustmentKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloudpb_cloud_product_proto_enumTypes[7].Descriptor()
+}
+
+func (SubscriptionAdjustmentKind) Type() protoreflect.EnumType {
+	return &file_cloudpb_cloud_product_proto_enumTypes[7]
+}
+
+func (x SubscriptionAdjustmentKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SubscriptionAdjustmentKind.Descriptor instead.
+func (SubscriptionAdjustmentKind) EnumDescriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{7}
+}
+
 // PaymentAttemptStatus 是一次 provider 支付尝试的持久状态。
 type PaymentAttemptStatus int32
 
@@ -242,11 +498,11 @@ func (x PaymentAttemptStatus) String() string {
 }
 
 func (PaymentAttemptStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_product_proto_enumTypes[3].Descriptor()
+	return file_cloudpb_cloud_product_proto_enumTypes[8].Descriptor()
 }
 
 func (PaymentAttemptStatus) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_product_proto_enumTypes[3]
+	return &file_cloudpb_cloud_product_proto_enumTypes[8]
 }
 
 func (x PaymentAttemptStatus) Number() protoreflect.EnumNumber {
@@ -255,7 +511,7 @@ func (x PaymentAttemptStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PaymentAttemptStatus.Descriptor instead.
 func (PaymentAttemptStatus) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{3}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{8}
 }
 
 // PaymentEventType 是 provider adapter 归一化后的稳定交易事件。
@@ -301,11 +557,11 @@ func (x PaymentEventType) String() string {
 }
 
 func (PaymentEventType) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_product_proto_enumTypes[4].Descriptor()
+	return file_cloudpb_cloud_product_proto_enumTypes[9].Descriptor()
 }
 
 func (PaymentEventType) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_product_proto_enumTypes[4]
+	return &file_cloudpb_cloud_product_proto_enumTypes[9]
 }
 
 func (x PaymentEventType) Number() protoreflect.EnumNumber {
@@ -314,7 +570,7 @@ func (x PaymentEventType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PaymentEventType.Descriptor instead.
 func (PaymentEventType) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{4}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{9}
 }
 
 // PaymentEventState 表示 durable provider journal 的处理阶段。
@@ -354,11 +610,11 @@ func (x PaymentEventState) String() string {
 }
 
 func (PaymentEventState) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_product_proto_enumTypes[5].Descriptor()
+	return file_cloudpb_cloud_product_proto_enumTypes[10].Descriptor()
 }
 
 func (PaymentEventState) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_product_proto_enumTypes[5]
+	return &file_cloudpb_cloud_product_proto_enumTypes[10]
 }
 
 func (x PaymentEventState) Number() protoreflect.EnumNumber {
@@ -367,7 +623,7 @@ func (x PaymentEventState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PaymentEventState.Descriptor instead.
 func (PaymentEventState) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{5}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{10}
 }
 
 // SubscriptionTransitionKind 是所有商业状态变化共用的显式原因。
@@ -434,11 +690,11 @@ func (x SubscriptionTransitionKind) String() string {
 }
 
 func (SubscriptionTransitionKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_product_proto_enumTypes[6].Descriptor()
+	return file_cloudpb_cloud_product_proto_enumTypes[11].Descriptor()
 }
 
 func (SubscriptionTransitionKind) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_product_proto_enumTypes[6]
+	return &file_cloudpb_cloud_product_proto_enumTypes[11]
 }
 
 func (x SubscriptionTransitionKind) Number() protoreflect.EnumNumber {
@@ -447,7 +703,7 @@ func (x SubscriptionTransitionKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SubscriptionTransitionKind.Descriptor instead.
 func (SubscriptionTransitionKind) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{6}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{11}
 }
 
 // EntitlementStatus 是 Hub/Relay 准入读取的归一化商业状态。
@@ -487,11 +743,11 @@ func (x EntitlementStatus) String() string {
 }
 
 func (EntitlementStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_product_proto_enumTypes[7].Descriptor()
+	return file_cloudpb_cloud_product_proto_enumTypes[12].Descriptor()
 }
 
 func (EntitlementStatus) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_product_proto_enumTypes[7]
+	return &file_cloudpb_cloud_product_proto_enumTypes[12]
 }
 
 func (x EntitlementStatus) Number() protoreflect.EnumNumber {
@@ -500,7 +756,7 @@ func (x EntitlementStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EntitlementStatus.Descriptor instead.
 func (EntitlementStatus) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{7}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{12}
 }
 
 // RelayReservationState 是 Control Plane 持久 Relay reservation 的生命周期。
@@ -541,11 +797,11 @@ func (x RelayReservationState) String() string {
 }
 
 func (RelayReservationState) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_product_proto_enumTypes[8].Descriptor()
+	return file_cloudpb_cloud_product_proto_enumTypes[13].Descriptor()
 }
 
 func (RelayReservationState) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_product_proto_enumTypes[8]
+	return &file_cloudpb_cloud_product_proto_enumTypes[13]
 }
 
 func (x RelayReservationState) Number() protoreflect.EnumNumber {
@@ -554,7 +810,7 @@ func (x RelayReservationState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use RelayReservationState.Descriptor instead.
 func (RelayReservationState) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{8}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{13}
 }
 
 // RelayServiceCapability 是 plan 对 Relay lease 和账期的硬上限。
@@ -3018,6 +3274,11 @@ type OrderProjection struct {
 	SourcePlanId               string                     `protobuf:"bytes,12,opt,name=source_plan_id,json=sourcePlanId,proto3" json:"source_plan_id,omitempty"`
 	SourcePlanVersion          uint64                     `protobuf:"varint,13,opt,name=source_plan_version,json=sourcePlanVersion,proto3" json:"source_plan_version,omitempty"`
 	Price                      *PlanPriceDefinition       `protobuf:"bytes,14,opt,name=price,proto3" json:"price,omitempty"`
+	BillingCadence             BillingCadence             `protobuf:"varint,15,opt,name=billing_cadence,json=billingCadence,proto3,enum=muxvia.cloud.v1.BillingCadence" json:"billing_cadence,omitempty"`
+	SubtotalMinor              int64                      `protobuf:"varint,16,opt,name=subtotal_minor,json=subtotalMinor,proto3" json:"subtotal_minor,omitempty"`
+	DiscountMinor              int64                      `protobuf:"varint,17,opt,name=discount_minor,json=discountMinor,proto3" json:"discount_minor,omitempty"`
+	TotalMinor                 int64                      `protobuf:"varint,18,opt,name=total_minor,json=totalMinor,proto3" json:"total_minor,omitempty"`
+	Promotion                  *PromotionSnapshot         `protobuf:"bytes,19,opt,name=promotion,proto3" json:"promotion,omitempty"`
 	unknownFields              protoimpl.UnknownFields
 	sizeCache                  protoimpl.SizeCache
 }
@@ -3150,6 +3411,572 @@ func (x *OrderProjection) GetPrice() *PlanPriceDefinition {
 	return nil
 }
 
+func (x *OrderProjection) GetBillingCadence() BillingCadence {
+	if x != nil {
+		return x.BillingCadence
+	}
+	return BillingCadence_BILLING_CADENCE_UNSPECIFIED
+}
+
+func (x *OrderProjection) GetSubtotalMinor() int64 {
+	if x != nil {
+		return x.SubtotalMinor
+	}
+	return 0
+}
+
+func (x *OrderProjection) GetDiscountMinor() int64 {
+	if x != nil {
+		return x.DiscountMinor
+	}
+	return 0
+}
+
+func (x *OrderProjection) GetTotalMinor() int64 {
+	if x != nil {
+		return x.TotalMinor
+	}
+	return 0
+}
+
+func (x *OrderProjection) GetPromotion() *PromotionSnapshot {
+	if x != nil {
+		return x.Promotion
+	}
+	return nil
+}
+
+// PromotionSnapshot 固化 checkout 时已核对的优惠经济字段。
+type PromotionSnapshot struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	PromotionId        string                 `protobuf:"bytes,1,opt,name=promotion_id,json=promotionId,proto3" json:"promotion_id,omitempty"`
+	Code               string                 `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
+	DiscountKind       PromotionDiscountKind  `protobuf:"varint,3,opt,name=discount_kind,json=discountKind,proto3,enum=muxvia.cloud.v1.PromotionDiscountKind" json:"discount_kind,omitempty"`
+	FixedMinor         int64                  `protobuf:"varint,4,opt,name=fixed_minor,json=fixedMinor,proto3" json:"fixed_minor,omitempty"`
+	PercentBasisPoints uint32                 `protobuf:"varint,5,opt,name=percent_basis_points,json=percentBasisPoints,proto3" json:"percent_basis_points,omitempty"`
+	Currency           string                 `protobuf:"bytes,6,opt,name=currency,proto3" json:"currency,omitempty"`
+	CreemDiscountCode  string                 `protobuf:"bytes,7,opt,name=creem_discount_code,json=creemDiscountCode,proto3" json:"creem_discount_code,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *PromotionSnapshot) Reset() {
+	*x = PromotionSnapshot{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromotionSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromotionSnapshot) ProtoMessage() {}
+
+func (x *PromotionSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromotionSnapshot.ProtoReflect.Descriptor instead.
+func (*PromotionSnapshot) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *PromotionSnapshot) GetPromotionId() string {
+	if x != nil {
+		return x.PromotionId
+	}
+	return ""
+}
+
+func (x *PromotionSnapshot) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *PromotionSnapshot) GetDiscountKind() PromotionDiscountKind {
+	if x != nil {
+		return x.DiscountKind
+	}
+	return PromotionDiscountKind_PROMOTION_DISCOUNT_KIND_UNSPECIFIED
+}
+
+func (x *PromotionSnapshot) GetFixedMinor() int64 {
+	if x != nil {
+		return x.FixedMinor
+	}
+	return 0
+}
+
+func (x *PromotionSnapshot) GetPercentBasisPoints() uint32 {
+	if x != nil {
+		return x.PercentBasisPoints
+	}
+	return 0
+}
+
+func (x *PromotionSnapshot) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
+}
+
+func (x *PromotionSnapshot) GetCreemDiscountCode() string {
+	if x != nil {
+		return x.CreemDiscountCode
+	}
+	return ""
+}
+
+// PromotionProjection 是 operator 发布后不可原地修改经济字段的优惠码真值。
+type PromotionProjection struct {
+	state                    protoimpl.MessageState `protogen:"open.v1"`
+	PromotionId              string                 `protobuf:"bytes,1,opt,name=promotion_id,json=promotionId,proto3" json:"promotion_id,omitempty"`
+	Code                     string                 `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
+	DiscountKind             PromotionDiscountKind  `protobuf:"varint,3,opt,name=discount_kind,json=discountKind,proto3,enum=muxvia.cloud.v1.PromotionDiscountKind" json:"discount_kind,omitempty"`
+	FixedMinor               int64                  `protobuf:"varint,4,opt,name=fixed_minor,json=fixedMinor,proto3" json:"fixed_minor,omitempty"`
+	PercentBasisPoints       uint32                 `protobuf:"varint,5,opt,name=percent_basis_points,json=percentBasisPoints,proto3" json:"percent_basis_points,omitempty"`
+	Currency                 string                 `protobuf:"bytes,6,opt,name=currency,proto3" json:"currency,omitempty"`
+	PlanIds                  []string               `protobuf:"bytes,7,rep,name=plan_ids,json=planIds,proto3" json:"plan_ids,omitempty"`
+	EffectiveFromUnixMillis  int64                  `protobuf:"varint,8,opt,name=effective_from_unix_millis,json=effectiveFromUnixMillis,proto3" json:"effective_from_unix_millis,omitempty"`
+	EffectiveUntilUnixMillis int64                  `protobuf:"varint,9,opt,name=effective_until_unix_millis,json=effectiveUntilUnixMillis,proto3" json:"effective_until_unix_millis,omitempty"`
+	MaxRedemptions           uint32                 `protobuf:"varint,10,opt,name=max_redemptions,json=maxRedemptions,proto3" json:"max_redemptions,omitempty"`
+	MaxRedemptionsPerAccount uint32                 `protobuf:"varint,11,opt,name=max_redemptions_per_account,json=maxRedemptionsPerAccount,proto3" json:"max_redemptions_per_account,omitempty"`
+	CreemDiscountCode        string                 `protobuf:"bytes,12,opt,name=creem_discount_code,json=creemDiscountCode,proto3" json:"creem_discount_code,omitempty"`
+	State                    PromotionState         `protobuf:"varint,13,opt,name=state,proto3,enum=muxvia.cloud.v1.PromotionState" json:"state,omitempty"`
+	Revision                 uint64                 `protobuf:"varint,14,opt,name=revision,proto3" json:"revision,omitempty"`
+	ActorId                  string                 `protobuf:"bytes,15,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Reason                   string                 `protobuf:"bytes,16,opt,name=reason,proto3" json:"reason,omitempty"`
+	CreatedAtUnixMillis      int64                  `protobuf:"varint,17,opt,name=created_at_unix_millis,json=createdAtUnixMillis,proto3" json:"created_at_unix_millis,omitempty"`
+	UpdatedAtUnixMillis      int64                  `protobuf:"varint,18,opt,name=updated_at_unix_millis,json=updatedAtUnixMillis,proto3" json:"updated_at_unix_millis,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
+}
+
+func (x *PromotionProjection) Reset() {
+	*x = PromotionProjection{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromotionProjection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromotionProjection) ProtoMessage() {}
+
+func (x *PromotionProjection) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromotionProjection.ProtoReflect.Descriptor instead.
+func (*PromotionProjection) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *PromotionProjection) GetPromotionId() string {
+	if x != nil {
+		return x.PromotionId
+	}
+	return ""
+}
+
+func (x *PromotionProjection) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *PromotionProjection) GetDiscountKind() PromotionDiscountKind {
+	if x != nil {
+		return x.DiscountKind
+	}
+	return PromotionDiscountKind_PROMOTION_DISCOUNT_KIND_UNSPECIFIED
+}
+
+func (x *PromotionProjection) GetFixedMinor() int64 {
+	if x != nil {
+		return x.FixedMinor
+	}
+	return 0
+}
+
+func (x *PromotionProjection) GetPercentBasisPoints() uint32 {
+	if x != nil {
+		return x.PercentBasisPoints
+	}
+	return 0
+}
+
+func (x *PromotionProjection) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
+}
+
+func (x *PromotionProjection) GetPlanIds() []string {
+	if x != nil {
+		return x.PlanIds
+	}
+	return nil
+}
+
+func (x *PromotionProjection) GetEffectiveFromUnixMillis() int64 {
+	if x != nil {
+		return x.EffectiveFromUnixMillis
+	}
+	return 0
+}
+
+func (x *PromotionProjection) GetEffectiveUntilUnixMillis() int64 {
+	if x != nil {
+		return x.EffectiveUntilUnixMillis
+	}
+	return 0
+}
+
+func (x *PromotionProjection) GetMaxRedemptions() uint32 {
+	if x != nil {
+		return x.MaxRedemptions
+	}
+	return 0
+}
+
+func (x *PromotionProjection) GetMaxRedemptionsPerAccount() uint32 {
+	if x != nil {
+		return x.MaxRedemptionsPerAccount
+	}
+	return 0
+}
+
+func (x *PromotionProjection) GetCreemDiscountCode() string {
+	if x != nil {
+		return x.CreemDiscountCode
+	}
+	return ""
+}
+
+func (x *PromotionProjection) GetState() PromotionState {
+	if x != nil {
+		return x.State
+	}
+	return PromotionState_PROMOTION_STATE_UNSPECIFIED
+}
+
+func (x *PromotionProjection) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *PromotionProjection) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *PromotionProjection) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *PromotionProjection) GetCreatedAtUnixMillis() int64 {
+	if x != nil {
+		return x.CreatedAtUnixMillis
+	}
+	return 0
+}
+
+func (x *PromotionProjection) GetUpdatedAtUnixMillis() int64 {
+	if x != nil {
+		return x.UpdatedAtUnixMillis
+	}
+	return 0
+}
+
+type PromotionRedemptionProjection struct {
+	state                protoimpl.MessageState   `protogen:"open.v1"`
+	RedemptionId         string                   `protobuf:"bytes,1,opt,name=redemption_id,json=redemptionId,proto3" json:"redemption_id,omitempty"`
+	PromotionId          string                   `protobuf:"bytes,2,opt,name=promotion_id,json=promotionId,proto3" json:"promotion_id,omitempty"`
+	AccountId            string                   `protobuf:"bytes,3,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	OrderId              string                   `protobuf:"bytes,4,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	State                PromotionRedemptionState `protobuf:"varint,5,opt,name=state,proto3,enum=muxvia.cloud.v1.PromotionRedemptionState" json:"state,omitempty"`
+	DiscountMinor        int64                    `protobuf:"varint,6,opt,name=discount_minor,json=discountMinor,proto3" json:"discount_minor,omitempty"`
+	ReservedAtUnixMillis int64                    `protobuf:"varint,7,opt,name=reserved_at_unix_millis,json=reservedAtUnixMillis,proto3" json:"reserved_at_unix_millis,omitempty"`
+	ExpiresAtUnixMillis  int64                    `protobuf:"varint,8,opt,name=expires_at_unix_millis,json=expiresAtUnixMillis,proto3" json:"expires_at_unix_millis,omitempty"`
+	UpdatedAtUnixMillis  int64                    `protobuf:"varint,9,opt,name=updated_at_unix_millis,json=updatedAtUnixMillis,proto3" json:"updated_at_unix_millis,omitempty"`
+	Revision             uint64                   `protobuf:"varint,10,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *PromotionRedemptionProjection) Reset() {
+	*x = PromotionRedemptionProjection{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromotionRedemptionProjection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromotionRedemptionProjection) ProtoMessage() {}
+
+func (x *PromotionRedemptionProjection) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromotionRedemptionProjection.ProtoReflect.Descriptor instead.
+func (*PromotionRedemptionProjection) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *PromotionRedemptionProjection) GetRedemptionId() string {
+	if x != nil {
+		return x.RedemptionId
+	}
+	return ""
+}
+
+func (x *PromotionRedemptionProjection) GetPromotionId() string {
+	if x != nil {
+		return x.PromotionId
+	}
+	return ""
+}
+
+func (x *PromotionRedemptionProjection) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+func (x *PromotionRedemptionProjection) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *PromotionRedemptionProjection) GetState() PromotionRedemptionState {
+	if x != nil {
+		return x.State
+	}
+	return PromotionRedemptionState_PROMOTION_REDEMPTION_STATE_UNSPECIFIED
+}
+
+func (x *PromotionRedemptionProjection) GetDiscountMinor() int64 {
+	if x != nil {
+		return x.DiscountMinor
+	}
+	return 0
+}
+
+func (x *PromotionRedemptionProjection) GetReservedAtUnixMillis() int64 {
+	if x != nil {
+		return x.ReservedAtUnixMillis
+	}
+	return 0
+}
+
+func (x *PromotionRedemptionProjection) GetExpiresAtUnixMillis() int64 {
+	if x != nil {
+		return x.ExpiresAtUnixMillis
+	}
+	return 0
+}
+
+func (x *PromotionRedemptionProjection) GetUpdatedAtUnixMillis() int64 {
+	if x != nil {
+		return x.UpdatedAtUnixMillis
+	}
+	return 0
+}
+
+func (x *PromotionRedemptionProjection) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+// SubscriptionAdjustmentProjection 区分人工赠送/补偿与 provider 已支付订单。
+type SubscriptionAdjustmentProjection struct {
+	state                         protoimpl.MessageState     `protogen:"open.v1"`
+	AdjustmentId                  string                     `protobuf:"bytes,1,opt,name=adjustment_id,json=adjustmentId,proto3" json:"adjustment_id,omitempty"`
+	AccountId                     string                     `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	AdjustmentKind                SubscriptionAdjustmentKind `protobuf:"varint,3,opt,name=adjustment_kind,json=adjustmentKind,proto3,enum=muxvia.cloud.v1.SubscriptionAdjustmentKind" json:"adjustment_kind,omitempty"`
+	TargetPlanId                  string                     `protobuf:"bytes,4,opt,name=target_plan_id,json=targetPlanId,proto3" json:"target_plan_id,omitempty"`
+	TargetPlanVersion             uint64                     `protobuf:"varint,5,opt,name=target_plan_version,json=targetPlanVersion,proto3" json:"target_plan_version,omitempty"`
+	DurationDays                  uint32                     `protobuf:"varint,6,opt,name=duration_days,json=durationDays,proto3" json:"duration_days,omitempty"`
+	ExpectedSubscriptionRevision  uint64                     `protobuf:"varint,7,opt,name=expected_subscription_revision,json=expectedSubscriptionRevision,proto3" json:"expected_subscription_revision,omitempty"`
+	ResultingSubscriptionRevision uint64                     `protobuf:"varint,8,opt,name=resulting_subscription_revision,json=resultingSubscriptionRevision,proto3" json:"resulting_subscription_revision,omitempty"`
+	ActorId                       string                     `protobuf:"bytes,9,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Reason                        string                     `protobuf:"bytes,10,opt,name=reason,proto3" json:"reason,omitempty"`
+	RequestId                     string                     `protobuf:"bytes,11,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	CreatedAtUnixMillis           int64                      `protobuf:"varint,12,opt,name=created_at_unix_millis,json=createdAtUnixMillis,proto3" json:"created_at_unix_millis,omitempty"`
+	Revision                      uint64                     `protobuf:"varint,13,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields                 protoimpl.UnknownFields
+	sizeCache                     protoimpl.SizeCache
+}
+
+func (x *SubscriptionAdjustmentProjection) Reset() {
+	*x = SubscriptionAdjustmentProjection{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionAdjustmentProjection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionAdjustmentProjection) ProtoMessage() {}
+
+func (x *SubscriptionAdjustmentProjection) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionAdjustmentProjection.ProtoReflect.Descriptor instead.
+func (*SubscriptionAdjustmentProjection) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *SubscriptionAdjustmentProjection) GetAdjustmentId() string {
+	if x != nil {
+		return x.AdjustmentId
+	}
+	return ""
+}
+
+func (x *SubscriptionAdjustmentProjection) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+func (x *SubscriptionAdjustmentProjection) GetAdjustmentKind() SubscriptionAdjustmentKind {
+	if x != nil {
+		return x.AdjustmentKind
+	}
+	return SubscriptionAdjustmentKind_SUBSCRIPTION_ADJUSTMENT_KIND_UNSPECIFIED
+}
+
+func (x *SubscriptionAdjustmentProjection) GetTargetPlanId() string {
+	if x != nil {
+		return x.TargetPlanId
+	}
+	return ""
+}
+
+func (x *SubscriptionAdjustmentProjection) GetTargetPlanVersion() uint64 {
+	if x != nil {
+		return x.TargetPlanVersion
+	}
+	return 0
+}
+
+func (x *SubscriptionAdjustmentProjection) GetDurationDays() uint32 {
+	if x != nil {
+		return x.DurationDays
+	}
+	return 0
+}
+
+func (x *SubscriptionAdjustmentProjection) GetExpectedSubscriptionRevision() uint64 {
+	if x != nil {
+		return x.ExpectedSubscriptionRevision
+	}
+	return 0
+}
+
+func (x *SubscriptionAdjustmentProjection) GetResultingSubscriptionRevision() uint64 {
+	if x != nil {
+		return x.ResultingSubscriptionRevision
+	}
+	return 0
+}
+
+func (x *SubscriptionAdjustmentProjection) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *SubscriptionAdjustmentProjection) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *SubscriptionAdjustmentProjection) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *SubscriptionAdjustmentProjection) GetCreatedAtUnixMillis() int64 {
+	if x != nil {
+		return x.CreatedAtUnixMillis
+	}
+	return 0
+}
+
+func (x *SubscriptionAdjustmentProjection) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
 // PaymentAttemptProjection 是 checkout order 与 provider event 之间的持久尝试。
 type PaymentAttemptProjection struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
@@ -3168,7 +3995,7 @@ type PaymentAttemptProjection struct {
 
 func (x *PaymentAttemptProjection) Reset() {
 	*x = PaymentAttemptProjection{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[35]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3180,7 +4007,7 @@ func (x *PaymentAttemptProjection) String() string {
 func (*PaymentAttemptProjection) ProtoMessage() {}
 
 func (x *PaymentAttemptProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[35]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3193,7 +4020,7 @@ func (x *PaymentAttemptProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PaymentAttemptProjection.ProtoReflect.Descriptor instead.
 func (*PaymentAttemptProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{35}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *PaymentAttemptProjection) GetPaymentAttemptId() string {
@@ -3271,7 +4098,7 @@ type PaymentEventProjection struct {
 
 func (x *PaymentEventProjection) Reset() {
 	*x = PaymentEventProjection{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[36]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3283,7 +4110,7 @@ func (x *PaymentEventProjection) String() string {
 func (*PaymentEventProjection) ProtoMessage() {}
 
 func (x *PaymentEventProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[36]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3296,7 +4123,7 @@ func (x *PaymentEventProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PaymentEventProjection.ProtoReflect.Descriptor instead.
 func (*PaymentEventProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{36}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *PaymentEventProjection) GetEvent() *NormalizedPaymentEvent {
@@ -3318,13 +4145,15 @@ type CreateCheckoutRequest struct {
 	state               protoimpl.MessageState     `protogen:"open.v1"`
 	PlanId              string                     `protobuf:"bytes,1,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
 	RequestedTransition SubscriptionTransitionKind `protobuf:"varint,2,opt,name=requested_transition,json=requestedTransition,proto3,enum=muxvia.cloud.v1.SubscriptionTransitionKind" json:"requested_transition,omitempty"`
+	BillingCadence      BillingCadence             `protobuf:"varint,3,opt,name=billing_cadence,json=billingCadence,proto3,enum=muxvia.cloud.v1.BillingCadence" json:"billing_cadence,omitempty"`
+	PromotionCode       string                     `protobuf:"bytes,4,opt,name=promotion_code,json=promotionCode,proto3" json:"promotion_code,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
 
 func (x *CreateCheckoutRequest) Reset() {
 	*x = CreateCheckoutRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[37]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3336,7 +4165,7 @@ func (x *CreateCheckoutRequest) String() string {
 func (*CreateCheckoutRequest) ProtoMessage() {}
 
 func (x *CreateCheckoutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[37]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3349,7 +4178,7 @@ func (x *CreateCheckoutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCheckoutRequest.ProtoReflect.Descriptor instead.
 func (*CreateCheckoutRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{37}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *CreateCheckoutRequest) GetPlanId() string {
@@ -3366,6 +4195,20 @@ func (x *CreateCheckoutRequest) GetRequestedTransition() SubscriptionTransitionK
 	return SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_UNSPECIFIED
 }
 
+func (x *CreateCheckoutRequest) GetBillingCadence() BillingCadence {
+	if x != nil {
+		return x.BillingCadence
+	}
+	return BillingCadence_BILLING_CADENCE_UNSPECIFIED
+}
+
+func (x *CreateCheckoutRequest) GetPromotionCode() string {
+	if x != nil {
+		return x.PromotionCode
+	}
+	return ""
+}
+
 type CreateCheckoutResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Order         *OrderProjection       `protobuf:"bytes,1,opt,name=order,proto3" json:"order,omitempty"`
@@ -3375,7 +4218,7 @@ type CreateCheckoutResponse struct {
 
 func (x *CreateCheckoutResponse) Reset() {
 	*x = CreateCheckoutResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[38]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3387,7 +4230,7 @@ func (x *CreateCheckoutResponse) String() string {
 func (*CreateCheckoutResponse) ProtoMessage() {}
 
 func (x *CreateCheckoutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[38]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3400,7 +4243,7 @@ func (x *CreateCheckoutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCheckoutResponse.ProtoReflect.Descriptor instead.
 func (*CreateCheckoutResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{38}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *CreateCheckoutResponse) GetOrder() *OrderProjection {
@@ -3420,7 +4263,7 @@ type CreatePaymentAttemptRequest struct {
 
 func (x *CreatePaymentAttemptRequest) Reset() {
 	*x = CreatePaymentAttemptRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[39]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3432,7 +4275,7 @@ func (x *CreatePaymentAttemptRequest) String() string {
 func (*CreatePaymentAttemptRequest) ProtoMessage() {}
 
 func (x *CreatePaymentAttemptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[39]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3445,7 +4288,7 @@ func (x *CreatePaymentAttemptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePaymentAttemptRequest.ProtoReflect.Descriptor instead.
 func (*CreatePaymentAttemptRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{39}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *CreatePaymentAttemptRequest) GetOrderId() string {
@@ -3471,7 +4314,7 @@ type CreatePaymentAttemptResponse struct {
 
 func (x *CreatePaymentAttemptResponse) Reset() {
 	*x = CreatePaymentAttemptResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[40]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3483,7 +4326,7 @@ func (x *CreatePaymentAttemptResponse) String() string {
 func (*CreatePaymentAttemptResponse) ProtoMessage() {}
 
 func (x *CreatePaymentAttemptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[40]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3496,7 +4339,7 @@ func (x *CreatePaymentAttemptResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePaymentAttemptResponse.ProtoReflect.Descriptor instead.
 func (*CreatePaymentAttemptResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{40}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *CreatePaymentAttemptResponse) GetPaymentAttempt() *PaymentAttemptProjection {
@@ -3519,13 +4362,16 @@ type NormalizedPaymentEvent struct {
 	ProviderReference    string                 `protobuf:"bytes,8,opt,name=provider_reference,json=providerReference,proto3" json:"provider_reference,omitempty"`
 	OccurredAtUnixMillis int64                  `protobuf:"varint,9,opt,name=occurred_at_unix_millis,json=occurredAtUnixMillis,proto3" json:"occurred_at_unix_millis,omitempty"`
 	PaymentAttemptId     string                 `protobuf:"bytes,10,opt,name=payment_attempt_id,json=paymentAttemptId,proto3" json:"payment_attempt_id,omitempty"`
+	ActorId              string                 `protobuf:"bytes,11,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Reason               string                 `protobuf:"bytes,12,opt,name=reason,proto3" json:"reason,omitempty"`
+	RequestId            string                 `protobuf:"bytes,13,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
 
 func (x *NormalizedPaymentEvent) Reset() {
 	*x = NormalizedPaymentEvent{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[41]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3537,7 +4383,7 @@ func (x *NormalizedPaymentEvent) String() string {
 func (*NormalizedPaymentEvent) ProtoMessage() {}
 
 func (x *NormalizedPaymentEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[41]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3550,7 +4396,7 @@ func (x *NormalizedPaymentEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NormalizedPaymentEvent.ProtoReflect.Descriptor instead.
 func (*NormalizedPaymentEvent) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{41}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *NormalizedPaymentEvent) GetProviderEventId() string {
@@ -3623,6 +4469,27 @@ func (x *NormalizedPaymentEvent) GetPaymentAttemptId() string {
 	return ""
 }
 
+func (x *NormalizedPaymentEvent) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *NormalizedPaymentEvent) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *NormalizedPaymentEvent) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
 // ApplyPaymentEventRequest 仅供 provider adapter 使用；签名验证发生在调用本 API 前。
 type ApplyPaymentEventRequest struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
@@ -3633,7 +4500,7 @@ type ApplyPaymentEventRequest struct {
 
 func (x *ApplyPaymentEventRequest) Reset() {
 	*x = ApplyPaymentEventRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[42]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3645,7 +4512,7 @@ func (x *ApplyPaymentEventRequest) String() string {
 func (*ApplyPaymentEventRequest) ProtoMessage() {}
 
 func (x *ApplyPaymentEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[42]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3658,7 +4525,7 @@ func (x *ApplyPaymentEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyPaymentEventRequest.ProtoReflect.Descriptor instead.
 func (*ApplyPaymentEventRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{42}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *ApplyPaymentEventRequest) GetEvent() *NormalizedPaymentEvent {
@@ -3680,7 +4547,7 @@ type ApplyPaymentEventResponse struct {
 
 func (x *ApplyPaymentEventResponse) Reset() {
 	*x = ApplyPaymentEventResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[43]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3692,7 +4559,7 @@ func (x *ApplyPaymentEventResponse) String() string {
 func (*ApplyPaymentEventResponse) ProtoMessage() {}
 
 func (x *ApplyPaymentEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[43]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3705,7 +4572,7 @@ func (x *ApplyPaymentEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyPaymentEventResponse.ProtoReflect.Descriptor instead.
 func (*ApplyPaymentEventResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{43}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *ApplyPaymentEventResponse) GetOrder() *OrderProjection {
@@ -3747,7 +4614,7 @@ type ConfirmTestPaymentRequest struct {
 
 func (x *ConfirmTestPaymentRequest) Reset() {
 	*x = ConfirmTestPaymentRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[44]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3759,7 +4626,7 @@ func (x *ConfirmTestPaymentRequest) String() string {
 func (*ConfirmTestPaymentRequest) ProtoMessage() {}
 
 func (x *ConfirmTestPaymentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[44]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3772,7 +4639,7 @@ func (x *ConfirmTestPaymentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfirmTestPaymentRequest.ProtoReflect.Descriptor instead.
 func (*ConfirmTestPaymentRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{44}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *ConfirmTestPaymentRequest) GetOrderId() string {
@@ -3798,7 +4665,7 @@ type ConfirmTestPaymentResponse struct {
 
 func (x *ConfirmTestPaymentResponse) Reset() {
 	*x = ConfirmTestPaymentResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[45]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3810,7 +4677,7 @@ func (x *ConfirmTestPaymentResponse) String() string {
 func (*ConfirmTestPaymentResponse) ProtoMessage() {}
 
 func (x *ConfirmTestPaymentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[45]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3823,7 +4690,7 @@ func (x *ConfirmTestPaymentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfirmTestPaymentResponse.ProtoReflect.Descriptor instead.
 func (*ConfirmTestPaymentResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{45}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *ConfirmTestPaymentResponse) GetResult() *ApplyPaymentEventResponse {
@@ -3848,7 +4715,7 @@ type TransitionSubscriptionRequest struct {
 
 func (x *TransitionSubscriptionRequest) Reset() {
 	*x = TransitionSubscriptionRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[46]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3860,7 +4727,7 @@ func (x *TransitionSubscriptionRequest) String() string {
 func (*TransitionSubscriptionRequest) ProtoMessage() {}
 
 func (x *TransitionSubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[46]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3873,7 +4740,7 @@ func (x *TransitionSubscriptionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransitionSubscriptionRequest.ProtoReflect.Descriptor instead.
 func (*TransitionSubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{46}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *TransitionSubscriptionRequest) GetAccountId() string {
@@ -3928,7 +4795,7 @@ type TransitionSubscriptionResponse struct {
 
 func (x *TransitionSubscriptionResponse) Reset() {
 	*x = TransitionSubscriptionResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[47]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3940,7 +4807,7 @@ func (x *TransitionSubscriptionResponse) String() string {
 func (*TransitionSubscriptionResponse) ProtoMessage() {}
 
 func (x *TransitionSubscriptionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[47]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3953,7 +4820,7 @@ func (x *TransitionSubscriptionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransitionSubscriptionResponse.ProtoReflect.Descriptor instead.
 func (*TransitionSubscriptionResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{47}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *TransitionSubscriptionResponse) GetSubscription() *SubscriptionProjection {
@@ -3985,7 +4852,7 @@ type CommerceAuditProjection struct {
 
 func (x *CommerceAuditProjection) Reset() {
 	*x = CommerceAuditProjection{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[48]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3997,7 +4864,7 @@ func (x *CommerceAuditProjection) String() string {
 func (*CommerceAuditProjection) ProtoMessage() {}
 
 func (x *CommerceAuditProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[48]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4010,7 +4877,7 @@ func (x *CommerceAuditProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommerceAuditProjection.ProtoReflect.Descriptor instead.
 func (*CommerceAuditProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{48}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *CommerceAuditProjection) GetAuditId() string {
@@ -4064,7 +4931,7 @@ type GetAccountCommerceRequest struct {
 
 func (x *GetAccountCommerceRequest) Reset() {
 	*x = GetAccountCommerceRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[49]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4076,7 +4943,7 @@ func (x *GetAccountCommerceRequest) String() string {
 func (*GetAccountCommerceRequest) ProtoMessage() {}
 
 func (x *GetAccountCommerceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[49]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4089,7 +4956,7 @@ func (x *GetAccountCommerceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountCommerceRequest.ProtoReflect.Descriptor instead.
 func (*GetAccountCommerceRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{49}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *GetAccountCommerceRequest) GetAccountId() string {
@@ -4109,14 +4976,16 @@ type GetAccountCommerceResponse struct {
 	PaymentAttempts []*PaymentAttemptProjection `protobuf:"bytes,6,rep,name=payment_attempts,json=paymentAttempts,proto3" json:"payment_attempts,omitempty"`
 	PaymentEvents   []*PaymentEventProjection   `protobuf:"bytes,7,rep,name=payment_events,json=paymentEvents,proto3" json:"payment_events,omitempty"`
 	// plan 是当前 subscription.plan_id/version 对应的 catalog 快照，供官方界面展示正式名称。
-	Plan          *PlanDefinition `protobuf:"bytes,8,opt,name=plan,proto3" json:"plan,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Plan                    *PlanDefinition                     `protobuf:"bytes,8,opt,name=plan,proto3" json:"plan,omitempty"`
+	PromotionRedemptions    []*PromotionRedemptionProjection    `protobuf:"bytes,9,rep,name=promotion_redemptions,json=promotionRedemptions,proto3" json:"promotion_redemptions,omitempty"`
+	SubscriptionAdjustments []*SubscriptionAdjustmentProjection `protobuf:"bytes,10,rep,name=subscription_adjustments,json=subscriptionAdjustments,proto3" json:"subscription_adjustments,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *GetAccountCommerceResponse) Reset() {
 	*x = GetAccountCommerceResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[50]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4128,7 +4997,7 @@ func (x *GetAccountCommerceResponse) String() string {
 func (*GetAccountCommerceResponse) ProtoMessage() {}
 
 func (x *GetAccountCommerceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[50]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4141,7 +5010,7 @@ func (x *GetAccountCommerceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountCommerceResponse.ProtoReflect.Descriptor instead.
 func (*GetAccountCommerceResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{50}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *GetAccountCommerceResponse) GetAccount() *AccountProjection {
@@ -4200,6 +5069,20 @@ func (x *GetAccountCommerceResponse) GetPlan() *PlanDefinition {
 	return nil
 }
 
+func (x *GetAccountCommerceResponse) GetPromotionRedemptions() []*PromotionRedemptionProjection {
+	if x != nil {
+		return x.PromotionRedemptions
+	}
+	return nil
+}
+
+func (x *GetAccountCommerceResponse) GetSubscriptionAdjustments() []*SubscriptionAdjustmentProjection {
+	if x != nil {
+		return x.SubscriptionAdjustments
+	}
+	return nil
+}
+
 // CloudProductError 是账号与交易 HTTP/Companion adapter 返回的稳定失败投影。
 type CloudProductError struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -4212,7 +5095,7 @@ type CloudProductError struct {
 
 func (x *CloudProductError) Reset() {
 	*x = CloudProductError{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[51]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4224,7 +5107,7 @@ func (x *CloudProductError) String() string {
 func (*CloudProductError) ProtoMessage() {}
 
 func (x *CloudProductError) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[51]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4237,7 +5120,7 @@ func (x *CloudProductError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloudProductError.ProtoReflect.Descriptor instead.
 func (*CloudProductError) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{51}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *CloudProductError) GetCode() string {
@@ -4476,7 +5359,7 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\x12!\n" +
 	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"d\n" +
 	"\x1dChangeAccountPasswordResponse\x12C\n" +
-	"\asession\x18\x01 \x01(\v2).muxvia.cloud.v1.AccountSessionCredentialR\asession\"\xa6\x05\n" +
+	"\asession\x18\x01 \x01(\v2).muxvia.cloud.v1.AccountSessionCredentialR\asession\"\xa1\a\n" +
 	"\x0fOrderProjection\x12\x19\n" +
 	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x1d\n" +
 	"\n" +
@@ -4493,7 +5376,73 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x1csource_subscription_revision\x18\v \x01(\x04R\x1asourceSubscriptionRevision\x12$\n" +
 	"\x0esource_plan_id\x18\f \x01(\tR\fsourcePlanId\x12.\n" +
 	"\x13source_plan_version\x18\r \x01(\x04R\x11sourcePlanVersion\x12:\n" +
-	"\x05price\x18\x0e \x01(\v2$.muxvia.cloud.v1.PlanPriceDefinitionR\x05price\"\x92\x03\n" +
+	"\x05price\x18\x0e \x01(\v2$.muxvia.cloud.v1.PlanPriceDefinitionR\x05price\x12H\n" +
+	"\x0fbilling_cadence\x18\x0f \x01(\x0e2\x1f.muxvia.cloud.v1.BillingCadenceR\x0ebillingCadence\x12%\n" +
+	"\x0esubtotal_minor\x18\x10 \x01(\x03R\rsubtotalMinor\x12%\n" +
+	"\x0ediscount_minor\x18\x11 \x01(\x03R\rdiscountMinor\x12\x1f\n" +
+	"\vtotal_minor\x18\x12 \x01(\x03R\n" +
+	"totalMinor\x12@\n" +
+	"\tpromotion\x18\x13 \x01(\v2\".muxvia.cloud.v1.PromotionSnapshotR\tpromotion\"\xb6\x02\n" +
+	"\x11PromotionSnapshot\x12!\n" +
+	"\fpromotion_id\x18\x01 \x01(\tR\vpromotionId\x12\x12\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\x12K\n" +
+	"\rdiscount_kind\x18\x03 \x01(\x0e2&.muxvia.cloud.v1.PromotionDiscountKindR\fdiscountKind\x12\x1f\n" +
+	"\vfixed_minor\x18\x04 \x01(\x03R\n" +
+	"fixedMinor\x120\n" +
+	"\x14percent_basis_points\x18\x05 \x01(\rR\x12percentBasisPoints\x12\x1a\n" +
+	"\bcurrency\x18\x06 \x01(\tR\bcurrency\x12.\n" +
+	"\x13creem_discount_code\x18\a \x01(\tR\x11creemDiscountCode\"\xa7\x06\n" +
+	"\x13PromotionProjection\x12!\n" +
+	"\fpromotion_id\x18\x01 \x01(\tR\vpromotionId\x12\x12\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\x12K\n" +
+	"\rdiscount_kind\x18\x03 \x01(\x0e2&.muxvia.cloud.v1.PromotionDiscountKindR\fdiscountKind\x12\x1f\n" +
+	"\vfixed_minor\x18\x04 \x01(\x03R\n" +
+	"fixedMinor\x120\n" +
+	"\x14percent_basis_points\x18\x05 \x01(\rR\x12percentBasisPoints\x12\x1a\n" +
+	"\bcurrency\x18\x06 \x01(\tR\bcurrency\x12\x19\n" +
+	"\bplan_ids\x18\a \x03(\tR\aplanIds\x12;\n" +
+	"\x1aeffective_from_unix_millis\x18\b \x01(\x03R\x17effectiveFromUnixMillis\x12=\n" +
+	"\x1beffective_until_unix_millis\x18\t \x01(\x03R\x18effectiveUntilUnixMillis\x12'\n" +
+	"\x0fmax_redemptions\x18\n" +
+	" \x01(\rR\x0emaxRedemptions\x12=\n" +
+	"\x1bmax_redemptions_per_account\x18\v \x01(\rR\x18maxRedemptionsPerAccount\x12.\n" +
+	"\x13creem_discount_code\x18\f \x01(\tR\x11creemDiscountCode\x125\n" +
+	"\x05state\x18\r \x01(\x0e2\x1f.muxvia.cloud.v1.PromotionStateR\x05state\x12\x1a\n" +
+	"\brevision\x18\x0e \x01(\x04R\brevision\x12\x19\n" +
+	"\bactor_id\x18\x0f \x01(\tR\aactorId\x12\x16\n" +
+	"\x06reason\x18\x10 \x01(\tR\x06reason\x123\n" +
+	"\x16created_at_unix_millis\x18\x11 \x01(\x03R\x13createdAtUnixMillis\x123\n" +
+	"\x16updated_at_unix_millis\x18\x12 \x01(\x03R\x13updatedAtUnixMillis\"\xc6\x03\n" +
+	"\x1dPromotionRedemptionProjection\x12#\n" +
+	"\rredemption_id\x18\x01 \x01(\tR\fredemptionId\x12!\n" +
+	"\fpromotion_id\x18\x02 \x01(\tR\vpromotionId\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x03 \x01(\tR\taccountId\x12\x19\n" +
+	"\border_id\x18\x04 \x01(\tR\aorderId\x12?\n" +
+	"\x05state\x18\x05 \x01(\x0e2).muxvia.cloud.v1.PromotionRedemptionStateR\x05state\x12%\n" +
+	"\x0ediscount_minor\x18\x06 \x01(\x03R\rdiscountMinor\x125\n" +
+	"\x17reserved_at_unix_millis\x18\a \x01(\x03R\x14reservedAtUnixMillis\x123\n" +
+	"\x16expires_at_unix_millis\x18\b \x01(\x03R\x13expiresAtUnixMillis\x123\n" +
+	"\x16updated_at_unix_millis\x18\t \x01(\x03R\x13updatedAtUnixMillis\x12\x1a\n" +
+	"\brevision\x18\n" +
+	" \x01(\x04R\brevision\"\xe8\x04\n" +
+	" SubscriptionAdjustmentProjection\x12#\n" +
+	"\radjustment_id\x18\x01 \x01(\tR\fadjustmentId\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x02 \x01(\tR\taccountId\x12T\n" +
+	"\x0fadjustment_kind\x18\x03 \x01(\x0e2+.muxvia.cloud.v1.SubscriptionAdjustmentKindR\x0eadjustmentKind\x12$\n" +
+	"\x0etarget_plan_id\x18\x04 \x01(\tR\ftargetPlanId\x12.\n" +
+	"\x13target_plan_version\x18\x05 \x01(\x04R\x11targetPlanVersion\x12#\n" +
+	"\rduration_days\x18\x06 \x01(\rR\fdurationDays\x12D\n" +
+	"\x1eexpected_subscription_revision\x18\a \x01(\x04R\x1cexpectedSubscriptionRevision\x12F\n" +
+	"\x1fresulting_subscription_revision\x18\b \x01(\x04R\x1dresultingSubscriptionRevision\x12\x19\n" +
+	"\bactor_id\x18\t \x01(\tR\aactorId\x12\x16\n" +
+	"\x06reason\x18\n" +
+	" \x01(\tR\x06reason\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\v \x01(\tR\trequestId\x123\n" +
+	"\x16created_at_unix_millis\x18\f \x01(\x03R\x13createdAtUnixMillis\x12\x1a\n" +
+	"\brevision\x18\r \x01(\x04R\brevision\"\x92\x03\n" +
 	"\x18PaymentAttemptProjection\x12,\n" +
 	"\x12payment_attempt_id\x18\x01 \x01(\tR\x10paymentAttemptId\x12\x19\n" +
 	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x1d\n" +
@@ -4507,17 +5456,19 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\brevision\x18\t \x01(\x04R\brevision\"\x91\x01\n" +
 	"\x16PaymentEventProjection\x12=\n" +
 	"\x05event\x18\x01 \x01(\v2'.muxvia.cloud.v1.NormalizedPaymentEventR\x05event\x128\n" +
-	"\x05state\x18\x02 \x01(\x0e2\".muxvia.cloud.v1.PaymentEventStateR\x05state\"\x90\x01\n" +
+	"\x05state\x18\x02 \x01(\x0e2\".muxvia.cloud.v1.PaymentEventStateR\x05state\"\x81\x02\n" +
 	"\x15CreateCheckoutRequest\x12\x17\n" +
 	"\aplan_id\x18\x01 \x01(\tR\x06planId\x12^\n" +
-	"\x14requested_transition\x18\x02 \x01(\x0e2+.muxvia.cloud.v1.SubscriptionTransitionKindR\x13requestedTransition\"P\n" +
+	"\x14requested_transition\x18\x02 \x01(\x0e2+.muxvia.cloud.v1.SubscriptionTransitionKindR\x13requestedTransition\x12H\n" +
+	"\x0fbilling_cadence\x18\x03 \x01(\x0e2\x1f.muxvia.cloud.v1.BillingCadenceR\x0ebillingCadence\x12%\n" +
+	"\x0epromotion_code\x18\x04 \x01(\tR\rpromotionCode\"P\n" +
 	"\x16CreateCheckoutResponse\x126\n" +
 	"\x05order\x18\x01 \x01(\v2 .muxvia.cloud.v1.OrderProjectionR\x05order\"T\n" +
 	"\x1bCreatePaymentAttemptRequest\x12\x19\n" +
 	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x1a\n" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\"r\n" +
 	"\x1cCreatePaymentAttemptResponse\x12R\n" +
-	"\x0fpayment_attempt\x18\x01 \x01(\v2).muxvia.cloud.v1.PaymentAttemptProjectionR\x0epaymentAttempt\"\xac\x03\n" +
+	"\x0fpayment_attempt\x18\x01 \x01(\v2).muxvia.cloud.v1.PaymentAttemptProjectionR\x0epaymentAttempt\"\xfe\x03\n" +
 	"\x16NormalizedPaymentEvent\x12*\n" +
 	"\x11provider_event_id\x18\x01 \x01(\tR\x0fproviderEventId\x12\x1a\n" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\x12@\n" +
@@ -4531,7 +5482,11 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x12provider_reference\x18\b \x01(\tR\x11providerReference\x125\n" +
 	"\x17occurred_at_unix_millis\x18\t \x01(\x03R\x14occurredAtUnixMillis\x12,\n" +
 	"\x12payment_attempt_id\x18\n" +
-	" \x01(\tR\x10paymentAttemptId\"Y\n" +
+	" \x01(\tR\x10paymentAttemptId\x12\x19\n" +
+	"\bactor_id\x18\v \x01(\tR\aactorId\x12\x16\n" +
+	"\x06reason\x18\f \x01(\tR\x06reason\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\r \x01(\tR\trequestId\"Y\n" +
 	"\x18ApplyPaymentEventRequest\x12=\n" +
 	"\x05event\x18\x01 \x01(\v2'.muxvia.cloud.v1.NormalizedPaymentEventR\x05event\"\xb9\x02\n" +
 	"\x19ApplyPaymentEventResponse\x126\n" +
@@ -4570,7 +5525,7 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x17occurred_at_unix_millis\x18\x06 \x01(\x03R\x14occurredAtUnixMillis\":\n" +
 	"\x19GetAccountCommerceRequest\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x01 \x01(\tR\taccountId\"\xc6\x04\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\"\x99\x06\n" +
 	"\x1aGetAccountCommerceResponse\x12<\n" +
 	"\aaccount\x18\x01 \x01(\v2\".muxvia.cloud.v1.AccountProjectionR\aaccount\x12K\n" +
 	"\fsubscription\x18\x02 \x01(\v2'.muxvia.cloud.v1.SubscriptionProjectionR\fsubscription\x12H\n" +
@@ -4579,7 +5534,10 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x05audit\x18\x05 \x03(\v2(.muxvia.cloud.v1.CommerceAuditProjectionR\x05audit\x12T\n" +
 	"\x10payment_attempts\x18\x06 \x03(\v2).muxvia.cloud.v1.PaymentAttemptProjectionR\x0fpaymentAttempts\x12N\n" +
 	"\x0epayment_events\x18\a \x03(\v2'.muxvia.cloud.v1.PaymentEventProjectionR\rpaymentEvents\x123\n" +
-	"\x04plan\x18\b \x01(\v2\x1f.muxvia.cloud.v1.PlanDefinitionR\x04plan\"_\n" +
+	"\x04plan\x18\b \x01(\v2\x1f.muxvia.cloud.v1.PlanDefinitionR\x04plan\x12c\n" +
+	"\x15promotion_redemptions\x18\t \x03(\v2..muxvia.cloud.v1.PromotionRedemptionProjectionR\x14promotionRedemptions\x12l\n" +
+	"\x18subscription_adjustments\x18\n" +
+	" \x03(\v21.muxvia.cloud.v1.SubscriptionAdjustmentProjectionR\x17subscriptionAdjustments\"_\n" +
 	"\x11CloudProductError\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +
@@ -4606,7 +5564,30 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x1eCATALOG_PRICE_MODE_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bCATALOG_PRICE_MODE_INCLUDED\x10\x01\x12!\n" +
 	"\x1dCATALOG_PRICE_MODE_CONFIGURED\x10\x02\x12\x1e\n" +
-	"\x1aCATALOG_PRICE_MODE_CONTACT\x10\x03*\xab\x01\n" +
+	"\x1aCATALOG_PRICE_MODE_CONTACT\x10\x03*j\n" +
+	"\x0eBillingCadence\x12\x1f\n" +
+	"\x1bBILLING_CADENCE_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17BILLING_CADENCE_MONTHLY\x10\x01\x12\x1a\n" +
+	"\x16BILLING_CADENCE_YEARLY\x10\x02*\x88\x01\n" +
+	"\x15PromotionDiscountKind\x12'\n" +
+	"#PROMOTION_DISCOUNT_KIND_UNSPECIFIED\x10\x00\x12!\n" +
+	"\x1dPROMOTION_DISCOUNT_KIND_FIXED\x10\x01\x12#\n" +
+	"\x1fPROMOTION_DISCOUNT_KIND_PERCENT\x10\x02*k\n" +
+	"\x0ePromotionState\x12\x1f\n" +
+	"\x1bPROMOTION_STATE_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16PROMOTION_STATE_ACTIVE\x10\x01\x12\x1c\n" +
+	"\x18PROMOTION_STATE_DISABLED\x10\x02*\xe9\x01\n" +
+	"\x18PromotionRedemptionState\x12*\n" +
+	"&PROMOTION_REDEMPTION_STATE_UNSPECIFIED\x10\x00\x12'\n" +
+	"#PROMOTION_REDEMPTION_STATE_RESERVED\x10\x01\x12'\n" +
+	"#PROMOTION_REDEMPTION_STATE_REDEEMED\x10\x02\x12'\n" +
+	"#PROMOTION_REDEMPTION_STATE_RELEASED\x10\x03\x12&\n" +
+	"\"PROMOTION_REDEMPTION_STATE_EXPIRED\x10\x04*\xc9\x01\n" +
+	"\x1aSubscriptionAdjustmentKind\x12,\n" +
+	"(SUBSCRIPTION_ADJUSTMENT_KIND_UNSPECIFIED\x10\x00\x12&\n" +
+	"\"SUBSCRIPTION_ADJUSTMENT_KIND_GRANT\x10\x01\x12'\n" +
+	"#SUBSCRIPTION_ADJUSTMENT_KIND_EXTEND\x10\x02\x12,\n" +
+	"(SUBSCRIPTION_ADJUSTMENT_KIND_CHANGE_PLAN\x10\x03*\xab\x01\n" +
 	"\x14PaymentAttemptStatus\x12&\n" +
 	"\"PAYMENT_ATTEMPT_STATUS_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1ePAYMENT_ATTEMPT_STATUS_PENDING\x10\x01\x12$\n" +
@@ -4662,130 +5643,149 @@ func file_cloudpb_cloud_product_proto_rawDescGZIP() []byte {
 	return file_cloudpb_cloud_product_proto_rawDescData
 }
 
-var file_cloudpb_cloud_product_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
-var file_cloudpb_cloud_product_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
+var file_cloudpb_cloud_product_proto_enumTypes = make([]protoimpl.EnumInfo, 14)
+var file_cloudpb_cloud_product_proto_msgTypes = make([]protoimpl.MessageInfo, 56)
 var file_cloudpb_cloud_product_proto_goTypes = []any{
-	(SubscriptionStatus)(0),                // 0: muxvia.cloud.v1.SubscriptionStatus
-	(OrderStatus)(0),                       // 1: muxvia.cloud.v1.OrderStatus
-	(CatalogPriceMode)(0),                  // 2: muxvia.cloud.v1.CatalogPriceMode
-	(PaymentAttemptStatus)(0),              // 3: muxvia.cloud.v1.PaymentAttemptStatus
-	(PaymentEventType)(0),                  // 4: muxvia.cloud.v1.PaymentEventType
-	(PaymentEventState)(0),                 // 5: muxvia.cloud.v1.PaymentEventState
-	(SubscriptionTransitionKind)(0),        // 6: muxvia.cloud.v1.SubscriptionTransitionKind
-	(EntitlementStatus)(0),                 // 7: muxvia.cloud.v1.EntitlementStatus
-	(RelayReservationState)(0),             // 8: muxvia.cloud.v1.RelayReservationState
-	(*RelayServiceCapability)(nil),         // 9: muxvia.cloud.v1.RelayServiceCapability
-	(*PlanCapability)(nil),                 // 10: muxvia.cloud.v1.PlanCapability
-	(*PlanDefinition)(nil),                 // 11: muxvia.cloud.v1.PlanDefinition
-	(*CreemProductMapping)(nil),            // 12: muxvia.cloud.v1.CreemProductMapping
-	(*PlanPriceDefinition)(nil),            // 13: muxvia.cloud.v1.PlanPriceDefinition
-	(*PlanPresentation)(nil),               // 14: muxvia.cloud.v1.PlanPresentation
-	(*PlanCatalogContract)(nil),            // 15: muxvia.cloud.v1.PlanCatalogContract
-	(*PlanCatalogReleaseProjection)(nil),   // 16: muxvia.cloud.v1.PlanCatalogReleaseProjection
-	(*EntitlementOverrideProjection)(nil),  // 17: muxvia.cloud.v1.EntitlementOverrideProjection
-	(*SubscriptionProjection)(nil),         // 18: muxvia.cloud.v1.SubscriptionProjection
-	(*EntitlementProjection)(nil),          // 19: muxvia.cloud.v1.EntitlementProjection
-	(*RelayQuotaPeriod)(nil),               // 20: muxvia.cloud.v1.RelayQuotaPeriod
-	(*RelayLeaseReservation)(nil),          // 21: muxvia.cloud.v1.RelayLeaseReservation
-	(*RelayUsageAggregate)(nil),            // 22: muxvia.cloud.v1.RelayUsageAggregate
-	(*GetAccountRelayQuotaRequest)(nil),    // 23: muxvia.cloud.v1.GetAccountRelayQuotaRequest
-	(*GetAccountRelayQuotaResponse)(nil),   // 24: muxvia.cloud.v1.GetAccountRelayQuotaResponse
-	(*GetPlanCatalogRequest)(nil),          // 25: muxvia.cloud.v1.GetPlanCatalogRequest
-	(*GetPlanCatalogResponse)(nil),         // 26: muxvia.cloud.v1.GetPlanCatalogResponse
-	(*GetAccountSubscriptionRequest)(nil),  // 27: muxvia.cloud.v1.GetAccountSubscriptionRequest
-	(*GetAccountSubscriptionResponse)(nil), // 28: muxvia.cloud.v1.GetAccountSubscriptionResponse
-	(*GetAccountEntitlementRequest)(nil),   // 29: muxvia.cloud.v1.GetAccountEntitlementRequest
-	(*GetAccountEntitlementResponse)(nil),  // 30: muxvia.cloud.v1.GetAccountEntitlementResponse
-	(*AccountProjection)(nil),              // 31: muxvia.cloud.v1.AccountProjection
-	(*AccountSessionCredential)(nil),       // 32: muxvia.cloud.v1.AccountSessionCredential
-	(*RegisterAccountRequest)(nil),         // 33: muxvia.cloud.v1.RegisterAccountRequest
-	(*RegisterAccountResponse)(nil),        // 34: muxvia.cloud.v1.RegisterAccountResponse
-	(*PasswordLoginRequest)(nil),           // 35: muxvia.cloud.v1.PasswordLoginRequest
-	(*PasswordLoginResponse)(nil),          // 36: muxvia.cloud.v1.PasswordLoginResponse
-	(*RefreshAccountSessionRequest)(nil),   // 37: muxvia.cloud.v1.RefreshAccountSessionRequest
-	(*RefreshAccountSessionResponse)(nil),  // 38: muxvia.cloud.v1.RefreshAccountSessionResponse
-	(*LogoutAccountSessionRequest)(nil),    // 39: muxvia.cloud.v1.LogoutAccountSessionRequest
-	(*LogoutAccountSessionResponse)(nil),   // 40: muxvia.cloud.v1.LogoutAccountSessionResponse
-	(*ChangeAccountPasswordRequest)(nil),   // 41: muxvia.cloud.v1.ChangeAccountPasswordRequest
-	(*ChangeAccountPasswordResponse)(nil),  // 42: muxvia.cloud.v1.ChangeAccountPasswordResponse
-	(*OrderProjection)(nil),                // 43: muxvia.cloud.v1.OrderProjection
-	(*PaymentAttemptProjection)(nil),       // 44: muxvia.cloud.v1.PaymentAttemptProjection
-	(*PaymentEventProjection)(nil),         // 45: muxvia.cloud.v1.PaymentEventProjection
-	(*CreateCheckoutRequest)(nil),          // 46: muxvia.cloud.v1.CreateCheckoutRequest
-	(*CreateCheckoutResponse)(nil),         // 47: muxvia.cloud.v1.CreateCheckoutResponse
-	(*CreatePaymentAttemptRequest)(nil),    // 48: muxvia.cloud.v1.CreatePaymentAttemptRequest
-	(*CreatePaymentAttemptResponse)(nil),   // 49: muxvia.cloud.v1.CreatePaymentAttemptResponse
-	(*NormalizedPaymentEvent)(nil),         // 50: muxvia.cloud.v1.NormalizedPaymentEvent
-	(*ApplyPaymentEventRequest)(nil),       // 51: muxvia.cloud.v1.ApplyPaymentEventRequest
-	(*ApplyPaymentEventResponse)(nil),      // 52: muxvia.cloud.v1.ApplyPaymentEventResponse
-	(*ConfirmTestPaymentRequest)(nil),      // 53: muxvia.cloud.v1.ConfirmTestPaymentRequest
-	(*ConfirmTestPaymentResponse)(nil),     // 54: muxvia.cloud.v1.ConfirmTestPaymentResponse
-	(*TransitionSubscriptionRequest)(nil),  // 55: muxvia.cloud.v1.TransitionSubscriptionRequest
-	(*TransitionSubscriptionResponse)(nil), // 56: muxvia.cloud.v1.TransitionSubscriptionResponse
-	(*CommerceAuditProjection)(nil),        // 57: muxvia.cloud.v1.CommerceAuditProjection
-	(*GetAccountCommerceRequest)(nil),      // 58: muxvia.cloud.v1.GetAccountCommerceRequest
-	(*GetAccountCommerceResponse)(nil),     // 59: muxvia.cloud.v1.GetAccountCommerceResponse
-	(*CloudProductError)(nil),              // 60: muxvia.cloud.v1.CloudProductError
-	(*fieldmaskpb.FieldMask)(nil),          // 61: google.protobuf.FieldMask
+	(SubscriptionStatus)(0),                  // 0: muxvia.cloud.v1.SubscriptionStatus
+	(OrderStatus)(0),                         // 1: muxvia.cloud.v1.OrderStatus
+	(CatalogPriceMode)(0),                    // 2: muxvia.cloud.v1.CatalogPriceMode
+	(BillingCadence)(0),                      // 3: muxvia.cloud.v1.BillingCadence
+	(PromotionDiscountKind)(0),               // 4: muxvia.cloud.v1.PromotionDiscountKind
+	(PromotionState)(0),                      // 5: muxvia.cloud.v1.PromotionState
+	(PromotionRedemptionState)(0),            // 6: muxvia.cloud.v1.PromotionRedemptionState
+	(SubscriptionAdjustmentKind)(0),          // 7: muxvia.cloud.v1.SubscriptionAdjustmentKind
+	(PaymentAttemptStatus)(0),                // 8: muxvia.cloud.v1.PaymentAttemptStatus
+	(PaymentEventType)(0),                    // 9: muxvia.cloud.v1.PaymentEventType
+	(PaymentEventState)(0),                   // 10: muxvia.cloud.v1.PaymentEventState
+	(SubscriptionTransitionKind)(0),          // 11: muxvia.cloud.v1.SubscriptionTransitionKind
+	(EntitlementStatus)(0),                   // 12: muxvia.cloud.v1.EntitlementStatus
+	(RelayReservationState)(0),               // 13: muxvia.cloud.v1.RelayReservationState
+	(*RelayServiceCapability)(nil),           // 14: muxvia.cloud.v1.RelayServiceCapability
+	(*PlanCapability)(nil),                   // 15: muxvia.cloud.v1.PlanCapability
+	(*PlanDefinition)(nil),                   // 16: muxvia.cloud.v1.PlanDefinition
+	(*CreemProductMapping)(nil),              // 17: muxvia.cloud.v1.CreemProductMapping
+	(*PlanPriceDefinition)(nil),              // 18: muxvia.cloud.v1.PlanPriceDefinition
+	(*PlanPresentation)(nil),                 // 19: muxvia.cloud.v1.PlanPresentation
+	(*PlanCatalogContract)(nil),              // 20: muxvia.cloud.v1.PlanCatalogContract
+	(*PlanCatalogReleaseProjection)(nil),     // 21: muxvia.cloud.v1.PlanCatalogReleaseProjection
+	(*EntitlementOverrideProjection)(nil),    // 22: muxvia.cloud.v1.EntitlementOverrideProjection
+	(*SubscriptionProjection)(nil),           // 23: muxvia.cloud.v1.SubscriptionProjection
+	(*EntitlementProjection)(nil),            // 24: muxvia.cloud.v1.EntitlementProjection
+	(*RelayQuotaPeriod)(nil),                 // 25: muxvia.cloud.v1.RelayQuotaPeriod
+	(*RelayLeaseReservation)(nil),            // 26: muxvia.cloud.v1.RelayLeaseReservation
+	(*RelayUsageAggregate)(nil),              // 27: muxvia.cloud.v1.RelayUsageAggregate
+	(*GetAccountRelayQuotaRequest)(nil),      // 28: muxvia.cloud.v1.GetAccountRelayQuotaRequest
+	(*GetAccountRelayQuotaResponse)(nil),     // 29: muxvia.cloud.v1.GetAccountRelayQuotaResponse
+	(*GetPlanCatalogRequest)(nil),            // 30: muxvia.cloud.v1.GetPlanCatalogRequest
+	(*GetPlanCatalogResponse)(nil),           // 31: muxvia.cloud.v1.GetPlanCatalogResponse
+	(*GetAccountSubscriptionRequest)(nil),    // 32: muxvia.cloud.v1.GetAccountSubscriptionRequest
+	(*GetAccountSubscriptionResponse)(nil),   // 33: muxvia.cloud.v1.GetAccountSubscriptionResponse
+	(*GetAccountEntitlementRequest)(nil),     // 34: muxvia.cloud.v1.GetAccountEntitlementRequest
+	(*GetAccountEntitlementResponse)(nil),    // 35: muxvia.cloud.v1.GetAccountEntitlementResponse
+	(*AccountProjection)(nil),                // 36: muxvia.cloud.v1.AccountProjection
+	(*AccountSessionCredential)(nil),         // 37: muxvia.cloud.v1.AccountSessionCredential
+	(*RegisterAccountRequest)(nil),           // 38: muxvia.cloud.v1.RegisterAccountRequest
+	(*RegisterAccountResponse)(nil),          // 39: muxvia.cloud.v1.RegisterAccountResponse
+	(*PasswordLoginRequest)(nil),             // 40: muxvia.cloud.v1.PasswordLoginRequest
+	(*PasswordLoginResponse)(nil),            // 41: muxvia.cloud.v1.PasswordLoginResponse
+	(*RefreshAccountSessionRequest)(nil),     // 42: muxvia.cloud.v1.RefreshAccountSessionRequest
+	(*RefreshAccountSessionResponse)(nil),    // 43: muxvia.cloud.v1.RefreshAccountSessionResponse
+	(*LogoutAccountSessionRequest)(nil),      // 44: muxvia.cloud.v1.LogoutAccountSessionRequest
+	(*LogoutAccountSessionResponse)(nil),     // 45: muxvia.cloud.v1.LogoutAccountSessionResponse
+	(*ChangeAccountPasswordRequest)(nil),     // 46: muxvia.cloud.v1.ChangeAccountPasswordRequest
+	(*ChangeAccountPasswordResponse)(nil),    // 47: muxvia.cloud.v1.ChangeAccountPasswordResponse
+	(*OrderProjection)(nil),                  // 48: muxvia.cloud.v1.OrderProjection
+	(*PromotionSnapshot)(nil),                // 49: muxvia.cloud.v1.PromotionSnapshot
+	(*PromotionProjection)(nil),              // 50: muxvia.cloud.v1.PromotionProjection
+	(*PromotionRedemptionProjection)(nil),    // 51: muxvia.cloud.v1.PromotionRedemptionProjection
+	(*SubscriptionAdjustmentProjection)(nil), // 52: muxvia.cloud.v1.SubscriptionAdjustmentProjection
+	(*PaymentAttemptProjection)(nil),         // 53: muxvia.cloud.v1.PaymentAttemptProjection
+	(*PaymentEventProjection)(nil),           // 54: muxvia.cloud.v1.PaymentEventProjection
+	(*CreateCheckoutRequest)(nil),            // 55: muxvia.cloud.v1.CreateCheckoutRequest
+	(*CreateCheckoutResponse)(nil),           // 56: muxvia.cloud.v1.CreateCheckoutResponse
+	(*CreatePaymentAttemptRequest)(nil),      // 57: muxvia.cloud.v1.CreatePaymentAttemptRequest
+	(*CreatePaymentAttemptResponse)(nil),     // 58: muxvia.cloud.v1.CreatePaymentAttemptResponse
+	(*NormalizedPaymentEvent)(nil),           // 59: muxvia.cloud.v1.NormalizedPaymentEvent
+	(*ApplyPaymentEventRequest)(nil),         // 60: muxvia.cloud.v1.ApplyPaymentEventRequest
+	(*ApplyPaymentEventResponse)(nil),        // 61: muxvia.cloud.v1.ApplyPaymentEventResponse
+	(*ConfirmTestPaymentRequest)(nil),        // 62: muxvia.cloud.v1.ConfirmTestPaymentRequest
+	(*ConfirmTestPaymentResponse)(nil),       // 63: muxvia.cloud.v1.ConfirmTestPaymentResponse
+	(*TransitionSubscriptionRequest)(nil),    // 64: muxvia.cloud.v1.TransitionSubscriptionRequest
+	(*TransitionSubscriptionResponse)(nil),   // 65: muxvia.cloud.v1.TransitionSubscriptionResponse
+	(*CommerceAuditProjection)(nil),          // 66: muxvia.cloud.v1.CommerceAuditProjection
+	(*GetAccountCommerceRequest)(nil),        // 67: muxvia.cloud.v1.GetAccountCommerceRequest
+	(*GetAccountCommerceResponse)(nil),       // 68: muxvia.cloud.v1.GetAccountCommerceResponse
+	(*CloudProductError)(nil),                // 69: muxvia.cloud.v1.CloudProductError
+	(*fieldmaskpb.FieldMask)(nil),            // 70: google.protobuf.FieldMask
 }
 var file_cloudpb_cloud_product_proto_depIdxs = []int32{
-	9,  // 0: muxvia.cloud.v1.PlanCapability.relay:type_name -> muxvia.cloud.v1.RelayServiceCapability
-	10, // 1: muxvia.cloud.v1.PlanDefinition.capability:type_name -> muxvia.cloud.v1.PlanCapability
-	13, // 2: muxvia.cloud.v1.PlanDefinition.price:type_name -> muxvia.cloud.v1.PlanPriceDefinition
-	14, // 3: muxvia.cloud.v1.PlanDefinition.presentation:type_name -> muxvia.cloud.v1.PlanPresentation
-	12, // 4: muxvia.cloud.v1.PlanDefinition.creem:type_name -> muxvia.cloud.v1.CreemProductMapping
+	14, // 0: muxvia.cloud.v1.PlanCapability.relay:type_name -> muxvia.cloud.v1.RelayServiceCapability
+	15, // 1: muxvia.cloud.v1.PlanDefinition.capability:type_name -> muxvia.cloud.v1.PlanCapability
+	18, // 2: muxvia.cloud.v1.PlanDefinition.price:type_name -> muxvia.cloud.v1.PlanPriceDefinition
+	19, // 3: muxvia.cloud.v1.PlanDefinition.presentation:type_name -> muxvia.cloud.v1.PlanPresentation
+	17, // 4: muxvia.cloud.v1.PlanDefinition.creem:type_name -> muxvia.cloud.v1.CreemProductMapping
 	2,  // 5: muxvia.cloud.v1.PlanPriceDefinition.mode:type_name -> muxvia.cloud.v1.CatalogPriceMode
-	11, // 6: muxvia.cloud.v1.PlanCatalogContract.plans:type_name -> muxvia.cloud.v1.PlanDefinition
-	15, // 7: muxvia.cloud.v1.PlanCatalogReleaseProjection.catalog:type_name -> muxvia.cloud.v1.PlanCatalogContract
-	61, // 8: muxvia.cloud.v1.EntitlementOverrideProjection.capability_mask:type_name -> google.protobuf.FieldMask
-	10, // 9: muxvia.cloud.v1.EntitlementOverrideProjection.capability:type_name -> muxvia.cloud.v1.PlanCapability
+	16, // 6: muxvia.cloud.v1.PlanCatalogContract.plans:type_name -> muxvia.cloud.v1.PlanDefinition
+	20, // 7: muxvia.cloud.v1.PlanCatalogReleaseProjection.catalog:type_name -> muxvia.cloud.v1.PlanCatalogContract
+	70, // 8: muxvia.cloud.v1.EntitlementOverrideProjection.capability_mask:type_name -> google.protobuf.FieldMask
+	15, // 9: muxvia.cloud.v1.EntitlementOverrideProjection.capability:type_name -> muxvia.cloud.v1.PlanCapability
 	0,  // 10: muxvia.cloud.v1.SubscriptionProjection.status:type_name -> muxvia.cloud.v1.SubscriptionStatus
-	7,  // 11: muxvia.cloud.v1.EntitlementProjection.status:type_name -> muxvia.cloud.v1.EntitlementStatus
-	10, // 12: muxvia.cloud.v1.EntitlementProjection.capability:type_name -> muxvia.cloud.v1.PlanCapability
-	8,  // 13: muxvia.cloud.v1.RelayLeaseReservation.state:type_name -> muxvia.cloud.v1.RelayReservationState
-	20, // 14: muxvia.cloud.v1.GetAccountRelayQuotaResponse.period:type_name -> muxvia.cloud.v1.RelayQuotaPeriod
-	21, // 15: muxvia.cloud.v1.GetAccountRelayQuotaResponse.active_reservations:type_name -> muxvia.cloud.v1.RelayLeaseReservation
-	15, // 16: muxvia.cloud.v1.GetPlanCatalogResponse.catalog:type_name -> muxvia.cloud.v1.PlanCatalogContract
-	18, // 17: muxvia.cloud.v1.GetAccountSubscriptionResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
-	19, // 18: muxvia.cloud.v1.GetAccountEntitlementResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
-	31, // 19: muxvia.cloud.v1.AccountSessionCredential.account:type_name -> muxvia.cloud.v1.AccountProjection
-	32, // 20: muxvia.cloud.v1.RegisterAccountResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
-	32, // 21: muxvia.cloud.v1.PasswordLoginResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
-	32, // 22: muxvia.cloud.v1.RefreshAccountSessionResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
-	32, // 23: muxvia.cloud.v1.ChangeAccountPasswordResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
+	12, // 11: muxvia.cloud.v1.EntitlementProjection.status:type_name -> muxvia.cloud.v1.EntitlementStatus
+	15, // 12: muxvia.cloud.v1.EntitlementProjection.capability:type_name -> muxvia.cloud.v1.PlanCapability
+	13, // 13: muxvia.cloud.v1.RelayLeaseReservation.state:type_name -> muxvia.cloud.v1.RelayReservationState
+	25, // 14: muxvia.cloud.v1.GetAccountRelayQuotaResponse.period:type_name -> muxvia.cloud.v1.RelayQuotaPeriod
+	26, // 15: muxvia.cloud.v1.GetAccountRelayQuotaResponse.active_reservations:type_name -> muxvia.cloud.v1.RelayLeaseReservation
+	20, // 16: muxvia.cloud.v1.GetPlanCatalogResponse.catalog:type_name -> muxvia.cloud.v1.PlanCatalogContract
+	23, // 17: muxvia.cloud.v1.GetAccountSubscriptionResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	24, // 18: muxvia.cloud.v1.GetAccountEntitlementResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
+	36, // 19: muxvia.cloud.v1.AccountSessionCredential.account:type_name -> muxvia.cloud.v1.AccountProjection
+	37, // 20: muxvia.cloud.v1.RegisterAccountResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
+	37, // 21: muxvia.cloud.v1.PasswordLoginResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
+	37, // 22: muxvia.cloud.v1.RefreshAccountSessionResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
+	37, // 23: muxvia.cloud.v1.ChangeAccountPasswordResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
 	1,  // 24: muxvia.cloud.v1.OrderProjection.status:type_name -> muxvia.cloud.v1.OrderStatus
-	6,  // 25: muxvia.cloud.v1.OrderProjection.requested_transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
-	13, // 26: muxvia.cloud.v1.OrderProjection.price:type_name -> muxvia.cloud.v1.PlanPriceDefinition
-	3,  // 27: muxvia.cloud.v1.PaymentAttemptProjection.status:type_name -> muxvia.cloud.v1.PaymentAttemptStatus
-	50, // 28: muxvia.cloud.v1.PaymentEventProjection.event:type_name -> muxvia.cloud.v1.NormalizedPaymentEvent
-	5,  // 29: muxvia.cloud.v1.PaymentEventProjection.state:type_name -> muxvia.cloud.v1.PaymentEventState
-	6,  // 30: muxvia.cloud.v1.CreateCheckoutRequest.requested_transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
-	43, // 31: muxvia.cloud.v1.CreateCheckoutResponse.order:type_name -> muxvia.cloud.v1.OrderProjection
-	44, // 32: muxvia.cloud.v1.CreatePaymentAttemptResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
-	4,  // 33: muxvia.cloud.v1.NormalizedPaymentEvent.event_type:type_name -> muxvia.cloud.v1.PaymentEventType
-	50, // 34: muxvia.cloud.v1.ApplyPaymentEventRequest.event:type_name -> muxvia.cloud.v1.NormalizedPaymentEvent
-	43, // 35: muxvia.cloud.v1.ApplyPaymentEventResponse.order:type_name -> muxvia.cloud.v1.OrderProjection
-	18, // 36: muxvia.cloud.v1.ApplyPaymentEventResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
-	5,  // 37: muxvia.cloud.v1.ApplyPaymentEventResponse.event_state:type_name -> muxvia.cloud.v1.PaymentEventState
-	44, // 38: muxvia.cloud.v1.ApplyPaymentEventResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
-	4,  // 39: muxvia.cloud.v1.ConfirmTestPaymentRequest.event_type:type_name -> muxvia.cloud.v1.PaymentEventType
-	52, // 40: muxvia.cloud.v1.ConfirmTestPaymentResponse.result:type_name -> muxvia.cloud.v1.ApplyPaymentEventResponse
-	6,  // 41: muxvia.cloud.v1.TransitionSubscriptionRequest.transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
-	18, // 42: muxvia.cloud.v1.TransitionSubscriptionResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
-	19, // 43: muxvia.cloud.v1.TransitionSubscriptionResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
-	31, // 44: muxvia.cloud.v1.GetAccountCommerceResponse.account:type_name -> muxvia.cloud.v1.AccountProjection
-	18, // 45: muxvia.cloud.v1.GetAccountCommerceResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
-	19, // 46: muxvia.cloud.v1.GetAccountCommerceResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
-	43, // 47: muxvia.cloud.v1.GetAccountCommerceResponse.orders:type_name -> muxvia.cloud.v1.OrderProjection
-	57, // 48: muxvia.cloud.v1.GetAccountCommerceResponse.audit:type_name -> muxvia.cloud.v1.CommerceAuditProjection
-	44, // 49: muxvia.cloud.v1.GetAccountCommerceResponse.payment_attempts:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
-	45, // 50: muxvia.cloud.v1.GetAccountCommerceResponse.payment_events:type_name -> muxvia.cloud.v1.PaymentEventProjection
-	11, // 51: muxvia.cloud.v1.GetAccountCommerceResponse.plan:type_name -> muxvia.cloud.v1.PlanDefinition
-	52, // [52:52] is the sub-list for method output_type
-	52, // [52:52] is the sub-list for method input_type
-	52, // [52:52] is the sub-list for extension type_name
-	52, // [52:52] is the sub-list for extension extendee
-	0,  // [0:52] is the sub-list for field type_name
+	11, // 25: muxvia.cloud.v1.OrderProjection.requested_transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
+	18, // 26: muxvia.cloud.v1.OrderProjection.price:type_name -> muxvia.cloud.v1.PlanPriceDefinition
+	3,  // 27: muxvia.cloud.v1.OrderProjection.billing_cadence:type_name -> muxvia.cloud.v1.BillingCadence
+	49, // 28: muxvia.cloud.v1.OrderProjection.promotion:type_name -> muxvia.cloud.v1.PromotionSnapshot
+	4,  // 29: muxvia.cloud.v1.PromotionSnapshot.discount_kind:type_name -> muxvia.cloud.v1.PromotionDiscountKind
+	4,  // 30: muxvia.cloud.v1.PromotionProjection.discount_kind:type_name -> muxvia.cloud.v1.PromotionDiscountKind
+	5,  // 31: muxvia.cloud.v1.PromotionProjection.state:type_name -> muxvia.cloud.v1.PromotionState
+	6,  // 32: muxvia.cloud.v1.PromotionRedemptionProjection.state:type_name -> muxvia.cloud.v1.PromotionRedemptionState
+	7,  // 33: muxvia.cloud.v1.SubscriptionAdjustmentProjection.adjustment_kind:type_name -> muxvia.cloud.v1.SubscriptionAdjustmentKind
+	8,  // 34: muxvia.cloud.v1.PaymentAttemptProjection.status:type_name -> muxvia.cloud.v1.PaymentAttemptStatus
+	59, // 35: muxvia.cloud.v1.PaymentEventProjection.event:type_name -> muxvia.cloud.v1.NormalizedPaymentEvent
+	10, // 36: muxvia.cloud.v1.PaymentEventProjection.state:type_name -> muxvia.cloud.v1.PaymentEventState
+	11, // 37: muxvia.cloud.v1.CreateCheckoutRequest.requested_transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
+	3,  // 38: muxvia.cloud.v1.CreateCheckoutRequest.billing_cadence:type_name -> muxvia.cloud.v1.BillingCadence
+	48, // 39: muxvia.cloud.v1.CreateCheckoutResponse.order:type_name -> muxvia.cloud.v1.OrderProjection
+	53, // 40: muxvia.cloud.v1.CreatePaymentAttemptResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
+	9,  // 41: muxvia.cloud.v1.NormalizedPaymentEvent.event_type:type_name -> muxvia.cloud.v1.PaymentEventType
+	59, // 42: muxvia.cloud.v1.ApplyPaymentEventRequest.event:type_name -> muxvia.cloud.v1.NormalizedPaymentEvent
+	48, // 43: muxvia.cloud.v1.ApplyPaymentEventResponse.order:type_name -> muxvia.cloud.v1.OrderProjection
+	23, // 44: muxvia.cloud.v1.ApplyPaymentEventResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	10, // 45: muxvia.cloud.v1.ApplyPaymentEventResponse.event_state:type_name -> muxvia.cloud.v1.PaymentEventState
+	53, // 46: muxvia.cloud.v1.ApplyPaymentEventResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
+	9,  // 47: muxvia.cloud.v1.ConfirmTestPaymentRequest.event_type:type_name -> muxvia.cloud.v1.PaymentEventType
+	61, // 48: muxvia.cloud.v1.ConfirmTestPaymentResponse.result:type_name -> muxvia.cloud.v1.ApplyPaymentEventResponse
+	11, // 49: muxvia.cloud.v1.TransitionSubscriptionRequest.transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
+	23, // 50: muxvia.cloud.v1.TransitionSubscriptionResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	24, // 51: muxvia.cloud.v1.TransitionSubscriptionResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
+	36, // 52: muxvia.cloud.v1.GetAccountCommerceResponse.account:type_name -> muxvia.cloud.v1.AccountProjection
+	23, // 53: muxvia.cloud.v1.GetAccountCommerceResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	24, // 54: muxvia.cloud.v1.GetAccountCommerceResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
+	48, // 55: muxvia.cloud.v1.GetAccountCommerceResponse.orders:type_name -> muxvia.cloud.v1.OrderProjection
+	66, // 56: muxvia.cloud.v1.GetAccountCommerceResponse.audit:type_name -> muxvia.cloud.v1.CommerceAuditProjection
+	53, // 57: muxvia.cloud.v1.GetAccountCommerceResponse.payment_attempts:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
+	54, // 58: muxvia.cloud.v1.GetAccountCommerceResponse.payment_events:type_name -> muxvia.cloud.v1.PaymentEventProjection
+	16, // 59: muxvia.cloud.v1.GetAccountCommerceResponse.plan:type_name -> muxvia.cloud.v1.PlanDefinition
+	51, // 60: muxvia.cloud.v1.GetAccountCommerceResponse.promotion_redemptions:type_name -> muxvia.cloud.v1.PromotionRedemptionProjection
+	52, // 61: muxvia.cloud.v1.GetAccountCommerceResponse.subscription_adjustments:type_name -> muxvia.cloud.v1.SubscriptionAdjustmentProjection
+	62, // [62:62] is the sub-list for method output_type
+	62, // [62:62] is the sub-list for method input_type
+	62, // [62:62] is the sub-list for extension type_name
+	62, // [62:62] is the sub-list for extension extendee
+	0,  // [0:62] is the sub-list for field type_name
 }
 
 func init() { file_cloudpb_cloud_product_proto_init() }
@@ -4798,8 +5798,8 @@ func file_cloudpb_cloud_product_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloudpb_cloud_product_proto_rawDesc), len(file_cloudpb_cloud_product_proto_rawDesc)),
-			NumEnums:      9,
-			NumMessages:   52,
+			NumEnums:      14,
+			NumMessages:   56,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

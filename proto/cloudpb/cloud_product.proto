@@ -38,6 +38,41 @@ enum CatalogPriceMode {
   CATALOG_PRICE_MODE_CONTACT = 3;
 }
 
+// BillingCadence 明确 checkout 使用月价或年价，订单不能从金额反推周期。
+enum BillingCadence {
+  BILLING_CADENCE_UNSPECIFIED = 0;
+  BILLING_CADENCE_MONTHLY = 1;
+  BILLING_CADENCE_YEARLY = 2;
+}
+
+// PromotionDiscountKind 是当前阶段允许的有界优惠类型。
+enum PromotionDiscountKind {
+  PROMOTION_DISCOUNT_KIND_UNSPECIFIED = 0;
+  PROMOTION_DISCOUNT_KIND_FIXED = 1;
+  PROMOTION_DISCOUNT_KIND_PERCENT = 2;
+}
+
+enum PromotionState {
+  PROMOTION_STATE_UNSPECIFIED = 0;
+  PROMOTION_STATE_ACTIVE = 1;
+  PROMOTION_STATE_DISABLED = 2;
+}
+
+enum PromotionRedemptionState {
+  PROMOTION_REDEMPTION_STATE_UNSPECIFIED = 0;
+  PROMOTION_REDEMPTION_STATE_RESERVED = 1;
+  PROMOTION_REDEMPTION_STATE_REDEEMED = 2;
+  PROMOTION_REDEMPTION_STATE_RELEASED = 3;
+  PROMOTION_REDEMPTION_STATE_EXPIRED = 4;
+}
+
+enum SubscriptionAdjustmentKind {
+  SUBSCRIPTION_ADJUSTMENT_KIND_UNSPECIFIED = 0;
+  SUBSCRIPTION_ADJUSTMENT_KIND_GRANT = 1;
+  SUBSCRIPTION_ADJUSTMENT_KIND_EXTEND = 2;
+  SUBSCRIPTION_ADJUSTMENT_KIND_CHANGE_PLAN = 3;
+}
+
 // PaymentAttemptStatus 是一次 provider 支付尝试的持久状态。
 enum PaymentAttemptStatus {
   PAYMENT_ATTEMPT_STATUS_UNSPECIFIED = 0;
@@ -398,6 +433,74 @@ message OrderProjection {
   string source_plan_id = 12;
   uint64 source_plan_version = 13;
   PlanPriceDefinition price = 14;
+  BillingCadence billing_cadence = 15;
+  int64 subtotal_minor = 16;
+  int64 discount_minor = 17;
+  int64 total_minor = 18;
+  PromotionSnapshot promotion = 19;
+}
+
+// PromotionSnapshot 固化 checkout 时已核对的优惠经济字段。
+message PromotionSnapshot {
+  string promotion_id = 1;
+  string code = 2;
+  PromotionDiscountKind discount_kind = 3;
+  int64 fixed_minor = 4;
+  uint32 percent_basis_points = 5;
+  string currency = 6;
+  string creem_discount_code = 7;
+}
+
+// PromotionProjection 是 operator 发布后不可原地修改经济字段的优惠码真值。
+message PromotionProjection {
+  string promotion_id = 1;
+  string code = 2;
+  PromotionDiscountKind discount_kind = 3;
+  int64 fixed_minor = 4;
+  uint32 percent_basis_points = 5;
+  string currency = 6;
+  repeated string plan_ids = 7;
+  int64 effective_from_unix_millis = 8;
+  int64 effective_until_unix_millis = 9;
+  uint32 max_redemptions = 10;
+  uint32 max_redemptions_per_account = 11;
+  string creem_discount_code = 12;
+  PromotionState state = 13;
+  uint64 revision = 14;
+  string actor_id = 15;
+  string reason = 16;
+  int64 created_at_unix_millis = 17;
+  int64 updated_at_unix_millis = 18;
+}
+
+message PromotionRedemptionProjection {
+  string redemption_id = 1;
+  string promotion_id = 2;
+  string account_id = 3;
+  string order_id = 4;
+  PromotionRedemptionState state = 5;
+  int64 discount_minor = 6;
+  int64 reserved_at_unix_millis = 7;
+  int64 expires_at_unix_millis = 8;
+  int64 updated_at_unix_millis = 9;
+  uint64 revision = 10;
+}
+
+// SubscriptionAdjustmentProjection 区分人工赠送/补偿与 provider 已支付订单。
+message SubscriptionAdjustmentProjection {
+  string adjustment_id = 1;
+  string account_id = 2;
+  SubscriptionAdjustmentKind adjustment_kind = 3;
+  string target_plan_id = 4;
+  uint64 target_plan_version = 5;
+  uint32 duration_days = 6;
+  uint64 expected_subscription_revision = 7;
+  uint64 resulting_subscription_revision = 8;
+  string actor_id = 9;
+  string reason = 10;
+  string request_id = 11;
+  int64 created_at_unix_millis = 12;
+  uint64 revision = 13;
 }
 
 // PaymentAttemptProjection 是 checkout order 与 provider event 之间的持久尝试。
@@ -424,6 +527,8 @@ message PaymentEventProjection {
 message CreateCheckoutRequest {
   string plan_id = 1;
   SubscriptionTransitionKind requested_transition = 2;
+  BillingCadence billing_cadence = 3;
+  string promotion_code = 4;
 }
 
 message CreateCheckoutResponse {
@@ -451,6 +556,9 @@ message NormalizedPaymentEvent {
   string provider_reference = 8;
   int64 occurred_at_unix_millis = 9;
   string payment_attempt_id = 10;
+  string actor_id = 11;
+  string reason = 12;
+  string request_id = 13;
 }
 
 // ApplyPaymentEventRequest 仅供 provider adapter 使用；签名验证发生在调用本 API 前。
@@ -514,6 +622,8 @@ message GetAccountCommerceResponse {
   repeated PaymentEventProjection payment_events = 7;
   // plan 是当前 subscription.plan_id/version 对应的 catalog 快照，供官方界面展示正式名称。
   PlanDefinition plan = 8;
+  repeated PromotionRedemptionProjection promotion_redemptions = 9;
+  repeated SubscriptionAdjustmentProjection subscription_adjustments = 10;
 }
 
 // CloudProductError 是账号与交易 HTTP/Companion adapter 返回的稳定失败投影。

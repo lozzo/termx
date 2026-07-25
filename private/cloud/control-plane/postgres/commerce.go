@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/promotion"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
 )
@@ -330,6 +331,49 @@ func (store *Store) RejectPaymentEvent(ctx context.Context, eventID string, audi
 	return tx.Commit()
 }
 
+func settlePromotionRedemption(ctx context.Context, tx *sql.Tx, event *cloudpb.NormalizedPaymentEvent, order *cloudpb.OrderProjection) error {
+	if order.GetPromotion() == nil {
+		return nil
+	}
+	var body []byte
+	var state cloudpb.PromotionRedemptionState
+	if err := queryRowContext(ctx, tx, `SELECT state,projection FROM promotion_redemptions WHERE order_id=? FOR UPDATE`, order.GetOrderId()).Scan(&state, &body); err != nil {
+		return promotion.ErrConflict
+	}
+	value := &cloudpb.PromotionRedemptionProjection{}
+	if err := proto.Unmarshal(body, value); err != nil {
+		return err
+	}
+	var next cloudpb.PromotionRedemptionState
+	switch event.GetEventType() {
+	case cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED:
+		if state != cloudpb.PromotionRedemptionState_PROMOTION_REDEMPTION_STATE_RESERVED || value.GetExpiresAtUnixMillis() <= event.GetOccurredAtUnixMillis() {
+			return promotion.ErrConflict
+		}
+		next = cloudpb.PromotionRedemptionState_PROMOTION_REDEMPTION_STATE_REDEEMED
+	case cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_FAILED:
+		if state != cloudpb.PromotionRedemptionState_PROMOTION_REDEMPTION_STATE_RESERVED {
+			return promotion.ErrConflict
+		}
+		next = cloudpb.PromotionRedemptionState_PROMOTION_REDEMPTION_STATE_RELEASED
+	default:
+		return nil
+	}
+	value.State, value.UpdatedAtUnixMillis, value.Revision = next, event.GetOccurredAtUnixMillis(), value.GetRevision()+1
+	nextBody, err := marshal(value)
+	if err != nil {
+		return err
+	}
+	result, err := execContext(ctx, tx, `UPDATE promotion_redemptions SET state=?,updated_at=?,revision=?,projection=? WHERE redemption_id=? AND state=? AND revision=?`, value.GetState(), value.GetUpdatedAtUnixMillis(), value.GetRevision(), nextBody, value.GetRedemptionId(), state, value.GetRevision()-1)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return promotion.ErrConflict
+	}
+	return nil
+}
+
 // CommitPaymentEvent 原子提交订单、Subscription、Entitlement、journal 结果和审计。
 func (store *Store) CommitPaymentEvent(ctx context.Context, eventID string, result *cloudpb.ApplyPaymentEventResponse, entitlement *cloudpb.EntitlementProjection, audit *cloudpb.CommerceAuditProjection) error {
 	if result == nil || result.GetOrder() == nil || result.GetSubscription() == nil || result.GetPaymentAttempt() == nil || entitlement == nil || result.GetEventState() != cloudpb.PaymentEventState_PAYMENT_EVENT_STATE_APPLIED {
@@ -376,6 +420,9 @@ func (store *Store) CommitPaymentEvent(ctx context.Context, eventID string, resu
 	}
 	if changed, _ := updated.RowsAffected(); changed != 1 {
 		return commerce.ErrConflict
+	}
+	if err := settlePromotionRedemption(ctx, tx, stored.Event, order); err != nil {
+		return err
 	}
 	attempt := result.GetPaymentAttempt()
 	var currentAttemptBody []byte
@@ -498,6 +545,53 @@ func (store *Store) Orders(ctx context.Context, accountID string) ([]*cloudpb.Or
 	return values, rows.Err()
 }
 
+// AllOrders 返回 operator 订单视图所需的全局订单投影；limit 是有界查询上限。
+func (store *Store) AllOrders(ctx context.Context, limit int) ([]*cloudpb.OrderProjection, error) {
+	return scanOrderRows(queryContext(ctx, store.db, `SELECT projection FROM commerce_orders ORDER BY order_id DESC LIMIT ?`, limit))
+}
+
+// Subscriptions 返回 operator 订阅视图所需的全局订阅投影；数据库 projection 仍是唯一真值。
+func (store *Store) Subscriptions(ctx context.Context, limit int) ([]*cloudpb.SubscriptionProjection, error) {
+	rows, err := queryContext(ctx, store.db, `SELECT projection FROM commerce_subscriptions ORDER BY account_id LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := make([]*cloudpb.SubscriptionProjection, 0)
+	for rows.Next() {
+		var body []byte
+		if err := rows.Scan(&body); err != nil {
+			return nil, err
+		}
+		value := &cloudpb.SubscriptionProjection{}
+		if err := proto.Unmarshal(body, value); err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
+func scanOrderRows(rows *sql.Rows, err error) ([]*cloudpb.OrderProjection, error) {
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := make([]*cloudpb.OrderProjection, 0)
+	for rows.Next() {
+		var body []byte
+		if err := rows.Scan(&body); err != nil {
+			return nil, err
+		}
+		value := &cloudpb.OrderProjection{}
+		if err := proto.Unmarshal(body, value); err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
 // PaymentAttempts 返回账号 provider 尝试，按 ID 稳定排序。
 func (store *Store) PaymentAttempts(ctx context.Context, accountID string) ([]*cloudpb.PaymentAttemptProjection, error) {
 	rows, err := queryContext(ctx, store.db, `SELECT projection FROM commerce_payment_attempts WHERE account_id=? ORDER BY payment_attempt_id`, accountID)
@@ -541,6 +635,62 @@ func (store *Store) PaymentEvents(ctx context.Context, accountID string) ([]*clo
 		result = append(result, &cloudpb.PaymentEventProjection{Event: event, State: state})
 	}
 	return result, rows.Err()
+}
+
+// SubscriptionAdjustments 返回账号的人工订阅调整时间线。
+func (store *Store) SubscriptionAdjustments(ctx context.Context, accountID string, limit int) ([]*cloudpb.SubscriptionAdjustmentProjection, error) {
+	rows, err := queryContext(ctx, store.db, `SELECT projection FROM subscription_adjustments WHERE account_id=? ORDER BY resulting_subscription_revision DESC LIMIT ?`, accountID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := make([]*cloudpb.SubscriptionAdjustmentProjection, 0)
+	for rows.Next() {
+		var body []byte
+		if err := rows.Scan(&body); err != nil {
+			return nil, err
+		}
+		value := &cloudpb.SubscriptionAdjustmentProjection{}
+		if err := proto.Unmarshal(body, value); err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
+// CommitSubscriptionAdjustment 原子写 adjustment、CAS Subscription、重算 Entitlement 并审计。
+func (store *Store) CommitSubscriptionAdjustment(ctx context.Context, adjustment *cloudpb.SubscriptionAdjustmentProjection, subscription *cloudpb.SubscriptionProjection, entitlement *cloudpb.EntitlementProjection, audit *cloudpb.OperatorMutationAuditProjection) error {
+	if adjustment == nil || subscription == nil || entitlement == nil || audit == nil || adjustment.GetResultingSubscriptionRevision() != subscription.GetRevision() || subscription.GetRevision() != adjustment.GetExpectedSubscriptionRevision()+1 {
+		return commerce.ErrConflict
+	}
+	adjustmentBody, err := marshal(adjustment)
+	if err != nil {
+		return err
+	}
+	subscriptionBody, err := marshal(subscription)
+	if err != nil {
+		return err
+	}
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := execContext(ctx, tx, `INSERT INTO subscription_adjustments(adjustment_id,account_id,request_id,resulting_subscription_revision,projection) VALUES(?,?,?,?,?)`, adjustment.GetAdjustmentId(), adjustment.GetAccountId(), adjustment.GetRequestId(), adjustment.GetResultingSubscriptionRevision(), adjustmentBody); err != nil {
+		return commerce.ErrConflict
+	}
+	updated, err := execContext(ctx, tx, `UPDATE commerce_subscriptions SET revision=?,projection=? WHERE account_id=? AND revision=?`, subscription.GetRevision(), subscriptionBody, subscription.GetAccountId(), adjustment.GetExpectedSubscriptionRevision())
+	if err != nil {
+		return err
+	}
+	if changed, _ := updated.RowsAffected(); changed != 1 {
+		return commerce.ErrConflict
+	}
+	if err := updateEntitlementAndOperatorAudit(ctx, tx, entitlement, audit); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // Audit 返回账号持久交易审计，按发生时间和 ID 稳定排序。

@@ -65,6 +65,7 @@ import {
   ConfirmTestPaymentResponseSchema,
   CreateCheckoutRequestSchema,
   CreateCheckoutResponseSchema,
+  BillingCadence,
   GetAccountCommerceResponseSchema,
   GetAccountRelayQuotaRequestSchema,
   GetAccountRelayQuotaResponseSchema,
@@ -115,6 +116,7 @@ export default function AccountPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [password, setPassword] = useState("");
+  const [promotionCode, setPromotionCode] = useState("");
   const [protectedAction, setProtectedAction] = useState<ProtectedAction>();
   const [addDeviceOpen, setAddDeviceOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -424,6 +426,10 @@ export default function AccountPage() {
                 label={t("account.billing.statusLabel")}
                 value={subscriptionStatusLabel(commerce.subscription?.status ?? 0, t)}
               />
+              <label className="grid gap-2 border-t border-line p-4 text-xs font-medium">
+                {t("account.billing.promotionCode")}
+                <Input data-testid="checkout-promotion-code" value={promotionCode} onChange={(event) => setPromotionCode(event.target.value)} placeholder={t("account.billing.promotionCodePlaceholder")} />
+              </label>
               <div className="flex flex-wrap gap-2 p-4">
                 <Button
                   disabled={
@@ -439,6 +445,8 @@ export default function AccountPage() {
                           planId: "pro",
                           requestedTransition:
                             SubscriptionTransitionKind.UPGRADE,
+                          billingCadence: BillingCadence.MONTHLY,
+                          promotionCode: promotionCode.trim(),
                         }),
                         CreateCheckoutResponseSchema,
                       );

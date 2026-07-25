@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/entitlement"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/promotion"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/protobuf/proto"
@@ -80,6 +81,8 @@ type Store interface {
 	AccountByEmail(context.Context, string) (AccountRecord, error)
 	Account(context.Context, string) (AccountRecord, error)
 	Accounts(context.Context, int) ([]AccountRecord, error)
+	AllOrders(context.Context, int) ([]*cloudpb.OrderProjection, error)
+	Subscriptions(context.Context, int) ([]*cloudpb.SubscriptionProjection, error)
 	PutSession(context.Context, SessionRecord, *cloudpb.CommerceAuditProjection) error
 	ReplaceDeviceSession(context.Context, SessionRecord, *cloudpb.CommerceAuditProjection) error
 	SessionByAccessHash(context.Context, [sha256.Size]byte) (SessionRecord, error)
@@ -100,7 +103,15 @@ type Store interface {
 	Orders(context.Context, string) ([]*cloudpb.OrderProjection, error)
 	PaymentAttempts(context.Context, string) ([]*cloudpb.PaymentAttemptProjection, error)
 	PaymentEvents(context.Context, string) ([]*cloudpb.PaymentEventProjection, error)
+	PromotionRedemptions(context.Context, string, string, int) ([]*cloudpb.PromotionRedemptionProjection, error)
+	SubscriptionAdjustments(context.Context, string, int) ([]*cloudpb.SubscriptionAdjustmentProjection, error)
+	CommitSubscriptionAdjustment(context.Context, *cloudpb.SubscriptionAdjustmentProjection, *cloudpb.SubscriptionProjection, *cloudpb.EntitlementProjection, *cloudpb.OperatorMutationAuditProjection) error
 	Audit(context.Context, string) ([]*cloudpb.CommerceAuditProjection, error)
+}
+
+// PromotionCheckout 原子保存带优惠 reservation 的订单。
+type PromotionCheckout interface {
+	ReserveCheckout(context.Context, *cloudpb.OrderProjection, *cloudpb.CommerceAuditProjection, string) (*cloudpb.PromotionRedemptionProjection, error)
 }
 
 // CatalogSource 提供当前发布目录与历史套餐快照。
@@ -112,10 +123,11 @@ type CatalogSource interface {
 
 // Config 固定 commerce Store、数据库目录来源、时间与随机来源。
 type Config struct {
-	Store   Store
-	Catalog CatalogSource
-	Now     func() time.Time
-	Random  io.Reader
+	Store      Store
+	Catalog    CatalogSource
+	Promotions PromotionCheckout
+	Now        func() time.Time
+	Random     io.Reader
 	// NotifyPolicyChange 在账号 auth revision 或 Entitlement 持久提交后通知 Controller。
 	NotifyPolicyChange func(string)
 }
@@ -124,6 +136,7 @@ type Config struct {
 type Service struct {
 	store              Store
 	catalog            CatalogSource
+	promotions         PromotionCheckout
 	now                func() time.Time
 	random             io.Reader
 	dummyPasswordHash  []byte
@@ -145,7 +158,7 @@ func New(config Config) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{store: config.Store, catalog: config.Catalog, now: config.Now, random: config.Random, dummyPasswordHash: dummyPasswordHash, notifyPolicyChange: config.NotifyPolicyChange}, nil
+	return &Service{store: config.Store, catalog: config.Catalog, promotions: config.Promotions, now: config.Now, random: config.Random, dummyPasswordHash: dummyPasswordHash, notifyPolicyChange: config.NotifyPolicyChange}, nil
 }
 
 // Register 创建账号、首个 session、included Subscription 与 Entitlement。
@@ -401,7 +414,19 @@ func (service *Service) CreateCheckout(ctx context.Context, accountID, actorID s
 	}
 	plan, ok := planByID(catalog, request.GetPlanId(), 0)
 	transition := request.GetRequestedTransition()
-	if accountID == "" || actorID == "" || !ok || plan.GetIncluded() || plan.GetPrice().GetMode() == cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_UNSPECIFIED || transition < cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_ACTIVATE || transition > cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_DOWNGRADE {
+	if accountID == "" || actorID == "" || !ok || plan.GetIncluded() || plan.GetPrice().GetMode() != cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_CONFIGURED || transition < cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_ACTIVATE || transition > cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_DOWNGRADE {
+		return nil, ErrConflict
+	}
+	var subtotal int64
+	switch request.GetBillingCadence() {
+	case cloudpb.BillingCadence_BILLING_CADENCE_MONTHLY:
+		subtotal = plan.GetPrice().GetMonthlyMinor()
+	case cloudpb.BillingCadence_BILLING_CADENCE_YEARLY:
+		subtotal = plan.GetPrice().GetYearlyMinor()
+	default:
+		return nil, ErrConflict
+	}
+	if subtotal <= 0 {
 		return nil, ErrConflict
 	}
 	current, currentErr := service.store.Subscription(ctx, accountID)
@@ -421,13 +446,21 @@ func (service *Service) CreateCheckout(ctx context.Context, accountID, actorID s
 	if err != nil {
 		return nil, err
 	}
-	order := &cloudpb.OrderProjection{OrderId: orderID, AccountId: accountID, PlanId: plan.GetPlanId(), PlanVersion: plan.GetPlanVersion(), Status: cloudpb.OrderStatus_ORDER_STATUS_PENDING, CreatedAtUnixMillis: now.UnixMilli(), Revision: 1, RequestedTransition: transition, Price: clonePrice(plan.GetPrice())}
+	order := &cloudpb.OrderProjection{OrderId: orderID, AccountId: accountID, PlanId: plan.GetPlanId(), PlanVersion: plan.GetPlanVersion(), Status: cloudpb.OrderStatus_ORDER_STATUS_PENDING, CreatedAtUnixMillis: now.UnixMilli(), Revision: 1, RequestedTransition: transition, Price: clonePrice(plan.GetPrice()), BillingCadence: request.GetBillingCadence(), SubtotalMinor: subtotal, TotalMinor: subtotal}
 	if currentErr == nil {
 		order.SourceSubscriptionRevision = current.GetRevision()
 		order.SourcePlanId = current.GetPlanId()
 		order.SourcePlanVersion = current.GetPlanVersion()
 	}
-	if err := service.store.CreateOrder(ctx, order, service.audit(accountID, actorID, "order.created", orderID, now)); err != nil {
+	audit := service.audit(accountID, actorID, "order.created", orderID, now)
+	if strings.TrimSpace(request.GetPromotionCode()) != "" {
+		if service.promotions == nil {
+			return nil, ErrConflict
+		}
+		if _, err := service.promotions.ReserveCheckout(ctx, order, audit, request.GetPromotionCode()); err != nil {
+			return nil, err
+		}
+	} else if err := service.store.CreateOrder(ctx, order, audit); err != nil {
 		return nil, err
 	}
 	return &cloudpb.CreateCheckoutResponse{Order: proto.Clone(order).(*cloudpb.OrderProjection)}, nil
@@ -615,12 +648,221 @@ func (service *Service) ApplyPaymentEvent(ctx context.Context, request *cloudpb.
 		return nil, err
 	}
 	result := &cloudpb.ApplyPaymentEventResponse{Order: updatedOrder, Subscription: subscription, EventState: cloudpb.PaymentEventState_PAYMENT_EVENT_STATE_APPLIED, PaymentAttempt: updatedAttempt}
-	audit := service.audit(order.GetAccountId(), event.GetProvider(), paymentAuditAction(event.GetEventType()), event.GetProviderEventId(), now)
+	actorID := event.GetProvider()
+	if event.GetActorId() != "" {
+		actorID = event.GetActorId()
+	}
+	audit := service.audit(order.GetAccountId(), actorID, paymentAuditAction(event.GetEventType()), event.GetProviderEventId(), now)
 	if err := service.store.CommitPaymentEvent(ctx, event.GetProviderEventId(), result, entitlementProjection, audit); err != nil {
+		if errors.Is(err, promotion.ErrConflict) {
+			service.rejectPaymentEvent(ctx, event, "payment.rejected_promotion")
+			return nil, ErrConflict
+		}
 		return nil, err
 	}
 	service.notifyPolicy(order.GetAccountId())
 	return proto.Clone(result).(*cloudpb.ApplyPaymentEventResponse), nil
+}
+
+// AdjustSubscription 以显式 operator adjustment 赠送、延期或变更套餐，不伪造 provider 订单。
+func (service *Service) AdjustSubscription(ctx context.Context, request *cloudpb.CreateSubscriptionAdjustmentRequest, actorID string) (*cloudpb.CreateSubscriptionAdjustmentResponse, error) {
+	if request == nil || request.GetAccountId() == "" || actorID == "" || strings.TrimSpace(request.GetReason()) == "" || request.GetRequestId() == "" || request.GetDurationDays() == 0 || request.GetExpectedSubscriptionRevision() == 0 {
+		return nil, ErrConflict
+	}
+	current, err := service.store.Subscription(ctx, request.GetAccountId())
+	if err != nil {
+		return nil, err
+	}
+	existingAdjustments, err := service.store.SubscriptionAdjustments(ctx, request.GetAccountId(), 200)
+	if err != nil {
+		return nil, err
+	}
+	for _, existing := range existingAdjustments {
+		if existing.GetRequestId() != request.GetRequestId() {
+			continue
+		}
+		if existing.GetActorId() != actorID || existing.GetAdjustmentKind() != request.GetAdjustmentKind() || existing.GetExpectedSubscriptionRevision() != request.GetExpectedSubscriptionRevision() || existing.GetTargetPlanId() != request.GetTargetPlanId() || existing.GetTargetPlanVersion() != request.GetTargetPlanVersion() || existing.GetDurationDays() != request.GetDurationDays() || existing.GetReason() != strings.TrimSpace(request.GetReason()) {
+			return nil, ErrConflict
+		}
+		entitlementProjection, entitlementErr := service.store.Entitlement(ctx, request.GetAccountId())
+		if entitlementErr != nil {
+			return nil, entitlementErr
+		}
+		return &cloudpb.CreateSubscriptionAdjustmentResponse{Adjustment: existing, Subscription: current, Entitlement: entitlementProjection}, nil
+	}
+	if current.GetRevision() != request.GetExpectedSubscriptionRevision() {
+		return nil, ErrConflict
+	}
+	now := service.now().UTC()
+	next := proto.Clone(current).(*cloudpb.SubscriptionProjection)
+	next.Revision++
+	next.UpdatedAtUnixMillis = now.UnixMilli()
+	next.Status = cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE
+	next.CancelAtPeriodEnd = false
+	var plan *cloudpb.PlanDefinition
+	switch request.GetAdjustmentKind() {
+	case cloudpb.SubscriptionAdjustmentKind_SUBSCRIPTION_ADJUSTMENT_KIND_GRANT, cloudpb.SubscriptionAdjustmentKind_SUBSCRIPTION_ADJUSTMENT_KIND_CHANGE_PLAN:
+		if request.GetTargetPlanId() == "" || request.GetTargetPlanVersion() == 0 {
+			return nil, ErrConflict
+		}
+		plan, err = service.catalog.Plan(ctx, request.GetTargetPlanId(), request.GetTargetPlanVersion())
+		if err != nil {
+			return nil, ErrConflict
+		}
+		next.PlanId, next.PlanVersion = plan.GetPlanId(), plan.GetPlanVersion()
+		next.CurrentPeriodStartUnixMillis = now.UnixMilli()
+		next.CurrentPeriodEndUnixMillis = now.Add(time.Duration(request.GetDurationDays()) * 24 * time.Hour).UnixMilli()
+		next.SourceOrderId, next.ProviderReference = "", ""
+	case cloudpb.SubscriptionAdjustmentKind_SUBSCRIPTION_ADJUSTMENT_KIND_EXTEND:
+		if request.GetTargetPlanId() != "" || request.GetTargetPlanVersion() != 0 {
+			return nil, ErrConflict
+		}
+		plan, err = service.catalog.Plan(ctx, next.GetPlanId(), next.GetPlanVersion())
+		if err != nil {
+			return nil, ErrConflict
+		}
+		periodEnd := now
+		if next.GetCurrentPeriodEndUnixMillis() > now.UnixMilli() {
+			periodEnd = time.UnixMilli(next.GetCurrentPeriodEndUnixMillis()).UTC()
+		}
+		next.CurrentPeriodEndUnixMillis = periodEnd.Add(time.Duration(request.GetDurationDays()) * 24 * time.Hour).UnixMilli()
+	default:
+		return nil, ErrConflict
+	}
+	entitlementProjection, err := normalizeEntitlement(next, plan, now)
+	if err != nil {
+		return nil, err
+	}
+	adjustmentID, err := service.randomID("adjustment")
+	if err != nil {
+		return nil, err
+	}
+	adjustment := &cloudpb.SubscriptionAdjustmentProjection{AdjustmentId: adjustmentID, AccountId: request.GetAccountId(), AdjustmentKind: request.GetAdjustmentKind(), TargetPlanId: next.GetPlanId(), TargetPlanVersion: next.GetPlanVersion(), DurationDays: request.GetDurationDays(), ExpectedSubscriptionRevision: current.GetRevision(), ResultingSubscriptionRevision: next.GetRevision(), ActorId: actorID, Reason: strings.TrimSpace(request.GetReason()), RequestId: request.GetRequestId(), CreatedAtUnixMillis: now.UnixMilli(), Revision: 1}
+	audit := &cloudpb.OperatorMutationAuditProjection{AuditId: "audit_" + request.GetRequestId(), ActorId: actorID, Action: "subscription.adjust", ResourceKind: "subscription", ResourceId: current.GetSubscriptionId(), AccountId: request.GetAccountId(), Reason: adjustment.GetReason(), RequestId: request.GetRequestId(), BeforeRevision: current.GetRevision(), AfterRevision: next.GetRevision(), OccurredAtUnixMillis: now.UnixMilli()}
+	if err := service.store.CommitSubscriptionAdjustment(ctx, adjustment, next, entitlementProjection, audit); err != nil {
+		return nil, err
+	}
+	service.notifyPolicy(request.GetAccountId())
+	return &cloudpb.CreateSubscriptionAdjustmentResponse{Adjustment: adjustment, Subscription: next, Entitlement: entitlementProjection}, nil
+}
+
+// ApplyOperatorPaymentEvent 把人工收款、退款或撤销归一化为同一 payment journal 输入。
+func (service *Service) ApplyOperatorPaymentEvent(ctx context.Context, request *cloudpb.ApplyOperatorPaymentEventRequest, actorID string) (*cloudpb.ApplyOperatorPaymentEventResponse, error) {
+	if request == nil || request.GetOrderId() == "" || actorID == "" || strings.TrimSpace(request.GetReason()) == "" || request.GetRequestId() == "" {
+		return nil, ErrConflict
+	}
+	order, err := service.store.Order(ctx, request.GetOrderId())
+	if err != nil {
+		return nil, err
+	}
+	eventID := "operator:" + request.GetRequestId()
+	events, err := service.store.PaymentEvents(ctx, order.GetAccountId())
+	if err != nil {
+		return nil, err
+	}
+	for _, existing := range events {
+		if existing.GetEvent().GetProviderEventId() == eventID {
+			if existing.GetEvent().GetOrderId() != request.GetOrderId() || existing.GetEvent().GetEventType() != request.GetEventType() || existing.GetEvent().GetActorId() != actorID || existing.GetEvent().GetReason() != strings.TrimSpace(request.GetReason()) || existing.GetEvent().GetRequestId() != request.GetRequestId() {
+				return nil, ErrConflict
+			}
+			result, applyErr := service.ApplyPaymentEvent(ctx, &cloudpb.ApplyPaymentEventRequest{Event: existing.GetEvent()})
+			return &cloudpb.ApplyOperatorPaymentEventResponse{Result: result}, applyErr
+		}
+	}
+	if request.GetEventType() != cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED && request.GetEventType() != cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_REFUNDED && request.GetEventType() != cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_REVOKED {
+		return nil, ErrConflict
+	}
+	var attempt *cloudpb.PaymentAttemptProjection
+	if request.GetEventType() == cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED {
+		created, createErr := service.CreatePaymentAttempt(ctx, order.GetAccountId(), actorID, &cloudpb.CreatePaymentAttemptRequest{OrderId: order.GetOrderId(), Provider: "operator-manual"})
+		if createErr != nil {
+			return nil, createErr
+		}
+		attempt = created.GetPaymentAttempt()
+	} else {
+		attempts, attemptsErr := service.store.PaymentAttempts(ctx, order.GetAccountId())
+		if attemptsErr != nil {
+			return nil, attemptsErr
+		}
+		for _, candidate := range attempts {
+			if candidate.GetOrderId() == order.GetOrderId() && candidate.GetStatus() == cloudpb.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_SUCCEEDED {
+				if attempt != nil {
+					return nil, ErrConflict
+				}
+				attempt = candidate
+			}
+		}
+		if attempt == nil {
+			return nil, ErrConflict
+		}
+	}
+	now := service.now().UTC()
+	event := &cloudpb.NormalizedPaymentEvent{ProviderEventId: eventID, Provider: attempt.GetProvider(), EventType: request.GetEventType(), OrderId: order.GetOrderId(), AccountId: order.GetAccountId(), PlanId: order.GetPlanId(), PlanVersion: order.GetPlanVersion(), ProviderReference: "operator:" + request.GetRequestId(), OccurredAtUnixMillis: now.UnixMilli(), PaymentAttemptId: attempt.GetPaymentAttemptId(), ActorId: actorID, Reason: strings.TrimSpace(request.GetReason()), RequestId: request.GetRequestId()}
+	result, err := service.ApplyPaymentEvent(ctx, &cloudpb.ApplyPaymentEventRequest{Event: event})
+	if err != nil {
+		return nil, err
+	}
+	return &cloudpb.ApplyOperatorPaymentEventResponse{Result: result}, nil
+}
+
+// OperatorOrders 返回带 attempt/event 时间线的有界订单列表。
+func (service *Service) OperatorOrders(ctx context.Context, request *cloudpb.ListOperatorOrdersRequest) (*cloudpb.ListOperatorOrdersResponse, error) {
+	limit := pageSize(request.GetPage(), 100)
+	orders, err := service.store.AllOrders(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	response := &cloudpb.ListOperatorOrdersResponse{}
+	for _, order := range orders {
+		if request.GetAccountId() != "" && order.GetAccountId() != request.GetAccountId() || request.GetStatus() != cloudpb.OrderStatus_ORDER_STATUS_UNSPECIFIED && order.GetStatus() != request.GetStatus() {
+			continue
+		}
+		attempts, attemptsErr := service.store.PaymentAttempts(ctx, order.GetAccountId())
+		if attemptsErr != nil {
+			return nil, attemptsErr
+		}
+		events, eventsErr := service.store.PaymentEvents(ctx, order.GetAccountId())
+		if eventsErr != nil {
+			return nil, eventsErr
+		}
+		item := &cloudpb.OperatorOrderProjection{Order: order}
+		for _, attempt := range attempts {
+			if attempt.GetOrderId() == order.GetOrderId() && (request.GetProvider() == "" || attempt.GetProvider() == request.GetProvider()) {
+				item.PaymentAttempts = append(item.PaymentAttempts, attempt)
+			}
+		}
+		for _, event := range events {
+			if event.GetEvent().GetOrderId() == order.GetOrderId() {
+				item.PaymentEvents = append(item.PaymentEvents, event)
+			}
+		}
+		if request.GetProvider() == "" || len(item.GetPaymentAttempts()) > 0 {
+			response.Orders = append(response.Orders, item)
+		}
+	}
+	return response, nil
+}
+
+// OperatorSubscriptions 返回有界订阅列表，并按稳定状态筛选。
+func (service *Service) OperatorSubscriptions(ctx context.Context, request *cloudpb.ListOperatorSubscriptionsRequest) (*cloudpb.ListOperatorSubscriptionsResponse, error) {
+	values, err := service.store.Subscriptions(ctx, pageSize(request.GetPage(), 100))
+	if err != nil {
+		return nil, err
+	}
+	response := &cloudpb.ListOperatorSubscriptionsResponse{}
+	for _, value := range values {
+		if request.GetStatus() == cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_UNSPECIFIED || value.GetStatus() == request.GetStatus() {
+			response.Subscriptions = append(response.Subscriptions, value)
+		}
+	}
+	return response, nil
+}
+
+func pageSize(page *cloudpb.PageRequest, fallback int) int {
+	if page != nil && page.GetPageSize() > 0 && page.GetPageSize() <= 200 {
+		return int(page.GetPageSize())
+	}
+	return fallback
 }
 
 func (service *Service) rejectPaymentEvent(ctx context.Context, event *cloudpb.NormalizedPaymentEvent, action string) {
@@ -718,7 +960,15 @@ func (service *Service) AccountCommerce(ctx context.Context, accountID string) (
 	if err != nil {
 		return nil, err
 	}
-	return &cloudpb.GetAccountCommerceResponse{Account: proto.Clone(account.Projection).(*cloudpb.AccountProjection), Subscription: subscription, Entitlement: entitlementProjection, Orders: orders, Audit: audit, PaymentAttempts: attempts, PaymentEvents: events, Plan: proto.Clone(plan).(*cloudpb.PlanDefinition)}, nil
+	redemptions, err := service.store.PromotionRedemptions(ctx, "", accountID, 200)
+	if err != nil {
+		return nil, err
+	}
+	adjustments, err := service.store.SubscriptionAdjustments(ctx, accountID, 200)
+	if err != nil {
+		return nil, err
+	}
+	return &cloudpb.GetAccountCommerceResponse{Account: proto.Clone(account.Projection).(*cloudpb.AccountProjection), Subscription: subscription, Entitlement: entitlementProjection, Orders: orders, Audit: audit, PaymentAttempts: attempts, PaymentEvents: events, Plan: proto.Clone(plan).(*cloudpb.PlanDefinition), PromotionRedemptions: redemptions, SubscriptionAdjustments: adjustments}, nil
 }
 
 func (service *Service) newSession(account *cloudpb.AccountProjection, revision uint64, now time.Time) (*cloudpb.AccountSessionCredential, SessionRecord, error) {
@@ -774,7 +1024,11 @@ func paidSubscription(current *cloudpb.SubscriptionProjection, order *cloudpb.Or
 			periodStart = time.UnixMilli(current.GetCurrentPeriodEndUnixMillis()).UTC()
 		}
 	}
-	return &cloudpb.SubscriptionProjection{SubscriptionId: "subscription-" + order.GetAccountId(), AccountId: order.GetAccountId(), SourceOrderId: order.GetOrderId(), PlanId: order.GetPlanId(), PlanVersion: order.GetPlanVersion(), Status: cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE, CurrentPeriodStartUnixMillis: periodStart.UnixMilli(), CurrentPeriodEndUnixMillis: periodStart.Add(time.Duration(plan.GetBillingPeriodDays()) * 24 * time.Hour).UnixMilli(), UpdatedAtUnixMillis: now.UnixMilli(), ProviderReference: order.GetProviderReference(), Revision: revision}
+	periodDays := plan.GetBillingPeriodDays()
+	if order.GetBillingCadence() == cloudpb.BillingCadence_BILLING_CADENCE_YEARLY {
+		periodDays = 365
+	}
+	return &cloudpb.SubscriptionProjection{SubscriptionId: "subscription-" + order.GetAccountId(), AccountId: order.GetAccountId(), SourceOrderId: order.GetOrderId(), PlanId: order.GetPlanId(), PlanVersion: order.GetPlanVersion(), Status: cloudpb.SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE, CurrentPeriodStartUnixMillis: periodStart.UnixMilli(), CurrentPeriodEndUnixMillis: periodStart.Add(time.Duration(periodDays) * 24 * time.Hour).UnixMilli(), UpdatedAtUnixMillis: now.UnixMilli(), ProviderReference: order.GetProviderReference(), Revision: revision}
 }
 
 func transitionSubscription(current *cloudpb.SubscriptionProjection, transition cloudpb.SubscriptionTransitionKind, targetPlan *cloudpb.PlanDefinition, now time.Time) *cloudpb.SubscriptionProjection {

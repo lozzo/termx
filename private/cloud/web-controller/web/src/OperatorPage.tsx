@@ -5,11 +5,14 @@ import {
   History,
   LogOut,
   PackageOpen,
+  ReceiptText,
   RefreshCw,
   Search,
   Server,
   ShieldCheck,
   SlidersHorizontal,
+  TicketPercent,
+  UserRoundCog,
 } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -21,6 +24,18 @@ import {
   ListHubFleetResponseSchema,
   ListOperatorAccountsRequestSchema,
   ListOperatorAccountsResponseSchema,
+  ListOperatorOrdersRequestSchema,
+  ListOperatorOrdersResponseSchema,
+  ListOperatorSubscriptionsRequestSchema,
+  ListOperatorSubscriptionsResponseSchema,
+  CreateSubscriptionAdjustmentRequestSchema,
+  CreateSubscriptionAdjustmentResponseSchema,
+  ApplyOperatorPaymentEventRequestSchema,
+  ApplyOperatorPaymentEventResponseSchema,
+  CreatePromotionRequestSchema,
+  CreatePromotionResponseSchema,
+  ListPromotionsRequestSchema,
+  ListPromotionsResponseSchema,
   ListPlanCatalogReleasesRequestSchema,
   ListPlanCatalogReleasesResponseSchema,
   ListEntitlementOverridesRequestSchema,
@@ -46,14 +61,23 @@ import {
   type GetOperatorAccountResponse,
   type ListHubFleetResponse,
   type ListOperatorAccountsResponse,
+  type ListOperatorOrdersResponse,
+  type ListOperatorSubscriptionsResponse,
+  type ListPromotionsResponse,
   type ListPlanCatalogReleasesResponse,
   type ListEntitlementOverridesResponse,
 } from "@/generated/cloudpb/cloud_management_pb";
 import {
   EntitlementOverrideProjectionSchema,
+  PromotionProjectionSchema,
+  OrderStatus,
+  PaymentEventType,
+  PromotionDiscountKind,
+  PromotionState,
   PlanCapabilitySchema,
   PlanCatalogContractSchema,
   SubscriptionStatus,
+  SubscriptionAdjustmentKind,
   SubscriptionTransitionKind,
   type PlanCatalogContract,
 } from "@/generated/cloudpb/cloud_product_pb";
@@ -67,6 +91,9 @@ export default function OperatorPage() {
   const [token, setToken] = useState("");
   const [authenticated, setAuthenticated] = useState(false);
   const [accounts, setAccounts] = useState<ListOperatorAccountsResponse>();
+  const [orders, setOrders] = useState<ListOperatorOrdersResponse>();
+  const [subscriptions, setSubscriptions] = useState<ListOperatorSubscriptionsResponse>();
+  const [promotions, setPromotions] = useState<ListPromotionsResponse>();
   const [fleet, setFleet] = useState<ListHubFleetResponse>();
   const [detail, setDetail] = useState<GetOperatorAccountResponse>();
   const [catalogHistory, setCatalogHistory] =
@@ -81,6 +108,19 @@ export default function OperatorPage() {
   const [overrideValue, setOverrideValue] = useState("");
   const [overrideReason, setOverrideReason] = useState("");
   const [overrideUntil, setOverrideUntil] = useState("");
+  const [adjustmentDays, setAdjustmentDays] = useState("14");
+  const [adjustmentPlan, setAdjustmentPlan] = useState("pro");
+  const [adjustmentKind, setAdjustmentKind] = useState<SubscriptionAdjustmentKind>(SubscriptionAdjustmentKind.GRANT);
+  const [adjustmentReason, setAdjustmentReason] = useState("");
+  const [promotionCode, setPromotionCode] = useState("");
+  const [promotionPercent, setPromotionPercent] = useState("10");
+  const [promotionKind, setPromotionKind] = useState<PromotionDiscountKind>(PromotionDiscountKind.PERCENT);
+  const [promotionPlan, setPromotionPlan] = useState("pro");
+  const [promotionLimit, setPromotionLimit] = useState("100");
+  const [promotionUntil, setPromotionUntil] = useState("");
+  const [promotionCreemCode, setPromotionCreemCode] = useState("");
+  const [promotionReason, setPromotionReason] = useState("");
+  const [paymentReasons, setPaymentReasons] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const catalogEditorRef = useRef<HTMLTextAreaElement>(null);
 
@@ -95,7 +135,7 @@ export default function OperatorPage() {
   async function load(search = query) {
     try {
       const page = create(PageRequestSchema, { pageSize: 100 });
-      const [nextAccounts, nextFleet, nextCatalogHistory] = await Promise.all([
+      const [nextAccounts, nextFleet, nextCatalogHistory, nextOrders, nextSubscriptions, nextPromotions] = await Promise.all([
         protoPost(
           "/api/v1/operator/accounts/list",
           ListOperatorAccountsRequestSchema,
@@ -117,10 +157,34 @@ export default function OperatorPage() {
           ListPlanCatalogReleasesResponseSchema,
           "muxvia_cloud_operator_csrf",
         ),
+        protoPost(
+          "/api/v1/operator/orders/list",
+          ListOperatorOrdersRequestSchema,
+          create(ListOperatorOrdersRequestSchema, { page }),
+          ListOperatorOrdersResponseSchema,
+          "muxvia_cloud_operator_csrf",
+        ),
+        protoPost(
+          "/api/v1/operator/subscriptions/list",
+          ListOperatorSubscriptionsRequestSchema,
+          create(ListOperatorSubscriptionsRequestSchema, { page }),
+          ListOperatorSubscriptionsResponseSchema,
+          "muxvia_cloud_operator_csrf",
+        ),
+        protoPost(
+          "/api/v1/operator/promotions/list",
+          ListPromotionsRequestSchema,
+          create(ListPromotionsRequestSchema, { includeDisabled: true, page }),
+          ListPromotionsResponseSchema,
+          "muxvia_cloud_operator_csrf",
+        ),
       ]);
       setAccounts(nextAccounts);
       setFleet(nextFleet);
       setCatalogHistory(nextCatalogHistory);
+      setOrders(nextOrders);
+      setSubscriptions(nextSubscriptions);
+      setPromotions(nextPromotions);
       const active = nextCatalogHistory.releases.find((item) => item.active);
       if (active?.catalog && !catalogDraft)
         setCatalogDraft(
@@ -268,6 +332,110 @@ export default function OperatorPage() {
     }
   }
 
+  async function adjustSubscription(event: FormEvent) {
+    event.preventDefault();
+    const subscription = detail?.commerce?.subscription;
+    const days = Number(adjustmentDays);
+    const activeCatalog = catalogHistory?.releases.find((item) => item.active)?.catalog;
+    const plan = activeCatalog?.plans.find((item) => item.planId === adjustmentPlan);
+    if (!subscription || !Number.isInteger(days) || days < 1 || !adjustmentReason.trim()) return;
+    if (adjustmentKind !== SubscriptionAdjustmentKind.EXTEND && !plan) return;
+    setBusy(true);
+    setError("");
+    try {
+      await protoPost(
+        "/api/v1/operator/subscriptions/adjust",
+        CreateSubscriptionAdjustmentRequestSchema,
+        create(CreateSubscriptionAdjustmentRequestSchema, {
+          accountId: subscription.accountId,
+          adjustmentKind,
+          targetPlanId: adjustmentKind === SubscriptionAdjustmentKind.EXTEND ? "" : plan?.planId,
+          targetPlanVersion: adjustmentKind === SubscriptionAdjustmentKind.EXTEND ? 0n : plan?.planVersion,
+          durationDays: days,
+          expectedSubscriptionRevision: subscription.revision,
+          reason: adjustmentReason.trim(),
+          requestId: crypto.randomUUID(),
+        }),
+        CreateSubscriptionAdjustmentResponseSchema,
+        "muxvia_cloud_operator_csrf",
+      );
+      setAdjustmentReason("");
+      await select(subscription.accountId);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Subscription adjustment failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createPromotion(event: FormEvent) {
+    event.preventDefault();
+    const value = Number(promotionPercent);
+    const limit = Number(promotionLimit);
+    const until = new Date(promotionUntil);
+    if (!promotionCode.trim() || !promotionCreemCode.trim() || !promotionReason.trim() || !Number.isFinite(value) || value <= 0 || !Number.isInteger(limit) || limit < 1 || Number.isNaN(until.getTime())) return;
+    setBusy(true);
+    setError("");
+    try {
+      await protoPost(
+        "/api/v1/operator/promotions/create",
+        CreatePromotionRequestSchema,
+        create(CreatePromotionRequestSchema, {
+          promotion: create(PromotionProjectionSchema, {
+            code: promotionCode.trim(),
+            discountKind: promotionKind,
+            percentBasisPoints: promotionKind === PromotionDiscountKind.PERCENT ? Math.round(value * 100) : 0,
+            fixedMinor: promotionKind === PromotionDiscountKind.FIXED ? BigInt(Math.round(value)) : 0n,
+            currency: promotionKind === PromotionDiscountKind.FIXED ? "USD" : "",
+            planIds: [promotionPlan],
+            effectiveFromUnixMillis: BigInt(Date.now()),
+            effectiveUntilUnixMillis: BigInt(until.getTime()),
+            maxRedemptions: limit,
+            maxRedemptionsPerAccount: 1,
+            creemDiscountCode: promotionCreemCode.trim(),
+            reason: promotionReason.trim(),
+          }),
+          requestId: crypto.randomUUID(),
+        }),
+        CreatePromotionResponseSchema,
+        "muxvia_cloud_operator_csrf",
+      );
+      setPromotionCode("");
+      setPromotionCreemCode("");
+      setPromotionReason("");
+      setPromotionUntil("");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Promotion creation failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applyPaymentEvent(orderId: string, eventType: PaymentEventType) {
+    const reason = paymentReasons[orderId]?.trim();
+    if (!reason) return;
+    setBusy(true);
+    setError("");
+    try {
+      await protoPost(
+        "/api/v1/operator/orders/payment-event",
+        ApplyOperatorPaymentEventRequestSchema,
+        create(ApplyOperatorPaymentEventRequestSchema, { orderId, eventType, reason, requestId: crypto.randomUUID() }),
+        ApplyOperatorPaymentEventResponseSchema,
+        "muxvia_cloud_operator_csrf",
+      );
+      setPaymentReasons((current) => ({ ...current, [orderId]: "" }));
+      await load();
+      if (detail?.commerce?.account?.accountId) await select(detail.commerce.account.accountId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Payment event failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function transition(kind: SubscriptionTransitionKind) {
     const accountId = detail?.commerce?.account?.accountId;
     if (!accountId) return;
@@ -365,6 +533,9 @@ export default function OperatorPage() {
     );
     setAuthenticated(false);
     setAccounts(undefined);
+    setOrders(undefined);
+    setSubscriptions(undefined);
+    setPromotions(undefined);
     setFleet(undefined);
     setDetail(undefined);
   }
@@ -426,6 +597,72 @@ export default function OperatorPage() {
           {error}
         </p>
       )}
+      <div className="mt-6 grid gap-5 xl:grid-cols-3" data-testid="operator-commerce-operations">
+        <section className="border border-line bg-panel" data-testid="operator-orders">
+          <header className="flex items-center justify-between gap-3 border-b border-line p-4">
+            <span className="flex items-center gap-2"><ReceiptText className="size-4 text-primary" /><strong className="text-sm">Orders</strong></span>
+            <span className="font-mono text-[10px] text-muted-foreground">{orders?.orders.length ?? 0} TOTAL</span>
+          </header>
+          <div className="max-h-[36rem] overflow-y-auto">
+            {orders?.orders.length ? orders.orders.map((item) => {
+              const order = item.order;
+              if (!order) return null;
+              const canCollect = order.status === OrderStatus.PENDING;
+              const canReverse = order.status === OrderStatus.PAID;
+              return (
+                <div className="border-b border-line p-4" key={order.orderId} data-testid={`operator-order-${order.orderId}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="min-w-0"><strong className="block truncate text-sm">{order.planId} · {formatMoney(order.totalMinor, order.price?.currency)}</strong><small className="font-mono text-[10px] text-muted-foreground">{order.orderId}</small></span>
+                    <span className="text-[10px] font-semibold text-primary">{OrderStatus[order.status]}</span>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">Account {order.accountId} · {item.paymentAttempts.length} attempts · {item.paymentEvents.length} events</p>
+                  {(canCollect || canReverse) && <div className="mt-3 grid gap-2">
+                    <Input aria-label={`Reason for order ${order.orderId}`} placeholder="Required operational reason" value={paymentReasons[order.orderId] ?? ""} onChange={(event) => setPaymentReasons((current) => ({ ...current, [order.orderId]: event.target.value }))} />
+                    <div className="flex flex-wrap gap-2">
+                      {canCollect && <Button size="sm" disabled={busy || !paymentReasons[order.orderId]?.trim()} onClick={() => void applyPaymentEvent(order.orderId, PaymentEventType.SUCCEEDED)}>Record payment</Button>}
+                      {canReverse && <Button size="sm" variant="outline" disabled={busy || !paymentReasons[order.orderId]?.trim()} onClick={() => void applyPaymentEvent(order.orderId, PaymentEventType.REFUNDED)}>Refund</Button>}
+                      {canReverse && <Button size="sm" variant="outline" disabled={busy || !paymentReasons[order.orderId]?.trim()} onClick={() => void applyPaymentEvent(order.orderId, PaymentEventType.REVOKED)}>Revoke</Button>}
+                    </div>
+                  </div>}
+                  {item.paymentEvents.length > 0 && <details className="mt-3 text-xs"><summary className="cursor-pointer text-muted-foreground">Event timeline</summary><div className="mt-2 border-l border-line pl-3">{item.paymentEvents.slice().reverse().map((event) => <p className="py-1" key={event.event?.providerEventId}><strong>{PaymentEventType[event.event?.eventType ?? 0]}</strong> · {event.event?.provider} · {new Date(Number(event.event?.occurredAtUnixMillis ?? 0n)).toLocaleString()}</p>)}</div></details>}
+                </div>
+              );
+            }) : <p className="p-4 text-xs text-muted-foreground">No orders yet.</p>}
+          </div>
+        </section>
+        <section className="border border-line bg-panel" data-testid="operator-subscriptions">
+          <header className="flex items-center justify-between gap-3 border-b border-line p-4">
+            <span className="flex items-center gap-2"><UserRoundCog className="size-4 text-primary" /><strong className="text-sm">Subscriptions</strong></span>
+            <span className="font-mono text-[10px] text-muted-foreground">{subscriptions?.subscriptions.length ?? 0} TOTAL</span>
+          </header>
+          <div className="max-h-[36rem] overflow-y-auto">
+            {subscriptions?.subscriptions.map((subscription) => <button type="button" className="grid min-h-16 w-full grid-cols-[1fr_auto] items-center gap-3 border-b border-line p-4 text-left hover:bg-soft focus-visible:outline-2 focus-visible:outline-primary" key={subscription.subscriptionId} onClick={() => void select(subscription.accountId)}>
+              <span><strong className="block text-sm">{subscription.planId} v{subscription.planVersion.toString()}</strong><small className="font-mono text-[10px] text-muted-foreground">{subscription.accountId}</small></span>
+              <span className="text-[10px] font-semibold text-primary">{SubscriptionStatus[subscription.status]}</span>
+            </button>)}
+          </div>
+        </section>
+        <section className="border border-line bg-panel" data-testid="operator-promotions">
+          <header className="flex items-center justify-between gap-3 border-b border-line p-4">
+            <span className="flex items-center gap-2"><TicketPercent className="size-4 text-primary" /><strong className="text-sm">Promotions</strong></span>
+            <span className="font-mono text-[10px] text-muted-foreground">{promotions?.promotions.length ?? 0} RELEASES</span>
+          </header>
+          <form className="grid gap-3 border-b border-line p-4" onSubmit={createPromotion}>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-2 text-xs font-medium">Code<Input data-testid="promotion-code" value={promotionCode} onChange={(event) => setPromotionCode(event.target.value)} /></label>
+              <label className="grid gap-2 text-xs font-medium">Plan<Input value={promotionPlan} onChange={(event) => setPromotionPlan(event.target.value)} /></label>
+              <label className="grid gap-2 text-xs font-medium">Discount<select className="min-h-11 border border-line-strong bg-background px-3 text-sm" value={promotionKind} onChange={(event) => setPromotionKind(Number(event.target.value) as PromotionDiscountKind)}><option value={PromotionDiscountKind.PERCENT}>Percent</option><option value={PromotionDiscountKind.FIXED}>Fixed minor units</option></select></label>
+              <label className="grid gap-2 text-xs font-medium">Value<Input type="number" min="1" value={promotionPercent} onChange={(event) => setPromotionPercent(event.target.value)} /></label>
+              <label className="grid gap-2 text-xs font-medium">Total limit<Input type="number" min="1" value={promotionLimit} onChange={(event) => setPromotionLimit(event.target.value)} /></label>
+              <label className="grid gap-2 text-xs font-medium">Effective until<Input type="datetime-local" value={promotionUntil} onChange={(event) => setPromotionUntil(event.target.value)} /></label>
+            </div>
+            <label className="grid gap-2 text-xs font-medium">Creem discount code<Input value={promotionCreemCode} onChange={(event) => setPromotionCreemCode(event.target.value)} /></label>
+            <label className="grid gap-2 text-xs font-medium">Publish reason<Input value={promotionReason} onChange={(event) => setPromotionReason(event.target.value)} /></label>
+            <Button data-testid="promotion-create" disabled={busy || !promotionCode.trim() || !promotionCreemCode.trim() || !promotionReason.trim() || !promotionUntil}>Register Creem promotion</Button>
+          </form>
+          <div className="max-h-64 overflow-y-auto">{promotions?.promotions.map((promotion) => <div className="grid grid-cols-[1fr_auto] gap-3 border-b border-line p-4 text-xs" key={promotion.promotionId}><span><strong className="block text-sm">{promotion.code}</strong><small className="text-muted-foreground">{promotion.planIds.join(", ")} · revision {promotion.revision.toString()}</small></span><span className={promotion.state === PromotionState.ACTIVE ? "text-success" : "text-muted-foreground"}>{PromotionState[promotion.state]}</span></div>)}</div>
+        </section>
+      </div>
       <section className="mt-6 border border-line bg-panel" data-testid="operator-catalog">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-line p-4">
           <div className="flex items-center gap-3">
@@ -570,6 +807,17 @@ export default function OperatorPage() {
                   label="Sessions"
                   value={String(detail.topology?.peerSessions.length ?? 0)}
                 />
+              </div>
+              <div className="border-t border-line" data-testid="operator-subscription-adjustment">
+                <header className="flex items-center gap-2 p-4"><UserRoundCog className="size-4 text-primary" /><div><h3 className="text-sm font-medium">Subscription adjustment</h3><p className="mt-1 text-xs text-muted-foreground">Grant, extend, or change service without creating a paid order.</p></div></header>
+                <form className="grid gap-3 border-t border-line p-4 md:grid-cols-2" onSubmit={adjustSubscription}>
+                  <label className="grid gap-2 text-xs font-medium">Adjustment<select className="min-h-11 border border-line-strong bg-background px-3 text-sm" value={adjustmentKind} onChange={(event) => setAdjustmentKind(Number(event.target.value) as SubscriptionAdjustmentKind)}><option value={SubscriptionAdjustmentKind.GRANT}>Grant</option><option value={SubscriptionAdjustmentKind.EXTEND}>Extend</option><option value={SubscriptionAdjustmentKind.CHANGE_PLAN}>Change plan</option></select></label>
+                  <label className="grid gap-2 text-xs font-medium">Duration days<Input type="number" min="1" value={adjustmentDays} onChange={(event) => setAdjustmentDays(event.target.value)} /></label>
+                  {adjustmentKind !== SubscriptionAdjustmentKind.EXTEND && <label className="grid gap-2 text-xs font-medium">Target plan<select className="min-h-11 border border-line-strong bg-background px-3 text-sm" value={adjustmentPlan} onChange={(event) => setAdjustmentPlan(event.target.value)}>{catalogHistory?.releases.find((item) => item.active)?.catalog?.plans.filter((plan) => !plan.included).map((plan) => <option value={plan.planId} key={plan.planId}>{plan.presentation?.name || plan.planId}</option>)}</select></label>}
+                  <label className="grid gap-2 text-xs font-medium">Reason<Input data-testid="adjustment-reason" value={adjustmentReason} onChange={(event) => setAdjustmentReason(event.target.value)} /></label>
+                  <Button data-testid="adjustment-create" className="md:col-start-2" disabled={busy || !adjustmentReason.trim() || Number(adjustmentDays) < 1}>Apply adjustment</Button>
+                </form>
+                <div className="border-t border-line">{detail.commerce?.subscriptionAdjustments.length ? detail.commerce.subscriptionAdjustments.map((item) => <div className="grid grid-cols-[1fr_auto] gap-3 border-b border-line px-4 py-3 text-xs" key={item.adjustmentId}><span><strong className="block">{SubscriptionAdjustmentKind[item.adjustmentKind]} · {item.durationDays} days</strong><small className="text-muted-foreground">{item.reason} · {item.actorId}</small></span><span className="font-mono text-[10px] text-muted-foreground">REV {item.resultingSubscriptionRevision.toString()}</span></div>) : <p className="p-4 text-xs text-muted-foreground">No manual adjustments.</p>}</div>
               </div>
               <div className="border-t border-line" data-testid="operator-overrides">
                 <header className="flex items-center gap-2 p-4">
@@ -759,6 +1007,9 @@ function decodeToken(value: string): Uint8Array {
     normalized + "=".repeat((4 - (normalized.length % 4)) % 4),
   );
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+function formatMoney(minor: bigint, currency = "USD") {
+  return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(Number(minor) / 100);
 }
 function Stat({ label, value }: { label: string; value: string }) {
   return (

@@ -15,6 +15,7 @@ import (
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	cloudentitlement "github.com/muxvia/muxvia/private/cloud/control-plane/entitlement"
 	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/promotion"
 	webcontroller "github.com/muxvia/muxvia/private/cloud/web-controller"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -47,13 +48,14 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 	}
 	accountID := registered.GetSession().GetAccount().GetAccountId()
 	overrides, _ := cloudentitlement.NewOverrideService(cloudentitlement.OverrideServiceConfig{Store: store, Plans: catalogService, Now: func() time.Time { return now }})
+	promotions, _ := promotion.New(store, func() time.Time { return now }, nil)
 	topology := &managementTargetSource{}
 	outbox, _ := commandoutbox.New(store)
 	planner, _ := commandoutbox.NewPlanner(outbox, topology, nil, bytes.NewReader(bytes.Repeat([]byte{7}, 64)), nil)
 	adminToken := bytes.Repeat([]byte{0x41}, 32)
 	admin, err := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{
 		AccessToken: adminToken, OperatorID: "operator-admin", ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN,
-		Commerce: commerceService, Catalog: catalogService, Overrides: overrides, Topology: topology, Quota: store, Outbox: outbox, Planner: planner, Fleet: staticFleet{}, Now: func() time.Time { return now },
+		Commerce: commerceService, Catalog: catalogService, Overrides: overrides, Promotions: promotions, Topology: topology, Quota: store, Outbox: outbox, Planner: planner, Fleet: staticFleet{}, Now: func() time.Time { return now },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -89,6 +91,30 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 	if putOverrideResponse.Code != http.StatusOK || !strings.Contains(putOverrideResponse.Body.String(), "cloud_device_limit\":9") {
 		t.Fatalf("operator entitlement override = %d: %s", putOverrideResponse.Code, putOverrideResponse.Body.String())
 	}
+	promotionCreate := operatorRequest(t, http.MethodPost, "/api/v1/operator/promotions/create", &cloudpb.CreatePromotionRequest{Promotion: &cloudpb.PromotionProjection{Code: "OPS20", DiscountKind: cloudpb.PromotionDiscountKind_PROMOTION_DISCOUNT_KIND_PERCENT, PercentBasisPoints: 2000, PlanIds: []string{"pro"}, EffectiveFromUnixMillis: now.Add(-time.Minute).UnixMilli(), EffectiveUntilUnixMillis: now.Add(time.Hour).UnixMilli(), MaxRedemptions: 10, MaxRedemptionsPerAccount: 1, CreemDiscountCode: "disc_ops20", Reason: "operator test"}, RequestId: "promotion-request-1"}, adminCookies)
+	promotionCreateResponse := httptest.NewRecorder()
+	admin.ServeHTTP(promotionCreateResponse, promotionCreate)
+	if promotionCreateResponse.Code != http.StatusOK || !strings.Contains(promotionCreateResponse.Body.String(), "OPS20") {
+		t.Fatalf("operator promotion create = %d: %s", promotionCreateResponse.Code, promotionCreateResponse.Body.String())
+	}
+	promotionList := operatorRequest(t, http.MethodPost, "/api/v1/operator/promotions/list", &cloudpb.ListPromotionsRequest{IncludeDisabled: true, Page: &cloudpb.PageRequest{PageSize: 20}}, adminCookies)
+	promotionListResponse := httptest.NewRecorder()
+	admin.ServeHTTP(promotionListResponse, promotionList)
+	if promotionListResponse.Code != http.StatusOK || !strings.Contains(promotionListResponse.Body.String(), "disc_ops20") {
+		t.Fatalf("operator promotion list = %d: %s", promotionListResponse.Code, promotionListResponse.Body.String())
+	}
+	adjust := operatorRequest(t, http.MethodPost, "/api/v1/operator/subscriptions/adjust", &cloudpb.CreateSubscriptionAdjustmentRequest{AccountId: accountID, AdjustmentKind: cloudpb.SubscriptionAdjustmentKind_SUBSCRIPTION_ADJUSTMENT_KIND_EXTEND, DurationDays: 7, ExpectedSubscriptionRevision: 1, Reason: "support extension", RequestId: "adjust-request-1"}, adminCookies)
+	adjustResponse := httptest.NewRecorder()
+	admin.ServeHTTP(adjustResponse, adjust)
+	if adjustResponse.Code != http.StatusOK || !strings.Contains(adjustResponse.Body.String(), "support extension") {
+		t.Fatalf("operator subscription adjust = %d: %s", adjustResponse.Code, adjustResponse.Body.String())
+	}
+	ordersList := operatorRequest(t, http.MethodPost, "/api/v1/operator/orders/list", &cloudpb.ListOperatorOrdersRequest{Page: &cloudpb.PageRequest{PageSize: 20}}, adminCookies)
+	ordersListResponse := httptest.NewRecorder()
+	admin.ServeHTTP(ordersListResponse, ordersList)
+	if ordersListResponse.Code != http.StatusOK {
+		t.Fatalf("operator orders list = %d: %s", ordersListResponse.Code, ordersListResponse.Body.String())
+	}
 	missing := operatorRequest(t, http.MethodPost, "/api/v1/operator/accounts/get", &cloudpb.GetOperatorAccountRequest{AccountId: "missing-account"}, adminCookies)
 	missingResponse := httptest.NewRecorder()
 	admin.ServeHTTP(missingResponse, missing)
@@ -121,7 +147,7 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 	readonlyToken := bytes.Repeat([]byte{0x52}, 32)
 	readonly, err := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{
 		AccessToken: readonlyToken, OperatorID: "operator-readonly", ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_READONLY,
-		Commerce: commerceService, Catalog: catalogService, Overrides: overrides, Topology: topology, Quota: store, Outbox: outbox, Planner: planner, Fleet: staticFleet{}, Now: func() time.Time { return now },
+		Commerce: commerceService, Catalog: catalogService, Overrides: overrides, Promotions: promotions, Topology: topology, Quota: store, Outbox: outbox, Planner: planner, Fleet: staticFleet{}, Now: func() time.Time { return now },
 	})
 	if err != nil {
 		t.Fatal(err)

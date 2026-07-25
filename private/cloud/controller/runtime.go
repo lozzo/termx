@@ -31,6 +31,7 @@ import (
 	"github.com/muxvia/muxvia/private/cloud/control-plane/persistence"
 	cloudpolicy "github.com/muxvia/muxvia/private/cloud/control-plane/policy"
 	cloudpostgres "github.com/muxvia/muxvia/private/cloud/control-plane/postgres"
+	cloudpromotion "github.com/muxvia/muxvia/private/cloud/control-plane/promotion"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/relaycontrol"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/relaylease"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
@@ -207,7 +208,12 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		case <-policyDone:
 		}
 	}
-	commerceService, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalogService, Now: time.Now, NotifyPolicyChange: notifyPolicyChange})
+	promotionService, err := cloudpromotion.New(store, time.Now, nil)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	commerceService, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalogService, Promotions: promotionService, Now: time.Now, NotifyPolicyChange: notifyPolicyChange})
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -429,7 +435,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 			return nil, fmt.Errorf("invalid operator role")
 		}
 		fleet := &fleetQuery{registry: registry, publisher: publisher, hubControl: controlServer, relayControl: relayControlServer}
-		operatorHandler, handlerErr := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{AccessToken: operatorToken, OperatorID: config.OperatorID, ActorKind: actorKind, Commerce: commerceService, Catalog: catalogService, Overrides: overrideService, Topology: topologyService, Quota: store, Outbox: outboxService, Planner: planner, Fleet: fleet, Now: time.Now, SecureCookie: config.SecureCookie})
+		operatorHandler, handlerErr := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{AccessToken: operatorToken, OperatorID: config.OperatorID, ActorKind: actorKind, Commerce: commerceService, Catalog: catalogService, Overrides: overrideService, Promotions: promotionService, Topology: topologyService, Quota: store, Outbox: outboxService, Planner: planner, Fleet: fleet, Now: time.Now, SecureCookie: config.SecureCookie})
 		clear(operatorToken)
 		if handlerErr != nil {
 			_ = store.Close()
@@ -479,9 +485,10 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 			}
 		}()
 	}
-	runtime.policyWG.Add(2)
+	runtime.policyWG.Add(3)
 	go runtime.runPolicyPublisher(config, policyService, privateKey, refreshInterval)
 	go runtime.runEntitlementOverrideReconciler(overrideService)
+	go runtime.runPromotionReservationReconciler(promotionService)
 	runtime.dispatcherWG.Add(1)
 	go runtime.runCommandDispatcher()
 	manifest := Manifest{PID: os.Getpid(), PublicURL: origin(publicListener), InternalControlURL: origin(internalListener), OperatorURL: origin(operatorListener), DatabaseEngine: "postgresql"}
@@ -698,6 +705,22 @@ func (runtime *Runtime) runEntitlementOverrideReconciler(overrides *cloudentitle
 	defer ticker.Stop()
 	for {
 		if _, err := overrides.ReconcileDue(context.Background(), 100); err != nil {
+			runtime.reportPolicyError(err)
+		}
+		select {
+		case <-ticker.C:
+		case <-runtime.policyDone:
+			return
+		}
+	}
+}
+
+func (runtime *Runtime) runPromotionReservationReconciler(promotions *cloudpromotion.Service) {
+	defer runtime.policyWG.Done()
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		if _, err := promotions.ReconcileExpired(context.Background(), 100); err != nil {
 			runtime.reportPolicyError(err)
 		}
 		select {

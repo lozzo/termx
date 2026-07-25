@@ -6,9 +6,11 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -321,7 +323,7 @@ func TestControllerKeepsListenersSeparateAndProjectionRevisionPersistent(t *test
 	_ = projectionPublic
 	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local-1", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublic), RelayId: "relay-1", RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(relayPublic)}
 	databaseKey := filepath.Join(t.TempDir(), "controller-postgres")
-	catalogPath := "../web-controller/config/plans.json"
+	catalogPath := configuredTestCatalogPath(t)
 	account := seedControllerAccount(t, databaseKey, catalogPath, now)
 	config := Config{PostgresDSN: postgrestest.DSN(t, databaseKey), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: "controller-key", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-key", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: []DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic), PublicHubURL: "http://127.0.0.1:41002", HealthURL: "http://127.0.0.1:41002/healthz", MaxAssignments: 100}}, Devices: []*cloudpb.CloudDevicePolicy{{AccountId: account.GetAccountId(), DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision()}}, Assignments: []*cloudpb.HubAssignment{{DaemonDeviceId: "daemon-1", AccountId: account.GetAccountId(), HubId: "hub-1", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}}}
 	first, err := Start(config)
@@ -372,7 +374,7 @@ func TestControllerKeepsListenersSeparateAndProjectionRevisionPersistent(t *test
 			csrf = cookie.Value
 		}
 	}
-	checkoutBody, _ := protojson.Marshal(&cloudpb.CreateCheckoutRequest{PlanId: "pro", RequestedTransition: cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_UPGRADE})
+	checkoutBody, _ := protojson.Marshal(&cloudpb.CreateCheckoutRequest{PlanId: "pro", RequestedTransition: cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_UPGRADE, BillingCadence: cloudpb.BillingCadence_BILLING_CADENCE_MONTHLY})
 	checkoutResponse := productMutation(t, manifest.PublicURL+"/api/v1/checkout", manifest.PublicURL, csrf, cookies, checkoutBody)
 	checkoutContract := &cloudpb.CreateCheckoutResponse{}
 	if err := protojson.Unmarshal(checkoutResponse, checkoutContract); err != nil {
@@ -448,6 +450,30 @@ func seedControllerAccount(t *testing.T, databaseKey, catalogPath string, now ti
 		t.Fatal(err)
 	}
 	return registered.GetSession().GetAccount()
+}
+
+func configuredTestCatalogPath(t *testing.T) string {
+	t.Helper()
+	catalog, err := webcontroller.LoadCatalog("../web-controller/config/plans.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	monthly, yearly := int64(1000), int64(10000)
+	for index := range catalog.Plans {
+		if catalog.Plans[index].ID == "pro" {
+			catalog.Plans[index].Price = webcontroller.CatalogPrice{Mode: "configured", Label: "$10", MonthlyMinor: &monthly, YearlyMinor: &yearly}
+			catalog.Plans[index].CreemProductID = "prod_controller_runtime_test"
+		}
+	}
+	body, err := json.Marshal(catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "plans.json")
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func productMutation(t *testing.T, endpoint, origin, csrf string, cookies []*http.Cookie, body []byte) []byte {
