@@ -90,6 +90,8 @@ Presence 是否在线、Hub 当前 attachment、Relay allocation 和 DataChannel
 
 ## 5. 实施切片
 
+执行顺序以 `workflow.md` 为准。当前只复用 `tgent` 九个管理入口对应的产品任务，固定先完成 `OPSHUB001 -> OPSUSER001 -> OPSREL001 -> OPSE2E001`，再回到已有本地 checkpoint 的 `CREEM001` 做真实支付部署和 sandbox 收口。下面各节的文档排列不代表执行优先级。
+
 ### OPSHUB001：Hub 管理与动态目录
 
 - Proto-first 补齐 deployment directory、lifecycle mutation、identity approval 和 fleet projection。
