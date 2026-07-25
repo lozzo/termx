@@ -103,10 +103,17 @@ type Store interface {
 	Audit(context.Context, string) ([]*cloudpb.CommerceAuditProjection, error)
 }
 
-// Config 固定 commerce Store、versioned catalog、时间与随机来源。
+// CatalogSource 提供当前发布目录与历史套餐快照。
+// Commerce 创建新交易时读取 Active，处理既有订单/订阅时必须读取精确历史 Plan。
+type CatalogSource interface {
+	Active(context.Context) (*cloudpb.PlanCatalogContract, error)
+	Plan(context.Context, string, uint64) (*cloudpb.PlanDefinition, error)
+}
+
+// Config 固定 commerce Store、数据库目录来源、时间与随机来源。
 type Config struct {
 	Store   Store
-	Catalog *cloudpb.PlanCatalogContract
+	Catalog CatalogSource
 	Now     func() time.Time
 	Random  io.Reader
 	// NotifyPolicyChange 在账号 auth revision 或 Entitlement 持久提交后通知 Controller。
@@ -116,7 +123,7 @@ type Config struct {
 // Service 是 Controller 内账号、交易与 Subscription 的应用边界。
 type Service struct {
 	store              Store
-	catalog            *cloudpb.PlanCatalogContract
+	catalog            CatalogSource
 	now                func() time.Time
 	random             io.Reader
 	dummyPasswordHash  []byte
@@ -125,7 +132,7 @@ type Service struct {
 
 // New 创建 commerce service；catalog 或 Store 缺失时 fail closed。
 func New(config Config) (*Service, error) {
-	if config.Store == nil || config.Catalog == nil || config.Catalog.GetCatalogVersion() == 0 || len(config.Catalog.GetPlans()) == 0 {
+	if config.Store == nil || config.Catalog == nil {
 		return nil, fmt.Errorf("commerce store and catalog are required")
 	}
 	if config.Now == nil {
@@ -138,7 +145,7 @@ func New(config Config) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{store: config.Store, catalog: proto.Clone(config.Catalog).(*cloudpb.PlanCatalogContract), now: config.Now, random: config.Random, dummyPasswordHash: dummyPasswordHash, notifyPolicyChange: config.NotifyPolicyChange}, nil
+	return &Service{store: config.Store, catalog: config.Catalog, now: config.Now, random: config.Random, dummyPasswordHash: dummyPasswordHash, notifyPolicyChange: config.NotifyPolicyChange}, nil
 }
 
 // Register 创建账号、首个 session、included Subscription 与 Entitlement。
@@ -168,7 +175,11 @@ func (service *Service) Register(ctx context.Context, request *cloudpb.RegisterA
 	if err != nil {
 		return nil, err
 	}
-	plan, ok := includedPlan(service.catalog)
+	catalog, err := service.catalog.Active(ctx)
+	if err != nil {
+		return nil, err
+	}
+	plan, ok := includedPlan(catalog)
 	if !ok {
 		return nil, ErrConflict
 	}
@@ -384,7 +395,11 @@ func (service *Service) CreateCheckout(ctx context.Context, accountID, actorID s
 	if request == nil {
 		return nil, ErrConflict
 	}
-	plan, ok := planByID(service.catalog, request.GetPlanId(), 0)
+	catalog, err := service.catalog.Active(ctx)
+	if err != nil {
+		return nil, err
+	}
+	plan, ok := planByID(catalog, request.GetPlanId(), 0)
 	transition := request.GetRequestedTransition()
 	if accountID == "" || actorID == "" || !ok || plan.GetIncluded() || plan.GetPrice().GetMode() == cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_UNSPECIFIED || transition < cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_ACTIVATE || transition > cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_DOWNGRADE {
 		return nil, ErrConflict
@@ -517,8 +532,8 @@ func (service *Service) ApplyPaymentEvent(ctx context.Context, request *cloudpb.
 		return nil, ErrConflict
 	}
 	now := service.now().UTC()
-	plan, ok := planByID(service.catalog, order.GetPlanId(), order.GetPlanVersion())
-	if !ok {
+	plan, planErr := service.catalog.Plan(ctx, order.GetPlanId(), order.GetPlanVersion())
+	if planErr != nil {
 		service.rejectPaymentEvent(ctx, event, "payment.rejected_plan")
 		return nil, ErrConflict
 	}
@@ -591,7 +606,11 @@ func (service *Service) ApplyPaymentEvent(ctx context.Context, request *cloudpb.
 		service.rejectPaymentEvent(ctx, event, "payment.rejected_transition")
 		return nil, ErrConflict
 	}
-	entitlementProjection, err := normalizeEntitlement(subscription, planForSubscription(service.catalog, subscription), now)
+	subscriptionPlan, err := service.catalog.Plan(ctx, subscription.GetPlanId(), subscription.GetPlanVersion())
+	if err != nil {
+		return nil, err
+	}
+	entitlementProjection, err := normalizeEntitlement(subscription, subscriptionPlan, now)
 	if err != nil {
 		return nil, err
 	}
@@ -632,13 +651,27 @@ func (service *Service) Transition(ctx context.Context, request *cloudpb.Transit
 	}
 	var targetPlan *cloudpb.PlanDefinition
 	if request.GetTargetPlanId() != "" {
-		targetPlan, _ = planByID(service.catalog, request.GetTargetPlanId(), request.GetTargetPlanVersion())
+		if request.GetTargetPlanVersion() == 0 {
+			catalog, catalogErr := service.catalog.Active(ctx)
+			if catalogErr != nil {
+				return nil, catalogErr
+			}
+			targetPlan, _ = planByID(catalog, request.GetTargetPlanId(), 0)
+		} else {
+			targetPlan, _ = service.catalog.Plan(ctx, request.GetTargetPlanId(), request.GetTargetPlanVersion())
+		}
 	}
 	next := transitionSubscription(current, request.GetTransition(), targetPlan, now)
 	if next == nil {
 		return nil, ErrConflict
 	}
-	plan := planForSubscription(service.catalog, next)
+	plan, err := service.catalog.Plan(ctx, next.GetPlanId(), next.GetPlanVersion())
+	if targetPlan != nil && targetPlan.GetPlanId() == next.GetPlanId() && targetPlan.GetPlanVersion() == next.GetPlanVersion() {
+		plan, err = targetPlan, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	entitlementProjection, err := normalizeEntitlement(next, plan, now)
 	if err != nil {
 		return nil, err
@@ -661,8 +694,8 @@ func (service *Service) AccountCommerce(ctx context.Context, accountID string) (
 	if err != nil {
 		return nil, err
 	}
-	plan := planForSubscription(service.catalog, subscription)
-	if plan == nil {
+	plan, err := service.catalog.Plan(ctx, subscription.GetPlanId(), subscription.GetPlanVersion())
+	if err != nil {
 		return nil, ErrConflict
 	}
 	entitlementProjection, err := service.store.Entitlement(ctx, accountID)
@@ -799,7 +832,9 @@ func normalizeEntitlement(subscription *cloudpb.SubscriptionProjection, plan *cl
 	if err != nil {
 		return nil, err
 	}
-	return value.Projection(), nil
+	projection := value.Projection()
+	projection.Revision = subscription.GetRevision()
+	return projection, nil
 }
 
 func planForSubscription(catalog *cloudpb.PlanCatalogContract, subscription *cloudpb.SubscriptionProjection) *cloudpb.PlanDefinition {

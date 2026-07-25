@@ -16,6 +16,7 @@ import (
 
 	"github.com/muxvia/muxvia/private/cloud/companion/cloudservice/httpapi"
 	"github.com/muxvia/muxvia/private/cloud/companion/session"
+	cloudcatalog "github.com/muxvia/muxvia/private/cloud/control-plane/catalog"
 	cloudcommerce "github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
 	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
@@ -269,7 +270,8 @@ func seedCommandAccount(t *testing.T, databaseKey, catalogPath string, now time.
 	store, _ := postgrestest.Open(t, databaseKey)
 	defer store.Close()
 	catalog, _ := webcontroller.LoadCatalog(catalogPath)
-	service, _ := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalog.Contract(), Now: func() time.Time { return now }})
+	catalogSource, _ := cloudcatalog.NewSnapshotSource(catalog.Contract())
+	service, _ := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalogSource, Now: func() time.Time { return now }})
 	registered, err := service.Register(context.Background(), &cloudpb.RegisterAccountRequest{Email: "command@example.com", Password: "secure-password"})
 	if err != nil {
 		t.Fatal(err)

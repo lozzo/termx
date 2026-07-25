@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	cloudcatalog "github.com/muxvia/muxvia/private/cloud/control-plane/catalog"
 	cloudcommerce "github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubcontrol"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
@@ -433,7 +434,8 @@ func seedControllerAccount(t *testing.T, databaseKey, catalogPath string, now ti
 		store.Close()
 		t.Fatal(err)
 	}
-	service, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalog.Contract(), Now: func() time.Time { return now }})
+	catalogSource, _ := cloudcatalog.NewSnapshotSource(catalog.Contract())
+	service, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalogSource, Now: func() time.Time { return now }})
 	if err != nil {
 		store.Close()
 		t.Fatal(err)

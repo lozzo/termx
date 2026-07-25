@@ -11,8 +11,10 @@ import (
 	"strings"
 	"time"
 
+	cloudcatalog "github.com/muxvia/muxvia/private/cloud/control-plane/catalog"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
+	cloudentitlement "github.com/muxvia/muxvia/private/cloud/control-plane/entitlement"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
@@ -33,6 +35,8 @@ type OperatorAPIConfig struct {
 	OperatorID   string
 	ActorKind    cloudpb.ManagementActorKind
 	Commerce     *commerce.Service
+	Catalog      *cloudcatalog.Service
+	Overrides    *cloudentitlement.OverrideService
 	Topology     ManagementTopologyQuery
 	Quota        RelayQuotaQuery
 	Outbox       *commandoutbox.Service
@@ -44,7 +48,7 @@ type OperatorAPIConfig struct {
 
 // OperatorAPIHandler 使用 HttpOnly session、CSRF 与五分钟近期认证保护管理操作。
 func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
-	if len(config.AccessToken) < 32 || config.OperatorID == "" || config.ActorKind != cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_READONLY && config.ActorKind != cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN || config.Commerce == nil || config.Topology == nil || config.Quota == nil || config.Outbox == nil || config.Planner == nil || config.Fleet == nil {
+	if len(config.AccessToken) < 32 || config.OperatorID == "" || config.ActorKind != cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_READONLY && config.ActorKind != cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN || config.Commerce == nil || config.Catalog == nil || config.Overrides == nil || config.Topology == nil || config.Quota == nil || config.Outbox == nil || config.Planner == nil || config.Fleet == nil {
 		return nil, commandoutbox.ErrCommandConflict
 	}
 	if config.Now == nil {
@@ -153,6 +157,91 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		if err == nil {
 			result, transitionErr := config.Commerce.Transition(r.Context(), &cloudpb.TransitionSubscriptionRequest{AccountId: request.GetAccountId(), Transition: request.GetTransition(), ActorId: config.OperatorID})
 			err, response = transitionErr, &cloudpb.OperatorTransitionSubscriptionResponse{Result: result}
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/catalog/list", func(w http.ResponseWriter, r *http.Request) {
+		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		request := &cloudpb.ListPlanCatalogReleasesRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.ListPlanCatalogReleasesResponse
+		if err == nil {
+			values, listErr := config.Catalog.Releases(r.Context(), boundedPageSize(request.GetPage(), 50))
+			err, response = listErr, &cloudpb.ListPlanCatalogReleasesResponse{Releases: values, Page: &cloudpb.PageResponse{}}
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/catalog/get", func(w http.ResponseWriter, r *http.Request) {
+		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		request := &cloudpb.GetPlanCatalogReleaseRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.GetPlanCatalogReleaseResponse
+		if err == nil {
+			value, getErr := config.Catalog.Release(r.Context(), request.GetCatalogVersion())
+			err, response = getErr, &cloudpb.GetPlanCatalogReleaseResponse{Release: value}
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/catalog/publish", func(w http.ResponseWriter, r *http.Request) {
+		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		if err == nil {
+			err = requireOperatorMutation(r, record, config.Now().UTC())
+		}
+		request := &cloudpb.PublishPlanCatalogRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.PublishPlanCatalogResponse
+		if err == nil {
+			value, publishErr := config.Catalog.Publish(r.Context(), request.GetCatalog(), config.OperatorID, request.GetReason(), request.GetRequestId())
+			err, response = publishErr, &cloudpb.PublishPlanCatalogResponse{Release: value}
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/entitlement-overrides/list", func(w http.ResponseWriter, r *http.Request) {
+		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		request := &cloudpb.ListEntitlementOverridesRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.ListEntitlementOverridesResponse
+		if err == nil {
+			values, listErr := config.Overrides.List(r.Context(), request.GetAccountId(), request.GetIncludeRevoked(), boundedPageSize(request.GetPage(), 50))
+			err, response = listErr, &cloudpb.ListEntitlementOverridesResponse{Overrides: values, Page: &cloudpb.PageResponse{}}
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/entitlement-overrides/put", func(w http.ResponseWriter, r *http.Request) {
+		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		if err == nil {
+			err = requireOperatorMutation(r, record, config.Now().UTC())
+		}
+		request := &cloudpb.PutEntitlementOverrideRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.PutEntitlementOverrideResponse
+		if err == nil {
+			response, err = config.Overrides.Put(r.Context(), request, config.OperatorID)
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/entitlement-overrides/revoke", func(w http.ResponseWriter, r *http.Request) {
+		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		if err == nil {
+			err = requireOperatorMutation(r, record, config.Now().UTC())
+		}
+		request := &cloudpb.RevokeEntitlementOverrideRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.RevokeEntitlementOverrideResponse
+		if err == nil {
+			response, err = config.Overrides.Revoke(r.Context(), request, config.OperatorID)
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})

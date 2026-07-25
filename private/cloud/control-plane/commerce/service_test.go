@@ -276,11 +276,26 @@ func TestPaidOrderSupportsRefundRevokeAndChargebackTransitions(t *testing.T) {
 
 func newService(t *testing.T, store commerce.Store, now func() time.Time) *commerce.Service {
 	t.Helper()
-	service, err := commerce.New(commerce.Config{Store: store, Catalog: catalogFixture(), Now: now})
+	service, err := commerce.New(commerce.Config{Store: store, Catalog: testCatalogSource{catalog: catalogFixture()}, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return service
+}
+
+type testCatalogSource struct{ catalog *cloudpb.PlanCatalogContract }
+
+func (source testCatalogSource) Active(context.Context) (*cloudpb.PlanCatalogContract, error) {
+	return proto.Clone(source.catalog).(*cloudpb.PlanCatalogContract), nil
+}
+
+func (source testCatalogSource) Plan(_ context.Context, planID string, planVersion uint64) (*cloudpb.PlanDefinition, error) {
+	for _, plan := range source.catalog.GetPlans() {
+		if plan.GetPlanId() == planID && plan.GetPlanVersion() == planVersion {
+			return proto.Clone(plan).(*cloudpb.PlanDefinition), nil
+		}
+	}
+	return nil, commerce.ErrNotFound
 }
 
 func transition(t *testing.T, service *commerce.Service, account *cloudpb.AccountProjection, kind cloudpb.SubscriptionTransitionKind, targetPlan string, now time.Time) *cloudpb.TransitionSubscriptionResponse {

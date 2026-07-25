@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
 func TestCloudPlatformRoundTripPreservesUnknownFieldsAndEnums(t *testing.T) {
@@ -44,6 +45,21 @@ func TestCloudPlatformRoundTripPreservesUnknownFieldsAndEnums(t *testing.T) {
 	}
 	if !bytes.Contains(reencoded, unknown) {
 		t.Fatalf("cloud command lost unknown field: %x", reencoded)
+	}
+}
+
+func TestCatalogReleaseAndEntitlementOverrideRoundTrip(t *testing.T) {
+	release := &PlanCatalogReleaseProjection{Catalog: &PlanCatalogContract{CatalogVersion: 7, Plans: []*PlanDefinition{{PlanId: "pro", PlanVersion: 3, Creem: &CreemProductMapping{ProductId: "prod_test"}}}}, Active: true, ActorId: "operator-1", Reason: "publish", RequestId: "request-1", PublishedAtUnixMillis: 1234, Revision: 1}
+	override := &EntitlementOverrideProjection{OverrideId: "override-1", AccountId: "account-1", CapabilityMask: &fieldmaskpb.FieldMask{Paths: []string{"standard_relay_enabled", "relay.max_concurrency"}}, Capability: &PlanCapability{StandardRelayEnabled: true, Relay: &RelayServiceCapability{MaxConcurrency: 2}}, EffectiveFromUnixMillis: 1000, EffectiveUntilUnixMillis: 2000, Reason: "support grant", ActorId: "operator-1", Revision: 1}
+	for _, value := range []proto.Message{release, override} {
+		payload, err := proto.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded := value.ProtoReflect().Type().New().Interface()
+		if err := proto.Unmarshal(payload, decoded); err != nil || !proto.Equal(value, decoded) {
+			t.Fatalf("operator product contract round-trip = (%v, %v)", decoded, err)
+		}
 	}
 }
 
@@ -382,6 +398,7 @@ func TestCloudPlatformDescriptorBaseline(t *testing.T) {
 		t.Fatal(err)
 	}
 	current := &descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{
+		protodesc.ToFileDescriptorProto(fieldmaskpb.File_google_protobuf_field_mask_proto),
 		protodesc.ToFileDescriptorProto(File_cloudpb_cloud_companion_proto),
 		protodesc.ToFileDescriptorProto(File_cloudpb_cloud_product_proto),
 		protodesc.ToFileDescriptorProto(File_cloudpb_cloud_topology_proto),

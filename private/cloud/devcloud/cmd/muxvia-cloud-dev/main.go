@@ -26,6 +26,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/muxvia/muxvia/private/cloud/companion/cloudservice/httpapi"
+	cloudcatalog "github.com/muxvia/muxvia/private/cloud/control-plane/catalog"
 	cloudcommerce "github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
 	cloudpostgres "github.com/muxvia/muxvia/private/cloud/control-plane/postgres"
@@ -93,7 +94,14 @@ func seedDevelopmentAccount(postgresDSN, catalogPath string, now time.Time) (*de
 	}
 	password := base64.RawURLEncoding.EncodeToString(passwordBytes)
 	clear(passwordBytes)
-	service, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalog.Contract(), Now: func() time.Time { return now }})
+	catalogService, err := cloudcatalog.New(store, func() time.Time { return now })
+	if err != nil {
+		return nil, err
+	}
+	if err := catalogService.Bootstrap(context.Background(), catalog.Contract()); err != nil {
+		return nil, err
+	}
+	service, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalogService, Now: func() time.Time { return now }})
 	if err != nil {
 		return nil, err
 	}

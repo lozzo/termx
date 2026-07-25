@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"time"
 
+	cloudcatalog "github.com/muxvia/muxvia/private/cloud/control-plane/catalog"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
+	cloudentitlement "github.com/muxvia/muxvia/private/cloud/control-plane/entitlement"
 	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -239,6 +241,10 @@ func writeManagementProto(w http.ResponseWriter, status int, value proto.Message
 		status = http.StatusNotFound
 		detail.Code = cloudpb.ManagementErrorCode_MANAGEMENT_ERROR_CODE_NOT_FOUND
 		detail.Message = "management target or account was not found"
+	case errors.Is(err, cloudcatalog.ErrNotFound), errors.Is(err, cloudentitlement.ErrOverrideNotFound):
+		status = http.StatusNotFound
+		detail.Code = cloudpb.ManagementErrorCode_MANAGEMENT_ERROR_CODE_NOT_FOUND
+		detail.Message = "catalog release or entitlement override was not found"
 	case errors.Is(err, cloudtopology.ErrOwnershipNotFound):
 		status = http.StatusNotFound
 		detail.Code = cloudpb.ManagementErrorCode_MANAGEMENT_ERROR_CODE_NOT_FOUND
@@ -251,6 +257,14 @@ func writeManagementProto(w http.ResponseWriter, status int, value proto.Message
 		status = http.StatusConflict
 		detail.Code = cloudpb.ManagementErrorCode_MANAGEMENT_ERROR_CODE_STALE_TARGET
 		detail.Message = "requested account transition conflicts with current state"
+	case errors.Is(err, cloudcatalog.ErrConflict), errors.Is(err, cloudentitlement.ErrOverrideConflict):
+		status = http.StatusConflict
+		detail.Code = cloudpb.ManagementErrorCode_MANAGEMENT_ERROR_CODE_STALE_TARGET
+		detail.Message = "catalog or entitlement override conflicts with the current revision"
+	case errors.Is(err, cloudcatalog.ErrInvalid), errors.Is(err, cloudentitlement.ErrOverrideInvalid):
+		status = http.StatusBadRequest
+		detail.Code = cloudpb.ManagementErrorCode_MANAGEMENT_ERROR_CODE_STALE_TARGET
+		detail.Message = "catalog or entitlement override request is invalid"
 	case errors.Is(err, errRecentAuthenticationRequired):
 		status = http.StatusForbidden
 		detail.Code = cloudpb.ManagementErrorCode_MANAGEMENT_ERROR_CODE_RECENT_AUTH_REQUIRED

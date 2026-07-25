@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	cloudcatalog "github.com/muxvia/muxvia/private/cloud/control-plane/catalog"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	webcontroller "github.com/muxvia/muxvia/private/cloud/web-controller"
@@ -26,7 +27,8 @@ func TestProductAPIUsesProtoCookieCSRFAndPersistentCommerce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := commerce.New(commerce.Config{Store: store, Catalog: catalog.Contract(), Now: func() time.Time { return now }})
+	catalogSource, _ := cloudcatalog.NewSnapshotSource(catalog.Contract())
+	service, err := commerce.New(commerce.Config{Store: store, Catalog: catalogSource, Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +132,8 @@ func TestProductAPIDoesNotExposeTestProviderUnlessExplicitlyEnabled(t *testing.T
 	}
 	defer store.Close()
 	catalog, _ := webcontroller.LoadCatalog("config/plans.json")
-	service, _ := commerce.New(commerce.Config{Store: store, Catalog: catalog.Contract(), Now: func() time.Time { return now }})
+	catalogSource, _ := cloudcatalog.NewSnapshotSource(catalog.Contract())
+	service, _ := commerce.New(commerce.Config{Store: store, Catalog: catalogSource, Now: func() time.Time { return now }})
 	handler, err := webcontroller.ProductAPIHandler(webcontroller.ProductAPIConfig{Commerce: service})
 	if err != nil {
 		t.Fatal(err)

@@ -32,6 +32,7 @@ type CatalogPlan struct {
 	CTA               CatalogCTA              `json:"cta"`
 	Featured          bool                    `json:"featured"`
 	Features          []string                `json:"features"`
+	CreemProductID    string                  `json:"creem_product_id,omitempty"`
 }
 
 // CatalogPrice 表示展示价格的发布状态。
@@ -85,19 +86,19 @@ func validateCatalog(catalog Catalog) error {
 		ids[plan.ID] = struct{}{}
 		switch plan.Price.Mode {
 		case "configured":
-			if plan.BillingPeriodDays == 0 || plan.Price.MonthlyMinor == nil && plan.Price.YearlyMinor == nil {
+			if plan.BillingPeriodDays == 0 || plan.Price.MonthlyMinor == nil && plan.Price.YearlyMinor == nil || strings.TrimSpace(plan.CreemProductID) == "" {
 				return fmt.Errorf("configured catalog plan %q has no price", plan.ID)
 			}
 		case "included":
 			includedPlans++
-			if plan.BillingPeriodDays == 0 || plan.Price.MonthlyMinor != nil || plan.Price.YearlyMinor != nil {
+			if plan.BillingPeriodDays == 0 || plan.Price.MonthlyMinor != nil || plan.Price.YearlyMinor != nil || plan.CreemProductID != "" {
 				return fmt.Errorf("included catalog plan %q contains billing data", plan.ID)
 			}
 		case "contact":
 			if plan.BillingPeriodDays == 0 {
 				return fmt.Errorf("contact catalog plan %q has no billing period", plan.ID)
 			}
-			if plan.Price.MonthlyMinor != nil || plan.Price.YearlyMinor != nil {
+			if plan.Price.MonthlyMinor != nil || plan.Price.YearlyMinor != nil || plan.CreemProductID != "" {
 				return fmt.Errorf("unpublished catalog plan %q contains a price", plan.ID)
 			}
 		default:
@@ -162,6 +163,9 @@ func (catalog Catalog) Contract() *cloudpb.PlanCatalogContract {
 			Capability: entitlement.ClonePlanCapability(plan.Capability), Included: plan.Price.Mode == "included", Price: price,
 			Presentation: &cloudpb.PlanPresentation{Name: plan.Name, Eyebrow: plan.Eyebrow, Description: plan.Description, CtaLabel: plan.CTA.Label, CtaHref: plan.CTA.Href, Featured: plan.Featured, Features: append([]string(nil), plan.Features...)},
 		})
+		if plan.CreemProductID != "" {
+			contract.Plans[len(contract.Plans)-1].Creem = &cloudpb.CreemProductMapping{ProductId: plan.CreemProductID}
+		}
 	}
 	return proto.Clone(contract).(*cloudpb.PlanCatalogContract)
 }

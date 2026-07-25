@@ -22,8 +22,10 @@ import (
 	"sync"
 	"time"
 
+	cloudcatalog "github.com/muxvia/muxvia/private/cloud/control-plane/catalog"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
 	cloudcommerce "github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
+	cloudentitlement "github.com/muxvia/muxvia/private/cloud/control-plane/entitlement"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubcontrol"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/persistence"
@@ -183,6 +185,15 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	catalogService, err := cloudcatalog.New(store, time.Now)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	if err := catalogService.Bootstrap(context.Background(), catalog.Contract()); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	policyService, err := cloudpolicy.New(store)
 	if err != nil {
 		_ = store.Close()
@@ -196,7 +207,12 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		case <-policyDone:
 		}
 	}
-	commerceService, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalog.Contract(), Now: time.Now, NotifyPolicyChange: notifyPolicyChange})
+	commerceService, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalogService, Now: time.Now, NotifyPolicyChange: notifyPolicyChange})
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	overrideService, err := cloudentitlement.NewOverrideService(cloudentitlement.OverrideServiceConfig{Store: store, Plans: catalogService, Now: time.Now, NotifyPolicyChange: notifyPolicyChange})
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -383,7 +399,12 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 			http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		body, _ := protojson.Marshal(&cloudpb.GetPlanCatalogResponse{Catalog: catalog.Contract()})
+		activeCatalog, catalogErr := catalogService.Active(request.Context())
+		if catalogErr != nil {
+			http.Error(writer, "catalog unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		body, _ := protojson.Marshal(&cloudpb.GetPlanCatalogResponse{Catalog: activeCatalog})
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write(body)
 	})
@@ -408,7 +429,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 			return nil, fmt.Errorf("invalid operator role")
 		}
 		fleet := &fleetQuery{registry: registry, publisher: publisher, hubControl: controlServer, relayControl: relayControlServer}
-		operatorHandler, handlerErr := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{AccessToken: operatorToken, OperatorID: config.OperatorID, ActorKind: actorKind, Commerce: commerceService, Topology: topologyService, Quota: store, Outbox: outboxService, Planner: planner, Fleet: fleet, Now: time.Now, SecureCookie: config.SecureCookie})
+		operatorHandler, handlerErr := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{AccessToken: operatorToken, OperatorID: config.OperatorID, ActorKind: actorKind, Commerce: commerceService, Catalog: catalogService, Overrides: overrideService, Topology: topologyService, Quota: store, Outbox: outboxService, Planner: planner, Fleet: fleet, Now: time.Now, SecureCookie: config.SecureCookie})
 		clear(operatorToken)
 		if handlerErr != nil {
 			_ = store.Close()
@@ -458,8 +479,9 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 			}
 		}()
 	}
-	runtime.policyWG.Add(1)
+	runtime.policyWG.Add(2)
 	go runtime.runPolicyPublisher(config, policyService, privateKey, refreshInterval)
+	go runtime.runEntitlementOverrideReconciler(overrideService)
 	runtime.dispatcherWG.Add(1)
 	go runtime.runCommandDispatcher()
 	manifest := Manifest{PID: os.Getpid(), PublicURL: origin(publicListener), InternalControlURL: origin(internalListener), OperatorURL: origin(operatorListener), DatabaseEngine: "postgresql"}
@@ -664,6 +686,22 @@ func (runtime *Runtime) runPolicyPublisher(config Config, policies *cloudpolicy.
 			if err := runtime.publishAllPolicies(config, policies, signingKey, now.UTC()); err != nil {
 				runtime.reportPolicyError(err)
 			}
+		case <-runtime.policyDone:
+			return
+		}
+	}
+}
+
+func (runtime *Runtime) runEntitlementOverrideReconciler(overrides *cloudentitlement.OverrideService) {
+	defer runtime.policyWG.Done()
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		if _, err := overrides.ReconcileDue(context.Background(), 100); err != nil {
+			runtime.reportPolicyError(err)
+		}
+		select {
+		case <-ticker.C:
 		case <-runtime.policyDone:
 			return
 		}

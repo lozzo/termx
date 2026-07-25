@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	cloudcatalog "github.com/muxvia/muxvia/private/cloud/control-plane/catalog"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/policy"
 	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
@@ -19,7 +20,8 @@ func TestHubAccountPolicyUsesPersistedAuthRevisionAndEntitlement(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	service, err := commerce.New(commerce.Config{Store: store, Catalog: policyCatalog(), Now: func() time.Time { return now }})
+	catalogSource, _ := cloudcatalog.NewSnapshotSource(policyCatalog())
+	service, err := commerce.New(commerce.Config{Store: store, Catalog: catalogSource, Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
 	}

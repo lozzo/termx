@@ -159,8 +159,8 @@ muxvia-cloud-edge × N
 | ENROLLUX004 | 已完成 | Web 替换与移除交互 | 批准前显示归属冲突和替换影响；活跃跨账号拒绝、已撤销同身份显式 transfer；持久 revoke 与 Hub 执行状态分离 |
 | APPTERM001 | 已完成 | App terminal 创建与工具体验 | 复用现有 `TerminalDefaults` Proto/API；daemon 按当前账号返回默认 shell 与 home；App 新建表单自动填充并提交完整 terminal ID/size；环境变量支持 KV 行与 `KEY=value`/`export KEY=value` 批量粘贴且不进入 metadata tag；Files、Resize 和 Tools 已进入主工具栏。ARM64/API 35 模拟器从真实 App UI 完成 Direct 配对、创建、环境变量输入输出、文件管理、尺寸控制、工具面板、150% 字体/横屏和 crash scan；验收 APK 为 `.artifacts/android/app-devcloud-debug.apk`，SHA-256 `d63e389aae69d81bd02896232a364a6f08ef8148b058b14de436e0f2269c74be` |
 | PAIRROUTE001 | 已完成 | 多 Route 配对与客户端 Route 管理 | Proto 多 seed、Route display name、Direct/SSH/Cloud pairing connector、同 generation race、默认 Direct+Cloud、普通参数与严格 URI、Low QR、raw-DEFLATE、同 DeviceIdentity 增量合并已接通；App Route 管理器完成 CRUD、启用、测试、优先级和 SSH Keystore credential，逐 Route 稳定错误不泄露底层文本。ARM64/API 35 真实 App UI 完成 Camera2 Low QR、marker 0/1、单 Endpoint 合并、中英文、150%/200% 字体、横屏、Accessibility tree 和 crash scan；最终 APK SHA-256 `bb0c9c7515bc206562ffd3aedf598ae546d82fea3c4b463f454fa99917b61974`。用户明确后续 Android 验收使用模拟器，实体机仅保留 PG004 既有补充证据；旧 pair `--no-cloud` 和隐式 override 已删除 |
-| OPSCAT001 | 进行中 | 套餐发布与用户特权 | 数据库版本化 catalog、历史快照、类型化 EntitlementOverride、到期重算、Creem product mapping 与 signed policy E2E；这是支付主线的当前切片 |
-| OPSCOM001 | 待开始 | 订单、订阅与优惠码 | normalized event 时间线、operator adjustment、refund/revoke、promo reservation/redemption 和并发/重放事务 E2E |
+| OPSCAT001 | 已完成 | 套餐发布与用户特权 | PostgreSQL 不可变 catalog release/head 与 canonical plan version、一次性 bootstrap、Creem product mapping、类型化 EntitlementOverride、CAS/审计、自然生效/到期重算和 signed Hub policy ack 已完成；真实 Operator UI Playwright 覆盖桌面/移动端，证据见 `docs/remote-platform/opscat001-e2e.md` |
+| OPSCOM001 | 进行中 | 订单、订阅与优惠码 | normalized event 时间线、operator adjustment、refund/revoke、promo reservation/redemption 和并发/重放事务 E2E；这是支付主线的当前切片 |
 | CREEM001 | 待开始 | Creem 正式支付 provider | Go adapter、sandbox/production secret、checkout、`POST /pay/creem` raw-body HMAC、Webhook + 有界轮询同 journal；真实 sandbox 与重启 E2E |
 | OPSHUB001 | 待开始 | Hub 管理与动态目录 | 支付闭环后恢复；Proto/PostgreSQL/Operator 完成 create/approve/update/drain/disable；删除正式 `Config.Deployments` 目录 ownership；运行中新增 Edge 与 assignment/fence E2E |
 | OPSUSER001 | 待开始 | 用户管理与 Agent 概览 | 支付闭环后恢复；账号/机器列表详情、角色保护、session/device revoke、Presence freshness 和 CommandOutbox 操作形成 Web E2E |
@@ -288,7 +288,7 @@ muxvia-cloud-edge × N
 ## 执行规则
 
 1. 每轮先读取 `AGENTS.md`、`cloud-product-spec.md`、`multi-hub-control-topology-spec.md`、`multi-hub-technical-plan.md` 和本文件，再检查 `git status --short --branch`。
-2. 只执行“当前收口路线”的当前行；`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`、`CONNCOPY001`、`LOADUX001`、`APPTERM001` 和 `PAIRROUTE001` 已完成。用户已明确把运营支付管理设为当前主线，固定先后顺序为 `OPSCAT001`、`OPSCOM001`、`CREEM001`；支付闭环后再按 `OPSHUB001`、`OPSUSER001`、`OPSREL001`、`OPSE2E001`、`ENROLLUX005`、`PG004`、`CLOUDP007` 恢复。当前最早未完成切片是 `OPSCAT001`，不得再因 App 登录或 R2 凭据跳回旧主线。
+2. 只执行“当前收口路线”的当前行；`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`、`CONNCOPY001`、`LOADUX001`、`APPTERM001`、`PAIRROUTE001` 和 `OPSCAT001` 已完成。用户已明确把运营支付管理设为当前主线，固定先后顺序为 `OPSCAT001`、`OPSCOM001`、`CREEM001`；支付闭环后再按 `OPSHUB001`、`OPSUSER001`、`OPSREL001`、`OPSE2E001`、`ENROLLUX005`、`PG004`、`CLOUDP007` 恢复。当前最早未完成切片是 `OPSCOM001`，不得再因 App 登录或 R2 凭据跳回旧主线。
 3. 待开始切片先标记 `进行中`，不得跨切片实现后续能力。
 4. 新跨边界字段固定执行 `proto -> generated -> compatibility harness -> domain/runtime -> adapter -> UI/client`。
 5. 先写最小真实 harness；不能用固定账号、直接写 store、手工改 projection 或 fake ack 冒充产品链路。

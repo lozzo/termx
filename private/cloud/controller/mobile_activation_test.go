@@ -12,6 +12,7 @@ import (
 
 	"github.com/muxvia/muxvia/private/cloud/companion/cloudservice/httpapi"
 	"github.com/muxvia/muxvia/private/cloud/companion/session"
+	cloudcatalog "github.com/muxvia/muxvia/private/cloud/control-plane/catalog"
 	cloudcommerce "github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/persistence"
@@ -191,7 +192,8 @@ func newMobileActivationTestService(t *testing.T) (*mobileActivationService, *cl
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
-	commerce, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalog.Contract(), Now: func() time.Time { return now }})
+	catalogSource, _ := cloudcatalog.NewSnapshotSource(catalog.Contract())
+	commerce, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalogSource, Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,13 +1,17 @@
-import { create } from "@bufbuild/protobuf";
+import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
+import { FieldMaskSchema } from "@bufbuild/protobuf/wkt";
 import {
   Building2,
+  History,
   LogOut,
+  PackageOpen,
   RefreshCw,
   Search,
   Server,
   ShieldCheck,
+  SlidersHorizontal,
 } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -17,6 +21,14 @@ import {
   ListHubFleetResponseSchema,
   ListOperatorAccountsRequestSchema,
   ListOperatorAccountsResponseSchema,
+  ListPlanCatalogReleasesRequestSchema,
+  ListPlanCatalogReleasesResponseSchema,
+  ListEntitlementOverridesRequestSchema,
+  ListEntitlementOverridesResponseSchema,
+  PublishPlanCatalogRequestSchema,
+  PublishPlanCatalogResponseSchema,
+  PutEntitlementOverrideRequestSchema,
+  PutEntitlementOverrideResponseSchema,
   ManagementActorKind,
   OperatorLoginRequestSchema,
   OperatorLoginResponseSchema,
@@ -34,10 +46,16 @@ import {
   type GetOperatorAccountResponse,
   type ListHubFleetResponse,
   type ListOperatorAccountsResponse,
+  type ListPlanCatalogReleasesResponse,
+  type ListEntitlementOverridesResponse,
 } from "@/generated/cloudpb/cloud_management_pb";
 import {
+  EntitlementOverrideProjectionSchema,
+  PlanCapabilitySchema,
+  PlanCatalogContractSchema,
   SubscriptionStatus,
   SubscriptionTransitionKind,
+  type PlanCatalogContract,
 } from "@/generated/cloudpb/cloud_product_pb";
 import {
   Freshness,
@@ -51,13 +69,33 @@ export default function OperatorPage() {
   const [accounts, setAccounts] = useState<ListOperatorAccountsResponse>();
   const [fleet, setFleet] = useState<ListHubFleetResponse>();
   const [detail, setDetail] = useState<GetOperatorAccountResponse>();
+  const [catalogHistory, setCatalogHistory] =
+    useState<ListPlanCatalogReleasesResponse>();
+  const [overrides, setOverrides] =
+    useState<ListEntitlementOverridesResponse>();
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
+  const [catalogDraft, setCatalogDraft] = useState("");
+  const [catalogReason, setCatalogReason] = useState("");
+  const [overridePath, setOverridePath] = useState("cloud_device_limit");
+  const [overrideValue, setOverrideValue] = useState("");
+  const [overrideReason, setOverrideReason] = useState("");
+  const [overrideUntil, setOverrideUntil] = useState("");
+  const [busy, setBusy] = useState(false);
+  const catalogEditorRef = useRef<HTMLTextAreaElement>(null);
+
+  function showCatalog(catalog: PlanCatalogContract) {
+    setCatalogDraft(toJsonString(PlanCatalogContractSchema, catalog, { prettySpaces: 2 }));
+    requestAnimationFrame(() => {
+      catalogEditorRef.current?.setSelectionRange(0, 0);
+      catalogEditorRef.current?.scrollTo({ top: 0 });
+    });
+  }
 
   async function load(search = query) {
     try {
       const page = create(PageRequestSchema, { pageSize: 100 });
-      const [nextAccounts, nextFleet] = await Promise.all([
+      const [nextAccounts, nextFleet, nextCatalogHistory] = await Promise.all([
         protoPost(
           "/api/v1/operator/accounts/list",
           ListOperatorAccountsRequestSchema,
@@ -72,9 +110,24 @@ export default function OperatorPage() {
           ListHubFleetResponseSchema,
           "muxvia_cloud_operator_csrf",
         ),
+        protoPost(
+          "/api/v1/operator/catalog/list",
+          ListPlanCatalogReleasesRequestSchema,
+          create(ListPlanCatalogReleasesRequestSchema, { page }),
+          ListPlanCatalogReleasesResponseSchema,
+          "muxvia_cloud_operator_csrf",
+        ),
       ]);
       setAccounts(nextAccounts);
       setFleet(nextFleet);
+      setCatalogHistory(nextCatalogHistory);
+      const active = nextCatalogHistory.releases.find((item) => item.active);
+      if (active?.catalog && !catalogDraft)
+        setCatalogDraft(
+          toJsonString(PlanCatalogContractSchema, active.catalog, {
+            prettySpaces: 2,
+          }),
+        );
       setAuthenticated(true);
       setError("");
     } catch (cause) {
@@ -111,19 +164,107 @@ export default function OperatorPage() {
 
   async function select(accountId: string) {
     try {
-      setDetail(
-        await protoPost(
+      const page = create(PageRequestSchema, { pageSize: 100 });
+      const [nextDetail, nextOverrides] = await Promise.all([
+        protoPost(
           "/api/v1/operator/accounts/get",
           GetOperatorAccountRequestSchema,
           create(GetOperatorAccountRequestSchema, { accountId }),
           GetOperatorAccountResponseSchema,
           "muxvia_cloud_operator_csrf",
         ),
-      );
+        protoPost(
+          "/api/v1/operator/entitlement-overrides/list",
+          ListEntitlementOverridesRequestSchema,
+          create(ListEntitlementOverridesRequestSchema, {
+            accountId,
+            includeRevoked: true,
+            page,
+          }),
+          ListEntitlementOverridesResponseSchema,
+          "muxvia_cloud_operator_csrf",
+        ),
+      ]);
+      setDetail(nextDetail);
+      setOverrides(nextOverrides);
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Account detail failed",
       );
+    }
+  }
+
+  async function publishCatalog(event: FormEvent) {
+    event.preventDefault();
+    if (!catalogReason.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      const catalog = fromJsonString(PlanCatalogContractSchema, catalogDraft, {
+        ignoreUnknownFields: false,
+      });
+      await protoPost(
+        "/api/v1/operator/catalog/publish",
+        PublishPlanCatalogRequestSchema,
+        create(PublishPlanCatalogRequestSchema, {
+          catalog,
+          reason: catalogReason.trim(),
+          requestId: crypto.randomUUID(),
+        }),
+        PublishPlanCatalogResponseSchema,
+        "muxvia_cloud_operator_csrf",
+      );
+      setCatalogReason("");
+      await load();
+      requestAnimationFrame(() => {
+        catalogEditorRef.current?.setSelectionRange(0, 0);
+        catalogEditorRef.current?.scrollTo({ top: 0 });
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Catalog publish failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function putOverride(event: FormEvent) {
+    event.preventDefault();
+    const accountId = detail?.commerce?.account?.accountId;
+    const parsedValue = Number(overrideValue);
+    const until = new Date(overrideUntil);
+    if (!accountId || !Number.isFinite(parsedValue) || parsedValue < 0 || !overrideReason.trim() || Number.isNaN(until.getTime())) return;
+    const capability = create(PlanCapabilitySchema);
+    if (overridePath === "cloud_device_limit") capability.cloudDeviceLimit = parsedValue;
+    if (overridePath === "managed_p2p_max_concurrency") capability.managedP2pMaxConcurrency = parsedValue;
+    setBusy(true);
+    setError("");
+    try {
+      await protoPost(
+        "/api/v1/operator/entitlement-overrides/put",
+        PutEntitlementOverrideRequestSchema,
+        create(PutEntitlementOverrideRequestSchema, {
+          override: create(EntitlementOverrideProjectionSchema, {
+            accountId,
+            capabilityMask: create(FieldMaskSchema, { paths: [overridePath] }),
+            capability,
+            effectiveFromUnixMillis: BigInt(Date.now()),
+            effectiveUntilUnixMillis: BigInt(until.getTime()),
+            reason: overrideReason.trim(),
+          }),
+          requestId: crypto.randomUUID(),
+        }),
+        PutEntitlementOverrideResponseSchema,
+        "muxvia_cloud_operator_csrf",
+      );
+      setOverrideValue("");
+      setOverrideReason("");
+      setOverrideUntil("");
+      await select(accountId);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Entitlement override failed");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -281,10 +422,67 @@ export default function OperatorPage() {
         </div>
       </header>
       {error && (
-        <p className="mt-5 border border-destructive p-3 text-xs text-destructive">
+        <p role="alert" className="mt-5 border border-destructive p-3 text-xs text-destructive">
           {error}
         </p>
       )}
+      <section className="mt-6 border border-line bg-panel" data-testid="operator-catalog">
+        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-line p-4">
+          <div className="flex items-center gap-3">
+            <PackageOpen className="size-4 text-primary" />
+            <div>
+              <h2 className="text-sm font-medium">Plan catalog</h2>
+              <p className="mt-1 text-xs text-muted-foreground">Immutable releases for new checkout; existing subscriptions keep their purchased version.</p>
+            </div>
+          </div>
+          <span className="font-mono text-[10px] text-muted-foreground">
+            {catalogHistory?.releases.length ?? 0} RELEASES
+          </span>
+        </header>
+        <div className="grid lg:grid-cols-[minmax(260px,0.7fr)_minmax(420px,1.3fr)]">
+          <div className="border-b border-line lg:border-b-0 lg:border-r">
+            {catalogHistory?.releases.map((release) => (
+              <button
+                type="button"
+                key={release.catalog?.catalogVersion.toString()}
+                className="grid min-h-16 w-full grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-line px-4 py-3 text-left hover:bg-soft focus-visible:outline-2 focus-visible:outline-primary"
+                onClick={() => release.catalog && showCatalog(release.catalog)}
+              >
+                <History className="size-4 text-muted-foreground" />
+                <span>
+                  <strong className="block text-sm">Catalog {release.catalog?.catalogVersion.toString()}</strong>
+                  <small className="text-muted-foreground">{new Date(Number(release.publishedAtUnixMillis)).toLocaleString()}</small>
+                </span>
+                <span className={release.active ? "text-[10px] font-semibold text-success" : "text-[10px] text-muted-foreground"}>
+                  {release.active ? "ACTIVE" : "HISTORY"}
+                </span>
+              </button>
+            ))}
+          </div>
+          <form className="grid gap-4 p-4" onSubmit={publishCatalog}>
+            <label className="grid gap-2 text-xs font-medium">
+              Versioned Proto JSON
+              <textarea
+                ref={catalogEditorRef}
+                data-testid="catalog-editor"
+                className="min-h-64 w-full resize-y border border-line-strong bg-background p-3 font-mono text-xs leading-5 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                value={catalogDraft}
+                onChange={(event) => setCatalogDraft(event.target.value)}
+                spellCheck={false}
+              />
+            </label>
+            <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+              <label className="grid gap-2 text-xs font-medium">
+                Publish reason
+                <Input data-testid="catalog-reason" value={catalogReason} onChange={(event) => setCatalogReason(event.target.value)} placeholder="Describe price or capability changes" />
+              </label>
+              <Button data-testid="catalog-publish" disabled={busy || !catalogDraft || !catalogReason.trim()}>
+                Publish release
+              </Button>
+            </div>
+          </form>
+        </div>
+      </section>
       <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(360px,0.8fr)_minmax(480px,1.2fr)]">
         <section className="border border-line bg-panel">
           <header className="flex items-center gap-2 border-b border-line p-4">
@@ -372,6 +570,52 @@ export default function OperatorPage() {
                   label="Sessions"
                   value={String(detail.topology?.peerSessions.length ?? 0)}
                 />
+              </div>
+              <div className="border-t border-line" data-testid="operator-overrides">
+                <header className="flex items-center gap-2 p-4">
+                  <SlidersHorizontal className="size-4 text-primary" />
+                  <div>
+                    <h3 className="text-sm font-medium">User privileges</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">Temporary typed capability overrides. Expiry automatically restores the subscribed plan.</p>
+                  </div>
+                </header>
+                <form className="grid gap-3 border-t border-line p-4 md:grid-cols-2" onSubmit={putOverride}>
+                  <label className="grid gap-2 text-xs font-medium">
+                    Capability
+                    <select className="min-h-11 border border-line-strong bg-background px-3 text-sm outline-none focus:border-primary" value={overridePath} onChange={(event) => setOverridePath(event.target.value)}>
+                      <option value="cloud_device_limit">Cloud device limit</option>
+                      <option value="managed_p2p_max_concurrency">Managed P2P concurrency</option>
+                    </select>
+                  </label>
+                  <label className="grid gap-2 text-xs font-medium">
+                    Value
+                    <Input data-testid="override-value" type="number" min="0" value={overrideValue} onChange={(event) => setOverrideValue(event.target.value)} />
+                  </label>
+                  <label className="grid gap-2 text-xs font-medium">
+                    Effective until
+                    <Input data-testid="override-until" type="datetime-local" value={overrideUntil} onChange={(event) => setOverrideUntil(event.target.value)} />
+                  </label>
+                  <label className="grid gap-2 text-xs font-medium">
+                    Reason
+                    <Input data-testid="override-reason" value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Support grant or incident response" />
+                  </label>
+                  <Button className="md:col-start-2" data-testid="override-create" disabled={busy || !overrideValue || !overrideUntil || !overrideReason.trim()}>
+                    Apply privilege
+                  </Button>
+                </form>
+                <div className="border-t border-line">
+                  {overrides?.overrides.length ? overrides.overrides.slice().reverse().map((item) => (
+                    <div className="grid gap-2 border-b border-line px-4 py-3 text-xs md:grid-cols-[1fr_auto]" key={item.overrideId}>
+                      <span>
+                        <strong className="block">{item.capabilityMask?.paths.join(", ")}</strong>
+                        <small className="text-muted-foreground">{item.reason} · revision {item.revision.toString()}</small>
+                      </span>
+                      <span className={item.revokedAtUnixMillis > 0n || item.effectiveUntilUnixMillis <= BigInt(Date.now()) ? "text-muted-foreground" : "text-success"}>
+                        {item.revokedAtUnixMillis > 0n ? "REVOKED" : item.effectiveUntilUnixMillis <= BigInt(Date.now()) ? "EXPIRED" : "ACTIVE"}
+                      </span>
+                    </div>
+                  )) : <p className="p-4 text-xs text-muted-foreground">No privilege overrides for this account.</p>}
+                </div>
               </div>
               <div className="border-t border-line">
                 <h3 className="p-4 text-sm font-medium">Devices</h3>

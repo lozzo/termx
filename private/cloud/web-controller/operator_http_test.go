@@ -10,13 +10,16 @@ import (
 	"testing"
 	"time"
 
+	cloudcatalog "github.com/muxvia/muxvia/private/cloud/control-plane/catalog"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
+	cloudentitlement "github.com/muxvia/muxvia/private/cloud/control-plane/entitlement"
 	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	webcontroller "github.com/muxvia/muxvia/private/cloud/web-controller"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
 func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *testing.T) {
@@ -30,7 +33,11 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	commerceService, err := commerce.New(commerce.Config{Store: store, Catalog: catalog.Contract(), Now: func() time.Time { return now }})
+	catalogService, _ := cloudcatalog.New(store, func() time.Time { return now })
+	if err := catalogService.Bootstrap(context.Background(), catalog.Contract()); err != nil {
+		t.Fatal(err)
+	}
+	commerceService, err := commerce.New(commerce.Config{Store: store, Catalog: catalogService, Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,13 +46,14 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 		t.Fatal(err)
 	}
 	accountID := registered.GetSession().GetAccount().GetAccountId()
+	overrides, _ := cloudentitlement.NewOverrideService(cloudentitlement.OverrideServiceConfig{Store: store, Plans: catalogService, Now: func() time.Time { return now }})
 	topology := &managementTargetSource{}
 	outbox, _ := commandoutbox.New(store)
 	planner, _ := commandoutbox.NewPlanner(outbox, topology, nil, bytes.NewReader(bytes.Repeat([]byte{7}, 64)), nil)
 	adminToken := bytes.Repeat([]byte{0x41}, 32)
 	admin, err := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{
 		AccessToken: adminToken, OperatorID: "operator-admin", ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN,
-		Commerce: commerceService, Topology: topology, Quota: store, Outbox: outbox, Planner: planner, Fleet: staticFleet{}, Now: func() time.Time { return now },
+		Commerce: commerceService, Catalog: catalogService, Overrides: overrides, Topology: topology, Quota: store, Outbox: outbox, Planner: planner, Fleet: staticFleet{}, Now: func() time.Time { return now },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -57,6 +65,29 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 	admin.ServeHTTP(listResponse, list)
 	if listResponse.Code != http.StatusOK || !strings.Contains(listResponse.Body.String(), accountID) {
 		t.Fatalf("operator account list = %d: %s", listResponse.Code, listResponse.Body.String())
+	}
+	catalogList := operatorRequest(t, http.MethodPost, "/api/v1/operator/catalog/list", &cloudpb.ListPlanCatalogReleasesRequest{}, adminCookies)
+	catalogListResponse := httptest.NewRecorder()
+	admin.ServeHTTP(catalogListResponse, catalogList)
+	if catalogListResponse.Code != http.StatusOK || !strings.Contains(catalogListResponse.Body.String(), "catalog_version\":\"1") {
+		t.Fatalf("operator catalog list = %d: %s", catalogListResponse.Code, catalogListResponse.Body.String())
+	}
+	nextCatalog := proto.Clone(catalog.Contract()).(*cloudpb.PlanCatalogContract)
+	nextCatalog.CatalogVersion = 2
+	for _, plan := range nextCatalog.Plans {
+		plan.PlanVersion++
+	}
+	publish := operatorRequest(t, http.MethodPost, "/api/v1/operator/catalog/publish", &cloudpb.PublishPlanCatalogRequest{Catalog: nextCatalog, Reason: "publish next catalog", RequestId: "catalog-request-2"}, adminCookies)
+	publishResponse := httptest.NewRecorder()
+	admin.ServeHTTP(publishResponse, publish)
+	if publishResponse.Code != http.StatusOK || !strings.Contains(publishResponse.Body.String(), "catalog_version\":\"2") {
+		t.Fatalf("operator catalog publish = %d: %s", publishResponse.Code, publishResponse.Body.String())
+	}
+	putOverride := operatorRequest(t, http.MethodPost, "/api/v1/operator/entitlement-overrides/put", &cloudpb.PutEntitlementOverrideRequest{Override: &cloudpb.EntitlementOverrideProjection{AccountId: accountID, CapabilityMask: &fieldmaskpb.FieldMask{Paths: []string{"cloud_device_limit"}}, Capability: &cloudpb.PlanCapability{CloudDeviceLimit: 9}, EffectiveFromUnixMillis: now.Add(-time.Minute).UnixMilli(), EffectiveUntilUnixMillis: now.Add(time.Hour).UnixMilli(), Reason: "support grant"}, RequestId: "override-request-1"}, adminCookies)
+	putOverrideResponse := httptest.NewRecorder()
+	admin.ServeHTTP(putOverrideResponse, putOverride)
+	if putOverrideResponse.Code != http.StatusOK || !strings.Contains(putOverrideResponse.Body.String(), "cloud_device_limit\":9") {
+		t.Fatalf("operator entitlement override = %d: %s", putOverrideResponse.Code, putOverrideResponse.Body.String())
 	}
 	missing := operatorRequest(t, http.MethodPost, "/api/v1/operator/accounts/get", &cloudpb.GetOperatorAccountRequest{AccountId: "missing-account"}, adminCookies)
 	missingResponse := httptest.NewRecorder()
@@ -90,7 +121,7 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 	readonlyToken := bytes.Repeat([]byte{0x52}, 32)
 	readonly, err := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{
 		AccessToken: readonlyToken, OperatorID: "operator-readonly", ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_READONLY,
-		Commerce: commerceService, Topology: topology, Quota: store, Outbox: outbox, Planner: planner, Fleet: staticFleet{}, Now: func() time.Time { return now },
+		Commerce: commerceService, Catalog: catalogService, Overrides: overrides, Topology: topology, Quota: store, Outbox: outbox, Planner: planner, Fleet: staticFleet{}, Now: func() time.Time { return now },
 	})
 	if err != nil {
 		t.Fatal(err)

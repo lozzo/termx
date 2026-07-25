@@ -4,6 +4,8 @@ package muxvia.cloud.v1;
 
 option go_package = "github.com/muxvia/muxvia/proto/cloudpb";
 
+import "google/protobuf/field_mask.proto";
+
 // SubscriptionStatus 是交易状态机投影到服务能力层的稳定订阅状态。
 enum SubscriptionStatus {
   SUBSCRIPTION_STATUS_UNSPECIFIED = 0;
@@ -127,6 +129,13 @@ message PlanDefinition {
   bool included = 5;
   PlanPriceDefinition price = 6;
   PlanPresentation presentation = 7;
+  CreemProductMapping creem = 8;
+}
+
+// CreemProductMapping 把一个不可变套餐版本绑定到已在 Creem 后台核对的产品。
+// included/contact 套餐不得填写；支付 adapter 不允许按 plan_id 猜 product ID。
+message CreemProductMapping {
+  string product_id = 1;
 }
 
 // PlanPriceDefinition 是 catalog 与订单快照共用的价格契约。
@@ -153,6 +162,35 @@ message PlanPresentation {
 message PlanCatalogContract {
   uint64 catalog_version = 1;
   repeated PlanDefinition plans = 2;
+}
+
+// PlanCatalogReleaseProjection 是数据库中不可变的目录发布记录。
+// active 只表示当前新交易读取的 head；旧订单和订阅始终按各自快照解释。
+message PlanCatalogReleaseProjection {
+  PlanCatalogContract catalog = 1;
+  bool active = 2;
+  string actor_id = 3;
+  string reason = 4;
+  string request_id = 5;
+  int64 published_at_unix_millis = 6;
+  uint64 revision = 7;
+}
+
+// EntitlementOverrideProjection 是账号级、类型化且有时效的能力覆盖。
+// capability_mask 只能选择 PlanCapability 已声明的白名单字段；空值和自由 JSON 均被拒绝。
+message EntitlementOverrideProjection {
+  string override_id = 1;
+  string account_id = 2;
+  google.protobuf.FieldMask capability_mask = 3;
+  PlanCapability capability = 4;
+  int64 effective_from_unix_millis = 5;
+  int64 effective_until_unix_millis = 6;
+  string reason = 7;
+  string actor_id = 8;
+  uint64 revision = 9;
+  int64 created_at_unix_millis = 10;
+  int64 updated_at_unix_millis = 11;
+  int64 revoked_at_unix_millis = 12;
 }
 
 // SubscriptionProjection 是订单/支付状态机输出的账号订阅投影。
@@ -183,6 +221,7 @@ message EntitlementProjection {
   int64 effective_until_unix_millis = 8;
   PlanCapability capability = 9;
   int64 updated_at_unix_millis = 10;
+  uint64 revision = 11;
 }
 
 // RelayQuotaPeriod 是账号当前 billing period 的持久额度投影。

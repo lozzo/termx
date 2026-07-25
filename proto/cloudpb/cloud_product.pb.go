@@ -9,6 +9,7 @@ package cloudpb
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -738,6 +739,7 @@ type PlanDefinition struct {
 	Included          bool                   `protobuf:"varint,5,opt,name=included,proto3" json:"included,omitempty"`
 	Price             *PlanPriceDefinition   `protobuf:"bytes,6,opt,name=price,proto3" json:"price,omitempty"`
 	Presentation      *PlanPresentation      `protobuf:"bytes,7,opt,name=presentation,proto3" json:"presentation,omitempty"`
+	Creem             *CreemProductMapping   `protobuf:"bytes,8,opt,name=creem,proto3" json:"creem,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -821,6 +823,59 @@ func (x *PlanDefinition) GetPresentation() *PlanPresentation {
 	return nil
 }
 
+func (x *PlanDefinition) GetCreem() *CreemProductMapping {
+	if x != nil {
+		return x.Creem
+	}
+	return nil
+}
+
+// CreemProductMapping 把一个不可变套餐版本绑定到已在 Creem 后台核对的产品。
+// included/contact 套餐不得填写；支付 adapter 不允许按 plan_id 猜 product ID。
+type CreemProductMapping struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProductId     string                 `protobuf:"bytes,1,opt,name=product_id,json=productId,proto3" json:"product_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreemProductMapping) Reset() {
+	*x = CreemProductMapping{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreemProductMapping) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreemProductMapping) ProtoMessage() {}
+
+func (x *CreemProductMapping) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreemProductMapping.ProtoReflect.Descriptor instead.
+func (*CreemProductMapping) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *CreemProductMapping) GetProductId() string {
+	if x != nil {
+		return x.ProductId
+	}
+	return ""
+}
+
 // PlanPriceDefinition 是 catalog 与订单快照共用的价格契约。
 type PlanPriceDefinition struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -835,7 +890,7 @@ type PlanPriceDefinition struct {
 
 func (x *PlanPriceDefinition) Reset() {
 	*x = PlanPriceDefinition{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[3]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -847,7 +902,7 @@ func (x *PlanPriceDefinition) String() string {
 func (*PlanPriceDefinition) ProtoMessage() {}
 
 func (x *PlanPriceDefinition) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[3]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -860,7 +915,7 @@ func (x *PlanPriceDefinition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanPriceDefinition.ProtoReflect.Descriptor instead.
 func (*PlanPriceDefinition) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{3}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *PlanPriceDefinition) GetMode() CatalogPriceMode {
@@ -914,7 +969,7 @@ type PlanPresentation struct {
 
 func (x *PlanPresentation) Reset() {
 	*x = PlanPresentation{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[4]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -926,7 +981,7 @@ func (x *PlanPresentation) String() string {
 func (*PlanPresentation) ProtoMessage() {}
 
 func (x *PlanPresentation) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[4]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -939,7 +994,7 @@ func (x *PlanPresentation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanPresentation.ProtoReflect.Descriptor instead.
 func (*PlanPresentation) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{4}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *PlanPresentation) GetName() string {
@@ -1002,7 +1057,7 @@ type PlanCatalogContract struct {
 
 func (x *PlanCatalogContract) Reset() {
 	*x = PlanCatalogContract{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[5]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1014,7 +1069,7 @@ func (x *PlanCatalogContract) String() string {
 func (*PlanCatalogContract) ProtoMessage() {}
 
 func (x *PlanCatalogContract) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[5]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1027,7 +1082,7 @@ func (x *PlanCatalogContract) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanCatalogContract.ProtoReflect.Descriptor instead.
 func (*PlanCatalogContract) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{5}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *PlanCatalogContract) GetCatalogVersion() uint64 {
@@ -1042,6 +1097,234 @@ func (x *PlanCatalogContract) GetPlans() []*PlanDefinition {
 		return x.Plans
 	}
 	return nil
+}
+
+// PlanCatalogReleaseProjection 是数据库中不可变的目录发布记录。
+// active 只表示当前新交易读取的 head；旧订单和订阅始终按各自快照解释。
+type PlanCatalogReleaseProjection struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Catalog               *PlanCatalogContract   `protobuf:"bytes,1,opt,name=catalog,proto3" json:"catalog,omitempty"`
+	Active                bool                   `protobuf:"varint,2,opt,name=active,proto3" json:"active,omitempty"`
+	ActorId               string                 `protobuf:"bytes,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Reason                string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	RequestId             string                 `protobuf:"bytes,5,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	PublishedAtUnixMillis int64                  `protobuf:"varint,6,opt,name=published_at_unix_millis,json=publishedAtUnixMillis,proto3" json:"published_at_unix_millis,omitempty"`
+	Revision              uint64                 `protobuf:"varint,7,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *PlanCatalogReleaseProjection) Reset() {
+	*x = PlanCatalogReleaseProjection{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanCatalogReleaseProjection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanCatalogReleaseProjection) ProtoMessage() {}
+
+func (x *PlanCatalogReleaseProjection) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanCatalogReleaseProjection.ProtoReflect.Descriptor instead.
+func (*PlanCatalogReleaseProjection) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *PlanCatalogReleaseProjection) GetCatalog() *PlanCatalogContract {
+	if x != nil {
+		return x.Catalog
+	}
+	return nil
+}
+
+func (x *PlanCatalogReleaseProjection) GetActive() bool {
+	if x != nil {
+		return x.Active
+	}
+	return false
+}
+
+func (x *PlanCatalogReleaseProjection) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *PlanCatalogReleaseProjection) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *PlanCatalogReleaseProjection) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *PlanCatalogReleaseProjection) GetPublishedAtUnixMillis() int64 {
+	if x != nil {
+		return x.PublishedAtUnixMillis
+	}
+	return 0
+}
+
+func (x *PlanCatalogReleaseProjection) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+// EntitlementOverrideProjection 是账号级、类型化且有时效的能力覆盖。
+// capability_mask 只能选择 PlanCapability 已声明的白名单字段；空值和自由 JSON 均被拒绝。
+type EntitlementOverrideProjection struct {
+	state                    protoimpl.MessageState `protogen:"open.v1"`
+	OverrideId               string                 `protobuf:"bytes,1,opt,name=override_id,json=overrideId,proto3" json:"override_id,omitempty"`
+	AccountId                string                 `protobuf:"bytes,2,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	CapabilityMask           *fieldmaskpb.FieldMask `protobuf:"bytes,3,opt,name=capability_mask,json=capabilityMask,proto3" json:"capability_mask,omitempty"`
+	Capability               *PlanCapability        `protobuf:"bytes,4,opt,name=capability,proto3" json:"capability,omitempty"`
+	EffectiveFromUnixMillis  int64                  `protobuf:"varint,5,opt,name=effective_from_unix_millis,json=effectiveFromUnixMillis,proto3" json:"effective_from_unix_millis,omitempty"`
+	EffectiveUntilUnixMillis int64                  `protobuf:"varint,6,opt,name=effective_until_unix_millis,json=effectiveUntilUnixMillis,proto3" json:"effective_until_unix_millis,omitempty"`
+	Reason                   string                 `protobuf:"bytes,7,opt,name=reason,proto3" json:"reason,omitempty"`
+	ActorId                  string                 `protobuf:"bytes,8,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Revision                 uint64                 `protobuf:"varint,9,opt,name=revision,proto3" json:"revision,omitempty"`
+	CreatedAtUnixMillis      int64                  `protobuf:"varint,10,opt,name=created_at_unix_millis,json=createdAtUnixMillis,proto3" json:"created_at_unix_millis,omitempty"`
+	UpdatedAtUnixMillis      int64                  `protobuf:"varint,11,opt,name=updated_at_unix_millis,json=updatedAtUnixMillis,proto3" json:"updated_at_unix_millis,omitempty"`
+	RevokedAtUnixMillis      int64                  `protobuf:"varint,12,opt,name=revoked_at_unix_millis,json=revokedAtUnixMillis,proto3" json:"revoked_at_unix_millis,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
+}
+
+func (x *EntitlementOverrideProjection) Reset() {
+	*x = EntitlementOverrideProjection{}
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EntitlementOverrideProjection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EntitlementOverrideProjection) ProtoMessage() {}
+
+func (x *EntitlementOverrideProjection) ProtoReflect() protoreflect.Message {
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EntitlementOverrideProjection.ProtoReflect.Descriptor instead.
+func (*EntitlementOverrideProjection) Descriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *EntitlementOverrideProjection) GetOverrideId() string {
+	if x != nil {
+		return x.OverrideId
+	}
+	return ""
+}
+
+func (x *EntitlementOverrideProjection) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+func (x *EntitlementOverrideProjection) GetCapabilityMask() *fieldmaskpb.FieldMask {
+	if x != nil {
+		return x.CapabilityMask
+	}
+	return nil
+}
+
+func (x *EntitlementOverrideProjection) GetCapability() *PlanCapability {
+	if x != nil {
+		return x.Capability
+	}
+	return nil
+}
+
+func (x *EntitlementOverrideProjection) GetEffectiveFromUnixMillis() int64 {
+	if x != nil {
+		return x.EffectiveFromUnixMillis
+	}
+	return 0
+}
+
+func (x *EntitlementOverrideProjection) GetEffectiveUntilUnixMillis() int64 {
+	if x != nil {
+		return x.EffectiveUntilUnixMillis
+	}
+	return 0
+}
+
+func (x *EntitlementOverrideProjection) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *EntitlementOverrideProjection) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *EntitlementOverrideProjection) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *EntitlementOverrideProjection) GetCreatedAtUnixMillis() int64 {
+	if x != nil {
+		return x.CreatedAtUnixMillis
+	}
+	return 0
+}
+
+func (x *EntitlementOverrideProjection) GetUpdatedAtUnixMillis() int64 {
+	if x != nil {
+		return x.UpdatedAtUnixMillis
+	}
+	return 0
+}
+
+func (x *EntitlementOverrideProjection) GetRevokedAtUnixMillis() int64 {
+	if x != nil {
+		return x.RevokedAtUnixMillis
+	}
+	return 0
 }
 
 // SubscriptionProjection 是订单/支付状态机输出的账号订阅投影。
@@ -1065,7 +1348,7 @@ type SubscriptionProjection struct {
 
 func (x *SubscriptionProjection) Reset() {
 	*x = SubscriptionProjection{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[6]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1077,7 +1360,7 @@ func (x *SubscriptionProjection) String() string {
 func (*SubscriptionProjection) ProtoMessage() {}
 
 func (x *SubscriptionProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[6]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1090,7 +1373,7 @@ func (x *SubscriptionProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionProjection.ProtoReflect.Descriptor instead.
 func (*SubscriptionProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{6}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SubscriptionProjection) GetSubscriptionId() string {
@@ -1190,13 +1473,14 @@ type EntitlementProjection struct {
 	EffectiveUntilUnixMillis int64                  `protobuf:"varint,8,opt,name=effective_until_unix_millis,json=effectiveUntilUnixMillis,proto3" json:"effective_until_unix_millis,omitempty"`
 	Capability               *PlanCapability        `protobuf:"bytes,9,opt,name=capability,proto3" json:"capability,omitempty"`
 	UpdatedAtUnixMillis      int64                  `protobuf:"varint,10,opt,name=updated_at_unix_millis,json=updatedAtUnixMillis,proto3" json:"updated_at_unix_millis,omitempty"`
+	Revision                 uint64                 `protobuf:"varint,11,opt,name=revision,proto3" json:"revision,omitempty"`
 	unknownFields            protoimpl.UnknownFields
 	sizeCache                protoimpl.SizeCache
 }
 
 func (x *EntitlementProjection) Reset() {
 	*x = EntitlementProjection{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[7]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1208,7 +1492,7 @@ func (x *EntitlementProjection) String() string {
 func (*EntitlementProjection) ProtoMessage() {}
 
 func (x *EntitlementProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[7]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1221,7 +1505,7 @@ func (x *EntitlementProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EntitlementProjection.ProtoReflect.Descriptor instead.
 func (*EntitlementProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{7}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *EntitlementProjection) GetAccountId() string {
@@ -1294,6 +1578,13 @@ func (x *EntitlementProjection) GetUpdatedAtUnixMillis() int64 {
 	return 0
 }
 
+func (x *EntitlementProjection) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
 // RelayQuotaPeriod 是账号当前 billing period 的持久额度投影。
 // used_bytes 只由后续已验证 usage settlement 增加；reserved_bytes 来自 ACTIVE reservation。
 type RelayQuotaPeriod struct {
@@ -1313,7 +1604,7 @@ type RelayQuotaPeriod struct {
 
 func (x *RelayQuotaPeriod) Reset() {
 	*x = RelayQuotaPeriod{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[8]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1325,7 +1616,7 @@ func (x *RelayQuotaPeriod) String() string {
 func (*RelayQuotaPeriod) ProtoMessage() {}
 
 func (x *RelayQuotaPeriod) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[8]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1338,7 +1629,7 @@ func (x *RelayQuotaPeriod) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayQuotaPeriod.ProtoReflect.Descriptor instead.
 func (*RelayQuotaPeriod) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{8}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RelayQuotaPeriod) GetAccountId() string {
@@ -1432,7 +1723,7 @@ type RelayLeaseReservation struct {
 
 func (x *RelayLeaseReservation) Reset() {
 	*x = RelayLeaseReservation{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[9]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1444,7 +1735,7 @@ func (x *RelayLeaseReservation) String() string {
 func (*RelayLeaseReservation) ProtoMessage() {}
 
 func (x *RelayLeaseReservation) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[9]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1457,7 +1748,7 @@ func (x *RelayLeaseReservation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayLeaseReservation.ProtoReflect.Descriptor instead.
 func (*RelayLeaseReservation) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{9}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RelayLeaseReservation) GetLeaseId() string {
@@ -1604,7 +1895,7 @@ type RelayUsageAggregate struct {
 
 func (x *RelayUsageAggregate) Reset() {
 	*x = RelayUsageAggregate{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[10]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1616,7 +1907,7 @@ func (x *RelayUsageAggregate) String() string {
 func (*RelayUsageAggregate) ProtoMessage() {}
 
 func (x *RelayUsageAggregate) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[10]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1629,7 +1920,7 @@ func (x *RelayUsageAggregate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayUsageAggregate.ProtoReflect.Descriptor instead.
 func (*RelayUsageAggregate) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{10}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *RelayUsageAggregate) GetAccountId() string {
@@ -1705,7 +1996,7 @@ type GetAccountRelayQuotaRequest struct {
 
 func (x *GetAccountRelayQuotaRequest) Reset() {
 	*x = GetAccountRelayQuotaRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[11]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1717,7 +2008,7 @@ func (x *GetAccountRelayQuotaRequest) String() string {
 func (*GetAccountRelayQuotaRequest) ProtoMessage() {}
 
 func (x *GetAccountRelayQuotaRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[11]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1730,7 +2021,7 @@ func (x *GetAccountRelayQuotaRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountRelayQuotaRequest.ProtoReflect.Descriptor instead.
 func (*GetAccountRelayQuotaRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{11}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GetAccountRelayQuotaRequest) GetAccountId() string {
@@ -1751,7 +2042,7 @@ type GetAccountRelayQuotaResponse struct {
 
 func (x *GetAccountRelayQuotaResponse) Reset() {
 	*x = GetAccountRelayQuotaResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[12]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1763,7 +2054,7 @@ func (x *GetAccountRelayQuotaResponse) String() string {
 func (*GetAccountRelayQuotaResponse) ProtoMessage() {}
 
 func (x *GetAccountRelayQuotaResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[12]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1776,7 +2067,7 @@ func (x *GetAccountRelayQuotaResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountRelayQuotaResponse.ProtoReflect.Descriptor instead.
 func (*GetAccountRelayQuotaResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{12}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GetAccountRelayQuotaResponse) GetPeriod() *RelayQuotaPeriod {
@@ -1802,7 +2093,7 @@ type GetPlanCatalogRequest struct {
 
 func (x *GetPlanCatalogRequest) Reset() {
 	*x = GetPlanCatalogRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[13]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1814,7 +2105,7 @@ func (x *GetPlanCatalogRequest) String() string {
 func (*GetPlanCatalogRequest) ProtoMessage() {}
 
 func (x *GetPlanCatalogRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[13]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1827,7 +2118,7 @@ func (x *GetPlanCatalogRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPlanCatalogRequest.ProtoReflect.Descriptor instead.
 func (*GetPlanCatalogRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{13}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{16}
 }
 
 // GetPlanCatalogResponse 返回 versioned PlanCatalog contract。
@@ -1840,7 +2131,7 @@ type GetPlanCatalogResponse struct {
 
 func (x *GetPlanCatalogResponse) Reset() {
 	*x = GetPlanCatalogResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[14]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1852,7 +2143,7 @@ func (x *GetPlanCatalogResponse) String() string {
 func (*GetPlanCatalogResponse) ProtoMessage() {}
 
 func (x *GetPlanCatalogResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[14]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1865,7 +2156,7 @@ func (x *GetPlanCatalogResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPlanCatalogResponse.ProtoReflect.Descriptor instead.
 func (*GetPlanCatalogResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{14}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *GetPlanCatalogResponse) GetCatalog() *PlanCatalogContract {
@@ -1885,7 +2176,7 @@ type GetAccountSubscriptionRequest struct {
 
 func (x *GetAccountSubscriptionRequest) Reset() {
 	*x = GetAccountSubscriptionRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[15]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1897,7 +2188,7 @@ func (x *GetAccountSubscriptionRequest) String() string {
 func (*GetAccountSubscriptionRequest) ProtoMessage() {}
 
 func (x *GetAccountSubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[15]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1910,7 +2201,7 @@ func (x *GetAccountSubscriptionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountSubscriptionRequest.ProtoReflect.Descriptor instead.
 func (*GetAccountSubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{15}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *GetAccountSubscriptionRequest) GetAccountId() string {
@@ -1930,7 +2221,7 @@ type GetAccountSubscriptionResponse struct {
 
 func (x *GetAccountSubscriptionResponse) Reset() {
 	*x = GetAccountSubscriptionResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[16]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1942,7 +2233,7 @@ func (x *GetAccountSubscriptionResponse) String() string {
 func (*GetAccountSubscriptionResponse) ProtoMessage() {}
 
 func (x *GetAccountSubscriptionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[16]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1955,7 +2246,7 @@ func (x *GetAccountSubscriptionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountSubscriptionResponse.ProtoReflect.Descriptor instead.
 func (*GetAccountSubscriptionResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{16}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GetAccountSubscriptionResponse) GetSubscription() *SubscriptionProjection {
@@ -1975,7 +2266,7 @@ type GetAccountEntitlementRequest struct {
 
 func (x *GetAccountEntitlementRequest) Reset() {
 	*x = GetAccountEntitlementRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[17]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1987,7 +2278,7 @@ func (x *GetAccountEntitlementRequest) String() string {
 func (*GetAccountEntitlementRequest) ProtoMessage() {}
 
 func (x *GetAccountEntitlementRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[17]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2000,7 +2291,7 @@ func (x *GetAccountEntitlementRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountEntitlementRequest.ProtoReflect.Descriptor instead.
 func (*GetAccountEntitlementRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{17}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *GetAccountEntitlementRequest) GetAccountId() string {
@@ -2020,7 +2311,7 @@ type GetAccountEntitlementResponse struct {
 
 func (x *GetAccountEntitlementResponse) Reset() {
 	*x = GetAccountEntitlementResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[18]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2032,7 +2323,7 @@ func (x *GetAccountEntitlementResponse) String() string {
 func (*GetAccountEntitlementResponse) ProtoMessage() {}
 
 func (x *GetAccountEntitlementResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[18]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2045,7 +2336,7 @@ func (x *GetAccountEntitlementResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountEntitlementResponse.ProtoReflect.Descriptor instead.
 func (*GetAccountEntitlementResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{18}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *GetAccountEntitlementResponse) GetEntitlement() *EntitlementProjection {
@@ -2070,7 +2361,7 @@ type AccountProjection struct {
 
 func (x *AccountProjection) Reset() {
 	*x = AccountProjection{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[19]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2082,7 +2373,7 @@ func (x *AccountProjection) String() string {
 func (*AccountProjection) ProtoMessage() {}
 
 func (x *AccountProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[19]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2095,7 +2386,7 @@ func (x *AccountProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccountProjection.ProtoReflect.Descriptor instead.
 func (*AccountProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{19}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *AccountProjection) GetAccountId() string {
@@ -2156,7 +2447,7 @@ type AccountSessionCredential struct {
 
 func (x *AccountSessionCredential) Reset() {
 	*x = AccountSessionCredential{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[20]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2168,7 +2459,7 @@ func (x *AccountSessionCredential) String() string {
 func (*AccountSessionCredential) ProtoMessage() {}
 
 func (x *AccountSessionCredential) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[20]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2181,7 +2472,7 @@ func (x *AccountSessionCredential) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccountSessionCredential.ProtoReflect.Descriptor instead.
 func (*AccountSessionCredential) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{20}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *AccountSessionCredential) GetSessionId() string {
@@ -2245,7 +2536,7 @@ type RegisterAccountRequest struct {
 
 func (x *RegisterAccountRequest) Reset() {
 	*x = RegisterAccountRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[21]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2257,7 +2548,7 @@ func (x *RegisterAccountRequest) String() string {
 func (*RegisterAccountRequest) ProtoMessage() {}
 
 func (x *RegisterAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[21]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2270,7 +2561,7 @@ func (x *RegisterAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterAccountRequest.ProtoReflect.Descriptor instead.
 func (*RegisterAccountRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{21}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *RegisterAccountRequest) GetEmail() string {
@@ -2303,7 +2594,7 @@ type RegisterAccountResponse struct {
 
 func (x *RegisterAccountResponse) Reset() {
 	*x = RegisterAccountResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[22]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2315,7 +2606,7 @@ func (x *RegisterAccountResponse) String() string {
 func (*RegisterAccountResponse) ProtoMessage() {}
 
 func (x *RegisterAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[22]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2328,7 +2619,7 @@ func (x *RegisterAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterAccountResponse.ProtoReflect.Descriptor instead.
 func (*RegisterAccountResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{22}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *RegisterAccountResponse) GetSession() *AccountSessionCredential {
@@ -2349,7 +2640,7 @@ type PasswordLoginRequest struct {
 
 func (x *PasswordLoginRequest) Reset() {
 	*x = PasswordLoginRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[23]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2361,7 +2652,7 @@ func (x *PasswordLoginRequest) String() string {
 func (*PasswordLoginRequest) ProtoMessage() {}
 
 func (x *PasswordLoginRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[23]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2374,7 +2665,7 @@ func (x *PasswordLoginRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PasswordLoginRequest.ProtoReflect.Descriptor instead.
 func (*PasswordLoginRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{23}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *PasswordLoginRequest) GetEmail() string {
@@ -2400,7 +2691,7 @@ type PasswordLoginResponse struct {
 
 func (x *PasswordLoginResponse) Reset() {
 	*x = PasswordLoginResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[24]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2412,7 +2703,7 @@ func (x *PasswordLoginResponse) String() string {
 func (*PasswordLoginResponse) ProtoMessage() {}
 
 func (x *PasswordLoginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[24]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2425,7 +2716,7 @@ func (x *PasswordLoginResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PasswordLoginResponse.ProtoReflect.Descriptor instead.
 func (*PasswordLoginResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{24}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *PasswordLoginResponse) GetSession() *AccountSessionCredential {
@@ -2445,7 +2736,7 @@ type RefreshAccountSessionRequest struct {
 
 func (x *RefreshAccountSessionRequest) Reset() {
 	*x = RefreshAccountSessionRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[25]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2457,7 +2748,7 @@ func (x *RefreshAccountSessionRequest) String() string {
 func (*RefreshAccountSessionRequest) ProtoMessage() {}
 
 func (x *RefreshAccountSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[25]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2470,7 +2761,7 @@ func (x *RefreshAccountSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshAccountSessionRequest.ProtoReflect.Descriptor instead.
 func (*RefreshAccountSessionRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{25}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *RefreshAccountSessionRequest) GetRefreshToken() []byte {
@@ -2489,7 +2780,7 @@ type RefreshAccountSessionResponse struct {
 
 func (x *RefreshAccountSessionResponse) Reset() {
 	*x = RefreshAccountSessionResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[26]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2501,7 +2792,7 @@ func (x *RefreshAccountSessionResponse) String() string {
 func (*RefreshAccountSessionResponse) ProtoMessage() {}
 
 func (x *RefreshAccountSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[26]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2514,7 +2805,7 @@ func (x *RefreshAccountSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshAccountSessionResponse.ProtoReflect.Descriptor instead.
 func (*RefreshAccountSessionResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{26}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *RefreshAccountSessionResponse) GetSession() *AccountSessionCredential {
@@ -2535,7 +2826,7 @@ type LogoutAccountSessionRequest struct {
 
 func (x *LogoutAccountSessionRequest) Reset() {
 	*x = LogoutAccountSessionRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[27]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2547,7 +2838,7 @@ func (x *LogoutAccountSessionRequest) String() string {
 func (*LogoutAccountSessionRequest) ProtoMessage() {}
 
 func (x *LogoutAccountSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[27]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2560,7 +2851,7 @@ func (x *LogoutAccountSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogoutAccountSessionRequest.ProtoReflect.Descriptor instead.
 func (*LogoutAccountSessionRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{27}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *LogoutAccountSessionRequest) GetSessionId() string {
@@ -2585,7 +2876,7 @@ type LogoutAccountSessionResponse struct {
 
 func (x *LogoutAccountSessionResponse) Reset() {
 	*x = LogoutAccountSessionResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[28]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2597,7 +2888,7 @@ func (x *LogoutAccountSessionResponse) String() string {
 func (*LogoutAccountSessionResponse) ProtoMessage() {}
 
 func (x *LogoutAccountSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[28]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2610,7 +2901,7 @@ func (x *LogoutAccountSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogoutAccountSessionResponse.ProtoReflect.Descriptor instead.
 func (*LogoutAccountSessionResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{28}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{31}
 }
 
 // ChangeAccountPasswordRequest 验证当前密码后替换 verifier，并撤销账号全部旧 session。
@@ -2624,7 +2915,7 @@ type ChangeAccountPasswordRequest struct {
 
 func (x *ChangeAccountPasswordRequest) Reset() {
 	*x = ChangeAccountPasswordRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[29]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2636,7 +2927,7 @@ func (x *ChangeAccountPasswordRequest) String() string {
 func (*ChangeAccountPasswordRequest) ProtoMessage() {}
 
 func (x *ChangeAccountPasswordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[29]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2649,7 +2940,7 @@ func (x *ChangeAccountPasswordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeAccountPasswordRequest.ProtoReflect.Descriptor instead.
 func (*ChangeAccountPasswordRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{29}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ChangeAccountPasswordRequest) GetCurrentPassword() string {
@@ -2675,7 +2966,7 @@ type ChangeAccountPasswordResponse struct {
 
 func (x *ChangeAccountPasswordResponse) Reset() {
 	*x = ChangeAccountPasswordResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[30]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2687,7 +2978,7 @@ func (x *ChangeAccountPasswordResponse) String() string {
 func (*ChangeAccountPasswordResponse) ProtoMessage() {}
 
 func (x *ChangeAccountPasswordResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[30]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2700,7 +2991,7 @@ func (x *ChangeAccountPasswordResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeAccountPasswordResponse.ProtoReflect.Descriptor instead.
 func (*ChangeAccountPasswordResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{30}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ChangeAccountPasswordResponse) GetSession() *AccountSessionCredential {
@@ -2733,7 +3024,7 @@ type OrderProjection struct {
 
 func (x *OrderProjection) Reset() {
 	*x = OrderProjection{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[31]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2745,7 +3036,7 @@ func (x *OrderProjection) String() string {
 func (*OrderProjection) ProtoMessage() {}
 
 func (x *OrderProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[31]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2758,7 +3049,7 @@ func (x *OrderProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OrderProjection.ProtoReflect.Descriptor instead.
 func (*OrderProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{31}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *OrderProjection) GetOrderId() string {
@@ -2877,7 +3168,7 @@ type PaymentAttemptProjection struct {
 
 func (x *PaymentAttemptProjection) Reset() {
 	*x = PaymentAttemptProjection{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[32]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2889,7 +3180,7 @@ func (x *PaymentAttemptProjection) String() string {
 func (*PaymentAttemptProjection) ProtoMessage() {}
 
 func (x *PaymentAttemptProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[32]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2902,7 +3193,7 @@ func (x *PaymentAttemptProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PaymentAttemptProjection.ProtoReflect.Descriptor instead.
 func (*PaymentAttemptProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{32}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *PaymentAttemptProjection) GetPaymentAttemptId() string {
@@ -2980,7 +3271,7 @@ type PaymentEventProjection struct {
 
 func (x *PaymentEventProjection) Reset() {
 	*x = PaymentEventProjection{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[33]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2992,7 +3283,7 @@ func (x *PaymentEventProjection) String() string {
 func (*PaymentEventProjection) ProtoMessage() {}
 
 func (x *PaymentEventProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[33]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3005,7 +3296,7 @@ func (x *PaymentEventProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PaymentEventProjection.ProtoReflect.Descriptor instead.
 func (*PaymentEventProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{33}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *PaymentEventProjection) GetEvent() *NormalizedPaymentEvent {
@@ -3033,7 +3324,7 @@ type CreateCheckoutRequest struct {
 
 func (x *CreateCheckoutRequest) Reset() {
 	*x = CreateCheckoutRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[34]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3045,7 +3336,7 @@ func (x *CreateCheckoutRequest) String() string {
 func (*CreateCheckoutRequest) ProtoMessage() {}
 
 func (x *CreateCheckoutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[34]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3058,7 +3349,7 @@ func (x *CreateCheckoutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCheckoutRequest.ProtoReflect.Descriptor instead.
 func (*CreateCheckoutRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{34}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *CreateCheckoutRequest) GetPlanId() string {
@@ -3084,7 +3375,7 @@ type CreateCheckoutResponse struct {
 
 func (x *CreateCheckoutResponse) Reset() {
 	*x = CreateCheckoutResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[35]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3096,7 +3387,7 @@ func (x *CreateCheckoutResponse) String() string {
 func (*CreateCheckoutResponse) ProtoMessage() {}
 
 func (x *CreateCheckoutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[35]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3109,7 +3400,7 @@ func (x *CreateCheckoutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCheckoutResponse.ProtoReflect.Descriptor instead.
 func (*CreateCheckoutResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{35}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *CreateCheckoutResponse) GetOrder() *OrderProjection {
@@ -3129,7 +3420,7 @@ type CreatePaymentAttemptRequest struct {
 
 func (x *CreatePaymentAttemptRequest) Reset() {
 	*x = CreatePaymentAttemptRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[36]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3141,7 +3432,7 @@ func (x *CreatePaymentAttemptRequest) String() string {
 func (*CreatePaymentAttemptRequest) ProtoMessage() {}
 
 func (x *CreatePaymentAttemptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[36]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3154,7 +3445,7 @@ func (x *CreatePaymentAttemptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePaymentAttemptRequest.ProtoReflect.Descriptor instead.
 func (*CreatePaymentAttemptRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{36}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *CreatePaymentAttemptRequest) GetOrderId() string {
@@ -3180,7 +3471,7 @@ type CreatePaymentAttemptResponse struct {
 
 func (x *CreatePaymentAttemptResponse) Reset() {
 	*x = CreatePaymentAttemptResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[37]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3192,7 +3483,7 @@ func (x *CreatePaymentAttemptResponse) String() string {
 func (*CreatePaymentAttemptResponse) ProtoMessage() {}
 
 func (x *CreatePaymentAttemptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[37]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3205,7 +3496,7 @@ func (x *CreatePaymentAttemptResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePaymentAttemptResponse.ProtoReflect.Descriptor instead.
 func (*CreatePaymentAttemptResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{37}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *CreatePaymentAttemptResponse) GetPaymentAttempt() *PaymentAttemptProjection {
@@ -3234,7 +3525,7 @@ type NormalizedPaymentEvent struct {
 
 func (x *NormalizedPaymentEvent) Reset() {
 	*x = NormalizedPaymentEvent{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[38]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3246,7 +3537,7 @@ func (x *NormalizedPaymentEvent) String() string {
 func (*NormalizedPaymentEvent) ProtoMessage() {}
 
 func (x *NormalizedPaymentEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[38]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3259,7 +3550,7 @@ func (x *NormalizedPaymentEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NormalizedPaymentEvent.ProtoReflect.Descriptor instead.
 func (*NormalizedPaymentEvent) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{38}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *NormalizedPaymentEvent) GetProviderEventId() string {
@@ -3342,7 +3633,7 @@ type ApplyPaymentEventRequest struct {
 
 func (x *ApplyPaymentEventRequest) Reset() {
 	*x = ApplyPaymentEventRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[39]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3354,7 +3645,7 @@ func (x *ApplyPaymentEventRequest) String() string {
 func (*ApplyPaymentEventRequest) ProtoMessage() {}
 
 func (x *ApplyPaymentEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[39]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3367,7 +3658,7 @@ func (x *ApplyPaymentEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyPaymentEventRequest.ProtoReflect.Descriptor instead.
 func (*ApplyPaymentEventRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{39}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ApplyPaymentEventRequest) GetEvent() *NormalizedPaymentEvent {
@@ -3389,7 +3680,7 @@ type ApplyPaymentEventResponse struct {
 
 func (x *ApplyPaymentEventResponse) Reset() {
 	*x = ApplyPaymentEventResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[40]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3401,7 +3692,7 @@ func (x *ApplyPaymentEventResponse) String() string {
 func (*ApplyPaymentEventResponse) ProtoMessage() {}
 
 func (x *ApplyPaymentEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[40]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3414,7 +3705,7 @@ func (x *ApplyPaymentEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyPaymentEventResponse.ProtoReflect.Descriptor instead.
 func (*ApplyPaymentEventResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{40}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ApplyPaymentEventResponse) GetOrder() *OrderProjection {
@@ -3456,7 +3747,7 @@ type ConfirmTestPaymentRequest struct {
 
 func (x *ConfirmTestPaymentRequest) Reset() {
 	*x = ConfirmTestPaymentRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[41]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3468,7 +3759,7 @@ func (x *ConfirmTestPaymentRequest) String() string {
 func (*ConfirmTestPaymentRequest) ProtoMessage() {}
 
 func (x *ConfirmTestPaymentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[41]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3481,7 +3772,7 @@ func (x *ConfirmTestPaymentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfirmTestPaymentRequest.ProtoReflect.Descriptor instead.
 func (*ConfirmTestPaymentRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{41}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *ConfirmTestPaymentRequest) GetOrderId() string {
@@ -3507,7 +3798,7 @@ type ConfirmTestPaymentResponse struct {
 
 func (x *ConfirmTestPaymentResponse) Reset() {
 	*x = ConfirmTestPaymentResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[42]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3519,7 +3810,7 @@ func (x *ConfirmTestPaymentResponse) String() string {
 func (*ConfirmTestPaymentResponse) ProtoMessage() {}
 
 func (x *ConfirmTestPaymentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[42]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3532,7 +3823,7 @@ func (x *ConfirmTestPaymentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfirmTestPaymentResponse.ProtoReflect.Descriptor instead.
 func (*ConfirmTestPaymentResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{42}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *ConfirmTestPaymentResponse) GetResult() *ApplyPaymentEventResponse {
@@ -3557,7 +3848,7 @@ type TransitionSubscriptionRequest struct {
 
 func (x *TransitionSubscriptionRequest) Reset() {
 	*x = TransitionSubscriptionRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[43]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3569,7 +3860,7 @@ func (x *TransitionSubscriptionRequest) String() string {
 func (*TransitionSubscriptionRequest) ProtoMessage() {}
 
 func (x *TransitionSubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[43]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3582,7 +3873,7 @@ func (x *TransitionSubscriptionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransitionSubscriptionRequest.ProtoReflect.Descriptor instead.
 func (*TransitionSubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{43}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *TransitionSubscriptionRequest) GetAccountId() string {
@@ -3637,7 +3928,7 @@ type TransitionSubscriptionResponse struct {
 
 func (x *TransitionSubscriptionResponse) Reset() {
 	*x = TransitionSubscriptionResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[44]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3649,7 +3940,7 @@ func (x *TransitionSubscriptionResponse) String() string {
 func (*TransitionSubscriptionResponse) ProtoMessage() {}
 
 func (x *TransitionSubscriptionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[44]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3662,7 +3953,7 @@ func (x *TransitionSubscriptionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransitionSubscriptionResponse.ProtoReflect.Descriptor instead.
 func (*TransitionSubscriptionResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{44}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *TransitionSubscriptionResponse) GetSubscription() *SubscriptionProjection {
@@ -3694,7 +3985,7 @@ type CommerceAuditProjection struct {
 
 func (x *CommerceAuditProjection) Reset() {
 	*x = CommerceAuditProjection{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[45]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3706,7 +3997,7 @@ func (x *CommerceAuditProjection) String() string {
 func (*CommerceAuditProjection) ProtoMessage() {}
 
 func (x *CommerceAuditProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[45]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3719,7 +4010,7 @@ func (x *CommerceAuditProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommerceAuditProjection.ProtoReflect.Descriptor instead.
 func (*CommerceAuditProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{45}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *CommerceAuditProjection) GetAuditId() string {
@@ -3773,7 +4064,7 @@ type GetAccountCommerceRequest struct {
 
 func (x *GetAccountCommerceRequest) Reset() {
 	*x = GetAccountCommerceRequest{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[46]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3785,7 +4076,7 @@ func (x *GetAccountCommerceRequest) String() string {
 func (*GetAccountCommerceRequest) ProtoMessage() {}
 
 func (x *GetAccountCommerceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[46]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3798,7 +4089,7 @@ func (x *GetAccountCommerceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountCommerceRequest.ProtoReflect.Descriptor instead.
 func (*GetAccountCommerceRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{46}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *GetAccountCommerceRequest) GetAccountId() string {
@@ -3825,7 +4116,7 @@ type GetAccountCommerceResponse struct {
 
 func (x *GetAccountCommerceResponse) Reset() {
 	*x = GetAccountCommerceResponse{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[47]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3837,7 +4128,7 @@ func (x *GetAccountCommerceResponse) String() string {
 func (*GetAccountCommerceResponse) ProtoMessage() {}
 
 func (x *GetAccountCommerceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[47]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3850,7 +4141,7 @@ func (x *GetAccountCommerceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountCommerceResponse.ProtoReflect.Descriptor instead.
 func (*GetAccountCommerceResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{47}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *GetAccountCommerceResponse) GetAccount() *AccountProjection {
@@ -3921,7 +4212,7 @@ type CloudProductError struct {
 
 func (x *CloudProductError) Reset() {
 	*x = CloudProductError{}
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[48]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3933,7 +4224,7 @@ func (x *CloudProductError) String() string {
 func (*CloudProductError) ProtoMessage() {}
 
 func (x *CloudProductError) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_product_proto_msgTypes[48]
+	mi := &file_cloudpb_cloud_product_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3946,7 +4237,7 @@ func (x *CloudProductError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloudProductError.ProtoReflect.Descriptor instead.
 func (*CloudProductError) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{48}
+	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *CloudProductError) GetCode() string {
@@ -3974,7 +4265,7 @@ var File_cloudpb_cloud_product_proto protoreflect.FileDescriptor
 
 const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\n" +
-	"\x1bcloudpb/cloud_product.proto\x12\x0fmuxvia.cloud.v1\"\xca\x02\n" +
+	"\x1bcloudpb/cloud_product.proto\x12\x0fmuxvia.cloud.v1\x1a google/protobuf/field_mask.proto\"\xca\x02\n" +
 	"\x16RelayServiceCapability\x12'\n" +
 	"\x0fallowed_regions\x18\x01 \x03(\tR\x0eallowedRegions\x12(\n" +
 	"\x10allow_relay_mesh\x18\x02 \x01(\bR\x0eallowRelayMesh\x12*\n" +
@@ -3988,7 +4279,7 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x1bmanaged_p2p_max_concurrency\x18\x02 \x01(\rR\x18managedP2pMaxConcurrency\x124\n" +
 	"\x16standard_relay_enabled\x18\x03 \x01(\bR\x14standardRelayEnabled\x12=\n" +
 	"\x05relay\x18\x04 \x01(\v2'.muxvia.cloud.v1.RelayServiceCapabilityR\x05relay\x12,\n" +
-	"\x12cloud_device_limit\x18\x05 \x01(\rR\x10cloudDeviceLimit\"\xdc\x02\n" +
+	"\x12cloud_device_limit\x18\x05 \x01(\rR\x10cloudDeviceLimit\"\x98\x03\n" +
 	"\x0ePlanDefinition\x12\x17\n" +
 	"\aplan_id\x18\x01 \x01(\tR\x06planId\x12!\n" +
 	"\fplan_version\x18\x02 \x01(\x04R\vplanVersion\x12.\n" +
@@ -3998,7 +4289,11 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"capability\x12\x1a\n" +
 	"\bincluded\x18\x05 \x01(\bR\bincluded\x12:\n" +
 	"\x05price\x18\x06 \x01(\v2$.muxvia.cloud.v1.PlanPriceDefinitionR\x05price\x12E\n" +
-	"\fpresentation\x18\a \x01(\v2!.muxvia.cloud.v1.PlanPresentationR\fpresentation\"\xc6\x01\n" +
+	"\fpresentation\x18\a \x01(\v2!.muxvia.cloud.v1.PlanPresentationR\fpresentation\x12:\n" +
+	"\x05creem\x18\b \x01(\v2$.muxvia.cloud.v1.CreemProductMappingR\x05creem\"4\n" +
+	"\x13CreemProductMapping\x12\x1d\n" +
+	"\n" +
+	"product_id\x18\x01 \x01(\tR\tproductId\"\xc6\x01\n" +
 	"\x13PlanPriceDefinition\x125\n" +
 	"\x04mode\x18\x01 \x01(\x0e2!.muxvia.cloud.v1.CatalogPriceModeR\x04mode\x12\x1a\n" +
 	"\bcurrency\x18\x02 \x01(\tR\bcurrency\x12#\n" +
@@ -4015,7 +4310,34 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\bfeatures\x18\a \x03(\tR\bfeatures\"u\n" +
 	"\x13PlanCatalogContract\x12'\n" +
 	"\x0fcatalog_version\x18\x01 \x01(\x04R\x0ecatalogVersion\x125\n" +
-	"\x05plans\x18\x02 \x03(\v2\x1f.muxvia.cloud.v1.PlanDefinitionR\x05plans\"\xbe\x04\n" +
+	"\x05plans\x18\x02 \x03(\v2\x1f.muxvia.cloud.v1.PlanDefinitionR\x05plans\"\x9d\x02\n" +
+	"\x1cPlanCatalogReleaseProjection\x12>\n" +
+	"\acatalog\x18\x01 \x01(\v2$.muxvia.cloud.v1.PlanCatalogContractR\acatalog\x12\x16\n" +
+	"\x06active\x18\x02 \x01(\bR\x06active\x12\x19\n" +
+	"\bactor_id\x18\x03 \x01(\tR\aactorId\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x05 \x01(\tR\trequestId\x127\n" +
+	"\x18published_at_unix_millis\x18\x06 \x01(\x03R\x15publishedAtUnixMillis\x12\x1a\n" +
+	"\brevision\x18\a \x01(\x04R\brevision\"\xcf\x04\n" +
+	"\x1dEntitlementOverrideProjection\x12\x1f\n" +
+	"\voverride_id\x18\x01 \x01(\tR\n" +
+	"overrideId\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x02 \x01(\tR\taccountId\x12C\n" +
+	"\x0fcapability_mask\x18\x03 \x01(\v2\x1a.google.protobuf.FieldMaskR\x0ecapabilityMask\x12?\n" +
+	"\n" +
+	"capability\x18\x04 \x01(\v2\x1f.muxvia.cloud.v1.PlanCapabilityR\n" +
+	"capability\x12;\n" +
+	"\x1aeffective_from_unix_millis\x18\x05 \x01(\x03R\x17effectiveFromUnixMillis\x12=\n" +
+	"\x1beffective_until_unix_millis\x18\x06 \x01(\x03R\x18effectiveUntilUnixMillis\x12\x16\n" +
+	"\x06reason\x18\a \x01(\tR\x06reason\x12\x19\n" +
+	"\bactor_id\x18\b \x01(\tR\aactorId\x12\x1a\n" +
+	"\brevision\x18\t \x01(\x04R\brevision\x123\n" +
+	"\x16created_at_unix_millis\x18\n" +
+	" \x01(\x03R\x13createdAtUnixMillis\x123\n" +
+	"\x16updated_at_unix_millis\x18\v \x01(\x03R\x13updatedAtUnixMillis\x123\n" +
+	"\x16revoked_at_unix_millis\x18\f \x01(\x03R\x13revokedAtUnixMillis\"\xbe\x04\n" +
 	"\x16SubscriptionProjection\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x1d\n" +
 	"\n" +
@@ -4030,7 +4352,7 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x14cancel_at_period_end\x18\n" +
 	" \x01(\bR\x11cancelAtPeriodEnd\x12-\n" +
 	"\x12provider_reference\x18\v \x01(\tR\x11providerReference\x12\x1a\n" +
-	"\brevision\x18\f \x01(\x04R\brevision\"\x98\x04\n" +
+	"\brevision\x18\f \x01(\x04R\brevision\"\xb4\x04\n" +
 	"\x15EntitlementProjection\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12:\n" +
@@ -4045,7 +4367,8 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"capability\x18\t \x01(\v2\x1f.muxvia.cloud.v1.PlanCapabilityR\n" +
 	"capability\x123\n" +
 	"\x16updated_at_unix_millis\x18\n" +
-	" \x01(\x03R\x13updatedAtUnixMillis\"\xf9\x02\n" +
+	" \x01(\x03R\x13updatedAtUnixMillis\x12\x1a\n" +
+	"\brevision\x18\v \x01(\x04R\brevision\"\xf9\x02\n" +
 	"\x10RelayQuotaPeriod\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x127\n" +
@@ -4340,7 +4663,7 @@ func file_cloudpb_cloud_product_proto_rawDescGZIP() []byte {
 }
 
 var file_cloudpb_cloud_product_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
-var file_cloudpb_cloud_product_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
+var file_cloudpb_cloud_product_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
 var file_cloudpb_cloud_product_proto_goTypes = []any{
 	(SubscriptionStatus)(0),                // 0: muxvia.cloud.v1.SubscriptionStatus
 	(OrderStatus)(0),                       // 1: muxvia.cloud.v1.OrderStatus
@@ -4354,107 +4677,115 @@ var file_cloudpb_cloud_product_proto_goTypes = []any{
 	(*RelayServiceCapability)(nil),         // 9: muxvia.cloud.v1.RelayServiceCapability
 	(*PlanCapability)(nil),                 // 10: muxvia.cloud.v1.PlanCapability
 	(*PlanDefinition)(nil),                 // 11: muxvia.cloud.v1.PlanDefinition
-	(*PlanPriceDefinition)(nil),            // 12: muxvia.cloud.v1.PlanPriceDefinition
-	(*PlanPresentation)(nil),               // 13: muxvia.cloud.v1.PlanPresentation
-	(*PlanCatalogContract)(nil),            // 14: muxvia.cloud.v1.PlanCatalogContract
-	(*SubscriptionProjection)(nil),         // 15: muxvia.cloud.v1.SubscriptionProjection
-	(*EntitlementProjection)(nil),          // 16: muxvia.cloud.v1.EntitlementProjection
-	(*RelayQuotaPeriod)(nil),               // 17: muxvia.cloud.v1.RelayQuotaPeriod
-	(*RelayLeaseReservation)(nil),          // 18: muxvia.cloud.v1.RelayLeaseReservation
-	(*RelayUsageAggregate)(nil),            // 19: muxvia.cloud.v1.RelayUsageAggregate
-	(*GetAccountRelayQuotaRequest)(nil),    // 20: muxvia.cloud.v1.GetAccountRelayQuotaRequest
-	(*GetAccountRelayQuotaResponse)(nil),   // 21: muxvia.cloud.v1.GetAccountRelayQuotaResponse
-	(*GetPlanCatalogRequest)(nil),          // 22: muxvia.cloud.v1.GetPlanCatalogRequest
-	(*GetPlanCatalogResponse)(nil),         // 23: muxvia.cloud.v1.GetPlanCatalogResponse
-	(*GetAccountSubscriptionRequest)(nil),  // 24: muxvia.cloud.v1.GetAccountSubscriptionRequest
-	(*GetAccountSubscriptionResponse)(nil), // 25: muxvia.cloud.v1.GetAccountSubscriptionResponse
-	(*GetAccountEntitlementRequest)(nil),   // 26: muxvia.cloud.v1.GetAccountEntitlementRequest
-	(*GetAccountEntitlementResponse)(nil),  // 27: muxvia.cloud.v1.GetAccountEntitlementResponse
-	(*AccountProjection)(nil),              // 28: muxvia.cloud.v1.AccountProjection
-	(*AccountSessionCredential)(nil),       // 29: muxvia.cloud.v1.AccountSessionCredential
-	(*RegisterAccountRequest)(nil),         // 30: muxvia.cloud.v1.RegisterAccountRequest
-	(*RegisterAccountResponse)(nil),        // 31: muxvia.cloud.v1.RegisterAccountResponse
-	(*PasswordLoginRequest)(nil),           // 32: muxvia.cloud.v1.PasswordLoginRequest
-	(*PasswordLoginResponse)(nil),          // 33: muxvia.cloud.v1.PasswordLoginResponse
-	(*RefreshAccountSessionRequest)(nil),   // 34: muxvia.cloud.v1.RefreshAccountSessionRequest
-	(*RefreshAccountSessionResponse)(nil),  // 35: muxvia.cloud.v1.RefreshAccountSessionResponse
-	(*LogoutAccountSessionRequest)(nil),    // 36: muxvia.cloud.v1.LogoutAccountSessionRequest
-	(*LogoutAccountSessionResponse)(nil),   // 37: muxvia.cloud.v1.LogoutAccountSessionResponse
-	(*ChangeAccountPasswordRequest)(nil),   // 38: muxvia.cloud.v1.ChangeAccountPasswordRequest
-	(*ChangeAccountPasswordResponse)(nil),  // 39: muxvia.cloud.v1.ChangeAccountPasswordResponse
-	(*OrderProjection)(nil),                // 40: muxvia.cloud.v1.OrderProjection
-	(*PaymentAttemptProjection)(nil),       // 41: muxvia.cloud.v1.PaymentAttemptProjection
-	(*PaymentEventProjection)(nil),         // 42: muxvia.cloud.v1.PaymentEventProjection
-	(*CreateCheckoutRequest)(nil),          // 43: muxvia.cloud.v1.CreateCheckoutRequest
-	(*CreateCheckoutResponse)(nil),         // 44: muxvia.cloud.v1.CreateCheckoutResponse
-	(*CreatePaymentAttemptRequest)(nil),    // 45: muxvia.cloud.v1.CreatePaymentAttemptRequest
-	(*CreatePaymentAttemptResponse)(nil),   // 46: muxvia.cloud.v1.CreatePaymentAttemptResponse
-	(*NormalizedPaymentEvent)(nil),         // 47: muxvia.cloud.v1.NormalizedPaymentEvent
-	(*ApplyPaymentEventRequest)(nil),       // 48: muxvia.cloud.v1.ApplyPaymentEventRequest
-	(*ApplyPaymentEventResponse)(nil),      // 49: muxvia.cloud.v1.ApplyPaymentEventResponse
-	(*ConfirmTestPaymentRequest)(nil),      // 50: muxvia.cloud.v1.ConfirmTestPaymentRequest
-	(*ConfirmTestPaymentResponse)(nil),     // 51: muxvia.cloud.v1.ConfirmTestPaymentResponse
-	(*TransitionSubscriptionRequest)(nil),  // 52: muxvia.cloud.v1.TransitionSubscriptionRequest
-	(*TransitionSubscriptionResponse)(nil), // 53: muxvia.cloud.v1.TransitionSubscriptionResponse
-	(*CommerceAuditProjection)(nil),        // 54: muxvia.cloud.v1.CommerceAuditProjection
-	(*GetAccountCommerceRequest)(nil),      // 55: muxvia.cloud.v1.GetAccountCommerceRequest
-	(*GetAccountCommerceResponse)(nil),     // 56: muxvia.cloud.v1.GetAccountCommerceResponse
-	(*CloudProductError)(nil),              // 57: muxvia.cloud.v1.CloudProductError
+	(*CreemProductMapping)(nil),            // 12: muxvia.cloud.v1.CreemProductMapping
+	(*PlanPriceDefinition)(nil),            // 13: muxvia.cloud.v1.PlanPriceDefinition
+	(*PlanPresentation)(nil),               // 14: muxvia.cloud.v1.PlanPresentation
+	(*PlanCatalogContract)(nil),            // 15: muxvia.cloud.v1.PlanCatalogContract
+	(*PlanCatalogReleaseProjection)(nil),   // 16: muxvia.cloud.v1.PlanCatalogReleaseProjection
+	(*EntitlementOverrideProjection)(nil),  // 17: muxvia.cloud.v1.EntitlementOverrideProjection
+	(*SubscriptionProjection)(nil),         // 18: muxvia.cloud.v1.SubscriptionProjection
+	(*EntitlementProjection)(nil),          // 19: muxvia.cloud.v1.EntitlementProjection
+	(*RelayQuotaPeriod)(nil),               // 20: muxvia.cloud.v1.RelayQuotaPeriod
+	(*RelayLeaseReservation)(nil),          // 21: muxvia.cloud.v1.RelayLeaseReservation
+	(*RelayUsageAggregate)(nil),            // 22: muxvia.cloud.v1.RelayUsageAggregate
+	(*GetAccountRelayQuotaRequest)(nil),    // 23: muxvia.cloud.v1.GetAccountRelayQuotaRequest
+	(*GetAccountRelayQuotaResponse)(nil),   // 24: muxvia.cloud.v1.GetAccountRelayQuotaResponse
+	(*GetPlanCatalogRequest)(nil),          // 25: muxvia.cloud.v1.GetPlanCatalogRequest
+	(*GetPlanCatalogResponse)(nil),         // 26: muxvia.cloud.v1.GetPlanCatalogResponse
+	(*GetAccountSubscriptionRequest)(nil),  // 27: muxvia.cloud.v1.GetAccountSubscriptionRequest
+	(*GetAccountSubscriptionResponse)(nil), // 28: muxvia.cloud.v1.GetAccountSubscriptionResponse
+	(*GetAccountEntitlementRequest)(nil),   // 29: muxvia.cloud.v1.GetAccountEntitlementRequest
+	(*GetAccountEntitlementResponse)(nil),  // 30: muxvia.cloud.v1.GetAccountEntitlementResponse
+	(*AccountProjection)(nil),              // 31: muxvia.cloud.v1.AccountProjection
+	(*AccountSessionCredential)(nil),       // 32: muxvia.cloud.v1.AccountSessionCredential
+	(*RegisterAccountRequest)(nil),         // 33: muxvia.cloud.v1.RegisterAccountRequest
+	(*RegisterAccountResponse)(nil),        // 34: muxvia.cloud.v1.RegisterAccountResponse
+	(*PasswordLoginRequest)(nil),           // 35: muxvia.cloud.v1.PasswordLoginRequest
+	(*PasswordLoginResponse)(nil),          // 36: muxvia.cloud.v1.PasswordLoginResponse
+	(*RefreshAccountSessionRequest)(nil),   // 37: muxvia.cloud.v1.RefreshAccountSessionRequest
+	(*RefreshAccountSessionResponse)(nil),  // 38: muxvia.cloud.v1.RefreshAccountSessionResponse
+	(*LogoutAccountSessionRequest)(nil),    // 39: muxvia.cloud.v1.LogoutAccountSessionRequest
+	(*LogoutAccountSessionResponse)(nil),   // 40: muxvia.cloud.v1.LogoutAccountSessionResponse
+	(*ChangeAccountPasswordRequest)(nil),   // 41: muxvia.cloud.v1.ChangeAccountPasswordRequest
+	(*ChangeAccountPasswordResponse)(nil),  // 42: muxvia.cloud.v1.ChangeAccountPasswordResponse
+	(*OrderProjection)(nil),                // 43: muxvia.cloud.v1.OrderProjection
+	(*PaymentAttemptProjection)(nil),       // 44: muxvia.cloud.v1.PaymentAttemptProjection
+	(*PaymentEventProjection)(nil),         // 45: muxvia.cloud.v1.PaymentEventProjection
+	(*CreateCheckoutRequest)(nil),          // 46: muxvia.cloud.v1.CreateCheckoutRequest
+	(*CreateCheckoutResponse)(nil),         // 47: muxvia.cloud.v1.CreateCheckoutResponse
+	(*CreatePaymentAttemptRequest)(nil),    // 48: muxvia.cloud.v1.CreatePaymentAttemptRequest
+	(*CreatePaymentAttemptResponse)(nil),   // 49: muxvia.cloud.v1.CreatePaymentAttemptResponse
+	(*NormalizedPaymentEvent)(nil),         // 50: muxvia.cloud.v1.NormalizedPaymentEvent
+	(*ApplyPaymentEventRequest)(nil),       // 51: muxvia.cloud.v1.ApplyPaymentEventRequest
+	(*ApplyPaymentEventResponse)(nil),      // 52: muxvia.cloud.v1.ApplyPaymentEventResponse
+	(*ConfirmTestPaymentRequest)(nil),      // 53: muxvia.cloud.v1.ConfirmTestPaymentRequest
+	(*ConfirmTestPaymentResponse)(nil),     // 54: muxvia.cloud.v1.ConfirmTestPaymentResponse
+	(*TransitionSubscriptionRequest)(nil),  // 55: muxvia.cloud.v1.TransitionSubscriptionRequest
+	(*TransitionSubscriptionResponse)(nil), // 56: muxvia.cloud.v1.TransitionSubscriptionResponse
+	(*CommerceAuditProjection)(nil),        // 57: muxvia.cloud.v1.CommerceAuditProjection
+	(*GetAccountCommerceRequest)(nil),      // 58: muxvia.cloud.v1.GetAccountCommerceRequest
+	(*GetAccountCommerceResponse)(nil),     // 59: muxvia.cloud.v1.GetAccountCommerceResponse
+	(*CloudProductError)(nil),              // 60: muxvia.cloud.v1.CloudProductError
+	(*fieldmaskpb.FieldMask)(nil),          // 61: google.protobuf.FieldMask
 }
 var file_cloudpb_cloud_product_proto_depIdxs = []int32{
 	9,  // 0: muxvia.cloud.v1.PlanCapability.relay:type_name -> muxvia.cloud.v1.RelayServiceCapability
 	10, // 1: muxvia.cloud.v1.PlanDefinition.capability:type_name -> muxvia.cloud.v1.PlanCapability
-	12, // 2: muxvia.cloud.v1.PlanDefinition.price:type_name -> muxvia.cloud.v1.PlanPriceDefinition
-	13, // 3: muxvia.cloud.v1.PlanDefinition.presentation:type_name -> muxvia.cloud.v1.PlanPresentation
-	2,  // 4: muxvia.cloud.v1.PlanPriceDefinition.mode:type_name -> muxvia.cloud.v1.CatalogPriceMode
-	11, // 5: muxvia.cloud.v1.PlanCatalogContract.plans:type_name -> muxvia.cloud.v1.PlanDefinition
-	0,  // 6: muxvia.cloud.v1.SubscriptionProjection.status:type_name -> muxvia.cloud.v1.SubscriptionStatus
-	7,  // 7: muxvia.cloud.v1.EntitlementProjection.status:type_name -> muxvia.cloud.v1.EntitlementStatus
-	10, // 8: muxvia.cloud.v1.EntitlementProjection.capability:type_name -> muxvia.cloud.v1.PlanCapability
-	8,  // 9: muxvia.cloud.v1.RelayLeaseReservation.state:type_name -> muxvia.cloud.v1.RelayReservationState
-	17, // 10: muxvia.cloud.v1.GetAccountRelayQuotaResponse.period:type_name -> muxvia.cloud.v1.RelayQuotaPeriod
-	18, // 11: muxvia.cloud.v1.GetAccountRelayQuotaResponse.active_reservations:type_name -> muxvia.cloud.v1.RelayLeaseReservation
-	14, // 12: muxvia.cloud.v1.GetPlanCatalogResponse.catalog:type_name -> muxvia.cloud.v1.PlanCatalogContract
-	15, // 13: muxvia.cloud.v1.GetAccountSubscriptionResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
-	16, // 14: muxvia.cloud.v1.GetAccountEntitlementResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
-	28, // 15: muxvia.cloud.v1.AccountSessionCredential.account:type_name -> muxvia.cloud.v1.AccountProjection
-	29, // 16: muxvia.cloud.v1.RegisterAccountResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
-	29, // 17: muxvia.cloud.v1.PasswordLoginResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
-	29, // 18: muxvia.cloud.v1.RefreshAccountSessionResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
-	29, // 19: muxvia.cloud.v1.ChangeAccountPasswordResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
-	1,  // 20: muxvia.cloud.v1.OrderProjection.status:type_name -> muxvia.cloud.v1.OrderStatus
-	6,  // 21: muxvia.cloud.v1.OrderProjection.requested_transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
-	12, // 22: muxvia.cloud.v1.OrderProjection.price:type_name -> muxvia.cloud.v1.PlanPriceDefinition
-	3,  // 23: muxvia.cloud.v1.PaymentAttemptProjection.status:type_name -> muxvia.cloud.v1.PaymentAttemptStatus
-	47, // 24: muxvia.cloud.v1.PaymentEventProjection.event:type_name -> muxvia.cloud.v1.NormalizedPaymentEvent
-	5,  // 25: muxvia.cloud.v1.PaymentEventProjection.state:type_name -> muxvia.cloud.v1.PaymentEventState
-	6,  // 26: muxvia.cloud.v1.CreateCheckoutRequest.requested_transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
-	40, // 27: muxvia.cloud.v1.CreateCheckoutResponse.order:type_name -> muxvia.cloud.v1.OrderProjection
-	41, // 28: muxvia.cloud.v1.CreatePaymentAttemptResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
-	4,  // 29: muxvia.cloud.v1.NormalizedPaymentEvent.event_type:type_name -> muxvia.cloud.v1.PaymentEventType
-	47, // 30: muxvia.cloud.v1.ApplyPaymentEventRequest.event:type_name -> muxvia.cloud.v1.NormalizedPaymentEvent
-	40, // 31: muxvia.cloud.v1.ApplyPaymentEventResponse.order:type_name -> muxvia.cloud.v1.OrderProjection
-	15, // 32: muxvia.cloud.v1.ApplyPaymentEventResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
-	5,  // 33: muxvia.cloud.v1.ApplyPaymentEventResponse.event_state:type_name -> muxvia.cloud.v1.PaymentEventState
-	41, // 34: muxvia.cloud.v1.ApplyPaymentEventResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
-	4,  // 35: muxvia.cloud.v1.ConfirmTestPaymentRequest.event_type:type_name -> muxvia.cloud.v1.PaymentEventType
-	49, // 36: muxvia.cloud.v1.ConfirmTestPaymentResponse.result:type_name -> muxvia.cloud.v1.ApplyPaymentEventResponse
-	6,  // 37: muxvia.cloud.v1.TransitionSubscriptionRequest.transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
-	15, // 38: muxvia.cloud.v1.TransitionSubscriptionResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
-	16, // 39: muxvia.cloud.v1.TransitionSubscriptionResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
-	28, // 40: muxvia.cloud.v1.GetAccountCommerceResponse.account:type_name -> muxvia.cloud.v1.AccountProjection
-	15, // 41: muxvia.cloud.v1.GetAccountCommerceResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
-	16, // 42: muxvia.cloud.v1.GetAccountCommerceResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
-	40, // 43: muxvia.cloud.v1.GetAccountCommerceResponse.orders:type_name -> muxvia.cloud.v1.OrderProjection
-	54, // 44: muxvia.cloud.v1.GetAccountCommerceResponse.audit:type_name -> muxvia.cloud.v1.CommerceAuditProjection
-	41, // 45: muxvia.cloud.v1.GetAccountCommerceResponse.payment_attempts:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
-	42, // 46: muxvia.cloud.v1.GetAccountCommerceResponse.payment_events:type_name -> muxvia.cloud.v1.PaymentEventProjection
-	11, // 47: muxvia.cloud.v1.GetAccountCommerceResponse.plan:type_name -> muxvia.cloud.v1.PlanDefinition
-	48, // [48:48] is the sub-list for method output_type
-	48, // [48:48] is the sub-list for method input_type
-	48, // [48:48] is the sub-list for extension type_name
-	48, // [48:48] is the sub-list for extension extendee
-	0,  // [0:48] is the sub-list for field type_name
+	13, // 2: muxvia.cloud.v1.PlanDefinition.price:type_name -> muxvia.cloud.v1.PlanPriceDefinition
+	14, // 3: muxvia.cloud.v1.PlanDefinition.presentation:type_name -> muxvia.cloud.v1.PlanPresentation
+	12, // 4: muxvia.cloud.v1.PlanDefinition.creem:type_name -> muxvia.cloud.v1.CreemProductMapping
+	2,  // 5: muxvia.cloud.v1.PlanPriceDefinition.mode:type_name -> muxvia.cloud.v1.CatalogPriceMode
+	11, // 6: muxvia.cloud.v1.PlanCatalogContract.plans:type_name -> muxvia.cloud.v1.PlanDefinition
+	15, // 7: muxvia.cloud.v1.PlanCatalogReleaseProjection.catalog:type_name -> muxvia.cloud.v1.PlanCatalogContract
+	61, // 8: muxvia.cloud.v1.EntitlementOverrideProjection.capability_mask:type_name -> google.protobuf.FieldMask
+	10, // 9: muxvia.cloud.v1.EntitlementOverrideProjection.capability:type_name -> muxvia.cloud.v1.PlanCapability
+	0,  // 10: muxvia.cloud.v1.SubscriptionProjection.status:type_name -> muxvia.cloud.v1.SubscriptionStatus
+	7,  // 11: muxvia.cloud.v1.EntitlementProjection.status:type_name -> muxvia.cloud.v1.EntitlementStatus
+	10, // 12: muxvia.cloud.v1.EntitlementProjection.capability:type_name -> muxvia.cloud.v1.PlanCapability
+	8,  // 13: muxvia.cloud.v1.RelayLeaseReservation.state:type_name -> muxvia.cloud.v1.RelayReservationState
+	20, // 14: muxvia.cloud.v1.GetAccountRelayQuotaResponse.period:type_name -> muxvia.cloud.v1.RelayQuotaPeriod
+	21, // 15: muxvia.cloud.v1.GetAccountRelayQuotaResponse.active_reservations:type_name -> muxvia.cloud.v1.RelayLeaseReservation
+	15, // 16: muxvia.cloud.v1.GetPlanCatalogResponse.catalog:type_name -> muxvia.cloud.v1.PlanCatalogContract
+	18, // 17: muxvia.cloud.v1.GetAccountSubscriptionResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	19, // 18: muxvia.cloud.v1.GetAccountEntitlementResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
+	31, // 19: muxvia.cloud.v1.AccountSessionCredential.account:type_name -> muxvia.cloud.v1.AccountProjection
+	32, // 20: muxvia.cloud.v1.RegisterAccountResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
+	32, // 21: muxvia.cloud.v1.PasswordLoginResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
+	32, // 22: muxvia.cloud.v1.RefreshAccountSessionResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
+	32, // 23: muxvia.cloud.v1.ChangeAccountPasswordResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
+	1,  // 24: muxvia.cloud.v1.OrderProjection.status:type_name -> muxvia.cloud.v1.OrderStatus
+	6,  // 25: muxvia.cloud.v1.OrderProjection.requested_transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
+	13, // 26: muxvia.cloud.v1.OrderProjection.price:type_name -> muxvia.cloud.v1.PlanPriceDefinition
+	3,  // 27: muxvia.cloud.v1.PaymentAttemptProjection.status:type_name -> muxvia.cloud.v1.PaymentAttemptStatus
+	50, // 28: muxvia.cloud.v1.PaymentEventProjection.event:type_name -> muxvia.cloud.v1.NormalizedPaymentEvent
+	5,  // 29: muxvia.cloud.v1.PaymentEventProjection.state:type_name -> muxvia.cloud.v1.PaymentEventState
+	6,  // 30: muxvia.cloud.v1.CreateCheckoutRequest.requested_transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
+	43, // 31: muxvia.cloud.v1.CreateCheckoutResponse.order:type_name -> muxvia.cloud.v1.OrderProjection
+	44, // 32: muxvia.cloud.v1.CreatePaymentAttemptResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
+	4,  // 33: muxvia.cloud.v1.NormalizedPaymentEvent.event_type:type_name -> muxvia.cloud.v1.PaymentEventType
+	50, // 34: muxvia.cloud.v1.ApplyPaymentEventRequest.event:type_name -> muxvia.cloud.v1.NormalizedPaymentEvent
+	43, // 35: muxvia.cloud.v1.ApplyPaymentEventResponse.order:type_name -> muxvia.cloud.v1.OrderProjection
+	18, // 36: muxvia.cloud.v1.ApplyPaymentEventResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	5,  // 37: muxvia.cloud.v1.ApplyPaymentEventResponse.event_state:type_name -> muxvia.cloud.v1.PaymentEventState
+	44, // 38: muxvia.cloud.v1.ApplyPaymentEventResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
+	4,  // 39: muxvia.cloud.v1.ConfirmTestPaymentRequest.event_type:type_name -> muxvia.cloud.v1.PaymentEventType
+	52, // 40: muxvia.cloud.v1.ConfirmTestPaymentResponse.result:type_name -> muxvia.cloud.v1.ApplyPaymentEventResponse
+	6,  // 41: muxvia.cloud.v1.TransitionSubscriptionRequest.transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
+	18, // 42: muxvia.cloud.v1.TransitionSubscriptionResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	19, // 43: muxvia.cloud.v1.TransitionSubscriptionResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
+	31, // 44: muxvia.cloud.v1.GetAccountCommerceResponse.account:type_name -> muxvia.cloud.v1.AccountProjection
+	18, // 45: muxvia.cloud.v1.GetAccountCommerceResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	19, // 46: muxvia.cloud.v1.GetAccountCommerceResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
+	43, // 47: muxvia.cloud.v1.GetAccountCommerceResponse.orders:type_name -> muxvia.cloud.v1.OrderProjection
+	57, // 48: muxvia.cloud.v1.GetAccountCommerceResponse.audit:type_name -> muxvia.cloud.v1.CommerceAuditProjection
+	44, // 49: muxvia.cloud.v1.GetAccountCommerceResponse.payment_attempts:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
+	45, // 50: muxvia.cloud.v1.GetAccountCommerceResponse.payment_events:type_name -> muxvia.cloud.v1.PaymentEventProjection
+	11, // 51: muxvia.cloud.v1.GetAccountCommerceResponse.plan:type_name -> muxvia.cloud.v1.PlanDefinition
+	52, // [52:52] is the sub-list for method output_type
+	52, // [52:52] is the sub-list for method input_type
+	52, // [52:52] is the sub-list for extension type_name
+	52, // [52:52] is the sub-list for extension extendee
+	0,  // [0:52] is the sub-list for field type_name
 }
 
 func init() { file_cloudpb_cloud_product_proto_init() }
@@ -4468,7 +4799,7 @@ func file_cloudpb_cloud_product_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloudpb_cloud_product_proto_rawDesc), len(file_cloudpb_cloud_product_proto_rawDesc)),
 			NumEnums:      9,
-			NumMessages:   49,
+			NumMessages:   52,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

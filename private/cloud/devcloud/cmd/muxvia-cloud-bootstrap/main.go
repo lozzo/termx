@@ -23,6 +23,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/muxvia/muxvia/private/cloud/companion/cloudservice/httpapi"
+	cloudcatalog "github.com/muxvia/muxvia/private/cloud/control-plane/catalog"
 	cloudcommerce "github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
 	cloudpostgres "github.com/muxvia/muxvia/private/cloud/control-plane/postgres"
@@ -177,7 +178,14 @@ func generate(ctx context.Context, value options, deploymentDSN string) error {
 	if err != nil {
 		return err
 	}
-	commerce, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalog.Contract(), Now: time.Now})
+	catalogService, err := cloudcatalog.New(store, time.Now)
+	if err != nil {
+		return err
+	}
+	if err := catalogService.Bootstrap(ctx, catalog.Contract()); err != nil {
+		return err
+	}
+	commerce, err := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalogService, Now: time.Now})
 	if err != nil {
 		return err
 	}

@@ -107,6 +107,22 @@ message ManagementActorProjection {
   string display_label = 3;
 }
 
+// OperatorMutationAuditProjection 记录管理面持久 mutation 的因果与 revision 边界。
+// request/response body、credential 和 provider secret 不得写入该投影。
+message OperatorMutationAuditProjection {
+  string audit_id = 1;
+  string actor_id = 2;
+  string action = 3;
+  string resource_kind = 4;
+  string resource_id = 5;
+  string account_id = 6;
+  string reason = 7;
+  string request_id = 8;
+  uint64 before_revision = 9;
+  uint64 after_revision = 10;
+  int64 occurred_at_unix_millis = 11;
+}
+
 // ManagementErrorDetail 是 Proto JSON API 的稳定错误 detail。
 message ManagementErrorDetail {
   ManagementErrorCode code = 1;
@@ -182,6 +198,70 @@ message OperatorTransitionSubscriptionRequest {
 
 message OperatorTransitionSubscriptionResponse {
   TransitionSubscriptionResponse result = 1;
+}
+
+// PublishPlanCatalogRequest 原子创建新的不可变目录版本并切换 active head。
+message PublishPlanCatalogRequest {
+  PlanCatalogContract catalog = 1;
+  string reason = 2;
+  string request_id = 3;
+}
+
+message PublishPlanCatalogResponse {
+  PlanCatalogReleaseProjection release = 1;
+}
+
+message ListPlanCatalogReleasesRequest {
+  PageRequest page = 1;
+}
+
+message ListPlanCatalogReleasesResponse {
+  repeated PlanCatalogReleaseProjection releases = 1;
+  PageResponse page = 2;
+}
+
+message GetPlanCatalogReleaseRequest {
+  uint64 catalog_version = 1;
+}
+
+message GetPlanCatalogReleaseResponse {
+  PlanCatalogReleaseProjection release = 1;
+}
+
+// PutEntitlementOverrideRequest 创建新覆盖或以 expected_revision 更新现有覆盖。
+message PutEntitlementOverrideRequest {
+  EntitlementOverrideProjection override = 1;
+  uint64 expected_revision = 2;
+  string request_id = 3;
+}
+
+message PutEntitlementOverrideResponse {
+  EntitlementOverrideProjection override = 1;
+  EntitlementProjection entitlement = 2;
+}
+
+message RevokeEntitlementOverrideRequest {
+  string account_id = 1;
+  string override_id = 2;
+  uint64 expected_revision = 3;
+  string reason = 4;
+  string request_id = 5;
+}
+
+message RevokeEntitlementOverrideResponse {
+  EntitlementOverrideProjection override = 1;
+  EntitlementProjection entitlement = 2;
+}
+
+message ListEntitlementOverridesRequest {
+  string account_id = 1;
+  bool include_revoked = 2;
+  PageRequest page = 3;
+}
+
+message ListEntitlementOverridesResponse {
+  repeated EntitlementOverrideProjection overrides = 1;
+  PageResponse page = 2;
 }
 
 // AccountDeviceProjection 是账号隔离后的设备与 assignment 摘要。

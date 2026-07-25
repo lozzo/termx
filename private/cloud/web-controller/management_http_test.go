@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	cloudcatalog "github.com/muxvia/muxvia/private/cloud/control-plane/catalog"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
@@ -27,7 +28,8 @@ func TestManagementAPIUsesAccountCSRFAndDurableCommandProjection(t *testing.T) {
 	}
 	defer store.Close()
 	catalog, _ := webcontroller.LoadCatalog("config/plans.json")
-	commerceService, _ := commerce.New(commerce.Config{Store: store, Catalog: catalog.Contract(), Now: func() time.Time { return now }})
+	catalogSource, _ := cloudcatalog.NewSnapshotSource(catalog.Contract())
+	commerceService, _ := commerce.New(commerce.Config{Store: store, Catalog: catalogSource, Now: func() time.Time { return now }})
 	productHandler, _ := webcontroller.ProductAPIHandler(webcontroller.ProductAPIConfig{Commerce: commerceService})
 	register := productRequest(http.MethodPost, "/api/v1/account/register", `{"email":"management@example.com","password":"secure-password"}`, nil)
 	registerResponse := httptest.NewRecorder()
