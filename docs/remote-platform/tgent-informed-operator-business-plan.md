@@ -123,7 +123,7 @@ Presence 是否在线、Hub 当前 attachment、Relay allocation 和 DataChannel
 
 - 实现 Go Creem provider adapter、sandbox/production base URL allowlist、secret 配置和有界 HTTP client；不引入 Next.js SDK 或第二套 Commerce 状态机。
 - Controller 创建 checkout 并返回托管 checkout URL；订单与 provider ID 映射同事务提交。
-- `POST /pay/creem` 验证 raw-body HMAC-SHA256 后写入现有 payment event journal；当前已在 Creem 后台登记该公网 URL，但实现部署前该地址仍只是 SPA fallback，不能视为 Webhook 可用。
+- `POST /pay/creem` 验证 raw-body HMAC-SHA256 后写入现有 payment event journal；Webhook 目标固定为 `https://muxvia.com/pay/creem`，用户将在实现部署后自行完成 Creem 后台配置。实现部署前该地址仍只是 SPA fallback，不能视为 Webhook 可用。
 - reconciliation worker 查询未终结 checkout、transaction 和 subscription，生成同一 normalized event；Webhook/轮询乱序、重复和并发由 provider event journal 与 Subscription revision CAS 收口。
 - sandbox E2E：真实 checkout、支付成功、Webhook、故意阻断 Webhook 后轮询补偿、取消、past due、退款、重复投递、Controller/PostgreSQL 重启；再由 operator 页面核对 order/attempt/event/subscription/audit。
 - 部署完成后由用户在 Creem dashboard 发送 test event；证据必须包含 HTTP 2xx、验签结果、event ID/digest、journal 状态和对应 Subscription revision。Webhook secret 由用户通过部署 secret 注入，不进入仓库。
