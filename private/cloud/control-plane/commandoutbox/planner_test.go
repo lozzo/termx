@@ -64,7 +64,7 @@ func TestPlannerDaemonRevokeUsesExactPresenceAndHubReceiptCompletesEnforcement(t
 		t.Fatal(err)
 	}
 	outbox, _ := commandoutbox.New(store)
-	source := &plannerSource{device: device, presence: &cloudpb.PresenceProjection{DaemonDeviceId: "daemon-1", ControlOwnerHubId: "hub-a", AssignmentEpoch: 8, PresenceSessionId: "presence-8", Availability: cloudpb.Availability_AVAILABILITY_ONLINE}}
+	source := &plannerSource{device: device, presence: &cloudpb.PresenceProjection{DaemonDeviceId: "daemon-1", ControlOwnerHubId: "hub-a", AssignmentEpoch: 8, PresenceSessionId: "presence-8", Availability: cloudpb.Availability_AVAILABILITY_ONLINE, Freshness: cloudpb.Freshness_FRESHNESS_FRESH}}
 	randomBytes := make([]byte, 36)
 	for index := range randomBytes {
 		randomBytes[index] = byte(index + 11)
@@ -79,6 +79,22 @@ func TestPlannerDaemonRevokeUsesExactPresenceAndHubReceiptCompletesEnforcement(t
 	completed, _, err := outbox.ApplyHubResult(context.Background(), &cloudpb.HubCommandResult{CommandId: created.GetChildren()[0].GetChildCommandId(), HubId: "hub-a", ControlGeneration: 3, ResultCode: cloudpb.RuntimeCommandResultCode_RUNTIME_COMMAND_RESULT_CODE_APPLIED, CompletedAtUnixMillis: now.Add(time.Second).UnixMilli()}, now.Add(time.Second))
 	if err != nil || completed.GetAuthorityResult() != cloudpb.CommandAuthorityResult_COMMAND_AUTHORITY_RESULT_COMMITTED || completed.GetExecutionState() != cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_APPLIED {
 		t.Fatalf("daemon revoke result = (%v, %v)", completed, err)
+	}
+}
+
+func TestPlannerRejectsKickForStalePresence(t *testing.T) {
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "stale-presence-postgres"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	outbox, _ := commandoutbox.New(store)
+	presence := &cloudpb.PresenceProjection{DaemonDeviceId: "daemon-1", ControlOwnerHubId: "hub-a", AssignmentEpoch: 8, PresenceSessionId: "presence-8", Availability: cloudpb.Availability_AVAILABILITY_ONLINE, Freshness: cloudpb.Freshness_FRESHNESS_STALE}
+	planner, _ := commandoutbox.NewPlanner(outbox, &plannerSource{device: cloudtopology.DeviceOwnership{AccountID: "account-1"}, presence: presence}, nil, bytes.NewReader(bytes.Repeat([]byte{9}, 64)), nil)
+	target := &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_Presence{Presence: &cloudpb.KickPresenceTarget{DaemonDeviceId: "daemon-1", AssignmentEpoch: 8, PresenceSessionId: "presence-8"}}}
+	_, _, err = planner.Create(context.Background(), &cloudpb.CreateManagementCommandRequest{AccountId: "account-1", CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_KICK_PRESENCE, Target: target, IdempotencyKey: "stale-kick"}, &cloudpb.ManagementActorProjection{ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN, ActorId: "operator-1"}, time.Now().UTC())
+	if !errors.Is(err, commandoutbox.ErrCommandNotFound) {
+		t.Fatalf("stale Presence kick = %v", err)
 	}
 }
 

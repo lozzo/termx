@@ -115,7 +115,7 @@ func (planner *Planner) Create(ctx context.Context, request *cloudpb.CreateManag
 		switch ownership.Kind {
 		case cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON:
 			accountID, presence, presenceErr := planner.targets.Presence(ctx, ownership.DeviceID)
-			if presenceErr == nil && accountID == request.GetAccountId() && presence.GetAvailability() == cloudpb.Availability_AVAILABILITY_ONLINE {
+			if presenceErr == nil && accountID == request.GetAccountId() && presence.GetAvailability() == cloudpb.Availability_AVAILABILITY_ONLINE && presence.GetFreshness() == cloudpb.Freshness_FRESHNESS_FRESH {
 				childTarget := &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_Presence{Presence: &cloudpb.KickPresenceTarget{DaemonDeviceId: ownership.DeviceID, AssignmentEpoch: presence.GetAssignmentEpoch(), PresenceSessionId: presence.GetPresenceSessionId()}}}
 				if err := planner.appendChild(projection, presence.GetControlOwnerHubId(), childTarget, now); err != nil {
 					return nil, false, err
@@ -257,5 +257,5 @@ func (planner *Planner) nextID(prefix string) (string, error) {
 }
 
 func presenceMatchesTarget(presence *cloudpb.PresenceProjection, target *cloudpb.KickPresenceTarget) bool {
-	return presence != nil && target != nil && presence.GetDaemonDeviceId() == target.GetDaemonDeviceId() && presence.GetAssignmentEpoch() == target.GetAssignmentEpoch() && presence.GetPresenceSessionId() == target.GetPresenceSessionId() && presence.GetAvailability() == cloudpb.Availability_AVAILABILITY_ONLINE
+	return presence != nil && target != nil && presence.GetDaemonDeviceId() == target.GetDaemonDeviceId() && presence.GetAssignmentEpoch() == target.GetAssignmentEpoch() && presence.GetPresenceSessionId() == target.GetPresenceSessionId() && presence.GetAvailability() == cloudpb.Availability_AVAILABILITY_ONLINE && presence.GetFreshness() == cloudpb.Freshness_FRESHNESS_FRESH
 }

@@ -4,6 +4,7 @@ import {
   Building2,
   Check,
   Edit3,
+  Laptop,
   History,
   LogOut,
   PackageOpen,
@@ -12,6 +13,7 @@ import {
   Power,
   ReceiptText,
   RefreshCw,
+  Radio,
   Search,
   Server,
   ShieldCheck,
@@ -39,6 +41,8 @@ import {
   DisableHubDeploymentResponseSchema,
   ListOperatorAccountsRequestSchema,
   ListOperatorAccountsResponseSchema,
+  ListOperatorAgentsRequestSchema,
+  ListOperatorAgentsResponseSchema,
   ListOperatorOrdersRequestSchema,
   ListOperatorOrdersResponseSchema,
   ListOperatorSubscriptionsRequestSchema,
@@ -75,15 +79,23 @@ import {
   ManagementCommandTargetSchema,
   AssignmentMigrationTargetSchema,
   RevokeCloudDeviceTargetSchema,
+  RevokeOperatorAccountSessionRequestSchema,
+  RevokeOperatorAccountSessionResponseSchema,
+  CommandAuthorityResult,
+  CommandDeliveryState,
+  CommandExecutionState,
+  CommandObservedEffect,
   type GetOperatorAccountResponse,
   type ListHubFleetResponse,
   type ListOperatorAccountsResponse,
+  type ListOperatorAgentsResponse,
   type ListOperatorOrdersResponse,
   type ListOperatorSubscriptionsResponse,
   type ListPromotionsResponse,
   type ListPlanCatalogReleasesResponse,
   type ListEntitlementOverridesResponse,
 } from "@/generated/cloudpb/cloud_management_pb";
+import { KickPresenceTargetSchema } from "@/generated/cloudpb/cloud_hub_control_pb";
 import {
   EntitlementOverrideProjectionSchema,
   PromotionProjectionSchema,
@@ -100,6 +112,7 @@ import {
   type PlanCatalogContract,
 } from "@/generated/cloudpb/cloud_product_pb";
 import {
+  Availability,
   Freshness,
   ManagedDeviceKind,
 } from "@/generated/cloudpb/cloud_topology_pb";
@@ -127,6 +140,7 @@ export default function OperatorPage() {
   const [token, setToken] = useState("");
   const [authenticated, setAuthenticated] = useState(false);
   const [accounts, setAccounts] = useState<ListOperatorAccountsResponse>();
+  const [agents, setAgents] = useState<ListOperatorAgentsResponse>();
   const [orders, setOrders] = useState<ListOperatorOrdersResponse>();
   const [subscriptions, setSubscriptions] = useState<ListOperatorSubscriptionsResponse>();
   const [promotions, setPromotions] = useState<ListPromotionsResponse>();
@@ -137,6 +151,7 @@ export default function OperatorPage() {
   const [overrides, setOverrides] =
     useState<ListEntitlementOverridesResponse>();
   const [query, setQuery] = useState("");
+  const [directoryView, setDirectoryView] = useState<"users" | "agents">("users");
   const [error, setError] = useState("");
   const [catalogDraft, setCatalogDraft] = useState("");
   const [catalogReason, setCatalogReason] = useState("");
@@ -175,12 +190,19 @@ export default function OperatorPage() {
   async function load(search = query) {
     try {
       const page = create(PageRequestSchema, { pageSize: 100 });
-      const [nextAccounts, nextFleet, nextCatalogHistory, nextOrders, nextSubscriptions, nextPromotions] = await Promise.all([
+      const [nextAccounts, nextAgents, nextFleet, nextCatalogHistory, nextOrders, nextSubscriptions, nextPromotions] = await Promise.all([
         protoPost(
           "/api/v1/operator/accounts/list",
           ListOperatorAccountsRequestSchema,
           create(ListOperatorAccountsRequestSchema, { query: search, page }),
           ListOperatorAccountsResponseSchema,
+          "muxvia_cloud_operator_csrf",
+        ),
+        protoPost(
+          "/api/v1/operator/agents/list",
+          ListOperatorAgentsRequestSchema,
+          create(ListOperatorAgentsRequestSchema, { query: search, includeRevoked: true, page }),
+          ListOperatorAgentsResponseSchema,
           "muxvia_cloud_operator_csrf",
         ),
         protoPost(
@@ -220,6 +242,7 @@ export default function OperatorPage() {
         ),
       ]);
       setAccounts(nextAccounts);
+      setAgents(nextAgents);
       setFleet(nextFleet);
       setCatalogHistory(nextCatalogHistory);
       setOrders(nextOrders);
@@ -528,13 +551,15 @@ export default function OperatorPage() {
     }
   }
 
-  async function revokeDevice(deviceId: string, authEpoch: bigint) {
+  async function revokeDevice(deviceId: string, authEpoch: bigint, explicitAccountId?: string) {
+    const accountId = explicitAccountId || detail?.commerce?.account?.accountId;
+    if (!accountId) return;
     try {
       await protoPost(
         "/api/v1/operator/commands",
         CreateManagementCommandRequestSchema,
         create(CreateManagementCommandRequestSchema, {
-          accountId: detail?.commerce?.account?.accountId,
+          accountId,
           commandKind: ManagementCommandKind.REVOKE_CLOUD_DEVICE,
           idempotencyKey: crypto.randomUUID(),
           target: create(ManagementCommandTargetSchema, {
@@ -550,15 +575,16 @@ export default function OperatorPage() {
         CreateManagementCommandResponseSchema,
         "muxvia_cloud_operator_csrf",
       );
-      if (detail?.commerce?.account?.accountId)
-        await select(detail.commerce.account.accountId);
+      if (detail?.commerce?.account?.accountId === accountId)
+        await select(accountId);
+      await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Device revoke failed");
     }
   }
 
-  async function migrateAssignment(daemonDeviceId: string, targetHubId: string) {
-    const accountId = detail?.commerce?.account?.accountId;
+  async function migrateAssignment(daemonDeviceId: string, targetHubId: string, explicitAccountId?: string) {
+    const accountId = explicitAccountId || detail?.commerce?.account?.accountId;
     if (!accountId) return;
     try {
       await protoPost(
@@ -581,12 +607,60 @@ export default function OperatorPage() {
         CreateManagementCommandResponseSchema,
         "muxvia_cloud_operator_csrf",
       );
-      await select(accountId);
+      if (detail?.commerce?.account?.accountId === accountId)
+        await select(accountId);
       await load();
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Assignment migration failed",
       );
+    }
+  }
+
+  async function kickAgent(accountId: string, daemonDeviceId: string, assignmentEpoch: bigint, presenceSessionId: string) {
+    if (!accountId || !daemonDeviceId || assignmentEpoch === 0n || !presenceSessionId) return;
+    setBusy(true);
+    setError("");
+    try {
+      await protoPost(
+        "/api/v1/operator/commands",
+        CreateManagementCommandRequestSchema,
+        create(CreateManagementCommandRequestSchema, {
+          accountId,
+          commandKind: ManagementCommandKind.KICK_PRESENCE,
+          idempotencyKey: crypto.randomUUID(),
+          target: create(ManagementCommandTargetSchema, { target: { case: "presence", value: create(KickPresenceTargetSchema, { daemonDeviceId, assignmentEpoch, presenceSessionId }) } }),
+        }),
+        CreateManagementCommandResponseSchema,
+        "muxvia_cloud_operator_csrf",
+      );
+      await load();
+      if (detail?.commerce?.account?.accountId === accountId) await select(accountId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Agent kick failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeSession(sessionId: string, revision: bigint) {
+    const accountId = detail?.commerce?.account?.accountId;
+    if (!accountId || !window.confirm("Revoke this account session?")) return;
+    setBusy(true);
+    setError("");
+    try {
+      await protoPost(
+        "/api/v1/operator/accounts/sessions/revoke",
+        RevokeOperatorAccountSessionRequestSchema,
+        create(RevokeOperatorAccountSessionRequestSchema, { accountId, sessionId, expectedRevision: revision, reason: "Operator revoked account session", requestId: crypto.randomUUID() }),
+        RevokeOperatorAccountSessionResponseSchema,
+        "muxvia_cloud_operator_csrf",
+      );
+      await select(accountId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Session revoke failed");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -677,6 +751,7 @@ export default function OperatorPage() {
     );
     setAuthenticated(false);
     setAccounts(undefined);
+    setAgents(undefined);
     setOrders(undefined);
     setSubscriptions(undefined);
     setPromotions(undefined);
@@ -890,16 +965,34 @@ export default function OperatorPage() {
       </section>
       <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(360px,0.8fr)_minmax(480px,1.2fr)]">
         <section className="border border-line bg-panel">
-          <header className="flex items-center gap-2 border-b border-line p-4">
-            <Search className="size-4" />
-            <Input
-              value={query}
-              placeholder="Search account or email"
-              onChange={(event) => setQuery(event.target.value)}
-            />
-            <Button onClick={() => void load(query)}>Search</Button>
+          <header className="grid gap-3 border-b border-line p-4">
+            <div className="grid grid-cols-2 border border-line-strong p-1" aria-label="Directory view">
+              <Button
+                variant={directoryView === "users" ? "default" : "ghost"}
+                onClick={() => setDirectoryView("users")}
+                data-testid="directory-users"
+              >
+                <UserRoundCog className="size-4" /> Users
+              </Button>
+              <Button
+                variant={directoryView === "agents" ? "default" : "ghost"}
+                onClick={() => setDirectoryView("agents")}
+                data-testid="directory-agents"
+              >
+                <Laptop className="size-4" /> Agents
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <Search className="size-4 shrink-0" />
+              <Input
+                value={query}
+                placeholder={directoryView === "users" ? "Search account or email" : "Search Agent, account, or Hub"}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              <Button onClick={() => void load(query)}>Search</Button>
+            </div>
           </header>
-          {accounts?.accounts.map((item) => (
+          {directoryView === "users" && accounts?.accounts.map((item) => (
             <button
               className="grid w-full gap-2 border-b border-line p-4 text-left hover:bg-soft"
               key={item.account?.accountId}
@@ -919,6 +1012,65 @@ export default function OperatorPage() {
               </span>
             </button>
           ))}
+          {directoryView === "agents" && agents?.agents.map((agent) => {
+            const accountId = agent.account?.accountId ?? "";
+            const device = agent.device;
+            const presence = agent.presence;
+            const isFreshOnline = presence?.availability === Availability.ONLINE && presence.freshness === Freshness.FRESH;
+            const state = presence?.freshness === Freshness.STALE
+              ? "STALE"
+              : Availability[presence?.availability ?? Availability.UNSPECIFIED];
+            const currentHubId = device?.assignedHubId || presence?.controlOwnerHubId;
+            return (
+              <div
+                className="grid gap-3 border-b border-line p-4"
+                key={`${accountId}/${device?.deviceId}`}
+                data-testid={`operator-agent-${device?.deviceId}`}
+              >
+                <button className="min-w-0 text-left" onClick={() => void select(accountId)}>
+                  <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
+                    <Radio className={isFreshOnline ? "size-4 shrink-0 text-success" : "size-4 shrink-0 text-muted-foreground"} />
+                    <span className="truncate">{device?.displayName || device?.deviceId}</span>
+                    <span className={isFreshOnline ? "ml-auto text-[10px] text-success" : "ml-auto text-[10px] text-muted-foreground"}>{state}</span>
+                  </span>
+                  <span className="mt-1 block truncate text-xs text-muted-foreground">{agent.account?.email}</span>
+                  <span className="mt-1 block font-mono text-[10px] text-muted-foreground">
+                    {currentHubId || "No assignment"} / {agent.activePeerSessionCount.toString()} active peers
+                  </span>
+                </button>
+                <div className="flex flex-wrap gap-2">
+                  {isFreshOnline && presence && (
+                    <Button
+                      variant="outline"
+                      disabled={busy}
+                      data-testid={`kick-${device?.deviceId}`}
+                      onClick={() => void kickAgent(accountId, presence.daemonDeviceId, presence.assignmentEpoch, presence.presenceSessionId)}
+                    >
+                      Kick
+                    </Button>
+                  )}
+                  {fleet?.hubs.filter((hub) => hub.hubReady && hub.deployment?.metadata?.hubId && hub.deployment.metadata.hubId !== currentHubId).map((hub) => (
+                    <Button
+                      key={hub.deployment?.metadata?.hubId}
+                      variant="outline"
+                      disabled={busy || !device}
+                      onClick={() => device && void migrateAssignment(device.deviceId, hub.deployment?.metadata?.hubId ?? "", accountId)}
+                    >
+                      Move to {hub.deployment?.metadata?.publicLabel || hub.deployment?.metadata?.hubId}
+                    </Button>
+                  ))}
+                  <Button
+                    variant="outline"
+                    disabled={busy || !device || device.revoked}
+                    data-testid={`agent-revoke-${device?.deviceId}`}
+                    onClick={() => device && void revokeDevice(device.deviceId, device.authEpoch, accountId)}
+                  >
+                    Revoke
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
         </section>
         <section className="border border-line bg-panel">
           {detail ? (
@@ -972,8 +1124,12 @@ export default function OperatorPage() {
                   value={String(detail.devices?.devices.length ?? 0)}
                 />
                 <Stat
-                  label="Sessions"
+                  label="Peer sessions"
                   value={String(detail.topology?.peerSessions.length ?? 0)}
+                />
+                <Stat
+                  label="Account sessions"
+                  value={String(detail.sessions.filter((session) => !session.revoked).length)}
                 />
               </div>
               <div className="border-t border-line" data-testid="operator-subscription-adjustment">
@@ -1032,6 +1188,22 @@ export default function OperatorPage() {
                     </div>
                   )) : <p className="p-4 text-xs text-muted-foreground">No privilege overrides for this account.</p>}
                 </div>
+              </div>
+              <div className="border-t border-line" data-testid="operator-account-sessions">
+                <h3 className="p-4 text-sm font-medium">Account sessions</h3>
+                {detail.sessions.length ? detail.sessions.map((session) => (
+                  <div className="grid gap-3 border-t border-line px-4 py-3 text-xs md:grid-cols-[minmax(0,1fr)_auto] md:items-center" key={session.sessionId} data-testid={`account-session-${session.sessionId}`}>
+                    <span className="min-w-0">
+                      <strong className="block truncate">{session.clientDeviceId || "Browser session"}</strong>
+                      <small className="font-mono text-muted-foreground">Refresh expires {new Date(Number(session.refreshExpiresAtUnixMillis)).toLocaleString()} / revision {session.revision.toString()}</small>
+                    </span>
+                    {session.revoked ? (
+                      <span className="text-muted-foreground">REVOKED</span>
+                    ) : (
+                      <Button variant="outline" disabled={busy} data-testid={`session-revoke-${session.sessionId}`} onClick={() => void revokeSession(session.sessionId, session.revision)}>Revoke session</Button>
+                    )}
+                  </div>
+                )) : <p className="border-t border-line p-4 text-xs text-muted-foreground">No account sessions.</p>}
               </div>
               <div className="border-t border-line">
                 <h3 className="p-4 text-sm font-medium">Devices</h3>
@@ -1097,6 +1269,33 @@ export default function OperatorPage() {
                     </div>
                   );
                 })}
+              </div>
+              <div className="border-t border-line" data-testid="operator-command-results">
+                <h3 className="p-4 text-sm font-medium">Management commands</h3>
+                {detail.commands.length ? detail.commands.slice().reverse().map((command) => (
+                  <div className="grid gap-2 border-t border-line px-4 py-3 text-xs" key={command.commandId} data-testid={`operator-command-${command.commandId}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <strong>{ManagementCommandKind[command.commandKind]}</strong>
+                      <span className="font-mono text-[10px] text-muted-foreground">{command.commandId}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground sm:grid-cols-4">
+                      <span>AUTH {CommandAuthorityResult[command.authorityResult]}</span>
+                      <span>DELIVERY {CommandDeliveryState[command.deliveryState]}</span>
+                      <span>EXECUTION {CommandExecutionState[command.executionState]}</span>
+                      <span>EFFECT {CommandObservedEffect[command.observedEffect]}</span>
+                    </div>
+                  </div>
+                )) : <p className="border-t border-line p-4 text-xs text-muted-foreground">No management commands.</p>}
+              </div>
+              <div className="border-t border-line" data-testid="operator-audit">
+                <h3 className="p-4 text-sm font-medium">Operator audit</h3>
+                {detail.operatorAudit.length ? detail.operatorAudit.map((item) => (
+                  <div className="grid gap-2 border-t border-line px-4 py-3 text-xs md:grid-cols-[180px_minmax(0,1fr)_auto]" key={item.auditId} data-testid={`operator-audit-${item.auditId}`}>
+                    <span className="text-muted-foreground">{new Date(Number(item.occurredAtUnixMillis)).toLocaleString()}</span>
+                    <span className="min-w-0"><strong className="block">{item.action}</strong><small className="text-muted-foreground">{item.reason} / {item.actorId}</small></span>
+                    <span className="font-mono text-[10px] text-muted-foreground">REV {item.beforeRevision.toString()} → {item.afterRevision.toString()}</span>
+                  </div>
+                )) : <p className="border-t border-line p-4 text-xs text-muted-foreground">No operator mutations.</p>}
               </div>
               <div className="border-t border-line">
                 <h3 className="p-4 text-sm font-medium">

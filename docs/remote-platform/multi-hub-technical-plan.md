@@ -791,6 +791,16 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 - process E2E 在 Controller 不重启、CLI/APK 不重建的情况下新增第三 Edge，证明新 daemon 可选中、已有 daemon 不漂移、drain 后无新 assignment、fence 后旧 Hub 拒绝旧 epoch。
 - 2026-07-25 已完成：真实 PostgreSQL + Controller + 三个 Edge runtime 证明运行中新增 pending identity、Operator 批准后 attachment 与旧 assignment 保持；Controller 生命周期测试和既有 HUB007 process E2E 分别证明动态 candidate revision、drain/disable 与 CommandOutbox fence migration。证据见 `docs/remote-platform/opshub001-e2e.md`。
 
+### OPSUSER001：用户管理与 Agent 概览
+
+- `cloud_management.proto` 定义无 secret 的账号 Session projection、Operator Session revoke 和按稳定 daemon DeviceIdentity 聚合的 Agent projection；Web 继续只消费 generated Proto JSON。
+- 账号 Session 的 access/refresh token 与 hash 不越过 commerce/store 边界。精确撤销使用 account/session/revision fence，撤销全部 Session 使用显式 `all_account_sessions`；持久撤销与 Operator audit 在同一 PostgreSQL 事务提交，重复 request 只有完全相同输入才能幂等成功。
+- Operator 身份与 `readonly/admin` 角色仍由独立部署 credential 不可变配置拥有，不建立数据库角色或第二套登录系统。readonly 只能查询，admin destructive action 必须同时通过 HttpOnly Session、same-origin、CSRF 和近期认证；角色本身没有运行时 mutation，因此不存在自降权或删除最后一个 admin 的写路径。
+- Agent 以账号目录中的 daemon DeviceIdentity 为稳定主键，组合 assignment、最后可信 Presence 和 active managed PeerSession 数量。`availability` 与 `freshness` 分开显示，不持久化 `online`、`pendingKick` 或最后操作猜测值。
+- Kick 只接受 `ONLINE + FRESH` 的精确 `daemon_device_id + assignment_epoch + presence_session_id`；stale Presence 明确拒绝。Revoke 先提交持久 device authority，再由 CommandOutbox 派生 runtime child；Migrate 复用 assignment epoch fence，不由 Web 直接改 topology。
+- Operator Web 分为 Users 与 Agents 视图。用户详情展示账号状态、登录 Session、设备授权、CommandOutbox authority/delivery/execution/effect 和 audit；Agent 视图展示机器、账号、Hub、freshness 与 active peer 数，并提供 Kick/Revoke/Migrate。
+- 真实进程 E2E 复用 HUB007 独立 PostgreSQL、Controller 与双 Edge Supervisor：迁移和 Controller 重启后按同一 DeviceIdentity 查询 Agent，再通过 Operator API 精确 Kick Presence 并等待 CommandOutbox 应用。页面 fixture 只用于桌面/移动交互和布局，不作为控制链路证据。
+
 ### CLOUDP007：Development 全产品 E2E
 
 - Web UI 完成注册、交易、套餐、设备、topology、command 和 usage。

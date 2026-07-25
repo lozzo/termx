@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- 用户原要求连续完成六个收口切片；在 `PG004` 实机 TURN/TCP 验收后又明确插入连接体验收口，并在 2026-07-24 要求立即实现参考 `tgent` 的 enrollment 升级。`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`、`CONNCOPY001`、`LOADUX001`、`APPTERM001` 和 `PAIRROUTE001` 已完成。2026-07-25 用户把当前主线重新收敛为九模块运营后台，并明确要求真实支付最后处理。套餐/用户特权由 `OPSCAT001` 完成，订单/订阅/优惠码由 `OPSCOM001` 完成，Hub 管理与动态目录由 `OPSHUB001` 完成；当前固定顺序改为 `OPSHUB001 -> OPSUSER001 -> OPSREL001 -> OPSE2E001 -> CREEM001`。先完成 Hub、用户、Agent、版本，再对用户、订单、订阅、套餐、Hub、Agent、版本、优惠码、用户特权九模块做总 E2E，最后才部署并验收 Creem。`CREEM001` 已有的本地 adapter、Webhook/轮询 harness 和 Operator 对账代码作为冻结 checkpoint 保留，不提前部署、不扩大实现，也不得阻塞当前 `OPSUSER001`。
+- 用户原要求连续完成六个收口切片；在 `PG004` 实机 TURN/TCP 验收后又明确插入连接体验收口，并在 2026-07-24 要求立即实现参考 `tgent` 的 enrollment 升级。`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`、`CONNCOPY001`、`LOADUX001`、`APPTERM001` 和 `PAIRROUTE001` 已完成。2026-07-25 用户把当前主线重新收敛为九模块运营后台，并明确要求真实支付最后处理。套餐/用户特权由 `OPSCAT001` 完成，订单/订阅/优惠码由 `OPSCOM001` 完成，Hub 管理与动态目录由 `OPSHUB001` 完成，用户管理与 Agent 概览由 `OPSUSER001` 完成；当前固定顺序为 `OPSREL001 -> OPSE2E001 -> CREEM001`。先完成版本管理，再对用户、订单、订阅、套餐、Hub、Agent、版本、优惠码、用户特权九模块做总 E2E，最后才部署并验收 Creem。`CREEM001` 已有的本地 adapter、Webhook/轮询 harness 和 Operator 对账代码作为冻结 checkpoint 保留，不提前部署、不扩大实现，也不得阻塞当前 `OPSREL001`。
 - 首期正式 UI 语言只承诺英文与简体中文。Web Controller 现有俄文资源保留为历史输入但从可选语言中暂时移除，直到键集合、关键流程和布局验收达到与英文/中文相同的完成条件；不得以 fallback 英文冒充俄文支持。
 - `UX001` 已完成英文/简体中文基础设施与首批关键流程迁移：Web Controller 登录/账号/设备/激活和 Android 首页/设备/配对/设置均使用 locale key，语言默认跟随系统并可持久切换；App 143 个、Web 365 个 locale key 对称，稳定 native error code 不再把底层英文 message 直接投影到 UI；ARM64 模拟器已验证中文设备页和设置页。terminal/file 剩余文案按计划留给 `APPUX001`，不在本切片提前扩大。
 - 二维码整改必须区分两类载荷：Web 手机 activation 只携带短期 `MXA` code，当前约 60 字符；daemon pairing 当前把约 599-byte signed bundle 编码成约 826 字符 URI，达到 QR Version 23 / 109x109 modules，是显示不全的根因。`QR001` 只提供终端尺寸检查、文本和图片 fallback；`QR002` 才通过 daemon-owned 内存 claim 缩短真实配对二维码。
@@ -164,7 +164,7 @@ muxvia-cloud-edge × N
 | OPSCAT001 | 已完成 | 套餐发布与用户特权 | PostgreSQL 不可变 catalog release/head 与 canonical plan version、一次性 bootstrap、Creem product mapping、类型化 EntitlementOverride、CAS/审计、自然生效/到期重算和 signed Hub policy ack 已完成；真实 Operator UI Playwright 覆盖桌面/移动端，证据见 `docs/remote-platform/opscat001-e2e.md` |
 | OPSCOM001 | 已完成 | 订单、订阅与优惠码 | normalized journal、operator adjustment/payment/refund/revoke、固定/比例优惠 reservation/redemption/到期释放和 Relay quota 账期联动完成；真实 PostgreSQL 并发/重放与 Operator/账号 UI E2E 通过，证据见 `docs/remote-platform/opscom001-e2e.md` |
 | OPSHUB001 | 已完成 | Hub 管理与动态目录 | PostgreSQL directory、Operator create/update/approve/drain/disable、动态 session/Relay 路由和无静态 manifest 已收口；运行中新增第三 Edge、旧 assignment 不漂移、fence migration、archive、桌面/移动 UI 与全量门禁通过，证据见 `docs/remote-platform/opshub001-e2e.md` |
-| OPSUSER001 | 待开始 | 用户管理与 Agent 概览 | 账号/机器列表详情、角色保护、session/device revoke、Presence freshness 和 CommandOutbox 操作形成 Web E2E |
+| OPSUSER001 | 已完成 | 用户管理与 Agent 概览 | 无 secret Session projection/CAS revoke、不可变 readonly/admin 保护、按 DeviceIdentity 聚合 Agent freshness、Kick/Revoke/Migrate 与命令四段状态已接通；真实 PostgreSQL + Controller + 双 Edge 和桌面/移动 Web E2E 通过，证据见 `docs/remote-platform/opsuser001-e2e.md` |
 | OPSREL001 | 待开始 | CLI/daemon/Android 版本管理 | 签名制品 metadata、channel activation、兼容/强制/灰度/回滚和 Operator UI E2E |
 | OPSE2E001 | 待开始 | 九模块运营后台 E2E | Web UI 发起九类流程，PostgreSQL、Controller、双 Edge、authorization/audit/restart 证据齐全 |
 | CREEM001 | 待后置收口 | Creem 正式支付 provider | 本地 adapter、Webhook/轮询、对账 UI 与 harness 已存在并冻结；仅在 OPSE2E001 完成后部署，补真实 Product mapping、secret、sandbox lifecycle 与重启 E2E |
@@ -290,7 +290,7 @@ muxvia-cloud-edge × N
 ## 执行规则
 
 1. 每轮先读取 `AGENTS.md`、`cloud-product-spec.md`、`multi-hub-control-topology-spec.md`、`multi-hub-technical-plan.md` 和本文件，再检查 `git status --short --branch`。
-2. 只执行“当前收口路线”的当前行；`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`、`CONNCOPY001`、`LOADUX001`、`APPTERM001`、`PAIRROUTE001`、`OPSCAT001`、`OPSCOM001` 和 `OPSHUB001` 已完成。当前固定顺序为 `OPSHUB001 -> OPSUSER001 -> OPSREL001 -> OPSE2E001 -> CREEM001 -> ENROLLUX005 -> PG004 -> CLOUDP007`。当前最早未完成切片是 `OPSUSER001`；在 `OPSE2E001` 明确通过前禁止部署、验收或继续扩展 Creem 支付。App 登录、R2 和其它旧主线也不得抢占九模块运营后台。
+2. 只执行“当前收口路线”的当前行；`QR002`、`WEBUX001`、`APPUX001`、`UXE2E001`、`NETUX001`、`CONNFAST001`、`TUIUX001`、`CONNCOPY001`、`LOADUX001`、`APPTERM001`、`PAIRROUTE001`、`OPSCAT001`、`OPSCOM001`、`OPSHUB001` 和 `OPSUSER001` 已完成。当前固定顺序为 `OPSREL001 -> OPSE2E001 -> CREEM001 -> ENROLLUX005 -> PG004 -> CLOUDP007`。当前最早未完成切片是 `OPSREL001`；在 `OPSE2E001` 明确通过前禁止部署、验收或继续扩展 Creem 支付。App 登录、R2 和其它旧主线也不得抢占九模块运营后台。
 3. 待开始切片先标记 `进行中`，不得跨切片实现后续能力。
 4. 新跨边界字段固定执行 `proto -> generated -> compatibility harness -> domain/runtime -> adapter -> UI/client`。
 5. 先写最小真实 harness；不能用固定账号、直接写 store、手工改 projection 或 fake ack 冒充产品链路。

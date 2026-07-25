@@ -138,6 +138,24 @@ func TestPresenceProjectionSeparatesAvailabilityAndFreshness(t *testing.T) {
 	}
 }
 
+func TestOperatorUserAndAgentContractsExcludeSessionSecretsAndOnlineTruth(t *testing.T) {
+	for _, required := range []string{"session_id", "client_device_id", "access_expires_at_unix_millis", "refresh_expires_at_unix_millis", "revision", "revoked"} {
+		if !descriptorFieldNames((&AccountSessionProjection{}).ProtoReflect().Descriptor())[required] {
+			t.Fatalf("AccountSessionProjection missing %q", required)
+		}
+	}
+	assertFieldsExcludeFragments(t, (&AccountSessionProjection{}).ProtoReflect().Descriptor(), []string{"token", "hash", "secret", "password"})
+	agentFields := descriptorFieldNames((&OperatorAgentProjection{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"account", "device", "presence", "active_peer_session_count"} {
+		if !agentFields[required] {
+			t.Fatalf("OperatorAgentProjection missing %q: %v", required, agentFields)
+		}
+	}
+	if agentFields["online"] || agentFields["pending_kick"] {
+		t.Fatalf("OperatorAgentProjection copied runtime state into database-style flags: %v", agentFields)
+	}
+}
+
 func TestRelayQuotaAndReservationAreProtoFirst(t *testing.T) {
 	periodFields := descriptorFieldNames((&RelayQuotaPeriod{}).ProtoReflect().Descriptor())
 	for _, required := range []string{"account_id", "period_start_unix_millis", "period_end_unix_millis", "limit_bytes", "used_bytes", "reserved_bytes", "remaining_bytes", "active_lease_count", "revision"} {

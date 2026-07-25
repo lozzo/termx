@@ -54,6 +54,9 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 		t.Fatal(err)
 	}
 	accountID := registered.GetSession().GetAccount().GetAccountId()
+	presence := &cloudpb.PresenceProjection{DaemonDeviceId: "daemon-operator", ControlOwnerHubId: "hub-operator", AssignmentEpoch: 3, PresenceSessionId: "presence-operator", Availability: cloudpb.Availability_AVAILABILITY_ONLINE, Freshness: cloudpb.Freshness_FRESHNESS_FRESH, ObservedAtUnixMillis: now.UnixMilli(), FreshUntilUnixMillis: now.Add(time.Minute).UnixMilli(), DaemonRuntimeGeneration: "runtime-operator", RegistryRevision: 4}
+	device := &cloudpb.AccountDeviceProjection{AccountId: accountID, DeviceId: "daemon-operator", DisplayName: "Operator workstation", Platform: "linux", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: 1, AssignedHubId: "hub-operator", AssignmentEpoch: 3, Presence: presence}
+	peer := &cloudpb.ManagedPeerSessionProjection{Target: &cloudpb.ManagedPeerSessionTarget{DaemonDeviceId: "daemon-operator", ManagedSessionId: "managed-operator", SessionIncarnation: 1, AssignmentEpoch: 3, ControlPresenceSessionId: "presence-operator", DaemonRuntimeGeneration: "runtime-operator"}, ClientDeviceId: "client-operator", ControlOwnerHubId: "hub-operator", ObservedDataPath: cloudpb.ObservedPath_OBSERVED_PATH_DIRECT, State: cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_READY, Freshness: cloudpb.Freshness_FRESHNESS_FRESH}
 	checkout, err := commerceService.CreateCheckout(context.Background(), accountID, registered.GetSession().GetAccount().GetUserId(), &cloudpb.CreateCheckoutRequest{PlanId: "pro", RequestedTransition: cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_UPGRADE, BillingCadence: cloudpb.BillingCadence_BILLING_CADENCE_MONTHLY})
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +68,7 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 	reconciler := &operatorPaymentReconciler{commerce: commerceService}
 	overrides, _ := cloudentitlement.NewOverrideService(cloudentitlement.OverrideServiceConfig{Store: store, Plans: catalogService, Now: func() time.Time { return now }})
 	promotions, _ := promotion.New(store, func() time.Time { return now }, nil, nil)
-	topology := &managementTargetSource{}
+	topology := &managementTargetSource{presenceAccountID: accountID, presence: presence, devices: []*cloudpb.AccountDeviceProjection{device}, presences: []*cloudpb.PresenceProjection{presence}, peerSessions: []*cloudpb.ManagedPeerSessionProjection{peer}}
 	outbox, _ := commandoutbox.New(store)
 	planner, _ := commandoutbox.NewPlanner(outbox, topology, nil, bytes.NewReader(bytes.Repeat([]byte{7}, 64)), nil)
 	adminToken := bytes.Repeat([]byte{0x41}, 32)
@@ -83,6 +86,30 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 	admin.ServeHTTP(listResponse, list)
 	if listResponse.Code != http.StatusOK || !strings.Contains(listResponse.Body.String(), accountID) {
 		t.Fatalf("operator account list = %d: %s", listResponse.Code, listResponse.Body.String())
+	}
+	agents := operatorRequest(t, http.MethodPost, "/api/v1/operator/agents/list", &cloudpb.ListOperatorAgentsRequest{Query: "workstation", Freshness: cloudpb.Freshness_FRESHNESS_FRESH, Page: &cloudpb.PageRequest{PageSize: 20}}, adminCookies)
+	agentsResponse := httptest.NewRecorder()
+	admin.ServeHTTP(agentsResponse, agents)
+	if agentsResponse.Code != http.StatusOK || !strings.Contains(agentsResponse.Body.String(), "presence-operator") || !strings.Contains(agentsResponse.Body.String(), "active_peer_session_count\":\"1") {
+		t.Fatalf("operator agent list = %d: %s", agentsResponse.Code, agentsResponse.Body.String())
+	}
+	kick := operatorRequest(t, http.MethodPost, "/api/v1/operator/commands", &cloudpb.CreateManagementCommandRequest{AccountId: accountID, CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_KICK_PRESENCE, Target: &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_Presence{Presence: &cloudpb.KickPresenceTarget{DaemonDeviceId: presence.GetDaemonDeviceId(), AssignmentEpoch: presence.GetAssignmentEpoch(), PresenceSessionId: presence.GetPresenceSessionId()}}}, IdempotencyKey: "operator-kick-presence"}, adminCookies)
+	kickResponse := httptest.NewRecorder()
+	admin.ServeHTTP(kickResponse, kick)
+	if kickResponse.Code != http.StatusAccepted || !strings.Contains(kickResponse.Body.String(), "presence-operator") {
+		t.Fatalf("operator agent kick = %d: %s", kickResponse.Code, kickResponse.Body.String())
+	}
+	revokeSession := operatorRequest(t, http.MethodPost, "/api/v1/operator/accounts/sessions/revoke", &cloudpb.RevokeOperatorAccountSessionRequest{AccountId: accountID, SessionId: registered.GetSession().GetSessionId(), ExpectedRevision: registered.GetSession().GetSessionRevision(), Reason: "credential reported lost", RequestId: "operator-session-revoke"}, adminCookies)
+	revokeSessionResponse := httptest.NewRecorder()
+	admin.ServeHTTP(revokeSessionResponse, revokeSession)
+	if revokeSessionResponse.Code != http.StatusOK || !strings.Contains(revokeSessionResponse.Body.String(), "revoked\":true") {
+		t.Fatalf("operator session revoke = %d: %s", revokeSessionResponse.Code, revokeSessionResponse.Body.String())
+	}
+	sessionAudit := operatorRequest(t, http.MethodPost, "/api/v1/operator/accounts/get", &cloudpb.GetOperatorAccountRequest{AccountId: accountID}, adminCookies)
+	sessionAuditResponse := httptest.NewRecorder()
+	admin.ServeHTTP(sessionAuditResponse, sessionAudit)
+	if sessionAuditResponse.Code != http.StatusOK || !strings.Contains(sessionAuditResponse.Body.String(), "account.session.revoke") || !strings.Contains(sessionAuditResponse.Body.String(), "credential reported lost") {
+		t.Fatalf("operator session audit projection = %d: %s", sessionAuditResponse.Code, sessionAuditResponse.Body.String())
 	}
 	catalogList := operatorRequest(t, http.MethodPost, "/api/v1/operator/catalog/list", &cloudpb.ListPlanCatalogReleasesRequest{}, adminCookies)
 	catalogListResponse := httptest.NewRecorder()
@@ -175,6 +202,12 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 		t.Fatal(err)
 	}
 	readonlyCookies := operatorLogin(t, readonly, readonlyToken)
+	readonlyRevoke := operatorRequest(t, http.MethodPost, "/api/v1/operator/accounts/sessions/revoke", &cloudpb.RevokeOperatorAccountSessionRequest{AccountId: accountID, AllAccountSessions: true, Reason: "readonly must fail", RequestId: "readonly-session-revoke"}, readonlyCookies)
+	readonlyRevokeResponse := httptest.NewRecorder()
+	readonly.ServeHTTP(readonlyRevokeResponse, readonlyRevoke)
+	if readonlyRevokeResponse.Code != http.StatusForbidden {
+		t.Fatalf("readonly session revoke = %d: %s", readonlyRevokeResponse.Code, readonlyRevokeResponse.Body.String())
+	}
 	forbidden := operatorRequest(t, http.MethodPost, "/api/v1/operator/subscription/transition", &cloudpb.OperatorTransitionSubscriptionRequest{AccountId: accountID, Transition: cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_RESTORE}, readonlyCookies)
 	forbiddenResponse := httptest.NewRecorder()
 	readonly.ServeHTTP(forbiddenResponse, forbidden)

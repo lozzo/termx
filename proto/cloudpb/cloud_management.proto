@@ -168,6 +168,16 @@ message OperatorAccountSummary {
   RelayQuotaPeriod relay_quota = 4;
 }
 
+// AccountSessionProjection 是 operator 可见的账号 session 元数据，不包含 access/refresh token 或 hash。
+message AccountSessionProjection {
+  string session_id = 1;
+  string client_device_id = 2;
+  int64 access_expires_at_unix_millis = 3;
+  int64 refresh_expires_at_unix_millis = 4;
+  uint64 revision = 5;
+  bool revoked = 6;
+}
+
 message ListOperatorAccountsRequest {
   string query = 1;
   SubscriptionStatus subscription_status = 2;
@@ -189,6 +199,43 @@ message GetOperatorAccountResponse {
   ListAccountDevicesResponse devices = 3;
   ListAccountTopologyResponse topology = 4;
   repeated ManagementCommandProjection commands = 5;
+  repeated AccountSessionProjection sessions = 6;
+  repeated OperatorMutationAuditProjection operator_audit = 7;
+}
+
+// OperatorAgentProjection 按稳定 daemon DeviceIdentity 聚合账号、assignment 与最后可信 Presence。
+// Presence 是否在线只能由 availability + freshness 推导，禁止持久化第二份 online bool。
+message OperatorAgentProjection {
+  AccountProjection account = 1;
+  AccountDeviceProjection device = 2;
+  PresenceProjection presence = 3;
+  uint64 active_peer_session_count = 4;
+}
+
+message ListOperatorAgentsRequest {
+  string query = 1;
+  Freshness freshness = 2;
+  bool include_revoked = 3;
+  PageRequest page = 4;
+}
+
+message ListOperatorAgentsResponse {
+  repeated OperatorAgentProjection agents = 1;
+  PageResponse page = 2;
+}
+
+// RevokeOperatorAccountSessionRequest 撤销一个精确 session，或显式撤销目标账号全部 session。
+message RevokeOperatorAccountSessionRequest {
+  string account_id = 1;
+  string session_id = 2;
+  uint64 expected_revision = 3;
+  bool all_account_sessions = 4;
+  string reason = 5;
+  string request_id = 6;
+}
+
+message RevokeOperatorAccountSessionResponse {
+  repeated AccountSessionProjection sessions = 1;
 }
 
 message OperatorTransitionSubscriptionRequest {

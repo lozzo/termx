@@ -190,6 +190,17 @@ func TestHUB007EdgeRestartAssignmentMigrationAndControllerOutage(t *testing.T) {
 	if err != nil || assignment.Value.GetHubId() != "hub-edge-b" || assignment.Value.GetAssignmentEpoch() != 2 {
 		t.Fatalf("persisted migration after Controller restart = (%+v, %v)", assignment, err)
 	}
+	restartedOperatorClient := operatorHTTPClient(t)
+	operatorLoginHTTP(t, restartedOperatorClient, controllerRuntime.OperatorURL, credentials.OperatorAccessToken)
+	agent := waitOperatorAgent(t, restartedOperatorClient, controllerRuntime.OperatorURL, accountID, "daemon-edge-a", "hub-edge-b", 2)
+	kick := &cloudpb.CreateManagementCommandResponse{}
+	operatorPost(t, restartedOperatorClient, controllerRuntime.OperatorURL, "/api/v1/operator/commands", &cloudpb.CreateManagementCommandRequest{AccountId: accountID, CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_KICK_PRESENCE, IdempotencyKey: "opsuser001-kick-migrated-presence", Target: &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_Presence{Presence: &cloudpb.KickPresenceTarget{DaemonDeviceId: agent.GetPresence().GetDaemonDeviceId(), AssignmentEpoch: agent.GetPresence().GetAssignmentEpoch(), PresenceSessionId: agent.GetPresence().GetPresenceSessionId()}}}}, kick)
+	closedAfterKick, cancelAfterKick := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelAfterKick()
+	if event, receiveErr := migratedPresence.presence.Receive(closedAfterKick); receiveErr == nil {
+		t.Fatalf("Agent Presence remained open after operator Kick: %v", event)
+	}
+	waitOperatorCommandApplied(t, postgresDSN, accountID, kick.GetCommand().GetCommandId())
 	scanHUB007RuntimeLogs(t, manifest, credentials, []string{restartedEdge.record.LogPath, restartedController.record.LogPath})
 }
 
@@ -459,6 +470,44 @@ func waitMigrationApplied(t *testing.T, postgresDSN, accountID, commandID string
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("assignment migration did not apply: command=%v assignment=%s error=%v", lastCommand, lastAssignment, lastError)
+}
+
+func waitOperatorCommandApplied(t *testing.T, postgresDSN, accountID, commandID string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	var last *cloudpb.ManagementCommandProjection
+	for time.Now().Before(deadline) {
+		store, err := cloudpostgres.Open(context.Background(), postgresDSN)
+		if err == nil {
+			service, _ := commandoutbox.New(store)
+			last, err = service.Get(context.Background(), accountID, commandID)
+			_ = store.Close()
+			if err == nil && (last.GetExecutionState() == cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_APPLIED || last.GetExecutionState() == cloudpb.CommandExecutionState_COMMAND_EXECUTION_STATE_ALREADY_SATISFIED) {
+				return
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("operator command %q did not apply: %v", commandID, last)
+}
+
+func waitOperatorAgent(t *testing.T, client *http.Client, origin, accountID, deviceID, hubID string, assignmentEpoch uint64) *cloudpb.OperatorAgentProjection {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	var last *cloudpb.ListOperatorAgentsResponse
+	for time.Now().Before(deadline) {
+		last = &cloudpb.ListOperatorAgentsResponse{}
+		operatorPost(t, client, origin, "/api/v1/operator/agents/list", &cloudpb.ListOperatorAgentsRequest{Query: deviceID, Freshness: cloudpb.Freshness_FRESHNESS_FRESH, Page: &cloudpb.PageRequest{PageSize: 10}}, last)
+		if len(last.GetAgents()) == 1 {
+			agent := last.GetAgents()[0]
+			if agent.GetAccount().GetAccountId() == accountID && agent.GetDevice().GetDeviceId() == deviceID && agent.GetPresence().GetControlOwnerHubId() == hubID && agent.GetPresence().GetAssignmentEpoch() == assignmentEpoch {
+				return agent
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("Agent projection did not converge after migration/restart: %v", last)
+	return nil
 }
 
 func waitOperatorManagedSession(t *testing.T, client *http.Client, origin, accountID, managedSessionID string, present bool) {

@@ -81,6 +81,8 @@ type Store interface {
 	AccountByEmail(context.Context, string) (AccountRecord, error)
 	Account(context.Context, string) (AccountRecord, error)
 	Accounts(context.Context, int) ([]AccountRecord, error)
+	Sessions(context.Context, string, bool, int) ([]SessionRecord, error)
+	OperatorAudits(context.Context, string, int) ([]*cloudpb.OperatorMutationAuditProjection, error)
 	AllOrders(context.Context, int) ([]*cloudpb.OrderProjection, error)
 	Subscriptions(context.Context, int) ([]*cloudpb.SubscriptionProjection, error)
 	PutSession(context.Context, SessionRecord, *cloudpb.CommerceAuditProjection) error
@@ -89,6 +91,7 @@ type Store interface {
 	SessionByRefreshHash(context.Context, [sha256.Size]byte) (SessionRecord, error)
 	RotateSession(context.Context, string, SessionRecord, *cloudpb.CommerceAuditProjection) error
 	RevokeSession(context.Context, string, string, bool, *cloudpb.CommerceAuditProjection) error
+	RevokeOperatorSessions(context.Context, string, string, uint64, bool, *cloudpb.OperatorMutationAuditProjection) error
 	ChangePassword(context.Context, AccountRecord, SessionRecord, *cloudpb.CommerceAuditProjection) error
 	CreateOrder(context.Context, *cloudpb.OrderProjection, *cloudpb.CommerceAuditProjection) error
 	Order(context.Context, string) (*cloudpb.OrderProjection, error)
@@ -279,6 +282,53 @@ func (service *Service) Accounts(ctx context.Context, limit int) ([]*cloudpb.Acc
 		result = append(result, proto.Clone(record.Projection).(*cloudpb.AccountProjection))
 	}
 	return result, nil
+}
+
+// Sessions 返回 operator 可见的无 secret 账号 session 投影。
+// token 及其 hash 始终留在 Store 内部，不能进入 Proto、Web 或日志。
+func (service *Service) Sessions(ctx context.Context, accountID string, includeRevoked bool, limit int) ([]*cloudpb.AccountSessionProjection, error) {
+	if accountID == "" || limit < 1 || limit > 200 {
+		return nil, ErrConflict
+	}
+	records, err := service.store.Sessions(ctx, accountID, includeRevoked, limit)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*cloudpb.AccountSessionProjection, 0, len(records))
+	for _, record := range records {
+		result = append(result, sessionProjection(record))
+	}
+	return result, nil
+}
+
+// OperatorAudits 返回目标账号的持久运营审计，只读消费 PostgreSQL 单一审计真值。
+func (service *Service) OperatorAudits(ctx context.Context, accountID string, limit int) ([]*cloudpb.OperatorMutationAuditProjection, error) {
+	if accountID == "" || limit < 1 || limit > 200 {
+		return nil, ErrConflict
+	}
+	return service.store.OperatorAudits(ctx, accountID, limit)
+}
+
+// RevokeOperatorSessions 通过 PostgreSQL 单事务撤销精确 session 或账号全部 session并写运营审计。
+func (service *Service) RevokeOperatorSessions(ctx context.Context, actorID string, request *cloudpb.RevokeOperatorAccountSessionRequest) (*cloudpb.RevokeOperatorAccountSessionResponse, error) {
+	if request == nil || actorID == "" || request.GetAccountId() == "" || request.GetRequestId() == "" || strings.TrimSpace(request.GetReason()) == "" || request.GetAllAccountSessions() == (request.GetSessionId() != "") || !request.GetAllAccountSessions() && request.GetExpectedRevision() == 0 {
+		return nil, ErrConflict
+	}
+	now := service.now().UTC()
+	resourceID := request.GetSessionId()
+	if request.GetAllAccountSessions() {
+		resourceID = request.GetAccountId()
+	}
+	audit := &cloudpb.OperatorMutationAuditProjection{AuditId: "audit_session_" + request.GetRequestId(), ActorId: actorID, Action: "account.session.revoke", ResourceKind: "account_session", ResourceId: resourceID, AccountId: request.GetAccountId(), Reason: strings.TrimSpace(request.GetReason()), RequestId: request.GetRequestId(), BeforeRevision: request.GetExpectedRevision(), AfterRevision: request.GetExpectedRevision(), OccurredAtUnixMillis: now.UnixMilli()}
+	if err := service.store.RevokeOperatorSessions(ctx, request.GetAccountId(), request.GetSessionId(), request.GetExpectedRevision(), request.GetAllAccountSessions(), audit); err != nil {
+		return nil, err
+	}
+	sessions, err := service.Sessions(ctx, request.GetAccountId(), true, 100)
+	return &cloudpb.RevokeOperatorAccountSessionResponse{Sessions: sessions}, err
+}
+
+func sessionProjection(record SessionRecord) *cloudpb.AccountSessionProjection {
+	return &cloudpb.AccountSessionProjection{SessionId: record.SessionID, ClientDeviceId: record.ClientDeviceID, AccessExpiresAtUnixMillis: record.AccessExpiresAt.UnixMilli(), RefreshExpiresAtUnixMillis: record.RefreshExpiresAt.UnixMilli(), Revision: record.Revision, Revoked: record.Revoked}
 }
 
 // Refresh 单次消费 refresh token，撤销旧 session 并返回新 token pair。

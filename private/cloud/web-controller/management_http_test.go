@@ -18,6 +18,7 @@ import (
 	webcontroller "github.com/muxvia/muxvia/private/cloud/web-controller"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestManagementAPIUsesAccountCSRFAndDurableCommandProjection(t *testing.T) {
@@ -136,14 +137,26 @@ func TestManagementAPIUsesAccountCSRFAndDurableCommandProjection(t *testing.T) {
 
 type managementTargetSource struct {
 	session               cloudtopology.StoredPeerSession
+	device                cloudtopology.DeviceOwnership
+	presenceAccountID     string
+	presence              *cloudpb.PresenceProjection
+	devices               []*cloudpb.AccountDeviceProjection
+	presences             []*cloudpb.PresenceProjection
+	peerSessions          []*cloudpb.ManagedPeerSessionProjection
 	lastDevicesAccountID  string
 	lastTopologyAccountID string
 }
 
 func (source *managementTargetSource) Device(context.Context, string) (cloudtopology.DeviceOwnership, error) {
+	if source.device.DeviceID != "" {
+		return source.device, nil
+	}
 	return cloudtopology.DeviceOwnership{}, cloudtopology.ErrOwnershipNotFound
 }
 func (source *managementTargetSource) Presence(context.Context, string) (string, *cloudpb.PresenceProjection, error) {
+	if source.presence != nil {
+		return source.presenceAccountID, proto.Clone(source.presence).(*cloudpb.PresenceProjection), nil
+	}
 	return "", nil, cloudtopology.ErrTopologyRejected
 }
 func (source *managementTargetSource) PeerSession(context.Context, *cloudpb.ManagedPeerSessionTarget) (cloudtopology.StoredPeerSession, error) {
@@ -162,9 +175,33 @@ func (source *managementTargetSource) ListTerminalAccess(_ context.Context, acco
 
 func (source *managementTargetSource) ListAccountDevices(_ context.Context, accountID string, _ cloudpb.ManagedDeviceKind, _ bool, _ int) ([]*cloudpb.AccountDeviceProjection, error) {
 	source.lastDevicesAccountID = accountID
-	return nil, nil
+	return cloneDevices(source.devices), nil
 }
 func (source *managementTargetSource) ListAccountTopology(_ context.Context, accountID, _, _ string, _ cloudpb.Freshness, _ int) ([]*cloudpb.PresenceProjection, []*cloudpb.ManagedPeerSessionProjection, error) {
 	source.lastTopologyAccountID = accountID
-	return nil, nil, nil
+	return clonePresences(source.presences), clonePeerSessions(source.peerSessions), nil
+}
+
+func cloneDevices(values []*cloudpb.AccountDeviceProjection) []*cloudpb.AccountDeviceProjection {
+	result := make([]*cloudpb.AccountDeviceProjection, 0, len(values))
+	for _, value := range values {
+		result = append(result, proto.Clone(value).(*cloudpb.AccountDeviceProjection))
+	}
+	return result
+}
+
+func clonePresences(values []*cloudpb.PresenceProjection) []*cloudpb.PresenceProjection {
+	result := make([]*cloudpb.PresenceProjection, 0, len(values))
+	for _, value := range values {
+		result = append(result, proto.Clone(value).(*cloudpb.PresenceProjection))
+	}
+	return result
+}
+
+func clonePeerSessions(values []*cloudpb.ManagedPeerSessionProjection) []*cloudpb.ManagedPeerSessionProjection {
+	result := make([]*cloudpb.ManagedPeerSessionProjection, 0, len(values))
+	for _, value := range values {
+		result = append(result, proto.Clone(value).(*cloudpb.ManagedPeerSessionProjection))
+	}
+	return result
 }

@@ -155,6 +155,33 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
+	mux.HandleFunc("POST /api/v1/operator/agents/list", func(w http.ResponseWriter, r *http.Request) {
+		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		request := &cloudpb.ListOperatorAgentsRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.ListOperatorAgentsResponse
+		if err == nil {
+			response, err = operatorAgents(r.Context(), config, request)
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/accounts/sessions/revoke", func(w http.ResponseWriter, r *http.Request) {
+		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		if err == nil {
+			err = requireOperatorMutation(r, record, config.Now().UTC())
+		}
+		request := &cloudpb.RevokeOperatorAccountSessionRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.RevokeOperatorAccountSessionResponse
+		if err == nil {
+			response, err = config.Commerce.RevokeOperatorSessions(r.Context(), config.OperatorID, request)
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
 	mux.HandleFunc("POST /api/v1/operator/subscription/transition", func(w http.ResponseWriter, r *http.Request) {
 		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
 		if err == nil {
@@ -584,7 +611,68 @@ func operatorAccountDetail(ctx context.Context, config OperatorAPIConfig, accoun
 	if err != nil {
 		return nil, err
 	}
-	return &cloudpb.GetOperatorAccountResponse{Commerce: commerceValue, RelayQuota: quota, Devices: &cloudpb.ListAccountDevicesResponse{Devices: devices, Page: &cloudpb.PageResponse{}}, Topology: &cloudpb.ListAccountTopologyResponse{Presences: presences, PeerSessions: sessions, Page: &cloudpb.PageResponse{}}, Commands: commands}, nil
+	accountSessions, err := config.Commerce.Sessions(ctx, accountID, true, 100)
+	if err != nil {
+		return nil, err
+	}
+	operatorAudit, err := config.Commerce.OperatorAudits(ctx, accountID, 100)
+	if err != nil {
+		return nil, err
+	}
+	return &cloudpb.GetOperatorAccountResponse{Commerce: commerceValue, RelayQuota: quota, Devices: &cloudpb.ListAccountDevicesResponse{Devices: devices, Page: &cloudpb.PageResponse{}}, Topology: &cloudpb.ListAccountTopologyResponse{Presences: presences, PeerSessions: sessions, Page: &cloudpb.PageResponse{}}, Commands: commands, Sessions: accountSessions, OperatorAudit: operatorAudit}, nil
+}
+
+func operatorAgents(ctx context.Context, config OperatorAPIConfig, request *cloudpb.ListOperatorAgentsRequest) (*cloudpb.ListOperatorAgentsResponse, error) {
+	if request == nil {
+		return nil, commandoutbox.ErrCommandConflict
+	}
+	accounts, err := config.Commerce.Accounts(ctx, 200)
+	if err != nil {
+		return nil, err
+	}
+	response := &cloudpb.ListOperatorAgentsResponse{Page: &cloudpb.PageResponse{}}
+	query := strings.ToLower(strings.TrimSpace(request.GetQuery()))
+	limit := boundedPageSize(request.GetPage(), 100)
+	for _, account := range accounts {
+		devices, listErr := config.Topology.ListAccountDevices(ctx, account.GetAccountId(), cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, request.GetIncludeRevoked(), 200)
+		if listErr != nil {
+			return nil, listErr
+		}
+		presences, peerSessions, listErr := config.Topology.ListAccountTopology(ctx, account.GetAccountId(), "", "", cloudpb.Freshness_FRESHNESS_UNSPECIFIED, 200)
+		if listErr != nil {
+			return nil, listErr
+		}
+		for _, device := range devices {
+			var presence *cloudpb.PresenceProjection
+			for _, candidate := range presences {
+				if candidate.GetDaemonDeviceId() == device.GetDeviceId() {
+					presence = candidate
+					break
+				}
+			}
+			if request.GetFreshness() != cloudpb.Freshness_FRESHNESS_UNSPECIFIED && (presence == nil || presence.GetFreshness() != request.GetFreshness()) {
+				continue
+			}
+			presenceHubID := ""
+			if presence != nil {
+				presenceHubID = presence.GetControlOwnerHubId()
+			}
+			if query != "" && !strings.Contains(strings.ToLower(account.GetEmail()+" "+device.GetDisplayName()+" "+device.GetDeviceId()+" "+device.GetPlatform()+" "+device.GetAssignedHubId()+" "+presenceHubID), query) {
+				continue
+			}
+			var active uint64
+			for _, peer := range peerSessions {
+				if peer.GetTarget().GetDaemonDeviceId() == device.GetDeviceId() && peer.GetState() != cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_CLOSED && peer.GetState() != cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_SUPERSEDED {
+					active++
+				}
+			}
+			response.Agents = append(response.Agents, &cloudpb.OperatorAgentProjection{Account: account, Device: device, Presence: presence, ActivePeerSessionCount: active})
+			if len(response.Agents) >= limit {
+				return response, nil
+			}
+		}
+	}
+	return response, nil
 }
 
 var errOperatorForbidden = errors.New("operator role is forbidden")

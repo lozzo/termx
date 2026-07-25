@@ -198,6 +198,65 @@ func TestCommercePersistsSessionPaymentReplayAndSubscriptionTransitions(t *testi
 	}
 }
 
+func TestOperatorSessionRevokeIsFencedAuditedAndReplaySafe(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 7, 25, 13, 0, 0, 0, time.UTC)
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "operator-session-postgres"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	service := newService(t, store, func() time.Time { return now })
+	registered, err := service.Register(ctx, &cloudpb.RegisterAccountRequest{Email: "sessions@example.com", Password: "secure-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.Login(ctx, &cloudpb.PasswordLoginRequest{Email: "sessions@example.com", Password: "secure-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	accountID := registered.GetSession().GetAccount().GetAccountId()
+	other, err := service.Register(ctx, &cloudpb.RegisterAccountRequest{Email: "other-sessions@example.com", Password: "secure-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	crossAccount := &cloudpb.RevokeOperatorAccountSessionRequest{AccountId: other.GetSession().GetAccount().GetAccountId(), SessionId: registered.GetSession().GetSessionId(), ExpectedRevision: registered.GetSession().GetSessionRevision(), Reason: "cross-account attempt", RequestId: "cross-account-session"}
+	if _, err := service.RevokeOperatorSessions(ctx, "operator-1", crossAccount); !errors.Is(err, commerce.ErrNotFound) {
+		t.Fatalf("cross-account session revoke = %v", err)
+	}
+	sessions, err := service.Sessions(ctx, accountID, false, 10)
+	if err != nil || len(sessions) != 2 {
+		t.Fatalf("active sessions = (%v, %v)", sessions, err)
+	}
+	request := &cloudpb.RevokeOperatorAccountSessionRequest{AccountId: accountID, SessionId: registered.GetSession().GetSessionId(), ExpectedRevision: registered.GetSession().GetSessionRevision(), Reason: "credential reported lost", RequestId: "revoke-session-1"}
+	response, err := service.RevokeOperatorSessions(ctx, "operator-1", request)
+	if err != nil || len(response.GetSessions()) != 2 {
+		t.Fatalf("operator revoke = (%v, %v)", response, err)
+	}
+	if _, _, err := service.AuthenticateAccess(ctx, registered.GetSession().GetAccessToken()); !errors.Is(err, commerce.ErrUnauthorized) {
+		t.Fatalf("revoked session remained usable: %v", err)
+	}
+	audits, err := service.OperatorAudits(ctx, accountID, 10)
+	if err != nil || len(audits) != 1 || audits[0].GetAction() != "account.session.revoke" || audits[0].GetReason() != request.GetReason() {
+		t.Fatalf("operator session audit = (%v, %v)", audits, err)
+	}
+	if _, err := service.RevokeOperatorSessions(ctx, "operator-1", request); err != nil {
+		t.Fatalf("exact operator replay = %v", err)
+	}
+	conflict := proto.Clone(request).(*cloudpb.RevokeOperatorAccountSessionRequest)
+	conflict.Reason = "different reason"
+	if _, err := service.RevokeOperatorSessions(ctx, "operator-1", conflict); !errors.Is(err, commerce.ErrConflict) {
+		t.Fatalf("conflicting operator replay = %v", err)
+	}
+	all := &cloudpb.RevokeOperatorAccountSessionRequest{AccountId: accountID, AllAccountSessions: true, Reason: "account recovery", RequestId: "revoke-all-sessions"}
+	if _, err := service.RevokeOperatorSessions(ctx, "operator-1", all); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.AuthenticateAccess(ctx, second.GetSession().GetAccessToken()); !errors.Is(err, commerce.ErrUnauthorized) {
+		t.Fatalf("all-session revoke left active credential: %v", err)
+	}
+}
+
 func TestPaymentEventRejectsOrderCreatedFromStaleSubscriptionRevision(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 7, 20, 15, 0, 0, 0, time.UTC)

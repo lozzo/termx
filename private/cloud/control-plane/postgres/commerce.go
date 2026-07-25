@@ -86,6 +86,46 @@ func (store *Store) Accounts(ctx context.Context, limit int) ([]commerce.Account
 	return result, rows.Err()
 }
 
+// Sessions 返回账号 session 元数据；token hash 只用于 Store 内部鉴权，不离开本方法。
+func (store *Store) Sessions(ctx context.Context, accountID string, includeRevoked bool, limit int) ([]commerce.SessionRecord, error) {
+	rows, err := queryContext(ctx, store.db, `SELECT session_id,account_id,client_device_id,access_hash,refresh_hash,access_expires_at,refresh_expires_at,revision,revoked FROM commerce_sessions WHERE account_id=? AND (revoked=0 OR ?=1) ORDER BY session_id LIMIT ?`, accountID, boolInt(includeRevoked), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []commerce.SessionRecord
+	for rows.Next() {
+		record, scanErr := scanSession(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		result = append(result, record)
+	}
+	return result, rows.Err()
+}
+
+// OperatorAudits 读取目标账号的持久运营审计；projection 是该表的唯一展示真值。
+func (store *Store) OperatorAudits(ctx context.Context, accountID string, limit int) ([]*cloudpb.OperatorMutationAuditProjection, error) {
+	rows, err := queryContext(ctx, store.db, `SELECT projection FROM operator_mutation_audit WHERE account_id=? ORDER BY occurred_at DESC,audit_id DESC LIMIT ?`, accountID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []*cloudpb.OperatorMutationAuditProjection
+	for rows.Next() {
+		var body []byte
+		if err := rows.Scan(&body); err != nil {
+			return nil, err
+		}
+		value := &cloudpb.OperatorMutationAuditProjection{}
+		if err := proto.Unmarshal(body, value); err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+	return result, rows.Err()
+}
+
 // PutSession 原子保存新的登录 session 和审计。
 func (store *Store) PutSession(ctx context.Context, session commerce.SessionRecord, audit *cloudpb.CommerceAuditProjection) error {
 	tx, err := store.db.BeginTx(ctx, nil)
@@ -179,6 +219,51 @@ func (store *Store) RevokeSession(ctx context.Context, accountID, sessionID stri
 	}
 	if err := insertCommerceAudit(ctx, tx, audit); err != nil {
 		return err
+	}
+	return tx.Commit()
+}
+
+// RevokeOperatorSessions 原子执行运营 session revoke 与 operator audit。
+// request_id 精确重放返回成功，任何 actor/reason/target 冲突都 fail closed。
+func (store *Store) RevokeOperatorSessions(ctx context.Context, accountID, sessionID string, expectedRevision uint64, all bool, audit *cloudpb.OperatorMutationAuditProjection) error {
+	if audit == nil || accountID == "" || audit.GetAccountId() != accountID || audit.GetAuditId() == "" || audit.GetRequestId() == "" {
+		return commerce.ErrConflict
+	}
+	body, err := marshal(audit)
+	if err != nil {
+		return err
+	}
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var existingBody []byte
+	existingErr := queryRowContext(ctx, tx, `SELECT projection FROM operator_mutation_audit WHERE audit_id=? FOR UPDATE`, audit.GetAuditId()).Scan(&existingBody)
+	if existingErr == nil {
+		existing := &cloudpb.OperatorMutationAuditProjection{}
+		if proto.Unmarshal(existingBody, existing) != nil || existing.GetActorId() != audit.GetActorId() || existing.GetAction() != audit.GetAction() || existing.GetResourceId() != audit.GetResourceId() || existing.GetAccountId() != audit.GetAccountId() || existing.GetReason() != audit.GetReason() || existing.GetRequestId() != audit.GetRequestId() || existing.GetBeforeRevision() != audit.GetBeforeRevision() {
+			return commerce.ErrConflict
+		}
+		return tx.Commit()
+	}
+	if !errors.Is(existingErr, sql.ErrNoRows) {
+		return existingErr
+	}
+	var result sql.Result
+	if all {
+		result, err = execContext(ctx, tx, `UPDATE commerce_sessions SET revoked=1 WHERE account_id=? AND revoked=0`, accountID)
+	} else {
+		result, err = execContext(ctx, tx, `UPDATE commerce_sessions SET revoked=1 WHERE account_id=? AND session_id=? AND revision=? AND revoked=0`, accountID, sessionID, expectedRevision)
+	}
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed == 0 {
+		return commerce.ErrNotFound
+	}
+	if _, err := execContext(ctx, tx, `INSERT INTO operator_mutation_audit(audit_id,account_id,occurred_at,projection) VALUES(?,?,?,?)`, audit.GetAuditId(), audit.GetAccountId(), audit.GetOccurredAtUnixMillis(), body); err != nil {
+		return conflict(err)
 	}
 	return tx.Commit()
 }
