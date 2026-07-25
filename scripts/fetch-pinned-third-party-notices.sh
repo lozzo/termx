@@ -114,8 +114,8 @@ publish "$tmp_dir/WEBRTC_SDK_WRAPPER_LICENSE.txt" "clients/mobile/public/third-p
 fetch_checked \
   "https://raw.githubusercontent.com/webrtc-sdk/android/878c5b093f8bbbd4955d1037316484aabe962d18/Licenses/WEBRTC.md" \
   "d1f9382c6878ac024155fd6d44a5977329108bb8b0a01cea40e4a2f1d7de252e" \
-  "$tmp_dir/WEBRTC.md"
-publish "$tmp_dir/WEBRTC.md" "clients/mobile/public/third-party/WEBRTC.md"
+  "$tmp_dir/WEBRTC.txt"
+publish "$tmp_dir/WEBRTC.txt" "clients/mobile/public/third-party/WEBRTC.txt"
 
 verify_derived "$repo_root/clients/ui/src/assets/fonts/LICENSE" "4ff4cfa7c2b208356fe1d7a658c2d751d25f9409d4895d11c203022106939908"
 publish "$repo_root/clients/ui/src/assets/fonts/LICENSE" "clients/mobile/public/third-party/FONTS.txt"

@@ -64,7 +64,7 @@ WEBRTC
 
 io.github.webrtc-sdk:android:125.6422.07 is pinned to repository commit
 878c5b093f8bbbd4955d1037316484aabe962d18. Its wrapper MIT license is in
-WEBRTC_SDK_WRAPPER_LICENSE.txt; native WebRTC and bundled third-party notices are in WEBRTC.md.
+WEBRTC_SDK_WRAPPER_LICENSE.txt; native WebRTC and bundled third-party notices are in WEBRTC.txt.
 
 JAVA-WEBSOCKET MIT LICENSE
 

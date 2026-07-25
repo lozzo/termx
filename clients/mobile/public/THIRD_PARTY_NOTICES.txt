@@ -13,7 +13,7 @@ third-party/ANDROID_NOTICES.txt
 third-party/WEBRTC_SDK_WRAPPER_LICENSE.txt
   License for the pinned Android WebRTC SDK wrapper repository.
 
-third-party/WEBRTC.md
+third-party/WEBRTC.txt
   Native WebRTC and bundled third-party notices from the exact pinned build.
 
 third-party/FONTS.txt
