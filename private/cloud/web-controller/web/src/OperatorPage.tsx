@@ -5,9 +5,7 @@ import {
   Check,
   Edit3,
   Laptop,
-  KeyRound,
   History,
-  Menu,
   PackageOpen,
   Rocket,
   PauseCircle,
@@ -21,13 +19,11 @@ import {
   SlidersHorizontal,
   TicketPercent,
   UserRoundCog,
-  X,
 } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import {
   GetOperatorAccountRequestSchema,
   GetOperatorAccountResponseSchema,
@@ -76,8 +72,6 @@ import {
   RevokeEntitlementOverrideRequestSchema,
   RevokeEntitlementOverrideResponseSchema,
   ManagementActorKind,
-  GetOperatorWorkspaceResponseSchema,
-  OperatorWorkspaceModule,
   RecentAuthenticationRequestSchema,
   RecentAuthenticationResponseSchema,
   OperatorTransitionSubscriptionRequestSchema,
@@ -137,6 +131,7 @@ import {
   ManagedDeviceKind,
 } from "@/generated/cloudpb/cloud_topology_pb";
 import { ProtoHTTPError, protoGet, protoPost } from "@/protoApi";
+import { operatorModuleFromPath, type OperatorModuleKey } from "@/consoleNavigation";
 
 type HubFormState = {
   hubId: string;
@@ -156,42 +151,21 @@ const emptyHubForm: HubFormState = {
   hubId: "", edgeDeploymentId: "", relayId: "", region: "", publicLabel: "", publicHubUrl: "", healthUrl: "", maxAssignments: "1000", hubControlPublicKey: "", relayControlPublicKey: "", reason: "",
 };
 
-type OperatorModuleKey = "users" | "agents" | "orders" | "subscriptions" | "plans" | "privileges" | "promotions" | "hubs" | "releases";
-
-const operatorModules: ReadonlyArray<{
-  key: OperatorModuleKey;
-  permission: OperatorWorkspaceModule;
-  icon: typeof UserRoundCog;
-}> = [
-  { key: "users", permission: OperatorWorkspaceModule.USERS, icon: UserRoundCog },
-  { key: "agents", permission: OperatorWorkspaceModule.AGENTS, icon: Laptop },
-  { key: "orders", permission: OperatorWorkspaceModule.ORDERS, icon: ReceiptText },
-  { key: "subscriptions", permission: OperatorWorkspaceModule.SUBSCRIPTIONS, icon: KeyRound },
-  { key: "plans", permission: OperatorWorkspaceModule.PLANS, icon: PackageOpen },
-  { key: "privileges", permission: OperatorWorkspaceModule.PRIVILEGES, icon: SlidersHorizontal },
-  { key: "promotions", permission: OperatorWorkspaceModule.PROMOTIONS, icon: TicketPercent },
-  { key: "hubs", permission: OperatorWorkspaceModule.HUBS, icon: Server },
-  { key: "releases", permission: OperatorWorkspaceModule.RELEASES, icon: Rocket },
-];
-
 const orderStatuses = [OrderStatus.PENDING, OrderStatus.PAID, OrderStatus.PAYMENT_FAILED, OrderStatus.REFUNDED, OrderStatus.REVOKED];
 const subscriptionStatuses = [SubscriptionStatus.PENDING, SubscriptionStatus.ACTIVE, SubscriptionStatus.CANCEL_AT_PERIOD_END, SubscriptionStatus.CANCELED, SubscriptionStatus.SUSPENDED, SubscriptionStatus.EXPIRED, SubscriptionStatus.TRIALING, SubscriptionStatus.GRACE, SubscriptionStatus.PAST_DUE];
 
 function moduleFromPath(pathname = window.location.pathname): OperatorModuleKey | undefined {
-  const key = pathname.replace(/\/$/, "").split("/")[2];
-  if (key === "catalog") return "plans";
-  return operatorModules.some((module) => module.key === key) ? key as OperatorModuleKey : undefined;
+  return operatorModuleFromPath(pathname);
 }
 
+/**
+ * OperatorPage 消费 generated operator API 并只呈现当前模块的右侧内容。
+ * 导航、Workspace 可见性和登录生命周期统一由 ConsolePage 持有。
+ */
 export default function OperatorPage() {
   const { t, i18n } = useTranslation();
-  const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
-  const [workspaceModules, setWorkspaceModules] = useState<OperatorWorkspaceModule[]>([]);
   const [activeModule, setActiveModule] = useState<OperatorModuleKey | undefined>(() => moduleFromPath());
   const [routePath, setRoutePath] = useState(window.location.pathname);
-  const [navigationOpen, setNavigationOpen] = useState(false);
-  const navigationRef = useRef<HTMLElement>(null);
-  const navigationTriggerRef = useRef<HTMLButtonElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [reauthPassword, setReauthPassword] = useState("");
   const [reauthExpiresAt, setReauthExpiresAt] = useState(0);
@@ -249,6 +223,7 @@ export default function OperatorPage() {
   const [hubEdit, setHubEdit] = useState<Pick<HubFormState, "region" | "publicLabel" | "publicHubUrl" | "healthUrl" | "maxAssignments" | "reason">>({ region: "", publicLabel: "", publicHubUrl: "", healthUrl: "", maxAssignments: "", reason: "" });
   const [busy, setBusy] = useState(false);
   const loadedModulesRef = useRef(new Set<OperatorModuleKey>());
+  const loadingModulesRef = useRef(new Set<OperatorModuleKey>());
   const catalogEditorRef = useRef<HTMLTextAreaElement>(null);
 
   function showCatalog(catalog: PlanCatalogContract) {
@@ -277,26 +252,17 @@ export default function OperatorPage() {
     });
   }
 
-  function navigate(module: OperatorModuleKey, replace = false) {
-    const path = `/operator/${module}`;
-    window.history[replace ? "replaceState" : "pushState"]({}, "", path);
-    setActiveModule(module);
-    setRoutePath(path);
-    setDetail(undefined);
-    setSelectedAccountId("");
-    setNavigationOpen(false);
-  }
-
   function navigateDetail(module: OperatorModuleKey, resourceId: string, accountId?: string) {
     const path = `/operator/${module === "plans" ? "catalog" : module}/${encodeURIComponent(resourceId)}`;
     window.history.pushState({}, "", path);
     setRoutePath(path);
-    setNavigationOpen(false);
     if (accountId) void select(accountId);
   }
 
   async function load(search = query, module = activeModule, background = module ? loadedModulesRef.current.has(module) : false) {
     if (!module) return;
+    if (loadingModulesRef.current.has(module)) return;
+    loadingModulesRef.current.add(module);
     if (!background) setLoaded(false);
     setError("");
     try {
@@ -393,6 +359,8 @@ export default function OperatorPage() {
       }
       setError(cause instanceof Error ? cause.message : "Operator request failed");
       setLoaded(true);
+    } finally {
+      loadingModulesRef.current.delete(module);
     }
   }
 
@@ -404,41 +372,6 @@ export default function OperatorPage() {
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
-
-  useEffect(() => {
-    if (!navigationOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setNavigationOpen(false);
-        return;
-      }
-      if (event.key !== "Tab" || !navigationRef.current) return;
-      const focusable = Array.from(navigationRef.current.querySelectorAll<HTMLElement>("button:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])"));
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKeyDown);
-    requestAnimationFrame(() => {
-      const navigation = navigationRef.current;
-      (navigation?.querySelector<HTMLElement>("a[aria-current='page']") ?? navigation?.querySelector<HTMLElement>("a[href], button"))?.focus();
-    });
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", onKeyDown);
-      navigationTriggerRef.current?.focus();
-    };
-  }, [navigationOpen]);
 
   useEffect(() => {
     if (!pendingMutation) return;
@@ -477,34 +410,11 @@ export default function OperatorPage() {
   }, [reauthExpiresAt]);
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const workspace = await protoGet("/api/v1/operator/workspace", GetOperatorWorkspaceResponseSchema);
-        if (workspace.modules.length === 0) {
-          location.href = "/account";
-          return;
-        }
-        setWorkspaceModules(workspace.modules);
-        setWorkspaceLoaded(true);
-      } catch (cause) {
-        if (cause instanceof ProtoHTTPError && cause.status === 401) location.href = "/login";
-        else location.href = "/account";
-      }
-    })();
-  }, []);
-
-  useEffect(() => {
-    if (!workspaceLoaded) return;
-    const allowed = operatorModules.filter((module) => workspaceModules.includes(module.permission));
-    const current = allowed.find((module) => module.key === activeModule);
-    if (!current) {
-      if (allowed[0]) navigate(allowed[0].key, true);
-      return;
-    }
-    setDirectoryView(current.key === "agents" ? "agents" : "users");
-    setLoaded(loadedModulesRef.current.has(current.key));
-    void load("", current.key, loadedModulesRef.current.has(current.key));
-  }, [activeModule, workspaceLoaded]);
+    if (!activeModule) return;
+    setDirectoryView(activeModule === "agents" ? "agents" : "users");
+    setLoaded(loadedModulesRef.current.has(activeModule));
+    void load("", activeModule, loadedModulesRef.current.has(activeModule));
+  }, [activeModule]);
 
   useEffect(() => {
     if (!loaded || !activeModule) return;
@@ -1122,53 +1032,14 @@ export default function OperatorPage() {
     }
   }
 
-  if (!workspaceLoaded)
-    return (
-      <main className="grid min-h-dvh place-items-center bg-background p-5 text-foreground">
-        <p className="text-sm text-muted-foreground">{t("operator.loading")}</p>
-      </main>
-    );
-
-  const allowedModules = operatorModules.filter((module) => workspaceModules.includes(module.permission));
   const activeResourceId = routePath.replace(/\/$/, "").split("/")[3] ? decodeURIComponent(routePath.replace(/\/$/, "").split("/")[3]) : "";
   const structuredCatalog = parseCatalog(catalogDraft);
   const selectedPromotion = promotions?.promotions.find((promotion) => promotion.promotionId === activeResourceId);
 
   return (
-    <div className="min-h-dvh bg-background text-foreground lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
-      <a className="sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:bg-primary focus:px-4 focus:py-3 focus:text-primary-foreground" href="#operator-content">{t("operator.navigation.skip")}</a>
-      {navigationOpen && <button className="fixed inset-0 z-30 bg-foreground/20 lg:hidden" aria-label={t("operator.navigation.close")} onClick={() => setNavigationOpen(false)} />}
-      <aside ref={navigationRef} id="operator-navigation" className={`${navigationOpen ? "translate-x-0" : "-translate-x-full"} fixed inset-y-0 left-0 z-40 flex w-[min(19rem,86vw)] flex-col border-r border-line bg-panel transition-transform motion-reduce:transition-none lg:sticky lg:top-0 lg:h-dvh lg:w-auto lg:translate-x-0 lg:transition-none`}>
-        <div className="flex min-h-20 items-center justify-between gap-3 border-b border-line px-5">
-          <a className="flex min-w-0 items-center gap-3" href="/operator">
-            <b className="grid size-9 shrink-0 place-items-center bg-primary font-mono text-xs text-primary-foreground">MV</b>
-            <span className="min-w-0"><strong className="block truncate text-sm">Muxvia Cloud</strong><small className="block truncate text-[10px] text-muted-foreground">{t("operator.navigation.workspace")}</small></span>
-          </a>
-          <Button className="lg:hidden" variant="ghost" size="icon" aria-label={t("operator.navigation.close")} onClick={() => setNavigationOpen(false)}><X /></Button>
-        </div>
-        <nav className="flex-1 overflow-y-auto p-3" aria-label={t("operator.navigation.label")}>
-          {allowedModules.map(({ key, icon: Icon }) => (
-            <a
-              key={key}
-              href={`/operator/${key}`}
-              aria-current={activeModule === key ? "page" : undefined}
-              className={`group relative flex min-h-12 items-center gap-3 border-b border-line px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary ${activeModule === key ? "bg-soft font-semibold text-primary" : "text-muted-foreground hover:bg-soft/70 hover:text-foreground"}`}
-              onClick={(event) => { event.preventDefault(); navigate(key); }}
-            >
-              <span className={`absolute inset-y-2 left-0 w-0.5 ${activeModule === key ? "bg-primary" : "bg-transparent"}`} />
-              <Icon className="size-4 shrink-0" />
-              <span>{t(`operator.navigation.modules.${key}`)}</span>
-            </a>
-          ))}
-        </nav>
-        <div className="border-t border-line p-3">
-          <a className="flex min-h-11 items-center gap-3 px-3 text-xs text-muted-foreground hover:bg-soft hover:text-foreground" href="/account"><UserRoundCog className="size-4" />{t("operator.account")}</a>
-        </div>
-      </aside>
-      <main className="min-w-0 p-4 sm:p-6 lg:p-8 xl:p-10" id="operator-content" onClickCapture={protectMutation} onSubmitCapture={protectMutationSubmit}>
+    <section className="min-w-0" id="operator-content" onClickCapture={protectMutation} onSubmitCapture={protectMutationSubmit}>
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-5">
         <div className="flex min-w-0 items-center gap-3">
-          <Button ref={navigationTriggerRef} className="shrink-0 lg:hidden" variant="outline" size="icon" aria-label={t("operator.navigation.open")} aria-controls="operator-navigation" aria-expanded={navigationOpen} onClick={() => setNavigationOpen(true)}><Menu /></Button>
           <div className="min-w-0">
           <p className="font-mono text-[10px] text-primary">
             {t("operator.kicker")}
@@ -1177,7 +1048,6 @@ export default function OperatorPage() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <LanguageSwitcher compact />
           <Button aria-label={t("operator.refresh")} variant="outline" size="icon" onClick={() => void load()}>
             <RefreshCw />
           </Button>
@@ -1832,8 +1702,7 @@ export default function OperatorPage() {
           {!fleet?.hubs.length && <p className="text-sm text-muted-foreground">{t("operator.fleet.empty")}</p>}
         </div>
       </section>}
-      </main>
-    </div>
+    </section>
   );
 }
 

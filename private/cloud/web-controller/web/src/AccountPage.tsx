@@ -3,18 +3,14 @@ import {
   Activity,
   Cable,
   ChevronDown,
-  CreditCard,
-  Gauge,
   KeyRound,
   Laptop,
-  LogOut,
   Plus,
   QrCode,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
   Smartphone,
-  UserRound,
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -22,7 +18,6 @@ import { useTranslation } from "react-i18next";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import {
   CreateManagementCommandRequestSchema,
   CreateManagementCommandResponseSchema,
@@ -34,8 +29,6 @@ import {
   ListManagementCommandsResponseSchema,
   ManagementCommandKind,
   ManagementCommandTargetSchema,
-  GetOperatorWorkspaceResponseSchema,
-  OperatorWorkspaceModule,
   PageRequestSchema,
   RecentAuthenticationRequestSchema,
   RecentAuthenticationResponseSchema,
@@ -71,8 +64,6 @@ import {
   GetAccountCommerceResponseSchema,
   GetAccountRelayQuotaRequestSchema,
   GetAccountRelayQuotaResponseSchema,
-  LogoutAccountSessionRequestSchema,
-  LogoutAccountSessionResponseSchema,
   PaymentEventType,
   SubscriptionStatus,
   SubscriptionTransitionKind,
@@ -89,8 +80,8 @@ import {
 } from "@/generated/cloudpb/cloud_topology_pb";
 import { ProtoHTTPError, protoGet, protoPost } from "@/protoApi";
 import { intlLocale } from "@/i18n";
+import type { AccountSection } from "@/consoleNavigation";
 
-type Tab = "overview" | "devices" | "plans" | "account";
 type AccountState = {
   commerce: GetAccountCommerceResponse;
   quota: GetAccountRelayQuotaResponse;
@@ -98,21 +89,16 @@ type AccountState = {
   topology: ListAccountTopologyResponse;
   commands: ListManagementCommandsResponse;
 };
-const tabs: [Tab, typeof Gauge][] = [
-  ["overview", Gauge],
-  ["devices", Laptop],
-  ["plans", CreditCard],
-  ["account", UserRound],
-];
+type AddDeviceKind = "phone" | "daemon";
 
 type ProtectedAction = {
   label: string;
   execute: () => Promise<unknown>;
 };
 
-export default function AccountPage() {
+/** AccountPage 只渲染账号中心右侧内容；统一导航和登录生命周期由 ConsolePage 持有。 */
+export default function AccountPage({ section }: { section: AccountSection }) {
   const { t, i18n } = useTranslation();
-  const [tab, setTab] = useState<Tab>("overview");
   const [state, setState] = useState<AccountState>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
@@ -122,17 +108,9 @@ export default function AccountPage() {
   const [addDeviceOpen, setAddDeviceOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [removedDevicesOpen, setRemovedDevicesOpen] = useState(false);
-  const [operatorModules, setOperatorModules] = useState<OperatorWorkspaceModule[]>([]);
 
   async function load() {
     try {
-      try {
-        const workspace = await protoGet("/api/v1/operator/workspace", GetOperatorWorkspaceResponseSchema);
-        setOperatorModules(workspace.modules);
-      } catch (cause) {
-        if (cause instanceof ProtoHTTPError && cause.status === 403) setOperatorModules([]);
-        else throw cause;
-      }
       const page = create(PageRequestSchema, { pageSize: 100 });
       const [commerce, quota, devices, topology, commands] = await Promise.all([
         protoGet("/api/v1/account/commerce", GetAccountCommerceResponseSchema),
@@ -220,21 +198,11 @@ export default function AccountPage() {
     setProtectedAction({ label, execute });
   }
 
-  async function logout() {
-    await protoPost(
-      "/api/v1/account/logout",
-      LogoutAccountSessionRequestSchema,
-      create(LogoutAccountSessionRequestSchema),
-      LogoutAccountSessionResponseSchema,
-    );
-    location.href = "/login";
-  }
-
   if (!state)
     return (
-      <main className="grid min-h-dvh place-items-center bg-background text-muted-foreground">
+      <div className="border border-line bg-panel p-6 text-sm text-muted-foreground" role="status">
         {t("account.loading")}
-      </main>
+      </div>
     );
   const { commerce, quota, devices, topology, commands } = state;
   const activeDevices = devices.devices.filter((device) => !device.revoked);
@@ -245,74 +213,13 @@ export default function AccountPage() {
       device.presence?.availability === Availability.ONLINE,
   ).length;
   return (
-    <div className="min-h-dvh bg-background text-foreground md:grid md:grid-cols-[232px_minmax(0,1fr)]">
-      <a className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:bg-primary focus:px-4 focus:py-3 focus:text-primary-foreground" href="#account-content">
-        {t("account.skip")}
-      </a>
-      <aside className="border-b border-line bg-panel px-4 py-3 md:min-h-dvh md:border-b-0 md:border-r md:p-5">
-        <div className="flex items-center justify-between gap-3 md:block">
-        <a className="flex h-12 items-center gap-3" href="/" aria-label={t("common.home")}>
-          <b className="grid size-8 place-items-center bg-primary font-mono text-xs text-primary-foreground">
-            MV
-          </b>
-          <span className="font-medium">Muxvia Cloud</span>
-        </a>
-        <LanguageSwitcher compact />
-        </div>
-        <nav className="mt-3 grid grid-cols-4 border border-line md:mt-8 md:grid-cols-1 md:border-0" aria-label={t("common.primaryNavigation")}>
-          {tabs.map(([id, Icon]) => (
-            <button
-              key={id}
-              className={`flex min-h-12 cursor-pointer items-center justify-center gap-2 border-r border-line px-2 text-xs last:border-r-0 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary md:justify-start md:border-b md:border-r-0 ${tab === id ? "bg-soft font-semibold text-primary" : "text-muted-foreground hover:bg-soft/70 hover:text-foreground"}`}
-              onClick={() => setTab(id)}
-              aria-current={tab === id ? "page" : undefined}
-            >
-              <Icon className="size-4" />
-              <span className="max-md:sr-only">{t(`account.tabs.${id}`)}</span>
-            </button>
-          ))}
-        </nav>
-        {operatorModules.length > 0 && (
-          <section className="mt-3 border border-line md:mt-6 md:border-0" aria-label={t("account.admin.navigation")}>
-            <p className="border-b border-line px-3 py-2 font-mono text-[10px] font-semibold text-muted-foreground md:px-0">
-              {t("account.admin.navigation")}
-            </p>
-            <nav className="grid grid-cols-3 md:grid-cols-1" aria-label={t("account.admin.navigation")}>
-              {operatorTabs.filter(([module]) => operatorModules.includes(module)).map(([module, Icon, label, anchor]) => (
-                <a
-                  className="flex min-h-12 min-w-0 items-center justify-center gap-2 border-b border-r border-line px-2 text-xs text-muted-foreground hover:bg-soft/70 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary md:justify-start md:border-r-0"
-                  href={`/operator#${anchor}`}
-                  key={module}
-                >
-                  <Icon className="size-4 shrink-0" />
-                  <span className="truncate">{t(`account.admin.modules.${label}`)}</span>
-                </a>
-              ))}
-            </nav>
-          </section>
-        )}
-        <div className="mt-8 hidden border-t border-line pt-5 text-xs md:block">
-          <strong>{commerce.account?.displayName}</strong>
-          <p className="truncate text-muted-foreground">
-            {commerce.account?.email}
-          </p>
-          <Button
-            className="mt-4 w-full justify-start"
-            variant="outline"
-            onClick={logout}
-          >
-            <LogOut />
-            {t("account.signOut")}
-          </Button>
-        </div>
-      </aside>
-      <main className="min-w-0 p-4 sm:p-6 md:p-10" id="account-content">
+    <div className="min-w-0">
         <header className="flex flex-wrap items-start justify-between gap-4 border-b border-line pb-6">
           <div>
             <p className="font-mono text-[10px] text-primary">
               {t("account.cloudControl")}
             </p>
-            <h1 className="mt-2 text-3xl font-semibold">{t(`account.tabs.${tab}`)}</h1>
+            <h1 className="mt-2 text-3xl font-semibold">{t(`account.tabs.${section}`)}</h1>
           </div>
           <Button
             variant="outline"
@@ -332,7 +239,7 @@ export default function AccountPage() {
             {error}
           </p>
         )}
-        {tab === "overview" && (
+        {section === "overview" && (
           <div className="mt-6 grid gap-4 lg:grid-cols-3">
             <Metric label={t("account.overview.nodes")} value={t("account.overview.nodesValue", { active: onlineDaemons, total: activeDevices.length })} />
             <Metric label={t("account.overview.plan")} value={commerce.subscription?.planId ?? "-"} />
@@ -365,7 +272,7 @@ export default function AccountPage() {
             <p className="lg:col-span-3 m-0 border-l-2 border-primary bg-panel px-4 py-3 text-sm leading-6 text-muted-foreground">{t("account.overview.proof")}</p>
           </div>
         )}
-        {tab === "devices" && (
+        {section === "devices" && (
           <div className="mt-6 grid gap-5">
             <section className="flex flex-col gap-4 border border-line bg-panel p-5 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -446,7 +353,7 @@ export default function AccountPage() {
             {advancedOpen && <AdvancedControls topology={topology} commands={commands} busy={busy} protect={protect} />}
           </div>
         )}
-        {tab === "plans" && (
+        {section === "plans" && (
           <div className="mt-6 grid gap-5 lg:grid-cols-2">
             <Panel title={t("account.billing.subscription")}>
               <Row label={t("account.billing.current")} value={commerce.subscription?.planId ?? "-"} />
@@ -552,8 +459,8 @@ export default function AccountPage() {
             </Panel>
           </div>
         )}
-        {tab === "account" && (
-          <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+        {section === "account" && (
+          <div className="mt-6 grid gap-5">
             <Panel title={t("account.profile.title")}>
               <Row label={t("account.profile.displayName")} value={commerce.account?.displayName ?? "-"} />
               <Row label={t("account.profile.email")} value={commerce.account?.email ?? "-"} />
@@ -562,15 +469,8 @@ export default function AccountPage() {
                 <p className="mt-3 break-all font-mono text-[10px]">{commerce.account?.accountId}</p>
               </details>
             </Panel>
-            <section className="border border-line bg-panel p-5">
-              <UserRound className="size-5 text-primary" />
-              <strong className="mt-4 block text-sm">{commerce.account?.displayName}</strong>
-              <p className="mt-1 break-all text-xs text-muted-foreground">{commerce.account?.email}</p>
-              <Button className="mt-5 w-full justify-start" variant="outline" onClick={logout}><LogOut />{t("account.signOut")}</Button>
-            </section>
           </div>
         )}
-      </main>
       {addDeviceOpen && <AddDeviceWizard onClose={() => setAddDeviceOpen(false)} onChanged={load} />}
       {protectedAction && (
         <ReauthDialog

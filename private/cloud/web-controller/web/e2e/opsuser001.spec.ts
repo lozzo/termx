@@ -47,7 +47,7 @@ test("operator manages users, sessions, and freshness-backed Agents", async ({ p
   await page.getByRole("navigation", { name: "Operations modules" }).getByRole("link", { name: "Agents" }).click();
   await expect(page.getByTestId("operator-agent-daemon-fresh")).toBeVisible();
   await expect(page.getByRole("button", { name: "Open management menu" })).toHaveAttribute("aria-expanded", "false");
-  await expect.poll(async () => (await page.locator("#operator-navigation").boundingBox())?.x ?? 0).toBeLessThan(-250);
+  await expect.poll(async () => (await page.locator("#console-navigation").boundingBox())?.x ?? 0).toBeLessThan(-250);
   await page.screenshot({ path: "../../../../.artifacts/opsuser001/users-agents-mobile.png", fullPage: true });
 });
 

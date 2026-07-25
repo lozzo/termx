@@ -8,7 +8,7 @@
 
 ## 2. 用户可观察结果
 
-- 账号中心只保留一个“进入运营管理”入口，不再展示九个指向同一页面的 hash 链接。
+- 登录后账号项与获准运营模块共用唯一左侧栏；运营人员点击模块后只切换右侧内容，不再经过“进入运营管理”的独立全屏页面。
 - `/operator` 根据后端 `GetOperatorWorkspaceResponse.modules` 规范跳转到第一个获准模块。
 - 九个一级模块使用真实路径：
   - `/operator/users`
@@ -21,7 +21,7 @@
   - `/operator/hubs`
   - `/operator/releases`
 - 详情路径覆盖账号、daemon、订单、订阅、catalog、特权账号、优惠码、Hub 和 release；catalog 历史使用 `/operator/catalog/:version`。
-- 桌面端左侧管理导航持续存在；移动端使用抽屉，支持遮罩、`Esc`、背景滚动锁定和 `aria-expanded`。
+- 桌面端统一左栏同时展示账号项和管理项；移动端使用同一抽屉，支持遮罩、`Esc`、背景滚动锁定和 `aria-expanded`。
 - 运营工作台首次进入默认简体中文，并继续使用独立语言偏好；普通账号语言偏好不受影响。
 
 ## 3. 数据边界
@@ -82,3 +82,10 @@ git diff --check
 - US/CN Edge 使用原二进制依次重启，均先经历短暂未就绪，再恢复本机及公网 health；Controller、PostgreSQL、Hub projection 和运行时 owner 未改变。
 - 回滚目录：`/opt/muxvia/rollback/pre-opsconsole-0f19d846-20260725-230947/`。
 - 九模块真实 PostgreSQL、Controller、双 Edge mutation、审计与重启业务矩阵沿用 `OPSE2E001` 已通过证据；本切片新增测试证明重构后的真实路由、请求隔离、近期认证、响应式和同一 generated API consumer，不通过重复创建线上套餐、Hub 或签名版本冒充新能力。
+
+## 7. 统一壳修正
+
+- 用户反馈证明“账号页单一入口 + 独立运营壳”不符合真实操作习惯；`OPSCONSOLE008` 将登录后页面收敛为唯一 `ConsolePage`。
+- `AccountPage` 与 `OperatorPage` 已删除各自的侧栏和壳层职责，只渲染右侧业务内容；Workspace、语言域切换、移动抽屉、退出和 URL 导航只保留一个 owner。
+- 从账号概览点击左侧“用户管理”直接进入 `/operator/users`，浏览器不整页重载；九个模块继续只加载当前模块，开发环境严格挂载下的同模块并发请求也已去重。
+- Web typecheck/build、Controller 测试和 14 条运营后台 Playwright 回归通过；1440px 截图确认统一左栏，390px 抽屉与无横向溢出通过。

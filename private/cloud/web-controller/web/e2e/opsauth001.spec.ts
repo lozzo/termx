@@ -18,13 +18,17 @@ test("administrator uses the account navigation and confirms password for change
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto(`${baseURL}/account`);
 
-  const management = page.getByRole("region", { name: "Management" });
+  const management = page.getByRole("navigation", { name: "Operations modules" });
   await expect(management).toBeVisible();
-  await expect(management.getByRole("link")).toHaveCount(1);
+  await expect(management.getByRole("link")).toHaveCount(9);
   await expect(page.getByText(/isAdmin|readonly|admin role/i)).toHaveCount(0);
-  await management.getByRole("link", { name: "Open operations" }).click();
+  await page.evaluate(() => { document.body.dataset.consoleShell = "persistent"; });
+  await management.getByRole("link", { name: "Users" }).click();
   await expect(page).toHaveURL(/\/operator\/users$/);
+  await expect.poll(() => page.evaluate(() => document.body.dataset.consoleShell)).toBe("persistent");
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+  await expect(page.getByRole("navigation", { name: "主导航" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "运营管理模块" }).getByRole("link")).toHaveCount(9);
   await expect(page.getByRole("heading", { level: 1, name: "用户管理" })).toBeVisible();
   await expect(page.getByText("浏览模式：变更操作需要确认身份")).toBeVisible();
   await page.getByRole("button", { name: "验证身份" }).click();
@@ -40,7 +44,8 @@ test("administrator uses the account navigation and confirms password for change
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseURL}/account`);
-  await expect(page.getByRole("region", { name: "Management" }).getByRole("link")).toHaveCount(1);
+  await page.getByRole("button", { name: "Open management menu" }).click();
+  await expect(page.getByRole("navigation", { name: "Operations modules" }).getByRole("link")).toHaveCount(9);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 });
 
