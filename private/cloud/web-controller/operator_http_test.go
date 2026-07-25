@@ -3,6 +3,8 @@ package webcontroller_test
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/sha256"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -16,6 +18,7 @@ import (
 	cloudentitlement "github.com/muxvia/muxvia/private/cloud/control-plane/entitlement"
 	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/promotion"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/releasecatalog"
 	webcontroller "github.com/muxvia/muxvia/private/cloud/web-controller"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -68,13 +71,15 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 	reconciler := &operatorPaymentReconciler{commerce: commerceService}
 	overrides, _ := cloudentitlement.NewOverrideService(cloudentitlement.OverrideServiceConfig{Store: store, Plans: catalogService, Now: func() time.Time { return now }})
 	promotions, _ := promotion.New(store, func() time.Time { return now }, nil, nil)
+	releasePrivate := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{9}, ed25519.SeedSize))
+	releases, _ := releasecatalog.New(store, map[string]ed25519.PublicKey{"operator-release-key": releasePrivate.Public().(ed25519.PublicKey)}, []string{"https://releases.muxvia.test"}, func() time.Time { return now })
 	topology := &managementTargetSource{presenceAccountID: accountID, presence: presence, devices: []*cloudpb.AccountDeviceProjection{device}, presences: []*cloudpb.PresenceProjection{presence}, peerSessions: []*cloudpb.ManagedPeerSessionProjection{peer}}
 	outbox, _ := commandoutbox.New(store)
 	planner, _ := commandoutbox.NewPlanner(outbox, topology, nil, bytes.NewReader(bytes.Repeat([]byte{7}, 64)), nil)
 	adminToken := bytes.Repeat([]byte{0x41}, 32)
 	admin, err := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{
 		AccessToken: adminToken, OperatorID: "operator-admin", ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN,
-		Commerce: commerceService, Catalog: catalogService, Overrides: overrides, Promotions: promotions, Topology: topology, Quota: store, Outbox: outbox, Planner: planner, Fleet: staticFleet{}, PaymentReconciler: reconciler, Now: func() time.Time { return now },
+		Commerce: commerceService, Catalog: catalogService, Overrides: overrides, Promotions: promotions, Topology: topology, Quota: store, Outbox: outbox, Planner: planner, Fleet: staticFleet{}, PaymentReconciler: reconciler, Releases: releases, Now: func() time.Time { return now },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -86,6 +91,32 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 	admin.ServeHTTP(listResponse, list)
 	if listResponse.Code != http.StatusOK || !strings.Contains(listResponse.Body.String(), accountID) {
 		t.Fatalf("operator account list = %d: %s", listResponse.Code, listResponse.Body.String())
+	}
+	releaseDigest := sha256.Sum256([]byte("operator-release"))
+	releaseArtifact := &cloudpb.ReleaseArtifactProjection{ReleaseId: "operator-android-1", Product: cloudpb.ReleaseProduct_RELEASE_PRODUCT_ANDROID, Channel: cloudpb.ReleaseChannel_RELEASE_CHANNEL_STABLE, Version: "v1.0.0", VersionCode: 100, Os: "android", Arch: "arm64", DownloadUrl: "https://releases.muxvia.test/operator.apk", ArtifactSize: 4096, Sha256: releaseDigest[:], SigningKeyId: "operator-release-key", MinCompatibleVersionCode: 50, RolloutBasisPoints: 1000}
+	releasePayload, _ := releasecatalog.SigningPayload(releaseArtifact)
+	releaseArtifact.Signature = ed25519.Sign(releasePrivate, releasePayload)
+	publishRelease := operatorRequest(t, http.MethodPost, "/api/v1/operator/releases/publish", &cloudpb.PublishReleaseArtifactRequest{Artifact: releaseArtifact, Reason: "operator release", RequestId: "operator-release-publish"}, adminCookies)
+	publishReleaseResponse := httptest.NewRecorder()
+	admin.ServeHTTP(publishReleaseResponse, publishRelease)
+	if publishReleaseResponse.Code != http.StatusCreated || !strings.Contains(publishReleaseResponse.Body.String(), releaseArtifact.GetReleaseId()) {
+		t.Fatalf("operator release publish = %d: %s", publishReleaseResponse.Code, publishReleaseResponse.Body.String())
+	}
+	activateRelease := operatorRequest(t, http.MethodPost, "/api/v1/operator/releases/channel", &cloudpb.SetReleaseChannelRequest{ReleaseId: releaseArtifact.GetReleaseId(), Reason: "operator activation", RequestId: "operator-release-activate"}, adminCookies)
+	activateReleaseResponse := httptest.NewRecorder()
+	admin.ServeHTTP(activateReleaseResponse, activateRelease)
+	if activateReleaseResponse.Code != http.StatusOK || !strings.Contains(activateReleaseResponse.Body.String(), "revision\":\"1") {
+		t.Fatalf("operator release activation = %d: %s", activateReleaseResponse.Code, activateReleaseResponse.Body.String())
+	}
+	releaseAPI, err := webcontroller.ReleaseAPIHandler(releases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolveRelease := operatorRequest(t, http.MethodPost, "/api/v1/releases/resolve", &cloudpb.ResolveClientReleaseRequest{Product: cloudpb.ReleaseProduct_RELEASE_PRODUCT_ANDROID, Channel: cloudpb.ReleaseChannel_RELEASE_CHANNEL_STABLE, Os: "android", Arch: "arm64", CurrentVersion: "v0.2.5", CurrentVersionCode: 25, StableClientId: "android-device-1"}, nil)
+	resolveReleaseResponse := httptest.NewRecorder()
+	releaseAPI.ServeHTTP(resolveReleaseResponse, resolveRelease)
+	if resolveReleaseResponse.Code != http.StatusOK || !strings.Contains(resolveReleaseResponse.Body.String(), "forced\":true") || !strings.Contains(resolveReleaseResponse.Body.String(), releaseArtifact.GetReleaseId()) {
+		t.Fatalf("client release resolve = %d: %s", resolveReleaseResponse.Code, resolveReleaseResponse.Body.String())
 	}
 	agents := operatorRequest(t, http.MethodPost, "/api/v1/operator/agents/list", &cloudpb.ListOperatorAgentsRequest{Query: "workstation", Freshness: cloudpb.Freshness_FRESHNESS_FRESH, Page: &cloudpb.PageRequest{PageSize: 20}}, adminCookies)
 	agentsResponse := httptest.NewRecorder()
@@ -196,12 +227,18 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 	readonlyToken := bytes.Repeat([]byte{0x52}, 32)
 	readonly, err := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{
 		AccessToken: readonlyToken, OperatorID: "operator-readonly", ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_READONLY,
-		Commerce: commerceService, Catalog: catalogService, Overrides: overrides, Promotions: promotions, Topology: topology, Quota: store, Outbox: outbox, Planner: planner, Fleet: staticFleet{}, Now: func() time.Time { return now },
+		Commerce: commerceService, Catalog: catalogService, Overrides: overrides, Promotions: promotions, Topology: topology, Quota: store, Outbox: outbox, Planner: planner, Fleet: staticFleet{}, Releases: releases, Now: func() time.Time { return now },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	readonlyCookies := operatorLogin(t, readonly, readonlyToken)
+	readonlyPublish := operatorRequest(t, http.MethodPost, "/api/v1/operator/releases/publish", &cloudpb.PublishReleaseArtifactRequest{Artifact: releaseArtifact, Reason: "readonly", RequestId: "readonly-release"}, readonlyCookies)
+	readonlyPublishResponse := httptest.NewRecorder()
+	readonly.ServeHTTP(readonlyPublishResponse, readonlyPublish)
+	if readonlyPublishResponse.Code != http.StatusForbidden {
+		t.Fatalf("readonly release publish = %d: %s", readonlyPublishResponse.Code, readonlyPublishResponse.Body.String())
+	}
 	readonlyRevoke := operatorRequest(t, http.MethodPost, "/api/v1/operator/accounts/sessions/revoke", &cloudpb.RevokeOperatorAccountSessionRequest{AccountId: accountID, AllAccountSessions: true, Reason: "readonly must fail", RequestId: "readonly-session-revoke"}, readonlyCookies)
 	readonlyRevokeResponse := httptest.NewRecorder()
 	readonly.ServeHTTP(readonlyRevokeResponse, readonlyRevoke)

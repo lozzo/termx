@@ -85,6 +85,19 @@ func TestHubDirectoryMigrationDeclaresLifecycleAndRevisionTruth(t *testing.T) {
 	}
 }
 
+func TestReleaseCatalogMigrationSeparatesImmutableArtifactsAndChannelHeads(t *testing.T) {
+	body, err := os.ReadFile("migrations/0006_release_catalog.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(body)
+	for _, table := range []string{"release_artifacts", "release_channel_heads"} {
+		if !strings.Contains(sql, "CREATE TABLE "+table+" ") {
+			t.Fatalf("release catalog migration is missing %s", table)
+		}
+	}
+}
+
 func TestPostgreSQLPlaceholderRebinding(t *testing.T) {
 	// Placeholder conversion is adapter-local，业务 query 不得自行拼接 PostgreSQL 参数编号。
 	if got := rebind("SELECT * FROM value WHERE a=? AND b=?"); got != "SELECT * FROM value WHERE a=$1 AND b=$2" {

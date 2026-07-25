@@ -16,6 +16,7 @@ import (
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	cloudentitlement "github.com/muxvia/muxvia/private/cloud/control-plane/entitlement"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/promotion"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/releasecatalog"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
@@ -56,13 +57,14 @@ type OperatorAPIConfig struct {
 	Planner           *commandoutbox.Planner
 	Fleet             OperatorFleetQuery
 	PaymentReconciler OperatorPaymentReconciler
+	Releases          *releasecatalog.Service
 	Now               func() time.Time
 	SecureCookie      bool
 }
 
 // OperatorAPIHandler 使用 HttpOnly session、CSRF 与五分钟近期认证保护管理操作。
 func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
-	if len(config.AccessToken) < 32 || config.OperatorID == "" || config.ActorKind != cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_READONLY && config.ActorKind != cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN || config.Commerce == nil || config.Catalog == nil || config.Overrides == nil || config.Promotions == nil || config.Topology == nil || config.Quota == nil || config.Outbox == nil || config.Planner == nil || config.Fleet == nil {
+	if len(config.AccessToken) < 32 || config.OperatorID == "" || config.ActorKind != cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_READONLY && config.ActorKind != cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN || config.Commerce == nil || config.Catalog == nil || config.Overrides == nil || config.Promotions == nil || config.Topology == nil || config.Quota == nil || config.Outbox == nil || config.Planner == nil || config.Fleet == nil || config.Releases == nil {
 		return nil, commandoutbox.ErrCommandConflict
 	}
 	if config.Now == nil {
@@ -71,6 +73,48 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 	tokenDigest := sha256.Sum256(config.AccessToken)
 	sessions := newProofStore(config.Now)
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/operator/releases/list", func(w http.ResponseWriter, r *http.Request) {
+		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		request := &cloudpb.ListReleaseArtifactsRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.ListReleaseArtifactsResponse
+		if err == nil {
+			response, err = config.Releases.List(r.Context(), request)
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/releases/publish", func(w http.ResponseWriter, r *http.Request) {
+		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		if err == nil {
+			err = requireOperatorMutation(r, record, config.Now().UTC())
+		}
+		request := &cloudpb.PublishReleaseArtifactRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var artifact *cloudpb.ReleaseArtifactProjection
+		if err == nil {
+			artifact, err = config.Releases.Publish(r.Context(), request.GetArtifact(), config.OperatorID, request.GetReason(), request.GetRequestId())
+		}
+		writeManagementProto(w, http.StatusCreated, &cloudpb.PublishReleaseArtifactResponse{Artifact: artifact}, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/releases/channel", func(w http.ResponseWriter, r *http.Request) {
+		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		if err == nil {
+			err = requireOperatorMutation(r, record, config.Now().UTC())
+		}
+		request := &cloudpb.SetReleaseChannelRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var channel *cloudpb.ReleaseChannelProjection
+		if err == nil {
+			channel, err = config.Releases.SetChannel(r.Context(), request, config.OperatorID)
+		}
+		writeManagementProto(w, http.StatusOK, &cloudpb.SetReleaseChannelResponse{Channel: channel}, err)
+	})
 	mux.HandleFunc("POST /api/v1/operator/login", func(w http.ResponseWriter, r *http.Request) {
 		request := &cloudpb.OperatorLoginRequest{}
 		err := decodeProductProto(r, request)

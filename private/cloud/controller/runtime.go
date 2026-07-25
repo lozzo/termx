@@ -33,6 +33,7 @@ import (
 	cloudpromotion "github.com/muxvia/muxvia/private/cloud/control-plane/promotion"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/relaycontrol"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/relaylease"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/releasecatalog"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/servicecredential"
 	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/usage"
@@ -57,23 +58,25 @@ type Config struct {
 	ProjectionPrivateKeyBase64 string `json:"projection_private_key_base64"`
 	// CredentialNotBeforeUnixMillis 和 CredentialNotAfterUnixMillis 是部署密钥的绝对验证窗口，
 	// Controller 与全部 Edge 必须使用相同值，避免各进程按启动时间建立第二份 key validity 真值。
-	CredentialNotBeforeUnixMillis int64                        `json:"credential_not_before_unix_millis"`
-	CredentialNotAfterUnixMillis  int64                        `json:"credential_not_after_unix_millis"`
-	DaemonControlKeyID            string                       `json:"daemon_control_key_id"`
-	DaemonControlPrivateKeyBase64 string                       `json:"daemon_control_private_key_base64"`
-	Devices                       []*cloudpb.CloudDevicePolicy `json:"devices"`
-	Assignments                   []*cloudpb.HubAssignment     `json:"assignments"`
-	EnableTestPaymentProvider     bool                         `json:"enable_test_payment_provider"`
-	CreemEnvironment              string                       `json:"creem_environment,omitempty"`
-	CreemSuccessURL               string                       `json:"creem_success_url,omitempty"`
-	CreemAPIKey                   string                       `json:"-"`
-	CreemWebhookSecret            string                       `json:"-"`
-	DevelopmentMobileHubID        string                       `json:"development_mobile_hub_id"`
-	OperatorID                    string                       `json:"operator_id"`
-	OperatorRole                  string                       `json:"operator_role"`
-	OperatorAccessTokenBase64     string                       `json:"operator_access_token_base64"`
-	SecureCookie                  bool                         `json:"secure_cookie"`
-	WebStaticDir                  string                       `json:"web_static_dir"`
+	CredentialNotBeforeUnixMillis  int64                        `json:"credential_not_before_unix_millis"`
+	CredentialNotAfterUnixMillis   int64                        `json:"credential_not_after_unix_millis"`
+	DaemonControlKeyID             string                       `json:"daemon_control_key_id"`
+	DaemonControlPrivateKeyBase64  string                       `json:"daemon_control_private_key_base64"`
+	Devices                        []*cloudpb.CloudDevicePolicy `json:"devices"`
+	Assignments                    []*cloudpb.HubAssignment     `json:"assignments"`
+	EnableTestPaymentProvider      bool                         `json:"enable_test_payment_provider"`
+	CreemEnvironment               string                       `json:"creem_environment,omitempty"`
+	CreemSuccessURL                string                       `json:"creem_success_url,omitempty"`
+	CreemAPIKey                    string                       `json:"-"`
+	CreemWebhookSecret             string                       `json:"-"`
+	DevelopmentMobileHubID         string                       `json:"development_mobile_hub_id"`
+	OperatorID                     string                       `json:"operator_id"`
+	OperatorRole                   string                       `json:"operator_role"`
+	OperatorAccessTokenBase64      string                       `json:"operator_access_token_base64"`
+	SecureCookie                   bool                         `json:"secure_cookie"`
+	WebStaticDir                   string                       `json:"web_static_dir"`
+	ReleaseSigningPublicKeysBase64 map[string]string            `json:"release_signing_public_keys_base64,omitempty"`
+	ReleaseDownloadOrigins         []string                     `json:"release_download_origins,omitempty"`
 }
 
 // Manifest 是 supervisor 和 E2E harness 使用的非秘密 Controller 进程描述。
@@ -172,6 +175,20 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		return nil, err
 	}
 	if err := catalogService.Bootstrap(context.Background(), catalog.Contract()); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	releaseKeys := make(map[string]ed25519.PublicKey, len(config.ReleaseSigningPublicKeysBase64))
+	for keyID, encoded := range config.ReleaseSigningPublicKeysBase64 {
+		decoded, decodeErr := base64.RawStdEncoding.DecodeString(encoded)
+		if decodeErr != nil || len(decoded) != ed25519.PublicKeySize {
+			_ = store.Close()
+			return nil, fmt.Errorf("invalid release signing public key %q", keyID)
+		}
+		releaseKeys[keyID] = ed25519.PublicKey(decoded)
+	}
+	releaseService, err := releasecatalog.New(store, releaseKeys, config.ReleaseDownloadOrigins, time.Now)
+	if err != nil {
 		_ = store.Close()
 		return nil, err
 	}
@@ -404,6 +421,12 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write(body)
 	})
+	releaseHandler, err := webcontroller.ReleaseAPIHandler(releaseService)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	publicMux.Handle("/api/v1/releases/", releaseHandler)
 	publicMux.Handle("/api/v1/management/", managementHandler)
 	publicMux.Handle("/api/v1/mobile-activations/", mobileActivationHandler)
 	publicMux.Handle("/api/v1/daemon-enrollments/", daemonEnrollmentHandler)
@@ -432,7 +455,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 				runtime.reportPolicyError(publishErr)
 			}
 		}}
-		operatorHandler, handlerErr := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{AccessToken: operatorToken, OperatorID: config.OperatorID, ActorKind: actorKind, Commerce: commerceService, Catalog: catalogService, Overrides: overrideService, Promotions: promotionService, Topology: topologyService, Quota: store, Outbox: outboxService, Planner: planner, Fleet: fleet, PaymentReconciler: creemService, Now: time.Now, SecureCookie: config.SecureCookie})
+		operatorHandler, handlerErr := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{AccessToken: operatorToken, OperatorID: config.OperatorID, ActorKind: actorKind, Commerce: commerceService, Catalog: catalogService, Overrides: overrideService, Promotions: promotionService, Topology: topologyService, Quota: store, Outbox: outboxService, Planner: planner, Fleet: fleet, PaymentReconciler: creemService, Releases: releaseService, Now: time.Now, SecureCookie: config.SecureCookie})
 		clear(operatorToken)
 		if handlerErr != nil {
 			_ = store.Close()

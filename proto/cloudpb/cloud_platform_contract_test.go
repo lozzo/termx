@@ -156,6 +156,22 @@ func TestOperatorUserAndAgentContractsExcludeSessionSecretsAndOnlineTruth(t *tes
 	}
 }
 
+func TestReleaseArtifactContractCarriesSignedMetadataWithoutPrivateMaterial(t *testing.T) {
+	fields := descriptorFieldNames((&ReleaseArtifactProjection{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"release_id", "product", "channel", "version", "version_code", "os", "arch", "download_url", "artifact_size", "sha256", "signing_key_id", "signature", "min_compatible_version_code", "force_after_unix_millis", "rollout_basis_points"} {
+		if !fields[required] {
+			t.Fatalf("ReleaseArtifactProjection missing %q: %v", required, fields)
+		}
+	}
+	assertFieldsExcludeFragments(t, (&ReleaseArtifactProjection{}).ProtoReflect().Descriptor(), []string{"private", "password", "token", "artifact_bytes"})
+	channelFields := descriptorFieldNames((&ReleaseChannelProjection{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"active_release_id", "revision", "paused"} {
+		if !channelFields[required] {
+			t.Fatalf("ReleaseChannelProjection missing %q: %v", required, channelFields)
+		}
+	}
+}
+
 func TestRelayQuotaAndReservationAreProtoFirst(t *testing.T) {
 	periodFields := descriptorFieldNames((&RelayQuotaPeriod{}).ProtoReflect().Descriptor())
 	for _, required := range []string{"account_id", "period_start_unix_millis", "period_end_unix_millis", "limit_bytes", "used_bytes", "reserved_bytes", "remaining_bytes", "active_lease_count", "revision"} {

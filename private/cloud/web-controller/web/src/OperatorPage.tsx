@@ -8,6 +8,7 @@ import {
   History,
   LogOut,
   PackageOpen,
+  Rocket,
   PauseCircle,
   Plus,
   Power,
@@ -81,6 +82,13 @@ import {
   RevokeCloudDeviceTargetSchema,
   RevokeOperatorAccountSessionRequestSchema,
   RevokeOperatorAccountSessionResponseSchema,
+  ListReleaseArtifactsRequestSchema,
+  ListReleaseArtifactsResponseSchema,
+  PublishReleaseArtifactRequestSchema,
+  PublishReleaseArtifactResponseSchema,
+  ReleaseArtifactProjectionSchema,
+  SetReleaseChannelRequestSchema,
+  SetReleaseChannelResponseSchema,
   CommandAuthorityResult,
   CommandDeliveryState,
   CommandExecutionState,
@@ -94,6 +102,7 @@ import {
   type ListPromotionsResponse,
   type ListPlanCatalogReleasesResponse,
   type ListEntitlementOverridesResponse,
+  type ListReleaseArtifactsResponse,
 } from "@/generated/cloudpb/cloud_management_pb";
 import { KickPresenceTargetSchema } from "@/generated/cloudpb/cloud_hub_control_pb";
 import {
@@ -145,6 +154,7 @@ export default function OperatorPage() {
   const [subscriptions, setSubscriptions] = useState<ListOperatorSubscriptionsResponse>();
   const [promotions, setPromotions] = useState<ListPromotionsResponse>();
   const [fleet, setFleet] = useState<ListHubFleetResponse>();
+  const [releases, setReleases] = useState<ListReleaseArtifactsResponse>();
   const [detail, setDetail] = useState<GetOperatorAccountResponse>();
   const [catalogHistory, setCatalogHistory] =
     useState<ListPlanCatalogReleasesResponse>();
@@ -174,6 +184,8 @@ export default function OperatorPage() {
   const [paymentReasons, setPaymentReasons] = useState<Record<string, string>>({});
   const [reconcileReasons, setReconcileReasons] = useState<Record<string, string>>({});
   const [hubForm, setHubForm] = useState<HubFormState>(emptyHubForm);
+  const [releaseDraft, setReleaseDraft] = useState("");
+  const [releaseReason, setReleaseReason] = useState("");
   const [editingHubId, setEditingHubId] = useState("");
   const [hubEdit, setHubEdit] = useState<Pick<HubFormState, "region" | "publicLabel" | "publicHubUrl" | "healthUrl" | "maxAssignments" | "reason">>({ region: "", publicLabel: "", publicHubUrl: "", healthUrl: "", maxAssignments: "", reason: "" });
   const [busy, setBusy] = useState(false);
@@ -190,7 +202,7 @@ export default function OperatorPage() {
   async function load(search = query) {
     try {
       const page = create(PageRequestSchema, { pageSize: 100 });
-      const [nextAccounts, nextAgents, nextFleet, nextCatalogHistory, nextOrders, nextSubscriptions, nextPromotions] = await Promise.all([
+      const [nextAccounts, nextAgents, nextFleet, nextCatalogHistory, nextOrders, nextSubscriptions, nextPromotions, nextReleases] = await Promise.all([
         protoPost(
           "/api/v1/operator/accounts/list",
           ListOperatorAccountsRequestSchema,
@@ -240,6 +252,7 @@ export default function OperatorPage() {
           ListPromotionsResponseSchema,
           "muxvia_cloud_operator_csrf",
         ),
+        protoPost("/api/v1/operator/releases/list", ListReleaseArtifactsRequestSchema, create(ListReleaseArtifactsRequestSchema, { page }), ListReleaseArtifactsResponseSchema, "muxvia_cloud_operator_csrf"),
       ]);
       setAccounts(nextAccounts);
       setAgents(nextAgents);
@@ -248,6 +261,7 @@ export default function OperatorPage() {
       setOrders(nextOrders);
       setSubscriptions(nextSubscriptions);
       setPromotions(nextPromotions);
+      setReleases(nextReleases);
       const active = nextCatalogHistory.releases.find((item) => item.active);
       if (active?.catalog && !catalogDraft)
         setCatalogDraft(
@@ -664,6 +678,40 @@ export default function OperatorPage() {
     }
   }
 
+  async function publishRelease(event: FormEvent) {
+    event.preventDefault();
+    if (!releaseDraft.trim() || !releaseReason.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      const artifact = fromJsonString(ReleaseArtifactProjectionSchema, releaseDraft, { ignoreUnknownFields: false });
+      await protoPost("/api/v1/operator/releases/publish", PublishReleaseArtifactRequestSchema, create(PublishReleaseArtifactRequestSchema, { artifact, reason: releaseReason.trim(), requestId: crypto.randomUUID() }), PublishReleaseArtifactResponseSchema, "muxvia_cloud_operator_csrf");
+      setReleaseDraft("");
+      setReleaseReason("");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Release publish failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setReleaseChannel(releaseId: string, paused: boolean, allowRollback: boolean) {
+    const artifact = releases?.artifacts.find((item) => item.releaseId === releaseId);
+    if (!artifact) return;
+    const channel = releases?.channels.find((item) => item.product === artifact.product && item.channel === artifact.channel && item.os === artifact.os && item.arch === artifact.arch);
+    setBusy(true);
+    setError("");
+    try {
+      await protoPost("/api/v1/operator/releases/channel", SetReleaseChannelRequestSchema, create(SetReleaseChannelRequestSchema, { releaseId, expectedRevision: channel?.revision ?? 0n, paused, allowRollback, reason: paused ? "Operator paused release channel" : allowRollback ? "Operator rolled back release channel" : "Operator activated release", requestId: crypto.randomUUID() }), SetReleaseChannelResponseSchema, "muxvia_cloud_operator_csrf");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Release channel update failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function createHub(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -756,6 +804,7 @@ export default function OperatorPage() {
     setSubscriptions(undefined);
     setPromotions(undefined);
     setFleet(undefined);
+    setReleases(undefined);
     setDetail(undefined);
   }
 
@@ -816,6 +865,38 @@ export default function OperatorPage() {
           {error}
         </p>
       )}
+      <section className="mt-6 border border-line bg-panel" data-testid="operator-releases">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line p-4">
+          <h2 className="flex items-center gap-2 text-sm font-medium"><Rocket className="size-4 text-primary" />Releases</h2>
+          <span className="font-mono text-[10px] text-muted-foreground">{releases?.artifacts.length ?? 0} SIGNED ARTIFACTS</span>
+        </header>
+        <div className="grid xl:grid-cols-[minmax(320px,0.8fr)_minmax(480px,1.2fr)]">
+          <form className="grid gap-3 border-b border-line p-4 xl:border-b-0 xl:border-r" onSubmit={publishRelease}>
+            <label className="grid gap-2 text-xs font-medium">Signed Proto JSON<textarea data-testid="release-draft" className="min-h-48 resize-y border border-line-strong bg-background p-3 font-mono text-xs outline-none focus:border-primary" value={releaseDraft} onChange={(event) => setReleaseDraft(event.target.value)} spellCheck={false} /></label>
+            <label className="grid gap-2 text-xs font-medium">Publish reason<Input data-testid="release-reason" value={releaseReason} onChange={(event) => setReleaseReason(event.target.value)} /></label>
+            <Button data-testid="release-publish" disabled={busy || !releaseDraft.trim() || !releaseReason.trim()}>Validate and publish</Button>
+          </form>
+          <div>
+            {releases?.artifacts.length ? releases.artifacts.map((artifact) => {
+              const channel = releases.channels.find((item) => item.product === artifact.product && item.channel === artifact.channel && item.os === artifact.os && item.arch === artifact.arch);
+              const active = channel?.activeReleaseId === artifact.releaseId;
+              return <div className="grid gap-3 border-b border-line p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center" key={artifact.releaseId} data-testid={`release-${artifact.releaseId}`}>
+                <span className="min-w-0"><strong className="block truncate">{artifact.version} / {artifact.os}-{artifact.arch}</strong><small className="font-mono text-[10px] text-muted-foreground">{artifact.releaseId} · code {artifact.versionCode.toString()} · rollout {artifact.rolloutBasisPoints / 100}%</small><span className="mt-1 block text-xs text-muted-foreground">{active ? channel?.paused ? "ACTIVE / PAUSED" : "ACTIVE" : "HISTORICAL"} · SHA-256 {Array.from(artifact.sha256.slice(0, 6)).map((value) => value.toString(16).padStart(2, "0")).join("")}…</span></span>
+                <div className="flex flex-wrap gap-2">
+                  {active ? <Button variant="outline" disabled={busy} onClick={() => void setReleaseChannel(artifact.releaseId, !channel?.paused, false)}>{channel?.paused ? "Resume" : "Pause"}</Button> : <><Button variant="outline" disabled={busy} onClick={() => void setReleaseChannel(artifact.releaseId, false, false)}>Activate</Button>{channel && artifact.versionCode < (releases.artifacts.find((item) => item.releaseId === channel.activeReleaseId)?.versionCode ?? 0n) && <Button variant="outline" disabled={busy} onClick={() => void setReleaseChannel(artifact.releaseId, false, true)}>Rollback</Button>}</>}
+                </div>
+              </div>;
+            }) : <p className="p-4 text-xs text-muted-foreground">No signed releases.</p>}
+          </div>
+        </div>
+        {releases?.operatorAudit.length ? <div className="border-t border-line" data-testid="release-audit">
+          {releases.operatorAudit.slice(0, 8).map((item) => <div className="grid gap-2 border-b border-line px-4 py-3 text-xs md:grid-cols-[180px_minmax(0,1fr)_auto]" key={item.auditId}>
+            <span className="text-muted-foreground">{new Date(Number(item.occurredAtUnixMillis)).toLocaleString()}</span>
+            <span><strong className="block">{item.action}</strong><small className="text-muted-foreground">{item.reason} / {item.actorId}</small></span>
+            <span className="font-mono text-[10px] text-muted-foreground">REV {item.beforeRevision.toString()} → {item.afterRevision.toString()}</span>
+          </div>)}
+        </div> : null}
+      </section>
       <div className="mt-6 grid gap-5 xl:grid-cols-3" data-testid="operator-commerce-operations">
         <section className="border border-line bg-panel" data-testid="operator-orders">
           <header className="flex items-center justify-between gap-3 border-b border-line p-4">

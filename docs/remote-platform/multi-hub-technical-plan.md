@@ -801,6 +801,16 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 - Operator Web 分为 Users 与 Agents 视图。用户详情展示账号状态、登录 Session、设备授权、CommandOutbox authority/delivery/execution/effect 和 audit；Agent 视图展示机器、账号、Hub、freshness 与 active peer 数，并提供 Kick/Revoke/Migrate。
 - 真实进程 E2E 复用 HUB007 独立 PostgreSQL、Controller 与双 Edge Supervisor：迁移和 Controller 重启后按同一 DeviceIdentity 查询 Agent，再通过 Operator API 精确 Kick Presence 并等待 CommandOutbox 应用。页面 fixture 只用于桌面/移动交互和布局，不作为控制链路证据。
 
+### OPSREL001：CLI/daemon 与 Android 版本管理
+
+- `cloud_management.proto` 定义 CLI/daemon 与 Android product、stable/beta channel、不可变 `ReleaseArtifactProjection`、可变 `ReleaseChannelProjection`、Operator publish/channel mutation 和 public client resolve；Web 与客户端只消费 generated Proto。
+- `releasecatalog` 持有签名校验、官方 HTTPS origin allowlist、version code 单调激活、显式 rollback、channel revision CAS、pause、兼容下限、强制截止时间和稳定 rollout bucket。Web、Controller 和 Android 不建立第二套更新策略。
+- PostgreSQL `release_artifacts` 只追加已验签 metadata，`release_channel_heads` 只持有 active release、revision 与 paused。publish/channel mutation 与既有 `operator_mutation_audit` 在同一事务提交；回滚只移动 head，不修改历史 artifact。
+- Ed25519 签名覆盖 release/product/channel/version/version code/target/download URL/size/SHA-256/兼容/强制/rollout/changelog 的 deterministic Proto metadata；服务端发布时间和 signature 本身不参与签名。Controller 只配置 public key 与可信 origin，private key 不进入服务、Web、数据库或仓库。
+- `muxvia-release-metadata` 是私有 CI 工具：读取真实 CLI/daemon 二进制或 APK、计算 SHA-256、从外部 PKCS#8 Ed25519 key 签名并输出 Proto JSON。Operator 页面只校验、发布和切换 channel，不生成签名。
+- public `POST /api/v1/releases/resolve` 使用 product/channel/os/arch/current version code/stable client ID，返回签名 artifact、channel revision、稳定 bucket 和 `current/paused/rollout/outside_rollout/forced` 决策。稳定 ID 不持久化；pause 停止分发，兼容下限或 force deadline 在非暂停 channel 上覆盖 rollout。
+- Operator UI 显示 signed artifact history、截断 SHA-256、active/paused head、revision audit，并提供 activate、pause/resume 和仅历史低版本可见的 rollback。浏览器 fixture 只证明页面交互；签名、origin、CAS、强制策略与 rollback 由真实 PostgreSQL service/API 测试证明。
+
 ### CLOUDP007：Development 全产品 E2E
 
 - Web UI 完成注册、交易、套餐、设备、topology、command 和 usage。
