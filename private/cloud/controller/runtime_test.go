@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,10 +39,10 @@ func TestControllerEnrollmentBindsControlKeyAndPersistsDaemonAuthority(t *testin
 	databaseKey := filepath.Join(t.TempDir(), "controller-postgres")
 	catalogPath := "../web-controller/config/plans.json"
 	account := seedControllerAccount(t, databaseKey, catalogPath, now)
+	seedControllerDeployment(t, databaseKey, metadata, hubPublic, relayPublic, now)
 	runtime, err := Start(Config{
 		PostgresDSN: postgrestest.DSN(t, databaseKey), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath,
 		ProjectionKeyID: "controller-key", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-key", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate),
-		Deployments: []DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic), PublicHubURL: "http://127.0.0.1:41002", HealthURL: "http://127.0.0.1:41002/healthz", MaxAssignments: 100}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -230,6 +231,105 @@ func TestControllerEnrollmentBindsControlKeyAndPersistsDaemonAuthority(t *testin
 	}
 }
 
+func TestControllerManagesDynamicHubDirectoryWithoutRestart(t *testing.T) {
+	now := time.Now().UTC()
+	sourceHubPublic, _, _ := ed25519.GenerateKey(rand.Reader)
+	sourceRelayPublic, _, _ := ed25519.GenerateKey(rand.Reader)
+	targetHubPublic, _, _ := ed25519.GenerateKey(rand.Reader)
+	targetRelayPublic, _, _ := ed25519.GenerateKey(rand.Reader)
+	_, projectionPrivate, _ := ed25519.GenerateKey(rand.Reader)
+	_, daemonControlPrivate, _ := ed25519.GenerateKey(rand.Reader)
+	operatorToken := bytes.Repeat([]byte{0x71}, 32)
+	databaseKey := filepath.Join(t.TempDir(), "dynamic-hub-postgres")
+	catalogPath := "../web-controller/config/plans.json"
+	account := seedControllerAccount(t, databaseKey, catalogPath, now)
+	sourceMetadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-source", Region: "local-1", PublicLabel: "Source Edge", HubId: "hub-source", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(sourceHubPublic), RelayId: "relay-source", RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(sourceRelayPublic)}
+	seedControllerDeployment(t, databaseKey, sourceMetadata, sourceHubPublic, sourceRelayPublic, now)
+	runtime, err := Start(Config{
+		PostgresDSN: postgrestest.DSN(t, databaseKey), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath,
+		ProjectionKeyID: "projection-dynamic", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-dynamic", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate),
+		OperatorID: "operator-dynamic", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorToken),
+		Devices:     []*cloudpb.CloudDevicePolicy{{AccountId: account.GetAccountId(), DeviceId: "daemon-dynamic", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision()}},
+		Assignments: []*cloudpb.HubAssignment{{DaemonDeviceId: "daemon-dynamic", AccountId: account.GetAccountId(), HubId: sourceMetadata.GetHubId(), AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close(context.Background())
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar, Timeout: 3 * time.Second}
+	postOperatorProto(t, client, runtime.Manifest().OperatorURL, "/api/v1/operator/login", &cloudpb.OperatorLoginRequest{AccessToken: operatorToken}, &cloudpb.OperatorLoginResponse{}, false)
+	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-dynamic", Region: "local-3", PublicLabel: "Dynamic Edge", HubId: "hub-dynamic", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(targetHubPublic), RelayId: "relay-dynamic", RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(targetRelayPublic)}
+	created := &cloudpb.CreateHubDeploymentResponse{}
+	postOperatorProto(t, client, runtime.Manifest().OperatorURL, "/api/v1/operator/fleet/create", &cloudpb.CreateHubDeploymentRequest{HubId: metadata.GetHubId(), EdgeDeploymentId: metadata.GetEdgeDeploymentId(), RelayId: metadata.GetRelayId(), Region: metadata.GetRegion(), PublicLabel: metadata.GetPublicLabel(), PublicHubUrl: "http://127.0.0.1:43002", HealthUrl: "http://127.0.0.1:43002/healthz", MaxAssignments: 10, HubControlPublicKey: targetHubPublic, RelayControlPublicKey: targetRelayPublic, Reason: "dynamic region", RequestId: "request-dynamic-create"}, created, true)
+	if created.GetDeployment().GetIdentityApproved() || created.GetDeployment().GetEnabled() || created.GetDeployment().GetDirectoryRevision() != 1 {
+		t.Fatalf("pending deployment = %v", created.GetDeployment())
+	}
+	approved := &cloudpb.ApproveHubDeploymentIdentityResponse{}
+	postOperatorProto(t, client, runtime.Manifest().OperatorURL, "/api/v1/operator/fleet/approve", &cloudpb.ApproveHubDeploymentIdentityRequest{HubId: metadata.GetHubId(), ExpectedRevision: 1, HubControlIdentityFingerprint: metadata.GetHubControlIdentityFingerprint(), RelayControlIdentityFingerprint: metadata.GetRelayControlIdentityFingerprint(), Reason: "fingerprints reviewed", RequestId: "request-dynamic-approve"}, approved, true)
+	if !approved.GetDeployment().GetEnabled() || approved.GetDeployment().GetDirectoryRevision() != 2 {
+		t.Fatalf("approved deployment = %v", approved.GetDeployment())
+	}
+	assignmentBeforeDrain, err := runtime.registry.Assignment(context.Background(), "daemon-dynamic")
+	if err != nil || assignmentBeforeDrain.Value.GetHubId() != sourceMetadata.GetHubId() || assignmentBeforeDrain.Value.GetAssignmentEpoch() != 1 {
+		t.Fatalf("existing assignment drifted after dynamic attach = (%v, %v)", assignmentBeforeDrain, err)
+	}
+	storedTarget, err := runtime.registry.Deployment(context.Background(), metadata.GetHubId())
+	if err != nil || !storedTarget.Enabled || storedTarget.DirectoryRevision != 2 {
+		t.Fatalf("approved dynamic deployment = (%v, %v)", storedTarget, err)
+	}
+	drained := &cloudpb.SetHubDeploymentDrainResponse{}
+	postOperatorProto(t, client, runtime.Manifest().OperatorURL, "/api/v1/operator/fleet/drain", &cloudpb.SetHubDeploymentDrainRequest{HubId: sourceMetadata.GetHubId(), ExpectedRevision: 1, Draining: true, Reason: "move active daemon before maintenance", RequestId: "request-source-drain"}, drained, true)
+	if !drained.GetDeployment().GetDraining() || drained.GetDeployment().GetDirectoryRevision() != 2 {
+		t.Fatalf("drained source deployment = %v", drained.GetDeployment())
+	}
+	if _, err := runtime.registry.Fence(context.Background(), "daemon-dynamic", sourceMetadata.GetHubId(), 1, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := runtime.registry.Assign(context.Background(), &cloudpb.HubAssignment{DaemonDeviceId: "daemon-dynamic", AccountId: account.GetAccountId(), HubId: metadata.GetHubId(), AssignmentEpoch: 2, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}, time.Now().UTC())
+	if err != nil || migrated.PreviousHubID != sourceMetadata.GetHubId() || migrated.PreviousEpoch != 1 {
+		t.Fatalf("assignment migration = (%v, %v)", migrated, err)
+	}
+	disabled := &cloudpb.DisableHubDeploymentResponse{}
+	postOperatorProto(t, client, runtime.Manifest().OperatorURL, "/api/v1/operator/fleet/disable", &cloudpb.DisableHubDeploymentRequest{HubId: sourceMetadata.GetHubId(), ExpectedRevision: 2, Reason: "maintenance migration completed", RequestId: "request-source-disable"}, disabled, true)
+	if !disabled.GetDeployment().GetArchived() || disabled.GetDeployment().GetEnabled() || disabled.GetDeployment().GetDirectoryRevision() != 3 {
+		t.Fatalf("disabled source deployment = %v", disabled.GetDeployment())
+	}
+}
+
+func postOperatorProto(t *testing.T, client *http.Client, origin, path string, request, response proto.Message, mutation bool) {
+	t.Helper()
+	body, err := protojson.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpRequest, err := http.NewRequest(http.MethodPost, origin+path, bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpRequest.Header.Set("Content-Type", "application/json")
+	if mutation {
+		httpRequest.Header.Set("Origin", origin)
+		for _, cookie := range client.Jar.Cookies(httpRequest.URL) {
+			if cookie.Name == "muxvia_cloud_operator_csrf" {
+				httpRequest.Header.Set("X-Muxvia-CSRF", cookie.Value)
+			}
+		}
+	}
+	httpResponse, err := client.Do(httpRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer httpResponse.Body.Close()
+	payload, _ := io.ReadAll(httpResponse.Body)
+	if httpResponse.StatusCode != http.StatusOK {
+		t.Fatalf("operator %s = %d: %s", path, httpResponse.StatusCode, payload)
+	}
+	if err := protojson.Unmarshal(payload, response); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func postControllerProto(t *testing.T, endpoint string, request, response proto.Message, expectedStatus int) {
 	t.Helper()
 	payload, err := proto.Marshal(request)
@@ -291,7 +391,9 @@ func TestControllerPeriodicallyRefreshesSignedProjection(t *testing.T) {
 	_, projectionPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	_, daemonControlPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-1", Region: "local-1", HubId: "hub-1", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublic), RelayId: "relay-1", RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(relayPublic)}
-	config := Config{PostgresDSN: postgrestest.DSN(t, filepath.Join(t.TempDir(), "controller-postgres")), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: "../web-controller/config/plans.json", ProjectionKeyID: "controller-key", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-key", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), Deployments: []DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic), PublicHubURL: "http://127.0.0.1:41002", HealthURL: "http://127.0.0.1:41002/healthz", MaxAssignments: 100}}}
+	databaseKey := filepath.Join(t.TempDir(), "controller-postgres")
+	seedControllerDeployment(t, databaseKey, metadata, hubPublic, relayPublic, time.Now().UTC())
+	config := Config{PostgresDSN: postgrestest.DSN(t, databaseKey), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: "../web-controller/config/plans.json", ProjectionKeyID: "controller-key", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-key", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate)}
 	runtime, err := start(config, 20*time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
@@ -325,7 +427,8 @@ func TestControllerKeepsListenersSeparateAndProjectionRevisionPersistent(t *test
 	databaseKey := filepath.Join(t.TempDir(), "controller-postgres")
 	catalogPath := configuredTestCatalogPath(t)
 	account := seedControllerAccount(t, databaseKey, catalogPath, now)
-	config := Config{PostgresDSN: postgrestest.DSN(t, databaseKey), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: "controller-key", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-key", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: []DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic), PublicHubURL: "http://127.0.0.1:41002", HealthURL: "http://127.0.0.1:41002/healthz", MaxAssignments: 100}}, Devices: []*cloudpb.CloudDevicePolicy{{AccountId: account.GetAccountId(), DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision()}}, Assignments: []*cloudpb.HubAssignment{{DaemonDeviceId: "daemon-1", AccountId: account.GetAccountId(), HubId: "hub-1", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}}}
+	seedControllerDeployment(t, databaseKey, metadata, hubPublic, relayPublic, now)
+	config := Config{PostgresDSN: postgrestest.DSN(t, databaseKey), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: "controller-key", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-key", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Devices: []*cloudpb.CloudDevicePolicy{{AccountId: account.GetAccountId(), DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision()}}, Assignments: []*cloudpb.HubAssignment{{DaemonDeviceId: "daemon-1", AccountId: account.GetAccountId(), HubId: "hub-1", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}}}
 	first, err := Start(config)
 	if err != nil {
 		t.Fatal(err)
@@ -422,6 +525,19 @@ func TestControllerKeepsListenersSeparateAndProjectionRevisionPersistent(t *test
 	loginResponse.Body.Close()
 	if loginResponse.StatusCode != http.StatusOK {
 		t.Fatalf("login after Controller restart = %d: %s", loginResponse.StatusCode, responseBody)
+	}
+}
+
+func seedControllerDeployment(t *testing.T, databaseKey string, metadata *cloudpb.EdgeDeploymentMetadata, hubPublic, relayPublic ed25519.PublicKey, now time.Time) {
+	t.Helper()
+	store, err := postgrestest.Open(t, databaseKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	registry, _ := hubregistry.New(store)
+	if err := registry.RegisterDeployment(context.Background(), hubregistry.Deployment{Metadata: metadata, ControlPublicKey: hubPublic, RelayControlPublicKey: relayPublic, PublicHubURL: "http://127.0.0.1:41002", HealthURL: "http://127.0.0.1:41002/healthz", MaxAssignments: 100, Enabled: true, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
 	}
 }
 

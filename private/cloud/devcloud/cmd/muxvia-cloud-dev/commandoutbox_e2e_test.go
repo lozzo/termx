@@ -44,7 +44,16 @@ func TestSignedCloseCommandCrossesControllerEdgeAndDaemonHTTPBoundaries(t *testi
 	databaseKey := filepath.Join(t.TempDir(), "controller-postgres")
 	catalogPath := filepath.Join(findRepoRoot(t), "private/cloud/web-controller/config/plans.json")
 	account := seedCommandAccount(t, databaseKey, catalogPath, now)
-	controllerRuntime, err := controller.Start(controller.Config{PostgresDSN: postgrestest.DSN(t, databaseKey), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: "projection-1", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-1", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), Deployments: []controller.DeploymentConfig{{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic), PublicHubURL: "http://127.0.0.1:41002", HealthURL: "http://127.0.0.1:41002/healthz", MaxAssignments: 100}}, Devices: []*cloudpb.CloudDevicePolicy{{AccountId: account.GetAccountId(), DeviceId: "client-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: account.GetAuthRevision()}, {AccountId: account.GetAccountId(), DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision(), PublicKey: daemonPublic}}, Assignments: []*cloudpb.HubAssignment{{DaemonDeviceId: "daemon-1", AccountId: account.GetAccountId(), HubId: "hub-1", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}}})
+	directoryStore, err := postgrestest.Open(t, databaseKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	directoryRegistry, _ := hubregistry.New(directoryStore)
+	if err := directoryRegistry.RegisterDeployment(context.Background(), hubregistry.Deployment{Metadata: metadata, ControlPublicKey: hubPublic, RelayControlPublicKey: relayPublic, PublicHubURL: "http://127.0.0.1:41002", HealthURL: "http://127.0.0.1:41002/healthz", MaxAssignments: 100, Enabled: true, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	_ = directoryStore.Close()
+	controllerRuntime, err := controller.Start(controller.Config{PostgresDSN: postgrestest.DSN(t, databaseKey), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: "projection-1", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-1", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), Devices: []*cloudpb.CloudDevicePolicy{{AccountId: account.GetAccountId(), DeviceId: "client-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: account.GetAuthRevision()}, {AccountId: account.GetAccountId(), DeviceId: "daemon-1", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision(), PublicKey: daemonPublic}}, Assignments: []*cloudpb.HubAssignment{{DaemonDeviceId: "daemon-1", AccountId: account.GetAccountId(), HubId: "hub-1", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,9 +73,9 @@ func TestSignedCloseCommandCrossesControllerEdgeAndDaemonHTTPBoundaries(t *testi
 	issuer, _ := servicecredential.NewEdgeAccessIssuer("muxvia-cloud-controller", signer)
 	daemonToken, _ := issuer.IssueEdgeAccessForPrincipal("daemon-token", "hub-1", account.GetAccountId(), "daemon-1", servicecredential.EdgePrincipalDaemon, account.GetAuthRevision(), time.Hour, now)
 	clientToken, _ := issuer.IssueEdgeAccessForPrincipal("client-token", "hub-1", account.GetAccountId(), "client-1", servicecredential.EdgePrincipalClient, account.GetAuthRevision(), time.Hour, now)
-	daemonSession, _ := session.New(session.Metadata{Kind: session.KindDevice, AccountID: account.GetAccountId(), DeviceID: "daemon-1", ExpiresAt: now.Add(time.Hour)}, daemonToken, now)
-	clientSession, _ := session.New(session.Metadata{Kind: session.KindAccount, AccountID: account.GetAccountId(), DeviceID: "client-1", ExpiresAt: now.Add(time.Hour)}, clientToken, now)
-	adapter, _ := httpapi.New(httpapi.Config{ControlPlaneURL: edgeRuntime.Manifest().HubURL, HubURL: edgeRuntime.Manifest().HubURL})
+	daemonSession, _ := session.New(session.Metadata{Kind: session.KindDevice, AccountID: account.GetAccountId(), DeviceID: "daemon-1", ExpiresAt: now.Add(time.Hour), HubID: "hub-1", HubURL: edgeRuntime.Manifest().HubURL, HubRegion: "local-1", HubDirectoryVersion: 1}, daemonToken, now)
+	clientSession, _ := session.New(session.Metadata{Kind: session.KindAccount, AccountID: account.GetAccountId(), DeviceID: "client-1", ExpiresAt: now.Add(time.Hour), HubID: "hub-1", HubURL: edgeRuntime.Manifest().HubURL, HubRegion: "local-1", HubDirectoryVersion: 1}, clientToken, now)
+	adapter, _ := httpapi.New(httpapi.Config{ControlPlaneURL: edgeRuntime.Manifest().HubURL})
 	challenge, err := adapter.BeginPresence(context.Background(), daemonSession.Authorization(), &cloudpb.BeginPresenceRequest{DeviceId: "daemon-1"})
 	if err != nil {
 		t.Fatal(err)

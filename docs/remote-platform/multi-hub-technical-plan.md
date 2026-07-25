@@ -332,7 +332,7 @@ CompleteDeviceEnrollmentRequest.hub_observations[] -> HubReachabilityObservation
 
 实现 owner 与链路：
 
-1. PostgreSQL `hub_deployments` 为每个已注册 deployment 持久化公开 `hub_url`、`health_url`、region、lifecycle revision 和 `max_assignments`；正式 URL 使用 HTTPS，loopback HTTP 只允许 development harness。`private/cloud/controller.DeploymentConfig` 只允许作为显式 development 首次 bootstrap 输入，不是运行时目录真值，也不得覆盖已有 row。
+1. PostgreSQL `hub_deployments` 为每个已注册 deployment 持久化公开 `hub_url`、`health_url`、region、lifecycle revision 和 `max_assignments`；正式 URL 使用 HTTPS，loopback HTTP 只允许 development harness。Controller 配置不再包含 deployment 目录；development bootstrap 也必须在 Controller 启动前通过 `hubregistry` 写入同一张表，不得建立静态目录或覆盖已有 row。
 2. Controller 只从 enabled registry、当前 active Hub control attachment 和未满容量构造候选，按 Hub ID 稳定排序并截断到 100。
 3. enrollment challenge 只发送 Hub ID、公开 Hub URL、health URL 和 region；精确 assignment 数与容量仅留在 Controller 内部，不能作为跨租户 fleet 摘要暴露给 daemon。
 4. `client/adapter/managed` 使用最多 16 个 worker、每候选独立 timeout、禁止 redirect 的 HTTP client 探测 health URL；`cmd/muxvia` 只编排调用和提交 generated Proto，不拥有网络选择算法。
@@ -789,6 +789,7 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 - drain 原子禁止新 assignment，再复用已有 migration/CommandOutbox/epoch fence 逐台迁移；assignment 清零前拒绝 disable。deployment 只 archive，不 hard delete。
 - client/Companion manifest 删除 Hub URL 和 fleet snapshot，只保留 Controller origin/trust material；daemon enrollment/refresh 与手机 target resolve 始终消费 Controller 签名动态目录。
 - process E2E 在 Controller 不重启、CLI/APK 不重建的情况下新增第三 Edge，证明新 daemon 可选中、已有 daemon 不漂移、drain 后无新 assignment、fence 后旧 Hub 拒绝旧 epoch。
+- 2026-07-25 已完成：真实 PostgreSQL + Controller + 三个 Edge runtime 证明运行中新增 pending identity、Operator 批准后 attachment 与旧 assignment 保持；Controller 生命周期测试和既有 HUB007 process E2E 分别证明动态 candidate revision、drain/disable 与 CommandOutbox fence migration。证据见 `docs/remote-platform/opshub001-e2e.md`。
 
 ### CLOUDP007：Development 全产品 E2E
 

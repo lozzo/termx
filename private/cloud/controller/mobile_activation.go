@@ -62,18 +62,15 @@ type mobileActivationService struct {
 	topology           *cloudtopology.Service
 	registry           *hubregistry.Registry
 	edgeIssuer         servicecredential.EdgeAccessIssuer
-	hubID              string
-	hubURL             string
-	hubRegion          string
-	daemonHubDirectory func(string) (string, string, bool)
+	preferredHubID     string
 	daemonNotAfter     time.Time
 	now                func() time.Time
 	random             io.Reader
 	notifyPolicyChange func(string)
 }
 
-func newMobileActivationService(commerce *cloudcommerce.Service, activationStore persistence.MobileActivationStore, topology *cloudtopology.Service, registry *hubregistry.Registry, issuer servicecredential.EdgeAccessIssuer, hubID, hubURL, hubRegion string, daemonHubDirectory func(string) (string, string, bool), daemonNotAfter time.Time, now func() time.Time, notify func(string)) (*mobileActivationService, error) {
-	if commerce == nil || activationStore == nil || topology == nil || registry == nil || hubID == "" || daemonHubDirectory == nil || now == nil || notify == nil {
+func newMobileActivationService(commerce *cloudcommerce.Service, activationStore persistence.MobileActivationStore, topology *cloudtopology.Service, registry *hubregistry.Registry, issuer servicecredential.EdgeAccessIssuer, preferredHubID string, daemonNotAfter time.Time, now func() time.Time, notify func(string)) (*mobileActivationService, error) {
+	if commerce == nil || activationStore == nil || topology == nil || registry == nil || now == nil || notify == nil {
 		return nil, errMobileActivationUnavailable
 	}
 	if !daemonNotAfter.After(now().UTC()) {
@@ -81,9 +78,8 @@ func newMobileActivationService(commerce *cloudcommerce.Service, activationStore
 	}
 	return &mobileActivationService{
 		flows: make(map[string]*mobileActivationFlow), codes: make(map[string]string), expiry: list.New(),
-		commerce: commerce, activationStore: activationStore, topology: topology, registry: registry, edgeIssuer: issuer, hubID: hubID, hubURL: hubURL, hubRegion: hubRegion,
-		daemonHubDirectory: daemonHubDirectory,
-		daemonNotAfter:     daemonNotAfter.UTC(), now: now, random: rand.Reader, notifyPolicyChange: notify,
+		commerce: commerce, activationStore: activationStore, topology: topology, registry: registry, edgeIssuer: issuer, preferredHubID: preferredHubID,
+		daemonNotAfter: daemonNotAfter.UTC(), now: now, random: rand.Reader, notifyPolicyChange: notify,
 	}, nil
 }
 
@@ -281,8 +277,8 @@ func (service *mobileActivationService) issueDaemonSession(account *cloudpb.Acco
 	if account == nil || assignment == nil || credential == nil || len(credential.GetRefreshToken()) < 32 {
 		return httpapi.SessionWire{}, errMobileActivationUnavailable
 	}
-	hubURL, hubRegion, ok := service.daemonHubDirectory(assignment.GetHubId())
-	if !ok {
+	deployment, err := service.registry.Deployment(context.Background(), assignment.GetHubId())
+	if err != nil || !deployment.IdentityApproved || !deployment.Enabled || deployment.Archived || deployment.PublicHubURL == "" {
 		return httpapi.SessionWire{}, errMobileActivationUnavailable
 	}
 	now := service.now().UTC()
@@ -311,7 +307,7 @@ func (service *mobileActivationService) issueDaemonSession(account *cloudpb.Acco
 	return httpapi.SessionWire{
 		Kind: session.KindDevice, AccountID: account.GetAccountId(), AccountLabel: account.GetDisplayName(), DeviceID: deviceID,
 		ExpiresAt: expiresAt.Unix(), AccessToken: access, RefreshToken: refreshToken, RefreshExpiresAt: credential.GetRefreshExpiresAtUnixMillis() / 1000,
-		HubID: assignment.GetHubId(), HubURL: hubURL, HubRegion: hubRegion, HubDirectoryVersion: 1,
+		HubID: assignment.GetHubId(), HubURL: deployment.PublicHubURL, HubRegion: deployment.Metadata.GetRegion(), HubDirectoryVersion: deployment.DirectoryRevision,
 	}, nil
 }
 
@@ -320,11 +316,15 @@ func (service *mobileActivationService) issueSession(account *cloudpb.AccountPro
 		return httpapi.SessionWire{}, errMobileActivationUnavailable
 	}
 	now := service.now().UTC()
+	deployment, err := service.clientDeployment(context.Background())
+	if err != nil {
+		return httpapi.SessionWire{}, errMobileActivationUnavailable
+	}
 	tokenID, err := service.randomID("edge")
 	if err != nil {
 		return httpapi.SessionWire{}, err
 	}
-	access, err := service.edgeIssuer.IssueEdgeAccessWithDirectory(tokenID, service.hubID, service.hubURL, service.hubRegion, 1, account.GetAccountId(), deviceID, servicecredential.EdgePrincipalClient, account.GetAuthRevision(), mobileAccessTTL, now)
+	access, err := service.edgeIssuer.IssueEdgeAccessWithDirectory(tokenID, deployment.Metadata.GetHubId(), deployment.PublicHubURL, deployment.Metadata.GetRegion(), deployment.DirectoryRevision, account.GetAccountId(), deviceID, servicecredential.EdgePrincipalClient, account.GetAuthRevision(), mobileAccessTTL, now)
 	if err != nil {
 		return httpapi.SessionWire{}, err
 	}
@@ -334,10 +334,34 @@ func (service *mobileActivationService) issueSession(account *cloudpb.AccountPro
 	return httpapi.SessionWire{
 		Kind: session.KindAccount, AccountID: account.GetAccountId(), AccountLabel: account.GetDisplayName(), DeviceID: deviceID,
 		ExpiresAt: now.Add(mobileAccessTTL).Unix(), AccessToken: access, RefreshToken: refreshToken,
-		RefreshExpiresAt: credential.GetRefreshExpiresAtUnixMillis() / 1000, HubID: service.hubID, HubURL: service.hubURL,
-		HubRegion: service.hubRegion, HubDirectoryVersion: 1, PlanID: subscription.GetPlanId(), PlanName: plan.GetPresentation().GetName(),
+		RefreshExpiresAt: credential.GetRefreshExpiresAtUnixMillis() / 1000, HubID: deployment.Metadata.GetHubId(), HubURL: deployment.PublicHubURL,
+		HubRegion: deployment.Metadata.GetRegion(), HubDirectoryVersion: deployment.DirectoryRevision, PlanID: subscription.GetPlanId(), PlanName: plan.GetPresentation().GetName(),
 		SubscriptionStatus: subscription.GetStatus().String(), SubscriptionRevision: subscription.GetRevision(),
 	}, nil
+}
+
+func (service *mobileActivationService) clientDeployment(ctx context.Context) (hubregistry.Deployment, error) {
+	deployments, err := service.registry.Deployments(ctx)
+	if err != nil {
+		return hubregistry.Deployment{}, err
+	}
+	var fallback *hubregistry.Deployment
+	for index := range deployments {
+		deployment := deployments[index]
+		if !deployment.IdentityApproved || !deployment.Enabled || deployment.Draining || deployment.Archived || deployment.PublicHubURL == "" || deployment.DirectoryRevision == 0 {
+			continue
+		}
+		if deployment.Metadata.GetHubId() == service.preferredHubID {
+			return deployment, nil
+		}
+		if fallback == nil {
+			fallback = &deployment
+		}
+	}
+	if fallback == nil {
+		return hubregistry.Deployment{}, errMobileActivationUnavailable
+	}
+	return *fallback, nil
 }
 
 func (service *mobileActivationService) registerHTTP(mux *http.ServeMux) {

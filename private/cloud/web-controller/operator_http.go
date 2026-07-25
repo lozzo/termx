@@ -28,6 +28,11 @@ const (
 type OperatorFleetQuery interface {
 	ListHubFleet(context.Context, *cloudpb.ListHubFleetRequest) (*cloudpb.ListHubFleetResponse, error)
 	GetHubStatus(context.Context, string) (*cloudpb.GetHubStatusResponse, error)
+	CreateHubDeployment(context.Context, *cloudpb.CreateHubDeploymentRequest, string, time.Time) (*cloudpb.CreateHubDeploymentResponse, error)
+	UpdateHubDeployment(context.Context, *cloudpb.UpdateHubDeploymentRequest, string, time.Time) (*cloudpb.UpdateHubDeploymentResponse, error)
+	ApproveHubDeploymentIdentity(context.Context, *cloudpb.ApproveHubDeploymentIdentityRequest, string, time.Time) (*cloudpb.ApproveHubDeploymentIdentityResponse, error)
+	SetHubDeploymentDrain(context.Context, *cloudpb.SetHubDeploymentDrainRequest, string, time.Time) (*cloudpb.SetHubDeploymentDrainResponse, error)
+	DisableHubDeployment(context.Context, *cloudpb.DisableHubDeploymentRequest, string, time.Time) (*cloudpb.DisableHubDeploymentResponse, error)
 }
 
 // OperatorPaymentReconciler 从正式 provider 服务端立即核对一个持久 payment attempt。
@@ -431,6 +436,81 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		var response *cloudpb.GetHubStatusResponse
 		if err == nil {
 			response, err = config.Fleet.GetHubStatus(r.Context(), request.GetHubId())
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/fleet/create", func(w http.ResponseWriter, r *http.Request) {
+		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		if err == nil {
+			err = requireOperatorMutation(r, record, config.Now().UTC())
+		}
+		request := &cloudpb.CreateHubDeploymentRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.CreateHubDeploymentResponse
+		if err == nil {
+			response, err = config.Fleet.CreateHubDeployment(r.Context(), request, config.OperatorID, config.Now().UTC())
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/fleet/update", func(w http.ResponseWriter, r *http.Request) {
+		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		if err == nil {
+			err = requireOperatorMutation(r, record, config.Now().UTC())
+		}
+		request := &cloudpb.UpdateHubDeploymentRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.UpdateHubDeploymentResponse
+		if err == nil {
+			response, err = config.Fleet.UpdateHubDeployment(r.Context(), request, config.OperatorID, config.Now().UTC())
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/fleet/approve", func(w http.ResponseWriter, r *http.Request) {
+		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		if err == nil {
+			err = requireOperatorMutation(r, record, config.Now().UTC())
+		}
+		request := &cloudpb.ApproveHubDeploymentIdentityRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.ApproveHubDeploymentIdentityResponse
+		if err == nil {
+			response, err = config.Fleet.ApproveHubDeploymentIdentity(r.Context(), request, config.OperatorID, config.Now().UTC())
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/fleet/drain", func(w http.ResponseWriter, r *http.Request) {
+		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		if err == nil {
+			err = requireOperatorMutation(r, record, config.Now().UTC())
+		}
+		request := &cloudpb.SetHubDeploymentDrainRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.SetHubDeploymentDrainResponse
+		if err == nil {
+			response, err = config.Fleet.SetHubDeploymentDrain(r.Context(), request, config.OperatorID, config.Now().UTC())
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/fleet/disable", func(w http.ResponseWriter, r *http.Request) {
+		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		if err == nil {
+			err = requireOperatorMutation(r, record, config.Now().UTC())
+		}
+		request := &cloudpb.DisableHubDeploymentRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		var response *cloudpb.DisableHubDeploymentResponse
+		if err == nil {
+			response, err = config.Fleet.DisableHubDeployment(r.Context(), request, config.OperatorID, config.Now().UTC())
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})

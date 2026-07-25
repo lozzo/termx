@@ -2200,13 +2200,14 @@ func (x *BeginDeviceEnrollmentRequest) GetDeviceId() string {
 // HubEnrollmentCandidate 是 Controller 为一次 daemon enrollment 筛选的有界可探测 Hub。
 // 候选只提供公开探测目录；Controller 私有容量真值不得暴露给客户端。
 type HubEnrollmentCandidate struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	HubId         string                 `protobuf:"bytes,1,opt,name=hub_id,json=hubId,proto3" json:"hub_id,omitempty"`
-	HubUrl        string                 `protobuf:"bytes,2,opt,name=hub_url,json=hubUrl,proto3" json:"hub_url,omitempty"`
-	HealthUrl     string                 `protobuf:"bytes,3,opt,name=health_url,json=healthUrl,proto3" json:"health_url,omitempty"`
-	Region        string                 `protobuf:"bytes,4,opt,name=region,proto3" json:"region,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	HubId             string                 `protobuf:"bytes,1,opt,name=hub_id,json=hubId,proto3" json:"hub_id,omitempty"`
+	HubUrl            string                 `protobuf:"bytes,2,opt,name=hub_url,json=hubUrl,proto3" json:"hub_url,omitempty"`
+	HealthUrl         string                 `protobuf:"bytes,3,opt,name=health_url,json=healthUrl,proto3" json:"health_url,omitempty"`
+	Region            string                 `protobuf:"bytes,4,opt,name=region,proto3" json:"region,omitempty"`
+	DirectoryRevision uint64                 `protobuf:"varint,5,opt,name=directory_revision,json=directoryRevision,proto3" json:"directory_revision,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *HubEnrollmentCandidate) Reset() {
@@ -2265,6 +2266,13 @@ func (x *HubEnrollmentCandidate) GetRegion() string {
 		return x.Region
 	}
 	return ""
+}
+
+func (x *HubEnrollmentCandidate) GetDirectoryRevision() uint64 {
+	if x != nil {
+		return x.DirectoryRevision
+	}
+	return 0
 }
 
 // HubReachabilityObservation 是 daemon 对 Controller 候选执行 HTTPS health 探测后的观测。
@@ -7085,13 +7093,14 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\rone_time_code\x18\x01 \x01(\tR\voneTimeCode\x12*\n" +
 	"\x11device_public_key\x18\x02 \x01(\fR\x0fdevicePublicKey\x12;\n" +
 	"\bmetadata\x18\x03 \x01(\v2\x1f.muxvia.cloud.v1.DeviceMetadataR\bmetadata\x12\x1b\n" +
-	"\tdevice_id\x18\x04 \x01(\tR\bdeviceId\"\x7f\n" +
+	"\tdevice_id\x18\x04 \x01(\tR\bdeviceId\"\xae\x01\n" +
 	"\x16HubEnrollmentCandidate\x12\x15\n" +
 	"\x06hub_id\x18\x01 \x01(\tR\x05hubId\x12\x17\n" +
 	"\ahub_url\x18\x02 \x01(\tR\x06hubUrl\x12\x1d\n" +
 	"\n" +
 	"health_url\x18\x03 \x01(\tR\thealthUrl\x12\x16\n" +
-	"\x06region\x18\x04 \x01(\tR\x06region\"x\n" +
+	"\x06region\x18\x04 \x01(\tR\x06region\x12-\n" +
+	"\x12directory_revision\x18\x05 \x01(\x04R\x11directoryRevision\"x\n" +
 	"\x1aHubReachabilityObservation\x12\x15\n" +
 	"\x06hub_id\x18\x01 \x01(\tR\x05hubId\x12\x1c\n" +
 	"\treachable\x18\x02 \x01(\bR\treachable\x12%\n" +

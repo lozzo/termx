@@ -175,13 +175,103 @@ func rebind(query string) string {
 func (store *Store) PutDeployment(ctx context.Context, value hubregistry.Deployment) error {
 	metadata := value.Metadata
 	_, err := execContext(ctx, store.db, `INSERT INTO hub_deployments(
-hub_id,deployment_id,credential_fingerprint,control_public_key,relay_control_public_key,region,public_label,relay_id,relay_credential_fingerprint,enabled,last_control_generation,last_relay_control_generation,updated_at)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(hub_id) DO UPDATE SET
+hub_id,deployment_id,credential_fingerprint,control_public_key,relay_control_public_key,region,public_label,relay_id,relay_credential_fingerprint,public_hub_url,health_url,max_assignments,identity_approved,enabled,draining,archived,directory_revision,last_control_generation,last_relay_control_generation,updated_at)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(hub_id) DO UPDATE SET
 deployment_id=excluded.deployment_id,credential_fingerprint=excluded.credential_fingerprint,control_public_key=excluded.control_public_key,
 relay_control_public_key=excluded.relay_control_public_key,
 region=excluded.region,public_label=excluded.public_label,relay_id=excluded.relay_id,relay_credential_fingerprint=excluded.relay_credential_fingerprint,
-enabled=excluded.enabled,updated_at=excluded.updated_at`, metadata.GetHubId(), metadata.GetEdgeDeploymentId(), metadata.GetHubControlIdentityFingerprint(), []byte(value.ControlPublicKey), []byte(value.RelayControlPublicKey), metadata.GetRegion(), metadata.GetPublicLabel(), metadata.GetRelayId(), metadata.GetRelayControlIdentityFingerprint(), boolInt(value.Enabled), value.ControlGeneration, value.RelayControlGeneration, value.UpdatedAt.UTC().Format(time.RFC3339Nano))
+public_hub_url=excluded.public_hub_url,health_url=excluded.health_url,max_assignments=excluded.max_assignments,identity_approved=excluded.identity_approved,
+enabled=excluded.enabled,draining=excluded.draining,archived=excluded.archived,directory_revision=excluded.directory_revision,updated_at=excluded.updated_at`, metadata.GetHubId(), metadata.GetEdgeDeploymentId(), metadata.GetHubControlIdentityFingerprint(), []byte(value.ControlPublicKey), []byte(value.RelayControlPublicKey), metadata.GetRegion(), metadata.GetPublicLabel(), metadata.GetRelayId(), metadata.GetRelayControlIdentityFingerprint(), value.PublicHubURL, value.HealthURL, value.MaxAssignments, boolInt(value.IdentityApproved), boolInt(value.Enabled), boolInt(value.Draining), boolInt(value.Archived), value.DirectoryRevision, value.ControlGeneration, value.RelayControlGeneration, value.UpdatedAt.UTC().Format(time.RFC3339Nano))
 	return err
+}
+
+// CreateDeployment 原子保存待批准 directory 与 operator audit；Hub/Relay generation 从零开始。
+func (store *Store) CreateDeployment(ctx context.Context, value hubregistry.Deployment, audit *cloudpb.OperatorMutationAuditProjection) error {
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	metadata := value.Metadata
+	if _, err := execContext(ctx, tx, `INSERT INTO hub_deployments(
+hub_id,deployment_id,credential_fingerprint,control_public_key,relay_control_public_key,region,public_label,relay_id,relay_credential_fingerprint,public_hub_url,health_url,max_assignments,identity_approved,enabled,draining,archived,directory_revision,last_control_generation,last_relay_control_generation,updated_at)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, metadata.GetHubId(), metadata.GetEdgeDeploymentId(), metadata.GetHubControlIdentityFingerprint(), []byte(value.ControlPublicKey), []byte(value.RelayControlPublicKey), metadata.GetRegion(), metadata.GetPublicLabel(), metadata.GetRelayId(), metadata.GetRelayControlIdentityFingerprint(), value.PublicHubURL, value.HealthURL, value.MaxAssignments, boolInt(value.IdentityApproved), boolInt(value.Enabled), boolInt(value.Draining), boolInt(value.Archived), value.DirectoryRevision, value.ControlGeneration, value.RelayControlGeneration, value.UpdatedAt.UTC().Format(time.RFC3339Nano)); err != nil {
+		return hubregistry.ErrDeploymentConflict
+	}
+	if err := insertHubOperatorAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// UpdateDeployment 用 directory revision CAS 保存目录或生命周期 mutation，并与 audit 同事务提交。
+func (store *Store) UpdateDeployment(ctx context.Context, value hubregistry.Deployment, expected uint64, audit *cloudpb.OperatorMutationAuditProjection) error {
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := execContext(ctx, tx, `UPDATE hub_deployments SET region=?,public_label=?,public_hub_url=?,health_url=?,max_assignments=?,identity_approved=?,enabled=?,draining=?,archived=?,directory_revision=?,updated_at=? WHERE hub_id=? AND directory_revision=? AND archived=0`, value.Metadata.GetRegion(), value.Metadata.GetPublicLabel(), value.PublicHubURL, value.HealthURL, value.MaxAssignments, boolInt(value.IdentityApproved), boolInt(value.Enabled), boolInt(value.Draining), boolInt(value.Archived), value.DirectoryRevision, value.UpdatedAt.UTC().Format(time.RFC3339Nano), value.Metadata.GetHubId(), expected)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return hubregistry.ErrDeploymentConflict
+	}
+	if err := insertHubOperatorAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ArchiveDeployment 在同一事务锁定 directory、检查有效 assignment 清零并保存 disable audit。
+func (store *Store) ArchiveDeployment(ctx context.Context, value hubregistry.Deployment, expected uint64, now time.Time, audit *cloudpb.OperatorMutationAuditProjection) error {
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var current uint64
+	if err := queryRowContext(ctx, tx, `SELECT directory_revision FROM hub_deployments WHERE hub_id=? FOR UPDATE`, value.Metadata.GetHubId()).Scan(&current); errors.Is(err, sql.ErrNoRows) {
+		return hubregistry.ErrDeploymentNotFound
+	} else if err != nil {
+		return err
+	}
+	if current != expected {
+		return hubregistry.ErrDeploymentConflict
+	}
+	var assignments uint64
+	if err := queryRowContext(ctx, tx, `SELECT COUNT(*) FROM hub_assignments WHERE hub_id=? AND expires_at_unix_millis>?`, value.Metadata.GetHubId(), now.UnixMilli()).Scan(&assignments); err != nil {
+		return err
+	}
+	if assignments != 0 {
+		return hubregistry.ErrDeploymentAssignmentsRemain
+	}
+	result, err := execContext(ctx, tx, `UPDATE hub_deployments SET enabled=0,archived=1,directory_revision=?,updated_at=? WHERE hub_id=? AND directory_revision=? AND enabled=1 AND draining=1 AND archived=0`, value.DirectoryRevision, value.UpdatedAt.UTC().Format(time.RFC3339Nano), value.Metadata.GetHubId(), expected)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return hubregistry.ErrDeploymentLifecycle
+	}
+	if err := insertHubOperatorAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func insertHubOperatorAudit(ctx context.Context, tx *sql.Tx, audit *cloudpb.OperatorMutationAuditProjection) error {
+	if audit == nil {
+		return hubregistry.ErrDeploymentConflict
+	}
+	body, err := marshal(audit)
+	if err != nil {
+		return err
+	}
+	if _, err := execContext(ctx, tx, `INSERT INTO operator_mutation_audit(audit_id,account_id,occurred_at,projection) VALUES(?,?,?,?)`, audit.GetAuditId(), audit.GetAccountId(), audit.GetOccurredAtUnixMillis(), body); err != nil {
+		return hubregistry.ErrDeploymentConflict
+	}
+	return nil
 }
 
 // Deployment 读取一个 Hub deployment 深拷贝。
@@ -189,9 +279,9 @@ func (store *Store) Deployment(ctx context.Context, hubID string) (hubregistry.D
 	var value hubregistry.Deployment
 	var metadata cloudpb.EdgeDeploymentMetadata
 	var publicKey, relayPublicKey []byte
-	var enabled int
+	var approved, enabled, draining, archived int
 	var updated string
-	err := queryRowContext(ctx, store.db, `SELECT deployment_id,credential_fingerprint,control_public_key,relay_control_public_key,region,public_label,relay_id,relay_credential_fingerprint,enabled,last_control_generation,last_relay_control_generation,updated_at FROM hub_deployments WHERE hub_id=?`, hubID).Scan(&metadata.EdgeDeploymentId, &metadata.HubControlIdentityFingerprint, &publicKey, &relayPublicKey, &metadata.Region, &metadata.PublicLabel, &metadata.RelayId, &metadata.RelayControlIdentityFingerprint, &enabled, &value.ControlGeneration, &value.RelayControlGeneration, &updated)
+	err := queryRowContext(ctx, store.db, `SELECT deployment_id,credential_fingerprint,control_public_key,relay_control_public_key,region,public_label,relay_id,relay_credential_fingerprint,public_hub_url,health_url,max_assignments,identity_approved,enabled,draining,archived,directory_revision,last_control_generation,last_relay_control_generation,updated_at FROM hub_deployments WHERE hub_id=?`, hubID).Scan(&metadata.EdgeDeploymentId, &metadata.HubControlIdentityFingerprint, &publicKey, &relayPublicKey, &metadata.Region, &metadata.PublicLabel, &metadata.RelayId, &metadata.RelayControlIdentityFingerprint, &value.PublicHubURL, &value.HealthURL, &value.MaxAssignments, &approved, &enabled, &draining, &archived, &value.DirectoryRevision, &value.ControlGeneration, &value.RelayControlGeneration, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return hubregistry.Deployment{}, hubregistry.ErrDeploymentNotFound
 	}
@@ -199,7 +289,8 @@ func (store *Store) Deployment(ctx context.Context, hubID string) (hubregistry.D
 		return hubregistry.Deployment{}, err
 	}
 	metadata.HubId = hubID
-	value.Metadata, value.ControlPublicKey, value.RelayControlPublicKey, value.Enabled = &metadata, append(ed25519.PublicKey(nil), publicKey...), append(ed25519.PublicKey(nil), relayPublicKey...), enabled != 0
+	value.Metadata, value.ControlPublicKey, value.RelayControlPublicKey = &metadata, append(ed25519.PublicKey(nil), publicKey...), append(ed25519.PublicKey(nil), relayPublicKey...)
+	value.IdentityApproved, value.Enabled, value.Draining, value.Archived = approved != 0, enabled != 0, draining != 0, archived != 0
 	value.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
 	return value, nil
 }
@@ -254,14 +345,14 @@ func (store *Store) AdvanceControlGeneration(ctx context.Context, hubID, deploym
 	}
 	defer tx.Rollback()
 	var storedDeployment, storedFingerprint string
-	var enabled int
+	var approved, enabled, archived int
 	var generation uint64
-	if err = queryRowContext(ctx, tx, `SELECT deployment_id,credential_fingerprint,enabled,last_control_generation FROM hub_deployments WHERE hub_id=? FOR UPDATE`, hubID).Scan(&storedDeployment, &storedFingerprint, &enabled, &generation); errors.Is(err, sql.ErrNoRows) {
+	if err = queryRowContext(ctx, tx, `SELECT deployment_id,credential_fingerprint,identity_approved,enabled,archived,last_control_generation FROM hub_deployments WHERE hub_id=? FOR UPDATE`, hubID).Scan(&storedDeployment, &storedFingerprint, &approved, &enabled, &archived, &generation); errors.Is(err, sql.ErrNoRows) {
 		return hubregistry.Deployment{}, hubregistry.ErrDeploymentNotFound
 	} else if err != nil {
 		return hubregistry.Deployment{}, err
 	}
-	if enabled == 0 {
+	if approved == 0 || enabled == 0 || archived != 0 {
 		return hubregistry.Deployment{}, hubregistry.ErrDeploymentNotFound
 	}
 	if storedDeployment != deploymentID || storedFingerprint != fingerprint {
@@ -280,12 +371,12 @@ func (store *Store) AdvanceControlGeneration(ctx context.Context, hubID, deploym
 // ControlGenerationCurrent 查询 handler generation 是否仍为 registry 当前值。
 func (store *Store) ControlGenerationCurrent(ctx context.Context, hubID string, generation uint64) (bool, error) {
 	var current uint64
-	var enabled int
-	err := queryRowContext(ctx, store.db, `SELECT last_control_generation,enabled FROM hub_deployments WHERE hub_id=?`, hubID).Scan(&current, &enabled)
+	var approved, enabled, archived int
+	err := queryRowContext(ctx, store.db, `SELECT last_control_generation,identity_approved,enabled,archived FROM hub_deployments WHERE hub_id=?`, hubID).Scan(&current, &approved, &enabled, &archived)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, hubregistry.ErrDeploymentNotFound
 	}
-	return err == nil && enabled != 0 && current == generation, err
+	return err == nil && approved != 0 && enabled != 0 && archived == 0 && current == generation, err
 }
 
 // AdvanceRelayControlGeneration 按 relay_id 校验独立 identity 并推进 Relay generation。
@@ -296,10 +387,10 @@ func (store *Store) AdvanceRelayControlGeneration(ctx context.Context, relayID, 
 	}
 	defer tx.Rollback()
 	var hubID, storedDeployment, storedFingerprint string
-	var enabled int
+	var approved, enabled, archived int
 	var generation uint64
-	err = queryRowContext(ctx, tx, `SELECT hub_id,deployment_id,relay_credential_fingerprint,enabled,last_relay_control_generation FROM hub_deployments WHERE relay_id=? FOR UPDATE`, relayID).Scan(&hubID, &storedDeployment, &storedFingerprint, &enabled, &generation)
-	if errors.Is(err, sql.ErrNoRows) || enabled == 0 {
+	err = queryRowContext(ctx, tx, `SELECT hub_id,deployment_id,relay_credential_fingerprint,identity_approved,enabled,archived,last_relay_control_generation FROM hub_deployments WHERE relay_id=? FOR UPDATE`, relayID).Scan(&hubID, &storedDeployment, &storedFingerprint, &approved, &enabled, &archived, &generation)
+	if errors.Is(err, sql.ErrNoRows) || approved == 0 || enabled == 0 || archived != 0 {
 		return hubregistry.Deployment{}, hubregistry.ErrDeploymentNotFound
 	}
 	if err != nil {
@@ -326,12 +417,12 @@ func (store *Store) AdvanceRelayControlGeneration(ctx context.Context, relayID, 
 // RelayControlGenerationCurrent 查询 Relay handler generation 是否仍为当前值。
 func (store *Store) RelayControlGenerationCurrent(ctx context.Context, relayID string, generation uint64) (bool, error) {
 	var current uint64
-	var enabled int
-	err := queryRowContext(ctx, store.db, `SELECT last_relay_control_generation,enabled FROM hub_deployments WHERE relay_id=?`, relayID).Scan(&current, &enabled)
+	var approved, enabled, archived int
+	err := queryRowContext(ctx, store.db, `SELECT last_relay_control_generation,identity_approved,enabled,archived FROM hub_deployments WHERE relay_id=?`, relayID).Scan(&current, &approved, &enabled, &archived)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, hubregistry.ErrDeploymentNotFound
 	}
-	return err == nil && enabled != 0 && current == generation, err
+	return err == nil && approved != 0 && enabled != 0 && archived == 0 && current == generation, err
 }
 
 // MoveAssignment 在单事务中执行 epoch 与跨 Hub fence/expiry 约束。
@@ -357,6 +448,26 @@ func (store *Store) MoveAssignment(ctx context.Context, next *cloudpb.HubAssignm
 		}
 	} else if next.GetAssignmentEpoch() != 1 {
 		return hubregistry.Assignment{}, hubregistry.ErrAssignmentConflict
+	}
+	var approved, enabled, draining, archived int
+	var maximum uint64
+	if err := queryRowContext(ctx, tx, `SELECT identity_approved,enabled,draining,archived,max_assignments FROM hub_deployments WHERE hub_id=? FOR UPDATE`, next.GetHubId()).Scan(&approved, &enabled, &draining, &archived, &maximum); errors.Is(err, sql.ErrNoRows) {
+		return hubregistry.Assignment{}, hubregistry.ErrDeploymentNotFound
+	} else if err != nil {
+		return hubregistry.Assignment{}, err
+	}
+	isRenewal := found && current.Value.GetHubId() == next.GetHubId()
+	if approved == 0 || enabled == 0 || archived != 0 || draining != 0 && !isRenewal || maximum == 0 {
+		return hubregistry.Assignment{}, hubregistry.ErrDeploymentLifecycle
+	}
+	if !isRenewal {
+		var assigned uint64
+		if err := queryRowContext(ctx, tx, `SELECT COUNT(*) FROM hub_assignments WHERE hub_id=? AND expires_at_unix_millis>?`, next.GetHubId(), now.UnixMilli()).Scan(&assigned); err != nil {
+			return hubregistry.Assignment{}, err
+		}
+		if assigned >= maximum {
+			return hubregistry.Assignment{}, hubregistry.ErrDeploymentLifecycle
+		}
 	}
 	_, err = execContext(ctx, tx, `INSERT INTO hub_assignments(daemon_device_id,account_id,hub_id,assignment_epoch,not_before_unix_millis,expires_at_unix_millis,fence_satisfied,previous_hub_id,previous_epoch,updated_at)
 VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(daemon_device_id) DO UPDATE SET account_id=excluded.account_id,hub_id=excluded.hub_id,assignment_epoch=excluded.assignment_epoch,not_before_unix_millis=excluded.not_before_unix_millis,expires_at_unix_millis=excluded.expires_at_unix_millis,fence_satisfied=excluded.fence_satisfied,previous_hub_id=excluded.previous_hub_id,previous_epoch=excluded.previous_epoch,updated_at=excluded.updated_at`, next.GetDaemonDeviceId(), next.GetAccountId(), next.GetHubId(), next.GetAssignmentEpoch(), next.GetNotBeforeUnixMillis(), next.GetExpiresAtUnixMillis(), 0, previousHub, previousEpoch, now.Format(time.RFC3339Nano))

@@ -207,7 +207,7 @@ func cloudRuntimeConfigurationFor(devManifest string, smoke bool) (cloudRuntimeC
 		return cloudRuntimeConfiguration{}, err
 	}
 	adapter, err := httpapi.New(httpapi.Config{
-		ControlPlaneURL: manifest.ControlPlaneURL, HubID: manifest.HubID, HubURL: manifest.HubURL, HubRegion: manifest.Region,
+		ControlPlaneURL: manifest.ControlPlaneURL,
 		AllowPublicHTTP: manifest.Profile == httpapi.ProfileStagingPublicHTTP, AllowPublicHTTPS: manifest.Profile == httpapi.ProfileStagingPublicHTTPS,
 	})
 	if err != nil {

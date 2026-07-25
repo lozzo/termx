@@ -359,7 +359,7 @@ func TestDaemonEnrollmentHubProposalIsProtoFirstAndControllerValidated(t *testin
 		}
 	}
 	candidateFields := descriptorFieldNames((&HubEnrollmentCandidate{}).ProtoReflect().Descriptor())
-	for _, required := range []string{"hub_id", "hub_url", "health_url", "region"} {
+	for _, required := range []string{"hub_id", "hub_url", "health_url", "region", "directory_revision"} {
 		if !candidateFields[required] {
 			t.Fatalf("HubEnrollmentCandidate missing %q: %v", required, candidateFields)
 		}
@@ -382,6 +382,44 @@ func TestDaemonEnrollmentHubProposalIsProtoFirstAndControllerValidated(t *testin
 			if strings.Contains(field, forbidden) {
 				t.Fatalf("client Hub observation owns forbidden field %q", field)
 			}
+		}
+	}
+}
+
+func TestHubDirectoryManagementIsProtoFirst(t *testing.T) {
+	directoryFields := descriptorFieldNames((&HubDeploymentProjection{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"metadata", "public_hub_url", "health_url", "max_assignments", "identity_approved", "enabled", "draining", "archived", "directory_revision", "updated_at_unix_millis"} {
+		if !directoryFields[required] {
+			t.Fatalf("HubDeploymentProjection missing %q: %v", required, directoryFields)
+		}
+	}
+	for _, message := range []proto.Message{
+		&CreateHubDeploymentRequest{},
+		&UpdateHubDeploymentRequest{},
+		&ApproveHubDeploymentIdentityRequest{},
+		&SetHubDeploymentDrainRequest{},
+		&DisableHubDeploymentRequest{},
+	} {
+		fields := descriptorFieldNames(message.ProtoReflect().Descriptor())
+		for _, required := range []string{"hub_id", "reason", "request_id"} {
+			if !fields[required] {
+				t.Fatalf("%s missing %q: %v", message.ProtoReflect().Descriptor().Name(), required, fields)
+			}
+		}
+		for field := range fields {
+			if strings.Contains(field, "private_key") {
+				t.Fatalf("%s exposes private key field %q", message.ProtoReflect().Descriptor().Name(), field)
+			}
+		}
+	}
+	for _, message := range []proto.Message{
+		&UpdateHubDeploymentRequest{},
+		&ApproveHubDeploymentIdentityRequest{},
+		&SetHubDeploymentDrainRequest{},
+		&DisableHubDeploymentRequest{},
+	} {
+		if !descriptorFieldNames(message.ProtoReflect().Descriptor())["expected_revision"] {
+			t.Fatalf("%s missing expected_revision", message.ProtoReflect().Descriptor().Name())
 		}
 	}
 }

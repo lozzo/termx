@@ -10,6 +10,7 @@ import (
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
 	cloudentitlement "github.com/muxvia/muxvia/private/cloud/control-plane/entitlement"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
 	cloudtopology "github.com/muxvia/muxvia/private/cloud/control-plane/topology"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -249,6 +250,18 @@ func writeManagementProto(w http.ResponseWriter, status int, value proto.Message
 		status = http.StatusNotFound
 		detail.Code = cloudpb.ManagementErrorCode_MANAGEMENT_ERROR_CODE_NOT_FOUND
 		detail.Message = "management target or command was not found"
+	case errors.Is(err, hubregistry.ErrDeploymentNotFound):
+		status = http.StatusNotFound
+		detail.Code = cloudpb.ManagementErrorCode_MANAGEMENT_ERROR_CODE_NOT_FOUND
+		detail.Message = "Hub deployment was not found"
+	case errors.Is(err, hubregistry.ErrDeploymentAssignmentsRemain):
+		status = http.StatusConflict
+		detail.Code = cloudpb.ManagementErrorCode_MANAGEMENT_ERROR_CODE_STALE_TARGET
+		detail.Message = "Hub still has active assignments; migrate and fence them before disabling"
+	case errors.Is(err, hubregistry.ErrDeploymentConflict), errors.Is(err, hubregistry.ErrDeploymentLifecycle), errors.Is(err, hubregistry.ErrDeploymentIdentity):
+		status = http.StatusConflict
+		detail.Code = cloudpb.ManagementErrorCode_MANAGEMENT_ERROR_CODE_STALE_TARGET
+		detail.Message = "Hub directory revision, identity, or lifecycle changed; reload and retry"
 	case errors.Is(err, commandoutbox.ErrCommandConflict):
 		status = http.StatusConflict
 		detail.Code = cloudpb.ManagementErrorCode_MANAGEMENT_ERROR_CODE_STALE_TARGET

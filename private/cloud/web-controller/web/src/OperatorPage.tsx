@@ -1,10 +1,15 @@
-import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
+import { create, fromJsonString, toJsonString, type DescMessage, type MessageShape } from "@bufbuild/protobuf";
 import { FieldMaskSchema } from "@bufbuild/protobuf/wkt";
 import {
   Building2,
+  Check,
+  Edit3,
   History,
   LogOut,
   PackageOpen,
+  PauseCircle,
+  Plus,
+  Power,
   ReceiptText,
   RefreshCw,
   Search,
@@ -22,6 +27,16 @@ import {
   GetOperatorAccountResponseSchema,
   ListHubFleetRequestSchema,
   ListHubFleetResponseSchema,
+  CreateHubDeploymentRequestSchema,
+  CreateHubDeploymentResponseSchema,
+  UpdateHubDeploymentRequestSchema,
+  UpdateHubDeploymentResponseSchema,
+  ApproveHubDeploymentIdentityRequestSchema,
+  ApproveHubDeploymentIdentityResponseSchema,
+  SetHubDeploymentDrainRequestSchema,
+  SetHubDeploymentDrainResponseSchema,
+  DisableHubDeploymentRequestSchema,
+  DisableHubDeploymentResponseSchema,
   ListOperatorAccountsRequestSchema,
   ListOperatorAccountsResponseSchema,
   ListOperatorOrdersRequestSchema,
@@ -90,6 +105,24 @@ import {
 } from "@/generated/cloudpb/cloud_topology_pb";
 import { ProtoHTTPError, protoPost } from "@/protoApi";
 
+type HubFormState = {
+  hubId: string;
+  edgeDeploymentId: string;
+  relayId: string;
+  region: string;
+  publicLabel: string;
+  publicHubUrl: string;
+  healthUrl: string;
+  maxAssignments: string;
+  hubControlPublicKey: string;
+  relayControlPublicKey: string;
+  reason: string;
+};
+
+const emptyHubForm: HubFormState = {
+  hubId: "", edgeDeploymentId: "", relayId: "", region: "", publicLabel: "", publicHubUrl: "", healthUrl: "", maxAssignments: "1000", hubControlPublicKey: "", relayControlPublicKey: "", reason: "",
+};
+
 export default function OperatorPage() {
   const [token, setToken] = useState("");
   const [authenticated, setAuthenticated] = useState(false);
@@ -125,6 +158,9 @@ export default function OperatorPage() {
   const [promotionReason, setPromotionReason] = useState("");
   const [paymentReasons, setPaymentReasons] = useState<Record<string, string>>({});
   const [reconcileReasons, setReconcileReasons] = useState<Record<string, string>>({});
+  const [hubForm, setHubForm] = useState<HubFormState>(emptyHubForm);
+  const [editingHubId, setEditingHubId] = useState("");
+  const [hubEdit, setHubEdit] = useState<Pick<HubFormState, "region" | "publicLabel" | "publicHubUrl" | "healthUrl" | "maxAssignments" | "reason">>({ region: "", publicLabel: "", publicHubUrl: "", healthUrl: "", maxAssignments: "", reason: "" });
   const [busy, setBusy] = useState(false);
   const catalogEditorRef = useRef<HTMLTextAreaElement>(null);
 
@@ -554,6 +590,83 @@ export default function OperatorPage() {
     }
   }
 
+  async function createHub(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await protoPost(
+        "/api/v1/operator/fleet/create",
+        CreateHubDeploymentRequestSchema,
+        create(CreateHubDeploymentRequestSchema, {
+          hubId: hubForm.hubId.trim(), edgeDeploymentId: hubForm.edgeDeploymentId.trim(), relayId: hubForm.relayId.trim(), region: hubForm.region.trim(), publicLabel: hubForm.publicLabel.trim(), publicHubUrl: hubForm.publicHubUrl.trim(), healthUrl: hubForm.healthUrl.trim(), maxAssignments: BigInt(hubForm.maxAssignments), hubControlPublicKey: decodeToken(hubForm.hubControlPublicKey.trim()), relayControlPublicKey: decodeToken(hubForm.relayControlPublicKey.trim()), reason: hubForm.reason.trim(), requestId: crypto.randomUUID(),
+        }),
+        CreateHubDeploymentResponseSchema,
+        "muxvia_cloud_operator_csrf",
+      );
+      setHubForm(emptyHubForm);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Hub creation failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function beginHubEdit(hub: NonNullable<ListHubFleetResponse["hubs"]>[number]) {
+    const deployment = hub.deployment;
+    if (!deployment?.metadata) return;
+    setEditingHubId(deployment.metadata.hubId);
+    setHubEdit({ region: deployment.metadata.region, publicLabel: deployment.metadata.publicLabel, publicHubUrl: deployment.publicHubUrl, healthUrl: deployment.healthUrl, maxAssignments: deployment.maxAssignments.toString(), reason: "" });
+  }
+
+  async function updateHub(event: FormEvent) {
+    event.preventDefault();
+    const deployment = fleet?.hubs.find((hub) => hub.deployment?.metadata?.hubId === editingHubId)?.deployment;
+    if (!deployment) return;
+    setBusy(true);
+    try {
+      await protoPost("/api/v1/operator/fleet/update", UpdateHubDeploymentRequestSchema, create(UpdateHubDeploymentRequestSchema, { hubId: editingHubId, expectedRevision: deployment.directoryRevision, region: hubEdit.region.trim(), publicLabel: hubEdit.publicLabel.trim(), publicHubUrl: hubEdit.publicHubUrl.trim(), healthUrl: hubEdit.healthUrl.trim(), maxAssignments: BigInt(hubEdit.maxAssignments), reason: hubEdit.reason.trim(), requestId: crypto.randomUUID() }), UpdateHubDeploymentResponseSchema, "muxvia_cloud_operator_csrf");
+      setEditingHubId("");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Hub update failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function approveHub(hubId: string) {
+    const deployment = fleet?.hubs.find((hub) => hub.deployment?.metadata?.hubId === hubId)?.deployment;
+    if (!deployment?.metadata) return;
+    await mutateHub("/api/v1/operator/fleet/approve", ApproveHubDeploymentIdentityRequestSchema, create(ApproveHubDeploymentIdentityRequestSchema, { hubId, expectedRevision: deployment.directoryRevision, hubControlIdentityFingerprint: deployment.metadata.hubControlIdentityFingerprint, relayControlIdentityFingerprint: deployment.metadata.relayControlIdentityFingerprint, reason: "Operator reviewed both Edge fingerprints", requestId: crypto.randomUUID() }), ApproveHubDeploymentIdentityResponseSchema);
+  }
+
+  async function setHubDrain(hubId: string, draining: boolean) {
+    const deployment = fleet?.hubs.find((hub) => hub.deployment?.metadata?.hubId === hubId)?.deployment;
+    if (!deployment) return;
+    await mutateHub("/api/v1/operator/fleet/drain", SetHubDeploymentDrainRequestSchema, create(SetHubDeploymentDrainRequestSchema, { hubId, expectedRevision: deployment.directoryRevision, draining, reason: draining ? "Operator started maintenance drain" : "Operator cancelled maintenance drain", requestId: crypto.randomUUID() }), SetHubDeploymentDrainResponseSchema);
+  }
+
+  async function disableHub(hubId: string) {
+    const deployment = fleet?.hubs.find((hub) => hub.deployment?.metadata?.hubId === hubId)?.deployment;
+    if (!deployment || !window.confirm(`Disable and archive ${hubId}? This cannot be undone.`)) return;
+    await mutateHub("/api/v1/operator/fleet/disable", DisableHubDeploymentRequestSchema, create(DisableHubDeploymentRequestSchema, { hubId, expectedRevision: deployment.directoryRevision, reason: "Operator completed drain and disabled deployment", requestId: crypto.randomUUID() }), DisableHubDeploymentResponseSchema);
+  }
+
+  async function mutateHub<Request extends DescMessage, Response extends DescMessage>(path: string, requestSchema: Request, request: MessageShape<Request>, responseSchema: Response) {
+    setBusy(true);
+    setError("");
+    try {
+      await protoPost(path, requestSchema, request, responseSchema, "muxvia_cloud_operator_csrf");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Hub operation failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function logout() {
     await protoPost(
       "/api/v1/operator/logout",
@@ -952,22 +1065,22 @@ export default function OperatorPage() {
                             .filter(
                               (hub) =>
                                 hub.hubReady &&
-                                hub.deployment?.hubId &&
-                                hub.deployment.hubId !== currentHubId,
+                                hub.deployment?.metadata?.hubId &&
+                                hub.deployment.metadata.hubId !== currentHubId,
                             )
                             .map((hub) => (
                               <Button
-                                key={hub.deployment?.hubId}
+                                key={hub.deployment?.metadata?.hubId}
                                 variant="outline"
-                                data-testid={`migrate-${device.deviceId}-${hub.deployment?.hubId}`}
+                                data-testid={`migrate-${device.deviceId}-${hub.deployment?.metadata?.hubId}`}
                                 onClick={() =>
                                   void migrateAssignment(
                                     device.deviceId,
-                                    hub.deployment?.hubId ?? "",
+                                    hub.deployment?.metadata?.hubId ?? "",
                                   )
                                 }
                               >
-                                Move to {hub.deployment?.publicLabel || hub.deployment?.hubId}
+                                Move to {hub.deployment?.metadata?.publicLabel || hub.deployment?.metadata?.hubId}
                               </Button>
                             ))}
                         <Button
@@ -1015,41 +1128,60 @@ export default function OperatorPage() {
         </section>
       </div>
       <section className="mt-5 border border-line bg-panel">
-        <h2 className="flex items-center gap-2 border-b border-line p-4 text-sm font-medium">
-          <Server className="size-4" />
-          Hub and Relay fleet
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line p-4">
+          <h2 className="flex items-center gap-2 text-sm font-medium"><Server className="size-4" />Hub and Relay fleet</h2>
+          <span className="font-mono text-[10px] text-muted-foreground">{fleet?.hubs.length ?? 0} deployments</span>
+        </div>
+        <details className="group border-b border-line" data-testid="hub-create-panel">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-4 py-3 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <Plus className="size-4" /> Add Hub deployment
+          </summary>
+          <form className="grid gap-3 border-t border-line p-4 md:grid-cols-2 xl:grid-cols-4" onSubmit={createHub}>
+            {([
+              ["Hub ID", "hubId"], ["Edge deployment ID", "edgeDeploymentId"], ["Relay ID", "relayId"], ["Region", "region"], ["Public label", "publicLabel"], ["Public Hub URL", "publicHubUrl"], ["Health URL", "healthUrl"], ["Capacity", "maxAssignments"], ["Hub control public key", "hubControlPublicKey"], ["Relay control public key", "relayControlPublicKey"], ["Change reason", "reason"],
+            ] as const).map(([label, field]) => (
+              <label className={field.includes("PublicKey") || field === "reason" ? "grid gap-1 xl:col-span-2" : "grid gap-1"} key={field}>
+                <span className="text-[10px] font-medium text-muted-foreground">{label}</span>
+                <Input required min={field === "maxAssignments" ? 1 : undefined} type={field === "maxAssignments" ? "number" : "text"} value={hubForm[field]} onChange={(event) => setHubForm((current) => ({ ...current, [field]: event.target.value }))} />
+              </label>
+            ))}
+            <div className="flex items-end xl:col-span-4">
+              <Button className="min-h-11" disabled={busy} type="submit"><Plus className="size-4" />Create pending deployment</Button>
+            </div>
+          </form>
+        </details>
         <div className="grid gap-3 p-4 lg:grid-cols-2">
-          {fleet?.hubs.map((hub) => (
-            <article
-              className="border border-line p-4"
-              key={hub.deployment?.hubId}
-            >
-              <div className="flex items-center justify-between">
-                <strong>
-                  {hub.deployment?.publicLabel || hub.deployment?.hubId}
-                </strong>
-                <span
-                  className={
-                    hub.freshness === Freshness.FRESH
-                      ? "text-success"
-                      : "text-warning"
-                  }
-                >
-                  {Freshness[hub.freshness]}
-                </span>
+          {fleet?.hubs.map((hub) => {
+            const deployment = hub.deployment;
+            const metadata = deployment?.metadata;
+            if (!deployment || !metadata) return null;
+            const lifecycle = deployment.archived ? "Archived" : !deployment.identityApproved ? "Pending approval" : deployment.draining ? "Draining" : deployment.enabled ? "Active" : "Disabled";
+            return <article className="border border-line p-4" data-testid={`hub-${metadata.hubId}`} key={metadata.hubId}>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <span><strong className="block">{metadata.publicLabel || metadata.hubId}</strong><small className="font-mono text-[10px] text-muted-foreground">{metadata.hubId} · {metadata.region}</small></span>
+                <span className={deployment.archived ? "text-muted-foreground" : deployment.draining || !deployment.identityApproved ? "text-warning" : "text-success"}>{lifecycle}</span>
               </div>
-              <p className="mt-3 font-mono text-[10px] text-muted-foreground">
-                Hub gen {hub.hubControlGeneration} / Relay gen{" "}
-                {hub.relayControlGeneration} / Projection{" "}
-                {hub.projectionRevision}
-              </p>
-              <p className="mt-2 text-xs">
-                Hub {hub.hubReady ? "ready" : "not ready"} · Relay{" "}
-                {hub.relayReady ? "ready" : "not ready"}
-              </p>
-            </article>
-          ))}
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                <div><dt className="text-muted-foreground">Assignments</dt><dd className="font-mono">{hub.activeAssignments} / {deployment.maxAssignments}</dd></div>
+                <div><dt className="text-muted-foreground">Directory revision</dt><dd className="font-mono">{deployment.directoryRevision}</dd></div>
+                <div><dt className="text-muted-foreground">Hub control</dt><dd>{hub.hubReady ? `Ready · gen ${hub.hubControlGeneration}` : "Not ready"}</dd></div>
+                <div><dt className="text-muted-foreground">Relay control</dt><dd>{hub.relayReady ? `Ready · gen ${hub.relayControlGeneration}` : "Not ready"}</dd></div>
+              </dl>
+              <p className="mt-3 break-all font-mono text-[10px] text-muted-foreground">{deployment.publicHubUrl}<br />{deployment.healthUrl}</p>
+              {!deployment.identityApproved && <div className="mt-3 border-t border-line pt-3 text-[10px] text-muted-foreground"><p className="break-all font-mono">Hub: {metadata.hubControlIdentityFingerprint}</p><p className="mt-1 break-all font-mono">Relay: {metadata.relayControlIdentityFingerprint}</p></div>}
+              <div className="mt-4 flex flex-wrap gap-2">
+                {!deployment.identityApproved && !deployment.archived && <Button className="min-h-11" disabled={busy} onClick={() => void approveHub(metadata.hubId)}><Check className="size-4" />Approve identity</Button>}
+                {deployment.identityApproved && deployment.enabled && !deployment.archived && <Button className="min-h-11" disabled={busy} variant="outline" onClick={() => void setHubDrain(metadata.hubId, !deployment.draining)}><PauseCircle className="size-4" />{deployment.draining ? "Cancel drain" : "Start drain"}</Button>}
+                {!deployment.archived && <Button className="min-h-11" disabled={busy} variant="outline" onClick={() => beginHubEdit(hub)}><Edit3 className="size-4" />Edit</Button>}
+                {!deployment.archived && deployment.draining && hub.activeAssignments === 0n && <Button className="min-h-11 text-destructive" disabled={busy} variant="outline" onClick={() => void disableHub(metadata.hubId)}><Power className="size-4" />Disable</Button>}
+              </div>
+              {editingHubId === metadata.hubId && <form className="mt-4 grid gap-3 border-t border-line pt-4 sm:grid-cols-2" onSubmit={updateHub}>
+                {([["Region", "region"], ["Public label", "publicLabel"], ["Public Hub URL", "publicHubUrl"], ["Health URL", "healthUrl"], ["Capacity", "maxAssignments"], ["Change reason", "reason"]] as const).map(([label, field]) => <label className="grid gap-1" key={field}><span className="text-[10px] text-muted-foreground">{label}</span><Input required min={field === "maxAssignments" ? 1 : undefined} type={field === "maxAssignments" ? "number" : "text"} value={hubEdit[field]} onChange={(event) => setHubEdit((current) => ({ ...current, [field]: event.target.value }))} /></label>)}
+                <div className="flex gap-2 sm:col-span-2"><Button className="min-h-11" disabled={busy} type="submit">Save directory</Button><Button className="min-h-11" type="button" variant="outline" onClick={() => setEditingHubId("")}>Cancel</Button></div>
+              </form>}
+            </article>;
+          })}
+          {!fleet?.hubs.length && <p className="text-sm text-muted-foreground">No Hub deployments. Add one to begin identity review.</p>}
         </div>
       </section>
     </main>

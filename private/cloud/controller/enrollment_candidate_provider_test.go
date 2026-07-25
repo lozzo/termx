@@ -30,20 +30,21 @@ func (attachments fakeEnrollmentAttachments) AttachmentStatus(hubID string) (uin
 }
 
 func TestEnrollmentCandidateProviderFiltersInactiveDisabledAndFullHubs(t *testing.T) {
-	configs := []DeploymentConfig{
-		enrollmentDeploymentConfig("hub-active", 2),
-		enrollmentDeploymentConfig("hub-inactive", 2),
-		enrollmentDeploymentConfig("hub-disabled", 2),
-		enrollmentDeploymentConfig("hub-full", 1),
+	deployments := []hubregistry.Deployment{
+		enrollmentDeployment("hub-active", 2),
+		enrollmentDeployment("hub-inactive", 2),
+		enrollmentDeployment("hub-disabled", 2),
+		enrollmentDeployment("hub-full", 1),
 	}
 	registry := fakeEnrollmentRegistry{assignments: map[string][]hubregistry.Assignment{
 		"hub-active": {{Value: &cloudpb.HubAssignment{DaemonDeviceId: "daemon-1"}}},
 		"hub-full":   {{Value: &cloudpb.HubAssignment{DaemonDeviceId: "daemon-2"}}},
 	}}
-	for _, config := range configs {
-		registry.deployments = append(registry.deployments, hubregistry.Deployment{Metadata: config.Metadata, Enabled: config.Metadata.GetHubId() != "hub-disabled"})
+	for _, deployment := range deployments {
+		deployment.Enabled = deployment.Metadata.GetHubId() != "hub-disabled"
+		registry.deployments = append(registry.deployments, deployment)
 	}
-	provider := enrollmentCandidateProvider(registry, fakeEnrollmentAttachments{"hub-active": true, "hub-disabled": true, "hub-full": true}, configs)
+	provider := enrollmentCandidateProvider(registry, fakeEnrollmentAttachments{"hub-active": true, "hub-disabled": true, "hub-full": true})
 	candidates, err := provider(context.Background(), time.Now(), "")
 	if err != nil {
 		t.Fatal(err)
@@ -54,12 +55,12 @@ func TestEnrollmentCandidateProviderFiltersInactiveDisabledAndFullHubs(t *testin
 }
 
 func TestEnrollmentCandidateProviderKeepsFullExistingHubOnlyForOwner(t *testing.T) {
-	config := enrollmentDeploymentConfig("hub-full", 1)
+	deployment := enrollmentDeployment("hub-full", 1)
 	registry := fakeEnrollmentRegistry{
-		deployments: []hubregistry.Deployment{{Metadata: config.Metadata, Enabled: true}},
+		deployments: []hubregistry.Deployment{deployment},
 		assignments: map[string][]hubregistry.Assignment{"hub-full": {{Value: &cloudpb.HubAssignment{DaemonDeviceId: "daemon-owner"}}}},
 	}
-	provider := enrollmentCandidateProvider(registry, fakeEnrollmentAttachments{"hub-full": true}, []DeploymentConfig{config})
+	provider := enrollmentCandidateProvider(registry, fakeEnrollmentAttachments{"hub-full": true})
 	if candidates, err := provider(context.Background(), time.Now(), ""); err != nil || len(candidates) != 0 {
 		t.Fatalf("new daemon full Hub candidates = (%v, %v)", candidates, err)
 	}
@@ -70,16 +71,14 @@ func TestEnrollmentCandidateProviderKeepsFullExistingHubOnlyForOwner(t *testing.
 }
 
 func TestEnrollmentCandidateProviderCapsStableCandidateListAtOneHundred(t *testing.T) {
-	configs := make([]DeploymentConfig, 0, 105)
 	registry := fakeEnrollmentRegistry{assignments: map[string][]hubregistry.Assignment{}}
 	attachments := fakeEnrollmentAttachments{}
 	for index := range 105 {
-		config := enrollmentDeploymentConfig(fmt.Sprintf("hub-%03d", index), 10)
-		configs = append(configs, config)
-		registry.deployments = append(registry.deployments, hubregistry.Deployment{Metadata: config.Metadata, Enabled: true})
-		attachments[config.Metadata.GetHubId()] = true
+		deployment := enrollmentDeployment(fmt.Sprintf("hub-%03d", index), 10)
+		registry.deployments = append(registry.deployments, deployment)
+		attachments[deployment.Metadata.GetHubId()] = true
 	}
-	provider := enrollmentCandidateProvider(registry, attachments, configs)
+	provider := enrollmentCandidateProvider(registry, attachments)
 	candidates, err := provider(context.Background(), time.Now(), "")
 	if err != nil {
 		t.Fatal(err)
@@ -89,6 +88,6 @@ func TestEnrollmentCandidateProviderCapsStableCandidateListAtOneHundred(t *testi
 	}
 }
 
-func enrollmentDeploymentConfig(hubID string, maximum uint64) DeploymentConfig {
-	return DeploymentConfig{Metadata: &cloudpb.EdgeDeploymentMetadata{HubId: hubID, Region: "test-1"}, PublicHubURL: "https://" + hubID + ".example.test", HealthURL: "https://" + hubID + ".example.test/healthz", MaxAssignments: maximum}
+func enrollmentDeployment(hubID string, maximum uint64) hubregistry.Deployment {
+	return hubregistry.Deployment{Metadata: &cloudpb.EdgeDeploymentMetadata{HubId: hubID, Region: "test-1"}, PublicHubURL: "https://" + hubID + ".example.test", HealthURL: "https://" + hubID + ".example.test/healthz", MaxAssignments: maximum, IdentityApproved: true, Enabled: true, DirectoryRevision: 1}
 }

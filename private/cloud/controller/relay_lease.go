@@ -61,13 +61,13 @@ func (source relaySessionSource) ManagedSession(ctx context.Context, accountID, 
 }
 
 type relayLeaseHTTPHandler struct {
-	service     *relaylease.Service
-	keyRing     *servicecredential.KeyRing
-	deployments map[string]*cloudpb.EdgeDeploymentMetadata
-	now         func() time.Time
+	service  *relaylease.Service
+	keyRing  *servicecredential.KeyRing
+	registry *hubregistry.Registry
+	now      func() time.Time
 }
 
-func newRelayLeaseHTTPHandler(store relayLeaseStore, topology *cloudtopology.Service, registry *hubregistry.Registry, signer servicecredential.Signer, deployments []DeploymentConfig) (*relayLeaseHTTPHandler, error) {
+func newRelayLeaseHTTPHandler(store relayLeaseStore, topology *cloudtopology.Service, registry *hubregistry.Registry, signer servicecredential.Signer) (*relayLeaseHTTPHandler, error) {
 	issuer, err := servicecredential.NewRelayLeaseIssuer("muxvia-cloud-controller-relay", signer)
 	if err != nil {
 		return nil, err
@@ -80,14 +80,7 @@ func newRelayLeaseHTTPHandler(store relayLeaseStore, topology *cloudtopology.Ser
 	if err != nil {
 		return nil, err
 	}
-	byHub := make(map[string]*cloudpb.EdgeDeploymentMetadata, len(deployments))
-	for _, deployment := range deployments {
-		if deployment.Metadata == nil || deployment.Metadata.GetHubId() == "" || deployment.Metadata.GetRelayId() == "" || deployment.Metadata.GetRegion() == "" {
-			return nil, errors.New("invalid Relay deployment metadata")
-		}
-		byHub[deployment.Metadata.GetHubId()] = proto.Clone(deployment.Metadata).(*cloudpb.EdgeDeploymentMetadata)
-	}
-	return &relayLeaseHTTPHandler{service: service, keyRing: keyRing, deployments: byHub, now: time.Now}, nil
+	return &relayLeaseHTTPHandler{service: service, keyRing: keyRing, registry: registry, now: time.Now}, nil
 }
 
 func (handler *relayLeaseHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -113,12 +106,13 @@ func (handler *relayLeaseHTTPHandler) ServeHTTP(writer http.ResponseWriter, requ
 		return
 	}
 	now := handler.now().UTC()
-	metadata := handler.deployments[payload.GetHubId()]
+	deployment, deploymentErr := handler.registry.Deployment(request.Context(), payload.GetHubId())
+	metadata := deployment.Metadata
 	claims, verifyErr := servicecredential.VerifyEdgeAccess(handler.keyRing, token, servicecredential.EdgeAccessExpectation{Issuer: "muxvia-cloud-controller", AudienceHubID: payload.GetHubId(), AccountID: payload.GetAccountId(), ClientDeviceID: payload.GetClientDeviceId(), PrincipalKind: servicecredential.EdgePrincipalClient}, now)
 	if verifyErr != nil {
 		claims, verifyErr = servicecredential.VerifyEdgeAccess(handler.keyRing, token, servicecredential.EdgeAccessExpectation{Issuer: "muxvia-cloud-controller", AudienceHubID: payload.GetHubId(), AccountID: payload.GetAccountId(), ClientDeviceID: payload.GetTargetDeviceId(), PrincipalKind: servicecredential.EdgePrincipalDaemon}, now)
 	}
-	if verifyErr != nil || metadata == nil || metadata.GetRelayId() != payload.GetRelayId() || metadata.GetRegion() != payload.GetRegion() {
+	if verifyErr != nil || deploymentErr != nil || !deployment.IdentityApproved || !deployment.Enabled || deployment.Archived || metadata == nil || metadata.GetRelayId() != payload.GetRelayId() || metadata.GetRegion() != payload.GetRegion() {
 		writeRelayLeaseError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Relay reservation authorization was rejected", false)
 		return
 	}

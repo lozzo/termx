@@ -133,8 +133,6 @@ func TestEmbeddedDevelopmentManifestSelectsNetworkAdapterWithoutRuntimeFile(t *t
 	}
 	embeddedManifest.Profile = httpapi.ProfileStagingPublicHTTP
 	embeddedManifest.ControlPlaneURL = "http://114.66.58.243:41101"
-	embeddedManifest.HubURL = "http://114.66.58.243:41102"
-	embeddedManifest.RelayURL = "turn:114.66.58.243:41003?transport=udp"
 	payload, err = json.Marshal(embeddedManifest)
 	if err != nil {
 		t.Fatal(err)
@@ -225,9 +223,7 @@ func writeDevManifest(t *testing.T) string {
 	}
 	manifest := httpapi.Manifest{
 		Version: httpapi.ManifestVersion, Profile: httpapi.ProfileDevLocal,
-		ControlPlaneURL: "http://127.0.0.1:41001", HubURL: "http://127.0.0.1:41002",
-		RelayURL: "turn:127.0.0.1:41003?transport=udp",
-		HubID:    "hub-dev", Region: "local-1", AccountLabel: "Dev Account",
+		ControlPlaneURL: "http://127.0.0.1:41001", AccountLabel: "Dev Account",
 		StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := json.NewEncoder(file).Encode(manifest); err != nil {

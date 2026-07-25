@@ -561,7 +561,7 @@ func (service *enrollmentService) complete(ctx context.Context, request *cloudpb
 	result := &cloudpb.DeviceEnrollmentServiceSession{
 		Session:     &cloudpb.CloudSessionSummary{AccountLabel: account.GetDisplayName(), AccountId: flowCopy.accountID, DeviceId: proof.GetDeviceId(), ExpiresAtUnix: uint64(sessionExpiresAt.Unix())},
 		AccessToken: accessToken, RefreshToken: refreshToken, RefreshExpiresAtUnixMillis: refreshExpiresAt,
-		HubId: selected.GetHubId(), HubUrl: selected.GetHubUrl(), HubRegion: selected.GetRegion(), HubDirectoryVersion: 1, ControlEnrollment: enrollment,
+		HubId: selected.GetHubId(), HubUrl: selected.GetHubUrl(), HubRegion: selected.GetRegion(), HubDirectoryVersion: selected.GetDirectoryRevision(), ControlEnrollment: enrollment,
 	}
 	service.completeDelivery(flowCopy.flowID, requestDigest[:], result)
 	completed = true

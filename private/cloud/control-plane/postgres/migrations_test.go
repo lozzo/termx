@@ -72,6 +72,19 @@ func TestCreemProviderMigrationDeclaresDurableReconciliationIndexes(t *testing.T
 	}
 }
 
+func TestHubDirectoryMigrationDeclaresLifecycleAndRevisionTruth(t *testing.T) {
+	body, err := os.ReadFile("migrations/0005_hub_directory.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(body)
+	for _, field := range []string{"public_hub_url", "health_url", "max_assignments", "identity_approved", "draining", "archived", "directory_revision"} {
+		if !strings.Contains(sql, "ADD COLUMN "+field) {
+			t.Fatalf("Hub directory migration is missing %s", field)
+		}
+	}
+}
+
 func TestPostgreSQLPlaceholderRebinding(t *testing.T) {
 	// Placeholder conversion is adapter-local，业务 query 不得自行拼接 PostgreSQL 参数编号。
 	if got := rebind("SELECT * FROM value WHERE a=? AND b=?"); got != "SELECT * FROM value WHERE a=$1 AND b=$2" {

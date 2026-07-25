@@ -26,7 +26,7 @@ import (
 const (
 	// ManifestVersion 是 dev-local runtime manifest 的当前 schema 版本。
 	// 读取方必须精确匹配该版本，未知版本不得按旧字段集合继续连接。
-	ManifestVersion = 2
+	ManifestVersion = 3
 	// ProfileDevLocal 是允许 loopback 明文 HTTP 与固定开发账号的唯一 profile 名称。
 	// production channel 必须拒绝该 profile，不能把它当作默认或 fallback 配置。
 	ProfileDevLocal = "dev-local"
@@ -84,17 +84,12 @@ const (
 	HubListManagedDevicesPath = "/v1/devices/list"
 )
 
-// Manifest 是 development Cloud 的非生产运行描述。
-// 它可以来自 `make cloud-dev` 的 runtime 文件，也可以在显式测试构建时固化进 Companion；
-// 只允许包含 service 地址和公开 profile metadata，不得包含 cloud session、refresh secret 或 daemon secret。
+// Manifest 是 development Cloud 的非生产 Controller bootstrap 描述。
+// Hub/Relay 目录只能由登录、refresh 或 enrollment 响应动态下发，manifest 不持有 fleet snapshot。
 type Manifest struct {
 	Version          uint32 `json:"version"`
 	Profile          string `json:"profile"`
 	ControlPlaneURL  string `json:"control_plane_url"`
-	HubURL           string `json:"hub_url"`
-	RelayURL         string `json:"relay_url"`
-	HubID            string `json:"hub_id"`
-	Region           string `json:"region"`
 	AccountLabel     string `json:"account_label"`
 	StartedAtRFC3339 string `json:"started_at"`
 }
@@ -121,7 +116,7 @@ func ParseManifest(data []byte) (Manifest, error) {
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return Manifest{}, fmt.Errorf("dev cloud manifest has trailing data")
 	}
-	if manifest.Version != ManifestVersion || manifest.Profile != ProfileDevLocal && manifest.Profile != ProfileStagingSSH && manifest.Profile != ProfileStagingPublicHTTP && manifest.Profile != ProfileStagingPublicHTTPS || manifest.HubID == "" || manifest.Region == "" || manifest.AccountLabel == "" {
+	if manifest.Version != ManifestVersion || manifest.Profile != ProfileDevLocal && manifest.Profile != ProfileStagingSSH && manifest.Profile != ProfileStagingPublicHTTP && manifest.Profile != ProfileStagingPublicHTTPS || manifest.AccountLabel == "" {
 		return Manifest{}, fmt.Errorf("invalid dev cloud manifest metadata")
 	}
 	allowPublicHTTP := manifest.Profile == ProfileStagingPublicHTTP
@@ -129,36 +124,10 @@ func ParseManifest(data []byte) (Manifest, error) {
 	if _, err := validateServiceURL(manifest.ControlPlaneURL, allowPublicHTTP, allowPublicHTTPS); err != nil {
 		return Manifest{}, fmt.Errorf("invalid dev Control Plane URL: %w", err)
 	}
-	if _, err := validateServiceURL(manifest.HubURL, allowPublicHTTP, allowPublicHTTPS); err != nil {
-		return Manifest{}, fmt.Errorf("invalid dev Hub URL: %w", err)
-	}
-	if err := validateTURNURL(manifest.RelayURL, manifest.Profile == ProfileStagingSSH || allowPublicHTTP || allowPublicHTTPS); err != nil {
-		return Manifest{}, fmt.Errorf("invalid dev Relay URL: %w", err)
-	}
 	if _, err := time.Parse(time.RFC3339, manifest.StartedAtRFC3339); err != nil {
 		return Manifest{}, fmt.Errorf("invalid dev cloud start time")
 	}
 	return manifest, nil
-}
-
-func validateTURNURL(raw string, allowPublicIP bool) error {
-	if raw == "" || raw != strings.TrimSpace(raw) || !strings.HasPrefix(strings.ToLower(raw), "turn:") {
-		return fmt.Errorf("URL must be a canonical TURN UDP URL")
-	}
-	address, query, ok := strings.Cut(raw[len("turn:"):], "?")
-	if !ok || query != "transport=udp" {
-		return fmt.Errorf("URL must require UDP transport")
-	}
-	host, port, err := net.SplitHostPort(address)
-	portNumber, portErr := strconv.Atoi(port)
-	if err != nil || portErr != nil || portNumber < 1 || portNumber > 65535 {
-		return fmt.Errorf("URL must include a Relay host and port")
-	}
-	ip := net.ParseIP(host)
-	if host != "localhost" && (ip == nil || !ip.IsLoopback()) && !(allowPublicIP && ip != nil && !ip.IsUnspecified()) {
-		return fmt.Errorf("URL host must match the staging profile")
-	}
-	return nil
 }
 
 // SessionWire 是 Control Plane 返回给 Companion 的 private cloud session。

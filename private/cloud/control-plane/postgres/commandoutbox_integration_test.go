@@ -2,11 +2,14 @@ package postgres_test
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
 	cloudpostgres "github.com/muxvia/muxvia/private/cloud/control-plane/postgres"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
@@ -75,6 +78,14 @@ func TestAssignmentMigrationResultMovesAssignmentAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
+	for _, hubID := range []string{"hub-a", "hub-b"} {
+		hubKey, _, _ := ed25519.GenerateKey(rand.Reader)
+		relayKey, _, _ := ed25519.GenerateKey(rand.Reader)
+		metadata := &cloudpb.EdgeDeploymentMetadata{HubId: hubID, EdgeDeploymentId: "edge-" + hubID, Region: "local", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubKey), RelayId: "relay-" + hubID, RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(relayKey)}
+		if err := store.PutDeployment(context.Background(), hubregistry.Deployment{Metadata: metadata, ControlPublicKey: hubKey, RelayControlPublicKey: relayKey, MaxAssignments: 100, IdentityApproved: true, Enabled: true, DirectoryRevision: 1, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if _, err := store.MoveAssignment(context.Background(), &cloudpb.HubAssignment{DaemonDeviceId: "daemon-1", AccountId: "account-1", HubId: "hub-a", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}, now); err != nil {
 		t.Fatal(err)
 	}

@@ -19,13 +19,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Config 固定显式 development staging Control Plane/Hub origin 与 HTTP transport client。
+// Config 固定显式 development staging Control Plane origin 与 HTTP transport client。
 // 默认必须是 loopback；公网 HTTP/HTTPS 开关只能来自对应且已验证的 staging manifest。
 type Config struct {
 	ControlPlaneURL  string
-	HubID            string
-	HubURL           string
-	HubRegion        string
 	AllowPublicHTTP  bool
 	AllowPublicHTTPS bool
 	HTTPClient       *http.Client
@@ -36,9 +33,6 @@ type Config struct {
 // 它通过真实 HTTP socket 交换 cloud contract，不 import 或调用 Control Plane/Hub 进程内 Service。
 type Adapter struct {
 	controlURL       string
-	hubID            string
-	hubURL           string
-	hubRegion        string
 	client           *http.Client
 	now              func() time.Time
 	allowPublicHTTP  bool
@@ -52,10 +46,6 @@ func New(config Config) (*Adapter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid dev Control Plane adapter: %w", err)
 	}
-	hub, err := validateServiceURL(config.HubURL, config.AllowPublicHTTP, config.AllowPublicHTTPS)
-	if err != nil {
-		return nil, fmt.Errorf("invalid dev Hub adapter: %w", err)
-	}
 	baseClient := config.HTTPClient
 	if baseClient == nil {
 		baseClient = &http.Client{}
@@ -67,9 +57,6 @@ func New(config Config) (*Adapter, error) {
 	}
 	return &Adapter{
 		controlURL:       strings.TrimSuffix(control.String(), "/"),
-		hubID:            strings.TrimSpace(config.HubID),
-		hubURL:           strings.TrimSuffix(hub.String(), "/"),
-		hubRegion:        strings.TrimSpace(config.HubRegion),
 		client:           &client,
 		now:              config.Now,
 		allowPublicHTTP:  config.AllowPublicHTTP,
@@ -92,7 +79,7 @@ func (adapter *Adapter) CompleteLogin(ctx context.Context, request *cloudpb.Comp
 	if err != nil {
 		return session.Session{}, err
 	}
-	if err := adapter.completeHubDirectory(&wire); err != nil {
+	if err := adapter.validateDynamicHubDirectory(wire.HubID, wire.HubURL, wire.HubRegion); err != nil {
 		return session.Session{}, err
 	}
 	return sessionFromWire(wire, adapter.now())
@@ -146,11 +133,7 @@ func (adapter *Adapter) RefreshSession(ctx context.Context, authorization sessio
 	if decodeJSON(response.Body, &wire) != nil {
 		return session.Session{}, protocolNetworkError("Control Plane returned an invalid refreshed session")
 	}
-	if authorization.Metadata().Kind == session.KindDevice {
-		if err := adapter.validateDynamicHubDirectory(wire.HubID, wire.HubURL, wire.HubRegion); err != nil {
-			return session.Session{}, err
-		}
-	} else if err := adapter.completeHubDirectory(&wire); err != nil {
+	if err := adapter.validateDynamicHubDirectory(wire.HubID, wire.HubURL, wire.HubRegion); err != nil {
 		return session.Session{}, err
 	}
 	return sessionFromWire(wire, adapter.now())
@@ -163,25 +146,6 @@ func (adapter *Adapter) validateDynamicHubDirectory(hubID, hubURL, hubRegion str
 	parsed, err := validateServiceURL(hubURL, adapter.allowPublicHTTP, adapter.allowPublicHTTPS)
 	if err != nil || strings.TrimSuffix(parsed.String(), "/") != strings.TrimSuffix(hubURL, "/") {
 		return protocolNetworkError("Control Plane returned an invalid dynamic Hub directory")
-	}
-	return nil
-}
-
-func (adapter *Adapter) completeHubDirectory(wire *SessionWire) error {
-	if wire == nil || wire.HubID == "" {
-		return protocolNetworkError("Control Plane returned an incomplete Hub directory")
-	}
-	if adapter.hubID != "" && wire.HubID != adapter.hubID {
-		return protocolNetworkError("Control Plane returned a mismatched Hub directory")
-	}
-	if wire.HubURL != "" && wire.HubURL != adapter.hubURL || wire.HubRegion != "" && wire.HubRegion != adapter.hubRegion {
-		return protocolNetworkError("Control Plane returned a mismatched Hub directory")
-	}
-	if wire.HubURL == "" {
-		wire.HubURL = adapter.hubURL
-	}
-	if wire.HubRegion == "" {
-		wire.HubRegion = adapter.hubRegion
 	}
 	return nil
 }
@@ -323,15 +287,12 @@ func (adapter *Adapter) doEdgeHub(ctx context.Context, path string, authorizatio
 		return nil, err
 	}
 	defer clear(envelope)
-	hubURL := adapter.hubURL
-	if metadata.HubURL != "" {
-		// Controller 签发并写入私有 session 的 owning Hub 是多 Hub 路由真值；manifest 只提供旧会话的启动 fallback。
-		parsed, validateErr := validateServiceURL(metadata.HubURL, adapter.allowPublicHTTP, adapter.allowPublicHTTPS)
-		if validateErr != nil || strings.TrimSuffix(parsed.String(), "/") != strings.TrimSuffix(metadata.HubURL, "/") {
-			return nil, protocolNetworkError("cloud session contains an invalid dynamic Hub directory")
-		}
-		hubURL = strings.TrimSuffix(parsed.String(), "/")
+	// Controller 签发并写入私有 session 的 Hub directory 是唯一客户端路由真值。
+	parsed, validateErr := validateServiceURL(metadata.HubURL, adapter.allowPublicHTTP, adapter.allowPublicHTTPS)
+	if validateErr != nil || strings.TrimSuffix(parsed.String(), "/") != strings.TrimSuffix(metadata.HubURL, "/") {
+		return nil, protocolNetworkError("cloud session contains an invalid dynamic Hub directory")
 	}
+	hubURL := strings.TrimSuffix(parsed.String(), "/")
 	return adapter.do(ctx, hubURL+path, authorization, JSONMediaType, envelope)
 }
 

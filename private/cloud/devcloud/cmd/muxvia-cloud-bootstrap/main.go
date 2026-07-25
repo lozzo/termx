@@ -203,7 +203,7 @@ func generate(ctx context.Context, value options, deploymentDSN string) error {
 
 	type edgeMaterial struct {
 		config     edge.Config
-		deployment controller.DeploymentConfig
+		deployment hubregistry.Deployment
 	}
 	makeEdge := func(edgeID, region, label, hubID, relayID, publicHubURL, publicIP string) (edgeMaterial, error) {
 		hubPublic, hubPrivate, err := ed25519.GenerateKey(rand.Reader)
@@ -220,7 +220,7 @@ func generate(ctx context.Context, value options, deploymentDSN string) error {
 			RelayId:                       relayID, RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(relayPublic),
 		}
 		return edgeMaterial{
-			deployment: controller.DeploymentConfig{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic), PublicHubURL: publicHubURL, HealthURL: strings.TrimSuffix(publicHubURL, "/") + "/healthz", MaxAssignments: 10_000},
+			deployment: hubregistry.Deployment{Metadata: metadata, ControlPublicKey: hubPublic, RelayControlPublicKey: relayPublic, PublicHubURL: publicHubURL, HealthURL: strings.TrimSuffix(publicHubURL, "/") + "/healthz", MaxAssignments: 10_000, Enabled: true, UpdatedAt: now},
 			config: edge.Config{
 				ControllerURL: value.controllerURL, PublicHubURL: publicHubURL,
 				HubListen: "127.0.0.1:42101", HealthListen: "127.0.0.1:42102", RelayListen: "0.0.0.0:41003", RelayPublicIP: publicIP,
@@ -239,13 +239,18 @@ func generate(ctx context.Context, value options, deploymentDSN string) error {
 	if err != nil {
 		return err
 	}
+	directoryRegistry, _ := hubregistry.New(store)
+	for _, deployment := range []hubregistry.Deployment{primary.deployment, secondary.deployment} {
+		if err := directoryRegistry.RegisterDeployment(ctx, deployment); err != nil {
+			return err
+		}
+	}
 	controllerConfig := controller.Config{
 		PostgresDSN: deploymentDSN, PublicListen: "127.0.0.1:42001", InternalControlListen: "127.0.0.1:42002", OperatorListen: "127.0.0.1:42003",
 		CatalogPath: "/opt/muxvia/config/plans.json", ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate),
 		CredentialNotBeforeUnixMillis: notBefore.UnixMilli(), CredentialNotAfterUnixMillis: notAfter.UnixMilli(),
 		DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate),
-		Deployments: []controller.DeploymentConfig{primary.deployment, secondary.deployment}, EnableTestPaymentProvider: value.creemEnvironment == "",
-		DevelopmentMobileHubID: primary.deployment.Metadata.GetHubId(), DevelopmentMobileHubURL: value.primaryHubURL, DevelopmentMobileHubRegion: primary.deployment.Metadata.GetRegion(),
+		EnableTestPaymentProvider: value.creemEnvironment == "", DevelopmentMobileHubID: primary.deployment.Metadata.GetHubId(),
 		OperatorID: "bootstrap-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes),
 		SecureCookie: true, WebStaticDir: "/opt/muxvia/web",
 	}
@@ -265,10 +270,8 @@ func generate(ctx context.Context, value options, deploymentDSN string) error {
 		},
 		"companion-manifest.json": httpapi.Manifest{
 			Version: httpapi.ManifestVersion, Profile: httpapi.ProfileStagingPublicHTTPS,
-			ControlPlaneURL: value.publicURL, HubURL: value.primaryHubURL,
-			RelayURL: "turn:" + value.primaryPublicIP + ":41003?transport=udp",
-			HubID:    primary.deployment.Metadata.GetHubId(), Region: primary.deployment.Metadata.GetRegion(),
-			AccountLabel: value.bootstrapEmail, StartedAtRFC3339: now.Format(time.RFC3339),
+			ControlPlaneURL: value.publicURL,
+			AccountLabel:    value.bootstrapEmail, StartedAtRFC3339: now.Format(time.RFC3339),
 		},
 	}
 	for name, asset := range assets {

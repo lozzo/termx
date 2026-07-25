@@ -14,40 +14,21 @@ func TestRepositoryStagingPublicManifestMatchesStrictContract(t *testing.T) {
 	}
 }
 
-func TestLoadManifestAllowsPublicTURNOnlyForStagingSSH(t *testing.T) {
-	manifest := Manifest{
-		Version: ManifestVersion, Profile: ProfileStagingSSH,
-		ControlPlaneURL: "http://127.0.0.1:42001", HubURL: "http://127.0.0.1:42002",
-		RelayURL: "turn:114.66.58.243:41003?transport=udp", HubID: "hub", Region: "region",
-		AccountLabel: "staging", StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
-	}
-	path := filepath.Join(t.TempDir(), "runtime.json")
-	payload, err := json.Marshal(manifest)
+func TestManifestRejectsStaticHubDirectoryFields(t *testing.T) {
+	payload, err := json.Marshal(map[string]any{"version": ManifestVersion, "profile": ProfileDevLocal, "control_plane_url": "http://127.0.0.1:42001", "hub_url": "http://127.0.0.1:42002", "account_label": "staging", "started_at": time.Now().UTC().Format(time.RFC3339)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, payload, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadManifest(path); err != nil {
-		t.Fatal(err)
-	}
-	manifest.Profile = ProfileDevLocal
-	payload, _ = json.Marshal(manifest)
-	if err := os.WriteFile(path, payload, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadManifest(path); err == nil {
-		t.Fatal("dev-local manifest accepted a public TURN address")
+	if _, err := ParseManifest(payload); err == nil {
+		t.Fatal("manifest accepted a static Hub directory")
 	}
 }
 
 func TestLoadManifestAllowsPublicHTTPOnlyForExplicitStagingProfile(t *testing.T) {
 	manifest := Manifest{
 		Version: ManifestVersion, Profile: ProfileStagingPublicHTTP,
-		ControlPlaneURL: "http://114.66.58.243:41101", HubURL: "http://114.66.58.243:41102",
-		RelayURL: "turn:114.66.58.243:41003?transport=udp", HubID: "hub", Region: "region",
-		AccountLabel: "public-http-test-only", StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
+		ControlPlaneURL: "http://114.66.58.243:41101",
+		AccountLabel:    "public-http-test-only", StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
 	}
 	path := filepath.Join(t.TempDir(), "runtime.json")
 	payload, _ := json.Marshal(manifest)
@@ -70,9 +51,8 @@ func TestLoadManifestAllowsPublicHTTPOnlyForExplicitStagingProfile(t *testing.T)
 func TestLoadManifestAllowsPublicHTTPSOnlyForExplicitStagingProfile(t *testing.T) {
 	manifest := Manifest{
 		Version: ManifestVersion, Profile: ProfileStagingPublicHTTPS,
-		ControlPlaneURL: "https://muxvia.com", HubURL: "https://cn1.edge.muxvia.com:41102",
-		RelayURL: "turn:114.66.58.243:41003?transport=udp", HubID: "hub", Region: "region",
-		AccountLabel: "public-https-test-only", StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
+		ControlPlaneURL: "https://muxvia.com",
+		AccountLabel:    "public-https-test-only", StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
 	}
 	payload, _ := json.Marshal(manifest)
 	if _, err := ParseManifest(payload); err != nil {

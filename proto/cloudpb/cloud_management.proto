@@ -544,9 +544,24 @@ message ListManagementCommandsResponse {
   PageResponse page = 2;
 }
 
-// HubFleetProjection 是 operator 可见的 Hub control/readiness 摘要。
+// HubDeploymentProjection 是 PostgreSQL 持有的单个 Hub directory 真值。
+// control attachment/readiness 不写入该投影，避免把进程内在线观察变成数据库状态。
+message HubDeploymentProjection {
+  EdgeDeploymentMetadata metadata = 1;
+  string public_hub_url = 2;
+  string health_url = 3;
+  uint64 max_assignments = 4;
+  bool identity_approved = 5;
+  bool enabled = 6;
+  bool draining = 7;
+  bool archived = 8;
+  uint64 directory_revision = 9;
+  int64 updated_at_unix_millis = 10;
+}
+
+// HubFleetProjection 是 operator 可见的持久目录与进程内 control/readiness 组合摘要。
 message HubFleetProjection {
-  EdgeDeploymentMetadata deployment = 1;
+  HubDeploymentProjection deployment = 1;
   uint64 hub_control_generation = 2;
   uint64 relay_control_generation = 3;
   uint64 projection_revision = 4;
@@ -554,6 +569,7 @@ message HubFleetProjection {
   bool hub_ready = 6;
   bool relay_ready = 7;
   int64 last_control_seen_at_unix_millis = 8;
+  uint64 active_assignments = 9;
 }
 
 // ListHubFleetRequest 是 operator-only fleet 查询。
@@ -577,4 +593,80 @@ message GetHubStatusRequest {
 // GetHubStatusResponse 返回 Hub/Relay 独立 generation 的组合展示。
 message GetHubStatusResponse {
   HubFleetProjection hub = 1;
+}
+
+// CreateHubDeploymentRequest 创建尚未批准的 Hub directory 与公钥身份。
+message CreateHubDeploymentRequest {
+  string hub_id = 1;
+  string edge_deployment_id = 2;
+  string relay_id = 3;
+  string region = 4;
+  string public_label = 5;
+  string public_hub_url = 6;
+  string health_url = 7;
+  uint64 max_assignments = 8;
+  bytes hub_control_public_key = 9;
+  bytes relay_control_public_key = 10;
+  string reason = 11;
+  string request_id = 12;
+}
+
+message CreateHubDeploymentResponse {
+  HubDeploymentProjection deployment = 1;
+}
+
+// UpdateHubDeploymentRequest 只更新目录属性，不改变 Hub/Relay identity 或 assignment epoch。
+message UpdateHubDeploymentRequest {
+  string hub_id = 1;
+  uint64 expected_revision = 2;
+  string region = 3;
+  string public_label = 4;
+  string public_hub_url = 5;
+  string health_url = 6;
+  uint64 max_assignments = 7;
+  string reason = 8;
+  string request_id = 9;
+}
+
+message UpdateHubDeploymentResponse {
+  HubDeploymentProjection deployment = 1;
+}
+
+// ApproveHubDeploymentIdentityRequest 核对待批准 identity fingerprint 后允许启用。
+message ApproveHubDeploymentIdentityRequest {
+  string hub_id = 1;
+  uint64 expected_revision = 2;
+  string hub_control_identity_fingerprint = 3;
+  string relay_control_identity_fingerprint = 4;
+  string reason = 5;
+  string request_id = 6;
+}
+
+message ApproveHubDeploymentIdentityResponse {
+  HubDeploymentProjection deployment = 1;
+}
+
+// SetHubDeploymentDrainRequest 原子控制新 assignment 准入；已有 assignment 必须显式迁移并 fence。
+message SetHubDeploymentDrainRequest {
+  string hub_id = 1;
+  uint64 expected_revision = 2;
+  bool draining = 3;
+  string reason = 4;
+  string request_id = 5;
+}
+
+message SetHubDeploymentDrainResponse {
+  HubDeploymentProjection deployment = 1;
+}
+
+// DisableHubDeploymentRequest 仅允许在 assignment 清零后禁用并 archive deployment。
+message DisableHubDeploymentRequest {
+  string hub_id = 1;
+  uint64 expected_revision = 2;
+  string reason = 3;
+  string request_id = 4;
+}
+
+message DisableHubDeploymentResponse {
+  HubDeploymentProjection deployment = 1;
 }

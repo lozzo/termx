@@ -14,11 +14,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -48,16 +46,6 @@ const (
 	projectionRefreshInterval = 10 * time.Minute
 )
 
-// DeploymentConfig 绑定一个 Hub deployment metadata 与其独立 control public key。
-type DeploymentConfig struct {
-	Metadata                    *cloudpb.EdgeDeploymentMetadata `json:"metadata"`
-	HubControlPublicKeyBase64   string                          `json:"hub_control_public_key_base64"`
-	RelayControlPublicKeyBase64 string                          `json:"relay_control_public_key_base64"`
-	PublicHubURL                string                          `json:"public_hub_url"`
-	HealthURL                   string                          `json:"health_url"`
-	MaxAssignments              uint64                          `json:"max_assignments"`
-}
-
 // Config 是 Controller development composition 的显式配置。
 type Config struct {
 	PostgresDSN                string `json:"postgres_dsn"`
@@ -73,7 +61,6 @@ type Config struct {
 	CredentialNotAfterUnixMillis  int64                        `json:"credential_not_after_unix_millis"`
 	DaemonControlKeyID            string                       `json:"daemon_control_key_id"`
 	DaemonControlPrivateKeyBase64 string                       `json:"daemon_control_private_key_base64"`
-	Deployments                   []DeploymentConfig           `json:"deployments"`
 	Devices                       []*cloudpb.CloudDevicePolicy `json:"devices"`
 	Assignments                   []*cloudpb.HubAssignment     `json:"assignments"`
 	EnableTestPaymentProvider     bool                         `json:"enable_test_payment_provider"`
@@ -82,8 +69,6 @@ type Config struct {
 	CreemAPIKey                   string                       `json:"-"`
 	CreemWebhookSecret            string                       `json:"-"`
 	DevelopmentMobileHubID        string                       `json:"development_mobile_hub_id"`
-	DevelopmentMobileHubURL       string                       `json:"development_mobile_hub_url"`
-	DevelopmentMobileHubRegion    string                       `json:"development_mobile_hub_region"`
 	OperatorID                    string                       `json:"operator_id"`
 	OperatorRole                  string                       `json:"operator_role"`
 	OperatorAccessTokenBase64     string                       `json:"operator_access_token_base64"`
@@ -93,12 +78,11 @@ type Config struct {
 
 // Manifest 是 supervisor 和 E2E harness 使用的非秘密 Controller 进程描述。
 type Manifest struct {
-	PID                int      `json:"pid"`
-	PublicURL          string   `json:"public_url"`
-	InternalControlURL string   `json:"internal_control_url"`
-	OperatorURL        string   `json:"operator_url"`
-	DatabaseEngine     string   `json:"database_engine"`
-	HubIDs             []string `json:"hub_ids"`
+	PID                int    `json:"pid"`
+	PublicURL          string `json:"public_url"`
+	InternalControlURL string `json:"internal_control_url"`
+	OperatorURL        string `json:"operator_url"`
+	DatabaseEngine     string `json:"database_engine"`
 }
 
 // Runtime 持有 Controller listener、persistent store 与 control publisher 生命周期。
@@ -144,20 +128,11 @@ func Start(config Config) (*Runtime, error) {
 }
 
 func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
-	if config.PostgresDSN == "" || config.CatalogPath == "" || config.ProjectionKeyID == "" || config.DaemonControlKeyID == "" || len(config.Deployments) < 1 {
-		return nil, fmt.Errorf("Controller database, catalog, projection key, daemon control key and deployments are required")
-	}
-	for _, deployment := range config.Deployments {
-		if err := validateDeploymentDirectory(deployment); err != nil {
-			return nil, err
-		}
+	if config.PostgresDSN == "" || config.CatalogPath == "" || config.ProjectionKeyID == "" || config.DaemonControlKeyID == "" {
+		return nil, fmt.Errorf("Controller database, catalog, projection key and daemon control key are required")
 	}
 	if refreshInterval <= 0 || refreshInterval >= projectionTTL {
 		return nil, fmt.Errorf("Controller projection refresh interval is invalid")
-	}
-	mobileDirectoryConfigured := config.DevelopmentMobileHubID != "" || config.DevelopmentMobileHubURL != "" || config.DevelopmentMobileHubRegion != ""
-	if mobileDirectoryConfigured && (config.DevelopmentMobileHubID == "" || config.DevelopmentMobileHubURL == "" || config.DevelopmentMobileHubRegion == "") {
-		return nil, fmt.Errorf("development mobile Hub ID, URL and region must be configured together")
 	}
 	now := time.Now().UTC()
 	credentialNotBefore, credentialNotAfter, err := credentialWindow(now, config.CredentialNotBeforeUnixMillis, config.CredentialNotAfterUnixMillis)
@@ -276,29 +251,6 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 			return nil, fmt.Errorf("persist topology device ownership %q: %w", device.GetDeviceId(), err)
 		}
 	}
-	for _, deployment := range config.Deployments {
-		publicKey, decodeErr := base64.RawStdEncoding.DecodeString(deployment.HubControlPublicKeyBase64)
-		if decodeErr != nil {
-			_ = store.Close()
-			return nil, fmt.Errorf("decode Hub control public key: %w", decodeErr)
-		}
-		relayPublicKey, decodeErr := base64.RawStdEncoding.DecodeString(deployment.RelayControlPublicKeyBase64)
-		if decodeErr != nil || len(relayPublicKey) != ed25519.PublicKeySize {
-			_ = store.Close()
-			return nil, fmt.Errorf("decode Relay control public key")
-		}
-		if err := registry.RegisterDeployment(context.Background(), hubregistry.Deployment{Metadata: deployment.Metadata, ControlPublicKey: ed25519.PublicKey(publicKey), RelayControlPublicKey: ed25519.PublicKey(relayPublicKey), Enabled: true, UpdatedAt: now}); err != nil {
-			_ = store.Close()
-			return nil, err
-		}
-	}
-	if mobileDirectoryConfigured {
-		deployment, err := registry.Deployment(context.Background(), config.DevelopmentMobileHubID)
-		if err != nil || deployment.Metadata.GetRegion() != config.DevelopmentMobileHubRegion {
-			_ = store.Close()
-			return nil, fmt.Errorf("development mobile Hub directory does not match a registered deployment")
-		}
-	}
 	for _, assignment := range config.Assignments {
 		_, currentErr := registry.Assignment(context.Background(), assignment.GetDaemonDeviceId())
 		if currentErr == nil {
@@ -330,7 +282,12 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	for _, deployment := range config.Deployments {
+	registeredDeployments, err := registry.Deployments(context.Background())
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	for _, deployment := range registeredDeployments {
 		hubID := deployment.Metadata.GetHubId()
 		revision, err := store.AllocateProjectionRevision(context.Background(), hubID, now)
 		if err != nil {
@@ -373,7 +330,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	}
 	enrollment, err := newEnrollmentService(enrollmentServiceConfig{
 		Commerce: commerceService, Topology: topologyService, Registry: registry, EnrollmentStore: store, EdgeIssuer: edgeIssuer,
-		CandidateProvider: enrollmentCandidateProvider(registry, controlServer, config.Deployments),
+		CandidateProvider: enrollmentCandidateProvider(registry, controlServer),
 		ControlKeyID:      config.DaemonControlKeyID, ControlPublicKey: daemonControlKey.Public().(ed25519.PublicKey),
 		ControlNotBefore: credentialNotBefore, ControlNotAfter: credentialNotAfter, Now: time.Now, NotifyPolicyChange: notifyPolicyChange,
 	})
@@ -386,12 +343,12 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	relayLeaseHandler, err := newRelayLeaseHTTPHandler(store, topologyService, registry, credentialSigner, config.Deployments)
+	relayLeaseHandler, err := newRelayLeaseHTTPHandler(store, topologyService, registry, credentialSigner)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
 	}
-	relayUsageHandler, err := newRelayUsageHTTPHandler(store, credentialSigner, config.Deployments, now)
+	relayUsageHandler, err := newRelayUsageHTTPHandler(store, credentialSigner, registry, credentialNotBefore, credentialNotAfter)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -411,10 +368,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		return nil, err
 	}
 	mobileHubID := config.DevelopmentMobileHubID
-	if mobileHubID == "" {
-		mobileHubID = config.Deployments[0].Metadata.GetHubId()
-	}
-	mobileActivation, err := newMobileActivationService(commerceService, store, topologyService, registry, edgeIssuer, mobileHubID, config.DevelopmentMobileHubURL, config.DevelopmentMobileHubRegion, daemonHubDirectory(config.Deployments), credentialNotAfter, time.Now, notifyPolicyChange)
+	mobileActivation, err := newMobileActivationService(commerceService, store, topologyService, registry, edgeIssuer, mobileHubID, credentialNotAfter, time.Now, notifyPolicyChange)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -470,7 +424,14 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 			_ = store.Close()
 			return nil, fmt.Errorf("invalid operator role")
 		}
-		fleet := &fleetQuery{registry: registry, publisher: publisher, hubControl: controlServer, relayControl: relayControlServer}
+		fleet := &fleetQuery{registry: registry, publisher: publisher, hubControl: controlServer, relayControl: relayControlServer, onEnabled: func(hubID string, changedAt time.Time) {
+			if runtime == nil {
+				return
+			}
+			if publishErr := runtime.publishHubPolicy(config, policyService, privateKey, hubID, changedAt); publishErr != nil {
+				runtime.reportPolicyError(publishErr)
+			}
+		}}
 		operatorHandler, handlerErr := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{AccessToken: operatorToken, OperatorID: config.OperatorID, ActorKind: actorKind, Commerce: commerceService, Catalog: catalogService, Overrides: overrideService, Promotions: promotionService, Topology: topologyService, Quota: store, Outbox: outboxService, Planner: planner, Fleet: fleet, PaymentReconciler: creemService, Now: time.Now, SecureCookie: config.SecureCookie})
 		clear(operatorToken)
 		if handlerErr != nil {
@@ -532,9 +493,6 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	runtime.dispatcherWG.Add(1)
 	go runtime.runCommandDispatcher()
 	manifest := Manifest{PID: os.Getpid(), PublicURL: origin(publicListener), InternalControlURL: origin(internalListener), OperatorURL: origin(operatorListener), DatabaseEngine: "postgresql"}
-	for _, deployment := range config.Deployments {
-		manifest.HubIDs = append(manifest.HubIDs, deployment.Metadata.GetHubId())
-	}
 	runtime.manifest = manifest
 	return runtime, nil
 }
@@ -651,11 +609,7 @@ type enrollmentAttachmentView interface {
 	AttachmentStatus(string) (uint64, time.Time, bool)
 }
 
-func enrollmentCandidateProvider(registry enrollmentRegistryView, control enrollmentAttachmentView, deployments []DeploymentConfig) func(context.Context, time.Time, string) ([]enrollmentHubCandidate, error) {
-	directories := make(map[string]DeploymentConfig, len(deployments))
-	for _, deployment := range deployments {
-		directories[deployment.Metadata.GetHubId()] = deployment
-	}
+func enrollmentCandidateProvider(registry enrollmentRegistryView, control enrollmentAttachmentView) func(context.Context, time.Time, string) ([]enrollmentHubCandidate, error) {
 	return func(ctx context.Context, now time.Time, existingHubID string) ([]enrollmentHubCandidate, error) {
 		registered, err := registry.Deployments(ctx)
 		if err != nil {
@@ -663,8 +617,7 @@ func enrollmentCandidateProvider(registry enrollmentRegistryView, control enroll
 		}
 		candidates := make([]enrollmentHubCandidate, 0, len(registered))
 		for _, deployment := range registered {
-			directory, ok := directories[deployment.Metadata.GetHubId()]
-			if !ok || !deployment.Enabled {
+			if !deployment.IdentityApproved || !deployment.Enabled || deployment.Archived || deployment.Draining && deployment.Metadata.GetHubId() != existingHubID || deployment.PublicHubURL == "" || deployment.HealthURL == "" || deployment.MaxAssignments == 0 {
 				continue
 			}
 			if _, _, attached := control.AttachmentStatus(deployment.Metadata.GetHubId()); !attached {
@@ -676,16 +629,16 @@ func enrollmentCandidateProvider(registry enrollmentRegistryView, control enroll
 			}
 			count := uint64(len(assignments))
 			// 满载只阻止新增 assignment；当前 daemon 复用自己的 owning Hub 不增加占用。
-			if directory.MaxAssignments == 0 || count >= directory.MaxAssignments && directory.Metadata.GetHubId() != existingHubID {
+			if count >= deployment.MaxAssignments && deployment.Metadata.GetHubId() != existingHubID {
 				continue
 			}
 			candidates = append(candidates, enrollmentHubCandidate{
 				value: &cloudpb.HubEnrollmentCandidate{
-					HubId: deployment.Metadata.GetHubId(), HubUrl: directory.PublicHubURL, HealthUrl: directory.HealthURL,
-					Region: deployment.Metadata.GetRegion(),
+					HubId: deployment.Metadata.GetHubId(), HubUrl: deployment.PublicHubURL, HealthUrl: deployment.HealthURL,
+					Region: deployment.Metadata.GetRegion(), DirectoryRevision: deployment.DirectoryRevision,
 				},
 				assignmentCount: count,
-				maxAssignments:  directory.MaxAssignments,
+				maxAssignments:  deployment.MaxAssignments,
 			})
 		}
 		sort.Slice(candidates, func(left, right int) bool {
@@ -696,43 +649,6 @@ func enrollmentCandidateProvider(registry enrollmentRegistryView, control enroll
 		}
 		return candidates, nil
 	}
-}
-
-func daemonHubDirectory(deployments []DeploymentConfig) func(string) (string, string, bool) {
-	directories := make(map[string]DeploymentConfig, len(deployments))
-	for _, deployment := range deployments {
-		directories[deployment.Metadata.GetHubId()] = deployment
-	}
-	return func(hubID string) (string, string, bool) {
-		deployment, ok := directories[hubID]
-		if !ok {
-			return "", "", false
-		}
-		return deployment.PublicHubURL, deployment.Metadata.GetRegion(), true
-	}
-}
-
-func validateDeploymentDirectory(deployment DeploymentConfig) error {
-	if deployment.Metadata == nil || deployment.Metadata.GetHubId() == "" || deployment.Metadata.GetRegion() == "" || deployment.MaxAssignments == 0 {
-		return fmt.Errorf("Controller deployment Hub directory is incomplete")
-	}
-	hubURL, err := url.Parse(deployment.PublicHubURL)
-	if err != nil || hubURL.Host == "" || hubURL.User != nil || hubURL.RawQuery != "" || hubURL.Fragment != "" || strings.Trim(hubURL.Path, "/") != "" || !trustedDeploymentURLScheme(hubURL) {
-		return fmt.Errorf("Controller deployment %q public Hub URL is invalid", deployment.Metadata.GetHubId())
-	}
-	healthURL, err := url.Parse(deployment.HealthURL)
-	if err != nil || healthURL.Host == "" || healthURL.User != nil || healthURL.RawQuery != "" || healthURL.Fragment != "" || !trustedDeploymentURLScheme(healthURL) {
-		return fmt.Errorf("Controller deployment %q health URL is invalid", deployment.Metadata.GetHubId())
-	}
-	return nil
-}
-
-func trustedDeploymentURLScheme(value *url.URL) bool {
-	if value.Scheme == "https" {
-		return true
-	}
-	address := net.ParseIP(value.Hostname())
-	return value.Scheme == "http" && address != nil && address.IsLoopback()
 }
 
 func (runtime *Runtime) runPolicyPublisher(config Config, policies *cloudpolicy.Service, signingKey ed25519.PrivateKey, refreshInterval time.Duration) {
@@ -788,7 +704,11 @@ func (runtime *Runtime) runPromotionReservationReconciler(promotions *cloudpromo
 }
 
 func (runtime *Runtime) publishAccountPolicy(config Config, policies *cloudpolicy.Service, signingKey ed25519.PrivateKey, accountID string, now time.Time) error {
-	for _, deployment := range config.Deployments {
+	deployments, err := runtime.registry.Deployments(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, deployment := range deployments {
 		hubID := deployment.Metadata.GetHubId()
 		assignments, err := runtime.registry.AssignmentsForHub(context.Background(), hubID, now)
 		if err != nil {
@@ -812,7 +732,11 @@ func (runtime *Runtime) publishAccountPolicy(config Config, policies *cloudpolic
 }
 
 func (runtime *Runtime) publishAllPolicies(config Config, policies *cloudpolicy.Service, signingKey ed25519.PrivateKey, now time.Time) error {
-	for _, deployment := range config.Deployments {
+	deployments, err := runtime.registry.Deployments(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, deployment := range deployments {
 		if err := runtime.publishHubPolicy(config, policies, signingKey, deployment.Metadata.GetHubId(), now); err != nil {
 			return err
 		}

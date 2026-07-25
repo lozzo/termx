@@ -23,7 +23,7 @@ func TestNetworkRouteUnavailableRemainsRetryable(t *testing.T) {
 }
 
 func TestAdapterRejectsNonLoopbackAndUnexpectedMediaType(t *testing.T) {
-	if _, err := New(Config{ControlPlaneURL: "http://cloud.example.test", HubURL: "http://127.0.0.1:1"}); err == nil {
+	if _, err := New(Config{ControlPlaneURL: "http://cloud.example.test"}); err == nil {
 		t.Fatal("adapter accepted non-loopback Control Plane")
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
@@ -32,7 +32,7 @@ func TestAdapterRejectsNonLoopbackAndUnexpectedMediaType(t *testing.T) {
 		_, _ = writer.Write([]byte("not protobuf"))
 	}))
 	defer server.Close()
-	adapter, err := New(Config{ControlPlaneURL: server.URL, HubURL: server.URL})
+	adapter, err := New(Config{ControlPlaneURL: server.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestAdapterDoesNotForwardAdmissionAcrossRedirect(t *testing.T) {
 		http.Redirect(writer, &http.Request{}, target.URL, http.StatusTemporaryRedirect)
 	}))
 	defer redirect.Close()
-	adapter, err := New(Config{ControlPlaneURL: redirect.URL, HubURL: redirect.URL})
+	adapter, err := New(Config{ControlPlaneURL: redirect.URL})
 	if err != nil {
 		t.Fatal(err)
 	}

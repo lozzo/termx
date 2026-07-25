@@ -222,6 +222,26 @@ func (staticFleet) GetHubStatus(context.Context, string) (*cloudpb.GetHubStatusR
 	return &cloudpb.GetHubStatusResponse{}, nil
 }
 
+func (staticFleet) CreateHubDeployment(context.Context, *cloudpb.CreateHubDeploymentRequest, string, time.Time) (*cloudpb.CreateHubDeploymentResponse, error) {
+	return &cloudpb.CreateHubDeploymentResponse{}, nil
+}
+
+func (staticFleet) UpdateHubDeployment(context.Context, *cloudpb.UpdateHubDeploymentRequest, string, time.Time) (*cloudpb.UpdateHubDeploymentResponse, error) {
+	return &cloudpb.UpdateHubDeploymentResponse{}, nil
+}
+
+func (staticFleet) ApproveHubDeploymentIdentity(context.Context, *cloudpb.ApproveHubDeploymentIdentityRequest, string, time.Time) (*cloudpb.ApproveHubDeploymentIdentityResponse, error) {
+	return &cloudpb.ApproveHubDeploymentIdentityResponse{}, nil
+}
+
+func (staticFleet) SetHubDeploymentDrain(context.Context, *cloudpb.SetHubDeploymentDrainRequest, string, time.Time) (*cloudpb.SetHubDeploymentDrainResponse, error) {
+	return &cloudpb.SetHubDeploymentDrainResponse{}, nil
+}
+
+func (staticFleet) DisableHubDeployment(context.Context, *cloudpb.DisableHubDeploymentRequest, string, time.Time) (*cloudpb.DisableHubDeploymentResponse, error) {
+	return &cloudpb.DisableHubDeploymentResponse{}, nil
+}
+
 func operatorLogin(t *testing.T, handler http.Handler, token []byte) map[string]*http.Cookie {
 	t.Helper()
 	login := operatorRequest(t, http.MethodPost, "/api/v1/operator/login", &cloudpb.OperatorLoginRequest{AccessToken: token}, nil)

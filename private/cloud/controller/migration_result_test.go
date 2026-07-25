@@ -2,12 +2,16 @@ package controller
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"errors"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
+	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
+	cloudpostgres "github.com/muxvia/muxvia/private/cloud/control-plane/postgres"
 	postgrestest "github.com/muxvia/muxvia/private/cloud/control-plane/postgrestest"
 	"github.com/muxvia/muxvia/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
@@ -20,6 +24,8 @@ func TestMigrationResultReplayRetriesProjectionRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
+	registerControllerTestHub(t, store, "hub-a", now)
+	registerControllerTestHub(t, store, "hub-b", now)
 	if _, err := store.MoveAssignment(context.Background(), &cloudpb.HubAssignment{DaemonDeviceId: "daemon-1", AccountId: "account-1", HubId: "hub-a", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}, now); err != nil {
 		t.Fatal(err)
 	}
@@ -51,5 +57,19 @@ func TestMigrationResultReplayRetriesProjectionRefresh(t *testing.T) {
 	assignment, err := store.Assignment(context.Background(), "daemon-1")
 	if err != nil || assignment.Value.GetHubId() != "hub-b" || assignment.Value.GetAssignmentEpoch() != 2 {
 		t.Fatalf("migration assignment = (%+v, %v)", assignment, err)
+	}
+}
+
+func registerControllerTestHub(t *testing.T, store *cloudpostgres.Store, hubID string, now time.Time) {
+	t.Helper()
+	hubKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	relayKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	region, hubURL := "local-1", "http://127.0.0.1:41002"
+	if hubID == "hub-2" {
+		region, hubURL = "remote-1", "http://127.0.0.1:42002"
+	}
+	metadata := &cloudpb.EdgeDeploymentMetadata{HubId: hubID, EdgeDeploymentId: "edge-" + hubID, Region: region, HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubKey), RelayId: "relay-" + hubID, RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(relayKey)}
+	if err := store.PutDeployment(context.Background(), hubregistry.Deployment{Metadata: metadata, ControlPublicKey: hubKey, RelayControlPublicKey: relayKey, PublicHubURL: hubURL, HealthURL: hubURL + "/healthz", MaxAssignments: 100, IdentityApproved: true, Enabled: true, DirectoryRevision: 1, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
 	}
 }

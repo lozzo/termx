@@ -34,7 +34,7 @@ func TestAdapterConsumesProtoDeviceEnrollmentSession(t *testing.T) {
 		_, _ = writer.Write(payload)
 	}))
 	defer server.Close()
-	adapter, err := New(Config{ControlPlaneURL: server.URL, HubID: "hub-1", HubURL: server.URL, HubRegion: "local-1", Now: func() time.Time { return now }})
+	adapter, err := New(Config{ControlPlaneURL: server.URL, Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestAdapterAcceptsControllerSelectedEnrollmentHubDirectory(t *testing.T) {
 		_, _ = writer.Write(payload)
 	}))
 	defer server.Close()
-	adapter, err := New(Config{ControlPlaneURL: server.URL, HubID: "hub-1", HubURL: server.URL, HubRegion: "local-1", Now: func() time.Time { return now }})
+	adapter, err := New(Config{ControlPlaneURL: server.URL, Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
 	}

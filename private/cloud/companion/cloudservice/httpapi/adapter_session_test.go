@@ -13,7 +13,7 @@ import (
 	"github.com/muxvia/muxvia/proto/cloudpb"
 )
 
-func TestAdapterRejectsLoginAndRefreshHubDirectoryMismatch(t *testing.T) {
+func TestAdapterRejectsInvalidDynamicLoginAndRefreshHubDirectory(t *testing.T) {
 	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", JSONMediaType)
@@ -21,16 +21,16 @@ func TestAdapterRejectsLoginAndRefreshHubDirectoryMismatch(t *testing.T) {
 			Kind: session.KindAccount, AccountID: "account-1", AccountLabel: "Alice", DeviceID: "client-1",
 			ExpiresAt: now.Add(time.Hour).Unix(), AccessToken: []byte("private-account-access-token"),
 			RefreshToken: bytes.Repeat([]byte{0x41}, 32), RefreshExpiresAt: now.Add(24 * time.Hour).Unix(),
-			HubID: "hub-1", HubURL: "http://127.0.0.1:1", HubRegion: "other-region", HubDirectoryVersion: 1,
+			HubID: "hub-1", HubURL: "http://cloud.example.test", HubRegion: "other-region", HubDirectoryVersion: 1,
 		})
 	}))
 	defer server.Close()
-	adapter, err := New(Config{ControlPlaneURL: server.URL, HubID: "hub-1", HubURL: server.URL, HubRegion: "local-1", Now: func() time.Time { return now }})
+	adapter, err := New(Config{ControlPlaneURL: server.URL, Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := adapter.CompleteLogin(context.Background(), &cloudpb.CompleteLoginRequest{FlowId: "flow-1"}); err == nil {
-		t.Fatal("login accepted a mismatched Hub URL/region")
+		t.Fatal("login accepted an invalid dynamic Hub URL")
 	}
 	local, err := session.NewRefreshable(session.Metadata{Kind: session.KindAccount, AccountID: "account-1", AccountLabel: "Alice", DeviceID: "client-1", ExpiresAt: now.Add(time.Hour), HubID: "hub-1", HubURL: server.URL, HubRegion: "local-1", HubDirectoryVersion: 1}, []byte("current-account-access-token"), bytes.Repeat([]byte{0x51}, 32), now.Add(24*time.Hour), now)
 	if err != nil {
@@ -43,7 +43,7 @@ func TestAdapterRejectsLoginAndRefreshHubDirectoryMismatch(t *testing.T) {
 	}
 	defer authorization.Destroy()
 	if _, err := adapter.RefreshSession(context.Background(), authorization); err == nil {
-		t.Fatal("refresh accepted a mismatched Hub URL/region")
+		t.Fatal("refresh accepted an invalid dynamic Hub URL")
 	}
 }
 
@@ -60,7 +60,7 @@ func TestAdapterAcceptsControllerSelectedDaemonRefreshDirectory(t *testing.T) {
 		})
 	}))
 	defer server.Close()
-	adapter, err := New(Config{ControlPlaneURL: server.URL, HubID: "hub-1", HubURL: server.URL, HubRegion: "local-1", Now: func() time.Time { return now }})
+	adapter, err := New(Config{ControlPlaneURL: server.URL, Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestAdapterRoutesEdgeRequestToControllerSelectedSessionHub(t *testing.T) {
 	}))
 	defer dynamicHub.Close()
 
-	adapter, err := New(Config{ControlPlaneURL: staticHub.URL, HubID: "hub-static", HubURL: staticHub.URL, HubRegion: "static", Now: func() time.Time { return now }})
+	adapter, err := New(Config{ControlPlaneURL: staticHub.URL, Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
 	}

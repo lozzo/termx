@@ -1,8 +1,6 @@
 package controller
 
 import (
-	"crypto/ed25519"
-	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -15,44 +13,27 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type relayUsageDeployment struct {
-	metadata *cloudpb.EdgeDeploymentMetadata
-	keyID    string
-}
-
 type relayUsageHTTPHandler struct {
-	store       usage.Store
-	leaseKeys   *servicecredential.KeyRing
-	usageKeys   *servicecredential.KeyRing
-	deployments map[string]relayUsageDeployment
-	now         func() time.Time
+	store               usage.Store
+	leaseKeys           *servicecredential.KeyRing
+	registry            *hubregistry.Registry
+	credentialNotBefore time.Time
+	credentialNotAfter  time.Time
+	now                 func() time.Time
 }
 
-func newRelayUsageHTTPHandler(store usage.Store, leaseSigner servicecredential.Signer, deployments []DeploymentConfig, now time.Time) (*relayUsageHTTPHandler, error) {
-	if store == nil {
+func newRelayUsageHTTPHandler(store usage.Store, leaseSigner servicecredential.Signer, registry *hubregistry.Registry, credentialNotBefore, credentialNotAfter time.Time) (*relayUsageHTTPHandler, error) {
+	if store == nil || registry == nil {
 		return nil, errors.New("Relay usage store is required")
+	}
+	if credentialNotBefore.IsZero() || !credentialNotAfter.After(credentialNotBefore) {
+		return nil, errors.New("Relay usage credential window is invalid")
 	}
 	leaseKeys, err := servicecredential.NewKeyRing(leaseSigner.PublicKey())
 	if err != nil {
 		return nil, err
 	}
-	verificationKeys := make([]servicecredential.VerificationKey, 0, len(deployments))
-	byRelay := make(map[string]relayUsageDeployment, len(deployments))
-	for _, deployment := range deployments {
-		publicKey, decodeErr := base64.RawStdEncoding.DecodeString(deployment.RelayControlPublicKeyBase64)
-		metadata := deployment.Metadata
-		if decodeErr != nil || len(publicKey) != ed25519.PublicKeySize || metadata == nil || metadata.GetRelayId() == "" || metadata.GetEdgeDeploymentId() == "" || metadata.GetRegion() == "" || metadata.GetRelayControlIdentityFingerprint() != hubregistry.IdentityFingerprint(ed25519.PublicKey(publicKey)) {
-			return nil, errors.New("invalid Relay usage deployment")
-		}
-		keyID := "relay-control-" + metadata.GetRelayId()
-		verificationKeys = append(verificationKeys, servicecredential.VerificationKey{ID: keyID, PublicKey: ed25519.PublicKey(publicKey), NotBefore: now.Add(-time.Hour), NotAfter: now.Add(365 * 24 * time.Hour)})
-		byRelay[metadata.GetRelayId()] = relayUsageDeployment{metadata: proto.Clone(metadata).(*cloudpb.EdgeDeploymentMetadata), keyID: keyID}
-	}
-	usageKeys, err := servicecredential.NewKeyRing(verificationKeys...)
-	if err != nil {
-		return nil, err
-	}
-	return &relayUsageHTTPHandler{store: store, leaseKeys: leaseKeys, usageKeys: usageKeys, deployments: byRelay, now: time.Now}, nil
+	return &relayUsageHTTPHandler{store: store, leaseKeys: leaseKeys, registry: registry, credentialNotBefore: credentialNotBefore, credentialNotAfter: credentialNotAfter, now: time.Now}, nil
 }
 
 func (handler *relayUsageHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -71,16 +52,24 @@ func (handler *relayUsageHTTPHandler) ServeHTTP(writer http.ResponseWriter, requ
 		writeRelayLeaseError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Relay usage payload is invalid", false)
 		return
 	}
-	deployment, ok := handler.deployments[payload.GetRelayId()]
-	if !ok || deployment.metadata.GetEdgeDeploymentId() != payload.GetEdgeDeploymentId() {
+	deployment, deploymentErr := handler.registry.DeploymentByRelay(request.Context(), payload.GetRelayId())
+	if deploymentErr != nil || !deployment.IdentityApproved || !deployment.Enabled || deployment.Archived || deployment.Metadata.GetEdgeDeploymentId() != payload.GetEdgeDeploymentId() {
 		writeRelayLeaseError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Relay usage deployment was rejected", false)
 		return
 	}
 	now := handler.now().UTC()
+	keyID := "relay-control-" + deployment.Metadata.GetRelayId()
+	// Relay 身份密钥的有效期由 Controller 部署配置持有；目录标签或 URL 更新不能改变
+	// 已签发 usage event 的验签窗口，否则一次无关编辑会丢失尚未结算的用量。
+	usageKeys, keyErr := servicecredential.NewKeyRing(servicecredential.VerificationKey{ID: keyID, PublicKey: deployment.RelayControlPublicKey, NotBefore: handler.credentialNotBefore, NotAfter: handler.credentialNotAfter})
+	if keyErr != nil {
+		writeRelayLeaseError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Relay usage deployment was rejected", false)
+		return
+	}
 	response := &cloudpb.ReportRelayUsageResponse{}
 	for _, record := range payload.GetRecords() {
-		claims, verifyErr := servicecredential.VerifyRelayLeaseForService(handler.leaseKeys, record.GetSignedLease(), "muxvia-cloud-controller-relay", "pool-"+deployment.metadata.GetRegion(), relayUsageReportGrace, now)
-		if verifyErr != nil || claims.Region != deployment.metadata.GetRegion() || claims.CredentialBindingID != "binding-"+payload.GetRelayId() {
+		claims, verifyErr := servicecredential.VerifyRelayLeaseForService(handler.leaseKeys, record.GetSignedLease(), "muxvia-cloud-controller-relay", "pool-"+deployment.Metadata.GetRegion(), relayUsageReportGrace, now)
+		if verifyErr != nil || claims.Region != deployment.Metadata.GetRegion() || claims.CredentialBindingID != "binding-"+payload.GetRelayId() {
 			writeRelayLeaseError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Relay usage lease was rejected", false)
 			return
 		}
@@ -89,7 +78,7 @@ func (handler *relayUsageHTTPHandler) ServeHTTP(writer http.ResponseWriter, requ
 			writeRelayLeaseError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Relay usage event was rejected", false)
 			return
 		}
-		digest, verifyErr := usage.VerifyEvent(handler.usageKeys, deployment.keyID, claims, event, now, relayUsageReportGrace)
+		digest, verifyErr := usage.VerifyEvent(usageKeys, keyID, claims, event, now, relayUsageReportGrace)
 		if verifyErr != nil {
 			writeRelayLeaseError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Relay usage signature was rejected", false)
 			return

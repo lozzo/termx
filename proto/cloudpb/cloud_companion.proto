@@ -323,6 +323,7 @@ message HubEnrollmentCandidate {
   string hub_url = 2;
   string health_url = 3;
   string region = 4;
+  uint64 directory_revision = 5;
 }
 
 // HubReachabilityObservation 是 daemon 对 Controller 候选执行 HTTPS health 探测后的观测。

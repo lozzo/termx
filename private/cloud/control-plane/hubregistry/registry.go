@@ -28,6 +28,12 @@ var (
 	ErrAssignmentFenceRequired = errors.New("hub assignment fence is required")
 	// ErrAssignmentConflict 表示 assignment epoch、owner 或时间窗口与当前真值冲突。
 	ErrAssignmentConflict = errors.New("hub assignment conflicts with current state")
+	// ErrDeploymentConflict 表示 Hub directory ID、request ID 或 revision 与当前真值冲突。
+	ErrDeploymentConflict = errors.New("hub deployment conflicts with current state")
+	// ErrDeploymentLifecycle 表示 mutation 不满足批准、启用、drain 或 archive 状态机。
+	ErrDeploymentLifecycle = errors.New("hub deployment lifecycle rejects mutation")
+	// ErrDeploymentAssignmentsRemain 表示 Hub 仍拥有有效 assignment，不能 disable/archive。
+	ErrDeploymentAssignmentsRemain = errors.New("hub deployment still owns assignments")
 )
 
 // Deployment 是 Controller 持久保存的 Hub control identity。
@@ -36,7 +42,14 @@ type Deployment struct {
 	Metadata               *cloudpb.EdgeDeploymentMetadata
 	ControlPublicKey       ed25519.PublicKey
 	RelayControlPublicKey  ed25519.PublicKey
+	PublicHubURL           string
+	HealthURL              string
+	MaxAssignments         uint64
+	IdentityApproved       bool
 	Enabled                bool
+	Draining               bool
+	Archived               bool
+	DirectoryRevision      uint64
 	ControlGeneration      uint64
 	RelayControlGeneration uint64
 	UpdatedAt              time.Time
@@ -55,6 +68,9 @@ type Assignment struct {
 // AdvanceControlGeneration 与 MoveAssignment 必须在各自单个事务内完成 CAS。
 type Store interface {
 	PutDeployment(context.Context, Deployment) error
+	CreateDeployment(context.Context, Deployment, *cloudpb.OperatorMutationAuditProjection) error
+	UpdateDeployment(context.Context, Deployment, uint64, *cloudpb.OperatorMutationAuditProjection) error
+	ArchiveDeployment(context.Context, Deployment, uint64, time.Time, *cloudpb.OperatorMutationAuditProjection) error
 	Deployment(context.Context, string) (Deployment, error)
 	DeploymentByRelay(context.Context, string) (Deployment, error)
 	Deployments(context.Context) ([]Deployment, error)
@@ -94,6 +110,16 @@ func (registry *Registry) RegisterDeployment(ctx context.Context, deployment Dep
 	deployment.Metadata = proto.Clone(deployment.Metadata).(*cloudpb.EdgeDeploymentMetadata)
 	deployment.ControlPublicKey = append(ed25519.PublicKey(nil), deployment.ControlPublicKey...)
 	deployment.RelayControlPublicKey = append(ed25519.PublicKey(nil), deployment.RelayControlPublicKey...)
+	if deployment.DirectoryRevision == 0 {
+		deployment.DirectoryRevision = 1
+	}
+	if deployment.MaxAssignments == 0 {
+		deployment.MaxAssignments = 10_000
+	}
+	// RegisterDeployment 只供部署 bootstrap/test fixture 使用；显式 enabled 代表身份已由部署流程批准。
+	if deployment.Enabled {
+		deployment.IdentityApproved = true
+	}
 	return registry.store.PutDeployment(ctx, deployment)
 }
 

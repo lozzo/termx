@@ -47,7 +47,7 @@ func TestHubPublicAdapterRunsPresenceResolveAndSignalingOverHTTP(t *testing.T) {
 	projection := &staticProjection{staticAssignmentSource: staticAssignmentSource{deviceID: "daemon-1", epoch: 1}}
 	server := httptest.NewServer(newHubHTTPHandler(hubHTTPConfig{Hub: hubService, Authorizer: authorizer, Projection: projection, HubID: "hub-1", HubURL: "http://127.0.0.1:1"}))
 	defer server.Close()
-	adapter, err := httpapi.New(httpapi.Config{ControlPlaneURL: server.URL, HubURL: server.URL})
+	adapter, err := httpapi.New(httpapi.Config{ControlPlaneURL: server.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,11 +63,11 @@ func TestHubPublicAdapterRunsPresenceResolveAndSignalingOverHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	clientSession, err := session.New(session.Metadata{Kind: session.KindAccount, AccountID: "account-1", DeviceID: "client-1", ExpiresAt: now.Add(time.Hour)}, clientToken, now)
+	clientSession, err := session.New(session.Metadata{Kind: session.KindAccount, AccountID: "account-1", DeviceID: "client-1", ExpiresAt: now.Add(time.Hour), HubID: "hub-1", HubURL: server.URL, HubRegion: "local-1", HubDirectoryVersion: 1}, clientToken, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	daemonSession, err := session.New(session.Metadata{Kind: session.KindDevice, AccountID: "account-1", DeviceID: "daemon-1", ExpiresAt: now.Add(time.Hour)}, daemonToken, now)
+	daemonSession, err := session.New(session.Metadata{Kind: session.KindDevice, AccountID: "account-1", DeviceID: "daemon-1", ExpiresAt: now.Add(time.Hour), HubID: "hub-1", HubURL: server.URL, HubRegion: "local-1", HubDirectoryVersion: 1}, daemonToken, now)
 	if err != nil {
 		t.Fatal(err)
 	}

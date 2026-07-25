@@ -198,7 +198,7 @@ func run(ctx context.Context, args []string) error {
 		{DaemonDeviceId: "daemon-edge-a", AccountId: account.GetAccountId(), HubId: "hub-edge-a", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()},
 		{DaemonDeviceId: "daemon-edge-b", AccountId: account.GetAccountId(), HubId: "hub-edge-b", AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()},
 	}
-	deploymentConfigs := make([]controller.DeploymentConfig, 0, 2)
+	deploymentConfigs := make([]hubregistry.Deployment, 0, 2)
 	edgeKeys := map[string]ed25519.PrivateKey{}
 	relayKeys := map[string]ed25519.PrivateKey{}
 	hubListens := map[string]string{}
@@ -212,12 +212,26 @@ func run(ctx context.Context, args []string) error {
 		}
 		hubURL := "http://" + hubListen
 		metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: edgeID, Region: "local-1", PublicLabel: hubID, HubId: hubID, HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(hubPublic), RelayId: "relay-" + hubID, RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(relayPublic)}
-		deploymentConfigs = append(deploymentConfigs, controller.DeploymentConfig{Metadata: metadata, HubControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(hubPublic), RelayControlPublicKeyBase64: base64.RawStdEncoding.EncodeToString(relayPublic), PublicHubURL: hubURL, HealthURL: hubURL + "/healthz", MaxAssignments: 1_000})
+		deploymentConfigs = append(deploymentConfigs, hubregistry.Deployment{Metadata: metadata, ControlPublicKey: hubPublic, RelayControlPublicKey: relayPublic, PublicHubURL: hubURL, HealthURL: hubURL + "/healthz", MaxAssignments: 1_000, Enabled: true, UpdatedAt: now})
 		edgeKeys[hubID] = hubPrivate
 		relayKeys[hubID] = relayPrivate
 		hubListens[hubID] = hubListen
 	}
-	controllerConfig := controller.Config{PostgresDSN: controllerPostgresDSN, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Devices: devices, Assignments: assignments, DevelopmentMobileHubID: "hub-edge-a", DevelopmentMobileHubURL: deploymentConfigs[0].PublicHubURL, DevelopmentMobileHubRegion: "local-1", OperatorID: "development-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes), WebStaticDir: webStaticDir}
+	directoryStore, err := cloudpostgres.Open(ctx, controllerPostgresDSN)
+	if err != nil {
+		return err
+	}
+	directoryRegistry, _ := hubregistry.New(directoryStore)
+	for _, deployment := range deploymentConfigs {
+		if err := directoryRegistry.RegisterDeployment(ctx, deployment); err != nil {
+			_ = directoryStore.Close()
+			return err
+		}
+	}
+	if err := directoryStore.Close(); err != nil {
+		return err
+	}
+	controllerConfig := controller.Config{PostgresDSN: controllerPostgresDSN, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Devices: devices, Assignments: assignments, DevelopmentMobileHubID: "hub-edge-a", OperatorID: "development-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes), WebStaticDir: webStaticDir}
 	if os.Getenv("MUXVIA_CREEM_API_KEY") != "" {
 		controllerConfig.CreemEnvironment = "test"
 		controllerConfig.CreemSuccessURL = "https://muxvia.com/account?payment=return"
@@ -318,7 +332,7 @@ func run(ctx context.Context, args []string) error {
 	if primaryEdge.HubID == "" {
 		return fmt.Errorf("development primary Edge did not start")
 	}
-	if err := writeJSONFile(companionManifestPath, httpapi.Manifest{Version: httpapi.ManifestVersion, Profile: httpapi.ProfileDevLocal, ControlPlaneURL: controllerRuntime.PublicURL, HubURL: primaryEdge.HubURL, RelayURL: primaryEdge.RelayURL, HubID: primaryEdge.HubID, Region: "local-1", AccountLabel: account.GetDisplayName(), StartedAtRFC3339: now.Format(time.RFC3339)}); err != nil {
+	if err := writeJSONFile(companionManifestPath, httpapi.Manifest{Version: httpapi.ManifestVersion, Profile: httpapi.ProfileDevLocal, ControlPlaneURL: controllerRuntime.PublicURL, AccountLabel: account.GetDisplayName(), StartedAtRFC3339: now.Format(time.RFC3339)}); err != nil {
 		return err
 	}
 	manifest := supervisorManifest{Version: 1, StartedAt: now.Format(time.RFC3339Nano), Controller: controllerRuntime, Edges: edgeManifests, CompanionManifestPath: companionManifestPath, CredentialsPath: credentialsPath}

@@ -263,12 +263,12 @@ func openDevelopmentPresence(t *testing.T, manifest supervisorManifest, accountI
 	if err != nil {
 		t.Fatal(err)
 	}
-	storedSession, err := session.New(session.Metadata{Kind: session.KindDevice, AccountID: accountID, DeviceID: deviceID, ExpiresAt: now.Add(30 * time.Minute)}, token, now)
+	edgeRuntime := edgeByHub(t, manifest.Edges, hubID)
+	storedSession, err := session.New(session.Metadata{Kind: session.KindDevice, AccountID: accountID, DeviceID: deviceID, ExpiresAt: now.Add(30 * time.Minute), HubID: hubID, HubURL: edgeRuntime.HubURL, HubRegion: "development", HubDirectoryVersion: 1}, token, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	edgeRuntime := edgeByHub(t, manifest.Edges, hubID)
-	adapter, err := httpapi.New(httpapi.Config{ControlPlaneURL: edgeRuntime.HubURL, HubURL: edgeRuntime.HubURL})
+	adapter, err := httpapi.New(httpapi.Config{ControlPlaneURL: edgeRuntime.HubURL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,12 +342,12 @@ func newDevelopmentClient(t *testing.T, manifest supervisorManifest, accountID s
 	if err != nil {
 		t.Fatal(err)
 	}
-	storedSession, err := session.New(session.Metadata{Kind: session.KindAccount, AccountID: accountID, DeviceID: clientID, ExpiresAt: now.Add(30 * time.Minute)}, token, now)
+	edgeRuntime := edgeByHub(t, manifest.Edges, hubID)
+	storedSession, err := session.New(session.Metadata{Kind: session.KindAccount, AccountID: accountID, DeviceID: clientID, ExpiresAt: now.Add(30 * time.Minute), HubID: hubID, HubURL: edgeRuntime.HubURL, HubRegion: "development", HubDirectoryVersion: 1}, token, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	edgeRuntime := edgeByHub(t, manifest.Edges, hubID)
-	adapter, err := httpapi.New(httpapi.Config{ControlPlaneURL: edgeRuntime.HubURL, HubURL: edgeRuntime.HubURL})
+	adapter, err := httpapi.New(httpapi.Config{ControlPlaneURL: edgeRuntime.HubURL})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -201,6 +201,8 @@ func newMobileActivationTestService(t *testing.T) (*mobileActivationService, *cl
 	if err != nil {
 		t.Fatal(err)
 	}
+	registerControllerTestHub(t, store, "hub-1", now)
+	registerControllerTestHub(t, store, "hub-2", now)
 	topology, err := cloudtopology.New(registry, store)
 	if err != nil {
 		t.Fatal(err)
@@ -217,16 +219,7 @@ func newMobileActivationTestService(t *testing.T) (*mobileActivationService, *cl
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := newMobileActivationService(commerce, store, topology, registry, issuer, "hub-1", "http://127.0.0.1:41002", "local-1", func(hubID string) (string, string, bool) {
-		switch hubID {
-		case "hub-1":
-			return "http://127.0.0.1:41002", "local-1", true
-		case "hub-2":
-			return "http://127.0.0.1:42002", "remote-1", true
-		default:
-			return "", "", false
-		}
-	}, now.Add(48*time.Hour), func() time.Time { return now }, func(string) {})
+	service, err := newMobileActivationService(commerce, store, topology, registry, issuer, "hub-1", now.Add(48*time.Hour), func() time.Time { return now }, func(string) {})
 	if err != nil {
 		t.Fatal(err)
 	}
