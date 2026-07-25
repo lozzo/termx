@@ -109,11 +109,19 @@ func TestValidateRequiresCreemMappingOnlyForConfiguredPlans(t *testing.T) {
 	if err := Validate(value); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("configured plan without Creem mapping error = %v", err)
 	}
-	value.Plans[1].Creem = &cloudpb.CreemProductMapping{ProductId: "prod_test"}
+	value.Plans[1].Creem = &cloudpb.CreemProductMapping{MonthlyProductId: "prod_monthly_test"}
 	if err := Validate(value); err != nil {
 		t.Fatal(err)
 	}
-	value.Plans[0].Creem = &cloudpb.CreemProductMapping{ProductId: "forbidden"}
+	value.Plans[1].Price.YearlyMinor = 9000
+	if err := Validate(value); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("configured yearly price without yearly Creem mapping error = %v", err)
+	}
+	value.Plans[1].Creem.YearlyProductId = "prod_yearly_test"
+	if err := Validate(value); err != nil {
+		t.Fatal(err)
+	}
+	value.Plans[0].Creem = &cloudpb.CreemProductMapping{MonthlyProductId: "forbidden"}
 	if err := Validate(value); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("included plan with Creem mapping error = %v", err)
 	}

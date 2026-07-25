@@ -35,7 +35,14 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 		t.Fatal(err)
 	}
 	catalogService, _ := cloudcatalog.New(store, func() time.Time { return now })
-	if err := catalogService.Bootstrap(context.Background(), catalog.Contract()); err != nil {
+	operatorCatalog := proto.Clone(catalog.Contract()).(*cloudpb.PlanCatalogContract)
+	for _, plan := range operatorCatalog.GetPlans() {
+		if plan.GetPlanId() == "pro" {
+			plan.Price = &cloudpb.PlanPriceDefinition{Mode: cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_CONFIGURED, Currency: "USD", MonthlyMinor: 1000, YearlyMinor: 10000, Label: "$10 / month"}
+			plan.Creem = &cloudpb.CreemProductMapping{MonthlyProductId: "prod_operator_monthly", YearlyProductId: "prod_operator_yearly"}
+		}
+	}
+	if err := catalogService.Bootstrap(context.Background(), operatorCatalog); err != nil {
 		t.Fatal(err)
 	}
 	commerceService, err := commerce.New(commerce.Config{Store: store, Catalog: catalogService, Now: func() time.Time { return now }})
@@ -47,15 +54,24 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 		t.Fatal(err)
 	}
 	accountID := registered.GetSession().GetAccount().GetAccountId()
+	checkout, err := commerceService.CreateCheckout(context.Background(), accountID, registered.GetSession().GetAccount().GetUserId(), &cloudpb.CreateCheckoutRequest{PlanId: "pro", RequestedTransition: cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_UPGRADE, BillingCadence: cloudpb.BillingCadence_BILLING_CADENCE_MONTHLY})
+	if err != nil {
+		t.Fatal(err)
+	}
+	creemAttempt, err := commerceService.CreatePaymentAttempt(context.Background(), accountID, registered.GetSession().GetAccount().GetUserId(), &cloudpb.CreatePaymentAttemptRequest{OrderId: checkout.GetOrder().GetOrderId(), Provider: "creem"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconciler := &operatorPaymentReconciler{commerce: commerceService}
 	overrides, _ := cloudentitlement.NewOverrideService(cloudentitlement.OverrideServiceConfig{Store: store, Plans: catalogService, Now: func() time.Time { return now }})
-	promotions, _ := promotion.New(store, func() time.Time { return now }, nil)
+	promotions, _ := promotion.New(store, func() time.Time { return now }, nil, nil)
 	topology := &managementTargetSource{}
 	outbox, _ := commandoutbox.New(store)
 	planner, _ := commandoutbox.NewPlanner(outbox, topology, nil, bytes.NewReader(bytes.Repeat([]byte{7}, 64)), nil)
 	adminToken := bytes.Repeat([]byte{0x41}, 32)
 	admin, err := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{
 		AccessToken: adminToken, OperatorID: "operator-admin", ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN,
-		Commerce: commerceService, Catalog: catalogService, Overrides: overrides, Promotions: promotions, Topology: topology, Quota: store, Outbox: outbox, Planner: planner, Fleet: staticFleet{}, Now: func() time.Time { return now },
+		Commerce: commerceService, Catalog: catalogService, Overrides: overrides, Promotions: promotions, Topology: topology, Quota: store, Outbox: outbox, Planner: planner, Fleet: staticFleet{}, PaymentReconciler: reconciler, Now: func() time.Time { return now },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +90,7 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 	if catalogListResponse.Code != http.StatusOK || !strings.Contains(catalogListResponse.Body.String(), "catalog_version\":\"1") {
 		t.Fatalf("operator catalog list = %d: %s", catalogListResponse.Code, catalogListResponse.Body.String())
 	}
-	nextCatalog := proto.Clone(catalog.Contract()).(*cloudpb.PlanCatalogContract)
+	nextCatalog := proto.Clone(operatorCatalog).(*cloudpb.PlanCatalogContract)
 	nextCatalog.CatalogVersion = 2
 	for _, plan := range nextCatalog.Plans {
 		plan.PlanVersion++
@@ -114,6 +130,12 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 	admin.ServeHTTP(ordersListResponse, ordersList)
 	if ordersListResponse.Code != http.StatusOK {
 		t.Fatalf("operator orders list = %d: %s", ordersListResponse.Code, ordersListResponse.Body.String())
+	}
+	reconcile := operatorRequest(t, http.MethodPost, "/api/v1/operator/orders/reconcile-creem", &cloudpb.ReconcileCreemPaymentAttemptRequest{PaymentAttemptId: creemAttempt.GetPaymentAttempt().GetPaymentAttemptId(), Reason: "webhook delivery delayed", RequestId: "reconcile-request-1"}, adminCookies)
+	reconcileResponse := httptest.NewRecorder()
+	admin.ServeHTTP(reconcileResponse, reconcile)
+	if reconcileResponse.Code != http.StatusOK || reconciler.calls != 1 || !strings.Contains(reconcileResponse.Body.String(), "last_provider_status\":\"operator_reconciled") {
+		t.Fatalf("operator Creem reconciliation = %d calls=%d: %s", reconcileResponse.Code, reconciler.calls, reconcileResponse.Body.String())
 	}
 	missing := operatorRequest(t, http.MethodPost, "/api/v1/operator/accounts/get", &cloudpb.GetOperatorAccountRequest{AccountId: "missing-account"}, adminCookies)
 	missingResponse := httptest.NewRecorder()
@@ -170,6 +192,27 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 }
 
 type staticFleet struct{}
+
+type operatorPaymentReconciler struct {
+	commerce *commerce.Service
+	calls    int
+}
+
+func (reconciler *operatorPaymentReconciler) ReconcilePaymentAttempt(ctx context.Context, attemptID string) (*cloudpb.PaymentAttemptProjection, error) {
+	_, _, current, err := reconciler.commerce.ProviderPaymentContext(ctx, attemptID)
+	if err != nil {
+		return nil, err
+	}
+	next := proto.Clone(current).(*cloudpb.PaymentAttemptProjection)
+	next.Revision++
+	next.LastProviderStatus = "operator_reconciled"
+	next.UpdatedAtUnixMillis++
+	if err := reconciler.commerce.UpdateProviderPaymentAttempt(ctx, next, current.GetRevision()); err != nil {
+		return nil, err
+	}
+	reconciler.calls++
+	return next, nil
+}
 
 func (staticFleet) ListHubFleet(context.Context, *cloudpb.ListHubFleetRequest) (*cloudpb.ListHubFleetResponse, error) {
 	return &cloudpb.ListHubFleetResponse{Page: &cloudpb.PageResponse{}}, nil

@@ -256,6 +256,18 @@ message ApplyOperatorPaymentEventResponse {
   ApplyPaymentEventResponse result = 1;
 }
 
+// ReconcileCreemPaymentAttemptRequest 要求 Controller 立即从 Creem 服务端重新核对一次持久 attempt。
+// reason/request_id 只用于运营审计，不会发送给支付 provider。
+message ReconcileCreemPaymentAttemptRequest {
+  string payment_attempt_id = 1;
+  string reason = 2;
+  string request_id = 3;
+}
+
+message ReconcileCreemPaymentAttemptResponse {
+  PaymentAttemptProjection payment_attempt = 1;
+}
+
 message CreatePromotionRequest {
   PromotionProjection promotion = 1;
   string request_id = 2;

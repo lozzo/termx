@@ -145,7 +145,9 @@ func Validate(contract *cloudpb.PlanCatalogContract) error {
 				return ErrInvalid
 			}
 		case cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_CONFIGURED:
-			if plan.GetIncluded() || strings.TrimSpace(plan.GetPrice().GetCurrency()) == "" || plan.GetPrice().GetMonthlyMinor() <= 0 && plan.GetPrice().GetYearlyMinor() <= 0 || strings.TrimSpace(plan.GetCreem().GetProductId()) == "" {
+			if plan.GetIncluded() || strings.TrimSpace(plan.GetPrice().GetCurrency()) == "" || plan.GetPrice().GetMonthlyMinor() <= 0 && plan.GetPrice().GetYearlyMinor() <= 0 ||
+				plan.GetPrice().GetMonthlyMinor() > 0 && strings.TrimSpace(plan.GetCreem().GetMonthlyProductId()) == "" ||
+				plan.GetPrice().GetYearlyMinor() > 0 && strings.TrimSpace(plan.GetCreem().GetYearlyProductId()) == "" {
 				return ErrInvalid
 			}
 		case cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_CONTACT:

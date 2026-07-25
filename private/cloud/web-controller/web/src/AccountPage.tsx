@@ -450,6 +450,10 @@ export default function AccountPage() {
                         }),
                         CreateCheckoutResponseSchema,
                       );
+                      if (checkout.checkoutUrl) {
+                        window.location.assign(checkout.checkoutUrl);
+                        return;
+                      }
                       if (checkout.order)
                         await protoPost(
                           "/api/v1/checkout/test-payment",

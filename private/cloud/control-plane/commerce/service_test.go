@@ -276,6 +276,41 @@ func TestPaidOrderSupportsRefundRevokeAndChargebackTransitions(t *testing.T) {
 	}
 }
 
+func TestOperatorPaymentMutationCannotBypassCreemTruth(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	store, err := postgrestest.Open(t, filepath.Join(t.TempDir(), "controller-postgres"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	service := newService(t, store, func() time.Time { return now })
+	registered, _ := service.Register(ctx, &cloudpb.RegisterAccountRequest{Email: "creem-owner@example.com", Password: "secure-password"})
+	account := registered.GetSession().GetAccount()
+	checkout, _ := service.CreateCheckout(ctx, account.GetAccountId(), account.GetUserId(), checkoutRequest("pro", cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_UPGRADE))
+	created, err := service.CreatePaymentAttempt(ctx, account.GetAccountId(), account.GetUserId(), &cloudpb.CreatePaymentAttemptRequest{OrderId: checkout.GetOrder().GetOrderId(), Provider: "creem"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manualSuccess := &cloudpb.ApplyOperatorPaymentEventRequest{OrderId: checkout.GetOrder().GetOrderId(), EventType: cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED, Reason: "do not bypass provider", RequestId: "manual-creem-success"}
+	if _, err := service.ApplyOperatorPaymentEvent(ctx, manualSuccess, "operator-admin"); !errors.Is(err, commerce.ErrConflict) {
+		t.Fatalf("manual success over Creem attempt = %v", err)
+	}
+	paid := paymentEvent("creem-paid", checkout.GetOrder(), created.GetPaymentAttempt(), cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED, now)
+	paid.Provider = "creem"
+	paid.ProviderProductId = checkout.GetOrder().GetProviderProductId()
+	paid.Currency = checkout.GetOrder().GetPrice().GetCurrency()
+	paid.SubtotalMinor = checkout.GetOrder().GetSubtotalMinor()
+	paid.DiscountMinor = checkout.GetOrder().GetDiscountMinor()
+	if _, err := service.ApplyPaymentEvent(ctx, &cloudpb.ApplyPaymentEventRequest{Event: paid}); err != nil {
+		t.Fatal(err)
+	}
+	manualRefund := &cloudpb.ApplyOperatorPaymentEventRequest{OrderId: checkout.GetOrder().GetOrderId(), EventType: cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_REFUNDED, Reason: "do not bypass provider refund", RequestId: "manual-creem-refund"}
+	if _, err := service.ApplyOperatorPaymentEvent(ctx, manualRefund, "operator-admin"); !errors.Is(err, commerce.ErrConflict) {
+		t.Fatalf("manual refund over Creem attempt = %v", err)
+	}
+}
+
 func TestPromotionConcurrencyPaymentReplayAndOperatorAdjustment(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 7, 25, 10, 0, 0, 0, time.UTC)
@@ -285,7 +320,7 @@ func TestPromotionConcurrencyPaymentReplayAndOperatorAdjustment(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	promotions, err := promotion.New(store, clock, nil)
+	promotions, err := promotion.New(store, clock, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,7 +475,7 @@ func catalogFixture() *cloudpb.PlanCatalogContract {
 	}
 	return &cloudpb.PlanCatalogContract{CatalogVersion: 1, Plans: []*cloudpb.PlanDefinition{
 		{PlanId: "included", PlanVersion: 1, BillingPeriodDays: 30, Capability: p2p(1), Included: true, Price: &cloudpb.PlanPriceDefinition{Mode: cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_INCLUDED, Currency: "USD", Label: "Free"}},
-		{PlanId: "basic", PlanVersion: 1, BillingPeriodDays: 30, Capability: p2p(2), Price: &cloudpb.PlanPriceDefinition{Mode: cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_CONFIGURED, Currency: "USD", MonthlyMinor: 500, Label: "$5"}},
-		{PlanId: "pro", PlanVersion: 1, BillingPeriodDays: 30, Capability: p2p(4), Price: &cloudpb.PlanPriceDefinition{Mode: cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_CONFIGURED, Currency: "USD", MonthlyMinor: 1000, Label: "$10"}},
+		{PlanId: "basic", PlanVersion: 1, BillingPeriodDays: 30, Capability: p2p(2), Price: &cloudpb.PlanPriceDefinition{Mode: cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_CONFIGURED, Currency: "USD", MonthlyMinor: 500, Label: "$5"}, Creem: &cloudpb.CreemProductMapping{MonthlyProductId: "prod_basic_monthly"}},
+		{PlanId: "pro", PlanVersion: 1, BillingPeriodDays: 30, Capability: p2p(4), Price: &cloudpb.PlanPriceDefinition{Mode: cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_CONFIGURED, Currency: "USD", MonthlyMinor: 1000, Label: "$10"}, Creem: &cloudpb.CreemProductMapping{MonthlyProductId: "prod_pro_monthly"}},
 	}}
 }

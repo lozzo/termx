@@ -32,7 +32,7 @@ func TestProductAPIUsesProtoCookieCSRFAndPersistentCommerce(t *testing.T) {
 	for _, plan := range contract.GetPlans() {
 		if plan.GetPlanId() == "pro" {
 			plan.Price = &cloudpb.PlanPriceDefinition{Mode: cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_CONFIGURED, Currency: "USD", MonthlyMinor: 1000, YearlyMinor: 10000, Label: "$10"}
-			plan.Creem = &cloudpb.CreemProductMapping{ProductId: "prod_product_http_test"}
+			plan.Creem = &cloudpb.CreemProductMapping{MonthlyProductId: "prod_product_http_test", YearlyProductId: "prod_product_http_yearly_test"}
 		}
 	}
 	catalogSource, _ := cloudcatalog.NewSnapshotSource(contract)

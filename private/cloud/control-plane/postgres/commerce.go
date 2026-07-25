@@ -263,7 +263,7 @@ func (store *Store) CreatePaymentAttempt(ctx context.Context, attempt *cloudpb.P
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = execContext(ctx, tx, `INSERT INTO commerce_payment_attempts(payment_attempt_id,order_id,account_id,revision,projection) VALUES(?,?,?,?,?)`, attempt.GetPaymentAttemptId(), attempt.GetOrderId(), attempt.GetAccountId(), attempt.GetRevision(), body); err != nil {
+	if _, err = execContext(ctx, tx, `INSERT INTO commerce_payment_attempts(payment_attempt_id,order_id,account_id,revision,projection,provider,status,provider_reference,provider_transaction_reference,provider_subscription_reference,reconcile_after,reconcile_deadline,provider_created_at,provider_updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, attempt.GetPaymentAttemptId(), attempt.GetOrderId(), attempt.GetAccountId(), attempt.GetRevision(), body, attempt.GetProvider(), attempt.GetStatus(), attempt.GetProviderReference(), attempt.GetProviderTransactionReference(), attempt.GetProviderSubscriptionReference(), attempt.GetReconcileAfterUnixMillis(), attempt.GetReconcileDeadlineUnixMillis(), attempt.GetCreatedAtUnixMillis(), attempt.GetUpdatedAtUnixMillis()); err != nil {
 		return conflict(err)
 	}
 	if err = insertCommerceAudit(ctx, tx, audit); err != nil {
@@ -272,10 +272,62 @@ func (store *Store) CreatePaymentAttempt(ctx context.Context, attempt *cloudpb.P
 	return tx.Commit()
 }
 
+// UpdatePaymentAttempt 以 revision CAS 同步 provider 索引列与 Proto projection。
+func (store *Store) UpdatePaymentAttempt(ctx context.Context, attempt *cloudpb.PaymentAttemptProjection, expectedRevision uint64) error {
+	if attempt == nil || expectedRevision == 0 || attempt.GetRevision() != expectedRevision+1 {
+		return commerce.ErrConflict
+	}
+	body, err := marshal(attempt)
+	if err != nil {
+		return err
+	}
+	result, err := execContext(ctx, store.db, `UPDATE commerce_payment_attempts SET revision=?,projection=?,provider=?,status=?,provider_reference=?,provider_transaction_reference=?,provider_subscription_reference=?,reconcile_after=?,reconcile_deadline=?,provider_updated_at=? WHERE payment_attempt_id=? AND revision=?`, attempt.GetRevision(), body, attempt.GetProvider(), attempt.GetStatus(), attempt.GetProviderReference(), attempt.GetProviderTransactionReference(), attempt.GetProviderSubscriptionReference(), attempt.GetReconcileAfterUnixMillis(), attempt.GetReconcileDeadlineUnixMillis(), attempt.GetUpdatedAtUnixMillis(), attempt.GetPaymentAttemptId(), expectedRevision)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return commerce.ErrConflict
+	}
+	return nil
+}
+
 // PaymentAttempt 读取一次持久 provider 尝试。
 func (store *Store) PaymentAttempt(ctx context.Context, attemptID string) (*cloudpb.PaymentAttemptProjection, error) {
 	var body []byte
 	if err := queryRowContext(ctx, store.db, `SELECT projection FROM commerce_payment_attempts WHERE payment_attempt_id=?`, attemptID).Scan(&body); err != nil {
+		return nil, notFound(err)
+	}
+	value := &cloudpb.PaymentAttemptProjection{}
+	return value, proto.Unmarshal(body, value)
+}
+
+// PendingPaymentAttempts 返回 PostgreSQL 中到达轮询时间的 pending checkout 与 active provider subscription。
+func (store *Store) PendingPaymentAttempts(ctx context.Context, provider string, before time.Time, limit int) ([]*cloudpb.PaymentAttemptProjection, error) {
+	rows, err := queryContext(ctx, store.db, `SELECT projection FROM commerce_payment_attempts WHERE provider=? AND reconcile_after>0 AND reconcile_after<=? AND (status=? OR (status=? AND provider_subscription_reference<>'')) ORDER BY reconcile_after,payment_attempt_id LIMIT ?`, provider, before.UnixMilli(), cloudpb.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_PENDING, cloudpb.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_SUCCEEDED, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := make([]*cloudpb.PaymentAttemptProjection, 0)
+	for rows.Next() {
+		var body []byte
+		if err := rows.Scan(&body); err != nil {
+			return nil, err
+		}
+		value := &cloudpb.PaymentAttemptProjection{}
+		if err := proto.Unmarshal(body, value); err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
+// PaymentAttemptByProviderReference 精确解析一个 provider resource 到唯一 payment attempt。
+func (store *Store) PaymentAttemptByProviderReference(ctx context.Context, provider, reference string) (*cloudpb.PaymentAttemptProjection, error) {
+	var body []byte
+	err := queryRowContext(ctx, store.db, `SELECT projection FROM commerce_payment_attempts WHERE provider=? AND (provider_reference=? OR provider_transaction_reference=? OR provider_subscription_reference=?) ORDER BY provider_updated_at DESC LIMIT 1`, provider, reference, reference, reference).Scan(&body)
+	if err != nil {
 		return nil, notFound(err)
 	}
 	value := &cloudpb.PaymentAttemptProjection{}
@@ -435,7 +487,7 @@ func (store *Store) CommitPaymentEvent(ctx context.Context, eventID string, resu
 		if err != nil {
 			return err
 		}
-		updated, err = execContext(ctx, tx, `UPDATE commerce_payment_attempts SET revision=?,projection=? WHERE payment_attempt_id=? AND revision=?`, attempt.GetRevision(), attemptBody, attempt.GetPaymentAttemptId(), currentAttemptRevision)
+		updated, err = execContext(ctx, tx, `UPDATE commerce_payment_attempts SET revision=?,projection=?,status=?,provider_reference=?,provider_transaction_reference=?,provider_subscription_reference=?,reconcile_after=?,reconcile_deadline=?,provider_updated_at=? WHERE payment_attempt_id=? AND revision=?`, attempt.GetRevision(), attemptBody, attempt.GetStatus(), attempt.GetProviderReference(), attempt.GetProviderTransactionReference(), attempt.GetProviderSubscriptionReference(), attempt.GetReconcileAfterUnixMillis(), attempt.GetReconcileDeadlineUnixMillis(), attempt.GetUpdatedAtUnixMillis(), attempt.GetPaymentAttemptId(), currentAttemptRevision)
 		if err != nil {
 			return err
 		}
@@ -713,6 +765,34 @@ func (store *Store) Audit(ctx context.Context, accountID string) ([]*cloudpb.Com
 		values = append(values, value)
 	}
 	return values, rows.Err()
+}
+
+// RecordOperatorAudit 幂等保存一次不直接修改领域状态的运营审计。
+// 同一 request_id 的 actor、动作、资源和原因一致时视为重放；首个 revision 边界保持不可变。
+func (store *Store) RecordOperatorAudit(ctx context.Context, audit *cloudpb.OperatorMutationAuditProjection) error {
+	if audit == nil || audit.GetAuditId() == "" || audit.GetAccountId() == "" || audit.GetRequestId() == "" {
+		return commerce.ErrConflict
+	}
+	body, err := marshal(audit)
+	if err != nil {
+		return err
+	}
+	result, err := execContext(ctx, store.db, `INSERT INTO operator_mutation_audit(audit_id,account_id,occurred_at,projection) VALUES(?,?,?,?) ON CONFLICT (audit_id) DO NOTHING`, audit.GetAuditId(), audit.GetAccountId(), audit.GetOccurredAtUnixMillis(), body)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed == 1 {
+		return nil
+	}
+	var existingBody []byte
+	if err := queryRowContext(ctx, store.db, `SELECT projection FROM operator_mutation_audit WHERE audit_id=?`, audit.GetAuditId()).Scan(&existingBody); err != nil {
+		return notFound(err)
+	}
+	existing := &cloudpb.OperatorMutationAuditProjection{}
+	if err := proto.Unmarshal(existingBody, existing); err != nil || existing.GetActorId() != audit.GetActorId() || existing.GetAction() != audit.GetAction() || existing.GetResourceKind() != audit.GetResourceKind() || existing.GetResourceId() != audit.GetResourceId() || existing.GetAccountId() != audit.GetAccountId() || existing.GetReason() != audit.GetReason() || existing.GetRequestId() != audit.GetRequestId() {
+		return commerce.ErrConflict
+	}
+	return nil
 }
 
 func (store *Store) scanProjection(ctx context.Context, query, id string, value proto.Message) error {

@@ -32,6 +32,8 @@ import {
   CreateSubscriptionAdjustmentResponseSchema,
   ApplyOperatorPaymentEventRequestSchema,
   ApplyOperatorPaymentEventResponseSchema,
+  ReconcileCreemPaymentAttemptRequestSchema,
+  ReconcileCreemPaymentAttemptResponseSchema,
   CreatePromotionRequestSchema,
   CreatePromotionResponseSchema,
   ListPromotionsRequestSchema,
@@ -71,6 +73,7 @@ import {
   EntitlementOverrideProjectionSchema,
   PromotionProjectionSchema,
   OrderStatus,
+  PaymentAttemptStatus,
   PaymentEventType,
   PromotionDiscountKind,
   PromotionState,
@@ -121,6 +124,7 @@ export default function OperatorPage() {
   const [promotionCreemCode, setPromotionCreemCode] = useState("");
   const [promotionReason, setPromotionReason] = useState("");
   const [paymentReasons, setPaymentReasons] = useState<Record<string, string>>({});
+  const [reconcileReasons, setReconcileReasons] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const catalogEditorRef = useRef<HTMLTextAreaElement>(null);
 
@@ -436,6 +440,33 @@ export default function OperatorPage() {
     }
   }
 
+  async function reconcileCreemAttempt(paymentAttemptId: string) {
+    const reason = reconcileReasons[paymentAttemptId]?.trim();
+    if (!reason) return;
+    setBusy(true);
+    setError("");
+    try {
+      await protoPost(
+        "/api/v1/operator/orders/reconcile-creem",
+        ReconcileCreemPaymentAttemptRequestSchema,
+        create(ReconcileCreemPaymentAttemptRequestSchema, {
+          paymentAttemptId,
+          reason,
+          requestId: crypto.randomUUID(),
+        }),
+        ReconcileCreemPaymentAttemptResponseSchema,
+        "muxvia_cloud_operator_csrf",
+      );
+      setReconcileReasons((current) => ({ ...current, [paymentAttemptId]: "" }));
+      await load();
+      if (detail?.commerce?.account?.accountId) await select(detail.commerce.account.accountId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Creem reconciliation failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function transition(kind: SubscriptionTransitionKind) {
     const accountId = detail?.commerce?.account?.accountId;
     if (!accountId) return;
@@ -607,8 +638,9 @@ export default function OperatorPage() {
             {orders?.orders.length ? orders.orders.map((item) => {
               const order = item.order;
               if (!order) return null;
-              const canCollect = order.status === OrderStatus.PENDING;
-              const canReverse = order.status === OrderStatus.PAID;
+              const manualSucceeded = item.paymentAttempts.some((attempt) => attempt.provider === "operator-manual" && attempt.status === PaymentAttemptStatus.SUCCEEDED);
+              const canCollect = order.status === OrderStatus.PENDING && item.paymentAttempts.length === 0;
+              const canReverse = order.status === OrderStatus.PAID && manualSucceeded;
               return (
                 <div className="border-b border-line p-4" key={order.orderId} data-testid={`operator-order-${order.orderId}`}>
                   <div className="flex items-start justify-between gap-3">
@@ -616,6 +648,29 @@ export default function OperatorPage() {
                     <span className="text-[10px] font-semibold text-primary">{OrderStatus[order.status]}</span>
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">Account {order.accountId} · {item.paymentAttempts.length} attempts · {item.paymentEvents.length} events</p>
+                  {item.paymentAttempts.map((attempt) => {
+                    const canReconcile = attempt.provider === "creem" && (attempt.status === PaymentAttemptStatus.PENDING || attempt.status === PaymentAttemptStatus.SUCCEEDED && Boolean(attempt.providerSubscriptionReference));
+                    return <div className="mt-3 border-l-2 border-primary/40 pl-3 text-xs" key={attempt.paymentAttemptId} data-testid={`payment-attempt-${attempt.paymentAttemptId}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <strong>{attempt.provider} · {PaymentAttemptStatus[attempt.status]}</strong>
+                        <span className="font-mono text-[10px] text-muted-foreground">revision {attempt.revision.toString()}</span>
+                      </div>
+                      <dl className="mt-2 grid gap-1 text-muted-foreground">
+                        {attempt.providerReference && <div><dt className="inline font-medium text-foreground">Checkout </dt><dd className="inline font-mono break-all">{attempt.providerReference}</dd></div>}
+                        {attempt.providerTransactionReference && <div><dt className="inline font-medium text-foreground">Transaction </dt><dd className="inline font-mono break-all">{attempt.providerTransactionReference}</dd></div>}
+                        {attempt.providerSubscriptionReference && <div><dt className="inline font-medium text-foreground">Subscription </dt><dd className="inline font-mono break-all">{attempt.providerSubscriptionReference}</dd></div>}
+                        <div><dt className="inline font-medium text-foreground">Provider status </dt><dd className="inline">{attempt.lastProviderStatus || "Awaiting first response"}</dd></div>
+                        <div><dt className="inline font-medium text-foreground">Reconciliation </dt><dd className="inline">{attempt.reconcileAttempts} checks{attempt.reconcileAfterUnixMillis > 0n ? ` · next ${new Date(Number(attempt.reconcileAfterUnixMillis)).toLocaleString()}` : " · stopped"}</dd></div>
+                      </dl>
+                      {canReconcile && <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                        <Input aria-label={`Reconciliation reason for ${attempt.paymentAttemptId}`} placeholder="Required reconciliation reason" value={reconcileReasons[attempt.paymentAttemptId] ?? ""} onChange={(event) => setReconcileReasons((current) => ({ ...current, [attempt.paymentAttemptId]: event.target.value }))} />
+                        <Button size="sm" variant="outline" disabled={busy || !reconcileReasons[attempt.paymentAttemptId]?.trim()} onClick={() => void reconcileCreemAttempt(attempt.paymentAttemptId)}>
+                          <RefreshCw />
+                          Reconcile now
+                        </Button>
+                      </div>}
+                    </div>;
+                  })}
                   {(canCollect || canReverse) && <div className="mt-3 grid gap-2">
                     <Input aria-label={`Reason for order ${order.orderId}`} placeholder="Required operational reason" value={paymentReasons[order.orderId] ?? ""} onChange={(event) => setPaymentReasons((current) => ({ ...current, [order.orderId]: event.target.value }))} />
                     <div className="flex flex-wrap gap-2">

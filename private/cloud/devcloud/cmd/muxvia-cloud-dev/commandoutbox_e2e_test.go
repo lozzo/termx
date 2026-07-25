@@ -270,7 +270,14 @@ func seedCommandAccount(t *testing.T, databaseKey, catalogPath string, now time.
 	store, _ := postgrestest.Open(t, databaseKey)
 	defer store.Close()
 	catalog, _ := webcontroller.LoadCatalog(catalogPath)
-	catalogSource, _ := cloudcatalog.NewSnapshotSource(catalog.Contract())
+	contract := catalog.Contract()
+	for _, plan := range contract.GetPlans() {
+		if plan.GetPlanId() == "pro" {
+			// 命令链路测试只需要一个可支付 entitlement fixture，不依赖正式站点当前的 contact 定价。
+			plan.Price = &cloudpb.PlanPriceDefinition{Mode: cloudpb.CatalogPriceMode_CATALOG_PRICE_MODE_CONFIGURED, Currency: "USD", MonthlyMinor: 1000, Label: "$10"}
+		}
+	}
+	catalogSource, _ := cloudcatalog.NewSnapshotSource(contract)
 	service, _ := cloudcommerce.New(cloudcommerce.Config{Store: store, Catalog: catalogSource, Now: func() time.Time { return now }})
 	registered, err := service.Register(context.Background(), &cloudpb.RegisterAccountRequest{Email: "command@example.com", Password: "secure-password"})
 	if err != nil {

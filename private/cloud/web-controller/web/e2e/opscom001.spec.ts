@@ -26,7 +26,7 @@ test("operator commerce UI publishes promotion, adjusts subscription, and observ
   for (const plan of contract.plans) plan.planVersion = (BigInt(plan.planVersion) + 1n).toString();
   const pro = contract.plans.find((plan: any) => plan.planId === "pro");
   pro.price = { mode: "CATALOG_PRICE_MODE_CONFIGURED", currency: "USD", monthlyMinor: "1000", yearlyMinor: "10000", label: "$10 / month" };
-  pro.creem = { productId: "prod_opscom_e2e" };
+  pro.creem = { monthlyProductId: "prod_opscom_e2e_monthly", yearlyProductId: "prod_opscom_e2e_yearly" };
   await editor.fill(JSON.stringify(contract, null, 2));
   await page.getByTestId("catalog-reason").fill("Enable OPSCOM checkout fixture");
   await page.getByTestId("catalog-publish").click();

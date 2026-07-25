@@ -38,15 +38,22 @@ type Store interface {
 	ReleaseExpiredPromotionReservations(context.Context, time.Time, int) (int, error)
 }
 
+// ExternalValidator 在本地 promotion 落库前核对正式 provider 的 Discount 真值。
+// validator 只能读取 provider，不拥有 promotion 或 redemption 状态。
+type ExternalValidator interface {
+	ValidatePromotion(context.Context, *cloudpb.PromotionProjection) error
+}
+
 // Service 是 operator 与 Commerce 共用的优惠应用边界。
 type Service struct {
-	store  Store
-	now    func() time.Time
-	random io.Reader
+	store    Store
+	now      func() time.Time
+	random   io.Reader
+	external ExternalValidator
 }
 
 // New 创建优惠服务；Store 缺失时 fail closed。
-func New(store Store, now func() time.Time, random io.Reader) (*Service, error) {
+func New(store Store, now func() time.Time, random io.Reader, external ExternalValidator) (*Service, error) {
 	if store == nil {
 		return nil, ErrInvalid
 	}
@@ -56,7 +63,7 @@ func New(store Store, now func() time.Time, random io.Reader) (*Service, error) 
 	if random == nil {
 		random = rand.Reader
 	}
-	return &Service{store: store, now: now, random: random}, nil
+	return &Service{store: store, now: now, random: random, external: external}, nil
 }
 
 // Create 发布一个经济字段不可变的优惠码。
@@ -79,6 +86,11 @@ func (service *Service) Create(ctx context.Context, request *cloudpb.CreatePromo
 	value.CreatedAtUnixMillis, value.UpdatedAtUnixMillis = now.UnixMilli(), now.UnixMilli()
 	if err := Validate(value); err != nil {
 		return nil, err
+	}
+	if service.external != nil {
+		if err := service.external.ValidatePromotion(ctx, value); err != nil {
+			return nil, err
+		}
 	}
 	audit := operatorAudit(actorID, "promotion.create", id, "promotion", value.GetReason(), request.GetRequestId(), 0, 1, now)
 	if err := service.store.CreatePromotion(ctx, value, audit); err != nil {

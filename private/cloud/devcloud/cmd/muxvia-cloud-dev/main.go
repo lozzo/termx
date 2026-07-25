@@ -218,6 +218,10 @@ func run(ctx context.Context, args []string) error {
 		hubListens[hubID] = hubListen
 	}
 	controllerConfig := controller.Config{PostgresDSN: controllerPostgresDSN, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Deployments: deploymentConfigs, Devices: devices, Assignments: assignments, DevelopmentMobileHubID: "hub-edge-a", DevelopmentMobileHubURL: deploymentConfigs[0].PublicHubURL, DevelopmentMobileHubRegion: "local-1", OperatorID: "development-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes), WebStaticDir: webStaticDir}
+	if os.Getenv("MUXVIA_CREEM_API_KEY") != "" {
+		controllerConfig.CreemEnvironment = "test"
+		controllerConfig.CreemSuccessURL = "https://muxvia.com/account?payment=return"
+	}
 	if *faultHarness {
 		controllerConfig.PublicListen, err = reserveTCPAddress()
 		if err != nil {

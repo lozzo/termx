@@ -518,31 +518,49 @@ func (PaymentAttemptStatus) EnumDescriptor() ([]byte, []int) {
 type PaymentEventType int32
 
 const (
-	PaymentEventType_PAYMENT_EVENT_TYPE_UNSPECIFIED PaymentEventType = 0
-	PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED   PaymentEventType = 1
-	PaymentEventType_PAYMENT_EVENT_TYPE_FAILED      PaymentEventType = 2
-	PaymentEventType_PAYMENT_EVENT_TYPE_REFUNDED    PaymentEventType = 3
-	PaymentEventType_PAYMENT_EVENT_TYPE_REVOKED     PaymentEventType = 4
-	PaymentEventType_PAYMENT_EVENT_TYPE_CHARGEBACK  PaymentEventType = 5
+	PaymentEventType_PAYMENT_EVENT_TYPE_UNSPECIFIED                   PaymentEventType = 0
+	PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED                     PaymentEventType = 1
+	PaymentEventType_PAYMENT_EVENT_TYPE_FAILED                        PaymentEventType = 2
+	PaymentEventType_PAYMENT_EVENT_TYPE_REFUNDED                      PaymentEventType = 3
+	PaymentEventType_PAYMENT_EVENT_TYPE_REVOKED                       PaymentEventType = 4
+	PaymentEventType_PAYMENT_EVENT_TYPE_CHARGEBACK                    PaymentEventType = 5
+	PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_SCHEDULED_CANCEL PaymentEventType = 6
+	PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_CANCELED         PaymentEventType = 7
+	PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_PAST_DUE         PaymentEventType = 8
+	PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_EXPIRED          PaymentEventType = 9
+	PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_PAUSED           PaymentEventType = 10
+	PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_ACTIVE_SYNC      PaymentEventType = 11
 )
 
 // Enum value maps for PaymentEventType.
 var (
 	PaymentEventType_name = map[int32]string{
-		0: "PAYMENT_EVENT_TYPE_UNSPECIFIED",
-		1: "PAYMENT_EVENT_TYPE_SUCCEEDED",
-		2: "PAYMENT_EVENT_TYPE_FAILED",
-		3: "PAYMENT_EVENT_TYPE_REFUNDED",
-		4: "PAYMENT_EVENT_TYPE_REVOKED",
-		5: "PAYMENT_EVENT_TYPE_CHARGEBACK",
+		0:  "PAYMENT_EVENT_TYPE_UNSPECIFIED",
+		1:  "PAYMENT_EVENT_TYPE_SUCCEEDED",
+		2:  "PAYMENT_EVENT_TYPE_FAILED",
+		3:  "PAYMENT_EVENT_TYPE_REFUNDED",
+		4:  "PAYMENT_EVENT_TYPE_REVOKED",
+		5:  "PAYMENT_EVENT_TYPE_CHARGEBACK",
+		6:  "PAYMENT_EVENT_TYPE_SUBSCRIPTION_SCHEDULED_CANCEL",
+		7:  "PAYMENT_EVENT_TYPE_SUBSCRIPTION_CANCELED",
+		8:  "PAYMENT_EVENT_TYPE_SUBSCRIPTION_PAST_DUE",
+		9:  "PAYMENT_EVENT_TYPE_SUBSCRIPTION_EXPIRED",
+		10: "PAYMENT_EVENT_TYPE_SUBSCRIPTION_PAUSED",
+		11: "PAYMENT_EVENT_TYPE_SUBSCRIPTION_ACTIVE_SYNC",
 	}
 	PaymentEventType_value = map[string]int32{
-		"PAYMENT_EVENT_TYPE_UNSPECIFIED": 0,
-		"PAYMENT_EVENT_TYPE_SUCCEEDED":   1,
-		"PAYMENT_EVENT_TYPE_FAILED":      2,
-		"PAYMENT_EVENT_TYPE_REFUNDED":    3,
-		"PAYMENT_EVENT_TYPE_REVOKED":     4,
-		"PAYMENT_EVENT_TYPE_CHARGEBACK":  5,
+		"PAYMENT_EVENT_TYPE_UNSPECIFIED":                   0,
+		"PAYMENT_EVENT_TYPE_SUCCEEDED":                     1,
+		"PAYMENT_EVENT_TYPE_FAILED":                        2,
+		"PAYMENT_EVENT_TYPE_REFUNDED":                      3,
+		"PAYMENT_EVENT_TYPE_REVOKED":                       4,
+		"PAYMENT_EVENT_TYPE_CHARGEBACK":                    5,
+		"PAYMENT_EVENT_TYPE_SUBSCRIPTION_SCHEDULED_CANCEL": 6,
+		"PAYMENT_EVENT_TYPE_SUBSCRIPTION_CANCELED":         7,
+		"PAYMENT_EVENT_TYPE_SUBSCRIPTION_PAST_DUE":         8,
+		"PAYMENT_EVENT_TYPE_SUBSCRIPTION_EXPIRED":          9,
+		"PAYMENT_EVENT_TYPE_SUBSCRIPTION_PAUSED":           10,
+		"PAYMENT_EVENT_TYPE_SUBSCRIPTION_ACTIVE_SYNC":      11,
 	}
 )
 
@@ -1089,10 +1107,11 @@ func (x *PlanDefinition) GetCreem() *CreemProductMapping {
 // CreemProductMapping 把一个不可变套餐版本绑定到已在 Creem 后台核对的产品。
 // included/contact 套餐不得填写；支付 adapter 不允许按 plan_id 猜 product ID。
 type CreemProductMapping struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProductId     string                 `protobuf:"bytes,1,opt,name=product_id,json=productId,proto3" json:"product_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	MonthlyProductId string                 `protobuf:"bytes,1,opt,name=monthly_product_id,json=monthlyProductId,proto3" json:"monthly_product_id,omitempty"`
+	YearlyProductId  string                 `protobuf:"bytes,2,opt,name=yearly_product_id,json=yearlyProductId,proto3" json:"yearly_product_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *CreemProductMapping) Reset() {
@@ -1125,9 +1144,16 @@ func (*CreemProductMapping) Descriptor() ([]byte, []int) {
 	return file_cloudpb_cloud_product_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *CreemProductMapping) GetProductId() string {
+func (x *CreemProductMapping) GetMonthlyProductId() string {
 	if x != nil {
-		return x.ProductId
+		return x.MonthlyProductId
+	}
+	return ""
+}
+
+func (x *CreemProductMapping) GetYearlyProductId() string {
+	if x != nil {
+		return x.YearlyProductId
 	}
 	return ""
 }
@@ -3279,6 +3305,7 @@ type OrderProjection struct {
 	DiscountMinor              int64                      `protobuf:"varint,17,opt,name=discount_minor,json=discountMinor,proto3" json:"discount_minor,omitempty"`
 	TotalMinor                 int64                      `protobuf:"varint,18,opt,name=total_minor,json=totalMinor,proto3" json:"total_minor,omitempty"`
 	Promotion                  *PromotionSnapshot         `protobuf:"bytes,19,opt,name=promotion,proto3" json:"promotion,omitempty"`
+	ProviderProductId          string                     `protobuf:"bytes,20,opt,name=provider_product_id,json=providerProductId,proto3" json:"provider_product_id,omitempty"`
 	unknownFields              protoimpl.UnknownFields
 	sizeCache                  protoimpl.SizeCache
 }
@@ -3444,6 +3471,13 @@ func (x *OrderProjection) GetPromotion() *PromotionSnapshot {
 		return x.Promotion
 	}
 	return nil
+}
+
+func (x *OrderProjection) GetProviderProductId() string {
+	if x != nil {
+		return x.ProviderProductId
+	}
+	return ""
 }
 
 // PromotionSnapshot 固化 checkout 时已核对的优惠经济字段。
@@ -3979,18 +4013,25 @@ func (x *SubscriptionAdjustmentProjection) GetRevision() uint64 {
 
 // PaymentAttemptProjection 是 checkout order 与 provider event 之间的持久尝试。
 type PaymentAttemptProjection struct {
-	state               protoimpl.MessageState `protogen:"open.v1"`
-	PaymentAttemptId    string                 `protobuf:"bytes,1,opt,name=payment_attempt_id,json=paymentAttemptId,proto3" json:"payment_attempt_id,omitempty"`
-	OrderId             string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
-	AccountId           string                 `protobuf:"bytes,3,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	Provider            string                 `protobuf:"bytes,4,opt,name=provider,proto3" json:"provider,omitempty"`
-	Status              PaymentAttemptStatus   `protobuf:"varint,5,opt,name=status,proto3,enum=muxvia.cloud.v1.PaymentAttemptStatus" json:"status,omitempty"`
-	CreatedAtUnixMillis int64                  `protobuf:"varint,6,opt,name=created_at_unix_millis,json=createdAtUnixMillis,proto3" json:"created_at_unix_millis,omitempty"`
-	UpdatedAtUnixMillis int64                  `protobuf:"varint,7,opt,name=updated_at_unix_millis,json=updatedAtUnixMillis,proto3" json:"updated_at_unix_millis,omitempty"`
-	ProviderReference   string                 `protobuf:"bytes,8,opt,name=provider_reference,json=providerReference,proto3" json:"provider_reference,omitempty"`
-	Revision            uint64                 `protobuf:"varint,9,opt,name=revision,proto3" json:"revision,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	state                         protoimpl.MessageState `protogen:"open.v1"`
+	PaymentAttemptId              string                 `protobuf:"bytes,1,opt,name=payment_attempt_id,json=paymentAttemptId,proto3" json:"payment_attempt_id,omitempty"`
+	OrderId                       string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	AccountId                     string                 `protobuf:"bytes,3,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	Provider                      string                 `protobuf:"bytes,4,opt,name=provider,proto3" json:"provider,omitempty"`
+	Status                        PaymentAttemptStatus   `protobuf:"varint,5,opt,name=status,proto3,enum=muxvia.cloud.v1.PaymentAttemptStatus" json:"status,omitempty"`
+	CreatedAtUnixMillis           int64                  `protobuf:"varint,6,opt,name=created_at_unix_millis,json=createdAtUnixMillis,proto3" json:"created_at_unix_millis,omitempty"`
+	UpdatedAtUnixMillis           int64                  `protobuf:"varint,7,opt,name=updated_at_unix_millis,json=updatedAtUnixMillis,proto3" json:"updated_at_unix_millis,omitempty"`
+	ProviderReference             string                 `protobuf:"bytes,8,opt,name=provider_reference,json=providerReference,proto3" json:"provider_reference,omitempty"`
+	Revision                      uint64                 `protobuf:"varint,9,opt,name=revision,proto3" json:"revision,omitempty"`
+	ProviderTransactionReference  string                 `protobuf:"bytes,10,opt,name=provider_transaction_reference,json=providerTransactionReference,proto3" json:"provider_transaction_reference,omitempty"`
+	ProviderDiscountReference     string                 `protobuf:"bytes,11,opt,name=provider_discount_reference,json=providerDiscountReference,proto3" json:"provider_discount_reference,omitempty"`
+	ReconcileAfterUnixMillis      int64                  `protobuf:"varint,12,opt,name=reconcile_after_unix_millis,json=reconcileAfterUnixMillis,proto3" json:"reconcile_after_unix_millis,omitempty"`
+	ReconcileDeadlineUnixMillis   int64                  `protobuf:"varint,13,opt,name=reconcile_deadline_unix_millis,json=reconcileDeadlineUnixMillis,proto3" json:"reconcile_deadline_unix_millis,omitempty"`
+	ReconcileAttempts             uint32                 `protobuf:"varint,14,opt,name=reconcile_attempts,json=reconcileAttempts,proto3" json:"reconcile_attempts,omitempty"`
+	LastProviderStatus            string                 `protobuf:"bytes,15,opt,name=last_provider_status,json=lastProviderStatus,proto3" json:"last_provider_status,omitempty"`
+	ProviderSubscriptionReference string                 `protobuf:"bytes,16,opt,name=provider_subscription_reference,json=providerSubscriptionReference,proto3" json:"provider_subscription_reference,omitempty"`
+	unknownFields                 protoimpl.UnknownFields
+	sizeCache                     protoimpl.SizeCache
 }
 
 func (x *PaymentAttemptProjection) Reset() {
@@ -4084,6 +4125,55 @@ func (x *PaymentAttemptProjection) GetRevision() uint64 {
 		return x.Revision
 	}
 	return 0
+}
+
+func (x *PaymentAttemptProjection) GetProviderTransactionReference() string {
+	if x != nil {
+		return x.ProviderTransactionReference
+	}
+	return ""
+}
+
+func (x *PaymentAttemptProjection) GetProviderDiscountReference() string {
+	if x != nil {
+		return x.ProviderDiscountReference
+	}
+	return ""
+}
+
+func (x *PaymentAttemptProjection) GetReconcileAfterUnixMillis() int64 {
+	if x != nil {
+		return x.ReconcileAfterUnixMillis
+	}
+	return 0
+}
+
+func (x *PaymentAttemptProjection) GetReconcileDeadlineUnixMillis() int64 {
+	if x != nil {
+		return x.ReconcileDeadlineUnixMillis
+	}
+	return 0
+}
+
+func (x *PaymentAttemptProjection) GetReconcileAttempts() uint32 {
+	if x != nil {
+		return x.ReconcileAttempts
+	}
+	return 0
+}
+
+func (x *PaymentAttemptProjection) GetLastProviderStatus() string {
+	if x != nil {
+		return x.LastProviderStatus
+	}
+	return ""
+}
+
+func (x *PaymentAttemptProjection) GetProviderSubscriptionReference() string {
+	if x != nil {
+		return x.ProviderSubscriptionReference
+	}
+	return ""
 }
 
 // PaymentEventProjection 是 operator/账号审计可见的 provider event journal 摘要。
@@ -4210,10 +4300,13 @@ func (x *CreateCheckoutRequest) GetPromotionCode() string {
 }
 
 type CreateCheckoutResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Order         *OrderProjection       `protobuf:"bytes,1,opt,name=order,proto3" json:"order,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState    `protogen:"open.v1"`
+	Order          *OrderProjection          `protobuf:"bytes,1,opt,name=order,proto3" json:"order,omitempty"`
+	PaymentAttempt *PaymentAttemptProjection `protobuf:"bytes,2,opt,name=payment_attempt,json=paymentAttempt,proto3" json:"payment_attempt,omitempty"`
+	Provider       string                    `protobuf:"bytes,3,opt,name=provider,proto3" json:"provider,omitempty"`
+	CheckoutUrl    string                    `protobuf:"bytes,4,opt,name=checkout_url,json=checkoutUrl,proto3" json:"checkout_url,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *CreateCheckoutResponse) Reset() {
@@ -4251,6 +4344,27 @@ func (x *CreateCheckoutResponse) GetOrder() *OrderProjection {
 		return x.Order
 	}
 	return nil
+}
+
+func (x *CreateCheckoutResponse) GetPaymentAttempt() *PaymentAttemptProjection {
+	if x != nil {
+		return x.PaymentAttempt
+	}
+	return nil
+}
+
+func (x *CreateCheckoutResponse) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *CreateCheckoutResponse) GetCheckoutUrl() string {
+	if x != nil {
+		return x.CheckoutUrl
+	}
+	return ""
 }
 
 type CreatePaymentAttemptRequest struct {
@@ -4351,22 +4465,28 @@ func (x *CreatePaymentAttemptResponse) GetPaymentAttempt() *PaymentAttemptProjec
 
 // NormalizedPaymentEvent 是所有正式/测试 provider 共用的 durable journal 输入。
 type NormalizedPaymentEvent struct {
-	state                protoimpl.MessageState `protogen:"open.v1"`
-	ProviderEventId      string                 `protobuf:"bytes,1,opt,name=provider_event_id,json=providerEventId,proto3" json:"provider_event_id,omitempty"`
-	Provider             string                 `protobuf:"bytes,2,opt,name=provider,proto3" json:"provider,omitempty"`
-	EventType            PaymentEventType       `protobuf:"varint,3,opt,name=event_type,json=eventType,proto3,enum=muxvia.cloud.v1.PaymentEventType" json:"event_type,omitempty"`
-	OrderId              string                 `protobuf:"bytes,4,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
-	AccountId            string                 `protobuf:"bytes,5,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	PlanId               string                 `protobuf:"bytes,6,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
-	PlanVersion          uint64                 `protobuf:"varint,7,opt,name=plan_version,json=planVersion,proto3" json:"plan_version,omitempty"`
-	ProviderReference    string                 `protobuf:"bytes,8,opt,name=provider_reference,json=providerReference,proto3" json:"provider_reference,omitempty"`
-	OccurredAtUnixMillis int64                  `protobuf:"varint,9,opt,name=occurred_at_unix_millis,json=occurredAtUnixMillis,proto3" json:"occurred_at_unix_millis,omitempty"`
-	PaymentAttemptId     string                 `protobuf:"bytes,10,opt,name=payment_attempt_id,json=paymentAttemptId,proto3" json:"payment_attempt_id,omitempty"`
-	ActorId              string                 `protobuf:"bytes,11,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
-	Reason               string                 `protobuf:"bytes,12,opt,name=reason,proto3" json:"reason,omitempty"`
-	RequestId            string                 `protobuf:"bytes,13,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	state                         protoimpl.MessageState `protogen:"open.v1"`
+	ProviderEventId               string                 `protobuf:"bytes,1,opt,name=provider_event_id,json=providerEventId,proto3" json:"provider_event_id,omitempty"`
+	Provider                      string                 `protobuf:"bytes,2,opt,name=provider,proto3" json:"provider,omitempty"`
+	EventType                     PaymentEventType       `protobuf:"varint,3,opt,name=event_type,json=eventType,proto3,enum=muxvia.cloud.v1.PaymentEventType" json:"event_type,omitempty"`
+	OrderId                       string                 `protobuf:"bytes,4,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	AccountId                     string                 `protobuf:"bytes,5,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	PlanId                        string                 `protobuf:"bytes,6,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
+	PlanVersion                   uint64                 `protobuf:"varint,7,opt,name=plan_version,json=planVersion,proto3" json:"plan_version,omitempty"`
+	ProviderReference             string                 `protobuf:"bytes,8,opt,name=provider_reference,json=providerReference,proto3" json:"provider_reference,omitempty"`
+	OccurredAtUnixMillis          int64                  `protobuf:"varint,9,opt,name=occurred_at_unix_millis,json=occurredAtUnixMillis,proto3" json:"occurred_at_unix_millis,omitempty"`
+	PaymentAttemptId              string                 `protobuf:"bytes,10,opt,name=payment_attempt_id,json=paymentAttemptId,proto3" json:"payment_attempt_id,omitempty"`
+	ActorId                       string                 `protobuf:"bytes,11,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Reason                        string                 `protobuf:"bytes,12,opt,name=reason,proto3" json:"reason,omitempty"`
+	RequestId                     string                 `protobuf:"bytes,13,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	ProviderProductId             string                 `protobuf:"bytes,14,opt,name=provider_product_id,json=providerProductId,proto3" json:"provider_product_id,omitempty"`
+	Currency                      string                 `protobuf:"bytes,15,opt,name=currency,proto3" json:"currency,omitempty"`
+	SubtotalMinor                 int64                  `protobuf:"varint,16,opt,name=subtotal_minor,json=subtotalMinor,proto3" json:"subtotal_minor,omitempty"`
+	DiscountMinor                 int64                  `protobuf:"varint,17,opt,name=discount_minor,json=discountMinor,proto3" json:"discount_minor,omitempty"`
+	ProviderDiscountReference     string                 `protobuf:"bytes,18,opt,name=provider_discount_reference,json=providerDiscountReference,proto3" json:"provider_discount_reference,omitempty"`
+	ProviderSubscriptionReference string                 `protobuf:"bytes,19,opt,name=provider_subscription_reference,json=providerSubscriptionReference,proto3" json:"provider_subscription_reference,omitempty"`
+	unknownFields                 protoimpl.UnknownFields
+	sizeCache                     protoimpl.SizeCache
 }
 
 func (x *NormalizedPaymentEvent) Reset() {
@@ -4486,6 +4606,48 @@ func (x *NormalizedPaymentEvent) GetReason() string {
 func (x *NormalizedPaymentEvent) GetRequestId() string {
 	if x != nil {
 		return x.RequestId
+	}
+	return ""
+}
+
+func (x *NormalizedPaymentEvent) GetProviderProductId() string {
+	if x != nil {
+		return x.ProviderProductId
+	}
+	return ""
+}
+
+func (x *NormalizedPaymentEvent) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
+}
+
+func (x *NormalizedPaymentEvent) GetSubtotalMinor() int64 {
+	if x != nil {
+		return x.SubtotalMinor
+	}
+	return 0
+}
+
+func (x *NormalizedPaymentEvent) GetDiscountMinor() int64 {
+	if x != nil {
+		return x.DiscountMinor
+	}
+	return 0
+}
+
+func (x *NormalizedPaymentEvent) GetProviderDiscountReference() string {
+	if x != nil {
+		return x.ProviderDiscountReference
+	}
+	return ""
+}
+
+func (x *NormalizedPaymentEvent) GetProviderSubscriptionReference() string {
+	if x != nil {
+		return x.ProviderSubscriptionReference
 	}
 	return ""
 }
@@ -5173,10 +5335,10 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\bincluded\x18\x05 \x01(\bR\bincluded\x12:\n" +
 	"\x05price\x18\x06 \x01(\v2$.muxvia.cloud.v1.PlanPriceDefinitionR\x05price\x12E\n" +
 	"\fpresentation\x18\a \x01(\v2!.muxvia.cloud.v1.PlanPresentationR\fpresentation\x12:\n" +
-	"\x05creem\x18\b \x01(\v2$.muxvia.cloud.v1.CreemProductMappingR\x05creem\"4\n" +
-	"\x13CreemProductMapping\x12\x1d\n" +
-	"\n" +
-	"product_id\x18\x01 \x01(\tR\tproductId\"\xc6\x01\n" +
+	"\x05creem\x18\b \x01(\v2$.muxvia.cloud.v1.CreemProductMappingR\x05creem\"o\n" +
+	"\x13CreemProductMapping\x12,\n" +
+	"\x12monthly_product_id\x18\x01 \x01(\tR\x10monthlyProductId\x12*\n" +
+	"\x11yearly_product_id\x18\x02 \x01(\tR\x0fyearlyProductId\"\xc6\x01\n" +
 	"\x13PlanPriceDefinition\x125\n" +
 	"\x04mode\x18\x01 \x01(\x0e2!.muxvia.cloud.v1.CatalogPriceModeR\x04mode\x12\x1a\n" +
 	"\bcurrency\x18\x02 \x01(\tR\bcurrency\x12#\n" +
@@ -5359,7 +5521,7 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\x12!\n" +
 	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"d\n" +
 	"\x1dChangeAccountPasswordResponse\x12C\n" +
-	"\asession\x18\x01 \x01(\v2).muxvia.cloud.v1.AccountSessionCredentialR\asession\"\xa1\a\n" +
+	"\asession\x18\x01 \x01(\v2).muxvia.cloud.v1.AccountSessionCredentialR\asession\"\xd1\a\n" +
 	"\x0fOrderProjection\x12\x19\n" +
 	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x1d\n" +
 	"\n" +
@@ -5382,7 +5544,8 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x0ediscount_minor\x18\x11 \x01(\x03R\rdiscountMinor\x12\x1f\n" +
 	"\vtotal_minor\x18\x12 \x01(\x03R\n" +
 	"totalMinor\x12@\n" +
-	"\tpromotion\x18\x13 \x01(\v2\".muxvia.cloud.v1.PromotionSnapshotR\tpromotion\"\xb6\x02\n" +
+	"\tpromotion\x18\x13 \x01(\v2\".muxvia.cloud.v1.PromotionSnapshotR\tpromotion\x12.\n" +
+	"\x13provider_product_id\x18\x14 \x01(\tR\x11providerProductId\"\xb6\x02\n" +
 	"\x11PromotionSnapshot\x12!\n" +
 	"\fpromotion_id\x18\x01 \x01(\tR\vpromotionId\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12K\n" +
@@ -5442,7 +5605,7 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\v \x01(\tR\trequestId\x123\n" +
 	"\x16created_at_unix_millis\x18\f \x01(\x03R\x13createdAtUnixMillis\x12\x1a\n" +
-	"\brevision\x18\r \x01(\x04R\brevision\"\x92\x03\n" +
+	"\brevision\x18\r \x01(\x04R\brevision\"\xc5\x06\n" +
 	"\x18PaymentAttemptProjection\x12,\n" +
 	"\x12payment_attempt_id\x18\x01 \x01(\tR\x10paymentAttemptId\x12\x19\n" +
 	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x1d\n" +
@@ -5453,7 +5616,15 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\x16created_at_unix_millis\x18\x06 \x01(\x03R\x13createdAtUnixMillis\x123\n" +
 	"\x16updated_at_unix_millis\x18\a \x01(\x03R\x13updatedAtUnixMillis\x12-\n" +
 	"\x12provider_reference\x18\b \x01(\tR\x11providerReference\x12\x1a\n" +
-	"\brevision\x18\t \x01(\x04R\brevision\"\x91\x01\n" +
+	"\brevision\x18\t \x01(\x04R\brevision\x12D\n" +
+	"\x1eprovider_transaction_reference\x18\n" +
+	" \x01(\tR\x1cproviderTransactionReference\x12>\n" +
+	"\x1bprovider_discount_reference\x18\v \x01(\tR\x19providerDiscountReference\x12=\n" +
+	"\x1breconcile_after_unix_millis\x18\f \x01(\x03R\x18reconcileAfterUnixMillis\x12C\n" +
+	"\x1ereconcile_deadline_unix_millis\x18\r \x01(\x03R\x1breconcileDeadlineUnixMillis\x12-\n" +
+	"\x12reconcile_attempts\x18\x0e \x01(\rR\x11reconcileAttempts\x120\n" +
+	"\x14last_provider_status\x18\x0f \x01(\tR\x12lastProviderStatus\x12F\n" +
+	"\x1fprovider_subscription_reference\x18\x10 \x01(\tR\x1dproviderSubscriptionReference\"\x91\x01\n" +
 	"\x16PaymentEventProjection\x12=\n" +
 	"\x05event\x18\x01 \x01(\v2'.muxvia.cloud.v1.NormalizedPaymentEventR\x05event\x128\n" +
 	"\x05state\x18\x02 \x01(\x0e2\".muxvia.cloud.v1.PaymentEventStateR\x05state\"\x81\x02\n" +
@@ -5461,14 +5632,17 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\aplan_id\x18\x01 \x01(\tR\x06planId\x12^\n" +
 	"\x14requested_transition\x18\x02 \x01(\x0e2+.muxvia.cloud.v1.SubscriptionTransitionKindR\x13requestedTransition\x12H\n" +
 	"\x0fbilling_cadence\x18\x03 \x01(\x0e2\x1f.muxvia.cloud.v1.BillingCadenceR\x0ebillingCadence\x12%\n" +
-	"\x0epromotion_code\x18\x04 \x01(\tR\rpromotionCode\"P\n" +
+	"\x0epromotion_code\x18\x04 \x01(\tR\rpromotionCode\"\xe3\x01\n" +
 	"\x16CreateCheckoutResponse\x126\n" +
-	"\x05order\x18\x01 \x01(\v2 .muxvia.cloud.v1.OrderProjectionR\x05order\"T\n" +
+	"\x05order\x18\x01 \x01(\v2 .muxvia.cloud.v1.OrderProjectionR\x05order\x12R\n" +
+	"\x0fpayment_attempt\x18\x02 \x01(\v2).muxvia.cloud.v1.PaymentAttemptProjectionR\x0epaymentAttempt\x12\x1a\n" +
+	"\bprovider\x18\x03 \x01(\tR\bprovider\x12!\n" +
+	"\fcheckout_url\x18\x04 \x01(\tR\vcheckoutUrl\"T\n" +
 	"\x1bCreatePaymentAttemptRequest\x12\x19\n" +
 	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x1a\n" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\"r\n" +
 	"\x1cCreatePaymentAttemptResponse\x12R\n" +
-	"\x0fpayment_attempt\x18\x01 \x01(\v2).muxvia.cloud.v1.PaymentAttemptProjectionR\x0epaymentAttempt\"\xfe\x03\n" +
+	"\x0fpayment_attempt\x18\x01 \x01(\v2).muxvia.cloud.v1.PaymentAttemptProjectionR\x0epaymentAttempt\"\xa0\x06\n" +
 	"\x16NormalizedPaymentEvent\x12*\n" +
 	"\x11provider_event_id\x18\x01 \x01(\tR\x0fproviderEventId\x12\x1a\n" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\x12@\n" +
@@ -5486,7 +5660,13 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\bactor_id\x18\v \x01(\tR\aactorId\x12\x16\n" +
 	"\x06reason\x18\f \x01(\tR\x06reason\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\r \x01(\tR\trequestId\"Y\n" +
+	"request_id\x18\r \x01(\tR\trequestId\x12.\n" +
+	"\x13provider_product_id\x18\x0e \x01(\tR\x11providerProductId\x12\x1a\n" +
+	"\bcurrency\x18\x0f \x01(\tR\bcurrency\x12%\n" +
+	"\x0esubtotal_minor\x18\x10 \x01(\x03R\rsubtotalMinor\x12%\n" +
+	"\x0ediscount_minor\x18\x11 \x01(\x03R\rdiscountMinor\x12>\n" +
+	"\x1bprovider_discount_reference\x18\x12 \x01(\tR\x19providerDiscountReference\x12F\n" +
+	"\x1fprovider_subscription_reference\x18\x13 \x01(\tR\x1dproviderSubscriptionReference\"Y\n" +
 	"\x18ApplyPaymentEventRequest\x12=\n" +
 	"\x05event\x18\x01 \x01(\v2'.muxvia.cloud.v1.NormalizedPaymentEventR\x05event\"\xb9\x02\n" +
 	"\x19ApplyPaymentEventResponse\x126\n" +
@@ -5592,14 +5772,21 @@ const file_cloudpb_cloud_product_proto_rawDesc = "" +
 	"\"PAYMENT_ATTEMPT_STATUS_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1ePAYMENT_ATTEMPT_STATUS_PENDING\x10\x01\x12$\n" +
 	" PAYMENT_ATTEMPT_STATUS_SUCCEEDED\x10\x02\x12!\n" +
-	"\x1dPAYMENT_ATTEMPT_STATUS_FAILED\x10\x03*\xdb\x01\n" +
+	"\x1dPAYMENT_ATTEMPT_STATUS_FAILED\x10\x03*\xf7\x03\n" +
 	"\x10PaymentEventType\x12\"\n" +
 	"\x1ePAYMENT_EVENT_TYPE_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cPAYMENT_EVENT_TYPE_SUCCEEDED\x10\x01\x12\x1d\n" +
 	"\x19PAYMENT_EVENT_TYPE_FAILED\x10\x02\x12\x1f\n" +
 	"\x1bPAYMENT_EVENT_TYPE_REFUNDED\x10\x03\x12\x1e\n" +
 	"\x1aPAYMENT_EVENT_TYPE_REVOKED\x10\x04\x12!\n" +
-	"\x1dPAYMENT_EVENT_TYPE_CHARGEBACK\x10\x05*\x9d\x01\n" +
+	"\x1dPAYMENT_EVENT_TYPE_CHARGEBACK\x10\x05\x124\n" +
+	"0PAYMENT_EVENT_TYPE_SUBSCRIPTION_SCHEDULED_CANCEL\x10\x06\x12,\n" +
+	"(PAYMENT_EVENT_TYPE_SUBSCRIPTION_CANCELED\x10\a\x12,\n" +
+	"(PAYMENT_EVENT_TYPE_SUBSCRIPTION_PAST_DUE\x10\b\x12+\n" +
+	"'PAYMENT_EVENT_TYPE_SUBSCRIPTION_EXPIRED\x10\t\x12*\n" +
+	"&PAYMENT_EVENT_TYPE_SUBSCRIPTION_PAUSED\x10\n" +
+	"\x12/\n" +
+	"+PAYMENT_EVENT_TYPE_SUBSCRIPTION_ACTIVE_SYNC\x10\v*\x9d\x01\n" +
 	"\x11PaymentEventState\x12#\n" +
 	"\x1fPAYMENT_EVENT_STATE_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cPAYMENT_EVENT_STATE_RECEIVED\x10\x01\x12\x1f\n" +
@@ -5759,33 +5946,34 @@ var file_cloudpb_cloud_product_proto_depIdxs = []int32{
 	11, // 37: muxvia.cloud.v1.CreateCheckoutRequest.requested_transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
 	3,  // 38: muxvia.cloud.v1.CreateCheckoutRequest.billing_cadence:type_name -> muxvia.cloud.v1.BillingCadence
 	48, // 39: muxvia.cloud.v1.CreateCheckoutResponse.order:type_name -> muxvia.cloud.v1.OrderProjection
-	53, // 40: muxvia.cloud.v1.CreatePaymentAttemptResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
-	9,  // 41: muxvia.cloud.v1.NormalizedPaymentEvent.event_type:type_name -> muxvia.cloud.v1.PaymentEventType
-	59, // 42: muxvia.cloud.v1.ApplyPaymentEventRequest.event:type_name -> muxvia.cloud.v1.NormalizedPaymentEvent
-	48, // 43: muxvia.cloud.v1.ApplyPaymentEventResponse.order:type_name -> muxvia.cloud.v1.OrderProjection
-	23, // 44: muxvia.cloud.v1.ApplyPaymentEventResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
-	10, // 45: muxvia.cloud.v1.ApplyPaymentEventResponse.event_state:type_name -> muxvia.cloud.v1.PaymentEventState
-	53, // 46: muxvia.cloud.v1.ApplyPaymentEventResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
-	9,  // 47: muxvia.cloud.v1.ConfirmTestPaymentRequest.event_type:type_name -> muxvia.cloud.v1.PaymentEventType
-	61, // 48: muxvia.cloud.v1.ConfirmTestPaymentResponse.result:type_name -> muxvia.cloud.v1.ApplyPaymentEventResponse
-	11, // 49: muxvia.cloud.v1.TransitionSubscriptionRequest.transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
-	23, // 50: muxvia.cloud.v1.TransitionSubscriptionResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
-	24, // 51: muxvia.cloud.v1.TransitionSubscriptionResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
-	36, // 52: muxvia.cloud.v1.GetAccountCommerceResponse.account:type_name -> muxvia.cloud.v1.AccountProjection
-	23, // 53: muxvia.cloud.v1.GetAccountCommerceResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
-	24, // 54: muxvia.cloud.v1.GetAccountCommerceResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
-	48, // 55: muxvia.cloud.v1.GetAccountCommerceResponse.orders:type_name -> muxvia.cloud.v1.OrderProjection
-	66, // 56: muxvia.cloud.v1.GetAccountCommerceResponse.audit:type_name -> muxvia.cloud.v1.CommerceAuditProjection
-	53, // 57: muxvia.cloud.v1.GetAccountCommerceResponse.payment_attempts:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
-	54, // 58: muxvia.cloud.v1.GetAccountCommerceResponse.payment_events:type_name -> muxvia.cloud.v1.PaymentEventProjection
-	16, // 59: muxvia.cloud.v1.GetAccountCommerceResponse.plan:type_name -> muxvia.cloud.v1.PlanDefinition
-	51, // 60: muxvia.cloud.v1.GetAccountCommerceResponse.promotion_redemptions:type_name -> muxvia.cloud.v1.PromotionRedemptionProjection
-	52, // 61: muxvia.cloud.v1.GetAccountCommerceResponse.subscription_adjustments:type_name -> muxvia.cloud.v1.SubscriptionAdjustmentProjection
-	62, // [62:62] is the sub-list for method output_type
-	62, // [62:62] is the sub-list for method input_type
-	62, // [62:62] is the sub-list for extension type_name
-	62, // [62:62] is the sub-list for extension extendee
-	0,  // [0:62] is the sub-list for field type_name
+	53, // 40: muxvia.cloud.v1.CreateCheckoutResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
+	53, // 41: muxvia.cloud.v1.CreatePaymentAttemptResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
+	9,  // 42: muxvia.cloud.v1.NormalizedPaymentEvent.event_type:type_name -> muxvia.cloud.v1.PaymentEventType
+	59, // 43: muxvia.cloud.v1.ApplyPaymentEventRequest.event:type_name -> muxvia.cloud.v1.NormalizedPaymentEvent
+	48, // 44: muxvia.cloud.v1.ApplyPaymentEventResponse.order:type_name -> muxvia.cloud.v1.OrderProjection
+	23, // 45: muxvia.cloud.v1.ApplyPaymentEventResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	10, // 46: muxvia.cloud.v1.ApplyPaymentEventResponse.event_state:type_name -> muxvia.cloud.v1.PaymentEventState
+	53, // 47: muxvia.cloud.v1.ApplyPaymentEventResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
+	9,  // 48: muxvia.cloud.v1.ConfirmTestPaymentRequest.event_type:type_name -> muxvia.cloud.v1.PaymentEventType
+	61, // 49: muxvia.cloud.v1.ConfirmTestPaymentResponse.result:type_name -> muxvia.cloud.v1.ApplyPaymentEventResponse
+	11, // 50: muxvia.cloud.v1.TransitionSubscriptionRequest.transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
+	23, // 51: muxvia.cloud.v1.TransitionSubscriptionResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	24, // 52: muxvia.cloud.v1.TransitionSubscriptionResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
+	36, // 53: muxvia.cloud.v1.GetAccountCommerceResponse.account:type_name -> muxvia.cloud.v1.AccountProjection
+	23, // 54: muxvia.cloud.v1.GetAccountCommerceResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	24, // 55: muxvia.cloud.v1.GetAccountCommerceResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
+	48, // 56: muxvia.cloud.v1.GetAccountCommerceResponse.orders:type_name -> muxvia.cloud.v1.OrderProjection
+	66, // 57: muxvia.cloud.v1.GetAccountCommerceResponse.audit:type_name -> muxvia.cloud.v1.CommerceAuditProjection
+	53, // 58: muxvia.cloud.v1.GetAccountCommerceResponse.payment_attempts:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
+	54, // 59: muxvia.cloud.v1.GetAccountCommerceResponse.payment_events:type_name -> muxvia.cloud.v1.PaymentEventProjection
+	16, // 60: muxvia.cloud.v1.GetAccountCommerceResponse.plan:type_name -> muxvia.cloud.v1.PlanDefinition
+	51, // 61: muxvia.cloud.v1.GetAccountCommerceResponse.promotion_redemptions:type_name -> muxvia.cloud.v1.PromotionRedemptionProjection
+	52, // 62: muxvia.cloud.v1.GetAccountCommerceResponse.subscription_adjustments:type_name -> muxvia.cloud.v1.SubscriptionAdjustmentProjection
+	63, // [63:63] is the sub-list for method output_type
+	63, // [63:63] is the sub-list for method input_type
+	63, // [63:63] is the sub-list for extension type_name
+	63, // [63:63] is the sub-list for extension extendee
+	0,  // [0:63] is the sub-list for field type_name
 }
 
 func init() { file_cloudpb_cloud_product_proto_init() }

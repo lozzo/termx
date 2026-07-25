@@ -1,6 +1,7 @@
 package webcontroller
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -27,6 +28,12 @@ type ProductAPIConfig struct {
 	Commerce                  *commerce.Service
 	SecureCookie              bool
 	EnableTestPaymentProvider bool
+	CheckoutProvider          CheckoutProvider
+}
+
+// CheckoutProvider 把已创建的 pending order 交给正式 provider，并只返回持久 attempt 与跳转 URL。
+type CheckoutProvider interface {
+	StartCheckout(context.Context, *cloudpb.AccountProjection, *cloudpb.OrderProjection) (*cloudpb.PaymentAttemptProjection, string, error)
 }
 
 // ProductAPIHandler 把 generated Cloud Product API 接到 Controller public listener。
@@ -131,6 +138,16 @@ func ProductAPIHandler(config ProductAPIConfig) (http.Handler, error) {
 		var response *cloudpb.CreateCheckoutResponse
 		if err == nil {
 			response, err = config.Commerce.CreateCheckout(r.Context(), account.GetAccountId(), account.GetUserId(), request)
+		}
+		if err == nil && config.CheckoutProvider != nil {
+			var attempt *cloudpb.PaymentAttemptProjection
+			var checkoutURL string
+			attempt, checkoutURL, err = config.CheckoutProvider.StartCheckout(r.Context(), account, response.GetOrder())
+			if err == nil {
+				response.PaymentAttempt = attempt
+				response.Provider = "creem"
+				response.CheckoutUrl = checkoutURL
+			}
 		}
 		writeProductProto(w, http.StatusCreated, response, err)
 	})

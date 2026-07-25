@@ -32,3 +32,21 @@ func TestBootstrapOriginsRequireCleanHTTPSOrigin(t *testing.T) {
 		}
 	}
 }
+
+func TestBootstrapCreemOptions(t *testing.T) {
+	if err := validateCreemOptions("test", "https://muxvia.com/account?payment=return"); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		environment string
+		successURL  string
+	}{
+		{environment: "sandbox", successURL: "https://muxvia.com/account"},
+		{environment: "test", successURL: "http://muxvia.com/account"},
+		{environment: "production", successURL: "https://user@muxvia.com/account"},
+	} {
+		if err := validateCreemOptions(test.environment, test.successURL); err == nil {
+			t.Fatalf("invalid Creem options were accepted: %+v", test)
+		}
+	}
+}

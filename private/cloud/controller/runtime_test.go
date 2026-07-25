@@ -462,7 +462,8 @@ func configuredTestCatalogPath(t *testing.T) string {
 	for index := range catalog.Plans {
 		if catalog.Plans[index].ID == "pro" {
 			catalog.Plans[index].Price = webcontroller.CatalogPrice{Mode: "configured", Label: "$10", MonthlyMinor: &monthly, YearlyMinor: &yearly}
-			catalog.Plans[index].CreemProductID = "prod_controller_runtime_test"
+			catalog.Plans[index].CreemMonthlyProductID = "prod_controller_runtime_monthly_test"
+			catalog.Plans[index].CreemYearlyProductID = "prod_controller_runtime_yearly_test"
 		}
 	}
 	body, err := json.Marshal(catalog)

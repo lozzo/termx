@@ -61,6 +61,8 @@ type options struct {
 	primaryPublicIP   string
 	secondaryPublicIP string
 	bootstrapEmail    string
+	creemEnvironment  string
+	creemSuccessURL   string
 	validity          time.Duration
 }
 
@@ -85,6 +87,8 @@ func run(ctx context.Context, args []string) error {
 	flags.StringVar(&value.primaryPublicIP, "primary-public-ip", "155.94.155.192", "primary Relay public IPv4")
 	flags.StringVar(&value.secondaryPublicIP, "secondary-public-ip", "114.66.58.243", "secondary Relay public IPv4")
 	flags.StringVar(&value.bootstrapEmail, "bootstrap-email", "bootstrap@muxvia.com", "initial staging account email")
+	flags.StringVar(&value.creemEnvironment, "creem-environment", "", "Creem provider environment: test or production")
+	flags.StringVar(&value.creemSuccessURL, "creem-success-url", "https://muxvia.com/account?payment=return", "HTTPS account URL used after Creem checkout")
 	validityDays := flags.Int("credential-validity-days", 30, "absolute deployment key window in days")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -100,6 +104,9 @@ func run(ctx context.Context, args []string) error {
 		if err := validateOrigin(origin); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
+	}
+	if err := validateCreemOptions(value.creemEnvironment, value.creemSuccessURL); err != nil {
+		return err
 	}
 	baseDSN := strings.TrimSpace(os.Getenv(postgresDSNEnvironment))
 	if baseDSN == "" {
@@ -237,10 +244,14 @@ func generate(ctx context.Context, value options, deploymentDSN string) error {
 		CatalogPath: "/opt/muxvia/config/plans.json", ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate),
 		CredentialNotBeforeUnixMillis: notBefore.UnixMilli(), CredentialNotAfterUnixMillis: notAfter.UnixMilli(),
 		DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate),
-		Deployments: []controller.DeploymentConfig{primary.deployment, secondary.deployment}, EnableTestPaymentProvider: true,
+		Deployments: []controller.DeploymentConfig{primary.deployment, secondary.deployment}, EnableTestPaymentProvider: value.creemEnvironment == "",
 		DevelopmentMobileHubID: primary.deployment.Metadata.GetHubId(), DevelopmentMobileHubURL: value.primaryHubURL, DevelopmentMobileHubRegion: primary.deployment.Metadata.GetRegion(),
 		OperatorID: "bootstrap-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes),
 		SecureCookie: true, WebStaticDir: "/opt/muxvia/web",
+	}
+	if value.creemEnvironment != "" {
+		controllerConfig.CreemEnvironment = value.creemEnvironment
+		controllerConfig.CreemSuccessURL = value.creemSuccessURL
 	}
 	clear(operatorTokenBytes)
 	assets := map[string]any{
@@ -286,6 +297,21 @@ func validateOrigin(value string) error {
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Path != "" && parsed.Path != "/" || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return errors.New("HTTPS origin without path, query, fragment or userinfo is required")
+	}
+	return nil
+}
+
+func validateCreemOptions(environment, successURL string) error {
+	environment = strings.TrimSpace(environment)
+	if environment == "" {
+		return nil
+	}
+	if environment != "test" && environment != "production" {
+		return fmt.Errorf("Creem environment must be test or production")
+	}
+	parsed, err := url.Parse(strings.TrimSpace(successURL))
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
+		return fmt.Errorf("Creem success URL must be an HTTPS URL without userinfo or fragment")
 	}
 	return nil
 }

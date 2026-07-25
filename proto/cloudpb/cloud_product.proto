@@ -89,6 +89,12 @@ enum PaymentEventType {
   PAYMENT_EVENT_TYPE_REFUNDED = 3;
   PAYMENT_EVENT_TYPE_REVOKED = 4;
   PAYMENT_EVENT_TYPE_CHARGEBACK = 5;
+  PAYMENT_EVENT_TYPE_SUBSCRIPTION_SCHEDULED_CANCEL = 6;
+  PAYMENT_EVENT_TYPE_SUBSCRIPTION_CANCELED = 7;
+  PAYMENT_EVENT_TYPE_SUBSCRIPTION_PAST_DUE = 8;
+  PAYMENT_EVENT_TYPE_SUBSCRIPTION_EXPIRED = 9;
+  PAYMENT_EVENT_TYPE_SUBSCRIPTION_PAUSED = 10;
+  PAYMENT_EVENT_TYPE_SUBSCRIPTION_ACTIVE_SYNC = 11;
 }
 
 // PaymentEventState 表示 durable provider journal 的处理阶段。
@@ -170,7 +176,8 @@ message PlanDefinition {
 // CreemProductMapping 把一个不可变套餐版本绑定到已在 Creem 后台核对的产品。
 // included/contact 套餐不得填写；支付 adapter 不允许按 plan_id 猜 product ID。
 message CreemProductMapping {
-  string product_id = 1;
+  string monthly_product_id = 1;
+  string yearly_product_id = 2;
 }
 
 // PlanPriceDefinition 是 catalog 与订单快照共用的价格契约。
@@ -438,6 +445,7 @@ message OrderProjection {
   int64 discount_minor = 17;
   int64 total_minor = 18;
   PromotionSnapshot promotion = 19;
+  string provider_product_id = 20;
 }
 
 // PromotionSnapshot 固化 checkout 时已核对的优惠经济字段。
@@ -514,6 +522,13 @@ message PaymentAttemptProjection {
   int64 updated_at_unix_millis = 7;
   string provider_reference = 8;
   uint64 revision = 9;
+  string provider_transaction_reference = 10;
+  string provider_discount_reference = 11;
+  int64 reconcile_after_unix_millis = 12;
+  int64 reconcile_deadline_unix_millis = 13;
+  uint32 reconcile_attempts = 14;
+  string last_provider_status = 15;
+  string provider_subscription_reference = 16;
 }
 
 // PaymentEventProjection 是 operator/账号审计可见的 provider event journal 摘要。
@@ -533,6 +548,9 @@ message CreateCheckoutRequest {
 
 message CreateCheckoutResponse {
   OrderProjection order = 1;
+  PaymentAttemptProjection payment_attempt = 2;
+  string provider = 3;
+  string checkout_url = 4;
 }
 
 message CreatePaymentAttemptRequest {
@@ -559,6 +577,12 @@ message NormalizedPaymentEvent {
   string actor_id = 11;
   string reason = 12;
   string request_id = 13;
+  string provider_product_id = 14;
+  string currency = 15;
+  int64 subtotal_minor = 16;
+  int64 discount_minor = 17;
+  string provider_discount_reference = 18;
+  string provider_subscription_reference = 19;
 }
 
 // ApplyPaymentEventRequest 仅供 provider adapter 使用；签名验证发生在调用本 API 前。

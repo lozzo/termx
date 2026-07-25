@@ -30,22 +30,29 @@ type OperatorFleetQuery interface {
 	GetHubStatus(context.Context, string) (*cloudpb.GetHubStatusResponse, error)
 }
 
+// OperatorPaymentReconciler 从正式 provider 服务端立即核对一个持久 payment attempt。
+// 实现必须把结果送入 commerce normalized journal，不能直接修改订单或订阅。
+type OperatorPaymentReconciler interface {
+	ReconcilePaymentAttempt(context.Context, string) (*cloudpb.PaymentAttemptProjection, error)
+}
+
 // OperatorAPIConfig 装配独立 operator listener 的最小角色、账号和 fleet API。
 type OperatorAPIConfig struct {
-	AccessToken  []byte
-	OperatorID   string
-	ActorKind    cloudpb.ManagementActorKind
-	Commerce     *commerce.Service
-	Catalog      *cloudcatalog.Service
-	Overrides    *cloudentitlement.OverrideService
-	Promotions   *promotion.Service
-	Topology     ManagementTopologyQuery
-	Quota        RelayQuotaQuery
-	Outbox       *commandoutbox.Service
-	Planner      *commandoutbox.Planner
-	Fleet        OperatorFleetQuery
-	Now          func() time.Time
-	SecureCookie bool
+	AccessToken       []byte
+	OperatorID        string
+	ActorKind         cloudpb.ManagementActorKind
+	Commerce          *commerce.Service
+	Catalog           *cloudcatalog.Service
+	Overrides         *cloudentitlement.OverrideService
+	Promotions        *promotion.Service
+	Topology          ManagementTopologyQuery
+	Quota             RelayQuotaQuery
+	Outbox            *commandoutbox.Service
+	Planner           *commandoutbox.Planner
+	Fleet             OperatorFleetQuery
+	PaymentReconciler OperatorPaymentReconciler
+	Now               func() time.Time
+	SecureCookie      bool
 }
 
 // OperatorAPIHandler 使用 HttpOnly session、CSRF 与五分钟近期认证保护管理操作。
@@ -213,6 +220,36 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		var response *cloudpb.ApplyOperatorPaymentEventResponse
 		if err == nil {
 			response, err = config.Commerce.ApplyOperatorPaymentEvent(r.Context(), request, config.OperatorID)
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("POST /api/v1/operator/orders/reconcile-creem", func(w http.ResponseWriter, r *http.Request) {
+		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		if err == nil {
+			err = requireOperatorMutation(r, record, config.Now().UTC())
+		}
+		request := &cloudpb.ReconcileCreemPaymentAttemptRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		if err == nil && (config.PaymentReconciler == nil || request.GetPaymentAttemptId() == "" || strings.TrimSpace(request.GetReason()) == "" || request.GetRequestId() == "") {
+			err = commerce.ErrConflict
+		}
+		var response *cloudpb.ReconcileCreemPaymentAttemptResponse
+		if err == nil {
+			_, _, before, loadErr := config.Commerce.ProviderPaymentContext(r.Context(), request.GetPaymentAttemptId())
+			err = loadErr
+			if loadErr == nil {
+				var reconciled *cloudpb.PaymentAttemptProjection
+				reconciled, err = config.PaymentReconciler.ReconcilePaymentAttempt(r.Context(), request.GetPaymentAttemptId())
+				if err == nil {
+					err = config.Commerce.RecordPaymentReconciliationAudit(r.Context(), request.GetPaymentAttemptId(), config.OperatorID, request.GetReason(), request.GetRequestId(), before.GetRevision(), reconciled.GetRevision())
+					response = &cloudpb.ReconcileCreemPaymentAttemptResponse{PaymentAttempt: reconciled}
+				} else if _, _, latest, latestErr := config.Commerce.ProviderPaymentContext(r.Context(), request.GetPaymentAttemptId()); latestErr == nil {
+					// Provider 失败也必须留下请求原因；原始 provider 错误继续返回给运营端。
+					_ = config.Commerce.RecordPaymentReconciliationAudit(r.Context(), request.GetPaymentAttemptId(), config.OperatorID, request.GetReason(), request.GetRequestId(), before.GetRevision(), latest.GetRevision())
+				}
+			}
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})

@@ -59,6 +59,19 @@ func TestCommerceOperationsMigrationDeclaresPromotionAndAdjustmentTruth(t *testi
 	}
 }
 
+func TestCreemProviderMigrationDeclaresDurableReconciliationIndexes(t *testing.T) {
+	body, err := os.ReadFile("migrations/0004_creem_provider.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(body)
+	for _, field := range []string{"provider_reference", "provider_transaction_reference", "provider_subscription_reference", "reconcile_after", "reconcile_deadline"} {
+		if !strings.Contains(sql, "ADD COLUMN "+field) {
+			t.Fatalf("Creem provider migration is missing %s", field)
+		}
+	}
+}
+
 func TestPostgreSQLPlaceholderRebinding(t *testing.T) {
 	// Placeholder conversion is adapter-local，业务 query 不得自行拼接 PostgreSQL 参数编号。
 	if got := rebind("SELECT * FROM value WHERE a=? AND b=?"); got != "SELECT * FROM value WHERE a=$1 AND b=$2" {

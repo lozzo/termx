@@ -236,7 +236,7 @@ Refund/Revocation
 
 ### 7.1 Creem provider 与双通道收口
 
-Muxvia 首个正式支付 provider 是 Creem。Creem 只拥有外部 checkout、customer、order、transaction 和 subscription 资源；Muxvia `Order`、`PaymentAttempt`、`PaymentEvent`、`Subscription` 与 `Entitlement` 仍是产品真值。
+Muxvia 首个正式支付 provider 是 Creem。Creem 拥有外部 Product、Discount、Checkout、Customer、Order、Transaction、退款和 provider subscription 资源；Muxvia 只保存不可变 mapping、经济快照，且 `Order`、`PaymentAttempt`、`PaymentEvent`、Muxvia `Subscription` 与 `Entitlement` 仍是服务权限真值。
 
 - Controller 服务端使用 deployment secret 调用 Creem sandbox/production API，Web 与客户端不能接触 API key。
 - checkout 使用 Muxvia order ID 作为稳定 request ID，并持久化 provider resource 映射和创建时的价格/套餐 revision。

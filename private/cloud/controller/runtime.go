@@ -25,6 +25,7 @@ import (
 	cloudcatalog "github.com/muxvia/muxvia/private/cloud/control-plane/catalog"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/commandoutbox"
 	cloudcommerce "github.com/muxvia/muxvia/private/cloud/control-plane/commerce"
+	cloudcreem "github.com/muxvia/muxvia/private/cloud/control-plane/creem"
 	cloudentitlement "github.com/muxvia/muxvia/private/cloud/control-plane/entitlement"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubcontrol"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/hubregistry"
@@ -76,6 +77,10 @@ type Config struct {
 	Devices                       []*cloudpb.CloudDevicePolicy `json:"devices"`
 	Assignments                   []*cloudpb.HubAssignment     `json:"assignments"`
 	EnableTestPaymentProvider     bool                         `json:"enable_test_payment_provider"`
+	CreemEnvironment              string                       `json:"creem_environment,omitempty"`
+	CreemSuccessURL               string                       `json:"creem_success_url,omitempty"`
+	CreemAPIKey                   string                       `json:"-"`
+	CreemWebhookSecret            string                       `json:"-"`
 	DevelopmentMobileHubID        string                       `json:"development_mobile_hub_id"`
 	DevelopmentMobileHubURL       string                       `json:"development_mobile_hub_url"`
 	DevelopmentMobileHubRegion    string                       `json:"development_mobile_hub_region"`
@@ -208,7 +213,23 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		case <-policyDone:
 		}
 	}
-	promotionService, err := cloudpromotion.New(store, time.Now, nil)
+	var creemClient *cloudcreem.Client
+	if config.CreemEnvironment != "" || config.CreemAPIKey != "" || config.CreemWebhookSecret != "" || config.CreemSuccessURL != "" {
+		creemClient, err = cloudcreem.NewClient(cloudcreem.ClientConfig{Environment: cloudcreem.Environment(config.CreemEnvironment), APIKey: config.CreemAPIKey})
+		if err != nil || config.CreemSuccessURL == "" {
+			_ = store.Close()
+			return nil, fmt.Errorf("invalid Creem provider configuration")
+		}
+	}
+	var promotionValidator cloudpromotion.ExternalValidator
+	if creemClient != nil {
+		promotionValidator, err = cloudcreem.NewPromotionValidator(creemClient, catalogService)
+		if err != nil {
+			_ = store.Close()
+			return nil, err
+		}
+	}
+	promotionService, err := cloudpromotion.New(store, time.Now, nil, promotionValidator)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -217,6 +238,14 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	if err != nil {
 		_ = store.Close()
 		return nil, err
+	}
+	var creemService *cloudcreem.Service
+	if creemClient != nil {
+		creemService, err = cloudcreem.NewService(cloudcreem.ServiceConfig{API: creemClient, Commerce: commerceService, SuccessURL: config.CreemSuccessURL, WebhookSecret: config.CreemWebhookSecret, Now: time.Now})
+		if err != nil {
+			_ = store.Close()
+			return nil, err
+		}
 	}
 	overrideService, err := cloudentitlement.NewOverrideService(cloudentitlement.OverrideServiceConfig{Store: store, Plans: catalogService, Now: time.Now, NotifyPolicyChange: notifyPolicyChange})
 	if err != nil {
@@ -367,7 +396,11 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	productHandler, err := webcontroller.ProductAPIHandler(webcontroller.ProductAPIConfig{Commerce: commerceService, EnableTestPaymentProvider: config.EnableTestPaymentProvider, SecureCookie: config.SecureCookie})
+	var checkoutProvider webcontroller.CheckoutProvider
+	if creemService != nil {
+		checkoutProvider = creemService
+	}
+	productHandler, err := webcontroller.ProductAPIHandler(webcontroller.ProductAPIConfig{Commerce: commerceService, EnableTestPaymentProvider: config.EnableTestPaymentProvider, CheckoutProvider: checkoutProvider, SecureCookie: config.SecureCookie})
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -398,6 +431,9 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	}
 	publicMux := http.NewServeMux()
 	publicMux.HandleFunc("/healthz", healthHandler)
+	if creemService != nil {
+		publicMux.Handle("/pay/creem", creemService.WebhookHandler())
+	}
 	mobileActivation.registerHTTP(publicMux)
 	enrollment.registerHTTP(publicMux)
 	publicMux.HandleFunc("/api/v1/catalog", func(writer http.ResponseWriter, request *http.Request) {
@@ -435,7 +471,7 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 			return nil, fmt.Errorf("invalid operator role")
 		}
 		fleet := &fleetQuery{registry: registry, publisher: publisher, hubControl: controlServer, relayControl: relayControlServer}
-		operatorHandler, handlerErr := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{AccessToken: operatorToken, OperatorID: config.OperatorID, ActorKind: actorKind, Commerce: commerceService, Catalog: catalogService, Overrides: overrideService, Promotions: promotionService, Topology: topologyService, Quota: store, Outbox: outboxService, Planner: planner, Fleet: fleet, Now: time.Now, SecureCookie: config.SecureCookie})
+		operatorHandler, handlerErr := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{AccessToken: operatorToken, OperatorID: config.OperatorID, ActorKind: actorKind, Commerce: commerceService, Catalog: catalogService, Overrides: overrideService, Promotions: promotionService, Topology: topologyService, Quota: store, Outbox: outboxService, Planner: planner, Fleet: fleet, PaymentReconciler: creemService, Now: time.Now, SecureCookie: config.SecureCookie})
 		clear(operatorToken)
 		if handlerErr != nil {
 			_ = store.Close()
@@ -489,6 +525,10 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	go runtime.runPolicyPublisher(config, policyService, privateKey, refreshInterval)
 	go runtime.runEntitlementOverrideReconciler(overrideService)
 	go runtime.runPromotionReservationReconciler(promotionService)
+	if creemService != nil {
+		runtime.policyWG.Add(1)
+		go runtime.runCreemReconciler(creemService)
+	}
 	runtime.dispatcherWG.Add(1)
 	go runtime.runCommandDispatcher()
 	manifest := Manifest{PID: os.Getpid(), PublicURL: origin(publicListener), InternalControlURL: origin(internalListener), OperatorURL: origin(operatorListener), DatabaseEngine: "postgresql"}
@@ -544,6 +584,22 @@ func (runtime *Runtime) runCommandDispatcher() {
 	for {
 		err := runtime.dispatcher.DispatchOnce(context.Background(), time.Now().UTC(), 128)
 		if err != nil && !errors.Is(err, hubcontrol.ErrPublisherBackpressure) && !errors.Is(err, relaycontrol.ErrPublisherBackpressure) && !errors.Is(err, commandoutbox.ErrCommandConflict) && !errors.Is(err, commandoutbox.ErrCommandNotFound) {
+			runtime.reportPolicyError(err)
+		}
+		select {
+		case <-ticker.C:
+		case <-runtime.policyDone:
+			return
+		}
+	}
+}
+
+func (runtime *Runtime) runCreemReconciler(service *cloudcreem.Service) {
+	defer runtime.policyWG.Done()
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		if _, err := service.ReconcileOnce(context.Background(), 100); err != nil {
 			runtime.reportPolicyError(err)
 		}
 		select {

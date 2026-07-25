@@ -93,7 +93,10 @@ type Store interface {
 	CreateOrder(context.Context, *cloudpb.OrderProjection, *cloudpb.CommerceAuditProjection) error
 	Order(context.Context, string) (*cloudpb.OrderProjection, error)
 	CreatePaymentAttempt(context.Context, *cloudpb.PaymentAttemptProjection, *cloudpb.CommerceAuditProjection) error
+	UpdatePaymentAttempt(context.Context, *cloudpb.PaymentAttemptProjection, uint64) error
 	PaymentAttempt(context.Context, string) (*cloudpb.PaymentAttemptProjection, error)
+	PendingPaymentAttempts(context.Context, string, time.Time, int) ([]*cloudpb.PaymentAttemptProjection, error)
+	PaymentAttemptByProviderReference(context.Context, string, string) (*cloudpb.PaymentAttemptProjection, error)
 	RecordPaymentEvent(context.Context, PaymentEventRecord) (PaymentEventRecord, bool, error)
 	RejectPaymentEvent(context.Context, string, *cloudpb.CommerceAuditProjection) error
 	CommitPaymentEvent(context.Context, string, *cloudpb.ApplyPaymentEventResponse, *cloudpb.EntitlementProjection, *cloudpb.CommerceAuditProjection) error
@@ -106,6 +109,7 @@ type Store interface {
 	PromotionRedemptions(context.Context, string, string, int) ([]*cloudpb.PromotionRedemptionProjection, error)
 	SubscriptionAdjustments(context.Context, string, int) ([]*cloudpb.SubscriptionAdjustmentProjection, error)
 	CommitSubscriptionAdjustment(context.Context, *cloudpb.SubscriptionAdjustmentProjection, *cloudpb.SubscriptionProjection, *cloudpb.EntitlementProjection, *cloudpb.OperatorMutationAuditProjection) error
+	RecordOperatorAudit(context.Context, *cloudpb.OperatorMutationAuditProjection) error
 	Audit(context.Context, string) ([]*cloudpb.CommerceAuditProjection, error)
 }
 
@@ -418,11 +422,14 @@ func (service *Service) CreateCheckout(ctx context.Context, accountID, actorID s
 		return nil, ErrConflict
 	}
 	var subtotal int64
+	var providerProductID string
 	switch request.GetBillingCadence() {
 	case cloudpb.BillingCadence_BILLING_CADENCE_MONTHLY:
 		subtotal = plan.GetPrice().GetMonthlyMinor()
+		providerProductID = strings.TrimSpace(plan.GetCreem().GetMonthlyProductId())
 	case cloudpb.BillingCadence_BILLING_CADENCE_YEARLY:
 		subtotal = plan.GetPrice().GetYearlyMinor()
+		providerProductID = strings.TrimSpace(plan.GetCreem().GetYearlyProductId())
 	default:
 		return nil, ErrConflict
 	}
@@ -446,7 +453,7 @@ func (service *Service) CreateCheckout(ctx context.Context, accountID, actorID s
 	if err != nil {
 		return nil, err
 	}
-	order := &cloudpb.OrderProjection{OrderId: orderID, AccountId: accountID, PlanId: plan.GetPlanId(), PlanVersion: plan.GetPlanVersion(), Status: cloudpb.OrderStatus_ORDER_STATUS_PENDING, CreatedAtUnixMillis: now.UnixMilli(), Revision: 1, RequestedTransition: transition, Price: clonePrice(plan.GetPrice()), BillingCadence: request.GetBillingCadence(), SubtotalMinor: subtotal, TotalMinor: subtotal}
+	order := &cloudpb.OrderProjection{OrderId: orderID, AccountId: accountID, PlanId: plan.GetPlanId(), PlanVersion: plan.GetPlanVersion(), Status: cloudpb.OrderStatus_ORDER_STATUS_PENDING, CreatedAtUnixMillis: now.UnixMilli(), Revision: 1, RequestedTransition: transition, Price: clonePrice(plan.GetPrice()), BillingCadence: request.GetBillingCadence(), SubtotalMinor: subtotal, TotalMinor: subtotal, ProviderProductId: providerProductID}
 	if currentErr == nil {
 		order.SourceSubscriptionRevision = current.GetRevision()
 		order.SourcePlanId = current.GetPlanId()
@@ -485,6 +492,74 @@ func (service *Service) CreatePaymentAttempt(ctx context.Context, accountID, act
 		return nil, err
 	}
 	return &cloudpb.CreatePaymentAttemptResponse{PaymentAttempt: proto.Clone(attempt).(*cloudpb.PaymentAttemptProjection)}, nil
+}
+
+// UpdateProviderPaymentAttempt 以 revision CAS 保存 provider checkout、transaction、subscription 与轮询状态。
+// 这些字段的真值来自已认证 provider API；调用方不得用浏览器 redirect 或客户端上报填充。
+func (service *Service) UpdateProviderPaymentAttempt(ctx context.Context, attempt *cloudpb.PaymentAttemptProjection, expectedRevision uint64) error {
+	if attempt == nil || attempt.GetPaymentAttemptId() == "" || attempt.GetProvider() == "" || attempt.GetRevision() != expectedRevision+1 || expectedRevision == 0 {
+		return ErrConflict
+	}
+	return service.store.UpdatePaymentAttempt(ctx, attempt, expectedRevision)
+}
+
+// ProviderPaymentContext 返回 adapter 对账一个 attempt 所需的持久账号、订单与尝试投影。
+func (service *Service) ProviderPaymentContext(ctx context.Context, attemptID string) (*cloudpb.AccountProjection, *cloudpb.OrderProjection, *cloudpb.PaymentAttemptProjection, error) {
+	attempt, err := service.store.PaymentAttempt(ctx, attemptID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	order, err := service.store.Order(ctx, attempt.GetOrderId())
+	if err != nil || order.GetAccountId() != attempt.GetAccountId() {
+		return nil, nil, nil, ErrConflict
+	}
+	account, err := service.store.Account(ctx, attempt.GetAccountId())
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return proto.Clone(account.Projection).(*cloudpb.AccountProjection), proto.Clone(order).(*cloudpb.OrderProjection), proto.Clone(attempt).(*cloudpb.PaymentAttemptProjection), nil
+}
+
+// PendingProviderPaymentAttempts 返回到期且仍未终结的 provider attempt，供有界 reconciliation 使用。
+func (service *Service) PendingProviderPaymentAttempts(ctx context.Context, provider string, before time.Time, limit int) ([]*cloudpb.PaymentAttemptProjection, error) {
+	if provider == "" || before.IsZero() || limit < 1 || limit > 200 {
+		return nil, ErrConflict
+	}
+	return service.store.PendingPaymentAttempts(ctx, provider, before.UTC(), limit)
+}
+
+// ProviderPaymentAttemptByReference 按 provider checkout、transaction 或 subscription reference 查找唯一 attempt。
+func (service *Service) ProviderPaymentAttemptByReference(ctx context.Context, provider, reference string) (*cloudpb.PaymentAttemptProjection, error) {
+	if provider == "" || reference == "" {
+		return nil, ErrConflict
+	}
+	return service.store.PaymentAttemptByProviderReference(ctx, provider, reference)
+}
+
+// RecordPaymentReconciliationAudit 持久记录运营员触发 provider 对账的原因与 attempt revision 边界。
+// 支付结果仍只能由已认证 provider 响应经 normalized journal 改变，本审计本身不修改订单或订阅。
+func (service *Service) RecordPaymentReconciliationAudit(ctx context.Context, attemptID, actorID, reason, requestID string, beforeRevision, afterRevision uint64) error {
+	if attemptID == "" || actorID == "" || strings.TrimSpace(reason) == "" || requestID == "" || beforeRevision == 0 || afterRevision < beforeRevision {
+		return ErrConflict
+	}
+	_, order, attempt, err := service.ProviderPaymentContext(ctx, attemptID)
+	if err != nil || attempt.GetRevision() != afterRevision {
+		return ErrConflict
+	}
+	now := service.now().UTC()
+	return service.store.RecordOperatorAudit(ctx, &cloudpb.OperatorMutationAuditProjection{
+		AuditId:              "audit_" + requestID,
+		ActorId:              actorID,
+		Action:               "payment_attempt.reconcile",
+		ResourceKind:         "payment_attempt",
+		ResourceId:           attemptID,
+		AccountId:            order.GetAccountId(),
+		Reason:               strings.TrimSpace(reason),
+		RequestId:            requestID,
+		BeforeRevision:       beforeRevision,
+		AfterRevision:        afterRevision,
+		OccurredAtUnixMillis: now.UnixMilli(),
+	})
 }
 
 // ConfirmTestPayment 生成 development provider event，再走与正式 provider 相同的 ApplyPaymentEvent。
@@ -564,6 +639,10 @@ func (service *Service) ApplyPaymentEvent(ctx context.Context, request *cloudpb.
 		service.rejectPaymentEvent(ctx, event, "payment.rejected_attempt")
 		return nil, ErrConflict
 	}
+	if event.GetProvider() == "creem" && !validCreemEconomics(event, order, attempt) {
+		service.rejectPaymentEvent(ctx, event, "payment.rejected_provider_economics")
+		return nil, ErrConflict
+	}
 	now := service.now().UTC()
 	plan, planErr := service.catalog.Plan(ctx, order.GetPlanId(), order.GetPlanVersion())
 	if planErr != nil {
@@ -581,7 +660,10 @@ func (service *Service) ApplyPaymentEvent(ctx context.Context, request *cloudpb.
 		return nil, ErrConflict
 	}
 	updatedOrder := proto.Clone(order).(*cloudpb.OrderProjection)
-	updatedOrder.ProviderReference = event.GetProviderReference()
+	updatedOrder.ProviderReference = event.GetProviderSubscriptionReference()
+	if updatedOrder.GetProviderReference() == "" {
+		updatedOrder.ProviderReference = event.GetProviderReference()
+	}
 	updatedOrder.SettledAtUnixMillis = now.UnixMilli()
 	updatedOrder.Revision++
 	updatedAttempt := proto.Clone(attempt).(*cloudpb.PaymentAttemptProjection)
@@ -595,6 +677,13 @@ func (service *Service) ApplyPaymentEvent(ctx context.Context, request *cloudpb.
 		}
 		updatedOrder.Status = cloudpb.OrderStatus_ORDER_STATUS_PAID
 		updatedAttempt.ProviderReference = event.GetProviderReference()
+		if attempt.GetProviderReference() != "" {
+			updatedAttempt.ProviderReference = attempt.GetProviderReference()
+		}
+		updatedAttempt.ProviderTransactionReference = event.GetProviderReference()
+		updatedAttempt.ProviderSubscriptionReference = event.GetProviderSubscriptionReference()
+		updatedAttempt.ReconcileAfterUnixMillis = 0
+		updatedAttempt.ReconcileDeadlineUnixMillis = 0
 		updatedAttempt.UpdatedAtUnixMillis = now.UnixMilli()
 		updatedAttempt.Status = cloudpb.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_SUCCEEDED
 		updatedAttempt.Revision++
@@ -606,6 +695,13 @@ func (service *Service) ApplyPaymentEvent(ctx context.Context, request *cloudpb.
 		}
 		updatedOrder.Status = cloudpb.OrderStatus_ORDER_STATUS_PAYMENT_FAILED
 		updatedAttempt.ProviderReference = event.GetProviderReference()
+		if attempt.GetProviderReference() != "" {
+			updatedAttempt.ProviderReference = attempt.GetProviderReference()
+		}
+		updatedAttempt.ProviderTransactionReference = event.GetProviderReference()
+		updatedAttempt.ProviderSubscriptionReference = event.GetProviderSubscriptionReference()
+		updatedAttempt.ReconcileAfterUnixMillis = 0
+		updatedAttempt.ReconcileDeadlineUnixMillis = 0
 		updatedAttempt.UpdatedAtUnixMillis = now.UnixMilli()
 		updatedAttempt.Status = cloudpb.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_FAILED
 		updatedAttempt.Revision++
@@ -631,6 +727,45 @@ func (service *Service) ApplyPaymentEvent(ctx context.Context, request *cloudpb.
 		}
 		updatedOrder.Status = cloudpb.OrderStatus_ORDER_STATUS_REVOKED
 		subscription = transitionSubscription(current, cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_SUSPEND, nil, now)
+	case cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_SCHEDULED_CANCEL:
+		if order.GetStatus() != cloudpb.OrderStatus_ORDER_STATUS_PAID || current.GetSourceOrderId() != order.GetOrderId() || attempt.GetStatus() != cloudpb.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_SUCCEEDED {
+			service.rejectPaymentEvent(ctx, event, "payment.rejected_order_state")
+			return nil, ErrConflict
+		}
+		subscription = transitionSubscription(current, cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_CANCEL_AT_PERIOD_END, nil, now)
+	case cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_CANCELED:
+		if order.GetStatus() != cloudpb.OrderStatus_ORDER_STATUS_PAID || current.GetSourceOrderId() != order.GetOrderId() || attempt.GetStatus() != cloudpb.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_SUCCEEDED {
+			service.rejectPaymentEvent(ctx, event, "payment.rejected_order_state")
+			return nil, ErrConflict
+		}
+		subscription = transitionSubscription(current, cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_REVOKE, nil, now)
+	case cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_PAST_DUE:
+		if order.GetStatus() != cloudpb.OrderStatus_ORDER_STATUS_PAID || current.GetSourceOrderId() != order.GetOrderId() || attempt.GetStatus() != cloudpb.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_SUCCEEDED {
+			service.rejectPaymentEvent(ctx, event, "payment.rejected_order_state")
+			return nil, ErrConflict
+		}
+		subscription = transitionSubscription(current, cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_PAYMENT_FAILED, nil, now)
+	case cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_EXPIRED:
+		if order.GetStatus() != cloudpb.OrderStatus_ORDER_STATUS_PAID || current.GetSourceOrderId() != order.GetOrderId() || attempt.GetStatus() != cloudpb.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_SUCCEEDED {
+			service.rejectPaymentEvent(ctx, event, "payment.rejected_order_state")
+			return nil, ErrConflict
+		}
+		subscription = transitionSubscription(current, cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_EXPIRE, nil, now)
+	case cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_PAUSED:
+		if order.GetStatus() != cloudpb.OrderStatus_ORDER_STATUS_PAID || current.GetSourceOrderId() != order.GetOrderId() || attempt.GetStatus() != cloudpb.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_SUCCEEDED {
+			service.rejectPaymentEvent(ctx, event, "payment.rejected_order_state")
+			return nil, ErrConflict
+		}
+		subscription = transitionSubscription(current, cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_SUSPEND, nil, now)
+	case cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_ACTIVE_SYNC:
+		if order.GetStatus() != cloudpb.OrderStatus_ORDER_STATUS_PAID || current.GetSourceOrderId() != order.GetOrderId() || attempt.GetStatus() != cloudpb.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_SUCCEEDED {
+			service.rejectPaymentEvent(ctx, event, "payment.rejected_order_state")
+			return nil, ErrConflict
+		}
+		// active 只推进 provider 同步 revision，不从 past_due/paused 恢复服务权限；恢复必须来自 paid。
+		subscription = proto.Clone(current).(*cloudpb.SubscriptionProjection)
+		subscription.Revision++
+		subscription.UpdatedAtUnixMillis = now.UnixMilli()
 	default:
 		service.rejectPaymentEvent(ctx, event, "payment.rejected_type")
 		return nil, ErrConflict
@@ -774,6 +909,15 @@ func (service *Service) ApplyOperatorPaymentEvent(ctx context.Context, request *
 	}
 	var attempt *cloudpb.PaymentAttemptProjection
 	if request.GetEventType() == cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED {
+		attempts, attemptsErr := service.store.PaymentAttempts(ctx, order.GetAccountId())
+		if attemptsErr != nil {
+			return nil, attemptsErr
+		}
+		for _, candidate := range attempts {
+			if candidate.GetOrderId() == order.GetOrderId() {
+				return nil, ErrConflict
+			}
+		}
 		created, createErr := service.CreatePaymentAttempt(ctx, order.GetAccountId(), actorID, &cloudpb.CreatePaymentAttemptRequest{OrderId: order.GetOrderId(), Provider: "operator-manual"})
 		if createErr != nil {
 			return nil, createErr
@@ -785,7 +929,7 @@ func (service *Service) ApplyOperatorPaymentEvent(ctx context.Context, request *
 			return nil, attemptsErr
 		}
 		for _, candidate := range attempts {
-			if candidate.GetOrderId() == order.GetOrderId() && candidate.GetStatus() == cloudpb.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_SUCCEEDED {
+			if candidate.GetOrderId() == order.GetOrderId() && candidate.GetProvider() != "creem" && candidate.GetStatus() == cloudpb.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_SUCCEEDED {
 				if attempt != nil {
 					return nil, ErrConflict
 				}
@@ -1126,6 +1270,26 @@ func validPaymentEvent(event *cloudpb.NormalizedPaymentEvent) bool {
 	return event != nil && event.GetProviderEventId() != "" && event.GetProvider() != "" && event.GetEventType() != cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_UNSPECIFIED && event.GetOrderId() != "" && event.GetAccountId() != "" && event.GetPlanId() != "" && event.GetPlanVersion() > 0 && event.GetOccurredAtUnixMillis() > 0 && event.GetPaymentAttemptId() != ""
 }
 
+func validCreemEconomics(event *cloudpb.NormalizedPaymentEvent, order *cloudpb.OrderProjection, attempt *cloudpb.PaymentAttemptProjection) bool {
+	if event.GetProviderProductId() != order.GetProviderProductId() || !strings.EqualFold(event.GetCurrency(), order.GetPrice().GetCurrency()) {
+		return false
+	}
+	switch event.GetEventType() {
+	case cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED,
+		cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_REFUNDED,
+		cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_CHARGEBACK:
+		if event.GetSubtotalMinor() != order.GetSubtotalMinor() || event.GetDiscountMinor() != order.GetDiscountMinor() {
+			return false
+		}
+		if order.GetPromotion() != nil {
+			return event.GetProviderDiscountReference() != "" && event.GetProviderDiscountReference() == attempt.GetProviderDiscountReference()
+		}
+		return event.GetProviderDiscountReference() == "" && event.GetDiscountMinor() == 0
+	default:
+		return true
+	}
+}
+
 func clonePrice(value *cloudpb.PlanPriceDefinition) *cloudpb.PlanPriceDefinition {
 	if value == nil {
 		return nil
@@ -1145,6 +1309,18 @@ func paymentAuditAction(eventType cloudpb.PaymentEventType) string {
 		return "payment.revoked"
 	case cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_CHARGEBACK:
 		return "payment.chargeback"
+	case cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_SCHEDULED_CANCEL:
+		return "subscription.provider_scheduled_cancel"
+	case cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_CANCELED:
+		return "subscription.provider_canceled"
+	case cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_PAST_DUE:
+		return "subscription.provider_past_due"
+	case cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_EXPIRED:
+		return "subscription.provider_expired"
+	case cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_PAUSED:
+		return "subscription.provider_paused"
+	case cloudpb.PaymentEventType_PAYMENT_EVENT_TYPE_SUBSCRIPTION_ACTIVE_SYNC:
+		return "subscription.provider_active_sync"
 	default:
 		return "payment.unknown"
 	}

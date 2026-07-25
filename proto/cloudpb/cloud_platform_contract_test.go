@@ -49,7 +49,7 @@ func TestCloudPlatformRoundTripPreservesUnknownFieldsAndEnums(t *testing.T) {
 }
 
 func TestCatalogReleaseAndEntitlementOverrideRoundTrip(t *testing.T) {
-	release := &PlanCatalogReleaseProjection{Catalog: &PlanCatalogContract{CatalogVersion: 7, Plans: []*PlanDefinition{{PlanId: "pro", PlanVersion: 3, Creem: &CreemProductMapping{ProductId: "prod_test"}}}}, Active: true, ActorId: "operator-1", Reason: "publish", RequestId: "request-1", PublishedAtUnixMillis: 1234, Revision: 1}
+	release := &PlanCatalogReleaseProjection{Catalog: &PlanCatalogContract{CatalogVersion: 7, Plans: []*PlanDefinition{{PlanId: "pro", PlanVersion: 3, Creem: &CreemProductMapping{MonthlyProductId: "prod_monthly_test", YearlyProductId: "prod_yearly_test"}}}}, Active: true, ActorId: "operator-1", Reason: "publish", RequestId: "request-1", PublishedAtUnixMillis: 1234, Revision: 1}
 	override := &EntitlementOverrideProjection{OverrideId: "override-1", AccountId: "account-1", CapabilityMask: &fieldmaskpb.FieldMask{Paths: []string{"standard_relay_enabled", "relay.max_concurrency"}}, Capability: &PlanCapability{StandardRelayEnabled: true, Relay: &RelayServiceCapability{MaxConcurrency: 2}}, EffectiveFromUnixMillis: 1000, EffectiveUntilUnixMillis: 2000, Reason: "support grant", ActorId: "operator-1", Revision: 1}
 	for _, value := range []proto.Message{release, override} {
 		payload, err := proto.Marshal(value)
@@ -278,9 +278,21 @@ func TestCloudProductUsesOnePlanCapabilityAcrossCatalogEntitlementAndHubPolicy(t
 		}
 	}
 	orderFields := descriptorFieldNames((&OrderProjection{}).ProtoReflect().Descriptor())
-	for _, required := range []string{"requested_transition", "source_subscription_revision", "source_plan_id", "source_plan_version", "price", "billing_cadence", "subtotal_minor", "discount_minor", "total_minor", "promotion"} {
+	for _, required := range []string{"requested_transition", "source_subscription_revision", "source_plan_id", "source_plan_version", "price", "billing_cadence", "subtotal_minor", "discount_minor", "total_minor", "promotion", "provider_product_id"} {
 		if !orderFields[required] {
 			t.Fatalf("OrderProjection missing %q: %v", required, orderFields)
+		}
+	}
+	attemptFields := descriptorFieldNames((&PaymentAttemptProjection{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"provider_reference", "provider_transaction_reference", "provider_subscription_reference", "provider_discount_reference", "reconcile_after_unix_millis", "reconcile_deadline_unix_millis", "reconcile_attempts", "last_provider_status"} {
+		if !attemptFields[required] {
+			t.Fatalf("PaymentAttemptProjection missing %q: %v", required, attemptFields)
+		}
+	}
+	eventFields := descriptorFieldNames((&NormalizedPaymentEvent{}).ProtoReflect().Descriptor())
+	for _, required := range []string{"provider_product_id", "currency", "subtotal_minor", "discount_minor", "provider_discount_reference", "provider_subscription_reference"} {
+		if !eventFields[required] {
+			t.Fatalf("NormalizedPaymentEvent missing %q: %v", required, eventFields)
 		}
 	}
 }

@@ -28,6 +28,9 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
+	// Creem secret 只从部署环境进入进程内配置，不落入 JSON、manifest 或日志。
+	config.CreemAPIKey = os.Getenv("MUXVIA_CREEM_API_KEY")
+	config.CreemWebhookSecret = os.Getenv("MUXVIA_CREEM_WEBHOOK_SECRET")
 	runtime, err := controller.Start(config)
 	if err != nil {
 		fatal(err)
