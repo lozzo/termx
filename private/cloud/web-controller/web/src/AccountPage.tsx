@@ -91,7 +91,6 @@ import { ProtoHTTPError, protoGet, protoPost } from "@/protoApi";
 import { intlLocale } from "@/i18n";
 
 type Tab = "overview" | "devices" | "plans" | "account";
-type AddDeviceKind = "phone" | "daemon";
 type AccountState = {
   commerce: GetAccountCommerceResponse;
   quota: GetAccountRelayQuotaResponse;
@@ -104,18 +103,6 @@ const tabs: [Tab, typeof Gauge][] = [
   ["devices", Laptop],
   ["plans", CreditCard],
   ["account", UserRound],
-];
-
-const operatorTabs: [OperatorWorkspaceModule, typeof Gauge, string, string][] = [
-  [OperatorWorkspaceModule.USERS, UserRound, "users", "operator-directory"],
-  [OperatorWorkspaceModule.ORDERS, CreditCard, "orders", "operator-orders"],
-  [OperatorWorkspaceModule.SUBSCRIPTIONS, KeyRound, "subscriptions", "operator-subscriptions"],
-  [OperatorWorkspaceModule.PLANS, ShieldCheck, "plans", "operator-catalog"],
-  [OperatorWorkspaceModule.HUBS, Cable, "hubs", "operator-fleet"],
-  [OperatorWorkspaceModule.AGENTS, Laptop, "agents", "operator-directory"],
-  [OperatorWorkspaceModule.RELEASES, RefreshCw, "releases", "operator-releases"],
-  [OperatorWorkspaceModule.PROMOTIONS, QrCode, "promotions", "operator-promotions"],
-  [OperatorWorkspaceModule.PRIVILEGES, Activity, "privileges", "operator-directory"],
 ];
 
 type ProtectedAction = {

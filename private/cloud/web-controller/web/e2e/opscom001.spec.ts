@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
+test.beforeEach(async ({ page }) => page.addInitScript(() => localStorage.setItem("muxvia-operator-language", "en")));
+
 const publicURL = process.env.MUXVIA_PUBLIC_URL;
 const accountEmail = process.env.MUXVIA_ACCOUNT_EMAIL;
 const accountPassword = process.env.MUXVIA_ACCOUNT_PASSWORD;
@@ -16,6 +18,7 @@ test("operator commerce UI publishes promotion, adjusts subscription, and observ
   await loginOperator(page);
   await expect(page.getByTestId("operator-commerce-operations")).toBeVisible();
 
+  await page.getByTestId("catalog-advanced-editor").locator("summary").click();
   const editor = page.getByTestId("catalog-editor");
   const contract = JSON.parse(await editor.inputValue()) as any;
   contract.catalogVersion = (BigInt(contract.catalogVersion) + 1n).toString();
@@ -28,6 +31,7 @@ test("operator commerce UI publishes promotion, adjusts subscription, and observ
   await page.getByTestId("catalog-publish").click();
   await expect(page.getByText(`Catalog ${contract.catalogVersion}`, { exact: true })).toBeVisible();
 
+  await page.goto(`${publicURL}/operator/promotions`);
   const until = new Date(Date.now() + 60 * 60 * 1000);
   const localUntil = new Date(until.getTime() - until.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
   await page.getByTestId("promotion-code").fill(promotionCode);
@@ -39,7 +43,8 @@ test("operator commerce UI publishes promotion, adjusts subscription, and observ
   await page.getByTestId("promotion-create").click();
   await expect(page.getByTestId("operator-promotions").getByText(promotionCode, { exact: true })).toBeVisible();
 
-  await page.locator('[data-testid^="operator-account-"]').first().click();
+  await page.goto(`${publicURL}/operator/subscriptions`);
+  await page.getByTestId("operator-subscriptions").locator("button").first().click();
   await page.getByLabel("Adjustment").selectOption("2");
   await page.getByTestId("adjustment-reason").fill("Seven day support extension");
   await page.getByTestId("adjustment-create").click();
@@ -55,7 +60,7 @@ test("operator commerce UI publishes promotion, adjusts subscription, and observ
   await page.getByRole("button", { name: "Activate Pro with test provider" }).click();
   await expect(page.getByText("pro", { exact: true }).first()).toBeVisible();
 
-  await page.goto(`${publicURL}/operator`);
+  await page.goto(`${publicURL}/operator/orders`);
   await expect(page.getByTestId("operator-orders").getByText("$5.00", { exact: false })).toBeVisible();
   await expect(page.getByTestId("operator-orders").getByText("PAID", { exact: true })).toBeVisible();
   await page.getByText("Event timeline", { exact: true }).click();
@@ -74,8 +79,9 @@ async function loginOperator(page: import("@playwright/test").Page) {
   await page.getByTestId("account-password").fill(accountPassword!);
   await page.getByTestId("account-submit").click();
   await expect(page).toHaveURL(/\/account/);
-  await page.goto(`${publicURL}/operator`);
-  await page.getByTestId("operator-reauth").getByLabel(/Confirm account password/).fill(accountPassword!);
+  await page.goto(`${publicURL}/operator/plans`);
+  await page.getByRole("button", { name: "Verify identity" }).click();
+  await page.getByTestId("operator-reauth").getByLabel("Account password").fill(accountPassword!);
   await page.getByRole("button", { name: "Unlock changes" }).click();
   await expect(page.getByText("CHANGES UNLOCKED")).toBeVisible();
 }

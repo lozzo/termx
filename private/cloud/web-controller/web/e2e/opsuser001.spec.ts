@@ -1,6 +1,8 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
+test.beforeEach(async ({ page }) => page.addInitScript(() => localStorage.setItem("muxvia-operator-language", "en")));
+
 const baseURL = process.env.MUXVIA_OPSUSER_E2E_BASE_URL ?? "http://127.0.0.1:5173";
 
 test.beforeAll(async () => {
@@ -10,9 +12,10 @@ test.beforeAll(async () => {
 test("operator manages users, sessions, and freshness-backed Agents", async ({ page }) => {
   await installOperatorAPI(page);
   await page.setViewportSize({ width: 1366, height: 950 });
-  await page.goto(`${baseURL}/operator`);
-
-  await page.getByTestId("directory-agents").click();
+  await page.goto(`${baseURL}/operator/agents`);
+  await page.getByRole("button", { name: "Verify identity" }).click();
+  await page.getByTestId("operator-reauth").getByLabel("Account password").fill("account-password");
+  await page.getByRole("button", { name: "Unlock changes" }).click();
   const freshAgent = page.getByTestId("operator-agent-daemon-fresh");
   const staleAgent = page.getByTestId("operator-agent-daemon-stale");
   await expect(freshAgent).toContainText("ONLINE");
@@ -28,7 +31,7 @@ test("operator manages users, sessions, and freshness-backed Agents", async ({ p
   await expect(page.getByTestId("operator-command-command-kick")).toContainText("AUTH COMMITTED");
   await expect(page.getByTestId("operator-command-command-kick")).toContainText("DELIVERY PENDING");
 
-  await page.getByTestId("directory-users").click();
+  await page.getByRole("navigation", { name: "Operations modules" }).getByRole("link", { name: "Users" }).click();
   await page.getByTestId("operator-account-account-1").click();
   const session = page.getByTestId("account-session-session-active");
   await expect(session).toContainText("phone-1");
@@ -40,8 +43,11 @@ test("operator manages users, sessions, and freshness-backed Agents", async ({ p
   await page.screenshot({ path: "../../../../.artifacts/opsuser001/users-agents-desktop.png", fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-  await page.getByTestId("directory-agents").click();
+  await page.getByRole("button", { name: "Open management menu" }).click();
+  await page.getByRole("navigation", { name: "Operations modules" }).getByRole("link", { name: "Agents" }).click();
   await expect(page.getByTestId("operator-agent-daemon-fresh")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open management menu" })).toHaveAttribute("aria-expanded", "false");
+  await expect.poll(async () => (await page.locator("#operator-navigation").boundingBox())?.x ?? 0).toBeLessThan(-250);
   await page.screenshot({ path: "../../../../.artifacts/opsuser001/users-agents-mobile.png", fullPage: true });
 });
 

@@ -1,6 +1,8 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
+test.beforeEach(async ({ page }) => page.addInitScript(() => localStorage.setItem("muxvia-operator-language", "en")));
+
 const baseURL = process.env.MUXVIA_OPSREL_E2E_BASE_URL ?? "http://127.0.0.1:5173";
 
 test.beforeAll(async () => {
@@ -10,7 +12,10 @@ test.beforeAll(async () => {
 test("operator publishes, activates, pauses, and rolls back signed releases", async ({ page }) => {
   await installAPI(page);
   await page.setViewportSize({ width: 1366, height: 950 });
-  await page.goto(`${baseURL}/operator`);
+  await page.goto(`${baseURL}/operator/releases`);
+  await page.getByRole("button", { name: "Verify identity" }).click();
+  await page.getByTestId("operator-reauth").getByLabel("Account password").fill("account-password");
+  await page.getByRole("button", { name: "Unlock changes" }).click();
   await publish(page, artifact("android-100", "v1.0.0", "100"), "Initial Android release");
   await page.getByTestId("release-android-100").getByRole("button", { name: "Activate" }).click();
   await expect(page.getByTestId("release-android-100")).toContainText("ACTIVE");

@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
+test.beforeEach(async ({ page }) => page.addInitScript(() => localStorage.setItem("muxvia-operator-language", "en")));
+
 const publicURL = process.env.MUXVIA_PUBLIC_URL;
 const accountEmail = process.env.MUXVIA_ACCOUNT_EMAIL;
 const accountPassword = process.env.MUXVIA_ACCOUNT_PASSWORD;
@@ -16,6 +18,7 @@ test("operator publishes catalog and applies typed privilege from the real UI", 
   await expect(page.getByRole("heading", { name: "Control plane" })).toBeVisible();
   await expect(page.getByTestId("operator-catalog")).toBeVisible();
 
+  await page.getByTestId("catalog-advanced-editor").locator("summary").click();
   const editor = page.getByTestId("catalog-editor");
   const contract = JSON.parse(await editor.inputValue()) as {
     catalogVersion: string;
@@ -29,6 +32,7 @@ test("operator publishes catalog and applies typed privilege from the real UI", 
   await page.getByTestId("catalog-publish").click();
   await expect(page.getByText(`Catalog ${nextVersion.toString()}`, { exact: true })).toBeVisible();
 
+  await page.goto(`${publicURL}/operator/privileges`);
   await page.locator('[data-testid^="operator-account-"]').first().click();
   await expect(page.getByTestId("operator-overrides")).toBeVisible();
   await page.getByTestId("override-value").fill("6");
@@ -54,8 +58,9 @@ async function loginOperator(page: import("@playwright/test").Page) {
   await page.getByTestId("account-password").fill(accountPassword!);
   await page.getByTestId("account-submit").click();
   await expect(page).toHaveURL(/\/account/);
-  await page.goto(`${publicURL}/operator`);
-  await page.getByTestId("operator-reauth").getByLabel(/Confirm account password/).fill(accountPassword!);
+  await page.goto(`${publicURL}/operator/plans`);
+  await page.getByRole("button", { name: "Verify identity" }).click();
+  await page.getByTestId("operator-reauth").getByLabel("Account password").fill(accountPassword!);
   await page.getByRole("button", { name: "Unlock changes" }).click();
   await expect(page.getByText("CHANGES UNLOCKED")).toBeVisible();
 }

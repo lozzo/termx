@@ -17,7 +17,7 @@ const Page =
     ? LoginPage
     : path === "/account"
       ? AccountPage
-      : path === "/operator"
+      : path === "/operator" || path.startsWith("/operator/")
         ? OperatorPage
         : HomePage;
 createRoot(document.getElementById("root")!).render(

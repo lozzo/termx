@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { mkdir, readFile } from "node:fs/promises";
 
+test.beforeEach(async ({ page }) => page.addInitScript(() => localStorage.setItem("muxvia-operator-language", "en")));
+
 type SupervisorManifest = {
   controller: { operator_url: string; public_url: string };
   credentials_path: string;
@@ -32,7 +34,8 @@ test("operator completes all nine modules against Controller, PostgreSQL, and tw
   await page.getByTestId("account-submit").click();
   await expect(page).toHaveURL(/\/account/);
   await page.goto(`${credentials.public_url}/operator`);
-  await page.getByTestId("operator-reauth").getByLabel(/Confirm account password/).fill(credentials.account_password);
+  await page.getByRole("button", { name: "Verify identity" }).click();
+  await page.getByTestId("operator-reauth").getByLabel("Account password").fill(credentials.account_password);
   await page.getByRole("button", { name: "Unlock changes" }).click();
   await expect(page.getByText("CHANGES UNLOCKED")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Control plane" })).toBeVisible();

@@ -14,23 +14,33 @@ test("ordinary account has no management projection", async ({ page }) => {
 
 test("administrator uses the account navigation and confirms password for changes", async ({ page }) => {
   await installAccountAPI(page, true);
+  await page.addInitScript(() => localStorage.setItem("muxvia-language", "en"));
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto(`${baseURL}/account`);
 
-  const management = page.getByRole("navigation", { name: "Management" });
+  const management = page.getByRole("region", { name: "Management" });
   await expect(management).toBeVisible();
-  await expect(management.getByRole("link")).toHaveCount(9);
+  await expect(management.getByRole("link")).toHaveCount(1);
   await expect(page.getByText(/isAdmin|readonly|admin role/i)).toHaveCount(0);
-  await management.getByRole("link", { name: "Releases" }).click();
-  await expect(page).toHaveURL(/\/operator#operator-releases$/);
-  await expect(page.getByText("READ-ONLY UNTIL CONFIRMED")).toBeVisible();
-  await page.getByTestId("operator-reauth").getByLabel(/Confirm account password/).fill("account-password");
-  await page.getByRole("button", { name: "Unlock changes" }).click();
-  await expect(page.getByText("CHANGES UNLOCKED")).toBeVisible();
+  await management.getByRole("link", { name: "Open operations" }).click();
+  await expect(page).toHaveURL(/\/operator\/users$/);
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+  await expect(page.getByRole("heading", { level: 1, name: "用户管理" })).toBeVisible();
+  await expect(page.getByText("浏览模式：变更操作需要确认身份")).toBeVisible();
+  await page.getByRole("button", { name: "验证身份" }).click();
+  await expect(page.getByRole("dialog", { name: "确认本次管理操作" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "确认本次管理操作" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "验证身份" })).toBeFocused();
+  await page.getByRole("button", { name: "验证身份" }).click();
+  await page.getByTestId("operator-reauth").getByLabel("账号密码").fill("account-password");
+  await page.getByRole("button", { name: "解锁变更操作" }).click();
+  await expect(page.getByText("变更操作已解锁")).toBeVisible();
+  await page.screenshot({ path: "test-results/operator-zh-CN.png", fullPage: true });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseURL}/account`);
-  await expect(page.getByRole("navigation", { name: "Management" }).getByRole("link")).toHaveCount(9);
+  await expect(page.getByRole("region", { name: "Management" }).getByRole("link")).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 });
 

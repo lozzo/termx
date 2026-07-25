@@ -1,6 +1,8 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
+test.beforeEach(async ({ page }) => page.addInitScript(() => localStorage.setItem("muxvia-operator-language", "en")));
+
 const baseURL = process.env.MUXVIA_OPSHUB_E2E_BASE_URL ?? "http://127.0.0.1:5173";
 
 test.beforeAll(async () => {
@@ -10,7 +12,10 @@ test.beforeAll(async () => {
 test("operator creates, edits, approves, drains and archives a Hub", async ({ page }) => {
   await installOperatorAPI(page);
   await page.setViewportSize({ width: 1366, height: 950 });
-  await page.goto(`${baseURL}/operator`);
+  await page.goto(`${baseURL}/operator/hubs`);
+  await page.getByRole("button", { name: "Verify identity" }).click();
+  await page.getByTestId("operator-reauth").getByLabel("Account password").fill("account-password");
+  await page.getByRole("button", { name: "Unlock changes" }).click();
 
   await page.getByText("Add Hub deployment").click();
   const createPanel = page.getByTestId("hub-create-panel");

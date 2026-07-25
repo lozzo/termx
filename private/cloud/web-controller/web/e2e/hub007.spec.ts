@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
+test.beforeEach(async ({ page }) => page.addInitScript(() => localStorage.setItem("muxvia-operator-language", "en")));
+
 type SupervisorManifest = {
   controller: { operator_url: string; public_url: string };
   credentials_path: string;
@@ -29,7 +31,8 @@ test("operator UI observes two Edges and issues a real management command", asyn
   await page.getByTestId("account-submit").click();
   await expect(page).toHaveURL(/\/account/);
   await page.goto(`${manifest.controller.public_url}/operator`);
-  await page.getByTestId("operator-reauth").getByLabel(/Confirm account password/).fill(credentials.account_password);
+  await page.getByRole("button", { name: "Verify identity" }).click();
+  await page.getByTestId("operator-reauth").getByLabel("Account password").fill(credentials.account_password);
   await page.getByRole("button", { name: "Unlock changes" }).click();
   await expect(page.getByText("CHANGES UNLOCKED")).toBeVisible();
   await expect(page.getByText("Hub and Relay fleet")).toBeVisible();

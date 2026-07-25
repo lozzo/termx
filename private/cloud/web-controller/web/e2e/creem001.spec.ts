@@ -3,6 +3,8 @@ import { mkdir } from "node:fs/promises";
 
 const baseURL = process.env.MUXVIA_CREEM_E2E_BASE_URL ?? "http://127.0.0.1:5173";
 
+test.beforeEach(async ({ page }) => page.addInitScript(() => localStorage.setItem("muxvia-operator-language", "en")));
+
 test.beforeAll(async () => {
   await mkdir("../../../../.artifacts/creem001", { recursive: true });
 });
@@ -11,7 +13,10 @@ test("operator sees Creem truth and can request immediate reconciliation", async
   let reconciliations = 0;
   await installOperatorAPI(page, () => { reconciliations++; });
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`${baseURL}/operator`);
+  await page.goto(`${baseURL}/operator/orders`);
+  await page.getByRole("button", { name: "Verify identity" }).click();
+  await page.getByTestId("operator-reauth").getByLabel("Account password").fill("account-password");
+  await page.getByRole("button", { name: "Unlock changes" }).click();
 
   const attempt = page.getByTestId("payment-attempt-attempt_creem_e2e");
   await expect(attempt).toContainText("creem · PENDING");
