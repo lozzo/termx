@@ -1,19 +1,18 @@
 import { expect, test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
-const operatorURL = process.env.MUXVIA_OPERATOR_URL;
-const operatorToken = process.env.MUXVIA_OPERATOR_TOKEN;
+const publicURL = process.env.MUXVIA_PUBLIC_URL;
+const accountEmail = process.env.MUXVIA_ACCOUNT_EMAIL;
+const accountPassword = process.env.MUXVIA_ACCOUNT_PASSWORD;
 
 test.beforeAll(async () => {
-  if (!operatorURL || !operatorToken) throw new Error("MUXVIA_OPERATOR_URL and MUXVIA_OPERATOR_TOKEN are required");
+  if (!publicURL || !accountEmail || !accountPassword) throw new Error("OPSCAT001 public URL and account credentials are required");
   await mkdir("../../../../.artifacts/opscat001", { recursive: true });
 });
 
 test("operator publishes catalog and applies typed privilege from the real UI", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 960 });
-  await page.goto(`${operatorURL}/operator`);
-  await page.getByTestId("operator-token").fill(operatorToken!);
-  await page.getByTestId("operator-submit").click();
+  await loginOperator(page);
   await expect(page.getByRole("heading", { name: "Control plane" })).toBeVisible();
   await expect(page.getByTestId("operator-catalog")).toBeVisible();
 
@@ -48,3 +47,15 @@ test("operator publishes catalog and applies typed privilege from the real UI", 
   expect(overflow).toBeLessThanOrEqual(1);
   await page.screenshot({ path: "../../../../.artifacts/opscat001/operator-mobile.png", fullPage: true });
 });
+
+async function loginOperator(page: import("@playwright/test").Page) {
+  await page.goto(`${publicURL}/login`);
+  await page.getByTestId("account-email").fill(accountEmail!);
+  await page.getByTestId("account-password").fill(accountPassword!);
+  await page.getByTestId("account-submit").click();
+  await expect(page).toHaveURL(/\/account/);
+  await page.goto(`${publicURL}/operator`);
+  await page.getByTestId("operator-reauth").getByLabel(/Confirm account password/).fill(accountPassword!);
+  await page.getByRole("button", { name: "Unlock changes" }).click();
+  await expect(page.getByText("CHANGES UNLOCKED")).toBeVisible();
+}

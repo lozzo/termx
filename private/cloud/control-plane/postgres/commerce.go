@@ -36,7 +36,7 @@ func (store *Store) CreateAccount(ctx context.Context, account commerce.AccountR
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = execContext(ctx, tx, `INSERT INTO commerce_accounts(account_id,email,projection,password_hash,auth_revision) VALUES(?,?,?,?,?)`, account.Projection.GetAccountId(), account.Projection.GetEmail(), accountBody, append([]byte(nil), account.PasswordHash...), account.Projection.GetAuthRevision()); err != nil {
+	if _, err = execContext(ctx, tx, `INSERT INTO commerce_accounts(account_id,email,projection,password_hash,auth_revision,operator_role) VALUES(?,?,?,?,?,?)`, account.Projection.GetAccountId(), account.Projection.GetEmail(), accountBody, append([]byte(nil), account.PasswordHash...), account.Projection.GetAuthRevision(), account.OperatorRole); err != nil {
 		return conflict(err)
 	}
 	if err = insertSession(ctx, tx, session); err != nil {
@@ -56,17 +56,17 @@ func (store *Store) CreateAccount(ctx context.Context, account commerce.AccountR
 
 // AccountByEmail 按归一化邮箱读取账号和密码 verifier。
 func (store *Store) AccountByEmail(ctx context.Context, email string) (commerce.AccountRecord, error) {
-	return scanAccount(queryRowContext(ctx, store.db, `SELECT projection,password_hash FROM commerce_accounts WHERE email=?`, email))
+	return scanAccount(queryRowContext(ctx, store.db, `SELECT projection,password_hash,operator_role FROM commerce_accounts WHERE email=?`, email))
 }
 
 // Account 按账号 ID 读取账号和密码 verifier。
 func (store *Store) Account(ctx context.Context, accountID string) (commerce.AccountRecord, error) {
-	return scanAccount(queryRowContext(ctx, store.db, `SELECT projection,password_hash FROM commerce_accounts WHERE account_id=?`, accountID))
+	return scanAccount(queryRowContext(ctx, store.db, `SELECT projection,password_hash,operator_role FROM commerce_accounts WHERE account_id=?`, accountID))
 }
 
 // Accounts 返回 operator 使用的有界账号记录，按 account_id 稳定排序。
 func (store *Store) Accounts(ctx context.Context, limit int) ([]commerce.AccountRecord, error) {
-	rows, err := queryContext(ctx, store.db, `SELECT projection,password_hash FROM commerce_accounts ORDER BY account_id LIMIT ?`, limit)
+	rows, err := queryContext(ctx, store.db, `SELECT projection,password_hash,operator_role FROM commerce_accounts ORDER BY account_id LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -74,16 +74,32 @@ func (store *Store) Accounts(ctx context.Context, limit int) ([]commerce.Account
 	var result []commerce.AccountRecord
 	for rows.Next() {
 		var body, passwordHash []byte
-		if err := rows.Scan(&body, &passwordHash); err != nil {
+		var operatorRole commerce.OperatorRole
+		if err := rows.Scan(&body, &passwordHash, &operatorRole); err != nil {
 			return nil, err
 		}
-		record := commerce.AccountRecord{Projection: &cloudpb.AccountProjection{}, PasswordHash: append([]byte(nil), passwordHash...)}
+		record := commerce.AccountRecord{Projection: &cloudpb.AccountProjection{}, PasswordHash: append([]byte(nil), passwordHash...), OperatorRole: operatorRole}
 		if err := proto.Unmarshal(body, record.Projection); err != nil {
 			return nil, err
 		}
 		result = append(result, record)
 	}
 	return result, rows.Err()
+}
+
+// SetOperatorRole 原子更新账号的后端运营角色；账号 Session 本身不携带角色。
+func (store *Store) SetOperatorRole(ctx context.Context, accountID string, role commerce.OperatorRole) error {
+	if accountID == "" || role > commerce.OperatorRoleAdmin {
+		return commerce.ErrConflict
+	}
+	result, err := execContext(ctx, store.db, `UPDATE commerce_accounts SET operator_role=? WHERE account_id=?`, role, accountID)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return commerce.ErrNotFound
+	}
+	return nil
 }
 
 // Sessions 返回账号 session 元数据；token hash 只用于 Store 内部鉴权，不离开本方法。
@@ -907,14 +923,15 @@ func insertCommerceAudit(ctx context.Context, tx *sql.Tx, audit *cloudpb.Commerc
 
 func scanAccount(row rowScanner) (commerce.AccountRecord, error) {
 	var body, passwordHash []byte
-	if err := row.Scan(&body, &passwordHash); err != nil {
+	var operatorRole commerce.OperatorRole
+	if err := row.Scan(&body, &passwordHash, &operatorRole); err != nil {
 		return commerce.AccountRecord{}, notFound(err)
 	}
 	projection := &cloudpb.AccountProjection{}
 	if err := proto.Unmarshal(body, projection); err != nil {
 		return commerce.AccountRecord{}, err
 	}
-	return commerce.AccountRecord{Projection: projection, PasswordHash: append([]byte(nil), passwordHash...)}, nil
+	return commerce.AccountRecord{Projection: projection, PasswordHash: append([]byte(nil), passwordHash...), OperatorRole: operatorRole}, nil
 }
 
 func scanSession(row rowScanner) (commerce.SessionRecord, error) {

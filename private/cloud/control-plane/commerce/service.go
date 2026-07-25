@@ -26,16 +26,32 @@ import (
 var (
 	// ErrUnauthorized 表示 credential 无效、过期或已被轮换。
 	ErrUnauthorized = errors.New("commerce credential is unauthorized")
+	// ErrForbidden 表示账号 Session 有效，但数据库角色不允许访问运营能力。
+	ErrForbidden = errors.New("commerce account is forbidden")
 	// ErrConflict 表示账号、订单、event replay 或 Subscription transition 与当前状态冲突。
 	ErrConflict = errors.New("commerce state conflict")
 	// ErrNotFound 表示请求的商业资源不存在。
 	ErrNotFound = errors.New("commerce resource not found")
 )
 
-// AccountRecord 是 Store 持久化的账号 projection 与密码 verifier。
+// OperatorRole 是只存在于 Control Plane 和数据库中的运营授权角色。
+// 该值不得进入 AccountProjection、账号登录响应或客户端持久状态。
+type OperatorRole uint8
+
+const (
+	// OperatorRoleNone 表示普通账号，没有运营 API 访问权限。
+	OperatorRoleNone OperatorRole = iota
+	// OperatorRoleReadonly 表示只允许查询运营模块，禁止任何 mutation。
+	OperatorRoleReadonly
+	// OperatorRoleAdmin 表示允许在近期认证和 CSRF 同时有效时执行运营 mutation。
+	OperatorRoleAdmin
+)
+
+// AccountRecord 是 Store 持久化的账号 projection、密码 verifier 与后端运营角色。
 type AccountRecord struct {
 	Projection   *cloudpb.AccountProjection
 	PasswordHash []byte
+	OperatorRole OperatorRole
 }
 
 // SessionRecord 只保存 token hash；原始 access/refresh token 只存在于创建响应。
@@ -81,6 +97,7 @@ type Store interface {
 	AccountByEmail(context.Context, string) (AccountRecord, error)
 	Account(context.Context, string) (AccountRecord, error)
 	Accounts(context.Context, int) ([]AccountRecord, error)
+	SetOperatorRole(context.Context, string, OperatorRole) error
 	Sessions(context.Context, string, bool, int) ([]SessionRecord, error)
 	OperatorAudits(context.Context, string, int) ([]*cloudpb.OperatorMutationAuditProjection, error)
 	AllOrders(context.Context, int) ([]*cloudpb.OrderProjection, error)
@@ -254,6 +271,38 @@ func (service *Service) AuthenticateAccess(ctx context.Context, accessToken []by
 		return nil, "", ErrUnauthorized
 	}
 	return proto.Clone(account.Projection).(*cloudpb.AccountProjection), record.SessionID, nil
+}
+
+// AuthenticateOperatorAccess 使用普通账号 access token 完成运营授权。
+// 角色每次从 Store 当前记录读取，升降级无需重新签发 Session，前端也不会收到角色字段。
+func (service *Service) AuthenticateOperatorAccess(ctx context.Context, accessToken []byte) (*cloudpb.AccountProjection, string, cloudpb.ManagementActorKind, error) {
+	account, sessionID, err := service.AuthenticateAccess(ctx, accessToken)
+	if err != nil {
+		return nil, "", cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_UNSPECIFIED, err
+	}
+	record, err := service.store.Account(ctx, account.GetAccountId())
+	if err != nil {
+		return nil, "", cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_UNSPECIFIED, ErrUnauthorized
+	}
+	actorKind := cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_UNSPECIFIED
+	switch record.OperatorRole {
+	case OperatorRoleReadonly:
+		actorKind = cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_READONLY
+	case OperatorRoleAdmin:
+		actorKind = cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN
+	default:
+		return nil, "", cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_UNSPECIFIED, ErrForbidden
+	}
+	return account, sessionID, actorKind, nil
+}
+
+// SetOperatorRole 写入数据库运营角色，供受控 bootstrap 和角色管理事务使用。
+// 普通账号 API 不暴露此方法；无效角色必须 fail closed。
+func (service *Service) SetOperatorRole(ctx context.Context, accountID string, role OperatorRole) error {
+	if accountID == "" || role > OperatorRoleAdmin {
+		return ErrConflict
+	}
+	return service.store.SetOperatorRole(ctx, accountID, role)
 }
 
 // VerifyPassword 为已认证账号创建近期认证 proof；它不创建新 session，也不暴露 verifier。

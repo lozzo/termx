@@ -2,10 +2,7 @@ package webcontroller
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/hex"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strings"
@@ -18,11 +15,6 @@ import (
 	"github.com/muxvia/muxvia/private/cloud/control-plane/promotion"
 	"github.com/muxvia/muxvia/private/cloud/control-plane/releasecatalog"
 	"github.com/muxvia/muxvia/proto/cloudpb"
-)
-
-const (
-	operatorSessionCookie = "muxvia_cloud_operator"
-	operatorCSRFCookie    = "muxvia_cloud_operator_csrf"
 )
 
 // OperatorFleetQuery 返回不伪造在线状态的 Hub/Relay attachment 投影。
@@ -42,11 +34,8 @@ type OperatorPaymentReconciler interface {
 	ReconcilePaymentAttempt(context.Context, string) (*cloudpb.PaymentAttemptProjection, error)
 }
 
-// OperatorAPIConfig 装配独立 operator listener 的最小角色、账号和 fleet API。
+// OperatorAPIConfig 装配普通账号产品面中的运营模块 API。
 type OperatorAPIConfig struct {
-	AccessToken       []byte
-	OperatorID        string
-	ActorKind         cloudpb.ManagementActorKind
 	Commerce          *commerce.Service
 	Catalog           *cloudcatalog.Service
 	Overrides         *cloudentitlement.OverrideService
@@ -59,22 +48,68 @@ type OperatorAPIConfig struct {
 	PaymentReconciler OperatorPaymentReconciler
 	Releases          *releasecatalog.Service
 	Now               func() time.Time
+	RecentProofs      *proofStore
 	SecureCookie      bool
 }
 
 // OperatorAPIHandler 使用 HttpOnly session、CSRF 与五分钟近期认证保护管理操作。
 func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
-	if len(config.AccessToken) < 32 || config.OperatorID == "" || config.ActorKind != cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_READONLY && config.ActorKind != cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN || config.Commerce == nil || config.Catalog == nil || config.Overrides == nil || config.Promotions == nil || config.Topology == nil || config.Quota == nil || config.Outbox == nil || config.Planner == nil || config.Fleet == nil || config.Releases == nil {
+	if config.Commerce == nil || config.Catalog == nil || config.Overrides == nil || config.Promotions == nil || config.Topology == nil || config.Quota == nil || config.Outbox == nil || config.Planner == nil || config.Fleet == nil || config.Releases == nil {
 		return nil, commandoutbox.ErrCommandConflict
 	}
 	if config.Now == nil {
 		config.Now = time.Now
 	}
-	tokenDigest := sha256.Sum256(config.AccessToken)
-	sessions := newProofStore(config.Now)
+	if config.RecentProofs == nil {
+		config.RecentProofs = newProofStore(config.Now)
+	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/operator/reauth", func(w http.ResponseWriter, r *http.Request) {
+		principal, err := authenticateOperator(r, config.Commerce)
+		if err == nil && principal.actorKind != cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN {
+			err = errOperatorForbidden
+		}
+		if err == nil && !productMutationAllowed(r) {
+			err = commerce.ErrUnauthorized
+		}
+		request := &cloudpb.RecentAuthenticationRequest{}
+		if err == nil {
+			err = decodeProductProto(r, request)
+		}
+		if err == nil {
+			err = config.Commerce.VerifyPassword(r.Context(), principal.account.GetAccountId(), request.GetPassword())
+		}
+		var response *cloudpb.RecentAuthenticationResponse
+		if err == nil {
+			token, record, issueErr := config.RecentProofs.issue(principal.account.GetAccountId(), principal.actorKind, 5*time.Minute)
+			err = issueErr
+			if issueErr == nil {
+				http.SetCookie(w, &http.Cookie{Name: "muxvia_cloud_recent", Value: token, Path: "/", MaxAge: 300, HttpOnly: true, Secure: config.SecureCookie, SameSite: http.SameSiteStrictMode})
+				response = &cloudpb.RecentAuthenticationResponse{ExpiresAtUnixMillis: record.expiresAt.UnixMilli()}
+			}
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
+	mux.HandleFunc("GET /api/v1/operator/workspace", func(w http.ResponseWriter, r *http.Request) {
+		_, err := authenticateOperator(r, config.Commerce)
+		response := &cloudpb.GetOperatorWorkspaceResponse{}
+		if err == nil {
+			response.Modules = []cloudpb.OperatorWorkspaceModule{
+				cloudpb.OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_USERS,
+				cloudpb.OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_ORDERS,
+				cloudpb.OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_SUBSCRIPTIONS,
+				cloudpb.OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_PLANS,
+				cloudpb.OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_HUBS,
+				cloudpb.OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_AGENTS,
+				cloudpb.OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_RELEASES,
+				cloudpb.OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_PROMOTIONS,
+				cloudpb.OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_PRIVILEGES,
+			}
+		}
+		writeManagementProto(w, http.StatusOK, response, err)
+	})
 	mux.HandleFunc("POST /api/v1/operator/releases/list", func(w http.ResponseWriter, r *http.Request) {
-		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		_, err := authenticateOperator(r, config.Commerce)
 		request := &cloudpb.ListReleaseArtifactsRequest{}
 		if err == nil {
 			err = decodeProductProto(r, request)
@@ -86,9 +121,9 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/releases/publish", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.PublishReleaseArtifactRequest{}
 		if err == nil {
@@ -96,14 +131,14 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		}
 		var artifact *cloudpb.ReleaseArtifactProjection
 		if err == nil {
-			artifact, err = config.Releases.Publish(r.Context(), request.GetArtifact(), config.OperatorID, request.GetReason(), request.GetRequestId())
+			artifact, err = config.Releases.Publish(r.Context(), request.GetArtifact(), principal.account.GetUserId(), request.GetReason(), request.GetRequestId())
 		}
 		writeManagementProto(w, http.StatusCreated, &cloudpb.PublishReleaseArtifactResponse{Artifact: artifact}, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/releases/channel", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.SetReleaseChannelRequest{}
 		if err == nil {
@@ -111,57 +146,12 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		}
 		var channel *cloudpb.ReleaseChannelProjection
 		if err == nil {
-			channel, err = config.Releases.SetChannel(r.Context(), request, config.OperatorID)
+			channel, err = config.Releases.SetChannel(r.Context(), request, principal.account.GetUserId())
 		}
 		writeManagementProto(w, http.StatusOK, &cloudpb.SetReleaseChannelResponse{Channel: channel}, err)
 	})
-	mux.HandleFunc("POST /api/v1/operator/login", func(w http.ResponseWriter, r *http.Request) {
-		request := &cloudpb.OperatorLoginRequest{}
-		err := decodeProductProto(r, request)
-		candidate := sha256.Sum256(request.GetAccessToken())
-		if err == nil && subtle.ConstantTimeCompare(candidate[:], tokenDigest[:]) != 1 {
-			err = commerce.ErrUnauthorized
-		}
-		clear(request.AccessToken)
-		var response *cloudpb.OperatorLoginResponse
-		if err == nil {
-			token, record, issueErr := sessions.issue(config.OperatorID, config.ActorKind, 8*time.Hour)
-			err = issueErr
-			if issueErr == nil {
-				csrf := make([]byte, 24)
-				_, issueErr = rand.Read(csrf)
-				err = issueErr
-				if issueErr == nil {
-					http.SetCookie(w, &http.Cookie{Name: operatorSessionCookie, Value: token, Path: "/", MaxAge: 8 * 60 * 60, HttpOnly: true, Secure: config.SecureCookie, SameSite: http.SameSiteStrictMode})
-					http.SetCookie(w, &http.Cookie{Name: operatorCSRFCookie, Value: hex.EncodeToString(csrf), Path: "/", MaxAge: 8 * 60 * 60, Secure: config.SecureCookie, SameSite: http.SameSiteStrictMode})
-					response = &cloudpb.OperatorLoginResponse{Session: operatorSession(config.OperatorID, config.ActorKind, record)}
-				}
-				clear(csrf)
-			}
-		}
-		writeManagementProto(w, http.StatusOK, response, err)
-	})
-	mux.HandleFunc("POST /api/v1/operator/logout", func(w http.ResponseWriter, r *http.Request) {
-		record, token, err := authenticateOperator(r, sessions, config.OperatorID)
-		_ = record
-		if err == nil && !operatorMutationAllowed(r) {
-			err = commerce.ErrUnauthorized
-		}
-		if err == nil {
-			sessions.revoke(token)
-		}
-		if err == nil {
-			for _, cookie := range []http.Cookie{{Name: operatorSessionCookie, Path: "/", HttpOnly: true}, {Name: operatorCSRFCookie, Path: "/"}} {
-				cookie.MaxAge = -1
-				cookie.Secure = config.SecureCookie
-				cookie.SameSite = http.SameSiteStrictMode
-				http.SetCookie(w, &cookie)
-			}
-		}
-		writeManagementProto(w, http.StatusOK, &cloudpb.OperatorLogoutResponse{}, err)
-	})
 	mux.HandleFunc("POST /api/v1/operator/accounts/list", func(w http.ResponseWriter, r *http.Request) {
-		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		_, err := authenticateOperator(r, config.Commerce)
 		request := &cloudpb.ListOperatorAccountsRequest{}
 		if err == nil {
 			err = decodeProductProto(r, request)
@@ -188,7 +178,7 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/accounts/get", func(w http.ResponseWriter, r *http.Request) {
-		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		_, err := authenticateOperator(r, config.Commerce)
 		request := &cloudpb.GetOperatorAccountRequest{}
 		if err == nil {
 			err = decodeProductProto(r, request)
@@ -200,7 +190,7 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/agents/list", func(w http.ResponseWriter, r *http.Request) {
-		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		_, err := authenticateOperator(r, config.Commerce)
 		request := &cloudpb.ListOperatorAgentsRequest{}
 		if err == nil {
 			err = decodeProductProto(r, request)
@@ -212,9 +202,9 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/accounts/sessions/revoke", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.RevokeOperatorAccountSessionRequest{}
 		if err == nil {
@@ -222,14 +212,14 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		}
 		var response *cloudpb.RevokeOperatorAccountSessionResponse
 		if err == nil {
-			response, err = config.Commerce.RevokeOperatorSessions(r.Context(), config.OperatorID, request)
+			response, err = config.Commerce.RevokeOperatorSessions(r.Context(), principal.account.GetUserId(), request)
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/subscription/transition", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.OperatorTransitionSubscriptionRequest{}
 		if err == nil {
@@ -240,13 +230,13 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 			err = commandoutbox.ErrCommandConflict
 		}
 		if err == nil {
-			result, transitionErr := config.Commerce.Transition(r.Context(), &cloudpb.TransitionSubscriptionRequest{AccountId: request.GetAccountId(), Transition: request.GetTransition(), ActorId: config.OperatorID})
+			result, transitionErr := config.Commerce.Transition(r.Context(), &cloudpb.TransitionSubscriptionRequest{AccountId: request.GetAccountId(), Transition: request.GetTransition(), ActorId: principal.account.GetUserId()})
 			err, response = transitionErr, &cloudpb.OperatorTransitionSubscriptionResponse{Result: result}
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/orders/list", func(w http.ResponseWriter, r *http.Request) {
-		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		_, err := authenticateOperator(r, config.Commerce)
 		request := &cloudpb.ListOperatorOrdersRequest{}
 		if err == nil {
 			err = decodeProductProto(r, request)
@@ -258,7 +248,7 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/subscriptions/list", func(w http.ResponseWriter, r *http.Request) {
-		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		_, err := authenticateOperator(r, config.Commerce)
 		request := &cloudpb.ListOperatorSubscriptionsRequest{}
 		if err == nil {
 			err = decodeProductProto(r, request)
@@ -270,9 +260,9 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/subscriptions/adjust", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.CreateSubscriptionAdjustmentRequest{}
 		if err == nil {
@@ -280,14 +270,14 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		}
 		var response *cloudpb.CreateSubscriptionAdjustmentResponse
 		if err == nil {
-			response, err = config.Commerce.AdjustSubscription(r.Context(), request, config.OperatorID)
+			response, err = config.Commerce.AdjustSubscription(r.Context(), request, principal.account.GetUserId())
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/orders/payment-event", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.ApplyOperatorPaymentEventRequest{}
 		if err == nil {
@@ -295,14 +285,14 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		}
 		var response *cloudpb.ApplyOperatorPaymentEventResponse
 		if err == nil {
-			response, err = config.Commerce.ApplyOperatorPaymentEvent(r.Context(), request, config.OperatorID)
+			response, err = config.Commerce.ApplyOperatorPaymentEvent(r.Context(), request, principal.account.GetUserId())
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/orders/reconcile-creem", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.ReconcileCreemPaymentAttemptRequest{}
 		if err == nil {
@@ -319,18 +309,18 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 				var reconciled *cloudpb.PaymentAttemptProjection
 				reconciled, err = config.PaymentReconciler.ReconcilePaymentAttempt(r.Context(), request.GetPaymentAttemptId())
 				if err == nil {
-					err = config.Commerce.RecordPaymentReconciliationAudit(r.Context(), request.GetPaymentAttemptId(), config.OperatorID, request.GetReason(), request.GetRequestId(), before.GetRevision(), reconciled.GetRevision())
+					err = config.Commerce.RecordPaymentReconciliationAudit(r.Context(), request.GetPaymentAttemptId(), principal.account.GetUserId(), request.GetReason(), request.GetRequestId(), before.GetRevision(), reconciled.GetRevision())
 					response = &cloudpb.ReconcileCreemPaymentAttemptResponse{PaymentAttempt: reconciled}
 				} else if _, _, latest, latestErr := config.Commerce.ProviderPaymentContext(r.Context(), request.GetPaymentAttemptId()); latestErr == nil {
 					// Provider 失败也必须留下请求原因；原始 provider 错误继续返回给运营端。
-					_ = config.Commerce.RecordPaymentReconciliationAudit(r.Context(), request.GetPaymentAttemptId(), config.OperatorID, request.GetReason(), request.GetRequestId(), before.GetRevision(), latest.GetRevision())
+					_ = config.Commerce.RecordPaymentReconciliationAudit(r.Context(), request.GetPaymentAttemptId(), principal.account.GetUserId(), request.GetReason(), request.GetRequestId(), before.GetRevision(), latest.GetRevision())
 				}
 			}
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/promotions/list", func(w http.ResponseWriter, r *http.Request) {
-		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		_, err := authenticateOperator(r, config.Commerce)
 		request := &cloudpb.ListPromotionsRequest{}
 		if err == nil {
 			err = decodeProductProto(r, request)
@@ -343,7 +333,7 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/promotions/redemptions", func(w http.ResponseWriter, r *http.Request) {
-		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		_, err := authenticateOperator(r, config.Commerce)
 		request := &cloudpb.ListPromotionRedemptionsRequest{}
 		if err == nil {
 			err = decodeProductProto(r, request)
@@ -356,9 +346,9 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/promotions/create", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.CreatePromotionRequest{}
 		if err == nil {
@@ -366,14 +356,14 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		}
 		var response *cloudpb.CreatePromotionResponse
 		if err == nil {
-			response, err = config.Promotions.Create(r.Context(), request, config.OperatorID)
+			response, err = config.Promotions.Create(r.Context(), request, principal.account.GetUserId())
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/promotions/disable", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.DisablePromotionRequest{}
 		if err == nil {
@@ -381,12 +371,12 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		}
 		var response *cloudpb.DisablePromotionResponse
 		if err == nil {
-			response, err = config.Promotions.Disable(r.Context(), request, config.OperatorID)
+			response, err = config.Promotions.Disable(r.Context(), request, principal.account.GetUserId())
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/catalog/list", func(w http.ResponseWriter, r *http.Request) {
-		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		_, err := authenticateOperator(r, config.Commerce)
 		request := &cloudpb.ListPlanCatalogReleasesRequest{}
 		if err == nil {
 			err = decodeProductProto(r, request)
@@ -399,7 +389,7 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/catalog/get", func(w http.ResponseWriter, r *http.Request) {
-		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		_, err := authenticateOperator(r, config.Commerce)
 		request := &cloudpb.GetPlanCatalogReleaseRequest{}
 		if err == nil {
 			err = decodeProductProto(r, request)
@@ -412,9 +402,9 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/catalog/publish", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.PublishPlanCatalogRequest{}
 		if err == nil {
@@ -422,13 +412,13 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		}
 		var response *cloudpb.PublishPlanCatalogResponse
 		if err == nil {
-			value, publishErr := config.Catalog.Publish(r.Context(), request.GetCatalog(), config.OperatorID, request.GetReason(), request.GetRequestId())
+			value, publishErr := config.Catalog.Publish(r.Context(), request.GetCatalog(), principal.account.GetUserId(), request.GetReason(), request.GetRequestId())
 			err, response = publishErr, &cloudpb.PublishPlanCatalogResponse{Release: value}
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/entitlement-overrides/list", func(w http.ResponseWriter, r *http.Request) {
-		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		_, err := authenticateOperator(r, config.Commerce)
 		request := &cloudpb.ListEntitlementOverridesRequest{}
 		if err == nil {
 			err = decodeProductProto(r, request)
@@ -441,9 +431,9 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/entitlement-overrides/put", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.PutEntitlementOverrideRequest{}
 		if err == nil {
@@ -451,14 +441,14 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		}
 		var response *cloudpb.PutEntitlementOverrideResponse
 		if err == nil {
-			response, err = config.Overrides.Put(r.Context(), request, config.OperatorID)
+			response, err = config.Overrides.Put(r.Context(), request, principal.account.GetUserId())
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/entitlement-overrides/revoke", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.RevokeEntitlementOverrideRequest{}
 		if err == nil {
@@ -466,14 +456,14 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		}
 		var response *cloudpb.RevokeEntitlementOverrideResponse
 		if err == nil {
-			response, err = config.Overrides.Revoke(r.Context(), request, config.OperatorID)
+			response, err = config.Overrides.Revoke(r.Context(), request, principal.account.GetUserId())
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/commands", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.CreateManagementCommandRequest{}
 		if err == nil {
@@ -481,13 +471,13 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		}
 		var response *cloudpb.CreateManagementCommandResponse
 		if err == nil {
-			command, _, createErr := config.Planner.Create(r.Context(), request, &cloudpb.ManagementActorProjection{ActorKind: record.actorKind, ActorId: config.OperatorID, DisplayLabel: config.OperatorID}, config.Now().UTC())
+			command, _, createErr := config.Planner.Create(r.Context(), request, &cloudpb.ManagementActorProjection{ActorKind: principal.actorKind, ActorId: principal.account.GetUserId(), DisplayLabel: principal.account.GetUserId()}, config.Now().UTC())
 			err, response = createErr, &cloudpb.CreateManagementCommandResponse{Command: command}
 		}
 		writeManagementProto(w, http.StatusAccepted, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/fleet/list", func(w http.ResponseWriter, r *http.Request) {
-		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		_, err := authenticateOperator(r, config.Commerce)
 		request := &cloudpb.ListHubFleetRequest{}
 		if err == nil {
 			err = decodeProductProto(r, request)
@@ -499,7 +489,7 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/fleet/get", func(w http.ResponseWriter, r *http.Request) {
-		_, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		_, err := authenticateOperator(r, config.Commerce)
 		request := &cloudpb.GetHubStatusRequest{}
 		if err == nil {
 			err = decodeProductProto(r, request)
@@ -511,9 +501,9 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/fleet/create", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.CreateHubDeploymentRequest{}
 		if err == nil {
@@ -521,14 +511,14 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		}
 		var response *cloudpb.CreateHubDeploymentResponse
 		if err == nil {
-			response, err = config.Fleet.CreateHubDeployment(r.Context(), request, config.OperatorID, config.Now().UTC())
+			response, err = config.Fleet.CreateHubDeployment(r.Context(), request, principal.account.GetUserId(), config.Now().UTC())
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/fleet/update", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.UpdateHubDeploymentRequest{}
 		if err == nil {
@@ -536,14 +526,14 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		}
 		var response *cloudpb.UpdateHubDeploymentResponse
 		if err == nil {
-			response, err = config.Fleet.UpdateHubDeployment(r.Context(), request, config.OperatorID, config.Now().UTC())
+			response, err = config.Fleet.UpdateHubDeployment(r.Context(), request, principal.account.GetUserId(), config.Now().UTC())
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/fleet/approve", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.ApproveHubDeploymentIdentityRequest{}
 		if err == nil {
@@ -551,14 +541,14 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		}
 		var response *cloudpb.ApproveHubDeploymentIdentityResponse
 		if err == nil {
-			response, err = config.Fleet.ApproveHubDeploymentIdentity(r.Context(), request, config.OperatorID, config.Now().UTC())
+			response, err = config.Fleet.ApproveHubDeploymentIdentity(r.Context(), request, principal.account.GetUserId(), config.Now().UTC())
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/fleet/drain", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.SetHubDeploymentDrainRequest{}
 		if err == nil {
@@ -566,14 +556,14 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		}
 		var response *cloudpb.SetHubDeploymentDrainResponse
 		if err == nil {
-			response, err = config.Fleet.SetHubDeploymentDrain(r.Context(), request, config.OperatorID, config.Now().UTC())
+			response, err = config.Fleet.SetHubDeploymentDrain(r.Context(), request, principal.account.GetUserId(), config.Now().UTC())
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	mux.HandleFunc("POST /api/v1/operator/fleet/disable", func(w http.ResponseWriter, r *http.Request) {
-		record, _, err := authenticateOperator(r, sessions, config.OperatorID)
+		principal, err := authenticateOperator(r, config.Commerce)
 		if err == nil {
-			err = requireOperatorMutation(r, record, config.Now().UTC())
+			err = requireOperatorMutation(r, principal, config.RecentProofs)
 		}
 		request := &cloudpb.DisableHubDeploymentRequest{}
 		if err == nil {
@@ -581,42 +571,49 @@ func OperatorAPIHandler(config OperatorAPIConfig) (http.Handler, error) {
 		}
 		var response *cloudpb.DisableHubDeploymentResponse
 		if err == nil {
-			response, err = config.Fleet.DisableHubDeployment(r.Context(), request, config.OperatorID, config.Now().UTC())
+			response, err = config.Fleet.DisableHubDeployment(r.Context(), request, principal.account.GetUserId(), config.Now().UTC())
 		}
 		writeManagementProto(w, http.StatusOK, response, err)
 	})
 	return mux, nil
 }
 
-func operatorSession(operatorID string, kind cloudpb.ManagementActorKind, record proofRecord) *cloudpb.OperatorSessionProjection {
-	return &cloudpb.OperatorSessionProjection{OperatorId: operatorID, ActorKind: kind, AuthenticatedAtUnixMillis: record.authenticatedAt.UnixMilli(), ExpiresAtUnixMillis: record.expiresAt.UnixMilli()}
+type operatorPrincipal struct {
+	account   *cloudpb.AccountProjection
+	actorKind cloudpb.ManagementActorKind
 }
 
-func authenticateOperator(r *http.Request, sessions *proofStore, operatorID string) (proofRecord, string, error) {
-	cookie, err := r.Cookie(operatorSessionCookie)
+// authenticateOperator 使用普通账号 HttpOnly access cookie，并在每个请求上读取数据库当前角色。
+// 菜单可见性不是授权真值；角色降级后既有浏览器 Session 的下一次请求立即失败。
+func authenticateOperator(r *http.Request, service *commerce.Service) (operatorPrincipal, error) {
+	cookie, err := r.Cookie(productAccessCookie)
 	if err != nil {
-		return proofRecord{}, "", commerce.ErrUnauthorized
+		return operatorPrincipal{}, commerce.ErrUnauthorized
 	}
-	record, ok := sessions.validate(cookie.Value, operatorID)
-	if !ok {
-		return proofRecord{}, "", commerce.ErrUnauthorized
+	token, err := base64.RawURLEncoding.DecodeString(cookie.Value)
+	if err != nil {
+		return operatorPrincipal{}, commerce.ErrUnauthorized
 	}
-	return record, cookie.Value, nil
+	account, _, actorKind, err := service.AuthenticateOperatorAccess(r.Context(), token)
+	clear(token)
+	if err != nil {
+		return operatorPrincipal{}, err
+	}
+	return operatorPrincipal{account: account, actorKind: actorKind}, nil
 }
 
-func operatorMutationAllowed(r *http.Request) bool {
-	cookie, err := r.Cookie(operatorCSRFCookie)
-	return err == nil && sameOrigin(r) && cookie.Value != "" && cookie.Value == r.Header.Get("X-Muxvia-CSRF")
-}
-
-func requireOperatorMutation(r *http.Request, record proofRecord, now time.Time) error {
-	if record.actorKind != cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN {
+func requireOperatorMutation(r *http.Request, principal operatorPrincipal, recentProofs *proofStore) error {
+	if principal.actorKind != cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN {
 		return errOperatorForbidden
 	}
-	if !operatorMutationAllowed(r) {
+	if !productMutationAllowed(r) {
 		return commerce.ErrUnauthorized
 	}
-	if now.Sub(record.authenticatedAt) > 5*time.Minute {
+	cookie, err := r.Cookie("muxvia_cloud_recent")
+	if err != nil {
+		return errRecentAuthenticationRequired
+	}
+	if _, ok := recentProofs.validate(cookie.Value, principal.account.GetAccountId()); !ok {
 		return errRecentAuthenticationRequired
 	}
 	return nil

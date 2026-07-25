@@ -264,7 +264,7 @@ func TestCloudManagementAPIMessagesAreProtoFirst(t *testing.T) {
 		"GetManagementCommandRequest", "GetManagementCommandResponse",
 		"ListManagementCommandsRequest", "ListManagementCommandsResponse",
 		"ListHubFleetRequest", "ListHubFleetResponse", "GetHubStatusRequest", "GetHubStatusResponse",
-		"RecentAuthenticationRequest", "RecentAuthenticationResponse", "OperatorLoginRequest", "OperatorLoginResponse",
+		"RecentAuthenticationRequest", "RecentAuthenticationResponse", "GetOperatorWorkspaceResponse",
 		"ListOperatorAccountsRequest", "ListOperatorAccountsResponse", "GetOperatorAccountRequest", "GetOperatorAccountResponse",
 		"OperatorTransitionSubscriptionRequest", "OperatorTransitionSubscriptionResponse",
 		"ListOperatorOrdersRequest", "ListOperatorOrdersResponse", "OperatorOrderProjection",

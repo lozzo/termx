@@ -37,5 +37,5 @@
 
 - Operator mutation 继续要求独立 listener、admin、同源 CSRF 和五分钟 recent-auth。
 - 测试 provider 仅在显式 development 配置启用；contact plan 不允许创建订单。
-- Creem API key、Webhook secret、operator token、账号密码和 provider raw payload 未写入仓库、截图、日志或 Proto projection。
+- Creem API key、Webhook secret、普通账号 Session token、账号密码和 provider raw payload 未写入仓库、截图、日志或 Proto projection。
 - `CREEM001` 才接入 Creem sandbox API、`POST /pay/creem` raw-body HMAC 和有界轮询；本切片没有用浏览器 success redirect 开通 Entitlement。

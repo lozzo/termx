@@ -1,23 +1,19 @@
 import { expect, test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
-const operatorURL = process.env.MUXVIA_OPERATOR_URL;
 const publicURL = process.env.MUXVIA_PUBLIC_URL;
-const operatorToken = process.env.MUXVIA_OPERATOR_TOKEN;
 const accountEmail = process.env.MUXVIA_ACCOUNT_EMAIL;
 const accountPassword = process.env.MUXVIA_ACCOUNT_PASSWORD;
 
 test.beforeAll(async () => {
-  if (!operatorURL || !publicURL || !operatorToken || !accountEmail || !accountPassword) throw new Error("OPSCOM001 runtime URLs and credentials are required");
+  if (!publicURL || !accountEmail || !accountPassword) throw new Error("OPSCOM001 public URL and account credentials are required");
   await mkdir("../../../../.artifacts/opscom001", { recursive: true });
 });
 
 test("operator commerce UI publishes promotion, adjusts subscription, and observes discounted payment", async ({ page }) => {
   const promotionCode = `E2E${Date.now().toString().slice(-6)}`;
   await page.setViewportSize({ width: 1440, height: 960 });
-  await page.goto(`${operatorURL}/operator`);
-  await page.getByTestId("operator-token").fill(operatorToken!);
-  await page.getByTestId("operator-submit").click();
+  await loginOperator(page);
   await expect(page.getByTestId("operator-commerce-operations")).toBeVisible();
 
   const editor = page.getByTestId("catalog-editor");
@@ -59,7 +55,7 @@ test("operator commerce UI publishes promotion, adjusts subscription, and observ
   await page.getByRole("button", { name: "Activate Pro with test provider" }).click();
   await expect(page.getByText("pro", { exact: true }).first()).toBeVisible();
 
-  await page.goto(`${operatorURL}/operator`);
+  await page.goto(`${publicURL}/operator`);
   await expect(page.getByTestId("operator-orders").getByText("$5.00", { exact: false })).toBeVisible();
   await expect(page.getByTestId("operator-orders").getByText("PAID", { exact: true })).toBeVisible();
   await page.getByText("Event timeline", { exact: true }).click();
@@ -71,3 +67,15 @@ test("operator commerce UI publishes promotion, adjusts subscription, and observ
   expect(overflow).toBeLessThanOrEqual(1);
   await page.screenshot({ path: "../../../../.artifacts/opscom001/operator-mobile.png", fullPage: true });
 });
+
+async function loginOperator(page: import("@playwright/test").Page) {
+  await page.goto(`${publicURL}/login`);
+  await page.getByTestId("account-email").fill(accountEmail!);
+  await page.getByTestId("account-password").fill(accountPassword!);
+  await page.getByTestId("account-submit").click();
+  await expect(page).toHaveURL(/\/account/);
+  await page.goto(`${publicURL}/operator`);
+  await page.getByTestId("operator-reauth").getByLabel(/Confirm account password/).fill(accountPassword!);
+  await page.getByRole("button", { name: "Unlock changes" }).click();
+  await expect(page.getByText("CHANGES UNLOCKED")).toBeVisible();
+}

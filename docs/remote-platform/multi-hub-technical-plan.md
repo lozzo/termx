@@ -767,12 +767,12 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 ### CLOUDP006：用户与运营管理面
 
 - Controller public/operator listener 从同一个可选 `web_static_dir` 提供生产 Web build；账号 API、operator API、Control Plane service 与静态资源仍在同一 `muxvia-cloud-controller` composition 内，internal control listener 不提供页面。
-- `cloud_management.proto` 已定义近期认证、operator session/角色、账号列表/详情和 suspend/restore；`cloud_product.proto` 的账号交易查询同时返回 normalized payment event journal。Go 与 TypeScript consumer 都从同一 schema 生成。
+- `cloud_management.proto` 已定义近期认证、管理 workspace 模块投影、账号列表/详情和 suspend/restore；`cloud_product.proto` 的账号交易查询同时返回 normalized payment event journal。Go 与 TypeScript consumer 都从同一 schema 生成。
 - 用户账号中心直接消费 generated Proto JSON，展示账号、Subscription/Entitlement、Relay quota、设备、Presence、managed PeerSession data path、CommandOutbox、订单、payment event 与审计；signaling control Hub 和 `DIRECT`/`SINGLE_RELAY` data path 分开显示，stale 不投影成 offline。
 - 账号 destructive command 必须先使用当前密码换取五分钟 HttpOnly recent proof，并同时通过账号 Cookie、same-origin 和 CSRF；请求中的 `account_id` 被当前账号覆盖，不能跨账号查询或控制。
-- 独立 operator listener 使用高熵部署 token、HttpOnly session、独立 CSRF Cookie 与 `readonly/admin` 角色；只读角色只能查询，admin 在登录后五分钟内可以 suspend/restore、撤销设备或创建已有 management command，结果进入 Subscription/Commerce audit 或 CommandOutbox 持久投影。
+- public 与 operator listener 复用普通账号的 HttpOnly Session 和 CSRF Cookie；PostgreSQL 账号记录持有 `none/readonly/admin` 角色，后端在每个请求上按当前数据库角色授权。前端只获得允许进入的管理模块，不获得角色或 `isAdmin` 标志。只读角色只能查询，admin 在再次确认当前账号密码后的五分钟内可以 suspend/restore、撤销设备或创建已有 management command，结果进入 Subscription/Commerce audit 或 CommandOutbox 持久投影。
 - fleet 页面只把同时存在的 Hub/Relay attachment 标记为 fresh，`last_control_seen_at` 只来自真实 attachment，不用 deployment 配置时间伪造在线证据。
-- development supervisor 构建同一 Web 资产，并把随机账号密码和 operator token 写入独立 `0600` credentials 文件；runtime manifest 只记录文件路径，不复制 secret。
+- development supervisor 构建同一 Web 资产，并把随机普通账号密码写入独立 `0600` credentials 文件；该账号在开发数据库中被授予 admin，runtime manifest 只记录 credentials 文件路径，不复制 secret。
 - 已删除旧 `web-controller/controller.go` hand-written facade、`Center/Node/Billing` DTO、旧 `/api/center`、旧 `/api/auth/*`、无 Proto 后端的 `/api/device-login*` 页面、referrals 与 staging 登录 fallback。
 
 ### HUB007：双 Hub 控制面 E2E
@@ -795,7 +795,7 @@ usage 幂等键继续使用稳定契约 `relay_id + lease_id + sequence`，不�
 
 - `cloud_management.proto` 定义无 secret 的账号 Session projection、Operator Session revoke 和按稳定 daemon DeviceIdentity 聚合的 Agent projection；Web 继续只消费 generated Proto JSON。
 - 账号 Session 的 access/refresh token 与 hash 不越过 commerce/store 边界。精确撤销使用 account/session/revision fence，撤销全部 Session 使用显式 `all_account_sessions`；持久撤销与 Operator audit 在同一 PostgreSQL 事务提交，重复 request 只有完全相同输入才能幂等成功。
-- Operator 身份与 `readonly/admin` 角色仍由独立部署 credential 不可变配置拥有，不建立数据库角色或第二套登录系统。readonly 只能查询，admin destructive action 必须同时通过 HttpOnly Session、same-origin、CSRF 和近期认证；角色本身没有运行时 mutation，因此不存在自降权或删除最后一个 admin 的写路径。
+- Operator 身份就是普通账号身份，`readonly/admin` 角色由 PostgreSQL 账号记录持有，不存在第二套登录系统或部署 token。readonly 只能查询，admin destructive action 必须同时通过普通账号 HttpOnly Session、same-origin、CSRF 和近期密码认证；后端逐请求重读角色，因此角色升降级对既有 Session 立即生效。
 - Agent 以账号目录中的 daemon DeviceIdentity 为稳定主键，组合 assignment、最后可信 Presence 和 active managed PeerSession 数量。`availability` 与 `freshness` 分开显示，不持久化 `online`、`pendingKick` 或最后操作猜测值。
 - Kick 只接受 `ONLINE + FRESH` 的精确 `daemon_device_id + assignment_epoch + presence_session_id`；stale Presence 明确拒绝。Revoke 先提交持久 device authority，再由 CommandOutbox 派生 runtime child；Migrate 复用 assignment epoch fence，不由 Web 直接改 topology。
 - Operator Web 分为 Users 与 Agents 视图。用户详情展示账号状态、登录 Session、设备授权、CommandOutbox authority/delivery/execution/effect 和 audit；Agent 视图展示机器、账号、Hub、freshness 与 active peer 数，并提供 Kick/Revoke/Migrate。

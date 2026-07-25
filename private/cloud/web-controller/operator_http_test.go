@@ -57,6 +57,24 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 		t.Fatal(err)
 	}
 	accountID := registered.GetSession().GetAccount().GetAccountId()
+	adminAccount, err := commerceService.Register(context.Background(), &cloudpb.RegisterAccountRequest{Email: "operator-admin@example.com", Password: "admin-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := commerceService.SetOperatorRole(context.Background(), adminAccount.GetSession().GetAccount().GetAccountId(), commerce.OperatorRoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	readonlyAccount, err := commerceService.Register(context.Background(), &cloudpb.RegisterAccountRequest{Email: "operator-readonly@example.com", Password: "readonly-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := commerceService.SetOperatorRole(context.Background(), readonlyAccount.GetSession().GetAccount().GetAccountId(), commerce.OperatorRoleReadonly); err != nil {
+		t.Fatal(err)
+	}
+	_, err = commerceService.Register(context.Background(), &cloudpb.RegisterAccountRequest{Email: "ordinary@example.com", Password: "ordinary-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	presence := &cloudpb.PresenceProjection{DaemonDeviceId: "daemon-operator", ControlOwnerHubId: "hub-operator", AssignmentEpoch: 3, PresenceSessionId: "presence-operator", Availability: cloudpb.Availability_AVAILABILITY_ONLINE, Freshness: cloudpb.Freshness_FRESHNESS_FRESH, ObservedAtUnixMillis: now.UnixMilli(), FreshUntilUnixMillis: now.Add(time.Minute).UnixMilli(), DaemonRuntimeGeneration: "runtime-operator", RegistryRevision: 4}
 	device := &cloudpb.AccountDeviceProjection{AccountId: accountID, DeviceId: "daemon-operator", DisplayName: "Operator workstation", Platform: "linux", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: 1, AssignedHubId: "hub-operator", AssignmentEpoch: 3, Presence: presence}
 	peer := &cloudpb.ManagedPeerSessionProjection{Target: &cloudpb.ManagedPeerSessionTarget{DaemonDeviceId: "daemon-operator", ManagedSessionId: "managed-operator", SessionIncarnation: 1, AssignmentEpoch: 3, ControlPresenceSessionId: "presence-operator", DaemonRuntimeGeneration: "runtime-operator"}, ClientDeviceId: "client-operator", ControlOwnerHubId: "hub-operator", ObservedDataPath: cloudpb.ObservedPath_OBSERVED_PATH_DIRECT, State: cloudpb.ManagedPeerSessionState_MANAGED_PEER_SESSION_STATE_READY, Freshness: cloudpb.Freshness_FRESHNESS_FRESH}
@@ -76,15 +94,31 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 	topology := &managementTargetSource{presenceAccountID: accountID, presence: presence, devices: []*cloudpb.AccountDeviceProjection{device}, presences: []*cloudpb.PresenceProjection{presence}, peerSessions: []*cloudpb.ManagedPeerSessionProjection{peer}}
 	outbox, _ := commandoutbox.New(store)
 	planner, _ := commandoutbox.NewPlanner(outbox, topology, nil, bytes.NewReader(bytes.Repeat([]byte{7}, 64)), nil)
-	adminToken := bytes.Repeat([]byte{0x41}, 32)
 	admin, err := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{
-		AccessToken: adminToken, OperatorID: "operator-admin", ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN,
 		Commerce: commerceService, Catalog: catalogService, Overrides: overrides, Promotions: promotions, Topology: topology, Quota: store, Outbox: outbox, Planner: planner, Fleet: staticFleet{}, PaymentReconciler: reconciler, Releases: releases, Now: func() time.Time { return now },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	adminCookies := operatorLogin(t, admin, adminToken)
+	product, err := webcontroller.ProductAPIHandler(webcontroller.ProductAPIConfig{Commerce: commerceService})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ordinaryCookies := accountLogin(t, product, "ordinary@example.com", "ordinary-password")
+	ordinaryWorkspace := operatorRequest(t, http.MethodGet, "/api/v1/operator/workspace", nil, ordinaryCookies)
+	ordinaryWorkspaceResponse := httptest.NewRecorder()
+	admin.ServeHTTP(ordinaryWorkspaceResponse, ordinaryWorkspace)
+	if ordinaryWorkspaceResponse.Code != http.StatusForbidden {
+		t.Fatalf("ordinary workspace = %d: %s", ordinaryWorkspaceResponse.Code, ordinaryWorkspaceResponse.Body.String())
+	}
+	adminCookies := accountLogin(t, product, "operator-admin@example.com", "admin-password")
+	operatorReauth(t, admin, adminCookies, "admin-password")
+	workspace := operatorRequest(t, http.MethodGet, "/api/v1/operator/workspace", nil, adminCookies)
+	workspaceResponse := httptest.NewRecorder()
+	admin.ServeHTTP(workspaceResponse, workspace)
+	if workspaceResponse.Code != http.StatusOK || !strings.Contains(workspaceResponse.Body.String(), "OPERATOR_WORKSPACE_MODULE_USERS") || strings.Contains(workspaceResponse.Body.String(), "admin") {
+		t.Fatalf("admin workspace = %d: %s", workspaceResponse.Code, workspaceResponse.Body.String())
+	}
 
 	list := operatorRequest(t, http.MethodPost, "/api/v1/operator/accounts/list", &cloudpb.ListOperatorAccountsRequest{Query: "operator-target"}, adminCookies)
 	listResponse := httptest.NewRecorder()
@@ -224,30 +258,22 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 		t.Fatalf("operator account detail audit = %d: %s", detailResponse.Code, detailResponse.Body.String())
 	}
 
-	readonlyToken := bytes.Repeat([]byte{0x52}, 32)
-	readonly, err := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{
-		AccessToken: readonlyToken, OperatorID: "operator-readonly", ActorKind: cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_READONLY,
-		Commerce: commerceService, Catalog: catalogService, Overrides: overrides, Promotions: promotions, Topology: topology, Quota: store, Outbox: outbox, Planner: planner, Fleet: staticFleet{}, Releases: releases, Now: func() time.Time { return now },
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	readonlyCookies := operatorLogin(t, readonly, readonlyToken)
+	readonlyCookies := accountLogin(t, product, "operator-readonly@example.com", "readonly-password")
 	readonlyPublish := operatorRequest(t, http.MethodPost, "/api/v1/operator/releases/publish", &cloudpb.PublishReleaseArtifactRequest{Artifact: releaseArtifact, Reason: "readonly", RequestId: "readonly-release"}, readonlyCookies)
 	readonlyPublishResponse := httptest.NewRecorder()
-	readonly.ServeHTTP(readonlyPublishResponse, readonlyPublish)
+	admin.ServeHTTP(readonlyPublishResponse, readonlyPublish)
 	if readonlyPublishResponse.Code != http.StatusForbidden {
 		t.Fatalf("readonly release publish = %d: %s", readonlyPublishResponse.Code, readonlyPublishResponse.Body.String())
 	}
 	readonlyRevoke := operatorRequest(t, http.MethodPost, "/api/v1/operator/accounts/sessions/revoke", &cloudpb.RevokeOperatorAccountSessionRequest{AccountId: accountID, AllAccountSessions: true, Reason: "readonly must fail", RequestId: "readonly-session-revoke"}, readonlyCookies)
 	readonlyRevokeResponse := httptest.NewRecorder()
-	readonly.ServeHTTP(readonlyRevokeResponse, readonlyRevoke)
+	admin.ServeHTTP(readonlyRevokeResponse, readonlyRevoke)
 	if readonlyRevokeResponse.Code != http.StatusForbidden {
 		t.Fatalf("readonly session revoke = %d: %s", readonlyRevokeResponse.Code, readonlyRevokeResponse.Body.String())
 	}
 	forbidden := operatorRequest(t, http.MethodPost, "/api/v1/operator/subscription/transition", &cloudpb.OperatorTransitionSubscriptionRequest{AccountId: accountID, Transition: cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_RESTORE}, readonlyCookies)
 	forbiddenResponse := httptest.NewRecorder()
-	readonly.ServeHTTP(forbiddenResponse, forbidden)
+	admin.ServeHTTP(forbiddenResponse, forbidden)
 	if forbiddenResponse.Code != http.StatusForbidden || !strings.Contains(forbiddenResponse.Body.String(), "MANAGEMENT_ERROR_CODE_FORBIDDEN") {
 		t.Fatalf("readonly mutation = %d: %s", forbiddenResponse.Code, forbiddenResponse.Body.String())
 	}
@@ -258,6 +284,15 @@ func TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit(t *te
 	admin.ServeHTTP(expiredRecentResponse, expiredRecent)
 	if expiredRecentResponse.Code != http.StatusForbidden || !strings.Contains(expiredRecentResponse.Body.String(), "MANAGEMENT_ERROR_CODE_RECENT_AUTH_REQUIRED") {
 		t.Fatalf("expired operator recent auth = %d: %s", expiredRecentResponse.Code, expiredRecentResponse.Body.String())
+	}
+	if err := commerceService.SetOperatorRole(context.Background(), adminAccount.GetSession().GetAccount().GetAccountId(), commerce.OperatorRoleNone); err != nil {
+		t.Fatal(err)
+	}
+	downgraded := operatorRequest(t, http.MethodGet, "/api/v1/operator/workspace", nil, adminCookies)
+	downgradedResponse := httptest.NewRecorder()
+	admin.ServeHTTP(downgradedResponse, downgraded)
+	if downgradedResponse.Code != http.StatusForbidden {
+		t.Fatalf("downgraded existing session = %d: %s", downgradedResponse.Code, downgradedResponse.Body.String())
 	}
 }
 
@@ -312,29 +347,46 @@ func (staticFleet) DisableHubDeployment(context.Context, *cloudpb.DisableHubDepl
 	return &cloudpb.DisableHubDeploymentResponse{}, nil
 }
 
-func operatorLogin(t *testing.T, handler http.Handler, token []byte) map[string]*http.Cookie {
+func accountLogin(t *testing.T, handler http.Handler, email, password string) map[string]*http.Cookie {
 	t.Helper()
-	login := operatorRequest(t, http.MethodPost, "/api/v1/operator/login", &cloudpb.OperatorLoginRequest{AccessToken: token}, nil)
+	login := operatorRequest(t, http.MethodPost, "/api/v1/account/login", &cloudpb.PasswordLoginRequest{Email: email, Password: password}, nil)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, login)
 	if response.Code != http.StatusOK {
-		t.Fatalf("operator login = %d: %s", response.Code, response.Body.String())
+		t.Fatalf("account login = %d: %s", response.Code, response.Body.String())
 	}
 	return cookieMap(response.Result().Cookies())
 }
 
+func operatorReauth(t *testing.T, handler http.Handler, cookies map[string]*http.Cookie, password string) {
+	t.Helper()
+	request := operatorRequest(t, http.MethodPost, "/api/v1/operator/reauth", &cloudpb.RecentAuthenticationRequest{Password: password}, cookies)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("operator reauth = %d: %s", response.Code, response.Body.String())
+	}
+	for _, cookie := range response.Result().Cookies() {
+		cookies[cookie.Name] = cookie
+	}
+}
+
 func operatorRequest(t *testing.T, method, path string, body proto.Message, cookies map[string]*http.Cookie) *http.Request {
 	t.Helper()
-	payload, err := protojson.Marshal(body)
-	if err != nil {
-		t.Fatal(err)
+	var payload []byte
+	if body != nil {
+		var err error
+		payload, err = protojson.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	request := httptest.NewRequest(method, "http://operator.test"+path, strings.NewReader(string(payload)))
 	request.Header.Set("Origin", "http://operator.test")
 	for _, cookie := range cookies {
 		request.AddCookie(cookie)
 	}
-	if csrf := cookies["muxvia_cloud_operator_csrf"]; csrf != nil {
+	if csrf := cookies["muxvia_cloud_csrf"]; csrf != nil {
 		request.Header.Set("X-Muxvia-CSRF", csrf.Value)
 	}
 	return request

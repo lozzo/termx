@@ -41,7 +41,7 @@ func TestOPSE2E001NineModuleOperatorWorkflow(t *testing.T) {
 
 	credentials := readDevelopmentCredentials(t, manifest.CredentialsPath)
 	operatorClient := operatorHTTPClient(t)
-	operatorLoginHTTP(t, operatorClient, manifest.Controller.OperatorURL, credentials.OperatorAccessToken)
+	operatorLoginHTTP(t, operatorClient, manifest.Controller.PublicURL, manifest.Controller.OperatorURL, credentials.AccountEmail, credentials.AccountPassword)
 	accounts := &cloudpb.ListOperatorAccountsResponse{}
 	operatorPost(t, operatorClient, manifest.Controller.OperatorURL, "/api/v1/operator/accounts/list", &cloudpb.ListOperatorAccountsRequest{Page: &cloudpb.PageRequest{PageSize: 10}}, accounts)
 	if len(accounts.GetAccounts()) != 1 {
@@ -120,7 +120,7 @@ func TestOPSE2E001NineModuleOperatorWorkflow(t *testing.T) {
 	waitControlGenerations(t, controllerPostgresDSN(t, manifest), map[string]uint64{"hub-edge-a": 2, "hub-edge-b": 3})
 
 	restartedClient := operatorHTTPClient(t)
-	operatorLoginHTTP(t, restartedClient, controllerRuntime.OperatorURL, credentials.OperatorAccessToken)
+	operatorLoginHTTP(t, restartedClient, controllerRuntime.PublicURL, controllerRuntime.OperatorURL, credentials.AccountEmail, credentials.AccountPassword)
 	evidence := assertNineModuleState(t, restartedClient, controllerRuntime.OperatorURL, accountID, kick.GetCommandId())
 	evidence["controller_pid_before"] = manifest.Controller.PID
 	evidence["controller_pid_after"] = controllerRuntime.PID

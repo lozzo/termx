@@ -452,6 +452,78 @@ func (ManagementErrorCode) EnumDescriptor() ([]byte, []int) {
 	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{6}
 }
 
+// OperatorWorkspaceModule 是后端按当前账号授权后允许展示的运营导航。
+// 它只表达可进入的业务模块，不暴露账号角色、角色布尔值或授权规则。
+type OperatorWorkspaceModule int32
+
+const (
+	OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_UNSPECIFIED   OperatorWorkspaceModule = 0
+	OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_USERS         OperatorWorkspaceModule = 1
+	OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_ORDERS        OperatorWorkspaceModule = 2
+	OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_SUBSCRIPTIONS OperatorWorkspaceModule = 3
+	OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_PLANS         OperatorWorkspaceModule = 4
+	OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_HUBS          OperatorWorkspaceModule = 5
+	OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_AGENTS        OperatorWorkspaceModule = 6
+	OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_RELEASES      OperatorWorkspaceModule = 7
+	OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_PROMOTIONS    OperatorWorkspaceModule = 8
+	OperatorWorkspaceModule_OPERATOR_WORKSPACE_MODULE_PRIVILEGES    OperatorWorkspaceModule = 9
+)
+
+// Enum value maps for OperatorWorkspaceModule.
+var (
+	OperatorWorkspaceModule_name = map[int32]string{
+		0: "OPERATOR_WORKSPACE_MODULE_UNSPECIFIED",
+		1: "OPERATOR_WORKSPACE_MODULE_USERS",
+		2: "OPERATOR_WORKSPACE_MODULE_ORDERS",
+		3: "OPERATOR_WORKSPACE_MODULE_SUBSCRIPTIONS",
+		4: "OPERATOR_WORKSPACE_MODULE_PLANS",
+		5: "OPERATOR_WORKSPACE_MODULE_HUBS",
+		6: "OPERATOR_WORKSPACE_MODULE_AGENTS",
+		7: "OPERATOR_WORKSPACE_MODULE_RELEASES",
+		8: "OPERATOR_WORKSPACE_MODULE_PROMOTIONS",
+		9: "OPERATOR_WORKSPACE_MODULE_PRIVILEGES",
+	}
+	OperatorWorkspaceModule_value = map[string]int32{
+		"OPERATOR_WORKSPACE_MODULE_UNSPECIFIED":   0,
+		"OPERATOR_WORKSPACE_MODULE_USERS":         1,
+		"OPERATOR_WORKSPACE_MODULE_ORDERS":        2,
+		"OPERATOR_WORKSPACE_MODULE_SUBSCRIPTIONS": 3,
+		"OPERATOR_WORKSPACE_MODULE_PLANS":         4,
+		"OPERATOR_WORKSPACE_MODULE_HUBS":          5,
+		"OPERATOR_WORKSPACE_MODULE_AGENTS":        6,
+		"OPERATOR_WORKSPACE_MODULE_RELEASES":      7,
+		"OPERATOR_WORKSPACE_MODULE_PROMOTIONS":    8,
+		"OPERATOR_WORKSPACE_MODULE_PRIVILEGES":    9,
+	}
+)
+
+func (x OperatorWorkspaceModule) Enum() *OperatorWorkspaceModule {
+	p := new(OperatorWorkspaceModule)
+	*p = x
+	return p
+}
+
+func (x OperatorWorkspaceModule) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (OperatorWorkspaceModule) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloudpb_cloud_management_proto_enumTypes[7].Descriptor()
+}
+
+func (OperatorWorkspaceModule) Type() protoreflect.EnumType {
+	return &file_cloudpb_cloud_management_proto_enumTypes[7]
+}
+
+func (x OperatorWorkspaceModule) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use OperatorWorkspaceModule.Descriptor instead.
+func (OperatorWorkspaceModule) EnumDescriptor() ([]byte, []int) {
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{7}
+}
+
 // ReleaseProduct 标识共享发布目录中的用户制品，不包含 Cloud 服务端内部部署制品。
 type ReleaseProduct int32
 
@@ -486,11 +558,11 @@ func (x ReleaseProduct) String() string {
 }
 
 func (ReleaseProduct) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_management_proto_enumTypes[7].Descriptor()
+	return file_cloudpb_cloud_management_proto_enumTypes[8].Descriptor()
 }
 
 func (ReleaseProduct) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_management_proto_enumTypes[7]
+	return &file_cloudpb_cloud_management_proto_enumTypes[8]
 }
 
 func (x ReleaseProduct) Number() protoreflect.EnumNumber {
@@ -499,7 +571,7 @@ func (x ReleaseProduct) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ReleaseProduct.Descriptor instead.
 func (ReleaseProduct) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{7}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{8}
 }
 
 type ReleaseChannel int32
@@ -535,11 +607,11 @@ func (x ReleaseChannel) String() string {
 }
 
 func (ReleaseChannel) Descriptor() protoreflect.EnumDescriptor {
-	return file_cloudpb_cloud_management_proto_enumTypes[8].Descriptor()
+	return file_cloudpb_cloud_management_proto_enumTypes[9].Descriptor()
 }
 
 func (ReleaseChannel) Type() protoreflect.EnumType {
-	return &file_cloudpb_cloud_management_proto_enumTypes[8]
+	return &file_cloudpb_cloud_management_proto_enumTypes[9]
 }
 
 func (x ReleaseChannel) Number() protoreflect.EnumNumber {
@@ -548,7 +620,7 @@ func (x ReleaseChannel) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ReleaseChannel.Descriptor instead.
 func (ReleaseChannel) EnumDescriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{8}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{9}
 }
 
 // PageCursor 是 opaque pagination cursor，不允许客户端自行解释排序字段。
@@ -1047,28 +1119,29 @@ func (x *RecentAuthenticationResponse) GetExpiresAtUnixMillis() int64 {
 	return 0
 }
 
-// OperatorLoginRequest 只在独立 operator listener 消费部署配置的高熵 token。
-type OperatorLoginRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AccessToken   []byte                 `protobuf:"bytes,1,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
+// GetOperatorWorkspaceResponse 只在普通账号 Session 已被后端判定具有运营权限后返回。
+// 客户端不得从模块集合反推或缓存角色，所有运营 API 仍逐请求重新授权。
+type GetOperatorWorkspaceResponse struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Modules       []OperatorWorkspaceModule `protobuf:"varint,1,rep,packed,name=modules,proto3,enum=muxvia.cloud.v1.OperatorWorkspaceModule" json:"modules,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *OperatorLoginRequest) Reset() {
-	*x = OperatorLoginRequest{}
+func (x *GetOperatorWorkspaceResponse) Reset() {
+	*x = GetOperatorWorkspaceResponse{}
 	mi := &file_cloudpb_cloud_management_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *OperatorLoginRequest) String() string {
+func (x *GetOperatorWorkspaceResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*OperatorLoginRequest) ProtoMessage() {}
+func (*GetOperatorWorkspaceResponse) ProtoMessage() {}
 
-func (x *OperatorLoginRequest) ProtoReflect() protoreflect.Message {
+func (x *GetOperatorWorkspaceResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_cloudpb_cloud_management_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1080,200 +1153,16 @@ func (x *OperatorLoginRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use OperatorLoginRequest.ProtoReflect.Descriptor instead.
-func (*OperatorLoginRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use GetOperatorWorkspaceResponse.ProtoReflect.Descriptor instead.
+func (*GetOperatorWorkspaceResponse) Descriptor() ([]byte, []int) {
 	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *OperatorLoginRequest) GetAccessToken() []byte {
+func (x *GetOperatorWorkspaceResponse) GetModules() []OperatorWorkspaceModule {
 	if x != nil {
-		return x.AccessToken
+		return x.Modules
 	}
 	return nil
-}
-
-type OperatorSessionProjection struct {
-	state                     protoimpl.MessageState `protogen:"open.v1"`
-	OperatorId                string                 `protobuf:"bytes,1,opt,name=operator_id,json=operatorId,proto3" json:"operator_id,omitempty"`
-	ActorKind                 ManagementActorKind    `protobuf:"varint,2,opt,name=actor_kind,json=actorKind,proto3,enum=muxvia.cloud.v1.ManagementActorKind" json:"actor_kind,omitempty"`
-	AuthenticatedAtUnixMillis int64                  `protobuf:"varint,3,opt,name=authenticated_at_unix_millis,json=authenticatedAtUnixMillis,proto3" json:"authenticated_at_unix_millis,omitempty"`
-	ExpiresAtUnixMillis       int64                  `protobuf:"varint,4,opt,name=expires_at_unix_millis,json=expiresAtUnixMillis,proto3" json:"expires_at_unix_millis,omitempty"`
-	unknownFields             protoimpl.UnknownFields
-	sizeCache                 protoimpl.SizeCache
-}
-
-func (x *OperatorSessionProjection) Reset() {
-	*x = OperatorSessionProjection{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *OperatorSessionProjection) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*OperatorSessionProjection) ProtoMessage() {}
-
-func (x *OperatorSessionProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use OperatorSessionProjection.ProtoReflect.Descriptor instead.
-func (*OperatorSessionProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *OperatorSessionProjection) GetOperatorId() string {
-	if x != nil {
-		return x.OperatorId
-	}
-	return ""
-}
-
-func (x *OperatorSessionProjection) GetActorKind() ManagementActorKind {
-	if x != nil {
-		return x.ActorKind
-	}
-	return ManagementActorKind_MANAGEMENT_ACTOR_KIND_UNSPECIFIED
-}
-
-func (x *OperatorSessionProjection) GetAuthenticatedAtUnixMillis() int64 {
-	if x != nil {
-		return x.AuthenticatedAtUnixMillis
-	}
-	return 0
-}
-
-func (x *OperatorSessionProjection) GetExpiresAtUnixMillis() int64 {
-	if x != nil {
-		return x.ExpiresAtUnixMillis
-	}
-	return 0
-}
-
-type OperatorLoginResponse struct {
-	state         protoimpl.MessageState     `protogen:"open.v1"`
-	Session       *OperatorSessionProjection `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *OperatorLoginResponse) Reset() {
-	*x = OperatorLoginResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *OperatorLoginResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*OperatorLoginResponse) ProtoMessage() {}
-
-func (x *OperatorLoginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use OperatorLoginResponse.ProtoReflect.Descriptor instead.
-func (*OperatorLoginResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *OperatorLoginResponse) GetSession() *OperatorSessionProjection {
-	if x != nil {
-		return x.Session
-	}
-	return nil
-}
-
-type OperatorLogoutRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *OperatorLogoutRequest) Reset() {
-	*x = OperatorLogoutRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *OperatorLogoutRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*OperatorLogoutRequest) ProtoMessage() {}
-
-func (x *OperatorLogoutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use OperatorLogoutRequest.ProtoReflect.Descriptor instead.
-func (*OperatorLogoutRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{11}
-}
-
-type OperatorLogoutResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *OperatorLogoutResponse) Reset() {
-	*x = OperatorLogoutResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *OperatorLogoutResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*OperatorLogoutResponse) ProtoMessage() {}
-
-func (x *OperatorLogoutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use OperatorLogoutResponse.ProtoReflect.Descriptor instead.
-func (*OperatorLogoutResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{12}
 }
 
 // OperatorAccountSummary 是 fleet 列表中的账号、subscription、entitlement 与 quota 摘要。
@@ -1289,7 +1178,7 @@ type OperatorAccountSummary struct {
 
 func (x *OperatorAccountSummary) Reset() {
 	*x = OperatorAccountSummary{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[13]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1301,7 +1190,7 @@ func (x *OperatorAccountSummary) String() string {
 func (*OperatorAccountSummary) ProtoMessage() {}
 
 func (x *OperatorAccountSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[13]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1314,7 +1203,7 @@ func (x *OperatorAccountSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OperatorAccountSummary.ProtoReflect.Descriptor instead.
 func (*OperatorAccountSummary) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{13}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *OperatorAccountSummary) GetAccount() *AccountProjection {
@@ -1360,7 +1249,7 @@ type AccountSessionProjection struct {
 
 func (x *AccountSessionProjection) Reset() {
 	*x = AccountSessionProjection{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[14]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1372,7 +1261,7 @@ func (x *AccountSessionProjection) String() string {
 func (*AccountSessionProjection) ProtoMessage() {}
 
 func (x *AccountSessionProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[14]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1385,7 +1274,7 @@ func (x *AccountSessionProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccountSessionProjection.ProtoReflect.Descriptor instead.
 func (*AccountSessionProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{14}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *AccountSessionProjection) GetSessionId() string {
@@ -1441,7 +1330,7 @@ type ListOperatorAccountsRequest struct {
 
 func (x *ListOperatorAccountsRequest) Reset() {
 	*x = ListOperatorAccountsRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[15]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1453,7 +1342,7 @@ func (x *ListOperatorAccountsRequest) String() string {
 func (*ListOperatorAccountsRequest) ProtoMessage() {}
 
 func (x *ListOperatorAccountsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[15]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1466,7 +1355,7 @@ func (x *ListOperatorAccountsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperatorAccountsRequest.ProtoReflect.Descriptor instead.
 func (*ListOperatorAccountsRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{15}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ListOperatorAccountsRequest) GetQuery() string {
@@ -1500,7 +1389,7 @@ type ListOperatorAccountsResponse struct {
 
 func (x *ListOperatorAccountsResponse) Reset() {
 	*x = ListOperatorAccountsResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[16]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1512,7 +1401,7 @@ func (x *ListOperatorAccountsResponse) String() string {
 func (*ListOperatorAccountsResponse) ProtoMessage() {}
 
 func (x *ListOperatorAccountsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[16]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1525,7 +1414,7 @@ func (x *ListOperatorAccountsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperatorAccountsResponse.ProtoReflect.Descriptor instead.
 func (*ListOperatorAccountsResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{16}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListOperatorAccountsResponse) GetAccounts() []*OperatorAccountSummary {
@@ -1551,7 +1440,7 @@ type GetOperatorAccountRequest struct {
 
 func (x *GetOperatorAccountRequest) Reset() {
 	*x = GetOperatorAccountRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[17]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1563,7 +1452,7 @@ func (x *GetOperatorAccountRequest) String() string {
 func (*GetOperatorAccountRequest) ProtoMessage() {}
 
 func (x *GetOperatorAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[17]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1576,7 +1465,7 @@ func (x *GetOperatorAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOperatorAccountRequest.ProtoReflect.Descriptor instead.
 func (*GetOperatorAccountRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{17}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetOperatorAccountRequest) GetAccountId() string {
@@ -1601,7 +1490,7 @@ type GetOperatorAccountResponse struct {
 
 func (x *GetOperatorAccountResponse) Reset() {
 	*x = GetOperatorAccountResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[18]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1613,7 +1502,7 @@ func (x *GetOperatorAccountResponse) String() string {
 func (*GetOperatorAccountResponse) ProtoMessage() {}
 
 func (x *GetOperatorAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[18]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1626,7 +1515,7 @@ func (x *GetOperatorAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOperatorAccountResponse.ProtoReflect.Descriptor instead.
 func (*GetOperatorAccountResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{18}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GetOperatorAccountResponse) GetCommerce() *GetAccountCommerceResponse {
@@ -1692,7 +1581,7 @@ type OperatorAgentProjection struct {
 
 func (x *OperatorAgentProjection) Reset() {
 	*x = OperatorAgentProjection{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[19]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1704,7 +1593,7 @@ func (x *OperatorAgentProjection) String() string {
 func (*OperatorAgentProjection) ProtoMessage() {}
 
 func (x *OperatorAgentProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[19]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1717,7 +1606,7 @@ func (x *OperatorAgentProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OperatorAgentProjection.ProtoReflect.Descriptor instead.
 func (*OperatorAgentProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{19}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *OperatorAgentProjection) GetAccount() *AccountProjection {
@@ -1760,7 +1649,7 @@ type ListOperatorAgentsRequest struct {
 
 func (x *ListOperatorAgentsRequest) Reset() {
 	*x = ListOperatorAgentsRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[20]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1772,7 +1661,7 @@ func (x *ListOperatorAgentsRequest) String() string {
 func (*ListOperatorAgentsRequest) ProtoMessage() {}
 
 func (x *ListOperatorAgentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[20]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1785,7 +1674,7 @@ func (x *ListOperatorAgentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperatorAgentsRequest.ProtoReflect.Descriptor instead.
 func (*ListOperatorAgentsRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{20}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListOperatorAgentsRequest) GetQuery() string {
@@ -1826,7 +1715,7 @@ type ListOperatorAgentsResponse struct {
 
 func (x *ListOperatorAgentsResponse) Reset() {
 	*x = ListOperatorAgentsResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[21]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1838,7 +1727,7 @@ func (x *ListOperatorAgentsResponse) String() string {
 func (*ListOperatorAgentsResponse) ProtoMessage() {}
 
 func (x *ListOperatorAgentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[21]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1851,7 +1740,7 @@ func (x *ListOperatorAgentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperatorAgentsResponse.ProtoReflect.Descriptor instead.
 func (*ListOperatorAgentsResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{21}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListOperatorAgentsResponse) GetAgents() []*OperatorAgentProjection {
@@ -1883,7 +1772,7 @@ type RevokeOperatorAccountSessionRequest struct {
 
 func (x *RevokeOperatorAccountSessionRequest) Reset() {
 	*x = RevokeOperatorAccountSessionRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[22]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1895,7 +1784,7 @@ func (x *RevokeOperatorAccountSessionRequest) String() string {
 func (*RevokeOperatorAccountSessionRequest) ProtoMessage() {}
 
 func (x *RevokeOperatorAccountSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[22]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1908,7 +1797,7 @@ func (x *RevokeOperatorAccountSessionRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use RevokeOperatorAccountSessionRequest.ProtoReflect.Descriptor instead.
 func (*RevokeOperatorAccountSessionRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{22}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RevokeOperatorAccountSessionRequest) GetAccountId() string {
@@ -1962,7 +1851,7 @@ type RevokeOperatorAccountSessionResponse struct {
 
 func (x *RevokeOperatorAccountSessionResponse) Reset() {
 	*x = RevokeOperatorAccountSessionResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[23]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1974,7 +1863,7 @@ func (x *RevokeOperatorAccountSessionResponse) String() string {
 func (*RevokeOperatorAccountSessionResponse) ProtoMessage() {}
 
 func (x *RevokeOperatorAccountSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[23]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1987,7 +1876,7 @@ func (x *RevokeOperatorAccountSessionResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use RevokeOperatorAccountSessionResponse.ProtoReflect.Descriptor instead.
 func (*RevokeOperatorAccountSessionResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{23}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *RevokeOperatorAccountSessionResponse) GetSessions() []*AccountSessionProjection {
@@ -2023,7 +1912,7 @@ type ReleaseArtifactProjection struct {
 
 func (x *ReleaseArtifactProjection) Reset() {
 	*x = ReleaseArtifactProjection{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[24]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2035,7 +1924,7 @@ func (x *ReleaseArtifactProjection) String() string {
 func (*ReleaseArtifactProjection) ProtoMessage() {}
 
 func (x *ReleaseArtifactProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[24]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2048,7 +1937,7 @@ func (x *ReleaseArtifactProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseArtifactProjection.ProtoReflect.Descriptor instead.
 func (*ReleaseArtifactProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{24}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ReleaseArtifactProjection) GetReleaseId() string {
@@ -2187,7 +2076,7 @@ type ReleaseChannelProjection struct {
 
 func (x *ReleaseChannelProjection) Reset() {
 	*x = ReleaseChannelProjection{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[25]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2199,7 +2088,7 @@ func (x *ReleaseChannelProjection) String() string {
 func (*ReleaseChannelProjection) ProtoMessage() {}
 
 func (x *ReleaseChannelProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[25]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2212,7 +2101,7 @@ func (x *ReleaseChannelProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseChannelProjection.ProtoReflect.Descriptor instead.
 func (*ReleaseChannelProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{25}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ReleaseChannelProjection) GetProduct() ReleaseProduct {
@@ -2282,7 +2171,7 @@ type PublishReleaseArtifactRequest struct {
 
 func (x *PublishReleaseArtifactRequest) Reset() {
 	*x = PublishReleaseArtifactRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[26]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2294,7 +2183,7 @@ func (x *PublishReleaseArtifactRequest) String() string {
 func (*PublishReleaseArtifactRequest) ProtoMessage() {}
 
 func (x *PublishReleaseArtifactRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[26]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2307,7 +2196,7 @@ func (x *PublishReleaseArtifactRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishReleaseArtifactRequest.ProtoReflect.Descriptor instead.
 func (*PublishReleaseArtifactRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{26}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *PublishReleaseArtifactRequest) GetArtifact() *ReleaseArtifactProjection {
@@ -2340,7 +2229,7 @@ type PublishReleaseArtifactResponse struct {
 
 func (x *PublishReleaseArtifactResponse) Reset() {
 	*x = PublishReleaseArtifactResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[27]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2352,7 +2241,7 @@ func (x *PublishReleaseArtifactResponse) String() string {
 func (*PublishReleaseArtifactResponse) ProtoMessage() {}
 
 func (x *PublishReleaseArtifactResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[27]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2365,7 +2254,7 @@ func (x *PublishReleaseArtifactResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishReleaseArtifactResponse.ProtoReflect.Descriptor instead.
 func (*PublishReleaseArtifactResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{27}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *PublishReleaseArtifactResponse) GetArtifact() *ReleaseArtifactProjection {
@@ -2389,7 +2278,7 @@ type SetReleaseChannelRequest struct {
 
 func (x *SetReleaseChannelRequest) Reset() {
 	*x = SetReleaseChannelRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[28]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2401,7 +2290,7 @@ func (x *SetReleaseChannelRequest) String() string {
 func (*SetReleaseChannelRequest) ProtoMessage() {}
 
 func (x *SetReleaseChannelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[28]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2414,7 +2303,7 @@ func (x *SetReleaseChannelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetReleaseChannelRequest.ProtoReflect.Descriptor instead.
 func (*SetReleaseChannelRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{28}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *SetReleaseChannelRequest) GetReleaseId() string {
@@ -2468,7 +2357,7 @@ type SetReleaseChannelResponse struct {
 
 func (x *SetReleaseChannelResponse) Reset() {
 	*x = SetReleaseChannelResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[29]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2480,7 +2369,7 @@ func (x *SetReleaseChannelResponse) String() string {
 func (*SetReleaseChannelResponse) ProtoMessage() {}
 
 func (x *SetReleaseChannelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[29]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2493,7 +2382,7 @@ func (x *SetReleaseChannelResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetReleaseChannelResponse.ProtoReflect.Descriptor instead.
 func (*SetReleaseChannelResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{29}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *SetReleaseChannelResponse) GetChannel() *ReleaseChannelProjection {
@@ -2516,7 +2405,7 @@ type ListReleaseArtifactsRequest struct {
 
 func (x *ListReleaseArtifactsRequest) Reset() {
 	*x = ListReleaseArtifactsRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[30]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2528,7 +2417,7 @@ func (x *ListReleaseArtifactsRequest) String() string {
 func (*ListReleaseArtifactsRequest) ProtoMessage() {}
 
 func (x *ListReleaseArtifactsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[30]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2541,7 +2430,7 @@ func (x *ListReleaseArtifactsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListReleaseArtifactsRequest.ProtoReflect.Descriptor instead.
 func (*ListReleaseArtifactsRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{30}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ListReleaseArtifactsRequest) GetProduct() ReleaseProduct {
@@ -2591,7 +2480,7 @@ type ListReleaseArtifactsResponse struct {
 
 func (x *ListReleaseArtifactsResponse) Reset() {
 	*x = ListReleaseArtifactsResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[31]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2603,7 +2492,7 @@ func (x *ListReleaseArtifactsResponse) String() string {
 func (*ListReleaseArtifactsResponse) ProtoMessage() {}
 
 func (x *ListReleaseArtifactsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[31]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2616,7 +2505,7 @@ func (x *ListReleaseArtifactsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListReleaseArtifactsResponse.ProtoReflect.Descriptor instead.
 func (*ListReleaseArtifactsResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{31}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ListReleaseArtifactsResponse) GetArtifacts() []*ReleaseArtifactProjection {
@@ -2663,7 +2552,7 @@ type ResolveClientReleaseRequest struct {
 
 func (x *ResolveClientReleaseRequest) Reset() {
 	*x = ResolveClientReleaseRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[32]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2675,7 +2564,7 @@ func (x *ResolveClientReleaseRequest) String() string {
 func (*ResolveClientReleaseRequest) ProtoMessage() {}
 
 func (x *ResolveClientReleaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[32]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2688,7 +2577,7 @@ func (x *ResolveClientReleaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveClientReleaseRequest.ProtoReflect.Descriptor instead.
 func (*ResolveClientReleaseRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{32}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ResolveClientReleaseRequest) GetProduct() ReleaseProduct {
@@ -2754,7 +2643,7 @@ type ResolveClientReleaseResponse struct {
 
 func (x *ResolveClientReleaseResponse) Reset() {
 	*x = ResolveClientReleaseResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[33]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2766,7 +2655,7 @@ func (x *ResolveClientReleaseResponse) String() string {
 func (*ResolveClientReleaseResponse) ProtoMessage() {}
 
 func (x *ResolveClientReleaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[33]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2779,7 +2668,7 @@ func (x *ResolveClientReleaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveClientReleaseResponse.ProtoReflect.Descriptor instead.
 func (*ResolveClientReleaseResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{33}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ResolveClientReleaseResponse) GetArtifact() *ReleaseArtifactProjection {
@@ -2834,7 +2723,7 @@ type OperatorTransitionSubscriptionRequest struct {
 
 func (x *OperatorTransitionSubscriptionRequest) Reset() {
 	*x = OperatorTransitionSubscriptionRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[34]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2846,7 +2735,7 @@ func (x *OperatorTransitionSubscriptionRequest) String() string {
 func (*OperatorTransitionSubscriptionRequest) ProtoMessage() {}
 
 func (x *OperatorTransitionSubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[34]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2859,7 +2748,7 @@ func (x *OperatorTransitionSubscriptionRequest) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use OperatorTransitionSubscriptionRequest.ProtoReflect.Descriptor instead.
 func (*OperatorTransitionSubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{34}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *OperatorTransitionSubscriptionRequest) GetAccountId() string {
@@ -2885,7 +2774,7 @@ type OperatorTransitionSubscriptionResponse struct {
 
 func (x *OperatorTransitionSubscriptionResponse) Reset() {
 	*x = OperatorTransitionSubscriptionResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[35]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2897,7 +2786,7 @@ func (x *OperatorTransitionSubscriptionResponse) String() string {
 func (*OperatorTransitionSubscriptionResponse) ProtoMessage() {}
 
 func (x *OperatorTransitionSubscriptionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[35]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2910,7 +2799,7 @@ func (x *OperatorTransitionSubscriptionResponse) ProtoReflect() protoreflect.Mes
 
 // Deprecated: Use OperatorTransitionSubscriptionResponse.ProtoReflect.Descriptor instead.
 func (*OperatorTransitionSubscriptionResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{35}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *OperatorTransitionSubscriptionResponse) GetResult() *TransitionSubscriptionResponse {
@@ -2932,7 +2821,7 @@ type ListOperatorOrdersRequest struct {
 
 func (x *ListOperatorOrdersRequest) Reset() {
 	*x = ListOperatorOrdersRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[36]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2944,7 +2833,7 @@ func (x *ListOperatorOrdersRequest) String() string {
 func (*ListOperatorOrdersRequest) ProtoMessage() {}
 
 func (x *ListOperatorOrdersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[36]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2957,7 +2846,7 @@ func (x *ListOperatorOrdersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperatorOrdersRequest.ProtoReflect.Descriptor instead.
 func (*ListOperatorOrdersRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{36}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ListOperatorOrdersRequest) GetAccountId() string {
@@ -2999,7 +2888,7 @@ type OperatorOrderProjection struct {
 
 func (x *OperatorOrderProjection) Reset() {
 	*x = OperatorOrderProjection{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[37]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3011,7 +2900,7 @@ func (x *OperatorOrderProjection) String() string {
 func (*OperatorOrderProjection) ProtoMessage() {}
 
 func (x *OperatorOrderProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[37]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3024,7 +2913,7 @@ func (x *OperatorOrderProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OperatorOrderProjection.ProtoReflect.Descriptor instead.
 func (*OperatorOrderProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{37}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *OperatorOrderProjection) GetOrder() *OrderProjection {
@@ -3058,7 +2947,7 @@ type ListOperatorOrdersResponse struct {
 
 func (x *ListOperatorOrdersResponse) Reset() {
 	*x = ListOperatorOrdersResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[38]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3070,7 +2959,7 @@ func (x *ListOperatorOrdersResponse) String() string {
 func (*ListOperatorOrdersResponse) ProtoMessage() {}
 
 func (x *ListOperatorOrdersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[38]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3083,7 +2972,7 @@ func (x *ListOperatorOrdersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperatorOrdersResponse.ProtoReflect.Descriptor instead.
 func (*ListOperatorOrdersResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{38}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ListOperatorOrdersResponse) GetOrders() []*OperatorOrderProjection {
@@ -3110,7 +2999,7 @@ type ListOperatorSubscriptionsRequest struct {
 
 func (x *ListOperatorSubscriptionsRequest) Reset() {
 	*x = ListOperatorSubscriptionsRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[39]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3122,7 +3011,7 @@ func (x *ListOperatorSubscriptionsRequest) String() string {
 func (*ListOperatorSubscriptionsRequest) ProtoMessage() {}
 
 func (x *ListOperatorSubscriptionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[39]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3135,7 +3024,7 @@ func (x *ListOperatorSubscriptionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperatorSubscriptionsRequest.ProtoReflect.Descriptor instead.
 func (*ListOperatorSubscriptionsRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{39}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ListOperatorSubscriptionsRequest) GetStatus() SubscriptionStatus {
@@ -3162,7 +3051,7 @@ type ListOperatorSubscriptionsResponse struct {
 
 func (x *ListOperatorSubscriptionsResponse) Reset() {
 	*x = ListOperatorSubscriptionsResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[40]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3174,7 +3063,7 @@ func (x *ListOperatorSubscriptionsResponse) String() string {
 func (*ListOperatorSubscriptionsResponse) ProtoMessage() {}
 
 func (x *ListOperatorSubscriptionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[40]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3187,7 +3076,7 @@ func (x *ListOperatorSubscriptionsResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use ListOperatorSubscriptionsResponse.ProtoReflect.Descriptor instead.
 func (*ListOperatorSubscriptionsResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{40}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ListOperatorSubscriptionsResponse) GetSubscriptions() []*SubscriptionProjection {
@@ -3220,7 +3109,7 @@ type CreateSubscriptionAdjustmentRequest struct {
 
 func (x *CreateSubscriptionAdjustmentRequest) Reset() {
 	*x = CreateSubscriptionAdjustmentRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[41]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3232,7 +3121,7 @@ func (x *CreateSubscriptionAdjustmentRequest) String() string {
 func (*CreateSubscriptionAdjustmentRequest) ProtoMessage() {}
 
 func (x *CreateSubscriptionAdjustmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[41]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3245,7 +3134,7 @@ func (x *CreateSubscriptionAdjustmentRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use CreateSubscriptionAdjustmentRequest.ProtoReflect.Descriptor instead.
 func (*CreateSubscriptionAdjustmentRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{41}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *CreateSubscriptionAdjustmentRequest) GetAccountId() string {
@@ -3315,7 +3204,7 @@ type CreateSubscriptionAdjustmentResponse struct {
 
 func (x *CreateSubscriptionAdjustmentResponse) Reset() {
 	*x = CreateSubscriptionAdjustmentResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[42]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3327,7 +3216,7 @@ func (x *CreateSubscriptionAdjustmentResponse) String() string {
 func (*CreateSubscriptionAdjustmentResponse) ProtoMessage() {}
 
 func (x *CreateSubscriptionAdjustmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[42]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3340,7 +3229,7 @@ func (x *CreateSubscriptionAdjustmentResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use CreateSubscriptionAdjustmentResponse.ProtoReflect.Descriptor instead.
 func (*CreateSubscriptionAdjustmentResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{42}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *CreateSubscriptionAdjustmentResponse) GetAdjustment() *SubscriptionAdjustmentProjection {
@@ -3376,7 +3265,7 @@ type ApplyOperatorPaymentEventRequest struct {
 
 func (x *ApplyOperatorPaymentEventRequest) Reset() {
 	*x = ApplyOperatorPaymentEventRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[43]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3388,7 +3277,7 @@ func (x *ApplyOperatorPaymentEventRequest) String() string {
 func (*ApplyOperatorPaymentEventRequest) ProtoMessage() {}
 
 func (x *ApplyOperatorPaymentEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[43]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3401,7 +3290,7 @@ func (x *ApplyOperatorPaymentEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyOperatorPaymentEventRequest.ProtoReflect.Descriptor instead.
 func (*ApplyOperatorPaymentEventRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{43}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ApplyOperatorPaymentEventRequest) GetOrderId() string {
@@ -3441,7 +3330,7 @@ type ApplyOperatorPaymentEventResponse struct {
 
 func (x *ApplyOperatorPaymentEventResponse) Reset() {
 	*x = ApplyOperatorPaymentEventResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[44]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3453,7 +3342,7 @@ func (x *ApplyOperatorPaymentEventResponse) String() string {
 func (*ApplyOperatorPaymentEventResponse) ProtoMessage() {}
 
 func (x *ApplyOperatorPaymentEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[44]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3466,7 +3355,7 @@ func (x *ApplyOperatorPaymentEventResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use ApplyOperatorPaymentEventResponse.ProtoReflect.Descriptor instead.
 func (*ApplyOperatorPaymentEventResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{44}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ApplyOperatorPaymentEventResponse) GetResult() *ApplyPaymentEventResponse {
@@ -3489,7 +3378,7 @@ type ReconcileCreemPaymentAttemptRequest struct {
 
 func (x *ReconcileCreemPaymentAttemptRequest) Reset() {
 	*x = ReconcileCreemPaymentAttemptRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[45]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3501,7 +3390,7 @@ func (x *ReconcileCreemPaymentAttemptRequest) String() string {
 func (*ReconcileCreemPaymentAttemptRequest) ProtoMessage() {}
 
 func (x *ReconcileCreemPaymentAttemptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[45]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3514,7 +3403,7 @@ func (x *ReconcileCreemPaymentAttemptRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use ReconcileCreemPaymentAttemptRequest.ProtoReflect.Descriptor instead.
 func (*ReconcileCreemPaymentAttemptRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{45}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *ReconcileCreemPaymentAttemptRequest) GetPaymentAttemptId() string {
@@ -3547,7 +3436,7 @@ type ReconcileCreemPaymentAttemptResponse struct {
 
 func (x *ReconcileCreemPaymentAttemptResponse) Reset() {
 	*x = ReconcileCreemPaymentAttemptResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[46]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3559,7 +3448,7 @@ func (x *ReconcileCreemPaymentAttemptResponse) String() string {
 func (*ReconcileCreemPaymentAttemptResponse) ProtoMessage() {}
 
 func (x *ReconcileCreemPaymentAttemptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[46]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3572,7 +3461,7 @@ func (x *ReconcileCreemPaymentAttemptResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use ReconcileCreemPaymentAttemptResponse.ProtoReflect.Descriptor instead.
 func (*ReconcileCreemPaymentAttemptResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{46}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ReconcileCreemPaymentAttemptResponse) GetPaymentAttempt() *PaymentAttemptProjection {
@@ -3592,7 +3481,7 @@ type CreatePromotionRequest struct {
 
 func (x *CreatePromotionRequest) Reset() {
 	*x = CreatePromotionRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[47]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3604,7 +3493,7 @@ func (x *CreatePromotionRequest) String() string {
 func (*CreatePromotionRequest) ProtoMessage() {}
 
 func (x *CreatePromotionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[47]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3617,7 +3506,7 @@ func (x *CreatePromotionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePromotionRequest.ProtoReflect.Descriptor instead.
 func (*CreatePromotionRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{47}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *CreatePromotionRequest) GetPromotion() *PromotionProjection {
@@ -3643,7 +3532,7 @@ type CreatePromotionResponse struct {
 
 func (x *CreatePromotionResponse) Reset() {
 	*x = CreatePromotionResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[48]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3655,7 +3544,7 @@ func (x *CreatePromotionResponse) String() string {
 func (*CreatePromotionResponse) ProtoMessage() {}
 
 func (x *CreatePromotionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[48]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3668,7 +3557,7 @@ func (x *CreatePromotionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePromotionResponse.ProtoReflect.Descriptor instead.
 func (*CreatePromotionResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{48}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *CreatePromotionResponse) GetPromotion() *PromotionProjection {
@@ -3690,7 +3579,7 @@ type DisablePromotionRequest struct {
 
 func (x *DisablePromotionRequest) Reset() {
 	*x = DisablePromotionRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[49]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3702,7 +3591,7 @@ func (x *DisablePromotionRequest) String() string {
 func (*DisablePromotionRequest) ProtoMessage() {}
 
 func (x *DisablePromotionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[49]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3715,7 +3604,7 @@ func (x *DisablePromotionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisablePromotionRequest.ProtoReflect.Descriptor instead.
 func (*DisablePromotionRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{49}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *DisablePromotionRequest) GetPromotionId() string {
@@ -3755,7 +3644,7 @@ type DisablePromotionResponse struct {
 
 func (x *DisablePromotionResponse) Reset() {
 	*x = DisablePromotionResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[50]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3767,7 +3656,7 @@ func (x *DisablePromotionResponse) String() string {
 func (*DisablePromotionResponse) ProtoMessage() {}
 
 func (x *DisablePromotionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[50]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3780,7 +3669,7 @@ func (x *DisablePromotionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisablePromotionResponse.ProtoReflect.Descriptor instead.
 func (*DisablePromotionResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{50}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *DisablePromotionResponse) GetPromotion() *PromotionProjection {
@@ -3800,7 +3689,7 @@ type ListPromotionsRequest struct {
 
 func (x *ListPromotionsRequest) Reset() {
 	*x = ListPromotionsRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[51]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3812,7 +3701,7 @@ func (x *ListPromotionsRequest) String() string {
 func (*ListPromotionsRequest) ProtoMessage() {}
 
 func (x *ListPromotionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[51]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3825,7 +3714,7 @@ func (x *ListPromotionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPromotionsRequest.ProtoReflect.Descriptor instead.
 func (*ListPromotionsRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{51}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *ListPromotionsRequest) GetIncludeDisabled() bool {
@@ -3852,7 +3741,7 @@ type ListPromotionsResponse struct {
 
 func (x *ListPromotionsResponse) Reset() {
 	*x = ListPromotionsResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[52]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3864,7 +3753,7 @@ func (x *ListPromotionsResponse) String() string {
 func (*ListPromotionsResponse) ProtoMessage() {}
 
 func (x *ListPromotionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[52]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3877,7 +3766,7 @@ func (x *ListPromotionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPromotionsResponse.ProtoReflect.Descriptor instead.
 func (*ListPromotionsResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{52}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *ListPromotionsResponse) GetPromotions() []*PromotionProjection {
@@ -3905,7 +3794,7 @@ type ListPromotionRedemptionsRequest struct {
 
 func (x *ListPromotionRedemptionsRequest) Reset() {
 	*x = ListPromotionRedemptionsRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[53]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3917,7 +3806,7 @@ func (x *ListPromotionRedemptionsRequest) String() string {
 func (*ListPromotionRedemptionsRequest) ProtoMessage() {}
 
 func (x *ListPromotionRedemptionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[53]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3930,7 +3819,7 @@ func (x *ListPromotionRedemptionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPromotionRedemptionsRequest.ProtoReflect.Descriptor instead.
 func (*ListPromotionRedemptionsRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{53}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *ListPromotionRedemptionsRequest) GetPromotionId() string {
@@ -3964,7 +3853,7 @@ type ListPromotionRedemptionsResponse struct {
 
 func (x *ListPromotionRedemptionsResponse) Reset() {
 	*x = ListPromotionRedemptionsResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[54]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3976,7 +3865,7 @@ func (x *ListPromotionRedemptionsResponse) String() string {
 func (*ListPromotionRedemptionsResponse) ProtoMessage() {}
 
 func (x *ListPromotionRedemptionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[54]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3989,7 +3878,7 @@ func (x *ListPromotionRedemptionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPromotionRedemptionsResponse.ProtoReflect.Descriptor instead.
 func (*ListPromotionRedemptionsResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{54}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ListPromotionRedemptionsResponse) GetRedemptions() []*PromotionRedemptionProjection {
@@ -4018,7 +3907,7 @@ type PublishPlanCatalogRequest struct {
 
 func (x *PublishPlanCatalogRequest) Reset() {
 	*x = PublishPlanCatalogRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[55]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4030,7 +3919,7 @@ func (x *PublishPlanCatalogRequest) String() string {
 func (*PublishPlanCatalogRequest) ProtoMessage() {}
 
 func (x *PublishPlanCatalogRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[55]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4043,7 +3932,7 @@ func (x *PublishPlanCatalogRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishPlanCatalogRequest.ProtoReflect.Descriptor instead.
 func (*PublishPlanCatalogRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{55}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *PublishPlanCatalogRequest) GetCatalog() *PlanCatalogContract {
@@ -4076,7 +3965,7 @@ type PublishPlanCatalogResponse struct {
 
 func (x *PublishPlanCatalogResponse) Reset() {
 	*x = PublishPlanCatalogResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[56]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4088,7 +3977,7 @@ func (x *PublishPlanCatalogResponse) String() string {
 func (*PublishPlanCatalogResponse) ProtoMessage() {}
 
 func (x *PublishPlanCatalogResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[56]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4101,7 +3990,7 @@ func (x *PublishPlanCatalogResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishPlanCatalogResponse.ProtoReflect.Descriptor instead.
 func (*PublishPlanCatalogResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{56}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *PublishPlanCatalogResponse) GetRelease() *PlanCatalogReleaseProjection {
@@ -4120,7 +4009,7 @@ type ListPlanCatalogReleasesRequest struct {
 
 func (x *ListPlanCatalogReleasesRequest) Reset() {
 	*x = ListPlanCatalogReleasesRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[57]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4132,7 +4021,7 @@ func (x *ListPlanCatalogReleasesRequest) String() string {
 func (*ListPlanCatalogReleasesRequest) ProtoMessage() {}
 
 func (x *ListPlanCatalogReleasesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[57]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4145,7 +4034,7 @@ func (x *ListPlanCatalogReleasesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPlanCatalogReleasesRequest.ProtoReflect.Descriptor instead.
 func (*ListPlanCatalogReleasesRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{57}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *ListPlanCatalogReleasesRequest) GetPage() *PageRequest {
@@ -4165,7 +4054,7 @@ type ListPlanCatalogReleasesResponse struct {
 
 func (x *ListPlanCatalogReleasesResponse) Reset() {
 	*x = ListPlanCatalogReleasesResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[58]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4177,7 +4066,7 @@ func (x *ListPlanCatalogReleasesResponse) String() string {
 func (*ListPlanCatalogReleasesResponse) ProtoMessage() {}
 
 func (x *ListPlanCatalogReleasesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[58]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4190,7 +4079,7 @@ func (x *ListPlanCatalogReleasesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPlanCatalogReleasesResponse.ProtoReflect.Descriptor instead.
 func (*ListPlanCatalogReleasesResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{58}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ListPlanCatalogReleasesResponse) GetReleases() []*PlanCatalogReleaseProjection {
@@ -4216,7 +4105,7 @@ type GetPlanCatalogReleaseRequest struct {
 
 func (x *GetPlanCatalogReleaseRequest) Reset() {
 	*x = GetPlanCatalogReleaseRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[59]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4228,7 +4117,7 @@ func (x *GetPlanCatalogReleaseRequest) String() string {
 func (*GetPlanCatalogReleaseRequest) ProtoMessage() {}
 
 func (x *GetPlanCatalogReleaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[59]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4241,7 +4130,7 @@ func (x *GetPlanCatalogReleaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPlanCatalogReleaseRequest.ProtoReflect.Descriptor instead.
 func (*GetPlanCatalogReleaseRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{59}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *GetPlanCatalogReleaseRequest) GetCatalogVersion() uint64 {
@@ -4260,7 +4149,7 @@ type GetPlanCatalogReleaseResponse struct {
 
 func (x *GetPlanCatalogReleaseResponse) Reset() {
 	*x = GetPlanCatalogReleaseResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[60]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4272,7 +4161,7 @@ func (x *GetPlanCatalogReleaseResponse) String() string {
 func (*GetPlanCatalogReleaseResponse) ProtoMessage() {}
 
 func (x *GetPlanCatalogReleaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[60]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4285,7 +4174,7 @@ func (x *GetPlanCatalogReleaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPlanCatalogReleaseResponse.ProtoReflect.Descriptor instead.
 func (*GetPlanCatalogReleaseResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{60}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *GetPlanCatalogReleaseResponse) GetRelease() *PlanCatalogReleaseProjection {
@@ -4307,7 +4196,7 @@ type PutEntitlementOverrideRequest struct {
 
 func (x *PutEntitlementOverrideRequest) Reset() {
 	*x = PutEntitlementOverrideRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[61]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4319,7 +4208,7 @@ func (x *PutEntitlementOverrideRequest) String() string {
 func (*PutEntitlementOverrideRequest) ProtoMessage() {}
 
 func (x *PutEntitlementOverrideRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[61]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4332,7 +4221,7 @@ func (x *PutEntitlementOverrideRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutEntitlementOverrideRequest.ProtoReflect.Descriptor instead.
 func (*PutEntitlementOverrideRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{61}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *PutEntitlementOverrideRequest) GetOverride() *EntitlementOverrideProjection {
@@ -4366,7 +4255,7 @@ type PutEntitlementOverrideResponse struct {
 
 func (x *PutEntitlementOverrideResponse) Reset() {
 	*x = PutEntitlementOverrideResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[62]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4378,7 +4267,7 @@ func (x *PutEntitlementOverrideResponse) String() string {
 func (*PutEntitlementOverrideResponse) ProtoMessage() {}
 
 func (x *PutEntitlementOverrideResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[62]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4391,7 +4280,7 @@ func (x *PutEntitlementOverrideResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutEntitlementOverrideResponse.ProtoReflect.Descriptor instead.
 func (*PutEntitlementOverrideResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{62}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *PutEntitlementOverrideResponse) GetOverride() *EntitlementOverrideProjection {
@@ -4421,7 +4310,7 @@ type RevokeEntitlementOverrideRequest struct {
 
 func (x *RevokeEntitlementOverrideRequest) Reset() {
 	*x = RevokeEntitlementOverrideRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[63]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4433,7 +4322,7 @@ func (x *RevokeEntitlementOverrideRequest) String() string {
 func (*RevokeEntitlementOverrideRequest) ProtoMessage() {}
 
 func (x *RevokeEntitlementOverrideRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[63]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4446,7 +4335,7 @@ func (x *RevokeEntitlementOverrideRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeEntitlementOverrideRequest.ProtoReflect.Descriptor instead.
 func (*RevokeEntitlementOverrideRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{63}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *RevokeEntitlementOverrideRequest) GetAccountId() string {
@@ -4494,7 +4383,7 @@ type RevokeEntitlementOverrideResponse struct {
 
 func (x *RevokeEntitlementOverrideResponse) Reset() {
 	*x = RevokeEntitlementOverrideResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[64]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4506,7 +4395,7 @@ func (x *RevokeEntitlementOverrideResponse) String() string {
 func (*RevokeEntitlementOverrideResponse) ProtoMessage() {}
 
 func (x *RevokeEntitlementOverrideResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[64]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4519,7 +4408,7 @@ func (x *RevokeEntitlementOverrideResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use RevokeEntitlementOverrideResponse.ProtoReflect.Descriptor instead.
 func (*RevokeEntitlementOverrideResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{64}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *RevokeEntitlementOverrideResponse) GetOverride() *EntitlementOverrideProjection {
@@ -4547,7 +4436,7 @@ type ListEntitlementOverridesRequest struct {
 
 func (x *ListEntitlementOverridesRequest) Reset() {
 	*x = ListEntitlementOverridesRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[65]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4559,7 +4448,7 @@ func (x *ListEntitlementOverridesRequest) String() string {
 func (*ListEntitlementOverridesRequest) ProtoMessage() {}
 
 func (x *ListEntitlementOverridesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[65]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4572,7 +4461,7 @@ func (x *ListEntitlementOverridesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEntitlementOverridesRequest.ProtoReflect.Descriptor instead.
 func (*ListEntitlementOverridesRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{65}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *ListEntitlementOverridesRequest) GetAccountId() string {
@@ -4606,7 +4495,7 @@ type ListEntitlementOverridesResponse struct {
 
 func (x *ListEntitlementOverridesResponse) Reset() {
 	*x = ListEntitlementOverridesResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[66]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4618,7 +4507,7 @@ func (x *ListEntitlementOverridesResponse) String() string {
 func (*ListEntitlementOverridesResponse) ProtoMessage() {}
 
 func (x *ListEntitlementOverridesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[66]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4631,7 +4520,7 @@ func (x *ListEntitlementOverridesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEntitlementOverridesResponse.ProtoReflect.Descriptor instead.
 func (*ListEntitlementOverridesResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{66}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *ListEntitlementOverridesResponse) GetOverrides() []*EntitlementOverrideProjection {
@@ -4667,7 +4556,7 @@ type AccountDeviceProjection struct {
 
 func (x *AccountDeviceProjection) Reset() {
 	*x = AccountDeviceProjection{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[67]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4679,7 +4568,7 @@ func (x *AccountDeviceProjection) String() string {
 func (*AccountDeviceProjection) ProtoMessage() {}
 
 func (x *AccountDeviceProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[67]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4692,7 +4581,7 @@ func (x *AccountDeviceProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccountDeviceProjection.ProtoReflect.Descriptor instead.
 func (*AccountDeviceProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{67}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *AccountDeviceProjection) GetAccountId() string {
@@ -4778,7 +4667,7 @@ type ListAccountDevicesRequest struct {
 
 func (x *ListAccountDevicesRequest) Reset() {
 	*x = ListAccountDevicesRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[68]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4790,7 +4679,7 @@ func (x *ListAccountDevicesRequest) String() string {
 func (*ListAccountDevicesRequest) ProtoMessage() {}
 
 func (x *ListAccountDevicesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[68]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4803,7 +4692,7 @@ func (x *ListAccountDevicesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAccountDevicesRequest.ProtoReflect.Descriptor instead.
 func (*ListAccountDevicesRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{68}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *ListAccountDevicesRequest) GetAccountId() string {
@@ -4845,7 +4734,7 @@ type ListAccountDevicesResponse struct {
 
 func (x *ListAccountDevicesResponse) Reset() {
 	*x = ListAccountDevicesResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[69]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4857,7 +4746,7 @@ func (x *ListAccountDevicesResponse) String() string {
 func (*ListAccountDevicesResponse) ProtoMessage() {}
 
 func (x *ListAccountDevicesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[69]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4870,7 +4759,7 @@ func (x *ListAccountDevicesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAccountDevicesResponse.ProtoReflect.Descriptor instead.
 func (*ListAccountDevicesResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{69}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *ListAccountDevicesResponse) GetDevices() []*AccountDeviceProjection {
@@ -4901,7 +4790,7 @@ type ListAccountTopologyRequest struct {
 
 func (x *ListAccountTopologyRequest) Reset() {
 	*x = ListAccountTopologyRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[70]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4913,7 +4802,7 @@ func (x *ListAccountTopologyRequest) String() string {
 func (*ListAccountTopologyRequest) ProtoMessage() {}
 
 func (x *ListAccountTopologyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[70]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4926,7 +4815,7 @@ func (x *ListAccountTopologyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAccountTopologyRequest.ProtoReflect.Descriptor instead.
 func (*ListAccountTopologyRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{70}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *ListAccountTopologyRequest) GetAccountId() string {
@@ -4976,7 +4865,7 @@ type ListAccountTopologyResponse struct {
 
 func (x *ListAccountTopologyResponse) Reset() {
 	*x = ListAccountTopologyResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[71]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4988,7 +4877,7 @@ func (x *ListAccountTopologyResponse) String() string {
 func (*ListAccountTopologyResponse) ProtoMessage() {}
 
 func (x *ListAccountTopologyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[71]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5001,7 +4890,7 @@ func (x *ListAccountTopologyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAccountTopologyResponse.ProtoReflect.Descriptor instead.
 func (*ListAccountTopologyResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{71}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *ListAccountTopologyResponse) GetPresences() []*PresenceProjection {
@@ -5036,7 +4925,7 @@ type GetManagedSessionRequest struct {
 
 func (x *GetManagedSessionRequest) Reset() {
 	*x = GetManagedSessionRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[72]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5048,7 +4937,7 @@ func (x *GetManagedSessionRequest) String() string {
 func (*GetManagedSessionRequest) ProtoMessage() {}
 
 func (x *GetManagedSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[72]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5061,7 +4950,7 @@ func (x *GetManagedSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetManagedSessionRequest.ProtoReflect.Descriptor instead.
 func (*GetManagedSessionRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{72}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *GetManagedSessionRequest) GetAccountId() string {
@@ -5088,7 +4977,7 @@ type GetManagedSessionResponse struct {
 
 func (x *GetManagedSessionResponse) Reset() {
 	*x = GetManagedSessionResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[73]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5100,7 +4989,7 @@ func (x *GetManagedSessionResponse) String() string {
 func (*GetManagedSessionResponse) ProtoMessage() {}
 
 func (x *GetManagedSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[73]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5113,7 +5002,7 @@ func (x *GetManagedSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetManagedSessionResponse.ProtoReflect.Descriptor instead.
 func (*GetManagedSessionResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{73}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *GetManagedSessionResponse) GetSession() *ManagedPeerSessionProjection {
@@ -5136,7 +5025,7 @@ type ListDaemonTerminalAccessRequest struct {
 
 func (x *ListDaemonTerminalAccessRequest) Reset() {
 	*x = ListDaemonTerminalAccessRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[74]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5148,7 +5037,7 @@ func (x *ListDaemonTerminalAccessRequest) String() string {
 func (*ListDaemonTerminalAccessRequest) ProtoMessage() {}
 
 func (x *ListDaemonTerminalAccessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[74]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5161,7 +5050,7 @@ func (x *ListDaemonTerminalAccessRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDaemonTerminalAccessRequest.ProtoReflect.Descriptor instead.
 func (*ListDaemonTerminalAccessRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{74}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *ListDaemonTerminalAccessRequest) GetAccountId() string {
@@ -5205,7 +5094,7 @@ type ListDaemonTerminalAccessResponse struct {
 
 func (x *ListDaemonTerminalAccessResponse) Reset() {
 	*x = ListDaemonTerminalAccessResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[75]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5217,7 +5106,7 @@ func (x *ListDaemonTerminalAccessResponse) String() string {
 func (*ListDaemonTerminalAccessResponse) ProtoMessage() {}
 
 func (x *ListDaemonTerminalAccessResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[75]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5230,7 +5119,7 @@ func (x *ListDaemonTerminalAccessResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDaemonTerminalAccessResponse.ProtoReflect.Descriptor instead.
 func (*ListDaemonTerminalAccessResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{75}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *ListDaemonTerminalAccessResponse) GetAccesses() []*TerminalAccessProjection {
@@ -5272,7 +5161,7 @@ type RevokeCloudDeviceTarget struct {
 
 func (x *RevokeCloudDeviceTarget) Reset() {
 	*x = RevokeCloudDeviceTarget{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[76]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5284,7 +5173,7 @@ func (x *RevokeCloudDeviceTarget) String() string {
 func (*RevokeCloudDeviceTarget) ProtoMessage() {}
 
 func (x *RevokeCloudDeviceTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[76]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5297,7 +5186,7 @@ func (x *RevokeCloudDeviceTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeCloudDeviceTarget.ProtoReflect.Descriptor instead.
 func (*RevokeCloudDeviceTarget) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{76}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *RevokeCloudDeviceTarget) GetDeviceId() string {
@@ -5333,7 +5222,7 @@ type AssignmentMigrationTarget struct {
 
 func (x *AssignmentMigrationTarget) Reset() {
 	*x = AssignmentMigrationTarget{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[77]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5345,7 +5234,7 @@ func (x *AssignmentMigrationTarget) String() string {
 func (*AssignmentMigrationTarget) ProtoMessage() {}
 
 func (x *AssignmentMigrationTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[77]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5358,7 +5247,7 @@ func (x *AssignmentMigrationTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssignmentMigrationTarget.ProtoReflect.Descriptor instead.
 func (*AssignmentMigrationTarget) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{77}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *AssignmentMigrationTarget) GetMigrationId() string {
@@ -5442,7 +5331,7 @@ type ManagementCommandTarget struct {
 
 func (x *ManagementCommandTarget) Reset() {
 	*x = ManagementCommandTarget{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[78]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5454,7 +5343,7 @@ func (x *ManagementCommandTarget) String() string {
 func (*ManagementCommandTarget) ProtoMessage() {}
 
 func (x *ManagementCommandTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[78]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5467,7 +5356,7 @@ func (x *ManagementCommandTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ManagementCommandTarget.ProtoReflect.Descriptor instead.
 func (*ManagementCommandTarget) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{78}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *ManagementCommandTarget) GetTarget() isManagementCommandTarget_Target {
@@ -5588,7 +5477,7 @@ type ManagementCommandChildProjection struct {
 
 func (x *ManagementCommandChildProjection) Reset() {
 	*x = ManagementCommandChildProjection{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[79]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5600,7 +5489,7 @@ func (x *ManagementCommandChildProjection) String() string {
 func (*ManagementCommandChildProjection) ProtoMessage() {}
 
 func (x *ManagementCommandChildProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[79]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5613,7 +5502,7 @@ func (x *ManagementCommandChildProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ManagementCommandChildProjection.ProtoReflect.Descriptor instead.
 func (*ManagementCommandChildProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{79}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *ManagementCommandChildProjection) GetChildCommandId() string {
@@ -5695,7 +5584,7 @@ type ManagementCommandProjection struct {
 
 func (x *ManagementCommandProjection) Reset() {
 	*x = ManagementCommandProjection{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[80]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5707,7 +5596,7 @@ func (x *ManagementCommandProjection) String() string {
 func (*ManagementCommandProjection) ProtoMessage() {}
 
 func (x *ManagementCommandProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[80]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5720,7 +5609,7 @@ func (x *ManagementCommandProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ManagementCommandProjection.ProtoReflect.Descriptor instead.
 func (*ManagementCommandProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{80}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *ManagementCommandProjection) GetCommandId() string {
@@ -5834,7 +5723,7 @@ type CreateManagementCommandRequest struct {
 
 func (x *CreateManagementCommandRequest) Reset() {
 	*x = CreateManagementCommandRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[81]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5846,7 +5735,7 @@ func (x *CreateManagementCommandRequest) String() string {
 func (*CreateManagementCommandRequest) ProtoMessage() {}
 
 func (x *CreateManagementCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[81]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5859,7 +5748,7 @@ func (x *CreateManagementCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateManagementCommandRequest.ProtoReflect.Descriptor instead.
 func (*CreateManagementCommandRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{81}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *CreateManagementCommandRequest) GetAccountId() string {
@@ -5900,7 +5789,7 @@ type CreateManagementCommandResponse struct {
 
 func (x *CreateManagementCommandResponse) Reset() {
 	*x = CreateManagementCommandResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[82]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5912,7 +5801,7 @@ func (x *CreateManagementCommandResponse) String() string {
 func (*CreateManagementCommandResponse) ProtoMessage() {}
 
 func (x *CreateManagementCommandResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[82]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5925,7 +5814,7 @@ func (x *CreateManagementCommandResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateManagementCommandResponse.ProtoReflect.Descriptor instead.
 func (*CreateManagementCommandResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{82}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *CreateManagementCommandResponse) GetCommand() *ManagementCommandProjection {
@@ -5946,7 +5835,7 @@ type GetManagementCommandRequest struct {
 
 func (x *GetManagementCommandRequest) Reset() {
 	*x = GetManagementCommandRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[83]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5958,7 +5847,7 @@ func (x *GetManagementCommandRequest) String() string {
 func (*GetManagementCommandRequest) ProtoMessage() {}
 
 func (x *GetManagementCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[83]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5971,7 +5860,7 @@ func (x *GetManagementCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetManagementCommandRequest.ProtoReflect.Descriptor instead.
 func (*GetManagementCommandRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{83}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *GetManagementCommandRequest) GetAccountId() string {
@@ -5998,7 +5887,7 @@ type GetManagementCommandResponse struct {
 
 func (x *GetManagementCommandResponse) Reset() {
 	*x = GetManagementCommandResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[84]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6010,7 +5899,7 @@ func (x *GetManagementCommandResponse) String() string {
 func (*GetManagementCommandResponse) ProtoMessage() {}
 
 func (x *GetManagementCommandResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[84]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6023,7 +5912,7 @@ func (x *GetManagementCommandResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetManagementCommandResponse.ProtoReflect.Descriptor instead.
 func (*GetManagementCommandResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{84}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *GetManagementCommandResponse) GetCommand() *ManagementCommandProjection {
@@ -6046,7 +5935,7 @@ type ListManagementCommandsRequest struct {
 
 func (x *ListManagementCommandsRequest) Reset() {
 	*x = ListManagementCommandsRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[85]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6058,7 +5947,7 @@ func (x *ListManagementCommandsRequest) String() string {
 func (*ListManagementCommandsRequest) ProtoMessage() {}
 
 func (x *ListManagementCommandsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[85]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6071,7 +5960,7 @@ func (x *ListManagementCommandsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListManagementCommandsRequest.ProtoReflect.Descriptor instead.
 func (*ListManagementCommandsRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{85}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *ListManagementCommandsRequest) GetAccountId() string {
@@ -6113,7 +6002,7 @@ type ListManagementCommandsResponse struct {
 
 func (x *ListManagementCommandsResponse) Reset() {
 	*x = ListManagementCommandsResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[86]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6125,7 +6014,7 @@ func (x *ListManagementCommandsResponse) String() string {
 func (*ListManagementCommandsResponse) ProtoMessage() {}
 
 func (x *ListManagementCommandsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[86]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6138,7 +6027,7 @@ func (x *ListManagementCommandsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListManagementCommandsResponse.ProtoReflect.Descriptor instead.
 func (*ListManagementCommandsResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{86}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *ListManagementCommandsResponse) GetCommands() []*ManagementCommandProjection {
@@ -6175,7 +6064,7 @@ type HubDeploymentProjection struct {
 
 func (x *HubDeploymentProjection) Reset() {
 	*x = HubDeploymentProjection{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[87]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6187,7 +6076,7 @@ func (x *HubDeploymentProjection) String() string {
 func (*HubDeploymentProjection) ProtoMessage() {}
 
 func (x *HubDeploymentProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[87]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6200,7 +6089,7 @@ func (x *HubDeploymentProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HubDeploymentProjection.ProtoReflect.Descriptor instead.
 func (*HubDeploymentProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{87}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *HubDeploymentProjection) GetMetadata() *EdgeDeploymentMetadata {
@@ -6291,7 +6180,7 @@ type HubFleetProjection struct {
 
 func (x *HubFleetProjection) Reset() {
 	*x = HubFleetProjection{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[88]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6303,7 +6192,7 @@ func (x *HubFleetProjection) String() string {
 func (*HubFleetProjection) ProtoMessage() {}
 
 func (x *HubFleetProjection) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[88]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6316,7 +6205,7 @@ func (x *HubFleetProjection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HubFleetProjection.ProtoReflect.Descriptor instead.
 func (*HubFleetProjection) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{88}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *HubFleetProjection) GetDeployment() *HubDeploymentProjection {
@@ -6394,7 +6283,7 @@ type ListHubFleetRequest struct {
 
 func (x *ListHubFleetRequest) Reset() {
 	*x = ListHubFleetRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[89]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6406,7 +6295,7 @@ func (x *ListHubFleetRequest) String() string {
 func (*ListHubFleetRequest) ProtoMessage() {}
 
 func (x *ListHubFleetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[89]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6419,7 +6308,7 @@ func (x *ListHubFleetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListHubFleetRequest.ProtoReflect.Descriptor instead.
 func (*ListHubFleetRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{89}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *ListHubFleetRequest) GetRegion() string {
@@ -6454,7 +6343,7 @@ type ListHubFleetResponse struct {
 
 func (x *ListHubFleetResponse) Reset() {
 	*x = ListHubFleetResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[90]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6466,7 +6355,7 @@ func (x *ListHubFleetResponse) String() string {
 func (*ListHubFleetResponse) ProtoMessage() {}
 
 func (x *ListHubFleetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[90]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6479,7 +6368,7 @@ func (x *ListHubFleetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListHubFleetResponse.ProtoReflect.Descriptor instead.
 func (*ListHubFleetResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{90}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *ListHubFleetResponse) GetHubs() []*HubFleetProjection {
@@ -6506,7 +6395,7 @@ type GetHubStatusRequest struct {
 
 func (x *GetHubStatusRequest) Reset() {
 	*x = GetHubStatusRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[91]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6518,7 +6407,7 @@ func (x *GetHubStatusRequest) String() string {
 func (*GetHubStatusRequest) ProtoMessage() {}
 
 func (x *GetHubStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[91]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6531,7 +6420,7 @@ func (x *GetHubStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetHubStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetHubStatusRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{91}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *GetHubStatusRequest) GetHubId() string {
@@ -6551,7 +6440,7 @@ type GetHubStatusResponse struct {
 
 func (x *GetHubStatusResponse) Reset() {
 	*x = GetHubStatusResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[92]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6563,7 +6452,7 @@ func (x *GetHubStatusResponse) String() string {
 func (*GetHubStatusResponse) ProtoMessage() {}
 
 func (x *GetHubStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[92]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6576,7 +6465,7 @@ func (x *GetHubStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetHubStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetHubStatusResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{92}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *GetHubStatusResponse) GetHub() *HubFleetProjection {
@@ -6607,7 +6496,7 @@ type CreateHubDeploymentRequest struct {
 
 func (x *CreateHubDeploymentRequest) Reset() {
 	*x = CreateHubDeploymentRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[93]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6619,7 +6508,7 @@ func (x *CreateHubDeploymentRequest) String() string {
 func (*CreateHubDeploymentRequest) ProtoMessage() {}
 
 func (x *CreateHubDeploymentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[93]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6632,7 +6521,7 @@ func (x *CreateHubDeploymentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateHubDeploymentRequest.ProtoReflect.Descriptor instead.
 func (*CreateHubDeploymentRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{93}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *CreateHubDeploymentRequest) GetHubId() string {
@@ -6728,7 +6617,7 @@ type CreateHubDeploymentResponse struct {
 
 func (x *CreateHubDeploymentResponse) Reset() {
 	*x = CreateHubDeploymentResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[94]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6740,7 +6629,7 @@ func (x *CreateHubDeploymentResponse) String() string {
 func (*CreateHubDeploymentResponse) ProtoMessage() {}
 
 func (x *CreateHubDeploymentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[94]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6753,7 +6642,7 @@ func (x *CreateHubDeploymentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateHubDeploymentResponse.ProtoReflect.Descriptor instead.
 func (*CreateHubDeploymentResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{94}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *CreateHubDeploymentResponse) GetDeployment() *HubDeploymentProjection {
@@ -6781,7 +6670,7 @@ type UpdateHubDeploymentRequest struct {
 
 func (x *UpdateHubDeploymentRequest) Reset() {
 	*x = UpdateHubDeploymentRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[95]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6793,7 +6682,7 @@ func (x *UpdateHubDeploymentRequest) String() string {
 func (*UpdateHubDeploymentRequest) ProtoMessage() {}
 
 func (x *UpdateHubDeploymentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[95]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6806,7 +6695,7 @@ func (x *UpdateHubDeploymentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateHubDeploymentRequest.ProtoReflect.Descriptor instead.
 func (*UpdateHubDeploymentRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{95}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *UpdateHubDeploymentRequest) GetHubId() string {
@@ -6881,7 +6770,7 @@ type UpdateHubDeploymentResponse struct {
 
 func (x *UpdateHubDeploymentResponse) Reset() {
 	*x = UpdateHubDeploymentResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[96]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6893,7 +6782,7 @@ func (x *UpdateHubDeploymentResponse) String() string {
 func (*UpdateHubDeploymentResponse) ProtoMessage() {}
 
 func (x *UpdateHubDeploymentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[96]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6906,7 +6795,7 @@ func (x *UpdateHubDeploymentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateHubDeploymentResponse.ProtoReflect.Descriptor instead.
 func (*UpdateHubDeploymentResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{96}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *UpdateHubDeploymentResponse) GetDeployment() *HubDeploymentProjection {
@@ -6931,7 +6820,7 @@ type ApproveHubDeploymentIdentityRequest struct {
 
 func (x *ApproveHubDeploymentIdentityRequest) Reset() {
 	*x = ApproveHubDeploymentIdentityRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[97]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6943,7 +6832,7 @@ func (x *ApproveHubDeploymentIdentityRequest) String() string {
 func (*ApproveHubDeploymentIdentityRequest) ProtoMessage() {}
 
 func (x *ApproveHubDeploymentIdentityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[97]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6956,7 +6845,7 @@ func (x *ApproveHubDeploymentIdentityRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use ApproveHubDeploymentIdentityRequest.ProtoReflect.Descriptor instead.
 func (*ApproveHubDeploymentIdentityRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{97}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *ApproveHubDeploymentIdentityRequest) GetHubId() string {
@@ -7010,7 +6899,7 @@ type ApproveHubDeploymentIdentityResponse struct {
 
 func (x *ApproveHubDeploymentIdentityResponse) Reset() {
 	*x = ApproveHubDeploymentIdentityResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[98]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7022,7 +6911,7 @@ func (x *ApproveHubDeploymentIdentityResponse) String() string {
 func (*ApproveHubDeploymentIdentityResponse) ProtoMessage() {}
 
 func (x *ApproveHubDeploymentIdentityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[98]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7035,7 +6924,7 @@ func (x *ApproveHubDeploymentIdentityResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use ApproveHubDeploymentIdentityResponse.ProtoReflect.Descriptor instead.
 func (*ApproveHubDeploymentIdentityResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{98}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *ApproveHubDeploymentIdentityResponse) GetDeployment() *HubDeploymentProjection {
@@ -7059,7 +6948,7 @@ type SetHubDeploymentDrainRequest struct {
 
 func (x *SetHubDeploymentDrainRequest) Reset() {
 	*x = SetHubDeploymentDrainRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[99]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7071,7 +6960,7 @@ func (x *SetHubDeploymentDrainRequest) String() string {
 func (*SetHubDeploymentDrainRequest) ProtoMessage() {}
 
 func (x *SetHubDeploymentDrainRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[99]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7084,7 +6973,7 @@ func (x *SetHubDeploymentDrainRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetHubDeploymentDrainRequest.ProtoReflect.Descriptor instead.
 func (*SetHubDeploymentDrainRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{99}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *SetHubDeploymentDrainRequest) GetHubId() string {
@@ -7131,7 +7020,7 @@ type SetHubDeploymentDrainResponse struct {
 
 func (x *SetHubDeploymentDrainResponse) Reset() {
 	*x = SetHubDeploymentDrainResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[100]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7143,7 +7032,7 @@ func (x *SetHubDeploymentDrainResponse) String() string {
 func (*SetHubDeploymentDrainResponse) ProtoMessage() {}
 
 func (x *SetHubDeploymentDrainResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[100]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7156,7 +7045,7 @@ func (x *SetHubDeploymentDrainResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetHubDeploymentDrainResponse.ProtoReflect.Descriptor instead.
 func (*SetHubDeploymentDrainResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{100}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *SetHubDeploymentDrainResponse) GetDeployment() *HubDeploymentProjection {
@@ -7179,7 +7068,7 @@ type DisableHubDeploymentRequest struct {
 
 func (x *DisableHubDeploymentRequest) Reset() {
 	*x = DisableHubDeploymentRequest{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[101]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7191,7 +7080,7 @@ func (x *DisableHubDeploymentRequest) String() string {
 func (*DisableHubDeploymentRequest) ProtoMessage() {}
 
 func (x *DisableHubDeploymentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[101]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7204,7 +7093,7 @@ func (x *DisableHubDeploymentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisableHubDeploymentRequest.ProtoReflect.Descriptor instead.
 func (*DisableHubDeploymentRequest) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{101}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *DisableHubDeploymentRequest) GetHubId() string {
@@ -7244,7 +7133,7 @@ type DisableHubDeploymentResponse struct {
 
 func (x *DisableHubDeploymentResponse) Reset() {
 	*x = DisableHubDeploymentResponse{}
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[102]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7256,7 +7145,7 @@ func (x *DisableHubDeploymentResponse) String() string {
 func (*DisableHubDeploymentResponse) ProtoMessage() {}
 
 func (x *DisableHubDeploymentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloudpb_cloud_management_proto_msgTypes[102]
+	mi := &file_cloudpb_cloud_management_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7269,7 +7158,7 @@ func (x *DisableHubDeploymentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisableHubDeploymentResponse.ProtoReflect.Descriptor instead.
 func (*DisableHubDeploymentResponse) Descriptor() ([]byte, []int) {
-	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{102}
+	return file_cloudpb_cloud_management_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *DisableHubDeploymentResponse) GetDeployment() *HubDeploymentProjection {
@@ -7323,20 +7212,9 @@ const file_cloudpb_cloud_management_proto_rawDesc = "" +
 	"\x1bRecentAuthenticationRequest\x12\x1a\n" +
 	"\bpassword\x18\x01 \x01(\tR\bpassword\"S\n" +
 	"\x1cRecentAuthenticationResponse\x123\n" +
-	"\x16expires_at_unix_millis\x18\x01 \x01(\x03R\x13expiresAtUnixMillis\"9\n" +
-	"\x14OperatorLoginRequest\x12!\n" +
-	"\faccess_token\x18\x01 \x01(\fR\vaccessToken\"\xf7\x01\n" +
-	"\x19OperatorSessionProjection\x12\x1f\n" +
-	"\voperator_id\x18\x01 \x01(\tR\n" +
-	"operatorId\x12C\n" +
-	"\n" +
-	"actor_kind\x18\x02 \x01(\x0e2$.muxvia.cloud.v1.ManagementActorKindR\tactorKind\x12?\n" +
-	"\x1cauthenticated_at_unix_millis\x18\x03 \x01(\x03R\x19authenticatedAtUnixMillis\x123\n" +
-	"\x16expires_at_unix_millis\x18\x04 \x01(\x03R\x13expiresAtUnixMillis\"]\n" +
-	"\x15OperatorLoginResponse\x12D\n" +
-	"\asession\x18\x01 \x01(\v2*.muxvia.cloud.v1.OperatorSessionProjectionR\asession\"\x17\n" +
-	"\x15OperatorLogoutRequest\"\x18\n" +
-	"\x16OperatorLogoutResponse\"\xb1\x02\n" +
+	"\x16expires_at_unix_millis\x18\x01 \x01(\x03R\x13expiresAtUnixMillis\"b\n" +
+	"\x1cGetOperatorWorkspaceResponse\x12B\n" +
+	"\amodules\x18\x01 \x03(\x0e2(.muxvia.cloud.v1.OperatorWorkspaceModuleR\amodules\"\xb1\x02\n" +
 	"\x16OperatorAccountSummary\x12<\n" +
 	"\aaccount\x18\x01 \x01(\v2\".muxvia.cloud.v1.AccountProjectionR\aaccount\x12K\n" +
 	"\fsubscription\x18\x02 \x01(\v2'.muxvia.cloud.v1.SubscriptionProjectionR\fsubscription\x12H\n" +
@@ -7889,7 +7767,18 @@ const file_cloudpb_cloud_management_proto_rawDesc = "" +
 	"%MANAGEMENT_ERROR_CODE_COMMAND_PARTIAL\x10\v\x12-\n" +
 	")MANAGEMENT_ERROR_CODE_RUNTIME_UNAVAILABLE\x10\f\x12+\n" +
 	"'MANAGEMENT_ERROR_CODE_RELAY_UNAVAILABLE\x10\r\x12#\n" +
-	"\x1fMANAGEMENT_ERROR_CODE_TEMPORARY\x10\x0e*n\n" +
+	"\x1fMANAGEMENT_ERROR_CODE_TEMPORARY\x10\x0e*\xa7\x03\n" +
+	"\x17OperatorWorkspaceModule\x12)\n" +
+	"%OPERATOR_WORKSPACE_MODULE_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fOPERATOR_WORKSPACE_MODULE_USERS\x10\x01\x12$\n" +
+	" OPERATOR_WORKSPACE_MODULE_ORDERS\x10\x02\x12+\n" +
+	"'OPERATOR_WORKSPACE_MODULE_SUBSCRIPTIONS\x10\x03\x12#\n" +
+	"\x1fOPERATOR_WORKSPACE_MODULE_PLANS\x10\x04\x12\"\n" +
+	"\x1eOPERATOR_WORKSPACE_MODULE_HUBS\x10\x05\x12$\n" +
+	" OPERATOR_WORKSPACE_MODULE_AGENTS\x10\x06\x12&\n" +
+	"\"OPERATOR_WORKSPACE_MODULE_RELEASES\x10\a\x12(\n" +
+	"$OPERATOR_WORKSPACE_MODULE_PROMOTIONS\x10\b\x12(\n" +
+	"$OPERATOR_WORKSPACE_MODULE_PRIVILEGES\x10\t*n\n" +
 	"\x0eReleaseProduct\x12\x1f\n" +
 	"\x1bRELEASE_PRODUCT_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aRELEASE_PRODUCT_CLI_DAEMON\x10\x01\x12\x1b\n" +
@@ -7911,8 +7800,8 @@ func file_cloudpb_cloud_management_proto_rawDescGZIP() []byte {
 	return file_cloudpb_cloud_management_proto_rawDescData
 }
 
-var file_cloudpb_cloud_management_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
-var file_cloudpb_cloud_management_proto_msgTypes = make([]protoimpl.MessageInfo, 103)
+var file_cloudpb_cloud_management_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
+var file_cloudpb_cloud_management_proto_msgTypes = make([]protoimpl.MessageInfo, 99)
 var file_cloudpb_cloud_management_proto_goTypes = []any{
 	(ManagementActorKind)(0),                       // 0: muxvia.cloud.v1.ManagementActorKind
 	(ManagementCommandKind)(0),                     // 1: muxvia.cloud.v1.ManagementCommandKind
@@ -7921,300 +7810,296 @@ var file_cloudpb_cloud_management_proto_goTypes = []any{
 	(CommandExecutionState)(0),                     // 4: muxvia.cloud.v1.CommandExecutionState
 	(CommandObservedEffect)(0),                     // 5: muxvia.cloud.v1.CommandObservedEffect
 	(ManagementErrorCode)(0),                       // 6: muxvia.cloud.v1.ManagementErrorCode
-	(ReleaseProduct)(0),                            // 7: muxvia.cloud.v1.ReleaseProduct
-	(ReleaseChannel)(0),                            // 8: muxvia.cloud.v1.ReleaseChannel
-	(*PageCursor)(nil),                             // 9: muxvia.cloud.v1.PageCursor
-	(*PageRequest)(nil),                            // 10: muxvia.cloud.v1.PageRequest
-	(*PageResponse)(nil),                           // 11: muxvia.cloud.v1.PageResponse
-	(*ManagementActorProjection)(nil),              // 12: muxvia.cloud.v1.ManagementActorProjection
-	(*OperatorMutationAuditProjection)(nil),        // 13: muxvia.cloud.v1.OperatorMutationAuditProjection
-	(*ManagementErrorDetail)(nil),                  // 14: muxvia.cloud.v1.ManagementErrorDetail
-	(*RecentAuthenticationRequest)(nil),            // 15: muxvia.cloud.v1.RecentAuthenticationRequest
-	(*RecentAuthenticationResponse)(nil),           // 16: muxvia.cloud.v1.RecentAuthenticationResponse
-	(*OperatorLoginRequest)(nil),                   // 17: muxvia.cloud.v1.OperatorLoginRequest
-	(*OperatorSessionProjection)(nil),              // 18: muxvia.cloud.v1.OperatorSessionProjection
-	(*OperatorLoginResponse)(nil),                  // 19: muxvia.cloud.v1.OperatorLoginResponse
-	(*OperatorLogoutRequest)(nil),                  // 20: muxvia.cloud.v1.OperatorLogoutRequest
-	(*OperatorLogoutResponse)(nil),                 // 21: muxvia.cloud.v1.OperatorLogoutResponse
-	(*OperatorAccountSummary)(nil),                 // 22: muxvia.cloud.v1.OperatorAccountSummary
-	(*AccountSessionProjection)(nil),               // 23: muxvia.cloud.v1.AccountSessionProjection
-	(*ListOperatorAccountsRequest)(nil),            // 24: muxvia.cloud.v1.ListOperatorAccountsRequest
-	(*ListOperatorAccountsResponse)(nil),           // 25: muxvia.cloud.v1.ListOperatorAccountsResponse
-	(*GetOperatorAccountRequest)(nil),              // 26: muxvia.cloud.v1.GetOperatorAccountRequest
-	(*GetOperatorAccountResponse)(nil),             // 27: muxvia.cloud.v1.GetOperatorAccountResponse
-	(*OperatorAgentProjection)(nil),                // 28: muxvia.cloud.v1.OperatorAgentProjection
-	(*ListOperatorAgentsRequest)(nil),              // 29: muxvia.cloud.v1.ListOperatorAgentsRequest
-	(*ListOperatorAgentsResponse)(nil),             // 30: muxvia.cloud.v1.ListOperatorAgentsResponse
-	(*RevokeOperatorAccountSessionRequest)(nil),    // 31: muxvia.cloud.v1.RevokeOperatorAccountSessionRequest
-	(*RevokeOperatorAccountSessionResponse)(nil),   // 32: muxvia.cloud.v1.RevokeOperatorAccountSessionResponse
-	(*ReleaseArtifactProjection)(nil),              // 33: muxvia.cloud.v1.ReleaseArtifactProjection
-	(*ReleaseChannelProjection)(nil),               // 34: muxvia.cloud.v1.ReleaseChannelProjection
-	(*PublishReleaseArtifactRequest)(nil),          // 35: muxvia.cloud.v1.PublishReleaseArtifactRequest
-	(*PublishReleaseArtifactResponse)(nil),         // 36: muxvia.cloud.v1.PublishReleaseArtifactResponse
-	(*SetReleaseChannelRequest)(nil),               // 37: muxvia.cloud.v1.SetReleaseChannelRequest
-	(*SetReleaseChannelResponse)(nil),              // 38: muxvia.cloud.v1.SetReleaseChannelResponse
-	(*ListReleaseArtifactsRequest)(nil),            // 39: muxvia.cloud.v1.ListReleaseArtifactsRequest
-	(*ListReleaseArtifactsResponse)(nil),           // 40: muxvia.cloud.v1.ListReleaseArtifactsResponse
-	(*ResolveClientReleaseRequest)(nil),            // 41: muxvia.cloud.v1.ResolveClientReleaseRequest
-	(*ResolveClientReleaseResponse)(nil),           // 42: muxvia.cloud.v1.ResolveClientReleaseResponse
-	(*OperatorTransitionSubscriptionRequest)(nil),  // 43: muxvia.cloud.v1.OperatorTransitionSubscriptionRequest
-	(*OperatorTransitionSubscriptionResponse)(nil), // 44: muxvia.cloud.v1.OperatorTransitionSubscriptionResponse
-	(*ListOperatorOrdersRequest)(nil),              // 45: muxvia.cloud.v1.ListOperatorOrdersRequest
-	(*OperatorOrderProjection)(nil),                // 46: muxvia.cloud.v1.OperatorOrderProjection
-	(*ListOperatorOrdersResponse)(nil),             // 47: muxvia.cloud.v1.ListOperatorOrdersResponse
-	(*ListOperatorSubscriptionsRequest)(nil),       // 48: muxvia.cloud.v1.ListOperatorSubscriptionsRequest
-	(*ListOperatorSubscriptionsResponse)(nil),      // 49: muxvia.cloud.v1.ListOperatorSubscriptionsResponse
-	(*CreateSubscriptionAdjustmentRequest)(nil),    // 50: muxvia.cloud.v1.CreateSubscriptionAdjustmentRequest
-	(*CreateSubscriptionAdjustmentResponse)(nil),   // 51: muxvia.cloud.v1.CreateSubscriptionAdjustmentResponse
-	(*ApplyOperatorPaymentEventRequest)(nil),       // 52: muxvia.cloud.v1.ApplyOperatorPaymentEventRequest
-	(*ApplyOperatorPaymentEventResponse)(nil),      // 53: muxvia.cloud.v1.ApplyOperatorPaymentEventResponse
-	(*ReconcileCreemPaymentAttemptRequest)(nil),    // 54: muxvia.cloud.v1.ReconcileCreemPaymentAttemptRequest
-	(*ReconcileCreemPaymentAttemptResponse)(nil),   // 55: muxvia.cloud.v1.ReconcileCreemPaymentAttemptResponse
-	(*CreatePromotionRequest)(nil),                 // 56: muxvia.cloud.v1.CreatePromotionRequest
-	(*CreatePromotionResponse)(nil),                // 57: muxvia.cloud.v1.CreatePromotionResponse
-	(*DisablePromotionRequest)(nil),                // 58: muxvia.cloud.v1.DisablePromotionRequest
-	(*DisablePromotionResponse)(nil),               // 59: muxvia.cloud.v1.DisablePromotionResponse
-	(*ListPromotionsRequest)(nil),                  // 60: muxvia.cloud.v1.ListPromotionsRequest
-	(*ListPromotionsResponse)(nil),                 // 61: muxvia.cloud.v1.ListPromotionsResponse
-	(*ListPromotionRedemptionsRequest)(nil),        // 62: muxvia.cloud.v1.ListPromotionRedemptionsRequest
-	(*ListPromotionRedemptionsResponse)(nil),       // 63: muxvia.cloud.v1.ListPromotionRedemptionsResponse
-	(*PublishPlanCatalogRequest)(nil),              // 64: muxvia.cloud.v1.PublishPlanCatalogRequest
-	(*PublishPlanCatalogResponse)(nil),             // 65: muxvia.cloud.v1.PublishPlanCatalogResponse
-	(*ListPlanCatalogReleasesRequest)(nil),         // 66: muxvia.cloud.v1.ListPlanCatalogReleasesRequest
-	(*ListPlanCatalogReleasesResponse)(nil),        // 67: muxvia.cloud.v1.ListPlanCatalogReleasesResponse
-	(*GetPlanCatalogReleaseRequest)(nil),           // 68: muxvia.cloud.v1.GetPlanCatalogReleaseRequest
-	(*GetPlanCatalogReleaseResponse)(nil),          // 69: muxvia.cloud.v1.GetPlanCatalogReleaseResponse
-	(*PutEntitlementOverrideRequest)(nil),          // 70: muxvia.cloud.v1.PutEntitlementOverrideRequest
-	(*PutEntitlementOverrideResponse)(nil),         // 71: muxvia.cloud.v1.PutEntitlementOverrideResponse
-	(*RevokeEntitlementOverrideRequest)(nil),       // 72: muxvia.cloud.v1.RevokeEntitlementOverrideRequest
-	(*RevokeEntitlementOverrideResponse)(nil),      // 73: muxvia.cloud.v1.RevokeEntitlementOverrideResponse
-	(*ListEntitlementOverridesRequest)(nil),        // 74: muxvia.cloud.v1.ListEntitlementOverridesRequest
-	(*ListEntitlementOverridesResponse)(nil),       // 75: muxvia.cloud.v1.ListEntitlementOverridesResponse
-	(*AccountDeviceProjection)(nil),                // 76: muxvia.cloud.v1.AccountDeviceProjection
-	(*ListAccountDevicesRequest)(nil),              // 77: muxvia.cloud.v1.ListAccountDevicesRequest
-	(*ListAccountDevicesResponse)(nil),             // 78: muxvia.cloud.v1.ListAccountDevicesResponse
-	(*ListAccountTopologyRequest)(nil),             // 79: muxvia.cloud.v1.ListAccountTopologyRequest
-	(*ListAccountTopologyResponse)(nil),            // 80: muxvia.cloud.v1.ListAccountTopologyResponse
-	(*GetManagedSessionRequest)(nil),               // 81: muxvia.cloud.v1.GetManagedSessionRequest
-	(*GetManagedSessionResponse)(nil),              // 82: muxvia.cloud.v1.GetManagedSessionResponse
-	(*ListDaemonTerminalAccessRequest)(nil),        // 83: muxvia.cloud.v1.ListDaemonTerminalAccessRequest
-	(*ListDaemonTerminalAccessResponse)(nil),       // 84: muxvia.cloud.v1.ListDaemonTerminalAccessResponse
-	(*RevokeCloudDeviceTarget)(nil),                // 85: muxvia.cloud.v1.RevokeCloudDeviceTarget
-	(*AssignmentMigrationTarget)(nil),              // 86: muxvia.cloud.v1.AssignmentMigrationTarget
-	(*ManagementCommandTarget)(nil),                // 87: muxvia.cloud.v1.ManagementCommandTarget
-	(*ManagementCommandChildProjection)(nil),       // 88: muxvia.cloud.v1.ManagementCommandChildProjection
-	(*ManagementCommandProjection)(nil),            // 89: muxvia.cloud.v1.ManagementCommandProjection
-	(*CreateManagementCommandRequest)(nil),         // 90: muxvia.cloud.v1.CreateManagementCommandRequest
-	(*CreateManagementCommandResponse)(nil),        // 91: muxvia.cloud.v1.CreateManagementCommandResponse
-	(*GetManagementCommandRequest)(nil),            // 92: muxvia.cloud.v1.GetManagementCommandRequest
-	(*GetManagementCommandResponse)(nil),           // 93: muxvia.cloud.v1.GetManagementCommandResponse
-	(*ListManagementCommandsRequest)(nil),          // 94: muxvia.cloud.v1.ListManagementCommandsRequest
-	(*ListManagementCommandsResponse)(nil),         // 95: muxvia.cloud.v1.ListManagementCommandsResponse
-	(*HubDeploymentProjection)(nil),                // 96: muxvia.cloud.v1.HubDeploymentProjection
-	(*HubFleetProjection)(nil),                     // 97: muxvia.cloud.v1.HubFleetProjection
-	(*ListHubFleetRequest)(nil),                    // 98: muxvia.cloud.v1.ListHubFleetRequest
-	(*ListHubFleetResponse)(nil),                   // 99: muxvia.cloud.v1.ListHubFleetResponse
-	(*GetHubStatusRequest)(nil),                    // 100: muxvia.cloud.v1.GetHubStatusRequest
-	(*GetHubStatusResponse)(nil),                   // 101: muxvia.cloud.v1.GetHubStatusResponse
-	(*CreateHubDeploymentRequest)(nil),             // 102: muxvia.cloud.v1.CreateHubDeploymentRequest
-	(*CreateHubDeploymentResponse)(nil),            // 103: muxvia.cloud.v1.CreateHubDeploymentResponse
-	(*UpdateHubDeploymentRequest)(nil),             // 104: muxvia.cloud.v1.UpdateHubDeploymentRequest
-	(*UpdateHubDeploymentResponse)(nil),            // 105: muxvia.cloud.v1.UpdateHubDeploymentResponse
-	(*ApproveHubDeploymentIdentityRequest)(nil),    // 106: muxvia.cloud.v1.ApproveHubDeploymentIdentityRequest
-	(*ApproveHubDeploymentIdentityResponse)(nil),   // 107: muxvia.cloud.v1.ApproveHubDeploymentIdentityResponse
-	(*SetHubDeploymentDrainRequest)(nil),           // 108: muxvia.cloud.v1.SetHubDeploymentDrainRequest
-	(*SetHubDeploymentDrainResponse)(nil),          // 109: muxvia.cloud.v1.SetHubDeploymentDrainResponse
-	(*DisableHubDeploymentRequest)(nil),            // 110: muxvia.cloud.v1.DisableHubDeploymentRequest
-	(*DisableHubDeploymentResponse)(nil),           // 111: muxvia.cloud.v1.DisableHubDeploymentResponse
-	(*AccountProjection)(nil),                      // 112: muxvia.cloud.v1.AccountProjection
-	(*SubscriptionProjection)(nil),                 // 113: muxvia.cloud.v1.SubscriptionProjection
-	(*EntitlementProjection)(nil),                  // 114: muxvia.cloud.v1.EntitlementProjection
-	(*RelayQuotaPeriod)(nil),                       // 115: muxvia.cloud.v1.RelayQuotaPeriod
-	(SubscriptionStatus)(0),                        // 116: muxvia.cloud.v1.SubscriptionStatus
-	(*GetAccountCommerceResponse)(nil),             // 117: muxvia.cloud.v1.GetAccountCommerceResponse
-	(*GetAccountRelayQuotaResponse)(nil),           // 118: muxvia.cloud.v1.GetAccountRelayQuotaResponse
-	(*PresenceProjection)(nil),                     // 119: muxvia.cloud.v1.PresenceProjection
-	(Freshness)(0),                                 // 120: muxvia.cloud.v1.Freshness
-	(SubscriptionTransitionKind)(0),                // 121: muxvia.cloud.v1.SubscriptionTransitionKind
-	(*TransitionSubscriptionResponse)(nil),         // 122: muxvia.cloud.v1.TransitionSubscriptionResponse
-	(OrderStatus)(0),                               // 123: muxvia.cloud.v1.OrderStatus
-	(*OrderProjection)(nil),                        // 124: muxvia.cloud.v1.OrderProjection
-	(*PaymentAttemptProjection)(nil),               // 125: muxvia.cloud.v1.PaymentAttemptProjection
-	(*PaymentEventProjection)(nil),                 // 126: muxvia.cloud.v1.PaymentEventProjection
-	(SubscriptionAdjustmentKind)(0),                // 127: muxvia.cloud.v1.SubscriptionAdjustmentKind
-	(*SubscriptionAdjustmentProjection)(nil),       // 128: muxvia.cloud.v1.SubscriptionAdjustmentProjection
-	(PaymentEventType)(0),                          // 129: muxvia.cloud.v1.PaymentEventType
-	(*ApplyPaymentEventResponse)(nil),              // 130: muxvia.cloud.v1.ApplyPaymentEventResponse
-	(*PromotionProjection)(nil),                    // 131: muxvia.cloud.v1.PromotionProjection
-	(*PromotionRedemptionProjection)(nil),          // 132: muxvia.cloud.v1.PromotionRedemptionProjection
-	(*PlanCatalogContract)(nil),                    // 133: muxvia.cloud.v1.PlanCatalogContract
-	(*PlanCatalogReleaseProjection)(nil),           // 134: muxvia.cloud.v1.PlanCatalogReleaseProjection
-	(*EntitlementOverrideProjection)(nil),          // 135: muxvia.cloud.v1.EntitlementOverrideProjection
-	(ManagedDeviceKind)(0),                         // 136: muxvia.cloud.v1.ManagedDeviceKind
-	(*ManagedPeerSessionProjection)(nil),           // 137: muxvia.cloud.v1.ManagedPeerSessionProjection
-	(*ManagedPeerSessionTarget)(nil),               // 138: muxvia.cloud.v1.ManagedPeerSessionTarget
-	(TerminalAccessState)(0),                       // 139: muxvia.cloud.v1.TerminalAccessState
-	(*TerminalAccessProjection)(nil),               // 140: muxvia.cloud.v1.TerminalAccessProjection
-	(*KickPresenceTarget)(nil),                     // 141: muxvia.cloud.v1.KickPresenceTarget
-	(*RevokeTerminalAccessTarget)(nil),             // 142: muxvia.cloud.v1.RevokeTerminalAccessTarget
-	(*RelayControlTarget)(nil),                     // 143: muxvia.cloud.v1.RelayControlTarget
-	(*EdgeDeploymentMetadata)(nil),                 // 144: muxvia.cloud.v1.EdgeDeploymentMetadata
+	(OperatorWorkspaceModule)(0),                   // 7: muxvia.cloud.v1.OperatorWorkspaceModule
+	(ReleaseProduct)(0),                            // 8: muxvia.cloud.v1.ReleaseProduct
+	(ReleaseChannel)(0),                            // 9: muxvia.cloud.v1.ReleaseChannel
+	(*PageCursor)(nil),                             // 10: muxvia.cloud.v1.PageCursor
+	(*PageRequest)(nil),                            // 11: muxvia.cloud.v1.PageRequest
+	(*PageResponse)(nil),                           // 12: muxvia.cloud.v1.PageResponse
+	(*ManagementActorProjection)(nil),              // 13: muxvia.cloud.v1.ManagementActorProjection
+	(*OperatorMutationAuditProjection)(nil),        // 14: muxvia.cloud.v1.OperatorMutationAuditProjection
+	(*ManagementErrorDetail)(nil),                  // 15: muxvia.cloud.v1.ManagementErrorDetail
+	(*RecentAuthenticationRequest)(nil),            // 16: muxvia.cloud.v1.RecentAuthenticationRequest
+	(*RecentAuthenticationResponse)(nil),           // 17: muxvia.cloud.v1.RecentAuthenticationResponse
+	(*GetOperatorWorkspaceResponse)(nil),           // 18: muxvia.cloud.v1.GetOperatorWorkspaceResponse
+	(*OperatorAccountSummary)(nil),                 // 19: muxvia.cloud.v1.OperatorAccountSummary
+	(*AccountSessionProjection)(nil),               // 20: muxvia.cloud.v1.AccountSessionProjection
+	(*ListOperatorAccountsRequest)(nil),            // 21: muxvia.cloud.v1.ListOperatorAccountsRequest
+	(*ListOperatorAccountsResponse)(nil),           // 22: muxvia.cloud.v1.ListOperatorAccountsResponse
+	(*GetOperatorAccountRequest)(nil),              // 23: muxvia.cloud.v1.GetOperatorAccountRequest
+	(*GetOperatorAccountResponse)(nil),             // 24: muxvia.cloud.v1.GetOperatorAccountResponse
+	(*OperatorAgentProjection)(nil),                // 25: muxvia.cloud.v1.OperatorAgentProjection
+	(*ListOperatorAgentsRequest)(nil),              // 26: muxvia.cloud.v1.ListOperatorAgentsRequest
+	(*ListOperatorAgentsResponse)(nil),             // 27: muxvia.cloud.v1.ListOperatorAgentsResponse
+	(*RevokeOperatorAccountSessionRequest)(nil),    // 28: muxvia.cloud.v1.RevokeOperatorAccountSessionRequest
+	(*RevokeOperatorAccountSessionResponse)(nil),   // 29: muxvia.cloud.v1.RevokeOperatorAccountSessionResponse
+	(*ReleaseArtifactProjection)(nil),              // 30: muxvia.cloud.v1.ReleaseArtifactProjection
+	(*ReleaseChannelProjection)(nil),               // 31: muxvia.cloud.v1.ReleaseChannelProjection
+	(*PublishReleaseArtifactRequest)(nil),          // 32: muxvia.cloud.v1.PublishReleaseArtifactRequest
+	(*PublishReleaseArtifactResponse)(nil),         // 33: muxvia.cloud.v1.PublishReleaseArtifactResponse
+	(*SetReleaseChannelRequest)(nil),               // 34: muxvia.cloud.v1.SetReleaseChannelRequest
+	(*SetReleaseChannelResponse)(nil),              // 35: muxvia.cloud.v1.SetReleaseChannelResponse
+	(*ListReleaseArtifactsRequest)(nil),            // 36: muxvia.cloud.v1.ListReleaseArtifactsRequest
+	(*ListReleaseArtifactsResponse)(nil),           // 37: muxvia.cloud.v1.ListReleaseArtifactsResponse
+	(*ResolveClientReleaseRequest)(nil),            // 38: muxvia.cloud.v1.ResolveClientReleaseRequest
+	(*ResolveClientReleaseResponse)(nil),           // 39: muxvia.cloud.v1.ResolveClientReleaseResponse
+	(*OperatorTransitionSubscriptionRequest)(nil),  // 40: muxvia.cloud.v1.OperatorTransitionSubscriptionRequest
+	(*OperatorTransitionSubscriptionResponse)(nil), // 41: muxvia.cloud.v1.OperatorTransitionSubscriptionResponse
+	(*ListOperatorOrdersRequest)(nil),              // 42: muxvia.cloud.v1.ListOperatorOrdersRequest
+	(*OperatorOrderProjection)(nil),                // 43: muxvia.cloud.v1.OperatorOrderProjection
+	(*ListOperatorOrdersResponse)(nil),             // 44: muxvia.cloud.v1.ListOperatorOrdersResponse
+	(*ListOperatorSubscriptionsRequest)(nil),       // 45: muxvia.cloud.v1.ListOperatorSubscriptionsRequest
+	(*ListOperatorSubscriptionsResponse)(nil),      // 46: muxvia.cloud.v1.ListOperatorSubscriptionsResponse
+	(*CreateSubscriptionAdjustmentRequest)(nil),    // 47: muxvia.cloud.v1.CreateSubscriptionAdjustmentRequest
+	(*CreateSubscriptionAdjustmentResponse)(nil),   // 48: muxvia.cloud.v1.CreateSubscriptionAdjustmentResponse
+	(*ApplyOperatorPaymentEventRequest)(nil),       // 49: muxvia.cloud.v1.ApplyOperatorPaymentEventRequest
+	(*ApplyOperatorPaymentEventResponse)(nil),      // 50: muxvia.cloud.v1.ApplyOperatorPaymentEventResponse
+	(*ReconcileCreemPaymentAttemptRequest)(nil),    // 51: muxvia.cloud.v1.ReconcileCreemPaymentAttemptRequest
+	(*ReconcileCreemPaymentAttemptResponse)(nil),   // 52: muxvia.cloud.v1.ReconcileCreemPaymentAttemptResponse
+	(*CreatePromotionRequest)(nil),                 // 53: muxvia.cloud.v1.CreatePromotionRequest
+	(*CreatePromotionResponse)(nil),                // 54: muxvia.cloud.v1.CreatePromotionResponse
+	(*DisablePromotionRequest)(nil),                // 55: muxvia.cloud.v1.DisablePromotionRequest
+	(*DisablePromotionResponse)(nil),               // 56: muxvia.cloud.v1.DisablePromotionResponse
+	(*ListPromotionsRequest)(nil),                  // 57: muxvia.cloud.v1.ListPromotionsRequest
+	(*ListPromotionsResponse)(nil),                 // 58: muxvia.cloud.v1.ListPromotionsResponse
+	(*ListPromotionRedemptionsRequest)(nil),        // 59: muxvia.cloud.v1.ListPromotionRedemptionsRequest
+	(*ListPromotionRedemptionsResponse)(nil),       // 60: muxvia.cloud.v1.ListPromotionRedemptionsResponse
+	(*PublishPlanCatalogRequest)(nil),              // 61: muxvia.cloud.v1.PublishPlanCatalogRequest
+	(*PublishPlanCatalogResponse)(nil),             // 62: muxvia.cloud.v1.PublishPlanCatalogResponse
+	(*ListPlanCatalogReleasesRequest)(nil),         // 63: muxvia.cloud.v1.ListPlanCatalogReleasesRequest
+	(*ListPlanCatalogReleasesResponse)(nil),        // 64: muxvia.cloud.v1.ListPlanCatalogReleasesResponse
+	(*GetPlanCatalogReleaseRequest)(nil),           // 65: muxvia.cloud.v1.GetPlanCatalogReleaseRequest
+	(*GetPlanCatalogReleaseResponse)(nil),          // 66: muxvia.cloud.v1.GetPlanCatalogReleaseResponse
+	(*PutEntitlementOverrideRequest)(nil),          // 67: muxvia.cloud.v1.PutEntitlementOverrideRequest
+	(*PutEntitlementOverrideResponse)(nil),         // 68: muxvia.cloud.v1.PutEntitlementOverrideResponse
+	(*RevokeEntitlementOverrideRequest)(nil),       // 69: muxvia.cloud.v1.RevokeEntitlementOverrideRequest
+	(*RevokeEntitlementOverrideResponse)(nil),      // 70: muxvia.cloud.v1.RevokeEntitlementOverrideResponse
+	(*ListEntitlementOverridesRequest)(nil),        // 71: muxvia.cloud.v1.ListEntitlementOverridesRequest
+	(*ListEntitlementOverridesResponse)(nil),       // 72: muxvia.cloud.v1.ListEntitlementOverridesResponse
+	(*AccountDeviceProjection)(nil),                // 73: muxvia.cloud.v1.AccountDeviceProjection
+	(*ListAccountDevicesRequest)(nil),              // 74: muxvia.cloud.v1.ListAccountDevicesRequest
+	(*ListAccountDevicesResponse)(nil),             // 75: muxvia.cloud.v1.ListAccountDevicesResponse
+	(*ListAccountTopologyRequest)(nil),             // 76: muxvia.cloud.v1.ListAccountTopologyRequest
+	(*ListAccountTopologyResponse)(nil),            // 77: muxvia.cloud.v1.ListAccountTopologyResponse
+	(*GetManagedSessionRequest)(nil),               // 78: muxvia.cloud.v1.GetManagedSessionRequest
+	(*GetManagedSessionResponse)(nil),              // 79: muxvia.cloud.v1.GetManagedSessionResponse
+	(*ListDaemonTerminalAccessRequest)(nil),        // 80: muxvia.cloud.v1.ListDaemonTerminalAccessRequest
+	(*ListDaemonTerminalAccessResponse)(nil),       // 81: muxvia.cloud.v1.ListDaemonTerminalAccessResponse
+	(*RevokeCloudDeviceTarget)(nil),                // 82: muxvia.cloud.v1.RevokeCloudDeviceTarget
+	(*AssignmentMigrationTarget)(nil),              // 83: muxvia.cloud.v1.AssignmentMigrationTarget
+	(*ManagementCommandTarget)(nil),                // 84: muxvia.cloud.v1.ManagementCommandTarget
+	(*ManagementCommandChildProjection)(nil),       // 85: muxvia.cloud.v1.ManagementCommandChildProjection
+	(*ManagementCommandProjection)(nil),            // 86: muxvia.cloud.v1.ManagementCommandProjection
+	(*CreateManagementCommandRequest)(nil),         // 87: muxvia.cloud.v1.CreateManagementCommandRequest
+	(*CreateManagementCommandResponse)(nil),        // 88: muxvia.cloud.v1.CreateManagementCommandResponse
+	(*GetManagementCommandRequest)(nil),            // 89: muxvia.cloud.v1.GetManagementCommandRequest
+	(*GetManagementCommandResponse)(nil),           // 90: muxvia.cloud.v1.GetManagementCommandResponse
+	(*ListManagementCommandsRequest)(nil),          // 91: muxvia.cloud.v1.ListManagementCommandsRequest
+	(*ListManagementCommandsResponse)(nil),         // 92: muxvia.cloud.v1.ListManagementCommandsResponse
+	(*HubDeploymentProjection)(nil),                // 93: muxvia.cloud.v1.HubDeploymentProjection
+	(*HubFleetProjection)(nil),                     // 94: muxvia.cloud.v1.HubFleetProjection
+	(*ListHubFleetRequest)(nil),                    // 95: muxvia.cloud.v1.ListHubFleetRequest
+	(*ListHubFleetResponse)(nil),                   // 96: muxvia.cloud.v1.ListHubFleetResponse
+	(*GetHubStatusRequest)(nil),                    // 97: muxvia.cloud.v1.GetHubStatusRequest
+	(*GetHubStatusResponse)(nil),                   // 98: muxvia.cloud.v1.GetHubStatusResponse
+	(*CreateHubDeploymentRequest)(nil),             // 99: muxvia.cloud.v1.CreateHubDeploymentRequest
+	(*CreateHubDeploymentResponse)(nil),            // 100: muxvia.cloud.v1.CreateHubDeploymentResponse
+	(*UpdateHubDeploymentRequest)(nil),             // 101: muxvia.cloud.v1.UpdateHubDeploymentRequest
+	(*UpdateHubDeploymentResponse)(nil),            // 102: muxvia.cloud.v1.UpdateHubDeploymentResponse
+	(*ApproveHubDeploymentIdentityRequest)(nil),    // 103: muxvia.cloud.v1.ApproveHubDeploymentIdentityRequest
+	(*ApproveHubDeploymentIdentityResponse)(nil),   // 104: muxvia.cloud.v1.ApproveHubDeploymentIdentityResponse
+	(*SetHubDeploymentDrainRequest)(nil),           // 105: muxvia.cloud.v1.SetHubDeploymentDrainRequest
+	(*SetHubDeploymentDrainResponse)(nil),          // 106: muxvia.cloud.v1.SetHubDeploymentDrainResponse
+	(*DisableHubDeploymentRequest)(nil),            // 107: muxvia.cloud.v1.DisableHubDeploymentRequest
+	(*DisableHubDeploymentResponse)(nil),           // 108: muxvia.cloud.v1.DisableHubDeploymentResponse
+	(*AccountProjection)(nil),                      // 109: muxvia.cloud.v1.AccountProjection
+	(*SubscriptionProjection)(nil),                 // 110: muxvia.cloud.v1.SubscriptionProjection
+	(*EntitlementProjection)(nil),                  // 111: muxvia.cloud.v1.EntitlementProjection
+	(*RelayQuotaPeriod)(nil),                       // 112: muxvia.cloud.v1.RelayQuotaPeriod
+	(SubscriptionStatus)(0),                        // 113: muxvia.cloud.v1.SubscriptionStatus
+	(*GetAccountCommerceResponse)(nil),             // 114: muxvia.cloud.v1.GetAccountCommerceResponse
+	(*GetAccountRelayQuotaResponse)(nil),           // 115: muxvia.cloud.v1.GetAccountRelayQuotaResponse
+	(*PresenceProjection)(nil),                     // 116: muxvia.cloud.v1.PresenceProjection
+	(Freshness)(0),                                 // 117: muxvia.cloud.v1.Freshness
+	(SubscriptionTransitionKind)(0),                // 118: muxvia.cloud.v1.SubscriptionTransitionKind
+	(*TransitionSubscriptionResponse)(nil),         // 119: muxvia.cloud.v1.TransitionSubscriptionResponse
+	(OrderStatus)(0),                               // 120: muxvia.cloud.v1.OrderStatus
+	(*OrderProjection)(nil),                        // 121: muxvia.cloud.v1.OrderProjection
+	(*PaymentAttemptProjection)(nil),               // 122: muxvia.cloud.v1.PaymentAttemptProjection
+	(*PaymentEventProjection)(nil),                 // 123: muxvia.cloud.v1.PaymentEventProjection
+	(SubscriptionAdjustmentKind)(0),                // 124: muxvia.cloud.v1.SubscriptionAdjustmentKind
+	(*SubscriptionAdjustmentProjection)(nil),       // 125: muxvia.cloud.v1.SubscriptionAdjustmentProjection
+	(PaymentEventType)(0),                          // 126: muxvia.cloud.v1.PaymentEventType
+	(*ApplyPaymentEventResponse)(nil),              // 127: muxvia.cloud.v1.ApplyPaymentEventResponse
+	(*PromotionProjection)(nil),                    // 128: muxvia.cloud.v1.PromotionProjection
+	(*PromotionRedemptionProjection)(nil),          // 129: muxvia.cloud.v1.PromotionRedemptionProjection
+	(*PlanCatalogContract)(nil),                    // 130: muxvia.cloud.v1.PlanCatalogContract
+	(*PlanCatalogReleaseProjection)(nil),           // 131: muxvia.cloud.v1.PlanCatalogReleaseProjection
+	(*EntitlementOverrideProjection)(nil),          // 132: muxvia.cloud.v1.EntitlementOverrideProjection
+	(ManagedDeviceKind)(0),                         // 133: muxvia.cloud.v1.ManagedDeviceKind
+	(*ManagedPeerSessionProjection)(nil),           // 134: muxvia.cloud.v1.ManagedPeerSessionProjection
+	(*ManagedPeerSessionTarget)(nil),               // 135: muxvia.cloud.v1.ManagedPeerSessionTarget
+	(TerminalAccessState)(0),                       // 136: muxvia.cloud.v1.TerminalAccessState
+	(*TerminalAccessProjection)(nil),               // 137: muxvia.cloud.v1.TerminalAccessProjection
+	(*KickPresenceTarget)(nil),                     // 138: muxvia.cloud.v1.KickPresenceTarget
+	(*RevokeTerminalAccessTarget)(nil),             // 139: muxvia.cloud.v1.RevokeTerminalAccessTarget
+	(*RelayControlTarget)(nil),                     // 140: muxvia.cloud.v1.RelayControlTarget
+	(*EdgeDeploymentMetadata)(nil),                 // 141: muxvia.cloud.v1.EdgeDeploymentMetadata
 }
 var file_cloudpb_cloud_management_proto_depIdxs = []int32{
-	9,   // 0: muxvia.cloud.v1.PageRequest.cursor:type_name -> muxvia.cloud.v1.PageCursor
-	9,   // 1: muxvia.cloud.v1.PageResponse.next_cursor:type_name -> muxvia.cloud.v1.PageCursor
+	10,  // 0: muxvia.cloud.v1.PageRequest.cursor:type_name -> muxvia.cloud.v1.PageCursor
+	10,  // 1: muxvia.cloud.v1.PageResponse.next_cursor:type_name -> muxvia.cloud.v1.PageCursor
 	0,   // 2: muxvia.cloud.v1.ManagementActorProjection.actor_kind:type_name -> muxvia.cloud.v1.ManagementActorKind
 	6,   // 3: muxvia.cloud.v1.ManagementErrorDetail.code:type_name -> muxvia.cloud.v1.ManagementErrorCode
-	0,   // 4: muxvia.cloud.v1.OperatorSessionProjection.actor_kind:type_name -> muxvia.cloud.v1.ManagementActorKind
-	18,  // 5: muxvia.cloud.v1.OperatorLoginResponse.session:type_name -> muxvia.cloud.v1.OperatorSessionProjection
-	112, // 6: muxvia.cloud.v1.OperatorAccountSummary.account:type_name -> muxvia.cloud.v1.AccountProjection
-	113, // 7: muxvia.cloud.v1.OperatorAccountSummary.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
-	114, // 8: muxvia.cloud.v1.OperatorAccountSummary.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
-	115, // 9: muxvia.cloud.v1.OperatorAccountSummary.relay_quota:type_name -> muxvia.cloud.v1.RelayQuotaPeriod
-	116, // 10: muxvia.cloud.v1.ListOperatorAccountsRequest.subscription_status:type_name -> muxvia.cloud.v1.SubscriptionStatus
-	10,  // 11: muxvia.cloud.v1.ListOperatorAccountsRequest.page:type_name -> muxvia.cloud.v1.PageRequest
-	22,  // 12: muxvia.cloud.v1.ListOperatorAccountsResponse.accounts:type_name -> muxvia.cloud.v1.OperatorAccountSummary
-	11,  // 13: muxvia.cloud.v1.ListOperatorAccountsResponse.page:type_name -> muxvia.cloud.v1.PageResponse
-	117, // 14: muxvia.cloud.v1.GetOperatorAccountResponse.commerce:type_name -> muxvia.cloud.v1.GetAccountCommerceResponse
-	118, // 15: muxvia.cloud.v1.GetOperatorAccountResponse.relay_quota:type_name -> muxvia.cloud.v1.GetAccountRelayQuotaResponse
-	78,  // 16: muxvia.cloud.v1.GetOperatorAccountResponse.devices:type_name -> muxvia.cloud.v1.ListAccountDevicesResponse
-	80,  // 17: muxvia.cloud.v1.GetOperatorAccountResponse.topology:type_name -> muxvia.cloud.v1.ListAccountTopologyResponse
-	89,  // 18: muxvia.cloud.v1.GetOperatorAccountResponse.commands:type_name -> muxvia.cloud.v1.ManagementCommandProjection
-	23,  // 19: muxvia.cloud.v1.GetOperatorAccountResponse.sessions:type_name -> muxvia.cloud.v1.AccountSessionProjection
-	13,  // 20: muxvia.cloud.v1.GetOperatorAccountResponse.operator_audit:type_name -> muxvia.cloud.v1.OperatorMutationAuditProjection
-	112, // 21: muxvia.cloud.v1.OperatorAgentProjection.account:type_name -> muxvia.cloud.v1.AccountProjection
-	76,  // 22: muxvia.cloud.v1.OperatorAgentProjection.device:type_name -> muxvia.cloud.v1.AccountDeviceProjection
-	119, // 23: muxvia.cloud.v1.OperatorAgentProjection.presence:type_name -> muxvia.cloud.v1.PresenceProjection
-	120, // 24: muxvia.cloud.v1.ListOperatorAgentsRequest.freshness:type_name -> muxvia.cloud.v1.Freshness
-	10,  // 25: muxvia.cloud.v1.ListOperatorAgentsRequest.page:type_name -> muxvia.cloud.v1.PageRequest
-	28,  // 26: muxvia.cloud.v1.ListOperatorAgentsResponse.agents:type_name -> muxvia.cloud.v1.OperatorAgentProjection
-	11,  // 27: muxvia.cloud.v1.ListOperatorAgentsResponse.page:type_name -> muxvia.cloud.v1.PageResponse
-	23,  // 28: muxvia.cloud.v1.RevokeOperatorAccountSessionResponse.sessions:type_name -> muxvia.cloud.v1.AccountSessionProjection
-	7,   // 29: muxvia.cloud.v1.ReleaseArtifactProjection.product:type_name -> muxvia.cloud.v1.ReleaseProduct
-	8,   // 30: muxvia.cloud.v1.ReleaseArtifactProjection.channel:type_name -> muxvia.cloud.v1.ReleaseChannel
-	7,   // 31: muxvia.cloud.v1.ReleaseChannelProjection.product:type_name -> muxvia.cloud.v1.ReleaseProduct
-	8,   // 32: muxvia.cloud.v1.ReleaseChannelProjection.channel:type_name -> muxvia.cloud.v1.ReleaseChannel
-	33,  // 33: muxvia.cloud.v1.PublishReleaseArtifactRequest.artifact:type_name -> muxvia.cloud.v1.ReleaseArtifactProjection
-	33,  // 34: muxvia.cloud.v1.PublishReleaseArtifactResponse.artifact:type_name -> muxvia.cloud.v1.ReleaseArtifactProjection
-	34,  // 35: muxvia.cloud.v1.SetReleaseChannelResponse.channel:type_name -> muxvia.cloud.v1.ReleaseChannelProjection
-	7,   // 36: muxvia.cloud.v1.ListReleaseArtifactsRequest.product:type_name -> muxvia.cloud.v1.ReleaseProduct
-	8,   // 37: muxvia.cloud.v1.ListReleaseArtifactsRequest.channel:type_name -> muxvia.cloud.v1.ReleaseChannel
-	10,  // 38: muxvia.cloud.v1.ListReleaseArtifactsRequest.page:type_name -> muxvia.cloud.v1.PageRequest
-	33,  // 39: muxvia.cloud.v1.ListReleaseArtifactsResponse.artifacts:type_name -> muxvia.cloud.v1.ReleaseArtifactProjection
-	34,  // 40: muxvia.cloud.v1.ListReleaseArtifactsResponse.channels:type_name -> muxvia.cloud.v1.ReleaseChannelProjection
-	11,  // 41: muxvia.cloud.v1.ListReleaseArtifactsResponse.page:type_name -> muxvia.cloud.v1.PageResponse
-	13,  // 42: muxvia.cloud.v1.ListReleaseArtifactsResponse.operator_audit:type_name -> muxvia.cloud.v1.OperatorMutationAuditProjection
-	7,   // 43: muxvia.cloud.v1.ResolveClientReleaseRequest.product:type_name -> muxvia.cloud.v1.ReleaseProduct
-	8,   // 44: muxvia.cloud.v1.ResolveClientReleaseRequest.channel:type_name -> muxvia.cloud.v1.ReleaseChannel
-	33,  // 45: muxvia.cloud.v1.ResolveClientReleaseResponse.artifact:type_name -> muxvia.cloud.v1.ReleaseArtifactProjection
-	34,  // 46: muxvia.cloud.v1.ResolveClientReleaseResponse.channel:type_name -> muxvia.cloud.v1.ReleaseChannelProjection
-	121, // 47: muxvia.cloud.v1.OperatorTransitionSubscriptionRequest.transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
-	122, // 48: muxvia.cloud.v1.OperatorTransitionSubscriptionResponse.result:type_name -> muxvia.cloud.v1.TransitionSubscriptionResponse
-	123, // 49: muxvia.cloud.v1.ListOperatorOrdersRequest.status:type_name -> muxvia.cloud.v1.OrderStatus
-	10,  // 50: muxvia.cloud.v1.ListOperatorOrdersRequest.page:type_name -> muxvia.cloud.v1.PageRequest
-	124, // 51: muxvia.cloud.v1.OperatorOrderProjection.order:type_name -> muxvia.cloud.v1.OrderProjection
-	125, // 52: muxvia.cloud.v1.OperatorOrderProjection.payment_attempts:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
-	126, // 53: muxvia.cloud.v1.OperatorOrderProjection.payment_events:type_name -> muxvia.cloud.v1.PaymentEventProjection
-	46,  // 54: muxvia.cloud.v1.ListOperatorOrdersResponse.orders:type_name -> muxvia.cloud.v1.OperatorOrderProjection
-	11,  // 55: muxvia.cloud.v1.ListOperatorOrdersResponse.page:type_name -> muxvia.cloud.v1.PageResponse
-	116, // 56: muxvia.cloud.v1.ListOperatorSubscriptionsRequest.status:type_name -> muxvia.cloud.v1.SubscriptionStatus
-	10,  // 57: muxvia.cloud.v1.ListOperatorSubscriptionsRequest.page:type_name -> muxvia.cloud.v1.PageRequest
-	113, // 58: muxvia.cloud.v1.ListOperatorSubscriptionsResponse.subscriptions:type_name -> muxvia.cloud.v1.SubscriptionProjection
-	11,  // 59: muxvia.cloud.v1.ListOperatorSubscriptionsResponse.page:type_name -> muxvia.cloud.v1.PageResponse
-	127, // 60: muxvia.cloud.v1.CreateSubscriptionAdjustmentRequest.adjustment_kind:type_name -> muxvia.cloud.v1.SubscriptionAdjustmentKind
-	128, // 61: muxvia.cloud.v1.CreateSubscriptionAdjustmentResponse.adjustment:type_name -> muxvia.cloud.v1.SubscriptionAdjustmentProjection
-	113, // 62: muxvia.cloud.v1.CreateSubscriptionAdjustmentResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
-	114, // 63: muxvia.cloud.v1.CreateSubscriptionAdjustmentResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
-	129, // 64: muxvia.cloud.v1.ApplyOperatorPaymentEventRequest.event_type:type_name -> muxvia.cloud.v1.PaymentEventType
-	130, // 65: muxvia.cloud.v1.ApplyOperatorPaymentEventResponse.result:type_name -> muxvia.cloud.v1.ApplyPaymentEventResponse
-	125, // 66: muxvia.cloud.v1.ReconcileCreemPaymentAttemptResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
-	131, // 67: muxvia.cloud.v1.CreatePromotionRequest.promotion:type_name -> muxvia.cloud.v1.PromotionProjection
-	131, // 68: muxvia.cloud.v1.CreatePromotionResponse.promotion:type_name -> muxvia.cloud.v1.PromotionProjection
-	131, // 69: muxvia.cloud.v1.DisablePromotionResponse.promotion:type_name -> muxvia.cloud.v1.PromotionProjection
-	10,  // 70: muxvia.cloud.v1.ListPromotionsRequest.page:type_name -> muxvia.cloud.v1.PageRequest
-	131, // 71: muxvia.cloud.v1.ListPromotionsResponse.promotions:type_name -> muxvia.cloud.v1.PromotionProjection
-	11,  // 72: muxvia.cloud.v1.ListPromotionsResponse.page:type_name -> muxvia.cloud.v1.PageResponse
-	10,  // 73: muxvia.cloud.v1.ListPromotionRedemptionsRequest.page:type_name -> muxvia.cloud.v1.PageRequest
-	132, // 74: muxvia.cloud.v1.ListPromotionRedemptionsResponse.redemptions:type_name -> muxvia.cloud.v1.PromotionRedemptionProjection
-	11,  // 75: muxvia.cloud.v1.ListPromotionRedemptionsResponse.page:type_name -> muxvia.cloud.v1.PageResponse
-	133, // 76: muxvia.cloud.v1.PublishPlanCatalogRequest.catalog:type_name -> muxvia.cloud.v1.PlanCatalogContract
-	134, // 77: muxvia.cloud.v1.PublishPlanCatalogResponse.release:type_name -> muxvia.cloud.v1.PlanCatalogReleaseProjection
-	10,  // 78: muxvia.cloud.v1.ListPlanCatalogReleasesRequest.page:type_name -> muxvia.cloud.v1.PageRequest
-	134, // 79: muxvia.cloud.v1.ListPlanCatalogReleasesResponse.releases:type_name -> muxvia.cloud.v1.PlanCatalogReleaseProjection
-	11,  // 80: muxvia.cloud.v1.ListPlanCatalogReleasesResponse.page:type_name -> muxvia.cloud.v1.PageResponse
-	134, // 81: muxvia.cloud.v1.GetPlanCatalogReleaseResponse.release:type_name -> muxvia.cloud.v1.PlanCatalogReleaseProjection
-	135, // 82: muxvia.cloud.v1.PutEntitlementOverrideRequest.override:type_name -> muxvia.cloud.v1.EntitlementOverrideProjection
-	135, // 83: muxvia.cloud.v1.PutEntitlementOverrideResponse.override:type_name -> muxvia.cloud.v1.EntitlementOverrideProjection
-	114, // 84: muxvia.cloud.v1.PutEntitlementOverrideResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
-	135, // 85: muxvia.cloud.v1.RevokeEntitlementOverrideResponse.override:type_name -> muxvia.cloud.v1.EntitlementOverrideProjection
-	114, // 86: muxvia.cloud.v1.RevokeEntitlementOverrideResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
-	10,  // 87: muxvia.cloud.v1.ListEntitlementOverridesRequest.page:type_name -> muxvia.cloud.v1.PageRequest
-	135, // 88: muxvia.cloud.v1.ListEntitlementOverridesResponse.overrides:type_name -> muxvia.cloud.v1.EntitlementOverrideProjection
-	11,  // 89: muxvia.cloud.v1.ListEntitlementOverridesResponse.page:type_name -> muxvia.cloud.v1.PageResponse
-	136, // 90: muxvia.cloud.v1.AccountDeviceProjection.device_kind:type_name -> muxvia.cloud.v1.ManagedDeviceKind
-	119, // 91: muxvia.cloud.v1.AccountDeviceProjection.presence:type_name -> muxvia.cloud.v1.PresenceProjection
-	136, // 92: muxvia.cloud.v1.ListAccountDevicesRequest.device_kind:type_name -> muxvia.cloud.v1.ManagedDeviceKind
-	10,  // 93: muxvia.cloud.v1.ListAccountDevicesRequest.page:type_name -> muxvia.cloud.v1.PageRequest
-	76,  // 94: muxvia.cloud.v1.ListAccountDevicesResponse.devices:type_name -> muxvia.cloud.v1.AccountDeviceProjection
-	11,  // 95: muxvia.cloud.v1.ListAccountDevicesResponse.page:type_name -> muxvia.cloud.v1.PageResponse
-	120, // 96: muxvia.cloud.v1.ListAccountTopologyRequest.freshness:type_name -> muxvia.cloud.v1.Freshness
-	10,  // 97: muxvia.cloud.v1.ListAccountTopologyRequest.page:type_name -> muxvia.cloud.v1.PageRequest
-	119, // 98: muxvia.cloud.v1.ListAccountTopologyResponse.presences:type_name -> muxvia.cloud.v1.PresenceProjection
-	137, // 99: muxvia.cloud.v1.ListAccountTopologyResponse.peer_sessions:type_name -> muxvia.cloud.v1.ManagedPeerSessionProjection
-	11,  // 100: muxvia.cloud.v1.ListAccountTopologyResponse.page:type_name -> muxvia.cloud.v1.PageResponse
-	138, // 101: muxvia.cloud.v1.GetManagedSessionRequest.target:type_name -> muxvia.cloud.v1.ManagedPeerSessionTarget
-	137, // 102: muxvia.cloud.v1.GetManagedSessionResponse.session:type_name -> muxvia.cloud.v1.ManagedPeerSessionProjection
-	139, // 103: muxvia.cloud.v1.ListDaemonTerminalAccessRequest.state:type_name -> muxvia.cloud.v1.TerminalAccessState
-	10,  // 104: muxvia.cloud.v1.ListDaemonTerminalAccessRequest.page:type_name -> muxvia.cloud.v1.PageRequest
-	140, // 105: muxvia.cloud.v1.ListDaemonTerminalAccessResponse.accesses:type_name -> muxvia.cloud.v1.TerminalAccessProjection
-	120, // 106: muxvia.cloud.v1.ListDaemonTerminalAccessResponse.freshness:type_name -> muxvia.cloud.v1.Freshness
-	11,  // 107: muxvia.cloud.v1.ListDaemonTerminalAccessResponse.page:type_name -> muxvia.cloud.v1.PageResponse
-	141, // 108: muxvia.cloud.v1.ManagementCommandTarget.presence:type_name -> muxvia.cloud.v1.KickPresenceTarget
-	85,  // 109: muxvia.cloud.v1.ManagementCommandTarget.cloud_device:type_name -> muxvia.cloud.v1.RevokeCloudDeviceTarget
-	138, // 110: muxvia.cloud.v1.ManagementCommandTarget.peer_session:type_name -> muxvia.cloud.v1.ManagedPeerSessionTarget
-	142, // 111: muxvia.cloud.v1.ManagementCommandTarget.terminal_access:type_name -> muxvia.cloud.v1.RevokeTerminalAccessTarget
-	143, // 112: muxvia.cloud.v1.ManagementCommandTarget.relay_allocations:type_name -> muxvia.cloud.v1.RelayControlTarget
-	86,  // 113: muxvia.cloud.v1.ManagementCommandTarget.assignment_migration:type_name -> muxvia.cloud.v1.AssignmentMigrationTarget
-	87,  // 114: muxvia.cloud.v1.ManagementCommandChildProjection.target:type_name -> muxvia.cloud.v1.ManagementCommandTarget
-	3,   // 115: muxvia.cloud.v1.ManagementCommandChildProjection.delivery_state:type_name -> muxvia.cloud.v1.CommandDeliveryState
-	4,   // 116: muxvia.cloud.v1.ManagementCommandChildProjection.execution_state:type_name -> muxvia.cloud.v1.CommandExecutionState
-	5,   // 117: muxvia.cloud.v1.ManagementCommandChildProjection.observed_effect:type_name -> muxvia.cloud.v1.CommandObservedEffect
-	14,  // 118: muxvia.cloud.v1.ManagementCommandChildProjection.last_error:type_name -> muxvia.cloud.v1.ManagementErrorDetail
-	12,  // 119: muxvia.cloud.v1.ManagementCommandProjection.actor:type_name -> muxvia.cloud.v1.ManagementActorProjection
-	1,   // 120: muxvia.cloud.v1.ManagementCommandProjection.command_kind:type_name -> muxvia.cloud.v1.ManagementCommandKind
-	87,  // 121: muxvia.cloud.v1.ManagementCommandProjection.target:type_name -> muxvia.cloud.v1.ManagementCommandTarget
-	2,   // 122: muxvia.cloud.v1.ManagementCommandProjection.authority_result:type_name -> muxvia.cloud.v1.CommandAuthorityResult
-	3,   // 123: muxvia.cloud.v1.ManagementCommandProjection.delivery_state:type_name -> muxvia.cloud.v1.CommandDeliveryState
-	4,   // 124: muxvia.cloud.v1.ManagementCommandProjection.execution_state:type_name -> muxvia.cloud.v1.CommandExecutionState
-	5,   // 125: muxvia.cloud.v1.ManagementCommandProjection.observed_effect:type_name -> muxvia.cloud.v1.CommandObservedEffect
-	88,  // 126: muxvia.cloud.v1.ManagementCommandProjection.children:type_name -> muxvia.cloud.v1.ManagementCommandChildProjection
-	1,   // 127: muxvia.cloud.v1.CreateManagementCommandRequest.command_kind:type_name -> muxvia.cloud.v1.ManagementCommandKind
-	87,  // 128: muxvia.cloud.v1.CreateManagementCommandRequest.target:type_name -> muxvia.cloud.v1.ManagementCommandTarget
-	89,  // 129: muxvia.cloud.v1.CreateManagementCommandResponse.command:type_name -> muxvia.cloud.v1.ManagementCommandProjection
-	89,  // 130: muxvia.cloud.v1.GetManagementCommandResponse.command:type_name -> muxvia.cloud.v1.ManagementCommandProjection
-	1,   // 131: muxvia.cloud.v1.ListManagementCommandsRequest.command_kind:type_name -> muxvia.cloud.v1.ManagementCommandKind
-	4,   // 132: muxvia.cloud.v1.ListManagementCommandsRequest.execution_state:type_name -> muxvia.cloud.v1.CommandExecutionState
-	10,  // 133: muxvia.cloud.v1.ListManagementCommandsRequest.page:type_name -> muxvia.cloud.v1.PageRequest
-	89,  // 134: muxvia.cloud.v1.ListManagementCommandsResponse.commands:type_name -> muxvia.cloud.v1.ManagementCommandProjection
-	11,  // 135: muxvia.cloud.v1.ListManagementCommandsResponse.page:type_name -> muxvia.cloud.v1.PageResponse
-	144, // 136: muxvia.cloud.v1.HubDeploymentProjection.metadata:type_name -> muxvia.cloud.v1.EdgeDeploymentMetadata
-	96,  // 137: muxvia.cloud.v1.HubFleetProjection.deployment:type_name -> muxvia.cloud.v1.HubDeploymentProjection
-	120, // 138: muxvia.cloud.v1.HubFleetProjection.freshness:type_name -> muxvia.cloud.v1.Freshness
-	120, // 139: muxvia.cloud.v1.ListHubFleetRequest.freshness:type_name -> muxvia.cloud.v1.Freshness
-	10,  // 140: muxvia.cloud.v1.ListHubFleetRequest.page:type_name -> muxvia.cloud.v1.PageRequest
-	97,  // 141: muxvia.cloud.v1.ListHubFleetResponse.hubs:type_name -> muxvia.cloud.v1.HubFleetProjection
-	11,  // 142: muxvia.cloud.v1.ListHubFleetResponse.page:type_name -> muxvia.cloud.v1.PageResponse
-	97,  // 143: muxvia.cloud.v1.GetHubStatusResponse.hub:type_name -> muxvia.cloud.v1.HubFleetProjection
-	96,  // 144: muxvia.cloud.v1.CreateHubDeploymentResponse.deployment:type_name -> muxvia.cloud.v1.HubDeploymentProjection
-	96,  // 145: muxvia.cloud.v1.UpdateHubDeploymentResponse.deployment:type_name -> muxvia.cloud.v1.HubDeploymentProjection
-	96,  // 146: muxvia.cloud.v1.ApproveHubDeploymentIdentityResponse.deployment:type_name -> muxvia.cloud.v1.HubDeploymentProjection
-	96,  // 147: muxvia.cloud.v1.SetHubDeploymentDrainResponse.deployment:type_name -> muxvia.cloud.v1.HubDeploymentProjection
-	96,  // 148: muxvia.cloud.v1.DisableHubDeploymentResponse.deployment:type_name -> muxvia.cloud.v1.HubDeploymentProjection
-	149, // [149:149] is the sub-list for method output_type
-	149, // [149:149] is the sub-list for method input_type
-	149, // [149:149] is the sub-list for extension type_name
-	149, // [149:149] is the sub-list for extension extendee
-	0,   // [0:149] is the sub-list for field type_name
+	7,   // 4: muxvia.cloud.v1.GetOperatorWorkspaceResponse.modules:type_name -> muxvia.cloud.v1.OperatorWorkspaceModule
+	109, // 5: muxvia.cloud.v1.OperatorAccountSummary.account:type_name -> muxvia.cloud.v1.AccountProjection
+	110, // 6: muxvia.cloud.v1.OperatorAccountSummary.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	111, // 7: muxvia.cloud.v1.OperatorAccountSummary.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
+	112, // 8: muxvia.cloud.v1.OperatorAccountSummary.relay_quota:type_name -> muxvia.cloud.v1.RelayQuotaPeriod
+	113, // 9: muxvia.cloud.v1.ListOperatorAccountsRequest.subscription_status:type_name -> muxvia.cloud.v1.SubscriptionStatus
+	11,  // 10: muxvia.cloud.v1.ListOperatorAccountsRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	19,  // 11: muxvia.cloud.v1.ListOperatorAccountsResponse.accounts:type_name -> muxvia.cloud.v1.OperatorAccountSummary
+	12,  // 12: muxvia.cloud.v1.ListOperatorAccountsResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	114, // 13: muxvia.cloud.v1.GetOperatorAccountResponse.commerce:type_name -> muxvia.cloud.v1.GetAccountCommerceResponse
+	115, // 14: muxvia.cloud.v1.GetOperatorAccountResponse.relay_quota:type_name -> muxvia.cloud.v1.GetAccountRelayQuotaResponse
+	75,  // 15: muxvia.cloud.v1.GetOperatorAccountResponse.devices:type_name -> muxvia.cloud.v1.ListAccountDevicesResponse
+	77,  // 16: muxvia.cloud.v1.GetOperatorAccountResponse.topology:type_name -> muxvia.cloud.v1.ListAccountTopologyResponse
+	86,  // 17: muxvia.cloud.v1.GetOperatorAccountResponse.commands:type_name -> muxvia.cloud.v1.ManagementCommandProjection
+	20,  // 18: muxvia.cloud.v1.GetOperatorAccountResponse.sessions:type_name -> muxvia.cloud.v1.AccountSessionProjection
+	14,  // 19: muxvia.cloud.v1.GetOperatorAccountResponse.operator_audit:type_name -> muxvia.cloud.v1.OperatorMutationAuditProjection
+	109, // 20: muxvia.cloud.v1.OperatorAgentProjection.account:type_name -> muxvia.cloud.v1.AccountProjection
+	73,  // 21: muxvia.cloud.v1.OperatorAgentProjection.device:type_name -> muxvia.cloud.v1.AccountDeviceProjection
+	116, // 22: muxvia.cloud.v1.OperatorAgentProjection.presence:type_name -> muxvia.cloud.v1.PresenceProjection
+	117, // 23: muxvia.cloud.v1.ListOperatorAgentsRequest.freshness:type_name -> muxvia.cloud.v1.Freshness
+	11,  // 24: muxvia.cloud.v1.ListOperatorAgentsRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	25,  // 25: muxvia.cloud.v1.ListOperatorAgentsResponse.agents:type_name -> muxvia.cloud.v1.OperatorAgentProjection
+	12,  // 26: muxvia.cloud.v1.ListOperatorAgentsResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	20,  // 27: muxvia.cloud.v1.RevokeOperatorAccountSessionResponse.sessions:type_name -> muxvia.cloud.v1.AccountSessionProjection
+	8,   // 28: muxvia.cloud.v1.ReleaseArtifactProjection.product:type_name -> muxvia.cloud.v1.ReleaseProduct
+	9,   // 29: muxvia.cloud.v1.ReleaseArtifactProjection.channel:type_name -> muxvia.cloud.v1.ReleaseChannel
+	8,   // 30: muxvia.cloud.v1.ReleaseChannelProjection.product:type_name -> muxvia.cloud.v1.ReleaseProduct
+	9,   // 31: muxvia.cloud.v1.ReleaseChannelProjection.channel:type_name -> muxvia.cloud.v1.ReleaseChannel
+	30,  // 32: muxvia.cloud.v1.PublishReleaseArtifactRequest.artifact:type_name -> muxvia.cloud.v1.ReleaseArtifactProjection
+	30,  // 33: muxvia.cloud.v1.PublishReleaseArtifactResponse.artifact:type_name -> muxvia.cloud.v1.ReleaseArtifactProjection
+	31,  // 34: muxvia.cloud.v1.SetReleaseChannelResponse.channel:type_name -> muxvia.cloud.v1.ReleaseChannelProjection
+	8,   // 35: muxvia.cloud.v1.ListReleaseArtifactsRequest.product:type_name -> muxvia.cloud.v1.ReleaseProduct
+	9,   // 36: muxvia.cloud.v1.ListReleaseArtifactsRequest.channel:type_name -> muxvia.cloud.v1.ReleaseChannel
+	11,  // 37: muxvia.cloud.v1.ListReleaseArtifactsRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	30,  // 38: muxvia.cloud.v1.ListReleaseArtifactsResponse.artifacts:type_name -> muxvia.cloud.v1.ReleaseArtifactProjection
+	31,  // 39: muxvia.cloud.v1.ListReleaseArtifactsResponse.channels:type_name -> muxvia.cloud.v1.ReleaseChannelProjection
+	12,  // 40: muxvia.cloud.v1.ListReleaseArtifactsResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	14,  // 41: muxvia.cloud.v1.ListReleaseArtifactsResponse.operator_audit:type_name -> muxvia.cloud.v1.OperatorMutationAuditProjection
+	8,   // 42: muxvia.cloud.v1.ResolveClientReleaseRequest.product:type_name -> muxvia.cloud.v1.ReleaseProduct
+	9,   // 43: muxvia.cloud.v1.ResolveClientReleaseRequest.channel:type_name -> muxvia.cloud.v1.ReleaseChannel
+	30,  // 44: muxvia.cloud.v1.ResolveClientReleaseResponse.artifact:type_name -> muxvia.cloud.v1.ReleaseArtifactProjection
+	31,  // 45: muxvia.cloud.v1.ResolveClientReleaseResponse.channel:type_name -> muxvia.cloud.v1.ReleaseChannelProjection
+	118, // 46: muxvia.cloud.v1.OperatorTransitionSubscriptionRequest.transition:type_name -> muxvia.cloud.v1.SubscriptionTransitionKind
+	119, // 47: muxvia.cloud.v1.OperatorTransitionSubscriptionResponse.result:type_name -> muxvia.cloud.v1.TransitionSubscriptionResponse
+	120, // 48: muxvia.cloud.v1.ListOperatorOrdersRequest.status:type_name -> muxvia.cloud.v1.OrderStatus
+	11,  // 49: muxvia.cloud.v1.ListOperatorOrdersRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	121, // 50: muxvia.cloud.v1.OperatorOrderProjection.order:type_name -> muxvia.cloud.v1.OrderProjection
+	122, // 51: muxvia.cloud.v1.OperatorOrderProjection.payment_attempts:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
+	123, // 52: muxvia.cloud.v1.OperatorOrderProjection.payment_events:type_name -> muxvia.cloud.v1.PaymentEventProjection
+	43,  // 53: muxvia.cloud.v1.ListOperatorOrdersResponse.orders:type_name -> muxvia.cloud.v1.OperatorOrderProjection
+	12,  // 54: muxvia.cloud.v1.ListOperatorOrdersResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	113, // 55: muxvia.cloud.v1.ListOperatorSubscriptionsRequest.status:type_name -> muxvia.cloud.v1.SubscriptionStatus
+	11,  // 56: muxvia.cloud.v1.ListOperatorSubscriptionsRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	110, // 57: muxvia.cloud.v1.ListOperatorSubscriptionsResponse.subscriptions:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	12,  // 58: muxvia.cloud.v1.ListOperatorSubscriptionsResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	124, // 59: muxvia.cloud.v1.CreateSubscriptionAdjustmentRequest.adjustment_kind:type_name -> muxvia.cloud.v1.SubscriptionAdjustmentKind
+	125, // 60: muxvia.cloud.v1.CreateSubscriptionAdjustmentResponse.adjustment:type_name -> muxvia.cloud.v1.SubscriptionAdjustmentProjection
+	110, // 61: muxvia.cloud.v1.CreateSubscriptionAdjustmentResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
+	111, // 62: muxvia.cloud.v1.CreateSubscriptionAdjustmentResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
+	126, // 63: muxvia.cloud.v1.ApplyOperatorPaymentEventRequest.event_type:type_name -> muxvia.cloud.v1.PaymentEventType
+	127, // 64: muxvia.cloud.v1.ApplyOperatorPaymentEventResponse.result:type_name -> muxvia.cloud.v1.ApplyPaymentEventResponse
+	122, // 65: muxvia.cloud.v1.ReconcileCreemPaymentAttemptResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
+	128, // 66: muxvia.cloud.v1.CreatePromotionRequest.promotion:type_name -> muxvia.cloud.v1.PromotionProjection
+	128, // 67: muxvia.cloud.v1.CreatePromotionResponse.promotion:type_name -> muxvia.cloud.v1.PromotionProjection
+	128, // 68: muxvia.cloud.v1.DisablePromotionResponse.promotion:type_name -> muxvia.cloud.v1.PromotionProjection
+	11,  // 69: muxvia.cloud.v1.ListPromotionsRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	128, // 70: muxvia.cloud.v1.ListPromotionsResponse.promotions:type_name -> muxvia.cloud.v1.PromotionProjection
+	12,  // 71: muxvia.cloud.v1.ListPromotionsResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	11,  // 72: muxvia.cloud.v1.ListPromotionRedemptionsRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	129, // 73: muxvia.cloud.v1.ListPromotionRedemptionsResponse.redemptions:type_name -> muxvia.cloud.v1.PromotionRedemptionProjection
+	12,  // 74: muxvia.cloud.v1.ListPromotionRedemptionsResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	130, // 75: muxvia.cloud.v1.PublishPlanCatalogRequest.catalog:type_name -> muxvia.cloud.v1.PlanCatalogContract
+	131, // 76: muxvia.cloud.v1.PublishPlanCatalogResponse.release:type_name -> muxvia.cloud.v1.PlanCatalogReleaseProjection
+	11,  // 77: muxvia.cloud.v1.ListPlanCatalogReleasesRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	131, // 78: muxvia.cloud.v1.ListPlanCatalogReleasesResponse.releases:type_name -> muxvia.cloud.v1.PlanCatalogReleaseProjection
+	12,  // 79: muxvia.cloud.v1.ListPlanCatalogReleasesResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	131, // 80: muxvia.cloud.v1.GetPlanCatalogReleaseResponse.release:type_name -> muxvia.cloud.v1.PlanCatalogReleaseProjection
+	132, // 81: muxvia.cloud.v1.PutEntitlementOverrideRequest.override:type_name -> muxvia.cloud.v1.EntitlementOverrideProjection
+	132, // 82: muxvia.cloud.v1.PutEntitlementOverrideResponse.override:type_name -> muxvia.cloud.v1.EntitlementOverrideProjection
+	111, // 83: muxvia.cloud.v1.PutEntitlementOverrideResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
+	132, // 84: muxvia.cloud.v1.RevokeEntitlementOverrideResponse.override:type_name -> muxvia.cloud.v1.EntitlementOverrideProjection
+	111, // 85: muxvia.cloud.v1.RevokeEntitlementOverrideResponse.entitlement:type_name -> muxvia.cloud.v1.EntitlementProjection
+	11,  // 86: muxvia.cloud.v1.ListEntitlementOverridesRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	132, // 87: muxvia.cloud.v1.ListEntitlementOverridesResponse.overrides:type_name -> muxvia.cloud.v1.EntitlementOverrideProjection
+	12,  // 88: muxvia.cloud.v1.ListEntitlementOverridesResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	133, // 89: muxvia.cloud.v1.AccountDeviceProjection.device_kind:type_name -> muxvia.cloud.v1.ManagedDeviceKind
+	116, // 90: muxvia.cloud.v1.AccountDeviceProjection.presence:type_name -> muxvia.cloud.v1.PresenceProjection
+	133, // 91: muxvia.cloud.v1.ListAccountDevicesRequest.device_kind:type_name -> muxvia.cloud.v1.ManagedDeviceKind
+	11,  // 92: muxvia.cloud.v1.ListAccountDevicesRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	73,  // 93: muxvia.cloud.v1.ListAccountDevicesResponse.devices:type_name -> muxvia.cloud.v1.AccountDeviceProjection
+	12,  // 94: muxvia.cloud.v1.ListAccountDevicesResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	117, // 95: muxvia.cloud.v1.ListAccountTopologyRequest.freshness:type_name -> muxvia.cloud.v1.Freshness
+	11,  // 96: muxvia.cloud.v1.ListAccountTopologyRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	116, // 97: muxvia.cloud.v1.ListAccountTopologyResponse.presences:type_name -> muxvia.cloud.v1.PresenceProjection
+	134, // 98: muxvia.cloud.v1.ListAccountTopologyResponse.peer_sessions:type_name -> muxvia.cloud.v1.ManagedPeerSessionProjection
+	12,  // 99: muxvia.cloud.v1.ListAccountTopologyResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	135, // 100: muxvia.cloud.v1.GetManagedSessionRequest.target:type_name -> muxvia.cloud.v1.ManagedPeerSessionTarget
+	134, // 101: muxvia.cloud.v1.GetManagedSessionResponse.session:type_name -> muxvia.cloud.v1.ManagedPeerSessionProjection
+	136, // 102: muxvia.cloud.v1.ListDaemonTerminalAccessRequest.state:type_name -> muxvia.cloud.v1.TerminalAccessState
+	11,  // 103: muxvia.cloud.v1.ListDaemonTerminalAccessRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	137, // 104: muxvia.cloud.v1.ListDaemonTerminalAccessResponse.accesses:type_name -> muxvia.cloud.v1.TerminalAccessProjection
+	117, // 105: muxvia.cloud.v1.ListDaemonTerminalAccessResponse.freshness:type_name -> muxvia.cloud.v1.Freshness
+	12,  // 106: muxvia.cloud.v1.ListDaemonTerminalAccessResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	138, // 107: muxvia.cloud.v1.ManagementCommandTarget.presence:type_name -> muxvia.cloud.v1.KickPresenceTarget
+	82,  // 108: muxvia.cloud.v1.ManagementCommandTarget.cloud_device:type_name -> muxvia.cloud.v1.RevokeCloudDeviceTarget
+	135, // 109: muxvia.cloud.v1.ManagementCommandTarget.peer_session:type_name -> muxvia.cloud.v1.ManagedPeerSessionTarget
+	139, // 110: muxvia.cloud.v1.ManagementCommandTarget.terminal_access:type_name -> muxvia.cloud.v1.RevokeTerminalAccessTarget
+	140, // 111: muxvia.cloud.v1.ManagementCommandTarget.relay_allocations:type_name -> muxvia.cloud.v1.RelayControlTarget
+	83,  // 112: muxvia.cloud.v1.ManagementCommandTarget.assignment_migration:type_name -> muxvia.cloud.v1.AssignmentMigrationTarget
+	84,  // 113: muxvia.cloud.v1.ManagementCommandChildProjection.target:type_name -> muxvia.cloud.v1.ManagementCommandTarget
+	3,   // 114: muxvia.cloud.v1.ManagementCommandChildProjection.delivery_state:type_name -> muxvia.cloud.v1.CommandDeliveryState
+	4,   // 115: muxvia.cloud.v1.ManagementCommandChildProjection.execution_state:type_name -> muxvia.cloud.v1.CommandExecutionState
+	5,   // 116: muxvia.cloud.v1.ManagementCommandChildProjection.observed_effect:type_name -> muxvia.cloud.v1.CommandObservedEffect
+	15,  // 117: muxvia.cloud.v1.ManagementCommandChildProjection.last_error:type_name -> muxvia.cloud.v1.ManagementErrorDetail
+	13,  // 118: muxvia.cloud.v1.ManagementCommandProjection.actor:type_name -> muxvia.cloud.v1.ManagementActorProjection
+	1,   // 119: muxvia.cloud.v1.ManagementCommandProjection.command_kind:type_name -> muxvia.cloud.v1.ManagementCommandKind
+	84,  // 120: muxvia.cloud.v1.ManagementCommandProjection.target:type_name -> muxvia.cloud.v1.ManagementCommandTarget
+	2,   // 121: muxvia.cloud.v1.ManagementCommandProjection.authority_result:type_name -> muxvia.cloud.v1.CommandAuthorityResult
+	3,   // 122: muxvia.cloud.v1.ManagementCommandProjection.delivery_state:type_name -> muxvia.cloud.v1.CommandDeliveryState
+	4,   // 123: muxvia.cloud.v1.ManagementCommandProjection.execution_state:type_name -> muxvia.cloud.v1.CommandExecutionState
+	5,   // 124: muxvia.cloud.v1.ManagementCommandProjection.observed_effect:type_name -> muxvia.cloud.v1.CommandObservedEffect
+	85,  // 125: muxvia.cloud.v1.ManagementCommandProjection.children:type_name -> muxvia.cloud.v1.ManagementCommandChildProjection
+	1,   // 126: muxvia.cloud.v1.CreateManagementCommandRequest.command_kind:type_name -> muxvia.cloud.v1.ManagementCommandKind
+	84,  // 127: muxvia.cloud.v1.CreateManagementCommandRequest.target:type_name -> muxvia.cloud.v1.ManagementCommandTarget
+	86,  // 128: muxvia.cloud.v1.CreateManagementCommandResponse.command:type_name -> muxvia.cloud.v1.ManagementCommandProjection
+	86,  // 129: muxvia.cloud.v1.GetManagementCommandResponse.command:type_name -> muxvia.cloud.v1.ManagementCommandProjection
+	1,   // 130: muxvia.cloud.v1.ListManagementCommandsRequest.command_kind:type_name -> muxvia.cloud.v1.ManagementCommandKind
+	4,   // 131: muxvia.cloud.v1.ListManagementCommandsRequest.execution_state:type_name -> muxvia.cloud.v1.CommandExecutionState
+	11,  // 132: muxvia.cloud.v1.ListManagementCommandsRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	86,  // 133: muxvia.cloud.v1.ListManagementCommandsResponse.commands:type_name -> muxvia.cloud.v1.ManagementCommandProjection
+	12,  // 134: muxvia.cloud.v1.ListManagementCommandsResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	141, // 135: muxvia.cloud.v1.HubDeploymentProjection.metadata:type_name -> muxvia.cloud.v1.EdgeDeploymentMetadata
+	93,  // 136: muxvia.cloud.v1.HubFleetProjection.deployment:type_name -> muxvia.cloud.v1.HubDeploymentProjection
+	117, // 137: muxvia.cloud.v1.HubFleetProjection.freshness:type_name -> muxvia.cloud.v1.Freshness
+	117, // 138: muxvia.cloud.v1.ListHubFleetRequest.freshness:type_name -> muxvia.cloud.v1.Freshness
+	11,  // 139: muxvia.cloud.v1.ListHubFleetRequest.page:type_name -> muxvia.cloud.v1.PageRequest
+	94,  // 140: muxvia.cloud.v1.ListHubFleetResponse.hubs:type_name -> muxvia.cloud.v1.HubFleetProjection
+	12,  // 141: muxvia.cloud.v1.ListHubFleetResponse.page:type_name -> muxvia.cloud.v1.PageResponse
+	94,  // 142: muxvia.cloud.v1.GetHubStatusResponse.hub:type_name -> muxvia.cloud.v1.HubFleetProjection
+	93,  // 143: muxvia.cloud.v1.CreateHubDeploymentResponse.deployment:type_name -> muxvia.cloud.v1.HubDeploymentProjection
+	93,  // 144: muxvia.cloud.v1.UpdateHubDeploymentResponse.deployment:type_name -> muxvia.cloud.v1.HubDeploymentProjection
+	93,  // 145: muxvia.cloud.v1.ApproveHubDeploymentIdentityResponse.deployment:type_name -> muxvia.cloud.v1.HubDeploymentProjection
+	93,  // 146: muxvia.cloud.v1.SetHubDeploymentDrainResponse.deployment:type_name -> muxvia.cloud.v1.HubDeploymentProjection
+	93,  // 147: muxvia.cloud.v1.DisableHubDeploymentResponse.deployment:type_name -> muxvia.cloud.v1.HubDeploymentProjection
+	148, // [148:148] is the sub-list for method output_type
+	148, // [148:148] is the sub-list for method input_type
+	148, // [148:148] is the sub-list for extension type_name
+	148, // [148:148] is the sub-list for extension extendee
+	0,   // [0:148] is the sub-list for field type_name
 }
 
 func init() { file_cloudpb_cloud_management_proto_init() }
@@ -8225,7 +8110,7 @@ func file_cloudpb_cloud_management_proto_init() {
 	file_cloudpb_cloud_hub_control_proto_init()
 	file_cloudpb_cloud_product_proto_init()
 	file_cloudpb_cloud_topology_proto_init()
-	file_cloudpb_cloud_management_proto_msgTypes[78].OneofWrappers = []any{
+	file_cloudpb_cloud_management_proto_msgTypes[74].OneofWrappers = []any{
 		(*ManagementCommandTarget_Presence)(nil),
 		(*ManagementCommandTarget_CloudDevice)(nil),
 		(*ManagementCommandTarget_PeerSession)(nil),
@@ -8238,8 +8123,8 @@ func file_cloudpb_cloud_management_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloudpb_cloud_management_proto_rawDesc), len(file_cloudpb_cloud_management_proto_rawDesc)),
-			NumEnums:      9,
-			NumMessages:   103,
+			NumEnums:      10,
+			NumMessages:   99,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

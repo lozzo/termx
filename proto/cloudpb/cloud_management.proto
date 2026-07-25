@@ -141,24 +141,26 @@ message RecentAuthenticationResponse {
   int64 expires_at_unix_millis = 1;
 }
 
-// OperatorLoginRequest 只在独立 operator listener 消费部署配置的高熵 token。
-message OperatorLoginRequest {
-  bytes access_token = 1;
+// OperatorWorkspaceModule 是后端按当前账号授权后允许展示的运营导航。
+// 它只表达可进入的业务模块，不暴露账号角色、角色布尔值或授权规则。
+enum OperatorWorkspaceModule {
+  OPERATOR_WORKSPACE_MODULE_UNSPECIFIED = 0;
+  OPERATOR_WORKSPACE_MODULE_USERS = 1;
+  OPERATOR_WORKSPACE_MODULE_ORDERS = 2;
+  OPERATOR_WORKSPACE_MODULE_SUBSCRIPTIONS = 3;
+  OPERATOR_WORKSPACE_MODULE_PLANS = 4;
+  OPERATOR_WORKSPACE_MODULE_HUBS = 5;
+  OPERATOR_WORKSPACE_MODULE_AGENTS = 6;
+  OPERATOR_WORKSPACE_MODULE_RELEASES = 7;
+  OPERATOR_WORKSPACE_MODULE_PROMOTIONS = 8;
+  OPERATOR_WORKSPACE_MODULE_PRIVILEGES = 9;
 }
 
-message OperatorSessionProjection {
-  string operator_id = 1;
-  ManagementActorKind actor_kind = 2;
-  int64 authenticated_at_unix_millis = 3;
-  int64 expires_at_unix_millis = 4;
+// GetOperatorWorkspaceResponse 只在普通账号 Session 已被后端判定具有运营权限后返回。
+// 客户端不得从模块集合反推或缓存角色，所有运营 API 仍逐请求重新授权。
+message GetOperatorWorkspaceResponse {
+  repeated OperatorWorkspaceModule modules = 1;
 }
-
-message OperatorLoginResponse {
-  OperatorSessionProjection session = 1;
-}
-
-message OperatorLogoutRequest {}
-message OperatorLogoutResponse {}
 
 // OperatorAccountSummary 是 fleet 列表中的账号、subscription、entitlement 与 quota 摘要。
 message OperatorAccountSummary {

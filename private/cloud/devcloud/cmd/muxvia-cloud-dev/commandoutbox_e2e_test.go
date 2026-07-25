@@ -293,6 +293,9 @@ func seedCommandAccount(t *testing.T, databaseKey, catalogPath string, now time.
 		t.Fatal(err)
 	}
 	account := registered.GetSession().GetAccount()
+	if err := service.SetOperatorRole(context.Background(), account.GetAccountId(), cloudcommerce.OperatorRoleAdmin); err != nil {
+		t.Fatal(err)
+	}
 	checkout, err := service.CreateCheckout(context.Background(), account.GetAccountId(), account.GetUserId(), &cloudpb.CreateCheckoutRequest{PlanId: "pro", RequestedTransition: cloudpb.SubscriptionTransitionKind_SUBSCRIPTION_TRANSITION_KIND_UPGRADE, BillingCadence: cloudpb.BillingCadence_BILLING_CADENCE_MONTHLY})
 	if err != nil {
 		t.Fatal(err)

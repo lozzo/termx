@@ -40,8 +40,6 @@ var schemaPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 type deploymentCredentials struct {
 	PublicURL                string `json:"public_url"`
 	OperatorURL              string `json:"operator_url"`
-	OperatorID               string `json:"operator_id"`
-	OperatorAccessToken      string `json:"operator_access_token"`
 	BootstrapAccountEmail    string `json:"bootstrap_account_email"`
 	BootstrapAccountPassword string `json:"bootstrap_account_password"`
 	PrimaryHubURL            string `json:"primary_hub_url"`
@@ -163,19 +161,10 @@ func generate(ctx context.Context, value options, deploymentDSN string) error {
 	if err != nil {
 		return err
 	}
-	operatorToken, err := randomValue("", 32)
-	if err != nil {
-		return err
-	}
 	accountPassword, err := randomValue("", 24)
 	if err != nil {
 		return err
 	}
-	operatorTokenBytes, err := base64.RawURLEncoding.DecodeString(operatorToken)
-	if err != nil {
-		return err
-	}
-
 	store, err := cloudpostgres.Open(ctx, deploymentDSN)
 	if err != nil {
 		return err
@@ -199,6 +188,9 @@ func generate(ctx context.Context, value options, deploymentDSN string) error {
 	registered, err := commerce.Register(ctx, &cloudpb.RegisterAccountRequest{Email: value.bootstrapEmail, Password: accountPassword})
 	if err != nil || registered.GetSession().GetAccount().GetAccountId() == "" {
 		return fmt.Errorf("seed bootstrap account: %w", err)
+	}
+	if err := commerce.SetOperatorRole(ctx, registered.GetSession().GetAccount().GetAccountId(), cloudcommerce.OperatorRoleAdmin); err != nil {
+		return fmt.Errorf("grant bootstrap account operator role: %w", err)
 	}
 
 	type edgeMaterial struct {
@@ -251,20 +243,18 @@ func generate(ctx context.Context, value options, deploymentDSN string) error {
 		CredentialNotBeforeUnixMillis: notBefore.UnixMilli(), CredentialNotAfterUnixMillis: notAfter.UnixMilli(),
 		DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate),
 		EnableTestPaymentProvider: value.creemEnvironment == "", DevelopmentMobileHubID: primary.deployment.Metadata.GetHubId(),
-		OperatorID: "bootstrap-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes),
 		SecureCookie: true, WebStaticDir: "/opt/muxvia/web",
 	}
 	if value.creemEnvironment != "" {
 		controllerConfig.CreemEnvironment = value.creemEnvironment
 		controllerConfig.CreemSuccessURL = value.creemSuccessURL
 	}
-	clear(operatorTokenBytes)
 	assets := map[string]any{
 		"controller-config.json":     controllerConfig,
 		"edge-primary-config.json":   primary.config,
 		"edge-secondary-config.json": secondary.config,
 		"credentials.json": deploymentCredentials{
-			PublicURL: value.publicURL, OperatorURL: value.operatorURL, OperatorID: "bootstrap-admin", OperatorAccessToken: operatorToken,
+			PublicURL: value.publicURL, OperatorURL: value.operatorURL,
 			BootstrapAccountEmail: value.bootstrapEmail, BootstrapAccountPassword: accountPassword,
 			PrimaryHubURL: value.primaryHubURL, SecondaryHubURL: value.secondaryHubURL, CredentialNotAfter: notAfter.Format(time.RFC3339),
 		},

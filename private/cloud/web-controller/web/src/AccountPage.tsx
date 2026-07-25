@@ -34,6 +34,8 @@ import {
   ListManagementCommandsResponseSchema,
   ManagementCommandKind,
   ManagementCommandTargetSchema,
+  GetOperatorWorkspaceResponseSchema,
+  OperatorWorkspaceModule,
   PageRequestSchema,
   RecentAuthenticationRequestSchema,
   RecentAuthenticationResponseSchema,
@@ -104,6 +106,18 @@ const tabs: [Tab, typeof Gauge][] = [
   ["account", UserRound],
 ];
 
+const operatorTabs: [OperatorWorkspaceModule, typeof Gauge, string, string][] = [
+  [OperatorWorkspaceModule.USERS, UserRound, "users", "operator-directory"],
+  [OperatorWorkspaceModule.ORDERS, CreditCard, "orders", "operator-orders"],
+  [OperatorWorkspaceModule.SUBSCRIPTIONS, KeyRound, "subscriptions", "operator-subscriptions"],
+  [OperatorWorkspaceModule.PLANS, ShieldCheck, "plans", "operator-catalog"],
+  [OperatorWorkspaceModule.HUBS, Cable, "hubs", "operator-fleet"],
+  [OperatorWorkspaceModule.AGENTS, Laptop, "agents", "operator-directory"],
+  [OperatorWorkspaceModule.RELEASES, RefreshCw, "releases", "operator-releases"],
+  [OperatorWorkspaceModule.PROMOTIONS, QrCode, "promotions", "operator-promotions"],
+  [OperatorWorkspaceModule.PRIVILEGES, Activity, "privileges", "operator-directory"],
+];
+
 type ProtectedAction = {
   label: string;
   execute: () => Promise<unknown>;
@@ -121,9 +135,17 @@ export default function AccountPage() {
   const [addDeviceOpen, setAddDeviceOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [removedDevicesOpen, setRemovedDevicesOpen] = useState(false);
+  const [operatorModules, setOperatorModules] = useState<OperatorWorkspaceModule[]>([]);
 
   async function load() {
     try {
+      try {
+        const workspace = await protoGet("/api/v1/operator/workspace", GetOperatorWorkspaceResponseSchema);
+        setOperatorModules(workspace.modules);
+      } catch (cause) {
+        if (cause instanceof ProtoHTTPError && cause.status === 403) setOperatorModules([]);
+        else throw cause;
+      }
       const page = create(PageRequestSchema, { pageSize: 100 });
       const [commerce, quota, devices, topology, commands] = await Promise.all([
         protoGet("/api/v1/account/commerce", GetAccountCommerceResponseSchema),
@@ -263,6 +285,25 @@ export default function AccountPage() {
             </button>
           ))}
         </nav>
+        {operatorModules.length > 0 && (
+          <section className="mt-3 border border-line md:mt-6 md:border-0" aria-label={t("account.admin.navigation")}>
+            <p className="border-b border-line px-3 py-2 font-mono text-[10px] font-semibold text-muted-foreground md:px-0">
+              {t("account.admin.navigation")}
+            </p>
+            <nav className="grid grid-cols-3 md:grid-cols-1" aria-label={t("account.admin.navigation")}>
+              {operatorTabs.filter(([module]) => operatorModules.includes(module)).map(([module, Icon, label, anchor]) => (
+                <a
+                  className="flex min-h-12 min-w-0 items-center justify-center gap-2 border-b border-r border-line px-2 text-xs text-muted-foreground hover:bg-soft/70 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary md:justify-start md:border-r-0"
+                  href={`/operator#${anchor}`}
+                  key={module}
+                >
+                  <Icon className="size-4 shrink-0" />
+                  <span className="truncate">{t(`account.admin.modules.${label}`)}</span>
+                </a>
+              ))}
+            </nav>
+          </section>
+        )}
         <div className="mt-8 hidden border-t border-line pt-5 text-xs md:block">
           <strong>{commerce.account?.displayName}</strong>
           <p className="truncate text-muted-foreground">

@@ -28,5 +28,5 @@
 ## 安全边界
 
 - Operator mutation 继续要求独立 listener、admin、CSRF 和五分钟近期认证。
-- Creem API key、Webhook secret、operator token 和 provider 原始 payload 均未写入 schema、仓库、截图或日志。
+- Creem API key、Webhook secret、普通账号 Session token 和 provider 原始 payload 均未写入 schema、仓库、截图或日志。
 - Hub policy 只消费归一化 Entitlement，不读取价格、Creem mapping、覆盖原因或 terminal capability。

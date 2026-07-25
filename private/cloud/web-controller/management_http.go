@@ -75,7 +75,7 @@ func ManagementAPIHandler(config ManagementAPIConfig) (http.Handler, error) {
 			token, record, issueErr := config.RecentProofs.issue(account.GetAccountId(), cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_ACCOUNT_OWNER, 5*time.Minute)
 			err = issueErr
 			if issueErr == nil {
-				http.SetCookie(w, &http.Cookie{Name: "muxvia_cloud_recent", Value: token, Path: "/api/v1/management", MaxAge: 300, HttpOnly: true, Secure: config.SecureCookie, SameSite: http.SameSiteStrictMode})
+				http.SetCookie(w, &http.Cookie{Name: "muxvia_cloud_recent", Value: token, Path: "/", MaxAge: 300, HttpOnly: true, Secure: config.SecureCookie, SameSite: http.SameSiteStrictMode})
 				response = &cloudpb.RecentAuthenticationResponse{ExpiresAtUnixMillis: record.expiresAt.UnixMilli()}
 			}
 		}
@@ -283,7 +283,7 @@ func writeManagementProto(w http.ResponseWriter, status int, value proto.Message
 		status = http.StatusForbidden
 		detail.Code = cloudpb.ManagementErrorCode_MANAGEMENT_ERROR_CODE_RECENT_AUTH_REQUIRED
 		detail.Message = "recent account authentication is required"
-	case errors.Is(err, errOperatorForbidden):
+	case errors.Is(err, errOperatorForbidden), errors.Is(err, commerce.ErrForbidden):
 		status = http.StatusForbidden
 		detail.Code = cloudpb.ManagementErrorCode_MANAGEMENT_ERROR_CODE_FORBIDDEN
 		detail.Message = "operator role is not allowed to perform this action"

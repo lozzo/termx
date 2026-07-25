@@ -68,8 +68,6 @@ type developmentCredentials struct {
 	AccountEmail        string `json:"account_email"`
 	AccountPassword     string `json:"account_password"`
 	OperatorURL         string `json:"operator_url"`
-	OperatorID          string `json:"operator_id"`
-	OperatorAccessToken string `json:"operator_access_token"`
 	ReleaseArtifactJSON string `json:"release_artifact_json"`
 }
 
@@ -111,6 +109,9 @@ func seedDevelopmentAccount(postgresDSN, catalogPath string, now time.Time) (*de
 	email := "devcloud-fixture@muxvia.invalid"
 	registered, err := service.Register(context.Background(), &cloudpb.RegisterAccountRequest{Email: email, Password: password})
 	if err != nil {
+		return nil, err
+	}
+	if err := service.SetOperatorRole(context.Background(), registered.GetSession().GetAccount().GetAccountId(), cloudcommerce.OperatorRoleAdmin); err != nil {
 		return nil, err
 	}
 	return &developmentAccount{Projection: registered.GetSession().GetAccount(), Email: email, Password: password}, nil
@@ -200,11 +201,6 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	account := development.Projection
-	operatorTokenBytes := make([]byte, 32)
-	if _, err := rand.Read(operatorTokenBytes); err != nil {
-		return err
-	}
-	operatorToken := base64.RawURLEncoding.EncodeToString(operatorTokenBytes)
 	devices := []*cloudpb.CloudDevicePolicy{
 		{AccountId: account.GetAccountId(), DeviceId: "client-dev-local", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: account.GetAuthRevision()},
 		{AccountId: account.GetAccountId(), DeviceId: "client-dev-secondary", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, AuthEpoch: account.GetAuthRevision()},
@@ -248,7 +244,7 @@ func run(ctx context.Context, args []string) error {
 	if err := directoryStore.Close(); err != nil {
 		return err
 	}
-	controllerConfig := controller.Config{PostgresDSN: controllerPostgresDSN, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Devices: devices, Assignments: assignments, DevelopmentMobileHubID: "hub-edge-a", OperatorID: "development-admin", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorTokenBytes), WebStaticDir: webStaticDir, ReleaseSigningPublicKeysBase64: map[string]string{releaseKeyID: base64.RawStdEncoding.EncodeToString(releasePublic)}, ReleaseDownloadOrigins: []string{"https://releases.muxvia.test"}}
+	controllerConfig := controller.Config{PostgresDSN: controllerPostgresDSN, PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath, ProjectionKeyID: projectionKeyID, ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: daemonControlKeyID, DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate), EnableTestPaymentProvider: true, Devices: devices, Assignments: assignments, DevelopmentMobileHubID: "hub-edge-a", WebStaticDir: webStaticDir, ReleaseSigningPublicKeysBase64: map[string]string{releaseKeyID: base64.RawStdEncoding.EncodeToString(releasePublic)}, ReleaseDownloadOrigins: []string{"https://releases.muxvia.test"}}
 	if os.Getenv("MUXVIA_CREEM_API_KEY") != "" {
 		controllerConfig.CreemEnvironment = "test"
 		controllerConfig.CreemSuccessURL = "https://muxvia.com/account?payment=return"
@@ -267,7 +263,6 @@ func run(ctx context.Context, args []string) error {
 			return err
 		}
 	}
-	clear(operatorTokenBytes)
 	controllerConfigPath := filepath.Join(artifactDir, "controller-config.json")
 	controllerManifestPath := filepath.Join(artifactDir, "controller-runtime.json")
 	if err := writeJSONFile(controllerConfigPath, controllerConfig); err != nil {
@@ -287,7 +282,7 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	credentialsPath := filepath.Join(artifactDir, "development-credentials.json")
-	if err := writeJSONFile(credentialsPath, developmentCredentials{PublicURL: controllerRuntime.PublicURL, AccountEmail: development.Email, AccountPassword: development.Password, OperatorURL: controllerRuntime.OperatorURL, OperatorID: "development-admin", OperatorAccessToken: operatorToken, ReleaseArtifactJSON: string(releaseArtifactJSON)}); err != nil {
+	if err := writeJSONFile(credentialsPath, developmentCredentials{PublicURL: controllerRuntime.PublicURL, AccountEmail: development.Email, AccountPassword: development.Password, OperatorURL: controllerRuntime.OperatorURL, ReleaseArtifactJSON: string(releaseArtifactJSON)}); err != nil {
 		return err
 	}
 

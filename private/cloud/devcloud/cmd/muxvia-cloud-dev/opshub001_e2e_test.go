@@ -28,10 +28,6 @@ func TestOPSHUB001AddsEdgeWithoutControllerRestart(t *testing.T) {
 	targetRelayPublic, targetRelayPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	projectionPublic, projectionPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	_, daemonControlPrivate, _ := ed25519.GenerateKey(rand.Reader)
-	operatorToken := make([]byte, 32)
-	if _, err := rand.Read(operatorToken); err != nil {
-		t.Fatal(err)
-	}
 	databaseKey := filepath.Join(t.TempDir(), "opshub001-postgres")
 	catalogPath := filepath.Join(findRepoRoot(t), "private/cloud/web-controller/config/plans.json")
 	account := seedCommandAccount(t, databaseKey, catalogPath, now)
@@ -55,7 +51,6 @@ func TestOPSHUB001AddsEdgeWithoutControllerRestart(t *testing.T) {
 	runtime, err := controller.Start(controller.Config{
 		PostgresDSN: postgrestest.DSN(t, databaseKey), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath,
 		ProjectionKeyID: "projection-opshub001", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-opshub001", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate),
-		OperatorID: "operator-opshub001", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorToken),
 		Devices:     []*cloudpb.CloudDevicePolicy{{AccountId: account.GetAccountId(), DeviceId: "daemon-opshub001", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision()}},
 		Assignments: []*cloudpb.HubAssignment{{DaemonDeviceId: "daemon-opshub001", AccountId: account.GetAccountId(), HubId: source.GetHubId(), AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}},
 	})
@@ -88,7 +83,7 @@ func TestOPSHUB001AddsEdgeWithoutControllerRestart(t *testing.T) {
 
 	jar, _ := cookiejar.New(nil)
 	operatorClient := &http.Client{Jar: jar, Timeout: 5 * time.Second}
-	operatorLoginHTTP(t, operatorClient, runtime.Manifest().OperatorURL, base64.RawURLEncoding.EncodeToString(operatorToken))
+	operatorLoginHTTP(t, operatorClient, runtime.Manifest().PublicURL, runtime.Manifest().OperatorURL, "command@example.com", "secure-password")
 	target := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-dynamic", Region: "local-3", PublicLabel: "Dynamic Edge", HubId: "hub-dynamic", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(targetHubPublic), RelayId: "relay-dynamic", RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(targetRelayPublic)}
 	created := &cloudpb.CreateHubDeploymentResponse{}
 	operatorPost(t, operatorClient, runtime.Manifest().OperatorURL, "/api/v1/operator/fleet/create", &cloudpb.CreateHubDeploymentRequest{HubId: target.GetHubId(), EdgeDeploymentId: target.GetEdgeDeploymentId(), RelayId: target.GetRelayId(), Region: target.GetRegion(), PublicLabel: target.GetPublicLabel(), PublicHubUrl: "http://127.0.0.1:43003", HealthUrl: "http://127.0.0.1:43003/healthz", MaxAssignments: 10, HubControlPublicKey: targetHubPublic, RelayControlPublicKey: targetRelayPublic, Reason: "add a third nearer region", RequestId: "opshub001-create"}, created)

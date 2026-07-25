@@ -32,7 +32,7 @@ supervisor manifest 记录 PID、listener、Hub/Relay identity、数据库引擎
 
 `npm run test:e2e:hub007 --workspace @muxvia/web-controller` 使用 Playwright 启动真实 supervisor，通过 Operator UI 完成：
 
-1. 输入 development operator token 登录；
+1. 使用 development 普通账号登录，再确认当前账号密码解锁五分钟管理写操作；
 2. 查看两个 Hub/Relay fleet 项；
 3. 选择 development 账号；
 4. 从 UI 发起 `daemon-edge-a -> hub-edge-b` assignment migration，并验证 management command HTTP 202；
@@ -54,7 +54,7 @@ supervisor manifest 记录 PID、listener、Hub/Relay identity、数据库引擎
 
 - `AssignmentMigrationTarget` 是唯一迁移 API contract，包含 migration ID、source Hub/generation/epoch 与 target Hub/epoch/lease；生成 Go/TypeScript 和 descriptor fixture 同步更新。
 - 账号用户 API 明确拒绝 assignment migration；只有 operator admin mutation 入口可以创建。
-- runtime 日志扫描禁止账号密码、operator token、Controller projection/daemon-control 私钥、Hub/Relay 私钥、daemon fixture 私钥、SDP/ICE password 和 terminal payload marker。
+- runtime 日志扫描禁止账号密码、普通账号 Session token、Controller projection/daemon-control 私钥、Hub/Relay 私钥、daemon fixture 私钥、SDP/ICE password 和 terminal payload marker。
 - topology、management 和 usage contract 的既有 descriptor 测试继续禁止 terminal、grant、credential、private key 与 payload 泄漏。
 
 ## 准入命令

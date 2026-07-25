@@ -50,6 +50,8 @@ async function installOperatorAPI(page: Page) {
   let kickCreated = false;
   await page.route("**/api/v1/operator/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (path === "/api/v1/operator/workspace") return json(route, operatorWorkspace());
+    if (path === "/api/v1/operator/reauth") return json(route, { expiresAtUnixMillis: String(Date.now() + 300_000) });
     if (path === "/api/v1/operator/accounts/list") return json(route, accountList());
     if (path === "/api/v1/operator/agents/list") return json(route, agentList());
     if (path === "/api/v1/operator/fleet/list") return json(route, fleetList());
@@ -64,6 +66,10 @@ async function installOperatorAPI(page: Page) {
     }
     return json(route, {});
   });
+}
+
+function operatorWorkspace() {
+  return { modules: ["OPERATOR_WORKSPACE_MODULE_USERS", "OPERATOR_WORKSPACE_MODULE_ORDERS", "OPERATOR_WORKSPACE_MODULE_SUBSCRIPTIONS", "OPERATOR_WORKSPACE_MODULE_PLANS", "OPERATOR_WORKSPACE_MODULE_HUBS", "OPERATOR_WORKSPACE_MODULE_AGENTS", "OPERATOR_WORKSPACE_MODULE_RELEASES", "OPERATOR_WORKSPACE_MODULE_PROMOTIONS", "OPERATOR_WORKSPACE_MODULE_PRIVILEGES"] };
 }
 
 function accountList() {

@@ -239,7 +239,6 @@ func TestControllerManagesDynamicHubDirectoryWithoutRestart(t *testing.T) {
 	targetRelayPublic, _, _ := ed25519.GenerateKey(rand.Reader)
 	_, projectionPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	_, daemonControlPrivate, _ := ed25519.GenerateKey(rand.Reader)
-	operatorToken := bytes.Repeat([]byte{0x71}, 32)
 	databaseKey := filepath.Join(t.TempDir(), "dynamic-hub-postgres")
 	catalogPath := "../web-controller/config/plans.json"
 	account := seedControllerAccount(t, databaseKey, catalogPath, now)
@@ -248,7 +247,6 @@ func TestControllerManagesDynamicHubDirectoryWithoutRestart(t *testing.T) {
 	runtime, err := Start(Config{
 		PostgresDSN: postgrestest.DSN(t, databaseKey), PublicListen: "127.0.0.1:0", InternalControlListen: "127.0.0.1:0", OperatorListen: "127.0.0.1:0", CatalogPath: catalogPath,
 		ProjectionKeyID: "projection-dynamic", ProjectionPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(projectionPrivate), DaemonControlKeyID: "daemon-control-dynamic", DaemonControlPrivateKeyBase64: base64.RawStdEncoding.EncodeToString(daemonControlPrivate),
-		OperatorID: "operator-dynamic", OperatorRole: "admin", OperatorAccessTokenBase64: base64.RawStdEncoding.EncodeToString(operatorToken),
 		Devices:     []*cloudpb.CloudDevicePolicy{{AccountId: account.GetAccountId(), DeviceId: "daemon-dynamic", DeviceKind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, AuthEpoch: account.GetAuthRevision()}},
 		Assignments: []*cloudpb.HubAssignment{{DaemonDeviceId: "daemon-dynamic", AccountId: account.GetAccountId(), HubId: sourceMetadata.GetHubId(), AssignmentEpoch: 1, NotBeforeUnixMillis: now.Add(-time.Minute).UnixMilli(), ExpiresAtUnixMillis: now.Add(time.Hour).UnixMilli()}},
 	})
@@ -258,7 +256,18 @@ func TestControllerManagesDynamicHubDirectoryWithoutRestart(t *testing.T) {
 	defer runtime.Close(context.Background())
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, Timeout: 3 * time.Second}
-	postOperatorProto(t, client, runtime.Manifest().OperatorURL, "/api/v1/operator/login", &cloudpb.OperatorLoginRequest{AccessToken: operatorToken}, &cloudpb.OperatorLoginResponse{}, false)
+	loginBody, _ := protojson.Marshal(&cloudpb.PasswordLoginRequest{Email: "controller-fixture@example.com", Password: "secure-password"})
+	loginRequest, _ := http.NewRequest(http.MethodPost, runtime.Manifest().PublicURL+"/api/v1/account/login", bytes.NewReader(loginBody))
+	loginRequest.Header.Set("Origin", runtime.Manifest().PublicURL)
+	loginResponse, err := client.Do(loginRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loginResponse.Body.Close()
+	if loginResponse.StatusCode != http.StatusOK {
+		t.Fatalf("operator account login = %d", loginResponse.StatusCode)
+	}
+	postOperatorProto(t, client, runtime.Manifest().OperatorURL, "/api/v1/operator/reauth", &cloudpb.RecentAuthenticationRequest{Password: "secure-password"}, &cloudpb.RecentAuthenticationResponse{}, true)
 	metadata := &cloudpb.EdgeDeploymentMetadata{EdgeDeploymentId: "edge-dynamic", Region: "local-3", PublicLabel: "Dynamic Edge", HubId: "hub-dynamic", HubControlIdentityFingerprint: hubregistry.IdentityFingerprint(targetHubPublic), RelayId: "relay-dynamic", RelayControlIdentityFingerprint: hubregistry.IdentityFingerprint(targetRelayPublic)}
 	created := &cloudpb.CreateHubDeploymentResponse{}
 	postOperatorProto(t, client, runtime.Manifest().OperatorURL, "/api/v1/operator/fleet/create", &cloudpb.CreateHubDeploymentRequest{HubId: metadata.GetHubId(), EdgeDeploymentId: metadata.GetEdgeDeploymentId(), RelayId: metadata.GetRelayId(), Region: metadata.GetRegion(), PublicLabel: metadata.GetPublicLabel(), PublicHubUrl: "http://127.0.0.1:43002", HealthUrl: "http://127.0.0.1:43002/healthz", MaxAssignments: 10, HubControlPublicKey: targetHubPublic, RelayControlPublicKey: targetRelayPublic, Reason: "dynamic region", RequestId: "request-dynamic-create"}, created, true)
@@ -311,7 +320,7 @@ func postOperatorProto(t *testing.T, client *http.Client, origin, path string, r
 	if mutation {
 		httpRequest.Header.Set("Origin", origin)
 		for _, cookie := range client.Jar.Cookies(httpRequest.URL) {
-			if cookie.Name == "muxvia_cloud_operator_csrf" {
+			if cookie.Name == "muxvia_cloud_csrf" {
 				httpRequest.Header.Set("X-Muxvia-CSRF", cookie.Value)
 			}
 		}
@@ -559,6 +568,9 @@ func seedControllerAccount(t *testing.T, databaseKey, catalogPath string, now ti
 		t.Fatal(err)
 	}
 	registered, err := service.Register(context.Background(), &cloudpb.RegisterAccountRequest{Email: "controller-fixture@example.com", Password: "secure-password"})
+	if err == nil {
+		err = service.SetOperatorRole(context.Background(), registered.GetSession().GetAccount().GetAccountId(), cloudcommerce.OperatorRoleAdmin)
+	}
 	if closeErr := store.Close(); err == nil && closeErr != nil {
 		err = closeErr
 	}

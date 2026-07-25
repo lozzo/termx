@@ -55,7 +55,7 @@ func TestHUB007EdgeRestartAssignmentMigrationAndControllerOutage(t *testing.T) {
 	}()
 	credentials := readDevelopmentCredentials(t, manifest.CredentialsPath)
 	operatorClient := operatorHTTPClient(t)
-	operatorLoginHTTP(t, operatorClient, manifest.Controller.OperatorURL, credentials.OperatorAccessToken)
+	operatorLoginHTTP(t, operatorClient, manifest.Controller.PublicURL, manifest.Controller.OperatorURL, credentials.AccountEmail, credentials.AccountPassword)
 	accounts := &cloudpb.ListOperatorAccountsResponse{}
 	operatorPost(t, operatorClient, manifest.Controller.OperatorURL, "/api/v1/operator/accounts/list", &cloudpb.ListOperatorAccountsRequest{Page: &cloudpb.PageRequest{PageSize: 10}}, accounts)
 	if len(accounts.GetAccounts()) != 1 {
@@ -191,7 +191,7 @@ func TestHUB007EdgeRestartAssignmentMigrationAndControllerOutage(t *testing.T) {
 		t.Fatalf("persisted migration after Controller restart = (%+v, %v)", assignment, err)
 	}
 	restartedOperatorClient := operatorHTTPClient(t)
-	operatorLoginHTTP(t, restartedOperatorClient, controllerRuntime.OperatorURL, credentials.OperatorAccessToken)
+	operatorLoginHTTP(t, restartedOperatorClient, controllerRuntime.PublicURL, controllerRuntime.OperatorURL, credentials.AccountEmail, credentials.AccountPassword)
 	agent := waitOperatorAgent(t, restartedOperatorClient, controllerRuntime.OperatorURL, accountID, "daemon-edge-a", "hub-edge-b", 2)
 	kick := &cloudpb.CreateManagementCommandResponse{}
 	operatorPost(t, restartedOperatorClient, controllerRuntime.OperatorURL, "/api/v1/operator/commands", &cloudpb.CreateManagementCommandRequest{AccountId: accountID, CommandKind: cloudpb.ManagementCommandKind_MANAGEMENT_COMMAND_KIND_KICK_PRESENCE, IdempotencyKey: "opsuser001-kick-migrated-presence", Target: &cloudpb.ManagementCommandTarget{Target: &cloudpb.ManagementCommandTarget_Presence{Presence: &cloudpb.KickPresenceTarget{DaemonDeviceId: agent.GetPresence().GetDaemonDeviceId(), AssignmentEpoch: agent.GetPresence().GetAssignmentEpoch(), PresenceSessionId: agent.GetPresence().GetPresenceSessionId()}}}}, kick)
@@ -398,13 +398,28 @@ func developmentEdgeIssuer(t *testing.T, manifest supervisorManifest, now time.T
 	return issuer
 }
 
-func operatorLoginHTTP(t *testing.T, client *http.Client, origin, token string) {
+func operatorLoginHTTP(t *testing.T, client *http.Client, publicOrigin, operatorOrigin, email, password string) {
 	t.Helper()
-	decoded, err := base64.RawURLEncoding.DecodeString(token)
+	body, err := protojson.Marshal(&cloudpb.PasswordLoginRequest{Email: email, Password: password})
 	if err != nil {
 		t.Fatal(err)
 	}
-	operatorPost(t, client, origin, "/api/v1/operator/login", &cloudpb.OperatorLoginRequest{AccessToken: decoded}, &cloudpb.OperatorLoginResponse{})
+	request, err := http.NewRequest(http.MethodPost, publicOrigin+"/api/v1/account/login", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", publicOrigin)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		detail, _ := io.ReadAll(response.Body)
+		t.Fatalf("account login = %d: %s", response.StatusCode, detail)
+	}
+	operatorPost(t, client, operatorOrigin, "/api/v1/operator/reauth", &cloudpb.RecentAuthenticationRequest{Password: password}, &cloudpb.RecentAuthenticationResponse{})
 }
 
 func operatorPost(t *testing.T, client *http.Client, origin, path string, requestBody, responseBody proto.Message) {
@@ -420,7 +435,7 @@ func operatorPost(t *testing.T, client *http.Client, origin, path string, reques
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Origin", origin)
 	for _, cookie := range client.Jar.Cookies(request.URL) {
-		if cookie.Name == "muxvia_cloud_operator_csrf" {
+		if cookie.Name == "muxvia_cloud_csrf" {
 			request.Header.Set("X-Muxvia-CSRF", cookie.Value)
 		}
 	}
@@ -556,7 +571,7 @@ func waitControlGenerations(t *testing.T, postgresDSN string, expected map[strin
 
 func scanHUB007RuntimeLogs(t *testing.T, manifest supervisorManifest, credentials developmentCredentials, extraLogs []string) {
 	t.Helper()
-	forbidden := []string{credentials.AccountPassword, credentials.OperatorAccessToken, base64.RawStdEncoding.EncodeToString(developmentDevicePrivateKey("daemon-edge-a")), base64.RawStdEncoding.EncodeToString(developmentDevicePrivateKey("daemon-edge-b")), "offer_sdp", "ice_pwd", "terminal_payload"}
+	forbidden := []string{credentials.AccountPassword, base64.RawStdEncoding.EncodeToString(developmentDevicePrivateKey("daemon-edge-a")), base64.RawStdEncoding.EncodeToString(developmentDevicePrivateKey("daemon-edge-b")), "offer_sdp", "ice_pwd", "terminal_payload"}
 	controllerConfigBody, err := os.ReadFile(processByName(t, manifest.Processes, "controller").ConfigPath)
 	if err != nil {
 		t.Fatal(err)

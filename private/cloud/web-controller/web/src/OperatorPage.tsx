@@ -6,7 +6,6 @@ import {
   Edit3,
   Laptop,
   History,
-  LogOut,
   PackageOpen,
   Rocket,
   PauseCircle,
@@ -17,7 +16,6 @@ import {
   Radio,
   Search,
   Server,
-  ShieldCheck,
   SlidersHorizontal,
   TicketPercent,
   UserRoundCog,
@@ -67,10 +65,9 @@ import {
   PutEntitlementOverrideRequestSchema,
   PutEntitlementOverrideResponseSchema,
   ManagementActorKind,
-  OperatorLoginRequestSchema,
-  OperatorLoginResponseSchema,
-  OperatorLogoutRequestSchema,
-  OperatorLogoutResponseSchema,
+  GetOperatorWorkspaceResponseSchema,
+  RecentAuthenticationRequestSchema,
+  RecentAuthenticationResponseSchema,
   OperatorTransitionSubscriptionRequestSchema,
   OperatorTransitionSubscriptionResponseSchema,
   PageRequestSchema,
@@ -125,7 +122,7 @@ import {
   Freshness,
   ManagedDeviceKind,
 } from "@/generated/cloudpb/cloud_topology_pb";
-import { ProtoHTTPError, protoPost } from "@/protoApi";
+import { ProtoHTTPError, protoGet, protoPost } from "@/protoApi";
 
 type HubFormState = {
   hubId: string;
@@ -146,8 +143,9 @@ const emptyHubForm: HubFormState = {
 };
 
 export default function OperatorPage() {
-  const [token, setToken] = useState("");
-  const [authenticated, setAuthenticated] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [reauthPassword, setReauthPassword] = useState("");
+  const [reauthExpiresAt, setReauthExpiresAt] = useState(0);
   const [accounts, setAccounts] = useState<ListOperatorAccountsResponse>();
   const [agents, setAgents] = useState<ListOperatorAgentsResponse>();
   const [orders, setOrders] = useState<ListOperatorOrdersResponse>();
@@ -201,6 +199,14 @@ export default function OperatorPage() {
 
   async function load(search = query) {
     try {
+      const workspace = await protoGet(
+        "/api/v1/operator/workspace",
+        GetOperatorWorkspaceResponseSchema,
+      );
+      if (workspace.modules.length === 0) {
+        location.href = "/account";
+        return;
+      }
       const page = create(PageRequestSchema, { pageSize: 100 });
       const [nextAccounts, nextAgents, nextFleet, nextCatalogHistory, nextOrders, nextSubscriptions, nextPromotions, nextReleases] = await Promise.all([
         protoPost(
@@ -208,51 +214,51 @@ export default function OperatorPage() {
           ListOperatorAccountsRequestSchema,
           create(ListOperatorAccountsRequestSchema, { query: search, page }),
           ListOperatorAccountsResponseSchema,
-          "muxvia_cloud_operator_csrf",
+          "muxvia_cloud_csrf",
         ),
         protoPost(
           "/api/v1/operator/agents/list",
           ListOperatorAgentsRequestSchema,
           create(ListOperatorAgentsRequestSchema, { query: search, includeRevoked: true, page }),
           ListOperatorAgentsResponseSchema,
-          "muxvia_cloud_operator_csrf",
+          "muxvia_cloud_csrf",
         ),
         protoPost(
           "/api/v1/operator/fleet/list",
           ListHubFleetRequestSchema,
           create(ListHubFleetRequestSchema, { page }),
           ListHubFleetResponseSchema,
-          "muxvia_cloud_operator_csrf",
+          "muxvia_cloud_csrf",
         ),
         protoPost(
           "/api/v1/operator/catalog/list",
           ListPlanCatalogReleasesRequestSchema,
           create(ListPlanCatalogReleasesRequestSchema, { page }),
           ListPlanCatalogReleasesResponseSchema,
-          "muxvia_cloud_operator_csrf",
+          "muxvia_cloud_csrf",
         ),
         protoPost(
           "/api/v1/operator/orders/list",
           ListOperatorOrdersRequestSchema,
           create(ListOperatorOrdersRequestSchema, { page }),
           ListOperatorOrdersResponseSchema,
-          "muxvia_cloud_operator_csrf",
+          "muxvia_cloud_csrf",
         ),
         protoPost(
           "/api/v1/operator/subscriptions/list",
           ListOperatorSubscriptionsRequestSchema,
           create(ListOperatorSubscriptionsRequestSchema, { page }),
           ListOperatorSubscriptionsResponseSchema,
-          "muxvia_cloud_operator_csrf",
+          "muxvia_cloud_csrf",
         ),
         protoPost(
           "/api/v1/operator/promotions/list",
           ListPromotionsRequestSchema,
           create(ListPromotionsRequestSchema, { includeDisabled: true, page }),
           ListPromotionsResponseSchema,
-          "muxvia_cloud_operator_csrf",
+          "muxvia_cloud_csrf",
         ),
-        protoPost("/api/v1/operator/releases/list", ListReleaseArtifactsRequestSchema, create(ListReleaseArtifactsRequestSchema, { page }), ListReleaseArtifactsResponseSchema, "muxvia_cloud_operator_csrf"),
+        protoPost("/api/v1/operator/releases/list", ListReleaseArtifactsRequestSchema, create(ListReleaseArtifactsRequestSchema, { page }), ListReleaseArtifactsResponseSchema, "muxvia_cloud_csrf"),
       ]);
       setAccounts(nextAccounts);
       setAgents(nextAgents);
@@ -269,13 +275,19 @@ export default function OperatorPage() {
             prettySpaces: 2,
           }),
         );
-      setAuthenticated(true);
+      setLoaded(true);
       setError("");
     } catch (cause) {
-      if (!(cause instanceof ProtoHTTPError && cause.status === 401))
-        setError(
-          cause instanceof Error ? cause.message : "Operator request failed",
-        );
+      if (cause instanceof ProtoHTTPError && cause.status === 401) {
+        location.href = "/login";
+        return;
+      }
+      if (cause instanceof ProtoHTTPError && cause.status === 403) {
+        location.href = "/account";
+        return;
+      }
+      setError(cause instanceof Error ? cause.message : "Operator request failed");
+      setLoaded(true);
     }
   }
 
@@ -283,23 +295,21 @@ export default function OperatorPage() {
     void load("");
   }, []);
 
-  async function login(event: FormEvent) {
+  async function reauthenticate(event: FormEvent) {
     event.preventDefault();
     setError("");
     try {
-      await protoPost(
-        "/api/v1/operator/login",
-        OperatorLoginRequestSchema,
-        create(OperatorLoginRequestSchema, { accessToken: decodeToken(token) }),
-        OperatorLoginResponseSchema,
-        "muxvia_cloud_operator_csrf",
+      const response = await protoPost(
+        "/api/v1/operator/reauth",
+        RecentAuthenticationRequestSchema,
+        create(RecentAuthenticationRequestSchema, { password: reauthPassword }),
+        RecentAuthenticationResponseSchema,
+        "muxvia_cloud_csrf",
       );
-      setToken("");
-      await load("");
+      setReauthPassword("");
+      setReauthExpiresAt(Number(response.expiresAtUnixMillis));
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Operator login failed",
-      );
+      setError(cause instanceof Error ? cause.message : "Password confirmation failed");
     }
   }
 
@@ -312,7 +322,7 @@ export default function OperatorPage() {
           GetOperatorAccountRequestSchema,
           create(GetOperatorAccountRequestSchema, { accountId }),
           GetOperatorAccountResponseSchema,
-          "muxvia_cloud_operator_csrf",
+          "muxvia_cloud_csrf",
         ),
         protoPost(
           "/api/v1/operator/entitlement-overrides/list",
@@ -323,7 +333,7 @@ export default function OperatorPage() {
             page,
           }),
           ListEntitlementOverridesResponseSchema,
-          "muxvia_cloud_operator_csrf",
+          "muxvia_cloud_csrf",
         ),
       ]);
       setDetail(nextDetail);
@@ -353,7 +363,7 @@ export default function OperatorPage() {
           requestId: crypto.randomUUID(),
         }),
         PublishPlanCatalogResponseSchema,
-        "muxvia_cloud_operator_csrf",
+        "muxvia_cloud_csrf",
       );
       setCatalogReason("");
       await load();
@@ -395,7 +405,7 @@ export default function OperatorPage() {
           requestId: crypto.randomUUID(),
         }),
         PutEntitlementOverrideResponseSchema,
-        "muxvia_cloud_operator_csrf",
+        "muxvia_cloud_csrf",
       );
       setOverrideValue("");
       setOverrideReason("");
@@ -434,7 +444,7 @@ export default function OperatorPage() {
           requestId: crypto.randomUUID(),
         }),
         CreateSubscriptionAdjustmentResponseSchema,
-        "muxvia_cloud_operator_csrf",
+        "muxvia_cloud_csrf",
       );
       setAdjustmentReason("");
       await select(subscription.accountId);
@@ -476,7 +486,7 @@ export default function OperatorPage() {
           requestId: crypto.randomUUID(),
         }),
         CreatePromotionResponseSchema,
-        "muxvia_cloud_operator_csrf",
+        "muxvia_cloud_csrf",
       );
       setPromotionCode("");
       setPromotionCreemCode("");
@@ -501,7 +511,7 @@ export default function OperatorPage() {
         ApplyOperatorPaymentEventRequestSchema,
         create(ApplyOperatorPaymentEventRequestSchema, { orderId, eventType, reason, requestId: crypto.randomUUID() }),
         ApplyOperatorPaymentEventResponseSchema,
-        "muxvia_cloud_operator_csrf",
+        "muxvia_cloud_csrf",
       );
       setPaymentReasons((current) => ({ ...current, [orderId]: "" }));
       await load();
@@ -528,7 +538,7 @@ export default function OperatorPage() {
           requestId: crypto.randomUUID(),
         }),
         ReconcileCreemPaymentAttemptResponseSchema,
-        "muxvia_cloud_operator_csrf",
+        "muxvia_cloud_csrf",
       );
       setReconcileReasons((current) => ({ ...current, [paymentAttemptId]: "" }));
       await load();
@@ -552,7 +562,7 @@ export default function OperatorPage() {
           transition: kind,
         }),
         OperatorTransitionSubscriptionResponseSchema,
-        "muxvia_cloud_operator_csrf",
+        "muxvia_cloud_csrf",
       );
       await select(accountId);
       await load();
@@ -587,7 +597,7 @@ export default function OperatorPage() {
           }),
         }),
         CreateManagementCommandResponseSchema,
-        "muxvia_cloud_operator_csrf",
+        "muxvia_cloud_csrf",
       );
       if (detail?.commerce?.account?.accountId === accountId)
         await select(accountId);
@@ -619,7 +629,7 @@ export default function OperatorPage() {
           }),
         }),
         CreateManagementCommandResponseSchema,
-        "muxvia_cloud_operator_csrf",
+        "muxvia_cloud_csrf",
       );
       if (detail?.commerce?.account?.accountId === accountId)
         await select(accountId);
@@ -646,7 +656,7 @@ export default function OperatorPage() {
           target: create(ManagementCommandTargetSchema, { target: { case: "presence", value: create(KickPresenceTargetSchema, { daemonDeviceId, assignmentEpoch, presenceSessionId }) } }),
         }),
         CreateManagementCommandResponseSchema,
-        "muxvia_cloud_operator_csrf",
+        "muxvia_cloud_csrf",
       );
       await load();
       if (detail?.commerce?.account?.accountId === accountId) await select(accountId);
@@ -668,7 +678,7 @@ export default function OperatorPage() {
         RevokeOperatorAccountSessionRequestSchema,
         create(RevokeOperatorAccountSessionRequestSchema, { accountId, sessionId, expectedRevision: revision, reason: "Operator revoked account session", requestId: crypto.randomUUID() }),
         RevokeOperatorAccountSessionResponseSchema,
-        "muxvia_cloud_operator_csrf",
+        "muxvia_cloud_csrf",
       );
       await select(accountId);
     } catch (cause) {
@@ -685,7 +695,7 @@ export default function OperatorPage() {
     setError("");
     try {
       const artifact = fromJsonString(ReleaseArtifactProjectionSchema, releaseDraft, { ignoreUnknownFields: false });
-      await protoPost("/api/v1/operator/releases/publish", PublishReleaseArtifactRequestSchema, create(PublishReleaseArtifactRequestSchema, { artifact, reason: releaseReason.trim(), requestId: crypto.randomUUID() }), PublishReleaseArtifactResponseSchema, "muxvia_cloud_operator_csrf");
+      await protoPost("/api/v1/operator/releases/publish", PublishReleaseArtifactRequestSchema, create(PublishReleaseArtifactRequestSchema, { artifact, reason: releaseReason.trim(), requestId: crypto.randomUUID() }), PublishReleaseArtifactResponseSchema, "muxvia_cloud_csrf");
       setReleaseDraft("");
       setReleaseReason("");
       await load();
@@ -703,7 +713,7 @@ export default function OperatorPage() {
     setBusy(true);
     setError("");
     try {
-      await protoPost("/api/v1/operator/releases/channel", SetReleaseChannelRequestSchema, create(SetReleaseChannelRequestSchema, { releaseId, expectedRevision: channel?.revision ?? 0n, paused, allowRollback, reason: paused ? "Operator paused release channel" : allowRollback ? "Operator rolled back release channel" : "Operator activated release", requestId: crypto.randomUUID() }), SetReleaseChannelResponseSchema, "muxvia_cloud_operator_csrf");
+      await protoPost("/api/v1/operator/releases/channel", SetReleaseChannelRequestSchema, create(SetReleaseChannelRequestSchema, { releaseId, expectedRevision: channel?.revision ?? 0n, paused, allowRollback, reason: paused ? "Operator paused release channel" : allowRollback ? "Operator rolled back release channel" : "Operator activated release", requestId: crypto.randomUUID() }), SetReleaseChannelResponseSchema, "muxvia_cloud_csrf");
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Release channel update failed");
@@ -724,7 +734,7 @@ export default function OperatorPage() {
           hubId: hubForm.hubId.trim(), edgeDeploymentId: hubForm.edgeDeploymentId.trim(), relayId: hubForm.relayId.trim(), region: hubForm.region.trim(), publicLabel: hubForm.publicLabel.trim(), publicHubUrl: hubForm.publicHubUrl.trim(), healthUrl: hubForm.healthUrl.trim(), maxAssignments: BigInt(hubForm.maxAssignments), hubControlPublicKey: decodeToken(hubForm.hubControlPublicKey.trim()), relayControlPublicKey: decodeToken(hubForm.relayControlPublicKey.trim()), reason: hubForm.reason.trim(), requestId: crypto.randomUUID(),
         }),
         CreateHubDeploymentResponseSchema,
-        "muxvia_cloud_operator_csrf",
+        "muxvia_cloud_csrf",
       );
       setHubForm(emptyHubForm);
       await load();
@@ -748,7 +758,7 @@ export default function OperatorPage() {
     if (!deployment) return;
     setBusy(true);
     try {
-      await protoPost("/api/v1/operator/fleet/update", UpdateHubDeploymentRequestSchema, create(UpdateHubDeploymentRequestSchema, { hubId: editingHubId, expectedRevision: deployment.directoryRevision, region: hubEdit.region.trim(), publicLabel: hubEdit.publicLabel.trim(), publicHubUrl: hubEdit.publicHubUrl.trim(), healthUrl: hubEdit.healthUrl.trim(), maxAssignments: BigInt(hubEdit.maxAssignments), reason: hubEdit.reason.trim(), requestId: crypto.randomUUID() }), UpdateHubDeploymentResponseSchema, "muxvia_cloud_operator_csrf");
+      await protoPost("/api/v1/operator/fleet/update", UpdateHubDeploymentRequestSchema, create(UpdateHubDeploymentRequestSchema, { hubId: editingHubId, expectedRevision: deployment.directoryRevision, region: hubEdit.region.trim(), publicLabel: hubEdit.publicLabel.trim(), publicHubUrl: hubEdit.publicHubUrl.trim(), healthUrl: hubEdit.healthUrl.trim(), maxAssignments: BigInt(hubEdit.maxAssignments), reason: hubEdit.reason.trim(), requestId: crypto.randomUUID() }), UpdateHubDeploymentResponseSchema, "muxvia_cloud_csrf");
       setEditingHubId("");
       await load();
     } catch (cause) {
@@ -780,7 +790,7 @@ export default function OperatorPage() {
     setBusy(true);
     setError("");
     try {
-      await protoPost(path, requestSchema, request, responseSchema, "muxvia_cloud_operator_csrf");
+      await protoPost(path, requestSchema, request, responseSchema, "muxvia_cloud_csrf");
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Hub operation failed");
@@ -789,55 +799,10 @@ export default function OperatorPage() {
     }
   }
 
-  async function logout() {
-    await protoPost(
-      "/api/v1/operator/logout",
-      OperatorLogoutRequestSchema,
-      create(OperatorLogoutRequestSchema),
-      OperatorLogoutResponseSchema,
-      "muxvia_cloud_operator_csrf",
-    );
-    setAuthenticated(false);
-    setAccounts(undefined);
-    setAgents(undefined);
-    setOrders(undefined);
-    setSubscriptions(undefined);
-    setPromotions(undefined);
-    setFleet(undefined);
-    setReleases(undefined);
-    setDetail(undefined);
-  }
-
-  if (!authenticated)
+  if (!loaded)
     return (
       <main className="grid min-h-dvh place-items-center bg-background p-5 text-foreground">
-        <form
-          className="w-full max-w-sm border border-line bg-panel p-6"
-          onSubmit={login}
-        >
-          <ShieldCheck className="size-8 text-primary" />
-          <p className="mt-6 font-mono text-[10px] text-primary">
-            OPERATOR CONTROL PLANE
-          </p>
-          <h1 className="mt-2 text-3xl font-light">Operator sign in</h1>
-          <label className="mt-6 grid gap-2 font-mono text-[9px] text-muted-foreground">
-            ACCESS TOKEN
-            <Input
-              data-testid="operator-token"
-              type="password"
-              value={token}
-              onChange={(event) => setToken(event.target.value)}
-            />
-          </label>
-          <Button
-            data-testid="operator-submit"
-            className="mt-4 w-full"
-            disabled={!token}
-          >
-            Sign in
-          </Button>
-          {error && <p className="mt-4 text-xs text-destructive">{error}</p>}
-        </form>
+        <p className="text-sm text-muted-foreground">Loading management workspace…</p>
       </main>
     );
 
@@ -854,18 +819,28 @@ export default function OperatorPage() {
           <Button variant="outline" size="icon" onClick={() => void load()}>
             <RefreshCw />
           </Button>
-          <Button variant="outline" onClick={logout}>
-            <LogOut />
-            Sign out
+          <Button variant="outline" onClick={() => { location.href = "/account"; }}>
+            <UserRoundCog />
+            Account
           </Button>
         </div>
       </header>
+      <form className="mt-5 flex flex-col gap-3 border border-line bg-panel p-4 sm:flex-row sm:items-end" onSubmit={reauthenticate} data-testid="operator-reauth">
+        <label className="grid min-w-0 flex-1 gap-2 text-xs font-medium">
+          Confirm account password to unlock changes for five minutes
+          <Input type="password" autoComplete="current-password" value={reauthPassword} onChange={(event) => setReauthPassword(event.target.value)} />
+        </label>
+        <Button disabled={!reauthPassword} type="submit">Unlock changes</Button>
+        <span className="pb-3 font-mono text-[10px] text-muted-foreground" aria-live="polite">
+          {reauthExpiresAt > Date.now() ? "CHANGES UNLOCKED" : "READ-ONLY UNTIL CONFIRMED"}
+        </span>
+      </form>
       {error && (
         <p role="alert" className="mt-5 border border-destructive p-3 text-xs text-destructive">
           {error}
         </p>
       )}
-      <section className="mt-6 border border-line bg-panel" data-testid="operator-releases">
+      <section className="mt-6 scroll-mt-4 border border-line bg-panel" data-testid="operator-releases" id="operator-releases">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line p-4">
           <h2 className="flex items-center gap-2 text-sm font-medium"><Rocket className="size-4 text-primary" />Releases</h2>
           <span className="font-mono text-[10px] text-muted-foreground">{releases?.artifacts.length ?? 0} SIGNED ARTIFACTS</span>
@@ -898,7 +873,7 @@ export default function OperatorPage() {
         </div> : null}
       </section>
       <div className="mt-6 grid gap-5 xl:grid-cols-3" data-testid="operator-commerce-operations">
-        <section className="border border-line bg-panel" data-testid="operator-orders">
+        <section className="scroll-mt-4 border border-line bg-panel" data-testid="operator-orders" id="operator-orders">
           <header className="flex items-center justify-between gap-3 border-b border-line p-4">
             <span className="flex items-center gap-2"><ReceiptText className="size-4 text-primary" /><strong className="text-sm">Orders</strong></span>
             <span className="font-mono text-[10px] text-muted-foreground">{orders?.orders.length ?? 0} TOTAL</span>
@@ -954,7 +929,7 @@ export default function OperatorPage() {
             }) : <p className="p-4 text-xs text-muted-foreground">No orders yet.</p>}
           </div>
         </section>
-        <section className="border border-line bg-panel" data-testid="operator-subscriptions">
+        <section className="scroll-mt-4 border border-line bg-panel" data-testid="operator-subscriptions" id="operator-subscriptions">
           <header className="flex items-center justify-between gap-3 border-b border-line p-4">
             <span className="flex items-center gap-2"><UserRoundCog className="size-4 text-primary" /><strong className="text-sm">Subscriptions</strong></span>
             <span className="font-mono text-[10px] text-muted-foreground">{subscriptions?.subscriptions.length ?? 0} TOTAL</span>
@@ -966,7 +941,7 @@ export default function OperatorPage() {
             </button>)}
           </div>
         </section>
-        <section className="border border-line bg-panel" data-testid="operator-promotions">
+        <section className="scroll-mt-4 border border-line bg-panel" data-testid="operator-promotions" id="operator-promotions">
           <header className="flex items-center justify-between gap-3 border-b border-line p-4">
             <span className="flex items-center gap-2"><TicketPercent className="size-4 text-primary" /><strong className="text-sm">Promotions</strong></span>
             <span className="font-mono text-[10px] text-muted-foreground">{promotions?.promotions.length ?? 0} RELEASES</span>
@@ -987,7 +962,7 @@ export default function OperatorPage() {
           <div className="max-h-64 overflow-y-auto">{promotions?.promotions.map((promotion) => <div className="grid grid-cols-[1fr_auto] gap-3 border-b border-line p-4 text-xs" key={promotion.promotionId}><span><strong className="block text-sm">{promotion.code}</strong><small className="text-muted-foreground">{promotion.planIds.join(", ")} · revision {promotion.revision.toString()}</small></span><span className={promotion.state === PromotionState.ACTIVE ? "text-success" : "text-muted-foreground"}>{PromotionState[promotion.state]}</span></div>)}</div>
         </section>
       </div>
-      <section className="mt-6 border border-line bg-panel" data-testid="operator-catalog">
+      <section className="mt-6 scroll-mt-4 border border-line bg-panel" data-testid="operator-catalog" id="operator-catalog">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-line p-4">
           <div className="flex items-center gap-3">
             <PackageOpen className="size-4 text-primary" />
@@ -1045,7 +1020,7 @@ export default function OperatorPage() {
         </div>
       </section>
       <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(360px,0.8fr)_minmax(480px,1.2fr)]">
-        <section className="min-w-0 border border-line bg-panel">
+        <section className="min-w-0 scroll-mt-4 border border-line bg-panel" id="operator-directory">
           <header className="grid gap-3 border-b border-line p-4">
             <div className="grid grid-cols-2 border border-line-strong p-1" aria-label="Directory view">
               <Button
@@ -1408,7 +1383,7 @@ export default function OperatorPage() {
           )}
         </section>
       </div>
-      <section className="mt-5 border border-line bg-panel">
+      <section className="mt-5 scroll-mt-4 border border-line bg-panel" id="operator-fleet">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line p-4">
           <h2 className="flex items-center gap-2 text-sm font-medium"><Server className="size-4" />Hub and Relay fleet</h2>
           <span className="font-mono text-[10px] text-muted-foreground">{fleet?.hubs.length ?? 0} deployments</span>

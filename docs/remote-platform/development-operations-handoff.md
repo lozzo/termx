@@ -329,7 +329,7 @@ systemctl reload nginx
 /etc/systemd/system/muxvia-cloud-edge.service
 ```
 
-`controller-config.json` 包含 PostgreSQL DSN、Controller projection private key、daemon-control private key 和 operator token。`edge-config.json` 包含 Hub/Relay control private key。`credentials.json` 包含 bootstrap 账号密码和 operator token。
+`controller-config.json` 包含 PostgreSQL DSN、Controller projection private key和 daemon-control private key。`edge-config.json` 包含 Hub/Relay control private key。`credentials.json` 只包含 bootstrap 普通账号密码；管理员授权保存在 PostgreSQL 账号角色列中。
 
 ### 9.2 114
 
@@ -364,7 +364,6 @@ Controller projection private key
 daemon-control private key
 两个 Edge 的 Hub control private key
 两个 Edge 的 Relay control private key
-operator access token
 bootstrap account password
 Cloudflare DNS API token
 Let's Encrypt/ACME account material或重新签发能力
@@ -493,7 +492,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64
 
 ## 15. Bootstrap 与原样迁移的区别
 
-`muxvia-cloud-bootstrap` 只适合创建新的空 schema 和全新部署身份。它会生成新的 Controller signing key、Edge identity、operator token 和 bootstrap 密码。
+`muxvia-cloud-bootstrap` 只适合创建新的空 schema 和全新部署身份。它会生成新的 Controller signing key、Edge identity 和 bootstrap 普通账号密码，并在 PostgreSQL 中把该账号授予 admin。
 
 对于本次“把现有 staging 搬到新服务器”，默认应原样迁移现有配置和密钥，而不是重新运行 bootstrap。否则现有 Edge identity、token audience、assignment 和账号 session 会失配。
 

@@ -70,9 +70,6 @@ type Config struct {
 	CreemAPIKey                    string                       `json:"-"`
 	CreemWebhookSecret             string                       `json:"-"`
 	DevelopmentMobileHubID         string                       `json:"development_mobile_hub_id"`
-	OperatorID                     string                       `json:"operator_id"`
-	OperatorRole                   string                       `json:"operator_role"`
-	OperatorAccessTokenBase64      string                       `json:"operator_access_token_base64"`
 	SecureCookie                   bool                         `json:"secure_cookie"`
 	WebStaticDir                   string                       `json:"web_static_dir"`
 	ReleaseSigningPublicKeysBase64 map[string]string            `json:"release_signing_public_keys_base64,omitempty"`
@@ -433,36 +430,22 @@ func start(config Config, refreshInterval time.Duration) (*Runtime, error) {
 	publicMux.Handle("/api/v1/", productHandler)
 	operatorMux := http.NewServeMux()
 	operatorMux.HandleFunc("/healthz", healthHandler)
-	if config.OperatorAccessTokenBase64 != "" {
-		operatorToken, decodeErr := base64.RawStdEncoding.DecodeString(config.OperatorAccessTokenBase64)
-		if decodeErr != nil || len(operatorToken) < 32 || config.OperatorID == "" {
-			_ = store.Close()
-			return nil, fmt.Errorf("invalid operator identity or access token")
+	fleet := &fleetQuery{registry: registry, publisher: publisher, hubControl: controlServer, relayControl: relayControlServer, onEnabled: func(hubID string, changedAt time.Time) {
+		if runtime == nil {
+			return
 		}
-		actorKind := cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_ADMIN
-		if config.OperatorRole == "readonly" {
-			actorKind = cloudpb.ManagementActorKind_MANAGEMENT_ACTOR_KIND_OPERATOR_READONLY
-		} else if config.OperatorRole != "admin" {
-			clear(operatorToken)
-			_ = store.Close()
-			return nil, fmt.Errorf("invalid operator role")
+		if publishErr := runtime.publishHubPolicy(config, policyService, privateKey, hubID, changedAt); publishErr != nil {
+			runtime.reportPolicyError(publishErr)
 		}
-		fleet := &fleetQuery{registry: registry, publisher: publisher, hubControl: controlServer, relayControl: relayControlServer, onEnabled: func(hubID string, changedAt time.Time) {
-			if runtime == nil {
-				return
-			}
-			if publishErr := runtime.publishHubPolicy(config, policyService, privateKey, hubID, changedAt); publishErr != nil {
-				runtime.reportPolicyError(publishErr)
-			}
-		}}
-		operatorHandler, handlerErr := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{AccessToken: operatorToken, OperatorID: config.OperatorID, ActorKind: actorKind, Commerce: commerceService, Catalog: catalogService, Overrides: overrideService, Promotions: promotionService, Topology: topologyService, Quota: store, Outbox: outboxService, Planner: planner, Fleet: fleet, PaymentReconciler: creemService, Releases: releaseService, Now: time.Now, SecureCookie: config.SecureCookie})
-		clear(operatorToken)
-		if handlerErr != nil {
-			_ = store.Close()
-			return nil, handlerErr
-		}
-		operatorMux.Handle("/api/v1/operator/", operatorHandler)
+	}}
+	operatorHandler, handlerErr := webcontroller.OperatorAPIHandler(webcontroller.OperatorAPIConfig{Commerce: commerceService, Catalog: catalogService, Overrides: overrideService, Promotions: promotionService, Topology: topologyService, Quota: store, Outbox: outboxService, Planner: planner, Fleet: fleet, PaymentReconciler: creemService, Releases: releaseService, Now: time.Now, SecureCookie: config.SecureCookie})
+	if handlerErr != nil {
+		_ = store.Close()
+		return nil, handlerErr
 	}
+	// 运营工作台属于普通账号产品面；public 与内部运维 listener 复用同一后端逐请求鉴权 handler。
+	publicMux.Handle("/api/v1/operator/", operatorHandler)
+	operatorMux.Handle("/api/v1/operator/", operatorHandler)
 	if config.WebStaticDir != "" {
 		staticHandler, staticErr := webStaticHandler(config.WebStaticDir)
 		if staticErr != nil {

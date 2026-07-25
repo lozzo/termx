@@ -2,12 +2,13 @@ import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
 type SupervisorManifest = {
-  controller: { operator_url: string };
+  controller: { operator_url: string; public_url: string };
   credentials_path: string;
 };
 
 type DevelopmentCredentials = {
-  operator_access_token: string;
+  account_email: string;
+  account_password: string;
 };
 
 test("operator UI observes two Edges and issues a real management command", async ({
@@ -22,9 +23,15 @@ test("operator UI observes two Edges and issues a real management command", asyn
     await readFile(manifest.credentials_path, "utf8"),
   ) as DevelopmentCredentials;
 
-  await page.goto(`${manifest.controller.operator_url}/operator`);
-  await page.getByTestId("operator-token").fill(credentials.operator_access_token);
-  await page.getByTestId("operator-submit").click();
+  await page.goto(`${manifest.controller.public_url}/login`);
+  await page.getByTestId("account-email").fill(credentials.account_email);
+  await page.getByTestId("account-password").fill(credentials.account_password);
+  await page.getByTestId("account-submit").click();
+  await expect(page).toHaveURL(/\/account/);
+  await page.goto(`${manifest.controller.public_url}/operator`);
+  await page.getByTestId("operator-reauth").getByLabel(/Confirm account password/).fill(credentials.account_password);
+  await page.getByRole("button", { name: "Unlock changes" }).click();
+  await expect(page.getByText("CHANGES UNLOCKED")).toBeVisible();
   await expect(page.getByText("Hub and Relay fleet")).toBeVisible();
   await expect(page.locator("article").filter({ hasText: "hub-edge-a" })).toBeVisible();
   await expect(page.locator("article").filter({ hasText: "hub-edge-b" })).toBeVisible();

@@ -40,7 +40,7 @@
 | admin + 近期认证 | 页面登录后九类 mutation 成功 |
 | 缺少 CSRF | 同浏览器 cookie 下危险 release mutation 返回 `401`，无写入 |
 | readonly | `TestOperatorAPIEnforcesRoleCSRFRecentAuthAndPersistsSubscriptionAudit` 返回 `403` |
-| secret/log scan | password、operator token、DeviceIdentity private key 和 signaling/terminal payload 未出现在 Controller、Edge、Playwright 日志 |
+| secret/log scan | password、普通账号 Session token、DeviceIdentity private key 和 signaling/terminal payload 未出现在 Controller、Edge、Playwright 日志 |
 
 ## UI 证据
 

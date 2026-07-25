@@ -11,7 +11,6 @@ type DevelopmentCredentials = {
   account_email: string;
   account_password: string;
   operator_url: string;
-  operator_access_token: string;
   release_artifact_json: string;
 };
 
@@ -27,9 +26,15 @@ test("operator completes all nine modules against Controller, PostgreSQL, and tw
   const promotionCode = `OPS${Date.now().toString().slice(-7)}`;
 
   await page.setViewportSize({ width: 1440, height: 960 });
-  await page.goto(`${credentials.operator_url}/operator`);
-  await page.getByTestId("operator-token").fill(credentials.operator_access_token);
-  await page.getByTestId("operator-submit").click();
+  await page.goto(`${credentials.public_url}/login`);
+  await page.getByTestId("account-email").fill(credentials.account_email);
+  await page.getByTestId("account-password").fill(credentials.account_password);
+  await page.getByTestId("account-submit").click();
+  await expect(page).toHaveURL(/\/account/);
+  await page.goto(`${credentials.public_url}/operator`);
+  await page.getByTestId("operator-reauth").getByLabel(/Confirm account password/).fill(credentials.account_password);
+  await page.getByRole("button", { name: "Unlock changes" }).click();
+  await expect(page.getByText("CHANGES UNLOCKED")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Control plane" })).toBeVisible();
   await expect(page.getByTestId("hub-hub-edge-a")).toContainText("Ready");
   await expect(page.getByTestId("hub-hub-edge-b")).toContainText("Ready");
@@ -70,17 +75,14 @@ test("operator completes all nine modules against Controller, PostgreSQL, and tw
   await expect(page.getByTestId("operator-overrides")).toContainText("cloud_device_limit");
   await expect(page.getByTestId("operator-overrides")).toContainText("ACTIVE");
 
-  await page.goto(`${credentials.public_url}/login`);
-  await page.getByTestId("account-email").fill(credentials.account_email);
-  await page.getByTestId("account-password").fill(credentials.account_password);
-  await page.getByTestId("account-submit").click();
-  await expect(page).toHaveURL(/\/account/);
+  await page.goto(`${credentials.public_url}/account`);
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
   await page.getByRole("button", { name: "Plans" }).click();
   await page.getByTestId("checkout-promotion-code").fill(promotionCode);
   await page.getByRole("button", { name: "Upgrade to Pro" }).click();
   await expect(page.getByText("pro", { exact: true }).first()).toBeVisible();
 
-  await page.goto(`${credentials.operator_url}/operator`);
+  await page.goto(`${credentials.public_url}/operator`);
   await expect(page.getByTestId("operator-orders")).toContainText("$5.00");
   await expect(page.getByTestId("operator-orders").getByText("PAID", { exact: true })).toBeVisible();
   await expect(page.getByTestId("operator-subscriptions").getByText("ACTIVE", { exact: true })).toBeVisible();
