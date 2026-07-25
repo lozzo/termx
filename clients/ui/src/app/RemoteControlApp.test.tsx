@@ -22,6 +22,19 @@ describe('RemoteControlApp first-use experience', () => {
     expect(screen.getByRole('button', { name: 'Add local device' })).toBeTruthy()
   })
 
+  it('uses service QR pairing without exposing account login when account access is disabled', async () => {
+    renderApp({ cloudAccount: null, accountAccessEnabled: false, scanPairingCode: vi.fn(async () => null) })
+
+    expect(await screen.findByTestId('muxvia-first-use')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Scan service QR' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Sign in to Muxvia Cloud' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+    expect(screen.queryByRole('heading', { name: 'Account' })).toBeNull()
+    expect(screen.queryByText('Current plan')).toBeNull()
+    expect(screen.getByText('Device access')).toBeTruthy()
+  })
+
   it('does not query the Cloud directory or show an error before sign-in', async () => {
     const listMachines = vi.fn(async () => {
       throw Object.assign(new Error('login required'), { code: 'login_required' })
@@ -164,6 +177,7 @@ describe('RemoteControlApp first-use experience', () => {
 })
 
 function renderApp({
+  accountAccessEnabled = true,
   cloudAccount,
   machines = [],
   listMachines,
@@ -171,6 +185,7 @@ function renderApp({
   pairingImport,
   scanPairingCode,
 }: {
+  accountAccessEnabled?: boolean
   cloudAccount: { accountId: string; accountLabel: string } | null
   machines?: Awaited<ReturnType<CloudAccountAdapter['listMachines']>>
   listMachines?: CloudAccountAdapter['listMachines'] | undefined
@@ -210,6 +225,7 @@ function renderApp({
   }
   render(
     <RemoteControlApp
+      accountAccessEnabled={accountAccessEnabled}
       cloudAccountAdapter={cloudAccountAdapter}
       externalPairingAdapter={externalPairingAdapter}
       networkRuntime={networkRuntime}

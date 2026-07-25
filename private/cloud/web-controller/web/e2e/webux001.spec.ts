@@ -30,28 +30,22 @@ for (const viewport of [
   });
 }
 
-test("single add-device wizard completes phone activation", async ({ page }) => {
+test("account service flow does not expose phone activation", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${baseURL}/account`);
   await page.getByRole("button", { name: "Devices" }).click();
-  await page.getByRole("button", { name: "Add device" }).click();
-  await expect(page.getByRole("heading", { name: "Add a device" })).toBeVisible();
-  await page.getByRole("button", { name: /Phone or tablet/ }).click();
-  await page.getByRole("button", { name: "Create QR code" }).click();
-  await expect(page.getByText("MXA-ABCD-EFGH-JKMP-QRST-VWXY-234567")).toBeVisible();
-  await expect(page.getByText("Pixel 9"), "submitted phone metadata should be reviewable").toBeVisible({ timeout: 5_000 });
-  await page.getByRole("button", { name: "Approve phone" }).click();
-  await expect(page.getByText(/finishing activation/i)).toBeVisible();
-  await page.getByRole("button", { name: "Done" }).click();
-  await expect(page.getByText("Pixel 9")).toBeVisible();
+  await page.getByRole("button", { name: "Add service" }).click();
+  await expect(page.getByRole("heading", { name: "Add a service" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Phone or tablet/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Create QR code" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Create login code" })).toBeVisible();
 });
 
 test("single add-device wizard completes daemon enrollment and protects removal", async ({ page }) => {
   await page.setViewportSize({ width: 768, height: 900 });
   await page.goto(`${baseURL}/account`);
   await page.getByRole("button", { name: "Devices" }).click();
-  await page.getByRole("button", { name: "Add device" }).click();
-  await page.getByRole("button", { name: /Daemon host/ }).click();
+  await page.getByRole("button", { name: "Add service" }).click();
   await page.getByRole("button", { name: "Create login code" }).click();
   await expect(page.getByText("MXD-ABCD-EFGH-JKMP-QRST-VWXY-234567", { exact: true })).toBeVisible();
   await expect(page.getByText("Build Mac"), "submitted daemon metadata should be reviewable").toBeVisible({ timeout: 5_000 });
@@ -77,8 +71,7 @@ test("daemon enrollment explains an explicit revoked-account transfer", async ({
   }));
   await page.goto(`${baseURL}/account`);
   await page.getByRole("button", { name: "Devices" }).click();
-  await page.getByRole("button", { name: "Add device" }).click();
-  await page.getByRole("button", { name: /Daemon host/ }).click();
+  await page.getByRole("button", { name: "Add service" }).click();
   await page.getByRole("button", { name: "Create login code" }).click();
   await expect(page.getByText(/old account's cloud links/i)).toBeVisible({ timeout: 5_000 });
   await expect(page.getByRole("button", { name: "Transfer to this account" })).toBeVisible();
@@ -96,20 +89,19 @@ test("advanced topology stays outside primary navigation and keyboard reachable"
   await expect(page.getByText("Command outbox")).toBeVisible();
 });
 
-test("simplified Chinese keeps the mobile device flow reachable", async ({ page }) => {
+test("simplified Chinese keeps daemon enrollment reachable without phone activation", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 780 });
   await page.goto(`${baseURL}/account`);
   await page.getByLabel("Language").selectOption("zh-CN");
   await expect(page.getByRole("heading", { name: "概览" })).toBeVisible();
   await page.getByRole("button", { name: "设备" }).click();
-  await page.getByRole("button", { name: "添加设备" }).click();
-  await expect(page.getByRole("heading", { name: "添加设备" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /手机或平板/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /守护进程主机/ })).toBeVisible();
+  await page.getByRole("button", { name: "添加服务" }).click();
+  await expect(page.getByRole("heading", { name: "添加服务" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /手机或平板/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "生成登录码" })).toBeVisible();
 });
 
 async function installAccountAPI(page: Page) {
-  let phoneInspect = 0;
   let daemonInspect = 0;
   let devices = [
     device("daemon-1", "Studio Mac", "MANAGED_DEVICE_KIND_DAEMON", true),
@@ -128,13 +120,6 @@ async function installAccountAPI(page: Page) {
         return json(route, { presences: [{ daemonDeviceId: "daemon-1", controlOwnerHubId: "hub-us", assignmentEpoch: "2", presenceSessionId: "presence-1", availability: "AVAILABILITY_ONLINE", freshness: "FRESHNESS_FRESH" }], peerSessions: [] });
       case "/api/v1/management/commands/list":
         return json(route, { commands: [] });
-      case "/api/v1/mobile-activations/create":
-        return json(route, phoneActivation("MOBILE_ACTIVATION_STATE_WAITING_FOR_DEVICE"));
-      case "/api/v1/mobile-activations/inspect":
-        phoneInspect += 1;
-        return json(route, phoneActivation(phoneInspect > 0 ? "MOBILE_ACTIVATION_STATE_WAITING_FOR_APPROVAL" : "MOBILE_ACTIVATION_STATE_WAITING_FOR_DEVICE", { displayName: "Pixel 9", platform: "Android", muxviaVersion: "0.1.0" }));
-      case "/api/v1/mobile-activations/approve":
-        return json(route, {});
       case "/api/v1/daemon-enrollments/create":
         return json(route, daemonEnrollment("DAEMON_ENROLLMENT_STATE_WAITING_FOR_DEVICE"));
       case "/api/v1/daemon-enrollments/inspect":
@@ -164,10 +149,6 @@ async function installAccountAPI(page: Page) {
 
 function device(deviceId: string, displayName: string, deviceKind: string, online: boolean) {
   return { deviceId, displayName, deviceKind, authEpoch: "1", presence: online ? { availability: "AVAILABILITY_ONLINE", freshness: "FRESHNESS_FRESH" } : undefined };
-}
-
-function phoneActivation(state: string, clientMetadata?: Record<string, string>) {
-  return { userCode: "MXA-ABCD-EFGH-JKMP-QRST-VWXY-234567", qrPayload: "muxvia-cloud-activate:v1:test", state, expiresAtUnix: "1784765400", clientMetadata };
 }
 
 function daemonEnrollment(state: string, daemonMetadata?: Record<string, string>) {

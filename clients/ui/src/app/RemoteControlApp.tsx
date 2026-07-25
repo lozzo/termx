@@ -199,6 +199,8 @@ export interface RemoteControlAppProps {
   externalPairingAdapter?: ExternalPairingAdapter | undefined
   exportDebugLogs?: (() => Promise<void>) | undefined
   cloudAccountAdapter?: CloudAccountAdapter | undefined
+  /** accountAccessEnabled 只控制账号登录产品面；Endpoint、配对和 terminal 权限仍由 Go Client Engine 与 daemon 持有。 */
+  accountAccessEnabled?: boolean | undefined
 }
 
 export function RemoteControlApp({
@@ -211,6 +213,7 @@ export function RemoteControlApp({
   externalPairingAdapter,
   exportDebugLogs,
   cloudAccountAdapter,
+  accountAccessEnabled = true,
 }: RemoteControlAppProps) {
   const { t } = useTranslation()
   const networkRuntime = networkRuntimeProp ?? unavailableNetworkRuntime
@@ -244,7 +247,7 @@ export function RemoteControlApp({
   const [sshCredentialNotice, setSSHCredentialNotice] = useState<NonNullable<ExternalPairingImportResult['sshCredentials']> | null>(null)
   const [cameraScanning, setCameraScanning] = useState(false)
   const [scanFlowState, setScanFlowState] = useState<ScanFlowState>('idle')
-  const signedIn = cloudAccountAdapter ? cloudAccount !== null : accessToken.trim() !== ''
+  const signedIn = accountAccessEnabled && (cloudAccountAdapter ? cloudAccount !== null : accessToken.trim() !== '')
   const appThemeStyle = useMemo(() => terminalThemeCssVariables(terminalSettings.themeId) as CSSProperties, [terminalSettings.themeId])
   const cameraScanInFlightRef = useRef(false)
   const runtimeCacheRef = useRef<{
@@ -848,6 +851,7 @@ export function RemoteControlApp({
     >
       {view === 'settings' ? (
         <SettingsView
+          accountAccessEnabled={accountAccessEnabled}
           error={error}
           controlUrl={controlUrl}
           loading={loading}
@@ -888,6 +892,7 @@ export function RemoteControlApp({
         />
       ) : (
         <HomeView
+          accountAccessEnabled={accountAccessEnabled}
           fileTransfer={globalFileTransfer}
           transferState={globalTransferState as { transfers: TransferInfo[]; hasActiveTransfers: boolean }}
           loading={loading}
@@ -1067,6 +1072,7 @@ function MachineRuntimeErrorShell({
 }
 
 function HomeView({
+  accountAccessEnabled,
   fileTransfer,
   transferState,
   loading,
@@ -1084,6 +1090,7 @@ function HomeView({
   onSelectMachine,
   onSignIn,
 }: {
+  accountAccessEnabled: boolean
   fileTransfer?: FileTransferContext | undefined
   transferState: { transfers: TransferInfo[]; hasActiveTransfers: boolean }
   loading: boolean
@@ -1113,7 +1120,7 @@ function HomeView({
           <div className="min-w-0 lg:flex lg:items-center lg:gap-3">
             <h1 className="text-lg font-semibold leading-6 lg:text-sm">{t('machines.title')}</h1>
             <p className="truncate text-xs font-medium text-zinc-500 lg:border-l lg:border-zinc-200 lg:pl-3">
-            {signedIn ? (user?.email ? t('machines.availableFor', { count: machines.length, account: user.email }) : t('machines.availableCount', { count: machines.length })) : t('machines.signInToSync')}
+            {signedIn ? (user?.email ? t('machines.availableFor', { count: machines.length, account: user.email }) : t('machines.availableCount', { count: machines.length })) : accountAccessEnabled ? t('machines.signInToSync') : t('machines.savedCount', { count: machines.length })}
             </p>
           </div>
         </div>
@@ -1163,6 +1170,7 @@ function HomeView({
 
       {machines.length === 0 ? (
         <FirstUseState
+          accountAccessEnabled={accountAccessEnabled}
           signedIn={signedIn}
           onAddLocalDevice={onAddLocalDevice}
           onSignIn={onSignIn}
@@ -1201,10 +1209,12 @@ function HomeView({
 }
 
 function FirstUseState({
+  accountAccessEnabled,
   signedIn,
   onAddLocalDevice,
   onSignIn,
 }: {
+  accountAccessEnabled: boolean
   signedIn: boolean
   onAddLocalDevice: () => void
   onSignIn: () => void
@@ -1217,17 +1227,17 @@ function FirstUseState({
           <Server className="h-6 w-6" />
         </div>
         <h2 className="mt-5 text-lg font-semibold text-zinc-950">{t('machines.emptyTitle')}</h2>
-        <p className="mt-2 text-sm leading-6 text-zinc-600">{t(signedIn ? 'machines.emptySignedInCopy' : 'machines.emptyCopy')}</p>
+        <p className="mt-2 text-sm leading-6 text-zinc-600">{t(accountAccessEnabled ? (signedIn ? 'machines.emptySignedInCopy' : 'machines.emptyCopy') : 'machines.emptyServiceCopy')}</p>
         <div className="mt-6 grid gap-3">
-          {!signedIn ? (
+          {accountAccessEnabled && !signedIn ? (
             <button className="muxvia-app-primary-button h-12 gap-2 px-4 text-sm font-semibold" type="button" onClick={onSignIn}>
               <LogIn className="h-4 w-4" />
               {t('machines.signInCloud')}
             </button>
           ) : null}
-          <button className={`${signedIn ? 'muxvia-app-primary-button' : 'muxvia-app-secondary-button'} h-12 gap-2 px-4 text-sm font-semibold`} type="button" onClick={onAddLocalDevice}>
-            <Plus className="h-4 w-4" />
-            {t('machines.addLocal')}
+          <button className={`${signedIn || !accountAccessEnabled ? 'muxvia-app-primary-button' : 'muxvia-app-secondary-button'} h-12 gap-2 px-4 text-sm font-semibold`} type="button" onClick={onAddLocalDevice}>
+            <QrCode className="h-4 w-4" />
+            {t(accountAccessEnabled ? 'machines.addLocal' : 'machines.scanService')}
           </button>
         </div>
       </section>
@@ -1236,6 +1246,7 @@ function FirstUseState({
 }
 
 function SettingsView({
+  accountAccessEnabled,
   canScanCloudActivation,
   cloudActivation,
   controlUrl,
@@ -1260,6 +1271,7 @@ function SettingsView({
   onExportDebugLogs,
   nativeCloudLogin,
 }: {
+  accountAccessEnabled: boolean
   canScanCloudActivation: boolean
   cloudActivation: { userCode: string; expiresAtUnix: number } | null
   controlUrl: string
@@ -1309,9 +1321,9 @@ function SettingsView({
         </button>
         <div className="min-w-0 flex-1">
           <h1 className="text-lg font-semibold leading-6 text-zinc-900">{t('common.settings')}</h1>
-          <p className="truncate text-xs font-medium text-zinc-500">{signedIn ? user?.email ?? t('common.signedIn') : nativeCloudLogin ? t('settings.cloudSignIn') : t('settings.webSignIn')}</p>
+          <p className="truncate text-xs font-medium text-zinc-500">{accountAccessEnabled ? (signedIn ? user?.email ?? t('common.signedIn') : nativeCloudLogin ? t('settings.cloudSignIn') : t('settings.webSignIn')) : t('settings.deviceAccess')}</p>
         </div>
-        {signedIn ? (
+        {accountAccessEnabled && signedIn ? (
           <button
             aria-label={t('common.signOut')}
             className="muxvia-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--muxvia-app-accent)]"
@@ -1330,7 +1342,7 @@ function SettingsView({
             <p className="border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
           ) : null}
 
-          <SettingsSection title={t('common.account')}>
+          {accountAccessEnabled ? <SettingsSection title={t('common.account')}>
             {signedIn ? (
               <>
                 <SettingsRow label={t('common.signedIn')} value={user?.email ?? t('common.account')} />
@@ -1401,9 +1413,9 @@ function SettingsView({
                 )}
               </>
             )}
-          </SettingsSection>
+          </SettingsSection> : null}
 
-          {!nativeCloudLogin ? (
+          {accountAccessEnabled && !nativeCloudLogin ? (
             <SettingsSection title={t('settings.connection')}>
               <SettingsRow
                 label={t('settings.webControl')}

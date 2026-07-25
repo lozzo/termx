@@ -10,12 +10,10 @@ import {
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
-  Smartphone,
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -46,13 +44,6 @@ import {
 	DaemonEnrollmentProjectionSchema,
 	DaemonEnrollmentState,
 	InspectDaemonEnrollmentRequestSchema,
-	MobileActivationApproveRequestSchema,
-  MobileActivationApproveResponseSchema,
-  MobileActivationCreateRequestSchema,
-  MobileActivationInspectRequestSchema,
-  MobileActivationProjectionSchema,
-  MobileActivationState,
-  type MobileActivationProjection,
 	type DaemonEnrollmentProjection,
 } from "@/generated/cloudpb/cloud_companion_pb";
 import {
@@ -89,8 +80,6 @@ type AccountState = {
   topology: ListAccountTopologyResponse;
   commands: ListManagementCommandsResponse;
 };
-type AddDeviceKind = "phone" | "daemon";
-
 type ProtectedAction = {
   label: string;
   execute: () => Promise<unknown>;
@@ -489,40 +478,18 @@ export default function AccountPage({ section }: { section: AccountSection }) {
 
 function AddDeviceWizard({ onClose, onChanged }: { onClose: () => void; onChanged: () => Promise<void> }) {
   const { t } = useTranslation();
-  const [kind, setKind] = useState<AddDeviceKind>();
   return (
     <div className="fixed inset-0 z-50 grid bg-black/45 p-3 sm:place-items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="add-device-title">
       <section className="flex max-h-[calc(100dvh-24px)] w-full max-w-3xl flex-col self-end overflow-hidden border border-line-strong bg-background shadow-2xl sm:self-auto">
         <header className="flex min-h-14 items-center justify-between gap-4 border-b border-line bg-panel px-4">
           <div>
             <h2 className="m-0 text-base font-semibold" id="add-device-title">{t("account.devices.addTitle")}</h2>
-            {kind && <p className="m-0 mt-0.5 text-xs text-muted-foreground">{t(`account.devices.${kind}Title`)}</p>}
+            <p className="m-0 mt-0.5 text-xs text-muted-foreground">{t("account.devices.daemonTitle")}</p>
           </div>
           <Button size="icon" variant="ghost" onClick={onClose} aria-label={t("account.devices.close")}><X /></Button>
         </header>
         <div className="min-h-0 overflow-y-auto p-4 sm:p-6">
-          {!kind ? (
-            <div>
-              <p className="m-0 max-w-2xl text-sm leading-6 text-muted-foreground">{t("account.devices.addCopy")}</p>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                <button className="group min-h-36 cursor-pointer border border-line bg-panel p-5 text-left hover:border-primary focus-visible:outline-2 focus-visible:outline-primary" onClick={() => setKind("phone")}>
-                  <Smartphone className="size-6 text-primary" />
-                  <strong className="mt-5 block text-base">{t("account.devices.phoneTitle")}</strong>
-                  <span className="mt-2 block text-sm leading-6 text-muted-foreground">{t("account.devices.phoneCopy")}</span>
-                </button>
-                <button className="group min-h-36 cursor-pointer border border-line bg-panel p-5 text-left hover:border-primary focus-visible:outline-2 focus-visible:outline-primary" onClick={() => setKind("daemon")}>
-                  <Laptop className="size-6 text-primary" />
-                  <strong className="mt-5 block text-base">{t("account.devices.daemonTitle")}</strong>
-                  <span className="mt-2 block text-sm leading-6 text-muted-foreground">{t("account.devices.daemonCopy")}</span>
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div>
-              <Button className="mb-4" variant="ghost" onClick={() => setKind(undefined)}>{t("account.devices.back")}</Button>
-              {kind === "phone" ? <MobileActivationPanel onActivated={onChanged} onDone={onClose} /> : <DaemonEnrollmentPanel onEnrolled={onChanged} onDone={onClose} />}
-            </div>
-          )}
+          <DaemonEnrollmentPanel onEnrolled={onChanged} onDone={onClose} />
         </div>
       </section>
     </div>
@@ -729,103 +696,6 @@ function DaemonEnrollmentPanel({ onEnrolled, onDone }: { onEnrolled: () => Promi
 			{error && <p className="m-5 border border-destructive p-3 text-xs text-destructive" role="alert">{error}</p>}
 		</Panel>
 	);
-}
-
-function MobileActivationPanel({ onActivated, onDone }: { onActivated: () => Promise<void>; onDone: () => void }) {
-  const { t } = useTranslation();
-  const [activation, setActivation] = useState<MobileActivationProjection>();
-  const [qrDataURL, setQRDataURL] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!activation?.qrPayload) { setQRDataURL(""); return; }
-    void QRCode.toDataURL(activation.qrPayload, { width: 256, margin: 2, errorCorrectionLevel: "M", color: { dark: "#111111", light: "#ffffff" } })
-      .then(setQRDataURL)
-      .catch(() => setError(t("account.mobileFlow.renderError")));
-  }, [activation?.qrPayload]);
-
-  useEffect(() => {
-    if (!activation || activation.state !== MobileActivationState.WAITING_FOR_DEVICE) return;
-    let stopped = false;
-    const inspect = async () => {
-      try {
-        const next = await protoPost(
-          "/api/v1/mobile-activations/inspect",
-          MobileActivationInspectRequestSchema,
-          create(MobileActivationInspectRequestSchema, { userCode: activation.userCode }),
-          MobileActivationProjectionSchema,
-        );
-        if (!stopped) setActivation(next);
-      } catch (cause) {
-        if (!stopped) setError(cause instanceof Error ? cause.message : t("account.mobileFlow.inspectError"));
-      }
-    };
-    const timer = window.setInterval(() => void inspect(), 1500);
-    return () => { stopped = true; window.clearInterval(timer); };
-  }, [activation]);
-
-  async function createActivation() {
-    setBusy(true); setError("");
-    try {
-      setActivation(await protoPost(
-        "/api/v1/mobile-activations/create",
-        MobileActivationCreateRequestSchema,
-        create(MobileActivationCreateRequestSchema),
-        MobileActivationProjectionSchema,
-      ));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("account.mobileFlow.createError"));
-    } finally { setBusy(false); }
-  }
-
-  async function approve() {
-    if (!activation) return;
-    setBusy(true); setError("");
-    try {
-      await protoPost(
-        "/api/v1/mobile-activations/approve",
-        MobileActivationApproveRequestSchema,
-        create(MobileActivationApproveRequestSchema, { userCode: activation.userCode }),
-        MobileActivationApproveResponseSchema,
-      );
-      setActivation({ ...activation, state: MobileActivationState.APPROVED });
-      await onActivated();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("account.mobileFlow.approveError"));
-    } finally { setBusy(false); }
-  }
-
-  return (
-    <Panel title={t("account.nodes.mobileTitle")}>
-      {!activation ? (
-        <div className="flex flex-wrap items-center justify-between gap-4 p-5">
-          <div className="flex max-w-2xl items-start gap-3">
-            <Smartphone className="mt-0.5 size-4 shrink-0 text-primary" />
-            <p className="m-0 text-sm leading-6 text-muted-foreground">{t("account.nodes.mobileCopy")}</p>
-          </div>
-          <Button disabled={busy} onClick={() => void createActivation()}><QrCode />{busy ? t("account.nodes.creating") : t("account.nodes.createQR")}</Button>
-        </div>
-      ) : (
-        <div className="grid md:grid-cols-[288px_1fr]">
-          <div className="grid min-h-72 place-items-center border-b border-line bg-white p-4 md:border-b-0 md:border-r">
-            {qrDataURL ? <img className="aspect-square size-full max-h-64 max-w-64 object-contain" width="256" height="256" alt={t("account.nodes.qrAlt")} src={qrDataURL} /> : <span className="text-sm text-muted-foreground">{t("account.mobileFlow.rendering")}</span>}
-          </div>
-          <div className="flex flex-col justify-center p-6">
-            <span className="text-xs font-medium text-primary">{t(`account.mobileFlow.state.${MobileActivationState[activation.state]}`)}</span>
-            <strong className="mt-3 font-mono text-2xl font-normal">{activation.userCode}</strong>
-            {activation.clientMetadata ? (
-              <div className="mt-5 border-y border-line py-4 text-xs"><b className="block font-medium">{activation.clientMetadata.displayName}</b><span className="text-muted-foreground">{activation.clientMetadata.platform} · {activation.clientMetadata.muxviaVersion}</span></div>
-            ) : <p className="mt-4 text-sm leading-6 text-muted-foreground">{t("account.nodes.scanCopy")}</p>}
-            {activation.state === MobileActivationState.WAITING_FOR_APPROVAL && <Button className="mt-5 self-start" disabled={busy} onClick={() => void approve()}><ShieldCheck />{busy ? t("account.mobileFlow.approving") : t("account.mobileFlow.approve")}</Button>}
-            {activation.state === MobileActivationState.APPROVED && <p className="mt-5 text-sm text-success">{t("account.nodes.approvedCopy")}</p>}
-            <Button className="mt-3 self-start" variant="ghost" onClick={() => { if (activation.state === MobileActivationState.APPROVED) onDone(); else { setActivation(undefined); setError(""); } }}>{activation.state === MobileActivationState.APPROVED ? t("account.nodes.done") : t("account.nodes.cancel")}</Button>
-          </div>
-        </div>
-      )}
-      {error && <p className="m-5 border border-destructive p-3 text-xs text-destructive" role="alert">{error}</p>}
-    </Panel>
-  );
 }
 
 function Panel({

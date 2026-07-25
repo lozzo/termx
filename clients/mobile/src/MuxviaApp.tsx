@@ -34,10 +34,9 @@ import type {
   WebControlMachine,
   RemoteControlAppProps,
   ExternalPairingAdapter,
-  CloudAccountAdapter,
   ProtoClientSession,
 } from '@muxvia/ui'
-import { NativeConnection, type NativeCloudAccount } from './plugins/nativeConnection'
+import { NativeConnection } from './plugins/nativeConnection'
 import { NativeFileTransferStore } from './NativeFileTransferStore'
 import { GoBindingClient, GoBindingConnector } from './GoBindingClient'
 import { settleBindingGeneration } from './BindingGeneration'
@@ -52,20 +51,6 @@ const qrScannerReaderId = 'muxvia-camera-qr-reader'
 const nativeHttpConnectTimeoutMs = 8_000
 const nativeHttpReadTimeoutMs = 15_000
 let goBindingClient = new GoBindingClient()
-
-function validCloudAccount(account: NativeCloudAccount): account is NativeCloudAccount & {
-  accountId: string
-  accountLabel: string
-  planId: string
-  planName: string
-  subscriptionStatus: string
-  subscriptionRevision: number
-} {
-  return Boolean(
-    account.accountId && account.accountLabel && account.planId && account.planName && account.subscriptionStatus &&
-    typeof account.subscriptionRevision === 'number' && account.subscriptionRevision > 0,
-  )
-}
 
 type MachineRuntimeFactory = NonNullable<RemoteControlAppProps['machineRuntimeFactory']>
 type MachineRuntime = ReturnType<MachineRuntimeFactory>
@@ -110,39 +95,6 @@ export function MuxviaApp() {
     () => createNativeExternalPairingAdapter(endpointRegistry),
     [endpointRegistry],
   )
-  const cloudAccountAdapter = useMemo<CloudAccountAdapter>(() => ({
-    async current() {
-      const account = await NativeConnection.getCloudAccount()
-      return validCloudAccount(account) ? account : null
-    },
-    async refresh() {
-      const account = await NativeConnection.refreshCloudAccount()
-      return validCloudAccount(account) ? account : null
-    },
-    beginActivation: () => NativeConnection.cloudBeginActivation(),
-    claimActivation: (payload) => NativeConnection.cloudClaimActivation({ payload }),
-    async awaitActivation() {
-      const account = await NativeConnection.cloudAwaitActivation()
-      if (!validCloudAccount(account)) throw new Error('Muxvia Cloud returned an invalid account')
-      return account
-    },
-    cancelActivation: () => NativeConnection.cloudCancelActivation(),
-    async listMachines() {
-      const result = await NativeConnection.cloudListDevices()
-      return result.devices
-        .filter((device) => device.kind === 'daemon' && !device.revoked)
-        .map((device) => ({
-          id: device.deviceId,
-          name: device.displayName,
-          osInfo: device.platform,
-          online: device.online,
-          source: 'hub' as const,
-          hubUrls: [],
-          hubStatus: device.online ? 'online' : 'offline',
-        }))
-    },
-    logout: () => NativeConnection.cloudLogout(),
-  }), [])
   const machineRuntimeFactory = useMemo<MachineRuntimeFactory>(
     () => nativeAppRuntime.createMachineRuntime,
     [nativeAppRuntime],
@@ -170,8 +122,8 @@ export function MuxviaApp() {
   return (
     <section className="muxvia-app-page flex h-[100dvh] w-screen flex-col overflow-hidden antialiased">
       <RemoteControlApp
+        accountAccessEnabled={false}
         defaultControlUrl={defaultControlUrl}
-        cloudAccountAdapter={cloudAccountAdapter}
         exportDebugLogs={exportNativeDebugLogs}
         externalPairingAdapter={externalPairingAdapter}
         globalFileTransfer={globalFileTransfer}
