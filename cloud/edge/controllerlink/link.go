@@ -43,22 +43,28 @@ type Config struct {
 	WriterQueueSize      int
 	OpenRuntimeFeed      func(context.Context) (*RuntimeFeed, error)
 	ApplyDesiredConfig   func(context.Context, *cloudv1.SignedEdgeDesiredConfig) (uint64, error)
+	Capabilities         []cloudv1.EdgeCapability
 }
 
 // Session 拥有一个 EdgeControl generation、唯一 reader、唯一 writer 与同步 coordinator。
 type Session struct {
-	connectionID string
-	welcome      *cloudv1.EdgeWelcome
-	stream       cloudv1.EdgeControl_ConnectClient
-	connection   *grpc.ClientConn
-	cancel       context.CancelFunc
-	done         chan struct{}
-	doneOnce     sync.Once
-	resultMu     sync.Mutex
-	resultErr    error
-	ready        chan struct{}
-	readyOnce    sync.Once
-	closeOnce    sync.Once
+	connectionID  string
+	welcome       *cloudv1.EdgeWelcome
+	stream        cloudv1.EdgeControl_ConnectClient
+	connection    *grpc.ClientConn
+	cancel        context.CancelFunc
+	done          chan struct{}
+	doneOnce      sync.Once
+	resultMu      sync.Mutex
+	resultErr     error
+	ready         chan struct{}
+	readyOnce     sync.Once
+	closeOnce     sync.Once
+	outbound      chan any
+	pendingMu     sync.Mutex
+	pendingLeases map[string]chan *cloudv1.RelayLeaseDecision
+	usageAcks     chan *cloudv1.UsageAck
+	usageMu       sync.Mutex
 }
 
 // Open 建立 mTLS 流并完成 Hello/Welcome；SnapshotAccepted 由 WaitReady 单独等待。
@@ -69,6 +75,9 @@ func Open(parent context.Context, config Config) (*Session, error) {
 	config.SoftwareVersion = strings.TrimSpace(config.SoftwareVersion)
 	if config.WriterQueueSize == 0 {
 		config.WriterQueueSize = 1024
+	}
+	if len(config.Capabilities) == 0 {
+		config.Capabilities = []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM}
 	}
 	if config.ControllerAddress == "" || config.EdgeID == "" || config.BootID == "" || config.SoftwareVersion == "" || config.TLSConfig == nil || config.OpenRuntimeFeed == nil || config.WriterQueueSize <= 0 {
 		return nil, errors.New("controller address, TLS, Edge identity, runtime feed, and positive writer queue are required")
@@ -88,7 +97,7 @@ func Open(parent context.Context, config Config) (*Session, error) {
 	connectionID := uuid.NewString()
 	if err := stream.Send(edgeEvent(config, connectionID, 1, &cloudv1.EdgeEvent_Hello{Hello: &cloudv1.EdgeHello{
 		EdgeId: config.EdgeID, SoftwareVersion: config.SoftwareVersion,
-		Capabilities:         []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM},
+		Capabilities:         append([]cloudv1.EdgeCapability(nil), config.Capabilities...),
 		DesiredConfigVersion: config.DesiredConfigVersion, CertificateVersion: config.CertificateVersion,
 	}})); err != nil {
 		cancel()
@@ -107,7 +116,10 @@ func Open(parent context.Context, config Config) (*Session, error) {
 		_ = connection.Close()
 		return nil, err
 	}
-	session := &Session{connectionID: connectionID, welcome: welcome, stream: stream, connection: connection, cancel: cancel, done: make(chan struct{}), ready: make(chan struct{})}
+	session := &Session{
+		connectionID: connectionID, welcome: welcome, stream: stream, connection: connection, cancel: cancel, done: make(chan struct{}), ready: make(chan struct{}),
+		outbound: make(chan any, config.WriterQueueSize), pendingLeases: make(map[string]chan *cloudv1.RelayLeaseDecision), usageAcks: make(chan *cloudv1.UsageAck, 1),
+	}
 	go session.run(ctx, config, command.GetSenderId(), command.GetBootId(), config.WriterQueueSize)
 	return session, nil
 }
@@ -139,6 +151,9 @@ func (session *Session) Wait() error {
 	return session.err()
 }
 
+// Done 在当前 EdgeControl generation 结束时关闭，供 usage pump 停止重试。
+func (session *Session) Done() <-chan struct{} { return session.done }
+
 // Close 取消 reader/writer/coordinator 并关闭底层连接；重复调用安全。
 func (session *Session) Close() error {
 	var err error
@@ -149,13 +164,71 @@ func (session *Session) Close() error {
 	return err
 }
 
+// RequestRelayLease 通过当前 EdgeControl generation 申请精确 session 的短租约。
+// correlation 只保存在内存；控制流关闭会使等待方失败，禁止跨 generation 复用决定。
+func (session *Session) RequestRelayLease(ctx context.Context, request *cloudv1.RelayLeaseRequest) (*cloudv1.RelayLeaseDecision, error) {
+	if session == nil || request == nil || strings.TrimSpace(request.GetCorrelationId()) == "" || strings.TrimSpace(request.GetSessionId()) == "" {
+		return nil, errors.New("RelayLeaseRequest correlation and session are required")
+	}
+	correlationID := request.GetCorrelationId()
+	response := make(chan *cloudv1.RelayLeaseDecision, 1)
+	session.pendingMu.Lock()
+	if _, exists := session.pendingLeases[correlationID]; exists {
+		session.pendingMu.Unlock()
+		return nil, errors.New("RelayLeaseRequest correlation already exists")
+	}
+	session.pendingLeases[correlationID] = response
+	session.pendingMu.Unlock()
+	defer func() {
+		session.pendingMu.Lock()
+		delete(session.pendingLeases, correlationID)
+		session.pendingMu.Unlock()
+	}()
+	if err := queueEvent(ctx, session.outbound, &cloudv1.EdgeEvent_RelayLeaseRequest{RelayLeaseRequest: request}); err != nil {
+		return nil, err
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-session.done:
+		return nil, errors.New("EdgeControl closed before RelayLeaseDecision")
+	case decision := <-response:
+		return decision, nil
+	}
+}
+
+// CommitUsageBatch 发送一个 outbox 批次并等待数据库提交后的精确 ACK。
+// 调用方同一时间只能有一个未完成批次，避免 UsageAck 与本地读取窗口错配。
+func (session *Session) CommitUsageBatch(ctx context.Context, batch *cloudv1.UsageBatch) (*cloudv1.UsageAck, error) {
+	if session == nil || batch == nil || strings.TrimSpace(batch.GetBatchId()) == "" || len(batch.GetEvents()) == 0 {
+		return nil, errors.New("non-empty UsageBatch is required")
+	}
+	session.usageMu.Lock()
+	defer session.usageMu.Unlock()
+	select {
+	case stale := <-session.usageAcks:
+		_ = stale
+	default:
+	}
+	if err := queueEvent(ctx, session.outbound, &cloudv1.EdgeEvent_UsageBatch{UsageBatch: batch}); err != nil {
+		return nil, err
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-session.done:
+		return nil, errors.New("EdgeControl closed before UsageAck")
+	case ack := <-session.usageAcks:
+		return ack, nil
+	}
+}
+
 func (session *Session) run(ctx context.Context, config Config, controllerID, controllerBootID string, writerQueueSize int) {
 	commands := make(chan *cloudv1.ControllerCommand, writerQueueSize)
 	receiveErrors := make(chan error, 1)
 	go session.readCommands(ctx, controllerID, controllerBootID, commands, receiveErrors)
-	events := make(chan any, writerQueueSize)
 	writeErrors := make(chan error, 1)
-	go session.writeEvents(ctx, config, events, writeErrors)
+	go session.writeEvents(ctx, config, session.outbound, writeErrors)
 
 	var feed *RuntimeFeed
 	closeFeed := func() {
@@ -172,7 +245,7 @@ func (session *Session) run(ctx context.Context, config Config, controllerID, co
 		if err != nil {
 			return err
 		}
-		return queueSnapshot(ctx, events, feed.Snapshot)
+		return queueSnapshot(ctx, session.outbound, feed.Snapshot)
 	}
 	if err := startSnapshot(); err != nil {
 		session.finish(err)
@@ -223,7 +296,7 @@ func (session *Session) run(ctx context.Context, config Config, controllerID, co
 				if applyErr != nil {
 					result.ErrorCode = "CONFIG_INVALID"
 				}
-				if err := queueEvent(ctx, events, &cloudv1.EdgeEvent_ConfigApplied{ConfigApplied: result}); err != nil {
+				if err := queueEvent(ctx, session.outbound, &cloudv1.EdgeEvent_ConfigApplied{ConfigApplied: result}); err != nil {
 					session.finish(err)
 					return
 				}
@@ -233,6 +306,15 @@ func (session *Session) run(ctx context.Context, config Config, controllerID, co
 				}
 				desiredApplied = true
 				markReady()
+			case *cloudv1.ControllerCommand_RelayLeaseDecision:
+				session.resolveRelayLease(payload.RelayLeaseDecision)
+			case *cloudv1.ControllerCommand_UsageAck:
+				select {
+				case session.usageAcks <- payload.UsageAck:
+				default:
+					session.finish(errors.New("unexpected or duplicate UsageAck"))
+					return
+				}
 			default:
 				session.finish(fmt.Errorf("unsupported Controller command payload %T", command.GetPayload()))
 				return
@@ -242,16 +324,31 @@ func (session *Session) run(ctx context.Context, config Config, controllerID, co
 				session.finish(errors.New("runtime delta buffer overflowed"))
 				return
 			}
-			if err := queueEvent(ctx, events, &cloudv1.EdgeEvent_RuntimeDelta{RuntimeDelta: delta}); err != nil {
+			if err := queueEvent(ctx, session.outbound, &cloudv1.EdgeEvent_RuntimeDelta{RuntimeDelta: delta}); err != nil {
 				session.finish(err)
 				return
 			}
 			latestRevision = delta.GetRevision()
 		case <-heartbeat.C:
-			if err := queueEvent(ctx, events, &cloudv1.EdgeEvent_Heartbeat{Heartbeat: &cloudv1.EdgeHeartbeat{RuntimeRevision: latestRevision}}); err != nil {
+			if err := queueEvent(ctx, session.outbound, &cloudv1.EdgeEvent_Heartbeat{Heartbeat: &cloudv1.EdgeHeartbeat{RuntimeRevision: latestRevision}}); err != nil {
 				session.finish(err)
 				return
 			}
+		}
+	}
+}
+
+func (session *Session) resolveRelayLease(decision *cloudv1.RelayLeaseDecision) {
+	if decision == nil || strings.TrimSpace(decision.GetCorrelationId()) == "" {
+		return
+	}
+	session.pendingMu.Lock()
+	waiter := session.pendingLeases[decision.GetCorrelationId()]
+	session.pendingMu.Unlock()
+	if waiter != nil {
+		select {
+		case waiter <- decision:
+		default:
 		}
 	}
 }
@@ -322,7 +419,7 @@ func queueSnapshot(ctx context.Context, output chan<- any, snapshot *cloudv1.Run
 		return err
 	}
 	chunkIndex := uint32(0)
-	for agentIndex, sessionIndex := 0, 0; agentIndex < len(normalized.Agents) || sessionIndex < len(normalized.Sessions); chunkIndex++ {
+	for agentIndex, sessionIndex, allocationIndex := 0, 0, 0; agentIndex < len(normalized.Agents) || sessionIndex < len(normalized.Sessions) || allocationIndex < len(normalized.Allocations); chunkIndex++ {
 		chunk := &cloudv1.SnapshotChunk{SnapshotId: snapshotID, ChunkIndex: chunkIndex}
 		remaining := snapshotChunkSize
 		for agentIndex < len(normalized.Agents) && remaining > 0 {
@@ -333,6 +430,11 @@ func queueSnapshot(ctx context.Context, output chan<- any, snapshot *cloudv1.Run
 		for sessionIndex < len(normalized.Sessions) && remaining > 0 {
 			chunk.Sessions = append(chunk.Sessions, normalized.Sessions[sessionIndex])
 			sessionIndex++
+			remaining--
+		}
+		for allocationIndex < len(normalized.Allocations) && remaining > 0 {
+			chunk.Allocations = append(chunk.Allocations, normalized.Allocations[allocationIndex])
+			allocationIndex++
 			remaining--
 		}
 		if err := queueEvent(ctx, output, &cloudv1.EdgeEvent_SnapshotChunk{SnapshotChunk: chunk}); err != nil {
@@ -369,6 +471,10 @@ func edgeEvent(config Config, connectionID string, sequence uint64, payload any)
 	case *cloudv1.EdgeEvent_Heartbeat:
 		event.Payload = typed
 	case *cloudv1.EdgeEvent_ConfigApplied:
+		event.Payload = typed
+	case *cloudv1.EdgeEvent_RelayLeaseRequest:
+		event.Payload = typed
+	case *cloudv1.EdgeEvent_UsageBatch:
 		event.Payload = typed
 	default:
 		panic("unsupported EdgeEvent payload")

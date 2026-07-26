@@ -117,7 +117,7 @@ func (service *Service) Connect(stream cloudv1.AgentGateway_ConnectServer) error
 			if err := validateAgentEvent(result.event, event, generation, expectedSequence); err != nil {
 				return status.Error(codes.InvalidArgument, err.Error())
 			}
-			if result.event.GetAnswer() != nil || result.event.GetRejected() != nil {
+			if result.event.GetAnswer() != nil || result.event.GetRejected() != nil || result.event.GetAuthorization() != nil {
 				if err := service.config.Runtime.ResolveAgentSignal(connectionCtx, claims.GetDaemonId(), generation, result.event); err != nil {
 					return status.Error(codes.FailedPrecondition, err.Error())
 				}
@@ -169,6 +169,10 @@ func validateAgentEvent(event, hello *cloudv1.AgentEvent, generation, expectedSe
 	case event.GetRejected() != nil:
 		if strings.TrimSpace(event.GetRejected().GetCorrelationId()) == "" || strings.TrimSpace(event.GetRejected().GetSessionId()) == "" || strings.TrimSpace(event.GetRejected().GetCode()) == "" {
 			return errors.New("Agent rejection is invalid")
+		}
+	case event.GetAuthorization() != nil:
+		if strings.TrimSpace(event.GetAuthorization().GetCorrelationId()) == "" || strings.TrimSpace(event.GetAuthorization().GetSessionId()) == "" || (!event.GetAuthorization().GetAuthorized() && strings.TrimSpace(event.GetAuthorization().GetCode()) == "") {
+			return errors.New("Agent authorization result is invalid")
 		}
 	default:
 		return errors.New("Agent event payload is unsupported")

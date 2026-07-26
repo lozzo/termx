@@ -28,6 +28,8 @@ type EdgeCapability int32
 const (
 	EdgeCapability_EDGE_CAPABILITY_UNSPECIFIED    EdgeCapability = 0
 	EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM EdgeCapability = 1
+	EdgeCapability_EDGE_CAPABILITY_RELAY          EdgeCapability = 2
+	EdgeCapability_EDGE_CAPABILITY_USAGE_OUTBOX   EdgeCapability = 3
 )
 
 // Enum value maps for EdgeCapability.
@@ -35,10 +37,14 @@ var (
 	EdgeCapability_name = map[int32]string{
 		0: "EDGE_CAPABILITY_UNSPECIFIED",
 		1: "EDGE_CAPABILITY_CONTROL_STREAM",
+		2: "EDGE_CAPABILITY_RELAY",
+		3: "EDGE_CAPABILITY_USAGE_OUTBOX",
 	}
 	EdgeCapability_value = map[string]int32{
 		"EDGE_CAPABILITY_UNSPECIFIED":    0,
 		"EDGE_CAPABILITY_CONTROL_STREAM": 1,
+		"EDGE_CAPABILITY_RELAY":          2,
+		"EDGE_CAPABILITY_USAGE_OUTBOX":   3,
 	}
 )
 
@@ -264,11 +270,12 @@ func (x *SnapshotBegin) GetRevision() uint64 {
 
 // SnapshotChunk 分块传输快照对象；chunk_index 必须从零严格递增。
 type SnapshotChunk struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	SnapshotId    string                  `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
-	ChunkIndex    uint32                  `protobuf:"varint,2,opt,name=chunk_index,json=chunkIndex,proto3" json:"chunk_index,omitempty"`
-	Agents        []*AgentPresence        `protobuf:"bytes,3,rep,name=agents,proto3" json:"agents,omitempty"`
-	Sessions      []*ClientSessionSummary `protobuf:"bytes,4,rep,name=sessions,proto3" json:"sessions,omitempty"`
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	SnapshotId    string                    `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	ChunkIndex    uint32                    `protobuf:"varint,2,opt,name=chunk_index,json=chunkIndex,proto3" json:"chunk_index,omitempty"`
+	Agents        []*AgentPresence          `protobuf:"bytes,3,rep,name=agents,proto3" json:"agents,omitempty"`
+	Sessions      []*ClientSessionSummary   `protobuf:"bytes,4,rep,name=sessions,proto3" json:"sessions,omitempty"`
+	Allocations   []*RelayAllocationSummary `protobuf:"bytes,5,rep,name=allocations,proto3" json:"allocations,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -327,6 +334,13 @@ func (x *SnapshotChunk) GetAgents() []*AgentPresence {
 func (x *SnapshotChunk) GetSessions() []*ClientSessionSummary {
 	if x != nil {
 		return x.Sessions
+	}
+	return nil
+}
+
+func (x *SnapshotChunk) GetAllocations() []*RelayAllocationSummary {
+	if x != nil {
+		return x.Allocations
 	}
 	return nil
 }
@@ -632,6 +646,8 @@ type EdgeEvent struct {
 	//	*EdgeEvent_RuntimeDelta
 	//	*EdgeEvent_Heartbeat
 	//	*EdgeEvent_ConfigApplied
+	//	*EdgeEvent_RelayLeaseRequest
+	//	*EdgeEvent_UsageBatch
 	Payload       isEdgeEvent_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -786,6 +802,24 @@ func (x *EdgeEvent) GetConfigApplied() *ConfigApplied {
 	return nil
 }
 
+func (x *EdgeEvent) GetRelayLeaseRequest() *RelayLeaseRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*EdgeEvent_RelayLeaseRequest); ok {
+			return x.RelayLeaseRequest
+		}
+	}
+	return nil
+}
+
+func (x *EdgeEvent) GetUsageBatch() *UsageBatch {
+	if x != nil {
+		if x, ok := x.Payload.(*EdgeEvent_UsageBatch); ok {
+			return x.UsageBatch
+		}
+	}
+	return nil
+}
+
 type isEdgeEvent_Payload interface {
 	isEdgeEvent_Payload()
 }
@@ -818,6 +852,14 @@ type EdgeEvent_ConfigApplied struct {
 	ConfigApplied *ConfigApplied `protobuf:"bytes,26,opt,name=config_applied,json=configApplied,proto3,oneof"`
 }
 
+type EdgeEvent_RelayLeaseRequest struct {
+	RelayLeaseRequest *RelayLeaseRequest `protobuf:"bytes,27,opt,name=relay_lease_request,json=relayLeaseRequest,proto3,oneof"`
+}
+
+type EdgeEvent_UsageBatch struct {
+	UsageBatch *UsageBatch `protobuf:"bytes,28,opt,name=usage_batch,json=usageBatch,proto3,oneof"`
+}
+
 func (*EdgeEvent_Hello) isEdgeEvent_Payload() {}
 
 func (*EdgeEvent_SnapshotBegin) isEdgeEvent_Payload() {}
@@ -831,6 +873,10 @@ func (*EdgeEvent_RuntimeDelta) isEdgeEvent_Payload() {}
 func (*EdgeEvent_Heartbeat) isEdgeEvent_Payload() {}
 
 func (*EdgeEvent_ConfigApplied) isEdgeEvent_Payload() {}
+
+func (*EdgeEvent_RelayLeaseRequest) isEdgeEvent_Payload() {}
+
+func (*EdgeEvent_UsageBatch) isEdgeEvent_Payload() {}
 
 // ControllerCommand 是 Controller 向 Edge 发送的单调序列 envelope。
 // welcome 之后由 snapshot_accepted 或 resync_required 驱动同步状态机。
@@ -849,6 +895,8 @@ type ControllerCommand struct {
 	//	*ControllerCommand_SnapshotAccepted
 	//	*ControllerCommand_ResyncRequired
 	//	*ControllerCommand_DesiredConfig
+	//	*ControllerCommand_RelayLeaseDecision
+	//	*ControllerCommand_UsageAck
 	Payload       isControllerCommand_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -976,6 +1024,24 @@ func (x *ControllerCommand) GetDesiredConfig() *SignedEdgeDesiredConfig {
 	return nil
 }
 
+func (x *ControllerCommand) GetRelayLeaseDecision() *RelayLeaseDecision {
+	if x != nil {
+		if x, ok := x.Payload.(*ControllerCommand_RelayLeaseDecision); ok {
+			return x.RelayLeaseDecision
+		}
+	}
+	return nil
+}
+
+func (x *ControllerCommand) GetUsageAck() *UsageAck {
+	if x != nil {
+		if x, ok := x.Payload.(*ControllerCommand_UsageAck); ok {
+			return x.UsageAck
+		}
+	}
+	return nil
+}
+
 type isControllerCommand_Payload interface {
 	isControllerCommand_Payload()
 }
@@ -996,6 +1062,14 @@ type ControllerCommand_DesiredConfig struct {
 	DesiredConfig *SignedEdgeDesiredConfig `protobuf:"bytes,23,opt,name=desired_config,json=desiredConfig,proto3,oneof"`
 }
 
+type ControllerCommand_RelayLeaseDecision struct {
+	RelayLeaseDecision *RelayLeaseDecision `protobuf:"bytes,24,opt,name=relay_lease_decision,json=relayLeaseDecision,proto3,oneof"`
+}
+
+type ControllerCommand_UsageAck struct {
+	UsageAck *UsageAck `protobuf:"bytes,25,opt,name=usage_ack,json=usageAck,proto3,oneof"`
+}
+
 func (*ControllerCommand_Welcome) isControllerCommand_Payload() {}
 
 func (*ControllerCommand_SnapshotAccepted) isControllerCommand_Payload() {}
@@ -1004,11 +1078,15 @@ func (*ControllerCommand_ResyncRequired) isControllerCommand_Payload() {}
 
 func (*ControllerCommand_DesiredConfig) isControllerCommand_Payload() {}
 
+func (*ControllerCommand_RelayLeaseDecision) isControllerCommand_Payload() {}
+
+func (*ControllerCommand_UsageAck) isControllerCommand_Payload() {}
+
 var File_cloud_v1_edge_control_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\n" +
-	"\x1bcloud/v1/edge_control.proto\x12\x0fmuxvia.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1acloud/v1/edge_config.proto\x1a\x16cloud/v1/runtime.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfb\x01\n" +
+	"\x1bcloud/v1/edge_control.proto\x12\x0fmuxvia.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1acloud/v1/edge_config.proto\x1a\x16cloud/v1/runtime.proto\x1a\x14cloud/v1/usage.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfb\x01\n" +
 	"\tEdgeHello\x12\x17\n" +
 	"\aedge_id\x18\x01 \x01(\tR\x06edgeId\x12)\n" +
 	"\x10software_version\x18\x02 \x01(\tR\x0fsoftwareVersion\x12C\n" +
@@ -1022,14 +1100,15 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\rSnapshotBegin\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1a\n" +
-	"\brevision\x18\x02 \x01(\x04R\brevision\"\xcc\x01\n" +
+	"\brevision\x18\x02 \x01(\x04R\brevision\"\x97\x02\n" +
 	"\rSnapshotChunk\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1f\n" +
 	"\vchunk_index\x18\x02 \x01(\rR\n" +
 	"chunkIndex\x126\n" +
 	"\x06agents\x18\x03 \x03(\v2\x1e.muxvia.cloud.v1.AgentPresenceR\x06agents\x12A\n" +
-	"\bsessions\x18\x04 \x03(\v2%.muxvia.cloud.v1.ClientSessionSummaryR\bsessions\"\x83\x01\n" +
+	"\bsessions\x18\x04 \x03(\v2%.muxvia.cloud.v1.ClientSessionSummaryR\bsessions\x12I\n" +
+	"\vallocations\x18\x05 \x03(\v2'.muxvia.cloud.v1.RelayAllocationSummaryR\vallocations\"\x83\x01\n" +
 	"\vSnapshotEnd\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1a\n" +
@@ -1050,7 +1129,7 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\aversion\x18\x01 \x01(\x04R\aversion\x12\x18\n" +
 	"\aapplied\x18\x02 \x01(\bR\aapplied\x12\x1d\n" +
 	"\n" +
-	"error_code\x18\x03 \x01(\tR\terrorCode\"\xe7\x05\n" +
+	"error_code\x18\x03 \x01(\tR\terrorCode\"\xfd\x06\n" +
 	"\tEdgeEvent\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
 	"\n" +
@@ -1067,8 +1146,11 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\fsnapshot_end\x18\x17 \x01(\v2\x1c.muxvia.cloud.v1.SnapshotEndH\x00R\vsnapshotEnd\x12D\n" +
 	"\rruntime_delta\x18\x18 \x01(\v2\x1d.muxvia.cloud.v1.RuntimeDeltaH\x00R\fruntimeDelta\x12>\n" +
 	"\theartbeat\x18\x19 \x01(\v2\x1e.muxvia.cloud.v1.EdgeHeartbeatH\x00R\theartbeat\x12G\n" +
-	"\x0econfig_applied\x18\x1a \x01(\v2\x1e.muxvia.cloud.v1.ConfigAppliedH\x00R\rconfigAppliedB\t\n" +
-	"\apayload\"\xc2\x04\n" +
+	"\x0econfig_applied\x18\x1a \x01(\v2\x1e.muxvia.cloud.v1.ConfigAppliedH\x00R\rconfigApplied\x12T\n" +
+	"\x13relay_lease_request\x18\x1b \x01(\v2\".muxvia.cloud.v1.RelayLeaseRequestH\x00R\x11relayLeaseRequest\x12>\n" +
+	"\vusage_batch\x18\x1c \x01(\v2\x1b.muxvia.cloud.v1.UsageBatchH\x00R\n" +
+	"usageBatchB\t\n" +
+	"\apayload\"\xd5\x05\n" +
 	"\x11ControllerCommand\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
 	"\n" +
@@ -1082,11 +1164,15 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\awelcome\x18\x14 \x01(\v2\x1c.muxvia.cloud.v1.EdgeWelcomeH\x00R\awelcome\x12P\n" +
 	"\x11snapshot_accepted\x18\x15 \x01(\v2!.muxvia.cloud.v1.SnapshotAcceptedH\x00R\x10snapshotAccepted\x12J\n" +
 	"\x0fresync_required\x18\x16 \x01(\v2\x1f.muxvia.cloud.v1.ResyncRequiredH\x00R\x0eresyncRequired\x12Q\n" +
-	"\x0edesired_config\x18\x17 \x01(\v2(.muxvia.cloud.v1.SignedEdgeDesiredConfigH\x00R\rdesiredConfigB\t\n" +
-	"\apayload*U\n" +
+	"\x0edesired_config\x18\x17 \x01(\v2(.muxvia.cloud.v1.SignedEdgeDesiredConfigH\x00R\rdesiredConfig\x12W\n" +
+	"\x14relay_lease_decision\x18\x18 \x01(\v2#.muxvia.cloud.v1.RelayLeaseDecisionH\x00R\x12relayLeaseDecision\x128\n" +
+	"\tusage_ack\x18\x19 \x01(\v2\x19.muxvia.cloud.v1.UsageAckH\x00R\busageAckB\t\n" +
+	"\apayload*\x92\x01\n" +
 	"\x0eEdgeCapability\x12\x1f\n" +
 	"\x1bEDGE_CAPABILITY_UNSPECIFIED\x10\x00\x12\"\n" +
-	"\x1eEDGE_CAPABILITY_CONTROL_STREAM\x10\x012\\\n" +
+	"\x1eEDGE_CAPABILITY_CONTROL_STREAM\x10\x01\x12\x19\n" +
+	"\x15EDGE_CAPABILITY_RELAY\x10\x02\x12 \n" +
+	"\x1cEDGE_CAPABILITY_USAGE_OUTBOX\x10\x032\\\n" +
 	"\vEdgeControl\x12M\n" +
 	"\aConnect\x12\x1a.muxvia.cloud.v1.EdgeEvent\x1a\".muxvia.cloud.v1.ControllerCommand(\x010\x01B1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
 
@@ -1121,9 +1207,14 @@ var file_cloud_v1_edge_control_proto_goTypes = []any{
 	(*VerificationKey)(nil),         // 13: muxvia.cloud.v1.VerificationKey
 	(*AgentPresence)(nil),           // 14: muxvia.cloud.v1.AgentPresence
 	(*ClientSessionSummary)(nil),    // 15: muxvia.cloud.v1.ClientSessionSummary
-	(*timestamppb.Timestamp)(nil),   // 16: google.protobuf.Timestamp
-	(*RuntimeDelta)(nil),            // 17: muxvia.cloud.v1.RuntimeDelta
-	(*SignedEdgeDesiredConfig)(nil), // 18: muxvia.cloud.v1.SignedEdgeDesiredConfig
+	(*RelayAllocationSummary)(nil),  // 16: muxvia.cloud.v1.RelayAllocationSummary
+	(*timestamppb.Timestamp)(nil),   // 17: google.protobuf.Timestamp
+	(*RuntimeDelta)(nil),            // 18: muxvia.cloud.v1.RuntimeDelta
+	(*RelayLeaseRequest)(nil),       // 19: muxvia.cloud.v1.RelayLeaseRequest
+	(*UsageBatch)(nil),              // 20: muxvia.cloud.v1.UsageBatch
+	(*SignedEdgeDesiredConfig)(nil), // 21: muxvia.cloud.v1.SignedEdgeDesiredConfig
+	(*RelayLeaseDecision)(nil),      // 22: muxvia.cloud.v1.RelayLeaseDecision
+	(*UsageAck)(nil),                // 23: muxvia.cloud.v1.UsageAck
 }
 var file_cloud_v1_edge_control_proto_depIdxs = []int32{
 	0,  // 0: muxvia.cloud.v1.EdgeHello.capabilities:type_name -> muxvia.cloud.v1.EdgeCapability
@@ -1131,26 +1222,31 @@ var file_cloud_v1_edge_control_proto_depIdxs = []int32{
 	13, // 2: muxvia.cloud.v1.EdgeWelcome.ticket_verification_keys:type_name -> muxvia.cloud.v1.VerificationKey
 	14, // 3: muxvia.cloud.v1.SnapshotChunk.agents:type_name -> muxvia.cloud.v1.AgentPresence
 	15, // 4: muxvia.cloud.v1.SnapshotChunk.sessions:type_name -> muxvia.cloud.v1.ClientSessionSummary
-	16, // 5: muxvia.cloud.v1.EdgeEvent.sent_at:type_name -> google.protobuf.Timestamp
-	1,  // 6: muxvia.cloud.v1.EdgeEvent.hello:type_name -> muxvia.cloud.v1.EdgeHello
-	3,  // 7: muxvia.cloud.v1.EdgeEvent.snapshot_begin:type_name -> muxvia.cloud.v1.SnapshotBegin
-	4,  // 8: muxvia.cloud.v1.EdgeEvent.snapshot_chunk:type_name -> muxvia.cloud.v1.SnapshotChunk
-	5,  // 9: muxvia.cloud.v1.EdgeEvent.snapshot_end:type_name -> muxvia.cloud.v1.SnapshotEnd
-	17, // 10: muxvia.cloud.v1.EdgeEvent.runtime_delta:type_name -> muxvia.cloud.v1.RuntimeDelta
-	6,  // 11: muxvia.cloud.v1.EdgeEvent.heartbeat:type_name -> muxvia.cloud.v1.EdgeHeartbeat
-	9,  // 12: muxvia.cloud.v1.EdgeEvent.config_applied:type_name -> muxvia.cloud.v1.ConfigApplied
-	16, // 13: muxvia.cloud.v1.ControllerCommand.sent_at:type_name -> google.protobuf.Timestamp
-	2,  // 14: muxvia.cloud.v1.ControllerCommand.welcome:type_name -> muxvia.cloud.v1.EdgeWelcome
-	7,  // 15: muxvia.cloud.v1.ControllerCommand.snapshot_accepted:type_name -> muxvia.cloud.v1.SnapshotAccepted
-	8,  // 16: muxvia.cloud.v1.ControllerCommand.resync_required:type_name -> muxvia.cloud.v1.ResyncRequired
-	18, // 17: muxvia.cloud.v1.ControllerCommand.desired_config:type_name -> muxvia.cloud.v1.SignedEdgeDesiredConfig
-	10, // 18: muxvia.cloud.v1.EdgeControl.Connect:input_type -> muxvia.cloud.v1.EdgeEvent
-	11, // 19: muxvia.cloud.v1.EdgeControl.Connect:output_type -> muxvia.cloud.v1.ControllerCommand
-	19, // [19:20] is the sub-list for method output_type
-	18, // [18:19] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	16, // 5: muxvia.cloud.v1.SnapshotChunk.allocations:type_name -> muxvia.cloud.v1.RelayAllocationSummary
+	17, // 6: muxvia.cloud.v1.EdgeEvent.sent_at:type_name -> google.protobuf.Timestamp
+	1,  // 7: muxvia.cloud.v1.EdgeEvent.hello:type_name -> muxvia.cloud.v1.EdgeHello
+	3,  // 8: muxvia.cloud.v1.EdgeEvent.snapshot_begin:type_name -> muxvia.cloud.v1.SnapshotBegin
+	4,  // 9: muxvia.cloud.v1.EdgeEvent.snapshot_chunk:type_name -> muxvia.cloud.v1.SnapshotChunk
+	5,  // 10: muxvia.cloud.v1.EdgeEvent.snapshot_end:type_name -> muxvia.cloud.v1.SnapshotEnd
+	18, // 11: muxvia.cloud.v1.EdgeEvent.runtime_delta:type_name -> muxvia.cloud.v1.RuntimeDelta
+	6,  // 12: muxvia.cloud.v1.EdgeEvent.heartbeat:type_name -> muxvia.cloud.v1.EdgeHeartbeat
+	9,  // 13: muxvia.cloud.v1.EdgeEvent.config_applied:type_name -> muxvia.cloud.v1.ConfigApplied
+	19, // 14: muxvia.cloud.v1.EdgeEvent.relay_lease_request:type_name -> muxvia.cloud.v1.RelayLeaseRequest
+	20, // 15: muxvia.cloud.v1.EdgeEvent.usage_batch:type_name -> muxvia.cloud.v1.UsageBatch
+	17, // 16: muxvia.cloud.v1.ControllerCommand.sent_at:type_name -> google.protobuf.Timestamp
+	2,  // 17: muxvia.cloud.v1.ControllerCommand.welcome:type_name -> muxvia.cloud.v1.EdgeWelcome
+	7,  // 18: muxvia.cloud.v1.ControllerCommand.snapshot_accepted:type_name -> muxvia.cloud.v1.SnapshotAccepted
+	8,  // 19: muxvia.cloud.v1.ControllerCommand.resync_required:type_name -> muxvia.cloud.v1.ResyncRequired
+	21, // 20: muxvia.cloud.v1.ControllerCommand.desired_config:type_name -> muxvia.cloud.v1.SignedEdgeDesiredConfig
+	22, // 21: muxvia.cloud.v1.ControllerCommand.relay_lease_decision:type_name -> muxvia.cloud.v1.RelayLeaseDecision
+	23, // 22: muxvia.cloud.v1.ControllerCommand.usage_ack:type_name -> muxvia.cloud.v1.UsageAck
+	10, // 23: muxvia.cloud.v1.EdgeControl.Connect:input_type -> muxvia.cloud.v1.EdgeEvent
+	11, // 24: muxvia.cloud.v1.EdgeControl.Connect:output_type -> muxvia.cloud.v1.ControllerCommand
+	24, // [24:25] is the sub-list for method output_type
+	23, // [23:24] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_edge_control_proto_init() }
@@ -1161,6 +1257,7 @@ func file_cloud_v1_edge_control_proto_init() {
 	file_cloud_v1_common_proto_init()
 	file_cloud_v1_edge_config_proto_init()
 	file_cloud_v1_runtime_proto_init()
+	file_cloud_v1_usage_proto_init()
 	file_cloud_v1_edge_control_proto_msgTypes[9].OneofWrappers = []any{
 		(*EdgeEvent_Hello)(nil),
 		(*EdgeEvent_SnapshotBegin)(nil),
@@ -1169,12 +1266,16 @@ func file_cloud_v1_edge_control_proto_init() {
 		(*EdgeEvent_RuntimeDelta)(nil),
 		(*EdgeEvent_Heartbeat)(nil),
 		(*EdgeEvent_ConfigApplied)(nil),
+		(*EdgeEvent_RelayLeaseRequest)(nil),
+		(*EdgeEvent_UsageBatch)(nil),
 	}
 	file_cloud_v1_edge_control_proto_msgTypes[10].OneofWrappers = []any{
 		(*ControllerCommand_Welcome)(nil),
 		(*ControllerCommand_SnapshotAccepted)(nil),
 		(*ControllerCommand_ResyncRequired)(nil),
 		(*ControllerCommand_DesiredConfig)(nil),
+		(*ControllerCommand_RelayLeaseDecision)(nil),
+		(*ControllerCommand_UsageAck)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

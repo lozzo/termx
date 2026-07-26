@@ -70,12 +70,13 @@ func (AgentCapability) EnumDescriptor() ([]byte, []int) {
 }
 
 // CloudRoutePolicy 是 ClientTicket 允许 Edge 执行的 managed Route 范围。
-// R5 只开放 P2P；Relay 必须等待独立 RelayLease，不能由该枚举隐式放行。
+// P2P_OR_RELAY 仍需独立 RelayLease，不能由该枚举隐式放行 Relay 数据面。
 type CloudRoutePolicy int32
 
 const (
-	CloudRoutePolicy_CLOUD_ROUTE_POLICY_UNSPECIFIED CloudRoutePolicy = 0
-	CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_ONLY    CloudRoutePolicy = 1
+	CloudRoutePolicy_CLOUD_ROUTE_POLICY_UNSPECIFIED  CloudRoutePolicy = 0
+	CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_ONLY     CloudRoutePolicy = 1
+	CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_OR_RELAY CloudRoutePolicy = 2
 )
 
 // Enum value maps for CloudRoutePolicy.
@@ -83,10 +84,12 @@ var (
 	CloudRoutePolicy_name = map[int32]string{
 		0: "CLOUD_ROUTE_POLICY_UNSPECIFIED",
 		1: "CLOUD_ROUTE_POLICY_P2P_ONLY",
+		2: "CLOUD_ROUTE_POLICY_P2P_OR_RELAY",
 	}
 	CloudRoutePolicy_value = map[string]int32{
-		"CLOUD_ROUTE_POLICY_UNSPECIFIED": 0,
-		"CLOUD_ROUTE_POLICY_P2P_ONLY":    1,
+		"CLOUD_ROUTE_POLICY_UNSPECIFIED":  0,
+		"CLOUD_ROUTE_POLICY_P2P_ONLY":     1,
+		"CLOUD_ROUTE_POLICY_P2P_OR_RELAY": 2,
 	}
 )
 
@@ -685,10 +688,11 @@ const file_cloud_v1_ticket_proto_rawDesc = "" +
 	"\x12attempt_generation\x18\x03 \x01(\x04R\x11attemptGeneration*S\n" +
 	"\x0fAgentCapability\x12 \n" +
 	"\x1cAGENT_CAPABILITY_UNSPECIFIED\x10\x00\x12\x1e\n" +
-	"\x1aAGENT_CAPABILITY_SIGNALING\x10\x01*W\n" +
+	"\x1aAGENT_CAPABILITY_SIGNALING\x10\x01*|\n" +
 	"\x10CloudRoutePolicy\x12\"\n" +
 	"\x1eCLOUD_ROUTE_POLICY_UNSPECIFIED\x10\x00\x12\x1f\n" +
-	"\x1bCLOUD_ROUTE_POLICY_P2P_ONLY\x10\x01B1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	"\x1bCLOUD_ROUTE_POLICY_P2P_ONLY\x10\x01\x12#\n" +
+	"\x1fCLOUD_ROUTE_POLICY_P2P_OR_RELAY\x10\x02B1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_ticket_proto_rawDescOnce sync.Once

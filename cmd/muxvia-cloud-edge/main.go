@@ -37,6 +37,10 @@ type options struct {
 	configSigningKeyID  string
 	configSigningPublic string
 	desiredConfigCache  string
+	turnListen          string
+	turnPublicEndpoint  string
+	turnRealm           string
+	usageOutbox         string
 }
 
 func main() {
@@ -74,6 +78,10 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 		config.configSigningKeyID = resolved.ConfigSigningKeyID
 		config.configSigningPublic = resolved.ConfigSigningPublicKeyFile
 		config.desiredConfigCache = resolved.DesiredConfigCacheFile
+		config.turnListen = resolved.TURNListenAddress
+		config.turnPublicEndpoint = resolved.TURNPublicEndpoint
+		config.turnRealm = resolved.TURNRealm
+		config.usageOutbox = resolved.UsageOutboxFile
 	}
 	if strings.TrimSpace(config.edgeID) == "" {
 		return errors.New("--edge-id is required")
@@ -96,11 +104,15 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 		ConfigSigningKeyID:         config.configSigningKeyID,
 		ConfigSigningPublicKeyFile: config.configSigningPublic,
 		DesiredConfigCacheFile:     config.desiredConfigCache,
+		TURNListenAddress:          config.turnListen,
+		TURNPublicEndpoint:         config.turnPublicEndpoint,
+		TURNRealm:                  config.turnRealm,
+		UsageOutboxFile:            config.usageOutbox,
 	})
 	if err != nil {
 		return err
 	}
-	logger.Info("Edge 已启动", "edge_id", config.edgeID, "version", config.softwareVersion, "public_address", runtime.PublicAddress(), "controller_address", config.controllerAddress)
+	logger.Info("Edge 已启动", "edge_id", config.edgeID, "version", config.softwareVersion, "public_address", runtime.PublicAddress(), "turn_address", runtime.TURNAddress(), "relay_degraded", runtime.RelayDegraded(), "controller_address", config.controllerAddress)
 
 	var runtimeErr error
 	select {
@@ -135,6 +147,10 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 	flags.StringVar(&config.controllerCA, "controller-ca", "", "Controller CA certificate file")
 	flags.StringVar(&config.softwareVersion, "version", defaultSoftwareVersion, "Edge software version reported in EdgeHello")
 	flags.DurationVar(&config.shutdownTimeout, "shutdown-timeout", 15*time.Second, "graceful shutdown deadline")
+	flags.StringVar(&config.turnListen, "turn-listen", "", "generated TURN UDP/TCP listen address")
+	flags.StringVar(&config.turnPublicEndpoint, "turn-public-endpoint", "", "generated public TURN host and port")
+	flags.StringVar(&config.turnRealm, "turn-realm", "", "generated TURN authentication realm")
+	flags.StringVar(&config.usageOutbox, "usage-outbox", "", "durable unacknowledged Relay usage outbox")
 	if err := flags.Parse(arguments); err != nil {
 		return options{}, fmt.Errorf("parse Edge flags: %w", err)
 	}

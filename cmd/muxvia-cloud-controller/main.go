@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -56,6 +57,10 @@ type options struct {
 	ticketSigningKeyID   string
 	heartbeatInterval    time.Duration
 	heartbeatTimeout     time.Duration
+	relayLeaseTTL        time.Duration
+	relayMaxBytes        uint64
+	relayMaxRate         uint64
+	relayMaxAllocations  uint
 	startupTimeout       time.Duration
 	shutdownTimeout      time.Duration
 }
@@ -78,8 +83,8 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
-	if config.startupTimeout <= 0 || config.shutdownTimeout <= 0 {
-		return errors.New("startup and shutdown timeout must be positive")
+	if config.startupTimeout <= 0 || config.shutdownTimeout <= 0 || config.relayLeaseTTL <= 0 || config.relayLeaseTTL > 5*time.Minute || config.relayMaxBytes == 0 || config.relayMaxRate == 0 || config.relayMaxAllocations == 0 || config.relayMaxAllocations > math.MaxUint32 {
+		return errors.New("startup, shutdown, and bounded Relay policy values must be positive")
 	}
 	startupContext, cancelStartup := context.WithTimeout(ctx, config.startupTimeout)
 	database, err := postgres.Open(startupContext, getenv("MUXVIA_CLOUD_DATABASE_URL"))
@@ -158,6 +163,9 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 		HeartbeatTimeout:       config.heartbeatTimeout,
 		Directory:              directoryState,
 		TicketVerificationKeys: []*cloudv1.VerificationKey{enrollmentService.TicketVerificationKey()},
+		TicketSigningKey:       ticketKey, TicketSigningKeyID: config.ticketSigningKeyID, RelayLeaseTTL: config.relayLeaseTTL,
+		RelayPolicy: control.ConfiguredRelayPolicy{Value: control.RelayLimits{MaxBytes: config.relayMaxBytes, MaxRateBytesPerSecond: config.relayMaxRate, MaxConcurrentAllocations: uint32(config.relayMaxAllocations)}},
+		UsageStore:  database,
 		DesiredConfig: func(ctx context.Context, edgeID string) (*cloudv1.SignedEdgeDesiredConfig, error) {
 			edge, err := edgeService.GetEdge(ctx, edgeID)
 			return edge.SignedConfig, err
@@ -234,6 +242,10 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 	flags.StringVar(&config.ticketSigningKeyID, "ticket-signing-key-id", "", "Cloud ticket signing key ID")
 	flags.DurationVar(&config.heartbeatInterval, "heartbeat-interval", 10*time.Second, "Edge heartbeat interval")
 	flags.DurationVar(&config.heartbeatTimeout, "heartbeat-timeout", 30*time.Second, "Edge heartbeat timeout")
+	flags.DurationVar(&config.relayLeaseTTL, "relay-lease-ttl", 5*time.Minute, "maximum lifetime of a signed RelayLease")
+	flags.Uint64Var(&config.relayMaxBytes, "relay-max-bytes", 1<<30, "maximum bytes allowed by one development RelayLease")
+	flags.Uint64Var(&config.relayMaxRate, "relay-max-rate", 10<<20, "maximum bytes per second allowed by one development RelayLease")
+	flags.UintVar(&config.relayMaxAllocations, "relay-max-allocations", 2, "maximum concurrent allocations allowed by one development RelayLease")
 	flags.DurationVar(&config.startupTimeout, "startup-timeout", 15*time.Second, "PostgreSQL startup deadline")
 	flags.DurationVar(&config.shutdownTimeout, "shutdown-timeout", 15*time.Second, "graceful shutdown deadline")
 	if err := flags.Parse(arguments); err != nil {

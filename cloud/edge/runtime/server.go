@@ -4,6 +4,7 @@ package runtime
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -13,12 +14,17 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/muxvia/muxvia/cloud/configsignature"
 	"github.com/muxvia/muxvia/cloud/edge/agentgateway"
 	"github.com/muxvia/muxvia/cloud/edge/clientgateway"
 	"github.com/muxvia/muxvia/cloud/edge/controllerlink"
+	"github.com/muxvia/muxvia/cloud/edge/policy"
+	"github.com/muxvia/muxvia/cloud/edge/relay"
+	"github.com/muxvia/muxvia/cloud/edge/usage"
 	"github.com/muxvia/muxvia/cloud/processhealth"
 	"github.com/muxvia/muxvia/cloud/securetransport"
 	"github.com/muxvia/muxvia/cloud/ticket"
@@ -46,28 +52,39 @@ type Config struct {
 	ConfigSigningKeyID         string
 	ConfigSigningPublicKeyFile string
 	DesiredConfigCacheFile     string
+	TURNListenAddress          string
+	TURNPublicEndpoint         string
+	TURNRealm                  string
+	UsageOutboxFile            string
 }
 
 // Runtime 拥有 Edge 公网 listener、唯一 ControllerLink 和唯一内存 State actor。
 type Runtime struct {
-	config          Config
-	publicTLS       *tls.Config
-	controllerTLS   *tls.Config
-	listener        net.Listener
-	httpServer      *http.Server
-	grpcServer      *grpc.Server
-	grpcHealth      *grpc_health.Server
-	health          *processhealth.State
-	errors          chan error
-	readyChanges    chan struct{}
-	ctx             context.Context
-	cancel          context.CancelFunc
-	waitGroup       sync.WaitGroup
-	shutdownOnce    sync.Once
-	state           *State
-	configPublicKey ed25519.PublicKey
-	ticketKeysMu    sync.RWMutex
-	ticketKeys      ticket.KeySet
+	config            Config
+	publicTLS         *tls.Config
+	controllerTLS     *tls.Config
+	listener          net.Listener
+	httpServer        *http.Server
+	grpcServer        *grpc.Server
+	grpcHealth        *grpc_health.Server
+	health            *processhealth.State
+	errors            chan error
+	readyChanges      chan struct{}
+	ctx               context.Context
+	cancel            context.CancelFunc
+	waitGroup         sync.WaitGroup
+	shutdownOnce      sync.Once
+	state             *State
+	configPublicKey   ed25519.PublicKey
+	ticketKeysMu      sync.RWMutex
+	ticketKeys        ticket.KeySet
+	credentialDeriver *policy.CredentialDeriver
+	usageOutbox       *usage.Outbox
+	relayServer       *relay.Server
+	controlSessionMu  sync.RWMutex
+	controlSession    *controllerlink.Session
+	usagePumpMu       sync.Mutex
+	usageDegraded     atomic.Bool
 }
 
 // Start 先启动固定 HTTPS /healthz，再在后台建立 mTLS EdgeControl。
@@ -127,12 +144,43 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 		state:           state,
 		configPublicKey: configPublicKey,
 	}
+	if config.TURNListenAddress != "" {
+		outbox, openErr := usage.Open(config.UsageOutboxFile, 2*time.Second)
+		if openErr != nil {
+			// usage outbox 是 Relay 的计费真值；损坏或不可写只关闭收费 Relay，P2P 信令仍可运行。
+			runtime.usageDegraded.Store(true)
+		} else {
+			secret := make([]byte, 32)
+			if _, err := rand.Read(secret); err != nil {
+				_ = outbox.Close()
+				_ = listener.Close()
+				state.Close()
+				cancel()
+				return nil, fmt.Errorf("generate TURN credential secret: %w", err)
+			}
+			deriver, err := policy.NewCredentialDeriver(secret, []string{
+				"turn:" + config.TURNPublicEndpoint + "?transport=udp",
+				"turn:" + config.TURNPublicEndpoint + "?transport=tcp",
+			})
+			if err != nil {
+				_ = outbox.Close()
+				_ = listener.Close()
+				state.Close()
+				cancel()
+				return nil, err
+			}
+			runtime.usageOutbox, runtime.credentialDeriver = outbox, deriver
+		}
+	}
 	agentService, err := agentgateway.NewService(agentgateway.Config{
 		EdgeID: config.EdgeID, EdgeBootID: config.BootID, Runtime: state,
 		VerificationKeys: runtime.currentTicketKeys, Heartbeat: 10 * time.Second, HeartbeatTimeout: 30 * time.Second,
 	})
 	if err != nil {
 		_ = listener.Close()
+		if runtime.usageOutbox != nil {
+			_ = runtime.usageOutbox.Close()
+		}
 		state.Close()
 		cancel()
 		return nil, err
@@ -140,15 +188,29 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 	cloudv1.RegisterAgentGatewayServer(grpcServer, agentService)
 	clientService, err := clientgateway.NewService(clientgateway.Config{
 		EdgeID: config.EdgeID, EdgeBootID: config.BootID, Runtime: state, VerificationKeys: runtime.currentTicketKeys,
-		Ready: runtime.Ready, SignalTimeout: 20 * time.Second,
+		Ready: runtime.Ready, SignalTimeout: 20 * time.Second, Relay: runtime.relayBroker(),
 	})
 	if err != nil {
 		_ = listener.Close()
+		if runtime.usageOutbox != nil {
+			_ = runtime.usageOutbox.Close()
+		}
 		state.Close()
 		cancel()
 		return nil, err
 	}
 	cloudv1.RegisterClientGatewayServer(grpcServer, clientService)
+	if runtime.usageOutbox != nil {
+		relayServer, relayErr := relay.Start(relay.Config{ListenAddress: config.TURNListenAddress, PublicEndpoint: config.TURNPublicEndpoint, Realm: config.TURNRealm, Runtime: state, Outbox: runtime.usageOutbox})
+		if relayErr != nil {
+			_ = listener.Close()
+			_ = runtime.usageOutbox.Close()
+			state.Close()
+			cancel()
+			return nil, relayErr
+		}
+		runtime.relayServer = relayServer
+	}
 	runtime.httpServer = &http.Server{Handler: runtime, ReadHeaderTimeout: 5 * time.Second, TLSConfig: publicTLS}
 	runtime.waitGroup.Add(2)
 	go runtime.servePublic()
@@ -159,6 +221,31 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 // PublicAddress 返回 Edge 公网 HTTPS/gRPC 共用 listener 的已绑定地址。
 func (runtime *Runtime) PublicAddress() string {
 	return runtime.listener.Addr().String()
+}
+
+// TURNAddress 返回同一 Edge 进程内置的 TURN UDP/TCP listener；未配置或降级时为空。
+func (runtime *Runtime) TURNAddress() string {
+	if runtime == nil || runtime.relayServer == nil {
+		return ""
+	}
+	return runtime.relayServer.Address()
+}
+
+// RelayDegraded 表示 usage outbox 不可用或 Relay 数据面已发生不可继续计费的错误。
+// 该状态只关闭新 Relay 分配，不影响同一 Edge 上的 P2P 信令和健康存活。
+func (runtime *Runtime) RelayDegraded() bool {
+	if runtime == nil {
+		return false
+	}
+	return runtime.usageDegraded.Load() || (runtime.relayServer != nil && runtime.relayServer.Degraded())
+}
+
+// UsageOutboxDepth 返回未确认 Relay usage 数量，供健康检查和 R6 故障恢复门禁使用。
+func (runtime *Runtime) UsageOutboxDepth() (int, error) {
+	if runtime == nil || runtime.usageOutbox == nil {
+		return 0, nil
+	}
+	return runtime.usageOutbox.Len()
 }
 
 // Ready 表示 Controller 已校验并原子接受当前 generation 的完整 Runtime 快照。
@@ -211,8 +298,14 @@ func (runtime *Runtime) Shutdown(ctx context.Context) error {
 	var shutdownErr error
 	runtime.shutdownOnce.Do(func() {
 		runtime.setReady(false)
-		runtime.cancel()
 		runtime.grpcHealth.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+		if runtime.relayServer != nil {
+			if err := runtime.relayServer.Close(); err != nil {
+				shutdownErr = err
+			}
+			_ = runtime.flushUsage(ctx)
+		}
+		runtime.cancel()
 		runtime.grpcServer.GracefulStop()
 		if err := runtime.httpServer.Shutdown(ctx); err != nil {
 			shutdownErr = err
@@ -230,6 +323,11 @@ func (runtime *Runtime) Shutdown(ctx context.Context) error {
 			}
 		}
 		runtime.state.Close()
+		if runtime.usageOutbox != nil {
+			if err := runtime.usageOutbox.Close(); shutdownErr == nil {
+				shutdownErr = err
+			}
+		}
 		runtime.health.SetAlive(false)
 	})
 	return shutdownErr
@@ -250,12 +348,17 @@ func (runtime *Runtime) runControllerLink() {
 		if len(runtime.configPublicKey) != 0 {
 			applyDesiredConfig = runtime.applyDesiredConfig
 		}
+		capabilities := []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM}
+		if runtime.relayServer != nil && runtime.usageOutbox != nil && !runtime.RelayDegraded() {
+			capabilities = append(capabilities, cloudv1.EdgeCapability_EDGE_CAPABILITY_RELAY, cloudv1.EdgeCapability_EDGE_CAPABILITY_USAGE_OUTBOX)
+		}
 		session, err := controllerlink.Open(runtime.ctx, controllerlink.Config{
 			ControllerAddress: runtime.config.ControllerAddress,
 			TLSConfig:         runtime.controllerTLS,
 			EdgeID:            runtime.config.EdgeID,
 			BootID:            runtime.config.BootID,
 			SoftwareVersion:   runtime.config.SoftwareVersion,
+			Capabilities:      capabilities,
 			OpenRuntimeFeed: func(ctx context.Context) (*controllerlink.RuntimeFeed, error) {
 				feed, err := runtime.state.OpenFeed(ctx)
 				if err != nil {
@@ -284,10 +387,12 @@ func (runtime *Runtime) runControllerLink() {
 			if err = session.WaitReady(runtime.ctx); err != nil {
 				_ = session.Close()
 			} else {
+				runtime.setControlSession(session)
 				runtime.setReady(true)
 				runtime.grpcHealth.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 				delay = 100 * time.Millisecond
 				err = session.Wait()
+				runtime.setControlSession(nil)
 				_ = session.Close()
 				runtime.setReady(false)
 				runtime.grpcHealth.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
@@ -343,6 +448,10 @@ func normalizeConfig(config Config) Config {
 	config.ConfigSigningKeyID = strings.TrimSpace(config.ConfigSigningKeyID)
 	config.ConfigSigningPublicKeyFile = strings.TrimSpace(config.ConfigSigningPublicKeyFile)
 	config.DesiredConfigCacheFile = strings.TrimSpace(config.DesiredConfigCacheFile)
+	config.TURNListenAddress = strings.TrimSpace(config.TURNListenAddress)
+	config.TURNPublicEndpoint = strings.TrimSpace(config.TURNPublicEndpoint)
+	config.TURNRealm = strings.TrimSpace(config.TURNRealm)
+	config.UsageOutboxFile = strings.TrimSpace(config.UsageOutboxFile)
 	return config
 }
 
@@ -382,5 +491,128 @@ func validateConfig(config Config) error {
 	if _, err := securetransport.EdgeIdentityURI(config.EdgeID); err != nil {
 		return err
 	}
+	r6Values := []string{config.TURNListenAddress, config.TURNPublicEndpoint, config.TURNRealm, config.UsageOutboxFile}
+	configured := 0
+	for _, value := range r6Values {
+		if value != "" {
+			configured++
+		}
+	}
+	if configured != 0 && configured != len(r6Values) {
+		return errors.New("TURN listener, public endpoint, realm, and usage outbox must be configured together")
+	}
 	return nil
+}
+
+func (runtime *Runtime) relayBroker() clientgateway.RelayBroker {
+	if runtime.credentialDeriver == nil || runtime.usageOutbox == nil {
+		return nil
+	}
+	return runtime
+}
+
+// RequestRelayLease 经当前 ready EdgeControl 申请、验签并登记 session-specific TURN credential。
+func (runtime *Runtime) RequestRelayLease(ctx context.Context, request *cloudv1.RelayLeaseRequest) (*cloudv1.RelayICEConfig, error) {
+	if runtime == nil || !runtime.Ready() || runtime.credentialDeriver == nil || runtime.RelayDegraded() {
+		return nil, errors.New("Edge Relay control is unavailable")
+	}
+	runtime.controlSessionMu.RLock()
+	session := runtime.controlSession
+	runtime.controlSessionMu.RUnlock()
+	if session == nil {
+		return nil, errors.New("EdgeControl has no ready generation")
+	}
+	decision, err := session.RequestRelayLease(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if denied := decision.GetDenied(); denied != nil {
+		return nil, fmt.Errorf("Relay lease denied (%s): %s", denied.GetCode(), denied.GetMessage())
+	}
+	claims, err := ticket.VerifyRelayLease(decision.GetLease(), runtime.currentTicketKeys(), runtime.config.EdgeID, request.GetSessionId(), time.Now().UTC(), 30*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	if claims.GetAccountId() != request.GetAccountId() || claims.GetDaemonId() != request.GetDaemonId() || claims.GetClientId() != request.GetClientId() {
+		return nil, errors.New("RelayLease identity does not match the accepted client session")
+	}
+	material, err := runtime.credentialDeriver.Material(claims)
+	if err != nil {
+		return nil, err
+	}
+	if err := runtime.state.RegisterRelayLease(ctx, claims, material); err != nil {
+		return nil, err
+	}
+	return material, nil
+}
+
+func (runtime *Runtime) setControlSession(session *controllerlink.Session) {
+	runtime.controlSessionMu.Lock()
+	runtime.controlSession = session
+	runtime.controlSessionMu.Unlock()
+	if session != nil && runtime.usageOutbox != nil {
+		go runtime.runUsagePump(session)
+	}
+}
+
+func (runtime *Runtime) runUsagePump(session *controllerlink.Session) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		ctx, cancel := context.WithTimeout(runtime.ctx, 5*time.Second)
+		err := runtime.flushUsageWithSession(ctx, session)
+		cancel()
+		if err != nil {
+			select {
+			case <-runtime.ctx.Done():
+				return
+			case <-session.Done():
+				return
+			case <-time.After(time.Second):
+			}
+		}
+		select {
+		case <-runtime.ctx.Done():
+			return
+		case <-session.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (runtime *Runtime) flushUsage(ctx context.Context) error {
+	runtime.controlSessionMu.RLock()
+	session := runtime.controlSession
+	runtime.controlSessionMu.RUnlock()
+	if session == nil {
+		return errors.New("EdgeControl is unavailable for usage flush")
+	}
+	return runtime.flushUsageWithSession(ctx, session)
+}
+
+func (runtime *Runtime) flushUsageWithSession(ctx context.Context, session *controllerlink.Session) error {
+	runtime.usagePumpMu.Lock()
+	defer runtime.usagePumpMu.Unlock()
+	if runtime.usageOutbox == nil {
+		return nil
+	}
+	events, err := runtime.usageOutbox.Batch(128)
+	if err != nil || len(events) == 0 {
+		return err
+	}
+	ack, err := session.CommitUsageBatch(ctx, &cloudv1.UsageBatch{BatchId: uuid.NewString(), Events: events})
+	if err != nil {
+		return err
+	}
+	known := make(map[string]struct{}, len(events))
+	for _, event := range events {
+		known[event.GetEventId()] = struct{}{}
+	}
+	for _, eventID := range ack.GetEventIds() {
+		if _, exists := known[eventID]; !exists {
+			return errors.New("Controller UsageAck contains an event outside the sent batch")
+		}
+	}
+	return runtime.usageOutbox.Ack(ack.GetEventIds())
 }

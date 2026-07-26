@@ -5,6 +5,7 @@ package muxvia.cloud.v1;
 import "cloud/v1/common.proto";
 import "cloud/v1/edge_config.proto";
 import "cloud/v1/runtime.proto";
+import "cloud/v1/usage.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
@@ -13,6 +14,8 @@ option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
 enum EdgeCapability {
   EDGE_CAPABILITY_UNSPECIFIED = 0;
   EDGE_CAPABILITY_CONTROL_STREAM = 1;
+  EDGE_CAPABILITY_RELAY = 2;
+  EDGE_CAPABILITY_USAGE_OUTBOX = 3;
 }
 
 // EdgeHello 是 EdgeControl 新连接的第一个且唯一一个注册消息。
@@ -45,6 +48,7 @@ message SnapshotChunk {
   uint32 chunk_index = 2;
   repeated AgentPresence agents = 3;
   repeated ClientSessionSummary sessions = 4;
+  repeated RelayAllocationSummary allocations = 5;
 }
 
 // SnapshotEnd 携带完整投影的确定性摘要，Controller 校验后才原子发布。
@@ -97,6 +101,8 @@ message EdgeEvent {
     RuntimeDelta runtime_delta = 24;
     EdgeHeartbeat heartbeat = 25;
     ConfigApplied config_applied = 26;
+    RelayLeaseRequest relay_lease_request = 27;
+    UsageBatch usage_batch = 28;
   }
 }
 
@@ -115,6 +121,8 @@ message ControllerCommand {
     SnapshotAccepted snapshot_accepted = 21;
     ResyncRequired resync_required = 22;
     SignedEdgeDesiredConfig desired_config = 23;
+    RelayLeaseDecision relay_lease_decision = 24;
+    UsageAck usage_ack = 25;
   }
 }
 

@@ -35,10 +35,11 @@ message AgentHelloProofInput {
 }
 
 // CloudRoutePolicy 是 ClientTicket 允许 Edge 执行的 managed Route 范围。
-// R5 只开放 P2P；Relay 必须等待独立 RelayLease，不能由该枚举隐式放行。
+// P2P_OR_RELAY 仍需独立 RelayLease，不能由该枚举隐式放行 Relay 数据面。
 enum CloudRoutePolicy {
   CLOUD_ROUTE_POLICY_UNSPECIFIED = 0;
   CLOUD_ROUTE_POLICY_P2P_ONLY = 1;
+  CLOUD_ROUTE_POLICY_P2P_OR_RELAY = 2;
 }
 
 // CloudRouteGrantClaims 由 owning daemon 的 DeviceIdentity 签发，只授权发现和信令。

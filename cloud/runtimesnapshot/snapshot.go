@@ -25,6 +25,9 @@ func NormalizeClone(snapshot *cloudv1.RuntimeSnapshot) (*cloudv1.RuntimeSnapshot
 	slices.SortFunc(clone.Sessions, func(left, right *cloudv1.ClientSessionSummary) int {
 		return strings.Compare(left.GetSessionId(), right.GetSessionId())
 	})
+	slices.SortFunc(clone.Allocations, func(left, right *cloudv1.RelayAllocationSummary) int {
+		return strings.Compare(left.GetAllocationId(), right.GetAllocationId())
+	})
 	seenAgents := make(map[string]struct{}, len(clone.Agents))
 	for _, agent := range clone.Agents {
 		if err := validateAgent(agent); err != nil {
@@ -44,6 +47,16 @@ func NormalizeClone(snapshot *cloudv1.RuntimeSnapshot) (*cloudv1.RuntimeSnapshot
 			return nil, fmt.Errorf("duplicate session %q", session.GetSessionId())
 		}
 		seenSessions[session.GetSessionId()] = struct{}{}
+	}
+	seenAllocations := make(map[string]struct{}, len(clone.Allocations))
+	for _, allocation := range clone.Allocations {
+		if err := validateAllocation(allocation); err != nil {
+			return nil, err
+		}
+		if _, exists := seenAllocations[allocation.GetAllocationId()]; exists {
+			return nil, fmt.Errorf("duplicate allocation %q", allocation.GetAllocationId())
+		}
+		seenAllocations[allocation.GetAllocationId()] = struct{}{}
 	}
 	return clone, nil
 }
@@ -80,8 +93,23 @@ func ValidateDelta(delta *cloudv1.RuntimeDelta) error {
 		if change.SessionRemoved == nil || strings.TrimSpace(change.SessionRemoved.GetSessionId()) == "" || change.SessionRemoved.GetGeneration() == 0 {
 			return errors.New("removed session identity and generation are required")
 		}
+	case *cloudv1.RuntimeDelta_AllocationUpserted:
+		return validateAllocation(change.AllocationUpserted)
+	case *cloudv1.RuntimeDelta_AllocationRemoved:
+		if change.AllocationRemoved == nil || strings.TrimSpace(change.AllocationRemoved.GetAllocationId()) == "" || change.AllocationRemoved.GetGeneration() == 0 {
+			return errors.New("removed allocation identity and generation are required")
+		}
 	default:
 		return errors.New("runtime delta change is required")
+	}
+	return nil
+}
+
+func validateAllocation(allocation *cloudv1.RelayAllocationSummary) error {
+	if allocation == nil || strings.TrimSpace(allocation.GetAllocationId()) == "" || strings.TrimSpace(allocation.GetSessionId()) == "" || strings.TrimSpace(allocation.GetLeaseId()) == "" ||
+		strings.TrimSpace(allocation.GetAccountId()) == "" || allocation.GetTransport() == cloudv1.RelayTransport_RELAY_TRANSPORT_UNSPECIFIED || allocation.GetGeneration() == 0 ||
+		allocation.GetStartedAt() == nil || allocation.GetStartedAt().CheckValid() != nil {
+		return errors.New("Relay allocation identity, transport, generation, and start time are required")
 	}
 	return nil
 }

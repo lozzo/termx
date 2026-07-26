@@ -53,10 +53,11 @@ type Attachment struct {
 // EdgeProjection 是管理/API 层可读取的不可变实时投影。
 type EdgeProjection struct {
 	Attachment
-	RuntimeRevision uint64
-	AgentCount      int
-	SessionCount    int
-	LastHeartbeat   time.Time
+	RuntimeRevision      uint64
+	AgentCount           int
+	SessionCount         int
+	RelayAllocationCount int
+	LastHeartbeat        time.Time
 }
 
 // ObjectLocation 表示实时对象当前由哪个 Edge generation 持有。
@@ -93,11 +94,12 @@ type connectionState struct {
 }
 
 type snapshotBuilder struct {
-	id        string
-	revision  uint64
-	nextChunk uint32
-	agents    []*cloudv1.AgentPresence
-	sessions  []*cloudv1.ClientSessionSummary
+	id          string
+	revision    uint64
+	nextChunk   uint32
+	agents      []*cloudv1.AgentPresence
+	sessions    []*cloudv1.ClientSessionSummary
+	allocations []*cloudv1.RelayAllocationSummary
 }
 
 // New 创建空 Directory；Controller 重启时不得从数据库恢复任何在线对象。
@@ -163,6 +165,9 @@ func (directory *Directory) AppendSnapshot(ctx context.Context, connectionID str
 		for _, session := range chunk.GetSessions() {
 			connection.staging.sessions = append(connection.staging.sessions, proto.Clone(session).(*cloudv1.ClientSessionSummary))
 		}
+		for _, allocation := range chunk.GetAllocations() {
+			connection.staging.allocations = append(connection.staging.allocations, proto.Clone(allocation).(*cloudv1.RelayAllocationSummary))
+		}
 		return nil
 	})
 }
@@ -179,7 +184,7 @@ func (directory *Directory) CommitSnapshot(ctx context.Context, connectionID str
 			connection.staging = nil
 			return &SyncError{ExpectedRevision: connection.currentRevision(), Reason: "snapshot end does not match begin/chunks"}
 		}
-		snapshot, err := runtimesnapshot.NormalizeClone(&cloudv1.RuntimeSnapshot{Revision: builder.revision, Agents: builder.agents, Sessions: builder.sessions})
+		snapshot, err := runtimesnapshot.NormalizeClone(&cloudv1.RuntimeSnapshot{Revision: builder.revision, Agents: builder.agents, Sessions: builder.sessions, Allocations: builder.allocations})
 		if err != nil {
 			connection.staging = nil
 			return &SyncError{ExpectedRevision: connection.currentRevision(), Reason: err.Error()}
@@ -313,6 +318,51 @@ func (directory *Directory) LocateDaemon(ctx context.Context, daemonID string) (
 	return directory.locate(ctx, daemonID, true)
 }
 
+// LocateSession 查询客户端信令 session 当前 Edge generation；不存在时不从数据库恢复。
+func (directory *Directory) LocateSession(ctx context.Context, sessionID string) (ObjectLocation, bool, error) {
+	return directory.locate(ctx, sessionID, false)
+}
+
+// Session 返回当前信令 session 的不可变摘要和所属 Edge generation。
+// Controller 签发 RelayLease 时使用该摘要校验 Edge 请求，不能信任请求里重复携带的账号字段。
+func (directory *Directory) Session(ctx context.Context, sessionID string) (*cloudv1.ClientSessionSummary, ObjectLocation, bool, error) {
+	type result struct {
+		session  *cloudv1.ClientSessionSummary
+		location ObjectLocation
+		found    bool
+	}
+	reply := make(chan result, 1)
+	if err := directory.submit(ctx, func(state *directoryState) {
+		location, found := state.sessions[strings.TrimSpace(sessionID)]
+		if !found {
+			reply <- result{}
+			return
+		}
+		connection := state.connections[location.ConnectionID]
+		if connection == nil || connection.snapshot == nil || state.current[location.EdgeID] != location.ConnectionID {
+			reply <- result{}
+			return
+		}
+		for _, session := range connection.snapshot.GetSessions() {
+			if session.GetSessionId() == strings.TrimSpace(sessionID) && session.GetGeneration() == location.Generation {
+				reply <- result{session: proto.Clone(session).(*cloudv1.ClientSessionSummary), location: location, found: true}
+				return
+			}
+		}
+		reply <- result{}
+	}); err != nil {
+		return nil, ObjectLocation{}, false, err
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ObjectLocation{}, false, ctx.Err()
+	case <-directory.done:
+		return nil, ObjectLocation{}, false, ErrClosed
+	case value := <-reply:
+		return value.session, value.location, value.found, nil
+	}
+}
+
 // Close 停止 actor，Directory 内容随 Controller 进程一起消失。
 func (directory *Directory) Close() {
 	directory.closeOnce.Do(func() {
@@ -420,7 +470,7 @@ func (connection *connectionState) currentRevision() uint64 {
 }
 
 func (connection *connectionState) projection() EdgeProjection {
-	return EdgeProjection{Attachment: connection.attachment, RuntimeRevision: connection.snapshot.GetRevision(), AgentCount: len(connection.snapshot.GetAgents()), SessionCount: len(connection.snapshot.GetSessions()), LastHeartbeat: connection.lastHeartbeat}
+	return EdgeProjection{Attachment: connection.attachment, RuntimeRevision: connection.snapshot.GetRevision(), AgentCount: len(connection.snapshot.GetAgents()), SessionCount: len(connection.snapshot.GetSessions()), RelayAllocationCount: len(connection.snapshot.GetAllocations()), LastHeartbeat: connection.lastHeartbeat}
 }
 
 func (state *directoryState) removeIndexes(connectionID string) {
@@ -502,6 +552,26 @@ func (state *directoryState) applyDelta(connectionID string, connection *connect
 			}
 		}
 		return errors.New("removed session generation is not current")
+	case *cloudv1.RuntimeDelta_AllocationUpserted:
+		allocation := change.AllocationUpserted
+		for index, current := range connection.snapshot.Allocations {
+			if current.GetAllocationId() == allocation.GetAllocationId() {
+				if allocation.GetGeneration() < current.GetGeneration() {
+					return errors.New("Relay allocation generation regressed")
+				}
+				connection.snapshot.Allocations[index] = proto.Clone(allocation).(*cloudv1.RelayAllocationSummary)
+				return nil
+			}
+		}
+		connection.snapshot.Allocations = append(connection.snapshot.Allocations, proto.Clone(allocation).(*cloudv1.RelayAllocationSummary))
+	case *cloudv1.RuntimeDelta_AllocationRemoved:
+		for index, current := range connection.snapshot.Allocations {
+			if current.GetAllocationId() == change.AllocationRemoved.GetAllocationId() && current.GetGeneration() == change.AllocationRemoved.GetGeneration() {
+				connection.snapshot.Allocations = append(connection.snapshot.Allocations[:index], connection.snapshot.Allocations[index+1:]...)
+				return nil
+			}
+		}
+		return errors.New("removed Relay allocation generation is not current")
 	default:
 		return errors.New("runtime delta change is required")
 	}

@@ -178,18 +178,19 @@ func (x *SignedEdgeDesiredConfig) GetSignature() []byte {
 
 // EdgeRuntimeProjection 来自纯内存 Directory，不得写回 Edge 配置表。
 type EdgeRuntimeProjection struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Online          bool                   `protobuf:"varint,1,opt,name=online,proto3" json:"online,omitempty"`
-	BootId          string                 `protobuf:"bytes,2,opt,name=boot_id,json=bootId,proto3" json:"boot_id,omitempty"`
-	ConnectionId    string                 `protobuf:"bytes,3,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
-	SoftwareVersion string                 `protobuf:"bytes,4,opt,name=software_version,json=softwareVersion,proto3" json:"software_version,omitempty"`
-	RuntimeRevision uint64                 `protobuf:"varint,5,opt,name=runtime_revision,json=runtimeRevision,proto3" json:"runtime_revision,omitempty"`
-	AgentCount      uint64                 `protobuf:"varint,6,opt,name=agent_count,json=agentCount,proto3" json:"agent_count,omitempty"`
-	SessionCount    uint64                 `protobuf:"varint,7,opt,name=session_count,json=sessionCount,proto3" json:"session_count,omitempty"`
-	ConnectedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=connected_at,json=connectedAt,proto3" json:"connected_at,omitempty"`
-	LastHeartbeat   *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=last_heartbeat,json=lastHeartbeat,proto3" json:"last_heartbeat,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	Online               bool                   `protobuf:"varint,1,opt,name=online,proto3" json:"online,omitempty"`
+	BootId               string                 `protobuf:"bytes,2,opt,name=boot_id,json=bootId,proto3" json:"boot_id,omitempty"`
+	ConnectionId         string                 `protobuf:"bytes,3,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
+	SoftwareVersion      string                 `protobuf:"bytes,4,opt,name=software_version,json=softwareVersion,proto3" json:"software_version,omitempty"`
+	RuntimeRevision      uint64                 `protobuf:"varint,5,opt,name=runtime_revision,json=runtimeRevision,proto3" json:"runtime_revision,omitempty"`
+	AgentCount           uint64                 `protobuf:"varint,6,opt,name=agent_count,json=agentCount,proto3" json:"agent_count,omitempty"`
+	SessionCount         uint64                 `protobuf:"varint,7,opt,name=session_count,json=sessionCount,proto3" json:"session_count,omitempty"`
+	ConnectedAt          *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=connected_at,json=connectedAt,proto3" json:"connected_at,omitempty"`
+	LastHeartbeat        *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=last_heartbeat,json=lastHeartbeat,proto3" json:"last_heartbeat,omitempty"`
+	RelayAllocationCount uint64                 `protobuf:"varint,10,opt,name=relay_allocation_count,json=relayAllocationCount,proto3" json:"relay_allocation_count,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *EdgeRuntimeProjection) Reset() {
@@ -283,6 +284,13 @@ func (x *EdgeRuntimeProjection) GetLastHeartbeat() *timestamppb.Timestamp {
 		return x.LastHeartbeat
 	}
 	return nil
+}
+
+func (x *EdgeRuntimeProjection) GetRelayAllocationCount() uint64 {
+	if x != nil {
+		return x.RelayAllocationCount
+	}
+	return 0
 }
 
 // ManagedEdge 合并持久 desired state 与只读 runtime projection。
@@ -892,7 +900,7 @@ const file_cloud_v1_edge_config_proto_rawDesc = "" +
 	"\x17SignedEdgeDesiredConfig\x12\x15\n" +
 	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\fR\apayload\x12\x1c\n" +
-	"\tsignature\x18\x03 \x01(\fR\tsignature\"\x8b\x03\n" +
+	"\tsignature\x18\x03 \x01(\fR\tsignature\"\xc1\x03\n" +
 	"\x15EdgeRuntimeProjection\x12\x16\n" +
 	"\x06online\x18\x01 \x01(\bR\x06online\x12\x17\n" +
 	"\aboot_id\x18\x02 \x01(\tR\x06bootId\x12#\n" +
@@ -903,7 +911,9 @@ const file_cloud_v1_edge_config_proto_rawDesc = "" +
 	"agentCount\x12#\n" +
 	"\rsession_count\x18\a \x01(\x04R\fsessionCount\x12=\n" +
 	"\fconnected_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\vconnectedAt\x12A\n" +
-	"\x0elast_heartbeat\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\rlastHeartbeat\"\xb4\x01\n" +
+	"\x0elast_heartbeat\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\rlastHeartbeat\x124\n" +
+	"\x16relay_allocation_count\x18\n" +
+	" \x01(\x04R\x14relayAllocationCount\"\xb4\x01\n" +
 	"\vManagedEdge\x12:\n" +
 	"\x06config\x18\x01 \x01(\v2\".muxvia.cloud.v1.EdgeDesiredConfigR\x06config\x12'\n" +
 	"\x0fconfig_revision\x18\x02 \x01(\x04R\x0econfigRevision\x12@\n" +

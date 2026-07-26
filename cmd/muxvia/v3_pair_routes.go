@@ -69,7 +69,7 @@ func v3PairingRoutes(flags v3PairRouteFlags) ([]*remoteauthpb.EndpointRouteConfi
 			route = &remoteauthpb.EndpointRouteConfigV1{
 				SchemaVersion: endpoint.RouteConfigVersion, RouteId: "cloud", Enabled: true,
 				Route: &remoteauthpb.EndpointRouteConfigV1_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.ManagedWebRTCRouteConfig{
-					AccountProfileRef: "default", RelayMode: remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_DIRECT,
+					AccountProfileRef: "default", RelayMode: remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_AUTO,
 				}},
 			}
 		case "ssh":

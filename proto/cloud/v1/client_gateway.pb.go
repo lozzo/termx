@@ -98,6 +98,7 @@ type ClientHello struct {
 	Product           ClientProduct          `protobuf:"varint,3,opt,name=product,proto3,enum=muxvia.cloud.v1.ClientProduct" json:"product,omitempty"`
 	SoftwareVersion   string                 `protobuf:"bytes,4,opt,name=software_version,json=softwareVersion,proto3" json:"software_version,omitempty"`
 	AttemptGeneration uint64                 `protobuf:"varint,5,opt,name=attempt_generation,json=attemptGeneration,proto3" json:"attempt_generation,omitempty"`
+	RelayPreference   RelayPreference        `protobuf:"varint,6,opt,name=relay_preference,json=relayPreference,proto3,enum=muxvia.cloud.v1.RelayPreference" json:"relay_preference,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -167,10 +168,18 @@ func (x *ClientHello) GetAttemptGeneration() uint64 {
 	return 0
 }
 
+func (x *ClientHello) GetRelayPreference() RelayPreference {
+	if x != nil {
+		return x.RelayPreference
+	}
+	return RelayPreference_RELAY_PREFERENCE_UNSPECIFIED
+}
+
 type ClientReady struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Generation    uint64                 `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	Relay         *RelayICEConfig        `protobuf:"bytes,3,opt,name=relay,proto3" json:"relay,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -217,6 +226,13 @@ func (x *ClientReady) GetGeneration() uint64 {
 		return x.Generation
 	}
 	return 0
+}
+
+func (x *ClientReady) GetRelay() *RelayICEConfig {
+	if x != nil {
+		return x.Relay
+	}
+	return nil
 }
 
 type ClientOffer struct {
@@ -695,24 +711,26 @@ var File_cloud_v1_client_gateway_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_client_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x1dcloud/v1/client_gateway.proto\x12\x0fmuxvia.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x16cloud/v1/runtime.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9f\x01\n" +
+	"\x1dcloud/v1/client_gateway.proto\x12\x0fmuxvia.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x16cloud/v1/runtime.proto\x1a\x14cloud/v1/usage.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9f\x01\n" +
 	"\x11CloudICECandidate\x12\x1c\n" +
 	"\tcandidate\x18\x01 \x01(\tR\tcandidate\x12\x17\n" +
 	"\asdp_mid\x18\x02 \x01(\tR\x06sdpMid\x12&\n" +
 	"\x0fsdp_mline_index\x18\x03 \x01(\rR\rsdpMlineIndex\x12+\n" +
-	"\x11username_fragment\x18\x04 \x01(\tR\x10usernameFragment\"\x8a\x02\n" +
+	"\x11username_fragment\x18\x04 \x01(\tR\x10usernameFragment\"\xd7\x02\n" +
 	"\vClientHello\x12D\n" +
 	"\rclient_ticket\x18\x01 \x01(\v2\x1f.muxvia.cloud.v1.SignedEnvelopeR\fclientTicket\x12!\n" +
 	"\fclient_proof\x18\x02 \x01(\fR\vclientProof\x128\n" +
 	"\aproduct\x18\x03 \x01(\x0e2\x1e.muxvia.cloud.v1.ClientProductR\aproduct\x12)\n" +
 	"\x10software_version\x18\x04 \x01(\tR\x0fsoftwareVersion\x12-\n" +
-	"\x12attempt_generation\x18\x05 \x01(\x04R\x11attemptGeneration\"L\n" +
+	"\x12attempt_generation\x18\x05 \x01(\x04R\x11attemptGeneration\x12K\n" +
+	"\x10relay_preference\x18\x06 \x01(\x0e2 .muxvia.cloud.v1.RelayPreferenceR\x0frelayPreference\"\x83\x01\n" +
 	"\vClientReady\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x02 \x01(\x04R\n" +
-	"generation\"\x8d\x01\n" +
+	"generation\x125\n" +
+	"\x05relay\x18\x03 \x01(\v2\x1f.muxvia.cloud.v1.RelayICEConfigR\x05relay\"\x8d\x01\n" +
 	"\vClientOffer\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
@@ -789,27 +807,31 @@ var file_cloud_v1_client_gateway_proto_goTypes = []any{
 	(*EdgeSignal)(nil),            // 7: muxvia.cloud.v1.EdgeSignal
 	(*SignedEnvelope)(nil),        // 8: muxvia.cloud.v1.SignedEnvelope
 	(ClientProduct)(0),            // 9: muxvia.cloud.v1.ClientProduct
-	(*timestamppb.Timestamp)(nil), // 10: google.protobuf.Timestamp
+	(RelayPreference)(0),          // 10: muxvia.cloud.v1.RelayPreference
+	(*RelayICEConfig)(nil),        // 11: muxvia.cloud.v1.RelayICEConfig
+	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
 }
 var file_cloud_v1_client_gateway_proto_depIdxs = []int32{
 	8,  // 0: muxvia.cloud.v1.ClientHello.client_ticket:type_name -> muxvia.cloud.v1.SignedEnvelope
 	9,  // 1: muxvia.cloud.v1.ClientHello.product:type_name -> muxvia.cloud.v1.ClientProduct
-	0,  // 2: muxvia.cloud.v1.ClientOffer.candidates:type_name -> muxvia.cloud.v1.CloudICECandidate
-	0,  // 3: muxvia.cloud.v1.EdgeAnswer.candidates:type_name -> muxvia.cloud.v1.CloudICECandidate
-	10, // 4: muxvia.cloud.v1.ClientSignal.sent_at:type_name -> google.protobuf.Timestamp
-	1,  // 5: muxvia.cloud.v1.ClientSignal.hello:type_name -> muxvia.cloud.v1.ClientHello
-	3,  // 6: muxvia.cloud.v1.ClientSignal.offer:type_name -> muxvia.cloud.v1.ClientOffer
-	10, // 7: muxvia.cloud.v1.EdgeSignal.sent_at:type_name -> google.protobuf.Timestamp
-	2,  // 8: muxvia.cloud.v1.EdgeSignal.ready:type_name -> muxvia.cloud.v1.ClientReady
-	4,  // 9: muxvia.cloud.v1.EdgeSignal.answer:type_name -> muxvia.cloud.v1.EdgeAnswer
-	5,  // 10: muxvia.cloud.v1.EdgeSignal.rejected:type_name -> muxvia.cloud.v1.SignalRejected
-	6,  // 11: muxvia.cloud.v1.ClientGateway.Connect:input_type -> muxvia.cloud.v1.ClientSignal
-	7,  // 12: muxvia.cloud.v1.ClientGateway.Connect:output_type -> muxvia.cloud.v1.EdgeSignal
-	12, // [12:13] is the sub-list for method output_type
-	11, // [11:12] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	10, // 2: muxvia.cloud.v1.ClientHello.relay_preference:type_name -> muxvia.cloud.v1.RelayPreference
+	11, // 3: muxvia.cloud.v1.ClientReady.relay:type_name -> muxvia.cloud.v1.RelayICEConfig
+	0,  // 4: muxvia.cloud.v1.ClientOffer.candidates:type_name -> muxvia.cloud.v1.CloudICECandidate
+	0,  // 5: muxvia.cloud.v1.EdgeAnswer.candidates:type_name -> muxvia.cloud.v1.CloudICECandidate
+	12, // 6: muxvia.cloud.v1.ClientSignal.sent_at:type_name -> google.protobuf.Timestamp
+	1,  // 7: muxvia.cloud.v1.ClientSignal.hello:type_name -> muxvia.cloud.v1.ClientHello
+	3,  // 8: muxvia.cloud.v1.ClientSignal.offer:type_name -> muxvia.cloud.v1.ClientOffer
+	12, // 9: muxvia.cloud.v1.EdgeSignal.sent_at:type_name -> google.protobuf.Timestamp
+	2,  // 10: muxvia.cloud.v1.EdgeSignal.ready:type_name -> muxvia.cloud.v1.ClientReady
+	4,  // 11: muxvia.cloud.v1.EdgeSignal.answer:type_name -> muxvia.cloud.v1.EdgeAnswer
+	5,  // 12: muxvia.cloud.v1.EdgeSignal.rejected:type_name -> muxvia.cloud.v1.SignalRejected
+	6,  // 13: muxvia.cloud.v1.ClientGateway.Connect:input_type -> muxvia.cloud.v1.ClientSignal
+	7,  // 14: muxvia.cloud.v1.ClientGateway.Connect:output_type -> muxvia.cloud.v1.EdgeSignal
+	14, // [14:15] is the sub-list for method output_type
+	13, // [13:14] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_client_gateway_proto_init() }
@@ -819,6 +841,7 @@ func file_cloud_v1_client_gateway_proto_init() {
 	}
 	file_cloud_v1_common_proto_init()
 	file_cloud_v1_runtime_proto_init()
+	file_cloud_v1_usage_proto_init()
 	file_cloud_v1_client_gateway_proto_msgTypes[6].OneofWrappers = []any{
 		(*ClientSignal_Hello)(nil),
 		(*ClientSignal_Offer)(nil),

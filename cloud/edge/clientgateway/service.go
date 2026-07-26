@@ -5,6 +5,7 @@ package clientgateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -30,6 +31,11 @@ type Runtime interface {
 	SendAgentCommand(context.Context, string, uint64, *cloudv1.EdgeCommand) error
 }
 
+// RelayBroker 只通过当前 EdgeControl generation 申请短租约并返回已经验签、登记的临时 ICE 参数。
+type RelayBroker interface {
+	RequestRelayLease(context.Context, *cloudv1.RelayLeaseRequest) (*cloudv1.RelayICEConfig, error)
+}
+
 // Config 提供 Edge identity、动态 Controller ticket key set 和信令 deadline。
 type Config struct {
 	EdgeID           string
@@ -39,6 +45,7 @@ type Config struct {
 	Ready            func() bool
 	SignalTimeout    time.Duration
 	Now              func() time.Time
+	Relay            RelayBroker
 }
 
 // Service 只在票据、proof、产品和 attempt generation 全部一致后发布客户端实时摘要。
@@ -83,7 +90,28 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 		defer cancel()
 		_ = service.config.Runtime.RemoveSession(cleanup, sessionID, generation)
 	}()
-	if err := stream.Send(service.edgeSignal(sessionID, 1, &cloudv1.EdgeSignal_Ready{Ready: &cloudv1.ClientReady{SessionId: sessionID, Generation: generation}})); err != nil {
+	if err := service.authorizeClient(stream.Context(), claims, sessionID); err != nil {
+		return status.Error(codes.PermissionDenied, err.Error())
+	}
+	preference := helloEvent.GetHello().GetRelayPreference()
+	switch preference {
+	case cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO, cloudv1.RelayPreference_RELAY_PREFERENCE_DIRECT_ONLY, cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY:
+	default:
+		return status.Error(codes.InvalidArgument, "Cloud Relay preference is required")
+	}
+	var relay *cloudv1.RelayICEConfig
+	if preference != cloudv1.RelayPreference_RELAY_PREFERENCE_DIRECT_ONLY {
+		if claims.GetRoutePolicy() != cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_OR_RELAY || service.config.Relay == nil {
+			return status.Error(codes.FailedPrecondition, "Relay is not allowed for this Cloud attempt")
+		}
+		relay, err = service.config.Relay.RequestRelayLease(stream.Context(), &cloudv1.RelayLeaseRequest{
+			CorrelationId: uuid.NewString(), SessionId: sessionID, AccountId: claims.GetAccountId(), DaemonId: claims.GetDaemonId(), ClientId: claims.GetClientId(), Preference: preference,
+		})
+		if err != nil {
+			return status.Error(codes.ResourceExhausted, err.Error())
+		}
+	}
+	if err := stream.Send(service.edgeSignal(sessionID, 1, &cloudv1.EdgeSignal_Ready{Ready: &cloudv1.ClientReady{SessionId: sessionID, Generation: generation, Relay: relay}})); err != nil {
 		return err
 	}
 	offerEvent, err := stream.Recv()
@@ -105,7 +133,7 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 	}()
 	offer := offerEvent.GetOffer()
 	command := &cloudv1.EdgeCommand{Payload: &cloudv1.EdgeCommand_Offer{Offer: &cloudv1.AgentOffer{
-		CorrelationId: correlationID, SessionId: sessionID, AgentGeneration: agentGeneration, ClientPublicKey: append([]byte(nil), claims.GetClientPublicKey()...), OfferSdp: offer.GetOfferSdp(), Candidates: cloneCandidates(offer.GetCandidates()),
+		CorrelationId: correlationID, SessionId: sessionID, AgentGeneration: agentGeneration, ClientPublicKey: append([]byte(nil), claims.GetClientPublicKey()...), OfferSdp: offer.GetOfferSdp(), Candidates: cloneCandidates(offer.GetCandidates()), Relay: cloneRelay(relay),
 	}}}
 	if err := service.config.Runtime.SendAgentCommand(stream.Context(), claims.GetDaemonId(), agentGeneration, command); err != nil {
 		return status.Error(codes.FailedPrecondition, "target daemon signaling stream changed")
@@ -141,6 +169,41 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 	}
 }
 
+func (service *Service) authorizeClient(ctx context.Context, claims *cloudv1.ClientTicketClaims, sessionID string) error {
+	correlationID := uuid.NewString()
+	agentGeneration, response, err := service.config.Runtime.BeginAgentSignal(ctx, correlationID, claims.GetDaemonId(), sessionID)
+	if err != nil {
+		return errors.New("target daemon is no longer online")
+	}
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = service.config.Runtime.CancelAgentSignal(cleanup, correlationID)
+	}()
+	command := &cloudv1.EdgeCommand{Payload: &cloudv1.EdgeCommand_Authorize{Authorize: &cloudv1.AgentAuthorize{
+		CorrelationId: correlationID, SessionId: sessionID, AgentGeneration: agentGeneration, ClientPublicKey: append([]byte(nil), claims.GetClientPublicKey()...), Product: claims.GetProduct(),
+	}}}
+	if err := service.config.Runtime.SendAgentCommand(ctx, claims.GetDaemonId(), agentGeneration, command); err != nil {
+		return errors.New("target daemon authorization stream changed")
+	}
+	timer := time.NewTimer(service.config.SignalTimeout)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return errors.New("daemon client authorization timed out")
+	case event, ok := <-response:
+		if !ok || event.GetAuthorization() == nil {
+			return errors.New("daemon client authorization generation ended")
+		}
+		if !event.GetAuthorization().GetAuthorized() {
+			return fmt.Errorf("daemon precheck rejected client access (%s): %s", event.GetAuthorization().GetCode(), event.GetAuthorization().GetMessage())
+		}
+		return nil
+	}
+}
+
 func (service *Service) admit(event *cloudv1.ClientSignal) (*cloudv1.ClientTicketClaims, error) {
 	if event == nil || event.GetProtocolVersion() != ProtocolVersion || event.GetStreamSeq() != 1 || event.GetHello() == nil || strings.TrimSpace(event.GetMessageId()) == "" || strings.TrimSpace(event.GetBootId()) == "" || strings.TrimSpace(event.GetConnectionId()) == "" {
 		return nil, errors.New("ClientHello envelope is invalid")
@@ -153,10 +216,20 @@ func (service *Service) admit(event *cloudv1.ClientSignal) (*cloudv1.ClientTicke
 	if event.GetSenderId() != claims.GetClientId() || hello.GetProduct() != claims.GetProduct() || hello.GetAttemptGeneration() == 0 {
 		return nil, errors.New("ClientHello identity, product, or generation does not match ClientTicket")
 	}
+	if hello.GetRelayPreference() < cloudv1.RelayPreference_RELAY_PREFERENCE_UNSPECIFIED || hello.GetRelayPreference() > cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY {
+		return nil, errors.New("ClientHello Relay preference is invalid")
+	}
 	if err := ticket.VerifyClientHelloProof(claims.GetClientPublicKey(), hello.GetClientProof(), hello.GetClientTicket(), event.GetConnectionId(), hello.GetAttemptGeneration()); err != nil {
 		return nil, err
 	}
 	return claims, nil
+}
+
+func cloneRelay(value *cloudv1.RelayICEConfig) *cloudv1.RelayICEConfig {
+	if value == nil {
+		return nil
+	}
+	return proto.Clone(value).(*cloudv1.RelayICEConfig)
 }
 
 func validateOffer(event, hello *cloudv1.ClientSignal, sessionID string) error {

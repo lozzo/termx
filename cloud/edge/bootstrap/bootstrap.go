@@ -41,6 +41,7 @@ type FileConfig struct {
 	StateDirectory       string `yaml:"state_directory"`
 	PublicEndpoint       string `yaml:"public_endpoint"`
 	ListenOverride       string `yaml:"listen_override"`
+	TURNListenOverride   string `yaml:"turn_listen_override,omitempty"`
 	LogLevel             string `yaml:"log_level,omitempty"`
 	ControllerAddress    string `yaml:"controller_address,omitempty"`
 	ControllerServerName string `yaml:"controller_server_name,omitempty"`
@@ -61,6 +62,10 @@ type Resolved struct {
 	ConfigSigningKeyID         string
 	ConfigSigningPublicKeyFile string
 	DesiredConfigCacheFile     string
+	TURNListenAddress          string
+	TURNPublicEndpoint         string
+	TURNRealm                  string
+	UsageOutboxFile            string
 }
 
 // Resolve 读取配置；未注册时生成或复用本机私钥并消费一次性 bootstrap token。
@@ -200,12 +205,17 @@ func register(ctx context.Context, configFile string, config *FileConfig, paths 
 }
 
 func resolvedPaths(config FileConfig) Resolved {
+	publicHost := config.PublicEndpoint
+	if host, _, err := net.SplitHostPort(config.PublicEndpoint); err == nil {
+		publicHost = strings.Trim(host, "[]")
+	}
 	return Resolved{
 		ListenAddress: config.ListenOverride, ControllerAddress: config.ControllerAddress, ControllerServerName: config.ControllerServerName, EdgeID: config.EdgeID,
 		IdentityCertificateFile: filepath.Join(config.StateDirectory, "identity-cert.pem"), IdentityPrivateKeyFile: filepath.Join(config.StateDirectory, "identity-key.pem"),
 		PublicCertificateFile: filepath.Join(config.StateDirectory, "public-cert.pem"), PublicPrivateKeyFile: filepath.Join(config.StateDirectory, "public-key.pem"),
 		ControllerCAFile: filepath.Join(config.StateDirectory, "controller-ca.pem"), ConfigSigningKeyID: config.ConfigKeyID,
 		ConfigSigningPublicKeyFile: filepath.Join(config.StateDirectory, "config-signing-public.key"), DesiredConfigCacheFile: filepath.Join(config.StateDirectory, "desired-config.pb"),
+		TURNListenAddress: config.TURNListenOverride, TURNPublicEndpoint: net.JoinHostPort(publicHost, "3478"), TURNRealm: publicHost, UsageOutboxFile: filepath.Join(config.StateDirectory, "usage-outbox.db"),
 	}
 }
 
@@ -217,6 +227,10 @@ func normalize(config *FileConfig) {
 	config.StateDirectory = strings.TrimSpace(config.StateDirectory)
 	config.PublicEndpoint = strings.TrimSpace(config.PublicEndpoint)
 	config.ListenOverride = strings.TrimSpace(config.ListenOverride)
+	config.TURNListenOverride = strings.TrimSpace(config.TURNListenOverride)
+	if config.TURNListenOverride == "" {
+		config.TURNListenOverride = "0.0.0.0:3478"
+	}
 	config.ControllerAddress = strings.TrimSpace(config.ControllerAddress)
 	config.ControllerServerName = strings.TrimSpace(config.ControllerServerName)
 	config.ConfigKeyID = strings.TrimSpace(config.ConfigKeyID)

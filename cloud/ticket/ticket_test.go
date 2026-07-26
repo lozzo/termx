@@ -127,3 +127,36 @@ func TestClientTicketBindsP2PEdgeAndHelloGeneration(t *testing.T) {
 		t.Fatal("ClientTicket accepted a lifetime longer than two minutes")
 	}
 }
+
+func TestRelayLeaseBindsSessionLimitsAndExpiry(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	claims := &cloudv1.RelayLeaseClaims{
+		LeaseId: "lease-r6", AccountId: "account-r6", EdgeId: "edge-r6", DaemonId: "daemon-r6", ClientId: "client-r6", SessionId: "session-r6",
+		MaxBytes: 1 << 20, MaxRateBytesPerSecond: 64 << 10, MaxConcurrentAllocations: 1,
+		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(5 * time.Minute)),
+	}
+	envelope, err := ticket.SignRelayLease("controller-r6", privateKey, claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := ticket.KeySet{"controller-r6": publicKey}
+	verified, err := ticket.VerifyRelayLease(envelope, keys, "edge-r6", "session-r6", now, 30*time.Second)
+	if err != nil || verified.GetMaxBytes() != 1<<20 {
+		t.Fatalf("verified RelayLease=%v err=%v", verified, err)
+	}
+	if _, err := ticket.VerifyRelayLease(envelope, keys, "edge-r6", "session-other", now, 30*time.Second); err == nil {
+		t.Fatal("RelayLease accepted another session")
+	}
+	if _, err := ticket.VerifyRelayLease(envelope, keys, "edge-r6", "session-r6", now.Add(6*time.Minute), 30*time.Second); err == nil {
+		t.Fatal("expired RelayLease was accepted")
+	}
+	tooLong := proto.Clone(claims).(*cloudv1.RelayLeaseClaims)
+	tooLong.ExpiresAt = timestamppb.New(now.Add(5*time.Minute + time.Nanosecond))
+	if _, err := ticket.SignRelayLease("controller-r6", privateKey, tooLong); err == nil {
+		t.Fatal("RelayLease accepted a lifetime longer than five minutes")
+	}
+}

@@ -254,12 +254,31 @@ func (runtime *Runtime) runEdgeCommands(ctx context.Context, stream cloudv1.Agen
 			failures <- err
 			return
 		}
-		offer := command.GetOffer()
-		if offer == nil || offer.GetAgentGeneration() != generation || strings.TrimSpace(offer.GetCorrelationId()) == "" || strings.TrimSpace(offer.GetSessionId()) == "" {
-			failures <- errors.New("Edge signaling command is invalid")
+		var response *cloudv1.AgentEvent
+		switch {
+		case command.GetAuthorize() != nil:
+			authorize := command.GetAuthorize()
+			if authorize.GetAgentGeneration() != generation || strings.TrimSpace(authorize.GetCorrelationId()) == "" || strings.TrimSpace(authorize.GetSessionId()) == "" || len(authorize.GetClientPublicKey()) != ed25519.PublicKeySize {
+				failures <- errors.New("Edge client authorization command is invalid")
+				return
+			}
+			allowed := runtime.config.AccessStore.AllowsClientPublicKey(ed25519.PublicKey(authorize.GetClientPublicKey()), time.Now().UTC())
+			result := &cloudv1.AgentAuthorizationResult{CorrelationId: authorize.GetCorrelationId(), SessionId: authorize.GetSessionId(), Authorized: allowed}
+			if !allowed {
+				result.Code, result.Message = "CLIENT_REVOKED", "client access is not active"
+			}
+			response = &cloudv1.AgentEvent{Payload: &cloudv1.AgentEvent_Authorization{Authorization: result}}
+		case command.GetOffer() != nil:
+			offer := command.GetOffer()
+			if offer.GetAgentGeneration() != generation || strings.TrimSpace(offer.GetCorrelationId()) == "" || strings.TrimSpace(offer.GetSessionId()) == "" {
+				failures <- errors.New("Edge signaling command is invalid")
+				return
+			}
+			response = runtime.answerOffer(ctx, offer)
+		default:
+			failures <- errors.New("Edge command payload is unsupported")
 			return
 		}
-		response := runtime.answerOffer(ctx, offer)
 		select {
 		case <-ctx.Done():
 			return
@@ -284,7 +303,14 @@ func (runtime *Runtime) answerOffer(ctx context.Context, offer *cloudv1.AgentOff
 			candidates = append(candidates, webrtc.ICECandidate{Candidate: candidate.GetCandidate(), SDPMid: candidate.GetSdpMid(), SDPMLineIndex: candidate.GetSdpMlineIndex(), UsernameFragment: candidate.GetUsernameFragment()})
 		}
 	}
-	answer, err := runtime.config.Answerer.Answer(ctx, &webrtc.SignalingOffer{SessionID: offer.GetSessionId(), SDP: offer.GetOfferSdp(), Candidates: candidates}, nil)
+	iceServers := make([]webrtc.ICEServer, 0, 1)
+	if relay := offer.GetRelay(); relay != nil {
+		if len(relay.GetUrls()) == 0 || strings.TrimSpace(relay.GetUsername()) == "" || strings.TrimSpace(relay.GetCredential()) == "" {
+			return reject("RELAY_INVALID", "Edge supplied incomplete Relay ICE material")
+		}
+		iceServers = append(iceServers, webrtc.ICEServer{URLs: append([]string(nil), relay.GetUrls()...), Username: relay.GetUsername(), Credential: relay.GetCredential()})
+	}
+	answer, err := runtime.config.Answerer.Answer(ctx, &webrtc.SignalingOffer{SessionID: offer.GetSessionId(), SDP: offer.GetOfferSdp(), Candidates: candidates}, iceServers)
 	if err != nil {
 		return reject("ANSWER_FAILED", "daemon could not establish P2P signaling")
 	}

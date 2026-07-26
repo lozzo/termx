@@ -16,6 +16,27 @@ type ICECandidate struct {
 	UsernameFragment string
 }
 
+// ICEServer 是 WebRTC primitive 的中性 STUN/TURN 参数；credential 来源和租约验证属于上层 adapter。
+type ICEServer struct {
+	URLs       []string
+	Username   string
+	Credential string
+}
+
+// ICETransportPolicy 约束当前 peer 是否允许 direct candidate 或必须只使用 Relay candidate。
+type ICETransportPolicy uint8
+
+const (
+	ICETransportAll ICETransportPolicy = iota
+	ICETransportRelayOnly
+)
+
+// WebRTCConfig 是创建单个 peer 所需的 Cloud 无关 ICE 配置，不拥有 Route 或 session lifecycle。
+type WebRTCConfig struct {
+	Servers []ICEServer
+	Policy  ICETransportPolicy
+}
+
 // WebRTCMessageChannel 是 Go Client Engine 对可靠有序 WebRTC DataChannel 的最小平台要求。
 // native Pion 与浏览器 adapter 都必须复制收到的 bytes，并实现显式背压和关闭；该接口不解释 remote-auth 或 Proto API payload。
 type WebRTCMessageChannel interface {

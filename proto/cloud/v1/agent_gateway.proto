@@ -4,6 +4,8 @@ package muxvia.cloud.v1;
 
 import "cloud/v1/common.proto";
 import "cloud/v1/client_gateway.proto";
+import "cloud/v1/runtime.proto";
+import "cloud/v1/usage.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
@@ -23,6 +25,24 @@ message AgentOffer {
   bytes client_public_key = 4;
   string offer_sdp = 5;
   repeated CloudICECandidate candidates = 6;
+  RelayICEConfig relay = 7;
+}
+
+// AgentAuthorize 要求 owning daemon 在产生 TURN credential 前按本地 AccessStore 预检客户端。
+message AgentAuthorize {
+  string correlation_id = 1;
+  string session_id = 2;
+  uint64 agent_generation = 3;
+  bytes client_public_key = 4;
+  ClientProduct product = 5;
+}
+
+message AgentAuthorizationResult {
+  string correlation_id = 1;
+  string session_id = 2;
+  bool authorized = 3;
+  string code = 4;
+  string message = 5;
 }
 
 message AgentAnswer {
@@ -57,6 +77,7 @@ message AgentEvent {
     AgentHeartbeat heartbeat = 21;
     AgentAnswer answer = 22;
     AgentSignalRejected rejected = 23;
+    AgentAuthorizationResult authorization = 24;
   }
 }
 
@@ -71,6 +92,7 @@ message EdgeCommand {
   oneof payload {
     AgentReady ready = 20;
     AgentOffer offer = 21;
+    AgentAuthorize authorize = 22;
   }
 }
 

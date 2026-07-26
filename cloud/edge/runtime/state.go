@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/muxvia/muxvia/cloud/edge/policy"
 	"github.com/muxvia/muxvia/cloud/runtimesnapshot"
 	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 	"google.golang.org/protobuf/proto"
@@ -56,15 +57,24 @@ type stateRequest struct {
 }
 
 type stateData struct {
-	revision       uint64
-	agents         map[string]*cloudv1.AgentPresence
-	agentWriters   map[string]agentWriter
-	agentNextGen   map[string]uint64
-	sessions       map[string]*cloudv1.ClientSessionSummary
-	pendingSignals map[string]pendingSignal
-	subscribers    map[uint64]chan *cloudv1.RuntimeDelta
-	nextSubscriber uint64
-	deltaBuffer    int
+	revision           uint64
+	agents             map[string]*cloudv1.AgentPresence
+	agentWriters       map[string]agentWriter
+	agentNextGen       map[string]uint64
+	sessions           map[string]*cloudv1.ClientSessionSummary
+	pendingSignals     map[string]pendingSignal
+	relayLeases        map[string]relayLease
+	relayReservations  map[string]relayReservation
+	allocations        map[string]relayAllocation
+	allocationNextGen  map[string]uint64
+	accountAllocations map[string]uint32
+	leaseAllocations   map[string]uint32
+	sessionAllocations map[string]uint32
+	accountRates       map[string]*policy.RateLimiter
+	sessionRates       map[string]*policy.RateLimiter
+	subscribers        map[uint64]chan *cloudv1.RuntimeDelta
+	nextSubscriber     uint64
+	deltaBuffer        int
 }
 
 type pendingSignal struct {
@@ -250,14 +260,16 @@ func (state *State) BeginAgentSignal(ctx context.Context, correlationID, daemonI
 
 // ResolveAgentSignal 只允许当前 AgentGateway generation 完成其登记的 correlation。
 func (state *State) ResolveAgentSignal(ctx context.Context, daemonID string, generation uint64, event *cloudv1.AgentEvent) error {
-	if event == nil || (event.GetAnswer() == nil) == (event.GetRejected() == nil) {
+	if event == nil || boolCount(event.GetAnswer() != nil, event.GetRejected() != nil, event.GetAuthorization() != nil) != 1 {
 		return errors.New("agent signal result is invalid")
 	}
 	correlationID, sessionID := "", ""
 	if answer := event.GetAnswer(); answer != nil {
 		correlationID, sessionID = answer.GetCorrelationId(), answer.GetSessionId()
-	} else {
+	} else if rejected := event.GetRejected(); rejected != nil {
 		correlationID, sessionID = event.GetRejected().GetCorrelationId(), event.GetRejected().GetSessionId()
+	} else {
+		correlationID, sessionID = event.GetAuthorization().GetCorrelationId(), event.GetAuthorization().GetSessionId()
 	}
 	return state.mutate(ctx, func(data *stateData) error {
 		pending, ok := data.pendingSignals[correlationID]
@@ -269,6 +281,16 @@ func (state *State) ResolveAgentSignal(ctx context.Context, daemonID string, gen
 		close(pending.result)
 		return nil
 	})
+}
+
+func boolCount(values ...bool) int {
+	count := 0
+	for _, value := range values {
+		if value {
+			count++
+		}
+	}
+	return count
 }
 
 // CancelAgentSignal 删除超时或客户端断开的精确 correlation；迟到 answer 会被 generation fence 拒绝。
@@ -414,6 +436,9 @@ func (state *State) Close() {
 func (state *State) run(deltaBuffer int) {
 	data := &stateData{
 		agents: make(map[string]*cloudv1.AgentPresence), agentWriters: make(map[string]agentWriter), agentNextGen: make(map[string]uint64), sessions: make(map[string]*cloudv1.ClientSessionSummary), pendingSignals: make(map[string]pendingSignal),
+		relayLeases: make(map[string]relayLease), relayReservations: make(map[string]relayReservation), allocations: make(map[string]relayAllocation), allocationNextGen: make(map[string]uint64),
+		accountAllocations: make(map[string]uint32), leaseAllocations: make(map[string]uint32), sessionAllocations: make(map[string]uint32),
+		accountRates: make(map[string]*policy.RateLimiter), sessionRates: make(map[string]*policy.RateLimiter),
 		subscribers: make(map[uint64]chan *cloudv1.RuntimeDelta), deltaBuffer: deltaBuffer,
 	}
 	for {
@@ -474,12 +499,15 @@ func (state *State) unsubscribe(id uint64) {
 }
 
 func (data *stateData) snapshot() (*cloudv1.RuntimeSnapshot, error) {
-	snapshot := &cloudv1.RuntimeSnapshot{Revision: data.revision, Agents: make([]*cloudv1.AgentPresence, 0, len(data.agents)), Sessions: make([]*cloudv1.ClientSessionSummary, 0, len(data.sessions))}
+	snapshot := &cloudv1.RuntimeSnapshot{Revision: data.revision, Agents: make([]*cloudv1.AgentPresence, 0, len(data.agents)), Sessions: make([]*cloudv1.ClientSessionSummary, 0, len(data.sessions)), Allocations: make([]*cloudv1.RelayAllocationSummary, 0, len(data.allocations))}
 	for _, agent := range data.agents {
 		snapshot.Agents = append(snapshot.Agents, proto.Clone(agent).(*cloudv1.AgentPresence))
 	}
 	for _, session := range data.sessions {
 		snapshot.Sessions = append(snapshot.Sessions, proto.Clone(session).(*cloudv1.ClientSessionSummary))
+	}
+	for _, allocation := range data.allocations {
+		snapshot.Allocations = append(snapshot.Allocations, proto.Clone(allocation.summary).(*cloudv1.RelayAllocationSummary))
 	}
 	normalized, err := runtimesnapshot.NormalizeClone(snapshot)
 	if err != nil {

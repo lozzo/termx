@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package muxvia.cloud.v1;
+
+import "cloud/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
+
+// RelayPreference 是客户端本次 Cloud attempt 的 ICE 选择意图。
+// 它只约束当前 attempt，不成为 Endpoint/Route 持久真值。
+enum RelayPreference {
+  RELAY_PREFERENCE_UNSPECIFIED = 0;
+  RELAY_PREFERENCE_AUTO = 1;
+  RELAY_PREFERENCE_DIRECT_ONLY = 2;
+  RELAY_PREFERENCE_RELAY_ONLY = 3;
+}
+
+// RelayTransport 是 Edge 实际承载 allocation 的 TURN 传输。
+enum RelayTransport {
+  RELAY_TRANSPORT_UNSPECIFIED = 0;
+  RELAY_TRANSPORT_UDP = 1;
+  RELAY_TRANSPORT_TCP = 2;
+  RELAY_TRANSPORT_TLS = 3;
+}
+
+// RelayLeaseClaims 是 Controller 冻结商业准入后签发的短期 Relay 上限。
+// Edge 只能缩小这些限制，不能自行扩大或续期。
+message RelayLeaseClaims {
+  string lease_id = 1;
+  string account_id = 2;
+  string edge_id = 3;
+  string daemon_id = 4;
+  string client_id = 5;
+  string session_id = 6;
+  uint64 max_bytes = 7;
+  uint64 max_rate_bytes_per_second = 8;
+  uint32 max_concurrent_allocations = 9;
+  google.protobuf.Timestamp issued_at = 10;
+  google.protobuf.Timestamp expires_at = 11;
+}
+
+// RelayLeaseRequest 只为已经通过 daemon 本地预检的精确 session 申请租约。
+message RelayLeaseRequest {
+  string correlation_id = 1;
+  string session_id = 2;
+  string account_id = 3;
+  string daemon_id = 4;
+  string client_id = 5;
+  RelayPreference preference = 6;
+}
+
+message RelayLeaseDenied {
+  string code = 1;
+  string message = 2;
+  bool retryable = 3;
+}
+
+// RelayLeaseDecision 用 correlation_id 把 Controller 决策返回当前 EdgeControl generation。
+message RelayLeaseDecision {
+  string correlation_id = 1;
+  string session_id = 2;
+  oneof result {
+    SignedEnvelope lease = 10;
+    RelayLeaseDenied denied = 11;
+  }
+}
+
+// RelayICEConfig 是 Edge 从已验证租约派生的一次性 TURN credential。
+// 该消息只在当前 ClientGateway/AgentGateway attempt 内存活，禁止持久化或写日志。
+message RelayICEConfig {
+  string lease_id = 1;
+  repeated string urls = 2;
+  string username = 3;
+  string credential = 4;
+  google.protobuf.Timestamp expires_at = 5;
+}
+
+// UsageEvent 是 allocation 关闭或租约窗口结束时冻结的幂等计费事实。
+message UsageEvent {
+  uint32 schema_version = 1;
+  string event_id = 2;
+  string edge_id = 3;
+  string lease_id = 4;
+  string account_id = 5;
+  string daemon_id = 6;
+  string client_id = 7;
+  string session_id = 8;
+  string allocation_id = 9;
+  RelayTransport transport = 10;
+  uint64 ingress_bytes = 11;
+  uint64 egress_bytes = 12;
+  google.protobuf.Timestamp started_at = 13;
+  google.protobuf.Timestamp ended_at = 14;
+}
+
+// UsageBatch 从 durable outbox 读取；发送失败时保留原 event_id 重试。
+message UsageBatch {
+  string batch_id = 1;
+  repeated UsageEvent events = 2;
+}
+
+// UsageAck 只列出已经在 Controller 数据库事务中提交的 event_id。
+message UsageAck {
+  repeated string event_ids = 1;
+}

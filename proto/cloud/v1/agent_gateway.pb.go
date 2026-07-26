@@ -134,6 +134,7 @@ type AgentOffer struct {
 	ClientPublicKey []byte                 `protobuf:"bytes,4,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
 	OfferSdp        string                 `protobuf:"bytes,5,opt,name=offer_sdp,json=offerSdp,proto3" json:"offer_sdp,omitempty"`
 	Candidates      []*CloudICECandidate   `protobuf:"bytes,6,rep,name=candidates,proto3" json:"candidates,omitempty"`
+	Relay           *RelayICEConfig        `protobuf:"bytes,7,opt,name=relay,proto3" json:"relay,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -210,6 +211,166 @@ func (x *AgentOffer) GetCandidates() []*CloudICECandidate {
 	return nil
 }
 
+func (x *AgentOffer) GetRelay() *RelayICEConfig {
+	if x != nil {
+		return x.Relay
+	}
+	return nil
+}
+
+// AgentAuthorize 要求 owning daemon 在产生 TURN credential 前按本地 AccessStore 预检客户端。
+type AgentAuthorize struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	CorrelationId   string                 `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
+	SessionId       string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	AgentGeneration uint64                 `protobuf:"varint,3,opt,name=agent_generation,json=agentGeneration,proto3" json:"agent_generation,omitempty"`
+	ClientPublicKey []byte                 `protobuf:"bytes,4,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
+	Product         ClientProduct          `protobuf:"varint,5,opt,name=product,proto3,enum=muxvia.cloud.v1.ClientProduct" json:"product,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *AgentAuthorize) Reset() {
+	*x = AgentAuthorize{}
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentAuthorize) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentAuthorize) ProtoMessage() {}
+
+func (x *AgentAuthorize) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentAuthorize.ProtoReflect.Descriptor instead.
+func (*AgentAuthorize) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *AgentAuthorize) GetCorrelationId() string {
+	if x != nil {
+		return x.CorrelationId
+	}
+	return ""
+}
+
+func (x *AgentAuthorize) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *AgentAuthorize) GetAgentGeneration() uint64 {
+	if x != nil {
+		return x.AgentGeneration
+	}
+	return 0
+}
+
+func (x *AgentAuthorize) GetClientPublicKey() []byte {
+	if x != nil {
+		return x.ClientPublicKey
+	}
+	return nil
+}
+
+func (x *AgentAuthorize) GetProduct() ClientProduct {
+	if x != nil {
+		return x.Product
+	}
+	return ClientProduct_CLIENT_PRODUCT_UNSPECIFIED
+}
+
+type AgentAuthorizationResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CorrelationId string                 `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Authorized    bool                   `protobuf:"varint,3,opt,name=authorized,proto3" json:"authorized,omitempty"`
+	Code          string                 `protobuf:"bytes,4,opt,name=code,proto3" json:"code,omitempty"`
+	Message       string                 `protobuf:"bytes,5,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentAuthorizationResult) Reset() {
+	*x = AgentAuthorizationResult{}
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentAuthorizationResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentAuthorizationResult) ProtoMessage() {}
+
+func (x *AgentAuthorizationResult) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentAuthorizationResult.ProtoReflect.Descriptor instead.
+func (*AgentAuthorizationResult) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *AgentAuthorizationResult) GetCorrelationId() string {
+	if x != nil {
+		return x.CorrelationId
+	}
+	return ""
+}
+
+func (x *AgentAuthorizationResult) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *AgentAuthorizationResult) GetAuthorized() bool {
+	if x != nil {
+		return x.Authorized
+	}
+	return false
+}
+
+func (x *AgentAuthorizationResult) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *AgentAuthorizationResult) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 type AgentAnswer struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CorrelationId string                 `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
@@ -222,7 +383,7 @@ type AgentAnswer struct {
 
 func (x *AgentAnswer) Reset() {
 	*x = AgentAnswer{}
-	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[3]
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -234,7 +395,7 @@ func (x *AgentAnswer) String() string {
 func (*AgentAnswer) ProtoMessage() {}
 
 func (x *AgentAnswer) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[3]
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -247,7 +408,7 @@ func (x *AgentAnswer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentAnswer.ProtoReflect.Descriptor instead.
 func (*AgentAnswer) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{3}
+	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *AgentAnswer) GetCorrelationId() string {
@@ -290,7 +451,7 @@ type AgentSignalRejected struct {
 
 func (x *AgentSignalRejected) Reset() {
 	*x = AgentSignalRejected{}
-	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[4]
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -302,7 +463,7 @@ func (x *AgentSignalRejected) String() string {
 func (*AgentSignalRejected) ProtoMessage() {}
 
 func (x *AgentSignalRejected) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[4]
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -315,7 +476,7 @@ func (x *AgentSignalRejected) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentSignalRejected.ProtoReflect.Descriptor instead.
 func (*AgentSignalRejected) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{4}
+	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *AgentSignalRejected) GetCorrelationId() string {
@@ -356,7 +517,7 @@ type AgentReady struct {
 
 func (x *AgentReady) Reset() {
 	*x = AgentReady{}
-	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[5]
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -368,7 +529,7 @@ func (x *AgentReady) String() string {
 func (*AgentReady) ProtoMessage() {}
 
 func (x *AgentReady) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[5]
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -381,7 +542,7 @@ func (x *AgentReady) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentReady.ProtoReflect.Descriptor instead.
 func (*AgentReady) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{5}
+	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *AgentReady) GetGeneration() uint64 {
@@ -413,6 +574,7 @@ type AgentEvent struct {
 	//	*AgentEvent_Heartbeat
 	//	*AgentEvent_Answer
 	//	*AgentEvent_Rejected
+	//	*AgentEvent_Authorization
 	Payload       isAgentEvent_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -420,7 +582,7 @@ type AgentEvent struct {
 
 func (x *AgentEvent) Reset() {
 	*x = AgentEvent{}
-	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[6]
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -432,7 +594,7 @@ func (x *AgentEvent) String() string {
 func (*AgentEvent) ProtoMessage() {}
 
 func (x *AgentEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[6]
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -445,7 +607,7 @@ func (x *AgentEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentEvent.ProtoReflect.Descriptor instead.
 func (*AgentEvent) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{6}
+	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *AgentEvent) GetProtocolVersion() uint32 {
@@ -540,6 +702,15 @@ func (x *AgentEvent) GetRejected() *AgentSignalRejected {
 	return nil
 }
 
+func (x *AgentEvent) GetAuthorization() *AgentAuthorizationResult {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentEvent_Authorization); ok {
+			return x.Authorization
+		}
+	}
+	return nil
+}
+
 type isAgentEvent_Payload interface {
 	isAgentEvent_Payload()
 }
@@ -560,6 +731,10 @@ type AgentEvent_Rejected struct {
 	Rejected *AgentSignalRejected `protobuf:"bytes,23,opt,name=rejected,proto3,oneof"`
 }
 
+type AgentEvent_Authorization struct {
+	Authorization *AgentAuthorizationResult `protobuf:"bytes,24,opt,name=authorization,proto3,oneof"`
+}
+
 func (*AgentEvent_Hello) isAgentEvent_Payload() {}
 
 func (*AgentEvent_Heartbeat) isAgentEvent_Payload() {}
@@ -567,6 +742,8 @@ func (*AgentEvent_Heartbeat) isAgentEvent_Payload() {}
 func (*AgentEvent_Answer) isAgentEvent_Payload() {}
 
 func (*AgentEvent_Rejected) isAgentEvent_Payload() {}
+
+func (*AgentEvent_Authorization) isAgentEvent_Payload() {}
 
 type EdgeCommand struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
@@ -581,6 +758,7 @@ type EdgeCommand struct {
 	//
 	//	*EdgeCommand_Ready
 	//	*EdgeCommand_Offer
+	//	*EdgeCommand_Authorize
 	Payload       isEdgeCommand_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -588,7 +766,7 @@ type EdgeCommand struct {
 
 func (x *EdgeCommand) Reset() {
 	*x = EdgeCommand{}
-	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[7]
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -600,7 +778,7 @@ func (x *EdgeCommand) String() string {
 func (*EdgeCommand) ProtoMessage() {}
 
 func (x *EdgeCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[7]
+	mi := &file_cloud_v1_agent_gateway_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -613,7 +791,7 @@ func (x *EdgeCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgeCommand.ProtoReflect.Descriptor instead.
 func (*EdgeCommand) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{7}
+	return file_cloud_v1_agent_gateway_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *EdgeCommand) GetProtocolVersion() uint32 {
@@ -690,6 +868,15 @@ func (x *EdgeCommand) GetOffer() *AgentOffer {
 	return nil
 }
 
+func (x *EdgeCommand) GetAuthorize() *AgentAuthorize {
+	if x != nil {
+		if x, ok := x.Payload.(*EdgeCommand_Authorize); ok {
+			return x.Authorize
+		}
+	}
+	return nil
+}
+
 type isEdgeCommand_Payload interface {
 	isEdgeCommand_Payload()
 }
@@ -702,15 +889,21 @@ type EdgeCommand_Offer struct {
 	Offer *AgentOffer `protobuf:"bytes,21,opt,name=offer,proto3,oneof"`
 }
 
+type EdgeCommand_Authorize struct {
+	Authorize *AgentAuthorize `protobuf:"bytes,22,opt,name=authorize,proto3,oneof"`
+}
+
 func (*EdgeCommand_Ready) isEdgeCommand_Payload() {}
 
 func (*EdgeCommand_Offer) isEdgeCommand_Payload() {}
+
+func (*EdgeCommand_Authorize) isEdgeCommand_Payload() {}
 
 var File_cloud_v1_agent_gateway_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x1ccloud/v1/agent_gateway.proto\x12\x0fmuxvia.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1dcloud/v1/client_gateway.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9e\x01\n" +
+	"\x1ccloud/v1/agent_gateway.proto\x12\x0fmuxvia.cloud.v1\x1a\x15cloud/v1/common.proto\x1a\x1dcloud/v1/client_gateway.proto\x1a\x16cloud/v1/runtime.proto\x1a\x14cloud/v1/usage.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9e\x01\n" +
 	"\n" +
 	"AgentHello\x12B\n" +
 	"\fagent_ticket\x18\x01 \x01(\v2\x1f.muxvia.cloud.v1.SignedEnvelopeR\vagentTicket\x12!\n" +
@@ -719,7 +912,7 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\x0eAgentHeartbeat\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x01 \x01(\x04R\n" +
-	"generation\"\x8a\x02\n" +
+	"generation\"\xc1\x02\n" +
 	"\n" +
 	"AgentOffer\x12%\n" +
 	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x1d\n" +
@@ -730,7 +923,24 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\toffer_sdp\x18\x05 \x01(\tR\bofferSdp\x12B\n" +
 	"\n" +
 	"candidates\x18\x06 \x03(\v2\".muxvia.cloud.v1.CloudICECandidateR\n" +
-	"candidates\"\xb6\x01\n" +
+	"candidates\x125\n" +
+	"\x05relay\x18\a \x01(\v2\x1f.muxvia.cloud.v1.RelayICEConfigR\x05relay\"\xe7\x01\n" +
+	"\x0eAgentAuthorize\x12%\n" +
+	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12)\n" +
+	"\x10agent_generation\x18\x03 \x01(\x04R\x0fagentGeneration\x12*\n" +
+	"\x11client_public_key\x18\x04 \x01(\fR\x0fclientPublicKey\x128\n" +
+	"\aproduct\x18\x05 \x01(\x0e2\x1e.muxvia.cloud.v1.ClientProductR\aproduct\"\xae\x01\n" +
+	"\x18AgentAuthorizationResult\x12%\n" +
+	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x1e\n" +
+	"\n" +
+	"authorized\x18\x03 \x01(\bR\n" +
+	"authorized\x12\x12\n" +
+	"\x04code\x18\x04 \x01(\tR\x04code\x12\x18\n" +
+	"\amessage\x18\x05 \x01(\tR\amessage\"\xb6\x01\n" +
 	"\vAgentAnswer\x12%\n" +
 	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x1d\n" +
 	"\n" +
@@ -751,7 +961,7 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\n" +
 	"generation\x18\x01 \x01(\x04R\n" +
 	"generation\x12>\n" +
-	"\theartbeat\x18\x02 \x01(\v2 .muxvia.cloud.v1.HeartbeatPolicyR\theartbeat\"\x82\x04\n" +
+	"\theartbeat\x18\x02 \x01(\v2 .muxvia.cloud.v1.HeartbeatPolicyR\theartbeat\"\xd5\x04\n" +
 	"\n" +
 	"AgentEvent\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
@@ -766,8 +976,9 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"\x05hello\x18\x14 \x01(\v2\x1b.muxvia.cloud.v1.AgentHelloH\x00R\x05hello\x12?\n" +
 	"\theartbeat\x18\x15 \x01(\v2\x1f.muxvia.cloud.v1.AgentHeartbeatH\x00R\theartbeat\x126\n" +
 	"\x06answer\x18\x16 \x01(\v2\x1c.muxvia.cloud.v1.AgentAnswerH\x00R\x06answer\x12B\n" +
-	"\brejected\x18\x17 \x01(\v2$.muxvia.cloud.v1.AgentSignalRejectedH\x00R\brejectedB\t\n" +
-	"\apayload\"\xfb\x02\n" +
+	"\brejected\x18\x17 \x01(\v2$.muxvia.cloud.v1.AgentSignalRejectedH\x00R\brejected\x12Q\n" +
+	"\rauthorization\x18\x18 \x01(\v2).muxvia.cloud.v1.AgentAuthorizationResultH\x00R\rauthorizationB\t\n" +
+	"\apayload\"\xbc\x03\n" +
 	"\vEdgeCommand\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
 	"\n" +
@@ -779,7 +990,8 @@ const file_cloud_v1_agent_gateway_proto_rawDesc = "" +
 	"stream_seq\x18\x06 \x01(\x04R\tstreamSeq\x123\n" +
 	"\asent_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x123\n" +
 	"\x05ready\x18\x14 \x01(\v2\x1b.muxvia.cloud.v1.AgentReadyH\x00R\x05ready\x123\n" +
-	"\x05offer\x18\x15 \x01(\v2\x1b.muxvia.cloud.v1.AgentOfferH\x00R\x05offerB\t\n" +
+	"\x05offer\x18\x15 \x01(\v2\x1b.muxvia.cloud.v1.AgentOfferH\x00R\x05offer\x12?\n" +
+	"\tauthorize\x18\x16 \x01(\v2\x1f.muxvia.cloud.v1.AgentAuthorizeH\x00R\tauthorizeB\t\n" +
 	"\apayload2X\n" +
 	"\fAgentGateway\x12H\n" +
 	"\aConnect\x12\x1b.muxvia.cloud.v1.AgentEvent\x1a\x1c.muxvia.cloud.v1.EdgeCommand(\x010\x01B1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
@@ -796,41 +1008,49 @@ func file_cloud_v1_agent_gateway_proto_rawDescGZIP() []byte {
 	return file_cloud_v1_agent_gateway_proto_rawDescData
 }
 
-var file_cloud_v1_agent_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_cloud_v1_agent_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_cloud_v1_agent_gateway_proto_goTypes = []any{
-	(*AgentHello)(nil),            // 0: muxvia.cloud.v1.AgentHello
-	(*AgentHeartbeat)(nil),        // 1: muxvia.cloud.v1.AgentHeartbeat
-	(*AgentOffer)(nil),            // 2: muxvia.cloud.v1.AgentOffer
-	(*AgentAnswer)(nil),           // 3: muxvia.cloud.v1.AgentAnswer
-	(*AgentSignalRejected)(nil),   // 4: muxvia.cloud.v1.AgentSignalRejected
-	(*AgentReady)(nil),            // 5: muxvia.cloud.v1.AgentReady
-	(*AgentEvent)(nil),            // 6: muxvia.cloud.v1.AgentEvent
-	(*EdgeCommand)(nil),           // 7: muxvia.cloud.v1.EdgeCommand
-	(*SignedEnvelope)(nil),        // 8: muxvia.cloud.v1.SignedEnvelope
-	(*CloudICECandidate)(nil),     // 9: muxvia.cloud.v1.CloudICECandidate
-	(*HeartbeatPolicy)(nil),       // 10: muxvia.cloud.v1.HeartbeatPolicy
-	(*timestamppb.Timestamp)(nil), // 11: google.protobuf.Timestamp
+	(*AgentHello)(nil),               // 0: muxvia.cloud.v1.AgentHello
+	(*AgentHeartbeat)(nil),           // 1: muxvia.cloud.v1.AgentHeartbeat
+	(*AgentOffer)(nil),               // 2: muxvia.cloud.v1.AgentOffer
+	(*AgentAuthorize)(nil),           // 3: muxvia.cloud.v1.AgentAuthorize
+	(*AgentAuthorizationResult)(nil), // 4: muxvia.cloud.v1.AgentAuthorizationResult
+	(*AgentAnswer)(nil),              // 5: muxvia.cloud.v1.AgentAnswer
+	(*AgentSignalRejected)(nil),      // 6: muxvia.cloud.v1.AgentSignalRejected
+	(*AgentReady)(nil),               // 7: muxvia.cloud.v1.AgentReady
+	(*AgentEvent)(nil),               // 8: muxvia.cloud.v1.AgentEvent
+	(*EdgeCommand)(nil),              // 9: muxvia.cloud.v1.EdgeCommand
+	(*SignedEnvelope)(nil),           // 10: muxvia.cloud.v1.SignedEnvelope
+	(*CloudICECandidate)(nil),        // 11: muxvia.cloud.v1.CloudICECandidate
+	(*RelayICEConfig)(nil),           // 12: muxvia.cloud.v1.RelayICEConfig
+	(ClientProduct)(0),               // 13: muxvia.cloud.v1.ClientProduct
+	(*HeartbeatPolicy)(nil),          // 14: muxvia.cloud.v1.HeartbeatPolicy
+	(*timestamppb.Timestamp)(nil),    // 15: google.protobuf.Timestamp
 }
 var file_cloud_v1_agent_gateway_proto_depIdxs = []int32{
-	8,  // 0: muxvia.cloud.v1.AgentHello.agent_ticket:type_name -> muxvia.cloud.v1.SignedEnvelope
-	9,  // 1: muxvia.cloud.v1.AgentOffer.candidates:type_name -> muxvia.cloud.v1.CloudICECandidate
-	9,  // 2: muxvia.cloud.v1.AgentAnswer.candidates:type_name -> muxvia.cloud.v1.CloudICECandidate
-	10, // 3: muxvia.cloud.v1.AgentReady.heartbeat:type_name -> muxvia.cloud.v1.HeartbeatPolicy
-	11, // 4: muxvia.cloud.v1.AgentEvent.sent_at:type_name -> google.protobuf.Timestamp
-	0,  // 5: muxvia.cloud.v1.AgentEvent.hello:type_name -> muxvia.cloud.v1.AgentHello
-	1,  // 6: muxvia.cloud.v1.AgentEvent.heartbeat:type_name -> muxvia.cloud.v1.AgentHeartbeat
-	3,  // 7: muxvia.cloud.v1.AgentEvent.answer:type_name -> muxvia.cloud.v1.AgentAnswer
-	4,  // 8: muxvia.cloud.v1.AgentEvent.rejected:type_name -> muxvia.cloud.v1.AgentSignalRejected
-	11, // 9: muxvia.cloud.v1.EdgeCommand.sent_at:type_name -> google.protobuf.Timestamp
-	5,  // 10: muxvia.cloud.v1.EdgeCommand.ready:type_name -> muxvia.cloud.v1.AgentReady
-	2,  // 11: muxvia.cloud.v1.EdgeCommand.offer:type_name -> muxvia.cloud.v1.AgentOffer
-	6,  // 12: muxvia.cloud.v1.AgentGateway.Connect:input_type -> muxvia.cloud.v1.AgentEvent
-	7,  // 13: muxvia.cloud.v1.AgentGateway.Connect:output_type -> muxvia.cloud.v1.EdgeCommand
-	13, // [13:14] is the sub-list for method output_type
-	12, // [12:13] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	10, // 0: muxvia.cloud.v1.AgentHello.agent_ticket:type_name -> muxvia.cloud.v1.SignedEnvelope
+	11, // 1: muxvia.cloud.v1.AgentOffer.candidates:type_name -> muxvia.cloud.v1.CloudICECandidate
+	12, // 2: muxvia.cloud.v1.AgentOffer.relay:type_name -> muxvia.cloud.v1.RelayICEConfig
+	13, // 3: muxvia.cloud.v1.AgentAuthorize.product:type_name -> muxvia.cloud.v1.ClientProduct
+	11, // 4: muxvia.cloud.v1.AgentAnswer.candidates:type_name -> muxvia.cloud.v1.CloudICECandidate
+	14, // 5: muxvia.cloud.v1.AgentReady.heartbeat:type_name -> muxvia.cloud.v1.HeartbeatPolicy
+	15, // 6: muxvia.cloud.v1.AgentEvent.sent_at:type_name -> google.protobuf.Timestamp
+	0,  // 7: muxvia.cloud.v1.AgentEvent.hello:type_name -> muxvia.cloud.v1.AgentHello
+	1,  // 8: muxvia.cloud.v1.AgentEvent.heartbeat:type_name -> muxvia.cloud.v1.AgentHeartbeat
+	5,  // 9: muxvia.cloud.v1.AgentEvent.answer:type_name -> muxvia.cloud.v1.AgentAnswer
+	6,  // 10: muxvia.cloud.v1.AgentEvent.rejected:type_name -> muxvia.cloud.v1.AgentSignalRejected
+	4,  // 11: muxvia.cloud.v1.AgentEvent.authorization:type_name -> muxvia.cloud.v1.AgentAuthorizationResult
+	15, // 12: muxvia.cloud.v1.EdgeCommand.sent_at:type_name -> google.protobuf.Timestamp
+	7,  // 13: muxvia.cloud.v1.EdgeCommand.ready:type_name -> muxvia.cloud.v1.AgentReady
+	2,  // 14: muxvia.cloud.v1.EdgeCommand.offer:type_name -> muxvia.cloud.v1.AgentOffer
+	3,  // 15: muxvia.cloud.v1.EdgeCommand.authorize:type_name -> muxvia.cloud.v1.AgentAuthorize
+	8,  // 16: muxvia.cloud.v1.AgentGateway.Connect:input_type -> muxvia.cloud.v1.AgentEvent
+	9,  // 17: muxvia.cloud.v1.AgentGateway.Connect:output_type -> muxvia.cloud.v1.EdgeCommand
+	17, // [17:18] is the sub-list for method output_type
+	16, // [16:17] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_agent_gateway_proto_init() }
@@ -840,15 +1060,19 @@ func file_cloud_v1_agent_gateway_proto_init() {
 	}
 	file_cloud_v1_common_proto_init()
 	file_cloud_v1_client_gateway_proto_init()
-	file_cloud_v1_agent_gateway_proto_msgTypes[6].OneofWrappers = []any{
+	file_cloud_v1_runtime_proto_init()
+	file_cloud_v1_usage_proto_init()
+	file_cloud_v1_agent_gateway_proto_msgTypes[8].OneofWrappers = []any{
 		(*AgentEvent_Hello)(nil),
 		(*AgentEvent_Heartbeat)(nil),
 		(*AgentEvent_Answer)(nil),
 		(*AgentEvent_Rejected)(nil),
+		(*AgentEvent_Authorization)(nil),
 	}
-	file_cloud_v1_agent_gateway_proto_msgTypes[7].OneofWrappers = []any{
+	file_cloud_v1_agent_gateway_proto_msgTypes[9].OneofWrappers = []any{
 		(*EdgeCommand_Ready)(nil),
 		(*EdgeCommand_Offer)(nil),
+		(*EdgeCommand_Authorize)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -856,7 +1080,7 @@ func file_cloud_v1_agent_gateway_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_agent_gateway_proto_rawDesc), len(file_cloud_v1_agent_gateway_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

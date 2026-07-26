@@ -3,6 +3,7 @@ package control
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/muxvia/muxvia/cloud/controller/directory"
 	"github.com/muxvia/muxvia/cloud/securetransport"
+	"github.com/muxvia/muxvia/cloud/ticket"
 	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -37,6 +39,11 @@ type Config struct {
 	TicketVerificationKeys []*cloudv1.VerificationKey
 	Directory              *directory.Directory
 	DesiredConfig          func(context.Context, string) (*cloudv1.SignedEdgeDesiredConfig, error)
+	TicketSigningKey       ed25519.PrivateKey
+	TicketSigningKeyID     string
+	RelayLeaseTTL          time.Duration
+	RelayPolicy            RelayPolicy
+	UsageStore             UsageStore
 }
 
 // Service 只拥有 EdgeControl admission 和 wire 状态机；实时拓扑全部提交给 Directory actor。
@@ -59,6 +66,12 @@ func NewService(config Config) (*Service, error) {
 		return nil, errors.New("heartbeat timeout must be greater than or equal to a positive interval")
 	}
 	config.TicketVerificationKeys = cloneKeys(config.TicketVerificationKeys)
+	config.TicketSigningKeyID = strings.TrimSpace(config.TicketSigningKeyID)
+	if config.RelayPolicy != nil || config.UsageStore != nil || len(config.TicketSigningKey) != 0 || config.RelayLeaseTTL != 0 {
+		if config.RelayPolicy == nil || config.UsageStore == nil || len(config.TicketSigningKey) != ed25519.PrivateKeySize || config.TicketSigningKeyID == "" || config.RelayLeaseTTL <= 0 || config.RelayLeaseTTL > 5*time.Minute {
+			return nil, errors.New("R6 Relay policy, usage store, signer, and bounded lease TTL must be configured together")
+		}
+	}
 	return &Service{config: config, drain: make(chan struct{})}, nil
 }
 
@@ -158,7 +171,7 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 			continue
 		}
 		expectedEventSeq++
-		accepted, syncErr := service.applyEvent(stream.Context(), event)
+		response, syncErr := service.applyEvent(stream.Context(), event)
 		if syncErr != nil {
 			var resync *directory.SyncError
 			if !errors.As(syncErr, &resync) {
@@ -170,16 +183,16 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 			}
 			continue
 		}
-		if accepted != nil {
+		if response != nil {
 			commandSeq++
-			if err := send(service.command(event.GetConnectionId(), commandSeq, &cloudv1.ControllerCommand_SnapshotAccepted{SnapshotAccepted: accepted})); err != nil {
-				return status.Errorf(codes.Unavailable, "send SnapshotAccepted: %v", err)
+			if err := send(service.command(event.GetConnectionId(), commandSeq, response)); err != nil {
+				return status.Errorf(codes.Unavailable, "send Controller response: %v", err)
 			}
 		}
 	}
 }
 
-func (service *Service) applyEvent(ctx context.Context, event *cloudv1.EdgeEvent) (*cloudv1.SnapshotAccepted, error) {
+func (service *Service) applyEvent(ctx context.Context, event *cloudv1.EdgeEvent) (any, error) {
 	switch payload := event.GetPayload().(type) {
 	case *cloudv1.EdgeEvent_SnapshotBegin:
 		return nil, service.config.Directory.BeginSnapshot(ctx, event.GetConnectionId(), payload.SnapshotBegin)
@@ -189,7 +202,7 @@ func (service *Service) applyEvent(ctx context.Context, event *cloudv1.EdgeEvent
 		if err := service.config.Directory.CommitSnapshot(ctx, event.GetConnectionId(), payload.SnapshotEnd); err != nil {
 			return nil, err
 		}
-		return &cloudv1.SnapshotAccepted{SnapshotId: payload.SnapshotEnd.GetSnapshotId(), Revision: payload.SnapshotEnd.GetRevision()}, nil
+		return &cloudv1.ControllerCommand_SnapshotAccepted{SnapshotAccepted: &cloudv1.SnapshotAccepted{SnapshotId: payload.SnapshotEnd.GetSnapshotId(), Revision: payload.SnapshotEnd.GetRevision()}}, nil
 	case *cloudv1.EdgeEvent_RuntimeDelta:
 		return nil, service.config.Directory.ApplyDelta(ctx, event.GetConnectionId(), payload.RuntimeDelta)
 	case *cloudv1.EdgeEvent_Heartbeat:
@@ -199,6 +212,21 @@ func (service *Service) applyEvent(ctx context.Context, event *cloudv1.EdgeEvent
 			return nil, errors.New("ConfigApplied version is required")
 		}
 		return nil, nil
+	case *cloudv1.EdgeEvent_RelayLeaseRequest:
+		decision, err := service.issueRelayLease(ctx, event, payload.RelayLeaseRequest)
+		if err != nil {
+			return nil, err
+		}
+		return &cloudv1.ControllerCommand_RelayLeaseDecision{RelayLeaseDecision: decision}, nil
+	case *cloudv1.EdgeEvent_UsageBatch:
+		if service.config.UsageStore == nil || payload.UsageBatch == nil || strings.TrimSpace(payload.UsageBatch.GetBatchId()) == "" || len(payload.UsageBatch.GetEvents()) == 0 {
+			return nil, errors.New("UsageBatch is invalid or settlement is unavailable")
+		}
+		acknowledged, err := service.config.UsageStore.CommitRelayUsage(ctx, event.GetSenderId(), payload.UsageBatch.GetEvents())
+		if err != nil {
+			return nil, err
+		}
+		return &cloudv1.ControllerCommand_UsageAck{UsageAck: &cloudv1.UsageAck{EventIds: acknowledged}}, nil
 	default:
 		return nil, errors.New("EdgeHello is only valid as the first EdgeControl payload")
 	}
@@ -215,10 +243,41 @@ func (service *Service) command(connectionID string, sequence uint64, payload an
 		command.Payload = typed
 	case *cloudv1.ControllerCommand_DesiredConfig:
 		command.Payload = typed
+	case *cloudv1.ControllerCommand_RelayLeaseDecision:
+		command.Payload = typed
+	case *cloudv1.ControllerCommand_UsageAck:
+		command.Payload = typed
 	default:
 		panic("unsupported ControllerCommand payload")
 	}
 	return command
+}
+
+func (service *Service) issueRelayLease(ctx context.Context, event *cloudv1.EdgeEvent, request *cloudv1.RelayLeaseRequest) (*cloudv1.RelayLeaseDecision, error) {
+	if service.config.RelayPolicy == nil || request == nil || strings.TrimSpace(request.GetCorrelationId()) == "" || strings.TrimSpace(request.GetSessionId()) == "" ||
+		(request.GetPreference() != cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO && request.GetPreference() != cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY) {
+		return nil, errors.New("RelayLeaseRequest is invalid or Relay is unavailable")
+	}
+	session, location, found, err := service.config.Directory.Session(ctx, request.GetSessionId())
+	if err != nil || !found || location.EdgeID != event.GetSenderId() || location.ConnectionID != event.GetConnectionId() ||
+		session.GetAccountId() != request.GetAccountId() || session.GetDaemonId() != request.GetDaemonId() || session.GetClientId() != request.GetClientId() {
+		return &cloudv1.RelayLeaseDecision{CorrelationId: request.GetCorrelationId(), SessionId: request.GetSessionId(), Result: &cloudv1.RelayLeaseDecision_Denied{Denied: &cloudv1.RelayLeaseDenied{Code: "SESSION_STALE", Message: "Relay session no longer belongs to this Edge generation"}}}, nil
+	}
+	limits, err := service.config.RelayPolicy.Limits(ctx, session)
+	if err != nil || limits.MaxBytes == 0 || limits.MaxRateBytesPerSecond == 0 || limits.MaxConcurrentAllocations == 0 {
+		return &cloudv1.RelayLeaseDecision{CorrelationId: request.GetCorrelationId(), SessionId: request.GetSessionId(), Result: &cloudv1.RelayLeaseDecision_Denied{Denied: &cloudv1.RelayLeaseDenied{Code: "RELAY_NOT_ENTITLED", Message: "Relay entitlement is unavailable"}}}, nil
+	}
+	now := time.Now().UTC()
+	claims := &cloudv1.RelayLeaseClaims{
+		LeaseId: uuid.NewString(), AccountId: session.GetAccountId(), EdgeId: event.GetSenderId(), DaemonId: session.GetDaemonId(), ClientId: session.GetClientId(), SessionId: session.GetSessionId(),
+		MaxBytes: limits.MaxBytes, MaxRateBytesPerSecond: limits.MaxRateBytesPerSecond, MaxConcurrentAllocations: limits.MaxConcurrentAllocations,
+		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.RelayLeaseTTL)),
+	}
+	signed, err := ticket.SignRelayLease(service.config.TicketSigningKeyID, service.config.TicketSigningKey, claims)
+	if err != nil {
+		return nil, err
+	}
+	return &cloudv1.RelayLeaseDecision{CorrelationId: request.GetCorrelationId(), SessionId: request.GetSessionId(), Result: &cloudv1.RelayLeaseDecision_Lease{Lease: signed}}, nil
 }
 
 func (service *Service) resyncCommand(connectionID string, sequence, expected uint64, reason string) *cloudv1.ControllerCommand {

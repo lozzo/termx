@@ -25,9 +25,9 @@ import (
 
 const defaultClientName = "muxvia-go-cloud"
 
-// PeerFactory 创建 R5 只允许 P2P 的 ICE-UDP WebRTC primitive。
+// PeerFactory 根据本次 Controller/Edge 决策创建 direct 或 single-Relay WebRTC primitive。
 type PeerFactory interface {
-	OpenCloudPeer(context.Context) (port.WebRTCPeer, error)
+	OpenCloudPeer(context.Context, port.WebRTCConfig) (port.WebRTCPeer, error)
 }
 
 // Dialer 是 managed-webrtc Route 的 Go-owned connector。
@@ -64,17 +64,36 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	if err != nil {
 		return nil, err
 	}
-	peer, err := dialer.Peers.OpenCloudPeer(ctx)
+	preference, icePolicy, err := relayPreference(request.Route().RelayMode)
 	if err != nil {
-		return nil, fmt.Errorf("create Cloud P2P peer: %w", err)
+		return nil, err
 	}
-	closePeer := func() { _ = peer.Close() }
-	if peer.Channel() == nil {
-		closePeer()
-		return nil, errors.New("Cloud P2P peer has no protocol DataChannel")
+	var peer port.WebRTCPeer
+	closePeer := func() {
+		if peer != nil {
+			_ = peer.Close()
+		}
 	}
 	dialer.report(clientruntime.EndpointPhaseConnecting)
-	signalSession, err := dialer.Cloud.Exchange(ctx, resolved, signaling.ClientIdentity(), signaling, dialer.Product, uint64(request.Stamp().Generation), peer.CreateOffer)
+	signalSession, err := dialer.Cloud.Exchange(ctx, resolved, signaling.ClientIdentity(), signaling, dialer.Product, uint64(request.Stamp().Generation), preference, func(ctx context.Context, ready *cloudv1.ClientReady) (string, error) {
+		peerConfig := port.WebRTCConfig{Policy: icePolicy}
+		if relay := ready.GetRelay(); relay != nil {
+			peerConfig.Servers = append(peerConfig.Servers, port.ICEServer{URLs: append([]string(nil), relay.GetUrls()...), Username: relay.GetUsername(), Credential: relay.GetCredential()})
+		}
+		if icePolicy == port.ICETransportRelayOnly && len(peerConfig.Servers) == 0 {
+			return "", errors.New("Cloud Relay-only attempt did not receive TURN material")
+		}
+		var openErr error
+		peer, openErr = dialer.Peers.OpenCloudPeer(ctx, peerConfig)
+		if openErr != nil {
+			return "", fmt.Errorf("create Cloud WebRTC peer: %w", openErr)
+		}
+		if peer.Channel() == nil {
+			closePeer()
+			return "", errors.New("Cloud WebRTC peer has no protocol DataChannel")
+		}
+		return peer.CreateOffer(ctx)
+	})
 	if err != nil {
 		closePeer()
 		return nil, err
@@ -92,15 +111,16 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	}
 	if err := peer.ApplyAnswer(ctx, answer.GetAnswerSdp(), candidates); err != nil {
 		closeAttempt()
-		return nil, fmt.Errorf("apply Cloud P2P answer: %w", err)
+		return nil, fmt.Errorf("apply Cloud WebRTC answer: %w", err)
 	}
 	if err := peer.WaitReady(ctx); err != nil {
 		closeAttempt()
-		return nil, fmt.Errorf("wait Cloud P2P DataChannel: %w", err)
+		return nil, fmt.Errorf("wait Cloud WebRTC DataChannel: %w", err)
 	}
-	if peer.ObservedPath() != endpoint.PathDirect {
+	observedPath := peer.ObservedPath()
+	if observedPath != endpoint.PathDirect && observedPath != endpoint.PathSingleRelay || icePolicy == port.ICETransportRelayOnly && observedPath != endpoint.PathSingleRelay {
 		closeAttempt()
-		return nil, fmt.Errorf("R5 Cloud connector established unsupported path %q", peer.ObservedPath())
+		return nil, fmt.Errorf("Cloud connector established a path that violates Relay policy: %q", observedPath)
 	}
 	fingerprint, err := peer.RemoteCertificateFingerprint()
 	if err != nil {
@@ -112,7 +132,7 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	if _, err := prepared.Authenticate(ctx, connection, fingerprint); err != nil {
 		_ = connection.Close()
 		closeAttempt()
-		return nil, fmt.Errorf("authenticate Cloud P2P DataChannel: %w", err)
+		return nil, fmt.Errorf("authenticate Cloud DataChannel: %w", err)
 	}
 	protocolClient := internalprotocol.NewClient(connection)
 	clientName := strings.TrimSpace(dialer.ClientName)
@@ -122,9 +142,9 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	if err := protocolClient.Hello(ctx, internalprotocol.Hello{Version: wire.Version, Client: clientName}); err != nil {
 		_ = protocolClient.Close()
 		closeAttempt()
-		return nil, fmt.Errorf("Cloud P2P protocol Hello: %w", err)
+		return nil, fmt.Errorf("Cloud protocol Hello: %w", err)
 	}
-	application, err := protocoladapter.NewApplicationClientWithObservedPath(protocolClient, request.Stamp(), string(endpoint.PathDirect))
+	application, err := protocoladapter.NewApplicationClientWithObservedPath(protocolClient, request.Stamp(), string(observedPath))
 	if err != nil {
 		_ = protocolClient.Close()
 		closeAttempt()
@@ -137,6 +157,19 @@ func (dialer *Dialer) Connect(ctx context.Context, request clientruntime.Attempt
 	}
 	dialer.report(clientruntime.EndpointPhaseReady)
 	return newSession(application, peer, signalSession), nil
+}
+
+func relayPreference(mode endpoint.RelayMode) (cloudv1.RelayPreference, port.ICETransportPolicy, error) {
+	switch mode {
+	case "", endpoint.RelayAuto, endpoint.RelaySmart:
+		return cloudv1.RelayPreference_RELAY_PREFERENCE_AUTO, port.ICETransportAll, nil
+	case endpoint.RelayDirect:
+		return cloudv1.RelayPreference_RELAY_PREFERENCE_DIRECT_ONLY, port.ICETransportAll, nil
+	case endpoint.RelayOnly:
+		return cloudv1.RelayPreference_RELAY_PREFERENCE_RELAY_ONLY, port.ICETransportRelayOnly, nil
+	default:
+		return cloudv1.RelayPreference_RELAY_PREFERENCE_UNSPECIFIED, port.ICETransportAll, fmt.Errorf("unsupported Cloud relay mode %q", mode)
+	}
 }
 
 func (dialer *Dialer) report(phase clientruntime.EndpointPhase) {

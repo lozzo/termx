@@ -16,10 +16,12 @@ require (
 	github.com/klauspost/compress v1.18.5
 	github.com/muesli/cancelreader v0.2.2
 	github.com/pion/ice/v4 v4.2.1
+	github.com/pion/turn/v4 v4.1.4
 	github.com/pion/webrtc/v4 v4.2.9
 	github.com/rivo/uniseg v0.4.7
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/spf13/cobra v1.10.2
+	go.etcd.io/bbolt v1.4.2
 	golang.org/x/crypto v0.51.0
 	golang.org/x/sys v0.46.0
 	golang.org/x/term v0.43.0
@@ -55,7 +57,6 @@ require (
 	github.com/pion/srtp/v3 v3.0.10 // indirect
 	github.com/pion/stun/v3 v3.1.1 // indirect
 	github.com/pion/transport/v4 v4.0.1 // indirect
-	github.com/pion/turn/v4 v4.1.4 // indirect
 	github.com/rogpeppe/go-internal v1.15.0 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/u-root/u-root v0.16.0 // indirect

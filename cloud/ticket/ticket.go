@@ -21,6 +21,7 @@ const (
 	clientTicketDomain     = "muxvia.cloud.client-ticket.v1\x00"
 	clientRouteProofDomain = "muxvia.cloud.client-route-proof.v1\x00"
 	clientHelloProofDomain = "muxvia.cloud.client-hello-proof.v1\x00"
+	relayLeaseDomain       = "muxvia.cloud.relay-lease.v1\x00"
 )
 
 // KeySet 是 Edge 当前从 EdgeWelcome 获得的只读 Controller 票据公钥集合。
@@ -205,6 +206,45 @@ func VerifyClientTicket(envelope *cloudv1.SignedEnvelope, keys KeySet, edgeID st
 	return claims, nil
 }
 
+// SignRelayLease 使用 Controller TicketSigner 签发绑定精确 managed session 的短租约。
+// max bytes、rate、并发和期限必须已经由 Controller 的商业策略冻结。
+func SignRelayLease(keyID string, privateKey ed25519.PrivateKey, claims *cloudv1.RelayLeaseClaims) (*cloudv1.SignedEnvelope, error) {
+	keyID = strings.TrimSpace(keyID)
+	if keyID == "" || len(privateKey) != ed25519.PrivateKeySize {
+		return nil, errors.New("RelayLease signer is invalid")
+	}
+	if err := validateRelayLease(claims, time.Time{}, 0); err != nil {
+		return nil, err
+	}
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(claims)
+	if err != nil {
+		return nil, err
+	}
+	return &cloudv1.SignedEnvelope{KeyId: keyID, Payload: payload, Signature: ed25519.Sign(privateKey, signingBytes(relayLeaseDomain, payload))}, nil
+}
+
+// VerifyRelayLease 由目标 Edge 离线验证签名、identity/session 绑定、上限和有效期。
+func VerifyRelayLease(envelope *cloudv1.SignedEnvelope, keys KeySet, edgeID, sessionID string, now time.Time, skew time.Duration) (*cloudv1.RelayLeaseClaims, error) {
+	if envelope == nil || len(envelope.GetSignature()) != ed25519.SignatureSize {
+		return nil, errors.New("RelayLease envelope is invalid")
+	}
+	publicKey := keys[strings.TrimSpace(envelope.GetKeyId())]
+	if len(publicKey) != ed25519.PublicKeySize || !ed25519.Verify(publicKey, signingBytes(relayLeaseDomain, envelope.GetPayload()), envelope.GetSignature()) {
+		return nil, errors.New("RelayLease signature is invalid")
+	}
+	claims := &cloudv1.RelayLeaseClaims{}
+	if err := proto.Unmarshal(envelope.GetPayload(), claims); err != nil {
+		return nil, errors.New("RelayLease payload is invalid")
+	}
+	if err := validateRelayLease(claims, now, skew); err != nil {
+		return nil, err
+	}
+	if claims.GetEdgeId() != strings.TrimSpace(edgeID) || claims.GetSessionId() != strings.TrimSpace(sessionID) {
+		return nil, errors.New("RelayLease targets another Edge or session")
+	}
+	return claims, nil
+}
+
 // ClientHelloProofBytes 把 Edge stream 的 session/generation 与短票据绑定到客户端签名。
 func ClientHelloProofBytes(ticketEnvelope *cloudv1.SignedEnvelope, sessionID string, attemptGeneration uint64) ([]byte, error) {
 	if ticketEnvelope == nil || strings.TrimSpace(sessionID) == "" || attemptGeneration == 0 {
@@ -278,12 +318,27 @@ func validateCloudRouteGrant(claims *cloudv1.CloudRouteGrantClaims, now time.Tim
 func validateClientTicket(claims *cloudv1.ClientTicketClaims, now time.Time, skew time.Duration) error {
 	if claims == nil || strings.TrimSpace(claims.GetTicketId()) == "" || strings.TrimSpace(claims.GetAccountId()) == "" || strings.TrimSpace(claims.GetEdgeId()) == "" ||
 		strings.TrimSpace(claims.GetDaemonId()) == "" || strings.TrimSpace(claims.GetClientId()) == "" || len(claims.GetClientPublicKey()) != ed25519.PublicKeySize ||
-		claims.GetProduct() < cloudv1.ClientProduct_CLIENT_PRODUCT_TUI || claims.GetProduct() > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI || claims.GetRoutePolicy() != cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_ONLY ||
+		claims.GetProduct() < cloudv1.ClientProduct_CLIENT_PRODUCT_TUI || claims.GetProduct() > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI ||
+		(claims.GetRoutePolicy() != cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_ONLY && claims.GetRoutePolicy() != cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_OR_RELAY) ||
 		claims.GetIssuedAt() == nil || claims.GetExpiresAt() == nil || claims.GetIssuedAt().CheckValid() != nil || claims.GetExpiresAt().CheckValid() != nil || !claims.GetExpiresAt().AsTime().After(claims.GetIssuedAt().AsTime()) || claims.GetExpiresAt().AsTime().Sub(claims.GetIssuedAt().AsTime()) > 2*time.Minute {
 		return errors.New("ClientTicket claims are incomplete")
 	}
 	if !now.IsZero() && (claims.GetIssuedAt().AsTime().After(now.UTC().Add(skew)) || !claims.GetExpiresAt().AsTime().After(now.UTC().Add(-skew))) {
 		return errors.New("ClientTicket is outside its validity window")
+	}
+	return nil
+}
+
+func validateRelayLease(claims *cloudv1.RelayLeaseClaims, now time.Time, skew time.Duration) error {
+	if claims == nil || strings.TrimSpace(claims.GetLeaseId()) == "" || strings.TrimSpace(claims.GetAccountId()) == "" || strings.TrimSpace(claims.GetEdgeId()) == "" ||
+		strings.TrimSpace(claims.GetDaemonId()) == "" || strings.TrimSpace(claims.GetClientId()) == "" || strings.TrimSpace(claims.GetSessionId()) == "" ||
+		claims.GetMaxBytes() == 0 || claims.GetMaxRateBytesPerSecond() == 0 || claims.GetMaxConcurrentAllocations() == 0 || claims.GetIssuedAt() == nil || claims.GetExpiresAt() == nil ||
+		claims.GetIssuedAt().CheckValid() != nil || claims.GetExpiresAt().CheckValid() != nil || !claims.GetExpiresAt().AsTime().After(claims.GetIssuedAt().AsTime()) ||
+		claims.GetExpiresAt().AsTime().Sub(claims.GetIssuedAt().AsTime()) > 5*time.Minute {
+		return errors.New("RelayLease claims are incomplete")
+	}
+	if !now.IsZero() && (claims.GetIssuedAt().AsTime().After(now.UTC().Add(skew)) || !claims.GetExpiresAt().AsTime().After(now.UTC().Add(-skew))) {
+		return errors.New("RelayLease is outside its validity window")
 	}
 	return nil
 }

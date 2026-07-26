@@ -4,6 +4,7 @@ package muxvia.cloud.v1;
 
 import "cloud/v1/common.proto";
 import "cloud/v1/runtime.proto";
+import "cloud/v1/usage.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
@@ -22,11 +23,13 @@ message ClientHello {
   ClientProduct product = 3;
   string software_version = 4;
   uint64 attempt_generation = 5;
+  RelayPreference relay_preference = 6;
 }
 
 message ClientReady {
   string session_id = 1;
   uint64 generation = 2;
+  RelayICEConfig relay = 3;
 }
 
 message ClientOffer {

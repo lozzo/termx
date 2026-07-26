@@ -103,7 +103,7 @@ func (service *Service) BeginClientRoute(ctx context.Context, request *cloudv1.B
 	return &cloudv1.IdentityChallenge{ChallengeId: id, Challenge: append([]byte(nil), challenge...), ExpiresAt: timestamppb.New(now.Add(service.config.ChallengeTTL))}, nil
 }
 
-// ResolveClientRoute 校验 ClientAccessIdentity proof，并只按当前 Presence 签发 P2P ClientTicket。
+// ResolveClientRoute 校验 ClientAccessIdentity proof，并按当前 Presence 签发允许独立 RelayLease 的 ClientTicket。
 func (service *Service) ResolveClientRoute(ctx context.Context, request *cloudv1.ResolveClientRouteRequest) (*cloudv1.ResolveClientRouteResponse, error) {
 	if request == nil || strings.TrimSpace(request.GetRequestId()) == "" {
 		return nil, status.Error(codes.InvalidArgument, "client route request ID is required")
@@ -128,7 +128,7 @@ func (service *Service) ResolveClientRoute(ctx context.Context, request *cloudv1
 	clientID := remoteauth.Fingerprint(ed25519.PublicKey(state.claims.GetClientPublicKey()))
 	claims := &cloudv1.ClientTicketClaims{
 		TicketId: uuid.NewString(), AccountId: state.daemon.AccountID, EdgeId: current.EdgeID, DaemonId: state.daemon.ID, ClientId: clientID,
-		ClientPublicKey: append([]byte(nil), state.claims.GetClientPublicKey()...), Product: state.claims.GetProduct(), RoutePolicy: cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_ONLY,
+		ClientPublicKey: append([]byte(nil), state.claims.GetClientPublicKey()...), Product: state.claims.GetProduct(), RoutePolicy: cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_OR_RELAY,
 		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.ClientTicketTTL)),
 	}
 	signed, err := ticket.SignClientTicket(service.config.TicketSigningKeyID, service.config.TicketSigningKey, claims)

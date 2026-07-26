@@ -131,7 +131,7 @@ func (client *Client) Resolve(ctx context.Context, cloudRouteGrant []byte, signe
 }
 
 // Exchange 连接目标 Edge，完成 ClientHello proof 和一次完整 offer/answer；SDP 不进入持久状态。
-func (client *Client) Exchange(ctx context.Context, resolved *cloudv1.ResolveClientRouteResponse, identity remoteauth.ClientAccessIdentity, signer Signer, product cloudv1.ClientProduct, attemptGeneration uint64, createOffer func(context.Context) (string, error)) (*SignalSession, error) {
+func (client *Client) Exchange(ctx context.Context, resolved *cloudv1.ResolveClientRouteResponse, identity remoteauth.ClientAccessIdentity, signer Signer, product cloudv1.ClientProduct, attemptGeneration uint64, relayPreference cloudv1.RelayPreference, createOffer func(context.Context, *cloudv1.ClientReady) (string, error)) (*SignalSession, error) {
 	if client == nil || resolved == nil || resolved.GetClientTicket() == nil || resolved.GetEdge() == nil || signer == nil || identity.ValidatePublic() != nil || product == cloudv1.ClientProduct_CLIENT_PRODUCT_UNSPECIFIED || attemptGeneration == 0 || createOffer == nil {
 		return nil, errors.New("Cloud signaling input is incomplete")
 	}
@@ -170,7 +170,7 @@ func (client *Client) Exchange(ctx context.Context, resolved *cloudv1.ResolveCli
 	if err != nil {
 		return nil, err
 	}
-	hello := &cloudv1.ClientSignal{ProtocolVersion: clientgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: identity.Fingerprint, BootId: bootID, ConnectionId: sessionID, StreamSeq: 1, SentAt: timestamppb.New(client.config.Now().UTC()), Payload: &cloudv1.ClientSignal_Hello{Hello: &cloudv1.ClientHello{ClientTicket: resolved.GetClientTicket(), ClientProof: proof, Product: product, SoftwareVersion: "development", AttemptGeneration: attemptGeneration}}}
+	hello := &cloudv1.ClientSignal{ProtocolVersion: clientgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: identity.Fingerprint, BootId: bootID, ConnectionId: sessionID, StreamSeq: 1, SentAt: timestamppb.New(client.config.Now().UTC()), Payload: &cloudv1.ClientSignal_Hello{Hello: &cloudv1.ClientHello{ClientTicket: resolved.GetClientTicket(), ClientProof: proof, Product: product, SoftwareVersion: "development", AttemptGeneration: attemptGeneration, RelayPreference: relayPreference}}}
 	if err := stream.Send(hello); err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func (client *Client) Exchange(ctx context.Context, resolved *cloudv1.ResolveCli
 	if ready.GetReady() == nil || ready.GetProtocolVersion() != clientgateway.ProtocolVersion || ready.GetConnectionId() != sessionID || ready.GetStreamSeq() != 1 || ready.GetReady().GetGeneration() != attemptGeneration {
 		return nil, errors.New("ClientReady is invalid")
 	}
-	offerSDP, err := createOffer(ctx)
+	offerSDP, err := createOffer(ctx, ready.GetReady())
 	if err != nil {
 		return nil, fmt.Errorf("create Cloud P2P offer: %w", err)
 	}

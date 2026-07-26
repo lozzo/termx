@@ -148,6 +148,7 @@ bootstrap_token: %s
 state_directory: /var/lib/muxvia-cloud-edge
 public_endpoint: %s
 listen_override: 0.0.0.0:%s
+turn_listen_override: 0.0.0.0:3478
 log_level: info
 MUXVIA_EDGE_CONFIG
 chown muxvia-edge:muxvia-edge /etc/muxvia-cloud-edge/config.yaml

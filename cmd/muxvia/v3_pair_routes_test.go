@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	remoteauthpb "github.com/muxvia/muxvia/proto/remoteauthpb"
+)
 
 func TestV3PairingRoutesAcceptOrdinaryDirectParameters(t *testing.T) {
 	routes, err := v3PairingRoutes(v3PairRouteFlags{
@@ -54,6 +58,9 @@ func TestV3PairingRoutesAddsCloudAlongsideDirect(t *testing.T) {
 	}
 	if len(routes) != 2 || routes[1].GetRouteId() != "cloud" || routes[1].GetManagedWebrtc().GetAccountProfileRef() != "default" {
 		t.Fatalf("routes = %#v", routes)
+	}
+	if routes[1].GetManagedWebrtc().GetRelayMode() != remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_AUTO {
+		t.Fatalf("portable Cloud route did not default to auto: %#v", routes[1].GetManagedWebrtc())
 	}
 	if routes[1].GetManagedWebrtc().GetTargetDeviceId() != "" {
 		t.Fatalf("pair flags invented daemon identity %q", routes[1].GetManagedWebrtc().GetTargetDeviceId())

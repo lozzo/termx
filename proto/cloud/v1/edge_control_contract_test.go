@@ -23,6 +23,7 @@ func TestCloudV1DescriptorBaseline(t *testing.T) {
 	current := &descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{
 		protodesc.ToFileDescriptorProto(File_cloud_v1_common_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_edge_config_proto),
+		protodesc.ToFileDescriptorProto(File_cloud_v1_usage_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_runtime_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_edge_control_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_ticket_proto),
@@ -52,8 +53,8 @@ func TestR5GatewayContracts(t *testing.T) {
 	}
 	assertEnvelopeFields(t, (&ClientSignal{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"hello": 20, "offer": 21})
 	assertEnvelopeFields(t, (&EdgeSignal{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"ready": 20, "answer": 21, "rejected": 22})
-	assertEnvelopeFields(t, (&AgentEvent{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"hello": 20, "heartbeat": 21, "answer": 22, "rejected": 23})
-	assertEnvelopeFields(t, (&EdgeCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"ready": 20, "offer": 21})
+	assertEnvelopeFields(t, (&AgentEvent{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"hello": 20, "heartbeat": 21, "answer": 22, "rejected": 23, "authorization": 24})
+	assertEnvelopeFields(t, (&EdgeCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"ready": 20, "offer": 21, "authorize": 22})
 }
 
 // TestEdgeControlIsBidirectionalStreaming 保证 Edge 连接数不会回退为轮询或一元 RPC。
@@ -67,11 +68,31 @@ func TestEdgeControlIsBidirectionalStreaming(t *testing.T) {
 		t.Fatalf("EdgeControl.Connect must be bidirectional streaming: %#v", method)
 	}
 	assertEnvelopeFields(t, (&EdgeEvent{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26,
+		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26, "relay_lease_request": 27, "usage_batch": 28,
 	})
 	assertEnvelopeFields(t, (&ControllerCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23,
+		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "relay_lease_decision": 24, "usage_ack": 25,
 	})
+}
+
+// TestR6RelayContracts 锁定 daemon 预检、短租约和幂等 usage 的跨进程边界。
+func TestR6RelayContracts(t *testing.T) {
+	lease := (&RelayLeaseClaims{}).ProtoReflect().Descriptor()
+	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{
+		"lease_id": 1, "account_id": 2, "edge_id": 3, "daemon_id": 4, "client_id": 5, "session_id": 6,
+		"max_bytes": 7, "max_rate_bytes_per_second": 8, "max_concurrent_allocations": 9, "issued_at": 10, "expires_at": 11,
+	} {
+		field := lease.Fields().ByName(name)
+		if field == nil || field.Number() != number {
+			t.Fatalf("RelayLeaseClaims.%s field number=%v want=%d", name, field, number)
+		}
+	}
+	if (&RelayLeaseDecision{}).ProtoReflect().Descriptor().Oneofs().ByName("result") == nil {
+		t.Fatal("RelayLeaseDecision result oneof is missing")
+	}
+	if (&UsageEvent{}).ProtoReflect().Descriptor().Fields().ByName("event_id").Number() != 2 {
+		t.Fatal("UsageEvent.event_id must remain the idempotency key at field 2")
+	}
 }
 
 func assertEnvelopeFields(t *testing.T, descriptor protoreflect.MessageDescriptor, wantPayload map[protoreflect.Name]protoreflect.FieldNumber) {
