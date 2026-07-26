@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily cloud.muxvia.com TLS certificate renewal check
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=6h
+Unit=muxvia-cloud-certificate-renew.service
+
+[Install]
+WantedBy=timers.target

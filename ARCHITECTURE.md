@@ -1426,6 +1426,10 @@ Playwright 1.62.0 对真实线上登录和 API 完成 `1440x900` 桌面与 Pixel
 - 完成 artifact 签名、Edge drain/upgrade/rollback。
 - 完成结构化日志、指标、secret audit、限流和备份恢复。
 
+2026-07-26 已先完成开发环境的正式域名入口迁移，但 R8 仍为未完成。Muxvia Cloud 主站、Web Controller、JSON API 和公开客户端 gRPC 统一使用 `https://cloud.muxvia.com`，Cloudflare DNS-only A 记录指向海外 Controller `155.94.155.192`；该机保留现有共享 Nginx，在 `443` 终止公开 TLS，并分别反向代理 Web/API 和 `/muxvia.cloud.v1.*` gRPC 到 Controller 原生 `18444` listener。EdgeControl mTLS 继续使用 `155.94.155.192:18443`，不经过公开 Nginx，也不因此重新注册 Edge。国内唯一 Edge 部署在 `114.66.58.243`，继续使用阿里云解析的 `muxvia-cn1.omscd.com:41102`，TURN 使用同机 `3478/udp,tcp`。
+
+`cloud.muxvia.com` 的 Let's Encrypt 证书有效期至 2026-10-24；证书私钥只保存在海外服务器，仓库只保留 Nginx 路由和续期装配。每日 systemd timer 在宿主机运行容器化 Certbot，续期后复制证书到 Nginx 只读挂载目录并执行配置检查和热加载。迁移后 Controller 与 Edge 均完成真实重启并返回 ready、`NRestarts=0`；标准 `443` gRPC 请求实际到达 `DirectoryService`，Playwright 1.62.0 从新域名完成桌面和手机视口真实登录、全部侧栏路由及在线 CN1 Edge 验收，结果为 2 项通过、2 项按项目正常跳过。该入口迁移不等于完成证书档案、Edge 证书自动轮换、灰度升级、回滚、指标、限流或备份恢复，余项仍由 R8 继续完成。
+
 ### 32.12 R9：上线门禁
 
 - 完成第 16 节全部 E2E、故障注入、负载、Android 和部署证据。
