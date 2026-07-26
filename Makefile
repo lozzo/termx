@@ -4,15 +4,18 @@ SHELL := /bin/bash
 
 ARTIFACT_DIR := $(CURDIR)/.artifacts
 MUXVIA_BIN := $(ARTIFACT_DIR)/bin/muxvia
+CLOUD_CONTROLLER_BIN := $(ARTIFACT_DIR)/bin/muxvia-cloud-controller
+CLOUD_EDGE_BIN := $(ARTIFACT_DIR)/bin/muxvia-cloud-edge
 ANDROID_DIR := $(CURDIR)/clients/mobile/android
 ANDROID_ARTIFACT_DIR := $(ARTIFACT_DIR)/android
 
-.PHONY: help build test test-clients test-android test-all doctor clean
+.PHONY: help build build-cloud test test-clients test-android test-all doctor clean
 
 help:
 	@printf '%s\n' \
 		'Targets:' \
 		'  make / make build  Build muxvia into .artifacts/bin/' \
+		'  make build-cloud    Build both Muxvia Cloud processes' \
 		'  make test          Test the Go module' \
 		'  make test-clients  Generate, test, typecheck, and build both clients' \
 		'  make test-android  Build/test the Muxvia Android APK' \
@@ -23,6 +26,11 @@ help:
 build:
 	mkdir -p "$(dir $(MUXVIA_BIN))"
 	GOWORK=off go build -o "$(MUXVIA_BIN)" ./cmd/muxvia
+
+build-cloud:
+	mkdir -p "$(dir $(CLOUD_CONTROLLER_BIN))"
+	GOWORK=off go build -o "$(CLOUD_CONTROLLER_BIN)" ./cmd/muxvia-cloud-controller
+	GOWORK=off go build -o "$(CLOUD_EDGE_BIN)" ./cmd/muxvia-cloud-edge
 
 test:
 	scripts/with-clean-muxvia-env.sh env GOWORK=off go test ./... -count=1

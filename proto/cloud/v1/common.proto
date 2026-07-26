@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package muxvia.cloud.v1;
+
+import "google/protobuf/duration.proto";
+
+option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
+
+// VerificationKey 是 Controller 下发给 Edge 的公开验签密钥。
+// public_key 只能包含公钥编码，不得携带私钥或 KMS 凭据。
+message VerificationKey {
+  string key_id = 1;
+  string algorithm = 2;
+  bytes public_key = 3;
+}
+
+// HeartbeatPolicy 约束 EdgeControl 的心跳频率和 Controller 失联判定。
+message HeartbeatPolicy {
+  google.protobuf.Duration interval = 1;
+  google.protobuf.Duration timeout = 2;
+}

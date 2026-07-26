@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package muxvia.cloud.v1;
+
+import "cloud/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
+
+// EdgeCapability 是 Edge 进程已实现并愿意承诺的版本化能力。
+enum EdgeCapability {
+  EDGE_CAPABILITY_UNSPECIFIED = 0;
+  EDGE_CAPABILITY_CONTROL_STREAM = 1;
+}
+
+// EdgeHello 是 EdgeControl 新连接的第一个且唯一一个注册消息。
+// edge_id 必须与 mTLS 客户端证书中的 Edge URI SAN 一致。
+message EdgeHello {
+  string edge_id = 1;
+  string software_version = 2;
+  repeated EdgeCapability capabilities = 3;
+  uint64 desired_config_version = 4;
+  uint64 certificate_version = 5;
+}
+
+// EdgeWelcome 表示 Controller 已接受当前 mTLS 连接和协议版本。
+// connection_id 由 Edge 每次重连生成，Controller 接受后在外层 ControllerCommand 中回显。
+message EdgeWelcome {
+  uint32 accepted_protocol_version = 1;
+  HeartbeatPolicy heartbeat = 2;
+  repeated VerificationKey ticket_verification_keys = 3;
+}
+
+// EdgeEvent 是 Edge 向 Controller 发送的单调序列 envelope。
+// R1 只允许 hello；后续切片在 payload oneof 中追加快照和增量事件。
+message EdgeEvent {
+  uint32 protocol_version = 1;
+  string message_id = 2;
+  string sender_id = 3;
+  string boot_id = 4;
+  string connection_id = 5;
+  uint64 stream_seq = 6;
+  google.protobuf.Timestamp sent_at = 7;
+  oneof payload {
+    EdgeHello hello = 20;
+  }
+}
+
+// ControllerCommand 是 Controller 向 Edge 发送的单调序列 envelope。
+// R1 只允许 welcome；所有后续实时命令必须另带 command/correlation/deadline 字段。
+message ControllerCommand {
+  uint32 protocol_version = 1;
+  string message_id = 2;
+  string sender_id = 3;
+  string boot_id = 4;
+  string connection_id = 5;
+  uint64 stream_seq = 6;
+  google.protobuf.Timestamp sent_at = 7;
+  oneof payload {
+    EdgeWelcome welcome = 20;
+  }
+}
+
+// EdgeControl 是 Edge 与 Controller 之间唯一长连接控制流。
+service EdgeControl {
+  rpc Connect(stream EdgeEvent) returns (stream ControllerCommand);
+}

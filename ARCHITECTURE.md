@@ -1323,14 +1323,14 @@ Edge 最少暴露：
 
 这个提交的完成条件是“没有旧 Cloud，但非 Cloud 产品仍可运行”，不能部署。
 
-### 32.4 R1：新契约和双进程骨架（当前最早未完成切片）
+### 32.4 R1：新契约和双进程骨架（已完成）
 
 - 新建 `proto/cloud/v1`、生成门禁和 compatibility fixture。
 - 新建两个 `cmd`、配置校验、TLS、health、graceful shutdown。
 - 建立真实 `EdgeControl.Connect` Hello/Welcome harness。
 - 固定 grpc-go、pgx、Proto generation toolchain。
 
-### 32.5 R2：Edge runtime 与 Controller Directory
+### 32.5 R2：Edge runtime 与 Controller Directory（当前最早未完成切片）
 
 - 实现两个 actor、generation、writer queue、snapshot/chunk/delta。
 - 实现 10 万对象基准、race test、断线整体删除和 Controller restart 重建。
@@ -1390,10 +1390,9 @@ D2 完成后才建立 R1。R1 的第一条可观察链路必须是：
 ```text
 muxvia-cloud-edge
   -> 使用 mTLS 建立 EdgeControl.Connect
-  -> Controller Directory 接受新 generation
-  -> Edge 发送空全量 snapshot
-  -> Controller Web API 返回这个真实在线 Edge
-  -> 断开 Edge 后该记录按 grace 消失
+  -> Controller 校验证书 Edge URI SAN、envelope 和协议版本
+  -> Controller 返回 EdgeWelcome 并回显当前 connection generation
+  -> Edge 进入 ready；Controller 不可达或控制流断开时撤销 ready
 ```
 
-这条链路不依赖 daemon、客户端、订单或 Relay，却一次证明了进程、TLS、Proto、内存真值、generation、故障删除和 Web projection 的基本方向。它通过后再沿 R2-R9 增加真实能力。
+这条链路不依赖 daemon、客户端、订单或 Relay，先证明双进程、TLS、Proto、版本协商、健康状态和连接 generation 的基本方向。R2 再在同一控制流上增加 Directory actor、全量 snapshot、增量事件、grace 删除和重建 harness；不得把这些状态提前塞回 R1 的 transport service。
