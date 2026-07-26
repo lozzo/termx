@@ -35,7 +35,7 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commercial, err := commerce.New(commerce.Config{Store: database})
+	commercial, err := commerce.New(commerce.Config{Store: database, DevelopmentPayments: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,21 +75,25 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 	if professional == nil || professional.GetState() != cloudv1.PlanState_PLAN_STATE_PUBLISHED {
 		t.Fatal("published professional plan is missing")
 	}
-	created, err := commercial.CreateOrder(userContext, &cloudv1.CreateOrderRequest{AccountId: registered.GetAccount().GetAccountId(), PlanId: professional.GetPlanId(), PlanVersion: professional.GetVersion(), Provider: "development", IdempotencyKey: uuid.NewString(), RequestedTransition: cloudv1.SubscriptionTransition_SUBSCRIPTION_TRANSITION_UPGRADE})
+	created, err := commercial.CreateMyOrder(userContext, &cloudv1.CreateMyOrderRequest{PlanId: professional.GetPlanId(), PlanVersion: professional.GetVersion(), IdempotencyKey: uuid.NewString(), RequestedTransition: cloudv1.SubscriptionTransition_SUBSCRIPTION_TRANSITION_UPGRADE})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if created.GetOrder().GetStatus() != cloudv1.OrderStatus_ORDER_STATUS_PENDING || created.GetPaymentAttempt().GetStatus() != cloudv1.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_PENDING {
 		t.Fatalf("new checkout = %+v", created)
 	}
-	event := &cloudv1.ApplyPaymentEventRequest{Provider: "development", ProviderEventId: uuid.NewString(), PaymentAttemptId: created.GetPaymentAttempt().GetPaymentAttemptId(), OrderId: created.GetOrder().GetOrderId(), EventType: cloudv1.PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED, ProviderReference: "r7-test", OccurredAt: timestamppb.Now()}
-	applied, err := commercial.ApplyPaymentEvent(adminContext, event)
+	applied, err := commercial.CompleteDevelopmentPayment(userContext, &cloudv1.CompleteDevelopmentPaymentRequest{PaymentAttemptId: created.GetPaymentAttempt().GetPaymentAttemptId(), OrderId: created.GetOrder().GetOrderId()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if applied.GetDuplicate() || applied.GetOrder().GetStatus() != cloudv1.OrderStatus_ORDER_STATUS_PAID || applied.GetSubscription().GetPlanId() != "professional" || applied.GetEntitlement().GetState() != cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE {
 		t.Fatalf("applied payment = %+v", applied)
 	}
+	aggregate, err := commercial.GetMyCommerce(userContext, &cloudv1.GetMyCommerceRequest{})
+	if err != nil || len(aggregate.GetOrders()) == 0 || aggregate.GetOrders()[0].GetAccountId() != registered.GetAccount().GetAccountId() {
+		t.Fatalf("self commerce aggregate=%+v err=%v", aggregate, err)
+	}
+	event := &cloudv1.ApplyPaymentEventRequest{Provider: "development", ProviderEventId: "development:" + created.GetPaymentAttempt().GetPaymentAttemptId() + ":succeeded", PaymentAttemptId: created.GetPaymentAttempt().GetPaymentAttemptId(), OrderId: created.GetOrder().GetOrderId(), EventType: cloudv1.PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED, ProviderReference: "r7-test", OccurredAt: timestamppb.Now()}
 	duplicate, err := commercial.ApplyPaymentEvent(adminContext, event)
 	if err != nil {
 		t.Fatal(err)
@@ -97,7 +101,15 @@ func TestR7AccountPaymentSubscriptionAndEntitlementInPostgreSQL(t *testing.T) {
 	if !duplicate.GetDuplicate() || duplicate.GetSubscription().GetRevision() != applied.GetSubscription().GetRevision() {
 		t.Fatalf("duplicate payment changed subscription: %+v", duplicate)
 	}
-	suspended, err := commercial.TransitionSubscription(adminContext, &cloudv1.TransitionSubscriptionRequest{AccountId: registered.GetAccount().GetAccountId(), Transition: cloudv1.SubscriptionTransition_SUBSCRIPTION_TRANSITION_SUSPEND, ExpectedRevision: applied.GetSubscription().GetRevision(), Reason: "R7 test suspend"})
+	cancelled, err := commercial.ChangeMySubscription(userContext, &cloudv1.ChangeMySubscriptionRequest{Transition: cloudv1.SubscriptionTransition_SUBSCRIPTION_TRANSITION_CANCEL_AT_PERIOD_END, ExpectedRevision: applied.GetSubscription().GetRevision()})
+	if err != nil || !cancelled.GetSubscription().GetCancelAtPeriodEnd() {
+		t.Fatalf("self cancel subscription=%+v err=%v", cancelled, err)
+	}
+	resumed, err := commercial.ChangeMySubscription(userContext, &cloudv1.ChangeMySubscriptionRequest{Transition: cloudv1.SubscriptionTransition_SUBSCRIPTION_TRANSITION_RESUME, ExpectedRevision: cancelled.GetSubscription().GetRevision()})
+	if err != nil || resumed.GetSubscription().GetCancelAtPeriodEnd() {
+		t.Fatalf("self resume subscription=%+v err=%v", resumed, err)
+	}
+	suspended, err := commercial.TransitionSubscription(adminContext, &cloudv1.TransitionSubscriptionRequest{AccountId: registered.GetAccount().GetAccountId(), Transition: cloudv1.SubscriptionTransition_SUBSCRIPTION_TRANSITION_SUSPEND, ExpectedRevision: resumed.GetSubscription().GetRevision(), Reason: "R7 test suspend"})
 	if err != nil {
 		t.Fatal(err)
 	}

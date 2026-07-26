@@ -47,6 +47,7 @@ type Config struct {
 	Directory          *directory.Directory
 	Install            *install.Service
 	Enrollment         *enrollment.Service
+	DaemonManagement   *enrollment.ManagementService
 	ClientDirectory    *directoryapi.Service
 	Accounts           *account.Service
 	Commerce           *commerce.Service
@@ -113,6 +114,9 @@ func NewHandler(config Config) (http.Handler, error) {
 	if config.Enrollment != nil {
 		grpcServer = grpc.NewServer(grpc.UnaryInterceptor(accountUnaryInterceptor(config.Accounts)))
 		cloudv1.RegisterEnrollmentServiceServer(grpcServer, config.Enrollment)
+		if config.DaemonManagement != nil {
+			cloudv1.RegisterDaemonManagementServiceServer(grpcServer, config.DaemonManagement)
+		}
 		if config.ClientDirectory != nil {
 			cloudv1.RegisterDirectoryServiceServer(grpcServer, config.ClientDirectory)
 		}
@@ -145,6 +149,10 @@ func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 		_, _ = writer.Write(handler.config.Install.Artifact())
 	case request.Method == http.MethodPost && request.URL.Path == "/api/install/register":
 		handler.register(writer, request)
+	case request.Method == http.MethodGet && request.URL.Path == "/api/commerce/plans":
+		// 已发布套餐是公开产品目录；未登录请求不能设置 include_unpublished。
+		response, err := handler.config.Commerce.ListPlans(request.Context(), &cloudv1.ListPlansRequest{})
+		writeServiceResult(writer, response, err)
 	case request.URL.Path == "/api/account/login" || request.URL.Path == "/api/account/register" || request.URL.Path == "/api/account/refresh":
 		if !handler.allowMutationOrigin(writer, request) {
 			return
@@ -164,6 +172,8 @@ func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 			handler.accountPrivate(writer, request)
 		case strings.HasPrefix(request.URL.Path, "/api/commerce/"):
 			handler.commerce(writer, request)
+		case strings.HasPrefix(request.URL.Path, "/api/daemons"):
+			handler.daemons(writer, request)
 		case strings.HasPrefix(request.URL.Path, "/api/operator/"):
 			if !identity.HasRole(cloudv1.AccountRole_ACCOUNT_ROLE_OPERATOR) {
 				writeError(writer, http.StatusForbidden, errors.New("operator role is required"))

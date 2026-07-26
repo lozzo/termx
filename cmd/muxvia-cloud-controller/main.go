@@ -62,6 +62,7 @@ type options struct {
 	heartbeatInterval    time.Duration
 	heartbeatTimeout     time.Duration
 	relayLeaseTTL        time.Duration
+	developmentPayments  bool
 	startupTimeout       time.Duration
 	shutdownTimeout      time.Duration
 }
@@ -132,7 +133,7 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if _, err := accountService.EnsureBootstrapOperator(ctx, config.operatorUsername, strings.TrimSpace(string(passwordPayload))); err != nil {
 		return fmt.Errorf("ensure bootstrap operator: %w", err)
 	}
-	commerceService, err := commerce.New(commerce.Config{Store: database})
+	commerceService, err := commerce.New(commerce.Config{Store: database, DevelopmentPayments: config.developmentPayments})
 	if err != nil {
 		return err
 	}
@@ -188,6 +189,13 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
+	daemonManagementService, err := enrollment.NewManagementService(enrollment.ManagementConfig{
+		Enrollment: enrollmentService, Store: database, Directory: directoryState, Control: service,
+		CommandPrefix: "muxvia cloud enroll --controller " + strings.TrimRight(config.publicOrigin, "/"),
+	})
+	if err != nil {
+		return err
+	}
 	operatorService, err := operatorservice.New(operatorservice.Config{Store: database, Edges: edgeService, Enrollment: enrollmentService, Directory: directoryState, Control: service})
 	if err != nil {
 		return err
@@ -202,7 +210,7 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
-	httpServer, err := apihttp.Start(apihttp.Config{ListenAddress: config.httpListen, TLSCertificateFile: config.tlsCertificate, TLSPrivateKeyFile: config.tlsPrivateKey, PublicOrigin: config.publicOrigin, Edges: edgeService, Directory: directoryState, Install: installService, Enrollment: enrollmentService, ClientDirectory: clientDirectoryService, Accounts: accountService, Commerce: commerceService, Operator: operatorService})
+	httpServer, err := apihttp.Start(apihttp.Config{ListenAddress: config.httpListen, TLSCertificateFile: config.tlsCertificate, TLSPrivateKeyFile: config.tlsPrivateKey, PublicOrigin: config.publicOrigin, Edges: edgeService, Directory: directoryState, Install: installService, Enrollment: enrollmentService, DaemonManagement: daemonManagementService, ClientDirectory: clientDirectoryService, Accounts: accountService, Commerce: commerceService, Operator: operatorService})
 	if err != nil {
 		shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), config.shutdownTimeout)
 		defer cancelShutdown()
@@ -261,6 +269,7 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 	flags.DurationVar(&config.heartbeatInterval, "heartbeat-interval", 10*time.Second, "Edge heartbeat interval")
 	flags.DurationVar(&config.heartbeatTimeout, "heartbeat-timeout", 30*time.Second, "Edge heartbeat timeout")
 	flags.DurationVar(&config.relayLeaseTTL, "relay-lease-ttl", 5*time.Minute, "maximum lifetime of a signed RelayLease")
+	flags.BoolVar(&config.developmentPayments, "development-payments", false, "enable the Development-only self-service payment adapter")
 	flags.DurationVar(&config.startupTimeout, "startup-timeout", 15*time.Second, "PostgreSQL startup deadline")
 	flags.DurationVar(&config.shutdownTimeout, "shutdown-timeout", 15*time.Second, "graceful shutdown deadline")
 	if err := flags.Parse(arguments); err != nil {

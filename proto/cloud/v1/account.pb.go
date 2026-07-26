@@ -903,6 +903,355 @@ func (x *VerifyRecentAuthenticationResponse) GetExpiresAt() *timestamppb.Timesta
 	return nil
 }
 
+// AccountSessionProjection 是用户可见的 session 元数据，不包含任何 token 摘要或原始 credential。
+type AccountSessionProjection struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	SessionId           string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Current             bool                   `protobuf:"varint,2,opt,name=current,proto3" json:"current,omitempty"`
+	CreatedAt           *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	AccessExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=access_expires_at,json=accessExpiresAt,proto3" json:"access_expires_at,omitempty"`
+	RefreshExpiresAt    *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=refresh_expires_at,json=refreshExpiresAt,proto3" json:"refresh_expires_at,omitempty"`
+	RecentAuthExpiresAt *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=recent_auth_expires_at,json=recentAuthExpiresAt,proto3" json:"recent_auth_expires_at,omitempty"`
+	Revision            uint64                 `protobuf:"varint,7,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *AccountSessionProjection) Reset() {
+	*x = AccountSessionProjection{}
+	mi := &file_cloud_v1_account_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AccountSessionProjection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AccountSessionProjection) ProtoMessage() {}
+
+func (x *AccountSessionProjection) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_account_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AccountSessionProjection.ProtoReflect.Descriptor instead.
+func (*AccountSessionProjection) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *AccountSessionProjection) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *AccountSessionProjection) GetCurrent() bool {
+	if x != nil {
+		return x.Current
+	}
+	return false
+}
+
+func (x *AccountSessionProjection) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *AccountSessionProjection) GetAccessExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.AccessExpiresAt
+	}
+	return nil
+}
+
+func (x *AccountSessionProjection) GetRefreshExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RefreshExpiresAt
+	}
+	return nil
+}
+
+func (x *AccountSessionProjection) GetRecentAuthExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RecentAuthExpiresAt
+	}
+	return nil
+}
+
+func (x *AccountSessionProjection) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+type ListAccountSessionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAccountSessionsRequest) Reset() {
+	*x = ListAccountSessionsRequest{}
+	mi := &file_cloud_v1_account_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAccountSessionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAccountSessionsRequest) ProtoMessage() {}
+
+func (x *ListAccountSessionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_account_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAccountSessionsRequest.ProtoReflect.Descriptor instead.
+func (*ListAccountSessionsRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{15}
+}
+
+type ListAccountSessionsResponse struct {
+	state         protoimpl.MessageState      `protogen:"open.v1"`
+	Sessions      []*AccountSessionProjection `protobuf:"bytes,1,rep,name=sessions,proto3" json:"sessions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAccountSessionsResponse) Reset() {
+	*x = ListAccountSessionsResponse{}
+	mi := &file_cloud_v1_account_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAccountSessionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAccountSessionsResponse) ProtoMessage() {}
+
+func (x *ListAccountSessionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_account_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAccountSessionsResponse.ProtoReflect.Descriptor instead.
+func (*ListAccountSessionsResponse) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ListAccountSessionsResponse) GetSessions() []*AccountSessionProjection {
+	if x != nil {
+		return x.Sessions
+	}
+	return nil
+}
+
+type ChangeAccountPasswordRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	CurrentPassword string                 `protobuf:"bytes,1,opt,name=current_password,json=currentPassword,proto3" json:"current_password,omitempty"`
+	NewPassword     string                 `protobuf:"bytes,2,opt,name=new_password,json=newPassword,proto3" json:"new_password,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ChangeAccountPasswordRequest) Reset() {
+	*x = ChangeAccountPasswordRequest{}
+	mi := &file_cloud_v1_account_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeAccountPasswordRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeAccountPasswordRequest) ProtoMessage() {}
+
+func (x *ChangeAccountPasswordRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_account_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeAccountPasswordRequest.ProtoReflect.Descriptor instead.
+func (*ChangeAccountPasswordRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ChangeAccountPasswordRequest) GetCurrentPassword() string {
+	if x != nil {
+		return x.CurrentPassword
+	}
+	return ""
+}
+
+func (x *ChangeAccountPasswordRequest) GetNewPassword() string {
+	if x != nil {
+		return x.NewPassword
+	}
+	return ""
+}
+
+type ChangeAccountPasswordResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Account       *AccountProfile        `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangeAccountPasswordResponse) Reset() {
+	*x = ChangeAccountPasswordResponse{}
+	mi := &file_cloud_v1_account_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeAccountPasswordResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeAccountPasswordResponse) ProtoMessage() {}
+
+func (x *ChangeAccountPasswordResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_account_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeAccountPasswordResponse.ProtoReflect.Descriptor instead.
+func (*ChangeAccountPasswordResponse) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ChangeAccountPasswordResponse) GetAccount() *AccountProfile {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+type RevokeAccountSessionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeAccountSessionRequest) Reset() {
+	*x = RevokeAccountSessionRequest{}
+	mi := &file_cloud_v1_account_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeAccountSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeAccountSessionRequest) ProtoMessage() {}
+
+func (x *RevokeAccountSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_account_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeAccountSessionRequest.ProtoReflect.Descriptor instead.
+func (*RevokeAccountSessionRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *RevokeAccountSessionRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type RevokeAccountSessionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeAccountSessionResponse) Reset() {
+	*x = RevokeAccountSessionResponse{}
+	mi := &file_cloud_v1_account_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeAccountSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeAccountSessionResponse) ProtoMessage() {}
+
+func (x *RevokeAccountSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_account_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeAccountSessionResponse.ProtoReflect.Descriptor instead.
+func (*RevokeAccountSessionResponse) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_account_proto_rawDescGZIP(), []int{20}
+}
+
 var File_cloud_v1_account_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_account_proto_rawDesc = "" +
@@ -962,7 +1311,29 @@ const file_cloud_v1_account_proto_rawDesc = "" +
 	"\bpassword\x18\x01 \x01(\tR\bpassword\"_\n" +
 	"\"VerifyRecentAuthenticationResponse\x129\n" +
 	"\n" +
-	"expires_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt*c\n" +
+	"expires_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x8d\x03\n" +
+	"\x18AccountSessionProjection\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x18\n" +
+	"\acurrent\x18\x02 \x01(\bR\acurrent\x129\n" +
+	"\n" +
+	"created_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12F\n" +
+	"\x11access_expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x0faccessExpiresAt\x12H\n" +
+	"\x12refresh_expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x10refreshExpiresAt\x12O\n" +
+	"\x16recent_auth_expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x13recentAuthExpiresAt\x12\x1a\n" +
+	"\brevision\x18\a \x01(\x04R\brevision\"\x1c\n" +
+	"\x1aListAccountSessionsRequest\"d\n" +
+	"\x1bListAccountSessionsResponse\x12E\n" +
+	"\bsessions\x18\x01 \x03(\v2).muxvia.cloud.v1.AccountSessionProjectionR\bsessions\"l\n" +
+	"\x1cChangeAccountPasswordRequest\x12)\n" +
+	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\x12!\n" +
+	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"Z\n" +
+	"\x1dChangeAccountPasswordResponse\x129\n" +
+	"\aaccount\x18\x01 \x01(\v2\x1f.muxvia.cloud.v1.AccountProfileR\aaccount\"<\n" +
+	"\x1bRevokeAccountSessionRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"\x1e\n" +
+	"\x1cRevokeAccountSessionResponse*c\n" +
 	"\fAccountState\x12\x1d\n" +
 	"\x19ACCOUNT_STATE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14ACCOUNT_STATE_ACTIVE\x10\x01\x12\x1a\n" +
@@ -971,7 +1342,7 @@ const file_cloud_v1_account_proto_rawDesc = "" +
 	"\x18ACCOUNT_ROLE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11ACCOUNT_ROLE_USER\x10\x01\x12\x19\n" +
 	"\x15ACCOUNT_ROLE_OPERATOR\x10\x02\x12\x16\n" +
-	"\x12ACCOUNT_ROLE_ADMIN\x10\x032\x83\x05\n" +
+	"\x12ACCOUNT_ROLE_ADMIN\x10\x032\xcd\a\n" +
 	"\x0eAccountService\x12]\n" +
 	"\bRegister\x12'.muxvia.cloud.v1.RegisterAccountRequest\x1a(.muxvia.cloud.v1.RegisterAccountResponse\x12T\n" +
 	"\x05Login\x12$.muxvia.cloud.v1.LoginAccountRequest\x1a%.muxvia.cloud.v1.LoginAccountResponse\x12h\n" +
@@ -979,7 +1350,10 @@ const file_cloud_v1_account_proto_rawDesc = "" +
 	"\x06Logout\x12,.muxvia.cloud.v1.LogoutAccountSessionRequest\x1a-.muxvia.cloud.v1.LogoutAccountSessionResponse\x12c\n" +
 	"\n" +
 	"GetCurrent\x12).muxvia.cloud.v1.GetCurrentAccountRequest\x1a*.muxvia.cloud.v1.GetCurrentAccountResponse\x12\x85\x01\n" +
-	"\x1aVerifyRecentAuthentication\x122.muxvia.cloud.v1.VerifyRecentAuthenticationRequest\x1a3.muxvia.cloud.v1.VerifyRecentAuthenticationResponseB1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	"\x1aVerifyRecentAuthentication\x122.muxvia.cloud.v1.VerifyRecentAuthenticationRequest\x1a3.muxvia.cloud.v1.VerifyRecentAuthenticationResponse\x12i\n" +
+	"\fListSessions\x12+.muxvia.cloud.v1.ListAccountSessionsRequest\x1a,.muxvia.cloud.v1.ListAccountSessionsResponse\x12o\n" +
+	"\x0eChangePassword\x12-.muxvia.cloud.v1.ChangeAccountPasswordRequest\x1a..muxvia.cloud.v1.ChangeAccountPasswordResponse\x12l\n" +
+	"\rRevokeSession\x12,.muxvia.cloud.v1.RevokeAccountSessionRequest\x1a-.muxvia.cloud.v1.RevokeAccountSessionResponseB1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_account_proto_rawDescOnce sync.Once
@@ -994,7 +1368,7 @@ func file_cloud_v1_account_proto_rawDescGZIP() []byte {
 }
 
 var file_cloud_v1_account_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_cloud_v1_account_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_cloud_v1_account_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_cloud_v1_account_proto_goTypes = []any{
 	(AccountState)(0),                          // 0: muxvia.cloud.v1.AccountState
 	(AccountRole)(0),                           // 1: muxvia.cloud.v1.AccountRole
@@ -1012,14 +1386,21 @@ var file_cloud_v1_account_proto_goTypes = []any{
 	(*GetCurrentAccountResponse)(nil),          // 13: muxvia.cloud.v1.GetCurrentAccountResponse
 	(*VerifyRecentAuthenticationRequest)(nil),  // 14: muxvia.cloud.v1.VerifyRecentAuthenticationRequest
 	(*VerifyRecentAuthenticationResponse)(nil), // 15: muxvia.cloud.v1.VerifyRecentAuthenticationResponse
-	(*timestamppb.Timestamp)(nil),              // 16: google.protobuf.Timestamp
+	(*AccountSessionProjection)(nil),           // 16: muxvia.cloud.v1.AccountSessionProjection
+	(*ListAccountSessionsRequest)(nil),         // 17: muxvia.cloud.v1.ListAccountSessionsRequest
+	(*ListAccountSessionsResponse)(nil),        // 18: muxvia.cloud.v1.ListAccountSessionsResponse
+	(*ChangeAccountPasswordRequest)(nil),       // 19: muxvia.cloud.v1.ChangeAccountPasswordRequest
+	(*ChangeAccountPasswordResponse)(nil),      // 20: muxvia.cloud.v1.ChangeAccountPasswordResponse
+	(*RevokeAccountSessionRequest)(nil),        // 21: muxvia.cloud.v1.RevokeAccountSessionRequest
+	(*RevokeAccountSessionResponse)(nil),       // 22: muxvia.cloud.v1.RevokeAccountSessionResponse
+	(*timestamppb.Timestamp)(nil),              // 23: google.protobuf.Timestamp
 }
 var file_cloud_v1_account_proto_depIdxs = []int32{
 	0,  // 0: muxvia.cloud.v1.AccountProfile.state:type_name -> muxvia.cloud.v1.AccountState
-	16, // 1: muxvia.cloud.v1.AccountProfile.created_at:type_name -> google.protobuf.Timestamp
-	16, // 2: muxvia.cloud.v1.AccountProfile.updated_at:type_name -> google.protobuf.Timestamp
-	16, // 3: muxvia.cloud.v1.AccountSessionCredential.access_expires_at:type_name -> google.protobuf.Timestamp
-	16, // 4: muxvia.cloud.v1.AccountSessionCredential.refresh_expires_at:type_name -> google.protobuf.Timestamp
+	23, // 1: muxvia.cloud.v1.AccountProfile.created_at:type_name -> google.protobuf.Timestamp
+	23, // 2: muxvia.cloud.v1.AccountProfile.updated_at:type_name -> google.protobuf.Timestamp
+	23, // 3: muxvia.cloud.v1.AccountSessionCredential.access_expires_at:type_name -> google.protobuf.Timestamp
+	23, // 4: muxvia.cloud.v1.AccountSessionCredential.refresh_expires_at:type_name -> google.protobuf.Timestamp
 	2,  // 5: muxvia.cloud.v1.RegisterAccountResponse.account:type_name -> muxvia.cloud.v1.AccountProfile
 	3,  // 6: muxvia.cloud.v1.RegisterAccountResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
 	2,  // 7: muxvia.cloud.v1.LoginAccountResponse.account:type_name -> muxvia.cloud.v1.AccountProfile
@@ -1030,25 +1411,37 @@ var file_cloud_v1_account_proto_depIdxs = []int32{
 	3,  // 12: muxvia.cloud.v1.RefreshAccountSessionResponse.session:type_name -> muxvia.cloud.v1.AccountSessionCredential
 	2,  // 13: muxvia.cloud.v1.GetCurrentAccountResponse.account:type_name -> muxvia.cloud.v1.AccountProfile
 	1,  // 14: muxvia.cloud.v1.GetCurrentAccountResponse.roles:type_name -> muxvia.cloud.v1.AccountRole
-	16, // 15: muxvia.cloud.v1.GetCurrentAccountResponse.recent_auth_expires_at:type_name -> google.protobuf.Timestamp
-	16, // 16: muxvia.cloud.v1.VerifyRecentAuthenticationResponse.expires_at:type_name -> google.protobuf.Timestamp
-	4,  // 17: muxvia.cloud.v1.AccountService.Register:input_type -> muxvia.cloud.v1.RegisterAccountRequest
-	6,  // 18: muxvia.cloud.v1.AccountService.Login:input_type -> muxvia.cloud.v1.LoginAccountRequest
-	8,  // 19: muxvia.cloud.v1.AccountService.Refresh:input_type -> muxvia.cloud.v1.RefreshAccountSessionRequest
-	10, // 20: muxvia.cloud.v1.AccountService.Logout:input_type -> muxvia.cloud.v1.LogoutAccountSessionRequest
-	12, // 21: muxvia.cloud.v1.AccountService.GetCurrent:input_type -> muxvia.cloud.v1.GetCurrentAccountRequest
-	14, // 22: muxvia.cloud.v1.AccountService.VerifyRecentAuthentication:input_type -> muxvia.cloud.v1.VerifyRecentAuthenticationRequest
-	5,  // 23: muxvia.cloud.v1.AccountService.Register:output_type -> muxvia.cloud.v1.RegisterAccountResponse
-	7,  // 24: muxvia.cloud.v1.AccountService.Login:output_type -> muxvia.cloud.v1.LoginAccountResponse
-	9,  // 25: muxvia.cloud.v1.AccountService.Refresh:output_type -> muxvia.cloud.v1.RefreshAccountSessionResponse
-	11, // 26: muxvia.cloud.v1.AccountService.Logout:output_type -> muxvia.cloud.v1.LogoutAccountSessionResponse
-	13, // 27: muxvia.cloud.v1.AccountService.GetCurrent:output_type -> muxvia.cloud.v1.GetCurrentAccountResponse
-	15, // 28: muxvia.cloud.v1.AccountService.VerifyRecentAuthentication:output_type -> muxvia.cloud.v1.VerifyRecentAuthenticationResponse
-	23, // [23:29] is the sub-list for method output_type
-	17, // [17:23] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	23, // 15: muxvia.cloud.v1.GetCurrentAccountResponse.recent_auth_expires_at:type_name -> google.protobuf.Timestamp
+	23, // 16: muxvia.cloud.v1.VerifyRecentAuthenticationResponse.expires_at:type_name -> google.protobuf.Timestamp
+	23, // 17: muxvia.cloud.v1.AccountSessionProjection.created_at:type_name -> google.protobuf.Timestamp
+	23, // 18: muxvia.cloud.v1.AccountSessionProjection.access_expires_at:type_name -> google.protobuf.Timestamp
+	23, // 19: muxvia.cloud.v1.AccountSessionProjection.refresh_expires_at:type_name -> google.protobuf.Timestamp
+	23, // 20: muxvia.cloud.v1.AccountSessionProjection.recent_auth_expires_at:type_name -> google.protobuf.Timestamp
+	16, // 21: muxvia.cloud.v1.ListAccountSessionsResponse.sessions:type_name -> muxvia.cloud.v1.AccountSessionProjection
+	2,  // 22: muxvia.cloud.v1.ChangeAccountPasswordResponse.account:type_name -> muxvia.cloud.v1.AccountProfile
+	4,  // 23: muxvia.cloud.v1.AccountService.Register:input_type -> muxvia.cloud.v1.RegisterAccountRequest
+	6,  // 24: muxvia.cloud.v1.AccountService.Login:input_type -> muxvia.cloud.v1.LoginAccountRequest
+	8,  // 25: muxvia.cloud.v1.AccountService.Refresh:input_type -> muxvia.cloud.v1.RefreshAccountSessionRequest
+	10, // 26: muxvia.cloud.v1.AccountService.Logout:input_type -> muxvia.cloud.v1.LogoutAccountSessionRequest
+	12, // 27: muxvia.cloud.v1.AccountService.GetCurrent:input_type -> muxvia.cloud.v1.GetCurrentAccountRequest
+	14, // 28: muxvia.cloud.v1.AccountService.VerifyRecentAuthentication:input_type -> muxvia.cloud.v1.VerifyRecentAuthenticationRequest
+	17, // 29: muxvia.cloud.v1.AccountService.ListSessions:input_type -> muxvia.cloud.v1.ListAccountSessionsRequest
+	19, // 30: muxvia.cloud.v1.AccountService.ChangePassword:input_type -> muxvia.cloud.v1.ChangeAccountPasswordRequest
+	21, // 31: muxvia.cloud.v1.AccountService.RevokeSession:input_type -> muxvia.cloud.v1.RevokeAccountSessionRequest
+	5,  // 32: muxvia.cloud.v1.AccountService.Register:output_type -> muxvia.cloud.v1.RegisterAccountResponse
+	7,  // 33: muxvia.cloud.v1.AccountService.Login:output_type -> muxvia.cloud.v1.LoginAccountResponse
+	9,  // 34: muxvia.cloud.v1.AccountService.Refresh:output_type -> muxvia.cloud.v1.RefreshAccountSessionResponse
+	11, // 35: muxvia.cloud.v1.AccountService.Logout:output_type -> muxvia.cloud.v1.LogoutAccountSessionResponse
+	13, // 36: muxvia.cloud.v1.AccountService.GetCurrent:output_type -> muxvia.cloud.v1.GetCurrentAccountResponse
+	15, // 37: muxvia.cloud.v1.AccountService.VerifyRecentAuthentication:output_type -> muxvia.cloud.v1.VerifyRecentAuthenticationResponse
+	18, // 38: muxvia.cloud.v1.AccountService.ListSessions:output_type -> muxvia.cloud.v1.ListAccountSessionsResponse
+	20, // 39: muxvia.cloud.v1.AccountService.ChangePassword:output_type -> muxvia.cloud.v1.ChangeAccountPasswordResponse
+	22, // 40: muxvia.cloud.v1.AccountService.RevokeSession:output_type -> muxvia.cloud.v1.RevokeAccountSessionResponse
+	32, // [32:41] is the sub-list for method output_type
+	23, // [23:32] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_account_proto_init() }
@@ -1062,7 +1455,7 @@ func file_cloud_v1_account_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_account_proto_rawDesc), len(file_cloud_v1_account_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   14,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -19,13 +19,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CommerceService_ListPlans_FullMethodName              = "/muxvia.cloud.v1.CommerceService/ListPlans"
-	CommerceService_CreatePlanVersion_FullMethodName      = "/muxvia.cloud.v1.CommerceService/CreatePlanVersion"
-	CommerceService_PublishPlanVersion_FullMethodName     = "/muxvia.cloud.v1.CommerceService/PublishPlanVersion"
-	CommerceService_CreateOrder_FullMethodName            = "/muxvia.cloud.v1.CommerceService/CreateOrder"
-	CommerceService_ApplyPaymentEvent_FullMethodName      = "/muxvia.cloud.v1.CommerceService/ApplyPaymentEvent"
-	CommerceService_TransitionSubscription_FullMethodName = "/muxvia.cloud.v1.CommerceService/TransitionSubscription"
-	CommerceService_GetAccountCommerce_FullMethodName     = "/muxvia.cloud.v1.CommerceService/GetAccountCommerce"
+	CommerceService_ListPlans_FullMethodName                  = "/muxvia.cloud.v1.CommerceService/ListPlans"
+	CommerceService_CreatePlanVersion_FullMethodName          = "/muxvia.cloud.v1.CommerceService/CreatePlanVersion"
+	CommerceService_PublishPlanVersion_FullMethodName         = "/muxvia.cloud.v1.CommerceService/PublishPlanVersion"
+	CommerceService_CreateOrder_FullMethodName                = "/muxvia.cloud.v1.CommerceService/CreateOrder"
+	CommerceService_ApplyPaymentEvent_FullMethodName          = "/muxvia.cloud.v1.CommerceService/ApplyPaymentEvent"
+	CommerceService_TransitionSubscription_FullMethodName     = "/muxvia.cloud.v1.CommerceService/TransitionSubscription"
+	CommerceService_GetAccountCommerce_FullMethodName         = "/muxvia.cloud.v1.CommerceService/GetAccountCommerce"
+	CommerceService_CreateMyOrder_FullMethodName              = "/muxvia.cloud.v1.CommerceService/CreateMyOrder"
+	CommerceService_GetMyCommerce_FullMethodName              = "/muxvia.cloud.v1.CommerceService/GetMyCommerce"
+	CommerceService_ChangeMySubscription_FullMethodName       = "/muxvia.cloud.v1.CommerceService/ChangeMySubscription"
+	CommerceService_CompleteDevelopmentPayment_FullMethodName = "/muxvia.cloud.v1.CommerceService/CompleteDevelopmentPayment"
 )
 
 // CommerceServiceClient is the client API for CommerceService service.
@@ -41,6 +45,10 @@ type CommerceServiceClient interface {
 	ApplyPaymentEvent(ctx context.Context, in *ApplyPaymentEventRequest, opts ...grpc.CallOption) (*ApplyPaymentEventResponse, error)
 	TransitionSubscription(ctx context.Context, in *TransitionSubscriptionRequest, opts ...grpc.CallOption) (*TransitionSubscriptionResponse, error)
 	GetAccountCommerce(ctx context.Context, in *GetAccountCommerceRequest, opts ...grpc.CallOption) (*GetAccountCommerceResponse, error)
+	CreateMyOrder(ctx context.Context, in *CreateMyOrderRequest, opts ...grpc.CallOption) (*CreateOrderResponse, error)
+	GetMyCommerce(ctx context.Context, in *GetMyCommerceRequest, opts ...grpc.CallOption) (*GetAccountCommerceResponse, error)
+	ChangeMySubscription(ctx context.Context, in *ChangeMySubscriptionRequest, opts ...grpc.CallOption) (*TransitionSubscriptionResponse, error)
+	CompleteDevelopmentPayment(ctx context.Context, in *CompleteDevelopmentPaymentRequest, opts ...grpc.CallOption) (*ApplyPaymentEventResponse, error)
 }
 
 type commerceServiceClient struct {
@@ -121,6 +129,46 @@ func (c *commerceServiceClient) GetAccountCommerce(ctx context.Context, in *GetA
 	return out, nil
 }
 
+func (c *commerceServiceClient) CreateMyOrder(ctx context.Context, in *CreateMyOrderRequest, opts ...grpc.CallOption) (*CreateOrderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateOrderResponse)
+	err := c.cc.Invoke(ctx, CommerceService_CreateMyOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *commerceServiceClient) GetMyCommerce(ctx context.Context, in *GetMyCommerceRequest, opts ...grpc.CallOption) (*GetAccountCommerceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAccountCommerceResponse)
+	err := c.cc.Invoke(ctx, CommerceService_GetMyCommerce_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *commerceServiceClient) ChangeMySubscription(ctx context.Context, in *ChangeMySubscriptionRequest, opts ...grpc.CallOption) (*TransitionSubscriptionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TransitionSubscriptionResponse)
+	err := c.cc.Invoke(ctx, CommerceService_ChangeMySubscription_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *commerceServiceClient) CompleteDevelopmentPayment(ctx context.Context, in *CompleteDevelopmentPaymentRequest, opts ...grpc.CallOption) (*ApplyPaymentEventResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApplyPaymentEventResponse)
+	err := c.cc.Invoke(ctx, CommerceService_CompleteDevelopmentPayment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CommerceServiceServer is the server API for CommerceService service.
 // All implementations must embed UnimplementedCommerceServiceServer
 // for forward compatibility.
@@ -134,6 +182,10 @@ type CommerceServiceServer interface {
 	ApplyPaymentEvent(context.Context, *ApplyPaymentEventRequest) (*ApplyPaymentEventResponse, error)
 	TransitionSubscription(context.Context, *TransitionSubscriptionRequest) (*TransitionSubscriptionResponse, error)
 	GetAccountCommerce(context.Context, *GetAccountCommerceRequest) (*GetAccountCommerceResponse, error)
+	CreateMyOrder(context.Context, *CreateMyOrderRequest) (*CreateOrderResponse, error)
+	GetMyCommerce(context.Context, *GetMyCommerceRequest) (*GetAccountCommerceResponse, error)
+	ChangeMySubscription(context.Context, *ChangeMySubscriptionRequest) (*TransitionSubscriptionResponse, error)
+	CompleteDevelopmentPayment(context.Context, *CompleteDevelopmentPaymentRequest) (*ApplyPaymentEventResponse, error)
 	mustEmbedUnimplementedCommerceServiceServer()
 }
 
@@ -164,6 +216,18 @@ func (UnimplementedCommerceServiceServer) TransitionSubscription(context.Context
 }
 func (UnimplementedCommerceServiceServer) GetAccountCommerce(context.Context, *GetAccountCommerceRequest) (*GetAccountCommerceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetAccountCommerce not implemented")
+}
+func (UnimplementedCommerceServiceServer) CreateMyOrder(context.Context, *CreateMyOrderRequest) (*CreateOrderResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateMyOrder not implemented")
+}
+func (UnimplementedCommerceServiceServer) GetMyCommerce(context.Context, *GetMyCommerceRequest) (*GetAccountCommerceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMyCommerce not implemented")
+}
+func (UnimplementedCommerceServiceServer) ChangeMySubscription(context.Context, *ChangeMySubscriptionRequest) (*TransitionSubscriptionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ChangeMySubscription not implemented")
+}
+func (UnimplementedCommerceServiceServer) CompleteDevelopmentPayment(context.Context, *CompleteDevelopmentPaymentRequest) (*ApplyPaymentEventResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CompleteDevelopmentPayment not implemented")
 }
 func (UnimplementedCommerceServiceServer) mustEmbedUnimplementedCommerceServiceServer() {}
 func (UnimplementedCommerceServiceServer) testEmbeddedByValue()                         {}
@@ -312,6 +376,78 @@ func _CommerceService_GetAccountCommerce_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CommerceService_CreateMyOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateMyOrderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CommerceServiceServer).CreateMyOrder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CommerceService_CreateMyOrder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CommerceServiceServer).CreateMyOrder(ctx, req.(*CreateMyOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CommerceService_GetMyCommerce_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMyCommerceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CommerceServiceServer).GetMyCommerce(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CommerceService_GetMyCommerce_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CommerceServiceServer).GetMyCommerce(ctx, req.(*GetMyCommerceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CommerceService_ChangeMySubscription_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ChangeMySubscriptionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CommerceServiceServer).ChangeMySubscription(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CommerceService_ChangeMySubscription_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CommerceServiceServer).ChangeMySubscription(ctx, req.(*ChangeMySubscriptionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CommerceService_CompleteDevelopmentPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompleteDevelopmentPaymentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CommerceServiceServer).CompleteDevelopmentPayment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CommerceService_CompleteDevelopmentPayment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CommerceServiceServer).CompleteDevelopmentPayment(ctx, req.(*CompleteDevelopmentPaymentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CommerceService_ServiceDesc is the grpc.ServiceDesc for CommerceService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -346,6 +482,22 @@ var CommerceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetAccountCommerce",
 			Handler:    _CommerceService_GetAccountCommerce_Handler,
+		},
+		{
+			MethodName: "CreateMyOrder",
+			Handler:    _CommerceService_CreateMyOrder_Handler,
+		},
+		{
+			MethodName: "GetMyCommerce",
+			Handler:    _CommerceService_GetMyCommerce_Handler,
+		},
+		{
+			MethodName: "ChangeMySubscription",
+			Handler:    _CommerceService_ChangeMySubscription_Handler,
+		},
+		{
+			MethodName: "CompleteDevelopmentPayment",
+			Handler:    _CommerceService_CompleteDevelopmentPayment_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

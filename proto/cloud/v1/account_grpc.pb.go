@@ -25,6 +25,9 @@ const (
 	AccountService_Logout_FullMethodName                     = "/muxvia.cloud.v1.AccountService/Logout"
 	AccountService_GetCurrent_FullMethodName                 = "/muxvia.cloud.v1.AccountService/GetCurrent"
 	AccountService_VerifyRecentAuthentication_FullMethodName = "/muxvia.cloud.v1.AccountService/VerifyRecentAuthentication"
+	AccountService_ListSessions_FullMethodName               = "/muxvia.cloud.v1.AccountService/ListSessions"
+	AccountService_ChangePassword_FullMethodName             = "/muxvia.cloud.v1.AccountService/ChangePassword"
+	AccountService_RevokeSession_FullMethodName              = "/muxvia.cloud.v1.AccountService/RevokeSession"
 )
 
 // AccountServiceClient is the client API for AccountService service.
@@ -39,6 +42,9 @@ type AccountServiceClient interface {
 	Logout(ctx context.Context, in *LogoutAccountSessionRequest, opts ...grpc.CallOption) (*LogoutAccountSessionResponse, error)
 	GetCurrent(ctx context.Context, in *GetCurrentAccountRequest, opts ...grpc.CallOption) (*GetCurrentAccountResponse, error)
 	VerifyRecentAuthentication(ctx context.Context, in *VerifyRecentAuthenticationRequest, opts ...grpc.CallOption) (*VerifyRecentAuthenticationResponse, error)
+	ListSessions(ctx context.Context, in *ListAccountSessionsRequest, opts ...grpc.CallOption) (*ListAccountSessionsResponse, error)
+	ChangePassword(ctx context.Context, in *ChangeAccountPasswordRequest, opts ...grpc.CallOption) (*ChangeAccountPasswordResponse, error)
+	RevokeSession(ctx context.Context, in *RevokeAccountSessionRequest, opts ...grpc.CallOption) (*RevokeAccountSessionResponse, error)
 }
 
 type accountServiceClient struct {
@@ -109,6 +115,36 @@ func (c *accountServiceClient) VerifyRecentAuthentication(ctx context.Context, i
 	return out, nil
 }
 
+func (c *accountServiceClient) ListSessions(ctx context.Context, in *ListAccountSessionsRequest, opts ...grpc.CallOption) (*ListAccountSessionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAccountSessionsResponse)
+	err := c.cc.Invoke(ctx, AccountService_ListSessions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *accountServiceClient) ChangePassword(ctx context.Context, in *ChangeAccountPasswordRequest, opts ...grpc.CallOption) (*ChangeAccountPasswordResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ChangeAccountPasswordResponse)
+	err := c.cc.Invoke(ctx, AccountService_ChangePassword_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *accountServiceClient) RevokeSession(ctx context.Context, in *RevokeAccountSessionRequest, opts ...grpc.CallOption) (*RevokeAccountSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevokeAccountSessionResponse)
+	err := c.cc.Invoke(ctx, AccountService_RevokeSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AccountServiceServer is the server API for AccountService service.
 // All implementations must embed UnimplementedAccountServiceServer
 // for forward compatibility.
@@ -121,6 +157,9 @@ type AccountServiceServer interface {
 	Logout(context.Context, *LogoutAccountSessionRequest) (*LogoutAccountSessionResponse, error)
 	GetCurrent(context.Context, *GetCurrentAccountRequest) (*GetCurrentAccountResponse, error)
 	VerifyRecentAuthentication(context.Context, *VerifyRecentAuthenticationRequest) (*VerifyRecentAuthenticationResponse, error)
+	ListSessions(context.Context, *ListAccountSessionsRequest) (*ListAccountSessionsResponse, error)
+	ChangePassword(context.Context, *ChangeAccountPasswordRequest) (*ChangeAccountPasswordResponse, error)
+	RevokeSession(context.Context, *RevokeAccountSessionRequest) (*RevokeAccountSessionResponse, error)
 	mustEmbedUnimplementedAccountServiceServer()
 }
 
@@ -148,6 +187,15 @@ func (UnimplementedAccountServiceServer) GetCurrent(context.Context, *GetCurrent
 }
 func (UnimplementedAccountServiceServer) VerifyRecentAuthentication(context.Context, *VerifyRecentAuthenticationRequest) (*VerifyRecentAuthenticationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method VerifyRecentAuthentication not implemented")
+}
+func (UnimplementedAccountServiceServer) ListSessions(context.Context, *ListAccountSessionsRequest) (*ListAccountSessionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSessions not implemented")
+}
+func (UnimplementedAccountServiceServer) ChangePassword(context.Context, *ChangeAccountPasswordRequest) (*ChangeAccountPasswordResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ChangePassword not implemented")
+}
+func (UnimplementedAccountServiceServer) RevokeSession(context.Context, *RevokeAccountSessionRequest) (*RevokeAccountSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeSession not implemented")
 }
 func (UnimplementedAccountServiceServer) mustEmbedUnimplementedAccountServiceServer() {}
 func (UnimplementedAccountServiceServer) testEmbeddedByValue()                        {}
@@ -278,6 +326,60 @@ func _AccountService_VerifyRecentAuthentication_Handler(srv interface{}, ctx con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AccountService_ListSessions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAccountSessionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccountServiceServer).ListSessions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccountService_ListSessions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccountServiceServer).ListSessions(ctx, req.(*ListAccountSessionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AccountService_ChangePassword_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ChangeAccountPasswordRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccountServiceServer).ChangePassword(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccountService_ChangePassword_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccountServiceServer).ChangePassword(ctx, req.(*ChangeAccountPasswordRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AccountService_RevokeSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeAccountSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccountServiceServer).RevokeSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccountService_RevokeSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccountServiceServer).RevokeSession(ctx, req.(*RevokeAccountSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AccountService_ServiceDesc is the grpc.ServiceDesc for AccountService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -308,6 +410,18 @@ var AccountService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "VerifyRecentAuthentication",
 			Handler:    _AccountService_VerifyRecentAuthentication_Handler,
+		},
+		{
+			MethodName: "ListSessions",
+			Handler:    _AccountService_ListSessions_Handler,
+		},
+		{
+			MethodName: "ChangePassword",
+			Handler:    _AccountService_ChangePassword_Handler,
+		},
+		{
+			MethodName: "RevokeSession",
+			Handler:    _AccountService_RevokeSession_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

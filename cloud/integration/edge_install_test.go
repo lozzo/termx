@@ -298,7 +298,15 @@ func TestR4DaemonEnrollmentConsumesCodeAndPersistsOnlyIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := service.CreateEnrollment(ctx, &cloudv1.CreateDaemonEnrollmentRequest{AccountName: "R4 测试账号", DaemonName: "R4 Daemon"}, "muxvia cloud enroll --controller https://controller.test")
+	accounts, err := account.New(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: time.Hour, RecentAuthenticationTTL: 10 * time.Minute, BcryptCost: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registered, err := accounts.Register(ctx, &cloudv1.RegisterAccountRequest{Email: "r4-" + uuid.NewString() + "@example.com", Password: "r4-test-password", DisplayName: "R4 测试账号"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.CreateEnrollment(ctx, &cloudv1.CreateDaemonEnrollmentRequest{AccountId: registered.GetAccount().GetAccountId(), AccountName: registered.GetAccount().GetDisplayName(), DaemonName: "R4 Daemon"}, "muxvia cloud enroll --controller https://controller.test")
 	if err != nil {
 		t.Fatal(err)
 	}

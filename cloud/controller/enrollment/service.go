@@ -111,15 +111,12 @@ func (service *Service) TicketVerificationKey() *cloudv1.VerificationKey {
 	return &cloudv1.VerificationKey{KeyId: service.config.TicketSigningKeyID, Algorithm: "Ed25519", PublicKey: append([]byte(nil), publicKey...)}
 }
 
-// CreateEnrollment 为运营面创建至少 192 bit 随机 code，数据库只接收摘要。
+// CreateEnrollment 为已存在账号创建至少 192 bit 随机 code，数据库只接收摘要。
 func (service *Service) CreateEnrollment(ctx context.Context, request *cloudv1.CreateDaemonEnrollmentRequest, commandPrefix string) (*cloudv1.CreateDaemonEnrollmentResponse, error) {
-	if request == nil || strings.TrimSpace(request.GetAccountName()) == "" || strings.TrimSpace(request.GetDaemonName()) == "" {
-		return nil, errors.New("account name and daemon name are required")
+	if request == nil || strings.TrimSpace(request.GetDaemonName()) == "" {
+		return nil, errors.New("account ID and daemon name are required")
 	}
 	accountID := strings.TrimSpace(request.GetAccountId())
-	if accountID == "" {
-		accountID = uuid.NewString()
-	}
 	if _, err := uuid.Parse(accountID); err != nil {
 		return nil, errors.New("account ID must be UUID")
 	}
@@ -144,6 +141,15 @@ func (service *Service) ListManagedDaemons(ctx context.Context) (*cloudv1.ListDa
 	if err != nil {
 		return nil, err
 	}
+	managed, err := service.projectManagedDaemons(ctx, daemons)
+	if err != nil {
+		return nil, err
+	}
+	return &cloudv1.ListDaemonsResponse{Daemons: managed}, nil
+}
+
+// projectManagedDaemons 只把调用方已完成账号过滤的 identity 与当前 Directory 投影合并。
+func (service *Service) projectManagedDaemons(ctx context.Context, daemons []Daemon) ([]*cloudv1.ManagedDaemon, error) {
 	edges, err := service.config.Edges.ListEdges(ctx)
 	if err != nil {
 		return nil, err
@@ -152,7 +158,7 @@ func (service *Service) ListManagedDaemons(ctx context.Context) (*cloudv1.ListDa
 	for _, edge := range edges {
 		edgeByID[edge.ID] = edge
 	}
-	response := &cloudv1.ListDaemonsResponse{Daemons: make([]*cloudv1.ManagedDaemon, 0, len(daemons))}
+	response := make([]*cloudv1.ManagedDaemon, 0, len(daemons))
 	for _, daemon := range daemons {
 		managed := &cloudv1.ManagedDaemon{Daemon: projectDaemon(daemon), Runtime: &cloudv1.DaemonRuntimeProjection{}}
 		if location, found, locateErr := service.config.Directory.LocateDaemon(ctx, daemon.ID); locateErr != nil {
@@ -161,7 +167,7 @@ func (service *Service) ListManagedDaemons(ctx context.Context) (*cloudv1.ListDa
 			edge := edgeByID[location.EdgeID]
 			managed.Runtime = &cloudv1.DaemonRuntimeProjection{Online: true, EdgeId: location.EdgeID, EdgeName: edge.Name, EdgeRegion: edge.Region, EdgePublicEndpoint: edge.PublicEndpoint, BootId: location.BootID, ConnectionId: location.ConnectionID, Generation: location.Generation}
 		}
-		response.Daemons = append(response.Daemons, managed)
+		response = append(response, managed)
 	}
 	return response, nil
 }

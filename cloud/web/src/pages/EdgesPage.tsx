@@ -47,7 +47,7 @@ function EdgeTable({ edges }: { edges: ManagedEdge[] }) {
     <td><Status active={Boolean(edge.runtime?.online)}>{edge.runtime?.online ? '在线' : edge.config?.enabled ? '离线' : '已停用'}</Status></td>
     <td>{edge.runtime?.agentCount.toString() ?? '0'} / {edge.config?.capacity.toString() ?? '0'}<small>{edge.runtime?.sessionCount.toString() ?? '0'} 个会话</small></td>
     <td>{edge.runtime?.softwareVersion || '-'}</td><td>{dateTime(edge.runtime?.lastHeartbeat)}</td>
-    <td><Link className="table-link" to={`/edges/${edge.config?.edgeId}/overview`}>查看</Link></td>
+    <td><Link className="table-link" to={`/app/admin/edges/${edge.config?.edgeId}/overview`}>查看</Link></td>
   </tr>)}</tbody></table></TableFrame>
 }
 
@@ -64,7 +64,7 @@ export function EdgeDetailPage() {
   if (!edge) return <Empty>Edge 不存在</Empty>
   return <>
     <PageHeader title={edge.config?.name || 'Edge 详情'} meta={`${edge.config?.region} · ${edge.config?.publicEndpoint}`} />
-    <nav className="tabs" aria-label="Edge 详情">{tabs.map(([value, label]) => <NavLink key={value} to={`/edges/${edgeId}/${value}`}>{label}</NavLink>)}</nav>
+    <nav className="tabs" aria-label="Edge 详情">{tabs.map(([value, label]) => <NavLink key={value} to={`/app/admin/edges/${edgeId}/${value}`}>{label}</NavLink>)}</nav>
     {tab === 'overview' && <EdgeOverview edge={edge} />}
     {tab === 'daemons' && <EdgeDaemons edgeId={edgeId} />}
     {tab === 'connections' && <EdgeConnections edgeId={edgeId} />}

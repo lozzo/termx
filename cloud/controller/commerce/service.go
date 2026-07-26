@@ -4,12 +4,14 @@ package commerce
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/muxvia/muxvia/cloud/controller/account"
 	"github.com/muxvia/muxvia/cloud/controller/control"
 	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 var (
@@ -35,15 +37,17 @@ type Store interface {
 
 // Config 固定 commerce Store 与时间来源。
 type Config struct {
-	Store Store
-	Now   func() time.Time
+	Store               Store
+	Now                 func() time.Time
+	DevelopmentPayments bool
 }
 
 // Service 是 CommerceService 的应用边界，不持有套餐或 Entitlement 的第二份缓存真值。
 type Service struct {
 	cloudv1.UnimplementedCommerceServiceServer
-	store Store
-	now   func() time.Time
+	store               Store
+	now                 func() time.Time
+	developmentPayments bool
 }
 
 // EffectiveEntitlement 返回签发票据所需的即时不可变能力投影。
@@ -62,7 +66,7 @@ func New(config Config) (*Service, error) {
 	if config.Now == nil {
 		config.Now = time.Now
 	}
-	return &Service{store: config.Store, now: config.Now}, nil
+	return &Service{store: config.Store, now: config.Now, developmentPayments: config.DevelopmentPayments}, nil
 }
 
 // ListPlans 返回数据库中的套餐版本；普通账号只能看到已发布版本。
@@ -135,6 +139,76 @@ func (service *Service) GetAccountCommerce(ctx context.Context, request *cloudv1
 		return nil, account.ErrUnauthenticated
 	}
 	return service.store.GetAccountCommerce(ctx, request.GetAccountId(), service.now().UTC())
+}
+
+// CreateMyOrder 从认证 session 派生账号和 Development provider，浏览器不能替用户选择这两个安全字段。
+func (service *Service) CreateMyOrder(ctx context.Context, request *cloudv1.CreateMyOrderRequest) (*cloudv1.CreateOrderResponse, error) {
+	identity, ok := account.IdentityFromContext(ctx)
+	if !ok || !service.developmentPayments || request == nil {
+		return nil, ErrInvalidTransition
+	}
+	return service.CreateOrder(ctx, &cloudv1.CreateOrderRequest{
+		AccountId: identity.Account.GetAccountId(), PlanId: request.GetPlanId(), PlanVersion: request.GetPlanVersion(),
+		Provider: "development", IdempotencyKey: request.GetIdempotencyKey(), RequestedTransition: request.GetRequestedTransition(), Yearly: request.GetYearly(),
+	})
+}
+
+// GetMyCommerce 返回认证账号自己的商业聚合，不接受浏览器提供 account_id。
+func (service *Service) GetMyCommerce(ctx context.Context, _ *cloudv1.GetMyCommerceRequest) (*cloudv1.GetAccountCommerceResponse, error) {
+	identity, ok := account.IdentityFromContext(ctx)
+	if !ok {
+		return nil, account.ErrUnauthenticated
+	}
+	return service.store.GetAccountCommerce(ctx, identity.Account.GetAccountId(), service.now().UTC())
+}
+
+// ChangeMySubscription 只允许用户执行到期取消和恢复；付费换档仍必须创建订单。
+func (service *Service) ChangeMySubscription(ctx context.Context, request *cloudv1.ChangeMySubscriptionRequest) (*cloudv1.TransitionSubscriptionResponse, error) {
+	identity, ok := account.IdentityFromContext(ctx)
+	if !ok || request == nil || request.GetExpectedRevision() == 0 || (request.GetTransition() != cloudv1.SubscriptionTransition_SUBSCRIPTION_TRANSITION_CANCEL_AT_PERIOD_END && request.GetTransition() != cloudv1.SubscriptionTransition_SUBSCRIPTION_TRANSITION_RESUME) {
+		return nil, ErrInvalidTransition
+	}
+	reason := "用户自助取消到期"
+	if request.GetTransition() == cloudv1.SubscriptionTransition_SUBSCRIPTION_TRANSITION_RESUME {
+		reason = "用户自助恢复订阅"
+	}
+	return service.store.TransitionSubscription(ctx, &cloudv1.TransitionSubscriptionRequest{AccountId: identity.Account.GetAccountId(), Transition: request.GetTransition(), ExpectedRevision: request.GetExpectedRevision(), Reason: reason}, identity.Account.GetAccountId(), service.now().UTC())
+}
+
+// CompleteDevelopmentPayment 为显式 Development 环境提供可重复验收的账号隔离支付适配器。
+func (service *Service) CompleteDevelopmentPayment(ctx context.Context, request *cloudv1.CompleteDevelopmentPaymentRequest) (*cloudv1.ApplyPaymentEventResponse, error) {
+	identity, ok := account.IdentityFromContext(ctx)
+	if !ok || !service.developmentPayments || request == nil || strings.TrimSpace(request.GetOrderId()) == "" || strings.TrimSpace(request.GetPaymentAttemptId()) == "" {
+		return nil, ErrInvalidTransition
+	}
+	aggregate, err := service.store.GetAccountCommerce(ctx, identity.Account.GetAccountId(), service.now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	var order *cloudv1.OrderProjection
+	for _, candidate := range aggregate.GetOrders() {
+		if candidate.GetOrderId() == request.GetOrderId() {
+			order = candidate
+			break
+		}
+	}
+	var attempt *cloudv1.PaymentAttemptProjection
+	for _, candidate := range aggregate.GetPaymentAttempts() {
+		if candidate.GetPaymentAttemptId() == request.GetPaymentAttemptId() && candidate.GetOrderId() == request.GetOrderId() {
+			attempt = candidate
+			break
+		}
+	}
+	if order == nil || attempt == nil || order.GetProvider() != "development" || attempt.GetProvider() != "development" {
+		return nil, account.ErrUnauthenticated
+	}
+	now := service.now().UTC()
+	event := &cloudv1.ApplyPaymentEventRequest{
+		Provider: "development", ProviderEventId: fmt.Sprintf("development:%s:succeeded", attempt.GetPaymentAttemptId()),
+		PaymentAttemptId: attempt.GetPaymentAttemptId(), OrderId: order.GetOrderId(),
+		EventType: cloudv1.PaymentEventType_PAYMENT_EVENT_TYPE_SUCCEEDED, ProviderReference: "development-confirmed", OccurredAt: timestamppb.New(now),
+	}
+	return service.store.ApplyPaymentEvent(ctx, event, identity.Account.GetAccountId(), now)
 }
 
 // EntitlementRelayPolicy 把 commerce truth 投影为 RelayLease 的窄执行上限。

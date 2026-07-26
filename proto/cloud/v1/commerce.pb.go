@@ -2227,6 +2227,225 @@ func (x *GetAccountCommerceResponse) GetUsage() *UsagePeriodProjection {
 	return nil
 }
 
+// CreateMyOrderRequest 不接受 account_id 或 provider；两者由认证 session 和部署模式决定。
+type CreateMyOrderRequest struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	PlanId              string                 `protobuf:"bytes,1,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
+	PlanVersion         uint64                 `protobuf:"varint,2,opt,name=plan_version,json=planVersion,proto3" json:"plan_version,omitempty"`
+	IdempotencyKey      string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	RequestedTransition SubscriptionTransition `protobuf:"varint,4,opt,name=requested_transition,json=requestedTransition,proto3,enum=muxvia.cloud.v1.SubscriptionTransition" json:"requested_transition,omitempty"`
+	Yearly              bool                   `protobuf:"varint,5,opt,name=yearly,proto3" json:"yearly,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *CreateMyOrderRequest) Reset() {
+	*x = CreateMyOrderRequest{}
+	mi := &file_cloud_v1_commerce_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateMyOrderRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateMyOrderRequest) ProtoMessage() {}
+
+func (x *CreateMyOrderRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_commerce_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateMyOrderRequest.ProtoReflect.Descriptor instead.
+func (*CreateMyOrderRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_commerce_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *CreateMyOrderRequest) GetPlanId() string {
+	if x != nil {
+		return x.PlanId
+	}
+	return ""
+}
+
+func (x *CreateMyOrderRequest) GetPlanVersion() uint64 {
+	if x != nil {
+		return x.PlanVersion
+	}
+	return 0
+}
+
+func (x *CreateMyOrderRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *CreateMyOrderRequest) GetRequestedTransition() SubscriptionTransition {
+	if x != nil {
+		return x.RequestedTransition
+	}
+	return SubscriptionTransition_SUBSCRIPTION_TRANSITION_UNSPECIFIED
+}
+
+func (x *CreateMyOrderRequest) GetYearly() bool {
+	if x != nil {
+		return x.Yearly
+	}
+	return false
+}
+
+type GetMyCommerceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMyCommerceRequest) Reset() {
+	*x = GetMyCommerceRequest{}
+	mi := &file_cloud_v1_commerce_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMyCommerceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMyCommerceRequest) ProtoMessage() {}
+
+func (x *GetMyCommerceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_commerce_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMyCommerceRequest.ProtoReflect.Descriptor instead.
+func (*GetMyCommerceRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_commerce_proto_rawDescGZIP(), []int{23}
+}
+
+// ChangeMySubscriptionRequest 只承载用户可执行的取消到期和恢复动作。
+type ChangeMySubscriptionRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Transition       SubscriptionTransition `protobuf:"varint,1,opt,name=transition,proto3,enum=muxvia.cloud.v1.SubscriptionTransition" json:"transition,omitempty"`
+	ExpectedRevision uint64                 `protobuf:"varint,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ChangeMySubscriptionRequest) Reset() {
+	*x = ChangeMySubscriptionRequest{}
+	mi := &file_cloud_v1_commerce_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeMySubscriptionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeMySubscriptionRequest) ProtoMessage() {}
+
+func (x *ChangeMySubscriptionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_commerce_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeMySubscriptionRequest.ProtoReflect.Descriptor instead.
+func (*ChangeMySubscriptionRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_commerce_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ChangeMySubscriptionRequest) GetTransition() SubscriptionTransition {
+	if x != nil {
+		return x.Transition
+	}
+	return SubscriptionTransition_SUBSCRIPTION_TRANSITION_UNSPECIFIED
+}
+
+func (x *ChangeMySubscriptionRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+// CompleteDevelopmentPaymentRequest 仅在显式 Development 支付模式下可用。
+type CompleteDevelopmentPaymentRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	OrderId          string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	PaymentAttemptId string                 `protobuf:"bytes,2,opt,name=payment_attempt_id,json=paymentAttemptId,proto3" json:"payment_attempt_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *CompleteDevelopmentPaymentRequest) Reset() {
+	*x = CompleteDevelopmentPaymentRequest{}
+	mi := &file_cloud_v1_commerce_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteDevelopmentPaymentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteDevelopmentPaymentRequest) ProtoMessage() {}
+
+func (x *CompleteDevelopmentPaymentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_commerce_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteDevelopmentPaymentRequest.ProtoReflect.Descriptor instead.
+func (*CompleteDevelopmentPaymentRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_commerce_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *CompleteDevelopmentPaymentRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *CompleteDevelopmentPaymentRequest) GetPaymentAttemptId() string {
+	if x != nil {
+		return x.PaymentAttemptId
+	}
+	return ""
+}
+
 var File_cloud_v1_commerce_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_commerce_proto_rawDesc = "" +
@@ -2411,7 +2630,22 @@ const file_cloud_v1_commerce_proto_rawDesc = "" +
 	"\ventitlement\x18\x02 \x01(\v2%.muxvia.cloud.v1.EffectiveEntitlementR\ventitlement\x128\n" +
 	"\x06orders\x18\x03 \x03(\v2 .muxvia.cloud.v1.OrderProjectionR\x06orders\x12T\n" +
 	"\x10payment_attempts\x18\x04 \x03(\v2).muxvia.cloud.v1.PaymentAttemptProjectionR\x0fpaymentAttempts\x12<\n" +
-	"\x05usage\x18\x05 \x01(\v2&.muxvia.cloud.v1.UsagePeriodProjectionR\x05usage*o\n" +
+	"\x05usage\x18\x05 \x01(\v2&.muxvia.cloud.v1.UsagePeriodProjectionR\x05usage\"\xef\x01\n" +
+	"\x14CreateMyOrderRequest\x12\x17\n" +
+	"\aplan_id\x18\x01 \x01(\tR\x06planId\x12!\n" +
+	"\fplan_version\x18\x02 \x01(\x04R\vplanVersion\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12Z\n" +
+	"\x14requested_transition\x18\x04 \x01(\x0e2'.muxvia.cloud.v1.SubscriptionTransitionR\x13requestedTransition\x12\x16\n" +
+	"\x06yearly\x18\x05 \x01(\bR\x06yearly\"\x16\n" +
+	"\x14GetMyCommerceRequest\"\x93\x01\n" +
+	"\x1bChangeMySubscriptionRequest\x12G\n" +
+	"\n" +
+	"transition\x18\x01 \x01(\x0e2'.muxvia.cloud.v1.SubscriptionTransitionR\n" +
+	"transition\x12+\n" +
+	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\"l\n" +
+	"!CompleteDevelopmentPaymentRequest\x12\x19\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\x12,\n" +
+	"\x12payment_attempt_id\x18\x02 \x01(\tR\x10paymentAttemptId*o\n" +
 	"\tPlanState\x12\x1a\n" +
 	"\x16PLAN_STATE_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10PLAN_STATE_DRAFT\x10\x01\x12\x18\n" +
@@ -2462,7 +2696,7 @@ const file_cloud_v1_commerce_proto_rawDesc = "" +
 	"\x1dENTITLEMENT_STATE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18ENTITLEMENT_STATE_ACTIVE\x10\x01\x12\x1f\n" +
 	"\x1bENTITLEMENT_STATE_SUSPENDED\x10\x02\x12\x1d\n" +
-	"\x19ENTITLEMENT_STATE_EXPIRED\x10\x032\xf0\x05\n" +
+	"\x19ENTITLEMENT_STATE_EXPIRED\x10\x032\xa8\t\n" +
 	"\x0fCommerceService\x12R\n" +
 	"\tListPlans\x12!.muxvia.cloud.v1.ListPlansRequest\x1a\".muxvia.cloud.v1.ListPlansResponse\x12j\n" +
 	"\x11CreatePlanVersion\x12).muxvia.cloud.v1.CreatePlanVersionRequest\x1a*.muxvia.cloud.v1.CreatePlanVersionResponse\x12m\n" +
@@ -2470,7 +2704,11 @@ const file_cloud_v1_commerce_proto_rawDesc = "" +
 	"\vCreateOrder\x12#.muxvia.cloud.v1.CreateOrderRequest\x1a$.muxvia.cloud.v1.CreateOrderResponse\x12j\n" +
 	"\x11ApplyPaymentEvent\x12).muxvia.cloud.v1.ApplyPaymentEventRequest\x1a*.muxvia.cloud.v1.ApplyPaymentEventResponse\x12y\n" +
 	"\x16TransitionSubscription\x12..muxvia.cloud.v1.TransitionSubscriptionRequest\x1a/.muxvia.cloud.v1.TransitionSubscriptionResponse\x12m\n" +
-	"\x12GetAccountCommerce\x12*.muxvia.cloud.v1.GetAccountCommerceRequest\x1a+.muxvia.cloud.v1.GetAccountCommerceResponseB1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	"\x12GetAccountCommerce\x12*.muxvia.cloud.v1.GetAccountCommerceRequest\x1a+.muxvia.cloud.v1.GetAccountCommerceResponse\x12\\\n" +
+	"\rCreateMyOrder\x12%.muxvia.cloud.v1.CreateMyOrderRequest\x1a$.muxvia.cloud.v1.CreateOrderResponse\x12c\n" +
+	"\rGetMyCommerce\x12%.muxvia.cloud.v1.GetMyCommerceRequest\x1a+.muxvia.cloud.v1.GetAccountCommerceResponse\x12u\n" +
+	"\x14ChangeMySubscription\x12,.muxvia.cloud.v1.ChangeMySubscriptionRequest\x1a/.muxvia.cloud.v1.TransitionSubscriptionResponse\x12|\n" +
+	"\x1aCompleteDevelopmentPayment\x122.muxvia.cloud.v1.CompleteDevelopmentPaymentRequest\x1a*.muxvia.cloud.v1.ApplyPaymentEventResponseB1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_commerce_proto_rawDescOnce sync.Once
@@ -2485,65 +2723,69 @@ func file_cloud_v1_commerce_proto_rawDescGZIP() []byte {
 }
 
 var file_cloud_v1_commerce_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_cloud_v1_commerce_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_cloud_v1_commerce_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_cloud_v1_commerce_proto_goTypes = []any{
-	(PlanState)(0),                         // 0: muxvia.cloud.v1.PlanState
-	(OrderStatus)(0),                       // 1: muxvia.cloud.v1.OrderStatus
-	(PaymentAttemptStatus)(0),              // 2: muxvia.cloud.v1.PaymentAttemptStatus
-	(PaymentEventType)(0),                  // 3: muxvia.cloud.v1.PaymentEventType
-	(SubscriptionState)(0),                 // 4: muxvia.cloud.v1.SubscriptionState
-	(SubscriptionTransition)(0),            // 5: muxvia.cloud.v1.SubscriptionTransition
-	(EntitlementState)(0),                  // 6: muxvia.cloud.v1.EntitlementState
-	(*Money)(nil),                          // 7: muxvia.cloud.v1.Money
-	(*CloudCapability)(nil),                // 8: muxvia.cloud.v1.CloudCapability
-	(*PlanDefinition)(nil),                 // 9: muxvia.cloud.v1.PlanDefinition
-	(*OrderProjection)(nil),                // 10: muxvia.cloud.v1.OrderProjection
-	(*PaymentAttemptProjection)(nil),       // 11: muxvia.cloud.v1.PaymentAttemptProjection
-	(*SubscriptionProjection)(nil),         // 12: muxvia.cloud.v1.SubscriptionProjection
-	(*EffectiveEntitlement)(nil),           // 13: muxvia.cloud.v1.EffectiveEntitlement
-	(*UsagePeriodProjection)(nil),          // 14: muxvia.cloud.v1.UsagePeriodProjection
-	(*ListPlansRequest)(nil),               // 15: muxvia.cloud.v1.ListPlansRequest
-	(*ListPlansResponse)(nil),              // 16: muxvia.cloud.v1.ListPlansResponse
-	(*CreatePlanVersionRequest)(nil),       // 17: muxvia.cloud.v1.CreatePlanVersionRequest
-	(*CreatePlanVersionResponse)(nil),      // 18: muxvia.cloud.v1.CreatePlanVersionResponse
-	(*PublishPlanVersionRequest)(nil),      // 19: muxvia.cloud.v1.PublishPlanVersionRequest
-	(*PublishPlanVersionResponse)(nil),     // 20: muxvia.cloud.v1.PublishPlanVersionResponse
-	(*CreateOrderRequest)(nil),             // 21: muxvia.cloud.v1.CreateOrderRequest
-	(*CreateOrderResponse)(nil),            // 22: muxvia.cloud.v1.CreateOrderResponse
-	(*ApplyPaymentEventRequest)(nil),       // 23: muxvia.cloud.v1.ApplyPaymentEventRequest
-	(*ApplyPaymentEventResponse)(nil),      // 24: muxvia.cloud.v1.ApplyPaymentEventResponse
-	(*TransitionSubscriptionRequest)(nil),  // 25: muxvia.cloud.v1.TransitionSubscriptionRequest
-	(*TransitionSubscriptionResponse)(nil), // 26: muxvia.cloud.v1.TransitionSubscriptionResponse
-	(*GetAccountCommerceRequest)(nil),      // 27: muxvia.cloud.v1.GetAccountCommerceRequest
-	(*GetAccountCommerceResponse)(nil),     // 28: muxvia.cloud.v1.GetAccountCommerceResponse
-	(*timestamppb.Timestamp)(nil),          // 29: google.protobuf.Timestamp
+	(PlanState)(0),                            // 0: muxvia.cloud.v1.PlanState
+	(OrderStatus)(0),                          // 1: muxvia.cloud.v1.OrderStatus
+	(PaymentAttemptStatus)(0),                 // 2: muxvia.cloud.v1.PaymentAttemptStatus
+	(PaymentEventType)(0),                     // 3: muxvia.cloud.v1.PaymentEventType
+	(SubscriptionState)(0),                    // 4: muxvia.cloud.v1.SubscriptionState
+	(SubscriptionTransition)(0),               // 5: muxvia.cloud.v1.SubscriptionTransition
+	(EntitlementState)(0),                     // 6: muxvia.cloud.v1.EntitlementState
+	(*Money)(nil),                             // 7: muxvia.cloud.v1.Money
+	(*CloudCapability)(nil),                   // 8: muxvia.cloud.v1.CloudCapability
+	(*PlanDefinition)(nil),                    // 9: muxvia.cloud.v1.PlanDefinition
+	(*OrderProjection)(nil),                   // 10: muxvia.cloud.v1.OrderProjection
+	(*PaymentAttemptProjection)(nil),          // 11: muxvia.cloud.v1.PaymentAttemptProjection
+	(*SubscriptionProjection)(nil),            // 12: muxvia.cloud.v1.SubscriptionProjection
+	(*EffectiveEntitlement)(nil),              // 13: muxvia.cloud.v1.EffectiveEntitlement
+	(*UsagePeriodProjection)(nil),             // 14: muxvia.cloud.v1.UsagePeriodProjection
+	(*ListPlansRequest)(nil),                  // 15: muxvia.cloud.v1.ListPlansRequest
+	(*ListPlansResponse)(nil),                 // 16: muxvia.cloud.v1.ListPlansResponse
+	(*CreatePlanVersionRequest)(nil),          // 17: muxvia.cloud.v1.CreatePlanVersionRequest
+	(*CreatePlanVersionResponse)(nil),         // 18: muxvia.cloud.v1.CreatePlanVersionResponse
+	(*PublishPlanVersionRequest)(nil),         // 19: muxvia.cloud.v1.PublishPlanVersionRequest
+	(*PublishPlanVersionResponse)(nil),        // 20: muxvia.cloud.v1.PublishPlanVersionResponse
+	(*CreateOrderRequest)(nil),                // 21: muxvia.cloud.v1.CreateOrderRequest
+	(*CreateOrderResponse)(nil),               // 22: muxvia.cloud.v1.CreateOrderResponse
+	(*ApplyPaymentEventRequest)(nil),          // 23: muxvia.cloud.v1.ApplyPaymentEventRequest
+	(*ApplyPaymentEventResponse)(nil),         // 24: muxvia.cloud.v1.ApplyPaymentEventResponse
+	(*TransitionSubscriptionRequest)(nil),     // 25: muxvia.cloud.v1.TransitionSubscriptionRequest
+	(*TransitionSubscriptionResponse)(nil),    // 26: muxvia.cloud.v1.TransitionSubscriptionResponse
+	(*GetAccountCommerceRequest)(nil),         // 27: muxvia.cloud.v1.GetAccountCommerceRequest
+	(*GetAccountCommerceResponse)(nil),        // 28: muxvia.cloud.v1.GetAccountCommerceResponse
+	(*CreateMyOrderRequest)(nil),              // 29: muxvia.cloud.v1.CreateMyOrderRequest
+	(*GetMyCommerceRequest)(nil),              // 30: muxvia.cloud.v1.GetMyCommerceRequest
+	(*ChangeMySubscriptionRequest)(nil),       // 31: muxvia.cloud.v1.ChangeMySubscriptionRequest
+	(*CompleteDevelopmentPaymentRequest)(nil), // 32: muxvia.cloud.v1.CompleteDevelopmentPaymentRequest
+	(*timestamppb.Timestamp)(nil),             // 33: google.protobuf.Timestamp
 }
 var file_cloud_v1_commerce_proto_depIdxs = []int32{
 	0,  // 0: muxvia.cloud.v1.PlanDefinition.state:type_name -> muxvia.cloud.v1.PlanState
 	7,  // 1: muxvia.cloud.v1.PlanDefinition.monthly_price:type_name -> muxvia.cloud.v1.Money
 	7,  // 2: muxvia.cloud.v1.PlanDefinition.yearly_price:type_name -> muxvia.cloud.v1.Money
 	8,  // 3: muxvia.cloud.v1.PlanDefinition.capability:type_name -> muxvia.cloud.v1.CloudCapability
-	29, // 4: muxvia.cloud.v1.PlanDefinition.created_at:type_name -> google.protobuf.Timestamp
-	29, // 5: muxvia.cloud.v1.PlanDefinition.published_at:type_name -> google.protobuf.Timestamp
+	33, // 4: muxvia.cloud.v1.PlanDefinition.created_at:type_name -> google.protobuf.Timestamp
+	33, // 5: muxvia.cloud.v1.PlanDefinition.published_at:type_name -> google.protobuf.Timestamp
 	1,  // 6: muxvia.cloud.v1.OrderProjection.status:type_name -> muxvia.cloud.v1.OrderStatus
 	7,  // 7: muxvia.cloud.v1.OrderProjection.amount:type_name -> muxvia.cloud.v1.Money
 	5,  // 8: muxvia.cloud.v1.OrderProjection.requested_transition:type_name -> muxvia.cloud.v1.SubscriptionTransition
-	29, // 9: muxvia.cloud.v1.OrderProjection.created_at:type_name -> google.protobuf.Timestamp
-	29, // 10: muxvia.cloud.v1.OrderProjection.settled_at:type_name -> google.protobuf.Timestamp
+	33, // 9: muxvia.cloud.v1.OrderProjection.created_at:type_name -> google.protobuf.Timestamp
+	33, // 10: muxvia.cloud.v1.OrderProjection.settled_at:type_name -> google.protobuf.Timestamp
 	2,  // 11: muxvia.cloud.v1.PaymentAttemptProjection.status:type_name -> muxvia.cloud.v1.PaymentAttemptStatus
-	29, // 12: muxvia.cloud.v1.PaymentAttemptProjection.created_at:type_name -> google.protobuf.Timestamp
-	29, // 13: muxvia.cloud.v1.PaymentAttemptProjection.updated_at:type_name -> google.protobuf.Timestamp
+	33, // 12: muxvia.cloud.v1.PaymentAttemptProjection.created_at:type_name -> google.protobuf.Timestamp
+	33, // 13: muxvia.cloud.v1.PaymentAttemptProjection.updated_at:type_name -> google.protobuf.Timestamp
 	4,  // 14: muxvia.cloud.v1.SubscriptionProjection.state:type_name -> muxvia.cloud.v1.SubscriptionState
-	29, // 15: muxvia.cloud.v1.SubscriptionProjection.period_start:type_name -> google.protobuf.Timestamp
-	29, // 16: muxvia.cloud.v1.SubscriptionProjection.period_end:type_name -> google.protobuf.Timestamp
-	29, // 17: muxvia.cloud.v1.SubscriptionProjection.updated_at:type_name -> google.protobuf.Timestamp
+	33, // 15: muxvia.cloud.v1.SubscriptionProjection.period_start:type_name -> google.protobuf.Timestamp
+	33, // 16: muxvia.cloud.v1.SubscriptionProjection.period_end:type_name -> google.protobuf.Timestamp
+	33, // 17: muxvia.cloud.v1.SubscriptionProjection.updated_at:type_name -> google.protobuf.Timestamp
 	6,  // 18: muxvia.cloud.v1.EffectiveEntitlement.state:type_name -> muxvia.cloud.v1.EntitlementState
 	8,  // 19: muxvia.cloud.v1.EffectiveEntitlement.capability:type_name -> muxvia.cloud.v1.CloudCapability
-	29, // 20: muxvia.cloud.v1.EffectiveEntitlement.effective_from:type_name -> google.protobuf.Timestamp
-	29, // 21: muxvia.cloud.v1.EffectiveEntitlement.effective_until:type_name -> google.protobuf.Timestamp
-	29, // 22: muxvia.cloud.v1.EffectiveEntitlement.computed_at:type_name -> google.protobuf.Timestamp
-	29, // 23: muxvia.cloud.v1.UsagePeriodProjection.period_start:type_name -> google.protobuf.Timestamp
-	29, // 24: muxvia.cloud.v1.UsagePeriodProjection.period_end:type_name -> google.protobuf.Timestamp
+	33, // 20: muxvia.cloud.v1.EffectiveEntitlement.effective_from:type_name -> google.protobuf.Timestamp
+	33, // 21: muxvia.cloud.v1.EffectiveEntitlement.effective_until:type_name -> google.protobuf.Timestamp
+	33, // 22: muxvia.cloud.v1.EffectiveEntitlement.computed_at:type_name -> google.protobuf.Timestamp
+	33, // 23: muxvia.cloud.v1.UsagePeriodProjection.period_start:type_name -> google.protobuf.Timestamp
+	33, // 24: muxvia.cloud.v1.UsagePeriodProjection.period_end:type_name -> google.protobuf.Timestamp
 	9,  // 25: muxvia.cloud.v1.ListPlansResponse.plans:type_name -> muxvia.cloud.v1.PlanDefinition
 	7,  // 26: muxvia.cloud.v1.CreatePlanVersionRequest.monthly_price:type_name -> muxvia.cloud.v1.Money
 	7,  // 27: muxvia.cloud.v1.CreatePlanVersionRequest.yearly_price:type_name -> muxvia.cloud.v1.Money
@@ -2554,7 +2796,7 @@ var file_cloud_v1_commerce_proto_depIdxs = []int32{
 	10, // 32: muxvia.cloud.v1.CreateOrderResponse.order:type_name -> muxvia.cloud.v1.OrderProjection
 	11, // 33: muxvia.cloud.v1.CreateOrderResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
 	3,  // 34: muxvia.cloud.v1.ApplyPaymentEventRequest.event_type:type_name -> muxvia.cloud.v1.PaymentEventType
-	29, // 35: muxvia.cloud.v1.ApplyPaymentEventRequest.occurred_at:type_name -> google.protobuf.Timestamp
+	33, // 35: muxvia.cloud.v1.ApplyPaymentEventRequest.occurred_at:type_name -> google.protobuf.Timestamp
 	10, // 36: muxvia.cloud.v1.ApplyPaymentEventResponse.order:type_name -> muxvia.cloud.v1.OrderProjection
 	11, // 37: muxvia.cloud.v1.ApplyPaymentEventResponse.payment_attempt:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
 	12, // 38: muxvia.cloud.v1.ApplyPaymentEventResponse.subscription:type_name -> muxvia.cloud.v1.SubscriptionProjection
@@ -2567,25 +2809,35 @@ var file_cloud_v1_commerce_proto_depIdxs = []int32{
 	10, // 45: muxvia.cloud.v1.GetAccountCommerceResponse.orders:type_name -> muxvia.cloud.v1.OrderProjection
 	11, // 46: muxvia.cloud.v1.GetAccountCommerceResponse.payment_attempts:type_name -> muxvia.cloud.v1.PaymentAttemptProjection
 	14, // 47: muxvia.cloud.v1.GetAccountCommerceResponse.usage:type_name -> muxvia.cloud.v1.UsagePeriodProjection
-	15, // 48: muxvia.cloud.v1.CommerceService.ListPlans:input_type -> muxvia.cloud.v1.ListPlansRequest
-	17, // 49: muxvia.cloud.v1.CommerceService.CreatePlanVersion:input_type -> muxvia.cloud.v1.CreatePlanVersionRequest
-	19, // 50: muxvia.cloud.v1.CommerceService.PublishPlanVersion:input_type -> muxvia.cloud.v1.PublishPlanVersionRequest
-	21, // 51: muxvia.cloud.v1.CommerceService.CreateOrder:input_type -> muxvia.cloud.v1.CreateOrderRequest
-	23, // 52: muxvia.cloud.v1.CommerceService.ApplyPaymentEvent:input_type -> muxvia.cloud.v1.ApplyPaymentEventRequest
-	25, // 53: muxvia.cloud.v1.CommerceService.TransitionSubscription:input_type -> muxvia.cloud.v1.TransitionSubscriptionRequest
-	27, // 54: muxvia.cloud.v1.CommerceService.GetAccountCommerce:input_type -> muxvia.cloud.v1.GetAccountCommerceRequest
-	16, // 55: muxvia.cloud.v1.CommerceService.ListPlans:output_type -> muxvia.cloud.v1.ListPlansResponse
-	18, // 56: muxvia.cloud.v1.CommerceService.CreatePlanVersion:output_type -> muxvia.cloud.v1.CreatePlanVersionResponse
-	20, // 57: muxvia.cloud.v1.CommerceService.PublishPlanVersion:output_type -> muxvia.cloud.v1.PublishPlanVersionResponse
-	22, // 58: muxvia.cloud.v1.CommerceService.CreateOrder:output_type -> muxvia.cloud.v1.CreateOrderResponse
-	24, // 59: muxvia.cloud.v1.CommerceService.ApplyPaymentEvent:output_type -> muxvia.cloud.v1.ApplyPaymentEventResponse
-	26, // 60: muxvia.cloud.v1.CommerceService.TransitionSubscription:output_type -> muxvia.cloud.v1.TransitionSubscriptionResponse
-	28, // 61: muxvia.cloud.v1.CommerceService.GetAccountCommerce:output_type -> muxvia.cloud.v1.GetAccountCommerceResponse
-	55, // [55:62] is the sub-list for method output_type
-	48, // [48:55] is the sub-list for method input_type
-	48, // [48:48] is the sub-list for extension type_name
-	48, // [48:48] is the sub-list for extension extendee
-	0,  // [0:48] is the sub-list for field type_name
+	5,  // 48: muxvia.cloud.v1.CreateMyOrderRequest.requested_transition:type_name -> muxvia.cloud.v1.SubscriptionTransition
+	5,  // 49: muxvia.cloud.v1.ChangeMySubscriptionRequest.transition:type_name -> muxvia.cloud.v1.SubscriptionTransition
+	15, // 50: muxvia.cloud.v1.CommerceService.ListPlans:input_type -> muxvia.cloud.v1.ListPlansRequest
+	17, // 51: muxvia.cloud.v1.CommerceService.CreatePlanVersion:input_type -> muxvia.cloud.v1.CreatePlanVersionRequest
+	19, // 52: muxvia.cloud.v1.CommerceService.PublishPlanVersion:input_type -> muxvia.cloud.v1.PublishPlanVersionRequest
+	21, // 53: muxvia.cloud.v1.CommerceService.CreateOrder:input_type -> muxvia.cloud.v1.CreateOrderRequest
+	23, // 54: muxvia.cloud.v1.CommerceService.ApplyPaymentEvent:input_type -> muxvia.cloud.v1.ApplyPaymentEventRequest
+	25, // 55: muxvia.cloud.v1.CommerceService.TransitionSubscription:input_type -> muxvia.cloud.v1.TransitionSubscriptionRequest
+	27, // 56: muxvia.cloud.v1.CommerceService.GetAccountCommerce:input_type -> muxvia.cloud.v1.GetAccountCommerceRequest
+	29, // 57: muxvia.cloud.v1.CommerceService.CreateMyOrder:input_type -> muxvia.cloud.v1.CreateMyOrderRequest
+	30, // 58: muxvia.cloud.v1.CommerceService.GetMyCommerce:input_type -> muxvia.cloud.v1.GetMyCommerceRequest
+	31, // 59: muxvia.cloud.v1.CommerceService.ChangeMySubscription:input_type -> muxvia.cloud.v1.ChangeMySubscriptionRequest
+	32, // 60: muxvia.cloud.v1.CommerceService.CompleteDevelopmentPayment:input_type -> muxvia.cloud.v1.CompleteDevelopmentPaymentRequest
+	16, // 61: muxvia.cloud.v1.CommerceService.ListPlans:output_type -> muxvia.cloud.v1.ListPlansResponse
+	18, // 62: muxvia.cloud.v1.CommerceService.CreatePlanVersion:output_type -> muxvia.cloud.v1.CreatePlanVersionResponse
+	20, // 63: muxvia.cloud.v1.CommerceService.PublishPlanVersion:output_type -> muxvia.cloud.v1.PublishPlanVersionResponse
+	22, // 64: muxvia.cloud.v1.CommerceService.CreateOrder:output_type -> muxvia.cloud.v1.CreateOrderResponse
+	24, // 65: muxvia.cloud.v1.CommerceService.ApplyPaymentEvent:output_type -> muxvia.cloud.v1.ApplyPaymentEventResponse
+	26, // 66: muxvia.cloud.v1.CommerceService.TransitionSubscription:output_type -> muxvia.cloud.v1.TransitionSubscriptionResponse
+	28, // 67: muxvia.cloud.v1.CommerceService.GetAccountCommerce:output_type -> muxvia.cloud.v1.GetAccountCommerceResponse
+	22, // 68: muxvia.cloud.v1.CommerceService.CreateMyOrder:output_type -> muxvia.cloud.v1.CreateOrderResponse
+	28, // 69: muxvia.cloud.v1.CommerceService.GetMyCommerce:output_type -> muxvia.cloud.v1.GetAccountCommerceResponse
+	26, // 70: muxvia.cloud.v1.CommerceService.ChangeMySubscription:output_type -> muxvia.cloud.v1.TransitionSubscriptionResponse
+	24, // 71: muxvia.cloud.v1.CommerceService.CompleteDevelopmentPayment:output_type -> muxvia.cloud.v1.ApplyPaymentEventResponse
+	61, // [61:72] is the sub-list for method output_type
+	50, // [50:61] is the sub-list for method input_type
+	50, // [50:50] is the sub-list for extension type_name
+	50, // [50:50] is the sub-list for extension extendee
+	0,  // [0:50] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_commerce_proto_init() }
@@ -2599,7 +2851,7 @@ func file_cloud_v1_commerce_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_commerce_proto_rawDesc), len(file_cloud_v1_commerce_proto_rawDesc)),
 			NumEnums:      7,
-			NumMessages:   22,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

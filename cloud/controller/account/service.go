@@ -54,6 +54,8 @@ type Store interface {
 	RotateSession(context.Context, Session, Session) error
 	RevokeSession(context.Context, string, string, bool) error
 	SetRecentAuthentication(context.Context, string, time.Time) error
+	ListAccountSessions(context.Context, string, time.Time) ([]Session, error)
+	UpdatePassword(context.Context, string, string, []byte, time.Time) (*cloudv1.AccountProfile, error)
 }
 
 // Config 固定账号 Store、token 时限和可替换的时间/随机来源。
@@ -219,6 +221,67 @@ func (service *Service) VerifyRecentAuthentication(ctx context.Context, request 
 		return nil, err
 	}
 	return &cloudv1.VerifyRecentAuthenticationResponse{ExpiresAt: timestamppb.New(expiresAt)}, nil
+}
+
+// ListSessions 返回当前账号仍可使用的 session 元数据；token 和摘要始终留在账号 Store 内部。
+func (service *Service) ListSessions(ctx context.Context, _ *cloudv1.ListAccountSessionsRequest) (*cloudv1.ListAccountSessionsResponse, error) {
+	identity, ok := IdentityFromContext(ctx)
+	if !ok {
+		return nil, ErrUnauthenticated
+	}
+	sessions, err := service.store.ListAccountSessions(ctx, identity.Account.GetAccountId(), service.now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	response := &cloudv1.ListAccountSessionsResponse{Sessions: make([]*cloudv1.AccountSessionProjection, 0, len(sessions))}
+	for _, session := range sessions {
+		projection := &cloudv1.AccountSessionProjection{
+			SessionId: session.ID, Current: session.ID == identity.SessionID, Revision: session.Revision,
+			CreatedAt: timestamppb.New(session.CreatedAt), AccessExpiresAt: timestamppb.New(session.AccessExpiresAt),
+			RefreshExpiresAt: timestamppb.New(session.RefreshExpiresAt),
+		}
+		if !session.RecentAuthExpiresAt.IsZero() {
+			projection.RecentAuthExpiresAt = timestamppb.New(session.RecentAuthExpiresAt)
+		}
+		response.Sessions = append(response.Sessions, projection)
+	}
+	return response, nil
+}
+
+// ChangePassword 校验当前 verifier 后原子替换密码，并撤销当前 session 之外的全部 session。
+func (service *Service) ChangePassword(ctx context.Context, request *cloudv1.ChangeAccountPasswordRequest) (*cloudv1.ChangeAccountPasswordResponse, error) {
+	identity, ok := IdentityFromContext(ctx)
+	if !ok || request == nil || len(request.GetNewPassword()) < 8 || request.GetCurrentPassword() == request.GetNewPassword() {
+		return nil, ErrUnauthenticated
+	}
+	record, err := service.store.AccountByID(ctx, identity.Account.GetAccountId())
+	if err != nil || bcrypt.CompareHashAndPassword(record.PasswordHash, []byte(request.GetCurrentPassword())) != nil {
+		return nil, ErrUnauthenticated
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(request.GetNewPassword()), service.bcryptCost)
+	if err != nil {
+		return nil, err
+	}
+	profile, err := service.store.UpdatePassword(ctx, identity.Account.GetAccountId(), identity.SessionID, hash, service.now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	return &cloudv1.ChangeAccountPasswordResponse{Account: profile}, nil
+}
+
+// RevokeSession 撤销当前账号的另一个精确 session；当前 session 必须通过 Logout 退出。
+func (service *Service) RevokeSession(ctx context.Context, request *cloudv1.RevokeAccountSessionRequest) (*cloudv1.RevokeAccountSessionResponse, error) {
+	identity, ok := IdentityFromContext(ctx)
+	if !ok || request == nil || strings.TrimSpace(request.GetSessionId()) == "" || request.GetSessionId() == identity.SessionID {
+		return nil, ErrUnauthenticated
+	}
+	if !service.now().UTC().Before(identity.RecentAuthExpiresAt) {
+		return nil, ErrUnauthenticated
+	}
+	if err := service.store.RevokeSession(ctx, identity.Account.GetAccountId(), request.GetSessionId(), false); err != nil {
+		return nil, err
+	}
+	return &cloudv1.RevokeAccountSessionResponse{}, nil
 }
 
 // AuthenticateAccess 验证 bearer/cookie token 并构造 transport 可注入的认证身份。

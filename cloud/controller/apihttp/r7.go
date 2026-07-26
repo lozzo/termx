@@ -121,6 +121,34 @@ func (handler *handler) accountPrivate(writer http.ResponseWriter, request *http
 		}
 		handler.clearSessionCookies(writer)
 		writeProto(writer, http.StatusOK, response)
+	case "/api/account/sessions":
+		switch request.Method {
+		case http.MethodGet:
+			response, err := handler.config.Accounts.ListSessions(request.Context(), &cloudv1.ListAccountSessionsRequest{})
+			writeServiceResult(writer, response, err)
+		case http.MethodDelete:
+			input := &cloudv1.RevokeAccountSessionRequest{}
+			if err := readProto(request, input); err != nil {
+				writeError(writer, http.StatusBadRequest, err)
+				return
+			}
+			response, err := handler.config.Accounts.RevokeSession(request.Context(), input)
+			writeServiceResult(writer, response, err)
+		default:
+			writer.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	case "/api/account/password":
+		if request.Method != http.MethodPost {
+			writer.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		input := &cloudv1.ChangeAccountPasswordRequest{}
+		if err := readProto(request, input); err != nil {
+			writeError(writer, http.StatusBadRequest, err)
+			return
+		}
+		response, err := handler.config.Accounts.ChangePassword(request.Context(), input)
+		writeServiceResult(writer, response, err)
 	default:
 		http.NotFound(writer, request)
 	}
@@ -141,6 +169,65 @@ func (handler *handler) commerce(writer http.ResponseWriter, request *http.Reque
 		writeServiceResult(writer, response, err)
 	case strings.HasPrefix(request.URL.Path, "/api/commerce/account/") && request.Method == http.MethodGet:
 		response, err := handler.config.Commerce.GetAccountCommerce(request.Context(), &cloudv1.GetAccountCommerceRequest{AccountId: strings.TrimPrefix(request.URL.Path, "/api/commerce/account/")})
+		writeServiceResult(writer, response, err)
+	case request.URL.Path == "/api/commerce/me" && request.Method == http.MethodGet:
+		response, err := handler.config.Commerce.GetMyCommerce(request.Context(), &cloudv1.GetMyCommerceRequest{})
+		writeServiceResult(writer, response, err)
+	case request.URL.Path == "/api/commerce/orders" && request.Method == http.MethodPost:
+		input := &cloudv1.CreateMyOrderRequest{}
+		if err := readProto(request, input); err != nil {
+			writeError(writer, http.StatusBadRequest, err)
+			return
+		}
+		response, err := handler.config.Commerce.CreateMyOrder(request.Context(), input)
+		writeServiceResult(writer, response, err)
+	case request.URL.Path == "/api/commerce/subscription" && request.Method == http.MethodPost:
+		input := &cloudv1.ChangeMySubscriptionRequest{}
+		if err := readProto(request, input); err != nil {
+			writeError(writer, http.StatusBadRequest, err)
+			return
+		}
+		response, err := handler.config.Commerce.ChangeMySubscription(request.Context(), input)
+		writeServiceResult(writer, response, err)
+	case request.URL.Path == "/api/commerce/payments/development" && request.Method == http.MethodPost:
+		input := &cloudv1.CompleteDevelopmentPaymentRequest{}
+		if err := readProto(request, input); err != nil {
+			writeError(writer, http.StatusBadRequest, err)
+			return
+		}
+		response, err := handler.config.Commerce.CompleteDevelopmentPayment(request.Context(), input)
+		writeServiceResult(writer, response, err)
+	default:
+		http.NotFound(writer, request)
+	}
+}
+
+func (handler *handler) daemons(writer http.ResponseWriter, request *http.Request) {
+	if handler.config.DaemonManagement == nil {
+		http.NotFound(writer, request)
+		return
+	}
+	switch {
+	case request.URL.Path == "/api/daemons" && request.Method == http.MethodGet:
+		response, err := handler.config.DaemonManagement.ListMyDaemons(request.Context(), &cloudv1.ListMyDaemonsRequest{})
+		writeServiceResult(writer, response, err)
+	case request.URL.Path == "/api/daemons/enroll" && request.Method == http.MethodPost:
+		input := &cloudv1.CreateMyDaemonEnrollmentRequest{}
+		if err := readProto(request, input); err != nil {
+			writeError(writer, http.StatusBadRequest, err)
+			return
+		}
+		response, err := handler.config.DaemonManagement.CreateMyEnrollment(request.Context(), input)
+		writeServiceResult(writer, response, err)
+	case strings.HasPrefix(request.URL.Path, "/api/daemons/") && strings.HasSuffix(request.URL.Path, "/revoke") && request.Method == http.MethodPost:
+		id := strings.TrimSuffix(strings.TrimPrefix(request.URL.Path, "/api/daemons/"), "/revoke")
+		input := &cloudv1.RevokeMyDaemonRequest{DaemonId: id}
+		if err := readProto(request, input); err != nil {
+			writeError(writer, http.StatusBadRequest, err)
+			return
+		}
+		input.DaemonId = id
+		response, err := handler.config.DaemonManagement.RevokeMyDaemon(request.Context(), input)
 		writeServiceResult(writer, response, err)
 	default:
 		http.NotFound(writer, request)

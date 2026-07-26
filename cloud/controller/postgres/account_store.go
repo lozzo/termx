@@ -140,6 +140,54 @@ func (database *Database) SetRecentAuthentication(ctx context.Context, sessionID
 	return nil
 }
 
+// ListAccountSessions 返回账号仍在 refresh 有效期内的活动 session，不暴露持久 token 摘要。
+func (database *Database) ListAccountSessions(ctx context.Context, accountID string, now time.Time) ([]account.Session, error) {
+	rows, err := database.pool.Query(ctx, accountSessionSelect+` WHERE account_id=$1 AND revoked_at IS NULL AND refresh_expires_at>$2 ORDER BY created_at DESC,session_id`, accountID, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]account.Session, 0)
+	for rows.Next() {
+		session, err := scanAccountSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, session)
+	}
+	return result, rows.Err()
+}
+
+// UpdatePassword 原子更新 verifier、账号 revision、撤销其它 session 并写入安全审计。
+func (database *Database) UpdatePassword(ctx context.Context, accountID, currentSessionID string, passwordHash []byte, now time.Time) (*cloudv1.AccountProfile, error) {
+	tx, err := database.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	result, err := tx.Exec(ctx, `UPDATE accounts SET password_hash=$1,revision=revision+1,updated_at=$2 WHERE account_id=$3 AND state='active'`, passwordHash, now, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if result.RowsAffected() != 1 {
+		return nil, account.ErrAccountConflict
+	}
+	if _, err := tx.Exec(ctx, `UPDATE account_sessions SET revoked_at=$1,revision=revision+1 WHERE account_id=$2 AND session_id<>$3 AND revoked_at IS NULL`, now, accountID, currentSessionID); err != nil {
+		return nil, err
+	}
+	if err := insertOperatorAudit(ctx, tx, accountID, "account.password.change", "account", accountID, "user security action", "applied", now); err != nil {
+		return nil, err
+	}
+	record, err := scanAccountRecord(tx.QueryRow(ctx, accountSelect+` WHERE a.account_id=$1`, accountID))
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return record.Profile, nil
+}
+
 const accountSelect = `SELECT a.account_id::text,coalesce(a.email,''),a.display_name,a.state,a.revision,a.created_at,a.updated_at,a.password_hash,ARRAY(SELECT r.role FROM account_roles r WHERE r.account_id=a.account_id ORDER BY r.role) FROM accounts a`
 
 func insertAccount(ctx context.Context, tx pgx.Tx, record account.Record) error {

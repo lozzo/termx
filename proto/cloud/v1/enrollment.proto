@@ -54,6 +54,22 @@ message CreateDaemonEnrollmentResponse {
 message ListDaemonsRequest {}
 message ListDaemonsResponse { repeated ManagedDaemon daemons = 1; }
 
+// CreateMyDaemonEnrollmentRequest 只允许用户命名 daemon；账号来自认证 session。
+message CreateMyDaemonEnrollmentRequest { string daemon_name = 1; }
+message ListMyDaemonsRequest {}
+message ListMyDaemonsResponse { repeated ManagedDaemon daemons = 1; }
+
+message RevokeMyDaemonRequest {
+  string daemon_id = 1;
+  uint64 expected_revision = 2;
+  string reason = 3;
+}
+message RevokeMyDaemonResponse {
+  DaemonRecord daemon = 1;
+  bool runtime_was_online = 2;
+  bool runtime_disconnect_applied = 3;
+}
+
 message BeginDaemonEnrollmentRequest {
   string enrollment_code = 1;
   string device_id = 2;
@@ -114,4 +130,11 @@ service EnrollmentService {
   rpc ListAgentCandidates(ListAgentCandidatesRequest) returns (ListAgentCandidatesResponse);
   rpc BeginAgentTicket(BeginAgentTicketRequest) returns (IdentityChallenge);
   rpc IssueAgentTicket(IssueAgentTicketRequest) returns (IssueAgentTicketResponse);
+}
+
+// DaemonManagementService 是登录用户管理自己 daemon 的 API；实现必须从 session 推导账号。
+service DaemonManagementService {
+  rpc CreateMyEnrollment(CreateMyDaemonEnrollmentRequest) returns (CreateDaemonEnrollmentResponse);
+  rpc ListMyDaemons(ListMyDaemonsRequest) returns (ListMyDaemonsResponse);
+  rpc RevokeMyDaemon(RevokeMyDaemonRequest) returns (RevokeMyDaemonResponse);
 }

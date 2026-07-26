@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/enrollment.proto.
  */
 export const file_cloud_v1_enrollment: GenFile = /*@__PURE__*/
-  fileDesc("ChljbG91ZC92MS9lbnJvbGxtZW50LnByb3RvEg9tdXh2aWEuY2xvdWQudjEikwIKDERhZW1vblJlY29yZBIRCglkYWVtb25faWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIUCgxhY2NvdW50X25hbWUYAyABKAkSFAoMZGlzcGxheV9uYW1lGAQgASgJEhEKCWRldmljZV9pZBgFIAEoCRIaChJkZXZpY2VfZmluZ2VycHJpbnQYBiABKAkSDwoHcmV2b2tlZBgHIAEoCBIQCghyZXZpc2lvbhgIIAEoBBIuCgpjcmVhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCK8AQoXRGFlbW9uUnVudGltZVByb2plY3Rpb24SDgoGb25saW5lGAEgASgIEg8KB2VkZ2VfaWQYAiABKAkSEQoJZWRnZV9uYW1lGAMgASgJEhMKC2VkZ2VfcmVnaW9uGAQgASgJEg8KB2Jvb3RfaWQYBSABKAkSFQoNY29ubmVjdGlvbl9pZBgGIAEoCRISCgpnZW5lcmF0aW9uGAcgASgEEhwKFGVkZ2VfcHVibGljX2VuZHBvaW50GAggASgJInkKDU1hbmFnZWREYWVtb24SLQoGZGFlbW9uGAEgASgLMh0ubXV4dmlhLmNsb3VkLnYxLkRhZW1vblJlY29yZBI5CgdydW50aW1lGAIgASgLMigubXV4dmlhLmNsb3VkLnYxLkRhZW1vblJ1bnRpbWVQcm9qZWN0aW9uIl4KHUNyZWF0ZURhZW1vbkVucm9sbG1lbnRSZXF1ZXN0EhIKCmFjY291bnRfaWQYASABKAkSFAoMYWNjb3VudF9uYW1lGAIgASgJEhMKC2RhZW1vbl9uYW1lGAMgASgJIpUBCh5DcmVhdGVEYWVtb25FbnJvbGxtZW50UmVzcG9uc2USEgoKYWNjb3VudF9pZBgBIAEoCRIXCg9lbnJvbGxtZW50X2NvZGUYAiABKAkSLgoKZXhwaXJlc19hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFgoOZW5yb2xsX2NvbW1hbmQYBCABKAkiFAoSTGlzdERhZW1vbnNSZXF1ZXN0IkYKE0xpc3REYWVtb25zUmVzcG9uc2USLwoHZGFlbW9ucxgBIAMoCzIeLm11eHZpYS5jbG91ZC52MS5NYW5hZ2VkRGFlbW9uIoEBChxCZWdpbkRhZW1vbkVucm9sbG1lbnRSZXF1ZXN0EhcKD2Vucm9sbG1lbnRfY29kZRgBIAEoCRIRCglkZXZpY2VfaWQYAiABKAkSGgoSZGV2aWNlX2ZpbmdlcnByaW50GAMgASgJEhkKEWRldmljZV9wdWJsaWNfa2V5GAQgASgMImwKEUlkZW50aXR5Q2hhbGxlbmdlEhQKDGNoYWxsZW5nZV9pZBgBIAEoCRIRCgljaGFsbGVuZ2UYAiABKAwSLgoKZXhwaXJlc19hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiTQofQ29tcGxldGVEYWVtb25FbnJvbGxtZW50UmVxdWVzdBIUCgxjaGFsbGVuZ2VfaWQYASABKAkSFAoMZGV2aWNlX3Byb29mGAIgASgMIlEKIENvbXBsZXRlRGFlbW9uRW5yb2xsbWVudFJlc3BvbnNlEi0KBmRhZW1vbhgBIAEoCzIdLm11eHZpYS5jbG91ZC52MS5EYWVtb25SZWNvcmQiSQoaTGlzdEFnZW50Q2FuZGlkYXRlc1JlcXVlc3QSEQoJZGFlbW9uX2lkGAEgASgJEhgKEHByZWZlcnJlZF9yZWdpb24YAiABKAkisgEKDUNhbmRpZGF0ZUVkZ2USDwoHZWRnZV9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEg4KBnJlZ2lvbhgDIAEoCRIXCg9wdWJsaWNfZW5kcG9pbnQYBCABKAkSEwoLc2VydmVyX25hbWUYBSABKAkSGgoSY2FfY2VydGlmaWNhdGVfcGVtGAYgASgMEhAKCGNhcGFjaXR5GAcgASgEEhYKDmN1cnJlbnRfYWdlbnRzGAggASgEIlEKG0xpc3RBZ2VudENhbmRpZGF0ZXNSZXNwb25zZRIyCgpjYW5kaWRhdGVzGAEgAygLMh4ubXV4dmlhLmNsb3VkLnYxLkNhbmRpZGF0ZUVkZ2UiPQoXQmVnaW5BZ2VudFRpY2tldFJlcXVlc3QSEQoJZGFlbW9uX2lkGAEgASgJEg8KB2VkZ2VfaWQYAiABKAkiRQoXSXNzdWVBZ2VudFRpY2tldFJlcXVlc3QSFAoMY2hhbGxlbmdlX2lkGAEgASgJEhQKDGRldmljZV9wcm9vZhgCIAEoDCJ/ChhJc3N1ZUFnZW50VGlja2V0UmVzcG9uc2USNQoMYWdlbnRfdGlja2V0GAEgASgLMh8ubXV4dmlhLmNsb3VkLnYxLlNpZ25lZEVudmVsb3BlEiwKBGVkZ2UYAiABKAsyHi5tdXh2aWEuY2xvdWQudjEuQ2FuZGlkYXRlRWRnZTK9BAoRRW5yb2xsbWVudFNlcnZpY2USagoVQmVnaW5EYWVtb25FbnJvbGxtZW50Ei0ubXV4dmlhLmNsb3VkLnYxLkJlZ2luRGFlbW9uRW5yb2xsbWVudFJlcXVlc3QaIi5tdXh2aWEuY2xvdWQudjEuSWRlbnRpdHlDaGFsbGVuZ2USfwoYQ29tcGxldGVEYWVtb25FbnJvbGxtZW50EjAubXV4dmlhLmNsb3VkLnYxLkNvbXBsZXRlRGFlbW9uRW5yb2xsbWVudFJlcXVlc3QaMS5tdXh2aWEuY2xvdWQudjEuQ29tcGxldGVEYWVtb25FbnJvbGxtZW50UmVzcG9uc2UScAoTTGlzdEFnZW50Q2FuZGlkYXRlcxIrLm11eHZpYS5jbG91ZC52MS5MaXN0QWdlbnRDYW5kaWRhdGVzUmVxdWVzdBosLm11eHZpYS5jbG91ZC52MS5MaXN0QWdlbnRDYW5kaWRhdGVzUmVzcG9uc2USYAoQQmVnaW5BZ2VudFRpY2tldBIoLm11eHZpYS5jbG91ZC52MS5CZWdpbkFnZW50VGlja2V0UmVxdWVzdBoiLm11eHZpYS5jbG91ZC52MS5JZGVudGl0eUNoYWxsZW5nZRJnChBJc3N1ZUFnZW50VGlja2V0EigubXV4dmlhLmNsb3VkLnYxLklzc3VlQWdlbnRUaWNrZXRSZXF1ZXN0GikubXV4dmlhLmNsb3VkLnYxLklzc3VlQWdlbnRUaWNrZXRSZXNwb25zZUIxWi9naXRodWIuY29tL211eHZpYS9tdXh2aWEvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_cloud_v1_common, file_google_protobuf_timestamp]);
+  fileDesc("ChljbG91ZC92MS9lbnJvbGxtZW50LnByb3RvEg9tdXh2aWEuY2xvdWQudjEikwIKDERhZW1vblJlY29yZBIRCglkYWVtb25faWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIUCgxhY2NvdW50X25hbWUYAyABKAkSFAoMZGlzcGxheV9uYW1lGAQgASgJEhEKCWRldmljZV9pZBgFIAEoCRIaChJkZXZpY2VfZmluZ2VycHJpbnQYBiABKAkSDwoHcmV2b2tlZBgHIAEoCBIQCghyZXZpc2lvbhgIIAEoBBIuCgpjcmVhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCK8AQoXRGFlbW9uUnVudGltZVByb2plY3Rpb24SDgoGb25saW5lGAEgASgIEg8KB2VkZ2VfaWQYAiABKAkSEQoJZWRnZV9uYW1lGAMgASgJEhMKC2VkZ2VfcmVnaW9uGAQgASgJEg8KB2Jvb3RfaWQYBSABKAkSFQoNY29ubmVjdGlvbl9pZBgGIAEoCRISCgpnZW5lcmF0aW9uGAcgASgEEhwKFGVkZ2VfcHVibGljX2VuZHBvaW50GAggASgJInkKDU1hbmFnZWREYWVtb24SLQoGZGFlbW9uGAEgASgLMh0ubXV4dmlhLmNsb3VkLnYxLkRhZW1vblJlY29yZBI5CgdydW50aW1lGAIgASgLMigubXV4dmlhLmNsb3VkLnYxLkRhZW1vblJ1bnRpbWVQcm9qZWN0aW9uIl4KHUNyZWF0ZURhZW1vbkVucm9sbG1lbnRSZXF1ZXN0EhIKCmFjY291bnRfaWQYASABKAkSFAoMYWNjb3VudF9uYW1lGAIgASgJEhMKC2RhZW1vbl9uYW1lGAMgASgJIpUBCh5DcmVhdGVEYWVtb25FbnJvbGxtZW50UmVzcG9uc2USEgoKYWNjb3VudF9pZBgBIAEoCRIXCg9lbnJvbGxtZW50X2NvZGUYAiABKAkSLgoKZXhwaXJlc19hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFgoOZW5yb2xsX2NvbW1hbmQYBCABKAkiFAoSTGlzdERhZW1vbnNSZXF1ZXN0IkYKE0xpc3REYWVtb25zUmVzcG9uc2USLwoHZGFlbW9ucxgBIAMoCzIeLm11eHZpYS5jbG91ZC52MS5NYW5hZ2VkRGFlbW9uIjYKH0NyZWF0ZU15RGFlbW9uRW5yb2xsbWVudFJlcXVlc3QSEwoLZGFlbW9uX25hbWUYASABKAkiFgoUTGlzdE15RGFlbW9uc1JlcXVlc3QiSAoVTGlzdE15RGFlbW9uc1Jlc3BvbnNlEi8KB2RhZW1vbnMYASADKAsyHi5tdXh2aWEuY2xvdWQudjEuTWFuYWdlZERhZW1vbiJVChVSZXZva2VNeURhZW1vblJlcXVlc3QSEQoJZGFlbW9uX2lkGAEgASgJEhkKEWV4cGVjdGVkX3JldmlzaW9uGAIgASgEEg4KBnJlYXNvbhgDIAEoCSKHAQoWUmV2b2tlTXlEYWVtb25SZXNwb25zZRItCgZkYWVtb24YASABKAsyHS5tdXh2aWEuY2xvdWQudjEuRGFlbW9uUmVjb3JkEhoKEnJ1bnRpbWVfd2FzX29ubGluZRgCIAEoCBIiChpydW50aW1lX2Rpc2Nvbm5lY3RfYXBwbGllZBgDIAEoCCKBAQocQmVnaW5EYWVtb25FbnJvbGxtZW50UmVxdWVzdBIXCg9lbnJvbGxtZW50X2NvZGUYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEhoKEmRldmljZV9maW5nZXJwcmludBgDIAEoCRIZChFkZXZpY2VfcHVibGljX2tleRgEIAEoDCJsChFJZGVudGl0eUNoYWxsZW5nZRIUCgxjaGFsbGVuZ2VfaWQYASABKAkSEQoJY2hhbGxlbmdlGAIgASgMEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIk0KH0NvbXBsZXRlRGFlbW9uRW5yb2xsbWVudFJlcXVlc3QSFAoMY2hhbGxlbmdlX2lkGAEgASgJEhQKDGRldmljZV9wcm9vZhgCIAEoDCJRCiBDb21wbGV0ZURhZW1vbkVucm9sbG1lbnRSZXNwb25zZRItCgZkYWVtb24YASABKAsyHS5tdXh2aWEuY2xvdWQudjEuRGFlbW9uUmVjb3JkIkkKGkxpc3RBZ2VudENhbmRpZGF0ZXNSZXF1ZXN0EhEKCWRhZW1vbl9pZBgBIAEoCRIYChBwcmVmZXJyZWRfcmVnaW9uGAIgASgJIrIBCg1DYW5kaWRhdGVFZGdlEg8KB2VkZ2VfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZyZWdpb24YAyABKAkSFwoPcHVibGljX2VuZHBvaW50GAQgASgJEhMKC3NlcnZlcl9uYW1lGAUgASgJEhoKEmNhX2NlcnRpZmljYXRlX3BlbRgGIAEoDBIQCghjYXBhY2l0eRgHIAEoBBIWCg5jdXJyZW50X2FnZW50cxgIIAEoBCJRChtMaXN0QWdlbnRDYW5kaWRhdGVzUmVzcG9uc2USMgoKY2FuZGlkYXRlcxgBIAMoCzIeLm11eHZpYS5jbG91ZC52MS5DYW5kaWRhdGVFZGdlIj0KF0JlZ2luQWdlbnRUaWNrZXRSZXF1ZXN0EhEKCWRhZW1vbl9pZBgBIAEoCRIPCgdlZGdlX2lkGAIgASgJIkUKF0lzc3VlQWdlbnRUaWNrZXRSZXF1ZXN0EhQKDGNoYWxsZW5nZV9pZBgBIAEoCRIUCgxkZXZpY2VfcHJvb2YYAiABKAwifwoYSXNzdWVBZ2VudFRpY2tldFJlc3BvbnNlEjUKDGFnZW50X3RpY2tldBgBIAEoCzIfLm11eHZpYS5jbG91ZC52MS5TaWduZWRFbnZlbG9wZRIsCgRlZGdlGAIgASgLMh4ubXV4dmlhLmNsb3VkLnYxLkNhbmRpZGF0ZUVkZ2UyvQQKEUVucm9sbG1lbnRTZXJ2aWNlEmoKFUJlZ2luRGFlbW9uRW5yb2xsbWVudBItLm11eHZpYS5jbG91ZC52MS5CZWdpbkRhZW1vbkVucm9sbG1lbnRSZXF1ZXN0GiIubXV4dmlhLmNsb3VkLnYxLklkZW50aXR5Q2hhbGxlbmdlEn8KGENvbXBsZXRlRGFlbW9uRW5yb2xsbWVudBIwLm11eHZpYS5jbG91ZC52MS5Db21wbGV0ZURhZW1vbkVucm9sbG1lbnRSZXF1ZXN0GjEubXV4dmlhLmNsb3VkLnYxLkNvbXBsZXRlRGFlbW9uRW5yb2xsbWVudFJlc3BvbnNlEnAKE0xpc3RBZ2VudENhbmRpZGF0ZXMSKy5tdXh2aWEuY2xvdWQudjEuTGlzdEFnZW50Q2FuZGlkYXRlc1JlcXVlc3QaLC5tdXh2aWEuY2xvdWQudjEuTGlzdEFnZW50Q2FuZGlkYXRlc1Jlc3BvbnNlEmAKEEJlZ2luQWdlbnRUaWNrZXQSKC5tdXh2aWEuY2xvdWQudjEuQmVnaW5BZ2VudFRpY2tldFJlcXVlc3QaIi5tdXh2aWEuY2xvdWQudjEuSWRlbnRpdHlDaGFsbGVuZ2USZwoQSXNzdWVBZ2VudFRpY2tldBIoLm11eHZpYS5jbG91ZC52MS5Jc3N1ZUFnZW50VGlja2V0UmVxdWVzdBopLm11eHZpYS5jbG91ZC52MS5Jc3N1ZUFnZW50VGlja2V0UmVzcG9uc2Uy1QIKF0RhZW1vbk1hbmFnZW1lbnRTZXJ2aWNlEncKEkNyZWF0ZU15RW5yb2xsbWVudBIwLm11eHZpYS5jbG91ZC52MS5DcmVhdGVNeURhZW1vbkVucm9sbG1lbnRSZXF1ZXN0Gi8ubXV4dmlhLmNsb3VkLnYxLkNyZWF0ZURhZW1vbkVucm9sbG1lbnRSZXNwb25zZRJeCg1MaXN0TXlEYWVtb25zEiUubXV4dmlhLmNsb3VkLnYxLkxpc3RNeURhZW1vbnNSZXF1ZXN0GiYubXV4dmlhLmNsb3VkLnYxLkxpc3RNeURhZW1vbnNSZXNwb25zZRJhCg5SZXZva2VNeURhZW1vbhImLm11eHZpYS5jbG91ZC52MS5SZXZva2VNeURhZW1vblJlcXVlc3QaJy5tdXh2aWEuY2xvdWQudjEuUmV2b2tlTXlEYWVtb25SZXNwb25zZUIxWi9naXRodWIuY29tL211eHZpYS9tdXh2aWEvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_cloud_v1_common, file_google_protobuf_timestamp]);
 
 /**
  * DaemonRecord 是 Controller 持久 daemon identity 的公开投影，不包含私钥或实时拓扑。
@@ -246,6 +246,109 @@ export const ListDaemonsResponseSchema: GenMessage<ListDaemonsResponse> = /*@__P
   messageDesc(file_cloud_v1_enrollment, 6);
 
 /**
+ * CreateMyDaemonEnrollmentRequest 只允许用户命名 daemon；账号来自认证 session。
+ *
+ * @generated from message muxvia.cloud.v1.CreateMyDaemonEnrollmentRequest
+ */
+export type CreateMyDaemonEnrollmentRequest = Message<"muxvia.cloud.v1.CreateMyDaemonEnrollmentRequest"> & {
+  /**
+   * @generated from field: string daemon_name = 1;
+   */
+  daemonName: string;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.CreateMyDaemonEnrollmentRequest.
+ * Use `create(CreateMyDaemonEnrollmentRequestSchema)` to create a new message.
+ */
+export const CreateMyDaemonEnrollmentRequestSchema: GenMessage<CreateMyDaemonEnrollmentRequest> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 7);
+
+/**
+ * @generated from message muxvia.cloud.v1.ListMyDaemonsRequest
+ */
+export type ListMyDaemonsRequest = Message<"muxvia.cloud.v1.ListMyDaemonsRequest"> & {
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.ListMyDaemonsRequest.
+ * Use `create(ListMyDaemonsRequestSchema)` to create a new message.
+ */
+export const ListMyDaemonsRequestSchema: GenMessage<ListMyDaemonsRequest> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 8);
+
+/**
+ * @generated from message muxvia.cloud.v1.ListMyDaemonsResponse
+ */
+export type ListMyDaemonsResponse = Message<"muxvia.cloud.v1.ListMyDaemonsResponse"> & {
+  /**
+   * @generated from field: repeated muxvia.cloud.v1.ManagedDaemon daemons = 1;
+   */
+  daemons: ManagedDaemon[];
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.ListMyDaemonsResponse.
+ * Use `create(ListMyDaemonsResponseSchema)` to create a new message.
+ */
+export const ListMyDaemonsResponseSchema: GenMessage<ListMyDaemonsResponse> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 9);
+
+/**
+ * @generated from message muxvia.cloud.v1.RevokeMyDaemonRequest
+ */
+export type RevokeMyDaemonRequest = Message<"muxvia.cloud.v1.RevokeMyDaemonRequest"> & {
+  /**
+   * @generated from field: string daemon_id = 1;
+   */
+  daemonId: string;
+
+  /**
+   * @generated from field: uint64 expected_revision = 2;
+   */
+  expectedRevision: bigint;
+
+  /**
+   * @generated from field: string reason = 3;
+   */
+  reason: string;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.RevokeMyDaemonRequest.
+ * Use `create(RevokeMyDaemonRequestSchema)` to create a new message.
+ */
+export const RevokeMyDaemonRequestSchema: GenMessage<RevokeMyDaemonRequest> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 10);
+
+/**
+ * @generated from message muxvia.cloud.v1.RevokeMyDaemonResponse
+ */
+export type RevokeMyDaemonResponse = Message<"muxvia.cloud.v1.RevokeMyDaemonResponse"> & {
+  /**
+   * @generated from field: muxvia.cloud.v1.DaemonRecord daemon = 1;
+   */
+  daemon?: DaemonRecord | undefined;
+
+  /**
+   * @generated from field: bool runtime_was_online = 2;
+   */
+  runtimeWasOnline: boolean;
+
+  /**
+   * @generated from field: bool runtime_disconnect_applied = 3;
+   */
+  runtimeDisconnectApplied: boolean;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.RevokeMyDaemonResponse.
+ * Use `create(RevokeMyDaemonResponseSchema)` to create a new message.
+ */
+export const RevokeMyDaemonResponseSchema: GenMessage<RevokeMyDaemonResponse> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_enrollment, 11);
+
+/**
  * @generated from message muxvia.cloud.v1.BeginDaemonEnrollmentRequest
  */
 export type BeginDaemonEnrollmentRequest = Message<"muxvia.cloud.v1.BeginDaemonEnrollmentRequest"> & {
@@ -275,7 +378,7 @@ export type BeginDaemonEnrollmentRequest = Message<"muxvia.cloud.v1.BeginDaemonE
  * Use `create(BeginDaemonEnrollmentRequestSchema)` to create a new message.
  */
 export const BeginDaemonEnrollmentRequestSchema: GenMessage<BeginDaemonEnrollmentRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 7);
+  messageDesc(file_cloud_v1_enrollment, 12);
 
 /**
  * @generated from message muxvia.cloud.v1.IdentityChallenge
@@ -302,7 +405,7 @@ export type IdentityChallenge = Message<"muxvia.cloud.v1.IdentityChallenge"> & {
  * Use `create(IdentityChallengeSchema)` to create a new message.
  */
 export const IdentityChallengeSchema: GenMessage<IdentityChallenge> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 8);
+  messageDesc(file_cloud_v1_enrollment, 13);
 
 /**
  * @generated from message muxvia.cloud.v1.CompleteDaemonEnrollmentRequest
@@ -324,7 +427,7 @@ export type CompleteDaemonEnrollmentRequest = Message<"muxvia.cloud.v1.CompleteD
  * Use `create(CompleteDaemonEnrollmentRequestSchema)` to create a new message.
  */
 export const CompleteDaemonEnrollmentRequestSchema: GenMessage<CompleteDaemonEnrollmentRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 9);
+  messageDesc(file_cloud_v1_enrollment, 14);
 
 /**
  * @generated from message muxvia.cloud.v1.CompleteDaemonEnrollmentResponse
@@ -341,7 +444,7 @@ export type CompleteDaemonEnrollmentResponse = Message<"muxvia.cloud.v1.Complete
  * Use `create(CompleteDaemonEnrollmentResponseSchema)` to create a new message.
  */
 export const CompleteDaemonEnrollmentResponseSchema: GenMessage<CompleteDaemonEnrollmentResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 10);
+  messageDesc(file_cloud_v1_enrollment, 15);
 
 /**
  * @generated from message muxvia.cloud.v1.ListAgentCandidatesRequest
@@ -363,7 +466,7 @@ export type ListAgentCandidatesRequest = Message<"muxvia.cloud.v1.ListAgentCandi
  * Use `create(ListAgentCandidatesRequestSchema)` to create a new message.
  */
 export const ListAgentCandidatesRequestSchema: GenMessage<ListAgentCandidatesRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 11);
+  messageDesc(file_cloud_v1_enrollment, 16);
 
 /**
  * @generated from message muxvia.cloud.v1.CandidateEdge
@@ -415,7 +518,7 @@ export type CandidateEdge = Message<"muxvia.cloud.v1.CandidateEdge"> & {
  * Use `create(CandidateEdgeSchema)` to create a new message.
  */
 export const CandidateEdgeSchema: GenMessage<CandidateEdge> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 12);
+  messageDesc(file_cloud_v1_enrollment, 17);
 
 /**
  * @generated from message muxvia.cloud.v1.ListAgentCandidatesResponse
@@ -432,7 +535,7 @@ export type ListAgentCandidatesResponse = Message<"muxvia.cloud.v1.ListAgentCand
  * Use `create(ListAgentCandidatesResponseSchema)` to create a new message.
  */
 export const ListAgentCandidatesResponseSchema: GenMessage<ListAgentCandidatesResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 13);
+  messageDesc(file_cloud_v1_enrollment, 18);
 
 /**
  * @generated from message muxvia.cloud.v1.BeginAgentTicketRequest
@@ -454,7 +557,7 @@ export type BeginAgentTicketRequest = Message<"muxvia.cloud.v1.BeginAgentTicketR
  * Use `create(BeginAgentTicketRequestSchema)` to create a new message.
  */
 export const BeginAgentTicketRequestSchema: GenMessage<BeginAgentTicketRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 14);
+  messageDesc(file_cloud_v1_enrollment, 19);
 
 /**
  * @generated from message muxvia.cloud.v1.IssueAgentTicketRequest
@@ -476,7 +579,7 @@ export type IssueAgentTicketRequest = Message<"muxvia.cloud.v1.IssueAgentTicketR
  * Use `create(IssueAgentTicketRequestSchema)` to create a new message.
  */
 export const IssueAgentTicketRequestSchema: GenMessage<IssueAgentTicketRequest> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 15);
+  messageDesc(file_cloud_v1_enrollment, 20);
 
 /**
  * @generated from message muxvia.cloud.v1.IssueAgentTicketResponse
@@ -498,7 +601,7 @@ export type IssueAgentTicketResponse = Message<"muxvia.cloud.v1.IssueAgentTicket
  * Use `create(IssueAgentTicketResponseSchema)` to create a new message.
  */
 export const IssueAgentTicketResponseSchema: GenMessage<IssueAgentTicketResponse> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_enrollment, 16);
+  messageDesc(file_cloud_v1_enrollment, 21);
 
 /**
  * EnrollmentService 是 daemon 注册和短期 AgentTicket 的唯一公共 API。
@@ -548,3 +651,36 @@ export const EnrollmentService: GenService<{
   },
 }> = /*@__PURE__*/
   serviceDesc(file_cloud_v1_enrollment, 0);
+
+/**
+ * DaemonManagementService 是登录用户管理自己 daemon 的 API；实现必须从 session 推导账号。
+ *
+ * @generated from service muxvia.cloud.v1.DaemonManagementService
+ */
+export const DaemonManagementService: GenService<{
+  /**
+   * @generated from rpc muxvia.cloud.v1.DaemonManagementService.CreateMyEnrollment
+   */
+  createMyEnrollment: {
+    methodKind: "unary";
+    input: typeof CreateMyDaemonEnrollmentRequestSchema;
+    output: typeof CreateDaemonEnrollmentResponseSchema;
+  },
+  /**
+   * @generated from rpc muxvia.cloud.v1.DaemonManagementService.ListMyDaemons
+   */
+  listMyDaemons: {
+    methodKind: "unary";
+    input: typeof ListMyDaemonsRequestSchema;
+    output: typeof ListMyDaemonsResponseSchema;
+  },
+  /**
+   * @generated from rpc muxvia.cloud.v1.DaemonManagementService.RevokeMyDaemon
+   */
+  revokeMyDaemon: {
+    methodKind: "unary";
+    input: typeof RevokeMyDaemonRequestSchema;
+    output: typeof RevokeMyDaemonResponseSchema;
+  },
+}> = /*@__PURE__*/
+  serviceDesc(file_cloud_v1_enrollment, 1);

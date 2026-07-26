@@ -248,6 +248,29 @@ message GetAccountCommerceResponse {
   UsagePeriodProjection usage = 5;
 }
 
+// CreateMyOrderRequest 不接受 account_id 或 provider；两者由认证 session 和部署模式决定。
+message CreateMyOrderRequest {
+  string plan_id = 1;
+  uint64 plan_version = 2;
+  string idempotency_key = 3;
+  SubscriptionTransition requested_transition = 4;
+  bool yearly = 5;
+}
+
+message GetMyCommerceRequest {}
+
+// ChangeMySubscriptionRequest 只承载用户可执行的取消到期和恢复动作。
+message ChangeMySubscriptionRequest {
+  SubscriptionTransition transition = 1;
+  uint64 expected_revision = 2;
+}
+
+// CompleteDevelopmentPaymentRequest 仅在显式 Development 支付模式下可用。
+message CompleteDevelopmentPaymentRequest {
+  string order_id = 1;
+  string payment_attempt_id = 2;
+}
+
 // CommerceService 拥有套餐、订单、支付、订阅和 Entitlement 状态机。
 service CommerceService {
   rpc ListPlans(ListPlansRequest) returns (ListPlansResponse);
@@ -257,4 +280,8 @@ service CommerceService {
   rpc ApplyPaymentEvent(ApplyPaymentEventRequest) returns (ApplyPaymentEventResponse);
   rpc TransitionSubscription(TransitionSubscriptionRequest) returns (TransitionSubscriptionResponse);
   rpc GetAccountCommerce(GetAccountCommerceRequest) returns (GetAccountCommerceResponse);
+  rpc CreateMyOrder(CreateMyOrderRequest) returns (CreateOrderResponse);
+  rpc GetMyCommerce(GetMyCommerceRequest) returns (GetAccountCommerceResponse);
+  rpc ChangeMySubscription(ChangeMySubscriptionRequest) returns (TransitionSubscriptionResponse);
+  rpc CompleteDevelopmentPayment(CompleteDevelopmentPaymentRequest) returns (ApplyPaymentEventResponse);
 }

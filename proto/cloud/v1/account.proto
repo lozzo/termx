@@ -93,6 +93,29 @@ message VerifyRecentAuthenticationResponse {
   google.protobuf.Timestamp expires_at = 1;
 }
 
+// AccountSessionProjection 是用户可见的 session 元数据，不包含任何 token 摘要或原始 credential。
+message AccountSessionProjection {
+  string session_id = 1;
+  bool current = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp access_expires_at = 4;
+  google.protobuf.Timestamp refresh_expires_at = 5;
+  google.protobuf.Timestamp recent_auth_expires_at = 6;
+  uint64 revision = 7;
+}
+
+message ListAccountSessionsRequest {}
+message ListAccountSessionsResponse { repeated AccountSessionProjection sessions = 1; }
+
+message ChangeAccountPasswordRequest {
+  string current_password = 1;
+  string new_password = 2;
+}
+message ChangeAccountPasswordResponse { AccountProfile account = 1; }
+
+message RevokeAccountSessionRequest { string session_id = 1; }
+message RevokeAccountSessionResponse {}
+
 // AccountService 是账号、credential 和 Web session 的唯一公共应用 API。
 service AccountService {
   rpc Register(RegisterAccountRequest) returns (RegisterAccountResponse);
@@ -101,4 +124,7 @@ service AccountService {
   rpc Logout(LogoutAccountSessionRequest) returns (LogoutAccountSessionResponse);
   rpc GetCurrent(GetCurrentAccountRequest) returns (GetCurrentAccountResponse);
   rpc VerifyRecentAuthentication(VerifyRecentAuthenticationRequest) returns (VerifyRecentAuthenticationResponse);
+  rpc ListSessions(ListAccountSessionsRequest) returns (ListAccountSessionsResponse);
+  rpc ChangePassword(ChangeAccountPasswordRequest) returns (ChangeAccountPasswordResponse);
+  rpc RevokeSession(RevokeAccountSessionRequest) returns (RevokeAccountSessionResponse);
 }

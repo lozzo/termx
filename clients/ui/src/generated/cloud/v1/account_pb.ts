@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/account.proto.
  */
 export const file_cloud_v1_account: GenFile = /*@__PURE__*/
-  fileDesc("ChZjbG91ZC92MS9hY2NvdW50LnByb3RvEg9tdXh2aWEuY2xvdWQudjEi6QEKDkFjY291bnRQcm9maWxlEhIKCmFjY291bnRfaWQYASABKAkSDQoFZW1haWwYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJEiwKBXN0YXRlGAQgASgOMh0ubXV4dmlhLmNsb3VkLnYxLkFjY291bnRTdGF0ZRIQCghyZXZpc2lvbhgFIAEoBBIuCgpjcmVhdGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLeAQoYQWNjb3VudFNlc3Npb25DcmVkZW50aWFsEhIKCnNlc3Npb25faWQYASABKAkSFAoMYWNjZXNzX3Rva2VuGAIgASgMEhUKDXJlZnJlc2hfdG9rZW4YAyABKAwSNQoRYWNjZXNzX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjYKEnJlZnJlc2hfZXhwaXJlc19hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKY3NyZl90b2tlbhgGIAEoDCJPChZSZWdpc3RlckFjY291bnRSZXF1ZXN0Eg0KBWVtYWlsGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCSKHAQoXUmVnaXN0ZXJBY2NvdW50UmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLm11eHZpYS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZRI6CgdzZXNzaW9uGAIgASgLMikubXV4dmlhLmNsb3VkLnYxLkFjY291bnRTZXNzaW9uQ3JlZGVudGlhbCI2ChNMb2dpbkFjY291bnRSZXF1ZXN0Eg0KBWxvZ2luGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJIrEBChRMb2dpbkFjY291bnRSZXNwb25zZRIwCgdhY2NvdW50GAEgASgLMh8ubXV4dmlhLmNsb3VkLnYxLkFjY291bnRQcm9maWxlEisKBXJvbGVzGAIgAygOMhwubXV4dmlhLmNsb3VkLnYxLkFjY291bnRSb2xlEjoKB3Nlc3Npb24YAyABKAsyKS5tdXh2aWEuY2xvdWQudjEuQWNjb3VudFNlc3Npb25DcmVkZW50aWFsIjUKHFJlZnJlc2hBY2NvdW50U2Vzc2lvblJlcXVlc3QSFQoNcmVmcmVzaF90b2tlbhgBIAEoDCK6AQodUmVmcmVzaEFjY291bnRTZXNzaW9uUmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLm11eHZpYS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZRIrCgVyb2xlcxgCIAMoDjIcLm11eHZpYS5jbG91ZC52MS5BY2NvdW50Um9sZRI6CgdzZXNzaW9uGAMgASgLMikubXV4dmlhLmNsb3VkLnYxLkFjY291bnRTZXNzaW9uQ3JlZGVudGlhbCJHChtMb2dvdXRBY2NvdW50U2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIUCgxhbGxfc2Vzc2lvbnMYAiABKAgiHgocTG9nb3V0QWNjb3VudFNlc3Npb25SZXNwb25zZSIaChhHZXRDdXJyZW50QWNjb3VudFJlcXVlc3QitgEKGUdldEN1cnJlbnRBY2NvdW50UmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLm11eHZpYS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZRIrCgVyb2xlcxgCIAMoDjIcLm11eHZpYS5jbG91ZC52MS5BY2NvdW50Um9sZRI6ChZyZWNlbnRfYXV0aF9leHBpcmVzX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI1CiFWZXJpZnlSZWNlbnRBdXRoZW50aWNhdGlvblJlcXVlc3QSEAoIcGFzc3dvcmQYASABKAkiVAoiVmVyaWZ5UmVjZW50QXV0aGVudGljYXRpb25SZXNwb25zZRIuCgpleHBpcmVzX2F0GAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCpjCgxBY2NvdW50U3RhdGUSHQoZQUNDT1VOVF9TVEFURV9VTlNQRUNJRklFRBAAEhgKFEFDQ09VTlRfU1RBVEVfQUNUSVZFEAESGgoWQUNDT1VOVF9TVEFURV9ESVNBQkxFRBACKnUKC0FjY291bnRSb2xlEhwKGEFDQ09VTlRfUk9MRV9VTlNQRUNJRklFRBAAEhUKEUFDQ09VTlRfUk9MRV9VU0VSEAESGQoVQUNDT1VOVF9ST0xFX09QRVJBVE9SEAISFgoSQUNDT1VOVF9ST0xFX0FETUlOEAMygwUKDkFjY291bnRTZXJ2aWNlEl0KCFJlZ2lzdGVyEicubXV4dmlhLmNsb3VkLnYxLlJlZ2lzdGVyQWNjb3VudFJlcXVlc3QaKC5tdXh2aWEuY2xvdWQudjEuUmVnaXN0ZXJBY2NvdW50UmVzcG9uc2USVAoFTG9naW4SJC5tdXh2aWEuY2xvdWQudjEuTG9naW5BY2NvdW50UmVxdWVzdBolLm11eHZpYS5jbG91ZC52MS5Mb2dpbkFjY291bnRSZXNwb25zZRJoCgdSZWZyZXNoEi0ubXV4dmlhLmNsb3VkLnYxLlJlZnJlc2hBY2NvdW50U2Vzc2lvblJlcXVlc3QaLi5tdXh2aWEuY2xvdWQudjEuUmVmcmVzaEFjY291bnRTZXNzaW9uUmVzcG9uc2USZQoGTG9nb3V0EiwubXV4dmlhLmNsb3VkLnYxLkxvZ291dEFjY291bnRTZXNzaW9uUmVxdWVzdBotLm11eHZpYS5jbG91ZC52MS5Mb2dvdXRBY2NvdW50U2Vzc2lvblJlc3BvbnNlEmMKCkdldEN1cnJlbnQSKS5tdXh2aWEuY2xvdWQudjEuR2V0Q3VycmVudEFjY291bnRSZXF1ZXN0GioubXV4dmlhLmNsb3VkLnYxLkdldEN1cnJlbnRBY2NvdW50UmVzcG9uc2UShQEKGlZlcmlmeVJlY2VudEF1dGhlbnRpY2F0aW9uEjIubXV4dmlhLmNsb3VkLnYxLlZlcmlmeVJlY2VudEF1dGhlbnRpY2F0aW9uUmVxdWVzdBozLm11eHZpYS5jbG91ZC52MS5WZXJpZnlSZWNlbnRBdXRoZW50aWNhdGlvblJlc3BvbnNlQjFaL2dpdGh1Yi5jb20vbXV4dmlhL211eHZpYS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("ChZjbG91ZC92MS9hY2NvdW50LnByb3RvEg9tdXh2aWEuY2xvdWQudjEi6QEKDkFjY291bnRQcm9maWxlEhIKCmFjY291bnRfaWQYASABKAkSDQoFZW1haWwYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJEiwKBXN0YXRlGAQgASgOMh0ubXV4dmlhLmNsb3VkLnYxLkFjY291bnRTdGF0ZRIQCghyZXZpc2lvbhgFIAEoBBIuCgpjcmVhdGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLeAQoYQWNjb3VudFNlc3Npb25DcmVkZW50aWFsEhIKCnNlc3Npb25faWQYASABKAkSFAoMYWNjZXNzX3Rva2VuGAIgASgMEhUKDXJlZnJlc2hfdG9rZW4YAyABKAwSNQoRYWNjZXNzX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjYKEnJlZnJlc2hfZXhwaXJlc19hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKY3NyZl90b2tlbhgGIAEoDCJPChZSZWdpc3RlckFjY291bnRSZXF1ZXN0Eg0KBWVtYWlsGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCSKHAQoXUmVnaXN0ZXJBY2NvdW50UmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLm11eHZpYS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZRI6CgdzZXNzaW9uGAIgASgLMikubXV4dmlhLmNsb3VkLnYxLkFjY291bnRTZXNzaW9uQ3JlZGVudGlhbCI2ChNMb2dpbkFjY291bnRSZXF1ZXN0Eg0KBWxvZ2luGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJIrEBChRMb2dpbkFjY291bnRSZXNwb25zZRIwCgdhY2NvdW50GAEgASgLMh8ubXV4dmlhLmNsb3VkLnYxLkFjY291bnRQcm9maWxlEisKBXJvbGVzGAIgAygOMhwubXV4dmlhLmNsb3VkLnYxLkFjY291bnRSb2xlEjoKB3Nlc3Npb24YAyABKAsyKS5tdXh2aWEuY2xvdWQudjEuQWNjb3VudFNlc3Npb25DcmVkZW50aWFsIjUKHFJlZnJlc2hBY2NvdW50U2Vzc2lvblJlcXVlc3QSFQoNcmVmcmVzaF90b2tlbhgBIAEoDCK6AQodUmVmcmVzaEFjY291bnRTZXNzaW9uUmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLm11eHZpYS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZRIrCgVyb2xlcxgCIAMoDjIcLm11eHZpYS5jbG91ZC52MS5BY2NvdW50Um9sZRI6CgdzZXNzaW9uGAMgASgLMikubXV4dmlhLmNsb3VkLnYxLkFjY291bnRTZXNzaW9uQ3JlZGVudGlhbCJHChtMb2dvdXRBY2NvdW50U2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIUCgxhbGxfc2Vzc2lvbnMYAiABKAgiHgocTG9nb3V0QWNjb3VudFNlc3Npb25SZXNwb25zZSIaChhHZXRDdXJyZW50QWNjb3VudFJlcXVlc3QitgEKGUdldEN1cnJlbnRBY2NvdW50UmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLm11eHZpYS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZRIrCgVyb2xlcxgCIAMoDjIcLm11eHZpYS5jbG91ZC52MS5BY2NvdW50Um9sZRI6ChZyZWNlbnRfYXV0aF9leHBpcmVzX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI1CiFWZXJpZnlSZWNlbnRBdXRoZW50aWNhdGlvblJlcXVlc3QSEAoIcGFzc3dvcmQYASABKAkiVAoiVmVyaWZ5UmVjZW50QXV0aGVudGljYXRpb25SZXNwb25zZRIuCgpleHBpcmVzX2F0GAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKsAgoYQWNjb3VudFNlc3Npb25Qcm9qZWN0aW9uEhIKCnNlc3Npb25faWQYASABKAkSDwoHY3VycmVudBgCIAEoCBIuCgpjcmVhdGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI1ChFhY2Nlc3NfZXhwaXJlc19hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASNgoScmVmcmVzaF9leHBpcmVzX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI6ChZyZWNlbnRfYXV0aF9leHBpcmVzX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIQCghyZXZpc2lvbhgHIAEoBCIcChpMaXN0QWNjb3VudFNlc3Npb25zUmVxdWVzdCJaChtMaXN0QWNjb3VudFNlc3Npb25zUmVzcG9uc2USOwoIc2Vzc2lvbnMYASADKAsyKS5tdXh2aWEuY2xvdWQudjEuQWNjb3VudFNlc3Npb25Qcm9qZWN0aW9uIk4KHENoYW5nZUFjY291bnRQYXNzd29yZFJlcXVlc3QSGAoQY3VycmVudF9wYXNzd29yZBgBIAEoCRIUCgxuZXdfcGFzc3dvcmQYAiABKAkiUQodQ2hhbmdlQWNjb3VudFBhc3N3b3JkUmVzcG9uc2USMAoHYWNjb3VudBgBIAEoCzIfLm11eHZpYS5jbG91ZC52MS5BY2NvdW50UHJvZmlsZSIxChtSZXZva2VBY2NvdW50U2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIeChxSZXZva2VBY2NvdW50U2Vzc2lvblJlc3BvbnNlKmMKDEFjY291bnRTdGF0ZRIdChlBQ0NPVU5UX1NUQVRFX1VOU1BFQ0lGSUVEEAASGAoUQUNDT1VOVF9TVEFURV9BQ1RJVkUQARIaChZBQ0NPVU5UX1NUQVRFX0RJU0FCTEVEEAIqdQoLQWNjb3VudFJvbGUSHAoYQUNDT1VOVF9ST0xFX1VOU1BFQ0lGSUVEEAASFQoRQUNDT1VOVF9ST0xFX1VTRVIQARIZChVBQ0NPVU5UX1JPTEVfT1BFUkFUT1IQAhIWChJBQ0NPVU5UX1JPTEVfQURNSU4QAzLNBwoOQWNjb3VudFNlcnZpY2USXQoIUmVnaXN0ZXISJy5tdXh2aWEuY2xvdWQudjEuUmVnaXN0ZXJBY2NvdW50UmVxdWVzdBooLm11eHZpYS5jbG91ZC52MS5SZWdpc3RlckFjY291bnRSZXNwb25zZRJUCgVMb2dpbhIkLm11eHZpYS5jbG91ZC52MS5Mb2dpbkFjY291bnRSZXF1ZXN0GiUubXV4dmlhLmNsb3VkLnYxLkxvZ2luQWNjb3VudFJlc3BvbnNlEmgKB1JlZnJlc2gSLS5tdXh2aWEuY2xvdWQudjEuUmVmcmVzaEFjY291bnRTZXNzaW9uUmVxdWVzdBouLm11eHZpYS5jbG91ZC52MS5SZWZyZXNoQWNjb3VudFNlc3Npb25SZXNwb25zZRJlCgZMb2dvdXQSLC5tdXh2aWEuY2xvdWQudjEuTG9nb3V0QWNjb3VudFNlc3Npb25SZXF1ZXN0Gi0ubXV4dmlhLmNsb3VkLnYxLkxvZ291dEFjY291bnRTZXNzaW9uUmVzcG9uc2USYwoKR2V0Q3VycmVudBIpLm11eHZpYS5jbG91ZC52MS5HZXRDdXJyZW50QWNjb3VudFJlcXVlc3QaKi5tdXh2aWEuY2xvdWQudjEuR2V0Q3VycmVudEFjY291bnRSZXNwb25zZRKFAQoaVmVyaWZ5UmVjZW50QXV0aGVudGljYXRpb24SMi5tdXh2aWEuY2xvdWQudjEuVmVyaWZ5UmVjZW50QXV0aGVudGljYXRpb25SZXF1ZXN0GjMubXV4dmlhLmNsb3VkLnYxLlZlcmlmeVJlY2VudEF1dGhlbnRpY2F0aW9uUmVzcG9uc2USaQoMTGlzdFNlc3Npb25zEisubXV4dmlhLmNsb3VkLnYxLkxpc3RBY2NvdW50U2Vzc2lvbnNSZXF1ZXN0GiwubXV4dmlhLmNsb3VkLnYxLkxpc3RBY2NvdW50U2Vzc2lvbnNSZXNwb25zZRJvCg5DaGFuZ2VQYXNzd29yZBItLm11eHZpYS5jbG91ZC52MS5DaGFuZ2VBY2NvdW50UGFzc3dvcmRSZXF1ZXN0Gi4ubXV4dmlhLmNsb3VkLnYxLkNoYW5nZUFjY291bnRQYXNzd29yZFJlc3BvbnNlEmwKDVJldm9rZVNlc3Npb24SLC5tdXh2aWEuY2xvdWQudjEuUmV2b2tlQWNjb3VudFNlc3Npb25SZXF1ZXN0Gi0ubXV4dmlhLmNsb3VkLnYxLlJldm9rZUFjY291bnRTZXNzaW9uUmVzcG9uc2VCMVovZ2l0aHViLmNvbS9tdXh2aWEvbXV4dmlhL3Byb3RvL2Nsb3VkL3YxO2Nsb3VkdjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
  * AccountProfile 是账号持久投影，不包含密码 verifier 或 session secret。
@@ -359,6 +359,154 @@ export const VerifyRecentAuthenticationResponseSchema: GenMessage<VerifyRecentAu
   messageDesc(file_cloud_v1_account, 13);
 
 /**
+ * AccountSessionProjection 是用户可见的 session 元数据，不包含任何 token 摘要或原始 credential。
+ *
+ * @generated from message muxvia.cloud.v1.AccountSessionProjection
+ */
+export type AccountSessionProjection = Message<"muxvia.cloud.v1.AccountSessionProjection"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: bool current = 2;
+   */
+  current: boolean;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 3;
+   */
+  createdAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp access_expires_at = 4;
+   */
+  accessExpiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp refresh_expires_at = 5;
+   */
+  refreshExpiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp recent_auth_expires_at = 6;
+   */
+  recentAuthExpiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: uint64 revision = 7;
+   */
+  revision: bigint;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.AccountSessionProjection.
+ * Use `create(AccountSessionProjectionSchema)` to create a new message.
+ */
+export const AccountSessionProjectionSchema: GenMessage<AccountSessionProjection> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_account, 14);
+
+/**
+ * @generated from message muxvia.cloud.v1.ListAccountSessionsRequest
+ */
+export type ListAccountSessionsRequest = Message<"muxvia.cloud.v1.ListAccountSessionsRequest"> & {
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.ListAccountSessionsRequest.
+ * Use `create(ListAccountSessionsRequestSchema)` to create a new message.
+ */
+export const ListAccountSessionsRequestSchema: GenMessage<ListAccountSessionsRequest> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_account, 15);
+
+/**
+ * @generated from message muxvia.cloud.v1.ListAccountSessionsResponse
+ */
+export type ListAccountSessionsResponse = Message<"muxvia.cloud.v1.ListAccountSessionsResponse"> & {
+  /**
+   * @generated from field: repeated muxvia.cloud.v1.AccountSessionProjection sessions = 1;
+   */
+  sessions: AccountSessionProjection[];
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.ListAccountSessionsResponse.
+ * Use `create(ListAccountSessionsResponseSchema)` to create a new message.
+ */
+export const ListAccountSessionsResponseSchema: GenMessage<ListAccountSessionsResponse> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_account, 16);
+
+/**
+ * @generated from message muxvia.cloud.v1.ChangeAccountPasswordRequest
+ */
+export type ChangeAccountPasswordRequest = Message<"muxvia.cloud.v1.ChangeAccountPasswordRequest"> & {
+  /**
+   * @generated from field: string current_password = 1;
+   */
+  currentPassword: string;
+
+  /**
+   * @generated from field: string new_password = 2;
+   */
+  newPassword: string;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.ChangeAccountPasswordRequest.
+ * Use `create(ChangeAccountPasswordRequestSchema)` to create a new message.
+ */
+export const ChangeAccountPasswordRequestSchema: GenMessage<ChangeAccountPasswordRequest> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_account, 17);
+
+/**
+ * @generated from message muxvia.cloud.v1.ChangeAccountPasswordResponse
+ */
+export type ChangeAccountPasswordResponse = Message<"muxvia.cloud.v1.ChangeAccountPasswordResponse"> & {
+  /**
+   * @generated from field: muxvia.cloud.v1.AccountProfile account = 1;
+   */
+  account?: AccountProfile | undefined;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.ChangeAccountPasswordResponse.
+ * Use `create(ChangeAccountPasswordResponseSchema)` to create a new message.
+ */
+export const ChangeAccountPasswordResponseSchema: GenMessage<ChangeAccountPasswordResponse> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_account, 18);
+
+/**
+ * @generated from message muxvia.cloud.v1.RevokeAccountSessionRequest
+ */
+export type RevokeAccountSessionRequest = Message<"muxvia.cloud.v1.RevokeAccountSessionRequest"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.RevokeAccountSessionRequest.
+ * Use `create(RevokeAccountSessionRequestSchema)` to create a new message.
+ */
+export const RevokeAccountSessionRequestSchema: GenMessage<RevokeAccountSessionRequest> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_account, 19);
+
+/**
+ * @generated from message muxvia.cloud.v1.RevokeAccountSessionResponse
+ */
+export type RevokeAccountSessionResponse = Message<"muxvia.cloud.v1.RevokeAccountSessionResponse"> & {
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.RevokeAccountSessionResponse.
+ * Use `create(RevokeAccountSessionResponseSchema)` to create a new message.
+ */
+export const RevokeAccountSessionResponseSchema: GenMessage<RevokeAccountSessionResponse> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_account, 20);
+
+/**
  * AccountState 是账号持久状态；禁用后所有新的 Cloud 准入都必须拒绝。
  *
  * @generated from enum muxvia.cloud.v1.AccountState
@@ -472,6 +620,30 @@ export const AccountService: GenService<{
     methodKind: "unary";
     input: typeof VerifyRecentAuthenticationRequestSchema;
     output: typeof VerifyRecentAuthenticationResponseSchema;
+  },
+  /**
+   * @generated from rpc muxvia.cloud.v1.AccountService.ListSessions
+   */
+  listSessions: {
+    methodKind: "unary";
+    input: typeof ListAccountSessionsRequestSchema;
+    output: typeof ListAccountSessionsResponseSchema;
+  },
+  /**
+   * @generated from rpc muxvia.cloud.v1.AccountService.ChangePassword
+   */
+  changePassword: {
+    methodKind: "unary";
+    input: typeof ChangeAccountPasswordRequestSchema;
+    output: typeof ChangeAccountPasswordResponseSchema;
+  },
+  /**
+   * @generated from rpc muxvia.cloud.v1.AccountService.RevokeSession
+   */
+  revokeSession: {
+    methodKind: "unary";
+    input: typeof RevokeAccountSessionRequestSchema;
+    output: typeof RevokeAccountSessionResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_cloud_v1_account, 0);

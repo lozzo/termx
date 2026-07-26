@@ -1,5 +1,5 @@
 import { X } from 'lucide-react'
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
+import { cloneElement, isValidElement, useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactElement, type ReactNode } from 'react'
 
 export function Button({ tone = 'default', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 'default' | 'primary' | 'danger' | 'quiet' }) {
   return <button className={`button button-${tone} ${className}`} {...props} />
@@ -9,8 +9,13 @@ export function IconButton({ label, ...props }: ButtonHTMLAttributes<HTMLButtonE
   return <button className="icon-button" title={label} aria-label={label} {...props} />
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return <label className="field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>
+export function Field({ label, hint, htmlFor, children }: { label: string; hint?: string; htmlFor?: string; children: ReactNode }) {
+  const generatedID = useId()
+  const controlID = htmlFor ?? generatedID
+  const control = !htmlFor && isValidElement(children)
+    ? cloneElement(children as ReactElement<{ id?: string }>, { id: (children.props as { id?: string }).id ?? controlID })
+    : children
+  return <div className="field"><label htmlFor={controlID}>{label}</label>{control}{hint && <small>{hint}</small>}</div>
 }
 
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) { return <input className="input" {...props} /> }

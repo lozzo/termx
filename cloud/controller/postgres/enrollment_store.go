@@ -11,16 +11,13 @@ import (
 	"github.com/muxvia/muxvia/cloud/controller/enrollment"
 )
 
-// CreateDaemonEnrollment 在同一事务确保开发阶段账号存在并写入一次性 token 摘要。
-func (database *Database) CreateDaemonEnrollment(ctx context.Context, accountID, accountName, daemonName string, digest []byte, expiresAt, now time.Time) (string, error) {
+// CreateDaemonEnrollment 只为已存在的活动账号写入一次性 token 摘要，不隐式创建残缺账号。
+func (database *Database) CreateDaemonEnrollment(ctx context.Context, accountID, _ string, daemonName string, digest []byte, expiresAt, now time.Time) (string, error) {
 	tx, err := database.pool.Begin(ctx)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `INSERT INTO accounts(account_id,display_name,state,revision,created_at,updated_at) VALUES($1,$2,'active',1,$3,$3) ON CONFLICT (account_id) DO NOTHING`, accountID, accountName, now); err != nil {
-		return "", err
-	}
 	var state string
 	if err := tx.QueryRow(ctx, `SELECT state FROM accounts WHERE account_id=$1`, accountID).Scan(&state); err != nil {
 		return "", err
@@ -72,7 +69,16 @@ func (database *Database) GetDaemon(ctx context.Context, daemonID string) (enrol
 
 // ListDaemons 返回持久 daemon 列表；在线状态由上层和 Directory 合并。
 func (database *Database) ListDaemons(ctx context.Context) ([]enrollment.Daemon, error) {
-	rows, err := database.pool.Query(ctx, daemonSelect+` ORDER BY daemon.created_at,daemon.daemon_id`)
+	return database.listDaemons(ctx, daemonSelect+` ORDER BY daemon.created_at,daemon.daemon_id`)
+}
+
+// ListDaemonsByAccount 返回账号持久 daemon identity；在线位置仍由 Directory 合并。
+func (database *Database) ListDaemonsByAccount(ctx context.Context, accountID string) ([]enrollment.Daemon, error) {
+	return database.listDaemons(ctx, daemonSelect+` WHERE daemon.account_id=$1 ORDER BY daemon.created_at,daemon.daemon_id`, accountID)
+}
+
+func (database *Database) listDaemons(ctx context.Context, query string, args ...any) ([]enrollment.Daemon, error) {
+	rows, err := database.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -86,6 +92,33 @@ func (database *Database) ListDaemons(ctx context.Context) ([]enrollment.Daemon,
 		result = append(result, daemon)
 	}
 	return result, rows.Err()
+}
+
+// RevokeDaemon 用账号归属和 revision CAS 持久撤销 identity，并在同一事务写入审计。
+func (database *Database) RevokeDaemon(ctx context.Context, accountID, daemonID string, expectedRevision uint64, reason string, now time.Time) (enrollment.Daemon, error) {
+	tx, err := database.pool.Begin(ctx)
+	if err != nil {
+		return enrollment.Daemon{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	result, err := tx.Exec(ctx, `UPDATE daemons SET revoked=true,revision=revision+1,updated_at=$1 WHERE daemon_id=$2 AND account_id=$3 AND revision=$4 AND revoked=false`, now, daemonID, accountID, expectedRevision)
+	if err != nil {
+		return enrollment.Daemon{}, err
+	}
+	if result.RowsAffected() != 1 {
+		return enrollment.Daemon{}, enrollment.ErrDaemonUnavailable
+	}
+	if err := insertOperatorAudit(ctx, tx, accountID, "daemon.revoke", "daemon", daemonID, reason, "applied", now); err != nil {
+		return enrollment.Daemon{}, err
+	}
+	daemon, err := scanDaemon(tx.QueryRow(ctx, daemonSelect+` WHERE daemon.daemon_id=$1`, daemonID))
+	if err != nil {
+		return enrollment.Daemon{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return enrollment.Daemon{}, err
+	}
+	return daemon, nil
 }
 
 const daemonSelect = `SELECT daemon.daemon_id::text,daemon.account_id::text,account.display_name,daemon.display_name,daemon.device_id,daemon.device_public_key,daemon.device_fingerprint,daemon.revoked,daemon.revision,daemon.created_at,daemon.updated_at FROM daemons daemon JOIN accounts account ON account.account_id=daemon.account_id`

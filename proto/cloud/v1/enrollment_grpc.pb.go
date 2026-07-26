@@ -275,3 +275,186 @@ var EnrollmentService_ServiceDesc = grpc.ServiceDesc{
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "cloud/v1/enrollment.proto",
 }
+
+const (
+	DaemonManagementService_CreateMyEnrollment_FullMethodName = "/muxvia.cloud.v1.DaemonManagementService/CreateMyEnrollment"
+	DaemonManagementService_ListMyDaemons_FullMethodName      = "/muxvia.cloud.v1.DaemonManagementService/ListMyDaemons"
+	DaemonManagementService_RevokeMyDaemon_FullMethodName     = "/muxvia.cloud.v1.DaemonManagementService/RevokeMyDaemon"
+)
+
+// DaemonManagementServiceClient is the client API for DaemonManagementService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// DaemonManagementService 是登录用户管理自己 daemon 的 API；实现必须从 session 推导账号。
+type DaemonManagementServiceClient interface {
+	CreateMyEnrollment(ctx context.Context, in *CreateMyDaemonEnrollmentRequest, opts ...grpc.CallOption) (*CreateDaemonEnrollmentResponse, error)
+	ListMyDaemons(ctx context.Context, in *ListMyDaemonsRequest, opts ...grpc.CallOption) (*ListMyDaemonsResponse, error)
+	RevokeMyDaemon(ctx context.Context, in *RevokeMyDaemonRequest, opts ...grpc.CallOption) (*RevokeMyDaemonResponse, error)
+}
+
+type daemonManagementServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewDaemonManagementServiceClient(cc grpc.ClientConnInterface) DaemonManagementServiceClient {
+	return &daemonManagementServiceClient{cc}
+}
+
+func (c *daemonManagementServiceClient) CreateMyEnrollment(ctx context.Context, in *CreateMyDaemonEnrollmentRequest, opts ...grpc.CallOption) (*CreateDaemonEnrollmentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateDaemonEnrollmentResponse)
+	err := c.cc.Invoke(ctx, DaemonManagementService_CreateMyEnrollment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonManagementServiceClient) ListMyDaemons(ctx context.Context, in *ListMyDaemonsRequest, opts ...grpc.CallOption) (*ListMyDaemonsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMyDaemonsResponse)
+	err := c.cc.Invoke(ctx, DaemonManagementService_ListMyDaemons_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonManagementServiceClient) RevokeMyDaemon(ctx context.Context, in *RevokeMyDaemonRequest, opts ...grpc.CallOption) (*RevokeMyDaemonResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevokeMyDaemonResponse)
+	err := c.cc.Invoke(ctx, DaemonManagementService_RevokeMyDaemon_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DaemonManagementServiceServer is the server API for DaemonManagementService service.
+// All implementations must embed UnimplementedDaemonManagementServiceServer
+// for forward compatibility.
+//
+// DaemonManagementService 是登录用户管理自己 daemon 的 API；实现必须从 session 推导账号。
+type DaemonManagementServiceServer interface {
+	CreateMyEnrollment(context.Context, *CreateMyDaemonEnrollmentRequest) (*CreateDaemonEnrollmentResponse, error)
+	ListMyDaemons(context.Context, *ListMyDaemonsRequest) (*ListMyDaemonsResponse, error)
+	RevokeMyDaemon(context.Context, *RevokeMyDaemonRequest) (*RevokeMyDaemonResponse, error)
+	mustEmbedUnimplementedDaemonManagementServiceServer()
+}
+
+// UnimplementedDaemonManagementServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedDaemonManagementServiceServer struct{}
+
+func (UnimplementedDaemonManagementServiceServer) CreateMyEnrollment(context.Context, *CreateMyDaemonEnrollmentRequest) (*CreateDaemonEnrollmentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateMyEnrollment not implemented")
+}
+func (UnimplementedDaemonManagementServiceServer) ListMyDaemons(context.Context, *ListMyDaemonsRequest) (*ListMyDaemonsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListMyDaemons not implemented")
+}
+func (UnimplementedDaemonManagementServiceServer) RevokeMyDaemon(context.Context, *RevokeMyDaemonRequest) (*RevokeMyDaemonResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeMyDaemon not implemented")
+}
+func (UnimplementedDaemonManagementServiceServer) mustEmbedUnimplementedDaemonManagementServiceServer() {
+}
+func (UnimplementedDaemonManagementServiceServer) testEmbeddedByValue() {}
+
+// UnsafeDaemonManagementServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to DaemonManagementServiceServer will
+// result in compilation errors.
+type UnsafeDaemonManagementServiceServer interface {
+	mustEmbedUnimplementedDaemonManagementServiceServer()
+}
+
+func RegisterDaemonManagementServiceServer(s grpc.ServiceRegistrar, srv DaemonManagementServiceServer) {
+	// If the following call panics, it indicates UnimplementedDaemonManagementServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&DaemonManagementService_ServiceDesc, srv)
+}
+
+func _DaemonManagementService_CreateMyEnrollment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateMyDaemonEnrollmentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonManagementServiceServer).CreateMyEnrollment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonManagementService_CreateMyEnrollment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonManagementServiceServer).CreateMyEnrollment(ctx, req.(*CreateMyDaemonEnrollmentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonManagementService_ListMyDaemons_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMyDaemonsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonManagementServiceServer).ListMyDaemons(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonManagementService_ListMyDaemons_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonManagementServiceServer).ListMyDaemons(ctx, req.(*ListMyDaemonsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonManagementService_RevokeMyDaemon_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeMyDaemonRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonManagementServiceServer).RevokeMyDaemon(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonManagementService_RevokeMyDaemon_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonManagementServiceServer).RevokeMyDaemon(ctx, req.(*RevokeMyDaemonRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// DaemonManagementService_ServiceDesc is the grpc.ServiceDesc for DaemonManagementService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var DaemonManagementService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "muxvia.cloud.v1.DaemonManagementService",
+	HandlerType: (*DaemonManagementServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CreateMyEnrollment",
+			Handler:    _DaemonManagementService_CreateMyEnrollment_Handler,
+		},
+		{
+			MethodName: "ListMyDaemons",
+			Handler:    _DaemonManagementService_ListMyDaemons_Handler,
+		},
+		{
+			MethodName: "RevokeMyDaemon",
+			Handler:    _DaemonManagementService_RevokeMyDaemon_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "cloud/v1/enrollment.proto",
+}

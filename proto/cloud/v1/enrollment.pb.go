@@ -500,6 +500,251 @@ func (x *ListDaemonsResponse) GetDaemons() []*ManagedDaemon {
 	return nil
 }
 
+// CreateMyDaemonEnrollmentRequest 只允许用户命名 daemon；账号来自认证 session。
+type CreateMyDaemonEnrollmentRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DaemonName    string                 `protobuf:"bytes,1,opt,name=daemon_name,json=daemonName,proto3" json:"daemon_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateMyDaemonEnrollmentRequest) Reset() {
+	*x = CreateMyDaemonEnrollmentRequest{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateMyDaemonEnrollmentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateMyDaemonEnrollmentRequest) ProtoMessage() {}
+
+func (x *CreateMyDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateMyDaemonEnrollmentRequest.ProtoReflect.Descriptor instead.
+func (*CreateMyDaemonEnrollmentRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *CreateMyDaemonEnrollmentRequest) GetDaemonName() string {
+	if x != nil {
+		return x.DaemonName
+	}
+	return ""
+}
+
+type ListMyDaemonsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMyDaemonsRequest) Reset() {
+	*x = ListMyDaemonsRequest{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMyDaemonsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMyDaemonsRequest) ProtoMessage() {}
+
+func (x *ListMyDaemonsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMyDaemonsRequest.ProtoReflect.Descriptor instead.
+func (*ListMyDaemonsRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{8}
+}
+
+type ListMyDaemonsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Daemons       []*ManagedDaemon       `protobuf:"bytes,1,rep,name=daemons,proto3" json:"daemons,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMyDaemonsResponse) Reset() {
+	*x = ListMyDaemonsResponse{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMyDaemonsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMyDaemonsResponse) ProtoMessage() {}
+
+func (x *ListMyDaemonsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMyDaemonsResponse.ProtoReflect.Descriptor instead.
+func (*ListMyDaemonsResponse) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ListMyDaemonsResponse) GetDaemons() []*ManagedDaemon {
+	if x != nil {
+		return x.Daemons
+	}
+	return nil
+}
+
+type RevokeMyDaemonRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	DaemonId         string                 `protobuf:"bytes,1,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	ExpectedRevision uint64                 `protobuf:"varint,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	Reason           string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *RevokeMyDaemonRequest) Reset() {
+	*x = RevokeMyDaemonRequest{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeMyDaemonRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeMyDaemonRequest) ProtoMessage() {}
+
+func (x *RevokeMyDaemonRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeMyDaemonRequest.ProtoReflect.Descriptor instead.
+func (*RevokeMyDaemonRequest) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RevokeMyDaemonRequest) GetDaemonId() string {
+	if x != nil {
+		return x.DaemonId
+	}
+	return ""
+}
+
+func (x *RevokeMyDaemonRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *RevokeMyDaemonRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type RevokeMyDaemonResponse struct {
+	state                    protoimpl.MessageState `protogen:"open.v1"`
+	Daemon                   *DaemonRecord          `protobuf:"bytes,1,opt,name=daemon,proto3" json:"daemon,omitempty"`
+	RuntimeWasOnline         bool                   `protobuf:"varint,2,opt,name=runtime_was_online,json=runtimeWasOnline,proto3" json:"runtime_was_online,omitempty"`
+	RuntimeDisconnectApplied bool                   `protobuf:"varint,3,opt,name=runtime_disconnect_applied,json=runtimeDisconnectApplied,proto3" json:"runtime_disconnect_applied,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
+}
+
+func (x *RevokeMyDaemonResponse) Reset() {
+	*x = RevokeMyDaemonResponse{}
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeMyDaemonResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeMyDaemonResponse) ProtoMessage() {}
+
+func (x *RevokeMyDaemonResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeMyDaemonResponse.ProtoReflect.Descriptor instead.
+func (*RevokeMyDaemonResponse) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *RevokeMyDaemonResponse) GetDaemon() *DaemonRecord {
+	if x != nil {
+		return x.Daemon
+	}
+	return nil
+}
+
+func (x *RevokeMyDaemonResponse) GetRuntimeWasOnline() bool {
+	if x != nil {
+		return x.RuntimeWasOnline
+	}
+	return false
+}
+
+func (x *RevokeMyDaemonResponse) GetRuntimeDisconnectApplied() bool {
+	if x != nil {
+		return x.RuntimeDisconnectApplied
+	}
+	return false
+}
+
 type BeginDaemonEnrollmentRequest struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	EnrollmentCode    string                 `protobuf:"bytes,1,opt,name=enrollment_code,json=enrollmentCode,proto3" json:"enrollment_code,omitempty"`
@@ -512,7 +757,7 @@ type BeginDaemonEnrollmentRequest struct {
 
 func (x *BeginDaemonEnrollmentRequest) Reset() {
 	*x = BeginDaemonEnrollmentRequest{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[7]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -524,7 +769,7 @@ func (x *BeginDaemonEnrollmentRequest) String() string {
 func (*BeginDaemonEnrollmentRequest) ProtoMessage() {}
 
 func (x *BeginDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[7]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -537,7 +782,7 @@ func (x *BeginDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginDaemonEnrollmentRequest.ProtoReflect.Descriptor instead.
 func (*BeginDaemonEnrollmentRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{7}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *BeginDaemonEnrollmentRequest) GetEnrollmentCode() string {
@@ -579,7 +824,7 @@ type IdentityChallenge struct {
 
 func (x *IdentityChallenge) Reset() {
 	*x = IdentityChallenge{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[8]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -591,7 +836,7 @@ func (x *IdentityChallenge) String() string {
 func (*IdentityChallenge) ProtoMessage() {}
 
 func (x *IdentityChallenge) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[8]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -604,7 +849,7 @@ func (x *IdentityChallenge) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IdentityChallenge.ProtoReflect.Descriptor instead.
 func (*IdentityChallenge) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{8}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *IdentityChallenge) GetChallengeId() string {
@@ -638,7 +883,7 @@ type CompleteDaemonEnrollmentRequest struct {
 
 func (x *CompleteDaemonEnrollmentRequest) Reset() {
 	*x = CompleteDaemonEnrollmentRequest{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[9]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -650,7 +895,7 @@ func (x *CompleteDaemonEnrollmentRequest) String() string {
 func (*CompleteDaemonEnrollmentRequest) ProtoMessage() {}
 
 func (x *CompleteDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[9]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -663,7 +908,7 @@ func (x *CompleteDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteDaemonEnrollmentRequest.ProtoReflect.Descriptor instead.
 func (*CompleteDaemonEnrollmentRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{9}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *CompleteDaemonEnrollmentRequest) GetChallengeId() string {
@@ -689,7 +934,7 @@ type CompleteDaemonEnrollmentResponse struct {
 
 func (x *CompleteDaemonEnrollmentResponse) Reset() {
 	*x = CompleteDaemonEnrollmentResponse{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[10]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -701,7 +946,7 @@ func (x *CompleteDaemonEnrollmentResponse) String() string {
 func (*CompleteDaemonEnrollmentResponse) ProtoMessage() {}
 
 func (x *CompleteDaemonEnrollmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[10]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -714,7 +959,7 @@ func (x *CompleteDaemonEnrollmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteDaemonEnrollmentResponse.ProtoReflect.Descriptor instead.
 func (*CompleteDaemonEnrollmentResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{10}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CompleteDaemonEnrollmentResponse) GetDaemon() *DaemonRecord {
@@ -734,7 +979,7 @@ type ListAgentCandidatesRequest struct {
 
 func (x *ListAgentCandidatesRequest) Reset() {
 	*x = ListAgentCandidatesRequest{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[11]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -746,7 +991,7 @@ func (x *ListAgentCandidatesRequest) String() string {
 func (*ListAgentCandidatesRequest) ProtoMessage() {}
 
 func (x *ListAgentCandidatesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[11]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -759,7 +1004,7 @@ func (x *ListAgentCandidatesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAgentCandidatesRequest.ProtoReflect.Descriptor instead.
 func (*ListAgentCandidatesRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{11}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListAgentCandidatesRequest) GetDaemonId() string {
@@ -792,7 +1037,7 @@ type CandidateEdge struct {
 
 func (x *CandidateEdge) Reset() {
 	*x = CandidateEdge{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[12]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -804,7 +1049,7 @@ func (x *CandidateEdge) String() string {
 func (*CandidateEdge) ProtoMessage() {}
 
 func (x *CandidateEdge) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[12]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -817,7 +1062,7 @@ func (x *CandidateEdge) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CandidateEdge.ProtoReflect.Descriptor instead.
 func (*CandidateEdge) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{12}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *CandidateEdge) GetEdgeId() string {
@@ -885,7 +1130,7 @@ type ListAgentCandidatesResponse struct {
 
 func (x *ListAgentCandidatesResponse) Reset() {
 	*x = ListAgentCandidatesResponse{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[13]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -897,7 +1142,7 @@ func (x *ListAgentCandidatesResponse) String() string {
 func (*ListAgentCandidatesResponse) ProtoMessage() {}
 
 func (x *ListAgentCandidatesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[13]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -910,7 +1155,7 @@ func (x *ListAgentCandidatesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAgentCandidatesResponse.ProtoReflect.Descriptor instead.
 func (*ListAgentCandidatesResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{13}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListAgentCandidatesResponse) GetCandidates() []*CandidateEdge {
@@ -930,7 +1175,7 @@ type BeginAgentTicketRequest struct {
 
 func (x *BeginAgentTicketRequest) Reset() {
 	*x = BeginAgentTicketRequest{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[14]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -942,7 +1187,7 @@ func (x *BeginAgentTicketRequest) String() string {
 func (*BeginAgentTicketRequest) ProtoMessage() {}
 
 func (x *BeginAgentTicketRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[14]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -955,7 +1200,7 @@ func (x *BeginAgentTicketRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginAgentTicketRequest.ProtoReflect.Descriptor instead.
 func (*BeginAgentTicketRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{14}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *BeginAgentTicketRequest) GetDaemonId() string {
@@ -982,7 +1227,7 @@ type IssueAgentTicketRequest struct {
 
 func (x *IssueAgentTicketRequest) Reset() {
 	*x = IssueAgentTicketRequest{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[15]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -994,7 +1239,7 @@ func (x *IssueAgentTicketRequest) String() string {
 func (*IssueAgentTicketRequest) ProtoMessage() {}
 
 func (x *IssueAgentTicketRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[15]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1007,7 +1252,7 @@ func (x *IssueAgentTicketRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IssueAgentTicketRequest.ProtoReflect.Descriptor instead.
 func (*IssueAgentTicketRequest) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{15}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *IssueAgentTicketRequest) GetChallengeId() string {
@@ -1034,7 +1279,7 @@ type IssueAgentTicketResponse struct {
 
 func (x *IssueAgentTicketResponse) Reset() {
 	*x = IssueAgentTicketResponse{}
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[16]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1046,7 +1291,7 @@ func (x *IssueAgentTicketResponse) String() string {
 func (*IssueAgentTicketResponse) ProtoMessage() {}
 
 func (x *IssueAgentTicketResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_enrollment_proto_msgTypes[16]
+	mi := &file_cloud_v1_enrollment_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1059,7 +1304,7 @@ func (x *IssueAgentTicketResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IssueAgentTicketResponse.ProtoReflect.Descriptor instead.
 func (*IssueAgentTicketResponse) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{16}
+	return file_cloud_v1_enrollment_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *IssueAgentTicketResponse) GetAgentTicket() *SignedEnvelope {
@@ -1126,7 +1371,21 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"\x0eenroll_command\x18\x04 \x01(\tR\renrollCommand\"\x14\n" +
 	"\x12ListDaemonsRequest\"O\n" +
 	"\x13ListDaemonsResponse\x128\n" +
-	"\adaemons\x18\x01 \x03(\v2\x1e.muxvia.cloud.v1.ManagedDaemonR\adaemons\"\xbf\x01\n" +
+	"\adaemons\x18\x01 \x03(\v2\x1e.muxvia.cloud.v1.ManagedDaemonR\adaemons\"B\n" +
+	"\x1fCreateMyDaemonEnrollmentRequest\x12\x1f\n" +
+	"\vdaemon_name\x18\x01 \x01(\tR\n" +
+	"daemonName\"\x16\n" +
+	"\x14ListMyDaemonsRequest\"Q\n" +
+	"\x15ListMyDaemonsResponse\x128\n" +
+	"\adaemons\x18\x01 \x03(\v2\x1e.muxvia.cloud.v1.ManagedDaemonR\adaemons\"y\n" +
+	"\x15RevokeMyDaemonRequest\x12\x1b\n" +
+	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12+\n" +
+	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xbb\x01\n" +
+	"\x16RevokeMyDaemonResponse\x125\n" +
+	"\x06daemon\x18\x01 \x01(\v2\x1d.muxvia.cloud.v1.DaemonRecordR\x06daemon\x12,\n" +
+	"\x12runtime_was_online\x18\x02 \x01(\bR\x10runtimeWasOnline\x12<\n" +
+	"\x1aruntime_disconnect_applied\x18\x03 \x01(\bR\x18runtimeDisconnectApplied\"\xbf\x01\n" +
 	"\x1cBeginDaemonEnrollmentRequest\x12'\n" +
 	"\x0fenrollment_code\x18\x01 \x01(\tR\x0eenrollmentCode\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12-\n" +
@@ -1173,7 +1432,11 @@ const file_cloud_v1_enrollment_proto_rawDesc = "" +
 	"\x18CompleteDaemonEnrollment\x120.muxvia.cloud.v1.CompleteDaemonEnrollmentRequest\x1a1.muxvia.cloud.v1.CompleteDaemonEnrollmentResponse\x12p\n" +
 	"\x13ListAgentCandidates\x12+.muxvia.cloud.v1.ListAgentCandidatesRequest\x1a,.muxvia.cloud.v1.ListAgentCandidatesResponse\x12`\n" +
 	"\x10BeginAgentTicket\x12(.muxvia.cloud.v1.BeginAgentTicketRequest\x1a\".muxvia.cloud.v1.IdentityChallenge\x12g\n" +
-	"\x10IssueAgentTicket\x12(.muxvia.cloud.v1.IssueAgentTicketRequest\x1a).muxvia.cloud.v1.IssueAgentTicketResponseB1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	"\x10IssueAgentTicket\x12(.muxvia.cloud.v1.IssueAgentTicketRequest\x1a).muxvia.cloud.v1.IssueAgentTicketResponse2\xd5\x02\n" +
+	"\x17DaemonManagementService\x12w\n" +
+	"\x12CreateMyEnrollment\x120.muxvia.cloud.v1.CreateMyDaemonEnrollmentRequest\x1a/.muxvia.cloud.v1.CreateDaemonEnrollmentResponse\x12^\n" +
+	"\rListMyDaemons\x12%.muxvia.cloud.v1.ListMyDaemonsRequest\x1a&.muxvia.cloud.v1.ListMyDaemonsResponse\x12a\n" +
+	"\x0eRevokeMyDaemon\x12&.muxvia.cloud.v1.RevokeMyDaemonRequest\x1a'.muxvia.cloud.v1.RevokeMyDaemonResponseB1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_enrollment_proto_rawDescOnce sync.Once
@@ -1187,7 +1450,7 @@ func file_cloud_v1_enrollment_proto_rawDescGZIP() []byte {
 	return file_cloud_v1_enrollment_proto_rawDescData
 }
 
-var file_cloud_v1_enrollment_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_cloud_v1_enrollment_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_cloud_v1_enrollment_proto_goTypes = []any{
 	(*DaemonRecord)(nil),                     // 0: muxvia.cloud.v1.DaemonRecord
 	(*DaemonRuntimeProjection)(nil),          // 1: muxvia.cloud.v1.DaemonRuntimeProjection
@@ -1196,46 +1459,59 @@ var file_cloud_v1_enrollment_proto_goTypes = []any{
 	(*CreateDaemonEnrollmentResponse)(nil),   // 4: muxvia.cloud.v1.CreateDaemonEnrollmentResponse
 	(*ListDaemonsRequest)(nil),               // 5: muxvia.cloud.v1.ListDaemonsRequest
 	(*ListDaemonsResponse)(nil),              // 6: muxvia.cloud.v1.ListDaemonsResponse
-	(*BeginDaemonEnrollmentRequest)(nil),     // 7: muxvia.cloud.v1.BeginDaemonEnrollmentRequest
-	(*IdentityChallenge)(nil),                // 8: muxvia.cloud.v1.IdentityChallenge
-	(*CompleteDaemonEnrollmentRequest)(nil),  // 9: muxvia.cloud.v1.CompleteDaemonEnrollmentRequest
-	(*CompleteDaemonEnrollmentResponse)(nil), // 10: muxvia.cloud.v1.CompleteDaemonEnrollmentResponse
-	(*ListAgentCandidatesRequest)(nil),       // 11: muxvia.cloud.v1.ListAgentCandidatesRequest
-	(*CandidateEdge)(nil),                    // 12: muxvia.cloud.v1.CandidateEdge
-	(*ListAgentCandidatesResponse)(nil),      // 13: muxvia.cloud.v1.ListAgentCandidatesResponse
-	(*BeginAgentTicketRequest)(nil),          // 14: muxvia.cloud.v1.BeginAgentTicketRequest
-	(*IssueAgentTicketRequest)(nil),          // 15: muxvia.cloud.v1.IssueAgentTicketRequest
-	(*IssueAgentTicketResponse)(nil),         // 16: muxvia.cloud.v1.IssueAgentTicketResponse
-	(*timestamppb.Timestamp)(nil),            // 17: google.protobuf.Timestamp
-	(*SignedEnvelope)(nil),                   // 18: muxvia.cloud.v1.SignedEnvelope
+	(*CreateMyDaemonEnrollmentRequest)(nil),  // 7: muxvia.cloud.v1.CreateMyDaemonEnrollmentRequest
+	(*ListMyDaemonsRequest)(nil),             // 8: muxvia.cloud.v1.ListMyDaemonsRequest
+	(*ListMyDaemonsResponse)(nil),            // 9: muxvia.cloud.v1.ListMyDaemonsResponse
+	(*RevokeMyDaemonRequest)(nil),            // 10: muxvia.cloud.v1.RevokeMyDaemonRequest
+	(*RevokeMyDaemonResponse)(nil),           // 11: muxvia.cloud.v1.RevokeMyDaemonResponse
+	(*BeginDaemonEnrollmentRequest)(nil),     // 12: muxvia.cloud.v1.BeginDaemonEnrollmentRequest
+	(*IdentityChallenge)(nil),                // 13: muxvia.cloud.v1.IdentityChallenge
+	(*CompleteDaemonEnrollmentRequest)(nil),  // 14: muxvia.cloud.v1.CompleteDaemonEnrollmentRequest
+	(*CompleteDaemonEnrollmentResponse)(nil), // 15: muxvia.cloud.v1.CompleteDaemonEnrollmentResponse
+	(*ListAgentCandidatesRequest)(nil),       // 16: muxvia.cloud.v1.ListAgentCandidatesRequest
+	(*CandidateEdge)(nil),                    // 17: muxvia.cloud.v1.CandidateEdge
+	(*ListAgentCandidatesResponse)(nil),      // 18: muxvia.cloud.v1.ListAgentCandidatesResponse
+	(*BeginAgentTicketRequest)(nil),          // 19: muxvia.cloud.v1.BeginAgentTicketRequest
+	(*IssueAgentTicketRequest)(nil),          // 20: muxvia.cloud.v1.IssueAgentTicketRequest
+	(*IssueAgentTicketResponse)(nil),         // 21: muxvia.cloud.v1.IssueAgentTicketResponse
+	(*timestamppb.Timestamp)(nil),            // 22: google.protobuf.Timestamp
+	(*SignedEnvelope)(nil),                   // 23: muxvia.cloud.v1.SignedEnvelope
 }
 var file_cloud_v1_enrollment_proto_depIdxs = []int32{
-	17, // 0: muxvia.cloud.v1.DaemonRecord.created_at:type_name -> google.protobuf.Timestamp
-	17, // 1: muxvia.cloud.v1.DaemonRecord.updated_at:type_name -> google.protobuf.Timestamp
+	22, // 0: muxvia.cloud.v1.DaemonRecord.created_at:type_name -> google.protobuf.Timestamp
+	22, // 1: muxvia.cloud.v1.DaemonRecord.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 2: muxvia.cloud.v1.ManagedDaemon.daemon:type_name -> muxvia.cloud.v1.DaemonRecord
 	1,  // 3: muxvia.cloud.v1.ManagedDaemon.runtime:type_name -> muxvia.cloud.v1.DaemonRuntimeProjection
-	17, // 4: muxvia.cloud.v1.CreateDaemonEnrollmentResponse.expires_at:type_name -> google.protobuf.Timestamp
+	22, // 4: muxvia.cloud.v1.CreateDaemonEnrollmentResponse.expires_at:type_name -> google.protobuf.Timestamp
 	2,  // 5: muxvia.cloud.v1.ListDaemonsResponse.daemons:type_name -> muxvia.cloud.v1.ManagedDaemon
-	17, // 6: muxvia.cloud.v1.IdentityChallenge.expires_at:type_name -> google.protobuf.Timestamp
-	0,  // 7: muxvia.cloud.v1.CompleteDaemonEnrollmentResponse.daemon:type_name -> muxvia.cloud.v1.DaemonRecord
-	12, // 8: muxvia.cloud.v1.ListAgentCandidatesResponse.candidates:type_name -> muxvia.cloud.v1.CandidateEdge
-	18, // 9: muxvia.cloud.v1.IssueAgentTicketResponse.agent_ticket:type_name -> muxvia.cloud.v1.SignedEnvelope
-	12, // 10: muxvia.cloud.v1.IssueAgentTicketResponse.edge:type_name -> muxvia.cloud.v1.CandidateEdge
-	7,  // 11: muxvia.cloud.v1.EnrollmentService.BeginDaemonEnrollment:input_type -> muxvia.cloud.v1.BeginDaemonEnrollmentRequest
-	9,  // 12: muxvia.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:input_type -> muxvia.cloud.v1.CompleteDaemonEnrollmentRequest
-	11, // 13: muxvia.cloud.v1.EnrollmentService.ListAgentCandidates:input_type -> muxvia.cloud.v1.ListAgentCandidatesRequest
-	14, // 14: muxvia.cloud.v1.EnrollmentService.BeginAgentTicket:input_type -> muxvia.cloud.v1.BeginAgentTicketRequest
-	15, // 15: muxvia.cloud.v1.EnrollmentService.IssueAgentTicket:input_type -> muxvia.cloud.v1.IssueAgentTicketRequest
-	8,  // 16: muxvia.cloud.v1.EnrollmentService.BeginDaemonEnrollment:output_type -> muxvia.cloud.v1.IdentityChallenge
-	10, // 17: muxvia.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:output_type -> muxvia.cloud.v1.CompleteDaemonEnrollmentResponse
-	13, // 18: muxvia.cloud.v1.EnrollmentService.ListAgentCandidates:output_type -> muxvia.cloud.v1.ListAgentCandidatesResponse
-	8,  // 19: muxvia.cloud.v1.EnrollmentService.BeginAgentTicket:output_type -> muxvia.cloud.v1.IdentityChallenge
-	16, // 20: muxvia.cloud.v1.EnrollmentService.IssueAgentTicket:output_type -> muxvia.cloud.v1.IssueAgentTicketResponse
-	16, // [16:21] is the sub-list for method output_type
-	11, // [11:16] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	2,  // 6: muxvia.cloud.v1.ListMyDaemonsResponse.daemons:type_name -> muxvia.cloud.v1.ManagedDaemon
+	0,  // 7: muxvia.cloud.v1.RevokeMyDaemonResponse.daemon:type_name -> muxvia.cloud.v1.DaemonRecord
+	22, // 8: muxvia.cloud.v1.IdentityChallenge.expires_at:type_name -> google.protobuf.Timestamp
+	0,  // 9: muxvia.cloud.v1.CompleteDaemonEnrollmentResponse.daemon:type_name -> muxvia.cloud.v1.DaemonRecord
+	17, // 10: muxvia.cloud.v1.ListAgentCandidatesResponse.candidates:type_name -> muxvia.cloud.v1.CandidateEdge
+	23, // 11: muxvia.cloud.v1.IssueAgentTicketResponse.agent_ticket:type_name -> muxvia.cloud.v1.SignedEnvelope
+	17, // 12: muxvia.cloud.v1.IssueAgentTicketResponse.edge:type_name -> muxvia.cloud.v1.CandidateEdge
+	12, // 13: muxvia.cloud.v1.EnrollmentService.BeginDaemonEnrollment:input_type -> muxvia.cloud.v1.BeginDaemonEnrollmentRequest
+	14, // 14: muxvia.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:input_type -> muxvia.cloud.v1.CompleteDaemonEnrollmentRequest
+	16, // 15: muxvia.cloud.v1.EnrollmentService.ListAgentCandidates:input_type -> muxvia.cloud.v1.ListAgentCandidatesRequest
+	19, // 16: muxvia.cloud.v1.EnrollmentService.BeginAgentTicket:input_type -> muxvia.cloud.v1.BeginAgentTicketRequest
+	20, // 17: muxvia.cloud.v1.EnrollmentService.IssueAgentTicket:input_type -> muxvia.cloud.v1.IssueAgentTicketRequest
+	7,  // 18: muxvia.cloud.v1.DaemonManagementService.CreateMyEnrollment:input_type -> muxvia.cloud.v1.CreateMyDaemonEnrollmentRequest
+	8,  // 19: muxvia.cloud.v1.DaemonManagementService.ListMyDaemons:input_type -> muxvia.cloud.v1.ListMyDaemonsRequest
+	10, // 20: muxvia.cloud.v1.DaemonManagementService.RevokeMyDaemon:input_type -> muxvia.cloud.v1.RevokeMyDaemonRequest
+	13, // 21: muxvia.cloud.v1.EnrollmentService.BeginDaemonEnrollment:output_type -> muxvia.cloud.v1.IdentityChallenge
+	15, // 22: muxvia.cloud.v1.EnrollmentService.CompleteDaemonEnrollment:output_type -> muxvia.cloud.v1.CompleteDaemonEnrollmentResponse
+	18, // 23: muxvia.cloud.v1.EnrollmentService.ListAgentCandidates:output_type -> muxvia.cloud.v1.ListAgentCandidatesResponse
+	13, // 24: muxvia.cloud.v1.EnrollmentService.BeginAgentTicket:output_type -> muxvia.cloud.v1.IdentityChallenge
+	21, // 25: muxvia.cloud.v1.EnrollmentService.IssueAgentTicket:output_type -> muxvia.cloud.v1.IssueAgentTicketResponse
+	4,  // 26: muxvia.cloud.v1.DaemonManagementService.CreateMyEnrollment:output_type -> muxvia.cloud.v1.CreateDaemonEnrollmentResponse
+	9,  // 27: muxvia.cloud.v1.DaemonManagementService.ListMyDaemons:output_type -> muxvia.cloud.v1.ListMyDaemonsResponse
+	11, // 28: muxvia.cloud.v1.DaemonManagementService.RevokeMyDaemon:output_type -> muxvia.cloud.v1.RevokeMyDaemonResponse
+	21, // [21:29] is the sub-list for method output_type
+	13, // [13:21] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_enrollment_proto_init() }
@@ -1250,9 +1526,9 @@ func file_cloud_v1_enrollment_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_enrollment_proto_rawDesc), len(file_cloud_v1_enrollment_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   22,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_cloud_v1_enrollment_proto_goTypes,
 		DependencyIndexes: file_cloud_v1_enrollment_proto_depIdxs,
