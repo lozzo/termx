@@ -1362,13 +1362,17 @@ R3 建立了 PostgreSQL Edge deployment/config version 与两阶段一次性 cla
 
 Playwright 1.61.0 对线上页面完成了 `1440x900` 和 `390x844` 两种视口验收：简体中文页面、固定左侧导航、真实在线 Edge 表格、编辑表单、容量 `1000 -> 1001 -> 1000` 的在线提交、静态资源、API 和浏览器错误门禁均通过。Controller 没有引入 Nginx；当前 DNS 尚未发布 `muxvia-controller.omscd.com` 记录，测试 Edge 使用明确的 hosts 映射，Playwright 使用等价 host resolver。该 DNS 记录和 2026-08-07 到期的开发证书必须在 R8 生产化前处理，不能把当前环境视为生产上线。
 
-### 32.7 R4：daemon enrollment 与 AgentGateway（当前最早未完成切片）
+### 32.7 R4：daemon enrollment 与 AgentGateway（已完成）
 
 - 实现 DeviceIdentity challenge、候选选择、AgentTicket 和 daemon runtime。
 - 接真实 `remote/webrtc.Answerer`，先完成 daemon Presence，不接客户端。
 - Controller 页面能实时看到 daemon 注册到哪个 Edge，Controller 重启后从 Edge 重建。
 
-### 32.8 R5：客户端 P2P 纵向
+R4 通过 `e5cfc600` 建立了 Proto-first EnrollmentService、一次性 DeviceIdentity challenge、PostgreSQL token 消费与 daemon identity 同事务、候选 Edge 选择、独立 Controller TicketSigner、十分钟 AgentTicket、Edge 离线验票、AgentGateway 单 writer/generation fence、daemon 唯一 Cloud runtime 和 Presence delta；`1f3431ce` 补齐了管理投影中的当前 Edge 域名/端口。真实 PostgreSQL harness 证明 code 重放失败且持久 daemon 不会被误报在线；真实 TLS integration 证明同 daemon replacement 和 Controller 在同一地址重启后由 Edge 快照重建 Presence。
+
+2026-07-26 的在线开发验收中，Controller `155.94.155.192:18443/18444` SHA-256 为 `3b6368b3be4eddb2b1caaec12ffd8ad8edcb67b6b2e9815bb8f658a96c05d6a3`，Edge `muxvia-cn1.omscd.com:41102` SHA-256 为 `82e828d8951bec9f0b0d343b713f46b188622bce5982dfd9e12f742ef8cfe3c6`，Linux daemon CLI SHA-256 为 `7c73e6a5dccec93ccad2c2512641f8c10e0ce0a48c5116373005f79135acdc32`。真实 daemon `7332516b-063a-41f6-a010-c3579eb92e29` 通过一次性命令注册到 Edge `65f6aade-5560-416e-9765-0d6fb0bacc00`；Controller 重启后数据库只恢复 identity，Directory 从 Edge 内存快照恢复为在线，三个进程均为 `NRestarts=0`。Playwright 对 `1440x900` 与 `390x844` 验证了中文固定侧栏、Edge/Daemon 独立模块、实时在线行、当前 Edge 域名/端口、注册表单、页面/console error 门禁，共 2 项通过。
+
+### 32.8 R5：客户端 P2P 纵向（当前最早未完成切片）
 
 - 实现 CloudRouteGrant、ClientTicket、ClientGateway 和 `client/adapter/cloud`。
 - TUI/CLI 从左到右完成 resolve、offer/answer、P2P DataChannel、remote auth、protocol Hello、terminal 输入输出。
