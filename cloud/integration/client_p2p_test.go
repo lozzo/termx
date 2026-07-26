@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -137,7 +138,10 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	}); err != nil {
 		t.Fatal(err)
 	}
-	coreServer := corev2.NewServer(corev2.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory))
+	coreServer := corev2.NewServer(
+		corev2.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory),
+		corev2.WithSocketPath(filepath.Join(t.TempDir(), "core.sock")),
+	)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -271,7 +275,7 @@ func assertR5TerminalIO(t *testing.T, session *cloudadapter.Session, endpointID,
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	terminalID := "term-r5-" + suffix
-	if _, err := session.TerminalCreate(ctx, &apipb.TerminalCreateCommand{Terminal: &apipb.TerminalCreateSpec{TerminalId: terminalID, Command: []string{"/bin/cat"}, Size: &apipb.TerminalSize{Cols: 80, Rows: 24}}}); err != nil {
+	if _, err := session.TerminalCreate(ctx, &apipb.TerminalCreateCommand{Terminal: &apipb.TerminalCreateSpec{TerminalId: terminalID, Command: testIdleTerminalCommand(), Size: &apipb.TerminalSize{Cols: 80, Rows: 24}}}); err != nil {
 		t.Fatalf("create terminal through Cloud: %v", err)
 	}
 	attached, err := session.TerminalAttach(ctx, &apipb.TerminalAttachCommand{Terminal: &apipb.TerminalRef{EndpointId: endpointID, TerminalId: terminalID}, Mode: apipb.AttachmentMode_ATTACHMENT_MODE_COLLABORATOR, ResizePolicy: apipb.ResizePolicy_RESIZE_POLICY_OWNER, SurfaceId: "r5-surface", ViewId: "r5-view"})
