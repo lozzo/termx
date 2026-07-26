@@ -76,6 +76,25 @@ func TestConnectionPolicyUsesGoRegistryTransactionAndAvailability(t *testing.T) 
 	if got := registry.GetRegistry().GetEndpoints()[0].GetSelectionPolicy().GetRoutePreference(); got != remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_DIRECT {
 		t.Fatalf("persisted route preference = %v", got)
 	}
+	applied, err = host.ApplyConnectionPolicy(context.Background(), &bindingpb.ConnectionPolicyApplyRequest{
+		EndpointId: "studio",
+		Policy: &bindingpb.ConnectionPolicy{
+			RoutePreference: remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_MANAGED_CLOUD,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied.GetState().GetPolicy().GetRoutePreference() != remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_MANAGED_CLOUD {
+		t.Fatalf("applied Cloud state = %#v", applied.GetState())
+	}
+	registry, err = host.GetEndpointRegistry(context.Background(), &bindingpb.EndpointRegistryGetRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := registry.GetRegistry().GetEndpoints()[0].GetSelectionPolicy().GetRoutePreference(); got != remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_MANAGED_CLOUD {
+		t.Fatalf("persisted Cloud route preference = %v", got)
+	}
 }
 
 func TestEndpointRegistryRejectsIdentityReplacementWithoutPublishing(t *testing.T) {

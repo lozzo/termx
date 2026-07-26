@@ -607,6 +607,8 @@ func bindingRouteKind(kind endpoint.RouteKind) bindingpb.ConnectionRouteKind {
 		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_DIRECT
 	case endpoint.RouteSSHWebRTCTCP:
 		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_SSH
+	case endpoint.RouteManagedWebRTC:
+		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_CLOUD
 	default:
 		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_UNSPECIFIED
 	}

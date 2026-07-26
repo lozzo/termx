@@ -1382,13 +1382,19 @@ R4 通过 `e5cfc600` 建立了 Proto-first EnrollmentService、一次性 DeviceI
 
 2026-07-26 的在线开发验收中，Controller `155.94.155.192:18443/18444` SHA-256 为 `3b6368b3be4eddb2b1caaec12ffd8ad8edcb67b6b2e9815bb8f658a96c05d6a3`，Edge `muxvia-cn1.omscd.com:41102` SHA-256 为 `82e828d8951bec9f0b0d343b713f46b188622bce5982dfd9e12f742ef8cfe3c6`，Linux daemon CLI SHA-256 为 `7c73e6a5dccec93ccad2c2512641f8c10e0ce0a48c5116373005f79135acdc32`。真实 daemon `7332516b-063a-41f6-a010-c3579eb92e29` 通过一次性命令注册到 Edge `65f6aade-5560-416e-9765-0d6fb0bacc00`；Controller 重启后数据库只恢复 identity，Directory 从 Edge 内存快照恢复为在线，三个进程均为 `NRestarts=0`。Playwright 对 `1440x900` 与 `390x844` 验证了中文固定侧栏、Edge/Daemon 独立模块、实时在线行、当前 Edge 域名/端口、注册表单、页面/console error 门禁，共 2 项通过。
 
-### 32.8 R5：客户端 P2P 纵向（当前最早未完成切片）
+### 32.8 R5：客户端 P2P 纵向（已完成）
 
 - 实现 CloudRouteGrant、ClientTicket、ClientGateway 和 `client/adapter/cloud`。
 - TUI/CLI 从左到右完成 resolve、offer/answer、P2P DataChannel、remote auth、protocol Hello、terminal 输入输出。
 - Android 通过同一 Go engine 完成真实 UI 连接，不允许平台层替代信令。
 
-### 32.9 R6：Relay、配额与 usage
+R5 通过 `0316f725` 建立了 Proto-first Directory/ClientGateway、Controller 签发与 Edge 离线校验 ClientTicket、daemon 真实 Pion answer/revocation、客户端 resolve -> ticket -> P2P -> 端到端认证 -> protocol Hello 链路，以及 Android Cloud Route 的同一 Go engine 装配；`4417cc51` 修正了可移植配对路由。最终收口补齐了 Go Endpoint registry 对 managed Cloud preference 的双向持久化映射，以及 ConnectionSnapshot 的 Cloud route kind 投影，防止已建立 Cloud 连接在 UI 中显示为未知路由。
+
+2026-07-26 的在线开发验收中，Controller `155.94.155.192:18443/18444` SHA-256 为 `5e9e6ec85200d08e1bce5154d59f94537e09e9c80cfb60c8eae6e774ca37e3c1`，Edge `muxvia-cn1.omscd.com:41102` SHA-256 为 `bf093903650ce35643f3e1aa7f5c2ecfc5a5c58776ed08a1a511de12aca4d90a`，Linux daemon CLI SHA-256 为 `ad5da5ba18bf57902a71adcd2c3fb571aed14ff33435893ce186e01f62726492`，三个 systemd 服务均为 active 且 `NRestarts=0`。CLI 通过公网 Controller resolve 和 Edge ClientGateway 建立 host/host UDP P2P DataChannel，在远端 `/bin/cat` 终端完成 `muxvia-r5-online-cli` 输入输出。
+
+最终 Android ARM64 debug APK SHA-256 为 `7aefcb71d21779ca9174e80e9c8e711d8061a1db10752f15e6b9eff469174fd7`。Playwright 1.62.0 通过 API 35 ARM64 模拟器中的真实 App UI 选择 Muxvia Cloud、打开远端终端并输入 `muxvia-r5-android-final`；daemon terminal capture 得到两次 cat 回显。连接投影显示 route ID `cloud`、实际路径 P2P direct、host/host candidate、UDP/UDP transport 和 51ms RTT；Android crash 扫描无异常。Cloud 相关 Go 全域测试通过，integration 连续运行 10 次通过。R5 只完成 P2P Cloud Route，P2P 失败后的 TURN Relay、配额和 usage 属于 R6。
+
+### 32.9 R6：Relay、配额与 usage（当前最早未完成切片）
 
 - 在同一 Edge 进程接 TURN、RelayLease、rate/concurrency/byte limit。
 - 实现 durable usage outbox、Controller 幂等结算和故障恢复。

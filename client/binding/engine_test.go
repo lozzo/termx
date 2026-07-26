@@ -120,6 +120,19 @@ func TestEngineOpenSessionReturnsReadyConnectionSnapshot(t *testing.T) {
 	}
 }
 
+func TestBindingRouteKindIncludesManagedCloud(t *testing.T) {
+	for kind, want := range map[endpoint.RouteKind]bindingpb.ConnectionRouteKind{
+		endpoint.RouteLocalUnix:       bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_LOCAL,
+		endpoint.RouteDirectWebRTCTCP: bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_DIRECT,
+		endpoint.RouteSSHWebRTCTCP:    bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_SSH,
+		endpoint.RouteManagedWebRTC:   bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_CLOUD,
+	} {
+		if got := bindingRouteKind(kind); got != want {
+			t.Fatalf("bindingRouteKind(%q) = %v, want %v", kind, got, want)
+		}
+	}
+}
+
 func TestEngineConnectionSnapshotCommandResamplesCurrentSession(t *testing.T) {
 	session := newBindingSession()
 	session.connection = &clientruntime.ConnectionSnapshot{RouteID: "direct", RouteKind: endpoint.RouteDirectWebRTCTCP, SampledAt: time.Unix(1_800_000_000, 0).UTC(), BytesReceived: 10, Connected: true}

@@ -189,6 +189,8 @@ func connectionPolicyFromProto(policy *bindingpb.ConnectionPolicy) (endpoint.Rou
 		preference = endpoint.RoutePreferenceDirect
 	case remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_SSH:
 		preference = endpoint.RoutePreferenceSSH
+	case remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_MANAGED_CLOUD:
+		preference = endpoint.RoutePreferenceManagedCloud
 	default:
 		return "", fmt.Errorf("connection route preference is unsupported")
 	}
@@ -204,6 +206,8 @@ func connectionPolicyToProto(target endpoint.Endpoint) *bindingpb.ConnectionPoli
 		policy.RoutePreference = remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_DIRECT
 	case endpoint.RoutePreferenceSSH:
 		policy.RoutePreference = remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_SSH
+	case endpoint.RoutePreferenceManagedCloud:
+		policy.RoutePreference = remoteauthpb.EndpointRoutePreference_ENDPOINT_ROUTE_PREFERENCE_MANAGED_CLOUD
 	}
 	return policy
 }
