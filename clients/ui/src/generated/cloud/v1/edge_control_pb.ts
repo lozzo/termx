@@ -6,6 +6,8 @@ import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobu
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { HeartbeatPolicy, VerificationKey } from "./common_pb";
 import { file_cloud_v1_common } from "./common_pb";
+import type { AgentPresence, ClientSessionSummary, RuntimeDelta } from "./runtime_pb";
+import { file_cloud_v1_runtime } from "./runtime_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
@@ -14,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/edge_control.proto.
  */
 export const file_cloud_v1_edge_control: GenFile = /*@__PURE__*/
-  fileDesc("ChtjbG91ZC92MS9lZGdlX2NvbnRyb2wucHJvdG8SD211eHZpYS5jbG91ZC52MSKqAQoJRWRnZUhlbGxvEg8KB2VkZ2VfaWQYASABKAkSGAoQc29mdHdhcmVfdmVyc2lvbhgCIAEoCRI1CgxjYXBhYmlsaXRpZXMYAyADKA4yHy5tdXh2aWEuY2xvdWQudjEuRWRnZUNhcGFiaWxpdHkSHgoWZGVzaXJlZF9jb25maWdfdmVyc2lvbhgEIAEoBBIbChNjZXJ0aWZpY2F0ZV92ZXJzaW9uGAUgASgEIqkBCgtFZGdlV2VsY29tZRIhChlhY2NlcHRlZF9wcm90b2NvbF92ZXJzaW9uGAEgASgNEjMKCWhlYXJ0YmVhdBgCIAEoCzIgLm11eHZpYS5jbG91ZC52MS5IZWFydGJlYXRQb2xpY3kSQgoYdGlja2V0X3ZlcmlmaWNhdGlvbl9rZXlzGAMgAygLMiAubXV4dmlhLmNsb3VkLnYxLlZlcmlmaWNhdGlvbktleSLtAQoJRWRnZUV2ZW50EhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SEgoKbWVzc2FnZV9pZBgCIAEoCRIRCglzZW5kZXJfaWQYAyABKAkSDwoHYm9vdF9pZBgEIAEoCRIVCg1jb25uZWN0aW9uX2lkGAUgASgJEhIKCnN0cmVhbV9zZXEYBiABKAQSKwoHc2VudF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKwoFaGVsbG8YFCABKAsyGi5tdXh2aWEuY2xvdWQudjEuRWRnZUhlbGxvSABCCQoHcGF5bG9hZCL5AQoRQ29udHJvbGxlckNvbW1hbmQSGAoQcHJvdG9jb2xfdmVyc2lvbhgBIAEoDRISCgptZXNzYWdlX2lkGAIgASgJEhEKCXNlbmRlcl9pZBgDIAEoCRIPCgdib290X2lkGAQgASgJEhUKDWNvbm5lY3Rpb25faWQYBSABKAkSEgoKc3RyZWFtX3NlcRgGIAEoBBIrCgdzZW50X2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgd3ZWxjb21lGBQgASgLMhwubXV4dmlhLmNsb3VkLnYxLkVkZ2VXZWxjb21lSABCCQoHcGF5bG9hZCpVCg5FZGdlQ2FwYWJpbGl0eRIfChtFREdFX0NBUEFCSUxJVFlfVU5TUEVDSUZJRUQQABIiCh5FREdFX0NBUEFCSUxJVFlfQ09OVFJPTF9TVFJFQU0QATJcCgtFZGdlQ29udHJvbBJNCgdDb25uZWN0EhoubXV4dmlhLmNsb3VkLnYxLkVkZ2VFdmVudBoiLm11eHZpYS5jbG91ZC52MS5Db250cm9sbGVyQ29tbWFuZCgBMAFCMVovZ2l0aHViLmNvbS9tdXh2aWEvbXV4dmlhL3Byb3RvL2Nsb3VkL3YxO2Nsb3VkdjFiBnByb3RvMw", [file_cloud_v1_common, file_google_protobuf_timestamp]);
+  fileDesc("ChtjbG91ZC92MS9lZGdlX2NvbnRyb2wucHJvdG8SD211eHZpYS5jbG91ZC52MSKqAQoJRWRnZUhlbGxvEg8KB2VkZ2VfaWQYASABKAkSGAoQc29mdHdhcmVfdmVyc2lvbhgCIAEoCRI1CgxjYXBhYmlsaXRpZXMYAyADKA4yHy5tdXh2aWEuY2xvdWQudjEuRWRnZUNhcGFiaWxpdHkSHgoWZGVzaXJlZF9jb25maWdfdmVyc2lvbhgEIAEoBBIbChNjZXJ0aWZpY2F0ZV92ZXJzaW9uGAUgASgEIqkBCgtFZGdlV2VsY29tZRIhChlhY2NlcHRlZF9wcm90b2NvbF92ZXJzaW9uGAEgASgNEjMKCWhlYXJ0YmVhdBgCIAEoCzIgLm11eHZpYS5jbG91ZC52MS5IZWFydGJlYXRQb2xpY3kSQgoYdGlja2V0X3ZlcmlmaWNhdGlvbl9rZXlzGAMgAygLMiAubXV4dmlhLmNsb3VkLnYxLlZlcmlmaWNhdGlvbktleSI2Cg1TbmFwc2hvdEJlZ2luEhMKC3NuYXBzaG90X2lkGAEgASgJEhAKCHJldmlzaW9uGAIgASgEIqIBCg1TbmFwc2hvdENodW5rEhMKC3NuYXBzaG90X2lkGAEgASgJEhMKC2NodW5rX2luZGV4GAIgASgNEi4KBmFnZW50cxgDIAMoCzIeLm11eHZpYS5jbG91ZC52MS5BZ2VudFByZXNlbmNlEjcKCHNlc3Npb25zGAQgAygLMiUubXV4dmlhLmNsb3VkLnYxLkNsaWVudFNlc3Npb25TdW1tYXJ5IlkKC1NuYXBzaG90RW5kEhMKC3NuYXBzaG90X2lkGAEgASgJEhAKCHJldmlzaW9uGAIgASgEEhMKC2NodW5rX2NvdW50GAMgASgNEg4KBmRpZ2VzdBgEIAEoDCIpCg1FZGdlSGVhcnRiZWF0EhgKEHJ1bnRpbWVfcmV2aXNpb24YASABKAQiOQoQU25hcHNob3RBY2NlcHRlZBITCgtzbmFwc2hvdF9pZBgBIAEoCRIQCghyZXZpc2lvbhgCIAEoBCI7Cg5SZXN5bmNSZXF1aXJlZBIZChFleHBlY3RlZF9yZXZpc2lvbhgBIAEoBBIOCgZyZWFzb24YAiABKAkihAQKCUVkZ2VFdmVudBIYChBwcm90b2NvbF92ZXJzaW9uGAEgASgNEhIKCm1lc3NhZ2VfaWQYAiABKAkSEQoJc2VuZGVyX2lkGAMgASgJEg8KB2Jvb3RfaWQYBCABKAkSFQoNY29ubmVjdGlvbl9pZBgFIAEoCRISCgpzdHJlYW1fc2VxGAYgASgEEisKB3NlbnRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEisKBWhlbGxvGBQgASgLMhoubXV4dmlhLmNsb3VkLnYxLkVkZ2VIZWxsb0gAEjgKDnNuYXBzaG90X2JlZ2luGBUgASgLMh4ubXV4dmlhLmNsb3VkLnYxLlNuYXBzaG90QmVnaW5IABI4Cg5zbmFwc2hvdF9jaHVuaxgWIAEoCzIeLm11eHZpYS5jbG91ZC52MS5TbmFwc2hvdENodW5rSAASNAoMc25hcHNob3RfZW5kGBcgASgLMhwubXV4dmlhLmNsb3VkLnYxLlNuYXBzaG90RW5kSAASNgoNcnVudGltZV9kZWx0YRgYIAEoCzIdLm11eHZpYS5jbG91ZC52MS5SdW50aW1lRGVsdGFIABIzCgloZWFydGJlYXQYGSABKAsyHi5tdXh2aWEuY2xvdWQudjEuRWRnZUhlYXJ0YmVhdEgAQgkKB3BheWxvYWQi9QIKEUNvbnRyb2xsZXJDb21tYW5kEhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SEgoKbWVzc2FnZV9pZBgCIAEoCRIRCglzZW5kZXJfaWQYAyABKAkSDwoHYm9vdF9pZBgEIAEoCRIVCg1jb25uZWN0aW9uX2lkGAUgASgJEhIKCnN0cmVhbV9zZXEYBiABKAQSKwoHc2VudF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoHd2VsY29tZRgUIAEoCzIcLm11eHZpYS5jbG91ZC52MS5FZGdlV2VsY29tZUgAEj4KEXNuYXBzaG90X2FjY2VwdGVkGBUgASgLMiEubXV4dmlhLmNsb3VkLnYxLlNuYXBzaG90QWNjZXB0ZWRIABI6Cg9yZXN5bmNfcmVxdWlyZWQYFiABKAsyHy5tdXh2aWEuY2xvdWQudjEuUmVzeW5jUmVxdWlyZWRIAEIJCgdwYXlsb2FkKlUKDkVkZ2VDYXBhYmlsaXR5Eh8KG0VER0VfQ0FQQUJJTElUWV9VTlNQRUNJRklFRBAAEiIKHkVER0VfQ0FQQUJJTElUWV9DT05UUk9MX1NUUkVBTRABMlwKC0VkZ2VDb250cm9sEk0KB0Nvbm5lY3QSGi5tdXh2aWEuY2xvdWQudjEuRWRnZUV2ZW50GiIubXV4dmlhLmNsb3VkLnYxLkNvbnRyb2xsZXJDb21tYW5kKAEwAUIxWi9naXRodWIuY29tL211eHZpYS9tdXh2aWEvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_cloud_v1_common, file_cloud_v1_runtime, file_google_protobuf_timestamp]);
 
 /**
  * EdgeHello 是 EdgeControl 新连接的第一个且唯一一个注册消息。
@@ -87,8 +89,167 @@ export const EdgeWelcomeSchema: GenMessage<EdgeWelcome> = /*@__PURE__*/
   messageDesc(file_cloud_v1_edge_control, 1);
 
 /**
+ * SnapshotBegin 开始当前 connection generation 的临时快照命名空间。
+ *
+ * @generated from message muxvia.cloud.v1.SnapshotBegin
+ */
+export type SnapshotBegin = Message<"muxvia.cloud.v1.SnapshotBegin"> & {
+  /**
+   * @generated from field: string snapshot_id = 1;
+   */
+  snapshotId: string;
+
+  /**
+   * @generated from field: uint64 revision = 2;
+   */
+  revision: bigint;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.SnapshotBegin.
+ * Use `create(SnapshotBeginSchema)` to create a new message.
+ */
+export const SnapshotBeginSchema: GenMessage<SnapshotBegin> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_edge_control, 2);
+
+/**
+ * SnapshotChunk 分块传输快照对象；chunk_index 必须从零严格递增。
+ *
+ * @generated from message muxvia.cloud.v1.SnapshotChunk
+ */
+export type SnapshotChunk = Message<"muxvia.cloud.v1.SnapshotChunk"> & {
+  /**
+   * @generated from field: string snapshot_id = 1;
+   */
+  snapshotId: string;
+
+  /**
+   * @generated from field: uint32 chunk_index = 2;
+   */
+  chunkIndex: number;
+
+  /**
+   * @generated from field: repeated muxvia.cloud.v1.AgentPresence agents = 3;
+   */
+  agents: AgentPresence[];
+
+  /**
+   * @generated from field: repeated muxvia.cloud.v1.ClientSessionSummary sessions = 4;
+   */
+  sessions: ClientSessionSummary[];
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.SnapshotChunk.
+ * Use `create(SnapshotChunkSchema)` to create a new message.
+ */
+export const SnapshotChunkSchema: GenMessage<SnapshotChunk> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_edge_control, 3);
+
+/**
+ * SnapshotEnd 携带完整投影的确定性摘要，Controller 校验后才原子发布。
+ *
+ * @generated from message muxvia.cloud.v1.SnapshotEnd
+ */
+export type SnapshotEnd = Message<"muxvia.cloud.v1.SnapshotEnd"> & {
+  /**
+   * @generated from field: string snapshot_id = 1;
+   */
+  snapshotId: string;
+
+  /**
+   * @generated from field: uint64 revision = 2;
+   */
+  revision: bigint;
+
+  /**
+   * @generated from field: uint32 chunk_count = 3;
+   */
+  chunkCount: number;
+
+  /**
+   * @generated from field: bytes digest = 4;
+   */
+  digest: Uint8Array;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.SnapshotEnd.
+ * Use `create(SnapshotEndSchema)` to create a new message.
+ */
+export const SnapshotEndSchema: GenMessage<SnapshotEnd> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_edge_control, 4);
+
+/**
+ * EdgeHeartbeat 只报告可合并的最新 runtime revision。
+ *
+ * @generated from message muxvia.cloud.v1.EdgeHeartbeat
+ */
+export type EdgeHeartbeat = Message<"muxvia.cloud.v1.EdgeHeartbeat"> & {
+  /**
+   * @generated from field: uint64 runtime_revision = 1;
+   */
+  runtimeRevision: bigint;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.EdgeHeartbeat.
+ * Use `create(EdgeHeartbeatSchema)` to create a new message.
+ */
+export const EdgeHeartbeatSchema: GenMessage<EdgeHeartbeat> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_edge_control, 5);
+
+/**
+ * SnapshotAccepted 表示 Controller 已原子发布当前快照。
+ *
+ * @generated from message muxvia.cloud.v1.SnapshotAccepted
+ */
+export type SnapshotAccepted = Message<"muxvia.cloud.v1.SnapshotAccepted"> & {
+  /**
+   * @generated from field: string snapshot_id = 1;
+   */
+  snapshotId: string;
+
+  /**
+   * @generated from field: uint64 revision = 2;
+   */
+  revision: bigint;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.SnapshotAccepted.
+ * Use `create(SnapshotAcceptedSchema)` to create a new message.
+ */
+export const SnapshotAcceptedSchema: GenMessage<SnapshotAccepted> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_edge_control, 6);
+
+/**
+ * ResyncRequired 要求 Edge 丢弃当前发送游标并重新获取一致性快照。
+ *
+ * @generated from message muxvia.cloud.v1.ResyncRequired
+ */
+export type ResyncRequired = Message<"muxvia.cloud.v1.ResyncRequired"> & {
+  /**
+   * @generated from field: uint64 expected_revision = 1;
+   */
+  expectedRevision: bigint;
+
+  /**
+   * @generated from field: string reason = 2;
+   */
+  reason: string;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.ResyncRequired.
+ * Use `create(ResyncRequiredSchema)` to create a new message.
+ */
+export const ResyncRequiredSchema: GenMessage<ResyncRequired> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_edge_control, 7);
+
+/**
  * EdgeEvent 是 Edge 向 Controller 发送的单调序列 envelope。
- * R1 只允许 hello；后续切片在 payload oneof 中追加快照和增量事件。
+ * hello 之后只允许快照、严格连续增量和可合并心跳。
  *
  * @generated from message muxvia.cloud.v1.EdgeEvent
  */
@@ -137,6 +298,36 @@ export type EdgeEvent = Message<"muxvia.cloud.v1.EdgeEvent"> & {
      */
     value: EdgeHello;
     case: "hello";
+  } | {
+    /**
+     * @generated from field: muxvia.cloud.v1.SnapshotBegin snapshot_begin = 21;
+     */
+    value: SnapshotBegin;
+    case: "snapshotBegin";
+  } | {
+    /**
+     * @generated from field: muxvia.cloud.v1.SnapshotChunk snapshot_chunk = 22;
+     */
+    value: SnapshotChunk;
+    case: "snapshotChunk";
+  } | {
+    /**
+     * @generated from field: muxvia.cloud.v1.SnapshotEnd snapshot_end = 23;
+     */
+    value: SnapshotEnd;
+    case: "snapshotEnd";
+  } | {
+    /**
+     * @generated from field: muxvia.cloud.v1.RuntimeDelta runtime_delta = 24;
+     */
+    value: RuntimeDelta;
+    case: "runtimeDelta";
+  } | {
+    /**
+     * @generated from field: muxvia.cloud.v1.EdgeHeartbeat heartbeat = 25;
+     */
+    value: EdgeHeartbeat;
+    case: "heartbeat";
   } | { case: undefined; value?: undefined };
 };
 
@@ -145,11 +336,11 @@ export type EdgeEvent = Message<"muxvia.cloud.v1.EdgeEvent"> & {
  * Use `create(EdgeEventSchema)` to create a new message.
  */
 export const EdgeEventSchema: GenMessage<EdgeEvent> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_edge_control, 2);
+  messageDesc(file_cloud_v1_edge_control, 8);
 
 /**
  * ControllerCommand 是 Controller 向 Edge 发送的单调序列 envelope。
- * R1 只允许 welcome；所有后续实时命令必须另带 command/correlation/deadline 字段。
+ * welcome 之后由 snapshot_accepted 或 resync_required 驱动同步状态机。
  *
  * @generated from message muxvia.cloud.v1.ControllerCommand
  */
@@ -198,6 +389,18 @@ export type ControllerCommand = Message<"muxvia.cloud.v1.ControllerCommand"> & {
      */
     value: EdgeWelcome;
     case: "welcome";
+  } | {
+    /**
+     * @generated from field: muxvia.cloud.v1.SnapshotAccepted snapshot_accepted = 21;
+     */
+    value: SnapshotAccepted;
+    case: "snapshotAccepted";
+  } | {
+    /**
+     * @generated from field: muxvia.cloud.v1.ResyncRequired resync_required = 22;
+     */
+    value: ResyncRequired;
+    case: "resyncRequired";
   } | { case: undefined; value?: undefined };
 };
 
@@ -206,7 +409,7 @@ export type ControllerCommand = Message<"muxvia.cloud.v1.ControllerCommand"> & {
  * Use `create(ControllerCommandSchema)` to create a new message.
  */
 export const ControllerCommandSchema: GenMessage<ControllerCommand> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_edge_control, 3);
+  messageDesc(file_cloud_v1_edge_control, 9);
 
 /**
  * EdgeCapability 是 Edge 进程已实现并愿意承诺的版本化能力。

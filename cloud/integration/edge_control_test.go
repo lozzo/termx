@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"io"
 	"math/big"
 	"net"
@@ -20,15 +21,18 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/cloud/controller/control"
+	"github.com/muxvia/muxvia/cloud/controller/directory"
 	controllerruntime "github.com/muxvia/muxvia/cloud/controller/runtime"
 	"github.com/muxvia/muxvia/cloud/edge/controllerlink"
 	edgeruntime "github.com/muxvia/muxvia/cloud/edge/runtime"
 	"github.com/muxvia/muxvia/cloud/securetransport"
+	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -77,6 +81,22 @@ func TestEdgeControllerHelloWelcomeOverMutualTLS(t *testing.T) {
 	defer cancelReady()
 	if err := edgeRuntime.WaitReady(readyContext); err != nil {
 		t.Fatalf("wait for real EdgeHello/EdgeWelcome: %v", err)
+	}
+	agent := &cloudv1.AgentPresence{DaemonId: "daemon-r2-1", AccountId: "account-r2-1", BootId: "daemon-boot-r2-1", ConnectionId: "agent-connection-r2-1", Generation: 1, TicketId: "ticket-r2-1", TicketIssuedAt: timestamppb.Now()}
+	if err := edgeRuntime.UpsertAgent(context.Background(), agent); err != nil {
+		t.Fatalf("publish test agent through Edge runtime: %v", err)
+	}
+	session := &cloudv1.ClientSessionSummary{SessionId: "session-r2-1", AccountId: "account-r2-1", DaemonId: agent.GetDaemonId(), ClientId: "client-r2-1", Product: cloudv1.ClientProduct_CLIENT_PRODUCT_TUI, Generation: 1}
+	if err := edgeRuntime.UpsertSession(context.Background(), session); err != nil {
+		t.Fatalf("publish test session through Edge runtime: %v", err)
+	}
+	eventually(t, 5*time.Second, func() bool {
+		projection, found, queryErr := controllerRuntime.directory.Edge(context.Background(), testEdgeID)
+		return queryErr == nil && found && projection.AgentCount == 1 && projection.SessionCount == 1 && projection.RuntimeRevision == 2
+	})
+	location, found, err := controllerRuntime.directory.LocateDaemon(context.Background(), agent.GetDaemonId())
+	if err != nil || !found || location.EdgeID != testEdgeID || location.Generation != 1 {
+		t.Fatalf("locate daemon = %+v, found=%v, err=%v", location, found, err)
 	}
 	assertHTTPStatus(t, http.DefaultClient, "http://"+controllerRuntime.HealthAddress()+"/readyz", http.StatusOK)
 
@@ -129,6 +149,7 @@ func TestControllerRejectsHelloIdentityMismatch(t *testing.T) {
 		EdgeID:            "edge-does-not-match-certificate",
 		BootID:            testEdgeBootID,
 		SoftwareVersion:   testEdgeSoftwareVersion,
+		OpenRuntimeFeed:   emptyRuntimeFeed,
 	})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("mismatched Edge identity code = %s, want InvalidArgument; error: %v", status.Code(err), err)
@@ -183,6 +204,7 @@ func TestControllerGracefullyShutsDownWithActiveEdgeStream(t *testing.T) {
 		EdgeID:            testEdgeID,
 		BootID:            testEdgeBootID,
 		SoftwareVersion:   testEdgeSoftwareVersion,
+		OpenRuntimeFeed:   emptyRuntimeFeed,
 	})
 	if err != nil {
 		t.Fatalf("open active EdgeControl stream: %v", err)
@@ -198,21 +220,31 @@ func TestControllerGracefullyShutsDownWithActiveEdgeStream(t *testing.T) {
 	go func() { waitResult <- session.Wait() }()
 	select {
 	case err := <-waitResult:
-		if status.Code(err) != codes.Unavailable {
-			t.Fatalf("drained Edge stream code = %s, want Unavailable; error: %v", status.Code(err), err)
+		if !errors.Is(err, io.EOF) && status.Code(err) != codes.Unavailable {
+			t.Fatalf("drained Edge stream = %v, want clean EOF or Unavailable", err)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("drained Edge stream did not close")
 	}
 }
 
-func startController(t *testing.T, certificates certificateFiles) *controllerruntime.Runtime {
+type controllerHarness struct {
+	*controllerruntime.Runtime
+	directory *directory.Directory
+}
+
+func startController(t *testing.T, certificates certificateFiles) *controllerHarness {
 	t.Helper()
+	directoryState, err := directory.New(directory.Config{MailboxSize: 1024, GracePeriod: 25 * time.Millisecond})
+	if err != nil {
+		t.Fatalf("create Controller Directory: %v", err)
+	}
 	service, err := control.NewService(control.Config{
 		ControllerID:      testControllerID,
 		ControllerBootID:  testControllerBootID,
 		HeartbeatInterval: time.Second,
 		HeartbeatTimeout:  3 * time.Second,
+		Directory:         directoryState,
 	})
 	if err != nil {
 		t.Fatalf("create EdgeControl service: %v", err)
@@ -225,6 +257,7 @@ func startController(t *testing.T, certificates certificateFiles) *controllerrun
 		EdgeCAFile:          certificates.rootCA,
 	}, service)
 	if err != nil {
+		directoryState.Close()
 		t.Fatalf("start Controller: %v", err)
 	}
 	t.Cleanup(func() {
@@ -233,8 +266,26 @@ func startController(t *testing.T, certificates certificateFiles) *controllerrun
 		if err := runtime.Shutdown(shutdownContext); err != nil {
 			t.Errorf("shutdown Controller: %v", err)
 		}
+		directoryState.Close()
 	})
-	return runtime
+	return &controllerHarness{Runtime: runtime, directory: directoryState}
+}
+
+func emptyRuntimeFeed(context.Context) (*controllerlink.RuntimeFeed, error) {
+	deltas := make(chan *cloudv1.RuntimeDelta)
+	return &controllerlink.RuntimeFeed{Snapshot: &cloudv1.RuntimeSnapshot{}, Deltas: deltas, Close: func() { close(deltas) }}, nil
+}
+
+func eventually(t *testing.T, timeout time.Duration, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("condition did not become true before timeout")
 }
 
 func shutdownEdge(t *testing.T, runtime *edgeruntime.Runtime) {

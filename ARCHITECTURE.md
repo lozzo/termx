@@ -1340,13 +1340,15 @@ Edge 最少暴露：
 
 2026-07-26 的 R1D 实际部署使用源码提交 `3f7288a5`：Controller 位于 `155.94.155.192:18443`，SHA-256 为 `1cb45c1b788e38690f2253d4cefef457f3ae583ec0d925ddaaac2539bf0ccb50`；Edge 位于 `https://muxvia-cn1.omscd.com:41102`，SHA-256 为 `0dca4b2226f959db46111789fc27f886016a07b5f416a3252d69878790461055`。Controller 故障时 Edge 保持 alive、撤销 ready，Controller 恢复及两个 unit 分别重启后均自动重建 `Hello/Welcome`；活跃控制流存在时 Controller 在 211ms 内正常退出，systemd 结果为 success、退出码为 0。旧活动资产分别归档在两台主机的 `/var/backups/muxvia/r1d-20260726T013831Z`；开发公网证书在 2026-08-07 到期，必须在到期前更换，不得把它视为 R8 证书管理完成。
 
-### 32.5 R2：Edge runtime 与 Controller Directory（当前最早未完成切片）
+### 32.5 R2：Edge runtime 与 Controller Directory（已完成）
 
 - 实现两个 actor、generation、writer queue、snapshot/chunk/delta。
 - 实现 10 万对象基准、race test、断线整体删除和 Controller restart 重建。
 - 此时只使用测试 agent/session event，不提前实现 daemon 连接。
 
-### 32.6 R3：Edge 配置与安装
+R2 建立了 `cloud/edge/runtime.State` 与 `cloud/controller/directory.Directory` 两个有界单写者 actor；EdgeControl 现在通过唯一 writer queue 发送确定性分块快照、严格连续增量和心跳，Controller 校验完整摘要后才原子发布并返回 `SnapshotAccepted`。本地准入覆盖半快照隔离、revision gap 重同步、generation fence、断线整体清理、Controller 空目录重启重建、并发 race 和 10 万 daemon 快照/查询基准；R2 不包含真实 AgentGateway 或客户端连接。
+
+### 32.6 R3：Edge 配置与安装（当前最早未完成切片）
 
 - 实现 Edge desired config、claim、EdgeIdentity CSR/mTLS 和 curl installer。
 - 实现运营 Edge 列表最小页面，能看到真实在线 Edge 和基础信息。

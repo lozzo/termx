@@ -3,6 +3,7 @@ syntax = "proto3";
 package muxvia.cloud.v1;
 
 import "cloud/v1/common.proto";
+import "cloud/v1/runtime.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
@@ -31,8 +32,47 @@ message EdgeWelcome {
   repeated VerificationKey ticket_verification_keys = 3;
 }
 
+// SnapshotBegin 开始当前 connection generation 的临时快照命名空间。
+message SnapshotBegin {
+  string snapshot_id = 1;
+  uint64 revision = 2;
+}
+
+// SnapshotChunk 分块传输快照对象；chunk_index 必须从零严格递增。
+message SnapshotChunk {
+  string snapshot_id = 1;
+  uint32 chunk_index = 2;
+  repeated AgentPresence agents = 3;
+  repeated ClientSessionSummary sessions = 4;
+}
+
+// SnapshotEnd 携带完整投影的确定性摘要，Controller 校验后才原子发布。
+message SnapshotEnd {
+  string snapshot_id = 1;
+  uint64 revision = 2;
+  uint32 chunk_count = 3;
+  bytes digest = 4;
+}
+
+// EdgeHeartbeat 只报告可合并的最新 runtime revision。
+message EdgeHeartbeat {
+  uint64 runtime_revision = 1;
+}
+
+// SnapshotAccepted 表示 Controller 已原子发布当前快照。
+message SnapshotAccepted {
+  string snapshot_id = 1;
+  uint64 revision = 2;
+}
+
+// ResyncRequired 要求 Edge 丢弃当前发送游标并重新获取一致性快照。
+message ResyncRequired {
+  uint64 expected_revision = 1;
+  string reason = 2;
+}
+
 // EdgeEvent 是 Edge 向 Controller 发送的单调序列 envelope。
-// R1 只允许 hello；后续切片在 payload oneof 中追加快照和增量事件。
+// hello 之后只允许快照、严格连续增量和可合并心跳。
 message EdgeEvent {
   uint32 protocol_version = 1;
   string message_id = 2;
@@ -43,11 +83,16 @@ message EdgeEvent {
   google.protobuf.Timestamp sent_at = 7;
   oneof payload {
     EdgeHello hello = 20;
+    SnapshotBegin snapshot_begin = 21;
+    SnapshotChunk snapshot_chunk = 22;
+    SnapshotEnd snapshot_end = 23;
+    RuntimeDelta runtime_delta = 24;
+    EdgeHeartbeat heartbeat = 25;
   }
 }
 
 // ControllerCommand 是 Controller 向 Edge 发送的单调序列 envelope。
-// R1 只允许 welcome；所有后续实时命令必须另带 command/correlation/deadline 字段。
+// welcome 之后由 snapshot_accepted 或 resync_required 驱动同步状态机。
 message ControllerCommand {
   uint32 protocol_version = 1;
   string message_id = 2;
@@ -58,6 +103,8 @@ message ControllerCommand {
   google.protobuf.Timestamp sent_at = 7;
   oneof payload {
     EdgeWelcome welcome = 20;
+    SnapshotAccepted snapshot_accepted = 21;
+    ResyncRequired resync_required = 22;
   }
 }
 

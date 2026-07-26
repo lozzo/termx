@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/muxvia/muxvia/cloud/controller/control"
+	"github.com/muxvia/muxvia/cloud/controller/directory"
 	"github.com/muxvia/muxvia/cloud/controller/postgres"
 	controllerruntime "github.com/muxvia/muxvia/cloud/controller/runtime"
 )
@@ -68,11 +69,17 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	}
 	defer database.Close()
 
+	directoryState, err := directory.New(directory.Config{MailboxSize: 4096, GracePeriod: 10 * time.Second})
+	if err != nil {
+		return err
+	}
+	defer directoryState.Close()
 	service, err := control.NewService(control.Config{
 		ControllerID:      config.controllerID,
 		ControllerBootID:  uuid.NewString(),
 		HeartbeatInterval: config.heartbeatInterval,
 		HeartbeatTimeout:  config.heartbeatTimeout,
+		Directory:         directoryState,
 	})
 	if err != nil {
 		return err

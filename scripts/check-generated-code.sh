@@ -52,6 +52,7 @@ portable_ts_proto=(
 )
 cloud_proto=(
   proto/cloud/v1/common.proto
+  proto/cloud/v1/runtime.proto
   proto/cloud/v1/edge_control.proto
 )
 # Go 与 TypeScript 都从 proto 源码生成到临时目录；检查过程不改工作树。

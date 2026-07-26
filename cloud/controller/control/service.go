@@ -1,4 +1,4 @@
-// Package control 实现 Controller 侧 EdgeControl gRPC admission 和 R1 Hello/Welcome 链路。
+// Package control 实现 Controller 侧 EdgeControl gRPC admission、同步状态机和 writer 边界。
 package control
 
 import (
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/muxvia/muxvia/cloud/controller/directory"
 	"github.com/muxvia/muxvia/cloud/securetransport"
 	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 	"google.golang.org/grpc/codes"
@@ -27,17 +28,17 @@ import (
 // ProtocolVersion 是新 Cloud 控制流首发协议版本。
 const ProtocolVersion uint32 = 1
 
-// Config 是 EdgeControl service 的 Controller 身份和下发策略。
-// ControllerBootID 每次进程启动重新生成，不存数据库。
+// Config 是 EdgeControl service 的 Controller 身份、Directory 和下发策略。
 type Config struct {
 	ControllerID           string
 	ControllerBootID       string
 	HeartbeatInterval      time.Duration
 	HeartbeatTimeout       time.Duration
 	TicketVerificationKeys []*cloudv1.VerificationKey
+	Directory              *directory.Directory
 }
 
-// Service 拥有 EdgeControl 流的 admission 语义，但不持有 R2 Directory 状态。
+// Service 只拥有 EdgeControl admission 和 wire 状态机；实时拓扑全部提交给 Directory actor。
 type Service struct {
 	cloudv1.UnimplementedEdgeControlServer
 	config    Config
@@ -46,12 +47,12 @@ type Service struct {
 	drainOnce sync.Once
 }
 
-// NewService 校验 Controller 身份与心跳策略，失败时不创建部分可用 service。
+// NewService 校验 Controller 身份、心跳和 Directory，失败时不创建部分可用 service。
 func NewService(config Config) (*Service, error) {
 	config.ControllerID = strings.TrimSpace(config.ControllerID)
 	config.ControllerBootID = strings.TrimSpace(config.ControllerBootID)
-	if config.ControllerID == "" || config.ControllerBootID == "" {
-		return nil, errors.New("controller ID and boot ID are required")
+	if config.ControllerID == "" || config.ControllerBootID == "" || config.Directory == nil {
+		return nil, errors.New("controller ID, boot ID, and Directory are required")
 	}
 	if config.HeartbeatInterval <= 0 || config.HeartbeatTimeout < config.HeartbeatInterval {
 		return nil, errors.New("heartbeat timeout must be greater than or equal to a positive interval")
@@ -61,14 +62,13 @@ func NewService(config Config) (*Service, error) {
 }
 
 // BeginShutdown 拒绝新控制流并通知现有 Connect handler 主动结束。
-// Runtime 必须先调用它再执行 gRPC GracefulStop，避免长连接把进程关闭拖到超时。
 func (service *Service) BeginShutdown() {
 	service.draining.Store(true)
 	service.drainOnce.Do(func() { close(service.drain) })
 }
 
-// Connect 验证 mTLS EdgeIdentity、第一个 envelope 和 EdgeHello，然后发送唯一 EdgeWelcome。
-// R1 不接受快照或增量 payload；收到额外事件会明确拒绝，不做旧协议 fallback。
+// Connect 验证 mTLS/Hello，然后把快照和增量逐条提交给 Directory。
+// 半份快照、序号缺口和摘要错误只触发当前连接重同步，不发布陈旧或不完整投影。
 func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error {
 	if service.draining.Load() {
 		return status.Error(codes.Unavailable, "Controller is draining")
@@ -77,44 +77,134 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 	if err != nil {
 		return status.Error(codes.Unauthenticated, err.Error())
 	}
-	event, err := service.receive(stream)
+	outbound := make(chan *cloudv1.ControllerCommand, 64)
+	writerErrors := make(chan error, 1)
+	go func() {
+		for command := range outbound {
+			if err := stream.Send(command); err != nil {
+				writerErrors <- err
+				return
+			}
+		}
+	}()
+	defer close(outbound)
+	send := func(command *cloudv1.ControllerCommand) error {
+		select {
+		case err := <-writerErrors:
+			return err
+		case <-stream.Context().Done():
+			return context.Cause(stream.Context())
+		case outbound <- command:
+			return nil
+		default:
+			return errors.New("Controller writer queue is full")
+		}
+	}
+
+	event, err := service.receive(stream, writerErrors)
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "receive EdgeHello: %v", err)
 	}
-	if _, err := validateHello(event, certificateEdgeID); err != nil {
+	hello, err := validateHello(event, certificateEdgeID)
+	if err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
-	if service.draining.Load() {
-		return status.Error(codes.Unavailable, "Controller is draining")
+	if err := service.config.Directory.Attach(stream.Context(), directory.Attachment{
+		EdgeID: certificateEdgeID, BootID: event.GetBootId(), ConnectionID: event.GetConnectionId(), SoftwareVersion: hello.GetSoftwareVersion(), ConnectedAt: time.Now().UTC(),
+	}); err != nil {
+		return status.Errorf(codes.Aborted, "attach Edge generation: %v", err)
 	}
-	command := &cloudv1.ControllerCommand{
-		ProtocolVersion: ProtocolVersion,
-		MessageId:       uuid.NewString(),
-		SenderId:        service.config.ControllerID,
-		BootId:          service.config.ControllerBootID,
-		ConnectionId:    event.GetConnectionId(),
-		StreamSeq:       1,
-		SentAt:          timestamppb.Now(),
-		Payload: &cloudv1.ControllerCommand_Welcome{Welcome: &cloudv1.EdgeWelcome{
-			AcceptedProtocolVersion: ProtocolVersion,
-			Heartbeat: &cloudv1.HeartbeatPolicy{
-				Interval: durationpb.New(service.config.HeartbeatInterval),
-				Timeout:  durationpb.New(service.config.HeartbeatTimeout),
-			},
-			TicketVerificationKeys: cloneKeys(service.config.TicketVerificationKeys),
-		}},
-	}
-	if err := stream.Send(command); err != nil {
+	defer service.config.Directory.Detach(event.GetConnectionId())
+	bootID := event.GetBootId()
+	connectionID := event.GetConnectionId()
+
+	commandSeq := uint64(1)
+	if err := send(service.command(connectionID, commandSeq, &cloudv1.ControllerCommand_Welcome{Welcome: &cloudv1.EdgeWelcome{
+		AcceptedProtocolVersion: ProtocolVersion,
+		Heartbeat:               &cloudv1.HeartbeatPolicy{Interval: durationpb.New(service.config.HeartbeatInterval), Timeout: durationpb.New(service.config.HeartbeatTimeout)},
+		TicketVerificationKeys:  cloneKeys(service.config.TicketVerificationKeys),
+	}})); err != nil {
 		return status.Errorf(codes.Unavailable, "send EdgeWelcome: %v", err)
 	}
+	expectedEventSeq := uint64(2)
 	for {
-		if _, err := service.receive(stream); errors.Is(err, io.EOF) {
+		event, err = service.receive(stream, writerErrors)
+		if errors.Is(err, io.EOF) {
 			return nil
-		} else if err != nil {
+		}
+		if err != nil {
 			return err
 		}
-		return status.Error(codes.Unimplemented, "R1 EdgeControl accepts only the initial EdgeHello")
+		if err := validateEventEnvelope(event, certificateEdgeID, hello.GetEdgeId(), bootID, connectionID); err != nil {
+			return status.Error(codes.InvalidArgument, err.Error())
+		}
+		if event.GetStreamSeq() != expectedEventSeq {
+			expectedEventSeq = event.GetStreamSeq() + 1
+			commandSeq++
+			if err := send(service.resyncCommand(event.GetConnectionId(), commandSeq, 0, "Edge event stream sequence has a gap")); err != nil {
+				return status.Errorf(codes.Unavailable, "send ResyncRequired: %v", err)
+			}
+			continue
+		}
+		expectedEventSeq++
+		accepted, syncErr := service.applyEvent(stream.Context(), event)
+		if syncErr != nil {
+			var resync *directory.SyncError
+			if !errors.As(syncErr, &resync) {
+				return status.Error(codes.InvalidArgument, syncErr.Error())
+			}
+			commandSeq++
+			if err := send(service.resyncCommand(event.GetConnectionId(), commandSeq, resync.ExpectedRevision, resync.Reason)); err != nil {
+				return status.Errorf(codes.Unavailable, "send ResyncRequired: %v", err)
+			}
+			continue
+		}
+		if accepted != nil {
+			commandSeq++
+			if err := send(service.command(event.GetConnectionId(), commandSeq, &cloudv1.ControllerCommand_SnapshotAccepted{SnapshotAccepted: accepted})); err != nil {
+				return status.Errorf(codes.Unavailable, "send SnapshotAccepted: %v", err)
+			}
+		}
 	}
+}
+
+func (service *Service) applyEvent(ctx context.Context, event *cloudv1.EdgeEvent) (*cloudv1.SnapshotAccepted, error) {
+	switch payload := event.GetPayload().(type) {
+	case *cloudv1.EdgeEvent_SnapshotBegin:
+		return nil, service.config.Directory.BeginSnapshot(ctx, event.GetConnectionId(), payload.SnapshotBegin)
+	case *cloudv1.EdgeEvent_SnapshotChunk:
+		return nil, service.config.Directory.AppendSnapshot(ctx, event.GetConnectionId(), payload.SnapshotChunk)
+	case *cloudv1.EdgeEvent_SnapshotEnd:
+		if err := service.config.Directory.CommitSnapshot(ctx, event.GetConnectionId(), payload.SnapshotEnd); err != nil {
+			return nil, err
+		}
+		return &cloudv1.SnapshotAccepted{SnapshotId: payload.SnapshotEnd.GetSnapshotId(), Revision: payload.SnapshotEnd.GetRevision()}, nil
+	case *cloudv1.EdgeEvent_RuntimeDelta:
+		return nil, service.config.Directory.ApplyDelta(ctx, event.GetConnectionId(), payload.RuntimeDelta)
+	case *cloudv1.EdgeEvent_Heartbeat:
+		return nil, service.config.Directory.Heartbeat(ctx, event.GetConnectionId(), payload.Heartbeat)
+	default:
+		return nil, errors.New("EdgeHello is only valid as the first EdgeControl payload")
+	}
+}
+
+func (service *Service) command(connectionID string, sequence uint64, payload any) *cloudv1.ControllerCommand {
+	command := &cloudv1.ControllerCommand{ProtocolVersion: ProtocolVersion, MessageId: uuid.NewString(), SenderId: service.config.ControllerID, BootId: service.config.ControllerBootID, ConnectionId: connectionID, StreamSeq: sequence, SentAt: timestamppb.Now()}
+	switch typed := payload.(type) {
+	case *cloudv1.ControllerCommand_Welcome:
+		command.Payload = typed
+	case *cloudv1.ControllerCommand_SnapshotAccepted:
+		command.Payload = typed
+	case *cloudv1.ControllerCommand_ResyncRequired:
+		command.Payload = typed
+	default:
+		panic("unsupported ControllerCommand payload")
+	}
+	return command
+}
+
+func (service *Service) resyncCommand(connectionID string, sequence, expected uint64, reason string) *cloudv1.ControllerCommand {
+	return service.command(connectionID, sequence, &cloudv1.ControllerCommand_ResyncRequired{ResyncRequired: &cloudv1.ResyncRequired{ExpectedRevision: expected, Reason: reason}})
 }
 
 type receiveResult struct {
@@ -122,13 +212,15 @@ type receiveResult struct {
 	err   error
 }
 
-func (service *Service) receive(stream cloudv1.EdgeControl_ConnectServer) (*cloudv1.EdgeEvent, error) {
+func (service *Service) receive(stream cloudv1.EdgeControl_ConnectServer, writerErrors <-chan error) (*cloudv1.EdgeEvent, error) {
 	result := make(chan receiveResult, 1)
 	go func() {
 		event, err := stream.Recv()
 		result <- receiveResult{event: event, err: err}
 	}()
 	select {
+	case err := <-writerErrors:
+		return nil, status.Errorf(codes.Unavailable, "send Controller command: %v", err)
 	case <-service.drain:
 		return nil, status.Error(codes.Unavailable, "Controller is draining")
 	case <-stream.Context().Done():
@@ -154,20 +246,14 @@ func validateHello(event *cloudv1.EdgeEvent, certificateEdgeID string) (*cloudv1
 	if event == nil || event.GetHello() == nil {
 		return nil, errors.New("first EdgeControl payload must be EdgeHello")
 	}
-	if event.GetProtocolVersion() != ProtocolVersion {
-		return nil, fmt.Errorf("unsupported protocol version %d", event.GetProtocolVersion())
-	}
-	if strings.TrimSpace(event.GetMessageId()) == "" || strings.TrimSpace(event.GetBootId()) == "" || strings.TrimSpace(event.GetConnectionId()) == "" {
-		return nil, errors.New("EdgeHello envelope IDs are required")
+	if err := validateEventEnvelope(event, certificateEdgeID, certificateEdgeID, event.GetBootId(), event.GetConnectionId()); err != nil {
+		return nil, err
 	}
 	if event.GetStreamSeq() != 1 {
 		return nil, errors.New("EdgeHello stream_seq must be 1")
 	}
-	if event.GetSentAt() == nil || event.GetSentAt().CheckValid() != nil {
-		return nil, errors.New("EdgeHello sent_at is invalid")
-	}
 	hello := event.GetHello()
-	if hello.GetEdgeId() != certificateEdgeID || event.GetSenderId() != certificateEdgeID {
+	if hello.GetEdgeId() != certificateEdgeID {
 		return nil, errors.New("EdgeHello identity does not match the mTLS Edge URI SAN")
 	}
 	if strings.TrimSpace(hello.GetSoftwareVersion()) == "" {
@@ -179,13 +265,28 @@ func validateHello(event *cloudv1.EdgeEvent, certificateEdgeID string) (*cloudv1
 	return hello, nil
 }
 
+func validateEventEnvelope(event *cloudv1.EdgeEvent, certificateEdgeID, senderID, bootID, connectionID string) error {
+	if event == nil || event.GetProtocolVersion() != ProtocolVersion {
+		return fmt.Errorf("unsupported protocol version %d", event.GetProtocolVersion())
+	}
+	if strings.TrimSpace(event.GetMessageId()) == "" || strings.TrimSpace(event.GetBootId()) == "" || strings.TrimSpace(event.GetConnectionId()) == "" {
+		return errors.New("Edge event envelope IDs are required")
+	}
+	if event.GetSenderId() != senderID || senderID != certificateEdgeID || event.GetBootId() != bootID || event.GetConnectionId() != connectionID {
+		return errors.New("Edge event identity or generation does not match EdgeHello")
+	}
+	if event.GetSentAt() == nil || event.GetSentAt().CheckValid() != nil {
+		return errors.New("Edge event sent_at is invalid")
+	}
+	return nil
+}
+
 func cloneKeys(keys []*cloudv1.VerificationKey) []*cloudv1.VerificationKey {
 	cloned := make([]*cloudv1.VerificationKey, 0, len(keys))
 	for _, key := range keys {
-		if key == nil {
-			continue
+		if key != nil {
+			cloned = append(cloned, proto.Clone(key).(*cloudv1.VerificationKey))
 		}
-		cloned = append(cloned, proto.Clone(key).(*cloudv1.VerificationKey))
 	}
 	return cloned
 }

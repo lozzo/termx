@@ -7,9 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/muxvia/muxvia/cloud/controller/control"
+	"github.com/muxvia/muxvia/cloud/runtimesnapshot"
 	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -18,8 +21,17 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+const snapshotChunkSize = 256
+
+// RuntimeFeed 是在同一 Edge actor 事务中取得的快照和后续增量。
+type RuntimeFeed struct {
+	Snapshot *cloudv1.RuntimeSnapshot
+	Deltas   <-chan *cloudv1.RuntimeDelta
+	Close    func()
+}
+
 // Config 是一次 EdgeControl 连接尝试的完整输入。
-// BootID 由 Edge 进程拥有，ConnectionID 由 Open 每次生成。
+// OpenRuntimeFeed 必须从 Edge Runtime actor 原子取得快照与后续增量订阅。
 type Config struct {
 	ControllerAddress    string
 	TLSConfig            *tls.Config
@@ -28,93 +40,309 @@ type Config struct {
 	SoftwareVersion      string
 	DesiredConfigVersion uint64
 	CertificateVersion   uint64
+	WriterQueueSize      int
+	OpenRuntimeFeed      func(context.Context) (*RuntimeFeed, error)
 }
 
-// Session 拥有一个已完成 Hello/Welcome 的 EdgeControl stream 与底层 gRPC connection。
-// 该类型不维护 Directory 或 runtime topology。
+// Session 拥有一个 EdgeControl generation、唯一 reader、唯一 writer 与同步 coordinator。
 type Session struct {
 	connectionID string
 	welcome      *cloudv1.EdgeWelcome
 	stream       cloudv1.EdgeControl_ConnectClient
 	connection   *grpc.ClientConn
+	cancel       context.CancelFunc
+	done         chan struct{}
+	doneOnce     sync.Once
+	resultMu     sync.Mutex
+	resultErr    error
+	ready        chan struct{}
+	readyOnce    sync.Once
+	closeOnce    sync.Once
 }
 
-// Open 建立真实 mTLS gRPC 流，发送 EdgeHello 并等待已校验的 EdgeWelcome。
-// TLS、协议版本、envelope 或 connection generation 不匹配时不返回部分 Session。
-func Open(ctx context.Context, config Config) (*Session, error) {
+// Open 建立 mTLS 流并完成 Hello/Welcome；SnapshotAccepted 由 WaitReady 单独等待。
+func Open(parent context.Context, config Config) (*Session, error) {
 	config.ControllerAddress = strings.TrimSpace(config.ControllerAddress)
 	config.EdgeID = strings.TrimSpace(config.EdgeID)
 	config.BootID = strings.TrimSpace(config.BootID)
 	config.SoftwareVersion = strings.TrimSpace(config.SoftwareVersion)
-	if config.ControllerAddress == "" || config.EdgeID == "" || config.BootID == "" || config.SoftwareVersion == "" || config.TLSConfig == nil {
-		return nil, errors.New("controller address, TLS config, Edge ID, boot ID, and software version are required")
+	if config.WriterQueueSize == 0 {
+		config.WriterQueueSize = 1024
 	}
+	if config.ControllerAddress == "" || config.EdgeID == "" || config.BootID == "" || config.SoftwareVersion == "" || config.TLSConfig == nil || config.OpenRuntimeFeed == nil || config.WriterQueueSize <= 0 {
+		return nil, errors.New("controller address, TLS, Edge identity, runtime feed, and positive writer queue are required")
+	}
+	ctx, cancel := context.WithCancel(parent)
 	connection, err := grpc.NewClient(config.ControllerAddress, grpc.WithTransportCredentials(credentials.NewTLS(config.TLSConfig.Clone())))
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("create EdgeControl client: %w", err)
 	}
 	stream, err := cloudv1.NewEdgeControlClient(connection).Connect(ctx)
 	if err != nil {
+		cancel()
 		_ = connection.Close()
 		return nil, fmt.Errorf("open EdgeControl stream: %w", err)
 	}
 	connectionID := uuid.NewString()
-	event := &cloudv1.EdgeEvent{
-		ProtocolVersion: control.ProtocolVersion,
-		MessageId:       uuid.NewString(),
-		SenderId:        config.EdgeID,
-		BootId:          config.BootID,
-		ConnectionId:    connectionID,
-		StreamSeq:       1,
-		SentAt:          timestamppb.Now(),
-		Payload: &cloudv1.EdgeEvent_Hello{Hello: &cloudv1.EdgeHello{
-			EdgeId:               config.EdgeID,
-			SoftwareVersion:      config.SoftwareVersion,
-			Capabilities:         []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM},
-			DesiredConfigVersion: config.DesiredConfigVersion,
-			CertificateVersion:   config.CertificateVersion,
-		}},
-	}
-	if err := stream.Send(event); err != nil {
+	if err := stream.Send(edgeEvent(config, connectionID, 1, &cloudv1.EdgeEvent_Hello{Hello: &cloudv1.EdgeHello{
+		EdgeId: config.EdgeID, SoftwareVersion: config.SoftwareVersion,
+		Capabilities:         []cloudv1.EdgeCapability{cloudv1.EdgeCapability_EDGE_CAPABILITY_CONTROL_STREAM},
+		DesiredConfigVersion: config.DesiredConfigVersion, CertificateVersion: config.CertificateVersion,
+	}})); err != nil {
+		cancel()
 		_ = connection.Close()
 		return nil, fmt.Errorf("send EdgeHello: %w", err)
 	}
 	command, err := stream.Recv()
 	if err != nil {
+		cancel()
 		_ = connection.Close()
 		return nil, fmt.Errorf("receive EdgeWelcome: %w", err)
 	}
 	welcome, err := validateWelcome(command, connectionID)
 	if err != nil {
+		cancel()
 		_ = connection.Close()
 		return nil, err
 	}
-	return &Session{connectionID: connectionID, welcome: welcome, stream: stream, connection: connection}, nil
+	session := &Session{connectionID: connectionID, welcome: welcome, stream: stream, connection: connection, cancel: cancel, done: make(chan struct{}), ready: make(chan struct{})}
+	go session.run(ctx, config, command.GetSenderId(), command.GetBootId(), config.WriterQueueSize)
+	return session, nil
 }
 
-// ConnectionID 返回当前 Edge 连接 generation，该值只在进程内存中生效。
-func (session *Session) ConnectionID() string {
-	return session.connectionID
+// ConnectionID 返回当前 Edge connection generation，只在进程内存中生效。
+func (session *Session) ConnectionID() string { return session.connectionID }
+
+// Welcome 返回 Controller 接受的心跳和公开验签策略投影。
+func (session *Session) Welcome() *cloudv1.EdgeWelcome { return session.welcome }
+
+// WaitReady 等待 Controller 原子接受当前 generation 的完整快照。
+func (session *Session) WaitReady(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-session.done:
+		if session.err() == nil {
+			return errors.New("EdgeControl closed before snapshot was accepted")
+		}
+		return session.err()
+	case <-session.ready:
+		return nil
+	}
 }
 
-// Welcome 返回 Controller 接受的心跳和公钥策略投影。
-func (session *Session) Welcome() *cloudv1.EdgeWelcome {
-	return session.welcome
-}
-
-// Wait 由当前连接的唯一 reader 调用，直到 Controller 关闭或发送 R1 不支持的命令。
+// Wait 等待当前 generation 结束；调用方据此撤销 ready 并重连。
 func (session *Session) Wait() error {
-	command, err := session.stream.Recv()
+	<-session.done
+	return session.err()
+}
+
+// Close 取消 reader/writer/coordinator 并关闭底层连接；重复调用安全。
+func (session *Session) Close() error {
+	var err error
+	session.closeOnce.Do(func() {
+		session.cancel()
+		_ = session.stream.CloseSend()
+		err = session.connection.Close()
+	})
+	return err
+}
+
+func (session *Session) run(ctx context.Context, config Config, controllerID, controllerBootID string, writerQueueSize int) {
+	commands := make(chan *cloudv1.ControllerCommand, writerQueueSize)
+	receiveErrors := make(chan error, 1)
+	go session.readCommands(ctx, controllerID, controllerBootID, commands, receiveErrors)
+	events := make(chan any, writerQueueSize)
+	writeErrors := make(chan error, 1)
+	go session.writeEvents(ctx, config, events, writeErrors)
+
+	var feed *RuntimeFeed
+	closeFeed := func() {
+		if feed != nil && feed.Close != nil {
+			feed.Close()
+		}
+		feed = nil
+	}
+	defer closeFeed()
+	startSnapshot := func() error {
+		closeFeed()
+		var err error
+		feed, err = config.OpenRuntimeFeed(ctx)
+		if err != nil {
+			return err
+		}
+		return queueSnapshot(ctx, events, feed.Snapshot)
+	}
+	if err := startSnapshot(); err != nil {
+		session.finish(err)
+		return
+	}
+	latestRevision := feed.Snapshot.GetRevision()
+	heartbeat := time.NewTicker(session.welcome.GetHeartbeat().GetInterval().AsDuration())
+	defer heartbeat.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			session.finish(context.Cause(ctx))
+			return
+		case err := <-receiveErrors:
+			session.finish(err)
+			return
+		case err := <-writeErrors:
+			session.finish(err)
+			return
+		case command := <-commands:
+			switch payload := command.GetPayload().(type) {
+			case *cloudv1.ControllerCommand_SnapshotAccepted:
+				if feed != nil && payload.SnapshotAccepted.GetRevision() == feed.Snapshot.GetRevision() {
+					session.readyOnce.Do(func() { close(session.ready) })
+				}
+			case *cloudv1.ControllerCommand_ResyncRequired:
+				if err := startSnapshot(); err != nil {
+					session.finish(err)
+					return
+				}
+				latestRevision = feed.Snapshot.GetRevision()
+			default:
+				session.finish(fmt.Errorf("unsupported Controller command payload %T", command.GetPayload()))
+				return
+			}
+		case delta, ok := <-feed.Deltas:
+			if !ok {
+				session.finish(errors.New("runtime delta buffer overflowed"))
+				return
+			}
+			if err := queueEvent(ctx, events, &cloudv1.EdgeEvent_RuntimeDelta{RuntimeDelta: delta}); err != nil {
+				session.finish(err)
+				return
+			}
+			latestRevision = delta.GetRevision()
+		case <-heartbeat.C:
+			if err := queueEvent(ctx, events, &cloudv1.EdgeEvent_Heartbeat{Heartbeat: &cloudv1.EdgeHeartbeat{RuntimeRevision: latestRevision}}); err != nil {
+				session.finish(err)
+				return
+			}
+		}
+	}
+}
+
+func (session *Session) readCommands(ctx context.Context, controllerID, controllerBootID string, output chan<- *cloudv1.ControllerCommand, errorsOut chan<- error) {
+	expected := uint64(2)
+	for {
+		command, err := session.stream.Recv()
+		if err != nil {
+			errorsOut <- err
+			return
+		}
+		if err := validateCommand(command, session.connectionID, controllerID, controllerBootID, expected); err != nil {
+			errorsOut <- err
+			return
+		}
+		expected++
+		select {
+		case <-ctx.Done():
+			return
+		case output <- command:
+		}
+	}
+}
+
+func (session *Session) writeEvents(ctx context.Context, config Config, input <-chan any, errorsOut chan<- error) {
+	sequence := uint64(1)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case payload := <-input:
+			sequence++
+			if err := session.stream.Send(edgeEvent(config, session.connectionID, sequence, payload)); err != nil {
+				errorsOut <- err
+				return
+			}
+		}
+	}
+}
+
+func (session *Session) finish(err error) {
+	session.doneOnce.Do(func() {
+		session.resultMu.Lock()
+		session.resultErr = err
+		session.resultMu.Unlock()
+		close(session.done)
+	})
+}
+
+func (session *Session) err() error {
+	session.resultMu.Lock()
+	defer session.resultMu.Unlock()
+	return session.resultErr
+}
+
+func queueSnapshot(ctx context.Context, output chan<- any, snapshot *cloudv1.RuntimeSnapshot) error {
+	normalized, err := runtimesnapshot.NormalizeClone(snapshot)
 	if err != nil {
 		return err
 	}
-	return fmt.Errorf("unsupported R1 Controller command payload %T", command.GetPayload())
+	digest, err := runtimesnapshot.Digest(normalized)
+	if err != nil {
+		return err
+	}
+	snapshotID := uuid.NewString()
+	if err := queueEvent(ctx, output, &cloudv1.EdgeEvent_SnapshotBegin{SnapshotBegin: &cloudv1.SnapshotBegin{SnapshotId: snapshotID, Revision: normalized.GetRevision()}}); err != nil {
+		return err
+	}
+	chunkIndex := uint32(0)
+	for agentIndex, sessionIndex := 0, 0; agentIndex < len(normalized.Agents) || sessionIndex < len(normalized.Sessions); chunkIndex++ {
+		chunk := &cloudv1.SnapshotChunk{SnapshotId: snapshotID, ChunkIndex: chunkIndex}
+		remaining := snapshotChunkSize
+		for agentIndex < len(normalized.Agents) && remaining > 0 {
+			chunk.Agents = append(chunk.Agents, normalized.Agents[agentIndex])
+			agentIndex++
+			remaining--
+		}
+		for sessionIndex < len(normalized.Sessions) && remaining > 0 {
+			chunk.Sessions = append(chunk.Sessions, normalized.Sessions[sessionIndex])
+			sessionIndex++
+			remaining--
+		}
+		if err := queueEvent(ctx, output, &cloudv1.EdgeEvent_SnapshotChunk{SnapshotChunk: chunk}); err != nil {
+			return err
+		}
+	}
+	return queueEvent(ctx, output, &cloudv1.EdgeEvent_SnapshotEnd{SnapshotEnd: &cloudv1.SnapshotEnd{SnapshotId: snapshotID, Revision: normalized.GetRevision(), ChunkCount: chunkIndex, Digest: digest}})
 }
 
-// Close 关闭发送方向和底层 gRPC connection，迟到消息不会被新 generation 复用。
-func (session *Session) Close() error {
-	_ = session.stream.CloseSend()
-	return session.connection.Close()
+func queueEvent(ctx context.Context, output chan<- any, payload any) error {
+	select {
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case output <- payload:
+		return nil
+	default:
+		return errors.New("EdgeControl writer queue is full")
+	}
+}
+
+func edgeEvent(config Config, connectionID string, sequence uint64, payload any) *cloudv1.EdgeEvent {
+	event := &cloudv1.EdgeEvent{ProtocolVersion: control.ProtocolVersion, MessageId: uuid.NewString(), SenderId: config.EdgeID, BootId: config.BootID, ConnectionId: connectionID, StreamSeq: sequence, SentAt: timestamppb.Now()}
+	switch typed := payload.(type) {
+	case *cloudv1.EdgeEvent_Hello:
+		event.Payload = typed
+	case *cloudv1.EdgeEvent_SnapshotBegin:
+		event.Payload = typed
+	case *cloudv1.EdgeEvent_SnapshotChunk:
+		event.Payload = typed
+	case *cloudv1.EdgeEvent_SnapshotEnd:
+		event.Payload = typed
+	case *cloudv1.EdgeEvent_RuntimeDelta:
+		event.Payload = typed
+	case *cloudv1.EdgeEvent_Heartbeat:
+		event.Payload = typed
+	default:
+		panic("unsupported EdgeEvent payload")
+	}
+	return event
 }
 
 func validateWelcome(command *cloudv1.ControllerCommand, connectionID string) (*cloudv1.EdgeWelcome, error) {
@@ -124,20 +352,27 @@ func validateWelcome(command *cloudv1.ControllerCommand, connectionID string) (*
 	if command.GetProtocolVersion() != control.ProtocolVersion || command.GetWelcome().GetAcceptedProtocolVersion() != control.ProtocolVersion {
 		return nil, fmt.Errorf("Controller accepted unsupported protocol version %d", command.GetWelcome().GetAcceptedProtocolVersion())
 	}
-	if strings.TrimSpace(command.GetMessageId()) == "" || strings.TrimSpace(command.GetSenderId()) == "" || strings.TrimSpace(command.GetBootId()) == "" {
-		return nil, errors.New("EdgeWelcome envelope IDs are required")
-	}
-	if command.GetConnectionId() != connectionID || command.GetStreamSeq() != 1 {
-		return nil, errors.New("EdgeWelcome connection generation or stream sequence does not match")
-	}
-	if command.GetSentAt() == nil || command.GetSentAt().CheckValid() != nil {
-		return nil, errors.New("EdgeWelcome sent_at is invalid")
+	if err := validateCommand(command, connectionID, command.GetSenderId(), command.GetBootId(), 1); err != nil {
+		return nil, err
 	}
 	heartbeat := command.GetWelcome().GetHeartbeat()
 	if heartbeat == nil || heartbeat.GetInterval() == nil || heartbeat.GetTimeout() == nil || heartbeat.GetInterval().AsDuration() <= 0 || heartbeat.GetTimeout().AsDuration() < heartbeat.GetInterval().AsDuration() {
 		return nil, errors.New("EdgeWelcome heartbeat policy is invalid")
 	}
 	return command.GetWelcome(), nil
+}
+
+func validateCommand(command *cloudv1.ControllerCommand, connectionID, controllerID, controllerBootID string, sequence uint64) error {
+	if command == nil || command.GetProtocolVersion() != control.ProtocolVersion || strings.TrimSpace(command.GetMessageId()) == "" || strings.TrimSpace(controllerID) == "" || strings.TrimSpace(controllerBootID) == "" {
+		return errors.New("Controller command envelope is invalid")
+	}
+	if command.GetSenderId() != controllerID || command.GetBootId() != controllerBootID || command.GetConnectionId() != connectionID || command.GetStreamSeq() != sequence {
+		return errors.New("Controller command identity, generation, or sequence does not match")
+	}
+	if command.GetSentAt() == nil || command.GetSentAt().CheckValid() != nil {
+		return errors.New("Controller command sent_at is invalid")
+	}
+	return nil
 }
 
 // IsExpectedClosure 区分 shutdown/cancel 与需要重连的 Controller 故障。

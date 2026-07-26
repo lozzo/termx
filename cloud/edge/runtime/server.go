@@ -15,6 +15,7 @@ import (
 	"github.com/muxvia/muxvia/cloud/edge/controllerlink"
 	"github.com/muxvia/muxvia/cloud/processhealth"
 	"github.com/muxvia/muxvia/cloud/securetransport"
+	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 	"google.golang.org/grpc"
 	grpc_health "google.golang.org/grpc/health"
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
@@ -36,8 +37,7 @@ type Config struct {
 	SoftwareVersion         string
 }
 
-// Runtime 拥有 Edge 公网 listener、gRPC health 和唯一 ControllerLink 重连循环。
-// R1 不拥有 agent/session/allocation map；这些真值由 R2 Runtime actor 建立。
+// Runtime 拥有 Edge 公网 listener、唯一 ControllerLink 和唯一内存 State actor。
 type Runtime struct {
 	config        Config
 	publicTLS     *tls.Config
@@ -53,6 +53,7 @@ type Runtime struct {
 	cancel        context.CancelFunc
 	waitGroup     sync.WaitGroup
 	shutdownOnce  sync.Once
+	state         *State
 }
 
 // Start 先启动固定 HTTPS /healthz，再在后台建立 mTLS EdgeControl。
@@ -78,8 +79,13 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load Edge identity TLS: %w", err)
 	}
+	state, err := NewState(StateConfig{MailboxSize: 1024, DeltaBuffer: 4096})
+	if err != nil {
+		return nil, err
+	}
 	listener, err := net.Listen("tcp", config.ListenAddress)
 	if err != nil {
+		state.Close()
 		return nil, fmt.Errorf("listen Edge public address: %w", err)
 	}
 	healthState := &processhealth.State{}
@@ -93,6 +99,7 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 		config: config, publicTLS: publicTLS, controllerTLS: controllerTLS,
 		listener: listener, grpcServer: grpcServer, grpcHealth: grpcHealth, health: healthState,
 		errors: make(chan error, 1), readyChanges: make(chan struct{}, 1), ctx: ctx, cancel: cancel,
+		state: state,
 	}
 	runtime.httpServer = &http.Server{Handler: runtime, ReadHeaderTimeout: 5 * time.Second, TLSConfig: publicTLS}
 	runtime.waitGroup.Add(2)
@@ -106,7 +113,7 @@ func (runtime *Runtime) PublicAddress() string {
 	return runtime.listener.Addr().String()
 }
 
-// Ready 表示 Edge 已完成当前 generation 的 EdgeHello/EdgeWelcome。
+// Ready 表示 Controller 已校验并原子接受当前 generation 的完整 Runtime 快照。
 func (runtime *Runtime) Ready() bool {
 	return runtime.health.Ready()
 }
@@ -128,6 +135,18 @@ func (runtime *Runtime) WaitReady(ctx context.Context) error {
 // Errors 只输出 Edge 公网 listener 的致命错误；ControllerLink 断开会撤销 ready 并有界重连。
 func (runtime *Runtime) Errors() <-chan error {
 	return runtime.errors
+}
+
+// UpsertAgent 把认证后的 daemon Presence 提交给唯一 State actor。
+// R2 由 integration harness 调用，R4 将由 AgentGateway 调用同一路径。
+func (runtime *Runtime) UpsertAgent(ctx context.Context, agent *cloudv1.AgentPresence) error {
+	return runtime.state.UpsertAgent(ctx, agent)
+}
+
+// UpsertSession 把认证后的客户端信令摘要提交给唯一 State actor。
+// R2 由 integration harness 调用，R5 将由 ClientGateway 调用同一路径。
+func (runtime *Runtime) UpsertSession(ctx context.Context, session *cloudv1.ClientSessionSummary) error {
+	return runtime.state.UpsertSession(ctx, session)
 }
 
 // ServeHTTP 在同一 TLS listener 上路由 gRPC health 和固定 HTTP 健康路径。
@@ -162,6 +181,7 @@ func (runtime *Runtime) Shutdown(ctx context.Context) error {
 				shutdownErr = ctx.Err()
 			}
 		}
+		runtime.state.Close()
 		runtime.health.SetAlive(false)
 	})
 	return shutdownErr
@@ -184,19 +204,30 @@ func (runtime *Runtime) runControllerLink() {
 			EdgeID:            runtime.config.EdgeID,
 			BootID:            runtime.config.BootID,
 			SoftwareVersion:   runtime.config.SoftwareVersion,
+			OpenRuntimeFeed: func(ctx context.Context) (*controllerlink.RuntimeFeed, error) {
+				feed, err := runtime.state.OpenFeed(ctx)
+				if err != nil {
+					return nil, err
+				}
+				return &controllerlink.RuntimeFeed{Snapshot: feed.Snapshot, Deltas: feed.Deltas, Close: feed.Close}, nil
+			},
 		})
 		if err == nil {
 			if runtime.ctx.Err() != nil {
 				_ = session.Close()
 				return
 			}
-			runtime.setReady(true)
-			runtime.grpcHealth.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
-			delay = 100 * time.Millisecond
-			err = session.Wait()
-			_ = session.Close()
-			runtime.setReady(false)
-			runtime.grpcHealth.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+			if err = session.WaitReady(runtime.ctx); err != nil {
+				_ = session.Close()
+			} else {
+				runtime.setReady(true)
+				runtime.grpcHealth.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+				delay = 100 * time.Millisecond
+				err = session.Wait()
+				_ = session.Close()
+				runtime.setReady(false)
+				runtime.grpcHealth.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+			}
 		}
 		if runtime.ctx.Err() != nil || controllerlink.IsExpectedClosure(runtime.ctx, err) {
 			return

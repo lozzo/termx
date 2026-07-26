@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
-// TestCloudV1DescriptorBaseline 锁定 R1 Cloud 跨进程契约，后续只能做可审查的兼容扩展。
+// TestCloudV1DescriptorBaseline 锁定当前 Cloud v1 跨进程契约，后续只能做可审查的兼容扩展。
 func TestCloudV1DescriptorBaseline(t *testing.T) {
 	payload, err := os.ReadFile("testdata/cloud-v1.pb")
 	if err != nil {
@@ -22,6 +22,7 @@ func TestCloudV1DescriptorBaseline(t *testing.T) {
 	}
 	current := &descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{
 		protodesc.ToFileDescriptorProto(File_cloud_v1_common_proto),
+		protodesc.ToFileDescriptorProto(File_cloud_v1_runtime_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_edge_control_proto),
 	}}
 	if !proto.Equal(baseline, current) {
@@ -39,11 +40,15 @@ func TestEdgeControlIsBidirectionalStreaming(t *testing.T) {
 	if method == nil || !method.IsStreamingClient() || !method.IsStreamingServer() {
 		t.Fatalf("EdgeControl.Connect must be bidirectional streaming: %#v", method)
 	}
-	assertEnvelopeFields(t, (&EdgeEvent{}).ProtoReflect().Descriptor())
-	assertEnvelopeFields(t, (&ControllerCommand{}).ProtoReflect().Descriptor())
+	assertEnvelopeFields(t, (&EdgeEvent{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25,
+	})
+	assertEnvelopeFields(t, (&ControllerCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22,
+	})
 }
 
-func assertEnvelopeFields(t *testing.T, descriptor protoreflect.MessageDescriptor) {
+func assertEnvelopeFields(t *testing.T, descriptor protoreflect.MessageDescriptor, wantPayload map[protoreflect.Name]protoreflect.FieldNumber) {
 	t.Helper()
 	want := map[protoreflect.Name]protoreflect.FieldNumber{
 		"protocol_version": 1,
@@ -61,7 +66,13 @@ func assertEnvelopeFields(t *testing.T, descriptor protoreflect.MessageDescripto
 		}
 	}
 	payload := descriptor.Oneofs().ByName("payload")
-	if payload == nil || payload.Fields().Len() != 1 || payload.Fields().Get(0).Number() != 20 {
-		t.Fatalf("%s payload oneof is not the R1 contract", descriptor.FullName())
+	if payload == nil || payload.Fields().Len() != len(wantPayload) {
+		t.Fatalf("%s payload field count=%d want=%d", descriptor.FullName(), payload.Fields().Len(), len(wantPayload))
+	}
+	for name, number := range wantPayload {
+		field := payload.Fields().ByName(name)
+		if field == nil || field.Number() != number {
+			t.Fatalf("%s payload %s field number=%v want=%d", descriptor.FullName(), name, field, number)
+		}
 	}
 }
