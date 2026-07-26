@@ -8,7 +8,7 @@ import (
 	"syscall"
 )
 
-func defaultResizeSignalFactory() (<-chan os.Signal, func()) {
+func defaultResizeSignalFactory(uintptr) (<-chan os.Signal, func()) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGWINCH)
 	return signals, func() {

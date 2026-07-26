@@ -96,6 +96,14 @@ func WithInput(reader io.Reader, fd uintptr) Option {
 	}
 }
 
+// WithSizeFD 设置宿主可见窗口尺寸的查询句柄。
+// Windows 输入句柄不能提供 ConsoleScreenBufferInfo，真实 Host 因此默认使用 stdout；该选项只供嵌入宿主和 harness 显式覆盖。
+func WithSizeFD(fd uintptr) Option {
+	return func(host *Host) {
+		host.sizeFD = fd
+	}
+}
+
 // WithOutput 设置宿主输出 writer。
 func WithOutput(writer io.Writer) Option {
 	return func(host *Host) {
@@ -174,6 +182,7 @@ type Host struct {
 	input  io.Reader
 	output io.Writer
 	fd     uintptr
+	sizeFD uintptr
 	ops    TerminalOps
 
 	cancelReaderFactory func(io.Reader) (CancelReader, error)
@@ -204,6 +213,7 @@ func New(options ...Option) *Host {
 		input:       os.Stdin,
 		output:      os.Stdout,
 		fd:          os.Stdin.Fd(),
+		sizeFD:      os.Stdout.Fd(),
 		ops:         xTermOps{},
 		inputBuffer: 64,
 		themeProbe:  true,
@@ -211,9 +221,14 @@ func New(options ...Option) *Host {
 	host.cancelReaderFactory = func(reader io.Reader) (CancelReader, error) {
 		return cancelreader.NewReader(reader)
 	}
-	host.resizeSignalFactory = defaultResizeSignalFactory
 	for _, option := range options {
 		option(host)
+	}
+	if host.resizeSignalFactory == nil {
+		sizeFD := host.sizeFD
+		host.resizeSignalFactory = func() (<-chan os.Signal, func()) {
+			return defaultResizeSignalFactory(sizeFD)
+		}
 	}
 	host.events = make(chan input.InputEvent, host.inputBuffer)
 	host.ready = make(chan struct{}, 1)
@@ -364,7 +379,7 @@ func writeFullString(writer io.Writer, value string) error {
 
 // Size 返回当前宿主终端尺寸，单位是 cols/rows。
 func (host *Host) Size() (int, int, error) {
-	return host.ops.GetSize(host.fd)
+	return host.ops.GetSize(host.sizeFD)
 }
 
 // InputEvents 返回宿主输入事件流。

@@ -25,6 +25,7 @@ type fakeTerminalOps struct {
 	rows     int
 	raw      int
 	restored int
+	sizeFD   uintptr
 }
 
 func (ops *fakeTerminalOps) IsTerminal(uintptr) bool {
@@ -45,10 +46,17 @@ func (ops *fakeTerminalOps) Restore(uintptr, TerminalState) error {
 	return nil
 }
 
-func (ops *fakeTerminalOps) GetSize(uintptr) (int, int, error) {
+func (ops *fakeTerminalOps) GetSize(fd uintptr) (int, int, error) {
 	ops.mu.Lock()
 	defer ops.mu.Unlock()
+	ops.sizeFD = fd
 	return ops.cols, ops.rows, nil
+}
+
+func (ops *fakeTerminalOps) SizeFD() uintptr {
+	ops.mu.Lock()
+	defer ops.mu.Unlock()
+	return ops.sizeFD
 }
 
 func (ops *fakeTerminalOps) RawCount() int {
@@ -436,13 +444,27 @@ func TestHostRejectsNonTerminal(t *testing.T) {
 }
 
 func TestHostReportsWindowSize(t *testing.T) {
-	host := New(WithTerminalOps(&fakeTerminalOps{cols: 132, rows: 43}))
+	ops := &fakeTerminalOps{cols: 132, rows: 43}
+	host := New(WithInput(strings.NewReader(""), 7), WithSizeFD(9), WithTerminalOps(ops))
 	cols, rows, err := host.Size()
 	if err != nil {
 		t.Fatalf("size: %v", err)
 	}
 	if cols != 132 || rows != 43 {
 		t.Fatalf("unexpected size %dx%d", cols, rows)
+	}
+	if got := ops.SizeFD(); got != 9 {
+		t.Fatalf("window size queried fd %d, want output fd 9", got)
+	}
+}
+
+func TestHostDefaultsWindowSizeToStdout(t *testing.T) {
+	host := New()
+	if host.sizeFD != os.Stdout.Fd() {
+		t.Fatalf("default size fd = %d, want stdout fd %d", host.sizeFD, os.Stdout.Fd())
+	}
+	if host.fd != os.Stdin.Fd() {
+		t.Fatalf("default input fd = %d, want stdin fd %d", host.fd, os.Stdin.Fd())
 	}
 }
 
