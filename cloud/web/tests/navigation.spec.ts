@@ -57,12 +57,14 @@ test('桌面端固定侧栏逐项进入不同管理模块', async ({ page }, tes
 test('手机端通过菜单进入模块且内容不重叠', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'mobile-chromium')
   await page.goto('/overview')
-  await page.getByRole('button', { name: '打开导航' }).click()
-  const nav = page.getByRole('navigation', { name: '运营模块' })
-  await expect(nav).toBeVisible()
-  await nav.getByRole('link', { name: '实时连接', exact: true }).click()
-  await expect(page).toHaveURL(/\/connections$/)
-  await expect(page.getByRole('heading', { name: '实时连接', exact: true }).last()).toBeVisible()
+  for (const [label, path] of [['Edge 管理', '/edges'], ['在线 daemon', '/daemons'], ['实时连接', '/connections']] as const) {
+    await page.getByRole('button', { name: '打开导航' }).click()
+    const nav = page.getByRole('navigation', { name: '运营模块' })
+    await expect(nav).toBeVisible()
+    await nav.getByRole('link', { name: label, exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`${path}$`))
+    await expect(page.getByRole('heading', { name: label, exact: true }).last()).toBeVisible()
+  }
   await expect(page.getByText('Android', { exact: true })).toBeVisible()
   await expect.poll(async () => { const box = await page.locator('.sidebar').boundingBox(); return box ? box.x + box.width : 0 }).toBeLessThanOrEqual(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1)
