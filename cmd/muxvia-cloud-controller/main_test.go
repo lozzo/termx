@@ -21,7 +21,7 @@ func TestParseOptionsAllowsBothRelayTransportsForBothPeers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.relayMaxAllocations != 4 {
-		t.Fatalf("relay max allocations = %d, want 4", config.relayMaxAllocations)
+	if config.relayMaxAllocations < 4 {
+		t.Fatalf("relay max allocations = %d, want at least 4", config.relayMaxAllocations)
 	}
 }

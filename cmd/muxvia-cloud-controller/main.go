@@ -32,7 +32,7 @@ import (
 
 const (
 	softwareVersion            = "development"
-	defaultRelayMaxAllocations = 4
+	defaultRelayMaxAllocations = 16
 )
 
 type options struct {
@@ -248,7 +248,7 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 	flags.DurationVar(&config.relayLeaseTTL, "relay-lease-ttl", 5*time.Minute, "maximum lifetime of a signed RelayLease")
 	flags.Uint64Var(&config.relayMaxBytes, "relay-max-bytes", 1<<30, "maximum bytes allowed by one development RelayLease")
 	flags.Uint64Var(&config.relayMaxRate, "relay-max-rate", 10<<20, "maximum bytes per second allowed by one development RelayLease")
-	// 一个 WebRTC Relay session 的两端会分别为 UDP/TCP 建立 allocation；默认值必须覆盖完整四元组。
+	// 一个 WebRTC Relay session 的两端会按本机网络接口分别为 UDP/TCP 建立 allocation；默认值必须覆盖多网卡双端。
 	flags.UintVar(&config.relayMaxAllocations, "relay-max-allocations", defaultRelayMaxAllocations, "maximum concurrent allocations allowed by one development RelayLease")
 	flags.DurationVar(&config.startupTimeout, "startup-timeout", 15*time.Second, "PostgreSQL startup deadline")
 	flags.DurationVar(&config.shutdownTimeout, "shutdown-timeout", 15*time.Second, "graceful shutdown deadline")
