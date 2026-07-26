@@ -177,7 +177,8 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 WantedBy=multi-user.target
 MUXVIA_EDGE_SYSTEMD
 systemctl daemon-reload
-systemctl enable --now muxvia-cloud-edge.service
+systemctl enable muxvia-cloud-edge.service
+systemctl restart muxvia-cloud-edge.service
 echo "Muxvia Cloud Edge installed: %s"
 `, strconv.Quote(artifactURL), strconv.Quote(service.artifactDigest), strconv.Quote(signature), string(service.artifactPublicPEM), service.artifactVersion, service.artifactVersion, service.artifactVersion, strconv.Quote(service.publicOrigin), strconv.Quote(service.publicOrigin+"/api/install/register"), strconv.Quote(edge.ID), strconv.Quote(bootstrap), strconv.Quote(edge.PublicEndpoint), endpointPort, edge.ID), nil
 }
