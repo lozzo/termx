@@ -138,7 +138,8 @@ install -d -m 0755 /opt/muxvia-cloud-edge/releases/%s
 install -m 0755 "$tmp_dir/muxvia-cloud-edge" /opt/muxvia-cloud-edge/releases/%s/muxvia-cloud-edge
 ln -sfn /opt/muxvia-cloud-edge/releases/%s /opt/muxvia-cloud-edge/current
 install -d -o muxvia-edge -g muxvia-edge -m 0700 /var/lib/muxvia-cloud-edge
-install -d -o root -g muxvia-edge -m 0750 /etc/muxvia-cloud-edge
+# Edge 必须在首次注册成功后原子替换配置文件，目录只向专用服务组开放写权限。
+install -d -o root -g muxvia-edge -m 0770 /etc/muxvia-cloud-edge
 cat > /etc/muxvia-cloud-edge/config.yaml <<'MUXVIA_EDGE_CONFIG'
 controller_origin: %s
 register_url: %s

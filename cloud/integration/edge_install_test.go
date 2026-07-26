@@ -94,6 +94,9 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 	if scriptRecorder.Code != http.StatusOK || !strings.Contains(scriptRecorder.Body.String(), "openssl pkeyutl -verify") {
 		t.Fatalf("install script status=%d body=%s", scriptRecorder.Code, scriptRecorder.Body.String())
 	}
+	if !strings.Contains(scriptRecorder.Body.String(), "install -d -o root -g muxvia-edge -m 0770 /etc/muxvia-cloud-edge") {
+		t.Fatal("install script does not permit the Edge service to atomically replace its bootstrap config")
+	}
 	syntaxCheck := exec.Command("sh", "-n")
 	syntaxCheck.Stdin = strings.NewReader(scriptRecorder.Body.String())
 	if output, err := syntaxCheck.CombinedOutput(); err != nil {
