@@ -68,7 +68,6 @@ func v3PairingRoutes(flags v3PairRouteFlags) ([]*remoteauthpb.EndpointRouteConfi
 			hasCloud = true
 			route = &remoteauthpb.EndpointRouteConfigV1{
 				SchemaVersion: endpoint.RouteConfigVersion, RouteId: "cloud", Enabled: true,
-				Source: remoteauthpb.EndpointSource_ENDPOINT_SOURCE_CLOUD, PolicySource: remoteauthpb.EndpointSource_ENDPOINT_SOURCE_USER,
 				Route: &remoteauthpb.EndpointRouteConfigV1_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.ManagedWebRTCRouteConfig{
 					AccountProfileRef: "default", RelayMode: remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_DIRECT,
 				}},

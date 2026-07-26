@@ -58,4 +58,7 @@ func TestV3PairingRoutesAddsCloudAlongsideDirect(t *testing.T) {
 	if routes[1].GetManagedWebrtc().GetTargetDeviceId() != "" {
 		t.Fatalf("pair flags invented daemon identity %q", routes[1].GetManagedWebrtc().GetTargetDeviceId())
 	}
+	if routes[1].GetSource() != 0 || routes[1].GetPolicySource() != 0 {
+		t.Fatalf("portable Cloud route claimed source provenance: %#v", routes[1])
+	}
 }
