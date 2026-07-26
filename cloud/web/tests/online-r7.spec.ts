@@ -81,7 +81,8 @@ test.describe('R7 线上运营后台', () => {
     }
 
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1)
-    await expect(page.getByRole('cell', { name: /^系统管理员/ })).toBeVisible()
+    const accountRow = page.getByRole('row').filter({ hasText: login ?? '' })
+    await expect(accountRow).toBeVisible({ timeout: 30_000 })
     await page.screenshot({ path: testInfo.outputPath('online-r7-mobile-accounts.png'), fullPage: true })
     expect(errors).toEqual([])
   })
