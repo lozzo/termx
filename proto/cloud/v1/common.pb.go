@@ -137,6 +137,67 @@ func (x *HeartbeatPolicy) GetTimeout() *durationpb.Duration {
 	return nil
 }
 
+// SignedEnvelope 使用 domain-separated Ed25519 签名保护确定性 Proto payload。
+type SignedEnvelope struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	KeyId         string                 `protobuf:"bytes,1,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	Payload       []byte                 `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
+	Signature     []byte                 `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignedEnvelope) Reset() {
+	*x = SignedEnvelope{}
+	mi := &file_cloud_v1_common_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignedEnvelope) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignedEnvelope) ProtoMessage() {}
+
+func (x *SignedEnvelope) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_common_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignedEnvelope.ProtoReflect.Descriptor instead.
+func (*SignedEnvelope) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_common_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SignedEnvelope) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
+func (x *SignedEnvelope) GetPayload() []byte {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *SignedEnvelope) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
 var File_cloud_v1_common_proto protoreflect.FileDescriptor
 
 const file_cloud_v1_common_proto_rawDesc = "" +
@@ -149,7 +210,11 @@ const file_cloud_v1_common_proto_rawDesc = "" +
 	"public_key\x18\x03 \x01(\fR\tpublicKey\"}\n" +
 	"\x0fHeartbeatPolicy\x125\n" +
 	"\binterval\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\binterval\x123\n" +
-	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\atimeoutB1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
+	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\atimeout\"_\n" +
+	"\x0eSignedEnvelope\x12\x15\n" +
+	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x18\n" +
+	"\apayload\x18\x02 \x01(\fR\apayload\x12\x1c\n" +
+	"\tsignature\x18\x03 \x01(\fR\tsignatureB1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
 
 var (
 	file_cloud_v1_common_proto_rawDescOnce sync.Once
@@ -163,15 +228,16 @@ func file_cloud_v1_common_proto_rawDescGZIP() []byte {
 	return file_cloud_v1_common_proto_rawDescData
 }
 
-var file_cloud_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_cloud_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_cloud_v1_common_proto_goTypes = []any{
 	(*VerificationKey)(nil),     // 0: muxvia.cloud.v1.VerificationKey
 	(*HeartbeatPolicy)(nil),     // 1: muxvia.cloud.v1.HeartbeatPolicy
-	(*durationpb.Duration)(nil), // 2: google.protobuf.Duration
+	(*SignedEnvelope)(nil),      // 2: muxvia.cloud.v1.SignedEnvelope
+	(*durationpb.Duration)(nil), // 3: google.protobuf.Duration
 }
 var file_cloud_v1_common_proto_depIdxs = []int32{
-	2, // 0: muxvia.cloud.v1.HeartbeatPolicy.interval:type_name -> google.protobuf.Duration
-	2, // 1: muxvia.cloud.v1.HeartbeatPolicy.timeout:type_name -> google.protobuf.Duration
+	3, // 0: muxvia.cloud.v1.HeartbeatPolicy.interval:type_name -> google.protobuf.Duration
+	3, // 1: muxvia.cloud.v1.HeartbeatPolicy.timeout:type_name -> google.protobuf.Duration
 	2, // [2:2] is the sub-list for method output_type
 	2, // [2:2] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
@@ -190,7 +256,7 @@ func file_cloud_v1_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_common_proto_rawDesc), len(file_cloud_v1_common_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

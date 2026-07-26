@@ -20,6 +20,7 @@ import (
 	"github.com/muxvia/muxvia/cloud/controller/control"
 	"github.com/muxvia/muxvia/cloud/controller/directory"
 	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
+	"github.com/muxvia/muxvia/cloud/controller/enrollment"
 	"github.com/muxvia/muxvia/cloud/controller/install"
 	"github.com/muxvia/muxvia/cloud/controller/postgres"
 	controllerruntime "github.com/muxvia/muxvia/cloud/controller/runtime"
@@ -50,6 +51,8 @@ type options struct {
 	artifactFile         string
 	artifactVersion      string
 	artifactSigningKey   string
+	ticketSigningKey     string
+	ticketSigningKeyID   string
 	heartbeatInterval    time.Duration
 	heartbeatTimeout     time.Duration
 	startupTimeout       time.Duration
@@ -103,6 +106,14 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
+	ticketKey, err := keymaterial.LoadEd25519PrivateKey(config.ticketSigningKey)
+	if err != nil {
+		return err
+	}
+	edgeCAPayload, err := os.ReadFile(filepath.Clean(config.edgeCA))
+	if err != nil {
+		return fmt.Errorf("read Edge CA: %w", err)
+	}
 	passwordPayload, err := os.ReadFile(filepath.Clean(config.operatorPasswordFile))
 	if err != nil {
 		return fmt.Errorf("read operator password: %w", err)
@@ -125,12 +136,20 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 		return err
 	}
 	defer directoryState.Close()
+	enrollmentService, err := enrollment.NewService(enrollment.Config{
+		Store: database, Edges: edgeService, Directory: directoryState, TicketSigningKey: ticketKey, TicketSigningKeyID: config.ticketSigningKeyID,
+		EdgeCACertificate: edgeCAPayload, EnrollmentTTL: 10 * time.Minute, ChallengeTTL: time.Minute, AgentTicketTTL: 10 * time.Minute,
+	})
+	if err != nil {
+		return err
+	}
 	service, err := control.NewService(control.Config{
-		ControllerID:      config.controllerID,
-		ControllerBootID:  uuid.NewString(),
-		HeartbeatInterval: config.heartbeatInterval,
-		HeartbeatTimeout:  config.heartbeatTimeout,
-		Directory:         directoryState,
+		ControllerID:           config.controllerID,
+		ControllerBootID:       uuid.NewString(),
+		HeartbeatInterval:      config.heartbeatInterval,
+		HeartbeatTimeout:       config.heartbeatTimeout,
+		Directory:              directoryState,
+		TicketVerificationKeys: []*cloudv1.VerificationKey{enrollmentService.TicketVerificationKey()},
 		DesiredConfig: func(ctx context.Context, edgeID string) (*cloudv1.SignedEdgeDesiredConfig, error) {
 			edge, err := edgeService.GetEdge(ctx, edgeID)
 			return edge.SignedConfig, err
@@ -149,7 +168,7 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
-	httpServer, err := apihttp.Start(apihttp.Config{ListenAddress: config.httpListen, TLSCertificateFile: config.tlsCertificate, TLSPrivateKeyFile: config.tlsPrivateKey, PublicOrigin: config.publicOrigin, OperatorUsername: config.operatorUsername, OperatorPassword: strings.TrimSpace(string(passwordPayload)), Edges: edgeService, Directory: directoryState, Install: installService})
+	httpServer, err := apihttp.Start(apihttp.Config{ListenAddress: config.httpListen, TLSCertificateFile: config.tlsCertificate, TLSPrivateKeyFile: config.tlsPrivateKey, PublicOrigin: config.publicOrigin, OperatorUsername: config.operatorUsername, OperatorPassword: strings.TrimSpace(string(passwordPayload)), Edges: edgeService, Directory: directoryState, Install: installService, Enrollment: enrollmentService})
 	if err != nil {
 		shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), config.shutdownTimeout)
 		defer cancelShutdown()
@@ -203,6 +222,8 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 	flags.StringVar(&config.artifactFile, "edge-artifact", "", "signed linux/amd64 Edge artifact")
 	flags.StringVar(&config.artifactVersion, "edge-artifact-version", softwareVersion, "Edge artifact immutable version")
 	flags.StringVar(&config.artifactSigningKey, "artifact-signing-key", "", "Edge artifact Ed25519 private key")
+	flags.StringVar(&config.ticketSigningKey, "ticket-signing-key", "", "Cloud ticket Ed25519 private key")
+	flags.StringVar(&config.ticketSigningKeyID, "ticket-signing-key-id", "", "Cloud ticket signing key ID")
 	flags.DurationVar(&config.heartbeatInterval, "heartbeat-interval", 10*time.Second, "Edge heartbeat interval")
 	flags.DurationVar(&config.heartbeatTimeout, "heartbeat-timeout", 30*time.Second, "Edge heartbeat timeout")
 	flags.DurationVar(&config.startupTimeout, "startup-timeout", 15*time.Second, "PostgreSQL startup deadline")

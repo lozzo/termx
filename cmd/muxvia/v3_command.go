@@ -113,6 +113,11 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 			return err
 		}
 		defer closeDirect()
+		closeCloud, err := startV3CloudDaemon(ctx, directCore, clientAccess, logger)
+		if err != nil {
+			return err
+		}
+		defer closeCloud()
 		stopPerfTrace, perfTracePath, perfTraceEnabled := perftrace.EnableFromEnvWithProcess(ctx, "core-v2-daemon")
 		defer stopPerfTrace()
 		if perfTraceEnabled {

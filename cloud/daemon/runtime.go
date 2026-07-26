@@ -1,0 +1,269 @@
+package daemon
+
+import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/muxvia/muxvia/cloud/edge/agentgateway"
+	"github.com/muxvia/muxvia/cloud/ticket"
+	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	remotedaemon "github.com/muxvia/muxvia/remote/daemon"
+	"github.com/muxvia/muxvia/remote/webrtc"
+	"github.com/muxvia/muxvia/shared/remoteauth"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+// Config 是 daemon Cloud owner 的稳定 identity、发现记录和真实 P2P answerer 装配。
+type Config struct {
+	Record          EnrollmentRecord
+	Identity        remoteauth.Identity
+	Answerer        webrtc.Answerer
+	SoftwareVersion string
+	ControllerTLS   *tls.Config
+	RetryMinimum    time.Duration
+	RetryMaximum    time.Duration
+}
+
+// Runtime 每次启动重新向 Controller 解析候选并只在内存持有当前 AgentGateway generation。
+type Runtime struct{ config Config }
+
+// NewAuthorizedRuntime 把现有 daemon Core/DeviceIdentity/AccessStore 接到真实 WebRTC Answerer。
+// cmd composition root 只传 owner，不需要依赖 Cloud 内部的 Pion 装配类型。
+func NewAuthorizedRuntime(record EnrollmentRecord, identity remoteauth.Identity, accessStore *remoteauth.AccessStore, core remotedaemon.ScopedTransportServer, softwareVersion string) (*Runtime, error) {
+	answerer := webrtc.Answerer{Handler: remotedaemon.SessionAcceptor{Core: core, Identity: identity, AccessStore: accessStore}}
+	return NewRuntime(Config{Record: record, Identity: identity, Answerer: answerer, SoftwareVersion: softwareVersion})
+}
+
+// NewRuntime 验证 Cloud owner 与 DataChannel 端到端授权 handler 已真实接线。
+func NewRuntime(config Config) (*Runtime, error) {
+	if err := config.Record.Validate(); err != nil {
+		return nil, err
+	}
+	if err := config.Identity.Validate(); err != nil {
+		return nil, err
+	}
+	config.SoftwareVersion = strings.TrimSpace(config.SoftwareVersion)
+	if config.SoftwareVersion == "" || config.Answerer.Handler == nil {
+		return nil, errors.New("daemon Cloud runtime requires version and authorized WebRTC Answerer")
+	}
+	if config.RetryMinimum <= 0 {
+		config.RetryMinimum = 250 * time.Millisecond
+	}
+	if config.RetryMaximum < config.RetryMinimum {
+		config.RetryMaximum = 5 * time.Second
+	}
+	return &Runtime{config: config}, nil
+}
+
+// Run 维持 AgentGateway 长连接；Controller/Edge 失败只撤销 Presence 并有界重新解析。
+func (runtime *Runtime) Run(ctx context.Context) error {
+	delay := runtime.config.RetryMinimum
+	for ctx.Err() == nil {
+		err := runtime.connectOnce(ctx)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err == nil {
+			delay = runtime.config.RetryMinimum
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+		if delay < runtime.config.RetryMaximum {
+			delay *= 2
+			if delay > runtime.config.RetryMaximum {
+				delay = runtime.config.RetryMaximum
+			}
+		}
+	}
+	return ctx.Err()
+}
+
+func (runtime *Runtime) connectOnce(ctx context.Context) error {
+	controller, err := runtime.dialController()
+	if err != nil {
+		return err
+	}
+	defer controller.Close()
+	enrollmentClient := cloudv1.NewEnrollmentServiceClient(controller)
+	candidates, err := enrollmentClient.ListAgentCandidates(ctx, &cloudv1.ListAgentCandidatesRequest{DaemonId: runtime.config.Record.DaemonID})
+	if err != nil {
+		return fmt.Errorf("list Cloud Edge candidates: %w", err)
+	}
+	edge, err := selectCandidate(ctx, candidates.GetCandidates())
+	if err != nil {
+		return err
+	}
+	challenge, err := enrollmentClient.BeginAgentTicket(ctx, &cloudv1.BeginAgentTicketRequest{DaemonId: runtime.config.Record.DaemonID, EdgeId: edge.GetEdgeId()})
+	if err != nil {
+		return fmt.Errorf("begin AgentTicket: %w", err)
+	}
+	proof, err := remoteauth.SignDeviceIdentityProof(runtime.config.Identity, challenge.GetChallenge())
+	if err != nil {
+		return err
+	}
+	issued, err := enrollmentClient.IssueAgentTicket(ctx, &cloudv1.IssueAgentTicketRequest{ChallengeId: challenge.GetChallengeId(), DeviceProof: proof})
+	if err != nil {
+		return fmt.Errorf("issue AgentTicket: %w", err)
+	}
+	return runtime.connectEdge(ctx, issued)
+}
+
+func (runtime *Runtime) dialController() (*grpc.ClientConn, error) {
+	tlsConfig := runtime.config.ControllerTLS
+	if tlsConfig == nil {
+		tlsConfig = &tls.Config{MinVersion: tls.VersionTLS13, ServerName: runtime.config.Record.ControllerServerName}
+	} else {
+		tlsConfig = tlsConfig.Clone()
+	}
+	return grpc.NewClient(runtime.config.Record.ControllerAddress, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+}
+
+func (runtime *Runtime) connectEdge(ctx context.Context, issued *cloudv1.IssueAgentTicketResponse) error {
+	if issued == nil || issued.GetAgentTicket() == nil || issued.GetEdge() == nil {
+		return errors.New("AgentTicket response is incomplete")
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(issued.GetEdge().GetCaCertificatePem()) {
+		return errors.New("Edge CA certificate is invalid")
+	}
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: roots, ServerName: issued.GetEdge().GetServerName()}
+	connection, err := grpc.NewClient(issued.GetEdge().GetPublicEndpoint(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	if err != nil {
+		return err
+	}
+	defer connection.Close()
+	stream, err := cloudv1.NewAgentGatewayClient(connection).Connect(ctx)
+	if err != nil {
+		return err
+	}
+	bootID, connectionID := uuid.NewString(), uuid.NewString()
+	proof, err := ticket.SignAgentHelloProof(runtime.config.Identity, issued.GetAgentTicket(), runtime.config.Record.DaemonID, bootID, connectionID)
+	if err != nil {
+		return err
+	}
+	hello := &cloudv1.AgentEvent{ProtocolVersion: agentgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: runtime.config.Record.DaemonID, BootId: bootID, ConnectionId: connectionID, StreamSeq: 1, SentAt: timestamppb.Now(), Payload: &cloudv1.AgentEvent_Hello{Hello: &cloudv1.AgentHello{AgentTicket: issued.GetAgentTicket(), DeviceProof: proof, SoftwareVersion: runtime.config.SoftwareVersion}}}
+	if err := stream.Send(hello); err != nil {
+		return err
+	}
+	command, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+	if command.GetReady() == nil || command.GetProtocolVersion() != agentgateway.ProtocolVersion || command.GetConnectionId() != connectionID || command.GetStreamSeq() != 1 {
+		return errors.New("AgentReady is invalid")
+	}
+	interval := command.GetReady().GetHeartbeat().GetInterval().AsDuration()
+	if interval <= 0 {
+		return errors.New("AgentReady heartbeat is invalid")
+	}
+	receive := make(chan error, 1)
+	go func() {
+		for {
+			_, recvErr := stream.Recv()
+			if recvErr != nil {
+				receive <- recvErr
+				return
+			}
+		}
+	}()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	sequence := uint64(1)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case recvErr := <-receive:
+			if errors.Is(recvErr, io.EOF) {
+				return nil
+			}
+			return recvErr
+		case <-ticker.C:
+			sequence++
+			event := &cloudv1.AgentEvent{ProtocolVersion: agentgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: runtime.config.Record.DaemonID, BootId: bootID, ConnectionId: connectionID, StreamSeq: sequence, SentAt: timestamppb.Now(), Payload: &cloudv1.AgentEvent_Heartbeat{Heartbeat: &cloudv1.AgentHeartbeat{Generation: command.GetReady().GetGeneration()}}}
+			if err := stream.Send(event); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func selectCandidate(ctx context.Context, candidates []*cloudv1.CandidateEdge) (*cloudv1.CandidateEdge, error) {
+	for _, candidate := range candidates {
+		if candidate == nil {
+			continue
+		}
+		dialer := net.Dialer{Timeout: 2 * time.Second}
+		connection, err := dialer.DialContext(ctx, "tcp", candidate.GetPublicEndpoint())
+		if err == nil {
+			_ = connection.Close()
+			return candidate, nil
+		}
+	}
+	return nil, errors.New("no Cloud Edge candidate is reachable")
+}
+
+// Enroll 使用一次性 code 和现有 DeviceIdentity 完成 challenge，并返回可持久化最小记录。
+func Enroll(ctx context.Context, controllerAddress, controllerServerName, code string, tlsConfig *tls.Config, identity remoteauth.Identity) (EnrollmentRecord, error) {
+	if err := identity.Validate(); err != nil {
+		return EnrollmentRecord{}, err
+	}
+	if tlsConfig == nil {
+		tlsConfig = &tls.Config{MinVersion: tls.VersionTLS13, ServerName: controllerServerName}
+	} else {
+		tlsConfig = tlsConfig.Clone()
+	}
+	connection, err := grpc.NewClient(strings.TrimSpace(controllerAddress), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	if err != nil {
+		return EnrollmentRecord{}, err
+	}
+	defer connection.Close()
+	client := cloudv1.NewEnrollmentServiceClient(connection)
+	challenge, err := client.BeginDaemonEnrollment(ctx, &cloudv1.BeginDaemonEnrollmentRequest{EnrollmentCode: strings.TrimSpace(code), DeviceId: identity.DeviceID, DeviceFingerprint: identity.Fingerprint, DevicePublicKey: append([]byte(nil), identity.PublicKey...)})
+	if err != nil {
+		return EnrollmentRecord{}, err
+	}
+	proof, err := remoteauth.SignDeviceIdentityProof(identity, challenge.GetChallenge())
+	if err != nil {
+		return EnrollmentRecord{}, err
+	}
+	completed, err := client.CompleteDaemonEnrollment(ctx, &cloudv1.CompleteDaemonEnrollmentRequest{ChallengeId: challenge.GetChallengeId(), DeviceProof: proof})
+	if err != nil {
+		return EnrollmentRecord{}, err
+	}
+	if completed.GetDaemon() == nil {
+		return EnrollmentRecord{}, errors.New("daemon enrollment response is incomplete")
+	}
+	return EnrollmentRecord{Version: recordVersion, DaemonID: completed.GetDaemon().GetDaemonId(), AccountID: completed.GetDaemon().GetAccountId(), ControllerAddress: strings.TrimSpace(controllerAddress), ControllerServerName: strings.TrimSpace(controllerServerName), EnrolledAt: time.Now().UTC()}, nil
+}
+
+// EnrollLocal 加载 daemon 已有 DeviceIdentity、完成注册并原子保存最小 Cloud record。
+func EnrollLocal(ctx context.Context, controllerAddress, controllerServerName, code, identityDirectory, recordPath string) (EnrollmentRecord, error) {
+	identity, err := remoteauth.LoadOrCreateLocalIdentity(identityDirectory)
+	if err != nil {
+		return EnrollmentRecord{}, err
+	}
+	record, err := Enroll(ctx, controllerAddress, controllerServerName, code, &tls.Config{MinVersion: tls.VersionTLS13, ServerName: controllerServerName}, identity)
+	if err != nil {
+		return EnrollmentRecord{}, err
+	}
+	if err := SaveRecord(recordPath, record); err != nil {
+		return EnrollmentRecord{}, err
+	}
+	return record, nil
+}

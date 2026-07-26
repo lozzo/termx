@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/common.proto.
  */
 export const file_cloud_v1_common: GenFile = /*@__PURE__*/
-  fileDesc("ChVjbG91ZC92MS9jb21tb24ucHJvdG8SD211eHZpYS5jbG91ZC52MSJICg9WZXJpZmljYXRpb25LZXkSDgoGa2V5X2lkGAEgASgJEhEKCWFsZ29yaXRobRgCIAEoCRISCgpwdWJsaWNfa2V5GAMgASgMImoKD0hlYXJ0YmVhdFBvbGljeRIrCghpbnRlcnZhbBgBIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbhIqCgd0aW1lb3V0GAIgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uQjFaL2dpdGh1Yi5jb20vbXV4dmlhL211eHZpYS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_google_protobuf_duration]);
+  fileDesc("ChVjbG91ZC92MS9jb21tb24ucHJvdG8SD211eHZpYS5jbG91ZC52MSJICg9WZXJpZmljYXRpb25LZXkSDgoGa2V5X2lkGAEgASgJEhEKCWFsZ29yaXRobRgCIAEoCRISCgpwdWJsaWNfa2V5GAMgASgMImoKD0hlYXJ0YmVhdFBvbGljeRIrCghpbnRlcnZhbBgBIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbhIqCgd0aW1lb3V0GAIgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uIkQKDlNpZ25lZEVudmVsb3BlEg4KBmtleV9pZBgBIAEoCRIPCgdwYXlsb2FkGAIgASgMEhEKCXNpZ25hdHVyZRgDIAEoDEIxWi9naXRodWIuY29tL211eHZpYS9tdXh2aWEvcHJvdG8vY2xvdWQvdjE7Y2xvdWR2MWIGcHJvdG8z", [file_google_protobuf_duration]);
 
 /**
  * VerificationKey 是 Controller 下发给 Edge 的公开验签密钥。
@@ -67,3 +67,32 @@ export type HeartbeatPolicy = Message<"muxvia.cloud.v1.HeartbeatPolicy"> & {
  */
 export const HeartbeatPolicySchema: GenMessage<HeartbeatPolicy> = /*@__PURE__*/
   messageDesc(file_cloud_v1_common, 1);
+
+/**
+ * SignedEnvelope 使用 domain-separated Ed25519 签名保护确定性 Proto payload。
+ *
+ * @generated from message muxvia.cloud.v1.SignedEnvelope
+ */
+export type SignedEnvelope = Message<"muxvia.cloud.v1.SignedEnvelope"> & {
+  /**
+   * @generated from field: string key_id = 1;
+   */
+  keyId: string;
+
+  /**
+   * @generated from field: bytes payload = 2;
+   */
+  payload: Uint8Array;
+
+  /**
+   * @generated from field: bytes signature = 3;
+   */
+  signature: Uint8Array;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.SignedEnvelope.
+ * Use `create(SignedEnvelopeSchema)` to create a new message.
+ */
+export const SignedEnvelopeSchema: GenMessage<SignedEnvelope> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_common, 2);

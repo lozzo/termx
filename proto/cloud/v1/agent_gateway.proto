@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package muxvia.cloud.v1;
+
+import "cloud/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
+
+message AgentHello {
+  SignedEnvelope agent_ticket = 1;
+  bytes device_proof = 2;
+  string software_version = 3;
+}
+
+message AgentHeartbeat { uint64 generation = 1; }
+
+message AgentReady {
+  uint64 generation = 1;
+  HeartbeatPolicy heartbeat = 2;
+}
+
+message AgentEvent {
+  uint32 protocol_version = 1;
+  string message_id = 2;
+  string sender_id = 3;
+  string boot_id = 4;
+  string connection_id = 5;
+  uint64 stream_seq = 6;
+  google.protobuf.Timestamp sent_at = 7;
+  oneof payload {
+    AgentHello hello = 20;
+    AgentHeartbeat heartbeat = 21;
+  }
+}
+
+message EdgeCommand {
+  uint32 protocol_version = 1;
+  string message_id = 2;
+  string sender_id = 3;
+  string boot_id = 4;
+  string connection_id = 5;
+  uint64 stream_seq = 6;
+  google.protobuf.Timestamp sent_at = 7;
+  oneof payload {
+    AgentReady ready = 20;
+  }
+}
+
+// AgentGateway 是 daemon 到单个 Edge 的唯一长连接控制流。
+service AgentGateway {
+  rpc Connect(stream AgentEvent) returns (stream EdgeCommand);
+}

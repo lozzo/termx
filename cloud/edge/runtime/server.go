@@ -16,9 +16,11 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/cloud/configsignature"
+	"github.com/muxvia/muxvia/cloud/edge/agentgateway"
 	"github.com/muxvia/muxvia/cloud/edge/controllerlink"
 	"github.com/muxvia/muxvia/cloud/processhealth"
 	"github.com/muxvia/muxvia/cloud/securetransport"
+	"github.com/muxvia/muxvia/cloud/ticket"
 	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 	"google.golang.org/grpc"
 	grpc_health "google.golang.org/grpc/health"
@@ -63,6 +65,8 @@ type Runtime struct {
 	shutdownOnce    sync.Once
 	state           *State
 	configPublicKey ed25519.PublicKey
+	ticketKeysMu    sync.RWMutex
+	ticketKeys      ticket.KeySet
 }
 
 // Start 先启动固定 HTTPS /healthz，再在后台建立 mTLS EdgeControl。
@@ -122,6 +126,17 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 		state:           state,
 		configPublicKey: configPublicKey,
 	}
+	agentService, err := agentgateway.NewService(agentgateway.Config{
+		EdgeID: config.EdgeID, EdgeBootID: config.BootID, Runtime: state,
+		VerificationKeys: runtime.currentTicketKeys, Heartbeat: 10 * time.Second, HeartbeatTimeout: 30 * time.Second,
+	})
+	if err != nil {
+		_ = listener.Close()
+		state.Close()
+		cancel()
+		return nil, err
+	}
+	cloudv1.RegisterAgentGatewayServer(grpcServer, agentService)
 	runtime.httpServer = &http.Server{Handler: runtime, ReadHeaderTimeout: 5 * time.Second, TLSConfig: publicTLS}
 	runtime.waitGroup.Add(2)
 	go runtime.servePublic()
@@ -239,6 +254,17 @@ func (runtime *Runtime) runControllerLink() {
 			ApplyDesiredConfig: applyDesiredConfig,
 		})
 		if err == nil {
+			if keys := session.Welcome().GetTicketVerificationKeys(); len(keys) != 0 {
+				parsed, parseErr := ticket.FromVerificationKeys(keys)
+				if parseErr != nil {
+					_ = session.Close()
+					err = parseErr
+				} else {
+					runtime.ticketKeysMu.Lock()
+					runtime.ticketKeys = parsed
+					runtime.ticketKeysMu.Unlock()
+				}
+			}
 			if runtime.ctx.Err() != nil {
 				_ = session.Close()
 				return
@@ -272,6 +298,16 @@ func (runtime *Runtime) runControllerLink() {
 			}
 		}
 	}
+}
+
+func (runtime *Runtime) currentTicketKeys() ticket.KeySet {
+	runtime.ticketKeysMu.RLock()
+	defer runtime.ticketKeysMu.RUnlock()
+	result := make(ticket.KeySet, len(runtime.ticketKeys))
+	for id, publicKey := range runtime.ticketKeys {
+		result[id] = append(ed25519.PublicKey(nil), publicKey...)
+	}
+	return result
 }
 
 func (runtime *Runtime) setReady(value bool) {

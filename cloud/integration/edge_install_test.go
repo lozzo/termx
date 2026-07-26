@@ -22,11 +22,13 @@ import (
 	"github.com/muxvia/muxvia/cloud/controller/apihttp"
 	"github.com/muxvia/muxvia/cloud/controller/directory"
 	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
+	"github.com/muxvia/muxvia/cloud/controller/enrollment"
 	"github.com/muxvia/muxvia/cloud/controller/install"
 	"github.com/muxvia/muxvia/cloud/controller/postgres"
 	"github.com/muxvia/muxvia/cloud/edge/bootstrap"
 	"github.com/muxvia/muxvia/cloud/securetransport"
 	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/muxvia/muxvia/shared/remoteauth"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
@@ -179,6 +181,86 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 		if info.Mode().Perm() != 0o600 {
 			t.Fatalf("private key mode %s = %v", keyPath, info.Mode().Perm())
 		}
+	}
+}
+
+func TestR4DaemonEnrollmentConsumesCodeAndPersistsOnlyIdentity(t *testing.T) {
+	databaseURL := os.Getenv("MUXVIA_CLOUD_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("MUXVIA_CLOUD_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	database, err := postgres.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	_, configKey, _ := ed25519.GenerateKey(rand.Reader)
+	edges, err := edgeconfig.NewService(edgeconfig.Config{Store: database, SigningKey: configKey, SigningKeyID: "r4-config", ClaimTTL: 10 * time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	directoryState, err := directory.New(directory.Config{MailboxSize: 128, GracePeriod: time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer directoryState.Close()
+	_, ticketKey, _ := ed25519.GenerateKey(rand.Reader)
+	service, err := enrollment.NewService(enrollment.Config{Store: database, Edges: edges, Directory: directoryState, TicketSigningKey: ticketKey, TicketSigningKeyID: "r4-ticket", EdgeCACertificate: []byte("test-ca"), EnrollmentTTL: 10 * time.Minute, ChallengeTTL: time.Minute, AgentTicketTTL: 10 * time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.CreateEnrollment(ctx, &cloudv1.CreateDaemonEnrollmentRequest{AccountName: "R4 测试账号", DaemonName: "R4 Daemon"}, "muxvia cloud enroll --controller https://controller.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := remoteauth.LoadOrCreateLocalIdentity(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	begin := &cloudv1.BeginDaemonEnrollmentRequest{EnrollmentCode: created.GetEnrollmentCode(), DeviceId: identity.DeviceID, DeviceFingerprint: identity.Fingerprint, DevicePublicKey: identity.PublicKey}
+	challenge, err := service.BeginDaemonEnrollment(ctx, begin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := remoteauth.SignDeviceIdentityProof(identity, challenge.GetChallenge())
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed, err := service.CompleteDaemonEnrollment(ctx, &cloudv1.CompleteDaemonEnrollmentRequest{ChallengeId: challenge.GetChallengeId(), DeviceProof: proof})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.GetDaemon().GetAccountId() != created.GetAccountId() || completed.GetDaemon().GetDeviceFingerprint() != identity.Fingerprint {
+		t.Fatalf("completed daemon=%+v", completed.GetDaemon())
+	}
+	replayChallenge, err := service.BeginDaemonEnrollment(ctx, begin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayProof, _ := remoteauth.SignDeviceIdentityProof(identity, replayChallenge.GetChallenge())
+	if _, err := service.CompleteDaemonEnrollment(ctx, &cloudv1.CompleteDaemonEnrollmentRequest{ChallengeId: replayChallenge.GetChallengeId(), DeviceProof: replayProof}); err == nil {
+		t.Fatal("consumed enrollment code was accepted again")
+	}
+	managed, err := service.ListManagedDaemons(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, item := range managed.GetDaemons() {
+		if item.GetDaemon().GetDaemonId() == completed.GetDaemon().GetDaemonId() {
+			found = true
+			if item.GetRuntime().GetOnline() {
+				t.Fatal("persistent daemon identity was incorrectly reported online")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("enrolled daemon is absent from persistent list")
 	}
 }
 

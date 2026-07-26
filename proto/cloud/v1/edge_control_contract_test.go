@@ -25,6 +25,9 @@ func TestCloudV1DescriptorBaseline(t *testing.T) {
 		protodesc.ToFileDescriptorProto(File_cloud_v1_edge_config_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_runtime_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_edge_control_proto),
+		protodesc.ToFileDescriptorProto(File_cloud_v1_ticket_proto),
+		protodesc.ToFileDescriptorProto(File_cloud_v1_enrollment_proto),
+		protodesc.ToFileDescriptorProto(File_cloud_v1_agent_gateway_proto),
 	}}
 	if !proto.Equal(baseline, current) {
 		t.Fatal("Cloud v1 descriptor differs from testdata/cloud-v1.pb")

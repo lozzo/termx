@@ -10,47 +10,68 @@
     <div class="shell">
       <aside class="sidebar">
         <div class="brand">Muxvia Cloud</div>
-        <nav aria-label="管理模块"><a class="nav-item active" href="/">Edge 管理</a></nav>
-        <div class="sidebar-foot">R3 开发环境</div>
+        <nav aria-label="管理模块">
+          <a class="nav-item" data-module="edges" href="/edges">Edge 管理</a>
+          <a class="nav-item" data-module="daemons" href="/daemons">Daemon 管理</a>
+        </nav>
+        <div class="sidebar-foot">R4 开发环境</div>
       </aside>
       <main>
-        <header class="topbar">
-          <div><h1>Edge 管理</h1><p id="summary">正在读取节点...</p></div>
-          <div class="actions"><button id="refresh" class="secondary">刷新</button><button id="create">添加 Edge</button></div>
-        </header>
-        <section class="content" aria-live="polite">
-          <div id="notice" class="notice" hidden></div>
-          <div class="table-wrap">
-            <table>
+        <section class="module" data-view="edges">
+          <header class="topbar">
+            <div><h1>Edge 管理</h1><p id="edge-summary">正在读取节点...</p></div>
+            <div class="actions"><button id="edge-refresh" class="secondary">刷新</button><button id="edge-create">添加 Edge</button></div>
+          </header>
+          <div class="content" aria-live="polite">
+            <div id="edge-notice" class="notice" hidden></div>
+            <div class="table-wrap"><table>
               <thead><tr><th>节点</th><th>区域</th><th>域名 / 端口</th><th>容量</th><th>状态</th><th>版本</th><th>实时连接</th><th></th></tr></thead>
               <tbody id="edge-rows"><tr><td colspan="8" class="empty">正在加载...</td></tr></tbody>
-            </table>
+            </table></div>
+          </div>
+        </section>
+
+        <section class="module" data-view="daemons" hidden>
+          <header class="topbar">
+            <div><h1>Daemon 管理</h1><p id="daemon-summary">正在读取注册信息...</p></div>
+            <div class="actions"><button id="daemon-refresh" class="secondary">刷新</button><button id="daemon-create">生成注册命令</button></div>
+          </header>
+          <div class="content" aria-live="polite">
+            <div id="daemon-notice" class="notice" hidden></div>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Daemon</th><th>所属账号</th><th>设备身份</th><th>状态</th><th>当前 Edge</th><th>Generation</th><th>注册时间</th></tr></thead>
+              <tbody id="daemon-rows"><tr><td colspan="7" class="empty">正在加载...</td></tr></tbody>
+            </table></div>
           </div>
         </section>
       </main>
     </div>
 
-    <dialog id="edge-dialog">
-      <form id="edge-form" method="dialog">
-        <header><h2 id="dialog-title">添加 Edge</h2><button class="close" type="button" data-close="edge-dialog" aria-label="关闭">×</button></header>
-        <input id="edge-id" type="hidden" /><input id="edge-revision" type="hidden" />
-        <label>节点名称<input id="name" required maxlength="80" /></label>
-        <label>区域<input id="region" required maxlength="40" placeholder="例如 cn-east" /></label>
-        <label>域名或域名加端口<input id="endpoint" required placeholder="edge.example.com:443" /></label>
-        <label>标称容量<input id="capacity" required type="number" min="1" step="1" /></label>
-        <label id="enabled-row" class="check" hidden><input id="enabled" type="checkbox" checked />启用节点</label>
-        <footer><button class="secondary" type="button" data-close="edge-dialog">取消</button><button id="save" type="submit">保存</button></footer>
-      </form>
-    </dialog>
+    <dialog id="edge-dialog"><form id="edge-form" method="dialog">
+      <header><h2 id="edge-dialog-title">添加 Edge</h2><button class="close" type="button" data-close="edge-dialog" aria-label="关闭">×</button></header>
+      <input id="edge-id" type="hidden" /><input id="edge-revision" type="hidden" />
+      <label>节点名称<input id="edge-name" required maxlength="80" /></label>
+      <label>区域<input id="edge-region" required maxlength="40" placeholder="例如 cn-east" /></label>
+      <label>域名或域名加端口<input id="edge-endpoint" required placeholder="edge.example.com:443" /></label>
+      <label>标称容量<input id="edge-capacity" required type="number" min="1" step="1" /></label>
+      <label id="edge-enabled-row" class="check" hidden><input id="edge-enabled" type="checkbox" checked />启用节点</label>
+      <footer><button class="secondary" type="button" data-close="edge-dialog">取消</button><button id="edge-save" type="submit">保存</button></footer>
+    </form></dialog>
 
-    <dialog id="install-dialog">
-      <div class="install-dialog">
-        <header><h2>安装命令</h2><button class="close" data-close="install-dialog" aria-label="关闭">×</button></header>
-        <p>该命令只显示一次，并在十分钟内有效。</p>
-        <pre id="install-command"></pre>
-        <footer><button id="copy-command">复制命令</button></footer>
-      </div>
-    </dialog>
+    <dialog id="daemon-dialog"><form id="daemon-form" method="dialog">
+      <header><h2>生成 Daemon 注册命令</h2><button class="close" type="button" data-close="daemon-dialog" aria-label="关闭">×</button></header>
+      <label>账号名称<input id="account-name" required maxlength="80" /></label>
+      <label>已有账号 ID（可选）<input id="account-id" placeholder="留空时创建开发账号" /></label>
+      <label>Daemon 名称<input id="daemon-name" required maxlength="80" /></label>
+      <footer><button class="secondary" type="button" data-close="daemon-dialog">取消</button><button id="daemon-save" type="submit">生成</button></footer>
+    </form></dialog>
+
+    <dialog id="command-dialog"><div class="install-dialog">
+      <header><h2 id="command-title">一次性命令</h2><button class="close" data-close="command-dialog" aria-label="关闭">×</button></header>
+      <p id="command-description">该命令只显示一次，并在十分钟内有效。</p>
+      <pre id="one-time-command"></pre>
+      <footer><button id="copy-command">复制命令</button></footer>
+    </div></dialog>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

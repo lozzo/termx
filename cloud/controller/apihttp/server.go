@@ -18,9 +18,11 @@ import (
 
 	"github.com/muxvia/muxvia/cloud/controller/directory"
 	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
+	"github.com/muxvia/muxvia/cloud/controller/enrollment"
 	"github.com/muxvia/muxvia/cloud/controller/install"
 	"github.com/muxvia/muxvia/cloud/securetransport"
 	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -41,6 +43,7 @@ type Config struct {
 	Edges              *edgeconfig.Service
 	Directory          *directory.Directory
 	Install            *install.Service
+	Enrollment         *enrollment.Service
 }
 
 // Server 拥有原生 HTTPS listener 生命周期，不拥有 Edge 配置或实时目录。
@@ -100,18 +103,28 @@ func NewHandler(config Config) (http.Handler, error) {
 	if config.Edges == nil || config.Directory == nil || config.Install == nil || config.PublicOrigin == "" || config.OperatorUsername == "" || config.OperatorPassword == "" {
 		return nil, errors.New("HTTP handler services, public origin, and credentials are required")
 	}
-	handler := &handler{config: config}
+	var grpcServer *grpc.Server
+	if config.Enrollment != nil {
+		grpcServer = grpc.NewServer()
+		cloudv1.RegisterEnrollmentServiceServer(grpcServer, config.Enrollment)
+	}
+	handler := &handler{config: config, grpcServer: grpcServer}
 	return handler, nil
 }
 
 type handler struct {
-	config Config
+	config     Config
+	grpcServer *grpc.Server
 }
 
 func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("X-Content-Type-Options", "nosniff")
 	writer.Header().Set("Referrer-Policy", "no-referrer")
 	writer.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'")
+	if handler.grpcServer != nil && request.ProtoMajor == 2 && strings.HasPrefix(strings.ToLower(request.Header.Get("Content-Type")), "application/grpc") {
+		handler.grpcServer.ServeHTTP(writer, request)
+		return
+	}
 	switch {
 	case request.Method == http.MethodGet && strings.HasPrefix(request.URL.Path, "/install/edge/"):
 		handler.installScript(writer, request)
@@ -136,7 +149,7 @@ func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 func (handler *handler) serveStatic(writer http.ResponseWriter, request *http.Request) {
 	var name, contentType string
 	switch request.URL.Path {
-	case "/", "/index.html":
+	case "/", "/index.html", "/edges", "/daemons":
 		name, contentType = "web/index.html", "text/html; charset=utf-8"
 	case "/app.js":
 		name, contentType = "web/app.js", "text/javascript; charset=utf-8"
@@ -157,6 +170,32 @@ func (handler *handler) serveStatic(writer http.ResponseWriter, request *http.Re
 }
 
 func (handler *handler) operator(writer http.ResponseWriter, request *http.Request) {
+	if request.URL.Path == "/api/operator/daemons" && handler.config.Enrollment != nil {
+		switch request.Method {
+		case http.MethodGet:
+			response, err := handler.config.Enrollment.ListManagedDaemons(request.Context())
+			if err != nil {
+				writeError(writer, http.StatusInternalServerError, err)
+				return
+			}
+			writeProto(writer, http.StatusOK, response)
+		case http.MethodPost:
+			input := &cloudv1.CreateDaemonEnrollmentRequest{}
+			if err := readProto(request, input); err != nil {
+				writeError(writer, http.StatusBadRequest, err)
+				return
+			}
+			response, err := handler.config.Enrollment.CreateEnrollment(request.Context(), input, "muxvia cloud enroll --controller "+handler.config.PublicOrigin)
+			if err != nil {
+				writeError(writer, http.StatusBadRequest, err)
+				return
+			}
+			writeProto(writer, http.StatusCreated, response)
+		default:
+			writer.WriteHeader(http.StatusMethodNotAllowed)
+		}
+		return
+	}
 	if request.URL.Path == "/api/operator/edges" {
 		switch request.Method {
 		case http.MethodGet:

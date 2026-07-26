@@ -42,6 +42,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newTerminalAliasCommands(terminalRuntime)...)
 	cmd.AddCommand(v3PairCommand(&socket, &logFile))
 	cmd.AddCommand(v3AccessCommand(&socket, &logFile))
+	cmd.AddCommand(cloudCommand())
 	cmd.AddCommand(newConfigCommand(&configPath, &socket, &logFile))
 	cmd.AddCommand(newEndpointCommand(&socket, &logFile))
 	cmd.AddCommand(newFileCommand(&socket, &logFile))
