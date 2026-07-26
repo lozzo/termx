@@ -39,7 +39,7 @@ export function UserSubscriptionPage() {
     })}</section>
     {createOrder.error && <Notice tone="error">无法创建订单，请检查订阅状态后重试。</Notice>}
     {change.error && <Notice tone="error">订阅状态已变化，请刷新后重试。</Notice>}
-    <Dialog title="Development 支付确认" open={Boolean(checkout)} onClose={() => setCheckout(undefined)} footer={<><Button tone="quiet" onClick={() => setCheckout(undefined)}>稍后支付</Button><Button tone="primary" onClick={() => pay.mutate()} disabled={pay.isPending}>{pay.isPending ? '正在确认' : '确认测试支付'}</Button></>}><Notice tone="warning">当前为 Development 支付适配器，不会发起真实扣款。</Notice><dl className="detail-list"><div><dt>套餐</dt><dd>{checkout?.planName}</dd></div><div><dt>金额</dt><dd>{checkout?.amount}</dd></div><div><dt>订单 ID</dt><dd className="mono">{checkout?.orderId}</dd></div></dl>{pay.error && <p className="form-error" role="alert">支付确认失败，订单仍保留为待支付。</p>}</Dialog>
+    <Dialog title="Development 支付确认" open={Boolean(checkout)} onClose={() => { if (!pay.isPending) setCheckout(undefined) }} footer={<><Button tone="quiet" onClick={() => setCheckout(undefined)} disabled={pay.isPending}>稍后支付</Button><Button tone="primary" onClick={() => pay.mutate()} disabled={pay.isPending}>{pay.isPending ? '正在确认' : '确认测试支付'}</Button></>}><Notice tone="warning">当前为 Development 支付适配器，不会发起真实扣款。</Notice><dl className="detail-list"><div><dt>套餐</dt><dd>{checkout?.planName}</dd></div><div><dt>金额</dt><dd>{checkout?.amount}</dd></div><div><dt>订单 ID</dt><dd className="mono">{checkout?.orderId}</dd></div></dl>{pay.error && <p className="form-error" role="alert">支付确认失败，订单仍保留为待支付。</p>}</Dialog>
   </>
 }
 
