@@ -1330,7 +1330,7 @@ Edge 最少暴露：
 - 建立真实 `EdgeControl.Connect` Hello/Welcome harness。
 - 固定 grpc-go、pgx、Proto generation toolchain。
 
-### 32.4.1 R1D：在线开发环境装配（进行中）
+### 32.4.1 R1D：在线开发环境装配（已完成）
 
 - 当前产品尚未发布，允许把 R1 双进程部署到公网开发服务器进行真实跨机验证；该环境不具备生产或可用 Cloud 产品语义。
 - 旧 Controller、Hub、Relay、Edge、Web 和运行状态先进入带时间戳的可恢复归档，再从活动 systemd、Nginx 和 `/opt/muxvia` 路径退出，禁止新旧进程并存或复用旧协议。
@@ -1338,7 +1338,9 @@ Edge 最少暴露：
 - R1D 使用独立 staging Edge CA 和显式 mTLS 文件权限；手工签发只用于当前开发装配，不替代 R3 的 claim、CSR、证书轮换和 curl installer。
 - 完成条件是 Linux artifact checksum、systemd active、Controller `/healthz` 与 `/readyz`、Edge 公网 `/healthz` 与 `/readyz`、跨服务器 mTLS `Hello/Welcome`、重启恢复和旧监听端口消失均有真实证据。
 
-### 32.5 R2：Edge runtime 与 Controller Directory
+2026-07-26 的 R1D 实际部署使用源码提交 `3f7288a5`：Controller 位于 `155.94.155.192:18443`，SHA-256 为 `1cb45c1b788e38690f2253d4cefef457f3ae583ec0d925ddaaac2539bf0ccb50`；Edge 位于 `https://muxvia-cn1.omscd.com:41102`，SHA-256 为 `0dca4b2226f959db46111789fc27f886016a07b5f416a3252d69878790461055`。Controller 故障时 Edge 保持 alive、撤销 ready，Controller 恢复及两个 unit 分别重启后均自动重建 `Hello/Welcome`；活跃控制流存在时 Controller 在 211ms 内正常退出，systemd 结果为 success、退出码为 0。旧活动资产分别归档在两台主机的 `/var/backups/muxvia/r1d-20260726T013831Z`；开发公网证书在 2026-08-07 到期，必须在到期前更换，不得把它视为 R8 证书管理完成。
+
+### 32.5 R2：Edge runtime 与 Controller Directory（当前最早未完成切片）
 
 - 实现两个 actor、generation、writer queue、snapshot/chunk/delta。
 - 实现 10 万对象基准、race test、断线整体删除和 Controller restart 重建。
