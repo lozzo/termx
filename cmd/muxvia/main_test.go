@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -2448,6 +2449,9 @@ func v3TmuxSmokeOutputValue(output string, key string) string {
 func buildMuxviaBinaryForTest(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "muxvia-test-bin")
+	if runtime.GOOS == "windows" {
+		path += ".exe"
+	}
 	cmd := exec.Command("go", "build", "-tags", "muxvia_dev_commands", "-o", path, ".")
 	cmd.Dir = "."
 	output, err := cmd.CombinedOutput()

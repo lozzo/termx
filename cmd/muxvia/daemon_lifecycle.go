@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/muxvia/muxvia/shared/securefs"
 	"github.com/spf13/cobra"
 )
 
@@ -81,9 +82,17 @@ func acquireDaemonRuntimeRecord(socketPath, logPath, configPath string) (func(),
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
+	if err := securefs.SecureDirectory(filepath.Dir(path)); err != nil {
+		return nil, fmt.Errorf("secure daemon runtime directory: %w", err)
+	}
 	for attempt := 0; attempt < 2; attempt++ {
 		file, openErr := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if openErr == nil {
+			if secureErr := securefs.SecureFile(path); secureErr != nil {
+				_ = file.Close()
+				_ = os.Remove(path)
+				return nil, fmt.Errorf("secure daemon runtime record: %w", secureErr)
+			}
 			encoder := json.NewEncoder(file)
 			encodeErr := encoder.Encode(record)
 			closeErr := file.Close()
@@ -118,7 +127,7 @@ func readDaemonRuntimeRecord(path string) (daemonRuntimeRecord, error) {
 	if err != nil {
 		return daemonRuntimeRecord{}, err
 	}
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 || !daemonRecordOwnedByCurrentUser(info) {
+	if !securefs.IsPrivateFile(path, info) {
 		return daemonRuntimeRecord{}, &cliError{code: 5, message: "daemon runtime record owner or permissions are invalid"}
 	}
 	file, err := os.Open(path)

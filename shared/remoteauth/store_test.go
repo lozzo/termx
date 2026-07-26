@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/shared/filelock"
+	"github.com/muxvia/muxvia/shared/securefs"
 )
 
 func TestCredentialStoreKeepsEndpointIdentityStableAcrossLostResponseRecovery(t *testing.T) {
@@ -33,8 +34,9 @@ func TestCredentialStoreKeepsEndpointIdentityStableAcrossLostResponseRecovery(t 
 	if _, err := store.LoadOrCreateIdentity("lab-access", "endpoint-other", rand.Reader); err == nil {
 		t.Fatal("credential ref was rebound to another endpoint")
 	}
-	info, err := os.Stat(filepath.Join(dir, credentialFileName("lab-access")))
-	if err != nil || info.Mode().Perm() != 0o600 {
+	path := filepath.Join(dir, credentialFileName("lab-access"))
+	info, err := os.Stat(path)
+	if err != nil || !securefs.IsPrivateFile(path, info) {
 		t.Fatalf("credential permissions: info=%v err=%v", info, err)
 	}
 }

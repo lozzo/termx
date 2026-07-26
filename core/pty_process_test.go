@@ -3,21 +3,18 @@ package core
 import (
 	"context"
 	"os"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestPTYProcessFactoryFeedsLiveSurface(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("pty integration requires a Unix-like PTY")
-	}
+	command, inputLine := ptyInteractiveFixture()
 	server := NewServer()
 	events := server.Events(context.Background(), EventFilter{Types: []EventType{EventTerminalLiveInvalidated, EventTerminalResized, EventTerminalExited}})
 	info, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-pty",
-		Command: []string{"/bin/sh", "-c", "printf 'alpha\\n'; read line; printf \"echo:%s\\n\" \"$line\""},
+		Command: command,
 		Size:    Size{Cols: 40, Rows: 8},
 	})
 	if err != nil {
@@ -30,7 +27,7 @@ func TestPTYProcessFactoryFeedsLiveSurface(t *testing.T) {
 	if err := server.ResizeTerminal(context.Background(), "term-pty", 50, 10); err != nil {
 		t.Fatalf("resize pty terminal: %v", err)
 	}
-	if err := server.WriteInput(context.Background(), "term-pty", []byte("beta\n")); err != nil {
+	if err := server.WriteInput(context.Background(), "term-pty", inputLine); err != nil {
 		t.Fatalf("write pty input: %v", err)
 	}
 	waitForLiveRow(t, server, "term-pty", "echo:beta")
@@ -40,10 +37,7 @@ func TestPTYProcessFactoryFeedsLiveSurface(t *testing.T) {
 }
 
 func TestPTYProcessFactoryUsesCreateDirAndEnv(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("pty integration requires a Unix-like PTY")
-	}
-	dir, err := os.MkdirTemp("/tmp", "muxvia-pty-env-")
+	dir, err := os.MkdirTemp("", "muxvia-pty-env-")
 	if err != nil {
 		t.Fatalf("create pty cwd: %v", err)
 	}
@@ -51,7 +45,7 @@ func TestPTYProcessFactoryUsesCreateDirAndEnv(t *testing.T) {
 	server := NewServer()
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-pty-env",
-		Command: []string{"/bin/sh", "-c", "printf 'cwd:%s env:%s\\n' \"$PWD\" \"$MUXVIA_REMOTE_TEST\""},
+		Command: ptyEnvironmentFixture(),
 		Size:    Size{Cols: 120, Rows: 4},
 		Options: TerminalCreateOptions{
 			Dir: dir,
@@ -103,14 +97,11 @@ func assertEventuallyEvent(t *testing.T, events <-chan Event, typ EventType, ter
 }
 
 func TestPTYProcessFactoryKillExitsProcess(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("pty integration requires a Unix-like PTY")
-	}
 	server := NewServer()
 	events := server.Events(context.Background(), EventFilter{Types: []EventType{EventTerminalExited}})
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-kill",
-		Command: []string{"/bin/sh", "-c", "while true; do sleep 1; done"},
+		Command: ptyLongRunningFixture(),
 		Size:    Size{Cols: 20, Rows: 4},
 	}); err != nil {
 		t.Fatalf("register pty terminal: %v", err)

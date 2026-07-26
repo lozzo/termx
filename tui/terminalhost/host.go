@@ -7,10 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/signal"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	xterm "github.com/charmbracelet/x/term"
@@ -534,14 +532,6 @@ func exitSequence(keyboardPushed bool) string {
 		sequence += disableKeyboardEnhancements
 	}
 	return sequence + showCursor + exitAltScreen
-}
-
-func defaultResizeSignalFactory() (<-chan os.Signal, func()) {
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGWINCH)
-	return signals, func() {
-		signal.Stop(signals)
-	}
 }
 
 func (host *Host) signalReady() {

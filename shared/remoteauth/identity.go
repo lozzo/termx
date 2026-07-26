@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/shared/filelock"
+	"github.com/muxvia/muxvia/shared/filepublish"
+	"github.com/muxvia/muxvia/shared/securefs"
 )
 
 const (
@@ -91,7 +93,7 @@ func LoadOrCreateIdentity(dir string, deviceID string) (Identity, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return Identity{}, fmt.Errorf("create remote identity directory: %w", err)
 	}
-	if err := os.Chmod(dir, 0o700); err != nil {
+	if err := securefs.SecureDirectory(dir); err != nil {
 		return Identity{}, fmt.Errorf("secure remote identity directory: %w", err)
 	}
 	lock, err := filelock.Acquire(filepath.Join(dir, identityLockFile), false)
@@ -117,7 +119,7 @@ func loadOrCreateIdentityLocked(dir string, deviceID string) (Identity, error) {
 		if err != nil || len(privateKey) != ed25519.PrivateKeySize {
 			return Identity{}, fmt.Errorf("remote identity has invalid private key")
 		}
-		if err := os.Chmod(path, 0o600); err != nil {
+		if err := securefs.SecureFile(path); err != nil {
 			return Identity{}, fmt.Errorf("secure remote identity permissions: %w", err)
 		}
 		return identityFromPrivateKey(deviceID, ed25519.PrivateKey(privateKey)), nil
@@ -150,7 +152,7 @@ func LoadOrCreateLocalIdentity(dir string) (Identity, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return Identity{}, fmt.Errorf("create remote identity directory: %w", err)
 	}
-	if err := os.Chmod(dir, 0o700); err != nil {
+	if err := securefs.SecureDirectory(dir); err != nil {
 		return Identity{}, fmt.Errorf("secure remote identity directory: %w", err)
 	}
 	lock, err := filelock.Acquire(filepath.Join(dir, identityLockFile), false)
@@ -215,7 +217,7 @@ func writePrivateFileWithPostPublish(path string, payload []byte, postPublish fu
 	}
 	tempPath := temp.Name()
 	defer os.Remove(tempPath)
-	if err := temp.Chmod(0o600); err != nil {
+	if err := securefs.SecureFile(tempPath); err != nil {
 		_ = temp.Close()
 		return fmt.Errorf("secure remote identity temp file: %w", err)
 	}
@@ -230,7 +232,7 @@ func writePrivateFileWithPostPublish(path string, payload []byte, postPublish fu
 	if err := temp.Close(); err != nil {
 		return fmt.Errorf("close remote identity: %w", err)
 	}
-	if err := os.Rename(tempPath, path); err != nil {
+	if err := filepublish.Rename(tempPath, path); err != nil {
 		return fmt.Errorf("install remote identity: %w", err)
 	}
 	if err := postPublish(path); err != nil {
@@ -240,20 +242,11 @@ func writePrivateFileWithPostPublish(path string, payload []byte, postPublish fu
 }
 
 func finishPrivateFilePublish(path string) error {
-	if err := os.Chmod(path, 0o600); err != nil {
+	if err := securefs.SecureFile(path); err != nil {
 		return fmt.Errorf("secure remote identity: %w", err)
 	}
-	directory, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return fmt.Errorf("open remote identity directory: %w", err)
-	}
-	syncErr := directory.Sync()
-	closeErr := directory.Close()
-	if syncErr != nil {
-		return fmt.Errorf("sync remote identity directory: %w", syncErr)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("close remote identity directory: %w", closeErr)
+	if err := filepublish.SyncDirectory(filepath.Dir(path)); err != nil {
+		return fmt.Errorf("sync remote identity directory: %w", err)
 	}
 	return nil
 }

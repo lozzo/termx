@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/muxvia/muxvia/shared/securefs"
 )
 
 func TestLoadMissingDefaultPathReturnsLocalEndpoint(t *testing.T) {
@@ -237,7 +239,7 @@ func TestSaveRoundTripV2AndFileMode(t *testing.T) {
 		t.Fatalf("round trip mismatch\ngot=%#v\nwant=%#v", loaded, want)
 	}
 	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0o600 {
+	if err != nil || !securefs.IsPrivateFile(path, info) {
 		t.Fatalf("registry mode=%v err=%v", info.Mode().Perm(), err)
 	}
 }

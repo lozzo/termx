@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -10,10 +11,9 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
-	creackpty "github.com/creack/pty"
+	crosspty "github.com/aymanbagabas/go-pty"
 	"github.com/muxvia/muxvia/shared/perftrace"
 )
 
@@ -74,18 +74,35 @@ func (ptyProcessFactory) Spawn(ctx context.Context, spec ProcessSpec) (TerminalP
 	if !size.Valid() {
 		size = Size{Cols: 80, Rows: 24}
 	}
-	cmd := exec.CommandContext(ctx, spec.Command[0], spec.Command[1:]...)
+	terminal, err := crosspty.New()
+	if err != nil {
+		return nil, fmt.Errorf("create terminal pty: %w", err)
+	}
+	if err := terminal.Resize(int(size.Cols), int(size.Rows)); err != nil {
+		_ = terminal.Close()
+		return nil, fmt.Errorf("set initial terminal size: %w", err)
+	}
+	cmd := terminal.CommandContext(ctx, spec.Command[0], spec.Command[1:]...)
 	cmd.Dir = spec.Dir
 	cmd.Env = ptyProcessEnv(spec.TerminalID, spec.Env)
 	finishStart := perftrace.Measure("core.process.pty_start")
-	file, err := creackpty.StartWithSize(cmd, &creackpty.Winsize{Cols: size.Cols, Rows: size.Rows})
+	err = cmd.Start()
 	finishStart(0)
 	if err != nil {
+		_ = terminal.Close()
 		return nil, err
 	}
+	platform, err := newPTYProcessPlatform(cmd.Process, terminal)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = terminal.Close()
+		_ = cmd.Wait()
+		return nil, fmt.Errorf("establish terminal process lifecycle: %w", err)
+	}
 	process := &ptyProcess{
-		file:     file,
+		terminal: terminal,
 		cmd:      cmd,
+		platform: platform,
 		outputCh: make(chan []byte, 64),
 		waitCh:   make(chan ProcessExit, 1),
 		readDone: make(chan struct{}),
@@ -97,8 +114,9 @@ func (ptyProcessFactory) Spawn(ctx context.Context, spec ProcessSpec) (TerminalP
 
 type ptyProcess struct {
 	mu            sync.Mutex
-	file          *os.File
-	cmd           *exec.Cmd
+	terminal      crosspty.Pty
+	cmd           *crosspty.Cmd
+	platform      ptyProcessPlatform
 	outputCh      chan []byte
 	waitCh        chan ProcessExit
 	readDone      chan struct{}
@@ -111,12 +129,12 @@ const ptyReadBufferBytes = 64 * 1024
 
 func (process *ptyProcess) Input(data []byte) error {
 	process.mu.Lock()
-	file := process.file
+	terminal := process.terminal
 	process.mu.Unlock()
-	if file == nil {
+	if terminal == nil {
 		return io.ErrClosedPipe
 	}
-	_, err := file.Write(data)
+	_, err := terminal.Write(data)
 	return err
 }
 
@@ -125,12 +143,12 @@ func (process *ptyProcess) Resize(size Size) error {
 		return ErrInvalidServerSize
 	}
 	process.mu.Lock()
-	file := process.file
+	terminal := process.terminal
 	process.mu.Unlock()
-	if file == nil {
+	if terminal == nil {
 		return io.ErrClosedPipe
 	}
-	return creackpty.Setsize(file, &creackpty.Winsize{Cols: size.Cols, Rows: size.Rows})
+	return terminal.Resize(int(size.Cols), int(size.Rows))
 }
 
 func (process *ptyProcess) Output() <-chan []byte {
@@ -139,36 +157,23 @@ func (process *ptyProcess) Output() <-chan []byte {
 
 func (process *ptyProcess) ResourceUsage() (TerminalResourceUsage, bool) {
 	process.mu.Lock()
-	cmd := process.cmd
+	platform := process.platform
 	process.mu.Unlock()
-	if cmd == nil || cmd.Process == nil || cmd.Process.Pid <= 0 {
+	if platform == nil {
 		return TerminalResourceUsage{}, false
 	}
-	pid := cmd.Process.Pid
-	// 中文说明：资源展示只做 Terminal Manager 诊断采样，真值仍归 OS 进程；
-	// 采样失败时返回空值，不修改 terminal lifecycle，也不做状态 fallback。
-	out, err := exec.Command("ps", "-o", "%cpu=,rss=", "-p", strconv.Itoa(pid)).Output()
-	if err != nil {
-		return TerminalResourceUsage{}, false
-	}
-	return parseProcessResourceUsage(pid, out, time.Now().UTC())
+	return platform.ResourceUsage()
 }
 
 func (process *ptyProcess) Kill() error {
 	process.mu.Lock()
-	cmd := process.cmd
+	platform := process.platform
 	process.killRequested.Store(true)
 	process.mu.Unlock()
-	if cmd == nil || cmd.Process == nil {
+	if platform == nil {
 		return nil
 	}
-	// creack/pty 会让子进程成为独立 session；优先给进程组发 HUP，失败时回退到主进程。
-	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGHUP); err != nil {
-		if signalErr := cmd.Process.Signal(syscall.SIGHUP); signalErr != nil && !errors.Is(signalErr, os.ErrProcessDone) {
-			return errors.Join(err, signalErr)
-		}
-	}
-	return nil
+	return platform.Kill()
 }
 
 func (process *ptyProcess) Wait() <-chan ProcessExit {
@@ -178,14 +183,16 @@ func (process *ptyProcess) Wait() <-chan ProcessExit {
 func (process *ptyProcess) Close() error {
 	var err error
 	process.closeOnce.Do(func() {
-		_ = process.Kill()
+		killErr := process.Kill()
 		process.mu.Lock()
-		file := process.file
-		process.file = nil
+		platform := process.platform
+		process.terminal = nil
+		process.platform = nil
 		process.mu.Unlock()
-		if file != nil {
-			err = file.Close()
+		if platform != nil {
+			err = errors.Join(err, platform.Close())
 		}
+		err = errors.Join(killErr, err)
 	})
 	return err
 }
@@ -196,12 +203,12 @@ func (process *ptyProcess) readLoop() {
 	buf := make([]byte, ptyReadBufferBytes)
 	for {
 		process.mu.Lock()
-		file := process.file
+		terminal := process.terminal
 		process.mu.Unlock()
-		if file == nil {
+		if terminal == nil {
 			return
 		}
-		n, err := file.Read(buf)
+		n, err := terminal.Read(buf)
 		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
@@ -216,7 +223,19 @@ func (process *ptyProcess) readLoop() {
 func (process *ptyProcess) waitLoop() {
 	process.waitOnce.Do(func() {
 		err := process.cmd.Wait()
+		process.mu.Lock()
+		platform := process.platform
+		process.mu.Unlock()
+		if platform != nil {
+			_ = platform.ProcessExited()
+		}
 		<-process.readDone
+		if platform != nil {
+			_ = platform.OutputDrained()
+		}
+		process.mu.Lock()
+		process.terminal = nil
+		process.mu.Unlock()
 		process.waitCh <- ProcessExit{
 			Code: processExitCode(err, process.killRequested.Load()),
 			Err:  err,
@@ -231,17 +250,10 @@ func processExitCode(err error, killed bool) int {
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
-			if killed && status.Signaled() {
-				return -1
-			}
-			if status.Exited() {
-				return status.ExitStatus()
-			}
-			if status.Signaled() {
-				return -1
-			}
+		if killed {
+			return -1
 		}
+		return exitErr.ExitCode()
 	}
 	return -1
 }

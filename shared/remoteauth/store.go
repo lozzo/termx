@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/shared/filelock"
+	"github.com/muxvia/muxvia/shared/securefs"
 )
 
 const clientCredentialVersion = 1
@@ -318,7 +319,7 @@ func (store *CredentialStore) resolveLocked(ref string) (ClientAccessCredential,
 	if err != nil {
 		return ClientAccessCredential{}, fmt.Errorf("resolve client access credential %q: %w", ref, err)
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
+	if err := securefs.SecureFile(path); err != nil {
 		return ClientAccessCredential{}, fmt.Errorf("secure client access credential %q: %w", ref, err)
 	}
 	decoder := json.NewDecoder(strings.NewReader(string(payload)))
@@ -383,7 +384,7 @@ func (store *CredentialStore) persistLocked(ref string, credential ClientAccessC
 	if err := os.MkdirAll(store.dir, 0o700); err != nil {
 		return fmt.Errorf("create remote credential directory: %w", err)
 	}
-	if err := os.Chmod(store.dir, 0o700); err != nil {
+	if err := securefs.SecureDirectory(store.dir); err != nil {
 		return fmt.Errorf("secure remote credential directory: %w", err)
 	}
 	stored := storedClientAccessCredential{
@@ -406,7 +407,7 @@ func (store *CredentialStore) acquireRefLockLocked(ctx context.Context, ref stri
 	if err := os.MkdirAll(store.dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create remote credential directory: %w", err)
 	}
-	if err := os.Chmod(store.dir, 0o700); err != nil {
+	if err := securefs.SecureDirectory(store.dir); err != nil {
 		return nil, fmt.Errorf("secure remote credential directory: %w", err)
 	}
 	lock, err := filelock.AcquireContext(ctx, filepath.Join(store.dir, credentialFileName(ref)+".lock"), false)

@@ -272,6 +272,10 @@ func resolveSocketPath(path string) (string, string) {
 	}
 	sum := sha256.Sum256([]byte(path))
 	actual := filepath.Join(shortSocketBaseDir(), fmt.Sprintf("muxvia-%x.sock", sum[:8]))
+	if runtime.GOOS == "windows" {
+		// 中文说明：Windows AF_UNIX 支持短路径，但普通用户创建 symlink 需要额外特权；Dial/Listen 共享哈希路径即可保持同一 transport truth。
+		return actual, ""
+	}
 	return actual, path
 }
 

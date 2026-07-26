@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/muxvia/muxvia/shared/securefs"
 )
 
 func TestLoadOrCreateIdentityKeepsStableFingerprintAndPrivatePermissions(t *testing.T) {
@@ -22,12 +24,13 @@ func TestLoadOrCreateIdentityKeepsStableFingerprintAndPrivatePermissions(t *test
 	if first.DeviceID != "device-1" || first.Fingerprint == "" || second.Fingerprint != first.Fingerprint {
 		t.Fatalf("identity is not stable: first=%#v second=%#v", first, second)
 	}
-	info, err := os.Stat(filepath.Join(dir, identityPrivateKeyFile))
+	path := filepath.Join(dir, identityPrivateKeyFile)
+	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("stat private key: %v", err)
 	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("private key permissions = %o, want 600", info.Mode().Perm())
+	if !securefs.IsPrivateFile(path, info) {
+		t.Fatal("private key does not satisfy the platform privacy contract")
 	}
 }
 

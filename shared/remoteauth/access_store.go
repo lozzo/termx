@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/shared/filelock"
+	"github.com/muxvia/muxvia/shared/securefs"
 )
 
 const (
@@ -131,7 +132,7 @@ func LoadAccessStore(dir string, identity Identity, options AccessStoreOptions) 
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create client access directory: %w", err)
 	}
-	if err := os.Chmod(dir, 0o700); err != nil {
+	if err := securefs.SecureDirectory(dir); err != nil {
 		return nil, fmt.Errorf("secure client access directory: %w", err)
 	}
 	owner, err := filelock.Acquire(filepath.Join(dir, accessStoreLockFile), true)
@@ -162,7 +163,7 @@ func LoadAccessStore(dir string, identity Identity, options AccessStoreOptions) 
 			_ = owner.Close()
 			return nil, err
 		}
-		if err := os.Chmod(store.path, 0o600); err != nil {
+		if err := securefs.SecureFile(store.path); err != nil {
 			_ = owner.Close()
 			return nil, fmt.Errorf("secure client access store: %w", err)
 		}

@@ -234,8 +234,15 @@ func TestListenerSupportsLongSocketPath(t *testing.T) {
 	}
 	defer listener.Close()
 
-	if _, err := os.Lstat(path); err != nil {
-		t.Fatalf("expected visible alias at original path: %v", err)
+	actualPath, aliasPath := resolveSocketPath(path)
+	if aliasPath != "" {
+		if _, err := os.Lstat(path); err != nil {
+			t.Fatalf("expected visible alias at original path: %v", err)
+		}
+	} else {
+		if _, err := os.Lstat(actualPath); err != nil {
+			t.Fatalf("expected mapped socket at short path: %v", err)
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

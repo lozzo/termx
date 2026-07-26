@@ -1,4 +1,4 @@
-//go:build darwin || linux
+//go:build windows
 
 package main
 
@@ -6,23 +6,33 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
-	"syscall"
+
+	"golang.org/x/sys/windows"
 )
 
 func daemonLifecycleSupported() bool { return true }
 
 func daemonProcessIdentity(pid int) (string, error) {
-	output, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "lstart=", "-o", "command=").Output()
+	if pid <= 0 {
+		return "", fmt.Errorf("process %d is invalid", pid)
+	}
+	handle, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
 	if err != nil {
 		return "", err
 	}
-	identity := strings.TrimSpace(string(output))
-	if identity == "" {
-		return "", fmt.Errorf("process %d is not running", pid)
+	defer windows.CloseHandle(handle)
+	var creation, exit, kernel, user windows.Filetime
+	if err := windows.GetProcessTimes(handle, &creation, &exit, &kernel, &user); err != nil {
+		return "", err
 	}
-	return identity, nil
+	buffer := make([]uint16, 32768)
+	size := uint32(len(buffer))
+	if err := windows.QueryFullProcessImageName(handle, 0, &buffer[0], &size); err != nil {
+		return "", err
+	}
+	image := strings.ToLower(windows.UTF16ToString(buffer[:size]))
+	return fmt.Sprintf("%08x%08x:%s", creation.HighDateTime, creation.LowDateTime, image), nil
 }
 
 func stopDaemonProcess(pid int) error {
@@ -30,7 +40,8 @@ func stopDaemonProcess(pid int) error {
 	if err != nil {
 		return err
 	}
-	return process.Signal(syscall.SIGTERM)
+	// 中文说明：PID 已由创建时间与映像路径复验；Windows 无 SIGTERM，当前 lifecycle contract 使用精确进程终止。
+	return process.Kill()
 }
 
 func startDetachedDaemon(socketPath, logPath, configPath string) error {

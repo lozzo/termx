@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 
 	localadapter "github.com/muxvia/muxvia/client/adapter/local"
@@ -111,9 +110,17 @@ func startCoreV2DaemonWithConfig(path string, logFile string, configPath string)
 	}
 	defer devNull.Close()
 	cmd.Stdin = devNull
-	cmd.Stdout = devNull
-	cmd.Stderr = devNull
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	output := devNull
+	if strings.TrimSpace(logFile) != "" {
+		output, err = os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		if err != nil {
+			return err
+		}
+		defer output.Close()
+	}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	configureDetachedCommand(cmd)
 	if err := cmd.Start(); err != nil {
 		return err
 	}

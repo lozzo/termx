@@ -1,16 +1,18 @@
-//go:build darwin || linux
+//go:build darwin || linux || windows
 
 package main
 
 import (
 	"bytes"
 	"encoding/json"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/muxvia/muxvia/shared/securefs"
 )
 
 func TestDaemonServiceLifecycleUsesExactRuntimeRecord(t *testing.T) {
@@ -35,8 +37,8 @@ func TestDaemonServiceLifecycleUsesExactRuntimeRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if recordInfo.Mode().Perm() != 0o600 {
-		t.Fatalf("daemon record mode = %#o", recordInfo.Mode().Perm())
+	if !securefs.IsPrivateFile(daemonRecordPath(socketPath), recordInfo) {
+		t.Fatal("daemon record is not protected for the current user")
 	}
 
 	restart := exec.Command(binary, "--socket", socketPath, "--log-file", logPath, "daemon", "restart")
@@ -62,6 +64,17 @@ func TestDaemonServiceLifecycleUsesExactRuntimeRecord(t *testing.T) {
 }
 
 func TestDaemonRuntimeRecordRejectsUnsafePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(os.Getenv("SystemRoot"), "System32", "kernel32.dll")
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if securefs.IsPrivateFile(path, info) {
+			t.Fatal("system-owned file must not pass current-user daemon record ownership")
+		}
+		return
+	}
 	path := daemonRecordPath(filepath.Join(t.TempDir(), "muxvia.sock"))
 	if err := os.WriteFile(path, []byte(`{"schema_version":1}`), 0o666); err != nil {
 		t.Fatal(err)
@@ -74,10 +87,16 @@ func TestDaemonRuntimeRecordRejectsUnsafePermissions(t *testing.T) {
 func executeMuxviaBinary(t *testing.T, binary string, args ...string) daemonStatusView {
 	t.Helper()
 	command := exec.Command(binary, args...)
-	command.Stderr = io.Discard
-	output, err := command.Output()
+	output, err := command.CombinedOutput()
 	if err != nil {
-		t.Fatalf("muxvia %s: %v", strings.Join(args, " "), err)
+		var daemonLog []byte
+		for index, arg := range args {
+			if arg == "--log-file" && index+1 < len(args) {
+				daemonLog, _ = os.ReadFile(args[index+1])
+				break
+			}
+		}
+		t.Fatalf("muxvia %s: %v\noutput:\n%s\nlog:\n%s", strings.Join(args, " "), err, output, daemonLog)
 	}
 	var view daemonStatusView
 	if err := json.Unmarshal(output, &view); err != nil {

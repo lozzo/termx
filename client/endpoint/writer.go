@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/shared/filelock"
+	"github.com/muxvia/muxvia/shared/filepublish"
+	"github.com/muxvia/muxvia/shared/securefs"
 	"gopkg.in/yaml.v3"
 )
 
@@ -95,6 +97,9 @@ func SaveContext(ctx context.Context, path string, registry Registry) error {
 	path = resolvedRegistryPath(path)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create endpoint registry directory: %w", err)
+	}
+	if err := securefs.SecureDirectory(filepath.Dir(path)); err != nil {
+		return fmt.Errorf("secure endpoint registry directory: %w", err)
 	}
 	lock, err := filelock.AcquireContext(ctx, path+".lock", false)
 	if err != nil {
@@ -193,7 +198,7 @@ func saveRegistryFile(path string, registry Registry) error {
 			_ = os.Remove(temporaryPath)
 		}
 	}()
-	if err := temporary.Chmod(0o600); err != nil {
+	if err := securefs.SecureFile(temporaryPath); err != nil {
 		return fmt.Errorf("secure endpoint registry temp file: %w", err)
 	}
 	if _, err := temporary.Write(payload); err != nil {
@@ -205,16 +210,11 @@ func saveRegistryFile(path string, registry Registry) error {
 	if err := temporary.Close(); err != nil {
 		return fmt.Errorf("close endpoint registry: %w", err)
 	}
-	directory, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return fmt.Errorf("open endpoint registry directory for sync: %w", err)
-	}
-	defer directory.Close()
-	if err := os.Rename(temporaryPath, path); err != nil {
+	if err := filepublish.Rename(temporaryPath, path); err != nil {
 		return fmt.Errorf("publish endpoint registry: %w", err)
 	}
 	committed = true
-	if err := directory.Sync(); err != nil {
+	if err := filepublish.SyncDirectory(filepath.Dir(path)); err != nil {
 		return &registryWriteError{err: fmt.Errorf("sync endpoint registry directory: %w", err), published: true}
 	}
 	return nil
