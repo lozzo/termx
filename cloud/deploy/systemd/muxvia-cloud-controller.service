@@ -1,0 +1,34 @@
+[Unit]
+Description=Muxvia Cloud Controller (online development)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=muxvia
+Group=muxvia
+EnvironmentFile=/etc/muxvia/cloud/controller.env
+ExecStart=/opt/muxvia/bin/muxvia-cloud-controller --controller-id=${MUXVIA_CLOUD_CONTROLLER_ID} --grpc-listen=${MUXVIA_CLOUD_CONTROLLER_LISTEN} --health-listen=${MUXVIA_CLOUD_CONTROLLER_HEALTH_LISTEN} --tls-cert=/etc/muxvia/cloud/tls/controller-fullchain.pem --tls-key=/etc/muxvia/cloud/tls/controller-key.pem --edge-ca=/etc/muxvia/cloud/tls/edge-ca.pem
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+LimitNOFILE=1048576
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

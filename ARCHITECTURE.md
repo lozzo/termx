@@ -1330,7 +1330,15 @@ Edge 最少暴露：
 - 建立真实 `EdgeControl.Connect` Hello/Welcome harness。
 - 固定 grpc-go、pgx、Proto generation toolchain。
 
-### 32.5 R2：Edge runtime 与 Controller Directory（当前最早未完成切片）
+### 32.4.1 R1D：在线开发环境装配（进行中）
+
+- 当前产品尚未发布，允许把 R1 双进程部署到公网开发服务器进行真实跨机验证；该环境不具备生产或可用 Cloud 产品语义。
+- 旧 Controller、Hub、Relay、Edge、Web 和运行状态先进入带时间戳的可恢复归档，再从活动 systemd、Nginx 和 `/opt/muxvia` 路径退出，禁止新旧进程并存或复用旧协议。
+- Controller 固定部署到 `155.94.155.192`；首个 Edge 固定部署到 `114.66.58.243`，公网健康入口使用已确认的 `muxvia-cn1.omscd.com:41102`。
+- R1D 使用独立 staging Edge CA 和显式 mTLS 文件权限；手工签发只用于当前开发装配，不替代 R3 的 claim、CSR、证书轮换和 curl installer。
+- 完成条件是 Linux artifact checksum、systemd active、Controller `/healthz` 与 `/readyz`、Edge 公网 `/healthz` 与 `/readyz`、跨服务器 mTLS `Hello/Welcome`、重启恢复和旧监听端口消失均有真实证据。
+
+### 32.5 R2：Edge runtime 与 Controller Directory
 
 - 实现两个 actor、generation、writer queue、snapshot/chunk/delta。
 - 实现 10 万对象基准、race test、断线整体删除和 Controller restart 重建。
@@ -1378,6 +1386,8 @@ Edge 最少暴露：
 - 选择并落地开源许可证，删除过渡性 private license 文案。
 - 使用候选 artifact 在 staging 完整部署，再按明确变更单部署生产。
 - 生产 smoke test、监控和回滚验证完成后才宣布上线。
+
+R1D 的公网开发装配不改变 R9：它只验证当前切片的真实网络链路，不得宣称为生产部署、公开发布或可供用户使用的 Cloud。
 
 每个切片只提交自己的纵向能力，提交前必须测试通过。不得把 D2 到 R9 合成一次大删除/大重写，也不得在某个切片未完成时用静态页面或 fake 数据提前标记后续能力完成。
 
