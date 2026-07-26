@@ -1,3 +1,7 @@
+-- 当前尚未发布，旧 Relay snapshot/sequence 表不属于新控制链，也没有兼容读取路径。
+DROP TABLE IF EXISTS relay_usage_aggregates;
+DROP TABLE IF EXISTS relay_usage_events;
+
 CREATE TABLE usage_periods (
     account_id uuid NOT NULL REFERENCES accounts(account_id),
     period_start timestamptz NOT NULL,
