@@ -49,7 +49,7 @@ func startDetachedDaemon(socketPath, logPath, configPath string) error {
 		return err
 	}
 	defer devNull.Close()
-	output, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	output, err := openPrivateDaemonLog(logPath)
 	if err != nil {
 		return err
 	}

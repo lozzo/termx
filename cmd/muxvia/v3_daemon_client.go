@@ -112,7 +112,7 @@ func startCoreV2DaemonWithConfig(path string, logFile string, configPath string)
 	cmd.Stdin = devNull
 	output := devNull
 	if strings.TrimSpace(logFile) != "" {
-		output, err = os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		output, err = openPrivateDaemonLog(logFile)
 		if err != nil {
 			return err
 		}

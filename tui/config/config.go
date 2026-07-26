@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/muxvia/muxvia/shared/userdirs"
 	actiondomain "github.com/muxvia/muxvia/tui/action"
 	"github.com/muxvia/muxvia/tui/input"
 	"github.com/muxvia/muxvia/tui/shortcut"
@@ -21,13 +22,7 @@ const (
 )
 
 func DefaultPath() string {
-	if configHome := os.Getenv("XDG_CONFIG_HOME"); configHome != "" {
-		return filepath.Join(configHome, "muxvia", DefaultFileName)
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".config", "muxvia", DefaultFileName)
-	}
-	return filepath.Join(os.TempDir(), "muxvia-config", DefaultFileName)
+	return filepath.Join(userdirs.ConfigHome(), "muxvia", DefaultFileName)
 }
 
 func Default() state.TUIConfigStore {

@@ -41,6 +41,15 @@ Edge 对外表现为一个节点：只有一个 `edge_id`、一个节点身份�
 
 代码内部可以把 gateway、signaling、relay、policy 和 usage 分成模块，但这些只是一个 Edge 内部的职责，不得重新形成两套节点身份、配置、在线状态、管理页面、持久化拓扑或控制连接。
 
+### 2.4 平台支持边界
+
+- Windows 一等支持范围是 Windows 10 1809+/Windows 11 的 amd64 本地产品面：`muxvia` CLI、TUI、ConPTY terminal、当前用户 daemon、Direct/SSH/Cloud 客户端链路、文件传输、历史、配对、安装、升级和卸载。
+- Windows terminal 的唯一 PTY owner 是 ConPTY；进程树由 Job Object 管理，退出、强制停止、resize 和输出 drain 不得退回到 pipe 模拟、Unix shell 或 WSL。
+- Windows 私有状态使用当前用户、SYSTEM、Administrators 的受保护 DACL，不能用 `os.FileMode` 的 `0600/0700` 映射假装完成权限隔离。Unix 继续使用 owner UID 与 mode 真值。
+- Windows 当前用户 daemon 使用同一二进制的 `daemon start/status/stop/restart` 生命周期；安装包写入 `%LOCALAPPDATA%\\Programs\\Muxvia`，用户 PATH 与登录自启动都属于 HKCU，不要求管理员权限。升级必须先按 runtime record 精确停止旧进程，再原子替换二进制并重新启动。
+- Windows 开发门禁使用仓库 PowerShell 脚本，覆盖 Go 全量测试、Proto 生成、UI/mobile 测试、typecheck、生产构建、三个 Go 二进制构建和安装包 smoke。Android 的 Go/JNI 产物允许在安装了固定 NDK 的 Windows 主机生成。
+- `muxvia-cloud-controller` 与 `muxvia-cloud-edge` 必须在 Windows 编译并通过平台无关单测，但 Cloud 生产服务器、一键 Edge 安装、systemd unit、在线升级与运维证据仍固定为 Linux/amd64。该服务器部署约束不允许污染 Windows 客户端或本地 daemon 的运行路径，也不得把 Windows 二进制展示成可部署的生产 Edge artifact。
+
 ## 3. 系统角色与职责
 
 ### 3.1 Controller

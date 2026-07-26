@@ -8,9 +8,24 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/muxvia/muxvia/shared/securefs"
+	"github.com/muxvia/muxvia/shared/userdirs"
 )
 
 const defaultLogMaxBytes int64 = 10 * 1024 * 1024
+
+func ensurePrivateLogDirectory(path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return err
+	}
+	return securefs.SecureDirectory(path)
+}
 
 func resolveLogFilePath(explicit string) string {
 	if explicit != "" {
@@ -19,36 +34,18 @@ func resolveLogFilePath(explicit string) string {
 	if path := os.Getenv("MUXVIA_LOG_FILE"); path != "" {
 		return path
 	}
-	if stateDir := os.Getenv("XDG_STATE_HOME"); stateDir != "" {
-		return filepath.Join(stateDir, "muxvia", "muxvia.log")
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".local", "state", "muxvia", "muxvia.log")
-	}
-	return filepath.Join(os.TempDir(), "muxvia.log")
+	return filepath.Join(userdirs.StateHome(), "muxvia", "muxvia.log")
 }
 
 func resolveWorkspaceStatePath() string {
-	if stateDir := os.Getenv("XDG_STATE_HOME"); stateDir != "" {
-		return filepath.Join(stateDir, "muxvia", "workspace-state.json")
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".local", "state", "muxvia", "workspace-state.json")
-	}
-	return filepath.Join(os.TempDir(), "muxvia-workspace-state.json")
+	return filepath.Join(userdirs.StateHome(), "muxvia", "workspace-state.json")
 }
 
 func resolveConfigFilePath(explicit string) string {
 	if strings.TrimSpace(explicit) != "" {
 		return explicit
 	}
-	if configDir := os.Getenv("XDG_CONFIG_HOME"); configDir != "" {
-		return filepath.Join(configDir, "muxvia", "muxvia.yaml")
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".config", "muxvia", "muxvia.yaml")
-	}
-	return filepath.Join(os.TempDir(), "muxvia.yaml")
+	return filepath.Join(userdirs.ConfigHome(), "muxvia", "muxvia.yaml")
 }
 
 func resolveStateFilePath(name string) string {
@@ -56,26 +53,14 @@ func resolveStateFilePath(name string) string {
 	if name == "" {
 		name = "muxvia.state"
 	}
-	if stateDir := os.Getenv("XDG_STATE_HOME"); stateDir != "" {
-		return filepath.Join(stateDir, "muxvia", name)
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".local", "state", "muxvia", name)
-	}
-	return filepath.Join(os.TempDir(), name)
+	return filepath.Join(userdirs.StateHome(), "muxvia", name)
 }
 
 func resolveGridStatePath() string {
 	if path := os.Getenv("MUXVIA_GRID_DIR"); path != "" {
 		return path
 	}
-	if stateDir := os.Getenv("XDG_STATE_HOME"); stateDir != "" {
-		return filepath.Join(stateDir, "muxvia", "grid")
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".local", "state", "muxvia", "grid")
-	}
-	return filepath.Join(os.TempDir(), "muxvia-grid")
+	return filepath.Join(userdirs.StateHome(), "muxvia", "grid")
 }
 
 func resolveLogLevel() slog.Leveler {
@@ -157,6 +142,10 @@ func (w *rotatingLogWriter) openLocked() error {
 	if err != nil {
 		return err
 	}
+	if err := securefs.SecureFile(w.path); err != nil {
+		_ = file.Close()
+		return err
+	}
 	info, statErr := file.Stat()
 	if statErr != nil {
 		_ = file.Close()
@@ -169,6 +158,10 @@ func (w *rotatingLogWriter) openLocked() error {
 		}
 		file, err = os.OpenFile(w.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
+			return err
+		}
+		if err := securefs.SecureFile(w.path); err != nil {
+			_ = file.Close()
 			return err
 		}
 		info, statErr = file.Stat()
@@ -200,6 +193,10 @@ func (w *rotatingLogWriter) rotateLocked() error {
 	if err != nil {
 		return err
 	}
+	if err := securefs.SecureFile(w.path); err != nil {
+		_ = file.Close()
+		return err
+	}
 	w.file = file
 	w.size = 0
 	return nil
@@ -207,7 +204,8 @@ func (w *rotatingLogWriter) rotateLocked() error {
 
 func openLogFileLogger(explicit string) (*slog.Logger, func() error, string, error) {
 	path := resolveLogFilePath(explicit)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	parent := filepath.Dir(path)
+	if err := ensurePrivateLogDirectory(parent); err != nil {
 		return nil, nil, path, err
 	}
 	writer, err := newRotatingLogWriter(path, resolveLogMaxBytes())

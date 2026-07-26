@@ -51,6 +51,22 @@ func addDaemonLifecycleCommands(command *cobra.Command, socket, logFile, configP
 	command.AddCommand(newDaemonDoctorCommand(socket, logFile, configPath))
 }
 
+func openPrivateDaemonLog(path string) (*os.File, error) {
+	parent := filepath.Dir(path)
+	if err := ensurePrivateLogDirectory(parent); err != nil {
+		return nil, err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := securefs.SecureFile(path); err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	return file, nil
+}
+
 func acquireDaemonRuntimeRecord(socketPath, logPath, configPath string) (func(), error) {
 	// record 由 daemon 进程自己原子占有，是 stop/restart 的唯一 PID truth；CLI 不扫描进程名。
 	if !daemonLifecycleSupported() {
@@ -196,7 +212,7 @@ func newDaemonStartCommand(socket, logFile, configPath *string) *cobra.Command {
 		Use: "start", Short: "Start the current-user daemon service", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if !daemonLifecycleSupported() {
-				return &cliError{code: 6, message: "daemon service management is supported on macOS and Linux"}
+				return &cliError{code: 6, message: "daemon service management is supported on Windows, macOS, and Linux"}
 			}
 			socketPath := resolveV3Socket(*socket)
 			status, _, err := daemonStatus(socketPath, *logFile, *configPath)

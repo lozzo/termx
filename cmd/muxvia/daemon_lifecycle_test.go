@@ -84,6 +84,24 @@ func TestDaemonRuntimeRecordRejectsUnsafePermissions(t *testing.T) {
 	}
 }
 
+func TestPrivateDaemonLogCreatesProtectedParent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing", "nested", "muxvia.log")
+	file, err := openPrivateDaemonLog(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !securefs.IsPrivateFile(path, info) {
+		t.Fatalf("daemon log permissions are not private: %v", info.Mode())
+	}
+}
+
 func executeMuxviaBinary(t *testing.T, binary string, args ...string) daemonStatusView {
 	t.Helper()
 	command := exec.Command(binary, args...)
