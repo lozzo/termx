@@ -1348,15 +1348,21 @@ Edge 最少暴露：
 
 R2 建立了 `cloud/edge/runtime.State` 与 `cloud/controller/directory.Directory` 两个有界单写者 actor；EdgeControl 现在通过唯一 writer queue 发送确定性分块快照、严格连续增量和心跳，Controller 校验完整摘要后才原子发布并返回 `SnapshotAccepted`。本地准入覆盖半快照隔离、revision gap 重同步、generation fence、断线整体清理、Controller 空目录重启重建、并发 race 和 10 万 daemon 快照/查询基准；R2 不包含真实 AgentGateway 或客户端连接。
 
-### 32.6 R3：Edge 配置与安装（进行中：代码完成，待在线安装验收）
+R2 实现提交为 `0a391012`。2026-07-26 的 R3 在线装配同时复验了 R2 重建语义：Controller 重启后 Directory 不读取 PostgreSQL 拓扑，Edge 自动重连并获得新的 `connection_id`，页面随后恢复为在线。
+
+### 32.6 R3：Edge 配置与安装（已完成）
 
 - 实现 Edge desired config、claim、EdgeIdentity CSR/mTLS 和 curl installer。
 - 实现运营 Edge 列表最小页面，能看到真实在线 Edge 和基础信息。
 - 在一台干净 Linux VM 上完成真实安装、重启和重连证据。
 
-R3 代码已经建立 PostgreSQL Edge deployment/config version 与两阶段一次性 claim 事务、Ed25519 desired config 签名、Edge 本机双私钥/CSR、Controller CA 签发、固定 artifact SHA-256 + 发布签名校验、原生 HTTPS Proto JSON API 和简体中文 Edge 管理页。真实 PostgreSQL 纵向 harness 已证明创建、列表、编辑、install claim 单次消费、bootstrap claim 单次消费、CSR 绑定、私钥 `0600`、注册后凭据删除和 signed config 在 `SnapshotAccepted` 前应用；完成状态仍取决于本节要求的在线 Linux 安装、重启与重连证据。
+R3 建立了 PostgreSQL Edge deployment/config version 与两阶段一次性 claim 事务、Ed25519 desired config 签名、Edge 本机双私钥/CSR、Controller CA 签发、固定 artifact SHA-256 + 发布签名校验、原生 HTTPS Proto JSON API 和简体中文 Edge 管理页。真实 PostgreSQL 纵向 harness 已证明创建、列表、编辑、install claim 单次消费、bootstrap claim 单次消费、CSR 绑定、私钥 `0600`、注册后凭据删除和 signed config 在 `SnapshotAccepted` 前应用。
 
-### 32.7 R4：daemon enrollment 与 AgentGateway
+2026-07-26 的最终在线验收使用源码提交 `ad1b2d4dcefea5349b9bc508acf1416b9e1314f2`。Controller 部署在 `155.94.155.192:18443`，原生 HTTPS 管理/安装入口为 `muxvia-controller.omscd.com:18444`，Controller SHA-256 为 `c2c6a8b5ed24aca2e810c364c608031175c4bcdfcd5445aadccac46f3c46a716`；Edge `65f6aade-5560-416e-9765-0d6fb0bacc00` 部署在 `muxvia-cn1.omscd.com:41102`，SHA-256 为 `68baf9b2e801aa02553a2390616dc8480b5692cd2ef4c26e577f44551b55e0ce`。最终安装从空的 `/opt/muxvia-cloud-edge`、`/etc/muxvia-cloud-edge` 和 `/var/lib/muxvia-cloud-edge` 运行态执行页面生成的 curl 命令，artifact 摘要和 Ed25519 发布签名校验成功，systemd `NRestarts=0`，配置目录为 `root:muxvia-edge 0770`，配置和两把私钥均为 `0600`，bootstrap token 自动删除，install claim 重放返回 HTTP `410`。Edge 与 Controller 分别重启后均自动重连，Controller 重启后的 `connection_id` 从 `ce2e6bc3-4562-4260-8b5f-799c70d7856d` 变为 `6539640c-5be0-4e31-87cd-a14ee1bcca1f`。
+
+Playwright 1.61.0 对线上页面完成了 `1440x900` 和 `390x844` 两种视口验收：简体中文页面、固定左侧导航、真实在线 Edge 表格、编辑表单、容量 `1000 -> 1001 -> 1000` 的在线提交、静态资源、API 和浏览器错误门禁均通过。Controller 没有引入 Nginx；当前 DNS 尚未发布 `muxvia-controller.omscd.com` 记录，测试 Edge 使用明确的 hosts 映射，Playwright 使用等价 host resolver。该 DNS 记录和 2026-08-07 到期的开发证书必须在 R8 生产化前处理，不能把当前环境视为生产上线。
+
+### 32.7 R4：daemon enrollment 与 AgentGateway（当前最早未完成切片）
 
 - 实现 DeviceIdentity challenge、候选选择、AgentTicket 和 daemon runtime。
 - 接真实 `remote/webrtc.Answerer`，先完成 daemon Presence，不接客户端。
