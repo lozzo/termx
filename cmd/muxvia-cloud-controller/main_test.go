@@ -15,3 +15,13 @@ func TestParseOptionsSupportsHelpAndRejectsPositionalArguments(t *testing.T) {
 		t.Fatal("positional Controller argument was accepted")
 	}
 }
+
+func TestParseOptionsAllowsBothRelayTransportsForBothPeers(t *testing.T) {
+	config, err := parseOptions(nil, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.relayMaxAllocations != 4 {
+		t.Fatalf("relay max allocations = %d, want 4", config.relayMaxAllocations)
+	}
+}

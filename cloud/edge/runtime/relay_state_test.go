@@ -2,6 +2,7 @@ package runtime_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -60,5 +61,39 @@ func TestRelayRuntimeRejectsExpiredCredential(t *testing.T) {
 	material := &cloudv1.RelayICEConfig{LeaseId: "lease", Username: "expired", Credential: "secret", ExpiresAt: claims.GetExpiresAt()}
 	if err := state.RegisterRelayLease(context.Background(), claims, material); err == nil {
 		t.Fatal("expired credential was registered")
+	}
+}
+
+func TestRelayRuntimeAllowsUDPAndTCPAllocationForBothPeers(t *testing.T) {
+	state, err := edgeruntime.NewState(edgeruntime.StateConfig{MailboxSize: 32, DeltaBuffer: 32})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	now := time.Now().UTC()
+	claims := &cloudv1.RelayLeaseClaims{
+		LeaseId: "lease-four", AccountId: "account-four", EdgeId: "edge-four", DaemonId: "daemon-four", ClientId: "client-four", SessionId: "session-four",
+		MaxBytes: 4096, MaxRateBytesPerSecond: 4096, MaxConcurrentAllocations: 4, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(time.Minute)),
+	}
+	material := &cloudv1.RelayICEConfig{LeaseId: claims.GetLeaseId(), Username: "username-four", Credential: "credential-four", ExpiresAt: claims.GetExpiresAt()}
+	if err := state.RegisterRelayLease(context.Background(), claims, material); err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < 4; index++ {
+		reservationID := fmt.Sprintf("reservation-%d", index)
+		allocationID := fmt.Sprintf("allocation-%d", index)
+		if _, err := state.ReserveRelayAllocation(context.Background(), reservationID, material.GetUsername(), now); err != nil {
+			t.Fatalf("reserve allocation %d: %v", index, err)
+		}
+		transport := cloudv1.RelayTransport_RELAY_TRANSPORT_UDP
+		if index%2 == 1 {
+			transport = cloudv1.RelayTransport_RELAY_TRANSPORT_TCP
+		}
+		if err := state.ActivateRelayAllocation(context.Background(), reservationID, allocationID, transport, now); err != nil {
+			t.Fatalf("activate allocation %d: %v", index, err)
+		}
+	}
+	if _, err := state.ReserveRelayAllocation(context.Background(), "reservation-over-limit", material.GetUsername(), now); err == nil {
+		t.Fatal("fifth allocation exceeded the shared RelayLease concurrency limit")
 	}
 }
