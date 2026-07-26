@@ -111,6 +111,7 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 	}
 	identityStore := r5EnrollmentStore{daemon: daemonRecord}
 	enrollmentService, err := enrollment.NewService(enrollment.Config{
+		Entitlement: testEntitlementReader{},
 		Store: identityStore, Edges: edges, Directory: controllerDirectory, TicketSigningKey: ticketPrivateKey, TicketSigningKeyID: ticketKeyID,
 		EdgeCACertificate: edgeCAPEM, EnrollmentTTL: time.Minute, ChallengeTTL: time.Minute, AgentTicketTTL: 10 * time.Minute,
 	})
@@ -118,6 +119,7 @@ func testCloudRelayOutageAndUsage(t *testing.T, transport string) {
 		t.Fatal(err)
 	}
 	directoryService, err := directoryapi.NewService(directoryapi.Config{
+		Entitlement: testEntitlementReader{},
 		Store: identityStore, Directory: controllerDirectory, Edges: edges, EdgeCACertificate: edgeCAPEM,
 		TicketSigningKey: ticketPrivateKey, TicketSigningKeyID: ticketKeyID, ChallengeTTL: time.Minute, ClientTicketTTL: 2 * time.Minute,
 	})

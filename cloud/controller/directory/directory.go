@@ -13,9 +13,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/muxvia/muxvia/cloud/runtimesnapshot"
 	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 var (
@@ -37,8 +39,9 @@ func (err *SyncError) Error() string {
 
 // Config 定义 actor mailbox 与 Edge 断线后的 generation 整体清理宽限期。
 type Config struct {
-	MailboxSize int
-	GracePeriod time.Duration
+	MailboxSize        int
+	GracePeriod        time.Duration
+	WatcherMailboxSize int
 }
 
 // Attachment 是通过 mTLS 和 EdgeHello 验证后的连接身份，不包含持久 Edge 配置。
@@ -68,13 +71,23 @@ type ObjectLocation struct {
 	Generation   uint64
 }
 
+// SessionProjection 是运营 API 可读取的实时 session 与精确 Edge generation 投影。
+type SessionProjection struct {
+	Session     *cloudv1.ClientSessionSummary
+	Location    ObjectLocation
+	ConnectedAt time.Time
+	Relay       bool
+}
+
 // Directory 是 Controller 在线 Edge、daemon 和 session 的唯一 owner。
 type Directory struct {
-	mailbox   chan request
-	done      chan struct{}
-	closing   atomic.Bool
-	closeOnce sync.Once
-	grace     time.Duration
+	mailbox            chan request
+	done               chan struct{}
+	closing            atomic.Bool
+	closeOnce          sync.Once
+	grace              time.Duration
+	instanceID         string
+	watcherMailboxSize int
 }
 
 type request struct{ run func(*directoryState) }
@@ -84,6 +97,16 @@ type directoryState struct {
 	current     map[string]string
 	daemons     map[string]ObjectLocation
 	sessions    map[string]ObjectLocation
+	pending     map[string]pendingCommand
+	watchers    map[uint64]chan *cloudv1.OperatorRuntimeEvent
+	nextWatcher uint64
+	eventSeq    uint64
+	instanceID  string
+}
+
+type pendingCommand struct {
+	location ObjectLocation
+	result   chan *cloudv1.EdgeCommandResult
 }
 
 type connectionState struct {
@@ -107,7 +130,13 @@ func New(config Config) (*Directory, error) {
 	if config.MailboxSize <= 0 || config.GracePeriod < 0 {
 		return nil, errors.New("Directory mailbox must be positive and grace period cannot be negative")
 	}
-	directory := &Directory{mailbox: make(chan request, config.MailboxSize), done: make(chan struct{}), grace: config.GracePeriod}
+	if config.WatcherMailboxSize == 0 {
+		config.WatcherMailboxSize = 128
+	}
+	if config.WatcherMailboxSize < 0 {
+		return nil, errors.New("Directory watcher mailbox cannot be negative")
+	}
+	directory := &Directory{mailbox: make(chan request, config.MailboxSize), done: make(chan struct{}), grace: config.GracePeriod, instanceID: uuid.NewString(), watcherMailboxSize: config.WatcherMailboxSize}
 	go directory.run()
 	return directory, nil
 }
@@ -203,6 +232,7 @@ func (directory *Directory) CommitSnapshot(ctx context.Context, connectionID str
 		connection.lastHeartbeat = time.Now().UTC()
 		state.current[connection.attachment.EdgeID] = connectionID
 		state.addIndexes(connectionID)
+		state.publish("edge", connection.attachment.EdgeID, cloudv1.OperatorEventOperation_OPERATOR_EVENT_OPERATION_RESET)
 		return nil
 	})
 }
@@ -225,6 +255,8 @@ func (directory *Directory) ApplyDelta(ctx context.Context, connectionID string,
 			return &SyncError{ExpectedRevision: expected, Reason: err.Error()}
 		}
 		connection.snapshot.Revision = delta.GetRevision()
+		kind, id, operation := runtimeDeltaEvent(delta)
+		state.publish(kind, id, operation)
 		return nil
 	})
 }
@@ -255,6 +287,7 @@ func (directory *Directory) Detach(connectionID string) {
 			if state.current[connection.attachment.EdgeID] == connectionID {
 				state.removeIndexes(connectionID)
 				delete(state.current, connection.attachment.EdgeID)
+				state.publish("edge", connection.attachment.EdgeID, cloudv1.OperatorEventOperation_OPERATOR_EVENT_OPERATION_DELETE)
 			}
 			delete(state.connections, connectionID)
 		})
@@ -363,6 +396,147 @@ func (directory *Directory) Session(ctx context.Context, sessionID string) (*clo
 	}
 }
 
+// ListSessions 返回全部当前 session 的不可变快照；对象离线后不会从数据库补回。
+func (directory *Directory) ListSessions(ctx context.Context) ([]SessionProjection, error) {
+	reply := make(chan []SessionProjection, 1)
+	if err := directory.submit(ctx, func(state *directoryState) {
+		result := make([]SessionProjection, 0, len(state.sessions))
+		for _, connectionID := range state.current {
+			connection := state.connections[connectionID]
+			if connection == nil || connection.snapshot == nil {
+				continue
+			}
+			relaySessions := make(map[string]bool, len(connection.snapshot.GetAllocations()))
+			for _, allocation := range connection.snapshot.GetAllocations() {
+				relaySessions[allocation.GetSessionId()] = true
+			}
+			for _, session := range connection.snapshot.GetSessions() {
+				location := state.sessions[session.GetSessionId()]
+				result = append(result, SessionProjection{Session: proto.Clone(session).(*cloudv1.ClientSessionSummary), Location: location, ConnectedAt: connection.attachment.ConnectedAt, Relay: relaySessions[session.GetSessionId()]})
+			}
+		}
+		sort.Slice(result, func(i, j int) bool { return result[i].Session.GetSessionId() < result[j].Session.GetSessionId() })
+		reply <- result
+	}); err != nil {
+		return nil, err
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-directory.done:
+		return nil, ErrClosed
+	case result := <-reply:
+		return result, nil
+	}
+}
+
+// BeginCommand 在当前对象 generation 上登记一次有界 waiter；命令本身不持久化。
+func (directory *Directory) BeginCommand(ctx context.Context, correlationID, objectID string, generation uint64, daemon bool) (ObjectLocation, <-chan *cloudv1.EdgeCommandResult, error) {
+	type result struct {
+		location ObjectLocation
+		waiter   chan *cloudv1.EdgeCommandResult
+		err      error
+	}
+	reply := make(chan result, 1)
+	if err := directory.submit(ctx, func(state *directoryState) {
+		if correlationID == "" || objectID == "" || generation == 0 {
+			reply <- result{err: errors.New("command correlation, object, and generation are required")}
+			return
+		}
+		if _, exists := state.pending[correlationID]; exists {
+			reply <- result{err: errors.New("command correlation already exists")}
+			return
+		}
+		location, found := state.sessions[objectID]
+		if daemon {
+			location, found = state.daemons[objectID]
+		}
+		if !found || location.Generation != generation {
+			reply <- result{err: ErrStaleConnection}
+			return
+		}
+		waiter := make(chan *cloudv1.EdgeCommandResult, 1)
+		state.pending[correlationID] = pendingCommand{location: location, result: waiter}
+		reply <- result{location: location, waiter: waiter}
+	}); err != nil {
+		return ObjectLocation{}, nil, err
+	}
+	select {
+	case <-ctx.Done():
+		return ObjectLocation{}, nil, ctx.Err()
+	case <-directory.done:
+		return ObjectLocation{}, nil, ErrClosed
+	case value := <-reply:
+		return value.location, value.waiter, value.err
+	}
+}
+
+// CompleteCommand 只允许 owning Edge connection 完成当前 correlation。
+func (directory *Directory) CompleteCommand(ctx context.Context, connectionID string, result *cloudv1.EdgeCommandResult) error {
+	return directory.mutate(ctx, func(state *directoryState) error {
+		if result == nil || result.GetCorrelationId() == "" {
+			return errors.New("command result is required")
+		}
+		pending, ok := state.pending[result.GetCorrelationId()]
+		if !ok || pending.location.ConnectionID != connectionID {
+			return ErrStaleConnection
+		}
+		delete(state.pending, result.GetCorrelationId())
+		pending.result <- proto.Clone(result).(*cloudv1.EdgeCommandResult)
+		close(pending.result)
+		return nil
+	})
+}
+
+// CancelCommand 删除 HTTP 取消或超时的 waiter；迟到结果不能命中新请求。
+func (directory *Directory) CancelCommand(correlationID string) {
+	_ = directory.submit(context.Background(), func(state *directoryState) {
+		if pending, ok := state.pending[correlationID]; ok {
+			delete(state.pending, correlationID)
+			close(pending.result)
+		}
+	})
+}
+
+// Watch 订阅有界 SSE 失效提示；消费者过慢时 channel 关闭并要求重新拉 snapshot。
+func (directory *Directory) Watch(ctx context.Context) (<-chan *cloudv1.OperatorRuntimeEvent, func(), error) {
+	type result struct {
+		id     uint64
+		events chan *cloudv1.OperatorRuntimeEvent
+	}
+	reply := make(chan result, 1)
+	if err := directory.submit(ctx, func(state *directoryState) {
+		state.nextWatcher++
+		events := make(chan *cloudv1.OperatorRuntimeEvent, directory.watcherMailboxSize)
+		state.watchers[state.nextWatcher] = events
+		reply <- result{id: state.nextWatcher, events: events}
+	}); err != nil {
+		return nil, nil, err
+	}
+	select {
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	case <-directory.done:
+		return nil, nil, ErrClosed
+	case value := <-reply:
+		var once sync.Once
+		cancel := func() {
+			once.Do(func() {
+				_ = directory.submit(context.Background(), func(state *directoryState) {
+					if events, ok := state.watchers[value.id]; ok {
+						delete(state.watchers, value.id)
+						close(events)
+					}
+				})
+			})
+		}
+		return value.events, cancel, nil
+	}
+}
+
+// InstanceID 返回当前 Controller 进程的 SSE generation。
+func (directory *Directory) InstanceID() string { return directory.instanceID }
+
 // Close 停止 actor，Directory 内容随 Controller 进程一起消失。
 func (directory *Directory) Close() {
 	directory.closeOnce.Do(func() {
@@ -378,7 +552,7 @@ func (directory *Directory) Close() {
 }
 
 func (directory *Directory) run() {
-	state := &directoryState{connections: make(map[string]*connectionState), current: make(map[string]string), daemons: make(map[string]ObjectLocation), sessions: make(map[string]ObjectLocation)}
+	state := &directoryState{connections: make(map[string]*connectionState), current: make(map[string]string), daemons: make(map[string]ObjectLocation), sessions: make(map[string]ObjectLocation), pending: make(map[string]pendingCommand), watchers: make(map[uint64]chan *cloudv1.OperatorRuntimeEvent), instanceID: directory.instanceID}
 	for {
 		select {
 		case <-directory.done:
@@ -386,6 +560,42 @@ func (directory *Directory) run() {
 		case request := <-directory.mailbox:
 			request.run(state)
 		}
+	}
+}
+
+func (state *directoryState) publish(kind, id string, operation cloudv1.OperatorEventOperation) {
+	if kind == "" || id == "" {
+		return
+	}
+	state.eventSeq++
+	event := &cloudv1.OperatorRuntimeEvent{ControllerInstanceId: state.instanceID, EventSeq: state.eventSeq, ResourceKind: kind, ResourceId: id, Operation: operation, OccurredAt: timestamppb.Now()}
+	for watcher, mailbox := range state.watchers {
+		clone := proto.Clone(event).(*cloudv1.OperatorRuntimeEvent)
+		select {
+		case mailbox <- clone:
+		default:
+			close(mailbox)
+			delete(state.watchers, watcher)
+		}
+	}
+}
+
+func runtimeDeltaEvent(delta *cloudv1.RuntimeDelta) (string, string, cloudv1.OperatorEventOperation) {
+	switch value := delta.GetChange().(type) {
+	case *cloudv1.RuntimeDelta_AgentUpserted:
+		return "daemon", value.AgentUpserted.GetDaemonId(), cloudv1.OperatorEventOperation_OPERATOR_EVENT_OPERATION_UPSERT
+	case *cloudv1.RuntimeDelta_AgentRemoved:
+		return "daemon", value.AgentRemoved.GetDaemonId(), cloudv1.OperatorEventOperation_OPERATOR_EVENT_OPERATION_DELETE
+	case *cloudv1.RuntimeDelta_SessionUpserted:
+		return "session", value.SessionUpserted.GetSessionId(), cloudv1.OperatorEventOperation_OPERATOR_EVENT_OPERATION_UPSERT
+	case *cloudv1.RuntimeDelta_SessionRemoved:
+		return "session", value.SessionRemoved.GetSessionId(), cloudv1.OperatorEventOperation_OPERATOR_EVENT_OPERATION_DELETE
+	case *cloudv1.RuntimeDelta_AllocationUpserted:
+		return "allocation", value.AllocationUpserted.GetAllocationId(), cloudv1.OperatorEventOperation_OPERATOR_EVENT_OPERATION_UPSERT
+	case *cloudv1.RuntimeDelta_AllocationRemoved:
+		return "allocation", value.AllocationRemoved.GetAllocationId(), cloudv1.OperatorEventOperation_OPERATOR_EVENT_OPERATION_DELETE
+	default:
+		return "", "", cloudv1.OperatorEventOperation_OPERATOR_EVENT_OPERATION_UNSPECIFIED
 	}
 }
 

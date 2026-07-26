@@ -75,6 +75,58 @@ func (EdgeCapability) EnumDescriptor() ([]byte, []int) {
 	return file_cloud_v1_edge_control_proto_rawDescGZIP(), []int{0}
 }
 
+type CommandResultCode int32
+
+const (
+	CommandResultCode_COMMAND_RESULT_CODE_UNSPECIFIED CommandResultCode = 0
+	CommandResultCode_COMMAND_RESULT_CODE_APPLIED     CommandResultCode = 1
+	CommandResultCode_COMMAND_RESULT_CODE_REJECTED    CommandResultCode = 2
+	CommandResultCode_COMMAND_RESULT_CODE_STALE       CommandResultCode = 3
+)
+
+// Enum value maps for CommandResultCode.
+var (
+	CommandResultCode_name = map[int32]string{
+		0: "COMMAND_RESULT_CODE_UNSPECIFIED",
+		1: "COMMAND_RESULT_CODE_APPLIED",
+		2: "COMMAND_RESULT_CODE_REJECTED",
+		3: "COMMAND_RESULT_CODE_STALE",
+	}
+	CommandResultCode_value = map[string]int32{
+		"COMMAND_RESULT_CODE_UNSPECIFIED": 0,
+		"COMMAND_RESULT_CODE_APPLIED":     1,
+		"COMMAND_RESULT_CODE_REJECTED":    2,
+		"COMMAND_RESULT_CODE_STALE":       3,
+	}
+)
+
+func (x CommandResultCode) Enum() *CommandResultCode {
+	p := new(CommandResultCode)
+	*p = x
+	return p
+}
+
+func (x CommandResultCode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CommandResultCode) Descriptor() protoreflect.EnumDescriptor {
+	return file_cloud_v1_edge_control_proto_enumTypes[1].Descriptor()
+}
+
+func (CommandResultCode) Type() protoreflect.EnumType {
+	return &file_cloud_v1_edge_control_proto_enumTypes[1]
+}
+
+func (x CommandResultCode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CommandResultCode.Descriptor instead.
+func (CommandResultCode) EnumDescriptor() ([]byte, []int) {
+	return file_cloud_v1_edge_control_proto_rawDescGZIP(), []int{1}
+}
+
 // EdgeHello 是 EdgeControl 新连接的第一个且唯一一个注册消息。
 // edge_id 必须与 mTLS 客户端证书中的 Edge URI SAN 一致。
 type EdgeHello struct {
@@ -626,6 +678,250 @@ func (x *ConfigApplied) GetErrorCode() string {
 	return ""
 }
 
+type CloseDaemonConnection struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	CorrelationId string                 `protobuf:"bytes,2,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
+	Deadline      *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=deadline,proto3" json:"deadline,omitempty"`
+	DaemonId      string                 `protobuf:"bytes,4,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	Generation    uint64                 `protobuf:"varint,5,opt,name=generation,proto3" json:"generation,omitempty"`
+	Reason        string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CloseDaemonConnection) Reset() {
+	*x = CloseDaemonConnection{}
+	mi := &file_cloud_v1_edge_control_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CloseDaemonConnection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CloseDaemonConnection) ProtoMessage() {}
+
+func (x *CloseDaemonConnection) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_edge_control_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CloseDaemonConnection.ProtoReflect.Descriptor instead.
+func (*CloseDaemonConnection) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_edge_control_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *CloseDaemonConnection) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *CloseDaemonConnection) GetCorrelationId() string {
+	if x != nil {
+		return x.CorrelationId
+	}
+	return ""
+}
+
+func (x *CloseDaemonConnection) GetDeadline() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Deadline
+	}
+	return nil
+}
+
+func (x *CloseDaemonConnection) GetDaemonId() string {
+	if x != nil {
+		return x.DaemonId
+	}
+	return ""
+}
+
+func (x *CloseDaemonConnection) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *CloseDaemonConnection) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type CloseClientSession struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	CorrelationId string                 `protobuf:"bytes,2,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
+	Deadline      *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=deadline,proto3" json:"deadline,omitempty"`
+	SessionId     string                 `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Generation    uint64                 `protobuf:"varint,5,opt,name=generation,proto3" json:"generation,omitempty"`
+	Reason        string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CloseClientSession) Reset() {
+	*x = CloseClientSession{}
+	mi := &file_cloud_v1_edge_control_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CloseClientSession) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CloseClientSession) ProtoMessage() {}
+
+func (x *CloseClientSession) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_edge_control_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CloseClientSession.ProtoReflect.Descriptor instead.
+func (*CloseClientSession) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_edge_control_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *CloseClientSession) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *CloseClientSession) GetCorrelationId() string {
+	if x != nil {
+		return x.CorrelationId
+	}
+	return ""
+}
+
+func (x *CloseClientSession) GetDeadline() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Deadline
+	}
+	return nil
+}
+
+func (x *CloseClientSession) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *CloseClientSession) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *CloseClientSession) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type EdgeCommandResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	CorrelationId string                 `protobuf:"bytes,2,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
+	Code          CommandResultCode      `protobuf:"varint,3,opt,name=code,proto3,enum=muxvia.cloud.v1.CommandResultCode" json:"code,omitempty"`
+	Message       string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+	CompletedAt   *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EdgeCommandResult) Reset() {
+	*x = EdgeCommandResult{}
+	mi := &file_cloud_v1_edge_control_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgeCommandResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgeCommandResult) ProtoMessage() {}
+
+func (x *EdgeCommandResult) ProtoReflect() protoreflect.Message {
+	mi := &file_cloud_v1_edge_control_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgeCommandResult.ProtoReflect.Descriptor instead.
+func (*EdgeCommandResult) Descriptor() ([]byte, []int) {
+	return file_cloud_v1_edge_control_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *EdgeCommandResult) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *EdgeCommandResult) GetCorrelationId() string {
+	if x != nil {
+		return x.CorrelationId
+	}
+	return ""
+}
+
+func (x *EdgeCommandResult) GetCode() CommandResultCode {
+	if x != nil {
+		return x.Code
+	}
+	return CommandResultCode_COMMAND_RESULT_CODE_UNSPECIFIED
+}
+
+func (x *EdgeCommandResult) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *EdgeCommandResult) GetCompletedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CompletedAt
+	}
+	return nil
+}
+
 // EdgeEvent 是 Edge 向 Controller 发送的单调序列 envelope。
 // hello 之后只允许快照、严格连续增量和可合并心跳。
 type EdgeEvent struct {
@@ -648,6 +944,7 @@ type EdgeEvent struct {
 	//	*EdgeEvent_ConfigApplied
 	//	*EdgeEvent_RelayLeaseRequest
 	//	*EdgeEvent_UsageBatch
+	//	*EdgeEvent_CommandResult
 	Payload       isEdgeEvent_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -655,7 +952,7 @@ type EdgeEvent struct {
 
 func (x *EdgeEvent) Reset() {
 	*x = EdgeEvent{}
-	mi := &file_cloud_v1_edge_control_proto_msgTypes[9]
+	mi := &file_cloud_v1_edge_control_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -667,7 +964,7 @@ func (x *EdgeEvent) String() string {
 func (*EdgeEvent) ProtoMessage() {}
 
 func (x *EdgeEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_edge_control_proto_msgTypes[9]
+	mi := &file_cloud_v1_edge_control_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -680,7 +977,7 @@ func (x *EdgeEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgeEvent.ProtoReflect.Descriptor instead.
 func (*EdgeEvent) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_edge_control_proto_rawDescGZIP(), []int{9}
+	return file_cloud_v1_edge_control_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *EdgeEvent) GetProtocolVersion() uint32 {
@@ -820,6 +1117,15 @@ func (x *EdgeEvent) GetUsageBatch() *UsageBatch {
 	return nil
 }
 
+func (x *EdgeEvent) GetCommandResult() *EdgeCommandResult {
+	if x != nil {
+		if x, ok := x.Payload.(*EdgeEvent_CommandResult); ok {
+			return x.CommandResult
+		}
+	}
+	return nil
+}
+
 type isEdgeEvent_Payload interface {
 	isEdgeEvent_Payload()
 }
@@ -860,6 +1166,10 @@ type EdgeEvent_UsageBatch struct {
 	UsageBatch *UsageBatch `protobuf:"bytes,28,opt,name=usage_batch,json=usageBatch,proto3,oneof"`
 }
 
+type EdgeEvent_CommandResult struct {
+	CommandResult *EdgeCommandResult `protobuf:"bytes,29,opt,name=command_result,json=commandResult,proto3,oneof"`
+}
+
 func (*EdgeEvent_Hello) isEdgeEvent_Payload() {}
 
 func (*EdgeEvent_SnapshotBegin) isEdgeEvent_Payload() {}
@@ -877,6 +1187,8 @@ func (*EdgeEvent_ConfigApplied) isEdgeEvent_Payload() {}
 func (*EdgeEvent_RelayLeaseRequest) isEdgeEvent_Payload() {}
 
 func (*EdgeEvent_UsageBatch) isEdgeEvent_Payload() {}
+
+func (*EdgeEvent_CommandResult) isEdgeEvent_Payload() {}
 
 // ControllerCommand 是 Controller 向 Edge 发送的单调序列 envelope。
 // welcome 之后由 snapshot_accepted 或 resync_required 驱动同步状态机。
@@ -897,6 +1209,8 @@ type ControllerCommand struct {
 	//	*ControllerCommand_DesiredConfig
 	//	*ControllerCommand_RelayLeaseDecision
 	//	*ControllerCommand_UsageAck
+	//	*ControllerCommand_CloseDaemon
+	//	*ControllerCommand_CloseSession
 	Payload       isControllerCommand_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -904,7 +1218,7 @@ type ControllerCommand struct {
 
 func (x *ControllerCommand) Reset() {
 	*x = ControllerCommand{}
-	mi := &file_cloud_v1_edge_control_proto_msgTypes[10]
+	mi := &file_cloud_v1_edge_control_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -916,7 +1230,7 @@ func (x *ControllerCommand) String() string {
 func (*ControllerCommand) ProtoMessage() {}
 
 func (x *ControllerCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_cloud_v1_edge_control_proto_msgTypes[10]
+	mi := &file_cloud_v1_edge_control_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -929,7 +1243,7 @@ func (x *ControllerCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControllerCommand.ProtoReflect.Descriptor instead.
 func (*ControllerCommand) Descriptor() ([]byte, []int) {
-	return file_cloud_v1_edge_control_proto_rawDescGZIP(), []int{10}
+	return file_cloud_v1_edge_control_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ControllerCommand) GetProtocolVersion() uint32 {
@@ -1042,6 +1356,24 @@ func (x *ControllerCommand) GetUsageAck() *UsageAck {
 	return nil
 }
 
+func (x *ControllerCommand) GetCloseDaemon() *CloseDaemonConnection {
+	if x != nil {
+		if x, ok := x.Payload.(*ControllerCommand_CloseDaemon); ok {
+			return x.CloseDaemon
+		}
+	}
+	return nil
+}
+
+func (x *ControllerCommand) GetCloseSession() *CloseClientSession {
+	if x != nil {
+		if x, ok := x.Payload.(*ControllerCommand_CloseSession); ok {
+			return x.CloseSession
+		}
+	}
+	return nil
+}
+
 type isControllerCommand_Payload interface {
 	isControllerCommand_Payload()
 }
@@ -1070,6 +1402,14 @@ type ControllerCommand_UsageAck struct {
 	UsageAck *UsageAck `protobuf:"bytes,25,opt,name=usage_ack,json=usageAck,proto3,oneof"`
 }
 
+type ControllerCommand_CloseDaemon struct {
+	CloseDaemon *CloseDaemonConnection `protobuf:"bytes,26,opt,name=close_daemon,json=closeDaemon,proto3,oneof"`
+}
+
+type ControllerCommand_CloseSession struct {
+	CloseSession *CloseClientSession `protobuf:"bytes,27,opt,name=close_session,json=closeSession,proto3,oneof"`
+}
+
 func (*ControllerCommand_Welcome) isControllerCommand_Payload() {}
 
 func (*ControllerCommand_SnapshotAccepted) isControllerCommand_Payload() {}
@@ -1081,6 +1421,10 @@ func (*ControllerCommand_DesiredConfig) isControllerCommand_Payload() {}
 func (*ControllerCommand_RelayLeaseDecision) isControllerCommand_Payload() {}
 
 func (*ControllerCommand_UsageAck) isControllerCommand_Payload() {}
+
+func (*ControllerCommand_CloseDaemon) isControllerCommand_Payload() {}
+
+func (*ControllerCommand_CloseSession) isControllerCommand_Payload() {}
 
 var File_cloud_v1_edge_control_proto protoreflect.FileDescriptor
 
@@ -1129,7 +1473,35 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\aversion\x18\x01 \x01(\x04R\aversion\x12\x18\n" +
 	"\aapplied\x18\x02 \x01(\bR\aapplied\x12\x1d\n" +
 	"\n" +
-	"error_code\x18\x03 \x01(\tR\terrorCode\"\xfd\x06\n" +
+	"error_code\x18\x03 \x01(\tR\terrorCode\"\xea\x01\n" +
+	"\x15CloseDaemonConnection\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\x12%\n" +
+	"\x0ecorrelation_id\x18\x02 \x01(\tR\rcorrelationId\x126\n" +
+	"\bdeadline\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\bdeadline\x12\x1b\n" +
+	"\tdaemon_id\x18\x04 \x01(\tR\bdaemonId\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x05 \x01(\x04R\n" +
+	"generation\x12\x16\n" +
+	"\x06reason\x18\x06 \x01(\tR\x06reason\"\xe9\x01\n" +
+	"\x12CloseClientSession\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\x12%\n" +
+	"\x0ecorrelation_id\x18\x02 \x01(\tR\rcorrelationId\x126\n" +
+	"\bdeadline\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\bdeadline\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x04 \x01(\tR\tsessionId\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x05 \x01(\x04R\n" +
+	"generation\x12\x16\n" +
+	"\x06reason\x18\x06 \x01(\tR\x06reason\"\xea\x01\n" +
+	"\x11EdgeCommandResult\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\x12%\n" +
+	"\x0ecorrelation_id\x18\x02 \x01(\tR\rcorrelationId\x126\n" +
+	"\x04code\x18\x03 \x01(\x0e2\".muxvia.cloud.v1.CommandResultCodeR\x04code\x12\x18\n" +
+	"\amessage\x18\x04 \x01(\tR\amessage\x12=\n" +
+	"\fcompleted_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\"\xca\a\n" +
 	"\tEdgeEvent\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
 	"\n" +
@@ -1149,8 +1521,9 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\x0econfig_applied\x18\x1a \x01(\v2\x1e.muxvia.cloud.v1.ConfigAppliedH\x00R\rconfigApplied\x12T\n" +
 	"\x13relay_lease_request\x18\x1b \x01(\v2\".muxvia.cloud.v1.RelayLeaseRequestH\x00R\x11relayLeaseRequest\x12>\n" +
 	"\vusage_batch\x18\x1c \x01(\v2\x1b.muxvia.cloud.v1.UsageBatchH\x00R\n" +
-	"usageBatchB\t\n" +
-	"\apayload\"\xd5\x05\n" +
+	"usageBatch\x12K\n" +
+	"\x0ecommand_result\x18\x1d \x01(\v2\".muxvia.cloud.v1.EdgeCommandResultH\x00R\rcommandResultB\t\n" +
+	"\apayload\"\xee\x06\n" +
 	"\x11ControllerCommand\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
 	"\n" +
@@ -1166,13 +1539,20 @@ const file_cloud_v1_edge_control_proto_rawDesc = "" +
 	"\x0fresync_required\x18\x16 \x01(\v2\x1f.muxvia.cloud.v1.ResyncRequiredH\x00R\x0eresyncRequired\x12Q\n" +
 	"\x0edesired_config\x18\x17 \x01(\v2(.muxvia.cloud.v1.SignedEdgeDesiredConfigH\x00R\rdesiredConfig\x12W\n" +
 	"\x14relay_lease_decision\x18\x18 \x01(\v2#.muxvia.cloud.v1.RelayLeaseDecisionH\x00R\x12relayLeaseDecision\x128\n" +
-	"\tusage_ack\x18\x19 \x01(\v2\x19.muxvia.cloud.v1.UsageAckH\x00R\busageAckB\t\n" +
+	"\tusage_ack\x18\x19 \x01(\v2\x19.muxvia.cloud.v1.UsageAckH\x00R\busageAck\x12K\n" +
+	"\fclose_daemon\x18\x1a \x01(\v2&.muxvia.cloud.v1.CloseDaemonConnectionH\x00R\vcloseDaemon\x12J\n" +
+	"\rclose_session\x18\x1b \x01(\v2#.muxvia.cloud.v1.CloseClientSessionH\x00R\fcloseSessionB\t\n" +
 	"\apayload*\x92\x01\n" +
 	"\x0eEdgeCapability\x12\x1f\n" +
 	"\x1bEDGE_CAPABILITY_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eEDGE_CAPABILITY_CONTROL_STREAM\x10\x01\x12\x19\n" +
 	"\x15EDGE_CAPABILITY_RELAY\x10\x02\x12 \n" +
-	"\x1cEDGE_CAPABILITY_USAGE_OUTBOX\x10\x032\\\n" +
+	"\x1cEDGE_CAPABILITY_USAGE_OUTBOX\x10\x03*\x9a\x01\n" +
+	"\x11CommandResultCode\x12#\n" +
+	"\x1fCOMMAND_RESULT_CODE_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bCOMMAND_RESULT_CODE_APPLIED\x10\x01\x12 \n" +
+	"\x1cCOMMAND_RESULT_CODE_REJECTED\x10\x02\x12\x1d\n" +
+	"\x19COMMAND_RESULT_CODE_STALE\x10\x032\\\n" +
 	"\vEdgeControl\x12M\n" +
 	"\aConnect\x12\x1a.muxvia.cloud.v1.EdgeEvent\x1a\".muxvia.cloud.v1.ControllerCommand(\x010\x01B1Z/github.com/muxvia/muxvia/proto/cloud/v1;cloudv1b\x06proto3"
 
@@ -1188,65 +1568,76 @@ func file_cloud_v1_edge_control_proto_rawDescGZIP() []byte {
 	return file_cloud_v1_edge_control_proto_rawDescData
 }
 
-var file_cloud_v1_edge_control_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_cloud_v1_edge_control_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_cloud_v1_edge_control_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_cloud_v1_edge_control_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_cloud_v1_edge_control_proto_goTypes = []any{
 	(EdgeCapability)(0),             // 0: muxvia.cloud.v1.EdgeCapability
-	(*EdgeHello)(nil),               // 1: muxvia.cloud.v1.EdgeHello
-	(*EdgeWelcome)(nil),             // 2: muxvia.cloud.v1.EdgeWelcome
-	(*SnapshotBegin)(nil),           // 3: muxvia.cloud.v1.SnapshotBegin
-	(*SnapshotChunk)(nil),           // 4: muxvia.cloud.v1.SnapshotChunk
-	(*SnapshotEnd)(nil),             // 5: muxvia.cloud.v1.SnapshotEnd
-	(*EdgeHeartbeat)(nil),           // 6: muxvia.cloud.v1.EdgeHeartbeat
-	(*SnapshotAccepted)(nil),        // 7: muxvia.cloud.v1.SnapshotAccepted
-	(*ResyncRequired)(nil),          // 8: muxvia.cloud.v1.ResyncRequired
-	(*ConfigApplied)(nil),           // 9: muxvia.cloud.v1.ConfigApplied
-	(*EdgeEvent)(nil),               // 10: muxvia.cloud.v1.EdgeEvent
-	(*ControllerCommand)(nil),       // 11: muxvia.cloud.v1.ControllerCommand
-	(*HeartbeatPolicy)(nil),         // 12: muxvia.cloud.v1.HeartbeatPolicy
-	(*VerificationKey)(nil),         // 13: muxvia.cloud.v1.VerificationKey
-	(*AgentPresence)(nil),           // 14: muxvia.cloud.v1.AgentPresence
-	(*ClientSessionSummary)(nil),    // 15: muxvia.cloud.v1.ClientSessionSummary
-	(*RelayAllocationSummary)(nil),  // 16: muxvia.cloud.v1.RelayAllocationSummary
-	(*timestamppb.Timestamp)(nil),   // 17: google.protobuf.Timestamp
-	(*RuntimeDelta)(nil),            // 18: muxvia.cloud.v1.RuntimeDelta
-	(*RelayLeaseRequest)(nil),       // 19: muxvia.cloud.v1.RelayLeaseRequest
-	(*UsageBatch)(nil),              // 20: muxvia.cloud.v1.UsageBatch
-	(*SignedEdgeDesiredConfig)(nil), // 21: muxvia.cloud.v1.SignedEdgeDesiredConfig
-	(*RelayLeaseDecision)(nil),      // 22: muxvia.cloud.v1.RelayLeaseDecision
-	(*UsageAck)(nil),                // 23: muxvia.cloud.v1.UsageAck
+	(CommandResultCode)(0),          // 1: muxvia.cloud.v1.CommandResultCode
+	(*EdgeHello)(nil),               // 2: muxvia.cloud.v1.EdgeHello
+	(*EdgeWelcome)(nil),             // 3: muxvia.cloud.v1.EdgeWelcome
+	(*SnapshotBegin)(nil),           // 4: muxvia.cloud.v1.SnapshotBegin
+	(*SnapshotChunk)(nil),           // 5: muxvia.cloud.v1.SnapshotChunk
+	(*SnapshotEnd)(nil),             // 6: muxvia.cloud.v1.SnapshotEnd
+	(*EdgeHeartbeat)(nil),           // 7: muxvia.cloud.v1.EdgeHeartbeat
+	(*SnapshotAccepted)(nil),        // 8: muxvia.cloud.v1.SnapshotAccepted
+	(*ResyncRequired)(nil),          // 9: muxvia.cloud.v1.ResyncRequired
+	(*ConfigApplied)(nil),           // 10: muxvia.cloud.v1.ConfigApplied
+	(*CloseDaemonConnection)(nil),   // 11: muxvia.cloud.v1.CloseDaemonConnection
+	(*CloseClientSession)(nil),      // 12: muxvia.cloud.v1.CloseClientSession
+	(*EdgeCommandResult)(nil),       // 13: muxvia.cloud.v1.EdgeCommandResult
+	(*EdgeEvent)(nil),               // 14: muxvia.cloud.v1.EdgeEvent
+	(*ControllerCommand)(nil),       // 15: muxvia.cloud.v1.ControllerCommand
+	(*HeartbeatPolicy)(nil),         // 16: muxvia.cloud.v1.HeartbeatPolicy
+	(*VerificationKey)(nil),         // 17: muxvia.cloud.v1.VerificationKey
+	(*AgentPresence)(nil),           // 18: muxvia.cloud.v1.AgentPresence
+	(*ClientSessionSummary)(nil),    // 19: muxvia.cloud.v1.ClientSessionSummary
+	(*RelayAllocationSummary)(nil),  // 20: muxvia.cloud.v1.RelayAllocationSummary
+	(*timestamppb.Timestamp)(nil),   // 21: google.protobuf.Timestamp
+	(*RuntimeDelta)(nil),            // 22: muxvia.cloud.v1.RuntimeDelta
+	(*RelayLeaseRequest)(nil),       // 23: muxvia.cloud.v1.RelayLeaseRequest
+	(*UsageBatch)(nil),              // 24: muxvia.cloud.v1.UsageBatch
+	(*SignedEdgeDesiredConfig)(nil), // 25: muxvia.cloud.v1.SignedEdgeDesiredConfig
+	(*RelayLeaseDecision)(nil),      // 26: muxvia.cloud.v1.RelayLeaseDecision
+	(*UsageAck)(nil),                // 27: muxvia.cloud.v1.UsageAck
 }
 var file_cloud_v1_edge_control_proto_depIdxs = []int32{
 	0,  // 0: muxvia.cloud.v1.EdgeHello.capabilities:type_name -> muxvia.cloud.v1.EdgeCapability
-	12, // 1: muxvia.cloud.v1.EdgeWelcome.heartbeat:type_name -> muxvia.cloud.v1.HeartbeatPolicy
-	13, // 2: muxvia.cloud.v1.EdgeWelcome.ticket_verification_keys:type_name -> muxvia.cloud.v1.VerificationKey
-	14, // 3: muxvia.cloud.v1.SnapshotChunk.agents:type_name -> muxvia.cloud.v1.AgentPresence
-	15, // 4: muxvia.cloud.v1.SnapshotChunk.sessions:type_name -> muxvia.cloud.v1.ClientSessionSummary
-	16, // 5: muxvia.cloud.v1.SnapshotChunk.allocations:type_name -> muxvia.cloud.v1.RelayAllocationSummary
-	17, // 6: muxvia.cloud.v1.EdgeEvent.sent_at:type_name -> google.protobuf.Timestamp
-	1,  // 7: muxvia.cloud.v1.EdgeEvent.hello:type_name -> muxvia.cloud.v1.EdgeHello
-	3,  // 8: muxvia.cloud.v1.EdgeEvent.snapshot_begin:type_name -> muxvia.cloud.v1.SnapshotBegin
-	4,  // 9: muxvia.cloud.v1.EdgeEvent.snapshot_chunk:type_name -> muxvia.cloud.v1.SnapshotChunk
-	5,  // 10: muxvia.cloud.v1.EdgeEvent.snapshot_end:type_name -> muxvia.cloud.v1.SnapshotEnd
-	18, // 11: muxvia.cloud.v1.EdgeEvent.runtime_delta:type_name -> muxvia.cloud.v1.RuntimeDelta
-	6,  // 12: muxvia.cloud.v1.EdgeEvent.heartbeat:type_name -> muxvia.cloud.v1.EdgeHeartbeat
-	9,  // 13: muxvia.cloud.v1.EdgeEvent.config_applied:type_name -> muxvia.cloud.v1.ConfigApplied
-	19, // 14: muxvia.cloud.v1.EdgeEvent.relay_lease_request:type_name -> muxvia.cloud.v1.RelayLeaseRequest
-	20, // 15: muxvia.cloud.v1.EdgeEvent.usage_batch:type_name -> muxvia.cloud.v1.UsageBatch
-	17, // 16: muxvia.cloud.v1.ControllerCommand.sent_at:type_name -> google.protobuf.Timestamp
-	2,  // 17: muxvia.cloud.v1.ControllerCommand.welcome:type_name -> muxvia.cloud.v1.EdgeWelcome
-	7,  // 18: muxvia.cloud.v1.ControllerCommand.snapshot_accepted:type_name -> muxvia.cloud.v1.SnapshotAccepted
-	8,  // 19: muxvia.cloud.v1.ControllerCommand.resync_required:type_name -> muxvia.cloud.v1.ResyncRequired
-	21, // 20: muxvia.cloud.v1.ControllerCommand.desired_config:type_name -> muxvia.cloud.v1.SignedEdgeDesiredConfig
-	22, // 21: muxvia.cloud.v1.ControllerCommand.relay_lease_decision:type_name -> muxvia.cloud.v1.RelayLeaseDecision
-	23, // 22: muxvia.cloud.v1.ControllerCommand.usage_ack:type_name -> muxvia.cloud.v1.UsageAck
-	10, // 23: muxvia.cloud.v1.EdgeControl.Connect:input_type -> muxvia.cloud.v1.EdgeEvent
-	11, // 24: muxvia.cloud.v1.EdgeControl.Connect:output_type -> muxvia.cloud.v1.ControllerCommand
-	24, // [24:25] is the sub-list for method output_type
-	23, // [23:24] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	16, // 1: muxvia.cloud.v1.EdgeWelcome.heartbeat:type_name -> muxvia.cloud.v1.HeartbeatPolicy
+	17, // 2: muxvia.cloud.v1.EdgeWelcome.ticket_verification_keys:type_name -> muxvia.cloud.v1.VerificationKey
+	18, // 3: muxvia.cloud.v1.SnapshotChunk.agents:type_name -> muxvia.cloud.v1.AgentPresence
+	19, // 4: muxvia.cloud.v1.SnapshotChunk.sessions:type_name -> muxvia.cloud.v1.ClientSessionSummary
+	20, // 5: muxvia.cloud.v1.SnapshotChunk.allocations:type_name -> muxvia.cloud.v1.RelayAllocationSummary
+	21, // 6: muxvia.cloud.v1.CloseDaemonConnection.deadline:type_name -> google.protobuf.Timestamp
+	21, // 7: muxvia.cloud.v1.CloseClientSession.deadline:type_name -> google.protobuf.Timestamp
+	1,  // 8: muxvia.cloud.v1.EdgeCommandResult.code:type_name -> muxvia.cloud.v1.CommandResultCode
+	21, // 9: muxvia.cloud.v1.EdgeCommandResult.completed_at:type_name -> google.protobuf.Timestamp
+	21, // 10: muxvia.cloud.v1.EdgeEvent.sent_at:type_name -> google.protobuf.Timestamp
+	2,  // 11: muxvia.cloud.v1.EdgeEvent.hello:type_name -> muxvia.cloud.v1.EdgeHello
+	4,  // 12: muxvia.cloud.v1.EdgeEvent.snapshot_begin:type_name -> muxvia.cloud.v1.SnapshotBegin
+	5,  // 13: muxvia.cloud.v1.EdgeEvent.snapshot_chunk:type_name -> muxvia.cloud.v1.SnapshotChunk
+	6,  // 14: muxvia.cloud.v1.EdgeEvent.snapshot_end:type_name -> muxvia.cloud.v1.SnapshotEnd
+	22, // 15: muxvia.cloud.v1.EdgeEvent.runtime_delta:type_name -> muxvia.cloud.v1.RuntimeDelta
+	7,  // 16: muxvia.cloud.v1.EdgeEvent.heartbeat:type_name -> muxvia.cloud.v1.EdgeHeartbeat
+	10, // 17: muxvia.cloud.v1.EdgeEvent.config_applied:type_name -> muxvia.cloud.v1.ConfigApplied
+	23, // 18: muxvia.cloud.v1.EdgeEvent.relay_lease_request:type_name -> muxvia.cloud.v1.RelayLeaseRequest
+	24, // 19: muxvia.cloud.v1.EdgeEvent.usage_batch:type_name -> muxvia.cloud.v1.UsageBatch
+	13, // 20: muxvia.cloud.v1.EdgeEvent.command_result:type_name -> muxvia.cloud.v1.EdgeCommandResult
+	21, // 21: muxvia.cloud.v1.ControllerCommand.sent_at:type_name -> google.protobuf.Timestamp
+	3,  // 22: muxvia.cloud.v1.ControllerCommand.welcome:type_name -> muxvia.cloud.v1.EdgeWelcome
+	8,  // 23: muxvia.cloud.v1.ControllerCommand.snapshot_accepted:type_name -> muxvia.cloud.v1.SnapshotAccepted
+	9,  // 24: muxvia.cloud.v1.ControllerCommand.resync_required:type_name -> muxvia.cloud.v1.ResyncRequired
+	25, // 25: muxvia.cloud.v1.ControllerCommand.desired_config:type_name -> muxvia.cloud.v1.SignedEdgeDesiredConfig
+	26, // 26: muxvia.cloud.v1.ControllerCommand.relay_lease_decision:type_name -> muxvia.cloud.v1.RelayLeaseDecision
+	27, // 27: muxvia.cloud.v1.ControllerCommand.usage_ack:type_name -> muxvia.cloud.v1.UsageAck
+	11, // 28: muxvia.cloud.v1.ControllerCommand.close_daemon:type_name -> muxvia.cloud.v1.CloseDaemonConnection
+	12, // 29: muxvia.cloud.v1.ControllerCommand.close_session:type_name -> muxvia.cloud.v1.CloseClientSession
+	14, // 30: muxvia.cloud.v1.EdgeControl.Connect:input_type -> muxvia.cloud.v1.EdgeEvent
+	15, // 31: muxvia.cloud.v1.EdgeControl.Connect:output_type -> muxvia.cloud.v1.ControllerCommand
+	31, // [31:32] is the sub-list for method output_type
+	30, // [30:31] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_cloud_v1_edge_control_proto_init() }
@@ -1258,7 +1649,7 @@ func file_cloud_v1_edge_control_proto_init() {
 	file_cloud_v1_edge_config_proto_init()
 	file_cloud_v1_runtime_proto_init()
 	file_cloud_v1_usage_proto_init()
-	file_cloud_v1_edge_control_proto_msgTypes[9].OneofWrappers = []any{
+	file_cloud_v1_edge_control_proto_msgTypes[12].OneofWrappers = []any{
 		(*EdgeEvent_Hello)(nil),
 		(*EdgeEvent_SnapshotBegin)(nil),
 		(*EdgeEvent_SnapshotChunk)(nil),
@@ -1268,22 +1659,25 @@ func file_cloud_v1_edge_control_proto_init() {
 		(*EdgeEvent_ConfigApplied)(nil),
 		(*EdgeEvent_RelayLeaseRequest)(nil),
 		(*EdgeEvent_UsageBatch)(nil),
+		(*EdgeEvent_CommandResult)(nil),
 	}
-	file_cloud_v1_edge_control_proto_msgTypes[10].OneofWrappers = []any{
+	file_cloud_v1_edge_control_proto_msgTypes[13].OneofWrappers = []any{
 		(*ControllerCommand_Welcome)(nil),
 		(*ControllerCommand_SnapshotAccepted)(nil),
 		(*ControllerCommand_ResyncRequired)(nil),
 		(*ControllerCommand_DesiredConfig)(nil),
 		(*ControllerCommand_RelayLeaseDecision)(nil),
 		(*ControllerCommand_UsageAck)(nil),
+		(*ControllerCommand_CloseDaemon)(nil),
+		(*ControllerCommand_CloseSession)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloud_v1_edge_control_proto_rawDesc), len(file_cloud_v1_edge_control_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   11,
+			NumEnums:      2,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

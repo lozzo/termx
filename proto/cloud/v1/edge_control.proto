@@ -83,6 +83,39 @@ message ConfigApplied {
   string error_code = 3;
 }
 
+message CloseDaemonConnection {
+  string command_id = 1;
+  string correlation_id = 2;
+  google.protobuf.Timestamp deadline = 3;
+  string daemon_id = 4;
+  uint64 generation = 5;
+  string reason = 6;
+}
+
+message CloseClientSession {
+  string command_id = 1;
+  string correlation_id = 2;
+  google.protobuf.Timestamp deadline = 3;
+  string session_id = 4;
+  uint64 generation = 5;
+  string reason = 6;
+}
+
+enum CommandResultCode {
+  COMMAND_RESULT_CODE_UNSPECIFIED = 0;
+  COMMAND_RESULT_CODE_APPLIED = 1;
+  COMMAND_RESULT_CODE_REJECTED = 2;
+  COMMAND_RESULT_CODE_STALE = 3;
+}
+
+message EdgeCommandResult {
+  string command_id = 1;
+  string correlation_id = 2;
+  CommandResultCode code = 3;
+  string message = 4;
+  google.protobuf.Timestamp completed_at = 5;
+}
+
 // EdgeEvent 是 Edge 向 Controller 发送的单调序列 envelope。
 // hello 之后只允许快照、严格连续增量和可合并心跳。
 message EdgeEvent {
@@ -103,6 +136,7 @@ message EdgeEvent {
     ConfigApplied config_applied = 26;
     RelayLeaseRequest relay_lease_request = 27;
     UsageBatch usage_batch = 28;
+    EdgeCommandResult command_result = 29;
   }
 }
 
@@ -123,6 +157,8 @@ message ControllerCommand {
     SignedEdgeDesiredConfig desired_config = 23;
     RelayLeaseDecision relay_lease_decision = 24;
     UsageAck usage_ack = 25;
+    CloseDaemonConnection close_daemon = 26;
+    CloseClientSession close_session = 27;
   }
 }
 

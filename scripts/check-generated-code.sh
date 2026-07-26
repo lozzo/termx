@@ -52,6 +52,8 @@ portable_ts_proto=(
 )
 cloud_proto=(
   proto/cloud/v1/common.proto
+  proto/cloud/v1/account.proto
+  proto/cloud/v1/commerce.proto
   proto/cloud/v1/edge_config.proto
   proto/cloud/v1/runtime.proto
   proto/cloud/v1/usage.proto
@@ -61,6 +63,7 @@ cloud_proto=(
   proto/cloud/v1/directory.proto
   proto/cloud/v1/client_gateway.proto
   proto/cloud/v1/agent_gateway.proto
+  proto/cloud/v1/operator.proto
 )
 # Go 与 TypeScript 都从 proto 源码生成到临时目录；检查过程不改工作树。
 protoc -I proto \
@@ -126,11 +129,15 @@ for source in "${cloud_proto[@]}"; do
   name="$(basename "$source" .proto)"
   check_generated_file "$tmp_dir/go/cloud/v1/${name}.pb.go" "proto/cloud/v1/${name}.pb.go"
   check_generated_file "$tmp_dir/api/cloud/v1/${name}_pb.ts" "clients/ui/src/generated/cloud/v1/${name}_pb.ts"
+  check_generated_file "$tmp_dir/api/cloud/v1/${name}_pb.ts" "cloud/web/src/generated/cloud/v1/${name}_pb.ts"
 done
 check_generated_file "$tmp_dir/go/cloud/v1/edge_control_grpc.pb.go" proto/cloud/v1/edge_control_grpc.pb.go
 check_generated_file "$tmp_dir/go/cloud/v1/enrollment_grpc.pb.go" proto/cloud/v1/enrollment_grpc.pb.go
 check_generated_file "$tmp_dir/go/cloud/v1/directory_grpc.pb.go" proto/cloud/v1/directory_grpc.pb.go
 check_generated_file "$tmp_dir/go/cloud/v1/client_gateway_grpc.pb.go" proto/cloud/v1/client_gateway_grpc.pb.go
 check_generated_file "$tmp_dir/go/cloud/v1/agent_gateway_grpc.pb.go" proto/cloud/v1/agent_gateway_grpc.pb.go
+check_generated_file "$tmp_dir/go/cloud/v1/account_grpc.pb.go" proto/cloud/v1/account_grpc.pb.go
+check_generated_file "$tmp_dir/go/cloud/v1/commerce_grpc.pb.go" proto/cloud/v1/commerce_grpc.pb.go
+check_generated_file "$tmp_dir/go/cloud/v1/operator_grpc.pb.go" proto/cloud/v1/operator_grpc.pb.go
 check_generated_file "$tmp_dir/descriptor/cloud-v1.pb" proto/cloud/v1/testdata/cloud-v1.pb
 echo "generated code is current"

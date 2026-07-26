@@ -1,0 +1,32 @@
+{
+  "name": "@muxvia/cloud-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "proto": "node scripts/generate-proto.mjs",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run src",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.12.0",
+    "@tanstack/react-query": "5.101.4",
+    "lucide-react": "1.14.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "react-router": "8.3.0"
+  },
+  "devDependencies": {
+    "@bufbuild/protoc-gen-es": "2.12.0",
+    "@playwright/test": "1.62.0",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "5.2.0",
+    "jsdom": "27.4.0",
+    "typescript": "5.9.3",
+    "vite": "8.1.5",
+    "vitest": "4.1.5"
+  }
+}

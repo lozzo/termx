@@ -4,26 +4,31 @@ package apihttp
 
 import (
 	"context"
-	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
+	pathpkg "path"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/muxvia/muxvia/cloud/controller/account"
+	"github.com/muxvia/muxvia/cloud/controller/commerce"
 	"github.com/muxvia/muxvia/cloud/controller/directory"
 	"github.com/muxvia/muxvia/cloud/controller/directoryapi"
 	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
 	"github.com/muxvia/muxvia/cloud/controller/enrollment"
 	"github.com/muxvia/muxvia/cloud/controller/install"
+	operatorservice "github.com/muxvia/muxvia/cloud/controller/operator"
 	"github.com/muxvia/muxvia/cloud/securetransport"
 	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -33,19 +38,19 @@ import (
 var webFiles embed.FS
 
 // Config 是 Controller 原生 HTTPS 管理/安装 listener 的装配输入。
-// R3 使用部署 secret 的 HTTP Basic 门禁；R7 会替换为账号 session/RBAC。
 type Config struct {
 	ListenAddress      string
 	TLSCertificateFile string
 	TLSPrivateKeyFile  string
 	PublicOrigin       string
-	OperatorUsername   string
-	OperatorPassword   string
 	Edges              *edgeconfig.Service
 	Directory          *directory.Directory
 	Install            *install.Service
 	Enrollment         *enrollment.Service
 	ClientDirectory    *directoryapi.Service
+	Accounts           *account.Service
+	Commerce           *commerce.Service
+	Operator           *operatorservice.Service
 }
 
 // Server 拥有原生 HTTPS listener 生命周期，不拥有 Edge 配置或实时目录。
@@ -59,8 +64,8 @@ type Server struct {
 // Start 验证 TLS/认证配置、绑定 listener 并启动 HTTPS。
 func Start(config Config) (*Server, error) {
 	config.ListenAddress = strings.TrimSpace(config.ListenAddress)
-	if config.ListenAddress == "" || config.Edges == nil || config.Directory == nil || config.Install == nil || strings.TrimSpace(config.OperatorUsername) == "" || config.OperatorPassword == "" {
-		return nil, errors.New("HTTP listen, services, and operator credentials are required")
+	if config.ListenAddress == "" || config.Edges == nil || config.Directory == nil || config.Install == nil || config.Accounts == nil || config.Commerce == nil || config.Operator == nil {
+		return nil, errors.New("HTTP listen and R7 application services are required")
 	}
 	tlsConfig, err := securetransport.NewServerTLSConfig(securetransport.ServerOptions{CertificateFile: config.TLSCertificateFile, PrivateKeyFile: config.TLSPrivateKeyFile})
 	if err != nil {
@@ -101,17 +106,19 @@ func (server *Server) Shutdown(ctx context.Context) error {
 // NewHandler 构造可测试的 HTTP adapter；调用方仍必须在生产使用 TLS listener。
 func NewHandler(config Config) (http.Handler, error) {
 	config.PublicOrigin = strings.TrimRight(strings.TrimSpace(config.PublicOrigin), "/")
-	config.OperatorUsername = strings.TrimSpace(config.OperatorUsername)
-	if config.Edges == nil || config.Directory == nil || config.Install == nil || config.PublicOrigin == "" || config.OperatorUsername == "" || config.OperatorPassword == "" {
-		return nil, errors.New("HTTP handler services, public origin, and credentials are required")
+	if config.Edges == nil || config.Directory == nil || config.Install == nil || config.PublicOrigin == "" || config.Accounts == nil || config.Commerce == nil || config.Operator == nil {
+		return nil, errors.New("HTTP handler and R7 application services are required")
 	}
 	var grpcServer *grpc.Server
 	if config.Enrollment != nil {
-		grpcServer = grpc.NewServer()
+		grpcServer = grpc.NewServer(grpc.UnaryInterceptor(accountUnaryInterceptor(config.Accounts)))
 		cloudv1.RegisterEnrollmentServiceServer(grpcServer, config.Enrollment)
 		if config.ClientDirectory != nil {
 			cloudv1.RegisterDirectoryServiceServer(grpcServer, config.ClientDirectory)
 		}
+		cloudv1.RegisterAccountServiceServer(grpcServer, config.Accounts)
+		cloudv1.RegisterCommerceServiceServer(grpcServer, config.Commerce)
+		cloudv1.RegisterOperatorServiceServer(grpcServer, config.Operator)
 	}
 	handler := &handler{config: config, grpcServer: grpcServer}
 	return handler, nil
@@ -138,43 +145,70 @@ func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 		_, _ = writer.Write(handler.config.Install.Artifact())
 	case request.Method == http.MethodPost && request.URL.Path == "/api/install/register":
 		handler.register(writer, request)
-	case strings.HasPrefix(request.URL.Path, "/api/operator/"):
-		if !handler.authorize(writer, request) || !handler.allowMutationOrigin(writer, request) {
+	case request.URL.Path == "/api/account/login" || request.URL.Path == "/api/account/register" || request.URL.Path == "/api/account/refresh":
+		if !handler.allowMutationOrigin(writer, request) {
 			return
 		}
-		handler.operator(writer, request)
+		handler.accountPublic(writer, request)
+	case strings.HasPrefix(request.URL.Path, "/api/"):
+		identity, ok := handler.authenticate(writer, request)
+		if !ok {
+			return
+		}
+		request = request.WithContext(account.ContextWithIdentity(request.Context(), identity))
+		if !handler.allowMutationOrigin(writer, request) {
+			return
+		}
+		switch {
+		case strings.HasPrefix(request.URL.Path, "/api/account/"):
+			handler.accountPrivate(writer, request)
+		case strings.HasPrefix(request.URL.Path, "/api/commerce/"):
+			handler.commerce(writer, request)
+		case strings.HasPrefix(request.URL.Path, "/api/operator/"):
+			if !identity.HasRole(cloudv1.AccountRole_ACCOUNT_ROLE_OPERATOR) {
+				writeError(writer, http.StatusForbidden, errors.New("operator role is required"))
+				return
+			}
+			handler.operator(writer, request)
+		default:
+			http.NotFound(writer, request)
+		}
 	default:
-		if !handler.authorize(writer, request) {
-			return
-		}
+		// SPA shell 与静态资源不包含业务数据；统一公开后，深链刷新也能先轮换 HttpOnly session，再由 API/RBAC 守住数据边界。
 		handler.serveStatic(writer, request)
 	}
 }
 
 func (handler *handler) serveStatic(writer http.ResponseWriter, request *http.Request) {
-	var name, contentType string
-	switch request.URL.Path {
-	case "/", "/index.html", "/edges", "/daemons":
-		name, contentType = "web/index.html", "text/html; charset=utf-8"
-	case "/app.js":
-		name, contentType = "web/app.js", "text/javascript; charset=utf-8"
-	case "/styles.css":
-		name, contentType = "web/styles.css", "text/css; charset=utf-8"
-	default:
-		http.NotFound(writer, request)
-		return
+	cleanPath := pathpkg.Clean("/" + request.URL.Path)
+	extension := pathpkg.Ext(cleanPath)
+	name := "web/index.html"
+	contentType := "text/html; charset=utf-8"
+	if extension != "" && cleanPath != "/index.html" {
+		name = "web/" + strings.TrimPrefix(cleanPath, "/")
+		contentType = mime.TypeByExtension(extension)
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
 	}
 	payload, err := webFiles.ReadFile(name)
 	if err != nil {
-		writeError(writer, http.StatusInternalServerError, err)
+		http.NotFound(writer, request)
 		return
 	}
 	writer.Header().Set("Content-Type", contentType)
-	writer.Header().Set("Cache-Control", "no-cache")
+	if name == "web/index.html" {
+		writer.Header().Set("Cache-Control", "no-cache")
+	} else {
+		writer.Header().Set("Cache-Control", "public, max-age=300")
+	}
 	_, _ = writer.Write(payload)
 }
 
 func (handler *handler) operator(writer http.ResponseWriter, request *http.Request) {
+	if handler.operatorR7(writer, request) {
+		return
+	}
 	if request.URL.Path == "/api/operator/daemons" && handler.config.Enrollment != nil {
 		switch request.Method {
 		case http.MethodGet:
@@ -306,18 +340,6 @@ func (handler *handler) register(writer http.ResponseWriter, request *http.Reque
 	writeProto(writer, http.StatusOK, response)
 }
 
-func (handler *handler) authorize(writer http.ResponseWriter, request *http.Request) bool {
-	username, password, ok := request.BasicAuth()
-	validUser := subtle.ConstantTimeCompare([]byte(username), []byte(handler.config.OperatorUsername)) == 1
-	validPassword := subtle.ConstantTimeCompare([]byte(password), []byte(handler.config.OperatorPassword)) == 1
-	if !ok || !validUser || !validPassword {
-		writer.Header().Set("WWW-Authenticate", `Basic realm="Muxvia Cloud R3", charset="UTF-8"`)
-		writer.WriteHeader(http.StatusUnauthorized)
-		return false
-	}
-	return true
-}
-
 func (handler *handler) allowMutationOrigin(writer http.ResponseWriter, request *http.Request) bool {
 	if request.Method == http.MethodGet || request.Method == http.MethodHead {
 		return true
@@ -331,7 +353,43 @@ func (handler *handler) allowMutationOrigin(writer http.ResponseWriter, request 
 		writeError(writer, http.StatusForbidden, errors.New("request origin is not allowed"))
 		return false
 	}
+	if request.URL.Path == "/api/account/refresh" {
+		csrfCookie, err := request.Cookie(csrfCookieName)
+		if err != nil || csrfCookie.Value == "" || csrfCookie.Value != strings.TrimSpace(request.Header.Get("X-Muxvia-CSRF")) {
+			writeError(writer, http.StatusForbidden, errors.New("CSRF proof is invalid"))
+			return false
+		}
+	} else if strings.HasPrefix(request.URL.Path, "/api/") && request.URL.Path != "/api/account/login" && request.URL.Path != "/api/account/register" {
+		identity, ok := account.IdentityFromContext(request.Context())
+		csrfCookie, err := request.Cookie(csrfCookieName)
+		csrfHeader := strings.TrimSpace(request.Header.Get("X-Muxvia-CSRF"))
+		if !ok || err != nil || csrfCookie.Value == "" || csrfHeader == "" || csrfCookie.Value != csrfHeader || !validateEncodedCSRF(identity, csrfHeader) {
+			writeError(writer, http.StatusForbidden, errors.New("CSRF proof is invalid"))
+			return false
+		}
+	}
 	return true
+}
+
+func accountUnaryInterceptor(accounts *account.Service) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		if strings.HasSuffix(info.FullMethod, "/Register") || strings.HasSuffix(info.FullMethod, "/Login") || strings.HasSuffix(info.FullMethod, "/Refresh") || strings.Contains(info.FullMethod, "EnrollmentService") || strings.Contains(info.FullMethod, "DirectoryService") {
+			return handler(ctx, request)
+		}
+		values := metadata.ValueFromIncomingContext(ctx, "authorization")
+		if len(values) != 1 {
+			return nil, account.ErrUnauthenticated
+		}
+		token, err := decodeBearer(values[0])
+		if err != nil {
+			return nil, account.ErrUnauthenticated
+		}
+		identity, err := accounts.AuthenticateAccess(ctx, token)
+		if err != nil {
+			return nil, err
+		}
+		return handler(account.ContextWithIdentity(ctx, identity), request)
+	}
 }
 
 func projectEdge(edge edgeconfig.Edge, runtime directory.EdgeProjection) *cloudv1.ManagedEdge {

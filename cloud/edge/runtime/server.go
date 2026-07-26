@@ -367,6 +367,8 @@ func (runtime *Runtime) runControllerLink() {
 				return &controllerlink.RuntimeFeed{Snapshot: feed.Snapshot, Deltas: feed.Deltas, Close: feed.Close}, nil
 			},
 			ApplyDesiredConfig: applyDesiredConfig,
+			CloseDaemon:        runtime.state.CloseAgentConnection,
+			CloseSession:       runtime.state.CloseSession,
 		})
 		if err == nil {
 			if keys := session.Welcome().GetTicketVerificationKeys(); len(keys) != 0 {

@@ -28,6 +28,7 @@ build:
 	GOWORK=off go build -o "$(MUXVIA_BIN)" ./cmd/muxvia
 
 build-cloud:
+	npm run build:cloud-web
 	mkdir -p "$(dir $(CLOUD_CONTROLLER_BIN))"
 	GOWORK=off go build -o "$(CLOUD_CONTROLLER_BIN)" ./cmd/muxvia-cloud-controller
 	GOWORK=off go build -o "$(CLOUD_EDGE_BIN)" ./cmd/muxvia-cloud-edge

@@ -87,6 +87,7 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 	}
 	identityStore := r5EnrollmentStore{daemon: daemonRecord}
 	enrollmentService, err := enrollment.NewService(enrollment.Config{
+		Entitlement: testEntitlementReader{},
 		Store: identityStore, Edges: edges, Directory: directoryState, TicketSigningKey: ticketPrivateKey, TicketSigningKeyID: ticketKeyID,
 		EdgeCACertificate: edgeCAPEM, EnrollmentTTL: time.Minute, ChallengeTTL: time.Minute, AgentTicketTTL: 10 * time.Minute,
 	})
@@ -94,6 +95,7 @@ func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T
 		t.Fatal(err)
 	}
 	directoryService, err := directoryapi.NewService(directoryapi.Config{
+		Entitlement: testEntitlementReader{},
 		Store: identityStore, Directory: directoryState, Edges: edges, EdgeCACertificate: edgeCAPEM,
 		TicketSigningKey: ticketPrivateKey, TicketSigningKeyID: ticketKeyID, ChallengeTTL: time.Minute, ClientTicketTTL: 2 * time.Minute,
 	})

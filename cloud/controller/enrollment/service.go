@@ -51,9 +51,12 @@ type Store interface {
 
 // Config 组合持久 Store、纯内存 Directory、Edge desired state 和 Controller TicketSigner。
 type Config struct {
-	Store              Store
-	Edges              *edgeconfig.Service
-	Directory          *directory.Directory
+	Store       Store
+	Edges       *edgeconfig.Service
+	Directory   *directory.Directory
+	Entitlement interface {
+		EffectiveEntitlement(context.Context, string) (*cloudv1.EffectiveEntitlement, error)
+	}
 	TicketSigningKey   ed25519.PrivateKey
 	TicketSigningKeyID string
 	EdgeCACertificate  []byte
@@ -92,7 +95,7 @@ type Service struct {
 // NewService 验证所有 owner 和期限，避免启动部分可用的收费准入路径。
 func NewService(config Config) (*Service, error) {
 	config.TicketSigningKeyID = strings.TrimSpace(config.TicketSigningKeyID)
-	if config.Store == nil || config.Edges == nil || config.Directory == nil || len(config.TicketSigningKey) != ed25519.PrivateKeySize ||
+	if config.Store == nil || config.Edges == nil || config.Directory == nil || config.Entitlement == nil || len(config.TicketSigningKey) != ed25519.PrivateKeySize ||
 		config.TicketSigningKeyID == "" || len(config.EdgeCACertificate) == 0 || config.EnrollmentTTL <= 0 || config.ChallengeTTL <= 0 || config.AgentTicketTTL <= 0 {
 		return nil, errors.New("enrollment store, directory, Edge state, signer, CA, and positive TTLs are required")
 	}
@@ -210,6 +213,10 @@ func (service *Service) BeginAgentTicket(ctx context.Context, request *cloudv1.B
 	daemon, err := service.config.Store.GetDaemon(ctx, strings.TrimSpace(request.GetDaemonId()))
 	if err != nil || daemon.Revoked {
 		return nil, status.Error(codes.NotFound, ErrDaemonUnavailable.Error())
+	}
+	entitlement, entitlementErr := service.config.Entitlement.EffectiveEntitlement(ctx, daemon.AccountID)
+	if entitlementErr != nil || entitlement.GetState() != cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE || !entitlement.GetCapability().GetManagedP2PEnabled() {
+		return nil, status.Error(codes.PermissionDenied, "account Cloud entitlement is unavailable")
 	}
 	edge, err := service.config.Edges.GetEdge(ctx, strings.TrimSpace(request.GetEdgeId()))
 	if err != nil || !edge.Enabled {

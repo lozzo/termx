@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -17,13 +16,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/muxvia/muxvia/cloud/controller/account"
 	"github.com/muxvia/muxvia/cloud/controller/apihttp"
+	"github.com/muxvia/muxvia/cloud/controller/commerce"
 	"github.com/muxvia/muxvia/cloud/controller/control"
 	"github.com/muxvia/muxvia/cloud/controller/directory"
 	"github.com/muxvia/muxvia/cloud/controller/directoryapi"
 	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
 	"github.com/muxvia/muxvia/cloud/controller/enrollment"
 	"github.com/muxvia/muxvia/cloud/controller/install"
+	operatorservice "github.com/muxvia/muxvia/cloud/controller/operator"
 	"github.com/muxvia/muxvia/cloud/controller/postgres"
 	controllerruntime "github.com/muxvia/muxvia/cloud/controller/runtime"
 	"github.com/muxvia/muxvia/cloud/keymaterial"
@@ -31,8 +33,7 @@ import (
 )
 
 const (
-	softwareVersion            = "development"
-	defaultRelayMaxAllocations = 16
+	softwareVersion = "development"
 )
 
 type options struct {
@@ -61,9 +62,6 @@ type options struct {
 	heartbeatInterval    time.Duration
 	heartbeatTimeout     time.Duration
 	relayLeaseTTL        time.Duration
-	relayMaxBytes        uint64
-	relayMaxRate         uint64
-	relayMaxAllocations  uint
 	startupTimeout       time.Duration
 	shutdownTimeout      time.Duration
 }
@@ -86,8 +84,8 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
-	if config.startupTimeout <= 0 || config.shutdownTimeout <= 0 || config.relayLeaseTTL <= 0 || config.relayLeaseTTL > 5*time.Minute || config.relayMaxBytes == 0 || config.relayMaxRate == 0 || config.relayMaxAllocations == 0 || config.relayMaxAllocations > math.MaxUint32 {
-		return errors.New("startup, shutdown, and bounded Relay policy values must be positive")
+	if config.startupTimeout <= 0 || config.shutdownTimeout <= 0 || config.relayLeaseTTL <= 0 || config.relayLeaseTTL > 5*time.Minute {
+		return errors.New("startup, shutdown, and bounded Relay lease TTL must be positive")
 	}
 	startupContext, cancelStartup := context.WithTimeout(ctx, config.startupTimeout)
 	database, err := postgres.Open(startupContext, getenv("MUXVIA_CLOUD_DATABASE_URL"))
@@ -127,6 +125,17 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return fmt.Errorf("read operator password: %w", err)
 	}
+	accountService, err := account.New(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: 30 * 24 * time.Hour, RecentAuthenticationTTL: 10 * time.Minute})
+	if err != nil {
+		return err
+	}
+	if _, err := accountService.EnsureBootstrapOperator(ctx, config.operatorUsername, strings.TrimSpace(string(passwordPayload))); err != nil {
+		return fmt.Errorf("ensure bootstrap operator: %w", err)
+	}
+	commerceService, err := commerce.New(commerce.Config{Store: database})
+	if err != nil {
+		return err
+	}
 	edgeService, err := edgeconfig.NewService(edgeconfig.Config{Store: database, SigningKey: configKey, SigningKeyID: config.configSigningKeyID, ClaimTTL: 10 * time.Minute})
 	if err != nil {
 		return err
@@ -140,13 +149,14 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 		return err
 	}
 
-	directoryState, err := directory.New(directory.Config{MailboxSize: 4096, GracePeriod: 10 * time.Second})
+	directoryState, err := directory.New(directory.Config{MailboxSize: 4096, GracePeriod: 10 * time.Second, WatcherMailboxSize: 256})
 	if err != nil {
 		return err
 	}
 	defer directoryState.Close()
 	enrollmentService, err := enrollment.NewService(enrollment.Config{
 		Store: database, Edges: edgeService, Directory: directoryState, TicketSigningKey: ticketKey, TicketSigningKeyID: config.ticketSigningKeyID,
+		Entitlement:       commerceService,
 		EdgeCACertificate: edgeCAPayload, EnrollmentTTL: 10 * time.Minute, ChallengeTTL: time.Minute, AgentTicketTTL: 10 * time.Minute,
 	})
 	if err != nil {
@@ -155,6 +165,7 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	clientDirectoryService, err := directoryapi.NewService(directoryapi.Config{
 		Store: database, Directory: directoryState, Edges: edgeService, EdgeCACertificate: edgeCAPayload,
 		TicketSigningKey: ticketKey, TicketSigningKeyID: config.ticketSigningKeyID, ChallengeTTL: time.Minute, ClientTicketTTL: 2 * time.Minute,
+		Entitlement: commerceService,
 	})
 	if err != nil {
 		return err
@@ -167,13 +178,17 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 		Directory:              directoryState,
 		TicketVerificationKeys: []*cloudv1.VerificationKey{enrollmentService.TicketVerificationKey()},
 		TicketSigningKey:       ticketKey, TicketSigningKeyID: config.ticketSigningKeyID, RelayLeaseTTL: config.relayLeaseTTL,
-		RelayPolicy: control.ConfiguredRelayPolicy{Value: control.RelayLimits{MaxBytes: config.relayMaxBytes, MaxRateBytesPerSecond: config.relayMaxRate, MaxConcurrentAllocations: uint32(config.relayMaxAllocations)}},
+		RelayPolicy: commerce.EntitlementRelayPolicy{Service: commerceService},
 		UsageStore:  database,
 		DesiredConfig: func(ctx context.Context, edgeID string) (*cloudv1.SignedEdgeDesiredConfig, error) {
 			edge, err := edgeService.GetEdge(ctx, edgeID)
 			return edge.SignedConfig, err
 		},
 	})
+	if err != nil {
+		return err
+	}
+	operatorService, err := operatorservice.New(operatorservice.Config{Store: database, Edges: edgeService, Enrollment: enrollmentService, Directory: directoryState, Control: service})
 	if err != nil {
 		return err
 	}
@@ -187,7 +202,7 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
-	httpServer, err := apihttp.Start(apihttp.Config{ListenAddress: config.httpListen, TLSCertificateFile: config.tlsCertificate, TLSPrivateKeyFile: config.tlsPrivateKey, PublicOrigin: config.publicOrigin, OperatorUsername: config.operatorUsername, OperatorPassword: strings.TrimSpace(string(passwordPayload)), Edges: edgeService, Directory: directoryState, Install: installService, Enrollment: enrollmentService, ClientDirectory: clientDirectoryService})
+	httpServer, err := apihttp.Start(apihttp.Config{ListenAddress: config.httpListen, TLSCertificateFile: config.tlsCertificate, TLSPrivateKeyFile: config.tlsPrivateKey, PublicOrigin: config.publicOrigin, Edges: edgeService, Directory: directoryState, Install: installService, Enrollment: enrollmentService, ClientDirectory: clientDirectoryService, Accounts: accountService, Commerce: commerceService, Operator: operatorService})
 	if err != nil {
 		shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), config.shutdownTimeout)
 		defer cancelShutdown()
@@ -246,10 +261,6 @@ func parseOptions(arguments []string, output io.Writer) (options, error) {
 	flags.DurationVar(&config.heartbeatInterval, "heartbeat-interval", 10*time.Second, "Edge heartbeat interval")
 	flags.DurationVar(&config.heartbeatTimeout, "heartbeat-timeout", 30*time.Second, "Edge heartbeat timeout")
 	flags.DurationVar(&config.relayLeaseTTL, "relay-lease-ttl", 5*time.Minute, "maximum lifetime of a signed RelayLease")
-	flags.Uint64Var(&config.relayMaxBytes, "relay-max-bytes", 1<<30, "maximum bytes allowed by one development RelayLease")
-	flags.Uint64Var(&config.relayMaxRate, "relay-max-rate", 10<<20, "maximum bytes per second allowed by one development RelayLease")
-	// 一个 WebRTC Relay session 的两端会按本机网络接口分别为 UDP/TCP 建立 allocation；默认值必须覆盖多网卡双端。
-	flags.UintVar(&config.relayMaxAllocations, "relay-max-allocations", defaultRelayMaxAllocations, "maximum concurrent allocations allowed by one development RelayLease")
 	flags.DurationVar(&config.startupTimeout, "startup-timeout", 15*time.Second, "PostgreSQL startup deadline")
 	flags.DurationVar(&config.shutdownTimeout, "shutdown-timeout", 15*time.Second, "graceful shutdown deadline")
 	if err := flags.Parse(arguments); err != nil {

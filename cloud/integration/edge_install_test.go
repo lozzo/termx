@@ -19,11 +19,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/muxvia/muxvia/cloud/controller/account"
 	"github.com/muxvia/muxvia/cloud/controller/apihttp"
+	"github.com/muxvia/muxvia/cloud/controller/commerce"
+	"github.com/muxvia/muxvia/cloud/controller/control"
 	"github.com/muxvia/muxvia/cloud/controller/directory"
 	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
 	"github.com/muxvia/muxvia/cloud/controller/enrollment"
 	"github.com/muxvia/muxvia/cloud/controller/install"
+	operatorservice "github.com/muxvia/muxvia/cloud/controller/operator"
 	"github.com/muxvia/muxvia/cloud/controller/postgres"
 	"github.com/muxvia/muxvia/cloud/edge/bootstrap"
 	"github.com/muxvia/muxvia/cloud/securetransport"
@@ -78,9 +83,88 @@ func TestR3EdgeCreateInstallRegisterAndListWithPostgreSQL(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer directoryState.Close()
-	handler, err := apihttp.NewHandler(apihttp.Config{PublicOrigin: "https://controller.example.com:18444", OperatorUsername: "operator", OperatorPassword: "test-password", Edges: edges, Directory: directoryState, Install: installer})
+	accounts, err := account.New(account.Config{Store: database, AccessTTL: 15 * time.Minute, RefreshTTL: time.Hour, RecentAuthenticationTTL: 10 * time.Minute, BcryptCost: 4})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := accounts.EnsureBootstrapOperator(ctx, "operator", "test-password"); err != nil {
+		t.Fatal(err)
+	}
+	commercial, err := commerce.New(commerce.Config{Store: database})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ticketKey, _ := ed25519.GenerateKey(rand.Reader)
+	enrollmentService, err := enrollment.NewService(enrollment.Config{Store: database, Edges: edges, Directory: directoryState, Entitlement: commercial, TicketSigningKey: ticketKey, TicketSigningKeyID: "r7-http", EdgeCACertificate: []byte("test-ca"), EnrollmentTTL: 10 * time.Minute, ChallengeTTL: time.Minute, AgentTicketTTL: 10 * time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	controlService, err := control.NewService(control.Config{ControllerID: "controller-test", ControllerBootID: uuid.NewString(), HeartbeatInterval: time.Second, HeartbeatTimeout: 3 * time.Second, Directory: directoryState})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operatorService, err := operatorservice.New(operatorservice.Config{Store: database, Edges: edges, Enrollment: enrollmentService, Directory: directoryState, Control: controlService})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := apihttp.NewHandler(apihttp.Config{PublicOrigin: "https://controller.example.com:18444", Edges: edges, Directory: directoryState, Install: installer, Enrollment: enrollmentService, Accounts: accounts, Commerce: commercial, Operator: operatorService})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loginBody, _ := protojson.Marshal(&cloudv1.LoginAccountRequest{Login: "operator", Password: "test-password"})
+	loginRequest := httptest.NewRequest(http.MethodPost, "/api/account/login", bytes.NewReader(loginBody))
+	loginRequest.Header.Set("Content-Type", "application/json")
+	loginRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(loginRecorder, loginRequest)
+	if loginRecorder.Code != http.StatusOK {
+		t.Fatalf("operator login status=%d body=%s", loginRecorder.Code, loginRecorder.Body.String())
+	}
+	r7TestCookies = loginRecorder.Result().Cookies()
+	var accessCookie, refreshCookie, csrfCookie *http.Cookie
+	for _, cookie := range r7TestCookies {
+		switch cookie.Name {
+		case "muxvia_cloud_access":
+			accessCookie = cookie
+		case "muxvia_cloud_refresh":
+			refreshCookie = cookie
+		case "muxvia_cloud_csrf":
+			csrfCookie = cookie
+			r7TestCSRF = cookie.Value
+		}
+	}
+	if accessCookie == nil || !accessCookie.Secure || !accessCookie.HttpOnly || accessCookie.SameSite != http.SameSiteStrictMode || accessCookie.Path != "/" {
+		t.Fatalf("invalid access cookie: %+v", accessCookie)
+	}
+	if refreshCookie == nil || !refreshCookie.Secure || !refreshCookie.HttpOnly || refreshCookie.SameSite != http.SameSiteStrictMode || refreshCookie.Path != "/api/account/refresh" {
+		t.Fatalf("invalid refresh cookie: %+v", refreshCookie)
+	}
+	if csrfCookie == nil || !csrfCookie.Secure || csrfCookie.HttpOnly || csrfCookie.SameSite != http.SameSiteStrictMode || csrfCookie.Path != "/" || r7TestCSRF == "" {
+		t.Fatalf("invalid CSRF cookie: %+v", csrfCookie)
+	}
+	unauthenticated := httptest.NewRecorder()
+	handler.ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, "/api/operator/edges", nil))
+	if unauthenticated.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated operator status=%d", unauthenticated.Code)
+	}
+	csrfBody, _ := protojson.Marshal(&cloudv1.CreateEdgeRequest{Name: "CSRF", Region: "test", Capacity: 1, PublicEndpoint: "csrf.example.com"})
+	csrfRequest := httptest.NewRequest(http.MethodPost, "/api/operator/edges", bytes.NewReader(csrfBody))
+	csrfRequest.Header.Set("Content-Type", "application/json")
+	for _, cookie := range r7TestCookies {
+		csrfRequest.AddCookie(cookie)
+	}
+	csrfRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(csrfRecorder, csrfRequest)
+	if csrfRecorder.Code != http.StatusForbidden {
+		t.Fatalf("missing CSRF status=%d body=%s", csrfRecorder.Code, csrfRecorder.Body.String())
+	}
+	spaRequest := httptest.NewRequest(http.MethodGet, "/accounts/11111111-1111-4111-8111-111111111111", nil)
+	for _, cookie := range r7TestCookies {
+		spaRequest.AddCookie(cookie)
+	}
+	spaRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(spaRecorder, spaRequest)
+	if spaRecorder.Code != http.StatusOK || !strings.Contains(spaRecorder.Header().Get("Content-Type"), "text/html") || !strings.Contains(spaRecorder.Body.String(), `<div id="root"></div>`) {
+		t.Fatalf("SPA route status=%d content-type=%q", spaRecorder.Code, spaRecorder.Header().Get("Content-Type"))
 	}
 
 	create := &cloudv1.CreateEdgeRequest{Name: "测试 Edge", Region: "cn-east", Capacity: 1000, PublicEndpoint: "edge-r3.example.com:41102"}
@@ -210,7 +294,7 @@ func TestR4DaemonEnrollmentConsumesCodeAndPersistsOnlyIdentity(t *testing.T) {
 	}
 	defer directoryState.Close()
 	_, ticketKey, _ := ed25519.GenerateKey(rand.Reader)
-	service, err := enrollment.NewService(enrollment.Config{Store: database, Edges: edges, Directory: directoryState, TicketSigningKey: ticketKey, TicketSigningKeyID: "r4-ticket", EdgeCACertificate: []byte("test-ca"), EnrollmentTTL: 10 * time.Minute, ChallengeTTL: time.Minute, AgentTicketTTL: 10 * time.Minute})
+	service, err := enrollment.NewService(enrollment.Config{Store: database, Edges: edges, Directory: directoryState, Entitlement: testEntitlementReader{}, TicketSigningKey: ticketKey, TicketSigningKeyID: "r4-ticket", EdgeCACertificate: []byte("test-ca"), EnrollmentTTL: 10 * time.Minute, ChallengeTTL: time.Minute, AgentTicketTTL: 10 * time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +357,12 @@ func doProtoRequest(t *testing.T, handler http.Handler, method, path string, inp
 	request := httptest.NewRequest(method, path, bytes.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 	if auth {
-		request.SetBasicAuth("operator", "test-password")
+		for _, cookie := range r7TestCookies {
+			request.AddCookie(cookie)
+		}
+		if method != http.MethodGet && method != http.MethodHead {
+			request.Header.Set("X-Muxvia-CSRF", r7TestCSRF)
+		}
 	}
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
@@ -286,6 +375,9 @@ func doProtoRequest(t *testing.T, handler http.Handler, method, path string, inp
 		}
 	}
 }
+
+var r7TestCookies []*http.Cookie
+var r7TestCSRF string
 
 func createTestCSR(t *testing.T, subject pkix.Name, dnsNames []string, uris []*url.URL) []byte {
 	t.Helper()

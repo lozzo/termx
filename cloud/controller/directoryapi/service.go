@@ -44,7 +44,10 @@ type Config struct {
 	TicketSigningKeyID string
 	ChallengeTTL       time.Duration
 	ClientTicketTTL    time.Duration
-	Now                func() time.Time
+	Entitlement        interface {
+		EffectiveEntitlement(context.Context, string) (*cloudv1.EffectiveEntitlement, error)
+	}
+	Now func() time.Time
 }
 
 // Service 是 DirectoryService 的 application owner；challenge 只在当前 Controller 内存存活。
@@ -58,7 +61,7 @@ type Service struct {
 // NewService 拒绝缺失 identity store、runtime Directory 或独立票据签名密钥的装配。
 func NewService(config Config) (*Service, error) {
 	config.TicketSigningKeyID = strings.TrimSpace(config.TicketSigningKeyID)
-	if config.Store == nil || config.Directory == nil || config.Edges == nil || len(config.EdgeCACertificate) == 0 || len(config.TicketSigningKey) != ed25519.PrivateKeySize ||
+	if config.Store == nil || config.Directory == nil || config.Edges == nil || config.Entitlement == nil || len(config.EdgeCACertificate) == 0 || len(config.TicketSigningKey) != ed25519.PrivateKeySize ||
 		config.TicketSigningKeyID == "" || config.ChallengeTTL <= 0 || config.ClientTicketTTL <= 0 || config.ClientTicketTTL > 2*time.Minute {
 		return nil, errors.New("DirectoryService store, runtime directory, Edge state, signer, CA, and bounded TTLs are required")
 	}
@@ -124,11 +127,19 @@ func (service *Service) ResolveClientRoute(ctx context.Context, request *cloudv1
 	if err != nil || !edge.Enabled {
 		return nil, status.Error(codes.FailedPrecondition, "target Edge is unavailable")
 	}
+	entitlement, entitlementErr := service.config.Entitlement.EffectiveEntitlement(ctx, state.daemon.AccountID)
+	if entitlementErr != nil || entitlement.GetState() != cloudv1.EntitlementState_ENTITLEMENT_STATE_ACTIVE || !entitlement.GetCapability().GetManagedP2PEnabled() {
+		return nil, status.Error(codes.PermissionDenied, "account Cloud entitlement is unavailable")
+	}
 	now := service.now()
 	clientID := remoteauth.Fingerprint(ed25519.PublicKey(state.claims.GetClientPublicKey()))
+	routePolicy := cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_ONLY
+	if entitlement.GetCapability().GetRelayEnabled() && entitlement.GetRelayRemainingBytes() > 0 {
+		routePolicy = cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_OR_RELAY
+	}
 	claims := &cloudv1.ClientTicketClaims{
 		TicketId: uuid.NewString(), AccountId: state.daemon.AccountID, EdgeId: current.EdgeID, DaemonId: state.daemon.ID, ClientId: clientID,
-		ClientPublicKey: append([]byte(nil), state.claims.GetClientPublicKey()...), Product: state.claims.GetProduct(), RoutePolicy: cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_OR_RELAY,
+		ClientPublicKey: append([]byte(nil), state.claims.GetClientPublicKey()...), Product: state.claims.GetProduct(), RoutePolicy: routePolicy,
 		IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(now.Add(service.config.ClientTicketTTL)),
 	}
 	signed, err := ticket.SignClientTicket(service.config.TicketSigningKeyID, service.config.TicketSigningKey, claims)

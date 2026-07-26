@@ -6,6 +6,7 @@
 *.tsbuildinfo
 /clients/ui/public/muxvia-wasm/
 /node_modules/
+/cloud/web/node_modules/
 /private/archive/**/.build/
 Screenshot_*.jpg
 muxvia-debug-*.zip

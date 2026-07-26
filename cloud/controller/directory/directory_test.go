@@ -79,6 +79,58 @@ func TestControllerRestartStartsEmptyAndRebuildsFromEdgeSnapshot(t *testing.T) {
 	}
 }
 
+func TestDirectoryStreamsRuntimeInvalidationAndFencesCommandResult(t *testing.T) {
+	directoryState := newDirectory(t, 0)
+	events, cancel, err := directoryState.Watch(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	attach(t, directoryState, "connection-commands")
+	commit(t, directoryState, "connection-commands", &cloudv1.RuntimeSnapshot{Revision: 1, Agents: []*cloudv1.AgentPresence{testAgent("daemon-command", 3)}, Sessions: []*cloudv1.ClientSessionSummary{testSession("session-command", "daemon-command", 4)}})
+	select {
+	case event := <-events:
+		if event.GetResourceKind() != "edge" || event.GetOperation() != cloudv1.OperatorEventOperation_OPERATOR_EVENT_OPERATION_RESET || event.GetControllerInstanceId() != directoryState.InstanceID() {
+			t.Fatalf("snapshot SSE event = %+v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("snapshot did not publish SSE reset")
+	}
+	if _, _, err := directoryState.BeginCommand(context.Background(), "stale-correlation", "daemon-command", 2, true); !errors.Is(err, directory.ErrStaleConnection) {
+		t.Fatalf("stale generation command error = %v", err)
+	}
+	location, waiter, err := directoryState.BeginCommand(context.Background(), "correlation-1", "daemon-command", 3, true)
+	if err != nil || location.ConnectionID != "connection-commands" {
+		t.Fatalf("begin command location=%+v err=%v", location, err)
+	}
+	commandResult := &cloudv1.EdgeCommandResult{CorrelationId: "correlation-1", Code: cloudv1.CommandResultCode_COMMAND_RESULT_CODE_APPLIED, CompletedAt: timestamppb.Now()}
+	if err := directoryState.CompleteCommand(context.Background(), "other-connection", commandResult); !errors.Is(err, directory.ErrStaleConnection) {
+		t.Fatalf("wrong connection completed command: %v", err)
+	}
+	if err := directoryState.CompleteCommand(context.Background(), "connection-commands", commandResult); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case result := <-waiter:
+		if result.GetCode() != cloudv1.CommandResultCode_COMMAND_RESULT_CODE_APPLIED {
+			t.Fatalf("command result = %+v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("command result waiter did not complete")
+	}
+	if err := directoryState.ApplyDelta(context.Background(), "connection-commands", &cloudv1.RuntimeDelta{Revision: 2, Change: &cloudv1.RuntimeDelta_SessionRemoved{SessionRemoved: &cloudv1.ClientSessionRemoved{SessionId: "session-command", Generation: 4}}}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-events:
+		if event.GetResourceKind() != "session" || event.GetResourceId() != "session-command" || event.GetOperation() != cloudv1.OperatorEventOperation_OPERATOR_EVENT_OPERATION_DELETE {
+			t.Fatalf("delta SSE event = %+v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("delta did not publish SSE event")
+	}
+}
+
 func BenchmarkDirectory100kSnapshot(b *testing.B) {
 	snapshot := &cloudv1.RuntimeSnapshot{Revision: 1, Agents: make([]*cloudv1.AgentPresence, 0, 100_000)}
 	for index := 0; index < 100_000; index++ {

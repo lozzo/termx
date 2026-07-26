@@ -4,7 +4,8 @@
   "private": true,
   "workspaces": [
     "clients/ui",
-    "clients/mobile"
+    "clients/mobile",
+    "cloud/web"
   ],
   "devDependencies": {
     "esbuild": "0.28.1",
@@ -25,11 +26,13 @@
     "undici-types": "7.19.2"
   },
   "scripts": {
-    "proto": "npm run proto --workspace @muxvia/ui",
-    "test": "npm test --workspace @muxvia/ui && npm test --workspace @muxvia/mobile",
+    "proto": "npm run proto --workspace @muxvia/ui && npm run proto --workspace @muxvia/cloud-web",
+    "test": "npm test --workspace @muxvia/ui && npm test --workspace @muxvia/mobile && npm test --workspace @muxvia/cloud-web",
     "test:i18n": "node scripts/check-i18n.mjs",
-    "typecheck": "npm run typecheck --workspace @muxvia/ui",
+    "typecheck": "npm run typecheck --workspace @muxvia/ui && npm run build --workspace @muxvia/cloud-web",
     "build": "npm run build --workspace @muxvia/ui && npm run build --workspace @muxvia/mobile",
+    "build:cloud-web": "npm run build --workspace @muxvia/cloud-web",
+    "test:cloud-web": "npm test --workspace @muxvia/cloud-web",
     "cap:sync": "npm run cap:sync --workspace @muxvia/mobile",
     "cap:build": "npm run cap:build --workspace @muxvia/mobile"
   }

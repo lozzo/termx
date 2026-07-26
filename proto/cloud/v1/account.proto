@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package muxvia.cloud.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
+
+// AccountState 是账号持久状态；禁用后所有新的 Cloud 准入都必须拒绝。
+enum AccountState {
+  ACCOUNT_STATE_UNSPECIFIED = 0;
+  ACCOUNT_STATE_ACTIVE = 1;
+  ACCOUNT_STATE_DISABLED = 2;
+}
+
+// AccountRole 是 Controller RBAC 的稳定角色，不由浏览器自行推断权限。
+enum AccountRole {
+  ACCOUNT_ROLE_UNSPECIFIED = 0;
+  ACCOUNT_ROLE_USER = 1;
+  ACCOUNT_ROLE_OPERATOR = 2;
+  ACCOUNT_ROLE_ADMIN = 3;
+}
+
+// AccountProfile 是账号持久投影，不包含密码 verifier 或 session secret。
+message AccountProfile {
+  string account_id = 1;
+  string email = 2;
+  string display_name = 3;
+  AccountState state = 4;
+  uint64 revision = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+// AccountSessionCredential 只在创建或轮换 session 时返回原始 token。
+message AccountSessionCredential {
+  string session_id = 1;
+  bytes access_token = 2;
+  bytes refresh_token = 3;
+  google.protobuf.Timestamp access_expires_at = 4;
+  google.protobuf.Timestamp refresh_expires_at = 5;
+  bytes csrf_token = 6;
+}
+
+message RegisterAccountRequest {
+  string email = 1;
+  string password = 2;
+  string display_name = 3;
+}
+
+message RegisterAccountResponse {
+  AccountProfile account = 1;
+  AccountSessionCredential session = 2;
+}
+
+message LoginAccountRequest {
+  string login = 1;
+  string password = 2;
+}
+
+message LoginAccountResponse {
+  AccountProfile account = 1;
+  repeated AccountRole roles = 2;
+  AccountSessionCredential session = 3;
+}
+
+message RefreshAccountSessionRequest { bytes refresh_token = 1; }
+
+message RefreshAccountSessionResponse {
+  AccountProfile account = 1;
+  repeated AccountRole roles = 2;
+  AccountSessionCredential session = 3;
+}
+
+message LogoutAccountSessionRequest {
+  string session_id = 1;
+  bool all_sessions = 2;
+}
+
+message LogoutAccountSessionResponse {}
+
+message GetCurrentAccountRequest {}
+
+message GetCurrentAccountResponse {
+  AccountProfile account = 1;
+  repeated AccountRole roles = 2;
+  google.protobuf.Timestamp recent_auth_expires_at = 3;
+}
+
+message VerifyRecentAuthenticationRequest { string password = 1; }
+
+message VerifyRecentAuthenticationResponse {
+  google.protobuf.Timestamp expires_at = 1;
+}
+
+// AccountService 是账号、credential 和 Web session 的唯一公共应用 API。
+service AccountService {
+  rpc Register(RegisterAccountRequest) returns (RegisterAccountResponse);
+  rpc Login(LoginAccountRequest) returns (LoginAccountResponse);
+  rpc Refresh(RefreshAccountSessionRequest) returns (RefreshAccountSessionResponse);
+  rpc Logout(LogoutAccountSessionRequest) returns (LogoutAccountSessionResponse);
+  rpc GetCurrent(GetCurrentAccountRequest) returns (GetCurrentAccountResponse);
+  rpc VerifyRecentAuthentication(VerifyRecentAuthenticationRequest) returns (VerifyRecentAuthenticationResponse);
+}

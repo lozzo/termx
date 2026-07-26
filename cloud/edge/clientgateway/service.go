@@ -81,16 +81,25 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 	}
 	sessionID := helloEvent.GetConnectionId()
 	generation := helloEvent.GetHello().GetAttemptGeneration()
+	sessionContext, cancelSession := context.WithCancel(stream.Context())
+	defer cancelSession()
 	summary := &cloudv1.ClientSessionSummary{SessionId: sessionID, AccountId: claims.GetAccountId(), DaemonId: claims.GetDaemonId(), ClientId: claims.GetClientId(), Product: claims.GetProduct(), Generation: generation}
-	if err := service.config.Runtime.UpsertSession(stream.Context(), summary); err != nil {
+	if err := service.config.Runtime.UpsertSession(sessionContext, summary); err != nil {
 		return status.Errorf(codes.Aborted, "publish client session: %v", err)
+	}
+	if registry, ok := service.config.Runtime.(interface {
+		RegisterSessionCloser(context.Context, string, uint64, func()) error
+	}); ok {
+		if err := registry.RegisterSessionCloser(sessionContext, sessionID, generation, cancelSession); err != nil {
+			return status.Errorf(codes.Aborted, "register client session owner: %v", err)
+		}
 	}
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		_ = service.config.Runtime.RemoveSession(cleanup, sessionID, generation)
 	}()
-	if err := service.authorizeClient(stream.Context(), claims, sessionID); err != nil {
+	if err := service.authorizeClient(sessionContext, claims, sessionID); err != nil {
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
 	preference := helloEvent.GetHello().GetRelayPreference()
@@ -104,7 +113,7 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 		if claims.GetRoutePolicy() != cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_OR_RELAY || service.config.Relay == nil {
 			return status.Error(codes.FailedPrecondition, "Relay is not allowed for this Cloud attempt")
 		}
-		relay, err = service.config.Relay.RequestRelayLease(stream.Context(), &cloudv1.RelayLeaseRequest{
+		relay, err = service.config.Relay.RequestRelayLease(sessionContext, &cloudv1.RelayLeaseRequest{
 			CorrelationId: uuid.NewString(), SessionId: sessionID, AccountId: claims.GetAccountId(), DaemonId: claims.GetDaemonId(), ClientId: claims.GetClientId(), Preference: preference,
 		})
 		if err != nil {
@@ -114,7 +123,7 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 	if err := stream.Send(service.edgeSignal(sessionID, 1, &cloudv1.EdgeSignal_Ready{Ready: &cloudv1.ClientReady{SessionId: sessionID, Generation: generation, Relay: relay}})); err != nil {
 		return err
 	}
-	offerEvent, err := stream.Recv()
+	offerEvent, err := receiveClientSignal(sessionContext, stream)
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "receive ClientOffer: %v", err)
 	}
@@ -122,7 +131,7 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 	correlationID := uuid.NewString()
-	agentGeneration, response, err := service.config.Runtime.BeginAgentSignal(stream.Context(), correlationID, claims.GetDaemonId(), sessionID)
+	agentGeneration, response, err := service.config.Runtime.BeginAgentSignal(sessionContext, correlationID, claims.GetDaemonId(), sessionID)
 	if err != nil {
 		return status.Error(codes.FailedPrecondition, "target daemon is no longer online")
 	}
@@ -135,14 +144,14 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 	command := &cloudv1.EdgeCommand{Payload: &cloudv1.EdgeCommand_Offer{Offer: &cloudv1.AgentOffer{
 		CorrelationId: correlationID, SessionId: sessionID, AgentGeneration: agentGeneration, ClientPublicKey: append([]byte(nil), claims.GetClientPublicKey()...), OfferSdp: offer.GetOfferSdp(), Candidates: cloneCandidates(offer.GetCandidates()), Relay: cloneRelay(relay),
 	}}}
-	if err := service.config.Runtime.SendAgentCommand(stream.Context(), claims.GetDaemonId(), agentGeneration, command); err != nil {
+	if err := service.config.Runtime.SendAgentCommand(sessionContext, claims.GetDaemonId(), agentGeneration, command); err != nil {
 		return status.Error(codes.FailedPrecondition, "target daemon signaling stream changed")
 	}
 	timer := time.NewTimer(service.config.SignalTimeout)
 	defer timer.Stop()
 	select {
-	case <-stream.Context().Done():
-		return stream.Context().Err()
+	case <-sessionContext.Done():
+		return context.Cause(sessionContext)
 	case <-timer.C:
 		return status.Error(codes.DeadlineExceeded, "daemon signaling answer timed out")
 	case result, ok := <-response:
@@ -160,12 +169,27 @@ func (service *Service) Connect(stream cloudv1.ClientGateway_ConnectServer) erro
 		}
 		// ClientGateway 只观察当前 P2P session 生命周期，不运输任何业务数据。
 		// 客户端关闭 ReadyPeerSession 后关闭发送侧，Edge 才删除内存摘要并向 Controller 发布 delta。
-		if _, err := stream.Recv(); errors.Is(err, io.EOF) {
+		if _, err := receiveClientSignal(sessionContext, stream); errors.Is(err, io.EOF) {
 			return nil
 		} else if err != nil {
 			return err
 		}
 		return status.Error(codes.InvalidArgument, "ClientGateway does not accept messages after signaling")
+	}
+}
+
+func receiveClientSignal(ctx context.Context, stream cloudv1.ClientGateway_ConnectServer) (*cloudv1.ClientSignal, error) {
+	type result struct {
+		signal *cloudv1.ClientSignal
+		err    error
+	}
+	reply := make(chan result, 1)
+	go func() { signal, err := stream.Recv(); reply <- result{signal: signal, err: err} }()
+	select {
+	case <-ctx.Done():
+		return nil, context.Cause(ctx)
+	case value := <-reply:
+		return value.signal, value.err
 	}
 }
 

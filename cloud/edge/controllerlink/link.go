@@ -43,6 +43,8 @@ type Config struct {
 	WriterQueueSize      int
 	OpenRuntimeFeed      func(context.Context) (*RuntimeFeed, error)
 	ApplyDesiredConfig   func(context.Context, *cloudv1.SignedEdgeDesiredConfig) (uint64, error)
+	CloseDaemon          func(context.Context, string, uint64) error
+	CloseSession         func(context.Context, string, uint64) error
 	Capabilities         []cloudv1.EdgeCapability
 }
 
@@ -315,6 +317,28 @@ func (session *Session) run(ctx context.Context, config Config, controllerID, co
 					session.finish(errors.New("unexpected or duplicate UsageAck"))
 					return
 				}
+			case *cloudv1.ControllerCommand_CloseDaemon:
+				result := executeRuntimeCommand(ctx, payload.CloseDaemon.GetCommandId(), payload.CloseDaemon.GetCorrelationId(), payload.CloseDaemon.GetDeadline(), func(commandContext context.Context) error {
+					if config.CloseDaemon == nil {
+						return errors.New("daemon close handler is unavailable")
+					}
+					return config.CloseDaemon(commandContext, payload.CloseDaemon.GetDaemonId(), payload.CloseDaemon.GetGeneration())
+				})
+				if err := queueEvent(ctx, session.outbound, &cloudv1.EdgeEvent_CommandResult{CommandResult: result}); err != nil {
+					session.finish(err)
+					return
+				}
+			case *cloudv1.ControllerCommand_CloseSession:
+				result := executeRuntimeCommand(ctx, payload.CloseSession.GetCommandId(), payload.CloseSession.GetCorrelationId(), payload.CloseSession.GetDeadline(), func(commandContext context.Context) error {
+					if config.CloseSession == nil {
+						return errors.New("session close handler is unavailable")
+					}
+					return config.CloseSession(commandContext, payload.CloseSession.GetSessionId(), payload.CloseSession.GetGeneration())
+				})
+				if err := queueEvent(ctx, session.outbound, &cloudv1.EdgeEvent_CommandResult{CommandResult: result}); err != nil {
+					session.finish(err)
+					return
+				}
 			default:
 				session.finish(fmt.Errorf("unsupported Controller command payload %T", command.GetPayload()))
 				return
@@ -336,6 +360,31 @@ func (session *Session) run(ctx context.Context, config Config, controllerID, co
 			}
 		}
 	}
+}
+
+func executeRuntimeCommand(parent context.Context, commandID, correlationID string, deadline *timestamppb.Timestamp, execute func(context.Context) error) *cloudv1.EdgeCommandResult {
+	result := &cloudv1.EdgeCommandResult{CommandId: commandID, CorrelationId: correlationID, CompletedAt: timestamppb.Now()}
+	if commandID == "" || correlationID == "" || deadline == nil || deadline.CheckValid() != nil || !time.Now().UTC().Before(deadline.AsTime()) {
+		result.Code = cloudv1.CommandResultCode_COMMAND_RESULT_CODE_REJECTED
+		result.Message = "command deadline is invalid or expired"
+		return result
+	}
+	ctx, cancel := context.WithDeadline(parent, deadline.AsTime())
+	defer cancel()
+	err := execute(ctx)
+	result.CompletedAt = timestamppb.Now()
+	if err == nil {
+		result.Code = cloudv1.CommandResultCode_COMMAND_RESULT_CODE_APPLIED
+		return result
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		result.Code = cloudv1.CommandResultCode_COMMAND_RESULT_CODE_REJECTED
+		result.Message = "command deadline exceeded"
+		return result
+	}
+	result.Code = cloudv1.CommandResultCode_COMMAND_RESULT_CODE_STALE
+	result.Message = "target generation is no longer current"
+	return result
 }
 
 func (session *Session) resolveRelayLease(decision *cloudv1.RelayLeaseDecision) {
@@ -475,6 +524,8 @@ func edgeEvent(config Config, connectionID string, sequence uint64, payload any)
 	case *cloudv1.EdgeEvent_RelayLeaseRequest:
 		event.Payload = typed
 	case *cloudv1.EdgeEvent_UsageBatch:
+		event.Payload = typed
+	case *cloudv1.EdgeEvent_CommandResult:
 		event.Payload = typed
 	default:
 		panic("unsupported EdgeEvent payload")

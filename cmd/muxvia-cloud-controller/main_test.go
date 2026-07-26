@@ -16,12 +16,12 @@ func TestParseOptionsSupportsHelpAndRejectsPositionalArguments(t *testing.T) {
 	}
 }
 
-func TestParseOptionsAllowsBothRelayTransportsForBothPeers(t *testing.T) {
+func TestParseOptionsKeepsOnlyTechnicalRelayLeaseTTL(t *testing.T) {
 	config, err := parseOptions(nil, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.relayMaxAllocations < 4 {
-		t.Fatalf("relay max allocations = %d, want at least 4", config.relayMaxAllocations)
+	if config.relayLeaseTTL <= 0 {
+		t.Fatalf("relay lease TTL = %s, want positive", config.relayLeaseTTL)
 	}
 }

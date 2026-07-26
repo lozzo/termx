@@ -132,6 +132,78 @@ func TestEdgeControllerHelloWelcomeOverMutualTLS(t *testing.T) {
 	}
 }
 
+func TestControllerDisconnectCommandsReachExactEdgeRuntimeGeneration(t *testing.T) {
+	certificates := newCertificateFiles(t, testEdgeID)
+	controllerRuntime := startController(t, certificates)
+	tlsConfig, err := securetransport.NewClientTLSConfig(securetransport.ClientOptions{
+		CertificateFile: certificates.edgeIdentityCert, PrivateKeyFile: certificates.edgeIdentityKey,
+		RootCAFile: certificates.rootCA, ServerName: testControllerServer,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := edgeruntime.NewState(edgeruntime.StateConfig{MailboxSize: 64, DeltaBuffer: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(state.Close)
+	daemonClosed := make(chan struct{}, 1)
+	agent := &cloudv1.AgentPresence{DaemonId: "daemon-command-1", AccountId: "account-command-1", BootId: "daemon-boot-command", ConnectionId: "agent-command", TicketId: "ticket-command", TicketIssuedAt: timestamppb.Now()}
+	generation, err := state.AttachAgent(context.Background(), agent, func(*cloudv1.EdgeCommand) bool { return true }, func() { daemonClosed <- struct{}{} })
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionClosed := make(chan struct{}, 1)
+	sessionSummary := &cloudv1.ClientSessionSummary{SessionId: "session-command-1", AccountId: agent.GetAccountId(), DaemonId: agent.GetDaemonId(), ClientId: "client-command", Product: cloudv1.ClientProduct_CLIENT_PRODUCT_ANDROID, Generation: 1}
+	if err := state.UpsertSession(context.Background(), sessionSummary); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.RegisterSessionCloser(context.Background(), sessionSummary.GetSessionId(), sessionSummary.GetGeneration(), func() { sessionClosed <- struct{}{} }); err != nil {
+		t.Fatal(err)
+	}
+	session, err := controllerlink.Open(context.Background(), controllerlink.Config{
+		ControllerAddress: controllerRuntime.GRPCAddress(), TLSConfig: tlsConfig, EdgeID: testEdgeID, BootID: testEdgeBootID, SoftwareVersion: testEdgeSoftwareVersion,
+		OpenRuntimeFeed: func(ctx context.Context) (*controllerlink.RuntimeFeed, error) {
+			feed, openErr := state.OpenFeed(ctx)
+			if openErr != nil {
+				return nil, openErr
+			}
+			return &controllerlink.RuntimeFeed{Snapshot: feed.Snapshot, Deltas: feed.Deltas, Close: feed.Close}, nil
+		},
+		CloseDaemon: state.CloseAgentConnection, CloseSession: state.CloseSession,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	readyCtx, cancelReady := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelReady()
+	if err := session.WaitReady(readyCtx); err != nil {
+		t.Fatal(err)
+	}
+	commandCtx, cancelCommand := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelCommand()
+	if result := controllerRuntime.control.DisconnectDaemon(commandCtx, agent.GetDaemonId(), generation, "integration command"); result != cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_APPLIED {
+		t.Fatalf("disconnect daemon result = %s", result)
+	}
+	select {
+	case <-daemonClosed:
+	case <-time.After(time.Second):
+		t.Fatal("daemon owner was not closed")
+	}
+	if result := controllerRuntime.control.DisconnectSession(commandCtx, sessionSummary.GetSessionId(), sessionSummary.GetGeneration(), "integration command"); result != cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_APPLIED {
+		t.Fatalf("disconnect session result = %s", result)
+	}
+	select {
+	case <-sessionClosed:
+	case <-time.After(time.Second):
+		t.Fatal("session owner was not closed")
+	}
+	if result := controllerRuntime.control.DisconnectSession(commandCtx, sessionSummary.GetSessionId(), sessionSummary.GetGeneration()+1, "stale command"); result != cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_STALE {
+		t.Fatalf("stale session command result = %s", result)
+	}
+}
+
 func TestEdgeAppliesSignedDesiredConfigBeforeReady(t *testing.T) {
 	certificates := newCertificateFiles(t, testEdgeID)
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
@@ -273,6 +345,7 @@ func TestControllerGracefullyShutsDownWithActiveEdgeStream(t *testing.T) {
 type controllerHarness struct {
 	*controllerruntime.Runtime
 	directory *directory.Directory
+	control   *control.Service
 }
 
 func startController(t *testing.T, certificates certificateFiles) *controllerHarness {
@@ -315,7 +388,7 @@ func startControllerWithDesired(t *testing.T, certificates certificateFiles, des
 		}
 		directoryState.Close()
 	})
-	return &controllerHarness{Runtime: runtime, directory: directoryState}
+	return &controllerHarness{Runtime: runtime, directory: directoryState, control: service}
 }
 
 func emptyRuntimeFeed(context.Context) (*controllerlink.RuntimeFeed, error) {

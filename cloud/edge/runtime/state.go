@@ -62,6 +62,7 @@ type stateData struct {
 	agentWriters       map[string]agentWriter
 	agentNextGen       map[string]uint64
 	sessions           map[string]*cloudv1.ClientSessionSummary
+	sessionClosers     map[string]sessionCloser
 	pendingSignals     map[string]pendingSignal
 	relayLeases        map[string]relayLease
 	relayReservations  map[string]relayReservation
@@ -86,6 +87,11 @@ type pendingSignal struct {
 type agentWriter struct {
 	generation uint64
 	send       func(*cloudv1.EdgeCommand) bool
+	close      func()
+}
+
+type sessionCloser struct {
+	generation uint64
 	close      func()
 }
 
@@ -218,6 +224,37 @@ func (state *State) SendAgentCommand(ctx context.Context, daemonID string, gener
 	}
 }
 
+// CloseAgentConnection 解析精确 generation 后在 actor 外关闭 AgentGateway writer。
+func (state *State) CloseAgentConnection(ctx context.Context, daemonID string, generation uint64) error {
+	type result struct {
+		close func()
+		err   error
+	}
+	reply := make(chan result, 1)
+	if err := state.submit(ctx, func(data *stateData) {
+		writer := data.agentWriters[daemonID]
+		if writer.generation != generation || writer.close == nil {
+			reply <- result{err: ErrStaleGeneration}
+			return
+		}
+		reply <- result{close: writer.close}
+	}); err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-state.done:
+		return ErrStateClosed
+	case value := <-reply:
+		if value.err != nil {
+			return value.err
+		}
+		value.close()
+		return nil
+	}
+}
+
 // BeginAgentSignal 在 actor 内锁定 daemon 当前 generation 并登记有界一次性 correlation。
 // 返回后网络发送与等待都必须在 actor 外执行，避免阻塞在线状态 owner。
 func (state *State) BeginAgentSignal(ctx context.Context, correlationID, daemonID, sessionID string) (uint64, <-chan *cloudv1.AgentEvent, error) {
@@ -337,6 +374,53 @@ func (state *State) UpsertSession(ctx context.Context, session *cloudv1.ClientSe
 	})
 }
 
+// RegisterSessionCloser 把 ClientGateway generation 的取消函数登记到同一 actor。
+func (state *State) RegisterSessionCloser(ctx context.Context, sessionID string, generation uint64, closeSession func()) error {
+	if closeSession == nil {
+		return errors.New("session closer is required")
+	}
+	return state.mutate(ctx, func(data *stateData) error {
+		current := data.sessions[sessionID]
+		if current == nil || current.GetGeneration() != generation {
+			return ErrStaleGeneration
+		}
+		data.sessionClosers[sessionID] = sessionCloser{generation: generation, close: closeSession}
+		return nil
+	})
+}
+
+// CloseSession 解析精确 generation 后在 actor 外取消 ClientGateway stream。
+func (state *State) CloseSession(ctx context.Context, sessionID string, generation uint64) error {
+	type result struct {
+		close func()
+		err   error
+	}
+	reply := make(chan result, 1)
+	if err := state.submit(ctx, func(data *stateData) {
+		current := data.sessions[sessionID]
+		closer := data.sessionClosers[sessionID]
+		if current == nil || current.GetGeneration() != generation || closer.generation != generation || closer.close == nil {
+			reply <- result{err: ErrStaleGeneration}
+			return
+		}
+		reply <- result{close: closer.close}
+	}); err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-state.done:
+		return ErrStateClosed
+	case value := <-reply:
+		if value.err != nil {
+			return value.err
+		}
+		value.close()
+		return nil
+	}
+}
+
 // RemoveSession 仅删除精确 generation 的客户端信令会话。
 func (state *State) RemoveSession(ctx context.Context, sessionID string, generation uint64) error {
 	return state.mutate(ctx, func(data *stateData) error {
@@ -345,6 +429,7 @@ func (state *State) RemoveSession(ctx context.Context, sessionID string, generat
 			return ErrStaleGeneration
 		}
 		delete(data.sessions, sessionID)
+		delete(data.sessionClosers, sessionID)
 		data.revision++
 		data.publish(&cloudv1.RuntimeDelta{Revision: data.revision, Change: &cloudv1.RuntimeDelta_SessionRemoved{SessionRemoved: &cloudv1.ClientSessionRemoved{SessionId: sessionID, Generation: generation}}})
 		return nil
@@ -419,6 +504,11 @@ func (state *State) Close() {
 				if writer.close != nil {
 					go writer.close()
 				}
+				for _, session := range data.sessionClosers {
+					if session.close != nil {
+						go session.close()
+					}
+				}
 			}
 			for id, subscriber := range data.subscribers {
 				close(subscriber)
@@ -435,7 +525,7 @@ func (state *State) Close() {
 
 func (state *State) run(deltaBuffer int) {
 	data := &stateData{
-		agents: make(map[string]*cloudv1.AgentPresence), agentWriters: make(map[string]agentWriter), agentNextGen: make(map[string]uint64), sessions: make(map[string]*cloudv1.ClientSessionSummary), pendingSignals: make(map[string]pendingSignal),
+		agents: make(map[string]*cloudv1.AgentPresence), agentWriters: make(map[string]agentWriter), agentNextGen: make(map[string]uint64), sessions: make(map[string]*cloudv1.ClientSessionSummary), sessionClosers: make(map[string]sessionCloser), pendingSignals: make(map[string]pendingSignal),
 		relayLeases: make(map[string]relayLease), relayReservations: make(map[string]relayReservation), allocations: make(map[string]relayAllocation), allocationNextGen: make(map[string]uint64),
 		accountAllocations: make(map[string]uint32), leaseAllocations: make(map[string]uint32), sessionAllocations: make(map[string]uint32),
 		accountRates: make(map[string]*policy.RateLimiter), sessionRates: make(map[string]*policy.RateLimiter),

@@ -22,6 +22,8 @@ func TestCloudV1DescriptorBaseline(t *testing.T) {
 	}
 	current := &descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{
 		protodesc.ToFileDescriptorProto(File_cloud_v1_common_proto),
+		protodesc.ToFileDescriptorProto(File_cloud_v1_account_proto),
+		protodesc.ToFileDescriptorProto(File_cloud_v1_commerce_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_edge_config_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_usage_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_runtime_proto),
@@ -31,6 +33,7 @@ func TestCloudV1DescriptorBaseline(t *testing.T) {
 		protodesc.ToFileDescriptorProto(File_cloud_v1_directory_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_client_gateway_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_agent_gateway_proto),
+		protodesc.ToFileDescriptorProto(File_cloud_v1_operator_proto),
 	}}
 	if !proto.Equal(baseline, current) {
 		t.Fatal("Cloud v1 descriptor differs from testdata/cloud-v1.pb")
@@ -68,10 +71,10 @@ func TestEdgeControlIsBidirectionalStreaming(t *testing.T) {
 		t.Fatalf("EdgeControl.Connect must be bidirectional streaming: %#v", method)
 	}
 	assertEnvelopeFields(t, (&EdgeEvent{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26, "relay_lease_request": 27, "usage_batch": 28,
+		"hello": 20, "snapshot_begin": 21, "snapshot_chunk": 22, "snapshot_end": 23, "runtime_delta": 24, "heartbeat": 25, "config_applied": 26, "relay_lease_request": 27, "usage_batch": 28, "command_result": 29,
 	})
 	assertEnvelopeFields(t, (&ControllerCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "relay_lease_decision": 24, "usage_ack": 25,
+		"welcome": 20, "snapshot_accepted": 21, "resync_required": 22, "desired_config": 23, "relay_lease_decision": 24, "usage_ack": 25, "close_daemon": 26, "close_session": 27,
 	})
 }
 

@@ -49,10 +49,17 @@ type Config struct {
 // Service 只拥有 EdgeControl admission 和 wire 状态机；实时拓扑全部提交给 Directory actor。
 type Service struct {
 	cloudv1.UnimplementedEdgeControlServer
-	config    Config
-	draining  atomic.Bool
-	drain     chan struct{}
-	drainOnce sync.Once
+	config        Config
+	draining      atomic.Bool
+	drain         chan struct{}
+	drainOnce     sync.Once
+	connectionsMu sync.RWMutex
+	connections   map[string]chan externalCommand
+}
+
+type externalCommand struct {
+	payload any
+	result  chan error
 }
 
 // NewService 校验 Controller 身份、心跳和 Directory，失败时不创建部分可用 service。
@@ -72,7 +79,7 @@ func NewService(config Config) (*Service, error) {
 			return nil, errors.New("R6 Relay policy, usage store, signer, and bounded lease TTL must be configured together")
 		}
 	}
-	return &Service{config: config, drain: make(chan struct{})}, nil
+	return &Service{config: config, drain: make(chan struct{}), connections: make(map[string]chan externalCommand)}, nil
 }
 
 // BeginShutdown 拒绝新控制流并通知现有 Connect handler 主动结束。
@@ -131,6 +138,15 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 	defer service.config.Directory.Detach(event.GetConnectionId())
 	bootID := event.GetBootId()
 	connectionID := event.GetConnectionId()
+	external := make(chan externalCommand, 64)
+	service.connectionsMu.Lock()
+	service.connections[connectionID] = external
+	service.connectionsMu.Unlock()
+	defer func() {
+		service.connectionsMu.Lock()
+		delete(service.connections, connectionID)
+		service.connectionsMu.Unlock()
+	}()
 
 	commandSeq := uint64(1)
 	if err := send(service.command(connectionID, commandSeq, &cloudv1.ControllerCommand_Welcome{Welcome: &cloudv1.EdgeWelcome{
@@ -150,9 +166,37 @@ func (service *Service) Connect(stream cloudv1.EdgeControl_ConnectServer) error 
 			return status.Errorf(codes.Unavailable, "send Edge desired config: %v", err)
 		}
 	}
+	inbound := make(chan receiveResult, 1)
+	go func() {
+		for {
+			received, receiveErr := stream.Recv()
+			select {
+			case inbound <- receiveResult{event: received, err: receiveErr}:
+			case <-stream.Context().Done():
+				return
+			}
+			if receiveErr != nil {
+				return
+			}
+		}
+	}()
 	expectedEventSeq := uint64(2)
 	for {
-		event, err = service.receive(stream, writerErrors)
+		select {
+		case <-service.drain:
+			return status.Error(codes.Unavailable, "Controller is draining")
+		case <-stream.Context().Done():
+			return context.Cause(stream.Context())
+		case err = <-writerErrors:
+			return status.Errorf(codes.Unavailable, "send Controller command: %v", err)
+		case request := <-external:
+			commandSeq++
+			sendErr := send(service.command(connectionID, commandSeq, request.payload))
+			request.result <- sendErr
+			continue
+		case received := <-inbound:
+			event, err = received.event, received.err
+		}
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
@@ -227,6 +271,8 @@ func (service *Service) applyEvent(ctx context.Context, event *cloudv1.EdgeEvent
 			return nil, err
 		}
 		return &cloudv1.ControllerCommand_UsageAck{UsageAck: &cloudv1.UsageAck{EventIds: acknowledged}}, nil
+	case *cloudv1.EdgeEvent_CommandResult:
+		return nil, service.config.Directory.CompleteCommand(ctx, event.GetConnectionId(), payload.CommandResult)
 	default:
 		return nil, errors.New("EdgeHello is only valid as the first EdgeControl payload")
 	}
@@ -247,10 +293,92 @@ func (service *Service) command(connectionID string, sequence uint64, payload an
 		command.Payload = typed
 	case *cloudv1.ControllerCommand_UsageAck:
 		command.Payload = typed
+	case *cloudv1.ControllerCommand_CloseDaemon:
+		command.Payload = typed
+	case *cloudv1.ControllerCommand_CloseSession:
+		command.Payload = typed
 	default:
 		panic("unsupported ControllerCommand payload")
 	}
 	return command
+}
+
+// DisconnectDaemon 发送精确 generation 实时命令并等待 Edge 结果；命令不写数据库。
+func (service *Service) DisconnectDaemon(ctx context.Context, daemonID string, generation uint64, reason string) cloudv1.RuntimeCommandResult {
+	commandID, correlationID := uuid.NewString(), uuid.NewString()
+	location, waiter, err := service.config.Directory.BeginCommand(ctx, correlationID, daemonID, generation, true)
+	if err != nil {
+		return cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_STALE
+	}
+	defer service.config.Directory.CancelCommand(correlationID)
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().UTC().Add(10 * time.Second)
+	}
+	payload := &cloudv1.ControllerCommand_CloseDaemon{CloseDaemon: &cloudv1.CloseDaemonConnection{CommandId: commandID, CorrelationId: correlationID, Deadline: timestamppb.New(deadline), DaemonId: daemonID, Generation: generation, Reason: reason}}
+	if err := service.sendExternal(ctx, location.ConnectionID, payload); err != nil {
+		return cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_UNAVAILABLE
+	}
+	return waitRuntimeCommand(ctx, waiter)
+}
+
+// DisconnectSession 发送精确 generation 客户端断开命令并等待 Edge 结果。
+func (service *Service) DisconnectSession(ctx context.Context, sessionID string, generation uint64, reason string) cloudv1.RuntimeCommandResult {
+	commandID, correlationID := uuid.NewString(), uuid.NewString()
+	location, waiter, err := service.config.Directory.BeginCommand(ctx, correlationID, sessionID, generation, false)
+	if err != nil {
+		return cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_STALE
+	}
+	defer service.config.Directory.CancelCommand(correlationID)
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().UTC().Add(10 * time.Second)
+	}
+	payload := &cloudv1.ControllerCommand_CloseSession{CloseSession: &cloudv1.CloseClientSession{CommandId: commandID, CorrelationId: correlationID, Deadline: timestamppb.New(deadline), SessionId: sessionID, Generation: generation, Reason: reason}}
+	if err := service.sendExternal(ctx, location.ConnectionID, payload); err != nil {
+		return cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_UNAVAILABLE
+	}
+	return waitRuntimeCommand(ctx, waiter)
+}
+
+func (service *Service) sendExternal(ctx context.Context, connectionID string, payload any) error {
+	service.connectionsMu.RLock()
+	outbound := service.connections[connectionID]
+	service.connectionsMu.RUnlock()
+	if outbound == nil {
+		return directory.ErrStaleConnection
+	}
+	request := externalCommand{payload: payload, result: make(chan error, 1)}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case outbound <- request:
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-request.result:
+		return err
+	}
+}
+
+func waitRuntimeCommand(ctx context.Context, waiter <-chan *cloudv1.EdgeCommandResult) cloudv1.RuntimeCommandResult {
+	select {
+	case <-ctx.Done():
+		return cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_TIMEOUT
+	case result, ok := <-waiter:
+		if !ok || result == nil {
+			return cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_UNAVAILABLE
+		}
+		switch result.GetCode() {
+		case cloudv1.CommandResultCode_COMMAND_RESULT_CODE_APPLIED:
+			return cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_APPLIED
+		case cloudv1.CommandResultCode_COMMAND_RESULT_CODE_STALE:
+			return cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_STALE
+		default:
+			return cloudv1.RuntimeCommandResult_RUNTIME_COMMAND_RESULT_REJECTED
+		}
+	}
 }
 
 func (service *Service) issueRelayLease(ctx context.Context, event *cloudv1.EdgeEvent, request *cloudv1.RelayLeaseRequest) (*cloudv1.RelayLeaseDecision, error) {
