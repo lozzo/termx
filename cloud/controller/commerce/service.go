@@ -202,6 +202,12 @@ func (service *Service) CompleteDevelopmentPayment(ctx context.Context, request 
 	if order == nil || attempt == nil || order.GetProvider() != "development" || attempt.GetProvider() != "development" {
 		return nil, account.ErrUnauthenticated
 	}
+	// 已结算状态是 Development 支付重试的持久真值；不能用新的 occurred_at 重建同一 provider event。
+	if order.GetStatus() == cloudv1.OrderStatus_ORDER_STATUS_PAID && attempt.GetStatus() == cloudv1.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_SUCCEEDED {
+		return &cloudv1.ApplyPaymentEventResponse{
+			Order: order, PaymentAttempt: attempt, Subscription: aggregate.GetSubscription(), Entitlement: aggregate.GetEntitlement(), Duplicate: true,
+		}, nil
+	}
 	now := service.now().UTC()
 	event := &cloudv1.ApplyPaymentEventRequest{
 		Provider: "development", ProviderEventId: fmt.Sprintf("development:%s:succeeded", attempt.GetPaymentAttemptId()),

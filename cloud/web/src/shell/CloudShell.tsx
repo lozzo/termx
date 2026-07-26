@@ -90,9 +90,9 @@ export function CloudShell() {
       <header className="topbar">
         <IconButton className="menu-button" label="打开导航" onClick={() => setDrawer(true)}><Menu size={20} /></IconButton>
         <div className="module-title"><span>{location.pathname.startsWith('/app/admin') ? '运营管理' : '我的 Cloud'}</span><strong>{title}</strong></div>
-        <div className="topbar-account"><NavLink to="/app/security"><span>{current.data.account.displayName}</span><small>{current.data.account.email}</small></NavLink><IconButton label="退出登录" onClick={() => logout.mutate()} disabled={logout.isPending}><LogOut size={18} /></IconButton></div>
+        <div className="topbar-account"><NavLink to="/app/security"><b aria-hidden="true">{current.data.account.displayName.trim().slice(0, 1).toUpperCase()}</b><span><strong>{current.data.account.displayName}</strong><small>{isOperator ? '管理员 · ' : ''}{current.data.account.email}</small></span></NavLink><IconButton label="退出登录" onClick={() => logout.mutate()} disabled={logout.isPending}><LogOut size={18} /></IconButton></div>
       </header>
-      <main className="content" id="main-content" tabIndex={-1}><Outlet context={{ current: current.data, isOperator } satisfies ShellContext} /></main>
+      <main className={`content ${location.pathname.startsWith('/app/admin') ? 'content-admin' : 'content-user'}`} id="main-content" tabIndex={-1}><Outlet context={{ current: current.data, isOperator } satisfies ShellContext} /></main>
       <nav className="mobile-bottom-nav" aria-label="手机主导航">{userNavigation.filter((item) => item.to !== '/app/orders').map(({ to, label, icon: Icon }) => <NavLink key={to} to={to}><Icon size={20} /><span>{label}</span></NavLink>)}</nav>
     </div>
   </div>

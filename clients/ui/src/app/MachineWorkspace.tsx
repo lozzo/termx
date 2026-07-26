@@ -223,6 +223,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const activeTerminal = terminals.find((terminal) => terminal.terminalId === activeTerminalId)
   const splitTerminal = terminals.find((terminal) => terminal.terminalId === splitTerminalId)
   const activeToolTerminal = activeTerminalSlot === 1 && splitTerminal ? splitTerminal : activeTerminal
+  // connectedSession 是 React 投影，不是 generation 真值。底层 Go session 已失效时，
+  // Terminal/FileManager 必须等待新 lease，不能先挂载旧资源再由 effect 事后清理。
+  const renderSession = connectedSession && isProtoSessionAlive(connectedSession) ? connectedSession : null
   const selectedTerminal = terminals.find((terminal) => terminal.terminalId === selectedTerminalId)
   const activeTerminalTitle = activeTerminal?.title || activeTerminal?.command || activeTerminalId || t('terminal.defaultTitle')
   const splitTerminalTitle = splitTerminal?.title || splitTerminal?.command || splitTerminalId || t('terminal.defaultTitle')
@@ -885,7 +888,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       if (cancelled) return
       setError(null)
       setConnectedSession(session)
-      if (page === 'terminal' && activeTerminalId) {
+      if (page === 'terminal-list') {
+        // 列表页重连只替换 session generation，不会产生 terminal inventory event；
+        // 成功后必须通过现有 API 重新读取 daemon truth，不能继续展示旧缓存的“0 个”。
+        void refreshTerminals()
+      } else if (page === 'terminal' && activeTerminalId) {
         reattachActiveTerminals(session)
       }
       updateFromConnectionState({
@@ -912,15 +919,15 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     return () => {
       cancelled = true
     }
-  }, [activeTerminalId, ensureMachineSession, forceRelayConnection, handleConnectionAuthFailure, machine?.machineId, manualReconnectNonce, page, reattachActiveTerminals, requireVerification, updateConnectionStatus, updateFromConnectionState])
+  }, [activeTerminalId, ensureMachineSession, forceRelayConnection, handleConnectionAuthFailure, machine?.machineId, manualReconnectNonce, page, reattachActiveTerminals, refreshTerminals, requireVerification, updateConnectionStatus, updateFromConnectionState])
 
   useEffect(() => {
     const handleResume = () => {
       resetKeyboardLayout()
       if (page === 'terminal-list') {
-        // 网络 generation 更换时 terminal list 也必须重新取得 Go-owned session；没有已打开 terminal
-        // 不代表 workspace 可以继续展示旧 inventory projection。
-        void refreshTerminals()
+        // terminal list 也承载文件管理器。generation 更换后必须先让既有重连状态机取得新的
+        // workspace session lease，再从 daemon 刷新 inventory；只刷新列表会让文件页永久等待旧 lease。
+        setManualReconnectNonce((value) => value + 1)
         return
       }
       if (page !== 'terminal') return
@@ -941,7 +948,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       document.removeEventListener('muxvia:resume', handleResume)
       document.removeEventListener('muxvia:binding-closed', handleResume)
     }
-  }, [activeTerminalId, connectedSession, page, reattachActiveTerminals, refreshTerminals, resetKeyboardLayout, splitTerminalId])
+  }, [activeTerminalId, connectedSession, page, reattachActiveTerminals, resetKeyboardLayout, splitTerminalId])
 
   const openTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (requireVerification) {
@@ -2450,12 +2457,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 activeTerminalSlotRef.current = 0
               }}
             >
-              {activeTerminalId && connectedSession && connectedTerminalId === activeTerminalId ? (
+              {activeTerminalId && renderSession && connectedTerminalId === activeTerminalId ? (
                 <Terminal
                   ref={terminalRef}
                   machineId={machine.machineId}
                   terminalId={activeTerminalId}
-                  session={connectedSession}
+                  session={renderSession}
                   className="absolute inset-0 outline-none"
                   modifierState={modifierState}
                   onModifierStateChange={setModifierState}
@@ -2473,7 +2480,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   {showMachineNetworkOverlay ? null : activeTerminalId && connectingTerminalId === activeTerminalId ? (displayedConnectionStatus ?? t('workspace.connectingTerminal')) : t('terminal.noActive')}
                 </div>
               )}
-              {activeTerminalId && connectedSession && connectedTerminalId === activeTerminalId && activeTerminalResizeLocked ? (
+              {activeTerminalId && renderSession && connectedTerminalId === activeTerminalId && activeTerminalResizeLocked ? (
                 <button
                   type="button"
                   aria-label={t('workspace.unlockResize')}
@@ -2498,12 +2505,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   activeTerminalSlotRef.current = 1
                 }}
               >
-                {connectedSession ? (
+                {renderSession ? (
                   <Terminal
                     ref={splitTerminalRef}
                     machineId={machine.machineId}
                     terminalId={splitTerminalId}
-                    session={connectedSession}
+                    session={renderSession}
                     className="absolute inset-0 outline-none"
                     modifierState={modifierState}
                     onModifierStateChange={setModifierState}
@@ -2634,12 +2641,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             <X className="h-5 w-5" />
           </button>
         </div>
-        {connectedSession ? (
+        {renderSession ? (
           <FileManager
             key={fileContextKey}
             machineId={machine.machineId}
             terminalId={fileTerminalId ?? undefined}
-            session={connectedSession}
+            session={renderSession}
             initialPath={fileInitialPath}
             className="flex h-full min-h-0 flex-col relative"
             active={filesOpen}

@@ -814,7 +814,7 @@ function createNativeInventoryEvents(
       let session: NativeSessionLease | null = null
       void sessionManager.get().then(async (connectedSession) => {
         if (closed) {
-          void connectedSession.close()
+          void connectedSession.close().catch(() => undefined)
           return
         }
         session = connectedSession
@@ -833,7 +833,7 @@ function createNativeInventoryEvents(
           closed = true
           subscription?.close()
           subscription = null
-          void session?.close()
+          void session?.close().catch(() => undefined)
           session = null
         },
       }

@@ -6,19 +6,23 @@ const account = { account_id: '11111111-1111-4111-8111-111111111111', email: 'us
 const daemon = { daemon_id: '33333333-3333-4333-8333-333333333333', account_id: account.account_id, account_name: account.display_name, display_name: '开发 Mac', device_id: 'device-1', device_fingerprint: 'fingerprint-1', revision: '1', created_at: now, updated_at: now }
 const plans = [{ plan_id: 'starter', version: '1', name: '基础版', description: '适合个人设备的完整 Cloud 连接能力。', state: 'PLAN_STATE_PUBLISHED', billing_period_days: 30, monthly_price: { currency: 'CNY', minor_units: '0' }, yearly_price: { currency: 'CNY', minor_units: '0' }, capability: { managed_p2p_enabled: true, managed_p2p_max_concurrency: 2, relay_enabled: true, relay_max_concurrency: 2, relay_max_bytes_per_period: '5368709120', cloud_daemon_limit: 3 }, revision: '1', created_at: now }, { plan_id: 'professional', version: '1', name: '专业版', description: '适合多设备与高频远程工作的更高配额。', state: 'PLAN_STATE_PUBLISHED', billing_period_days: 30, monthly_price: { currency: 'CNY', minor_units: '3900' }, yearly_price: { currency: 'CNY', minor_units: '39900' }, capability: { managed_p2p_enabled: true, managed_p2p_max_concurrency: 10, relay_enabled: true, relay_max_concurrency: 8, relay_max_bytes_per_period: '1099511627776', cloud_daemon_limit: 20 }, revision: '1', created_at: now }]
 const commerce = { subscription: { subscription_id: '55555555-5555-4555-8555-555555555555', account_id: account.account_id, plan_id: 'starter', plan_version: '1', state: 'SUBSCRIPTION_STATE_ACTIVE', revision: '1', period_start: now, period_end: periodEnd }, entitlement: { account_id: account.account_id, state: 'ENTITLEMENT_STATE_ACTIVE', plan_id: 'starter', plan_version: '1', relay_remaining_bytes: '5368707584', capability: plans[0].capability }, orders: [], payment_attempts: [], usage: { account_id: account.account_id, period_start: now, period_end: periodEnd, relay_ingress_bytes: '512', relay_egress_bytes: '1024', relay_total_bytes: '1536', quota_bytes: '5368709120', remaining_bytes: '5368707584', revision: '1' } }
+const pendingOrder = { order_id: 'order-pending', account_id: account.account_id, plan_id: 'professional', plan_version: '1', status: 'ORDER_STATUS_PENDING', amount: { currency: 'CNY', minor_units: '3900' }, provider: 'development', idempotency_key: 'pending-checkout', requested_transition: 'SUBSCRIPTION_TRANSITION_UPGRADE', revision: '1', created_at: now }
+const pendingAttempt = { payment_attempt_id: 'attempt-pending', order_id: pendingOrder.order_id, account_id: account.account_id, provider: 'development', status: 'PAYMENT_ATTEMPT_STATUS_PENDING', revision: '1', created_at: now, updated_at: now }
 
 function json(route: Route, value: unknown, status = 200) { return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) }) }
 
-async function mockAPI(page: Page, operator = false) {
+async function mockAPI(page: Page, operator = false, failLogin = false, withPendingOrder = false) {
+  const requests = new Map<string, number>()
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url())
     const path = url.pathname
+    requests.set(path, (requests.get(path) ?? 0) + 1)
     if (path === '/api/commerce/plans') return json(route, { plans })
     if (path === '/api/account/current') return json(route, { account, roles: operator ? ['ACCOUNT_ROLE_USER', 'ACCOUNT_ROLE_ADMIN'] : ['ACCOUNT_ROLE_USER'], recent_auth_expires_at: periodEnd })
     if (path === '/api/account/register') return json(route, { account, session: { session_id: 'register-session', access_expires_at: periodEnd, refresh_expires_at: periodEnd } }, 201)
-    if (path === '/api/account/login') return json(route, { account, roles: operator ? ['ACCOUNT_ROLE_USER', 'ACCOUNT_ROLE_ADMIN'] : ['ACCOUNT_ROLE_USER'], session: { session_id: 'login-session', access_expires_at: periodEnd, refresh_expires_at: periodEnd } })
+    if (path === '/api/account/login') return failLogin ? json(route, { code: 'invalid_credentials' }, 401) : json(route, { account, roles: operator ? ['ACCOUNT_ROLE_USER', 'ACCOUNT_ROLE_ADMIN'] : ['ACCOUNT_ROLE_USER'], session: { session_id: 'login-session', access_expires_at: periodEnd, refresh_expires_at: periodEnd } })
     if (path === '/api/account/sessions') return json(route, { sessions: [{ session_id: 'current-session', current: true, created_at: now, access_expires_at: periodEnd, refresh_expires_at: periodEnd, recent_auth_expires_at: periodEnd, revision: '1' }, { session_id: 'other-session', current: false, created_at: now, access_expires_at: periodEnd, refresh_expires_at: periodEnd, revision: '1' }] })
-    if (path === '/api/commerce/me') return json(route, commerce)
+    if (path === '/api/commerce/me') return json(route, withPendingOrder ? { ...commerce, orders: [pendingOrder], payment_attempts: [pendingAttempt] } : commerce)
     if (path === '/api/commerce/orders') return json(route, { order: { order_id: 'order-development', account_id: account.account_id, plan_id: 'professional', plan_version: '1', status: 'ORDER_STATUS_PENDING', amount: { currency: 'CNY', minor_units: '3900' }, provider: 'development', idempotency_key: 'checkout', requested_transition: 'SUBSCRIPTION_TRANSITION_UPGRADE', revision: '1', created_at: now }, payment_attempt: { payment_attempt_id: 'attempt-development', order_id: 'order-development', account_id: account.account_id, provider: 'development', status: 'PAYMENT_ATTEMPT_STATUS_PENDING', revision: '1', created_at: now, updated_at: now } }, 201)
     if (path === '/api/commerce/payments/development') return json(route, { order: { order_id: 'order-development', status: 'ORDER_STATUS_PAID' }, subscription: { ...commerce.subscription, plan_id: 'professional', revision: '2' }, entitlement: { ...commerce.entitlement, plan_id: 'professional' } })
     if (path === '/api/daemons') return json(route, { daemons: [{ daemon, runtime: { online: true, edge_id: '22222222-2222-4222-8222-222222222222', edge_name: 'CN1 Edge', edge_region: 'CN1', edge_public_endpoint: 'muxvia-cn1.omscd.com:41102', generation: '1' } }] })
@@ -36,26 +40,30 @@ async function mockAPI(page: Page, operator = false) {
     if (path === '/api/operator/audit') return json(route, { events: [] })
     return json(route, {})
   })
+  return requests
 }
 
 test('公开落地页展示真实连接路径和套餐', async ({ page }, testInfo) => {
   await mockAPI(page)
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Muxvia Cloud', exact: true })).toBeVisible()
+  await expect(page.getByText('随时回到你的电脑。', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '把一台电脑放进你的设备列表。' })).toBeVisible()
   await expect(page.getByLabel('Muxvia Cloud 产品连接画面')).toContainText('muxvia-cloud-ok')
   await expect(page.getByRole('heading', { name: '基础版' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1)
   await page.screenshot({ path: testInfo.outputPath('landing.png'), fullPage: true })
 })
 
-test('普通用户共享 Shell 且不能进入运营页面', async ({ page }, testInfo) => {
-  await mockAPI(page)
+test('普通用户共享 Shell、复用页面缓存且不能进入运营页面', async ({ page }, testInfo) => {
+  const requests = await mockAPI(page)
   await page.goto('/app/overview')
   const userNav = page.getByRole('navigation', { name: '用户功能' })
   const compact = testInfo.project.name !== 'desktop-chromium'
   if (compact) await expect(userNav).toBeHidden()
   else await expect(userNav).toBeVisible()
   await expect(page.getByRole('navigation', { name: '运营管理' })).toHaveCount(0)
+  await expect(page.getByLabel('Cloud 设备连接可用')).toContainText('连接可用')
   await page.screenshot({ path: testInfo.outputPath('user-overview.png'), fullPage: !compact })
   if (testInfo.project.name === 'mobile-chromium') {
     const finalAction = page.getByRole('link', { name: '查看套餐' })
@@ -70,6 +78,16 @@ test('普通用户共享 Shell 且不能进入运营页面', async ({ page }, te
   await deviceLink.click()
   await expect(page).toHaveURL(/\/app\/devices$/)
   await expect(page.getByText('CN1 Edge', { exact: true })).toBeVisible()
+  if (!compact) {
+    await userNav.getByRole('link', { name: '概览' }).click()
+    await expect(page.getByRole('heading', { name: '你好，测试用户' })).toBeVisible()
+    await expect(page.locator('.skeleton-list')).toHaveCount(0)
+    expect(requests.get('/api/commerce/me')).toBe(1)
+    await page.goto('/app/devices')
+    await page.reload()
+    await expect(page).toHaveURL(/\/app\/devices$/)
+    await expect(page.getByText('CN1 Edge', { exact: true })).toBeVisible()
+  }
   await page.screenshot({ path: testInfo.outputPath('user-devices.png'), fullPage: !compact })
   await page.goto('/app/admin/edges')
   await expect(page).toHaveURL(/\/app\/no-permission$/)
@@ -86,6 +104,23 @@ test('用户创建订单并完成 Development 支付', async ({ page }) => {
   await expect(paymentDialog.getByText('¥39.00', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '确认测试支付' }).click()
   await expect(page.getByRole('dialog', { name: 'Development 支付确认' })).toHaveCount(0)
+})
+
+test('用户可以确认取消续订并继续完成待支付订单', async ({ page }) => {
+  await mockAPI(page, false, false, true)
+  await page.goto('/app/subscription')
+  await page.getByRole('button', { name: '到期后取消' }).click()
+  const cancelDialog = page.getByRole('dialog', { name: '取消自动续订' })
+  await expect(cancelDialog).toContainText('不会立即删除设备或中断现有连接')
+  await page.keyboard.press('Escape')
+  await expect(cancelDialog).toHaveCount(0)
+
+  await page.goto('/app/orders')
+  await page.getByRole('button', { name: '继续支付' }).click()
+  const paymentDialog = page.getByRole('dialog', { name: '继续完成订单' })
+  await expect(paymentDialog).toContainText('¥39.00')
+  await paymentDialog.getByRole('button', { name: '确认测试支付' }).click()
+  await expect(paymentDialog).toHaveCount(0)
 })
 
 test('管理员在同一 Shell 进入全部运营模块', async ({ page }, testInfo) => {
@@ -107,7 +142,7 @@ test('管理员在同一 Shell 进入全部运营模块', async ({ page }, testI
 })
 
 test('手机底栏与运营抽屉不遮挡内容', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'mobile-chromium')
+  test.skip(testInfo.project.name === 'desktop-chromium')
   await mockAPI(page, true)
   await page.goto('/app/overview')
   const bottom = page.getByRole('navigation', { name: '手机主导航' })
@@ -124,12 +159,27 @@ test('手机底栏与运营抽屉不遮挡内容', async ({ page }, testInfo) =>
 test('注册后直接进入普通用户概览', async ({ page }) => {
   await mockAPI(page)
   await page.goto('/register')
-  await page.getByLabel('显示名称').fill('测试用户')
+  await page.getByLabel('你的称呼').fill('测试用户')
   await page.getByLabel('邮箱').fill('user@muxvia.com')
   await page.getByLabel('密码', { exact: true }).fill('muxvia-test-password')
   await page.getByRole('button', { name: '创建账号' }).click()
   await expect(page).toHaveURL(/\/app\/overview$/)
   await expect(page.getByRole('heading', { name: '你好，测试用户' })).toBeVisible()
+})
+
+test('统一登录页提供字段约束和明确错误反馈', async ({ page }) => {
+  await mockAPI(page, false, true)
+  const errors = captureErrors(page)
+  await page.goto('/login')
+  const submit = page.getByRole('button', { name: '登录', exact: true })
+  await expect(submit).toBeDisabled()
+  await page.getByLabel('邮箱或账号').fill('user@muxvia.com')
+  await page.getByLabel('密码', { exact: true }).fill('wrong-password')
+  await submit.click()
+  await expect(page.getByRole('alert')).toHaveText('账号或密码不正确。请检查后重新输入。')
+  await expect(page).toHaveURL(/\/login$/)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1)
+  expect(errors.filter((value) => !value.includes('status of 401'))).toEqual([])
 })
 
 function captureErrors(page: Page): string[] {

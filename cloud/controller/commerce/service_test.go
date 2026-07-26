@@ -44,6 +44,24 @@ func TestCommerceSelfServiceDerivesAccountAndDevelopmentProvider(t *testing.T) {
 	if store.applied.GetProvider() != "development" || store.applied.GetProviderEventId() != "development:attempt-a:succeeded" || store.applyActor != "account-a" {
 		t.Fatalf("payment event=%+v actor=%q", store.applied, store.applyActor)
 	}
+	store.aggregate = &cloudv1.GetAccountCommerceResponse{
+		Subscription: &cloudv1.SubscriptionProjection{SubscriptionId: "subscription-a", AccountId: "account-a", Revision: 4},
+		Entitlement:  &cloudv1.EffectiveEntitlement{AccountId: "account-a", RelayUsedBytes: 360, RelayRemainingBytes: 640},
+		Orders: []*cloudv1.OrderProjection{{
+			OrderId: "order-a", AccountId: "account-a", Provider: "development", Status: cloudv1.OrderStatus_ORDER_STATUS_PAID,
+		}},
+		PaymentAttempts: []*cloudv1.PaymentAttemptProjection{{
+			PaymentAttemptId: "attempt-a", OrderId: "order-a", Provider: "development", Status: cloudv1.PaymentAttemptStatus_PAYMENT_ATTEMPT_STATUS_SUCCEEDED,
+		}},
+	}
+	now = now.Add(time.Hour)
+	duplicate, err := service.CompleteDevelopmentPayment(ctx, &cloudv1.CompleteDevelopmentPaymentRequest{OrderId: "order-a", PaymentAttemptId: "attempt-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !duplicate.GetDuplicate() || duplicate.GetEntitlement().GetRelayUsedBytes() != 360 || store.applyCalls != 1 {
+		t.Fatalf("development payment retry=%+v apply calls=%d", duplicate, store.applyCalls)
+	}
 	if _, err := service.CompleteDevelopmentPayment(ctx, &cloudv1.CompleteDevelopmentPaymentRequest{OrderId: "order-b", PaymentAttemptId: "attempt-b"}); !errors.Is(err, account.ErrUnauthenticated) {
 		t.Fatalf("cross-account development payment error=%v", err)
 	}
@@ -73,6 +91,7 @@ type commerceStoreFake struct {
 	createActor, readAccount string
 	applied                  *cloudv1.ApplyPaymentEventRequest
 	applyActor               string
+	applyCalls               int
 	transition               *cloudv1.TransitionSubscriptionRequest
 	transitionActor          string
 }
@@ -92,6 +111,7 @@ func (store *commerceStoreFake) CreateOrder(_ context.Context, request *cloudv1.
 }
 func (store *commerceStoreFake) ApplyPaymentEvent(_ context.Context, request *cloudv1.ApplyPaymentEventRequest, actor string, _ time.Time) (*cloudv1.ApplyPaymentEventResponse, error) {
 	store.applied, store.applyActor = request, actor
+	store.applyCalls++
 	return &cloudv1.ApplyPaymentEventResponse{}, nil
 }
 func (store *commerceStoreFake) TransitionSubscription(_ context.Context, request *cloudv1.TransitionSubscriptionRequest, actor string, _ time.Time) (*cloudv1.TransitionSubscriptionResponse, error) {

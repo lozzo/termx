@@ -13,6 +13,46 @@ import { MockProtoSession, protoResult } from '../test/mockProtoSession'
 import { createProtoTerminalProtocolSession } from './protoTerminalProtocolSession'
 
 describe('ProtoTerminalProtocolSession input ordering', () => {
+  it('owns an asynchronous live screen refresh failure', async () => {
+    let liveScreenCalls = 0
+    let session: MockProtoSession
+    session = new MockProtoSession('machine-live-refresh', (command) => {
+      switch (command.command.case) {
+        case 'eventSubscribe':
+          return protoResult('eventSubscription', { subscription: resource(ResourceKind.SUBSCRIPTION, 1, session) })
+        case 'terminalAttach':
+          return protoResult('terminalAttach', create(TerminalAttachResultSchema, {
+            attachment: create(AttachmentHandleSchema, {
+              resource: resource(ResourceKind.ATTACHMENT, 2, session),
+              terminal: create(TerminalRefSchema, { endpointId: session.stamp.endpointId, terminalId: 'terminal-1' }),
+            }),
+          }))
+        case 'terminalGet':
+          return protoResult('terminalGet', create(TerminalGetResultSchema, {
+            terminal: create(TerminalInfoSchema, {
+              ref: create(TerminalRefSchema, { endpointId: session.stamp.endpointId, terminalId: 'terminal-1' }),
+            }),
+          }))
+        case 'liveScreenGet':
+          liveScreenCalls += 1
+          if (liveScreenCalls > 1) throw new Error('Go binding bridge disconnected')
+          return protoResult('liveScreen', create(NativeScreenResultSchema))
+        default:
+          return protoResult('acknowledge', {})
+      }
+    })
+    const protocol = createProtoTerminalProtocolSession(session)
+    await protocol.openTerminal('terminal-1')
+    const events: string[] = []
+    protocol.subscribeTerminal('terminal-1', (event) => {
+      if (event.type === 'closed') events.push(event.reason ?? '')
+    })
+
+    protocol.markSyncLost('terminal-1')
+
+    await vi.waitFor(() => expect(events).toEqual(['Go binding bridge disconnected']))
+  })
+
   it('waits for each terminal input acknowledgement before sending the next input', async () => {
     const sent: string[] = []
     const acknowledge: Array<() => void> = []

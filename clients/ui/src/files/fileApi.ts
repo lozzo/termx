@@ -262,7 +262,7 @@ async function readProtoFileTransferStream(
       reject(error)
     }
     const abortListener = () => {
-      void stream.close()
+      void stream.close().catch(() => undefined)
       fail(abortError())
     }
     const subscription = stream.subscribe((type, payload) => {

@@ -18,7 +18,7 @@ type SessionOwner struct {
 	authority    *SessionGenerationAuthority
 	current      map[endpoint.EndpointID]ApplicationReadyPeerSession
 	configs      map[endpoint.EndpointID]string
-	stickyRoutes map[endpoint.EndpointID]endpoint.RouteID
+	stickyRoutes map[endpoint.EndpointID]stickyRouteSelection
 	selections   map[endpoint.EndpointID]routeSelection
 	acquireLocks map[endpoint.EndpointID]*sync.Mutex
 	sharedLeases map[endpoint.EndpointID]map[*sharedApplicationLease]struct{}
@@ -29,6 +29,13 @@ type SessionOwner struct {
 type routeSelection struct {
 	generation SessionGeneration
 	reason     string
+}
+
+// stickyRouteSelection 只在产生显式选择时的连接配置仍未变化时复用 route。
+// configKey 由 Endpoint、策略和平台能力共同生成，配置变化后必须回到 planner，不能让旧测试连接覆盖用户的新策略。
+type stickyRouteSelection struct {
+	routeID   endpoint.RouteID
+	configKey string
 }
 
 // SessionGenerationAuthority 是 Go Client Engine 进程级的 endpoint generation 真值。
@@ -60,7 +67,7 @@ func NewSessionOwnerWithAuthority(authority *SessionGenerationAuthority) *Sessio
 		authority:    authority,
 		current:      make(map[endpoint.EndpointID]ApplicationReadyPeerSession),
 		configs:      make(map[endpoint.EndpointID]string),
-		stickyRoutes: make(map[endpoint.EndpointID]endpoint.RouteID),
+		stickyRoutes: make(map[endpoint.EndpointID]stickyRouteSelection),
 		selections:   make(map[endpoint.EndpointID]routeSelection),
 		acquireLocks: make(map[endpoint.EndpointID]*sync.Mutex),
 		sharedLeases: make(map[endpoint.EndpointID]map[*sharedApplicationLease]struct{}),

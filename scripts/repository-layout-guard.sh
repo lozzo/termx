@@ -18,7 +18,8 @@ for path in \
 done
 
 tracked_markdown="$(git ls-files '*.md')"
-[[ "$tracked_markdown" == "ARCHITECTURE.md" ]] || fail "tracked Markdown must only contain ARCHITECTURE.md: ${tracked_markdown:-none}"
+expected_markdown=$'ARCHITECTURE.md\nworkflow.md'
+[[ "$tracked_markdown" == "$expected_markdown" ]] || fail "tracked Markdown must only contain ARCHITECTURE.md and workflow.md: ${tracked_markdown:-none}"
 
 for path in bin .build; do
   [[ ! -e "$path" ]] || fail "legacy build output still exists: $path (run make clean)"
@@ -62,7 +63,7 @@ if [[ "${actual_modules[*]}" != "${expected_modules_sorted[*]}" ]]; then
 fi
 
 scan_candidates=(
-  .gitignore ARCHITECTURE.md Makefile THIRD_PARTY_NOTICES.txt go.mod go.work package.json
+  .gitignore ARCHITECTURE.md workflow.md Makefile THIRD_PARTY_NOTICES.txt go.mod go.work package.json
   clients cmd core docs internal proto remote scripts shared testkit tui vterm
 )
 scan_paths=()

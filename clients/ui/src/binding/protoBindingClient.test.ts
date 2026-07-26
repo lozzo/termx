@@ -50,6 +50,28 @@ describe('ProtoBindingClient cancellation ownership', () => {
 })
 
 describe('ProtoBindingClient engine command boundary', () => {
+  it('owns operation release failures when the binding generation closes', async () => {
+    const backend = new CancellationBackend()
+    const close = vi.spyOn(backend, 'close')
+    backend.request = async (operation, _payload, handle) => {
+      if (operation === BindingOperation.ENGINE_COMMAND) {
+        queueMicrotask(() => backend.emit(toBinary(EventEnvelopeSchema, create(EventEnvelopeSchema, {
+          event: { case: 'endpointRegistryGet', value: create(EndpointRegistryGetResultSchema, {
+            operationHandle: 1n,
+            registry: create(EndpointRegistryV1Schema, { schemaVersion: 1 }),
+          }) },
+        }))))
+        return 1n
+      }
+      if (operation === BindingOperation.RELEASE && handle === 1n) throw new Error('binding generation closed during release')
+      return 0n
+    }
+    const client = new ProtoBindingClient(backend)
+
+    await expect(client.getEndpointRegistry()).resolves.toMatchObject({ schemaVersion: 1 })
+    await vi.waitFor(() => expect(close).toHaveBeenCalledTimes(1))
+  })
+
   it('queries the Go-owned endpoint registry through one generic command operation', async () => {
     const backend = new CancellationBackend()
     backend.request = async (operation, payload, handle) => {

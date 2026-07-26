@@ -195,6 +195,12 @@ export class ProtoBindingClient {
     await this.backend.request(BindingOperation.RELEASE, new Uint8Array(), handle)
   }
 
+  private releaseCompletedOperation(handle: bigint): void {
+    // operation handle 仍由 binding client 拥有；generation 关闭时的异步释放失败必须在这里
+    // 收口到 client lifecycle，不能形成 WebView 未处理 rejection。
+    void this.release(handle).catch((error) => this.onClosed(new Error(`completed operation release failed: ${errorMessage(error)}`)))
+  }
+
   private async waitOperation<T>(registry: Map<bigint, PendingOperation<T>>, operation: bigint, signal?: AbortSignal): Promise<T> {
     if (signal?.aborted) {
       this.abandonOperation(registry, operation)
@@ -264,13 +270,13 @@ export class ProtoBindingClient {
         this.openOperations.delete(event.value.operationHandle)
         if (event.value.error || !event.value.session || event.value.sessionHandle === 0n) {
           pending.reject(apiError(event.value.error, 'open session failed'))
-          void this.release(event.value.operationHandle)
+          this.releaseCompletedOperation(event.value.operationHandle)
           return
         }
         const session = new ProtoBindingSession(this, event.value.sessionHandle, event.value.session, event.value.connection)
         this.sessions.set(event.value.sessionHandle, session)
         pending.resolve(session)
-        void this.release(event.value.operationHandle)
+        this.releaseCompletedOperation(event.value.operationHandle)
         return
       }
       case 'execute': {
@@ -279,7 +285,7 @@ export class ProtoBindingClient {
         this.executeOperations.delete(event.value.operationHandle)
         if (event.value.error || !event.value.result) pending.reject(apiError(event.value.error, 'application command failed'))
         else pending.resolve(event.value.result)
-        void this.release(event.value.operationHandle)
+        this.releaseCompletedOperation(event.value.operationHandle)
         return
       }
       case 'importPairing': {
@@ -288,7 +294,7 @@ export class ProtoBindingClient {
         this.importOperations.delete(event.value.operationHandle)
         if (event.value.error) pending.reject(apiError(event.value.error, 'pairing import failed'))
         else pending.resolve(event.value)
-        void this.release(event.value.operationHandle)
+        this.releaseCompletedOperation(event.value.operationHandle)
         return
       }
       case 'deleteCredential': {
@@ -297,7 +303,7 @@ export class ProtoBindingClient {
         this.deleteOperations.delete(event.value.operationHandle)
         if (event.value.error) pending.reject(apiError(event.value.error, 'credential delete failed'))
         else pending.resolve()
-        void this.release(event.value.operationHandle)
+        this.releaseCompletedOperation(event.value.operationHandle)
         return
       }
       case 'endpointRegistryGet': {
@@ -306,7 +312,7 @@ export class ProtoBindingClient {
         this.registryGetOperations.delete(event.value.operationHandle)
         if (event.value.error || !event.value.registry) pending.reject(apiError(event.value.error, 'endpoint registry get failed'))
         else pending.resolve(event.value.registry)
-        void this.release(event.value.operationHandle)
+        this.releaseCompletedOperation(event.value.operationHandle)
         return
       }
       case 'endpointUpsert': {
@@ -315,7 +321,7 @@ export class ProtoBindingClient {
         this.endpointUpsertOperations.delete(event.value.operationHandle)
         if (event.value.error) pending.reject(apiError(event.value.error, 'endpoint upsert failed'))
         else pending.resolve(event.value)
-        void this.release(event.value.operationHandle)
+        this.releaseCompletedOperation(event.value.operationHandle)
         return
       }
       case 'endpointDelete': {
@@ -324,7 +330,7 @@ export class ProtoBindingClient {
         this.endpointDeleteOperations.delete(event.value.operationHandle)
         if (event.value.error) pending.reject(apiError(event.value.error, 'endpoint delete failed'))
         else pending.resolve(event.value)
-        void this.release(event.value.operationHandle)
+        this.releaseCompletedOperation(event.value.operationHandle)
         return
       }
       case 'endpointShareReceive': {
@@ -333,7 +339,7 @@ export class ProtoBindingClient {
         this.endpointShareReceiveOperations.delete(event.value.operationHandle)
         if (event.value.error || !event.value.preview) pending.reject(apiError(event.value.error, 'endpoint share receive failed'))
         else pending.resolve(event.value)
-        void this.release(event.value.operationHandle)
+        this.releaseCompletedOperation(event.value.operationHandle)
         return
       }
       case 'endpointShareCommit': {
@@ -342,7 +348,7 @@ export class ProtoBindingClient {
         this.endpointShareCommitOperations.delete(event.value.operationHandle)
         if (event.value.error || !event.value.endpoint || !event.value.registry) pending.reject(apiError(event.value.error, 'endpoint share commit failed'))
         else pending.resolve(event.value)
-        void this.release(event.value.operationHandle)
+        this.releaseCompletedOperation(event.value.operationHandle)
         return
       }
       case 'sshCredentialProvision': {
@@ -354,7 +360,7 @@ export class ProtoBindingClient {
         } else {
           pending.resolve(event.value)
         }
-        void this.release(event.value.operationHandle)
+        this.releaseCompletedOperation(event.value.operationHandle)
         return
       }
       case 'connectionPolicyGet': {
@@ -363,7 +369,7 @@ export class ProtoBindingClient {
         this.connectionPolicyGetOperations.delete(event.value.operationHandle)
         if (event.value.error || !event.value.state) pending.reject(apiError(event.value.error, 'connection policy get failed'))
         else pending.resolve(event.value.state)
-        void this.release(event.value.operationHandle)
+        this.releaseCompletedOperation(event.value.operationHandle)
         return
       }
       case 'connectionPolicyApply': {
@@ -372,7 +378,7 @@ export class ProtoBindingClient {
         this.connectionPolicyApplyOperations.delete(event.value.operationHandle)
         if (event.value.error || !event.value.state) pending.reject(apiError(event.value.error, 'connection policy apply failed'))
         else pending.resolve(event.value.state)
-        void this.release(event.value.operationHandle)
+        this.releaseCompletedOperation(event.value.operationHandle)
         return
       }
       case 'connectionSnapshotGet': {
@@ -381,7 +387,7 @@ export class ProtoBindingClient {
         this.connectionSnapshotGetOperations.delete(event.value.operationHandle)
         if (event.value.error || !event.value.connection) pending.reject(apiError(event.value.error, 'connection snapshot get failed'))
         else pending.resolve(event.value.connection)
-        void this.release(event.value.operationHandle)
+        this.releaseCompletedOperation(event.value.operationHandle)
         return
       }
       case 'application':

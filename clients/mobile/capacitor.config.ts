@@ -4,6 +4,9 @@ const config: CapacitorConfig = {
   appId: 'com.muxvia.app',
   appName: 'Muxvia',
   webDir: 'dist',
+  // Native bridge responses contain an ephemeral loopback bearer token. Capacitor framework logs
+  // must never echo plugin payloads; product diagnostics use the explicitly redacted debug log.
+  loggingBehavior: 'none',
   plugins: {
     Keyboard: {
       resize: 'none',

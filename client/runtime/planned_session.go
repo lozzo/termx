@@ -65,11 +65,11 @@ func (owner *SessionOwner) ConnectPlanned(
 	acquireLock := owner.endpointAcquireLock(target.ID)
 	acquireLock.Lock()
 	defer acquireLock.Unlock()
-	return owner.connectPlanned(ctx, target, routeOverride, intent, environment, clock, dialers)
+	return owner.connectPlanned(ctx, target, routeOverride, "", intent, environment, clock, dialers)
 }
 
-func (owner *SessionOwner) connectPlanned(ctx context.Context, target endpoint.Endpoint, routeOverride endpoint.RouteID, intent ConnectIntent, environment RoutePlanEnvironment, clock port.Clock, dialers PeerConnectorResolver) (SessionLease, error) {
-	override := owner.effectiveRouteOverride(target.ID, routeOverride)
+func (owner *SessionOwner) connectPlanned(ctx context.Context, target endpoint.Endpoint, routeOverride endpoint.RouteID, configKey string, intent ConnectIntent, environment RoutePlanEnvironment, clock port.Clock, dialers PeerConnectorResolver) (SessionLease, error) {
+	override := owner.effectiveRouteOverride(target.ID, routeOverride, configKey)
 	preflight := endpoint.RouteSelectionRequest{
 		Endpoint: target, Intent: endpoint.ConnectIntent{Kind: string(intent)}, RouteOverride: override, Generation: 1,
 		SupportedRouteKinds:     append([]endpoint.RouteKind(nil), environment.SupportedRouteKinds...),
@@ -100,7 +100,7 @@ func (owner *SessionOwner) connectPlanned(ctx context.Context, target endpoint.E
 	}
 	if routeOverride != "" {
 		owner.mu.Lock()
-		owner.stickyRoutes[target.ID] = routeOverride
+		owner.stickyRoutes[target.ID] = stickyRouteSelection{routeID: routeOverride, configKey: configKey}
 		owner.mu.Unlock()
 	}
 	return lease, nil
@@ -135,7 +135,7 @@ func (owner *SessionOwner) AcquirePlanned(
 		case <-current.Done():
 		default:
 			if routeOverride != "" {
-				owner.stickyRoutes[target.ID] = routeOverride
+				owner.stickyRoutes[target.ID] = stickyRouteSelection{routeID: routeOverride, configKey: configKey}
 			}
 			lease := owner.newSharedLeaseLocked(target.ID, current)
 			owner.mu.Unlock()
@@ -143,7 +143,7 @@ func (owner *SessionOwner) AcquirePlanned(
 		}
 	}
 	owner.mu.Unlock()
-	lease, err := owner.connectPlanned(ctx, target, routeOverride, intent, environment, clock, dialers)
+	lease, err := owner.connectPlanned(ctx, target, routeOverride, configKey, intent, environment, clock, dialers)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +192,7 @@ func (owner *SessionOwner) EnsurePlanned(
 		case <-current.Done():
 		default:
 			if routeOverride != "" {
-				owner.stickyRoutes[target.ID] = routeOverride
+				owner.stickyRoutes[target.ID] = stickyRouteSelection{routeID: routeOverride, configKey: configKey}
 			}
 			lease := SessionLease{Stamp: current.Stamp()}
 			owner.mu.Unlock()
@@ -200,7 +200,7 @@ func (owner *SessionOwner) EnsurePlanned(
 		}
 	}
 	owner.mu.Unlock()
-	lease, err := owner.connectPlanned(ctx, target, routeOverride, intent, environment, clock, dialers)
+	lease, err := owner.connectPlanned(ctx, target, routeOverride, configKey, intent, environment, clock, dialers)
 	if err != nil {
 		return SessionLease{}, err
 	}
@@ -389,13 +389,21 @@ func (owner *SessionOwner) executeScheduledAttempt(ctx context.Context, index in
 	return routeAttemptResult{index: index, request: request, ready: ready}
 }
 
-func (owner *SessionOwner) effectiveRouteOverride(endpointID endpoint.EndpointID, explicit endpoint.RouteID) endpoint.RouteID {
+func (owner *SessionOwner) effectiveRouteOverride(endpointID endpoint.EndpointID, explicit endpoint.RouteID, configKey string) endpoint.RouteID {
 	if explicit != "" || owner == nil {
 		return explicit
 	}
 	owner.mu.Lock()
 	defer owner.mu.Unlock()
-	return owner.stickyRoutes[endpointID]
+	sticky, ok := owner.stickyRoutes[endpointID]
+	if !ok {
+		return ""
+	}
+	if sticky.configKey != configKey {
+		delete(owner.stickyRoutes, endpointID)
+		return ""
+	}
+	return sticky.routeID
 }
 
 func (owner *SessionOwner) publishEndpointEvent(event EndpointEvent) {

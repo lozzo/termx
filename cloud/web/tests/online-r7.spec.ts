@@ -57,8 +57,8 @@ test.describe('R7 线上运营后台', () => {
     expect(errors).toEqual([])
   })
 
-  test('手机端从抽屉逐项进入真实管理模块', async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name !== 'mobile-chromium')
+  test('移动布局从抽屉逐项进入真实管理模块', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === 'desktop-chromium')
     const errors = captureErrors(page)
     const modules = [
       ['Edge 管理', '/app/admin/edges'],

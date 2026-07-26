@@ -245,6 +245,42 @@ func TestSessionOwnerAcquirePlannedSharesLeaseAndKeepsExplicitRouteSticky(t *tes
 	_ = third.Close()
 }
 
+func TestSessionOwnerAcquirePlannedClearsStickyRouteWhenConfigChanges(t *testing.T) {
+	owner := NewSessionOwner()
+	defer owner.Close()
+	target := plannedEndpoint(true)
+	dialer := newPlannedDialer(map[endpoint.RouteID]*plannedBehavior{"local": {}, "ssh": {}})
+	resolver, err := NewPeerConnectorMap(map[endpoint.RouteKind]PeerConnector{
+		endpoint.RouteLocalUnix:    dialer,
+		endpoint.RouteSSHWebRTCTCP: dialer,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := owner.AcquirePlanned(context.Background(), target, "ssh", ConnectIntentInteractive, "config-a", plannedEnvironment(), realTestClock{}, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := dialer.session("ssh", 0).Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-first.Done():
+	case <-time.After(time.Second):
+		t.Fatal("explicit route session did not close")
+	}
+
+	reconnected, err := owner.AcquirePlanned(context.Background(), target, "", ConnectIntentInteractive, "config-b", plannedEnvironment(), realTestClock{}, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reconnected.Stamp().RouteID != "local" || dialer.calls("local") != 1 || dialer.calls("ssh") != 1 {
+		t.Fatalf("config change reused stale sticky route: lease=%#v calls local=%d ssh=%d", reconnected.Stamp(), dialer.calls("local"), dialer.calls("ssh"))
+	}
+	_ = first.Close()
+	_ = reconnected.Close()
+}
+
 func TestSessionOwnerEnsurePlannedExplicitOverrideReplacesDifferentCurrentWinner(t *testing.T) {
 	owner := NewSessionOwner()
 	target := plannedEndpoint(false)

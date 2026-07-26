@@ -11,7 +11,7 @@ export function UserUsagePage() {
   const value = query.data.usage
   const percentage = value.quotaBytes > 0n ? Math.min(100, Number(value.relayTotalBytes * 100n / value.quotaBytes)) : 0
   return <>
-    <PageHeader title="用量" meta={`${dateTime(value.periodStart)} 至 ${dateTime(value.periodEnd)}`} />
+    <PageHeader title="Relay 用量" meta={`本计费周期：${dateTime(value.periodStart)} 至 ${dateTime(value.periodEnd)}`} />
     <section className="usage-hero"><Activity size={24} /><span>本周期 Relay 用量</span><strong>{bytes(value.relayTotalBytes)}</strong><div className="usage-progress" role="progressbar" aria-label="Relay 配额使用比例" aria-valuenow={percentage} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${percentage}%` }} /></div><small>{percentage}% · 剩余 {bytes(value.remainingBytes)}</small></section>
     <section className="usage-breakdown"><div><span>入口流量</span><strong>{bytes(value.relayIngressBytes)}</strong></div><div><span>出口流量</span><strong>{bytes(value.relayEgressBytes)}</strong></div><div><span>周期配额</span><strong>{bytes(value.quotaBytes)}</strong></div></section>
   </>

@@ -1,5 +1,5 @@
 import { X } from 'lucide-react'
-import { cloneElement, isValidElement, useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactElement, type ReactNode } from 'react'
+import { cloneElement, isValidElement, useEffect, useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactElement, type ReactNode } from 'react'
 
 export function Button({ tone = 'default', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 'default' | 'primary' | 'danger' | 'quiet' }) {
   return <button className={`button button-${tone} ${className}`} {...props} />
@@ -37,6 +37,12 @@ export function Empty({ children = '暂无数据' }: { children?: ReactNode }) {
 export function Skeleton({ rows = 6 }: { rows?: number }) { return <div className="skeleton-list" aria-label="正在加载">{Array.from({ length: rows }, (_, index) => <i key={index} />)}</div> }
 
 export function Dialog({ title, open, onClose, children, footer }: { title: string; open: boolean; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
+  useEffect(() => {
+    if (!open) return
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [onClose, open])
   if (!open) return null
   return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <section className="dialog" role="dialog" aria-modal="true" aria-label={title}>
@@ -47,4 +53,4 @@ export function Dialog({ title, open, onClose, children, footer }: { title: stri
   </div>
 }
 
-export function ErrorState({ error }: { error: unknown }) { return <Notice tone="error">{error instanceof Error ? error.message : '加载失败'}</Notice> }
+export function ErrorState({ error }: { error: unknown }) { return <div className="error-state"><Notice tone="error">{error instanceof Error ? error.message : '加载失败，请稍后重试。'}</Notice><Button onClick={() => window.location.reload()}>重新加载</Button></div> }

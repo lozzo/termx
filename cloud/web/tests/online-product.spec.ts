@@ -22,10 +22,10 @@ test.describe('Muxvia Cloud 线上普通用户产品', () => {
     await expect(page.getByRole('navigation', { name: '运营管理' })).toHaveCount(0)
 
     await page.getByRole('navigation', { name: '用户功能' }).getByRole('link', { name: '我的设备' }).click()
-    await page.getByRole('button', { name: '添加 daemon' }).click()
+    await page.getByRole('button', { name: '添加设备' }).click()
     await page.getByLabel('设备名称').fill('线上 E2E Mac')
     await page.getByRole('button', { name: '生成命令' }).click()
-    const enrollmentDialog = page.getByRole('dialog', { name: '注册命令已生成' })
+    const enrollmentDialog = page.getByRole('dialog', { name: '安装命令已生成' })
     await expect(enrollmentDialog).toBeVisible()
     await expect(enrollmentDialog.locator('code')).toContainText('muxvia cloud enroll --controller https://cloud.muxvia.com mxe_')
     await enrollmentDialog.getByRole('button', { name: '完成' }).click()
@@ -56,8 +56,8 @@ test.describe('Muxvia Cloud 线上普通用户产品', () => {
     expect(errors).toEqual([])
   })
 
-  test('手机端注册后使用用户主导航且页面不横向溢出', async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name !== 'mobile-chromium')
+  test('移动布局注册后使用用户主导航且页面不横向溢出', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === 'desktop-chromium')
     const errors = captureErrors(page)
     const identity = uniqueIdentity(testInfo.project.name)
 
@@ -79,7 +79,7 @@ test.describe('Muxvia Cloud 线上普通用户产品', () => {
 })
 
 async function register(page: Page, identity: ReturnType<typeof uniqueIdentity>) {
-  await page.getByLabel('显示名称').fill(identity.displayName)
+  await page.getByLabel('你的称呼').fill(identity.displayName)
   await page.getByLabel('邮箱').fill(identity.email)
   await page.getByLabel('密码', { exact: true }).fill(identity.password)
   await page.getByRole('button', { name: '创建账号', exact: true }).click()
@@ -88,7 +88,7 @@ async function register(page: Page, identity: ReturnType<typeof uniqueIdentity>)
 function uniqueIdentity(project: string) {
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
   return {
-    displayName: project === 'mobile-chromium' ? '手机验收用户' : '桌面验收用户',
+    displayName: project === 'desktop-chromium' ? '桌面验收用户' : '移动验收用户',
     email: `cloud-e2e-${project}-${suffix}@example.com`,
     password: `Muxvia-e2e-${suffix}`,
   }

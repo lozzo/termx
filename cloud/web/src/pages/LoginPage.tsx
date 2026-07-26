@@ -21,11 +21,11 @@ export function LoginPage() {
   })
   useEffect(() => { document.title = '登录 · Muxvia Cloud' }, [])
   function submit(event: FormEvent) { event.preventDefault(); if (login.trim() && password) mutation.mutate() }
-  return <AuthLayout title="登录 Muxvia Cloud" description="使用你的账号继续管理设备与订阅。" alternate={<>还没有账号？<Link to="/register">创建账号</Link></>}>
+  return <AuthLayout title="欢迎回来" description="登录后继续连接设备、查看用量和管理订阅。" alternate={<>还没有账号？<Link to="/register">免费创建</Link></>}>
     <form onSubmit={submit}>
       <Field label="邮箱或账号"><Input autoComplete="username" autoFocus value={login} onChange={(event) => setLogin(event.target.value)} /></Field>
       <Field label="密码" htmlFor="login-password"><div className="password-input"><Input id="login-password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /><button type="button" aria-label={showPassword ? '隐藏密码' : '显示密码'} onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></Field>
-      {mutation.error && <p className="form-error" role="alert">账号或密码不正确，请重新输入。</p>}
+      {mutation.error && <p className="form-error" role="alert">账号或密码不正确。请检查后重新输入。</p>}
       <Button tone="primary" type="submit" disabled={!login.trim() || !password || mutation.isPending}>{mutation.isPending ? '正在登录' : '登录'}<ArrowRight size={17} /></Button>
     </form>
   </AuthLayout>

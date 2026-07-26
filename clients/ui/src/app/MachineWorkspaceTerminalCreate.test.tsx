@@ -15,8 +15,11 @@ import { muxviaI18n } from '../i18n'
 import { MockProtoSession, protoResult } from '../test/mockProtoSession'
 import { MachineWorkspace } from './MachineWorkspace'
 
+const terminalRender = vi.hoisted(() => vi.fn())
+
 vi.mock('../terminal/Terminal', () => ({
-  Terminal: forwardRef(function MockTerminal(_props: unknown, ref) {
+  Terminal: forwardRef(function MockTerminal(props: unknown, ref) {
+    terminalRender(props)
     useImperativeHandle(ref, () => ({
       sendInput: () => {},
       sendResize: () => {},
@@ -42,8 +45,14 @@ vi.mock('../terminal/Terminal', () => ({
 }))
 
 describe('MachineWorkspace terminal creation', () => {
-  beforeEach(async () => { await muxviaI18n.changeLanguage('en') })
-  afterEach(cleanup)
+  beforeEach(async () => {
+    terminalRender.mockReset()
+    await muxviaI18n.changeLanguage('en')
+  })
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
 
   it('prefills daemon defaults and submits a complete generated Proto create command', async () => {
     const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
@@ -119,5 +128,115 @@ describe('MachineWorkspace terminal creation', () => {
     expect(within(header).getByRole('button', { name: 'Control resize' })).toBeTruthy()
     expect(within(header).getByRole('button', { name: 'Terminal tools' })).toBeTruthy()
     expect(within(header).getByRole('button', { name: 'Open terminal menu' })).toBeTruthy()
+  })
+
+  it('never mounts terminal resources with a stale generation while reconnecting', async () => {
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const terminal = {
+      terminalId: 'term-shell', machineId: 'studio', title: 'Shell', state: 'running' as const,
+      command: '/bin/zsh', cols: 80, rows: 24,
+    }
+    const staleSession = new MockProtoSession('studio')
+    const freshSession = new MockProtoSession('studio')
+    const connect = vi.fn()
+      .mockResolvedValueOnce(staleSession)
+      .mockResolvedValueOnce(freshSession)
+
+    render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+        listTerminals: vi.fn(async () => [terminal]),
+      }}
+      connector={{ connect }}
+      initialMachine={machine}
+    />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
+    await screen.findByTestId('mock-terminal')
+    expect(terminalRender.mock.calls.some(([props]) => (props as { session: MockProtoSession }).session === staleSession)).toBe(true)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Back to terminal list' }))
+    await staleSession.close()
+    terminalRender.mockClear()
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
+
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(terminalRender).toHaveBeenCalled())
+    expect(terminalRender.mock.calls.every(([props]) => (props as { session: MockProtoSession }).session === freshSession)).toBe(true)
+  })
+
+  it('refreshes daemon inventory after a list-page manual reconnect', async () => {
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const terminal = {
+      terminalId: 'term-shell', machineId: 'studio', title: 'Shell', state: 'running' as const,
+      command: '/bin/zsh', cols: 80, rows: 24,
+    }
+    const staleSession = new MockProtoSession('studio')
+    const freshSession = new MockProtoSession('studio')
+    const connect = vi.fn()
+      .mockResolvedValueOnce(staleSession)
+      .mockResolvedValueOnce(freshSession)
+    const reconnect = vi.fn(async () => undefined)
+    const applyConnectionPolicy = vi.fn(async () => undefined)
+    const listTerminals = vi.fn(async () => [terminal])
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+        listTerminals,
+      }}
+      connector={{
+        connect,
+        reconnect,
+        getConnectionPolicy: vi.fn(async () => ({
+          policy: { route: 'auto', cloud: 'auto', relayTransport: 'auto' },
+          available: { direct: true, ssh: true, cloud: true },
+          unavailableReasons: {},
+        })),
+        applyConnectionPolicy,
+      }}
+      initialMachine={machine}
+    />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Shell' }))
+    await screen.findByTestId('mock-terminal')
+    await userEvent.click(screen.getByRole('button', { name: 'Back to terminal list' }))
+    await staleSession.close()
+    await userEvent.click(screen.getByRole('button', { name: 'Connection info' }))
+    await userEvent.click(await screen.findByRole('radio', { name: 'Direct' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Apply & reconnect' }))
+
+    await waitFor(() => expect(applyConnectionPolicy).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(reconnect).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(listTerminals.mock.calls.length).toBeGreaterThan(1))
+  })
+
+  it('rebuilds the workspace session before refreshing files after a native generation resume', async () => {
+    const machine = { machineId: 'studio', name: 'Studio', state: 'online' as const }
+    const staleSession = new MockProtoSession('studio')
+    const freshSession = new MockProtoSession('studio')
+    const connect = vi.fn()
+      .mockResolvedValueOnce(staleSession)
+      .mockResolvedValueOnce(freshSession)
+    const listTerminals = vi.fn(async () => [])
+
+    render(<MachineWorkspace
+      api={{
+        getStatus: vi.fn(async () => ({ machine, localWeb: { httpUrl: '', rtcOfferUrl: '' } })),
+        listTerminals,
+      }}
+      connector={{ connect }}
+      initialMachine={machine}
+    />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open files' }))
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(1))
+    await staleSession.close()
+    document.dispatchEvent(new Event('muxvia:resume'))
+
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(listTerminals.mock.calls.length).toBeGreaterThan(1))
   })
 })

@@ -1,18 +1,17 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
-import { Check, Network, ShieldCheck } from 'lucide-react'
+import { Check, LockKeyhole, MonitorSmartphone, Network, ShieldCheck, Smartphone } from 'lucide-react'
 import logo from '../../../../clients/mobile/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png'
 
 export function AuthLayout({ title, description, alternate, children }: { title: string; description: string; alternate: ReactNode; children: ReactNode }) {
   return <main className="auth-page">
     <section className="auth-panel">
-      <Link className="auth-brand" to="/"><img src={logo} alt="Muxvia" /><span><strong>Muxvia Cloud</strong><small>安全连接你的每一台设备</small></span></Link>
+      <Link className="auth-brand" to="/"><img src={logo} alt="Muxvia" /><span><strong>Muxvia Cloud</strong><small>随时回到你的电脑</small></span></Link>
       <div className="auth-form-wrap"><h1>{title}</h1><p>{description}</p>{children}<div className="auth-alternate">{alternate}</div></div>
       <footer><span>Development</span><Link to="/">返回首页</Link></footer>
     </section>
     <aside className="auth-scene" aria-label="Muxvia Cloud 连接能力">
-      <div className="auth-scene-copy"><span className="eyebrow">MUXVIA CLOUD</span><h2>连接由 Cloud 协调，终端数据始终端到端传输。</h2><ul><li><Network size={18} />P2P 优先，必要时使用 Relay</li><li><ShieldCheck size={18} />Controller 不解密终端内容</li><li><Check size={18} />Direct 与 SSH 始终独立可用</li></ul></div>
-      <div className="signal-track" aria-hidden="true"><i /><i /><i /><span>DEVICE</span><b>EDGE</b><span>DAEMON</span></div>
+      <div className="auth-scene-copy"><span className="eyebrow">一个账号，所有设备</span><h2>登录后，从手机直接找到自己的电脑。</h2><div className="auth-route" aria-label="Muxvia Cloud 加密连接路径"><span><Smartphone size={20} />Muxvia App</span><i /><b><Network size={18} />Cloud Edge</b><i /><span><MonitorSmartphone size={20} />我的设备</span></div><ul><li><Network size={18} />优先 P2P，必要时自动使用 Relay</li><li><ShieldCheck size={18} />Cloud 不解密终端与文件内容</li><li><Check size={18} />Direct 与 SSH 始终独立可用</li></ul><p className="auth-proof"><LockKeyhole size={16} />连接权限由你的设备最终确认</p></div>
     </aside>
   </main>
 }

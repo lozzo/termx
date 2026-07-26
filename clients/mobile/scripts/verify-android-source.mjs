@@ -57,7 +57,8 @@ for (const path of [
 
 const manifest = join(androidRoot, 'app', 'src', 'main', 'AndroidManifest.xml')
 const buildGradle = join(androidRoot, 'app', 'build.gradle')
-for (const path of [manifest, buildGradle, join(androidRoot, 'app', 'src', 'main', 'res', 'xml', 'network_security_config.xml')]) {
+const capacitorConfig = join(mobileRoot, 'capacitor.config.ts')
+for (const path of [manifest, buildGradle, capacitorConfig, join(androidRoot, 'app', 'src', 'main', 'res', 'xml', 'network_security_config.xml')]) {
   requireFile(path, path)
 }
 const manifestText = readFileSync(manifest, 'utf8')
@@ -67,6 +68,10 @@ for (const fragment of ['android.permission.ACCESS_NETWORK_STATE', 'android.perm
 const gradleText = readFileSync(buildGradle, 'utf8')
 for (const fragment of ["apply plugin: 'kotlin-android'", '// muxvia NativeConnection dependencies', 'shrinkResources true', "main.proto.srcDir '../../../../proto'"]) {
   if (!gradleText.includes(fragment)) fail(`Gradle configuration lost required fragment: ${fragment}`)
+}
+const capacitorConfigText = readFileSync(capacitorConfig, 'utf8')
+if (!capacitorConfigText.includes("loggingBehavior: 'none'")) {
+  fail('Capacitor framework logging could expose native bridge bearer tokens')
 }
 
 console.log('Android Gradle source integrity passed')

@@ -370,10 +370,17 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     onLifecycle: (message) => dispatch(message),
     onError: (message) => dispatch({ type: 'connection.failed', reason: message, recoverable: true, surface: 'banner' }),
     onClose: (reason) => {
+      if (!sessionRef.current.isAlive()) {
+        // native generation 已失效时，terminal 不得在旧 lease 上自建订阅或重放输入；
+        // MachineWorkspace 会在新 generation 发布后重新取得 session 并 reattach。
+        clearPendingRecoveryInput()
+        recoveringInputRef.current = false
+        return
+      }
       const pending = pendingRecoveryInputRef.current
       if (pending && (recoveringInputRef.current || shouldRecoverRecentInput(reason))) {
         void recoverInputChannel(pending, reason ?? 'terminal channel closed')
-      } else if (shouldRecoverTerminalChannel(reason)) {
+      } else if (shouldRecoverTerminalChannel(sessionRef.current, reason)) {
         void recoverTerminalChannel(reason ?? 'terminal channel closed', {
           forceTerminalChannel: true,
         })
@@ -386,14 +393,19 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       }
     },
     onInputSendFailed: (reason) => {
+      if (!sessionRef.current.isAlive()) {
+        clearPendingRecoveryInput()
+        recoveringInputRef.current = false
+        return
+      }
       const pending = pendingRecoveryInputRef.current
       if (pending) {
         void recoverInputChannel(pending, reason)
-      } else if (shouldRecoverTerminalChannel(reason)) {
+      } else if (shouldRecoverTerminalChannel(sessionRef.current, reason)) {
         void recoverTerminalChannel(reason, { forceTerminalChannel: true })
       }
     },
-  }), [logSession, maybeLogOutputStats, publishTerminalTextNow, recoverInputChannel, recoverTerminalChannel, scheduleTerminalTextPublish])
+  }), [clearPendingRecoveryInput, logSession, maybeLogOutputStats, publishTerminalTextNow, recoverInputChannel, recoverTerminalChannel, scheduleTerminalTextPublish])
 
   useEffect(() => {
     sessionRef.current = options.session
@@ -700,7 +712,8 @@ function shouldRecoverRecentInput(reason?: string): boolean {
   return /not open|send failed|unavailable|input send failed|not attached|readonly/i.test(reason)
 }
 
-function shouldRecoverTerminalChannel(reason?: string): boolean {
-  if (!reason) return false
+/** shouldRecoverTerminalChannel 只允许同一存活 session 内恢复 terminal channel；generation 重建由上层 owner 负责。 */
+export function shouldRecoverTerminalChannel(session: Pick<ProtoClientSession, 'isAlive'>, reason?: string): boolean {
+  if (!session.isAlive() || !reason) return false
   return /terminal data channel|terminal channel send failed|terminal protocol .* timed out|native bridge|not open|closed|timed out|send failed|not attached|attachment channel|ensure resize requires attachment/i.test(reason)
 }

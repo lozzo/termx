@@ -61,7 +61,7 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
       types: [ApplicationEventType.TERMINAL_LIVE_INVALIDATED, ApplicationEventType.TERMINAL_LIFECYCLE],
     }), (event) => {
       if (event.event.case === 'liveInvalidated' && event.event.value.terminal?.terminalId) {
-        void this.publishLiveScreen(event.event.value.terminal.terminalId, 'live_invalidated', event.event.value.liveRevision)
+        this.refreshLiveScreen(event.event.value.terminal.terminalId, 'live_invalidated', event.event.value.liveRevision)
       }
       if (event.event.case === 'terminalLifecycle') {
         const terminal = event.event.value.terminal
@@ -153,7 +153,16 @@ class ProtoTerminalProtocolSession implements TerminalProtocolSession {
   }
 
   markSyncLost(terminalId: string): void {
-    void this.publishLiveScreen(terminalId, 'manual_sync_lost')
+    this.refreshLiveScreen(terminalId, 'manual_sync_lost')
+  }
+
+  private refreshLiveScreen(terminalId: string, reason: TerminalSnapshotPayload['refreshReason'], minimumRevision = 0n): void {
+    // live screen refresh 属于当前 Proto session；bridge/generation 切换时旧请求必须被消费，
+    // 存活 session 的真实失败则通过 terminal channel closed 交给现有恢复状态机。
+    void this.publishLiveScreen(terminalId, reason, minimumRevision).catch((error) => {
+      if (!this.session.isAlive()) return
+      this.publish(terminalId, { type: 'closed', reason: errorMessage(error) })
+    })
   }
 
   requestResizeOwner(terminalId: string, size?: TerminalInputSize): Promise<TerminalResizeControl> {
