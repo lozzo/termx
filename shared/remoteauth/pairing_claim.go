@@ -173,11 +173,20 @@ func (store *AccessStore) ResolvePairingClaimForExchange(payload []byte, clientP
 
 // RedeemPairingClaim 复用 AccessStore 的 PairingTicket 原子消费事务，并在成功后把内存 claim 固定到同一客户端 key。
 func (store *AccessStore) RedeemPairingClaim(offerPayload []byte, clientPublicKey ed25519.PublicKey, clientLabel string, now time.Time) (PairingExchangeResult, []byte, error) {
+	return store.redeemPairingClaim(offerPayload, clientPublicKey, clientLabel, 0, now)
+}
+
+// RedeemPairingClaimForProduct 把官方客户端产品类型交给 daemon Cloud owner 签发 CloudRouteGrant。
+func (store *AccessStore) RedeemPairingClaimForProduct(offerPayload []byte, clientPublicKey ed25519.PublicKey, clientLabel string, product uint32, now time.Time) (PairingExchangeResult, []byte, error) {
+	return store.redeemPairingClaim(offerPayload, clientPublicKey, clientLabel, product, now)
+}
+
+func (store *AccessStore) redeemPairingClaim(offerPayload []byte, clientPublicKey ed25519.PublicKey, clientLabel string, product uint32, now time.Time) (PairingExchangeResult, []byte, error) {
 	bundlePayload, err := store.ResolvePairingClaimForExchange(offerPayload, clientPublicKey, now)
 	if err != nil {
 		return PairingExchangeResult{}, nil, err
 	}
-	result, err := store.RedeemPairingBundle(bundlePayload, clientPublicKey, clientLabel, now)
+	result, err := store.RedeemPairingBundleForProduct(bundlePayload, clientPublicKey, clientLabel, product, now)
 	if err != nil {
 		return PairingExchangeResult{}, nil, err
 	}

@@ -2808,6 +2808,7 @@ export function ConnectionInfoDialog({
     { value: 'auto', label: t('workspace.connection.routeAuto'), available: true, reason: undefined },
     { value: 'direct', label: t('workspace.connection.routeDirect'), available: policyState?.available.direct ?? false, reason: connectionPolicyUnavailableLabel(policyState?.unavailableReasons.direct, t) },
     { value: 'ssh', label: t('workspace.connection.routeSSH'), available: policyState?.available.ssh ?? false, reason: connectionPolicyUnavailableLabel(policyState?.unavailableReasons.ssh, t) },
+    { value: 'cloud', label: t('workspace.connection.routeCloud'), available: policyState?.available.cloud ?? false, reason: connectionPolicyUnavailableLabel(policyState?.unavailableReasons.cloud, t) },
   ]
   return (
     <div ref={overlayRef} className="absolute inset-0 z-50 flex items-end justify-center bg-black/45 backdrop-blur-sm md:items-center md:p-4" onClick={() => { hapticSelection(); onClose() }} onKeyDown={(event) => trapConnectionDialogFocus(event, overlayRef.current, onClose)}>
@@ -2940,6 +2941,7 @@ function connectionRouteLabel(kind: ConnectionInfo['routeKind'], t: ReturnType<t
     case 'local': return t('workspace.connection.routeLocal')
     case 'direct': return t('workspace.connection.routeDirect')
     case 'ssh': return t('workspace.connection.routeSSH')
+    case 'cloud': return t('workspace.connection.routeCloud')
     default: return t('workspace.connection.notProvided')
   }
 }
@@ -2969,7 +2971,7 @@ async function machineWorkspaceConnectionInfo(session: MachineWorkspaceClientSes
   const observedPath = observedPathFromProto(snapshot?.observedPath)
   const relayInUse = observedPath === 'single_relay' || snapshot?.localCandidateType === ConnectionCandidateType.RELAY || snapshot?.remoteCandidateType === ConnectionCandidateType.RELAY
   return {
-  path: 'local',
+  path: routeKind === 'cloud' ? 'hub' : 'local',
   routeId: snapshot?.routeId || session.stamp.routeId,
   routeKind,
   observedPath,
@@ -3025,6 +3027,7 @@ function connectionRouteKindFromProto(value: ConnectionRouteKind | undefined): C
     case ConnectionRouteKind.LOCAL: return 'local'
     case ConnectionRouteKind.DIRECT: return 'direct'
     case ConnectionRouteKind.SSH: return 'ssh'
+    case ConnectionRouteKind.CLOUD: return 'cloud'
     default: return undefined
   }
 }

@@ -156,8 +156,9 @@ func (service v3ClientAccessService) CreateTicket(_ context.Context, request cor
 			continue
 		}
 		route := proto.Clone(value).(*remoteauthpb.EndpointRouteConfigV1)
-		if route.GetManagedWebrtc() != nil {
-			return corev2.ClientAccessTicket{}, fmt.Errorf("Cloud Route is unavailable while Muxvia Cloud is being rebuilt")
+		if managed := route.GetManagedWebrtc(); managed != nil {
+			// owning daemon 的 DeviceIdentity 是 managed Route 唯一目标；CLI 不能让调用者伪造其它 daemon ID。
+			managed.TargetDeviceId = service.identity.DeviceID
 		}
 		routes = append(routes, route)
 	}

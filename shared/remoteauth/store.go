@@ -35,6 +35,7 @@ type ClientAccessCredential struct {
 	EndpointID              string
 	Identity                ClientAccessIdentity
 	CapabilityGrant         string
+	CloudRouteGrant         []byte
 	LastPairingBundleDigest string
 	UpdatedAt               time.Time
 }
@@ -63,6 +64,7 @@ type storedClientAccessCredential struct {
 	EndpointID              string    `json:"endpoint_id"`
 	PrivateKey              string    `json:"private_key"`
 	CapabilityGrant         string    `json:"capability_grant,omitempty"`
+	CloudRouteGrant         []byte    `json:"cloud_route_grant,omitempty"`
 	LastPairingBundleDigest string    `json:"last_pairing_bundle_digest,omitempty"`
 	UpdatedAt               time.Time `json:"updated_at"`
 }
@@ -202,6 +204,7 @@ func (store *CredentialStore) PairAndBind(
 		return ClientAccessCredential{}, fmt.Errorf("%w: pairing exchange grant exceeds ticket scope", ErrGrantScopeInvalid)
 	}
 	credential.CapabilityGrant = strings.TrimSpace(result.Grant)
+	credential.CloudRouteGrant = append([]byte(nil), result.CloudRouteGrant...)
 	credential.LastPairingBundleDigest = bundleDigest
 	credential.UpdatedAt = responseNow
 	if err := store.persistLocked(ref, credential); err != nil {
@@ -348,7 +351,8 @@ func (store *CredentialStore) resolveLocked(ref string) (ClientAccessCredential,
 	return ClientAccessCredential{
 		Version: stored.Version, EndpointID: stored.EndpointID, Identity: identity,
 		CapabilityGrant: strings.TrimSpace(stored.CapabilityGrant), LastPairingBundleDigest: strings.TrimSpace(stored.LastPairingBundleDigest),
-		UpdatedAt: stored.UpdatedAt.UTC(),
+		CloudRouteGrant: append([]byte(nil), stored.CloudRouteGrant...),
+		UpdatedAt:       stored.UpdatedAt.UTC(),
 	}, nil
 }
 
@@ -391,6 +395,7 @@ func (store *CredentialStore) persistLocked(ref string, credential ClientAccessC
 		Version: credential.Version, EndpointID: credential.EndpointID,
 		PrivateKey:              base64.RawURLEncoding.EncodeToString(credential.Identity.PrivateKey),
 		CapabilityGrant:         strings.TrimSpace(credential.CapabilityGrant),
+		CloudRouteGrant:         append([]byte(nil), credential.CloudRouteGrant...),
 		LastPairingBundleDigest: strings.TrimSpace(credential.LastPairingBundleDigest), UpdatedAt: credential.UpdatedAt.UTC(),
 	}
 	payload, err := json.MarshalIndent(stored, "", "  ")

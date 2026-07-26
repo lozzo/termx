@@ -36,9 +36,26 @@ func TestV3PairingRoutesRejectFieldsWithoutExplicitRoute(t *testing.T) {
 		t.Fatal("unknown URI query was accepted")
 	}
 	if _, err := v3PairingRoutes(v3PairRouteFlags{Routes: []string{"cloud"}}); err == nil {
-		t.Fatal("unavailable Cloud Route was accepted")
+		t.Fatal("Cloud-only Route was accepted without an initial pairing path")
 	}
 	if _, err := v3PairingRoutes(v3PairRouteFlags{Routes: []string{"direct"}, SSHHost: "ignored"}); err == nil {
 		t.Fatal("out-of-scope SSH fields were silently ignored")
+	}
+}
+
+func TestV3PairingRoutesAddsCloudAlongsideDirect(t *testing.T) {
+	routes, err := v3PairingRoutes(v3PairRouteFlags{
+		Routes:             []string{"direct", "cloud"},
+		SignalingAddresses: []string{"127.0.0.1:44111"},
+		ICETCPAddresses:    []string{"127.0.0.1:44112"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(routes) != 2 || routes[1].GetRouteId() != "cloud" || routes[1].GetManagedWebrtc().GetAccountProfileRef() != "default" {
+		t.Fatalf("routes = %#v", routes)
+	}
+	if routes[1].GetManagedWebrtc().GetTargetDeviceId() != "" {
+		t.Fatalf("pair flags invented daemon identity %q", routes[1].GetManagedWebrtc().GetTargetDeviceId())
 	}
 }

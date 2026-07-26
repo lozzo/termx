@@ -3,6 +3,7 @@ syntax = "proto3";
 package muxvia.cloud.v1;
 
 import "google/protobuf/timestamp.proto";
+import "cloud/v1/runtime.proto";
 
 option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
 
@@ -31,4 +32,51 @@ message AgentHelloProofInput {
   string daemon_id = 2;
   string boot_id = 3;
   string connection_id = 4;
+}
+
+// CloudRoutePolicy 是 ClientTicket 允许 Edge 执行的 managed Route 范围。
+// R5 只开放 P2P；Relay 必须等待独立 RelayLease，不能由该枚举隐式放行。
+enum CloudRoutePolicy {
+  CLOUD_ROUTE_POLICY_UNSPECIFIED = 0;
+  CLOUD_ROUTE_POLICY_P2P_ONLY = 1;
+}
+
+// CloudRouteGrantClaims 由 owning daemon 的 DeviceIdentity 签发，只授权发现和信令。
+// 该消息不得出现 terminal、scope、CapabilityGrant、命令或文件字段。
+message CloudRouteGrantClaims {
+  string grant_id = 1;
+  string daemon_id = 2;
+  bytes client_public_key = 3;
+  ClientProduct product = 4;
+  google.protobuf.Timestamp issued_at = 5;
+  google.protobuf.Timestamp expires_at = 6;
+}
+
+// ClientRouteProofInput 把客户端 proof 绑定到 Controller nonce、grant 和本次解析请求。
+message ClientRouteProofInput {
+  string challenge_id = 1;
+  bytes challenge = 2;
+  bytes grant_payload_sha256 = 3;
+  string request_id = 4;
+}
+
+// ClientTicketClaims 是 Controller 对单个在线 Edge 信令 attempt 的两分钟准入票据。
+message ClientTicketClaims {
+  string ticket_id = 1;
+  string account_id = 2;
+  string edge_id = 3;
+  string daemon_id = 4;
+  string client_id = 5;
+  bytes client_public_key = 6;
+  ClientProduct product = 7;
+  CloudRoutePolicy route_policy = 8;
+  google.protobuf.Timestamp issued_at = 9;
+  google.protobuf.Timestamp expires_at = 10;
+}
+
+// ClientHelloProofInput 把 ClientAccessIdentity proof 绑定到票据和当前 attempt generation。
+message ClientHelloProofInput {
+  bytes ticket_payload_sha256 = 1;
+  string session_id = 2;
+  uint64 attempt_generation = 3;
 }

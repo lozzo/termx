@@ -3,6 +3,7 @@
 package enginehost
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	cloudadapter "github.com/muxvia/muxvia/client/adapter/cloud"
 	"github.com/muxvia/muxvia/client/adapter/direct"
 	peeradapter "github.com/muxvia/muxvia/client/adapter/peer"
 	shareadapter "github.com/muxvia/muxvia/client/adapter/share"
@@ -22,8 +24,10 @@ import (
 	"github.com/muxvia/muxvia/client/endpoint"
 	"github.com/muxvia/muxvia/client/port"
 	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	cloudclient "github.com/muxvia/muxvia/cloud/client"
 	"github.com/muxvia/muxvia/proto/apipb"
 	"github.com/muxvia/muxvia/proto/bindingpb"
+	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 	"github.com/muxvia/muxvia/proto/remoteauthpb"
 	"github.com/muxvia/muxvia/shared/remoteauth"
 	"google.golang.org/protobuf/proto"
@@ -41,6 +45,7 @@ type Options struct {
 	CredentialPrefix string
 	Now              func() time.Time
 	SessionAuthority *clientruntime.SessionGenerationAuthority
+	CloudProduct     cloudv1.ClientProduct
 	ShareReceive     func(context.Context, *remoteauthpb.ShareSessionOffer) (*remoteauthpb.ClientEndpointShareBundleV1, error)
 }
 
@@ -70,6 +75,9 @@ func New(options Options) (*Host, error) {
 	}
 	if options.Now == nil {
 		options.Now = time.Now
+	}
+	if options.CloudProduct != cloudv1.ClientProduct_CLIENT_PRODUCT_UNSPECIFIED && !validCloudProduct(options.CloudProduct) {
+		return nil, fmt.Errorf("binding Cloud client product is invalid")
 	}
 	if options.SSHCredentials == nil && options.DirectPeers != nil {
 		// Android/native binding 默认复用同一 platform broker 的不可导出 SSH signer；浏览器没有 Direct primitive，不会启用该 Route。
@@ -130,6 +138,13 @@ func (host *Host) routeConnectors(authorizer peeradapter.CapabilityAuthorizer) m
 			})
 		}
 	}
+	cloudPeers, cloudSupported := host.options.DirectPeers.(cloudadapter.PeerFactory)
+	if validCloudProduct(host.options.CloudProduct) && cloudSupported {
+		connectors[endpoint.RouteManagedWebRTC] = &platformCloudConnector{
+			profiles: platformCloudProfiles{broker: host.options.Broker}, peers: cloudPeers,
+			authorization: authorizer, product: host.options.CloudProduct, clientName: host.options.ClientName,
+		}
+	}
 	return connectors
 }
 
@@ -186,7 +201,7 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 	signer := platformSigner{broker: host.options.Broker, credentialRef: credentialRef, identity: identity}
 	pairingRequest := remoteauth.ClientPairingRequest{
 		ExpectedDeviceID: offer.GetDeviceId(), ExpectedDeviceFingerprint: deviceFingerprint,
-		PairingClaimOffer: payload, Identity: identity, Signer: signer, ClientLabel: host.options.ClientName,
+		PairingClaimOffer: payload, Identity: identity, Signer: signer, ClientLabel: host.options.ClientName, ClientProduct: uint32(host.options.CloudProduct),
 	}
 	paired, err := host.redeemPairingRace(ctx, attempts, pairingRequest)
 	if err != nil {
@@ -201,7 +216,7 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 		return nil, err
 	}
 	boundResponse, err := host.options.Broker.Exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CredentialBind{
-		CredentialBind: &bindingpb.CredentialBindRequest{EndpointId: endpointID, CredentialRef: credentialRef, CapabilityGrant: paired.Grant},
+		CredentialBind: &bindingpb.CredentialBindRequest{EndpointId: endpointID, CredentialRef: credentialRef, CapabilityGrant: paired.Grant, CloudRouteGrant: paired.CloudRouteGrant},
 	}})
 	if err != nil {
 		return nil, err
@@ -210,14 +225,14 @@ func (host *Host) ImportPairing(ctx context.Context, request *bindingpb.ImportPa
 	if err != nil {
 		return nil, err
 	}
-	if bound.GetKeyFingerprint() != identity.Fingerprint || bound.GetCapabilityGrant() != paired.Grant {
+	if bound.GetKeyFingerprint() != identity.Fingerprint || bound.GetCapabilityGrant() != paired.Grant || !bytes.Equal(bound.GetCloudRouteGrant(), paired.CloudRouteGrant) {
 		return nil, fmt.Errorf("platform secure store bound a different pairing credential")
 	}
 	committed, registry, err := host.commitPairingEndpoint(ctx, endpoint.EndpointID(endpointID), candidate, credentialRef)
 	if err != nil {
 		rollbackContext, cancelRollback := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancelRollback()
-		rollbackErr := host.rollbackPreparedCredential(rollbackContext, record, paired.Grant)
+		rollbackErr := host.rollbackPreparedCredential(rollbackContext, record, paired.Grant, paired.CloudRouteGrant)
 		if rollbackErr != nil {
 			return nil, fmt.Errorf("commit paired endpoint: %v; rollback credential: %w", err, rollbackErr)
 		}
@@ -340,7 +355,11 @@ type contextSSHCredentialAvailability interface {
 	AvailableContext(context.Context, string) bool
 }
 
-// routePlanEnvironment 生成当前调用的能力快照，并在副本中禁用尚未重建的 Cloud Route。
+type cloudCredentialAvailability interface {
+	CloudAvailable(context.Context, string, string) bool
+}
+
+// routePlanEnvironment 生成当前调用的平台、凭据与 Cloud profile 能力快照。
 // 禁用只影响本次规划，不能删除持久 Endpoint，也不能阻断 Direct/SSH。
 func routePlanEnvironment(ctx context.Context, target endpoint.Endpoint, options Options, credentials clientCredentialAvailability) (endpoint.Endpoint, clientruntime.RoutePlanEnvironment, error) {
 	wireTarget, err := endpoint.EndpointToProto(target)
@@ -361,10 +380,16 @@ func routePlanEnvironment(ctx context.Context, target endpoint.Endpoint, options
 	if sshSupported {
 		environment.SupportedRouteKinds = append(environment.SupportedRouteKinds, endpoint.RouteSSHWebRTCTCP)
 	}
+	_, cloudPeerSupported := options.DirectPeers.(cloudadapter.PeerFactory)
+	cloudSupported := cloudPeerSupported && validCloudProduct(options.CloudProduct)
+	cloudProfiles := platformCloudProfiles{broker: options.Broker}
+	if cloudSupported {
+		environment.SupportedRouteKinds = append(environment.SupportedRouteKinds, endpoint.RouteManagedWebRTC)
+	}
 	available := make(map[string]struct{})
 	credentialChecked := make(map[string]bool)
 	for _, route := range planningTarget.RouteList() {
-		if route.CredentialRef != "" && credentials != nil {
+		if route.Kind != endpoint.RouteManagedWebRTC && route.CredentialRef != "" && credentials != nil {
 			credentialAvailable, checked := credentialChecked[route.CredentialRef]
 			if !checked {
 				credentialAvailable = credentials.Available(ctx, string(planningTarget.ID), route.CredentialRef)
@@ -380,9 +405,13 @@ func routePlanEnvironment(ctx context.Context, target endpoint.Endpoint, options
 				available[route.SSHCredentialRef] = struct{}{}
 			}
 		case endpoint.RouteManagedWebRTC:
-			// D2 删除旧 Cloud 后没有可用 connector；新 Cloud 必须从新的 Proto 契约重新接入。
-			route.Enabled = false
-			planningTarget.Routes[route.ID] = route
+			cloudCredentials, credentialSupported := credentials.(cloudCredentialAvailability)
+			if !cloudSupported || !credentialSupported || !cloudProfiles.Available(ctx, route.AccountProfileRef) || !cloudCredentials.CloudAvailable(ctx, string(planningTarget.ID), route.CredentialRef) {
+				route.Enabled = false
+				planningTarget.Routes[route.ID] = route
+				continue
+			}
+			available[route.CredentialRef] = struct{}{}
 		}
 	}
 	for _, route := range planningTarget.RouteList() {
@@ -426,6 +455,65 @@ func pairingTarget(endpointID string, identity endpoint.DaemonIdentity, routes [
 	}
 }
 
+type platformCloudProfiles struct{ broker *binding.PlatformBroker }
+
+// Resolve 只把平台 profile 投影成 Go Cloud protocol client；平台不建立网络连接，也不拥有 attempt。
+func (source platformCloudProfiles) Resolve(ctx context.Context, reference string) (*cloudclient.Client, error) {
+	reference = strings.TrimSpace(reference)
+	if source.broker == nil || reference == "" {
+		return nil, fmt.Errorf("Cloud account profile is unavailable")
+	}
+	response, err := source.broker.Exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CloudProfileResolve{
+		CloudProfileResolve: &bindingpb.CloudProfileResolveRequest{AccountProfileRef: reference},
+	}})
+	if err != nil {
+		return nil, err
+	}
+	if err := platformResponseError(response); err != nil {
+		return nil, err
+	}
+	profile := response.GetCloudProfile()
+	if profile == nil || profile.GetAccountProfileRef() != reference {
+		return nil, fmt.Errorf("platform Cloud profile response does not match %q", reference)
+	}
+	return cloudclient.NewClient(cloudclient.Config{
+		ControllerAddress: profile.GetControllerAddress(), ControllerServerName: profile.GetControllerServerName(),
+		ControllerCAPEM: append([]byte(nil), profile.GetControllerCaPem()...),
+	})
+}
+
+func (source platformCloudProfiles) Available(ctx context.Context, reference string) bool {
+	_, err := source.Resolve(ctx, reference)
+	return err == nil
+}
+
+// platformCloudConnector 延迟解析当前本地 profile，然后把整个 Cloud attempt 交回 Go adapter。
+type platformCloudConnector struct {
+	profiles      platformCloudProfiles
+	peers         cloudadapter.PeerFactory
+	authorization peeradapter.Authorizer
+	product       cloudv1.ClientProduct
+	clientName    string
+}
+
+func (connector *platformCloudConnector) Connect(ctx context.Context, request clientruntime.AttemptRequest) (clientruntime.ReadyPeerSession, error) {
+	if connector == nil {
+		return nil, fmt.Errorf("Cloud connector is unavailable")
+	}
+	protocolClient, err := connector.profiles.Resolve(ctx, request.Route().AccountProfileRef)
+	if err != nil {
+		return nil, err
+	}
+	return (&cloudadapter.Dialer{
+		Peers: connector.peers, Cloud: protocolClient, Authorization: connector.authorization,
+		Product: connector.product, ClientName: connector.clientName,
+	}).Connect(ctx, request)
+}
+
+func validCloudProduct(product cloudv1.ClientProduct) bool {
+	return product >= cloudv1.ClientProduct_CLIENT_PRODUCT_TUI && product <= cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI
+}
+
 type platformCredentials struct{ broker *binding.PlatformBroker }
 
 func (source platformCredentials) Available(ctx context.Context, endpointID, reference string) bool {
@@ -448,7 +536,12 @@ func (source platformCredentials) ResolveClientCredential(ctx context.Context, e
 	if err := identity.ValidatePublic(); err != nil {
 		return remoteauth.ClientAccessCredential{}, err
 	}
-	return remoteauth.ClientAccessCredential{Version: 1, EndpointID: record.GetEndpointId(), Identity: identity, CapabilityGrant: record.GetCapabilityGrant(), UpdatedAt: time.Now().UTC()}, nil
+	return remoteauth.ClientAccessCredential{Version: 1, EndpointID: record.GetEndpointId(), Identity: identity, CapabilityGrant: record.GetCapabilityGrant(), CloudRouteGrant: append([]byte(nil), record.GetCloudRouteGrant()...), UpdatedAt: time.Now().UTC()}, nil
+}
+
+func (source platformCredentials) CloudAvailable(ctx context.Context, endpointID, reference string) bool {
+	credential, err := source.ResolveClientCredential(ctx, endpointID, reference)
+	return err == nil && credential.Ready() && len(credential.CloudRouteGrant) != 0
 }
 
 func (source platformCredentials) ResolveClientSigner(_ context.Context, endpointID, reference string, identity remoteauth.ClientAccessIdentity) (remoteauth.ClientAccessSigner, error) {

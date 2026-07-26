@@ -1,6 +1,8 @@
 package com.muxvia.app.goclient
 
 import android.content.Context
+import android.util.Base64
+import com.muxvia.app.BuildConfig
 import com.google.protobuf.ByteString
 import muxvia.api.v1.Common
 import muxvia.client.binding.v1.ClientBinding
@@ -80,6 +82,7 @@ class AndroidClientPlatform(
                         request.credentialBind.credentialRef,
                         request.credentialBind.endpointId,
                         request.credentialBind.capabilityGrant,
+                        request.credentialBind.cloudRouteGrant.toByteArray(),
                     ))
                 ClientBinding.PlatformRequest.RequestCase.ENDPOINT_REGISTRY_LOAD ->
                     response.setEndpointRegistry(ClientBinding.EndpointRegistryLoaded.newBuilder()
@@ -106,6 +109,8 @@ class AndroidClientPlatform(
                         ))))
                 ClientBinding.PlatformRequest.RequestCase.SSH_CREDENTIAL_DELETE ->
                     sshCredentials.delete(request.sshCredentialDelete.credentialRef)
+                ClientBinding.PlatformRequest.RequestCase.CLOUD_PROFILE_RESOLVE ->
+                    response.setCloudProfile(resolveCloudProfile(request.cloudProfileResolve.accountProfileRef))
                 ClientBinding.PlatformRequest.RequestCase.REQUEST_NOT_SET ->
                     throw ClientPlatformFailure("protocol", "platform request payload is missing")
                 null -> throw ClientPlatformFailure("protocol", "platform request case is invalid")
@@ -116,6 +121,25 @@ class AndroidClientPlatform(
         } catch (_: Throwable) {
             response.setError(platformError("temporary", "Android platform request failed")).build()
         }
+    }
+
+    /** resolveCloudProfile 只暴露构建时注入的 TLS locator；所有 Cloud 协议仍由 Go 执行。 */
+    private fun resolveCloudProfile(reference: String): ClientBinding.CloudProfileRecord {
+        val normalized = reference.trim()
+        val address = BuildConfig.MUXVIA_CLOUD_CONTROLLER_ADDRESS.trim()
+        val serverName = BuildConfig.MUXVIA_CLOUD_CONTROLLER_SERVER_NAME.trim()
+        if (normalized != "default" || address.isBlank() || serverName.isBlank()) {
+            throw ClientPlatformFailure("route_unavailable", "Muxvia Cloud profile is unavailable")
+        }
+        val caPEM = BuildConfig.MUXVIA_CLOUD_CONTROLLER_CA_PEM_BASE64.trim().let {
+            if (it.isBlank()) byteArrayOf() else Base64.decode(it, Base64.DEFAULT)
+        }
+        return ClientBinding.CloudProfileRecord.newBuilder()
+            .setAccountProfileRef(normalized)
+            .setControllerAddress(address)
+            .setControllerServerName(serverName)
+            .setControllerCaPem(ByteString.copyFrom(caPEM))
+            .build()
     }
 
     private fun platformError(code: String, message: String): Common.ApiError {

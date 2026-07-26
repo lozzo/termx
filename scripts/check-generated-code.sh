@@ -57,6 +57,8 @@ cloud_proto=(
   proto/cloud/v1/edge_control.proto
   proto/cloud/v1/ticket.proto
   proto/cloud/v1/enrollment.proto
+  proto/cloud/v1/directory.proto
+  proto/cloud/v1/client_gateway.proto
   proto/cloud/v1/agent_gateway.proto
 )
 # Go 与 TypeScript 都从 proto 源码生成到临时目录；检查过程不改工作树。
@@ -126,6 +128,8 @@ for source in "${cloud_proto[@]}"; do
 done
 check_generated_file "$tmp_dir/go/cloud/v1/edge_control_grpc.pb.go" proto/cloud/v1/edge_control_grpc.pb.go
 check_generated_file "$tmp_dir/go/cloud/v1/enrollment_grpc.pb.go" proto/cloud/v1/enrollment_grpc.pb.go
+check_generated_file "$tmp_dir/go/cloud/v1/directory_grpc.pb.go" proto/cloud/v1/directory_grpc.pb.go
+check_generated_file "$tmp_dir/go/cloud/v1/client_gateway_grpc.pb.go" proto/cloud/v1/client_gateway_grpc.pb.go
 check_generated_file "$tmp_dir/go/cloud/v1/agent_gateway_grpc.pb.go" proto/cloud/v1/agent_gateway_grpc.pb.go
 check_generated_file "$tmp_dir/descriptor/cloud-v1.pb" proto/cloud/v1/testdata/cloud-v1.pb
 echo "generated code is current"

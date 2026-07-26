@@ -19,6 +19,7 @@ import (
 	"github.com/muxvia/muxvia/cloud/controller/apihttp"
 	"github.com/muxvia/muxvia/cloud/controller/control"
 	"github.com/muxvia/muxvia/cloud/controller/directory"
+	"github.com/muxvia/muxvia/cloud/controller/directoryapi"
 	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
 	"github.com/muxvia/muxvia/cloud/controller/enrollment"
 	"github.com/muxvia/muxvia/cloud/controller/install"
@@ -143,6 +144,13 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
+	clientDirectoryService, err := directoryapi.NewService(directoryapi.Config{
+		Store: database, Directory: directoryState, Edges: edgeService, EdgeCACertificate: edgeCAPayload,
+		TicketSigningKey: ticketKey, TicketSigningKeyID: config.ticketSigningKeyID, ChallengeTTL: time.Minute, ClientTicketTTL: 2 * time.Minute,
+	})
+	if err != nil {
+		return err
+	}
 	service, err := control.NewService(control.Config{
 		ControllerID:           config.controllerID,
 		ControllerBootID:       uuid.NewString(),
@@ -168,7 +176,7 @@ func run(ctx context.Context, arguments []string, getenv func(string) string, lo
 	if err != nil {
 		return err
 	}
-	httpServer, err := apihttp.Start(apihttp.Config{ListenAddress: config.httpListen, TLSCertificateFile: config.tlsCertificate, TLSPrivateKeyFile: config.tlsPrivateKey, PublicOrigin: config.publicOrigin, OperatorUsername: config.operatorUsername, OperatorPassword: strings.TrimSpace(string(passwordPayload)), Edges: edgeService, Directory: directoryState, Install: installService, Enrollment: enrollmentService})
+	httpServer, err := apihttp.Start(apihttp.Config{ListenAddress: config.httpListen, TLSCertificateFile: config.tlsCertificate, TLSPrivateKeyFile: config.tlsPrivateKey, PublicOrigin: config.publicOrigin, OperatorUsername: config.operatorUsername, OperatorPassword: strings.TrimSpace(string(passwordPayload)), Edges: edgeService, Directory: directoryState, Install: installService, Enrollment: enrollmentService, ClientDirectory: clientDirectoryService})
 	if err != nil {
 		shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), config.shutdownTimeout)
 		defer cancelShutdown()

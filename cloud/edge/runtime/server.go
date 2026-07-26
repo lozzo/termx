@@ -17,6 +17,7 @@ import (
 
 	"github.com/muxvia/muxvia/cloud/configsignature"
 	"github.com/muxvia/muxvia/cloud/edge/agentgateway"
+	"github.com/muxvia/muxvia/cloud/edge/clientgateway"
 	"github.com/muxvia/muxvia/cloud/edge/controllerlink"
 	"github.com/muxvia/muxvia/cloud/processhealth"
 	"github.com/muxvia/muxvia/cloud/securetransport"
@@ -137,6 +138,17 @@ func Start(parent context.Context, config Config) (*Runtime, error) {
 		return nil, err
 	}
 	cloudv1.RegisterAgentGatewayServer(grpcServer, agentService)
+	clientService, err := clientgateway.NewService(clientgateway.Config{
+		EdgeID: config.EdgeID, EdgeBootID: config.BootID, Runtime: state, VerificationKeys: runtime.currentTicketKeys,
+		Ready: runtime.Ready, SignalTimeout: 20 * time.Second,
+	})
+	if err != nil {
+		_ = listener.Close()
+		state.Close()
+		cancel()
+		return nil, err
+	}
+	cloudv1.RegisterClientGatewayServer(grpcServer, clientService)
 	runtime.httpServer = &http.Server{Handler: runtime, ReadHeaderTimeout: 5 * time.Second, TLSConfig: publicTLS}
 	runtime.waitGroup.Add(2)
 	go runtime.servePublic()

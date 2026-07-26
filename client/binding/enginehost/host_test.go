@@ -65,7 +65,7 @@ func TestPairingTargetKeepsManagedFieldsOutOfDirectRoute(t *testing.T) {
 	}
 }
 
-func TestPairingClaimRoutesExcludeUnavailableCloudRoute(t *testing.T) {
+func TestPairingClaimRoutesExcludeCloudFromInitialExchange(t *testing.T) {
 	direct := endpoint.AccessRoute{ID: "direct", Kind: endpoint.RouteDirectWebRTCTCP, Enabled: true}
 	cloud := endpoint.AccessRoute{ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true}
 	target := endpoint.EndpointCandidate{Routes: []endpoint.AccessRoute{direct, cloud}}

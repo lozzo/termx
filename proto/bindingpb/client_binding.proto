@@ -33,6 +33,7 @@ enum ConnectionRouteKind {
   CONNECTION_ROUTE_KIND_SSH = 3;
 	reserved 4;
 	reserved "CONNECTION_ROUTE_KIND_MANAGED_CLOUD";
+  CONNECTION_ROUTE_KIND_CLOUD = 5;
 }
 
 // ConnectionObservedPath 是已建立 WebRTC candidate pair 的中性路径投影。
@@ -390,6 +391,7 @@ message CredentialBindRequest {
   string endpoint_id = 1;
   string credential_ref = 2;
   string capability_grant = 3;
+  bytes cloud_route_grant = 4;
 }
 
 message CredentialRecord {
@@ -399,6 +401,7 @@ message CredentialRecord {
   string key_fingerprint = 4;
   string capability_grant = 5;
   bool newly_created = 6;
+  bytes cloud_route_grant = 7;
 }
 
 message CredentialSignRequest {
@@ -407,6 +410,17 @@ message CredentialSignRequest {
 }
 
 message CredentialSignResponse { bytes signature = 1; }
+
+// CloudProfileResolveRequest 只解析本机账号/构建配置中的 Controller TLS locator。
+// 平台不得在该请求内执行 Directory、ClientGateway、WebRTC 或认证逻辑。
+message CloudProfileResolveRequest { string account_profile_ref = 1; }
+
+message CloudProfileRecord {
+  string account_profile_ref = 1;
+  string controller_address = 2;
+  string controller_server_name = 3;
+  bytes controller_ca_pem = 4;
+}
 
 // SSHCredentialLookupRequest 查询或显式创建一个平台不可导出的 SSH signer。
 // create_if_missing=false 只能查询，planner 不得因为能力探测而创建新 key。
@@ -461,8 +475,9 @@ message PlatformRequest {
     SSHCredentialLookupRequest ssh_credential_lookup = 17;
     SSHCredentialSignRequest ssh_credential_sign = 18;
     SSHCredentialDeleteRequest ssh_credential_delete = 19;
+    CloudProfileResolveRequest cloud_profile_resolve = 20;
   }
-	reserved 20 to 26, 30 to 38;
+	reserved 21 to 26, 30 to 38;
 }
 
 message PlatformResponse {
@@ -474,6 +489,7 @@ message PlatformResponse {
     EndpointRegistryLoaded endpoint_registry = 12;
     SSHCredentialRecord ssh_credential = 13;
     SSHCredentialSignResponse ssh_credential_sign = 14;
+    CloudProfileRecord cloud_profile = 15;
   }
 	reserved 20 to 26, 30 to 34;
 }

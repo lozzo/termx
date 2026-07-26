@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/muxvia/muxvia/cloud/controller/directory"
+	"github.com/muxvia/muxvia/cloud/controller/directoryapi"
 	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
 	"github.com/muxvia/muxvia/cloud/controller/enrollment"
 	"github.com/muxvia/muxvia/cloud/controller/install"
@@ -44,6 +45,7 @@ type Config struct {
 	Directory          *directory.Directory
 	Install            *install.Service
 	Enrollment         *enrollment.Service
+	ClientDirectory    *directoryapi.Service
 }
 
 // Server 拥有原生 HTTPS listener 生命周期，不拥有 Edge 配置或实时目录。
@@ -107,6 +109,9 @@ func NewHandler(config Config) (http.Handler, error) {
 	if config.Enrollment != nil {
 		grpcServer = grpc.NewServer()
 		cloudv1.RegisterEnrollmentServiceServer(grpcServer, config.Enrollment)
+		if config.ClientDirectory != nil {
+			cloudv1.RegisterDirectoryServiceServer(grpcServer, config.ClientDirectory)
+		}
 	}
 	handler := &handler{config: config, grpcServer: grpcServer}
 	return handler, nil

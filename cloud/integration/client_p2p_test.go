@@ -1,0 +1,400 @@
+package integration_test
+
+import (
+	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	apilayer "github.com/muxvia/muxvia/api_layer"
+	cloudadapter "github.com/muxvia/muxvia/client/adapter/cloud"
+	peeradapter "github.com/muxvia/muxvia/client/adapter/peer"
+	pionadapter "github.com/muxvia/muxvia/client/adapter/webrtc/pion"
+	"github.com/muxvia/muxvia/client/endpoint"
+	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	cloudclient "github.com/muxvia/muxvia/cloud/client"
+	"github.com/muxvia/muxvia/cloud/controller/directory"
+	"github.com/muxvia/muxvia/cloud/controller/directoryapi"
+	"github.com/muxvia/muxvia/cloud/controller/edgeconfig"
+	"github.com/muxvia/muxvia/cloud/controller/enrollment"
+	clouddaemon "github.com/muxvia/muxvia/cloud/daemon"
+	edgeruntime "github.com/muxvia/muxvia/cloud/edge/runtime"
+	"github.com/muxvia/muxvia/cloud/ticket"
+	corev2 "github.com/muxvia/muxvia/core"
+	"github.com/muxvia/muxvia/proto/apipb"
+	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
+	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	remotedaemon "github.com/muxvia/muxvia/remote/daemon"
+	remotewebrtc "github.com/muxvia/muxvia/remote/webrtc"
+	"github.com/muxvia/muxvia/shared/remoteauth"
+	pionwebrtc "github.com/pion/webrtc/v4"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+func TestCloudP2PCompletesCLIAndTUITerminalIOAndTracksMemorySession(t *testing.T) {
+	certificates := newCertificateFiles(t, testEdgeID)
+	ticketPublicKey, ticketPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticketKeyID := "ticket-r5"
+	controllerRuntime, directoryState := startPresenceController(t, certificates, "127.0.0.1:0", &cloudv1.VerificationKey{KeyId: ticketKeyID, Algorithm: "Ed25519", PublicKey: ticketPublicKey})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = controllerRuntime.Shutdown(ctx)
+		directoryState.Close()
+	})
+
+	_, daemonPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	daemonIdentity, err := remoteauth.NewIdentity("device-r5", daemonPrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	daemonRecord := enrollment.Daemon{
+		ID: uuid.NewString(), AccountID: uuid.NewString(), AccountName: "R5 Account", DisplayName: "R5 daemon",
+		DeviceID: daemonIdentity.DeviceID, DeviceFingerprint: daemonIdentity.Fingerprint, DevicePublicKey: append(ed25519.PublicKey(nil), daemonIdentity.PublicKey...),
+		Revision: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	edgeStore := &r5EdgeStore{edge: edgeconfig.Edge{ID: testEdgeID, Name: "R5 Edge", Region: "local", Capacity: 100, PublicEndpoint: "127.0.0.1:1", Enabled: true, ConfigVersion: 1, Revision: 1}}
+	_, configSigningKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edges, err := edgeconfig.NewService(edgeconfig.Config{Store: edgeStore, SigningKey: configSigningKey, SigningKeyID: "config-r5", ClaimTTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	edgeCAPEM, err := os.ReadFile(certificates.rootCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identityStore := r5EnrollmentStore{daemon: daemonRecord}
+	enrollmentService, err := enrollment.NewService(enrollment.Config{
+		Store: identityStore, Edges: edges, Directory: directoryState, TicketSigningKey: ticketPrivateKey, TicketSigningKeyID: ticketKeyID,
+		EdgeCACertificate: edgeCAPEM, EnrollmentTTL: time.Minute, ChallengeTTL: time.Minute, AgentTicketTTL: 10 * time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	directoryService, err := directoryapi.NewService(directoryapi.Config{
+		Store: identityStore, Directory: directoryState, Edges: edges, EdgeCACertificate: edgeCAPEM,
+		TicketSigningKey: ticketPrivateKey, TicketSigningKeyID: ticketKeyID, ChallengeTTL: time.Minute, ClientTicketTTL: 2 * time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicControllerAddress := startR5PublicController(t, certificates, enrollmentService, directoryService)
+
+	edgeRuntime, err := edgeruntime.Start(context.Background(), edgeruntime.Config{
+		ListenAddress: "127.0.0.1:0", PublicCertificateFile: certificates.edgePublicCert, PublicPrivateKeyFile: certificates.edgePublicKey,
+		ControllerAddress: controllerRuntime.GRPCAddress(), ControllerServerName: testControllerServer, ControllerCAFile: certificates.rootCA,
+		IdentityCertificateFile: certificates.edgeIdentityCert, IdentityPrivateKeyFile: certificates.edgeIdentityKey,
+		EdgeID: testEdgeID, BootID: testEdgeBootID, SoftwareVersion: "r5-integration",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { shutdownEdge(t, edgeRuntime) })
+	edgeStore.setPublicEndpoint(edgeRuntime.PublicAddress())
+	readyContext, cancelReady := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := edgeRuntime.WaitReady(readyContext); err != nil {
+		cancelReady()
+		t.Fatal(err)
+	}
+	cancelReady()
+
+	accessStore, err := remoteauth.LoadAccessStore(t.TempDir(), daemonIdentity, remoteauth.AccessStoreOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = accessStore.Close() })
+	if err := accessStore.ConfigureManagedRouteGrantIssuer(func(clientPublicKey ed25519.PublicKey, product uint32, now time.Time) ([]byte, error) {
+		claims := &cloudv1.CloudRouteGrantClaims{
+			GrantId: uuid.NewString(), DaemonId: daemonRecord.ID, ClientPublicKey: append([]byte(nil), clientPublicKey...), Product: cloudv1.ClientProduct(product),
+			IssuedAt: timestamppb.New(now.UTC()), ExpiresAt: timestamppb.New(now.UTC().Add(7 * 24 * time.Hour)),
+		}
+		signed, signErr := ticket.SignCloudRouteGrant(daemonIdentity, claims)
+		if signErr != nil {
+			return nil, signErr
+		}
+		return proto.MarshalOptions{Deterministic: true}.Marshal(signed)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	coreServer := corev2.NewServer(corev2.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = coreServer.Shutdown(ctx)
+	})
+	loopbackAPI := r5LoopbackWebRTCAPI()
+	daemonRuntime, err := clouddaemon.NewRuntime(clouddaemon.Config{
+		Record:   clouddaemon.EnrollmentRecord{Version: 1, DaemonID: daemonRecord.ID, AccountID: daemonRecord.AccountID, ControllerAddress: publicControllerAddress, ControllerServerName: testControllerServer, EnrolledAt: time.Now().UTC()},
+		Identity: daemonIdentity, AccessStore: accessStore, SoftwareVersion: "r5-integration",
+		ControllerTLS: &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: certificates.rootPool, ServerName: testControllerServer},
+		Answerer:      remotewebrtc.Answerer{Handler: remotedaemon.SessionAcceptor{Core: coreServer, Identity: daemonIdentity, AccessStore: accessStore}, PeerConnections: loopbackAPI.NewPeerConnection},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	daemonContext, cancelDaemon := context.WithCancel(context.Background())
+	daemonDone := make(chan error, 1)
+	go func() { daemonDone <- daemonRuntime.Run(daemonContext) }()
+	t.Cleanup(func() {
+		cancelDaemon()
+		select {
+		case runErr := <-daemonDone:
+			if runErr != nil && !errors.Is(runErr, context.Canceled) {
+				t.Errorf("stop R5 daemon runtime: %v", runErr)
+			}
+		case <-time.After(5 * time.Second):
+			t.Error("R5 daemon runtime did not stop")
+		}
+	})
+	eventually(t, 8*time.Second, func() bool {
+		location, found, locateErr := directoryState.LocateDaemon(context.Background(), daemonRecord.ID)
+		return locateErr == nil && found && location.EdgeID == testEdgeID
+	})
+
+	cloudNetwork, err := cloudclient.NewClient(cloudclient.Config{ControllerAddress: publicControllerAddress, ControllerServerName: testControllerServer, ControllerCAPEM: edgeCAPEM})
+	if err != nil {
+		t.Fatal(err)
+	}
+	products := []cloudv1.ClientProduct{cloudv1.ClientProduct_CLIENT_PRODUCT_CLI, cloudv1.ClientProduct_CLIENT_PRODUCT_TUI}
+	var revokedCredential remoteauth.ClientAccessCredential
+	var revokedGrantID string
+	for index, product := range products {
+		endpointID := fmt.Sprintf("cloud-r5-%s", strings.ToLower(strings.TrimPrefix(product.String(), "CLIENT_PRODUCT_")))
+		credential, grantID := issueR5CloudCredential(t, accessStore, daemonIdentity, endpointID, product)
+		dialer := &cloudadapter.Dialer{
+			Peers: pionadapter.Factory{PeerConnections: loopbackAPI.NewPeerConnection}, Cloud: cloudNetwork, Product: product,
+			Authorization: peeradapter.CapabilityAuthorizer{Credentials: r5CredentialSource{credential: credential}},
+		}
+		attempt := r5CloudAttempt(t, daemonIdentity, endpointID, clientruntime.SessionGeneration(index+1))
+		connectContext, cancelConnect := context.WithTimeout(context.Background(), 45*time.Second)
+		ready, connectErr := dialer.Connect(connectContext, attempt)
+		if connectErr != nil {
+			cancelConnect()
+			t.Fatalf("connect %s through Cloud P2P: %v", product, connectErr)
+		}
+		// 模拟 route racer 发布 winner 后取消 attempt；ClientGateway 必须继续由 ReadyPeerSession 持有。
+		cancelConnect()
+		session, ok := ready.(*cloudadapter.Session)
+		if !ok {
+			_ = ready.Close()
+			t.Fatalf("Cloud ready session type = %T", ready)
+		}
+		eventually(t, 5*time.Second, func() bool { return r5SessionCount(directoryState) == 1 })
+		assertR5TerminalIO(t, session, endpointID, strings.ToLower(product.String()))
+		if err := session.Close(); err != nil {
+			t.Fatalf("close %s Cloud session: %v", product, err)
+		}
+		eventually(t, 5*time.Second, func() bool { return r5SessionCount(directoryState) == 0 })
+		if product == cloudv1.ClientProduct_CLIENT_PRODUCT_CLI {
+			revokedCredential, revokedGrantID = credential, grantID
+		}
+	}
+
+	if _, err := accessStore.RevokeGrant(revokedGrantID); err != nil {
+		t.Fatal(err)
+	}
+	revokedDialer := &cloudadapter.Dialer{
+		Peers: pionadapter.Factory{PeerConnections: loopbackAPI.NewPeerConnection}, Cloud: cloudNetwork, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI,
+		Authorization: peeradapter.CapabilityAuthorizer{Credentials: r5CredentialSource{credential: revokedCredential}},
+	}
+	revokedContext, cancelRevoked := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelRevoked()
+	if _, err := revokedDialer.Connect(revokedContext, r5CloudAttempt(t, daemonIdentity, revokedCredential.EndpointID, 99)); err == nil || !strings.Contains(err.Error(), "CLIENT_REVOKED") {
+		t.Fatalf("revoked Cloud client error = %v, want daemon precheck rejection", err)
+	}
+	eventually(t, 5*time.Second, func() bool { return r5SessionCount(directoryState) == 0 })
+}
+
+func issueR5CloudCredential(t *testing.T, store *remoteauth.AccessStore, daemonIdentity remoteauth.Identity, endpointID string, product cloudv1.ClientProduct) (remoteauth.ClientAccessCredential, string) {
+	t.Helper()
+	clientIdentity, err := remoteauth.GenerateClientAccessIdentity(endpointID, rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, _, err := store.IssuePairingBundle(remoteauth.PairingIssueOptions{
+		Scope: remoteauth.FullDaemonScope(), TicketTTL: time.Minute, GrantLifetime: time.Hour,
+		Routes: []*remoteauthpb.EndpointRouteConfigV1{{SchemaVersion: 1, RouteId: "cloud", Enabled: true, Route: &remoteauthpb.EndpointRouteConfigV1_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.ManagedWebRTCRouteConfig{TargetDeviceId: daemonIdentity.DeviceID, RelayMode: remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_DIRECT}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := remoteauth.EncodePairingBundle(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exchanged, err := store.RedeemPairingBundleForProduct(payload, clientIdentity.PublicKey, product.String(), uint32(product), time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exchanged.CloudRouteGrant) == 0 {
+		t.Fatal("managed pairing did not issue CloudRouteGrant")
+	}
+	return remoteauth.ClientAccessCredential{Version: 1, EndpointID: endpointID, Identity: clientIdentity, CapabilityGrant: exchanged.Grant, CloudRouteGrant: exchanged.CloudRouteGrant, UpdatedAt: time.Now().UTC()}, exchanged.GrantID
+}
+
+func r5CloudAttempt(t *testing.T, identity remoteauth.Identity, endpointID string, generation clientruntime.SessionGeneration) clientruntime.AttemptRequest {
+	t.Helper()
+	target := endpoint.Endpoint{
+		ID: endpoint.EndpointID(endpointID), DaemonIdentity: endpoint.DaemonIdentity{DeviceID: identity.DeviceID, DeviceFingerprint: identity.Fingerprint},
+		Routes: map[endpoint.RouteID]endpoint.AccessRoute{"cloud": {ID: "cloud", Kind: endpoint.RouteManagedWebRTC, Enabled: true, Source: endpoint.SourceCloud, PolicySource: endpoint.SourceUser, CredentialRef: "credential:" + endpointID, TargetDeviceID: identity.DeviceID, AccountProfileRef: "default", RelayMode: endpoint.RelayDirect}},
+	}
+	attempt, err := clientruntime.NewAttemptRequest(target, "cloud", generation, clientruntime.ConnectIntentInteractive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return attempt
+}
+
+func assertR5TerminalIO(t *testing.T, session *cloudadapter.Session, endpointID, suffix string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	terminalID := "term-r5-" + suffix
+	if _, err := session.TerminalCreate(ctx, &apipb.TerminalCreateCommand{Terminal: &apipb.TerminalCreateSpec{TerminalId: terminalID, Command: []string{"/bin/cat"}, Size: &apipb.TerminalSize{Cols: 80, Rows: 24}}}); err != nil {
+		t.Fatalf("create terminal through Cloud: %v", err)
+	}
+	attached, err := session.TerminalAttach(ctx, &apipb.TerminalAttachCommand{Terminal: &apipb.TerminalRef{EndpointId: endpointID, TerminalId: terminalID}, Mode: apipb.AttachmentMode_ATTACHMENT_MODE_COLLABORATOR, ResizePolicy: apipb.ResizePolicy_RESIZE_POLICY_OWNER, SurfaceId: "r5-surface", ViewId: "r5-view"})
+	if err != nil {
+		t.Fatalf("attach terminal through Cloud: %v", err)
+	}
+	resource := attached.GetAttachment().GetResource()
+	marker := "muxvia-r5-" + suffix
+	if err := session.TerminalInput(ctx, &apipb.TerminalInputCommand{Attachment: resource, Data: []byte(marker + "\n")}); err != nil {
+		t.Fatalf("write terminal input through Cloud: %v", err)
+	}
+	eventually(t, 5*time.Second, func() bool {
+		screen, screenErr := session.LiveScreen(ctx, &apipb.LiveScreenGetCommand{Terminal: &apipb.TerminalRef{EndpointId: endpointID, TerminalId: terminalID}})
+		return screenErr == nil && strings.Contains(r5ScreenText(screen), marker)
+	})
+}
+
+func r5ScreenText(screen *apipb.NativeScreenResult) string {
+	var text strings.Builder
+	for _, row := range screen.GetRows() {
+		for _, cell := range row.GetCells() {
+			text.WriteString(cell.GetContent())
+		}
+		text.WriteByte('\n')
+	}
+	return text.String()
+}
+
+func r5SessionCount(state *directory.Directory) int {
+	projection, found, err := state.Edge(context.Background(), testEdgeID)
+	if err != nil || !found {
+		return -1
+	}
+	return projection.SessionCount
+}
+
+func r5LoopbackWebRTCAPI() *pionwebrtc.API {
+	settings := pionwebrtc.SettingEngine{}
+	settings.SetNetworkTypes([]pionwebrtc.NetworkType{pionwebrtc.NetworkTypeUDP4})
+	settings.SetIncludeLoopbackCandidate(true)
+	settings.SetIPFilter(func(address net.IP) bool { return address.IsLoopback() })
+	return pionwebrtc.NewAPI(pionwebrtc.WithSettingEngine(settings))
+}
+
+func startR5PublicController(t *testing.T, certificates certificateFiles, enrollmentService *enrollment.Service, directoryService *directoryapi.Service) string {
+	t.Helper()
+	certificate, err := tls.LoadX509KeyPair(certificates.controllerCert, certificates.controllerKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate}})))
+	cloudv1.RegisterEnrollmentServiceServer(server, enrollmentService)
+	cloudv1.RegisterDirectoryServiceServer(server, directoryService)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+	return listener.Addr().String()
+}
+
+type r5CredentialSource struct {
+	credential remoteauth.ClientAccessCredential
+}
+
+func (source r5CredentialSource) ResolveClientCredential(context.Context, string, string) (remoteauth.ClientAccessCredential, error) {
+	return source.credential, nil
+}
+
+type r5EnrollmentStore struct{ daemon enrollment.Daemon }
+
+func (r5EnrollmentStore) CreateDaemonEnrollment(context.Context, string, string, string, []byte, time.Time, time.Time) (string, error) {
+	return "", errors.New("not implemented by R5 identity fixture")
+}
+func (r5EnrollmentStore) ConsumeDaemonEnrollment(context.Context, []byte, string, string, ed25519.PublicKey, time.Time) (enrollment.Daemon, error) {
+	return enrollment.Daemon{}, errors.New("not implemented by R5 identity fixture")
+}
+func (store r5EnrollmentStore) GetDaemon(_ context.Context, daemonID string) (enrollment.Daemon, error) {
+	if daemonID != store.daemon.ID {
+		return enrollment.Daemon{}, enrollment.ErrDaemonUnavailable
+	}
+	return store.daemon, nil
+}
+func (store r5EnrollmentStore) ListDaemons(context.Context) ([]enrollment.Daemon, error) {
+	return []enrollment.Daemon{store.daemon}, nil
+}
+
+type r5EdgeStore struct {
+	mu   sync.RWMutex
+	edge edgeconfig.Edge
+}
+
+func (store *r5EdgeStore) setPublicEndpoint(value string) {
+	store.mu.Lock()
+	store.edge.PublicEndpoint = value
+	store.mu.Unlock()
+}
+func (store *r5EdgeStore) ListEdges(context.Context) ([]edgeconfig.Edge, error) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	return []edgeconfig.Edge{store.edge}, nil
+}
+func (store *r5EdgeStore) GetEdge(_ context.Context, edgeID string) (edgeconfig.Edge, error) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	if edgeID != store.edge.ID {
+		return edgeconfig.Edge{}, errors.New("Edge not found")
+	}
+	return store.edge, nil
+}
+func (*r5EdgeStore) CreateEdge(context.Context, edgeconfig.Edge, []byte, time.Time) error {
+	return errors.New("not implemented by R5 Edge fixture")
+}
+func (*r5EdgeStore) UpdateEdge(context.Context, edgeconfig.UpdateInput, edgeconfig.Edge) error {
+	return errors.New("not implemented by R5 Edge fixture")
+}
+func (*r5EdgeStore) ConsumeInstallClaim(context.Context, []byte, []byte, time.Time) (edgeconfig.Edge, error) {
+	return edgeconfig.Edge{}, errors.New("not implemented by R5 Edge fixture")
+}
+func (*r5EdgeStore) ConsumeBootstrapClaim(context.Context, []byte, string, []byte) (edgeconfig.Edge, error) {
+	return edgeconfig.Edge{}, errors.New("not implemented by R5 Edge fixture")
+}

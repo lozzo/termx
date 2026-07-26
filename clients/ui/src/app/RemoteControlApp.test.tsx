@@ -20,12 +20,12 @@ describe('RemoteControlApp accountless product shell', () => {
     expect(screen.queryByRole('button', { name: 'Sign in to Muxvia Cloud' })).toBeNull()
   })
 
-  it('shows Cloud as unavailable in settings', async () => {
+  it('does not invent a static Cloud availability state in settings', async () => {
     renderApp()
 
     await userEvent.click(await screen.findByRole('button', { name: 'Open settings' }))
     expect(screen.getByText('Device access')).toBeTruthy()
-    expect(screen.getByText('Cloud unavailable')).toBeTruthy()
+    expect(screen.queryByText('Cloud unavailable')).toBeNull()
     expect(screen.queryByRole('heading', { name: 'Account' })).toBeNull()
   })
 

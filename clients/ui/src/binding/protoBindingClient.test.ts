@@ -187,7 +187,7 @@ describe('ProtoBindingClient engine command boundary', () => {
 })
 
 describe('ProtoBindingConnector route policy', () => {
-  it('reads availability and persists a Direct/SSH route policy through Proto registry commands', async () => {
+  it('reads availability and persists a Cloud route policy through Proto registry commands', async () => {
     const state = create(ConnectionPolicyStateSchema, {
       policy: create(ConnectionPolicySchema, {
         routePreference: EndpointRoutePreference.AUTO,
@@ -195,6 +195,7 @@ describe('ProtoBindingConnector route policy', () => {
       routes: [
         create(ConnectionPolicyRouteAvailabilitySchema, { routeKind: ConnectionRouteKind.DIRECT, available: true, reason: ConnectionPolicyAvailabilityReason.AVAILABLE }),
         create(ConnectionPolicyRouteAvailabilitySchema, { routeKind: ConnectionRouteKind.SSH, available: false, reason: ConnectionPolicyAvailabilityReason.CREDENTIAL_UNAVAILABLE }),
+        create(ConnectionPolicyRouteAvailabilitySchema, { routeKind: ConnectionRouteKind.CLOUD, available: true, reason: ConnectionPolicyAvailabilityReason.AVAILABLE }),
       ],
     })
     const client = {
@@ -205,12 +206,12 @@ describe('ProtoBindingConnector route policy', () => {
 
     await expect(connector.getConnectionPolicy()).resolves.toEqual({
       policy: { route: 'auto' },
-      available: { direct: true, ssh: false },
+      available: { direct: true, ssh: false, cloud: true },
       unavailableReasons: { ssh: 'credential_unavailable' },
     })
-    await connector.applyConnectionPolicy({ route: 'direct' })
+    await connector.applyConnectionPolicy({ route: 'cloud' })
     expect(client.applyConnectionPolicy).toHaveBeenCalledWith('studio', expect.objectContaining({
-      routePreference: EndpointRoutePreference.DIRECT,
+      routePreference: EndpointRoutePreference.MANAGED_CLOUD,
     }), undefined)
   })
 

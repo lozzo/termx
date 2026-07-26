@@ -99,6 +99,7 @@ message PairingOpen {
   bytes client_nonce = 4;
   bytes proof = 5;
   bytes pairing_claim_offer = 6;
+  uint32 client_product = 7;
 }
 
 // ScopeSummary 是 daemon 已接受 capability 的最小无歧义投影。
@@ -188,6 +189,7 @@ message PairingAccepted {
   string subject_key_fingerprint = 3;
   ScopeSummary scope = 4;
   bytes pairing_bundle = 5;
+  bytes cloud_route_grant = 6;
 }
 
 // CapabilityRejected 返回稳定错误类别和固定脱敏消息，随后 channel 必须关闭。

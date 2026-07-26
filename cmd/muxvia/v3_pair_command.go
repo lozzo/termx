@@ -16,6 +16,7 @@ import (
 
 	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
 	"github.com/muxvia/muxvia/proto/apipb"
+	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 	"github.com/muxvia/muxvia/proto/remoteauthpb"
 	"github.com/muxvia/muxvia/shared/filepublish"
 	"github.com/muxvia/muxvia/shared/remoteauth"
@@ -509,7 +510,7 @@ func v3PairImportCommand(socket *string, logFile *string) *cobra.Command {
 						}
 						pairingRequest := remoteauth.ClientPairingRequest{
 							ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.DeviceFingerprint,
-							Identity: clientIdentity, ClientLabel: labelForClient, ChannelBinding: binding,
+							Identity: clientIdentity, ClientLabel: labelForClient, ClientProduct: uint32(cloudv1.ClientProduct_CLIENT_PRODUCT_CLI), ChannelBinding: binding,
 						}
 						if claimMode {
 							pairingRequest.PairingClaimOffer = payload

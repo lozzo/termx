@@ -27,11 +27,33 @@ func TestCloudV1DescriptorBaseline(t *testing.T) {
 		protodesc.ToFileDescriptorProto(File_cloud_v1_edge_control_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_ticket_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_enrollment_proto),
+		protodesc.ToFileDescriptorProto(File_cloud_v1_directory_proto),
+		protodesc.ToFileDescriptorProto(File_cloud_v1_client_gateway_proto),
 		protodesc.ToFileDescriptorProto(File_cloud_v1_agent_gateway_proto),
 	}}
 	if !proto.Equal(baseline, current) {
 		t.Fatal("Cloud v1 descriptor differs from testdata/cloud-v1.pb")
 	}
+}
+
+// TestR5GatewayContracts 锁定客户端与 daemon 都通过双向流完成信令，且 envelope 不能退化成无 generation 的 unary API。
+func TestR5GatewayContracts(t *testing.T) {
+	for _, service := range []protoreflect.ServiceDescriptor{
+		File_cloud_v1_agent_gateway_proto.Services().ByName("AgentGateway"),
+		File_cloud_v1_client_gateway_proto.Services().ByName("ClientGateway"),
+	} {
+		if service == nil {
+			t.Fatal("R5 gateway service is missing")
+		}
+		method := service.Methods().ByName("Connect")
+		if method == nil || !method.IsStreamingClient() || !method.IsStreamingServer() {
+			t.Fatalf("%s.Connect must be bidirectional streaming", service.FullName())
+		}
+	}
+	assertEnvelopeFields(t, (&ClientSignal{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"hello": 20, "offer": 21})
+	assertEnvelopeFields(t, (&EdgeSignal{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"ready": 20, "answer": 21, "rejected": 22})
+	assertEnvelopeFields(t, (&AgentEvent{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"hello": 20, "heartbeat": 21, "answer": 22, "rejected": 23})
+	assertEnvelopeFields(t, (&EdgeCommand{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{"ready": 20, "offer": 21})
 }
 
 // TestEdgeControlIsBidirectionalStreaming 保证 Edge 连接数不会回退为轮询或一元 RPC。

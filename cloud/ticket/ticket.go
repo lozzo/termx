@@ -15,8 +15,12 @@ import (
 )
 
 const (
-	agentTicketDomain = "muxvia.cloud.agent-ticket.v1\x00"
-	agentProofDomain  = "muxvia.cloud.agent-hello-proof.v1\x00"
+	agentTicketDomain      = "muxvia.cloud.agent-ticket.v1\x00"
+	agentProofDomain       = "muxvia.cloud.agent-hello-proof.v1\x00"
+	cloudRouteGrantDomain  = "muxvia.cloud.route-grant.v1\x00"
+	clientTicketDomain     = "muxvia.cloud.client-ticket.v1\x00"
+	clientRouteProofDomain = "muxvia.cloud.client-route-proof.v1\x00"
+	clientHelloProofDomain = "muxvia.cloud.client-hello-proof.v1\x00"
 )
 
 // KeySet 是 Edge 当前从 EdgeWelcome 获得的只读 Controller 票据公钥集合。
@@ -106,6 +110,126 @@ func VerifyAgentHelloProof(publicKey []byte, proof []byte, ticketEnvelope *cloud
 	return nil
 }
 
+// SignCloudRouteGrant 使用 daemon DeviceIdentity 对只含发现信息的 grant 做 domain-separated 签名。
+func SignCloudRouteGrant(identity remoteauth.Identity, claims *cloudv1.CloudRouteGrantClaims) (*cloudv1.SignedEnvelope, error) {
+	if err := identity.Validate(); err != nil {
+		return nil, err
+	}
+	if err := validateCloudRouteGrant(claims, time.Time{}); err != nil {
+		return nil, err
+	}
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(claims)
+	if err != nil {
+		return nil, err
+	}
+	return &cloudv1.SignedEnvelope{KeyId: identity.Fingerprint, Payload: payload, Signature: ed25519.Sign(identity.PrivateKey, signingBytes(cloudRouteGrantDomain, payload))}, nil
+}
+
+// VerifyCloudRouteGrant 使用 Controller 持久化的 daemon 公钥验签，不读取或保存在线拓扑。
+func VerifyCloudRouteGrant(envelope *cloudv1.SignedEnvelope, daemonPublicKey ed25519.PublicKey, expectedDaemonID string, now time.Time) (*cloudv1.CloudRouteGrantClaims, error) {
+	if envelope == nil || len(daemonPublicKey) != ed25519.PublicKeySize || len(envelope.GetSignature()) != ed25519.SignatureSize ||
+		strings.TrimSpace(envelope.GetKeyId()) != remoteauth.Fingerprint(daemonPublicKey) ||
+		!ed25519.Verify(daemonPublicKey, signingBytes(cloudRouteGrantDomain, envelope.GetPayload()), envelope.GetSignature()) {
+		return nil, errors.New("CloudRouteGrant signature is invalid")
+	}
+	claims := &cloudv1.CloudRouteGrantClaims{}
+	if err := proto.Unmarshal(envelope.GetPayload(), claims); err != nil {
+		return nil, errors.New("CloudRouteGrant payload is invalid")
+	}
+	if err := validateCloudRouteGrant(claims, now); err != nil {
+		return nil, err
+	}
+	if claims.GetDaemonId() != strings.TrimSpace(expectedDaemonID) {
+		return nil, errors.New("CloudRouteGrant targets another daemon")
+	}
+	return claims, nil
+}
+
+// ClientRouteProofBytes 返回 ClientAccessIdentity 对 Controller challenge 的 canonical 签名输入。
+func ClientRouteProofBytes(challengeID string, challenge []byte, grant *cloudv1.SignedEnvelope, requestID string) ([]byte, error) {
+	if strings.TrimSpace(challengeID) == "" || len(challenge) == 0 || grant == nil || strings.TrimSpace(requestID) == "" {
+		return nil, errors.New("client route proof input is incomplete")
+	}
+	digest := sha256.Sum256(grant.GetPayload())
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(&cloudv1.ClientRouteProofInput{
+		ChallengeId: strings.TrimSpace(challengeID), Challenge: append([]byte(nil), challenge...), GrantPayloadSha256: digest[:], RequestId: strings.TrimSpace(requestID),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return signingBytes(clientRouteProofDomain, payload), nil
+}
+
+// VerifyClientRouteProof 证明发起解析的客户端持有 grant 内 ClientAccessIdentity 私钥。
+func VerifyClientRouteProof(publicKey []byte, signature []byte, canonical []byte) error {
+	if len(publicKey) != ed25519.PublicKeySize || len(signature) != ed25519.SignatureSize || len(canonical) == 0 || !ed25519.Verify(ed25519.PublicKey(publicKey), canonical, signature) {
+		return errors.New("client route proof is invalid")
+	}
+	return nil
+}
+
+// SignClientTicket 使用 Controller TicketSigner 签发只绑定一次 P2P 信令 attempt 的短票据。
+func SignClientTicket(keyID string, privateKey ed25519.PrivateKey, claims *cloudv1.ClientTicketClaims) (*cloudv1.SignedEnvelope, error) {
+	if strings.TrimSpace(keyID) == "" || len(privateKey) != ed25519.PrivateKeySize {
+		return nil, errors.New("ClientTicket signer is invalid")
+	}
+	if err := validateClientTicket(claims, time.Time{}, 0); err != nil {
+		return nil, err
+	}
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(claims)
+	if err != nil {
+		return nil, err
+	}
+	return &cloudv1.SignedEnvelope{KeyId: strings.TrimSpace(keyID), Payload: payload, Signature: ed25519.Sign(privateKey, signingBytes(clientTicketDomain, payload))}, nil
+}
+
+// VerifyClientTicket 由 Edge 离线校验 Controller 签名、目标 Edge、P2P policy 和有效期。
+func VerifyClientTicket(envelope *cloudv1.SignedEnvelope, keys KeySet, edgeID string, now time.Time, skew time.Duration) (*cloudv1.ClientTicketClaims, error) {
+	if envelope == nil || len(envelope.GetSignature()) != ed25519.SignatureSize {
+		return nil, errors.New("ClientTicket envelope is invalid")
+	}
+	publicKey := keys[strings.TrimSpace(envelope.GetKeyId())]
+	if len(publicKey) != ed25519.PublicKeySize || !ed25519.Verify(publicKey, signingBytes(clientTicketDomain, envelope.GetPayload()), envelope.GetSignature()) {
+		return nil, errors.New("ClientTicket signature is invalid")
+	}
+	claims := &cloudv1.ClientTicketClaims{}
+	if err := proto.Unmarshal(envelope.GetPayload(), claims); err != nil {
+		return nil, errors.New("ClientTicket payload is invalid")
+	}
+	if err := validateClientTicket(claims, now, skew); err != nil {
+		return nil, err
+	}
+	if claims.GetEdgeId() != strings.TrimSpace(edgeID) {
+		return nil, errors.New("ClientTicket targets another Edge")
+	}
+	return claims, nil
+}
+
+// ClientHelloProofBytes 把 Edge stream 的 session/generation 与短票据绑定到客户端签名。
+func ClientHelloProofBytes(ticketEnvelope *cloudv1.SignedEnvelope, sessionID string, attemptGeneration uint64) ([]byte, error) {
+	if ticketEnvelope == nil || strings.TrimSpace(sessionID) == "" || attemptGeneration == 0 {
+		return nil, errors.New("ClientHello proof input is incomplete")
+	}
+	digest := sha256.Sum256(ticketEnvelope.GetPayload())
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(&cloudv1.ClientHelloProofInput{TicketPayloadSha256: digest[:], SessionId: strings.TrimSpace(sessionID), AttemptGeneration: attemptGeneration})
+	if err != nil {
+		return nil, err
+	}
+	return signingBytes(clientHelloProofDomain, payload), nil
+}
+
+// VerifyClientHelloProof 证明 ClientGateway stream 持有票据内 ClientAccessIdentity 私钥。
+func VerifyClientHelloProof(publicKey, proof []byte, ticketEnvelope *cloudv1.SignedEnvelope, sessionID string, attemptGeneration uint64) error {
+	canonical, err := ClientHelloProofBytes(ticketEnvelope, sessionID, attemptGeneration)
+	if err != nil {
+		return err
+	}
+	if len(publicKey) != ed25519.PublicKeySize || len(proof) != ed25519.SignatureSize || !ed25519.Verify(ed25519.PublicKey(publicKey), canonical, proof) {
+		return errors.New("ClientHello proof is invalid")
+	}
+	return nil
+}
+
 func agentHelloProofBytes(envelope *cloudv1.SignedEnvelope, daemonID, bootID, connectionID string) ([]byte, error) {
 	if envelope == nil || strings.TrimSpace(daemonID) == "" || strings.TrimSpace(bootID) == "" || strings.TrimSpace(connectionID) == "" {
 		return nil, errors.New("AgentHello proof input is incomplete")
@@ -135,6 +259,31 @@ func validateAgentClaims(claims *cloudv1.AgentTicketClaims, now time.Time, skew 
 		if claims.GetIssuedAt().AsTime().After(now.Add(skew)) || !claims.GetExpiresAt().AsTime().After(now.Add(-skew)) {
 			return fmt.Errorf("AgentTicket is outside its validity window")
 		}
+	}
+	return nil
+}
+
+func validateCloudRouteGrant(claims *cloudv1.CloudRouteGrantClaims, now time.Time) error {
+	if claims == nil || strings.TrimSpace(claims.GetGrantId()) == "" || strings.TrimSpace(claims.GetDaemonId()) == "" || len(claims.GetClientPublicKey()) != ed25519.PublicKeySize ||
+		claims.GetProduct() < cloudv1.ClientProduct_CLIENT_PRODUCT_TUI || claims.GetProduct() > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI || claims.GetIssuedAt() == nil || claims.GetExpiresAt() == nil || claims.GetIssuedAt().CheckValid() != nil || claims.GetExpiresAt().CheckValid() != nil ||
+		!claims.GetExpiresAt().AsTime().After(claims.GetIssuedAt().AsTime()) || claims.GetExpiresAt().AsTime().Sub(claims.GetIssuedAt().AsTime()) > 7*24*time.Hour {
+		return errors.New("CloudRouteGrant claims are incomplete")
+	}
+	if !now.IsZero() && (claims.GetIssuedAt().AsTime().After(now.UTC().Add(30*time.Second)) || !claims.GetExpiresAt().AsTime().After(now.UTC().Add(-30*time.Second))) {
+		return errors.New("CloudRouteGrant is outside its validity window")
+	}
+	return nil
+}
+
+func validateClientTicket(claims *cloudv1.ClientTicketClaims, now time.Time, skew time.Duration) error {
+	if claims == nil || strings.TrimSpace(claims.GetTicketId()) == "" || strings.TrimSpace(claims.GetAccountId()) == "" || strings.TrimSpace(claims.GetEdgeId()) == "" ||
+		strings.TrimSpace(claims.GetDaemonId()) == "" || strings.TrimSpace(claims.GetClientId()) == "" || len(claims.GetClientPublicKey()) != ed25519.PublicKeySize ||
+		claims.GetProduct() < cloudv1.ClientProduct_CLIENT_PRODUCT_TUI || claims.GetProduct() > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI || claims.GetRoutePolicy() != cloudv1.CloudRoutePolicy_CLOUD_ROUTE_POLICY_P2P_ONLY ||
+		claims.GetIssuedAt() == nil || claims.GetExpiresAt() == nil || claims.GetIssuedAt().CheckValid() != nil || claims.GetExpiresAt().CheckValid() != nil || !claims.GetExpiresAt().AsTime().After(claims.GetIssuedAt().AsTime()) || claims.GetExpiresAt().AsTime().Sub(claims.GetIssuedAt().AsTime()) > 2*time.Minute {
+		return errors.New("ClientTicket claims are incomplete")
+	}
+	if !now.IsZero() && (claims.GetIssuedAt().AsTime().After(now.UTC().Add(skew)) || !claims.GetExpiresAt().AsTime().After(now.UTC().Add(-skew))) {
+		return errors.New("ClientTicket is outside its validity window")
 	}
 	return nil
 }

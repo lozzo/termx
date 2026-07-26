@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -60,9 +61,16 @@ type stateData struct {
 	agentWriters   map[string]agentWriter
 	agentNextGen   map[string]uint64
 	sessions       map[string]*cloudv1.ClientSessionSummary
+	pendingSignals map[string]pendingSignal
 	subscribers    map[uint64]chan *cloudv1.RuntimeDelta
 	nextSubscriber uint64
 	deltaBuffer    int
+}
+
+type pendingSignal struct {
+	daemonID, sessionID string
+	agentGeneration     uint64
+	result              chan *cloudv1.AgentEvent
 }
 
 type agentWriter struct {
@@ -124,6 +132,7 @@ func (state *State) AttachAgent(ctx context.Context, agent *cloudv1.AgentPresenc
 		var oldClose func()
 		if old := data.agentWriters[clone.GetDaemonId()]; old.close != nil {
 			oldClose = old.close
+			data.cancelAgentSignals(clone.GetDaemonId(), old.generation)
 		}
 		data.agentWriters[clone.GetDaemonId()] = agentWriter{generation: clone.GetGeneration(), send: send, close: closeWriter}
 		data.agents[clone.GetDaemonId()] = clone
@@ -156,6 +165,7 @@ func (state *State) DetachAgent(ctx context.Context, daemonID string, generation
 		}
 		delete(data.agentWriters, daemonID)
 		delete(data.agents, daemonID)
+		data.cancelAgentSignals(daemonID, generation)
 		data.revision++
 		data.publish(&cloudv1.RuntimeDelta{Revision: data.revision, Change: &cloudv1.RuntimeDelta_AgentRemoved{AgentRemoved: &cloudv1.AgentRemoved{DaemonId: daemonID, Generation: generation}}})
 		return nil
@@ -196,6 +206,82 @@ func (state *State) SendAgentCommand(ctx context.Context, daemonID string, gener
 		}
 		return nil
 	}
+}
+
+// BeginAgentSignal 在 actor 内锁定 daemon 当前 generation 并登记有界一次性 correlation。
+// 返回后网络发送与等待都必须在 actor 外执行，避免阻塞在线状态 owner。
+func (state *State) BeginAgentSignal(ctx context.Context, correlationID, daemonID, sessionID string) (uint64, <-chan *cloudv1.AgentEvent, error) {
+	correlationID, daemonID, sessionID = strings.TrimSpace(correlationID), strings.TrimSpace(daemonID), strings.TrimSpace(sessionID)
+	if correlationID == "" || daemonID == "" || sessionID == "" {
+		return 0, nil, errors.New("agent signal correlation, daemon, and session are required")
+	}
+	type result struct {
+		generation uint64
+		response   chan *cloudv1.AgentEvent
+		err        error
+	}
+	reply := make(chan result, 1)
+	if err := state.submit(ctx, func(data *stateData) {
+		if _, exists := data.pendingSignals[correlationID]; exists {
+			reply <- result{err: errors.New("agent signal correlation already exists")}
+			return
+		}
+		agent := data.agents[daemonID]
+		writer := data.agentWriters[daemonID]
+		if agent == nil || writer.send == nil || writer.generation != agent.GetGeneration() {
+			reply <- result{err: ErrStaleGeneration}
+			return
+		}
+		response := make(chan *cloudv1.AgentEvent, 1)
+		data.pendingSignals[correlationID] = pendingSignal{daemonID: daemonID, sessionID: sessionID, agentGeneration: agent.GetGeneration(), result: response}
+		reply <- result{generation: agent.GetGeneration(), response: response}
+	}); err != nil {
+		return 0, nil, err
+	}
+	select {
+	case <-ctx.Done():
+		return 0, nil, ctx.Err()
+	case <-state.done:
+		return 0, nil, ErrStateClosed
+	case value := <-reply:
+		return value.generation, value.response, value.err
+	}
+}
+
+// ResolveAgentSignal 只允许当前 AgentGateway generation 完成其登记的 correlation。
+func (state *State) ResolveAgentSignal(ctx context.Context, daemonID string, generation uint64, event *cloudv1.AgentEvent) error {
+	if event == nil || (event.GetAnswer() == nil) == (event.GetRejected() == nil) {
+		return errors.New("agent signal result is invalid")
+	}
+	correlationID, sessionID := "", ""
+	if answer := event.GetAnswer(); answer != nil {
+		correlationID, sessionID = answer.GetCorrelationId(), answer.GetSessionId()
+	} else {
+		correlationID, sessionID = event.GetRejected().GetCorrelationId(), event.GetRejected().GetSessionId()
+	}
+	return state.mutate(ctx, func(data *stateData) error {
+		pending, ok := data.pendingSignals[correlationID]
+		if !ok || pending.daemonID != daemonID || pending.sessionID != sessionID || pending.agentGeneration != generation {
+			return ErrStaleGeneration
+		}
+		delete(data.pendingSignals, correlationID)
+		pending.result <- proto.Clone(event).(*cloudv1.AgentEvent)
+		close(pending.result)
+		return nil
+	})
+}
+
+// CancelAgentSignal 删除超时或客户端断开的精确 correlation；迟到 answer 会被 generation fence 拒绝。
+func (state *State) CancelAgentSignal(ctx context.Context, correlationID string) error {
+	return state.mutate(ctx, func(data *stateData) error {
+		pending, ok := data.pendingSignals[strings.TrimSpace(correlationID)]
+		if !ok {
+			return nil
+		}
+		delete(data.pendingSignals, strings.TrimSpace(correlationID))
+		close(pending.result)
+		return nil
+	})
 }
 
 // RemoveAgent 仅删除精确 generation，避免旧连接关闭事件误删新 Presence。
@@ -327,7 +413,7 @@ func (state *State) Close() {
 
 func (state *State) run(deltaBuffer int) {
 	data := &stateData{
-		agents: make(map[string]*cloudv1.AgentPresence), agentWriters: make(map[string]agentWriter), agentNextGen: make(map[string]uint64), sessions: make(map[string]*cloudv1.ClientSessionSummary),
+		agents: make(map[string]*cloudv1.AgentPresence), agentWriters: make(map[string]agentWriter), agentNextGen: make(map[string]uint64), sessions: make(map[string]*cloudv1.ClientSessionSummary), pendingSignals: make(map[string]pendingSignal),
 		subscribers: make(map[uint64]chan *cloudv1.RuntimeDelta), deltaBuffer: deltaBuffer,
 	}
 	for {
@@ -336,6 +422,15 @@ func (state *State) run(deltaBuffer int) {
 			return
 		case request := <-state.mailbox:
 			request.run(data)
+		}
+	}
+}
+
+func (data *stateData) cancelAgentSignals(daemonID string, generation uint64) {
+	for correlationID, pending := range data.pendingSignals {
+		if pending.daemonID == daemonID && pending.agentGeneration == generation {
+			delete(data.pendingSignals, correlationID)
+			close(pending.result)
 		}
 	}
 }

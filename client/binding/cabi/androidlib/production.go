@@ -7,6 +7,7 @@ import (
 	"github.com/muxvia/muxvia/client/binding"
 	"github.com/muxvia/muxvia/client/binding/enginehost"
 	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 )
 
 var androidSessionAuthority = clientruntime.NewSessionGenerationAuthority()
@@ -23,7 +24,7 @@ func newAndroidProductionHost() *androidProductionHost {
 	peers := pionadapter.Factory{}
 	host, err := enginehost.New(enginehost.Options{
 		Broker: broker, DirectPeers: peers, ClientName: "muxvia-android", CredentialPrefix: "android-access-",
-		SessionAuthority: androidSessionAuthority,
+		SessionAuthority: androidSessionAuthority, CloudProduct: cloudv1.ClientProduct_CLIENT_PRODUCT_ANDROID,
 	})
 	if err != nil {
 		panic(err)

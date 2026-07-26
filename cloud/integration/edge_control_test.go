@@ -397,6 +397,7 @@ func newCertificateFiles(t *testing.T, edgeID string) certificateFiles {
 	edgePublicCert, edgePublicKey := issueCertificate(t, caCertificate, caKey, certificateRequest{
 		commonName:  testEdgePublicServer,
 		dnsNames:    []string{testEdgePublicServer},
+		ipAddresses: []net.IP{net.ParseIP("127.0.0.1")},
 		extendedUse: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	})
 	return certificateFiles{
@@ -414,6 +415,7 @@ func newCertificateFiles(t *testing.T, edgeID string) certificateFiles {
 type certificateRequest struct {
 	commonName  string
 	dnsNames    []string
+	ipAddresses []net.IP
 	uris        []*url.URL
 	extendedUse []x509.ExtKeyUsage
 }
@@ -452,6 +454,7 @@ func issueCertificate(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKe
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  request.extendedUse,
 		DNSNames:     request.dnsNames,
+		IPAddresses:  request.ipAddresses,
 		URIs:         request.uris,
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, ca, &key.PublicKey, caKey)

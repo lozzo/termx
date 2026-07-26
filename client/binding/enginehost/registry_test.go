@@ -53,7 +53,8 @@ func TestConnectionPolicyUsesGoRegistryTransactionAndAvailability(t *testing.T) 
 		t.Fatalf("initial policy = %#v", initial.GetState())
 	}
 	availability := initial.GetState().GetRoutes()
-	if len(availability) != 2 || availability[0].GetRouteKind() != bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_DIRECT || availability[0].GetReason() != bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_PLATFORM_UNSUPPORTED {
+	if len(availability) != 3 || availability[0].GetRouteKind() != bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_DIRECT || availability[0].GetReason() != bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_PLATFORM_UNSUPPORTED ||
+		availability[2].GetRouteKind() != bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_CLOUD || availability[2].GetReason() != bindingpb.ConnectionPolicyAvailabilityReason_CONNECTION_POLICY_AVAILABILITY_REASON_ROUTE_NOT_CONFIGURED {
 		t.Fatalf("route availability = %#v", availability)
 	}
 	applied, err := host.ApplyConnectionPolicy(context.Background(), &bindingpb.ConnectionPolicyApplyRequest{
@@ -174,13 +175,13 @@ func TestPairingCredentialRollbackRestoresPreparedState(t *testing.T) {
 	platform.credentials["grant-new"] = "bound-new"
 	if err := host.rollbackPreparedCredential(context.Background(), &bindingpb.CredentialRecord{
 		EndpointId: "new", CredentialRef: "grant-new", NewlyCreated: true,
-	}, "bound-new"); err != nil {
+	}, "bound-new", nil); err != nil {
 		t.Fatal(err)
 	}
 	platform.credentials["grant-existing"] = "bound-new"
 	if err := host.rollbackPreparedCredential(context.Background(), &bindingpb.CredentialRecord{
 		EndpointId: "existing", CredentialRef: "grant-existing", CapabilityGrant: "bound-old",
-	}, "bound-new"); err != nil {
+	}, "bound-new", nil); err != nil {
 		t.Fatal(err)
 	}
 	platform.mu.Lock()

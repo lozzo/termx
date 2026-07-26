@@ -27,7 +27,7 @@ type v3PairRouteFlags struct {
 }
 
 // v3PairingRoutes 把普通 flags 与严格 URI 收敛成唯一 generated Route contract。
-// 未指定 Route 时只签入 Direct；Cloud 在新契约完成前不可选。
+// 未指定 Route 时只签入 Direct；Cloud 需要与一个可执行的 Direct/SSH 首次配对入口同时出现。
 func v3PairingRoutes(flags v3PairRouteFlags) ([]*remoteauthpb.EndpointRouteConfigV1, error) {
 	specs := append([]string(nil), flags.Routes...)
 	if len(specs) == 0 {
@@ -49,7 +49,7 @@ func v3PairingRoutes(flags v3PairRouteFlags) ([]*remoteauthpb.EndpointRouteConfi
 		}
 	}
 	routes := make([]*remoteauthpb.EndpointRouteConfigV1, 0, len(specs))
-	plainDirect, plainSSH := false, false
+	plainDirect, plainSSH, hasCloud := false, false, false
 	for _, raw := range specs {
 		raw = strings.TrimSpace(raw)
 		var route *remoteauthpb.EndpointRouteConfigV1
@@ -62,7 +62,17 @@ func v3PairingRoutes(flags v3PairRouteFlags) ([]*remoteauthpb.EndpointRouteConfi
 			plainDirect = true
 			route, err = v3ParameterizedDirectRoute(flags)
 		case "cloud":
-			return nil, fmt.Errorf("Cloud Route is unavailable while Muxvia Cloud is being rebuilt")
+			if hasCloud {
+				return nil, fmt.Errorf("--route cloud may only appear once")
+			}
+			hasCloud = true
+			route = &remoteauthpb.EndpointRouteConfigV1{
+				SchemaVersion: endpoint.RouteConfigVersion, RouteId: "cloud", Enabled: true,
+				Source: remoteauthpb.EndpointSource_ENDPOINT_SOURCE_CLOUD, PolicySource: remoteauthpb.EndpointSource_ENDPOINT_SOURCE_USER,
+				Route: &remoteauthpb.EndpointRouteConfigV1_ManagedWebrtc{ManagedWebrtc: &remoteauthpb.ManagedWebRTCRouteConfig{
+					AccountProfileRef: "default", RelayMode: remoteauthpb.ManagedWebRTCRelayMode_MANAGED_WEBRTC_RELAY_MODE_DIRECT,
+				}},
+			}
 		case "ssh":
 			if plainSSH {
 				return nil, fmt.Errorf("parameterized --route ssh may only appear once; use ssh:// URI for multiple SSH Routes")
@@ -76,6 +86,15 @@ func v3PairingRoutes(flags v3PairRouteFlags) ([]*remoteauthpb.EndpointRouteConfi
 			return nil, err
 		}
 		routes = append(routes, route)
+	}
+	if hasCloud {
+		hasPairingRoute := false
+		for _, route := range routes {
+			hasPairingRoute = hasPairingRoute || route.GetDirectWebrtcTcp() != nil || route.GetSshWebrtcTcp() != nil
+		}
+		if !hasPairingRoute {
+			return nil, fmt.Errorf("Cloud Route requires a Direct or SSH Route for the initial pairing exchange")
+		}
 	}
 	if len(routes) > 4 {
 		return nil, fmt.Errorf("pair create accepts at most four Routes")

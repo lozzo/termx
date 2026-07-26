@@ -36,6 +36,15 @@ type PreparedAuthorization interface {
 	Authenticate(context.Context, transport.Transport, string) (remoteauth.Claims, error)
 }
 
+// PreparedSignalingAuthorization 是 managed Cloud connector 在发送任何网络请求前冻结的客户端身份材料。
+// CloudRouteGrant 只授权发现；Sign 仍由同一平台 secure signer 执行，private key 不离开 owner。
+type PreparedSignalingAuthorization interface {
+	PreparedAuthorization
+	ClientIdentity() remoteauth.ClientAccessIdentity
+	CloudRouteGrant() []byte
+	Sign(context.Context, []byte) ([]byte, error)
+}
+
 // Authorizer 在任何 signaling 请求前验证 endpoint-bound credential，并冻结本次认证事务。
 // 平台 secure store 或 signer 适配位于实现侧，connector 不读取、持久化或记录私钥。
 type Authorizer interface {
@@ -125,6 +134,24 @@ func (authorization *preparedCapabilityAuthorization) Authenticate(ctx context.C
 		ExpectedDeviceID: authorization.identity.DeviceID, ExpectedDeviceFingerprint: authorization.identity.DeviceFingerprint,
 		Credential: authorization.credential, Signer: authorization.signer, ChannelBinding: binding,
 	})
+}
+
+// ClientIdentity 返回当前 attempt 已冻结的公开 ClientAccessIdentity 投影。
+func (authorization *preparedCapabilityAuthorization) ClientIdentity() remoteauth.ClientAccessIdentity {
+	identity := authorization.credential.Identity
+	identity.PublicKey = append([]byte(nil), identity.PublicKey...)
+	identity.PrivateKey = nil
+	return identity
+}
+
+// CloudRouteGrant 返回 pairing 时与同一 credential 原子保存的 DeviceIdentity 签名发现 grant。
+func (authorization *preparedCapabilityAuthorization) CloudRouteGrant() []byte {
+	return append([]byte(nil), authorization.credential.CloudRouteGrant...)
+}
+
+// Sign 委托当前 frozen platform signer 对 Cloud challenge/hello canonical bytes 签名。
+func (authorization *preparedCapabilityAuthorization) Sign(ctx context.Context, payload []byte) ([]byte, error) {
+	return authorization.signer.Sign(ctx, append([]byte(nil), payload...))
 }
 
 var _ Authorizer = CapabilityAuthorizer{}

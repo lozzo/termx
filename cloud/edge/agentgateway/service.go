@@ -27,6 +27,7 @@ const ProtocolVersion uint32 = 1
 type Runtime interface {
 	AttachAgent(context.Context, *cloudv1.AgentPresence, func(*cloudv1.EdgeCommand) bool, func()) (uint64, error)
 	DetachAgent(context.Context, string, uint64) error
+	ResolveAgentSignal(context.Context, string, uint64, *cloudv1.AgentEvent) error
 }
 
 // Config 提供 Edge identity、动态 Controller ticket key set 和心跳策略。
@@ -59,7 +60,7 @@ func NewService(config Config) (*Service, error) {
 	return &Service{config: config}, nil
 }
 
-// Connect 要求第一条消息是 AgentHello，之后只接收严格连续的精确 generation heartbeat。
+// Connect 要求第一条消息是 AgentHello，之后接收严格连续的 heartbeat 或信令结果。
 func (service *Service) Connect(stream cloudv1.AgentGateway_ConnectServer) error {
 	event, err := stream.Recv()
 	if err != nil {
@@ -113,8 +114,13 @@ func (service *Service) Connect(stream cloudv1.AgentGateway_ConnectServer) error
 			if result.err != nil {
 				return result.err
 			}
-			if err := validateHeartbeat(result.event, event, generation, expectedSequence); err != nil {
+			if err := validateAgentEvent(result.event, event, generation, expectedSequence); err != nil {
 				return status.Error(codes.InvalidArgument, err.Error())
+			}
+			if result.event.GetAnswer() != nil || result.event.GetRejected() != nil {
+				if err := service.config.Runtime.ResolveAgentSignal(connectionCtx, claims.GetDaemonId(), generation, result.event); err != nil {
+					return status.Error(codes.FailedPrecondition, err.Error())
+				}
 			}
 			expectedSequence++
 			if !timer.Stop() {
@@ -147,10 +153,25 @@ func (service *Service) admit(event *cloudv1.AgentEvent) (*cloudv1.AgentTicketCl
 	return claims, nil
 }
 
-func validateHeartbeat(event, hello *cloudv1.AgentEvent, generation, expectedSequence uint64) error {
-	if event == nil || event.GetHeartbeat() == nil || event.GetProtocolVersion() != ProtocolVersion || event.GetStreamSeq() != expectedSequence ||
-		event.GetSenderId() != hello.GetSenderId() || event.GetBootId() != hello.GetBootId() || event.GetConnectionId() != hello.GetConnectionId() || event.GetHeartbeat().GetGeneration() != generation {
-		return errors.New("Agent heartbeat envelope or generation is invalid")
+func validateAgentEvent(event, hello *cloudv1.AgentEvent, generation, expectedSequence uint64) error {
+	if event == nil || event.GetProtocolVersion() != ProtocolVersion || event.GetStreamSeq() != expectedSequence || event.GetSenderId() != hello.GetSenderId() || event.GetBootId() != hello.GetBootId() || event.GetConnectionId() != hello.GetConnectionId() {
+		return errors.New("Agent event envelope is invalid")
+	}
+	switch {
+	case event.GetHeartbeat() != nil:
+		if event.GetHeartbeat().GetGeneration() != generation {
+			return errors.New("Agent heartbeat generation is invalid")
+		}
+	case event.GetAnswer() != nil:
+		if strings.TrimSpace(event.GetAnswer().GetCorrelationId()) == "" || strings.TrimSpace(event.GetAnswer().GetSessionId()) == "" || strings.TrimSpace(event.GetAnswer().GetAnswerSdp()) == "" {
+			return errors.New("Agent answer is invalid")
+		}
+	case event.GetRejected() != nil:
+		if strings.TrimSpace(event.GetRejected().GetCorrelationId()) == "" || strings.TrimSpace(event.GetRejected().GetSessionId()) == "" || strings.TrimSpace(event.GetRejected().GetCode()) == "" {
+			return errors.New("Agent rejection is invalid")
+		}
+	default:
+		return errors.New("Agent event payload is unsupported")
 	}
 	return nil
 }

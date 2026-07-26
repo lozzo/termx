@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -20,6 +21,7 @@ import (
 	"github.com/muxvia/muxvia/shared/remoteauth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -28,6 +30,7 @@ type Config struct {
 	Record          EnrollmentRecord
 	Identity        remoteauth.Identity
 	Answerer        webrtc.Answerer
+	AccessStore     *remoteauth.AccessStore
 	SoftwareVersion string
 	ControllerTLS   *tls.Config
 	RetryMinimum    time.Duration
@@ -40,8 +43,25 @@ type Runtime struct{ config Config }
 // NewAuthorizedRuntime 把现有 daemon Core/DeviceIdentity/AccessStore 接到真实 WebRTC Answerer。
 // cmd composition root 只传 owner，不需要依赖 Cloud 内部的 Pion 装配类型。
 func NewAuthorizedRuntime(record EnrollmentRecord, identity remoteauth.Identity, accessStore *remoteauth.AccessStore, core remotedaemon.ScopedTransportServer, softwareVersion string) (*Runtime, error) {
+	if accessStore == nil {
+		return nil, errors.New("daemon Cloud runtime requires AccessStore")
+	}
+	if err := accessStore.ConfigureManagedRouteGrantIssuer(func(clientPublicKey ed25519.PublicKey, product uint32, now time.Time) ([]byte, error) {
+		clientProduct := cloudv1.ClientProduct(product)
+		if clientProduct == cloudv1.ClientProduct_CLIENT_PRODUCT_UNSPECIFIED || clientProduct > cloudv1.ClientProduct_CLIENT_PRODUCT_DESKTOP_GUI {
+			return nil, errors.New("CloudRouteGrant client product is invalid")
+		}
+		claims := &cloudv1.CloudRouteGrantClaims{GrantId: uuid.NewString(), DaemonId: record.DaemonID, ClientPublicKey: append([]byte(nil), clientPublicKey...), Product: clientProduct, IssuedAt: timestamppb.New(now.UTC()), ExpiresAt: timestamppb.New(now.UTC().Add(7 * 24 * time.Hour))}
+		envelope, err := ticket.SignCloudRouteGrant(identity, claims)
+		if err != nil {
+			return nil, err
+		}
+		return proto.MarshalOptions{Deterministic: true}.Marshal(envelope)
+	}); err != nil {
+		return nil, err
+	}
 	answerer := webrtc.Answerer{Handler: remotedaemon.SessionAcceptor{Core: core, Identity: identity, AccessStore: accessStore}}
-	return NewRuntime(Config{Record: record, Identity: identity, Answerer: answerer, SoftwareVersion: softwareVersion})
+	return NewRuntime(Config{Record: record, Identity: identity, Answerer: answerer, AccessStore: accessStore, SoftwareVersion: softwareVersion})
 }
 
 // NewRuntime 验证 Cloud owner 与 DataChannel 端到端授权 handler 已真实接线。
@@ -53,7 +73,7 @@ func NewRuntime(config Config) (*Runtime, error) {
 		return nil, err
 	}
 	config.SoftwareVersion = strings.TrimSpace(config.SoftwareVersion)
-	if config.SoftwareVersion == "" || config.Answerer.Handler == nil {
+	if config.SoftwareVersion == "" || config.Answerer.Handler == nil || config.AccessStore == nil {
 		return nil, errors.New("daemon Cloud runtime requires version and authorized WebRTC Answerer")
 	}
 	if config.RetryMinimum <= 0 {
@@ -171,36 +191,108 @@ func (runtime *Runtime) connectEdge(ctx context.Context, issued *cloudv1.IssueAg
 	if interval <= 0 {
 		return errors.New("AgentReady heartbeat is invalid")
 	}
+	connectionCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	outbound := make(chan *cloudv1.AgentEvent, 32)
+	writerErrors := make(chan error, 1)
+	go runtime.runAgentWriter(connectionCtx, stream, bootID, connectionID, 1, outbound, writerErrors)
 	receive := make(chan error, 1)
-	go func() {
-		for {
-			_, recvErr := stream.Recv()
-			if recvErr != nil {
-				receive <- recvErr
-				return
-			}
-		}
-	}()
+	go runtime.runEdgeCommands(connectionCtx, stream, command.GetReady().GetGeneration(), outbound, receive)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	sequence := uint64(1)
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case writeErr := <-writerErrors:
+			return writeErr
 		case recvErr := <-receive:
 			if errors.Is(recvErr, io.EOF) {
 				return nil
 			}
 			return recvErr
 		case <-ticker.C:
-			sequence++
-			event := &cloudv1.AgentEvent{ProtocolVersion: agentgateway.ProtocolVersion, MessageId: uuid.NewString(), SenderId: runtime.config.Record.DaemonID, BootId: bootID, ConnectionId: connectionID, StreamSeq: sequence, SentAt: timestamppb.Now(), Payload: &cloudv1.AgentEvent_Heartbeat{Heartbeat: &cloudv1.AgentHeartbeat{Generation: command.GetReady().GetGeneration()}}}
-			if err := stream.Send(event); err != nil {
-				return err
+			event := &cloudv1.AgentEvent{Payload: &cloudv1.AgentEvent_Heartbeat{Heartbeat: &cloudv1.AgentHeartbeat{Generation: command.GetReady().GetGeneration()}}}
+			select {
+			case outbound <- event:
+			default:
+				return errors.New("AgentGateway writer queue is full")
 			}
 		}
 	}
+}
+
+func (runtime *Runtime) runAgentWriter(ctx context.Context, stream cloudv1.AgentGateway_ConnectClient, bootID, connectionID string, sequence uint64, outbound <-chan *cloudv1.AgentEvent, failures chan<- error) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event := <-outbound:
+			sequence++
+			event.ProtocolVersion = agentgateway.ProtocolVersion
+			event.MessageId = uuid.NewString()
+			event.SenderId = runtime.config.Record.DaemonID
+			event.BootId = bootID
+			event.ConnectionId = connectionID
+			event.StreamSeq = sequence
+			event.SentAt = timestamppb.Now()
+			if err := stream.Send(event); err != nil {
+				select {
+				case failures <- err:
+				default:
+				}
+				return
+			}
+		}
+	}
+}
+
+func (runtime *Runtime) runEdgeCommands(ctx context.Context, stream cloudv1.AgentGateway_ConnectClient, generation uint64, outbound chan<- *cloudv1.AgentEvent, failures chan<- error) {
+	for {
+		command, err := stream.Recv()
+		if err != nil {
+			failures <- err
+			return
+		}
+		offer := command.GetOffer()
+		if offer == nil || offer.GetAgentGeneration() != generation || strings.TrimSpace(offer.GetCorrelationId()) == "" || strings.TrimSpace(offer.GetSessionId()) == "" {
+			failures <- errors.New("Edge signaling command is invalid")
+			return
+		}
+		response := runtime.answerOffer(ctx, offer)
+		select {
+		case <-ctx.Done():
+			return
+		case outbound <- response:
+		default:
+			failures <- errors.New("AgentGateway writer queue is full")
+			return
+		}
+	}
+}
+
+func (runtime *Runtime) answerOffer(ctx context.Context, offer *cloudv1.AgentOffer) *cloudv1.AgentEvent {
+	reject := func(code, message string) *cloudv1.AgentEvent {
+		return &cloudv1.AgentEvent{Payload: &cloudv1.AgentEvent_Rejected{Rejected: &cloudv1.AgentSignalRejected{CorrelationId: offer.GetCorrelationId(), SessionId: offer.GetSessionId(), Code: code, Message: message}}}
+	}
+	if !runtime.config.AccessStore.AllowsClientPublicKey(ed25519.PublicKey(offer.GetClientPublicKey()), time.Now().UTC()) {
+		return reject("CLIENT_REVOKED", "client access is not active")
+	}
+	candidates := make([]webrtc.ICECandidate, 0, len(offer.GetCandidates()))
+	for _, candidate := range offer.GetCandidates() {
+		if candidate != nil {
+			candidates = append(candidates, webrtc.ICECandidate{Candidate: candidate.GetCandidate(), SDPMid: candidate.GetSdpMid(), SDPMLineIndex: candidate.GetSdpMlineIndex(), UsernameFragment: candidate.GetUsernameFragment()})
+		}
+	}
+	answer, err := runtime.config.Answerer.Answer(ctx, &webrtc.SignalingOffer{SessionID: offer.GetSessionId(), SDP: offer.GetOfferSdp(), Candidates: candidates}, nil)
+	if err != nil {
+		return reject("ANSWER_FAILED", "daemon could not establish P2P signaling")
+	}
+	wireCandidates := make([]*cloudv1.CloudICECandidate, 0, len(answer.Candidates))
+	for _, candidate := range answer.Candidates {
+		wireCandidates = append(wireCandidates, &cloudv1.CloudICECandidate{Candidate: candidate.Candidate, SdpMid: candidate.SDPMid, SdpMlineIndex: candidate.SDPMLineIndex, UsernameFragment: candidate.UsernameFragment})
+	}
+	return &cloudv1.AgentEvent{Payload: &cloudv1.AgentEvent_Answer{Answer: &cloudv1.AgentAnswer{CorrelationId: offer.GetCorrelationId(), SessionId: offer.GetSessionId(), AnswerSdp: answer.SDP, Candidates: wireCandidates}}}
 }
 
 func selectCandidate(ctx context.Context, candidates []*cloudv1.CandidateEdge) (*cloudv1.CandidateEdge, error) {

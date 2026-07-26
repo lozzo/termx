@@ -42,6 +42,16 @@ func (factory Factory) OpenDirectPeer(_ context.Context) (port.WebRTCPeer, error
 	return openPeer(peerFactory, pionwebrtc.Configuration{})
 }
 
+// OpenCloudPeer 创建允许 ICE-UDP host/srflx candidate 的 native Pion peer。
+// TURN server 与 Relay policy 在 R6 由 Cloud adapter 显式传入；R5 不配置 Relay。
+func (factory Factory) OpenCloudPeer(_ context.Context) (port.WebRTCPeer, error) {
+	peerFactory := factory.PeerConnections
+	if peerFactory == nil {
+		peerFactory = remotewebrtc.NewPeerConnection
+	}
+	return openPeer(peerFactory, pionwebrtc.Configuration{})
+}
+
 func openPeer(peerFactory remotewebrtc.PeerConnectionFactory, configuration pionwebrtc.Configuration) (port.WebRTCPeer, error) {
 	peer, err := peerFactory(configuration)
 	if err != nil {

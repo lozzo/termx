@@ -6,6 +6,8 @@ import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegen
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { HeartbeatPolicy, SignedEnvelope } from "./common_pb";
 import { file_cloud_v1_common } from "./common_pb";
+import type { CloudICECandidate } from "./client_gateway_pb";
+import { file_cloud_v1_client_gateway } from "./client_gateway_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
@@ -14,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud/v1/agent_gateway.proto.
  */
 export const file_cloud_v1_agent_gateway: GenFile = /*@__PURE__*/
-  fileDesc("ChxjbG91ZC92MS9hZ2VudF9nYXRld2F5LnByb3RvEg9tdXh2aWEuY2xvdWQudjEicwoKQWdlbnRIZWxsbxI1CgxhZ2VudF90aWNrZXQYASABKAsyHy5tdXh2aWEuY2xvdWQudjEuU2lnbmVkRW52ZWxvcGUSFAoMZGV2aWNlX3Byb29mGAIgASgMEhgKEHNvZnR3YXJlX3ZlcnNpb24YAyABKAkiJAoOQWdlbnRIZWFydGJlYXQSEgoKZ2VuZXJhdGlvbhgBIAEoBCJVCgpBZ2VudFJlYWR5EhIKCmdlbmVyYXRpb24YASABKAQSMwoJaGVhcnRiZWF0GAIgASgLMiAubXV4dmlhLmNsb3VkLnYxLkhlYXJ0YmVhdFBvbGljeSKlAgoKQWdlbnRFdmVudBIYChBwcm90b2NvbF92ZXJzaW9uGAEgASgNEhIKCm1lc3NhZ2VfaWQYAiABKAkSEQoJc2VuZGVyX2lkGAMgASgJEg8KB2Jvb3RfaWQYBCABKAkSFQoNY29ubmVjdGlvbl9pZBgFIAEoCRISCgpzdHJlYW1fc2VxGAYgASgEEisKB3NlbnRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKBWhlbGxvGBQgASgLMhsubXV4dmlhLmNsb3VkLnYxLkFnZW50SGVsbG9IABI0CgloZWFydGJlYXQYFSABKAsyHy5tdXh2aWEuY2xvdWQudjEuQWdlbnRIZWFydGJlYXRIAEIJCgdwYXlsb2FkIvABCgtFZGdlQ29tbWFuZBIYChBwcm90b2NvbF92ZXJzaW9uGAEgASgNEhIKCm1lc3NhZ2VfaWQYAiABKAkSEQoJc2VuZGVyX2lkGAMgASgJEg8KB2Jvb3RfaWQYBCABKAkSFQoNY29ubmVjdGlvbl9pZBgFIAEoCRISCgpzdHJlYW1fc2VxGAYgASgEEisKB3NlbnRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKBXJlYWR5GBQgASgLMhsubXV4dmlhLmNsb3VkLnYxLkFnZW50UmVhZHlIAEIJCgdwYXlsb2FkMlgKDEFnZW50R2F0ZXdheRJICgdDb25uZWN0EhsubXV4dmlhLmNsb3VkLnYxLkFnZW50RXZlbnQaHC5tdXh2aWEuY2xvdWQudjEuRWRnZUNvbW1hbmQoATABQjFaL2dpdGh1Yi5jb20vbXV4dmlhL211eHZpYS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_cloud_v1_common, file_google_protobuf_timestamp]);
+  fileDesc("ChxjbG91ZC92MS9hZ2VudF9nYXRld2F5LnByb3RvEg9tdXh2aWEuY2xvdWQudjEicwoKQWdlbnRIZWxsbxI1CgxhZ2VudF90aWNrZXQYASABKAsyHy5tdXh2aWEuY2xvdWQudjEuU2lnbmVkRW52ZWxvcGUSFAoMZGV2aWNlX3Byb29mGAIgASgMEhgKEHNvZnR3YXJlX3ZlcnNpb24YAyABKAkiJAoOQWdlbnRIZWFydGJlYXQSEgoKZ2VuZXJhdGlvbhgBIAEoBCK4AQoKQWdlbnRPZmZlchIWCg5jb3JyZWxhdGlvbl9pZBgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJEhgKEGFnZW50X2dlbmVyYXRpb24YAyABKAQSGQoRY2xpZW50X3B1YmxpY19rZXkYBCABKAwSEQoJb2ZmZXJfc2RwGAUgASgJEjYKCmNhbmRpZGF0ZXMYBiADKAsyIi5tdXh2aWEuY2xvdWQudjEuQ2xvdWRJQ0VDYW5kaWRhdGUihQEKC0FnZW50QW5zd2VyEhYKDmNvcnJlbGF0aW9uX2lkGAEgASgJEhIKCnNlc3Npb25faWQYAiABKAkSEgoKYW5zd2VyX3NkcBgDIAEoCRI2CgpjYW5kaWRhdGVzGAQgAygLMiIubXV4dmlhLmNsb3VkLnYxLkNsb3VkSUNFQ2FuZGlkYXRlImAKE0FnZW50U2lnbmFsUmVqZWN0ZWQSFgoOY29ycmVsYXRpb25faWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRIMCgRjb2RlGAMgASgJEg8KB21lc3NhZ2UYBCABKAkiVQoKQWdlbnRSZWFkeRISCgpnZW5lcmF0aW9uGAEgASgEEjMKCWhlYXJ0YmVhdBgCIAEoCzIgLm11eHZpYS5jbG91ZC52MS5IZWFydGJlYXRQb2xpY3kijwMKCkFnZW50RXZlbnQSGAoQcHJvdG9jb2xfdmVyc2lvbhgBIAEoDRISCgptZXNzYWdlX2lkGAIgASgJEhEKCXNlbmRlcl9pZBgDIAEoCRIPCgdib290X2lkGAQgASgJEhUKDWNvbm5lY3Rpb25faWQYBSABKAkSEgoKc3RyZWFtX3NlcRgGIAEoBBIrCgdzZW50X2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCgVoZWxsbxgUIAEoCzIbLm11eHZpYS5jbG91ZC52MS5BZ2VudEhlbGxvSAASNAoJaGVhcnRiZWF0GBUgASgLMh8ubXV4dmlhLmNsb3VkLnYxLkFnZW50SGVhcnRiZWF0SAASLgoGYW5zd2VyGBYgASgLMhwubXV4dmlhLmNsb3VkLnYxLkFnZW50QW5zd2VySAASOAoIcmVqZWN0ZWQYFyABKAsyJC5tdXh2aWEuY2xvdWQudjEuQWdlbnRTaWduYWxSZWplY3RlZEgAQgkKB3BheWxvYWQingIKC0VkZ2VDb21tYW5kEhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SEgoKbWVzc2FnZV9pZBgCIAEoCRIRCglzZW5kZXJfaWQYAyABKAkSDwoHYm9vdF9pZBgEIAEoCRIVCg1jb25uZWN0aW9uX2lkGAUgASgJEhIKCnN0cmVhbV9zZXEYBiABKAQSKwoHc2VudF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLAoFcmVhZHkYFCABKAsyGy5tdXh2aWEuY2xvdWQudjEuQWdlbnRSZWFkeUgAEiwKBW9mZmVyGBUgASgLMhsubXV4dmlhLmNsb3VkLnYxLkFnZW50T2ZmZXJIAEIJCgdwYXlsb2FkMlgKDEFnZW50R2F0ZXdheRJICgdDb25uZWN0EhsubXV4dmlhLmNsb3VkLnYxLkFnZW50RXZlbnQaHC5tdXh2aWEuY2xvdWQudjEuRWRnZUNvbW1hbmQoATABQjFaL2dpdGh1Yi5jb20vbXV4dmlhL211eHZpYS9wcm90by9jbG91ZC92MTtjbG91ZHYxYgZwcm90bzM", [file_cloud_v1_common, file_cloud_v1_client_gateway, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message muxvia.cloud.v1.AgentHello
@@ -61,6 +63,112 @@ export const AgentHeartbeatSchema: GenMessage<AgentHeartbeat> = /*@__PURE__*/
   messageDesc(file_cloud_v1_agent_gateway, 1);
 
 /**
+ * @generated from message muxvia.cloud.v1.AgentOffer
+ */
+export type AgentOffer = Message<"muxvia.cloud.v1.AgentOffer"> & {
+  /**
+   * @generated from field: string correlation_id = 1;
+   */
+  correlationId: string;
+
+  /**
+   * @generated from field: string session_id = 2;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: uint64 agent_generation = 3;
+   */
+  agentGeneration: bigint;
+
+  /**
+   * @generated from field: bytes client_public_key = 4;
+   */
+  clientPublicKey: Uint8Array;
+
+  /**
+   * @generated from field: string offer_sdp = 5;
+   */
+  offerSdp: string;
+
+  /**
+   * @generated from field: repeated muxvia.cloud.v1.CloudICECandidate candidates = 6;
+   */
+  candidates: CloudICECandidate[];
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.AgentOffer.
+ * Use `create(AgentOfferSchema)` to create a new message.
+ */
+export const AgentOfferSchema: GenMessage<AgentOffer> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_agent_gateway, 2);
+
+/**
+ * @generated from message muxvia.cloud.v1.AgentAnswer
+ */
+export type AgentAnswer = Message<"muxvia.cloud.v1.AgentAnswer"> & {
+  /**
+   * @generated from field: string correlation_id = 1;
+   */
+  correlationId: string;
+
+  /**
+   * @generated from field: string session_id = 2;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string answer_sdp = 3;
+   */
+  answerSdp: string;
+
+  /**
+   * @generated from field: repeated muxvia.cloud.v1.CloudICECandidate candidates = 4;
+   */
+  candidates: CloudICECandidate[];
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.AgentAnswer.
+ * Use `create(AgentAnswerSchema)` to create a new message.
+ */
+export const AgentAnswerSchema: GenMessage<AgentAnswer> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_agent_gateway, 3);
+
+/**
+ * @generated from message muxvia.cloud.v1.AgentSignalRejected
+ */
+export type AgentSignalRejected = Message<"muxvia.cloud.v1.AgentSignalRejected"> & {
+  /**
+   * @generated from field: string correlation_id = 1;
+   */
+  correlationId: string;
+
+  /**
+   * @generated from field: string session_id = 2;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string code = 3;
+   */
+  code: string;
+
+  /**
+   * @generated from field: string message = 4;
+   */
+  message: string;
+};
+
+/**
+ * Describes the message muxvia.cloud.v1.AgentSignalRejected.
+ * Use `create(AgentSignalRejectedSchema)` to create a new message.
+ */
+export const AgentSignalRejectedSchema: GenMessage<AgentSignalRejected> = /*@__PURE__*/
+  messageDesc(file_cloud_v1_agent_gateway, 4);
+
+/**
  * @generated from message muxvia.cloud.v1.AgentReady
  */
 export type AgentReady = Message<"muxvia.cloud.v1.AgentReady"> & {
@@ -80,7 +188,7 @@ export type AgentReady = Message<"muxvia.cloud.v1.AgentReady"> & {
  * Use `create(AgentReadySchema)` to create a new message.
  */
 export const AgentReadySchema: GenMessage<AgentReady> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_agent_gateway, 2);
+  messageDesc(file_cloud_v1_agent_gateway, 5);
 
 /**
  * @generated from message muxvia.cloud.v1.AgentEvent
@@ -136,6 +244,18 @@ export type AgentEvent = Message<"muxvia.cloud.v1.AgentEvent"> & {
      */
     value: AgentHeartbeat;
     case: "heartbeat";
+  } | {
+    /**
+     * @generated from field: muxvia.cloud.v1.AgentAnswer answer = 22;
+     */
+    value: AgentAnswer;
+    case: "answer";
+  } | {
+    /**
+     * @generated from field: muxvia.cloud.v1.AgentSignalRejected rejected = 23;
+     */
+    value: AgentSignalRejected;
+    case: "rejected";
   } | { case: undefined; value?: undefined };
 };
 
@@ -144,7 +264,7 @@ export type AgentEvent = Message<"muxvia.cloud.v1.AgentEvent"> & {
  * Use `create(AgentEventSchema)` to create a new message.
  */
 export const AgentEventSchema: GenMessage<AgentEvent> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_agent_gateway, 3);
+  messageDesc(file_cloud_v1_agent_gateway, 6);
 
 /**
  * @generated from message muxvia.cloud.v1.EdgeCommand
@@ -194,6 +314,12 @@ export type EdgeCommand = Message<"muxvia.cloud.v1.EdgeCommand"> & {
      */
     value: AgentReady;
     case: "ready";
+  } | {
+    /**
+     * @generated from field: muxvia.cloud.v1.AgentOffer offer = 21;
+     */
+    value: AgentOffer;
+    case: "offer";
   } | { case: undefined; value?: undefined };
 };
 
@@ -202,7 +328,7 @@ export type EdgeCommand = Message<"muxvia.cloud.v1.EdgeCommand"> & {
  * Use `create(EdgeCommandSchema)` to create a new message.
  */
 export const EdgeCommandSchema: GenMessage<EdgeCommand> = /*@__PURE__*/
-  messageDesc(file_cloud_v1_agent_gateway, 4);
+  messageDesc(file_cloud_v1_agent_gateway, 7);
 
 /**
  * AgentGateway 是 daemon 到单个 Edge 的唯一长连接控制流。

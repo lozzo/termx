@@ -1065,6 +1065,7 @@ type PairingOpen struct {
 	ClientNonce       []byte                 `protobuf:"bytes,4,opt,name=client_nonce,json=clientNonce,proto3" json:"client_nonce,omitempty"`
 	Proof             []byte                 `protobuf:"bytes,5,opt,name=proof,proto3" json:"proof,omitempty"`
 	PairingClaimOffer []byte                 `protobuf:"bytes,6,opt,name=pairing_claim_offer,json=pairingClaimOffer,proto3" json:"pairing_claim_offer,omitempty"`
+	ClientProduct     uint32                 `protobuf:"varint,7,opt,name=client_product,json=clientProduct,proto3" json:"client_product,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1139,6 +1140,13 @@ func (x *PairingOpen) GetPairingClaimOffer() []byte {
 		return x.PairingClaimOffer
 	}
 	return nil
+}
+
+func (x *PairingOpen) GetClientProduct() uint32 {
+	if x != nil {
+		return x.ClientProduct
+	}
+	return 0
 }
 
 // ScopeSummary 是 daemon 已接受 capability 的最小无歧义投影。
@@ -1853,6 +1861,7 @@ type PairingAccepted struct {
 	SubjectKeyFingerprint string                 `protobuf:"bytes,3,opt,name=subject_key_fingerprint,json=subjectKeyFingerprint,proto3" json:"subject_key_fingerprint,omitempty"`
 	Scope                 *ScopeSummary          `protobuf:"bytes,4,opt,name=scope,proto3" json:"scope,omitempty"`
 	PairingBundle         []byte                 `protobuf:"bytes,5,opt,name=pairing_bundle,json=pairingBundle,proto3" json:"pairing_bundle,omitempty"`
+	CloudRouteGrant       []byte                 `protobuf:"bytes,6,opt,name=cloud_route_grant,json=cloudRouteGrant,proto3" json:"cloud_route_grant,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -1918,6 +1927,13 @@ func (x *PairingAccepted) GetScope() *ScopeSummary {
 func (x *PairingAccepted) GetPairingBundle() []byte {
 	if x != nil {
 		return x.PairingBundle
+	}
+	return nil
+}
+
+func (x *PairingAccepted) GetCloudRouteGrant() []byte {
+	if x != nil {
+		return x.CloudRouteGrant
 	}
 	return nil
 }
@@ -5134,14 +5150,15 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x05grant\x18\x01 \x01(\tR\x05grant\x12*\n" +
 	"\x11client_public_key\x18\x02 \x01(\fR\x0fclientPublicKey\x12!\n" +
 	"\fclient_nonce\x18\x03 \x01(\fR\vclientNonce\x12\x14\n" +
-	"\x05proof\x18\x04 \x01(\fR\x05proof\"\xec\x01\n" +
+	"\x05proof\x18\x04 \x01(\fR\x05proof\"\x93\x02\n" +
 	"\vPairingOpen\x12%\n" +
 	"\x0epairing_bundle\x18\x01 \x01(\fR\rpairingBundle\x12*\n" +
 	"\x11client_public_key\x18\x02 \x01(\fR\x0fclientPublicKey\x12!\n" +
 	"\fclient_label\x18\x03 \x01(\tR\vclientLabel\x12!\n" +
 	"\fclient_nonce\x18\x04 \x01(\fR\vclientNonce\x12\x14\n" +
 	"\x05proof\x18\x05 \x01(\fR\x05proof\x12.\n" +
-	"\x13pairing_claim_offer\x18\x06 \x01(\fR\x11pairingClaimOffer\"\x97\x01\n" +
+	"\x13pairing_claim_offer\x18\x06 \x01(\fR\x11pairingClaimOffer\x12%\n" +
+	"\x0eclient_product\x18\a \x01(\rR\rclientProduct\"\x97\x01\n" +
 	"\fScopeSummary\x124\n" +
 	"\x04kind\x18\x01 \x01(\x0e2 .muxvia.remote.auth.v1.ScopeKindR\x04kind\x12\x1f\n" +
 	"\vterminal_id\x18\x02 \x01(\tR\n" +
@@ -5198,13 +5215,14 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x12CapabilityAccepted\x12\x19\n" +
 	"\bgrant_id\x18\x01 \x01(\tR\agrantId\x129\n" +
 	"\x05scope\x18\x02 \x01(\v2#.muxvia.remote.auth.v1.ScopeSummaryR\x05scope\x126\n" +
-	"\x17subject_key_fingerprint\x18\x03 \x01(\tR\x15subjectKeyFingerprint\"\xec\x01\n" +
+	"\x17subject_key_fingerprint\x18\x03 \x01(\tR\x15subjectKeyFingerprint\"\x98\x02\n" +
 	"\x0fPairingAccepted\x12\x14\n" +
 	"\x05grant\x18\x01 \x01(\tR\x05grant\x12)\n" +
 	"\x10delivery_receipt\x18\x02 \x01(\tR\x0fdeliveryReceipt\x126\n" +
 	"\x17subject_key_fingerprint\x18\x03 \x01(\tR\x15subjectKeyFingerprint\x129\n" +
 	"\x05scope\x18\x04 \x01(\v2#.muxvia.remote.auth.v1.ScopeSummaryR\x05scope\x12%\n" +
-	"\x0epairing_bundle\x18\x05 \x01(\fR\rpairingBundle\"h\n" +
+	"\x0epairing_bundle\x18\x05 \x01(\fR\rpairingBundle\x12*\n" +
+	"\x11cloud_route_grant\x18\x06 \x01(\fR\x0fcloudRouteGrant\"h\n" +
 	"\x12CapabilityRejected\x128\n" +
 	"\x04code\x18\x01 \x01(\x0e2$.muxvia.remote.auth.v1.AuthErrorCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"\x93\x03\n" +

@@ -15,7 +15,7 @@ describe('mobile product shell', () => {
   it('does not expose staging IP addresses in the official App shell', () => {
     expect(mobileAppSource).not.toContain('114.66.58.243')
     expect(mobileAppSource).not.toContain('VITE_CONTROL_URL')
-    expect(remoteControlSource).toContain('workspace.connection.unavailableReason.cloud_unavailable')
+    expect(remoteControlSource).not.toContain('workspace.connection.unavailableReason.cloud_unavailable')
   })
 
   it('removes the retired Cloud account bridge from the native plugin', () => {

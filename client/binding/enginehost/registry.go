@@ -1,6 +1,7 @@
 package enginehost
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -103,7 +104,7 @@ func (host *Host) connectionPolicyState(ctx context.Context, target endpoint.End
 		return nil, err
 	}
 	state := &bindingpb.ConnectionPolicyState{Policy: connectionPolicyToProto(target)}
-	for _, kind := range []endpoint.RouteKind{endpoint.RouteDirectWebRTCTCP, endpoint.RouteSSHWebRTCTCP} {
+	for _, kind := range []endpoint.RouteKind{endpoint.RouteDirectWebRTCTCP, endpoint.RouteSSHWebRTCTCP, endpoint.RouteManagedWebRTC} {
 		available, reason, err := connectionRouteAvailability(target, planningTarget, environment, kind)
 		if err != nil {
 			return nil, err
@@ -213,6 +214,8 @@ func bindingPolicyRouteKind(kind endpoint.RouteKind) bindingpb.ConnectionRouteKi
 		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_DIRECT
 	case endpoint.RouteSSHWebRTCTCP:
 		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_SSH
+	case endpoint.RouteManagedWebRTC:
+		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_CLOUD
 	default:
 		return bindingpb.ConnectionRouteKind_CONNECTION_ROUTE_KIND_UNSPECIFIED
 	}
@@ -537,7 +540,7 @@ func (host *Host) commitPairingEndpoint(ctx context.Context, preferredID endpoin
 	return wireEndpoint, wireRegistry, nil
 }
 
-func (host *Host) rollbackPreparedCredential(ctx context.Context, prepared *bindingpb.CredentialRecord, boundGrant string) error {
+func (host *Host) rollbackPreparedCredential(ctx context.Context, prepared *bindingpb.CredentialRecord, boundGrant string, boundCloudGrant []byte) error {
 	if prepared == nil || strings.TrimSpace(prepared.GetCredentialRef()) == "" {
 		return nil
 	}
@@ -550,11 +553,11 @@ func (host *Host) rollbackPreparedCredential(ctx context.Context, prepared *bind
 		}
 		return platformResponseError(response)
 	}
-	if prepared.GetCapabilityGrant() == boundGrant {
+	if prepared.GetCapabilityGrant() == boundGrant && bytes.Equal(prepared.GetCloudRouteGrant(), boundCloudGrant) {
 		return nil
 	}
 	response, err := host.options.Broker.Exchange(ctx, &bindingpb.PlatformRequest{Request: &bindingpb.PlatformRequest_CredentialBind{
-		CredentialBind: &bindingpb.CredentialBindRequest{EndpointId: prepared.GetEndpointId(), CredentialRef: prepared.GetCredentialRef(), CapabilityGrant: prepared.GetCapabilityGrant()},
+		CredentialBind: &bindingpb.CredentialBindRequest{EndpointId: prepared.GetEndpointId(), CredentialRef: prepared.GetCredentialRef(), CapabilityGrant: prepared.GetCapabilityGrant(), CloudRouteGrant: prepared.GetCloudRouteGrant()},
 	}})
 	if err != nil {
 		return err

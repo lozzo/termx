@@ -3,6 +3,7 @@ syntax = "proto3";
 package muxvia.cloud.v1;
 
 import "cloud/v1/common.proto";
+import "cloud/v1/client_gateway.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/muxvia/muxvia/proto/cloud/v1;cloudv1";
@@ -14,6 +15,29 @@ message AgentHello {
 }
 
 message AgentHeartbeat { uint64 generation = 1; }
+
+message AgentOffer {
+  string correlation_id = 1;
+  string session_id = 2;
+  uint64 agent_generation = 3;
+  bytes client_public_key = 4;
+  string offer_sdp = 5;
+  repeated CloudICECandidate candidates = 6;
+}
+
+message AgentAnswer {
+  string correlation_id = 1;
+  string session_id = 2;
+  string answer_sdp = 3;
+  repeated CloudICECandidate candidates = 4;
+}
+
+message AgentSignalRejected {
+  string correlation_id = 1;
+  string session_id = 2;
+  string code = 3;
+  string message = 4;
+}
 
 message AgentReady {
   uint64 generation = 1;
@@ -31,6 +55,8 @@ message AgentEvent {
   oneof payload {
     AgentHello hello = 20;
     AgentHeartbeat heartbeat = 21;
+    AgentAnswer answer = 22;
+    AgentSignalRejected rejected = 23;
   }
 }
 
@@ -44,6 +70,7 @@ message EdgeCommand {
   google.protobuf.Timestamp sent_at = 7;
   oneof payload {
     AgentReady ready = 20;
+    AgentOffer offer = 21;
   }
 }
 

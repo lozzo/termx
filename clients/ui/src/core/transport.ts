@@ -47,7 +47,7 @@ export interface RtcConnectOptions {
   onConnectionState?: ((snapshot: RtcConnectionStateSnapshot) => void) | undefined
 }
 
-export type ConnectionRoutePreference = 'auto' | 'direct' | 'ssh'
+export type ConnectionRoutePreference = 'auto' | 'direct' | 'ssh' | 'cloud'
 
 export interface ConnectionPolicy {
   route: ConnectionRoutePreference
@@ -59,7 +59,7 @@ export interface ConnectionPolicyState {
   unavailableReasons: Partial<Record<Exclude<ConnectionRoutePreference, 'auto'>, ConnectionPolicyUnavailableReason>>
 }
 
-export type ConnectionPolicyUnavailableReason = 'route_not_configured' | 'route_disabled' | 'platform_unsupported' | 'credential_unavailable'
+export type ConnectionPolicyUnavailableReason = 'route_not_configured' | 'route_disabled' | 'platform_unsupported' | 'credential_unavailable' | 'cloud_unavailable'
 
 export interface RtcSubscription {
   close(): void

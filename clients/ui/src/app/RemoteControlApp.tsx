@@ -956,10 +956,6 @@ function SettingsView({
             <p className="border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
           ) : null}
 
-          <SettingsSection title={t('workspace.connection.routeCloud')}>
-            <SettingsRow label={t('workspace.connection.routeCloud')} value={t('workspace.connection.unavailableReason.cloud_unavailable')} />
-          </SettingsSection>
-
           <SettingsSection title={t('common.language')}>
             <SettingsRow label={t('settings.languageHint')}>
               <SettingsSelect

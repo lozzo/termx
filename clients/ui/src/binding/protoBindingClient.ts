@@ -689,6 +689,7 @@ function routePreferenceFromProto(value: MuxviaRemoteAuth.EndpointRoutePreferenc
   switch (value) {
     case MuxviaRemoteAuth.EndpointRoutePreference.DIRECT: return 'direct'
     case MuxviaRemoteAuth.EndpointRoutePreference.SSH: return 'ssh'
+    case MuxviaRemoteAuth.EndpointRoutePreference.MANAGED_CLOUD: return 'cloud'
     default: return 'auto'
   }
 }
@@ -697,6 +698,7 @@ function routePreferenceToProto(value: ConnectionPolicy['route']): MuxviaRemoteA
   switch (value) {
     case 'direct': return MuxviaRemoteAuth.EndpointRoutePreference.DIRECT
     case 'ssh': return MuxviaRemoteAuth.EndpointRoutePreference.SSH
+    case 'cloud': return MuxviaRemoteAuth.EndpointRoutePreference.MANAGED_CLOUD
     default: return MuxviaRemoteAuth.EndpointRoutePreference.AUTO
   }
 }
@@ -707,7 +709,7 @@ function connectionPolicyStateFromProto(state: MuxviaClientBinding.ConnectionPol
     policy: {
       route: routePreferenceFromProto(policy?.routePreference),
     },
-    available: { direct: false, ssh: false },
+    available: { direct: false, ssh: false, cloud: false },
     unavailableReasons: {},
   }
   for (const route of state.routes) {
@@ -715,7 +717,9 @@ function connectionPolicyStateFromProto(state: MuxviaClientBinding.ConnectionPol
       ? 'direct'
       : route.routeKind === MuxviaClientBinding.ConnectionRouteKind.SSH
         ? 'ssh'
-        : undefined
+        : route.routeKind === MuxviaClientBinding.ConnectionRouteKind.CLOUD
+          ? 'cloud'
+          : undefined
     if (!key) continue
     result.available[key] = route.available
     if (!route.available) result.unavailableReasons[key] = connectionPolicyReasonFromProto(route.reason)
@@ -728,6 +732,7 @@ function connectionPolicyReasonFromProto(reason: MuxviaClientBinding.ConnectionP
     case MuxviaClientBinding.ConnectionPolicyAvailabilityReason.ROUTE_DISABLED: return 'route_disabled'
     case MuxviaClientBinding.ConnectionPolicyAvailabilityReason.PLATFORM_UNSUPPORTED: return 'platform_unsupported'
     case MuxviaClientBinding.ConnectionPolicyAvailabilityReason.CREDENTIAL_UNAVAILABLE: return 'credential_unavailable'
+    case MuxviaClientBinding.ConnectionPolicyAvailabilityReason.CLOUD_UNAVAILABLE: return 'cloud_unavailable'
     default: return 'route_not_configured'
   }
 }

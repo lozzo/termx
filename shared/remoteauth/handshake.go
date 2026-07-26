@@ -41,6 +41,7 @@ type ClientPairingRequest struct {
 	Identity                  ClientAccessIdentity
 	Signer                    ClientAccessSigner
 	ClientLabel               string
+	ClientProduct             uint32
 	ChannelBinding            ChannelBinding
 }
 
@@ -196,7 +197,7 @@ func (handshake ClientPairingHandshake) Redeem(ctx context.Context, connection t
 		Protocol: AuthProtocol, Version: AuthVersion, AuthSessionId: helloEnvelope.GetAuthSessionId(),
 		Payload: &remoteauthpb.AuthEnvelope_PairingOpen{PairingOpen: &remoteauthpb.PairingOpen{
 			PairingBundle: append([]byte(nil), request.PairingBundle...), ClientPublicKey: append([]byte(nil), request.Identity.PublicKey...),
-			PairingClaimOffer: append([]byte(nil), request.PairingClaimOffer...), ClientLabel: strings.TrimSpace(request.ClientLabel), ClientNonce: clientNonce, Proof: proof,
+			PairingClaimOffer: append([]byte(nil), request.PairingClaimOffer...), ClientLabel: strings.TrimSpace(request.ClientLabel), ClientProduct: request.ClientProduct, ClientNonce: clientNonce, Proof: proof,
 		}},
 	}); err != nil {
 		return PairingExchangeResult{}, err
@@ -232,10 +233,13 @@ func (handshake ClientPairingHandshake) Redeem(ctx context.Context, connection t
 	if expectedTicketClaims != nil && (expectedTicketClaims.TicketID != ticketClaims.TicketID || expectedTicketClaims.ScopeCeiling != ticketClaims.ScopeCeiling) {
 		return PairingExchangeResult{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_PAIRING_TICKET_INVALID, "daemon returned a different pairing ticket", nil)
 	}
+	if pairingBundleHasManagedRoute(responseBundle) && len(accepted.GetCloudRouteGrant()) == 0 {
+		return PairingExchangeResult{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_PROTOCOL, "daemon omitted the managed Route discovery grant", nil)
+	}
 	return PairingExchangeResult{
 		TicketID: ticketClaims.TicketID, Grant: strings.TrimSpace(accepted.GetGrant()), GrantID: claims.GrantID,
 		DeliveryReceipt: strings.TrimSpace(accepted.GetDeliveryReceipt()), SubjectKeyFingerprint: claims.SubjectKeyFingerprint,
-		Scope: claims.Scope, ExpiresAt: claims.ExpiresAt, Bundle: append([]byte(nil), accepted.GetPairingBundle()...),
+		Scope: claims.Scope, ExpiresAt: claims.ExpiresAt, Bundle: append([]byte(nil), accepted.GetPairingBundle()...), CloudRouteGrant: append([]byte(nil), accepted.GetCloudRouteGrant()...),
 	}, nil
 }
 
@@ -425,9 +429,9 @@ func (handshake ServerHandshake) acceptPairing(ctx context.Context, connection t
 	}
 	var result PairingExchangeResult
 	if len(open.GetPairingClaimOffer()) > 0 {
-		result, bundlePayload, err = handshake.AccessStore.RedeemPairingClaim(open.GetPairingClaimOffer(), clientPublicKey, open.GetClientLabel(), now)
+		result, bundlePayload, err = handshake.AccessStore.RedeemPairingClaimForProduct(open.GetPairingClaimOffer(), clientPublicKey, open.GetClientLabel(), open.GetClientProduct(), now)
 	} else {
-		result, err = handshake.AccessStore.RedeemPairingBundle(bundlePayload, clientPublicKey, open.GetClientLabel(), now)
+		result, err = handshake.AccessStore.RedeemPairingBundleForProduct(bundlePayload, clientPublicKey, open.GetClientLabel(), open.GetClientProduct(), now)
 	}
 	if err != nil {
 		return ServerHandshakeResult{}, mapPairingError(err)
@@ -440,7 +444,7 @@ func (handshake ServerHandshake) acceptPairing(ctx context.Context, connection t
 		Protocol: AuthProtocol, Version: AuthVersion, AuthSessionId: authSessionID,
 		Payload: &remoteauthpb.AuthEnvelope_PairingAccepted{PairingAccepted: &remoteauthpb.PairingAccepted{
 			Grant: result.Grant, DeliveryReceipt: result.DeliveryReceipt,
-			SubjectKeyFingerprint: result.SubjectKeyFingerprint, Scope: summary, PairingBundle: append([]byte(nil), bundlePayload...),
+			SubjectKeyFingerprint: result.SubjectKeyFingerprint, Scope: summary, PairingBundle: append([]byte(nil), bundlePayload...), CloudRouteGrant: append([]byte(nil), result.CloudRouteGrant...),
 		}},
 	}); err != nil {
 		return ServerHandshakeResult{}, err

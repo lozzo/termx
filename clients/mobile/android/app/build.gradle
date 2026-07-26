@@ -2,6 +2,11 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'com.google.protobuf'
 
+def muxviaBuildString = { value -> '"' + value.toString().replace('\\', '\\\\').replace('"', '\\"') + '"' }
+def muxviaCloudControllerAddress = project.findProperty('muxviaCloudControllerAddress') ?: ''
+def muxviaCloudControllerServerName = project.findProperty('muxviaCloudControllerServerName') ?: ''
+def muxviaCloudControllerCAPEMBase64 = project.findProperty('muxviaCloudControllerCAPEMBase64') ?: ''
+
 android {
     namespace = "com.muxvia.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,6 +21,9 @@ android {
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField "String", "MUXVIA_CLOUD_CONTROLLER_ADDRESS", muxviaBuildString(muxviaCloudControllerAddress)
+        buildConfigField "String", "MUXVIA_CLOUD_CONTROLLER_SERVER_NAME", muxviaBuildString(muxviaCloudControllerServerName)
+        buildConfigField "String", "MUXVIA_CLOUD_CONTROLLER_CA_PEM_BASE64", muxviaBuildString(muxviaCloudControllerCAPEMBase64)
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61

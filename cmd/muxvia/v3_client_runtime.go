@@ -6,9 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
+	cloudadapter "github.com/muxvia/muxvia/client/adapter/cloud"
 	directadapter "github.com/muxvia/muxvia/client/adapter/direct"
 	localadapter "github.com/muxvia/muxvia/client/adapter/local"
 	peeradapter "github.com/muxvia/muxvia/client/adapter/peer"
@@ -18,6 +20,8 @@ import (
 	pionadapter "github.com/muxvia/muxvia/client/adapter/webrtc/pion"
 	clientendpoint "github.com/muxvia/muxvia/client/endpoint"
 	clientruntime "github.com/muxvia/muxvia/client/runtime"
+	cloudclient "github.com/muxvia/muxvia/cloud/client"
+	cloudv1 "github.com/muxvia/muxvia/proto/cloud/v1"
 	"github.com/muxvia/muxvia/shared/remoteauth"
 )
 
@@ -26,6 +30,7 @@ type cliEndpointPlanSource struct {
 	credentials    cliCredentialSource
 	sshCredentials sshadapter.AgentCredentialSource
 	initialTarget  clientendpoint.Endpoint
+	cloudAvailable bool
 }
 
 // Snapshot 每次从共享 Endpoint registry 读取当前配置，再生成本机平台与 credential 索引。
@@ -44,7 +49,7 @@ func (source cliEndpointPlanSource) Snapshot(ctx context.Context, endpointID cli
 		}
 		target = source.initialTarget
 	}
-	environment := cliRoutePlanEnvironment(ctx, target, source.credentials, source.sshCredentials)
+	environment := cliRoutePlanEnvironment(ctx, target, source.credentials, source.sshCredentials, source.cloudAvailable)
 	configKey, err := cliEndpointConfigKey(target, source.localOptions, environment)
 	if err != nil {
 		return clientruntime.EndpointPlanSnapshot{}, err
@@ -79,6 +84,11 @@ func (source cliCredentialSource) ResolveClientSigner(_ context.Context, endpoin
 func (source cliCredentialSource) Available(ctx context.Context, endpointID, reference string) bool {
 	credential, err := source.store.ResolveContext(ctx, strings.TrimSpace(reference))
 	return err == nil && credential.EndpointID == endpointID && credential.Ready()
+}
+
+func (source cliCredentialSource) CloudAvailable(ctx context.Context, endpointID, reference string) bool {
+	credential, err := source.store.ResolveContext(ctx, strings.TrimSpace(reference))
+	return err == nil && credential.EndpointID == endpointID && credential.Ready() && len(credential.CloudRouteGrant) != 0
 }
 
 func connectCLIEndpointApplication(ctx context.Context, owner *clientruntime.SessionOwner, target clientendpoint.Endpoint, requested clientendpoint.RouteID, intent clientruntime.ConnectIntent, localOptions localadapter.Options) (*protocoladapter.ApplicationClient, clientendpoint.AccessRoute, error) {
@@ -116,7 +126,7 @@ func newCLIEndpointRuntime(ctx context.Context, owner *clientruntime.SessionOwne
 	credentials := cliCredentialSource{store: remoteauth.NewCredentialStore(v3RemoteCredentialDir())}
 	sshCredentials := sshadapter.AgentCredentialSource{}
 	localDialer := localadapter.NewDialer(localOptions)
-	dialers, err := clientruntime.NewPeerConnectorMap(map[clientendpoint.RouteKind]clientruntime.PeerConnector{
+	connectors := map[clientendpoint.RouteKind]clientruntime.PeerConnector{
 		clientendpoint.RouteLocalUnix: localDialer,
 		clientendpoint.RouteDirectWebRTCTCP: &directadapter.Dialer{
 			Peers: pionadapter.Factory{}, Authorization: peeradapter.CapabilityAuthorizer{Credentials: credentials},
@@ -126,12 +136,20 @@ func newCLIEndpointRuntime(ctx context.Context, owner *clientruntime.SessionOwne
 			Peers: pionadapter.Factory{}, Authorization: peeradapter.CapabilityAuthorizer{Credentials: credentials},
 			Credentials: sshCredentials, ClientName: "muxvia-cli",
 		}),
-	})
+	}
+	cloudProtocol, err := cliCloudClientFromEnvironment()
+	if err != nil {
+		return nil, err
+	}
+	if cloudProtocol != nil {
+		connectors[clientendpoint.RouteManagedWebRTC] = &cloudadapter.Dialer{Peers: pionadapter.Factory{}, Cloud: cloudProtocol, Authorization: peeradapter.CapabilityAuthorizer{Credentials: credentials}, Product: cloudv1.ClientProduct_CLIENT_PRODUCT_CLI, ClientName: "muxvia-cli"}
+	}
+	dialers, err := clientruntime.NewPeerConnectorMap(connectors)
 	if err != nil {
 		return nil, err
 	}
 	runtime, err := clientruntime.NewClientRuntime(owner, cliEndpointPlanSource{
-		localOptions: localOptions, credentials: credentials, sshCredentials: sshCredentials, initialTarget: target,
+		localOptions: localOptions, credentials: credentials, sshCredentials: sshCredentials, initialTarget: target, cloudAvailable: cloudProtocol != nil,
 	}, systemadapter.Clock{}, dialers)
 	if err != nil {
 		return nil, err
@@ -147,16 +165,30 @@ type cliCapabilityAvailability interface {
 	Available(context.Context, string, string) bool
 }
 
-func cliRoutePlanEnvironment(ctx context.Context, target clientendpoint.Endpoint, credentials cliCapabilityAvailability, sshCredentials cliSSHCredentialAvailability) clientruntime.RoutePlanEnvironment {
+type cliCloudCredentialAvailability interface {
+	CloudAvailable(context.Context, string, string) bool
+}
+
+func cliRoutePlanEnvironment(ctx context.Context, target clientendpoint.Endpoint, credentials cliCapabilityAvailability, sshCredentials cliSSHCredentialAvailability, cloudEnabled ...bool) clientruntime.RoutePlanEnvironment {
+	cloudAvailable := len(cloudEnabled) != 0 && cloudEnabled[0]
 	environment := clientruntime.RoutePlanEnvironment{SupportedRouteKinds: []clientendpoint.RouteKind{
 		clientendpoint.RouteLocalUnix, clientendpoint.RouteDirectWebRTCTCP, clientendpoint.RouteSSHWebRTCTCP,
 	}}
+	if cloudAvailable {
+		environment.SupportedRouteKinds = append(environment.SupportedRouteKinds, clientendpoint.RouteManagedWebRTC)
+	}
 	for _, route := range target.RouteList() {
 		reference := strings.TrimSpace(route.CredentialRef)
 		switch route.Kind {
 		case clientendpoint.RouteDirectWebRTCTCP:
 			if credentials != nil && credentials.Available(ctx, string(target.ID), reference) {
 				environment.AvailableCredentialRefs = append(environment.AvailableCredentialRefs, reference)
+			}
+		case clientendpoint.RouteManagedWebRTC:
+			if cloudCredentials, ok := credentials.(cliCloudCredentialAvailability); cloudAvailable && ok {
+				if cloudCredentials.CloudAvailable(ctx, string(target.ID), reference) {
+					environment.AvailableCredentialRefs = append(environment.AvailableCredentialRefs, reference)
+				}
 			}
 		case clientendpoint.RouteSSHWebRTCTCP:
 			if credentials != nil && credentials.Available(ctx, string(target.ID), reference) {
@@ -168,6 +200,27 @@ func cliRoutePlanEnvironment(ctx context.Context, target clientendpoint.Endpoint
 		}
 	}
 	return environment
+}
+
+func cliCloudClientFromEnvironment() (*cloudclient.Client, error) {
+	address := strings.TrimSpace(os.Getenv("MUXVIA_CLOUD_CONTROLLER_ADDRESS"))
+	serverName := strings.TrimSpace(os.Getenv("MUXVIA_CLOUD_CONTROLLER_SERVER_NAME"))
+	caFile := strings.TrimSpace(os.Getenv("MUXVIA_CLOUD_CONTROLLER_CA"))
+	if address == "" && serverName == "" && caFile == "" {
+		return nil, nil
+	}
+	if address == "" || serverName == "" {
+		return nil, fmt.Errorf("MUXVIA_CLOUD_CONTROLLER_ADDRESS and MUXVIA_CLOUD_CONTROLLER_SERVER_NAME must be configured together")
+	}
+	var caPEM []byte
+	if caFile != "" {
+		var err error
+		caPEM, err = os.ReadFile(caFile)
+		if err != nil {
+			return nil, fmt.Errorf("read Muxvia Cloud Controller CA: %w", err)
+		}
+	}
+	return cloudclient.NewClient(cloudclient.Config{ControllerAddress: address, ControllerServerName: serverName, ControllerCAPEM: caPEM})
 }
 
 func cliEndpointConfigKey(target clientendpoint.Endpoint, localOptions localadapter.Options, environment clientruntime.RoutePlanEnvironment) (string, error) {
