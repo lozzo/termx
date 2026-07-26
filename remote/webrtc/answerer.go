@@ -63,6 +63,9 @@ type Answerer struct {
 	CloseOnDisconnected bool
 	// OnPeerClosed 在 Pion peer 真正关闭后调用一次，供 listener 释放有界 admission token。
 	OnPeerClosed func()
+	// OnSessionStart 在可靠有序 DataChannel 打开并即将进入 daemon 端到端授权入口时调用。
+	// 它只用于连接级可观测性，不能修改授权、session generation 或 PeerConnection lifecycle。
+	OnSessionStart func()
 	// OnSessionError 接收 DataChannel 端到端认证或 application handler 的失败。
 	OnSessionError func(error)
 }
@@ -150,6 +153,9 @@ func (answerer Answerer) Answer(ctx context.Context, offer *SignalingOffer, iceS
 		protocolTransport := datachannel.New(NewChannel(channel))
 		channel.OnOpen(func() {
 			go func() {
+				if answerer.OnSessionStart != nil {
+					answerer.OnSessionStart()
+				}
 				dtlsFingerprint, fingerprintErr := LocalCertificateFingerprint(peer)
 				if fingerprintErr == nil {
 					fingerprintErr = answerer.Handler.ServeDataChannel(sessionCtx, protocolTransport, dtlsFingerprint)

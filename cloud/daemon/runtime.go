@@ -41,8 +41,9 @@ type Config struct {
 type Runtime struct{ config Config }
 
 // NewAuthorizedRuntime 把现有 daemon Core/DeviceIdentity/AccessStore 接到真实 WebRTC Answerer。
-// cmd composition root 只传 owner，不需要依赖 Cloud 内部的 Pion 装配类型。
-func NewAuthorizedRuntime(record EnrollmentRecord, identity remoteauth.Identity, accessStore *remoteauth.AccessStore, core remotedaemon.ScopedTransportServer, softwareVersion string) (*Runtime, error) {
+// cmd composition root 只传 owner 和只读 session 观测回调，不需要依赖 Cloud 内部的 Pion 装配类型；
+// 回调不能修改授权、PeerSession 或 Cloud generation 真值。
+func NewAuthorizedRuntime(record EnrollmentRecord, identity remoteauth.Identity, accessStore *remoteauth.AccessStore, core remotedaemon.ScopedTransportServer, softwareVersion string, onSessionStart func(), onSessionError func(error)) (*Runtime, error) {
 	if accessStore == nil {
 		return nil, errors.New("daemon Cloud runtime requires AccessStore")
 	}
@@ -60,7 +61,11 @@ func NewAuthorizedRuntime(record EnrollmentRecord, identity remoteauth.Identity,
 	}); err != nil {
 		return nil, err
 	}
-	answerer := webrtc.Answerer{Handler: remotedaemon.SessionAcceptor{Core: core, Identity: identity, AccessStore: accessStore}}
+	answerer := webrtc.Answerer{
+		Handler:        remotedaemon.SessionAcceptor{Core: core, Identity: identity, AccessStore: accessStore},
+		OnSessionStart: onSessionStart,
+		OnSessionError: onSessionError,
+	}
 	return NewRuntime(Config{Record: record, Identity: identity, Answerer: answerer, AccessStore: accessStore, SoftwareVersion: softwareVersion})
 }
 

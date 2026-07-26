@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
 
@@ -18,7 +19,18 @@ func startV3CloudDaemon(ctx context.Context, core v3RemoteDaemonCore, clientAcce
 	if err != nil {
 		return nil, err
 	}
-	runtime, err := clouddaemon.NewAuthorizedRuntime(record, clientAccess.Identity, clientAccess.Store, core, "development")
+	runtime, err := clouddaemon.NewAuthorizedRuntime(
+		record, clientAccess.Identity, clientAccess.Store, core, "development",
+		func() {
+			logger.Info("Muxvia Cloud DataChannel 已进入端到端授权", "daemon_id", record.DaemonID)
+		},
+		func(sessionErr error) {
+			if errors.Is(sessionErr, io.EOF) || errors.Is(sessionErr, context.Canceled) {
+				return
+			}
+			logger.Warn("Muxvia Cloud DataChannel 会话异常结束", "daemon_id", record.DaemonID, "error", sessionErr)
+		},
+	)
 	if err != nil {
 		return nil, err
 	}

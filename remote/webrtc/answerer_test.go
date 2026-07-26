@@ -12,8 +12,13 @@ import (
 
 func TestAnswererHandsReliableChannelToAuthorizedHandler(t *testing.T) {
 	handler := &recordingAuthorizedHandler{called: make(chan struct{}), result: make(chan error)}
+	sessionStarted := make(chan struct{}, 1)
 	sessionErrors := make(chan error, 1)
-	answerer := Answerer{Handler: handler, OnSessionError: func(err error) { sessionErrors <- err }}
+	answerer := Answerer{
+		Handler:        handler,
+		OnSessionStart: func() { sessionStarted <- struct{}{} },
+		OnSessionError: func(err error) { sessionErrors <- err },
+	}
 	clientPeer, err := pion.NewPeerConnection(pion.Configuration{})
 	if err != nil {
 		t.Fatalf("create client peer: %v", err)
@@ -54,6 +59,11 @@ func TestAnswererHandsReliableChannelToAuthorizedHandler(t *testing.T) {
 	case <-opened:
 	case <-time.After(10 * time.Second):
 		t.Fatal("muxvia protocol data channel did not open")
+	}
+	select {
+	case <-sessionStarted:
+	case <-time.After(10 * time.Second):
+		t.Fatal("authorized channel start was not reported")
 	}
 	select {
 	case <-handler.called:
