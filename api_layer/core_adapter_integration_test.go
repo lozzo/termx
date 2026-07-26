@@ -39,7 +39,7 @@ func TestCoreApplicationAdapterRunsTerminalProtoE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := application.TerminalCreate(context.Background(), &apipb.TerminalCreateCommand{Terminal: &apipb.TerminalCreateSpec{TerminalId: "term-e2e", Command: []string{"/bin/cat"}, Size: &apipb.TerminalSize{Cols: 80, Rows: 24}}})
+	created, err := application.TerminalCreate(context.Background(), &apipb.TerminalCreateCommand{Terminal: &apipb.TerminalCreateSpec{TerminalId: "term-e2e", Command: testIdleTerminalCommand(), Size: &apipb.TerminalSize{Cols: 80, Rows: 24}}})
 	if err != nil {
 		t.Fatal(err)
 	}

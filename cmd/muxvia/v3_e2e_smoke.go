@@ -85,7 +85,7 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	application := client.ApplicationSession
 	created, err := application.TerminalCreate(ctx, &apipb.TerminalCreateCommand{Terminal: &apipb.TerminalCreateSpec{
 		TerminalId: newV3TerminalID(), Name: "v3-e2e-smoke",
-		Command: []string{"/bin/sh", "-c", "printf 'alpha\\nbeta\\n'; while IFS= read -r line; do printf 'echo:%s\\n' \"$line\"; done"},
+		Command: v3E2ESmokeTerminalCommand(),
 		Size:    &apipb.TerminalSize{Cols: 80, Rows: 24},
 	}})
 	if err != nil {

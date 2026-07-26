@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/muxvia/muxvia/shared/filepublish"
+	"github.com/muxvia/muxvia/shared/securefs"
 	tuiconfig "github.com/muxvia/muxvia/tui/config"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -338,16 +340,20 @@ func validateAndWriteConfig(path string, document *yaml.Node) error {
 	if _, err := tuiconfig.Parse(output.Bytes()); err != nil {
 		return &cliError{code: 2, message: err.Error(), cause: err}
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	parent := filepath.Dir(path)
+	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return err
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".muxvia-config-*")
+	if err := securefs.SecureDirectory(parent); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(parent, ".muxvia-config-*")
 	if err != nil {
 		return err
 	}
 	temporaryPath := temporary.Name()
 	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(0o600); err != nil {
+	if err := securefs.SecureFile(temporaryPath); err != nil {
 		_ = temporary.Close()
 		return err
 	}
@@ -363,5 +369,8 @@ func validateAndWriteConfig(path string, document *yaml.Node) error {
 		return err
 	}
 	// 同目录 temporary + rename 保证读者只观察到完整旧版本或完整新版本。
-	return os.Rename(temporaryPath, path)
+	if err := filepublish.Rename(temporaryPath, path); err != nil {
+		return err
+	}
+	return filepublish.SyncDirectory(parent)
 }

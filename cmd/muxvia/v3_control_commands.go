@@ -25,11 +25,7 @@ func v3NewCommand(socket *string, logFile *string) *cobra.Command {
 			}
 			defer closeLogger()
 			if len(args) == 0 {
-				shell := os.Getenv("SHELL")
-				if shell == "" {
-					shell = "/bin/sh"
-				}
-				args = []string{shell}
+				args = defaultTerminalCommand()
 			}
 			socketPath := resolveV3Socket(*socket)
 			logger.Info("creating core-v2 terminal", "socket", socketPath, "command", strings.Join(args, " "), "log_file", logPath)

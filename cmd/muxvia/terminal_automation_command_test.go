@@ -28,7 +28,7 @@ func TestTerminalAutomationLocalDataPlane(t *testing.T) {
 	}
 
 	if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{
-		TerminalId: "automation", Name: "automation", Command: []string{"/bin/sh", "-c", `printf 'READY\n'; IFS= read -r line; printf 'GOT:%s\n' "$line"`},
+		TerminalId: "automation", Name: "automation", Command: testAutomationCommand(),
 		Size: &apipb.TerminalSize{Cols: 80, Rows: 24},
 	}); err != nil {
 		t.Fatal(err)
@@ -55,7 +55,7 @@ func TestTerminalAutomationLocalDataPlane(t *testing.T) {
 	}
 
 	if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{
-		TerminalId: "resize-me", Name: "resize-me", Command: []string{"/bin/sh", "-c", "sleep 10"}, Size: &apipb.TerminalSize{Cols: 80, Rows: 24},
+		TerminalId: "resize-me", Name: "resize-me", Command: testShellSleepCommand(), Size: &apipb.TerminalSize{Cols: 80, Rows: 24},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestTerminalEventsWritesStableNDJSON(t *testing.T) {
 	for index := 0; index < 50; index++ {
 		terminalID := fmt.Sprintf("event-created-%d", index)
 		if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{
-			TerminalId: terminalID, Command: []string{"/bin/sh", "-c", "exit 0"}, Size: &apipb.TerminalSize{Cols: 80, Rows: 24},
+			TerminalId: terminalID, Command: testExitCommand(), Size: &apipb.TerminalSize{Cols: 80, Rows: 24},
 		}); err != nil {
 			t.Fatal(err)
 		}

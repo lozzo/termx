@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
 	"github.com/muxvia/muxvia/proto/wire"
+	"github.com/muxvia/muxvia/shared/runtimepath"
 	tuiconfig "github.com/muxvia/muxvia/tui/config"
 )
 
@@ -14,11 +14,7 @@ func resolveV3Socket(path string) string {
 	if path != "" {
 		return path
 	}
-	name := fmt.Sprintf("muxvia-v2-wire%d.sock", wire.Version)
-	if runtimeDir := os.Getenv("XDG_RUNTIME_DIR"); runtimeDir != "" {
-		return runtimeDir + "/" + name
-	}
-	return fmt.Sprintf("%s/muxvia-v2-wire%d-%d.sock", os.TempDir(), wire.Version, os.Getuid())
+	return runtimepath.SocketPath(fmt.Sprintf("muxvia-v2-wire%d.sock", wire.Version))
 }
 
 func loadV3ConnectionRegistry() (endpointdomain.Registry, error) {

@@ -16,6 +16,7 @@ import (
 	"github.com/muxvia/muxvia/internal/protocol"
 	"github.com/muxvia/muxvia/proto/apipb"
 	"github.com/muxvia/muxvia/shared/filelock"
+	"github.com/muxvia/muxvia/shared/securefs"
 )
 
 func TestEndpointMutationHonorsRootTimeoutWhileRegistryLocked(t *testing.T) {
@@ -105,8 +106,9 @@ func TestEndpointRegistryCommandLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("registry mode = %o, want 600", info.Mode().Perm())
+	registryPath := filepath.Join(configHome, "muxvia", endpointdomain.DefaultFileName)
+	if !securefs.IsPrivateFile(registryPath, info) {
+		t.Fatalf("registry permissions are not private: %v", info.Mode())
 	}
 }
 
@@ -140,7 +142,7 @@ func TestTerminalCommandsRouteDuplicateIDsToOwningLocalEndpoint(t *testing.T) {
 
 	for _, client := range []*protocol.Client{localClient, westClient} {
 		if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{
-			TerminalId: "same", Name: "same", Command: []string{"/bin/sh", "-c", "sleep 30"}, Size: &apipb.TerminalSize{Cols: 80, Rows: 24},
+			TerminalId: "same", Name: "same", Command: testShellSleepCommand(), Size: &apipb.TerminalSize{Cols: 80, Rows: 24},
 		}); err != nil {
 			t.Fatal(err)
 		}

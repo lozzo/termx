@@ -20,7 +20,7 @@ import (
 func TestProtocolTerminalServiceAdapterWithRealProtocolClient(t *testing.T) {
 	clientTransport, serverTransport := memory.NewPair()
 	server := corev2.NewServer(corev2.WithApplicationExecutorFactory(apilayer.CoreApplicationExecutorFactory))
-	if _, err := server.RegisterTerminal(corev2.TerminalRecord{ID: "term-1", Command: []string{"/bin/cat"}, Size: corev2.Size{Cols: 80, Rows: 24}}); err != nil {
+	if _, err := server.RegisterTerminal(corev2.TerminalRecord{ID: "term-1", Command: testIdleTerminalCommand(), Size: corev2.Size{Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("register terminal: %v", err)
 	}
 	errCh := make(chan error, 1)

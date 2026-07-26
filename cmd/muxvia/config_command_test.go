@@ -2,11 +2,14 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/muxvia/muxvia/shared/securefs"
 )
 
 func TestConfigCommandsAtomicallyUseRuntimeParser(t *testing.T) {
@@ -19,8 +22,8 @@ func TestConfigCommandsAtomicallyUseRuntimeParser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("config mode = %#o", info.Mode().Perm())
+	if !securefs.IsPrivateFile(path, info) {
+		t.Fatalf("config permissions are not private: %v", info.Mode())
 	}
 
 	getOutput := runConfigCommand(t, nil, "config", "get", "tui.theme.mode")
@@ -66,7 +69,13 @@ func TestConfigPathsUseActualTUIConfigPath(t *testing.T) {
 	configHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 	output := runConfigCommand(t, nil, "config", "paths", "--json")
-	if !strings.Contains(output, filepath.Join(configHome, "muxvia", "tui-v3.yaml")) || strings.Contains(output, "muxvia.yaml") {
+	var paths struct {
+		Config string `json:"config"`
+	}
+	if err := json.Unmarshal([]byte(output), &paths); err != nil {
+		t.Fatal(err)
+	}
+	if paths.Config != filepath.Join(configHome, "muxvia", "tui-v3.yaml") {
 		t.Fatalf("config paths = %s", output)
 	}
 }

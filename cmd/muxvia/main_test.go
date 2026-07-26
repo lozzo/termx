@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -123,7 +124,7 @@ endpoints:
       local:
         kind: local-unix
         enabled: true
-        socket: "`+socketPath+`"
+        socket: `+yamlTestString(socketPath)+`
 `)
 
 	var gotCfg v3RootConfig
@@ -178,7 +179,7 @@ endpoints:
       local:
         kind: local-unix
         enabled: true
-        socket: "`+registrySocket+`"
+        socket: `+yamlTestString(registrySocket)+`
 `)
 
 	var gotCfg v3RootConfig
@@ -211,6 +212,10 @@ func writeCLIConnectionRegistry(t *testing.T, configHome string, content string)
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)+"\n"), 0o644); err != nil {
 		t.Fatalf("write connection registry: %v", err)
 	}
+}
+
+func yamlTestString(value string) string {
+	return strconv.Quote(value)
 }
 
 func TestV3InteractiveRuntimeInitializesEndpointStoreFromRegistry(t *testing.T) {
@@ -937,7 +942,7 @@ func TestDefaultLocalControlCommandsUseCoreV2Protocol(t *testing.T) {
 	lsText := lsOut.String()
 	if !strings.Contains(lsText, terminalID) ||
 		!strings.Contains(lsText, "v3-demo") ||
-		!strings.Contains(lsText, "/bin/sh") ||
+		!strings.Contains(lsText, testShellSleepCommand()[0]) ||
 		!strings.Contains(lsText, "running") {
 		t.Fatalf("unexpected v3 ls output:\n%s", lsText)
 	}
@@ -2863,8 +2868,4 @@ func lastFramePaneResizeRegionForCLITest(t *testing.T, host *app.FakeTerminalHos
 	}
 	t.Fatalf("missing pane resize region pane=%s direction=%s in %#v", paneID, direction, frames[len(frames)-1].HitRegions)
 	return render.HitRegion{}
-}
-
-func testShellSleepCommand() []string {
-	return []string{"/bin/sh", "-c", "while true; do sleep 1; done"}
 }

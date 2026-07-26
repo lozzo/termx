@@ -969,6 +969,7 @@ func TestR360TerminalHistoryOldestReturnsReplaceWindow(t *testing.T) {
 func TestR436TerminalDefaultsToLineHistoryStore(t *testing.T) {
 	historyDir := t.TempDir()
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()), WithHistoryStorageDir(historyDir))
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-r436-linehist-default",
 		Command: []string{"shell"},
@@ -1025,6 +1026,7 @@ func TestR436HistoryStorageDirRecoversLineHistoryRows(t *testing.T) {
 	}
 
 	recovered := NewServer(WithProcessFactory(newRecordingProcessFactory()), WithHistoryStorageDir(historyDir))
+	t.Cleanup(func() { _ = recovered.Shutdown(context.Background()) })
 	if _, err := recovered.RegisterTerminal(TerminalRecord{
 		ID:      "term-r436-recover-linehist",
 		Command: []string{"shell"},

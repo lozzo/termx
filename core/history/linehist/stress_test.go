@@ -15,6 +15,7 @@ import (
 func TestStressLargeVolumeProjectionStaysExact(t *testing.T) {
 	dir := t.TempDir()
 	harness := newStoreHarnessInDir(t, dir, "term-stress", 12, 3)
+	t.Cleanup(func() { _ = harness.store.Close() })
 	const totalLines = 20000
 	const linesPerWrite = 100
 	var batch strings.Builder

@@ -21,6 +21,8 @@ import (
 	"github.com/muxvia/muxvia/internal/protocol"
 	"github.com/muxvia/muxvia/proto/apipb"
 	"github.com/muxvia/muxvia/proto/wire"
+	"github.com/muxvia/muxvia/shared/filepublish"
+	"github.com/muxvia/muxvia/shared/securefs"
 	"github.com/spf13/cobra"
 )
 
@@ -533,7 +535,7 @@ func downloadEndpointFileAtomic(ctx context.Context, client *protocoladapter.App
 			_ = os.Remove(temporaryPath)
 		}
 	}()
-	if err := temporary.Chmod(0o600); err != nil {
+	if err := securefs.SecureFile(temporaryPath); err != nil {
 		return protocol.FileTransferResult{}, err
 	}
 	result, err := downloadEndpointFile(ctx, client, remotePath, temporary)
@@ -547,7 +549,7 @@ func downloadEndpointFileAtomic(ctx context.Context, client *protocoladapter.App
 		return protocol.FileTransferResult{}, err
 	}
 	if overwrite {
-		err = os.Rename(temporaryPath, localPath)
+		err = filepublish.Rename(temporaryPath, localPath)
 	} else {
 		err = os.Link(temporaryPath, localPath)
 		if err == nil {
@@ -555,6 +557,9 @@ func downloadEndpointFileAtomic(ctx context.Context, client *protocoladapter.App
 		}
 	}
 	if err != nil {
+		return protocol.FileTransferResult{}, err
+	}
+	if err := filepublish.SyncDirectory(parent); err != nil {
 		return protocol.FileTransferResult{}, err
 	}
 	committed = true

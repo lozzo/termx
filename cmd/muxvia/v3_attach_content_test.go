@@ -15,7 +15,7 @@ func TestV3InteractiveRuntimeRendersInitialTerminalOutput(t *testing.T) {
 	_, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
 	defer closeClient()
 	if _, err := createCLIProtoTerminal(context.Background(), client, &apipb.TerminalCreateSpec{
-		TerminalId: "initial-output", Name: "initial-output", Command: []string{"/bin/sh", "-c", "printf 'muxvia-initial-output\\n'; sleep 5"},
+		TerminalId: "initial-output", Name: "initial-output", Command: testInitialOutputCommand(),
 		Size: &apipb.TerminalSize{Cols: 100, Rows: 30},
 	}); err != nil {
 		t.Fatal(err)

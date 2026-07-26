@@ -300,7 +300,7 @@ func newProtoTransportClient(t *testing.T, server *corev2.Server, scope *corev2.
 func createProtoTestTerminal(t *testing.T, application *clientruntime.ApplicationSession, terminalID string) {
 	t.Helper()
 	if _, err := application.TerminalCreate(context.Background(), &apipb.TerminalCreateCommand{Terminal: &apipb.TerminalCreateSpec{
-		TerminalId: terminalID, Command: []string{"/bin/cat"}, Size: &apipb.TerminalSize{Cols: 12, Rows: 4},
+		TerminalId: terminalID, Command: testIdleTerminalCommand(), Size: &apipb.TerminalSize{Cols: 12, Rows: 4},
 	}}); err != nil {
 		t.Fatal(err)
 	}

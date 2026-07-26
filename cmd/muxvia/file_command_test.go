@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
+	"github.com/muxvia/muxvia/shared/securefs"
 )
 
 func TestFileCommandRealDaemonLifecycleAndTransfers(t *testing.T) {
@@ -49,8 +50,8 @@ func TestFileCommandRealDaemonLifecycleAndTransfers(t *testing.T) {
 	if payload, err := os.ReadFile(localDownload); err != nil || string(payload) != "remote-source\n" {
 		t.Fatalf("downloaded content = %q, %v", payload, err)
 	}
-	if info, err := os.Stat(localDownload); err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("download mode = %v, %v", info, err)
+	if info, err := os.Stat(localDownload); err != nil || !securefs.IsPrivateFile(localDownload, info) {
+		t.Fatalf("download permissions = %v, %v", info, err)
 	}
 
 	largeContent := bytes.Repeat([]byte("muxvia-upload-window-"), 20000)

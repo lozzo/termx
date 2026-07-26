@@ -17,7 +17,9 @@ import (
 	endpointdomain "github.com/muxvia/muxvia/client/endpoint"
 	"github.com/muxvia/muxvia/proto/apipb"
 	"github.com/muxvia/muxvia/proto/remoteauthpb"
+	"github.com/muxvia/muxvia/shared/filepublish"
 	"github.com/muxvia/muxvia/shared/remoteauth"
+	"github.com/muxvia/muxvia/shared/securefs"
 	unixtransport "github.com/muxvia/muxvia/shared/transport/unix"
 	qrcode "github.com/skip2/go-qrcode"
 	"github.com/spf13/cobra"
@@ -713,10 +715,14 @@ func writeV3PrivateFile(path string, payload []byte) error {
 	if path == "" {
 		return fmt.Errorf("output path is required")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	parent := filepath.Dir(path)
+	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return err
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".pairing-*.json")
+	if err := securefs.SecureDirectory(parent); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(parent, ".pairing-*.json")
 	if err != nil {
 		return err
 	}
@@ -728,7 +734,7 @@ func writeV3PrivateFile(path string, payload []byte) error {
 			_ = os.Remove(temporaryPath)
 		}
 	}()
-	if err := temporary.Chmod(0o600); err != nil {
+	if err := securefs.SecureFile(temporaryPath); err != nil {
 		return err
 	}
 	if _, err := temporary.Write(payload); err != nil {
@@ -740,10 +746,10 @@ func writeV3PrivateFile(path string, payload []byte) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(temporaryPath, path); err != nil {
+	if err := filepublish.Rename(temporaryPath, path); err != nil {
 		return err
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
+	if err := filepublish.SyncDirectory(parent); err != nil {
 		return err
 	}
 	committed = true

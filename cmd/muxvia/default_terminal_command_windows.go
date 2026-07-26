@@ -1,15 +1,15 @@
 //go:build windows
 
-package core
+package main
 
 import (
 	"os"
 	"strings"
 )
 
-func currentAccountShell() string {
+func defaultTerminalCommand() []string {
 	if shell := strings.TrimSpace(os.Getenv("COMSPEC")); shell != "" {
-		return shell
+		return []string{shell}
 	}
-	return "cmd.exe"
+	return []string{"cmd.exe"}
 }

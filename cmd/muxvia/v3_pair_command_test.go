@@ -18,6 +18,7 @@ import (
 	corev2 "github.com/muxvia/muxvia/core"
 	"github.com/muxvia/muxvia/shared/filelock"
 	"github.com/muxvia/muxvia/shared/remoteauth"
+	"github.com/muxvia/muxvia/shared/securefs"
 	unixtransport "github.com/muxvia/muxvia/shared/transport/unix"
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -162,8 +163,8 @@ func TestPairCreateTextAndPNGOutputsArePortableAndOwnerOnly(t *testing.T) {
 		t.Fatalf("pair PNG output = %q", output)
 	}
 	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("pairing PNG mode = %v err=%v", info, err)
+	if err != nil || !securefs.IsPrivateFile(path, info) {
+		t.Fatalf("pairing PNG permissions = %v err=%v", info, err)
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -325,8 +326,8 @@ func TestPairCreateWritesOwnerOnlyTicketBundle(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "pair", "bundle.json")
 	executePairCommand(t, nil, "--socket", filepath.Join(runtimeDir, "daemon.sock"), "pair", "create", "--out", path)
 	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("pairing bundle mode = %v err=%v", info, err)
+	if err != nil || !securefs.IsPrivateFile(path, info) {
+		t.Fatalf("pairing bundle permissions = %v err=%v", info, err)
 	}
 }
 

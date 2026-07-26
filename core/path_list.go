@@ -99,27 +99,18 @@ func pathCompletionBase(prefix string) (string, string, string, bool) {
 		if strings.TrimSpace(home) == "" {
 			return "", "", "", false
 		}
-		return "~/", home, "", true
-	case strings.HasPrefix(prefix, "~/"):
+		return "~" + string(filepath.Separator), home, "", true
+	case strings.HasPrefix(prefix, "~/") || strings.HasPrefix(prefix, "~\\"):
 		if strings.TrimSpace(home) == "" {
 			return "", "", "", false
 		}
-		rest := strings.TrimPrefix(prefix, "~/")
-		base, fragment := splitPathCompletionPrefix(rest)
-		return "~/" + base, filepath.Join(home, filepath.FromSlash(base)), fragment, true
-	case strings.HasPrefix(prefix, "/"):
-		base, fragment := splitPathCompletionPrefix(strings.TrimPrefix(prefix, "/"))
-		return "/" + base, filepath.Join(string(filepath.Separator), filepath.FromSlash(base)), fragment, true
-	default:
-		base, fragment := splitPathCompletionPrefix(prefix)
-		return base, filepath.Join(cwd, filepath.FromSlash(base)), fragment, true
+		rest := filepath.FromSlash(prefix[2:])
+		base, fragment := filepath.Split(rest)
+		return "~" + string(filepath.Separator) + base, filepath.Join(home, base), fragment, true
 	}
-}
-
-func splitPathCompletionPrefix(prefix string) (string, string) {
-	lastSlash := strings.LastIndex(prefix, "/")
-	if lastSlash < 0 {
-		return "", prefix
+	base, fragment := filepath.Split(filepath.FromSlash(prefix))
+	if filepath.IsAbs(filepath.FromSlash(prefix)) {
+		return base, filepath.Clean(base), fragment, true
 	}
-	return prefix[:lastSlash+1], prefix[lastSlash+1:]
+	return base, filepath.Join(cwd, base), fragment, true
 }
